@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ReasoningFloorEffort is the lowest effort every reasoning wire accepts
@@ -25,7 +25,7 @@ var auxDisabledEfforts = map[string]bool{"none": true, "off": true, "disabled": 
 
 // True for a reasoning config map whose enabled flag is exactly false
 func auxReasoningDisabled(reasoningConfig any) bool {
-	m, ok := pyjson.Dict(reasoningConfig)
+	m, ok := jsonutil.AsMap(reasoningConfig)
 	if !ok {
 		return false
 	}
@@ -37,7 +37,7 @@ func auxDisabledEffort(v any, present bool) bool {
 	if !present {
 		v = ""
 	}
-	return auxDisabledEfforts[strings.ToLower(strings.TrimSpace(pyrepr.Str(v)))]
+	return auxDisabledEfforts[strings.ToLower(strings.TrimSpace(anyutil.String(v)))]
 }
 
 // FloorReasoningConfig lifts a disabled reasoning config to the floor and returns anything else unchanged
@@ -63,9 +63,9 @@ func WithReasoningFloor(kwargs map[string]any) map[string]any {
 		retry["_reasoning_config"] = FloorReasoningConfig(retry["_reasoning_config"])
 		changed = true
 	}
-	if extraBody, ok := pyjson.Dict(retry["extra_body"]); ok {
+	if extraBody, ok := jsonutil.AsMap(retry["extra_body"]); ok {
 		reasoning := extraBody["reasoning"]
-		rm, isMap := pyjson.Dict(reasoning)
+		rm, isMap := jsonutil.AsMap(reasoning)
 		effortOff := false
 		if isMap {
 			effort, present := rm["effort"]
@@ -73,8 +73,8 @@ func WithReasoningFloor(kwargs map[string]any) map[string]any {
 		}
 		if auxReasoningDisabled(reasoning) || effortOff {
 			floor := map[string]any{"enabled": true, "effort": ReasoningFloorEffort}
-			if ordered, isObject := retry["extra_body"].(*pyjson.Object); isObject {
-				merged := ordered.Copy()
+			if ordered, isObject := retry["extra_body"].(*jsonutil.Object); isObject {
+				merged := ordered.Clone()
 				merged.Set("reasoning", floor)
 				retry["extra_body"] = merged
 			} else {
@@ -101,8 +101,8 @@ func RememberReasoningFloor(provider, baseURL string, rejectedKwargs map[string]
 		return err
 	}
 	model := ""
-	if v := rejectedKwargs["model"]; pyrepr.Truthy(v) {
-		model = pyrepr.Str(v)
+	if v := rejectedKwargs["model"]; anyutil.IsTrue(v) {
+		model = anyutil.String(v)
 	}
 	auxFlooredRoutesMu.Lock()
 	auxFlooredRoutes[auxFlooredRoute{route, model}] = true

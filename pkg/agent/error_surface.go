@@ -3,9 +3,9 @@ package agent
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -146,7 +146,7 @@ func buildErrorSurfaceFromResult(result any, providerName, model string) (surfac
 	if errorText != "" && state.IsDiskFullError(errorText) {
 		return errorSurface(LayerDisk, "disk_full", false, providerName, model)
 	}
-	if pyrepr.Truthy(res["billing_block"]) || reason == "billing" || reason == "billing_unverified" {
+	if anyutil.IsTrue(res["billing_block"]) || reason == "billing" || reason == "billing_unverified" {
 		code := reason
 		if code == "" {
 			code = "billing"
@@ -172,8 +172,8 @@ func buildErrorSurfaceFromResult(result any, providerName, model string) (surfac
 
 // Python str of a value or the empty string when the value is falsy
 func surfaceStr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }

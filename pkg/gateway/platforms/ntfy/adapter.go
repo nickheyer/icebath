@@ -21,10 +21,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -47,7 +48,7 @@ func (e *fatalStreamError) Error() string { return e.reason }
 
 // AttributeError a str method raises on a value of another type
 func attributeError(v any, attr string) error {
-	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
 }
 
 // Twelve hex digits of a fresh uuid4
@@ -55,7 +56,7 @@ func shortUUID() string { return strings.ReplaceAll(uuid.NewString(), "-", "")[:
 
 // Authorization header of an ntfy token, Basic for user and password, Bearer otherwise, none when unset
 func buildAuthHeader(token any) ([][2]string, error) {
-	if !pyrepr.Truthy(token) {
+	if !anyutil.IsTrue(token) {
 		return nil, nil
 	}
 	text, ok := token.(string)
@@ -100,16 +101,16 @@ func truncateBody(message, context string) []byte {
 }
 
 // Message id ntfy returned, a random twelve hex id when the body carries none or does not parse
-func responseMessageID(resp *pyhttpx.Response) any {
+func responseMessageID(resp *httputil.Response) any {
 	parsed, err := resp.JSON()
 	if err != nil {
 		return shortUUID()
 	}
-	obj, ok := parsed.(*pyjson.Object)
+	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return shortUUID()
 	}
-	if id, _ := obj.Get("id"); pyrepr.Truthy(id) {
+	if id, _ := obj.Get("id"); anyutil.IsTrue(id) {
 		return id
 	}
 	return shortUUID()
@@ -148,7 +149,7 @@ func validateConfig(ctx context.Context, config *gateway.PlatformConfig) (bool, 
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(topic), nil
+	return anyutil.IsTrue(topic), nil
 }
 
 // Whether ntfy is configured through the env or the config extra
@@ -160,7 +161,7 @@ func isConnected(ctx context.Context, config *gateway.PlatformConfig) (bool, err
 	if topic != "" {
 		return true, nil
 	}
-	return pyrepr.Truthy(configExtra(config)["topic"]), nil
+	return anyutil.IsTrue(configExtra(config)["topic"]), nil
 }
 
 // ntfy adapter, a streaming JSON subscription in and one POST per reply out
@@ -205,7 +206,7 @@ func NewNtfyAdapter(ctx context.Context, config *gateway.PlatformConfig) (*NtfyA
 	if a.publishTopic, err = gateway.ExtraOrSecret(ctx, extra, "publish_topic", "NTFY_PUBLISH_TOPIC", "", true); err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(a.publishTopic) {
+	if !anyutil.IsTrue(a.publishTopic) {
 		a.publishTopic = a.topic
 	}
 	if a.token, err = gateway.ExtraOrSecret(ctx, extra, "token", "NTFY_TOKEN", "", true); err != nil {
@@ -216,12 +217,12 @@ func NewNtfyAdapter(ctx context.Context, config *gateway.PlatformConfig) (*NtfyA
 
 // HTTP client like a default httpx client, proxy env honoured and redirects returned unfollowed
 func newHTTPClient() *http.Client {
-	return &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone()), CheckRedirect: pyhttpx.RedirectPolicy(false)}
+	return &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone()), CheckRedirect: httputil.RedirectPolicy(false)}
 }
 
 // Starts the streaming subscription task and marks the adapter connected, false without a topic
 func (a *NtfyAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
-	if !pyrepr.Truthy(a.topic) {
+	if !anyutil.IsTrue(a.topic) {
 		pkgLog().Warn(fmt.Sprintf("[%s] NTFY_TOPIC not configured", a.Name()))
 		return false, nil
 	}
@@ -233,7 +234,7 @@ func (a *NtfyAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 	a.mu.Lock()
 	a.streamTask = task
 	a.mu.Unlock()
-	pkgLog().Info(fmt.Sprintf("[%s] Connected — subscribing to %s/%s", a.Name(), a.server, pyrepr.Str(a.topic)))
+	pkgLog().Info(fmt.Sprintf("[%s] Connected — subscribing to %s/%s", a.Name(), a.server, anyutil.String(a.topic)))
 	a.WirePluginHandlers(ctx, nil)
 	return true, nil
 }
@@ -241,7 +242,7 @@ func (a *NtfyAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 // Subscribes to the topic and reopens the stream with backoff until the adapter stops or a fatal status ends it
 func (a *NtfyAdapter) runStream(ctx context.Context) error {
 	backoffIdx := 0
-	streamURL := a.server + "/" + pyrepr.Str(a.topic) + "/json"
+	streamURL := a.server + "/" + anyutil.String(a.topic) + "/json"
 	headers, err := a.authHeaders()
 	if err != nil {
 		return err
@@ -294,7 +295,7 @@ func streamErrorText(err error) string {
 	if errors.As(err, &se) {
 		return se.text
 	}
-	return pyhttpx.ErrorText(err)
+	return err.Error()
 }
 
 // HTTPStatusError of a stream response outside the 2xx range
@@ -310,8 +311,8 @@ func (a *NtfyAdapter) fatalStatus(ctx context.Context, statusCode int) error {
 		pkgLog().Error(fmt.Sprintf("[%s] Authentication failed (401) — stopping reconnect loop. Check NTFY_TOKEN.", a.Name()))
 		code, detail, reason = "ntfy_unauthorized", "ntfy server rejected auth (401). Check NTFY_TOKEN.", "401 Unauthorized"
 	case 404:
-		pkgLog().Error(fmt.Sprintf("[%s] Topic not found (404): %s — stopping reconnect loop.", a.Name(), pyrepr.Str(a.topic)))
-		code, detail = "ntfy_topic_not_found", fmt.Sprintf("ntfy topic '%s' returned 404. Check NTFY_TOPIC.", pyrepr.Str(a.topic))
+		pkgLog().Error(fmt.Sprintf("[%s] Topic not found (404): %s — stopping reconnect loop.", a.Name(), anyutil.String(a.topic)))
+		code, detail = "ntfy_topic_not_found", fmt.Sprintf("ntfy topic '%s' returned 404. Check NTFY_TOPIC.", anyutil.String(a.topic))
 		reason = "404 Not Found"
 	default:
 		return nil
@@ -415,14 +416,14 @@ func (a *NtfyAdapter) consumeStream(ctx context.Context, streamURL string, heade
 	if client == nil {
 		return attributeError(nil, "stream")
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pyhttpx.MergeParams(streamURL, pyhttpx.Params{{"poll", "false"}}), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, httputil.MergeQuery(streamURL, pyhttpx.Params{{"poll", "false"}}), nil)
 	if err != nil {
 		return err
 	}
 	for _, h := range headers {
 		req.Header.Set(h[0], h[1])
 	}
-	response, err := pyhttpx.StreamTimeout(client, req, pyhttpx.Timeout{Connect: 15 * time.Second,
+	response, err := httputil.Stream(client, req, httputil.Timeout{Connect: 15 * time.Second,
 		Read: streamTimeoutSeconds * time.Second, Write: 15 * time.Second, Pool: 15 * time.Second})
 	if err != nil {
 		return err
@@ -446,19 +447,19 @@ func (a *NtfyAdapter) consumeStream(ctx context.Context, streamURL string, heade
 			if line == "" {
 				continue
 			}
-			parsed, perr := pyjson.Loads(line)
+			parsed, perr := jsonutil.Decode(line)
 			if perr != nil {
-				var decodeErr *pyjson.DecodeError
+				var decodeErr *jsonutil.SyntaxError
 				if errors.As(perr, &decodeErr) {
 					continue
 				}
 				return false, perr
 			}
-			event, ok := parsed.(*pyjson.Object)
+			event, ok := parsed.(*jsonutil.Object)
 			if !ok {
 				return false, attributeError(parsed, "get")
 			}
-			if kind, _ := event.Get("event"); pyrepr.Equal(kind, "message") {
+			if kind, _ := event.Get("event"); anyutil.Equal(kind, "message") {
 				if err := a.onMessage(ctx, event); err != nil {
 					return false, err
 				}
@@ -522,31 +523,31 @@ func (a *NtfyAdapter) Disconnect(ctx context.Context) error {
 
 // Whether the echo tag is a member of the event's tags value
 func hasEchoTag(tags any) (bool, error) {
-	if !pyrepr.Truthy(tags) {
+	if !anyutil.IsTrue(tags) {
 		return false, nil
 	}
 	switch t := tags.(type) {
 	case []any:
 		for _, item := range t {
-			if pyrepr.Equal(item, echoTag) {
+			if anyutil.Equal(item, echoTag) {
 				return true, nil
 			}
 		}
 		return false, nil
 	case string:
 		return strings.Contains(t, echoTag), nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, ok := t.Get(echoTag)
 		return ok, nil
 	}
-	return false, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("argument of type '%s' is not iterable", pyrepr.TypeName(tags))}
+	return false, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("argument of type '%s' is not iterable", anyutil.Kind(tags))}
 }
 
 // Turns one ntfy message event into a text message from the topic, duplicates, own echoes and blank bodies dropped
-func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error {
+func (a *NtfyAdapter) onMessage(ctx context.Context, event *jsonutil.Object) error {
 	var msgID string
-	if id, _ := event.Get("id"); pyrepr.Truthy(id) {
-		msgID = pyrepr.Str(id)
+	if id, _ := event.Get("id"); anyutil.IsTrue(id) {
+		msgID = anyutil.String(id)
 	} else {
 		msgID = strings.ReplaceAll(uuid.NewString(), "-", "")
 	}
@@ -564,7 +565,7 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error
 		return nil
 	}
 	text := ""
-	if message, _ := event.Get("message"); pyrepr.Truthy(message) {
+	if message, _ := event.Get("message"); anyutil.IsTrue(message) {
 		s, ok := message.(string)
 		if !ok {
 			return attributeError(message, "strip")
@@ -576,16 +577,16 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error
 		return nil
 	}
 	topicValue, _ := event.Get("topic")
-	if !pyrepr.Truthy(topicValue) {
+	if !anyutil.IsTrue(topicValue) {
 		topicValue = a.topic
 	}
-	topic := pyrepr.Str(topicValue)
+	topic := anyutil.String(topicValue)
 	source := a.BuildSource(ctx, topic, gateway.SourceFields{ChatName: &topic, ChatType: "dm", UserID: &topic, UserName: &topic,
 		MessageID: &msgID})
 	timestamp := time.Now().UTC()
-	if unixTS, _ := event.Get("time"); pyrepr.Truthy(unixTS) {
-		seconds, err := pyint.Int64(unixTS)
-		pe, isPy := err.(*pyint.Error)
+	if unixTS, _ := event.Get("time"); anyutil.IsTrue(unixTS) {
+		seconds, err := anyutil.ToInt(unixTS)
+		pe, isPy := err.(*errorutil.Error)
 		switch {
 		case isPy && (pe.Kind == "TypeError" || pe.Kind == "ValueError"):
 		case err != nil:
@@ -608,10 +609,10 @@ func (a *NtfyAdapter) onMessage(ctx context.Context, event *pyjson.Object) error
 // Publishes the content to the metadata topic, the configured publish topic or the chat id
 func (a *NtfyAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	var publishTopic any = metadata["publish_topic"]
-	if !pyrepr.Truthy(publishTopic) {
+	if !anyutil.IsTrue(publishTopic) {
 		publishTopic = a.publishTopic
 	}
-	if !pyrepr.Truthy(publishTopic) {
+	if !anyutil.IsTrue(publishTopic) {
 		publishTopic = chatID
 	}
 	a.mu.Lock()
@@ -628,16 +629,16 @@ func (a *NtfyAdapter) Send(ctx context.Context, chatID, content, replyTo string,
 		pkgLog().Warn(fmt.Sprintf("[%s] Message truncated from %d to %d chars (ntfy limit)", a.Name(), n, maxMessageLength))
 	}
 	body := []byte(textutil.First(content, maxMessageLength))
-	resp, err := publish(ctx, client, a.server+"/"+pyrepr.Str(publishTopic), body, headers)
+	resp, err := publish(ctx, client, a.server+"/"+anyutil.String(publishTopic), body, headers)
 	if err != nil {
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		var timeout *pyhttpx.TimeoutError
+		var timeout *httputil.TimeoutError
 		if errors.As(err, &timeout) {
 			return gateway.SendResult{Success: false, Error: "Timeout publishing to ntfy"}, nil
 		}
-		text := pyhttpx.ErrorText(err)
+		text := err.Error()
 		pkgLog().Error(fmt.Sprintf("[%s] Send error: %s", a.Name(), text))
 		return gateway.SendResult{Success: false, Error: text}, nil
 	}
@@ -650,7 +651,7 @@ func (a *NtfyAdapter) Send(ctx context.Context, chatID, content, replyTo string,
 }
 
 // One publish POST with the fifteen second httpx timeout
-func publish(ctx context.Context, client *http.Client, target string, body []byte, headers [][2]string) (*pyhttpx.Response, error) {
+func publish(ctx context.Context, client *http.Client, target string, body []byte, headers [][2]string) (*httputil.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader(body))
 	if err != nil {
 		return nil, err
@@ -658,7 +659,7 @@ func publish(ctx context.Context, client *http.Client, target string, body []byt
 	for _, h := range headers {
 		req.Header.Set(h[0], h[1])
 	}
-	return pyhttpx.Do(client, req, 15*time.Second)
+	return httputil.Do(client, req, httputil.EachPhase(15*time.Second))
 }
 
 // Chat info of a topic chat

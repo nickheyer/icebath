@@ -16,8 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var configStamp atomic.Int64
@@ -293,7 +293,7 @@ func TestResetIsReachableFromAModelCallDespiteStaleKernelMode(t *testing.T) {
 	env := kernelEnv(t, map[string]any{"kernel_mode": "per-call"})
 	ctx := context.Background()
 	schema := buildExecuteCodeSchema(env, nil, "strict")
-	reset := pyjson.Plain(schema.Vals["parameters"]).(map[string]any)["properties"].(map[string]any)["reset"].(map[string]any)
+	reset := jsonutil.Plain(schema.Value("parameters")).(map[string]any)["properties"].(map[string]any)["reset"].(map[string]any)
 	if reset["type"] != "boolean" {
 		t.Fatalf("reset missing from schema: %v", reset)
 	}

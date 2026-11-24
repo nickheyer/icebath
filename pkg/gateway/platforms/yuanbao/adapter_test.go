@@ -11,8 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -152,7 +152,7 @@ func TestTurnCleanupClearsOnlyTheRecallTrackingItStillOwns(t *testing.T) {
 
 func TestMentionsResolveAgainstTheFreshMemberCacheOnly(t *testing.T) {
 	adapter := makeAdapter(t, nil)
-	members := []any{pyjson.ObjectOf("nickname", "Bob", "user_id", "u1"), pyjson.ObjectOf("nick_name", "carol", "user_id", "")}
+	members := []any{jsonutil.ObjectOf("nickname", "Bob", "user_id", "u1"), jsonutil.ObjectOf("nick_name", "carol", "user_id", "")}
 	adapter.memberCache["g-stale"] = memberCacheEntry{wallClock() - 301, members}
 	adapter.memberCache["g-fresh"] = memberCacheEntry{wallClock() - 10, members}
 	render := func(text, group string) string {
@@ -160,7 +160,7 @@ func TestMentionsResolveAgainstTheFreshMemberCacheOnly(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		encoded, err := pyjson.Dumps(body, pyjson.EnsureASCII(false))
+		encoded, err := jsonutil.Encode(body)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -183,7 +183,7 @@ func TestMentionsResolveAgainstTheFreshMemberCacheOnly(t *testing.T) {
 	if _, kept := adapter.memberCache["g-fresh"]; !kept {
 		t.Fatal("a fresh entry must survive the read")
 	}
-	adapter.memberCache["g-odd"] = memberCacheEntry{wallClock(), []any{pyjson.ObjectOf("nickname", int64(7), "user_id", "u9")}}
+	adapter.memberCache["g-odd"] = memberCacheEntry{wallClock(), []any{jsonutil.ObjectOf("nickname", int64(7), "user_id", "u9")}}
 	if _, err := adapter.outbound.sender.buildMsgBodyWithMentions("hi", "g-odd"); err == nil || err.Error() != "a member nickname must be text, got a number" {
 		t.Fatalf("a nickname that is not text: %v", err)
 	}
@@ -225,7 +225,7 @@ func TestSendDMHonoursTheDMPolicyAndCutsLongText(t *testing.T) {
 	for _, frame := range frames {
 		delivered.WriteString(firstText(t, frame, 5))
 	}
-	fields, err := parseDict(frames[0].Vals["data"].([]byte))
+	fields, err := parseDict(frames[0].Value("data").([]byte))
 	if err != nil {
 		t.Fatal(err)
 	}

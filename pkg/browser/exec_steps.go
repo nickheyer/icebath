@@ -30,10 +30,7 @@ import (
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/tiff"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypil"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // A png that has not arrived by then will not, a hidden tab answers jpeg within a few seconds
@@ -385,10 +382,10 @@ func (r *helperRun) evaluate(session, expr string, awaitPromise bool) (any, erro
 	if err := json.Unmarshal(raw, &resp); err != nil {
 		return nil, err
 	}
-	details := pyjson.NewObject()
+	details := jsonutil.NewObject()
 	if len(resp.Details) > 0 {
-		if decoded, err := pyjson.LoadsBytes(resp.Details); err == nil {
-			if obj, ok := decoded.(*pyjson.Object); ok {
+		if decoded, err := jsonutil.Decode(resp.Details); err == nil {
+			if obj, ok := decoded.(*jsonutil.Object); ok {
 				details = obj
 			}
 		}
@@ -397,8 +394,8 @@ func (r *helperRun) evaluate(session, expr string, awaitPromise bool) (any, erro
 	_ = json.Unmarshal(resp.Result["subtype"], &subtype)
 	if details.Len() > 0 || subtype == "error" {
 		where := ""
-		if line, col := details.GetOr("lineNumber", nil), details.GetOr("columnNumber", nil); line != nil && col != nil {
-			where = fmt.Sprintf(" at line %s, column %s", pyrepr.Str(line), pyrepr.Str(col))
+		if line, col := details.ValueOr("lineNumber", nil), details.ValueOr("columnNumber", nil); line != nil && col != nil {
+			where = fmt.Sprintf(" at line %s, column %s", anyutil.String(line), anyutil.String(col))
 		}
 		return nil, fmt.Errorf("JavaScript evaluation failed%s: %s; expression: %s", where, jsExceptionDescription(resp.Result, details), jsSnippet(expr))
 	}
@@ -414,31 +411,31 @@ func (r *helperRun) evaluate(session, expr string, awaitPromise bool) (any, erro
 }
 
 // What a thrown evaluation says, the exception description, value or class, then the details text
-func jsExceptionDescription(result map[string]json.RawMessage, details *pyjson.Object) string {
+func jsExceptionDescription(result map[string]json.RawMessage, details *jsonutil.Object) string {
 	desc := ""
 	if raw, ok := result["description"]; ok {
-		if v, err := pyjson.LoadsBytes(raw); err == nil && pyrepr.Truthy(v) {
-			desc = pyrepr.Str(v)
+		if v, err := jsonutil.Decode(raw); err == nil && anyutil.IsTrue(v) {
+			desc = anyutil.String(v)
 		}
 	}
-	exc, isDict := details.GetOr("exception", nil).(*pyjson.Object)
+	exc, isDict := details.ValueOr("exception", nil).(*jsonutil.Object)
 	if desc == "" && isDict {
 		var d any
 		found := false
 		if v, ok := exc.Get("description"); ok && v != nil {
 			d, found = v, true
 		} else if v, ok := exc.Get("value"); ok {
-			d, found = pyrepr.Str(v), true
+			d, found = anyutil.String(v), true
 		} else if v, ok := exc.Get("className"); ok && v != nil {
 			d, found = v, true
 		}
-		if found && pyrepr.Truthy(d) {
-			desc = pyrepr.Str(d)
+		if found && anyutil.IsTrue(d) {
+			desc = anyutil.String(d)
 		}
 	}
 	if desc == "" && details.Len() > 0 {
-		if v := details.GetOr("text", nil); pyrepr.Truthy(v) {
-			desc = pyrepr.Str(v)
+		if v := details.ValueOr("text", nil); anyutil.IsTrue(v) {
+			desc = anyutil.String(v)
 		}
 	}
 	if desc == "" {
@@ -460,13 +457,13 @@ func (r *helperRun) js(session, expr string) (any, error) {
 func jsTruthy(value any) bool {
 	raw, ok := value.(json.RawMessage)
 	if !ok {
-		return pyrepr.Truthy(value)
+		return anyutil.IsTrue(value)
 	}
 	var decoded any
 	if json.Unmarshal(raw, &decoded) != nil {
 		return false
 	}
-	return pyrepr.Truthy(decoded)
+	return anyutil.IsTrue(decoded)
 }
 
 func quoteJS(s string) string {
@@ -590,7 +587,7 @@ func (r *helperRun) pressKey(key string, modifiers int) error {
 
 // Focuses an input, clears it, types the text key by key and fires the events frameworks listen for
 func (r *helperRun) fillInput(selector, text string, clear bool, timeout float64) error {
-	notFound := fmt.Errorf("fill_input: element not found: %s", pyrepr.StrRepr(selector))
+	notFound := fmt.Errorf("fill_input: element not found: %s", strconv.Quote(selector))
 	if timeout > 0 {
 		found, err := r.waitForElement(selector, timeout, false)
 		if err != nil {
@@ -921,7 +918,7 @@ func shrinkImageFile(path string, side int) error {
 	case *image.NRGBA, *image.NRGBA64:
 		hasAlpha = true
 	}
-	thumb := pypil.Thumbnail(pypil.ToNRGBA(img), side, hasAlpha)
+	thumb := pypil.Thumbnail(imageutil.ToNRGBA(img), side, hasAlpha)
 	var buf bytes.Buffer
 	ext := strings.ToLower(filepath.Ext(path))
 	switch ext {
@@ -969,7 +966,7 @@ func (a helperArgs) truthy(key string) bool {
 	if json.Unmarshal(a[key], &v) != nil {
 		return false
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Raw argument, JSON null when the code did not bind it
@@ -1159,7 +1156,7 @@ func (r *helperRun) helper(name string, a helperArgs) (any, error) {
 		}
 		return nil, r.call("DOM.setFileInputFiles", map[string]any{"files": files, "nodeId": node.NodeID}, nil)
 	}
-	return nil, fmt.Errorf("%s is not a browser helper", pyrepr.StrRepr(name))
+	return nil, fmt.Errorf("%s is not a browser helper", strconv.Quote(name))
 }
 
 // Names every helper the code's preamble defines that Go answers
@@ -1177,7 +1174,7 @@ func (r *helperRun) answer(line []byte) []byte {
 	err := json.Unmarshal(line, &req)
 	if err == nil {
 		if !slices.Contains(servedHelpers, req.Helper) {
-			err = fmt.Errorf("%s is not a browser helper", pyrepr.StrRepr(req.Helper))
+			err = fmt.Errorf("%s is not a browser helper", strconv.Quote(req.Helper))
 		} else {
 			value, err = r.helper(req.Helper, req.Args)
 		}
@@ -1208,11 +1205,11 @@ func helperErrorReply(err error) map[string]any {
 	var pathErr *os.PathError
 	var errno syscall.Errno
 	if errors.As(err, &pathErr) && errors.As(pathErr.Err, &errno) {
-		args := []any{int(errno), pypath.Strerror(errno), pathErr.Path}
+		args := []any{int(errno), errno.Error(), pathErr.Path}
 		if runtime.GOOS == "windows" {
 			args = []any{0, strings.TrimRight(errno.Error(), " .\r\n"), pathErr.Path, int(errno)}
 		}
-		return map[string]any{"error": pypath.OSErrorText(err), "type": "OSError", "oserror": args}
+		return map[string]any{"error": err.Error(), "type": "OSError", "oserror": args}
 	}
 	return map[string]any{"error": err.Error(), "type": "RuntimeError"}
 }

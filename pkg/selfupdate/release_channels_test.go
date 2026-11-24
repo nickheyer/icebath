@@ -23,7 +23,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Object store serving channel keys under /bucket/ or the root, every GET recorded
@@ -61,7 +62,7 @@ func jv(t *testing.T, v any) any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, err := pyjson.Loads(string(raw))
+	out, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +71,7 @@ func jv(t *testing.T, v any) any {
 
 // Sorted compact ASCII JSON with a trailing newline, the byte form every channel digest covers
 func canonicalJSON(value any) ([]byte, error) {
-	text, err := pyjson.Dumps(value, pyjson.SortKeys(true), pyjson.Separators(",", ":"), pyjson.EnsureASCII(true), pyjson.AllowNaN(false))
+	text, err := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.ASCII())
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +208,7 @@ func TestChannelResolveVerifiesExactManifestAndPreservesRetirementConstraints(t 
 	a.put(t, "releases/channels/next-preview.json", record)
 	reader := a.reader(t, "example/icebath-agent")
 	res, err := reader.Resolve(ctx, "next-preview")
-	if err != nil || !pyjson.Equal(res.Manifest, jv(t, manifest)) {
+	if err != nil || !anyutil.Equal(res.Manifest, jv(t, manifest)) {
 		t.Fatalf("resolve %v %v", res, err)
 	}
 	old := a.get(t, "releases/channels/old-preview.json")
@@ -216,8 +217,8 @@ func TestChannelResolveVerifiesExactManifestAndPreservesRetirementConstraints(t 
 	old["receiver"], old["lastHead"] = map[string]any{"kind": "discontinued"}, nil
 	a.put(t, "releases/channels/old-preview.json", old)
 	resolved, err := reader.Resolve(ctx, "old-preview")
-	if err != nil || !pyjson.Equal(resolved.Requested, jv(t, old)) || !pyjson.Equal(resolved.Terminal, jv(t, record)) ||
-		resolved.Requested.Vals["minimumVersion"] != "1.0.0" {
+	if err != nil || !anyutil.Equal(resolved.Requested, jv(t, old)) || !anyutil.Equal(resolved.Terminal, jv(t, record)) ||
+		resolved.Requested.Value("minimumVersion") != "1.0.0" {
 		t.Fatalf("retired resolve %v %v", resolved, err)
 	}
 	newer := chCopy(t, request)
@@ -227,8 +228,8 @@ func TestChannelResolveVerifiesExactManifestAndPreservesRetirementConstraints(t 
 	a.put(t, "releases/channels/next-preview.json", record)
 	a.seedManifest(t, newer)
 	after, err := reader.Resolve(ctx, "old-preview")
-	if err != nil || !pyjson.Equal(after.Manifest, jv(t, manifest)) ||
-		after.Terminal.Vals["head"].(*pyjson.Object).Vals["buildId"] != newer["buildId"] {
+	if err != nil || !anyutil.Equal(after.Manifest, jv(t, manifest)) ||
+		after.Terminal.Value("head").(*jsonutil.Object).Value("buildId") != newer["buildId"] {
 		t.Fatalf("pinned resolve %v %v", after, err)
 	}
 	key := record["head"].(map[string]any)["manifestKey"].(string)
@@ -409,7 +410,7 @@ func TestChannelReleasePoliciesResolveTheirTaggedBuilds(t *testing.T) {
 		a.putRaw("releases/channel-builds/"+c.build+"/build.json", body)
 		a.put(t, "releases/channels/"+c.name+".json", record)
 		res, err := reader.Resolve(ctx, c.name)
-		if err != nil || !pyjson.Equal(res.Manifest, jv(t, release)) {
+		if err != nil || !anyutil.Equal(res.Manifest, jv(t, release)) {
 			t.Fatalf("%s resolve %v", c.name, err)
 		}
 		bad := chCopy(t, req)
@@ -493,8 +494,8 @@ func TestChannelArchiveRefAcceptsAttemptAndTagRefs(t *testing.T) {
 			t.Fatalf("%s request %v", ref, err)
 		}
 		manifest, record := chStableManifest(request)
-		got, err := validateChannelManifest(jv(t, manifest), jv(t, record).(*pyjson.Object), "https://releases.example")
-		if err != nil || !pyjson.Equal(got, jv(t, manifest)) {
+		got, err := validateChannelManifest(jv(t, manifest), jv(t, record).(*jsonutil.Object), "https://releases.example")
+		if err != nil || !anyutil.Equal(got, jv(t, manifest)) {
 			t.Fatalf("%s manifest %v", ref, err)
 		}
 	}
@@ -504,20 +505,20 @@ func TestChannelManifestIgnoresFieldsOutsideTheChannelSchema(t *testing.T) {
 	request := chStableRequest("1.2.3", "")
 	manifest, record := chStableManifest(request)
 	record["identity"] = chCopy(t, request["identity"].(map[string]any))
-	got, err := validateChannelManifest(jv(t, manifest), jv(t, record).(*pyjson.Object), "https://releases.example")
-	if err != nil || !pyjson.Equal(got, jv(t, manifest)) {
+	got, err := validateChannelManifest(jv(t, manifest), jv(t, record).(*jsonutil.Object), "https://releases.example")
+	if err != nil || !anyutil.Equal(got, jv(t, manifest)) {
 		t.Fatalf("manifest without extra fields %v", err)
 	}
 	identity := request["identity"].(map[string]any)
 	identity["appId"], identity["msixAppIdWithOrg"], identity["windowsExecutableName"] = "not an app id", "", 7
 	request["windowsVersion"], request["bundleEnv"] = "x", []any{"not an object"}
 	manifest["packages"] = []any{map[string]any{"platform": "win32", "arch": "x64", "variant": "bundled", "publisher": "", "teamId": "bad"}, "x"}
-	got, err = validateChannelManifest(jv(t, manifest), jv(t, record).(*pyjson.Object), "https://releases.example")
-	if err != nil || !pyjson.Equal(got, jv(t, manifest)) {
+	got, err = validateChannelManifest(jv(t, manifest), jv(t, record).(*jsonutil.Object), "https://releases.example")
+	if err != nil || !anyutil.Equal(got, jv(t, manifest)) {
 		t.Fatalf("manifest with extra fields %v", err)
 	}
 	identity["cliName"] = "icebath-other"
-	_, err = validateChannelManifest(jv(t, manifest), jv(t, record).(*pyjson.Object), "https://releases.example")
+	_, err = validateChannelManifest(jv(t, manifest), jv(t, record).(*jsonutil.Object), "https://releases.example")
 	chExpectErr(t, err, "identity mismatch")
 }
 

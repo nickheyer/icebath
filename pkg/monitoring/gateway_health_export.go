@@ -19,10 +19,10 @@ import (
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Every gauge the runtime snapshot can emit, a metric missing here is never exported
@@ -43,7 +43,7 @@ var floatGaugeNames = map[string]bool{
 
 var (
 	// Runtime status payload of the active gateway, assigned by the gateway package
-	GatewayReadRuntimeStatus func() *pyjson.Object
+	GatewayReadRuntimeStatus func() *jsonutil.Object
 
 	// Live background work counters, assigned by the tools package
 	AsyncDelegationActiveTaskCount func() int
@@ -167,11 +167,11 @@ func supervisionMode() string {
 
 // Gateway snapshot of the runtime status file, an empty status when it cannot be read
 func readGatewaySnapshot(ctx context.Context) (GatewayHealthSnapshot, error) {
-	runtime := pyjson.NewObject()
+	runtime := jsonutil.NewObject()
 	if read := GatewayReadRuntimeStatus; read != nil {
 		func() {
 			defer func() { _ = recover() }()
-			if got := read(); got != nil && len(got.Keys) > 0 {
+			if got := read(); got != nil && got.Len() > 0 {
 				runtime = got
 			}
 		}()
@@ -350,8 +350,8 @@ var severityNames = map[string]logspb.SeverityNumber{
 // OTel severity of a diagnostic severity, warn for anything unrecognised
 func severityNumber(severity any) logspb.SeverityNumber {
 	text := "warning"
-	if pyrepr.Truthy(severity) {
-		text = pyrepr.Str(severity)
+	if anyutil.IsTrue(severity) {
+		text = anyutil.String(severity)
 	}
 	if n, ok := severityNames[strings.ToLower(text)]; ok {
 		return n
@@ -360,7 +360,7 @@ func severityNumber(severity any) logspb.SeverityNumber {
 }
 
 // Allowlisted redacted diagnostic attributes, never the profile, install id or timestamp
-func diagnosticLogAttributes(ev *pyjson.Object) map[string]any {
+func diagnosticLogAttributes(ev *jsonutil.Object) map[string]any {
 	return allowlistedAttrs(ev, keepByKind["gateway_diagnostic"])
 }
 
@@ -385,19 +385,19 @@ func newGatewayDiagnosticLogStreamer(ctx context.Context, sdk *gatewayHealthSDK)
 }
 
 // Emits one log record per gateway diagnostic event of the batch, scoped by its source logger
-func (s *GatewayDiagnosticLogStreamer) Call(batch []*pyjson.Object) {
+func (s *GatewayDiagnosticLogStreamer) Call(batch []*jsonutil.Object) {
 	for _, ev := range batch {
 		if kind, _ := ev.Get("event"); kind != any("gateway_diagnostic") {
 			continue
 		}
 		scope := "icebath.gateway.diagnostics"
-		if src := SourceLoggerForExport(ev.GetOr("source_logger", nil)); src != nil {
+		if src := SourceLoggerForExport(ev.ValueOr("source_logger", nil)); src != nil {
 			scope = *src
 		}
-		severity := ev.GetOr("severity", nil)
+		severity := ev.ValueOr("severity", nil)
 		text := "warning"
-		if pyrepr.Truthy(severity) {
-			text = pyrepr.Str(severity)
+		if anyutil.IsTrue(severity) {
+			text = anyutil.String(severity)
 		}
 		rec := &logspb.LogRecord{
 			ObservedTimeUnixNano: uint64(time.Now().UnixNano()),
@@ -405,7 +405,7 @@ func (s *GatewayDiagnosticLogStreamer) Call(batch []*pyjson.Object) {
 			SeverityText:         strings.ToUpper(text),
 			Body:                 &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: RedactBounded("gateway diagnostic")}},
 		}
-		if ts, ok := pyint.Instance(ev.GetOr("ts_ns", nil)); ok && ts.IsUint64() {
+		if ts, ok := pyint.Instance(ev.ValueOr("ts_ns", nil)); ok && ts.IsUint64() {
 			rec.TimeUnixNano = ts.Uint64()
 		}
 		attrs := diagnosticLogAttributes(ev)
@@ -442,7 +442,7 @@ func (s *GatewayDiagnosticLogStreamer) Shutdown() {
 	s.processor.close()
 }
 
-func gatewayHealthEvent(ev *pyjson.Object) bool {
+func gatewayHealthEvent(ev *jsonutil.Object) bool {
 	kind, _ := ev.Get("event")
 	return kind == any("gateway_health") || kind == any("cron_execution")
 }

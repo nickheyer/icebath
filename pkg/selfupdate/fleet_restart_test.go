@@ -19,9 +19,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Monotonic clock a test advances only by sleeping
@@ -42,19 +42,19 @@ func installFleetClock(t *testing.T) *fleetFakeClock {
 	return clock
 }
 
-func fleetObject(pairs ...any) *pyjson.Object { return pyjson.ObjectOf(pairs...) }
+func fleetObject(pairs ...any) *jsonutil.Object { return jsonutil.ObjectOf(pairs...) }
 
 func fleetJSON(t *testing.T, value any) string {
 	t.Helper()
-	text, err := pyjson.Dumps(value)
+	text, err := jsonutil.Encode(value)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return text
 }
 
-func completedText(cmd []string, stdout string) *pysubprocess.Completed {
-	return &pysubprocess.Completed{Args: cmd, Stdout: []byte(stdout), Stderr: []byte{}}
+func completedText(cmd []string, stdout string) *executil.Completed {
+	return &executil.Completed{Args: cmd, Stdout: []byte(stdout), Stderr: []byte{}}
 }
 
 func readLatestReceipt(t *testing.T, home string) map[string]any {
@@ -138,7 +138,7 @@ func TestSystemdUnitOfAnotherHomeIsLeftAlone(t *testing.T) {
 	fleetPidHomes(t, map[int]string{4242: fleetForeignHome, 4343: own})
 	mainPID := 4242
 	writeVerbs := [][]string{}
-	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*executil.Completed, error) {
 		switch {
 		case slices.Contains(cmd, "is-active"):
 			return completedText(cmd, "active\n"), nil
@@ -215,7 +215,7 @@ const (
 )
 
 // Runs the restart phase with one timed out unit and then verification, returning the output, receipt and marker clears
-func updateWithFailedUnit(t *testing.T, mainPID int, fleetRows []*pyjson.Object) (string, map[string]any, int) {
+func updateWithFailedUnit(t *testing.T, mainPID int, fleetRows []*jsonutil.Object) (string, map[string]any, int) {
 	t.Helper()
 	h := newFleetHarness(t)
 	ctx := updaterecord.UpdateReceiptScope(h.ctx)
@@ -233,16 +233,16 @@ func updateWithFailedUnit(t *testing.T, mainPID int, fleetRows []*pyjson.Object)
 	vsSwap(t, &fleetForceKillStuck, func(context.Context, io.Writer, map[int]bool) {})
 	vsSwap(t, &fleetRestartIdentitySHA, func(context.Context) string { return "new" })
 	vsSwap(t, &fleetIsMacOS, func() bool { return false })
-	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*executil.Completed, error) {
 		if slices.Contains(cmd, "--user") {
 			return completedText(cmd, "LoadState=loaded\nMainPID="+strconv.Itoa(mainPID)+"\n"), nil
 		}
 		return completedText(cmd, "LoadState=not-found\nMainPID=0\n"), nil
 	})
-	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*pyjson.Object {
-		rows := make([]*pyjson.Object, len(fleetRows))
+	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*jsonutil.Object {
+		rows := make([]*jsonutil.Object, len(fleetRows))
 		for i, row := range fleetRows {
-			rows[i] = pyjson.Clone(row).(*pyjson.Object)
+			rows[i] = jsonutil.Clone(row).(*jsonutil.Object)
 			rows[i].Set("code_sha", "new")
 			rows[i].Set("code_version", "1")
 			rows[i].Set("state", "current")
@@ -275,12 +275,12 @@ func TestFailedUnitSettlesOnlyOnItsOwnFreshCurrentGateway(t *testing.T) {
 	cases := []struct {
 		name    string
 		mainPID int
-		rows    []*pyjson.Object
+		rows    []*jsonutil.Object
 		settled bool
 	}{
-		{"own-fresh-mainpid", fleetNewPID, []*pyjson.Object{fleetObject("profile", "default", "pid", int64(fleetNewPID))}, true},
-		{"other-profile-row", 0, []*pyjson.Object{fleetObject("profile", "coder", "pid", int64(fleetOtherPID))}, false},
-		{"pre-restart-pid", fleetOldPID, []*pyjson.Object{fleetObject("profile", "default", "pid", int64(fleetOldPID))}, false},
+		{"own-fresh-mainpid", fleetNewPID, []*jsonutil.Object{fleetObject("profile", "default", "pid", int64(fleetNewPID))}, true},
+		{"other-profile-row", 0, []*jsonutil.Object{fleetObject("profile", "coder", "pid", int64(fleetOtherPID))}, false},
+		{"pre-restart-pid", fleetOldPID, []*jsonutil.Object{fleetObject("profile", "default", "pid", int64(fleetOldPID))}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -302,10 +302,10 @@ func TestFailedUnitSettlesOnlyOnItsOwnFreshCurrentGateway(t *testing.T) {
 	}
 }
 
-func fleetSnapshots(t *testing.T, snapshots ...[]*pyjson.Object) {
+func fleetSnapshots(t *testing.T, snapshots ...[]*jsonutil.Object) {
 	t.Helper()
 	next := 0
-	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*pyjson.Object {
+	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*jsonutil.Object {
 		if next >= len(snapshots) {
 			t.Fatal("fleet probe polled past the scripted snapshots")
 		}
@@ -317,8 +317,8 @@ func fleetSnapshots(t *testing.T, snapshots ...[]*pyjson.Object) {
 func TestSnapshotWaitsForLateCurrentGatewayState(t *testing.T) {
 	clock := installFleetClock(t)
 	expected := fleetObject("profile", "default", "pid", int64(202), "code_sha", "new", "state", "current")
-	snapshots := make([][]*pyjson.Object, 20)
-	snapshots[19] = []*pyjson.Object{expected}
+	snapshots := make([][]*jsonutil.Object, 20)
+	snapshots[19] = []*jsonutil.Object{expected}
 	fleetSnapshots(t, snapshots...)
 
 	result, err := collectFleetSnapshot(context.Background(), &gatewayRestartOutcome{PreRestartGatewayPIDs: []int{101}}, true)
@@ -335,8 +335,8 @@ func TestSnapshotWaitsForLateCurrentGatewayState(t *testing.T) {
 
 func TestSnapshotStopsWaitingOnceTheRestartedUnitIsDead(t *testing.T) {
 	clock := installFleetClock(t)
-	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*pyjson.Object { return []*pyjson.Object{} })
-	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*jsonutil.Object { return []*jsonutil.Object{} })
+	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*executil.Completed, error) {
 		return completedText(cmd, "LoadState=loaded\nActiveState=failed\n"), nil
 	})
 	restart := &gatewayRestartOutcome{PreRestartGatewayPIDs: []int{101}, RestartedScopedUnits: map[string]bool{"user/icebath-gateway.service": true}}
@@ -351,8 +351,8 @@ func TestSnapshotStopsWaitingOnceTheRestartedUnitIsDead(t *testing.T) {
 
 func TestSnapshotKeepsWaitingWhenTheUnitIsUnknownToTheAskedScope(t *testing.T) {
 	clock := installFleetClock(t)
-	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*pyjson.Object { return []*pyjson.Object{} })
-	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*jsonutil.Object { return []*jsonutil.Object{} })
+	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*executil.Completed, error) {
 		if slices.Contains(cmd, "--user") {
 			return completedText(cmd, "LoadState=loaded\nActiveState=active\n"), nil
 		}
@@ -374,12 +374,12 @@ func TestSnapshotKeepsWaitingWhenTheUnitIsUnknownToTheAskedScope(t *testing.T) {
 
 func TestSnapshotWaitsForTheRelaunchedPidToPublishItsIdentity(t *testing.T) {
 	clock := installFleetClock(t)
-	unknown := func() *pyjson.Object {
+	unknown := func() *jsonutil.Object {
 		return fleetObject("profile", "default", "pid", int64(34516), "code_sha", nil, "code_version", nil, "state", "unknown")
 	}
 	current := fleetObject("profile", "default", "pid", int64(34516), "code_sha", "new", "code_version", "0.21.3", "state", "current")
-	booting := []*pyjson.Object{unknown()}
-	fleetSnapshots(t, booting, booting, booting, booting, booting, []*pyjson.Object{current})
+	booting := []*jsonutil.Object{unknown()}
+	fleetSnapshots(t, booting, booting, booting, booting, booting, []*jsonutil.Object{current})
 	restart := &gatewayRestartOutcome{PreRestartGatewayPIDs: []int{32512}, RestartedScopedUnits: map[string]bool{}}
 
 	result, err := collectFleetSnapshot(context.Background(), restart, true)
@@ -391,7 +391,7 @@ func TestSnapshotWaitsForTheRelaunchedPidToPublishItsIdentity(t *testing.T) {
 	}
 
 	clock.now = 0
-	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*pyjson.Object { return []*pyjson.Object{unknown()} })
+	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*jsonutil.Object { return []*jsonutil.Object{unknown()} })
 	survivor := &gatewayRestartOutcome{PreRestartGatewayPIDs: []int{34516}, RestartedScopedUnits: map[string]bool{}}
 	result, err = collectFleetSnapshot(context.Background(), survivor, true)
 	if err != nil {
@@ -422,7 +422,7 @@ func TestFleetCompletionPreservesRuntimeVerdictAndRestartObligation(t *testing.T
 			h := newFleetHarness(t)
 			ctx := updaterecord.UpdateReceiptScope(h.ctx)
 			migrated := 0
-			snapshot := []*pyjson.Object{}
+			snapshot := []*jsonutil.Object{}
 			if tc.state != nil {
 				snapshot = append(snapshot, fleetObject("profile", "default", "pid", int64(1234), "state", tc.state))
 			}
@@ -432,7 +432,7 @@ func TestFleetCompletionPreservesRuntimeVerdictAndRestartObligation(t *testing.T
 			vsSwap(t, &fleetAutoMigrate, func(context.Context, io.Writer) error { migrated++; return nil })
 			// The drain signal is withheld so a live pid 1234 of the test host is never signalled
 			vsSwap(t, &fleetGracefulRestart, func(int, float64, func()) bool { return false })
-			vsSwap(t, &fleetCollectSnapshot, func(_ context.Context, outcome *gatewayRestartOutcome, rowsExpected bool) ([]*pyjson.Object, error) {
+			vsSwap(t, &fleetCollectSnapshot, func(_ context.Context, outcome *gatewayRestartOutcome, rowsExpected bool) ([]*jsonutil.Object, error) {
 				if outcome != restart || !rowsExpected {
 					t.Fatalf("collect called with %p %v", outcome, rowsExpected)
 				}
@@ -475,9 +475,11 @@ func TestFleetCompletionPreservesRuntimeVerdictAndRestartObligation(t *testing.T
 
 func TestVerifyFleetHandsStaleRowsToSurvivorSignalling(t *testing.T) {
 	h := newFleetHarness(t)
-	staleFleet := []*pyjson.Object{fleetObject("profile", "default", "pid", int64(4242), "state", "stale", "code_sha", strings.Repeat("a", 40))}
+	staleFleet := []*jsonutil.Object{fleetObject("profile", "default", "pid", int64(4242), "state", "stale", "code_sha", strings.Repeat("a", 40))}
 	var seen []any
-	vsSwap(t, &fleetCollectSnapshot, func(context.Context, *gatewayRestartOutcome, bool) ([]*pyjson.Object, error) { return staleFleet, nil })
+	vsSwap(t, &fleetCollectSnapshot, func(context.Context, *gatewayRestartOutcome, bool) ([]*jsonutil.Object, error) {
+		return staleFleet, nil
+	})
 	vsSwap(t, &fleetSignalStaleSurvivors, func(_ context.Context, _ io.Writer, fleet []any, _ *gatewayRestartOutcome, _ float64) []int {
 		if seen == nil {
 			seen = fleet

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Writes text to path under dir, creating the parents
@@ -97,8 +97,8 @@ func TestContainerModeMayBeActive(t *testing.T) {
 }
 
 func TestUpdateStatusLine(t *testing.T) {
-	status := func(pairs ...any) *pyjson.Object {
-		o := pyjson.NewObject()
+	status := func(pairs ...any) *jsonutil.Object {
+		o := jsonutil.NewObject()
 		for i := 0; i < len(pairs); i += 2 {
 			o.Set(pairs[i].(string), pairs[i+1])
 		}
@@ -108,7 +108,7 @@ func TestUpdateStatusLine(t *testing.T) {
 	broken := func() (string, error) { return "", errors.New("no config") }
 	cases := []struct {
 		name    string
-		status  *pyjson.Object
+		status  *jsonutil.Object
 		command func() (string, error)
 		want    string
 	}{

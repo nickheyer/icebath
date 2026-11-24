@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const footerSep = " · "
@@ -19,8 +20,8 @@ func homeRelativeCwd(cwd string) string {
 	if cwd == "" {
 		return ""
 	}
-	home := pypath.Expanduser("~")
-	p, err := pypath.Abspath(cwd)
+	home := pathutil.ExpandUser("~")
+	p, err := filepath.Abs(cwd)
 	if err != nil {
 		return cwd
 	}

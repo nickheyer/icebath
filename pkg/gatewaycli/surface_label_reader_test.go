@@ -93,7 +93,7 @@ func richIDs(t *testing.T, reader *SurfaceLabelReader, source string, limit, off
 	}
 	ids := []string{}
 	for _, row := range rows {
-		ids = append(ids, row.Vals["id"].(string))
+		ids = append(ids, row.Value("id").(string))
 	}
 	return ids
 }
@@ -205,7 +205,7 @@ func TestReaderOnAReadOnlyStoreFromBeforeTheColumnAndTheRuntimeTables(t *testing
 		t.Fatal(err)
 	}
 	for _, row := range tables {
-		if row.Vals["name"] == "session_admissions" {
+		if row.Value("name") == "session_admissions" {
 			t.Fatal("the read only open migrated the runtime tables")
 		}
 	}
@@ -214,7 +214,7 @@ func TestReaderOnAReadOnlyStoreFromBeforeTheColumnAndTheRuntimeTables(t *testing
 		t.Fatal(err)
 	}
 	for _, row := range columns {
-		if row.Vals["name"] == "created_source" {
+		if row.Value("name") == "created_source" {
 			t.Fatal("the read only open migrated the column")
 		}
 	}

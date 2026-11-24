@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -168,7 +168,7 @@ func archiveFilename(archive map[string]any) (string, error) {
 	}
 	rawURL, isString := raw.(string)
 	if !isString {
-		if pyrepr.Truthy(raw) {
+		if anyutil.IsTrue(raw) {
 			return "", &PyError{Class: "AttributeError", Message: fmt.Sprintf("the archive url is %s, expected text", errchain.Kind(raw))}
 		}
 		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the archive url is %s, expected text", errchain.Kind(raw))}
@@ -191,7 +191,7 @@ func archiveFilename(archive map[string]any) (string, error) {
 func pyPathName(p string) string {
 	rest, seps := p, "/"
 	if runtime.GOOS == "windows" {
-		_, _, rest = pypath.NtSplitRoot(p)
+		_, _, rest = pathutil.WindowsSplitRoot(p)
 		seps = `\/`
 	}
 	parts := strings.FieldsFunc(rest, func(r rune) bool { return strings.ContainsRune(seps, r) })

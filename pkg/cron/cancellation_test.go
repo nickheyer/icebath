@@ -76,8 +76,8 @@ func TestCancelRunBooksTheLiveExecutionAsCancelled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := res.Get("execution_id"); v != id || res.Keys[len(res.Keys)-1] != "detail" {
-		t.Fatalf("cancel result %v", res.Keys)
+	if v, _ := res.Get("execution_id"); v != id || res.Keys()[res.Len()-1] != "detail" {
+		t.Fatalf("cancel result %v", res.Keys())
 	}
 	torn := 0
 	_, ran, err := runJobUnlessCancelled(ctx, s, func() (string, error) { return "", errors.New("interrupted") },

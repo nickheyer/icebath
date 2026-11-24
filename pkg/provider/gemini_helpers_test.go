@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // JSON text decoded with numbers kept as written, panicking on bad input
@@ -53,7 +53,7 @@ func gemAt(v any, path ...any) any {
 	for _, p := range path {
 		switch k := p.(type) {
 		case string:
-			m, _ := pyjson.Dict(v)
+			m, _ := jsonutil.AsMap(v)
 			v = m[k]
 		case int:
 			switch l := v.(type) {

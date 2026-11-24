@@ -11,11 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hermetic home whose config.yaml holds body
@@ -48,7 +48,7 @@ func TestNotifierWatcherSkipsWhenNotificationsDisabled(t *testing.T) {
 	listed, slept := 0, 0
 	prevList, prevSleep := kanbanListAllBoards, asyncioSleep
 	t.Cleanup(func() { kanbanListAllBoards, asyncioSleep = prevList, prevSleep })
-	kanbanListAllBoards = func(bool) ([]*pyjson.Object, error) { listed++; return nil, nil }
+	kanbanListAllBoards = func(bool) ([]*jsonutil.Object, error) { listed++; return nil, nil }
 	asyncioSleep = func(context.Context, float64) error { slept++; return nil }
 	if err := r.kanbanNotifierWatcher(context.Background(), 5.0); err != nil {
 		t.Fatal(err)
@@ -65,7 +65,7 @@ func TestNotifierWatcherPollsWithoutDispatchOwnership(t *testing.T) {
 	var sleepCalls []float64
 	prevList, prevSleep := kanbanListAllBoards, asyncioSleep
 	t.Cleanup(func() { kanbanListAllBoards, asyncioSleep = prevList, prevSleep })
-	kanbanListAllBoards = func(bool) ([]*pyjson.Object, error) { pastGate = append(pastGate, true); return nil, nil }
+	kanbanListAllBoards = func(bool) ([]*jsonutil.Object, error) { pastGate = append(pastGate, true); return nil, nil }
 	asyncioSleep = func(_ context.Context, delay float64) error {
 		sleepCalls = append(sleepCalls, delay)
 		if len(sleepCalls) >= 2 {

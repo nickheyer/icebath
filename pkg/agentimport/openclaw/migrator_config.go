@@ -5,34 +5,35 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Path of the target config.yaml
-func (m *Migrator) configPath() string { return pypath.PathJoin(m.targetRoot, "config.yaml") }
+func (m *Migrator) configPath() string { return pathutil.Join(m.targetRoot, "config.yaml") }
 
 // Writes a JSON archive file under the archive directory, creating it first
 func (m *Migrator) archiveJSON(name string, value any) string {
 	mkdirAll(m.archiveDir)
-	dest := pypath.PathJoin(m.archiveDir, name)
+	dest := pathutil.Join(m.archiveDir, name)
 	writeJSONFile(dest, value)
 	return dest
 }
 
 // Copies a source directory into the archive, merging into an existing copy
 func copyTreeInto(src, dst string) {
-	if err := pyshutil.CopyTree(src, dst, false, true); err != nil {
+	if err := fsutil.CopyTree(src, dst, fsutil.CopyTreeOptions{DirsExistOK: true}); err != nil {
 		raise(err)
 	}
 }
 
 // Imports MCP server definitions into mcp_servers
-func (m *Migrator) migrateMCPServers(cfg *pyjson.Object) {
+func (m *Migrator) migrateMCPServers(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	mcpRaw := or(dget(or(dget(cfg, "mcp", nil), pyjson.NewObject()), "servers", nil), pyjson.NewObject())
-	if !truthy(mcpRaw) {
+	mcpRaw := or(dget(or(dget(cfg, "mcp", nil), jsonutil.NewObject()), "servers", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(mcpRaw) {
 		m.record("mcp-servers", "", "", StatusSkipped, "No MCP servers found in OpenClaw config")
 		return
 	}
@@ -50,18 +51,18 @@ func (m *Migrator) migrateMCPServers(cfg *pyjson.Object) {
 			continue
 		}
 		icebathSrv := newYAMLMap()
-		if truthy(dget(srv, "command", nil)) {
+		if anyutil.IsTrue(dget(srv, "command", nil)) {
 			dset(icebathSrv, "command", toYAML(dindex(srv, "command")))
 			for _, k := range []string{"args", "env", "cwd"} {
-				if truthy(dget(srv, k, nil)) {
+				if anyutil.IsTrue(dget(srv, k, nil)) {
 					dset(icebathSrv, k, toYAML(dindex(srv, k)))
 				}
 			}
 		}
-		if truthy(dget(srv, "url", nil)) {
+		if anyutil.IsTrue(dget(srv, "url", nil)) {
 			dset(icebathSrv, "url", toYAML(dindex(srv, "url")))
 			for _, k := range []string{"headers", "auth"} {
-				if truthy(dget(srv, k, nil)) {
+				if anyutil.IsTrue(dget(srv, k, nil)) {
 					dset(icebathSrv, k, toYAML(dindex(srv, k)))
 				}
 			}
@@ -69,23 +70,23 @@ func (m *Migrator) migrateMCPServers(cfg *pyjson.Object) {
 		if isFalse(dget(srv, "enabled", nil)) {
 			dset(icebathSrv, "enabled", false)
 		}
-		if truthy(dget(srv, "timeout", nil)) {
+		if anyutil.IsTrue(dget(srv, "timeout", nil)) {
 			dset(icebathSrv, "timeout", toYAML(dindex(srv, "timeout")))
 		}
-		if truthy(dget(srv, "connectTimeout", nil)) {
+		if anyutil.IsTrue(dget(srv, "connectTimeout", nil)) {
 			dset(icebathSrv, "connect_timeout", toYAML(dindex(srv, "connectTimeout")))
 		}
-		toolsCfg := or(dget(srv, "tools", nil), pyjson.NewObject())
-		if truthy(dget(toolsCfg, "include", nil)) || truthy(dget(toolsCfg, "exclude", nil)) {
+		toolsCfg := or(dget(srv, "tools", nil), jsonutil.NewObject())
+		if anyutil.IsTrue(dget(toolsCfg, "include", nil)) || anyutil.IsTrue(dget(toolsCfg, "exclude", nil)) {
 			tools := newYAMLMap()
 			dset(icebathSrv, "tools", tools)
 			for _, k := range []string{"include", "exclude"} {
-				if truthy(dget(toolsCfg, k, nil)) {
+				if anyutil.IsTrue(dget(toolsCfg, k, nil)) {
 					dset(tools, k, toYAML(dindex(toolsCfg, k)))
 				}
 			}
 		}
-		if sampling := dget(srv, "sampling", nil); truthy(sampling) && isDict(sampling) {
+		if sampling := dget(srv, "sampling", nil); anyutil.IsTrue(sampling) && isDict(sampling) {
 			out := newYAMLMap()
 			fields := []kv{
 				{"enabled", dget(sampling, "enabled", nil)},
@@ -113,10 +114,10 @@ func (m *Migrator) migrateMCPServers(cfg *pyjson.Object) {
 }
 
 // Archives the plugins config and extensions directory and imports plugin API keys when secrets are enabled
-func (m *Migrator) migratePluginsConfig(cfg *pyjson.Object) {
+func (m *Migrator) migratePluginsConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	plugins := or(dget(cfg, "plugins", nil), pyjson.NewObject())
-	if !truthy(plugins) {
+	plugins := or(dget(cfg, "plugins", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(plugins) {
 		m.record("plugins-config", "", "", StatusSkipped, "No plugins configuration found")
 		return
 	}
@@ -130,18 +131,18 @@ func (m *Migrator) migratePluginsConfig(cfg *pyjson.Object) {
 		}
 		m.record("plugins-config", "openclaw.json plugins.*", "archive/plugins-config.json", status, "Would archive plugins config")
 	}
-	if extDir := pypath.PathJoin(m.sourceRoot, "extensions"); isDir(extDir) && m.archiveDir != "" {
-		destExt := pypath.PathJoin(m.archiveDir, "extensions")
+	if extDir := pathutil.Join(m.sourceRoot, "extensions"); isDir(extDir) && m.archiveDir != "" {
+		destExt := pathutil.Join(m.archiveDir, "extensions")
 		if m.execute {
 			copyTreeInto(extDir, destExt)
 		}
 		m.record("plugins-config", extDir, destExt, StatusArchived, "Extensions directory archived")
 	}
-	for _, e := range ditems(or(dget(plugins, "entries", nil), pyjson.NewObject())) {
+	for _, e := range ditems(or(dget(plugins, "entries", nil), jsonutil.NewObject())) {
 		if !isDict(e.Val) {
 			continue
 		}
-		if apiKey := dget(e.Val, "apiKey", nil); truthy(apiKey) && m.migrateSecrets {
+		if apiKey := dget(e.Val, "apiKey", nil); anyutil.IsTrue(apiKey) && m.migrateSecrets {
 			envKey := "PLUGIN_" + strings.ReplaceAll(upper(e.Key), "-", "_") + "_API_KEY"
 			m.setEnvVar(envKey, apiKey, "plugins.entries."+e.Key+".apiKey")
 		}
@@ -149,12 +150,12 @@ func (m *Migrator) migratePluginsConfig(cfg *pyjson.Object) {
 }
 
 // Archives the cron config and the cron job store
-func (m *Migrator) migrateCronJobs(cfg *pyjson.Object) {
+func (m *Migrator) migrateCronJobs(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	cron := or(dget(cfg, "cron", nil), pyjson.NewObject())
-	cronStore := pypath.PathJoin(m.sourceRoot, "cron")
+	cron := or(dget(cfg, "cron", nil), jsonutil.NewObject())
+	cronStore := pathutil.Join(m.sourceRoot, "cron")
 	found := false
-	if truthy(cron) {
+	if anyutil.IsTrue(cron) {
 		found = true
 		if m.archiveDir != "" && m.execute {
 			dest := m.archiveJSON("cron-config.json", cron)
@@ -165,7 +166,7 @@ func (m *Migrator) migrateCronJobs(cfg *pyjson.Object) {
 	}
 	if isDir(cronStore) && m.archiveDir != "" {
 		found = true
-		destCron := pypath.PathJoin(m.archiveDir, "cron-store")
+		destCron := pathutil.Join(m.archiveDir, "cron-store")
 		if m.execute {
 			copyTreeInto(cronStore, destCron)
 		}
@@ -177,10 +178,10 @@ func (m *Migrator) migrateCronJobs(cfg *pyjson.Object) {
 }
 
 // Archives the hooks config and the workspace hooks directory
-func (m *Migrator) migrateHooksConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateHooksConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	hooks := or(dget(cfg, "hooks", nil), pyjson.NewObject())
-	if !truthy(hooks) {
+	hooks := or(dget(cfg, "hooks", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(hooks) {
 		m.record("hooks-config", "", "", StatusSkipped, "No hooks configuration found")
 		return
 	}
@@ -191,9 +192,9 @@ func (m *Migrator) migrateHooksConfig(cfg *pyjson.Object) {
 		m.record("hooks-config", "openclaw.json hooks.*", "archive/hooks-config.json", StatusArchived, "Would archive hooks config")
 	}
 	for _, ws := range []string{"workspace", "workspace.default"} {
-		hooksDir := pypath.PathJoin(m.sourceRoot, ws, "hooks")
+		hooksDir := pathutil.Join(m.sourceRoot, ws, "hooks")
 		if isDir(hooksDir) && m.archiveDir != "" {
-			destHooks := pypath.PathJoin(m.archiveDir, "workspace-hooks")
+			destHooks := pathutil.Join(m.archiveDir, "workspace-hooks")
 			if m.execute {
 				copyTreeInto(hooksDir, destHooks)
 			}
@@ -211,12 +212,12 @@ func inSet(v any, members ...string) bool {
 }
 
 // Maps agent defaults onto agent, compression, human_delay, timezone and terminal and archives the agent list and bindings
-func (m *Migrator) migrateAgentConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateAgentConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	agents := or(dget(cfg, "agents", nil), pyjson.NewObject())
-	defaults := or(dget(agents, "defaults", nil), pyjson.NewObject())
+	agents := or(dget(cfg, "agents", nil), jsonutil.NewObject())
+	defaults := or(dget(agents, "defaults", nil), jsonutil.NewObject())
 	agentList := or(dget(agents, "list", nil), []any{})
-	if !truthy(defaults) && !truthy(agentList) {
+	if !anyutil.IsTrue(defaults) && !anyutil.IsTrue(agentList) {
 		m.record("agent-config", "", "", StatusSkipped, "No agent configuration found")
 		return
 	}
@@ -225,15 +226,15 @@ func (m *Migrator) migrateAgentConfig(cfg *pyjson.Object) {
 	changes := false
 	agentCfg := or(dget(icebathCfg, "agent", nil), newYAMLMap())
 	dget(defaults, "contextTokens", nil)
-	if truthy(dget(defaults, "timeoutSeconds", nil)) {
+	if anyutil.IsTrue(dget(defaults, "timeoutSeconds", nil)) {
 		dset(agentCfg, "max_turns", floorDiv10Min200(dindex(defaults, "timeoutSeconds")))
 		changes = true
 	}
-	if truthy(dget(defaults, "verboseDefault", nil)) {
+	if anyutil.IsTrue(dget(defaults, "verboseDefault", nil)) {
 		dset(agentCfg, "verbose", toYAML(dindex(defaults, "verboseDefault")))
 		changes = true
 	}
-	if truthy(dget(defaults, "thinkingDefault", nil)) {
+	if anyutil.IsTrue(dget(defaults, "thinkingDefault", nil)) {
 		thinking := dindex(defaults, "thinkingDefault")
 		switch {
 		case inSet(thinking, "always", "high", "xhigh"):
@@ -245,11 +246,11 @@ func (m *Migrator) migrateAgentConfig(cfg *pyjson.Object) {
 		}
 		changes = true
 	}
-	if compaction := or(dget(defaults, "compaction", nil), pyjson.NewObject()); truthy(compaction) {
+	if compaction := or(dget(defaults, "compaction", nil), jsonutil.NewObject()); anyutil.IsTrue(compaction) {
 		compression := or(dget(icebathCfg, "compression", nil), newYAMLMap())
 		dset(compression, "enabled", !eqStr(dget(compaction, "mode", nil), "off"))
 		dget(compaction, "timeout", nil)
-		if truthy(dget(compaction, "model", nil)) {
+		if anyutil.IsTrue(dget(compaction, "model", nil)) {
 			aux := dsetdefaultDict(icebathCfg, "auxiliary")
 			auxComp := dsetdefaultDict(aux, "compression")
 			dset(auxComp, "model", toYAML(dindex(compaction, "model")))
@@ -257,41 +258,41 @@ func (m *Migrator) migrateAgentConfig(cfg *pyjson.Object) {
 		dset(icebathCfg, "compression", compression)
 		changes = true
 	}
-	if humanDelay := or(dget(defaults, "humanDelay", nil), pyjson.NewObject()); truthy(humanDelay) {
+	if humanDelay := or(dget(defaults, "humanDelay", nil), jsonutil.NewObject()); anyutil.IsTrue(humanDelay) {
 		hd := or(dget(icebathCfg, "human_delay", nil), newYAMLMap())
 		var natural any
-		if truthy(dget(humanDelay, "enabled", nil)) {
+		if anyutil.IsTrue(dget(humanDelay, "enabled", nil)) {
 			natural = "natural"
 		}
 		hdMode := or(dget(humanDelay, "mode", nil), natural)
-		if truthy(hdMode) && !eqStr(hdMode, "off") {
+		if anyutil.IsTrue(hdMode) && !eqStr(hdMode, "off") {
 			dset(hd, "mode", toYAML(hdMode))
 		}
-		if truthy(dget(humanDelay, "minMs", nil)) {
+		if anyutil.IsTrue(dget(humanDelay, "minMs", nil)) {
 			dset(hd, "min_ms", toYAML(dindex(humanDelay, "minMs")))
 		}
-		if truthy(dget(humanDelay, "maxMs", nil)) {
+		if anyutil.IsTrue(dget(humanDelay, "maxMs", nil)) {
 			dset(hd, "max_ms", toYAML(dindex(humanDelay, "maxMs")))
 		}
 		dset(icebathCfg, "human_delay", hd)
 		changes = true
 	}
-	if truthy(dget(defaults, "userTimezone", nil)) {
+	if anyutil.IsTrue(dget(defaults, "userTimezone", nil)) {
 		dset(icebathCfg, "timezone", toYAML(dindex(defaults, "userTimezone")))
 		changes = true
 	}
-	if execCfg := or(dget(or(dget(cfg, "tools", nil), pyjson.NewObject()), "exec", nil), pyjson.NewObject()); truthy(execCfg) {
+	if execCfg := or(dget(or(dget(cfg, "tools", nil), jsonutil.NewObject()), "exec", nil), jsonutil.NewObject()); anyutil.IsTrue(execCfg) {
 		terminalCfg := or(dget(icebathCfg, "terminal", nil), newYAMLMap())
-		if timeout := orElse(dget(execCfg, "timeoutSec", nil), lazyGet(execCfg, "timeout")); truthy(timeout) {
+		if timeout := orElse(dget(execCfg, "timeoutSec", nil), lazyGet(execCfg, "timeout")); anyutil.IsTrue(timeout) {
 			dset(terminalCfg, "timeout", toYAML(orElse(dget(execCfg, "timeoutSec", nil), lazyGet(execCfg, "timeout"))))
 			changes = true
 		}
 		dset(icebathCfg, "terminal", terminalCfg)
 	}
-	if sandbox := or(dget(defaults, "sandbox", nil), pyjson.NewObject()); truthy(sandbox) && eqStr(dget(sandbox, "backend", nil), "docker") {
+	if sandbox := or(dget(defaults, "sandbox", nil), jsonutil.NewObject()); anyutil.IsTrue(sandbox) && eqStr(dget(sandbox, "backend", nil), "docker") {
 		terminalCfg := or(dget(icebathCfg, "terminal", nil), newYAMLMap())
 		dset(terminalCfg, "backend", "docker")
-		if truthy(dget(dget(sandbox, "docker", pyjson.NewObject()), "image", nil)) {
+		if anyutil.IsTrue(dget(dget(sandbox, "docker", jsonutil.NewObject()), "image", nil)) {
 			dset(terminalCfg, "docker_image", toYAML(dindex(dindex(sandbox, "docker"), "image")))
 		}
 		dset(icebathCfg, "terminal", terminalCfg)
@@ -305,14 +306,14 @@ func (m *Migrator) migrateAgentConfig(cfg *pyjson.Object) {
 		}
 		m.record("agent-config", "openclaw.json agents.defaults", "config.yaml agent/compression/terminal", StatusMigrated, "Agent defaults mapped to Icebath config")
 	}
-	if truthy(agentList) {
+	if anyutil.IsTrue(agentList) {
 		if m.archiveDir != "" && m.execute {
 			m.archiveJSON("agents-list.json", agentList)
 		}
 		m.record("agent-config", "openclaw.json agents.list", "archive/agents-list.json", StatusArchived,
 			fmt.Sprintf("Multi-agent setup (%d agents) archived for manual recreation", pyLen(agentList)))
 	}
-	if bindings := or(dget(cfg, "bindings", nil), []any{}); truthy(bindings) {
+	if bindings := or(dget(cfg, "bindings", nil), []any{}); anyutil.IsTrue(bindings) {
 		if m.archiveDir != "" && m.execute {
 			m.archiveJSON("bindings.json", bindings)
 		}
@@ -322,10 +323,10 @@ func (m *Migrator) migrateAgentConfig(cfg *pyjson.Object) {
 }
 
 // Archives the gateway config and imports the gateway auth token when secrets are enabled
-func (m *Migrator) migrateGatewayConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateGatewayConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	gateway := or(dget(cfg, "gateway", nil), pyjson.NewObject())
-	if !truthy(gateway) {
+	gateway := or(dget(cfg, "gateway", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(gateway) {
 		m.record("gateway-config", "", "", StatusSkipped, "No gateway configuration found")
 		return
 	}
@@ -333,26 +334,26 @@ func (m *Migrator) migrateGatewayConfig(cfg *pyjson.Object) {
 		m.archiveJSON("gateway-config.json", gateway)
 	}
 	m.record("gateway-config", "openclaw.json gateway.*", "archive/gateway-config.json", StatusArchived, "Gateway config archived. Use 'icebath gateway' to configure.")
-	auth := or(dget(gateway, "auth", nil), pyjson.NewObject())
-	if truthy(dget(auth, "token", nil)) && m.migrateSecrets {
+	auth := or(dget(gateway, "auth", nil), jsonutil.NewObject())
+	if anyutil.IsTrue(dget(auth, "token", nil)) && m.migrateSecrets {
 		m.setEnvVar("ICEBATH_GATEWAY_TOKEN", dindex(auth, "token"), "gateway.auth.token")
 	}
 }
 
 // Records that reset timers are not imported and archives the advanced session settings
-func (m *Migrator) migrateSessionConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateSessionConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	session := or(dget(cfg, "session", nil), pyjson.NewObject())
-	if !truthy(session) {
+	session := or(dget(cfg, "session", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(session) {
 		m.record("session-config", "", "", StatusSkipped, "No session configuration found")
 		return
 	}
-	if truthy(dget(session, "reset", nil)) || truthy(dget(session, "resetTriggers", nil)) || truthy(dget(session, "reset_triggers", nil)) {
+	if anyutil.IsTrue(dget(session, "reset", nil)) || anyutil.IsTrue(dget(session, "resetTriggers", nil)) || anyutil.IsTrue(dget(session, "reset_triggers", nil)) {
 		m.record("session-config", "session reset timers", "", StatusSkipped, "Icebath conversations do not reset on idle or daily timers")
 	}
-	complexSession := pyjson.NewObject()
+	complexSession := jsonutil.NewObject()
 	for _, e := range ditems(session) {
-		if containsString([]string{"identityLinks", "threadBindings", "maintenance", "scope", "sendPolicy"}, e.Key) && truthy(e.Val) {
+		if containsString([]string{"identityLinks", "threadBindings", "maintenance", "scope", "sendPolicy"}, e.Key) && anyutil.IsTrue(e.Val) {
 			complexSession.Set(e.Key, e.Val)
 		}
 	}
@@ -376,11 +377,11 @@ var apiModeMap = map[string]string{
 var wellKnownProviders = []string{"openrouter", "openai", "anthropic", "deepseek", "google", "groq"}
 
 // Adds custom providers as providers entries, imports provider keys when secrets are enabled and archives the model catalog
-func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
+func (m *Migrator) migrateFullProviders(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	models := or(dget(cfg, "models", nil), pyjson.NewObject())
-	providers := or(dget(models, "providers", nil), pyjson.NewObject())
-	if !truthy(providers) {
+	models := or(dget(cfg, "models", nil), jsonutil.NewObject())
+	providers := or(dget(models, "providers", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(providers) {
 		m.record("full-providers", "", "", StatusSkipped, "No model providers found")
 		return
 	}
@@ -393,15 +394,15 @@ func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
 		if !isDict(provCfg) {
 			continue
 		}
-		if apiKey := or(dget(provCfg, "apiKey", nil), dget(provCfg, "api_key", nil)); truthy(apiKey) && m.migrateSecrets {
+		if apiKey := or(dget(provCfg, "apiKey", nil), dget(provCfg, "api_key", nil)); anyutil.IsTrue(apiKey) && m.migrateSecrets {
 			envKey := strings.ReplaceAll(upper(provName), "-", "_") + "_API_KEY"
 			m.setEnvVar(envKey, apiKey, "models.providers."+provName+".apiKey")
 		}
-		if containsString(wellKnownProviders, lower(provName)) || !truthy(dget(provCfg, "baseUrl", nil)) {
+		if containsString(wellKnownProviders, lower(provName)) || !anyutil.IsTrue(dget(provCfg, "baseUrl", nil)) {
 			continue
 		}
 		entryKey := strings.ReplaceAll(lower(provName), " ", "-")
-		if truthy(dget(userProviders, entryKey, nil)) && !m.overwrite {
+		if anyutil.IsTrue(dget(userProviders, entryKey, nil)) && !m.overwrite {
 			m.record("full-providers", "models.providers."+provName, "config.yaml providers", StatusConflict, fmt.Sprintf("Provider '%s' already exists", provName))
 			continue
 		}
@@ -430,8 +431,8 @@ func (m *Migrator) migrateFullProviders(cfg *pyjson.Object) {
 		dset(icebathCfg, "providers", userProviders)
 		dumpYAML(path, icebathCfg)
 	}
-	agentDefaults := or(dget(or(dget(cfg, "agents", nil), pyjson.NewObject()), "defaults", nil), pyjson.NewObject())
-	if aliases := or(dget(agentDefaults, "models", nil), pyjson.NewObject()); truthy(aliases) {
+	agentDefaults := or(dget(or(dget(cfg, "agents", nil), jsonutil.NewObject()), "defaults", nil), jsonutil.NewObject())
+	if aliases := or(dget(agentDefaults, "models", nil), jsonutil.NewObject()); anyutil.IsTrue(aliases) {
 		if m.archiveDir != "" && m.execute {
 			m.archiveJSON("model-aliases.json", aliases)
 		}
@@ -477,16 +478,16 @@ func joinedStr(v any) string {
 }
 
 // Imports extended channel settings into .env, Discord options into config.yaml, and archives the complex channel settings
-func (m *Migrator) migrateDeepChannels(cfg *pyjson.Object) {
+func (m *Migrator) migrateDeepChannels(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	channels := or(dget(cfg, "channels", nil), pyjson.NewObject())
-	if !truthy(channels) {
+	channels := or(dget(cfg, "channels", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(channels) {
 		m.record("deep-channels", "", "", StatusSkipped, "No channel configuration found")
 		return
 	}
 	for _, ch := range channelEnvMap {
-		chCfg := or(dget(channels, ch.name, nil), pyjson.NewObject())
-		if !truthy(chCfg) {
+		chCfg := or(dget(channels, ch.name, nil), jsonutil.NewObject())
+		if !anyutil.IsTrue(chCfg) {
 			continue
 		}
 		tokenField := ch.tokenField
@@ -494,15 +495,15 @@ func (m *Migrator) migrateDeepChannels(cfg *pyjson.Object) {
 			tokenField = "botToken"
 		}
 		botToken := channelField(chCfg, tokenField)
-		if ch.token != "" && truthy(botToken) && m.migrateSecrets {
+		if ch.token != "" && anyutil.IsTrue(botToken) && m.migrateSecrets {
 			m.setEnvVar(ch.token, pyStr(botToken), "channels."+ch.name+"."+tokenField)
 		}
-		if allowVal := channelField(chCfg, "allowFrom"); ch.allowFrom != "" && truthy(allowVal) {
+		if allowVal := channelField(chCfg, "allowFrom"); ch.allowFrom != "" && anyutil.IsTrue(allowVal) {
 			m.setEnvVar(ch.allowFrom, joinedStr(allowVal), "channels."+ch.name+".allowFrom")
 		}
 		for _, extra := range ch.extras {
 			val := channelField(chCfg, extra.Key)
-			if !truthy(val) {
+			if !anyutil.IsTrue(val) {
 				continue
 			}
 			low := lower(extra.Key)
@@ -513,7 +514,7 @@ func (m *Migrator) migrateDeepChannels(cfg *pyjson.Object) {
 			m.setEnvVar(extra.Val.(string), joinedStr(val), "channels."+ch.name+"."+extra.Key)
 		}
 	}
-	if discord := or(dget(channels, "discord", nil), pyjson.NewObject()); truthy(discord) {
+	if discord := or(dget(channels, "discord", nil), jsonutil.NewObject()); anyutil.IsTrue(discord) {
 		path := m.configPath()
 		icebathCfg := loadYAML(path)
 		discordIcebath := or(dget(icebathCfg, "discord", nil), newYAMLMap())
@@ -531,14 +532,14 @@ func (m *Migrator) migrateDeepChannels(cfg *pyjson.Object) {
 			dumpYAML(path, icebathCfg)
 		}
 	}
-	complexArchive := pyjson.NewObject()
+	complexArchive := jsonutil.NewObject()
 	for _, e := range ditems(channels) {
 		if !isDict(e.Val) {
 			continue
 		}
-		complexKeys := pyjson.NewObject()
+		complexKeys := jsonutil.NewObject()
 		for _, inner := range ditems(e.Val) {
-			if containsString([]string{"botToken", "appToken", "allowFrom", "enabled"}, inner.Key) || !truthy(inner.Val) ||
+			if containsString([]string{"botToken", "appToken", "allowFrom", "enabled"}, inner.Key) || !anyutil.IsTrue(inner.Val) ||
 				containsString([]string{"requireMention", "autoThread"}, inner.Key) {
 				continue
 			}
@@ -558,10 +559,10 @@ func (m *Migrator) migrateDeepChannels(cfg *pyjson.Object) {
 }
 
 // Maps cdpUrl and headless into the browser section and archives the other browser settings
-func (m *Migrator) migrateBrowserConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateBrowserConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	browser := or(dget(cfg, "browser", nil), pyjson.NewObject())
-	if !truthy(browser) {
+	browser := or(dget(cfg, "browser", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(browser) {
 		m.record("browser-config", "", "", StatusSkipped, "No browser configuration found")
 		return
 	}
@@ -569,7 +570,7 @@ func (m *Migrator) migrateBrowserConfig(cfg *pyjson.Object) {
 	icebathCfg := loadYAML(path)
 	browserIcebath := or(dget(icebathCfg, "browser", nil), newYAMLMap())
 	changed := false
-	if truthy(dget(browser, "cdpUrl", nil)) {
+	if anyutil.IsTrue(dget(browser, "cdpUrl", nil)) {
 		dset(browserIcebath, "cdp_url", toYAML(dindex(browser, "cdpUrl")))
 		changed = true
 	}
@@ -585,9 +586,9 @@ func (m *Migrator) migrateBrowserConfig(cfg *pyjson.Object) {
 		}
 		m.record("browser-config", "openclaw.json browser.*", "config.yaml browser", StatusMigrated, "")
 	}
-	advanced := pyjson.NewObject()
+	advanced := jsonutil.NewObject()
 	for _, e := range ditems(browser) {
-		if e.Key != "cdpUrl" && e.Key != "headless" && truthy(e.Val) {
+		if e.Key != "cdpUrl" && e.Key != "headless" && anyutil.IsTrue(e.Val) {
 			advanced.Set(e.Key, e.Val)
 		}
 	}
@@ -600,29 +601,29 @@ func (m *Migrator) migrateBrowserConfig(cfg *pyjson.Object) {
 }
 
 // Maps the exec timeout onto terminal.timeout, imports the Brave key when secrets are enabled and archives the tools config
-func (m *Migrator) migrateToolsConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateToolsConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	tools := or(dget(cfg, "tools", nil), pyjson.NewObject())
-	if !truthy(tools) {
+	tools := or(dget(cfg, "tools", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(tools) {
 		m.record("tools-config", "", "", StatusSkipped, "No tools configuration found")
 		return
 	}
 	path := m.configPath()
 	icebathCfg := loadYAML(path)
 	changed := false
-	execCfg := or(dget(tools, "exec", nil), pyjson.NewObject())
-	if timeoutVal := orElse(dget(execCfg, "timeoutSec", nil), lazyGet(execCfg, "timeout")); truthy(timeoutVal) {
+	execCfg := or(dget(tools, "exec", nil), jsonutil.NewObject())
+	if timeoutVal := orElse(dget(execCfg, "timeoutSec", nil), lazyGet(execCfg, "timeout")); anyutil.IsTrue(timeoutVal) {
 		terminalCfg := or(dget(icebathCfg, "terminal", nil), newYAMLMap())
 		dset(terminalCfg, "timeout", toYAML(timeoutVal))
 		dset(icebathCfg, "terminal", terminalCfg)
 		changed = true
 	}
-	webCfg := orElse(dget(tools, "web", nil), func() any { return or(dget(tools, "webSearch", nil), pyjson.NewObject()) })
+	webCfg := orElse(dget(tools, "web", nil), func() any { return or(dget(tools, "webSearch", nil), jsonutil.NewObject()) })
 	searchCfg := webCfg
-	if truthy(dget(webCfg, "search", nil)) {
+	if anyutil.IsTrue(dget(webCfg, "search", nil)) {
 		searchCfg = dindex(webCfg, "search")
 	}
-	braveCfg := or(dget(searchCfg, "brave", nil), pyjson.NewObject())
+	braveCfg := or(dget(searchCfg, "brave", nil), jsonutil.NewObject())
 	braveKey := orElse(dget(braveCfg, "apiKey", nil), func() any {
 		return orElse(dget(searchCfg, "braveApiKey", nil), lazyGet(webCfg, "braveApiKey"))
 	})
@@ -646,22 +647,22 @@ func (m *Migrator) migrateToolsConfig(cfg *pyjson.Object) {
 var approvalModeMap = map[string]string{"auto": "off", "always": "manual", "smart": "smart", "manual": "manual"}
 
 // Maps the approval mode into approvals.mode and archives the approval rules
-func (m *Migrator) migrateApprovalsConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateApprovalsConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	approvals := or(dget(cfg, "approvals", nil), pyjson.NewObject())
-	if !truthy(approvals) {
+	approvals := or(dget(cfg, "approvals", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(approvals) {
 		m.record("approvals-config", "", "", StatusSkipped, "No approvals configuration found")
 		return
 	}
 	path := m.configPath()
 	icebathCfg := loadYAML(path)
-	execApprovals := or(dget(approvals, "exec", nil), pyjson.NewObject())
+	execApprovals := or(dget(approvals, "exec", nil), jsonutil.NewObject())
 	var execMode any
 	if isDict(execApprovals) {
 		execMode = dget(execApprovals, "mode", nil)
 	}
 	mode := orElse(execMode, func() any { return orElse(dget(approvals, "mode", nil), lazyGet(approvals, "defaultMode")) })
-	if truthy(mode) {
+	if anyutil.IsTrue(mode) {
 		requireHashable(mode)
 		icebathMode := "manual"
 		if s, ok := mode.(string); ok {
@@ -687,7 +688,7 @@ func (m *Migrator) migrateApprovalsConfig(cfg *pyjson.Object) {
 
 // Archives one top level config section, recording it skipped when absent
 func (m *Migrator) archiveSection(kind string, value any, emptyReason, file, source, reason string) {
-	if !truthy(value) {
+	if !anyutil.IsTrue(value) {
 		m.record(kind, "", "", StatusSkipped, emptyReason)
 		return
 	}
@@ -698,18 +699,18 @@ func (m *Migrator) archiveSection(kind string, value any, emptyReason, file, sou
 }
 
 // Archives the memory backend settings
-func (m *Migrator) migrateMemoryBackend(cfg *pyjson.Object) {
+func (m *Migrator) migrateMemoryBackend(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	m.archiveSection("memory-backend", or(dget(cfg, "memory", nil), pyjson.NewObject()), "No memory backend configuration found",
+	m.archiveSection("memory-backend", or(dget(cfg, "memory", nil), jsonutil.NewObject()), "No memory backend configuration found",
 		"memory-backend-config.json", "openclaw.json memory.*", "Memory backend config (QMD, vector search, citations) archived for manual review")
 }
 
 // Archives the skills registry settings
-func (m *Migrator) migrateSkillsConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateSkillsConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	skills := or(dget(cfg, "skills", nil), pyjson.NewObject())
-	entries := or(dget(skills, "entries", nil), pyjson.NewObject())
-	if !truthy(entries) && !truthy(skills) {
+	skills := or(dget(cfg, "skills", nil), jsonutil.NewObject())
+	entries := or(dget(skills, "entries", nil), jsonutil.NewObject())
+	if !anyutil.IsTrue(entries) && !anyutil.IsTrue(skills) {
 		m.record("skills-config", "", "", StatusSkipped, "No skills registry configuration found")
 		return
 	}
@@ -721,20 +722,20 @@ func (m *Migrator) migrateSkillsConfig(cfg *pyjson.Object) {
 }
 
 // Archives the UI theme and identity settings
-func (m *Migrator) migrateUIIdentity(cfg *pyjson.Object) {
+func (m *Migrator) migrateUIIdentity(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	m.archiveSection("ui-identity", or(dget(cfg, "ui", nil), pyjson.NewObject()), "No UI/identity configuration found",
+	m.archiveSection("ui-identity", or(dget(cfg, "ui", nil), jsonutil.NewObject()), "No UI/identity configuration found",
 		"ui-identity-config.json", "openclaw.json ui.*", "UI theme and identity settings archived")
 }
 
 // Archives the logging and diagnostics settings together
-func (m *Migrator) migrateLoggingConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateLoggingConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	combined := pyjson.NewObject()
-	if v := or(dget(cfg, "logging", nil), pyjson.NewObject()); truthy(v) {
+	combined := jsonutil.NewObject()
+	if v := or(dget(cfg, "logging", nil), jsonutil.NewObject()); anyutil.IsTrue(v) {
 		combined.Set("logging", v)
 	}
-	if v := or(dget(cfg, "diagnostics", nil), pyjson.NewObject()); truthy(v) {
+	if v := or(dget(cfg, "diagnostics", nil), jsonutil.NewObject()); anyutil.IsTrue(v) {
 		combined.Set("diagnostics", v)
 	}
 	if combined.Len() == 0 {
@@ -749,7 +750,7 @@ func (m *Migrator) migrateLoggingConfig(cfg *pyjson.Object) {
 
 // Sets one .env variable during apply, an existing key a conflict unless overwriting
 func (m *Migrator) setEnvVar(key string, value any, sourceLabel string) {
-	envPath := pypath.PathJoin(m.targetRoot, ".env")
+	envPath := pathutil.Join(m.targetRoot, ".env")
 	if m.execute {
 		envData := parseEnvFile(envPath)
 		if _, has := envData.get(key); has && !m.overwrite {
@@ -879,6 +880,6 @@ func (m *Migrator) generateMigrationNotes() {
 	)
 	if m.execute {
 		mkdirAll(m.outputDir)
-		writeText(pypath.PathJoin(m.outputDir, "MIGRATION_NOTES.md"), strings.Join(notes, "\n")+"\n")
+		writeText(pathutil.Join(m.outputDir, "MIGRATION_NOTES.md"), strings.Join(notes, "\n")+"\n")
 	}
 }

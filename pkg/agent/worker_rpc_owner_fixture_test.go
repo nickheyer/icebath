@@ -17,7 +17,6 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const loopbackOwnerEnv = "ICEBATH_TEST_LOOPBACK_OWNER"
@@ -198,7 +197,7 @@ func runLoopbackOwner(spec loopbackOwnerSpec) int {
 			payload := gateway.BuildIdentifyPayload()
 			for _, kv := range [][2]any{{"runtime_protocol", int64(1)}, {"state", state}, {"supervisor", "external"},
 				{"capabilities", []any{"session-authority-v1"}}, {"authority_epoch", int64(1)}, {"instance_id", "owner-instance"},
-				{"api_origin", origin}, {"served_profiles", []any{pyjson.ObjectOf("home", home, "profile_id", home)}}} {
+				{"api_origin", origin}, {"served_profiles", []any{jsonutil.ObjectOf("home", home, "profile_id", home)}}} {
 				payload.Set(kv[0].(string), kv[1])
 			}
 			return payload, nil
@@ -212,7 +211,7 @@ func runLoopbackOwner(spec loopbackOwnerSpec) int {
 		"session-ticket": func(params map[string]any, _ string) (any, error) {
 			ticket := "ticket-" + strings.Repeat("x", int(tickets.Add(1)))
 			logEvent("ticket", map[string]any{"purpose": params["purpose"], "ticket": ticket})
-			return pyjson.ObjectOf("ticket", ticket, "profile_id", home, "instance_id", "owner-instance", "runtime_protocol", int64(1)), nil
+			return jsonutil.ObjectOf("ticket", ticket, "profile_id", home, "instance_id", "owner-instance", "runtime_protocol", int64(1)), nil
 		},
 	})
 	if !server.Start() {

@@ -202,7 +202,7 @@ func TestCoerceKeepClampsAndDefaults(t *testing.T) {
 	cases := map[string]int{
 		"5": 5, "1": 1, "0": 1, "-4": 1, "100": 100, "101": MaxKeepLast, "+7": 7, "1_0": 10,
 		"99999999999999999999999": MaxKeepLast, "-99999999999999999999999": 1, "x": DefaultKeepLast,
-		"": DefaultKeepLast, "2.5": DefaultKeepLast, "_1": DefaultKeepLast, "٤": 4,
+		"": DefaultKeepLast, "2.5": DefaultKeepLast, "_1": DefaultKeepLast, "٤": DefaultKeepLast,
 	}
 	for in, want := range cases {
 		if got := coerceKeep(in); got != want {

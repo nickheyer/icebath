@@ -7,11 +7,11 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // CuaDriverBackend is the default computer use backend over the cua-driver MCP server
@@ -25,7 +25,7 @@ type CuaDriverBackend struct {
 	activePID      *int
 	activeWindowID *int
 	lastApp        *string
-	lastTarget     *pyjson.Object
+	lastTarget     *jsonutil.Object
 	snapshotTokens map[int]string
 	sessionID      string
 	callCtx        atomic.Pointer[context.Context]
@@ -97,12 +97,12 @@ func (b *CuaDriverBackend) Start() error {
 		if err != nil {
 			return err
 		}
-		ready, reason = pyrepr.Truthy(cuGet(contract, "ready")), cuGet(contract, "reason")
+		ready, reason = anyutil.IsTrue(cuGet(contract, "ready")), cuGet(contract, "reason")
 	}
 	if !ready {
 		why := "runtime contract is incomplete"
-		if pyrepr.Truthy(reason) {
-			why = pyrepr.Str(reason)
+		if anyutil.IsTrue(reason) {
+			why = anyutil.String(reason)
 		}
 		hint := "Run `icebath computer-use install` to repair it."
 		if override {
@@ -126,7 +126,7 @@ func (b *CuaDriverBackend) Start() error {
 		}
 		return err
 	}
-	declare := pyjson.NewObject()
+	declare := jsonutil.NewObject()
 	declare.Set("session", b.sessionID)
 	b.bestEffort("start_session failed (continuing anonymous)", func() error {
 		_, err := b.session.callTool("start_session", declare, 30)
@@ -134,7 +134,7 @@ func (b *CuaDriverBackend) Start() error {
 	})
 	if b.session.started.Load() {
 		if maxDim := computerUseMaxImageDimension(b.env); maxDim > 0 {
-			cfg := pyjson.NewObject()
+			cfg := jsonutil.NewObject()
 			cfg.Set("max_image_dimension", maxDim)
 			b.bestEffort("set_config(max_image_dimension) failed", func() error { b.SetConfig(cfg); return nil })
 		}
@@ -148,7 +148,7 @@ func (b *CuaDriverBackend) Start() error {
 // Ends the driver session, then tears down session, bridge and private daemon even when one step fails
 func (b *CuaDriverBackend) Stop() error {
 	if b.session.started.Load() {
-		end := pyjson.NewObject()
+		end := jsonutil.NewObject()
 		end.Set("session", b.sessionID)
 		b.bestEffort("end_session failed (continuing teardown)", func() error {
 			_, err := b.session.callTool("end_session", end, 30)
@@ -190,12 +190,12 @@ func (b *CuaDriverBackend) clearActiveTarget() {
 }
 
 // Pins the sticky target and disarms the prior snapshot's tokens
-func (b *CuaDriverBackend) setActiveTarget(target *pyjson.Object) {
+func (b *CuaDriverBackend) setActiveTarget(target *jsonutil.Object) {
 	pid, _ := cuGet(target, "pid").(int)
 	wid, _ := cuGet(target, "window_id").(int)
 	b.activePID, b.activeWindowID = &pid, &wid
 	b.snapshotTokens = map[int]string{}
-	b.lastTarget = pyjson.NewObject()
+	b.lastTarget = jsonutil.NewObject()
 	b.lastTarget.Set("pid", pid)
 	b.lastTarget.Set("window_id", wid)
 }
@@ -214,7 +214,7 @@ func (b *CuaDriverBackend) LaunchApp(a LaunchAppArgs) (any, error) {
 	if a.BundleID == "" && a.Name == "" {
 		return nil, errors.New("launch_app requires either bundle_id or name")
 	}
-	args := pyjson.NewObject()
+	args := jsonutil.NewObject()
 	args.Set("session", b.sessionID)
 	if a.BundleID != "" {
 		args.Set("bundle_id", a.BundleID)
@@ -235,17 +235,17 @@ func (b *CuaDriverBackend) LaunchApp(a LaunchAppArgs) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if sc := cuGet(out, "structuredContent"); pyrepr.Truthy(sc) {
+	if sc := cuGet(out, "structuredContent"); anyutil.IsTrue(sc) {
 		return sc, nil
 	}
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	data.Set("data", cuGet(out, "data"))
 	return data, nil
 }
 
 // Activates a window so later foreground input lands on it
 func (b *CuaDriverBackend) BringToFront(pid int, windowID *int) *ActionResult {
-	args := pyjson.NewObject()
+	args := jsonutil.NewObject()
 	args.Set("pid", pid)
 	if windowID != nil {
 		args.Set("window_id", *windowID)
@@ -255,7 +255,7 @@ func (b *CuaDriverBackend) BringToFront(pid int, windowID *int) *ActionResult {
 
 // Toggles the agent cursor overlay of this run
 func (b *CuaDriverBackend) SetAgentCursorEnabled(enabled bool, cursorID string) *ActionResult {
-	args := pyjson.NewObject()
+	args := jsonutil.NewObject()
 	args.Set("enabled", enabled)
 	if cursorID != "" {
 		args.Set("cursor_id", cursorID)
@@ -264,15 +264,15 @@ func (b *CuaDriverBackend) SetAgentCursorEnabled(enabled bool, cursorID string) 
 }
 
 // Sets cua-driver config keys, unknown keys pass through for the driver to validate
-func (b *CuaDriverBackend) SetConfig(config *pyjson.Object) *ActionResult {
-	return b.action("set_config", config.Copy(), true)
+func (b *CuaDriverBackend) SetConfig(config *jsonutil.Object) *ActionResult {
+	return b.action("set_config", config.Clone(), true)
 }
 
 // Calls any cua-driver MCP tool by name with the session label defaulted in
-func (b *CuaDriverBackend) CallTool(name string, args *pyjson.Object, timeout float64) (*pyjson.Object, error) {
-	payload := pyjson.NewObject()
+func (b *CuaDriverBackend) CallTool(name string, args *jsonutil.Object, timeout float64) (*jsonutil.Object, error) {
+	payload := jsonutil.NewObject()
 	if args != nil {
-		payload = args.Copy()
+		payload = args.Clone()
 	}
 	if _, has := payload.Get("session"); !has {
 		payload.Set("session", b.sessionID)
@@ -295,7 +295,7 @@ func snapshotIndex(v any) (int, bool) {
 }
 
 // One driver action with the snapshot token attached, merged meta and the structured verdict
-func (b *CuaDriverBackend) action(name string, args *pyjson.Object, injectSession bool) *ActionResult {
+func (b *CuaDriverBackend) action(name string, args *jsonutil.Object, injectSession bool) *ActionResult {
 	if idx, ok := snapshotIndex(cuGet(args, "element_index")); ok {
 		if token := b.snapshotTokens[idx]; token != "" && (b.session.supportsInputProperty(name, "element_token") ||
 			b.session.supportsCapability("accessibility.element_tokens", name)) {
@@ -312,26 +312,26 @@ func (b *CuaDriverBackend) action(name string, args *pyjson.Object, injectSessio
 	}
 	data := cuGet(out, "data")
 	structured := cuGet(out, "structuredContent")
-	if !pyrepr.Truthy(structured) {
-		structured = pyjson.NewObject()
+	if !anyutil.IsTrue(structured) {
+		structured = jsonutil.NewObject()
 	}
 	message := ""
 	switch d := data.(type) {
-	case *pyjson.Object:
-		message = pyrepr.Str(getOr(d, "message", ""))
+	case *jsonutil.Object:
+		message = anyutil.String(getOr(d, "message", ""))
 	case string:
 		message = d
 	}
 	if message == "" {
-		if s, ok := structured.(*pyjson.Object); ok {
-			message = pyrepr.Str(getOr(s, "message", ""))
+		if s, ok := structured.(*jsonutil.Object); ok {
+			message = anyutil.String(getOr(s, "message", ""))
 		}
 	}
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	for _, part := range []any{data, structured} {
-		if p, ok := part.(*pyjson.Object); ok {
-			for _, k := range p.Keys {
-				meta.Set(k, p.Vals[k])
+		if p, ok := part.(*jsonutil.Object); ok {
+			for _, k := range p.Keys() {
+				meta.Set(k, p.Value(k))
 			}
 		}
 	}
@@ -339,11 +339,11 @@ func (b *CuaDriverBackend) action(name string, args *pyjson.Object, injectSessio
 	if s, ok := cuGet(args, "delivery_mode").(string); ok {
 		requested = &s
 	}
-	return actionResultFrom(name, !pyrepr.Truthy(cuGet(out, "isError")), message, meta, structured, requested)
+	return actionResultFrom(name, !anyutil.IsTrue(cuGet(out, "isError")), message, meta, structured, requested)
 }
 
 // dict.get with a default
-func getOr(o *pyjson.Object, key string, def any) any {
+func getOr(o *jsonutil.Object, key string, def any) any {
 	if v, has := o.Get(key); has {
 		return v
 	}

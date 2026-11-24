@@ -8,9 +8,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -64,7 +64,7 @@ func classifyInboundMedia(event *gateway.MessageEvent, pendingSTTPrepared bool) 
 
 // Display name and agent visible path of an attachment, the original name else the parsed cache name
 func inboundAttachmentDisplayName(ctx context.Context, path, originalName string) (string, string) {
-	basename := pypath.Basename(path)
+	basename := pathutil.Name(path)
 	name := gateway.CleanAttachmentFilename(originalName)
 	agentPath := tools.ToAgentVisibleCachePath(inboundToolsEnv(ctx), path)
 	if name == "" && strings.HasPrefix(basename, relayMediaPrefix) {
@@ -138,7 +138,7 @@ func prependInboundDocumentNotes(ctx context.Context, event *gateway.MessageEven
 		}
 		mtype := eventMediaTypeAt(event, i)
 		if mtype == "" || mtype == "application/octet-stream" {
-			_, ext := pypath.Splitext(path)
+			_, ext := pathutil.SplitExt(path)
 			if inboundTextExtensions[strings.ToLower(ext)] {
 				mtype = "text/plain"
 			} else if guessed, _, _ := pymimetypes.GuessType(path, true); guessed != "" {

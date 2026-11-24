@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Profiles the bundled deepinfra plugin registers
@@ -20,15 +20,15 @@ func deepinfraPluginProfiles() []Profile {
 }
 
 // Top level effort on the OpenAI compatible vocabulary, none the only off switch and an unset effort omitted
-func deepinfraBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (*pyjson.Object, map[string]any) {
+func deepinfraBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (*jsonutil.Object, map[string]any) {
 	if reasoning != nil && reasoning.Enabled != nil && !*reasoning.Enabled {
-		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": "none"}
+		return jsonutil.ObjectOf(), map[string]any{"reasoning_effort": "none"}
 	}
 	clamped := clampEffort(requestedEffort(hookReasoningCfg(reasoning)), openAICompatWireEfforts, nil)
 	if containsStr(openAICompatWireEfforts, clamped) {
-		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": clamped}
+		return jsonutil.ObjectOf(), map[string]any{"reasoning_effort": clamped}
 	}
-	return pyjson.ObjectOf(), map[string]any{}
+	return jsonutil.ObjectOf(), map[string]any{}
 }
 
 // Seam the vision default reads the live catalog through

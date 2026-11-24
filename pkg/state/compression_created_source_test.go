@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 func createdCompress(t *testing.T, db *SessionDB, parentCreated any, child string) string {
@@ -217,7 +217,7 @@ func TestDeliberateBoundaryStillFailsClosed(t *testing.T) {
 			t.Fatal(err)
 		}
 		err := publishTUI(db, parent, child)
-		var pe *pyint.Error
+		var pe *errorutil.Error
 		if err == nil || !strings.Contains(err.Error(), "already ended") || !errors.As(err, &pe) || pe.Kind != "RuntimeError" {
 			t.Fatalf("%s publish %v", reason, err)
 		}

@@ -6,9 +6,8 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const todosJSON = `[{"id": "1", "content": "write the test", "status": "completed"}, {"id": "2", "content": "fix the bug", "status": "in_progress"}, {"id": "3", "content": "drop the hack", "status": "cancelled"}]`
@@ -16,12 +15,12 @@ const todosJSON = `[{"id": "1", "content": "write the test", "status": "complete
 func mappingAgent(t *testing.T, reply string) (*GatewayACPAgent, *fakeGateway, *editorFake) {
 	t.Helper()
 	a := newGatewayAgent(t)
-	link := newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link := newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		return jsonObj(t, reply), nil
 	})
 	editor := &editorFake{}
 	a.loop.enter()
-	a.snapshots.Set("s", pyjson.NewObject())
+	a.snapshots.Set("s", jsonutil.NewObject())
 	a.gateway, a.conn = link, editor
 	a.loop.leave()
 	return a, link, editor
@@ -29,14 +28,14 @@ func mappingAgent(t *testing.T, reply string) (*GatewayACPAgent, *fakeGateway, *
 
 func projectEvent(t *testing.T, a *GatewayACPAgent, kind, payload, aid string) {
 	t.Helper()
-	event := pyjson.ObjectOf("session_id", "s", "type", kind, "admission_id", aid, "payload", jsonObj(t, payload))
+	event := jsonutil.ObjectOf("session_id", "s", "type", kind, "admission_id", aid, "payload", jsonObj(t, payload))
 	if err := onLoop(a, func() error { return a.project(context.Background(), event) }); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func updatesOf(e *editorFake) []pyacp.SessionUpdate {
-	var out []pyacp.SessionUpdate
+func updatesOf(e *editorFake) []acputil.SessionUpdate {
+	var out []acputil.SessionUpdate
 	for _, u := range e.seen() {
 		out = append(out, u.update)
 	}
@@ -48,7 +47,7 @@ type closedCall struct{ id, status string }
 func closedCalls(e *editorFake) []closedCall {
 	var out []closedCall
 	for _, u := range updatesOf(e) {
-		if p, ok := u.(*pyacp.ToolCallProgress); ok {
+		if p, ok := u.(*acputil.ToolCallProgress); ok {
 			status := ""
 			if p.Status != nil {
 				status = *p.Status
@@ -66,7 +65,7 @@ func TestTodoUpdatedBecomesTheNativePlanUpdate(t *testing.T) {
 	if len(sent) != 1 {
 		t.Fatalf("updates = %v", sent)
 	}
-	plan, ok := sent[0].(*pyacp.AgentPlanUpdate)
+	plan, ok := sent[0].(*acputil.AgentPlanUpdate)
 	if !ok {
 		t.Fatalf("update is %T", sent[0])
 	}
@@ -107,13 +106,13 @@ func TestAnAnsweredPermissionCardIsClosed(t *testing.T) {
 	for _, tc := range []struct{ choice, status string }{{"allow_once", "completed"}, {"deny", "failed"}, {"", "failed"}} {
 		t.Run("choice_"+tc.choice, func(t *testing.T) {
 			a, _, editor := mappingAgent(t, `{"status": "resolved"}`)
-			var card *pyacp.ToolCallUpdate
-			editor.permission = func(options []pyacp.PermissionOption, sessionID string, toolCall *pyacp.ToolCallUpdate) (*pyacp.RequestPermissionResponse, error) {
+			var card *acputil.ToolCallUpdate
+			editor.permission = func(options []acputil.PermissionOption, sessionID string, toolCall *acputil.ToolCallUpdate) (*acputil.RequestPermissionResponse, error) {
 				card = toolCall
 				if tc.choice == "" {
-					return &pyacp.RequestPermissionResponse{Outcome: &pyacp.DeniedOutcome{}}, nil
+					return &acputil.RequestPermissionResponse{Outcome: &acputil.DeniedOutcome{}}, nil
 				}
-				return &pyacp.RequestPermissionResponse{Outcome: &pyacp.AllowedOutcome{OptionID: tc.choice}}, nil
+				return &acputil.RequestPermissionResponse{Outcome: &acputil.AllowedOutcome{OptionID: tc.choice}}, nil
 			}
 			prompt := jsonObj(t, `{"kind": "approval", "prompt_id": "p", "execution_generation": 1, "command": "rm -r x", "description": "recursive delete", "choices": ["once", "deny"]}`)
 			onLoop(a, func() bool { return a.answerPermission(context.Background(), "s", prompt) })
@@ -127,8 +126,8 @@ func TestAnAnsweredPermissionCardIsClosed(t *testing.T) {
 
 func TestAnAnsweredClarifyCardIsClosed(t *testing.T) {
 	a, _, editor := mappingAgent(t, `{"status": "resolved"}`)
-	editor.permission = func([]pyacp.PermissionOption, string, *pyacp.ToolCallUpdate) (*pyacp.RequestPermissionResponse, error) {
-		return &pyacp.RequestPermissionResponse{Outcome: &pyacp.AllowedOutcome{OptionID: "choice-0"}}, nil
+	editor.permission = func([]acputil.PermissionOption, string, *acputil.ToolCallUpdate) (*acputil.RequestPermissionResponse, error) {
+		return &acputil.RequestPermissionResponse{Outcome: &acputil.AllowedOutcome{OptionID: "choice-0"}}, nil
 	}
 	prompt := jsonObj(t, `{"kind": "clarify", "prompt_id": "q", "execution_generation": 1, "question": "Which?", "choices": ["A", "B"]}`)
 	onLoop(a, func() bool { return a.answerClarify(context.Background(), "s", prompt) })
@@ -142,11 +141,11 @@ func chunkIDs(t *testing.T, e *editorFake) ([]string, []string) {
 	var ids, texts []string
 	for _, u := range updatesOf(e) {
 		var id *string
-		var content pyacp.ContentBlock
+		var content acputil.ContentBlock
 		switch update := u.(type) {
-		case *pyacp.AgentMessageChunk:
+		case *acputil.AgentMessageChunk:
 			id, content = update.MessageID, update.Content
-		case *pyacp.AgentThoughtChunk:
+		case *acputil.AgentThoughtChunk:
 			id, content = update.MessageID, update.Content
 		default:
 			continue
@@ -155,7 +154,7 @@ func chunkIDs(t *testing.T, e *editorFake) ([]string, []string) {
 			t.Fatalf("chunk without a message id: %#v", u)
 		}
 		ids = append(ids, *id)
-		texts = append(texts, content.(*pyacp.TextContentBlock).Text)
+		texts = append(texts, content.(*acputil.TextContentBlock).Text)
 	}
 	return ids, texts
 }
@@ -206,8 +205,8 @@ func TestATerminalReceiptFinishesTheReplyLikeMessageComplete(t *testing.T) {
 	projectEvent(t, a, "message.delta", `{"text": "next"}`, "b")
 	var ids, texts []string
 	for _, u := range updatesOf(editor) {
-		if chunk, ok := u.(*pyacp.AgentMessageChunk); ok {
-			texts = append(texts, chunk.Content.(*pyacp.TextContentBlock).Text)
+		if chunk, ok := u.(*acputil.AgentMessageChunk); ok {
+			texts = append(texts, chunk.Content.(*acputil.TextContentBlock).Text)
 			id := ""
 			if chunk.MessageID != nil {
 				id = *chunk.MessageID

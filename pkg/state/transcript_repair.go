@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -98,19 +98,19 @@ func TranscriptRowSnapshot(row map[string]any) string {
 		case string:
 			tag, data = "S", []byte(v)
 		case float64:
-			tag, data = "F", []byte(pyrepr.Float(v))
+			tag, data = "F", []byte(strconv.FormatFloat(v, 'f', -1, 64))
 		case float32:
-			tag, data = "F", []byte(pyrepr.Float(float64(v)))
+			tag, data = "F", []byte(strconv.FormatFloat(float64(v), 'f', -1, 64))
 		case int64:
 			tag, data = "I", []byte(strconv.FormatInt(v, 10))
 		case int:
 			tag, data = "I", []byte(strconv.Itoa(v))
 		case bool:
-			tag, data = "I", []byte(pyrepr.Repr(v))
+			tag, data = "I", []byte(anyutil.Quote(v))
 		case *big.Int:
 			tag, data = "I", []byte(v.String())
 		default:
-			tag, data = "I", []byte(pyrepr.Repr(v))
+			tag, data = "I", []byte(anyutil.Quote(v))
 		}
 		var size [8]byte
 		binary.BigEndian.PutUint64(size[:], uint64(len(data)))
@@ -178,7 +178,7 @@ func IsContentBlank(content any) (bool, error) {
 			if !ok {
 				continue
 			}
-			if kind, _ := part.get("type"); !pyrepr.Equal(kind, "text") {
+			if kind, _ := part.get("type"); !anyutil.Equal(kind, "text") {
 				continue
 			}
 			value, has := part.get("text")
@@ -269,12 +269,12 @@ func sameAsStored(msg map[string]any, rows []map[string]any, codec transcriptCod
 			}
 		}
 		role, _ := row["role"].(string)
-		if pyrepr.Equal(serialized["content"], codec.encode(loadedViewContent(role, codec.decode(row["content"])))) {
+		if anyutil.Equal(serialized["content"], codec.encode(loadedViewContent(role, codec.decode(row["content"])))) {
 			serialized["content"] = row["content"]
 		}
 		same := true
 		for _, column := range replayColumns {
-			if !pyrepr.Equal(row[column], serialized[column]) {
+			if !anyutil.Equal(row[column], serialized[column]) {
 				same = false
 				break
 			}
@@ -353,7 +353,7 @@ func resolveAndRepairTranscriptBatch(ctx context.Context, conn SQLiteConn, sessi
 					serialized["token_count"] = target["token_count"]
 				}
 				for _, column := range ownedColumns {
-					if !pyrepr.Equal(target[column], serialized[column]) {
+					if !anyutil.Equal(target[column], serialized[column]) {
 						if err := rewriteTranscriptRow(ctx, conn, sessionID, target, serialized); err != nil {
 							return nil, err
 						}
@@ -501,7 +501,7 @@ func restoreDisplayIndex(ctx context.Context, conn SQLiteConn, sessionID string,
 // Same role active clone of a row id, or the addressed inactive row when no unique clone exists
 func activeMessageRow(ctx context.Context, conn SQLiteConn, sessionID string, rowID int64, role string) (map[string]any, error) {
 	row, err := connRow(ctx, conn, "SELECT * FROM messages WHERE id = ? AND session_id = ?", rowID, sessionID)
-	if err != nil || row == nil || !pyrepr.Equal(row["role"], role) {
+	if err != nil || row == nil || !anyutil.Equal(row["role"], role) {
 		return nil, err
 	}
 	if active, _ := pyIntID(row["active"]); active == 1 {

@@ -10,10 +10,9 @@ import (
 	"runtime"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 const (
@@ -34,10 +33,10 @@ func isPermissionError(err error) bool { return errors.Is(err, fs.ErrPermission)
 // Stuck records keyed by entry name in file order
 type stuckState struct {
 	keys []string
-	recs map[string]*pyjson.Object
+	recs map[string]*jsonutil.Object
 }
 
-func (s *stuckState) set(name string, rec *pyjson.Object) {
+func (s *stuckState) set(name string, rec *jsonutil.Object) {
 	if _, ok := s.recs[name]; !ok {
 		s.keys = append(s.keys, name)
 	}
@@ -46,7 +45,7 @@ func (s *stuckState) set(name string, rec *pyjson.Object) {
 
 // Stuck records of root, empty when the file is missing, torn or not an object
 func readStuck(root string) *stuckState {
-	state := &stuckState{recs: map[string]*pyjson.Object{}}
+	state := &stuckState{recs: map[string]*jsonutil.Object{}}
 	data, err := os.ReadFile(filepath.Join(root, StuckStateName))
 	if err != nil {
 		return state
@@ -55,13 +54,13 @@ func readStuck(root string) *stuckState {
 	if !ok {
 		return state
 	}
-	v, err := pyjson.Loads(text)
-	obj, isObj := v.(*pyjson.Object)
+	v, err := jsonutil.Decode(text)
+	obj, isObj := v.(*jsonutil.Object)
 	if err != nil || !isObj {
 		return state
 	}
-	for _, k := range obj.Keys {
-		if rec, ok := obj.Vals[k].(*pyjson.Object); ok {
+	for _, k := range obj.Keys() {
+		if rec, ok := obj.Value(k).(*jsonutil.Object); ok {
 			state.set(k, rec)
 		}
 	}
@@ -75,12 +74,12 @@ func writeStuck(root string, state *stuckState) {
 		_ = os.Remove(path)
 		return
 	}
-	obj := pyjson.NewObject()
+	obj := jsonutil.NewObject()
 	for _, k := range state.keys {
 		obj.Keys = append(obj.Keys, k)
-		obj.Vals[k] = state.recs[k]
+		obj.Set(k, state.recs[k])
 	}
-	text, err := pyjson.Dumps(obj, pyjson.Indent(1), pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(obj, jsonutil.Indent(1), jsonutil.SortKeys())
 	if err != nil {
 		return
 	}
@@ -97,18 +96,18 @@ func writeStuck(root string, state *stuckState) {
 
 // Python float of a falsy-defaulted value, the conversion error raised like float()
 func floatOrZero(v any) (float64, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
-	return pyint.Float(v)
+	return anyutil.ToFloat(v)
 }
 
 // Whether a record still describes an entry this user cannot remove, by uid, age, fingerprint and blockers
-func stillStuck(root, name string, rec *pyjson.Object, now float64) (bool, error) {
-	if !numberEquals(rec.Vals["uid"], int64(os.Geteuid())) {
+func stillStuck(root, name string, rec *jsonutil.Object, now float64) (bool, error) {
+	if !numberEquals(rec.Value("uid"), int64(os.Geteuid())) {
 		return false, nil
 	}
-	since, err := floatOrZero(rec.Vals["since"])
+	since, err := floatOrZero(rec.Value("since"))
 	if err != nil {
 		return false, err
 	}
@@ -116,10 +115,10 @@ func stillStuck(root, name string, rec *pyjson.Object, now float64) (bool, error
 		return false, nil
 	}
 	fp, ok := entryFingerprint(filepath.Join(root, name))
-	if !fingerprintEquals(rec.Vals["fp"], fp, ok) {
+	if !fingerprintEquals(rec.Value("fp"), fp, ok) {
 		return false, nil
 	}
-	blockers, ok := rec.Vals["blockers"].([]any)
+	blockers, ok := rec.Value("blockers").([]any)
 	if !ok || len(blockers) == 0 {
 		return false, nil
 	}
@@ -159,7 +158,7 @@ func LoadStuckSkips(root string, persist bool) (map[string]bool, error) {
 	}
 	now := scratchNow()
 	filter := func(state *stuckState) (*stuckState, error) {
-		live := &stuckState{recs: map[string]*pyjson.Object{}}
+		live := &stuckState{recs: map[string]*jsonutil.Object{}}
 		for _, k := range state.keys {
 			stuck, err := stillStuck(root, k, state.recs[k], now)
 			if err != nil {
@@ -228,10 +227,10 @@ func rmtreeCollectingPermissionErrors(entry string) []string {
 
 // Command that clears entry, with a sudo free docker variant when docker is installed
 func RemovalHint(entry string) string {
-	hint := "sudo rm -rf " + pyshlex.Quote(entry)
+	hint := "sudo rm -rf " + shellutil.Quote(entry)
 	if _, err := exec.LookPath("docker"); err == nil {
 		hint += fmt.Sprintf("  (or without sudo: docker run --rm -v %s alpine rm -rf %s)",
-			pyshlex.Quote(filepath.Dir(entry)+":/s"), pyshlex.Quote("/s/"+filepath.Base(entry)))
+			shellutil.Quote(filepath.Dir(entry)+":/s"), shellutil.Quote("/s/"+filepath.Base(entry)))
 	}
 	return hint
 }
@@ -244,7 +243,7 @@ func recordStuck(root, entry string, blockers []string, audit *pruneAudit) {
 	}
 	uid := os.Geteuid()
 	kept := blockers[:min(len(blockers), maxStuckBlockers)]
-	rec := pyjson.NewObject()
+	rec := jsonutil.NewObject()
 	rec.Keys = []string{"fp", "since", "uid", "blockers"}
 	fpList := make([]any, len(fp))
 	for i, n := range fp {

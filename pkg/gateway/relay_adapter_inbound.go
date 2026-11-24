@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const relaySeenInboundMax = 512
@@ -189,7 +189,7 @@ func (a *RelayAdapter) withScope(chatID string, metadata map[string]any) map[str
 		key   string
 		cache map[string]string
 	}{{"scope_id", a.scopeByChat}, {"user_id", a.dmUserByChat}, {"profile", a.profileByChat}} {
-		if !pyrepr.Truthy(meta[field.key]) {
+		if !anyutil.IsTrue(meta[field.key]) {
 			if v := field.cache[chatID]; v != "" {
 				meta[field.key] = v
 			}
@@ -210,7 +210,7 @@ func (a *RelayAdapter) FrontsPlatform(platform Platform) bool {
 	}
 	ids, _ := lister.RelayIdentities().([]any)
 	for _, id := range ids {
-		if pair, ok := id.([]any); ok && len(pair) == 2 && pyrepr.Str(pair[0]) == value {
+		if pair, ok := id.([]any); ok && len(pair) == 2 && anyutil.String(pair[0]) == value {
 			return true
 		}
 	}

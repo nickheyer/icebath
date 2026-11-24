@@ -6,9 +6,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -31,7 +31,7 @@ func parkLogger() *slog.Logger { return slog.Default().With("logger", "tuigatewa
 
 // Whether an event may wait in the park, startup replayed delegations never
 func parkable(evt map[string]any) bool {
-	return !(evt["type"] == "async_delegation" && pyrepr.Truthy(evt["restored"]))
+	return !(evt["type"] == "async_delegation" && anyutil.IsTrue(evt["restored"]))
 }
 
 // Drops expired entries under the park lock and returns them for release outside it
@@ -54,8 +54,8 @@ func parkExpireLocked(now float64) []map[string]any {
 // Whether an event is a progress notice that yields to results
 func parkIsProgress(evt map[string]any) bool {
 	evtType := ""
-	if pyrepr.Truthy(evt["type"]) {
-		evtType = pyrepr.Str(evt["type"])
+	if anyutil.IsTrue(evt["type"]) {
+		evtType = anyutil.String(evt["type"])
 	}
 	return evtType == "heartbeat" || strings.HasPrefix(evtType, "watch_")
 }
@@ -70,9 +70,9 @@ func parkRelease(events []map[string]any) {
 		UnholdParked([]map[string]any{evt})
 		evtType := "completion"
 		if t, ok := evt["type"]; ok {
-			evtType = pyrepr.Str(t)
+			evtType = anyutil.String(t)
 		}
-		msg := "Dropping parked " + evtType + " notification past its retention window (key=" + pyrepr.Repr(parkKey(evt)) + ")"
+		msg := "Dropping parked " + evtType + " notification past its retention window (key=" + anyutil.Quote(parkKey(evt)) + ")"
 		if isDelegation {
 			parkLogger().Warn(msg)
 		} else {
@@ -83,8 +83,8 @@ func parkRelease(events []map[string]any) {
 
 // Owner session key of an event
 func parkKey(evt map[string]any) string {
-	if pyrepr.Truthy(evt["session_key"]) {
-		return pyrepr.Str(evt["session_key"])
+	if anyutil.IsTrue(evt["session_key"]) {
+		return anyutil.String(evt["session_key"])
 	}
 	return ""
 }
@@ -130,7 +130,7 @@ func ParkNotification(evt map[string]any) bool {
 	if !parkable(evt) {
 		return false
 	}
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	parkMu.Lock()
 	expired := parkExpireLocked(now)
 	admitted, displaced := parkAdmitLocked(evt, parkKey(evt))
@@ -143,9 +143,9 @@ func ParkNotification(evt map[string]any) bool {
 	for _, held := range displaced {
 		evtType := "completion"
 		if t, ok := evt["type"]; ok {
-			evtType = pyrepr.Str(t)
+			evtType = anyutil.String(t)
 		}
-		parkLogger().Debug("Dropping parked " + pyrepr.Str(held["type"]) + " notification to make room for a " + evtType + " (key=" + pyrepr.Repr(parkKey(held)) + ")")
+		parkLogger().Debug("Dropping parked " + anyutil.String(held["type"]) + " notification to make room for a " + evtType + " (key=" + anyutil.Quote(parkKey(held)) + ")")
 	}
 	return admitted
 }
@@ -160,7 +160,7 @@ func ClaimParked(owns func(map[string]any) bool) []map[string]any {
 		parkMu.Unlock()
 		return nil
 	}
-	expired := parkExpireLocked(pythread.Monotonic())
+	expired := parkExpireLocked(timeutil.Monotonic())
 	snapshot := make([]map[string]any, len(parkedList))
 	for i, p := range parkedList {
 		snapshot[i] = p.evt

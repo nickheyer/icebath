@@ -7,24 +7,23 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-// Integer coercion for telemetry fields, nil when int of the value raises
+// Integer coercion for telemetry fields, nil when the value does not convert
 func telemetrySafeInt(value any) any {
-	n, err := pyint.Of(value)
-	if err != nil || !n.IsInt64() {
+	n, err := anyutil.ToInt(value)
+	if err != nil {
 		return nil
 	}
-	return int(n.Int64())
+	return int(n)
 }
 
-// Integer reading of a telemetry field, zero for None
-func telemetryInt(t *pyjson.Object, key string) int {
+// Integer reading of a telemetry field, zero when absent or null
+func telemetryInt(t *jsonutil.Object, key string) int {
 	v, _ := t.Get(key)
 	n, _ := telemetrySafeInt(v).(int)
 	return n
@@ -64,9 +63,9 @@ func estimateRequestRowsRough(ctx context.Context, rows []map[string]any, system
 
 // CompressionTelemetry is the content free per attempt telemetry a compressor embeds and each phase fills
 type CompressionTelemetry struct {
-	Seed                     *pyjson.Object
-	Active                   *pyjson.Object
-	Last                     *pyjson.Object
+	Seed                     *jsonutil.Object
+	Active                   *jsonutil.Object
+	Last                     *jsonutil.Object
 	LastAuxModelFailureModel string
 	LastAuxModelFailureError string
 	LastSummaryFallbackUsed  bool
@@ -86,10 +85,10 @@ type TelemetryAttempt struct {
 }
 
 // Seeds the active and last telemetry record of one compression attempt
-func (t *CompressionTelemetry) Begin(at TelemetryAttempt) *pyjson.Object {
+func (t *CompressionTelemetry) Begin(at TelemetryAttempt) *jsonutil.Object {
 	seed := t.Seed
 	if seed == nil {
-		seed = &pyjson.Object{}
+		seed = &jsonutil.Object{}
 	}
 	seeded := func(explicit, key string) any {
 		if explicit != "" {
@@ -99,17 +98,17 @@ func (t *CompressionTelemetry) Begin(at TelemetryAttempt) *pyjson.Object {
 		return v
 	}
 	attemptID, sessionID, triggerSource := seeded(at.AttemptID, "attempt_id"), seeded(at.SessionID, "session_id"), seeded(at.TriggerSource, "trigger_source")
-	if !pyrepr.Truthy(attemptID) {
+	if !anyutil.IsTrue(attemptID) {
 		attemptID = strings.ReplaceAll(uuid.NewString(), "-", "")
 	}
-	if !pyrepr.Truthy(sessionID) {
+	if !anyutil.IsTrue(sessionID) {
 		sessionID = ""
 	}
-	if !pyrepr.Truthy(triggerSource) {
+	if !anyutil.IsTrue(triggerSource) {
 		triggerSource = "unknown"
 	}
 	overflowReason, _ := seed.Get("overflow_reason")
-	telemetry := &pyjson.Object{}
+	telemetry := &jsonutil.Object{}
 	for _, kv := range []struct {
 		k string
 		v any
@@ -208,7 +207,7 @@ func (t *CompressionTelemetry) NoteAuxRouteFallback(route map[string]string) {
 	}
 	if telemetry := t.Active; telemetry != nil {
 		telemetry.Set("fallback_used", true)
-		if v, _ := telemetry.Get("failure_class"); !pyrepr.Truthy(v) {
+		if v, _ := telemetry.Get("failure_class"); !anyutil.IsTrue(v) {
 			telemetry.Set("failure_class", "aux_model_fallback")
 		}
 	}

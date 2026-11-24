@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -93,7 +93,7 @@ func orLastActivity(t *testing.T, db *SessionDB, id string) float64 {
 	return f
 }
 
-func orFind(t *testing.T, db *SessionDB) []*pyjson.Object {
+func orFind(t *testing.T, db *SessionDB) []*jsonutil.Object {
 	t.Helper()
 	records, err := db.FindOrphanedGatewaySessions(context.Background(), nil)
 	if err != nil {
@@ -111,7 +111,7 @@ func orAdopt(t *testing.T, db *SessionDB, orphan, donor string) bool {
 	return ok
 }
 
-func orSession(t *testing.T, db *SessionDB, id string) *pyjson.Object {
+func orSession(t *testing.T, db *SessionDB, id string) *jsonutil.Object {
 	t.Helper()
 	row, err := db.GetSession(context.Background(), id)
 	if err != nil || row == nil {
@@ -204,7 +204,7 @@ func TestAPredecessorOfAnotherPlatformIsNotADonor(t *testing.T) {
 	}
 }
 
-func orResolve(t *testing.T, db *SessionDB) *pyjson.Object {
+func orResolve(t *testing.T, db *SessionDB) *jsonutil.Object {
 	t.Helper()
 	user, key, chat, kind := orUser, orKey, orUser, "dm"
 	row, err := db.FindLatestGatewaySessionForPeer(context.Background(), GatewayPeerQuery{Source: "telegram", UserID: &user, SessionKey: &key, ChatID: &chat, ChatType: &kind})

@@ -5,14 +5,15 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // CodexSessionDB is the session store surface the runtime reads thread bindings from and queues accounting into
@@ -124,7 +125,7 @@ func codexRequestFailureDetails(err error) (*int, string) {
 	current := err
 	for current != nil && !codexSeenError(seen, current) && len(seen) < 8 {
 		seen[current] = true
-		classes = append(classes, pyrepr.TypeName(current))
+		classes = append(classes, codexErrorLinkKind(current))
 		if bodyBytes == nil {
 			var carrier failedRequestCarrier
 			if errors.As(current, &carrier) {
@@ -137,6 +138,23 @@ func codexRequestFailureDetails(err error) (*int, string) {
 		current = codexNextError(current)
 	}
 	return bodyBytes, strings.Join(classes, " <- ")
+}
+
+// Label of one link of an error chain on its own: the kind it declares, else its Go type name
+func codexErrorLinkKind(err error) string {
+	if k, ok := err.(interface{ ErrorKind() string }); ok {
+		if label := k.ErrorKind(); label != "" {
+			return label
+		}
+	}
+	t := reflect.TypeOf(err)
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if name := t.Name(); name != "" {
+		return name
+	}
+	return t.String()
 }
 
 func codexSeenError(seen map[error]bool, err error) (found bool) {
@@ -161,32 +179,32 @@ func codexNextError(err error) error {
 	return nil
 }
 
-// Non negative int of a usage value, bools and unparsable text are zero and a NaN float panics like int() raises
+// Non negative int of a usage value, bools and unparsable text are zero and a NaN or infinite float panics
 func codexCoerceUsageInt(value any) int {
 	switch v := value.(type) {
 	case bool:
 		return 0
 	case float64:
 		if math.IsNaN(v) || math.IsInf(v, 0) {
-			panic(fmt.Sprintf("cannot convert float %s to integer", pyrepr.Repr(v)))
+			panic(fmt.Sprintf("cannot convert float %s to integer", strconv.FormatFloat(v, 'f', -1, 64)))
 		}
-		return max(int(v), 0)
+		switch {
+		case v <= 0:
+			return 0
+		case v >= math.MaxInt:
+			return math.MaxInt
+		}
+		return int(v)
 	case string:
 		if n, ok := codexToolsParseIntText(strings.TrimSpace(v)); ok {
-			if i, isInt := pyrepr.Int(n); isInt && i.IsInt64() {
-				return max(int(i.Int64()), 0)
+			if i, isInt := n.(int64); isInt {
+				return int(min(max(i, 0), math.MaxInt))
 			}
 		}
 		return 0
 	}
-	if n, ok := pyrepr.Int(value); ok {
-		if !n.IsInt64() {
-			if n.Sign() < 0 {
-				return 0
-			}
-			return math.MaxInt
-		}
-		return max(int(n.Int64()), 0)
+	if n, ok := anyutil.Int(value); ok {
+		return int(min(max(n, 0), math.MaxInt))
 	}
 	return 0
 }
@@ -199,7 +217,7 @@ func codexQueueTokenCounts(agent CodexRuntimeAgent, failMsg string, failExtra []
 	}
 	fail := func(err any) {
 		args := append([]any{agent.SessionID()}, failExtra...)
-		pkgLog().Debug(pyPercentFormat(failMsg, append(args, pyrepr.Str(err))...))
+		pkgLog().Debug(fmt.Sprintf(failMsg, append(args, anyutil.String(err))...))
 	}
 	defer func() {
 		if r := recover(); r != nil {
@@ -215,22 +233,6 @@ func codexQueueTokenCounts(agent CodexRuntimeAgent, failMsg string, failExtra []
 	if err := db.QueueTokenCounts(agent.SessionID(), agent.SessionSource(), counts()); err != nil {
 		fail(err.Error())
 	}
-}
-
-// Minimal printf of a logging format with %s and %d placeholders
-func pyPercentFormat(format string, args ...any) string {
-	var b strings.Builder
-	i := 0
-	for j := 0; j < len(format); j++ {
-		if format[j] == '%' && j+1 < len(format) && (format[j+1] == 's' || format[j+1] == 'd') && i < len(args) {
-			b.WriteString(pyrepr.Str(args[i]))
-			i++
-			j++
-			continue
-		}
-		b.WriteByte(format[j])
-	}
-	return b.String()
 }
 
 // Translates codex token usage into session accounting, a usage less turn still counts as one call
@@ -261,7 +263,7 @@ func recordCodexAppServerUsage(agent CodexRuntimeAgent, turn *CodexTurnResult, m
 	canonical := CanonicalUsage{
 		InputTokens: max(0, codexCoerceUsageInt(get("inputTokens"))-cacheRead), OutputTokens: codexCoerceUsageInt(get("outputTokens")),
 		CacheReadTokens: cacheRead, ReasoningTokens: codexCoerceUsageInt(get("reasoningOutputTokens")), RequestCount: 1,
-		RawUsage: pyjson.Plain(usage).(map[string]any),
+		RawUsage: jsonutil.Plain(usage).(map[string]any),
 	}
 	promptTokens := canonical.PromptTokens()
 	totalTokens := codexCoerceUsageInt(get("totalTokens"))
@@ -347,7 +349,7 @@ func recordCodexAppServerCompaction(agent CodexRuntimeAgent, turn *CodexTurnResu
 	if sessionLabel == "" {
 		sessionLabel = "none"
 	}
-	pkgLog().Info(fmt.Sprintf("codex app-server compaction observed: session=%s thread=%s turn=%s force=%s", sessionLabel, turn.ThreadID, turn.TurnID, pyrepr.Str(force)))
+	pkgLog().Info(fmt.Sprintf("codex app-server compaction observed: session=%s thread=%s turn=%s force=%s", sessionLabel, turn.ThreadID, turn.TurnID, anyutil.String(force)))
 	if !force {
 		func() {
 			defer func() { _ = recover() }()
@@ -510,14 +512,7 @@ func makeCodexAppServerEventBridge(agent CodexRuntimeAgent) func(note any) {
 
 // Float of a decoded JSON int or float, false for anything else
 func codexNumber(v any) (float64, bool) {
-	if f, ok := v.(float64); ok {
-		return f, true
-	}
-	if n, ok := pyrepr.Int(v); ok {
-		f, _ := strconv.ParseFloat(n.String(), 64)
-		return f, true
-	}
-	return 0, false
+	return anyutil.Float(v)
 }
 
 // Drops the session so the next turn respawns codex instead of reusing a dead client

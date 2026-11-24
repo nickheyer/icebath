@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/logging"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 func TestParseSinceHours(t *testing.T) {
@@ -196,7 +196,7 @@ func TestParseSinceBeyondTheDatetimeRangeRaisesOverflowError(t *testing.T) {
 		"1000000d":              "the --since window 1000000d reaches back before the year 1",
 	} {
 		_, ok, err := parseLogSince(since)
-		var raised *pyint.Error
+		var raised *errorutil.Error
 		if ok || !errors.As(err, &raised) || raised.Kind != "OverflowError" || err.Error() != want {
 			t.Fatalf("%s gave %v %v", since, ok, err)
 		}

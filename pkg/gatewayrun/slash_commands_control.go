@@ -13,9 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -145,9 +145,9 @@ func (r *GatewayRunner) handlePlatformCommand(ctx context.Context, event *gatewa
 			i18n.T(ctx, "gateway.platform.connected", "", map[string]any{"platforms": connected})}
 		for _, p := range failedOrder {
 			info := failed[p]
-			if pyrepr.Truthy(info["paused"]) {
+			if anyutil.IsTrue(info["paused"]) {
 				reason := info["pause_reason"]
-				if !pyrepr.Truthy(reason) {
+				if !anyutil.IsTrue(reason) {
 					reason = i18n.T(ctx, "gateway.platform.reason_default", "", nil)
 				}
 				lines = append(lines, i18n.T(ctx, "gateway.platform.item_paused", "", map[string]any{"name": string(p), "reason": reason}))
@@ -182,7 +182,7 @@ func (r *GatewayRunner) handlePlatformCommand(ctx context.Context, event *gatewa
 	}
 	name := string(platform)
 	info, queued := failed[platform]
-	paused := queued && pyrepr.Truthy(info["paused"])
+	paused := queued && anyutil.IsTrue(info["paused"])
 	if action == "pause" {
 		if !queued {
 			return i18n.T(ctx, "gateway.platform.not_queued_pause", "", map[string]any{"name": name}), nil
@@ -227,7 +227,7 @@ func (r *GatewayRunner) handleRestartCommand(ctx context.Context, event *gateway
 	icebathHome := home.Dir(ctx)
 	writeMarker := func(name string, build func() map[string]any, label string) {
 		if err := config.AtomicJSONWriteWith(ctx, filepath.Join(icebathHome, name), build()); err != nil {
-			pkgLog().Debug(fmt.Sprintf("Failed to write restart %s: %s", label, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Failed to write restart %s: %s", label, err.Error()))
 		}
 	}
 	notifyPayload := func() map[string]any {
@@ -362,7 +362,7 @@ func (r *GatewayRunner) handleSetHomeCommand(ctx context.Context, event *gateway
 		UserID: optional(source.UserID), ScopeID: optional(source.ScopeID)}
 	homeChannel.PostInit()
 	if err := gateway.PersistHomeChannel(ctx, homeChannel, !viaRelay); err != nil {
-		return saveFailed(pyrepr.ExceptionMessage(err)), nil
+		return saveFailed(err.Error()), nil
 	}
 	threadText := ""
 	if threadID != nil {
@@ -374,7 +374,7 @@ func (r *GatewayRunner) handleSetHomeCommand(ctx context.Context, event *gateway
 		}
 		return config.SaveEnvValueContext(ctx, home.Dir(ctx), homeThreadEnvVar(ctx, platformName), threadText)
 	}(); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Home config saved but legacy env persistence failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Home config saved but legacy env persistence failed: %s", err.Error()))
 	}
 	platformConfig := r.config.Platforms[source.Platform]
 	if platformConfig == nil {

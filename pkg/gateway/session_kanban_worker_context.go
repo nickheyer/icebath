@@ -12,38 +12,38 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Closed once this worker's turns ended, stopping the submitter watch
 var kanbanTurnsDone = make(chan struct{})
 
 // Item of the decoded kanban context, KeyError when absent
-func kanbanContextItem(context *pyjson.Object, key string) (any, error) {
+func kanbanContextItem(context *jsonutil.Object, key string) (any, error) {
 	v, ok := context.Get(key)
 	if !ok {
-		return nil, &PyError{Kind: "KeyError", Msg: pyrepr.Repr(key)}
+		return nil, &PyError{Kind: "KeyError", Msg: anyutil.Quote(key)}
 	}
 	return v, nil
 }
 
 // Decoded kanban context of a policy's kanban_json text, nil for a chat turn, refusing a policy whose source is not kanban
-func decodeKanbanWorkerContext(text, source any) (*pyjson.Object, error) {
+func decodeKanbanWorkerContext(text, source any) (*jsonutil.Object, error) {
 	raw, _ := text.(string)
 	if raw == "" {
 		raw = "null"
 	}
-	decoded, err := pyjson.Loads(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil || decoded == nil {
 		return nil, err
 	}
-	if !pyjson.Equal(source, "kanban") {
+	if !anyutil.Equal(source, "kanban") {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid_kanban_policy"}
 	}
-	kctx, ok := decoded.(*pyjson.Object)
+	kctx, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the kanban worker context is %s, expected a mapping", errchain.Kind(decoded))}
 	}
@@ -67,18 +67,18 @@ func kanbanWorkerSpawnEnv(ctx context.Context, policy *LocalSessionPolicy) (map[
 		v, err = kanbanContextItem(kctx, key)
 		return v
 	}
-	text := func(key string) string { return pyrepr.Str(item(key)) }
+	text := func(key string) string { return anyutil.String(item(key)) }
 	env := map[string]string{"ICEBATH_KANBAN_TASK": text("task_id"), "ICEBATH_KANBAN_BOARD": text("board"),
 		"ICEBATH_KANBAN_DB": text("db"), "ICEBATH_KANBAN_RUN_ID": text("run_id"),
 		"ICEBATH_KANBAN_CLAIM_LOCK": text("claim_lock"), "ICEBATH_KANBAN_WORKSPACE": text("workspace"),
 		"ICEBATH_KANBAN_WORKSPACES_ROOT": text("workspaces_root"), "ICEBATH_PROFILE": text("profile"),
 		"ICEBATH_SESSION_SOURCE": "kanban"}
 	for _, pair := range [][2]string{{"ICEBATH_KANBAN_BRANCH", "branch"}, {"ICEBATH_TENANT", "tenant"}} {
-		if v := item(pair[1]); pyrepr.Truthy(v) {
-			env[pair[0]] = pyrepr.Str(v)
+		if v := item(pair[1]); anyutil.IsTrue(v) {
+			env[pair[0]] = anyutil.String(v)
 		}
 	}
-	if pyrepr.Truthy(item("goal_mode")) {
+	if anyutil.IsTrue(item("goal_mode")) {
 		env["ICEBATH_KANBAN_GOAL_MODE"] = "1"
 	}
 	maxRuntime := item("max_runtime_seconds")
@@ -122,16 +122,16 @@ func kanbanClaimTTL(ctx context.Context, dbPath, taskID string, runID int64) (in
 	if err != nil || !found {
 		return 0, false, err
 	}
-	decoded, err := pyjson.Loads(claimedPayload.String)
+	decoded, err := jsonutil.Decode(claimedPayload.String)
 	if err != nil {
 		return 0, false, err
 	}
-	obj, ok := decoded.(*pyjson.Object)
+	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return 0, false, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the kanban claimed event is %s, expected a mapping", errchain.Kind(decoded))}
 	}
-	expires, isInt := obj.GetOr("expires", nil).(int64)
-	if !isInt || !pyrepr.Truthy(claimedAt) {
+	expires, isInt := obj.ValueOr("expires", nil).(int64)
+	if !isInt || !anyutil.IsTrue(claimedAt) {
 		return 0, false, nil
 	}
 	created, err := claimInt(claimedAt)
@@ -142,9 +142,9 @@ func kanbanClaimTTL(ctx context.Context, dbPath, taskID string, runID int64) (in
 }
 
 // Binds the adopted worker to its Kanban claim before tool discovery, refusing a stale claim and following the submitter; its worker protocol env came with its spawn
-func bindKanbanWorkerContext(ctx context.Context, frame *pyjson.Object) error {
-	policy, _ := frame.GetOr("policy", nil).(*pyjson.Object)
-	kctx, err := decodeKanbanWorkerContext(policy.GetOr("kanban_json", nil), policy.GetOr("source", nil))
+func bindKanbanWorkerContext(ctx context.Context, frame *jsonutil.Object) error {
+	policy, _ := frame.ValueOr("policy", nil).(*jsonutil.Object)
+	kctx, err := decodeKanbanWorkerContext(policy.ValueOr("kanban_json", nil), policy.ValueOr("source", nil))
 	if err != nil || kctx == nil {
 		return err
 	}
@@ -156,9 +156,9 @@ func bindKanbanWorkerContext(ctx context.Context, frame *pyjson.Object) error {
 		v, err = kanbanContextItem(kctx, key)
 		return v
 	}
-	dbPath, taskID, claimLock := pyrepr.Str(item("db")), pyrepr.Str(item("task_id")), item("claim_lock")
+	dbPath, taskID, claimLock := anyutil.String(item("db")), anyutil.String(item("task_id")), item("claim_lock")
 	runID, _ := item("run_id").(int64)
-	workspace := pyrepr.Str(item("workspace"))
+	workspace := anyutil.String(item("workspace"))
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func bindKanbanWorkerContext(ctx context.Context, frame *pyjson.Object) error {
 				return err
 			}
 			if task == nil || task.Status != "running" || task.CurrentRunID == nil || *task.CurrentRunID != runID ||
-				task.ClaimLock == nil || !pyjson.Equal(*task.ClaimLock, claimLock) {
+				task.ClaimLock == nil || !anyutil.Equal(*task.ClaimLock, claimLock) {
 				return runtimeRefusal("stale_kanban_claim")
 			}
 			fingerprint := kanban.UnverifiedWorkerFingerprint

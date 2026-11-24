@@ -15,12 +15,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 const setupCancelled = -1
@@ -236,7 +236,7 @@ func (m *MemorySetup) installDeps(ctx context.Context, name string) error {
 
 // Reports whether a shell split check command exits zero within five seconds
 func externalCheckPasses(ctx context.Context, check string) bool {
-	argv, err := pyshlex.SplitPOSIX(check, false)
+	argv, err := shellutil.Split(check)
 	if err != nil || len(argv) == 0 {
 		return false
 	}
@@ -470,7 +470,7 @@ func whenMatches(cfg, when map[string]any) bool {
 	return true
 }
 
-func pyEqual(a, b any) bool { return pyrepr.Repr(a) == pyrepr.Repr(b) }
+func pyEqual(a, b any) bool { return anyutil.Quote(a) == anyutil.Quote(b) }
 
 // Interactive provider picker and schema walk that saves activation, provider config and secrets
 func (m *MemorySetup) CmdSetup(ctx context.Context) error {
@@ -614,7 +614,7 @@ func (m *MemorySetup) CmdStatus(ctx context.Context) error {
 		if dm, ok := display.(map[string]any); ok && len(dm) > 0 {
 			m.printf("\n  %s config:\n", providerName)
 			for _, k := range config.MappingKeys(dm) {
-				m.printf("    %s: %s\n", k, pyrepr.Str(dm[k]))
+				m.printf("    %s: %s\n", k, anyutil.String(dm[k]))
 			}
 		}
 		if parked, ok := ParkedProviderNotice(ctx, m.Env, providerName); ok && parked != "" {

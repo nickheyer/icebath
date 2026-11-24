@@ -12,12 +12,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Interrupts the gateway turn for a shutdown signal, then sleeps the stop signal grace of the settings for the profile of ctx
@@ -86,7 +86,7 @@ func takeTurnAuthorFromProcessEnv() map[string]any {
 	if author == nil {
 		return nil
 	}
-	m, _ := pyjson.Plain(author).(map[string]any)
+	m, _ := jsonutil.Plain(author).(map[string]any)
 	return m
 }
 
@@ -339,7 +339,7 @@ func runSingleQueryMode(c *CLI, query, image string, quiet, streamJSON bool) {
 		queryLabel = "[image attached]"
 	}
 	if queryLabel != "" {
-		fmt.Fprintln(c.console.Out, pyrich.Render(fmt.Sprintf("[bold blue]%s[/] %s", i18n.T(c.ctx, "cli.single_query.query_label", "", nil), queryLabel), c.console.ShouldUseColor()))
+		fmt.Fprintln(c.console.Out, consoleutil.Render(fmt.Sprintf("[bold blue]%s[/] %s", consoleutil.Escape(i18n.T(c.ctx, "cli.single_query.query_label", "", nil)), consoleutil.Escape(queryLabel)), c.console.ShouldUseColor()))
 	}
 	c.showSecurityAdvisories()
 	c.singleQueryTurnAuthor = takeTurnAuthorFromProcessEnv()

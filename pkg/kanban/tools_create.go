@@ -11,17 +11,17 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session id only when this profile's state database holds it, nil when absent or unopenable
 func persistedSessionID(k *kanbanCall, sessionID any) (*string, error) {
-	if !pyrepr.Truthy(sessionID) {
+	if !anyutil.IsTrue(sessionID) {
 		return nil, nil
 	}
 	db, err := state.Open(home.StatePath(k.home()), state.Options{ReadOnly: true})
@@ -46,7 +46,7 @@ func persistedSessionID(k *kanbanCall, sessionID any) (*string, error) {
 
 // Optional text of a create argument Python strips and treats as absent when empty, an attribute error for other types
 func strippedArg(value any) (*string, error) {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return nil, nil
 	}
 	text, isText := value.(string)
@@ -66,7 +66,7 @@ func handleCreate(k *kanbanCall) (string, error) {
 		return "", err
 	}
 	assignee := k.get("assignee")
-	if !pyrepr.Truthy(assignee) {
+	if !anyutil.IsTrue(assignee) {
 		return "", reject("assignee is required — name the profile that should execute this " +
 			"task (the dispatcher will only spawn tasks with an assignee)")
 	}
@@ -88,11 +88,11 @@ func handleCreate(k *kanbanCall) (string, error) {
 		return "", err
 	}
 	modelOverride, providerOverride := k.get("model"), k.get("provider")
-	if !pyrepr.Truthy(modelOverride) && pyrepr.Truthy(providerOverride) {
+	if !anyutil.IsTrue(modelOverride) && anyutil.IsTrue(providerOverride) {
 		return "", reject("'provider' requires 'model' to be set as well")
 	}
 	rawParents := k.get("parents")
-	if !pyrepr.Truthy(rawParents) {
+	if !anyutil.IsTrue(rawParents) {
 		rawParents = []any{}
 	}
 	parentItems, _, err := coerceStrList(rawParents, "parents", "task ids", false)
@@ -147,9 +147,9 @@ func handleCreate(k *kanbanCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		o := CreateTaskOptions{Title: strings.TrimSpace(pyrepr.Str(title)), Triage: triage, GoalMode: goalMode, Board: board,
+		o := CreateTaskOptions{Title: strings.TrimSpace(anyutil.String(title)), Triage: triage, GoalMode: goalMode, Board: board,
 			ProjectSourceTaskID: projectSourceTaskID, SessionID: sessionID}
-		assigneeText := pyrepr.Str(assignee)
+		assigneeText := anyutil.String(assignee)
 		o.Assignee = &assigneeText
 		createdBy := persistedIdentity(k.ctx)
 		o.CreatedBy = &createdBy
@@ -159,7 +159,7 @@ func handleCreate(k *kanbanCall) (string, error) {
 		if raw := k.get("completion_contract"); raw != nil {
 			contract, isText := raw.(string)
 			if !isText {
-				contract = "\x00" + pyrepr.Str(raw)
+				contract = "\x00" + anyutil.String(raw)
 			}
 			o.CompletionContract = &contract
 		}
@@ -207,7 +207,7 @@ func handleCreate(k *kanbanCall) (string, error) {
 			o.workspacePathRaw = workspacePath
 		}
 		tenant := k.get("tenant")
-		if !pyrepr.Truthy(tenant) {
+		if !anyutil.IsTrue(tenant) {
 			tenant = nil
 			if inherited, set := os.LookupEnv("ICEBATH_TENANT"); set {
 				tenant = inherited
@@ -218,38 +218,38 @@ func handleCreate(k *kanbanCall) (string, error) {
 			o.tenantRaw = tenant
 		}
 		idempotencyKey := k.get("idempotency_key")
-		bind(&o.IdempotencyKey, idempotencyKey, map[bool]int{true: 1, false: 14}[pyrepr.Truthy(idempotencyKey)], pyrepr.Truthy(idempotencyKey))
-		o.idempotencyKeyFalsy = idempotencyKey != nil && !pyrepr.Truthy(idempotencyKey)
+		bind(&o.IdempotencyKey, idempotencyKey, map[bool]int{true: 1, false: 14}[anyutil.IsTrue(idempotencyKey)], anyutil.IsTrue(idempotencyKey))
+		o.idempotencyKeyFalsy = idempotencyKey != nil && !anyutil.IsTrue(idempotencyKey)
 		o.MaxRuntimeSeconds = bindInt(maxRuntime, 15)
 		o.GoalMaxTurns = bindInt(goalMaxTurns, 22)
 		if workspaceKind != nil {
-			kind := pyrepr.Str(workspaceKind)
+			kind := anyutil.String(workspaceKind)
 			o.WorkspaceKind = &kind
 		}
 		if projectID != nil {
-			project := pyrepr.Str(projectID)
+			project := anyutil.String(projectID)
 			o.ProjectID = &project
 		}
 		if hasSkills {
 			o.Skills = []string{}
 			for _, item := range skillItems {
-				if pyrepr.Truthy(item) {
-					o.Skills = append(o.Skills, pyrepr.Str(item))
+				if anyutil.IsTrue(item) {
+					o.Skills = append(o.Skills, anyutil.String(item))
 				}
 			}
 		}
 		for _, item := range parentItems {
-			if !pyrepr.Truthy(item) {
+			if !anyutil.IsTrue(item) {
 				continue
 			}
-			o.Parents = append(o.Parents, pyrepr.Str(item))
+			o.Parents = append(o.Parents, anyutil.String(item))
 			if _, err := sqliteBind(item, len(o.Parents)); err != nil && parentBinding == nil {
 				parentBinding = err
 			}
 		}
 		o.InitialStatus = "running"
-		if raw := k.get("initial_status"); pyrepr.Truthy(raw) {
-			o.InitialStatus = pyrepr.Str(raw)
+		if raw := k.get("initial_status"); anyutil.IsTrue(raw) {
+			o.InitialStatus = anyutil.String(raw)
 		}
 		if selectBinding != nil || parentBinding != nil || insertBinding != nil {
 			probe := o
@@ -288,8 +288,8 @@ func handleCreate(k *kanbanCall) (string, error) {
 		}
 		fields := []any{"task_id", newTID}
 		landed := fieldsOf(created, createdFields)
-		for _, name := range landed.Keys {
-			fields = append(fields, name, landed.Vals[name])
+		for _, name := range landed.Keys() {
+			fields = append(fields, name, landed.Value(name))
 		}
 		var wait *Event
 		for _, e := range events {
@@ -339,7 +339,7 @@ func createArgumentError(err error, workspaceKind any, parentItems []any) error 
 		return err
 	}
 	if _, isText := workspaceKind.(string); workspaceKind != nil && !isText {
-		passed := ", got " + pyrepr.Str(workspaceKind)
+		passed := ", got " + anyutil.String(workspaceKind)
 		if strings.HasPrefix(ve.Msg, "workspace_kind must be one of ") && strings.HasSuffix(ve.Msg, passed) {
 			if !pyHashable(workspaceKind) {
 				return unhashableSetError(workspaceKind)
@@ -355,7 +355,7 @@ func createArgumentError(err error, workspaceKind any, parentItems []any) error 
 			named[id] = true
 		}
 		for _, item := range parentItems {
-			if !pyrepr.Truthy(item) || !named[pyrepr.Str(item)] {
+			if !anyutil.IsTrue(item) || !named[anyutil.String(item)] {
 				continue
 			}
 			if _, isText := item.(string); !isText {
@@ -438,10 +438,10 @@ func resolveNotifyTarget(k *kanbanCall) *NotifySubOptions {
 	if platform == "tui" {
 		chatID = liveTUISessionKey(k.ctx, chatID, notifierProfile)
 	}
-	metadata := pyjson.NewObject()
+	metadata := jsonutil.NewObject()
 	for _, item := range [][2]any{{"thread_id", optStrValue(threadID)}, {"chat_type", optStrValue(chatType)},
 		{"scope_id", env("ICEBATH_SESSION_SCOPE_ID")}, {"parent_chat_id", env("ICEBATH_SESSION_PARENT_CHAT_ID")}} {
-		if pyrepr.Truthy(item[1]) {
+		if anyutil.IsTrue(item[1]) {
 			metadata.Set(item[0].(string), item[1])
 		}
 	}
@@ -510,10 +510,10 @@ func maybeAutoSubscribe(k *kanbanCall, conn state.SQLiteConn, taskID string) (su
 		platform, _ := sub.Get("platform")
 		chatID, _ := sub.Get("chat_id")
 		thread, _ := sub.Get("thread_id")
-		if !pyrepr.Truthy(thread) {
+		if !anyutil.IsTrue(thread) {
 			thread = ""
 		}
-		if pyjson.Equal(platform, target.Platform) && pyjson.Equal(chatID, target.ChatID) && pyjson.Equal(thread, wantThread) {
+		if anyutil.Equal(platform, target.Platform) && anyutil.Equal(chatID, target.ChatID) && anyutil.Equal(thread, wantThread) {
 			return true
 		}
 	}
@@ -533,10 +533,10 @@ func handleUnblock(k *kanbanCall) (string, error) {
 		return "", err
 	}
 	raw := k.get("task_id")
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return "", reject("task_id is required")
 	}
-	tid := pyrepr.Str(raw)
+	tid := anyutil.String(raw)
 	if err := enforceWorkerTaskOwnership(tid); err != nil {
 		return "", err
 	}
@@ -562,12 +562,12 @@ func handleLink(k *kanbanCall) (string, error) {
 		return "", err
 	}
 	parentID, childID := k.get("parent_id"), k.get("child_id")
-	if !pyrepr.Truthy(parentID) || !pyrepr.Truthy(childID) {
+	if !anyutil.IsTrue(parentID) || !anyutil.IsTrue(childID) {
 		return "", reject("both parent_id and child_id are required")
 	}
 	return withBoard(k.ctx, k.get("board"), false, func(conn state.SQLiteConn) (string, error) {
-		expected := expectedRunID(pyrepr.Str(childID))
-		if pyjson.Equal(parentID, childID) {
+		expected := expectedRunID(anyutil.String(childID))
+		if anyutil.Equal(parentID, childID) {
 			return "", &ValueError{"a task cannot depend on itself"}
 		}
 		var missing []any

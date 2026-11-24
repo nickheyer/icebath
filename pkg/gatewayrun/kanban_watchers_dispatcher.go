@@ -7,16 +7,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Kanban calls of the dispatcher tick, the kanban package functions and the live board listing
@@ -52,7 +53,7 @@ func resolveDispatcherSettings(ctx context.Context) dispatcherSettings {
 	if assignee := strings.TrimSpace(settings.KanbanDefaultAssignee.Get(ctx)); assignee != "" {
 		defaultAssignee = &assignee
 		pkgLog().Info(fmt.Sprintf("kanban dispatcher: default_assignee=%s (unassigned ready tasks "+
-			"will route to this profile)", pyrepr.StrRepr(assignee)))
+			"will route to this profile)", strconv.Quote(assignee)))
 	}
 	return dispatcherSettings{
 		interval:                max(settings.KanbanDispatchIntervalSeconds.Get(ctx).Seconds(), 1.0),
@@ -98,7 +99,7 @@ func (d *kanbanDispatcher) boardDBFingerprint(ctx context.Context, slug string) 
 	if err != nil {
 		return boardDBFingerprint{}, err
 	}
-	resolved, err := pypath.Resolve(pypath.Expanduser(path))
+	resolved, err := pathutil.Resolve(pathutil.ExpandUser(path))
 	if err != nil {
 		resolved = path
 	}
@@ -134,7 +135,7 @@ func (d *kanbanDispatcher) quarantineLifted(slug string, fingerprint boardDBFing
 	if !ok {
 		return true
 	}
-	age := pythread.Monotonic() - entry.at
+	age := timeutil.Monotonic() - entry.at
 	if entry.fingerprint == fingerprint && age < d.corruptBoardRetryAfter {
 		return false
 	}
@@ -182,7 +183,7 @@ func (d *kanbanDispatcher) tickOnceForBoard(ctx context.Context, slug string) (*
 		return result, nil
 	}
 	if d.isCorruptBoardDBError(err) {
-		d.disabledCorruptBoards[slug] = corruptBoardEntry{fingerprint: fingerprint, at: pythread.Monotonic()}
+		d.disabledCorruptBoards[slug] = corruptBoardEntry{fingerprint: fingerprint, at: timeutil.Monotonic()}
 		pkgLog().Error(fmt.Sprintf("kanban dispatcher: board %s database %s is not a valid "+
 			"SQLite database; pausing dispatch for this board until "+
 			"the file changes, the gateway restarts, or the "+
@@ -267,7 +268,7 @@ func (d *kanbanDispatcher) autoDecomposeTick(ctx context.Context, perTick int) (
 		boardCtx := kanban.ScopedCurrentBoard(scoped, slug)
 		triageIDs, err := kanbanDecomposeListTriageIDs(boardCtx, nil)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("kanban auto-decompose: list_triage_ids failed on board %s (%s)", slug, pyrepr.Str(err)))
+			pkgLog().Debug(fmt.Sprintf("kanban auto-decompose: list_triage_ids failed on board %s (%s)", slug, anyutil.String(err)))
 			triageIDs = nil
 		}
 		for _, tid := range triageIDs {

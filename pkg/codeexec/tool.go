@@ -13,11 +13,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -29,11 +28,11 @@ const (
 var maxStdoutBytes = 50_000
 
 // Byte capped stdout with 40 percent head and 60 percent tail, truncation metadata and the spill path
-func truncateStdoutText(env *tools.Env, stdoutText string) (string, *pyjson.Object) {
-	raw := pystr.EncodeUTF8Replace(stdoutText)
+func truncateStdoutText(env *tools.Env, stdoutText string) (string, *jsonutil.Object) {
+	raw := []byte(stdoutText)
 	total := len(raw)
 	captured := min(total, maxStdoutBytes)
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("stdout_truncated", total > captured)
 	meta.Set("stdout_bytes_captured", captured)
 	meta.Set("stdout_bytes_total", total)
@@ -66,7 +65,7 @@ var spillFullStdout = func(env *tools.Env, stdoutText string) string {
 		pkgLog(env).Debug("Failed to spill execute_code stdout: " + err.Error())
 		return ""
 	}
-	sum := sha256.Sum256(pystr.EncodeUTF8Replace(stdoutText))
+	sum := sha256.Sum256([]byte(stdoutText))
 	path := filepath.Join(dir, "stdout-"+hex.EncodeToString(sum[:])[:12]+".txt")
 	if err := tools.WriteTextExclusive(path, stdoutText, false, true); err != nil {
 		pkgLog(env).Debug("Failed to spill execute_code stdout: " + err.Error())
@@ -96,7 +95,7 @@ func formatInterruptedOutput(ctx context.Context, stdoutText string) string {
 }
 
 // Byte cap with spill, ANSI strip and code file secret redaction of stdout
-func cleanOutput(env *tools.Env, stdoutText string) (string, *pyjson.Object) {
+func cleanOutput(env *tools.Env, stdoutText string) (string, *jsonutil.Object) {
 	text, meta := truncateStdoutText(env, stdoutText)
 	return tools.RedactSensitiveTextWith(env, tools.StripANSI(text), tools.RedactOptions{CodeFile: true}), meta
 }
@@ -111,7 +110,7 @@ func withTimeoutNotice(stdoutText, timeoutMsg string) string {
 
 // Error result JSON with the call count, duration and the optional one sentence user summary
 func errorResult(msg string, toolCallsMade int, duration any, userSummary string) string {
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("status", "error")
 	body.Set("error", msg)
 	body.Set("tool_calls_made", toolCallsMade)
@@ -119,7 +118,7 @@ func errorResult(msg string, toolCallsMade int, duration any, userSummary string
 	if userSummary != "" {
 		body.Set("user_summary", userSummary)
 	}
-	out, err := pyjson.Dumps(body, pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(body)
 	if err != nil {
 		return toolError(err.Error())
 	}

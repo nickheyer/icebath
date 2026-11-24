@@ -15,9 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 var _ cron.GatewayRunner = (*GatewayRunner)(nil)
@@ -46,7 +43,7 @@ func (t *gatewayCronTicker) stopProvider() { stopCronProvider(t.provider) }
 func (t *gatewayCronTicker) alive() bool { return t.thread.IsAlive() }
 
 // Misfire catch-up sweep every five ticks and the ticker supervisor every tick
-func (t *gatewayCronTicker) chores(ctx context.Context, adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter], loop gateway.EventLoop) []housekeepingTask {
+func (t *gatewayCronTicker) chores(ctx context.Context, adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter], loop gateway.EventLoop) []housekeepingTask {
 	var adaptersArg, loopArg any
 	if adapters != nil {
 		adaptersArg = adapters
@@ -112,7 +109,7 @@ func (r *GatewayRunner) noticeInterruptedCronJobs(ctx context.Context, jobIDs []
 	for _, jobID := range jobIDs {
 		job, err := cron.GetJob(ctx, home.Dir(ctx), jobID)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("Cron interrupt targets unresolved for %s: %s", jobID, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Cron interrupt targets unresolved for %s: %s", jobID, err.Error()))
 			continue
 		}
 		if job == nil {
@@ -158,7 +155,7 @@ func (r *GatewayRunner) noticeInterruptedCronJobs(ctx context.Context, jobIDs []
 					return nil
 				}, string(platform), false)
 				if err != nil {
-					pkgLog().Debug(fmt.Sprintf("Cron interrupt notice to %s:%s raised: %s", platform, chatID, pyrepr.ExceptionMessage(err)))
+					pkgLog().Debug(fmt.Sprintf("Cron interrupt notice to %s:%s raised: %s", platform, chatID, err.Error()))
 				}
 			}()
 		}
@@ -203,7 +200,7 @@ func housekeepingMisfireCatchUp(ctx context.Context, p cron.CronScheduler, adapt
 }
 
 // Drains each profile's worker queue through its live adapters, a satellite through the primary's routed ones
-func drainRestartSafeCronDeliveries(ctx context.Context, adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter],
+func drainRestartSafeCronDeliveries(ctx context.Context, adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter],
 	loop gateway.EventLoop, r *GatewayRunner) error {
 	var loopArg any
 	if loop != nil {
@@ -274,7 +271,7 @@ func describeCronJobUnits(ctx context.Context, pid int) (units []map[string]any)
 }
 
 // Starts the cron scheduler of the gateway on its supervised ticker goroutine, stopped by stop
-func startGatewayCronTicker(ctx context.Context, r *GatewayRunner, stop *pythread.Event) cronTicker {
+func startGatewayCronTicker(ctx context.Context, r *GatewayRunner, stop *syncutil.Event) cronTicker {
 	homes, err := cronTickProfileHomes(ctx, r.config)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Could not resolve profile homes for cron: %v", err))

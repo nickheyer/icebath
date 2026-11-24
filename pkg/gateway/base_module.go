@@ -28,14 +28,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Encodes the file to voip tuned Ogg Opus through ffmpeg, empty when ffmpeg is missing or the encode fails
@@ -106,7 +105,7 @@ func replyAnchorForEvent(event *MessageEvent) *string {
 		platform, chatType, threadID = platformName(event.Source.Platform), event.Source.ChatType, event.Source.ThreadID
 	}
 	raw, isDict := event.RawMessage.(map[string]any)
-	if event.Internal || platform == "slack" && isDict && pyrepr.Truthy(raw["_icebath_no_thread_response"]) {
+	if event.Internal || platform == "slack" && isDict && anyutil.IsTrue(raw["_icebath_no_thread_response"]) {
 		return nil
 	}
 	threaded := threadID != nil && *threadID != ""
@@ -306,11 +305,11 @@ type ProxyConnector struct {
 
 // Connector for a socks5, socks4 or http proxy URL that resolves target names on the proxy side
 func NewProxyConnector(proxyURL string) (*ProxyConnector, error) {
-	parsed, err := pyurl.Split(proxyURL)
+	parsed, err := urlutil.Split(proxyURL)
 	if err != nil {
 		return nil, err
 	}
-	scheme := strings.ToLower(parsed.Scheme)
+	scheme := parsed.Scheme
 	if scheme != "socks5" && scheme != "socks4" && scheme != "http" {
 		return nil, &mediacache.ValueError{Msg: "Invalid scheme component: " + scheme}
 	}
@@ -569,12 +568,17 @@ func readBodyWithLimit(ctx context.Context, body io.Reader, contentLength, media
 	h := home.Dir(ctx)
 	maxBytes := mediacache.InboundMediaMaxBytes(ctx, h)
 	if contentLength != "" {
-		if n, ok := pyint.Parse(contentLength); !ok {
-			pkgLog().Debug(fmt.Sprintf("Ignoring invalid Content-Length for inbound %s: %s", mediaType, pyrepr.Repr(contentLength)))
-		} else if !n.IsInt64() && n.Sign() > 0 && maxBytes != 0 {
-			return nil, &mediacache.ValueError{Msg: fmt.Sprintf("Inbound %s payload is too large (%s bytes > %d bytes)", mediaType, n.String(), maxBytes)}
-		} else if n.IsInt64() {
-			if err := mediacache.ValidateInboundMediaSize(ctx, h, n.Int64(), mediaType, &maxBytes); err != nil {
+		declared := strings.TrimSpace(contentLength)
+		n, err := strconv.ParseInt(declared, 10, 64)
+		switch {
+		case errors.Is(err, strconv.ErrRange):
+			if n > 0 && maxBytes != 0 {
+				return nil, &mediacache.ValueError{Msg: fmt.Sprintf("Inbound %s payload is too large (%s bytes > %d bytes)", mediaType, declared, maxBytes)}
+			}
+		case err != nil:
+			pkgLog().Debug(fmt.Sprintf("Ignoring invalid Content-Length for inbound %s: %s", mediaType, anyutil.Quote(contentLength)))
+		default:
+			if err := mediacache.ValidateInboundMediaSize(ctx, h, n, mediaType, &maxBytes); err != nil {
 				return nil, err
 			}
 		}

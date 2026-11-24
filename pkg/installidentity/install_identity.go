@@ -14,8 +14,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 const fileName = "install_id"
@@ -68,7 +68,7 @@ func installIDFileLock(root string, fn func() (string, error)) (string, error) {
 			return "", err
 		}
 	}
-	if err := pyfs.LockFile(f); err != nil {
+	if err := fsutil.LockFile(f); err != nil {
 		return "", err
 	}
 	value, fnErr := fn()
@@ -77,7 +77,7 @@ func installIDFileLock(root string, fn func() (string, error)) (string, error) {
 			return "", err
 		}
 	}
-	if err := pyfs.UnlockFile(f); err != nil && fnErr == nil {
+	if err := fsutil.UnlockFile(f); err != nil && fnErr == nil {
 		return "", err
 	}
 	return value, fnErr
@@ -145,7 +145,7 @@ func readOrCreate(ctx context.Context, root string, mint func() string) (string,
 			content = strings.ReplaceAll(content, "\n", "\r\n")
 		}
 		mode := os.FileMode(0o600)
-		if err := pyfs.AtomicWriteBytes(ctx, path, []byte(content), ".install_id-", &mode, true); err != nil {
+		if err := fsutil.WriteFile(ctx, path, []byte(content), fsutil.WriteOptions{Prefix: ".install_id-", Mode: &mode, SyncDir: true}); err != nil {
 			return "", err
 		}
 		committed, err := readText(path)
@@ -165,7 +165,7 @@ func readOrCreate(ctx context.Context, root string, mint func() string) (string,
 
 // Empty identity for an OSError, the error itself for anything else
 func osFailure(err error) (string, error) {
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return "", nil
 	}
 	return "", err

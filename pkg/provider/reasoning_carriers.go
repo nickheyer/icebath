@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const carrierGeminiKey = "extra_content"
@@ -280,11 +280,11 @@ func carrierStripFunctionSignature(toolCalls []any) []any {
 	out := make([]any, len(toolCalls))
 	for i, tc := range toolCalls {
 		out[i] = tc
-		call, ok := pyjson.Dict(tc)
+		call, ok := jsonutil.AsMap(tc)
 		if !ok {
 			continue
 		}
-		fn, ok := pyjson.Dict(call["function"])
+		fn, ok := jsonutil.AsMap(call["function"])
 		if !ok {
 			continue
 		}
@@ -292,8 +292,8 @@ func carrierStripFunctionSignature(toolCalls []any) []any {
 			continue
 		}
 		var stripped any
-		if o, ordered := call["function"].(*pyjson.Object); ordered {
-			cp := o.Copy()
+		if o, ordered := call["function"].(*jsonutil.Object); ordered {
+			cp := o.Clone()
 			cp.Delete("thought_signature")
 			stripped = cp
 		} else {
@@ -305,8 +305,8 @@ func carrierStripFunctionSignature(toolCalls []any) []any {
 			}
 			stripped = cp
 		}
-		if o, ordered := tc.(*pyjson.Object); ordered {
-			cp := o.Copy()
+		if o, ordered := tc.(*jsonutil.Object); ordered {
+			cp := o.Clone()
 			cp.Set("function", stripped)
 			out[i] = cp
 			continue
@@ -336,7 +336,7 @@ func carrierListOf(v any) []any {
 }
 
 func carrierIsRecord(d any) (map[string]any, bool) {
-	m, ok := pyjson.Dict(d)
+	m, ok := jsonutil.AsMap(d)
 	if !ok {
 		return nil, false
 	}
@@ -362,8 +362,8 @@ func carrierShape(msg map[string]any, r carrierWireRoute) map[string]any {
 	fnSig := false
 	if !r.keepFnSig {
 		for _, tc := range toolCalls {
-			if m, ok := pyjson.Dict(tc); ok {
-				if fn, ok := pyjson.Dict(m["function"]); ok {
+			if m, ok := jsonutil.AsMap(tc); ok {
+				if fn, ok := jsonutil.AsMap(m["function"]); ok {
 					if _, has := fn["thought_signature"]; has {
 						fnSig = true
 						break

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"runtime/debug"
 	"strings"
 	"sync"
@@ -18,13 +19,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -45,28 +46,14 @@ const (
 var (
 	// Seconds to wait before each reconnect attempt, the last value repeating
 	reconnectBackoff  = []int{2, 5, 10, 30, 60}
-	dingtalkWebhookRE = pyre.MustCompile(`^https://(?:api|oapi)\.dingtalk\.com/`)
-	numberedRE        = pyre.MustCompile(`^\d+\.\s`)
+	dingtalkWebhookRE = regexutil.Lazy(regexp.MustCompile, `^https://(?:api|oapi)\.dingtalk\.com/`)
+	numberedRE        = regexutil.Lazy(regexp.MustCompile, `^\d+\.\s`)
 )
 
 // Hex of a fresh uuid4
 func uuidHex() string { return strings.ReplaceAll(uuid.NewString(), "-", "") }
 
-// Whether an error chain names the websockets context manager mismatch within four links
-func isSDKIncompat(exc error) bool {
-	for i := 0; i < 4; i++ {
-		if exc == nil {
-			return false
-		}
-		if pyrepr.ExceptionName(exc) == "TypeError" && strings.Contains(pyrepr.ExceptionMessage(exc), "asynchronous context manager") {
-			return true
-		}
-		exc = errors.Unwrap(exc)
-	}
-	return false
-}
-
-// Key of one collapsed log record, its level, leading text and error class
+// Key of one collapsed log record, its level, leading text and error kind
 type sdkLogKey struct {
 	level slog.Level
 	msg   string
@@ -75,24 +62,22 @@ type sdkLogKey struct {
 
 // Collapse state shared by a guard and the handlers derived from it
 type sdkLogState struct {
-	onException func(exc error)
-	window      float64
-	started     time.Time
+	window  float64
+	started time.Time
 
 	mu   sync.Mutex
 	seen map[sdkLogKey]*[2]float64
 }
 
-// Log handler collapsing repeated stream client records and reporting their errors to a callback
+// Log handler collapsing repeated stream client records
 type sdkLogGuard struct {
 	next  slog.Handler
 	state *sdkLogState
 }
 
 // Guard over a handler with the repeat window in seconds
-func newSDKLogGuard(next slog.Handler, onException func(exc error), window float64) *sdkLogGuard {
-	return &sdkLogGuard{next: next, state: &sdkLogState{onException: onException, window: window, started: time.Now(),
-		seen: map[sdkLogKey]*[2]float64{}}}
+func newSDKLogGuard(next slog.Handler, window float64) *sdkLogGuard {
+	return &sdkLogGuard{next: next, state: &sdkLogState{window: window, started: time.Now(), seen: map[sdkLogKey]*[2]float64{}}}
 }
 
 func (g *sdkLogGuard) Enabled(ctx context.Context, level slog.Level) bool {
@@ -132,12 +117,9 @@ func (g *sdkLogGuard) filter(record *slog.Record) (emit bool) {
 		return true
 	})
 	st := g.state
-	if exc != nil && st.onException != nil {
-		st.onException(exc)
-	}
 	key := sdkLogKey{level: record.Level, msg: textutil.First(msg, 500)}
 	if exc != nil {
-		key.exc = pyrepr.ExceptionName(exc)
+		key.exc = errorutil.Kind(exc)
 	}
 	now := time.Since(st.started).Seconds()
 	st.mu.Lock()
@@ -166,14 +148,14 @@ func EnsureDingTalkDeps(ctx context.Context) (bool, error) { return true, nil }
 // Client id and secret from the extra first, then the scoped env
 func credentials(ctx context.Context, extra map[string]any) (any, any, error) {
 	clientID, clientSecret := extra["client_id"], extra["client_secret"]
-	if !pyrepr.Truthy(clientID) {
+	if !anyutil.IsTrue(clientID) {
 		scoped, err := gateway.GetScopedSecret(ctx, "DINGTALK_CLIENT_ID", "", false)
 		if err != nil {
 			return nil, nil, err
 		}
 		clientID = scoped
 	}
-	if !pyrepr.Truthy(clientSecret) {
+	if !anyutil.IsTrue(clientSecret) {
 		scoped, err := gateway.GetScopedSecret(ctx, "DINGTALK_CLIENT_SECRET", "", false)
 		if err != nil {
 			return nil, nil, err
@@ -204,14 +186,13 @@ type DingTalkAdapter struct {
 	mu              sync.Mutex
 	streamClient    *streamClient
 	streamTask      *gateway.AdapterTask
-	sdkLoopTask     *gateway.AdapterTask
 	httpClient      *http.Client
 	cardSDK         *openAPIClient
 	robotSDK        *openAPIClient
-	sessionWebhooks *pydict.Dict[string, sessionWebhook]
+	sessionWebhooks *orderedutil.Map[string, sessionWebhook]
 	messageContexts map[string]*IncomingMessage
 	doneEmojiFired  map[string]bool
-	streamingCards  map[string]*pydict.Dict[string, string]
+	streamingCards  map[string]*orderedutil.Map[string, string]
 	bgTasks         map[*gateway.AdapterTask]struct{}
 }
 
@@ -228,8 +209,8 @@ func NewDingTalkAdapter(ctx context.Context, config *gateway.PlatformConfig) (*D
 		config = gateway.NewPlatformConfig()
 	}
 	a := &DingTalkAdapter{dedup: gateway.NewMessageDeduplicator(1000, gateway.DefaultDedupTTLSeconds),
-		sessionWebhooks: pydict.New[string, sessionWebhook](), messageContexts: map[string]*IncomingMessage{},
-		doneEmojiFired: map[string]bool{}, streamingCards: map[string]*pydict.Dict[string, string]{},
+		sessionWebhooks: orderedutil.NewMap[string, sessionWebhook](), messageContexts: map[string]*IncomingMessage{},
+		doneEmojiFired: map[string]bool{}, streamingCards: map[string]*orderedutil.Map[string, string]{},
 		bgTasks: map[*gateway.AdapterTask]struct{}{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.PlatformDingTalk, a)
 	a.Traits = dingtalkAdapterTraits()
@@ -251,7 +232,7 @@ func NewDingTalkAdapter(ctx context.Context, config *gateway.PlatformConfig) (*D
 	}
 	sctx := gateway.SettingsContext(ctx)
 	a.robotCode = strings.TrimSpace(settings.DingtalkRobotCode.Get(sctx))
-	if !pyrepr.Truthy(a.robotCode) {
+	if !anyutil.IsTrue(a.robotCode) {
 		a.robotCode = a.clientID
 	}
 	a.cardTemplateID = strings.TrimSpace(settings.DingtalkCardTemplateID.Get(sctx))
@@ -262,12 +243,12 @@ func NewDingTalkAdapter(ctx context.Context, config *gateway.PlatformConfig) (*D
 func (a *DingTalkAdapter) supportsMessageEditing() bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	return pyrepr.Truthy(a.cardTemplateID) && a.cardSDK != nil
+	return anyutil.IsTrue(a.cardTemplateID) && a.cardSDK != nil
 }
 
 // Connects through Stream Mode, starting the stream task and the card and robot clients
 func (a *DingTalkAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
-	if !pyrepr.Truthy(a.clientID) || !pyrepr.Truthy(a.clientSecret) {
+	if !anyutil.IsTrue(a.clientID) || !anyutil.IsTrue(a.clientSecret) {
 		pkgLog().Warn(fmt.Sprintf("[%s] DINGTALK_CLIENT_ID and DINGTALK_CLIENT_SECRET required", a.Name()))
 		return false, nil
 	}
@@ -275,13 +256,13 @@ func (a *DingTalkAdapter) Connect(ctx context.Context, isReconnect bool) (bool, 
 	a.mu.Lock()
 	a.httpClient = gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(ctx), false)
 	a.streamClient = client
-	if pyrepr.Truthy(a.cardTemplateID) {
+	if anyutil.IsTrue(a.cardTemplateID) {
 		a.cardSDK = newOpenAPIClient()
 	}
 	a.robotSDK = newOpenAPIClient()
 	a.mu.Unlock()
-	if pyrepr.Truthy(a.cardTemplateID) {
-		pkgLog().Info(fmt.Sprintf("[%s] Card SDK initialized with template: %s", a.Name(), pyrepr.Str(a.cardTemplateID)))
+	if anyutil.IsTrue(a.cardTemplateID) {
+		pkgLog().Info(fmt.Sprintf("[%s] Card SDK initialized with template: %s", a.Name(), anyutil.String(a.cardTemplateID)))
 	} else {
 		pkgLog().Info(fmt.Sprintf("[%s] Robot SDK initialized (media download)", a.Name()))
 	}
@@ -301,14 +282,13 @@ func (a *DingTalkAdapter) Connect(ctx context.Context, isReconnect bool) (bool, 
 // Runs the stream loop with the log guard installed on the stream client logger
 func (a *DingTalkAdapter) runStream(ctx context.Context) error {
 	a.mu.Lock()
-	a.sdkLoopTask = gateway.CurrentAdapterTask(ctx)
 	client := a.streamClient
 	a.mu.Unlock()
 	if client == nil {
 		return nil
 	}
 	original := client.log()
-	guard := newSDKLogGuard(original.Handler(), func(exc error) { a.onSDKError(ctx, exc, true) }, sdkLogRepeatWindow)
+	guard := newSDKLogGuard(original.Handler(), sdkLogRepeatWindow)
 	client.swapLogger(slog.New(guard))
 	defer client.swapLogger(original)
 	return a.runStreamLoop(ctx, client)
@@ -322,30 +302,23 @@ func (a *DingTalkAdapter) runStreamLoop(ctx context.Context, client *streamClien
 		pkgLog().Debug(fmt.Sprintf("[%s] Starting stream client...", a.Name()))
 		err := client.start(ctx)
 		if ctx.Err() != nil {
-			if code := a.FatalErrorCode(); code != nil && *code == "dingtalk_stream_error" {
-				return a.NotifyFatalError(context.WithoutCancel(ctx))
-			}
 			return nil
 		}
 		if err != nil {
 			if !a.IsConnected() {
 				return nil
 			}
-			if isSDKIncompat(err) {
-				a.onSDKError(ctx, err, false)
-				return a.NotifyFatalError(ctx)
-			}
-			errorType := pyrepr.ExceptionName(err)
+			errorType := errorutil.Kind(err)
 			if errorType == lastErrorType {
 				consecutiveSameError++
 			} else {
 				consecutiveSameError, lastErrorType = 1, errorType
 			}
 			if consecutiveSameError <= reconnectCircuitBreakerTrips {
-				pkgLog().Warn(fmt.Sprintf("[%s] Stream client error: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+				pkgLog().Warn(fmt.Sprintf("[%s] Stream client error: %s", a.Name(), err.Error()))
 			} else if consecutiveSameError == reconnectCircuitBreakerTrips+1 {
 				pkgLog().Error(fmt.Sprintf("[%s] Stream client error repeated %d times: %s — circuit breaker tripped; "+
-					"retrying every %ds silently until the error changes.", a.Name(), consecutiveSameError, pyrepr.ExceptionMessage(err),
+					"retrying every %ds silently until the error changes.", a.Name(), consecutiveSameError, err.Error(),
 					reconnectCircuitBreakerDelay))
 			}
 		}
@@ -368,31 +341,10 @@ func (a *DingTalkAdapter) runStreamLoop(ctx context.Context, client *streamClien
 	return nil
 }
 
-// Hands a websockets incompatibility of the stream client to the gateway as a fatal error and stops the stream loop
-func (a *DingTalkAdapter) onSDKError(ctx context.Context, exc error, cancel bool) {
-	if !isSDKIncompat(exc) {
-		return
-	}
-	if code := a.FatalErrorCode(); code != nil && *code == "dingtalk_stream_error" {
-		return
-	}
-	msg := fmt.Sprintf("dingtalk-stream cannot open its websocket with the installed websockets package (%s). "+
-		"Icebath pins dingtalk-stream==0.24.3 with websockets==15.0.1; reinstall the dingtalk extra "+
-		"so those versions are used (e.g. `pip install 'icebath-agent[dingtalk]'`).", pyrepr.ExceptionMessage(exc))
-	pkgLog().Error(fmt.Sprintf("[%s] %s", a.Name(), msg))
-	a.SetFatalError(ctx, "dingtalk_stream_error", msg, false)
-	a.mu.Lock()
-	task := a.sdkLoopTask
-	a.mu.Unlock()
-	if cancel && task != nil && !task.Done() {
-		task.Cancel()
-	}
-}
-
 // Runs fn and swallows its failure, logging it at debug under the format when one is given
 func (a *DingTalkAdapter) quiet(fn func() error, debugFmt string, args ...any) {
 	if err := fn(); err != nil && debugFmt != "" {
-		pkgLog().Debug(fmt.Sprintf(debugFmt, append(append([]any{a.Name()}, args...), pyrepr.ExceptionMessage(err))...))
+		pkgLog().Debug(fmt.Sprintf(debugFmt, append(append([]any{a.Name()}, args...), err.Error())...))
 	}
 }
 
@@ -490,14 +442,14 @@ func (a *DingTalkAdapter) compileMentionPatterns(ctx context.Context) ([]*regexp
 		DisplayLabel: "DingTalk"}), nil
 }
 
-// Lowercased text of a sender id, the AttributeError lower raises on a non string id
+// Lowercased text of a sender id, a kind error for an id that is not text
 func lowerID(v any) (string, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", attributeError(v, "lower")
+		return "", kindError("sender id", "a string", v)
 	}
 	return strings.ToLower(s), nil
 }
@@ -553,7 +505,7 @@ func (a *DingTalkAdapter) shouldProcessMessage(ctx context.Context, message *Inc
 	if err != nil {
 		return false, err
 	}
-	if !required || pyrepr.Truthy(message.IsInAtList) {
+	if !required || anyutil.IsTrue(message.IsInAtList) {
 		return true, nil
 	}
 	return a.messageMatchesMentionPatterns(text)
@@ -585,7 +537,7 @@ func (a *DingTalkAdapter) closeStreamingSiblings(ctx context.Context, chatID str
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(token) {
+	if !anyutil.IsTrue(token) {
 		return nil
 	}
 	for outTrackID, lastContent := range cards.All() {
@@ -593,7 +545,7 @@ func (a *DingTalkAdapter) closeStreamingSiblings(ctx context.Context, chatID str
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			pkgLog().Debug(fmt.Sprintf("[%s] Sibling close failed for %s: %s", a.Name(), outTrackID, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Sibling close failed for %s: %s", a.Name(), outTrackID, err.Error()))
 			continue
 		}
 		pkgLog().Debug(fmt.Sprintf("[%s] AI Card sibling closed: %s", a.Name(), outTrackID))
@@ -614,48 +566,48 @@ func (a *DingTalkAdapter) fireDoneReaction(ctx context.Context, chatID string) {
 	if msg == nil {
 		return
 	}
-	msgID, conversationID := orEmpty(msg.MessageID), orEmpty(msg.ConversationID)
-	if !pyrepr.Truthy(msgID) || !pyrepr.Truthy(conversationID) {
+	msgID, conversationID := anyutil.Or(msg.MessageID, ""), anyutil.Or(msg.ConversationID, "")
+	if !anyutil.IsTrue(msgID) || !anyutil.IsTrue(conversationID) {
 		return
 	}
 	thinking := i18n.T(ctx, "platform.dingtalk.emotion.thinking", "", nil)
 	done := i18n.T(ctx, "platform.dingtalk.emotion.done", "", nil)
 	a.spawnBG(ctx, func(tctx context.Context) error {
-		if err := a.sendEmotion(tctx, pyrepr.Str(msgID), pyrepr.Str(conversationID), thinking, true); err != nil {
+		if err := a.sendEmotion(tctx, anyutil.String(msgID), anyutil.String(conversationID), thinking, true); err != nil {
 			return err
 		}
-		return a.sendEmotion(tctx, pyrepr.Str(msgID), pyrepr.Str(conversationID), done, false)
+		return a.sendEmotion(tctx, anyutil.String(msgID), anyutil.String(conversationID), done, false)
 	})
 }
 
 // Turns one inbound chatbot message into a message event after dedup, allowlist and group trigger gating
 func (a *DingTalkAdapter) onMessage(ctx context.Context, message *IncomingMessage) error {
-	msgID := pyrepr.Str(message.MessageID)
-	if !pyrepr.Truthy(message.MessageID) {
+	msgID := anyutil.String(message.MessageID)
+	if !anyutil.IsTrue(message.MessageID) {
 		msgID = uuidHex()
 	}
 	if a.dedup.IsDuplicate(msgID) {
 		pkgLog().Debug(fmt.Sprintf("[%s] Duplicate message %s, skipping", a.Name(), msgID))
 		return nil
 	}
-	conversationID, senderID := orEmpty(message.ConversationID), orEmpty(message.SenderID)
-	senderNick, senderStaffID := orEmpty(message.SenderNick), orEmpty(message.SenderStaffID)
-	isGroup := pyrepr.Str(message.ConversationType) == "2"
-	if !pyrepr.Truthy(senderNick) {
+	conversationID, senderID := anyutil.Or(message.ConversationID, ""), anyutil.Or(message.SenderID, "")
+	senderNick, senderStaffID := anyutil.Or(message.SenderNick, ""), anyutil.Or(message.SenderStaffID, "")
+	isGroup := anyutil.String(message.ConversationType) == "2"
+	if !anyutil.IsTrue(senderNick) {
 		senderNick = senderID
 	}
 	chatIDValue := conversationID
-	if !pyrepr.Truthy(chatIDValue) {
+	if !anyutil.IsTrue(chatIDValue) {
 		chatIDValue = senderID
 	}
-	chatID := pyrepr.Str(chatIDValue)
+	chatID := anyutil.String(chatIDValue)
 	allowed, err := a.isUserAllowed(senderID, senderStaffID)
 	if err != nil {
 		return err
 	}
 	if !allowed {
 		pkgLog().Debug(fmt.Sprintf("[%s] Dropping message from non-allowlisted user staff_id=%s sender_id=%s", a.Name(),
-			pyrepr.Str(senderStaffID), pyrepr.Str(senderID)))
+			anyutil.String(senderStaffID), anyutil.String(senderID)))
 		return nil
 	}
 	early, err := ExtractText(&message.ChatbotMessage)
@@ -676,18 +628,14 @@ func (a *DingTalkAdapter) onMessage(ctx context.Context, message *IncomingMessag
 		delete(a.doneEmojiFired, chatID)
 		a.mu.Unlock()
 	}
-	if webhook := orEmpty(message.SessionWebhook); pyrepr.Truthy(webhook) && chatID != "" {
+	if webhook := message.SessionWebhook; anyutil.IsTrue(webhook) && chatID != "" {
 		webhookText, ok := webhook.(string)
 		if !ok {
-			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(webhook))}
+			return kindError("session webhook", "a string", webhook)
 		}
-		matched, err := dingtalkWebhookRE.MatchString(webhookText)
-		if err != nil {
-			return err
-		}
-		if matched {
+		if dingtalkWebhookRE().MatchString(webhookText) {
 			var expired any = message.SessionWebhookExpiredTime
-			if !pyrepr.Truthy(expired) {
+			if !anyutil.IsTrue(expired) {
 				expired = 0
 			}
 			a.mu.Lock()
@@ -718,23 +666,23 @@ func (a *DingTalkAdapter) onMessage(ctx context.Context, message *IncomingMessag
 		fields.ChatType = "group"
 	}
 	if message.ConversationTitle != nil {
-		title := pyrepr.Str(message.ConversationTitle)
+		title := anyutil.String(message.ConversationTitle)
 		fields.ChatName = &title
 	}
-	userID, userName := pyrepr.Str(senderID), pyrepr.Str(senderNick)
+	userID, userName := anyutil.String(senderID), anyutil.String(senderNick)
 	fields.UserID, fields.UserName, fields.MessageID = &userID, &userName, &msgID
-	if pyrepr.Truthy(senderStaffID) {
-		staff := pyrepr.Str(senderStaffID)
+	if anyutil.IsTrue(senderStaffID) {
+		staff := anyutil.String(senderStaffID)
 		fields.UserIDAlt = &staff
 	}
 	source := a.BuildSource(ctx, chatID, fields)
 	timestamp := time.Now().UTC()
-	if pyrepr.Truthy(message.CreateAt) {
-		if millis, err := pyint.Int64(message.CreateAt); err == nil {
+	if anyutil.IsTrue(message.CreateAt) {
+		if millis, err := anyutil.ToInt(message.CreateAt); err == nil {
 			if at := time.UnixMilli(millis).UTC(); at.Year() >= 1 && at.Year() <= 9999 {
 				timestamp = at
 			}
-		} else if pe, ok := err.(*pyint.Error); !ok || (pe.Kind != "ValueError" && pe.Kind != "TypeError") {
+		} else if !errors.Is(err, anyutil.ErrNotNumber) {
 			return err
 		}
 	}
@@ -769,16 +717,16 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 	cardSDK, httpClient := a.cardSDK, a.httpClient
 	currentMessage := a.messageContexts[chatID]
 	a.mu.Unlock()
-	cardEnabled := pyrepr.Truthy(a.cardTemplateID) && cardSDK != nil
-	pkgLog().Debug(fmt.Sprintf("[%s] send() chat_id=%s card_enabled=%s", a.Name(), chatID, pyrepr.Str(cardEnabled)))
+	cardEnabled := anyutil.IsTrue(a.cardTemplateID) && cardSDK != nil
+	pkgLog().Debug(fmt.Sprintf("[%s] send() chat_id=%s card_enabled=%t", a.Name(), chatID, cardEnabled))
 	webhookValue := metadata["session_webhook"]
-	if !pyrepr.Truthy(webhookValue) {
+	if !anyutil.IsTrue(webhookValue) {
 		webhookValue = ""
 		if info := a.getValidWebhook(chatID); info != nil {
 			webhookValue = info.url
 		}
 	}
-	if !pyrepr.Truthy(webhookValue) {
+	if !anyutil.IsTrue(webhookValue) {
 		pkgLog().Warn(fmt.Sprintf("[%s] No valid session_webhook for chat_id=%s", a.Name(), chatID))
 		return gateway.SendResult{Success: false, Error: "No valid session_webhook available. Reply must follow an incoming message."}, nil
 	}
@@ -801,10 +749,10 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 				a.mu.Lock()
 				cards := a.streamingCards[chatID]
 				if cards == nil {
-					cards = pydict.New[string, string]()
+					cards = orderedutil.NewMap[string, string]()
 					a.streamingCards[chatID] = cards
 				}
-				cards.Set(pyrepr.Str(result.MessageID), content)
+				cards.Set(anyutil.String(result.MessageID), content)
 				a.mu.Unlock()
 			}
 			return *result, nil
@@ -812,18 +760,18 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 		pkgLog().Warn(fmt.Sprintf("[%s] AI Card send failed, falling back to webhook", a.Name()))
 	}
 	pkgLog().Debug(fmt.Sprintf("[%s] Sending via webhook", a.Name()))
-	payload := pyjson.ObjectOf("msgtype", "markdown", "markdown", pyjson.ObjectOf("title", "Icebath",
+	payload := jsonutil.ObjectOf("msgtype", "markdown", "markdown", jsonutil.ObjectOf("title", "Icebath",
 		"text", normalizeMarkdown(textutil.First(content, maxMessageLength))))
-	resp, err := postJSON(ctx, httpClient, pyrepr.Str(webhookValue), payload, 15*time.Second)
+	resp, err := postJSON(ctx, httpClient, anyutil.String(webhookValue), payload, 15*time.Second)
 	if err != nil {
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		var timeout *pyhttpx.TimeoutError
+		var timeout *httputil.TimeoutError
 		if errors.As(err, &timeout) {
 			return gateway.SendResult{Success: false, Error: "Timeout sending message to DingTalk"}, nil
 		}
-		text := pyhttpx.ErrorText(err)
+		text := err.Error()
 		pkgLog().Error(fmt.Sprintf("[%s] Send error: %s", a.Name(), text))
 		return gateway.SendResult{Success: false, Error: text}, nil
 	}
@@ -839,8 +787,8 @@ func (a *DingTalkAdapter) Send(ctx context.Context, chatID, content, replyTo str
 }
 
 // One JSON POST on an httpx style client with a per phase timeout
-func postJSON(ctx context.Context, client *http.Client, target string, payload *pyjson.Object, timeout time.Duration) (*pyhttpx.Response, error) {
-	encoded, err := pyjson.Dumps(payload)
+func postJSON(ctx context.Context, client *http.Client, target string, payload *jsonutil.Object, timeout time.Duration) (*httputil.Response, error) {
+	encoded, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -849,7 +797,7 @@ func postJSON(ctx context.Context, client *http.Client, target string, payload *
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	return pyhttpx.Do(client, req, timeout)
+	return httputil.Do(client, req, httputil.EachPhase(timeout))
 }
 
 // DingTalk has no typing indicator
@@ -893,8 +841,7 @@ func (a *DingTalkAdapter) getValidWebhook(chatID string) *sessionWebhook {
 	if !ok {
 		return nil
 	}
-	if expired, isNumber := pyrepr.Int(info.expiredMS); isNumber && expired.Sign() > 0 &&
-		expired.IsInt64() && time.Now().UnixMilli()+5*60*1000 >= expired.Int64() {
+	if expired, isNumber := anyutil.Int(info.expiredMS); isNumber && expired > 0 && time.Now().UnixMilli()+5*60*1000 >= expired {
 		a.sessionWebhooks.Delete(chatID)
 		return nil
 	}
@@ -905,27 +852,27 @@ func (a *DingTalkAdapter) getValidWebhook(chatID string) *sessionWebhook {
 func (a *DingTalkAdapter) createAndStreamCard(ctx context.Context, chatID string, message *IncomingMessage, content string, finalize bool) (*gateway.SendResult, error) {
 	result, err := func() (*gateway.SendResult, error) {
 		token, err := a.getAccessToken(ctx)
-		if err != nil || !pyrepr.Truthy(token) {
+		if err != nil || !anyutil.IsTrue(token) {
 			return nil, err
 		}
 		a.mu.Lock()
 		cardSDK := a.cardSDK
 		a.mu.Unlock()
 		outTrackID := "icebath_" + uuidHex()[:12]
-		isGroup := pyrepr.Str(message.ConversationType) == "2"
-		senderStaffID := orEmpty(message.SenderStaffID)
+		isGroup := anyutil.String(message.ConversationType) == "2"
+		senderStaffID := anyutil.Or(message.SenderStaffID, "")
 		if err := cardSDK.createCard(ctx, token, a.cardTemplateID, outTrackID); err != nil {
 			return nil, err
 		}
 		var openSpaceID, deliverKey string
-		var deliverModel *pyjson.Object
+		var deliverModel *jsonutil.Object
 		switch {
 		case isGroup:
-			openSpaceID = "dtv1.card//IM_GROUP." + pyrepr.Str(orEmpty(message.ConversationID))
-			deliverKey, deliverModel = "imGroupOpenDeliverModel", pyjson.ObjectOf("robotCode", a.robotCode)
-		case pyrepr.Truthy(senderStaffID):
-			openSpaceID = "dtv1.card//IM_ROBOT." + pyrepr.Str(senderStaffID)
-			deliverKey, deliverModel = "imRobotOpenDeliverModel", pyjson.ObjectOf("spaceType", "IM_ROBOT")
+			openSpaceID = "dtv1.card//IM_GROUP." + anyutil.String(anyutil.Or(message.ConversationID, ""))
+			deliverKey, deliverModel = "imGroupOpenDeliverModel", jsonutil.ObjectOf("robotCode", a.robotCode)
+		case anyutil.IsTrue(senderStaffID):
+			openSpaceID = "dtv1.card//IM_ROBOT." + anyutil.String(senderStaffID)
+			deliverKey, deliverModel = "imRobotOpenDeliverModel", jsonutil.ObjectOf("spaceType", "IM_ROBOT")
 		default:
 			pkgLog().Warn(fmt.Sprintf("[%s] AI Card skipped: missing sender_staff_id for DM", a.Name()))
 			return nil, nil
@@ -947,7 +894,7 @@ func (a *DingTalkAdapter) createAndStreamCard(ctx context.Context, chatID string
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] AI Card create failed: %s\n%s", a.Name(), pyrepr.ExceptionMessage(err), debug.Stack()))
+		pkgLog().Warn(fmt.Sprintf("[%s] AI Card create failed: %s\n%s", a.Name(), err.Error(), debug.Stack()))
 		return nil, nil
 	}
 	return result, nil
@@ -965,7 +912,7 @@ func (a *DingTalkAdapter) EditMessage(ctx context.Context, chatID, messageID, co
 			return gateway.SendResult{}, err
 		}
 	}
-	if !pyrepr.Truthy(token) {
+	if !anyutil.IsTrue(token) {
 		if messageID == "" {
 			return gateway.SendResult{Success: false, Error: "message_id required"}, nil
 		}
@@ -975,8 +922,8 @@ func (a *DingTalkAdapter) EditMessage(ctx context.Context, chatID, messageID, co
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] Card edit failed: %s", a.Name(), pyrepr.ExceptionMessage(err)))
-		return gateway.SendResult{Success: false, Error: pyrepr.ExceptionMessage(err)}, nil
+		pkgLog().Warn(fmt.Sprintf("[%s] Card edit failed: %s", a.Name(), err.Error()))
+		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	if finalize {
 		a.mu.Lock()
@@ -993,7 +940,7 @@ func (a *DingTalkAdapter) EditMessage(ctx context.Context, chatID, messageID, co
 		a.mu.Lock()
 		cards := a.streamingCards[chatID]
 		if cards == nil {
-			cards = pydict.New[string, string]()
+			cards = orderedutil.NewMap[string, string]()
 			a.streamingCards[chatID] = cards
 		}
 		cards.Set(messageID, content)
@@ -1008,7 +955,7 @@ func (a *DingTalkAdapter) streamCardContent(ctx context.Context, outTrackID stri
 	cardSDK := a.cardSDK
 	a.mu.Unlock()
 	if cardSDK == nil {
-		return attributeError(nil, "streaming_update_with_options_async")
+		return errors.New("dingtalk: AI card client is not initialized")
 	}
 	return cardSDK.streamingUpdate(ctx, token, outTrackID, uuid.NewString(), textutil.First(content, maxMessageLength), finalize)
 }
@@ -1026,7 +973,7 @@ func (a *DingTalkAdapter) getAccessToken(ctx context.Context) (any, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		pkgLog().Error(fmt.Sprintf("[%s] Failed to get access token: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to get access token: %s", a.Name(), err.Error()))
 		return nil, nil
 	}
 	return token, nil
@@ -1056,7 +1003,7 @@ func (a *DingTalkAdapter) sendEmotion(ctx context.Context, openMsgID, openConver
 		action = "recall"
 	}
 	token, err := a.getAccessToken(ctx)
-	if err == nil && pyrepr.Truthy(token) {
+	if err == nil && anyutil.IsTrue(token) {
 		err = robotSDK.robotEmotion(ctx, token, recall, a.robotCode, openMsgID, openConversationID, emojiName)
 		if err == nil {
 			pkgLog().Info(fmt.Sprintf("[%s] _send_emotion: %s %s on msg=%s", a.Name(), action, emojiName, textutil.First(openMsgID, 24)))
@@ -1077,11 +1024,11 @@ func (a *DingTalkAdapter) resolveMediaCodes(ctx context.Context, message *Incomi
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(token) {
+	if !anyutil.IsTrue(token) {
 		return nil
 	}
 	robotCode := message.RobotCode
-	if !pyrepr.Truthy(robotCode) {
+	if !anyutil.IsTrue(robotCode) {
 		robotCode = a.clientID
 	}
 	var wg sync.WaitGroup
@@ -1093,7 +1040,7 @@ func (a *DingTalkAdapter) resolveMediaCodes(ctx context.Context, message *Incomi
 		case map[string]any:
 			code = container[ref.Key]
 		}
-		if !pyrepr.Truthy(code) {
+		if !anyutil.IsTrue(code) {
 			continue
 		}
 		wg.Add(1)
@@ -1117,22 +1064,22 @@ func (a *DingTalkAdapter) fetchDownloadURL(ctx context.Context, code, robotCode,
 	}
 	body, err := robotSDK.robotMessageFileDownload(ctx, token, code, robotCode)
 	if err != nil {
-		pkgLog().Error(fmt.Sprintf("[%s] Error resolving media code %s: %s", a.Name(), pyrepr.Str(code), pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Error resolving media code %s: %s", a.Name(), anyutil.String(code), err.Error()))
 		return
 	}
 	if body == nil || body.Len() == 0 {
-		pkgLog().Warn(fmt.Sprintf("[%s] Failed to download media: empty response for code %s", a.Name(), pyrepr.Str(code)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to download media: empty response for code %s", a.Name(), anyutil.String(code)))
 		return
 	}
 	url, _ := body.Get("downloadUrl")
-	if !pyrepr.Truthy(url) {
+	if !anyutil.IsTrue(url) {
 		return
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	switch container := ref.Container.(type) {
 	case *ImageContent:
-		container.DownloadCode = pyrepr.Str(url)
+		container.DownloadCode = anyutil.String(url)
 	case map[string]any:
 		container[ref.Key] = url
 	}
@@ -1142,10 +1089,7 @@ func (a *DingTalkAdapter) fetchDownloadURL(ctx context.Context, code, robotCode,
 func normalizeMarkdown(text string) string {
 	lines := strings.Split(text, "\n")
 	out := make([]string, 0, len(lines))
-	numbered := func(s string) bool {
-		m, err := numberedRE.MatchString(s)
-		return err == nil && m
-	}
+	numbered := func(s string) bool { return numberedRE().MatchString(s) }
 	for i, line := range lines {
 		prev := ""
 		if i > 0 {
@@ -1189,7 +1133,7 @@ func (h *incomingHandler) process(ctx context.Context, message *streamMessage) (
 func (h *incomingHandler) prepare(ctx context.Context, message *streamMessage) (*IncomingMessage, error) {
 	data := message.data
 	if text, ok := data.(string); ok {
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil, err
 		}
@@ -1199,25 +1143,25 @@ func (h *incomingHandler) prepare(ctx context.Context, message *streamMessage) (
 	if err != nil {
 		return nil, err
 	}
-	fields, _ := data.(*pyjson.Object)
+	fields, _ := data.(*jsonutil.Object)
 	if fields == nil {
-		fields = pyjson.NewObject()
+		fields = jsonutil.NewObject()
 	}
-	webhook := fields.GetOr("sessionWebhook", nil)
-	if !pyrepr.Truthy(webhook) {
-		webhook = fields.GetOr("session_webhook", nil)
+	webhook := fields.ValueOr("sessionWebhook", nil)
+	if !anyutil.IsTrue(webhook) {
+		webhook = fields.ValueOr("session_webhook", nil)
 	}
-	if pyrepr.Truthy(webhook) && !pyrepr.Truthy(chatbotMsg.SessionWebhook) {
+	if anyutil.IsTrue(webhook) && !anyutil.IsTrue(chatbotMsg.SessionWebhook) {
 		chatbotMsg.SessionWebhook = webhook
 	}
-	if !pyrepr.Truthy(chatbotMsg.IsInAtList) && pyrepr.Truthy(fields.GetOr("isInAtList", nil)) {
+	if !anyutil.IsTrue(chatbotMsg.IsInAtList) && anyutil.IsTrue(fields.ValueOr("isInAtList", nil)) {
 		chatbotMsg.IsInAtList = true
 	}
-	msgID, conversationID := orEmpty(chatbotMsg.MessageID), orEmpty(chatbotMsg.ConversationID)
-	if pyrepr.Truthy(msgID) && pyrepr.Truthy(conversationID) {
+	msgID, conversationID := anyutil.Or(chatbotMsg.MessageID, ""), anyutil.Or(chatbotMsg.ConversationID, "")
+	if anyutil.IsTrue(msgID) && anyutil.IsTrue(conversationID) {
 		thinking := i18n.T(ctx, "platform.dingtalk.emotion.thinking", "", nil)
 		h.adapter.spawnBG(ctx, func(tctx context.Context) error {
-			return h.adapter.sendEmotion(tctx, pyrepr.Str(msgID), pyrepr.Str(conversationID), thinking, false)
+			return h.adapter.sendEmotion(tctx, anyutil.String(msgID), anyutil.String(conversationID), thinking, false)
 		})
 	}
 	return chatbotMsg, nil

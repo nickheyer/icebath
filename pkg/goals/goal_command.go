@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -92,12 +93,12 @@ func goalWait(m Manager, arg string) (GoalCommandResult, error) {
 		}
 	} else {
 		if state := m.State(); state == nil || state.Status != "active" {
-			return GoalCommandResult{}, &pyint.Error{Kind: "RuntimeError", Msg: "no active goal to park"}
+			return GoalCommandResult{}, &errorutil.Error{Kind: "RuntimeError", Msg: "no active goal to park"}
 		}
 		if pid.Sign() <= 0 {
-			return GoalCommandResult{}, &pyint.Error{Kind: "ValueError", Msg: "pid must be a positive integer"}
+			return GoalCommandResult{}, &errorutil.Error{Kind: "ValueError", Msg: "pid must be a positive integer"}
 		}
-		return GoalCommandResult{}, &pyint.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
+		return GoalCommandResult{}, &errorutil.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
 	}
 	suffix := ""
 	if reason != "" {
@@ -124,7 +125,7 @@ func goalGateRemove(m Manager, arg string) (GoalCommandResult, error) {
 	if index.IsInt64() {
 		command, err = m.RemoveGate(index.Int64())
 	} else if !m.HasGoal() {
-		err = &pyint.Error{Kind: "RuntimeError", Msg: "no active goal"}
+		err = &errorutil.Error{Kind: "RuntimeError", Msg: "no active goal"}
 	} else {
 		_, err = goalIndex(-1, len(m.State().Gates))
 	}
@@ -164,7 +165,7 @@ func goalBareControl(m Manager, verb, rest string, render GoalRender) (GoalComma
 	if err != nil {
 		return result, err
 	}
-	result.Output += fmt.Sprintf("\n(ignored %s: a control command never sets goal text — use /goal -- <text> when the goal really starts with a control word.)", pyrepr.Repr(rest))
+	result.Output += fmt.Sprintf("\n(ignored %s: a control command never sets goal text — use /goal -- <text> when the goal really starts with a control word.)", anyutil.Quote(rest))
 	return result, nil
 }
 
@@ -189,7 +190,7 @@ func goalGate(m Manager, arg string, authorizeGate func() string) (GoalCommandRe
 	}
 	result, err := handler(m, rest)
 	if err != nil {
-		if pyErr, isPy := err.(*pyint.Error); isPy && goalCommandErrorKinds[pyErr.Kind] {
+		if pyErr, isPy := err.(*errorutil.Error); isPy && goalCommandErrorKinds[pyErr.Kind] {
 			operation := verb
 			if verb == "rm" {
 				operation = "remove"
@@ -240,12 +241,12 @@ func goalSet(m Manager, arg string, drafting bool, lastUserMessage any, render G
 		return GoalCommandResult{}, err
 	}
 	if state == nil {
-		return GoalCommandResult{}, &pyint.Error{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'goal'"}
+		return GoalCommandResult{}, &errorutil.Error{Kind: "AttributeError", Msg: "'NoneType' object has no attribute 'goal'"}
 	}
-	goal := pyrepr.Str(state.Goal)
+	goal := anyutil.String(state.Goal)
 	output := render("gateway.goal.set", "⊙ Goal set ({budget}-turn budget): {goal}", map[string]any{"budget": state.MaxTurns, "goal": state.Goal})
-	if pyrepr.Truthy(previous) && !pyrepr.Equal(previous, state.Goal) {
-		output += "\n(replaced the previous goal)\n  was: " + pyrepr.Str(previous)
+	if anyutil.IsTrue(previous) && !anyutil.Equal(previous, state.Goal) {
+		output += "\n(replaced the previous goal)\n  was: " + anyutil.String(previous)
 	}
 	if state.HasContract() {
 		label := "Completion contract:"
@@ -334,7 +335,7 @@ func DispatchGoalCommand(m Manager, arg string, o GoalCommandOptions) (GoalComma
 	if err == nil {
 		return result, nil
 	}
-	pyErr, isPy := err.(*pyint.Error)
+	pyErr, isPy := err.(*errorutil.Error)
 	if !isPy || !goalCommandErrorKinds[pyErr.Kind] {
 		return GoalCommandResult{}, err
 	}

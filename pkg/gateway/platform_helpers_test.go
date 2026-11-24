@@ -17,8 +17,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/provider"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 func fixedDedupClock(t *testing.T, now *float64) {
@@ -165,7 +165,7 @@ func TestCancelTaskUnwindsAndIsSelfCancelSafe(t *testing.T) {
 }
 
 func TestBoundedPutRefreshesAndCaps(t *testing.T) {
-	store := pydict.New[string, any]()
+	store := orderedutil.NewMap[string, any]()
 	for i, k := range []string{"k0", "k1", "k2", "k3", "k4"} {
 		BoundedPut(store, k, any(i), 3)
 	}
@@ -729,7 +729,7 @@ func TestSharedPlatformBoilerplate(t *testing.T) {
 		for _, c := range []struct {
 			in   any
 			want int
-		}{{"8080", 8080}, {" 42 ", 42}, {8443.9, 8443}, {true, 1}, {math.Inf(1), 7}, {math.NaN(), 7}, {"8080.0", 7}, {nil, 7}, {"1_000", 1000}} {
+		}{{"8080", 8080}, {" 42 ", 42}, {8443.9, 8443}, {true, 1}, {math.Inf(1), 7}, {math.NaN(), 7}, {"8080.0", 8080}, {nil, 7}, {"1_000", 1000}} {
 			if got := CoercePort(c.in, 7); got != c.want {
 				t.Fatalf("%v -> %d", c.in, got)
 			}

@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var repairProfilesKindLabels = map[string]string{
@@ -111,14 +111,14 @@ func repairProfilesCommand(r *sessionsRun, liveHomes func(context.Context, []rep
 		return 1, err
 	}
 	dump := func(v any) error {
-		text, err := pyjson.Dumps(v, pyjson.Indent(2))
+		text, err := jsonutil.Encode(v, jsonutil.Indent(2))
 		if err == nil {
 			r.print(text)
 		}
 		return err
 	}
 	findings := plan.findings
-	result, code, done, err := func() (*pyjson.Object, int, bool, error) {
+	result, code, done, err := func() (*jsonutil.Object, int, bool, error) {
 		defer session.close()
 		repairable := plan.repairable()
 		if asJSON && !apply {
@@ -126,7 +126,7 @@ func repairProfilesCommand(r *sessionsRun, liveHomes func(context.Context, []rep
 			for _, p := range profiles {
 				storeNames = append(storeNames, p)
 			}
-			return nil, 0, true, dump(pyjson.ObjectOf("stores", storeNames, "findings", findingDicts(findings), "repairable", len(repairable)))
+			return nil, 0, true, dump(jsonutil.ObjectOf("stores", storeNames, "findings", findingDicts(findings), "repairable", len(repairable)))
 		}
 		if !asJSON {
 			r.printf("Scanned %d profile store(s): %s", len(stores), strings.Join(profiles, ", "))
@@ -143,7 +143,7 @@ func repairProfilesCommand(r *sessionsRun, liveHomes func(context.Context, []rep
 		}
 		if len(repairable) == 0 {
 			if asJSON {
-				return nil, 0, true, dump(pyjson.ObjectOf("findings", findingDicts(findings), "applied", pyjson.NewObject()))
+				return nil, 0, true, dump(jsonutil.ObjectOf("findings", findingDicts(findings), "applied", jsonutil.NewObject()))
 			}
 			r.print("\nNothing to repair.")
 			return nil, 0, true, nil
@@ -166,26 +166,26 @@ func repairProfilesCommand(r *sessionsRun, liveHomes func(context.Context, []rep
 	}
 	failures, _ := rowGet(result, "failures").([]any)
 	if asJSON {
-		if err := dump(pyjson.ObjectOf("findings", findingDicts(findings), "applied", result)); err != nil {
+		if err := dump(jsonutil.ObjectOf("findings", findingDicts(findings), "applied", result)); err != nil {
 			return 1, err
 		}
 	} else {
-		if snapshots, ok := rowGet(result, "snapshots").(*pyjson.Object); ok {
-			for _, profile := range snapshots.Keys {
+		if snapshots, ok := rowGet(result, "snapshots").(*jsonutil.Object); ok {
+			for _, profile := range snapshots.Keys() {
 				snap := "FAILED"
-				if v := snapshots.Vals[profile]; pyrepr.Truthy(v) {
-					snap = pyrepr.Str(v)
+				if v := snapshots.Value(profile); anyutil.IsTrue(v) {
+					snap = anyutil.String(v)
 				}
 				r.printf("  snapshot [%s]: %s", profile, snap)
 			}
 		}
 		var applied []string
-		if totals, ok := rowGet(result, "totals").(*pyjson.Object); ok {
-			keys := slices.Clone(totals.Keys)
+		if totals, ok := rowGet(result, "totals").(*jsonutil.Object); ok {
+			keys := slices.Clone(totals.Keys())
 			slices.Sort(keys)
 			for _, k := range keys {
-				if v := totals.Vals[k]; pyrepr.Truthy(v) {
-					applied = append(applied, k+"="+pyrepr.Str(v))
+				if v := totals.Value(k); anyutil.IsTrue(v) {
+					applied = append(applied, k+"="+anyutil.String(v))
 				}
 			}
 		}
@@ -195,8 +195,8 @@ func repairProfilesCommand(r *sessionsRun, liveHomes func(context.Context, []rep
 		}
 		r.printf("\nApplied: %s", appliedText)
 		for _, item := range failures {
-			failure, _ := item.(*pyjson.Object)
-			r.printf("  ✗ %s %s: %s", pyrepr.Str(rowGet(failure, "kind")), pyrepr.Str(rowGet(failure, "subject")), pyrepr.Str(rowGet(failure, "error")))
+			failure, _ := item.(*jsonutil.Object)
+			r.printf("  ✗ %s %s: %s", anyutil.String(rowGet(failure, "kind")), anyutil.String(rowGet(failure, "subject")), anyutil.String(rowGet(failure, "error")))
 		}
 		r.print("Re-run without --apply to confirm the stores are clean.")
 	}

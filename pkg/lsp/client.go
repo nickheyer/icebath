@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -22,8 +23,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -71,7 +72,7 @@ var clientCapabilities = map[string]any{
 
 // FileURI returns the file URI of a path, spaces, unicode and drive letters included
 func FileURI(path string) (string, error) {
-	abs, err := pypath.Abspath(path)
+	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
 	}
@@ -86,7 +87,7 @@ func FileURI(path string) (string, error) {
 
 // LSP WorkspaceFolder of a root
 func folder(root string) (map[string]any, error) {
-	name := pypath.Basename(strings.TrimRight(root, string(filepath.Separator)))
+	name := pathutil.Name(strings.TrimRight(root, string(filepath.Separator)))
 	if name == "" {
 		name = root
 	}
@@ -106,7 +107,7 @@ func URIToPath(uri string) string {
 	if runtime.GOOS == "windows" && strings.HasPrefix(raw, "/") && len(raw) > 2 && raw[2] == ':' {
 		raw = raw[1:]
 	}
-	return pypath.Normpath(pyUnquote(raw))
+	return filepath.Clean(pyUnquote(raw))
 }
 
 // UTF-16 code units of a string
@@ -676,7 +677,7 @@ func (c *Client) dispatch(msg any) error {
 	case KindNotification:
 		c.dispatchNotification(key, msg.(map[string]any))
 	default:
-		c.logf(slog.LevelWarn, "[%s] dropping invalid message: %s", c.ServerID, pyrepr.Repr(msg))
+		c.logf(slog.LevelWarn, "[%s] dropping invalid message: %s", c.ServerID, anyutil.Quote(msg))
 	}
 	return nil
 }
@@ -816,7 +817,7 @@ func (c *Client) initialize(ctx context.Context) error {
 
 // AttributeError a get call on a non dict raises
 func attributeError(v any) error {
-	return &pyExc{typ: "AttributeError", text: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))}
+	return &pyExc{typ: "AttributeError", text: fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(v))}
 }
 
 // Graceful shutdown and exit, a grace period for the server to honour exit, then the hard kill
@@ -950,7 +951,7 @@ var errConnectionLost = &pyExc{typ: "ConnectionResetError", text: "Connection lo
 
 func (c *Client) requireOpen(method string) error {
 	if !c.connectionIsOpen() {
-		return protocolErrorf("cannot send %s: server connection closed", pyrepr.StrRepr(method))
+		return protocolErrorf("cannot send %s: server connection closed", strconv.Quote(method))
 	}
 	return nil
 }
@@ -972,7 +973,7 @@ func (c *Client) sendRequest(ctx context.Context, method string, params any) (an
 		if isCancellation(err) {
 			return nil, err
 		}
-		return nil, protocolErrorf("send failed for %s: %s", pyrepr.StrRepr(method), writeErrorText(err))
+		return nil, protocolErrorf("send failed for %s: %s", strconv.Quote(method), writeErrorText(err))
 	}
 	defer delete(c.pending, id)
 	if err := c.l.await(ctx, fut.done); err != nil {
@@ -1025,7 +1026,7 @@ func (c *Client) dispatchResponse(id any, msg map[string]any) error {
 	if !ok {
 		switch id.(type) {
 		case []any, map[string]any:
-			return &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(id))}
+			return &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(id))}
 		}
 		return nil
 	}
@@ -1047,7 +1048,7 @@ func (c *Client) dispatchResponse(id any, msg map[string]any) error {
 	if err != nil {
 		return err
 	}
-	fut.setError(NewRequestError(int(code), pyrepr.Str(dgetOr(em, "message", "unknown")), em["data"]))
+	fut.setError(NewRequestError(int(code), anyutil.String(dgetOr(em, "message", "unknown")), em["data"]))
 	return nil
 }
 
@@ -1100,7 +1101,7 @@ func (c *Client) dispatchRequest(ctx context.Context, id any, msg map[string]any
 			reply = MakeResponse(id, result)
 		}
 	default:
-		reply = MakeErrorResponse(id, ErrorMethodNotFound, "method not found: "+pyrepr.Str(method), nil)
+		reply = MakeErrorResponse(id, ErrorMethodNotFound, "method not found: "+anyutil.String(method), nil)
 	}
 	c.sendReply(ctx, reply)
 }
@@ -1126,7 +1127,7 @@ func (c *Client) handleWorkspaceConfiguration(params any) (any, error) {
 	case string:
 		items = make([]any, utf8.RuneCountInString(t))
 	default:
-		return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(t))
+		return nil, fmt.Errorf("'%s' object is not iterable", anyutil.Kind(t))
 	}
 	out := make([]any, 0, len(items))
 	for _, item := range items {
@@ -1141,14 +1142,14 @@ func (c *Client) configSection(item any) any {
 		return nil
 	}
 	section := m["section"]
-	if !pyrepr.Truthy(section) || len(c.initOptions) == 0 {
+	if !anyutil.IsTrue(section) || len(c.initOptions) == 0 {
 		if len(c.initOptions) == 0 {
 			return nil
 		}
 		return c.initOptions
 	}
 	var cur any = c.initOptions
-	for _, part := range strings.Split(pyrepr.Str(section), ".") {
+	for _, part := range strings.Split(anyutil.String(section), ".") {
 		cm, ok := cur.(map[string]any)
 		if !ok {
 			return nil
@@ -1209,7 +1210,7 @@ func (c *Client) openFile(ctx context.Context, path, languageID string, text *st
 	if !c.isRunning() {
 		return 0, protocolErrorf("client not running")
 	}
-	absPath, err := pypath.Abspath(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return 0, err
 	}
@@ -1293,7 +1294,7 @@ func (c *Client) saveFile(ctx context.Context, path string) error {
 	if !c.isRunning() {
 		return nil
 	}
-	absPath, err := pypath.Abspath(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return err
 	}
@@ -1307,7 +1308,7 @@ func (c *Client) saveFile(ctx context.Context, path string) error {
 
 // Pulls document diagnostics into the pull store tagged with the version at send time
 func (c *Client) pullDocumentDiagnostics(ctx context.Context, path string) error {
-	absPath, err := pypath.Abspath(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return err
 	}
@@ -1385,7 +1386,7 @@ func (c *Client) waitForDiagnostics(ctx context.Context, path string, version in
 		}
 	}
 	deadline := time.Now().Add(timeout)
-	absPath, err := pypath.Abspath(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return false, err
 	}
@@ -1490,7 +1491,7 @@ func (c *Client) seedsFirstPush() bool { return c.seedFirstPush }
 
 // Text last synced for a path, false when never opened
 func (c *Client) documentText(path string) (string, bool, error) {
-	absPath, err := pypath.Abspath(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return "", false, err
 	}
@@ -1502,7 +1503,7 @@ func (c *Client) documentText(path string) (string, bool, error) {
 
 // Merged and deduped push and pull diagnostics, stores counting only once fresh when asked
 func (c *Client) diagnosticsFor(path string, freshOnly bool) ([]map[string]any, error) {
-	absPath, err := pypath.Abspath(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
@@ -1568,12 +1569,12 @@ func DiagnosticKey(d map[string]any) (string, error) {
 	}
 	code := ""
 	if v, ok := d["code"]; ok && v != nil {
-		code = pyrepr.Str(v)
+		code = anyutil.String(v)
 	}
 	return strings.Join([]string{
-		pyrepr.Str(pyOr(d["severity"], int64(1))), code, pyrepr.Str(pyOr(d["source"], "")),
-		strings.TrimSpace(pyrepr.Str(pyOr(d["message"], ""))),
-		pyrepr.Str(dgetOr(start, "line", int64(0))) + ":" + pyrepr.Str(dgetOr(start, "character", int64(0))) + "-" +
-			pyrepr.Str(dgetOr(end, "line", int64(0))) + ":" + pyrepr.Str(dgetOr(end, "character", int64(0))),
+		anyutil.String(pyOr(d["severity"], int64(1))), code, anyutil.String(pyOr(d["source"], "")),
+		strings.TrimSpace(anyutil.String(pyOr(d["message"], ""))),
+		anyutil.String(dgetOr(start, "line", int64(0))) + ":" + anyutil.String(dgetOr(start, "character", int64(0))) + "-" +
+			anyutil.String(dgetOr(end, "line", int64(0))) + ":" + anyutil.String(dgetOr(end, "character", int64(0))),
 	}, "\x00"), nil
 }

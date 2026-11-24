@@ -2,13 +2,10 @@ package feishu
 
 import (
 	"context"
-	"math/big"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 type MeetingInviteUser struct {
@@ -22,8 +19,8 @@ type MeetingInviteMeeting struct {
 	ID          string
 	Topic       string
 	MeetingNo   string
-	StartTimeMs *big.Int
-	EndTimeMs   *big.Int
+	StartTimeMs int64
+	EndTimeMs   int64
 	HostUser    *MeetingInviteUser
 }
 
@@ -31,7 +28,7 @@ type MeetingInvitedPayload struct {
 	EventID     string
 	Meeting     *MeetingInviteMeeting
 	Inviter     *MeetingInviteUser
-	InviteTimeS *big.Int
+	InviteTimeS int64
 }
 
 // Feishu ID tiers of a sender the adapter resolves to a profile, absent tiers nil
@@ -63,7 +60,7 @@ type DuplicateChecker interface {
 // Payload dict of a mapping or JSON string value, empty for anything else
 func asDict(value any) map[string]any {
 	if s, ok := value.(string); ok {
-		parsed, err := pyjson.Loads(s)
+		parsed, err := jsonutil.Decode(s)
 		if err != nil {
 			return map[string]any{}
 		}
@@ -76,9 +73,9 @@ func asDict(value any) map[string]any {
 			out[k] = v
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := make(map[string]any, d.Len())
-		for _, k := range d.Keys {
+		for _, k := range d.Keys() {
 			out[k], _ = d.Get(k)
 		}
 		return out
@@ -87,7 +84,7 @@ func asDict(value any) map[string]any {
 }
 
 func truthyOr(v any, def any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return def
@@ -98,7 +95,7 @@ func contentPayload(container map[string]any) map[string]any {
 	content, _ := asDict(container["body"])["content"].([]any)
 	for _, raw := range content {
 		item := asDict(raw)
-		ctype := strings.ToLower(pyrepr.Str(truthyOr(item["contentType"], truthyOr(item["content_type"], ""))))
+		ctype := strings.ToLower(anyutil.String(truthyOr(item["contentType"], truthyOr(item["content_type"], ""))))
 		if ctype != "" && ctype != "application/json" {
 			continue
 		}
@@ -112,22 +109,22 @@ func contentPayload(container map[string]any) map[string]any {
 }
 
 func strField(raw map[string]any, key string, strip bool) string {
-	s := pyrepr.Str(truthyOr(raw[key], ""))
+	s := anyutil.String(truthyOr(raw[key], ""))
 	if strip {
 		return strings.TrimSpace(s)
 	}
 	return s
 }
 
-// Python int of the stripped string form, zero for absent or unparseable values
-func intField(value any) *big.Int {
+// Integer of the trimmed text form of a value, zero for absent or unparseable values
+func intField(value any) int64 {
 	if value == nil || value == "" {
-		return new(big.Int)
+		return 0
 	}
-	if n, ok := pyint.Parse(strings.TrimSpace(pyrepr.Str(value))); ok {
+	if n, err := strconv.ParseInt(strings.TrimSpace(anyutil.String(value)), 10, 64); err == nil {
 		return n
 	}
-	return new(big.Int)
+	return 0
 }
 
 func parseUser(value any) *MeetingInviteUser {
@@ -172,7 +169,7 @@ func ParseMeetingInvitedEvent(data any) *MeetingInvitedPayload {
 	if inviter == nil || meeting == nil || meeting.MeetingNo == "" {
 		return nil
 	}
-	return &MeetingInvitedPayload{EventID: pyrepr.Str(truthyOr(asDict(root["header"])["event_id"], "")), Meeting: meeting,
+	return &MeetingInvitedPayload{EventID: anyutil.String(truthyOr(asDict(root["header"])["event_id"], "")), Meeting: meeting,
 		Inviter: inviter, InviteTimeS: intField(merged["invite_time"])}
 }
 
@@ -208,13 +205,6 @@ func BuildMeetingInvitePrompt(payload *MeetingInvitedPayload) string {
 	}, "\n")
 }
 
-func bigText(n *big.Int) string {
-	if n == nil {
-		return "0"
-	}
-	return n.String()
-}
-
 func meetingDedupKey(payload *MeetingInvitedPayload) string {
 	if payload.EventID != "" {
 		return "vc_invite:" + payload.EventID
@@ -226,7 +216,7 @@ func meetingDedupKey(payload *MeetingInvitedPayload) string {
 	if payload.Inviter != nil {
 		openID = payload.Inviter.OpenID
 	}
-	return "vc_invite:" + meetingID + ":" + openID + ":" + bigText(payload.InviteTimeS)
+	return "vc_invite:" + meetingID + ":" + openID + ":" + strconv.FormatInt(payload.InviteTimeS, 10)
 }
 
 func optText(s string) *string {
@@ -265,8 +255,8 @@ func HandleMeetingInvitedEvent(ctx context.Context, adapter MeetingInviteHost, d
 	}
 	inviter := payload.Inviter
 	if inviter.OpenID == "" {
-		pkgLog().Warn("[Feishu-MeetingInvite] Missing inviter open_id, cannot route reply safely (user_id=" + pyrepr.Repr(inviter.UserID) +
-			" union_id=" + pyrepr.Repr(inviter.UnionID) + ")")
+		pkgLog().Warn("[Feishu-MeetingInvite] Missing inviter open_id, cannot route reply safely (user_id=" + anyutil.Quote(inviter.UserID) +
+			" union_id=" + anyutil.Quote(inviter.UnionID) + ")")
 		return nil
 	}
 	profile, err := adapter.ResolveSenderProfile(ctx, SenderID{OpenID: optText(inviter.OpenID), UserID: optText(inviter.UserID),

@@ -20,9 +20,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -112,7 +112,7 @@ func (a *DiscordAdapter) sendPlain(ctx context.Context, ch *discordgo.Channel, c
 func (a *DiscordAdapter) rejectOversizedUpload(ctx context.Context, ch *discordgo.Channel, path, filename, caption string) *gateway.SendResult {
 	size, err := getsize(path)
 	if err != nil {
-		return &gateway.SendResult{Success: false, Error: fmt.Sprintf("Cannot stat file %s: %s", filename, pypath.OSErrorText(err))}
+		return &gateway.SendResult{Success: false, Error: fmt.Sprintf("Cannot stat file %s: %s", filename, err.Error())}
 	}
 	limit := a.discordUploadLimitBytes(ch)
 	if size <= int64(limit) {
@@ -156,12 +156,12 @@ func (a *DiscordAdapter) sendFileAttachment(ctx context.Context, chatID, path, c
 	}
 	filename := fileName
 	if filename == "" {
-		filename = pypath.Basename(path)
+		filename = pathutil.Name(path)
 	}
 	if rejected := a.rejectOversizedUpload(ctx, ch, path, filename, caption); rejected != nil {
 		return *rejected, nil
 	}
-	_, ext := pypath.Splitext(filename)
+	_, ext := pathutil.SplitExt(filename)
 	ext = strings.ToLower(ext)
 	if ext == "" {
 		ext = "no-ext"
@@ -298,21 +298,21 @@ func (a *DiscordAdapter) sendImageChunk(ctx context.Context, ch *discordgo.Chann
 			}
 			size, err := getsize(localPath)
 			if err != nil {
-				pkgLog().Warn(fmt.Sprintf("[%s] Skipping unreadable image %s: %s", a.Name(), localPath, pypath.OSErrorText(err)))
+				pkgLog().Warn(fmt.Sprintf("[%s] Skipping unreadable image %s: %s", a.Name(), localPath, err.Error()))
 				continue
 			}
 			if limit := a.discordUploadLimitBytes(ch); size > int64(limit) {
 				sizeMB, limitMB := float64(size)/(1024*1024), float64(limit)/(1024*1024)
-				pkgLog().Warn(fmt.Sprintf("[%s] Skipping oversized image in batch: %s is %.1f MB (limit %.0f MB)", a.Name(), pypath.Basename(localPath), sizeMB, limitMB))
+				pkgLog().Warn(fmt.Sprintf("[%s] Skipping oversized image in batch: %s is %.1f MB (limit %.0f MB)", a.Name(), pathutil.Name(localPath), sizeMB, limitMB))
 				skipNotices = append(skipNotices, i18n.T(ctx, "platform.discord.media.image_skipped_too_large", "", map[string]any{
-					"filename": pypath.Basename(localPath), "size_mb": fmt.Sprintf("%.1f", sizeMB), "limit_mb": fmt.Sprintf("%.0f", limitMB)}))
+					"filename": pathutil.Name(localPath), "size_mb": fmt.Sprintf("%.1f", sizeMB), "limit_mb": fmt.Sprintf("%.0f", limitMB)}))
 				continue
 			}
 			data, err := os.ReadFile(localPath)
 			if err != nil {
 				return false, err
 			}
-			files = append(files, &discordgo.File{Name: pypath.Basename(localPath), Reader: bytes.NewReader(data)})
+			files = append(files, &discordgo.File{Name: pathutil.Name(localPath), Reader: bytes.NewReader(data)})
 			continue
 		}
 		if !isSafeURL(env, img.URL) {
@@ -421,7 +421,7 @@ func (a *DiscordAdapter) sendVoiceMessage(ctx context.Context, chatID, audioPath
 	if _, err := os.Stat(audioPath); err != nil {
 		return gateway.SendResult{Success: false, Error: "Audio file not found: " + audioPath}, nil
 	}
-	filename := pypath.Basename(audioPath)
+	filename := pathutil.Name(audioPath)
 	if rejected := a.rejectOversizedUpload(ctx, ch, audioPath, filename, caption); rejected != nil {
 		return *rejected, nil
 	}

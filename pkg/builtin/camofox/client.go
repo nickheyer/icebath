@@ -3,12 +3,15 @@ package camofox
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 	"net/http"
+	"net/netip"
 	"net/url"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,15 +21,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -121,21 +121,7 @@ func (s *scope) camofoxConfig() map[string]any {
 	return map[string]any{}
 }
 
-// Python int saturated into the int64 range
-func saturateInt64(n *big.Int) int64 {
-	switch {
-	case n.IsInt64():
-		return n.Int64()
-	case n.Sign() < 0:
-		return math.MinInt64
-	}
-	return math.MaxInt64
-}
-
-// Whole seconds of a Python int clamped into the range a duration holds
-func clampSeconds(n *big.Int) int64 { return min(saturateInt64(n), maxTimeoutSeconds) }
-
-// browser.command_timeout of the profile floored at 5 seconds, 30 when unset or unreadable
+// browser.command_timeout of the profile floored at 5 seconds and capped at what a duration holds, 30 when unset or unreadable
 func (s *scope) commandTimeout() int64 {
 	raw, err := s.rawConfig()
 	if err == nil {
@@ -143,9 +129,10 @@ func (s *scope) commandTimeout() int64 {
 		if val == nil {
 			return defaultTimeout
 		}
-		var n *big.Int
-		if n, err = pyint.Of(val); err == nil {
-			return max(clampSeconds(n), 5)
+		// A number past the int64 range converts to its bound, which the cap and the floor bring into range
+		var n int64
+		if n, err = anyutil.ToInt(val); err == nil || errors.Is(err, anyutil.ErrRange) {
+			return max(min(n, maxTimeoutSeconds), 5)
 		}
 	}
 	pkgLog().Debug(fmt.Sprintf("Could not read browser.command_timeout: %v", err))
@@ -154,7 +141,7 @@ func (s *scope) commandTimeout() int64 {
 
 // browser.camofox.managed_persistence, a stable profile scoped userId instead of a random one
 func managedPersistenceEnabled(cfg map[string]any) bool {
-	return pyrepr.Truthy(cfg["managed_persistence"])
+	return anyutil.IsTrue(cfg["managed_persistence"])
 }
 
 // Env value first, then the browser.camofox key as stripped text, else empty
@@ -162,7 +149,7 @@ func (s *scope) envOrCfg(envName string, cfg map[string]any, key string) string 
 	if v := s.secret(envName); v != "" {
 		return v
 	}
-	return strings.TrimSpace(pyOrStr(cfg[key]))
+	return strings.TrimSpace(anyutil.String(anyutil.Or(cfg[key], "")))
 }
 
 // Boolean toggle where a valid env spelling wins over the config key
@@ -175,13 +162,13 @@ func (s *scope) flag(envName string, cfg map[string]any, key string) bool {
 		return false
 	}
 	if raw != "" {
-		pkgLog().Debug(fmt.Sprintf("Ignoring invalid boolean env %s=%s", envName, pyrepr.Repr(raw)))
+		pkgLog().Debug(fmt.Sprintf("Ignoring invalid boolean env %s=%s", envName, strconv.Quote(raw)))
 	}
-	return pyrepr.Truthy(cfg[key])
+	return anyutil.IsTrue(cfg[key])
 }
 
 // Profile scoped root directory of Camofox persistence
-func (s *scope) stateDir() string { return pypath.PathJoin(s.home, "browser_auth", "camofox") }
+func (s *scope) stateDir() string { return filepath.Join(s.home, "browser_auth", "camofox") }
 
 // Camofox userId and session key of one session
 type identity struct {
@@ -223,27 +210,17 @@ func isLoopbackHostname(hostname string) bool {
 	if host == "localhost" || host == "localhost.localdomain" {
 		return true
 	}
-	ip, ok := pyipaddress.IPAddress(host)
-	return ok && pyipaddress.IsLoopback(ip)
-}
-
-// Userinfo of a split netloc like SplitResult username and password, absent parts reported false
-func netlocUserinfo(netloc string) (string, bool, string, bool) {
-	i := strings.LastIndex(netloc, "@")
-	if i < 0 {
-		return "", false, "", false
-	}
-	user, pass, hasPass := strings.Cut(netloc[:i], ":")
-	return user, true, pass, hasPass
+	ip, err := netip.ParseAddr(host)
+	return err == nil && ip.IsLoopback()
 }
 
 // Loopback page URL rewritten to the Docker host alias when enabled, with the metadata naming the rewrite
-func (s *scope) rewriteLoopbackURL(raw string) (string, *pyjson.Object, error) {
+func (s *scope) rewriteLoopbackURL(raw string) (string, *jsonutil.Object, error) {
 	cfg := s.camofoxConfig()
 	if !s.flag("CAMOFOX_REWRITE_LOOPBACK_URLS", cfg, "rewrite_loopback_urls") {
 		return raw, nil, nil
 	}
-	parsed, err := pyurl.Split(raw)
+	parsed, err := url.Parse(raw)
 	if err != nil {
 		return raw, nil, nil
 	}
@@ -251,33 +228,25 @@ func (s *scope) rewriteLoopbackURL(raw string) (string, *pyjson.Object, error) {
 	if alias == "" {
 		alias = "host.docker.internal"
 	}
-	hostname := parsed.Hostname()
+	hostname := strings.ToLower(parsed.Hostname())
 	if (parsed.Scheme != "http" && parsed.Scheme != "https") || !isLoopbackHostname(hostname) {
 		return raw, nil, nil
 	}
-	userinfo := ""
-	if user, _, pass, _ := netlocUserinfo(parsed.Netloc); user != "" {
-		userinfo = user
-		if pass != "" {
-			userinfo += ":" + pass
-		}
-		userinfo += "@"
-	}
-	hostPart := alias
-	if strings.Contains(alias, ":") && !strings.HasPrefix(alias, "[") {
-		hostPart = "[" + alias + "]"
-	}
-	port, hasPort, err := parsed.Port()
+	port, hasPort, err := urlutil.Port(parsed)
 	if err != nil {
 		return "", nil, &pyError{"ValueError", err.Error()}
 	}
-	portPart := ""
+	host := urlutil.FormatHost(alias)
 	if hasPort && port != 0 {
-		portPart = fmt.Sprintf(":%d", port)
+		host += ":" + strconv.Itoa(port)
 	}
-	rewritten := pyurl.Unsplit(pyurl.URL{Scheme: parsed.Scheme, Netloc: userinfo + hostPart + portPart,
-		Path: parsed.Path, Query: parsed.Query, Fragment: parsed.Fragment})
-	return rewritten, pyjson.ObjectOf("from", hostname, "to", alias, "original_url", raw, "rewritten_url", rewritten), nil
+	next := *parsed
+	next.Host = host
+	if next.User.Username() == "" {
+		next.User = nil
+	}
+	rewritten := next.String()
+	return rewritten, jsonutil.ObjectOf("from", hostname, "to", alias, "original_url", raw, "rewritten_url", rewritten), nil
 }
 
 // VNC address recorded per Camofox server URL, nil recording that the server advertised none
@@ -287,8 +256,8 @@ var (
 )
 
 // VNC address a health reply advertises through vncPort, nil when it carries no valid port
-func vncURLFromHealth(serverURL string, resp *pyrequests.Response) *string {
-	body, err := decodeJSON(resp.Body)
+func vncURLFromHealth(serverURL string, resp *httputil.Response) *string {
+	body, err := decodeJSON(resp.Content)
 	if err != nil {
 		return nil
 	}
@@ -296,19 +265,19 @@ func vncURLFromHealth(serverURL string, resp *pyrequests.Response) *string {
 	if err != nil {
 		return nil
 	}
-	n, ok := pyint.Instance(port)
-	if !ok || n.Cmp(big.NewInt(1)) < 0 || n.Cmp(big.NewInt(65535)) > 0 {
+	n, ok := anyutil.Int(port)
+	if !ok || n < 1 || n > 65535 {
 		return nil
 	}
-	parsed, err := pyurl.Split(serverURL)
+	parsed, err := url.Parse(serverURL)
 	if err != nil {
 		return nil
 	}
-	host := parsed.Hostname()
+	host := urlutil.FormatHost(strings.ToLower(parsed.Hostname()))
 	if host == "" {
 		host = "localhost"
 	}
-	out := fmt.Sprintf("http://%s:%s", host, pyrepr.Str(port))
+	out := "http://" + host + ":" + strconv.FormatInt(n, 10)
 	return &out
 }
 
@@ -322,14 +291,14 @@ func (s *scope) checkAvailable() bool {
 	if err != nil {
 		return false
 	}
-	if resp.Status == 200 {
+	if resp.StatusCode == 200 {
 		vncMu.Lock()
 		if _, known := vncByURL[serverURL]; !known {
 			vncByURL[serverURL] = vncURLFromHealth(serverURL, resp)
 		}
 		vncMu.Unlock()
 	}
-	return resp.Status == 200
+	return resp.StatusCode == 200
 }
 
 // VNC address of the configured server, empty when it exposes none
@@ -349,19 +318,19 @@ func (s *scope) vncURL() string {
 	return ""
 }
 
-// HTTPError raise_for_status raised, its text carrying the server's own explanation
+// Camofox reply with a 4xx or 5xx status, its text carrying the server's own explanation
 type httpError struct {
 	status int
 	text   string
-	resp   *pyrequests.Response
+	resp   *httputil.Response
 }
 
 func (e *httpError) Error() string { return e.text }
 
-// Python exception class name the error stands for
-func (e *httpError) PyTypeName() string { return "HTTPError" }
+// Kind label the error records under
+func (e *httpError) ErrorKind() string { return "HTTPError" }
 
-// Whether an error is a requests HTTPError with one of the statuses
+// Whether an error is a Camofox status failure with one of the statuses
 func httpStatusIn(err error, statuses ...int) bool {
 	he, ok := err.(*httpError)
 	if !ok {
@@ -375,56 +344,48 @@ func httpStatusIn(err error, statuses ...int) bool {
 	return false
 }
 
-// Whether an error is requests ConnectionError or one of its subclasses
+// Whether a request failed to reach the server: no connection, a connect timeout, a proxy or TLS failure, a read timeout and a redirect loop not counted
 func isConnectionError(err error) bool {
-	re, ok := err.(*pyrequests.Error)
-	if !ok {
-		return false
-	}
-	switch re.Class {
-	case "ConnectionError", "ConnectTimeout", "ProxyError", "SSLError":
-		return true
-	}
-	return false
+	var ue *url.Error
+	var te *httputil.TimeoutError
+	return errors.As(err, &ue) && !(errors.As(err, &te) && te.Phase == httputil.PhaseRead) &&
+		!errors.Is(err, httputil.ErrTooManyRedirects)
 }
 
-// Request URL requests prepares, or the InvalidSchema, InvalidURL or MissingSchema it raises first
+// Request URL of an http or https address with a host, the reason it cannot be sent otherwise
 func prepareURL(raw string) (*url.URL, error) {
-	if strings.Contains(raw, ":") && !strings.HasPrefix(strings.ToLower(raw), "http") {
-		return nil, &pyError{"InvalidSchema", "No connection adapters were found for " + pyrepr.StrRepr(raw)}
-	}
 	u, err := url.Parse(raw)
 	if err != nil {
-		return nil, &pyError{"InvalidURL", "Failed to parse: " + raw}
+		return nil, fmt.Errorf("invalid Camofox URL: %w", err)
 	}
 	if u.Scheme == "" {
-		return nil, &pyError{"MissingSchema", fmt.Sprintf("Invalid URL %s: No scheme supplied. Perhaps you meant https://%s?", pyrepr.StrRepr(raw), raw)}
-	}
-	if u.Host == "" {
-		return nil, &pyError{"InvalidURL", fmt.Sprintf("Invalid URL %s: No host supplied", pyrepr.StrRepr(raw))}
+		return nil, fmt.Errorf("invalid Camofox URL %q: no scheme, perhaps https://%s", raw, raw)
 	}
 	if scheme := strings.ToLower(u.Scheme); scheme != "http" && scheme != "https" {
-		return nil, &pyError{"InvalidSchema", "No connection adapters were found for " + pyrepr.StrRepr(raw)}
+		return nil, fmt.Errorf("invalid Camofox URL %q: scheme %q is neither http nor https", raw, u.Scheme)
+	}
+	if u.Host == "" {
+		return nil, fmt.Errorf("invalid Camofox URL %q: no host", raw)
 	}
 	return u, nil
 }
 
-// One requests call with headers, params and a JSON body, direct skipping proxies and redirects
-func (s *scope) send(method, raw string, headers http.Header, params [][2]string, body any, timeout int64, direct bool) (*pyrequests.Response, error) {
+// One HTTP call with headers, params and a JSON body, connect and read each held to the timeout, direct skipping proxies and redirects
+func (s *scope) send(method, raw string, headers http.Header, params [][2]string, body any, timeout int64, direct bool) (*httputil.Response, error) {
 	u, err := prepareURL(raw)
 	if err != nil {
 		return nil, err
 	}
 	if len(params) > 0 {
 		if u.RawQuery != "" {
-			u.RawQuery += "&" + pyurl.URLEncode(params)
+			u.RawQuery += "&" + urlutil.EncodeQuery(params)
 		} else {
-			u.RawQuery = pyurl.URLEncode(params)
+			u.RawQuery = urlutil.EncodeQuery(params)
 		}
 	}
 	var reader io.Reader
 	if body != nil {
-		payload, err := pyjson.EncodeWTF8PythonASCII(body)
+		payload, err := jsonutil.Append(nil, body, jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
@@ -440,31 +401,32 @@ func (s *scope) send(method, raw string, headers http.Header, params [][2]string
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	t := pyrequests.Timeout{Connect: time.Duration(timeout) * time.Second, Read: time.Duration(timeout) * time.Second,
-		ConnectText: fmt.Sprint(timeout), ReadText: fmt.Sprint(timeout)}
+	limit := time.Duration(timeout) * time.Second
+	t := httputil.Timeout{Connect: limit, Read: limit}
+	client := &http.Client{Transport: httputil.TrustEnvCA(proxiedTransport), CheckRedirect: httputil.RedirectPolicy(true)}
 	if direct {
-		return pyrequests.SendNoRedirects(s.ctx, directTransport, t, req)
+		client = &http.Client{Transport: httputil.TrustEnvCA(directTransport), CheckRedirect: httputil.RedirectPolicy(false)}
 	}
-	return pyrequests.Send(s.ctx, proxiedTransport, t, req)
+	return httputil.Do(client, req, t)
 }
 
 // The server's error, code and recovery fields of an error reply joined, empty when the body has none
-func errorDetail(resp *pyrequests.Response) string {
-	body, err := decodeJSON(resp.Body)
+func errorDetail(resp *httputil.Response) string {
+	body, err := decodeJSON(resp.Content)
 	if err != nil || !isDict(body) {
 		return ""
 	}
 	var parts []string
 	for _, k := range []string{"error", "code", "recovery"} {
-		if v, _ := get(body, k, nil); pyrepr.Truthy(v) {
-			parts = append(parts, k+": "+pyrepr.Str(v))
+		if v, _ := get(body, k, nil); anyutil.IsTrue(v) {
+			parts = append(parts, k+": "+anyutil.String(v))
 		}
 	}
 	return strings.Join(parts, "; ")
 }
 
-// Authenticated request to the Camofox server, a 4xx or 5xx raised as HTTPError with the server's explanation
-func (s *scope) request(method, path string, timeout int64, params [][2]string, body any, direct bool) (*pyrequests.Response, error) {
+// Authenticated request to the Camofox server, a 4xx or 5xx returned as an *httpError with the server's explanation
+func (s *scope) request(method, path string, timeout int64, params [][2]string, body any, direct bool) (*httputil.Response, error) {
 	target := s.camofoxURL() + path
 	headers := s.authHeaders()
 	if timeout == commandTimeoutDefault {
@@ -474,12 +436,12 @@ func (s *scope) request(method, path string, timeout int64, params [][2]string, 
 	if err != nil {
 		return nil, err
 	}
-	if raised := resp.RaiseForStatus(resp.URL); raised != nil {
-		text := raised.Error()
+	if resp.StatusCode >= 400 {
+		text := resp.CheckStatus().Error()
 		if detail := errorDetail(resp); detail != "" {
 			text += " (" + detail + ")"
 		}
-		return nil, &httpError{status: resp.Status, text: text, resp: resp}
+		return nil, &httpError{status: resp.StatusCode, text: text, resp: resp}
 	}
 	return resp, nil
 }
@@ -490,7 +452,7 @@ func (s *scope) post(path string, body any, timeout int64) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decodeJSON(resp.Body)
+	return decodeJSON(resp.Content)
 }
 
 // GET with params, the decoded reply
@@ -499,11 +461,11 @@ func (s *scope) get(path string, params [][2]string, timeout int64) (any, error)
 	if err != nil {
 		return nil, err
 	}
-	return decodeJSON(resp.Body)
+	return decodeJSON(resp.Content)
 }
 
 // GET returning the raw response for binary payloads such as screenshots
-func (s *scope) getRaw(path string, params [][2]string, timeout int64) (*pyrequests.Response, error) {
+func (s *scope) getRaw(path string, params [][2]string, timeout int64) (*httputil.Response, error) {
 	return s.request("GET", path, timeout, params, nil, false)
 }
 
@@ -513,7 +475,7 @@ func (s *scope) delete(path string, body any, timeout int64) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decodeJSON(resp.Body)
+	return decodeJSON(resp.Content)
 }
 
 // Text naming the unreachable server and how to start it
@@ -544,8 +506,8 @@ func (ss *session) setTab(v any) {
 	ss.mu.Unlock()
 }
 
-// Whether a tab id is tracked, the truthiness the Python session map tests
-func (ss *session) hasTab() bool { return pyrepr.Truthy(ss.tab()) }
+// Whether a tab id is tracked, a missing, empty or zero id counting as none
+func (ss *session) hasTab() bool { return anyutil.IsTrue(ss.tab()) }
 
 // Session map slot of one profile home and task
 type sessionSlot struct {
@@ -564,7 +526,7 @@ func (s *scope) slot(taskID string) sessionSlot {
 
 // Path of a tab action under the session's tab
 func tabPath(ss *session, suffix string) string {
-	return "/tabs/" + pyrepr.Str(ss.tab()) + "/" + suffix
+	return "/tabs/" + anyutil.String(ss.tab()) + "/" + suffix
 }
 
 // userId query params of a session
@@ -596,10 +558,10 @@ func (s *scope) adoptExistingTab(ss *session) *session {
 		return ss
 	}
 	list, _ := tabs.([]any)
-	var candidates []*pyjson.Object
+	var candidates []*jsonutil.Object
 	for _, tab := range list {
-		if o, ok := tab.(*pyjson.Object); ok && o != nil {
-			if key, _ := get(o, "listItemId", nil); pyjson.Equal(key, ss.sessionKey) {
+		if o, ok := tab.(*jsonutil.Object); ok && o != nil {
+			if key, _ := get(o, "listItemId", nil); anyutil.Equal(key, ss.sessionKey) {
 				candidates = append(candidates, o)
 			}
 		}
@@ -667,23 +629,23 @@ func (s *scope) resyncTab(ss *session) bool {
 		return false
 	}
 	list, _ := tabs.([]any)
-	var live []*pyjson.Object
+	var live []*jsonutil.Object
 	for _, tab := range list {
-		if o, ok := tab.(*pyjson.Object); ok && o != nil {
-			if id, _ := get(o, "tabId", nil); pyrepr.Truthy(id) {
+		if o, ok := tab.(*jsonutil.Object); ok && o != nil {
+			if id, _ := get(o, "tabId", nil); anyutil.IsTrue(id) {
 				live = append(live, o)
 			}
 		}
 	}
 	tracked := ss.tab()
 	for _, tab := range live {
-		if id, _ := get(tab, "tabId", nil); pyjson.Equal(id, tracked) {
+		if id, _ := get(tab, "tabId", nil); anyutil.Equal(id, tracked) {
 			return true
 		}
 	}
-	var mine []*pyjson.Object
+	var mine []*jsonutil.Object
 	for _, tab := range live {
-		if key, _ := get(tab, "listItemId", nil); pyjson.Equal(key, ss.sessionKey) {
+		if key, _ := get(tab, "listItemId", nil); anyutil.Equal(key, ss.sessionKey) {
 			mine = append(mine, tab)
 		}
 	}
@@ -700,7 +662,7 @@ func (s *scope) resyncTab(ss *session) bool {
 func (s *scope) ensureTab(taskID, at string) (*session, error) {
 	ss := s.getSession(taskID)
 	if !ss.hasTab() {
-		data, err := s.post("/tabs", pyjson.ObjectOf("userId", ss.userID, "listItemId", ss.sessionKey, "url", at), commandTimeoutDefault)
+		data, err := s.post("/tabs", jsonutil.ObjectOf("userId", ss.userID, "listItemId", ss.sessionKey, "url", at), commandTimeoutDefault)
 		if err != nil {
 			return nil, err
 		}

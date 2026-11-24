@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // GCGraceSeconds is how long an untouched partial survives collection
@@ -52,7 +52,7 @@ func CollectPartials(root string, graceSeconds float64) error {
 	keys := map[string]bool{}
 	for _, e := range entries {
 		name := e.Name()
-		if ext := pypath.PathSuffix(name); ext == ".part" || ext == ".ranges" {
+		if ext := pathutil.Suffix(name); ext == ".part" || ext == ".ranges" {
 			keys[strings.TrimSuffix(name, ext)] = true
 		}
 	}

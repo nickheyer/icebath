@@ -5,19 +5,19 @@ import (
 	"math"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // The _delegate_single helper, one task whose scripted child returns childResult
-func delegateSingleStatus(t *testing.T, childResult map[string]any) *pyjson.Object {
+func delegateSingleStatus(t *testing.T, childResult map[string]any) *jsonutil.Object {
 	t.Helper()
 	parent := mockDelegateParent(t, 0)
 	scriptedResultChild(t, parent.env, "claude-sonnet-4-6", 0, 0, childResult)
 	return delegateFirstResult(t, parent, "Test child status")
 }
 
-func statusTriple(t *testing.T, entry *pyjson.Object) (string, string, bool) {
+func statusTriple(t *testing.T, entry *jsonutil.Object) (string, string, bool) {
 	t.Helper()
 	truncated, _ := entry.Get("truncated")
 	return entryText(entry, "status"), entryText(entry, "exit_reason"), truncated == true
@@ -75,10 +75,10 @@ func TestSubagentCostRollupSingleChildCostFoldedIntoParent(t *testing.T) {
 
 func TestSubagentCostRollupBatchChildrenCostsSumIntoParent(t *testing.T) {
 	parent := costCounterParent(t, 0.0)
-	entries := []*pyjson.Object{
-		pyjson.ObjectOf("task_index", 0, "status", "completed", "summary", "A", "api_calls", 2, "duration_seconds", 1.0, "_child_role", "leaf", "_child_cost_usd", 0.15),
-		pyjson.ObjectOf("task_index", 1, "status", "completed", "summary", "B", "api_calls", 2, "duration_seconds", 1.0, "_child_role", "leaf", "_child_cost_usd", 0.27),
-		pyjson.ObjectOf("task_index", 2, "status", "failed", "summary", "", "error", "boom", "api_calls", 0, "duration_seconds", 0.1, "_child_role", "leaf", "_child_cost_usd", 0.03),
+	entries := []*jsonutil.Object{
+		jsonutil.ObjectOf("task_index", 0, "status", "completed", "summary", "A", "api_calls", 2, "duration_seconds", 1.0, "_child_role", "leaf", "_child_cost_usd", 0.15),
+		jsonutil.ObjectOf("task_index", 1, "status", "completed", "summary", "B", "api_calls", 2, "duration_seconds", 1.0, "_child_role", "leaf", "_child_cost_usd", 0.27),
+		jsonutil.ObjectOf("task_index", 2, "status", "failed", "summary", "", "error", "boom", "api_calls", 0, "duration_seconds", 0.1, "_child_role", "leaf", "_child_cost_usd", 0.03),
 	}
 	scriptChildEntries(t, entries...)
 	out, err := delegateTask(tools.WithToolEnv(context.Background(), parent.env), parent, map[string]any{"tasks": batchGoals("Investigate module A", "Investigate module B", "Investigate module C")})
@@ -87,7 +87,7 @@ func TestSubagentCostRollupBatchChildrenCostsSumIntoParent(t *testing.T) {
 		t.Fatalf("parent cost %v source %q status %q", parent.sessionEstimatedCostUSD, parent.sessionCostSource, parent.sessionCostStatus)
 	}
 	for _, raw := range batchResults(t, payload) {
-		entry := raw.(*pyjson.Object)
+		entry := raw.(*jsonutil.Object)
 		if entryHas(entry, "_child_cost_usd") || entryHas(entry, "_child_role") {
 			t.Fatalf("entry %v", entry)
 		}

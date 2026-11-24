@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Runtimes the codex runtime switch accepts
@@ -42,7 +42,7 @@ func CodexRuntimeParseArgs(argString string) (*string, []string) {
 	if slices.Contains(CodexValidRuntimes, value) {
 		return &value, nil
 	}
-	return nil, []string{fmt.Sprintf("Unknown runtime %s. Use one of: auto, codex_app_server, on, off", pyrepr.Repr(raw))}
+	return nil, []string{fmt.Sprintf("Unknown runtime %s. Use one of: auto, codex_app_server, on, off", anyutil.Quote(raw))}
 }
 
 // Configured model.openai_runtime, auto when unset, empty or unrecognized
@@ -56,7 +56,7 @@ func GetCurrentCodexRuntime(cfg map[string]any) string {
 	}
 	value := ""
 	if cxTruthy(modelCfg["openai_runtime"]) {
-		value = strings.ToLower(strings.TrimSpace(pyrepr.Str(modelCfg["openai_runtime"])))
+		value = strings.ToLower(strings.TrimSpace(anyutil.String(modelCfg["openai_runtime"])))
 	}
 	if slices.Contains(CodexValidRuntimes, value) {
 		return value
@@ -69,7 +69,7 @@ func GetConfiguredCodexBinary(cfg map[string]any) string {
 	modelCfg, _ := cfg["model"].(map[string]any)
 	value := ""
 	if modelCfg != nil && cxTruthy(modelCfg["codex_bin"]) {
-		value = strings.TrimSpace(pyrepr.Str(modelCfg["codex_bin"]))
+		value = strings.TrimSpace(anyutil.String(modelCfg["codex_bin"]))
 	}
 	if value == "" {
 		return "codex"
@@ -80,7 +80,7 @@ func GetConfiguredCodexBinary(cfg map[string]any) string {
 // Stores the runtime in the config in place and returns the previous one
 func SetCodexRuntime(cfg map[string]any, newValue string) (string, error) {
 	if !slices.Contains(CodexValidRuntimes, newValue) {
-		return "", fmt.Errorf("invalid runtime %s; must be one of ('auto', 'codex_app_server')", pyrepr.Repr(newValue))
+		return "", fmt.Errorf("invalid runtime %s; must be one of ('auto', 'codex_app_server')", anyutil.Quote(newValue))
 	}
 	old := GetCurrentCodexRuntime(cfg)
 	modelCfg, ok := cfg["model"].(map[string]any)

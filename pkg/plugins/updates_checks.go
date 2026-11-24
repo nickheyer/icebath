@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -35,7 +35,7 @@ func strOrEmpty(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Update check of one installed plugin, its catalog pin, saved feed or git source consulted after local provenance
@@ -43,24 +43,24 @@ func checkProvenanced(ctx context.Context, prov Provenance, fetch, lsRemote func
 	row := prov.Row
 	catalog, _ := row["catalog"].(map[string]any)
 	catalogName := catalog["name"]
-	if !pyrepr.Truthy(catalogName) {
+	if !anyutil.IsTrue(catalogName) {
 		catalogName = row["catalog_name"]
 	}
-	if pyrepr.Truthy(catalogName) {
-		name := pyrepr.Str(catalogName)
+	if anyutil.IsTrue(catalogName) {
+		name := anyutil.String(catalogName)
 		result := &CheckResult{Name: prov.Name, Class: "catalog", Current: strOrEmpty(row["revision"])}
 		port := portCatalogEntry(name) != nil
 		var removed *RemovedEntry
 		if allow, _ := row["allow_removed"].(bool); !allow {
 			if removed = findRemovedFor(ctx, port, name); removed == nil {
 				repo := catalog["repo"]
-				if !pyrepr.Truthy(repo) {
+				if !anyutil.IsTrue(repo) {
 					repo = row["source"]
 					if repo == nil {
 						repo = ""
 					}
 				}
-				removed = findRemovedFor(ctx, port, strings.SplitN(pyrepr.Str(repo), "#", 2)[0])
+				removed = findRemovedFor(ctx, port, strings.SplitN(anyutil.String(repo), "#", 2)[0])
 			}
 		}
 		if removed != nil {
@@ -82,8 +82,8 @@ func checkProvenanced(ctx context.Context, prov Provenance, fetch, lsRemote func
 	if result.Reason != "" || result.NeedsFixing != "" {
 		return result
 	}
-	if saved := row["update_url"]; pyrepr.Truthy(saved) {
-		feedText, err := fetch(ctx, pyrepr.Str(saved))
+	if saved := row["update_url"]; anyutil.IsTrue(saved) {
+		feedText, err := fetch(ctx, anyutil.String(saved))
 		if err != nil {
 			result.Reason = "feed fetch failed: " + err.Error()
 			return result
@@ -121,11 +121,11 @@ func checkProvenanced(ctx context.Context, prov Provenance, fetch, lsRemote func
 		return result
 	}
 	source := row["source"]
-	if !pyrepr.Truthy(source) {
+	if !anyutil.IsTrue(source) {
 		result.Reason = "no recorded source"
 		return result
 	}
-	head, err := lsRemote(ctx, pyrepr.Str(source))
+	head, err := lsRemote(ctx, anyutil.String(source))
 	if err != nil {
 		result.Reason = "ls-remote failed: " + err.Error()
 		return result

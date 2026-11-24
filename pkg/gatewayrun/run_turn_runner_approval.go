@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Seconds a local viewer's approval or clarify prompt counts down, nil on a messaging turn or an unlimited clarify wait
@@ -57,7 +57,7 @@ func approvalFlag(data map[string]any, key string, def bool) bool {
 	if !present {
 		return def
 	}
-	return pyrepr.Truthy(value)
+	return anyutil.IsTrue(value)
 }
 
 // Sends the approval request as native buttons when the adapter renders them, else as text with the typed approve steps
@@ -114,7 +114,7 @@ func (t *TurnRunner) sendApprovalCard(sender execApprovalCardSender, approvalDat
 	tc := t.ctx
 	var requestID *string
 	if value, ok := approvalData["request_id"]; ok && value != nil {
-		id := pyrepr.Str(value)
+		id := anyutil.String(value)
 		requestID = &id
 	}
 	chatID, sessionKey, metadata := tc.statusChatID, tc.sessionKey, tc.statusThreadMetadata
@@ -130,7 +130,7 @@ func (t *TurnRunner) sendApprovalCard(sender execApprovalCardSender, approvalDat
 		result, _ := fut.resultWithin(0)
 		var cardID *string
 		if sent, ok := result.(gateway.SendResult); ok && sent.MessageID != nil {
-			id := pyrepr.Str(sent.MessageID)
+			id := anyutil.String(sent.MessageID)
 			cardID = &id
 		}
 		registerTimeoutNotice(t, approvalData, cmd, cardID)

@@ -3,23 +3,25 @@ package pm
 import (
 	"errors"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Joined parts made absolute, left joined when the working directory is gone, with the normcase form
 func sitePath(parts ...string) (string, string) {
-	dir := pypath.Join(parts[0], parts[1:]...)
-	if abs, err := pypath.Abspath(dir); err == nil {
+	dir := pathutil.Join(parts[0], parts[1:]...)
+	if abs, err := filepath.Abs(dir); err == nil {
 		dir = abs
 	}
-	return dir, pypath.Normcase(dir)
+	return dir, pathutil.FoldCase(dir)
 }
 
 // Normcase forms of the import path entries that exist on disk
@@ -43,7 +45,7 @@ func fsEncodeLine(text string) (string, bool) {
 	if isASCII(text) {
 		return text, true
 	}
-	encoded, err := pycodecs.Encode(text, pycodecs.LocaleEncoding())
+	encoded, err := pycodecs.Encode(text, charsetutil.Locale())
 	return encoded, err == nil
 }
 
@@ -65,7 +67,7 @@ func addSitePackage(entries []string, sitedir, name string, known map[string]boo
 	if known == nil {
 		known = knownSitePaths(entries)
 	}
-	fullname := pypath.Join(sitedir, name)
+	fullname := pathutil.Join(sitedir, name)
 	st, err := os.Lstat(fullname)
 	if err != nil || pthHidden(st) {
 		return entries, nil
@@ -74,9 +76,9 @@ func addSitePackage(entries []string, sitedir, name string, known map[string]boo
 	if err != nil {
 		return entries, nil
 	}
-	content, err := pycodecs.Decode(raw, "utf-8-sig")
+	content, err := charsetutil.Decode(raw, "utf-8-sig")
 	if err != nil {
-		if content, err = pycodecs.Decode(raw, pycodecs.GetEncoding()); err != nil {
+		if content, err = charsetutil.Decode(raw, charsetutil.Locale()); err != nil {
 			return entries, pthDecodeError(err)
 		}
 	}

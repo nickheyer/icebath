@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Baseline dicts of a pause token as one list, a typed list read the same as a decoded one
@@ -32,7 +32,7 @@ func mergedSorted(existing any, bound []string) []any {
 	set := map[string]bool{}
 	if list, ok := existing.([]any); ok {
 		for _, item := range list {
-			set[pyrepr.Str(item)] = true
+			set[anyutil.String(item)] = true
 		}
 	}
 	for _, item := range bound {
@@ -77,7 +77,7 @@ func checkoutMove(ctx context.Context, token map[string]any, bind checkoutMoveBi
 	pauseID := token["pause_id"]
 	var root string
 	var found map[string]any
-	if pyrepr.Truthy(pauseID) && (len(targets) > 0 || len(bind.Paths) > 0 || bind.Revert) {
+	if anyutil.IsTrue(pauseID) && (len(targets) > 0 || len(bind.Paths) > 0 || bind.Revert) {
 		root = updaterecord.PauseInstallRoot()
 		if root != "" {
 			found = updaterecord.TreeState(ctx, root)
@@ -89,17 +89,17 @@ func checkoutMove(ctx context.Context, token map[string]any, bind checkoutMoveBi
 	paths := append([]string{}, bind.Paths...)
 	if dirty, ok := found["dirty_at_pause"].([]any); ok && bind.Revert {
 		for _, item := range dirty {
-			paths = append(paths, pyrepr.Str(item))
+			paths = append(paths, anyutil.String(item))
 		}
 	}
 	baselines := tokenBaselines(token)
 	token["baselines"] = baselines
-	moveID := pyrepr.Str(pauseID) + "@" + pyrepr.Str(found["pre_sha"])
+	moveID := anyutil.String(pauseID) + "@" + anyutil.String(found["pre_sha"])
 	var baseline map[string]any
 	for _, item := range baselines {
 		candidate, ok := item.(map[string]any)
-		if ok && pyrepr.Equal(candidate["pre_sha"], found["pre_sha"]) &&
-			(pyrepr.Equal(candidate["pause_id"], pauseID) || pyrepr.Equal(candidate["pause_id"], moveID)) {
+		if ok && anyutil.Equal(candidate["pre_sha"], found["pre_sha"]) &&
+			(anyutil.Equal(candidate["pause_id"], pauseID) || anyutil.Equal(candidate["pause_id"], moveID)) {
 			baseline = candidate
 			break
 		}
@@ -136,14 +136,14 @@ func settleCheckoutMove(ctx context.Context, token, baseline, found map[string]a
 	if now == nil {
 		return &pm.PyError{Class: "TypeError", Message: "the checkout tree state could not be read"}
 	}
-	moved := !pyrepr.Equal(now["pre_sha"], found["pre_sha"])
+	moved := !anyutil.Equal(now["pre_sha"], found["pre_sha"])
 	var torn []string
 	tornKnown := false
 	if moved {
 		var changes []string
 		dirty, changesKnown := now["dirty_at_pause"].([]any)
 		for _, item := range dirty {
-			changes = append(changes, pyrepr.Str(item))
+			changes = append(changes, anyutil.String(item))
 		}
 		var err error
 		torn, tornKnown, err = updaterecord.TornByMove(ctx, root, found, changes, changesKnown)
@@ -163,24 +163,24 @@ func settleCheckoutMove(ctx context.Context, token, baseline, found map[string]a
 		}
 		head := "null"
 		if now["pre_sha"] != nil {
-			head = pyrepr.Str(now["pre_sha"])
+			head = anyutil.String(now["pre_sha"])
 		}
 		landed[head] = names
 	}
 	whole := tornKnown && len(torn) == 0
 	if !moved {
-		whole = pyrepr.Truthy(step["whole"])
+		whole = anyutil.IsTrue(step["whole"])
 		if !whole {
 			whole = true
 			for key, value := range found {
-				if !pyrepr.Equal(now[key], value) {
+				if !anyutil.Equal(now[key], value) {
 					whole = false
 					break
 				}
 			}
 		}
 	}
-	if !pyrepr.Equal(baseline["pause_id"], token["pause_id"]) && whole {
+	if !anyutil.Equal(baseline["pause_id"], token["pause_id"]) && whole {
 		kept := []any{}
 		own := reflect.ValueOf(baseline).Pointer()
 		for _, item := range tokenBaselines(token) {

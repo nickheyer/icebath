@@ -9,10 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Public petdex manifest and the fetch, cache and download bounds of the store
@@ -30,16 +30,16 @@ type ManifestEntry struct {
 }
 
 // Manifest row from its dict with the display name, kind and URLs defaulted
-func ManifestEntryFromDict(d *pyjson.Object) ManifestEntry {
-	text := func(key string) string { return pyrepr.Str(d.GetOr(key, "")) }
+func ManifestEntryFromDict(d *jsonutil.Object) ManifestEntry {
+	text := func(key string) string { return anyutil.String(d.ValueOr(key, "")) }
 	orText := func(key string, fallback any) string {
-		v := d.GetOr(key, "")
-		if !pyrepr.Truthy(v) {
+		v := d.ValueOr(key, "")
+		if !anyutil.IsTrue(v) {
 			v = fallback
 		}
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
-	return ManifestEntry{Slug: strings.TrimSpace(text("slug")), DisplayName: orText("displayName", d.GetOr("slug", "")),
+	return ManifestEntry{Slug: strings.TrimSpace(text("slug")), DisplayName: orText("displayName", d.ValueOr("slug", "")),
 		Kind: orText("kind", "pet"), SubmittedBy: orText("submittedBy", ""), SpritesheetURL: orText("spritesheetUrl", ""),
 		PetJSONURL: orText("petJsonUrl", ""), ZipURL: orText("zipUrl", "")}
 }
@@ -86,7 +86,7 @@ func Prefetch(ctx context.Context, env *tools.Env) {
 }
 
 // SSRF vetted GET following redirects with the petdex user agent, raising on HTTP errors
-func httpGet(ctx context.Context, env *tools.Env, rawURL string, timeout time.Duration) (*pyhttpx.Response, error) {
+func httpGet(ctx context.Context, env *tools.Env, rawURL string, timeout time.Duration) (*httputil.Response, error) {
 	if !tools.IsSafeURL(env, rawURL) {
 		return nil, errors.New("Pet store URL failed the SSRF safety check: " + rawURL)
 	}
@@ -95,7 +95,7 @@ func httpGet(ctx context.Context, env *tools.Env, rawURL string, timeout time.Du
 		return nil, err
 	}
 	req.Header.Set("User-Agent", petdexUserAgent)
-	resp, err := pyhttpx.Do(tools.NewSSRFSafeClient(env, timeout, true), req, timeout)
+	resp, err := httputil.Do(tools.NewSSRFSafeClient(env, timeout, true), req, httputil.EachPhase(timeout))
 	if err != nil {
 		return nil, err
 	}
@@ -109,9 +109,9 @@ func httpGet(ctx context.Context, env *tools.Env, rawURL string, timeout time.Du
 func fetchErrText(err error) string {
 	var urlErr *url.Error
 	if errors.As(err, &urlErr) {
-		return pyhttpx.ErrorText(err)
+		return err.Error()
 	}
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }
 
 // Every approved pet of the public manifest, cached for five minutes unless forced
@@ -137,15 +137,15 @@ func FetchManifest(ctx context.Context, env *tools.Env, force bool) ([]ManifestE
 		return nil, &ManifestError{"could not fetch petdex manifest: " + fetchErrText(err)}
 	}
 	var pets []any
-	if obj, ok := payload.(*pyjson.Object); ok {
-		pets, _ = obj.GetOr("pets", nil).([]any)
+	if obj, ok := payload.(*jsonutil.Object); ok {
+		pets, _ = obj.ValueOr("pets", nil).([]any)
 	}
 	if pets == nil {
 		return nil, &ManifestError{"petdex manifest had no 'pets' array"}
 	}
 	entries := []ManifestEntry{}
 	for _, raw := range pets {
-		if d, ok := raw.(*pyjson.Object); ok {
+		if d, ok := raw.(*jsonutil.Object); ok {
 			if e := ManifestEntryFromDict(d); e.Slug != "" && e.SpritesheetURL != "" {
 				entries = append(entries, e)
 			}

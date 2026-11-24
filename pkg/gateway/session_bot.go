@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python str of a row field, empty for a missing or falsy value
-func botRowText(row *pyjson.Object, key string) string {
+func botRowText(row *jsonutil.Object, key string) string {
 	if row == nil {
 		return ""
 	}
@@ -78,7 +78,7 @@ func releaseSupersededBotChat(ctx context.Context, db SessionStoreDB, store *Ses
 }
 
 // Created source of a row with a missing or NULL column reading as no source
-func botRowCreatedSource(row *pyjson.Object) string {
+func botRowCreatedSource(row *jsonutil.Object) string {
 	value, _ := row.Get("created_source")
 	if value == nil {
 		return ""
@@ -113,7 +113,7 @@ func releaseSupersededBotChatAtBoot(ctx context.Context, db botChatBootDB, store
 // Session database surface of the boot release, the store surface plus the title lookup
 type botChatBootDB interface {
 	SessionStoreDB
-	GetSessionByTitle(ctx context.Context, title string) (*pyjson.Object, error)
+	GetSessionByTitle(ctx context.Context, title string) (*jsonutil.Object, error)
 }
 
 // Renames the canonical Bot Chat title off sid under a visible label, false when the title moved meanwhile

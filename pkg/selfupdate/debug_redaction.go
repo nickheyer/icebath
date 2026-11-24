@@ -3,11 +3,11 @@ package selfupdate
 import (
 	"regexp"
 	"strings"
+	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const debugRedacted = "[REDACTED]"
@@ -18,7 +18,7 @@ var debugEmailAddressRe = regexp2.MustCompile(`(?<![A-Za-z0-9._%+-])[A-Za-z0-9._
 func alnumOnly(s string) string {
 	var b strings.Builder
 	for _, r := range s {
-		if pystr.IsAlnum(r) {
+		if unicode.IsLetter(r) || unicode.IsNumber(r) {
 			b.WriteRune(r)
 		}
 	}
@@ -175,7 +175,7 @@ func RedactDebugSupportTextCapped(value any, maxChars int) string {
 func redactDebugSupportText(value any, maxChars int) string {
 	text := ""
 	if value != nil {
-		text = pyrepr.Str(value)
+		text = anyutil.String(value)
 	}
 	if text == "" {
 		return text

@@ -9,12 +9,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -53,7 +53,7 @@ type turnLeaseStore interface {
 type turnLeaseAdmissionStore interface {
 	turnLeaseStore
 	AcquireSessionTurnLease(sessionID, holder string, o state.TurnLeaseWait) (bool, error)
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 	ResolveResumeSessionID(sessionID string) (string, error)
 	GetMessagesAsConversation(ctx context.Context, sessionID string, o state.ConversationOptions) ([]map[string]any, error)
 }
@@ -94,7 +94,7 @@ type durableTurnLease struct {
 	sessionID         string
 	holder            string
 	authorityDeadline float64
-	stop              *pythread.Event
+	stop              *syncutil.Event
 	refreshInterval   float64
 	mu                sync.Mutex
 	turnActive        bool
@@ -113,7 +113,7 @@ func newDurableTurnLease(a *AIAgent, db turnLeaseStore, sessionID, holder string
 	if a.sessionTurnLeaseRefreshInterval != nil {
 		interval = *a.sessionTurnLeaseRefreshInterval
 	}
-	return &durableTurnLease{agent: a, db: db, sessionID: sessionID, holder: holder, authorityDeadline: deadline, stop: &pythread.Event{}, refreshInterval: interval}
+	return &durableTurnLease{agent: a, db: db, sessionID: sessionID, holder: holder, authorityDeadline: deadline, stop: &syncutil.Event{}, refreshInterval: interval}
 }
 
 // Live session id of the agent, the admission id when the agent has none
@@ -350,7 +350,7 @@ func committedLeaseExpiry(db turnLeaseStore, sessionID, holder string, floor flo
 
 // Whether the session row exists, nil when the read failed and the state is unknown
 func durableSessionExists(ctx context.Context, db turnLeaseAdmissionStore, sessionID string) *bool {
-	row, err := func() (row *pyjson.Object, err error) {
+	row, err := func() (row *jsonutil.Object, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				err = fmt.Errorf("%v", r)
@@ -474,7 +474,7 @@ func carryUnadmittedUserMessage(result map[string]any, userMessage any, persistU
 		durableContent = persistUserMessage
 	}
 	deferredUser := map[string]any{"role": "user", "content": durableContent, state.PersistAfterAdmissionInterrupt: true}
-	if text, isText := userMessage.(string); isText && !pyrepr.Equal(text, durableContent) {
+	if text, isText := userMessage.(string); isText && !anyutil.Equal(text, durableContent) {
 		deferredUser["api_content"] = userMessage
 	}
 	if displayKind != "" {

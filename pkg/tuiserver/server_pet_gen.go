@@ -21,15 +21,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pet"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 )
 
 // Configured display.pet.scale or the engine default, never failing
 func petConfigScale(ctx context.Context) float64 {
 	raw := petCfg(ctx)["scale"]
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return pet.DefaultScale
 	}
 	scale, err := pyFloat(raw)
@@ -125,7 +126,7 @@ func petPNGDataURI(path string, maxPx int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	img := pypil.ThumbnailLanczos(pypil.ToNRGBA(decoded), maxPx)
+	img := imageutil.Thumbnail(imageutil.ToNRGBA(decoded), maxPx, imageutil.Lanczos)
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		return "", err
@@ -248,8 +249,8 @@ func updatePetConfig(ctx context.Context, whenSlug *string, values map[string]an
 	}
 	if whenSlug != nil {
 		current := ""
-		if petMap != nil && pyrepr.Truthy(petMap["slug"]) {
-			current = pyrepr.Str(petMap["slug"])
+		if petMap != nil && anyutil.IsTrue(petMap["slug"]) {
+			current = anyutil.String(petMap["slug"])
 		}
 		if petMap == nil || current != *whenSlug {
 			return false, nil

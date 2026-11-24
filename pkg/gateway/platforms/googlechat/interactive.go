@@ -10,9 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -148,12 +148,12 @@ func clickParams(sources ...any) map[string]string {
 		switch v := src.(type) {
 		case map[string]any:
 			for k, val := range v {
-				out[k] = pyrepr.Str(val)
+				out[k] = anyutil.String(val)
 			}
 		case []any:
 			for _, item := range v {
 				if kv, ok := item.(map[string]any); ok {
-					out[pyrepr.Str(orEmpty(kv["key"]))] = pyrepr.Str(orEmpty(kv["value"]))
+					out[anyutil.String(kv["key"])] = anyutil.String(kv["value"])
 				}
 			}
 		}
@@ -170,7 +170,7 @@ func clickFormValues(raw any) map[string][]string {
 		stringInputs, _ := entry["stringInputs"].(map[string]any)
 		values, _ := stringInputs["value"].([]any)
 		for _, v := range values {
-			out[name] = append(out[name], pyrepr.Str(v))
+			out[name] = append(out[name], anyutil.String(v))
 		}
 	}
 	return out
@@ -191,7 +191,7 @@ func parseCardClick(envelope map[string]any) (*cardClick, bool) {
 		click = &cardClick{params: clickParams(common["parameters"]), formValues: clickFormValues(common["formInputs"]),
 			user: user, message: message, space: space, addon: true}
 	} else {
-		if pyrepr.Str(orEmpty(envelope["type"])) != "CARD_CLICKED" {
+		if anyutil.String(envelope["type"]) != "CARD_CLICKED" {
 			return nil, false
 		}
 		common, _ := envelope["common"].(map[string]any)
@@ -210,13 +210,13 @@ func parseCardClick(envelope map[string]any) (*cardClick, bool) {
 
 // Clicker's display name, email or users id
 func (c *cardClick) userLabel() string {
-	return pyrepr.Str(orEmpty(firstTruthy(c.user["displayName"], c.user["email"], c.user["name"])))
+	return anyutil.String(firstTruthy(c.user["displayName"], c.user["email"], c.user["name"]))
 }
 
 // Message only the clicker sees
 func (c *cardClick) privateNotice(text string) map[string]any {
 	notice := map[string]any{"text": text}
-	if name := pyrepr.Str(orEmpty(c.user["name"])); name != "" {
+	if name := anyutil.String(c.user["name"]); name != "" {
 		notice["privateMessageViewer"] = map[string]any{"name": name}
 	}
 	return notice
@@ -224,7 +224,7 @@ func (c *cardClick) privateNotice(text string) map[string]any {
 
 // Whether the clicker may answer prompts, the injected check, then the runner, then the platform allowlist
 func (a *GoogleChatAdapter) clickAuthorized(ctx context.Context, c *cardClick) bool {
-	email, name := pyrepr.Str(orEmpty(c.user["email"])), pyrepr.Str(orEmpty(c.user["name"]))
+	email, name := anyutil.String(c.user["email"]), anyutil.String(c.user["name"])
 	userID := email
 	if userID == "" {
 		userID = name
@@ -232,9 +232,9 @@ func (a *GoogleChatAdapter) clickAuthorized(ctx context.Context, c *cardClick) b
 	if userID == "" {
 		return false
 	}
-	spaceName := pyrepr.Str(orEmpty(c.space["name"]))
+	spaceName := anyutil.String(c.space["name"])
 	chatType := "group"
-	if t := strings.ToUpper(pyrepr.Str(orEmpty(firstTruthy(c.space["type"], c.space["spaceType"])))); t == "DIRECT_MESSAGE" || t == "DM" {
+	if t := strings.ToUpper(anyutil.String(firstTruthy(c.space["type"], c.space["spaceType"]))); t == "DIRECT_MESSAGE" || t == "DM" {
 		chatType = "dm"
 	}
 	if a.HasAuthorizationCheck() {
@@ -366,7 +366,7 @@ func settledCard(message map[string]any, outcome string) map[string]any {
 	}
 	settled := copyMap(card)
 	settled["sections"] = append(kept, decision)
-	return map[string]any{"cardId": pyrepr.Str(orDefault(entry["cardId"], "settled")), "card": settled}
+	return map[string]any{"cardId": anyutil.String(orDefault(entry["cardId"], "settled")), "card": settled}
 }
 
 // Answers a card click, the synchronous HTTP reply when sync, otherwise the card patched through the REST API
@@ -400,19 +400,19 @@ func (a *GoogleChatAdapter) clickReply(ctx context.Context, c *cardClick, sync b
 		reply["actionResponse"] = map[string]any{"type": kind}
 		return reply
 	}
-	name := pyrepr.Str(orEmpty(c.message["name"]))
+	name := anyutil.String(c.message["name"])
 	if update && name != "" {
 		if _, err := a.patchMessage(ctx, name, message); err != nil {
 			pkgLog().Warn("[GoogleChat] Could not update the clicked card: " + excText(err))
 		}
 		return nil
 	}
-	spaceName := pyrepr.Str(orEmpty(c.space["name"]))
+	spaceName := anyutil.String(c.space["name"])
 	if spaceName == "" {
 		return nil
 	}
 	body := copyMap(message)
-	if thread, _ := c.message["thread"].(map[string]any); pyrepr.Truthy(thread["name"]) {
+	if thread, _ := c.message["thread"].(map[string]any); anyutil.IsTrue(thread["name"]) {
 		body["thread"] = map[string]any{"name": thread["name"]}
 	}
 	if _, err := a.createMessage(ctx, spaceName, body); err != nil {

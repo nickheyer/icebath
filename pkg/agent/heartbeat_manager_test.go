@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
+	"math"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func parsedInterval(t *testing.T, text string) *big.Int {
+func parsedInterval(t *testing.T, text string) int64 {
 	t.Helper()
 	got, err := ParseHeartbeatInterval(text)
 	if err != nil {
@@ -24,7 +25,7 @@ func parsedInterval(t *testing.T, text string) *big.Int {
 
 func TestParseIntervalValid(t *testing.T) {
 	for text, want := range map[string]int64{"10m": 600, "every 10m": 600, "2h": 7200, "every 2 hours": 7200, "1d": 86400, "90 minutes": 5400, "600s": 600} {
-		if got := parsedInterval(t, text); got == nil || got.Cmp(big.NewInt(want)) != 0 {
+		if got := parsedInterval(t, text); got != want {
 			t.Fatalf("%q -> %v", text, got)
 		}
 	}
@@ -32,7 +33,7 @@ func TestParseIntervalValid(t *testing.T) {
 
 func TestParseIntervalNotAnInterval(t *testing.T) {
 	for _, text := range []string{"", "banana", "check CI", "every", "m10"} {
-		if got := parsedInterval(t, text); got != nil {
+		if got := parsedInterval(t, text); got != 0 {
 			t.Fatalf("%q parsed", text)
 		}
 	}
@@ -40,11 +41,11 @@ func TestParseIntervalNotAnInterval(t *testing.T) {
 
 func TestParseIntervalTooSmallIsRejected(t *testing.T) {
 	for _, text := range []string{"5s", "30s"} {
-		if got := parsedInterval(t, text); got == nil || got.Cmp(big.NewInt(-1)) != 0 {
+		if got := parsedInterval(t, text); got != -1 {
 			t.Fatalf("%q -> %v", text, got)
 		}
 	}
-	if got := parsedInterval(t, fmt.Sprintf("%ds", MinHeartbeatIntervalSeconds)); got == nil || got.Cmp(big.NewInt(MinHeartbeatIntervalSeconds)) != 0 {
+	if got := parsedInterval(t, fmt.Sprintf("%ds", MinHeartbeatIntervalSeconds)); got != MinHeartbeatIntervalSeconds {
 		t.Fatalf("floor -> %v", got)
 	}
 }
@@ -52,24 +53,21 @@ func TestParseIntervalTooSmallIsRejected(t *testing.T) {
 func TestParseIntervalRaisesKeyErrorForUnitsOnlyCaseFoldingMatches(t *testing.T) {
 	for text, key := range map[string]string{"10ſ": "unknown interval unit ſ", "every 5 minuteſ": "unknown interval unit minuteſ", "3 mın": "unknown interval unit mın"} {
 		got, err := ParseHeartbeatInterval(text)
-		var raised *pyint.Error
-		if got != nil || !errors.As(err, &raised) || raised.Kind != "KeyError" || raised.Msg != key {
+		var raised *errorutil.Error
+		if got != 0 || !errors.As(err, &raised) || raised.Kind != "KeyError" || raised.Msg != key {
 			t.Fatalf("%q -> %v %v", text, got, err)
 		}
 	}
 }
 
-func TestParseIntervalKeepsSecondsBeyondSixtyFourBits(t *testing.T) {
-	got := parsedInterval(t, "99999999999999999999999d")
-	if got == nil || got.String() != "8639999999999998927331917824" || FormatHeartbeatInterval(got) != "8639999999999998927331917824s" {
-		t.Fatalf("large interval %v", got)
-	}
-	if day := parsedInterval(t, "1180591620717411303424d"); FormatHeartbeatInterval(day) != "1180591620717411303424d" {
-		t.Fatalf("whole days %v", day)
+func TestParseIntervalRefusesSecondsBeyondSixtyFourBits(t *testing.T) {
+	for _, text := range []string{"99999999999999999999999d", "1180591620717411303424d"} {
+		if got, err := ParseHeartbeatInterval(text); got != 0 || !errors.Is(err, anyutil.ErrRange) {
+			t.Fatalf("%q -> %d %v", text, got, err)
+		}
 	}
 	_, err := ParseHeartbeatInterval(strings.Repeat("9", 400) + "s")
-	var raised *pyint.Error
-	if !errors.As(err, &raised) || raised.Kind != "OverflowError" || raised.Msg != "cannot convert float infinity to integer" {
+	if !errors.Is(err, anyutil.ErrRange) || err.Error() != "cannot convert +Inf to an integer: value out of range" {
 		t.Fatalf("infinite seconds %v", err)
 	}
 }
@@ -77,24 +75,24 @@ func TestParseIntervalKeepsSecondsBeyondSixtyFourBits(t *testing.T) {
 func TestLargeIntervalHeartbeatPersistsAndNeverFires(t *testing.T) {
 	goalsTestHome(t)
 	ctx := context.Background()
-	interval := parsedInterval(t, "99999999999999999999999d")
+	interval := int64(math.MaxInt64)
 	mgr := NewHeartbeatManager(ctx, "hb-large-sid")
 	if _, err := mgr.Set("far away", interval); err != nil {
 		t.Fatal(err)
 	}
 	loaded := NewHeartbeatManager(ctx, "hb-large-sid").State()
-	if loaded == nil || loaded.IntervalSeconds.Cmp(interval) != 0 || loaded.IsDue(nowSeconds()+1e18) {
+	if loaded == nil || loaded.IntervalSeconds != interval || loaded.IsDue(nowSeconds()+1e18) {
 		t.Fatalf("loaded %+v", loaded)
 	}
 	line, err := mgr.StatusLine()
-	if err != nil || line != ("♥ Heartbeat (every 8639999999999998927331917824s, next in ~8639999999999998927331917824s): far away") {
+	if err != nil || line != ("♥ Heartbeat (every 9223372036854775807s, next in ~9223372036854775807s): far away") {
 		t.Fatalf("status %q %v", line, err)
 	}
 }
 
 func TestFormatInterval(t *testing.T) {
 	for seconds, want := range map[int64]string{600: "10m", 7200: "2h", 86400: "1d", 90: "90s"} {
-		if got := FormatHeartbeatInterval(big.NewInt(seconds)); got != want {
+		if got := FormatHeartbeatInterval(seconds); got != want {
 			t.Fatalf("%d -> %q", seconds, got)
 		}
 	}
@@ -102,7 +100,7 @@ func TestFormatInterval(t *testing.T) {
 
 func TestIsDueAnchorsOnCreatedThenLastFired(t *testing.T) {
 	now := nowSeconds()
-	s := &HeartbeatState{Prompt: "p", IntervalSeconds: big.NewInt(600), Status: "active", CreatedAt: now}
+	s := &HeartbeatState{Prompt: "p", IntervalSeconds: 600, Status: "active", CreatedAt: now}
 	if s.IsDue(now+1) || !s.IsDue(now+601) {
 		t.Fatal("created anchor")
 	}
@@ -114,7 +112,7 @@ func TestIsDueAnchorsOnCreatedThenLastFired(t *testing.T) {
 
 func TestPausedNeverDue(t *testing.T) {
 	now := nowSeconds()
-	s := &HeartbeatState{Prompt: "p", IntervalSeconds: big.NewInt(60), Status: "paused", CreatedAt: now - 3600}
+	s := &HeartbeatState{Prompt: "p", IntervalSeconds: 60, Status: "paused", CreatedAt: now - 3600}
 	if s.IsDue(now) {
 		t.Fatal("paused heartbeat due")
 	}
@@ -334,11 +332,11 @@ func TestHeartbeatStatusLineFollowsTheStoredState(t *testing.T) {
 
 func TestParseIntervalAcceptsEveryUnicodeSpace(t *testing.T) {
 	for text, want := range map[string]int64{"\u00a0every\u200310\x1fm\u3000": 600, "\v2\u2028Hours\u0085": 7200, "1.5h": 5400, "٣m": 180} {
-		if got := parsedInterval(t, text); got == nil || got.Cmp(big.NewInt(want)) != 0 {
+		if got := parsedInterval(t, text); got != want {
 			t.Fatalf("%q -> %v", text, got)
 		}
 	}
-	if got := parsedInterval(t, "10\u200bm"); got != nil {
+	if got := parsedInterval(t, "10\u200bm"); got != 0 {
 		t.Fatal("zero width space parsed")
 	}
 }
@@ -346,7 +344,7 @@ func TestParseIntervalAcceptsEveryUnicodeSpace(t *testing.T) {
 func TestViewerHeartbeatSetConvertsItsIntervalLikeTheManager(t *testing.T) {
 	goalsTestHome(t)
 	ctx := context.Background()
-	call := func(args ...any) *pyjson.Object {
+	call := func(args ...any) *jsonutil.Object {
 		t.Helper()
 		out, err := InvokeViewerAutomation(ctx, nil, "heartbeat", "viewer-hb-sid", "set", args, nil)
 		if err != nil {
@@ -354,17 +352,17 @@ func TestViewerHeartbeatSetConvertsItsIntervalLikeTheManager(t *testing.T) {
 		}
 		return out
 	}
-	large := new(big.Int).Lsh(big.NewInt(1), 80)
+	large := int64(1) << 62
 	set := call("watch", large)
 	stored := LoadHeartbeat(ctx, "viewer-hb-sid")
-	if _, isState := set.GetOr("value", nil).(*pyjson.Object); !isState || stored == nil || stored.IntervalSeconds.Cmp(large) != 0 {
+	if _, isState := set.Value("value").(*jsonutil.Object); !isState || stored == nil || stored.IntervalSeconds != large {
 		t.Fatalf("large interval set %v stored %+v", set, stored)
 	}
-	if text := call("watch", "600"); LoadHeartbeat(ctx, "viewer-hb-sid").IntervalSeconds.Int64() != 600 || text.GetOr("error", nil) != nil {
+	if text := call("watch", "600"); LoadHeartbeat(ctx, "viewer-hb-sid").IntervalSeconds != 600 || text.Value("error") != nil {
 		t.Fatalf("text interval %v", text)
 	}
-	refused, _ := call("watch", "soon").GetOr("error", nil).(*pyjson.Object)
-	if refused == nil || refused.GetOr("type", nil) != "ValueError" || refused.GetOr("message", nil) != "heartbeat interval must be a whole number of seconds, got soon" {
+	refused, _ := call("watch", "soon").Value("error").(*jsonutil.Object)
+	if refused == nil || refused.Value("type") != "ValueError" || refused.Value("message") != "heartbeat interval must be a whole number of seconds, got soon" {
 		t.Fatalf("refused %v", refused)
 	}
 }

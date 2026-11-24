@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 var (
@@ -296,11 +296,11 @@ func IsLocalValidationError(err error) bool {
 	if errors.As(err, &local) {
 		return true
 	}
-	if mro := declaredExceptionMRO(err); mro != nil {
-		if !slices.Contains(mro, "ValueError") && !slices.Contains(mro, "TypeError") {
+	if chain := errorClassChain(err); chain != nil {
+		if !slices.Contains(chain, "ValueError") && !slices.Contains(chain, "TypeError") {
 			return false
 		}
-		if slices.Contains(mro, "JSONDecodeError") || slices.Contains(mro, "UnicodeEncodeError") || slices.Contains(mro, "SSLError") {
+		if slices.Contains(chain, "JSONDecodeError") || slices.Contains(chain, "UnicodeEncodeError") || slices.Contains(chain, "SSLError") {
 			return false
 		}
 	}
@@ -311,17 +311,37 @@ func IsLocalValidationError(err error) bool {
 	return true
 }
 
-// Python classes of the first error in the chain that declares its class, nil when none does
-func declaredExceptionMRO(err error) []string {
-	var declared interface{ PyExceptionMRO() []string }
-	if errors.As(err, &declared) {
-		return declared.PyExceptionMRO()
+// Class chain a failure presents to the classifiers: the chain a plugin host raise reports, else its kind followed by the value or type error family the kind belongs to; nil when the chain holds plain errors only
+func errorClassChain(err error) []string {
+	var chained interface{ ClassChain() []string }
+	if errors.As(err, &chained) {
+		return chained.ClassChain()
 	}
-	var named pyrepr.PyTypeNamed
-	if errors.As(err, &named) && named.PyTypeName() != "" {
-		return pyrepr.ExceptionMROFrom(named.PyTypeName(), nil)
+	kind := errorutil.Kind(err)
+	if kind == "" || kind == "error" {
+		return nil
 	}
-	return nil
+	if chain, ok := errorKindChains[kind]; ok {
+		return chain
+	}
+	return []string{kind}
+}
+
+// Kinds of the value and type error families with the families they belong to, the Go conversion and JSON encoding errors among them
+var errorKindChains = map[string][]string{
+	"ValueError":               {"ValueError"},
+	"TypeError":                {"TypeError"},
+	"UnicodeError":             {"UnicodeError", "ValueError"},
+	"UnicodeDecodeError":       {"UnicodeDecodeError", "UnicodeError", "ValueError"},
+	"UnicodeEncodeError":       {"UnicodeEncodeError", "UnicodeError", "ValueError"},
+	"UnicodeTranslateError":    {"UnicodeTranslateError", "UnicodeError", "ValueError"},
+	"JSONDecodeError":          {"JSONDecodeError", "ValueError"},
+	"SSLCertVerificationError": {"SSLCertVerificationError", "SSLError", "OSError", "ValueError"},
+	"NumError":                 {"NumError", "ValueError"},
+	"UnsupportedValueError":    {"UnsupportedValueError", "ValueError"},
+	"UnmarshalTypeError":       {"UnmarshalTypeError", "TypeError"},
+	"UnsupportedTypeError":     {"UnsupportedTypeError", "TypeError"},
+	"InvalidUnmarshalError":    {"InvalidUnmarshalError", "TypeError"},
 }
 
 // LocalValidationError marks a request the adapter refused before any transport attempt

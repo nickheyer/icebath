@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Entry whose ro subdir refuses unlink of its blob, the residue a root owned container write leaves
@@ -141,13 +141,13 @@ func TestFixedExpiredOrOtherUIDEntryIsJudgedAgain(t *testing.T) {
 	}
 	stateFile := filepath.Join(root, StuckStateName)
 	data, _ := os.ReadFile(stateFile)
-	v, err := pyjson.Loads(string(data))
+	v, err := jsonutil.Decode(string(data))
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec := v.(*pyjson.Object).Vals["other"].(*pyjson.Object)
-	rec.Vals["uid"] = rec.Vals["uid"].(int64) + 1
-	text, _ := pyjson.Dumps(v)
+	rec := v.(*jsonutil.Object).Value("other").(*jsonutil.Object)
+	rec.Set("uid", rec.Value("uid").(int64)+1)
+	text, _ := jsonutil.Encode(v)
 	writeText(t, stateFile, text)
 	*walked = nil
 	mustPruneIdle(t, root, logFile, 0)

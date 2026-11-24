@@ -1,33 +1,32 @@
 package app
 
 import (
-	"unicode"
-	"unicode/utf8"
-
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
-const pyWSClass = `[\t\n\v\f\r \x{1c}-\x{1f}\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
+// Unicode white space with the information separators U+001C to U+001F, which also break lines
+const textSpaceClass = `[\t\n\v\f\r \x{1c}-\x{1f}\x{85}\x{a0}\x{1680}\x{2000}-\x{200a}\x{2028}\x{2029}\x{202f}\x{205f}\x{3000}]`
 
 const visionAnalysisPrompt = "Describe everything visible in this image in thorough detail. " +
 	"Include any text, code, data, objects, people, layout, colors, " +
@@ -36,7 +35,7 @@ const visionAnalysisPrompt = "Describe everything visible in this image in thoro
 var (
 	streamOpenTags, streamCloseTags [][]rune
 	streamMaxCloseTagLen            int
-	reasoningParagraphRe            = regexp.MustCompile(`\n` + pyWSClass + `*\n+`)
+	reasoningParagraphRe            = regexp.MustCompile(`\n` + textSpaceClass + `*\n+`)
 	visionAnalyzeTool               = tools.VisionAnalyzeTool
 )
 
@@ -78,7 +77,7 @@ func (c *CLI) onThinking(text any) {
 	_, diagnostic := text.(config.DiagnosticText)
 	shown := ""
 	if text != nil {
-		shown = pyrepr.Str(text)
+		shown = anyutil.String(text)
 	}
 	show := func() error {
 		if shown == "" {
@@ -164,7 +163,7 @@ func (c *CLI) emitReasoningPreview(reasoningText string) {
 			}
 		}
 		if compact := strings.Join(kept, " "); compact != "" {
-			paragraphs = append(paragraphs, strings.Join(pystr.TextwrapWrap(compact, pystr.DefaultTextwrap(wrapWidth)), "\n"))
+			paragraphs = append(paragraphs, strings.Join(textutil.Wrap(compact, wrapWidth, textutil.WrapOptions{}), "\n"))
 		}
 	}
 	previewText = strings.Join(paragraphs, "\n")
@@ -245,7 +244,7 @@ func (c *CLI) onReasoning(reasoningText string) {
 }
 
 // Clock suffix of a submitted message preview, empty unless timestamps are shown
-func (c *CLI) timestampNow() string { return pydatetime.Strftime(time.Now(), c.timestampFormat) }
+func (c *CLI) timestampNow() string { return timeutil.Strftime(time.Now(), c.timestampFormat) }
 
 // Streams reasoning tokens into the dim block above the response
 func (c *CLI) streamReasoningDelta(text string) {
@@ -382,10 +381,10 @@ func (c *CLI) streamDelta(text any) {
 		c.resetStreamStateLocked()
 		return
 	}
-	if !pyrepr.Truthy(text) {
+	if !anyutil.IsTrue(text) {
 		return
 	}
-	c.streamDeltaText(pyrepr.Str(text))
+	c.streamDeltaText(anyutil.String(text))
 }
 
 // Filters reasoning tags out of streamed text, routing their content to the reasoning block when shown
@@ -533,12 +532,12 @@ func (c *CLI) renderStreamText(text string) {
 		var rgb [3]string
 		parsed := true
 		for i, start := range []int{1, 3, 5} {
-			n, ok := pyint.ParseBase(textutil.Between(textHex, start, start+2), 16)
-			if !ok {
+			n, err := strconv.ParseUint(textutil.Between(textHex, start, start+2), 16, 8)
+			if err != nil {
 				parsed = false
 				break
 			}
-			rgb[i] = n.String()
+			rgb[i] = strconv.FormatUint(n, 10)
 		}
 		if parsed {
 			c.streamTextANSI = "\033[38;2;" + rgb[0] + ";" + rgb[1] + ";" + rgb[2] + "m"
@@ -687,10 +686,10 @@ func (c *CLI) preprocessImagesWithVision(text string, images []string, announce 
 			if announce {
 				notify("cli.stream.vision_error")
 			}
-		case pyrepr.Truthy(result["success"]):
+		case anyutil.IsTrue(result["success"]):
 			description := ""
 			if v, ok := result["analysis"]; ok {
-				description = pyrepr.Str(v)
+				description = anyutil.String(v)
 			}
 			enrichedParts = append(enrichedParts, "[The user attached an image. Here's what it contains:\n"+description+"]\n"+
 				"[If you need a closer look, use vision_analyze with "+
@@ -727,11 +726,11 @@ func (c *CLI) analyzeImage(imgPath string) (result map[string]any, failure strin
 			result, failure = nil, panicText(r)
 		}
 	}()
-	decoded, err := pyjson.Loads(visionAnalyzeTool(c.ctx, c.env, imgPath, visionAnalysisPrompt))
+	decoded, err := jsonutil.Decode(visionAnalyzeTool(c.ctx, c.env, imgPath, visionAnalysisPrompt))
 	if err != nil {
 		return nil, err.Error()
 	}
-	obj, ok := decoded.(*pyjson.Object)
+	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, "the vision tool replied with " + errchain.Kind(decoded) + " where a mapping was expected"
 	}
@@ -752,9 +751,9 @@ func panicText(r any) string {
 	return fmt.Sprint(r)
 }
 
-// Prints Rich markup through the command safe console, prompt safe once the TUI is live
+// Prints console markup through the command safe console, prompt safe once the TUI is live
 func (c *CLI) consolePrint(markup string) {
-	(&pyrich.Console{Out: c.console.Out, Color: c.console.ShouldUseColor(), Terminal: c.console.StdoutIsTTY(), Width: terminalColumns()}).Print(markup)
+	(&consoleutil.Console{Out: c.console.Out, Color: c.console.ShouldUseColor(), Terminal: c.console.StdoutIsTTY(), Width: terminalColumns()}).Print(markup)
 }
 
 // Closes open blocks once and announces the tool whose arguments the model began generating
@@ -814,7 +813,7 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 			label = c.t("cli.stream.reference_noun", nil)
 		}
 		header := c.t("cli.stream.reference_header", map[string]any{"label": label})
-		if idx, count := extra["moa_index"], extra["moa_count"]; pyrepr.Truthy(idx) && pyrepr.Truthy(count) {
+		if idx, count := extra["moa_index"], extra["moa_count"]; anyutil.IsTrue(idx) && anyutil.IsTrue(count) {
 			header = c.t("cli.stream.reference_header_indexed", map[string]any{"index": idx, "count": count, "label": label})
 		}
 		func() {
@@ -841,7 +840,7 @@ func (c *CLI) onToolProgress(eventType, functionName, preview string, functionAr
 		}
 		return
 	}
-	isError := pyrepr.Truthy(extra["is_error"])
+	isError := anyutil.IsTrue(extra["is_error"])
 	if eventType == "tool.started" {
 		c.streamMu.Lock()
 		c.toolGenAnnounced = nil
@@ -967,7 +966,7 @@ func (c *CLI) showToolProgress(eventType, functionName, message string, percent 
 	}
 	parts := []string{running[0]}
 	if percent != nil {
-		parts = append(parts, pyrepr.Str(percent)+"%")
+		parts = append(parts, anyutil.String(percent)+"%")
 	}
 	if message != "" {
 		parts = append(parts, message)
@@ -995,25 +994,25 @@ func (c *CLI) onToolComplete(toolCallID, functionName string, functionArgs map[s
 // Prints the dim running in background line when a delegate call was dispatched to the background
 func (c *CLI) announceBackgroundDelegation(functionResult string) {
 	defer func() { _ = recover() }()
-	decoded, err := pyjson.Loads(functionResult)
+	decoded, err := jsonutil.Decode(functionResult)
 	if err != nil {
 		return
 	}
-	obj, ok := decoded.(*pyjson.Object)
+	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return
 	}
 	status, _ := obj.Get("status")
 	mode, _ := obj.Get("mode")
-	if !pyrepr.Equal(status, "dispatched") || !pyrepr.Equal(mode, "background") {
+	if !anyutil.Equal(status, "dispatched") || !anyutil.Equal(mode, "background") {
 		return
 	}
 	var n any = int64(1)
-	if count, _ := obj.Get("count"); pyrepr.Truthy(count) {
+	if count, _ := obj.Get("count"); anyutil.IsTrue(count) {
 		n = count
 	}
 	key := "cli.stream.background_running_other"
-	if pyrepr.Equal(n, int64(1)) {
+	if anyutil.Equal(n, int64(1)) {
 		key = "cli.stream.background_running_one"
 	}
 	cprint("\033[2m" + c.t(key, map[string]any{"count": n}) + "\033[0m")

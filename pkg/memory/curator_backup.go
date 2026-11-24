@@ -20,14 +20,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	tarutil "github.com/nickheyer/icebath/pkg/utils/tar"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -102,7 +103,7 @@ func curatorReadUTF8Sig(p string) (string, error) {
 }
 
 // Copies the live cron jobs.json into the snapshot, reporting why when it could not
-func curatorBackupCronJobsInto(ctx context.Context, dest string) (*pyjson.Object, error) {
+func curatorBackupCronJobsInto(ctx context.Context, dest string) (*jsonutil.Object, error) {
 	src := filepath.Join(home.Dir(ctx), "cron", "jobs.json")
 	info := curatorEntry("backed_up", false, "jobs_count", 0)
 	if _, err := os.Stat(src); err != nil {
@@ -119,7 +120,7 @@ func curatorBackupCronJobsInto(ctx context.Context, dest string) (*pyjson.Object
 		return nil, fmt.Errorf("%s is not valid UTF-8", src)
 	}
 	text := strings.TrimPrefix(string(raw), "\ufeff")
-	if parsed, err := pyjson.Loads(text); err == nil {
+	if parsed, err := jsonutil.Decode(text); err == nil {
 		jobs, _ := curatorJobsList(parsed)
 		info.Set("jobs_count", len(jobs))
 	} else {
@@ -146,7 +147,7 @@ func curatorUTCID(now time.Time) string {
 var (
 	curatorUTCIDNow       = curatorUTCID
 	curatorSnapshotSkills = SnapshotSkills
-	curatorMove           = pyfs.Move
+	curatorMove           = fsutil.Move
 	curatorRename         = os.Rename
 )
 
@@ -179,21 +180,21 @@ func curatorCountSkillFiles(base string) int {
 }
 
 // Writes manifest.json describing the snapshot archive and its cron capture
-func curatorWriteManifest(dest, reason, archive string, skillsCounted int, cronInfo *pyjson.Object) error {
-	cron := curatorEntry("backed_up", pyrepr.Truthy(curatorGetOr(cronInfo, "backed_up", false)), "jobs_count", curatorCount(cronInfo, "jobs_count"))
-	if !pyrepr.Truthy(curatorGetOr(cronInfo, "backed_up", nil)) {
+func curatorWriteManifest(dest, reason, archive string, skillsCounted int, cronInfo *jsonutil.Object) error {
+	cron := curatorEntry("backed_up", anyutil.IsTrue(curatorGetOr(cronInfo, "backed_up", false)), "jobs_count", curatorCount(cronInfo, "jobs_count"))
+	if !anyutil.IsTrue(curatorGetOr(cronInfo, "backed_up", nil)) {
 		cron.Set("reason", curatorGetOr(cronInfo, "reason", "not captured"))
 	}
-	if w := curatorGetOr(cronInfo, "parse_warning", nil); pyrepr.Truthy(w) {
+	if w := curatorGetOr(cronInfo, "parse_warning", nil); anyutil.IsTrue(w) {
 		cron.Set("parse_warning", w)
 	}
 	st, err := os.Stat(archive)
 	if err != nil {
 		return err
 	}
-	manifest := curatorEntry("id", filepath.Base(dest), "reason", reason, "created_at", pydatetime.ISOFormatUTC(time.Now()), "archive", filepath.Base(archive),
+	manifest := curatorEntry("id", filepath.Base(dest), "reason", reason, "created_at", time.Now().UTC().Format(timeutil.RFC3339Micro), "archive", filepath.Base(archive),
 		"archive_bytes", st.Size(), "skill_files", skillsCounted, "cron_jobs", cron)
-	text, err := pyjson.Dumps(manifest, pyjson.Indent(2), pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(manifest, jsonutil.Indent(2), jsonutil.SortKeys())
 	if err != nil {
 		return err
 	}
@@ -232,7 +233,7 @@ func curatorWriteArchive(skillsDir, archive string) error {
 	gz.Name = strings.TrimSuffix(filepath.Base(archive), ".gz")
 	gz.ModTime = time.Now()
 	tw := tar.NewWriter(gz)
-	adder := &pyfs.TarAdder{W: tw}
+	adder := &tarutil.Adder{W: tw}
 	filter := func(h *tar.Header) *tar.Header {
 		if curatorExcludedMember(h.Name, h.Typeflag == tar.TypeDir) {
 			return nil
@@ -286,7 +287,7 @@ func SnapshotSkills(ctx context.Context, reason string, protect map[string]bool)
 	archive := filepath.Join(dest, curatorArchiveName)
 	err := curatorWriteArchive(skillsDir, archive)
 	if err == nil {
-		var cronInfo *pyjson.Object
+		var cronInfo *jsonutil.Object
 		if cronInfo, err = curatorBackupCronJobsInto(ctx, dest); err != nil {
 			os.RemoveAll(dest)
 			return "", false, err
@@ -346,7 +347,7 @@ func curatorPruneOld(ctx context.Context, keep int, protect map[string]bool) []s
 	deleted := []string{}
 	for _, d := range doomed {
 		p := filepath.Join(backups, d.name)
-		if err := pyfs.RmTree(p, nil); err != nil {
+		if err := os.RemoveAll(p); err != nil {
 			pkgLog().Debug(fmt.Sprintf("Failed to %s %s: %v", d.what, p, err))
 			continue
 		}
@@ -362,13 +363,13 @@ func curatorReadManifest(dir string) (any, error) {
 	text, err := curatorReadUTF8Sig(filepath.Join(dir, "manifest.json"))
 	if err != nil {
 		if !errors.Is(err, errCuratorNotUTF8) {
-			return pyjson.NewObject(), nil
+			return jsonutil.NewObject(), nil
 		}
 		return nil, err
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	return v, nil
 }
@@ -395,20 +396,20 @@ func curatorRestorableSnapshots(ctx context.Context) []string {
 }
 
 // Manifests of every restorable snapshot, newest first
-func ListCuratorBackups(ctx context.Context) ([]*pyjson.Object, error) {
-	out := []*pyjson.Object{}
+func ListCuratorBackups(ctx context.Context) ([]*jsonutil.Object, error) {
+	out := []*jsonutil.Object{}
 	for _, child := range curatorRestorableSnapshots(ctx) {
 		mf := curatorEntry("id", filepath.Base(child), "path", child)
 		manifest, err := curatorReadManifest(child)
 		if err != nil {
 			return nil, err
 		}
-		obj, ok := manifest.(*pyjson.Object)
+		obj, ok := manifest.(*jsonutil.Object)
 		if !ok {
 			return nil, fmt.Errorf("backup manifest is %s where a mapping was expected", errchain.Kind(manifest))
 		}
-		for _, k := range obj.Keys {
-			mf.Set(k, obj.Vals[k])
+		for _, k := range obj.Keys() {
+			mf.Set(k, obj.Value(k))
 		}
 		if _, has := mf.Get("archive_bytes"); !has {
 			if st, err := os.Stat(filepath.Join(child, curatorArchiveName)); err == nil {
@@ -437,7 +438,7 @@ func curatorResolveBackup(ctx context.Context, id string) (string, bool) {
 
 func curatorSetOrDelete(job any, key string, value any) {
 	switch m := job.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if value == nil {
 			m.Delete(key)
 		} else {
@@ -453,7 +454,7 @@ func curatorSetOrDelete(job any, key string, value any) {
 }
 
 // Restores backed up skills and skill fields onto cron jobs that still exist, under the cron jobs lock
-func curatorRestoreCronSkillLinks(ctx context.Context, snapDir string) *pyjson.Object {
+func curatorRestoreCronSkillLinks(ctx context.Context, snapDir string) *jsonutil.Object {
 	report := curatorEntry("attempted", false, "restored", []any{}, "skipped_missing", []any{}, "unchanged", 0, "error", nil)
 	backupFile := filepath.Join(snapDir, curatorCronJobsFilename)
 	if !curatorExists(backupFile) {
@@ -463,7 +464,7 @@ func curatorRestoreCronSkillLinks(ctx context.Context, snapDir string) *pyjson.O
 	text, err := curatorReadUTF8Sig(backupFile)
 	var parsed any
 	if err == nil {
-		parsed, err = pyjson.Loads(text)
+		parsed, err = jsonutil.Decode(text)
 	}
 	if err != nil {
 		report.Set("error", fmt.Sprintf("failed to load backed-up jobs: %v", err))
@@ -474,14 +475,14 @@ func curatorRestoreCronSkillLinks(ctx context.Context, snapDir string) *pyjson.O
 		report.Set("error", "backed-up cron-jobs.json has no jobs list")
 		return report
 	}
-	byID := pyjson.NewObject()
+	byID := jsonutil.NewObject()
 	for _, job := range backupJobs {
 		id, ok := curatorGetOr(job, "id", nil).(string)
 		if !curatorIsDict(job) || !ok || id == "" {
 			continue
 		}
 		name := curatorGetOr(job, "name", nil)
-		if !pyrepr.Truthy(name) {
+		if !anyutil.IsTrue(name) {
 			name = id
 		}
 		byID.Set(id, curatorEntry("skills", curatorGetOr(job, "skills", nil), "skill", curatorGetOr(job, "skill", nil), "name", name))
@@ -511,20 +512,20 @@ func curatorRestoreCronSkillLinks(ctx context.Context, snapDir string) *pyjson.O
 			}
 			cur := curatorEntry("skills", curatorGetOr(live, "skills", nil), "skill", curatorGetOr(live, "skill", nil))
 			bkp := curatorEntry("skills", curatorGetOr(b, "skills", nil), "skill", curatorGetOr(b, "skill", nil))
-			if reflect.DeepEqual(cur.Vals, bkp.Vals) {
+			if reflect.DeepEqual(cur.Map(), bkp.Map()) {
 				unchanged++
 				continue
 			}
-			for _, k := range bkp.Keys {
-				curatorSetOrDelete(live, k, bkp.Vals[k])
+			for _, k := range bkp.Keys() {
+				curatorSetOrDelete(live, k, bkp.Value(k))
 			}
 			restored = append(restored, curatorEntry("job_id", jid, "job_name", curatorGetOr(b, "name", jid), "from", cur, "to", bkp))
 			changed = true
 		}
 		skipped := []any{}
-		for _, jid := range byID.Keys {
+		for _, jid := range byID.Keys() {
 			if !liveIDs[jid] {
-				skipped = append(skipped, curatorEntry("job_id", jid, "job_name", curatorGetOr(byID.Vals[jid], "name", jid)))
+				skipped = append(skipped, curatorEntry("job_id", jid, "job_name", curatorGetOr(byID.Value(jid), "name", jid)))
 			}
 		}
 		report.Set("skipped_missing", skipped)
@@ -545,7 +546,7 @@ func curatorRemoveEntry(entry string) error {
 		return nil
 	}
 	if st.IsDir() {
-		return pyfs.RmTree(entry, nil)
+		return os.RemoveAll(entry)
 	}
 	return os.Remove(entry)
 }
@@ -631,11 +632,11 @@ func curatorUnstage(moved []curatorMoved) []string {
 }
 
 // One line cron reconciliation summary, empty when nothing worth saying happened
-func curatorCronSummary(rep *pyjson.Object) string {
-	if !pyrepr.Truthy(curatorGetOr(rep, "attempted", nil)) {
+func curatorCronSummary(rep *jsonutil.Object) string {
+	if !anyutil.IsTrue(curatorGetOr(rep, "attempted", nil)) {
 		return ""
 	}
-	if e := curatorGetOr(rep, "error", nil); pyrepr.Truthy(e) {
+	if e := curatorGetOr(rep, "error", nil); anyutil.IsTrue(e) {
 		return "cron links: error — " + pyStr(e)
 	}
 	lenOf := func(key string) int {
@@ -668,7 +669,7 @@ func curatorCheckArchiveMembers(archive string) error {
 	if err != nil {
 		return err
 	}
-	names, err := pyfs.TarMemberNames(gz)
+	names, err := tarutil.MemberNames(gz)
 	if err != nil {
 		return err
 	}
@@ -785,12 +786,12 @@ var curatorExtractArchive = func(archive, dest string) error {
 	if err != nil {
 		return err
 	}
-	return pyfs.ExtractTarDataReader(gz, dest)
+	return tarutil.Extract(gz, dest, tarutil.ExtractOptions{Links: true})
 }
 
 // sizefmt format_bytes, B below 1024 then one decimal KB MB GB TB
 func formatBytes(n any) string {
-	size, err := pyint.Float(n)
+	size, err := anyutil.ToFloat(n)
 	if err != nil {
 		return "?"
 	}
@@ -830,7 +831,7 @@ func SummarizeCuratorBackups(ctx context.Context) (string, error) {
 	lines := []string{header, strings.Repeat("─", utf8.RuneCountInString(header))}
 	for _, r := range rows {
 		reason := curatorGetOr(r, "reason", "?")
-		if !pyrepr.Truthy(reason) {
+		if !anyutil.IsTrue(reason) {
 			reason = "?"
 		}
 		size, err := pyint.Of(curatorGetOr(r, "archive_bytes", 0))

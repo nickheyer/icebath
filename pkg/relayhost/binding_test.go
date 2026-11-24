@@ -12,11 +12,11 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/relayhost/relaytest"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 // Provisions the nemo_relay environment before the network is blocked, then dispatches a child or runs the suite
@@ -46,7 +46,7 @@ func TestBindingDrivesNativeRelay(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer relay.Subscribers.Deregister("test.binding")
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	handle, err := relay.Scope.Push(ctx, "test.agent", relay.ScopeType.Agent, map[string]any{"metadata": map[string]any{"k": "v"}})
 	if err != nil {
 		t.Fatal(err)

@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func decodeMap(raw string) map[string]any {
@@ -43,7 +42,7 @@ func registerSearchTool(t *testing.T, name, toolset string, params map[string]an
 	Default.mu.RLock()
 	previous := Default.tools[name]
 	Default.mu.RUnlock()
-	Default.Register(Def{Name: name, Toolset: toolset, Schema: pyjson.ObjectOf("name", name, "description", "desc "+name, "parameters", params),
+	Default.Register(Def{Name: name, Toolset: toolset, Schema: jsonutil.ObjectOf("name", name, "description", "desc "+name, "parameters", params),
 		Handler: func(ctx context.Context, call *Call) string {
 			return jsonCompact(map[string]any{"ok": true, "args": call.Args})
 		}})
@@ -411,7 +410,7 @@ func TestResolveUnderlyingCall(t *testing.T) {
 		t.Fatalf("suffix hint: %s", errMsg)
 	}
 	entries, errMsg := NormalizeToolCallEntries(map[string]any{"calls": `[{"name":"mcp__res__probe","arguments":"{\"a\":1,\"b\":1.0}"}]`})
-	if errMsg != "" || len(entries) != 1 || entries[0].Arguments.Vals["a"] != int64(1) || entries[0].Arguments.Vals["b"] != 1.0 || !slices.Equal(entries[0].Arguments.Keys, []string{"a", "b"}) {
+	if errMsg != "" || len(entries) != 1 || entries[0].Arguments.Value("a") != int64(1) || entries[0].Arguments.Value("b") != 1.0 || !slices.Equal(entries[0].Arguments.Keys(), []string{"a", "b"}) {
 		t.Fatalf("json envelope: %v %s", entries, errMsg)
 	}
 	if handler := entries[0].HandlerArgs(); handler["a"] != 1.0 || handler["b"] != 1.0 {
@@ -421,7 +420,7 @@ func TestResolveUnderlyingCall(t *testing.T) {
 	if errMsg != "tool_call calls[0].arguments is not valid JSON: Expecting value: line 1 column 1 (char 0)" {
 		t.Fatalf("invalid json: %s", errMsg)
 	}
-	batchErr := LocalBatchError([]ToolCallEntry{{Name: "a", Arguments: pyjson.ObjectOf("y", 1.0, "x", int64(1))}, {Name: "b", Arguments: pyjson.NewObject()}})
+	batchErr := LocalBatchError([]ToolCallEntry{{Name: "a", Arguments: jsonutil.ObjectOf("y", 1.0, "x", int64(1))}, {Name: "b", Arguments: jsonutil.NewObject()}})
 	if batchErr != `tool_call takes exactly one entry for local tools; you sent 2. Retry with only: {"calls":[{"name":"a","arguments":{"y":1.0,"x":1}}]} then issue the remaining 1 call(s) as separate tool_call invocations. Only connectors__ names may be batched together.` {
 		t.Fatalf("batch error: %s", batchErr)
 	}
@@ -442,11 +441,11 @@ func TestToolCallBatchErrorEchoesModelNumbersAsPythonDoes(t *testing.T) {
 			t.Fatalf("parse %s: %s", raw, parseErr)
 		}
 		out := NewDispatcher(Default).Dispatch(context.Background(), &Call{Name: ToolCallName, Args: args, RawArgs: raw, Env: env})
-		decoded, err := pyjson.Loads(out)
+		decoded, err := jsonutil.Decode(out)
 		if err != nil {
 			t.Fatalf("result %s: %v", out, err)
 		}
-		msg, _ := decoded.(*pyjson.Object).Vals["error"].(string)
+		msg, _ := decoded.(*jsonutil.Object).Value("error").(string)
 		if !strings.Contains(msg, want) {
 			t.Fatalf("echo for %s: %s", raw, msg)
 		}

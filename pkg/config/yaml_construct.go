@@ -8,12 +8,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Python objects the safe constructor builds before they become Go values, containers by reference
@@ -56,19 +54,14 @@ const (
 
 func newPyDict() *pyDict { return &pyDict{index: map[string]int{}} }
 
-// Python set a YAML !!set loads to, members in insertion order
+// Set a YAML !!set loads to, members in insertion order
 type YAMLSet struct{ Items []any }
 
-func (YAMLSet) PyTypeName() string { return "set" }
-
-// Repr of the set with its members in insertion order
-func (s YAMLSet) PyRepr() string {
-	if len(s.Items) == 0 {
-		return "set()"
-	}
+// Members in insertion order between braces, strings quoted
+func (s YAMLSet) String() string {
 	parts := make([]string, len(s.Items))
 	for i, it := range s.Items {
-		parts[i] = pyrepr.Repr(it)
+		parts[i] = anyutil.Quote(it)
 	}
 	return "{" + strings.Join(parts, ", ") + "}"
 }
@@ -176,14 +169,13 @@ func isRTObject(v any) bool {
 // Equality class of a date or datetime, naive values by wall time and aware values by UTC instant
 func timeHashKey(v any) string {
 	switch t := v.(type) {
-	case pydatetime.Date:
-		return fmt.Sprintf("d%04d-%02d-%02d", t.Year, t.Month, t.Day)
-	case pydatetime.DateTime:
-		wall := time.Date(t.Year, time.Month(t.Month), t.Day, t.Hour, t.Minute, t.Second, t.Microsecond*1000, time.UTC)
-		if t.Zone == nil {
-			return "t" + wall.Format(time.RFC3339Nano)
+	case timeutil.Date:
+		return "d" + t.String()
+	case time.Time:
+		if t.Location() == time.UTC {
+			return "t" + t.Format(time.RFC3339Nano)
 		}
-		return "a" + wall.Add(-t.Zone.Offset).Format(time.RFC3339Nano)
+		return "a" + t.UTC().Format(time.RFC3339Nano)
 	}
 	return "?"
 }
@@ -262,7 +254,7 @@ func pyObjStr(v any) string {
 	case string:
 		return x
 	case *pyTime:
-		return pyrepr.Str(x.v)
+		return timestampText(x.v)
 	case *rtBool:
 		if x.b {
 			return "1"
@@ -274,6 +266,14 @@ func pyObjStr(v any) string {
 		return x.value
 	}
 	return pyObjRepr(v, map[any]bool{})
+}
+
+// Text of a loaded date or datetime, yyyy-mm-dd or the ISO datetime with a space before the time
+func timestampText(v any) string {
+	if t, ok := v.(time.Time); ok {
+		return representTime(t)
+	}
+	return anyutil.String(v)
 }
 
 func pyObjRepr(v any, active map[any]bool) string {
@@ -288,15 +288,15 @@ func pyObjRepr(v any, active map[any]bool) string {
 	case *big.Int:
 		return x.String()
 	case float64:
-		return pyrepr.Float(x)
+		return strconv.FormatFloat(x, 'f', -1, 64)
 	case *pyNaN:
 		return "nan"
 	case string:
-		return pyrepr.StrRepr(x)
+		return strconv.Quote(x)
 	case []byte:
-		return pyrepr.BytesRepr(x)
+		return strconv.Quote(string(x))
 	case *pyTime:
-		return pyrepr.Repr(x.v)
+		return timestampText(x.v)
 	case *rtBool:
 		if x.b {
 			return "1"
@@ -510,7 +510,7 @@ func (c *safeConstructor) constructSafeScalar(n *ry.Node, tag string) any {
 		low := strings.ToLower(value)
 		b, ok := boolValues[low]
 		if !ok {
-			panic(pyErr("KeyError", pyrepr.StrRepr(low)))
+			panic(pyErr("KeyError", strconv.Quote(low)))
 		}
 		return b
 	case yamlTagPrefix + "int":
@@ -552,7 +552,7 @@ func (c *safeConstructor) constructSafeCollection(n *ry.Node, tag string) any {
 		m := newPyDict()
 		return c.generator(m, 3, func() { m.update(c.constructMapping(n, false)) })
 	}
-	panic(constructorError("", nil, "could not determine a constructor for the tag "+pyrepr.StrRepr(tag), n.Start))
+	panic(constructorError("", nil, "could not determine a constructor for the tag "+strconv.Quote(tag), n.Start))
 }
 
 // Scalar text of a node, a mapping answering with its value key entry as SafeConstructor.construct_scalar does
@@ -690,22 +690,13 @@ func (c *safeConstructor) constructMapping(n *ry.Node, deep bool) *pyDict {
 
 var boolValues = map[string]bool{"yes": true, "no": false, "y": true, "n": false, "true": true, "false": false, "on": true, "off": false}
 
-// Python int() of text in a base, the ValueError texts CPython gives for bad literals and over long decimals
+// Integer of YAML digits in a base, any size, the ValueError for text that is no number and for decimals over 4300 digits
 func yamlIntOf(text string, base int) *big.Int {
-	if base == 10 {
-		digits := 0
-		for _, r := range text {
-			if r != '_' && !unicode.IsSpace(r) && r != '+' && r != '-' {
-				digits++
-			}
+	text = strings.TrimSpace(text)
+	if n, ok := new(big.Int).SetString(text, base); ok {
+		if digits := len(strings.TrimLeft(text, "+-")); base == 10 && digits > 4300 {
+			panic(pyErr("ValueError", fmt.Sprintf("YAML integer has %d digits, more than the 4300 a decimal integer may have", digits)))
 		}
-		if n, ok := pyint.ParseBase(text, base); ok {
-			if digits > 4300 {
-				panic(pyErr("ValueError", fmt.Sprintf("Exceeds the limit (4300 digits) for integer string conversion: value has %d digits; use sys.set_int_max_str_digits() to increase the limit", digits)))
-			}
-			return n
-		}
-	} else if n, ok := pyint.ParseBase(text, base); ok {
 		return n
 	}
 	r := []rune(text)
@@ -760,7 +751,7 @@ func (c *safeConstructor) constructInt(n *ry.Node) any {
 
 // Python float() of a str, the ValueError naming the text
 func pyFloatText(text string) float64 {
-	f, err := pyint.ParseFloat(text)
+	f, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
 	if err != nil {
 		panic(pyErr("ValueError", err.Error()))
 	}
@@ -921,26 +912,22 @@ func (c *safeConstructor) constructBinary(n *ry.Node) any {
 
 var timestampRegexp = regexp.MustCompile(`^(?P<year>[0-9][0-9][0-9][0-9])-(?P<month>[0-9][0-9]?)-(?P<day>[0-9][0-9]?)(?:((?P<t>[Tt])|[ \t]+)(?P<hour>[0-9][0-9]?):(?P<minute>[0-9][0-9]):(?P<second>[0-9][0-9])(?:\.(?P<fraction>[0-9]*))?(?:[ \t]*(?P<tz>Z|(?P<tz_sign>[-+])(?P<tz_hour>[0-9][0-9]?)(?::(?P<tz_minute>[0-9][0-9]))?))?)?$`)
 
+// Date or time of a timestamp scalar, a scalar that is no timestamp failing to construct and an impossible field raising the ValueError
 func (c *safeConstructor) constructTimestamp(n *ry.Node) any {
-	var m []string
+	text := ""
 	if n.Kind == ry.ScalarNode {
-		m = timestampRegexp.FindStringSubmatch(n.Value)
-		if m == nil && strings.HasSuffix(n.Value, "\n") {
-			m = timestampRegexp.FindStringSubmatch(n.Value[:len(n.Value)-1])
-		}
+		text = n.Value
 	}
-	if m == nil {
+	v, ok, err := timeutil.YAMLTimestamp(text)
+	if !ok && strings.HasSuffix(text, "\n") {
+		v, ok, err = timeutil.YAMLTimestamp(text[:len(text)-1])
+	}
+	if !ok {
 		panic(constructorError("", nil, `failed to construct timestamp from "`+nodeValueStr(n)+`"`, n.Start))
 	}
-	group := func(name string) (string, bool) {
-		i := timestampRegexp.SubexpIndex(name)
-		full := timestampRegexp.FindStringSubmatchIndex(n.Value)
-		if full == nil {
-			full = timestampRegexp.FindStringSubmatchIndex(n.Value[:len(n.Value)-1])
-		}
-		return m[i], full[2*i] >= 0
+	if err != nil {
+		panic(pyErr("ValueError", err.Error()))
 	}
-	v := createTimestamp(group)
 	return &pyTime{v: v, shared: n.Anchor != nil}
 }
 
@@ -966,84 +953,14 @@ func nodeValueStr(n *ry.Node) string {
 // Repr of a ruamel node, the class, tag, anchor and value
 func nodeRepr(n *ry.Node) string {
 	class := map[ry.NodeKind]string{ry.ScalarNode: "ScalarNode", ry.SequenceNode: "SequenceNode", ry.MappingNode: "MappingNode"}[n.Kind]
-	value := pyrepr.StrRepr(n.Value)
+	value := strconv.Quote(n.Value)
 	if n.Kind != ry.ScalarNode {
 		value = nodeValueStr(n)
 	}
 	if n.Anchor != nil {
-		return class + "(tag=" + pyrepr.StrRepr(n.Tag()) + ", anchor=" + pyrepr.StrRepr(*n.Anchor) + ", value=" + value + ")"
+		return class + "(tag=" + strconv.Quote(n.Tag()) + ", anchor=" + strconv.Quote(*n.Anchor) + ", value=" + value + ")"
 	}
-	return class + "(tag=" + pyrepr.StrRepr(n.Tag()) + ", value=" + value + ")"
-}
-
-// Python datetime.date argument check raising the shared CPython 3.14 messages
-func checkDateArgs(year, month, day int) {
-	if msg := pydatetime.DateArgsError(year, month, day); msg != "" {
-		panic(pyErr("ValueError", msg))
-	}
-}
-
-// Date or datetime ruamel's create_timestamp builds from the matched groups
-func createTimestamp(group func(string) (string, bool)) any {
-	atoi := func(name string) int {
-		s, _ := group(name)
-		n, _ := strconv.Atoi(s)
-		return n
-	}
-	year, month, day := atoi("year"), atoi("month"), atoi("day")
-	if _, ok := group("hour"); !ok {
-		checkDateArgs(year, month, day)
-		return pydatetime.Date{Year: year, Month: month, Day: day}
-	}
-	hour, minute, second := atoi("hour"), atoi("minute"), atoi("second")
-	frac, fraction := 0, 0
-	if f, _ := group("fraction"); f != "" {
-		fracS := f
-		if len(fracS) > 6 {
-			fracS = fracS[:6]
-		}
-		for len(fracS) < 6 {
-			fracS += "0"
-		}
-		frac, _ = strconv.Atoi(fracS)
-		if len(f) > 6 && f[6]-'0' > 4 {
-			frac++
-		}
-		if frac <= 999999 {
-			fraction = frac
-		}
-	}
-	var zone *pydatetime.FixedOffset
-	tz, _ := group("tz")
-	if sign, ok := group("tz_sign"); ok && sign != "" {
-		minutes := atoi("tz_hour") * 60
-		if tm, _ := group("tz_minute"); tm != "" {
-			minutes += atoi("tz_minute")
-		}
-		if sign == "-" {
-			minutes = -minutes
-		}
-		off := time.Duration(minutes) * time.Minute
-		if off <= -24*time.Hour || off >= 24*time.Hour {
-			panic(pyErr("ValueError", "offset must be a timedelta strictly between -timedelta(hours=24) and timedelta(hours=24), not "+pydatetime.TimedeltaRepr(off)+"."))
-		}
-		zone = &pydatetime.FixedOffset{Offset: off, Name: tz}
-	} else if tz == "Z" {
-		zone = &pydatetime.FixedOffset{Name: tz}
-	}
-	checkDateArgs(year, month, day)
-	if msg := pydatetime.TimeArgsError(hour, minute, second); msg != "" {
-		panic(pyErr("ValueError", msg))
-	}
-	dt := pydatetime.DateTime{Year: year, Month: month, Day: day, Hour: hour, Minute: minute, Second: second, Microsecond: fraction, Zone: zone}
-	if frac > 999999 {
-		t := time.Date(year, time.Month(month), day, hour, minute, second, fraction*1000, time.UTC).Add(time.Second)
-		if t.Year() > 9999 {
-			panic(pyErr("OverflowError", "date value out of range"))
-		}
-		dt.Year, dt.Month, dt.Day, dt.Hour, dt.Minute, dt.Second = t.Year(), int(t.Month()), t.Day(), t.Hour(), t.Minute(), t.Second()
-	}
-	return dt
+	return class + "(tag=" + strconv.Quote(n.Tag()) + ", value=" + value + ")"
 }
 
 func (c *safeConstructor) fillOmap(n *ry.Node, omap *pyDict) {
@@ -1089,7 +1006,10 @@ func (c *safeConstructor) fillPairs(n *ry.Node, pairs *pyList) {
 func toGoValue(v any, memo map[any]any) any {
 	switch x := v.(type) {
 	case *big.Int:
-		return pyint.Native(x)
+		if x.IsInt64() && x.Int64() >= math.MinInt && x.Int64() <= math.MaxInt {
+			return int(x.Int64())
+		}
+		return x
 	case *pyNaN:
 		if x.neg {
 			return math.Copysign(math.NaN(), -1)
@@ -1102,9 +1022,9 @@ func toGoValue(v any, memo map[any]any) any {
 		var out any = x.v
 		if x.shared {
 			switch t := x.v.(type) {
-			case pydatetime.Date:
+			case timeutil.Date:
 				out = &t
-			case pydatetime.DateTime:
+			case time.Time:
 				out = &t
 			}
 		}
@@ -1124,7 +1044,7 @@ func toGoValue(v any, memo map[any]any) any {
 		if got, ok := memo[x]; ok {
 			return got
 		}
-		out := make(pyrepr.Tuple, len(x.items))
+		out := make([]any, len(x.items))
 		memo[x] = out
 		for i, it := range x.items {
 			out[i] = toGoValue(it, memo)

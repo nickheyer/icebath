@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var delegationParentEventFields = map[string]bool{
@@ -54,8 +53,8 @@ func RedactChildText(env *Env, text any, force bool) (out string) {
 		return pc.Text
 	}
 	s := ""
-	if pyrepr.Truthy(text) {
-		s = pyrepr.Str(text)
+	if anyutil.IsTrue(text) {
+		s = anyutil.String(text)
 	}
 	if force || redactionEnabled(env) {
 		return RedactForEgress(env, s)
@@ -74,7 +73,7 @@ func redactDelegationField(env *Env, key, value string, force bool) string {
 	if cleaned != value || !IsSecretFieldName(key) {
 		return cleaned
 	}
-	raw, err := pyjson.Dumps(map[string]any{key: value})
+	raw, err := jsonutil.Encode(map[string]any{key: value})
 	if err != nil {
 		return RedactionUnavailable
 	}
@@ -82,12 +81,12 @@ func redactDelegationField(env *Env, key, value string, force bool) string {
 	if scrubbed == raw {
 		return cleaned
 	}
-	probe, err := pyjson.Loads(scrubbed)
+	probe, err := jsonutil.Decode(scrubbed)
 	if err != nil {
 		return RedactionUnavailable
 	}
-	if obj, ok := probe.(*pyjson.Object); ok && len(obj.Keys) == 1 {
-		if only, ok := obj.Vals[obj.Keys[0]].(string); ok {
+	if obj, ok := probe.(*jsonutil.Object); ok && obj.Len() == 1 {
+		if only, ok := obj.Value(obj.Keys()[0]).(string); ok {
 			return only
 		}
 	}
@@ -108,9 +107,9 @@ func redactChildValueAt(env *Env, value any, force bool, depth int) any {
 		return projectParentCopy(v, force)
 	case string:
 		return RedactChildText(env, v, force)
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		keys, get, _ := delegationObject(v)
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for _, k := range keys {
 			item := get(k)
 			rk := RedactChildText(env, k, force)
@@ -122,13 +121,13 @@ func redactChildValueAt(env *Env, value any, force bool, depth int) any {
 			} else {
 				cleaned = redactChildValueAt(env, item, force, depth+1)
 			}
-			if _, seen := out.Vals[rk]; !seen {
+			if _, seen := out.Get(rk); !seen {
 				out.Keys = append(out.Keys, rk)
 			}
-			out.Vals[rk] = cleaned
+			out.Set(rk, cleaned)
 		}
 		if _, isMap := v.(map[string]any); isMap {
-			return out.Vals
+			return out.Map()
 		}
 		return out
 	case []any:
@@ -158,8 +157,8 @@ func redactChildValueAt(env *Env, value any, force bool, depth int) any {
 // Ordered keys and lookup of a map shaped value
 func delegationObject(v any) ([]string, func(string) any, bool) {
 	switch o := v.(type) {
-	case *pyjson.Object:
-		return o.Keys, func(k string) any { return o.Vals[k] }, true
+	case *jsonutil.Object:
+		return o.Keys(), func(k string) any { return o.Value(k) }, true
 	case map[string]any:
 		keys := make([]string, 0, len(o))
 		for k := range o {
@@ -185,7 +184,7 @@ func redactDelegationSummary(env *Env, summary any, structured, force bool) any 
 		var parsed any
 		if start >= 0 {
 			var err error
-			if parsed, err = pyjson.Loads(candidate); err != nil {
+			if parsed, err = jsonutil.Decode(candidate); err != nil {
 				start = -1
 			}
 		}
@@ -193,8 +192,8 @@ func redactDelegationSummary(env *Env, summary any, structured, force bool) any 
 			prefix, suffix := s[:start], s[start+len(candidate):]
 			cleaned := RedactChildValue(env, parsed, force)
 			body := candidate
-			if !pyrepr.Equal(cleaned, parsed) {
-				if text, err := pyjson.Dumps(cleaned, pyjson.EnsureASCII(false)); err == nil {
+			if !anyutil.Equal(cleaned, parsed) {
+				if text, err := jsonutil.Encode(cleaned); err == nil {
 					body = text
 				}
 			}
@@ -233,12 +232,12 @@ func RedactChildResultAt(env *Env, result any, outputSchema any, force bool, val
 	}
 	_, hasValid := lookupKey(keys, "schema_valid")
 	structured := isJSONObject(outputSchema) || hasValid
-	cleaned := pyjson.NewObject()
+	cleaned := jsonutil.NewObject()
 	set := func(k string, v any) {
-		if _, seen := cleaned.Vals[k]; !seen {
+		if _, seen := cleaned.Get(k); !seen {
 			cleaned.Keys = append(cleaned.Keys, k)
 		}
-		cleaned.Vals[k] = v
+		cleaned.Set(k, v)
 	}
 	for _, k := range keys {
 		value := get(k)
@@ -262,10 +261,10 @@ func RedactChildResultAt(env *Env, result any, outputSchema any, force bool, val
 			set(k, RedactChildValue(env, value, force))
 		}
 	}
-	if hasValid && !pyrepr.Equal(summaryComparable(cleaned.Vals["summary"]), summaryComparable(get("summary"))) {
+	if hasValid && !anyutil.Equal(summaryComparable(cleaned.Value("summary")), summaryComparable(get("summary"))) {
 		valid, errs := false, []string{"The redacted summary has not been validated against the original output_schema."}
 		if isJSONObject(outputSchema) {
-			summary, _ := summaryComparable(cleaned.Vals["summary"]).(string)
+			summary, _ := summaryComparable(cleaned.Value("summary")).(string)
 			v, e, err := ValidateOutputAt(summary, outputSchema, validateDepth)
 			if err != nil {
 				errs = []string{"Output validation was unavailable after secret redaction."}
@@ -286,7 +285,7 @@ func RedactChildResultAt(env *Env, result any, outputSchema any, force bool, val
 		}
 	}
 	if _, isMap := result.(map[string]any); isMap {
-		return cleaned.Vals
+		return cleaned.Map()
 	}
 	return cleaned
 }
@@ -301,10 +300,10 @@ func lookupKey(keys []string, k string) (int, bool) {
 	return i, i >= 0
 }
 
-func deleteKey(o *pyjson.Object, k string) {
-	if i := slices.Index(o.Keys, k); i >= 0 {
+func deleteKey(o *jsonutil.Object, k string) {
+	if i := slices.Index(o.Keys(), k); i >= 0 {
 		o.Keys = slices.Delete(o.Keys, i, i+1)
-		delete(o.Vals, k)
+		o.Delete(k)
 	}
 }
 
@@ -314,24 +313,24 @@ func RedactCompletionEvent(env *Env, event any, force bool) any {
 	if !ok {
 		return RedactChildValue(env, event, force)
 	}
-	child := pyjson.NewObject()
+	child := jsonutil.NewObject()
 	for _, k := range keys {
 		if !delegationParentEventFields[k] {
 			child.Keys = append(child.Keys, k)
-			child.Vals[k] = get(k)
+			child.Set(k, get(k))
 		}
 	}
-	cleaned := RedactChildResult(env, child, nil, force).(*pyjson.Object)
+	cleaned := RedactChildResult(env, child, nil, force).(*jsonutil.Object)
 	for _, k := range keys {
 		if delegationParentEventFields[k] {
-			if _, seen := cleaned.Vals[k]; !seen {
+			if _, seen := cleaned.Get(k); !seen {
 				cleaned.Keys = append(cleaned.Keys, k)
 			}
-			cleaned.Vals[k] = get(k)
+			cleaned.Set(k, get(k))
 		}
 	}
 	if _, isMap := event.(map[string]any); isMap {
-		return cleaned.Vals
+		return cleaned.Map()
 	}
 	return cleaned
 }

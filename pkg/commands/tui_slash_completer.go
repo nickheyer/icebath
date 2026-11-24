@@ -5,8 +5,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Slash completer the TUI gateway runs over a session's skill and bundle tables and the live sources of the ctx profile
@@ -46,7 +46,7 @@ func tuiBundleInfos(found skills.SkillCommands) map[string]BundleInfo {
 		var members []string
 		if list, ok := info["skills"].([]any); ok {
 			for _, m := range list {
-				members = append(members, pyrepr.Str(m))
+				members = append(members, anyutil.String(m))
 			}
 		} else if list, ok := info["skills"].([]string); ok {
 			members = append(members, list...)
@@ -64,5 +64,5 @@ func tuiStr(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }

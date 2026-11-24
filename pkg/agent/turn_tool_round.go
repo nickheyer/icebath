@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -302,8 +302,8 @@ var stageToolCallMessage = func(a *AIAgent, assistantMessage *provider.Response,
 	assistantMsg := a.buildAssistantMessage(assistantMessage, finishReason)
 	msg := assistantMessage.Message
 	turnContent, isText := msg.Content.(string)
-	if !isText && pyrepr.Truthy(msg.Content) {
-		return nil, false, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("assistant message content is %s where text was expected", errchain.Kind(msg.Content))}
+	if !isText && anyutil.IsTrue(msg.Content) {
+		return nil, false, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("assistant message content is %s where text was expected", errchain.Kind(msg.Content))}
 	}
 
 	if len(msg.ToolCalls) > 0 && toolCallStaleMarkerRE.MatchString(strings.TrimSpace(turnContent)) {
@@ -335,7 +335,7 @@ var stageToolCallMessage = func(a *AIAgent, assistantMessage *provider.Response,
 	hadPrefill := false
 	for len(*messages) > 0 {
 		last := (*messages)[len(*messages)-1]
-		if last == nil || !pyrepr.Truthy(last.Extra["_thinking_prefill"]) {
+		if last == nil || !anyutil.IsTrue(last.Extra["_thinking_prefill"]) {
 			break
 		}
 		*messages = (*messages)[:len(*messages)-1]

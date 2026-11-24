@@ -6,8 +6,8 @@ import (
 	"io"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Copies a string list into the JSON list json.dumps prints for it, empty when the list is nil
@@ -33,11 +33,11 @@ func CodexRuntimeCommand(ctx context.Context, h string, ns map[string]any, w io.
 	if err != nil {
 		return 1, err
 	}
-	report, err := MigrateCodexRuntimePlugins(ctx, cfg, CodexMigrateOptions{DryRun: pyrepr.Truthy(ns["dry_run"])})
+	report, err := MigrateCodexRuntimePlugins(ctx, cfg, CodexMigrateOptions{DryRun: anyutil.IsTrue(ns["dry_run"])})
 	if err != nil {
 		return 1, err
 	}
-	if pyrepr.Truthy(ns["json"]) {
+	if anyutil.IsTrue(ns["json"]) {
 		target := report.TargetPath
 		if target == "" {
 			target = "None"
@@ -46,7 +46,7 @@ func CodexRuntimeCommand(ctx context.Context, h string, ns map[string]any, w io.
 		for name, keys := range report.SkippedKeysPerServer {
 			skipped[name] = codexReportList(keys)
 		}
-		text, err := pyjson.Dumps(map[string]any{
+		text, err := jsonutil.Encode(map[string]any{
 			"target_path":               target,
 			"migrated":                  codexReportList(report.Migrated),
 			"skipped_keys_per_server":   skipped,
@@ -57,7 +57,7 @@ func CodexRuntimeCommand(ctx context.Context, h string, ns map[string]any, w io.
 			"errors":                    codexReportList(report.Errors),
 			"written":                   report.Written,
 			"dry_run":                   report.DryRun,
-		}, pyjson.Indent(2), pyjson.SortKeys(true))
+		}, jsonutil.Indent(2), jsonutil.SortKeys())
 		if err != nil {
 			return 1, err
 		}

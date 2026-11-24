@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Scripted websocket recording sent frames and popping queued replies
@@ -158,11 +158,11 @@ type recordingSession struct {
 	spoken []string
 }
 
-func (s *recordingSession) speak(text string, _ float64) (*pyjson.Object, error) {
+func (s *recordingSession) speak(text string, _ float64) (*jsonutil.Object, error) {
 	s.mu.Lock()
 	s.spoken = append(s.spoken, text)
 	s.mu.Unlock()
-	return pyjson.ObjectOf("ok", true, "bytes_written", len(text), "duration_ms", 1.0), nil
+	return jsonutil.ObjectOf("ok", true, "bytes_written", len(text), "duration_ms", 1.0), nil
 }
 
 func (s *recordingSession) count() int {
@@ -209,7 +209,7 @@ func TestSpeakerDrainKeepsASayEnqueuedDuringTheRewrite(t *testing.T) {
 	dir := t.TempDir()
 	queue := filepath.Join(dir, "say_queue.jsonl")
 	_ = os.WriteFile(queue, []byte(`{"id": "a", "text": "first"}`+"\n"), 0o644)
-	_ = writeActive(ctx, pyjson.ObjectOf("pid", 0, "meeting_id", "abc-defg-hij", "out_dir", dir, "mode", "realtime", "url", "https://meet.google.com/abc-defg-hij", "started_at", 0))
+	_ = writeActive(ctx, jsonutil.ObjectOf("pid", 0, "meeting_id", "abc-defg-hij", "out_dir", dir, "mode", "realtime", "url", "https://meet.google.com/abc-defg-hij", "started_at", 0))
 	speakerHolds := make(chan struct{})
 	contended := make(chan struct{}, 1)
 	realLock := sayQueueLock
@@ -231,7 +231,7 @@ func TestSpeakerDrainKeepsASayEnqueuedDuringTheRewrite(t *testing.T) {
 	appended := make(chan struct{})
 	peerDone := make(chan struct{})
 	var peerStarted bool
-	speaker.readQueue = func() ([]*pyjson.Object, error) {
+	speaker.readQueue = func() ([]*jsonutil.Object, error) {
 		out, err := speaker.readQueueFile()
 		reads++
 		if reads == 2 {

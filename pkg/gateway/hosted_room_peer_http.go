@@ -16,12 +16,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -65,9 +64,6 @@ type PeerRunsHTTPError struct {
 func (e *PeerRunsHTTPError) Error() string { return e.Msg }
 
 func (e *PeerRunsHTTPError) Unwrap() error { return e.Cause }
-
-// Python class name of the failure
-func (e *PeerRunsHTTPError) PyTypeName() string { return "PeerRunsHTTPError" }
 
 func (e *PeerRunsHTTPError) attemptProof() (bool, bool) { return e.NotAdmitted, false }
 
@@ -117,7 +113,7 @@ func peerReadBoundedResponse(resp *http.Response, maxBytes int, deadline float64
 	body := []byte{}
 	chunk := make([]byte, peerResponseChunkBytes)
 	for len(body) <= maxBytes {
-		if deadline-pythread.Monotonic() <= 0 {
+		if deadline-timeutil.Monotonic() <= 0 {
 			return nil, errPeerResponseDeadline
 		}
 		n, err := resp.Body.Read(chunk[:min(peerResponseChunkBytes, maxBytes+1-len(body))])
@@ -129,7 +125,7 @@ func peerReadBoundedResponse(resp *http.Response, maxBytes int, deadline float64
 			return body, nil
 		}
 		if err != nil {
-			if pythread.Monotonic() >= deadline {
+			if timeutil.Monotonic() >= deadline {
 				return nil, fmt.Errorf("%w: %w", errPeerResponseDeadline, err)
 			}
 			return nil, err
@@ -198,7 +194,7 @@ func peerResponseErrorCode(detail string) string {
 }
 
 func peerRunPath(record map[string]any, suffix ...string) string {
-	return strings.Join(append([]string{"/v1/runs", pyurl.Quote(pyrepr.Str(record["run_id"]), "")}, suffix...), "/")
+	return strings.Join(append([]string{"/v1/runs", pyurl.Quote(anyutil.String(record["run_id"]), "")}, suffix...), "/")
 }
 
 type peerRunKey struct {
@@ -249,7 +245,7 @@ func NewPeerRunsHTTPClient(ctx context.Context, baseURL, apiKey string, timeoutS
 		return nil, &RoomValueError{Msg: "peer polling bounds are invalid"}
 	}
 	if clock == nil {
-		clock = pythread.Monotonic
+		clock = timeutil.Monotonic
 	}
 	return &PeerRunsHTTPClient{ctx: ctx, BaseURL: normalized, APIKey: apiKey, TransportSecurity: security, TimeoutSeconds: timeoutSeconds,
 		ReceiptDBPath: receiptDBPath, PollMinSeconds: pollMinSeconds, PollMaxSeconds: pollMaxSeconds, clock: clock,
@@ -288,7 +284,7 @@ func (c *PeerRunsHTTPClient) BindRoomScope(scope PeerRoomScope) error {
 		"authority_epoch": scope.AuthorityEpoch, "member_id": names[3], "target_install_id": names[4], "target_profile": names[5]}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.roomScope != nil && pyrepr.Equal(c.roomScope, next) {
+	if c.roomScope != nil && anyutil.Equal(c.roomScope, next) {
 		return nil
 	}
 	c.roomScope, c.observationKey = next, nil
@@ -338,10 +334,10 @@ func (c *PeerRunsHTTPClient) BindObservation(taskID string, executionGeneration 
 
 // One credentialed RoomLink request, its JSON object or a classified peer error
 func (c *PeerRunsHTTPClient) request(path, method string, body any, headers map[string]string, roomGrant string) (map[string]any, error) {
-	deadline, ambiguous := pythread.Monotonic()+c.TimeoutSeconds, method == "POST"
+	deadline, ambiguous := timeutil.Monotonic()+c.TimeoutSeconds, method == "POST"
 	var reader io.Reader
 	if body != nil {
-		encoded, err := pyjson.Dumps(body, pyjson.Separators(",", ":"))
+		encoded, err := jsonutil.Encode(body)
 		if err != nil {
 			return nil, err
 		}
@@ -484,7 +480,7 @@ func (c *PeerRunsHTTPClient) checkedDispatch(dispatch any, grant string) (*Hoste
 	return checked, nil
 }
 
-func (c *PeerRunsHTTPClient) Dispatch(_ context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
+func (c *PeerRunsHTTPClient) Dispatch(_ context.Context, dispatch *jsonutil.Object, grant string) (map[string]any, error) {
 	checked, err := c.checkedDispatch(dispatch, grant)
 	if err != nil {
 		return nil, err
@@ -506,11 +502,11 @@ func (c *PeerRunsHTTPClient) RecoverDispatch(dispatch any, grant string) (map[st
 	if existing != nil {
 		scope := peerDispatchScopeFields(checked)
 		for _, field := range peerReceiptScopeFields {
-			if !pyrepr.Equal(existing[field], scope[field]) {
+			if !anyutil.Equal(existing[field], scope[field]) {
 				return nil, newPeerRunsHTTPError("peer run receipt conflicts with the recovered dispatch", peerErrorFlags{}, nil)
 			}
 		}
-		return peerAccepted(checked, pyrepr.Str(existing["run_id"]), pyrepr.Str(existing["session_id"]), true), nil
+		return peerAccepted(checked, anyutil.String(existing["run_id"]), anyutil.String(existing["session_id"]), true), nil
 	}
 	key, now := peerRunKey{checked.TaskID, generation}, c.clock()
 	c.mu.Lock()
@@ -554,7 +550,7 @@ func (c *PeerRunsHTTPClient) admitDispatch(checked *HostedMemberDispatch, grant 
 		return nil, err
 	}
 	admit := func() (map[string]any, error) {
-		return c.request("/v1/runs", "POST", pyjson.ObjectOf("input", checked.Prompt, "hosted_room_dispatch", checked.AsMapping()),
+		return c.request("/v1/runs", "POST", jsonutil.ObjectOf("input", checked.Prompt, "hosted_room_dispatch", checked.AsMapping()),
 			map[string]string{"Idempotency-Key": fmt.Sprintf("room:%s:%d", checked.TaskID, generation)}, grant)
 	}
 	result, err := admit()
@@ -592,7 +588,7 @@ func (c *PeerRunsHTTPClient) admitDispatch(checked *HostedMemberDispatch, grant 
 	if !has {
 		replayed = false
 	}
-	return peerAccepted(checked, runID, sessionID, pyrepr.Truthy(replayed)), nil
+	return peerAccepted(checked, runID, sessionID, anyutil.IsTrue(replayed)), nil
 }
 
 func (c *PeerRunsHTTPClient) sessionID(dispatch *HostedMemberDispatch, grant string) (string, error) {
@@ -601,7 +597,7 @@ func (c *PeerRunsHTTPClient) sessionID(dispatch *HostedMemberDispatch, grant str
 		return "", err
 	}
 	if len(existing) > 0 {
-		return pyrepr.Str(existing["session_id"]), nil
+		return anyutil.String(existing["session_id"]), nil
 	}
 	prepared, err := c.Prepare(c.ctx, PeerPrepare{RoomID: dispatch.RoomID, Profile: dispatch.TargetProfile, Source: "bot_room", Grant: grant, Create: true})
 	if err != nil {
@@ -627,7 +623,7 @@ func (c *PeerRunsHTTPClient) observationReceipt(roomID, profile, sessionID strin
 	if err != nil || record == nil {
 		return nil, err
 	}
-	if !pyrepr.Equal(record["room_id"], roomID) || !pyrepr.Equal(record["target_profile"], profile) || !pyrepr.Equal(record["session_id"], sessionID) {
+	if !anyutil.Equal(record["room_id"], roomID) || !anyutil.Equal(record["target_profile"], profile) || !anyutil.Equal(record["session_id"], sessionID) {
 		return nil, newPeerRunsHTTPError("peer observation receipt changed scope", peerErrorFlags{}, nil)
 	}
 	return record, nil
@@ -642,7 +638,7 @@ func (c *PeerRunsHTTPClient) nextPollDelay(cached bool, cachedDelay float64) flo
 }
 
 func (c *PeerRunsHTTPClient) pollReceipt(record map[string]any, grant string) (map[string]any, error) {
-	runID, now := pyrepr.Str(record["run_id"]), c.clock()
+	runID, now := anyutil.String(record["run_id"]), c.clock()
 	c.mu.Lock()
 	cached, isCached := c.statusCache[runID]
 	c.mu.Unlock()
@@ -675,8 +671,8 @@ func (c *PeerRunsHTTPClient) pollReceipt(record map[string]any, grant string) (m
 	c.mu.Lock()
 	c.statusCache = map[string]peerStatusEntry{runID: {status: status, delay: delay, nextPollAt: now + delay}}
 	if state, _ := status["status"].(string); peerTerminalRunStates[state] {
-		generation, _ := pyint.Int64(record["execution_generation"])
-		c.terminalReceipts[peerRunKey{pyrepr.Str(record["task_id"]), generation}] = true
+		generation, _ := anyutil.ToInt(record["execution_generation"])
+		c.terminalReceipts[peerRunKey{anyutil.String(record["task_id"]), generation}] = true
 	}
 	c.mu.Unlock()
 	return status, nil
@@ -712,7 +708,7 @@ func (c *PeerRunsHTTPClient) fetchRunStatus(record map[string]any, runID, grant 
 // Acknowledges a run lost to a member gateway restart and settles it interrupted
 func (c *PeerRunsHTTPClient) resolveUnknown(record, full map[string]any, grant string) (map[string]any, error) {
 	if _, err := c.request(peerRunPath(record, "resolve-unknown"), "POST",
-		pyjson.ObjectOf("admission_id", full["admission_id"], "execution_generation", full["execution_generation"]), nil, grant); err != nil {
+		jsonutil.ObjectOf("admission_id", full["admission_id"], "execution_generation", full["execution_generation"]), nil, grant); err != nil {
 		return nil, err
 	}
 	return map[string]any{"run_id": full["run_id"], "status": "interrupted", "error": "member gateway restarted"}, nil
@@ -737,21 +733,21 @@ func (c *PeerRunsHTTPClient) History(_ context.Context, roomID, profile, session
 		rowStatus = "settled"
 	}
 	content := status["output"]
-	if !pyrepr.Truthy(content) {
+	if !anyutil.IsTrue(content) {
 		content = status["error"]
 	}
-	if !pyrepr.Truthy(content) {
+	if !anyutil.IsTrue(content) {
 		content = ""
 	}
 	row := map[string]any{"role": "assistant", "task_id": receipt["task_id"], "execution_generation": receipt["execution_generation"],
-		"status": rowStatus, "message_id": "peer-run:" + pyrepr.Str(status["run_id"]), "content": content}
+		"status": rowStatus, "message_id": "peer-run:" + anyutil.String(status["run_id"]), "content": content}
 	if state == "completed" && status["files"] != nil {
 		files, notes, err := c.replyFiles(receipt, status["files"], grant)
 		if err != nil {
 			return nil, err
 		}
 		if len(notes) > 0 {
-			row["content"] = strings.TrimSpace(pyrepr.Str(content) + "\n\n" + strings.Join(notes, "\n"))
+			row["content"] = strings.TrimSpace(anyutil.String(content) + "\n\n" + strings.Join(notes, "\n"))
 		}
 		if len(files) > 0 {
 			row["attachments"] = files
@@ -791,21 +787,21 @@ func (c *PeerRunsHTTPClient) ApproveReceipt(taskID string, executionGeneration i
 	if _, err := peerRequireRoomGrant(grant); err != nil {
 		return nil, err
 	}
-	return c.postRunAction(record, "approval", pyjson.ObjectOf("choice", choice, "request_id", requestID), grant)
+	return c.postRunAction(record, "approval", jsonutil.ObjectOf("choice", choice, "request_id", requestID), grant)
 }
 
-func (c *PeerRunsHTTPClient) postRunAction(record map[string]any, action string, body *pyjson.Object, grant string) (map[string]any, error) {
+func (c *PeerRunsHTTPClient) postRunAction(record map[string]any, action string, body *jsonutil.Object, grant string) (map[string]any, error) {
 	result, err := c.request(peerRunPath(record, action), "POST", body, nil, grant)
 	if err != nil {
 		return nil, err
 	}
 	c.mu.Lock()
-	delete(c.statusCache, pyrepr.Str(record["run_id"]))
+	delete(c.statusCache, anyutil.String(record["run_id"]))
 	c.mu.Unlock()
 	return result, nil
 }
 
-func (c *PeerRunsHTTPClient) Stop(ctx context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
+func (c *PeerRunsHTTPClient) Stop(ctx context.Context, dispatch *jsonutil.Object, grant string) (map[string]any, error) {
 	checked, err := HostedMemberDispatchFromMapping(dispatch)
 	if err != nil {
 		return nil, err
@@ -826,7 +822,7 @@ func (c *PeerRunsHTTPClient) StopReceipt(_ context.Context, taskID string, execu
 	if err != nil {
 		return nil, err
 	}
-	result, err := c.postRunAction(record, "stop", pyjson.NewObject(), scoped)
+	result, err := c.postRunAction(record, "stop", jsonutil.NewObject(), scoped)
 	if err != nil {
 		return nil, err
 	}
@@ -843,7 +839,7 @@ func (c *PeerRunsHTTPClient) IssueInvitation(roomID, homeInstallID, authorityGat
 	if c.APIKey == "" {
 		return nil, newPeerRunsHTTPError("issuing an invitation requires the target gateway API key", peerErrorFlags{}, nil)
 	}
-	body := pyjson.ObjectOf("room_id", roomID, "home_install_id", homeInstallID, "authority_gateway_id", authorityGatewayID,
+	body := jsonutil.ObjectOf("room_id", roomID, "home_install_id", homeInstallID, "authority_gateway_id", authorityGatewayID,
 		"authority_epoch", authorityEpoch, "member_id", memberID, "grant_id", grantID, "ttl_seconds", ttlSeconds)
 	if statusTTLSeconds != nil {
 		body.Set("status_ttl_seconds", *statusTTLSeconds)
@@ -853,7 +849,7 @@ func (c *PeerRunsHTTPClient) IssueInvitation(roomID, homeInstallID, authorityGat
 
 // Renews dispatch access only while its frozen authority is unchanged
 func (c *PeerRunsHTTPClient) RefreshGrant(grant string, ttlSeconds float64, capabilityDigest, executionPolicyDigest *string) (map[string]any, error) {
-	refreshed, err := c.scopedPost("/v1/room-members/grants/refresh", grant, pyjson.ObjectOf("ttl_seconds", ttlSeconds))
+	refreshed, err := c.scopedPost("/v1/room-members/grants/refresh", grant, jsonutil.ObjectOf("ttl_seconds", ttlSeconds))
 	if err != nil {
 		return nil, err
 	}
@@ -882,7 +878,7 @@ func (c *PeerRunsHTTPClient) RefreshGrant(grant string, ttlSeconds float64, capa
 
 // Revokes this grant's exact room, home, target and profile scope
 func (c *PeerRunsHTTPClient) RevokeGrant(grant string) (map[string]any, error) {
-	return c.scopedPost("/v1/room-members/grants/revoke", grant, pyjson.NewObject())
+	return c.scopedPost("/v1/room-members/grants/revoke", grant, jsonutil.NewObject())
 }
 
 // Verifies gateway reachability and the live scoped capability catalog
@@ -894,7 +890,7 @@ func (c *PeerRunsHTTPClient) Probe(grant string) (map[string]any, error) {
 	return c.request("/v1/room-members/capabilities", "GET", nil, nil, scoped)
 }
 
-func (c *PeerRunsHTTPClient) scopedPost(path, grant string, body *pyjson.Object) (map[string]any, error) {
+func (c *PeerRunsHTTPClient) scopedPost(path, grant string, body *jsonutil.Object) (map[string]any, error) {
 	scoped, err := peerRequireRoomGrant(grant)
 	if err != nil {
 		return nil, err

@@ -12,8 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // errFlowCancelled is the Ctrl-C or EOF a wrapped prompt raised
@@ -59,7 +59,7 @@ func autoProviderName(baseURL string) string {
 	if strings.Contains(strings.ToLower(name), "runpod") {
 		return fmt.Sprintf("RunPod (%s)", name)
 	}
-	return pystr.Capitalize(name)
+	return textutil.UpperFirst(strings.ToLower(name))
 }
 
 // Custom provider api mode picked from an arrow key list on a terminal, ran false when the terminal draws none
@@ -279,7 +279,7 @@ func parseContextLength(r *ModelFlowRun, text string) (int, bool) {
 		return 0, false
 	}
 	cleaned := strings.ReplaceAll(strings.ReplaceAll(strings.ReplaceAll(text, ",", ""), "k", "000"), "K", "000")
-	value, err := parsePyInt(cleaned)
+	value, err := parseWholeNumber(cleaned)
 	if err != nil {
 		fmt.Fprintf(r.Out, "Invalid context length: %s — will auto-detect.\n", text)
 		return 0, false
@@ -364,8 +364,8 @@ func pickDetectedModel(r *ModelFlowRun, detected []string) (string, error) {
 			return "", errFlowCancelled
 		}
 		pick = strings.TrimSpace(pick)
-		if pystr.StrIsDigit(pick) {
-			n, perr := parsePyInt(pick)
+		if textutil.IsDigits(pick) {
+			n, perr := parseWholeNumber(pick)
 			if perr != nil {
 				return "", perr
 			}
@@ -744,7 +744,7 @@ func pickNamedCustomModel(r *ModelFlowRun, name string, models []string, savedMo
 			fmt.Fprintln(r.Out, "Cancelled.")
 			return "", false
 		}
-		n, perr := parsePyInt(val)
+		n, perr := parseWholeNumber(val)
 		if perr != nil {
 			fmt.Fprintln(r.Out, "\nCancelled.")
 			return "", false

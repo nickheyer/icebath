@@ -5,9 +5,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // System prompt platform hint, cached prompt bytes kept stable
@@ -23,7 +23,7 @@ func checkRequirements() bool { return true }
 
 // Whether phone number id and access token are present in the config extra or the env
 func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error) {
-	if cfg != nil && pyrepr.Truthy(cfg.Extra["phone_number_id"]) && pyrepr.Truthy(cfg.Extra["access_token"]) {
+	if cfg != nil && anyutil.IsTrue(cfg.Extra["phone_number_id"]) && anyutil.IsTrue(cfg.Extra["access_token"]) {
 		return true, nil
 	}
 	return gateway.EnvIsConnected("WHATSAPP_CLOUD_PHONE_NUMBER_ID", "WHATSAPP_CLOUD_ACCESS_TOKEN")(ctx, cfg)

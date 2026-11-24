@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Captured events of a replaced durable producer, the capture admissions fixture
@@ -74,7 +74,7 @@ func coalescePost(t *testing.T, adapter *WebhookAdapter, body []byte, deliveryID
 	}
 	resp, err := adapter.handleWebhook(context.Background(), webhookRequest(headers, body, "pr"))
 	status, obj := webhookResponseJSON(t, resp, err)
-	text, _ := obj.GetOr("status", nil).(string)
+	text, _ := obj.ValueOr("status", nil).(string)
 	return status, text
 }
 
@@ -109,7 +109,7 @@ func TestInvalidCoalesceConfigRejectedAtConnect(t *testing.T) {
 			t.Fatalf("%s: %v", c.match, err)
 		}
 		dynamic := makeCoalesceAdapter(t, nil)
-		encoded, _ := pyjson.Dumps(map[string]any{"dyn": c.route})
+		encoded, _ := jsonutil.Encode(map[string]any{"dyn": c.route})
 		if err := os.WriteFile(filepath.Join(os.Getenv("ICEBATH_HOME"), "webhook_subscriptions.json"), []byte(encoded), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -204,7 +204,7 @@ func mcpEventHome(t *testing.T) (*WebhookAdapter, string) {
 	h := os.Getenv("ICEBATH_HOME")
 	route := map[string]any{"secret": mcpTestSecret, "prompt": "Event {eventId}: {data.feed_id}", "deliver": "log", "profile": "default",
 		"mcp_event": map[string]any{"server": "ambush", "name": "feed.emission.created", "arguments": map[string]any{}}}
-	encoded, _ := pyjson.Dumps(map[string]any{mcpTestRoute: route})
+	encoded, _ := jsonutil.Encode(map[string]any{mcpTestRoute: route})
 	if err := os.WriteFile(filepath.Join(h, "webhook_subscriptions.json"), []byte(encoded), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func mcpEventHome(t *testing.T) (*WebhookAdapter, string) {
 }
 
 // Standard Webhooks signed POST of a payload to the MCP route
-func mcpEventPost(t *testing.T, adapter *WebhookAdapter, payload string, secret string) (int, *pyjson.Object) {
+func mcpEventPost(t *testing.T, adapter *WebhookAdapter, payload string, secret string) (int, *jsonutil.Object) {
 	t.Helper()
 	body := []byte(payload)
 	msgID, stamp := "msg_"+strings.ReplaceAll(time.Now().Format("150405.000000000"), ".", ""), nowText(0)
@@ -231,8 +231,8 @@ func TestVerificationChallengeIsEchoedWithoutARun(t *testing.T) {
 	adapter, _ := mcpEventHome(t)
 	admitted := captureWebhookAdmissions(t, adapter)
 	status, body := mcpEventPost(t, adapter, `{"type": "verification", "challenge": "nonce-123"}`, mcpTestSecret)
-	if status != 200 || body.Len() != 1 || body.GetOr("challenge", nil) != "nonce-123" {
-		t.Fatalf("%d %v", status, pyjson.Plain(body))
+	if status != 200 || body.Len() != 1 || body.ValueOr("challenge", nil) != "nonce-123" {
+		t.Fatalf("%d %v", status, jsonutil.Plain(body))
 	}
 	forged := "whsec_" + base64.StdEncoding.EncodeToString([]byte(strings.Repeat("x", 32)))
 	if status, _ := mcpEventPost(t, adapter, `{"type": "verification", "challenge": "nonce-123"}`, forged); status != 401 {
@@ -271,12 +271,12 @@ func TestGapRemembersTheFreshCursor(t *testing.T) {
 		t.Fatalf("status %d", status)
 	}
 	raw, _ := os.ReadFile(filepath.Join(h, "mcp_event_subscriptions.json"))
-	state, err := pyjson.Loads(string(raw))
+	state, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	route, _ := state.(*pyjson.Object).GetOr(mcpTestRoute, pyjson.NewObject()).(*pyjson.Object)
-	if route == nil || route.GetOr("cursor", nil) != "c-9" || len(admitted.snapshot()) != 0 {
+	route, _ := state.(*jsonutil.Object).ValueOr(mcpTestRoute, jsonutil.NewObject()).(*jsonutil.Object)
+	if route == nil || route.ValueOr("cursor", nil) != "c-9" || len(admitted.snapshot()) != 0 {
 		t.Fatalf("state %s", raw)
 	}
 }
@@ -285,8 +285,8 @@ func TestAnUnknownControlEnvelopeIsAcknowledgedWithoutARun(t *testing.T) {
 	adapter, _ := mcpEventHome(t)
 	admitted := captureWebhookAdmissions(t, adapter)
 	status, body := mcpEventPost(t, adapter, `{"type": "paused", "reason": "maintenance"}`, mcpTestSecret)
-	if status != 200 || body.GetOr("status", nil) != "ignored" {
-		t.Fatalf("%d %v", status, pyjson.Plain(body))
+	if status != 200 || body.ValueOr("status", nil) != "ignored" {
+		t.Fatalf("%d %v", status, jsonutil.Plain(body))
 	}
 	if status, _ := mcpEventPost(t, adapter, `{"type": {"not": "a string"}}`, mcpTestSecret); status != 200 {
 		t.Fatalf("odd %d", status)
@@ -322,22 +322,22 @@ func webhookFilterScript(t *testing.T, body, fakeBash string) string {
 func TestShellFilterRunsUnderFindBashInterpreter(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "ran")
 	filter := webhookFilterScript(t, "exit 99\n", "touch \""+marker+"\"\nprintf '{\"ok\": true}'\n")
-	accepted, transformed, err := NewWebhookRouteProcessor(WebhookDefaultScriptTimeoutSeconds).RunRouteScript(context.Background(), filter, pyjson.ObjectOf("a", int64(1)))
+	accepted, transformed, err := NewWebhookRouteProcessor(WebhookDefaultScriptTimeoutSeconds).RunRouteScript(context.Background(), filter, jsonutil.ObjectOf("a", int64(1)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, statErr := os.Stat(marker); statErr != nil {
 		t.Fatal("fake bash did not run")
 	}
-	if !accepted || transformed == nil || transformed.Len() != 1 || transformed.GetOr("ok", nil) != true {
-		t.Fatalf("%v %v", accepted, pyjson.Plain(transformed))
+	if !accepted || transformed == nil || transformed.Len() != 1 || transformed.ValueOr("ok", nil) != true {
+		t.Fatalf("%v %v", accepted, jsonutil.Plain(transformed))
 	}
 }
 
 func TestSilentNonzeroExitIsLoggedAsWarning(t *testing.T) {
 	filter := webhookFilterScript(t, "", "exit 1\n")
 	logs := captureLogs(t)
-	accepted, _, err := NewWebhookRouteProcessor(WebhookDefaultScriptTimeoutSeconds).RunRouteScript(context.Background(), filter, pyjson.NewObject())
+	accepted, _, err := NewWebhookRouteProcessor(WebhookDefaultScriptTimeoutSeconds).RunRouteScript(context.Background(), filter, jsonutil.NewObject())
 	if err != nil || accepted {
 		t.Fatalf("%v %v", accepted, err)
 	}

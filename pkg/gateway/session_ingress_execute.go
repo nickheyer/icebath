@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session and generation of the claim a chat route's turn runs under
@@ -32,11 +32,11 @@ type turnHandlerRunner interface {
 }
 
 // Author of the admitted input for memory attribution, the producer's stamp else the forwarded peer of the policy
-func rowTurnAuthor(policy *LocalSessionPolicy, row *pyjson.Object) any {
+func rowTurnAuthor(policy *LocalSessionPolicy, row *jsonutil.Object) any {
 	payload := rowPayload(row)
 	for _, key := range []string{"local_automation_v1", "api_turn_v1", "cli_turn_v1"} {
 		value, _ := payload.Get(key)
-		if stamped, ok := value.(*pyjson.Object); ok && stamped != nil {
+		if stamped, ok := value.(*jsonutil.Object); ok && stamped != nil {
 			if author, _ := stamped.Get("turn_author"); author != nil {
 				return author
 			}
@@ -49,7 +49,7 @@ func rowTurnAuthor(policy *LocalSessionPolicy, row *pyjson.Object) any {
 }
 
 // Text of an admitted row, the parts of an API turn standing until its prepared content replaces them
-func admittedText(payload *pyjson.Object) (string, bool, error) {
+func admittedText(payload *jsonutil.Object) (string, bool, error) {
 	text, ok := payload.Get("text")
 	if !ok {
 		return "", false, &pyKeyError{"text"}
@@ -64,7 +64,7 @@ func admittedText(payload *pyjson.Object) (string, bool, error) {
 }
 
 // Event of a claimed row rebuilt from its committed payload
-func admittedEvent(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, row *pyjson.Object) (*MessageEvent, bool, error) {
+func admittedEvent(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, row *jsonutil.Object) (*MessageEvent, bool, error) {
 	payload := rowPayload(row)
 	if _, native := payload.Get("native_text_v1"); native {
 		event, err := restoreNative(ctx, payload, a.Runner)
@@ -89,7 +89,7 @@ func admittedEvent(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 }
 
 // Text parts of a prepared API execution joined into the transcript text of its turn
-func preparedText(prepared *pyjson.Object) (string, error) {
+func preparedText(prepared *jsonutil.Object) (string, error) {
 	content, ok := prepared.Get("content")
 	if !ok {
 		return "", &pyKeyError{"content"}
@@ -97,7 +97,7 @@ func preparedText(prepared *pyjson.Object) (string, error) {
 	items, _ := content.([]any)
 	lines := []string{}
 	for _, item := range items {
-		part, isPart := item.(*pyjson.Object)
+		part, isPart := item.(*jsonutil.Object)
 		if !isPart {
 			return "", &PyError{Kind: "AttributeError", Msg: "an admitted text part is " + errchain.Kind(item) + ", expected a mapping"}
 		}
@@ -118,7 +118,7 @@ func preparedText(prepared *pyjson.Object) (string, error) {
 }
 
 // Runs a claimed admission through the runner's turn handler and records its result, reply and crash marker for the drain
-func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object) (reply any, retErr error) {
+func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object) (reply any, retErr error) {
 	admissionID := rowString(row, "admission_id")
 	noted, err := noteIfUnviewed(ctx, a, ref, row)
 	if err != nil {
@@ -169,7 +169,7 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		event.Metadata["gateway_proven_session_id"] = proven
 	}
 	var provenance any
-	if wrapped, isEnvelope := envelope.(*pyjson.Object); isEnvelope && wrapped != nil {
+	if wrapped, isEnvelope := envelope.(*jsonutil.Object); isEnvelope && wrapped != nil {
 		provenance, _ = wrapped.Get("provenance")
 	}
 	var home *string
@@ -198,7 +198,7 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	}
 	ctx = context.WithValue(ctx, viewerTurnKey{}, viewer)
 	ctx = bindAPIExecution(ctx, nil)
-	captured := pyjson.NewObject()
+	captured := jsonutil.NewObject()
 	ctx = withExecutionResult(ctx, captured)
 	ctx = context.WithValue(ctx, executingAdmissionKey{}, true)
 	event.setTurnMarkerHandoff(true)
@@ -252,21 +252,21 @@ func executeAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 			if !pyTruthy(final) {
 				final = ""
 			}
-			result = pyjson.ObjectOf("final_response", final, "messages", []any{})
+			result = jsonutil.ObjectOf("final_response", final, "messages", []any{})
 			command, isCommand := event.GetCommand()
 			if finite, _ := payload.Get("finite"); isAPI || (finite == true && !(isCommand && command != "")) {
 				failure := response
 				if !pyTruthy(failure) {
 					failure = "The admitted turn failed."
 				}
-				result = pyjson.ObjectOf("final_response", "", "messages", []any{}, "failed", true, "completed", false, "error", failure)
+				result = jsonutil.ObjectOf("final_response", "", "messages", []any{}, "failed", true, "completed", false, "error", failure)
 			}
 		}
 		usage, has := captured.Get("usage")
 		if !has {
-			usage = pyjson.NewObject()
+			usage = jsonutil.NewObject()
 		}
-		pending := pyjson.ObjectOf("result", result, "usage", usage)
+		pending := jsonutil.ObjectOf("result", result, "usage", usage)
 		if sessionUsage, has := captured.Get("session_usage"); has {
 			pending.Set("session_usage", sessionUsage)
 		}
@@ -307,7 +307,7 @@ func launchBodyIfLaunchOwner(ctx context.Context, a *SessionAuthority) context.C
 }
 
 // Runs the execution inside the producer bracket of its row and under the execution scope
-func admissionScope(ctx context.Context, a *SessionAuthority, home *string, row *pyjson.Object, event *MessageEvent, captured *pyjson.Object, run func(ctx context.Context) error) error {
+func admissionScope(ctx context.Context, a *SessionAuthority, home *string, row *jsonutil.Object, event *MessageEvent, captured *jsonutil.Object, run func(ctx context.Context) error) error {
 	return producerTurn(ctx, a, row, event, captured, func(turn context.Context) error {
 		return run(executionScope(turn, a, home))
 	})

@@ -5,7 +5,7 @@ import (
 	"math"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Threads of the separate pool for session housekeeping chores
@@ -87,9 +87,9 @@ func (r *GatewayRunner) shutdownExecutor(drainTimeout float64) int {
 	r.executor, r.housekeepingExecutor = nil, nil
 	r.executorLock.Unlock()
 	workers := append(stopPool(executor), stopPool(housekeeping)...)
-	deadline := pythread.Monotonic() + math.Max(drainTimeout, 0)
+	deadline := timeutil.Monotonic() + math.Max(drainTimeout, 0)
 	for _, worker := range workers {
-		remaining := deadline - pythread.Monotonic()
+		remaining := deadline - timeutil.Monotonic()
 		if remaining <= 0 {
 			break
 		}

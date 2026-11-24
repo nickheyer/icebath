@@ -2,27 +2,21 @@ package tools
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-// httpxError is the httpx RequestError a failed send raises, its text the str of the exception
-type httpxError struct{ err error }
-
-func (e *httpxError) Error() string { return pyhttpx.ErrorText(e.err) }
-func (e *httpxError) Unwrap() error { return e.err }
-
 // Test seam for the client every httpx call sends through
-var httpxClient = func() *http.Client { return pyhttpx.PlainClient(false) }
+var httpxClient = func() *http.Client { return httputil.Client(false) }
 
 // Test seam for the website policy check the extract gate runs
 var extractWebsiteAccess = CheckWebsiteAccess
@@ -30,15 +24,12 @@ var extractWebsiteAccess = CheckWebsiteAccess
 // Test seam for the private address check the extract gate runs on final urls
 var extractURLSafe = isSafeURL
 
-// One httpx.get or httpx.post with redirects unfollowed and every phase bounded by the timeout
-func httpxSend(ctx context.Context, method, target string, params pyhttpx.Params, headers [][2]string, payload any, timeout time.Duration) (*pyhttpx.Response, error) {
-	target = pyhttpx.MergeParams(target, params)
-	if msg := pyhttpx.ProtocolError(target); msg != "" {
-		return nil, &httpxError{errors.New(msg)}
-	}
+// One GET or POST with redirects unfollowed and every phase bounded by the timeout; a failure to parse the target or send the request is a *url.Error
+func httpxSend(ctx context.Context, method, target string, params url.Values, headers [][2]string, payload any, timeout time.Duration) (*httputil.Response, error) {
+	target = httputil.MergeQuery(target, params)
 	var body io.Reader
 	if payload != nil {
-		text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+		text, err := jsonutil.Encode(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -46,7 +37,7 @@ func httpxSend(ctx context.Context, method, target string, params pyhttpx.Params
 	}
 	req, err := http.NewRequestWithContext(ctx, method, target, body)
 	if err != nil {
-		return nil, &httpxError{err}
+		return nil, err
 	}
 	req.Header.Set("Accept", "*/*")
 	req.Header.Set("User-Agent", icebathUserAgent())
@@ -56,20 +47,16 @@ func httpxSend(ctx context.Context, method, target string, params pyhttpx.Params
 	for _, h := range headers {
 		req.Header.Set(h[0], h[1])
 	}
-	resp, err := pyhttpx.Do(httpxClient(), req, timeout)
-	if err != nil {
-		return nil, &httpxError{err}
-	}
-	return resp, nil
+	return httputil.Do(httpxClient(), req, httputil.EachPhase(timeout))
 }
 
 // Response body text for a failing reply, or HTTP code when the body is empty
-func httpxStatusDetail(resp *pyhttpx.Response) string {
+func httpxStatusDetail(resp *httputil.Response) string {
 	return httpStatusDetail(resp.StatusCode, resp.Text())
 }
 
-// GET and parse JSON, any non 2xx answer a failure like raise_for_status
-func httpGetJSON(ctx context.Context, env *Env, label, target string, params pyhttpx.Params, headers [][2]string, timeout time.Duration, reachTarget string) (any, *WebSearchResponse) {
+// GET and parse JSON, any non 2xx answer a failure
+func httpGetJSON(ctx context.Context, env *Env, label, target string, params url.Values, headers [][2]string, timeout time.Duration, reachTarget string) (any, *WebSearchResponse) {
 	resp, err := httpxSend(ctx, http.MethodGet, target, params, headers, nil, timeout)
 	if err != nil {
 		envLog(env).Warn(label+" request error", "error", err.Error())
@@ -136,7 +123,7 @@ func titledRows(raw []any, descriptionKey string) ([]WebSearchHit, error) {
 		}
 		field := func(key string) string {
 			if v, ok := d.Get(key); ok {
-				return pyrepr.Str(v)
+				return anyutil.String(v)
 			}
 			return ""
 		}

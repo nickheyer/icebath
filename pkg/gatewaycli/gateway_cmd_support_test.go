@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
 // Fresh profile home with the managed dir pointed away from the host
@@ -75,7 +74,7 @@ func TestExplainServiceFailureCoversSystemctlFailures(t *testing.T) {
 		lines[3] != "Details: Command '['systemctl', '--user', 'restart', 'icebath-gateway']' returned non-zero exit status 1." {
 		t.Fatalf("lines %q", lines)
 	}
-	if lines := ExplainServiceFailure(&pysubprocess.CalledProcessError{Cmd: []string{"journalctl"}, Returncode: 2}); lines[0] != "Could not start the gateway service; systemd reported an error." {
+	if lines := ExplainServiceFailure(&executil.StatusError{Args: []string{"journalctl"}, ExitCode: 2}); lines[0] != "Could not start the gateway service; systemd reported an error." {
 		t.Fatalf("default verb %q", lines[0])
 	}
 	if ExplainServiceFailure(errors.New("other")) != nil {

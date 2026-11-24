@@ -13,10 +13,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/pm"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 // Raised when the account a system service should run as cannot be chosen or found
@@ -26,7 +27,7 @@ func (e *ServiceUserError) Error() string { return e.Msg }
 
 var (
 	serviceDefProjectRoot = pm.RepoRoot
-	serviceDefUserHome    = pypath.PathHome
+	serviceDefUserHome    = pathutil.Home
 	serviceDefChown       = os.Chown
 	launchdPlistPathRe    = regexp.MustCompile(`(?s)(<key>PATH</key>\s*<string>)(.*?)(</string>)`)
 )
@@ -55,7 +56,7 @@ func buildServicePathDirs(ctx context.Context, projectRoot string) []string {
 // Resolved home when it is a directory, else the project root, so a service never starts in a vanished checkout
 func stableServiceWorkingDir(ctx context.Context) string {
 	if h := home.Dir(ctx); h != "" && isDirSafe(h) {
-		if resolved, err := pypath.Resolve(h); err == nil {
+		if resolved, err := pathutil.Resolve(h); err == nil {
 			return resolved
 		}
 	}
@@ -131,7 +132,7 @@ func systemServiceIdentity(runAsUser string) (string, string, string, int, error
 	}
 	if username == "" {
 		var err error
-		if username, err = pypwd.Getuser(); err != nil {
+		if username, err = userutil.LoginName(); err != nil {
 			return "", "", "", 0, err
 		}
 	}
@@ -146,7 +147,7 @@ func systemServiceIdentity(runAsUser string) (string, string, string, int, error
 		fmt.Fprintln(lifecycleOut, cliui.Color("⚠ Installing gateway service to run as root.", cliui.Yellow))
 		fmt.Fprintln(lifecycleOut, cliui.Color("    This is fine for LXC/container environments but not recommended on bare-metal hosts.", cliui.Dim))
 	}
-	info, err := pypwd.Getpwnam(username)
+	info, err := userutil.Lookup(username)
 	var keyErr *pypwd.KeyError
 	if errors.As(err, &keyErr) {
 		return "", "", "", 0, &ServiceUserError{"Unknown user: " + username}
@@ -154,7 +155,7 @@ func systemServiceIdentity(runAsUser string) (string, string, string, int, error
 	if err != nil {
 		return "", "", "", 0, err
 	}
-	group, err := pypwd.Getgrgid(info.GID)
+	group, err := userutil.LookupGroupID(info.GID)
 	if err != nil {
 		return "", "", "", 0, err
 	}
@@ -167,21 +168,21 @@ func remapPathForUser(p, targetHomeDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	expanded, err := pypath.PathExpanduser(p)
+	expanded, err := pathutil.ExpandUserPath(p)
 	if err != nil {
 		return "", err
 	}
-	if rel, ok := pypath.PathRelativeTo(expanded, current); ok {
-		return pypath.PathJoin(targetHomeDir, rel), nil
+	if rel, ok := pathutil.RelativeTo(expanded, current); ok {
+		return pathutil.Join(targetHomeDir, rel), nil
 	}
-	return pypath.PathStr(expanded), nil
+	return filepath.Clean(expanded), nil
 }
 
 // Caller home in effect remapped under the target account's default home, a custom home kept as is
 func icebathHomeForTargetUser(ctx context.Context, targetHomeDir string) (string, error) {
 	current := home.Dir(ctx)
 	if raw := strings.TrimSpace(os.Getenv("ICEBATH_HOME")); raw != "" {
-		expanded, err := pypath.PathExpanduser(raw)
+		expanded, err := pathutil.ExpandUserPath(raw)
 		if err != nil {
 			return "", err
 		}
@@ -191,10 +192,10 @@ func icebathHomeForTargetUser(ctx context.Context, targetHomeDir string) (string
 	if err != nil {
 		return "", err
 	}
-	if rel, ok := pypath.PathRelativeTo(current, pypath.PathJoin(userHome, ".icebath")); ok {
-		return pypath.PathJoin(pypath.PathJoin(targetHomeDir, ".icebath"), rel), nil
+	if rel, ok := pathutil.RelativeTo(current, pathutil.Join(userHome, ".icebath")); ok {
+		return pathutil.Join(pathutil.Join(targetHomeDir, ".icebath"), rel), nil
 	}
-	return pypath.PathStr(current), nil
+	return filepath.Clean(current), nil
 }
 
 // Publishes the install launchers a service definition references, owned by the service account for a system unit
@@ -229,7 +230,7 @@ func prepareServiceLauncher(ctx context.Context, system bool, runAsUser string) 
 	if !owned {
 		return nil
 	}
-	info, err := pypwd.Getpwnam(username)
+	info, err := userutil.Lookup(username)
 	if err != nil {
 		return err
 	}

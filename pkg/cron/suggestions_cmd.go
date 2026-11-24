@@ -10,16 +10,16 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Value of key in a suggestion or job record, def when the key is absent
 func suggestionGet(rec any, key string, def any) (any, error) {
 	switch m := rec.(type) {
-	case *pyjson.Object:
-		if v, ok := m.Vals[key]; ok {
+	case *jsonutil.Object:
+		if v, ok := m.Get(key); ok {
 			return v, nil
 		}
 		return def, nil
@@ -34,12 +34,12 @@ func suggestionGet(rec any, key string, def any) (any, error) {
 
 // Nested job_spec value of a record, falling back to def as the Python or chain does
 func suggestionSpecGet(rec any, key string, def any) (any, error) {
-	spec, err := suggestionGet(rec, "job_spec", pyjson.NewObject())
+	spec, err := suggestionGet(rec, "job_spec", jsonutil.NewObject())
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(spec) {
-		spec = pyjson.NewObject()
+	if !anyutil.IsTrue(spec) {
+		spec = jsonutil.NewObject()
 	}
 	return suggestionGet(spec, key, def)
 }
@@ -65,7 +65,7 @@ func fmtPendingSuggestions(pending []any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		lines = append(lines, fmt.Sprintf("  %d. %s  [%s]  (%s)", i+1, pyrepr.Str(title), pyrepr.Str(sched), pyrepr.Str(source)))
+		lines = append(lines, fmt.Sprintf("  %d. %s  [%s]  (%s)", i+1, anyutil.String(title), anyutil.String(sched), anyutil.String(source)))
 		descVal, err := suggestionGet(s, "description", "")
 		if err != nil {
 			return "", err
@@ -107,7 +107,7 @@ func acceptSuggestionCmd(ctx context.Context, s *Store, rest string, origin map[
 		return "", err
 	}
 	sched, _ := suggestionGet(rec, "schedule_display", nil)
-	if !pyrepr.Truthy(sched) {
+	if !anyutil.IsTrue(sched) {
 		if sched, err = suggestionSpecGet(rec, "schedule", ""); err != nil {
 			return "", err
 		}
@@ -117,9 +117,9 @@ func acceptSuggestionCmd(ctx context.Context, s *Store, rest string, origin map[
 	if surface == "cli" {
 		manage = "Manage it with /cron."
 	}
-	out := "Scheduled '" + pyrepr.Str(name) + "'"
-	if pyrepr.Truthy(sched) {
-		out += " (" + pyrepr.Str(sched) + ")"
+	out := "Scheduled '" + anyutil.String(name) + "'"
+	if anyutil.IsTrue(sched) {
+		out += " (" + anyutil.String(sched) + ")"
 	}
 	return out + ". " + manage, nil
 }
@@ -143,7 +143,7 @@ func dismissSuggestionCmd(s *Store, rest string) (string, error) {
 func catalogSuggestionsCmd(ctx context.Context, s *Store) string {
 	created, err := SeedCatalogSuggestions(ctx, s.AddSuggestion, nil)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("catalog seed failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("catalog seed failed: %s", err.Error()))
 		return "Couldn't load the catalog."
 	}
 	if len(created) == 0 {
@@ -153,7 +153,7 @@ func catalogSuggestionsCmd(ctx context.Context, s *Store) string {
 	titles := make([]string, len(created))
 	for i, c := range created {
 		title, _ := suggestionGet(c, "title", "?")
-		titles[i] = pyrepr.Str(title)
+		titles[i] = anyutil.String(title)
 	}
 	return "Added " + strconv.Itoa(len(created)) + " suggestion(s): " + strings.Join(titles, ", ") + ".\nRun /suggestions to review."
 }

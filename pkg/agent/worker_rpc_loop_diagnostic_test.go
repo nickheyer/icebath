@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const loopSecret = "arg-value-never-logged"
@@ -25,12 +25,12 @@ func guardWarnings(records []loggerRecord) []string {
 }
 
 func persistFromCallback(ctx context.Context, rpc *WorkerRPC) error {
-	_, err := rpc.Call(ctx, "worker.persist", pyjson.ObjectOf("payload", loopSecret))
+	_, err := rpc.Call(ctx, "worker.persist", jsonutil.ObjectOf("payload", loopSecret))
 	return err
 }
 
 func onLoopPersist(ctx context.Context, rpc *WorkerRPC) error {
-	return persistFromCallback(pyctx.WithRunningLoop(ctx), rpc)
+	return persistFromCallback(ctxutil.WithNonBlocking(ctx), rpc)
 }
 
 func TestOnLoopRpcLogsCallerFramesWithoutArgumentValues(t *testing.T) {
@@ -64,9 +64,9 @@ func TestOnLoopStoreWriteNamesTheCallerNotTheStore(t *testing.T) {
 	records := captureLogger(t, "agent", slog.LevelWarn)
 	tmp := t.TempDir()
 	rpc := mustNewWorkerRPC(t, tmp)
-	store := mustStore(t, rpc.Call, pyjson.ObjectOf("session_id", "s"), filepath.Join(tmp, "outbox"), 0)
+	store := mustStore(t, rpc.Call, jsonutil.ObjectOf("session_id", "s"), filepath.Join(tmp, "outbox"), 0)
 	defer store.closeOwner()
-	bestEffortUsage(pyctx.WithRunningLoop(context.Background()), store)
+	bestEffortUsage(ctxutil.WithNonBlocking(context.Background()), store)
 	warnings := guardWarnings(records())
 	if len(warnings) != 1 {
 		t.Fatalf("warnings %v", warnings)

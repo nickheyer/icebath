@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // RoundTripper calling a handler in process like httpx.MockTransport
@@ -109,7 +109,7 @@ func TestTokenProviderReusesCachedTokenUntilExpiry(t *testing.T) {
 	}
 	health := provider.InspectTokenHealth()
 	if v, _ := health.Get("cached"); v != true {
-		t.Fatalf("health = %v", health.Keys)
+		t.Fatalf("health = %v", health.Keys())
 	}
 	if v, _ := health.Get("expires_in_seconds"); v.(int64) < 3590 {
 		t.Fatalf("expires_in_seconds = %v", v)
@@ -120,7 +120,7 @@ func TestTokenProviderReusesCachedTokenUntilExpiry(t *testing.T) {
 	}
 	provider.ClearCache()
 	health = provider.InspectTokenHealth()
-	text, _ := pyjson.Dumps(health)
+	text, _ := jsonutil.Encode(health)
 	if text != `{"configured": true, "tenant_id": "tenant", "client_id": "client", "scope": "https://graph.microsoft.com/.default", `+
 		`"authority_url": "https://login.microsoftonline.com", "token_url": "https://login.microsoftonline.com/tenant/oauth2/v2.0/token", `+
 		`"cached": false, "expires_in_seconds": null, "is_expired": null, "refresh_skew_seconds": 120}` {
@@ -216,8 +216,8 @@ func TestTokenResponseValidationAndErrorDetail(t *testing.T) {
 }
 
 func TestFormatGraphError(t *testing.T) {
-	obj := func(kv ...any) *pyjson.Object {
-		o := pyjson.NewObject()
+	obj := func(kv ...any) *jsonutil.Object {
+		o := jsonutil.NewObject()
 		for i := 0; i < len(kv); i += 2 {
 			o.Set(kv[i].(string), kv[i+1])
 		}

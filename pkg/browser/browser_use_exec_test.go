@@ -16,7 +16,6 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -558,7 +557,7 @@ func TestBrowserExecTimeoutAndLaunchFailureSaySo(t *testing.T) {
 		return execProc{launchErr: &os.PathError{Op: "fork/exec", Path: "/usr/bin/python3", Err: syscall.EACCES}}
 	})
 	result = decodeExecResult(t, f.raw(t, pageInfo, "", 30, "", false))
-	if msg, _ := result["error"].(string); msg != "Failed to launch Python for browser_exec: [Errno 13] Permission denied: '/usr/bin/python3'" {
+	if msg, _ := result["error"].(string); msg != "Failed to launch Python for browser_exec: fork/exec /usr/bin/python3: permission denied" {
 		t.Fatalf("%v", result)
 	}
 }
@@ -775,7 +774,7 @@ func TestClampTimeoutFollowsPythonInt(t *testing.T) {
 	for _, c := range []struct {
 		in   any
 		want int
-	}{{nil, 300}, {"abc", 300}, {"60", 60}, {2.9, 5}, {99999, 1800}, {true, 5}, {pyjson.ParseInt("120"), 120}} {
+	}{{nil, 300}, {"abc", 300}, {"60", 60}, {2.9, 5}, {99999, 1800}, {true, 5}, {int64(120), 120}} {
 		if got := clampTimeout(c.in); got != c.want {
 			t.Errorf("clampTimeout(%v) = %d, want %d", c.in, got, c.want)
 		}

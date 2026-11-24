@@ -6,11 +6,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Waits on the session's gateway approval for one proposed file change, a one use consent never a grant
@@ -64,18 +64,18 @@ func policyScope(ctx context.Context, policy *LocalSessionPolicy, a *SessionAuth
 		field, detail := "cwd", policy.Cwd
 		return state.NewRuntimeStoreError("workspace_unavailable", &field, &detail)
 	}
-	loaded, err := pyjson.Loads(policy.TerminalJSON)
+	loaded, err := jsonutil.Decode(policy.TerminalJSON)
 	if err != nil {
 		return err
 	}
-	fields, ok := pyjson.AsObject(loaded)
+	fields, ok := jsonutil.AsObject(loaded)
 	if !ok {
 		return &PyError{Kind: "TypeError", Msg: "the session policy scope is " + errchain.Kind(loaded) + ", expected a mapping"}
 	}
 	terminal := tools.TerminalPolicy{}
-	for _, key := range fields.Keys {
+	for _, key := range fields.Keys() {
 		value, _ := fields.Get(key)
-		terminal[key] = pyrepr.Str(value)
+		terminal[key] = anyutil.String(value)
 	}
 	var owner launchSecretOwner
 	if a != nil {
@@ -88,7 +88,7 @@ func policyScope(ctx context.Context, policy *LocalSessionPolicy, a *SessionAuth
 		}
 		for i, path := range recovered.paths {
 			if len(path) > 1 && path[0] == nil {
-				terminal[pyrepr.Str(path[1])] = pyrepr.Str(recovered.values[i])
+				terminal[anyutil.String(path[1])] = anyutil.String(recovered.values[i])
 			}
 		}
 	}

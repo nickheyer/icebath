@@ -25,7 +25,7 @@ func interplayHits(t *testing.T, db *SessionDB, sid, query string) int {
 	}
 	n := 0
 	for _, h := range hits {
-		if h.Vals["session_id"] == sid {
+		if h.Value("session_id") == sid {
 			n++
 		}
 	}
@@ -120,7 +120,7 @@ func TestRewindToEmptyDriftsTheCounterToZero(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return fmt.Sprint(row.Vals["message_count"], " ", row.Vals["n"])
+		return fmt.Sprint(row.Value("message_count"), " ", row.Value("n"))
 	}
 	if got := counts(); got != "4 4" {
 		t.Fatalf("seeded counts %s", got)
@@ -132,7 +132,7 @@ func TestRewindToEmptyDriftsTheCounterToZero(t *testing.T) {
 		t.Fatalf("counts after the rewind %s", got)
 	}
 	rows, err := db.GetMessages(ctx, "rewound", GetMessagesOptions{IncludeInactive: true})
-	if err != nil || len(rows) != 4 || !strings.HasPrefix(pyStr(rows[0].Vals["content"]), "turn") {
+	if err != nil || len(rows) != 4 || !strings.HasPrefix(pyStr(rows[0].Value("content")), "turn") {
 		t.Fatalf("inactive rows %d err %v", len(rows), err)
 	}
 }

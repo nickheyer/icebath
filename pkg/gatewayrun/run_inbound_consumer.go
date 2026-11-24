@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const postAdmissionHook = "post_gateway_admission"
@@ -29,7 +28,7 @@ func runPostAdmissionHook(ctx context.Context, r *GatewayRunner, event *gateway.
 	results, err := func() (results []any, err error) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				err = fmt.Errorf("%s", pyrepr.Str(rec))
+				err = fmt.Errorf("%s", anyutil.String(rec))
 			}
 		}()
 		scoped, err := r.routedScope(ctx, source)

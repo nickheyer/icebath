@@ -12,10 +12,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Provider, model, endpoint and key of the route a session runs now
@@ -43,7 +43,7 @@ func runtimeResolver(a *SessionAuthority) (agentRuntimeResolver, error) {
 // String field of a mapping, empty when absent or falsy
 func mapText(m map[string]any, key string) string {
 	if v, ok := m[key]; ok && pyTruthy(v) {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -98,7 +98,7 @@ func authorityHome(a *SessionAuthority) string {
 }
 
 // Freezes an explicit model pick into the policy, resolved like every surface's model command
-func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error) {
+func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, prepared *jsonutil.Object) (*jsonutil.Object, error) {
 	old, err := preparedPolicy(prepared)
 	if err != nil {
 		return nil, err
@@ -107,12 +107,12 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	if err != nil {
 		return nil, err
 	}
-	if payload.GetOr("refresh", nil) == true {
+	if payload.ValueOr("refresh", nil) == true {
 		provider.ClearAllProviderModelsCache(ctx)
 	}
 	_, named := payload.Get("model")
 	if _, picked := payload.Get("provider"); !named && !picked {
-		return pyjson.ObjectOf("status", "refreshed", "model", current.Model, "provider", current.Provider), nil
+		return jsonutil.ObjectOf("status", "refreshed", "model", current.Model, "provider", current.Provider), nil
 	}
 	reset, err := isModelReset(payload)
 	if err != nil {
@@ -137,11 +137,11 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	}
 	explicit := ""
 	if value, has := payload.Get("provider"); has {
-		explicit = pyrepr.Str(value)
+		explicit = anyutil.String(value)
 	}
 	rawModel := ""
 	if raw, has := payload.Get("model"); has {
-		rawModel = pyrepr.Str(raw)
+		rawModel = anyutil.String(raw)
 	}
 	result, err := provider.SwitchModel(ctx, provider.SwitchModelOptions{RawInput: rawModel, CurrentProvider: current.Provider,
 		CurrentBaseURL: current.BaseURL, CurrentAPIKey: current.APIKey, ExplicitProvider: explicit, UserProviders: userProviders, CustomProviders: customProviders})
@@ -162,14 +162,14 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 			return refusal, err
 		}
 	}
-	if payload.GetOr("persist", nil) == true {
+	if payload.ValueOr("persist", nil) == true {
 		if err := provider.PersistModelSelection(ctx, result, filepath.Join(authorityHome(a), "config.yaml")); err != nil {
 			return nil, err
 		}
 	}
 	extra := []any{}
-	if payload.GetOr("once", nil) == true && current.Model != "" {
-		restore := pyjson.ObjectOf("model", current.Model)
+	if payload.ValueOr("once", nil) == true && current.Model != "" {
+		restore := jsonutil.ObjectOf("model", current.Model)
 		if current.Provider != "" {
 			restore.Set("provider", current.Provider)
 		}
@@ -234,7 +234,7 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	} else if _, has := model["api_key"]; !has {
 		delete(model, "api_key_from")
 	}
-	configJSON, err := pyjson.Dumps(frozen)
+	configJSON, err := jsonutil.Encode(frozen)
 	if err != nil {
 		return nil, err
 	}
@@ -267,7 +267,7 @@ func prepareModel(ctx context.Context, a *SessionAuthority, live *LiveSession, p
 	filtered := &RecoveredSecrets{}
 	for i, path := range secrets.paths {
 		if len(path) == 2 && path[0] == "model" {
-			if _, has := model[pyrepr.Str(path[1])]; !has {
+			if _, has := model[anyutil.String(path[1])]; !has {
 				continue
 			}
 		}
@@ -321,21 +321,21 @@ func secretPathKey(path secretPath) string {
 			parts[i] = fmt.Sprintf("%d", n)
 			continue
 		}
-		parts[i] = pyrepr.Repr(part)
+		parts[i] = anyutil.Quote(part)
 	}
 	return strings.Join(parts, "\x1f")
 }
 
 // Whether a model payload is the reset token, refusing it beside any other selection field
-func isModelReset(payload *pyjson.Object) (bool, error) {
+func isModelReset(payload *jsonutil.Object) (bool, error) {
 	raw, named := payload.Get("model")
 	if !named {
 		return false, nil
 	}
-	if strings.ToLower(strings.TrimSpace(pyrepr.Str(raw))) != provider.ModelSwitchResetToken {
+	if strings.ToLower(strings.TrimSpace(anyutil.String(raw))) != provider.ModelSwitchResetToken {
 		return false, nil
 	}
-	for _, key := range payload.Keys {
+	for _, key := range payload.Keys() {
 		if key != "model" && key != "confirm" {
 			field, detail := "payload", provider.ModelSwitchErrorText[provider.ModelSwitchErrResetWithFlags]
 			return false, state.NewRuntimeStoreError("invalid_params", &field, &detail)
@@ -365,7 +365,7 @@ func configuredDefault(ctx context.Context, a *SessionAuthority) (string, string
 }
 
 // Pick of the profile's configured model for a reset, a noop report when the session already runs it
-func resetModelPayload(ctx context.Context, a *SessionAuthority, old *LocalSessionPolicy, current switchRoute) (*pyjson.Object, error) {
+func resetModelPayload(ctx context.Context, a *SessionAuthority, old *LocalSessionPolicy, current switchRoute) (*jsonutil.Object, error) {
 	model, name := "", ""
 	if !old.IgnoreUserConfig {
 		var err error
@@ -378,9 +378,9 @@ func resetModelPayload(ctx context.Context, a *SessionAuthority, old *LocalSessi
 		return nil, state.NewRuntimeStoreError("invalid_params", &field, &detail)
 	}
 	if model == current.Model && (name == "" || name == current.Provider) {
-		return pyjson.ObjectOf("status", "noop", "model", model, "note", i18n.T(ctx, "cli.model.reset_none", "", map[string]any{"model": model})), nil
+		return jsonutil.ObjectOf("status", "noop", "model", model, "note", i18n.T(ctx, "cli.model.reset_none", "", map[string]any{"model": model})), nil
 	}
-	out := pyjson.ObjectOf("model", model)
+	out := jsonutil.ObjectOf("model", model)
 	if name != "" {
 		out.Set("provider", name)
 	}
@@ -439,7 +439,7 @@ func selectedProviderKeyEnv(ctx context.Context, cfg map[string]any, name string
 
 // Canonical identity of a providers key, its spellings folded together
 func providerKeySlug(key any) string {
-	return provider.CustomProviderSlug("", pyrepr.Str(key))
+	return provider.CustomProviderSlug("", anyutil.String(key))
 }
 
 // Copies only the picked providers entry into the frozen route, returning its private values, retired paths and moved entries
@@ -454,7 +454,7 @@ func freezeSelectedProvider(ctx context.Context, cfg, frozen map[string]any, nam
 	if !ok {
 		return secrets, retired, moved, nil
 	}
-	copied := pyjson.Clone(entry).(map[string]any)
+	copied := jsonutil.Clone(entry).(map[string]any)
 	retired[secretPathKey(secretPath{path.Section, path.Key})] = true
 	previous, _ := frozen[path.Section].(map[string]any)
 	next := map[string]any{}
@@ -546,7 +546,7 @@ func persistedSelectionContext(ctx context.Context, a *SessionAuthority, snapsho
 			return nil, err
 		}
 	}
-	sid := pyrepr.Str(target)
+	sid := anyutil.String(target)
 	rows, err := a.DB.GetMessagesAsConversation(ctx, sid, state.ConversationOptions{})
 	if err != nil {
 		return nil, err
@@ -583,7 +583,7 @@ func residentAgent(a *SessionAuthority, live *LiveSession) any {
 }
 
 // Confirmation request of a guarded target bound to the resolved target, replaced selection and revision, nil once confirmed
-func selectionGuardRefusal(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, snapshot any, current switchRoute, result provider.ModelSwitchResult) (*pyjson.Object, error) {
+func selectionGuardRefusal(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, snapshot any, current switchRoute, result provider.ModelSwitchResult) (*jsonutil.Object, error) {
 	var selection *provider.SelectionContext
 	if agent, ok := residentAgent(a, live).(selectionContextAgent); ok && agent != nil {
 		selection = provider.SelectionContextFor(agent.ContextLastPromptTokens(), agent.Model())
@@ -628,7 +628,7 @@ func selectionGuardRefusal(ctx context.Context, a *SessionAuthority, live *LiveS
 		"current": []any{current.Model, current.Provider, provider.NormalizeRouteBaseURL(current.BaseURL)},
 		"session": []any{target, revision}, "guards": guards,
 	}
-	text, err := pyjson.Dumps(binding, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(binding, jsonutil.SortKeys())
 	if err != nil {
 		return nil, err
 	}
@@ -639,9 +639,9 @@ func selectionGuardRefusal(ctx context.Context, a *SessionAuthority, live *LiveS
 	}
 	listed := make([]any, len(warnings))
 	for i, w := range warnings {
-		listed[i] = pyjson.ObjectOf("kind", w.Kind, "title", w.Title, "message", w.Message)
+		listed[i] = jsonutil.ObjectOf("kind", w.Kind, "title", w.Title, "message", w.Message)
 	}
-	return pyjson.ObjectOf("status", "confirmation_required", "confirm_required", true, "confirm", token,
+	return jsonutil.ObjectOf("status", "confirmation_required", "confirm_required", true, "confirm", token,
 		"target_model", result.NewModel, "target_provider", result.TargetProvider,
 		"confirm_message", provider.CombinedSelectionMessage(warnings), "warnings", listed), nil
 }

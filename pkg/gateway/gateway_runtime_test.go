@@ -19,22 +19,22 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
-func readyPayload(h string) *pyjson.Object {
-	v, err := pyjson.Loads(fmt.Sprintf(`{"runtime_protocol": 1, "state": "ready", "instance_id": "inst", "authority_epoch": 3,
+func readyPayload(h string) *jsonutil.Object {
+	v, err := jsonutil.Decode(fmt.Sprintf(`{"runtime_protocol": 1, "state": "ready", "instance_id": "inst", "authority_epoch": 3,
 		"api_origin": "http://127.0.0.1:4321", "supervisor": "none",
 		"served_profiles": [{"profile_id": %q, "home": %q}]}`, h, h))
 	if err != nil {
 		panic(err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 // Unix listener at home's gateway.sock answering identify with the current payload until the test ends
-func serveIdentify(t *testing.T, h string, payload func() *pyjson.Object) func() {
+func serveIdentify(t *testing.T, h string, payload func() *jsonutil.Object) func() {
 	t.Helper()
 	sock := filepath.Join(h, "gateway.sock")
 	ln, err := net.Listen("unix", sock)
@@ -52,7 +52,7 @@ func serveIdentify(t *testing.T, h string, payload func() *pyjson.Object) func()
 				return
 			}
 			bufio.NewReader(conn).ReadString('\n')
-			body, _ := pyjson.Dumps(payload())
+			body, _ := jsonutil.Encode(payload())
 			fmt.Fprintf(conn, "{\"ok\": true, \"protocol\": 1, \"id\": 1, \"result\": %s}\n", body)
 			conn.Close()
 		}
@@ -82,7 +82,7 @@ func TestLiveDiscoveryDoesNotTreatAnUnusableOwnerAsAbsent(t *testing.T) {
 	payload.Set("instance_id", "fixture-instance")
 	payload.Set("authority_epoch", 1)
 	payload.Set("api_origin", "http://127.0.0.1:41817")
-	stop := serveIdentify(t, h, func() *pyjson.Object { mu.Lock(); defer mu.Unlock(); return payload.Copy() })
+	stop := serveIdentify(t, h, func() *jsonutil.Object { mu.Lock(); defer mu.Unlock(); return payload.Clone() })
 	ready := discover(h, time.Second)
 	if ready.State != "ready" || ready.Endpoint.ProfileID != identity || ready.Endpoint.InstanceID != "fixture-instance" ||
 		ready.Endpoint.APIOrigin != "http://127.0.0.1:41817" {
@@ -200,7 +200,7 @@ func overlayFixture(t *testing.T, overlayMode os.FileMode) (owner, overlay strin
 func TestDiscoveryResolvesAPrivateOverlayLockToItsOwner(t *testing.T) {
 	owner, overlay := overlayFixture(t, 0o700)
 	var queried []string
-	patch(t, &queryIdentifySeam, func(h string, _ time.Duration) (*pyjson.Object, error) {
+	patch(t, &queryIdentifySeam, func(h string, _ time.Duration) (*jsonutil.Object, error) {
 		queried = append(queried, h)
 		return readyPayload(owner), nil
 	})
@@ -219,7 +219,7 @@ func TestDiscoveryResolvesAPrivateOverlayLockToItsOwner(t *testing.T) {
 func TestDiscoveryDoesNotFollowAnOverlayLockFromAWritableHome(t *testing.T) {
 	owner, overlay := overlayFixture(t, 0o707)
 	var queried []string
-	patch(t, &queryIdentifySeam, func(h string, _ time.Duration) (*pyjson.Object, error) {
+	patch(t, &queryIdentifySeam, func(h string, _ time.Duration) (*jsonutil.Object, error) {
 		queried = append(queried, h)
 		return readyPayload(owner), nil
 	})
@@ -399,19 +399,19 @@ func homeStat(t *testing.T, h string) *syscall.Stat_t {
 func TestHomeModeRefusesOnlyWritesAnotherUserCanMake(t *testing.T) {
 	h := filepath.Join(t.TempDir(), "home")
 	os.Mkdir(h, 0o755)
-	user := pypwd.Passwd{Name: "owner", UID: os.Getuid(), GID: os.Getgid()}
-	patch(t, &discoveryGetpwuid, func(int) (pypwd.Passwd, error) { return user, nil })
-	patch(t, &discoveryGetpwall, func() ([]pypwd.Passwd, error) { return []pypwd.Passwd{user}, nil })
-	private := pypwd.Group{Name: user.Name, GID: user.GID}
-	shared := pypwd.Group{Name: "staff", GID: user.GID, Mem: []string{user.Name, "someone-else"}}
+	user := userutil.Account{Name: "owner", UID: os.Getuid(), GID: os.Getgid()}
+	patch(t, &discoveryGetpwuid, func(int) (userutil.Account, error) { return user, nil })
+	patch(t, &discoveryGetpwall, func() ([]userutil.Account, error) { return []userutil.Account{user}, nil })
+	private := userutil.Group{Name: user.Name, GID: user.GID}
+	shared := userutil.Group{Name: "staff", GID: user.GID, Mem: []string{user.Name, "someone-else"}}
 	for _, c := range []struct {
 		mode   os.FileMode
-		group  pypwd.Group
+		group  userutil.Group
 		unsafe bool
 	}{{0o700, private, false}, {0o755, shared, false}, {0o757, private, true}, {0o775, private, false}, {0o775, shared, true}} {
 		os.Chmod(h, c.mode)
 		g := c.group
-		patch(t, &discoveryGetgrgid, func(int) (pypwd.Group, error) { return g, nil })
+		patch(t, &discoveryGetgrgid, func(int) (userutil.Group, error) { return g, nil })
 		if got := HomeModeUnsafe(homeStat(t, h), h); got != c.unsafe {
 			t.Fatalf("%o %s: %v", c.mode, g.Name, got)
 		}
@@ -422,19 +422,19 @@ func TestGroupWriteIsPrivateOnlyWhenNoOtherAccountHasThatPrimaryGroup(t *testing
 	h := filepath.Join(t.TempDir(), "home")
 	os.Mkdir(h, 0o755)
 	os.Chmod(h, 0o775)
-	user := pypwd.Passwd{Name: "owner", UID: os.Getuid(), GID: os.Getgid()}
-	patch(t, &discoveryGetpwuid, func(int) (pypwd.Passwd, error) { return user, nil })
-	patch(t, &discoveryGetgrgid, func(int) (pypwd.Group, error) { return pypwd.Group{Name: user.Name, GID: user.GID}, nil })
-	other := pypwd.Passwd{Name: "intruder", UID: user.UID + 1, GID: user.GID}
-	patch(t, &discoveryGetpwall, func() ([]pypwd.Passwd, error) { return []pypwd.Passwd{user, other}, nil })
+	user := userutil.Account{Name: "owner", UID: os.Getuid(), GID: os.Getgid()}
+	patch(t, &discoveryGetpwuid, func(int) (userutil.Account, error) { return user, nil })
+	patch(t, &discoveryGetgrgid, func(int) (userutil.Group, error) { return userutil.Group{Name: user.Name, GID: user.GID}, nil })
+	other := userutil.Account{Name: "intruder", UID: user.UID + 1, GID: user.GID}
+	patch(t, &discoveryGetpwall, func() ([]userutil.Account, error) { return []userutil.Account{user, other}, nil })
 	if !HomeModeUnsafe(homeStat(t, h), h) {
 		t.Fatal("shared primary group read as private")
 	}
-	patch(t, &discoveryGetpwall, func() ([]pypwd.Passwd, error) { return []pypwd.Passwd{user}, nil })
+	patch(t, &discoveryGetpwall, func() ([]userutil.Account, error) { return []userutil.Account{user}, nil })
 	if HomeModeUnsafe(homeStat(t, h), h) {
 		t.Fatal("private group read as shared")
 	}
-	patch(t, &discoveryGetpwall, func() ([]pypwd.Passwd, error) { return nil, errors.New("passwd database unavailable") })
+	patch(t, &discoveryGetpwall, func() ([]userutil.Account, error) { return nil, errors.New("passwd database unavailable") })
 	if !HomeModeUnsafe(homeStat(t, h), h) {
 		t.Fatal("unreadable passwd read as private")
 	}
@@ -499,8 +499,8 @@ func gatewayLookalike(t *testing.T, asGateway bool) int {
 	return holder.pid
 }
 
-func refusalRecord(h string, pid int) *pyjson.Object {
-	r := pyjson.NewObject()
+func refusalRecord(h string, pid int) *jsonutil.Object {
+	r := jsonutil.NewObject()
 	r.Set("pid", pid)
 	r.Set("kind", gatewayKind)
 	r.Set("argv", []any{"icebath", "gateway", "run"})
@@ -509,8 +509,8 @@ func refusalRecord(h string, pid int) *pyjson.Object {
 	return r
 }
 
-func writeRefusalRecord(t *testing.T, path string, r *pyjson.Object) {
-	body, err := pyjson.Dumps(r)
+func writeRefusalRecord(t *testing.T, path string, r *jsonutil.Object) {
+	body, err := jsonutil.Encode(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -576,7 +576,7 @@ func TestDiscoveryRoutesARefusedControlChannelThroughRefused(t *testing.T) {
 		seen = append(seen, home)
 		return ObservedEndpoint{State: "inaccessible", ReasonCode: GatewayElevated}
 	})
-	patch(t, &queryIdentifySeam, func(string, time.Duration) (*pyjson.Object, error) {
+	patch(t, &queryIdentifySeam, func(string, time.Duration) (*jsonutil.Object, error) {
 		return nil, fmt.Errorf("runtime control pipe inaccessible: %w", fs.ErrPermission)
 	})
 	result := discover(h, time.Second)
@@ -646,7 +646,7 @@ func TestAStalePidFileFallsThroughToTheLockOwner(t *testing.T) {
 	os.Mkdir(h, 0o755)
 	dead := exec.Command("true")
 	dead.Run()
-	stale := pyjson.NewObject()
+	stale := jsonutil.NewObject()
 	stale.Set("pid", dead.Process.Pid)
 	stale.Set("start_time", 1)
 	writeRefusalRecord(t, filepath.Join(h, "gateway.pid"), stale)

@@ -12,10 +12,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const (
@@ -106,7 +106,7 @@ func ownSession(t *testing.T, h, sessionID, profile string) {
 }
 
 // Multiplexing runner whose primary api_server adapter is adapter and whose builder profile holds builderAdapters
-func makeServedRunner(t *testing.T, adapter gateway.PlatformAdapter, builderAdapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]) *GatewayRunner {
+func makeServedRunner(t *testing.T, adapter gateway.PlatformAdapter, builderAdapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]) *GatewayRunner {
 	t.Helper()
 	if adapter == nil {
 		adapter = newRecordingAPIServerAdapter(nil)
@@ -116,7 +116,7 @@ func makeServedRunner(t *testing.T, adapter gateway.PlatformAdapter, builderAdap
 	if builderAdapters == nil {
 		builderAdapters = adapterDict()
 	}
-	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
+	r.profileAdapters = orderedutil.NewMap[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]()
 	r.profileAdapters.Set("builder", builderAdapters)
 	r.profileAdapters.Set("atlas", adapterDict())
 	r.primaryProfileName = "default"
@@ -144,7 +144,7 @@ func servedSubscription(t *testing.T, chatID, profile string) string {
 }
 
 // Subscription row of an api_server destination
-func apiSub(chatID, profile string) *pyjson.Object {
+func apiSub(chatID, profile string) *jsonutil.Object {
 	return kobj("task_id", "t_owned", "platform", "api_server", "chat_id", chatID, "chat_type", "dm", "thread_id", "",
 		"notifier_profile", profile, "delivery_metadata", nil)
 }
@@ -180,7 +180,7 @@ func TestServedProfileWakeRunsInProcessOnlyForTheSessionItOwns(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	resolve := func(sub *pyjson.Object, profile string, builder *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]) gateway.PlatformAdapter {
+	resolve := func(sub *jsonutil.Object, profile string, builder *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]) gateway.PlatformAdapter {
 		a, err := adapterForSubscription(ctx, makeServedRunner(t, nil, builder), gateway.PlatformAPIServer, sub, profile)
 		if err != nil {
 			t.Fatal(err)

@@ -11,14 +11,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func cmdAgent(t *testing.T, rpc func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error)) (*GatewayACPAgent, *fakeGateway, *editorFake) {
+func cmdAgent(t *testing.T, rpc func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error)) (*GatewayACPAgent, *fakeGateway, *editorFake) {
 	t.Helper()
 	a := newGatewayAgent(t)
-	link := newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link := newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		return rpc(a, method, params)
 	})
 	editor := &editorFake{}
@@ -29,10 +30,10 @@ func cmdAgent(t *testing.T, rpc func(a *GatewayACPAgent, method string, params m
 	return a, link, editor
 }
 
-func promptWithin(t *testing.T, a *GatewayACPAgent, text string) (*pyacp.PromptResponse, error) {
+func promptWithin(t *testing.T, a *GatewayACPAgent, text string) (*acputil.PromptResponse, error) {
 	t.Helper()
 	type outcome struct {
-		resp *pyacp.PromptResponse
+		resp *acputil.PromptResponse
 		err  error
 	}
 	done := make(chan outcome, 1)
@@ -62,14 +63,14 @@ func lastText(e *editorFake) string {
 	if len(seen) == 0 {
 		return ""
 	}
-	if chunk, ok := seen[len(seen)-1].update.(*pyacp.AgentMessageChunk); ok {
-		return chunk.Content.(*pyacp.TextContentBlock).Text
+	if chunk, ok := seen[len(seen)-1].update.(*acputil.AgentMessageChunk); ok {
+		return chunk.Content.(*acputil.TextContentBlock).Text
 	}
 	return ""
 }
 
-func receiptOf(t *testing.T, status string, generation any) *pyjson.Object {
-	return pyjson.ObjectOf("admission_id", "mine", "status", status, "execution_generation", generation)
+func receiptOf(t *testing.T, status string, generation any) *jsonutil.Object {
+	return jsonutil.ObjectOf("admission_id", "mine", "status", status, "execution_generation", generation)
 }
 
 type methodLog struct {
@@ -90,7 +91,7 @@ func (l *methodLog) list() []string {
 }
 
 func TestQueueSubmitsItsTextAsTheNextPrompt(t *testing.T) {
-	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		if method != "prompt.submit" || params["text"] != "run the linter" {
 			t.Errorf("unexpected %s %v", method, params)
 		}
@@ -104,7 +105,7 @@ func TestQueueSubmitsItsTextAsTheNextPrompt(t *testing.T) {
 }
 
 func TestSteerReachesThisEditorsRunningTurn(t *testing.T) {
-	a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		if method == "prompt.receipt" {
 			if !reflect.DeepEqual(params, map[string]any{"session_id": "s", "admission_id": "mine"}) {
 				t.Errorf("receipt params %v", params)
@@ -128,7 +129,7 @@ func TestSteerReachesThisEditorsRunningTurn(t *testing.T) {
 
 func TestASteerThatEndedTheVoiceChatIsReportedAndNeverResentAsAPrompt(t *testing.T) {
 	calls := &methodLog{}
-	a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		calls.add(method)
 		if method == "prompt.receipt" {
 			return receiptOf(t, "started", int64(9)), nil
@@ -150,7 +151,7 @@ func TestASteerThatEndedTheVoiceChatIsReportedAndNeverResentAsAPrompt(t *testing
 
 func TestSteerWhileThisEditorsPromptWaitsBehindAnotherClientsTurnIsQueued(t *testing.T) {
 	calls := &methodLog{}
-	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		calls.add(method)
 		if method == "prompt.receipt" {
 			return receiptOf(t, "queued", nil), nil
@@ -170,7 +171,7 @@ func TestSteerWhileThisEditorsPromptWaitsBehindAnotherClientsTurnIsQueued(t *tes
 
 func TestARefusedSteerIsReportedAndNeverResentAsAPrompt(t *testing.T) {
 	calls := &methodLog{}
-	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		calls.add(method)
 		if method == "prompt.receipt" {
 			return receiptOf(t, "started", int64(7)), nil
@@ -190,7 +191,7 @@ func TestARefusedSteerIsReportedAndNeverResentAsAPrompt(t *testing.T) {
 
 func TestASteerForATurnThatJustEndedBecomesTheNextPrompt(t *testing.T) {
 	calls := &methodLog{}
-	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		calls.add(method)
 		switch method {
 		case "prompt.receipt":
@@ -220,29 +221,29 @@ type sentMutation struct {
 func TestModesAndTheConfigOptionSetTheOwnersEditPolicy(t *testing.T) {
 	var mu sync.Mutex
 	var sent []sentMutation
-	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch method {
 		case "session.resume":
 			return jsonObj(t, `{"revision": 3, "execution_generation": 7}`), nil
 		case "session.info":
-			return pyjson.NewObject(), nil
+			return jsonutil.NewObject(), nil
 		}
 		if method != "session.mutate" {
 			t.Errorf("unexpected %s", method)
 		}
 		mu.Lock()
-		sent = append(sent, sentMutation{pyStr(params["operation"]), pyjson.Plain(params["payload"]), params["expected_generation"]})
+		sent = append(sent, sentMutation{anyutil.String(params["operation"]), jsonutil.Plain(params["payload"]), params["expected_generation"]})
 		mu.Unlock()
 		return jsonObj(t, `{"session_id": "s", "operation": "edit_policy", "revision": 4}`), nil
 	})
 	ctx := context.Background()
-	if _, err := a.SetSessionMode(ctx, &pyacp.SetSessionModeRequest{ModeID: "accept_edits", SessionID: "s"}); err != nil {
+	if _, err := a.SetSessionMode(ctx, &acputil.SetSessionModeRequest{ModeID: "accept_edits", SessionID: "s"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.SetConfigOption(ctx, &pyacp.SetConfigOptionParams{ConfigID: "edit_approval_policy", SessionID: "s", Value: "session"}); err != nil {
+	if _, err := a.SetConfigOption(ctx, &acputil.SetConfigOptionParams{ConfigID: "edit_approval_policy", SessionID: "s", Value: "session"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := a.SetSessionMode(ctx, &pyacp.SetSessionModeRequest{ModeID: "default", SessionID: "s"}); err != nil {
+	if _, err := a.SetSessionMode(ctx, &acputil.SetSessionModeRequest{ModeID: "default", SessionID: "s"}); err != nil {
 		t.Fatal(err)
 	}
 	want := []sentMutation{
@@ -254,11 +255,11 @@ func TestModesAndTheConfigOptionSetTheOwnersEditPolicy(t *testing.T) {
 		t.Fatalf("sent = %v", sent)
 	}
 	sent = nil
-	_, err := a.SetSessionMode(ctx, &pyacp.SetSessionModeRequest{ModeID: "yolo", SessionID: "s"})
+	_, err := a.SetSessionMode(ctx, &acputil.SetSessionModeRequest{ModeID: "yolo", SessionID: "s"})
 	if !refusedWith(err, "invalid_params") {
 		t.Fatalf("err = %v", err)
 	}
-	if _, err := a.SetConfigOption(ctx, &pyacp.SetConfigOptionParams{ConfigID: "theme", SessionID: "s", Value: "dark"}); err != nil {
+	if _, err := a.SetConfigOption(ctx, &acputil.SetConfigOptionParams{ConfigID: "theme", SessionID: "s", Value: "dark"}); err != nil {
 		t.Fatal(err)
 	}
 	if len(sent) != 0 {
@@ -267,26 +268,26 @@ func TestModesAndTheConfigOptionSetTheOwnersEditPolicy(t *testing.T) {
 }
 
 func TestTheEditorsOwnPickProjectedBeforeTheMutationAnswersIsHarmless(t *testing.T) {
-	a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		if method == "session.resume" {
 			return jsonObj(t, `{"revision": 3, "execution_generation": 7}`), nil
 		}
-		policy := pyjson.Plain(params["payload"]).(map[string]any)["policy"]
-		event := pyjson.ObjectOf("session_id", "s", "type", "session.info", "payload", pyjson.ObjectOf("edit_approval_policy", policy))
+		policy := jsonutil.Plain(params["payload"]).(map[string]any)["policy"]
+		event := jsonutil.ObjectOf("session_id", "s", "type", "session.info", "payload", jsonutil.ObjectOf("edit_approval_policy", policy))
 		if err := onLoop(a, func() error { return a.project(context.Background(), event) }); err != nil {
 			t.Error(err)
 		}
 		return jsonObj(t, `{"session_id": "s", "operation": "edit_policy", "revision": 4}`), nil
 	})
 	onLoop(a, func() bool { a.modes["s"] = "default"; return true })
-	if _, err := a.SetSessionMode(context.Background(), &pyacp.SetSessionModeRequest{ModeID: "dont_ask", SessionID: "s"}); err != nil {
+	if _, err := a.SetSessionMode(context.Background(), &acputil.SetSessionModeRequest{ModeID: "dont_ask", SessionID: "s"}); err != nil {
 		t.Fatal(err)
 	}
 	shown := updatesOf(editor)
 	if len(shown) != 1 {
 		t.Fatalf("shown = %v", shown)
 	}
-	if update, ok := shown[0].(*pyacp.CurrentModeUpdate); !ok || update.CurrentModeID != "dont_ask" {
+	if update, ok := shown[0].(*acputil.CurrentModeUpdate); !ok || update.CurrentModeID != "dont_ask" {
 		t.Fatalf("shown = %#v", shown[0])
 	}
 	mode, failure := onLoop(a, func() string { return a.modes["s"] }), onLoop(a, func() error { return a.failure })
@@ -297,7 +298,7 @@ func TestTheEditorsOwnPickProjectedBeforeTheMutationAnswersIsHarmless(t *testing
 
 func anyIdleNotice(e *editorFake) bool {
 	for _, u := range updatesOf(e) {
-		if chunk, ok := u.(*pyacp.AgentMessageChunk); ok && strings.Contains(chunk.Content.(*pyacp.TextContentBlock).Text, "idle") {
+		if chunk, ok := u.(*acputil.AgentMessageChunk); ok && strings.Contains(chunk.Content.(*acputil.TextContentBlock).Text, "idle") {
 			return true
 		}
 	}
@@ -307,17 +308,17 @@ func anyIdleNotice(e *editorFake) bool {
 func TestAModePickDuringATurnIsRefusedWithTheReason(t *testing.T) {
 	picks := map[string]func(a *GatewayACPAgent) error{
 		"set_session_mode": func(a *GatewayACPAgent) error {
-			_, err := a.SetSessionMode(context.Background(), &pyacp.SetSessionModeRequest{ModeID: "dont_ask", SessionID: "s"})
+			_, err := a.SetSessionMode(context.Background(), &acputil.SetSessionModeRequest{ModeID: "dont_ask", SessionID: "s"})
 			return err
 		},
 		"set_config_option": func(a *GatewayACPAgent) error {
-			_, err := a.SetConfigOption(context.Background(), &pyacp.SetConfigOptionParams{ConfigID: "edit_approval_policy", SessionID: "s", Value: "session"})
+			_, err := a.SetConfigOption(context.Background(), &acputil.SetConfigOptionParams{ConfigID: "edit_approval_policy", SessionID: "s", Value: "session"})
 			return err
 		},
 	}
 	for name, pick := range picks {
 		t.Run(name, func(t *testing.T) {
-			a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+			a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 				if method == "session.resume" {
 					return jsonObj(t, `{"revision": 3, "execution_generation": 7}`), nil
 				}
@@ -325,7 +326,7 @@ func TestAModePickDuringATurnIsRefusedWithTheReason(t *testing.T) {
 			})
 			onLoop(a, func() bool { a.modes["s"] = "default"; return true })
 			err := pick(a)
-			var refused *pyacp.RequestError
+			var refused *acputil.RequestError
 			if !errors.As(err, &refused) || !strings.Contains(refused.Message, "idle") {
 				t.Fatalf("err = %v", err)
 			}
@@ -340,7 +341,7 @@ func TestAModePickDuringATurnIsRefusedWithTheReason(t *testing.T) {
 }
 
 func TestAModePickBehindALostTurnSaysToResolveItNotToWait(t *testing.T) {
-	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, _ := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		if method == "session.resume" {
 			return jsonObj(t, `{"revision": 3, "execution_generation": 7}`), nil
 		}
@@ -351,8 +352,8 @@ func TestAModePickBehindALostTurnSaysToResolveItNotToWait(t *testing.T) {
 		snapshot.Set("pending", []any{jsonObj(t, `{"admission_id": "lost-1", "status": "unknown"}`)})
 		return true
 	})
-	_, err := a.SetSessionMode(context.Background(), &pyacp.SetSessionModeRequest{ModeID: "dont_ask", SessionID: "s"})
-	var refused *pyacp.RequestError
+	_, err := a.SetSessionMode(context.Background(), &acputil.SetSessionModeRequest{ModeID: "dont_ask", SessionID: "s"})
+	var refused *acputil.RequestError
 	if !errors.As(err, &refused) {
 		t.Fatalf("err = %v", err)
 	}
@@ -372,7 +373,7 @@ func (m *appliedMutations) Retire(sessionID string)                             
 func contextShown(e *editorFake) [][2]int {
 	var out [][2]int
 	for _, u := range updatesOf(e) {
-		if usage, ok := u.(*pyacp.UsageUpdate); ok {
+		if usage, ok := u.(*acputil.UsageUpdate); ok {
 			out = append(out, [2]int{usage.Size, usage.Used})
 		}
 	}
@@ -380,7 +381,7 @@ func contextShown(e *editorFake) [][2]int {
 }
 
 func boundaryAgent(t *testing.T, messages string) (*GatewayACPAgent, *editorFake) {
-	a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*pyjson.Object, error) {
+	a, _, editor := cmdAgent(t, func(a *GatewayACPAgent, method string, params map[string]any) (*jsonutil.Object, error) {
 		if method == "session.resume" {
 			return jsonObj(t, `{"execution_generation": 8, "messages": `+messages+`}`), nil
 		}
@@ -410,7 +411,7 @@ func TestResetEmptiesTheEditorsContextIndicator(t *testing.T) {
 func TestCompressShowsTheCompressedTranscriptsOccupancy(t *testing.T) {
 	content := strings.Repeat("summary of the earlier turns ", 40)
 	kept := []map[string]any{{"role": "user", "content": content}}
-	dumped, _ := pyjson.Dumps([]any{pyjson.ObjectOf("role", "user", "content", content)})
+	dumped, _ := jsonutil.Encode([]any{jsonutil.ObjectOf("role", "user", "content", content)})
 	a, editor := boundaryAgent(t, dumped)
 	if _, err := promptWithin(t, a, "/compress"); err != nil {
 		t.Fatal(err)

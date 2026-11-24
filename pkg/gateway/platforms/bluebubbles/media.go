@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -11,10 +12,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Whether path names an existing regular file
@@ -41,7 +41,7 @@ func (a *BlueBubblesAdapter) sendAttachment(ctx context.Context, chatID, filePat
 	}
 	fname := filename
 	if fname == "" {
-		fname = pypath.Basename(filePath)
+		fname = pathutil.Name(filePath)
 	}
 	result, err := a.uploadAttachment(ctx, client, chatID, filePath, fname, guid, caption, isAudioMessage)
 	if err != nil {
@@ -57,7 +57,7 @@ func (a *BlueBubblesAdapter) sendAttachment(ctx context.Context, chatID, filePat
 func (a *BlueBubblesAdapter) uploadAttachment(ctx context.Context, client *http.Client, chatID, filePath, fname, guid, caption string, isAudioMessage bool) (gateway.SendResult, error) {
 	payload, err := os.ReadFile(filePath)
 	if err != nil {
-		return gateway.SendResult{}, &pyErr{pypath.OSErrorClass(err), pypath.OSErrorText(err)}
+		return gateway.SendResult{}, err
 	}
 	parts := []gateway.MultipartPart{{Name: "chatGuid", Data: []byte(guid)}, {Name: "name", Data: []byte(fname)},
 		{Name: "tempGuid", Data: []byte(strings.ReplaceAll(uuid.NewString(), "-", ""))}}
@@ -74,7 +74,7 @@ func (a *BlueBubblesAdapter) uploadAttachment(ctx context.Context, client *http.
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	if err := raiseForStatus(resp, rawURL); err != nil {
+	if err := checkStatus(resp, rawURL); err != nil {
 		return gateway.SendResult{}, err
 	}
 	result, err := resp.JSON()
@@ -90,9 +90,9 @@ func (a *BlueBubblesAdapter) uploadAttachment(ctx context.Context, client *http.
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	if pyrepr.Equal(rm["status"], int64(200)) {
+	if anyutil.Equal(rm["status"], int64(200)) {
 		var msgID any
-		if rd, isDict := pyjson.Dict(pyrepr.Or(rm["data"], map[string]any{})); isDict {
+		if rd, isDict := jsonutil.AsMap(anyutil.Or(rm["data"], map[string]any{})); isDict {
 			msgID = rd["guid"]
 		}
 		return gateway.SendResult{Success: true, MessageID: msgID, RawResponse: result}, nil
@@ -164,12 +164,12 @@ func (a *BlueBubblesAdapter) downloadAttachmentToCache(ctx context.Context, attG
 		return "", nil
 	}
 	path, err := func() (string, error) {
-		rawURL := a.apiURL("/api/v1/attachment/" + pyurl.Quote(attGUID, "") + "/download")
+		rawURL := a.apiURL("/api/v1/attachment/" + url.PathEscape(attGUID) + "/download")
 		resp, err := doRequest(ctx, client, http.MethodGet, rawURL, nil, "", 60*time.Second)
 		if err != nil {
 			return "", err
 		}
-		if err := raiseForStatus(resp, rawURL); err != nil {
+		if err := checkStatus(resp, rawURL); err != nil {
 			return "", err
 		}
 		mime, err := lowerText(attMeta["mimeType"])
@@ -198,14 +198,14 @@ func (a *BlueBubblesAdapter) downloadAttachmentToCache(ctx context.Context, attG
 	return path, nil
 }
 
-// Lowercased text of an optional string field, the AttributeError a non string value raises
+// Lowercased text of an optional string field, a kind error for a value that is not a string
 func lowerText(v any) (string, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", noAttr(v, "lower")
+		return "", kindError("a string", v)
 	}
 	return strings.ToLower(s), nil
 }

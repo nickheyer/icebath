@@ -5,9 +5,9 @@ import (
 	"crypto/subtle"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Path of the state database the launch secret references bind to
@@ -34,7 +34,7 @@ func bindLaunchKey(ctx context.Context, a *SessionAuthority, sid string, policy 
 }
 
 // Binds launch secrets, an owner expanded key of the same create request taking the key its slot already holds
-func bindLaunchKeyFor(ctx context.Context, a *SessionAuthority, sid string, policy *LocalSessionPolicy, apiKey *string, configSecrets *RecoveredSecrets, ownerKey bool, clientRequest *pyjson.Object) (*LocalSessionPolicy, error) {
+func bindLaunchKeyFor(ctx context.Context, a *SessionAuthority, sid string, policy *LocalSessionPolicy, apiKey *string, configSecrets *RecoveredSecrets, ownerKey bool, clientRequest *jsonutil.Object) (*LocalSessionPolicy, error) {
 	secrets := &RecoveredSecrets{}
 	var servers any
 	if configSecrets != nil {
@@ -60,7 +60,7 @@ func bindLaunchKeyFor(ctx context.Context, a *SessionAuthority, sid string, poli
 		a.launchSlots = &launchSecretSlots{keys: map[string]string{}, configs: map[string]*RecoveredSecrets{}}
 	}
 	if a.localOwnerKeyRequests == nil {
-		a.localOwnerKeyRequests = map[string]*pyjson.Object{}
+		a.localOwnerKeyRequests = map[string]*jsonutil.Object{}
 	}
 	slots, owners := a.launchSlots, a.localOwnerKeyRequests
 	a.mu.Unlock()
@@ -70,7 +70,7 @@ func bindLaunchKeyFor(ctx context.Context, a *SessionAuthority, sid string, poli
 	old, held := slots.keys[ref]
 	if saved, owned := owners[ref]; ownerKey && apiKey != nil && held && owned {
 		if clientRequest == nil {
-			clientRequest = pyjson.NewObject()
+			clientRequest = jsonutil.NewObject()
 		}
 		same, err := state.SameCreateRetry(saved, policy.RequestJSON, clientRequest)
 		if err != nil {
@@ -96,7 +96,7 @@ func bindLaunchKeyFor(ctx context.Context, a *SessionAuthority, sid string, poli
 		slots.configs[configRef] = secrets.without(nil)
 	}
 	if apiKey != nil && !held && ownerKey {
-		owners[ref] = pyjson.ObjectOf("request_json", policy.RequestJSON, "client_env_json", optStrAny(policy.ClientEnvJSON),
+		owners[ref] = jsonutil.ObjectOf("request_json", policy.RequestJSON, "client_env_json", optStrAny(policy.ClientEnvJSON),
 			"client_env_rules_json", optStrAny(policy.ClientEnvRulesJSON))
 	}
 	bound.CredentialRef, bound.ConfigSecretRef = nil, nil

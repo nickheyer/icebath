@@ -9,9 +9,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Parent of test_delegate.py _make_mock_parent at the given depth over a temp home
@@ -43,7 +43,7 @@ func childSpec(parent *AIAgent, goal string, model any, maxIterations int, role 
 func toolNamesOfDefinitions(defs []map[string]any) map[string]bool {
 	names := map[string]bool{}
 	for _, d := range defs {
-		fn, _ := pyjson.Dict(d["function"])
+		fn, _ := jsonutil.AsMap(d["function"])
 		if n, _ := fn["name"].(string); n != "" {
 			names[n] = true
 		}

@@ -13,8 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"gopkg.in/yaml.v3"
 )
 
@@ -84,7 +83,7 @@ func TestEvictionMalformedSecondaryCannotEvictRecordedMember(t *testing.T) {
 	}
 	recorded := evRecorded(t)
 	selected := svSelected(t, core)
-	if pyrepr.Str(recorded["stamp"]) == "" || !isDirectory(selected) || !strings.Contains(svWorkspaceManifest(t), "profile-dep") {
+	if anyutil.String(recorded["stamp"]) == "" || !isDirectory(selected) || !strings.Contains(svWorkspaceManifest(t), "profile-dep") {
 		t.Fatalf("recorded %v", recorded)
 	}
 	bad := filepath.Join(profile, "config.yaml")
@@ -129,7 +128,7 @@ func TestEvictionMalformedSecondaryCannotEvictRecordedMember(t *testing.T) {
 	if !isDirectory(svSelected(t, core)) || restored["stamp"] == recorded["stamp"] {
 		t.Fatalf("restored %v", restored)
 	}
-	if text := peRead(t, filepath.Join(filepath.Dir(pyrepr.Str(restored["resolved_lock"])), "pyproject.toml")); !strings.Contains(text, "profile-dep") {
+	if text := peRead(t, filepath.Join(filepath.Dir(anyutil.String(restored["resolved_lock"])), "pyproject.toml")); !strings.Contains(text, "profile-dep") {
 		t.Fatalf("workspace %s", text)
 	}
 }

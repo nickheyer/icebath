@@ -20,8 +20,9 @@ import (
 	"golang.org/x/net/idna"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
+	netutil "github.com/nickheyer/icebath/pkg/utils/net"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Proxy env vars that delegate DNS to the proxy when set
@@ -178,35 +179,19 @@ var trustedPrivateIPHosts = map[string]bool{"multimedia.nt.qq.com.cn": true}
 
 const maxSSRFConnectIPs = 8
 
-var cgnatNetwork = mustPrefix("100.64.0.0/10")
-
 var ipv4TranslatedNetwork = mustPrefix("::ffff:0:0:0/96")
+
+// NAT64 well-known prefix, whose low 32 bits are the IPv4 address a translator dials
+var nat64WellKnownNetwork = mustPrefix("64:ff9b::/96")
+
+// IPv6 protocol assignments block, blocked whole including the globally reachable assignments inside it
+var ietfProtocolBlock = mustPrefix("2001::/23")
 
 // Address classes a fake ip declaration can never excuse
 var fakeIPUndeclarableNetworks = []netip.Prefix{
 	mustPrefix("0.0.0.0/32"), mustPrefix("127.0.0.0/8"), mustPrefix("10.0.0.0/8"), mustPrefix("172.16.0.0/12"), mustPrefix("192.168.0.0/16"),
 	mustPrefix("169.254.0.0/16"), mustPrefix("100.64.0.0/10"),
 	mustPrefix("::/128"), mustPrefix("::1/128"), mustPrefix("fc00::/7"), mustPrefix("fe80::/10"),
-}
-
-// IPv4 ranges the Python ipaddress module reports as private
-var pythonPrivateV4 = []netip.Prefix{
-	mustPrefix("0.0.0.0/8"), mustPrefix("10.0.0.0/8"), mustPrefix("127.0.0.0/8"), mustPrefix("169.254.0.0/16"), mustPrefix("172.16.0.0/12"),
-	mustPrefix("192.0.0.0/29"), mustPrefix("192.0.0.170/31"), mustPrefix("192.0.2.0/24"), mustPrefix("192.168.0.0/16"), mustPrefix("198.18.0.0/15"),
-	mustPrefix("198.51.100.0/24"), mustPrefix("203.0.113.0/24"), mustPrefix("240.0.0.0/4"), mustPrefix("255.255.255.255/32"),
-}
-
-// IPv6 ranges the Python ipaddress module reports as private
-var pythonPrivateV6 = []netip.Prefix{
-	mustPrefix("::1/128"), mustPrefix("::/128"), mustPrefix("::ffff:0:0/96"), mustPrefix("100::/64"), mustPrefix("2001::/23"),
-	mustPrefix("2001:db8::/32"), mustPrefix("2001:2::/48"), mustPrefix("fc00::/7"), mustPrefix("fe80::/10"),
-}
-
-// IPv6 ranges the Python ipaddress module reports as reserved
-var pythonReservedV6 = []netip.Prefix{
-	mustPrefix("::/8"), mustPrefix("100::/8"), mustPrefix("200::/7"), mustPrefix("400::/6"), mustPrefix("800::/5"), mustPrefix("1000::/4"),
-	mustPrefix("4000::/3"), mustPrefix("6000::/3"), mustPrefix("8000::/3"), mustPrefix("a000::/3"), mustPrefix("c000::/3"), mustPrefix("e000::/4"),
-	mustPrefix("f000::/5"), mustPrefix("f800::/6"), mustPrefix("fe00::/9"),
 }
 
 func inAny(ip netip.Addr, nets []netip.Prefix) bool {
@@ -262,15 +247,15 @@ const urlEdgeWhitespace = " \t\n\r\x0b\x0c"
 // Dots IDNA maps to a period, used when IDNA encoding fails
 var idnaDots = strings.NewReplacer("。", ".", "．", ".", "｡", ".")
 
-// Host of the url the way a WHATWG client dials it, the urlsplit ValueError returned
+// Host of the url the way a WHATWG client dials it, the urlutil.ErrInvalidHost error of an authority that cannot be split returned
 func urlHostname(raw string, percentDecode bool) (string, error) {
-	parts, err := pyurl.Split(strings.Trim(raw, urlEdgeWhitespace))
+	parts, err := urlutil.Split(strings.Trim(raw, urlEdgeWhitespace))
 	if err != nil {
 		return "", err
 	}
 	host := parts.Hostname()
 	if percentDecode {
-		host = pyurl.Unquote(host)
+		host = urlutil.Unescape(host)
 	}
 	if ascii, err := idna.Lookup.ToASCII(host); err == nil {
 		host = ascii
@@ -282,15 +267,15 @@ func urlHostname(raw string, percentDecode bool) (string, error) {
 	return normalizeHostname(host), nil
 }
 
-// Host a WHATWG client dials for the url, optionally percent decoded first, with the urlsplit ValueError
+// Host a WHATWG client dials for the url, optionally percent decoded first, with the error of an authority that cannot be split
 func URLHostname(raw string, percentDecode bool) (string, error) {
 	return urlHostname(raw, percentDecode)
 }
 
-// Why another client could read a different host or port from the url, empty when unambiguous, the urlsplit ValueError returned
+// Why another client could read a different host or port from the url, empty when unambiguous, the urlutil.ErrInvalidHost error of an authority that cannot be split returned
 func authorityAmbiguity(raw string, floor bool) (string, error) {
 	raw = strings.Trim(raw, urlEdgeWhitespace)
-	parts, err := pyurl.Split(raw)
+	parts, err := urlutil.Split(raw)
 	if err != nil {
 		return "", err
 	}
@@ -302,20 +287,20 @@ func authorityAmbiguity(raw string, floor bool) (string, error) {
 			return "control character in URL", nil
 		}
 	}
-	if parts.Netloc == "" {
+	if parts.Authority == "" {
 		return "authority not introduced by //", nil
 	}
-	if strings.Contains(parts.Netloc, "\\") {
+	if strings.Contains(parts.Authority, "\\") {
 		return "backslash in authority", nil
 	}
 	if floor {
 		return "", nil
 	}
-	at := strings.LastIndex(parts.Netloc, "@")
+	at := strings.LastIndex(parts.Authority, "@")
 	if at >= 0 {
 		return "userinfo in authority", nil
 	}
-	host := parts.Netloc
+	host := parts.Authority
 	if strings.Contains(host, "%") {
 		return "percent-encoding in host", nil
 	}
@@ -328,7 +313,7 @@ func authorityAmbiguity(raw string, floor bool) (string, error) {
 	return "", nil
 }
 
-// Ambiguous authority reason of an http url, the floor form keeping only host moving checks, with the urlsplit ValueError
+// Ambiguous authority reason of an http url, the floor form keeping only host moving checks, with the error of an authority that cannot be split
 func AuthorityAmbiguity(raw string, floor bool) (string, error) {
 	return authorityAmbiguity(raw, floor)
 }
@@ -342,12 +327,12 @@ func parseIPLiteral(hostname string) (netip.Addr, bool) {
 	return addr.WithZone(""), true
 }
 
-// The IPv4 address an IPv6 wrapper stands for, the input otherwise
+// The IPv4 address an IPv6 wrapper reaches: an IPv4-mapped address, or one in the IPv4-translated prefix or the NAT64 well-known prefix whose low 32 bits a translator dials; the input otherwise
 func embeddedIPv4(ip netip.Addr) netip.Addr {
 	if ip.Is4In6() {
 		return ip.Unmap()
 	}
-	if ip.Is6() && ipv4TranslatedNetwork.Contains(ip) {
+	if ip.Is6() && (ipv4TranslatedNetwork.Contains(ip) || nat64WellKnownNetwork.Contains(ip)) {
 		b := ip.As16()
 		return netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]})
 	}
@@ -369,13 +354,10 @@ func isDeclaredFakeIP(env *Env, ip netip.Addr) bool {
 // Address inside a fake ip range the proxy configuration declares for the env
 func IsDeclaredFakeIP(env *Env, ip netip.Addr) bool { return isDeclaredFakeIP(env, ip) }
 
-// Python ipaddress classification of private, loopback, link local, reserved, multicast, unspecified and CGNAT
+// Address that is not globally reachable: private, loopback, link local, reserved, shared (CGNAT), multicast and unspecified space, the whole IPv6 protocol assignments block included
 func isBlockedIP(ip netip.Addr) bool {
 	ip = embeddedIPv4(ip)
-	if ip.Is4() {
-		return inAny(ip, pythonPrivateV4) || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified() || cgnatNetwork.Contains(ip)
-	}
-	return inAny(ip, pythonPrivateV6) || inAny(ip, pythonReservedV6) || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsMulticast() || ip.IsUnspecified()
+	return netutil.IsPrivate(ip) || netutil.IsReserved(ip) || netutil.IsShared(ip) || ip.IsMulticast() || ietfProtocolBlock.Contains(ip)
 }
 
 // Resolver swapped by tests, every address of a hostname
@@ -402,13 +384,13 @@ func SwapLookupHostIPs(fn func(ctx context.Context, hostname string) ([]netip.Ad
 	return func() { lookupHostIPs = prev }
 }
 
-// Reports whether the url targets the always blocked cloud metadata floor
+// Reports whether the url targets the always blocked cloud metadata floor, failing closed on a url whose authority cannot be split
 func isAlwaysBlockedURL(env *Env, raw string) bool {
 	log := envLog(env)
 	reason, err := authorityAmbiguity(raw, true)
 	if err != nil {
-		log.Debug(fmt.Sprintf("is_always_blocked_url error for %s: %v", raw, err))
-		return false
+		log.Warn(fmt.Sprintf("Blocked request, unparseable URL (always-blocked floor) %s: %v", raw, err))
+		return true
 	}
 	if reason != "" {
 		log.Warn("Blocked request, ambiguous URL authority (always-blocked floor)", "reason", reason)
@@ -416,8 +398,8 @@ func isAlwaysBlockedURL(env *Env, raw string) bool {
 	}
 	hostname, err := urlHostname(raw, true)
 	if err != nil {
-		log.Debug(fmt.Sprintf("is_always_blocked_url error for %s: %v", raw, err))
-		return false
+		log.Warn(fmt.Sprintf("Blocked request, unparseable URL (always-blocked floor) %s: %v", raw, err))
+		return true
 	}
 	if hostname == "" {
 		return false
@@ -469,7 +451,7 @@ func resolvedIPBlockReason(env *Env, ip netip.Addr, allowPrivate bool) string {
 // Reports whether the url target is not a private or internal address, failing closed
 func isSafeURL(env *Env, raw string) bool {
 	log := envLog(env)
-	parts, err := pyurl.Parse(raw)
+	parts, err := urlutil.Split(raw)
 	if err != nil {
 		return safetyCheckError(log, raw, err)
 	}

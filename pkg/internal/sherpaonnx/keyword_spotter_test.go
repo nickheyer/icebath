@@ -11,7 +11,6 @@ import (
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
 )
 
 func TestMain(m *testing.M) {
@@ -32,7 +31,7 @@ func cstr(p *byte) string {
 	if p == nil {
 		return "<null>"
 	}
-	return pyctypes.GoString(uintptr(unsafe.Pointer(p)))
+	return dlutil.GoString(uintptr(unsafe.Pointer(p)))
 }
 
 // Records every call a spotter makes and serves one keyword result built in Go memory
@@ -84,7 +83,7 @@ func (f *fakeAPI) api() *capi {
 			if stream == 22 {
 				return 0
 			}
-			keyword, t1, t2 := pyctypes.CString(" HEY_ICEBATH "), pyctypes.CString("▁HE"), pyctypes.CString("Y")
+			keyword, t1, t2 := dlutil.CString(" HEY_ICEBATH "), dlutil.CString("▁HE"), dlutil.CString("Y")
 			arr := []uintptr{uintptr(unsafe.Pointer(&t1[0])), uintptr(unsafe.Pointer(&t2[0]))}
 			stamps := []float32{0.25, 0.5}
 			res := &cKeywordResult{keyword: uintptr(unsafe.Pointer(&keyword[0])), tokensArr: uintptr(unsafe.Pointer(&arr[0])), count: 2,

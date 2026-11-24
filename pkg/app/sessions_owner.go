@@ -7,15 +7,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 const pruneRPCTimeout = 600 * time.Second
 
 // Ready gateway endpoint serving the home, nil when none is ready, discovery never starting one
 func liveOwner(ctx context.Context, h string) *gateway.GatewayEndpoint {
-	resolved, err := pypath.Resolve(h)
+	resolved, err := pathutil.Resolve(h)
 	if err != nil {
 		resolved = h
 	}
@@ -37,7 +35,7 @@ func ownerPrune(ctx context.Context, endpoint *gateway.GatewayEndpoint, params m
 	if err != nil {
 		return nil, err
 	}
-	plain, ok := pyjson.Plain(result).(map[string]any)
+	plain, ok := jsonutil.Plain(result).(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("gateway session.prune answered %T, not an object", result)
 	}

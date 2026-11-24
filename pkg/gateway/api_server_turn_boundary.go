@@ -1,9 +1,9 @@
 package gateway
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var apiTranscriptIdentityKeys = []string{"role", "content", "tool_calls", "tool_call_id"}
@@ -15,16 +15,16 @@ func apiSameTranscriptPrefix(agentMessages, prefix []any) bool {
 	}
 	for i, want := range prefix {
 		got := agentMessages[i]
-		gotObj, gotDict := pyjson.AsObject(got)
-		wantObj, wantDict := pyjson.AsObject(want)
+		gotObj, gotDict := jsonutil.AsObject(got)
+		wantObj, wantDict := jsonutil.AsObject(want)
 		if !gotDict || !wantDict {
-			if !pyrepr.Equal(got, want) {
+			if !anyutil.Equal(got, want) {
 				return false
 			}
 			continue
 		}
 		for _, key := range apiTranscriptIdentityKeys {
-			if !pyrepr.Equal(gotObj.GetOr(key, nil), wantObj.GetOr(key, nil)) {
+			if !anyutil.Equal(gotObj.ValueOr(key, nil), wantObj.ValueOr(key, nil)) {
 				return false
 			}
 		}
@@ -34,22 +34,22 @@ func apiSameTranscriptPrefix(agentMessages, prefix []any) bool {
 
 // Index in the result messages where this turn's assistant and tool rows begin, zero meaning all
 func APIResponseTurnStartIndex(conversationHistory []any, userMessage any, result any) int {
-	obj, isDict := pyjson.AsObject(result)
+	obj, isDict := jsonutil.AsObject(result)
 	if !isDict {
 		return 0
 	}
-	agentMessages, ok := obj.GetOr("messages", nil).([]any)
+	agentMessages, ok := obj.ValueOr("messages", nil).([]any)
 	if !ok || len(agentMessages) == 0 {
 		return 0
 	}
-	if pyrepr.Truthy(obj.GetOr("_messages_are_turn_suffix", nil)) {
+	if anyutil.IsTrue(obj.ValueOr("_messages_are_turn_suffix", nil)) {
 		return 0
 	}
 	if userIdx := state.ReanchorCurrentTurnUserIdx(agentMessages, userMessage); userIdx >= 0 {
 		return userIdx + 1
 	}
 	prior := append([]any(nil), conversationHistory...)
-	expectedPrefix := append(append([]any(nil), prior...), pyjson.ObjectOf("role", "user", "content", userMessage))
+	expectedPrefix := append(append([]any(nil), prior...), jsonutil.ObjectOf("role", "user", "content", userMessage))
 	if apiSameTranscriptPrefix(agentMessages, expectedPrefix) {
 		return len(expectedPrefix)
 	}

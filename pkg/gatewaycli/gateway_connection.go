@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 var (
@@ -98,7 +99,7 @@ type SessionState struct {
 	UsageListeners      []*SessionListener
 	AdmittedTurn        map[string]any
 	Pending             []any
-	QueuedInputs        *pyjson.Object
+	QueuedInputs        *jsonutil.Object
 	Adopted             map[string]any
 	ArmedAdmission      string
 	PendingSeq          int
@@ -113,17 +114,17 @@ type SessionState struct {
 type SessionListener func(ctx context.Context, payload map[string]any)
 
 func NewSessionState(sessionID string) *SessionState {
-	return &SessionState{SessionID: sessionID, Info: map[string]any{}, Usage: map[string]any{}, QueuedInputs: pyjson.NewObject(),
+	return &SessionState{SessionID: sessionID, Info: map[string]any{}, Usage: map[string]any{}, QueuedInputs: jsonutil.NewObject(),
 		Adopted: map[string]any{}, Missed: map[string]bool{}}
 }
 
 // Plain map of a dict value, ok false for anything else
 func plainDict(v any) (map[string]any, bool) {
-	obj, ok := pyjson.AsObject(v)
+	obj, ok := jsonutil.AsObject(v)
 	if !ok {
 		return nil, false
 	}
-	plain, _ := pyjson.Plain(obj).(map[string]any)
+	plain, _ := jsonutil.Plain(obj).(map[string]any)
 	return plain, true
 }
 
@@ -133,19 +134,19 @@ func plainList(v any) ([]any, bool) {
 	if !ok {
 		return nil, false
 	}
-	plain, _ := pyjson.Plain(list).([]any)
+	plain, _ := jsonutil.Plain(list).([]any)
 	return plain, true
 }
 
 // Replaces the cached view with a resume or create snapshot, keeping fields the snapshot does not carry
 func (s *SessionState) AdoptSnapshot(snapshot any) {
-	snap, _ := pyjson.AsObject(snapshot)
+	snap, _ := jsonutil.AsObject(snapshot)
 	if snap == nil {
-		snap = pyjson.NewObject()
+		snap = jsonutil.NewObject()
 	}
 	s.Lock()
 	defer s.Unlock()
-	info, _ := plainDict(snap.Vals["info"])
+	info, _ := plainDict(snap.Value("info"))
 	if info == nil {
 		info = map[string]any{}
 	}
@@ -159,12 +160,12 @@ func (s *SessionState) AdoptSnapshot(snapshot any) {
 	if v, ok := snap.Get("execution_generation"); ok {
 		s.ExecutionGeneration = v
 	}
-	messages, _ := plainList(snap.Vals["messages"])
+	messages, _ := plainList(snap.Value("messages"))
 	s.Messages = append([]any{}, messages...)
 	if plan, ok := snap.Get("todo_state"); ok {
 		s.PlanState, _ = plainDict(plan)
 	}
-	if pending, ok := plainList(snap.Vals["pending"]); ok {
+	if pending, ok := plainList(snap.Value("pending")); ok {
 		s.Pending = pending
 		s.PendingSeq++
 	}
@@ -289,7 +290,7 @@ type GatewayConnection struct {
 	looping           bool
 	thread            loopThread
 	runner            loopRunner
-	ready             pythread.Event
+	ready             syncutil.Event
 	err               error
 	stop              chan struct{}
 	stopOnce          *sync.Once
@@ -622,15 +623,15 @@ func (c *GatewayConnection) pump(ctx context.Context, client ConnectionClient) {
 			c.putLoss(failure)
 			return
 		}
-		var params *pyjson.Object
-		if dict, ok := pyjson.AsObject(frame); ok {
-			params, _ = pyjson.AsObject(dict.Vals["params"])
+		var params *jsonutil.Object
+		if dict, ok := jsonutil.AsObject(frame); ok {
+			params, _ = jsonutil.AsObject(dict.Value("params"))
 		}
 		if params != nil && c.takeSide(params) {
 			continue
 		}
 		if params != nil {
-			if sid, ok := params.Vals["session_id"].(string); ok {
+			if sid, ok := params.Value("session_id").(string); ok {
 				if state := c.LookupState(sid); state != nil {
 					c.applyEvent(ctx, state, params)
 				}
@@ -641,25 +642,25 @@ func (c *GatewayConnection) pump(ctx context.Context, client ConnectionClient) {
 }
 
 // Applies one frame to a session cache, a failing listener never stopping the pump
-func (c *GatewayConnection) applyEvent(ctx context.Context, state *SessionState, params *pyjson.Object) {
+func (c *GatewayConnection) applyEvent(ctx context.Context, state *SessionState, params *jsonutil.Object) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			pkgLog().Debug("session state update failed", "error", recovered)
 		}
 	}()
-	state.ApplyEvent(ctx, params.Vals["type"], params.Vals["payload"])
+	state.ApplyEvent(ctx, params.Value("type"), params.Value("payload"))
 }
 
 // Hands a side task answer to its waiter, false for every other frame
-func (c *GatewayConnection) takeSide(params *pyjson.Object) bool {
-	kind, _ := params.Vals["type"].(string)
-	payload, isDict := plainDict(params.Vals["payload"])
-	if !sideEvents[kind] || !isDict || !pyrepr.Truthy(payload["task_id"]) {
+func (c *GatewayConnection) takeSide(params *jsonutil.Object) bool {
+	kind, _ := params.Value("type").(string)
+	payload, isDict := plainDict(params.Value("payload"))
+	if !sideEvents[kind] || !isDict || !anyutil.IsTrue(payload["task_id"]) {
 		return false
 	}
 	taskID, ok := payload["task_id"].(string)
 	if !ok {
-		taskID = pyrepr.Str(payload["task_id"])
+		taskID = anyutil.String(payload["task_id"])
 	}
 	c.SideWaiter(taskID).PutNowait(payload)
 	return true
@@ -702,7 +703,7 @@ func (c *GatewayConnection) Reply(requestID any, result any) bool {
 	if client == nil || !looping {
 		return false
 	}
-	frame, err := pyjson.Dumps(pyjson.ObjectOf("jsonrpc", "2.0", "id", requestID, "result", result))
+	frame, err := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", requestID, "result", result))
 	if err == nil {
 		sent := make(chan error, 1)
 		go func() { sent <- client.SendFrame(frame) }()

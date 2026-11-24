@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Socket whose send never completes until it is closed, recording each close code
@@ -58,7 +58,7 @@ func TestStalledSendClosesSocketAndReleasesQueuedReply(t *testing.T) {
 	}
 	reply := make(chan bool, 1)
 	go func() {
-		reply <- transport.WriteAsync(pyjson.ObjectOf("id", "submit", "result", pyjson.ObjectOf("status", "streaming")))
+		reply <- transport.WriteAsync(jsonutil.ObjectOf("id", "submit", "result", jsonutil.ObjectOf("status", "streaming")))
 	}()
 	results := []bool{}
 	for _, pending := range []chan bool{progress, reply} {
@@ -84,8 +84,8 @@ func TestStalledSendClosesSocketAndReleasesQueuedReply(t *testing.T) {
 func TestProgressThenFinalOrderingPreservedOnHealthySocket(t *testing.T) {
 	ws := &recordingWS{}
 	transport := NewWSTransport(ws, "127.0.0.1:1", nil)
-	for _, frame := range []*pyjson.Object{wsEvent("tool.progress"), wsEvent("message.complete"),
-		pyjson.ObjectOf("id", "submit", "result", pyjson.ObjectOf("status", "done"))} {
+	for _, frame := range []*jsonutil.Object{wsEvent("tool.progress"), wsEvent("message.complete"),
+		jsonutil.ObjectOf("id", "submit", "result", jsonutil.ObjectOf("status", "done"))} {
 		if !transport.WriteAsync(frame) {
 			t.Fatalf("write of %s failed", frameText(t, frame))
 		}
@@ -95,13 +95,13 @@ func TestProgressThenFinalOrderingPreservedOnHealthySocket(t *testing.T) {
 	}
 	kinds := []string{}
 	for _, line := range ws.lines() {
-		frame, err := pyjson.LoadsDict(line)
+		frame, err := jsonutil.DecodeObject(line)
 		if err != nil {
 			t.Fatal(err)
 		}
 		kind := "reply"
-		if params, ok := frame.GetOr("params", nil).(*pyjson.Object); ok {
-			kind, _ = params.GetOr("type", "reply").(string)
+		if params, ok := frame.ValueOr("params", nil).(*jsonutil.Object); ok {
+			kind, _ = params.ValueOr("type", "reply").(string)
 		}
 		kinds = append(kinds, kind)
 	}

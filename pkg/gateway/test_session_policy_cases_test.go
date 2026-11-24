@@ -7,19 +7,19 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session id a session.create dispatch returned, else the refusal message it carried
 func dispatchedCreate(t *testing.T, ctx context.Context, connection *AuthorityConnection, params map[string]any) string {
 	t.Helper()
-	request, _ := pyjson.Ordered(params).(*pyjson.Object)
-	reply, err := connection.Dispatch(ctx, pyjson.ObjectOf("id", int64(1), "method", "session.create", "params", request))
+	request, _ := jsonutil.Ordered(params).(*jsonutil.Object)
+	reply, err := connection.Dispatch(ctx, jsonutil.ObjectOf("id", int64(1), "method", "session.create", "params", request))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain, _ := pyjson.Plain(reply).(map[string]any)
+	plain, _ := jsonutil.Plain(reply).(map[string]any)
 	if result, ok := plain["result"].(map[string]any); ok {
 		if sid, _ := result["session_id"].(string); sid != "" {
 			return sid
@@ -112,7 +112,7 @@ func TestLaunchOptionsReachTheOwnerFrozenAndHooksConsented(t *testing.T) {
 		{"skills": []any{"missing-typo"}}, {"skills": "launch-fixture"}, {"checkpoints": "yes"},
 		{"model": "m", "safe_mode": true, "skills": []any{"launch-fixture"}},
 	} {
-		text, _ := pyjson.Dumps(params)
+		text, _ := jsonutil.Encode(params)
 		if got := create("refused-"+text, params); got != "unknown_skill" && got != "invalid_params" {
 			t.Fatalf("params %v gave %q", params, got)
 		}

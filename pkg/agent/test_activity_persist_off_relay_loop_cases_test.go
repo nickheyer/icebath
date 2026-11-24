@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const activityOffLoopSession = "session-1"
@@ -25,30 +25,30 @@ type activityOwnerReplies struct {
 	persisted []any
 	onLoop    []bool
 	sending   bool
-	reply     *pyjson.Object
+	reply     *jsonutil.Object
 }
 
 func (o *activityOwnerReplies) connect(ctx context.Context) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
-	o.sending = pyctx.RunningLoop(ctx) || tools.RelayHasRunningEventLoop(ctx)
+	o.sending = ctxutil.NonBlocking(ctx) || tools.RelayHasRunningEventLoop(ctx)
 }
 
 func (o *activityOwnerReplies) send(requestID int64, message string) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.onLoop = append(o.onLoop, o.sending)
-	raw, err := pyjson.Loads(message)
+	raw, err := jsonutil.Decode(message)
 	if err != nil {
 		return err
 	}
-	params, _ := raw.(*pyjson.Object).GetOr("params", nil).(*pyjson.Object)
-	o.persisted = append(o.persisted, params.GetOr("operation", nil))
-	o.reply = pyjson.ObjectOf("jsonrpc", "2.0", "id", requestID, "result", pyjson.ObjectOf("ok", true, "value", nil))
+	params, _ := raw.(*jsonutil.Object).ValueOr("params", nil).(*jsonutil.Object)
+	o.persisted = append(o.persisted, params.ValueOr("operation", nil))
+	o.reply = jsonutil.ObjectOf("jsonrpc", "2.0", "id", requestID, "result", jsonutil.ObjectOf("ok", true, "value", nil))
 	return nil
 }
 
-func (o *activityOwnerReplies) receive(time.Duration) (*pyjson.Object, error) {
+func (o *activityOwnerReplies) receive(time.Duration) (*jsonutil.Object, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.reply, nil
@@ -74,7 +74,7 @@ func activityRelayTurn(t *testing.T) context.Context {
 	}
 	tools.RegisterNemoRelayBinding(func() (*tools.NemoRelay, error) { return f.relay, nil })
 	tools.ResetRelayRuntimeForTests()
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	lease := tools.RelayCoordinator.AcquireConversation(ctx, tools.RelayConversation{ProfileKey: tools.CurrentRelayProfileKey(ctx), SessionID: activityOffLoopSession, Platform: "cli"})
 	turn, err := tools.RelayCoordinator.BeginTurn(ctx, lease, "turn-1", "task-1", nil)
 	if err != nil {
@@ -105,7 +105,7 @@ func activityWorkerAgent(t *testing.T) (*AIAgent, *RuntimeSessionStore, *activit
 	t.Cleanup(func() { workerRPCConnection = prev })
 	tmp := t.TempDir()
 	rpc := mustNewWorkerRPC(t, filepath.Join(tmp, "home"))
-	store := mustStore(t, rpc.Call, pyjson.ObjectOf("session_id", activityOffLoopSession), filepath.Join(tmp, "outbox"), 0)
+	store := mustStore(t, rpc.Call, jsonutil.ObjectOf("session_id", activityOffLoopSession), filepath.Join(tmp, "outbox"), 0)
 	t.Cleanup(store.closeOwner)
 	return &AIAgent{sessionID: activityOffLoopSession, sessionDB: store}, store, owner
 }
@@ -135,7 +135,7 @@ func assertPersistedOffLoop(t *testing.T, records func() []loggerRecord, store *
 func activityToolOnPool(t *testing.T, ctx context.Context, name string, args map[string]any, tool func(ctx context.Context, args map[string]any) (any, error)) {
 	t.Helper()
 	done := make(chan error, 1)
-	worker := pyctx.With(ctx, pyctx.CopyContext(ctx))
+	worker := ctxutil.Fork(ctx)
 	go func() {
 		_, _, err := tools.RelayExecuteTool(worker, name, args, tool, activityOffLoopSession, "call-1", nil)
 		done <- err

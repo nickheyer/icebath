@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hermetic home with a kanban database pinned to name and initialised
@@ -69,7 +69,7 @@ func kanbanComplete(t *testing.T, conn state.SQLiteConn, tid, summary string) bo
 }
 
 // Appends a task scoped event with an optional payload
-func kanbanAppend(t *testing.T, conn state.SQLiteConn, tid, kind string, payload *pyjson.Object) {
+func kanbanAppend(t *testing.T, conn state.SQLiteConn, tid, kind string, payload *jsonutil.Object) {
 	t.Helper()
 	var body any
 	if payload != nil {
@@ -81,8 +81,8 @@ func kanbanAppend(t *testing.T, conn state.SQLiteConn, tid, kind string, payload
 }
 
 // Ordered JSON object from alternating keys and values
-func kobj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func kobj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -145,7 +145,7 @@ func unseenTerminalEventsFor(t *testing.T, tid, chatID string) []*kanban.Event {
 }
 
 // Notify subscriptions of one task
-func kanbanSubsOf(t *testing.T, tid string) []*pyjson.Object {
+func kanbanSubsOf(t *testing.T, tid string) []*jsonutil.Object {
 	t.Helper()
 	conn, err := kanban.Connect(context.Background(), "", nil)
 	if err != nil {
@@ -438,7 +438,7 @@ func TestKanbanNotifierIsolatesPerSubscriptionFailure(t *testing.T) {
 		}
 		return prevClaim(ctx, c, taskID, platform, chatID, threadID, kinds)
 	}
-	kanbanListNotifySubs = func(ctx context.Context, c state.SQLiteConn, taskID *string, scope kanban.NotifyOwnerScope) ([]*pyjson.Object, error) {
+	kanbanListNotifySubs = func(ctx context.Context, c state.SQLiteConn, taskID *string, scope kanban.NotifyOwnerScope) ([]*jsonutil.Object, error) {
 		subs, err := prevList(ctx, c, taskID, scope)
 		sort.SliceStable(subs, func(i, j int) bool {
 			return subText(subs[i], "task_id") == bad && subText(subs[j], "task_id") != bad
@@ -476,7 +476,7 @@ func TestNotifierDeliversBlockLoopDetectedTriagePing(t *testing.T) {
 }
 
 // Block loop ping of a payload rendered under a fixed head
-func fmtBlockLoop(t *testing.T, payload *pyjson.Object) string {
+func fmtBlockLoop(t *testing.T, payload *jsonutil.Object) string {
 	t.Helper()
 	out, err := kanbanEventFormatters["block_loop_detected"](context.Background(), &kanban.Event{Payload: payload}, &kanbanNotification{head: "H123"})
 	if err != nil {

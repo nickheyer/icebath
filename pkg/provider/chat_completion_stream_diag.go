@@ -6,7 +6,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Adds one real chunk to the attempt diagnostics, stamping the first chunk time once
@@ -40,7 +40,7 @@ func estimateChunkBytes(chunk map[string]any) int {
 			calls, _ := delta["tool_calls"].([]any)
 			for _, tc := range calls {
 				m, _ := tc.(map[string]any)
-				if fn, ok := pyjson.Dict(m["function"]); ok {
+				if fn, ok := jsonutil.AsMap(m["function"]); ok {
 					add(fn, "arguments", "name")
 				}
 			}

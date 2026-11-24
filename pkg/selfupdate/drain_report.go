@@ -14,9 +14,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const drainReportIntervalS = 30.0
@@ -37,9 +38,9 @@ func init() {
 
 // Elapsed seconds as XmYYs from one minute up, Ns below, a question mark when not a number
 func fmtElapsed(seconds any) string {
-	f, err := pyint.Float(seconds)
+	f, err := anyutil.ToFloat(seconds)
 	if err != nil {
-		if pe, ok := err.(*pyint.Error); ok && pe.Kind == "OverflowError" {
+		if pe, ok := err.(*errorutil.Error); ok && pe.Kind == "OverflowError" {
 			panic(err)
 		}
 		return "?"
@@ -48,7 +49,7 @@ func fmtElapsed(seconds any) string {
 		return "?"
 	}
 	if math.IsInf(f, 0) {
-		panic(&pyint.Error{Kind: "OverflowError", Msg: "cannot convert float infinity to integer"})
+		panic(&errorutil.Error{Kind: "OverflowError", Msg: "cannot convert float infinity to integer"})
 	}
 	total, _ := new(big.Float).SetFloat64(f).Int(nil)
 	if total.Cmp(big.NewInt(60)) < 0 {
@@ -82,7 +83,7 @@ func cronJobName(ctx context.Context, jobID, h string) string {
 // Getter over one active work entry, an AttributeError when the entry is no mapping
 func drainUnitGetter(unit any) (func(string) any, error) {
 	switch u := unit.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return func(k string) any { v, _ := u.Get(k); return v }, nil
 	case map[string]any:
 		return func(k string) any { return u[k] }, nil
@@ -92,8 +93,8 @@ func drainUnitGetter(unit any) (func(string) any, error) {
 
 // Python value or its fallback when falsy, rendered with str
 func drainOr(v any, fallback string) string {
-	if pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return fallback
 }
@@ -106,8 +107,8 @@ func describeActiveWorkUnit(ctx context.Context, unit any, h string) (string, er
 	}
 	kind := drainOr(get("kind"), "work")
 	pidPart := ""
-	if pid := get("pid"); pyrepr.Truthy(pid) {
-		pidPart = " pid " + pyrepr.Str(pid)
+	if pid := get("pid"); anyutil.IsTrue(pid) {
+		pidPart = " pid " + anyutil.String(pid)
 	}
 	elapsedPart := ""
 	if elapsed := get("elapsed_s"); elapsed != nil {
@@ -121,18 +122,18 @@ func describeActiveWorkUnit(ctx context.Context, unit any, h string) (string, er
 			label += " (" + name + ")"
 		}
 		where := " in-process" + pidPart
-		if pyrepr.Truthy(get("external")) {
+		if anyutil.IsTrue(get("external")) {
 			where = " in external worker" + pidPart
 		}
 		return label + where + elapsedPart, nil
 	case "chat":
 		session := drainOr(get("session"), "?")
 		var parts []string
-		if model := get("model"); pyrepr.Truthy(model) {
-			parts = append(parts, "model "+pyrepr.Str(model))
+		if model := get("model"); anyutil.IsTrue(model) {
+			parts = append(parts, "model "+anyutil.String(model))
 		}
-		if tool := get("current_tool"); pyrepr.Truthy(tool) {
-			parts = append(parts, "tool "+pyrepr.Str(tool))
+		if tool := get("current_tool"); anyutil.IsTrue(tool) {
+			parts = append(parts, "tool "+anyutil.String(tool))
 		}
 		line := "chat turn " + session + pidPart + elapsedPart
 		if len(parts) > 0 {
@@ -205,7 +206,7 @@ func formatDrainReport(ctx context.Context, work []any, remainingS float64, h st
 			lines = append(lines, "       • "+line)
 		}
 		for _, u := range work {
-			if get, err := drainUnitGetter(u); err == nil && pyrepr.Equal(get("kind"), "chat") {
+			if get, err := drainUnitGetter(u); err == nil && anyutil.Equal(get("kind"), "chat") {
 				chat = true
 				break
 			}

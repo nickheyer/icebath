@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Extra value recording that a key the struct always renders was absent from the source dict
@@ -177,7 +177,7 @@ func MessageKeyOrder(m *Message, d map[string]any) []string {
 	for k := range d {
 		present[k] = nil
 	}
-	return orderedDict(present, m.Keys, build).Keys
+	return orderedDict(present, m.Keys, build).Keys()
 }
 
 // Key order the agent builds a tool call dict in
@@ -187,13 +187,13 @@ var toolCallKeyOrder = []string{"id", "call_id", "response_item_id", "type", "fu
 var toolCallFunctionKeyOrder = []string{"name", "arguments", "thought_signature"}
 
 // Lossless dict form of a tool call struct in the key order of its source dict
-func ToolCallToDict(tc ToolCall) *pyjson.Object {
+func ToolCallToDict(tc ToolCall) *jsonutil.Object {
 	return orderedDict(structToDict(reflect.ValueOf(tc), nil), tc.Keys, toolCallKeyOrder)
 }
 
 // Ordered dict of m, recorded keys first, then the build order, then any remaining key in sorted order
-func orderedDict(m map[string]any, recorded, build []string) *pyjson.Object {
-	o := pyjson.NewObject()
+func orderedDict(m map[string]any, recorded, build []string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for _, list := range [][]string{recorded, build} {
 		for _, k := range list {
 			if v, ok := m[k]; ok {
@@ -203,7 +203,7 @@ func orderedDict(m map[string]any, recorded, build []string) *pyjson.Object {
 	}
 	rest := make([]string, 0, len(m)-o.Len())
 	for k := range m {
-		if _, ok := o.Vals[k]; !ok {
+		if _, ok := o.Get(k); !ok {
 			rest = append(rest, k)
 		}
 	}
@@ -220,7 +220,7 @@ func sourceKeyOrder(keys, build []string) []string {
 	for _, k := range keys {
 		present[k] = nil
 	}
-	if slices.Equal(orderedDict(present, nil, build).Keys, keys) {
+	if slices.Equal(orderedDict(present, nil, build).Keys(), keys) {
 		return nil
 	}
 	return append([]string(nil), keys...)
@@ -261,7 +261,7 @@ func structToDict(rv reflect.Value, bookkeeping map[string]string) map[string]an
 		}
 		out[key] = fieldToDictValue(fv)
 		if raw, isRaw := fv.Interface().(json.RawMessage); isRaw && key == "reasoning_details" && len(raw) > 0 {
-			if ordered, err := pyjson.LoadsOrdered(raw); err == nil {
+			if ordered, err := jsonutil.Decode(raw); err == nil {
 				out[key] = ordered
 			}
 		}
@@ -479,15 +479,15 @@ func orderedDictValue(value any) (map[string]any, []string, bool) {
 	switch d := value.(type) {
 	case map[string]any:
 		return d, nil, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if d == nil {
 			return nil, nil, false
 		}
-		out := make(map[string]any, len(d.Keys))
-		for _, k := range d.Keys {
-			out[k] = d.Vals[k]
+		out := make(map[string]any, d.Len())
+		for _, k := range d.Keys() {
+			out[k] = d.Value(k)
 		}
-		return out, append([]string(nil), d.Keys...), true
+		return out, append([]string(nil), d.Keys()...), true
 	case pyObject:
 		out := make(map[string]any, len(d))
 		keys := make([]string, 0, len(d))
@@ -505,13 +505,13 @@ func orderedDictValue(value any) (map[string]any, []string, bool) {
 // Value with every ordered object at any depth turned into the plain map a json decode yields
 func plainDictTree(v any) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return v
 		}
-		out := make(map[string]any, len(t.Keys))
-		for _, k := range t.Keys {
-			out[k] = plainDictTree(t.Vals[k])
+		out := make(map[string]any, t.Len())
+		for _, k := range t.Keys() {
+			out[k] = plainDictTree(t.Value(k))
 		}
 		return out
 	case pyObject:
@@ -540,7 +540,7 @@ func plainDictTree(v any) any {
 func orderedDictTree(v any) any {
 	switch t := v.(type) {
 	case pyObject:
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		for _, kv := range t {
 			o.Set(kv.Key, orderedDictTree(kv.Value))
 		}

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Multiplex predicate of agent.secret_scope that pkg/provider installs, nil in a process without a multiplexer
@@ -25,7 +25,7 @@ var (
 )
 
 // Time written in a strftime format
-func SafeStrftime(value time.Time, format string) string { return pydatetime.Strftime(value, format) }
+func SafeStrftime(value time.Time, format string) string { return timeutil.Strftime(value, format) }
 
 // ICEBATH_TIMEZONE when it speaks for the active profile, empty under multiplexing where each profile reads its config
 func envTimezone(ctx context.Context) string {
@@ -86,7 +86,7 @@ func timezoneEntryFor(ctx context.Context) timezoneEntry {
 	var loc *time.Location
 	if name != "" {
 		var err error
-		if loc, err = pydatetime.ZoneInfo(name); err != nil {
+		if loc, err = time.LoadLocation(name); err != nil {
 			loc = nil
 			pkgLog().Warn("Invalid timezone '" + name + "': " + err.Error() + ". Falling back to server local time.")
 		}
@@ -122,5 +122,5 @@ func TimeNow(ctx context.Context) time.Time {
 	if loc, ok := TimeZone(ctx); ok {
 		return time.Now().In(loc)
 	}
-	return pydatetime.Astimezone(time.Now())
+	return time.Now().Local()
 }

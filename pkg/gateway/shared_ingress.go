@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Published shared listener application of a secondary's adapter with its forwarding base and callback URL
@@ -33,7 +33,7 @@ type listenerAddressAdapter interface {
 
 // Runner holding the launch profile's adapter map
 type launchAdaptersRunner interface {
-	Adapters() *pydict.Dict[Platform, PlatformAdapter]
+	Adapters() *orderedutil.Map[Platform, PlatformAdapter]
 }
 
 // Wildcard hosts that bind every interface

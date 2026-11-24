@@ -3,7 +3,7 @@ package provider
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Total thinking plus output budget Gemini 4 gets for an effort above high
@@ -29,7 +29,7 @@ func longDecodeMaxOutputTokens(model string, reasoningConfig map[string]any) int
 
 // Hop count that scales the non streaming stale budget of one api payload
 func longDecodeStaleMultiplier(apiPayload map[string]any) int {
-	extra, ok := pyjson.Dict(apiPayload["extra_body"])
+	extra, ok := jsonutil.AsMap(apiPayload["extra_body"])
 	if !ok {
 		return 1
 	}

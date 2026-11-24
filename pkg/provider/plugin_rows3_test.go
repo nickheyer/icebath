@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func extrasOf(t *testing.T, name string, r *Reasoning, kw map[string]any) (map[string]any, map[string]any) {
@@ -20,7 +20,7 @@ func extrasOf(t *testing.T, name string, r *Reasoning, kw map[string]any) (map[s
 		kw = map[string]any{}
 	}
 	extra, top := bundledPluginProfile(t, name).BuildAPIKwargsExtras(r, kw)
-	plain, _ := pyjson.Plain(extra).(map[string]any)
+	plain, _ := jsonutil.Plain(extra).(map[string]any)
 	return plain, top
 }
 
@@ -157,7 +157,7 @@ func TestAlibabaRegionalAndTokenPlanProfilesResolveInAuthRegistry(t *testing.T) 
 	}
 	for _, name := range []string{"alibaba", "alibaba-coding-plan-cn"} {
 		extra, _ := extrasOf(t, name, nil, map[string]any{"model": "qwen3.6-plus"})
-		if !reflect.DeepEqual(extra, pyjson.Plain(dashscopePreserveThinkingExtras("qwen3.6-plus"))) {
+		if !reflect.DeepEqual(extra, jsonutil.Plain(dashscopePreserveThinkingExtras("qwen3.6-plus"))) {
 			t.Fatalf("%s extras %v", name, extra)
 		}
 	}
@@ -196,7 +196,7 @@ func TestUpstageReasoning(t *testing.T) {
 	}
 	for _, e := range []string{"low", "medium", "high"} {
 		extra, top := p.BuildAPIKwargsExtras(effortCfg(e), map[string]any{"model": "solar-pro3"})
-		assertExtras(t, e, pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": e})
+		assertExtras(t, e, jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": e})
 	}
 	if _, top := p.BuildAPIKwargsExtras(effortCfg("hyperthink"), map[string]any{"model": "solar-pro3"}); top["reasoning_effort"] != "high" {
 		t.Fatalf("unknown effort %v", top)
@@ -211,7 +211,7 @@ func TestUpstageReasoning(t *testing.T) {
 	}
 	for _, m := range []string{"solar-mini", "solar-mini-250422", "solar-mini-202610", "solar-mini@q4", "syn-pro"} {
 		extra, top := p.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": m})
-		assertExtras(t, m, pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
+		assertExtras(t, m, jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
 	}
 	if _, top := p.BuildAPIKwargsExtras(nil, map[string]any{}); top["reasoning_effort"] != "medium" {
 		t.Fatalf("none model %v", top)
@@ -232,7 +232,7 @@ func TestNebiusTokenFactoryProfile(t *testing.T) {
 	}
 	p := bundledPluginProfile(t, "nebius-token-factory")
 	extra, top := p.BuildAPIKwargsExtras(effortCfg("xhigh"), map[string]any{"model": "openai/gpt-oss-120b-fast"})
-	assertExtras(t, "gpt-oss", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": "high"})
+	assertExtras(t, "gpt-oss", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": "high"})
 	for effort, want := range map[string]string{"ultra": "high", "max": "high", "xhigh": "high", "minimal": "low"} {
 		if _, top := p.BuildAPIKwargsExtras(effortCfg(effort), map[string]any{"model": "deepseek-ai/DeepSeek-V4-Pro"}); top["reasoning_effort"] != want {
 			t.Fatalf("%s -> %v", effort, top)
@@ -242,9 +242,9 @@ func TestNebiusTokenFactoryProfile(t *testing.T) {
 		t.Fatalf("default %v", top)
 	}
 	extra, top = p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false), Effort: "high"}, map[string]any{"model": "deepseek-ai/DeepSeek-V4-Pro"})
-	assertExtras(t, "disabled", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
+	assertExtras(t, "disabled", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
 	extra, top = p.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": "meta-llama/Llama-3.3-70B-Instruct"})
-	assertExtras(t, "llama", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
+	assertExtras(t, "llama", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
 	if _, top := p.BuildAPIKwargsExtras(effortCfg("low"), map[string]any{"model": "meta-llama/Llama-3.3-70B-Instruct", "supports_reasoning": true}); top["reasoning_effort"] != "low" {
 		t.Fatalf("capable model %v", top)
 	}
@@ -272,11 +272,11 @@ func TestFireworksProfile(t *testing.T) {
 		t.Fatal("expected curated fallbacks")
 	}
 	extra, top := p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, map[string]any{})
-	assertExtras(t, "off", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": "none"})
+	assertExtras(t, "off", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": "none"})
 	extra, top = p.BuildAPIKwargsExtras(effortCfg("low"), map[string]any{})
-	assertExtras(t, "low", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": "low"})
+	assertExtras(t, "low", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": "low"})
 	extra, top = p.BuildAPIKwargsExtras(nil, map[string]any{})
-	assertExtras(t, "unset", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
+	assertExtras(t, "unset", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
 }
 
 func TestGeminiAndVertexThinkingConfig(t *testing.T) {
@@ -290,17 +290,17 @@ func TestGeminiAndVertexThinkingConfig(t *testing.T) {
 		t.Fatal("expected a thinking config for gemini-3.1-pro")
 	}
 	native := p.BuildExtraBody("", map[string]any{"model": "gemini-3.1-pro", "reasoning_config": r})
-	if !reflect.DeepEqual(native.Vals["thinking_config"], raw) {
+	if !reflect.DeepEqual(native.Value("thinking_config"), raw) {
 		t.Fatalf("native %v", native)
 	}
 	compat := p.BuildExtraBody("", map[string]any{"model": "gemini-3.1-pro", "reasoning_config": r,
 		"base_url": "https://generativelanguage.googleapis.com/v1beta/openai/"})
 	want := map[string]any{"extra_body": map[string]any{"google": map[string]any{"thinking_config": snakeCaseGeminiThinkingConfig(raw)}}}
-	if !reflect.DeepEqual(pyjson.Plain(compat), want) {
-		t.Fatalf("compat %v", pyjson.Plain(compat))
+	if !reflect.DeepEqual(jsonutil.Plain(compat), want) {
+		t.Fatalf("compat %v", jsonutil.Plain(compat))
 	}
-	if got := bundledPluginProfile(t, "vertex").BuildExtraBody("", map[string]any{"model": "gemini-3.1-pro", "reasoning_config": r}); !reflect.DeepEqual(pyjson.Plain(got), want) {
-		t.Fatalf("vertex %v", pyjson.Plain(got))
+	if got := bundledPluginProfile(t, "vertex").BuildExtraBody("", map[string]any{"model": "gemini-3.1-pro", "reasoning_config": r}); !reflect.DeepEqual(jsonutil.Plain(got), want) {
+		t.Fatalf("vertex %v", jsonutil.Plain(got))
 	}
 	if got := p.BuildExtraBody("", map[string]any{"model": "gpt-5"}); got.Len() != 0 {
 		t.Fatalf("no thinking config %v", got)
@@ -311,7 +311,7 @@ func TestOllamaCloudReasoning(t *testing.T) {
 	p := bundledPluginProfile(t, "ollama-cloud")
 	run := func(r *Reasoning, supports bool) (map[string]any, map[string]any) {
 		extra, top := p.BuildAPIKwargsExtras(r, map[string]any{"supports_reasoning": supports})
-		plain, _ := pyjson.Plain(extra).(map[string]any)
+		plain, _ := jsonutil.Plain(extra).(map[string]any)
 		return plain, top
 	}
 	for _, e := range []string{"xhigh", "max", "MAX", "  Max  "} {
@@ -378,21 +378,21 @@ func TestTokenHubLMStudioAIGatewayNvidia(t *testing.T) {
 	}{{nil, map[string]any{}}, {&Reasoning{Enabled: bptr(false)}, map[string]any{}}, {&Reasoning{Enabled: bptr(true)}, map[string]any{"reasoning_effort": "high"}},
 		{effortCfg("xhigh"), map[string]any{"reasoning_effort": "high"}}, {effortCfg("minimal"), map[string]any{"reasoning_effort": "low"}}} {
 		extra, top := hub.BuildAPIKwargsExtras(c.r, map[string]any{})
-		assertExtras(t, "tokenhub", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, c.want)
+		assertExtras(t, "tokenhub", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, c.want)
 	}
 	lm := bundledPluginProfile(t, "lmstudio")
 	extra, top := lm.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{})
-	assertExtras(t, "lmstudio aux", pyjson.Plain(extra).(map[string]any), top, pyjson.Plain(genericNestedReasoning(hookReasoningCfg(effortCfg("high")))).(map[string]any), map[string]any{})
+	assertExtras(t, "lmstudio aux", jsonutil.Plain(extra).(map[string]any), top, jsonutil.Plain(genericNestedReasoning(hookReasoningCfg(effortCfg("high")))).(map[string]any), map[string]any{})
 	extra, top = lm.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"lmstudio_reasoning_options": []string{"off", "low", "high"}})
-	assertExtras(t, "lmstudio unsupported", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
+	assertExtras(t, "lmstudio unsupported", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
 	want, _ := resolveLMStudioEffort(hookReasoningCfg(effortCfg("high")), []string{"off", "low", "high"})
 	extra, top = lm.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"lmstudio_reasoning_options": []any{"off", "low", "high"}, "supports_reasoning": true})
-	assertExtras(t, "lmstudio probed", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": want})
+	assertExtras(t, "lmstudio probed", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{"reasoning_effort": want})
 	gw := bundledPluginProfile(t, "ai-gateway")
 	extra, top = gw.BuildAPIKwargsExtras(nil, map[string]any{})
-	assertExtras(t, "gateway unset", pyjson.Plain(extra).(map[string]any), top, map[string]any{"reasoning": map[string]any{"enabled": true, "effort": "medium"}}, map[string]any{})
+	assertExtras(t, "gateway unset", jsonutil.Plain(extra).(map[string]any), top, map[string]any{"reasoning": map[string]any{"enabled": true, "effort": "medium"}}, map[string]any{})
 	extra, top = gw.BuildAPIKwargsExtras(effortCfg("low"), map[string]any{"supports_reasoning": false})
-	assertExtras(t, "gateway off", pyjson.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
+	assertExtras(t, "gateway off", jsonutil.Plain(extra).(map[string]any), top, map[string]any{}, map[string]any{})
 	if h := gw.DefaultHeaders(); h["HTTP-Referer"] != attributionReferer || h["X-Title"] != attributionTitle {
 		t.Fatalf("gateway headers %v", h)
 	}

@@ -4,14 +4,14 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pytoml"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	tomlutil "github.com/nickheyer/icebath/pkg/utils/toml"
 	"github.com/pelletier/go-toml/v2/unstable"
 )
 
 // Parses TOML like tomllib, every table an ordered object keyed in document order
 func loadsTOMLOrdered(text string) (any, error) {
-	doc, err := pytoml.Loads(text)
+	doc, err := tomlutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func orderTOML(v any, path string, order map[string]int) any {
 			}
 			return keys[i] < keys[j]
 		})
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for _, k := range keys {
 			child := k
 			if path != "" {

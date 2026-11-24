@@ -12,7 +12,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 var glCtx = context.Background()
@@ -396,7 +396,7 @@ func TestDepth1CloneOfATaglessOriginGetsItsCommitGraph(t *testing.T) {
 	dir := t.TempDir()
 	origin, clone := glHealOrigin(t, dir, 3), filepath.Join(dir, "clone")
 	glGit(t, dir, "clone", "-q", "--depth", "1", "file://"+filepath.ToSlash(origin), clone)
-	if ok, err := HealShallowHistory(glCtx, clone, "main", pysubprocess.Options{}); !ok || err != nil {
+	if ok, err := HealShallowHistory(glCtx, clone, "main", executil.Options{}); !ok || err != nil {
 		t.Fatal(ok, err)
 	}
 	if glGit(t, clone, "rev-parse", "--is-shallow-repository") != "false" || glGit(t, clone, "rev-list", "--count", "HEAD") != "3" ||
@@ -424,7 +424,7 @@ func TestDepthPrefetchOnAFullCloneRestoresAncestryAndKeepsItFull(t *testing.T) {
 	if _, _, rc := glGitRC(t, clone, "merge-base", "HEAD", "origin/main"); rc == 0 {
 		t.Fatal("premise")
 	}
-	if ok, err := HealShallowHistory(glCtx, clone, "main", pysubprocess.Options{}); !ok || err != nil {
+	if ok, err := HealShallowHistory(glCtx, clone, "main", executil.Options{}); !ok || err != nil {
 		t.Fatal(ok, err)
 	}
 	if _, _, rc := glGitRC(t, clone, "merge-base", "--is-ancestor", "HEAD", "origin/main"); rc != 0 {
@@ -476,8 +476,8 @@ func TestTreelessCheckoutGetsItsWholeHistoryOnceSoWalksStayOffline(t *testing.T)
 			glGit(t, dir, "clone", "-q", "--filter=tree:0", "--no-tags", "file://"+filepath.ToSlash(origin), clone)
 			c.checkOut(t, clone)
 			walk := func() (string, int) {
-				res, err := pysubprocess.RunWith(glCtx, []string{"git", "log", "--format=%H", "--", "f.txt"},
-					pysubprocess.Options{Dir: clone, Env: glEnv("GIT_NO_LAZY_FETCH=1")})
+				res, err := executil.Run(glCtx, []string{"git", "log", "--format=%H", "--", "f.txt"},
+					executil.Options{Dir: clone, Env: glEnv("GIT_NO_LAZY_FETCH=1")})
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -486,7 +486,7 @@ func TestTreelessCheckoutGetsItsWholeHistoryOnceSoWalksStayOffline(t *testing.T)
 			if _, rc := walk(); rc == 0 {
 				t.Fatal("premise: offline walk succeeded")
 			}
-			if ok, err := ConvertTreelessCheckout(glCtx, clone, pysubprocess.Options{}); !ok || err != nil {
+			if ok, err := ConvertTreelessCheckout(glCtx, clone, executil.Options{}); !ok || err != nil {
 				t.Fatal(ok, err)
 			}
 			if glGit(t, clone, "config", "remote.origin.partialclonefilter") != "blob:none" {
@@ -495,7 +495,7 @@ func TestTreelessCheckoutGetsItsWholeHistoryOnceSoWalksStayOffline(t *testing.T)
 			if out, rc := walk(); rc != 0 || len(strings.Fields(out)) != c.history {
 				t.Fatalf("walk %d %q", rc, out)
 			}
-			if ok, _ := ConvertTreelessCheckout(glCtx, clone, pysubprocess.Options{}); ok {
+			if ok, _ := ConvertTreelessCheckout(glCtx, clone, executil.Options{}); ok {
 				t.Fatal("converted twice")
 			}
 		})
@@ -507,8 +507,8 @@ func TestFailedConversionKeepsTheCheckoutTreelessForARetry(t *testing.T) {
 	origin, clone := glHealOrigin(t, dir, 2), filepath.Join(dir, "clone")
 	glGit(t, dir, "clone", "-q", "--filter=tree:0", "file://"+filepath.ToSlash(origin), clone)
 	glGit(t, clone, "remote", "set-url", "origin", "file://"+filepath.ToSlash(filepath.Join(dir, "gone")))
-	_, err := ConvertTreelessCheckout(glCtx, clone, pysubprocess.Options{})
-	var cpe *pysubprocess.CalledProcessError
+	_, err := ConvertTreelessCheckout(glCtx, clone, executil.Options{})
+	var cpe *executil.StatusError
 	if !errors.As(err, &cpe) {
 		t.Fatalf("err %v", err)
 	}
@@ -548,7 +548,7 @@ func TestTagFetchNeverWritesPromisorConfigOnAFullClone(t *testing.T) {
 	if glHasPromisor(t, checkout) {
 		t.Fatal("premise")
 	}
-	if _, err := FetchFullCommitGraph(glCtx, checkout, nil, pysubprocess.Options{}); err != nil {
+	if _, err := FetchFullCommitGraph(glCtx, checkout, nil, executil.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	if glHasPromisor(t, checkout) {
@@ -570,7 +570,7 @@ func TestTagFetchPreservesANonDefaultPartialCloneFilter(t *testing.T) {
 	if !glHasPromisor(t, checkout) {
 		t.Fatal("premise")
 	}
-	if _, err := FetchFullCommitGraph(glCtx, checkout, nil, pysubprocess.Options{}); err != nil {
+	if _, err := FetchFullCommitGraph(glCtx, checkout, nil, executil.Options{}); err != nil {
 		t.Fatal(err)
 	}
 	if glGit(t, checkout, "config", "--get", "remote.origin.partialclonefilter") != "blob:none" ||
@@ -588,17 +588,17 @@ func TestATagRefreshIsBoundedShortAndAHistoryFillKeepsTheLongBudget(t *testing.T
 	glGit(t, dir, "clone", "-q", "--depth", "1", "file://"+filepath.ToSlash(server), shallow)
 	seen := map[string]float64{}
 	real := GitlockRunGit
-	GitlockRunGit = func(ctx context.Context, gitCmd, args []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
+	GitlockRunGit = func(ctx context.Context, gitCmd, args []string, o executil.Options) (*executil.Completed, error) {
 		if len(args) > 0 && args[0] == "fetch" {
 			seen[o.Dir] = o.Timeout.Seconds()
 		}
 		return real(ctx, gitCmd, args, o)
 	}
 	t.Cleanup(func() { GitlockRunGit = real })
-	if ok, err := FetchFullCommitGraph(glCtx, full, nil, pysubprocess.Options{}); ok || err != nil {
+	if ok, err := FetchFullCommitGraph(glCtx, full, nil, executil.Options{}); ok || err != nil {
 		t.Fatal(ok, err)
 	}
-	if ok, err := FetchFullCommitGraph(glCtx, shallow, nil, pysubprocess.Options{}); !ok || err != nil {
+	if ok, err := FetchFullCommitGraph(glCtx, shallow, nil, executil.Options{}); !ok || err != nil {
 		t.Fatal(ok, err)
 	}
 	if seen[full] != 30 || seen[shallow] != 900 || tagRefreshTimeout.Seconds() != 30 || historyFetchTimeout.Seconds() != 900 {
@@ -610,12 +610,12 @@ func TestATagRefreshIsBoundedShortAndAHistoryFillKeepsTheLongBudget(t *testing.T
 }
 
 // Records every spawn with its attributes and answers through reply
-func glRecordSpawns(t *testing.T, reply func(argv []string) *pysubprocess.Completed) *[][]any {
+func glRecordSpawns(t *testing.T, reply func(argv []string) *executil.Completed) *[][]any {
 	var captured [][]any
 	marker := &syscall.SysProcAttr{}
 	prevHide, prevRun := gitlockHideAttr, gitlockSubprocessRun
 	gitlockHideAttr = func() *syscall.SysProcAttr { return marker }
-	gitlockSubprocessRun = func(ctx context.Context, argv []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
+	gitlockSubprocessRun = func(ctx context.Context, argv []string, o executil.Options) (*executil.Completed, error) {
 		captured = append(captured, []any{slices.Clone(argv), o.Attr == marker})
 		return reply(argv), nil
 	}
@@ -624,17 +624,17 @@ func glRecordSpawns(t *testing.T, reply func(argv []string) *pysubprocess.Comple
 }
 
 func TestGitlockGitSpawnsHideConsoleWindow(t *testing.T) {
-	captured := glRecordSpawns(t, func(argv []string) *pysubprocess.Completed {
+	captured := glRecordSpawns(t, func(argv []string) *executil.Completed {
 		s := strings.Join(argv, " ")
 		switch {
 		case strings.Contains(s, "rev-list"):
-			return &pysubprocess.Completed{Returncode: 1}
+			return &executil.Completed{ExitCode: 1}
 		case strings.Contains(s, "cat-file") && strings.Contains(s, "--batch-check"):
-			return &pysubprocess.Completed{}
+			return &executil.Completed{}
 		case strings.Contains(s, "cat-file"):
-			return &pysubprocess.Completed{Returncode: 1}
+			return &executil.Completed{ExitCode: 1}
 		}
-		return &pysubprocess.Completed{Stdout: []byte("deadbeef\n")}
+		return &executil.Completed{Stdout: []byte("deadbeef\n")}
 	})
 	dir := t.TempDir()
 	if got := GitlockStdoutLines(glCtx, dir, []string{"rev-parse", "--git-path", "shallow"}); !slices.Equal(got, []string{"deadbeef"}) {
@@ -655,8 +655,8 @@ func TestGitlockGitSpawnsHideConsoleWindow(t *testing.T) {
 }
 
 func TestGitlockTasklistProbeHidesConsoleWindow(t *testing.T) {
-	captured := glRecordSpawns(t, func([]string) *pysubprocess.Completed {
-		return &pysubprocess.Completed{Stdout: []byte("\"git.exe\",\"1234\",\"Console\",\"1\",\"10,000 K\"\n")}
+	captured := glRecordSpawns(t, func([]string) *executil.Completed {
+		return &executil.Completed{Stdout: []byte("\"git.exe\",\"1234\",\"Console\",\"1\",\"10,000 K\"\n")}
 	})
 	prev := gitlockWindows
 	gitlockWindows = true
@@ -670,13 +670,13 @@ func TestGitlockTasklistProbeHidesConsoleWindow(t *testing.T) {
 }
 
 func TestGitlockTagFetchHidesConsoleWindow(t *testing.T) {
-	captured := glRecordSpawns(t, func(argv []string) *pysubprocess.Completed {
+	captured := glRecordSpawns(t, func(argv []string) *executil.Completed {
 		if strings.Contains(strings.Join(argv, " "), "cat-file") {
-			return &pysubprocess.Completed{Returncode: 1}
+			return &executil.Completed{ExitCode: 1}
 		}
-		return &pysubprocess.Completed{Stdout: []byte("8192, 4096, deadbeef\n")}
+		return &executil.Completed{Stdout: []byte("8192, 4096, deadbeef\n")}
 	})
-	if ok, err := FetchFullCommitGraph(glCtx, t.TempDir(), nil, pysubprocess.Options{}); ok || err != nil {
+	if ok, err := FetchFullCommitGraph(glCtx, t.TempDir(), nil, executil.Options{}); ok || err != nil {
 		t.Fatal(ok, err)
 	}
 	var fetches int

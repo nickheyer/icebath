@@ -16,12 +16,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Shows the thread status line through the session status API, refreshes keeping the first start time
@@ -173,7 +173,7 @@ func (a *SlackAdapter) dmTopLevelThreadsAsSessions() bool {
 
 // Continuable cron surface, in_channel when configured, thread otherwise
 func (a *SlackAdapter) CronContinuableSurface() string {
-	if strings.ToLower(strings.TrimSpace(pyrepr.Str(a.extra()["cron_continuable_surface"]))) == "in_channel" {
+	if strings.ToLower(strings.TrimSpace(anyutil.String(a.extra()["cron_continuable_surface"]))) == "in_channel" {
 		return "in_channel"
 	}
 	return "thread"
@@ -181,7 +181,7 @@ func (a *SlackAdapter) CronContinuableSurface() string {
 
 // Warns when in_channel cron delivery is set without flat replies
 func (a *SlackAdapter) warnIfInchannelWithoutFlatReply(teamName string) {
-	if a.CronContinuableSurface() == "in_channel" && pyrepr.Truthy(getOr(a.extra(), "reply_in_thread", true)) {
+	if a.CronContinuableSurface() == "in_channel" && anyutil.IsTrue(getOr(a.extra(), "reply_in_thread", true)) {
 		pkgLog().Warn(fmt.Sprintf("[Slack] %s: cron_continuable_surface=in_channel is set WITHOUT "+
 			"reply_in_thread=false. A continuable in-channel cron job will deliver flat, "+
 			"but the bot will still reply to your continuation in a thread — so it falls "+
@@ -213,13 +213,13 @@ func (a *SlackAdapter) slackAPIHumanUsers(ctx context.Context) map[string]bool {
 
 // Whether the event itself identifies a bot or app sender
 func (a *SlackAdapter) eventDeclaresBotSender(ctx context.Context, event map[string]any) bool {
-	if pyrepr.Truthy(event["bot_id"]) || pyrepr.Truthy(event["bot_profile"]) || event["subtype"] == "bot_message" {
+	if anyutil.IsTrue(event["bot_id"]) || anyutil.IsTrue(event["bot_profile"]) || event["subtype"] == "bot_message" {
 		return true
 	}
-	if profile, ok := event["user_profile"].(map[string]any); ok && pyrepr.Truthy(profile["is_bot"]) {
+	if profile, ok := event["user_profile"].(map[string]any); ok && anyutil.IsTrue(profile["is_bot"]) {
 		return true
 	}
-	if pyrepr.Truthy(event["app_id"]) && !pyrepr.Truthy(event["client_msg_id"]) {
+	if anyutil.IsTrue(event["app_id"]) && !anyutil.IsTrue(event["client_msg_id"]) {
 		user, _ := event["user"].(string)
 		return !a.slackAPIHumanUsers(ctx)[user]
 	}
@@ -228,7 +228,7 @@ func (a *SlackAdapter) eventDeclaresBotSender(ctx context.Context, event map[str
 
 // Thread ts for an API call, metadata thread over reply_to and flat replies when threading is off
 func (a *SlackAdapter) resolveThreadTS(replyTo string, metadata map[string]any) string {
-	if !pyrepr.Truthy(getOr(a.extra(), "reply_in_thread", true)) {
+	if !anyutil.IsTrue(getOr(a.extra(), "reply_in_thread", true)) {
 		existing := strOrEmpty(firstTruthy(orEmptyMap(metadata), "thread_id", "thread_ts"))
 		if existing != "" && replyTo != "" && existing == replyTo {
 			existing = ""
@@ -236,11 +236,11 @@ func (a *SlackAdapter) resolveThreadTS(replyTo string, metadata map[string]any) 
 		return existing
 	}
 	if len(metadata) > 0 {
-		if v := metadata["thread_id"]; pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v := metadata["thread_id"]; anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
-		if v := metadata["thread_ts"]; pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v := metadata["thread_ts"]; anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	return replyTo
@@ -298,7 +298,7 @@ func (a *SlackAdapter) sendLocalFile(ctx context.Context, chatID, filePath, capt
 	}
 	chatID = a.dmTarget(ctx, chatID, metadata)
 	threadTS := a.resolveThreadTS(replyTo, metadata)
-	label := pystr.Capitalize(kind) + " upload"
+	label := textutil.UpperFirst(strings.ToLower(kind)) + " upload"
 	result, err := a.uploadWithRetry(ctx, chatID, filePath, filename, caption, threadTS, metadata, label, nil, 3)
 	if err == nil {
 		return result, nil
@@ -443,7 +443,7 @@ func (a *SlackAdapter) extraFlag(key string, def bool) bool {
 	if !ok || raw == nil {
 		return def
 	}
-	switch strings.ToLower(strings.TrimSpace(pyrepr.Str(raw))) {
+	switch strings.ToLower(strings.TrimSpace(anyutil.String(raw))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -649,13 +649,13 @@ func (a *SlackAdapter) resolveChannelName(ctx context.Context, channelID, teamID
 	} else {
 		ch := asMap(result.get("channel"))
 		switch {
-		case pyrepr.Truthy(ch["is_im"]):
+		case anyutil.IsTrue(ch["is_im"]):
 			if peer := strOrEmpty(ch["user"]); peer != "" {
 				name = resolveUserNameFn(a, ctx, peer, channelID, teamID)
 			}
 		default:
 			if v := firstTruthy(ch, "name", "name_normalized"); v != nil {
-				name = pyrepr.Str(v)
+				name = anyutil.String(v)
 			}
 		}
 	}
@@ -873,7 +873,7 @@ func (a *SlackAdapter) GetChatInfo(ctx context.Context, chatID string) (map[stri
 	}
 	channel := asMap(getOr(result.Data, "channel", map[string]any{}))
 	kind := "group"
-	if pyrepr.Truthy(getOr(channel, "is_im", false)) {
+	if anyutil.IsTrue(getOr(channel, "is_im", false)) {
 		kind = "dm"
 	}
 	return map[string]any{"name": getOr(channel, "name", chatID), "type": kind}, nil
@@ -932,7 +932,7 @@ func (a *SlackAdapter) rememberProcessedMessageTS(ts string) {
 	if from < 0 {
 		from = max(from+len(keys), 0)
 	}
-	kept := pydict.New[string, float64]()
+	kept := orderedutil.NewMap[string, float64]()
 	for _, k := range keys[min(from, len(keys)):] {
 		v, _ := a.processedMessageTS.Get(k)
 		kept.Set(k, v)

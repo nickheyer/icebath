@@ -285,7 +285,7 @@ func TestModelPromptCapabilitySurfaceCoercion(t *testing.T) {
 		raw  any
 		want string
 	}{
-		{true, "<nil>"}, {0, "<nil>"}, {-5, "<nil>"}, {4096, "4096"}, {" 8192 ", "8192"}, {"12k", "<nil>"}, {"٣٢", "32"}, {nil, "<nil>"},
+		{true, "<nil>"}, {0, "<nil>"}, {-5, "<nil>"}, {4096, "4096"}, {" 8192 ", "8192"}, {"12k", "<nil>"}, {"٣٢", "<nil>"}, {nil, "<nil>"},
 	} {
 		surface, err := modelPromptCapabilitySurface(map[string]any{"context_length": c.raw, "supports_vision": "on"})
 		if err != nil {

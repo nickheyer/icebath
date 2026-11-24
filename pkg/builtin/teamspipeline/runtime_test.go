@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Webhook adapter double holding the bound scheduler and the tasks it was asked to track
@@ -58,8 +59,8 @@ type fakeGatewayHost struct {
 }
 
 func (h *fakeGatewayHost) RunnerConfig() *gateway.GatewayConfig { return h.config }
-func (h *fakeGatewayHost) Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
-	adapters := pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+func (h *fakeGatewayHost) Adapters() *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
+	adapters := orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	for platform, adapter := range h.adapters {
 		adapters.Set(platform, adapter)
 	}
@@ -72,11 +73,11 @@ func (h *fakeGatewayHost) SetTeamsPipelineRuntimeError(message *string) { h.runt
 // Pipeline double whose accept persists nothing and whose processing blocks until released
 type fakePipeline struct {
 	mu            sync.Mutex
-	notifications []*pyjson.Object
+	notifications []*jsonutil.Object
 	release       chan struct{}
 }
 
-func (p *fakePipeline) CreateJobFromNotification(notification *pyjson.Object) (*TeamsMeetingPipelineJob, error) {
+func (p *fakePipeline) CreateJobFromNotification(notification *jsonutil.Object) (*TeamsMeetingPipelineJob, error) {
 	return &TeamsMeetingPipelineJob{JobID: "job-" + get(notification, "id").(string), Status: "received"}, nil
 }
 
@@ -88,10 +89,10 @@ func (p *fakePipeline) RunJob(_ context.Context, jobOrID any) (*TeamsMeetingPipe
 	return nil, nil
 }
 
-func (p *fakePipeline) seen() []*pyjson.Object {
+func (p *fakePipeline) seen() []*jsonutil.Object {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return append([]*pyjson.Object(nil), p.notifications...)
+	return append([]*jsonutil.Object(nil), p.notifications...)
 }
 
 func useRuntimeBuilder(t *testing.T, build func(ctx context.Context, host GatewayRuntimeHost) (PipelineRuntime, error)) {
@@ -126,9 +127,9 @@ func TestRuntimeConfigUsesExistingTeamsPlatformSettings(t *testing.T) {
 	if notion, _ := get(runtimeConfig, "notion").(map[string]any); notion["database_id"] != "db-1" {
 		t.Fatalf("notion %v", get(runtimeConfig, "notion"))
 	}
-	delivery, _ := get(runtimeConfig, "teams_delivery").(*pyjson.Object)
+	delivery, _ := get(runtimeConfig, "teams_delivery").(*jsonutil.Object)
 	want := map[string]any{"enabled": true, "mode": "graph", "team_id": "team-1", "channel_id": "channel-1"}
-	if delivery == nil || !reflect.DeepEqual(delivery.Vals, want) {
+	if delivery == nil || !reflect.DeepEqual(delivery.Map(), want) {
 		t.Fatalf("teams_delivery %v", get(runtimeConfig, "teams_delivery"))
 	}
 }
@@ -171,7 +172,7 @@ func TestBindGatewayRuntimeAttachesScheduler(t *testing.T) {
 	}
 	close(pipeline.release)
 	adapter.gather(t)
-	if seen := pipeline.seen(); len(seen) != 1 || !pyjson.Equal(seen[0], notification) {
+	if seen := pipeline.seen(); len(seen) != 1 || !anyutil.Equal(seen[0], notification) {
 		t.Fatalf("notifications %v", seen)
 	}
 }
@@ -211,7 +212,7 @@ func TestDuplicateNoIDNotificationsInOneBatchRunTheJobOnce(t *testing.T) {
 	}
 	notification := obj("changeType", "created", "resource", "communications/onlineMeetings/m1", "resourceData", obj("id", "m1"))
 	for range 2 {
-		if err := adapter.scheduler(context.Background(), notification.Copy(), &gateway.MessageEvent{}); err != nil {
+		if err := adapter.scheduler(context.Background(), notification.Clone(), &gateway.MessageEvent{}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -304,7 +305,7 @@ type cancellablePipeline struct {
 	ended   chan error
 }
 
-func (p *cancellablePipeline) CreateJobFromNotification(notification *pyjson.Object) (*TeamsMeetingPipelineJob, error) {
+func (p *cancellablePipeline) CreateJobFromNotification(notification *jsonutil.Object) (*TeamsMeetingPipelineJob, error) {
 	return &TeamsMeetingPipelineJob{JobID: "job-" + get(notification, "id").(string), Status: "received"}, nil
 }
 

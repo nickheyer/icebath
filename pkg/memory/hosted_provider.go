@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Provider whose MemoryProvider object lives in the plugin host, every hook a call into the child
@@ -21,14 +21,14 @@ func newHostedProvider(ctx context.Context, obj *plugins.HostedObject) (Provider
 	if err != nil {
 		return nil, err
 	}
-	return &hostedProvider{obj: obj, name: pyrepr.Str(name)}, nil
+	return &hostedProvider{obj: obj, name: anyutil.String(name)}, nil
 }
 
 func hostedStr(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func hostedMaps(v any) []map[string]any {
@@ -124,7 +124,7 @@ func (p *hostedProvider) StatusConfig(ctx context.Context, providerConfig any) (
 
 func (p *hostedProvider) Available(ctx context.Context) bool {
 	v, err := p.obj.Call(ctx, "is_available", nil, nil)
-	return err == nil && pyrepr.Truthy(v)
+	return err == nil && anyutil.IsTrue(v)
 }
 
 func (p *hostedProvider) UnavailableReason(ctx context.Context) string {

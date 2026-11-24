@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 	"github.com/nickheyer/icebath/pkg/settings"
+	diffutil "github.com/nickheyer/icebath/pkg/utils/diff"
 )
 
 // Configured voice stop phrases lowercased with blanks dropped, empty when disabled
@@ -71,7 +71,7 @@ func isTTSEcho(transcript, spokenText string, threshold float64) bool {
 	if len(a) == 0 || len(b) == 0 {
 		return false
 	}
-	similar := func(x, y []rune) bool { return pydifflib.NewSequenceMatcher(x, y, true).Ratio() >= threshold }
+	similar := func(x, y []rune) bool { return diffutil.Ratio(x, y) >= threshold }
 	if similar(a, b) {
 		return true
 	}

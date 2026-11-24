@@ -14,9 +14,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -48,7 +48,7 @@ type HubCLI struct {
 	S   *Scope
 	Hub *Hub
 	// Console every command prints to unless one is passed in
-	C *pyrich.Console
+	C *consoleutil.Console
 	// Plain stdout of print and sys.stdout.write
 	Stdout io.Writer
 	// input() of the confirm prompt and line_input of the name and category prompts
@@ -66,20 +66,20 @@ type HubCLI struct {
 // Replaceable collaborators, nil fields run the real implementation
 type hubCLISeams struct {
 	unifiedSearch        func(ctx context.Context, query string, sources []SkillSource, sourceFilter string, limit int) []SkillMeta
-	parallelSearch       func(ctx context.Context, sources []SkillSource, query string, limits map[string]int, sourceFilter string, timeout time.Duration, onDone func(string, int)) ([]SkillMeta, *pyjson.Object, []string)
+	parallelSearch       func(ctx context.Context, sources []SkillSource, query string, limits map[string]int, sourceFilter string, timeout time.Duration, onDone func(string, int)) ([]SkillMeta, *jsonutil.Object, []string)
 	checkUpdates         func(ctx context.Context, name string) ([]SkillUpdateCheck, error)
 	install              func(ctx context.Context, identifier string, o HubInstallOptions) (HubOutcome, error)
 	resolveMetaAndBundle func(ctx context.Context, identifier string, sources []SkillSource) (*SkillMeta, *SkillBundle, SkillSource)
-	resolveURLBundleName func(c *pyrich.Console, b *SkillBundle, meta *SkillMeta, identifier, nameOverride string, skipConfirm bool) bool
+	resolveURLBundleName func(c *consoleutil.Console, b *SkillBundle, meta *SkillMeta, identifier, nameOverride string, skipConfirm bool) bool
 	disabledSkills       func(platform string) map[string]bool
-	uninstall            func(ctx context.Context, name string, c *pyrich.Console, skipConfirm, deferCache bool) (HubOutcome, error)
+	uninstall            func(ctx context.Context, name string, c *consoleutil.Console, skipConfirm, deferCache bool) (HubOutcome, error)
 	uninstallSkill       func(name string) (bool, string, error)
 	tier1Enabled         func() bool
 	tier1Scan            func(ctx context.Context, skillDir string, timeout int) (Tier1Report, error)
 }
 
 // Uninstall command the CLI and slash dispatchers run, the real DoUninstall unless a test replaced it
-func (x *HubCLI) doUninstall(ctx context.Context, name string, c *pyrich.Console, skipConfirm, deferCache bool) (HubOutcome, error) {
+func (x *HubCLI) doUninstall(ctx context.Context, name string, c *consoleutil.Console, skipConfirm, deferCache bool) (HubOutcome, error) {
 	if x.seams.uninstall != nil {
 		return x.seams.uninstall(ctx, name, c, skipConfirm, deferCache)
 	}
@@ -104,13 +104,13 @@ func (x *HubCLI) disabledSkillNames(platform string) map[string]bool {
 
 // Hub command runner over a scope, printing to stdout
 func NewHubCLI(s *Scope) *HubCLI {
-	return &HubCLI{S: s, Hub: NewHub(s), C: pyrich.NewConsole(os.Stdout), Stdout: os.Stdout,
+	return &HubCLI{S: s, Hub: NewHub(s), C: consoleutil.NewConsole(os.Stdout), Stdout: os.Stdout,
 		Input:     func(prompt string) (string, error) { return cliui.Default().Input(prompt) },
 		LineInput: func(prompt string) (string, error) { return cliui.Default().LineInput(prompt) },
 		Now:       time.Now, GitHubAPI: "https://api.github.com/repos", HTTPClient: &http.Client{}}
 }
 
-func (x *HubCLI) console(c *pyrich.Console) *pyrich.Console {
+func (x *HubCLI) console(c *consoleutil.Console) *consoleutil.Console {
 	if c != nil {
 		return c
 	}
@@ -120,8 +120,8 @@ func (x *HubCLI) console(c *pyrich.Console) *pyrich.Console {
 // Source label of a result row, GitHub tap rows showing their provider
 func displaySource(r SkillMeta) string {
 	if r.Source == "github" && r.Extra != nil {
-		if v, ok := r.Extra.Get("provider"); ok && pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v, ok := r.Extra.Get("provider"); ok && anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	return r.Source
@@ -149,11 +149,13 @@ func truncateText(text string, width int) string {
 	return text
 }
 
-func identCol(style string) pyrich.Column {
-	return pyrich.Column{Header: "Identifier", Style: style, Overflow: "fold"}
+func identCol(style string) consoleutil.Column {
+	return consoleutil.Column{Header: "Identifier", Style: style, Overflow: "fold"}
 }
 
-func dimCol(header string) pyrich.Column { return pyrich.Column{Header: header, Style: "dim"} }
+func dimCol(header string) consoleutil.Column {
+	return consoleutil.Column{Header: header, Style: "dim"}
+}
 
 // Asks Confirm [y/N] and reports yes, an EOF or interrupt counting as no
 func (x *HubCLI) confirm() bool {
@@ -166,7 +168,7 @@ func (x *HubCLI) confirm() bool {
 }
 
 // Prints the lines and asks to confirm, printing cancel on refusal
-func (x *HubCLI) confirmOrCancel(c *pyrich.Console, cancel string, lines ...string) bool {
+func (x *HubCLI) confirmOrCancel(c *consoleutil.Console, cancel string, lines ...string) bool {
 	for _, l := range lines {
 		c.Print(l)
 	}
@@ -180,7 +182,7 @@ func (x *HubCLI) confirmOrCancel(c *pyrich.Console, cancel string, lines ...stri
 const cancelledLine = "[dim]Cancelled.[/]\n"
 
 // Clears the skills prompt cache now or tells the user the change lands next session
-func (x *HubCLI) finishChange(c *pyrich.Console, invalidate bool, what, verb string, notice bool) {
+func (x *HubCLI) finishChange(c *consoleutil.Console, invalidate bool, what, verb string, notice bool) {
 	if invalidate {
 		ClearSkillsSystemPromptCache(x.S.Home, true)
 		return
@@ -192,22 +194,22 @@ func (x *HubCLI) finishChange(c *pyrich.Console, invalidate bool, what, verb str
 	c.Print(fmt.Sprintf("[dim]Use /reset to start a new session now, or --now to %s immediately (invalidates prompt cache).[/]\n", verb))
 }
 
-func (x *HubCLI) finishDefault(c *pyrich.Console, invalidate bool) {
+func (x *HubCLI) finishDefault(c *consoleutil.Console, invalidate bool) {
 	x.finishChange(c, invalidate, "Change will take effect", "apply", true)
 }
 
 // One unwrapped red error line
-func printHubError(c *pyrich.Console, message string) {
+func printHubError(c *consoleutil.Console, message string) {
 	c.PrintSoft(fmt.Sprintf("[bold red]Error:[/] %s\n", message))
 }
 
-func printListed(c *pyrich.Console, label string, items []string) {
+func printListed(c *consoleutil.Console, label string, items []string) {
 	if len(items) > 0 {
 		c.Print(fmt.Sprintf("[dim]%s: %s[/]", label, strings.Join(items, ", ")))
 	}
 }
 
-func reportPair(c *pyrich.Console, success bool, msg string) bool {
+func reportPair(c *consoleutil.Console, success bool, msg string) bool {
 	if success {
 		c.Print(fmt.Sprintf("[bold green]%s[/]\n", msg))
 	} else {
@@ -217,16 +219,16 @@ func reportPair(c *pyrich.Console, success bool, msg string) bool {
 }
 
 // Green message of an ok result, red error otherwise
-func reportOK(c *pyrich.Console, result map[string]any, fallback string) bool {
-	if pyrepr.Truthy(result["ok"]) {
-		c.Print(fmt.Sprintf("[bold green]%s[/]", pyrepr.Str(result["message"])))
+func reportOK(c *consoleutil.Console, result map[string]any, fallback string) bool {
+	if anyutil.IsTrue(result["ok"]) {
+		c.Print(fmt.Sprintf("[bold green]%s[/]", anyutil.String(result["message"])))
 		return true
 	}
 	msg, ok := result["message"]
 	if !ok {
 		msg = fallback
 	}
-	printHubError(c, pyrepr.Str(msg))
+	printHubError(c, anyutil.String(msg))
 	return false
 }
 
@@ -249,25 +251,25 @@ func skillMDPreview(b *SkillBundle) (string, bool) {
 }
 
 // Labelled upstream metadata lines, installs shown even when zero, security audits sorted by name
-func formatExtraMetadataLines(extra *pyjson.Object) []string {
+func formatExtraMetadataLines(extra *jsonutil.Object) []string {
 	var lines []string
 	if extra == nil {
 		return lines
 	}
 	for _, kl := range extraMetaLabels {
 		v, ok := extra.Get(kl[0])
-		if ok && v != nil && (pyrepr.Truthy(v) || kl[0] == "installs") {
-			lines = append(lines, fmt.Sprintf("[bold]%s:[/] %s", kl[1], pyrepr.Str(v)))
+		if ok && v != nil && (anyutil.IsTrue(v) || kl[0] == "installs") {
+			lines = append(lines, fmt.Sprintf("[bold]%s:[/] %s", kl[1], anyutil.String(v)))
 		}
 	}
 	if sec, ok := extra.Get("security_audits"); ok {
-		if obj, ok := sec.(*pyjson.Object); ok && obj.Len() > 0 {
-			keys := append([]string(nil), obj.Keys...)
+		if obj, ok := sec.(*jsonutil.Object); ok && obj.Len() > 0 {
+			keys := append([]string(nil), obj.Keys()...)
 			sort.Strings(keys)
 			parts := make([]string, len(keys))
 			for i, k := range keys {
 				v, _ := obj.Get(k)
-				parts[i] = k + "=" + pyrepr.Str(v)
+				parts[i] = k + "=" + anyutil.String(v)
 			}
 			lines = append(lines, "[bold]Security:[/] "+strings.Join(parts, ", "))
 		}
@@ -326,7 +328,7 @@ func (x *HubCLI) unifiedSearch(ctx context.Context, query string, sources []Skil
 	return x.Hub.UnifiedSearch(ctx, query, sources, sourceFilter, limit)
 }
 
-func (x *HubCLI) parallelSearch(ctx context.Context, sources []SkillSource, limits map[string]int, sourceFilter string, onDone func(string, int)) ([]SkillMeta, *pyjson.Object, []string) {
+func (x *HubCLI) parallelSearch(ctx context.Context, sources []SkillSource, limits map[string]int, sourceFilter string, onDone func(string, int)) ([]SkillMeta, *jsonutil.Object, []string) {
 	if x.seams.parallelSearch != nil {
 		return x.seams.parallelSearch(ctx, sources, "", limits, sourceFilter, 30*time.Second, onDone)
 	}
@@ -334,7 +336,7 @@ func (x *HubCLI) parallelSearch(ctx context.Context, sources []SkillSource, limi
 }
 
 // Full identifier of a short name through search, empty when ambiguous or missing
-func (x *HubCLI) resolveShortName(ctx context.Context, name string, sources []SkillSource, c *pyrich.Console) string {
+func (x *HubCLI) resolveShortName(ctx context.Context, name string, sources []SkillSource, c *consoleutil.Console) string {
 	c.Print(fmt.Sprintf("[dim]Resolving '%s'...[/]", name))
 	results := x.unifiedSearch(ctx, name, sources, "all", 20)
 	exact := exactNameHits(results, name)
@@ -354,7 +356,7 @@ func (x *HubCLI) resolveShortName(ctx context.Context, name string, sources []Sk
 			return official[0].Identifier
 		}
 		c.Print(fmt.Sprintf("\n[yellow]Multiple skills named '%s' found:[/]", name))
-		table := &pyrich.Table{Columns: []pyrich.Column{dimCol("Source"), dimCol("Trust"), identCol("bold cyan")}}
+		table := &consoleutil.Table{Columns: []consoleutil.Column{dimCol("Source"), dimCol("Trust"), identCol("bold cyan")}}
 		for _, r := range exact {
 			table.AddRow(r.Source, trustCell(r.TrustLevel, r.Source, "official"), r.Identifier)
 		}
@@ -402,7 +404,7 @@ func (x *HubCLI) resolveSourceMetaAndBundle(ctx context.Context, identifier stri
 	return firstMeta, nil, firstSource
 }
 
-func (x *HubCLI) fullIdentifier(ctx context.Context, identifier string, sources []SkillSource, c *pyrich.Console) string {
+func (x *HubCLI) fullIdentifier(ctx context.Context, identifier string, sources []SkillSource, c *consoleutil.Console) string {
 	if strings.Contains(identifier, "/") {
 		return identifier
 	}
@@ -410,7 +412,7 @@ func (x *HubCLI) fullIdentifier(ctx context.Context, identifier string, sources 
 }
 
 // Short name resolution plus the meta, bundle and source inside one pooled hub session
-func (x *HubCLI) resolveIdentifier(ctx context.Context, identifier string, sources []SkillSource, c *pyrich.Console) (string, *SkillMeta, *SkillBundle, SkillSource) {
+func (x *HubCLI) resolveIdentifier(ctx context.Context, identifier string, sources []SkillSource, c *consoleutil.Console) (string, *SkillMeta, *SkillBundle, SkillSource) {
 	ctx, done := x.Hub.HTTPSession(ctx)
 	defer done()
 	identifier = x.fullIdentifier(ctx, identifier, sources, c)
@@ -463,7 +465,7 @@ func (x *HubCLI) lineInput(prompt string) (string, bool) {
 }
 
 // Interactive skill name, false on cancel or an invalid answer
-func (x *HubCLI) promptForSkillName(c *pyrich.Console, url, def string) (string, bool) {
+func (x *HubCLI) promptForSkillName(c *consoleutil.Console, url, def string) (string, bool) {
 	c.Print()
 	c.Print(fmt.Sprintf("[yellow]The SKILL.md at %s doesn't declare a `name:` in its frontmatter,[/]\n"+
 		"[yellow]and the URL path doesn't produce a valid identifier either.[/]", url))
@@ -487,7 +489,7 @@ func (x *HubCLI) promptForSkillName(c *pyrich.Console, url, def string) (string,
 }
 
 // Interactive category, empty meaning a flat install
-func (x *HubCLI) promptForCategory(c *pyrich.Console, existing []string) string {
+func (x *HubCLI) promptForCategory(c *consoleutil.Console, existing []string) string {
 	c.Print()
 	if len(existing) > 0 {
 		c.Print("[bold]Pick a category[/] [dim](reuse an existing bucket, type a new one, or press Enter to install flat)[/]")
@@ -504,7 +506,7 @@ func (x *HubCLI) promptForCategory(c *pyrich.Console, existing []string) string 
 }
 
 // Searches the registries and prints a table, or a JSON array for scripting
-func (x *HubCLI) DoSearch(ctx context.Context, query, source string, limit int, c *pyrich.Console, asJSON bool) error {
+func (x *HubCLI) DoSearch(ctx context.Context, query, source string, limit int, c *consoleutil.Console, asJSON bool) error {
 	c = x.console(c)
 	sources := x.sources()
 	if asJSON {
@@ -514,7 +516,7 @@ func (x *HubCLI) DoSearch(ctx context.Context, query, source string, limit int, 
 			rows[i] = objOf("name", r.Name, "identifier", r.Identifier, "source", r.Source,
 				"trust_level", r.TrustLevel, "description", r.Description)
 		}
-		text, err := pyjson.Dumps(rows, pyjson.Indent(2))
+		text, err := jsonutil.Encode(rows, jsonutil.Indent(2))
 		if err != nil {
 			return err
 		}
@@ -529,7 +531,7 @@ func (x *HubCLI) DoSearch(ctx context.Context, query, source string, limit int, 
 		c.Print("[dim]No skills found matching your query.[/]\n")
 		return nil
 	}
-	table := &pyrich.Table{Title: fmt.Sprintf("Skills Hub — %d result(s)", len(results)), Columns: []pyrich.Column{
+	table := &consoleutil.Table{Title: fmt.Sprintf("Skills Hub — %d result(s)", len(results)), Columns: []consoleutil.Column{
 		{Header: "Name", Style: "bold cyan"}, {Header: "Description", MaxWidth: 60}, dimCol("Source"), dimCol("Trust"), identCol("dim")}}
 	for _, r := range results {
 		table.AddRow(r.Name, truncateText(r.Description, 60), displaySource(r), trustCell(r.TrustLevel, r.Source, "official"), r.Identifier)
@@ -569,7 +571,7 @@ func rankAndPage(all []SkillMeta, page, pageSize int) (deduped, items []SkillMet
 }
 
 // Fetches every filtered source in parallel with a live per source progress status
-func (x *HubCLI) fetchBrowseResults(ctx context.Context, c *pyrich.Console, source string) ([]SkillMeta, *pyjson.Object, []string) {
+func (x *HubCLI) fetchBrowseResults(ctx context.Context, c *consoleutil.Console, source string) ([]SkillMeta, *jsonutil.Object, []string) {
 	st := c.Status("[bold]Fetching skills from registries...")
 	defer st.Stop()
 	var done []string
@@ -580,7 +582,7 @@ func (x *HubCLI) fetchBrowseResults(ctx context.Context, c *pyrich.Console, sour
 	return x.parallelSearch(ctx, x.sources(), browseLimits, source, onDone)
 }
 
-func (x *HubCLI) renderBrowsePage(c *pyrich.Console, deduped, items []SkillMeta, page, totalPages, start int, source string, counts *pyjson.Object, timedOut []string) {
+func (x *HubCLI) renderBrowsePage(c *consoleutil.Console, deduped, items []SkillMeta, page, totalPages, start int, source string, counts *jsonutil.Object, timedOut []string) {
 	official := 0
 	for _, r := range deduped {
 		if r.Source == "official" {
@@ -600,7 +602,7 @@ func (x *HubCLI) renderBrowsePage(c *pyrich.Console, deduped, items []SkillMeta,
 		c.Print(fmt.Sprintf("[bright_cyan]★ %d official optional skill(s) from icebath[/]", official))
 	}
 	c.Print()
-	table := &pyrich.Table{Columns: []pyrich.Column{
+	table := &consoleutil.Table{Columns: []consoleutil.Column{
 		{Header: "#", Style: "dim", Width: 4, Justify: "right"}, {Header: "Name", Style: "bold cyan", MaxWidth: 22},
 		{Header: "Description", MaxWidth: 44}, {Header: "Source", Style: "dim", Width: 12}, {Header: "Trust", Width: 10}, identCol("dim")}}
 	for i, r := range items {
@@ -619,12 +621,12 @@ func (x *HubCLI) renderBrowsePage(c *pyrich.Console, deduped, items []SkillMeta,
 		c.Print("  " + strings.Join(nav, " | "))
 	}
 	if source == "all" && counts != nil && counts.Len() > 0 {
-		keys := append([]string(nil), counts.Keys...)
+		keys := append([]string(nil), counts.Keys()...)
 		sort.Strings(keys)
 		parts := make([]string, len(keys))
 		for i, k := range keys {
 			v, _ := counts.Get(k)
-			parts[i] = k + ": " + pyrepr.Str(v)
+			parts[i] = k + ": " + anyutil.String(v)
 		}
 		c.Print(fmt.Sprintf("  [dim]Sources: %s[/]", strings.Join(parts, ", ")))
 	}
@@ -635,7 +637,7 @@ func (x *HubCLI) renderBrowsePage(c *pyrich.Console, deduped, items []SkillMeta,
 }
 
 // Browses every registry paginated with official skills first
-func (x *HubCLI) DoBrowse(ctx context.Context, page, pageSize int, source string, c *pyrich.Console) {
+func (x *HubCLI) DoBrowse(ctx context.Context, page, pageSize int, source string, c *consoleutil.Console) {
 	pageSize = max(1, min(pageSize, 100))
 	c = x.console(c)
 	all, counts, timedOut := x.fetchBrowseResults(ctx, c, source)
@@ -684,7 +686,7 @@ func (x *HubCLI) BrowseSkills(ctx context.Context, page, pageSize int, source st
 }
 
 // Previews a skill SKILL.md without installing
-func (x *HubCLI) DoInspect(ctx context.Context, identifier string, c *pyrich.Console) {
+func (x *HubCLI) DoInspect(ctx context.Context, identifier string, c *consoleutil.Console) {
 	c = x.console(c)
 	identifier, meta, bundle, _ := x.resolveIdentifier(ctx, identifier, x.sources(), c)
 	if identifier == "" {
@@ -701,9 +703,9 @@ func (x *HubCLI) DoInspect(ctx context.Context, identifier string, c *pyrich.Con
 		info = append(info, "[bold]Tags:[/] "+strings.Join(meta.Tags, ", "))
 	}
 	info = append(info, formatExtraMetadataLines(meta.Extra)...)
-	c.PrintPanel(pyrich.Panel{Body: strings.Join(info, "\n"), Title: "Skill: " + meta.Name})
+	c.PrintPanel(consoleutil.Panel{Body: strings.Join(info, "\n"), Title: "Skill: " + meta.Name})
 	if preview, ok := skillMDPreview(bundle); ok {
-		c.PrintPanel(pyrich.Panel{Body: preview, Title: "SKILL.md Preview", Subtitle: "icebath skills install <id> to install"})
+		c.PrintPanel(consoleutil.Panel{Body: preview, Title: "SKILL.md Preview", Subtitle: "icebath skills install <id> to install"})
 	}
 	c.Print()
 }
@@ -720,7 +722,7 @@ type InspectResult struct {
 
 // Metadata of a skill with its SKILL.md preview, nil when unresolved
 func (x *HubCLI) InspectSkill(ctx context.Context, identifier string) *InspectResult {
-	quiet := &pyrich.Console{Quiet: true, Width: 80}
+	quiet := &consoleutil.Console{Quiet: true, Width: 80}
 	ident, meta, bundle, _ := x.resolveIdentifier(ctx, identifier, x.sources(), quiet)
 	if ident == "" || meta == nil {
 		return nil
@@ -734,8 +736,8 @@ func (x *HubCLI) InspectSkill(ctx context.Context, identifier string) *InspectRe
 }
 
 // Ordered object of alternating keys and values
-func objOf(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func objOf(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}

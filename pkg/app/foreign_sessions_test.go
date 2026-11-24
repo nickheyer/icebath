@@ -3,12 +3,11 @@ package app
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func foreignJSONLine(t *testing.T, v any) string {
@@ -263,7 +262,9 @@ func TestImportRejectsBadInput(t *testing.T) {
 	cases = append(cases, struct{ source, path, want string }{"claude", empty, "No user/assistant conversation"})
 	for _, c := range cases {
 		_, err := importForeignSession(ctx, store, c.source, c.path)
-		if pyrepr.ExceptionName(err) != "ValueError" || !strings.Contains(err.Error(), c.want) {
+		var ve *appValueError
+		var ce *appClassedError
+		if !(errors.As(err, &ve) || errors.As(err, &ce) && ce.class == "ValueError") || !strings.Contains(err.Error(), c.want) {
 			t.Fatalf("%s: %v", c.source, err)
 		}
 	}

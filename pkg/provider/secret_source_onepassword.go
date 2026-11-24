@@ -4,13 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 const (
@@ -103,12 +103,14 @@ func opRefsFingerprint(references map[string]string) string {
 func FindOp(binaryPath string) string {
 	found := binaryPath
 	if found == "" {
-		found, _ = pyshutil.Which("op", nil)
+		if p, err := exec.LookPath("op"); err == nil {
+			found = p
+		}
 	}
-	if found == "" || (binaryPath != "" && !pyfs.Access(binaryPath, 1)) {
+	if found == "" || (binaryPath != "" && !fsutil.Access(binaryPath, 1)) {
 		return ""
 	}
-	return pypath.PathStr(found)
+	return filepath.Clean(found)
 }
 
 func opScrub(text string) string {

@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Config sections the voice setup of the launch profile lives in
@@ -40,7 +40,7 @@ func mirrorSecret(path, launchHome, name string, wanted func(src, dst string) bo
 	if !isFile(src) || !wanted(src, dst) {
 		return false, nil
 	}
-	if err := pyfs.Copy2(src, dst); err != nil {
+	if err := fsutil.CopyFile(src, dst); err != nil {
 		return false, err
 	}
 	_ = os.Chmod(dst, 0o600)

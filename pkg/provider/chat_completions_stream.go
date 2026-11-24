@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -278,7 +278,7 @@ type ccStreamState struct {
 	detailDisplayParts []string
 	refusalParts       []string
 	pendingText        []string
-	reasoningDetails   []*pyjson.Object
+	reasoningDetails   []*jsonutil.Object
 	tools              *ccToolCallAccumulator
 	partialToolNames   []string
 	signature          string
@@ -582,7 +582,7 @@ func (s *ccStreamState) handleChunk(chunk map[string]any) (bool, error) {
 					return true, err
 				}
 			}
-			if fn, _ := pyjson.Dict(tc["function"]); fn != nil {
+			if fn, _ := jsonutil.AsMap(tc["function"]); fn != nil {
 				if frag, ok := fn["arguments"].(string); ok && frag != "" {
 					if err := s.emit(StreamEvent{Kind: EventToolCallDelta, Index: slot, ToolCall: &state.ToolCall{ID: entry.ID, Type: "function", Function: state.ToolCallFunction{Name: entry.Name, Arguments: frag}}}); err != nil {
 						return true, err

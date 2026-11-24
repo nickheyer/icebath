@@ -10,10 +10,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Outcome of the busy steer or redirect resolution, the mode after demotions and what reached the run
@@ -43,7 +43,7 @@ func steerActiveSubagents(runningAgent *agent.AIAgent, text string) int {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					pkgLog().Warn(fmt.Sprintf("Steer into subagent <run_agent.AIAgent object at %p> failed: %s", child, pyrepr.Str(rec)))
+					pkgLog().Warn(fmt.Sprintf("Steer into subagent <run_agent.AIAgent object at %p> failed: %s", child, anyutil.String(rec)))
 				}
 			}()
 			if child.Steer(text) {
@@ -62,7 +62,7 @@ func steerRunningAgent(runningAgent *agent.AIAgent, text string) bool {
 
 // Warns that a failed read leaves compression treated as active
 func assumeCompressionActive(what, ident string, err any) bool {
-	pkgLog().Warn(fmt.Sprintf("Compression in-flight check failed while reading %s %s; treating compression as active to avoid interrupting a possible parent-session rotation: %s", what, ident, pyrepr.Str(err)))
+	pkgLog().Warn(fmt.Sprintf("Compression in-flight check failed while reading %s %s; treating compression as active to avoid interrupting a possible parent-session rotation: %s", what, ident, anyutil.String(err)))
 	return true
 }
 
@@ -170,7 +170,7 @@ func (r *GatewayRunner) steerTextWithOrigin(ctx context.Context, text string, ev
 		return text, nil
 	}
 	source := event.Source
-	origin := pyjson.NewObject()
+	origin := jsonutil.NewObject()
 	put := func(key string, value any) {
 		if value == nil || value == "" {
 			return
@@ -192,15 +192,15 @@ func (r *GatewayRunner) steerTextWithOrigin(ctx context.Context, text string, ev
 		return "", err
 	}
 	if gateway.ShouldRedactPII(ctx, source.Platform, settings.RedactPII.Get(scoped)) {
-		for _, key := range origin.Keys {
+		for _, key := range origin.Keys() {
 			if key == "platform" || key == "chat_type" {
 				continue
 			}
 			value, _ := origin.Get(key)
-			origin.Set(key, steerOriginHasher(key)(pyrepr.Str(value)))
+			origin.Set(key, steerOriginHasher(key)(anyutil.String(value)))
 		}
 	}
-	encoded, err := pyjson.Dumps(origin, pyjson.EnsureASCII(true))
+	encoded, err := jsonutil.Encode(origin, jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}
@@ -281,7 +281,7 @@ func plaintextApprovalWords(ctx context.Context) map[string]approvalVerbArgs {
 func (r *GatewayRunner) routePlaintextApprovalWhileBusy(ctx context.Context, event *gateway.MessageEvent, sessionKey string) (routed bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Warn(fmt.Sprintf("Plain-text approval routing failed for session %s; falling through to busy handling: %s", sessionKey, pyrepr.Str(rec)))
+			pkgLog().Warn(fmt.Sprintf("Plain-text approval routing failed for session %s; falling through to busy handling: %s", sessionKey, anyutil.String(rec)))
 			routed = false
 		}
 	}()
@@ -365,7 +365,7 @@ func (r *GatewayRunner) resolveBusySteerOrRedirect(ctx context.Context, event *g
 func (r *GatewayRunner) tryAgentVerb(ctx context.Context, runningAgent *agent.AIAgent, verb, text, sessionKey string, event *gateway.MessageEvent) (ok bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Warn(fmt.Sprintf("Gateway %s failed for session %s: %s", verb, sessionKey, pyrepr.Str(rec)))
+			pkgLog().Warn(fmt.Sprintf("Gateway %s failed for session %s: %s", verb, sessionKey, anyutil.String(rec)))
 			ok = false
 		}
 	}()

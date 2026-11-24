@@ -15,8 +15,7 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/gorilla/websocket"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Voice connection of the bot in one guild, discord.py's VoiceClient on this package's own voice transport
@@ -486,7 +485,7 @@ type ffmpegPCMAudio struct {
 func newFFmpegPCMAudio(path, executable, options string) (*ffmpegPCMAudio, error) {
 	args := []string{"-i", path, "-f", "s16le", "-ar", "48000", "-ac", "2", "-loglevel", "warning", "-blocksize", "8192"}
 	if options != "" {
-		extra, err := pyshlex.SplitPOSIX(options, false)
+		extra, err := shellutil.Split(options)
 		if err != nil {
 			return nil, err
 		}

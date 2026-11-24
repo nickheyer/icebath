@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Unacknowledged delivery routed to a parked profile, nothing admitted and answered retryably
@@ -139,7 +139,7 @@ func refuseParkedRoute(ctx context.Context, adapter PlatformAdapter, source *Ses
 	if platform == "" {
 		platform = "?"
 	}
-	quoted := pyrepr.Repr(profile)
+	quoted := anyutil.Quote(profile)
 	if scope, _ := ctx.Value(retryableIngressKey{}).(*RetryableIngressScope); scope != nil {
 		scope.mu.Lock()
 		open := scope.open
@@ -205,6 +205,6 @@ func sendParkedRefusal(ctx context.Context, adapter PlatformAdapter, source *Ses
 			kind = *result.ErrorKind
 		}
 		pkgLog().Warn(fmt.Sprintf("[%s] The parked-profile refusal to %s was not delivered (error_kind=%s, retryable=%s)",
-			name, source.ChatID, kind, pyrepr.Repr(result.Retryable)))
+			name, source.ChatID, kind, anyutil.Quote(result.Retryable)))
 	}
 }

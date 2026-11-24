@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -75,7 +75,7 @@ var (
 	loggers    = map[string]*Logger{}
 	root       = &Logger{name: "root", level: LevelWarning, propagate: true}
 	minLevel   atomic.Int64
-	moduleLock pythread.RLock
+	moduleLock syncutil.ReentrantMutex
 )
 
 func init() { minLevel.Store(LevelWarning) }

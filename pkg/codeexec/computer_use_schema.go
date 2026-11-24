@@ -3,7 +3,7 @@ package codeexec
 import (
 	_ "embed"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 //go:embed payload/computer_use_schema.json
@@ -12,12 +12,12 @@ var computerUseSchemaJSON []byte
 var computerUseSchema = decodeComputerUseSchema()
 
 // Frozen schema payload decoded once as json.loads does, a malformed payload is a build defect and panics at init
-func decodeComputerUseSchema() *pyjson.Object {
-	out, err := pyjson.Loads(string(computerUseSchemaJSON))
+func decodeComputerUseSchema() *jsonutil.Object {
+	out, err := jsonutil.Decode(string(computerUseSchemaJSON))
 	if err != nil {
 		panic("computer_use schema payload: " + err.Error())
 	}
-	obj, ok := out.(*pyjson.Object)
+	obj, ok := out.(*jsonutil.Object)
 	if !ok {
 		panic("computer_use schema payload is not a JSON object")
 	}
@@ -25,4 +25,4 @@ func decodeComputerUseSchema() *pyjson.Object {
 }
 
 // Generic function calling schema of the computer_use tool
-func GetComputerUseSchema() *pyjson.Object { return computerUseSchema }
+func GetComputerUseSchema() *jsonutil.Object { return computerUseSchema }

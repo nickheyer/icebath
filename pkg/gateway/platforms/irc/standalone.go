@@ -13,10 +13,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -159,8 +157,8 @@ func saRegister(ctx context.Context, conn *standaloneConn, nickBase string, serv
 		}
 		return nil, nil
 	}
-	if pyrepr.Truthy(serverPassword) {
-		password, err := strAttr(serverPassword, "replace")
+	if anyutil.IsTrue(serverPassword) {
+		password, err := textValue(serverPassword)
 		if err != nil {
 			return nil, err
 		}
@@ -223,18 +221,16 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(server) || !pyrepr.Truthy(channel) {
+	if !anyutil.IsTrue(server) || !anyutil.IsTrue(channel) {
 		return saError("IRC_SERVER and IRC_CHANNEL must be configured"), nil
 	}
 	portValue, err := envOrExtra(ctx, extra, "IRC_PORT", "port", 6697)
 	if err != nil {
 		return nil, err
 	}
-	portInt, err := pyint.Of(portValue)
-	if pe, ok := err.(*pyint.Error); ok && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
-		return saError("invalid port " + pyrepr.Repr(portValue)), nil
-	} else if err != nil {
-		return nil, err
+	portInt, err := anyutil.ToInt(portValue)
+	if errors.Is(err, anyutil.ErrNotNumber) {
+		return saError("invalid port " + anyutil.Quote(portValue)), nil
 	}
 	useTLS := settings.IrcUseTLS.Get(gateway.SettingsContext(ctx))
 	var targetValue any = chatID
@@ -243,7 +239,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	target, ok := targetValue.(string)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("argument of type '%s' is not iterable", pyrepr.TypeName(targetValue))}
+		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("the IRC target must be text, got %s", anyutil.Kind(targetValue))}
 	}
 	if strings.ContainsAny(target, "\r\n\x00 ") {
 		return saError("chat_id contains illegal IRC characters"), nil
@@ -252,7 +248,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	nickText, err := strAttr(nickValue, "rstrip")
+	nickText, err := textValue(nickValue)
 	if err != nil {
 		return nil, err
 	}
@@ -261,10 +257,10 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		nickBase = "icebath-bot"
 	}
 	plain := stripMarkdown(message)
-	if !portInt.IsInt64() || portInt.Int64() < 0 || portInt.Int64() > 65535 {
-		return gateway.SendError("IRC standalone connect failed: getsockaddrarg: port must be 0-65535."), nil
+	if portInt < 0 || portInt > 65535 {
+		return gateway.SendError("IRC standalone connect failed: port must be 0-65535"), nil
 	}
-	netConn, err := openConnection(ctx, server, int(portInt.Int64()), useTLS, 15*time.Second)
+	netConn, err := openConnection(ctx, server, int(portInt), useTLS, 15*time.Second)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -290,7 +286,7 @@ func standaloneErrorText(err error) string {
 	if errors.As(err, &pe) {
 		return pe.Msg
 	}
-	return pyhttpx.OSErrorText(err)
+	return err.Error()
 }
 
 // Registers, identifies, joins a channel target and sends every line, the success envelope carrying a fresh id
@@ -306,8 +302,8 @@ func standaloneDeliver(ctx context.Context, conn *standaloneConn, extra map[stri
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(nickservPassword) {
-		password, err := strAttr(nickservPassword, "replace")
+	if anyutil.IsTrue(nickservPassword) {
+		password, err := textValue(nickservPassword)
 		if err != nil {
 			return nil, err
 		}

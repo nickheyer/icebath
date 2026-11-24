@@ -1,9 +1,11 @@
 package gateway
 
-import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+import (
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 // What launched the gateway behind an identify answer, empty when it only says none or nothing usable
-func LaunchSupervisor(identity *pyjson.Object) string {
+func LaunchSupervisor(identity *jsonutil.Object) string {
 	if identity == nil {
 		return ""
 	}

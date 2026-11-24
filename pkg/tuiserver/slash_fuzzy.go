@@ -6,8 +6,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Score of one completion item against the query from its name and description, lower is better
@@ -22,7 +22,7 @@ func itemField(item map[string]any, key string) string {
 	if !present {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Identity of an item dict, the way id() keys the Python score table

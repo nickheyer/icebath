@@ -24,18 +24,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
+	browserutil "github.com/nickheyer/icebath/pkg/utils/browser"
 )
 
 // Console browsers the system opener would launch inside the terminal, hijacking the TTY
 var consoleBrowserNames = map[string]bool{
 	"w3m": true, "lynx": true, "links": true, "links2": true, "elinks": true, "www-browser": true, "browsh": true,
+	"carbonyl": true,
 }
 
 // Browser only remote IDEs and cloud shells that set neither SSH_CLIENT nor SSH_TTY
 var remoteIDEEnvVars = []string{"CLOUD_SHELL", "CODESPACES", "CODESPACE_NAME", "GITPOD_WORKSPACE_ID", "REPL_ID", "STACKBLITZ"}
 
-// Process environment reader the browser heuristics consult, swappable so tests control the shell
+// Process environment reader the remote session heuristics consult, swappable so tests control the shell
 var oauthGetenv = os.Getenv
 
 // Browser opener every interactive flow goes through, swappable so tests never launch one
@@ -68,35 +69,19 @@ func isRemoteSession() bool {
 	return false
 }
 
-func namesConsoleBrowser(value string) bool {
-	fields := strings.Fields(value)
-	if len(fields) == 0 {
-		return false
-	}
-	return consoleBrowserNames[strings.ToLower(filepath.Base(fields[0]))]
+// Whether a launcher's program is a console browser, its directory and any .exe suffix ignored
+func namesConsoleBrowser(program string) bool {
+	return consoleBrowserNames[strings.TrimSuffix(strings.ToLower(filepath.Base(program)), ".exe")]
 }
 
-// True only when a graphical browser is likely to open rather than a console one taking the terminal
+// True only when the first launcher a browser open tries is a graphical one rather than a console browser taking the terminal
 func canOpenGraphicalBrowser() bool {
-	browserEnv := oauthGetenv("BROWSER")
-	if browserEnv != "" && namesConsoleBrowser(browserEnv) {
+	launchers := browserutil.Launchers()
+	if len(launchers) == 0 {
 		return false
 	}
-	if runtime.GOOS == "linux" {
-		hasDisplay := oauthGetenv("DISPLAY") != "" || oauthGetenv("WAYLAND_DISPLAY") != ""
-		if !hasDisplay && browserEnv == "" {
-			return false
-		}
-	}
-	controller, err := pywebbrowser.Get()
-	if err != nil {
-		return false
-	}
-	candidate := controller.Name
-	if candidate == "" {
-		candidate = controller.Basename
-	}
-	return !namesConsoleBrowser(candidate)
+	first := launchers[0]
+	return !first.Terminal && (len(first.Args) == 0 || !namesConsoleBrowser(first.Args[0]))
 }
 
 // user at hostname for the SSH tunnel hint, placeholders keeping the syntax valid

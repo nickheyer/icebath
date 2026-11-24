@@ -4,18 +4,19 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strings"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // Fixed allowlist --tools offers, never terminal, file, code execution, process, kanban or delegation tools
@@ -39,7 +40,7 @@ var urlArgs = map[string]urlArg{
 	"browser_navigate": {"url", false}, "web_extract": {"urls", false}, "vision_analyze": {"image_url", true},
 }
 
-var schemeRE = pyre.MustCompile(`^\s*([a-zA-Z][a-zA-Z0-9+.-]*):(?!\d)`)
+var schemeRE = regexutil.Lazy(regexp.MustCompile, `^[\s\v\x{85}\p{Z}]*([a-zA-Z][a-zA-Z0-9+.-]*):(?:\P{Nd}|$)`)
 
 // Reports whether a tool drops the named argument
 func isDropped(toolName, arg string) bool {
@@ -54,16 +55,16 @@ func isDropped(toolName, arg string) bool {
 // Reports an http or https URL or a bare host with an optional port, data URLs only when allowed
 func isWebURL(value any, allowData bool) bool {
 	text := ""
-	if pyrepr.Truthy(value) {
-		text = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		text = anyutil.String(value)
 	}
-	m, _ := schemeRE.FindStringMatch(text)
+	m := schemeRE().FindStringSubmatch(text)
 	if m == nil {
 		rest := strings.TrimLeftFunc(text, unicode.IsSpace)
 		return strings.TrimSpace(text) != "" && !strings.HasPrefix(rest, "/") && !strings.HasPrefix(rest, "~") &&
 			!strings.HasPrefix(rest, "\\") && !strings.HasPrefix(rest, ".")
 	}
-	scheme := strings.ToLower(m.GroupByNumber(1).String())
+	scheme := strings.ToLower(m[1])
 	return scheme == "http" || scheme == "https" || (allowData && scheme == "data")
 }
 
@@ -87,28 +88,28 @@ func refusal(toolName string, args map[string]any) string {
 			if ua.allowData {
 				kinds = "http(s) or data: URLs"
 			}
-			return fmt.Sprintf("%s over MCP accepts only %s, not local files: %s", toolName, kinds, pyrepr.Repr(v))
+			return fmt.Sprintf("%s over MCP accepts only %s, not local files: %s", toolName, kinds, anyutil.Quote(v))
 		}
 	}
 	return ""
 }
 
 // Handler forwarding set arguments to the registry, refusing local file URLs and reporting a raised error as JSON
-func makeToolHandler(ctx context.Context, env *tools.Env, toolName string) func(kw *pyjson.Object) string {
-	return func(kw *pyjson.Object) (result string) {
+func makeToolHandler(ctx context.Context, env *tools.Env, toolName string) func(kw *jsonutil.Object) string {
+	return func(kw *jsonutil.Object) (result string) {
 		args := map[string]any{}
-		for _, k := range kw.Keys {
-			if v := kw.Vals[k]; v != nil && !isDropped(toolName, k) {
+		for _, k := range kw.Keys() {
+			if v := kw.Value(k); v != nil && !isDropped(toolName, k) {
 				args[k] = v
 			}
 		}
 		if reason := refusal(toolName, args); reason != "" {
-			return dumps(pyjson.ObjectOf("error", reason, "tool", toolName), false)
+			return dumps(jsonutil.ObjectOf("error", reason, "tool", toolName), false)
 		}
 		defer func() {
 			if r := recover(); r != nil {
 				pkgLog().Error(fmt.Sprintf("tool %s raised\n%s", toolName, raisedText(r)))
-				result = dumps(pyjson.ObjectOf("error", raisedText(r), "tool", toolName), false)
+				result = dumps(jsonutil.ObjectOf("error", raisedText(r), "tool", toolName), false)
 			}
 		}()
 		return tools.NewDispatcher(tools.Default).Dispatch(ctx, &tools.Call{Name: toolName, Args: args, Env: env})
@@ -133,13 +134,13 @@ func toolEnv(ctx context.Context) (*tools.Env, error) {
 // One available exposed tool and its function spec with the dropped arguments removed
 type toolSpec struct {
 	name string
-	spec *pyjson.Object
+	spec *jsonutil.Object
 }
 
 // Removes key from a dict value in place, raising what d.pop(key, None) raises for a value that is no dict
 func dictPop(d any, key string) {
 	switch t := d.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		t.Delete(key)
 	case map[string]any:
 		delete(t, key)
@@ -164,7 +165,7 @@ func availableToolSpecs(ctx context.Context, env *tools.Env) []toolSpec {
 	for _, td := range tools.Default.ToolDefinitions(ctx, env, tools.DefinitionOptions{Enabled: toolsets, Quiet: true}) {
 		if isStr(td["type"], "function") {
 			fn := pyIndex(td, "function")
-			defs[pyrepr.Str(pyIndex(fn, "name"))] = fn
+			defs[anyutil.String(pyIndex(fn, "name"))] = fn
 		}
 	}
 	specs := []toolSpec{}
@@ -173,23 +174,23 @@ func availableToolSpecs(ctx context.Context, env *tools.Env) []toolSpec {
 		if !ok {
 			continue
 		}
-		spec, isDict := asDict(pyjson.Clone(def))
+		spec, isDict := asDict(jsonutil.Clone(def))
 		if !isDict {
 			noAttribute(def, "setdefault")
 		}
-		if _, has := spec.Vals["parameters"]; !has {
-			spec.Set("parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject()))
+		if _, has := spec.Get("parameters"); !has {
+			spec.Set("parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject()))
 		}
-		params := spec.Vals["parameters"]
+		params := spec.Value("parameters")
 		for _, arg := range droppedArgs[name] {
-			if props := pyGet(params, "properties", nil); pyrepr.Truthy(props) {
+			if props := pyGet(params, "properties", nil); anyutil.IsTrue(props) {
 				dictPop(props, arg)
 			}
 			if required, ok := pyGet(params, "required", nil).([]any); ok {
 				for i, r := range required {
 					if isStr(r, arg) {
 						required = append(required[:i:i], required[i+1:]...)
-						if o, isObj := params.(*pyjson.Object); isObj {
+						if o, isObj := params.(*jsonutil.Object); isObj {
 							o.Set("required", required)
 						} else {
 							params.(map[string]any)["required"] = required
@@ -216,12 +217,12 @@ func registerIcebathTools(ctx context.Context, server *provider.MCPToolServer, r
 			continue
 		}
 		description := fmt.Sprintf("Icebath %s tool", s.name)
-		if d := s.spec.Vals["description"]; pyrepr.Truthy(d) {
-			description = pyrepr.Str(d)
+		if d := s.spec.Value("description"); anyutil.IsTrue(d) {
+			description = anyutil.String(d)
 		}
-		params := s.spec.Vals["parameters"]
-		if !pyrepr.Truthy(params) {
-			params = pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
+		params := s.spec.Value("parameters")
+		if !anyutil.IsTrue(params) {
+			params = jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject())
 		}
 		server.AddTool(s.name, description, provider.MCPToolParamsFromSchema(params), params, makeToolHandler(ctx, env, s.name))
 		count++

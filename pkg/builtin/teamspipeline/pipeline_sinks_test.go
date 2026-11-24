@@ -11,8 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Transport double answering every sink request with one status and JSON body, recording what was sent
@@ -50,8 +51,8 @@ func TestNotionWriterCreatesPageThenUpdatesOnlyProperties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(record, obj("page_id", "page-9", "url", "https://notion.so/page-9")) {
-		t.Fatalf("record %v", pyrepr.Repr(record))
+	if !anyutil.Equal(record, obj("page_id", "page-9", "url", "https://notion.so/page-9")) {
+		t.Fatalf("record %v", anyutil.Quote(record))
 	}
 	request := transport.requests[0]
 	if request.Method != "POST" || request.URL.String() != "https://api.notion.com/v1/pages" {
@@ -77,7 +78,7 @@ func TestNotionWriterCreatesPageThenUpdatesOnlyProperties(t *testing.T) {
 		t.Fatal(err)
 	}
 	if get(record, "page_id") != "page-9" {
-		t.Fatalf("record %v", pyrepr.Repr(record))
+		t.Fatalf("record %v", anyutil.Quote(record))
 	}
 	if request = transport.requests[1]; request.Method != "PATCH" || request.URL.String() != "https://api.notion.com/v1/pages/page-9" {
 		t.Fatalf("request %s %s", request.Method, request.URL)
@@ -105,7 +106,7 @@ func TestNotionWriterFailures(t *testing.T) {
 	if _, err := keyed.WriteSummary(context.Background(), sinkPayload(), obj(), nil); !errors.As(err, &sinkErr) || err.Error() != "Notion sink requires database_id or an existing page_id." {
 		t.Fatalf("no target %v", err)
 	}
-	if _, err := keyed.WriteSummary(context.Background(), sinkPayload(), obj("databaseId", "db"), nil); pyrepr.ExceptionName(err) != "KeyError" || pyrepr.ExceptionMessage(err) != "missing id" {
+	if _, err := keyed.WriteSummary(context.Background(), sinkPayload(), obj("databaseId", "db"), nil); pyrepr.ExceptionName(err) != "KeyError" || err.Error() != "missing id" {
 		t.Fatalf("missing id %v", err)
 	}
 	refused, _ := NewNotionWriter(context.Background(), "k", &sinkTransport{status: 400, body: `{"message": "bad"}`})
@@ -131,20 +132,20 @@ func TestLinearWriterCreatesThenUpdatesIssue(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(record, obj("issue_id", "iss-1", "identifier", "ENG-1", "url", "https://linear.app/i/ENG-1")) {
-		t.Fatalf("record %v", pyrepr.Repr(record))
+	if !anyutil.Equal(record, obj("issue_id", "iss-1", "identifier", "ENG-1", "url", "https://linear.app/i/ENG-1")) {
+		t.Fatalf("record %v", anyutil.Quote(record))
 	}
 	request := transport.requests[0]
 	if request.Method != "POST" || request.URL.String() != "https://api.linear.app/graphql" || request.Header.Get("Authorization") != "lin-key" {
 		t.Fatalf("request %s %s %v", request.Method, request.URL, request.Header)
 	}
-	sent, err := pyjson.Loads(transport.bodies[0])
+	sent, err := jsonutil.Decode(transport.bodies[0])
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantBody := obj("query", "mutation($input: IssueCreateInput!) { issueCreate(input: $input) { success issue { id identifier url } } }",
 		"variables", obj("input", obj("teamId", "team-1", "title", "Meeting Summary: m-1", "description", markdown)))
-	if !pyjson.Equal(sent, wantBody) || !reflect.DeepEqual(get(get(sent.(*pyjson.Object), "variables").(*pyjson.Object), "input").(*pyjson.Object).Keys, []string{"teamId", "title", "description"}) {
+	if !anyutil.Equal(sent, wantBody) || !reflect.DeepEqual(get(get(sent.(*jsonutil.Object), "variables").(*jsonutil.Object), "input").(*jsonutil.Object).Keys(), []string{"teamId", "title", "description"}) {
 		t.Fatalf("body %s", transport.bodies[0])
 	}
 
@@ -152,13 +153,13 @@ func TestLinearWriterCreatesThenUpdatesIssue(t *testing.T) {
 	titled := sinkPayload()
 	titled.Title, titled.Confidence, titled.ConfidenceNotes = "Weekly", "high", "Transcript available."
 	if record, err = writer.WriteSummary(context.Background(), titled, obj(), obj("issue_id", "iss-1")); err != nil || get(record, "url") != nil {
-		t.Fatalf("update record %v err %v", pyrepr.Repr(record), err)
+		t.Fatalf("update record %v err %v", anyutil.Quote(record), err)
 	}
-	sent, _ = pyjson.Loads(transport.bodies[1])
-	variables := get(sent.(*pyjson.Object), "variables").(*pyjson.Object)
-	if get(variables, "id") != "iss-1" || get(get(variables, "input").(*pyjson.Object), "title") != "Weekly" ||
-		!strings.HasSuffix(get(get(variables, "input").(*pyjson.Object), "description").(string), "\n\nConfidence: high\nTranscript available.") ||
-		!strings.HasPrefix(get(sent.(*pyjson.Object), "query").(string), "mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input)") {
+	sent, _ = jsonutil.Decode(transport.bodies[1])
+	variables := get(sent.(*jsonutil.Object), "variables").(*jsonutil.Object)
+	if get(variables, "id") != "iss-1" || get(get(variables, "input").(*jsonutil.Object), "title") != "Weekly" ||
+		!strings.HasSuffix(get(get(variables, "input").(*jsonutil.Object), "description").(string), "\n\nConfidence: high\nTranscript available.") ||
+		!strings.HasPrefix(get(sent.(*jsonutil.Object), "query").(string), "mutation($id: String!, $input: IssueUpdateInput!) { issueUpdate(id: $id, input: $input)") {
 		t.Fatalf("update body %s", transport.bodies[1])
 	}
 
@@ -191,10 +192,10 @@ func TestSummaryParsingAndHeuristicFallback(t *testing.T) {
 		empty.ConfidenceNotes != "Generated with heuristic fallback because no LLM summary response was available." {
 		t.Fatalf("empty %+v err %v", empty, err)
 	}
-	if _, err := parseSummaryJSON("[1]"); pyrepr.ExceptionName(err) != "AttributeError" || pyrepr.ExceptionMessage(err) != "expected a mapping, got a list" {
+	if _, err := parseSummaryJSON("[1]"); pyrepr.ExceptionName(err) != "AttributeError" || err.Error() != "expected a mapping, got a list" {
 		t.Fatalf("list %v", err)
 	}
-	if _, err := parseSummaryJSON(`{"summary": "x", "risks": null}`); pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "expected a list, got nothing" {
+	if _, err := parseSummaryJSON(`{"summary": "x", "risks": null}`); pyrepr.ExceptionName(err) != "TypeError" || err.Error() != "expected a list, got nothing" {
 		t.Fatalf("null risks %v", err)
 	}
 	if _, err := parseSummaryJSON("no json here"); err == nil {
@@ -239,7 +240,7 @@ func TestTeamsPipelineConfigFromDictReadsSnakeAndCamelKeys(t *testing.T) {
 	if _, err := TeamsPipelineConfigFromDict(obj("tmp_dir", int64(5))); pyrepr.ExceptionName(err) != "TypeError" {
 		t.Fatalf("tmp_dir %v", err)
 	}
-	if _, err := TeamsPipelineConfigFromDict("on"); pyrepr.ExceptionName(err) != "ValueError" || pyrepr.ExceptionMessage(err) != "expected a mapping, got text" {
+	if _, err := TeamsPipelineConfigFromDict("on"); pyrepr.ExceptionName(err) != "ValueError" || err.Error() != "expected a mapping, got text" {
 		t.Fatalf("string config %v", err)
 	}
 	kept := NewTeamsPipelineConfig()
@@ -253,12 +254,12 @@ func TestMeetingIDsFromNotificationFallbacks(t *testing.T) {
 	id, organizer, extra, err := meetingIDsFromNotification(obj("id", "n-1", "resource", "communications/onlineMeetings/getAllRecordings",
 		"resourceData", obj("id", "rec-blob", "@odata.type", "#microsoft.graph.callRecording", "meetingOrganizer", obj("user", obj("id", " org-9 ")))))
 	if err != nil || id != "id:n-1" || organizer != "org-9" || extra.Len() != 0 {
-		t.Fatalf("recording blob: %q %q %v %v", id, organizer, pyrepr.Repr(extra), err)
+		t.Fatalf("recording blob: %q %q %v %v", id, organizer, anyutil.Quote(extra), err)
 	}
 	id, organizer, extra, err = meetingIDsFromNotification(obj("resource", "users/u1/onlineMeetings/m%201/recordings/r1",
 		"resourceData", "not a dict", "organizer", obj("identity", obj("user", obj("id", "flat")))))
-	if err != nil || id != "m 1" || organizer != "u1" || !pyjson.Equal(extra, obj("recording_id", "r1")) {
-		t.Fatalf("recording path: %q %q %v %v", id, organizer, pyrepr.Repr(extra), err)
+	if err != nil || id != "m 1" || organizer != "u1" || !anyutil.Equal(extra, obj("recording_id", "r1")) {
+		t.Fatalf("recording path: %q %q %v %v", id, organizer, anyutil.Quote(extra), err)
 	}
 	id, organizer, _, err = meetingIDsFromNotification(obj("resourceData", obj("meetingId", " mid ", "organizerUserId", " o2 ")))
 	if err != nil || id != "mid" || organizer != "o2" {
@@ -266,7 +267,7 @@ func TestMeetingIDsFromNotificationFallbacks(t *testing.T) {
 	}
 	id, _, extra, err = meetingIDsFromNotification(obj("resourceData", obj("id", "abcTranscriptV2=")))
 	if err != nil || id != "abcTranscriptV2=" || get(extra, "transcript_id") != "abcTranscriptV2=" {
-		t.Fatalf("transcript only: %q %v %v", id, pyrepr.Repr(extra), err)
+		t.Fatalf("transcript only: %q %v %v", id, anyutil.Quote(extra), err)
 	}
 	id, _, _, err = meetingIDsFromNotification(obj("changeType", "created"))
 	if err != nil || !strings.HasPrefix(id, "sha256:") || len(id) != len("sha256:")+64 {

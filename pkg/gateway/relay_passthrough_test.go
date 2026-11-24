@@ -7,7 +7,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Connected discord adapter over a capture transport, its passthrough handler wired
@@ -42,7 +42,7 @@ func relayOnlyEvent(t *testing.T, seen func() []*MessageEvent) *MessageEvent {
 
 func TestPassthroughFromWireBytePreservesBody(t *testing.T) {
 	original, _ := json.Marshal(map[string]any{"type": 2, "data": map[string]any{"name": "ping"}, "guild_id": "g1"})
-	wire := pyjson.ObjectOf("platform", "discord", "botId", "appShared", "method", "POST", "path", "/interactions/discord/appShared",
+	wire := jsonutil.ObjectOf("platform", "discord", "botId", "appShared", "method", "POST", "path", "/interactions/discord/appShared",
 		"headers", []any{[]any{"content-type", "application/json"}}, "bodyB64", base64.StdEncoding.EncodeToString(original))
 	fwd := relayPassthroughFromWire(wire)
 	if fwd.Platform != "discord" || fwd.BotID != "appShared" || !bytes.Equal(fwd.Body, original) ||
@@ -52,7 +52,7 @@ func TestPassthroughFromWireBytePreservesBody(t *testing.T) {
 }
 
 func TestPassthroughFromWireStampsRoutedProfile(t *testing.T) {
-	wire := pyjson.ObjectOf("platform", "discord", "botId", "appShared", "method", "POST", "path", "/interactions/discord/appShared",
+	wire := jsonutil.ObjectOf("platform", "discord", "botId", "appShared", "method", "POST", "path", "/interactions/discord/appShared",
 		"headers", []any{}, "bodyB64", "", "profile", "reviewer")
 	if fwd := relayPassthroughFromWire(wire); fwd.Profile == nil || *fwd.Profile != "reviewer" {
 		t.Fatalf("profile %v", fwd.Profile)

@@ -2,18 +2,18 @@ package googlemeet
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // True when the bot driver this binary links can be re entered as the bot child
@@ -27,14 +27,13 @@ func meetDriverAvailable() bool {
 
 // True when the plugin can run locally on Linux or macOS with the bot driver available
 func checkMeetRequirements(env *tools.Env) bool {
-	system := strings.ToLower(pyplatform.System())
-	return (system == "linux" || system == "darwin") && meetDriverAvailable()
+	return (runtime.GOOS == "linux" || runtime.GOOS == "darwin") && meetDriverAvailable()
 }
 
 // Client and name of the addressed node, auto meaning the sole registered node, nil when none matches
 func resolveNode(ctx context.Context, node any) (*nodeClient, any, error) {
 	reg := newNodeRegistry(ctx, "")
-	var entry *pyjson.Object
+	var entry *jsonutil.Object
 	var err error
 	switch v := node.(type) {
 	case string:
@@ -42,13 +41,13 @@ func resolveNode(ctx context.Context, node any) (*nodeClient, any, error) {
 			v = ""
 		}
 		entry, err = reg.resolve(v)
-	case []any, map[string]any, *pyjson.Object:
-		if pyrepr.Truthy(v) {
+	case []any, map[string]any, *jsonutil.Object:
+		if anyutil.IsTrue(v) {
 			return nil, nil, &TypeError{fmt.Sprintf("unhashable type: '%s'", pyTypeName(v))}
 		}
 		entry, err = reg.resolve("")
 	default:
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			entry, err = reg.resolve("")
 		}
 	}
@@ -84,18 +83,18 @@ func resolveNode(ctx context.Context, node any) (*nodeClient, any, error) {
 
 const nodeClientTimeout = 10 * time.Second
 
-func strProp(description string) *pyjson.Object {
-	return pyjson.ObjectOf("type", "string", "description", description)
+func strProp(description string) *jsonutil.Object {
+	return jsonutil.ObjectOf("type", "string", "description", description)
 }
 
 // Tool schema with an object parameter block closed to extra properties
-func meetSchema(name, description string, properties *pyjson.Object, required ...any) *pyjson.Object {
-	params := pyjson.ObjectOf("type", "object", "properties", properties)
+func meetSchema(name, description string, properties *jsonutil.Object, required ...any) *jsonutil.Object {
+	params := jsonutil.ObjectOf("type", "object", "properties", properties)
 	if len(required) > 0 {
 		params.Set("required", required)
 	}
 	params.Set("additionalProperties", false)
-	return pyjson.ObjectOf("name", name, "description", description, "parameters", params)
+	return jsonutil.ObjectOf("name", name, "description", description, "parameters", params)
 }
 
 func nodeProp() map[string]any { return map[string]any{"type": "string"} }
@@ -106,16 +105,16 @@ var meetJoinSchema = meetSchema("meet_join",
 		"Chromium subprocess that runs in parallel with the agent loop — returns immediately. Poll "+
 		"with meet_status and read captions with meet_transcript. Reminder to the agent: you "+
 		"should announce yourself in the meeting (there is no automatic consent announcement).",
-	pyjson.ObjectOf(
+	jsonutil.ObjectOf(
 		"url", strProp("Full https://meet.google.com/... URL. Required."),
-		"mode", pyjson.ObjectOf("type", "string", "enum", []any{"transcribe", "realtime"},
+		"mode", jsonutil.ObjectOf("type", "string", "enum", []any{"transcribe", "realtime"},
 			"description", "transcribe (default): listen-only, scrape captions. "+
 				"realtime: also enable agent speech via meet_say "+
 				"(requires OpenAI Realtime key + platform audio bridge)."),
 		"guest_name", strProp("Display name to use when joining as guest. Defaults to 'Icebath Agent'."),
 		"duration", strProp("Optional max duration before auto-leave (e.g. '30m', "+
 			"'2h', '90s'). Omit to stay until meet_leave is called."),
-		"headed", pyjson.ObjectOf("type", "boolean",
+		"headed", jsonutil.ObjectOf("type", "boolean",
 			"description", "Run Chromium headed instead of headless (debug only). Default false."),
 		"node", strProp("Name of a registered remote node to run the bot on (useful when the gateway "+
 			"runs on a headless Linux box but the user's Chrome with a signed-in Google "+
@@ -126,13 +125,13 @@ var meetJoinSchema = meetSchema("meet_join",
 var meetStatusSchema = meetSchema("meet_status",
 	"Report the current Meet session state — whether the bot is alive, has joined, is sitting "+
 		"in the lobby, number of transcript lines captured, and last-caption timestamp.",
-	pyjson.ObjectOf("node", nodeProp()))
+	jsonutil.ObjectOf("node", nodeProp()))
 
 var meetTranscriptSchema = meetSchema("meet_transcript",
 	"Read the scraped transcript for the active Meet session. Returns "+
 		"full transcript unless 'last' is set, in which case returns the last N lines only.",
-	pyjson.ObjectOf(
-		"last", pyjson.ObjectOf("type", "integer",
+	jsonutil.ObjectOf(
+		"last", jsonutil.ObjectOf("type", "integer",
 			"description", "Optional: return only the last N caption lines. Useful "+
 				"for polling during a meeting without re-reading the whole transcript.",
 			"minimum", 1),
@@ -142,7 +141,7 @@ var meetTranscriptSchema = meetSchema("meet_transcript",
 var meetLeaveSchema = meetSchema("meet_leave",
 	"Leave the active Meet call cleanly, stop caption scraping, and finalize the transcript "+
 		"file. Safe to call when no meeting is active — returns ok=false with a reason.",
-	pyjson.ObjectOf("node", nodeProp()))
+	jsonutil.ObjectOf("node", nodeProp()))
 
 var meetSaySchema = meetSchema("meet_say",
 	"Speak text into the active Meet call. Requires the active meeting to have been joined "+
@@ -150,11 +149,11 @@ var meetSaySchema = meetSchema("meet_say",
 		"generated audio is streamed into Chrome's fake microphone via a virtual audio device "+
 		"(PulseAudio null-sink on Linux, BlackHole on macOS). Returns immediately — the actual "+
 		"speech lags by a couple of seconds.",
-	pyjson.ObjectOf("text", strProp("Text to speak."), "node", nodeProp()), "text")
+	jsonutil.ObjectOf("text", strProp("Text to speak."), "node", nodeProp()), "text")
 
 // JSON text of a tool result with non ASCII kept
 func toolJSON(obj any) string {
-	out, err := pyjson.Dumps(obj, pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(obj)
 	if err != nil {
 		panic(err)
 	}
@@ -163,19 +162,19 @@ func toolJSON(obj any) string {
 
 // Failure result carrying the message and extra key value pairs
 func toolErr(msg string, extra ...any) string {
-	return toolJSON(pyjson.ObjectOf(append([]any{"success", false, "error", msg}, extra...)...))
+	return toolJSON(jsonutil.ObjectOf(append([]any{"success", false, "error", msg}, extra...)...))
 }
 
 // Result with success from its ok field followed by the result keys
-func withSuccess(res *pyjson.Object, pairs ...any) *pyjson.Object {
-	out := pyjson.ObjectOf(append([]any{"success", pyrepr.Truthy(getOr(res, "ok", nil))}, pairs...)...)
-	out.Update(res)
+func withSuccess(res *jsonutil.Object, pairs ...any) *jsonutil.Object {
+	out := jsonutil.ObjectOf(append([]any{"success", anyutil.IsTrue(getOr(res, "ok", nil))}, pairs...)...)
+	out.Merge(res)
 	return out
 }
 
 // Runs remote on the addressed node, else local, wrapping either outcome as a tool result
-func dispatchMeet(ctx context.Context, node any, op string, remote func(*nodeClient) (*pyjson.Object, error), local func() (*pyjson.Object, error)) string {
-	if !pyrepr.Truthy(node) {
+func dispatchMeet(ctx context.Context, node any, op string, remote func(*nodeClient) (*jsonutil.Object, error), local func() (*jsonutil.Object, error)) string {
+	if !anyutil.IsTrue(node) {
 		res, err := local()
 		if err != nil {
 			panic(err)
@@ -188,7 +187,7 @@ func dispatchMeet(ctx context.Context, node any, op string, remote func(*nodeCli
 	}
 	if client == nil {
 		return toolErr(fmt.Sprintf("no registered meet node matches %s — "+
-			"run `icebath meet node approve <name> <url> <token>` first", pyrepr.Repr(node)))
+			"run `icebath meet node approve <name> <url> <token>` first", anyutil.Quote(node)))
 	}
 	res, err := remote(client)
 	if err != nil {
@@ -200,7 +199,7 @@ func dispatchMeet(ctx context.Context, node any, op string, remote func(*nodeCli
 // Stripped text of an argument or its default when falsy, an AttributeError for a truthy non string
 func argText(args map[string]any, key, def string) string {
 	v := args[key]
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return strings.TrimSpace(def)
 	}
 	s, ok := v.(string)
@@ -219,26 +218,26 @@ func handleMeetJoin(ctx context.Context, call *tools.Call) string {
 	}
 	mode := strings.ToLower(argText(args, "mode", "transcribe"))
 	if mode != "transcribe" && mode != "realtime" {
-		return toolErr(fmt.Sprintf("mode must be 'transcribe' or 'realtime' (got %s)", pyrepr.StrRepr(mode)))
+		return toolErr(fmt.Sprintf("mode must be 'transcribe' or 'realtime' (got %s)", strconv.Quote(mode)))
 	}
 	o := newStartOptions()
-	if v := args["guest_name"]; pyrepr.Truthy(v) {
-		o.GuestName = pyrepr.Str(v)
+	if v := args["guest_name"]; anyutil.IsTrue(v) {
+		o.GuestName = anyutil.String(v)
 	}
 	var duration *string
-	if v := args["duration"]; pyrepr.Truthy(v) {
-		s := pyrepr.Str(v)
+	if v := args["duration"]; anyutil.IsTrue(v) {
+		s := anyutil.String(v)
 		duration, o.Duration = &s, s
 	}
-	o.Headed, o.Mode = pyrepr.Truthy(args["headed"]), mode
-	local := func() (*pyjson.Object, error) {
+	o.Headed, o.Mode = anyutil.IsTrue(args["headed"]), mode
+	local := func() (*jsonutil.Object, error) {
 		if !checkMeetRequirements(call.Env) {
-			return pyjson.ObjectOf("ok", false, "error", "google_meet plugin prerequisites missing — install with "+
+			return jsonutil.ObjectOf("ok", false, "error", "google_meet plugin prerequisites missing — install with "+
 				"`icebath meet install`. Plugin is supported on Linux and macOS only."), nil
 		}
 		return pmStart(ctx, url, o)
 	}
-	return dispatchMeet(ctx, args["node"], "start_bot", func(c *nodeClient) (*pyjson.Object, error) {
+	return dispatchMeet(ctx, args["node"], "start_bot", func(c *nodeClient) (*jsonutil.Object, error) {
 		return c.startBot(url, o.GuestName, duration, o.Headed, mode)
 	}, local)
 }
@@ -246,34 +245,28 @@ func handleMeetJoin(ctx context.Context, call *tools.Call) string {
 // Reports bot liveness and transcript progress
 func handleMeetStatus(ctx context.Context, call *tools.Call) string {
 	return dispatchMeet(ctx, call.Args["node"], "status", (*nodeClient).status,
-		func() (*pyjson.Object, error) { return pmStatus(ctx) })
+		func() (*jsonutil.Object, error) { return pmStatus(ctx) })
 }
 
-// Last n of a transcript argument, nil when absent, unparsable or below one
+// Last n of a transcript argument, nil when absent, unparsable or below one, a number past the int range held at its bound
 func transcriptLastArg(v any) *int {
 	if v == nil {
 		return nil
 	}
-	n, err := pyint.Of(v)
-	if e, ok := err.(*pyint.Error); ok && e.Kind == "OverflowError" {
-		panic(&OverflowError{e.Msg})
-	}
-	if err != nil || n.Sign() < 1 {
+	n, err := anyutil.ToInt(v)
+	if (err != nil && !errors.Is(err, anyutil.ErrRange)) || n < 1 {
 		return nil
 	}
-	last := math.MaxInt
-	if n.Cmp(big.NewInt(math.MaxInt)) <= 0 {
-		last = int(n.Int64())
-	}
+	last := int(min(n, math.MaxInt))
 	return &last
 }
 
 // Reads the transcript, the last n lines when last is set
 func handleMeetTranscript(ctx context.Context, call *tools.Call) string {
 	last := transcriptLastArg(call.Args["last"])
-	return dispatchMeet(ctx, call.Args["node"], "transcript", func(c *nodeClient) (*pyjson.Object, error) {
+	return dispatchMeet(ctx, call.Args["node"], "transcript", func(c *nodeClient) (*jsonutil.Object, error) {
 		return c.transcript(last)
-	}, func() (*pyjson.Object, error) {
+	}, func() (*jsonutil.Object, error) {
 		n := 0
 		if last != nil {
 			n = *last
@@ -285,7 +278,7 @@ func handleMeetTranscript(ctx context.Context, call *tools.Call) string {
 // Signals the bot to leave cleanly
 func handleMeetLeave(ctx context.Context, call *tools.Call) string {
 	return dispatchMeet(ctx, call.Args["node"], "stop", (*nodeClient).stop,
-		func() (*pyjson.Object, error) { return pmStop(ctx, "agent called meet_leave") })
+		func() (*jsonutil.Object, error) { return pmStop(ctx, "agent called meet_leave") })
 }
 
 // Queues text for the realtime bridge to speak
@@ -294,7 +287,7 @@ func handleMeetSay(ctx context.Context, call *tools.Call) string {
 	if text == "" {
 		return toolErr("text is required")
 	}
-	return dispatchMeet(ctx, call.Args["node"], "say", func(c *nodeClient) (*pyjson.Object, error) {
+	return dispatchMeet(ctx, call.Args["node"], "say", func(c *nodeClient) (*jsonutil.Object, error) {
 		return c.say(text)
-	}, func() (*pyjson.Object, error) { return pmEnqueueSay(ctx, text) })
+	}, func() (*jsonutil.Object, error) { return pmEnqueueSay(ctx, text) })
 }

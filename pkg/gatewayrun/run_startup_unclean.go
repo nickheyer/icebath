@@ -10,10 +10,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Discards orphan turn markers then consumes the clean exit receipt, failing closed
@@ -100,8 +100,8 @@ func historyMessage(v any) map[string]any {
 	switch m := v.(type) {
 	case map[string]any:
 		return m
-	case *pyjson.Object:
-		if plain, ok := pyjson.Plain(m).(map[string]any); ok {
+	case *jsonutil.Object:
+		if plain, ok := jsonutil.Plain(m).(map[string]any); ok {
 			return plain
 		}
 	}
@@ -122,8 +122,8 @@ func (r *GatewayRunner) crashLeftReply(ctx context.Context, history []any, start
 		last = visible[len(visible)-1]
 	}
 	content, isText := last["content"].(string)
-	stamp, _ := pydatetime.CoerceEpoch(last["timestamp"], "", "")
-	if last["role"] != "assistant" || pyrepr.Truthy(last["tool_calls"]) || !isText || stamp < started {
+	stamp, _ := timeutil.StoredEpoch(last["timestamp"], "", "")
+	if last["role"] != "assistant" || anyutil.IsTrue(last["tool_calls"]) || !isText || stamp < started {
 		return nil, nil
 	}
 	prompt := map[string]any{}
@@ -153,7 +153,7 @@ func (r *GatewayRunner) crashLeftReply(ctx context.Context, history []any, start
 			decision = map[string]any{}
 		}
 		proven := activeToken != nil && decision["token"] == *activeToken &&
-			pyjson.Equal(decision["timestamp"], last["timestamp"]) && decision["silent"] == true
+			anyutil.Equal(decision["timestamp"], last["timestamp"]) && decision["silent"] == true
 		var replyExpected *bool
 		if expected, ok := displayMetadata["reply_expected"].(bool); ok {
 			replyExpected = &expected
@@ -164,7 +164,7 @@ func (r *GatewayRunner) crashLeftReply(ctx context.Context, history []any, start
 		}
 		return &text, nil
 	}
-	reply := pyrepr.Str(gateway.StripTrailingSilenceMarker(content))
+	reply := anyutil.String(gateway.StripTrailingSilenceMarker(content))
 	stripped, err := gateway.StripMediaDirectives(ctx, sanitizeGatewayFinalResponse(ctx, origin.Platform, reply))
 	if err != nil {
 		return nil, err

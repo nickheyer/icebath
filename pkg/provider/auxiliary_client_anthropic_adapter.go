@@ -7,22 +7,22 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
 // Merges an OpenAI response format into the Anthropic output_config as a json_schema format
 func auxTranslateAnthropicResponseFormat(anthropicKwargs map[string]any, responseFormat any) {
-	rf, ok := pyjson.Dict(responseFormat)
+	rf, ok := jsonutil.AsMap(responseFormat)
 	if !ok {
 		return
 	}
 	var schema any
 	switch rf["type"] {
 	case "json_schema":
-		jsonSchema, ok := pyjson.Dict(rf["json_schema"])
+		jsonSchema, ok := jsonutil.AsMap(rf["json_schema"])
 		if !ok {
 			return
 		}
@@ -69,7 +69,7 @@ func auxAnthropicToolChoice(choice any) any {
 	case map[string]any:
 		choiceType := strings.ToLower(pyStr(c["type"]))
 		if choiceType == "function" {
-			fn, _ := pyjson.Dict(c["function"])
+			fn, _ := jsonutil.AsMap(c["function"])
 			return fn["name"]
 		}
 		if choiceType == "auto" || choiceType == "required" || choiceType == "none" {
@@ -88,16 +88,16 @@ func (a *auxAnthropicCompletionsAdapter) create(ctx context.Context, kwargs map[
 		model = pyStr(v)
 	}
 	var maxTokens any
-	if !pyrepr.Truthy(kwargs["_skip_zai_max_tokens"]) {
+	if !anyutil.IsTrue(kwargs["_skip_zai_max_tokens"]) {
 		maxTokens = kwargs["max_tokens"]
-		if !pyrepr.Truthy(maxTokens) {
+		if !anyutil.IsTrue(maxTokens) {
 			maxTokens = kwargs["max_completion_tokens"]
 		}
 	}
 	reasoningCfg := kwargs["_reasoning_config"]
 	if reasoningCfg == nil {
-		if eb, ok := pyjson.Dict(kwargs["extra_body"]); ok {
-			if rc, ok := pyjson.Dict(eb["reasoning"]); ok {
+		if eb, ok := jsonutil.AsMap(kwargs["extra_body"]); ok {
+			if rc, ok := jsonutil.AsMap(eb["reasoning"]); ok {
 				reasoningCfg = rc
 			}
 		}
@@ -134,17 +134,17 @@ func (a *auxAnthropicCompletionsAdapter) create(ctx context.Context, kwargs map[
 	if rf := kwargs["response_format"]; rf != nil {
 		auxTranslateAnthropicResponseFormat(anthropicKwargs, rf)
 	}
-	if callerExtra, ok := pyjson.AsObject(kwargs["extra_body"]); ok && callerExtra.Len() > 0 {
-		auxTranslateAnthropicResponseFormat(anthropicKwargs, callerExtra.Vals["response_format"])
-		passthrough := pyjson.NewObject()
-		for _, k := range callerExtra.Keys {
+	if callerExtra, ok := jsonutil.AsObject(kwargs["extra_body"]); ok && callerExtra.Len() > 0 {
+		auxTranslateAnthropicResponseFormat(anthropicKwargs, callerExtra.Value("response_format"))
+		passthrough := jsonutil.NewObject()
+		for _, k := range callerExtra.Keys() {
 			if k != "reasoning" && k != "response_format" && !strings.HasPrefix(k, "_") {
-				passthrough.Set(k, callerExtra.Vals[k])
+				passthrough.Set(k, callerExtra.Value(k))
 			}
 		}
 		if passthrough.Len() > 0 {
 			merged := anthExtraBodyObject(anthropicKwargs)
-			merged.Update(passthrough)
+			merged.Merge(passthrough)
 			anthropicKwargs["extra_body"] = merged
 		}
 	}
@@ -260,7 +260,7 @@ func (a *auxBedrockCompletionsAdapter) create(ctx context.Context, kwargs map[st
 		model = pyStr(v)
 	}
 	maxTokens := kwargs["max_tokens"]
-	if !pyrepr.Truthy(maxTokens) {
+	if !anyutil.IsTrue(maxTokens) {
 		maxTokens = kwargs["max_completion_tokens"]
 	}
 	var stop []string
@@ -275,9 +275,9 @@ func (a *auxBedrockCompletionsAdapter) create(ctx context.Context, kwargs map[st
 		}
 	}
 	if choice := kwargs["tool_choice"]; choice != nil {
-		pkgLog().Debug(fmt.Sprintf("BedrockAuxiliaryClient: tool_choice=%s not supported by the Converse shim — ignored.", pyrepr.Repr(choice)))
+		pkgLog().Debug(fmt.Sprintf("BedrockAuxiliaryClient: tool_choice=%s not supported by the Converse shim — ignored.", anyutil.Quote(choice)))
 	}
-	if pyrepr.Truthy(kwargs["stream"]) {
+	if anyutil.IsTrue(kwargs["stream"]) {
 		pkgLog().Debug(fmt.Sprintf("BedrockAuxiliaryClient: stream=True requested for %s — returning a complete response (Converse shim does not stream); caller downgrades to non-streaming.", model))
 	}
 	messages, err := auxKwargDicts(kwargs, "messages", false)
@@ -290,7 +290,7 @@ func (a *auxBedrockCompletionsAdapter) create(ctx context.Context, kwargs map[st
 	}
 	in := bedrockConverseInput{Model: model, Messages: messages, Tools: toolDefs,
 		Temperature: auxKwargFloatPtr(kwargs["temperature"]), TopP: auxKwargFloatPtr(kwargs["top_p"]), StopSequences: stop}
-	if pyrepr.Truthy(maxTokens) {
+	if anyutil.IsTrue(maxTokens) {
 		v, err := auxPyIntCall(maxTokens)
 		if err != nil {
 			return nil, err
@@ -329,8 +329,8 @@ func auxPyIntCall(v any) (int, error) {
 		}
 		return 0, &ValueError{Message: fmt.Sprintf("%v is not a whole number", x)}
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		return int(n.Int64()), nil
+	if n, ok := anyutil.Int(v); ok {
+		return int(n), nil
 	}
 	return 0, &ValueError{Message: fmt.Sprintf("expected a whole number, got %s", errchain.Kind(v))}
 }

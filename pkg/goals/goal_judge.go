@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -18,13 +19,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -105,7 +109,7 @@ func renderExtraCriteria(subgoals []string) string {
 func gateWorkspace(ctx context.Context) (cwd, refusal string) {
 	env := goalToolEnvFrom(ctx)
 	if declared := goalScopedSessionCwd(env); declared != "" {
-		path := pypath.PathStr(pypath.Expanduser(declared))
+		path := filepath.Clean(pathutil.ExpandUser(declared))
 		if info, err := os.Stat(path); err == nil && info.IsDir() {
 			return path, ""
 		}
@@ -157,9 +161,9 @@ func gatePipe(sink *gateOutput) (read, write *os.File, done chan struct{}, err e
 // Shell run of one gate giving pass, exit code and output tail, a timeout as minus one
 func RunGate(ctx context.Context, gate GoalGate, cwd string) (passed bool, exitCode int64, outputTail string, interrupted error) {
 	couldNotRun := func(err error) (bool, int64, string, error) {
-		return false, -1, fmt.Sprintf("[gate could not run: %s: %s]", pypath.OSErrorClass(err), pypath.OSErrorText(err)), nil
+		return false, -1, fmt.Sprintf("[gate could not run: %s: %s]", pypath.OSErrorClass(err), err.Error()), nil
 	}
-	shell, err := pysubprocess.ShellCommand(gate.Command)
+	shell, err := executil.ShellCommand(gate.Command)
 	if err != nil {
 		return couldNotRun(err)
 	}
@@ -213,7 +217,7 @@ func RunGate(ctx context.Context, gate GoalGate, cwd string) (passed bool, exitC
 	code := int64(0)
 	var exitErr *exec.ExitError
 	if errors.As(waitErr, &exitErr) {
-		code = int64(pysubprocess.Returncode(exitErr))
+		code = int64(executil.ExitCode(exitErr.ProcessState))
 	} else if waitErr != nil {
 		return couldNotRun(waitErr)
 	}
@@ -269,7 +273,7 @@ func goalJudgeSetting(ctx context.Context, key string, def any, cast func(any) (
 	if err != nil {
 		return def
 	}
-	section, isDict := pyrepr.Or(cfg["auxiliary"], map[string]any{}).(map[string]any)
+	section, isDict := anyutil.Or(cfg["auxiliary"], map[string]any{}).(map[string]any)
 	if !isDict {
 		return def
 	}
@@ -303,7 +307,7 @@ func castJudgeInt(raw any) (any, bool, error) {
 
 // Python float cast of a setting and whether it is above zero
 func castJudgeFloat(raw any) (any, bool, error) {
-	f, err := pyint.Float(raw)
+	f, err := anyutil.ToFloat(raw)
 	return f, err == nil && f > 0, err
 }
 
@@ -319,12 +323,12 @@ func goalJudgeTimeout(ctx context.Context) float64 {
 
 // AttributeError a str method call on a value of another type raises
 func strMethodError(v any, method string) error {
-	return &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), method)}
+	return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), method)}
 }
 
 // JSON object of a fence stripped reply or its first parsable braced span, nil otherwise
-func extractJSONObject(raw any) (*pyjson.Object, error) {
-	if !pyrepr.Truthy(raw) {
+func extractJSONObject(raw any) (*jsonutil.Object, error) {
+	if !anyutil.IsTrue(raw) {
 		return nil, nil
 	}
 	rawText, isText := raw.(string)
@@ -338,23 +342,23 @@ func extractJSONObject(raw any) (*pyjson.Object, error) {
 			text = text[nl+1:]
 		}
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		match := goalJSONObjectRE.FindString(text)
 		if match == "" {
 			return nil, nil
 		}
-		if data, err = pyjson.Loads(match); err != nil {
+		if data, err = jsonutil.Decode(match); err != nil {
 			return nil, nil
 		}
 	}
-	obj, _ := data.(*pyjson.Object)
+	obj, _ := data.(*jsonutil.Object)
 	return obj, nil
 }
 
 // Verdict, reason, unusable reply flag and wait target of a judge reply, failing open to continue
 func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait map[string]any, err error) {
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return "continue", "judge returned empty response", true, nil, nil
 	}
 	data, err := extractJSONObject(raw)
@@ -362,10 +366,10 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 		return "", "", false, nil, err
 	}
 	if data == nil {
-		return "continue", "judge reply was not JSON: " + pyrepr.Repr(goalTruncate(raw.(string), 200)), true, nil, nil
+		return "continue", "judge reply was not JSON: " + anyutil.Quote(goalTruncate(raw.(string), 200)), true, nil, nil
 	}
-	get := func(key string) any { return data.GetOr(key, nil) }
-	reason = strings.TrimSpace(pyrepr.Str(pyrepr.Or(get("reason"), "")))
+	get := func(key string) any { return data.ValueOr(key, nil) }
+	reason = strings.TrimSpace(anyutil.String(anyutil.Or(get("reason"), "")))
 	if reason == "" {
 		reason = "no reason provided"
 	}
@@ -373,7 +377,7 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 		verdict = strings.ToLower(strings.TrimSpace(verdictRaw))
 	} else {
 		doneVal := get("done")
-		done := pyrepr.Truthy(doneVal)
+		done := anyutil.IsTrue(doneVal)
 		if text, isStr := doneVal.(string); isStr {
 			switch strings.ToLower(strings.TrimSpace(text)) {
 			case "true", "yes", "1", "done":
@@ -403,7 +407,7 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 			}
 			iv, convErr := pyint.Of(value)
 			if convErr != nil {
-				if kind := convErr.(*pyint.Error).Kind; kind == "TypeError" || kind == "ValueError" {
+				if kind := convErr.(*errorutil.Error).Kind; kind == "TypeError" || kind == "ValueError" {
 					continue
 				}
 				panic(convErr)
@@ -416,7 +420,7 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 	}
 	sess := get("wait_on_session")
 	for _, key := range []string{"session_id", "wait_session"} {
-		if !pyrepr.Truthy(sess) {
+		if !anyutil.IsTrue(sess) {
 			sess = get(key)
 		}
 	}
@@ -434,7 +438,7 @@ func parseJudgeResponse(raw any) (verdict, reason string, parseFailed bool, wait
 
 // Single line text of a process field cut to 120 characters
 func backgroundField(p map[string]any, key string) string {
-	text := pyrepr.Str(pyrepr.Or(p[key], ""))
+	text := anyutil.String(anyutil.Or(p[key], ""))
 	return goalTruncate(strings.TrimSpace(strings.ReplaceAll(text, "\n", " ")), 120)
 }
 
@@ -442,25 +446,25 @@ func backgroundField(p map[string]any, key string) string {
 func renderBackgroundBlock(backgroundProcesses []map[string]any) string {
 	var lines []string
 	for _, p := range backgroundProcesses {
-		if p == nil || p["status"] == "exited" || !pyrepr.Truthy(p["pid"]) {
+		if p == nil || p["status"] == "exited" || !anyutil.IsTrue(p["pid"]) {
 			continue
 		}
 		cmd, tail := backgroundField(p, "command"), backgroundField(p, "output_preview")
-		line := "- pid " + pyrepr.Str(p["pid"])
-		if pyrepr.Truthy(p["session_id"]) {
-			line += " / session " + pyrepr.Str(p["session_id"])
+		line := "- pid " + anyutil.String(p["pid"])
+		if anyutil.IsTrue(p["session_id"]) {
+			line += " / session " + anyutil.String(p["session_id"])
 		}
 		line += ": " + cmd
 		if p["uptime_seconds"] != nil {
-			line += " (running " + pyrepr.Str(p["uptime_seconds"]) + "s)"
+			line += " (running " + anyutil.String(p["uptime_seconds"]) + "s)"
 		}
-		if wps := p["watch_patterns"]; pyrepr.Truthy(wps) {
+		if wps := p["watch_patterns"]; anyutil.IsTrue(wps) {
 			hit := ""
-			if pyrepr.Truthy(p["watch_hit"]) {
+			if anyutil.IsTrue(p["watch_hit"]) {
 				hit = " [already matched]"
 			}
-			line += " | watch_patterns=" + pyrepr.Str(wps) + hit
-		} else if pyrepr.Truthy(p["notify_on_complete"]) {
+			line += " | watch_patterns=" + anyutil.String(wps) + hit
+		} else if anyutil.IsTrue(p["notify_on_complete"]) {
 			line += " | notify_on_complete"
 		}
 		if tail != "" {
@@ -497,7 +501,7 @@ func callGoalJudgeLLM(ctx context.Context, systemPrompt, userPrompt string, time
 	if err != nil {
 		return "", nil
 	}
-	return pyrepr.Or(provider.MessageField(message, "content"), ""), nil
+	return anyutil.Or(provider.MessageField(message, "content"), ""), nil
 }
 
 // Optional inputs of one judge call
@@ -565,10 +569,10 @@ func JudgeGoal(ctx context.Context, goal, lastResponse string, o JudgeOptions) J
 	if err != nil {
 		var unavailable *provider.AuxiliaryClientUnavailable
 		if errors.As(err, &unavailable) {
-			pkgLog().Info(fmt.Sprintf("goal judge: auxiliary client unavailable (%s) — falling through to continue", pyrepr.ExceptionMessage(err)))
-			return JudgeResult{Verdict: "continue", Reason: "goal_judge auxiliary client unavailable: " + pyrepr.ExceptionMessage(err), TransportFailed: true}
+			pkgLog().Info(fmt.Sprintf("goal judge: auxiliary client unavailable (%s) — falling through to continue", err.Error()))
+			return JudgeResult{Verdict: "continue", Reason: "goal_judge auxiliary client unavailable: " + err.Error(), TransportFailed: true}
 		}
-		pkgLog().Info(fmt.Sprintf("goal judge: API call failed (%s) — falling through to continue", pyrepr.ExceptionMessage(err)))
+		pkgLog().Info(fmt.Sprintf("goal judge: API call failed (%s) — falling through to continue", err.Error()))
 		return JudgeResult{Verdict: "continue", Reason: "judge error: " + pyrepr.ExceptionName(err), TransportFailed: true}
 	}
 	verdict, reason, parseFailed, wait, err := parseJudgeResponse(raw)
@@ -577,7 +581,7 @@ func JudgeGoal(ctx context.Context, goal, lastResponse string, o JudgeOptions) J
 	}
 	waitText := ""
 	if len(wait) > 0 {
-		waitText = " wait=" + pyrepr.Str(wait)
+		waitText = " wait=" + anyutil.String(wait)
 	}
 	pkgLog().Info(fmt.Sprintf("goal judge: verdict=%s reason=%s%s", verdict, goalTruncate(reason, 120), waitText))
 	return JudgeResult{Verdict: verdict, Reason: reason, ParseFailed: parseFailed, Wait: wait}
@@ -587,7 +591,7 @@ func JudgeGoal(ctx context.Context, goal, lastResponse string, o JudgeOptions) J
 func judgeRaising(ctx context.Context, goal, lastResponse string, o JudgeOptions) (result JudgeResult, err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			raised, isPy := r.(*pyint.Error)
+			raised, isPy := r.(*errorutil.Error)
 			if !isPy {
 				panic(r)
 			}
@@ -618,7 +622,7 @@ func dictOf(v any) (func(string) (any, bool), bool) {
 			return nil, false
 		}
 		return func(k string) (any, bool) { x, ok := m[k]; return x, ok }, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil, false
 		}
@@ -638,7 +642,7 @@ func listOf(v any) ([]any, bool) {
 			out[i] = m
 		}
 		return out, true
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		out := make([]any, len(l))
 		for i, m := range l {
 			out[i] = m
@@ -659,13 +663,13 @@ func GoalKickPrompt(goal string, lastUserMessage any) string {
 				if !present {
 					text = ""
 				}
-				texts = append(texts, pyrepr.Str(text))
+				texts = append(texts, anyutil.String(text))
 			}
 		}
 		content = strings.Join(texts, " ")
 	}
 	normalize := func(v any) string {
-		return strings.Join(strings.Fields(pyrepr.Str(pyrepr.Or(v, ""))), " ")
+		return strings.Join(strings.Fields(anyutil.String(anyutil.Or(v, ""))), " ")
 	}
 	goalNorm, lastNorm := normalize(goal), normalize(content)
 	if utf8.RuneCountInString(goalNorm) >= goalRepasteMinChars && strings.Contains(lastNorm, goalNorm) &&
@@ -690,7 +694,7 @@ func LastUserMessageContent(history any) any {
 }
 
 // Newest twenty messages of a session from the session store, not ok when the store cannot be read
-func latestSessionMessages(ctx context.Context, sessionID string) ([]*pyjson.Object, bool) {
+func latestSessionMessages(ctx context.Context, sessionID string) ([]*jsonutil.Object, bool) {
 	db := SessionDB(ctx)
 	if db == nil {
 		return nil, false
@@ -744,8 +748,8 @@ func GatherBackgroundProcesses(ctx context.Context, taskID, ownerTaskID string) 
 	if ownerTaskID != "" {
 		owned := []map[string]any{}
 		for _, session := range running {
-			owner := pyrepr.Or(pyrepr.Or(session["owner_task_id"], session["task_id"]), "")
-			if pyrepr.Str(owner) == ownerTaskID {
+			owner := anyutil.Or(anyutil.Or(session["owner_task_id"], session["task_id"]), "")
+			if anyutil.String(owner) == ownerTaskID {
 				owned = append(owned, session)
 			}
 		}
@@ -766,7 +770,7 @@ func DraftContract(ctx context.Context, objective string, timeout *float64) *Goa
 	}
 	raw, err := callGoalJudgeLLM(ctx, draftContractSystemPrompt, "Objective:\n"+goalTruncate(objective, 4000), budget)
 	if err != nil {
-		pkgLog().Info(fmt.Sprintf("goal draft: API call failed (%s)", pyrepr.ExceptionMessage(err)))
+		pkgLog().Info(fmt.Sprintf("goal draft: API call failed (%s)", err.Error()))
 		return nil
 	}
 	data, err := extractJSONObject(raw)
@@ -774,7 +778,7 @@ func DraftContract(ctx context.Context, objective string, timeout *float64) *Goa
 		panic(err)
 	}
 	if data == nil {
-		pkgLog().Debug("goal draft: reply was not JSON: " + pyrepr.Repr(goalTruncate(raw.(string), 200)))
+		pkgLog().Debug("goal draft: reply was not JSON: " + anyutil.Quote(goalTruncate(raw.(string), 200)))
 		return nil
 	}
 	contract := GoalContractFromDict(data)

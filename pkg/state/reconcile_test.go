@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Installs no-op gateway ownership seams, the shape of a host with no gateway holding any home
@@ -23,7 +23,7 @@ func installOwnershipDoubles(t *testing.T) {
 	LiveRuntimeOwner = func(string) (int, bool, error) { return 0, false, nil }
 	CanonicalHome = func(h string) (string, error) { return filepath.Clean(h), nil }
 	ProfileLabelForHome = func(string) string { return "default" }
-	ReadGatewayLockRecord = func(string) *pyjson.Object { return nil }
+	ReadGatewayLockRecord = func(string) *jsonutil.Object { return nil }
 	t.Cleanup(func() {
 		ExclusiveMaintenance, IsOwnershipConflict, LiveRuntimeOwner = prevExclusive, prevConflict, prevLive
 		CanonicalHome, ProfileLabelForHome, ReadGatewayLockRecord = prevCanonical, prevLabel, prevRecord

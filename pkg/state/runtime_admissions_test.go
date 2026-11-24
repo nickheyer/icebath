@@ -9,7 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
@@ -36,7 +37,7 @@ func refusalReason(t *testing.T, err error) string {
 	return refusal.Reason
 }
 
-func admissionText(text string) *pyjson.Object { return pyjson.ObjectOf("text", text) }
+func admissionText(text string) *jsonutil.Object { return jsonutil.ObjectOf("text", text) }
 
 func TestAdmissionRetryClaimAndRestartAreFenced(t *testing.T) {
 	ctx := context.Background()
@@ -60,7 +61,7 @@ func TestAdmissionRetryClaimAndRestartAreFenced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if replay, err := db.AdmitSessionInput(ctx, args); err != nil || !pyjson.Equal(replay, first) {
+	if replay, err := db.AdmitSessionInput(ctx, args); err != nil || !anyutil.Equal(replay, first) {
 		t.Fatalf("replay %v %v", replay, err)
 	}
 	changed, steer := args, args
@@ -82,12 +83,12 @@ func TestAdmissionRetryClaimAndRestartAreFenced(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	seq := func(row *pyjson.Object) int64 { n, _ := exactInt(rowValue(row, "seq")); return n }
+	seq := func(row *jsonutil.Object) int64 { n, _ := exactInt(rowValue(row, "seq")); return n }
 	if !(seq(first) < seq(second) && seq(second) < seq(third)) {
 		t.Fatalf("seq order %d %d %d", seq(first), seq(second), seq(third))
 	}
 	claimed, _, err := db.ClaimSessionInput(ctx, ClaimInput{Epoch: epoch, SessionID: "s"})
-	if err != nil || !pyjson.Equal(rowValue(claimed, "admission_id"), rowValue(first, "admission_id")) || rowValue(claimed, "status") != "started" {
+	if err != nil || !anyutil.Equal(rowValue(claimed, "admission_id"), rowValue(first, "admission_id")) || rowValue(claimed, "status") != "started" {
 		t.Fatalf("claim %v %v", claimed, err)
 	}
 	if again, _, err := db.ClaimSessionInput(ctx, ClaimInput{Epoch: epoch, SessionID: "s"}); err != nil || again != nil {
@@ -102,7 +103,7 @@ func TestAdmissionRetryClaimAndRestartAreFenced(t *testing.T) {
 		t.Fatal(err)
 	}
 	running, _, err := db.ClaimSessionInput(ctx, ClaimInput{Epoch: epoch, SessionID: "s"})
-	if err != nil || !pyjson.Equal(rowValue(running, "admission_id"), rowValue(second, "admission_id")) {
+	if err != nil || !anyutil.Equal(rowValue(running, "admission_id"), rowValue(second, "admission_id")) {
 		t.Fatalf("running %v %v", running, err)
 	}
 	runningGeneration, _ := exactInt(rowValue(running, "generation"))
@@ -283,7 +284,7 @@ func TestRealSqliteFullAbortsAdmissionAndEpochFailureIsAtomic(t *testing.T) {
 		t.Fatalf("refused epoch %v", err)
 	}
 	row, err := fetchOne(ctx, db.conn, "SELECT epoch,instance_id FROM runtime_epoch")
-	if err != nil || !pyjson.Equal(row, []any{epoch, "boot"}) {
+	if err != nil || !anyutil.Equal(row, []any{epoch, "boot"}) {
 		t.Fatalf("epoch row %v %v", row, err)
 	}
 	mustExecConn(t, db.conn, "DROP TRIGGER refuse_epoch")
@@ -311,11 +312,11 @@ func seedLocalSession(t *testing.T, db *SessionDB, cwd string) string {
 		t.Fatal(err)
 	}
 	route := "local:" + sid
-	origin := pyjson.ObjectOf("platform", "local", "chat_id", sid, "user_id", "human", "chat_type", "dm")
-	entry := pyjson.ObjectOf("session_key", route, "session_id", sid, "created_at", "2026-11-06T00:00:00", "updated_at", "2026-11-06T00:00:00",
+	origin := jsonutil.ObjectOf("platform", "local", "chat_id", sid, "user_id", "human", "chat_type", "dm")
+	entry := jsonutil.ObjectOf("session_key", route, "session_id", sid, "created_at", "2026-11-06T00:00:00", "updated_at", "2026-11-06T00:00:00",
 		"origin", origin, "platform", "local", "chat_type", "dm")
-	policy := pyjson.ObjectOf("source", "cli", "cwd", cwd, "model", "m", "request_json", `{"source":"cli"}`)
-	receipt := pyjson.ObjectOf("profile_id", "profile", "principal_id", "human", "request_id", "r", "session_id", sid,
+	policy := jsonutil.ObjectOf("source", "cli", "cwd", cwd, "model", "m", "request_json", `{"source":"cli"}`)
+	receipt := jsonutil.ObjectOf("profile_id", "profile", "principal_id", "human", "request_id", "r", "session_id", sid,
 		"route", route, "entry", entry, "policy", policy)
 	entryJSON, _ := runtimeJSON(entry)
 	originJSON, _ := runtimeJSON(origin)
@@ -339,7 +340,7 @@ func TestResetLocalTargetAdvancesTheReceiptToItsResetChild(t *testing.T) {
 	if _, err := db.AdmitSessionInput(ctx, SessionInput{Epoch: epoch, PrincipalID: "human", SessionID: sid, RequestID: "queued", Payload: admissionText("queued")}); err != nil {
 		t.Fatal(err)
 	}
-	entry := pyjson.ObjectOf("session_key", "local:"+sid, "session_id", "child", "is_fresh_reset", true)
+	entry := jsonutil.ObjectOf("session_key", "local:"+sid, "session_id", "child", "is_fresh_reset", true)
 	if err := db.ResetLocalTarget(ctx, epoch+1, sid, entry); refusalReason(t, err) != "stale_epoch" {
 		t.Fatal(err)
 	}
@@ -350,8 +351,8 @@ func TestResetLocalTargetAdvancesTheReceiptToItsResetChild(t *testing.T) {
 	if err != nil || rowValue(child, "parent_session_id") != sid || rowValue(child, "source") != "cli" || rowValue(child, "model") != "m" {
 		t.Fatalf("reset child %v %v", child, err)
 	}
-	config, _ := pyjson.Loads(rowValue(child, "model_config").(string))
-	if !pyjson.Equal(config, pyjson.ObjectOf("_reset_from", sid)) {
+	config, _ := jsonutil.Decode(rowValue(child, "model_config").(string))
+	if !anyutil.Equal(config, jsonutil.ObjectOf("_reset_from", sid)) {
 		t.Fatalf("child model config %v", config)
 	}
 	parent, err := db.GetSession(ctx, sid)
@@ -389,7 +390,7 @@ func TestResetLocalTargetRefusesExecutingWorkAndCompressedParents(t *testing.T) 
 	if _, _, err := db.ClaimSessionInput(ctx, ClaimInput{Epoch: epoch, SessionID: sid}); err != nil {
 		t.Fatal(err)
 	}
-	entry := pyjson.ObjectOf("session_key", "local:"+sid, "session_id", "child")
+	entry := jsonutil.ObjectOf("session_key", "local:"+sid, "session_id", "child")
 	if err := db.ResetLocalTarget(ctx, epoch, sid, entry); refusalReason(t, err) != "session_busy" {
 		t.Fatal(err)
 	}

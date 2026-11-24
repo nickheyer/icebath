@@ -5,8 +5,12 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"maps"
+	"math"
+	"net/mail"
 	"os"
-	"sort"
+	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,16 +18,15 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyemail"
-	"github.com/nickheyer/icebath/pkg/internal/pyimaplib"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysmtplib"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mailutil "github.com/nickheyer/icebath/pkg/utils/mail"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -32,12 +35,13 @@ const (
 )
 
 var (
-	// Seen UID snapshot per account surviving adapter recreation, and the accounts warned about a missing authserv pin
+	// Seen UID snapshot per account surviving adapter recreation with the INBOX UIDVALIDITY it belongs to, and the accounts warned about a missing authserv pin
 	accountState = struct {
 		sync.Mutex
-		seenUIDs         map[string]map[string]bool
+		seenUIDs         map[string]map[uint32]bool
+		uidValidity      map[string]uint32
 		missingPinWarned map[string]bool
-	}{seenUIDs: map[string]map[string]bool{}, missingPinWarned: map[string]bool{}}
+	}{seenUIDs: map[string]map[uint32]bool{}, uidValidity: map[string]uint32{}, missingPinWarned: map[string]bool{}}
 )
 
 // Scope aware secret read with an empty default
@@ -79,39 +83,36 @@ func tlsContext(verify bool, host string) *tls.Config {
 	return &tls.Config{InsecureSkipVerify: true}
 }
 
-// Logs out, closing the socket even when the logout itself fails on a broken connection
-func closeIMAP(imap *pyimaplib.IMAP4) {
-	if _, _, err := imap.Logout(); err != nil {
-		imap.Shutdown()
-	}
+// Logs out, the connection closed even when the logout fails on a broken connection
+func closeIMAP(ctx context.Context, imap *mailutil.IMAP) {
+	_ = imap.Logout(context.WithoutCancel(ctx))
 }
 
 // Opens one SMTP connection with TLS established per the security mode
-func openSMTP(ctx context.Context, host string, port int, security string, tlsConfig *tls.Config, dial pysmtplib.Dialer,
-	timeout time.Duration) (*pysmtplib.SMTP, error) {
+func openSMTP(ctx context.Context, host string, port int, security string, tlsConfig *tls.Config, dial mailutil.DialFunc,
+	timeout time.Duration) (*mailutil.SMTP, error) {
 	if security == "tls" {
-		return pysmtplib.New(ctx, host, port, timeout, dial, tlsConfig)
+		return mailutil.DialSMTP(ctx, host, port, timeout, dial, tlsConfig)
 	}
-	smtp, err := pysmtplib.New(ctx, host, port, timeout, dial, nil)
+	smtp, err := mailutil.DialSMTP(ctx, host, port, timeout, dial, nil)
 	if err != nil {
 		return nil, err
 	}
-	if security == "starttls" {
-		if err := smtp.Starttls(ctx, tlsConfig); err != nil {
-			smtp.Close()
+	switch security {
+	case "starttls":
+		if err := smtp.StartTLS(ctx, tlsConfig); err != nil {
+			_ = smtp.Close()
 			return nil, err
 		}
+	case "plain":
+		smtp.AllowPlaintextLogin()
 	}
 	return smtp, nil
 }
 
 // Sends the RFC 2971 client ID when the server advertises the extension, a refusal logged at debug
-func sendIMAPID(imap *pyimaplib.IMAP4) {
-	advertised := false
-	for _, capability := range imap.Capabilities {
-		advertised = advertised || capability == "ID"
-	}
-	if !advertised {
+func sendIMAPID(ctx context.Context, imap *mailutil.IMAP) {
+	if !imap.HasCapability("ID") {
 		pkgLog().Debug("[Email] Server does not advertise IMAP ID capability; skipping ID")
 		return
 	}
@@ -119,22 +120,32 @@ func sendIMAPID(imap *pyimaplib.IMAP4) {
 	if info, err := updaterecord.GetVersionInfo(); err == nil {
 		version = info.BaseVersion
 	}
-	if _, _, err := imap.Xatom("ID", fmt.Sprintf(`("name" "icebath-agent" "version" "%s" `+
-		`"vendor" "Icebath" "support-url" "https://github.com/nickheyer/icebath/issues")`, version)); err != nil {
+	if _, err := imap.ID(ctx, map[string]string{"name": "icebath-agent", "version": version, "vendor": "Icebath",
+		"support-url": "https://github.com/nickheyer/icebath/issues"}); err != nil {
 		pkgLog().Debug(fmt.Sprintf("[Email] IMAP ID command not accepted: %s", err.Error()))
 	}
 }
 
-// Literal bytes of a one message FETCH response, false for any other shape
-func imapPayload(data []any) ([]byte, bool) {
-	if len(data) == 0 {
-		return nil, false
+// To field text for a recipient: a mailbox written as it parses, else the bare addr-spec with its local part quoted where it needs quoting
+func recipientField(addr string) string {
+	if parsed, err := mailutil.ParseAddress(addr); err == nil {
+		return parsed.String()
 	}
-	literal, ok := data[0].(pyimaplib.Literal)
-	if !ok {
-		return nil, false
+	return (&mail.Address{Address: strings.TrimSpace(addr)}).String()
+}
+
+// Fresh Message-ID under the domain of the address, localhost when the address has none
+func newMessageID(address string) string {
+	domain := "localhost"
+	if i := strings.LastIndex(address, "@"); i >= 0 && address[i+1:] != "" {
+		domain = address[i+1:]
 	}
-	return literal.Data, true
+	return fmt.Sprintf("<icebath-%s@%s>", strings.ReplaceAll(uuid.NewString(), "-", "")[:12], domain)
+}
+
+// Whether two UIDVALIDITY values name different UID numberings of the mailbox, a value the server did not give never counting as a change
+func uidValidityChanged(previous, current uint32) bool {
+	return previous != 0 && current != 0 && previous != current
 }
 
 // Whether every email setting is present and non blank in the scoped env
@@ -156,7 +167,7 @@ type threadContext struct {
 
 // One fetched message reduced to what authorization and dispatch need
 type fetchedMessage struct {
-	uid                 string
+	uid                 uint32
 	senderAddr          string
 	senderName          string
 	subject             string
@@ -189,7 +200,8 @@ type EmailAdapter struct {
 	authservID                 string
 
 	mu              sync.Mutex
-	seenUIDs        map[string]bool
+	seenUIDs        map[uint32]bool
+	uidValidity     uint32 // INBOX UIDVALIDITY the seen UIDs belong to, zero while the server has not given one
 	pollTask        *gateway.AdapterTask
 	lastFetchFailed bool
 	lastFetchError  string
@@ -204,11 +216,11 @@ func emailAdapterTraits() gateway.AdapterTraits {
 	return traits
 }
 
-// Stripped text of a setting value, the AttributeError strip raises on a non string
-func stripSetting(v any) (string, error) {
+// Text of a setting value with the space around it cut off, an error for a value that is not text
+func stripSetting(key string, v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
-		return "", &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))}
+		return "", &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("email setting %s must be text, got %s", key, anyutil.Kind(v))}
 	}
 	return strings.TrimSpace(s), nil
 }
@@ -223,7 +235,7 @@ func mailboxValue(ctx context.Context, extra map[string]any, env, key string) (s
 		return strings.TrimSpace(value), nil
 	}
 	if v, ok := extra[key]; ok {
-		return stripSetting(v)
+		return stripSetting(key, v)
 	}
 	return "", nil
 }
@@ -233,7 +245,7 @@ func NewEmailAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Emai
 	if config == nil {
 		config = gateway.NewPlatformConfig()
 	}
-	a := &EmailAdapter{seenUIDs: map[string]bool{}, threadContexts: map[string]threadContext{}}
+	a := &EmailAdapter{seenUIDs: map[uint32]bool{}, threadContexts: map[string]threadContext{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.PlatformEmail, a)
 	a.Traits = emailAdapterTraits()
 	extra := config.Extra
@@ -277,120 +289,124 @@ func (a *EmailAdapter) trimSeenUIDs() {
 	if len(a.seenUIDs) <= seenUIDsMax {
 		return
 	}
-	uids := make([]string, 0, len(a.seenUIDs))
-	numeric := true
-	values := map[string]int64{}
-	for uid := range a.seenUIDs {
-		uids = append(uids, uid)
-		n, err := pyint.Int64(uid)
-		if err != nil {
-			numeric = false
-		}
-		values[uid] = n
-	}
-	if numeric {
-		sort.Slice(uids, func(i, j int) bool { return values[uids[i]] < values[uids[j]] })
-	}
-	kept := map[string]bool{}
+	uids := slices.Sorted(maps.Keys(a.seenUIDs))
+	kept := make(map[uint32]bool, seenUIDsMax/2)
 	for _, uid := range uids[len(uids)-seenUIDsMax/2:] {
 		kept[uid] = true
 	}
 	a.seenUIDs = kept
-	if numeric {
-		pkgLog().Debug(fmt.Sprintf("[Email] Trimmed seen UIDs to %d entries", len(a.seenUIDs)))
-	}
+	pkgLog().Debug(fmt.Sprintf("[Email] Trimmed seen UIDs to %d entries", len(a.seenUIDs)))
 }
 
-// IMAP connection over implicit TLS, STARTTLS or plain text
-func (a *EmailAdapter) connectIMAP(ctx context.Context) (*pyimaplib.IMAP4, error) {
+// IMAP connection over implicit TLS, STARTTLS or plain text, fetched messages bounded by the inbound file limit
+func (a *EmailAdapter) connectIMAP(ctx context.Context) (*mailutil.IMAP, error) {
+	var implicit *tls.Config
 	if a.imapSecurity == "tls" {
-		return pyimaplib.Open(ctx, a.imapHost, a.imapPort, 30*time.Second, tlsContext(a.imapTLSVerify, a.imapHost))
+		implicit = tlsContext(a.imapTLSVerify, a.imapHost)
 	}
-	imap, err := pyimaplib.Open(ctx, a.imapHost, a.imapPort, 30*time.Second, nil)
+	imap, err := mailutil.DialIMAP(ctx, a.imapHost, a.imapPort, 30*time.Second, mailutil.Dial, implicit)
 	if err != nil {
 		return nil, err
 	}
-	if a.imapSecurity == "starttls" {
-		if err := imap.Starttls(ctx, tlsContext(a.imapTLSVerify, a.imapHost)); err != nil {
-			closeIMAP(imap)
+	imap.SetMaxLiteral(maxFetchedMessageBytes(ctx))
+	switch a.imapSecurity {
+	case "starttls":
+		if err := imap.StartTLS(ctx, tlsContext(a.imapTLSVerify, a.imapHost)); err != nil {
+			closeIMAP(ctx, imap)
 			return nil, err
 		}
+	case "plain":
+		imap.AllowPlaintextLogin()
 	}
 	return imap, nil
 }
 
+// Largest message fetched whole: one file at gateway.max_inbound_media_bytes in base64 with its line breaks, plus a MiB for the headers and text; no bound of its own when the operator turned the file limit off
+func maxFetchedMessageBytes(ctx context.Context) int64 {
+	limit := mediacache.InboundMediaMaxBytes(ctx, home.Dir(ctx))
+	if limit <= 0 || limit > math.MaxInt64/2 {
+		return math.MaxInt64
+	}
+	return limit/3*4 + limit/28 + 1<<20
+}
+
 // Runs fn on a logged in IMAP handle with INBOX selected, the handle always closed afterwards
-func (a *EmailAdapter) inbox(ctx context.Context, fn func(imap *pyimaplib.IMAP4) error) error {
+func (a *EmailAdapter) inbox(ctx context.Context, fn func(imap *mailutil.IMAP, mailbox *mailutil.Mailbox) error) error {
 	imap, err := a.connectIMAP(ctx)
 	if err != nil {
 		return err
 	}
-	defer closeIMAP(imap)
-	if _, _, err := imap.Login(a.address, a.password); err != nil {
+	defer closeIMAP(ctx, imap)
+	if err := imap.Login(ctx, a.address, a.password); err != nil {
 		return err
 	}
-	sendIMAPID(imap)
-	if _, _, err := imap.Select("INBOX"); err != nil {
+	sendIMAPID(ctx, imap)
+	mailbox, err := imap.Select(ctx, "INBOX")
+	if err != nil {
 		return err
 	}
-	return fn(imap)
+	return fn(imap, mailbox)
 }
 
 // SMTP connection with TLS established, a connection failure retried once through IPv4 only
-func (a *EmailAdapter) connectSMTP(ctx context.Context) (*pysmtplib.SMTP, error) {
+func (a *EmailAdapter) connectSMTP(ctx context.Context) (*mailutil.SMTP, error) {
 	config := tlsContext(a.smtpTLSVerify, a.smtpHost)
-	smtp, err := openSMTP(ctx, a.smtpHost, a.smtpPort, a.smtpSecurity, config, pysmtplib.DialDefault, smtpConnectTimeout)
+	smtp, err := openSMTP(ctx, a.smtpHost, a.smtpPort, a.smtpSecurity, config, mailutil.Dial, smtpConnectTimeout)
 	if err == nil {
 		return smtp, nil
 	}
-	var smtpErr *pysmtplib.Error
-	if ctx.Err() != nil || !errors.As(err, &smtpErr) || smtpErr.IsSSL() || smtpErr.Class == "ValueError" {
+	var tlsErr *mailutil.TLSError
+	if ctx.Err() != nil || errors.As(err, &tlsErr) {
 		return nil, err
 	}
-	return openSMTP(ctx, a.smtpHost, a.smtpPort, a.smtpSecurity, config, pysmtplib.DialIPv4, smtpConnectTimeout)
+	return openSMTP(ctx, a.smtpHost, a.smtpPort, a.smtpSecurity, config, mailutil.DialIPv4, smtpConnectTimeout)
 }
 
-// Logs the error, records a fatal error for the reconnect machinery and reports the connect as failed
-func (a *EmailAdapter) fail(ctx context.Context, logFmt string, err any, code, detail string, retryable bool) bool {
-	pkgLog().Error(fmt.Sprintf(logFmt, pyrepr.Str(err)))
+// Logs the error text, records a fatal error for the reconnect machinery and reports the connect as failed
+func (a *EmailAdapter) fail(ctx context.Context, logFmt, text, code, detail string, retryable bool) bool {
+	pkgLog().Error(fmt.Sprintf(logFmt, text))
 	a.SetFatalError(ctx, code, detail, retryable)
 	return false
 }
 
-// Members of an IMAP search answer, none unless the server answered OK with data
-func searchUIDs(status string, data []any) []string {
-	if status != "OK" || len(data) == 0 {
-		return nil
-	}
-	first, _ := data[0].([]byte)
-	return strings.Fields(string(first))
-}
-
 // Tests the IMAP connection and sets the seen UID baseline, a failure recorded as a retryable fatal error
 func (a *EmailAdapter) probeIMAP(ctx context.Context, isReconnect bool) bool {
-	err := a.inbox(ctx, func(imap *pyimaplib.IMAP4) error {
+	err := a.inbox(ctx, func(imap *mailutil.IMAP, mailbox *mailutil.Mailbox) error {
 		accountState.Lock()
 		snapshot, hasSnapshot := accountState.seenUIDs[a.address]
+		snapshotValidity := accountState.uidValidity[a.address]
 		accountState.Unlock()
 		a.mu.Lock()
 		defer a.mu.Unlock()
+		if uidValidityChanged(a.uidValidity, mailbox.UIDValidity) {
+			a.seenUIDs = map[uint32]bool{}
+		}
 		passed := "[Email] IMAP connection test passed. %d existing messages skipped."
-		if isReconnect && hasSnapshot {
-			a.seenUIDs = map[string]bool{}
+		restore := isReconnect && hasSnapshot && !uidValidityChanged(snapshotValidity, mailbox.UIDValidity)
+		if restore {
+			a.seenUIDs = make(map[uint32]bool, len(snapshot))
 			for uid := range snapshot {
 				a.seenUIDs[uid] = true
 			}
 			passed = "[Email] IMAP reconnect test passed. Restored %d seen UIDs; messages received during the outage will be processed."
 		} else {
+			if isReconnect && hasSnapshot {
+				pkgLog().Warn(fmt.Sprintf("[Email] INBOX UIDVALIDITY changed from %d to %d during the outage: the server renumbered "+
+					"the mailbox, so the seen UIDs no longer apply and the messages now in it are taken as seen", snapshotValidity,
+					mailbox.UIDValidity))
+			}
 			a.mu.Unlock()
-			status, data, err := imap.UID("search", "ALL")
+			uids, err := imap.UIDSearch(ctx, "ALL")
 			a.mu.Lock()
-			if err != nil {
+			if err != nil && !errors.Is(err, mailutil.ErrRefused) {
 				return err
 			}
-			for _, uid := range searchUIDs(status, data) {
+			for _, uid := range uids {
 				a.seenUIDs[uid] = true
 			}
+		}
+		if mailbox.UIDValidity != 0 {
+			a.uidValidity = mailbox.UIDValidity
 		}
 		a.trimSeenUIDs()
 		pkgLog().Info(fmt.Sprintf(passed, len(a.seenUIDs)))
@@ -404,16 +420,44 @@ func (a *EmailAdapter) probeIMAP(ctx context.Context, isReconnect bool) bool {
 	return true
 }
 
-// Stores a copy of the seen UIDs as the reconnect baseline of the account
+// Starts the seen UIDs afresh from the messages now in INBOX when the server renumbered the mailbox since the last session, true when it did
+func (a *EmailAdapter) rebaselineSeenUIDs(ctx context.Context, imap *mailutil.IMAP, validity uint32) (bool, error) {
+	a.mu.Lock()
+	previous := a.uidValidity
+	if !uidValidityChanged(previous, validity) {
+		if validity != 0 {
+			a.uidValidity = validity
+		}
+		a.mu.Unlock()
+		return false, nil
+	}
+	a.mu.Unlock()
+	uids, err := imap.UIDSearch(ctx, "ALL")
+	if err != nil && !errors.Is(err, mailutil.ErrRefused) {
+		return false, err
+	}
+	a.mu.Lock()
+	a.seenUIDs = make(map[uint32]bool, len(uids))
+	for _, uid := range uids {
+		a.seenUIDs[uid] = true
+	}
+	a.uidValidity = validity
+	a.trimSeenUIDs()
+	a.mu.Unlock()
+	pkgLog().Warn(fmt.Sprintf("[Email] INBOX UIDVALIDITY changed from %d to %d: the server renumbered the mailbox, so the seen UIDs "+
+		"were reset and the %d messages now in it are taken as seen", previous, validity, len(uids)))
+	return true, nil
+}
+
+// Stores a copy of the seen UIDs and the UIDVALIDITY they belong to as the reconnect baseline of the account
 func (a *EmailAdapter) snapshotSeenUIDs() {
 	a.mu.Lock()
-	snapshot := make(map[string]bool, len(a.seenUIDs))
-	for uid := range a.seenUIDs {
-		snapshot[uid] = true
-	}
+	snapshot := maps.Clone(a.seenUIDs)
+	validity := a.uidValidity
 	a.mu.Unlock()
 	accountState.Lock()
 	accountState.seenUIDs[a.address] = snapshot
+	accountState.uidValidity[a.address] = validity
 	accountState.Unlock()
 }
 
@@ -424,18 +468,17 @@ func (a *EmailAdapter) probeSMTP(ctx context.Context) bool {
 		if err != nil {
 			return err
 		}
-		loginErr := smtp.Login(a.address, a.password)
-		if quitErr := smtp.Quit(); quitErr != nil {
-			return quitErr
+		if err := smtp.Login(ctx, a.address, a.password); err != nil {
+			_ = smtp.Quit(ctx)
+			return err
 		}
-		return loginErr
+		return smtp.Quit(ctx)
 	}()
 	if err == nil {
 		pkgLog().Info("[Email] SMTP connection test passed.")
 		return true
 	}
-	var smtpErr *pysmtplib.Error
-	if errors.As(err, &smtpErr) && smtpErr.Class == "SMTPAuthenticationError" {
+	if errors.Is(err, mailutil.ErrAuthFailed) {
 		return a.fail(ctx, "[Email] SMTP authentication failed: %s", err.Error(), "email_auth_error",
 			fmt.Sprintf("SMTP authentication failed for %s: %s. Check EMAIL_PASSWORD (for Gmail/Outlook "+
 				"this must be an app password, not the account password).", a.address, err.Error()), false)
@@ -500,7 +543,7 @@ func (a *EmailAdapter) pollLoop(ctx context.Context) error {
 			return nil
 		}
 		if err != nil {
-			pkgLog().Error(fmt.Sprintf("[Email] Poll error: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Error(fmt.Sprintf("[Email] Poll error: %s", err.Error()))
 		}
 		timer := time.NewTimer(a.pollInterval)
 		select {
@@ -546,84 +589,93 @@ func (a *EmailAdapter) checkInbox(ctx context.Context) error {
 }
 
 // Remembers a rejected UID and marks it seen on the server without fetching its body
-func (a *EmailAdapter) markUIDConsumed(imap *pyimaplib.IMAP4, uid string) error {
+func (a *EmailAdapter) markUIDConsumed(ctx context.Context, imap *mailutil.IMAP, uid uint32) error {
 	a.mu.Lock()
 	a.seenUIDs[uid] = true
 	a.trimSeenUIDs()
 	a.mu.Unlock()
-	status, _, err := imap.UID("store", uid, "+FLAGS.SILENT", `(\Seen)`)
-	if err != nil {
-		return err
+	err := imap.UIDStore(ctx, uid, "+FLAGS.SILENT", `\Seen`)
+	if errors.Is(err, mailutil.ErrRefused) {
+		pkgLog().Warn(fmt.Sprintf("[Email] Could not mark rejected UID %d seen", uid))
+		return nil
 	}
-	if status != "OK" {
-		pkgLog().Warn(fmt.Sprintf("[Email] Could not mark rejected UID %s seen", uidRepr(uid)))
-	}
-	return nil
+	return err
 }
 
 // Fetches unseen messages, the bounded headers of each passing the pre authorization before its body is requested
 func (a *EmailAdapter) fetchNewMessages(ctx context.Context, preauthorize func(*fetchedMessage) bool) []*fetchedMessage {
 	results := []*fetchedMessage{}
-	err := a.inbox(ctx, func(imap *pyimaplib.IMAP4) error {
-		status, data, err := imap.UID("search", "UNSEEN")
-		if err != nil {
+	err := a.inbox(ctx, func(imap *mailutil.IMAP, mailbox *mailutil.Mailbox) error {
+		if rebaselined, err := a.rebaselineSeenUIDs(ctx, imap, mailbox.UIDValidity); err != nil || rebaselined {
 			return err
 		}
-		for _, uid := range searchUIDs(status, data) {
+		uids, err := imap.UIDSearch(ctx, "UNSEEN")
+		if err != nil && !errors.Is(err, mailutil.ErrRefused) {
+			return err
+		}
+		for _, uid := range uids {
 			a.mu.Lock()
 			seen := a.seenUIDs[uid]
 			a.mu.Unlock()
 			if seen {
 				continue
 			}
-			headerStatus, headerData, err := imap.UID("fetch", uid, preauthFetch)
-			if err != nil {
-				return err
-			}
-			if headerStatus != "OK" {
+			rawHeaders, err := imap.UIDFetch(ctx, uid, preauthFetch)
+			if errors.Is(err, mailutil.ErrRefused) {
 				continue
 			}
-			rawHeaders, ok := imapPayload(headerData)
-			if !ok || len(rawHeaders) > maxPreauthHeaderBytes {
-				pkgLog().Warn(fmt.Sprintf("[Email] Unusable pre-authorization headers for UID %s, skipping", uidRepr(uid)))
-				if err := a.markUIDConsumed(imap, uid); err != nil {
+			if err != nil && !errors.Is(err, mailutil.ErrNotFound) {
+				return err
+			}
+			if err != nil || len(rawHeaders) > maxPreauthHeaderBytes {
+				pkgLog().Warn(fmt.Sprintf("[Email] Unusable pre-authorization headers for UID %d, skipping", uid))
+				if err := a.markUIDConsumed(ctx, imap, uid); err != nil {
 					return err
 				}
 				continue
 			}
-			accepted := false
-			candidate, authErr := a.parseFetchedHeaders(uid, rawHeaders)
-			if authErr == nil && candidate != nil {
-				accepted = preauthorize(candidate)
-			}
-			if authErr != nil {
-				pkgLog().Error(fmt.Sprintf("[Email] Failed to read the headers of message UID %s, skipping: %s", uidRepr(uid), pyrepr.ExceptionMessage(authErr)))
-			}
-			if !accepted {
-				if err := a.markUIDConsumed(imap, uid); err != nil {
+			candidate := a.parseFetchedHeaders(uid, rawHeaders)
+			if candidate == nil || !preauthorize(candidate) {
+				if err := a.markUIDConsumed(ctx, imap, uid); err != nil {
 					return err
 				}
 				continue
 			}
-			status, msgData, err := imap.UID("fetch", uid, "(RFC822)")
-			if err != nil {
-				return err
-			}
-			if status != "OK" {
+			rawEmail, err := imap.UIDFetch(ctx, uid, "(BODY[])")
+			if errors.Is(err, mailutil.ErrRefused) {
 				continue
+			}
+			var tooLarge *mailutil.LiteralTooLargeError
+			if errors.As(err, &tooLarge) {
+				pkgLog().Warn(fmt.Sprintf("[Email] Skipping UID %d: the message is %d bytes, over the %d byte limit set by "+
+					"gateway.max_inbound_media_bytes", uid, tooLarge.Size, tooLarge.Limit))
+				if !tooLarge.Drained {
+					// the client closed the connection; the next poll reconnects and goes on with the other messages
+					a.mu.Lock()
+					a.seenUIDs[uid] = true
+					a.trimSeenUIDs()
+					a.mu.Unlock()
+					return nil
+				}
+				if err := a.markUIDConsumed(ctx, imap, uid); err != nil {
+					return err
+				}
+				continue
+			}
+			if err != nil && !errors.Is(err, mailutil.ErrNotFound) {
+				return err
 			}
 			a.mu.Lock()
 			a.seenUIDs[uid] = true
 			a.trimSeenUIDs()
 			a.mu.Unlock()
-			rawEmail, ok := imapPayload(msgData)
-			if !ok {
-				pkgLog().Warn(fmt.Sprintf("[Email] Unexpected IMAP response structure for UID %s, skipping", uidRepr(uid)))
+			if err != nil {
+				pkgLog().Warn(fmt.Sprintf("[Email] Unexpected IMAP response structure for UID %d, skipping", uid))
 				continue
 			}
 			parsed, parseErr := a.parseFetchedMessage(ctx, uid, rawEmail)
 			if parseErr != nil {
-				pkgLog().Error(fmt.Sprintf("[Email] Failed to process message UID %s, skipping: %s", uidRepr(uid), pyrepr.ExceptionMessage(parseErr)))
+				pkgLog().Error(fmt.Sprintf("[Email] Failed to process message UID %d, skipping: %s", uid, parseErr.Error()))
 				continue
 			}
 			if parsed != nil {
@@ -642,58 +694,51 @@ func (a *EmailAdapter) fetchNewMessages(ctx context.Context, preauthorize func(*
 	return results
 }
 
-// Sender facing headers and the authentication verdict of a message, nil for an unparseable or automated sender
-func (a *EmailAdapter) messageMetadata(uid string, msg *pyemail.Message) (*fetchedMessage, error) {
-	from, _ := msg.Get("From")
-	senderAddr := extractEmailAddress(from.Str())
-	if senderAddr == "" {
-		pkgLog().Debug(fmt.Sprintf("[Email] Dropping message with no parseable From address: %s", pyrepr.Repr(from.Str())))
-		return nil, nil
+// Sender facing header fields and the authentication verdict of a message, nil for an unparseable, ambiguous or automated sender
+func (a *EmailAdapter) messageMetadata(uid uint32, header mailutil.Header) *fetchedMessage {
+	if froms := header.Values("From"); len(froms) > 1 {
+		pkgLog().Debug(fmt.Sprintf("[Email] Dropping message UID %d with %d From fields", uid, len(froms)))
+		return nil
 	}
-	senderName := decodeHeaderValue(from)
+	from := header.Get("From")
+	senderAddr := extractEmailAddress(from)
+	if senderAddr == "" {
+		pkgLog().Debug(fmt.Sprintf("[Email] Dropping message with no parseable From address: %s", strconv.Quote(from)))
+		return nil
+	}
+	senderName := header.Text("From")
 	if strings.Contains(senderName, "<") {
 		head, _, _ := strings.Cut(senderName, "<")
 		senderName = strings.Trim(strings.TrimSpace(head), `"`)
 	}
-	subjectValue, ok := msg.Get("Subject")
-	if !ok {
-		subjectValue = "(no subject)"
+	subject := "(no subject)"
+	if _, ok := header.Lookup("Subject"); ok {
+		subject = header.Text("Subject")
 	}
-	subject := decodeHeaderValue(subjectValue)
-	headers := map[string]pyemail.HeaderValue{}
-	for _, item := range msg.Items() {
-		headers[item[0]] = pyemail.HeaderValue(item[1])
-	}
-	automated, err := isAutomatedSender(senderAddr, headers)
-	if err != nil {
-		return nil, err
-	}
-	if automated {
+	if isAutomatedSender(senderAddr, header) {
 		pkgLog().Debug(fmt.Sprintf("[Email] Skipping automated sender: %s", senderAddr))
-		return nil, nil
+		return nil
 	}
-	authenticated, reason := verifySenderAuthentication(msg, senderAddr, a.authservID)
-	text := func(name string) string {
-		value, _ := msg.Get(name)
-		return value.Str()
-	}
-	return &fetchedMessage{uid: uid, senderAddr: senderAddr, senderName: senderName, subject: subject, messageID: text("Message-ID"),
-		inReplyTo: text("In-Reply-To"), date: text("Date"), senderAuthenticated: authenticated, authReason: reason}, nil
+	authenticated, reason := verifySenderAuthentication(header, senderAddr, a.authservID)
+	return &fetchedMessage{uid: uid, senderAddr: senderAddr, senderName: senderName, subject: subject,
+		messageID: header.Get("Message-ID"), inReplyTo: header.Get("In-Reply-To"), date: header.Get("Date"),
+		senderAuthenticated: authenticated, authReason: reason}
 }
 
 // Metadata of the bounded header preflight, no MIME tree built
-func (a *EmailAdapter) parseFetchedHeaders(uid string, rawHeaders []byte) (*fetchedMessage, error) {
-	return a.messageMetadata(uid, pyemail.ParseBytes(rawHeaders, true))
+func (a *EmailAdapter) parseFetchedHeaders(uid uint32, rawHeaders []byte) *fetchedMessage {
+	return a.messageMetadata(uid, mailutil.ParseHeader(rawHeaders))
 }
 
 // An authorized RFC822 payload parsed into a dispatchable message with its body and attachments
-func (a *EmailAdapter) parseFetchedMessage(ctx context.Context, uid string, rawEmail []byte) (*fetchedMessage, error) {
-	msg := pyemail.ParseBytes(rawEmail, false)
-	metadata, err := a.messageMetadata(uid, msg)
-	if err != nil || metadata == nil {
-		return nil, err
+func (a *EmailAdapter) parseFetchedMessage(ctx context.Context, uid uint32, rawEmail []byte) (*fetchedMessage, error) {
+	msg := mailutil.Parse(rawEmail)
+	metadata := a.messageMetadata(uid, msg.Header)
+	if metadata == nil {
+		return nil, nil
 	}
 	metadata.body = extractTextBody(msg)
+	var err error
 	if metadata.attachments, err = extractAttachments(ctx, msg, a.skipAttachments); err != nil {
 		return nil, err
 	}
@@ -721,7 +766,7 @@ func (a *EmailAdapter) senderAccepted(ctx context.Context, senderAddr string, ms
 	if senderAddr == strings.ToLower(a.address) {
 		return false
 	}
-	if automated, _ := isAutomatedSender(senderAddr, nil); automated {
+	if isAutomatedSender(senderAddr, nil) {
 		pkgLog().Debug(fmt.Sprintf("[Email] Dropping automated sender at dispatch: %s", senderAddr))
 		return false
 	}
@@ -837,7 +882,7 @@ func (a *EmailAdapter) runSend(ctx context.Context, fn func() (string, error), l
 	select {
 	case res := <-done:
 		if res.err != nil {
-			text := pyrepr.ExceptionMessage(res.err)
+			text := res.err.Error()
 			pkgLog().Error(fmt.Sprintf(logFmt, append(logArgs, text)...))
 			return gateway.SendResult{Success: false, Error: text}, nil
 		}
@@ -854,17 +899,9 @@ func (a *EmailAdapter) Send(ctx context.Context, chatID, content, replyTo string
 		"[Email] Send failed to %s: %s", chatID)
 }
 
-// Domain for generated Message-IDs, localhost when the address has none
-func (a *EmailAdapter) messageIDDomain() string {
-	if i := strings.LastIndex(a.address, "@"); i >= 0 && a.address[i+1:] != "" {
-		return a.address[i+1:]
-	}
-	return "localhost"
-}
-
 // Threaded reply skeleton with its Message-ID and subject, the body attached when present or asked for
-func (a *EmailAdapter) newReply(toAddr, body, replyToMsgID string, attachEmptyBody bool) (*pyemail.Part, string, string) {
-	msg := pyemail.NewMultipart()
+func (a *EmailAdapter) newReply(toAddr, body, replyToMsgID string, attachEmptyBody bool) (*mailutil.Part, string, string) {
+	msg := mailutil.NewMultipart()
 	a.mu.Lock()
 	ctx, known := a.threadContexts[toAddr]
 	a.mu.Unlock()
@@ -879,37 +916,33 @@ func (a *EmailAdapter) newReply(toAddr, body, replyToMsgID string, attachEmptyBo
 	if originalMsgID == "" {
 		originalMsgID = ctx.messageID
 	}
-	msgID := fmt.Sprintf("<icebath-%s@%s>", strings.ReplaceAll(uuid.NewString(), "-", "")[:12], a.messageIDDomain())
+	msgID := newMessageID(a.address)
 	msg.Set("From", a.address)
-	msg.Set("To", toAddr)
+	msg.Set("To", recipientField(toAddr))
 	msg.Set("Subject", subject)
 	if originalMsgID != "" {
 		msg.Set("In-Reply-To", originalMsgID)
 		msg.Set("References", originalMsgID)
 	}
-	msg.Set("Date", pyemail.FormatDateLocal())
+	msg.Set("Date", time.Now().Format(time.RFC1123Z))
 	msg.Set("Message-ID", msgID)
 	if body != "" || attachEmptyBody {
-		msg.Attach(pyemail.NewTextUTF8(body))
+		msg.Attach(mailutil.NewText(body))
 	}
 	return msg, msgID, subject
 }
 
 // Logs in, sends and always releases the SMTP connection
-func (a *EmailAdapter) smtpSend(ctx context.Context, msg *pyemail.Part) error {
+func (a *EmailAdapter) smtpSend(ctx context.Context, msg *mailutil.Part) error {
 	smtp, err := a.connectSMTP(ctx)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		if smtp.Quit() != nil {
-			smtp.Close()
-		}
-	}()
-	if err := smtp.Login(a.address, a.password); err != nil {
+	defer func() { _ = smtp.Quit(ctx) }()
+	if err := smtp.Login(ctx, a.address, a.password); err != nil {
 		return err
 	}
-	return smtp.SendMessage(msg)
+	return smtp.SendMessage(ctx, msg)
 }
 
 // Sends a text reply and returns its Message-ID
@@ -928,15 +961,13 @@ type outgoingFile struct {
 	name string
 }
 
-// Attaches a file as base64 application/octet-stream
-func attachFile(msg *pyemail.Part, path, filename string) error {
+// Attaches a file as base64 application/octet-stream under the name
+func attachFile(msg *mailutil.Part, path, filename string) error {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return &gateway.PyError{Kind: pypath.OSErrorClass(err), Msg: pypath.OSErrorText(err)}
+		return err
 	}
-	part := pyemail.NewBase64("application", "octet-stream", data)
-	part.Set("Content-Disposition", "attachment; filename="+filename)
-	msg.Attach(part)
+	msg.Attach(mailutil.NewAttachment(filename, "application/octet-stream", data))
 	return nil
 }
 
@@ -948,7 +979,7 @@ func (a *EmailAdapter) sendWithFiles(ctx context.Context, toAddr, body string, f
 			if !lenient {
 				return "", err
 			}
-			pkgLog().Warn(fmt.Sprintf("[Email] Failed to attach %s: %s", file.path, pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("[Email] Failed to attach %s: %s", file.path, err.Error()))
 		}
 	}
 	if err := a.smtpSend(ctx, msg); err != nil {
@@ -976,12 +1007,19 @@ func (a *EmailAdapter) SendMultipleImages(ctx context.Context, chatID string, im
 			bodyParts = append(bodyParts, i18n.T(ctx, "platform.email.image_line", "", map[string]any{"url": image.URL}))
 			continue
 		}
-		localPath := pyurl.Unquote(image.URL[7:])
-		if _, err := os.Stat(localPath); err == nil {
-			localPaths = append(localPaths, localPath)
-		} else {
-			pkgLog().Warn(fmt.Sprintf("[Email] Skipping missing image: %s", localPath))
+		localPath, err := urlutil.FilePath(image.URL)
+		if err == nil {
+			_, err = os.Stat(localPath)
 		}
+		if err != nil {
+			missing := localPath
+			if missing == "" {
+				missing = image.URL
+			}
+			pkgLog().Warn(fmt.Sprintf("[Email] Skipping missing image: %s", missing))
+			continue
+		}
+		localPaths = append(localPaths, localPath)
 	}
 	if len(localPaths) == 0 && len(bodyParts) == 0 {
 		return gateway.SendResult{Success: false, Error: "no valid images in batch"}, nil
@@ -999,7 +1037,7 @@ func (a *EmailAdapter) SendMultipleImages(ctx context.Context, chatID string, im
 	select {
 	case res := <-done:
 		if res.err != nil {
-			pkgLog().Error(fmt.Sprintf("[Email] Multi-image send failed, falling back: %s", pyrepr.ExceptionMessage(res.err)), "error", res.err)
+			pkgLog().Error(fmt.Sprintf("[Email] Multi-image send failed, falling back: %s", res.err.Error()), "error", res.err)
 			return a.BasePlatformAdapter.SendMultipleImages(ctx, chatID, images, metadata, humanDelay)
 		}
 		return gateway.SendResult{Success: true, MessageID: res.id}, nil
@@ -1012,7 +1050,7 @@ func (a *EmailAdapter) SendMultipleImages(ctx context.Context, chatID string, im
 func (a *EmailAdapter) sendEmailWithAttachments(ctx context.Context, toAddr, body string, filePaths []string) (string, error) {
 	files := make([]outgoingFile, len(filePaths))
 	for i, path := range filePaths {
-		files[i] = outgoingFile{path: path, name: pypath.PathName(path)}
+		files[i] = outgoingFile{path: path, name: pathutil.Name(path)}
 	}
 	msgID, err := a.sendWithFiles(ctx, toAddr, body, files, true, "")
 	if err != nil {
@@ -1034,7 +1072,7 @@ func (a *EmailAdapter) SendDocument(ctx context.Context, chatID, filePath, capti
 func (a *EmailAdapter) sendEmailWithAttachment(ctx context.Context, toAddr, body, filePath, fileName, replyToMsgID string) (string, error) {
 	name := fileName
 	if name == "" {
-		name = pypath.PathName(filePath)
+		name = pathutil.Name(filePath)
 	}
 	return a.sendWithFiles(ctx, toAddr, body, []outgoingFile{{path: filePath, name: name}}, false, replyToMsgID)
 }

@@ -9,8 +9,8 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/skills"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	"github.com/spf13/cobra"
 )
 
@@ -119,7 +119,7 @@ func runSkillsHub(cmd *cobra.Command, sub string, args []string) error {
 		}
 	}
 	x := newSkillsHubCLI(ctx)
-	x.C, x.Stdout = pyrich.NewConsole(cmd.OutOrStdout()), cmd.OutOrStdout()
+	x.C, x.Stdout = consoleutil.NewConsole(cmd.OutOrStdout()), cmd.OutOrStdout()
 	code, err := x.SkillsCommand(ctx, a)
 	if err != nil {
 		return err

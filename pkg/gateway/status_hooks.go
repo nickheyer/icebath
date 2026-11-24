@@ -6,8 +6,8 @@ import (
 	"sort"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Installs the runtime status functions pkg/profiles/manage reaches through profiles.GatewayStatusHooks
@@ -64,7 +64,7 @@ func profilesExclusiveMaintenance(dirs []string) (func(), error) {
 }
 
 // Ordered object of a Go map, keys sorted since a Go map carries no insertion order
-func objectFromMap(m map[string]any) *pyjson.Object {
+func objectFromMap(m map[string]any) *jsonutil.Object {
 	if m == nil {
 		return nil
 	}
@@ -73,7 +73,7 @@ func objectFromMap(m map[string]any) *pyjson.Object {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	for _, k := range keys {
 		o.Set(k, m[k])
 	}

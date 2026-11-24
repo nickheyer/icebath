@@ -16,12 +16,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const liveSendConfirmTimeout = 60 * time.Second
@@ -139,7 +139,7 @@ func resultField(v any, key string) (any, bool) {
 	case map[string]any:
 		x, ok := m[key]
 		return x, ok
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return m.Get(key)
 	}
 	rv := reflect.ValueOf(v)
@@ -194,8 +194,8 @@ func resultTruthy(v any) bool {
 	switch v.(type) {
 	case nil:
 		return false
-	case map[string]any, *pyjson.Object:
-		return pyTruthy(v)
+	case map[string]any, *jsonutil.Object:
+		return anyutil.IsTrue(v)
 	}
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Pointer || rv.Kind() == reflect.Interface {
@@ -239,10 +239,10 @@ func (s *Store) openContinuableCronThread(ctx context.Context, job *Job, adapter
 		s.log.Debug(fmt.Sprintf("Job '%s': create_handoff_thread failed on %s — falling back to DM-session mirror: %v", jobIDOr(job, "?"), name, err))
 		return ""
 	}
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Creates the session row the reply lands on and mirrors the brief into it as a user turn
@@ -338,9 +338,9 @@ func (s *Store) botChatMessageNamed(name, content string) string {
 	return fmt.Sprintf("[Cronjob \"%s\" output — scheduled job, not the user. Review it, act on anything that needs action, and summarize for the chat.]\n\n%s", jobName, content)
 }
 
-func (job *Job) botChatReceipts() *pyjson.Object {
+func (job *Job) botChatReceipts() *jsonutil.Object {
 	if job.run.botChatDeliveryReceipts == nil {
-		job.run.botChatDeliveryReceipts = pyjson.NewObject()
+		job.run.botChatDeliveryReceipts = jsonutil.NewObject()
 	}
 	return job.run.botChatDeliveryReceipts
 }
@@ -353,12 +353,12 @@ func receiptStatus(job *Job, target string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	st, _ := v.(*pyjson.Object).Get("status")
+	st, _ := v.(*jsonutil.Object).Get("status")
 	return pyStrOrEmpty(st), true
 }
 
-func newReceipt(status, deliveryID string) *pyjson.Object {
-	r := pyjson.NewObject()
+func newReceipt(status, deliveryID string) *jsonutil.Object {
+	r := jsonutil.NewObject()
 	r.Set("status", status)
 	r.Set("delivery_id", deliveryID)
 	return r
@@ -385,7 +385,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 			out, err = nil, fmt.Errorf("%v", r)
 		}
 	}()
-	sourceHome, err := pypath.Resolve(s.home)
+	sourceHome, err := pathutil.Resolve(s.home)
 	if err != nil {
 		return nil, err
 	}
@@ -395,7 +395,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 		if err != nil {
 			return nil, err
 		}
-		if targetHome, err = pypath.Resolve(dir); err != nil {
+		if targetHome, err = pathutil.Resolve(dir); err != nil {
 			return nil, err
 		}
 	}
@@ -412,7 +412,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 		}
 		runID = job.run.botChatRunID
 	}
-	keyJSON, err := pyjson.Dumps([]any{sourceHome, jobID, runID, targetHome}, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	keyJSON, err := jsonutil.Encode([]any{sourceHome, jobID, runID, targetHome})
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +471,7 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 	if !ok {
 		return nil, errors.New("'status'")
 	}
-	status := pyrepr.Str(statusVal)
+	status := anyutil.String(statusVal)
 	job.botChatReceipts().Set(target, newReceipt(status, key))
 	s.log.Info(fmt.Sprintf("Job '%s': Bot Chat %s receipt=%s status=%s", jobID, label, key, status))
 	if status == "settled" {
@@ -480,10 +480,10 @@ func (s *Store) deliverToBotChatInner(ctx context.Context, job *Job, jobID, labe
 	detail := "completion unverified; do not resend"
 	if status != "queued" && status != "claimed" {
 		detail = "not completed"
-		if pyTruthy(receipt["error"]) {
-			detail = pyrepr.Str(receipt["error"])
-		} else if pyTruthy(receipt["reason"]) {
-			detail = pyrepr.Str(receipt["reason"])
+		if anyutil.IsTrue(receipt["error"]) {
+			detail = anyutil.String(receipt["error"])
+		} else if anyutil.IsTrue(receipt["reason"]) {
+			detail = anyutil.String(receipt["reason"])
 		}
 	}
 	return strPtr(fmt.Sprintf("%s %s (receipt %s): %s", target, status, key, detail)), nil
@@ -522,7 +522,7 @@ func (s *Store) sendMediaViaAdapter(ctx context.Context, adapter any, chatID str
 	for _, m := range media {
 		path, isVoice := m.Path, m.IsVoice
 		err := func() error {
-			ext := strings.ToLower(pypath.PathSuffix(path))
+			ext := strings.ToLower(pathutil.Suffix(path))
 			var call func(ctx context.Context) (any, error)
 			switch {
 			case gateway.ShouldSendMediaAsAudio(route, ext, isVoice):
@@ -564,10 +564,10 @@ func (s *Store) sendMediaViaAdapter(ctx context.Context, adapter any, chatID str
 			}
 			raw, _ := resultField(result, "raw_response")
 			rawMap, isMap := raw.(map[string]any)
-			if resultTruthy(result) && pyTruthy(resultGet(result, "success", false)) && isMap && pyTruthy(rawMap["ambiguous"]) {
+			if resultTruthy(result) && anyutil.IsTrue(resultGet(result, "success", false)) && isMap && anyutil.IsTrue(rawMap["ambiguous"]) {
 				job.run.mediaAckLost = true
-			} else if resultTruthy(result) && !pyTruthy(resultGet(result, "success", true)) {
-				noteTargetError(s, jobRef, fmt.Sprintf("media send failed for %s: %s", path, pyrepr.Str(resultGet(result, "error", "unknown"))), &errs)
+			} else if resultTruthy(result) && !anyutil.IsTrue(resultGet(result, "success", true)) {
+				noteTargetError(s, jobRef, fmt.Sprintf("media send failed for %s: %s", path, anyutil.String(resultGet(result, "error", "unknown"))), &errs)
 			}
 			return nil
 		}()
@@ -607,7 +607,7 @@ func (s *Store) confirmAdapterDelivery(result any, jobID string, unverified *[]b
 		return false
 	}
 	success, has := resultField(result, "success")
-	if !has || !pyTruthy(success) {
+	if !has || !anyutil.IsTrue(success) {
 		return false
 	}
 	if delivered, ok := resultField(result, "delivered"); ok && delivered == false {
@@ -615,7 +615,7 @@ func (s *Store) confirmAdapterDelivery(result any, jobID string, unverified *[]b
 	}
 	msgID, _ := resultField(result, "message_id")
 	raw, _ := resultField(result, "raw_response")
-	if msgID == nil && !pyTruthy(raw) {
+	if msgID == nil && !anyutil.IsTrue(raw) {
 		s.log.Warn(fmt.Sprintf("Job '%s': live adapter reported success with no delivery evidence (no message_id, no raw_response) — treating as delivered but UNVERIFIED", jobID))
 		if unverified != nil {
 			*unverified = append(*unverified, true)
@@ -656,14 +656,14 @@ func (s *Store) recordDeliveryVerification(ctx context.Context, job *Job, unveri
 	if len(unverified) > 0 {
 		newValue = append([]string(nil), unverified...)
 	}
-	var queued *pyjson.Object
+	var queued *jsonutil.Object
 	if r := job.run.botChatDeliveryReceipts; r != nil {
-		for _, target := range r.Keys {
+		for _, target := range r.Keys() {
 			v, _ := r.Get(target)
-			st, _ := v.(*pyjson.Object).Get("status")
+			st, _ := v.(*jsonutil.Object).Get("status")
 			if st == "queued" || st == "claimed" {
 				if queued == nil {
-					queued = pyjson.NewObject()
+					queued = jsonutil.NewObject()
 				}
 				queued.Set(target, v)
 			}
@@ -678,7 +678,7 @@ func (s *Store) recordDeliveryVerification(ctx context.Context, job *Job, unveri
 		}
 	}
 	var current any = job.LastDeliveryQueued
-	if !pyTruthy(current) {
+	if !anyutil.IsTrue(current) {
 		current = nil
 	}
 	var want any
@@ -719,8 +719,8 @@ func jsonEqual(a, b any) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	da, errA := pyjson.Dumps(a, pyjson.SortKeys(true))
-	db, errB := pyjson.Dumps(b, pyjson.SortKeys(true))
+	da, errA := jsonutil.Encode(a, jsonutil.SortKeys())
+	db, errB := jsonutil.Encode(b, jsonutil.SortKeys())
 	return errA == nil && errB == nil && da == db
 }
 
@@ -900,7 +900,7 @@ func (s *Store) liveSendText(ctx context.Context, t *targetDelivery, text string
 		if v, ok := rawMap["total_chunks"]; ok {
 			total = v
 		}
-		noteTargetError(s, job.ID, fmt.Sprintf("live adapter send to %s delivered %s of %s chunks, then failed: %v", t.where(), pyrepr.Str(delivered), pyrepr.Str(total), err), deliveryErrors)
+		noteTargetError(s, job.ID, fmt.Sprintf("live adapter send to %s delivered %s of %s chunks, then failed: %v", t.where(), anyutil.String(delivered), anyutil.String(total), err), deliveryErrors)
 		return true, false, nil, nil
 	}
 	if err != nil {
@@ -924,30 +924,30 @@ func (s *Store) liveSendText(ctx context.Context, t *targetDelivery, text string
 		case map[string]any:
 			shape = "dict"
 			errVal = "unknown"
-			if pyTruthy(r["error"]) {
+			if anyutil.IsTrue(r["error"]) {
 				errVal = r["error"]
-			} else if pyTruthy(r["filtered"]) {
+			} else if anyutil.IsTrue(r["filtered"]) {
 				errVal = r["filtered"]
 			}
 		default:
 			errVal, _ = resultField(result, "error")
 			shape = resultTypeName(result)
 		}
-		msg := fmt.Sprintf("live adapter send to %s returned unconfirmed result (%s, error=%s)", t.where(), shape, pyrepr.Str(errVal))
+		msg := fmt.Sprintf("live adapter send to %s returned unconfirmed result (%s, error=%s)", t.where(), shape, anyutil.String(errVal))
 		t.liveError = nil
-		if pyTruthy(errVal) {
-			t.liveError = strPtr(pyrepr.Str(errVal))
+		if anyutil.IsTrue(errVal) {
+			t.liveError = strPtr(anyutil.String(errVal))
 		}
 		s.warnLiveLaneFailure(job, msg, t.isRelay())
 		*targetErrors = append(*targetErrors, msg)
 		return false, false, nil, nil
 	}
-	if rawMap, ok := rawResp.(map[string]any); ok && pyTruthy(rawResp) && t.threadID != "" && pyTruthy(rawMap["thread_fallback"]) {
+	if rawMap, ok := rawResp.(map[string]any); ok && anyutil.IsTrue(rawResp) && t.threadID != "" && anyutil.IsTrue(rawMap["thread_fallback"]) {
 		requested := any(t.threadID)
-		if pyTruthy(rawMap["requested_thread_id"]) {
+		if anyutil.IsTrue(rawMap["requested_thread_id"]) {
 			requested = rawMap["requested_thread_id"]
 		}
-		noteTargetError(s, job.ID, fmt.Sprintf("configured thread_id %s for %s was not found; delivered without thread_id", pyrepr.Str(requested), t.where()), deliveryErrors)
+		noteTargetError(s, job.ID, fmt.Sprintf("configured thread_id %s for %s was not found; delivered without thread_id", anyutil.String(requested), t.where()), deliveryErrors)
 	}
 	return true, false, messageID, nil
 }
@@ -999,11 +999,11 @@ func (s *Store) seedLiveDeliverySessions(ctx context.Context, t *targetDelivery,
 		if !inchannelSeeded {
 			s.log.Warn(fmt.Sprintf("Job '%s': in_channel seed did NOT land on %s:%s — a plain reply will not see this brief", job.ID, t.platformName, t.chatID))
 		}
-		if pyTruthy(deliveredMessageID) {
-			s.seedCronThreadSession(ctx, job, t.runtimeAdapter, t.platformName, t.chatID, pyrepr.Str(deliveredMessageID), t.mirrorText, chatName, t.isDMTarget, scopeID)
+		if anyutil.IsTrue(deliveredMessageID) {
+			s.seedCronThreadSession(ctx, job, t.runtimeAdapter, t.platformName, t.chatID, anyutil.String(deliveredMessageID), t.mirrorText, chatName, t.isDMTarget, scopeID)
 		}
 	} else if t.inChannelSurface && !t.inchannelContinuable {
-		s.log.Warn(fmt.Sprintf("Job '%s': in_channel delivery to %s:%s is not a continuable target (origin=%s:%s thread=%s; not the origin conversation, and not a mirror-eligible fallback/opted-in target the seed can key) — seed skipped; the plain mirror below may still apply", job.ID, t.platformName, t.chatID, pyrepr.Str(origin["platform"]), pyrepr.Str(origin["chat_id"]), pyrepr.Str(origin["thread_id"])))
+		s.log.Warn(fmt.Sprintf("Job '%s': in_channel delivery to %s:%s is not a continuable target (origin=%s:%s thread=%s; not the origin conversation, and not a mirror-eligible fallback/opted-in target the seed can key) — seed skipped; the plain mirror below may still apply", job.ID, t.platformName, t.chatID, anyutil.String(origin["platform"]), anyutil.String(origin["chat_id"]), anyutil.String(origin["thread_id"])))
 	}
 	s.maybeMirrorCronDelivery(ctx, job, t.platformName, t.chatID, t.mirrorText, t.threadID, t.originUserID, t.mirrorThisTarget && !threadSeeded && !inchannelSeeded)
 }
@@ -1012,7 +1012,7 @@ func optionalStrPtr(v any) *string {
 	if v == nil {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	return &s
 }
 
@@ -1065,7 +1065,7 @@ func (s *Store) deliverViaLiveAdapter(ctx context.Context, t *targetDelivery, cl
 			threadLog = *routeThread
 		}
 		if messageID != nil {
-			idLog = pyrepr.Str(messageID)
+			idLog = anyutil.String(messageID)
 		}
 		s.log.Info(fmt.Sprintf("Job '%s': delivered to %s:%s via live adapter thread=%s message_id=%s", job.ID, t.platformName, t.chatID, threadLog, idLog))
 		delivered = true
@@ -1170,7 +1170,7 @@ func (s *Store) queueForLiveReconnect(ctx context.Context, t *targetDelivery, co
 		if err := gateway.RecordObligation(ctx, gateway.DeliveryObligation{ObligationID: obligationID, SessionKey: sessionKey, Platform: t.platformName, ChatID: t.chatID, ThreadID: thread, Content: content, AdapterProfile: profile}); err != nil {
 			return err
 		}
-		return gateway.MarkFailed(ctx, obligationID, pyrepr.Str(liveErr))
+		return gateway.MarkFailed(ctx, obligationID, anyutil.String(liveErr))
 	}()
 	if errors.Is(err, errNotQueued) {
 		return
@@ -1208,8 +1208,8 @@ func (s *Store) sendStandalone(ctx context.Context, t *targetDelivery, content s
 		return
 	}
 	result, errText := s.standaloneSend(ctx, t, content, media)
-	if errText == nil && len(result) > 0 && pyTruthy(result["error"]) {
-		errText = strPtr(fmt.Sprintf("delivery error: %s (target %s)", pyrepr.Str(result["error"]), t.where()))
+	if errText == nil && len(result) > 0 && anyutil.IsTrue(result["error"]) {
+		errText = strPtr(fmt.Sprintf("delivery error: %s (target %s)", anyutil.String(result["error"]), t.where()))
 		s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, *errText))
 	}
 	if errText != nil {
@@ -1220,7 +1220,7 @@ func (s *Store) sendStandalone(ctx context.Context, t *targetDelivery, content s
 	}
 	if warnings, ok := result["warnings"].([]any); ok {
 		for _, w := range warnings {
-			msg := fmt.Sprintf("delivery warning: %s (target %s)", pyrepr.Str(w), t.where())
+			msg := fmt.Sprintf("delivery warning: %s (target %s)", anyutil.String(w), t.where())
 			s.log.Error(fmt.Sprintf("Job '%s': %s", job.ID, msg))
 			*deliveryErrors = append(*deliveryErrors, msg)
 		}
@@ -1236,12 +1236,12 @@ func (s *Store) prepareTargetDelivery(ctx context.Context, job *Job, target Targ
 	if origin == nil {
 		origin = map[string]any{}
 	}
-	if pyTruthy(origin["thread_id"]) && threadID == "" {
+	if anyutil.IsTrue(origin["thread_id"]) && threadID == "" {
 		deliver := "local"
 		if job.Deliver != nil {
 			deliver = *job.Deliver
 		}
-		s.log.Warn(fmt.Sprintf("Job '%s': origin has thread_id=%s but delivery target lost it (deliver=%s, target=%s)", job.ID, pyrepr.Str(origin["thread_id"]), deliver, pyrepr.Str(target.dict())))
+		s.log.Warn(fmt.Sprintf("Job '%s': origin has thread_id=%s but delivery target lost it (deliver=%s, target=%s)", job.ID, anyutil.String(origin["thread_id"]), deliver, anyutil.String(target.dict())))
 	} else if threadID != "" {
 		s.log.Debug(fmt.Sprintf("Job '%s': delivering to %s:%s thread_id=%s", job.ID, platformName, chatID, threadID))
 	}

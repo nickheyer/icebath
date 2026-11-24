@@ -7,8 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -177,7 +175,7 @@ func tomliWFloat(f float64) string {
 	case math.IsNaN(f):
 		return "nan"
 	}
-	return pyrepr.Float(f)
+	return strconv.FormatFloat(f, 'f', -1, 64)
 }
 
 // Python str of a time of day, microseconds shown only when present

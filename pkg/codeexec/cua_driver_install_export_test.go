@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestMacosRefreshRegistersPostEnsureSignedApp(t *testing.T) {
@@ -35,9 +35,9 @@ func TestMacosRefreshRegistersPostEnsureSignedApp(t *testing.T) {
 			return nil
 		})
 		var contracted []string
-		cuSwap(t, &cuaDriverContractStatus, func(_ context.Context, _ *tools.Env, b string) (*pyjson.Object, error) {
+		cuSwap(t, &cuaDriverContractStatus, func(_ context.Context, _ *tools.Env, b string) (*jsonutil.Object, error) {
 			contracted = append(contracted, b)
-			state := pyjson.NewObject()
+			state := jsonutil.NewObject()
 			state.Set("ready", true)
 			return state, nil
 		})

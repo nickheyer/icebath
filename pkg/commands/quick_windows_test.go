@@ -5,10 +5,15 @@ package commands
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/windows"
+
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 func TestQuickExecRepliesOnWindows(t *testing.T) {
@@ -26,7 +31,11 @@ func TestQuickExecFailuresOnWindows(t *testing.T) {
 	ctx := quickTestContext(t)
 	env := quickToolEnv()
 	missing := filepath.Join(t.TempDir(), "missing")
-	if got, _ := RunGatewayExecQuickCommand(ctx, env, "echo hi", missing); got != "Quick command error: [WinError 267] The directory name is invalid" {
+	shell, err := executil.Shell()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := RunGatewayExecQuickCommand(ctx, env, "echo hi", missing); got != "Quick command error: "+(&fs.PathError{Op: "fork/exec", Path: shell, Err: windows.ERROR_DIRECTORY}).Error() {
 		t.Fatalf("missing cwd %q", got)
 	}
 	if got, _ := RunGatewayExecQuickCommand(ctx, env, []byte("echo hi"), ""); got != "Quick command error: bytes args is not allowed on Windows" {
@@ -34,7 +43,7 @@ func TestQuickExecFailuresOnWindows(t *testing.T) {
 	}
 	t.Setenv("ComSpec", "")
 	t.Setenv("SystemRoot", "")
-	if got, _ := RunGatewayExecQuickCommand(ctx, env, "echo hi", ""); got != "Quick command error: shell not found: neither %ComSpec% nor %SystemRoot% is set" {
+	if got, _ := RunGatewayExecQuickCommand(ctx, env, "echo hi", ""); got != "Quick command error: no command shell found: ComSpec is unset and SystemRoot is not an absolute directory" {
 		t.Fatalf("no shell %q", got)
 	}
 }

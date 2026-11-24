@@ -13,13 +13,15 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Release answers counted as a closed session
@@ -104,7 +106,7 @@ var cloudTransport = sync.OnceValue(func() *http.Transport {
 func cloudRequest(method, url string, headers map[string]string, body any, timeout int) (*pyrequests.Response, error) {
 	var payload []byte
 	if body != nil {
-		text, err := pyjson.Dumps(body, pyjson.AllowNaN(false))
+		text, err := jsonutil.Encode(body)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +125,7 @@ func cloudRequest(method, url string, headers map[string]string, body any, timeo
 	if body != nil && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	return pyrequests.Send(context.Background(), cloudTransport(), pyrequests.Seconds(timeout), req)
+	return pyrequests.Send(context.Background(), cloudTransport(), httputil.EachPhase(time.Duration(float64(timeout)*float64(time.Second))), req)
 }
 
 // Release request of a session by the vendor's method and path
@@ -232,7 +234,7 @@ func firstRunes(s string, n int) string {
 
 // Response body parsed as requests' json() parses it
 func responseJSON(r *pyrequests.Response) (any, error) {
-	v, err := pyjson.Loads(string(r.Body))
+	v, err := jsonutil.Decode(string(r.Body))
 	if err != nil {
 		return nil, &pyrequests.Error{Class: "JSONDecodeError", Text: err.Error(), Err: err}
 	}
@@ -245,7 +247,7 @@ func jsonGet(v any, key string) (any, bool, bool) {
 	case map[string]any:
 		got, ok := o[key]
 		return got, ok, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		got, ok := o.Get(key)
 		return got, ok, true
 	}
@@ -259,7 +261,7 @@ func jsonItem(v any, key string) (any, error) {
 		return nil, &cloudError{Class: "TypeError", Msg: subscriptError(v)}
 	}
 	if !ok {
-		return nil, &cloudError{Class: "KeyError", Msg: pyrepr.Repr(key)}
+		return nil, &cloudError{Class: "KeyError", Msg: anyutil.Quote(key)}
 	}
 	return got, nil
 }

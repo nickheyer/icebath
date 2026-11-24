@@ -6,10 +6,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"unicode"
+	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // SearchMatch is one search hit with the modification time used for sorting
@@ -116,8 +116,8 @@ type searchMatchJSON struct {
 }
 
 // Ordered dict of the result, path grouped matches when densify is set and worth it
-func (r *SearchResult) toDict(densify bool) *pyjson.Object {
-	out := &pyjson.Object{Vals: map[string]any{}}
+func (r *SearchResult) toDict(densify bool) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("total_count", r.TotalCount)
 	if len(r.Matches) > 0 {
 		dense, ok := "", false
@@ -140,7 +140,7 @@ func (r *SearchResult) toDict(densify bool) *pyjson.Object {
 		out.Set("files", r.Files)
 	}
 	if len(r.Counts) > 0 {
-		counts := &pyjson.Object{Vals: map[string]any{}}
+		counts := jsonutil.NewObject()
 		for _, c := range r.Counts {
 			counts.Set(c.Path, c.Count)
 		}
@@ -170,8 +170,8 @@ type LintResult struct {
 func newLintResult() *LintResult { return &LintResult{Success: true} }
 
 // Lint dict in status, output, message order or the skipped status with its message
-func (l *LintResult) toDict() *pyjson.Object {
-	out := &pyjson.Object{Vals: map[string]any{}}
+func (l *LintResult) toDict() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	if l.Skipped {
 		out.Set("status", "skipped")
 		out.Set("message", l.Message)
@@ -233,7 +233,7 @@ func stripTerminalFenceLeaks(text string) string {
 func runePrefix(s string, n int) string {
 	i := 0
 	for count := 0; i < len(s) && count < n; count++ {
-		_, size := pystr.DecodeRune(s[i:])
+		_, size := utf8.DecodeRuneInString(s[i:])
 		i += size
 	}
 	return s[:i]
@@ -331,77 +331,6 @@ func normalizeSearchPagination(offset, limit any) (int, int) {
 
 // Python str.rstrip with no argument
 func pyRStrip(s string) string { return strings.TrimRightFunc(s, pyIsSpace) }
-
-// Word break MidLetter, MidNumLet and Single_Quote code points Python counts as case ignorable
-var pyCaseIgnorablePunct = map[rune]bool{
-	0x27: true, 0x2e: true, 0x3a: true, 0xb7: true, 0x387: true, 0x55f: true, 0x5f4: true, 0x2018: true,
-	0x2019: true, 0x2024: true, 0x2027: true, 0xfe13: true, 0xfe52: true, 0xfe55: true, 0xff07: true,
-	0xff0e: true, 0xff1a: true,
-}
-
-// Python case ignorable property used by the final sigma rule
-func pyCaseIgnorable(r rune) bool {
-	return unicode.In(r, unicode.Mn, unicode.Me, unicode.Cf, unicode.Lm, unicode.Sk) || pyCaseIgnorablePunct[r]
-}
-
-// Python cased property used by the final sigma rule
-func pyCased(r rune) bool {
-	return unicode.In(r, unicode.Lu, unicode.Ll, unicode.Lt, unicode.Other_Lowercase, unicode.Other_Uppercase)
-}
-
-// Python str.lower with the dotted capital I expansion and the final sigma context rule
-func pyLower(s string) string {
-	if isASCIIString(s) {
-		return strings.ToLower(s)
-	}
-	rs := []rune(s)
-	var b strings.Builder
-	for i, at := 0, 0; at < len(s); i++ {
-		r, size := pystr.DecodeRune(s[at:])
-		switch {
-		case pystr.IsSurrogate(r):
-			b.WriteString(s[at : at+size])
-		case r == 0x130:
-			b.WriteString("i\xcc\x87")
-		case r == 0x3a3:
-			b.WriteRune(pyLowerSigma(rs, i))
-		default:
-			b.WriteRune(unicode.ToLower(r))
-		}
-		at += size
-	}
-	return b.String()
-}
-
-// Final small sigma when a cased letter precedes and none follows past case ignorable runes
-func pyLowerSigma(rs []rune, i int) rune {
-	j := i - 1
-	for j >= 0 && pyCaseIgnorable(rs[j]) {
-		j--
-	}
-	final := j >= 0 && pyCased(rs[j])
-	if final && i+1 < len(rs) {
-		j = i + 1
-		for j < len(rs) && pyCaseIgnorable(rs[j]) {
-			j++
-		}
-		final = j == len(rs) || !pyCased(rs[j])
-	}
-	if final {
-		return 0x3c2
-	}
-	return 0x3c3
-}
-
-// Reports whether every byte of s is ASCII
-func isASCIIString(s string) bool {
-	for i := 0; i < len(s); i++ {
-		if s[i] >= 0x80 {
-			return false
-		}
-	}
-	return true
-}
 
 // ntpath.splitroot into drive, root and the rest, slashes and backslashes both separators
 func ntSplitRoot(p string) (string, string, string) {

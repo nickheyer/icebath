@@ -14,13 +14,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -35,18 +35,18 @@ const (
 var codexAcceptedInputMime = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
 
 // httpx.Client construction seam of the images request, nil when no HTTP client is linked
-var codexImagesHTTPClient = func() *http.Client { return pyhttpx.PlainClient(false) }
+var codexImagesHTTPClient = func() *http.Client { return httputil.Client(false) }
 
 // httpx.Timeout(300, connect=30, read=300, write=60, pool=30) of the images request
-var codexImagesTimeout = pyhttpx.Timeout{Connect: 30 * time.Second, Read: 300 * time.Second, Write: 60 * time.Second, Pool: 30 * time.Second}
+var codexImagesTimeout = httputil.Timeout{Connect: 30 * time.Second, Read: 300 * time.Second, Write: 60 * time.Second, Pool: 30 * time.Second}
 
 // Error message of a parsed error object clipped to the cap, else the clipped raw body
 func summarizeCodexErrorBody(body string) string {
-	if payload, err := pyjson.Loads(body); err == nil {
-		if obj, ok := pyjson.AsObject(payload); ok {
+	if payload, err := jsonutil.Decode(body); err == nil {
+		if obj, ok := jsonutil.AsObject(payload); ok {
 			errVal, _ := obj.Get("error")
-			if eo, ok := pyjson.AsObject(errVal); ok {
-				if msg, ok := eo.Vals["message"].(string); ok && strings.TrimSpace(msg) != "" {
+			if eo, ok := jsonutil.AsObject(errVal); ok {
+				if msg, ok := eo.Value("message").(string); ok && strings.TrimSpace(msg) != "" {
 					return clipRunes(strings.TrimSpace(msg), codexMaxErrorBodyChars)
 				}
 			}
@@ -109,7 +109,7 @@ func codexDataURLToInputImageURL(value string) (string, error) {
 	if !strings.HasPrefix(headerLC, "data:image/") || !strings.Contains(headerLC, ";base64") {
 		return "", &imageValueError{"Only base64 data:image URLs are supported as Codex image inputs"}
 	}
-	raw, err := pybase64.B64DecodeValidate(data)
+	raw, err := base64.StdEncoding.DecodeString(data)
 	if err != nil {
 		return "", err
 	}
@@ -123,14 +123,14 @@ func codexRemoteImageToDataURL(ctx context.Context, env *tools.Env, value string
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, value, nil)
 	if err != nil {
-		return "", fmt.Errorf("%s", pyhttpx.ErrorText(err))
+		return "", fmt.Errorf("%s", err.Error())
 	}
-	resp, err := pyhttpx.Do(tools.NewSSRFSafeClient(env, 60*time.Second, true), req, 60*time.Second)
+	resp, err := httputil.Do(tools.NewSSRFSafeClient(env, 60*time.Second, true), req, httputil.EachPhase(60*time.Second))
 	if err != nil {
-		return "", fmt.Errorf("%s", pyhttpx.ErrorText(err))
+		return "", fmt.Errorf("%s", err.Error())
 	}
 	if resp.StatusCode/100 != 2 {
-		return "", fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
+		return "", &httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.URL, Location: resp.Header.Get("Location")}
 	}
 	return encodeCodexInputImage(resp.Content, "Image URL exceeds 25MB cap: "+value, "Image URL did not return a supported image: "+value)
 }
@@ -140,7 +140,7 @@ func codexLocalImageToDataURL(env *tools.Env, value string) (string, error) {
 	if blocked := tools.ReadBlockError(env, value); blocked != "" {
 		return "", &imageValueError{blocked}
 	}
-	path, err := pypath.Resolve(pypath.Expanduser(value))
+	path, err := pathutil.Resolve(pathutil.ExpandUser(value))
 	if err != nil {
 		return "", fmt.Errorf("%s", errchain.OSText(err))
 	}
@@ -159,7 +159,7 @@ func codexLocalImageToDataURL(env *tools.Env, value string) (string, error) {
 }
 
 // images entry of a URL, data URL or local path for the edits endpoint
-func codexToInputImage(ctx context.Context, env *tools.Env, value string) (*pyjson.Object, error) {
+func codexToInputImage(ctx context.Context, env *tools.Env, value string) (*jsonutil.Object, error) {
 	candidate := strings.TrimSpace(value)
 	if candidate == "" {
 		return nil, &imageValueError{"Blank image input"}
@@ -178,7 +178,7 @@ func codexToInputImage(ctx context.Context, env *tools.Env, value string) (*pyjs
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("image_url", imageURL), nil
+	return jsonutil.ObjectOf("image_url", imageURL), nil
 }
 
 // images entries of the primary and reference sources up to the sixteen the endpoint accepts
@@ -195,8 +195,8 @@ func normalizeCodexInputImages(ctx context.Context, env *tools.Env, imageURL str
 }
 
 // Endpoint path and JSON body, images/edits when sources are present else images/generations
-func buildCodexImageRequest(prompt, size string, quality any, inputImages []any) (string, *pyjson.Object) {
-	body := pyjson.ObjectOf("prompt", prompt, "model", gptImage2APIModel, "n", 1, "quality", quality, "size", size, "background", "opaque")
+func buildCodexImageRequest(prompt, size string, quality any, inputImages []any) (string, *jsonutil.Object) {
+	body := jsonutil.ObjectOf("prompt", prompt, "model", gptImage2APIModel, "n", 1, "quality", quality, "size", size, "background", "opaque")
 	if len(inputImages) > 0 {
 		body.Set("images", inputImages)
 		return "images/edits", body
@@ -205,27 +205,27 @@ func buildCodexImageRequest(prompt, size string, quality any, inputImages []any)
 }
 
 // Posts to the native Codex images endpoint and returns the decoded body with the backend request id
-func postCodexImageRequest(ctx context.Context, token, prompt, size string, quality any, inputImages []any, baseURL string) (*pyjson.Object, error) {
+func postCodexImageRequest(ctx context.Context, token, prompt, size string, quality any, inputImages []any, baseURL string) (*jsonutil.Object, error) {
 	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
 	headers := provider.CodexCloudflareHeaders(token, baseURL)
 	headers["Authorization"] = "Bearer " + token
 	headers["Content-Type"] = "application/json"
 	headers["x-codex-image-turn-id"] = uuid.NewString()
 	path, body := buildCodexImageRequest(prompt, size, quality, inputImages)
-	encoded, err := pyjson.Dumps(body, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+	encoded, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/"+path, bytes.NewReader([]byte(encoded)))
 	if err != nil {
-		return nil, fmt.Errorf("%s", pyhttpx.ErrorText(err))
+		return nil, fmt.Errorf("%s", err.Error())
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := pyhttpx.DoTimeout(codexImagesHTTPClient(), req, codexImagesTimeout)
+	resp, err := httputil.Do(codexImagesHTTPClient(), req, codexImagesTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("%s", pyhttpx.ErrorText(err))
+		return nil, fmt.Errorf("%s", err.Error())
 	}
 	if resp.StatusCode >= 400 {
 		return nil, fmt.Errorf("Codex images API returned HTTP %d: %s", resp.StatusCode, summarizeCodexErrorBody(resp.Text()))
@@ -234,7 +234,7 @@ func postCodexImageRequest(ctx context.Context, token, prompt, size string, qual
 	if err != nil {
 		return nil, err
 	}
-	payload, ok := pyjson.AsObject(decoded)
+	payload, ok := jsonutil.AsObject(decoded)
 	if !ok {
 		return nil, fmt.Errorf("Codex images API returned a non-object body")
 	}
@@ -322,8 +322,8 @@ func (p *openAICodexImageGenProvider) Generate(ctx context.Context, env *tools.E
 	data, _ := payload.Get("data")
 	var b64 string
 	if items, ok := data.([]any); ok && len(items) > 0 {
-		if first, ok := pyjson.AsObject(items[0]); ok {
-			b64, _ = first.Vals["b64_json"].(string)
+		if first, ok := jsonutil.AsObject(items[0]); ok {
+			b64, _ = first.Value("b64_json").(string)
 		}
 	}
 	if b64 == "" {

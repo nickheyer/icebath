@@ -8,8 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Connected client transports global broadcasts fan out to, and whether stdout is the JSON RPC client channel
@@ -45,13 +45,13 @@ func UnregisterLiveTransport(transport Transport) {
 func StdioIsRPCChannel() bool { return stdioIsRPCChannel.Load() }
 
 // JSON RPC event notification of one event for a session, the payload key present only with a payload
-func EventFrame(event, sid string, payload map[string]any) *pyjson.Object {
+func EventFrame(event, sid string, payload map[string]any) *jsonutil.Object {
 	payload = tuigateway.SealPayload(event, payload)
-	params := pyjson.ObjectOf("type", event, "session_id", sid)
+	params := jsonutil.ObjectOf("type", event, "session_id", sid)
 	if payload != nil {
 		params.Set("payload", payload)
 	}
-	return pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params", params)
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event", "params", params)
 }
 
 // Fans a session less event to every connected client, stdio when it is the client channel, else drops it
@@ -85,7 +85,7 @@ func broadcastEvent(event, sid string, payload map[string]any, skip ...Transport
 }
 
 // Writes one frame to one peer, a panicking peer logged so the rest still receive it
-func writeGlobalEvent(transport Transport, frame *pyjson.Object, event string) {
+func writeGlobalEvent(transport Transport, frame *jsonutil.Object, event string) {
 	defer func() {
 		if r := recover(); r != nil {
 			serverLog().Debug(fmt.Sprintf("global-event broadcast write failed type=%s", event), "exc_info", fmt.Errorf("%v", r))

@@ -16,12 +16,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 var workerProcess atomic.Bool
@@ -48,16 +48,16 @@ func ApplyRowAnnotations(messages []map[string]any, annotations any) error {
 		if i >= len(list) {
 			return &workerStoreError{"ValueError", "there are fewer row annotations than messages"}
 		}
-		annotation, ok := list[i].(*pyjson.Object)
+		annotation, ok := list[i].(*jsonutil.Object)
 		if !ok {
 			return &workerStoreError{"AttributeError", fmt.Sprintf("row annotation is %s where a mapping was expected", errchain.Kind(list[i]))}
 		}
-		for _, key := range annotation.Keys {
-			value := annotation.Vals[key]
+		for _, key := range annotation.Keys() {
+			value := annotation.Value(key)
 			if value == nil {
 				delete(messages[i], key)
 			} else {
-				messages[i][key] = pyjson.Plain(value)
+				messages[i][key] = jsonutil.Plain(value)
 			}
 		}
 	}
@@ -100,11 +100,11 @@ func currentThreadName() string {
 
 // Runs fn here, or on a fresh goroutine without the loop marker when this context runs an event loop
 func CallOffEventLoop(ctx context.Context, fn func(ctx context.Context) error) error {
-	if !pyctx.RunningLoop(ctx) && !tools.RelayHasRunningEventLoop(ctx) {
+	if !ctxutil.NonBlocking(ctx) && !tools.RelayHasRunningEventLoop(ctx) {
 		return fn(ctx)
 	}
 	done := make(chan error, 1)
-	off := tools.RelayWithoutRunningLoop(pyctx.WithoutRunningLoop(ctx))
+	off := tools.RelayWithoutRunningLoop(ctxutil.WithBlocking(ctx))
 	go func() { done <- fn(off) }()
 	return <-done
 }
@@ -160,13 +160,13 @@ func (l *ownerLink) read() {
 			l.put(err)
 			return
 		}
-		frame, err := pyjson.LoadsBytes(data)
+		frame, err := jsonutil.Decode(data)
 		if err != nil {
 			continue
 		}
-		obj, ok := frame.(*pyjson.Object)
+		obj, ok := frame.(*jsonutil.Object)
 		awaiting := l.awaiting.Load().(int64)
-		if ok && awaiting != 0 && pyjson.Equal(obj.GetOr("id", nil), awaiting) {
+		if ok && awaiting != 0 && anyutil.Equal(obj.ValueOr("id", nil), awaiting) {
 			l.put(obj)
 		}
 	}
@@ -188,7 +188,7 @@ func (l *ownerLink) send(requestID int64, message string) error {
 }
 
 // Next reply within the timeout, worker_receipt_timeout once it lapses and the read error as raised
-func (l *ownerLink) receive(timeout time.Duration) (*pyjson.Object, error) {
+func (l *ownerLink) receive(timeout time.Duration) (*jsonutil.Object, error) {
 	timer := time.NewTimer(timeout)
 	defer timer.Stop()
 	for {
@@ -196,7 +196,7 @@ func (l *ownerLink) receive(timeout time.Duration) (*pyjson.Object, error) {
 			if err, isErr := reply.(error); isErr {
 				return nil, err
 			}
-			return reply.(*pyjson.Object), nil
+			return reply.(*jsonutil.Object), nil
 		}
 		select {
 		case <-l.ready:
@@ -223,7 +223,7 @@ type WorkerRPC struct {
 
 // Caller bound to the profile home, resolved
 func NewWorkerRPC(home string) (*WorkerRPC, error) {
-	resolved, err := pypath.Resolve(home)
+	resolved, err := pathutil.Resolve(home)
 	if err != nil {
 		return nil, err
 	}
@@ -249,7 +249,7 @@ func (r *WorkerRPC) connection(ctx context.Context) (*ownerLink, error) {
 	if err != nil {
 		return nil, err
 	}
-	if pyjson.Equal(descriptor.GetOr("pid", nil), int64(os.Getpid())) {
+	if anyutil.Equal(descriptor.ValueOr("pid", nil), int64(os.Getpid())) {
 		return nil, tools.NewWorkerPersistenceError("synchronous_self_rpc")
 	}
 	ticket, err := gateway.SessionTicket(r.home, endpoint, "worker-adoption")
@@ -260,7 +260,7 @@ func (r *WorkerRPC) connection(ctx context.Context) (*ownerLink, error) {
 	dialer := websocket.Dialer{Proxy: nil, HandshakeTimeout: 5 * time.Second, Subprotocols: protocols}
 	ws, resp, err := dialer.DialContext(ctx, url, nil)
 	if err != nil {
-		return nil, pywebsockets.HandshakeError(resp, err)
+		return nil, websocketutil.WrapDialError(resp, err)
 	}
 	ws.SetReadLimit(8 * 1024 * 1024)
 	r.link = newOwnerLink(ws)
@@ -270,7 +270,7 @@ func (r *WorkerRPC) connection(ctx context.Context) (*ownerLink, error) {
 // Send and receive half of the owner connection one request travels over
 type workerOwnerConn interface {
 	send(requestID int64, message string) error
-	receive(timeout time.Duration) (*pyjson.Object, error)
+	receive(timeout time.Duration) (*jsonutil.Object, error)
 }
 
 // Live owner connection of an exchange, the WorkerRPC connection tests swap for an in process reply
@@ -299,8 +299,8 @@ func (r *WorkerRPC) Close() {
 }
 
 // One JSON-RPC call to the owner, refused on an event loop and never resent once its outcome is unknown
-func (r *WorkerRPC) Call(ctx context.Context, method string, params *pyjson.Object) (any, error) {
-	if pyctx.RunningLoop(ctx) {
+func (r *WorkerRPC) Call(ctx context.Context, method string, params *jsonutil.Object) (any, error) {
+	if ctxutil.NonBlocking(ctx) {
 		pkgLog().Warn(fmt.Sprintf("synchronous_rpc_on_event_loop: %s on thread %s; caller: %s", method, currentThreadName(), callerSummary(8)))
 		return nil, tools.NewWorkerPersistenceError("synchronous_rpc_on_event_loop")
 	}
@@ -309,9 +309,9 @@ func (r *WorkerRPC) Call(ctx context.Context, method string, params *pyjson.Obje
 	r.requestID++
 	requestID := r.requestID
 	if params == nil {
-		params = pyjson.NewObject()
+		params = jsonutil.NewObject()
 	}
-	message, err := pyjson.Dumps(pyjson.ObjectOf("jsonrpc", "2.0", "id", requestID, "method", method, "params", params))
+	message, err := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", requestID, "method", method, "params", params))
 	if err != nil {
 		return nil, err
 	}
@@ -321,19 +321,19 @@ func (r *WorkerRPC) Call(ctx context.Context, method string, params *pyjson.Obje
 		return nil, err
 	}
 	if raw, has := response.Get("error"); has {
-		failure, ok := raw.(*pyjson.Object)
+		failure, ok := raw.(*jsonutil.Object)
 		if !ok {
 			return nil, &workerStoreError{"AttributeError", fmt.Sprintf("worker reply error is %s where a mapping was expected", errchain.Kind(raw))}
 		}
-		reason := failure.GetOr("message", "persistence_failed")
+		reason := failure.ValueOr("message", "persistence_failed")
 		text, isText := reason.(string)
 		if !isText {
-			text = pyrepr.Str(reason)
+			text = anyutil.String(reason)
 		}
 		return nil, tools.NewWorkerPersistenceError(text)
 	}
 	if method == "worker.register" || method == "worker.adopt" {
-		if pyjson.Equal(params.GetOr("pid", nil), int64(os.Getpid())) {
+		if anyutil.Equal(params.ValueOr("pid", nil), int64(os.Getpid())) {
 			workerProcess.Store(true)
 		}
 	}
@@ -345,7 +345,7 @@ func (r *WorkerRPC) Call(ctx context.Context, method string, params *pyjson.Obje
 }
 
 // Sends the request once, redialing a single time when the send itself failed, then waits for its reply
-func (r *WorkerRPC) exchange(ctx context.Context, requestID int64, message string) (*pyjson.Object, error) {
+func (r *WorkerRPC) exchange(ctx context.Context, requestID int64, message string) (*jsonutil.Object, error) {
 	link, err := workerRPCConnection(r, ctx)
 	if err != nil {
 		return nil, err

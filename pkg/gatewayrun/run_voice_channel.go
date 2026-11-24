@@ -9,8 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Discord voice channel a member sits in
@@ -42,7 +40,7 @@ type pendingVoiceDiscarder interface {
 
 // Discord adapter surface remembering the source a voice join came from
 type voiceSourceRecorder interface {
-	SetVoiceSource(guildID int64, source *pyjson.Object)
+	SetVoiceSource(guildID int64, source *jsonutil.Object)
 }
 
 // Discord adapter surface leaving a guild's voice channel
@@ -82,7 +80,7 @@ func (r *GatewayRunner) handleVoiceChannelJoin(ctx context.Context, event *gatew
 	}
 	if holder, ok := adapter.(voiceModeGetterHolder); ok {
 		holder.SetVoiceModeGetter(func(chatID any) string {
-			if mode, found := chatVoiceMode(voiceKey(gateway.PlatformDiscord, pyrepr.Str(chatID), voiceProfile)); found {
+			if mode, found := chatVoiceMode(voiceKey(gateway.PlatformDiscord, anyutil.String(chatID), voiceProfile)); found {
 				return mode
 			}
 			return "off"
@@ -90,13 +88,13 @@ func (r *GatewayRunner) handleVoiceChannelJoin(ctx context.Context, event *gatew
 	}
 	success, err := joiner.JoinVoiceChannel(ctx, voiceChannel)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to join voice channel: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to join voice channel: %s", err.Error()))
 		joiner.SetVoiceInputCallback(nil)
 		var native interface{ VoiceDependencyHint() string }
 		if errors.As(err, &native) {
 			return i18n.T(ctx, "gateway.voice.channel_deps_missing", "", map[string]any{"hint": native.VoiceDependencyHint()}), nil
 		}
-		return i18n.T(ctx, "gateway.voice.channel_join_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.voice.channel_join_failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	if !success {
 		joiner.SetVoiceInputCallback(nil)
@@ -134,7 +132,7 @@ func (r *GatewayRunner) handleVoiceChannelLeave(ctx context.Context, event *gate
 		return i18n.T(ctx, "gateway.voice.channel_not_joined", "", nil), nil
 	}
 	if err := leaver.LeaveVoiceChannel(ctx, guildID); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Error leaving voice channel: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Error leaving voice channel: %s", err.Error()))
 	}
 	r.applyVoiceMode(adapter, r.voiceKeyForSource(event.Source), event.Source.ChatID, "off")
 	if binder, ok := adapter.(voiceInputBinder); ok {

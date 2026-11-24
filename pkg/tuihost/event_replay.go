@@ -6,8 +6,8 @@ import (
 	"encoding/hex"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Random 32 hex character identifier, uuid4 hex
@@ -60,8 +60,8 @@ var replay = struct {
 func ReplayEpoch() string { return replayEpochToken }
 
 // Serialized replay snapshot detached from the caller's object graph
-func freezeParams(params *pyjson.Object) []byte {
-	text, err := pyjson.Dumps(params, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+func freezeParams(params *jsonutil.Object) []byte {
+	text, err := jsonutil.Encode(params)
 	if err != nil {
 		panic(err)
 	}
@@ -69,33 +69,33 @@ func freezeParams(params *pyjson.Object) []byte {
 }
 
 // Client event object rebuilt from its snapshot with the server owned seq restored
-func thawParams(payload []byte, seq int) *pyjson.Object {
-	decoded, err := pyjson.LoadsBytes(payload)
+func thawParams(payload []byte, seq int) *jsonutil.Object {
+	decoded, err := jsonutil.Decode(payload)
 	if err != nil {
 		panic(err)
 	}
-	event := decoded.(*pyjson.Object)
+	event := decoded.(*jsonutil.Object)
 	event.Set("seq", seq)
 	return event
 }
 
 // Stamps an outgoing event frame with its per session seq and records a frozen snapshot
-func StampEvent(obj *pyjson.Object) {
+func StampEvent(obj *jsonutil.Object) {
 	if method, _ := obj.Get("method"); method != "event" {
 		return
 	}
 	raw, _ := obj.Get("params")
-	params, ok := raw.(*pyjson.Object)
+	params, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return
 	}
 	sidValue, _ := params.Get("session_id")
-	if !pyrepr.Truthy(sidValue) {
+	if !anyutil.IsTrue(sidValue) {
 		return
 	}
 	sid, isStr := sidValue.(string)
 	if !isStr {
-		sid = pyrepr.Repr(sidValue)
+		sid = anyutil.Quote(sidValue)
 	}
 	payload := freezeParams(params)
 	size := len(payload)
@@ -215,7 +215,7 @@ func ReleaseKey(key string, blocking bool) {
 }
 
 // Recorded event objects newer than lastSeen for a session, decoded outside the ring lock
-func EventsSince(sid string, lastSeen int) []*pyjson.Object {
+func EventsSince(sid string, lastSeen int) []*jsonutil.Object {
 	replay.Lock()
 	var snapshots []replayFrame
 	if elem, ok := replay.buffers[sid]; ok {
@@ -226,7 +226,7 @@ func EventsSince(sid string, lastSeen int) []*pyjson.Object {
 		}
 	}
 	replay.Unlock()
-	out := make([]*pyjson.Object, 0, len(snapshots))
+	out := make([]*jsonutil.Object, 0, len(snapshots))
 	for _, frame := range snapshots {
 		out = append(out, thawParams(frame.payload, frame.seq))
 	}

@@ -7,14 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // LSP error codes the client acts on
@@ -86,7 +84,7 @@ func attachDetails(err error, details string) {
 
 // EncodeMessage frames an envelope as compact UTF-8 JSON behind an exact Content-Length header
 func EncodeMessage(obj any) ([]byte, error) {
-	body, err := pyjson.Dumps(orderedEnvelope(obj), pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
+	body, err := jsonutil.Encode(orderedEnvelope(obj))
 	if err != nil {
 		return nil, err
 	}
@@ -113,8 +111,8 @@ func orderedEnvelope(obj any) any {
 }
 
 // Ordered object with the named keys first and every other key after them in sorted order
-func keysFirst(m map[string]any, first ...string) *pyjson.Object {
-	out := pyjson.NewObject()
+func keysFirst(m map[string]any, first ...string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, k := range first {
 		if v, has := m[k]; has {
 			out.Set(k, v)
@@ -147,7 +145,7 @@ func readHeaders(r *bufio.Reader) ([]headerField, bool, error) {
 				if len(line) == 0 && len(headers) == 0 {
 					return nil, false, nil
 				}
-				return nil, false, protocolErrorf("unexpected EOF while reading LSP headers (partial=%s)", pyrepr.BytesRepr(line))
+				return nil, false, protocolErrorf("unexpected EOF while reading LSP headers (partial=%s)", strconv.Quote(string(line)))
 			}
 			return nil, false, err
 		}
@@ -161,12 +159,12 @@ func readHeaders(r *bufio.Reader) ([]headerField, bool, error) {
 		}
 		for _, c := range line {
 			if c >= 0x80 {
-				return nil, false, protocolErrorf("non-ASCII LSP header: %s", pyrepr.BytesRepr(line))
+				return nil, false, protocolErrorf("non-ASCII LSP header: %s", strconv.Quote(string(line)))
 			}
 		}
 		key, value, _ := strings.Cut(string(line), ":")
 		if key == "" {
-			return nil, false, protocolErrorf("malformed LSP header line: %s", pyrepr.BytesRepr(line))
+			return nil, false, protocolErrorf("malformed LSP header line: %s", strconv.Quote(string(line)))
 		}
 		name, repeated := strings.ToLower(strings.TrimSpace(key)), false
 		for i := range headers {
@@ -214,14 +212,16 @@ func ReadMessage(r *bufio.Reader, decode func(text string) (any, error)) (msg an
 	if cl == nil {
 		return nil, false, protocolErrorf("LSP message missing Content-Length: %s", headersRepr(headers))
 	}
-	n, valid := pyint.Parse(*cl)
-	if !valid {
-		return nil, false, protocolErrorf("non-integer Content-Length: %s", pyrepr.StrRepr(*cl))
+	n, err := strconv.ParseInt(strings.TrimSpace(*cl), 10, 64)
+	switch {
+	case errors.Is(err, strconv.ErrRange):
+		return nil, false, protocolErrorf("unreasonable Content-Length: %s", strings.TrimSpace(*cl))
+	case err != nil:
+		return nil, false, protocolErrorf("non-integer Content-Length: %s", strconv.Quote(*cl))
+	case n < 0 || n > maxBodyBytes:
+		return nil, false, protocolErrorf("unreasonable Content-Length: %d", n)
 	}
-	if n.Sign() < 0 || n.Cmp(big.NewInt(maxBodyBytes)) > 0 {
-		return nil, false, protocolErrorf("unreasonable Content-Length: %s", n.String())
-	}
-	size := int(n.Int64())
+	size := int(n)
 	body := make([]byte, size)
 	got, err := io.ReadFull(r, body)
 	if err != nil {
@@ -248,7 +248,7 @@ func ReadMessage(r *bufio.Reader, decode func(text string) (any, error)) (msg an
 func headersRepr(headers []headerField) string {
 	parts := make([]string, len(headers))
 	for i, h := range headers {
-		parts[i] = pyrepr.StrRepr(h.key) + ": " + pyrepr.StrRepr(h.value)
+		parts[i] = strconv.Quote(h.key) + ": " + strconv.Quote(h.value)
 	}
 	return "{" + strings.Join(parts, ", ") + "}"
 }

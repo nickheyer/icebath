@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func (h *fakeSearchHost) GetMessagesAround(ctx context.Context, sessionID string, aroundMessageID int64, window int) (*pyjson.Object, error) {
+func (h *fakeSearchHost) GetMessagesAround(ctx context.Context, sessionID string, aroundMessageID int64, window int) (*jsonutil.Object, error) {
 	window = max(window, 0)
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	anchor, err := queryObjects(ctx, h.reader, "SELECT 1 FROM messages WHERE id = ? AND session_id = ? LIMIT 1", aroundMessageID, sessionID)
 	if err != nil {
 		return nil, err
@@ -43,7 +43,7 @@ func (h *fakeSearchHost) GetMessagesAround(ctx context.Context, sessionID string
 	return out, nil
 }
 
-func (h *fakeSearchHost) rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) (*pyjson.Object, error) {
+func (h *fakeSearchHost) rowToMessageDict(row *jsonutil.Object, warnContext string, summaryFlag bool) (*jsonutil.Object, error) {
 	row.Delete("display_identity")
 	row.Delete("display_order")
 	content, _ := row.Get("content")
@@ -52,12 +52,12 @@ func (h *fakeSearchHost) rowToMessageDict(row *pyjson.Object, warnContext string
 	return row, nil
 }
 
-func viewIDs(t *testing.T, view *pyjson.Object, key string) []int64 {
+func viewIDs(t *testing.T, view *jsonutil.Object, key string) []int64 {
 	t.Helper()
 	raw, _ := view.Get(key)
 	var ids []int64
 	for _, item := range raw.([]any) {
-		ids = append(ids, objInt(item.(*pyjson.Object), "id"))
+		ids = append(ids, objInt(item.(*jsonutil.Object), "id"))
 	}
 	return ids
 }
@@ -70,7 +70,7 @@ func TestGetAnchoredView(t *testing.T) {
 		{"assistant", "a8", ""}, {"user", "u9", ""}, {"assistant", "a10", ""}, {"tool", "t11", "t"},
 		{"assistant", "resolution", ""},
 	})
-	view := func(anchor int64, o AnchoredViewOptions) *pyjson.Object {
+	view := func(anchor int64, o AnchoredViewOptions) *jsonutil.Object {
 		t.Helper()
 		v, err := s.GetAnchoredView(ctx, "s1", anchor, o)
 		if err != nil {
@@ -87,11 +87,11 @@ func TestGetAnchoredView(t *testing.T) {
 	if objInt(v, "messages_before") != 1 || objInt(v, "messages_after") != 1 {
 		t.Fatalf("counts %s", objJSON(t, v))
 	}
-	if strings.Join(v.Keys, ",") != "window,messages_before,messages_after,bookend_start,bookend_end" {
-		t.Fatalf("key order %v", v.Keys)
+	if strings.Join(v.Keys(), ",") != "window,messages_before,messages_after,bookend_start,bookend_end" {
+		t.Fatalf("key order %v", v.Keys())
 	}
 	raw, _ := v.Get("bookend_start")
-	if by := objStr(raw.([]any)[0].(*pyjson.Object), "_hydrated_by"); by != "get_anchored_view" {
+	if by := objStr(raw.([]any)[0].(*jsonutil.Object), "_hydrated_by"); by != "get_anchored_view" {
 		t.Fatalf("bookends hydrate through the row dict: %q", by)
 	}
 	if got := viewIDs(t, view(7, o), "window"); fmt.Sprint(got) != "[6 7 8]" {
@@ -151,8 +151,8 @@ func TestListRecentUserMessages(t *testing.T) {
 		}
 		var out []string
 		for _, r := range rows {
-			if strings.Join(r.Keys, ",") != "id,timestamp,preview" {
-				t.Fatalf("keys %v", r.Keys)
+			if strings.Join(r.Keys(), ",") != "id,timestamp,preview" {
+				t.Fatalf("keys %v", r.Keys())
 			}
 			out = append(out, fmt.Sprintf("%d:%s", objInt(r, "id"), objStr(r, "preview")))
 		}
@@ -210,8 +210,8 @@ func TestSummaryContentClassification(t *testing.T) {
 	}
 }
 
-func pyjsonText(text string) *pyjson.Object {
-	o := pyjson.NewObject()
+func pyjsonText(text string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("type", "text")
 	o.Set("text", text)
 	return o

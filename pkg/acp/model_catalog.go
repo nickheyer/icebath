@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const acpMaxModelsPerProvider = 200
@@ -29,7 +29,7 @@ type namedCatalog struct {
 }
 
 func fieldText(entry map[string]any, key string) string {
-	return strings.TrimSpace(pyStr(pyrepr.Or(entry[key], "")))
+	return strings.TrimSpace(anyutil.String(anyutil.Or(entry[key], "")))
 }
 
 func stringHeaders(v any) map[string]string {
@@ -39,7 +39,7 @@ func stringHeaders(v any) map[string]string {
 	}
 	out := map[string]string{}
 	for k, x := range m {
-		out[k] = pyStr(x)
+		out[k] = anyutil.String(x)
 	}
 	return out
 }
@@ -210,7 +210,7 @@ func EncodeModelChoice(prov, model string) string {
 // Deduplicated ACP model rows from the inventory and named endpoints
 type modelCatalog struct {
 	currentModel, currentChoiceProvider, currentBaseURL string
-	models                                              []pyacp.ModelInfo
+	models                                              []acputil.ModelInfo
 	seenIDs, seenSemantic, emptyAuthoritative           map[string]bool
 	identityResolved                                    bool
 }
@@ -230,17 +230,17 @@ func (c *modelCatalog) add(providerID, modelID, name, description string) {
 	if choice == "" || c.seenIDs[choice] || c.seenSemantic[semanticID] {
 		return
 	}
-	c.models = append(c.models, pyacp.ModelInfo{ModelID: choice, Name: name, Description: pyacp.Ptr(description)})
+	c.models = append(c.models, acputil.ModelInfo{ModelID: choice, Name: name, Description: new(description)})
 	c.seenIDs[choice] = true
 	c.seenSemantic[semanticID] = true
 }
 
 func (c *modelCatalog) addInventoryRows(rows []map[string]any) {
 	for _, row := range rows {
-		rawRow := strings.ToLower(strings.TrimSpace(pyStr(pyrepr.Or(row["slug"], ""))))
+		rawRow := strings.ToLower(strings.TrimSpace(anyutil.String(anyutil.Or(row["slug"], ""))))
 		rowProvider := provider.NormalizeProvider(rawRow)
-		rowBase := strings.ToLower(strings.TrimRight(strings.TrimSpace(pyStr(pyrepr.Or(row["api_url"], ""))), "/"))
-		if truthy(row["native_catalog_empty"]) {
+		rowBase := strings.ToLower(strings.TrimRight(strings.TrimSpace(anyutil.String(anyutil.Or(row["api_url"], ""))), "/"))
+		if anyutil.IsTrue(row["native_catalog_empty"]) {
 			c.emptyAuthoritative[rawRow] = true
 		}
 		if !c.identityResolved && (rawRow == "ollama" || rawRow == "custom:ollama") && c.currentBaseURL != "" && rowBase == c.currentBaseURL {
@@ -251,7 +251,7 @@ func (c *modelCatalog) addInventoryRows(rows []map[string]any) {
 		if rowProvider == "" || !ok {
 			continue
 		}
-		providerName := strings.TrimSpace(pyStr(pyrepr.Or(row["name"], "")))
+		providerName := strings.TrimSpace(anyutil.String(anyutil.Or(row["name"], "")))
 		if providerName == "" {
 			providerName = provider.ProviderLabel(rowProvider)
 		}
@@ -263,9 +263,9 @@ func (c *modelCatalog) addInventoryRows(rows []map[string]any) {
 		}
 		for _, entry := range rowModels {
 			if m, ok := entry.(map[string]any); ok {
-				entry = pyrepr.Or(pyrepr.Or(m["id"], m["model"]), m["name"])
+				entry = anyutil.Or(anyutil.Or(m["id"], m["model"]), m["name"])
 			}
-			rendered := strings.TrimSpace(pyStr(pyrepr.Or(entry, "")))
+			rendered := strings.TrimSpace(anyutil.String(anyutil.Or(entry, "")))
 			if rendered == "" {
 				continue
 			}
@@ -330,7 +330,7 @@ func providerRows(v any) []map[string]any {
 }
 
 // Picker state from the inventory and named endpoints, nil when nothing is listable, an error when the inventory fails
-func BuildModelState(ctx context.Context, model, prov, baseURL string) (*pyacp.SessionModelState, error) {
+func BuildModelState(ctx context.Context, model, prov, baseURL string) (*acputil.SessionModelState, error) {
 	normalized := provider.NormalizeProvider(prov)
 	pc, err := loadPickerContext(ctx)
 	if err != nil {
@@ -352,19 +352,19 @@ func BuildModelState(ctx context.Context, model, prov, baseURL string) (*pyacp.S
 	allRows := providerRows(payload["providers"])
 	canonicalCurrent := false
 	for _, r := range allRows {
-		if strings.ToLower(strings.TrimSpace(pyStr(pyrepr.Or(r["slug"], "")))) == currentChoice && !truthy(r["is_user_defined"]) {
+		if strings.ToLower(strings.TrimSpace(anyutil.String(anyutil.Or(r["slug"], "")))) == currentChoice && !anyutil.IsTrue(r["is_user_defined"]) {
 			canonicalCurrent = true
 			break
 		}
 	}
 	var inventory []map[string]any
 	for _, row := range allRows {
-		slug := strings.ToLower(strings.TrimSpace(pyStr(pyrepr.Or(row["slug"], ""))))
-		if !truthy(row["is_user_defined"]) || !(namedSlugs[slug] || namedSlugs["custom:"+slug]) {
+		slug := strings.ToLower(strings.TrimSpace(anyutil.String(anyutil.Or(row["slug"], ""))))
+		if !anyutil.IsTrue(row["is_user_defined"]) || !(namedSlugs[slug] || namedSlugs["custom:"+slug]) {
 			inventory = append(inventory, row)
 			continue
 		}
-		rowBase := strings.ToLower(strings.TrimRight(strings.TrimSpace(pyStr(pyrepr.Or(row["api_url"], ""))), "/"))
+		rowBase := strings.ToLower(strings.TrimRight(strings.TrimSpace(anyutil.String(anyutil.Or(row["api_url"], ""))), "/"))
 		if strings.TrimPrefix(slug, "custom:") == currentChoice && (currentBase == rowBase || !canonicalCurrent) {
 			currentChoice = "custom:" + currentChoice
 		}
@@ -374,7 +374,7 @@ func BuildModelState(ctx context.Context, model, prov, baseURL string) (*pyacp.S
 	cat.addNamedCatalogs(named, currentChoice)
 	available := cat.models
 	if len(cat.emptyAuthoritative) > 0 {
-		var kept []pyacp.ModelInfo
+		var kept []acputil.ModelInfo
 		for _, m := range available {
 			if !emptyCatalogApplies(choiceProvider(ctx, m.ModelID), cat.emptyAuthoritative) {
 				kept = append(kept, m)
@@ -384,7 +384,7 @@ func BuildModelState(ctx context.Context, model, prov, baseURL string) (*pyacp.S
 	}
 	currentIsEmpty := emptyCatalogApplies(cat.currentChoiceProvider, cat.emptyAuthoritative)
 	if currentIsEmpty {
-		var kept []pyacp.ModelInfo
+		var kept []acputil.ModelInfo
 		for _, m := range available {
 			if m.Description == nil || !strings.Contains(*m.Description, " • current") {
 				kept = append(kept, m)
@@ -406,18 +406,18 @@ func BuildModelState(ctx context.Context, model, prov, baseURL string) (*pyacp.S
 		}
 		if !found {
 			name := provider.ProviderLabel(normalized)
-			available = append([]pyacp.ModelInfo{{ModelID: currentID, Name: name + " · " + model, Description: pyacp.Ptr("Provider: " + name + " • current")}}, available...)
+			available = append([]acputil.ModelInfo{{ModelID: currentID, Name: name + " · " + model, Description: new("Provider: " + name + " • current")}}, available...)
 		}
 	}
 	if len(available) == 0 && currentIsEmpty {
-		return &pyacp.SessionModelState{AvailableModels: []pyacp.ModelInfo{}, CurrentModelID: ""}, nil
+		return &acputil.SessionModelState{AvailableModels: []acputil.ModelInfo{}, CurrentModelID: ""}, nil
 	}
 	if len(available) > 0 {
 		cur := currentID
 		if cur == "" && !currentIsEmpty {
 			cur = available[0].ModelID
 		}
-		return &pyacp.SessionModelState{AvailableModels: available, CurrentModelID: cur}, nil
+		return &acputil.SessionModelState{AvailableModels: available, CurrentModelID: cur}, nil
 	}
 	return nil, nil
 }

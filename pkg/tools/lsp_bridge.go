@@ -10,8 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/lsp"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Profile level env of a session, the session values left out as the LSP loop never sees them
@@ -77,7 +77,7 @@ func lspDecodeJSON(text string) (any, error) {
 	if class != "" {
 		return nil, lsp.PythonError(class, msg)
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
@@ -87,15 +87,15 @@ func lspDecodeJSON(text string) (any, error) {
 // Decoded value in the plain map, int64 and float64 shapes the LSP layer reads
 func lspJSONValue(v any) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
-		m := make(map[string]any, len(t.Keys))
-		for _, k := range t.Keys {
-			if related, ordered := t.Vals[k].(*pyjson.Object); ordered && k == "relatedDocuments" {
+	case *jsonutil.Object:
+		m := make(map[string]any, t.Len())
+		for _, k := range t.Keys() {
+			if related, ordered := t.Value(k).(*jsonutil.Object); ordered && k == "relatedDocuments" {
 				reports, _ := lspJSONValue(related).(map[string]any)
-				m[k] = lsp.RelatedDocuments{URIs: append([]string(nil), related.Keys...), Reports: reports}
+				m[k] = lsp.RelatedDocuments{URIs: append([]string(nil), related.Keys()...), Reports: reports}
 				continue
 			}
-			m[k] = lspJSONValue(t.Vals[k])
+			m[k] = lspJSONValue(t.Value(k))
 		}
 		return m
 	case []any:

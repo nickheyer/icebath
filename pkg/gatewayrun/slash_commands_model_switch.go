@@ -10,13 +10,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Reasoning display toggles of the reasoning command, the value the display flag takes
@@ -70,7 +69,7 @@ func (r *GatewayRunner) performModelSwitch(ctx context.Context, sw *gateway.Mode
 		return nil, i18n.T(ctx, "gateway.model.error_prefix", "", map[string]any{"error": result.ErrorMessage}), nil
 	}
 	if err := r.enrichModelSwitchWarningsForGateway(ctx, &result, sw.SessionKey, source, switchCustomProviders(sw.CustomProviders)); err != nil {
-		pkgLog().Debug("preflight-compression switch warning failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("preflight-compression switch warning failed: " + err.Error())
 	}
 	return &result, "", nil
 }
@@ -81,7 +80,7 @@ func configuredPreflightRoute(cfg map[string]any) (*int, agent.PreflightConfigur
 	if !ok || modelCfg["context_length"] == nil {
 		return nil, agent.PreflightConfigured{}
 	}
-	length, err := pyint.Int64(modelCfg["context_length"])
+	length, err := anyutil.ToInt(modelCfg["context_length"])
 	if err != nil {
 		return nil, agent.PreflightConfigured{}
 	}
@@ -90,7 +89,7 @@ func configuredPreflightRoute(cfg map[string]any) (*int, agent.PreflightConfigur
 		if v == nil {
 			return nil
 		}
-		text := pyrepr.Str(v)
+		text := anyutil.String(v)
 		return &text
 	}
 	return &value, agent.PreflightConfigured{Model: optional(modelCfg["default"]),
@@ -128,9 +127,9 @@ func (r *GatewayRunner) switchCachedAgentModel(ctx context.Context, result *prov
 		if picker {
 			label = "Picker"
 		}
-		pkgLog().Warn(fmt.Sprintf("%s model switch failed for cached agent: %s", label, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("%s model switch failed for cached agent: %s", label, err.Error()))
 		return i18n.T(ctx, "gateway.model.error_prefix", "", map[string]any{"error": i18n.T(ctx, "gateway.model.err_switch_failed", "",
-			map[string]any{"model": result.NewModel, "error": pyrepr.ExceptionMessage(err), "current": sw.CurrentModel})})
+			map[string]any{"model": result.NewModel, "error": err.Error(), "current": sw.CurrentModel})})
 	}
 	return ""
 }
@@ -149,7 +148,7 @@ func (r *GatewayRunner) recordModelSwitch(ctx context.Context, result *provider.
 			return db.DB().SetSessionModel(ctx, entry.SessionID, result.NewModel, result.TargetProvider, result.BaseURL, result.APIMode)
 		}()
 		if err != nil {
-			pkgLog().Debug("Failed to persist model switch to DB: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Debug("Failed to persist model switch to DB: " + err.Error())
 		}
 	}
 	via := result.ProviderLabel
@@ -185,15 +184,15 @@ func (r *GatewayRunner) recordModelSwitch(ctx context.Context, result *provider.
 	globalError := ""
 	if sw.PersistGlobal {
 		if err := persistModelSwitchToConfig(ctx, *result, sw.ConfigPath); err != nil {
-			pkgLog().Warn("Failed to persist model switch: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Warn("Failed to persist model switch: " + err.Error())
 			globalError = i18n.T(ctx, "gateway.model.err_config_not_updated", "", map[string]any{"error": errorTextOrType(err)})
 		}
 	}
 	switch {
 	case sw.PersistGlobal && globalError == "" && r.channelOverrideFor(source) == nil:
 		if err := r.sessionStore.SetModelOverride(ctx, sw.SessionKey, nil); err != nil {
-			pkgLog().Warn("Failed to clear persisted session model override: " + pyrepr.ExceptionMessage(err))
-			globalError = i18n.T(ctx, "gateway.model.err_stale_override", "", map[string]any{"error": pyrepr.ExceptionMessage(err)})
+			pkgLog().Warn("Failed to clear persisted session model override: " + err.Error())
+			globalError = i18n.T(ctx, "gateway.model.err_stale_override", "", map[string]any{"error": err.Error()})
 		} else {
 			r.sessionModelOverrides().Delete(sw.SessionKey)
 		}
@@ -209,7 +208,7 @@ func (r *GatewayRunner) recordModelSwitch(ctx context.Context, result *provider.
 
 // Message of an error, no details given when the message is empty
 func errorTextOrType(err error) string {
-	if text := pyrepr.ExceptionMessage(err); text != "" {
+	if text := err.Error(); text != "" {
 		return text
 	}
 	return "no details given"
@@ -229,7 +228,7 @@ func (r *GatewayRunner) modelSwitchConfirmation(ctx context.Context, result *pro
 	modelCfg, _ := gateway.LoadGatewayConfigMap(ctx, "")["model"].(map[string]any)
 	var configCtx *int
 	if modelCfg != nil && modelCfg["context_length"] != nil {
-		if length, err := pyint.Int64(modelCfg["context_length"]); err == nil {
+		if length, err := anyutil.ToInt(modelCfg["context_length"]); err == nil {
 			value := int(length)
 			configCtx = &value
 		}
@@ -251,8 +250,8 @@ func (r *GatewayRunner) modelSwitchConfirmation(ctx context.Context, result *pro
 	ctxLen, ok := provider.ResolveDisplayContextLength(ctx, provider.DisplayContextRequest{
 		Model: result.NewModel, Provider: result.TargetProvider, BaseURL: baseURL, APIKey: apiKey, ModelInfo: mi,
 		CustomProviders: providers, ConfigContextLength: configCtx,
-		ConfiguredModel:    pyrepr.Str(pyrepr.Or(modelCfg["default"], "")),
-		ConfiguredProvider: pyrepr.Str(pyrepr.Or(modelCfg["provider"], "")), ConfiguredBaseURL: pyrepr.Str(pyrepr.Or(modelCfg["base_url"], "")),
+		ConfiguredModel:    anyutil.String(anyutil.Or(modelCfg["default"], "")),
+		ConfiguredProvider: anyutil.String(anyutil.Or(modelCfg["provider"], "")), ConfiguredBaseURL: anyutil.String(anyutil.Or(modelCfg["base_url"], "")),
 	})
 	if ok && ctxLen != 0 {
 		var pin any
@@ -268,7 +267,7 @@ func (r *GatewayRunner) modelSwitchConfirmation(ctx context.Context, result *pro
 	if mi != nil {
 		lines = append(lines, i18n.T(ctx, "gateway.model.capabilities_label", "", map[string]any{"capabilities": mi.FormatCapabilities()}))
 	}
-	hostMatches, _ := pyurl.BaseURLHostMatches(result.BaseURL, "openrouter.ai")
+	hostMatches, _ := urlutil.BaseHostMatches(result.BaseURL, "openrouter.ai")
 	openrouterClaude := hostMatches && strings.Contains(strings.ToLower(result.NewModel), "claude")
 	if !picker && (openrouterClaude || result.APIMode == "anthropic_messages") {
 		lines = append(lines, i18n.T(ctx, "gateway.model.prompt_caching_enabled", "", nil))
@@ -367,7 +366,7 @@ func (r *GatewayRunner) commitModelSwitchLocked(ctx context.Context, result *pro
 // Saves a setting of the profile in ctx through the settings writer, false when the write failed
 func (r *GatewayRunner) saveGatewayConfigKey(ctx context.Context, keyPath string, value any) bool {
 	if _, err := settings.Set(ctx, keyPath, value, settings.Global); err != nil {
-		pkgLog().Error(fmt.Sprintf("Failed to save %s: %s", keyPath, pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("Failed to save %s: %s", keyPath, err.Error()))
 		return false
 	}
 	return true

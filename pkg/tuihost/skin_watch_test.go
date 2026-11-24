@@ -7,16 +7,15 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Live peer double recording every frame, following a profile skin when skinHome is set
 type skinPeer struct {
 	skinHome string
-	frames   []*pyjson.Object
+	frames   []*jsonutil.Object
 }
 
-func (p *skinPeer) Write(obj *pyjson.Object) bool {
+func (p *skinPeer) Write(obj *jsonutil.Object) bool {
 	p.frames = append(p.frames, obj)
 	return true
 }
@@ -29,11 +28,11 @@ func (p *skinPeer) followedSkinHome() string { return p.skinHome }
 func peerSkins(p *skinPeer) []string {
 	names := []string{}
 	for _, frame := range p.frames {
-		params, _ := frame.GetOr("params", nil).(*pyjson.Object)
-		if params.GetOr("type", nil) != "skin.changed" {
+		params, _ := frame.ValueOr("params", nil).(*jsonutil.Object)
+		if params.ValueOr("type", nil) != "skin.changed" {
 			continue
 		}
-		payload, _ := params.GetOr("payload", nil).(map[string]any)
+		payload, _ := params.ValueOr("payload", nil).(map[string]any)
 		name, _ := payload["name"].(string)
 		names = append(names, name)
 	}

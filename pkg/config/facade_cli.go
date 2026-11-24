@@ -12,11 +12,9 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 	"unicode/utf16"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"gopkg.in/yaml.v3"
 )
 
@@ -189,37 +187,34 @@ func defaultValueForKey(key string) any {
 	return node
 }
 
-// Integer for a clean Python int literal, signs, whitespace, digit underscores and digits of any script allowed
+// Integer of a decimal literal with an optional sign and digits that single underscores may separate, as YAML writes one; an int when it fits, else a *big.Int
 func coerceInt(value string) (any, bool) {
-	n, ok := pyint.Parse(value)
+	s := strings.TrimSpace(value)
+	sign := ""
+	if s != "" && (s[0] == '+' || s[0] == '-') {
+		sign, s = s[:1], s[1:]
+	}
+	if s == "" || s[0] == '_' || s[len(s)-1] == '_' || strings.Contains(s, "__") || strings.Trim(s, "0123456789_") != "" {
+		return nil, false
+	}
+	n, ok := new(big.Int).SetString(sign+strings.ReplaceAll(s, "_", ""), 10)
 	if !ok {
 		return nil, false
 	}
-	return pyint.Native(n), true
+	if n.IsInt64() && n.Int64() >= math.MinInt && n.Int64() <= math.MaxInt {
+		return int(n.Int64()), true
+	}
+	return n, true
 }
 
-// Decimal text of a float literal the way Decimal reads it, digits folded to ASCII and underscores dropped
+// Exact decimal text of a float literal strconv.ParseFloat accepted, the plus sign and digit underscores dropped
 func decimalLiteral(value string) string {
-	var b strings.Builder
-	for _, r := range strings.TrimPrefix(strings.TrimFunc(value, isPySpace), "+") {
-		switch {
-		case r == '_':
-		case r > unicode.MaxASCII && unicode.Is(unicode.Nd, r):
-			start := r
-			for unicode.Is(unicode.Nd, start-1) {
-				start--
-			}
-			b.WriteByte(byte('0' + (r-start)%10))
-		default:
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
+	return strings.ReplaceAll(strings.TrimPrefix(strings.TrimSpace(value), "+"), "_", "")
 }
 
 // Float only when the conversion keeps the literal's decimal value, NaN and infinities rejected
 func coerceFloat(value string) (any, bool) {
-	f, err := pyint.ParseFloat(value)
+	f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 	if err != nil || math.IsNaN(f) || math.IsInf(f, 0) {
 		return nil, false
 	}

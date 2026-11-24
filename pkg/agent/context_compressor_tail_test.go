@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestResolveModelThresholdRanksScopedAndLongestKeys(t *testing.T) {
@@ -222,13 +222,13 @@ func TestSkillSafetyRuleRidesTheHandoffExactlyOnce(t *testing.T) {
 
 func TestCompressionTelemetryRecordsEachPhase(t *testing.T) {
 	ctx := context.Background()
-	tel := &CompressionTelemetry{Seed: &pyjson.Object{}}
+	tel := &CompressionTelemetry{Seed: &jsonutil.Object{}}
 	tel.Seed.Set("session_id", "seeded")
 	tel.Seed.Set("overflow_reason", "context_overflow")
 	cur := 900
 	rec := tel.Begin(TelemetryAttempt{CurrentTokens: cur, AttemptID: "a1", TriggerSource: "preflight", Provider: "p", Model: "m", ContextLength: 1000, ThresholdTokens: "800"})
-	if tel.Active != rec || tel.Last != rec || len(rec.Keys) != 51 || rec.Keys[0] != "event" || rec.Keys[50] != "prepared_summary" {
-		t.Fatalf("seeded keys %d %v", len(rec.Keys), rec.Keys[:3])
+	if tel.Active != rec || tel.Last != rec || rec.Len() != 51 || rec.Keys()[0] != "event" || rec.Keys()[50] != "prepared_summary" {
+		t.Fatalf("seeded keys %d %v", rec.Len(), rec.Keys()[:3])
 	}
 	for k, want := range map[string]any{"attempt_id": "a1", "session_id": "seeded", "trigger_source": "preflight", "overflow_reason": "context_overflow", "effective_threshold": 800, "current_estimated_tokens": 900, "main_context_limit": 1000} {
 		if got, _ := rec.Get(k); got != want {
@@ -282,7 +282,7 @@ type summaryFake struct {
 	summaryModel string
 	fallenBack   bool
 	lastError    string
-	telemetry    *pyjson.Object
+	telemetry    *jsonutil.Object
 	gotFocus     *string
 	restored     bool
 	err          error
@@ -293,8 +293,8 @@ func (f *summaryFake) SummaryModelFallenBack() bool { return f.fallenBack }
 func (f *summaryFake) MainRoute() (string, string, string, string, string) {
 	return "main-prov", "main-model", "", "key", ""
 }
-func (f *summaryFake) SetLastSummaryError(text string)            { f.lastError = text }
-func (f *summaryFake) ActiveCompressionTelemetry() *pyjson.Object { return f.telemetry }
+func (f *summaryFake) SetLastSummaryError(text string)              { f.lastError = text }
+func (f *summaryFake) ActiveCompressionTelemetry() *jsonutil.Object { return f.telemetry }
 func (f *summaryFake) DeriveAutoFocusTopic(messages []map[string]any) *string {
 	s := "derived"
 	return &s

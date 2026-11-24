@@ -21,9 +21,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 const singularityInstallURL = "https://apptainer.org/docs/admin/main/installation.html"
@@ -50,7 +51,7 @@ func singularityReturncode(res *CaptureResult, state *os.ProcessState) int {
 
 // Text of the Python TimeoutExpired raised when argv outlives its timeout
 func singularityTimeoutText(argv []string, seconds int) string {
-	return fmt.Sprintf("Command '%s' timed out after %d seconds", pyrepr.Repr(argv), seconds)
+	return fmt.Sprintf("Command '%s' timed out after %d seconds", anyutil.Quote(argv), seconds)
 }
 
 // Image from the Apptainer image setting, else the default sandbox image as a docker reference
@@ -124,7 +125,7 @@ func singularityScratchDir(env *Env) (string, error) {
 			return "", err
 		}
 		scratchPath = filepath.Join(sandbox, "singularity")
-		if _, err := os.Stat("/scratch"); err == nil && pyfs.Access("/scratch", 2) {
+		if _, err := os.Stat("/scratch"); err == nil && fsutil.Access("/scratch", 2) {
 			user, ok := os.LookupEnv("USER")
 			if !ok {
 				user = "icebath"
@@ -262,7 +263,7 @@ func registerSingularityExitSweep(scratch string) {
 // Removes every icebath prefixed entry of a scratch directory, errors ignored like rmtree with ignore_errors
 func sweepSingularityScratchDir(scratch string) {
 	for _, p := range singularityScratchPaths(scratch) {
-		_ = pyfs.RmTree(p, func(pyfs.RmTreeOp, string, error) error { return nil })
+		_ = os.RemoveAll(p)
 		envLog(nil).Info(fmt.Sprintf("Removed orphaned: %s", p))
 	}
 }
@@ -413,16 +414,16 @@ func newSingularityEnvironment(ctx context.Context, env *Env, o singularityOptio
 	return s, nil
 }
 
-// Python comparison of a limit with zero and its str form, a TypeError text for a non number
+// Whether a limit is above zero and its text, an error for a value that is not a number
 func singularityLimit(v any) (bool, string, error) {
 	if b, ok := v.(bool); ok {
-		return b, pyrepr.Str(b), nil
+		return b, strconv.FormatBool(b), nil
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		return n.Sign() > 0, n.String(), nil
+	if n, ok := anyutil.Int(v); ok {
+		return n > 0, strconv.FormatInt(n, 10), nil
 	}
 	if f, ok := v.(float64); ok {
-		return f > 0, pyrepr.Str(f), nil
+		return f > 0, anyutil.String(f), nil
 	}
 	return false, "", fmt.Errorf("a Singularity limit is %s, expected a number", errchain.Kind(v))
 }
@@ -475,7 +476,7 @@ func (s *singularityEnv) startInstance(ctx context.Context) error {
 		return fmt.Errorf("Failed to start instance: %s", res.Stderr)
 	}
 	s.instanceStarted.Store(true)
-	envLog(s.env).Info(fmt.Sprintf("Singularity instance %s started (persistent=%s)", s.instanceID, pyrepr.Str(s.persistentValue)))
+	envLog(s.env).Info(fmt.Sprintf("Singularity instance %s started (persistent=%s)", s.instanceID, anyutil.String(s.persistentValue)))
 	return nil
 }
 

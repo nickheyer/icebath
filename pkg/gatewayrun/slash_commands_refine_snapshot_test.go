@@ -13,8 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Value under key of a decoded JSON object in either map form, nil for anything else
@@ -22,8 +20,8 @@ func snapshotField(v any, key string) any {
 	switch m := v.(type) {
 	case map[string]any:
 		return m[key]
-	case *pyjson.Object:
-		return m.GetOr(key, nil)
+	case *jsonutil.Object:
+		return m.ValueOr(key, nil)
 	}
 	return nil
 }
@@ -85,7 +83,7 @@ func TestGatewayRefineSnapshotDoesNotAliasLiveHistory(t *testing.T) {
 	live := refineNestedHistory()
 	a.SetUnflushedSessionMessagesForTests(live)
 	r := allocGatewayRunner()
-	r.agentCache = pydict.New[string, agentCacheEntry]()
+	r.agentCache = orderedutil.NewMap[string, agentCacheEntry]()
 	r.agentCacheLock = &sync.Mutex{}
 	source := &gateway.SessionSource{Platform: gateway.PlatformTelegram, ChatID: "1", ChatType: "dm"}
 	key, err := r.sessionKeyForSource(ctx, source)

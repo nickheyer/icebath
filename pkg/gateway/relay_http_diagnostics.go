@@ -4,10 +4,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -35,19 +34,19 @@ func RelayReadErrorBody(exc *RelayHTTPError) []byte {
 
 // Connector refusal reason from a JSON error object body, empty for anything else
 func RelayConnectorReason(body []byte) string {
-	text, err := pystr.DecodeUTF8(body)
+	text, err := textutil.DecodeUTF8(body)
 	if err != nil {
 		return ""
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return ""
 	}
-	obj, ok := pyjson.AsObject(parsed)
+	obj, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		return ""
 	}
-	reason, ok := obj.Vals["error"].(string)
+	reason, ok := obj.Value("error").(string)
 	if !ok {
 		return ""
 	}
@@ -107,7 +106,7 @@ func RelayDescribeHTTPError(exc *RelayHTTPError, body []byte, secrets ...string)
 		if len([]rune(text)) > RelayBodyExcerptChars {
 			excerpt += "…"
 		}
-		parts = append(parts, "body="+pyrepr.Repr(RelayRedactExcerpt(excerpt, secrets...)))
+		parts = append(parts, "body="+anyutil.Quote(RelayRedactExcerpt(excerpt, secrets...)))
 	}
 	out := "HTTP " + strconv.Itoa(exc.Code)
 	if len(parts) > 0 {

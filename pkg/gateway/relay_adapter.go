@@ -11,8 +11,8 @@ import (
 	"sync"
 	"unicode/utf16"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Store refusal reasons a connector delivery is acknowledged for instead of replayed
@@ -57,7 +57,7 @@ func relayLenFn(unit string) func(string) int {
 
 // SendResult projected from a connector outbound result
 func relaySendResult(result map[string]any) SendResult {
-	return SendResult{Success: pyrepr.Truthy(result["success"]), MessageID: result["message_id"], Error: result["error"]}
+	return SendResult{Success: anyutil.IsTrue(result["success"]), MessageID: result["message_id"], Error: result["error"]}
 }
 
 // Message id and chat id of an inbound event, the message id falling back to the source
@@ -188,8 +188,8 @@ func (a *RelayAdapter) chatPlatform(chatID string) string {
 func (a *RelayAdapter) WarningNotificationsEnabled(ctx context.Context, logicalPlatform Platform, chatID string, metadata map[string]any) bool {
 	platform := string(logicalPlatform)
 	if platform == "" {
-		if v := metadata["_relay_logical_platform"]; pyrepr.Truthy(v) {
-			platform = pyrepr.Str(v)
+		if v := metadata["_relay_logical_platform"]; anyutil.IsTrue(v) {
+			platform = anyutil.String(v)
 		} else {
 			platform = a.chatPlatform(chatID)
 		}
@@ -249,27 +249,27 @@ func (a *RelayAdapter) NativeTaskCardsEnabled() (bool, error) {
 
 // Coordination key of one turn's stream, the per turn identity before the thread anchor
 func relayDraftKey(chatID string, metadata map[string]any) string {
-	turnID := pyrepr.Or(metadata["message_id"], metadata["reply_to_message_id"])
-	if pyrepr.Truthy(turnID) {
-		return chatID + ":turn:" + pyrepr.Str(turnID)
+	turnID := anyutil.Or(metadata["message_id"], metadata["reply_to_message_id"])
+	if anyutil.IsTrue(turnID) {
+		return chatID + ":turn:" + anyutil.String(turnID)
 	}
-	anchor := pyrepr.Or(pyrepr.Or(metadata["thread_ts"], metadata["thread_id"]), "")
-	return chatID + ":" + pyrepr.Str(anchor)
+	anchor := anyutil.Or(anyutil.Or(metadata["thread_ts"], metadata["thread_id"]), "")
+	return chatID + ":" + anyutil.String(anchor)
 }
 
 // Task card key anchored on the reply target, the turn identity, the thread or root
 func relayCardKey(replyTo string, metadata map[string]any) string {
 	var anchor any = replyTo
 	for _, k := range []string{"message_id", "reply_to_message_id", "thread_ts", "thread_id"} {
-		if pyrepr.Truthy(anchor) {
+		if anyutil.IsTrue(anchor) {
 			break
 		}
 		anchor = metadata[k]
 	}
-	if !pyrepr.Truthy(anchor) {
+	if !anyutil.IsTrue(anchor) {
 		anchor = "root"
 	}
-	return "turn:" + pyrepr.Str(anchor)
+	return "turn:" + anyutil.String(anchor)
 }
 
 // Open draft key of the send, the single open stream of the chat for an identity less send
@@ -280,7 +280,7 @@ func (a *RelayAdapter) matchOpenDraft(chatID string, metadata map[string]any) (s
 	if a.openDraftByChat.has(key) {
 		return key, true
 	}
-	if pyrepr.Truthy(metadata["message_id"]) || pyrepr.Truthy(metadata["reply_to_message_id"]) {
+	if anyutil.IsTrue(metadata["message_id"]) || anyutil.IsTrue(metadata["reply_to_message_id"]) {
 		return "", false
 	}
 	var candidates []string
@@ -298,7 +298,7 @@ func (a *RelayAdapter) matchOpenDraft(chatID string, metadata map[string]any) (s
 
 // Outbound action for the chat's platform, a connector decline logged
 func (a *RelayAdapter) outbound(ctx context.Context, chatID string, action map[string]any) (map[string]any, error) {
-	op := pyrepr.Str(pyrepr.Or(action["op"], "?"))
+	op := anyutil.String(anyutil.Or(action["op"], "?"))
 	if _, has := action["op"]; !has {
 		op = "?"
 	}
@@ -309,7 +309,7 @@ func (a *RelayAdapter) outbound(ctx context.Context, chatID string, action map[s
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(result["success"]) && IsEgressDecline(result) {
+	if !anyutil.IsTrue(result["success"]) && IsEgressDecline(result) {
 		LogDecline(op, chatID, result)
 	}
 	return result, nil
@@ -326,7 +326,7 @@ type relayGateOptions struct {
 
 // Result of an advertised op, nil when unadvertised, failed or declined unless surfaced
 func (a *RelayAdapter) gatedOp(ctx context.Context, chatID string, action map[string]any, o relayGateOptions) map[string]any {
-	op := pyrepr.Str(action["op"])
+	op := anyutil.String(action["op"])
 	if a.transport == nil || !a.Descriptor().SupportsOp(op) {
 		return nil
 	}
@@ -345,8 +345,8 @@ func (a *RelayAdapter) gatedOp(ctx context.Context, chatID string, action map[st
 	if subject == nil {
 		subject = chatID
 	}
-	if !pyrepr.Truthy(result["success"]) {
-		if o.surfaceAmbiguous && pyrepr.Truthy(result["ambiguous"]) {
+	if !anyutil.IsTrue(result["success"]) {
+		if o.surfaceAmbiguous && anyutil.IsTrue(result["ambiguous"]) {
 			return result
 		}
 		if IsEgressDecline(result) {
@@ -357,7 +357,7 @@ func (a *RelayAdapter) gatedOp(ctx context.Context, chatID string, action map[st
 			return nil
 		}
 		if o.declineLevel != nil {
-			pkgLog().Log(ctx, *o.declineLevel, fmt.Sprintf("relay %s declined for %s: %s", op, pyrepr.Str(subject), pyrepr.Str(result["error"])))
+			pkgLog().Log(ctx, *o.declineLevel, fmt.Sprintf("relay %s declined for %s: %s", op, anyutil.String(subject), anyutil.String(result["error"])))
 		}
 		return nil
 	}

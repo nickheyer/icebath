@@ -18,7 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestInstallPolicyRealPolicyIsBooleanAndFailsClosed(t *testing.T) {
@@ -265,7 +265,7 @@ func iePauseCase(t *testing.T, route string, cached bool) {
 			t.Fatal("a stage created the facts file")
 		}
 	} else {
-		entry = filepath.Join(root, pyrepr.Str(fact["entry"]))
+		entry = filepath.Join(root, anyutil.String(fact["entry"]))
 		digest, _ := TreeDigest(entry)
 		if !jsonEquals(fact["artifacts"], []any{shas[0], shas[1]}) || fact["digest"] != digest {
 			t.Fatalf("fact %v", fact)

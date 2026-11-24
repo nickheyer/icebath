@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestOffThreadCopyReturnsTheCopyError(t *testing.T) {
@@ -79,7 +79,7 @@ func TestPerProfileConfigModelRestoreRestoresFromOwnSnapshot(t *testing.T) {
 	if again := RestoreConfigModelSettingsAllProfiles(context.Background(), snaps, profiles["default"]); len(again) != 0 {
 		t.Fatalf("second pass restored %v", again)
 	}
-	if none := RestoreConfigModelSettingsAllProfiles(context.Background(), pyjson.NewObject(), ""); none == nil || len(none) != 0 {
+	if none := RestoreConfigModelSettingsAllProfiles(context.Background(), jsonutil.NewObject(), ""); none == nil || len(none) != 0 {
 		t.Fatalf("empty map restored %v", none)
 	}
 }

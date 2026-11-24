@@ -6,11 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Directory of the profile plugin tree, empty when it is not a directory
@@ -46,7 +46,7 @@ func readPackageText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimPrefix(pystr.TranslateNewlines(strings.ToValidUTF8(string(raw), "\uFFFD")), "\xef\xbb\xbf"), nil
+	return strings.TrimPrefix(textutil.NormalizeNewlines(strings.ToValidUTF8(string(raw), "\uFFFD")), "\xef\xbb\xbf"), nil
 }
 
 // One external provider root with the discovery source it stands for
@@ -78,8 +78,8 @@ func providerManifest(dir string) (string, []string) {
 	text, _ := readPackageText(filepath.Join(dir, "plugin.yaml"))
 	var spellings []string
 	if file, err := pm.NativeManifestFile(dir); err == nil && file != "" {
-		if manifest, err := pm.ReadNativeManifest(file); err == nil && pyrepr.Truthy(manifest["name"]) {
-			spellings = append(spellings, pyrepr.Str(manifest["name"]))
+		if manifest, err := pm.ReadNativeManifest(file); err == nil && anyutil.IsTrue(manifest["name"]) {
+			spellings = append(spellings, anyutil.String(manifest["name"]))
 		}
 	}
 	return text, spellings

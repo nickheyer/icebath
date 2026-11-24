@@ -3,7 +3,7 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Routing identity columns a messaging lane stamps onto every segment of a conversation it takes over
@@ -93,7 +93,7 @@ func (d *SessionDB) HandoffHead(ctx context.Context, sessionID string) (string, 
 }
 
 // Decoded receipt object, nil for anything json loads rejects or a non object
-func localReceiptObject(raw any) *pyjson.Object {
+func localReceiptObject(raw any) *jsonutil.Object {
 	text, ok := raw.(string)
 	if !ok {
 		b, isBytes := raw.([]byte)
@@ -106,11 +106,11 @@ func localReceiptObject(raw any) *pyjson.Object {
 		}
 		text = decoded
 	}
-	value, err := pyjson.Loads(text)
+	value, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
-	o, _ := value.(*pyjson.Object)
+	o, _ := value.(*jsonutil.Object)
 	return o
 }
 
@@ -203,7 +203,7 @@ func handOffConversations(ctx context.Context, conn SQLiteConn, moved []movedRec
 		for i, sid := range segments {
 			encoded[i] = sid
 		}
-		text, err := pyjson.Dumps(encoded)
+		text, err := jsonutil.Encode(encoded)
 		if err != nil {
 			return nil, err
 		}
@@ -228,7 +228,7 @@ func handOffConversations(ctx context.Context, conn SQLiteConn, moved []movedRec
 }
 
 // Stored creation receipt of a local session, storage_unavailable when it is missing or not a JSON object
-func (d *SessionDB) LocalReceipt(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) LocalReceipt(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	var row map[string]any
 	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		var err error

@@ -5,26 +5,26 @@ import (
 	"unicode/utf8"
 
 	"context"
+	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Text of tool result content with content block lists flattened and dicts serialized
@@ -49,17 +49,17 @@ func stringifyToolContent(content any) string {
 		}
 		return strings.Join(parts, "\n")
 	}
-	if obj, ok := pyjson.AsObject(content); ok {
+	if obj, ok := jsonutil.AsObject(content); ok {
 		return dumpsDefaultStr(obj)
 	}
-	return pyrepr.Str(content)
+	return anyutil.String(content)
 }
 
 // One content block as its text field, its JSON form when a dict, otherwise its str form
 func stringifyContentBlock(item any) string {
-	obj, ok := pyjson.AsObject(item)
+	obj, ok := jsonutil.AsObject(item)
 	if !ok {
-		return pyrepr.Str(item)
+		return anyutil.String(item)
 	}
 	if text, has := obj.Get("text"); has {
 		switch t := text.(type) {
@@ -72,9 +72,9 @@ func stringifyContentBlock(item any) string {
 	return dumpsDefaultStr(obj)
 }
 
-// JSON text with non ASCII kept and unserializable values rendered through str
+// JSON text with non ASCII kept and values JSON cannot carry written as their text
 func dumpsDefaultStr(v any) string {
-	text, _ := pyjson.Dumps(v, pyjson.EnsureASCII(false), pyjson.Default(func(x any) (any, error) { return pyrepr.Str(x), nil }))
+	text, _ := jsonutil.Encode(v, jsonutil.Convert(func(x any) (any, error) { return anyutil.String(x), nil }))
 	return text
 }
 
@@ -87,15 +87,15 @@ func looksLikeErrorOutput(content any) bool {
 		return false
 	}
 	if trimmed := strings.TrimLeftFunc(text, unicode.IsSpace); strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-		if parsed, err := pyjson.Loads(text); err == nil {
-			if obj, ok := pyjson.AsObject(parsed); ok {
+		if parsed, err := jsonutil.Decode(text); err == nil {
+			if obj, ok := jsonutil.AsObject(parsed); ok {
 				errVal, _ := obj.Get("error")
 				status, _ := obj.Get("status")
 				statusText := ""
-				if pyrepr.Truthy(status) {
-					statusText = pyrepr.Str(status)
+				if anyutil.IsTrue(status) {
+					statusText = anyutil.String(status)
 				}
-				if pyrepr.Truthy(errVal) || errorStatuses[strings.ToLower(strings.TrimSpace(statusText))] {
+				if anyutil.IsTrue(errVal) || errorStatuses[strings.ToLower(strings.TrimSpace(statusText))] {
 					return true
 				}
 			}
@@ -142,20 +142,20 @@ func extractOutputTail(env *tools.Env, result map[string]any, maxEntries, maxCha
 			}
 		}
 		for _, rawCall := range calls {
-			tc, ok := pyjson.AsObject(rawCall)
+			tc, ok := jsonutil.AsObject(rawCall)
 			if !ok {
 				continue
 			}
 			id, _ := tc.Get("id")
 			key, hashable := callIDKey(id)
-			if !pyrepr.Truthy(id) || !hashable {
+			if !anyutil.IsTrue(id) || !hashable {
 				continue
 			}
 			name := "tool"
-			if fnRaw, _ := tc.Get("function"); pyrepr.Truthy(fnRaw) {
-				if fn, ok := pyjson.AsObject(fnRaw); ok {
-					if n, _ := fn.Get("name"); pyrepr.Truthy(n) {
-						name = pyrepr.Str(n)
+			if fnRaw, _ := tc.Get("function"); anyutil.IsTrue(fnRaw) {
+				if fn, ok := jsonutil.AsObject(fnRaw); ok {
+					if n, _ := fn.Get("name"); anyutil.IsTrue(n) {
+						name = anyutil.String(n)
 					}
 				}
 			}
@@ -172,12 +172,12 @@ func extractOutputTail(env *tools.Env, result map[string]any, maxEntries, maxCha
 			continue
 		}
 		var body any = ""
-		if pyrepr.Truthy(msg["content"]) {
+		if anyutil.IsTrue(msg["content"]) {
 			body = msg["content"]
 		}
 		content := tools.RedactChildText(env, stringifyToolContent(body), false)
 		var callID any = ""
-		if pyrepr.Truthy(msg["tool_call_id"]) {
+		if anyutil.IsTrue(msg["tool_call_id"]) {
 			callID = msg["tool_call_id"]
 		}
 		toolName := "tool"
@@ -186,7 +186,7 @@ func extractOutputTail(env *tools.Env, result map[string]any, maxEntries, maxCha
 				toolName = n
 			}
 		}
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		row.Set("tool", toolName)
 		row.Set("preview", textutil.First(content, maxChars))
 		row.Set("is_error", looksLikeErrorOutput(content))
@@ -223,42 +223,38 @@ func sanitizeToolTarget(env *tools.Env, key string, value any, force bool) any {
 	}
 	bounded := textutil.First(tools.RedactChildText(env, s, force), 1024)
 	if toolInputURLKeys[key] {
-		parsed, err := pyurl.Split(bounded)
+		parsed, err := urlutil.Split(bounded)
 		if err != nil {
 			return nil
 		}
-		if parsed.Scheme != "" && parsed.Netloc != "" {
+		if parsed.Scheme != "" && parsed.Authority != "" {
 			hostname := parsed.Hostname()
 			if hostname == "" {
 				return nil
 			}
-			host := hostname
-			if strings.Contains(hostname, ":") {
-				host = "[" + hostname + "]"
-			}
+			host := urlutil.FormatHost(hostname)
 			port, hasPort, err := parsed.Port()
 			if err != nil {
 				return nil
 			}
-			netloc := host
 			if hasPort {
-				netloc = fmt.Sprintf("%s:%d", host, port)
+				host += ":" + strconv.Itoa(port)
 			}
-			return pyurl.Unsplit(pyurl.URL{Scheme: parsed.Scheme, Netloc: netloc, Path: parsed.Path})
+			return urlutil.Parts{Scheme: parsed.Scheme, Authority: host, Path: parsed.Path}.String()
 		}
 	}
 	return bounded
 }
 
 // Known side effect target keys of a mapping, each sanitized with URL secrets dropped
-func sanitizeTargets(env *tools.Env, mapping *pyjson.Object, force bool) *pyjson.Object {
-	targets := pyjson.NewObject()
-	for _, rawKey := range mapping.Keys {
+func sanitizeTargets(env *tools.Env, mapping *jsonutil.Object, force bool) *jsonutil.Object {
+	targets := jsonutil.NewObject()
+	for _, rawKey := range mapping.Keys() {
 		key := strings.ToLower(rawKey)
 		if !toolInputTargetKeys[key] {
 			continue
 		}
-		if cleaned := sanitizeToolTarget(env, key, mapping.Vals[rawKey], force); cleaned != nil {
+		if cleaned := sanitizeToolTarget(env, key, mapping.Value(rawKey), force); cleaned != nil {
 			targets.Set(key, cleaned)
 		}
 	}
@@ -266,7 +262,7 @@ func sanitizeTargets(env *tools.Env, mapping *pyjson.Object, force bool) *pyjson
 }
 
 // Argument keys and targets with bounded sanitized contents, empty parts for malformed shapes
-func inputSummary(env *tools.Env, keys any, targets any, force bool) *pyjson.Object {
+func inputSummary(env *tools.Env, keys any, targets any, force bool) *jsonutil.Object {
 	argumentKeys := []any{}
 	var keyList []any
 	switch k := keys.(type) {
@@ -278,62 +274,83 @@ func inputSummary(env *tools.Env, keys any, targets any, force bool) *pyjson.Obj
 		}
 	}
 	for _, key := range keyList[:min(64, len(keyList))] {
-		argumentKeys = append(argumentKeys, textutil.First(tools.RedactChildText(env, pyrepr.Str(key), force), 128))
+		argumentKeys = append(argumentKeys, textutil.First(tools.RedactChildText(env, anyutil.String(key), force), 128))
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("argument_keys", argumentKeys)
-	if mapping, ok := pyjson.AsObject(targets); ok {
+	if mapping, ok := jsonutil.AsObject(targets); ok {
 		out.Set("targets", sanitizeTargets(env, mapping, force))
 	} else {
-		out.Set("targets", pyjson.NewObject())
+		out.Set("targets", jsonutil.NewObject())
 	}
 	return out
 }
 
 // Argument names and side effect targets of a tool call without its raw payload
-func summarizeToolArguments(env *tools.Env, arguments any) *pyjson.Object {
+func summarizeToolArguments(env *tools.Env, arguments any) *jsonutil.Object {
 	var parsed any
 	if s, ok := arguments.(string); ok {
-		if v, err := pyjson.Loads(s); err == nil {
+		if v, err := jsonutil.Decode(s); err == nil {
 			parsed = v
 		}
 	}
-	obj, ok := pyjson.AsObject(parsed)
+	obj, ok := jsonutil.AsObject(parsed)
 	if !ok {
-		return inputSummary(env, []any{}, pyjson.NewObject(), true)
+		return inputSummary(env, []any{}, jsonutil.NewObject(), true)
 	}
-	keys := slices.Clone(obj.Keys)
+	keys := slices.Clone(obj.Keys())
 	slices.Sort(keys)
 	return inputSummary(env, keys, obj, false)
 }
 
 // Non negative integer byte count of a trace field, zero for absent, boolean or non numeric values
-func traceByteCount(item *pyjson.Object, key string) (int, error) {
+func traceByteCount(item *jsonutil.Object, key string) (int, error) {
 	value, ok := item.Get(key)
 	if !ok {
 		return 0, nil
 	}
-	if _, isBool := value.(bool); isBool {
-		return 0, nil
-	}
+	var n int
 	switch value.(type) {
 	case float32, float64:
+		f, _ := anyutil.Float(value)
+		whole, err := truncatedInt(f)
+		if err != nil {
+			return 0, err
+		}
+		n = whole
 	default:
-		if _, isInt := pyint.Instance(value); !isInt {
+		i, isInt := anyutil.Int(value)
+		if !isInt {
 			return 0, nil
 		}
+		n = int(i)
 	}
-	n, err := pyint.Of(value)
-	if err != nil {
+	return max(n, 0), nil
+}
+
+// Whole part of a finite float saturated at the int range, NaN and the infinities refused
+func truncatedInt(f float64) (int, error) {
+	switch {
+	case math.IsNaN(f) || math.IsInf(f, 0):
+		_, err := anyutil.ToInt(f)
 		return 0, err
-	}
-	if n.Sign() < 0 {
-		return 0, nil
-	}
-	if !n.IsInt64() {
+	case f >= math.MaxInt:
 		return math.MaxInt, nil
+	case f <= math.MinInt:
+		return math.MinInt, nil
 	}
-	return int(n.Int64()), nil
+	return int(f), nil
+}
+
+// Integer a value converts to with a number past the int64 range saturated, NaN, the infinities and values with no integer form refused
+func saturatedInt(v any) (int64, error) {
+	n, err := anyutil.ToInt(v)
+	if errors.Is(err, anyutil.ErrRange) {
+		if f, isNumber := anyutil.Float(v); !isNumber || !math.IsInf(f, 0) {
+			return n, nil
+		}
+	}
+	return n, err
 }
 
 // Metadata only tool history for lifecycle hooks with input summaries sanitized again under force
@@ -344,25 +361,25 @@ func subagentStopToolCallHistory(env *tools.Env, toolTrace any) ([]any, error) {
 	}
 	history := []any{}
 	for _, raw := range trace {
-		item, ok := pyjson.AsObject(raw)
+		item, ok := jsonutil.AsObject(raw)
 		if !ok {
 			continue
 		}
 		statusVal, _ := item.Get("status")
 		status := "unknown"
-		if pyrepr.Truthy(statusVal) {
-			status = pyrepr.Str(statusVal)
+		if anyutil.IsTrue(statusVal) {
+			status = anyutil.String(statusVal)
 		}
 		status = strings.ToLower(status)
 		summaryRaw, _ := item.Get("input_summary")
-		summary, ok := pyjson.AsObject(summaryRaw)
+		summary, ok := jsonutil.AsObject(summaryRaw)
 		if !ok {
-			summary = pyjson.NewObject()
+			summary = jsonutil.NewObject()
 		}
 		toolVal, _ := item.Get("tool")
 		toolName := "unknown"
-		if pyrepr.Truthy(toolVal) {
-			toolName = pyrepr.Str(toolVal)
+		if anyutil.IsTrue(toolVal) {
+			toolName = anyutil.String(toolVal)
 		}
 		argKeys, _ := summary.Get("argument_keys")
 		targets, _ := summary.Get("targets")
@@ -377,7 +394,7 @@ func subagentStopToolCallHistory(env *tools.Env, toolTrace any) ([]any, error) {
 		if status != "ok" && status != "error" {
 			status = "unknown"
 		}
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		row.Set("tool_name", textutil.First(toolName, 256))
 		row.Set("tool_input", inputSummary(env, argKeys, targets, true))
 		row.Set("input_bytes", inBytes)
@@ -413,7 +430,7 @@ func spillSummaryToFile(ctx context.Context, env *tools.Env, taskIndex any, summ
 	}
 	now := time.Now()
 	stamp := fmt.Sprintf("%s_%06d", now.Format("20060102_150405"), now.Nanosecond()/1000)
-	path := filepath.Join(cacheDir, fmt.Sprintf("subagent-summary-%s-%s.txt", pyrepr.Str(taskIndex), stamp))
+	path := filepath.Join(cacheDir, fmt.Sprintf("subagent-summary-%s-%s.txt", anyutil.String(taskIndex), stamp))
 	if err := tools.WriteTextExclusive(path, summary, false, false); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to spill subagent summary to file: %s", err))
 		return ""
@@ -427,12 +444,12 @@ func trimSummaryWithFooter(ctx context.Context, env *tools.Env, summary any, cap
 	if pc, ok := summary.(*tools.ParentCopy); ok {
 		forced, text = tools.RedactChildText(env, pc, true), pc.Text
 	} else {
-		text = pyrepr.Str(summary)
+		text = anyutil.String(summary)
 		projected := tools.RedactSummary(env, summary, true, true)
 		if s, ok := projected.(string); ok {
 			forced = s
 		} else {
-			forced = pyrepr.Str(projected)
+			forced = anyutil.String(projected)
 		}
 	}
 	spillPath := spillSummaryToFile(ctx, env, taskIndex, forced)
@@ -487,31 +504,25 @@ func lastRuneIndex(rs []rune, r rune) int {
 	return -1
 }
 
-// Positive integer of a real number, the error int raises for NaN or infinity
+// Positive integer of a real number, an error for infinity
 func positiveTokens(v any) (int, bool, error) {
-	switch f := v.(type) {
-	case float64:
+	switch v.(type) {
+	case float32, float64:
+		f, _ := anyutil.Float(v)
 		if !(f > 0) {
 			return 0, false, nil
 		}
-	case float32:
-		if !(f > 0) {
-			return 0, false, nil
+		n, err := truncatedInt(f)
+		if err != nil {
+			return 0, false, err
 		}
-	default:
-		n, ok := pyint.Instance(v)
-		if !ok || n.Sign() <= 0 {
-			return 0, false, nil
-		}
+		return n, true, nil
 	}
-	n, err := pyint.Of(v)
-	if err != nil {
-		return 0, false, err
+	n, ok := anyutil.Int(v)
+	if !ok || n <= 0 {
+		return 0, false, nil
 	}
-	if !n.IsInt64() {
-		return math.MaxInt, true, nil
-	}
-	return int(n.Int64()), true, nil
+	return int(n), true, nil
 }
 
 // Current prompt size of the parent from its own last prompt size then its last provider usage
@@ -541,20 +552,14 @@ func engineMaxTokens(engine ContextEngine) (int, error) {
 			raw = v
 		}
 	}
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return 0, nil
 	}
-	n, err := pyint.Of(raw)
+	n, err := saturatedInt(raw)
 	if err != nil {
 		return 0, err
 	}
-	if !n.IsInt64() {
-		if n.Sign() > 0 {
-			return math.MaxInt, nil
-		}
-		return math.MinInt, nil
-	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Per summary character budget from the parent's remaining context headroom, false when its context state is unknown
@@ -613,22 +618,16 @@ func staticSummaryCeiling(ctx context.Context) int {
 	if !ok {
 		return DefaultMaxSummaryChars
 	}
-	n, err := pyint.Of(raw)
+	n, err := saturatedInt(raw)
 	if err != nil {
 		return DefaultMaxSummaryChars
 	}
-	if !n.IsInt64() {
-		if n.Sign() > 0 {
-			return math.MaxInt
-		}
-		return 0
-	}
-	return int(n.Int64())
+	return int(max(n, 0))
 }
 
 // Trims summaries in place so a batch cannot overflow the parent's window, spilling each full text to disk
-func applySummaryBudget(ctx context.Context, results []*pyjson.Object, parent *AIAgent) {
-	var summaries []*pyjson.Object
+func applySummaryBudget(ctx context.Context, results []*jsonutil.Object, parent *AIAgent) {
+	var summaries []*jsonutil.Object
 	for _, r := range results {
 		if r == nil {
 			continue
@@ -678,7 +677,7 @@ func applySummaryBudget(ctx context.Context, results []*pyjson.Object, parent *A
 		if spill == "" {
 			spill = "none"
 		}
-		pkgLog().Debug(fmt.Sprintf("[subagent-%s] summary trimmed %d → ~%d chars (spill=%s)", pyrepr.Str(logIndex), length, limit, spill))
+		pkgLog().Debug(fmt.Sprintf("[subagent-%s] summary trimmed %d → ~%d chars (spill=%s)", anyutil.String(logIndex), length, limit, spill))
 	}
 }
 
@@ -701,17 +700,14 @@ func parentFinalizationLock(ctx context.Context, parent *AIAgent) (context.Conte
 	return context.WithValue(ctx, finalizationHeldKey{}, next), mu.Unlock
 }
 
-// Integer dict key a task index value hashes to, bools and integral floats included
+// Integer key of a task index value, integral floats within the int range included
 func childIndexKey(v any) (int, bool) {
-	if n, ok := pyint.Instance(v); ok {
-		if n.IsInt64() {
-			return int(n.Int64()), true
-		}
-		return 0, false
+	if n, ok := anyutil.Int(v); ok {
+		return int(n), true
 	}
 	switch f := v.(type) {
 	case float64:
-		if f == math.Trunc(f) && !math.IsInf(f, 0) {
+		if f == math.Trunc(f) && f >= math.MinInt && f < math.MaxInt {
 			return int(f), true
 		}
 	case float32:
@@ -737,7 +733,7 @@ func finalizeEnv(parent *AIAgent) *tools.Env {
 }
 
 // Feeds each forced redacted child summary to the parent's memory providers
-func notifyMemoryManager(ctx context.Context, results []*pyjson.Object, taskList []map[string]any, childByIndex map[int]*AIAgent, parent *AIAgent) {
+func notifyMemoryManager(ctx context.Context, results []*jsonutil.Object, taskList []map[string]any, childByIndex map[int]*AIAgent, parent *AIAgent) {
 	if parent == nil || parent.memoryManager == nil {
 		return
 	}
@@ -749,15 +745,15 @@ func notifyMemoryManager(ctx context.Context, results []*pyjson.Object, taskList
 				taskIndex = -1
 			}
 			task := ""
-			if n, isInt := pyint.Instance(taskIndex); isInt && n.Sign() >= 0 && n.Cmp(big.NewInt(int64(len(taskList)))) < 0 {
-				goal, has := taskList[int(n.Int64())]["goal"]
+			if n, isInt := anyutil.Int(taskIndex); isInt && n >= 0 && n < int64(len(taskList)) {
+				goal, has := taskList[n]["goal"]
 				if !has {
 					return
 				}
 				if s, ok := goal.(string); ok {
 					task = s
 				} else {
-					task = pyrepr.Str(goal)
+					task = anyutil.String(goal)
 				}
 			}
 			summary, _ := entry.Get("summary")
@@ -772,15 +768,14 @@ func notifyMemoryManager(ctx context.Context, results []*pyjson.Object, taskList
 
 // Duration in whole milliseconds the way int of seconds times one thousand truncates
 func durationMillis(v any) (int, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
-	if n, ok := pyint.Instance(v); ok {
-		ms := new(big.Int).Mul(n, big.NewInt(1000))
-		if !ms.IsInt64() {
-			return 0, fmt.Errorf("duration out of range")
+	if n, ok := anyutil.Int(v); ok {
+		if n > math.MaxInt64/1000 || n < math.MinInt64/1000 {
+			return 0, fmt.Errorf("subagent duration of %d seconds in milliseconds: %w", n, anyutil.ErrRange)
 		}
-		return int(ms.Int64()), nil
+		return int(n * 1000), nil
 	}
 	f, ok := v.(float64)
 	if !ok {
@@ -791,25 +786,25 @@ func durationMillis(v any) (int, error) {
 	if !ok {
 		return 0, fmt.Errorf("subagent duration is %s where a number was expected", errchain.Kind(v))
 	}
-	n, err := pyint.Of(f * 1000)
+	n, err := anyutil.ToInt(f * 1000)
 	if err != nil {
 		return 0, err
 	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Pops the hidden role and cost fields, fires subagent_stop per child and returns the summed child cost
-func fireSubagentStopHooks(ctx context.Context, results []*pyjson.Object, childByIndex map[int]*AIAgent, parent *AIAgent) float64 {
+func fireSubagentStopHooks(ctx context.Context, results []*jsonutil.Object, childByIndex map[int]*AIAgent, parent *AIAgent) float64 {
 	env := finalizeEnv(parent)
 	total := 0.0
 	for _, entry := range results {
-		childRole, _ := entry.Pop("_child_role")
-		childCost, hasCost := entry.Pop("_child_cost_usd")
+		childRole, _ := entry.Take("_child_role")
+		childCost, hasCost := entry.Take("_child_cost_usd")
 		if !hasCost {
 			childCost = 0.0
 		}
-		if pyrepr.Truthy(childCost) {
-			if f, err := pyint.Float(childCost); err == nil {
+		if anyutil.IsTrue(childCost) {
+			if f, err := anyutil.ToFloat(childCost); err == nil {
 				total += f
 			}
 		}
@@ -865,12 +860,12 @@ func rollupChildrenCost(parent *AIAgent, childrenCostTotal float64) {
 
 // True for a dict shaped output schema
 func isSchemaDict(v any) bool {
-	_, ok := pyjson.AsObject(v)
+	_, ok := jsonutil.AsObject(v)
 	return ok
 }
 
 // Applies the host owned summary, memory, hook and cost contracts to a finished batch once
-func finalizeChildResults(ctx context.Context, results []*pyjson.Object, taskList []map[string]any, children []delegateChild, parent *AIAgent) {
+func finalizeChildResults(ctx context.Context, results []*jsonutil.Object, taskList []map[string]any, children []delegateChild, parent *AIAgent) {
 	ctx, unlock := parentFinalizationLock(ctx, parent)
 	defer unlock()
 	childByIndex := make(map[int]*AIAgent, len(children))
@@ -887,8 +882,8 @@ func finalizeChildResults(ctx context.Context, results []*pyjson.Object, taskLis
 		summary, _ := entry.Get("summary")
 		_, hasValid := entry.Get("schema_valid")
 		forced := tools.RedactSummary(env, summary, isSchemaDict(schema) || hasValid, true)
-		if cleaned, ok := tools.RedactChildResult(env, entry, schema, false).(*pyjson.Object); ok {
-			entry.Update(cleaned)
+		if cleaned, ok := tools.RedactChildResult(env, entry, schema, false).(*jsonutil.Object); ok {
+			entry.Merge(cleaned)
 		}
 		if _, isStr := summaryText(summary); !isStr {
 			continue
@@ -913,7 +908,7 @@ var (
 )
 
 // Runs one child and applies the host lifecycle delegate_task uses
-func runChildLifecycle(ctx context.Context, taskIndex int, goal string, child, parent *AIAgent) *pyjson.Object {
+func runChildLifecycle(ctx context.Context, taskIndex int, goal string, child, parent *AIAgent) *jsonutil.Object {
 	result := runSingleChildFn(ctx, taskIndex, goal, child, parent, "", nil, nil)
 	if _, ok := result.Get("task_index"); !ok {
 		result.Set("task_index", taskIndex)
@@ -924,7 +919,7 @@ func runChildLifecycle(ctx context.Context, taskIndex int, goal string, child, p
 		taskList = append(taskList, map[string]any{"goal": ""})
 	}
 	taskList = append(taskList, task)
-	finalizeChildResultsFn(ctx, []*pyjson.Object{result}, taskList, []delegateChild{{Index: taskIndex, Task: task, Child: child}}, parent)
+	finalizeChildResultsFn(ctx, []*jsonutil.Object{result}, taskList, []delegateChild{{Index: taskIndex, Task: task, Child: child}}, parent)
 	return result
 }
 

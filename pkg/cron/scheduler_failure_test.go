@@ -10,9 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 func strp(s string) *string { return &s }
@@ -149,7 +149,7 @@ func (d *titleDB) SetSessionTitle(ctx context.Context, id, title string) (bool, 
 	d.calls = append(d.calls, title)
 	if d.fail > 0 {
 		d.fail--
-		return false, &pyint.Error{Kind: "ValueError", Msg: "in use"}
+		return false, &errorutil.Error{Kind: "ValueError", Msg: "in use"}
 	}
 	return true, nil
 }

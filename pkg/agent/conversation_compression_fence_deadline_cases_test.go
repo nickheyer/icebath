@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 func TestCommitFencePublishesItsSharedDeadline(t *testing.T) {
@@ -16,7 +16,7 @@ func TestCommitFencePublishesItsSharedDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	published, armed := fence.DeadlineMonotonic()
-	if remaining := published - pythread.Monotonic(); !armed || remaining <= 590 || remaining > 600 {
+	if remaining := published - timeutil.Monotonic(); !armed || remaining <= 590 || remaining > 600 {
 		t.Fatalf("published %v armed %v remaining %v", published, armed, remaining)
 	}
 	if fence.DeadlineExceeded() {
@@ -29,7 +29,7 @@ func TestCommitFencePublishesItsSharedDeadline(t *testing.T) {
 	if !fence.DeadlineExceeded() {
 		t.Fatal("a millisecond ceiling is exceeded")
 	}
-	if deadline, _ := fence.DeadlineMonotonic(); deadline > pythread.Monotonic() {
+	if deadline, _ := fence.DeadlineMonotonic(); deadline > timeutil.Monotonic() {
 		t.Fatalf("deadline %v lies in the future", deadline)
 	}
 }

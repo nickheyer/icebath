@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Backoff seconds before each recovery attempt, the last entry repeating
@@ -59,8 +60,8 @@ func RecoveryDelaySeconds(attempt int) float64 {
 // True when the turn already ended through a durable terminal settlement
 func turnExitIsTerminal(result map[string]any) bool {
 	reason := ""
-	if v := result["turn_exit_reason"]; pyrepr.Truthy(v) {
-		reason = pyrepr.Str(v)
+	if v := result["turn_exit_reason"]; anyutil.IsTrue(v) {
+		reason = anyutil.String(v)
 	}
 	for _, prefix := range terminalTurnExitPrefixes {
 		if strings.HasPrefix(reason, prefix) {
@@ -95,8 +96,8 @@ func ShouldRecoverTurn(result any, attempt int, taskID *string) bool {
 		return false
 	}
 	reason := ""
-	if v := dict["failure_reason"]; pyrepr.Truthy(v) {
-		reason = pyrepr.Str(v)
+	if v := dict["failure_reason"]; anyutil.IsTrue(v) {
+		reason = anyutil.String(v)
 	}
 	return !nonRecoverableReasons[reason]
 }
@@ -117,19 +118,19 @@ type ClaimProof struct {
 
 // Absolute form of a path the way pathlib absolute joins it onto the working directory
 func pathlibAbsolute(p string) (string, error) {
-	if pypath.IsAbs(p) {
-		return pypath.PathStr(p), nil
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p), nil
 	}
-	cwd, err := pypath.Getcwd()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathJoin(cwd, p), nil
+	return pathutil.Join(cwd, p), nil
 }
 
 // Text of a cell when it is truthy text, empty for a falsy cell, not ok for any other value
 func truthyCellText(v any) (string, bool) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", true
 	}
 	s, ok := v.(string)
@@ -148,7 +149,7 @@ func WorkerClaimIsLive(ctx context.Context, proof ClaimProof) (bool, error) {
 	}
 	exists := false
 	if dbPath != "" {
-		info, err := pypath.PathlibStat(dbPath)
+		info, err := pathutil.StatIfExists(dbPath)
 		if err != nil {
 			return false, err
 		}
@@ -189,7 +190,7 @@ func claimRowsAreLive(ctx context.Context, dbPath, taskID, runID, lock string, n
 	if err != nil {
 		return false, err
 	}
-	uri, err := pypath.AsURI(abs)
+	uri, err := pathutil.FileURL(abs)
 	if err != nil {
 		return false, err
 	}
@@ -212,7 +213,7 @@ func claimRowsAreLive(ctx context.Context, dbPath, taskID, runID, lock string, n
 	if currentRunID == nil {
 		return false, nil
 	}
-	if pyrepr.Str(currentRunID) != runID {
+	if anyutil.String(currentRunID) != runID {
 		return false, nil
 	}
 	if held, ok := truthyCellText(row.Get("claim_lock")); !ok || held != lock {
@@ -221,7 +222,7 @@ func claimRowsAreLive(ctx context.Context, dbPath, taskID, runID, lock string, n
 	if unexpired, err := leaseIsUnexpired(row.Get("claim_expires"), now); err != nil || !unexpired {
 		return false, err
 	}
-	runKey, err := pyIntOf(currentRunID)
+	runKey, err := cellIntOf(currentRunID)
 	if err != nil {
 		return false, err
 	}
@@ -243,7 +244,7 @@ func pidIsOursOrUnset(cell any, verifyPid bool) (bool, error) {
 	if !verifyPid || cell == nil {
 		return true, nil
 	}
-	pid, err := pyIntOf(cell)
+	pid, err := cellIntOf(cell)
 	if err != nil {
 		return false, err
 	}
@@ -255,7 +256,7 @@ func leaseIsUnexpired(cell any, now int64) (bool, error) {
 	if cell == nil {
 		return false, nil
 	}
-	expires, err := pyIntOf(cell)
+	expires, err := cellIntOf(cell)
 	if err != nil {
 		return false, err
 	}
@@ -277,11 +278,11 @@ func BuildRecoveryNudge(result any, attempt, maxAttempts int, taskID *string) st
 	errText := ""
 	if dict, ok := result.(map[string]any); ok && dict != nil {
 		source := dict["error"]
-		if !pyrepr.Truthy(source) {
+		if !anyutil.IsTrue(source) {
 			source = dict["final_response"]
 		}
-		if pyrepr.Truthy(source) {
-			errText = truncateRecoveryText(pyrepr.Str(source), 300)
+		if anyutil.IsTrue(source) {
+			errText = truncateRecoveryText(anyutil.String(source), 300)
 		}
 	}
 	if errText == "" {

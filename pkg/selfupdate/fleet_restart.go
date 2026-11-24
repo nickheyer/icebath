@@ -18,9 +18,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const manualGatewaySkipReason = "manual gateway has no supervisor relaunch authority; left running for explicit operator restart"
@@ -151,7 +151,7 @@ func liveFleetCurrentRows(ctx context.Context) []any {
 		return nil
 	}
 	for _, row := range fleet {
-		if !pyrepr.Equal(rowValue(row, "state"), "current") || pyrepr.Str(rowValue(row, "code_sha")) != checkoutSHA {
+		if !anyutil.Equal(rowValue(row, "state"), "current") || anyutil.String(rowValue(row, "code_sha")) != checkoutSHA {
 			return nil
 		}
 	}
@@ -169,8 +169,8 @@ func restartIdentitySHA(ctx context.Context) (sha string) {
 		}
 	}
 	if postUpdate := rowValue(fleetLatestReceipt(ctx), "post_update"); isRowDict(postUpdate) {
-		if value := rowValue(postUpdate, "sha"); pyrepr.Truthy(value) {
-			return pyrepr.Str(value)
+		if value := rowValue(postUpdate, "sha"); anyutil.IsTrue(value) {
+			return anyutil.String(value)
 		}
 	}
 	return ""
@@ -262,9 +262,9 @@ type gatewayRecoveryCandidates struct {
 }
 
 // Splits pre update runtimes into supervised gateways a fresh process may restart and skips with a reason
-func gatewayRecoveryPartition(plan *UpdatePlan, skipProfiles map[string]bool) (gatewayRecoveryCandidates, []*pyjson.Object) {
+func gatewayRecoveryPartition(plan *UpdatePlan, skipProfiles map[string]bool) (gatewayRecoveryCandidates, []*jsonutil.Object) {
 	candidates := gatewayRecoveryCandidates{Profiles: []string{}, Supervisors: map[string]string{}}
-	skipped := []*pyjson.Object{}
+	skipped := []*jsonutil.Object{}
 	if plan == nil {
 		return candidates, skipped
 	}
@@ -279,7 +279,7 @@ func gatewayRecoveryPartition(plan *UpdatePlan, skipProfiles map[string]bool) (g
 			}
 			continue
 		}
-		skipped = append(skipped, pyjson.ObjectOf("profile", runtime.Profile, "kind", runtime.Kind, "supervisor", runtime.Supervisor, "reason", manualGatewaySkipReason))
+		skipped = append(skipped, jsonutil.ObjectOf("profile", runtime.Profile, "kind", runtime.Kind, "supervisor", runtime.Supervisor, "reason", manualGatewaySkipReason))
 	}
 	return candidates, skipped
 }

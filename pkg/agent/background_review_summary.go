@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Glyph, preview field and preview length of one memory operation line
@@ -35,10 +35,10 @@ func (e reviewSummaryError) Error() string { return e.msg }
 
 // Dict view of a mapping value, a decoded JSON object included, false for anything else
 func reviewDict(v any) (map[string]any, bool) {
-	if o, ok := v.(*pyjson.Object); ok && o != nil {
-		m := make(map[string]any, len(o.Keys))
-		for _, k := range o.Keys {
-			m[k] = o.Vals[k]
+	if o, ok := v.(*jsonutil.Object); ok && o != nil {
+		m := make(map[string]any, o.Len())
+		for _, k := range o.Keys() {
+			m[k] = o.Value(k)
 		}
 		return m, true
 	}
@@ -65,7 +65,7 @@ func reviewStr(v any, what string) string {
 // Key of an id placed in a set, a review failure for a list or mapping id
 func reviewHashKey(v any) any {
 	switch v.(type) {
-	case map[string]any, []any, *pyjson.Object, []map[string]any:
+	case map[string]any, []any, *jsonutil.Object, []map[string]any:
 		panic(reviewSummaryError{fmt.Sprintf("review id is %s where text or a number was expected", errchain.Kind(v))})
 	}
 	return v
@@ -205,7 +205,7 @@ func collectReviewCallDetails(reviewMessages []map[string]any) (map[any]bool, ma
 			}
 			args := map[string]any{}
 			if text, ok := reviewGet(fn, "arguments", "{}").(string); ok {
-				if parsed, err := pyjson.Loads(text); err == nil {
+				if parsed, err := jsonutil.Decode(text); err == nil {
 					d, ok := reviewDict(parsed)
 					if !ok {
 						panic(reviewSummaryError{fmt.Sprintf("review tool call arguments are %s where a mapping was expected", errchain.Kind(parsed))})
@@ -255,7 +255,7 @@ func priorToolKeys(priorSnapshot []map[string]any) (map[any]bool, map[string]boo
 func actionLines(ctx context.Context, data, detail map[string]any, verbose bool) []string {
 	if pyTruthy(data["staged"]) {
 		if pyTruthy(data["proposal_staged"]) && pyTruthy(data["message"]) {
-			return []string{pyrepr.Str(data["message"])}
+			return []string{anyutil.String(data["message"])}
 		}
 		return []string{}
 	}
@@ -284,7 +284,7 @@ func actionLines(ctx context.Context, data, detail map[string]any, verbose bool)
 			}
 			path := ""
 			if pyTruthy(result["file_path"]) {
-				path = " (" + pyrepr.Str(result["file_path"]) + ")"
+				path = " (" + anyutil.String(result["file_path"]) + ")"
 			}
 			lines = append(lines, i18n.T(ctx, "display.review.skill_result", "", map[string]any{"name": result["name"],
 				"verb": i18n.T(ctx, "display.review.skill_verb."+verbKey, "", nil), "path": path}))
@@ -338,7 +338,7 @@ func summarizeBackgroundReviewActions(ctx context.Context, reviewMessages, prior
 	if !pyTruthy(notificationMode) {
 		notificationMode = "on"
 	}
-	mode := strings.ToLower(pyrepr.Str(notificationMode))
+	mode := strings.ToLower(anyutil.String(notificationMode))
 	if mode == "off" {
 		return []string{}, nil
 	}
@@ -360,7 +360,7 @@ func summarizeBackgroundReviewActions(ctx context.Context, reviewMessages, prior
 		if !ok {
 			continue
 		}
-		parsed, perr := pyjson.Loads(text)
+		parsed, perr := jsonutil.Decode(text)
 		if perr != nil {
 			continue
 		}

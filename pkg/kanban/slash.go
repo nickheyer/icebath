@@ -9,8 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // What the CLI parser made of slash tokens, parser text renamed to /kanban whenever no action parsed
@@ -57,9 +56,9 @@ func slashTokens(rest string) ([]string, error) {
 	var raw []string
 	var err error
 	if runtime.GOOS == "windows" {
-		raw, err = pyshlex.SplitNonPOSIX(rest)
+		raw, err = shellutil.SplitRaw(rest)
 	} else {
-		raw, err = pyshlex.SplitPOSIX(rest, false)
+		raw, err = shellutil.Split(rest)
 	}
 	if err != nil {
 		return nil, err
@@ -111,7 +110,7 @@ func RunSlash(ctx context.Context, rest string) (string, error) {
 	bufOut.WriteString(p.Out)
 	bufErr.WriteString(p.Err)
 	if _, kerr := KanbanCommand(ctx, p.Namespace, &bufOut, &bufErr); kerr != nil {
-		fmt.Fprintf(&bufErr, "error: %s\n", pyrepr.ExceptionMessage(kerr))
+		fmt.Fprintf(&bufErr, "error: %s\n", kerr.Error())
 	}
 	out, errText := strings.TrimRightFunc(bufOut.String(), unicode.IsSpace), strings.TrimRightFunc(bufErr.String(), unicode.IsSpace)
 	if errText != "" && out != "" {

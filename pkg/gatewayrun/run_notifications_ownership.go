@@ -8,17 +8,17 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Longest model_config _delegate_from chain walked before a delegate pin fails closed
 const maxDelegateProvenanceHops = 16
 
 // Value of a session row column, nil when absent
-func rowField(row *pyjson.Object, key string) any {
+func rowField(row *jsonutil.Object, key string) any {
 	v, _ := row.Get(key)
 	return v
 }
@@ -40,7 +40,7 @@ func (r *GatewayRunner) resolveCompressionLineageTarget(ctx context.Context, db 
 	if err != nil {
 		return failed()
 	}
-	if tipRow == nil || pyrepr.Truthy(rowField(tipRow, "ended_at")) {
+	if tipRow == nil || anyutil.IsTrue(rowField(tipRow, "ended_at")) {
 		return "retry", ""
 	}
 	if entry == nil || entry.SessionID == pinned || entry.SessionID == target {
@@ -53,7 +53,7 @@ func (r *GatewayRunner) resolveCompressionLineageTarget(ctx context.Context, db 
 	if routeRow == nil {
 		return "retry", ""
 	}
-	if pyrepr.Truthy(rowField(routeRow, "ended_at")) && rowField(routeRow, "end_reason") == "compression" {
+	if anyutil.IsTrue(rowField(routeRow, "ended_at")) && rowField(routeRow, "end_reason") == "compression" {
 		routeTip, err := db.DB().GetCompressionTip(ctx, entry.SessionID)
 		if err != nil {
 			return failed()
@@ -71,7 +71,7 @@ func (r *GatewayRunner) resolveCompressionLineageTarget(ctx context.Context, db 
 }
 
 // Closed physical session of a local conversation the completion is noted on, empty when none
-func (r *GatewayRunner) closedLocalTarget(ctx context.Context, db *state.AsyncSessionDB, entry *gateway.SessionEntry, pinned string, pinnedRow *pyjson.Object) (string, error) {
+func (r *GatewayRunner) closedLocalTarget(ctx context.Context, db *state.AsyncSessionDB, entry *gateway.SessionEntry, pinned string, pinnedRow *jsonutil.Object) (string, error) {
 	if entry == nil || entry.Platform != gateway.PlatformLocal || pinnedRow == nil {
 		return "", nil
 	}
@@ -92,14 +92,14 @@ func (r *GatewayRunner) closedLocalTarget(ctx context.Context, db *state.AsyncSe
 		}
 		target = tip
 	}
-	if target != entry.SessionID || row == nil || !pyrepr.Truthy(rowField(row, "ended_at")) || rowField(row, "end_reason") == "compression" {
+	if target != entry.SessionID || row == nil || !anyutil.IsTrue(rowField(row, "ended_at")) || rowField(row, "end_reason") == "compression" {
 		return "", nil
 	}
 	return target, nil
 }
 
 // Delegation proof of a pinned session, its verdict, the owning session id and that owner's row
-func (r *GatewayRunner) lookupCompletionOwner(ctx context.Context, sessionID, currentSessionID string) (string, string, *pyjson.Object) {
+func (r *GatewayRunner) lookupCompletionOwner(ctx context.Context, sessionID, currentSessionID string) (string, string, *jsonutil.Object) {
 	db := r.sessionDB(ctx)
 	if db == nil {
 		return "retry", sessionID, nil
@@ -118,7 +118,7 @@ func (r *GatewayRunner) lookupCompletionOwner(ctx context.Context, sessionID, cu
 		if row == nil {
 			return "terminal", sessionID, nil
 		}
-		if pyrepr.Truthy(rowField(row, "ended_at")) {
+		if anyutil.IsTrue(rowField(row, "ended_at")) {
 			if reason, ok := rowField(row, "end_reason").(string); ok && userBoundaryEndReasons[reason] {
 				return "terminal", sessionID, row
 			}
@@ -138,16 +138,16 @@ func (r *GatewayRunner) lookupCompletionOwner(ctx context.Context, sessionID, cu
 		}
 		config := rowField(row, "model_config")
 		if text, ok := config.(string); ok {
-			decoded, err := pyjson.Loads(text)
+			decoded, err := jsonutil.Decode(text)
 			if err != nil {
 				return "terminal", sessionID, nil
 			}
 			config = decoded
 		}
 		if config == nil {
-			config = pyjson.NewObject()
+			config = jsonutil.NewObject()
 		}
-		object, ok := config.(*pyjson.Object)
+		object, ok := config.(*jsonutil.Object)
 		if !ok {
 			return "terminal", sessionID, nil
 		}
@@ -217,7 +217,7 @@ func (r *GatewayRunner) resolveAsyncDelegationSession(ctx context.Context, entry
 	}
 	target := pinned
 	followsCompression := false
-	if pyrepr.Truthy(rowField(pinnedRow, "ended_at")) {
+	if anyutil.IsTrue(rowField(pinnedRow, "ended_at")) {
 		endReason := truthyText(rowField(pinnedRow, "end_reason"))
 		if userBoundaryEndReasons[endReason] {
 			pkgLog().Warn(fmt.Sprintf("Async-delegation completion pinned to user-closed session %s (end_reason=%s); dropping injection instead of resurrecting it (#55578 fail-closed).",
@@ -315,7 +315,7 @@ func (r *GatewayRunner) classifyCompletionOwner(ctx context.Context, parentSessi
 	}
 	if closedTip != "" {
 		verdict, target = "deliver", closedTip
-	} else if verdict == "deliver" && parent != nil && pyrepr.Truthy(rowField(parent, "ended_at")) {
+	} else if verdict == "deliver" && parent != nil && anyutil.IsTrue(rowField(parent, "ended_at")) {
 		endReason := truthyText(rowField(parent, "end_reason"))
 		if endReason != "compression" {
 			verdict = "deliver"

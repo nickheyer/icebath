@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const (
@@ -28,9 +28,9 @@ const (
 // Process wide session tables, every one guarded by sessionsMu as the Python cleanup lock guards them
 var (
 	sessionsMu          sync.Mutex
-	activeSessions      = pydict.New[string, map[string]any]()
-	sessionLastActivity = pydict.New[string, float64]()
-	sessionOwnerEnvs    = pydict.New[string, *tools.Env]()
+	activeSessions      = orderedutil.NewMap[string, map[string]any]()
+	sessionLastActivity = orderedutil.NewMap[string, float64]()
+	sessionOwnerEnvs    = orderedutil.NewMap[string, *tools.Env]()
 	cleanupFailures     = map[string]int{}
 	cleanupDone         bool
 	sessionNow          = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
@@ -81,7 +81,7 @@ func sameSession(a, b map[string]any) bool {
 
 // Local sessions share the Bot Desktop screen while its DISPLAY is up or a human lease still fences it
 func sharesBotDesktopBrowser(env *tools.Env, info map[string]any) bool {
-	if !pyrepr.Truthy(featuresOf(info)["local"]) {
+	if !anyutil.IsTrue(featuresOf(info)["local"]) {
 		return false
 	}
 	return botDesktopPublishedEnv(env)["DISPLAY"] != "" || botDesktopHumanHolds(env)
@@ -218,7 +218,7 @@ func createChromiumSession(ctx context.Context, env *tools.Env, cacheKey string)
 	if b.PID != nil {
 		pid = *b.PID
 	}
-	cfgOf(env).logger().Info(fmt.Sprintf("Created local browser session %s for %s (Chromium pid %s)", info["session_name"], cacheKey, pyrepr.Str(pid)))
+	cfgOf(env).logger().Info(fmt.Sprintf("Created local browser session %s for %s (Chromium pid %s)", info["session_name"], cacheKey, anyutil.String(pid)))
 	return info, nil
 }
 
@@ -259,7 +259,7 @@ func createLocalSession(ctx context.Context, env *tools.Env, cacheKey string, al
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(fallbackNote) {
+	if anyutil.IsTrue(fallbackNote) {
 		info["real_profile_unavailable"] = fallbackNote
 	}
 	return info, nil
@@ -282,7 +282,7 @@ func providerCreate(env *tools.Env, p BrowserProvider, cacheKey string) (info ma
 	}()
 	info, err = p.CreateSession(env, cacheKey)
 	if err == nil && len(info) == 0 {
-		err = valueError("Cloud provider returned invalid session: " + pyrepr.Repr(info))
+		err = valueError("Cloud provider returned invalid session: " + anyutil.Quote(info))
 	}
 	return info, err
 }
@@ -308,8 +308,8 @@ func createCloudSessionOrFallback(ctx context.Context, env *tools.Env, cacheKey 
 	for k, v := range info {
 		out[k] = v
 	}
-	if pyrepr.Truthy(out["cdp_url"]) {
-		out["cdp_url"] = ResolveCDPOverride(context.Background(), pyrepr.Str(out["cdp_url"]))
+	if anyutil.IsTrue(out["cdp_url"]) {
+		out["cdp_url"] = ResolveCDPOverride(context.Background(), anyutil.String(out["cdp_url"]))
 	}
 	return out, nil
 }
@@ -337,17 +337,17 @@ func createSessionForKey(ctx context.Context, env *tools.Env, cacheKey string, f
 // Local session whose process is gone or whose shared launcher key now names another endpoint
 func backendDead(env *tools.Env, info map[string]any) bool {
 	features := featuresOf(info)
-	if pyrepr.Truthy(features["lightpanda"]) {
+	if anyutil.IsTrue(features["lightpanda"]) {
 		name, _ := info["session_name"].(string)
 		server := getLightpandaServer(name)
 		return server == nil || !server.IsAlive()
 	}
-	if pyrepr.Truthy(features["sandbox"]) {
+	if anyutil.IsTrue(features["sandbox"]) {
 		return !sandboxBrowserAlive(env, info)
 	}
 	if key, _ := info["launcher_key"].(string); key != "" {
 		b := getBrowser(key)
-		return b == nil || !pyrepr.Equal(b.CDPURL, info["cdp_url"])
+		return b == nil || !anyutil.Equal(b.CDPURL, info["cdp_url"])
 	}
 	return false
 }
@@ -428,7 +428,7 @@ func getSessionInfo(ctx context.Context, env *tools.Env, cacheKey string) (map[s
 		cfgOf(env).logger().Info(fmt.Sprintf("Browser endpoint changed during session creation for %s; recreating", key))
 		releaseSessionBackend(tools.WithEnvHome(ctx, env), env, key, built)
 	}
-	if !pyrepr.Truthy(featuresOf(info)["local"]) {
+	if !anyutil.IsTrue(featuresOf(info)["local"]) {
 		sessionEnsureSupervisor(env, key)
 	}
 	return info, nil

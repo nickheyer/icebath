@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var codexStubHooks = []string{"tool_progress_callback", "_fire_stream_delta", "_fire_reasoning_delta", "_emit_interim_assistant_message"}
@@ -29,10 +29,10 @@ func TestCodexItemHelpersForTheBridge(t *testing.T) {
 	}
 	args := codexItemToArgs(map[string]any{"type": "fileChange", "changes": []any{map[string]any{"path": "/a.py", "kind": map[string]any{"type": "add"}},
 		map[string]any{"path": "/b.py", "kind": map[string]any{"type": "update"}}, "not-a-dict"}})
-	if !pyrepr.Equal(pyjson.Plain(args), map[string]any{"changes": []any{map[string]any{"kind": "add", "path": "/a.py"}, map[string]any{"kind": "update", "path": "/b.py"}}}) {
+	if !anyutil.Equal(jsonutil.Plain(args), map[string]any{"changes": []any{map[string]any{"kind": "add", "path": "/a.py"}, map[string]any{"kind": "update", "path": "/b.py"}}}) {
 		t.Fatalf("file change args %v", args)
 	}
-	if args := codexItemToArgs(map[string]any{"type": "dynamicToolCall", "arguments": []any{"a", "b"}}); !pyrepr.Equal(pyjson.Plain(args), map[string]any{"arguments": []any{"a", "b"}}) {
+	if args := codexItemToArgs(map[string]any{"type": "dynamicToolCall", "arguments": []any{"a", "b"}}); !anyutil.Equal(jsonutil.Plain(args), map[string]any{"arguments": []any{"a", "b"}}) {
 		t.Fatalf("wrapped args %v", args)
 	}
 	if p, _ := codexItemToPreview(map[string]any{"type": "commandExecution", "command": "echo " + strings.Repeat("x", 500)}).(string); p == "" || len([]rune(p)) > 120 {
@@ -70,8 +70,8 @@ func TestCodexEventBridgeDispatch(t *testing.T) {
 	bridge = makeCodexAppServerEventBridge(a)
 	bridge(codexItemNote("item/started", map[string]any{"type": "commandExecution", "id": "exec-1", "command": "ls /tmp", "cwd": "/tmp"}))
 	started := a.callsOf("tool_progress_callback")
-	if len(started) != 1 || started[0][0] != "tool.started" || started[0][1] != "exec_command" || !strings.Contains(pyrepr.Str(started[0][2]), "ls /tmp") ||
-		!pyrepr.Equal(pyjson.Plain(started[0][3]), map[string]any{"command": "ls /tmp", "cwd": "/tmp"}) {
+	if len(started) != 1 || started[0][0] != "tool.started" || started[0][1] != "exec_command" || !strings.Contains(anyutil.String(started[0][2]), "ls /tmp") ||
+		!anyutil.Equal(jsonutil.Plain(started[0][3]), map[string]any{"command": "ls /tmp", "cwd": "/tmp"}) {
 		t.Fatalf("started %v", started)
 	}
 
@@ -92,7 +92,7 @@ func TestCodexEventBridgeDispatch(t *testing.T) {
 	bridge(codexItemNote("item/completed", map[string]any{"type": "webSearch", "id": "ws-1", "query": "icebath agent docs"}))
 	calls = a.callsOf("tool_progress_callback")
 	if len(calls) != 2 || calls[0][0] != "tool.started" || calls[1][0] != "tool.completed" || calls[0][1] != "web_search" || calls[0][2] != "icebath agent docs" ||
-		!pyrepr.Equal(pyjson.Plain(calls[0][3]), map[string]any{"query": "icebath agent docs"}) {
+		!anyutil.Equal(jsonutil.Plain(calls[0][3]), map[string]any{"query": "icebath agent docs"}) {
 		t.Fatalf("web search %v", calls)
 	}
 }
@@ -235,7 +235,7 @@ func TestCodexRecordUsageAndCompaction(t *testing.T) {
 		len(db.queued) != 1 || db.queued[0]["billing_mode"] != "subscription_included" || db.queued[0]["api_call_count"] != 1 {
 		t.Fatalf("usage less %v %+v %v", got, comp, db.queued)
 	}
-	usage := pyjson.NewObject()
+	usage := jsonutil.NewObject()
 	for k, v := range map[string]any{"inputTokens": 1000, "cachedInputTokens": 400, "outputTokens": 50, "reasoningOutputTokens": 7, "totalTokens": 1050} {
 		usage.Set(k, v)
 	}
@@ -357,7 +357,7 @@ func TestCodexRuntimeExportsRecordUsageAndCompaction(t *testing.T) {
 	comp := &fakeCodexCompressor{awaiting: true}
 	a := newFakeCodexAgent()
 	a.sessionID, a.db, a.compressor, a.model, a.provider = "s1", db, comp, "gpt-5.5", "openai-codex"
-	usage := pyjson.NewObject()
+	usage := jsonutil.NewObject()
 	for k, v := range map[string]any{"inputTokens": 1000, "cachedInputTokens": 400, "outputTokens": 50, "reasoningOutputTokens": 7, "totalTokens": 1050} {
 		usage.Set(k, v)
 	}

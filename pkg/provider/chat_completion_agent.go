@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 // ChatCompletionAgent is every agent field and method the agent shaped request helpers read or write
@@ -354,7 +354,7 @@ func DirectAPICall(ctx context.Context, agent ChatCompletionAgent, apiKwargs map
 				next[k] = v
 			}
 			connCap := secondsDuration(math.Min(staleTimeout, 60))
-			next["timeout"] = pyhttpx.Timeout{Connect: connCap, Read: hard, Write: connCap, Pool: connCap}
+			next["timeout"] = httputil.Timeout{Connect: connCap, Read: hard, Write: connCap, Pool: connCap}
 			apiKwargs = next
 		}
 	}

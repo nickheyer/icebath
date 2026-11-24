@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 type speakerTestQueue struct {
@@ -45,10 +45,6 @@ func (q *speakerTestQueue) Get(timeout time.Duration) (any, bool) {
 func drainQueue(items ...any) *speakerTestQueue {
 	return &speakerTestQueue{items: append(items, nil)}
 }
-
-type speakerTestEvent struct{ pythread.Event }
-
-func (e *speakerTestEvent) Wait(timeout time.Duration) bool { return e.Event.Wait(timeout.Seconds()) }
 
 type fakeStreamer struct {
 	rate   atomic.Int64
@@ -99,7 +95,6 @@ func (o *speakerOut) Write(data []int16) (bool, error) {
 	}
 	return false, o.writeErr
 }
-func (o *speakerOut) WriteAvailable() (int, error) { return 0, nil }
 func (o *speakerOut) writeCount() int {
 	o.wmu.Lock()
 	defer o.wmu.Unlock()
@@ -113,11 +108,11 @@ func newSpeakerOut(writeErr error) *speakerOut {
 type speakerSD struct {
 	*fakeSD
 	omu    sync.Mutex
-	opened []pysounddevice.StreamParams
-	next   func() pysounddevice.OutputStream
+	opened []portaudioutil.StreamParams
+	next   func() portaudioutil.OutputStream
 }
 
-func (f *speakerSD) OutputStream(p pysounddevice.StreamParams) (pysounddevice.OutputStream, error) {
+func (f *speakerSD) OpenOutput(p portaudioutil.StreamParams) (portaudioutil.OutputStream, error) {
 	f.omu.Lock()
 	defer f.omu.Unlock()
 	f.opened = append(f.opened, p)
@@ -127,13 +122,13 @@ func (f *speakerSD) OutputStream(p pysounddevice.StreamParams) (pysounddevice.Ou
 // Installs a fake sounddevice whose every output stream is the returned one
 func sdMock(t *testing.T, writeErr error) (*speakerSD, *speakerOut) {
 	out := newSpeakerOut(writeErr)
-	sd := &speakerSD{fakeSD: &fakeSD{}, next: func() pysounddevice.OutputStream { return out }}
+	sd := &speakerSD{fakeSD: &fakeSD{}, next: func() portaudioutil.OutputStream { return out }}
 	installSpeakerSD(t, sd)
 	return sd, out
 }
 
 func installSpeakerSD(t *testing.T, sd *speakerSD) {
-	swap(t, &ttsImportSounddevice, func() (pysounddevice.Module, error) { return sd, nil })
+	swap(t, &speakerOpenAudio, func() (portaudioutil.Audio, error) { return sd, nil })
 }
 
 func patchResolveStreamer(t *testing.T, s StreamingTTSProvider) {
@@ -163,7 +158,7 @@ func TestStreamerPathHandlesMisalignedPcmChunks(t *testing.T) {
 	})
 	_, out := sdMock(t, nil)
 	patchResolveStreamer(t, provider)
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	StreamTTSToSpeaker(context.Background(), drainQueue("A complete sentence for testing."), stop, done, nil, "")
 	if out.writeCount() == 0 {
 		t.Fatal("expected PCM chunks written despite odd byte counts")
@@ -190,7 +185,7 @@ func TestStreamerPathSurvivesPortaudioWriteError(t *testing.T) {
 	})
 	_, out := sdMock(t, errors.New("Internal PortAudio error [PaErrorCode -9986]"))
 	patchResolveStreamer(t, provider)
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	StreamTTSToSpeaker(context.Background(), drainQueue("A complete sentence for testing."), stop, done, nil, "")
 	if out.writeCount() == 0 {
 		t.Fatal("expected at least one write attempt")
@@ -210,7 +205,7 @@ func TestStreamerReinitAfterPortaudioErrorPlaysRemainingSentences(t *testing.T) 
 	freshOut := newSpeakerOut(nil)
 	pool := []*speakerOut{brokenOut, freshOut}
 	sd := &speakerSD{fakeSD: &fakeSD{}}
-	sd.next = func() pysounddevice.OutputStream {
+	sd.next = func() portaudioutil.OutputStream {
 		if len(pool) == 0 {
 			return newSpeakerOut(nil)
 		}
@@ -220,7 +215,7 @@ func TestStreamerReinitAfterPortaudioErrorPlaysRemainingSentences(t *testing.T) 
 	}
 	installSpeakerSD(t, sd)
 	patchResolveStreamer(t, provider)
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	q := drainQueue("First sentence triggers PortAudio error here. ", "Second sentence must still play after reinit. ")
 	StreamTTSToSpeaker(context.Background(), q, stop, done, nil, "")
 	if brokenOut.writeCount() == 0 {
@@ -250,7 +245,7 @@ func TestStreamerTempfileFallbackAfterReinitExhausted(t *testing.T) {
 		return true
 	})
 	patchResolveStreamer(t, provider)
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	q := drainQueue("First sentence triggers PortAudio error. ", "Second sentence fails after first reinit. ",
 		"Third sentence fails after second reinit. ", "Fourth sentence fails after third reinit. ", "Fifth sentence plays via tempfile fallback. ")
 	StreamTTSToSpeaker(context.Background(), q, stop, done, nil, "")
@@ -283,7 +278,7 @@ func TestSpeakerHonoursTtsStreamingMinLenForShortCjkOpener(t *testing.T) {
 	sdMock(t, nil)
 	patchResolveStreamer(t, trackingStreamer(&streamCalls, &mu, pcm("\x00\x00", 10)))
 	fixedTTSConfig(t, map[string]any{"streaming": map[string]any{"min_len": 6}})
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	StreamTTSToSpeaker(context.Background(), drainQueue("记得，叫团团. ", "然后我们再说第二句话，这一句要长一些才行. "), stop, done, nil, "")
 	if len(streamCalls) == 0 || streamCalls[0] != "记得，叫团团." {
 		t.Fatalf("stream calls = %q", streamCalls)
@@ -300,7 +295,7 @@ func TestHybridSubsequentSentencesPrefetchedIndividually(t *testing.T) {
 	var streamCalls []string
 	sdMock(t, nil)
 	patchResolveStreamer(t, trackingStreamer(&streamCalls, &mu, pcm("\x00\x00", 10)))
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	q := drainQueue("This is the very first sentence here. ", "This is the second complete sentence. ",
 		"This is the third complete sentence. ", "This is the fourth complete sentence. ")
 	StreamTTSToSpeaker(context.Background(), q, stop, done, nil, "")
@@ -320,7 +315,7 @@ func TestHybridSubsequentSentencesPrefetchedIndividually(t *testing.T) {
 func TestHybridDoneEventWaitsForPrefetch(t *testing.T) {
 	skipOnDarwin(t)
 	speakerHome(t)
-	prefetchDone := &pythread.Event{}
+	prefetchDone := &syncutil.Event{}
 	provider := newFakeStreamer(func(*fakeStreamer, string) iter.Seq2[[]byte, error] {
 		return func(yield func([]byte, error) bool) {
 			if !yield(pcm("\x00\x00", 10), nil) {
@@ -332,7 +327,7 @@ func TestHybridDoneEventWaitsForPrefetch(t *testing.T) {
 	})
 	sdMock(t, nil)
 	patchResolveStreamer(t, provider)
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	q := drainQueue("This is the first sentence here. ", "This is the second sentence here. ", "This is the third sentence here. ")
 	StreamTTSToSpeaker(context.Background(), q, stop, done, nil, "")
 	if !done.IsSet() {
@@ -350,7 +345,7 @@ func TestHybridSingleSentenceStillWorks(t *testing.T) {
 	var streamCalls []string
 	sdMock(t, nil)
 	patchResolveStreamer(t, trackingStreamer(&streamCalls, &mu, pcm("\x00\x00", 10)))
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	StreamTTSToSpeaker(context.Background(), drainQueue("Just one complete sentence."), stop, done, nil, "")
 	if len(streamCalls) != 1 {
 		t.Fatalf("single sentence should trigger exactly 1 stream() call, got %q", streamCalls)
@@ -384,7 +379,7 @@ func TestHybridPlaybackSerializedNoOverlap(t *testing.T) {
 	for i := range 10 {
 		sentences = append(sentences, "This is sentence number "+string(rune('0'+i))+" here. ")
 	}
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	StreamTTSToSpeaker(context.Background(), drainQueue(sentences...), stop, done, nil, "")
 	if !done.IsSet() {
 		t.Fatal("done not set")
@@ -405,13 +400,13 @@ type syncRunOptions struct {
 }
 
 // Drives the speaker over the sync path with timed synth and play fakes, returning their ordered events
-func timedSyncRun(t *testing.T, sentences []any, o syncRunOptions) ([]syncRunEvent, *speakerTestEvent, *speakerTestEvent) {
+func timedSyncRun(t *testing.T, sentences []any, o syncRunOptions) ([]syncRunEvent, *syncutil.Event, *syncutil.Event) {
 	t.Helper()
 	speakerHome(t)
 	origin := time.Now()
 	var mu sync.Mutex
 	var events []syncRunEvent
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	swap(t, &speakerTextToSpeechTool, func(_ context.Context, text, outputPath string) (string, error) {
 		t0 := time.Since(origin).Seconds()
 		if o.synthFailOn != "" && strings.Contains(text, o.synthFailOn) {
@@ -547,7 +542,7 @@ func TestOpenaiStreamerHonorsEndpointReportedRateInWavPlayback(t *testing.T) {
 		mu.Unlock()
 		return true
 	})
-	playback := newStreamerPlayback(context.Background(), streamer, &speakerTestEvent{})
+	playback := newStreamerPlayback(context.Background(), streamer, &syncutil.Event{})
 	playback.speak("One sentence.")
 	playback.finish()
 	if streamer.SampleRate() != 44100 {
@@ -566,13 +561,13 @@ func TestSpeakerOutputStreamOpensAtRateLearnedFromFirstChunk(t *testing.T) {
 	})
 	sd, out := sdMock(t, nil)
 	patchResolveStreamer(t, provider)
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	q := drainQueue("The first sentence is long enough. ", "The second sentence is long enough too. ")
 	StreamTTSToSpeaker(context.Background(), q, stop, done, nil, "")
 	if !done.IsSet() {
 		t.Fatal("done not set")
 	}
-	if len(sd.opened) != 1 || sd.opened[0].Samplerate != 44100 {
+	if len(sd.opened) != 1 || sd.opened[0].SampleRate != 44100 {
 		t.Fatalf("opened = %+v", sd.opened)
 	}
 	if out.writeCount() != 2 {
@@ -587,7 +582,7 @@ func TestSyncPipelinePlaysTheArtifactTheToolReported(t *testing.T) {
 		t.Fatal(err)
 	}
 	swap(t, &speakerTextToSpeechTool, func(context.Context, string, string) (string, error) {
-		return pyjson.Dumps(map[string]any{"success": true, "file_path": ogg, "file_paths": []any{ogg}})
+		return jsonutil.Encode(map[string]any{"success": true, "file_path": ogg, "file_paths": []any{ogg}})
 	})
 	var mu sync.Mutex
 	var played []string
@@ -598,7 +593,7 @@ func TestSyncPipelinePlaysTheArtifactTheToolReported(t *testing.T) {
 		return true
 	})
 	patchResolveStreamer(t, nil)
-	StreamTTSToSpeaker(context.Background(), drainQueue("Hello there. "), &speakerTestEvent{}, &speakerTestEvent{}, nil, "")
+	StreamTTSToSpeaker(context.Background(), drainQueue("Hello there. "), &syncutil.Event{}, &syncutil.Event{}, nil, "")
 	if len(played) != 1 || played[0] != ogg {
 		t.Fatalf("sentence dropped: playback ignored the reported artifact, played = %q", played)
 	}
@@ -610,7 +605,7 @@ func TestSyncPipelineFallsBackToRequestedPathWhenReportedMissing(t *testing.T) {
 		if err := os.WriteFile(outputPath, bytes.Repeat([]byte("x"), 100), 0o600); err != nil {
 			return "", err
 		}
-		return pyjson.Dumps(map[string]any{"success": false, "error": "shape without paths"})
+		return jsonutil.Encode(map[string]any{"success": false, "error": "shape without paths"})
 	})
 	var mu sync.Mutex
 	var sizes []int64
@@ -626,7 +621,7 @@ func TestSyncPipelineFallsBackToRequestedPathWhenReportedMissing(t *testing.T) {
 		return true
 	})
 	patchResolveStreamer(t, nil)
-	StreamTTSToSpeaker(context.Background(), drainQueue("Hello there. "), &speakerTestEvent{}, &speakerTestEvent{}, nil, "")
+	StreamTTSToSpeaker(context.Background(), drainQueue("Hello there. "), &syncutil.Event{}, &syncutil.Event{}, nil, "")
 	if len(sizes) != 1 || sizes[0] <= 0 {
 		t.Fatalf("requested-path fallback no longer plays, sizes = %v", sizes)
 	}
@@ -638,11 +633,11 @@ func runStreamForSounddeviceProbe(t *testing.T) bool {
 	fixedTTSConfig(t, map[string]any{})
 	patchResolveStreamer(t, newFakeStreamer(func(*fakeStreamer, string) iter.Seq2[[]byte, error] { return pcmGenerator(nil) }))
 	var hit atomic.Bool
-	swap(t, &ttsImportSounddevice, func() (pysounddevice.Module, error) {
+	swap(t, &speakerOpenAudio, func() (portaudioutil.Audio, error) {
 		hit.Store(true)
-		return nil, &pysounddevice.LibraryError{Msg: "no audio device in test"}
+		return nil, &portaudioutil.LibraryError{Err: errors.New("no audio device in test")}
 	})
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	StreamTTSToSpeaker(context.Background(), drainQueue(), stop, done, nil, "")
 	if !done.IsSet() {
 		t.Fatal("done not set")
@@ -672,7 +667,7 @@ func TestStreamTtsToSpeakerNoneSentinelFlushesBuffer(t *testing.T) {
 	speakerHome(t)
 	var mu sync.Mutex
 	var spoken []string
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	StreamTTSToSpeaker(context.Background(), drainQueue("Hello world."), stop, done, func(text string) {
 		mu.Lock()
 		spoken = append(spoken, text)
@@ -689,7 +684,7 @@ func TestStreamTtsToSpeakerNoneSentinelFlushesBuffer(t *testing.T) {
 func TestStreamTtsToSpeakerStopEventAbortsEarly(t *testing.T) {
 	speakerHome(t)
 	var spoken []string
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	stop.Set()
 	StreamTTSToSpeaker(context.Background(), drainQueue("Should not be spoken."), stop, done, func(text string) { spoken = append(spoken, text) }, "")
 	if !done.IsSet() {
@@ -702,7 +697,7 @@ func TestStreamTtsToSpeakerStopEventAbortsEarly(t *testing.T) {
 
 func TestStreamTtsToSpeakerDoneEventSetOnException(t *testing.T) {
 	speakerHome(t)
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	StreamTTSToSpeaker(context.Background(), drainQueue(12345), stop, done, nil, "")
 	if !done.IsSet() {
 		t.Fatal("done not set")
@@ -723,7 +718,7 @@ func TestStreamTtsTempfileFallbackTempfileHandleClosedBeforePlayback(t *testing.
 	speakerHome(t)
 	chunk := pcm("\x00\x00", 240)
 	patchResolveStreamer(t, newFakeStreamer(func(*fakeStreamer, string) iter.Seq2[[]byte, error] { return pcmGenerator(nil, chunk, chunk) }))
-	swap(t, &ttsImportSounddevice, func() (pysounddevice.Module, error) {
+	swap(t, &speakerOpenAudio, func() (portaudioutil.Audio, error) {
 		return nil, &ttsImportError{msg: "sounddevice unavailable in test"}
 	})
 	type event struct{ kind, path string }
@@ -753,7 +748,7 @@ func TestStreamTtsTempfileFallbackTempfileHandleClosedBeforePlayback(t *testing.
 		}
 		return true
 	})
-	stop, done := &speakerTestEvent{}, &speakerTestEvent{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	StreamTTSToSpeaker(context.Background(), drainQueue("This is a spoken sentence for the fallback. "), stop, done, nil, "")
 	if !done.IsSet() {
 		t.Fatal("done not set")
@@ -793,13 +788,13 @@ func TestAlignInt16ChunksCarriesOddBytesAndPadsTheTail(t *testing.T) {
 		}
 		return strings.Join(parts, "|")
 	}
-	if got := collect(&speakerTestEvent{}, true); got != "\x01\x00|\x02\x00|\x00" {
+	if got := collect(&syncutil.Event{}, true); got != "\x01\x00|\x02\x00|\x00" {
 		t.Fatalf("padded = %q", got)
 	}
-	if got := collect(&speakerTestEvent{}, false); got != "\x01\x00|\x02\x00" {
+	if got := collect(&syncutil.Event{}, false); got != "\x01\x00|\x02\x00" {
 		t.Fatalf("unpadded = %q", got)
 	}
-	stopped := &speakerTestEvent{}
+	stopped := &syncutil.Event{}
 	stopped.Set()
 	if got := collect(stopped, true); got != "" {
 		t.Fatalf("stopped = %q", got)
@@ -816,7 +811,7 @@ func TestFirstWrittenArtifactPrefersTheReportedFileWithContent(t *testing.T) {
 		t.Fatal(err)
 	}
 	dump := func(v any) string {
-		s, err := pyjson.Dumps(v)
+		s, err := jsonutil.Encode(v)
 		if err != nil {
 			t.Fatal(err)
 		}

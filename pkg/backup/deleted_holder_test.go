@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyzip"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
 const dbHolderChildEnv = "ICEBATH_BACKUP_TEST_DB_HOLDER"
@@ -75,13 +75,13 @@ func TestImportRefusesToPublishOverADeletedButHeldDatabase(t *testing.T) {
 		if pids, ok := foreignDBHolderPIDs(target); !ok || len(pids) != 1 || pids[0] != holder.Process.Pid {
 			t.Fatalf("holders %v %v, want [%d]", pids, ok, holder.Process.Pid)
 		}
-		zr, err := pyzip.OpenReader(archive)
+		zr, err := ziputil.OpenReader(archive)
 		if err != nil {
 			t.Fatal(err)
 		}
 		err = importDBMember(ctx, zr, "icebath/state.db", target, 0, false)
 		zr.Close()
-		var oe *osError
+		var oe *restoreError
 		if !errors.As(err, &oe) || !strings.Contains(err.Error(), strconv.Itoa(holder.Process.Pid)) {
 			t.Fatalf("import error %v", err)
 		}
@@ -89,7 +89,7 @@ func TestImportRefusesToPublishOverADeletedButHeldDatabase(t *testing.T) {
 			t.Fatal("a new inode was published under a live holder")
 		}
 	}()
-	zr, err := pyzip.OpenReader(archive)
+	zr, err := ziputil.OpenReader(archive)
 	if err != nil {
 		t.Fatal(err)
 	}

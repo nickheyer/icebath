@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Bare agent on a route with its derived host fields under a temp home
@@ -60,7 +60,7 @@ func TestTryActivateFallbackExhaustedChainArmsShortCooldown(t *testing.T) {
 		t.Fatal("empty chain armed a cooldown")
 	}
 	a.fallbackChain = []map[string]any{{"provider": "openrouter"}, {"model": "x"}}
-	before := pythread.Monotonic()
+	before := timeutil.Monotonic()
 	if a.tryActivateFallback(context.Background(), provider.ReasonServerError) {
 		t.Fatal("malformed entries activated")
 	}
@@ -123,7 +123,7 @@ func TestAliasToolSearchBridgeForXAIRoundTripsThroughTheTransport(t *testing.T) 
 	tr := a.getTransport("")
 	toolsIn := []map[string]any{{"type": "function", "function": map[string]any{"name": "tool_search", "parameters": map[string]any{}}}}
 	out := a.aliasToolSearchBridgeForXAI(tr, toolsIn)
-	if fn, _ := pyjson.Dict(out[0]["function"]); fn["name"] != "icebath_tool_search" {
+	if fn, _ := jsonutil.AsMap(out[0]["function"]); fn["name"] != "icebath_tool_search" {
 		t.Fatalf("bridge not aliased: %v", out)
 	}
 	if toolsIn[0]["function"].(map[string]any)["name"] != "tool_search" {
@@ -158,8 +158,8 @@ func TestBuildAssistantMessageExtractsInlineThinkAndPadsToolCallReasoning(t *tes
 	if row["content"] != "answer" || row["reasoning"] != "plan it" || row["reasoning_content"] != "plan it" || row["finish_reason"] != "tool_calls" {
 		t.Fatalf("row %v", row)
 	}
-	tc := row["tool_calls"].([]any)[0].(*pyjson.Object)
-	if tc.GetOr("id", nil) != "call_abc" || tc.GetOr("call_id", nil) != "call_abc" || tc.GetOr("response_item_id", nil) != "fc_123" {
+	tc := row["tool_calls"].([]any)[0].(*jsonutil.Object)
+	if tc.ValueOr("id", nil) != "call_abc" || tc.ValueOr("call_id", nil) != "call_abc" || tc.ValueOr("response_item_id", nil) != "fc_123" {
 		t.Fatalf("tool call %v", tc)
 	}
 }
@@ -215,9 +215,9 @@ func TestFallbackSwitchBenchesPrimaryUntilValidFutureProviderReset(t *testing.T)
 				resetAt = int(reset)
 			}
 		}
-		monoBefore := pythread.Monotonic()
+		monoBefore := timeutil.Monotonic()
 		activated := a.tryActivateFallbackAt(a.homeContext(), provider.ReasonRateLimit, resetAt)
-		monoAfter, wallAfter := pythread.Monotonic(), wall()
+		monoAfter, wallAfter := timeutil.Monotonic(), wall()
 		if !activated {
 			t.Fatalf("%s: fallback not activated", c.name)
 		}
@@ -258,11 +258,11 @@ func TestMinSwitchResetSecondsKeepsPrimaryWhenResetIsImminent(t *testing.T) {
 func TestRateLimitExhaustionKeeps60sCooldown(t *testing.T) {
 	a := cooldownFallbackAgent(t, "")
 	a.rateLimitedUntil = 0
-	before := pythread.Monotonic()
+	before := timeutil.Monotonic()
 	if !a.tryActivateFallback(a.homeContext(), provider.ReasonRateLimit) {
 		t.Fatal("first activation")
 	}
-	after := pythread.Monotonic()
+	after := timeutil.Monotonic()
 	armed := a.rateLimitedUntil
 	if armed < before+60 || armed > after+60 {
 		t.Fatalf("cooldown %.3f s want 60 s", armed-before)
@@ -277,7 +277,7 @@ func TestRateLimitExhaustionKeeps60sCooldown(t *testing.T) {
 
 func TestCooldownNeverShrinksExistingWindow(t *testing.T) {
 	a := cooldownFallbackAgent(t, "")
-	far := pythread.Monotonic() + 999
+	far := timeutil.Monotonic() + 999
 	a.rateLimitedUntil = far
 	if !a.tryActivateFallback(a.homeContext(), "") || a.tryActivateFallback(a.homeContext(), "") {
 		t.Fatal("activation sequence")
@@ -290,9 +290,9 @@ func TestCooldownNeverShrinksExistingWindow(t *testing.T) {
 func TestBackoffCapsAtFourHours(t *testing.T) {
 	a := cooldownFallbackAgent(t, "")
 	a.rateLimitedUntil, a.rateLimitBackoffCount = 0, 10
-	before := pythread.Monotonic()
+	before := timeutil.Monotonic()
 	a.tryActivateFallback(a.homeContext(), provider.ReasonRateLimit)
-	after := pythread.Monotonic()
+	after := timeutil.Monotonic()
 	if a.rateLimitedUntil < before+14400 || a.rateLimitedUntil > after+14400 {
 		t.Fatalf("cooldown %.3f s want 14400 s", a.rateLimitedUntil-before)
 	}

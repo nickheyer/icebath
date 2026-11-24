@@ -13,9 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // The kanban_home fixture, a fresh home with an initialized board and no kanban pins
@@ -64,7 +65,7 @@ func slashKanban(t *testing.T, ctx context.Context, rest string) string {
 func slashKanbanJSON(t *testing.T, ctx context.Context, rest string) any {
 	t.Helper()
 	out := slashKanban(t, ctx, rest)
-	v, err := pyjson.Loads(out)
+	v, err := jsonutil.Decode(out)
 	if err != nil {
 		t.Fatalf("%s: %v\n%s", rest, err, out)
 	}
@@ -91,8 +92,8 @@ func TestKanbanListJsonIncludesSessionID(t *testing.T) {
 	rows, _ := slashKanbanJSON(t, ctx, "list --json").([]any)
 	found := false
 	for _, row := range rows {
-		obj := row.(*pyjson.Object)
-		if obj.GetOr("title", nil) == "acp task" && obj.GetOr("session_id", nil) == "acp-x" {
+		obj := row.(*jsonutil.Object)
+		if obj.Value("title") == "acp task" && obj.Value("session_id") == "acp-x" {
 			found = true
 		}
 	}
@@ -113,8 +114,8 @@ func TestRunSlashStatsTextIncludesReviewLane(t *testing.T) {
 	if text := slashKanban(t, ctx, "stats"); !regexp.MustCompile(`review\s+1`).MatchString(text) {
 		t.Fatalf("stats text lacks the review lane:\n%s", text)
 	}
-	stats := slashKanbanJSON(t, ctx, "stats --json").(*pyjson.Object)
-	if got := stats.GetOr("by_status", nil).(*pyjson.Object).GetOr("review", nil); !pyjson.Equal(got, 1) {
+	stats := slashKanbanJSON(t, ctx, "stats --json").(*jsonutil.Object)
+	if got := stats.Value("by_status").(*jsonutil.Object).Value("review"); !anyutil.Equal(got, 1) {
 		t.Fatalf("by_status review = %v", got)
 	}
 }
@@ -127,10 +128,10 @@ func TestKanbanShowJSONIncludesRuntimeLimit(t *testing.T) {
 		bounded = mustCreateTask(t, ctx, conn, kanban.CreateTaskOptions{Title: "bounded task", MaxRuntimeSeconds: &limit})
 		uncapped = mustCreateTask(t, ctx, conn, kanban.CreateTaskOptions{Title: "uncapped task"})
 	})
-	b := slashKanbanJSON(t, ctx, "show "+bounded+" --json").(*pyjson.Object).GetOr("task", nil).(*pyjson.Object)
-	u := slashKanbanJSON(t, ctx, "show "+uncapped+" --json").(*pyjson.Object).GetOr("task", nil).(*pyjson.Object)
-	if !pyjson.Equal(b.GetOr("max_runtime_seconds", nil), 2700) || u.GetOr("max_runtime_seconds", 0) != nil {
-		t.Fatalf("bounded %v uncapped %v", b.GetOr("max_runtime_seconds", nil), u.GetOr("max_runtime_seconds", 0))
+	b := slashKanbanJSON(t, ctx, "show "+bounded+" --json").(*jsonutil.Object).Value("task").(*jsonutil.Object)
+	u := slashKanbanJSON(t, ctx, "show "+uncapped+" --json").(*jsonutil.Object).Value("task").(*jsonutil.Object)
+	if !anyutil.Equal(b.Value("max_runtime_seconds"), 2700) || u.ValueOr("max_runtime_seconds", 0) != nil {
+		t.Fatalf("bounded %v uncapped %v", b.Value("max_runtime_seconds"), u.ValueOr("max_runtime_seconds", 0))
 	}
 }
 
@@ -194,21 +195,21 @@ func TestShowSurvivesIsoStringsInIntegerTimestampColumns(t *testing.T) {
 	if !strings.Contains(out, "Task "+tid+": corrupted card") || strings.Contains(out, "invalid literal") {
 		t.Fatalf("show output:\n%s", out)
 	}
-	payload := slashKanbanJSON(t, ctx, "show "+tid+" --json").(*pyjson.Object)
-	if got := payload.GetOr("task", nil).(*pyjson.Object).GetOr("id", nil); got != tid {
+	payload := slashKanbanJSON(t, ctx, "show "+tid+" --json").(*jsonutil.Object)
+	if got := payload.Value("task").(*jsonutil.Object).Value("id"); got != tid {
 		t.Fatalf("task id %v", got)
 	}
-	runs := payload.GetOr("runs", nil).([]any)
-	if len(runs) != 1 || !pyjson.Equal(runs[0].(*pyjson.Object).GetOr("ended_at", nil), 1787927722) {
+	runs := payload.Value("runs").([]any)
+	if len(runs) != 1 || !anyutil.Equal(runs[0].(*jsonutil.Object).Value("ended_at"), 1787927722) {
 		t.Fatalf("runs %v", runs)
 	}
-	events := payload.GetOr("events", nil).([]any)
+	events := payload.Value("events").([]any)
 	if len(events) == 0 {
 		t.Fatal("no events")
 	}
 	for _, e := range events {
-		if !pyjson.Equal(e.(*pyjson.Object).GetOr("created_at", nil), 1787936336) {
-			t.Fatalf("event created_at %v", e.(*pyjson.Object).GetOr("created_at", nil))
+		if !anyutil.Equal(e.(*jsonutil.Object).Value("created_at"), 1787936336) {
+			t.Fatalf("event created_at %v", e.(*jsonutil.Object).Value("created_at"))
 		}
 	}
 }

@@ -4,9 +4,9 @@ package spotify
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func init() { plugins.RegisterPort(Plugin{}) }
@@ -20,7 +20,7 @@ const Toolset = "spotify"
 // Name, schema builder, handler and emoji of each tool in registration order
 var spotifyTools = []struct {
 	name    string
-	schema  func() *pyjson.Object
+	schema  func() *jsonutil.Object
 	handler tools.Handler
 	emoji   string
 }{

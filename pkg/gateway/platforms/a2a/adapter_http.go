@@ -13,14 +13,10 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // Error page http.server sends for an unsupported method
@@ -107,7 +103,7 @@ func (q *a2aRequest) handleError(rec any) {
 
 // JSON body with its content type and length
 func (q *a2aRequest) json(code int, payload any) {
-	body, err := pyjson.Dumps(payload)
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		panic(err)
 	}
@@ -125,7 +121,7 @@ func (q *a2aRequest) error(httpCode int, reqID any, code int, message string) {
 
 // Not implemented page http.server answers a method without a handler with
 func (q *a2aRequest) unsupportedMethod() {
-	message := fmt.Sprintf("Unsupported method (%s)", pyrepr.StrRepr(q.r.Method))
+	message := fmt.Sprintf("Unsupported method (%s)", strconv.Quote(q.r.Method))
 	q.logMessage("code %d, message %s", http.StatusNotImplemented, message)
 	q.logRequest(http.StatusNotImplemented)
 	header := q.w.Header()
@@ -255,28 +251,24 @@ func (q *a2aRequest) doPOST() {
 		n, _ := io.ReadFull(q.r.Body, raw)
 		raw = raw[:n]
 	}
-	var req any
-	text, err := pycodecs.Decode(raw, "utf-8")
-	if err == nil {
-		req, err = pyjson.Loads(text)
-	}
-	if err != nil {
+	req, err := jsonutil.Decode(raw)
+	if err != nil || !utf8.Valid(raw) {
 		q.error(http.StatusBadRequest, nil, ErrParse, "parse error")
 		return
 	}
-	reqObj, isObj := req.(*pyjson.Object)
+	reqObj, isObj := req.(*jsonutil.Object)
 	if !isObj || reqObj == nil {
 		q.error(http.StatusBadRequest, nil, ErrInvalidParams, "JSON-RPC request must be an object")
 		return
 	}
 	reqID := getOr(reqObj, "id")
-	method := pyrepr.Str(pyGet(reqObj, "method", ""))
-	var params any = pyjson.NewObject()
+	method := anyutil.String(pyGet(reqObj, "method", ""))
+	var params any = jsonutil.NewObject()
 	if p := getOr(reqObj, "params"); p != nil {
 		params = p
 	}
 	version := strings.TrimSpace(q.r.Header.Get("A2A-Version"))
-	paramsObj, paramsIsObj := params.(*pyjson.Object)
+	paramsObj, paramsIsObj := params.(*jsonutil.Object)
 	var rt route
 	if paramsIsObj {
 		rt = a.routeForRequest(q.r.RequestURI, paramsObj)
@@ -333,21 +325,9 @@ func (q *a2aRequest) doPOST() {
 	}
 }
 
-// OSError a failed socket write raises, broken pipe and reset named like their Python classes
-func sockError(err error) error {
-	switch {
-	case errors.Is(err, syscall.EPIPE):
-		return &PyError{"BrokenPipeError", pyhttpx.OSErrorText(err)}
-	case errors.Is(err, syscall.ECONNRESET):
-		return &PyError{"ConnectionResetError", pyhttpx.OSErrorText(err)}
-	}
-	return &PyError{"OSError", pyhttpx.OSErrorText(err)}
-}
-
-// True for the broken pipe and reset errors a gone stream client raises
+// True for the broken pipe and reset errors a write to a gone stream client fails with
 func clientGone(err error) bool {
-	var perr *PyError
-	return errors.As(err, &perr) && (perr.Type == "BrokenPipeError" || perr.Type == "ConnectionResetError")
+	return errors.Is(err, syscall.EPIPE) || errors.Is(err, syscall.ECONNRESET)
 }
 
 // Event stream headers, the connection closing after the stream since closure signals the terminal state
@@ -359,7 +339,7 @@ func (q *a2aRequest) sseHeaders() {
 	header.Set("Connection", "close")
 	q.w.WriteHeader(http.StatusOK)
 	if err := http.NewResponseController(q.w).Flush(); err != nil {
-		panic(sockError(err))
+		panic(fmt.Errorf("a2a: flush event stream headers: %w", err))
 	}
 }
 
@@ -372,11 +352,11 @@ func (q *a2aRequest) sseWrite(chunk string) error {
 	if err == nil {
 		return nil
 	}
-	serr := sockError(err)
-	if !clientGone(serr) {
-		panic(serr)
+	err = fmt.Errorf("a2a: write event stream: %w", err)
+	if !clientGone(err) {
+		panic(err)
 	}
-	return serr
+	return err
 }
 
 // Keepalive comment whose any failure means the client is gone
@@ -393,8 +373,8 @@ func statusReason(resp *http.Response) string {
 	return strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)+" ")
 }
 
-// Redirect policy of urlopen, a POST refused on 307 and 308 and loops capped at ten hops or four repeats
-func urlopenRedirect(req *http.Request, via []*http.Request) error {
+// Redirect policy of a push callback, a POST refused on 307 and 308 and loops capped at ten hops or four repeats
+func pushRedirect(req *http.Request, via []*http.Request) error {
 	resp := req.Response
 	method := via[len(via)-1].Method
 	code := resp.StatusCode
@@ -407,47 +387,32 @@ func urlopenRedirect(req *http.Request, via []*http.Request) error {
 		visited[v.URL.String()]++
 	}
 	if visited[req.URL.String()] >= 4 || len(visited) >= 10 {
-		return &HTTPError{Code: code, Reason: "The HTTP server returned a redirect error that would lead to an infinite loop.\n" +
-			"The last 30x error message was:\n" + statusReason(resp)}
+		return &HTTPError{Code: code, Reason: "redirect loop, last redirect " + statusReason(resp)}
 	}
 	return nil
 }
 
-// URLError text of a failed request, a timeout before the response surfacing as timed out
-func urlopenError(err error) error {
-	var opErr *net.OpError
-	dialFailed := errors.As(err, &opErr) && opErr.Op == "dial"
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
-		if dialFailed {
-			return &PyError{"URLError", "<urlopen error timed out>"}
-		}
-		return &PyError{"TimeoutError", "timed out"}
-	}
-	return &PyError{"URLError", fmt.Sprintf("<urlopen error %s>", pyhttpx.OSErrorText(err))}
-}
-
-// POSTs a JSON payload like urlopen and returns the final status, the HTTPError for a non success one
-func urlopenPost(ctx context.Context, rawURL string, payload any, headers map[string]string, timeout time.Duration) (int, error) {
-	body, err := pyjson.Dumps(payload)
+// POSTs a JSON payload to a push callback and returns the final status, the HTTPError for a non success one
+func pushPost(ctx context.Context, rawURL string, payload any, headers map[string]string, timeout time.Duration) (int, error) {
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		return 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, strings.NewReader(body))
 	if err != nil {
-		return 0, &PyError{"ValueError", "unknown url type: " + pyrepr.StrRepr(rawURL)}
+		return 0, err
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	client := &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}, CheckRedirect: urlopenRedirect}
+	client := &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: httputil.Proxy}, CheckRedirect: pushRedirect}
 	resp, err := client.Do(req)
 	if err != nil {
 		var httpErr *HTTPError
 		if errors.As(err, &httpErr) {
 			return 0, httpErr
 		}
-		return 0, urlopenError(err)
+		return 0, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {

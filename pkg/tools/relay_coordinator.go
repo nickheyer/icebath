@@ -9,8 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Profile scoped Relay host, the real runtime or the reduced capability no op host
@@ -45,14 +45,14 @@ type RelayHostSource interface {
 // Exactly one Relay host for each canonical icebath profile, first creations running outside the lock
 type RelayHostRegistry struct {
 	mu       sync.Mutex
-	hosts    *pydict.Dict[string, RelayHost]
+	hosts    *orderedutil.Map[string, RelayHost]
 	creating map[string]chan struct{}
 	epoch    uint64
 }
 
 // Empty host registry
 func NewRelayHostRegistry() *RelayHostRegistry {
-	return &RelayHostRegistry{hosts: pydict.New[string, RelayHost](), creating: map[string]chan struct{}{}}
+	return &RelayHostRegistry{hosts: orderedutil.NewMap[string, RelayHost](), creating: map[string]chan struct{}{}}
 }
 
 // Host of the profile, created on first use unless create is false, the no op host while Relay has no consumer or cannot start
@@ -122,7 +122,7 @@ func buildRelayHost(ctx context.Context, key string, current RelayHost) (RelayHo
 func (g *RelayHostRegistry) ShutdownAll() {
 	g.mu.Lock()
 	hosts := g.hosts.Values()
-	g.hosts = pydict.New[string, RelayHost]()
+	g.hosts = orderedutil.NewMap[string, RelayHost]()
 	g.epoch++
 	g.mu.Unlock()
 	for _, h := range hosts {
@@ -163,7 +163,7 @@ type RelayTurnContext struct {
 	TurnID           string
 	TaskID           string
 	Handle           any
-	LogicalLLMCalls  *pydict.Dict[string, any]
+	LogicalLLMCalls  *orderedutil.Map[string, any]
 	LogicalLLMMu     sync.Mutex
 	finalizeMu       sync.Mutex
 	previousTurn     *RelayTurnContext
@@ -179,13 +179,13 @@ func (t *RelayTurnContext) RelayEnabled() bool { return t.relayEnabled.Load() }
 func (t *RelayTurnContext) Closed() bool { return t.closed.Load() }
 
 var (
-	relayCurrentTurnVar          = pyctx.NewVar("icebath_relay_turn", (*RelayTurnContext)(nil))
-	relayManagedCallbackDepthVar = pyctx.NewVar("icebath_relay_managed_callback_depth", 0)
+	relayCurrentTurnVar          = ctxutil.NewVar[any]("icebath_relay_turn", (*RelayTurnContext)(nil))
+	relayManagedCallbackDepthVar = ctxutil.NewVar[any]("icebath_relay_managed_callback_depth", 0)
 )
 
 // Context of a managed Relay callback whose transitive work, forwarded copies included, runs unmanaged
 func RelayManagedCallbackGuard(ctx context.Context) context.Context {
-	inner := pyctx.With(ctx, pyctx.CopyContext(ctx))
+	inner := ctxutil.Fork(ctx)
 	relayManagedCallbackDepthVar.Set(inner, relayManagedCallbackDepthVar.Get(ctx).(int)+1)
 	return inner
 }
@@ -228,14 +228,14 @@ type RelaySessionInitializer func(ctx context.Context, host *RelayRuntime, conte
 type RelaySessionCoordinator struct {
 	Registry      RelayHostSource
 	initializerMu sync.Mutex
-	initializers  *pydict.Dict[string, RelaySessionInitializer]
+	initializers  *orderedutil.Map[string, RelaySessionInitializer]
 	activeTurnsMu sync.Mutex
 	activeTurns   map[relayTurnKey]map[*RelayTurnContext]bool
 }
 
 // Coordinator over registry
 func NewRelaySessionCoordinator(registry RelayHostSource) *RelaySessionCoordinator {
-	return &RelaySessionCoordinator{Registry: registry, initializers: pydict.New[string, RelaySessionInitializer](),
+	return &RelaySessionCoordinator{Registry: registry, initializers: orderedutil.NewMap[string, RelaySessionInitializer](),
 		activeTurns: map[relayTurnKey]map[*RelayTurnContext]bool{}}
 }
 
@@ -336,7 +336,7 @@ func (c *RelaySessionCoordinator) BeginTurn(ctx context.Context, lease *Conversa
 	if lease.Released() {
 		return nil, errors.New("Icebath Relay conversation lease is released")
 	}
-	turn := &RelayTurnContext{Lease: lease, TurnID: turnID, TaskID: taskID, LogicalLLMCalls: pydict.New[string, any]()}
+	turn := &RelayTurnContext{Lease: lease, TurnID: turnID, TaskID: taskID, LogicalLLMCalls: orderedutil.NewMap[string, any]()}
 	turn.relayEnabled.Store(true)
 	key := relayTurnKey{lease.ProfileKey, lease.SessionID}
 	c.activeTurnsMu.Lock()
@@ -516,7 +516,7 @@ func relayFinishLogicalCalls(ctx context.Context, turn *RelayTurnContext, outcom
 	}
 	turn.LogicalLLMMu.Lock()
 	ids, handles := turn.LogicalLLMCalls.Keys(), turn.LogicalLLMCalls.Values()
-	turn.LogicalLLMCalls = pydict.New[string, any]()
+	turn.LogicalLLMCalls = orderedutil.NewMap[string, any]()
 	turn.LogicalLLMMu.Unlock()
 	for len(ids) > 0 {
 		last := len(ids) - 1

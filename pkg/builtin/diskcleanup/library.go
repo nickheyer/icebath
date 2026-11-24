@@ -18,18 +18,18 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const largeFileBytes = 500 * 1024 * 1024
 
 var (
-	resolvePath           = pypath.Resolve
+	resolvePath           = pathutil.Resolve
 	stdout      io.Writer = os.Stdout
 	nowUTC                = func() time.Time { return time.Now().UTC() }
 )
@@ -67,7 +67,7 @@ var (
 )
 
 // One tracked.json entry in its stored key order
-type Entry = *pyjson.Object
+type Entry = *jsonutil.Object
 
 // Result of a quick cleanup run
 type Summary struct {
@@ -136,14 +136,14 @@ func IsSafePath(ctx context.Context, path string) bool {
 	if err != nil {
 		return false
 	}
-	if _, ok := pypath.PathRelativeTo(resolved, h); ok {
+	if _, ok := pathutil.RelativeTo(resolved, h); ok {
 		return true
 	}
 	tmp, err := resolvePath("/tmp")
 	if err != nil {
 		return false
 	}
-	rel, ok := pypath.PathRelativeTo(resolved, tmp)
+	rel, ok := pathutil.RelativeTo(resolved, tmp)
 	if !ok {
 		return false
 	}
@@ -175,7 +175,7 @@ func readJSONSig(path string) (any, bool, error) {
 	if !utf8.Valid(data) {
 		return nil, false, nil
 	}
-	v, err := pyjson.Loads(string(data))
+	v, err := jsonutil.Decode(string(data))
 	if err != nil {
 		return nil, false, nil
 	}
@@ -190,7 +190,7 @@ func asEntries(v any) ([]Entry, error) {
 	}
 	out := make([]Entry, 0, len(list))
 	for _, item := range list {
-		o, ok := item.(*pyjson.Object)
+		o, ok := item.(*jsonutil.Object)
 		if !ok {
 			return nil, fmt.Errorf("a tracked.json entry is %s, expected a mapping", errchain.Kind(item))
 		}
@@ -236,7 +236,7 @@ func SaveTracked(ctx context.Context, tracked []Entry) error {
 	for i, e := range tracked {
 		list[i] = e
 	}
-	text, err := pyjson.Dumps(list, pyjson.Indent(2))
+	text, err := jsonutil.Encode(list, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -245,7 +245,7 @@ func SaveTracked(ctx context.Context, tracked []Entry) error {
 		return err
 	}
 	if exists(tf) {
-		if err := pyshutil.Copy2(tf, tf+".bak"); err != nil {
+		if err := fsutil.CopyFile(tf, tf+".bak"); err != nil {
 			return err
 		}
 	}
@@ -261,7 +261,7 @@ func isProtectedDir(ctx context.Context, p string) bool {
 	if err != nil {
 		return false
 	}
-	rel, ok := pypath.PathRelativeTo(resolved, home.Dir(ctx))
+	rel, ok := pathutil.RelativeTo(resolved, home.Dir(ctx))
 	if !ok {
 		return false
 	}
@@ -273,8 +273,8 @@ func isProtectedDir(ctx context.Context, p string) bool {
 func protectedCronPaths(h string) map[string]bool {
 	out := map[string]bool{}
 	for _, parent := range []string{"cron", "cronjobs"} {
-		base := pypath.PathJoin(h, parent)
-		for _, x := range []string{base, pypath.PathJoin(base, "output"), pypath.PathJoin(base, "jobs.json"), pypath.PathJoin(base, ".tick.lock")} {
+		base := pathutil.Join(h, parent)
+		for _, x := range []string{base, pathutil.Join(base, "output"), pathutil.Join(base, "jobs.json"), pathutil.Join(base, ".tick.lock")} {
 			out[x] = true
 		}
 	}
@@ -287,7 +287,7 @@ func isProtectedCronPath(ctx context.Context, p string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return protectedCronPaths(pypath.PathStr(home.Dir(ctx)))[resolved], nil
+	return protectedCronPaths(filepath.Clean(home.Dir(ctx)))[resolved], nil
 }
 
 // Human size with one decimal in B, KB, MB, GB, TB or PB
@@ -395,7 +395,7 @@ func Track(ctx context.Context, pathStr, category string, silent bool) (bool, er
 			return false, nil
 		}
 	}
-	tracked = append(tracked, pyjson.ObjectOf("path", path, "timestamp", pydatetime.ISOFormatUTC(nowUTC()), "category", category, "size", size))
+	tracked = append(tracked, jsonutil.ObjectOf("path", path, "timestamp", nowUTC().UTC().Format(timeutil.RFC3339Micro), "category", category, "size", size))
 	if err := SaveTracked(ctx, tracked); err != nil {
 		return false, err
 	}
@@ -449,7 +449,7 @@ type liveItem struct {
 
 // Whole days between an aware ISO timestamp and now, floored like timedelta.days
 func ageDays(now time.Time, stamp string) (int, error) {
-	ts, aware, err := pydatetime.ParseISOFormat(stamp)
+	ts, aware, err := timeutil.ParseISOZone(stamp, time.UTC)
 	if err != nil {
 		return 0, err
 	}
@@ -467,7 +467,7 @@ func liveItems(ctx context.Context, tracked []Entry, now time.Time, logStale boo
 		if err != nil {
 			return nil, err
 		}
-		p := pypath.PathStr(raw)
+		p := filepath.Clean(raw)
 		if exists(p) {
 			stamp, err := strField(item, "timestamp")
 			if err != nil {
@@ -518,15 +518,15 @@ func deleteItem(ctx context.Context, item Entry) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	p := pypath.PathStr(raw)
+	p := filepath.Clean(raw)
 	var rmErr error
 	if isFile(p) {
 		rmErr = os.Remove(p)
 	} else if isDir(p) {
-		rmErr = pyshutil.Rmtree(p)
+		rmErr = os.RemoveAll(p)
 	}
 	if rmErr != nil {
-		text := pypath.OSErrorText(rmErr)
+		text := rmErr.Error()
 		Log(ctx, fmt.Sprintf("ERROR deleting %s: %s", p, text))
 		return fmt.Sprintf("%s: %s", p, text), nil
 	}
@@ -612,7 +612,7 @@ func Quick(ctx context.Context) (Summary, error) {
 				if reCat != "" {
 					shown = reCat
 				}
-				Log(ctx, fmt.Sprintf("SKIP stale %s entry: %s (re-classified as %s%s)", cat, li.path, pyrepr.Repr(shown), note))
+				Log(ctx, fmt.Sprintf("SKIP stale %s entry: %s (re-classified as %s%s)", cat, li.path, anyutil.Quote(shown), note))
 				continue
 			}
 		}
@@ -757,7 +757,7 @@ func GetStatus(ctx context.Context) (Status, error) {
 		if err != nil {
 			return Status{}, err
 		}
-		if exists(pypath.PathStr(p)) {
+		if exists(filepath.Clean(p)) {
 			size, _ := sizeField(item)
 			cat, _ := strField(item, "category")
 			existing = append(existing, TopItem{Path: p, Size: size, Category: cat})
@@ -818,7 +818,7 @@ func sourceGitEnv() []string {
 func gitTracks(path string) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, "git", "-C", pypath.Dirname(path), "ls-files", "--error-unmatch", "--", ":(literal)"+pypath.Basename(path))
+	cmd := exec.CommandContext(ctx, "git", "-C", filepath.Dir(path), "ls-files", "--error-unmatch", "--", ":(literal)"+pathutil.Name(path))
 	cmd.Env = sourceGitEnv()
 	return cmd.Run() == nil
 }
@@ -830,24 +830,24 @@ func insideGitWorktree(ctx context.Context, path string) (bool, error) {
 		return false, err
 	}
 	var parents []string
-	for p := pypath.Dirname(resolved); ; p = pypath.Dirname(p) {
+	for p := filepath.Dir(resolved); ; p = filepath.Dir(p) {
 		parents = append(parents, p)
-		if pypath.Dirname(p) == p {
+		if filepath.Dir(p) == p {
 			break
 		}
 	}
 	var above []string
-	h := pypath.PathStr(home.Dir(ctx))
+	h := filepath.Clean(home.Dir(ctx))
 	if i := slices.Index(parents, h); i >= 0 {
 		parents, above = parents[:i], parents[i:]
 	}
 	for _, parent := range parents {
-		if exists(pypath.PathJoin(parent, ".git")) {
+		if exists(pathutil.Join(parent, ".git")) {
 			return true, nil
 		}
 	}
 	for _, parent := range above {
-		if exists(pypath.PathJoin(parent, ".git")) {
+		if exists(pathutil.Join(parent, ".git")) {
 			return gitTracks(resolved), nil
 		}
 	}
@@ -863,7 +863,7 @@ func GuessCategory(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if rel, ok := pypath.PathRelativeTo(resolved, home.Dir(ctx)); ok {
+	if rel, ok := pathutil.RelativeTo(resolved, home.Dir(ctx)); ok {
 		parts := relParts(rel)
 		top := ""
 		if len(parts) > 0 {
@@ -882,7 +882,7 @@ func GuessCategory(ctx context.Context, path string) (string, error) {
 			return "temp", nil
 		}
 	}
-	name := pypath.Basename(pypath.PathStr(path))
+	name := pathutil.Name(filepath.Clean(path))
 	if slices.ContainsFunc(testPatterns, func(x string) bool { return strings.HasPrefix(name, x) }) ||
 		slices.ContainsFunc(testSuffixes, func(x string) bool { return strings.HasSuffix(name, x) }) {
 		inside, err := insideGitWorktree(ctx, path)

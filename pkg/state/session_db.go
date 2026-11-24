@@ -21,9 +21,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Write contention budgets and retry jitter in seconds, vars a test may tune like the class attributes
@@ -124,7 +122,7 @@ type sessionCore struct {
 	retireConnection         func(conn any)
 	leaseSeams               turnLeaseSeams
 	richRowSeams             richRowSeams
-	neverActiveListSeam      func(ctx context.Context, olderThanDays float64) ([]*pyjson.Object, error)
+	neverActiveListSeam      func(ctx context.Context, olderThanDays float64) ([]*jsonutil.Object, error)
 	connectionPinned         bool
 	walLockGuard             lockGuardHeld
 
@@ -228,7 +226,7 @@ func (d *SessionDB) initialize(ctx context.Context) error {
 // Python exception class name of an error for the init failure diagnostic
 func pyExceptionClassName(err error) string {
 	var typed interface{ PyTypeName() string }
-	var intErr *pyint.Error
+	var intErr *errorutil.Error
 	var conv *pyConvError
 	var corrupt *StateDBCorruptError
 	var deleted *DeletedWalGenerationError
@@ -914,8 +912,8 @@ func (d *SessionDB) writeRowcount(ctx context.Context, query string, params []an
 }
 
 // First row of one read only statement, nil when it returns none
-func (d *SessionDB) readOne(ctx context.Context, query string, args ...any) (*pyjson.Object, error) {
-	var row *pyjson.Object
+func (d *SessionDB) readOne(ctx context.Context, query string, args ...any) (*jsonutil.Object, error) {
+	var row *jsonutil.Object
 	err := d.readRetryingIOErr(ctx, func(conn SQLiteConn) error {
 		rows, err := queryObjects(ctx, conn, query, args...)
 		if err != nil {
@@ -931,8 +929,8 @@ func (d *SessionDB) readOne(ctx context.Context, query string, args ...any) (*py
 }
 
 // Every row of one read only statement
-func (d *SessionDB) readAll(ctx context.Context, query string, args ...any) ([]*pyjson.Object, error) {
-	var out []*pyjson.Object
+func (d *SessionDB) readAll(ctx context.Context, query string, args ...any) ([]*jsonutil.Object, error) {
+	var out []*jsonutil.Object
 	err := d.readRetryingIOErr(ctx, func(conn SQLiteConn) error {
 		rows, err := queryObjects(ctx, conn, query, args...)
 		out = rows
@@ -1001,7 +999,7 @@ func (c *sessionCore) ensureDBFileGeneration() error {
 			}
 		}
 		if pyTruthy(value) {
-			token = pyrepr.Str(value)
+			token = anyutil.String(value)
 		}
 		var appID int64
 		if err := conn.QueryRowContext(ctx, "PRAGMA application_id").Scan(&appID); err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -1067,8 +1065,8 @@ func (d *SessionDB) recordDBFileIdentity(ctx context.Context) error {
 		}
 		return err
 	}
-	if row != nil && len(row.Keys) > 0 {
-		v, _ := row.Get(row.Keys[0])
+	if row != nil && row.Len() > 0 {
+		v, _ := row.Get(row.Keys()[0])
 		if n, ok := v.(int64); ok && n != 0 {
 			d.identityMu.Lock()
 			d.dbFileApplicationID = uint32(n)
@@ -1497,15 +1495,15 @@ func (c *sessionCore) ftsMergeCommandsPerPass() int { return sessionFTSMergeComm
 func (d *SessionDB) decodeContent(content any) any { return decodeMessageContent(content) }
 
 // Message dict of one row
-func (d *SessionDB) rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) (*pyjson.Object, error) {
+func (d *SessionDB) rowToMessageDict(row *jsonutil.Object, warnContext string, summaryFlag bool) (*jsonutil.Object, error) {
 	return rowToMessageDict(row, warnContext, summaryFlag)
 }
 
 // Session dict of one row with resolved prompt columns
-func (d *SessionDB) sessionRowDict(row *pyjson.Object) *pyjson.Object { return sessionRowDict(row) }
+func (d *SessionDB) sessionRowDict(row *jsonutil.Object) *jsonutil.Object { return sessionRowDict(row) }
 
 // Messages around one message id within window
-func (d *SessionDB) GetMessagesAround(ctx context.Context, sessionID string, aroundMessageID int64, window int) (*pyjson.Object, error) {
+func (d *SessionDB) GetMessagesAround(ctx context.Context, sessionID string, aroundMessageID int64, window int) (*jsonutil.Object, error) {
 	return getMessagesAround(ctx, d.readCtx, sessionID, aroundMessageID, window)
 }
 
@@ -1530,7 +1528,7 @@ func (c *sessionCore) getMeta(ctx context.Context, key string) (string, bool, er
 	if b, ok := value.([]byte); ok {
 		return string(b), true, nil
 	}
-	return pyrepr.Str(value), true, nil
+	return anyutil.String(value), true, nil
 }
 
 // Value of a state_meta key, false when absent or NULL

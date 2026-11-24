@@ -13,12 +13,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -127,17 +127,17 @@ func scanBannerSkills(ctx context.Context) (found []map[string]any, ok bool) {
 }
 
 // Skill names grouped by category in scan order, empty and uncached when the scan fails
-func getAvailableSkills(ctx context.Context) *pyjson.Object {
+func getAvailableSkills(ctx context.Context) *jsonutil.Object {
 	result := memoBanner(ctx, &availableSkillsCache, func() (any, bool) {
 		all, ok := scanBannerSkills(ctx)
 		if !ok {
 			return nil, false
 		}
-		grouped := pyjson.NewObject()
+		grouped := jsonutil.NewObject()
 		for _, skill := range all {
 			category := "general"
-			if c := skill["category"]; pyrepr.Truthy(c) {
-				category = pyrepr.Str(c)
+			if c := skill["category"]; anyutil.IsTrue(c) {
+				category = anyutil.String(c)
 			}
 			names, _ := grouped.Get(category)
 			list, _ := names.([]any)
@@ -145,10 +145,10 @@ func getAvailableSkills(ctx context.Context) *pyjson.Object {
 		}
 		return grouped, true
 	})
-	if grouped, ok := result.(*pyjson.Object); ok && grouped != nil {
+	if grouped, ok := result.(*jsonutil.Object); ok && grouped != nil {
 		return grouped
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Active git checkout of the running code or the copy under the home, empty when neither is one
@@ -197,10 +197,10 @@ func bakedBannerState() *BannerGitState {
 			return "", err
 		}
 		short, _ := identity.Get("short_sha")
-		if !pyrepr.Truthy(short) {
+		if !anyutil.IsTrue(short) {
 			return "", nil
 		}
-		return pyrepr.Str(short), nil
+		return anyutil.String(short), nil
 	}, "")
 	if baked == "" {
 		return nil

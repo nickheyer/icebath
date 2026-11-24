@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Turn boundary notices and the display kind a failed turn row carries
@@ -70,13 +70,13 @@ func CompressionMessageText(message map[string]any) string {
 				continue
 			}
 			value := part["text"]
-			if !pyrepr.Truthy(value) {
+			if !anyutil.IsTrue(value) {
 				value = part["content"]
 			}
-			if !pyrepr.Truthy(value) {
+			if !anyutil.IsTrue(value) {
 				value = ""
 			}
-			parts = append(parts, pyrepr.Str(value))
+			parts = append(parts, anyutil.String(value))
 		}
 		return strings.Join(parts, "\n")
 	}

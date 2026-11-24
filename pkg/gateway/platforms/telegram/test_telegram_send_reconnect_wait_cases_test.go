@@ -7,16 +7,15 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Runner double exposing a mutable live adapter table
 type liveRunner struct {
 	mu       sync.Mutex
-	adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 }
 
-func (r *liveRunner) Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (r *liveRunner) Adapters() *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.adapters
@@ -48,7 +47,7 @@ func TestSendDelegatesToReplacementAdapterInstalledMidWait(t *testing.T) {
 	live, fake := newScriptedAdapter(t, nil)
 	live.richSendDisabled.Store(true)
 	live.reconnectWaitSeconds = 0.01
-	runner := &liveRunner{adapters: pydict.New[gateway.Platform, gateway.PlatformAdapter]()}
+	runner := &liveRunner{adapters: orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()}
 	old.GatewayRunner = runner
 	time.AfterFunc(120*time.Millisecond, func() {
 		runner.mu.Lock()
@@ -69,7 +68,7 @@ func TestSendDelegatesImmediatelyWhenReplacementAlreadyLive(t *testing.T) {
 	old.reconnectWaitSeconds = 30
 	live, fake := newScriptedAdapter(t, nil)
 	live.richSendDisabled.Store(true)
-	runner := &liveRunner{adapters: pydict.New[gateway.Platform, gateway.PlatformAdapter]()}
+	runner := &liveRunner{adapters: orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()}
 	runner.adapters.Set(old.Platform, live)
 	old.GatewayRunner = runner
 	started := time.Now()

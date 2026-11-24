@@ -13,10 +13,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Delays in seconds before each boot provision retry, the last one repeating
@@ -43,8 +43,8 @@ type RelayRuntimeError struct{ Msg string }
 func (e *RelayRuntimeError) Error() string { return e.Msg }
 
 // Bearer authenticated JSON POST returning the open 2xx response
-func relayJSONPost(url, token string, body *pyjson.Object, timeout time.Duration) (*http.Response, error) {
-	data, err := pyjson.Dumps(body)
+func relayJSONPost(url, token string, body *jsonutil.Object, timeout time.Duration) (*http.Response, error) {
+	data, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
@@ -74,12 +74,12 @@ type relayProvisionArgs struct {
 }
 
 // Provision response object, RelayProvisionRefused for a reasoned refusal and RelayRuntimeError for other failures
-func relayPostProvision(a relayProvisionArgs) (*pyjson.Object, error) {
+func relayPostProvision(a relayProvisionArgs) (*jsonutil.Object, error) {
 	routeKeys := make([]any, len(a.routeKeys))
 	for i, k := range a.routeKeys {
 		routeKeys[i] = k
 	}
-	body := pyjson.ObjectOf("gatewayId", a.gatewayID, "platform", a.platform, "botId", a.botID,
+	body := jsonutil.ObjectOf("gatewayId", a.gatewayID, "platform", a.platform, "botId", a.botID,
 		"gatewayEndpoint", a.gatewayEndpoint, "routeKeys", routeKeys)
 	for _, kv := range [][2]string{{"instanceId", a.instanceID}, {"wakeUrl", a.wakeURL}, {"displayName", a.displayName}} {
 		if kv[1] != "" {
@@ -116,19 +116,19 @@ func relayPostProvision(a relayProvisionArgs) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8(raw)
+	text, err := textutil.DecodeUTF8(raw)
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	payload, ok := pyjson.AsObject(parsed)
+	payload, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		return nil, &RelayRuntimeError{Msg: "connector returned an unexpected response"}
 	}
-	if issued, has := payload.Get("secretIssued"); !pyrepr.Truthy(payload.GetOr("secret", nil)) && !(has && issued == false) {
+	if issued, has := payload.Get("secretIssued"); !anyutil.IsTrue(payload.ValueOr("secret", nil)) && !(has && issued == false) {
 		return nil, &RelayRuntimeError{Msg: "connector returned an unexpected response (no secret)"}
 	}
 	return payload, nil
@@ -217,7 +217,7 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 	if v := relaySetting(ctx, settings.GatewayRelayID); v != "" {
 		loggedID = v
 	}
-	tenant := pyrepr.Str(pyrepr.Or(result.GetOr("tenant", nil), ""))
+	tenant := anyutil.String(anyutil.Or(result.ValueOr("tenant", nil), ""))
 	if tenant == "" {
 		tenant = "?"
 	}
@@ -237,10 +237,10 @@ func relaySelfProvision(ctx context.Context) (string, error) {
 }
 
 // Provisions every fronted platform under one gateway id, saving the first credentials the connector hands out into the profile .env as icebath gateway enroll does, returning the provisioned names, refusal count and last result
-func relayProvisionEachPlatform(ctx context.Context, identities [][2]string, gatewayID string, post relayProvisionArgs) ([]string, int, *pyjson.Object, error) {
+func relayProvisionEachPlatform(ctx context.Context, identities [][2]string, gatewayID string, post relayProvisionArgs) ([]string, int, *jsonutil.Object, error) {
 	provisioned := []string{}
 	refused := 0
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	for _, id := range identities {
 		args := post
 		args.platform, args.botID, args.gatewayID = id[0], id[1], gatewayID
@@ -260,10 +260,10 @@ func relayProvisionEachPlatform(ctx context.Context, identities [][2]string, gat
 		}
 		result = payload
 		provisioned = append(provisioned, id[0])
-		if pyrepr.Truthy(result.GetOr("secret", nil)) && relaySetting(ctx, settings.GatewayRelaySecret) == "" {
-			for _, pair := range [][2]string{{"GATEWAY_RELAY_ID", pyrepr.Str(pyrepr.Or(result.GetOr("gatewayId", nil), gatewayID))},
-				{"GATEWAY_RELAY_SECRET", pyrepr.Str(result.GetOr("secret", nil))},
-				{"GATEWAY_RELAY_DELIVERY_KEY", pyrepr.Str(pyrepr.Or(result.GetOr("deliveryKey", nil), ""))}} {
+		if anyutil.IsTrue(result.ValueOr("secret", nil)) && relaySetting(ctx, settings.GatewayRelaySecret) == "" {
+			for _, pair := range [][2]string{{"GATEWAY_RELAY_ID", anyutil.String(anyutil.Or(result.ValueOr("gatewayId", nil), gatewayID))},
+				{"GATEWAY_RELAY_SECRET", anyutil.String(result.ValueOr("secret", nil))},
+				{"GATEWAY_RELAY_DELIVERY_KEY", anyutil.String(anyutil.Or(result.ValueOr("deliveryKey", nil), ""))}} {
 				if pair[1] == "" {
 					continue
 				}
@@ -357,5 +357,5 @@ func relayRunOffLoop(ctx context.Context, fn func() (string, error)) (string, er
 
 // Python str of an exception value
 func relayExcStr(err error) string {
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }

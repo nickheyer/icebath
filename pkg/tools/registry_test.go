@@ -9,15 +9,15 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fresh registry holding one core tool per handler
 func registryWith(handlers map[string]Handler) *Dispatcher {
 	r := NewRegistry()
 	for name, h := range handlers {
-		r.Register(Def{Name: name, Toolset: "core", Schema: pyjson.ObjectOf("name", name, "description", "Test tool "+name,
-			"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())), Handler: h})
+		r.Register(Def{Name: name, Toolset: "core", Schema: jsonutil.ObjectOf("name", name, "description", "Test tool "+name,
+			"parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf())), Handler: h})
 	}
 	return NewDispatcher(r)
 }

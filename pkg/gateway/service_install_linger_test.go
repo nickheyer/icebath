@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 // Linux host with the user and the linger file probe of a scenario, the loginctl run recorded
@@ -116,7 +116,7 @@ func TestEnsureSystemServiceLingerFreshEnableWaitsOnTargetUidAndHintsRestartOnly
 			t.Setenv("ICEBATH_HOME", t.TempDir())
 			keepInstallHooks(t)
 			installHooks.ensureLinger = func(context.Context, io.Writer, string, bool) (bool, error) { return true, nil }
-			installHooks.getpwnam = func(string) (pypwd.Passwd, error) { return pypwd.Passwd{UID: 1001}, nil }
+			installHooks.getpwnam = func(string) (userutil.Account, error) { return userutil.Account{UID: 1001}, nil }
 			var waited []int
 			installHooks.waitUserBus = func(uid int, _ time.Duration) bool { waited = append(waited, uid); return true }
 			adopted := false

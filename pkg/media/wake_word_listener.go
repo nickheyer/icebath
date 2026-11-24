@@ -4,16 +4,14 @@ package media
 
 import (
 	"context"
-	"io"
 	"os"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"sync"
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 var (
@@ -27,7 +25,7 @@ var (
 	wakeLockPath         = func() string { return filepath.Join(home.Root(), "runtime", "wake-word.lock") }
 )
 
-// Identity of two owners like Python is, never panicking on uncomparable values
+// Identity of two owners, uncomparable maps, slices and funcs compared by their pointer, never panicking
 func sameOwner(a, b any) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
@@ -46,28 +44,12 @@ func sameOwner(a, b any) bool {
 	return false
 }
 
-// Non blocking exclusive lock or unlock of the lease file, one byte through msvcrt semantics on Windows
+// Non blocking exclusive lock or unlock of the lease file
 func wakeFlock(f *os.File, acquire bool) error {
-	if runtime.GOOS == "windows" {
-		if acquire {
-			end, err := f.Seek(0, io.SeekEnd)
-			if err != nil {
-				return err
-			}
-			if end == 0 {
-				if _, err := f.Write([]byte{0}); err != nil {
-					return err
-				}
-			}
-		}
-		if _, err := f.Seek(0, io.SeekStart); err != nil {
-			return err
-		}
-	}
 	if !acquire {
-		return pyfs.UnlockFile(f)
+		return fsutil.UnlockFile(f)
 	}
-	ok, err := pyfs.TryLockFile(f)
+	ok, err := fsutil.TryLockFile(f)
 	if err != nil {
 		return err
 	}
@@ -134,7 +116,7 @@ func detectorFailed(det *WakeWordDetector) {
 // StartListening claims, builds and starts the detector, idempotent for its owner and WakeWordInUse for others
 func StartListening(ctx context.Context, onWake func() error, owner any, cfg *WakeConfig) (*WakeWordDetector, error) {
 	if owner == nil {
-		return nil, &WakeWordError{Class: "ValueError", Msg: "wake-word owner must not be None"}
+		return nil, &WakeWordError{Kind: errWakeInvalid, Msg: "wake-word owner must not be nil"}
 	}
 	wakeDetectorLock.Lock()
 	defer wakeDetectorLock.Unlock()

@@ -6,9 +6,9 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Recovers committed API work once the real API adapter is published, each served profile under its own scope
@@ -34,7 +34,7 @@ func recoverAuthorityAPITurns(ctx context.Context, a *SessionAuthority) error {
 		rows, err := state.QueryObjects(ctx, conn,
 			"SELECT DISTINCT target_session_id FROM session_admissions WHERE principal_id='api' AND status='queued'")
 		for _, row := range rows {
-			targets = append(targets, pyrepr.Str(row.GetOr("target_session_id", nil)))
+			targets = append(targets, anyutil.String(row.ValueOr("target_session_id", nil)))
 		}
 		return err
 	})
@@ -78,7 +78,7 @@ func recoverAPISession(ctx context.Context, a *SessionAuthority, sid string) err
 		if err != nil {
 			return err
 		}
-		payload, isDict := raw.(*pyjson.Object)
+		payload, isDict := raw.(*jsonutil.Object)
 		if !isDict {
 			return &PyError{Kind: "AttributeError", Msg: "the API session to recover is " + errchain.Kind(raw) + ", expected a mapping"}
 		}

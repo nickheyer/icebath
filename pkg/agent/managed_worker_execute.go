@@ -13,11 +13,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runs the managed worker child argv names through the binary exit hooks, otherwise latches the dispatch
@@ -45,13 +45,13 @@ func ManagedWorkerMain(ctx context.Context) (code int) {
 			} else {
 				fmt.Fprintf(os.Stderr, "managed worker failed\n%v\n", r)
 			}
-			_ = channel.Send("error", pyjson.ObjectOf("reason", "managed_worker_failed"))
+			_ = channel.Send("error", jsonutil.ObjectOf("reason", "managed_worker_failed"))
 			code = 1
 		}
 	}()
 	if err := runManagedWorker(ctx, channel); err != nil {
 		fmt.Fprintf(os.Stderr, "managed worker failed\n%s\n", formatWorkerFailure(err))
-		_ = channel.Send("error", pyjson.ObjectOf("reason", "managed_worker_failed"))
+		_ = channel.Send("error", jsonutil.ObjectOf("reason", "managed_worker_failed"))
 		return 1
 	}
 	return 0
@@ -94,12 +94,12 @@ var discoverProfileMCP = func(ctx context.Context, env *tools.Env, policy *gatew
 
 // WorkerSender is the framed event writer execute and its controls send through
 type WorkerSender interface {
-	Send(kind string, payload *pyjson.Object) error
+	Send(kind string, payload *jsonutil.Object) error
 }
 
 // Owner connection execute adopts through and closes last
 type managedWorkerRPC interface {
-	Call(ctx context.Context, method string, params *pyjson.Object) (any, error)
+	Call(ctx context.Context, method string, params *jsonutil.Object) (any, error)
 	Close()
 }
 
@@ -146,7 +146,7 @@ var (
 		}
 		return rpc, nil
 	}
-	newRuntimeSessionStore = func(ctx context.Context, rpc WorkerCall, scope *pyjson.Object, outboxDir string, adopted any, maxBytes int) (managedWorkerStore, error) {
+	newRuntimeSessionStore = func(ctx context.Context, rpc WorkerCall, scope *jsonutil.Object, outboxDir string, adopted any, maxBytes int) (managedWorkerStore, error) {
 		store, err := NewRuntimeSessionStore(ctx, rpc, scope, outboxDir, adopted, maxBytes)
 		if err != nil {
 			return nil, err
@@ -182,27 +182,27 @@ func optionalText(text *string) any {
 }
 
 // Adopts the execution, builds the agent under the frozen policy, runs the turn and settles it with the owner
-func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel WorkerSender, input *bufio.Reader) (err error) {
+func ExecuteManagedWorker(ctx context.Context, frame *jsonutil.Object, channel WorkerSender, input *bufio.Reader) (err error) {
 	if err := bindWorkerPolicy(frame); err != nil {
 		return err
 	}
-	scope := frame.Vals["scope"].(*pyjson.Object).Copy()
-	profileHome := frame.Vals["home"].(string)
+	scope := frame.Value("scope").(*jsonutil.Object).Clone()
+	profileHome := frame.Value("home").(string)
 	rpc, err := newWorkerRPC(profileHome)
 	if err != nil {
 		return err
 	}
-	adoptParams := pyjson.NewObject()
-	for _, key := range scope.Keys {
+	adoptParams := jsonutil.NewObject()
+	for _, key := range scope.Keys() {
 		if key != "epoch" {
-			adoptParams.Set(key, scope.Vals[key])
+			adoptParams.Set(key, scope.Value(key))
 		}
 	}
 	adoptedRaw, err := rpc.Call(ctx, "worker.adopt", adoptParams)
 	if err != nil {
 		return err
 	}
-	adopted, isDict := adoptedRaw.(*pyjson.Object)
+	adopted, isDict := adoptedRaw.(*jsonutil.Object)
 	if !isDict {
 		return &workerStoreError{"TypeError", "adopted session record is " + errchain.Kind(adoptedRaw) + " where a mapping was expected"}
 	}
@@ -210,10 +210,10 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel Wor
 	if !present {
 		return &workerStoreError{"KeyError", "'owner_epoch'"}
 	}
-	if !pyjson.Equal(ownerEpoch, scope.Vals["epoch"]) {
+	if !anyutil.Equal(ownerEpoch, scope.Value("epoch")) {
 		return &workerStoreError{"RuntimeError", "stale_epoch"}
 	}
-	outbox, err := ManagedWorkerOutboxDir(profileHome, scope.Vals["execution_id"])
+	outbox, err := ManagedWorkerOutboxDir(profileHome, scope.Value("execution_id"))
 	if err != nil {
 		return err
 	}
@@ -233,7 +233,7 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel Wor
 	if err := recoverProcessCheckpoint(ctx, env); err != nil {
 		return err
 	}
-	policy, err := gateway.RestorePolicy(frame.Vals["policy"])
+	policy, err := gateway.RestorePolicy(frame.Value("policy"))
 	if err != nil {
 		return err
 	}
@@ -243,7 +243,7 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel Wor
 	if err := discoverProfileMCP(ctx, env, policy); err != nil {
 		return err
 	}
-	route := frame.Vals["route"].(string)
+	route := frame.Value("route").(string)
 	tools.SetCurrentSessionKey(env, route)
 	env.Values.Store("session.gateway", true)
 	inputs, err := gateway.ConstructKwargs(frame)
@@ -251,8 +251,8 @@ func ExecuteManagedWorker(ctx context.Context, frame *pyjson.Object, channel Wor
 		return err
 	}
 	construct := map[string]any{"ephemeral_system_prompt": optionalText(policy.SkillsPrompt)}
-	for _, key := range inputs.Keys {
-		construct[key] = pyjson.Plain(inputs.Vals[key])
+	for _, key := range inputs.Keys() {
+		construct[key] = jsonutil.Plain(inputs.Value(key))
 	}
 	controls := newWorkerControls(channel, route, input, env)
 	tools.RegisterGatewayNotify(route, controls.Approval)
@@ -296,8 +296,8 @@ func closeWorkerRPC(rpc managedWorkerRPC) {
 }
 
 // The keyword arguments execute builds the worker's AIAgent from, before the worker route overrides
-func managedAgentKwargs(ctx context.Context, frame *pyjson.Object, policy *gateway.LocalSessionPolicy, store managedWorkerStore,
-	scope *pyjson.Object, channel WorkerSender, controls managedWorkerControls, construct map[string]any) (map[string]any, error) {
+func managedAgentKwargs(ctx context.Context, frame *jsonutil.Object, policy *gateway.LocalSessionPolicy, store managedWorkerStore,
+	scope *jsonutil.Object, channel WorkerSender, controls managedWorkerControls, construct map[string]any) (map[string]any, error) {
 	cfg, _, err := policy.EffectiveFor(ctx, nil, true)
 	if err != nil {
 		return nil, err
@@ -308,15 +308,15 @@ func managedAgentKwargs(ctx context.Context, frame *pyjson.Object, policy *gatew
 	}
 	model := optionalText(policy.Model)
 	kwargs := map[string]any{
-		"model": model, "provider": policy.Provider(), "base_url": policy.BaseURL(), "api_key": frame.Vals["api_key"],
-		"session_db": store, "session_id": scope.Vals["session_id"], "enabled_toolsets": append([]string{}, policy.Toolsets...),
+		"model": model, "provider": policy.Provider(), "base_url": policy.BaseURL(), "api_key": frame.Value("api_key"),
+		"session_db": store, "session_id": scope.Value("session_id"), "enabled_toolsets": append([]string{}, policy.Toolsets...),
 		"max_iterations": policy.MaxTurns(), "reasoning_config": policy.ReasoningConfig(), "platform": platform,
-		"gateway_session_key": frame.Vals["route"], "user_id": frame.Vals["user_id"], "chat_id": frame.Vals["chat_id"],
+		"gateway_session_key": frame.Value("route"), "user_id": frame.Value("user_id"), "chat_id": frame.Value("chat_id"),
 		"skip_context_files": policy.IgnoreRules(), "load_soul_identity": !policy.IgnoreRules(), "skip_memory": policy.IgnoreRules(),
 		"skip_background_review": true, "quiet_mode": true, "pass_session_id": policy.PassSessionID(),
 		"stream_delta_callback": func(text any) {
-			if pyrepr.Truthy(text) {
-				if err := channel.Send("delta", pyjson.ObjectOf("text", text)); err != nil {
+			if anyutil.IsTrue(text) {
+				if err := channel.Send("delta", jsonutil.ObjectOf("text", text)); err != nil {
 					panic(err)
 				}
 			}
@@ -349,7 +349,7 @@ func routeText(value any) string {
 	if value == nil {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Sends one tool lifecycle frame built from the callback arguments, raising into the executor's callback guard on failure
@@ -364,7 +364,7 @@ func sendToolFrame(ctx context.Context, channel WorkerSender, kind, callID, name
 }
 
 // Builds the worker's agent with the worker route applied, booking a kanban start failure before the error propagates
-func constructManagedAgent(ctx context.Context, frame *pyjson.Object, policy *gateway.LocalSessionPolicy, kwargs map[string]any) (managedWorkerAgent, error) {
+func constructManagedAgent(ctx context.Context, frame *jsonutil.Object, policy *gateway.LocalSessionPolicy, kwargs map[string]any) (managedWorkerAgent, error) {
 	agent, err := func() (managedWorkerAgent, error) {
 		route, err := gateway.WorkerRoute(ctx, policy, kwargs)
 		if err != nil {
@@ -389,17 +389,17 @@ func constructManagedAgent(ctx context.Context, frame *pyjson.Object, policy *ga
 }
 
 // Runs the adopted turn and settles it, the agent retired here once its turn is done
-func runManagedTurn(ctx context.Context, frame, scope *pyjson.Object, channel WorkerSender, controls managedWorkerControls,
+func runManagedTurn(ctx context.Context, frame, scope *jsonutil.Object, channel WorkerSender, controls managedWorkerControls,
 	store managedWorkerStore, agentRef *managedWorkerAgent) error {
 	agent := *agentRef
 	controls.SetAgent(agent)
 	if controls.Stopped() {
 		RequestHardInterruptOf(agent, nil, nil)
 	}
-	if err := channel.Send("ready", pyjson.ObjectOf("pid", int64(os.Getpid()))); err != nil {
+	if err := channel.Send("ready", jsonutil.ObjectOf("pid", int64(os.Getpid()))); err != nil {
 		return err
 	}
-	sessionID := pyrepr.Str(scope.Vals["session_id"])
+	sessionID := anyutil.String(scope.Value("session_id"))
 	history, err := store.GetMessagesAsConversation(ctx, sessionID, state.ConversationOptions{})
 	if err != nil {
 		return err
@@ -414,7 +414,7 @@ func runManagedTurn(ctx context.Context, frame, scope *pyjson.Object, channel Wo
 	if err != nil {
 		return err
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	provider, model := managedAgentRoute(agent)
 	result.Set("provider", provider)
 	result.Set("model", model)
@@ -435,10 +435,10 @@ func runManagedTurn(ctx context.Context, frame, scope *pyjson.Object, channel Wo
 	if _, err := store.FlushTokenCountsChecked(5.0); err != nil {
 		return err
 	}
-	if result.GetOr("final_response", nil) == nil && (pyrepr.Truthy(result.GetOr("interrupted", nil)) || pyrepr.Truthy(result.GetOr("failed", nil))) {
+	if result.ValueOr("final_response", nil) == nil && (anyutil.IsTrue(result.ValueOr("interrupted", nil)) || anyutil.IsTrue(result.ValueOr("failed", nil))) {
 		result.Set("final_response", "")
 	}
-	if err := channel.Send("result", pyjson.ObjectOf("result", gateway.ResultFrame(result))); err != nil {
+	if err := channel.Send("result", jsonutil.ObjectOf("result", gateway.ResultFrame(result))); err != nil {
 		return err
 	}
 	if !controls.WaitFinish(30 * time.Second) {
@@ -481,23 +481,23 @@ func managedSessionTokens(agent any) (prompt, completion int) {
 }
 
 // Bootstrap frame whose text carries the committed attachments as native content parts, refusing one that cannot be read
-func managedAttachmentFrame(ctx context.Context, env *tools.Env, frame *pyjson.Object) (*pyjson.Object, error) {
+func managedAttachmentFrame(ctx context.Context, env *tools.Env, frame *jsonutil.Object) (*jsonutil.Object, error) {
 	data, _ := frame.Get("attachments_v1")
-	if !pyrepr.Truthy(data) {
+	if !anyutil.IsTrue(data) {
 		return nil, &workerStoreError{"KeyError", "'media_urls'"}
 	}
 	urls, _, err := gateway.RestoreAttachments(ctx, frame)
 	if err != nil {
 		return nil, err
 	}
-	content, skipped, err := tools.BuildNativeContentParts(env, frame.Vals["text"].(string), urls, nil)
+	content, skipped, err := tools.BuildNativeContentParts(env, frame.Value("text").(string), urls, nil)
 	if err != nil {
 		return nil, err
 	}
 	if len(skipped) > 0 {
 		return nil, &workerStoreError{"ValueError", "managed_attachment_unavailable"}
 	}
-	out := frame.Copy()
+	out := frame.Clone()
 	out.Set("text", content)
 	return out, nil
 }
@@ -506,9 +506,9 @@ func managedAttachmentFrame(ctx context.Context, env *tools.Env, frame *pyjson.O
 func objectTree(value any) any {
 	switch v := value.(type) {
 	case map[string]any:
-		obj, _ := pyjson.AsObject(v)
-		for _, key := range obj.Keys {
-			obj.Vals[key] = objectTree(obj.Vals[key])
+		obj, _ := jsonutil.AsObject(v)
+		for _, key := range obj.Keys() {
+			obj.Set(key, objectTree(obj.Value(key)))
 		}
 		return obj
 	case []any:

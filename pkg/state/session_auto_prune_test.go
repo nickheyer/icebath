@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func autoDB(t *testing.T) *SessionDB {
@@ -27,7 +27,7 @@ func autoPrune(t *testing.T, db *SessionDB, minIntervalHours float64) AutoPruneR
 	return db.MaybeAutoPruneAndVacuum(context.Background(), o)
 }
 
-func autoSession(t *testing.T, db *SessionDB, sid string) *pyjson.Object {
+func autoSession(t *testing.T, db *SessionDB, sid string) *jsonutil.Object {
 	t.Helper()
 	row, err := db.GetSession(context.Background(), sid)
 	if err != nil {

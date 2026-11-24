@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Console the spotify command prints to
@@ -59,8 +59,8 @@ func setupCLI(parser any) {
 
 // Text of a namespace value, empty for None or a falsy value
 func nsText(ns map[string]any, key string) string {
-	if v := ns[key]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := ns[key]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -78,7 +78,7 @@ func handleCLI(args any) error {
 		timeout, _ := ns["timeout"].(float64)
 		err := provider.SpotifyLogin(context.Background(), h, provider.SpotifyLoginOptions{
 			ClientID: nsText(ns, "client_id"), RedirectURI: nsText(ns, "redirect_uri"), Scope: nsText(ns, "scope"),
-			NoBrowser: pyrepr.Truthy(ns["no_browser"]), Timeout: timeout,
+			NoBrowser: anyutil.IsTrue(ns["no_browser"]), Timeout: timeout,
 		}, cliOut)
 		var exit *provider.AuthExitError
 		if errors.As(err, &exit) {
@@ -99,7 +99,7 @@ func handleCLI(args any) error {
 		}
 		return nil
 	}
-	return &pyError{kind: "KeyError", msg: pyrepr.Repr(action)}
+	return &pyError{kind: "KeyError", msg: anyutil.Quote(action)}
 }
 
 // Prints whether the profile is logged in and each stored login field that is set
@@ -108,14 +108,14 @@ func printStatus(h string) error {
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(status["logged_in"]) {
+	if !anyutil.IsTrue(status["logged_in"]) {
 		fmt.Fprintln(cliOut, "spotify: logged out")
 		return nil
 	}
 	fmt.Fprintln(cliOut, "spotify: logged in")
 	for _, key := range []string{"auth_type", "client_id", "redirect_uri", "scope", "expires_at", "api_base_url"} {
-		if v := status[key]; pyrepr.Truthy(v) {
-			fmt.Fprintf(cliOut, "  %s: %s\n", key, pyrepr.Str(v))
+		if v := status[key]; anyutil.IsTrue(v) {
+			fmt.Fprintf(cliOut, "  %s: %s\n", key, anyutil.String(v))
 		}
 	}
 	return nil

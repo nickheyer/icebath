@@ -4,7 +4,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 type simpleKey struct {
@@ -1301,7 +1301,7 @@ func (s *scanner) scanURIEscapes(name string, start *Mark) string {
 		codeBytes = append(codeBytes, byte(v.Int64()))
 		s.r.forward(2)
 	}
-	text, err := pystr.DecodeUTF8(codeBytes)
+	text, err := textutil.DecodeUTF8(codeBytes)
 	if err != nil {
 		panic(scannerError("while scanning an "+name, start, err.Error(), mark))
 	}

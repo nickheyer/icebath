@@ -14,7 +14,7 @@ import (
 	"unicode/utf16"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Shell stand in for the install binary that prints its arguments as a JSON list
@@ -331,7 +331,7 @@ func TestInstallLaunchersNeverBindAFixtureStoreUnderScratch(t *testing.T) {
 	}
 	for _, path := range written {
 		if wrapper := mustRead(t, path); strings.Contains(wrapper, "icebath-e2e-media-overlap-run") || strings.Contains(wrapper, fixture) ||
-			!strings.Contains(wrapper, pyshlex.Quote(filepath.Join(root, "icebath"))) || launcherStore(path) != own {
+			!strings.Contains(wrapper, shellutil.Quote(filepath.Join(root, "icebath"))) || launcherStore(path) != own {
 			t.Fatalf("wrapper %q", wrapper)
 		}
 	}
@@ -364,7 +364,7 @@ func TestPublicationUsesTheRuntimeStoreWhenTheTreeRecordsNone(t *testing.T) {
 		t.Fatalf("written %v err %v", written, err)
 	}
 	for _, path := range written {
-		if !strings.Contains(mustRead(t, path), pyshlex.Quote(filepath.Join(root, "icebath"))) || launcherStore(path) != resolvePath(runtime) {
+		if !strings.Contains(mustRead(t, path), shellutil.Quote(filepath.Join(root, "icebath"))) || launcherStore(path) != resolvePath(runtime) {
 			t.Fatalf("wrapper %q", mustRead(t, path))
 		}
 	}

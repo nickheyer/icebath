@@ -3,12 +3,12 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Committed surface of the executing admission, nil outside a surface turn scope
-func SurfaceTurn(ctx context.Context) *pyjson.Object {
-	committed, _ := ctx.Value(surfaceTurnKey{}).(*pyjson.Object)
+func SurfaceTurn(ctx context.Context) *jsonutil.Object {
+	committed, _ := ctx.Value(surfaceTurnKey{}).(*jsonutil.Object)
 	return committed
 }
 

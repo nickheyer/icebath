@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestManagedWorkerTurnSurvivesLeaseRefreshTick(t *testing.T) {
@@ -18,11 +19,11 @@ func TestManagedWorkerTurnSurvivesLeaseRefreshTick(t *testing.T) {
 		payload           any
 	}
 	var calls []sent
-	rpc := cannedCall(func(method string, p *pyjson.Object) (any, error) {
-		calls = append(calls, sent{method, p.GetOr("operation", "").(string), p.GetOr("payload", nil)})
-		return pyjson.ObjectOf("value", true), nil
+	rpc := cannedCall(func(method string, p *jsonutil.Object) (any, error) {
+		calls = append(calls, sent{method, p.ValueOr("operation", "").(string), p.ValueOr("payload", nil)})
+		return jsonutil.ObjectOf("value", true), nil
 	})
-	store := mustStore(t, rpc, pyjson.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
+	store := mustStore(t, rpc, jsonutil.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
 	defer store.Close()
 	a := &AIAgent{sessionID: "s"}
 	expires := float64(time.Now().UnixNano())/1e9 + leaseTTLSeconds
@@ -36,7 +37,7 @@ func TestManagedWorkerTurnSurvivesLeaseRefreshTick(t *testing.T) {
 		t.Fatalf("interrupted %q %q", lease.interruptMessage, a.interruptMessage)
 	}
 	if len(calls) != 1 || calls[0].method != "worker.persist" || calls[0].operation != "turn.renew" ||
-		!pyjson.Equal(calls[0].payload, pyjson.ObjectOf("holder", "holder", "ttl_seconds", leaseTTLSeconds)) {
+		!anyutil.Equal(calls[0].payload, jsonutil.ObjectOf("holder", "holder", "ttl_seconds", leaseTTLSeconds)) {
 		t.Fatalf("sent %v", calls)
 	}
 	if lease.authorityDeadline < before {
@@ -46,9 +47,9 @@ func TestManagedWorkerTurnSurvivesLeaseRefreshTick(t *testing.T) {
 
 func TestReopenReconcilesPendingReceiptBeforeNewWrite(t *testing.T) {
 	dir := t.TempDir()
-	scope := pyjson.ObjectOf("session_id", "s", "execution_id", "w", "epoch", int64(1))
-	var calls []*pyjson.Object
-	lost := cannedCall(func(_ string, p *pyjson.Object) (any, error) {
+	scope := jsonutil.ObjectOf("session_id", "s", "execution_id", "w", "epoch", int64(1))
+	var calls []*jsonutil.Object
+	lost := cannedCall(func(_ string, p *jsonutil.Object) (any, error) {
 		calls = append(calls, p)
 		return nil, &workerStoreError{"TimeoutError", "lost reply"}
 	})
@@ -57,24 +58,24 @@ func TestReopenReconcilesPendingReceiptBeforeNewWrite(t *testing.T) {
 		t.Fatal("lost reply accepted")
 	}
 	store.closeOwner()
-	var restored []*pyjson.Object
-	owner := cannedCall(func(_ string, p *pyjson.Object) (any, error) {
+	var restored []*jsonutil.Object
+	owner := cannedCall(func(_ string, p *jsonutil.Object) (any, error) {
 		restored = append(restored, p)
-		return pyjson.ObjectOf("ok", true), nil
+		return jsonutil.ObjectOf("ok", true), nil
 	})
 	reopened := mustStore(t, owner, scope, dir, 0)
 	defer reopened.Close()
 	if err := reopened.QueueTokenCounts("s", state.TokenCountDelta{InputTokens: 20}); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(restored[0], calls[0]) {
+	if !anyutil.Equal(restored[0], calls[0]) {
 		t.Fatalf("replay %v != %v", restored[0], calls[0])
 	}
-	if len(restored) != 2 || !pyjson.Equal(restored[0].GetOr("sequence", nil), int64(1)) || !pyjson.Equal(restored[1].GetOr("sequence", nil), int64(2)) {
+	if len(restored) != 2 || !anyutil.Equal(restored[0].ValueOr("sequence", nil), int64(1)) || !anyutil.Equal(restored[1].ValueOr("sequence", nil), int64(2)) {
 		t.Fatalf("sequences %v", restored)
 	}
 	for i, want := range []int64{10, 20} {
-		if got := restored[i].GetOr("payload", nil).(*pyjson.Object).GetOr("input_tokens", nil); !pyjson.Equal(got, want) {
+		if got := restored[i].ValueOr("payload", nil).(*jsonutil.Object).ValueOr("input_tokens", nil); !anyutil.Equal(got, want) {
 			t.Fatalf("input_tokens %d = %v", i, got)
 		}
 	}
@@ -83,7 +84,7 @@ func TestReopenReconcilesPendingReceiptBeforeNewWrite(t *testing.T) {
 // Owner call that commits for real and then loses its reply
 func losingAck(db *state.SessionDB) WorkerCall {
 	commit := dbWorkerCall(db)
-	return func(ctx context.Context, method string, p *pyjson.Object) (any, error) {
+	return func(ctx context.Context, method string, p *jsonutil.Object) (any, error) {
 		if _, err := commit(ctx, method, p); err != nil {
 			return nil, err
 		}
@@ -123,7 +124,7 @@ func TestLostAckReceiptReconcilesUnderTheAdoptedEpochOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	first, _ := db.BeginRuntimeEpoch(ctx, "first")
-	scope := pyjson.ObjectOf("epoch", first, "execution_id", "worker", "session_id", "s", "generation", int64(0))
+	scope := jsonutil.ObjectOf("epoch", first, "execution_id", "worker", "session_id", "s", "generation", int64(0))
 	if _, err := db.RegisterWorkerExecution(ctx, state.WorkerRegistration{Epoch: first, ExecutionID: "worker", SessionID: "s", Kind: "compute", AdoptionSecret: "private"}); err != nil {
 		t.Fatal(err)
 	}
@@ -137,13 +138,13 @@ func TestLostAckReceiptReconcilesUnderTheAdoptedEpochOnce(t *testing.T) {
 	db = openOwnerDB(t, path)
 	defer db.Close()
 	second, _ := db.BeginRuntimeEpoch(ctx, "second")
-	successor := scope.Copy()
+	successor := scope.Clone()
 	successor.Set("epoch", second)
 	adopted, err := db.AdoptWorkerExecution(ctx, second, "worker", "s", 0, "private")
 	if err != nil {
 		t.Fatal(err)
 	}
-	staleEpoch, otherExecution := adopted.Copy(), adopted.Copy()
+	staleEpoch, otherExecution := adopted.Clone(), adopted.Clone()
 	staleEpoch.Set("owner_epoch", first)
 	otherExecution.Set("execution_id", "other")
 	for _, proof := range []any{nil, staleEpoch, otherExecution} {
@@ -151,7 +152,7 @@ func TestLostAckReceiptReconcilesUnderTheAdoptedEpochOnce(t *testing.T) {
 			t.Fatalf("proof %v accepted: %v", proof, err)
 		}
 	}
-	regenerated := successor.Copy()
+	regenerated := successor.Clone()
 	regenerated.Set("generation", int64(1))
 	if _, err := NewRuntimeSessionStore(ctx, dbWorkerCall(db), regenerated, outbox, adopted, 0); persistenceReason(err) != "outbox_scope_mismatch" {
 		t.Fatalf("generation drift accepted: %v", err)
@@ -164,7 +165,7 @@ func TestLostAckReceiptReconcilesUnderTheAdoptedEpochOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	if pending, _ := journalPending(reopened.journal); len(pending) != 0 || !pyjson.Equal(reopened.Scope(), successor) {
+	if pending, _ := journalPending(reopened.journal); len(pending) != 0 || !anyutil.Equal(reopened.Scope(), successor) {
 		t.Fatalf("journal %v scope %v", pending, reopened.Scope())
 	}
 	if err := reopened.QueueTokenCounts("s", state.TokenCountDelta{InputTokens: 5}); err != nil {
@@ -174,8 +175,8 @@ func TestLostAckReceiptReconcilesUnderTheAdoptedEpochOnce(t *testing.T) {
 		t.Fatalf("receipts %d", n)
 	}
 	row, _ := db.GetSession(ctx, "s")
-	if !pyjson.Equal(row.GetOr("input_tokens", nil), int64(15)) {
-		t.Fatalf("input_tokens %v", row.GetOr("input_tokens", nil))
+	if !anyutil.Equal(row.ValueOr("input_tokens", nil), int64(15)) {
+		t.Fatalf("input_tokens %v", row.ValueOr("input_tokens", nil))
 	}
 }
 
@@ -188,7 +189,7 @@ func TestPendingPublicationFollowsAdoptionOntoTheRotatedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	first, _ := db.BeginRuntimeEpoch(ctx, "first")
-	scope := pyjson.ObjectOf("epoch", first, "execution_id", "worker", "session_id", "root", "generation", int64(0))
+	scope := jsonutil.ObjectOf("epoch", first, "execution_id", "worker", "session_id", "root", "generation", int64(0))
 	if _, err := db.RegisterWorkerExecution(ctx, state.WorkerRegistration{Epoch: first, ExecutionID: "worker", SessionID: "root", Kind: "compute", AdoptionSecret: "private"}); err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +215,7 @@ func TestPendingPublicationFollowsAdoptionOntoTheRotatedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	receipts := receiptCount(t, path)
-	rotated := scope.Copy()
+	rotated := scope.Clone()
 	rotated.Set("epoch", second)
 	rotated.Set("session_id", "child")
 	reopened, err := NewRuntimeSessionStore(ctx, dbWorkerCall(db), rotated, outbox, adopted, 0)
@@ -222,7 +223,7 @@ func TestPendingPublicationFollowsAdoptionOntoTheRotatedTarget(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer reopened.Close()
-	if pending, _ := journalPending(reopened.journal); len(pending) != 0 || !pyjson.Equal(reopened.Scope(), rotated) {
+	if pending, _ := journalPending(reopened.journal); len(pending) != 0 || !anyutil.Equal(reopened.Scope(), rotated) {
 		t.Fatalf("journal %v scope %v", pending, reopened.Scope())
 	}
 	if n := receiptCount(t, path); n != receipts {
@@ -299,7 +300,7 @@ func TestTailReadsAnswerLikeTheOwner(t *testing.T) {
 	if _, err := db.RegisterWorkerExecution(ctx, state.WorkerRegistration{Epoch: epoch, ExecutionID: "w", SessionID: "s", Kind: "compute", AdoptionSecret: "secret"}); err != nil {
 		t.Fatal(err)
 	}
-	scope := pyjson.ObjectOf("epoch", epoch, "execution_id", "w", "session_id", "s", "generation", int64(0))
+	scope := jsonutil.ObjectOf("epoch", epoch, "execution_id", "w", "session_id", "s", "generation", int64(0))
 	store := mustStore(t, dbWorkerCall(db), scope, filepath.Join(tmp, "outbox"), 0)
 	defer store.Close()
 	viaStore, err := store.LatestConversationRole(ctx, "s")

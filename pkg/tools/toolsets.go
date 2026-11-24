@@ -12,8 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // CoreTools is the shared tool list every platform bundle inherits
@@ -1045,7 +1046,7 @@ func ParsePlatformToolsetsValue(value any) ([]string, bool) {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, item := range v {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 		return out, true
 	case []string:
@@ -1190,14 +1191,11 @@ func parseMCPBoolish(value any, def bool) bool {
 			return false
 		}
 	default:
-		if n, isInt := pyrepr.Int(v); isInt {
-			return n.Sign() != 0
-		}
-		if name := pyrepr.TypeName(v); name == "float" {
-			return pyTruthy(v)
+		if f, isNumber := anyutil.Float(v); isNumber {
+			return f != 0
 		}
 	}
-	mcpCommonLogger().Warn(fmt.Sprintf("MCP config expected a boolean-ish value, got %s; using default=%s", pyrepr.Repr(value), pyrepr.Str(def)))
+	mcpCommonLogger().Warn(fmt.Sprintf("MCP config expected a boolean-ish value, got %s; using default=%s", anyutil.Quote(value), anyutil.String(def)))
 	return def
 }
 
@@ -1271,7 +1269,7 @@ func (r *Registry) enableRecentlyShipped(ctx context.Context, scope string, enab
 	switch offered := cfg.Sub("known_builtin_toolsets")[platform].(type) {
 	case []any:
 		for _, n := range offered {
-			declined[pyrepr.Str(n)] = true
+			declined[anyutil.String(n)] = true
 		}
 	case []string:
 		for _, n := range offered {
@@ -1817,11 +1815,11 @@ func platformRegisteredSafe(platform string) (ok bool) {
 func platformToolsetsItems(value any) [][2]any {
 	var items [][2]any
 	switch m := value.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil
 		}
-		for _, k := range m.Keys {
+		for _, k := range m.Keys() {
 			v, _ := m.Get(k)
 			items = append(items, [2]any{k, v})
 		}
@@ -1872,7 +1870,7 @@ func ValidatePlatformToolsetsWith(platformToolsets any, isValid func(string) boo
 	}
 	valid := 0
 	for _, item := range items {
-		platform, raw := pyrepr.Str(item[0]), item[1]
+		platform, raw := anyutil.String(item[0]), item[1]
 		def := PlatformDefaultToolset(platform)
 		defaultValid := platformDefaultIsValid(platform, def, isValid, isAllowed)
 		platformValid := 0
@@ -1893,7 +1891,7 @@ func ValidatePlatformToolsetsWith(platformToolsets any, isValid func(string) boo
 			case string:
 				detail = fmt.Sprintf("invalid toolset value '%s'", v)
 			default:
-				detail = fmt.Sprintf("invalid %s toolset value", pyrepr.TypeName(raw))
+				detail = fmt.Sprintf("invalid %s toolset value", anyutil.Kind(raw))
 			}
 			warnings = append(warnings, fmt.Sprintf("platform '%s' has %s — %s. Run `icebath tools` to configure explicitly.", platform, detail, fallback))
 			if platformValid == 0 {
@@ -1992,8 +1990,8 @@ func CurrentTerminalBackend(env *Env) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if v := cfg["env_type"]; pyTruthy(v) {
-		return pyrepr.Str(v), nil
+	if v := cfg["env_type"]; anyutil.IsTrue(v) {
+		return anyutil.String(v), nil
 	}
 	return "local", nil
 }

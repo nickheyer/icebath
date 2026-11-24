@@ -153,14 +153,10 @@ func ftgErr(r map[string]any) string {
 	return s
 }
 
-// Blocked device verdict for a path, failing the test on a readlink encode error
+// Blocked device verdict for a path
 func ftgBlocked(t *testing.T, p string) bool {
 	t.Helper()
-	blocked, err := isBlockedDevice(nil, p, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	return blocked
+	return isBlockedDevice(nil, p, "")
 }
 
 func TestFileToolsGuardSafeDeviceNotBlocked(t *testing.T) {

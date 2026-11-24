@@ -20,15 +20,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const curatorClaimStaleSeconds = 3600.0
@@ -39,7 +40,7 @@ type CuratorCronRewrite struct {
 	JobName any
 	Before  []string
 	After   []string
-	Mapped  *pyjson.Object
+	Mapped  *jsonutil.Object
 	Dropped []string
 }
 
@@ -82,7 +83,7 @@ type CuratorReviewResult struct {
 // CuratorHooks is the cron and agent access the curator reaches, installed by pkg/cron and pkg/agent in init
 var CuratorHooks struct {
 	ReferencedSkillNames func(ctx context.Context, home string) (map[string]bool, error)
-	RewriteSkillRefs     func(ctx context.Context, home string, consolidated *pyjson.Object, pruned []string) (CuratorCronRewriteReport, error)
+	RewriteSkillRefs     func(ctx context.Context, home string, consolidated *jsonutil.Object, pruned []string) (CuratorCronRewriteReport, error)
 	UpdateJobs           func(ctx context.Context, home string, update func(jobs []any) (bool, error)) error
 	RunReview            func(ctx context.Context, req CuratorReviewRequest) (*CuratorReviewResult, error)
 }
@@ -101,8 +102,8 @@ func curatorStateFile(ctx context.Context) string {
 }
 
 // Curator scheduler state merged over the defaults, underscore keys kept, a decode failure yields the defaults
-func LoadCuratorState(ctx context.Context) (*pyjson.Object, error) {
-	base := pyjson.NewObject()
+func LoadCuratorState(ctx context.Context) (*jsonutil.Object, error) {
+	base := jsonutil.NewObject()
 	for _, k := range []string{"last_run_at", "last_run_duration_seconds", "last_run_summary", "last_run_summary_shown_at", "last_report_path"} {
 		base.Set(k, nil)
 	}
@@ -118,15 +119,15 @@ func LoadCuratorState(ctx context.Context) (*pyjson.Object, error) {
 	if !utf8.Valid(raw) {
 		return nil, fmt.Errorf("curator state %s is not valid UTF-8", curatorStateFile(ctx))
 	}
-	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+	data, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to read curator state: %v", err))
 		return base, nil
 	}
-	if obj, ok := data.(*pyjson.Object); ok {
-		for _, k := range obj.Keys {
+	if obj, ok := data.(*jsonutil.Object); ok {
+		for _, k := range obj.Keys() {
 			if _, known := base.Get(k); known || strings.HasPrefix(k, "_") {
-				base.Set(k, obj.Vals[k])
+				base.Set(k, obj.Value(k))
 			}
 		}
 	}
@@ -134,8 +135,8 @@ func LoadCuratorState(ctx context.Context) (*pyjson.Object, error) {
 }
 
 // Writes the curator state sorted and indented, logging instead of failing
-func SaveCuratorState(ctx context.Context, data *pyjson.Object) {
-	if err := config.AtomicJSONWriteWith(ctx, curatorStateFile(ctx), data, pyjson.Indent(2), pyjson.SortKeys(true)); err != nil {
+func SaveCuratorState(ctx context.Context, data *jsonutil.Object) {
+	if err := config.AtomicJSONWriteWith(ctx, curatorStateFile(ctx), data, jsonutil.Indent(2), jsonutil.SortKeys()); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to save curator state: %v", err))
 	}
 }
@@ -158,7 +159,7 @@ func CuratorIsPaused(ctx context.Context) (bool, error) {
 		return false, err
 	}
 	v, _ := st.Get("paused")
-	return pyrepr.Truthy(v), nil
+	return anyutil.IsTrue(v), nil
 }
 
 func curatorAsMap(v any) (map[string]any, bool) {
@@ -245,14 +246,14 @@ func CuratorConsolidate(ctx context.Context) bool {
 
 // datetime.fromisoformat of a truthy string, false for anything unparseable
 func curatorParseISO(ts any) (time.Time, bool, bool) {
-	if !pyrepr.Truthy(ts) {
+	if !anyutil.IsTrue(ts) {
 		return time.Time{}, false, false
 	}
 	s, ok := ts.(string)
 	if !ok {
 		return time.Time{}, false, false
 	}
-	t, aware, err := pydatetime.ParseISOFormat(s)
+	t, aware, err := timeutil.ParseISOZone(s, time.UTC)
 	if err != nil {
 		return time.Time{}, false, false
 	}
@@ -289,7 +290,7 @@ func CuratorShouldRunNow(ctx context.Context, now time.Time) (bool, error) {
 	lastRaw, _ := st.Get("last_run_at")
 	last, ok := curatorParseUTC(lastRaw)
 	if !ok {
-		st.Set("last_run_at", pydatetime.ISOFormatUTC(now))
+		st.Set("last_run_at", now.UTC().Format(timeutil.RFC3339Micro))
 		st.Set("last_run_summary", "deferred first run — curator seeded, will run after one interval; use `icebath curator run --dry-run` to preview now")
 		SaveCuratorState(ctx, st)
 		return false, nil
@@ -313,7 +314,7 @@ func curatorCronReferencedSkills(ctx context.Context) map[string]bool {
 
 func curatorGet(d any, key string) (any, bool) {
 	switch m := d.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil, false
 		}
@@ -337,7 +338,7 @@ func curatorGetOr(d any, key string, def any) any {
 
 func curatorIsDict(d any) bool {
 	switch m := d.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return m != nil
 	case map[string]any, config.Tree:
 		return true
@@ -347,7 +348,7 @@ func curatorIsDict(d any) bool {
 
 // int(value or 0) with the Python int conversion errors
 func curatorIntOrZero(v any) (int, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
 	n, err := pyint.Of(v)
@@ -357,15 +358,15 @@ func curatorIntOrZero(v any) (int, error) {
 	return curatorBigToInt(n), nil
 }
 
-func curatorCounter(keys ...string) *pyjson.Object {
-	o := pyjson.NewObject()
+func curatorCounter(keys ...string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for _, k := range keys {
 		o.Set(k, 0)
 	}
 	return o
 }
 
-func curatorBump(o *pyjson.Object, key string) {
+func curatorBump(o *jsonutil.Object, key string) {
 	v, _ := o.Get(key)
 	n, _ := v.(int)
 	o.Set(key, n+1)
@@ -377,7 +378,7 @@ func curatorCount(o any, key string) int {
 }
 
 // Moves every curator managed skill between active, stale and archived by its latest activity
-func ApplyCuratorTransitions(ctx context.Context, now time.Time) (*pyjson.Object, error) {
+func ApplyCuratorTransitions(ctx context.Context, now time.Time) (*jsonutil.Object, error) {
 	scope, env, _ := curatorScope(ctx)
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -401,10 +402,10 @@ func ApplyCuratorTransitions(ctx context.Context, now time.Time) (*pyjson.Object
 	for _, row := range rows {
 		curatorBump(counts, "checked")
 		name := pyStr(curatorGetOr(row, "name", nil))
-		if pyrepr.Truthy(curatorGetOr(row, "pinned", nil)) || protected[name] || (len(locked) > 0 && tools.IsLockedSkill(env, name, locked)) {
+		if anyutil.IsTrue(curatorGetOr(row, "pinned", nil)) || protected[name] || (len(locked) > 0 && tools.IsLockedSkill(env, name, locked)) {
 			continue
 		}
-		if !pyrepr.Truthy(curatorGetOr(row, "_persisted", true)) {
+		if !anyutil.IsTrue(curatorGetOr(row, "_persisted", true)) {
 			if err := scope.SeedRecordIfMissing(ctx, name); err != nil {
 				return nil, err
 			}
@@ -416,7 +417,7 @@ func ApplyCuratorTransitions(ctx context.Context, now time.Time) (*pyjson.Object
 			return nil, err
 		}
 		_, _, hasActivity := curatorParseISO(curatorGetOr(row, "last_activity_at", nil))
-		if curatorGetOr(row, "provenance", nil) == "bundled" && useCount == 0 && !hasActivity && !pyrepr.Truthy(curatorGetOr(row, "first_seen_at", nil)) {
+		if curatorGetOr(row, "provenance", nil) == "bundled" && useCount == 0 && !hasActivity && !anyutil.IsTrue(curatorGetOr(row, "first_seen_at", nil)) {
 			scope.ReanchorClock(ctx, name)
 			curatorBump(counts, "seeded")
 			continue
@@ -485,17 +486,17 @@ func curatorSkillManageArgs(tc any, rawFallback bool) (any, bool) {
 		return nil, false
 	}
 	raw := curatorGetOr(tc, "arguments", nil)
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = ""
 	}
 	s, isStr := raw.(string)
 	if !isStr {
 		return raw, curatorIsDict(raw)
 	}
-	args, err := pyjson.Loads(s)
+	args, err := jsonutil.Decode(s)
 	if err != nil {
 		if rawFallback {
-			o := pyjson.NewObject()
+			o := jsonutil.NewObject()
 			o.Set("_raw", s)
 			return o, true
 		}
@@ -537,8 +538,8 @@ func curatorRunes(s string, n int) string {
 	return string(r[:n])
 }
 
-func curatorEntry(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func curatorEntry(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -556,8 +557,8 @@ func curatorSetOf(names ...[]string) map[string]bool {
 }
 
 // Splits removed skills into consolidated and pruned by skill_manage calls on surviving skills that reference them
-func curatorClassifyRemoved(removed, added []string, afterNames map[string]bool, toolCalls []any) ([]*pyjson.Object, []*pyjson.Object) {
-	var consolidated, pruned []*pyjson.Object
+func curatorClassifyRemoved(removed, added []string, afterNames map[string]bool, toolCalls []any) ([]*jsonutil.Object, []*jsonutil.Object) {
+	var consolidated, pruned []*jsonutil.Object
 	var parsed []any
 	for _, tc := range toolCalls {
 		if a, ok := curatorSkillManageArgs(tc, true); ok {
@@ -597,7 +598,7 @@ func curatorClassifyRemoved(removed, added []string, afterNames map[string]bool,
 }
 
 // Consolidations and prunings of the fenced yaml block in the final response, empty lists when absent or malformed
-func curatorParseStructuredSummary(final any) (cons, prunes []*pyjson.Object) {
+func curatorParseStructuredSummary(final any) (cons, prunes []*jsonutil.Object) {
 	text, ok := final.(string)
 	if !ok {
 		return nil, nil
@@ -613,18 +614,18 @@ func curatorParseStructuredSummary(final any) (cons, prunes []*pyjson.Object) {
 	if _, isMap := curatorAsMap(data); !isMap {
 		return nil, nil
 	}
-	entries := func(key string, fields ...string) []*pyjson.Object {
+	entries := func(key string, fields ...string) []*jsonutil.Object {
 		raw := curatorGetOr(data, key, nil)
 		list, isList := raw.([]any)
 		if !isList {
 			return nil
 		}
-		var out []*pyjson.Object
+		var out []*jsonutil.Object
 		for _, e := range list {
 			if _, isMap := curatorAsMap(e); !isMap {
 				continue
 			}
-			cleaned := pyjson.NewObject()
+			cleaned := jsonutil.NewObject()
 			keep := true
 			for _, f := range append(append([]string{}, fields...), "reason") {
 				v, isStr := curatorGetOr(e, f, nil).(string)
@@ -662,7 +663,7 @@ func curatorAbsorbedDeclarations(toolCalls []any) map[string]string {
 	return out
 }
 
-func curatorStrField(o *pyjson.Object, key string) string {
+func curatorStrField(o *jsonutil.Object, key string) string {
 	if o == nil {
 		return ""
 	}
@@ -672,16 +673,16 @@ func curatorStrField(o *pyjson.Object, key string) string {
 }
 
 // Merges the declared targets, the model block and the tool call audit so every removal lands in one bucket
-func curatorReconcile(removed []string, heurCons []*pyjson.Object, modelCons, modelPrunes []*pyjson.Object, destinations map[string]bool, declared map[string]string) ([]*pyjson.Object, []*pyjson.Object) {
-	index := func(list []*pyjson.Object, key string) map[string]*pyjson.Object {
-		out := map[string]*pyjson.Object{}
+func curatorReconcile(removed []string, heurCons []*jsonutil.Object, modelCons, modelPrunes []*jsonutil.Object, destinations map[string]bool, declared map[string]string) ([]*jsonutil.Object, []*jsonutil.Object) {
+	index := func(list []*jsonutil.Object, key string) map[string]*jsonutil.Object {
+		out := map[string]*jsonutil.Object{}
 		for _, e := range list {
 			out[curatorStrField(e, key)] = e
 		}
 		return out
 	}
 	hcBy, mcBy, mpBy := index(heurCons, "name"), index(modelCons, "from"), index(modelPrunes, "name")
-	var consolidated, pruned []*pyjson.Object
+	var consolidated, pruned []*jsonutil.Object
 	for _, name := range removed {
 		mc, mp, hc := mcBy[name], mpBy[name], hcBy[name]
 		dec, hasDec := declared[name]
@@ -726,8 +727,8 @@ type curatorRunDiff struct {
 	afterNames   map[string]bool
 	removed      []string
 	added        []string
-	consolidated []*pyjson.Object
-	pruned       []*pyjson.Object
+	consolidated []*jsonutil.Object
+	pruned       []*jsonutil.Object
 }
 
 func curatorSortedDiff(a, b map[string]bool) []string {
@@ -754,8 +755,8 @@ func curatorDiffAndClassify(before, after map[string]bool, toolCalls []any, fina
 	return curatorRunDiff{after, removed, added, cons, pruned}
 }
 
-func curatorByName(report []*pyjson.Object) map[string]*pyjson.Object {
-	out := map[string]*pyjson.Object{}
+func curatorByName(report []*jsonutil.Object) map[string]*jsonutil.Object {
+	out := map[string]*jsonutil.Object{}
 	for _, r := range report {
 		if r != nil {
 			out[pyStr(curatorGetOr(r, "name", nil))] = r
@@ -764,7 +765,7 @@ func curatorByName(report []*pyjson.Object) map[string]*pyjson.Object {
 	return out
 }
 
-func curatorNames(by map[string]*pyjson.Object) map[string]bool {
+func curatorNames(by map[string]*jsonutil.Object) map[string]bool {
 	out := map[string]bool{}
 	for n := range by {
 		out[n] = true
@@ -773,7 +774,7 @@ func curatorNames(by map[string]*pyjson.Object) map[string]bool {
 }
 
 // Where did my skills go lines appended to the run summary, empty when nothing was archived
-func curatorRenameSummary(beforeNames map[string]bool, afterReport []*pyjson.Object, toolCalls []any, final any) string {
+func curatorRenameSummary(beforeNames map[string]bool, afterReport []*jsonutil.Object, toolCalls []any, final any) string {
 	afterNames := curatorNames(curatorByName(afterReport))
 	if len(curatorSortedDiff(beforeNames, afterNames)) == 0 {
 		return ""
@@ -807,21 +808,21 @@ func curatorRenameSummary(beforeNames map[string]bool, afterReport []*pyjson.Obj
 	return strings.Join(lines, "\n")
 }
 
-func curatorEmptyRewrites() *pyjson.Object {
+func curatorEmptyRewrites() *jsonutil.Object {
 	return curatorEntry("rewrites", []any{}, "jobs_updated", 0, "jobs_scanned", 0)
 }
 
 // Points cron jobs at the umbrella of a consolidated skill and drops pruned ones, never failing the run
-func curatorRewriteCronRefs(ctx context.Context, consolidated, pruned []*pyjson.Object) *pyjson.Object {
-	cmap := pyjson.NewObject()
+func curatorRewriteCronRefs(ctx context.Context, consolidated, pruned []*jsonutil.Object) *jsonutil.Object {
+	cmap := jsonutil.NewObject()
 	for _, e := range consolidated {
-		if n, into := curatorGetOr(e, "name", nil), curatorGetOr(e, "into", nil); pyrepr.Truthy(n) && pyrepr.Truthy(into) {
+		if n, into := curatorGetOr(e, "name", nil), curatorGetOr(e, "into", nil); anyutil.IsTrue(n) && anyutil.IsTrue(into) {
 			cmap.Set(pyStr(n), into)
 		}
 	}
 	var names []string
 	for _, e := range pruned {
-		if n := curatorGetOr(e, "name", nil); pyrepr.Truthy(n) {
+		if n := curatorGetOr(e, "name", nil); anyutil.IsTrue(n) {
 			names = append(names, pyStr(n))
 		}
 	}
@@ -843,7 +844,7 @@ func curatorRewriteCronRefs(ctx context.Context, consolidated, pruned []*pyjson.
 	for _, r := range rep.Rewrites {
 		mapped := r.Mapped
 		if mapped == nil {
-			mapped = pyjson.NewObject()
+			mapped = jsonutil.NewObject()
 		}
 		rewrites = append(rewrites, curatorEntry("job_id", r.JobID, "job_name", r.JobName, "before", curatorStrList(r.Before),
 			"after", curatorStrList(r.After), "mapped", mapped, "dropped", curatorStrList(r.Dropped)))
@@ -859,7 +860,7 @@ func curatorStrList(in []string) []any {
 	return out
 }
 
-func curatorObjList(in []*pyjson.Object) []any {
+func curatorObjList(in []*jsonutil.Object) []any {
 	out := make([]any, len(in))
 	for i, o := range in {
 		out[i] = o
@@ -874,7 +875,7 @@ func curatorWriteFile(path, label string, render any) {
 	case func() string:
 		text = r()
 	default:
-		s, err := pyjson.Dumps(r, pyjson.Indent(2), pyjson.EnsureASCII(false))
+		s, err := jsonutil.Encode(r, jsonutil.Indent(2))
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("Curator %s write failed: %v", label, err))
 			return
@@ -889,14 +890,14 @@ func curatorWriteFile(path, label string, render any) {
 type curatorRunReportInput struct {
 	startedAt    time.Time
 	elapsed      float64
-	autoCounts   *pyjson.Object
-	beforeReport []*pyjson.Object
+	autoCounts   *jsonutil.Object
+	beforeReport []*jsonutil.Object
 	beforeNames  map[string]bool
-	afterReport  []*pyjson.Object
-	llmMeta      *pyjson.Object
+	afterReport  []*jsonutil.Object
+	llmMeta      *jsonutil.Object
 }
 
-func curatorToolCalls(meta *pyjson.Object) []any {
+func curatorToolCalls(meta *jsonutil.Object) []any {
 	v, _ := meta.Get("tool_calls")
 	list, _ := v.([]any)
 	return list
@@ -923,7 +924,7 @@ func curatorWriteRunReport(ctx context.Context, in curatorRunReportInput) string
 	toolCalls := curatorToolCalls(in.llmMeta)
 	afterBy, beforeBy := curatorByName(in.afterReport), curatorByName(in.beforeReport)
 	final := curatorGetOr(in.llmMeta, "final", "")
-	if !pyrepr.Truthy(final) {
+	if !anyutil.IsTrue(final) {
 		final = ""
 	}
 	diff := curatorDiffAndClassify(in.beforeNames, curatorNames(afterBy), toolCalls, final)
@@ -937,11 +938,11 @@ func curatorWriteRunReport(ctx context.Context, in curatorRunReportInput) string
 	transitions := []any{}
 	for _, n := range both {
 		b, a := curatorGetOr(beforeBy[n], "state", nil), curatorGetOr(afterBy[n], "state", nil)
-		if pyrepr.Truthy(b) && pyrepr.Truthy(a) && b != a {
+		if anyutil.IsTrue(b) && anyutil.IsTrue(a) && b != a {
 			transitions = append(transitions, curatorEntry("name", n, "from", b, "to", a))
 		}
 	}
-	tcCounts := pyjson.NewObject()
+	tcCounts := jsonutil.NewObject()
 	total := 0
 	for _, tc := range toolCalls {
 		key := pyStr(curatorGetOr(tc, "name", "unknown"))
@@ -959,7 +960,7 @@ func curatorWriteRunReport(ctx context.Context, in curatorRunReportInput) string
 	counts := curatorEntry("before", len(in.beforeNames), "after", len(diff.afterNames), "delta", len(diff.afterNames)-len(in.beforeNames),
 		"archived_this_run", len(diff.removed), "added_this_run", len(diff.added), "consolidated_this_run", len(diff.consolidated),
 		"pruned_this_run", len(diff.pruned), "state_transitions", len(transitions), "cron_jobs_rewritten", jobsUpdated, "tool_calls_total", total)
-	payload := curatorEntry("started_at", pydatetime.ISOFormatUTC(in.startedAt), "duration_seconds", pyint.Round(in.elapsed, 2),
+	payload := curatorEntry("started_at", in.startedAt.UTC().Format(timeutil.RFC3339Micro), "duration_seconds", mathutil.Round(in.elapsed, 2),
 		"model", curatorGetOr(in.llmMeta, "model", ""), "provider", curatorGetOr(in.llmMeta, "provider", ""), "auto_transitions", in.autoCounts,
 		"counts", counts, "tool_call_counts", tcCounts, "archived", curatorStrList(diff.removed), "consolidated", curatorObjList(diff.consolidated),
 		"pruned", curatorObjList(diff.pruned), "pruned_names", prunedNames, "added", curatorStrList(diff.added), "state_transitions", transitions,
@@ -980,7 +981,7 @@ func curatorExists(p string) bool {
 
 func curatorReasonSuffix(entry any) string {
 	reason := curatorGetOr(entry, "reason", nil)
-	if !pyrepr.Truthy(reason) {
+	if !anyutil.IsTrue(reason) {
 		return ""
 	}
 	if r := pyStrip(pyStr(reason)); r != "" {
@@ -995,7 +996,7 @@ func curatorConsolidatedLines(entry any) []string {
 		line += fmt.Sprintf("  _(detected via %s)_", source)
 	}
 	out := []string{line}
-	if claimed := curatorGetOr(entry, "model_claimed_into", nil); pyrepr.Truthy(claimed) {
+	if claimed := curatorGetOr(entry, "model_claimed_into", nil); anyutil.IsTrue(claimed) {
 		out = append(out, fmt.Sprintf("  ⚠ The curator's summary named `%s` as the umbrella but that skill doesn't exist post-run; showing the tool-call audit's finding instead.", pyStr(claimed)))
 	}
 	return out
@@ -1019,8 +1020,8 @@ func curatorJoinList(v any) string {
 
 func curatorCronRewriteLines(entry any) []string {
 	jobName := curatorGetOr(entry, "job_name", nil)
-	if !pyrepr.Truthy(jobName) {
-		if jobName = curatorGetOr(entry, "job_id", nil); !pyrepr.Truthy(jobName) {
+	if !anyutil.IsTrue(jobName) {
+		if jobName = curatorGetOr(entry, "job_id", nil); !anyutil.IsTrue(jobName) {
 			jobName = "?"
 		}
 	}
@@ -1029,9 +1030,9 @@ func curatorCronRewriteLines(entry any) []string {
 		after = "(none)"
 	}
 	out := []string{fmt.Sprintf("- `%s`: `%s` → `%s`", pyStr(jobName), curatorJoinList(curatorGetOr(entry, "before", nil)), after)}
-	if mapped, ok := curatorGetOr(entry, "mapped", nil).(*pyjson.Object); ok {
-		for _, k := range mapped.Keys {
-			out = append(out, fmt.Sprintf("    - `%s` → `%s` (consolidated)", k, pyStr(mapped.Vals[k])))
+	if mapped, ok := curatorGetOr(entry, "mapped", nil).(*jsonutil.Object); ok {
+		for _, k := range mapped.Keys() {
+			out = append(out, fmt.Sprintf("    - `%s` → `%s` (consolidated)", k, pyStr(mapped.Value(k))))
 		}
 	}
 	if dropped, ok := curatorGetOr(entry, "dropped", nil).([]any); ok {
@@ -1067,10 +1068,10 @@ func curatorSignedInt(n int) string {
 }
 
 // Human readable REPORT.md of a run payload
-func curatorRenderReport(p *pyjson.Object) string {
+func curatorRenderReport(p *jsonutil.Object) string {
 	durV := curatorGetOr(p, "duration_seconds", 0)
 	dur := 0
-	if f, err := pyint.Float(durV); err == nil && pyrepr.Truthy(durV) {
+	if f, err := anyutil.ToFloat(durV); err == nil && anyutil.IsTrue(durV) {
 		dur = int(f)
 	}
 	mins, secs := dur/60, dur%60
@@ -1081,17 +1082,17 @@ func curatorRenderReport(p *pyjson.Object) string {
 	counts, auto, tc := curatorGetOr(p, "counts", nil), curatorGetOr(p, "auto_transitions", nil), curatorGetOr(p, "tool_call_counts", nil)
 	errV := curatorGetOr(p, "llm_error", nil)
 	orUnresolved := func(key string) string {
-		if v := curatorGetOr(p, key, nil); pyrepr.Truthy(v) {
+		if v := curatorGetOr(p, key, nil); anyutil.IsTrue(v) {
 			return pyStr(v)
 		}
 		return "(not resolved)"
 	}
 	var byName []string
-	if o, ok := tc.(*pyjson.Object); ok {
-		keys := append([]string{}, o.Keys...)
+	if o, ok := tc.(*jsonutil.Object); ok {
+		keys := append([]string{}, o.Keys()...)
 		sort.Strings(keys)
 		for _, k := range keys {
-			byName = append(byName, fmt.Sprintf("%s=%s", k, pyStr(o.Vals[k])))
+			byName = append(byName, fmt.Sprintf("%s=%s", k, pyStr(o.Value(k))))
 		}
 	}
 	tcLabel := strings.Join(byName, ", ")
@@ -1103,7 +1104,7 @@ func curatorRenderReport(p *pyjson.Object) string {
 		fmt.Sprintf("Model: `%s` via `%s`  ·  Duration: %s  ·  Agent-created skills: %d → %d (%s)\n", orUnresolved("model"), orUnresolved("provider"),
 			label, curatorCount(counts, "before"), curatorCount(counts, "after"), curatorSignedInt(curatorCount(counts, "delta"))),
 	}
-	if pyrepr.Truthy(errV) {
+	if anyutil.IsTrue(errV) {
 		lines = append(lines, fmt.Sprintf("> ⚠ LLM pass error: `%s`\n", pyStr(errV)))
 	}
 	lines = append(lines, "## Auto-transitions (pure, no LLM)\n", fmt.Sprintf("- checked: %d", curatorCount(auto, "checked")),
@@ -1143,12 +1144,12 @@ func curatorRenderReport(p *pyjson.Object) string {
 	}
 	finalV := curatorGetOr(p, "llm_final", nil)
 	final := ""
-	if pyrepr.Truthy(finalV) {
+	if anyutil.IsTrue(finalV) {
 		final = pyStrip(pyStr(finalV))
 	}
 	if final != "" {
 		lines = append(lines, "## LLM final summary\n", final, "")
-	} else if summary := curatorGetOr(p, "llm_summary", nil); !pyrepr.Truthy(errV) && pyrepr.Truthy(summary) {
+	} else if summary := curatorGetOr(p, "llm_summary", nil); !anyutil.IsTrue(errV) && anyutil.IsTrue(summary) {
 		lines = append(lines, "## LLM summary\n", pyStr(summary), "")
 	}
 	lines = append(lines, "## Recovery\n", "- Restore an archived skill: `icebath curator restore <name>`",
@@ -1165,7 +1166,7 @@ func curatorRenderCandidateList(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	for _, r := range report {
 		name := pyStr(curatorGetOr(r, "name", nil))
 		bundled, err := scope.IsBundled(name)
@@ -1190,11 +1191,11 @@ func curatorRenderCandidateList(ctx context.Context) (string, error) {
 	for _, r := range rows {
 		name := pyStr(curatorGetOr(r, "name", nil))
 		last := curatorGetOr(r, "last_activity_at", nil)
-		if !pyrepr.Truthy(last) {
+		if !anyutil.IsTrue(last) {
 			last = "never"
 		}
 		lines = append(lines, fmt.Sprintf("- %s  provenance=%s  state=%s  pinned=%s  cron=%s  activity=%s  use=%s  view=%s  patches=%s  last_activity=%s",
-			name, pyStr(curatorGetOr(r, "provenance", "agent")), pyStr(curatorGetOr(r, "state", nil)), yesNo(pyrepr.Truthy(curatorGetOr(r, "pinned", nil))),
+			name, pyStr(curatorGetOr(r, "provenance", "agent")), pyStr(curatorGetOr(r, "state", nil)), yesNo(anyutil.IsTrue(curatorGetOr(r, "pinned", nil))),
 			yesNo(cron[name]), pyStr(curatorGetOr(r, "activity_count", 0)), pyStr(curatorGetOr(r, "use_count", 0)), pyStr(curatorGetOr(r, "view_count", 0)),
 			pyStr(curatorGetOr(r, "patch_count", 0)), pyStr(last)))
 	}
@@ -1202,7 +1203,7 @@ func curatorRenderCandidateList(ctx context.Context) (string, error) {
 }
 
 // Result of an LLM pass that did not run
-func curatorLLMMeta(summary string, errText any) *pyjson.Object {
+func curatorLLMMeta(summary string, errText any) *jsonutil.Object {
 	return curatorEntry("final", "", "summary", summary, "model", "", "provider", "", "tool_calls", []any{}, "error", errText)
 }
 
@@ -1214,7 +1215,7 @@ func curatorNotify(onSummary func(string), message string) {
 	onSummary(message)
 }
 
-func curatorSafeReport(ctx context.Context) []*pyjson.Object {
+func curatorSafeReport(ctx context.Context) []*jsonutil.Object {
 	scope, _, _ := curatorScope(ctx)
 	rows, err := scope.CuratedReport()
 	if err != nil {
@@ -1224,9 +1225,9 @@ func curatorSafeReport(ctx context.Context) []*pyjson.Object {
 }
 
 // LLM half of a run, forking unless there are no candidates, then appending the rename map
-func curatorConsolidationPass(ctx context.Context, prefix, autoSummary string, dryRun bool, beforeNames map[string]bool) (string, *pyjson.Object) {
+func curatorConsolidationPass(ctx context.Context, prefix, autoSummary string, dryRun bool, beforeNames map[string]bool) (string, *jsonutil.Object) {
 	var final string
-	var meta *pyjson.Object
+	var meta *jsonutil.Object
 	list, err := curatorRenderCandidateList(ctx)
 	switch {
 	case err != nil:
@@ -1251,7 +1252,7 @@ func curatorConsolidationPass(ctx context.Context, prefix, autoSummary string, d
 		return final, meta
 	}
 	finalText := curatorGetOr(meta, "final", "")
-	if !pyrepr.Truthy(finalText) {
+	if !anyutil.IsTrue(finalText) {
 		finalText = ""
 	}
 	if lines := curatorRenameSummary(beforeNames, after, curatorToolCalls(meta), finalText); lines != "" {
@@ -1272,13 +1273,13 @@ type CuratorRunOptions struct {
 }
 
 // One curator pass, deterministic transitions then the optional LLM fork, recording state and a report
-func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Object, error) {
+func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*jsonutil.Object, error) {
 	consolidate := CuratorConsolidate(ctx)
 	if opts.Consolidate != nil {
 		consolidate = *opts.Consolidate
 	}
 	start := time.Now().UTC()
-	var counts *pyjson.Object
+	var counts *jsonutil.Object
 	if opts.DryRun {
 		counts = curatorEntry("checked", len(curatorSafeReport(ctx)), "marked_stale", 0, "archived", 0, "reactivated", 0)
 	} else {
@@ -1321,7 +1322,7 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Obje
 		if err != nil {
 			return nil, err
 		}
-		st.Set("last_run_at", pydatetime.ISOFormatUTC(start))
+		st.Set("last_run_at", start.UTC().Format(timeutil.RFC3339Micro))
 		st.Set("run_count", pyint.Native(new(big.Int).Add(runCount, big.NewInt(1))))
 	}
 	SaveCuratorState(ctx, st)
@@ -1329,7 +1330,7 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Obje
 		beforeReport := curatorSafeReport(ctx)
 		beforeNames := curatorNames(curatorByName(beforeReport))
 		var final string
-		var meta *pyjson.Object
+		var meta *jsonutil.Object
 		if consolidate {
 			final, meta = curatorConsolidationPass(ctx, prefix, autoSummary, opts.DryRun, beforeNames)
 		} else {
@@ -1360,7 +1361,7 @@ func RunCuratorReview(ctx context.Context, opts CuratorRunOptions) (*pyjson.Obje
 			llmPass(context.WithoutCancel(ctx))
 		}()
 	}
-	return curatorEntry("started_at", pydatetime.ISOFormatUTC(start), "auto_transitions", counts, "summary_so_far", autoSummary), nil
+	return curatorEntry("started_at", start.UTC().Format(timeutil.RFC3339Micro), "auto_transitions", counts, "summary_so_far", autoSummary), nil
 }
 
 type curatorReviewBinding struct {
@@ -1429,7 +1430,7 @@ func curatorResolveReviewProvider(ctx context.Context) (*provider.Runtime, strin
 }
 
 // Forks the review agent on the prompt and collects its final response and tool calls
-func curatorRunLLMReview(ctx context.Context, prompt string) *pyjson.Object {
+func curatorRunLLMReview(ctx context.Context, prompt string) *jsonutil.Object {
 	meta := curatorLLMMeta("", nil)
 	if CuratorHooks.RunReview == nil {
 		msg := "the review agent is not built into this icebath"
@@ -1464,7 +1465,7 @@ func curatorRunLLMReview(ctx context.Context, prompt string) *pyjson.Object {
 	}
 	final := ""
 	if curatorIsDict(res.Conversation) {
-		if v := curatorGetOr(res.Conversation, "final_response", nil); pyrepr.Truthy(v) {
+		if v := curatorGetOr(res.Conversation, "final_response", nil); anyutil.IsTrue(v) {
 			final = pyStrip(pyStr(v))
 		}
 	}
@@ -1488,15 +1489,15 @@ func curatorRunLLMReview(ctx context.Context, prompt string) *pyjson.Object {
 				continue
 			}
 			fn := curatorGetOr(tc, "function", nil)
-			if !pyrepr.Truthy(fn) {
+			if !anyutil.IsTrue(fn) {
 				fn = map[string]any{}
 			}
 			name := curatorGetOr(fn, "name", nil)
-			if !pyrepr.Truthy(name) {
+			if !anyutil.IsTrue(name) {
 				name = ""
 			}
 			args := curatorGetOr(fn, "arguments", nil)
-			if !pyrepr.Truthy(args) {
+			if !anyutil.IsTrue(args) {
 				args = ""
 			}
 			if s, ok := args.(string); ok && utf8.RuneCountInString(s) > 400 {
@@ -1539,7 +1540,7 @@ func curatorClaimRun(ctx context.Context) bool {
 func curatorReleaseRunClaim(ctx context.Context) { _ = os.Remove(curatorRunClaimPath(ctx)) }
 
 // Starts a scheduled pass when every gate passes, nil when it did not run or failed
-func MaybeRunCurator(ctx context.Context, idleForSeconds *float64, onSummary func(string)) *pyjson.Object {
+func MaybeRunCurator(ctx context.Context, idleForSeconds *float64, onSummary func(string)) *jsonutil.Object {
 	run, err := CuratorShouldRunNow(ctx, time.Time{})
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("maybe_run_curator failed: %v", err))

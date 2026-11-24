@@ -11,10 +11,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Invalid owner attestation configuration, reported as a fatal config error
@@ -27,7 +27,7 @@ func settingText(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Reply mode first, all or off from buzz.reply_to_mode, buzz.reply_in_thread off meaning off
@@ -117,7 +117,7 @@ func resolveAuthTag(ctx context.Context, extra map[string]any) (string, error) {
 	for i, s := range parsed {
 		items[i] = s
 	}
-	return pyjson.Dumps(items, pyjson.Separators(",", ":"))
+	return jsonutil.Encode(items)
 }
 
 // Extra of the buzz section in the scoped profile's config, empty when unscoped or unreadable
@@ -203,7 +203,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	message, _ := kwargs["message"].(string)
 	threadID := ""
 	if v := kwargs["thread_id"]; v != nil {
-		threadID = pyrepr.Str(v)
+		threadID = anyutil.String(v)
 	}
 	extra := map[string]any{}
 	if pconfig != nil && pconfig.Extra != nil {
@@ -255,7 +255,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			if pair, ok := media.([]any); ok && len(pair) > 0 {
 				media = pair[0]
 			}
-			mediaFiles = append(mediaFiles, pyrepr.Str(media))
+			mediaFiles = append(mediaFiles, anyutil.String(media))
 		}
 	}
 	for _, media := range mediaFiles {

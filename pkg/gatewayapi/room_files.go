@@ -2,16 +2,13 @@ package gatewayapi
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Room member file routes, the turn files a room home sends and the reply files it pulls
@@ -53,7 +50,7 @@ func roomFileResponse(answer map[string]any, err error) (*gateway.WebResponse, e
 	if err != nil {
 		return nil, err
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, key := range []string{"object", "file_id", "offset", "size", "received", "complete", "sha256", "data_base64"} {
 		if value, has := answer[key]; has {
 			out.Set(key, value)
@@ -68,7 +65,7 @@ func (a *APIServerAdapter) handleRoomFileBegin(ctx context.Context, request *gat
 	if errResp != nil {
 		return errResp, nil
 	}
-	for _, key := range body.Keys {
+	for _, key := range body.Keys() {
 		if !strings.Contains(" name kind mime size sha256 ", " "+key+" ") {
 			return jsonError("A room file accepts only name, kind, mime, size and sha256.", "invalid_attachment", http.StatusBadRequest), nil
 		}
@@ -86,14 +83,14 @@ func (a *APIServerAdapter) handleRoomFileChunk(ctx context.Context, request *gat
 	if errResp != nil {
 		return errResp, nil
 	}
-	rawOffset := body.GetOr("offset", nil)
+	rawOffset := body.ValueOr("offset", nil)
 	_, isBool := rawOffset.(bool)
-	offset, offsetErr := pyint.Int64(rawOffset)
-	encoded, isText := body.GetOr("data_base64", nil).(string)
+	offset, offsetErr := anyutil.ToInt(rawOffset)
+	encoded, isText := body.ValueOr("data_base64", nil).(string)
 	if body.Len() != 2 || isBool || offsetErr != nil || !isText {
 		return jsonError("A file chunk carries only offset and data_base64.", "invalid_attachment", http.StatusBadRequest), nil
 	}
-	data, err := pybase64.B64DecodeValidate(encoded)
+	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return jsonError("data_base64 is not valid base64.", "invalid_attachment", http.StatusBadRequest), nil
 	}
@@ -122,11 +119,11 @@ func (a *APIServerAdapter) handleRoomFileRead(ctx context.Context, request *gate
 }
 
 // Finished room member run status for a home that pulls files, reply files staged and MEDIA directives removed
-func (a *APIServerAdapter) roomRunFiles(ctx context.Context, request *gateway.WebRequest, runID string, status *pyjson.Object) (*pyjson.Object, *gateway.WebResponse, error) {
-	if roomGrantToken(request) == "" || request.Header.Get(gateway.PeerRoomFilesHeader) != "1" || status.GetOr("status", nil) != "completed" {
+func (a *APIServerAdapter) roomRunFiles(ctx context.Context, request *gateway.WebRequest, runID string, status *jsonutil.Object) (*jsonutil.Object, *gateway.WebResponse, error) {
+	if roomGrantToken(request) == "" || request.Header.Get(gateway.PeerRoomFilesHeader) != "1" || status.ValueOr("status", nil) != "completed" {
 		return status, nil, nil
 	}
-	output, _ := status.GetOr("output", "").(string)
+	output, _ := status.ValueOr("output", "").(string)
 	scoped, scope, refused := a.roomFileScope(ctx, request, "status")
 	if refused != nil {
 		return nil, refused, nil
@@ -135,13 +132,13 @@ func (a *APIServerAdapter) roomRunFiles(ctx context.Context, request *gateway.We
 	if err != nil || len(files) == 0 && text == output {
 		return status, nil, err
 	}
-	out := status.Copy()
+	out := status.Clone()
 	out.Set("output", text)
 	listed := make([]any, len(files))
 	for i, raw := range files {
 		item, _ := raw.(map[string]any)
-		listed[i] = pyjson.ObjectOf("file_id", item["file_id"], "name", item["name"], "kind", item["kind"], "mime", item["mime"],
-			"size", item["size"], "sha256", pyrepr.Str(item["sha256"]))
+		listed[i] = jsonutil.ObjectOf("file_id", item["file_id"], "name", item["name"], "kind", item["kind"], "mime", item["mime"],
+			"size", item["size"], "sha256", anyutil.String(item["sha256"]))
 	}
 	out.Set("files", listed)
 	return out, nil, nil

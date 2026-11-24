@@ -15,15 +15,11 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/plugins/defaults"
@@ -35,7 +31,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -89,7 +90,7 @@ func printCuratorFirstRunNotice(ctx context.Context, w io.Writer) {
 	if err != nil {
 		return
 	}
-	if pyrepr.Truthy(curatorState.GetOr("last_run_at", nil)) {
+	if anyutil.IsTrue(curatorState.ValueOr("last_run_at", nil)) {
 		return
 	}
 	days := max(1, memory.CuratorIntervalHours(ctx)/24)
@@ -205,15 +206,15 @@ func printCuratorRecentRunNotice(ctx context.Context, w io.Writer) {
 	if err != nil {
 		return
 	}
-	lastRunAt := curatorState.GetOr("last_run_at", nil)
-	if !pyrepr.Truthy(lastRunAt) {
+	lastRunAt := curatorState.ValueOr("last_run_at", nil)
+	if !anyutil.IsTrue(lastRunAt) {
 		return
 	}
-	if pyrepr.Equal(curatorState.GetOr("last_run_summary_shown_at", nil), lastRunAt) {
+	if anyutil.Equal(curatorState.ValueOr("last_run_summary_shown_at", nil), lastRunAt) {
 		return
 	}
-	summary := curatorState.GetOr("last_run_summary", nil)
-	if !pyrepr.Truthy(summary) {
+	summary := curatorState.ValueOr("last_run_summary", nil)
+	if !anyutil.IsTrue(summary) {
 		return
 	}
 	if text, ok := summary.(string); ok && strings.Contains(text, "\n") {
@@ -234,7 +235,7 @@ func formatTimeAgo(isoTS any) string {
 	if !ok {
 		return "recently"
 	}
-	ts, _, err := pydatetime.ParseISOFormat(text)
+	ts, _, err := timeutil.ParseISOZone(text, time.UTC)
 	if err != nil {
 		return "recently"
 	}
@@ -362,7 +363,7 @@ func verifyAndRestoreOneStateDB(ctx context.Context, w io.Writer, h, label strin
 		}
 		restored, err := restoreStateDBFromSnapshot(ctx, w, statePath, snapState)
 		switch {
-		case err != nil && pypath.IsOSError(err):
+		case err != nil && errorutil.IsSystem(err):
 			fmt.Fprintf(w, "  ✗ Auto-restore file copy failed: %s\n", launchErrorText(err))
 		case err != nil:
 			pkgLog().DebugContext(ctx, fmt.Sprintf("Post-update state.db guard (%s) failed: %s", label, launchErrorText(err)))
@@ -406,7 +407,7 @@ func maintNames(v any) []string {
 	case []any:
 		out := make([]string, len(list))
 		for i, item := range list {
-			out[i] = pyrepr.Str(item)
+			out[i] = anyutil.String(item)
 		}
 		return out
 	}
@@ -458,10 +459,10 @@ func ensureFHSPathGuard(ctx context.Context, w io.Writer) error {
 	if !ok {
 		term = "dumb"
 	}
-	probe, err := pysubprocess.RunWith(ctx, []string{"env", "-i", "HOME=" + userHome, "TERM=" + term, "bash", "-i", "-c", "command -v icebath"},
-		pysubprocess.Options{Timeout: 10 * time.Second})
+	probe, err := executil.Run(ctx, []string{"env", "-i", "HOME=" + userHome, "TERM=" + term, "bash", "-i", "-c", "command -v icebath"},
+		executil.Options{Timeout: 10 * time.Second})
 	if err != nil {
-		var expired *pysubprocess.TimeoutExpired
+		var expired *executil.TimeoutError
 		var missing *exec.Error
 		if errors.As(err, &expired) || errors.As(err, &missing) || errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -484,7 +485,7 @@ func ensureFHSPathGuard(ctx context.Context, w io.Writer) error {
 			continue
 		}
 		guarded := false
-		for _, line := range textutil.Lines(pystr.DecodeUTF8SigReplace(raw)) {
+		for _, line := range textutil.Lines(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError))) {
 			if strings.Contains(line, "/usr/local/bin") && strings.Contains(line, "PATH") && !strings.HasPrefix(strings.TrimLeftFunc(line, unicode.IsSpace), "#") {
 				guarded = true
 				break
@@ -521,10 +522,10 @@ func ensureACPLauncher(ctx context.Context) error {
 
 // Backup mode off, quick or full, the flags winning over the config and quick the default
 func resolvePreUpdateBackupMode(ctx context.Context, args map[string]any) string {
-	if pyrepr.Truthy(args["no_backup"]) {
+	if anyutil.IsTrue(args["no_backup"]) {
 		return "off"
 	}
-	if pyrepr.Truthy(args["backup"]) {
+	if anyutil.IsTrue(args["backup"]) {
 		return "full"
 	}
 	return settings.UpdatesPreUpdateBackup.Get(ctx)
@@ -573,11 +574,11 @@ func runQuickSnapshots(ctx context.Context, w io.Writer) (string, error) {
 		if err != nil || siblings == nil || siblings.Len() == 0 {
 			return err
 		}
-		names := append([]string{}, siblings.Keys...)
+		names := append([]string{}, siblings.Keys()...)
 		sort.Strings(names)
 		pairs := make([]string, len(names))
 		for i, name := range names {
-			pairs[i] = name + "=" + pyrepr.Str(siblings.GetOr(name, nil))
+			pairs[i] = name + "=" + anyutil.String(siblings.ValueOr(name, nil))
 		}
 		fmt.Fprintln(w, "◆ Sibling profile snapshot(s): "+strings.Join(names, ", "))
 		recordUpdateStep(ctx, "sibling_profile_snapshots", true, strings.Join(pairs, ", "))
@@ -609,12 +610,12 @@ func runFullBackup(ctx context.Context, w io.Writer) {
 	if info, err := os.Stat(outPath); err == nil {
 		size = info.Size()
 	}
-	display := pypath.PathStr(outPath)
-	if rel, ok := pypath.PathRelativeTo(outPath, h); ok {
+	display := filepath.Clean(outPath)
+	if rel, ok := pathutil.RelativeTo(outPath, h); ok {
 		display = home.Display(h) + "/" + rel
 	}
 	fmt.Fprintf(w, "  Saved:    %s (%s, %.1fs)\n", display, tools.SizefmtBytes(size), elapsed)
-	fmt.Fprintf(w, "  Restore:  icebath import %s\n", pypath.PathStr(outPath))
+	fmt.Fprintf(w, "  Restore:  icebath import %s\n", filepath.Clean(outPath))
 	fmt.Fprintln(w, "  Disable:  set updates.pre_update_backup: quick (or off) in config.yaml")
 	fmt.Fprintln(w)
 }
@@ -623,7 +624,7 @@ func runFullBackup(ctx context.Context, w io.Writer) {
 func runPreUpdateBackup(ctx context.Context, w io.Writer, args map[string]any) *string {
 	mode := resolvePreUpdateBackupMode(ctx, args)
 	if mode == "off" {
-		if pyrepr.Truthy(args["no_backup"]) {
+		if anyutil.IsTrue(args["no_backup"]) {
 			fmt.Fprintln(w, "◆ Pre-update backup: skipped (--no-backup)")
 			fmt.Fprintln(w)
 		}
@@ -680,7 +681,7 @@ func sweepBytecodeAfterUpdate(ctx context.Context, w io.Writer, branch string) {
 }
 
 func profileSkillSyncStatus(r map[string]any) string {
-	if len(r) > 0 && pyrepr.Truthy(r["skipped_opt_out"]) {
+	if len(r) > 0 && anyutil.IsTrue(r["skipped_opt_out"]) {
 		return "opted out (--no-skills)"
 	}
 	if len(r) == 0 {
@@ -764,7 +765,7 @@ func installDefaultToolsAfterUpdate(ctx context.Context, w io.Writer) error {
 		fmt.Fprintf(w, "\n→ Installing %s (default tool; opt out with `icebath pm install --without %s`)...\n", name, name)
 		if _, err := pm.Ensure(ctx, name, pm.EnsureOptions{Explicit: true}); err != nil {
 			var install *pm.InstallError
-			if !errors.As(err, &install) && !pypath.IsOSError(err) {
+			if !errors.As(err, &install) && !errorutil.IsSystem(err) {
 				return err
 			}
 			fmt.Fprintf(w, "  ⚠ %s was not installed: %s\n", name, launchErrorText(err))
@@ -841,11 +842,11 @@ func RunPostUpdateMaintenance(ctx context.Context, o PostUpdateMaintenance) (boo
 		return false, err
 	}
 	kw := noPromptGitKwargs()
-	fetched, err := tools.FetchFullCommitGraph(ctx, root, nil, pysubprocess.Options{Env: kw.Env, Attr: kw.Attr})
+	fetched, err := tools.FetchFullCommitGraph(ctx, root, nil, executil.Options{Env: kw.Env, Attr: kw.Attr})
 	switch {
 	case err == nil && fetched:
 		fmt.Fprintln(w, "  ✓ Fetched release history (commits only) for version identity")
-	case err != nil && (pypath.IsOSError(err) || isSubprocessError(err)):
+	case err != nil && (errorutil.IsSystem(err) || isSubprocessError(err)):
 		fmt.Fprintf(w, "  ⚠ Could not refresh release history (%s); the version label may be stale or unknown until the next update\n", maintLastLine(err))
 	case err != nil:
 		return false, err

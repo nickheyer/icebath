@@ -17,10 +17,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/provider"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func killScriptProcess(pid int) { syscall.Kill(pid, syscall.SIGKILL) }
@@ -89,7 +88,7 @@ func TestConfiguredInterpreterKeepsDotDotAndReportsEveryRefusalAsPythonDoes(t *t
 	refusals := []struct{ interpreter, want string }{
 		{d + "//x/./../python3", "Interpreter is not executable: " + d + "/x/../python3"},
 		{" " + d + "/x/../python3  ", "Interpreter is not executable: " + d + "/x/../python3"},
-		{d + "/python3/python3", "Unable to resolve interpreter path " + pyrepr.StrRepr(d+"/python3/python3") + ": not a directory: " + d + "/python3/python3"},
+		{d + "/python3/python3", "Unable to resolve interpreter path " + strconv.Quote(d+"/python3/python3") + ": not a directory: " + d + "/python3/python3"},
 		{"~no_such_user_zz/python3", "Unable to resolve interpreter path '~no_such_user_zz/python3': Could not determine home directory."},
 		{d + "/nope/../python3", "Interpreter not found: " + d + "/nope/../python3"},
 		{"./~/x", "Interpreter not found: ./~/x"},
@@ -160,7 +159,7 @@ func TestScriptPathFollowsLinksBeforeDotDot(t *testing.T) {
 		t.Fatal(err)
 	}
 	ok, out := runScript(t, s, "out/../evil.py", nil)
-	resolvedAway, err := pypath.Resolve(away)
+	resolvedAway, err := pathutil.Resolve(away)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +187,7 @@ func TestKilledScriptThatOutlivesBothReapWaitsRaisesTimeoutExpired(t *testing.T)
 	}
 	unreaped := &cronScriptProcess{cmd: cmd, exited: make(chan struct{})}
 	err := s.terminateCronScriptProcess(unreaped)
-	var expired *pysubprocess.TimeoutExpired
+	var expired *executil.TimeoutError
 	if !errors.As(err, &expired) || err.Error() != "Command '['sleep', '30']' timed out after 1.0 seconds" {
 		t.Fatalf("got %v", err)
 	}
@@ -221,10 +220,10 @@ func TestScriptTerminationReapsDescendants(t *testing.T) {
 					detached = "True"
 				}
 				child := "import os, signal, time; from pathlib import Path; " + ignoreTerm +
-					"Path(" + pyrepr.StrRepr(ready+".tmp") + ").write_text(str(os.getpid())); " +
-					"os.replace(" + pyrepr.StrRepr(ready+".tmp") + ", " + pyrepr.StrRepr(ready) + "); time.sleep(60)"
+					"Path(" + strconv.Quote(ready+".tmp") + ").write_text(str(os.getpid())); " +
+					"os.replace(" + strconv.Quote(ready+".tmp") + ", " + strconv.Quote(ready) + "); time.sleep(60)"
 				script := writeScript(t, s, "blocking.py", "import subprocess, sys, time\n"+
-					"subprocess.Popen([sys.executable, '-c', "+pyrepr.StrRepr(child)+"], start_new_session="+detached+")\n"+
+					"subprocess.Popen([sys.executable, '-c', "+strconv.Quote(child)+"], start_new_session="+detached+")\n"+
 					"time.sleep(60)\n")
 				cancel := &latchEvent{}
 				type result struct {

@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func agentWithAdmission(t *testing.T) (*GatewayACPAgent, *scriptedGateway, *editorFake) {
@@ -25,7 +23,7 @@ func agentWithAdmission(t *testing.T) (*GatewayACPAgent, *scriptedGateway, *edit
 
 func completeAdmission(t *testing.T, a *GatewayACPAgent, admission, outcome, text string) {
 	t.Helper()
-	event := pyjson.ObjectOf("session_id", "s", "type", "message.complete", "admission_id", admission, "payload", pyjson.ObjectOf("outcome", outcome, "text", text))
+	event := jsonutil.ObjectOf("session_id", "s", "type", "message.complete", "admission_id", admission, "payload", jsonutil.ObjectOf("outcome", outcome, "text", text))
 	if err := onLoop(a, func() error { return a.project(context.Background(), event) }); err != nil {
 		t.Error(err)
 	}
@@ -34,8 +32,8 @@ func completeAdmission(t *testing.T, a *GatewayACPAgent, admission, outcome, tex
 func emittedText(e *editorFake) []string {
 	var out []string
 	for _, u := range updatesOf(e) {
-		if chunk, ok := u.(*pyacp.AgentMessageChunk); ok {
-			out = append(out, chunk.Content.(*pyacp.TextContentBlock).Text)
+		if chunk, ok := u.(*acputil.AgentMessageChunk); ok {
+			out = append(out, chunk.Content.(*acputil.TextContentBlock).Text)
 		}
 	}
 	return out
@@ -77,7 +75,7 @@ func TestRefusedReattachAfterAReplayGapStillFailsThePump(t *testing.T) {
 		return true
 	})
 	link.put(jsonObj(t, `{"method": "event", "params": {"session_id": "s", "type": "session.replay_gap", "payload": {"reason": "subscriber_overflow"}}}`))
-	link.set(func(context.Context, string, map[string]any) (*pyjson.Object, error) {
+	link.set(func(context.Context, string, map[string]any) (*jsonutil.Object, error) {
 		return nil, &gateway.GatewayRPCError{Msg: "not_found"}
 	})
 	done := make(chan error, 1)
@@ -116,7 +114,7 @@ func TestFailedAdmissionRaisesWithoutPoisoningTheNextSuccess(t *testing.T) {
 func receiptAgent(t *testing.T, final string, gate func(a *GatewayACPAgent)) (*GatewayACPAgent, *editorFake) {
 	t.Helper()
 	a, link := bareGatewayAgent(t, map[string]string{"s": `{}`})
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		if method == "prompt.submit" {
 			return jsonObj(t, `{"admission_id": "a1", "status": "terminal", "outcome": "completed"}`), nil
 		}
@@ -126,7 +124,7 @@ func receiptAgent(t *testing.T, final string, gate func(a *GatewayACPAgent)) (*G
 		if gate != nil {
 			gate(a)
 		}
-		return pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", final)), nil
+		return jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", final)), nil
 	})
 	editor := &editorFake{}
 	onLoop(a, func() bool { a.conn = editor; return true })
@@ -137,7 +135,7 @@ func TestLiveCompletionDuringTheReceiptEditorUpdateIsNotShownTwice(t *testing.T)
 	a, editor := receiptAgent(t, "Final answer", nil)
 	var mu sync.Mutex
 	count := 0
-	editor.onUpdate = func(string, pyacp.SessionUpdate) error {
+	editor.onUpdate = func(string, acputil.SessionUpdate) error {
 		mu.Lock()
 		count++
 		first := count == 1
@@ -183,7 +181,7 @@ func TestCompletionThatLandsBeforeTheReceiptIsTheOneShown(t *testing.T) {
 	}
 }
 
-func configAgent(t *testing.T, modelState func(ctx context.Context, info *pyjson.Object) *pyacp.SessionModelState) (*GatewayACPAgent, *editorFake) {
+func configAgent(t *testing.T, modelState func(ctx context.Context, info *jsonutil.Object) *acputil.SessionModelState) (*GatewayACPAgent, *editorFake) {
 	t.Helper()
 	swap(t, &gatewayModelState, modelState)
 	a := newGatewayAgent(t)
@@ -202,13 +200,13 @@ func projectModeOf(t *testing.T, a *GatewayACPAgent, info string) {
 func shownConfigs(e *editorFake) []map[string]string {
 	var out []map[string]string
 	for _, u := range updatesOf(e) {
-		update, ok := u.(*pyacp.ConfigOptionUpdate)
+		update, ok := u.(*acputil.ConfigOptionUpdate)
 		if !ok {
 			continue
 		}
 		row := map[string]string{}
 		for _, option := range update.ConfigOptions {
-			sel := option.(*pyacp.SessionConfigOptionSelect)
+			sel := option.(*acputil.SessionConfigOptionSelect)
 			row[*sel.Category] = sel.CurrentValue
 		}
 		out = append(out, row)
@@ -217,7 +215,7 @@ func shownConfigs(e *editorFake) []map[string]string {
 }
 
 func TestAnotherSurfacesModeAndEffortChangeResendTheConfigOptions(t *testing.T) {
-	a, editor := configAgent(t, func(context.Context, *pyjson.Object) *pyacp.SessionModelState { return nil })
+	a, editor := configAgent(t, func(context.Context, *jsonutil.Object) *acputil.SessionModelState { return nil })
 	projectModeOf(t, a, `{"edit_approval_policy": "ask", "model": "fixture", "reasoning_effort": "medium"}`)
 	projectModeOf(t, a, `{"edit_approval_policy": "session", "model": "fixture", "reasoning_effort": "medium"}`)
 	projectModeOf(t, a, `{"reasoning_effort": "high"}`)
@@ -227,10 +225,10 @@ func TestAnotherSurfacesModeAndEffortChangeResendTheConfigOptions(t *testing.T) 
 	}
 }
 
-func heldModelState() (func(ctx context.Context, info *pyjson.Object) *pyacp.SessionModelState, <-chan struct{}, func()) {
+func heldModelState() (func(ctx context.Context, info *jsonutil.Object) *acputil.SessionModelState, <-chan struct{}, func()) {
 	building, release := make(chan struct{}), make(chan struct{})
 	var once, releaseOnce sync.Once
-	state := func(context.Context, *pyjson.Object) *pyacp.SessionModelState {
+	state := func(context.Context, *jsonutil.Object) *acputil.SessionModelState {
 		first := false
 		once.Do(func() { first = true; close(building) })
 		if first {
@@ -269,7 +267,7 @@ func TestAProjectionSupersededDuringItsCatalogBuildNeverLandsAfterTheNewerOne(t 
 
 func TestAnEqualAdoptionDuringTheCatalogBuildDoesNotSwallowTheUpdate(t *testing.T) {
 	state, building, release := heldModelState()
-	a, editor := configAgent(t, func(context.Context, *pyjson.Object) *pyacp.SessionModelState { return nil })
+	a, editor := configAgent(t, func(context.Context, *jsonutil.Object) *acputil.SessionModelState { return nil })
 	defer release()
 	projectModeOf(t, a, `{"edit_approval_policy": "ask", "model": "fixture", "reasoning_effort": "medium"}`)
 	swap(t, &gatewayModelState, state)

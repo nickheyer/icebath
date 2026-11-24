@@ -13,9 +13,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Env over a fresh home with the real user config dirs out of reach
@@ -157,7 +157,7 @@ func TestComputerUseInstallPropagatesSetupResult(t *testing.T) {
 
 func TestPermissionsStatusNamesTheStaleTCCRowForTheMissingGrant(t *testing.T) {
 	env := cuCLIEnv(t)
-	st := pyjson.NewObject()
+	st := jsonutil.NewObject()
 	for _, kv := range []struct {
 		k string
 		v any
@@ -166,7 +166,7 @@ func TestPermissionsStatusNamesTheStaleTCCRowForTheMissingGrant(t *testing.T) {
 		{"accessibility", false}, {"screen_recording", true}, {"screen_recording_capturable", true}} {
 		st.Set(kv.k, kv.v)
 	}
-	cuSwap(t, &cliComputerUseStatus, func(context.Context, *tools.Env, *string) (*pyjson.Object, error) { return st, nil })
+	cuSwap(t, &cliComputerUseStatus, func(context.Context, *tools.Env, *string) (*jsonutil.Object, error) { return st, nil })
 	rc, out, _ := cuInvoke(t, env, "permissions", "status")
 	if rc != 1 || !strings.Contains(out, "tccutil reset Accessibility com.trycua.driver") || strings.Contains(out, "ScreenCapture") ||
 		!strings.Contains(out, "icebath computer-use permissions grant") {
@@ -229,7 +229,7 @@ func TestStatusNeverPrintsTheHoldersRawViewerID(t *testing.T) {
 	if _, err := botdesktop.LeaseAcquire(secret, key, "typing a password"); err != nil {
 		t.Fatal(err)
 	}
-	rpcView, err := pyjson.Dumps(botdesktop.LeasePublicView(botdesktop.LeaseGet(key)), pyjson.SortKeys(true))
+	rpcView, err := jsonutil.Encode(botdesktop.LeasePublicView(botdesktop.LeaseGet(key)), jsonutil.SortKeys())
 	if err != nil || strings.Contains(rpcView, secret) {
 		t.Fatalf("rpc view %q err %v", rpcView, err)
 	}
@@ -237,14 +237,14 @@ func TestStatusNeverPrintsTheHoldersRawViewerID(t *testing.T) {
 	if rc != 0 || strings.Contains(out, secret) {
 		t.Fatalf("rc %d json %q", rc, out)
 	}
-	payload, err := pyjson.Loads(out)
+	payload, err := jsonutil.Decode(out)
 	if err != nil {
 		t.Fatal(err)
 	}
-	lease := cuGet(payload.(*pyjson.Object), "lease")
-	got, _ := pyjson.Dumps(lease, pyjson.SortKeys(true))
+	lease := cuGet(payload.(*jsonutil.Object), "lease")
+	got, _ := jsonutil.Encode(lease, jsonutil.SortKeys())
 	sum := sha256.Sum256([]byte(secret))
-	if got != rpcView || cuGet(lease.(*pyjson.Object), "viewer_hash") != hex.EncodeToString(sum[:])[:12] {
+	if got != rpcView || cuGet(lease.(*jsonutil.Object), "viewer_hash") != hex.EncodeToString(sum[:])[:12] {
 		t.Fatalf("lease %s rpc %s", got, rpcView)
 	}
 	rc, human, _ := cuInvoke(t, env, "screen", "status")

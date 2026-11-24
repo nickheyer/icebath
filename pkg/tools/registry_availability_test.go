@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func availabilitySchema(name string) *pyjson.Object {
-	return pyjson.ObjectOf("name", name, "description", name, "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
+func availabilitySchema(name string) *jsonutil.Object {
+	return jsonutil.ObjectOf("name", name, "description", name, "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf()))
 }
 
 func availabilityRegistry(t *testing.T, defs ...Def) (*Registry, *Env) {
@@ -47,7 +47,7 @@ func TestGetDefinitionsReturnsOpenAIFormat(t *testing.T) {
 		if d["type"] != "function" {
 			t.Fatalf("type %v", d["type"])
 		}
-		fn, _ := pyjson.Dict(d["function"])
+		fn, _ := jsonutil.AsMap(d["function"])
 		names[fn["name"].(string)] = true
 	}
 	if len(defs) != 2 || !names["t1"] || !names["t2"] {

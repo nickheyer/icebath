@@ -16,19 +16,15 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Successful authority claim of a hosted room peer reservation that a newer authority outranks
 type AuthorityConflictError struct{ *HostedRoomError }
 
 func (e *AuthorityConflictError) Unwrap() error { return e.HostedRoomError }
-
-// Python class name of the error
-func (e *AuthorityConflictError) PyTypeName() string { return "AuthorityConflictError" }
 
 const hostedJournalModeLockRetries = 8
 
@@ -209,7 +205,7 @@ func hostedTableColumns(ctx context.Context, conn state.SQLiteConn, table string
 	}
 	columns := make(map[string]bool, len(info))
 	for _, row := range info {
-		columns[pyrepr.Str(row[1])] = true
+		columns[anyutil.String(row[1])] = true
 	}
 	return columns, nil
 }
@@ -266,12 +262,12 @@ func hostedRemoteRunSchemaCurrent(ctx context.Context, conn state.SQLiteConn, co
 	}
 	var keys []keyed
 	for _, row := range info {
-		pk, err := pyint.Int64(row[5])
+		pk, err := anyutil.ToInt(row[5])
 		if err != nil {
 			return false, err
 		}
 		if pk != 0 {
-			keys = append(keys, keyed{pyrepr.Str(row[1]), pk})
+			keys = append(keys, keyed{anyutil.String(row[1]), pk})
 		}
 	}
 	sort.SliceStable(keys, func(i, j int) bool { return keys[i].pk < keys[j].pk })
@@ -531,7 +527,7 @@ func hostedSelectExpressions(ctx context.Context, legacy, target state.SQLiteCon
 		return nil, err
 	}
 	for _, row := range info {
-		column := pyrepr.Str(row[1])
+		column := anyutil.String(row[1])
 		sourceColumns[column] = true
 		if targetColumns[column] {
 			pairs = append(pairs, [2]string{column, column})
@@ -560,7 +556,7 @@ func hostedCopyRows(ctx context.Context, target state.SQLiteConn, source string,
 	}
 	existing := map[string]bool{}
 	for _, row := range scanned {
-		existing[pyrepr.Str(row[0])] = true
+		existing[anyutil.String(row[0])] = true
 	}
 	legacy, err := state.ConnectSQLite("file:"+source+"?mode=ro", state.SQLiteConfig{Timeout: 10, URI: true})
 	if err != nil {
@@ -577,7 +573,7 @@ func hostedCopyRows(ctx context.Context, target state.SQLiteConn, source string,
 	}
 	names := make([]string, 0, len(scannedNames))
 	for _, row := range scannedNames {
-		names = append(names, pyrepr.Str(row[0]))
+		names = append(names, anyutil.String(row[0]))
 	}
 	sort.SliceStable(names, func(i, j int) bool {
 		if (names[i] != "hosted_rooms") != (names[j] != "hosted_rooms") {
@@ -599,7 +595,7 @@ func hostedCopyRows(ctx context.Context, target state.SQLiteConn, source string,
 			if err := legacy.QueryRowContext(ctx, "SELECT sql FROM sqlite_master WHERE type='table' AND name=?", name).Scan(&ddl); err != nil {
 				return 0, err
 			}
-			if _, err := target.ExecContext(ctx, pyrepr.Str(ddl)); err != nil {
+			if _, err := target.ExecContext(ctx, anyutil.String(ddl)); err != nil {
 				return 0, err
 			}
 		}
@@ -631,7 +627,7 @@ func hostedCopyRows(ctx context.Context, target state.SQLiteConn, source string,
 		if roomIndex >= 0 {
 			kept := rows[:0]
 			for _, row := range rows {
-				if room := pyrepr.Str(row[roomIndex]); !existing[room] && (only == nil || only[room]) {
+				if room := anyutil.String(row[roomIndex]); !existing[room] && (only == nil || only[room]) {
 					kept = append(kept, row)
 				}
 			}
@@ -642,7 +638,7 @@ func hostedCopyRows(ctx context.Context, target state.SQLiteConn, source string,
 		if name == "hosted_rooms" {
 			copiedRooms = copiedRooms[:0]
 			for _, row := range rows {
-				copiedRooms = append(copiedRooms, pyrepr.Str(row[roomIndex]))
+				copiedRooms = append(copiedRooms, anyutil.String(row[roomIndex]))
 			}
 		}
 		statement := verb + " INTO " + name + " (" + strings.Join(columns, ", ") + ") VALUES (" +
@@ -728,40 +724,36 @@ func hostedClock(now *float64) float64 {
 }
 
 // Text of each claim key, empty for a falsy value
-func hostedClaimValues(claims *pyjson.Object, keys ...string) []string {
+func hostedClaimValues(claims *jsonutil.Object, keys ...string) []string {
 	out := make([]string, len(keys))
 	for i, key := range keys {
-		if value := claims.GetOr(key, nil); pyrepr.Truthy(value) {
-			out[i] = pyrepr.Str(value)
+		if value := claims.ValueOr(key, nil); anyutil.IsTrue(value) {
+			out[i] = anyutil.String(value)
 		}
 	}
 	return out
 }
 
-// Python int of a claim value, zero for a falsy one
-func hostedClaimInt(claims *pyjson.Object, key string) (int64, error) {
-	value := claims.GetOr(key, nil)
-	if !pyrepr.Truthy(value) {
+// Integer of a claim value, zero for a falsy one
+func hostedClaimInt(claims *jsonutil.Object, key string) (int64, error) {
+	value := claims.Value(key)
+	if !anyutil.IsTrue(value) {
 		return 0, nil
 	}
-	n, err := pyint.Of(value)
-	if err != nil {
-		return 0, err
-	}
-	return n.Int64(), nil
+	return anyutil.ToInt(value)
 }
 
-// Python float of a claim value, zero for a falsy one
-func hostedClaimFloat(claims *pyjson.Object, key string) (float64, error) {
-	value := claims.GetOr(key, nil)
-	if !pyrepr.Truthy(value) {
+// Float of a claim value, zero for a falsy one
+func hostedClaimFloat(claims *jsonutil.Object, key string) (float64, error) {
+	value := claims.ValueOr(key, nil)
+	if !anyutil.IsTrue(value) {
 		return 0, nil
 	}
-	return pyint.Float(value)
+	return anyutil.ToFloat(value)
 }
 
 // Stable non secret key of one room, home, target and profile scope
-func hostedRoomGrantScopeKey(claims *pyjson.Object) (string, error) {
+func hostedRoomGrantScopeKey(claims *jsonutil.Object) (string, error) {
 	keys := []string{"room_id", "home_install_id", "authority_gateway_id", "authority_epoch", "member_id", "target_install_id", "target_profile"}
 	values := hostedClaimValues(claims, keys...)
 	fields := make(map[string]any, len(keys))
@@ -780,7 +772,7 @@ func hostedRoomGrantScopeKey(claims *pyjson.Object) (string, error) {
 }
 
 // Revokes every grant issued at or before now for one exact room scope
-func RevokeRoomGrantScope(ctx context.Context, dbPath string, claims *pyjson.Object, expiresAt float64, now *float64) error {
+func RevokeRoomGrantScope(ctx context.Context, dbPath string, claims *jsonutil.Object, expiresAt float64, now *float64) error {
 	scopeKey, err := hostedRoomGrantScopeKey(claims)
 	if err != nil {
 		return err
@@ -822,19 +814,19 @@ type hostedReservation struct {
 }
 
 // Reservation identity of a grant's claims, refused when any part is invalid
-func hostedReservationClaims(claims *pyjson.Object) (hostedReservation, error) {
+func hostedReservationClaims(claims *jsonutil.Object) (hostedReservation, error) {
 	var r hostedReservation
 	var err error
-	if r.roomID, err = roomIdentifier(claims.GetOr("room_id", nil), roomIdentifierSpec{label: "room_id", maxChars: 128}, hostedRoomError); err != nil {
+	if r.roomID, err = roomIdentifier(claims.ValueOr("room_id", nil), roomIdentifierSpec{label: "room_id", maxChars: 128}, hostedRoomError); err != nil {
 		return r, err
 	}
-	if r.memberID, err = hostedActorID(claims.GetOr("member_id", nil), "member_id"); err != nil {
+	if r.memberID, err = hostedActorID(claims.ValueOr("member_id", nil), "member_id"); err != nil {
 		return r, err
 	}
-	if r.targetProfile, err = hostedActorID(claims.GetOr("target_profile", nil), "target_profile"); err != nil {
+	if r.targetProfile, err = hostedActorID(claims.ValueOr("target_profile", nil), "target_profile"); err != nil {
 		return r, err
 	}
-	if r.gatewayID, err = hostedActorID(claims.GetOr("authority_gateway_id", nil), "authority_gateway_id"); err != nil {
+	if r.gatewayID, err = hostedActorID(claims.ValueOr("authority_gateway_id", nil), "authority_gateway_id"); err != nil {
 		return r, err
 	}
 	if r.epoch, err = hostedClaimInt(claims, "authority_epoch"); err != nil {
@@ -848,15 +840,15 @@ func hostedReservationClaims(claims *pyjson.Object) (hostedReservation, error) {
 
 // Whether a newer epoch, or the same epoch under another gateway, outranks this claim
 func hostedReservationSuperseded(rowGateway any, rowEpoch any, gatewayID string, epoch int64) (bool, error) {
-	stored, err := pyint.Int64(rowEpoch)
+	stored, err := anyutil.ToInt(rowEpoch)
 	if err != nil {
 		return false, err
 	}
-	return stored > epoch || (stored == epoch && pyrepr.Str(rowGateway) != gatewayID), nil
+	return stored > epoch || (stored == epoch && anyutil.String(rowGateway) != gatewayID), nil
 }
 
 // Fences direct local prompts for a room before the first peer run is admitted
-func ReservePeerRoom(ctx context.Context, dbPath string, claims *pyjson.Object, expiresAt float64, now *float64) error {
+func ReservePeerRoom(ctx context.Context, dbPath string, claims *jsonutil.Object, expiresAt float64, now *float64) error {
 	timestamp := hostedClock(now)
 	if expiresAt <= timestamp {
 		return hostedRoomError("peer room reservation must expire in the future")
@@ -943,7 +935,7 @@ func hostedReadOne(ctx context.Context, dbPath, query string, args ...any) ([]an
 }
 
 // Whether a grant matches the target's current live reservation
-func PeerRoomGrantIsCurrent(ctx context.Context, dbPath string, claims *pyjson.Object, now *float64) (bool, error) {
+func PeerRoomGrantIsCurrent(ctx context.Context, dbPath string, claims *jsonutil.Object, now *float64) (bool, error) {
 	timestamp := hostedClock(now)
 	r, err := hostedReservationClaims(claims)
 	if err != nil {
@@ -956,7 +948,7 @@ func PeerRoomGrantIsCurrent(ctx context.Context, dbPath string, claims *pyjson.O
 }
 
 // Whether a grant predates its exact scope's revocation fence
-func RoomGrantIsRevoked(ctx context.Context, dbPath string, claims *pyjson.Object, now *float64) (bool, error) {
+func RoomGrantIsRevoked(ctx context.Context, dbPath string, claims *jsonutil.Object, now *float64) (bool, error) {
 	timestamp := hostedClock(now)
 	scopeKey, err := hostedRoomGrantScopeKey(claims)
 	if err != nil {
@@ -971,7 +963,7 @@ func RoomGrantIsRevoked(ctx context.Context, dbPath string, claims *pyjson.Objec
 	if err != nil || row == nil {
 		return false, err
 	}
-	revokedBefore, err := pyint.Float(row[0])
+	revokedBefore, err := anyutil.ToFloat(row[0])
 	if err != nil {
 		return false, err
 	}

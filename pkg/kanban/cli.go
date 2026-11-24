@@ -1,6 +1,7 @@
 package kanban
 
 import (
+	"strconv"
 	"unicode"
 	"unicode/utf8"
 
@@ -18,25 +19,18 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
-
-// pyException is a Python exception of a named class this package has no dedicated type for
-type pyException struct{ Class, Msg string }
-
-func (e *pyException) Error() string      { return e.Msg }
-func (e *pyException) PyTypeName() string { return e.Class }
 
 // None for the unassign spellings none, dash and null
 func noneProfile(value string) *string {
@@ -48,15 +42,15 @@ func noneProfile(value string) *string {
 }
 
 // Decoded --metadata JSON object with the exit code of a refusal
-func (c *kanbanCLI) parseMetadataFlag(raw *string) (*pyjson.Object, int) {
+func (c *kanbanCLI) parseMetadataFlag(raw *string) (*jsonutil.Object, int) {
 	if raw == nil || *raw == "" {
 		return nil, 0
 	}
-	decoded, err := pyjson.Loads(*raw)
+	decoded, err := jsonutil.Decode(*raw)
 	if err != nil {
 		return nil, cliErr(c.errw, "kanban: --metadata: "+err.Error(), 2)
 	}
-	obj, ok := decoded.(*pyjson.Object)
+	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, cliErr(c.errw, "kanban: --metadata: must be a JSON object", 2)
 	}
@@ -95,7 +89,7 @@ func parseWorkspaceFlag(value *string) (*string, *string, error) {
 		if path == "" {
 			return nil, nil, &argumentTypeError{"--workspace " + pair[0] + " requires a path after the colon"}
 		}
-		kind, expanded := pair[1], pypath.Expanduser(path)
+		kind, expanded := pair[1], pathutil.ExpandUser(path)
 		return &kind, &expanded, nil
 	}
 	return nil, nil, &argumentTypeError{"unknown --workspace value " + errchain.Show(*value) + ": use scratch, worktree, worktree:<path>, or dir:<path>"}
@@ -133,10 +127,10 @@ func CheckDispatcherPresence(ctx context.Context, icebathHome string) (running b
 		return true, ""
 	}
 	dispatchInGateway := settings.KanbanDispatchInGateway.Get(ctx)
-	if pyrepr.Truthy(pid) && dispatchInGateway {
-		return true, fmt.Sprintf("gateway pid=%s, dispatch enabled", pyrepr.Str(pid))
+	if anyutil.IsTrue(pid) && dispatchInGateway {
+		return true, fmt.Sprintf("gateway pid=%s, dispatch enabled", anyutil.String(pid))
 	}
-	if pyrepr.Truthy(pid) {
+	if anyutil.IsTrue(pid) {
 		return false, "Gateway is running but kanban.dispatch_in_gateway=false in " +
 			"config.yaml — the task will sit in 'ready' until you flip it " +
 			"back on and restart the gateway, OR run the legacy " +
@@ -169,7 +163,7 @@ func KanbanCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) (i
 	if override := nsStr(ns, "board"); override != "" {
 		normed, err := normalizeBoardSlug(&override)
 		if err != nil {
-			return cliErr(errw, "kanban: "+pyrepr.ExceptionMessage(err), 2), nil
+			return cliErr(errw, "kanban: "+err.Error(), 2), nil
 		}
 		if normed == "" {
 			return cliErr(errw, "kanban: --board requires a slug", 2), nil
@@ -204,15 +198,16 @@ func caughtByKanbanCommand(err error) bool {
 	var ve *ValueError
 	var re *RuntimeError
 	var pe *PermissionError
-	if errors.As(err, &ve) || errors.As(err, &re) || errors.As(err, &pe) || errors.Is(err, fs.ErrPermission) {
-		return true
-	}
-	switch pyrepr.ExceptionName(err) {
-	case "ValueError", "RuntimeError", "PermissionError", "UnicodeError", "UnicodeDecodeError", "UnicodeEncodeError",
-		"JSONDecodeError", "NotImplementedError", "RecursionError", "PythonFinalizationError":
-		return true
-	}
-	return false
+	var se *jsonutil.SyntaxError
+	var ke *errorutil.Error
+	return errors.As(err, &ve) || errors.As(err, &re) || errors.As(err, &pe) || errors.Is(err, fs.ErrPermission) ||
+		errors.As(err, &se) || errors.Is(err, errors.ErrUnsupported) || errors.As(err, &ke) && kanbanCaughtKinds[ke.Kind]
+}
+
+// Kind labels of package-made errors a kanban command reports instead of raising
+var kanbanCaughtKinds = map[string]bool{
+	"ValueError": true, "RuntimeError": true, "PermissionError": true, "UnicodeDecodeError": true,
+	"UnicodeEncodeError": true, "JSONDecodeError": true, "NotImplementedError": true,
 }
 
 // Action handlers by name and alias
@@ -334,12 +329,11 @@ func parseDuration(val any) (*int64, error) {
 	if val == nil || val == "" {
 		return nil, nil
 	}
-	s := strings.ToLower(strings.TrimSpace(pyrepr.Str(val)))
-	if n, ok := pyint.Parse(s); ok {
+	s := strings.ToLower(strings.TrimSpace(anyutil.String(val)))
+	if n, err := strconv.ParseInt(s, 10, 64); err == nil {
+		return &n, nil
+	} else if errors.Is(err, strconv.ErrRange) {
 		v := int64(math.MaxInt64)
-		if n.IsInt64() {
-			v = n.Int64()
-		}
 		return &v, nil
 	}
 	if s == "" {
@@ -349,7 +343,7 @@ func parseDuration(val any) (*int64, error) {
 	if !ok {
 		return nil, &ValueError{"malformed duration " + errchain.Show(val) + " (expected 30s, 5m, 2h, 1d, or a number)"}
 	}
-	n, err := pyint.ParseFloat(s[:len(s)-1])
+	n, err := strconv.ParseFloat(strings.TrimSpace(s[:len(s)-1]), 64)
 	if err != nil {
 		return nil, &ValueError{"malformed duration " + errchain.Show(val)}
 	}
@@ -358,7 +352,7 @@ func parseDuration(val any) (*int64, error) {
 		return nil, &ValueError{"cannot convert float NaN to integer"}
 	}
 	if math.IsInf(total, 0) {
-		return nil, &pyException{"OverflowError", "cannot convert float infinity to integer"}
+		return nil, &ValueError{"malformed duration " + errchain.Show(val) + " (out of range)"}
 	}
 	v := int64(total)
 	return &v, nil
@@ -407,7 +401,7 @@ func (c *kanbanCLI) cmdHeartbeat() (int, error) {
 
 // Lists known assignees with on disk presence and per status counts
 func (c *kanbanCLI) cmdAssignees() (int, error) {
-	var data []*pyjson.Object
+	var data []*jsonutil.Object
 	if err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 		var err error
 		data, err = KnownAssignees(c.ctx, conn)
@@ -429,12 +423,12 @@ func (c *kanbanCLI) cmdAssignees() (int, error) {
 	fmt.Fprintf(c.w, "%-20s  %-8s  COUNTS\n", "NAME", "ON DISK")
 	for _, entry := range data {
 		onDisk := "no"
-		if v, _ := entry.Get("on_disk"); pyrepr.Truthy(v) {
+		if v, _ := entry.Get("on_disk"); anyutil.IsTrue(v) {
 			onDisk = "yes"
 		}
 		counts := map[string]int64{}
 		if v, _ := entry.Get("counts"); v != nil {
-			if obj, ok := v.(*pyjson.Object); ok {
+			if obj, ok := v.(*jsonutil.Object); ok {
 				counts = countsMap(obj)
 			}
 		}
@@ -465,7 +459,7 @@ func (c *kanbanCLI) createBody() (*string, int, error) {
 	var text string
 	if *bodyFile == "-" {
 		text = string(raw)
-	} else if text, err = pystr.DecodeUTF8Sig(raw); err != nil {
+	} else if text, err = textutil.DecodeUTF8(textutil.TrimBOM(raw)); err != nil {
 		return nil, 0, err
 	}
 	return &text, 0, nil
@@ -659,16 +653,16 @@ func (c *kanbanCLI) printDiagnostics(diags []*Diagnostic, indent string, withKin
 		fmt.Fprintf(c.w, "%s%s [%s] %s\n", indent, marker, d.Severity, head)
 		if d.Data != nil && d.Data.Len() > 0 {
 			bits := make([]string, 0, d.Data.Len())
-			for _, k := range d.Data.Keys {
+			for _, k := range d.Data.Keys() {
 				v, _ := d.Data.Get(k)
 				if list, isList := v.([]any); isList {
 					parts := make([]string, 0, len(list))
 					for _, x := range list {
-						parts = append(parts, pyrepr.Str(x))
+						parts = append(parts, anyutil.String(x))
 					}
 					bits = append(bits, k+"="+strings.Join(parts, ","))
 				} else {
-					bits = append(bits, k+"="+pyrepr.Str(v))
+					bits = append(bits, k+"="+anyutil.String(v))
 				}
 			}
 			fmt.Fprintf(c.w, "%s   data: %s\n", indent, strings.Join(bits, " | "))
@@ -722,7 +716,7 @@ func (c *kanbanCLI) cmdShow() (int, error) {
 	var parents, children []string
 	var runs []*Run
 	var latestSummary *string
-	var graph *pyjson.Object
+	var graph *jsonutil.Object
 	missing := false
 	if err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 		var err error
@@ -761,7 +755,7 @@ func (c *kanbanCLI) cmdShow() (int, error) {
 	if wantJSON {
 		commentDicts := make([]any, 0, len(comments))
 		for _, cm := range comments {
-			commentDicts = append(commentDicts, pyjson.ObjectOf("author", cm.Author, "body", cm.Body, "created_at", cm.CreatedAt))
+			commentDicts = append(commentDicts, jsonutil.ObjectOf("author", cm.Author, "body", cm.Body, "created_at", cm.CreatedAt))
 		}
 		eventDicts := make([]any, 0, len(events))
 		for _, e := range events {
@@ -771,10 +765,10 @@ func (c *kanbanCLI) cmdShow() (int, error) {
 		for _, r := range runs {
 			runDicts = append(runDicts, objDict(showRunFields, func(k string) any { return runAttr(r, k) }))
 		}
-		return 0, printJSON(c.w, pyjson.ObjectOf("task", taskToDict(task), "latest_summary", optStrValue(latestSummary),
+		return 0, printJSON(c.w, jsonutil.ObjectOf("task", taskToDict(task), "latest_summary", optStrValue(latestSummary),
 			"parents", stringsAny(parents), "children", stringsAny(children), "comments", commentDicts, "events", eventDicts, "runs", runDicts), false)
 	}
-	field := func(label string, value any) { fmt.Fprintf(c.w, "  %-11s%s\n", label+":", pyrepr.Str(value)) }
+	field := func(label string, value any) { fmt.Fprintf(c.w, "  %-11s%s\n", label+":", anyutil.String(value)) }
 	fmt.Fprintf(c.w, "Task %s: %s\n", task.ID, task.Title)
 	field("status", task.Status)
 	field("assignee", orDash(task.Assignee))
@@ -853,8 +847,8 @@ func (c *kanbanCLI) cmdShow() (int, error) {
 			if e.RunID != nil && *e.RunID != 0 {
 				run = fmt.Sprintf(" [run %d]", *e.RunID)
 			}
-			if pyrepr.Truthy(e.Payload) {
-				pl = " " + pyrepr.Str(e.Payload)
+			if anyutil.IsTrue(e.Payload) {
+				pl = " " + anyutil.String(e.Payload)
 			}
 			lines = append(lines, fmt.Sprintf("  [%s]%s %s%s", fmtTS(&e.CreatedAt), run, e.Kind, pl))
 		}
@@ -942,8 +936,8 @@ func (c *kanbanCLI) cmdSetModel() (int, error) {
 	if err != nil {
 		var ve *ValueError
 		var re *RuntimeError
-		if errors.As(err, &ve) || errors.As(err, &re) || pyrepr.ExceptionName(err) == "ValueError" {
-			return cliErr(c.errw, "kanban: "+pyrepr.ExceptionMessage(err), 2), nil
+		if errors.As(err, &ve) || errors.As(err, &re) {
+			return cliErr(c.errw, "kanban: "+err.Error(), 2), nil
 		}
 		return 0, err
 	}
@@ -1013,7 +1007,7 @@ func rowsByTask(ctx context.Context, conn state.SQLiteConn, table string, ids []
 		return nil, err
 	}
 	for _, row := range rows {
-		id := pyrepr.Str(row.Get("task_id"))
+		id := anyutil.String(row.Get("task_id"))
 		by[id] = append(by[id], row)
 	}
 	return by, nil
@@ -1024,7 +1018,7 @@ func (c *kanbanCLI) cmdDiagnostics() (int, error) {
 	diagConfig := DiagnosticsConfigFor(c.ctx)
 	var order []string
 	byTask := map[string][]*Diagnostic{}
-	meta := map[string]*pyjson.Object{}
+	meta := map[string]*jsonutil.Object{}
 	taskArg := nsStr(c.ns, "task")
 	missing := false
 	err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
@@ -1059,7 +1053,7 @@ func (c *kanbanCLI) cmdDiagnostics() (int, error) {
 			}
 			ids := make([]string, 0, len(rows))
 			for _, r := range rows {
-				ids = append(ids, pyrepr.Str(r.Get("id")))
+				ids = append(ids, anyutil.String(r.Get("id")))
 			}
 			if len(ids) > 0 {
 				evBy, err := rowsByTask(c.ctx, conn, "task_events", ids)
@@ -1075,7 +1069,7 @@ func (c *kanbanCLI) cmdDiagnostics() (int, error) {
 					return err
 				}
 				for _, r := range rows {
-					tid := pyrepr.Str(r.Get("id"))
+					tid := anyutil.String(r.Get("id"))
 					var graphArg any
 					if g, ok := graphBy.Get(tid); ok && g != nil {
 						graphArg = g
@@ -1119,7 +1113,7 @@ func (c *kanbanCLI) cmdDiagnostics() (int, error) {
 				return err
 			}
 			for _, r := range rows {
-				meta[pyrepr.Str(r.Get("id"))] = pyjson.ObjectOf("title", r.Get("title"), "status", r.Get("status"), "assignee", r.Get("assignee"))
+				meta[anyutil.String(r.Get("id"))] = jsonutil.ObjectOf("title", r.Get("title"), "status", r.Get("status"), "assignee", r.Get("assignee"))
 			}
 		}
 		return nil
@@ -1134,9 +1128,9 @@ func (c *kanbanCLI) cmdDiagnostics() (int, error) {
 	if nsBool(c.ns, "json") {
 		payloadRows := make([]any, 0, len(order)+1)
 		for _, tid := range order {
-			row := pyjson.ObjectOf("task_id", tid)
+			row := jsonutil.ObjectOf("task_id", tid)
 			if m, ok := meta[tid]; ok {
-				row.Update(m)
+				row.Merge(m)
 			}
 			dicts := make([]any, 0, len(byTask[tid]))
 			for _, d := range byTask[tid] {
@@ -1145,7 +1139,7 @@ func (c *kanbanCLI) cmdDiagnostics() (int, error) {
 			row.Set("diagnostics", dicts)
 			payloadRows = append(payloadRows, row)
 		}
-		payloadRows = append(payloadRows, pyjson.ObjectOf("task_id", nil, "dispatch_profiles", allowlist, "diagnostics", []any{}))
+		payloadRows = append(payloadRows, jsonutil.ObjectOf("task_id", nil, "dispatch_profiles", allowlist, "diagnostics", []any{}))
 		return 0, printJSON(c.w, payloadRows, false)
 	}
 	fmt.Fprintf(c.w, "kanban.dispatch_profiles: %s\n", allowlist)
@@ -1161,11 +1155,11 @@ func (c *kanbanCLI) cmdDiagnostics() (int, error) {
 	for _, tid := range order {
 		m := meta[tid]
 		if m == nil {
-			m = pyjson.NewObject()
+			m = jsonutil.NewObject()
 		}
 		text := func(key, def string) string {
-			if v, _ := m.Get(key); pyrepr.Truthy(v) {
-				return pyrepr.Str(v)
+			if v, _ := m.Get(key); anyutil.IsTrue(v) {
+				return anyutil.String(v)
 			}
 			return def
 		}
@@ -1291,7 +1285,7 @@ func (c *kanbanCLI) cmdAttach() (int, error) {
 	if _, err := workerRunIDFor(tid); err != nil {
 		return 0, err
 	}
-	src := pypath.PathStr(pypath.Expanduser(nsStr(c.ns, "path")))
+	src := filepath.Clean(pathutil.ExpandUser(nsStr(c.ns, "path")))
 	if st, err := os.Stat(src); err != nil || !st.Mode().IsRegular() {
 		return cliErr(c.errw, "kanban: no such file: "+src, 1), nil
 	}
@@ -1306,7 +1300,7 @@ func (c *kanbanCLI) cmdAttach() (int, error) {
 	contentType := nsOptStr(c.ns, "content_type")
 	if contentType == nil || *contentType == "" {
 		contentType = nil
-		if guessed, _, err := pymimetypes.GuessType(name, true); err == nil && guessed != "" {
+		if guessed := mimeutil.TypeByName(name); guessed != "" {
 			contentType = &guessed
 		}
 	}
@@ -1400,12 +1394,11 @@ func workerRunIDFor(taskID string) (*int64, error) {
 	if envTID != taskID || raw == "" {
 		return nil, nil
 	}
-	n, ok := pyint.Parse(raw)
-	if !ok || !n.IsInt64() {
+	n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+	if err != nil {
 		return nil, nil
 	}
-	v := n.Int64()
-	return &v, nil
+	return &n, nil
 }
 
 // Goal judge verdict for a terminal handoff, done with no reason when the judge allows it or is unavailable
@@ -1452,7 +1445,7 @@ func (c *kanbanCLI) goalGateError(conn state.SQLiteConn, tid, evidence, handoff,
 	}
 	verdict, rejection := c.goalModeHandoffRejection(task, evidence)
 	if verdict == "blocked" {
-		msg := fmt.Sprintf("kanban: goal %s of %s rejected: judge ruled the goal unachievable — %s. %s", handoff, tid, pyrepr.Str(optStrValue(rejection)), blockedHint)
+		msg := fmt.Sprintf("kanban: goal %s of %s rejected: judge ruled the goal unachievable — %s. %s", handoff, tid, anyutil.String(optStrValue(rejection)), blockedHint)
 		return &msg, nil
 	}
 	if rejection != nil {
@@ -1824,7 +1817,7 @@ func (c *kanbanCLI) cmdReopenReview() (int, error) {
 	}
 	var reason *string
 	if raw := nsOptStr(c.ns, "reason"); raw != nil {
-		if s := strings.TrimSpace(pyrepr.Str(redactReviewValue(strings.TrimSpace(*raw)))); s != "" {
+		if s := strings.TrimSpace(anyutil.String(redactReviewValue(strings.TrimSpace(*raw)))); s != "" {
 			reason = &s
 		}
 	}
@@ -1869,7 +1862,7 @@ func (c *kanbanCLI) cmdPromote() (int, error) {
 		}
 	}
 	dryRun := nsBool(c.ns, "dry_run")
-	var results []*pyjson.Object
+	var results []*jsonutil.Object
 	failed := 0
 	if err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 		for _, tid := range ids {
@@ -1884,7 +1877,7 @@ func (c *kanbanCLI) cmdPromote() (int, error) {
 			if !ok {
 				failed++
 			}
-			results = append(results, pyjson.ObjectOf("task_id", tid, "promoted", ok, "dry_run", dryRun, "reason", optStrValue(reason), "error", errValue))
+			results = append(results, jsonutil.ObjectOf("task_id", tid, "promoted", ok, "dry_run", dryRun, "reason", optStrValue(reason), "error", errValue))
 		}
 		return nil
 	}); err != nil {
@@ -1916,7 +1909,7 @@ func (c *kanbanCLI) cmdPromote() (int, error) {
 			fmt.Fprintf(c.w, "%s %s -> ready%s%s\n", label, tid, tag, suffix)
 		} else {
 			errValue, _ := r.Get("error")
-			fmt.Fprintf(c.errw, "cannot promote %s: %s\n", tid, pyrepr.Str(errValue))
+			fmt.Fprintf(c.errw, "cannot promote %s: %s\n", tid, anyutil.String(errValue))
 		}
 	}
 	return rc, nil
@@ -1948,7 +1941,7 @@ func (c *kanbanCLI) cmdArchive() (int, error) {
 
 // Per status and per assignee counts with the oldest ready age
 func (c *kanbanCLI) cmdStats() (int, error) {
-	var stats *pyjson.Object
+	var stats *jsonutil.Object
 	if err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 		var err error
 		stats, err = BoardStats(c.ctx, conn)
@@ -1959,26 +1952,26 @@ func (c *kanbanCLI) cmdStats() (int, error) {
 	if done, err := jsonOut(c, stats, false); done || err != nil {
 		return 0, err
 	}
-	byStatus, _ := stats.GetOr("by_status", pyjson.NewObject()).(*pyjson.Object)
+	byStatus, _ := stats.ValueOr("by_status", jsonutil.NewObject()).(*jsonutil.Object)
 	fmt.Fprintln(c.w, "By status:")
 	for _, k := range DefaultWorkflow.Keys() {
-		fmt.Fprintf(c.w, "  %-8s  %s\n", k, pyrepr.Str(byStatus.GetOr(k, 0)))
+		fmt.Fprintf(c.w, "  %-8s  %s\n", k, anyutil.String(byStatus.ValueOr(k, 0)))
 	}
-	if byAssignee, _ := stats.GetOr("by_assignee", nil).(*pyjson.Object); byAssignee != nil && byAssignee.Len() > 0 {
+	if byAssignee, _ := stats.ValueOr("by_assignee", nil).(*jsonutil.Object); byAssignee != nil && byAssignee.Len() > 0 {
 		fmt.Fprintln(c.w, "\nBy assignee:")
-		names := slices.Clone(byAssignee.Keys)
+		names := slices.Clone(byAssignee.Keys())
 		slices.Sort(names)
 		for _, who := range names {
-			counts, _ := byAssignee.GetOr(who, nil).(*pyjson.Object)
+			counts, _ := byAssignee.ValueOr(who, nil).(*jsonutil.Object)
 			fmt.Fprintf(c.w, "  %-20s  %s\n", who, fmtCounts(countsMap(counts), ""))
 		}
 	}
-	if age := stats.GetOr("oldest_ready_age_seconds", nil); age != nil {
-		n, err := pyint.Of(age)
+	if age := stats.ValueOr("oldest_ready_age_seconds", nil); age != nil {
+		n, err := anyutil.ToInt(age)
 		if err != nil {
 			return 0, err
 		}
-		fmt.Fprintf(c.w, "\nOldest ready task age: %ss\n", n.String())
+		fmt.Fprintf(c.w, "\nOldest ready task age: %ds\n", n)
 	}
 	return 0, nil
 }
@@ -1987,9 +1980,9 @@ func (c *kanbanCLI) cmdStats() (int, error) {
 func (c *kanbanCLI) cmdNotifySubscribe() (int, error) {
 	tid := nsStr(c.ns, "task_id")
 	var deliveryMetadata any
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	for _, key := range []string{"parent_chat_id", "guild_id"} {
-		if v := c.ns[key]; pyrepr.Truthy(v) {
+		if v := c.ns[key]; anyutil.IsTrue(v) {
 			meta.Set(key, v)
 		}
 	}
@@ -2028,7 +2021,7 @@ func (c *kanbanCLI) cmdNotifySubscribe() (int, error) {
 
 // Lists notification subscriptions, of one task when given
 func (c *kanbanCLI) cmdNotifyList() (int, error) {
-	var subs []*pyjson.Object
+	var subs []*jsonutil.Object
 	if err := ConnectClosing(c.ctx, "", nil, func(conn state.SQLiteConn) error {
 		var err error
 		subs, err = ListNotifySubs(c.ctx, conn, nsOptStr(c.ns, "task_id"), NotifyOwnerScope{})
@@ -2048,33 +2041,33 @@ func (c *kanbanCLI) cmdNotifyList() (int, error) {
 		return 0, nil
 	}
 	for _, s := range subs {
-		get := func(k string) any { return s.GetOr(k, nil) }
+		get := func(k string) any { return s.ValueOr(k, nil) }
 		thr := ""
-		if v := get("thread_id"); pyrepr.Truthy(v) {
-			thr = ":" + pyrepr.Str(v)
+		if v := get("thread_id"); anyutil.IsTrue(v) {
+			thr = ":" + anyutil.String(v)
 		}
 		dmode, ctype := "notify", "dm"
-		if v := get("delivery_mode"); pyrepr.Truthy(v) {
-			dmode = pyrepr.Str(v)
+		if v := get("delivery_mode"); anyutil.IsTrue(v) {
+			dmode = anyutil.String(v)
 		}
-		if v := get("chat_type"); pyrepr.Truthy(v) {
-			ctype = pyrepr.Str(v)
+		if v := get("chat_type"); anyutil.IsTrue(v) {
+			ctype = anyutil.String(v)
 		}
 		extras := ""
-		if v := get("notifier_profile"); pyrepr.Truthy(v) {
-			extras += "  owner=" + pyrepr.Str(v)
+		if v := get("notifier_profile"); anyutil.IsTrue(v) {
+			extras += "  owner=" + anyutil.String(v)
 		}
 		if ctype != "dm" {
 			extras += "  chat_type=" + ctype
 		}
-		if v := get("user_id_alt"); pyrepr.Truthy(v) {
-			extras += "  user_id_alt=" + pyrepr.Str(v)
+		if v := get("user_id_alt"); anyutil.IsTrue(v) {
+			extras += "  user_id_alt=" + anyutil.String(v)
 		}
 		if dmode != "notify" {
 			extras += "  mode=" + dmode
 		}
-		fmt.Fprintf(c.w, "  %-10s  %s:%s%s  (since event %s)%s\n", pyrepr.Str(get("task_id")), pyrepr.Str(get("platform")),
-			pyrepr.Str(get("chat_id")), thr, pyrepr.Str(get("last_event_id")), extras)
+		fmt.Fprintf(c.w, "  %-10s  %s:%s%s  (since event %s)%s\n", anyutil.String(get("task_id")), anyutil.String(get("platform")),
+			anyutil.String(get("chat_id")), thr, anyutil.String(get("last_event_id")), extras)
 	}
 	return 0, nil
 }
@@ -2188,7 +2181,7 @@ type triageOutcome struct {
 	taskID string
 	ok     bool
 	reason string
-	fields *pyjson.Object
+	fields *jsonutil.Object
 	human  string
 }
 
@@ -2214,7 +2207,7 @@ func (c *kanbanCLI) runTriageSweep(verb, jsonKey string, listIDs func(*string) (
 		}
 		if len(ids) == 0 {
 			if wantJSON {
-				text, err := pyjson.Dumps(pyjson.ObjectOf(jsonKey, 0, "total", 0))
+				text, err := jsonutil.Encode(jsonutil.ObjectOf(jsonKey, 0, "total", 0))
 				if err != nil {
 					return 0, err
 				}
@@ -2244,7 +2237,7 @@ func (c *kanbanCLI) runTriageSweep(verb, jsonKey string, listIDs func(*string) (
 		}
 		switch {
 		case wantJSON:
-			text, err := pyjson.Dumps(outcome.fields)
+			text, err := jsonutil.Encode(outcome.fields)
 			if err != nil {
 				return 0, err
 			}
@@ -2284,7 +2277,7 @@ func (c *kanbanCLI) cmdSpecify() (int, error) {
 				return nil, err
 			}
 			return &triageOutcome{o.TaskID, o.OK, o.Reason,
-				pyjson.ObjectOf("task_id", o.TaskID, "ok", o.OK, "reason", o.Reason, "new_title", optStrValue(o.NewTitle)),
+				jsonutil.ObjectOf("task_id", o.TaskID, "ok", o.OK, "reason", o.Reason, "new_title", optStrValue(o.NewTitle)),
 				"Specified " + o.TaskID + " → todo" + retitledSuffix(o.NewTitle)}, nil
 		})
 }
@@ -2310,7 +2303,7 @@ func (c *kanbanCLI) cmdDecompose() (int, error) {
 				childIDs = stringsAny(o.ChildIDs)
 			}
 			return &triageOutcome{o.TaskID, o.OK, o.Reason,
-				pyjson.ObjectOf("task_id", o.TaskID, "ok", o.OK, "reason", o.Reason, "fanout", o.Fanout, "child_ids", childIDs, "new_title", optStrValue(o.NewTitle)),
+				jsonutil.ObjectOf("task_id", o.TaskID, "ok", o.OK, "reason", o.Reason, "fanout", o.Fanout, "child_ids", childIDs, "new_title", optStrValue(o.NewTitle)),
 				decomposeOKLine(o)}, nil
 		})
 }

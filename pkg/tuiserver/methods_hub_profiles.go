@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Longest an automatic description may take the auxiliary model
@@ -31,7 +31,7 @@ func profileText(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Every profile of the install with the sticky default marked, as the profiles screen shows it

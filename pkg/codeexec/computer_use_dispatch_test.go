@@ -61,17 +61,17 @@ func TestHandleComputerUseRefusesUnknownMissingAndHumanControl(t *testing.T) {
 	human, epoch := false, 0
 	cuLease(t, &human, &epoch)
 	env, _ := cuDispatchEnv(t, "off")
-	if got := cuHandle(t, env, map[string]any{"action": "  "}); got != `{"error": "missing `+"`action`"+`"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "  "}); got != `{"error":"missing `+"`action`"+`"}` {
 		t.Fatalf("missing %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "Hotkey"}); !strings.Contains(got, "unknown action hotkey \\u2014 did you mean key?") {
+	if got := cuHandle(t, env, map[string]any{"action": "Hotkey"}); !strings.Contains(got, "unknown action hotkey — did you mean key?") {
 		t.Fatalf("unknown %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "teleport"}); got != `{"error": "unknown action teleport"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "teleport"}); got != `{"error":"unknown action teleport"}` {
 		t.Fatalf("unknown without hint %s", got)
 	}
 	human = true
-	if got := cuHandle(t, env, map[string]any{"action": "list_apps"}); !strings.HasPrefix(got, `{"ok": false, "action": "list_apps", "code": "human_has_control"`) {
+	if got := cuHandle(t, env, map[string]any{"action": "list_apps"}); !strings.HasPrefix(got, `{"ok":false,"action":"list_apps","code":"human_has_control"`) {
 		t.Fatalf("human %s", got)
 	}
 	if _, err := handleComputerUse(context.Background(), env, map[string]any{"action": 5}, ""); err == nil {
@@ -83,25 +83,25 @@ func TestHandleComputerUseDispatchesThroughTheBackend(t *testing.T) {
 	human, epoch := false, 3
 	cuLease(t, &human, &epoch)
 	env, b := cuDispatchEnv(t, "off")
-	if got := cuHandle(t, env, map[string]any{"action": "list_apps"}); !strings.HasSuffix(got, `"count": 0}`) {
+	if got := cuHandle(t, env, map[string]any{"action": "list_apps"}); !strings.HasSuffix(got, `"count":0}`) {
 		t.Fatalf("list_apps %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "drag", "from_element": 1}); got != `{"error": "drag requires from_coordinate/to_coordinate or from_element/to_element"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "drag", "from_element": 1}); got != `{"error":"drag requires from_coordinate/to_coordinate or from_element/to_element"}` {
 		t.Fatalf("drag %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "set_value"}); got != `{"error": "set_value requires `+"`value`"+`"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "set_value"}); got != `{"error":"set_value requires `+"`value`"+`"}` {
 		t.Fatalf("set_value %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "focus_app", "app": ""}); got != `{"error": "focus_app requires `+"`app`"+`"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "focus_app", "app": ""}); got != `{"error":"focus_app requires `+"`app`"+`"}` {
 		t.Fatalf("focus_app %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "capture", "mode": "x"}); got != `{"error": "bad mode x; use som|vision|ax"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "capture", "mode": "x"}); got != `{"error":"bad mode x; use som|vision|ax"}` {
 		t.Fatalf("capture %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "wait", "seconds": "abc"}); got != `{"error": "wait failed: abc is not a number"}` {
+	if got := cuHandle(t, env, map[string]any{"action": "wait", "seconds": "abc"}); got != `{"error":"wait failed: abc is not a number"}` {
 		t.Fatalf("wait %s", got)
 	}
-	if got := cuHandle(t, env, map[string]any{"action": "double_click", "element": int64(4)}); !strings.Contains(got, `"ok": true`) {
+	if got := cuHandle(t, env, map[string]any{"action": "double_click", "element": int64(4)}); !strings.Contains(got, `"ok":true`) {
 		t.Fatalf("double_click %s", got)
 	}
 	if len(b.calls) == 0 || b.calls[len(b.calls)-1].name != "click" {
@@ -117,7 +117,7 @@ func TestHandleComputerUseFenceDiscardsAResultAfterTakeover(t *testing.T) {
 	BotDesktopLeaseEpoch = func(*tools.Env) int { return epoch + 1 }
 	t.Cleanup(func() { BotDesktopLeaseEpoch = prev })
 	got := cuHandle(t, env, map[string]any{"action": "list_apps"})
-	if !strings.Contains(got, `"code": "human_has_control"`) || !strings.Contains(got, "its result was discarded") {
+	if !strings.Contains(got, `"code":"human_has_control"`) || !strings.Contains(got, "its result was discarded") {
 		t.Fatalf("fence %s", got)
 	}
 }

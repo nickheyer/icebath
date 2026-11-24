@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // tests/tools/test_mcp_session_scope.py session_tool_scope contract, current_session_tool_scope and _session_slot_key
@@ -119,14 +118,14 @@ func TestNormalizeHandlerResultMatchesTheRegistryContract(t *testing.T) {
 	if got := NormalizeHandlerResult(env, "t", envelope); got != `{"_multimodal": true, "content": [{"text": "hi", "type": "text"}]}` {
 		t.Fatalf("envelope %q", got)
 	}
-	ordered := pyjson.NewObject()
+	ordered := jsonutil.NewObject()
 	ordered.Set("_multimodal", true)
 	ordered.Set("content", []any{})
 	ordered.Set("text_summary", "s")
 	if got := NormalizeHandlerResult(env, "t", ordered); got != `{"_multimodal": true, "content": [], "text_summary": "s"}` {
 		t.Fatalf("ordered envelope %q", got)
 	}
-	notEnvelope := pyjson.NewObject()
+	notEnvelope := jsonutil.NewObject()
 	notEnvelope.Set("_multimodal", true)
 	notEnvelope.Set("content", "text")
 	for _, tc := range []struct {

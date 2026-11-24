@@ -8,7 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One scripted owner answering each request with the frame its reply builds, hooks replacing send and receive
@@ -32,12 +33,12 @@ func (s *scriptedOwner) Send(raw string) error {
 	if s.send != nil {
 		return s.send(raw)
 	}
-	decoded, err := pyjson.Loads(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return err
 	}
-	if frame := s.reply(pyjson.Plain(decoded).(map[string]any)); frame != nil {
-		text, err := pyjson.Dumps(frame)
+	if frame := s.reply(jsonutil.Plain(decoded).(map[string]any)); frame != nil {
+		text, err := jsonutil.Encode(frame)
 		if err != nil {
 			return err
 		}
@@ -92,7 +93,7 @@ func TestRPCErrorKeepsNumericCodeAndBoundedData(t *testing.T) {
 	if !errors.As(err, &refused) || refused.Error() != "invalid_params" || refused.Code == nil || *refused.Code != 4001 {
 		t.Fatalf("refusal %#v", err)
 	}
-	if !pyjson.Equal(pyjson.Plain(refused.Data), map[string]any{"reason": "invalid_params", "fields": []any{"payload.title"}}) {
+	if !anyutil.Equal(jsonutil.Plain(refused.Data), map[string]any{"reason": "invalid_params", "fields": []any{"payload.title"}}) {
 		t.Fatalf("data %v", refused.Data)
 	}
 	_, err = client.RPC(context.Background(), "nope", nil)

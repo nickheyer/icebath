@@ -23,11 +23,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -252,7 +252,7 @@ func (s *elevenLabsStreamer) Stream(ctx context.Context, text string) (iter.Seq2
 			if json.Unmarshal(raw, &parsed) == nil {
 				body = parsed
 			}
-			yield(nil, &ttsRuntimeError{msg: fmt.Sprintf("status_code: %d, body: %s", resp.StatusCode, pyrepr.Str(body))})
+			yield(nil, &ttsRuntimeError{msg: fmt.Sprintf("status_code: %d, body: %s", resp.StatusCode, anyutil.String(body))})
 			return
 		}
 		bodyChunks(resp.Body, 1024, true)(yield)
@@ -490,12 +490,12 @@ func requestsEncodingFromHeaders(headers http.Header) (string, error) {
 func decodeStreamChunk(pending []byte, encoding string, final bool) (string, []byte, error) {
 	if !final {
 		for k := 0; k <= 3 && k <= len(pending); k++ {
-			if text, err := pycodecs.Decode(pending[:len(pending)-k], encoding); err == nil {
+			if text, err := charsetutil.Decode(pending[:len(pending)-k], encoding); err == nil {
 				return text, bytes.Clone(pending[len(pending)-k:]), nil
 			}
 		}
 	}
-	text, err := pycodecs.DecodeReplace(pending, encoding)
+	text, err := charsetutil.DecodeReplace(pending, encoding)
 	return text, nil, err
 }
 
@@ -581,7 +581,7 @@ func responseLines(resp *http.Response) iter.Seq2[string, error] {
 
 // The candidates[0].content.parts value of one SSE event, false when any lookup would raise
 func geminiEventParts(event any) (any, bool) {
-	obj, ok := event.(*pyjson.Object)
+	obj, ok := event.(*jsonutil.Object)
 	if !ok {
 		return nil, false
 	}
@@ -599,7 +599,7 @@ func geminiEventParts(event any) (any, bool) {
 	default:
 		return nil, false
 	}
-	cand, ok := first.(*pyjson.Object)
+	cand, ok := first.(*jsonutil.Object)
 	if !ok {
 		return nil, false
 	}
@@ -607,7 +607,7 @@ func geminiEventParts(event any) (any, bool) {
 	if !ok {
 		return nil, false
 	}
-	contentObj, ok := content.(*pyjson.Object)
+	contentObj, ok := content.(*jsonutil.Object)
 	if !ok {
 		return nil, false
 	}
@@ -625,9 +625,9 @@ func pyIterJSON(v any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
-		out := make([]any, 0, len(t.Keys))
-		for _, k := range t.Keys {
+	case *jsonutil.Object:
+		out := make([]any, 0, t.Len())
+		for _, k := range t.Keys() {
 			out = append(out, k)
 		}
 		return out, nil
@@ -637,7 +637,7 @@ func pyIterJSON(v any) ([]any, error) {
 
 // Python dict.get of a decoded JSON value, a non mapping failing like the attribute lookup
 func pyJSONGet(v any, key string) (any, error) {
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, &ttsAttributeError{msg: fmt.Sprintf("TTS stream event is %s where a mapping holding %s was expected", errchain.Kind(v), key)}
 	}
@@ -680,7 +680,7 @@ func (s *geminiStreamer) sseChunks(ctx context.Context, endpoint, apiKey string,
 			if line == "" || !isData {
 				continue
 			}
-			event, err := pyjson.Loads(data)
+			event, err := jsonutil.Decode(data)
 			if err != nil {
 				continue
 			}
@@ -704,12 +704,12 @@ func (s *geminiStreamer) sseChunks(ctx context.Context, endpoint, apiKey string,
 				}
 				var b64 any = ""
 				if pyTruthy(inline) {
-					obj, isObj := inline.(*pyjson.Object)
+					obj, isObj := inline.(*jsonutil.Object)
 					if !isObj {
 						yield(nil, &ttsAttributeError{msg: fmt.Sprintf("Gemini TTS inline data is %s where a mapping was expected", errchain.Kind(inline))})
 						return
 					}
-					b64 = obj.GetOr("data", "")
+					b64 = obj.ValueOr("data", "")
 				}
 				if !pyTruthy(b64) {
 					continue

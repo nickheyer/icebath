@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // The surface callback of the clarify tool, shown questions in and an answers outcome notice dict out
@@ -67,8 +67,8 @@ func ClarifyToolWithCallback(ctx context.Context, env *Env, questions any, callb
 	reply, err := callback(ctx, dicts)
 	outcome := ""
 	if err == nil {
-		if raw := reply["outcome"]; pyrepr.Truthy(raw) {
-			outcome = pyrepr.Str(raw)
+		if raw := reply["outcome"]; anyutil.IsTrue(raw) {
+			outcome = anyutil.String(raw)
 		}
 		if _, present := reply["outcome"]; !present {
 			err = errors.New("'outcome'")
@@ -79,9 +79,9 @@ func ClarifyToolWithCallback(ctx context.Context, env *Env, questions any, callb
 		return toolErrorJSON("Failed to get user input: "+err.Error(), nil)
 	}
 	answers, _ := reply["answers"].(map[string]any)
-	out := ClarifyReply{Answers: answers, Outcome: pyrepr.Str(reply["outcome"])}
-	if notice := reply["notice"]; pyrepr.Truthy(notice) {
-		out.Notice = pyrepr.Str(notice)
+	out := ClarifyReply{Answers: answers, Outcome: anyutil.String(reply["outcome"])}
+	if notice := reply["notice"]; anyutil.IsTrue(notice) {
+		out.Notice = anyutil.String(notice)
 	}
 	human.finish(ctx, env, outcome)
 	return clarifyResult(normalized, out, shown)

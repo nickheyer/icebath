@@ -13,10 +13,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Writes the agent's live in memory transcript through its session flush
@@ -41,7 +41,7 @@ func flushAgentTranscriptAtShutdown(ctx context.Context, a *agent.AIAgent) {
 	if raised := shutdownFlushRaised(a); raised != nil {
 		messages := agent.SessionMessageDicts(a.SessionMessages())
 		pkgLog().Warn(fmt.Sprintf("Shutdown transcript flush failed (%s); preserving %d in-memory message(s) to recovery snapshot",
-			pyrepr.ExceptionMessage(raised), len(messages)))
+			raised.Error(), len(messages)))
 		history := make([]any, len(messages))
 		for i, m := range messages {
 			history[i] = m
@@ -106,20 +106,20 @@ func (r *GatewayRunner) stuckLoopCountsPath() string {
 }
 
 // Parsed counter mapping, nil when the file is missing or unreadable
-func readJSONCounts(path string) *pyjson.Object {
+func readJSONCounts(path string) *jsonutil.Object {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
-	counts, ok := data.(*pyjson.Object)
+	counts, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -142,8 +142,8 @@ func (r *GatewayRunner) suspendStuckLoopSessions(ctx context.Context) int {
 		return 0
 	}
 	suspended := 0
-	for _, sessionKey := range counts.Keys {
-		value := counts.Vals[sessionKey]
+	for _, sessionKey := range counts.Keys() {
+		value := counts.Value(sessionKey)
 		if !countAtLeast(value, stuckLoopThreshold) {
 			continue
 		}
@@ -154,7 +154,7 @@ func (r *GatewayRunner) suspendStuckLoopSessions(ctx context.Context) int {
 				entry.Suspended = true
 				suspended++
 				pkgLog().Warn(fmt.Sprintf("Auto-suspended stuck session %s (active across %s consecutive restarts — likely a stuck loop)",
-					sessionKey, pyrepr.Str(value)))
+					sessionKey, anyutil.String(value)))
 			}
 		}()
 	}
@@ -269,9 +269,9 @@ func (r *GatewayRunner) ResetSessionOffLoop(ctx context.Context, sessionKey stri
 	case err == nil:
 	case errors.Is(err, errBoundedTimeout):
 		pkgLog().Warn(fmt.Sprintf("Session reset hooks (%s) exceeded %ss; proceeding without blocking the event loop.",
-			pyrepr.Str(kwargs["old_session_id"]), pyrepr.Str(finalizeTimeoutS)))
+			anyutil.String(kwargs["old_session_id"]), anyutil.String(finalizeTimeoutS)))
 	default:
-		pkgLog().Debug(fmt.Sprintf("Session reset hooks (%s) failed", pyrepr.Str(kwargs["old_session_id"])), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf("Session reset hooks (%s) failed", anyutil.String(kwargs["old_session_id"])), "exc_info", err)
 	}
 	return nil
 }
@@ -294,9 +294,9 @@ func (r *GatewayRunner) finalizeSessionOffLoop(ctx context.Context, sessionID an
 	case err == nil:
 	case errors.Is(err, errBoundedTimeout):
 		pkgLog().Warn(fmt.Sprintf("Session finalize hooks (%s, reason=%s) exceeded %ss; proceeding without blocking the event loop "+
-			"(the worker thread is left to finish on its own).", pyrepr.Str(sessionID), reason, pyrepr.Str(finalizeTimeoutS)))
+			"(the worker thread is left to finish on its own).", anyutil.String(sessionID), reason, anyutil.String(finalizeTimeoutS)))
 	default:
-		pkgLog().Debug(fmt.Sprintf("Session finalize hooks (%s, reason=%s) failed", pyrepr.Str(sessionID), reason), "exc_info", err)
+		pkgLog().Debug(fmt.Sprintf("Session finalize hooks (%s, reason=%s) failed", anyutil.String(sessionID), reason), "exc_info", err)
 	}
 	mu.Lock()
 	defer mu.Unlock()

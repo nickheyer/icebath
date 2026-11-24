@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 const preCallTTL = 3600 * time.Second
@@ -83,9 +83,9 @@ func extractPathsFromTerminal(args map[string]any) []string {
 	var toks []string
 	var err error
 	if runtime.GOOS == "windows" {
-		toks, err = pyshlex.SplitNonPOSIX(cmd)
+		toks, err = shellutil.SplitRaw(cmd)
 	} else {
-		toks, err = pyshlex.SplitPOSIX(cmd, false)
+		toks, err = shellutil.Split(cmd)
 	}
 	if err != nil {
 		return nil
@@ -138,7 +138,7 @@ func (h *hooks) onPreToolCall(_ context.Context, kwargs map[string]any) (any, er
 	now := time.Now()
 	absent := map[string]bool{}
 	for _, s := range extractor(args) {
-		p, err := pypath.PathExpanduser(s)
+		p, err := pathutil.ExpandUserPath(s)
 		if err != nil {
 			absent = map[string]bool{}
 			break
@@ -176,7 +176,7 @@ func (h *hooks) onPostToolCall(ctx context.Context, kwargs map[string]any) (any,
 		return nil, nil
 	}
 	for _, pathStr := range extractor(args) {
-		p, err := pypath.PathExpanduser(pathStr)
+		p, err := pathutil.ExpandUserPath(pathStr)
 		if err != nil {
 			continue
 		}
@@ -335,7 +335,7 @@ func allowedRepr() string {
 	for i, n := range names {
 		list[i] = n
 	}
-	return pyrepr.Repr(list)
+	return anyutil.Quote(list)
 }
 
 // Manually adds a path to tracking under a category

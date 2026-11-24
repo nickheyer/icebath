@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var clientEnvTestSubstrings = []string{"KEY", "TOKEN", "SECRET", "PASSWORD", "CREDENTIAL", "PASSWD", "AUTH", "DSN",
@@ -30,7 +30,7 @@ func installSecretPolicy(t *testing.T) {
 
 var clientEnvTestConfig = map[string]any{"terminal": map[string]any{"client_env_passthrough": []any{"GEM_HOME"}}}
 
-func clientEnvObject(m map[string]string) *pyjson.Object {
+func clientEnvObject(m map[string]string) *jsonutil.Object {
 	anyMap := map[string]any{}
 	for k, v := range m {
 		anyMap[k] = v
@@ -38,23 +38,23 @@ func clientEnvObject(m map[string]string) *pyjson.Object {
 	return modelConfigPatchObject(anyMap)
 }
 
-func committedPolicy(t *testing.T, sent map[string]string, config any, local bool) *pyjson.Object {
+func committedPolicy(t *testing.T, sent map[string]string, config any, local bool) *jsonutil.Object {
 	t.Helper()
 	rules := ClientEnvRulesFor(config, local)
 	kept, err := NormaliseClientEnv(sent, rules)
 	if err != nil {
 		t.Fatal(err)
 	}
-	envText, _ := pyjson.Dumps(clientEnvObject(kept))
-	rulesText, _ := pyjson.Dumps(rules.Object())
-	policy := pyjson.NewObject()
+	envText, _ := jsonutil.Encode(clientEnvObject(kept))
+	rulesText, _ := jsonutil.Encode(rules.Object())
+	policy := jsonutil.NewObject()
 	policy.Set("client_env_json", envText)
 	policy.Set("client_env_rules_json", rulesText)
 	return policy
 }
 
-func retryRequest(env any) *pyjson.Object {
-	req := pyjson.NewObject()
+func retryRequest(env any) *jsonutil.Object {
+	req := jsonutil.NewObject()
 	req.Set("request_id", "x")
 	if env != nil {
 		req.Set("client_env", env)
@@ -62,7 +62,7 @@ func retryRequest(env any) *pyjson.Object {
 	return req
 }
 
-func mustRetry(t *testing.T, committed *pyjson.Object, env any) bool {
+func mustRetry(t *testing.T, committed *jsonutil.Object, env any) bool {
 	t.Helper()
 	ok, err := RetryMatches(committed, retryRequest(env))
 	if err != nil {
@@ -123,7 +123,7 @@ func TestCredentialAndControlNamesAreRefusedByTheSecretPolicy(t *testing.T) {
 
 func TestExactRetryOfASessionCreatedBeforeClientEnv(t *testing.T) {
 	installSecretPolicy(t)
-	legacy := pyjson.NewObject()
+	legacy := jsonutil.NewObject()
 	if !mustRetry(t, legacy, nil) || mustRetry(t, legacy, map[string]string{"PATH": "/x"}) || mustRetry(t, legacy, map[string]string{}) {
 		t.Fatal("a session committed without a map matches only a retry without one")
 	}
@@ -183,13 +183,13 @@ func TestExactRetryComparesTheCompleteMapUnderItsCommittedRules(t *testing.T) {
 	if mustRetry(t, remote, map[string]string{"PATH": "/a", "ICEBATH_EPHEMERAL_SYSTEM_PROMPT": "Q"}) {
 		t.Fatal("a changed behaviour value matched")
 	}
-	broken := pyjson.NewObject()
+	broken := jsonutil.NewObject()
 	broken.Set("client_env_json", `{}`)
 	broken.Set("client_env_rules_json", "{not json")
 	if mustRetry(t, broken, map[string]string{"PATH": "/a"}) {
 		t.Fatal("undecodable rules matched")
 	}
-	unfiltered := pyjson.NewObject()
+	unfiltered := jsonutil.NewObject()
 	unfiltered.Set("client_env_json", `{"PATH": "/a"}`)
 	if !mustRetry(t, unfiltered, map[string]string{"PATH": "/a"}) || mustRetry(t, unfiltered, map[string]string{"PATH": "/a", "GEM_HOME": "/g"}) {
 		t.Fatal("a map frozen before rules is compared unfiltered")
@@ -269,7 +269,7 @@ func TestHostValuesApplyOnlyOverAGatewayProvenLocalAttach(t *testing.T) {
 	if len(rules.Names) != 0 || len(rules.Prefixes) != 0 || !reflect.DeepEqual(rules.Behaviour, []string{"ICEBATH_EPHEMERAL_SYSTEM_PROMPT", "ICEBATH_INFERENCE_PROVIDER"}) {
 		t.Fatalf("remote rules %+v", rules)
 	}
-	text, _ := pyjson.Dumps(rules.Object())
+	text, _ := jsonutil.Encode(rules.Object())
 	parsed, err := ParseClientEnvRules(mustLoads(t, text))
 	if err != nil || !reflect.DeepEqual(parsed.Behaviour, rules.Behaviour) || len(parsed.Secret) != len(clientEnvTestSubstrings) {
 		t.Fatalf("rules round trip %+v %v", parsed, err)
@@ -281,7 +281,7 @@ func TestHostValuesApplyOnlyOverAGatewayProvenLocalAttach(t *testing.T) {
 
 func mustLoads(t *testing.T, text string) any {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}

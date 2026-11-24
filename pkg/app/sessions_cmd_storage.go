@@ -14,10 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Reports the size before and after, preferring the page accounting of SQLite over the file size
@@ -57,15 +58,15 @@ func cmdCleanMarkers(r *sessionsRun, db *state.SessionDB) (int, error) {
 	}
 	affected := rowGet(report, "rows_affected")
 	switch {
-	case pyrepr.Equal(affected, 0):
+	case anyutil.Equal(affected, 0):
 		r.print("✓ No affected rows found — nothing to clean.")
 	case dryRun:
-		r.printf("Would clear %s row(s): ids %s", pyrepr.Str(affected), errchain.Show(rowGet(report, "row_ids")))
+		r.printf("Would clear %s row(s): ids %s", anyutil.String(affected), errchain.Show(rowGet(report, "row_ids")))
 	default:
-		if backup := rowGet(report, "backup_path"); pyrepr.Truthy(backup) {
-			r.printf("  backup: %s", pyrepr.Str(backup))
+		if backup := rowGet(report, "backup_path"); anyutil.IsTrue(backup) {
+			r.printf("  backup: %s", anyutil.String(backup))
 		}
-		r.printf("✓ Cleared %s row(s).", pyrepr.Str(affected))
+		r.printf("✓ Cleared %s row(s).", anyutil.String(affected))
 	}
 	return 0, nil
 }
@@ -80,7 +81,7 @@ func countedPhase(phase any) bool {
 }
 
 // Value of a progress key, the fallback when the key is absent
-func infoOr(info *pyjson.Object, key string, fallback any) any {
+func infoOr(info *jsonutil.Object, key string, fallback any) any {
 	if v, ok := info.Get(key); ok {
 		return v
 	}
@@ -107,20 +108,20 @@ func progressFloat(v any) float64 {
 }
 
 // One progress line of the search index optimization for the phase a report names
-func optimizeProgressLine(info *pyjson.Object) string {
+func optimizeProgressLine(info *jsonutil.Object) string {
 	phase, _ := rowGet(info, "phase").(string)
 	pct := progressFormat(infoOr(info, "percent", 0), "3d") + "%"
 	counts := "(" + progressFormat(infoOr(info, "indexed", 0), ",") + "/" + progressFormat(infoOr(info, "total", 0), ",")
 	paced := ""
-	if pyrepr.Truthy(rowGet(info, "paced")) {
+	if anyutil.IsTrue(rowGet(info, "paced")) {
 		paced = " — paced: another process is using the database"
 	}
 	if label, ok := backfillLabels[phase]; ok {
 		return "  " + label + ": " + pct + " " + counts + " messages)" + paced
 	}
 	if phase == "teardown" {
-		table := strings.TrimPrefix(pyrepr.Str(infoOr(info, "table", "")), "fts_v22_trash_")
-		return "  Reclaiming old index: table " + pyrepr.Str(infoOr(info, "table_index", 0)) + "/" + pyrepr.Str(infoOr(info, "table_count", 0)) +
+		table := strings.TrimPrefix(anyutil.String(infoOr(info, "table", "")), "fts_v22_trash_")
+		return "  Reclaiming old index: table " + anyutil.String(infoOr(info, "table_index", 0)) + "/" + anyutil.String(infoOr(info, "table_count", 0)) +
 			" (" + table + ") " + pct + " " + counts + " rows)" + paced
 	}
 	elapsed := int(progressFloat(infoOr(info, "elapsed", 0)))
@@ -135,18 +136,18 @@ type optimizeProgress struct {
 	hasKey bool
 	phase  any
 	table  any
-	last   *pyjson.Object
+	last   *jsonutil.Object
 	line   string
 }
 
 // Draws the line of a progress report, completing the previous phase line when the phase or table moved on
-func (p *optimizeProgress) call(info *pyjson.Object) {
+func (p *optimizeProgress) call(info *jsonutil.Object) {
 	phase, table := rowGet(info, "phase"), rowGet(info, "table")
-	if !p.hasKey || !pyrepr.Equal(phase, p.phase) || !pyrepr.Equal(table, p.table) {
+	if !p.hasKey || !anyutil.Equal(phase, p.phase) || !anyutil.Equal(table, p.table) {
 		p.close(true)
 		p.hasKey, p.phase, p.table = true, phase, table
 	}
-	if phase == "done" || (countedPhase(phase) && !pyrepr.Truthy(rowGet(info, "total")) && !pyrepr.Truthy(table)) {
+	if phase == "done" || (countedPhase(phase) && !anyutil.IsTrue(rowGet(info, "total")) && !anyutil.IsTrue(table)) {
 		return
 	}
 	p.last = info
@@ -167,9 +168,9 @@ func (p *optimizeProgress) draw(line string) {
 func (p *optimizeProgress) close(completed bool) {
 	last := p.last
 	if completed && last != nil && last.Len() > 0 && countedPhase(rowGet(last, "phase")) {
-		final := pyjson.NewObject()
-		for _, k := range last.Keys {
-			final.Set(k, last.Vals[k])
+		final := jsonutil.NewObject()
+		for _, k := range last.Keys() {
+			final.Set(k, last.Value(k))
 		}
 		final.Set("percent", 100)
 		final.Set("indexed", infoOr(last, "total", 0))
@@ -198,7 +199,7 @@ func cmdOptimizeStorage(r *sessionsRun, db *state.SessionDB) (int, error) {
 	}
 	beforeMB := float64(beforeBytes) / (1024 * 1024)
 	doVacuum := !nsTruthy(r.ns, "no_vacuum")
-	_, _, freeBytes, freeErr := pyfs.DiskUsage(filepath.Dir(dbPath))
+	_, _, freeBytes, freeErr := fsutil.DiskUsage(filepath.Dir(dbPath))
 	needBytes := beforeBytes
 	if !doVacuum {
 		needBytes = int64(float64(beforeBytes) * 0.3)
@@ -243,8 +244,8 @@ func cmdOptimizeStorage(r *sessionsRun, db *state.SessionDB) (int, error) {
 		return 1, nil
 	}
 	progress.close(false)
-	if !pyrepr.Truthy(rowGet(result, "ok")) {
-		r.printf("Could not optimize: %s", pyrepr.Str(infoOr(result, "reason", "unknown")))
+	if !anyutil.IsTrue(rowGet(result, "ok")) {
+		r.printf("Could not optimize: %s", anyutil.String(infoOr(result, "reason", "unknown")))
 		return 1, nil
 	}
 	r.print("✓ Search index optimized.")
@@ -268,15 +269,15 @@ func cmdRepairRouting(r *sessionsRun, db *state.SessionDB) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	var adoptable []*pyjson.Object
+	var adoptable []*jsonutil.Object
 	for _, record := range records {
-		r.printf("%s  (%s, %s messages)", pyrepr.Str(rowGet(record, "orphan_id")), pyrepr.Str(rowGet(record, "source")), pyrepr.Str(rowGet(record, "message_count")))
-		if pyrepr.Truthy(rowGet(record, "adoptable")) {
+		r.printf("%s  (%s, %s messages)", anyutil.String(rowGet(record, "orphan_id")), anyutil.String(rowGet(record, "source")), anyutil.String(rowGet(record, "message_count")))
+		if anyutil.IsTrue(rowGet(record, "adoptable")) {
 			adoptable = append(adoptable, record)
-			r.printf("  → adopt into %s (from %s, evidence: %s)", pyrepr.Str(rowGet(record, "session_key")),
-				pyrepr.Str(rowGet(record, "donor_id")), pyrepr.Str(rowGet(record, "evidence")))
+			r.printf("  → adopt into %s (from %s, evidence: %s)", anyutil.String(rowGet(record, "session_key")),
+				anyutil.String(rowGet(record, "donor_id")), anyutil.String(rowGet(record, "evidence")))
 		} else {
-			r.printf("  ✗ not repairable — %s", pyrepr.Str(rowGet(record, "reason")))
+			r.printf("  ✗ not repairable — %s", anyutil.String(rowGet(record, "reason")))
 		}
 	}
 	if len(records) == 0 {
@@ -299,14 +300,14 @@ func cmdRepairRouting(r *sessionsRun, db *state.SessionDB) (int, error) {
 	}
 	repaired := 0
 	for _, record := range adoptable {
-		orphanID := pyrepr.Str(rowGet(record, "orphan_id"))
-		adopted, err := db.AdoptOrphanedGatewaySession(r.ctx, orphanID, pyrepr.Str(rowGet(record, "donor_id")))
+		orphanID := anyutil.String(rowGet(record, "orphan_id"))
+		adopted, err := db.AdoptOrphanedGatewaySession(r.ctx, orphanID, anyutil.String(rowGet(record, "donor_id")))
 		if err != nil {
 			return 1, err
 		}
 		if adopted {
 			repaired++
-			r.printf("✓ %s now owns %s", orphanID, pyrepr.Str(rowGet(record, "session_key")))
+			r.printf("✓ %s now owns %s", orphanID, anyutil.String(rowGet(record, "session_key")))
 		} else {
 			r.printf("✗ %s was not adopted (the row changed since it was reported)", orphanID)
 		}
@@ -316,10 +317,10 @@ func cmdRepairRouting(r *sessionsRun, db *state.SessionDB) (int, error) {
 }
 
 // Tool names of a stored tools pin, legacy name list or versioned object, false when unreadable
-func repairPromptsPinNames(row *pyjson.Object) ([]string, bool) {
+func repairPromptsPinNames(row *jsonutil.Object) ([]string, bool) {
 	raw := rowGet(row, "tool_names")
 	text := "null"
-	if pyrepr.Truthy(raw) {
+	if anyutil.IsTrue(raw) {
 		switch v := raw.(type) {
 		case string:
 			text = v
@@ -329,12 +330,12 @@ func repairPromptsPinNames(row *pyjson.Object) ([]string, bool) {
 			return nil, false
 		}
 	}
-	pin, err := pyjson.Loads(text)
+	pin, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, false
 	}
 	tools := pin
-	if obj, ok := pin.(*pyjson.Object); ok {
+	if obj, ok := pin.(*jsonutil.Object); ok {
 		tools = rowGet(obj, "tools")
 	}
 	list, ok := tools.([]any)
@@ -347,8 +348,8 @@ func repairPromptsPinNames(row *pyjson.Object) ([]string, bool) {
 		switch v := item.(type) {
 		case string:
 			name = v
-		case *pyjson.Object:
-			if function, ok := rowGet(v, "function").(*pyjson.Object); ok {
+		case *jsonutil.Object:
+			if function, ok := rowGet(v, "function").(*jsonutil.Object); ok {
 				name = rowGet(function, "name")
 			}
 		default:
@@ -364,18 +365,18 @@ func repairPromptsPinNames(row *pyjson.Object) ([]string, bool) {
 }
 
 // Whether a stored prompt carries neither the skill_manage guidance nor the skill safety heading
-func repairPromptsLacksSkillSafety(row *pyjson.Object) bool {
+func repairPromptsLacksSkillSafety(row *jsonutil.Object) bool {
 	prompt := strings.TrimSpace(rowText(row, "system_prompt"))
 	return prompt != "" && !strings.Contains(prompt, agent.SkillsGuidance) && !strings.Contains(prompt, agent.SkillSafetyHeading)
 }
 
 // A finding of the stored prompt scan as the ordered JSON object the report prints
-func promptFinding(row *pyjson.Object, reason string, reasonFirst bool) *pyjson.Object {
+func promptFinding(row *jsonutil.Object, reason string, reasonFirst bool) *jsonutil.Object {
 	chars := utf8.RuneCountInString(rowText(row, "system_prompt"))
 	if reasonFirst {
-		return pyjson.ObjectOf("id", rowGet(row, "id"), "reason", reason, "prompt_chars", chars)
+		return jsonutil.ObjectOf("id", rowGet(row, "id"), "reason", reason, "prompt_chars", chars)
 	}
-	return pyjson.ObjectOf("id", rowGet(row, "id"), "prompt_chars", chars, "reason", reason)
+	return jsonutil.ObjectOf("id", rowGet(row, "id"), "prompt_chars", chars, "reason", reason)
 }
 
 // Reports stored system prompts degraded to a reduced toolset build and clears the verified ones on apply
@@ -395,7 +396,7 @@ func cmdRepairPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 		if err != nil {
 			return 1, err
 		}
-		if row != nil && pyrepr.Truthy(rowGet(row, "system_prompt")) {
+		if row != nil && anyutil.IsTrue(rowGet(row, "system_prompt")) {
 			findings = append(findings, promptFinding(row, "targeted clear", true))
 		}
 	} else {
@@ -444,7 +445,7 @@ func cmdRepairPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 	}
 	apply, asJSON := nsTruthy(r.ns, "apply"), nsTruthy(r.ns, "json")
 	printPayload := func(cleared []any) error {
-		text, err := pyjson.Dumps(pyjson.ObjectOf("findings", findings, "unverifiable", unverifiable, "apply", apply, "cleared", cleared), pyjson.Indent(2))
+		text, err := jsonutil.Encode(jsonutil.ObjectOf("findings", findings, "unverifiable", unverifiable, "apply", apply, "cleared", cleared), jsonutil.Indent(2))
 		if err == nil {
 			r.print(text)
 		}
@@ -468,8 +469,8 @@ func cmdRepairPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 	}
 	if !asJSON {
 		for _, finding := range findings {
-			f := finding.(*pyjson.Object)
-			r.printf("  %s  (%s chars) - %s", pyrepr.Str(rowGet(f, "id")), pyrepr.Str(rowGet(f, "prompt_chars")), pyrepr.Str(rowGet(f, "reason")))
+			f := finding.(*jsonutil.Object)
+			r.printf("  %s  (%s chars) - %s", anyutil.String(rowGet(f, "id")), anyutil.String(rowGet(f, "prompt_chars")), anyutil.String(rowGet(f, "reason")))
 		}
 		if len(unverifiable) > 0 {
 			r.printf("\nSkipped %d unverifiable row(s) without enough tools[] evidence.", len(unverifiable))
@@ -494,8 +495,8 @@ func cmdRepairPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 	}
 	cleared := []any{}
 	for _, finding := range findings {
-		id := rowGet(finding.(*pyjson.Object), "id")
-		if err := db.UpdateSystemPrompt(r.ctx, pyrepr.Str(id), nil); err != nil {
+		id := rowGet(finding.(*jsonutil.Object), "id")
+		if err := db.UpdateSystemPrompt(r.ctx, anyutil.String(id), nil); err != nil {
 			return 1, err
 		}
 		cleared = append(cleared, id)
@@ -537,7 +538,7 @@ func cmdRefreshPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 		if err != nil {
 			return 1, err
 		}
-		if pyrepr.Truthy(rowGet(row, "system_prompt")) {
+		if anyutil.IsTrue(rowGet(row, "system_prompt")) {
 			count = 1
 		}
 		sessionID = &resolved
@@ -556,7 +557,7 @@ func cmdRefreshPrompts(r *sessionsRun, db *state.SessionDB) (int, error) {
 		if sessionID != nil {
 			id = *sessionID
 		}
-		text, err := pyjson.Dumps(pyjson.ObjectOf("epoch", epoch, "session_id", id, "sessions", count))
+		text, err := jsonutil.Encode(jsonutil.ObjectOf("epoch", epoch, "session_id", id, "sessions", count))
 		if err != nil {
 			return 1, err
 		}

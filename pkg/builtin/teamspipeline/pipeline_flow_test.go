@@ -9,8 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const longTranscript = "Decision: keep the transcript first path.\nAction: write the remaining cases.\nMore detail for the summary."
@@ -28,7 +29,7 @@ func echoSummarizer(_ context.Context, resolved *TeamsMeetingRef, transcriptText
 	return &TeamsMeetingSummaryPayload{MeetingRef: resolved, Title: "T", TranscriptText: transcriptText, Summary: "ok", SourceArtifacts: artifacts}, nil
 }
 
-func flowNotification(id string) *pyjson.Object {
+func flowNotification(id string) *jsonutil.Object {
 	return meetingNotification(id, "updated", "communications/onlineMeetings/meeting-1", obj("id", "meeting-1"))
 }
 
@@ -43,8 +44,8 @@ func TestRunJobRecordsFailedAndRetryStates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if job.Status != "failed" || !pyjson.Equal(job.ErrorInfo, obj("message", "Teams meeting not found: meeting-1", "type", "TeamsMeetingNotFoundError")) {
-		t.Fatalf("failed job %q %v", job.Status, pyrepr.Repr(job.ErrorInfo))
+	if job.Status != "failed" || !anyutil.Equal(job.ErrorInfo, obj("message", "Teams meeting not found: meeting-1", "type", "TeamsMeetingNotFoundError")) {
+		t.Fatalf("failed job %q %v", job.Status, anyutil.Quote(job.ErrorInfo))
 	}
 	if again, err := pipeline.RunNotification(context.Background(), flowNotification("n-fail")); err != nil || again.JobID != job.JobID || again.Status != "failed" {
 		t.Fatalf("terminal duplicate %+v err %v", again, err)
@@ -54,13 +55,13 @@ func TestRunJobRecordsFailedAndRetryStates(t *testing.T) {
 	pipelineFetchPreferredTranscriptText = transcriptFetcher(t, "")
 	required, _ := testPipeline(t, obj("transcript_required", true))
 	if job, err = required.RunNotification(context.Background(), flowNotification("n-req")); err != nil || job.Status != "retry_scheduled" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "Transcript unavailable for meeting meeting-1.", "retryable", true)) {
-		t.Fatalf("required %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		!anyutil.Equal(job.ErrorInfo, obj("message", "Transcript unavailable for meeting meeting-1.", "retryable", true)) {
+		t.Fatalf("required %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 	noFallback, _ := testPipeline(t, obj("transcription_fallback", false))
 	if job, err = noFallback.RunNotification(context.Background(), flowNotification("n-nofb")); err != nil || job.Status != "retry_scheduled" ||
 		get(job.ErrorInfo, "message") != "No transcript available and transcription fallback disabled for meeting-1." {
-		t.Fatalf("no fallback %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		t.Fatalf("no fallback %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 
 	var pipelineErr *TeamsPipelineError
@@ -88,29 +89,29 @@ func TestRunJobSummaryResultShapesAndStoredNotification(t *testing.T) {
 	if err != nil || job.Status != "completed" || job.SummaryPayload.Summary != "from dict" || !reflect.DeepEqual(job.SummaryPayload.KeyDecisions, []any{"d"}) {
 		t.Fatalf("dict summary %+v err %v", job, err)
 	}
-	if got := get(get(store.GetJob(job.JobID), "meeting_ref").(*pyjson.Object), "metadata").(*pyjson.Object); get(got, "subject") != "Weekly Sync" || get(got, "notification") == nil {
-		t.Fatalf("merged metadata %v", pyrepr.Repr(got))
+	if got := get(get(store.GetJob(job.JobID), "meeting_ref").(*jsonutil.Object), "metadata").(*jsonutil.Object); get(got, "subject") != "Weekly Sync" || get(got, "notification") == nil {
+		t.Fatalf("merged metadata %v", anyutil.Quote(got))
 	}
 
 	pipeline.SummarizeFn = func(context.Context, *TeamsMeetingRef, string, []*MeetingArtifact) (any, error) { return nil, nil }
 	if job, err = pipeline.RunNotification(context.Background(), flowNotification("n-none")); err != nil || job.Status != "failed" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "the summarizer returned nothing", "type", "TypeError")) {
-		t.Fatalf("none summary %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		!anyutil.Equal(job.ErrorInfo, obj("message", "the summarizer returned nothing", "type", "TypeError")) {
+		t.Fatalf("none summary %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 	pipeline.SummarizeFn = func(context.Context, *TeamsMeetingRef, string, []*MeetingArtifact) (any, error) {
 		return obj("summary", "x"), nil
 	}
 	if job, err = pipeline.RunNotification(context.Background(), flowNotification("n-noref")); err != nil || job.Status != "failed" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "the meeting summary payload has no meeting_ref", "type", "KeyError")) {
-		t.Fatalf("summary without meeting_ref %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		!anyutil.Equal(job.ErrorInfo, obj("message", "the meeting summary payload has no meeting_ref", "type", "KeyError")) {
+		t.Fatalf("summary without meeting_ref %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 
 	pipeline.SummarizeFn = echoSummarizer
 	bare := &TeamsMeetingPipelineJob{JobID: "teams-job-bare", EventID: "e", DedupeKey: "e", SourceEventType: "manual", Status: "received",
 		MeetingRef: &TeamsMeetingRef{MeetingID: "meeting-1", Metadata: obj("join_web_url", nil)}}
 	if job, err = pipeline.RunJob(context.Background(), bare); err != nil || job.Status != "failed" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "expected a mapping, got nothing", "type", "AttributeError")) {
-		t.Fatalf("job without stored notification %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		!anyutil.Equal(job.ErrorInfo, obj("message", "expected a mapping, got nothing", "type", "AttributeError")) {
+		t.Fatalf("job without stored notification %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -140,7 +141,7 @@ func TestShortTranscriptFallsBackToRecordingAndSTTFailuresRetry(t *testing.T) {
 		return []*MeetingArtifact{testArtifact(t, "recording", "rec-7", displayName, nil, nil), testArtifact(t, "recording", "rec-8", "second.mp4", nil, nil)}, nil
 	}
 	var targets []string
-	pipelineDownloadRecordingArtifact = func(_ context.Context, _ graphClient, _ *TeamsMeetingRef, recording *MeetingArtifact, destination string) (*pyjson.Object, error) {
+	pipelineDownloadRecordingArtifact = func(_ context.Context, _ graphClient, _ *TeamsMeetingRef, recording *MeetingArtifact, destination string) (*jsonutil.Object, error) {
 		targets = append(targets, recording.ArtifactID+"="+destination)
 		return obj("path", destination), os.WriteFile(destination, []byte("v"), 0o644)
 	}
@@ -152,8 +153,8 @@ func TestShortTranscriptFallsBackToRecordingAndSTTFailuresRetry(t *testing.T) {
 	pipeline.TranscribeFn = func(_ context.Context, filePath, model string) (map[string]any, error) {
 		transcribed = append(transcribed, model+"="+filePath)
 		inFlight := 0
-		for _, stored := range store.ListJobs().Vals {
-			if get(stored.(*pyjson.Object), "status") == "transcribing_audio" {
+		for _, stored := range store.ListJobs().All() {
+			if get(stored.(*jsonutil.Object), "status") == "transcribing_audio" {
 				inFlight++
 			}
 		}
@@ -183,19 +184,19 @@ func TestShortTranscriptFallsBackToRecordingAndSTTFailuresRetry(t *testing.T) {
 	displayName = "clip.MP4"
 	result = map[string]any{"success": false, "error": "provider down"}
 	if job, err = pipeline.RunNotification(context.Background(), flowNotification("n-stt")); err != nil || job.Status != "retry_scheduled" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "provider down", "retryable", true)) {
-		t.Fatalf("stt failure %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		!anyutil.Equal(job.ErrorInfo, obj("message", "provider down", "retryable", true)) {
+		t.Fatalf("stt failure %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 	if filepath.Base(targets[1]) != "clip.MP4" {
 		t.Fatalf("targets %v", targets)
 	}
 	result = map[string]any{"success": false}
 	if job, _ = pipeline.RunNotification(context.Background(), flowNotification("n-stt2")); get(job.ErrorInfo, "message") != "Unknown STT failure" {
-		t.Fatalf("stt failure without error %v", pyrepr.Repr(job.ErrorInfo))
+		t.Fatalf("stt failure without error %v", anyutil.Quote(job.ErrorInfo))
 	}
 	result = map[string]any{"success": true, "transcript": "   "}
 	if job, _ = pipeline.RunNotification(context.Background(), flowNotification("n-stt3")); job.Status != "retry_scheduled" || get(job.ErrorInfo, "message") != "STT returned an empty transcript." {
-		t.Fatalf("empty transcript %q %v", job.Status, pyrepr.Repr(job.ErrorInfo))
+		t.Fatalf("empty transcript %q %v", job.Status, anyutil.Quote(job.ErrorInfo))
 	}
 }
 
@@ -225,9 +226,9 @@ type recordingSink struct {
 	fail  error
 }
 
-func (s recordingSink) WriteSummary(_ context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *pyjson.Object) (*pyjson.Object, error) {
+func (s recordingSink) WriteSummary(_ context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *jsonutil.Object) (*jsonutil.Object, error) {
 	jobs := s.store.ListJobs()
-	*s.seen = append(*s.seen, s.name+":"+pyrepr.Str(get(jobs.Vals[jobs.Keys[0]].(*pyjson.Object), "status"))+":"+pyrepr.Str(get(existingRecord, "n"))+":"+pyrepr.Str(get(config, "tag")))
+	*s.seen = append(*s.seen, s.name+":"+anyutil.String(get(jobs.Value(jobs.Keys()[0]).(*jsonutil.Object), "status"))+":"+anyutil.String(get(existingRecord, "n"))+":"+anyutil.String(get(config, "tag")))
 	if s.fail != nil {
 		return nil, s.fail
 	}
@@ -253,13 +254,13 @@ func TestWriteSinksRunsEnabledSinksInOrderWithExistingRecords(t *testing.T) {
 
 	job, err := pipeline.RunNotification(context.Background(), flowNotification("n-sinks"))
 	if err != nil || job.Status != "completed" {
-		t.Fatalf("job %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		t.Fatalf("job %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 	if want := []string{"notion:writing_notion:None:n", "teams:sending_teams:None:t"}; !reflect.DeepEqual(seen, want) {
 		t.Fatalf("seen %v", seen)
 	}
 	if record := store.GetSinkRecord("notion:meeting-1"); get(record, "n") != int64(1) || get(record, "sink_key") != "notion:meeting-1" || store.GetSinkRecord("linear:meeting-1") != nil {
-		t.Fatalf("records %v", pyrepr.Repr(record))
+		t.Fatalf("records %v", anyutil.Quote(record))
 	}
 
 	seen = nil
@@ -272,13 +273,13 @@ func TestWriteSinksRunsEnabledSinksInOrderWithExistingRecords(t *testing.T) {
 
 	pipeline.NotionWriter = recordingSink{name: "notion", store: store, seen: &seen, fail: &TeamsPipelineSinkError{TeamsPipelineError{"NOTION_API_KEY is not configured."}}}
 	if job, err = pipeline.RunJob(context.Background(), job.JobID); err != nil || job.Status != "failed" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "NOTION_API_KEY is not configured.", "type", "TeamsPipelineSinkError")) {
-		t.Fatalf("sink failure %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		!anyutil.Equal(job.ErrorInfo, obj("message", "NOTION_API_KEY is not configured.", "type", "TeamsPipelineSinkError")) {
+		t.Fatalf("sink failure %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 	pipeline.Config.Notion = "on"
 	if job, err = pipeline.RunJob(context.Background(), job.JobID); err != nil || job.Status != "failed" || get(job.ErrorInfo, "type") != "AttributeError" ||
 		get(job.ErrorInfo, "message") != "expected a mapping, got text" {
-		t.Fatalf("string sink config %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		t.Fatalf("string sink config %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 }
 
@@ -292,7 +293,7 @@ func TestRunJobRecordsRaisedPanicsAndMissingTranscriptionResult(t *testing.T) {
 		panic(pyError("ValueError", "summarizer exploded"))
 	}
 	job, err := pipeline.RunNotification(context.Background(), flowNotification("n-panic"))
-	if err != nil || job.Status != "failed" || !pyjson.Equal(job.ErrorInfo, obj("message", "summarizer exploded", "type", "ValueError")) {
+	if err != nil || job.Status != "failed" || !anyutil.Equal(job.ErrorInfo, obj("message", "summarizer exploded", "type", "ValueError")) {
 		t.Fatalf("raised error %+v err %v", job, err)
 	}
 	pipeline.SummarizeFn = func(context.Context, *TeamsMeetingRef, string, []*MeetingArtifact) (any, error) { panic("plain text") }
@@ -307,20 +308,20 @@ func TestRunJobRecordsRaisedPanicsAndMissingTranscriptionResult(t *testing.T) {
 	pipelineListRecordingArtifacts = func(context.Context, graphClient, *TeamsMeetingRef) ([]*MeetingArtifact, error) {
 		return []*MeetingArtifact{testArtifact(t, "recording", "rec-1", "r.mp4", nil, nil)}, nil
 	}
-	pipelineDownloadRecordingArtifact = func(_ context.Context, _ graphClient, _ *TeamsMeetingRef, _ *MeetingArtifact, destination string) (*pyjson.Object, error) {
+	pipelineDownloadRecordingArtifact = func(_ context.Context, _ graphClient, _ *TeamsMeetingRef, _ *MeetingArtifact, destination string) (*jsonutil.Object, error) {
 		return obj("path", destination), nil
 	}
 	pipeline.TranscribeFn = func(context.Context, string, string) (map[string]any, error) { return nil, nil }
 	if job, err = pipeline.RunNotification(context.Background(), flowNotification("n-nil-stt")); err != nil || job.Status != "failed" ||
-		!pyjson.Equal(job.ErrorInfo, obj("message", "the transcription returned nothing", "type", "AttributeError")) {
-		t.Fatalf("missing transcription result %q %v err %v", job.Status, pyrepr.Repr(job.ErrorInfo), err)
+		!anyutil.Equal(job.ErrorInfo, obj("message", "the transcription returned nothing", "type", "AttributeError")) {
+		t.Fatalf("missing transcription result %q %v err %v", job.Status, anyutil.Quote(job.ErrorInfo), err)
 	}
 }
 
 func TestSummarySinksKeepNonTextSummaryErrorsOfTheWriters(t *testing.T) {
 	payload := sinkPayload()
 	payload.Summary = int64(5)
-	if _, err := renderSummaryMarkdown(payload); pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "summary line 3 is a number where text was expected" {
+	if _, err := renderSummaryMarkdown(payload); pyrepr.ExceptionName(err) != "TypeError" || err.Error() != "summary line 3 is a number where text was expected" {
 		t.Fatalf("markdown %v", err)
 	}
 	transport := &sinkTransport{status: 200, body: `{"id": "p"}`}
@@ -329,7 +330,7 @@ func TestSummarySinksKeepNonTextSummaryErrorsOfTheWriters(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := writer.WriteSummary(context.Background(), payload, obj("database_id", "db", "summary_property", "Summary"), nil); pyrepr.ExceptionName(err) != "TypeError" ||
-		pyrepr.ExceptionMessage(err) != "the meeting summary is a number where text or a list was expected" {
+		err.Error() != "the meeting summary is a number where text or a list was expected" {
 		t.Fatalf("summary property %v", err)
 	}
 	if _, err := writer.WriteSummary(context.Background(), payload, obj("database_id", "db"), nil); err != nil {
@@ -339,7 +340,7 @@ func TestSummarySinksKeepNonTextSummaryErrorsOfTheWriters(t *testing.T) {
 		t.Fatalf("body %s", transport.bodies[0])
 	}
 	payload.Summary, payload.ConfidenceNotes = "S", []any{"n"}
-	if _, err := renderSummaryMarkdown(payload); pyrepr.ExceptionMessage(err) != "summary line 15 is a list where text was expected" {
+	if _, err := renderSummaryMarkdown(payload); err.Error() != "summary line 15 is a list where text was expected" {
 		t.Fatalf("notes %v", err)
 	}
 	payload.ConfidenceNotes, payload.MeetingRef = nil, nil

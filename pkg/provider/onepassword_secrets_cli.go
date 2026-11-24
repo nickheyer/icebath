@@ -6,9 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 const opDocsURL = "https://developer.1password.com/docs/cli/get-started/"
@@ -73,7 +72,7 @@ func registerOnePasswordCLI(parent *secretsParser) {
 
 func opCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 	console := cli.console
-	console.PrintPanel(pyrich.Panel{Body: "[bold]1Password secret source setup[/bold]\n\n" +
+	console.PrintPanel(consoleutil.Panel{Body: "[bold]1Password secret source setup[/bold]\n\n" +
 		"Icebath resolves [cyan]op://vault/item/field[/cyan] references through your\n" +
 		"already-installed, already-authenticated 1Password CLI (`op`).\n\n" +
 		fmt.Sprintf("Don't have it yet? Install + sign in: [cyan]%s[/cyan]", opDocsURL),
@@ -188,7 +187,7 @@ func opCmdStatus(cli *secretsCLI, ns map[string]any) (int, error) {
 		for _, name := range sortedAnyKeys(refs) {
 			rows = append(rows, []string{name, pyStr(refs[name])})
 		}
-		printTable(console, []pyrich.Column{{Header: "Env var", Style: "cyan"}, {Header: "Reference"}}, rows, nil, "")
+		printTable(console, []consoleutil.Column{{Header: "Env var", Style: "cyan"}, {Header: "Reference"}}, rows, nil, "")
 	}
 	if !enabled {
 		console.Print("\n  Run [cyan]icebath secrets onepassword setup[/cyan] to enable.")
@@ -310,7 +309,7 @@ func opCmdSync(cli *secretsCLI, ns map[string]any) (int, error) {
 	account := cfgStr(op, "account")
 	tokenEnv := cfgText(op, "service_account_token_env", opDefaultTokenEnv)
 	binaryPath := cfgStr(op, "binary_path")
-	columns := []pyrich.Column{{Header: "Env var", Style: "cyan"}, {Header: "Action"}}
+	columns := []consoleutil.Column{{Header: "Env var", Style: "cyan"}, {Header: "Action"}}
 	if nsFlag(ns, "apply") {
 		result := ApplyOnePasswordSecrets(OnePasswordApplyOptions{Enabled: true, Env: refs, Account: account,
 			ServiceAccountTokenEnv: tokenEnv, BinaryPath: binaryPath, OverrideExisting: cfgBool(op, "override_existing", true),
@@ -333,7 +332,7 @@ func opCmdSync(cli *secretsCLI, ns map[string]any) (int, error) {
 	secrets, warnings, err := FetchOnePasswordSecrets(OnePasswordFetchOptions{References: refs, Account: account,
 		TokenEnv: tokenEnv, BinaryPath: binaryPath, UseCache: false, CacheTTL: 300, HomePath: cli.home})
 	if err != nil {
-		console.Print(fmt.Sprintf("[red]%s[/red]", pyrepr.ExceptionMessage(err)))
+		console.Print(fmt.Sprintf("[red]%s[/red]", err.Error()))
 		return 1, nil
 	}
 	override := cfgBool(op, "override_existing", true)
@@ -385,7 +384,7 @@ func opWhoami(cli *secretsCLI, binary, account, tokenValue string) (string, bool
 	if tokenValue != "" {
 		env["OP_SERVICE_ACCOUNT_TOKEN"] = tokenValue
 	}
-	res, err := pysubprocess.RunWith(cli.ctx, cmd, pysubprocess.Options{Env: envList(env), Timeout: 10 * time.Second})
+	res, err := executil.Run(cli.ctx, cmd, executil.Options{Env: envList(env), Timeout: 10 * time.Second})
 	if err != nil || res.Returncode != 0 {
 		return "", false
 	}

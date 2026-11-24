@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Scripted socket of the ws cases, frames pushed on inbound and a nil frame hanging up
@@ -35,15 +35,15 @@ func newWSTestSocket() *wsTestSocket {
 
 // Authority connection of the socket cases, each request answered by dispatch and as an unknown method without one
 type wsTestConnection struct {
-	dispatch func(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error)
+	dispatch func(ctx context.Context, request *jsonutil.Object) (*jsonutil.Object, error)
 }
 
-func (c *wsTestConnection) Dispatch(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error) {
+func (c *wsTestConnection) Dispatch(ctx context.Context, request *jsonutil.Object) (*jsonutil.Object, error) {
 	if c.dispatch != nil {
 		return c.dispatch(ctx, request)
 	}
-	return pyjson.ObjectOf("jsonrpc", "2.0", "id", request.GetOr("id", nil),
-		"error", pyjson.ObjectOf("code", -32601, "message", "unknown method")), nil
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "id", request.ValueOr("id", nil),
+		"error", jsonutil.ObjectOf("code", -32601, "message", "unknown method")), nil
 }
 func (c *wsTestConnection) Close(context.Context) error { return nil }
 func (c *wsTestConnection) Actor() gateway.Principal    { return gateway.Principal{} }
@@ -52,7 +52,7 @@ func (c *wsTestConnection) AwaitsProfileStart(context.Context, map[string]any, [
 }
 
 // Answers the requests of every socket of one case with dispatch in place of a real authority connection
-func wsTestFakeAuthority(t *testing.T, dispatch func(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error)) {
+func wsTestFakeAuthority(t *testing.T, dispatch func(ctx context.Context, request *jsonutil.Object) (*jsonutil.Object, error)) {
 	t.Helper()
 	prev := wsNewAuthorityConnection
 	wsNewAuthorityConnection = func(*gateway.SessionAuthority, *tuihost.WSTransport, map[string]any, bool) (authorityConn, error) {
@@ -73,11 +73,11 @@ func (s *wsTestSocket) SendText(_ context.Context, text string) error {
 		if strings.TrimSpace(part) == "" {
 			continue
 		}
-		decoded, err := pyjson.Loads(part)
+		decoded, err := jsonutil.Decode(part)
 		if err != nil {
 			return err
 		}
-		frame, _ := pyjson.Plain(decoded).(map[string]any)
+		frame, _ := jsonutil.Plain(decoded).(map[string]any)
 		s.mu.Lock()
 		if s.failIDs[frame["id"]] {
 			s.mu.Unlock()
@@ -105,7 +105,7 @@ func (s *wsTestSocket) ReceiveText(ctx context.Context) (string, error) {
 		if text, isText := item.(string); isText {
 			return text, nil
 		}
-		text, err := pyjson.Dumps(item)
+		text, err := jsonutil.Encode(item)
 		return text, err
 	case <-ctx.Done():
 		return "", ctx.Err()
@@ -148,8 +148,8 @@ func (s *wsTestSocket) receivedCount() int {
 }
 
 // JSON RPC request frame of the cases
-func wsTestRPC(id any, method string) *pyjson.Object {
-	return pyjson.ObjectOf("jsonrpc", "2.0", "id", id, "method", method, "params", pyjson.NewObject())
+func wsTestRPC(id any, method string) *jsonutil.Object {
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "id", id, "method", method, "params", jsonutil.NewObject())
 }
 
 // Polls a predicate until it holds or the timeout passes

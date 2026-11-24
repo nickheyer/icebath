@@ -11,10 +11,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runs fn as a task scheduled on the loop and waits up to timeout, timedOut when it is still running
@@ -38,7 +38,7 @@ func runOnLoopWithin(ctx context.Context, loop gateway.EventLoop, name string, t
 
 // Python type name and message of a failure, the f"{type(exc).__name__}: {exc}" text
 func excText(err error) string {
-	return pyrepr.ExceptionName(err) + ": " + pyrepr.ExceptionMessage(err)
+	return err.Error()
 }
 
 // Ordered served profile homes as name and home pairs
@@ -57,7 +57,7 @@ func servedHomesOf(d interface {
 
 // Serve or unserve control verb run on the owning loop, pending when the teardown outlasts five seconds
 func profileLifecycleVerb(ctx context.Context, r *GatewayRunner, loop gateway.EventLoop, serve bool) gateway.ControlVerbHandler {
-	refuse := func(msg string) (any, error) { return pyjson.ObjectOf("error", msg), nil }
+	refuse := func(msg string) (any, error) { return jsonutil.ObjectOf("error", msg), nil }
 	apply := func(ctx context.Context, nameValue any) (any, error) {
 		if !r.multiplexOn() || !r.running.Load() || r.servedProfileHomes == nil {
 			return refuse("host multiplexer is not ready")
@@ -81,7 +81,7 @@ func profileLifecycleVerb(ctx context.Context, r *GatewayRunner, loop gateway.Ev
 				return nil, err
 			}
 			r.recordServedProfiles(ctx, active, servedHomesOf(known))
-			return pyjson.ObjectOf("unserved", name, "served_profiles", namesList(r.servedProfileNames())), nil
+			return jsonutil.ObjectOf("unserved", name, "served_profiles", namesList(r.servedProfileNames())), nil
 		}
 		listed, err := profiles.ProfilesToServe(ctx, true, false, true)
 		if err != nil {
@@ -111,17 +111,17 @@ func profileLifecycleVerb(ctx context.Context, r *GatewayRunner, loop gateway.Ev
 		if !slices.Contains(list, any(name)) {
 			return refuse(fmt.Sprintf("profile '%s' was removed or parked during startup", name))
 		}
-		return pyjson.ObjectOf("served", name, "served_profiles", served), nil
+		return jsonutil.ObjectOf("served", name, "served_profiles", served), nil
 	}
 	return func(params map[string]any) (any, error) {
 		result, timedOut, err := runOnLoopWithin(ctx, loop, "profile-lifecycle", 5*time.Second,
 			func(c context.Context) (any, error) { return apply(c, params["name"]) })
 		if timedOut {
-			return pyjson.ObjectOf("pending", true, "served_profiles", namesList(r.servedProfileNames())), nil
+			return jsonutil.ObjectOf("pending", true, "served_profiles", namesList(r.servedProfileNames())), nil
 		}
 		if err != nil {
 			pkgLog().Warn("Profile lifecycle request failed", "exc_info", err)
-			return pyjson.ObjectOf("error", excText(err)), nil
+			return jsonutil.ObjectOf("error", excText(err)), nil
 		}
 		return result, nil
 	}
@@ -140,10 +140,10 @@ func serveProfileVerb(ctx context.Context, r *GatewayRunner, loop gateway.EventL
 // Trimmed str of a param, empty for a missing or falsy value
 func paramText(params map[string]any, key string) string {
 	v := params[key]
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Control verb a profile rename asks to rekey both durable stores and the live routing index
@@ -151,11 +151,11 @@ func migrateProfileIdentityVerb(ctx context.Context, r *GatewayRunner) gateway.C
 	return func(params map[string]any) (any, error) {
 		old, fresh := paramText(params, "old"), paramText(params, "new")
 		if old == "" || fresh == "" || old == fresh {
-			return pyjson.ObjectOf("ok", false, "error", "old/new required and must differ"), nil
+			return jsonutil.ObjectOf("ok", false, "error", "old/new required and must differ"), nil
 		}
 		store := r.sessionStore
 		if store == nil {
-			return pyjson.ObjectOf("ok", false, "error", "live gateway has no session store"), nil
+			return jsonutil.ObjectOf("ok", false, "error", "live gateway has no session store"), nil
 		}
 		var acquired []*state.DB
 		defer func() {
@@ -163,8 +163,8 @@ func migrateProfileIdentityVerb(ctx context.Context, r *GatewayRunner) gateway.C
 				state.ReleaseOrClose(db)
 			}
 		}()
-		answer, err := func() (*pyjson.Object, error) {
-			dbCounts := pyjson.NewObject()
+		answer, err := func() (*jsonutil.Object, error) {
+			dbCounts := jsonutil.NewObject()
 			if rekeyer, ok := store.RoutingDB(ctx).(interface {
 				RekeyProfileState(oldName, newName string) (map[string]int, error)
 			}); ok && rekeyer != nil {
@@ -193,11 +193,11 @@ func migrateProfileIdentityVerb(ctx context.Context, r *GatewayRunner) gateway.C
 			if err != nil {
 				return nil, err
 			}
-			return pyjson.ObjectOf("ok", true, "rekeyed", int64(rekeyed), "db", dbCounts), nil
+			return jsonutil.ObjectOf("ok", true, "rekeyed", int64(rekeyed), "db", dbCounts), nil
 		}()
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("Profile identity migration failed for %s->%s: %s", errchain.Show(old), errchain.Show(fresh), err))
-			return pyjson.ObjectOf("ok", false, "error", excText(err)), nil
+			return jsonutil.ObjectOf("ok", false, "error", excText(err)), nil
 		}
 		return answer, nil
 	}
@@ -208,14 +208,14 @@ func purgeProfileIdentityVerb(ctx context.Context, r *GatewayRunner) gateway.Con
 	return func(params map[string]any) (any, error) {
 		name := paramText(params, "name")
 		if name == "" {
-			return pyjson.ObjectOf("ok", false, "error", "name required"), nil
+			return jsonutil.ObjectOf("ok", false, "error", "name required"), nil
 		}
 		store := r.sessionStore
 		if store == nil {
-			return pyjson.ObjectOf("ok", false, "error", "live gateway has no session store"), nil
+			return jsonutil.ObjectOf("ok", false, "error", "live gateway has no session store"), nil
 		}
-		answer, err := func() (*pyjson.Object, error) {
-			dbCounts := pyjson.NewObject()
+		answer, err := func() (*jsonutil.Object, error) {
+			dbCounts := jsonutil.NewObject()
 			if purger, ok := store.RoutingDB(ctx).(interface {
 				PurgeProfileState(profile string) (map[string]int, error)
 			}); ok && purger != nil {
@@ -229,11 +229,11 @@ func purgeProfileIdentityVerb(ctx context.Context, r *GatewayRunner) gateway.Con
 			if err != nil {
 				return nil, err
 			}
-			return pyjson.ObjectOf("ok", true, "dropped", int64(dropped), "db", dbCounts), nil
+			return jsonutil.ObjectOf("ok", true, "dropped", int64(dropped), "db", dbCounts), nil
 		}()
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("Profile identity purge failed for %s: %s", errchain.Show(name), err))
-			return pyjson.ObjectOf("ok", false, "error", excText(err)), nil
+			return jsonutil.ObjectOf("ok", false, "error", excText(err)), nil
 		}
 		return answer, nil
 	}

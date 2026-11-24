@@ -24,12 +24,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
@@ -40,7 +40,7 @@ var (
 	hfRetryStatus       = map[int]bool{408: true, 429: true, 500: true, 502: true, 503: true, 504: true}
 	hfLFSHeaders        = map[string]string{"Accept": "application/vnd.git-lfs+json", "Content-Type": "application/vnd.git-lfs+json"}
 	hfWarnedTopics      = map[string]bool{}
-	hfClient            = pyhttpx.PlainClient(true)
+	hfClient            = httputil.Client(true)
 )
 
 // HfHubHTTPError or the subclass a Hub response maps to, carrying the status code
@@ -97,14 +97,14 @@ type hfRequest struct {
 }
 
 // Sends a request once, the trace id header added the way the session event hook adds it
-func hfSend(ctx context.Context, r hfRequest) (*pyhttpx.Response, error) {
+func hfSend(ctx context.Context, r hfRequest) (*httputil.Response, error) {
 	body := r.body
 	headers := map[string]string{}
 	for k, v := range r.headers {
 		headers[k] = v
 	}
 	if r.json != nil {
-		text, err := pyjson.Dumps(r.json)
+		text, err := jsonutil.Encode(r.json)
 		if err != nil {
 			return nil, err
 		}
@@ -123,7 +123,7 @@ func hfSend(ctx context.Context, r hfRequest) (*pyhttpx.Response, error) {
 	if req.Header.Get("X-Amzn-Trace-Id") == "" {
 		req.Header.Set("X-Amzn-Trace-Id", uuid.NewString())
 	}
-	return pyhttpx.Do(hfClient, req, 0)
+	return httputil.Do(hfClient, req, httputil.EachPhase(0))
 }
 
 // Case insensitive header lookup in a plain map
@@ -138,14 +138,14 @@ func headerLookup(h map[string]string, name string) (string, bool) {
 
 // Whether a transport error is one http_backoff retries
 func hfRetryableError(err error) bool {
-	var te *pyhttpx.TimeoutError
+	var te *httputil.TimeoutError
 	var ne net.Error
 	var ue *url.Error
 	return errors.As(err, &te) || errors.As(err, &ne) || errors.As(err, &ue)
 }
 
 // Request retried on transient statuses and network errors with exponential backoff, rate limit waits honored
-func hfBackoff(ctx context.Context, r hfRequest) (*pyhttpx.Response, error) {
+func hfBackoff(ctx context.Context, r hfRequest) (*httputil.Response, error) {
 	const maxRetries = 5
 	sleep := 1.0
 	for tries := 1; ; tries++ {
@@ -155,7 +155,7 @@ func hfBackoff(ctx context.Context, r hfRequest) (*pyhttpx.Response, error) {
 			if !hfRetryableError(err) {
 				return nil, err
 			}
-			pkgLog().Warn(fmt.Sprintf("'%s' thrown while requesting %s %s", pyhttpx.ErrorText(err), r.method, r.url))
+			pkgLog().Warn(fmt.Sprintf("'%s' thrown while requesting %s %s", err.Error(), r.method, r.url))
 			if tries > maxRetries {
 				return nil, err
 			}
@@ -252,7 +252,7 @@ func hfWarnOnWarningHeaders(h http.Header) {
 }
 
 // Error of a non 2xx Hub response with the server message and request id folded in, nil otherwise
-func hfRaiseForStatus(resp *pyhttpx.Response, r hfRequest, endpointName string) error {
+func hfRaiseForStatus(resp *httputil.Response, r hfRequest, endpointName string) error {
 	hfWarnOnWarningHeaders(resp.Header)
 	if resp.StatusCode < 400 {
 		return nil
@@ -307,42 +307,42 @@ func hfRaiseForStatus(resp *pyhttpx.Response, r hfRequest, endpointName string) 
 }
 
 // Error of the given class with the server errors and the first request id header folded into the message
-func hfFormat(class, custom string, resp *pyhttpx.Response) error {
+func hfFormat(class, custom string, resp *httputil.Response) error {
 	var serverErrors []string
 	if v, ok := resp.Header["X-Error-Message"]; ok && len(v) > 0 {
 		serverErrors = append(serverErrors, v[0])
 	}
-	data, err := pyjson.LoadsBytes(resp.Content)
+	data, err := jsonutil.Decode(resp.Content)
 	if err == nil {
-		if obj, ok := data.(*pyjson.Object); ok {
+		if obj, ok := data.(*jsonutil.Object); ok {
 			errVal, hasErr := obj.Get("error")
 			desc, hasDesc := obj.Get("error_description")
 			hasErr, hasDesc = hasErr && errVal != nil, hasDesc && desc != nil
 			if hasErr {
 				if list, ok := errVal.([]any); ok {
 					for _, item := range list {
-						serverErrors = append(serverErrors, pyrepr.Str(item))
+						serverErrors = append(serverErrors, anyutil.String(item))
 					}
 				} else if hasDesc {
-					serverErrors = append(serverErrors, pyrepr.Str(errVal)+": "+pyrepr.Str(desc))
+					serverErrors = append(serverErrors, anyutil.String(errVal)+": "+anyutil.String(desc))
 				} else {
-					serverErrors = append(serverErrors, pyrepr.Str(errVal))
+					serverErrors = append(serverErrors, anyutil.String(errVal))
 				}
 			} else if hasDesc {
-				serverErrors = append(serverErrors, pyrepr.Str(desc))
+				serverErrors = append(serverErrors, anyutil.String(desc))
 			}
-			if list, ok := obj.GetOr("errors", nil).([]any); ok {
+			if list, ok := obj.Value("errors").([]any); ok {
 				for _, item := range list {
-					if e, ok := item.(*pyjson.Object); ok {
+					if e, ok := item.(*jsonutil.Object); ok {
 						if m, ok := e.Get("message"); ok {
-							serverErrors = append(serverErrors, pyrepr.Str(m))
+							serverErrors = append(serverErrors, anyutil.String(m))
 						}
 					}
 				}
 			}
 		}
 	} else {
-		var decodeErr *pyjson.DecodeError
+		var decodeErr *jsonutil.SyntaxError
 		if errors.As(err, &decodeErr) {
 			if text := resp.Text(); text != "" && !strings.Contains(strings.ToLower(resp.Header.Get("Content-Type")), "html") {
 				serverErrors = append(serverErrors, text)
@@ -440,22 +440,22 @@ func hfTokenFromEnvironment() (string, bool) {
 // Token file path from HF_TOKEN_PATH, else the token file under HF_HOME or the XDG cache, staging kept apart
 func hfTokenPath() string {
 	if hfStagingMode() {
-		return pypath.Join(pypath.Expanduser("~"), ".cache", "huggingface_staging", "token")
+		return pathutil.Join(pathutil.ExpandUser("~"), ".cache", "huggingface_staging", "token")
 	}
 	cache, ok := os.LookupEnv("XDG_CACHE_HOME")
 	if !ok {
-		cache = pypath.Join(pypath.Expanduser("~"), ".cache")
+		cache = pathutil.Join(pathutil.ExpandUser("~"), ".cache")
 	}
 	hfHome, ok := os.LookupEnv("HF_HOME")
 	if !ok {
-		hfHome = pypath.Join(cache, "huggingface")
+		hfHome = pathutil.Join(cache, "huggingface")
 	}
-	hfHome = pypath.Expandvars(pypath.Expanduser(hfHome))
+	hfHome = pathutil.ExpandEnv(pathutil.ExpandUser(hfHome))
 	path, ok := os.LookupEnv("HF_TOKEN_PATH")
 	if !ok {
-		path = pypath.Join(hfHome, "token")
+		path = pathutil.Join(hfHome, "token")
 	}
-	return pypath.Expandvars(pypath.Expanduser(path))
+	return pathutil.ExpandEnv(pathutil.ExpandUser(path))
 }
 
 // Stored login token read in the locale encoding, false when the file is missing or blank
@@ -467,7 +467,7 @@ func hfTokenFromFile() (string, bool, error) {
 		}
 		return "", false, errors.New(errchain.OSText(err))
 	}
-	text, err := pycodecs.Decode(data, pycodecs.LocaleEncoding())
+	text, err := charsetutil.Decode(data, charsetutil.Locale())
 	if err != nil {
 		return "", false, err
 	}
@@ -501,8 +501,8 @@ func hfCreateDatasetRepo(ctx context.Context, token, repoID string, private bool
 		visibility = "private"
 	}
 	r := hfRequest{method: "POST", url: hfEndpoint() + "/api/repos/create", headers: hfHeaders(token),
-		json: pyjson.ObjectOf("name", name, "organization", organization, "visibility", visibility, "type", "dataset")}
-	var resp *pyhttpx.Response
+		json: jsonutil.ObjectOf("name", name, "organization", organization, "visibility", visibility, "type", "dataset")}
+	var resp *httputil.Response
 	for {
 		var err error
 		if resp, err = hfSend(ctx, r); err != nil {
@@ -533,7 +533,7 @@ func hfCreateDatasetRepo(ctx context.Context, token, repoID string, private bool
 	if err != nil {
 		return err
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return &appClassedError{class: "TypeError", msg: "Hugging Face reply is " + errchain.Kind(data) + " where a mapping was expected"}
 	}
@@ -556,9 +556,9 @@ func hfFetchUploadMode(ctx context.Context, token, repoID, path string, content 
 	if len(sample) > 512 {
 		sample = sample[:512]
 	}
-	file := pyjson.ObjectOf("path", path, "sample", base64.StdEncoding.EncodeToString(sample), "size", len(content))
+	file := jsonutil.ObjectOf("path", path, "sample", base64.StdEncoding.EncodeToString(sample), "size", len(content))
 	r := hfRequest{method: "POST", url: hfEndpoint() + "/api/datasets/" + repoID + "/preupload/main",
-		headers: hfHeaders(token), json: pyjson.ObjectOf("files", []any{file})}
+		headers: hfHeaders(token), json: jsonutil.ObjectOf("files", []any{file})}
 	resp, err := hfBackoff(ctx, r)
 	if err != nil {
 		return nil, err
@@ -571,23 +571,23 @@ func hfFetchUploadMode(ctx context.Context, token, repoID, path string, content 
 		return nil, err
 	}
 	malformed := &appValueError{"preupload_info is improperly formatted: " + errchain.Show(data)}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil, malformed
 	}
-	files, ok := obj.GetOr("files", nil).([]any)
+	files, ok := obj.Value("files").([]any)
 	if !ok {
 		return nil, malformed
 	}
 	var plan *hfUploadPlan
 	for _, item := range files {
-		f, ok := item.(*pyjson.Object)
+		f, ok := item.(*jsonutil.Object)
 		if !ok {
 			return nil, malformed
 		}
-		p, pok := f.GetOr("path", nil).(string)
-		mode, mok := f.GetOr("uploadMode", nil).(string)
-		ignore, iok := f.GetOr("shouldIgnore", nil).(bool)
+		p, pok := f.Value("path").(string)
+		mode, mok := f.Value("uploadMode").(string)
+		ignore, iok := f.Value("shouldIgnore").(bool)
 		if !pok || !mok || !iok || (mode != "lfs" && mode != "regular") {
 			return nil, malformed
 		}
@@ -595,7 +595,7 @@ func hfFetchUploadMode(ctx context.Context, token, repoID, path string, content 
 			continue
 		}
 		plan = &hfUploadPlan{mode: mode, shouldIgnore: ignore}
-		if oid, ok := f.GetOr("oid", nil).(string); ok {
+		if oid, ok := f.Value("oid").(string); ok {
 			plan.remoteOID = &oid
 		}
 	}
@@ -618,9 +618,9 @@ func hfUploadLFS(ctx context.Context, token, repoID string, content []byte, oid 
 		headers[k] = v
 	}
 	r := hfRequest{method: "POST", url: hfEndpoint() + "/datasets/" + repoID + ".git/info/lfs/objects/batch", headers: headers,
-		json: pyjson.ObjectOf("operation", "upload", "transfers", []any{"basic", "multipart"},
-			"objects", []any{pyjson.ObjectOf("oid", oid, "size", len(content))}, "hash_algo", "sha256",
-			"ref", pyjson.ObjectOf("name", "main"))}
+		json: jsonutil.ObjectOf("operation", "upload", "transfers", []any{"basic", "multipart"},
+			"objects", []any{jsonutil.ObjectOf("oid", oid, "size", len(content))}, "hash_algo", "sha256",
+			"ref", jsonutil.ObjectOf("name", "main"))}
 	resp, err := hfBackoff(ctx, r)
 	if err != nil {
 		return err
@@ -632,15 +632,15 @@ func hfUploadLFS(ctx context.Context, token, repoID string, content []byte, oid 
 	if err != nil {
 		return err
 	}
-	info, _ := data.(*pyjson.Object)
-	objects, ok := info.GetOr("objects", nil).([]any)
+	info, _ := data.(*jsonutil.Object)
+	objects, ok := info.Value("objects").([]any)
 	if info == nil || !ok {
 		return &appValueError{"Malformed response from server"}
 	}
-	var actions []*pyjson.Object
+	var actions []*jsonutil.Object
 	var batchErrors []string
 	for _, item := range objects {
-		obj, _ := item.(*pyjson.Object)
+		obj, _ := item.(*jsonutil.Object)
 		if obj == nil {
 			return &appClassedError{class: "AttributeError", msg: "Hugging Face LFS object is " + errchain.Kind(item) + " where a mapping was expected"}
 		}
@@ -648,8 +648,8 @@ func hfUploadLFS(ctx context.Context, token, repoID string, content []byte, oid 
 			if err := hfValidateBatchError(obj); err != nil {
 				return err
 			}
-			errInfo := obj.Vals["error"].(*pyjson.Object)
-			batchErrors = append(batchErrors, fmt.Sprintf("Encountered error for file with OID %s: `%s", pyrepr.Str(obj.Vals["oid"]), pyrepr.Str(errInfo.Vals["message"])))
+			errInfo := obj.Value("error").(*jsonutil.Object)
+			batchErrors = append(batchErrors, fmt.Sprintf("Encountered error for file with OID %s: `%s", anyutil.String(obj.Value("oid")), anyutil.String(errInfo.Value("message"))))
 			continue
 		}
 		if err := hfValidateBatchActions(obj); err != nil {
@@ -679,11 +679,11 @@ func hfIsInt(v any) bool {
 
 // Refuses an action without a string href or with a non dict header
 func hfValidateLFSAction(action any) error {
-	obj, ok := action.(*pyjson.Object)
+	obj, ok := action.(*jsonutil.Object)
 	if ok {
-		_, hrefOK := obj.GetOr("href", nil).(string)
-		header := obj.GetOr("header", nil)
-		_, headerOK := header.(*pyjson.Object)
+		_, hrefOK := obj.Value("href").(string)
+		header := obj.Value("header")
+		_, headerOK := header.(*jsonutil.Object)
 		if hrefOK && (header == nil || headerOK) {
 			return nil
 		}
@@ -692,16 +692,16 @@ func hfValidateLFSAction(action any) error {
 }
 
 // Refuses a batch object without oid and size or with malformed actions
-func hfValidateBatchActions(obj *pyjson.Object) error {
-	if _, ok := obj.GetOr("oid", nil).(string); !ok || !hfIsInt(obj.GetOr("size", nil)) {
+func hfValidateBatchActions(obj *jsonutil.Object) error {
+	if _, ok := obj.Value("oid").(string); !ok || !hfIsInt(obj.Value("size")) {
 		return &appValueError{"lfs_batch_actions is improperly formatted"}
 	}
-	actions, _ := obj.GetOr("actions", pyjson.NewObject()).(*pyjson.Object)
+	actions, _ := obj.ValueOr("actions", jsonutil.NewObject()).(*jsonutil.Object)
 	if actions == nil {
 		return &appClassedError{class: "AttributeError", msg: "Hugging Face LFS actions are not a mapping"}
 	}
 	for _, name := range []string{"upload", "verify"} {
-		if a := actions.GetOr(name, nil); a != nil {
+		if a := actions.Value(name); a != nil {
 			if err := hfValidateLFSAction(a); err != nil {
 				return err
 			}
@@ -711,15 +711,15 @@ func hfValidateBatchActions(obj *pyjson.Object) error {
 }
 
 // Refuses a batch error object without oid, size, message and code
-func hfValidateBatchError(obj *pyjson.Object) error {
-	if _, ok := obj.GetOr("oid", nil).(string); !ok || !hfIsInt(obj.GetOr("size", nil)) {
+func hfValidateBatchError(obj *jsonutil.Object) error {
+	if _, ok := obj.Value("oid").(string); !ok || !hfIsInt(obj.Value("size")) {
 		return &appValueError{"lfs_batch_error is improperly formatted"}
 	}
-	info, ok := obj.GetOr("error", nil).(*pyjson.Object)
+	info, ok := obj.Value("error").(*jsonutil.Object)
 	if !ok {
 		return &appValueError{"lfs_batch_error is improperly formatted"}
 	}
-	if _, ok := info.GetOr("message", nil).(string); !ok || !hfIsInt(info.GetOr("code", nil)) {
+	if _, ok := info.Value("message").(string); !ok || !hfIsInt(info.Value("code")) {
 		return &appValueError{"lfs_batch_error is improperly formatted"}
 	}
 	return nil
@@ -736,8 +736,8 @@ func hfFixEndpointInURL(u string) string {
 }
 
 // Performs one batch action, single PUT or the multipart protocol, then the verify call
-func hfLFSUpload(ctx context.Context, token string, content []byte, oid string, action *pyjson.Object) error {
-	actions, _ := action.GetOr("actions", nil).(*pyjson.Object)
+func hfLFSUpload(ctx context.Context, token string, content []byte, oid string, action *jsonutil.Object) error {
+	actions, _ := action.Value("actions").(*jsonutil.Object)
 	if actions == nil {
 		return nil
 	}
@@ -748,13 +748,13 @@ func hfLFSUpload(ctx context.Context, token string, content []byte, oid string, 
 	if err := hfValidateLFSAction(upload); err != nil {
 		return err
 	}
-	uploadObj := upload.(*pyjson.Object)
-	verify := actions.GetOr("verify", nil)
-	header, _ := uploadObj.GetOr("header", pyjson.NewObject()).(*pyjson.Object)
+	uploadObj := upload.(*jsonutil.Object)
+	verify := actions.Value("verify")
+	header, _ := uploadObj.ValueOr("header", jsonutil.NewObject()).(*jsonutil.Object)
 	if header == nil {
-		header = pyjson.NewObject()
+		header = jsonutil.NewObject()
 	}
-	uploadURL := hfFixEndpointInURL(uploadObj.Vals["href"].(string))
+	uploadURL := hfFixEndpointInURL(uploadObj.Value("href").(string))
 	if chunk, ok := header.Get("chunk_size"); ok && chunk != nil {
 		size, err := pyintOfChunk(chunk)
 		if err != nil {
@@ -777,8 +777,8 @@ func hfLFSUpload(ctx context.Context, token string, content []byte, oid string, 
 		if err := hfValidateLFSAction(verify); err != nil {
 			return err
 		}
-		r := hfRequest{method: "POST", url: hfFixEndpointInURL(verify.(*pyjson.Object).Vals["href"].(string)),
-			headers: hfHeaders(token), json: pyjson.ObjectOf("oid", oid, "size", len(content))}
+		r := hfRequest{method: "POST", url: hfFixEndpointInURL(verify.(*jsonutil.Object).Value("href").(string)),
+			headers: hfHeaders(token), json: jsonutil.ObjectOf("oid", oid, "size", len(content))}
 		resp, err := hfBackoff(ctx, r)
 		if err != nil {
 			return err
@@ -790,7 +790,7 @@ func hfLFSUpload(ctx context.Context, token string, content []byte, oid string, 
 
 // int of a chunk_size header value, the batch endpoint error for anything else
 func pyintOfChunk(v any) (int, error) {
-	bad := &appValueError{fmt.Sprintf("Malformed response from LFS batch endpoint: `chunk_size` should be an integer. Got '%s'.", pyrepr.Str(v))}
+	bad := &appValueError{fmt.Sprintf("Malformed response from LFS batch endpoint: `chunk_size` should be an integer. Got '%s'.", anyutil.String(v))}
 	switch t := v.(type) {
 	case string:
 		n, ok := pystr.IntText(t)
@@ -814,18 +814,18 @@ func pyintOfChunk(v any) (int, error) {
 }
 
 // Uploads the parts to their presigned URLs in part order then posts the completion payload
-func hfUploadMultiPart(ctx context.Context, content []byte, oid string, header *pyjson.Object, chunkSize int, uploadURL string) error {
+func hfUploadMultiPart(ctx context.Context, content []byte, oid string, header *jsonutil.Object, chunkSize int, uploadURL string) error {
 	type part struct {
 		n   int
 		url string
 	}
 	var parts []part
-	for _, k := range header.Keys {
+	for _, k := range header.Keys() {
 		if k == "" || strings.Trim(k, "0123456789") != "" {
 			continue
 		}
 		n, _ := strconv.Atoi(k)
-		parts = append(parts, part{n, pyrepr.Str(header.Vals[k])})
+		parts = append(parts, part{n, anyutil.String(header.Value(k))})
 	}
 	sort.SliceStable(parts, func(i, j int) bool { return parts[i].n < parts[j].n })
 	if chunkSize == 0 {
@@ -860,9 +860,9 @@ func hfUploadMultiPart(ctx context.Context, content []byte, oid string, header *
 			}
 			return &appValueError{fmt.Sprintf("Invalid etag (`%s`) returned for part %d", shown, i+1)}
 		}
-		completed = append(completed, pyjson.ObjectOf("partNumber", i+1, "etag", etag))
+		completed = append(completed, jsonutil.ObjectOf("partNumber", i+1, "etag", etag))
 	}
-	r := hfRequest{method: "POST", url: uploadURL, headers: hfLFSHeaders, json: pyjson.ObjectOf("oid", oid, "parts", completed)}
+	r := hfRequest{method: "POST", url: uploadURL, headers: hfLFSHeaders, json: jsonutil.ObjectOf("oid", oid, "parts", completed)}
 	resp, err := hfBackoff(ctx, r)
 	if err != nil {
 		return err
@@ -902,19 +902,19 @@ func hfUploadFile(ctx context.Context, token, repoID, pathInRepo string, content
 		pkgLog().Warn("No files have been modified since last commit. Skipping to prevent empty commit.")
 		return hfRepoInfo(ctx, token, repoID)
 	}
-	lines := []any{pyjson.ObjectOf("key", "header", "value", pyjson.ObjectOf("summary", commitMessage, "description", ""))}
+	lines := []any{jsonutil.ObjectOf("key", "header", "value", jsonutil.ObjectOf("summary", commitMessage, "description", ""))}
 	if !plan.shouldIgnore {
 		if plan.mode == "regular" {
-			lines = append(lines, pyjson.ObjectOf("key", "file", "value", pyjson.ObjectOf(
+			lines = append(lines, jsonutil.ObjectOf("key", "file", "value", jsonutil.ObjectOf(
 				"content", base64.StdEncoding.EncodeToString(content), "path", pathInRepo, "encoding", "base64")))
 		} else {
-			lines = append(lines, pyjson.ObjectOf("key", "lfsFile", "value", pyjson.ObjectOf(
+			lines = append(lines, jsonutil.ObjectOf("key", "lfsFile", "value", jsonutil.ObjectOf(
 				"path", pathInRepo, "algo", "sha256", "oid", oid, "size", len(content))))
 		}
 	}
 	var body bytes.Buffer
 	for _, line := range lines {
-		text, err := pyjson.Dumps(line)
+		text, err := jsonutil.Encode(line)
 		if err != nil {
 			return err
 		}
@@ -936,7 +936,7 @@ func hfUploadFile(ctx context.Context, token, repoID, pathInRepo string, content
 	if err != nil {
 		return err
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return &appClassedError{class: "TypeError", msg: "Hugging Face reply is " + errchain.Kind(data) + " where a mapping was expected"}
 	}

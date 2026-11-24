@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Nudge for a silent background process that is almost always a bounded task missing its flag
@@ -175,7 +175,7 @@ func spawnTracked(ctx context.Context, env *Env, e Environment, envType, command
 }
 
 // Drops the notification flags on finite sessions and stamps routing otherwise
-func applyAsyncSupport(env *Env, s *ProcessSession, result *pyjson.Object, notifyOnComplete bool, watchPatterns []string) (bool, []string) {
+func applyAsyncSupport(env *Env, s *ProcessSession, result *jsonutil.Object, notifyOnComplete bool, watchPatterns []string) (bool, []string) {
 	if !notifyOnComplete && len(watchPatterns) == 0 {
 		return notifyOnComplete, watchPatterns
 	}
@@ -243,7 +243,7 @@ func spawnBackgroundProcess(ctx context.Context, env *Env, e Environment, req ba
 		result.Set("hint", silentBackgroundHint)
 	}
 	if req.command != "" && looksLikeHomebrewCIPoller(req.command) {
-		if existing, _ := result.Vals["hint"].(string); existing != "" {
+		if existing, _ := result.Value("hint").(string); existing != "" {
 			result.Set("hint", existing+"\n\n"+homebrewCIPollerHint)
 		} else {
 			result.Set("hint", homebrewCIPollerHint)

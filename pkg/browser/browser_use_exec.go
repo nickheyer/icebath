@@ -2,26 +2,26 @@ package browser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"maps"
 	"math"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -90,8 +90,8 @@ func exportSessionCDP(penv map[string]string, info func(string) (map[string]any,
 		return failMsg(err)
 	}
 	cdp := ""
-	if v := got["cdp_url"]; pyrepr.Truthy(v) {
-		cdp = pyrepr.Str(v)
+	if v := got["cdp_url"]; anyutil.IsTrue(v) {
+		cdp = anyutil.String(v)
 	}
 	if cdp == "" {
 		return noCDPMsg
@@ -112,7 +112,7 @@ func codeURLVerdict(env *tools.Env, code string) (string, bool, error) {
 		if blocked := evaluateURLSafety(env, u, routesLocal); blocked != nil {
 			msg := "Blocked: unsafe URL"
 			if v, ok := blocked.Get("error"); ok {
-				msg = pyrepr.Str(v)
+				msg = anyutil.String(v)
 			}
 			return msg, localSidecar, nil
 		}
@@ -146,14 +146,14 @@ func workspaceDir(env *tools.Env, taskID string) string {
 		path = filepath.Join(s.homeDir(), "cache", "browser-use", "workspace", safe)
 	}
 	if err := os.MkdirAll(path, 0o777); err != nil {
-		pkgLog().Debug(fmt.Sprintf("browser_exec workspace unavailable: %s", pypath.OSErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("browser_exec workspace unavailable: %s", err.Error()))
 		return ""
 	}
 	return path
 }
 
 // Multimodal result attaching the screenshot for a native vision model, empty otherwise
-func nativeScreenshotResult(ctx context.Context, env *tools.Env, result *pyjson.Object, path string) string {
+func nativeScreenshotResult(ctx context.Context, env *tools.Env, result *jsonutil.Object, path string) string {
 	if !execNativeVision(ctx, env) {
 		return ""
 	}
@@ -163,18 +163,18 @@ func nativeScreenshotResult(ctx context.Context, env *tools.Env, result *pyjson.
 		pkgLog().Debug(fmt.Sprintf("Native screenshot attach failed (falling back to text): %s", err))
 		return ""
 	}
-	text, err := pyjson.Dumps(result, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(result)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Native screenshot attach failed (falling back to text): %s", err))
 		return ""
 	}
 	attached := text + "\n\nThe screenshot from this call is attached — inspect it with your native vision."
-	return tools.ToolResult(pyjson.ObjectOf(
+	return tools.ToolResult(jsonutil.ObjectOf(
 		"_multimodal", true, "text_summary", text,
-		"meta", pyjson.ObjectOf("screenshot_path", path, "native_vision", true),
+		"meta", jsonutil.ObjectOf("screenshot_path", path, "native_vision", true),
 		"content", []any{
-			pyjson.ObjectOf("type", "text", "text", attached),
-			pyjson.ObjectOf("type", "image_url", "image_url", pyjson.ObjectOf("url", dataURL)),
+			jsonutil.ObjectOf("type", "text", "text", attached),
+			jsonutil.ObjectOf("type", "image_url", "image_url", jsonutil.ObjectOf("url", dataURL)),
 		}))
 }
 
@@ -219,23 +219,23 @@ func sidecarSessionName(name string) string {
 // Carries the session layer's real profile fallback note for the key
 func exportRealProfileNote(penv map[string]string, key string) {
 	note := realProfileNote(key)
-	if !pyrepr.Truthy(note) {
+	if !anyutil.IsTrue(note) {
 		return
 	}
 	if _, ok := penv[realProfileFallbackSentinel]; !ok {
-		penv[realProfileFallbackSentinel] = pyrepr.Str(note)
+		penv[realProfileFallbackSentinel] = anyutil.String(note)
 	}
 }
 
 // Flags a local session browser for the Bot Desktop fence and as exclusive unless its profile is shared
 func markLocalBrowser(penv map[string]string, session map[string]any, key string) {
 	features, _ := session["features"].(map[string]any)
-	if pyrepr.Truthy(features["lightpanda"]) {
+	if anyutil.IsTrue(features["lightpanda"]) {
 		penv[botDesktopBrowserSentinel] = "lightpanda"
 	} else {
 		penv[botDesktopBrowserSentinel] = "local"
 	}
-	if !pyrepr.Truthy(session["shared_profile"]) && !pyrepr.Truthy(features["real_profile"]) {
+	if !anyutil.IsTrue(session["shared_profile"]) && !anyutil.IsTrue(features["real_profile"]) {
 		penv[privateBrowserSentinel] = "1"
 	}
 	exportRealProfileNote(penv, key)
@@ -280,7 +280,7 @@ func resolveLocalCDP(ctx context.Context, env *tools.Env, penv map[string]string
 // True for the headed Chromium shown on the Bot Desktop screen, never the user's own profile or Lightpanda
 func drivesScreenBrowser(env *tools.Env, session map[string]any) bool {
 	features := featuresOf(session)
-	return sharesBotDesktopBrowser(env, session) && !pyrepr.Truthy(features["real_profile"]) && !pyrepr.Truthy(features["lightpanda"])
+	return sharesBotDesktopBrowser(env, session) && !anyutil.IsTrue(features["real_profile"]) && !anyutil.IsTrue(features["lightpanda"])
 }
 
 // Routes to the configured backend, operator overrides first, then sidecar, provider and local engine
@@ -313,9 +313,9 @@ func resolveBackendCDP(ctx context.Context, env *tools.Env, penv map[string]stri
 		},
 		fmt.Sprintf("Cloud browser provider %s returned no CDP endpoint, so browser_exec "+
 			"cannot drive it. Pick a CDP-capable provider via `icebath tools` → Browser Automation.", providerName))
-	if pyrepr.Truthy(session["fallback_from_cloud"]) {
+	if anyutil.IsTrue(session["fallback_from_cloud"]) {
 		pkgLog().Warn(fmt.Sprintf("browser_exec: %s failed (%s); using local Chromium for this session",
-			providerName, pyrepr.Str(session["fallback_reason"])))
+			providerName, anyutil.String(session["fallback_reason"])))
 		if err == "" {
 			markLocalBrowser(penv, session, key)
 		}
@@ -390,42 +390,37 @@ func routeBackend(ctx context.Context, env *tools.Env, penv map[string]string, s
 	return resolveBackendCDP(ctx, env, penv, taskID, session, forceLocalSidecar)
 }
 
-// Python int of a value, false where int raises TypeError or ValueError
-func pyIntOf(v any) (*big.Int, bool) {
-	switch x := v.(type) {
+// Timeout seconds clamped to the exec bounds: a bool counts as 0 or 1, a float is truncated, numeric text is read in
+// base ten, anything holding no integer gives the default and an infinite float fails
+func clampTimeout(timeoutS any) int {
+	var n int64
+	switch x := timeoutS.(type) {
 	case bool:
 		if x {
-			return big.NewInt(1), true
+			n = 1
 		}
-		return big.NewInt(0), true
 	case float64:
 		if math.IsNaN(x) {
-			return nil, false
+			return execDefaultTimeoutS
 		}
 		if math.IsInf(x, 0) {
 			panic(pyError("OverflowError", "cannot convert float infinity to integer"))
 		}
-		n, _ := big.NewFloat(math.Trunc(x)).Int(nil)
-		return n, true
+		n = int64(min(max(x, float64(execMinTimeoutS)), execMaxTimeoutS))
 	case string:
-		return pystr.IntText(x)
+		parsed, err := textutil.ParseInt(x)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
+			return execDefaultTimeoutS
+		}
+		n = parsed
+	default:
+		parsed, ok := anyutil.Int(x)
+		if !ok {
+			return execDefaultTimeoutS
+		}
+		n = parsed
 	}
-	return pyrepr.Int(v)
-}
-
-// Timeout seconds clamped to the exec bounds, the default for a value int refuses
-func clampTimeout(timeoutS any) int {
-	n, ok := pyIntOf(timeoutS)
-	if !ok {
-		return execDefaultTimeoutS
-	}
-	if n.Cmp(big.NewInt(execMaxTimeoutS)) > 0 {
-		return execMaxTimeoutS
-	}
-	if n.Cmp(big.NewInt(int64(execMinTimeoutS))) < 0 {
-		return execMinTimeoutS
-	}
-	return int(n.Int64())
+	return int(min(max(n, int64(execMinTimeoutS)), execMaxTimeoutS))
 }
 
 // Routes one call and remembers a real profile fallback so the route keeps its fresh browser
@@ -477,8 +472,8 @@ func takeRealProfileNote(routeKey string) (string, bool) {
 }
 
 // Fence refusal as the ordered dict the session layer builds
-func fenceRefusal(m map[string]any) *pyjson.Object {
-	out := pyjson.NewObject()
+func fenceRefusal(m map[string]any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	order := []string{"success", "error", "code"}
 	if msg, _ := m["error"].(string); strings.HasPrefix(msg, fenceTakeoverPrefix) {
 		order = []string{"success", "code", "error"}
@@ -572,7 +567,7 @@ func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, 
 		return toolErr(err.Error()), nil
 	}
 	if sessionName != "" && !execSessionRE.MatchString(sessionName) {
-		return toolErr(fmt.Sprintf("Invalid session name %s: use 1-64 letters, digits, dashes, or underscores (e.g. 'r7k2').", pyrepr.StrRepr(sessionName))), nil
+		return toolErr(fmt.Sprintf("Invalid session name %s: use 1-64 letters, digits, dashes, or underscores (e.g. 'r7k2').", strconv.Quote(sessionName))), nil
 	}
 	route := map[string]string{}
 	if sessionName != "" {
@@ -610,7 +605,7 @@ func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, 
 				"append to workspace files — anything already written to the workspace is preserved.", timeout, execMaxTimeoutS))}
 		}
 		if proc.launchErr != nil {
-			return map[string]any{"error_result": toolErr("Failed to launch Python for browser_exec: " + pypath.OSErrorText(proc.launchErr))}
+			return map[string]any{"error_result": toolErr("Failed to launch Python for browser_exec: " + proc.launchErr.Error())}
 		}
 		return map[string]any{"proc": proc}
 	}
@@ -628,7 +623,7 @@ func browserExec(ctx context.Context, env *tools.Env, code, sessionName string, 
 		return tools.ToolResult(fenceRefusal(dispatched)), nil
 	}
 	redact := func(s string) string { return tools.RedactSensitiveTextWith(env, s, tools.RedactOptions{Force: true}) }
-	result := pyjson.ObjectOf("success", proc.returnCode == 0, "exit_code", proc.returnCode, "output", redact(proc.stdout))
+	result := jsonutil.ObjectOf("success", proc.returnCode == 0, "exit_code", proc.returnCode, "output", redact(proc.stdout))
 	if workspace != "" {
 		result.Set("workspace", workspace)
 	}

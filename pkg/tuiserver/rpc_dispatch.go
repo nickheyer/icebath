@@ -7,12 +7,12 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Set of the given names
@@ -134,19 +134,19 @@ func init() {
 
 // Request as a plain map tree, a decoded JSON object converted and anything else unchanged
 func plainRequest(req any) any {
-	if obj, isObject := req.(*pyjson.Object); isObject && obj != nil {
-		return pyjson.Plain(obj)
+	if obj, isObject := req.(*jsonutil.Object); isObject && obj != nil {
+		return jsonutil.Plain(obj)
 	}
 	return req
 }
 
 // Ordered JSON object of a request or response, a plain map ordered like the Python dict literal
-func frameObject(frame any) *pyjson.Object {
+func frameObject(frame any) *jsonutil.Object {
 	switch t := frame.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t
 	case map[string]any:
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for _, key := range []string{"jsonrpc", "id", "method", "params", "result", "error"} {
 			if value, present := t[key]; present {
 				out.Set(key, pyjsonValue(value))
@@ -253,7 +253,7 @@ func Dispatch(ctx context.Context, req any, transport tuihost.Transport) map[str
 	ctx = tuihost.BindTransport(ctx, t)
 	if frame := frameObject(req); frame != nil && tuihost.IsResponseFrame(frame) {
 		if !tuihost.ResolveResponse(frame, t) {
-			pkgLog().Debug(fmt.Sprintf("dropping response for unknown server request id=%s", pyrepr.Repr(frame.GetOr("id", nil))))
+			pkgLog().Debug(fmt.Sprintf("dropping response for unknown server request id=%s", anyutil.Quote(frame.ValueOr("id", nil))))
 		}
 		return nil
 	}

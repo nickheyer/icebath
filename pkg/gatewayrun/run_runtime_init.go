@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Seconds since the epoch like time.time
@@ -58,7 +58,7 @@ func (r *GatewayRunner) initLifecycleState() {
 	r.running.Store(false)
 	r.draining.Store(false)
 	r.gatewayLoop = nil
-	r.shutdownEvent = &pythread.Event{}
+	r.shutdownEvent = &syncutil.Event{}
 	r.exitReason, r.exitCode = nil, nil
 	r.profileFailedPlatforms = map[string]map[gateway.Platform]*gatewayTask{}
 	r.profileBotPlatforms = map[string]map[gateway.Platform]struct{}{}
@@ -83,11 +83,11 @@ func (r *GatewayRunner) initLifecycleState() {
 	r.startupRestoreQueue = []*gateway.MessageEvent{}
 	r.startupRestoreTasks = []*gatewayTask{}
 	r.platformLockTakeoverOnStart = false
-	r.sessionSources = pydict.New[string, *gateway.SessionSource]()
+	r.sessionSources = orderedutil.NewMap[string, *gateway.SessionSource]()
 	r.sessionSourcesMax = 512
 	r.completionDeliveryLock = &sync.Mutex{}
 	r.completionDeliveriesInflight = map[completionIdentity]struct{}{}
-	r.completionDeliveriesDelivered = pydict.New[completionIdentity, struct{}]()
+	r.completionDeliveriesDelivered = orderedutil.NewMap[completionIdentity, struct{}]()
 	r.completionDeliveryRetention = 2048
 	r.completionNotificationBatches = map[string][]completionBatchItem{}
 	r.completionNotificationBatchTasks = map[string]*gatewayTask{}
@@ -98,7 +98,7 @@ func (r *GatewayRunner) initLifecycleState() {
 
 // Agent cache, launch profile identity, Teams runtime slot, failed platform tracking and the confirm counter
 func (r *GatewayRunner) initRuntimeCaches(ctx context.Context) {
-	r.agentCache = pydict.New[string, agentCacheEntry]()
+	r.agentCache = orderedutil.NewMap[string, agentCacheEntry]()
 	r.agentCacheLock = &sync.Mutex{}
 	launch := r.activeProfileName(ctx)
 	r.kanbanNotifierProfile = launch
@@ -108,7 +108,7 @@ func (r *GatewayRunner) initRuntimeCaches(ctx context.Context) {
 	}
 	r.teamsPipelineRuntime = nil
 	r.teamsPipelineRuntimeError = nil
-	r.failedPlatforms = pydict.New[gateway.Platform, map[string]any]()
+	r.failedPlatforms = orderedutil.NewMap[gateway.Platform, map[string]any]()
 	r.fatalHandlerTasks = map[*gatewayTask]struct{}{}
 	r.slashConfirmCounter = &atomic.Int64{}
 }

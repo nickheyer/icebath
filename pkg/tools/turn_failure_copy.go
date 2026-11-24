@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -39,8 +38,8 @@ var FailureCauseGlossTable = map[string]string{
 // Plain clause for a classified failure reason with the asker substituted, false when the reason has no gloss
 func FailureCauseGloss(reason any, subject, possessive string) (string, bool) {
 	key := ""
-	if pyrepr.Truthy(reason) {
-		key = pyrepr.Str(reason)
+	if anyutil.IsTrue(reason) {
+		key = anyutil.String(reason)
 	}
 	template, ok := FailureCauseGlossTable[key]
 	if !ok || template == "" {
@@ -109,7 +108,7 @@ var siteCopyFieldName = regexp.MustCompile(`\{([^{}:!.\[]*)`)
 // SiteCopyError is the KeyError an unknown site copy code raises
 type SiteCopyError struct{ Code string }
 
-func (e *SiteCopyError) Error() string { return pyrepr.Repr(e.Code) }
+func (e *SiteCopyError) Error() string { return anyutil.Quote(e.Code) }
 
 // PyTypeName names the Python exception class an unknown code raises
 func (e *SiteCopyError) PyTypeName() string { return "KeyError" }

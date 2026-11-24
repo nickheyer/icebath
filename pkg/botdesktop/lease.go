@@ -16,8 +16,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -54,8 +54,8 @@ func corruptLease(reason string) BotDesktopLease {
 	return l
 }
 
-func (l BotDesktopLease) AsDict() *pyjson.Object {
-	return pyjson.ObjectOf("holder", l.Holder, "viewer_id", l.ViewerID, "since", l.Since, "reason", l.Reason, "epoch", l.Epoch)
+func (l BotDesktopLease) AsDict() *jsonutil.Object {
+	return jsonutil.ObjectOf("holder", l.Holder, "viewer_id", l.ViewerID, "since", l.Since, "reason", l.Reason, "epoch", l.Epoch)
 }
 
 // Integer epoch for comparisons across an admitted action, bools and floats folded as Python int does
@@ -97,7 +97,7 @@ func (l *BotDesktopLease) bumpEpoch() error {
 }
 
 // Lease as RPC results and broadcasts show it, the viewer id capability replaced by a short hash
-func LeasePublicView(l BotDesktopLease) *pyjson.Object {
+func LeasePublicView(l BotDesktopLease) *jsonutil.Object {
 	d := l.AsDict()
 	d.Set("viewer_id", nil)
 	if id, ok := l.ViewerID.(string); ok && id != "" {
@@ -138,12 +138,12 @@ func leaseRead(path string) BotDesktopLease {
 	if err != nil {
 		return corruptLease("lease file unreadable")
 	}
-	text, err := pyjson.DecodeBytes([]byte(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")))
+	text, err := jsonutil.Text([]byte(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")))
 	if err != nil {
 		return corruptLease("lease file unreadable")
 	}
-	data, err := pyjson.Loads(text)
-	obj, ok := data.(*pyjson.Object)
+	data, err := jsonutil.Decode(text)
+	obj, ok := data.(*jsonutil.Object)
 	if err != nil || !ok {
 		return corruptLease("lease file corrupt")
 	}
@@ -181,7 +181,7 @@ func leaseWrite(path string, l BotDesktopLease) error {
 	if err := leasePrivateDir(path); err != nil {
 		return err
 	}
-	text, err := pyjson.Dumps(l.AsDict())
+	text, err := jsonutil.Encode(l.AsDict())
 	if err != nil {
 		return err
 	}
@@ -211,10 +211,10 @@ func leaseLocked(path string, fn func() error) error {
 		return err
 	}
 	defer fh.Close()
-	if err := pyfs.LockFile(fh); err != nil {
+	if err := fsutil.LockFile(fh); err != nil {
 		return err
 	}
-	defer pyfs.UnlockFile(fh)
+	defer fsutil.UnlockFile(fh)
 	return fn()
 }
 

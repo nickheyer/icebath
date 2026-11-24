@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func selectRequest() []map[string]any {
@@ -388,7 +388,7 @@ const (
 )
 
 func sendValidArgs(t *testing.T) string {
-	return mustDumps(t, pyjson.ObjectOf("path", "a.txt", "text", "héllo"))
+	return mustDumps(t, jsonutil.ObjectOf("path", "a.txt", "text", "héllo"))
 }
 
 func adversarialHistory(t *testing.T) []any {

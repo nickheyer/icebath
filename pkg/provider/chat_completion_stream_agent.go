@@ -10,8 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // StreamEmitters brackets a stream with the agent display hooks for its start and its end
@@ -97,7 +97,7 @@ func finalizeBedrockRelayEvents(events []any) (any, error) {
 	for _, ev := range events {
 		m, ok := ev.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("bedrock relay event %s is not an event dict", pyrepr.TypeName(ev))
+			return nil, fmt.Errorf("bedrock relay event %s is not an event dict", anyutil.Kind(ev))
 		}
 		dicts = append(dicts, m)
 	}
@@ -360,7 +360,7 @@ func runBedrockStreamWorker(ctx context.Context, r bedrockStreamRun, cb bedrockS
 		}
 		event, ok := chunk.(map[string]any)
 		if !ok {
-			return nil, fmt.Errorf("bedrock stream chunk %s is not an event dict", pyrepr.TypeName(chunk))
+			return nil, fmt.Errorf("bedrock stream chunk %s is not an event dict", anyutil.Kind(chunk))
 		}
 		return event, nil
 	}

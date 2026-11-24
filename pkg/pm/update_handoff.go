@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hand off file and update flags of the exact fresh checkout command shipped updaters emit
@@ -28,7 +28,7 @@ func LegacyPostSwapInvocation(argv []string) (string, []string, bool) {
 }
 
 // Post swap payload of a hand off file, a ValueError when it holds no JSON object
-func readHandoff(path string) (*pyjson.Object, error) {
+func readHandoff(path string) (*jsonutil.Object, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -37,29 +37,29 @@ func readHandoff(path string) (*pyjson.Object, error) {
 	if err := strictUTF8(data); err != nil {
 		return nil, &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
-	decoded, err := pyjson.Loads(string(data))
+	decoded, err := jsonutil.Decode(string(data))
 	if err != nil {
 		return nil, err
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("post-swap hand-off %s is not a JSON object", pypath.PurePathStr(path))}
+		return nil, &PyError{Class: "ValueError", Message: fmt.Sprintf("post-swap hand-off %s is not a JSON object", filepath.Clean(path))}
 	}
 	return payload, nil
 }
 
 // Takeover request of a post swap payload, the older resume and assume yes names mapped onto the new ones
-func takeoverRequest(payload *pyjson.Object, argvTail []string) *OrderedObject {
+func takeoverRequest(payload *jsonutil.Object, argvTail []string) *OrderedObject {
 	request := NewOrderedObject()
-	for _, key := range payload.Keys {
-		request.Set(key, payload.Vals[key])
+	for _, key := range payload.Keys() {
+		request.Set(key, payload.Value(key))
 	}
 	setDefault := func(key string, value any) {
 		if _, ok := request.Get(key); !ok {
 			request.Set(key, value)
 		}
 	}
-	setDefault("windows_resume", payload.GetOr("windows_gateway_resume", nil))
+	setDefault("windows_resume", payload.ValueOr("windows_gateway_resume", nil))
 	setDefault("assume_yes", slices.Contains(argvTail, "--yes"))
 	setDefault("restart_update", false)
 	return request
@@ -71,6 +71,6 @@ func ContinueLegacyPostSwap(ctx context.Context, handoffPath string, argvTail []
 	if err != nil {
 		return 0, err
 	}
-	_ = pypath.Unlink(handoffPath)
+	_ = os.Remove(handoffPath)
 	return runChild(ctx, takeoverRequest(payload, argvTail))
 }

@@ -17,7 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type scInstall struct {
@@ -114,7 +115,7 @@ func scFixture(t *testing.T) *scInstall {
 	return f
 }
 
-func scGet(t *testing.T, status *pyjson.Object, key string) any {
+func scGet(t *testing.T, status *jsonutil.Object, key string) any {
 	t.Helper()
 	value, _ := status.Get(key)
 	return value
@@ -156,7 +157,7 @@ func TestSourceCheckCacheForceExpiryAndPassiveOptOut(t *testing.T) {
 	t.Cleanup(func() { sourceCheckClock = previous })
 	url := "/repos/fixture/fork/commits/main"
 	f.respond(url, 200, f.head)
-	check := func(opts SourceCheckOptions) *pyjson.Object {
+	check := func(opts SourceCheckOptions) *jsonutil.Object {
 		t.Helper()
 		opts.InstallRoot, opts.Home = f.root, f.home
 		status, err := CheckForUpdates(context.Background(), opts)
@@ -165,7 +166,10 @@ func TestSourceCheckCacheForceExpiryAndPassiveOptOut(t *testing.T) {
 		}
 		return status
 	}
-	behindZero := func(status *pyjson.Object) bool { n, ok := pyIntValue(scGet(t, status, "behind")); return ok && n == 0 }
+	behindZero := func(status *jsonutil.Object) bool {
+		n, ok := pyIntValue(scGet(t, status, "behind"))
+		return ok && n == 0
+	}
 	if !behindZero(check(SourceCheckOptions{})) {
 		t.Fatal("first check")
 	}
@@ -211,7 +215,7 @@ func TestSourceCheckExplicitAndCurrentBranchHealOnlyAfterConfirmedAbsence(t *tes
 	f := scFixture(t)
 	f.git(t, f.root, "remote", "set-url", "origin", f.root)
 	ctx := context.Background()
-	branch := func(name *string, force bool) *pyjson.Object {
+	branch := func(name *string, force bool) *jsonutil.Object {
 		status, err := CheckForUpdates(ctx, SourceCheckOptions{InstallRoot: f.linked, Home: f.home, Branch: name, Force: force})
 		if err != nil {
 			t.Fatal(err)
@@ -462,7 +466,7 @@ func scUnique(prefix string) string {
 	return fmt.Sprintf("%s%012x", prefix, time.Now().UnixNano()&0xffffffffffff)
 }
 
-func scCheck(t *testing.T, opts SourceCheckOptions) *pyjson.Object {
+func scCheck(t *testing.T, opts SourceCheckOptions) *jsonutil.Object {
 	t.Helper()
 	status, err := CheckForUpdates(context.Background(), opts)
 	if err != nil {
@@ -1020,7 +1024,7 @@ func TestSourceCheckStableReleaseTheUpdaterRefusesIsHeldNotOffered(t *testing.T)
 		allowed := scCheck(t, SourceCheckOptions{InstallRoot: f.root, Home: f.home, Channel: &stable})
 		behind, _ := pyIntValue(scGet(t, allowed, "behind"))
 		if _, has := allowed.Get("held"); scGet(t, allowed, "updateAvailable") != true || behind != -1 || scGet(t, allowed, "rollback") != !c.divergent || has ||
-			!pyjson.Equal(scGet(t, allowed, "fetchedAt"), scGet(t, status, "fetchedAt")) {
+			!anyutil.Equal(scGet(t, allowed, "fetchedAt"), scGet(t, status, "fetchedAt")) {
 			t.Fatalf("%+v allowed %v", c, allowed)
 		}
 		if asked := f.asked(); len(asked) != len(seen) {

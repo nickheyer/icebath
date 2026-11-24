@@ -9,9 +9,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/teams"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Teams platform settings mirrored into the teams_delivery config of the pipeline
@@ -19,14 +20,14 @@ var deliveryKeys = []string{"incoming_webhook_url", "access_token", "team_id", "
 
 // Pipeline surface the webhook scheduler drives, the durable accept and the detached run
 type PipelineRuntime interface {
-	CreateJobFromNotification(notification *pyjson.Object) (*TeamsMeetingPipelineJob, error)
+	CreateJobFromNotification(notification *jsonutil.Object) (*TeamsMeetingPipelineJob, error)
 	RunJob(ctx context.Context, jobOrID any) (*TeamsMeetingPipelineJob, error)
 }
 
 // Gateway runner surface the binding reads and writes, its config, live adapters and bound runtime slot
 type GatewayRuntimeHost interface {
 	RunnerConfig() *gateway.GatewayConfig
-	Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	Adapters() *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 	TeamsPipelineRuntime() any
 	SetTeamsPipelineRuntime(runtime any)
 	SetTeamsPipelineRuntimeError(message *string)
@@ -60,7 +61,7 @@ var (
 	importTeamsSummaryWriter = func() (func(platformConfig *gateway.PlatformConfig) SummarySink, error) {
 		return func(platformConfig *gateway.PlatformConfig) SummarySink {
 			writer := teams.NewTeamsSummaryWriter(platformConfig, nil, nil)
-			return SinkFn(func(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *pyjson.Object) (*pyjson.Object, error) {
+			return SinkFn(func(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *jsonutil.Object) (*jsonutil.Object, error) {
 				return writer.WriteSummary(ctx, teamsSummaryContent(payload), config, existingRecord)
 			})
 		}, nil
@@ -81,19 +82,19 @@ func teamsSummaryContent(payload *TeamsMeetingSummaryPayload) teams.SummaryPaylo
 }
 
 // Whether the delivery mode has its target, a webhook URL or a chat or team channel pair
-func teamsDeliveryIsConfigured(teamsExtra map[string]any, teamsDelivery *pyjson.Object) bool {
+func teamsDeliveryIsConfigured(teamsExtra map[string]any, teamsDelivery *jsonutil.Object) bool {
 	pick := func(key string) any { return or(get(teamsDelivery, key), teamsExtra[key]) }
 	switch strings.ToLower(strField(or(get(teamsDelivery, "mode"), pick("delivery_mode"), ""))) {
 	case "incoming_webhook":
-		return pyrepr.Truthy(pick("incoming_webhook_url"))
+		return anyutil.IsTrue(pick("incoming_webhook_url"))
 	case "graph":
-		return pyrepr.Truthy(pick("chat_id")) || (pyrepr.Truthy(pick("team_id")) && pyrepr.Truthy(pick("channel_id")))
+		return anyutil.IsTrue(pick("chat_id")) || (anyutil.IsTrue(pick("team_id")) && anyutil.IsTrue(pick("channel_id")))
 	}
 	return false
 }
 
 // Pipeline config from teams.extra.meeting_pipeline with the Teams delivery targets of an enabled platform mirrored in
-func BuildPipelineRuntimeConfig(gatewayConfig *gateway.GatewayConfig) (*pyjson.Object, error) {
+func BuildPipelineRuntimeConfig(gatewayConfig *gateway.GatewayConfig) (*jsonutil.Object, error) {
 	teamsConfig := gatewayConfig.Platforms[gateway.Platform("teams")]
 	teamsExtra := map[string]any{}
 	if teamsConfig != nil {
@@ -123,7 +124,7 @@ func BuildPipelineRuntimeConfig(gatewayConfig *gateway.GatewayConfig) (*pyjson.O
 				teamsDelivery.Set(key, value)
 			}
 		default:
-			if name := pyrepr.TypeName(value); name == "list" || name == "dict" || name == "set" {
+			if name := anyutil.Kind(value); name == "list" || name == "dict" || name == "set" {
 				return nil, pyError("TypeError", "Teams delivery setting "+key+" is "+errchain.Kind(value)+" where a single value was expected")
 			}
 			teamsDelivery.Set(key, value)
@@ -149,7 +150,7 @@ func BuildPipelineRuntime(ctx context.Context, host GatewayRuntimeHost) (*TeamsM
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(notionEnabled) {
+	if anyutil.IsTrue(notionEnabled) {
 		writer, err := NewNotionWriter(ctx, "", nil)
 		if err != nil {
 			return nil, err
@@ -160,7 +161,7 @@ func BuildPipelineRuntime(ctx context.Context, host GatewayRuntimeHost) (*TeamsM
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(linearEnabled) {
+	if anyutil.IsTrue(linearEnabled) {
 		writer, err := NewLinearWriter(ctx, "", nil)
 		if err != nil {
 			return nil, err
@@ -172,7 +173,7 @@ func BuildPipelineRuntime(ctx context.Context, host GatewayRuntimeHost) (*TeamsM
 		if err != nil {
 			return nil, err
 		}
-		if pyrepr.Truthy(enabled) {
+		if anyutil.IsTrue(enabled) {
 			newWriter, err := importTeamsSummaryWriter()
 			switch {
 			case err == nil:
@@ -219,13 +220,13 @@ func BindGatewayRuntime(ctx context.Context, host GatewayRuntimeHost) (bool, err
 	}
 	runtime, err := runtimeBuildPipeline(ctx, host)
 	if err != nil {
-		message := pyrepr.ExceptionMessage(err)
+		message := err.Error()
 		host.SetTeamsPipelineRuntimeError(&message)
 		pkgLog().Warn(fmt.Sprintf("Teams pipeline runtime unavailable: %s. Installing a drop-scheduler "+
 			"so Graph notifications ack cleanly without piling up unbound.", message))
-		drop := func(_ context.Context, notification *pyjson.Object, _ *gateway.MessageEvent) error {
+		drop := func(_ context.Context, notification *jsonutil.Object, _ *gateway.MessageEvent) error {
 			pkgLog().Debug(fmt.Sprintf("Dropping Graph notification because runtime is unavailable: id=%s resource=%s",
-				pyrepr.Str(get(notification, "id")), pyrepr.Str(get(notification, "resource"))))
+				anyutil.String(get(notification, "id")), anyutil.String(get(notification, "resource"))))
 			return nil
 		}
 		return false, setScheduler(drop)
@@ -233,7 +234,7 @@ func BindGatewayRuntime(ctx context.Context, host GatewayRuntimeHost) (bool, err
 	tracker, _ := adapter.(backgroundTaskTracker)
 	var mu sync.Mutex
 	scheduled := map[string]bool{}
-	schedule := func(sctx context.Context, notification *pyjson.Object, _ *gateway.MessageEvent) error {
+	schedule := func(sctx context.Context, notification *jsonutil.Object, _ *gateway.MessageEvent) error {
 		mu.Lock()
 		job, err := runtime.CreateJobFromNotification(notification)
 		if err != nil || job.Status != "received" || scheduled[job.JobID] {

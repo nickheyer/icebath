@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestGetTaskMaxConcurrency(t *testing.T) {
@@ -114,7 +114,7 @@ func TestBuildCallKwargsToolDedupAndExtraBody(t *testing.T) {
 	off := false
 	kw, _ = auxBuildCallKwargs(ctx, "deepinfra", "m", []any{}, auxCallKwargsOptions{Timeout: 30,
 		ExtraBody: map[string]any{"reasoning": map[string]any{"enabled": true, "effort": "high"}}, ReasoningConfig: map[string]any{"enabled": off}})
-	if eb, _ := pyjson.Plain(kw["extra_body"]).(map[string]any); eb != nil {
+	if eb, _ := jsonutil.Plain(kw["extra_body"]).(map[string]any); eb != nil {
 		if r, _ := eb["reasoning"].(map[string]any); r != nil && r["effort"] == "high" {
 			t.Fatalf("caller disable lost to task reasoning %v", eb)
 		}

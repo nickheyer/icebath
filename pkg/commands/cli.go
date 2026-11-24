@@ -16,9 +16,8 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	diffutil "github.com/nickheyer/icebath/pkg/utils/diff"
 )
 
 // CLIHandler runs one bound CLI subcommand
@@ -570,11 +569,11 @@ func positionalValueError(cmd *cobra.Command, specs []posSpec, args []string) er
 		if s.Variadic || s.Remain {
 			break
 		}
-		value, repr := a, pyrepr.StrRepr
+		value, repr := a, strconv.Quote
 		if s.Int {
 			n, err := strconv.Atoi(a)
 			if err != nil {
-				return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid int value: %s", s.display(), pyrepr.StrRepr(a))}
+				return &ArgparseError{Cmd: cmd, Msg: fmt.Sprintf("argument %s: invalid int value: %s", s.display(), strconv.Quote(a))}
 			}
 			value, repr = strconv.Itoa(n), func(v string) string { return v }
 		}
@@ -621,7 +620,7 @@ func (c *CLI) hasChatIntent(root *cobra.Command) bool {
 func (c *CLI) unknownCommand(cmd *cobra.Command, value string) error {
 	prog := cmd.CommandPath()
 	lines := []string{fmt.Sprintf("%s: '%s' is not a `%s` command.", prog, value, prog)}
-	close := pydifflib.GetCloseMatches(value, subcommandChoices(cmd), 3, 0.6)
+	close := diffutil.CloseMatches(value, subcommandChoices(cmd), 3, 0.6)
 	ctx := context.Background()
 	install := pluginCommandInstallHint(ctx, prog, value)
 	owner := ""

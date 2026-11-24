@@ -2,17 +2,14 @@ package plugins
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 const (
@@ -36,7 +33,6 @@ var (
 	defaultHookIdentityFields  = []string{"tool_call_id", "turn_id"}
 	hookTimeoutFailClosedHooks = map[string]bool{"pre_tool_call": true}
 	hookCallerThreadHooks      = map[string]bool{"subagent_stop": true}
-	pyFloatRe                  = regexp.MustCompile(`^[+-]?(?:(?:\d(?:_?\d)*(?:\.(?:\d(?:_?\d)*)?)?|\.\d(?:_?\d)*)(?:[eE][+-]?\d(?:_?\d)*)?|(?i:inf|infinity|nan))$`)
 )
 
 // Deferred result a hook, event or command callback returns for the dispatcher to await
@@ -50,9 +46,6 @@ type PluginCommandTimeoutError struct{ Seconds float64 }
 func (e *PluginCommandTimeoutError) Error() string {
 	return fmt.Sprintf("Plugin command async handler did not complete within %.0fs", e.Seconds)
 }
-
-// Reports whether the caller marked its context as a running loop
-func runningLoop(ctx context.Context) bool { return pyctx.RunningLoop(ctx) }
 
 // Error carrying a recovered callback panic
 type CallbackPanicError struct{ Value any }
@@ -80,7 +73,7 @@ func ResolvePluginCommandResult(ctx context.Context, result any) (any, error) {
 		return result, nil
 	}
 	await := func() (any, error) { return aw.Await(ctx) }
-	if !runningLoop(ctx) {
+	if !ctxutil.NonBlocking(ctx) {
 		return guardedValue(await)
 	}
 	type outcome struct {
@@ -125,31 +118,6 @@ func hookUsesCallbackTimeout(hookName string, timeout float64) bool {
 	return hookTimeoutBoundedHooks[hookName] || hookTimeoutFailClosedHooks[hookName]
 }
 
-// Float conversion following the Python float builtin for numbers, booleans and numeric strings
-func pyFloat(v any) (float64, bool) {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1, true
-		}
-		return 0, true
-	case string:
-		s := strings.TrimSpace(x)
-		if !pyFloatRe.MatchString(s) {
-			return 0, false
-		}
-		f, err := strconv.ParseFloat(strings.ReplaceAll(s, "_", ""), 64)
-		if err != nil && !errors.Is(err, strconv.ErrRange) {
-			return 0, false
-		}
-		return f, true
-	}
-	return config.AsFloat(v)
-}
-
-// Python percent g rendering of a float
-func pyG(v float64) string { return strconv.FormatFloat(v, 'g', 6, 64) }
-
 // Effective hook callback timeout in seconds from plugins.hook_callback_timeout
 func (m *Manager) resolveHookCallbackTimeout() float64 {
 	return settings.PluginsHookCallbackTimeout.Get(homeContext(m.home)).Seconds()
@@ -165,7 +133,7 @@ func policyErrorBlockDirective(hookName, callbackName string, err error) map[str
 		"message": fmt.Sprintf("%s plugin callback %s raised %s: %s", hookName, callbackName, errorTypeName(err), msg)}
 }
 
-// Short type name of an error, the Go counterpart of the exception class name
+// Kind label an error declares, else its Go type name without package and pointer
 func errorTypeName(err error) string {
 	switch e := err.(type) {
 	case *HostBuiltinError:
@@ -174,8 +142,8 @@ func errorTypeName(err error) string {
 		if e.TypeName != "" {
 			return e.TypeName
 		}
-	case pyrepr.PyTypeNamed:
-		if name := e.PyTypeName(); name != "" {
+	case interface{ ErrorKind() string }:
+		if name := e.ErrorKind(); name != "" {
 			return name
 		}
 	}
@@ -187,7 +155,7 @@ func errorTypeName(err error) string {
 	return name
 }
 
-// Python exception class name of an error a plugin call returned
+// Kind label of an error a plugin call returned, the exception class name a Python plugin catches
 func ErrorTypeName(err error) string { return errorTypeName(err) }
 
 // Calls one hook callback with its own payload copy and awaits an awaitable result
@@ -330,7 +298,7 @@ func (m *Manager) runHookCallbackBounded(ctx context.Context, hookName string, c
 		m.hookAbandoned[supKey][gateKey] = true
 	}
 	m.hookTimeoutMu.Unlock()
-	pkgLog().Warn(fmt.Sprintf("Hook '%s' callback %s timed out after %ss — skipping", hookName, cb.name, pyG(timeout)))
+	pkgLog().Warn(fmt.Sprintf("Hook '%s' callback %s timed out after %ss — skipping", hookName, cb.name, strconv.FormatFloat(timeout, 'g', 6, 64)))
 	return nil, true, nil
 }
 

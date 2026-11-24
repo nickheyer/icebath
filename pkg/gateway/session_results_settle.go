@@ -7,10 +7,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Display kind of the icebath authored boundary that ends a failed turn
@@ -22,13 +22,13 @@ const partialFailedTurnNotice = "This turn did not complete. Some actions may al
 type executionResultKey struct{}
 
 // Context carrying the exact structured result the executing admission captures
-func withExecutionResult(ctx context.Context, captured *pyjson.Object) context.Context {
+func withExecutionResult(ctx context.Context, captured *jsonutil.Object) context.Context {
 	return context.WithValue(ctx, executionResultKey{}, captured)
 }
 
 // Captured result of the executing admission, nil outside an execution
-func executionResultOf(ctx context.Context) *pyjson.Object {
-	captured, _ := ctx.Value(executionResultKey{}).(*pyjson.Object)
+func executionResultOf(ctx context.Context) *jsonutil.Object {
+	captured, _ := ctx.Value(executionResultKey{}).(*jsonutil.Object)
 	return captured
 }
 
@@ -43,11 +43,11 @@ func recordUnexecutedFailure(ctx context.Context, reply string, reason string, f
 	}
 	text := "The admitted turn failed."
 	if pyTruthy(failure) {
-		text = pyrepr.Str(failure)
+		text = anyutil.String(failure)
 	} else if reply != "" {
 		text = reply
 	}
-	result := pyjson.ObjectOf("final_response", "", "messages", []any{}, "failed", true, "completed", false, "error", text)
+	result := jsonutil.ObjectOf("final_response", "", "messages", []any{}, "failed", true, "completed", false, "error", text)
 	captured.Set("result", result)
 	if reason != "" {
 		stampTurnFailure(result, reason, false)
@@ -56,7 +56,7 @@ func recordUnexecutedFailure(ctx context.Context, reply string, reason string, f
 }
 
 // Retains an owner side failure even if an abandoned executor returns while delivery unwinds
-func recordTerminalFailure(ctx context.Context, result *pyjson.Object) *pyjson.Object {
+func recordTerminalFailure(ctx context.Context, result *jsonutil.Object) *jsonutil.Object {
 	if captured := executionResultOf(ctx); captured != nil {
 		captured.Set("terminal_result", result)
 	}
@@ -68,9 +68,9 @@ func redactedResult(value any) any {
 	switch v := value.(type) {
 	case string:
 		return tools.RedactSensitiveText(v)
-	case *pyjson.Object:
-		out := pyjson.NewObject()
-		for _, key := range v.Keys {
+	case *jsonutil.Object:
+		out := jsonutil.NewObject()
+		for _, key := range v.Keys() {
 			item, _ := v.Get(key)
 			out.Set(key, redactedResult(item))
 		}
@@ -92,7 +92,7 @@ func redactedResult(value any) any {
 }
 
 // Generation an admission row was claimed under, zero for a row never claimed
-func rowGeneration(row *pyjson.Object) int64 {
+func rowGeneration(row *jsonutil.Object) int64 {
 	if stamped := rowInt(row, "generation"); stamped != nil {
 		return *stamped
 	}
@@ -100,19 +100,19 @@ func rowGeneration(row *pyjson.Object) int64 {
 }
 
 // Outcome a result's own flags imply and the compact redacted copy settlement stores
-func prepareResult(row *pyjson.Object, response any, outcome string, captured *pyjson.Object) (*state.CapturedResult, error) {
+func prepareResult(row *jsonutil.Object, response any, outcome string, captured *jsonutil.Object) (*state.CapturedResult, error) {
 	if captured == nil {
 		final := response
 		if !pyTruthy(final) {
 			final = ""
 		}
-		captured = pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", final, "messages", []any{}), "usage", pyjson.NewObject())
+		captured = jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", final, "messages", []any{}), "usage", jsonutil.NewObject())
 	}
 	raw, ok := captured.Get("result")
 	if !ok {
 		return nil, &pyKeyError{"result"}
 	}
-	value, ok := raw.(*pyjson.Object)
+	value, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return nil, errors.New("the stored turn result is " + errchain.Kind(raw) + ", expected a mapping")
 	}
@@ -133,15 +133,15 @@ func prepareResult(row *pyjson.Object, response any, outcome string, captured *p
 	if err != nil {
 		return nil, err
 	}
-	stored, _ := redactedResult(compact).(*pyjson.Object)
+	stored, _ := redactedResult(compact).(*jsonutil.Object)
 	return &state.CapturedResult{Outcome: outcome, Stored: stored}, nil
 }
 
 // Commits a claim's outcome with its result, a row already terminal answering with what it committed
-func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *pyjson.Object, response any, outcome string, result *pyjson.Object,
-	prepared *state.CapturedResult, transfers map[string]bool) (*pyjson.Object, any, error) {
+func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *jsonutil.Object, response any, outcome string, result *jsonutil.Object,
+	prepared *state.CapturedResult, transfers map[string]bool) (*jsonutil.Object, any, error) {
 	admissionID := rowString(row, "admission_id")
-	var committed *pyjson.Object
+	var committed *jsonutil.Object
 	var saved string
 	err := db.ReadCtx(ctx, func(conn state.SQLiteConn) error {
 		committed, saved = nil, ""
@@ -166,7 +166,7 @@ func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *py
 		if scanErr != nil {
 			return scanErr
 		}
-		committed = current.Copy()
+		committed = current.Clone()
 		return nil
 	})
 	if err != nil {
@@ -177,7 +177,7 @@ func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *py
 		if err != nil {
 			return nil, nil, err
 		}
-		stored, _ := loaded.(*pyjson.Object)
+		stored, _ := loaded.(*jsonutil.Object)
 		if stored == nil {
 			return nil, nil, runtimeRefusal("storage_unavailable")
 		}
@@ -189,16 +189,16 @@ func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *py
 		}
 	}
 	notice := ownerStopNotice(result, prepared.Outcome, row)
-	var displayMetadata *pyjson.Object
+	var displayMetadata *jsonutil.Object
 	if notice == "" {
 		if refusal, metadata := gatewayRefusalBoundary(result, prepared.Outcome); metadata != nil {
 			notice, displayMetadata = refusal, metadata
 		}
 	}
-	var terminalWrite func(ctx context.Context, conn state.SQLiteConn, current *pyjson.Object) error
+	var terminalWrite func(ctx context.Context, conn state.SQLiteConn, current *jsonutil.Object) error
 	if notice != "" {
 		mark, _ := row.Get("transcript_mark")
-		terminalWrite = func(writeCtx context.Context, conn state.SQLiteConn, _ *pyjson.Object) error {
+		terminalWrite = func(writeCtx context.Context, conn state.SQLiteConn, _ *jsonutil.Object) error {
 			_, err := closeDiscardedTurn(writeCtx, db, conn, row, notice, mark, displayMetadata)
 			return err
 		}
@@ -212,12 +212,12 @@ func finishResult(ctx context.Context, db *state.SessionDB, epoch int64, row *py
 }
 
 // Closer of a discarded turn's transcript tail, replaced by tests that fail the closure after it wrote
-var closeDiscardedTurn func(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *pyjson.Object, notice any, replaceAfter any, displayMetadata *pyjson.Object) (bool, error)
+var closeDiscardedTurn func(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *jsonutil.Object, notice any, replaceAfter any, displayMetadata *jsonutil.Object) (bool, error)
 
 func init() { closeDiscardedTurn = closeDiscardedTail }
 
 // Closes a discarded turn's open transcript tail with an icebath authored boundary on the resolution's own transaction
-func closeDiscardedTail(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *pyjson.Object, notice any, replaceAfter any, displayMetadata *pyjson.Object) (bool, error) {
+func closeDiscardedTail(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *jsonutil.Object, notice any, replaceAfter any, displayMetadata *jsonutil.Object) (bool, error) {
 	physical, err := state.LocalPhysicalTarget(ctx, conn, rowString(row, "target_session_id"))
 	if err != nil {
 		return false, err
@@ -283,7 +283,7 @@ func columnText(value any) string {
 }
 
 // Display metadata as the encoder takes it, nil when a boundary carries none
-func metadataValue(displayMetadata *pyjson.Object) any {
+func metadataValue(displayMetadata *jsonutil.Object) any {
 	if displayMetadata == nil {
 		return nil
 	}

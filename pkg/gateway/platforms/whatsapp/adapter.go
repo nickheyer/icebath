@@ -18,11 +18,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 )
 
 // Running bridge as the adapter sees it, the Popen surface of the bridge.js child
@@ -122,7 +122,7 @@ var _ gateway.PlatformAdapter = (*WhatsAppAdapter)(nil)
 func sessionDir(ctx context.Context, extra map[string]any) string {
 	raw := home.IcebathDir(home.Dir(ctx), "platforms/whatsapp/session", "whatsapp/session")
 	if v, ok := extra["session_path"]; ok {
-		raw = pyrepr.Str(v)
+		raw = anyutil.String(v)
 	}
 	expanded := raw
 	if strings.HasPrefix(raw, "~") {
@@ -162,13 +162,13 @@ func NewWhatsAppAdapter(ctx context.Context, config *gateway.PlatformConfig) (*W
 	}
 	a.bridgePort = port
 	if script, ok := extra["bridge_script"]; ok {
-		a.bridgeScript = pyrepr.Str(script)
+		a.bridgeScript = anyutil.String(script)
 	} else {
 		a.bridgeScript, _ = os.Executable()
 	}
 	a.sessionPath = sessionDir(ctx, extra)
 	if rp, ok := extra["reply_prefix"]; ok && rp != nil {
-		s := pyrepr.Str(rp)
+		s := anyutil.String(rp)
 		a.ReplyPrefix = &s
 	}
 	sctx := gateway.SettingsContext(ctx)
@@ -181,7 +181,7 @@ func NewWhatsAppAdapter(ctx context.Context, config *gateway.PlatformConfig) (*W
 	case nil:
 		a.sendReadReceipts = false
 	default:
-		a.sendReadReceipts = whatsappTruthy[strings.ToLower(strings.TrimSpace(pyrepr.Str(rr)))] && pyrepr.Truthy(rr)
+		a.sendReadReceipts = whatsappTruthy[strings.ToLower(strings.TrimSpace(anyutil.String(rr)))] && anyutil.IsTrue(rr)
 	}
 	a.ConfigureTextBatchDelays()
 	return a, nil
@@ -215,7 +215,7 @@ type bridgeResponse struct {
 }
 
 // Decoded JSON body of a bridge answer
-func (r bridgeResponse) json() (any, error) { return pyjson.LoadsBytes(r.body) }
+func (r bridgeResponse) json() (any, error) { return jsonutil.Decode(r.body) }
 
 // Issues one request against a bridge endpoint bounded by the total timeout
 func (a *WhatsAppAdapter) bridgeReq(ctx context.Context, client *http.Client, method, path string, timeout time.Duration, payload any) (bridgeResponse, error) {
@@ -258,7 +258,7 @@ func isTimeout(err error) bool {
 }
 
 // Health probe with a fresh client, true with nil data for an unparseable 200 and errors passed through
-func (a *WhatsAppAdapter) probeBridgeHealth(ctx context.Context) (bool, *pyjson.Object, error) {
+func (a *WhatsAppAdapter) probeBridgeHealth(ctx context.Context) (bool, *jsonutil.Object, error) {
 	client := &http.Client{}
 	defer client.CloseIdleConnections()
 	resp, err := a.bridgeReq(ctx, client, http.MethodGet, "health", 2*time.Second, nil)
@@ -269,7 +269,7 @@ func (a *WhatsAppAdapter) probeBridgeHealth(ctx context.Context) (bool, *pyjson.
 		return false, nil, nil
 	}
 	data, err := resp.json()
-	if obj, ok := data.(*pyjson.Object); err == nil && ok {
+	if obj, ok := data.(*jsonutil.Object); err == nil && ok {
 		return true, obj, nil
 	}
 	return true, nil, nil
@@ -304,22 +304,22 @@ func (a *WhatsAppAdapter) reuseRunningBridge(ctx context.Context, bridgePath str
 	if !ok || data == nil {
 		return false
 	}
-	if reported := data.GetOr("session", nil); pyrepr.Truthy(reported) && pyrepr.Str(reported) != a.sessionPath {
-		s := pyrepr.Str(reported)
+	if reported := data.ValueOr("session", nil); anyutil.IsTrue(reported) && anyutil.String(reported) != a.sessionPath {
+		s := anyutil.String(reported)
 		a.foreignBridgeSession = &s
 		return false
 	}
-	status := pyrepr.Str(data.GetOr("status", "unknown"))
+	status := anyutil.String(data.ValueOr("status", "unknown"))
 	if status != "connected" {
 		fmt.Printf("[%s] Bridge found but not connected (status: %s), restarting\n", a.Name(), status)
 		return false
 	}
 	runningHash := ""
-	if v := data.GetOr("scriptHash", ""); pyrepr.Truthy(v) {
-		runningHash = pyrepr.Str(v)
+	if v := data.ValueOr("scriptHash", ""); anyutil.IsTrue(v) {
+		runningHash = anyutil.String(v)
 	}
 	diskHash := fileContentHash(bridgePath)
-	if runningHash != "" && diskHash != "" && runningHash == diskHash && pyrepr.Truthy(data.GetOr("sendReadReceipts", false)) == a.sendReadReceipts {
+	if runningHash != "" && diskHash != "" && runningHash == diskHash && anyutil.IsTrue(data.ValueOr("sendReadReceipts", false)) == a.sendReadReceipts {
 		fmt.Printf("[%s] Using existing bridge (status: %s)\n", a.Name(), status)
 		a.MarkConnected(ctx, "")
 		a.attachToBridge(ctx, nil)
@@ -428,9 +428,9 @@ const (
 )
 
 // Polls the health endpoint fifteen times a second apart, reporting a dead bridge and a connected one
-func (a *WhatsAppAdapter) pollBridgeHealth(ctx context.Context, diedMsg string) (healthOutcome, bool, *pyjson.Object) {
+func (a *WhatsAppAdapter) pollBridgeHealth(ctx context.Context, diedMsg string) (healthOutcome, bool, *jsonutil.Object) {
 	httpReady := false
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	for attempt := 0; attempt < 15; attempt++ {
 		if err := whatsappSleep(ctx, time.Second); err != nil {
 			return healthTimeout, httpReady, data
@@ -447,7 +447,7 @@ func (a *WhatsAppAdapter) pollBridgeHealth(ctx context.Context, diedMsg string) 
 		httpReady = true
 		if d != nil {
 			data = d
-			if status, isStr := data.GetOr("status", nil).(string); isStr && status == "connected" {
+			if status, isStr := data.ValueOr("status", nil).(string); isStr && status == "connected" {
 				fmt.Printf("[%s] Bridge ready (status: connected)\n", a.Name())
 				return healthConnected, httpReady, data
 			}
@@ -465,7 +465,7 @@ func (a *WhatsAppAdapter) waitForBridge(ctx context.Context) bool {
 	if !httpReady {
 		return a.bridgeDied(ctx, "Bridge HTTP server did not start in 15s", "whatsapp_bridge_timeout")
 	}
-	if status, isStr := data.GetOr("status", nil).(string); !isStr || status != "connected" {
+	if status, isStr := data.ValueOr("status", nil).(string); !isStr || status != "connected" {
 		fmt.Printf("[%s] Bridge HTTP ready, waiting for WhatsApp connection...\n", a.Name())
 		outcome, _, _ = a.pollBridgeHealth(ctx, "Bridge process died during connection")
 		if outcome == healthDied {
@@ -631,7 +631,11 @@ func (a *WhatsAppAdapter) waitBridgePortFree(ctx context.Context) bool {
 		if !time.Now().Before(deadline) {
 			holders := "unknown"
 			if pids, err := portListenerPids(a.bridgePort); err == nil && len(pids) > 0 {
-				holders = pyrepr.Repr(intsAny(pids))
+				shown := make([]string, len(pids))
+				for i, pid := range pids {
+					shown[i] = strconv.Itoa(pid)
+				}
+				holders = strings.Join(shown, ", ")
 			}
 			a.SetFatalError(ctx, "whatsapp_bridge_port_busy", fmt.Sprintf(
 				"Port %d is still held by PID(s) %s after the previous bridge was stopped and %.0fs of waiting; no new bridge was spawned. "+
@@ -641,15 +645,6 @@ func (a *WhatsAppAdapter) waitBridgePortFree(ctx context.Context) bool {
 		time.Sleep(200 * time.Millisecond)
 	}
 	return true
-}
-
-// Ints as a Python list value
-func intsAny(in []int) []any {
-	out := make([]any, len(in))
-	for i, v := range in {
-		out[i] = v
-	}
-	return out
 }
 
 // Whether the gateway runner flagged a signal driven stop
@@ -747,10 +742,10 @@ func (a *WhatsAppAdapter) postBridgeMessage(ctx context.Context, path string, pa
 		if err != nil {
 			return gateway.SendResult{Success: false, Error: err.Error()}
 		}
-		obj, _ := data.(*pyjson.Object)
+		obj, _ := data.(*jsonutil.Object)
 		var id any
 		if obj != nil {
-			id = obj.GetOr("messageId", nil)
+			id = obj.ValueOr("messageId", nil)
 		}
 		return gateway.SendResult{Success: true, MessageID: id, RawResponse: data}
 	}
@@ -783,8 +778,8 @@ func (a *WhatsAppAdapter) Send(ctx context.Context, chatID, content, replyTo str
 			return gateway.SendResult{Success: false, Error: result.Error}, nil
 		}
 		last = result.MessageID
-		if pyrepr.Truthy(last) {
-			sent = append(sent, pyrepr.Str(last))
+		if anyutil.IsTrue(last) {
+			sent = append(sent, anyutil.String(last))
 		}
 		if len(chunks) > 1 {
 			_ = whatsappSleep(ctx, 300*time.Millisecond)
@@ -851,8 +846,8 @@ func (a *WhatsAppAdapter) sendMediaToBridge(ctx context.Context, chatID, filePat
 		payload["fileName"] = fileName
 	}
 	result := a.postBridgeMessage(ctx, "send-media", payload, 120*time.Second)
-	if result.Success && pyrepr.Truthy(result.MessageID) {
-		mt, _, _ := pymimetypes.GuessType(filePath, true)
+	if result.Success && anyutil.IsTrue(result.MessageID) {
+		mt := mimeutil.TypeByName(filePath)
 		if mt == "" {
 			mt = mediaInfo[mediaTypeByBridgeKind[mediaType]][1]
 		}
@@ -890,7 +885,7 @@ func (a *WhatsAppAdapter) SendClarify(ctx context.Context, chatID, question stri
 		if result.Success {
 			return result, nil
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] Native WhatsApp clarify poll failed; falling back to text: %s", a.Name(), pyrepr.Str(result.Error)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Native WhatsApp clarify poll failed; falling back to text: %s", a.Name(), anyutil.String(result.Error)))
 	}
 	return a.BasePlatformAdapter.SendClarify(ctx, chatID, question, choices, clarifyID, sessionKey, metadata)
 }
@@ -965,12 +960,12 @@ func (a *WhatsAppAdapter) GetChatInfo(ctx context.Context, chatID string) (map[s
 			pkgLog().Debug(fmt.Sprintf("Could not get WhatsApp chat info for %s: %s", chatID, err.Error()))
 		} else if resp.status == 200 {
 			data, err := resp.json()
-			if obj, ok := data.(*pyjson.Object); err == nil && ok {
+			if obj, ok := data.(*jsonutil.Object); err == nil && ok {
 				kind := "dm"
-				if pyrepr.Truthy(obj.GetOr("isGroup", nil)) {
+				if anyutil.IsTrue(obj.ValueOr("isGroup", nil)) {
 					kind = "group"
 				}
-				return map[string]any{"name": obj.GetOr("name", chatID), "type": kind, "participants": obj.GetOr("participants", []any{})}, nil
+				return map[string]any{"name": obj.ValueOr("name", chatID), "type": kind, "participants": obj.ValueOr("participants", []any{})}, nil
 			}
 			if err != nil {
 				pkgLog().Debug(fmt.Sprintf("Could not get WhatsApp chat info for %s: %s", chatID, err.Error()))
@@ -1001,11 +996,11 @@ func (a *WhatsAppAdapter) pollMessages(ctx context.Context) {
 			if data, err = resp.json(); err == nil {
 				items, _ := data.([]any)
 				for _, item := range items {
-					msg, ok := item.(*pyjson.Object)
+					msg, ok := item.(*jsonutil.Object)
 					if !ok {
 						continue
 					}
-					if pyrepr.Str(msg.GetOr("event", nil)) == "delivery_status" {
+					if anyutil.String(msg.ValueOr("event", nil)) == "delivery_status" {
 						a.logDeliveryStatus(msg)
 						continue
 					}
@@ -1041,22 +1036,22 @@ func (a *WhatsAppAdapter) pollMessages(ctx context.Context) {
 }
 
 // One gateway log line per delivery or read status change of a message we sent
-func (a *WhatsAppAdapter) logDeliveryStatus(data *pyjson.Object) {
+func (a *WhatsAppAdapter) logDeliveryStatus(data *jsonutil.Object) {
 	recipient, errText := "", ""
-	if v := data.GetOr("recipientId", nil); pyrepr.Truthy(v) {
-		recipient = " recipient=" + pyrepr.Str(v)
+	if v := data.ValueOr("recipientId", nil); anyutil.IsTrue(v) {
+		recipient = " recipient=" + anyutil.String(v)
 	}
-	if v := data.GetOr("error", nil); pyrepr.Truthy(v) {
-		errText = " error=" + pyrepr.Str(v)
+	if v := data.ValueOr("error", nil); anyutil.IsTrue(v) {
+		errText = " error=" + anyutil.String(v)
 	}
 	pkgLog().Info(fmt.Sprintf("[%s] WhatsApp delivery status: message=%s chat=%s status=%s%s at=%s%s", a.Name(),
-		pyrepr.Str(data.GetOr("messageId", nil)), pyrepr.Str(data.GetOr("chatId", nil)), pyrepr.Str(data.GetOr("status", nil)),
-		recipient, pyrepr.Str(data.GetOr("timestamp", nil)), errText))
+		anyutil.String(data.ValueOr("messageId", nil)), anyutil.String(data.ValueOr("chatId", nil)), anyutil.String(data.ValueOr("status", nil)),
+		recipient, anyutil.String(data.ValueOr("timestamp", nil)), errText))
 }
 
 // Marks an accepted inbound message read when read receipts are on
-func (a *WhatsAppAdapter) sendReadReceipt(ctx context.Context, data *pyjson.Object) {
-	key, ok := data.GetOr("readReceiptKey", nil).(*pyjson.Object)
+func (a *WhatsAppAdapter) sendReadReceipt(ctx context.Context, data *jsonutil.Object) {
+	key, ok := data.ValueOr("readReceiptKey", nil).(*jsonutil.Object)
 	if !a.sendReadReceipts || a.httpSession == nil || !ok {
 		return
 	}
@@ -1071,15 +1066,15 @@ func (a *WhatsAppAdapter) sendReadReceipt(ctx context.Context, data *pyjson.Obje
 }
 
 // Message kind of a bridge payload, native kinds first then the media needles
-func classifyBridgeMessage(data *pyjson.Object) gateway.MessageType {
+func classifyBridgeMessage(data *jsonutil.Object) gateway.MessageType {
 	mediaType := ""
-	if v := data.GetOr("mediaType", ""); pyrepr.Truthy(v) {
-		mediaType = pyrepr.Str(v)
+	if v := data.ValueOr("mediaType", ""); anyutil.IsTrue(v) {
+		mediaType = anyutil.String(v)
 	}
 	if kind, ok := nativeMediaTypes[mediaType]; ok {
 		return kind
 	}
-	if !pyrepr.Truthy(data.GetOr("hasMedia", nil)) {
+	if !anyutil.IsTrue(data.ValueOr("hasMedia", nil)) {
 		return gateway.MessageTypeText
 	}
 	for _, n := range mediaNeedles {
@@ -1091,17 +1086,17 @@ func classifyBridgeMessage(data *pyjson.Object) gateway.MessageType {
 }
 
 // Cached media of a bridge payload, remote image and audio fetched and absolute paths kept only inside a cache dir
-func (a *WhatsAppAdapter) collectBridgeMedia(ctx context.Context, data *pyjson.Object, msgType gateway.MessageType) ([]string, []string) {
+func (a *WhatsAppAdapter) collectBridgeMedia(ctx context.Context, data *jsonutil.Object, msgType gateway.MessageType) ([]string, []string) {
 	urls, kinds := []string{}, []string{}
 	info, known := mediaInfo[msgType]
 	label, defaultMime := info[0], info[1]
 	bridgeMime := ""
-	if v := data.GetOr("mime", nil); pyrepr.Truthy(v) {
-		bridgeMime = strings.TrimSpace(pyrepr.Str(v))
+	if v := data.ValueOr("mime", nil); anyutil.IsTrue(v) {
+		bridgeMime = strings.TrimSpace(anyutil.String(v))
 	}
-	list, _ := data.GetOr("mediaUrls", []any{}).([]any)
+	list, _ := data.ValueOr("mediaUrls", []any{}).([]any)
 	for _, raw := range list {
-		url := pyrepr.Str(raw)
+		url := anyutil.String(raw)
 		mt := bridgeMime
 		if mt == "" {
 			if msgType == gateway.MessageTypeDocument {
@@ -1185,17 +1180,17 @@ func (a *WhatsAppAdapter) injectDocumentText(cachedURLs []string, body string) (
 }
 
 // Quoted attachment path and mime, inbound from the bridge cache and ours from the outbound index
-func (a *WhatsAppAdapter) quotedMedia(ctx context.Context, data *pyjson.Object, rawReplyID any) [][2]string {
+func (a *WhatsAppAdapter) quotedMedia(ctx context.Context, data *jsonutil.Object, rawReplyID any) [][2]string {
 	quotedType := ""
-	if v := data.GetOr("quotedMediaType", nil); pyrepr.Truthy(v) {
-		quotedType = strings.TrimSpace(pyrepr.Str(v))
+	if v := data.ValueOr("quotedMediaType", nil); anyutil.IsTrue(v) {
+		quotedType = strings.TrimSpace(anyutil.String(v))
 	}
 	accepted := [][2]string{}
-	list, _ := data.GetOr("quotedMediaUrls", nil).([]any)
+	list, _ := data.ValueOr("quotedMediaUrls", nil).([]any)
 	for _, raw := range list {
 		path, isStr := raw.(string)
 		if !isStr || !filepath.IsAbs(path) || !isAllowedBridgePath(ctx, path) {
-			fmt.Printf("[%s] Rejected quoted-media path outside cache dir: %s\n", a.Name(), pyrepr.Str(raw))
+			fmt.Printf("[%s] Rejected quoted-media path outside cache dir: %s\n", a.Name(), anyutil.String(raw))
 			continue
 		}
 		mt := quotedMimeByBridgeKind[quotedType]
@@ -1205,7 +1200,7 @@ func (a *WhatsAppAdapter) quotedMedia(ctx context.Context, data *pyjson.Object, 
 		accepted = append(accepted, [2]string{path, mt})
 	}
 	if len(accepted) == 0 && rawReplyID != nil {
-		accepted = gateway.RichSentLookupMedia(ctx, data.GetOr("chatId", ""), pyrepr.Str(rawReplyID))
+		accepted = gateway.RichSentLookupMedia(ctx, data.ValueOr("chatId", ""), anyutil.String(rawReplyID))
 	}
 	for _, p := range accepted {
 		fmt.Printf("[%s] Attached quoted-reply media: %s\n", a.Name(), p[0])
@@ -1214,14 +1209,14 @@ func (a *WhatsAppAdapter) quotedMedia(ctx context.Context, data *pyjson.Object, 
 }
 
 // Message event of a bridge payload after the intake gate, media cached and quoted media folded in
-func (a *WhatsAppAdapter) buildMessageEvent(ctx context.Context, data *pyjson.Object) (event *gateway.MessageEvent) {
+func (a *WhatsAppAdapter) buildMessageEvent(ctx context.Context, data *jsonutil.Object) (event *gateway.MessageEvent) {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("[%s] Error building event: %v\n", a.Name(), r)
 			event = nil
 		}
 	}()
-	raw := data.Vals
+	raw := data.Map()
 	allowed, err := a.ShouldProcessMessage(ctx, raw)
 	if err != nil {
 		fmt.Printf("[%s] Error building event: %s\n", a.Name(), err.Error())
@@ -1232,31 +1227,31 @@ func (a *WhatsAppAdapter) buildMessageEvent(ctx context.Context, data *pyjson.Ob
 	}
 	msgType := classifyBridgeMessage(data)
 	chatType := "dm"
-	if pyrepr.Truthy(data.GetOr("isGroup", false)) {
+	if anyutil.IsTrue(data.ValueOr("isGroup", false)) {
 		chatType = "group"
 	}
 	optStr := func(key string) *string {
-		v := data.GetOr(key, nil)
+		v := data.ValueOr(key, nil)
 		if v == nil {
 			return nil
 		}
-		s := pyrepr.Str(v)
+		s := anyutil.String(v)
 		return &s
 	}
-	source := a.BuildSource(ctx, pyrepr.Str(data.GetOr("chatId", "")), gateway.SourceFields{ChatName: optStr("chatName"),
+	source := a.BuildSource(ctx, anyutil.String(data.ValueOr("chatId", "")), gateway.SourceFields{ChatName: optStr("chatName"),
 		ChatType: chatType, UserID: optStr("senderId"), UserName: optStr("senderName"), MessageID: optStr("messageId")})
 	cachedURLs, mediaTypes := a.collectBridgeMedia(ctx, data, msgType)
-	body := pyrepr.Str(data.GetOr("body", ""))
-	if pyrepr.Truthy(data.GetOr("isGroup", nil)) {
+	body := anyutil.String(data.ValueOr("body", ""))
+	if anyutil.IsTrue(data.ValueOr("isGroup", nil)) {
 		body = CleanBotMentionText(body, raw)
 	}
 	if msgType == gateway.MessageTypeVoice && len(cachedURLs) > 0 && strings.ToLower(strings.TrimSpace(body)) == "[ptt received]" {
 		body = ""
 	}
-	quoted := pyrepr.Truthy(data.GetOr("hasQuotedMessage", nil))
+	quoted := anyutil.IsTrue(data.ValueOr("hasQuotedMessage", nil))
 	var rawReplyID any
 	if quoted {
-		rawReplyID = data.GetOr("quotedMessageId", nil)
+		rawReplyID = data.ValueOr("quotedMessageId", nil)
 		for _, p := range a.quotedMedia(ctx, data, rawReplyID) {
 			cachedURLs = append(cachedURLs, p[0])
 			mediaTypes = append(mediaTypes, p[1])
@@ -1267,13 +1262,13 @@ func (a *WhatsAppAdapter) buildMessageEvent(ctx context.Context, data *pyjson.Ob
 		body, inlined = a.injectDocumentText(cachedURLs, body)
 	}
 	metadata := map[string]any{}
-	if nt := strings.TrimSpace(pyrepr.Str(orEmpty(data.GetOr("nativeType", nil)))); nt != "" {
+	if nt := strings.TrimSpace(anyutil.String(orEmpty(data.ValueOr("nativeType", nil)))); nt != "" {
 		metadata["whatsapp_native_type"] = nt
 	}
-	if native, ok := data.GetOr("nativeMetadata", nil).(*pyjson.Object); ok && native.Len() > 0 {
+	if native, ok := data.ValueOr("nativeMetadata", nil).(*jsonutil.Object); ok && native.Len() > 0 {
 		metadata["whatsapp_native"] = native
 	}
-	if pyrepr.Truthy(data.GetOr("fromOwner", nil)) {
+	if anyutil.IsTrue(data.ValueOr("fromOwner", nil)) {
 		metadata["whatsapp_from_owner"] = true
 		if !strings.HasPrefix(body, ownerReplyPrefix) {
 			body = ownerReplyPrefix + body
@@ -1294,14 +1289,14 @@ func (a *WhatsAppAdapter) buildMessageEvent(ctx context.Context, data *pyjson.Ob
 	ev.MediaTextInlined = inlinedPtrs
 	ev.Metadata = metadata
 	if rawReplyID != nil {
-		s := pyrepr.Str(rawReplyID)
+		s := anyutil.String(rawReplyID)
 		ev.ReplyToMessageID = &s
 	}
-	if qt := strings.TrimSpace(pyrepr.Str(orEmpty(data.GetOr("quotedText", nil)))); qt != "" {
+	if qt := strings.TrimSpace(anyutil.String(orEmpty(data.ValueOr("quotedText", nil)))); qt != "" {
 		ev.ReplyToText = &qt
 	}
 	if quoted {
-		if author := NormalizeWhatsAppID(data.GetOr("quotedParticipant", nil)); author != "" {
+		if author := NormalizeWhatsAppID(data.ValueOr("quotedParticipant", nil)); author != "" {
 			ev.ReplyToAuthorID = &author
 		}
 		ev.ReplyToIsOwnMessage = MessageIsReplyToBot(raw)
@@ -1311,7 +1306,7 @@ func (a *WhatsAppAdapter) buildMessageEvent(ctx context.Context, data *pyjson.Ob
 
 // Empty string for a falsy value, the value otherwise
 func orEmpty(v any) any {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return v

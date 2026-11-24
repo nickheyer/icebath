@@ -3,9 +3,7 @@ package gateway
 import (
 	"math/big"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -55,7 +53,7 @@ func discussionContinuedThrough(events []discussionEvent) map[string]int64 {
 	latest := map[string]int64{}
 	for _, event := range events {
 		if event.kind == continuedEventKind {
-			latest[pyrepr.Str(event.payload["discussion_event_id"])] = event.seq
+			latest[anyutil.String(event.payload["discussion_event_id"])] = event.seq
 		}
 	}
 	return latest
@@ -109,20 +107,20 @@ func pausedDiscussion(events []map[string]any, discussionEventID string) (*pause
 		return nil, nil
 	}
 	threadID := bounded["payload"].(map[string]any)["thread_id"]
-	sourceSeq, err := pyint.Int64(bounded["seq"])
+	sourceSeq, err := anyutil.ToInt(bounded["seq"])
 	if err != nil {
 		return nil, err
 	}
 	for _, event := range events {
 		if event["event_id"] == discussionEventID {
-			if sourceSeq, err = pyint.Int64(event["seq"]); err != nil {
+			if sourceSeq, err = anyutil.ToInt(event["seq"]); err != nil {
 				return nil, err
 			}
 			break
 		}
 	}
 	for _, event := range events {
-		seq, err := pyint.Int64(event["seq"])
+		seq, err := anyutil.ToInt(event["seq"])
 		if err != nil {
 			return nil, err
 		}
@@ -130,7 +128,7 @@ func pausedDiscussion(events []map[string]any, discussionEventID string) (*pause
 			continue
 		}
 		payload, _ := event["payload"].(map[string]any)
-		if event["kind"] == "room.stop_requested" || (event["kind"] == "message.user" && pyjson.Equal(payload["thread_id"], threadID)) {
+		if event["kind"] == "room.stop_requested" || (event["kind"] == "message.user" && anyutil.Equal(payload["thread_id"], threadID)) {
 			return nil, nil
 		}
 	}

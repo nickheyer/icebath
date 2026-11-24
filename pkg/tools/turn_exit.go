@@ -1,6 +1,8 @@
 package tools
 
-import "github.com/nickheyer/icebath/pkg/internal/pyrepr"
+import (
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+)
 
 // Exit codes of a kanban worker the dispatcher reads, a healable provider failure and one needing an operator
 const (
@@ -45,11 +47,11 @@ func TurnExitCode(result map[string]any, o TurnExitOptions) int {
 		}
 		return 1
 	}
-	if pyrepr.Truthy(result["interrupted"]) {
+	if anyutil.IsTrue(result["interrupted"]) {
 		return 130
 	}
 	completed, hasCompleted := result["completed"].(bool)
-	if !(pyrepr.Truthy(result["failed"]) || pyrepr.Truthy(result["partial"]) || (hasCompleted && !completed)) {
+	if !(anyutil.IsTrue(result["failed"]) || anyutil.IsTrue(result["partial"]) || (hasCompleted && !completed)) {
 		return 0
 	}
 	if o.KanbanWorker {

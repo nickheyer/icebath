@@ -12,8 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"gopkg.in/yaml.v3"
 )
 
@@ -99,7 +98,7 @@ func svVenvFact(t *testing.T) map[string]any {
 // Generated workspace pyproject text behind the recorded venv
 func svWorkspaceManifest(t *testing.T) string {
 	t.Helper()
-	return peRead(t, filepath.Join(filepath.Dir(pyrepr.Str(svVenvFact(t)["resolved_lock"])), "pyproject.toml"))
+	return peRead(t, filepath.Join(filepath.Dir(anyutil.String(svVenvFact(t)["resolved_lock"])), "pyproject.toml"))
 }
 
 // Selected dependency environment of the core
@@ -127,7 +126,7 @@ func svList(v any) []string {
 	out := []string{}
 	items, _ := v.([]any)
 	for _, item := range items {
-		out = append(out, pyrepr.Str(item))
+		out = append(out, anyutil.String(item))
 	}
 	return out
 }

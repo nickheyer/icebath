@@ -12,14 +12,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session database surface the store reads and writes, satisfied by the state SessionDB and test doubles
 type SessionStoreDB interface {
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 	GetMeta(ctx context.Context, key string) (string, bool, error)
 	SetMeta(ctx context.Context, key, value string) error
 	SessionCountGE(ctx context.Context, n int) (bool, error)
@@ -28,7 +29,7 @@ type SessionStoreDB interface {
 	ReopenSession(ctx context.Context, sessionID string) error
 	GetCompressionTip(ctx context.Context, sessionID string) (string, error)
 	GetMessagesAsConversation(ctx context.Context, sessionID string, o state.ConversationOptions) ([]map[string]any, error)
-	LocalReceipt(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	LocalReceipt(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 	RouteRetired(ctx context.Context, sessionKey, entryJSON string) (bool, error)
 	GetCompressionLineage(ctx context.Context, sessionID string) ([]string, error)
 	ExecuteWrite(ctx context.Context, fn func(conn state.SQLiteConn) error) error
@@ -128,15 +129,15 @@ func (s *SessionStore) StripRetiredMirrorRoutes(ctx context.Context, sessionIDs 
 	if err != nil {
 		return err
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
-	kept := pyjson.NewObject()
-	for _, key := range obj.Keys {
-		entry := obj.Vals[key]
+	kept := jsonutil.NewObject()
+	for _, key := range obj.Keys() {
+		entry := obj.Value(key)
 		var sid any
-		if eo, ok := entry.(*pyjson.Object); ok {
+		if eo, ok := entry.(*jsonutil.Object); ok {
 			sid, _ = eo.Get("session_id")
 		}
 		sidStr, isStr := sid.(string)
@@ -153,16 +154,16 @@ func (s *SessionStore) StripRetiredMirrorRoutes(ctx context.Context, sessionIDs 
 		}
 	}
 	if kept.Len() < obj.Len() {
-		return config.AtomicJSONWriteMode(ctx, sessionsFile, kept, 0o600, pyjson.Indent(2), pyjson.EnsureASCII(false))
+		return config.AtomicJSONWriteMode(ctx, sessionsFile, kept, 0o600, jsonutil.Indent(2))
 	}
 	return nil
 }
 
 // JSON of a one key session id object as route_retired receives it
 func sessionIDJSON(sessionID string) string {
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("session_id", sessionID)
-	text, _ := pyjson.Dumps(o)
+	text, _ := jsonutil.Encode(o)
 	return text
 }
 
@@ -173,7 +174,7 @@ func readSessionsJSON(path string) (any, error) {
 		return nil, err
 	}
 	raw = []byte(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
-	return pyjson.LoadsBytes(raw)
+	return jsonutil.Decode(raw)
 }
 
 // Opens through the process wide registry, a package var so tests substitute the open
@@ -399,7 +400,7 @@ func (s *SessionStore) RecordChatLabels(ctx context.Context, source *SessionSour
 	if db == nil {
 		return false, nil
 	}
-	labels, err := pyjson.Dumps([]any{optStr(source.ChatName), optStr(source.ChatTopic)})
+	labels, err := jsonutil.Encode([]any{optStr(source.ChatName), optStr(source.ChatTopic)})
 	if err != nil {
 		return false, err
 	}
@@ -422,7 +423,7 @@ func (s *SessionStore) ChatLabels(ctx context.Context, platform Platform, scopeI
 	if !found || raw == "" {
 		return nil, nil, false, nil
 	}
-	parsed, err := pyjson.Loads(raw)
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, nil, false, err
 	}
@@ -454,12 +455,12 @@ func (s *SessionStore) loadRoutingRowsLocked(ctx context.Context) bool {
 
 // One parsed routing row, nil with a warning when invalid
 func routingEntryFromJSON(ctx context.Context, key, entryJSON string) *SessionEntry {
-	parsed, err := pyjson.Loads(entryJSON)
+	parsed, err := jsonutil.Decode(entryJSON)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Skipping invalid routing entry %q: %v", key, err))
 		return nil
 	}
-	obj, ok := parsed.(*pyjson.Object)
+	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -550,19 +551,19 @@ func (s *SessionStore) importLegacySessionsJSON(ctx context.Context, dbHadEntrie
 		fmt.Printf("[gateway] Warning: Failed to load sessions: %v\n", err)
 		return retired
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		fmt.Printf("[gateway] Warning: Failed to load sessions: sessions.json is %s, expected a mapping\n", errchain.Kind(data))
 		return retired
 	}
 	imported := 0
-	for _, key := range obj.Keys {
+	for _, key := range obj.Keys() {
 		if strings.HasPrefix(key, "_") || s.entries.has(key) {
 			continue
 		}
-		entryData, ok := obj.Vals[key].(*pyjson.Object)
+		entryData, ok := obj.Value(key).(*jsonutil.Object)
 		if !ok {
-			pkgLog().Warn(fmt.Sprintf("Skipping invalid session entry %q: expected a mapping, got %s", key, errchain.Kind(obj.Vals[key])))
+			pkgLog().Warn(fmt.Sprintf("Skipping invalid session entry %q: expected a mapping, got %s", key, errchain.Kind(obj.Value(key))))
 			continue
 		}
 		sid, hasID := entryData.Get("session_id")
@@ -646,7 +647,7 @@ func (s *SessionStore) pruneStaleSessionsLocked(ctx context.Context) {
 }
 
 // Verdict for an entry whose row ended, prune, a replacement entry, or keep as is, a store read failure returned
-func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry *SessionEntry, row *pyjson.Object) (bool, *SessionEntry, error) {
+func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry *SessionEntry, row *jsonutil.Object) (bool, *SessionEntry, error) {
 	endReason, _ := row.Get("end_reason")
 	target, err := s.localReceiptTarget(ctx, entry)
 	if err != nil {
@@ -659,7 +660,7 @@ func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry 
 		repointed := *entry
 		repointed.SessionID = target
 		pkgLog().Warn(fmt.Sprintf("gateway.session: repointing stale sessions.json entry %q from ended %s (end_reason=%s) to its local receipt target %s",
-			key, entry.SessionID, pyReprValue(endReason), target))
+			key, entry.SessionID, anyutil.Quote(endReason), target))
 		return false, &repointed, nil
 	}
 	var recoveredEntry *SessionEntry
@@ -671,7 +672,7 @@ func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry 
 	}
 	if recoveredEntry != nil && recoveredEntry.SessionID != entry.SessionID {
 		pkgLog().Warn(fmt.Sprintf("gateway.session: repointing stale sessions.json entry %q from ended %s (end_reason=%s) to recovered %s",
-			key, entry.SessionID, pyReprValue(endReason), recoveredEntry.SessionID))
+			key, entry.SessionID, anyutil.Quote(endReason), recoveredEntry.SessionID))
 		if entry.PromptPin != nil && entry.PromptPin.Len() > 0 {
 			tip, err := s.compressionTipForSessionID(ctx, entry.SessionID)
 			if err != nil {
@@ -685,17 +686,17 @@ func (s *SessionStore) staleEntryVerdict(ctx context.Context, key string, entry 
 	}
 	if recoveredEntry != nil {
 		pkgLog().Info(fmt.Sprintf("gateway.session: reopened ended session %s for sessions.json entry %q (end_reason=%s); keeping route",
-			entry.SessionID, key, pyReprValue(endReason)))
+			entry.SessionID, key, anyutil.Quote(endReason)))
 		return false, nil, nil
 	}
 	pkgLog().Warn(fmt.Sprintf("gateway.session: pruning stale sessions.json entry %q -> %s (end_reason=%s); left by a crashed gateway",
-		key, entry.SessionID, pyReprValue(endReason)))
+		key, entry.SessionID, anyutil.Quote(endReason)))
 	return true, nil, nil
 }
 
 // Serializable snapshot of the index, lock held
-func (s *SessionStore) entriesAsDicts() *pyjson.Object {
-	out := pyjson.NewObject()
+func (s *SessionStore) entriesAsDicts() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, e := range s.entries.values() {
 		out.Set(e.SessionKey, e.ToDict())
 	}
@@ -743,7 +744,7 @@ func (s *SessionStore) reconcileRecoveredRoutingLocked(ctx context.Context) {
 				s.entries.set(key, durableEntry)
 			}
 		case !inCurrent:
-		case pyjson.Equal(cur, base):
+		case anyutil.Equal(cur, base):
 			s.entries.set(key, durableEntry)
 		}
 	}
@@ -752,13 +753,13 @@ func (s *SessionStore) reconcileRecoveredRoutingLocked(ctx context.Context) {
 }
 
 // Immutable routing data with a fresh generation, lock held
-func (s *SessionStore) snapshotRoutingLocked(ctx context.Context) (*pyjson.Object, int) {
+func (s *SessionStore) snapshotRoutingLocked(ctx context.Context) (*jsonutil.Object, int) {
 	s.reconcileRecoveredRoutingLocked(ctx)
 	return s.entriesAsDicts(), s.nextRoutingGenerationLocked()
 }
 
 // Serializes whole index writers through the save lock folding in newer fast upserts
-func (s *SessionStore) persistRoutingData(ctx context.Context, data *pyjson.Object, generation int) error {
+func (s *SessionStore) persistRoutingData(ctx context.Context, data *jsonutil.Object, generation int) error {
 	s.saveMu.Lock()
 	defer s.saveMu.Unlock()
 	if generation <= s.persistedRoutingGeneration {
@@ -766,7 +767,7 @@ func (s *SessionStore) persistRoutingData(ctx context.Context, data *pyjson.Obje
 	}
 	for key, fast := range s.fastPersistedEntries {
 		if fast.revision > generation {
-			if parsed, err := pyjson.Loads(fast.entryJSON); err == nil {
+			if parsed, err := jsonutil.Decode(fast.entryJSON); err == nil {
 				data.Set(key, parsed)
 			}
 		}
@@ -774,8 +775,8 @@ func (s *SessionStore) persistRoutingData(ctx context.Context, data *pyjson.Obje
 	dbSaved := false
 	if replacer, ok := s.routingDB(ctx).(gatewayRoutingReplacer); ok && replacer != nil {
 		encoded := map[string]string{}
-		for _, k := range data.Keys {
-			text, err := pyjson.Dumps(data.Vals[k])
+		for _, k := range data.Keys() {
+			text, err := jsonutil.Encode(data.Value(k))
 			if err != nil {
 				return err
 			}
@@ -787,7 +788,7 @@ func (s *SessionStore) persistRoutingData(ctx context.Context, data *pyjson.Obje
 		} else {
 			dbSaved = true
 			if len(retired) > 0 {
-				data = data.Copy()
+				data = data.Clone()
 				for k := range retired {
 					data.Delete(k)
 				}
@@ -812,13 +813,13 @@ func (s *SessionStore) persistRoutingData(ctx context.Context, data *pyjson.Obje
 }
 
 // Writes the legacy sessions.json mirror atomically behind its readme sentinel
-func (s *SessionStore) saveSessionsJSON(data *pyjson.Object) error {
-	out := pyjson.NewObject()
+func (s *SessionStore) saveSessionsJSON(data *jsonutil.Object) error {
+	out := jsonutil.NewObject()
 	out.Set("_README", sessionsJSONReadme)
-	for _, k := range data.Keys {
-		out.Set(k, data.Vals[k])
+	for _, k := range data.Keys() {
+		out.Set(k, data.Value(k))
 	}
-	return config.AtomicJSONWriteMode(s.ctx, filepath.Join(s.SessionsDir, "sessions.json"), out, 0o600, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	return config.AtomicJSONWriteMode(s.ctx, filepath.Join(s.SessionsDir, "sessions.json"), out, 0o600, jsonutil.Indent(2))
 }
 
 // Snapshots under the lock and persists after releasing it
@@ -830,7 +831,7 @@ func (s *SessionStore) saveEntries(ctx context.Context) error {
 }
 
 // Persists one entry by upsert, a candidate durable before publication, falling back to a full rewrite
-func (s *SessionStore) saveEntry(ctx context.Context, sessionKey string, entryData *pyjson.Object, lockHeld bool) error {
+func (s *SessionStore) saveEntry(ctx context.Context, sessionKey string, entryData *jsonutil.Object, lockHeld bool) error {
 	if !lockHeld {
 		s.mu.Lock()
 	}
@@ -845,7 +846,7 @@ func (s *SessionStore) saveEntry(ctx context.Context, sessionKey string, entryDa
 	if serialized == nil {
 		serialized = entry.ToDict()
 	}
-	entryJSON, err := pyjson.Dumps(serialized)
+	entryJSON, err := jsonutil.Encode(serialized)
 	revision := s.nextRoutingGenerationLocked()
 	if !lockHeld {
 		s.mu.Unlock()
@@ -883,7 +884,7 @@ func (s *SessionStore) saveEntry(ctx context.Context, sessionKey string, entryDa
 		if !lockHeld {
 			s.mu.Unlock()
 		}
-		fallback.Set(sessionKey, entryData.Copy())
+		fallback.Set(sessionKey, entryData.Clone())
 		return s.persistRoutingData(ctx, fallback, revision)
 	}
 	if lockHeld {

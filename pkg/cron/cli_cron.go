@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const overdueGraceSeconds = 15 * 60
@@ -67,26 +67,26 @@ func (s *Store) nextRunOverdueSeconds(nextRunAt any) (float64, bool) {
 }
 
 // Next run label and value, Overdue with a scheduler hint when an active job is past the grace
-func (s *Store) nextRunRow(job *pyjson.Object) (string, string) {
+func (s *Store) nextRunRow(job *jsonutil.Object) (string, string) {
 	stamp := field(job, "next_run_at", "?")
 	overdue, ok := s.nextRunOverdueSeconds(stamp)
 	state := field(job, "state", nil)
-	if !ok || overdue <= overdueGraceSeconds || !pyrepr.Truthy(field(job, "enabled", true)) || state == "paused" || state == "completed" {
-		return "Next run", pyrepr.Str(stamp)
+	if !ok || overdue <= overdueGraceSeconds || !anyutil.IsTrue(field(job, "enabled", true)) || state == "paused" || state == "completed" {
+		return "Next run", anyutil.String(stamp)
 	}
-	return "Overdue", cliui.Color(fmt.Sprintf("%s  (%s ago — the job has not fired; is the scheduler running?)", pyrepr.Str(stamp), formatLateness(overdue)), cliui.Yellow)
+	return "Overdue", cliui.Color(fmt.Sprintf("%s  (%s ago — the job has not fired; is the scheduler running?)", anyutil.String(stamp), formatLateness(overdue)), cliui.Yellow)
 }
 
 // One line verdict of a manual run, the dispatch for a background run
-func runOutcome(job *pyjson.Object) string {
-	if id := field(job, "delegation_id", nil); pyrepr.Truthy(id) {
-		return fmt.Sprintf("Running in background (delegation %s).", pyrepr.Str(id))
+func runOutcome(job *jsonutil.Object) string {
+	if id := field(job, "delegation_id", nil); anyutil.IsTrue(id) {
+		return fmt.Sprintf("Running in background (delegation %s).", anyutil.String(id))
 	}
 	if field(job, "execution_mode", nil) == "background" {
 		return "Running in background."
 	}
-	if pyrepr.Truthy(field(job, "executed", nil)) {
-		success := pyrepr.Truthy(field(job, "execution_success", nil))
+	if anyutil.IsTrue(field(job, "executed", nil)) {
+		success := anyutil.IsTrue(field(job, "execution_success", nil))
 		if !success && field(job, "last_status", nil) == "cancelled" {
 			return "Ran now: cancelled."
 		}
@@ -95,8 +95,8 @@ func runOutcome(job *pyjson.Object) string {
 		}
 		return "Ran now: failed."
 	}
-	if skipped := field(job, "execution_skipped", nil); pyrepr.Truthy(skipped) {
-		return pyrepr.Str(skipped)
+	if skipped := field(job, "execution_skipped", nil); anyutil.IsTrue(skipped) {
+		return anyutil.String(skipped)
 	}
 	return "It will run on the next scheduler tick."
 }

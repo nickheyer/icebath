@@ -11,47 +11,47 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Directory id of a session origin, chat and thread joined, empty without a chat id
-func sessionEntryID(origin *pyjson.Object) string {
+func sessionEntryID(origin *jsonutil.Object) string {
 	chatID, _ := origin.Get("chat_id")
-	if !pyrepr.Truthy(chatID) {
+	if !anyutil.IsTrue(chatID) {
 		return ""
 	}
-	if tid, _ := origin.Get("thread_id"); pyrepr.Truthy(tid) {
-		return pyrepr.Str(chatID) + ":" + pyrepr.Str(tid)
+	if tid, _ := origin.Get("thread_id"); anyutil.IsTrue(tid) {
+		return anyutil.String(chatID) + ":" + anyutil.String(tid)
 	}
-	return pyrepr.Str(chatID)
+	return anyutil.String(chatID)
 }
 
 // Display name of a session origin, its topic or topic number appended for a thread
-func sessionEntryName(origin *pyjson.Object) any {
+func sessionEntryName(origin *jsonutil.Object) any {
 	base, _ := origin.Get("chat_name")
-	if !pyrepr.Truthy(base) {
+	if !anyutil.IsTrue(base) {
 		base, _ = origin.Get("user_name")
 	}
-	if !pyrepr.Truthy(base) {
+	if !anyutil.IsTrue(base) {
 		chatID, _ := origin.Get("chat_id")
-		base = pyrepr.Str(chatID)
+		base = anyutil.String(chatID)
 	}
 	tid, _ := origin.Get("thread_id")
-	if !pyrepr.Truthy(tid) {
+	if !anyutil.IsTrue(tid) {
 		return base
 	}
 	topic, _ := origin.Get("chat_topic")
-	if !pyrepr.Truthy(topic) {
-		topic = "topic " + pyrepr.Str(tid)
+	if !anyutil.IsTrue(topic) {
+		topic = "topic " + anyutil.String(tid)
 	}
-	return pyrepr.Str(base) + " / " + pyrepr.Str(topic)
+	return anyutil.String(base) + " / " + anyutil.String(topic)
 }
 
 // Known channels and contacts from session origins, state.db first and sessions.json as the fallback
-func BuildFromSessions(ctx context.Context, platformName string) []*pyjson.Object {
+func BuildFromSessions(ctx context.Context, platformName string) []*jsonutil.Object {
 	if out := buildFromSessionsDB(ctx, platformName); len(out) > 0 {
 		return out
 	}
@@ -59,17 +59,17 @@ func BuildFromSessions(ctx context.Context, platformName string) []*pyjson.Objec
 }
 
 // Deduped entries of the yielded origins, keeping entries read before a failure
-func entriesFromOrigins(platformName, source string, origins func(yield func(origin *pyjson.Object, chatType any)) error) []*pyjson.Object {
-	var entries []*pyjson.Object
+func entriesFromOrigins(platformName, source string, origins func(yield func(origin *jsonutil.Object, chatType any)) error) []*jsonutil.Object {
+	var entries []*jsonutil.Object
 	seen := map[string]bool{}
-	if err := origins(func(origin *pyjson.Object, chatType any) {
+	if err := origins(func(origin *jsonutil.Object, chatType any) {
 		id := sessionEntryID(origin)
 		if id == "" || seen[id] {
 			return
 		}
 		seen[id] = true
 		tid, _ := origin.Get("thread_id")
-		entries = append(entries, pyjson.ObjectOf("id", id, "name", sessionEntryName(origin), "type", chatType, "thread_id", tid))
+		entries = append(entries, jsonutil.ObjectOf("id", id, "name", sessionEntryName(origin), "type", chatType, "thread_id", tid))
 	}); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Channel directory: %s for %s: %v", source, platformName, err))
 	}
@@ -77,8 +77,8 @@ func entriesFromOrigins(platformName, source string, origins func(yield func(ori
 }
 
 // Entries from the gateway session rows of state.db
-func buildFromSessionsDB(ctx context.Context, platformName string) []*pyjson.Object {
-	return entriesFromOrigins(platformName, "state.db session read failed", func(yield func(*pyjson.Object, any)) error {
+func buildFromSessionsDB(ctx context.Context, platformName string) []*jsonutil.Object {
+	return entriesFromOrigins(platformName, "state.db session read failed", func(yield func(*jsonutil.Object, any)) error {
 		db, err := state.Acquire(ctx, "")
 		if err != nil {
 			return err
@@ -89,11 +89,11 @@ func buildFromSessionsDB(ctx context.Context, platformName string) []*pyjson.Obj
 			return err
 		}
 		for _, row := range rows {
-			var origin *pyjson.Object
-			if raw, _ := row.Get("origin_json"); pyrepr.Truthy(raw) {
+			var origin *jsonutil.Object
+			if raw, _ := row.Get("origin_json"); anyutil.IsTrue(raw) {
 				if text, ok := raw.(string); ok {
-					if v, err := pyjson.Loads(text); err == nil {
-						origin, _ = v.(*pyjson.Object)
+					if v, err := jsonutil.Decode(text); err == nil {
+						origin, _ = v.(*jsonutil.Object)
 					}
 				}
 			}
@@ -101,10 +101,10 @@ func buildFromSessionsDB(ctx context.Context, platformName string) []*pyjson.Obj
 				chatID, _ := row.Get("chat_id")
 				tid, _ := row.Get("thread_id")
 				name, _ := row.Get("display_name")
-				origin = pyjson.ObjectOf("chat_id", chatID, "thread_id", tid, "chat_name", name)
+				origin = jsonutil.ObjectOf("chat_id", chatID, "thread_id", tid, "chat_name", name)
 			}
 			chatType, _ := row.Get("chat_type")
-			if !pyrepr.Truthy(chatType) {
+			if !anyutil.IsTrue(chatType) {
 				chatType = "dm"
 			}
 			yield(origin, chatType)
@@ -114,35 +114,35 @@ func buildFromSessionsDB(ctx context.Context, platformName string) []*pyjson.Obj
 }
 
 // Entries from the origin data of the legacy sessions.json index
-func buildFromSessionsJSON(ctx context.Context, platformName string) []*pyjson.Object {
+func buildFromSessionsJSON(ctx context.Context, platformName string) []*jsonutil.Object {
 	path := filepath.Join(home.Dir(ctx), "sessions", "sessions.json")
 	if _, err := os.Stat(path); err != nil {
 		return nil
 	}
-	return entriesFromOrigins(platformName, "failed to read sessions", func(yield func(*pyjson.Object, any)) error {
+	return entriesFromOrigins(platformName, "failed to read sessions", func(yield func(*jsonutil.Object, any)) error {
 		raw, err := readChannelJSON(path)
 		if err != nil {
 			return err
 		}
-		sessions, ok := raw.(*pyjson.Object)
+		sessions, ok := raw.(*jsonutil.Object)
 		if !ok || sessions == nil {
 			return fmt.Errorf("the sessions index is %s, expected a mapping", errchain.Kind(raw))
 		}
-		for _, key := range append([]string(nil), sessions.Keys...) {
+		for _, key := range append([]string(nil), sessions.Keys()...) {
 			v, _ := sessions.Get(key)
-			session, ok := v.(*pyjson.Object)
+			session, ok := v.(*jsonutil.Object)
 			if strings.HasPrefix(key, "_") || !ok || session == nil {
 				continue
 			}
-			var origin *pyjson.Object
-			if o, _ := session.Get("origin"); pyrepr.Truthy(o) {
-				obj, isObj := o.(*pyjson.Object)
+			var origin *jsonutil.Object
+			if o, _ := session.Get("origin"); anyutil.IsTrue(o) {
+				obj, isObj := o.(*jsonutil.Object)
 				if !isObj {
 					return fmt.Errorf("a session origin is %s, expected a mapping", errchain.Kind(o))
 				}
 				origin = obj
 			} else {
-				origin = pyjson.NewObject()
+				origin = jsonutil.NewObject()
 			}
 			if p, _ := origin.Get("platform"); p == any(platformName) {
 				chatType, has := session.Get("chat_type")
@@ -205,13 +205,13 @@ func pySortStable[T any](items []T, key func(T) any) error {
 }
 
 // Channel dicts of a directory channel list, an error where Python iteration or dict access raises
-func directoryChannelDicts(channels any) ([]*pyjson.Object, error) {
+func directoryChannelDicts(channels any) ([]*jsonutil.Object, error) {
 	var items []any
 	switch c := channels.(type) {
 	case []any:
 		items = c
-	case *pyjson.Object:
-		for _, k := range c.Keys {
+	case *jsonutil.Object:
+		for _, k := range c.Keys() {
 			items = append(items, k)
 		}
 	case string:
@@ -221,9 +221,9 @@ func directoryChannelDicts(channels any) ([]*pyjson.Object, error) {
 	default:
 		return nil, fmt.Errorf("the directory channels are %s, expected a list", errchain.Kind(channels))
 	}
-	out := make([]*pyjson.Object, 0, len(items))
+	out := make([]*jsonutil.Object, 0, len(items))
 	for _, it := range items {
-		obj, ok := it.(*pyjson.Object)
+		obj, ok := it.(*jsonutil.Object)
 		if !ok || obj == nil {
 			return nil, fmt.Errorf("a directory channel is %s, expected a mapping", errchain.Kind(it))
 		}
@@ -233,29 +233,29 @@ func directoryChannelDicts(channels any) ([]*pyjson.Object, error) {
 }
 
 // Channel directory as the human readable target list shown to the model, the on disk directory when nil
-func FormatDirectoryForDisplay(ctx context.Context, platforms *pyjson.Object) (string, error) {
+func FormatDirectoryForDisplay(ctx context.Context, platforms *jsonutil.Object) (string, error) {
 	var src any = platforms
 	if platforms == nil {
 		src, _ = loadChannelDirectory(ctx).Get("platforms")
 		if src == nil {
-			src = pyjson.NewObject()
+			src = jsonutil.NewObject()
 		}
 	}
-	if !pyrepr.Truthy(src) {
+	if !anyutil.IsTrue(src) {
 		return "No messaging platforms connected or no channels discovered yet.", nil
 	}
-	pobj, ok := src.(*pyjson.Object)
+	pobj, ok := src.(*jsonutil.Object)
 	if !ok {
 		return "", fmt.Errorf("the channel directory is %s, expected a mapping", errchain.Kind(src))
 	}
-	names := append([]string(nil), pobj.Keys...)
+	names := append([]string(nil), pobj.Keys()...)
 	sort.Strings(names)
 	lines := []string{"Available messaging targets:\n"}
 	for _, plat := range names {
 		channels, _ := pobj.Get(plat)
 		switch {
-		case !pyrepr.Truthy(channels):
-			lines = append(lines, pystr.Title(plat)+":",
+		case !anyutil.IsTrue(channels):
+			lines = append(lines, textutil.Title(plat)+":",
 				fmt.Sprintf("  (no channels discovered yet — send directly with %s:<chat_id>, or bare '%s' for the home channel)", plat, plat))
 		case plat == "discord":
 			chs, err := directoryChannelDicts(channels)
@@ -264,18 +264,18 @@ func FormatDirectoryForDisplay(ctx context.Context, platforms *pyjson.Object) (s
 			}
 			type guildGroup struct {
 				guild any
-				chs   []*pyjson.Object
+				chs   []*jsonutil.Object
 			}
 			var guilds []*guildGroup
 			index := map[string]*guildGroup{}
-			var dms []*pyjson.Object
+			var dms []*jsonutil.Object
 			for _, ch := range chs {
 				g, _ := ch.Get("guild")
-				if !pyrepr.Truthy(g) {
+				if !anyutil.IsTrue(g) {
 					dms = append(dms, ch)
 					continue
 				}
-				k := pyrepr.Repr(g)
+				k := anyutil.Quote(g)
 				grp := index[k]
 				if grp == nil {
 					grp = &guildGroup{guild: g}
@@ -293,10 +293,10 @@ func FormatDirectoryForDisplay(ctx context.Context, platforms *pyjson.Object) (s
 						return "", fmt.Errorf("'name'")
 					}
 				}
-				if err := pySortStable(grp.chs, func(c *pyjson.Object) any { n, _ := c.Get("name"); return n }); err != nil {
+				if err := pySortStable(grp.chs, func(c *jsonutil.Object) any { n, _ := c.Get("name"); return n }); err != nil {
 					return "", err
 				}
-				lines = append(lines, fmt.Sprintf("Discord (%s):", pyrepr.Str(grp.guild)))
+				lines = append(lines, fmt.Sprintf("Discord (%s):", anyutil.String(grp.guild)))
 				for _, ch := range grp.chs {
 					name, err := channelTargetName(plat, ch)
 					if err != nil {
@@ -320,7 +320,7 @@ func FormatDirectoryForDisplay(ctx context.Context, platforms *pyjson.Object) (s
 			if err != nil {
 				return "", err
 			}
-			lines = append(lines, pystr.Title(plat)+":")
+			lines = append(lines, textutil.Title(plat)+":")
 			for _, ch := range chs {
 				name, err := channelTargetName(plat, ch)
 				if err != nil {

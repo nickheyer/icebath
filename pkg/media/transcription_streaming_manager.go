@@ -11,7 +11,6 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Resample converts one chunk, carrying the unconsumed tail into the next call
@@ -29,7 +28,7 @@ func (r *Resampler) Resample(pcm []byte) []byte {
 			for _, v := range data[i : i+step] {
 				sum += int(v)
 			}
-			out = append(out, int16(pyFloorDiv(sum, step)))
+			out = append(out, int16(floorDiv(sum, step)))
 		}
 		r.carry = data[usable:]
 		return int16Bytes(out)
@@ -47,6 +46,15 @@ func (r *Resampler) Resample(pcm []byte) []byte {
 	r.carry = data[min(keep, len(data)):]
 	r.pos = pos - float64(keep)
 	return int16Bytes(out)
+}
+
+// Quotient of a by a positive b rounded toward negative infinity
+func floorDiv(a, b int) int {
+	q := a / b
+	if a%b < 0 {
+		q--
+	}
+	return q
 }
 
 // Next queued chunk resampled to 16 kHz, end set for the sentinel, an empty chunk when nothing is queued
@@ -132,11 +140,11 @@ func (d *wsDriver) loop(s *StreamingSession, ws *wsConn) (map[string]any, error)
 		if msg.binary {
 			continue
 		}
-		decoded, err := pyjson.Loads(string(msg.data))
+		decoded, err := jsonutil.Decode(string(msg.data))
 		if err != nil {
 			return nil, err
 		}
-		event, isObject := decoded.(*pyjson.Object)
+		event, isObject := decoded.(*jsonutil.Object)
 		if !isObject {
 			return nil, fmt.Errorf("transcription stream event is %s where a mapping was expected", errchain.Kind(decoded))
 		}

@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Delegation providers plugins register, scoped by profile home like every provider registry
@@ -57,7 +57,7 @@ func (h hostedDelegationProvider) DisplayName() string {
 	if s, ok := h.attr("display_name").(string); ok {
 		return s
 	}
-	return pystr.Title(h.Name())
+	return textutil.Title(h.Name())
 }
 
 func (h hostedDelegationProvider) GetSetupSchema() map[string]any {
@@ -80,18 +80,18 @@ func (h hostedDelegationProvider) Summary() string {
 }
 
 func (h hostedDelegationProvider) IsAvailable() bool {
-	return pyrepr.Truthy(h.mustCall("is_available"))
+	return anyutil.IsTrue(h.mustCall("is_available"))
 }
 
-func (h hostedDelegationProvider) TaskParameters(config map[string]any) *pyjson.Object {
+func (h hostedDelegationProvider) TaskParameters(config map[string]any) *jsonutil.Object {
 	raw, err := h.obj.Call(plugins.WithOrderedResult(context.Background()), "task_parameters", []any{config}, nil)
 	if err != nil {
 		panic(err)
 	}
-	out := pyjson.NewObject()
-	if params, ok := pyjson.AsObject(raw); ok {
-		for _, name := range params.Keys {
-			if spec, ok := pyjson.AsObject(params.Vals[name]); ok {
+	out := jsonutil.NewObject()
+	if params, ok := jsonutil.AsObject(raw); ok {
+		for _, name := range params.Keys() {
+			if spec, ok := jsonutil.AsObject(params.Value(name)); ok {
 				out.Set(name, spec)
 			}
 		}

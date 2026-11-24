@@ -15,14 +15,15 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Developer cache directory the pinned downloads are kept in between runs
@@ -97,7 +98,7 @@ func peFetchPinned(pkg, binaryName string) (string, error) {
 	if !ok {
 		return "", &fs.PathError{Op: "pin", Path: pkg + " " + target, Err: fs.ErrNotExist}
 	}
-	url, sha := pyrepr.Str(artifact["url"]), pyrepr.Str(artifact["sha256"])
+	url, sha := anyutil.String(artifact["url"]), anyutil.String(artifact["sha256"])
 	if peCacheRoot == "" {
 		return "", &fs.PathError{Op: "cache", Path: "user cache directory", Err: fs.ErrNotExist}
 	}
@@ -171,12 +172,12 @@ func peLockCache(cache string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := pyfs.LockFile(f); err != nil {
+	if err := fsutil.LockFile(f); err != nil {
 		f.Close()
 		return nil, err
 	}
 	return func() {
-		pyfs.UnlockFile(f)
+		fsutil.UnlockFile(f)
 		f.Close()
 	}, nil
 }
@@ -214,7 +215,7 @@ func peWheel(t *testing.T, dir, name, version string, requirements []string, ext
 		paths = append(paths, path)
 		entries[path] = body
 	}
-	add(name+"/__init__.py", "__version__ = "+pyrepr.StrRepr(version)+"\n")
+	add(name+"/__init__.py", "__version__ = "+strconv.Quote(version)+"\n")
 	meta := "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version + "\n"
 	for _, r := range requirements {
 		meta += "Requires-Dist: " + r + "\n"

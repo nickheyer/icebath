@@ -2,15 +2,15 @@ package cron
 
 import (
 	"fmt"
+	"regexp"
 	"strconv"
 	"strings"
 	"unicode"
 
-	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // User facing path of a job's saved run output under the profile home
@@ -19,27 +19,9 @@ func cronOutputDirDisplay(h, jobID string) string {
 }
 
 var (
-	httpStatusInText = mustPyRe(`(?i)(?:\bHTTP\b|\bError code\b|\bstatus(?: code)?\b)\W{0,3}(\b[45]\d\d\b)`)
-	leadingExcType   = mustPyRe(`^(?:[\w.]+\.)?([A-Z]\w*(?:Error|Timeout|Exception))\s*:`)
+	httpStatusInText = regexutil.Lazy(regexp.MustCompile, `(?i)(?:\bHTTP\b|\bError code\b|\bstatus(?: code)?\b)\W{0,3}(\b[45]\d\d\b)`)
+	leadingExcType   = regexutil.Lazy(regexp.MustCompile, `^(?:[\w.]+\.)?([A-Z]\w*(?:Error|Timeout|Exception))\s*:`)
 )
-
-// Python re pattern compiled with CPython str semantics for its classes and boundaries
-func mustPyRe(pattern string) *regexp2.Regexp {
-	re, err := pyre.Compile(pattern)
-	if err != nil {
-		panic(err)
-	}
-	return re
-}
-
-// First group of the first match of a Python pattern, false when nothing matches
-func pyReGroup(re *regexp2.Regexp, text string, group int) (string, bool) {
-	m, err := re.FindStringMatch(text)
-	if err != nil || m == nil {
-		return "", false
-	}
-	return m.GroupByNumber(group).String(), true
-}
 
 var cronTransportErrorTypes = map[string]bool{
 	"ReadTimeout": true, "ConnectTimeout": true, "PoolTimeout": true, "ConnectError": true, "RemoteProtocolError": true,
@@ -67,8 +49,8 @@ func (e *cronTransportFailureText) Temporary() bool { return true }
 func classifyCronFailureReason(text string) string {
 	in := provider.ClassifyInput{}
 	name := "Exception"
-	if m, ok := pyReGroup(leadingExcType, text, 1); ok {
-		name = m
+	if m := leadingExcType().FindStringSubmatch(text); m != nil {
+		name = m[1]
 	}
 	base := cronFailureText{name: name, text: text}
 	if cronTransportErrorTypes[name] {
@@ -76,8 +58,8 @@ func classifyCronFailureReason(text string) string {
 	} else {
 		in.Err = &base
 	}
-	if m, ok := pyReGroup(httpStatusInText, text, 1); ok {
-		in.Status, _ = strconv.Atoi(m)
+	if m := httpStatusInText().FindStringSubmatch(text); m != nil {
+		in.Status, _ = strconv.Atoi(m[1])
 	}
 	return string(provider.ClassifyError(in).Reason)
 }

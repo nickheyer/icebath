@@ -15,9 +15,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
@@ -94,7 +93,7 @@ func ParseTrustedWorkspaces(rt *Runtime, value any) []string {
 	roots, ok := workspaces.TrustedWorkspaces(value)
 	if !ok {
 		rt.logf(slog.LevelWarn, "lsp.trusted_workspaces must be a list of directories, e.g. ['~/code/my-app'] (got %s); only the "+
-			"workspaces you launched Icebath or opened a session in are trusted until the key is fixed", pyrepr.TypeName(value))
+			"workspaces you launched Icebath or opened a session in are trusted until the key is fixed", anyutil.Kind(value))
 	}
 	return roots
 }
@@ -104,7 +103,7 @@ func parseExcludeRoots(rt *Runtime, value any) ([]string, bool) {
 	roots, ok := workspaces.PathList(value)
 	if !ok {
 		rt.logf(slog.LevelWarn, "lsp.exclude_roots must be a list of glob patterns, e.g. ['~/big-monorepo', '/srv/*/vendor'] "+
-			"(got %s); LSP is skipped for every workspace until the key is fixed", pyrepr.TypeName(value))
+			"(got %s); LSP is skipped for every workspace until the key is fixed", anyutil.Kind(value))
 	}
 	return roots, ok
 }
@@ -214,21 +213,21 @@ func ServiceFromConfig(ctx context.Context, rt *Runtime, operatorRoots map[strin
 		if cmd, ok := c["command"].([]any); ok && len(cmd) > 0 {
 			parts := make([]string, len(cmd))
 			for i, p := range cmd {
-				parts[i] = pyrepr.Str(p)
+				parts[i] = anyutil.String(p)
 			}
 			o.BinaryOverrides[n] = parts
 		}
 		if env, ok := c["env"].(map[string]any); ok {
 			m := map[string]string{}
 			for k, v := range env {
-				m[k] = pyrepr.Str(v)
+				m[k] = anyutil.String(v)
 			}
 			o.EnvOverrides[n] = m
 		}
 		if init, ok := c["initialization_options"].(map[string]any); ok {
 			o.InitOverrides[n] = init
 		}
-		if pyrepr.Truthy(c["disabled"]) {
+		if anyutil.IsTrue(c["disabled"]) {
 			o.DisabledServers = append(o.DisabledServers, n)
 		}
 	}
@@ -453,7 +452,7 @@ func (s *Service) SnapshotBaseline(filePath string, operatorRoots map[string]boo
 	if diags == nil {
 		diags = []map[string]any{}
 	}
-	absPath, err := pypath.Abspath(filePath)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return err
 	}
@@ -532,7 +531,7 @@ func (s *Service) GetDiagnosticsSync(filePath string, delta bool, timeout time.D
 
 // Drops diagnostics present in the shifted baseline, then rolls the baseline forward
 func (s *Service) applyDelta(filePath string, diags []map[string]any, shift LineShift) ([]map[string]any, error) {
-	absPath, err := pypath.Abspath(filePath)
+	absPath, err := filepath.Abs(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -982,7 +981,7 @@ func (s *Service) ReleaseWorkspace(workspaceRoot string) (int, error) {
 	if !s.enabled {
 		return 0, nil
 	}
-	root, err := pypath.Abspath(workspaceRoot)
+	root, err := filepath.Abs(workspaceRoot)
 	if err != nil {
 		return 0, err
 	}

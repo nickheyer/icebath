@@ -5,14 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Verbs of a session's connection card
@@ -44,16 +44,16 @@ type sessionEnvScoper interface {
 }
 
 // Whether params name a session owner, the only owner a connection card verb has
-func sessionOwned(params *pyjson.Object) bool {
-	owner, ok := params.GetOr("owner", nil).(*pyjson.Object)
-	return ok && pyjson.Equal(owner.GetOr("type", nil), "session")
+func sessionOwned(params *jsonutil.Object) bool {
+	owner, ok := params.ValueOr("owner", nil).(*jsonutil.Object)
+	return ok && anyutil.Equal(owner.ValueOr("type", nil), "session")
 }
 
 // Connection card verbs of a connection keyed by method name
 func connectionHandlers(c *AuthorityConnection) map[string]controlHandler {
 	out := map[string]controlHandler{}
 	for method := range connectionMethods {
-		out[method] = func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		out[method] = func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return handleConnection(ctx, c, method, params)
 		}
 	}
@@ -61,7 +61,7 @@ func connectionHandlers(c *AuthorityConnection) map[string]controlHandler {
 }
 
 // Open operation of a live session as its connection.request payload, nil without one
-func pendingConnection(a *SessionAuthority, sessionID string) (*pyjson.Object, error) {
+func pendingConnection(a *SessionAuthority, sessionID string) (*jsonutil.Object, error) {
 	live, err := liveSession(a, sessionID)
 	if err != nil {
 		return nil, err
@@ -83,7 +83,7 @@ type connectionVerb struct {
 }
 
 // Params of a connector verb decoded into its declared type, refused as invalid params when they do not fit
-func connectionRequest(method string, params *pyjson.Object) (connectionVerb, error) {
+func connectionRequest(method string, params *jsonutil.Object) (connectionVerb, error) {
 	var verb connectionVerb
 	var err error
 	switch method {
@@ -112,13 +112,13 @@ func connectionRequest(method string, params *pyjson.Object) (connectionVerb, er
 
 // Card view of an operation's snapshot with its settled flag
 func connectionView(operation *tools.ConnectionOperation) any {
-	snapshot := operation.Snapshot(false).Copy()
-	snapshot.Set("settled", snapshot.GetOr("settled_at", nil) != nil)
+	snapshot := operation.Snapshot(false).Clone()
+	snapshot.Set("settled", snapshot.ValueOr("settled_at", nil) != nil)
 	return tuihost.ConnectorUIPayload(snapshot)
 }
 
 // Answers, polls, wakes or retries the connection operation of one session the caller may drive
-func handleConnection(ctx context.Context, c *AuthorityConnection, method string, params *pyjson.Object) (any, error) {
+func handleConnection(ctx context.Context, c *AuthorityConnection, method string, params *jsonutil.Object) (any, error) {
 	verb, err := connectionRequest(method, params)
 	if err != nil {
 		return nil, err
@@ -150,15 +150,15 @@ func handleConnection(ctx context.Context, c *AuthorityConnection, method string
 		return connectionView(operation), nil
 	case "connectors.operation.wake":
 		operation.Wake.Set()
-		return pyjson.ObjectOf("status", "ok"), nil
+		return jsonutil.ObjectOf("status", "ok"), nil
 	case "connection.respond":
-		return forwardOffThread(ctx, func() (*pyjson.Object, error) { return respondConnection(ctx, operation, verb.answer) })
+		return forwardOffThread(ctx, func() (*jsonutil.Object, error) { return respondConnection(ctx, operation, verb.answer) })
 	}
 	return forwardOffThread(ctx, func() (any, error) { return retryConnection(ctx, a, ref, operation, verb) })
 }
 
 // Settles the operation with the client's answer, an illegal transition refused as an invalid answer
-func respondConnection(ctx context.Context, operation *tools.ConnectionOperation, answer tuigateway.ConnectionAnswer) (*pyjson.Object, error) {
+func respondConnection(ctx context.Context, operation *tools.ConnectionOperation, answer tuigateway.ConnectionAnswer) (*jsonutil.Object, error) {
 	raw, err := json.Marshal(tuigateway.Plain(answer))
 	if err != nil {
 		return nil, err
@@ -171,7 +171,7 @@ func respondConnection(ctx context.Context, operation *tools.ConnectionOperation
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("status", "ok", "settled", settled), nil
+	return jsonutil.ObjectOf("status", "ok", "settled", settled), nil
 }
 
 // The card's Try again under the session's own context, re-running only the named targets
@@ -192,7 +192,7 @@ func retryConnection(ctx context.Context, a *SessionAuthority, ref SessionRef, o
 	if err != nil {
 		return nil, err
 	}
-	session := &SessionContext{Source: live.Source, ConnectedPlatforms: []Platform{}, HomeChannels: pydict.New[Platform, *HomeChannel](),
+	session := &SessionContext{Source: live.Source, ConnectedPlatforms: []Platform{}, HomeChannels: orderedutil.NewMap[Platform, *HomeChannel](),
 		SessionKey: live.Route, SessionID: target}
 	var reason string
 	err = scoper.SessionEnvScope(ctx, session, func(env *tools.Env) error {
@@ -267,7 +267,7 @@ func sessionToolsets(ctx context.Context, a *SessionAuthority, ref SessionRef) (
 		}
 	}
 	agentSection := cfg["agent"]
-	if !pyrepr.Truthy(agentSection) {
+	if !anyutil.IsTrue(agentSection) {
 		agentSection = map[string]any{}
 	}
 	raw, err := pyGet(agentSection, "disabled_toolsets", nil)

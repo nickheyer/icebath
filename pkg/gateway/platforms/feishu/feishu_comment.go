@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -13,10 +14,10 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -61,25 +62,25 @@ Do not show your reasoning process. Do not start with "I will", "Let me", or "I'
 Output only the final user-facing reply.
 If no reply is needed, output exactly NO_REPLY.`
 
-// Attribute access on a value that is not a mapping, the AttributeError the Python handler would raise
+// Value read as an object that is not one
 type attrError struct{ msg string }
 
 func (e attrError) Error() string { return e.msg }
 
-// Mapping view of a decoded value, raising the attribute error a dict get on anything else raises
-func mustObj(v any) *pyjson.Object {
-	if o, ok := v.(*pyjson.Object); ok {
+// Object view of a decoded value, panicking with an attrError for anything else
+func mustObj(v any) *jsonutil.Object {
+	if o, ok := v.(*jsonutil.Object); ok {
 		return o
 	}
-	panic(attrError{fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))})
+	panic(attrError{fmt.Sprintf("expected an object, got %s", anyutil.Kind(v))})
 }
 
 // Mapping of a dict value, empty for anything else
-func asDictObj(v any) *pyjson.Object {
-	if o, ok := v.(*pyjson.Object); ok {
+func asDictObj(v any) *jsonutil.Object {
+	if o, ok := v.(*jsonutil.Object); ok {
 		return o
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 type badJSON struct{}
@@ -90,7 +91,7 @@ func maybeJSON(value any, fallback any) any {
 	if !ok {
 		return value
 	}
-	v, err := pyjson.Loads(s)
+	v, err := jsonutil.Decode(s)
 	if err != nil {
 		return fallback
 	}
@@ -103,7 +104,7 @@ func reprPairs(pairs [][2]string) string {
 	}
 	parts := make([]string, len(pairs))
 	for i, p := range pairs {
-		parts[i] = "(" + pyrepr.StrRepr(p[0]) + ", " + pyrepr.StrRepr(p[1]) + ")"
+		parts[i] = "(" + strconv.Quote(p[0]) + ", " + strconv.Quote(p[1]) + ")"
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }
@@ -114,15 +115,15 @@ func reprPaths(paths [][2]string) string {
 	}
 	parts := make([]string, len(paths))
 	for i, p := range paths {
-		parts[i] = pyrepr.StrRepr(p[0]) + ": " + pyrepr.StrRepr(p[1])
+		parts[i] = strconv.Quote(p[0]) + ": " + strconv.Quote(p[1])
 	}
 	return "{" + strings.Join(parts, ", ") + "}"
 }
 
 // Executes a tenant token API request and returns its code, message and data object
-func execRequest(ctx context.Context, client larkAPI, method, uri string, paths, queries [][2]string, body any) (any, string, *pyjson.Object) {
+func execRequest(ctx context.Context, client larkAPI, method, uri string, paths, queries [][2]string, body any) (any, string, *jsonutil.Object) {
 	bodyText := "None"
-	if pyrepr.Truthy(body) {
+	if anyutil.IsTrue(body) {
 		bodyText = textutil.First(dumpsNoASCII(body), 500)
 	}
 	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] API >>> %s %s paths=%s queries=%s body=%s", method, uri, reprPaths(paths), reprPairs(queries), bodyText))
@@ -147,14 +148,14 @@ func execRequest(ctx context.Context, client larkAPI, method, uri string, paths,
 	}
 	var code any
 	msg := ""
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	hasRaw := resp != nil && resp.RawBody != nil
 	if hasRaw {
-		if parsed, perr := pyjson.Loads(string(resp.RawBody)); perr == nil {
-			if root, ok := parsed.(*pyjson.Object); ok {
+		if parsed, perr := jsonutil.Decode(string(resp.RawBody)); perr == nil {
+			if root, ok := parsed.(*jsonutil.Object); ok {
 				code = dget(root, "code")
-				msg = pyrepr.Str(dgetDef(root, "msg", ""))
-				if d, ok := dgetDef(root, "data", pyjson.NewObject()).(*pyjson.Object); ok {
+				msg = anyutil.String(dgetDef(root, "msg", ""))
+				if d, ok := dgetDef(root, "data", jsonutil.NewObject()).(*jsonutil.Object); ok {
 					data = d
 				}
 			}
@@ -162,9 +163,9 @@ func execRequest(ctx context.Context, client larkAPI, method, uri string, paths,
 	}
 	keys := "empty"
 	if data.Len() > 0 {
-		keys = pyrepr.Repr(anyStrings(data.Keys))
+		keys = anyutil.Quote(anyStrings(data.Keys()))
 	}
-	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] API <<< %s %s code=%s msg=%s data_keys=%s", method, uri, pyrepr.Str(code), msg, keys))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] API <<< %s %s code=%s msg=%s data_keys=%s", method, uri, anyutil.String(code), msg, keys))
 	if !numberIs(code, 0) {
 		shown := ""
 		if hasRaw {
@@ -196,15 +197,15 @@ func logOutcome(code any, fail, ok string) {
 
 // Flat field dict of a drive comment event, nil when it carries no event
 func parseDriveCommentEvent(data any) (map[string]string, bool, bool) {
-	pkgLog().Debug("[Feishu-Comment] parse_drive_comment_event: data type=" + pyrepr.TypeName(data))
-	root := asDictObj(maybeJSON(data, pyjson.NewObject()))
+	pkgLog().Debug("[Feishu-Comment] parse_drive_comment_event: data type=" + anyutil.Kind(data))
+	root := asDictObj(maybeJSON(data, jsonutil.NewObject()))
 	event, ok := root.Get("event")
 	if !ok || event == nil {
 		pkgLog().Debug("[Feishu-Comment] parse_drive_comment_event: no .event attribute, returning None")
 		return nil, false, false
 	}
 	evt := asDictObj(event)
-	pkgLog().Debug("[Feishu-Comment] parse_drive_comment_event: evt keys=" + pyrepr.Repr(anyStrings(evt.Keys)))
+	pkgLog().Debug("[Feishu-Comment] parse_drive_comment_event: evt keys=" + anyutil.Quote(anyStrings(evt.Keys())))
 	meta := asDictObj(orObj(dget(evt, "notice_meta")))
 	fields := map[string]string{}
 	for _, k := range []string{"event_id", "comment_id", "reply_id", "timestamp"} {
@@ -215,18 +216,18 @@ func parseDriveCommentEvent(data any) (map[string]string, bool, bool) {
 	}
 	fields["from_open_id"] = strOr(dget(asDictObj(orObj(dget(meta, "from_user_id"))), "open_id"))
 	fields["to_open_id"] = strOr(dget(asDictObj(orObj(dget(meta, "to_user_id"))), "open_id"))
-	return fields, pyrepr.Truthy(dget(evt, "is_mentioned")), true
+	return fields, anyutil.IsTrue(dget(evt, "is_mentioned")), true
 }
 
 func orObj(v any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
-func obj(pairs ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func obj(pairs ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(pairs); i += 2 {
 		o.Set(pairs[i].(string), pairs[i+1])
 	}
@@ -237,46 +238,46 @@ func obj(pairs ...any) *pyjson.Object {
 func updateCommentReaction(ctx context.Context, client larkAPI, action, fileToken, fileType, replyID, reactionType string) bool {
 	code, msg, _ := execRequest(ctx, client, "POST", reactionURI, [][2]string{{"file_token", fileToken}}, [][2]string{{"file_type", fileType}},
 		obj("action", action, "reply_id", replyID, "reaction_type", reactionType))
-	logOutcome(code, fmt.Sprintf("[Feishu-Comment] Reaction API failed: code=%s msg=%s file=%s:%s reply=%s", pyrepr.Str(code), msg, fileType, fileToken, replyID),
+	logOutcome(code, fmt.Sprintf("[Feishu-Comment] Reaction API failed: code=%s msg=%s file=%s:%s reply=%s", anyutil.String(code), msg, fileType, fileToken, replyID),
 		fmt.Sprintf("[Feishu-Comment] Reaction '%s' %s: file=%s:%s reply=%s", reactionType, reactionVerbs[action], fileType, fileToken, replyID))
 	return codeOK(code)
 }
 
 // Title, URL and doc type of a document from the batch meta API, empty on failure
-func queryDocumentMeta(ctx context.Context, client larkAPI, fileToken, fileType string) *pyjson.Object {
+func queryDocumentMeta(ctx context.Context, client larkAPI, fileToken, fileType string) *jsonutil.Object {
 	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] query_document_meta: file_token=%s file_type=%s", fileToken, fileType))
 	code, msg, data := execRequest(ctx, client, "POST", batchQueryMetaURI, nil, nil,
 		obj("request_docs", []any{obj("doc_token", fileToken, "doc_type", fileType)}, "with_url", true))
 	if !codeOK(code) {
-		pkgLog().Warn(fmt.Sprintf("[Feishu-Comment] Meta batch_query failed: code=%s msg=%s", pyrepr.Str(code), msg))
-		return pyjson.NewObject()
+		pkgLog().Warn(fmt.Sprintf("[Feishu-Comment] Meta batch_query failed: code=%s msg=%s", anyutil.String(code), msg))
+		return jsonutil.NewObject()
 	}
 	metas := dgetDef(data, "metas", []any{})
-	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] query_document_meta: raw metas type=%s value=%s", pyrepr.TypeName(metas), textutil.First(pyrepr.Str(metas), 300)))
-	_, isDict := metas.(*pyjson.Object)
-	if !pyrepr.Truthy(metas) && !isDict {
+	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] query_document_meta: raw metas type=%s value=%s", anyutil.Kind(metas), textutil.First(anyutil.String(metas), 300)))
+	_, isDict := metas.(*jsonutil.Object)
+	if !anyutil.IsTrue(metas) && !isDict {
 		pkgLog().Debug("[Feishu-Comment] query_document_meta: no metas found")
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	var meta *pyjson.Object
+	var meta *jsonutil.Object
 	switch m := metas.(type) {
 	case []any:
 		meta = mustObj(m[0])
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m.Len() > 0 {
-			meta = pyjson.NewObject()
+			meta = jsonutil.NewObject()
 		} else {
-			meta = mustObj(dgetDef(m, fileToken, pyjson.NewObject()))
+			meta = mustObj(dgetDef(m, fileToken, jsonutil.NewObject()))
 		}
 	default:
-		meta = pyjson.NewObject()
+		meta = jsonutil.NewObject()
 	}
 	result := obj("title", dgetDef(meta, "title", ""), "url", dgetDef(meta, "url", ""), "doc_type", dgetDef(meta, "doc_type", fileType))
-	url := pyrepr.Str(dget(result, "url"))
-	if !pyrepr.Truthy(dget(result, "url")) {
+	url := anyutil.String(dget(result, "url"))
+	if !anyutil.IsTrue(dget(result, "url")) {
 		url = ""
 	}
-	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] query_document_meta: title=%s url=%s", pyrepr.Str(dget(result, "title")), textutil.First(url, 80)))
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] query_document_meta: title=%s url=%s", anyutil.String(dget(result, "title")), textutil.First(url, 80)))
 	return result
 }
 
@@ -291,9 +292,9 @@ func retryPause(ctx context.Context, attempt int, retryMsg, failMsg string) bool
 }
 
 // One comment's details with retries while it is not queryable yet, empty on failure
-func batchQueryComment(ctx context.Context, client larkAPI, fileToken, fileType, commentID string) *pyjson.Object {
+func batchQueryComment(ctx context.Context, client larkAPI, fileToken, fileType, commentID string) *jsonutil.Object {
 	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] batch_query_comment: file_token=%s comment_id=%s", fileToken, commentID))
-	var data *pyjson.Object
+	var data *jsonutil.Object
 	for attempt := 0; attempt < commentRetryLimit; attempt++ {
 		code, msg, d := execRequest(ctx, client, "POST", batchQueryCommentURI, [][2]string{{"file_token", fileToken}},
 			[][2]string{{"file_type", fileType}, {"user_id_type", "open_id"}}, obj("comment_ids", []any{commentID}))
@@ -301,9 +302,9 @@ func batchQueryComment(ctx context.Context, client larkAPI, fileToken, fileType,
 		if codeOK(code) {
 			break
 		}
-		if !retryPause(ctx, attempt, fmt.Sprintf("[Feishu-Comment] batch_query_comment retry %d/%d: code=%s msg=%s", attempt+1, commentRetryLimit, pyrepr.Str(code), msg),
-			fmt.Sprintf("[Feishu-Comment] batch_query_comment failed after %d attempts: code=%s msg=%s", commentRetryLimit, pyrepr.Str(code), msg)) {
-			return pyjson.NewObject()
+		if !retryPause(ctx, attempt, fmt.Sprintf("[Feishu-Comment] batch_query_comment retry %d/%d: code=%s msg=%s", attempt+1, commentRetryLimit, anyutil.String(code), msg),
+			fmt.Sprintf("[Feishu-Comment] batch_query_comment failed after %d attempts: code=%s msg=%s", commentRetryLimit, anyutil.String(code), msg)) {
+			return jsonutil.NewObject()
 		}
 	}
 	items := dgetDef(data, "items", []any{})
@@ -313,17 +314,17 @@ func batchQueryComment(ctx context.Context, client larkAPI, fileToken, fileType,
 		n = len(list)
 	}
 	pkgLog().Debug(fmt.Sprintf("[Feishu-Comment] batch_query_comment: got %d items", n))
-	if !pyrepr.Truthy(items) || !isList {
-		pkgLog().Warn("[Feishu-Comment] batch_query_comment: empty items, raw data keys=" + pyrepr.Repr(anyStrings(data.Keys)))
-		return pyjson.NewObject()
+	if !anyutil.IsTrue(items) || !isList {
+		pkgLog().Warn("[Feishu-Comment] batch_query_comment: empty items, raw data keys=" + anyutil.Quote(anyStrings(data.Keys())))
+		return jsonutil.NewObject()
 	}
 	item := mustObj(list[0])
 	replyCount := "?"
-	if rl, ok := dget(item, "reply_list").(*pyjson.Object); ok {
+	if rl, ok := dget(item, "reply_list").(*jsonutil.Object); ok {
 		replies, _ := dgetDef(rl, "replies", []any{}).([]any)
 		replyCount = fmt.Sprint(len(replies))
 	}
-	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] batch_query_comment: is_whole=%s quote=%s reply_count=%s", pyrepr.Str(dget(item, "is_whole")),
+	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] batch_query_comment: is_whole=%s quote=%s reply_count=%s", anyutil.String(dget(item, "is_whole")),
 		textutil.First(strOr(dgetDef(item, "quote", "")), 60), replyCount))
 	return item
 }
@@ -339,7 +340,7 @@ func listAllPages(ctx context.Context, client larkAPI, uri string, paths, querie
 		}
 		code, msg, data := execRequest(ctx, client, "GET", uri, paths, q, nil)
 		if !codeOK(code) {
-			pkgLog().Warn(fmt.Sprintf(failFmt, pyrepr.Str(code), msg))
+			pkgLog().Warn(fmt.Sprintf(failFmt, anyutil.String(code), msg))
 			return out, false
 		}
 		items, isList := dgetDef(data, "items", []any{}).([]any)
@@ -350,7 +351,7 @@ func listAllPages(ctx context.Context, client larkAPI, uri string, paths, querie
 			}
 		}
 		pageToken = ""
-		if pyrepr.Truthy(dget(data, "has_more")) {
+		if anyutil.IsTrue(dget(data, "has_more")) {
 			pageToken = strOrRaw(dgetDef(data, "page_token", ""))
 		}
 		if pageToken == "" {
@@ -361,10 +362,10 @@ func listAllPages(ctx context.Context, client larkAPI, uri string, paths, querie
 }
 
 func strOrRaw(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Every whole document comment, paginated
@@ -387,7 +388,7 @@ func listCommentReplies(ctx context.Context, client larkAPI, fileToken, fileType
 			[][2]string{{"file_type", fileType}, {"page_size", "100"}, {"user_id_type", "open_id"}}, "[Feishu-Comment] List replies failed: code=%s msg=%s", "")
 		found := false
 		for _, r := range all {
-			if pyrepr.Equal(dget(mustObj(r), "reply_id"), expectReplyID) {
+			if anyutil.Equal(dget(mustObj(r), "reply_id"), expectReplyID) {
 				found = true
 				break
 			}
@@ -413,7 +414,7 @@ func replyToComment(ctx context.Context, client larkAPI, fileToken, fileType, co
 	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] reply_to_comment: comment_id=%s text=%s", commentID, textutil.First(text, 100)))
 	code, msg, _ := execRequest(ctx, client, "POST", repliesURI, [][2]string{{"file_token", fileToken}, {"comment_id", commentID}},
 		[][2]string{{"file_type", fileType}}, obj("content", obj("elements", []any{obj("type", "text_run", "text_run", obj("text", text))})))
-	logOutcome(code, fmt.Sprintf("[Feishu-Comment] reply_to_comment FAILED: code=%s msg=%s comment_id=%s", pyrepr.Str(code), msg, commentID),
+	logOutcome(code, fmt.Sprintf("[Feishu-Comment] reply_to_comment FAILED: code=%s msg=%s comment_id=%s", anyutil.String(code), msg, commentID),
 		"[Feishu-Comment] reply_to_comment OK: comment_id="+commentID)
 	return codeOK(code), code
 }
@@ -424,7 +425,7 @@ func addWholeComment(ctx context.Context, client larkAPI, fileToken, fileType, t
 	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] add_whole_comment: file_token=%s text=%s", fileToken, textutil.First(text, 100)))
 	code, msg, _ := execRequest(ctx, client, "POST", addCommentURI, [][2]string{{"file_token", fileToken}}, nil,
 		obj("file_type", fileType, "reply_elements", []any{obj("type", "text", "text", text)}))
-	logOutcome(code, fmt.Sprintf("[Feishu-Comment] add_whole_comment FAILED: code=%s msg=%s", pyrepr.Str(code), msg), "[Feishu-Comment] add_whole_comment OK")
+	logOutcome(code, fmt.Sprintf("[Feishu-Comment] add_whole_comment FAILED: code=%s msg=%s", anyutil.String(code), msg), "[Feishu-Comment] add_whole_comment OK")
 	return codeOK(code)
 }
 
@@ -490,29 +491,29 @@ func pyBool(b bool) string {
 }
 
 // Plain text of a reply's elements, the semantic form dropping the self mention and collapsing whitespace
-func extractReplyText(reply *pyjson.Object, semantic bool, selfOpenID string) string {
-	raw := dgetDef(reply, "content", pyjson.NewObject())
+func extractReplyText(reply *jsonutil.Object, semantic bool, selfOpenID string) string {
+	raw := dgetDef(reply, "content", jsonutil.NewObject())
 	content := maybeJSON(raw, badJSON{})
 	if _, bad := content.(badJSON); bad {
-		return pyrepr.Str(raw)
+		return anyutil.String(raw)
 	}
 	var parts []string
 	elements, _ := dgetDef(mustObj(content), "elements", []any{}).([]any)
 	for _, e := range elements {
 		elem := mustObj(e)
-		etype := pyrepr.Str(dget(elem, "type"))
+		etype := anyutil.String(dget(elem, "type"))
 		var uid any
 		if etype == "person" {
 			def := any("unknown")
 			if semantic {
 				def = ""
 			}
-			uid = dgetDef(mustObj(dgetDef(elem, "person", pyjson.NewObject())), "user_id", def)
+			uid = dgetDef(mustObj(dgetDef(elem, "person", jsonutil.NewObject())), "user_id", def)
 		}
 		if key, ok := elementTextKeys[etype]; ok {
-			parts = append(parts, pyrepr.Str(dgetDef(mustObj(dgetDef(elem, etype, pyjson.NewObject())), key, "")))
-		} else if etype == "person" && !(semantic && selfOpenID != "" && pyrepr.Equal(uid, selfOpenID)) {
-			parts = append(parts, "@"+pyrepr.Str(uid))
+			parts = append(parts, anyutil.String(dgetDef(mustObj(dgetDef(elem, etype, jsonutil.NewObject())), key, "")))
+		} else if etype == "person" && !(semantic && selfOpenID != "" && anyutil.Equal(uid, selfOpenID)) {
+			parts = append(parts, "@"+anyutil.String(uid))
 		}
 	}
 	text := strings.Join(parts, "")
@@ -523,17 +524,17 @@ func extractReplyText(reply *pyjson.Object, semantic bool, selfOpenID string) st
 }
 
 // User id of a reply from its open id or user id
-func getReplyUserID(reply *pyjson.Object) string {
+func getReplyUserID(reply *jsonutil.Object) string {
 	userID := dgetDef(reply, "user_id", "")
-	if u, ok := userID.(*pyjson.Object); ok {
+	if u, ok := userID.(*jsonutil.Object); ok {
 		return firstNonEmpty(strOr(dgetDef(u, "open_id", "")), strOr(dgetDef(u, "user_id", "")))
 	}
-	return pyrepr.Str(userID)
+	return anyutil.String(userID)
 }
 
 // Replies of a whole comment, its reply list possibly a JSON string
-func replyListReplies(whole *pyjson.Object) []any {
-	list := mustObj(maybeJSON(dgetDef(whole, "reply_list", pyjson.NewObject()), pyjson.NewObject()))
+func replyListReplies(whole *jsonutil.Object) []any {
+	list := mustObj(maybeJSON(dgetDef(whole, "reply_list", jsonutil.NewObject()), jsonutil.NewObject()))
 	out, _ := dgetDef(list, "replies", []any{}).([]any)
 	return out
 }
@@ -549,7 +550,7 @@ func extractDocsLinks(replies []any) []*docLink {
 	seen := map[string]bool{}
 	var links []*docLink
 	for _, r := range replies {
-		content := maybeJSON(dgetDef(mustObj(r), "content", pyjson.NewObject()), badJSON{})
+		content := maybeJSON(dgetDef(mustObj(r), "content", jsonutil.NewObject()), badJSON{})
 		if _, bad := content.(badJSON); bad {
 			continue
 		}
@@ -557,12 +558,12 @@ func extractDocsLinks(replies []any) []*docLink {
 		for _, e := range elements {
 			elem := mustObj(e)
 			url := ""
-			if t := pyrepr.Str(dget(elem, "type")); t == "docs_link" || t == "link" {
+			if t := anyutil.String(dget(elem, "type")); t == "docs_link" || t == "link" {
 				src := dget(elem, "docs_link")
-				if !pyrepr.Truthy(src) {
+				if !anyutil.IsTrue(src) {
 					src = dget(elem, "link")
 				}
-				url = pyrepr.Str(dgetDef(mustObj(orObj(src)), "url", ""))
+				url = anyutil.String(dgetDef(mustObj(orObj(src)), "url", ""))
 			}
 			if url == "" {
 				continue
@@ -583,19 +584,19 @@ func extractDocsLinks(replies []any) []*docLink {
 }
 
 // Wiki node of the queries, nil after logging an API failure
-func wikiNode(ctx context.Context, client larkAPI, queries [][2]string, failMsg func(code any, msg string) string) *pyjson.Object {
+func wikiNode(ctx context.Context, client larkAPI, queries [][2]string, failMsg func(code any, msg string) string) *jsonutil.Object {
 	code, msg, data := execRequest(ctx, client, "GET", wikiGetNodeURI, nil, queries, nil)
 	if !codeOK(code) {
 		pkgLog().Warn(failMsg(code, msg))
 		return nil
 	}
-	return mustObj(dgetDef(data, "node", pyjson.NewObject()))
+	return mustObj(dgetDef(data, "node", jsonutil.NewObject()))
 }
 
 // Wiki node token owning a document token, empty when it is not a wiki document
 func reverseLookupWikiToken(ctx context.Context, client larkAPI, objType, objToken string) string {
 	node := wikiNode(ctx, client, [][2]string{{"token", objToken}, {"obj_type", objType}}, func(code any, msg string) string {
-		return fmt.Sprintf("[Feishu-Comment] Wiki reverse lookup failed: code=%s msg=%s obj=%s:%s", pyrepr.Str(code), msg, objType, objToken)
+		return fmt.Sprintf("[Feishu-Comment] Wiki reverse lookup failed: code=%s msg=%s obj=%s:%s", anyutil.String(code), msg, objType, objToken)
 	})
 	if node == nil {
 		return ""
@@ -611,7 +612,7 @@ func resolveWikiNodes(ctx context.Context, client larkAPI, links []*docLink) []*
 		}
 		token := link.Token
 		node := wikiNode(ctx, client, [][2]string{{"token", token}}, func(code any, msg string) string {
-			return fmt.Sprintf("[Feishu-Comment] Wiki resolve failed: code=%s msg=%s token=%s", pyrepr.Str(code), msg, token)
+			return fmt.Sprintf("[Feishu-Comment] Wiki resolve failed: code=%s msg=%s token=%s", anyutil.String(code), msg, token)
 		})
 		if node == nil {
 			continue
@@ -783,8 +784,8 @@ func loadSessionHistory(key string) []map[string]any {
 func saveSessionHistory(key string, messages []map[string]any) {
 	var cleaned []map[string]any
 	for _, m := range messages {
-		role := pyrepr.Str(m["role"])
-		if (role == "user" || role == "assistant") && pyrepr.Truthy(m["content"]) {
+		role := anyutil.String(m["role"])
+		if (role == "user" || role == "assistant") && anyutil.IsTrue(m["content"]) {
 			cleaned = append(cleaned, m)
 		}
 	}
@@ -871,7 +872,7 @@ func lastIndexWhere(timeline []timelineEntry, pred func(timelineEntry) bool) (st
 	return "", -1, false
 }
 
-func newTimelineEntry(r *pyjson.Object, selfOpenID string) timelineEntry {
+func newTimelineEntry(r *jsonutil.Object, selfOpenID string) timelineEntry {
 	uid := getReplyUserID(r)
 	return timelineEntry{UserID: uid, Text: extractReplyText(r, false, ""), IsSelf: selfOpenID != "" && uid == selfOpenID}
 }
@@ -923,7 +924,7 @@ func localCommentPrompt(ctx context.Context, client larkAPI, commentID, replyID,
 	}
 	targetText, targetIndex := "", -1
 	for i, r := range replies {
-		if replyID != "" && pyrepr.Equal(dgetDef(mustObj(r), "reply_id", ""), replyID) {
+		if replyID != "" && anyutil.Equal(dgetDef(mustObj(r), "reply_id", ""), replyID) {
 			targetText, targetIndex = extractReplyText(mustObj(r), true, doc.SelfOpenID), i
 		}
 	}
@@ -1002,7 +1003,7 @@ func handleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 			rule = ResolveRule(cfg, fileType, fileToken, wikiToken)
 		}
 	}
-	if !pyrepr.Truthy(rule.Enabled) {
+	if !anyutil.IsTrue(rule.Enabled) {
 		pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Comments disabled for %s:%s, skipping", fileType, fileToken))
 		return
 	}
@@ -1022,7 +1023,7 @@ func handleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 		}()
 	}
 	pkgLog().Info("[Feishu-Comment] [Step 2/5] Parallel fetch: doc meta + comment batch_query")
-	var meta, detail *pyjson.Object
+	var meta, detail *jsonutil.Object
 	var wg sync.WaitGroup
 	var metaPanic, detailPanic any
 	wg.Add(2)
@@ -1042,16 +1043,16 @@ func handleDriveCommentEvent(ctx context.Context, client larkAPI, data any, self
 			panic(p)
 		}
 	}
-	doc := commentDoc{Title: pyrepr.Str(dgetDef(meta, "title", "Untitled")), URL: pyrepr.Str(dgetDef(meta, "url", "")), FileToken: fileToken,
+	doc := commentDoc{Title: anyutil.String(dgetDef(meta, "title", "Untitled")), URL: anyutil.String(dgetDef(meta, "url", "")), FileToken: fileToken,
 		FileType: fileType, SelfOpenID: selfOpenID}
-	isWhole := pyrepr.Truthy(dget(detail, "is_whole"))
+	isWhole := anyutil.IsTrue(dget(detail, "is_whole"))
 	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] Comment context: title=%s is_whole=%s", doc.Title, pyBool(isWhole)))
 	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] [Step 3/5] Building timeline (is_whole=%s)", pyBool(isWhole)))
 	var prompt string
 	if isWhole {
 		prompt = wholeCommentPrompt(ctx, client, fromOpenID, doc)
 	} else {
-		prompt = localCommentPrompt(ctx, client, commentID, replyID, fromOpenID, pyrepr.Str(dgetDef(detail, "quote", "")), doc)
+		prompt = localCommentPrompt(ctx, client, commentID, replyID, fromOpenID, anyutil.String(dgetDef(detail, "quote", "")), doc)
 	}
 	pkgLog().Info(fmt.Sprintf("[Feishu-Comment] [Step 4/5] Prompt built (%d chars), running agent...", utf8.RuneCountInString(prompt)))
 	pkgLog().Debug("[Feishu-Comment] Full prompt:\n" + prompt)

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func usageDB(t *testing.T) *SessionDB {
@@ -208,7 +208,7 @@ func TestReadBarrierOnRunningLoopNeverWaits(t *testing.T) {
 	})
 	_ = d.QueueTokenCounts("s-loop", TokenCountDelta{InputTokens: 3, APICallCount: 1})
 	begin := time.Now()
-	if d.FlushForRead(pyctx.WithRunningLoop(context.Background())) {
+	if d.FlushForRead(ctxutil.WithNonBlocking(context.Background())) {
 		t.Fatal("a loop read reported drained while the writer was blocked")
 	}
 	if time.Since(begin) > time.Second {
@@ -483,8 +483,8 @@ func TestFindSessionByOriginPrefersExactSender(t *testing.T) {
 	}
 }
 
-func dumpRows(rows []*pyjson.Object) string {
-	text, err := pyjson.Dumps(rows)
+func dumpRows(rows []*jsonutil.Object) string {
+	text, err := jsonutil.Encode(rows)
 	if err != nil {
 		panic(err)
 	}

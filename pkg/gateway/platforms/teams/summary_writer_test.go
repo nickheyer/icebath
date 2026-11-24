@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Graph client double recording each post and answering a fixed message
@@ -22,7 +22,7 @@ type recordingGraph struct {
 func (g *recordingGraph) PostJSON(ctx context.Context, path string, jsonBody any, headers map[string]string) (any, error) {
 	g.paths = append(g.paths, path)
 	g.bodies = append(g.bodies, jsonBody)
-	return pyjson.ObjectOf("id", "msg-123", "webUrl", "https://teams.example/messages/123"), nil
+	return jsonutil.ObjectOf("id", "msg-123", "webUrl", "https://teams.example/messages/123"), nil
 }
 
 func makeSummaryPayload() SummaryPayload {
@@ -35,20 +35,20 @@ func TestTeamsSummaryWriterGraphDeliveryPostsToChannel(t *testing.T) {
 	graph := &recordingGraph{}
 	writer := NewTeamsSummaryWriter(nil, graph, nil)
 	result, err := writer.WriteSummary(context.Background(), makeSummaryPayload(),
-		pyjson.ObjectOf("delivery_mode", "graph", "team_id", "team-1", "channel_id", "channel-1"), nil)
+		jsonutil.ObjectOf("delivery_mode", "graph", "team_id", "team-1", "channel_id", "channel-1"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.GetOr("target_type", nil) != "channel" || result.GetOr("message_id", nil) != "msg-123" {
-		t.Fatalf("result = %v", result.Vals)
+	if result.ValueOr("target_type", nil) != "channel" || result.ValueOr("message_id", nil) != "msg-123" {
+		t.Fatalf("result = %v", result)
 	}
 	if len(graph.paths) != 1 || graph.paths[0] != "/teams/team-1/channels/channel-1/messages" {
 		t.Fatalf("paths = %v", graph.paths)
 	}
-	body := graph.bodies[0].(*pyjson.Object).GetOr("body", nil).(*pyjson.Object)
-	content, _ := body.GetOr("content", nil).(string)
-	if body.GetOr("contentType", nil) != "html" || !strings.Contains(content, "Weekly Sync") {
-		t.Fatalf("body = %v", body.Vals)
+	body := graph.bodies[0].(*jsonutil.Object).ValueOr("body", nil).(*jsonutil.Object)
+	content, _ := body.ValueOr("content", nil).(string)
+	if body.ValueOr("contentType", nil) != "html" || !strings.Contains(content, "Weekly Sync") {
+		t.Fatalf("body = %v", body)
 	}
 }
 
@@ -71,37 +71,37 @@ func TestTeamsSummaryWriterIncomingWebhookDeliveryAndRefusals(t *testing.T) {
 	ctx := context.Background()
 	transport := &webhookTransport{status: 200}
 	writer := NewTeamsSummaryWriter(nil, nil, transport)
-	config := pyjson.ObjectOf("incoming_webhook_url", " https://hooks.example/abc ")
+	config := jsonutil.ObjectOf("incoming_webhook_url", " https://hooks.example/abc ")
 	result, err := writer.WriteSummary(ctx, makeSummaryPayload(), config, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.GetOr("delivery_mode", nil) != "incoming_webhook" || result.GetOr("webhook_url", nil) != "https://hooks.example/abc" ||
-		result.GetOr("status_code", nil) != 200 || result.GetOr("delivered", nil) != true {
-		t.Fatalf("result = %v", result.Vals)
+	if result.ValueOr("delivery_mode", nil) != "incoming_webhook" || result.ValueOr("webhook_url", nil) != "https://hooks.example/abc" ||
+		result.ValueOr("status_code", nil) != 200 || result.ValueOr("delivered", nil) != true {
+		t.Fatalf("result = %v", result)
 	}
-	sent, err := pyjson.LoadsDict(transport.body)
+	sent, err := jsonutil.DecodeObject(transport.body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, _ := sent.GetOr("text", nil).(string)
+	text, _ := sent.ValueOr("text", nil).(string)
 	if !strings.HasPrefix(text, "**Weekly Sync**\n\n") || !strings.Contains(text, "- Proceed with staged rollout.") {
 		t.Fatalf("markdown = %q", text)
 	}
-	existing := pyjson.ObjectOf("delivered", true, "marker", "kept")
+	existing := jsonutil.ObjectOf("delivered", true, "marker", "kept")
 	again, err := writer.WriteSummary(ctx, makeSummaryPayload(), config, existing)
-	if err != nil || again == existing || again.GetOr("marker", nil) != "kept" {
+	if err != nil || again == existing || again.ValueOr("marker", nil) != "kept" {
 		t.Fatalf("existing record = %v %v", again, err)
 	}
 	transport.status = 404
 	if _, err := writer.WriteSummary(ctx, makeSummaryPayload(), config, nil); err == nil || !strings.HasPrefix(err.Error(), "Client error '404 Not Found' for url 'https://hooks.example/abc'") {
 		t.Fatalf("status error = %v", err)
 	}
-	if _, err := writer.WriteSummary(ctx, makeSummaryPayload(), pyjson.NewObject(), nil); err == nil || err.Error() != "Teams delivery_mode must be 'incoming_webhook' or 'graph'." {
+	if _, err := writer.WriteSummary(ctx, makeSummaryPayload(), jsonutil.NewObject(), nil); err == nil || err.Error() != "Teams delivery_mode must be 'incoming_webhook' or 'graph'." {
 		t.Fatalf("mode error = %v", err)
 	}
 	withGraph := NewTeamsSummaryWriter(nil, &recordingGraph{}, nil)
-	if _, err := withGraph.WriteSummary(ctx, makeSummaryPayload(), pyjson.ObjectOf("delivery_mode", "graph", "team_id", "t"), nil); err == nil ||
+	if _, err := withGraph.WriteSummary(ctx, makeSummaryPayload(), jsonutil.ObjectOf("delivery_mode", "graph", "team_id", "t"), nil); err == nil ||
 		err.Error() != "Graph delivery mode requires chat_id, or both team_id and channel_id." {
 		t.Fatalf("target error = %v", err)
 	}
@@ -116,7 +116,7 @@ func TestTeamsSummaryWriterImportDoesNotLoadCwdDotenv(t *testing.T) {
 	t.Chdir(dir)
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	writer := NewTeamsSummaryWriter(nil, &recordingGraph{}, nil)
-	if _, err := writer.WriteSummary(context.Background(), makeSummaryPayload(), pyjson.ObjectOf("delivery_mode", "graph", "chat_id", "19:chat"), nil); err != nil {
+	if _, err := writer.WriteSummary(context.Background(), makeSummaryPayload(), jsonutil.ObjectOf("delivery_mode", "graph", "chat_id", "19:chat"), nil); err != nil {
 		t.Fatal(err)
 	}
 	if _, leaked := os.LookupEnv(canary); leaked || writer == nil {

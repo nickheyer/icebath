@@ -1,12 +1,13 @@
 package dingtalk
 
 import (
+	"errors"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 func mustText(t *testing.T, m *ChatbotMessage) string {
@@ -93,8 +94,9 @@ func TestExtractTextRaisesOnNonStringPayloads(t *testing.T) {
 		}
 	}
 	_, err := ExtractText(cases[0].m)
-	if pyrepr.ExceptionName(err) != "AttributeError" {
-		t.Fatalf("class = %s", pyrepr.ExceptionName(err))
+	var pe *payloadError
+	if !errors.As(err, &pe) || pe.class != "AttributeError" {
+		t.Fatalf("class = %s", errorutil.Kind(err))
 	}
 }
 

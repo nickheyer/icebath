@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var ccStripMsgKeys = map[string]bool{
@@ -95,7 +95,7 @@ func sanitizeChatMessage(msg map[string]any, stripExtra bool, stripReasoning []s
 	if details, ok := msg["reasoning_details"].([]any); ok && !strip["reasoning_details"] {
 		kept := []any{}
 		for _, d := range details {
-			if dm, ok := pyjson.Dict(d); ok {
+			if dm, ok := jsonutil.AsMap(d); ok {
 				if typ, ok := dm["type"].(string); ok && strings.HasSuffix(typ, ".native_assistant") && typ != nativeType {
 					continue
 				}
@@ -136,11 +136,11 @@ func sanitizeChatMessage(msg map[string]any, stripExtra bool, stripReasoning []s
 		strip["tool_calls"] = true
 	} else if isList {
 		for idx, tc := range list {
-			tco, ok := pyjson.AsObject(tc)
+			tco, ok := jsonutil.AsObject(tc)
 			if !ok {
 				continue
 			}
-			tcm := tco.Vals
+			tcm := tco.Map()
 			drop := map[string]bool{}
 			for _, k := range ccStripTCKeys {
 				if _, ok := tcm[k]; ok {
@@ -164,8 +164,8 @@ func sanitizeChatMessage(msg map[string]any, stripExtra bool, stripReasoning []s
 			if copied == nil {
 				copied = append([]any(nil), list...)
 			}
-			next := pyjson.NewObject()
-			for _, k := range tco.Keys {
+			next := jsonutil.NewObject()
+			for _, k := range tco.Keys() {
 				if !drop[k] {
 					next.Set(k, tcm[k])
 				}
@@ -174,7 +174,7 @@ func sanitizeChatMessage(msg map[string]any, stripExtra bool, stripReasoning []s
 				next.Set("id", mapped)
 			}
 			if _, plain := tc.(map[string]any); plain {
-				copied[idx] = next.Vals
+				copied[idx] = next.Map()
 			} else {
 				copied[idx] = next
 			}
@@ -258,13 +258,13 @@ func reasoningConfigDict(v any) map[string]any {
 }
 
 // Ordered config with its effort clamped onto the supported wire vocabulary, the same dict when unchanged
-func clampReasoningConfigObject(rc *pyjson.Object, supported []string) *pyjson.Object {
+func clampReasoningConfigObject(rc *jsonutil.Object, supported []string) *jsonutil.Object {
 	if rc == nil {
 		return nil
 	}
 	effort := ""
-	if pyTruthy(rc.Vals["effort"]) {
-		effort = strings.ToLower(strings.TrimSpace(pyStr(rc.Vals["effort"])))
+	if pyTruthy(rc.Value("effort")) {
+		effort = strings.ToLower(strings.TrimSpace(pyStr(rc.Value("effort"))))
 	}
 	clamped := effort
 	if effort != "" {
@@ -273,7 +273,7 @@ func clampReasoningConfigObject(rc *pyjson.Object, supported []string) *pyjson.O
 	if clamped == effort {
 		return rc
 	}
-	out := rc.Copy()
+	out := rc.Clone()
 	out.Set("effort", clamped)
 	return out
 }
@@ -438,7 +438,7 @@ func staticPromptInstructionsDicts(messages []map[string]any) string {
 	if s, ok := content.(string); ok {
 		return s
 	}
-	text, err := pyjson.Dumps(content, pyjson.SortKeys(true), pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	text, err := jsonutil.Encode(content, jsonutil.SortKeys())
 	if err != nil {
 		if !pyTruthy(content) {
 			return ""
@@ -455,7 +455,7 @@ func addPromptCacheKey(api map[string]any, messages []map[string]any, supports b
 		boundPromptCacheKeyField(api)
 		found = true
 	}
-	if extra, ok := api["extra_body"].(*pyjson.Object); ok {
+	if extra, ok := api["extra_body"].(*jsonutil.Object); ok {
 		if v, has := extra.Get("prompt_cache_key"); has {
 			if bounded := boundedPromptCacheKey(v); bounded != "" {
 				extra.Set("prompt_cache_key", bounded)
@@ -565,7 +565,7 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 	if kwargBool(params, "is_tokenhub", false) && !thinkingOff {
 		api["reasoning_effort"] = tokenhubEffort(requested)
 	}
-	extraBody := pyjson.NewObject()
+	extraBody := jsonutil.NewObject()
 	isOpenRouter := kwargBool(params, "is_openrouter", false)
 	baseURL := kwargString(params, "base_url")
 	if isOpenRouter && pyTruthy(params["provider_preferences"]) {
@@ -573,7 +573,7 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 	}
 	if isOpenRouter && model == "openrouter/pareto-code" {
 		if score, ok := paretoScore(params["openrouter_min_coding_score"]); ok {
-			extraBody.Set("plugins", []any{pyjson.ObjectOf("id", "pareto-router", "min_coding_score", score)})
+			extraBody.Set("plugins", []any{jsonutil.ObjectOf("id", "pareto-router", "min_coding_score", score)})
 		}
 	}
 	if isKimi {
@@ -581,7 +581,7 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 		if thinkingOff {
 			toggle = "disabled"
 		}
-		extraBody.Set("thinking", pyjson.ObjectOf("type", toggle))
+		extraBody.Set("thinking", jsonutil.ObjectOf("type", toggle))
 	}
 	if kwargBool(params, "supports_reasoning", false) {
 		if kwargBool(params, "profile_endpoint", false) {
@@ -597,9 +597,9 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 			}
 			off := thinkingOff || effort == any("none")
 			if off {
-				extraBody.Set("reasoning", pyjson.ObjectOf("enabled", false, "effort", "none"))
+				extraBody.Set("reasoning", jsonutil.ObjectOf("enabled", false, "effort", "none"))
 			} else {
-				extraBody.Set("reasoning", pyjson.ObjectOf("enabled", true, "effort", effort))
+				extraBody.Set("reasoning", jsonutil.ObjectOf("enabled", true, "effort", effort))
 			}
 		}
 	}
@@ -607,24 +607,24 @@ func chatCompletionsBuildKwargs(model string, messages []map[string]any, tools [
 		raw := buildGeminiThinkingConfig(model, reasoningFromRequest(reasoningFromConfig(rc)))
 		if geminiOpenAICompatBaseURL(baseURL) {
 			if tc := snakeCaseGeminiThinkingConfig(raw); len(tc) > 0 {
-				compat, _ := pyjson.AsObject(extraBody.Vals["extra_body"])
+				compat, _ := jsonutil.AsObject(extraBody.Value("extra_body"))
 				if compat == nil {
-					compat = pyjson.NewObject()
+					compat = jsonutil.NewObject()
 				}
-				google := pyjson.NewObject()
-				if prev, ok := pyjson.AsObject(compat.Vals["google"]); ok {
-					google = prev.Copy()
+				google := jsonutil.NewObject()
+				if prev, ok := jsonutil.AsObject(compat.Value("google")); ok {
+					google = prev.Clone()
 				}
-				google.Set("thinking_config", pyjson.Ordered(tc))
+				google.Set("thinking_config", jsonutil.Ordered(tc))
 				compat.Set("google", google)
 				extraBody.Set("extra_body", compat)
 			}
 		} else if len(raw) > 0 {
-			extraBody.Set("thinking_config", pyjson.Ordered(raw))
+			extraBody.Set("thinking_config", jsonutil.Ordered(raw))
 		}
 	}
-	if additions, ok := pyjson.AsObject(params["extra_body_additions"]); ok && additions.Len() > 0 {
-		extraBody.Update(additions)
+	if additions, ok := jsonutil.AsObject(params["extra_body_additions"]); ok && additions.Len() > 0 {
+		extraBody.Merge(additions)
 	}
 	if extraBody.Len() > 0 {
 		api["extra_body"] = extraBody
@@ -663,17 +663,17 @@ func buildKwargsFromProfile(profile *Profile, model string, sanitized []map[stri
 	}
 	extraFromProfile, top := profile.BuildAPIKwargsExtras(reasoning, extrasCtx)
 	mergeInto(api, top)
-	extraBody := pyjson.NewObject()
+	extraBody := jsonutil.NewObject()
 	profileBody := profile.BuildExtraBody(kwargString(params, "session_id"), bodyCtx)
-	additions, _ := pyjson.AsObject(params["extra_body_additions"])
-	for _, part := range []*pyjson.Object{profileBody, extraFromProfile, additions} {
-		extraBody.Update(part)
+	additions, _ := jsonutil.AsObject(params["extra_body_additions"])
+	for _, part := range []*jsonutil.Object{profileBody, extraFromProfile, additions} {
+		extraBody.Merge(part)
 	}
-	if overrides, ok := pyjson.AsObject(params["request_overrides"]); ok {
-		for _, k := range overrides.Keys {
-			v := overrides.Vals[k]
-			if sub, isDict := pyjson.AsObject(v); k == "extra_body" && isDict {
-				extraBody.Update(sub)
+	if overrides, ok := jsonutil.AsObject(params["request_overrides"]); ok {
+		for _, k := range overrides.Keys() {
+			v := overrides.Value(k)
+			if sub, isDict := jsonutil.AsObject(v); k == "extra_body" && isDict {
+				extraBody.Merge(sub)
 			} else {
 				api[k] = v
 			}
@@ -681,10 +681,10 @@ func buildKwargsFromProfile(profile *Profile, model string, sanitized []map[stri
 	}
 	if extraBody.Len() > 0 {
 		if isNativeGeminiBaseURL(kwargString(params, "base_url")) {
-			kept := pyjson.NewObject()
-			for _, k := range extraBody.Keys {
+			kept := jsonutil.NewObject()
+			for _, k := range extraBody.Keys() {
 				if k == "thinking_config" || k == "thinkingConfig" || k == "max_output_tokens" {
-					kept.Set(k, extraBody.Vals[k])
+					kept.Set(k, extraBody.Value(k))
 				}
 			}
 			extraBody = kept

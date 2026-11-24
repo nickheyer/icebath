@@ -5,11 +5,13 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // IncidentStates lists the lifecycle states, closed being the only terminal one
@@ -35,9 +37,21 @@ const (
 )
 
 var (
-	incidentDurationRe   = mustPyRe(incidentDurationPattern)
-	incidentWhitespaceRe = mustPyRe(`\s+`)
-	incidentsMu          sync.Mutex
+	incidentDurationRe   = regexutil.Lazy(regexp.MustCompile, incidentDurationPattern)
+	incidentWhitespaceRe = regexutil.Lazy(regexp.MustCompile, `[\s\v\x{85}\p{Z}]+`)
+	// Compiled whole word entries of failureTypeOrder, keyed by their pattern text
+	failureTypeWordRes = sync.OnceValue(func() map[string]*regexp.Regexp {
+		out := map[string]*regexp.Regexp{}
+		for _, entry := range failureTypeOrder {
+			for _, pattern := range entry.patterns {
+				if strings.HasPrefix(pattern, `\b`) && strings.HasSuffix(pattern, `\b`) {
+					out[pattern] = regexp.MustCompile(pattern)
+				}
+			}
+		}
+		return out
+	})
+	incidentsMu sync.Mutex
 	// Incident database a test points elsewhere, after the store executions override
 	incidentsExecutionsFile string
 )
@@ -121,10 +135,7 @@ func (i *IncidentStore) transaction(body func(ctx context.Context, conn state.SQ
 
 // Collapses whitespace runs, strips and lowercases an error for signing
 func normalizeIncidentError(errText string) string {
-	collapsed, err := incidentWhitespaceRe.Replace(errText, " ", -1, -1)
-	if err != nil {
-		collapsed = errText
-	}
+	collapsed := incidentWhitespaceRe().ReplaceAllLiteralString(errText, " ")
 	return strings.ToLower(strings.TrimSpace(collapsed))
 }
 
@@ -151,10 +162,7 @@ func (i *IncidentStore) redactIncidentError(errText string) string {
 
 // Dedup key stable for the same job and normalized error prefix with measured durations masked
 func incidentErrorSignature(jobID, errText string) string {
-	masked, err := incidentDurationRe.Replace(normalizeIncidentError(errText), "#s", -1, -1)
-	if err != nil {
-		masked = normalizeIncidentError(errText)
-	}
+	masked := incidentDurationRe().ReplaceAllLiteralString(normalizeIncidentError(errText), "#s")
 	sum := sha256.Sum256([]byte(jobID + headRunes(masked, maxSignatureErrorChars)))
 	return hex.EncodeToString(sum[:])[:12]
 }
@@ -171,7 +179,7 @@ func classifyFailureType(errText string) string {
 	for _, entry := range failureTypeOrder {
 		for _, pattern := range entry.patterns {
 			if strings.HasPrefix(pattern, `\b`) && strings.HasSuffix(pattern, `\b`) {
-				if ok, _ := mustPyRe(pattern).MatchString(text); ok {
+				if failureTypeWordRes()[pattern].MatchString(text) {
 					return entry.kind
 				}
 			} else if strings.Contains(text, pattern) {

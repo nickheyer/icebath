@@ -6,13 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type fakeStreamHost struct {
 	mu      sync.Mutex
-	sent    []*pyjson.Object
-	onSend  func(reqID string, body *pyjson.Object)
+	sent    []*jsonutil.Object
+	onSend  func(reqID string, body *jsonutil.Object)
 	lastReq map[string]string
 }
 
@@ -21,38 +21,38 @@ func (h *fakeStreamHost) RequireWS() error                           { return ni
 func (h *fakeStreamHost) RequireReplyReqID(r string) (string, error) { return r, nil }
 func (h *fakeStreamHost) ReplyReqIDForMessage(string) string         { return "" }
 func (h *fakeStreamHost) LastChatReqID(chat string) string           { return h.lastReq[chat] }
-func (h *fakeStreamHost) RaiseForWeComError(*pyjson.Object, string) error {
+func (h *fakeStreamHost) RaiseForWeComError(*jsonutil.Object, string) error {
 	return nil
 }
 func (h *fakeStreamHost) EnqueueChatSend(ctx context.Context, _ string, send func(context.Context) (any, error), _ bool) (any, error) {
 	return send(ctx)
 }
-func (h *fakeStreamHost) SendJSON(_ context.Context, payload *pyjson.Object) error {
+func (h *fakeStreamHost) SendJSON(_ context.Context, payload *jsonutil.Object) error {
 	h.mu.Lock()
 	h.sent = append(h.sent, payload)
 	h.mu.Unlock()
 	if h.onSend != nil {
 		headers, _ := payload.Get("headers")
-		reqID, _ := headers.(*pyjson.Object).Get("req_id")
+		reqID, _ := headers.(*jsonutil.Object).Get("req_id")
 		body, _ := payload.Get("body")
-		h.onSend(reqID.(string), body.(*pyjson.Object))
+		h.onSend(reqID.(string), body.(*jsonutil.Object))
 	}
 	return nil
 }
 
-func frameText(p *pyjson.Object) (string, bool) {
+func frameText(p *jsonutil.Object) (string, bool) {
 	body, _ := p.Get("body")
-	stream, _ := body.(*pyjson.Object).Get("stream")
-	content, _ := stream.(*pyjson.Object).Get("content")
-	finish, _ := stream.(*pyjson.Object).Get("finish")
+	stream, _ := body.(*jsonutil.Object).Get("stream")
+	content, _ := stream.(*jsonutil.Object).Get("content")
+	finish, _ := stream.(*jsonutil.Object).Get("finish")
 	return content.(string), finish.(bool)
 }
 
 func TestStreamTurnSeedUpdateFinalize(t *testing.T) {
 	host := &fakeStreamHost{lastReq: map[string]string{"chat1": "req-1"}}
 	s := &Streamer{Host: host, SafeDurationSeconds: StreamSafeDurationSeconds}
-	host.onSend = func(reqID string, body *pyjson.Object) {
-		ack := pyjson.NewObject()
+	host.onSend = func(reqID string, body *jsonutil.Object) {
+		ack := jsonutil.NewObject()
 		ack.Set("errcode", int64(0))
 		s.ResolveReplyAck(reqID, ack)
 	}
@@ -84,10 +84,10 @@ func TestStreamTurnSeedUpdateFinalize(t *testing.T) {
 func TestStreamFinalExpiredFallsBackAndMarksChat(t *testing.T) {
 	host := &fakeStreamHost{lastReq: map[string]string{"c": "r"}}
 	s := &Streamer{Host: host, SafeDurationSeconds: StreamSafeDurationSeconds}
-	host.onSend = func(reqID string, body *pyjson.Object) {
-		ack := pyjson.NewObject()
+	host.onSend = func(reqID string, body *jsonutil.Object) {
+		ack := jsonutil.NewObject()
 		stream, _ := body.Get("stream")
-		if finish, _ := stream.(*pyjson.Object).Get("finish"); finish == true {
+		if finish, _ := stream.(*jsonutil.Object).Get("finish"); finish == true {
 			ack.Set("errcode", int64(StreamExpiredErrcode))
 		}
 		s.ResolveReplyAck(reqID, ack)
@@ -111,16 +111,16 @@ func TestReplyQueueSkipsWhilePendingAndTimesOutFinal(t *testing.T) {
 	s := &Streamer{Host: &fakeStreamHost{}}
 	ctx := context.Background()
 	body := obj("msgtype", "stream", "stream", obj("id", "s", "finish", false, "content", "x"))
-	if r, _ := s.sendReplyQueued(ctx, "q", body, false, true); r.Vals["errmsg"] != "sent_nonblocking" {
-		t.Fatalf("first %v", r.Vals)
+	if r, _ := s.sendReplyQueued(ctx, "q", body, false, true); r.Value("errmsg") != "sent_nonblocking" {
+		t.Fatalf("first %v", r)
 	}
-	if r, _ := s.sendReplyQueued(ctx, "q", body, false, true); r.Vals["errmsg"] != "pending_ack" {
-		t.Fatalf("second %v", r.Vals)
+	if r, _ := s.sendReplyQueued(ctx, "q", body, false, true); r.Value("errmsg") != "pending_ack" {
+		t.Fatalf("second %v", r)
 	}
-	if r, _ := s.sendReplyQueued(ctx, "q", body, true, false); r.Vals["errmsg"] != "ack_timeout_assumed_delivered" || len(s.replyQueues) != 0 {
-		t.Fatalf("final %v queues %d", r.Vals, len(s.replyQueues))
+	if r, _ := s.sendReplyQueued(ctx, "q", body, true, false); r.Value("errmsg") != "ack_timeout_assumed_delivered" || len(s.replyQueues) != 0 {
+		t.Fatalf("final %v queues %d", r, len(s.replyQueues))
 	}
-	if got, _ := truncateStreamContent("aé", 2); got != "a" {
+	if got := truncateStreamContent("aé", 2); got != "a" {
 		t.Fatalf("truncate %q", got)
 	}
 }

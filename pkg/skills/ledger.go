@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,11 +22,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -61,7 +58,7 @@ type LedgerMutation struct {
 	BeforeCaptured bool
 	AfterRoot      string
 	Actor          string
-	Evidence       *pyjson.Object
+	Evidence       *jsonutil.Object
 }
 
 // Snapshot, append and maintenance steps of the ledger, swapped by tests to observe, fail and pause them
@@ -70,7 +67,7 @@ var ledgerSteps struct {
 	trim     func(s *Scope, ctx context.Context, maxBytes int64) (int, error)
 	rewrite  func(ctx context.Context, path string, lines [][]byte, op string) ([]byte, error)
 	snapshot func(s *Scope, root string, completePackage bool) ([]any, error)
-	append   func(s *Scope, ctx context.Context, action string, skill any, before, after []any, actor string, evidence *pyjson.Object) (string, bool)
+	append   func(s *Scope, ctx context.Context, action string, skill any, before, after []any, actor string, evidence *jsonutil.Object) (string, bool)
 }
 
 func init() {
@@ -123,15 +120,20 @@ func (s *Scope) ledgerCfg(key string, fallback any) any {
 }
 
 // Truthiness of skills.ledger, on by default
-func (s *Scope) LedgerEnabled() bool { return pyrepr.Truthy(s.ledgerCfg("ledger", true)) }
+func (s *Scope) LedgerEnabled() bool { return anyutil.IsTrue(s.ledgerCfg("ledger", true)) }
 
-func (s *Scope) ledgerMaxBytes() (*big.Int, error) {
-	return pyint.Of(s.ledgerCfg("ledger_max_bytes", ledgerDefaultMaxBytes))
+// Configured ledger size bound, a value past the int64 range held at the nearest bound
+func (s *Scope) ledgerMaxBytes() (int64, error) {
+	n, err := anyutil.ToInt(s.ledgerCfg("ledger_max_bytes", ledgerDefaultMaxBytes))
+	if errors.Is(err, anyutil.ErrRange) {
+		return n, nil
+	}
+	return n, err
 }
 
 // Posix path of p under root after normpath of both, false when outside
 func ledgerRelPosix(p, root string) (string, bool) {
-	return pypath.PathRelativeTo(pypath.Normpath(p), pypath.Normpath(root))
+	return pathutil.RelativeTo(filepath.Clean(p), filepath.Clean(root))
 }
 
 func ledgerWithin(root, p string) bool {
@@ -183,8 +185,8 @@ func (s *Scope) LedgerReadBlob(sha string) ([]byte, bool) {
 	return data, true
 }
 
-func newLedgerItem(path, sha string) *pyjson.Object {
-	o := pyjson.NewObject()
+func newLedgerItem(path, sha string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("path", path)
 	o.Set("sha256", sha)
 	return o
@@ -192,7 +194,7 @@ func newLedgerItem(path, sha string) *pyjson.Object {
 
 // Python item.get(key, default) on a manifest item, AttributeError text for a non dict
 func ledgerItemGet(item any, key string, fallback any) (any, error) {
-	o, ok := item.(*pyjson.Object)
+	o, ok := item.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("ledger item is %s where a mapping was expected", errchain.Kind(item))
 	}
@@ -204,7 +206,7 @@ func ledgerItemGet(item any, key string, fallback any) (any, error) {
 
 // Python item[key] on a manifest item, KeyError or TypeError text when it fails
 func ledgerItemKey(item any, key string) (any, error) {
-	o, ok := item.(*pyjson.Object)
+	o, ok := item.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("ledger item is %s where a mapping holding %s was expected", errchain.Kind(item), key)
 	}
@@ -216,15 +218,15 @@ func ledgerItemKey(item any, key string) (any, error) {
 
 // Elements Python iteration of value or [] yields, dict keys and string characters included
 func ledgerIter(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return []any{}, nil
 	}
 	switch x := v.(type) {
 	case []any:
 		return x, nil
-	case *pyjson.Object:
-		out := make([]any, len(x.Keys))
-		for i, k := range x.Keys {
+	case *jsonutil.Object:
+		out := make([]any, x.Len())
+		for i, k := range x.Keys() {
 			out[i] = k
 		}
 		return out, nil
@@ -240,10 +242,10 @@ func ledgerIter(v any) ([]any, error) {
 
 // Python (a or []) + (b or []) over two ledger manifests
 func ledgerConcat(a, b any) ([]any, error) {
-	if !pyrepr.Truthy(a) {
+	if !anyutil.IsTrue(a) {
 		a = []any{}
 	}
-	if !pyrepr.Truthy(b) {
+	if !anyutil.IsTrue(b) {
 		b = []any{}
 	}
 	la, okA := a.([]any)
@@ -263,7 +265,7 @@ func ledgerConcat(a, b any) ([]any, error) {
 	return nil, fmt.Errorf("cannot join %s with %s", errchain.Kind(a), errchain.Kind(b))
 }
 
-func ledgerObjects(items []*pyjson.Object) []any {
+func ledgerObjects(items []*jsonutil.Object) []any {
 	out := make([]any, len(items))
 	for i, it := range items {
 		out[i] = it
@@ -271,10 +273,10 @@ func ledgerObjects(items []*pyjson.Object) []any {
 	return out
 }
 
-func ledgerTyped(items []any) []*pyjson.Object {
-	out := make([]*pyjson.Object, 0, len(items))
+func ledgerTyped(items []any) []*jsonutil.Object {
+	out := make([]*jsonutil.Object, 0, len(items))
 	for _, it := range items {
-		if o, ok := it.(*pyjson.Object); ok {
+		if o, ok := it.(*jsonutil.Object); ok {
 			out = append(out, o)
 		}
 	}
@@ -344,7 +346,7 @@ func (s *Scope) ledgerSnapshot(root string, completePackage bool) ([]any, error)
 	if root == "" {
 		return []any{}, nil
 	}
-	root = pypath.PathStr(root)
+	root = filepath.Clean(root)
 	var files []string
 	if st, err := os.Stat(root); err == nil {
 		if st.Mode().IsRegular() {
@@ -372,7 +374,7 @@ func (s *Scope) ledgerSnapshot(root string, completePackage bool) ([]any, error)
 }
 
 // Snapshot of root, unioned with the newest curator tarball's package files when completePackage is set
-func (s *Scope) LedgerSnapshotPaths(root string, completePackage bool) ([]*pyjson.Object, error) {
+func (s *Scope) LedgerSnapshotPaths(root string, completePackage bool) ([]*jsonutil.Object, error) {
 	items, err := ledgerSteps.snapshot(s, root, completePackage)
 	return ledgerTyped(items), err
 }
@@ -402,9 +404,9 @@ func ledgerSkillMDParents(items []any) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		p := pypath.PathStr(pyrepr.Str(v))
-		if pypath.PathName(p) == "SKILL.md" {
-			out = append(out, pypath.PathParent(p))
+		p := filepath.Clean(anyutil.String(v))
+		if pathutil.Name(p) == "SKILL.md" {
+			out = append(out, filepath.Dir(filepath.Clean(p)))
 		}
 	}
 	return out, nil
@@ -439,7 +441,7 @@ func (s *Scope) ledgerPackagePrefixes(root, skill string, before []any) ([]strin
 }
 
 // Tarball member prefixes of a skill package, root and skill empty for none
-func (s *Scope) LedgerPackagePrefixes(root, skill string, before []*pyjson.Object) ([]string, error) {
+func (s *Scope) LedgerPackagePrefixes(root, skill string, before []*jsonutil.Object) ([]string, error) {
 	return s.ledgerPackagePrefixes(root, skill, ledgerObjects(before))
 }
 
@@ -521,7 +523,7 @@ func ledgerReadTarball(archive string, exact map[string]bool, prefixed []string)
 		if name == "" || strings.HasPrefix(name, "/") {
 			continue
 		}
-		_, parts := pypath.PathParts(name)
+		_, parts := pathutil.Parts(name)
 		traversal := false
 		for _, p := range parts {
 			traversal = traversal || p == ".."
@@ -563,8 +565,8 @@ func (s *Scope) ledgerFill(root string, existing []any, skill string) ([]any, er
 	destRoot := ""
 	pkgNames := map[string]bool{}
 	if root != "" {
-		destRoot = pypath.PathStr(root)
-		name := pypath.PathName(destRoot)
+		destRoot = filepath.Clean(root)
+		name := pathutil.Name(destRoot)
 		pkgNames[name] = true
 		pkgNames[ledgerStripArchiveTimestamp(name)] = true
 	}
@@ -574,7 +576,7 @@ func (s *Scope) ledgerFill(root string, existing []any, skill string) ([]any, er
 		if err != nil {
 			return nil, err
 		}
-		if rel, ok := ledgerRelPosix(pyrepr.Str(v), skills); ok {
+		if rel, ok := ledgerRelPosix(anyutil.String(v), skills); ok {
 			have[rel] = true
 		}
 	}
@@ -590,7 +592,7 @@ func (s *Scope) ledgerFill(root string, existing []any, skill string) ([]any, er
 		if destRoot != "" {
 			base = destRoot
 		}
-		dest := pypath.PathJoin(base, parts...)
+		dest := pathutil.Join(base, parts...)
 		if !ledgerWithin(skills, dest) || !ledgerWithin(s.Home, dest) {
 			continue
 		}
@@ -610,7 +612,7 @@ func (s *Scope) ledgerFill(root string, existing []any, skill string) ([]any, er
 }
 
 // Manifest unioned with absent package files from the newest curator tarball, root and skill empty for none
-func (s *Scope) LedgerFillSnapshotFromCuratorBackup(root string, existing []*pyjson.Object, skill string) ([]*pyjson.Object, error) {
+func (s *Scope) LedgerFillSnapshotFromCuratorBackup(root string, existing []*jsonutil.Object, skill string) ([]*jsonutil.Object, error) {
 	items, err := s.ledgerFill(root, ledgerObjects(existing), skill)
 	return ledgerTyped(items), err
 }
@@ -623,7 +625,7 @@ func ledgerDelta(before, after []any) ([]any, []any, error) {
 			return "", nil, err
 		}
 		sha, _ := ledgerItemGet(it, "sha256", nil)
-		return pyrepr.Str(p), sha, nil
+		return anyutil.String(p), sha, nil
 	}
 	bSha, aSha := map[string]any{}, map[string]any{}
 	var bOrder []string
@@ -646,7 +648,7 @@ func ledgerDelta(before, after []any) ([]any, []any, error) {
 	}
 	same := map[string]bool{}
 	for _, p := range bOrder {
-		if pyrepr.Equal(aSha[p], bSha[p]) {
+		if anyutil.Equal(aSha[p], bSha[p]) {
 			same[p] = true
 		}
 	}
@@ -672,7 +674,7 @@ func ledgerErrText(err error) string {
 }
 
 // Appends one entry and returns its id, false when the ledger is off or the write failed
-func (s *Scope) ledgerAppend(ctx context.Context, action string, skill any, before, after []any, actor string, evidence *pyjson.Object) (string, bool) {
+func (s *Scope) ledgerAppend(ctx context.Context, action string, skill any, before, after []any, actor string, evidence *jsonutil.Object) (string, bool) {
 	if !s.LedgerEnabled() {
 		return "", false
 	}
@@ -684,7 +686,7 @@ func (s *Scope) ledgerAppend(ctx context.Context, action string, skill any, befo
 	return id, true
 }
 
-func (s *Scope) ledgerAppendEntry(ctx context.Context, action string, skill any, before, after []any, actor string, evidence *pyjson.Object) (string, error) {
+func (s *Scope) ledgerAppendEntry(ctx context.Context, action string, skill any, before, after []any, actor string, evidence *jsonutil.Object) (string, error) {
 	if before == nil {
 		before = []any{}
 	}
@@ -701,10 +703,10 @@ func (s *Scope) ledgerAppendEntry(ctx context.Context, action string, skill any,
 		actor = s.LedgerDeriveActor(ctx)
 	}
 	if evidence == nil {
-		evidence = pyjson.NewObject()
+		evidence = jsonutil.NewObject()
 	}
 	id := ledgerRandomHex(6)
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("id", id)
 	entry.Set("ts", nowISO())
 	entry.Set("actor", actor)
@@ -713,7 +715,7 @@ func (s *Scope) ledgerAppendEntry(ctx context.Context, action string, skill any,
 	entry.Set("evidence", evidence)
 	entry.Set("before", before)
 	entry.Set("after", after)
-	line, err := pyjson.Dumps(entry, pyjson.EnsureASCII(false))
+	line, err := jsonutil.Encode(entry)
 	if err != nil {
 		return "", err
 	}
@@ -748,7 +750,7 @@ func (s *Scope) ledgerAppendEntry(ctx context.Context, action string, skill any,
 }
 
 // Appends one entry over typed manifests, false when the ledger is off or the write failed
-func (s *Scope) LedgerAppendEntry(ctx context.Context, action, skill string, before, after []*pyjson.Object, actor string, evidence *pyjson.Object) (string, bool) {
+func (s *Scope) LedgerAppendEntry(ctx context.Context, action, skill string, before, after []*jsonutil.Object, actor string, evidence *jsonutil.Object) (string, bool) {
 	var b, a []any
 	if before != nil {
 		b = ledgerObjects(before)
@@ -768,9 +770,9 @@ func (s *Scope) ledgerRead(what string, quietMissing bool) []byte {
 		}
 		return nil
 	}
-	raw = bytes.TrimPrefix(raw, []byte("\xEF\xBB\xBF"))
-	if i, ok := pystr.ValidIndex(raw); !ok {
-		s.logger().Warn(fmt.Sprintf("skill_ledger: ledger unreadable (%s); %s", pystr.UTF8DecodeError(raw, i).Error(), what))
+	raw = textutil.TrimBOM(raw)
+	if err := textutil.ValidateUTF8(raw); err != nil {
+		s.logger().Warn(fmt.Sprintf("skill_ledger: ledger unreadable (%s); %s", err.Error(), what))
 		return nil
 	}
 	if raw == nil {
@@ -785,7 +787,7 @@ func (s *Scope) ledgerMaintainSize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if maxBytes.Sign() <= 0 {
+	if maxBytes <= 0 {
 		return nil
 	}
 	if err := s.ledgerSweep(ctx, maxBytes); err != nil {
@@ -794,19 +796,19 @@ func (s *Scope) ledgerMaintainSize(ctx context.Context) error {
 	return nil
 }
 
-func (s *Scope) ledgerSweep(ctx context.Context, maxBytes *big.Int) error {
+func (s *Scope) ledgerSweep(ctx context.Context, maxBytes int64) error {
 	st, err := os.Stat(s.LedgerPath())
 	if err != nil {
 		return err
 	}
-	if big.NewInt(st.Size()).Cmp(maxBytes) <= 0 {
+	if st.Size() <= maxBytes {
 		return nil
 	}
 	_, _, sizeAfter, err := ledgerSteps.compact(s, ctx)
 	if err != nil {
 		return err
 	}
-	lowWater := int64(float64(maxBytes.Int64()) * ledgerTrimLowWater)
+	lowWater := int64(float64(maxBytes) * ledgerTrimLowWater)
 	dropped := 0
 	if int64(sizeAfter) > lowWater {
 		if dropped, err = ledgerSteps.trim(s, ctx, lowWater); err != nil {
@@ -886,16 +888,16 @@ func (s *Scope) LedgerCompact(ctx context.Context) (int, int, int, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		row, err := pyjson.Loads(line)
+		row, err := jsonutil.Decode(line)
 		if err != nil {
-			var de *pyjson.DecodeError
+			var de *jsonutil.SyntaxError
 			if errors.As(err, &de) {
 				out = append(out, line)
 				continue
 			}
 			return 0, 0, 0, err
 		}
-		if obj, ok := row.(*pyjson.Object); ok && !ledgerIsPreRollback(obj) {
+		if obj, ok := row.(*jsonutil.Object); ok && !ledgerIsPreRollback(obj) {
 			bv, _ := obj.Get("before")
 			av, _ := obj.Get("after")
 			b, err := ledgerIter(bv)
@@ -911,7 +913,7 @@ func (s *Scope) LedgerCompact(ctx context.Context) (int, int, int, error) {
 			}
 			obj.Set("before", b)
 			obj.Set("after", a)
-			if line, err = pyjson.Dumps(obj, pyjson.EnsureASCII(false)); err != nil {
+			if line, err = jsonutil.Encode(obj); err != nil {
 				return 0, 0, 0, err
 			}
 		}
@@ -936,7 +938,7 @@ func (s *Scope) LedgerCompact(ctx context.Context) (int, int, int, error) {
 	return kept, len(raw), len(data), nil
 }
 
-func ledgerIsPreRollback(row *pyjson.Object) bool {
+func ledgerIsPreRollback(row *jsonutil.Object) bool {
 	v, _ := row.Get("action")
 	a, ok := v.(string)
 	return ok && a == "pre-rollback"
@@ -962,15 +964,15 @@ func (s *Scope) LedgerGCBlobs(ctx context.Context) (int, int64, error) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		row, err := pyjson.Loads(line)
+		row, err := jsonutil.Decode(line)
 		if err != nil {
-			var de *pyjson.DecodeError
+			var de *jsonutil.SyntaxError
 			if !errors.As(err, &de) {
 				return 0, 0, err
 			}
 			row = nil
 		}
-		obj, ok := row.(*pyjson.Object)
+		obj, ok := row.(*jsonutil.Object)
 		if !ok {
 			s.logger().Warn("skill_ledger: malformed ledger line; blob GC skipped")
 			return 0, 0, nil
@@ -986,7 +988,7 @@ func (s *Scope) LedgerGCBlobs(ctx context.Context) (int, int64, error) {
 			if err != nil {
 				return 0, 0, err
 			}
-			referenced[pyrepr.Str(v)] = true
+			referenced[anyutil.String(v)] = true
 		}
 	}
 	entries, err := os.ReadDir(blobs)
@@ -1014,7 +1016,7 @@ func (s *Scope) LedgerGCBlobs(ctx context.Context) (int, int64, error) {
 func ledgerFromMaps(items []map[string]string) []any {
 	out := make([]any, len(items))
 	for i, m := range items {
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		for _, k := range []string{"path", "sha256"} {
 			if v, ok := m[k]; ok {
 				o.Set(k, v)
@@ -1039,9 +1041,9 @@ func ledgerToMaps(items []any) []map[string]string {
 	out := make([]map[string]string, 0, len(items))
 	for _, it := range items {
 		m := map[string]string{}
-		if o, ok := it.(*pyjson.Object); ok {
-			for k, v := range o.Vals {
-				m[k] = pyrepr.Str(v)
+		if o, ok := it.(*jsonutil.Object); ok {
+			for k, v := range o.All() {
+				m[k] = anyutil.String(v)
 			}
 		}
 		out = append(out, m)
@@ -1102,9 +1104,9 @@ func (s *Scope) LedgerCaptureBefore(ctx context.Context, root string, completePa
 }
 
 // Ledger rows newest first filtered by skill when set, limit below zero for all
-func (s *Scope) LedgerListEntries(skill string, limit int) ([]*pyjson.Object, error) {
+func (s *Scope) LedgerListEntries(skill string, limit int) ([]*jsonutil.Object, error) {
 	raw := s.ledgerRead("listing empty", true)
-	rows := []*pyjson.Object{}
+	rows := []*jsonutil.Object{}
 	if raw == nil {
 		return rows, nil
 	}
@@ -1112,19 +1114,19 @@ func (s *Scope) LedgerListEntries(skill string, limit int) ([]*pyjson.Object, er
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		row, err := pyjson.Loads(line)
+		row, err := jsonutil.Decode(line)
 		if err != nil {
-			var de *pyjson.DecodeError
+			var de *jsonutil.SyntaxError
 			if errors.As(err, &de) {
 				continue
 			}
 			return nil, err
 		}
-		obj, ok := row.(*pyjson.Object)
+		obj, ok := row.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
-		if v, _ := obj.Get("skill"); skill == "" || pyrepr.Equal(v, skill) {
+		if v, _ := obj.Get("skill"); skill == "" || anyutil.Equal(v, skill) {
 			rows = append(rows, obj)
 		}
 	}
@@ -1138,7 +1140,7 @@ func (s *Scope) LedgerListEntries(skill string, limit int) ([]*pyjson.Object, er
 }
 
 // Ledger row with the given id, nil when absent or the id is empty
-func (s *Scope) LedgerGetEntry(entryID string) (*pyjson.Object, error) {
+func (s *Scope) LedgerGetEntry(entryID string) (*jsonutil.Object, error) {
 	if entryID == "" {
 		return nil, nil
 	}
@@ -1147,7 +1149,7 @@ func (s *Scope) LedgerGetEntry(entryID string) (*pyjson.Object, error) {
 		return nil, err
 	}
 	for _, r := range rows {
-		if v, _ := r.Get("id"); pyrepr.Equal(v, entryID) {
+		if v, _ := r.Get("id"); anyutil.Equal(v, entryID) {
 			return r, nil
 		}
 	}
@@ -1156,7 +1158,7 @@ func (s *Scope) LedgerGetEntry(entryID string) (*pyjson.Object, error) {
 
 // Refusal text when any manifest path sits outside the home, empty when all are inside
 func (s *Scope) ledgerValidatePaths(sections ...any) (string, error) {
-	h := pypath.PathStr(s.Home)
+	h := filepath.Clean(s.Home)
 	for _, sec := range sections {
 		items, err := ledgerIter(sec)
 		if err != nil {
@@ -1167,7 +1169,7 @@ func (s *Scope) ledgerValidatePaths(sections ...any) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			p := pypath.PathStr(pyrepr.Str(v))
+			p := filepath.Clean(anyutil.String(v))
 			if !ledgerWithin(h, p) {
 				return fmt.Sprintf("entry references a path outside %s: %s", h, p), nil
 			}
@@ -1202,7 +1204,7 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 	}
 	actionV, _ := entry.Get("action")
 	switch actionV.(type) {
-	case []any, *pyjson.Object:
+	case []any, *jsonutil.Object:
 		return false, "", fmt.Errorf("ledger rollback action is %s where text was expected", errchain.Kind(actionV))
 	}
 	if a, ok := actionV.(string); ok && ledgerPackageRestoreActions[a] {
@@ -1216,8 +1218,8 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 		}
 		skillV, _ := entry.Get("skill")
 		skill := ""
-		if pyrepr.Truthy(skillV) {
-			skill = pyrepr.Str(skillV)
+		if anyutil.IsTrue(skillV) {
+			skill = anyutil.String(skillV)
 		}
 		if before, err = s.ledgerFill(root, before, skill); err != nil {
 			return false, "", err
@@ -1233,10 +1235,10 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 		if err != nil {
 			return false, "", err
 		}
-		if _, ok := s.LedgerReadBlob(pyrepr.Str(shaV)); !ok {
+		if _, ok := s.LedgerReadBlob(anyutil.String(shaV)); !ok {
 			sha, _ := ledgerItemGet(it, "sha256", nil)
 			path, _ := ledgerItemGet(it, "path", nil)
-			return false, fmt.Sprintf("missing blob %s for %s; rollback aborted, nothing was changed", pyrepr.Str(sha), pyrepr.Str(path)), nil
+			return false, fmt.Sprintf("missing blob %s for %s; rollback aborted, nothing was changed", anyutil.String(sha), anyutil.String(path)), nil
 		}
 	}
 	touched := map[string]bool{}
@@ -1245,8 +1247,8 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 		if err != nil {
 			return false, "", err
 		}
-		if pyrepr.Truthy(v) {
-			touched[pyrepr.Str(v)] = true
+		if anyutil.IsTrue(v) {
+			touched[anyutil.String(v)] = true
 		}
 	}
 	paths := make([]string, 0, len(touched))
@@ -1273,7 +1275,7 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 	if !ok {
 		skillV = "?"
 	}
-	ev := pyjson.NewObject()
+	ev := jsonutil.NewObject()
 	ev.Set("rollback_target", entryID)
 	safetyID, ok := ledgerSteps.append(s, ctx, "pre-rollback", skillV, safety, safety, "", ev)
 	if !ok {
@@ -1285,24 +1287,24 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 		if err != nil {
 			return false, "", err
 		}
-		beforePaths[pyrepr.Str(v)] = true
+		beforePaths[anyutil.String(v)] = true
 	}
 	for _, it := range before {
 		pv, err := ledgerItemKey(it, "path")
 		if err != nil {
 			return false, "", err
 		}
-		fp := pypath.PathStr(pyrepr.Str(pv))
-		if err := os.MkdirAll(pypath.PathParent(fp), 0o777); err != nil {
+		fp := filepath.Clean(anyutil.String(pv))
+		if err := os.MkdirAll(filepath.Dir(filepath.Clean(fp)), 0o777); err != nil {
 			return false, "", err
 		}
 		sv, err := ledgerItemKey(it, "sha256")
 		if err != nil {
 			return false, "", err
 		}
-		data, ok := s.LedgerReadBlob(pyrepr.Str(sv))
+		data, ok := s.LedgerReadBlob(anyutil.String(sv))
 		if !ok {
-			return false, "", fmt.Errorf("ledger blob %s is missing", pyrepr.Str(sv))
+			return false, "", fmt.Errorf("ledger blob %s is missing", anyutil.String(sv))
 		}
 		if err := os.WriteFile(fp, data, 0o666); err != nil {
 			return false, "", err
@@ -1314,7 +1316,7 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 		if err != nil {
 			return false, "", err
 		}
-		p := pyrepr.Str(v)
+		p := anyutil.String(v)
 		if p == "" || beforePaths[p] {
 			continue
 		}
@@ -1327,7 +1329,7 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 		}
 		removed++
 	}
-	done := pyjson.NewObject()
+	done := jsonutil.NewObject()
 	done.Set("rollback_target", entryID)
 	done.Set("restored", restored)
 	done.Set("removed", removed)
@@ -1335,5 +1337,5 @@ func (s *Scope) LedgerRollbackEntry(ctx context.Context, entryID string) (bool, 
 	action, _ := entry.Get("action")
 	skillShown, _ := entry.Get("skill")
 	return true, fmt.Sprintf("rolled back entry %s (%s on '%s'): %d file(s) restored, %d removed. Safety entry %s captured the pre-rollback state.",
-		entryID, pyrepr.Str(action), pyrepr.Str(skillShown), restored, removed, safetyID), nil
+		entryID, anyutil.String(action), anyutil.String(skillShown), restored, removed, safetyID), nil
 }

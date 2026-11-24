@@ -7,8 +7,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Program name the entry parser prints, the published launcher of the ACP server
@@ -310,7 +310,7 @@ func parseEntryArgs(argv []string, stdout, stderr io.Writer) (args entryArgs, co
 			}
 			explicit := *m.explicit
 			if m.optionString[1] == '-' || explicit == "" || m.sep != "" || explicit[0] == '-' {
-				return fail(m.option, "ignored explicit argument "+pyrepr.Repr(explicit))
+				return fail(m.option, "ignored explicit argument "+anyutil.Quote(explicit))
 			}
 			taken = append(taken, m.option)
 			_, firstLen := utf8.DecodeRuneInString(explicit)

@@ -3,7 +3,7 @@ package state
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -58,10 +58,10 @@ func withPartText(item any, text string) any {
 			}
 		}
 		return append(out, pyKeyValue{"text", text})
-	case *pyjson.Object:
-		out := pyjson.NewObject()
-		for _, k := range m.Keys {
-			out.Set(k, m.Vals[k])
+	case *jsonutil.Object:
+		out := jsonutil.NewObject()
+		for _, k := range m.Keys() {
+			out.Set(k, m.Value(k))
 		}
 		out.Set("text", text)
 		return out
@@ -76,10 +76,10 @@ func copyPart(item any) any {
 		return copyMessage(m)
 	case pyObject:
 		return append(pyObject{}, m...)
-	case *pyjson.Object:
-		out := pyjson.NewObject()
-		for _, k := range m.Keys {
-			out.Set(k, m.Vals[k])
+	case *jsonutil.Object:
+		out := jsonutil.NewObject()
+		for _, k := range m.Keys() {
+			out.Set(k, m.Value(k))
 		}
 		return out
 	}
@@ -110,10 +110,10 @@ func deepCopyValue(v any) any {
 			out[i] = pyKeyValue{kv.Key, deepCopyValue(kv.Value)}
 		}
 		return out
-	case *pyjson.Object:
-		out := pyjson.NewObject()
-		for _, k := range x.Keys {
-			out.Set(k, deepCopyValue(x.Vals[k]))
+	case *jsonutil.Object:
+		out := jsonutil.NewObject()
+		for _, k := range x.Keys() {
+			out.Set(k, deepCopyValue(x.Value(k)))
 		}
 		return out
 	case []any:

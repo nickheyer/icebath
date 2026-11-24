@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // FAL backend delegating to the image_generate pipeline at call time
@@ -89,10 +89,10 @@ func (p *falImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	if failure != nil {
 		return failure, nil
 	}
-	decoded, err := pyjson.Loads(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		response = map[string]any{"success": false, "image": nil, "error": "Invalid JSON from FAL pipeline"}
-	} else if m, ok := pyjson.Plain(decoded).(map[string]any); ok {
+	} else if m, ok := jsonutil.Plain(decoded).(map[string]any); ok {
 		response = m
 	} else {
 		response = map[string]any{"success": false, "image": nil, "error": "FAL pipeline returned a non-dict response", "error_type": "provider_contract"}

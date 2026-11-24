@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func wantInterval(t *testing.T, token string, want int64, ok bool) {
@@ -439,7 +439,7 @@ func TestParkedGoalDoesNotBlock(t *testing.T) {
 }
 
 // Dispatches one loop command and fails the test on an error
-func dispatchLoop(t *testing.T, mgr *LoopManager, args string, route *pyjson.Object) LoopCommandResult {
+func dispatchLoop(t *testing.T, mgr *LoopManager, args string, route *jsonutil.Object) LoopCommandResult {
 	t.Helper()
 	result, err := DispatchLoopCommand(context.Background(), mgr, args, route)
 	if err != nil {
@@ -489,9 +489,9 @@ func TestPauseResumeStop(t *testing.T) {
 
 func TestRouteStored(t *testing.T) {
 	goalsTestHome(t)
-	route := pyjson.ObjectOf("platform", "telegram", "chat_id", "42", "chat_type", "private")
+	route := jsonutil.ObjectOf("platform", "telegram", "chat_id", "42", "chat_type", "private")
 	dispatchLoop(t, NewLoopManager(context.Background(), "d5"), "5m ping", route)
-	if loaded := LoadLoop(context.Background(), "d5"); loaded == nil || !pyrepr.Equal(loaded.Route, route) {
+	if loaded := LoadLoop(context.Background(), "d5"); loaded == nil || !anyutil.Equal(loaded.Route, route) {
 		t.Fatalf("loaded %#v", loaded)
 	}
 }

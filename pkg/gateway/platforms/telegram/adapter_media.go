@@ -27,9 +27,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 )
 
 // Routing fields of a media send applied to the SDK params
@@ -121,7 +120,7 @@ func (a *TelegramAdapter) compressImageToJPEG(imagePath string) string {
 	}
 	tmp, err := a.writeCompressedJPEG(imagePath)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[%s] Image compression failed, uploading original: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Image compression failed, uploading original: %s", a.Name(), err.Error()))
 		return ""
 	}
 	out, _ := os.Stat(tmp)
@@ -153,7 +152,7 @@ func (a *TelegramAdapter) writeCompressedJPEG(imagePath string) (string, error) 
 	w, h := bounds.Dx(), bounds.Dy()
 	if maxDim := max(w, h); maxDim > imgMaxDimension {
 		scale := float64(imgMaxDimension) / float64(maxDim)
-		img = pypil.ResizeLanczos(rgb, int(float64(w)*scale), int(float64(h)*scale))
+		img = imageutil.Resize(rgb, int(float64(w)*scale), int(float64(h)*scale), imageutil.Lanczos)
 	}
 	out, err := os.CreateTemp("", "tg_compress_*.jpg")
 	if err != nil {
@@ -437,7 +436,7 @@ func (a *TelegramAdapter) SendImageFile(ctx context.Context, chatID, imagePath, 
 		defer os.Remove(compressed)
 	}
 	onError := func(e error) (gateway.SendResult, error) {
-		text := pyrepr.ExceptionMessage(e)
+		text := e.Error()
 		if strings.Contains(text, "Photo_invalid_dimensions") || strings.Contains(text, "PHOTO_INVALID_DIMENSIONS") {
 			pkgLog().Info(fmt.Sprintf("[%s] Image dimensions exceed Telegram photo limits, sending as document: %s", a.Name(), imagePath))
 		} else {
@@ -595,7 +594,7 @@ func (a *TelegramAdapter) SendImage(ctx context.Context, chatID, imageURL, capti
 		if errors.Is(err, context.Canceled) && ctx.Err() != nil {
 			return gateway.SendResult{}, err
 		}
-		pkgLog().Error(fmt.Sprintf("[%s] File upload send_photo also failed: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] File upload send_photo also failed: %s", a.Name(), err.Error()))
 		return a.BasePlatformAdapter.SendImage(ctx, chatID, imageURL, caption, replyTo, metadata)
 	}
 	return gateway.SendResult{Success: true, MessageID: sentID(msg)}, nil

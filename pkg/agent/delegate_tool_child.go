@@ -10,11 +10,11 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Dedicated session db handle on the parent's db file, nil when the parent has none or it cannot open
@@ -38,10 +38,10 @@ func openChildSessionDB(ctx context.Context, parent *AIAgent) (SessionStore, err
 }
 
 func childStrArg(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func strListArg(v any) []string {
@@ -51,7 +51,7 @@ func strListArg(v any) []string {
 	case []any:
 		out := make([]string, 0, len(l))
 		for _, x := range l {
-			out = append(out, pyrepr.Str(x))
+			out = append(out, anyutil.String(x))
 		}
 		return out
 	}
@@ -108,7 +108,7 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 	}
 	var apiMode *string
 	if spec.OverrideAPIMode != nil {
-		m := pyrepr.Str(spec.OverrideAPIMode)
+		m := anyutil.String(spec.OverrideAPIMode)
 		apiMode = &m
 	}
 	overrideProvider := childStrArg(spec.OverrideProvider)
@@ -230,7 +230,7 @@ func buildChildAgent(ctx context.Context, spec childBuildSpec) (*AIAgent, error)
 }
 
 // Runs a prebuilt child on the calling goroutine and returns its result entry
-func runSingleChild(ctx context.Context, taskIndex int, goal string, child, parent *AIAgent, ownerSessionID string, ownerTransport, ownerSessionRecord any) (entry *pyjson.Object) {
+func runSingleChild(ctx context.Context, taskIndex int, goal string, child, parent *AIAgent, ownerSessionID string, ownerTransport, ownerSessionRecord any) (entry *jsonutil.Object) {
 	progressCB := child.toolProgressCallback
 	pool, leasedID := leaseChildCredential(ctx, child)
 	heartbeat := newChildHeartbeat(child, parent, taskIndex)

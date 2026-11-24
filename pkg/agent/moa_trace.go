@@ -7,14 +7,14 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
@@ -29,7 +29,7 @@ func moaTracesEnabledAndDir(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	if override := settings.MoaTraceDir.Get(ctx); override != "" {
-		return pypath.Expandvars(pypath.Expanduser(override)), true
+		return pathutil.ExpandEnv(pathutil.ExpandUser(override)), true
 	}
 	return filepath.Join(home.Dir(ctx), "moa-traces"), true
 }
@@ -41,7 +41,7 @@ func moaSanitizeSessionID(sessionID string) string {
 	}
 	var b strings.Builder
 	for _, c := range sessionID {
-		if pystr.IsAlnum(c) || strings.ContainsRune("-_.", c) {
+		if (unicode.IsLetter(c) || unicode.IsNumber(c)) || strings.ContainsRune("-_.", c) {
 			b.WriteRune(c)
 		} else {
 			b.WriteByte('_')
@@ -62,15 +62,15 @@ func moaAttr(obj any, key string, def any) any {
 }
 
 // One reference accounting as a full trace record with its full input messages and output
-func moaSlotTrace(acct any, label string) *pyjson.Object {
-	trace := pyjson.NewObject()
+func moaSlotTrace(acct any, label string) *jsonutil.Object {
+	trace := jsonutil.NewObject()
 	trace.Set("label", label)
 	for _, f := range moaAcctFields {
 		trace.Set(f, moaAttr(acct, f, nil))
 	}
 	trace.Set("input_messages", moaAttr(acct, "messages", nil))
 	trace.Set("output", moaAttr(acct, "output", nil))
-	usage := pyjson.NewObject()
+	usage := jsonutil.NewObject()
 	if u := moaAttr(acct, "usage", nil); u != nil {
 		for _, f := range moaUsageFields {
 			usage.Set(f, moaAttr(u, f, 0))
@@ -84,7 +84,7 @@ func moaSlotTrace(acct any, label string) *pyjson.Object {
 }
 
 // Slot trace without its input messages for observability hooks, output overriding the accounting output
-func SlotMetrics(acct any, label string, output any) *pyjson.Object {
+func SlotMetrics(acct any, label string, output any) *jsonutil.Object {
 	trace := moaSlotTrace(acct, label)
 	trace.Delete("input_messages")
 	if output != nil {
@@ -125,7 +125,7 @@ func SaveMoATurn(ctx context.Context, turn MoATurn) {
 		sessionID = turn.SessionID
 	}
 	if err := writeMoATurn(base, sessionID, turn); err != nil {
-		pkgLog().Debug(fmt.Sprintf("MoA trace write failed (session=%s): %s", pyrepr.Str(sessionID), err))
+		pkgLog().Debug(fmt.Sprintf("MoA trace write failed (session=%s): %s", anyutil.String(sessionID), err))
 	}
 }
 
@@ -148,7 +148,7 @@ func writeMoATurn(base string, sessionID any, turn MoATurn) error {
 	for i, r := range turn.ReferenceOutputs {
 		refs[i] = moaSlotTrace(r.Acct, r.Label)
 	}
-	aggregator := pyjson.NewObject()
+	aggregator := jsonutil.NewObject()
 	for _, kv := range []struct {
 		k string
 		v any
@@ -157,13 +157,13 @@ func writeMoATurn(base string, sessionID any, turn MoATurn) error {
 		{"streamed", turn.AggregatorStreamed}, {"output_location", location}} {
 		aggregator.Set(kv.k, kv.v)
 	}
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("ts", float64(time.Now().UnixNano())/1e9)
 	record.Set("session_id", sessionID)
 	record.Set("preset", turn.PresetName)
 	record.Set("references", refs)
 	record.Set("aggregator", aggregator)
-	line, err := pyjson.Dumps(record, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	line, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
 		return err
 	}

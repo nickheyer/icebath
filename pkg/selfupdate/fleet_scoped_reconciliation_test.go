@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const scopedDeadPID = 1<<22 - 7
@@ -54,8 +54,8 @@ func scopedSeed(t *testing.T, old map[string]any, marker *string, live *[]map[st
 	h := newFleetHarness(t)
 	h.receipt(old)
 	h.checkout("new")
-	fleetCollectVersions = func() []*pyjson.Object {
-		rows := make([]*pyjson.Object, len(*live))
+	fleetCollectVersions = func() []*jsonutil.Object {
+		rows := make([]*jsonutil.Object, len(*live))
 		for i, row := range *live {
 			rows[i] = fleetObject()
 			for _, key := range []string{"profile", "pid", "state", "code_sha"} {
@@ -297,12 +297,12 @@ func TestMarkerReconciliationCollectsOneLiveSnapshot(t *testing.T) {
 	h, _ := scopedSeed(t, map[string]any{}, &sha, &live)
 	h.arm("new", []any{scopedGateway("alpha")})
 	probes := 0
-	fleetCollectVersions = func() []*pyjson.Object {
+	fleetCollectVersions = func() []*jsonutil.Object {
 		probes++
 		if probes == 1 {
-			return []*pyjson.Object{fleetObject("profile", "alpha", "state", "current", "code_sha", "new")}
+			return []*jsonutil.Object{fleetObject("profile", "alpha", "state", "current", "code_sha", "new")}
 		}
-		return []*pyjson.Object{}
+		return []*jsonutil.Object{}
 	}
 	if h.pendingNeeded() || probes != 1 {
 		t.Fatalf("pending with %d probes", probes)

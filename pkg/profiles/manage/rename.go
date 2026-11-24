@@ -11,10 +11,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Meta writer and alias probe a rename goes through, swapped by tests
@@ -37,7 +37,7 @@ func recordProfileRename(ctx context.Context, newDir, oldCanon string) {
 		history = append(history, oldCanon)
 	}
 	if err := writeProfileMeta(ctx, newDir, profiles.MetaUpdate{PreviousNames: &history}); err != nil {
-		pkgLog().Debug(fmt.Sprintf("profile rename: could not record previous name %s in %s: %v", pyrepr.Repr(oldCanon), newDir, err))
+		pkgLog().Debug(fmt.Sprintf("profile rename: could not record previous name %s in %s: %v", anyutil.Quote(oldCanon), newDir, err))
 	}
 }
 
@@ -49,7 +49,7 @@ func refuseRenameWithoutFileTooling(ctx context.Context, oldCanon string) error 
 	}
 	if !backend.SupportsFileTooling() {
 		return &profiles.ValueError{Msg: fmt.Sprintf("Cannot rename profile '%s': its config lives in the %s config "+
-			"backend under that name, and renaming it there is not supported. Nothing was changed.", oldCanon, pyrepr.Repr(backend.Name()))}
+			"backend under that name, and renaming it there is not supported. Nothing was changed.", oldCanon, anyutil.Quote(backend.Name()))}
 	}
 	return nil
 }

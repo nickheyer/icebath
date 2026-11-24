@@ -9,13 +9,14 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // ModelFlowRun is one provider wizard invocation, the loaded config, the current model and the CLI namespace
@@ -248,7 +249,7 @@ func modelFlowMoA(r *ModelFlowRun) error {
 		if raw == "" {
 			idx = defaultIdx
 		} else {
-			n, perr := parsePyInt(raw)
+			n, perr := parseWholeNumber(raw)
 			if perr != nil {
 				fmt.Fprintln(r.Out, flowNoChange)
 				return nil
@@ -288,19 +289,13 @@ func modelFlowMoA(r *ModelFlowRun) error {
 	return nil
 }
 
-// Python int of a menu answer, a ValueError for anything int rejects and huge values saturated
-func parsePyInt(s string) (int, error) {
-	n, ok := pystr.IntText(s)
-	if !ok {
+// Whole number of a menu answer, huge values saturated so one less than the lowest still fits an int
+func parseWholeNumber(s string) (int, error) {
+	n, err := textutil.ParseInt(s)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		return 0, fmt.Errorf("%s is not a whole number", s)
 	}
-	if n.IsInt64() {
-		return int(n.Int64()), nil
-	}
-	if n.Sign() < 0 {
-		return math.MinInt64 + 1, nil
-	}
-	return math.MaxInt64, nil
+	return int(max(min(n, math.MaxInt), math.MinInt+1)), nil
 }
 
 // OpenAI Codex provider, ensure logged in then pick a model over the pooled or legacy token
@@ -980,15 +975,6 @@ func profileSetupStatus(ctx context.Context, profile Profile) (map[string]any, e
 	return profile.SetupStatusHook(ctx, nil)
 }
 
-// Shell quoted join of a command's words
-func shlexJoin(words []string) string {
-	quoted := make([]string, len(words))
-	for i, w := range words {
-		quoted[i] = pyshlex.Quote(w)
-	}
-	return strings.Join(quoted, " ")
-}
-
 // Logged in shows the plan, logged out runs the CLI login on a TTY or prints the instruction
 func externalProcessLoginGate(r *ModelFlowRun, profile Profile, status map[string]any) (bool, error) {
 	if truthy(status["logged_in"]) {
@@ -1009,7 +995,7 @@ func externalProcessLoginGate(r *ModelFlowRun, profile Profile, status map[strin
 	if len(tail) > 2 {
 		tail = login[len(login)-2:]
 	}
-	flowSay(r.Out, fmt.Sprintf("  %s.", strings.SplitN(detail, ".", 2)[0]), fmt.Sprintf("  Starting `%s` (press Ctrl-C to cancel)...", shlexJoin(tail)), "")
+	flowSay(r.Out, fmt.Sprintf("  %s.", strings.SplitN(detail, ".", 2)[0]), fmt.Sprintf("  Starting `%s` (press Ctrl-C to cancel)...", shellutil.Join(tail)), "")
 	if !runLoginCommand(r.ctx(), login) {
 		fmt.Fprintln(r.Out, "Login cancelled or failed.")
 		return false, nil

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestExecutionProjectionIsOpaqueBoundedAndContentFree(t *testing.T) {
@@ -25,7 +25,7 @@ func TestExecutionProjectionIsOpaqueBoundedAndContentFree(t *testing.T) {
 	get := func(k string) any { v, _ := event.Get(k); return v }
 	if get("event") != "cron_execution" || get("status") != "failed" || get("delivery_outcome") != "failed" ||
 		get("error_class") != "auth_failed" || get("duration_ms") != int64(2250) {
-		t.Fatalf("event %v", event.Vals)
+		t.Fatalf("event %v", event)
 	}
 	key := get("job_key").(string)
 	if !strings.HasPrefix(key, "sha256:") || len(key) != len("sha256:")+24 {
@@ -37,7 +37,7 @@ func TestExecutionProjectionIsOpaqueBoundedAndContentFree(t *testing.T) {
 	if _, ok := event.Get("error"); ok {
 		t.Fatal("error exported")
 	}
-	raw, _ := pyjson.Dumps(event)
+	raw, _ := jsonutil.Encode(event)
 	if strings.Contains(raw, "alice@example.com") || strings.Contains(raw, "top-secret-token") {
 		t.Fatalf("content leaked %s", raw)
 	}
@@ -57,7 +57,7 @@ func TestErrorClassificationAvoidsAuthSubstringFalsePositives(t *testing.T) {
 type fakeSink struct{ calls []string }
 
 func (f *fakeSink) Emit(event any) {
-	f.calls = append(f.calls, "emit "+event.(Event).ToDict().Vals["status"].(string))
+	f.calls = append(f.calls, "emit "+event.(Event).ToDict().Value("status").(string))
 }
 
 func (f *fakeSink) Flush(timeout float64) {

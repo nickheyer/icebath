@@ -11,14 +11,15 @@ import (
 	"os/exec"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Program name of the dependency sync entry in its usage and errors
@@ -41,7 +42,7 @@ var osErrorClasses = map[string]bool{
 
 // Python class name of an error, the errno subclass for an OS error
 func launchErrorClass(err error) string {
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return pypath.OSErrorClass(err)
 	}
 	return pm.ErrorClass(err)
@@ -49,7 +50,7 @@ func launchErrorClass(err error) string {
 
 // str of the exception an error stands for
 func launchErrorText(err error) string {
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return errchain.OSText(err)
 	}
 	return err.Error()
@@ -354,7 +355,7 @@ func parseVenvSyncArgs(argv []string, stdout, stderr io.Writer) (venvSyncArgs, i
 		label := map[string]string{"-h": "-h/--help", "--help": "-h/--help", "--project-root": "--project-root", "--check": "--check", "--json": "--json"}[option]
 		if option == "-h+" {
 			if explicit, help := venvSyncShortHelp(*value); !help {
-				return fail(fmt.Sprintf("argument -h/--help: ignored explicit argument %s", pyrepr.StrRepr(explicit)))
+				return fail(fmt.Sprintf("argument -h/--help: ignored explicit argument %s", strconv.Quote(explicit)))
 			}
 			io.WriteString(stdout, venvSyncHelp(pm.ArgparseThemeFor(stdout)))
 			return venvSyncArgs{}, 0, false
@@ -362,7 +363,7 @@ func parseVenvSyncArgs(argv []string, stdout, stderr io.Writer) (venvSyncArgs, i
 		switch option {
 		case "-h", "--help", "--check", "--json":
 			if value != nil {
-				return fail(fmt.Sprintf("argument %s: ignored explicit argument %s", label, pyrepr.StrRepr(*value)))
+				return fail(fmt.Sprintf("argument %s: ignored explicit argument %s", label, strconv.Quote(*value)))
 			}
 			switch option {
 			case "--check":
@@ -402,7 +403,7 @@ func VenvSyncMain(ctx context.Context, argv []string, stdout, stderr io.Writer) 
 		return 1
 	}
 	if args.json {
-		text, err := pyjson.Dumps(result.object())
+		text, err := jsonutil.Encode(result.object())
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1

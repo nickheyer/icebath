@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Agent with a real session db and an ensured session row, the flush fields an initialized agent carries
@@ -21,7 +21,7 @@ func newPersistTestAgent(t *testing.T, sessionID string) (*AIAgent, *state.Sessi
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
-	a := &AIAgent{sessionDB: db, sessionID: sessionID, model: "test/model", quietMode: true, sessionPersistLock: &pythread.RLock{}}
+	a := &AIAgent{sessionDB: db, sessionID: sessionID, model: "test/model", quietMode: true, sessionPersistLock: &syncutil.ReentrantMutex{}}
 	if err := a.ensureDBSession(); err != nil || !a.sessionDBCreated {
 		t.Fatalf("session row not created: %v", err)
 	}
@@ -50,8 +50,8 @@ func persistRowCount(t *testing.T, db *state.SessionDB, sid string) int64 {
 func persistJSONEqual(t *testing.T, x, y any) bool {
 	t.Helper()
 	var dx, dy any
-	bx, errX := json.Marshal(pyjson.Plain(x))
-	by, errY := json.Marshal(pyjson.Plain(y))
+	bx, errX := json.Marshal(jsonutil.Plain(x))
+	by, errY := json.Marshal(jsonutil.Plain(y))
 	if errX != nil || errY != nil || json.Unmarshal(bx, &dx) != nil || json.Unmarshal(by, &dy) != nil {
 		t.Fatalf("json round trip failed: %v %v", errX, errY)
 	}

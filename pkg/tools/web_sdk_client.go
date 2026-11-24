@@ -17,9 +17,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Every vendor here caps max_results at 20 server side
@@ -145,7 +145,7 @@ type sdkTimeoutError struct {
 }
 
 func (e *sdkTimeoutError) Error() string {
-	return fmt.Sprintf("%s timed out. (%s timeout=%s)", pystr.Capitalize(e.phase), e.phase, pyrepr.Str(e.limit.Seconds()))
+	return fmt.Sprintf("%s timed out. (%s timeout=%s)", textutil.UpperFirst(strings.ToLower(e.phase)), e.phase, anyutil.String(e.limit.Seconds()))
 }
 
 func (e *sdkTimeoutError) Unwrap() error { return e.err }
@@ -212,12 +212,12 @@ func isSDKTimeout(err error) bool {
 // ---- Python object semantics of decoded vendor payloads --------------------------------------------
 
 // Dict view of a decoded JSON value, false for every other type
-func pyDict(v any) (*pyjson.Object, bool) {
+func pyDict(v any) (*jsonutil.Object, bool) {
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x, true
 	case map[string]any:
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		for k, val := range x {
 			o.Set(k, val)
 		}
@@ -288,7 +288,7 @@ func pyIter(v any) ([]any, error) {
 	}
 	if d, ok := pyDict(v); ok {
 		out := make([]any, 0, d.Len())
-		for _, k := range d.Keys {
+		for _, k := range d.Keys() {
 			out = append(out, k)
 		}
 		return out, nil
@@ -298,7 +298,7 @@ func pyIter(v any) ([]any, error) {
 
 // Value or a fallback when the value is falsy, the Python x or y
 func pyOr(v any, fallback any) any {
-	if pyTruthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return fallback
@@ -314,7 +314,7 @@ func pyJoin(sep string, v any) (string, error) {
 	for i, item := range items {
 		s, ok := item.(string)
 		if !ok {
-			return "", &pyTypeError{fmt.Sprintf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(item))}
+			return "", &pyTypeError{fmt.Sprintf("sequence item %d: expected str instance, %s found", i, anyutil.Kind(item))}
 		}
 		parts = append(parts, s)
 	}
@@ -329,7 +329,7 @@ func pyStrField(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 var (
@@ -344,9 +344,9 @@ func camelToSnake(s string) string {
 }
 
 // Top level keys of a response row in snake_case, a later key winning a collision
-func toSnakeCase(d *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range d.Keys {
+func toSnakeCase(d *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, k := range d.Keys() {
 		v, _ := d.Get(k)
 		if inner, ok := pyDict(v); ok {
 			v = toSnakeCase(inner)

@@ -6,8 +6,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Read only session store whose source filtered listings also match gateway local rows by created surface
@@ -47,7 +47,7 @@ func (r *SurfaceLabelReader) hasCreatedSourceColumn(ctx context.Context) (bool, 
 			return false, err
 		}
 		for _, row := range rows {
-			if len(row.Keys) > 1 && row.Vals[row.Keys[1]] == "created_source" {
+			if row.Len() > 1 && row.Value(row.Keys()[1]) == "created_source" {
 				r.hasColumn = true
 				break
 			}
@@ -109,11 +109,11 @@ func (r *SurfaceLabelReader) labelled(ctx context.Context, requested []string) (
 }
 
 // Plain map of one stored row, nil for a missing row
-func plainRow(row *pyjson.Object) map[string]any {
+func plainRow(row *jsonutil.Object) map[string]any {
 	if row == nil {
 		return nil
 	}
-	plain, _ := pyjson.Plain(row).(map[string]any)
+	plain, _ := jsonutil.Plain(row).(map[string]any)
 	return plain
 }
 
@@ -140,7 +140,7 @@ func (r *SurfaceLabelReader) SearchSessions(ctx context.Context, o SearchSession
 }
 
 // Rich session page whose source filter also matches local rows created by the requested surfaces
-func (r *SurfaceLabelReader) ListSessionsRich(ctx context.Context, o state.ListSessionsRichOptions) ([]*pyjson.Object, error) {
+func (r *SurfaceLabelReader) ListSessionsRich(ctx context.Context, o state.ListSessionsRichOptions) ([]*jsonutil.Object, error) {
 	requested := o.Sources
 	if len(requested) == 0 && o.Source != "" {
 		requested = []string{o.Source}

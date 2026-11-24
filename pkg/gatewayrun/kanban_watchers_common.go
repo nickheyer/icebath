@@ -9,11 +9,11 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Result of a blocking call run on a worker goroutine
@@ -55,7 +55,7 @@ var (
 )
 
 // Live boards, the default board metadata alone when listing fails
-func kanbanListBoards() ([]*pyjson.Object, error) {
+func kanbanListBoards() ([]*jsonutil.Object, error) {
 	boards, err := kanbanListAllBoards(false)
 	if err == nil {
 		return boards, nil
@@ -65,7 +65,7 @@ func kanbanListBoards() ([]*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	return []*pyjson.Object{meta}, nil
+	return []*jsonutil.Object{meta}, nil
 }
 
 // Slug of every live board, the default slug for a board without one
@@ -82,15 +82,15 @@ func kanbanBoardSlugs() ([]string, error) {
 }
 
 // Truthy slug of a board metadata object, else the default board
-func boardMetaSlug(b *pyjson.Object) string {
-	if v := objValue(b, "slug"); pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+func boardMetaSlug(b *jsonutil.Object) string {
+	if v := objValue(b, "slug"); anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return kanban.DefaultBoard
 }
 
 // Value of key in a JSON object, nil when the object or key is absent
-func objValue(o *pyjson.Object, key string) any {
+func objValue(o *jsonutil.Object, key string) any {
 	if o == nil {
 		return nil
 	}

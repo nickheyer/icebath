@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Holds the cross process init lock from another goroutine until the returned release runs
@@ -534,7 +534,7 @@ func TestCorruptBackupRetentionCapPrunesOldest(t *testing.T) {
 		}
 		minted = append(minted, corrupt.BackupPath)
 	}
-	remaining, _ := pypath.Glob(tmp, "kanban.db.corrupt.*.bak")
+	remaining, _ := pathutil.Glob(tmp, "kanban.db.corrupt.*.bak")
 	if len(remaining) != 3 || !slices.Contains(remaining, minted[len(minted)-1]) {
 		t.Fatalf("remaining %v", remaining)
 	}

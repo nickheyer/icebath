@@ -8,14 +8,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner holding the per chat voice modes, GatewayRunner._voice_mode with _voice_key_for_source
@@ -36,17 +36,17 @@ type (
 // Settings verbs of a connection keyed by method name
 func sessionConfigHandlers(c *AuthorityConnection) map[string]controlHandler {
 	return map[string]controlHandler{
-		"config.get": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"config.get": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return configGet(ctx, c, ref, params)
 		},
-		"model.options": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"model.options": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return modelOptions(ctx, c, ref, params)
 		},
 	}
 }
 
 // Read authorization of the settings verbs, the session's local policy when a session is named
-func authorizeSettingsRead(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (*LocalSessionPolicy, error) {
+func authorizeSettingsRead(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (*LocalSessionPolicy, error) {
 	a, actor := c.authority, c.actor
 	if actor.ProfileID != a.ProfileID {
 		return nil, runtimeRefusal("profile_mismatch")
@@ -61,7 +61,7 @@ func authorizeSettingsRead(ctx context.Context, c *AuthorityConnection, ref Sess
 			}
 		}
 	}
-	if profile, _ := params.Get("profile"); pyrepr.Truthy(profile) {
+	if profile, _ := params.Get("profile"); anyutil.IsTrue(profile) {
 		if !profiles.ProfileMatchesHome(ctx, profile.(string), a.ProfileID) {
 			return nil, runtimeRefusal("profile_mismatch")
 		}
@@ -93,7 +93,7 @@ func mcpRevision(ctx context.Context, policy *LocalSessionPolicy, cfg map[string
 	for _, key := range []string{"mcp", "mcp_servers", "tools"} {
 		sections[key] = source[key]
 	}
-	text, err := pyjson.Dumps(sections, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(sections, jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}
@@ -102,7 +102,7 @@ func mcpRevision(ctx context.Context, policy *LocalSessionPolicy, cfg map[string
 }
 
 // Owner bound settings read, the session controls for their keys and the profile config for the rest
-func configGet(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func configGet(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if paramsOutside(params, "session_id", "profile", "key", "cwd") {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -139,7 +139,7 @@ func configGet(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 }
 
 // One settings key read inside the owning profile's runtime scope
-func readSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, key string, policy *LocalSessionPolicy, agent any) (any, error) {
+func readSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object, key string, policy *LocalSessionPolicy, agent any) (any, error) {
 	profileHome := c.authority.ProfileID
 	sctx := profileRuntimeScope(ctx, profileHome, true)
 	cfg, err := config.LoadContext(sctx, home.Dir(sctx), nil)
@@ -289,28 +289,28 @@ func reasoningSetting(ctx context.Context, c *AuthorityConnection, ref SessionRe
 }
 
 // Working directory a project read names and its git branch
-func projectSetting(ctx context.Context, params *pyjson.Object, policy *LocalSessionPolicy) (map[string]any, error) {
+func projectSetting(ctx context.Context, params *jsonutil.Object, policy *LocalSessionPolicy) (map[string]any, error) {
 	cwd, _ := params.Get("cwd")
-	if !pyrepr.Truthy(cwd) {
+	if !anyutil.IsTrue(cwd) {
 		if policy != nil {
 			cwd = policy.Cwd
 		} else {
 			cwd = settings.WorkingFolder.Get(ctx)
 		}
 	}
-	if !pyrepr.Truthy(cwd) {
+	if !anyutil.IsTrue(cwd) {
 		resolved, err := tools.ResolveAgentCwd(tools.EnvForProfileHome(ctx, nil, home.Dir(ctx)))
 		if err != nil {
 			return nil, err
 		}
 		cwd = resolved
 	}
-	dir := pyrepr.Str(cwd)
+	dir := anyutil.String(cwd)
 	return map[string]any{"cwd": cwd, "branch": tuihost.Branch(dir)}, nil
 }
 
 // Model picker inventory of the owning profile with the session's provider selected
-func modelOptions(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func modelOptions(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	flags := []string{"explicit_only", "include_unconfigured", "refresh"}
 	if paramsOutside(params, append([]string{"profile", "session_id"}, flags...)...) {
 		return nil, runtimeRefusal("invalid_params")
@@ -349,14 +349,14 @@ func modelOptions(ctx context.Context, c *AuthorityConnection, ref SessionRef, p
 		requested = a.RequestedProvider()
 	}
 	if policy != nil {
-		if prov == "" && pyrepr.Truthy(policy.Provider()) {
-			prov = pyrepr.Str(policy.Provider())
+		if prov == "" && anyutil.IsTrue(policy.Provider()) {
+			prov = anyutil.String(policy.Provider())
 		}
 		if model == "" && policy.Model != nil {
 			model = *policy.Model
 		}
-		if baseURL == "" && pyrepr.Truthy(policy.BaseURL()) {
-			baseURL = pyrepr.Str(policy.BaseURL())
+		if baseURL == "" && anyutil.IsTrue(policy.BaseURL()) {
+			baseURL = anyutil.String(policy.BaseURL())
 		}
 	}
 	return forwardOffThread(ctx, func() (any, error) {

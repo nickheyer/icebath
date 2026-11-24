@@ -13,9 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -67,7 +67,7 @@ func (r *GatewayRunner) backgroundTaskBody(ctx context.Context, adapter gateway.
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(runtimeKwargs["api_key"]) {
+	if !anyutil.IsTrue(runtimeKwargs["api_key"]) {
 		_, err := adapter.Send(ctx, source.ChatID, i18n.T(ctx, "gateway.background.no_credentials", "", nil), "", threadMetadata)
 		return err
 	}
@@ -151,7 +151,7 @@ func (r *GatewayRunner) backgroundTaskBody(ctx context.Context, adapter gateway.
 		_, _ = adapter.SendImage(ctx, source.ChatID, image.URL, image.Alt, "", threadMetadata)
 	}
 	for _, m := range mediaFiles {
-		_, ext := pypath.Splitext(m.Path)
+		_, ext := pathutil.SplitExt(m.Path)
 		ext = strings.ToLower(ext)
 		switch {
 		case gateway.ShouldSendMediaAsAudio(source.Platform, ext, m.IsVoice):
@@ -174,9 +174,9 @@ func backgroundResponse(ctx context.Context, result map[string]any) string {
 	}
 	response := ""
 	if result["final_response"] != nil {
-		response = pyrepr.Str(result["final_response"])
+		response = anyutil.String(result["final_response"])
 	}
-	if response == "" && pyrepr.Truthy(result["error"]) {
+	if response == "" && anyutil.IsTrue(result["error"]) {
 		response = i18n.T(ctx, "gateway.shared.error_prefix", "", map[string]any{"error": result["error"]})
 	}
 	if response == "" {

@@ -12,9 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Trusted inputs and client proofs of one local session creation
@@ -126,7 +126,7 @@ func stagedCreationFollows(ctx context.Context, a *SessionAuthority, actor Princ
 		if err != nil {
 			return nil, err
 		}
-		policy, isObject := rawPolicy.(*pyjson.Object)
+		policy, isObject := rawPolicy.(*jsonutil.Object)
 		if !isObject {
 			return nil, &PyError{Kind: "TypeError", Msg: "the staged session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
 		}
@@ -138,7 +138,7 @@ func stagedCreationFollows(ctx context.Context, a *SessionAuthority, actor Princ
 		if !isText {
 			return nil, &PyError{Kind: "TypeError", Msg: "the staged creation request is " + errchain.Kind(rawRequest) + ", expected JSON text"}
 		}
-		return pyjson.Loads(requestJSON)
+		return jsonutil.Decode(requestJSON)
 	}()
 	if err != nil {
 		if receiptCheckFailure(err) && checkErrorClass(err) != "AttributeError" {
@@ -146,7 +146,7 @@ func stagedCreationFollows(ctx context.Context, a *SessionAuthority, actor Princ
 		}
 		return false, err
 	}
-	object, isObject := request.(*pyjson.Object)
+	object, isObject := request.(*jsonutil.Object)
 	if !isObject {
 		return false, nil
 	}
@@ -155,13 +155,13 @@ func stagedCreationFollows(ctx context.Context, a *SessionAuthority, actor Princ
 }
 
 // Request params as an ordered object, keys sorted
-func paramsObject(params map[string]any) *pyjson.Object {
+func paramsObject(params map[string]any) *jsonutil.Object {
 	keys := make([]string, 0, len(params))
 	for key := range params {
 		keys = append(keys, key)
 	}
 	sort.Strings(keys)
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, key := range keys {
 		out.Set(key, params[key])
 	}
@@ -224,7 +224,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 			}
 			request.Set("model_requested", rawModel)
 			request.Set("route_derived", derived)
-			text, err := pyjson.Dumps(request, pyjson.SortKeys(true))
+			text, err := jsonutil.Encode(request, jsonutil.SortKeys())
 			if err != nil {
 				return nil, nil, err
 			}
@@ -232,7 +232,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 			replaced.RequestJSON = text
 			policy = &replaced
 		}
-		marks := pyjson.NewObject()
+		marks := jsonutil.NewObject()
 		if policy.Model == nil {
 			effective, err := policy.config(ctx, nil, true)
 			if err != nil {
@@ -249,11 +249,11 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 			if err != nil {
 				return nil, nil, err
 			}
-			for _, key := range marks.Keys {
+			for _, key := range marks.Keys() {
 				value, _ := marks.Get(key)
 				frozen.Set(key, value)
 			}
-			text, err := pyjson.Dumps(frozen)
+			text, err := jsonutil.Encode(frozen)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -296,7 +296,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 		if err != nil {
 			return nil, nil, err
 		}
-		savedPolicy, isObject := rawPolicy.(*pyjson.Object)
+		savedPolicy, isObject := rawPolicy.(*jsonutil.Object)
 		if !isObject {
 			return nil, nil, &PyError{Kind: "TypeError", Msg: "the staged session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
 		}
@@ -351,7 +351,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 	if warning := projectPluginsWarning(policy); warning != nil {
 		pkgLog().Warn(fmt.Sprintf("session %s: %s", sid, *warning))
 	}
-	clientRequest := pyjson.NewObject()
+	clientRequest := jsonutil.NewObject()
 	if env, has := params["client_env"]; has {
 		clientRequest.Set("client_env", env)
 	}
@@ -374,7 +374,7 @@ func stageLocalSession(ctx context.Context, a *SessionAuthority, actor Principal
 	now := sessionNow()
 	entry := NewSessionEntry(route, sid, now, now)
 	entry.Origin, entry.Platform = source, PlatformLocal
-	staged, err := stageSessionPrefill(ctx, a, policy, pyjson.ObjectOf(
+	staged, err := stageSessionPrefill(ctx, a, policy, jsonutil.ObjectOf(
 		"profile_id", a.ProfileID, "principal_id", actor.Subject, "request_id", requestID,
 		"session_id", sid, "route", route, "entry", entry.ToDict(), "policy", localPolicyAsDict(policy)))
 	if err != nil {

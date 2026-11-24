@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func TestCancellingAScriptJobKillsItAndNamesTheReason(t *testing.T) {
@@ -23,8 +22,8 @@ func TestCancellingAScriptJobKillsItAndNamesTheReason(t *testing.T) {
 	os.Unsetenv("PYTHONPATH")
 	ready := filepath.Join(s.Home(), "script.pid")
 	script := writeScript(t, s, "blocking.py", "import os, time\n"+
-		"open("+pyrepr.StrRepr(ready+".tmp")+", 'w').write(str(os.getpid()))\n"+
-		"os.replace("+pyrepr.StrRepr(ready+".tmp")+", "+pyrepr.StrRepr(ready)+")\n"+
+		"open("+strconv.Quote(ready+".tmp")+", 'w').write(str(os.getpid()))\n"+
+		"os.replace("+strconv.Quote(ready+".tmp")+", "+strconv.Quote(ready)+")\n"+
 		"time.sleep(120)\n")
 	cancel := s.newCancelRequest("exec-live-script")
 	type result struct {

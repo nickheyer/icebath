@@ -2,32 +2,31 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
+	"path"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
-// Python exception class and message a gateway config read raises
+// Gateway error carrying a kind label beside its message
 type PyError struct {
 	Kind string
 	Msg  string
@@ -35,71 +34,69 @@ type PyError struct {
 
 func (e *PyError) Error() string { return e.Msg }
 
-// Python exception class of an error, empty for errors that carry none
+// Kind label of the error, the word errorutil.Kind reports for it
+func (e *PyError) ErrorKind() string { return e.Kind }
+
+// Kind label of a PyError or errorutil.Error, empty for errors that carry none
 func pyErrorKind(err error) string {
 	switch e := err.(type) {
 	case *PyError:
 		return e.Kind
-	case *pyint.Error:
+	case *errorutil.Error:
 		return e.Kind
 	}
 	return ""
 }
 
-// Python float of the value, the default for None or any value float rejects
+// Float of the value, the default for nil or any value that is not a number
 func coerceFloat(value any, def float64) float64 {
 	if value == nil {
 		return def
 	}
-	f, err := pyint.Float(value)
+	f, err := anyutil.ToFloat(value)
 	if err != nil {
 		return def
 	}
 	return f
 }
 
-// Python int of the value, the default for None or any value int rejects
-func coerceInt(value any, def int) *big.Int {
+// Whole number of the value, the default for nil or any value that is not a number within the int64 range
+func coerceInt(value any, def int) int {
 	if value == nil {
-		return big.NewInt(int64(def))
+		return def
 	}
-	n, err := pyint.Of(value)
+	n, err := anyutil.ToInt(value)
 	if err != nil {
-		return big.NewInt(int64(def))
+		return def
 	}
-	return n
+	return int(n)
 }
 
-// Positive int or nil, nil zero and negatives disable, malformed values warn and disable
-func coerceOptionalPositiveInt(value any, key string) *big.Int {
+// Positive whole number of the value, zero for nil, zero and negatives (disabled); malformed values warn and disable
+func coerceOptionalPositiveInt(value any, key string) int {
 	if value == nil {
-		return nil
+		return 0
 	}
-	var parsed *big.Int
+	var parsed int64
 	var err error
-	_, isBool := value.(bool)
 	f, isFloat := value.(float64)
-	switch {
+	_, isBool := value.(bool)
+	switch s, isStr := value.(string); {
 	case isBool || (isFloat && (math.IsInf(f, 0) || math.IsNaN(f) || f != math.Trunc(f))):
-		err = &PyError{"ValueError", pyrepr.Repr(value)}
+		err = anyutil.ErrNotNumber
+	case isStr:
+		parsed, err = textutil.ParseInt(s)
 	default:
-		if s, ok := value.(string); ok {
-			var good bool
-			if parsed, good = pyint.Parse(strings.TrimSpace(s)); !good {
-				err = &PyError{"ValueError", s}
-			}
-		} else {
-			parsed, err = pyint.Of(value)
-		}
+		parsed, err = anyutil.ToInt(value)
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s (expected a positive integer; 0/null disables)", key, pyrepr.Repr(value)))
-		return nil
+		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s (expected a positive integer; 0/null disables)", key, anyutil.Quote(value)))
+		return 0
 	}
-	if parsed.Sign() <= 0 {
-		return nil
+	if parsed <= 0 {
+		return 0
 	}
-	return parsed
+	return int(parsed)
 }
 
 // Largest watchdog interval systemd accepts
@@ -113,24 +110,22 @@ func CoerceSystemdWatchdogSeconds(value any, key string) int {
 	if value == nil {
 		return 0
 	}
-	var parsed *big.Int
-	if n, ok := pyrepr.Int(value); ok {
-		parsed = n
-	} else if s, ok := value.(string); ok {
-		t := strings.TrimSpace(s)
-		if t != "" && pystr.All(t, func(r rune) bool { return r < utf8.RuneSelf && unicode.IsDigit(r) }) {
-			parsed, _ = pyint.Parse(t)
+	parsed, ok := anyutil.Int(value)
+	if s, isStr := value.(string); isStr {
+		if t := strings.TrimSpace(s); textutil.IsDigits(t) {
+			n, err := strconv.ParseInt(t, 10, 64)
+			parsed, ok = n, err == nil || errors.Is(err, strconv.ErrRange)
 		}
 	}
-	if parsed == nil {
+	if !ok {
 		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s (expected a positive integer)", key))
 		return 0
 	}
-	if parsed.Sign() != 0 && (parsed.Sign() < 0 || parsed.Cmp(big.NewInt(systemdWatchdogMaxSeconds)) > 0) {
+	if parsed < 0 || parsed > systemdWatchdogMaxSeconds {
 		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s (expected an integer from 1 to %d)", key, systemdWatchdogMaxSeconds))
 		return 0
 	}
-	return int(parsed.Int64())
+	return int(parsed)
 }
 
 // Env value through the active profile secret scope when one is installed, else the process env; a name folded into a setting reads the setting
@@ -203,7 +198,7 @@ var BuiltinPlatformValues = func() map[string]bool {
 var platformMembers struct {
 	sync.Mutex
 	pseudo         map[string]Platform
-	memberMap      *pydict.Dict[string, Platform]
+	memberMap      *orderedutil.Map[string, Platform]
 	scanned        bool
 	bundledNames   map[string]bool
 	bundledAliases map[string]string
@@ -247,7 +242,7 @@ func addPseudoPlatform(value string) Platform {
 	}
 	platformMembers.pseudo[value] = Platform(value)
 	if platformMembers.memberMap == nil {
-		platformMembers.memberMap = pydict.New[string, Platform]()
+		platformMembers.memberMap = orderedutil.NewMap[string, Platform]()
 		for _, p := range builtinPlatforms {
 			platformMembers.memberMap.Set(p.Name(), p)
 		}
@@ -273,7 +268,7 @@ func ParsePlatform(ctx context.Context, value any) (Platform, error) {
 	if p, ok := value.(Platform); ok {
 		value = string(p)
 	}
-	invalid := &PyError{"ValueError", pyrepr.Repr(raw) + " is not a valid Platform"}
+	invalid := &PyError{"ValueError", anyutil.Quote(raw) + " is not a valid Platform"}
 	s, ok := value.(string)
 	if !ok {
 		return "", invalid
@@ -384,10 +379,10 @@ func HomeChannelFromDict(ctx context.Context, data map[string]any) (*HomeChannel
 	if !ok {
 		name = "Home"
 	}
-	h := &HomeChannel{Platform: platform, ChatID: pyrepr.Str(rawChat), Name: name}
+	h := &HomeChannel{Platform: platform, ChatID: anyutil.String(rawChat), Name: name}
 	for k, dst := range map[string]**string{"thread_id": &h.ThreadID, "user_id": &h.UserID, "scope_id": &h.ScopeID} {
-		if v := data[k]; pyrepr.Truthy(v) {
-			s := pyrepr.Str(v)
+		if v := data[k]; anyutil.IsTrue(v) {
+			s := anyutil.String(v)
 			*dst = &s
 		}
 	}
@@ -481,10 +476,10 @@ func (c *PlatformConfig) ToDict() map[string]any {
 	if c.TypingStatusText != nil {
 		out["typing_status_text"] = c.TypingStatusText
 	}
-	if pyrepr.Truthy(c.Token) {
+	if anyutil.IsTrue(c.Token) {
 		out["token"] = c.Token
 	}
-	if pyrepr.Truthy(c.APIKey) {
+	if anyutil.IsTrue(c.APIKey) {
 		out["api_key"] = c.APIKey
 	}
 	if c.HomeChannel != nil {
@@ -568,7 +563,7 @@ type StreamingConfig struct {
 	Enabled                bool
 	Transport              string
 	EditInterval           float64
-	BufferThreshold        *big.Int
+	BufferThreshold        int
 	Cursor                 any
 	FreshFinalAfterSeconds float64
 }
@@ -576,7 +571,7 @@ type StreamingConfig struct {
 // Streaming config with the dataclass defaults
 func DefaultStreamingConfig() StreamingConfig {
 	return StreamingConfig{Transport: "auto", EditInterval: DefaultStreamingEditInterval,
-		BufferThreshold: big.NewInt(DefaultStreamingBufferThreshold), Cursor: DefaultStreamingCursor}
+		BufferThreshold: DefaultStreamingBufferThreshold, Cursor: DefaultStreamingCursor}
 }
 
 // The master switch, a transport of off also disabling
@@ -584,13 +579,13 @@ func (s StreamingConfig) GloballyEnabled() bool { return s.Enabled && s.Transpor
 
 // Effective streaming for one platform, a per platform value only narrowing the global switch
 func (s StreamingConfig) EnabledFor(platformOverride any) bool {
-	return s.GloballyEnabled() && (platformOverride == nil || pyrepr.Truthy(platformOverride))
+	return s.GloballyEnabled() && (platformOverride == nil || anyutil.IsTrue(platformOverride))
 }
 
 // Mapping of every field
 func (s StreamingConfig) ToDict() map[string]any {
 	return map[string]any{"enabled": s.Enabled, "transport": s.Transport, "edit_interval": s.EditInterval,
-		"buffer_threshold": pyint.Native(s.BufferThreshold), "cursor": s.Cursor, "fresh_final_after_seconds": s.FreshFinalAfterSeconds}
+		"buffer_threshold": s.BufferThreshold, "cursor": s.Cursor, "fresh_final_after_seconds": s.FreshFinalAfterSeconds}
 }
 
 // Streaming config of a mapping, mode as a transport alias that also implies enabled
@@ -626,7 +621,7 @@ func StreamingConfigFromDict(raw any) StreamingConfig {
 
 // True when the API server key is strong enough for the adapter to start
 func hasUsableAPIServerKey(key any) bool {
-	if !pyrepr.Truthy(key) {
+	if !anyutil.IsTrue(key) {
 		return false
 	}
 	return provider.HasUsableSecret(key, 16)
@@ -638,13 +633,13 @@ var platformConnectedCheckers = map[Platform]func(cfg *PlatformConfig) bool{
 	PlatformWebhook:   func(cfg *PlatformConfig) bool { return true },
 	PlatformMSGraphWebhook: func(cfg *PlatformConfig) bool {
 		v := cfg.Extra["client_state"]
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			v = ""
 		}
-		return strings.TrimSpace(pyrepr.Str(v)) != ""
+		return strings.TrimSpace(anyutil.String(v)) != ""
 	},
 	PlatformRelay: func(cfg *PlatformConfig) bool {
-		return pyrepr.Truthy(cfg.Extra["relay_url"]) || pyrepr.Truthy(cfg.Extra["url"])
+		return anyutil.IsTrue(cfg.Extra["relay_url"]) || anyutil.IsTrue(cfg.Extra["url"])
 	},
 }
 
@@ -676,7 +671,7 @@ type GatewayConfig struct {
 	STTEchoTranscripts           bool
 	GroupSessionsPerUser         bool
 	ThreadSessionsPerUser        bool
-	MaxConcurrentSessions        *big.Int
+	MaxConcurrentSessions        int
 	MultiplexProfiles            *bool
 	RoomLinkURL                  *string
 	SystemdWatchdogSeconds       int
@@ -688,7 +683,7 @@ type GatewayConfig struct {
 	UnauthorizedDMBehavior       string
 	UnauthorizedDMDeclineMessage string
 	Streaming                    StreamingConfig
-	SessionStoreMaxAgeDays       *big.Int
+	SessionStoreMaxAgeDays       int
 	ProfileRoutes                []*ProfileRoute
 	runtimeProfileHomes          *[]profiles.ServedProfile
 }
@@ -702,7 +697,7 @@ func DefaultGatewayConfig(ctx context.Context) *GatewayConfig {
 		LoopWatchdog: true, LoopWatchdogProbeIntervalS: DefaultLoopWatchdogIntervalS,
 		LoopWatchdogProbeTimeoutS: DefaultLoopWatchdogTimeoutS, LoopWatchdogMaxStrikes: DefaultLoopWatchdogMaxStrikes,
 		OnAllAdaptersDown: "exit", UnauthorizedDMBehavior: "pair", Streaming: DefaultStreamingConfig(),
-		SessionStoreMaxAgeDays: big.NewInt(90), ProfileRoutes: []*ProfileRoute{},
+		SessionStoreMaxAgeDays: 90, ProfileRoutes: []*ProfileRoute{},
 	}
 }
 
@@ -725,13 +720,13 @@ func (c *GatewayConfig) GetConnectedPlatforms(ctx context.Context) []Platform {
 // Whether a platform has the credentials its core checker or plugin entry requires
 func (c *GatewayConfig) isPlatformConnected(ctx context.Context, platform Platform, cfg *PlatformConfig) bool {
 	if checker, ok := platformConnectedCheckers[platform]; ok {
-		return pyrepr.Truthy(cfg.Token) || pyrepr.Truthy(cfg.APIKey) || checker(cfg)
+		return anyutil.IsTrue(cfg.Token) || anyutil.IsTrue(cfg.APIKey) || checker(cfg)
 	}
 	entry := discoveredRegistryEntry(ctx, platform)
 	if entry != nil && entry.ConfigConnectedFn != nil {
 		return entry.ConfigConnectedFn(cfg)
 	}
-	if pyrepr.Truthy(cfg.Token) || pyrepr.Truthy(cfg.APIKey) {
+	if anyutil.IsTrue(cfg.Token) || anyutil.IsTrue(cfg.APIKey) {
 		return true
 	}
 	if entry == nil {
@@ -771,11 +766,9 @@ func (c *GatewayConfig) ToDict() map[string]any {
 	for _, r := range c.ProfileRoutes {
 		routes = append(routes, r.ToDict())
 	}
-	optInt := func(p *big.Int) any {
-		if p == nil {
-			return nil
-		}
-		return pyint.Native(p)
+	var maxConcurrent any
+	if c.MaxConcurrentSessions > 0 {
+		maxConcurrent = c.MaxConcurrentSessions
 	}
 	optBool := func(p *bool) any {
 		if p == nil {
@@ -794,13 +787,13 @@ func (c *GatewayConfig) ToDict() map[string]any {
 		"sessions_dir": c.SessionsDir, "write_sessions_json": c.WriteSessionsJSON, "always_log_local": c.AlwaysLogLocal,
 		"filter_silence_narration": c.FilterSilenceNarration, "stt_enabled": c.STTEnabled,
 		"stt_echo_transcripts": c.STTEchoTranscripts, "group_sessions_per_user": c.GroupSessionsPerUser,
-		"thread_sessions_per_user": c.ThreadSessionsPerUser, "max_concurrent_sessions": optInt(c.MaxConcurrentSessions),
+		"thread_sessions_per_user": c.ThreadSessionsPerUser, "max_concurrent_sessions": maxConcurrent,
 		"multiplex_profiles": optBool(c.MultiplexProfiles), "on_all_adapters_down": c.OnAllAdaptersDown,
 		"room_link_url": optStr(c.RoomLinkURL), "systemd_watchdog_seconds": c.SystemdWatchdogSeconds,
 		"loop_watchdog": c.LoopWatchdog, "loop_watchdog_probe_interval_s": c.LoopWatchdogProbeIntervalS,
 		"loop_watchdog_probe_timeout_s": c.LoopWatchdogProbeTimeoutS, "loop_watchdog_max_strikes": c.LoopWatchdogMaxStrikes,
 		"unauthorized_dm_behavior": c.UnauthorizedDMBehavior, "unauthorized_dm_decline_message": c.UnauthorizedDMDeclineMessage,
-		"streaming": c.Streaming.ToDict(), "session_store_max_age_days": pyint.Native(c.SessionStoreMaxAgeDays), "profile_routes": routes,
+		"streaming": c.Streaming.ToDict(), "session_store_max_age_days": c.SessionStoreMaxAgeDays, "profile_routes": routes,
 	}
 }
 
@@ -843,7 +836,8 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 				continue
 			}
 		}
-		if pyErrorKind(err) != "ValueError" {
+		var pe *PyError
+		if !errors.As(err, &pe) || pe.Kind != "ValueError" {
 			return nil, err
 		}
 	}
@@ -861,8 +855,8 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		return def
 	}
 	maxStrikes := DefaultLoopWatchdogMaxStrikes
-	if n := coerceInt(pick("loop_watchdog_max_strikes"), DefaultLoopWatchdogMaxStrikes); n.IsInt64() && n.Int64() >= 1 && n.Int64() <= 1000 {
-		maxStrikes = int(n.Int64())
+	if n := coerceInt(pick("loop_watchdog_max_strikes"), DefaultLoopWatchdogMaxStrikes); n >= 1 && n <= 1000 {
+		maxStrikes = n
 	}
 	watchdog := CoerceSystemdWatchdogSeconds(pick("systemd_watchdog_seconds"), keyLabel("systemd_watchdog_seconds"))
 	multiplexRaw := data["multiplex_profiles"]
@@ -876,17 +870,14 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 	}
 	onDown := normalizeChoice(pick("on_all_adapters_down"), map[string]bool{"exit": true, "stay_alive": true}, "exit")
 	maxConcurrent := coerceOptionalPositiveInt(pick("max_concurrent_sessions"), keyLabel("max_concurrent_sessions"))
-	maxAge := big.NewInt(90)
+	maxAge := 90
 	ageRaw, ok := data["session_store_max_age_days"]
 	if !ok {
 		ageRaw = 90
 	}
-	if n, err := pyint.Of(ageRaw); err == nil {
-		maxAge = n
-		if n.Sign() < 0 {
-			maxAge = big.NewInt(0)
-		}
-	} else if k := pyErrorKind(err); k != "TypeError" && k != "ValueError" {
+	if n, err := anyutil.ToInt(ageRaw); err == nil {
+		maxAge = int(max(n, 0))
+	} else if errors.Is(err, anyutil.ErrRange) {
 		return nil, err
 	}
 	sessionsDir := filepath.Join(home.Dir(ctx), "sessions")
@@ -895,7 +886,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		if !isStr {
 			return nil, &PyError{"TypeError", "sessions_dir is " + errchain.Kind(v) + ", expected a path"}
 		}
-		sessionsDir = pypath.PosixPath(s)
+		sessionsDir = path.Clean(s)
 	}
 	quickRaw, ok := data["quick_commands"]
 	if !ok {
@@ -906,7 +897,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		roomLink = &s
 	}
 	declineRaw := data["unauthorized_dm_decline_message"]
-	if !pyrepr.Truthy(declineRaw) {
+	if !anyutil.IsTrue(declineRaw) {
 		declineRaw = ""
 	}
 	streamingRaw, ok := data["streaming"]
@@ -914,7 +905,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		streamingRaw = map[string]any{}
 	}
 	routesRaw := data["profile_routes"]
-	if !pyrepr.Truthy(routesRaw) {
+	if !anyutil.IsTrue(routesRaw) {
 		routesRaw = []any{}
 	}
 	routes, err := ParseProfileRoutes(ctx, routesRaw)
@@ -935,7 +926,7 @@ func GatewayConfigFromDict(ctx context.Context, raw any) (*GatewayConfig, error)
 		OnAllAdaptersDown:            onDown,
 		MaxConcurrentSessions:        maxConcurrent,
 		UnauthorizedDMBehavior:       normalizeChoice(data["unauthorized_dm_behavior"], UnauthorizedDMBehaviors, "pair"),
-		UnauthorizedDMDeclineMessage: strings.TrimSpace(pyrepr.Str(declineRaw)),
+		UnauthorizedDMDeclineMessage: strings.TrimSpace(anyutil.String(declineRaw)),
 		Streaming:                    StreamingConfigFromDict(streamingRaw),
 		SessionStoreMaxAgeDays:       maxAge,
 		ProfileRoutes:                routes,

@@ -6,8 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -120,12 +118,12 @@ func processErrorDetail(e *sttProcessError) string {
 		var detail string
 		switch v := output.(type) {
 		case []byte:
-			s, _ := pycodecs.DecodeReplace(v, "utf-8")
+			s, _ := charsetutil.DecodeReplace(v, "utf-8")
 			detail = strings.TrimSpace(s)
 		case nil:
 			detail = ""
 		default:
-			detail = strings.TrimSpace(pyrepr.Str(v))
+			detail = strings.TrimSpace(anyutil.String(v))
 		}
 		if detail != "" {
 			return detail

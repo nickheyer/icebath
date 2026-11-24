@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Delivers a watch event to a stateless api_server session by raw id, a delegation as a durable row
@@ -69,13 +68,13 @@ func completionDeliveryIdentity(evt map[string]any) (completionIdentity, bool) {
 		if producer == "" {
 			return completionIdentity{}, false
 		}
-		if pyrepr.Truthy(evt["task_failure_notice"]) {
+		if anyutil.IsTrue(evt["task_failure_notice"]) {
 			index := ""
 			results, _ := evt["results"].([]any)
 			if len(results) > 0 {
 				if first, ok := results[0].(map[string]any); ok {
 					if v, ok := first["task_index"]; ok {
-						index = pyrepr.Str(v)
+						index = anyutil.String(v)
 					}
 				}
 			}
@@ -83,8 +82,8 @@ func completionDeliveryIdentity(evt map[string]any) (completionIdentity, bool) {
 		}
 		return completionIdentity{evtType: evtType, producerID: producer, incarnation: ""}, true
 	case "watch_match", "watch_disabled", "heartbeat":
-		if pyrepr.Truthy(evt["event_id"]) {
-			return completionIdentity{evtType: evtType, producerID: pyrepr.Str(evt["session_id"]), incarnation: pyrepr.Str(evt["event_id"])}, true
+		if anyutil.IsTrue(evt["event_id"]) {
+			return completionIdentity{evtType: evtType, producerID: anyutil.String(evt["session_id"]), incarnation: anyutil.String(evt["event_id"])}, true
 		}
 	case "completion":
 		producer := truthyText(evt["session_id"])

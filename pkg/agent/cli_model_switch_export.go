@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -42,7 +42,7 @@ func (a *AIAgent) SetReasoningConfig(cfg map[string]any) { a.reasoningConfig = c
 
 // RestorePrimarySnapshot reinstates a captured primary runtime as an active fallback and restores it, true when the route came back
 func (a *AIAgent) RestorePrimarySnapshot(ctx context.Context, primary map[string]any) (bool, error) {
-	copied, _ := pycopy.DeepCopy(primary).(map[string]any)
+	copied, _ := any(anyutil.Clone(primary)).(map[string]any)
 	a.primaryRuntime = copied
 	a.fallbackActivated = true
 	a.rateLimitedUntil = 0

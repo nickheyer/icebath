@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func newRecoveryDB(t *testing.T) *state.SessionDB {
@@ -286,7 +286,7 @@ func TestCompressionLeaseAcquireContendAndRelease(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := &AIAgent{sessionDB: db, sessionID: "s", cachedSystemPrompt: "sp"}
-	attempt := &compressionAttempt{startedAt: time.Now(), seed: pyjson.NewObject()}
+	attempt := &compressionAttempt{startedAt: time.Now(), seed: jsonutil.NewObject()}
 	fence := NewCompressionCommitFence()
 	lease, prompt, err := acquireCompressionLease(t.Context(), a, fence, newCompactionLifecycle(a, false), nil, attempt)
 	if err != nil || lease == nil || prompt != "" || lease.holder == nil || lease.watermark == nil {

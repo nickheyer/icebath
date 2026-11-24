@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Path completion listing of the TUI server, assigned from pkg/tuiserver in cmd/icebath/wiring.go
@@ -17,17 +17,17 @@ func noCompletions() any {
 }
 
 // Path and context ref completions of one session, its host folder or its sandbox listed through its terminal
-func completePath(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func completePath(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	invalid := paramsOutside(params, "session_id", "profile", "word", "cwd")
-	for _, key := range params.Keys {
-		if _, isStr := params.GetOr(key, nil).(string); !isStr {
+	for _, key := range params.Keys() {
+		if _, isStr := params.ValueOr(key, nil).(string); !isStr {
 			invalid = true
 		}
 	}
 	if invalid {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	word, _ := params.GetOr("word", "").(string)
+	word, _ := params.ValueOr("word", "").(string)
 	if word == "" || ref.SessionID == "" {
 		return noCompletions(), nil
 	}

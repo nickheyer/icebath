@@ -46,7 +46,7 @@ func TestCredentialsFollowProfileHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if unserved.Len() != 1 || unserved.GetOr("whatsapp", nil) != "pair it: icebath -p work whatsapp" {
+	if unserved.Len() != 1 || unserved.ValueOr("whatsapp", nil) != "pair it: icebath -p work whatsapp" {
 		t.Fatalf("unserved %v", unserved)
 	}
 }

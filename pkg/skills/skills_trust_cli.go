@@ -9,8 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Adds or removes a project root in skills.trusted_project_dirs, the cwd checkout when no path is given
@@ -22,7 +22,7 @@ func SkillsTrustCommand(ctx context.Context, h, action, rawPath string, out io.W
 	scope := NewScope(h, cfg)
 	var root string
 	if rawPath != "" {
-		root = resolvePath(pypath.Expanduser(rawPath))
+		root = resolvePath(pathutil.ExpandUser(rawPath))
 		if st, err := os.Stat(root); err != nil || !st.IsDir() {
 			fmt.Fprintf(out, "Not a directory: %s\n", root)
 			return nil
@@ -42,14 +42,14 @@ func SkillsTrustCommand(ctx context.Context, h, action, rawPath string, out io.W
 	switch raw := skillsCfg["trusted_project_dirs"].(type) {
 	case []any:
 		for _, t := range raw {
-			trusted = append(trusted, pyrepr.Str(t))
+			trusted = append(trusted, anyutil.String(t))
 		}
 	default:
-		if pyrepr.Truthy(raw) {
-			trusted = append(trusted, pyrepr.Str(raw))
+		if anyutil.IsTrue(raw) {
+			trusted = append(trusted, anyutil.String(raw))
 		}
 	}
-	same := func(t string) bool { return resolvePath(pypath.Expanduser(t)) == root }
+	same := func(t string) bool { return resolvePath(pathutil.ExpandUser(t)) == root }
 	toList := func(items []string) []any {
 		list := make([]any, 0, len(items))
 		for _, t := range items {

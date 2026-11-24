@@ -7,15 +7,16 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Waits of a worker for its flush, of one socket send, and of buffered tokens before a flush
@@ -112,13 +113,13 @@ func NewWSTransport(ws WSConn, peer string, authIdentity map[string]any) *WSTran
 func (t *WSTransport) AuthIdentity() map[string]any { return t.authIdentity }
 
 // Buffers a streamed token or sends the frame behind every buffered token, waiting a bounded time for the wire
-func (t *WSTransport) Write(obj *pyjson.Object) bool {
+func (t *WSTransport) Write(obj *jsonutil.Object) bool {
 	if t.closed.Load() {
 		return false
 	}
 	line := SerializeFrame(obj, t.peer, wsLog())
-	if params, ok := obj.GetOr("params", nil).(*pyjson.Object); ok {
-		if kind, _ := params.GetOr("type", nil).(string); wsStreamingEventTypes[kind] {
+	if params, ok := obj.ValueOr("params", nil).(*jsonutil.Object); ok {
+		if kind, _ := params.ValueOr("type", nil).(string); wsStreamingEventTypes[kind] {
 			t.tokenMu.Lock()
 			t.pendingTokens = append(t.pendingTokens, line)
 			if !t.tokenFlushArmed {
@@ -147,7 +148,7 @@ func (t *WSTransport) Write(obj *pyjson.Object) bool {
 		}
 	case <-timer.C:
 		wsLog().Warn(fmt.Sprintf("ws write slow (loop stalled >%ss) peer=%s — frame left in flight",
-			pyrepr.Float(wsWriteTimeout.Seconds()), t.peer))
+			strconv.FormatFloat(wsWriteTimeout.Seconds(), 'f', -1, 64), t.peer))
 	}
 	return !t.closed.Load()
 }
@@ -157,7 +158,7 @@ func panicTypeName(failure any) string {
 	if err, ok := failure.(error); ok {
 		return plugins.ErrorTypeName(err)
 	}
-	return pyrepr.TypeName(failure)
+	return anyutil.Kind(failure)
 }
 
 // Starts the coalescing timer of the token buffer unless the transport closed, the token lock held
@@ -192,7 +193,7 @@ func (t *WSTransport) Closed() bool { return t.closed.Load() }
 func (t *WSTransport) WS() WSConn { return t.ws }
 
 // Sends buffered tokens and the frame as one batch and returns once it is on the wire
-func (t *WSTransport) WriteAsync(obj *pyjson.Object) bool {
+func (t *WSTransport) WriteAsync(obj *jsonutil.Object) bool {
 	if t.closed.Load() {
 		return false
 	}
@@ -206,12 +207,12 @@ func (t *WSTransport) WriteAsync(obj *pyjson.Object) bool {
 }
 
 // Sends buffered tokens then the frames in order as one batch and returns once it is on the wire
-func (t *WSTransport) WriteManyAsync(frames []*pyjson.Object) bool {
+func (t *WSTransport) WriteManyAsync(frames []*jsonutil.Object) bool {
 	return t.WriteManyIfCurrentAsync(frames, nil)
 }
 
 // Sends a batch whose own frames stop once isCurrent turns false, tokens of other producers going out regardless
-func (t *WSTransport) WriteManyIfCurrentAsync(frames []*pyjson.Object, isCurrent func() bool) bool {
+func (t *WSTransport) WriteManyIfCurrentAsync(frames []*jsonutil.Object, isCurrent func() bool) bool {
 	if t.closed.Load() {
 		return false
 	}
@@ -287,14 +288,14 @@ func (t *WSTransport) safeSendMany(turn chan struct{}, lines []string, isCurrent
 		if timedOut {
 			t.closed.Store(true)
 			wsLog().Warn(fmt.Sprintf("ws send deadline exceeded (socket stalled, loop responsive) peer=%s deadline=%ss — closing",
-				t.peer, pyrepr.Float(wsSendDeadline.Seconds())))
+				t.peer, strconv.FormatFloat(wsSendDeadline.Seconds(), 'f', -1, 64)))
 			go t.closeSocket(1011, "send deadline")
 			return
 		}
 		if err == nil {
 			continue
 		}
-		var encode *pystr.UnicodeEncodeError
+		var encode *textutil.InvalidUTF8Error
 		if errors.As(err, &encode) {
 			wsLog().Warn(fmt.Sprintf("ws send skipped invalid utf-8 frame peer=%s error=%s", t.peer, err))
 			continue

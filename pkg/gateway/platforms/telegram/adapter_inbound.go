@@ -21,10 +21,10 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Image cache writer of inbound photos and stickers
@@ -136,7 +136,7 @@ func (a *TelegramAdapter) ignoredThreads(ctx context.Context) map[int64]bool {
 	for _, text := range gateway.SettingList(ctx, settings.TelegramIgnoredThreads) {
 		n, convErr := strconv.ParseInt(text, 10, 64)
 		if convErr != nil {
-			pkgLog().Warn(fmt.Sprintf("[%s] Ignoring invalid Telegram thread id: %s", a.Name(), pyrepr.Repr(text)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Ignoring invalid Telegram thread id: %s", a.Name(), anyutil.Quote(text)))
 			continue
 		}
 		out[n] = true
@@ -150,7 +150,7 @@ func (a *TelegramAdapter) currentMentionPatterns() []*regexp2.Regexp {
 	if patterns := settings.TelegramMentionPatterns.Get(a.settingsCtx); len(patterns) > 0 {
 		raw = patterns
 	}
-	source := pyrepr.Repr(raw)
+	source := anyutil.Quote(raw)
 	a.mentionPatterns.mu.Lock()
 	defer a.mentionPatterns.mu.Unlock()
 	if a.mentionPatterns.source != source {
@@ -281,7 +281,7 @@ func (a *TelegramAdapter) refreshBotIdentity(ctx context.Context, force bool) {
 		if known == "" {
 			known = "unknown"
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] Telegram identity refresh failed (keeping @%s): %s", a.Name(), known, pyrepr.ExceptionMessage(ptbError(err))))
+		pkgLog().Debug(fmt.Sprintf("[%s] Telegram identity refresh failed (keeping @%s): %s", a.Name(), known, ptbError(err).Error()))
 		return
 	}
 	a.mu.Lock()
@@ -528,7 +528,7 @@ func (a *TelegramAdapter) topicGatesPass(ctx context.Context, chatID string, thr
 			if !warnNonNumeric {
 				return &blocked
 			}
-			pkgLog().Warn(fmt.Sprintf("[%s] Ignoring non-numeric Telegram message_thread_id: %s", a.Name(), pyrepr.Repr(*threadID)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Ignoring non-numeric Telegram message_thread_id: %s", a.Name(), anyutil.Quote(*threadID)))
 		} else if a.ignoredThreads(ctx)[n] {
 			return &blocked
 		}
@@ -737,7 +737,7 @@ func (a *TelegramAdapter) cacheObservedMedia(ctx context.Context, m *models.Mess
 	case "oversized":
 		event.Text = appendObservedNote(event.Text, fmt.Sprintf("[Observed Telegram attachment too large or unverifiable. Maximum: %d MB.]",
 			a.maxDocBytes/(1024*1024)))
-		pkgLog().Info(fmt.Sprintf("[Telegram] Observed group attachment skipped (size=%s)", pyrepr.Str(sizeValue(size))))
+		pkgLog().Info(fmt.Sprintf("[Telegram] Observed group attachment skipped (size=%s)", anyutil.String(sizeValue(size))))
 	case "unreadable":
 		event.Text = appendObservedNote(event.Text, "[Observed Telegram attachment could not be read, not cached.]")
 	case "ok":
@@ -814,7 +814,7 @@ func (a *TelegramAdapter) surfaceMediaCacheFailure(ctx context.Context, m *model
 	if notice != nil && *notice != "" {
 		a.AcceptUpdate(scoped)
 		if err := a.replyText(scoped, m, *notice); err != nil {
-			pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to notify user about %s cache failure: %s", kind, pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("[Telegram] Failed to notify user about %s cache failure: %s", kind, err.Error()))
 		}
 		event.Text = appendObservedNote(event.Text, fmt.Sprintf("[The user attempted to send a %s%s but it could not be downloaded (%s); they have been asked to retry.]",
 			kind, named, exceptionClassName(exc)))
@@ -865,7 +865,7 @@ func (a *TelegramAdapter) observeUnmentionedGroupMessage(ctx context.Context, m 
 	}
 	if err != nil {
 		a.failUpdatePreparation(ctx)
-		pkgLog().Warn(fmt.Sprintf("[%s] Failed to observe Telegram group message: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to observe Telegram group message: %s", a.Name(), err.Error()))
 		return
 	}
 	userID := "unknown"
@@ -972,7 +972,7 @@ func logBlockedUser(m *models.Message, level slog.Level, what string) {
 	if m.From != nil {
 		userID = m.From.ID
 	}
-	pkgLog().Log(context.Background(), level, fmt.Sprintf("[Telegram] Blocked %s %s in chat %d", what, pyrepr.Str(userID), m.Chat.ID))
+	pkgLog().Log(context.Background(), level, fmt.Sprintf("[Telegram] Blocked %s %s in chat %d", what, anyutil.String(userID), m.Chat.ID))
 }
 
 // Group trigger gate that observes unaddressed chatter when configured, true to proceed
@@ -1059,7 +1059,7 @@ func (a *TelegramAdapter) handleLocationMessage(ctx context.Context, update *Upd
 	if location == nil {
 		return nil
 	}
-	lat, lon := pyrepr.Str(location.Latitude), pyrepr.Str(location.Longitude)
+	lat, lon := anyutil.String(location.Latitude), anyutil.String(location.Longitude)
 	parts := []string{"[The user shared a location pin.]"}
 	if m.Venue != nil {
 		if m.Venue.Title != "" {
@@ -1296,7 +1296,7 @@ func (a *TelegramAdapter) cacheInboundAV(ctx context.Context, m *models.Message,
 			if note != nil {
 				event.Text = appendObservedNote(event.Text, *note)
 			}
-			pkgLog().Info(fmt.Sprintf("[Telegram] Skipped oversized user %s (size=%s)", kind, pyrepr.Str(sizeValue(src.fileSize))))
+			pkgLog().Info(fmt.Sprintf("[Telegram] Skipped oversized user %s (size=%s)", kind, anyutil.String(sizeValue(src.fileSize))))
 			return errOversizedDispatched
 		}
 		data, filePath, err := a.downloadFile(ctx, src.fileID)
@@ -1381,7 +1381,7 @@ func (a *TelegramAdapter) cacheInboundDocument(ctx context.Context, m *models.Me
 		}
 		display := joinFirst(original, docMime, ext, "unknown")
 		if doc.FileSize == 0 || doc.FileSize > a.maxDocBytes {
-			pkgLog().Info(fmt.Sprintf("[Telegram] Document too large: %s bytes", pyrepr.Str(sizeValue(doc.FileSize))))
+			pkgLog().Info(fmt.Sprintf("[Telegram] Document too large: %s bytes", anyutil.String(sizeValue(doc.FileSize))))
 			return a.dispatchWithText(ctx, event, fmt.Sprintf("The document is too large or its size could not be verified. Maximum: %d MB.",
 				a.maxDocBytes/(1024*1024)))
 		}
@@ -1628,12 +1628,12 @@ func (a *TelegramAdapter) handleSticker(ctx context.Context, m *models.Message, 
 	if cached := gateway.GetCachedStickerDescription(ctx, sticker.FileUniqueID); len(cached) > 0 {
 		cachedEmoji, cachedSet := emoji, setName
 		if v, ok := cached["emoji"]; ok {
-			cachedEmoji = pyrepr.Str(v)
+			cachedEmoji = anyutil.String(v)
 		}
 		if v, ok := cached["set_name"]; ok {
-			cachedSet = pyrepr.Str(v)
+			cachedSet = anyutil.String(v)
 		}
-		event.Text = gateway.BuildStickerInjection(pyrepr.Str(cached["description"]), cachedEmoji, cachedSet)
+		event.Text = gateway.BuildStickerInjection(anyutil.String(cached["description"]), cachedEmoji, cachedSet)
 		pkgLog().Info(fmt.Sprintf("[Telegram] Sticker cache hit: %s", sticker.FileUniqueID))
 		return
 	}
@@ -1660,7 +1660,7 @@ func (a *TelegramAdapter) handleSticker(ctx context.Context, m *models.Message, 
 		if pyTruthy(result["success"]) {
 			description := "a sticker"
 			if v, ok := result["analysis"]; ok {
-				description = pyrepr.Str(v)
+				description = anyutil.String(v)
 			}
 			if err := gateway.CacheStickerDescription(ctx, sticker.FileUniqueID, description, emoji, setName); err != nil {
 				return err
@@ -1685,7 +1685,7 @@ func (a *TelegramAdapter) resolveTopicBinding(ctx context.Context, m *models.Mes
 	if chatType == "dm" && threadID != nil {
 		if info := a.getDMTopicInfo(ctx, chatID, *threadID); info != nil {
 			if name, ok := info["name"]; ok && name != nil {
-				s := pyrepr.Str(name)
+				s := anyutil.String(name)
 				chatTopic = &s
 			}
 			topicSkill = info["skill"]
@@ -1720,7 +1720,7 @@ func (a *TelegramAdapter) resolveTopicBinding(ctx context.Context, m *models.Mes
 		if v, has := entry["chat_id"]; has {
 			entryChat = v
 		}
-		if pyrepr.Str(entryChat) != chatID {
+		if anyutil.String(entryChat) != chatID {
 			continue
 		}
 		topics, _ := entry["topics"].([]any)
@@ -1729,9 +1729,9 @@ func (a *TelegramAdapter) resolveTopicBinding(ctx context.Context, m *models.Mes
 			if !ok {
 				continue
 			}
-			if tid, has := topic["thread_id"]; has && tid != nil && pyrepr.Str(tid) == *threadID {
+			if tid, has := topic["thread_id"]; has && tid != nil && anyutil.String(tid) == *threadID {
 				if name := topic["name"]; name != nil {
-					s := pyrepr.Str(name)
+					s := anyutil.String(name)
 					chatTopic = &s
 				}
 				topicSkill = topic["skill"]
@@ -1943,7 +1943,7 @@ func (a *TelegramAdapter) EntitySources(cm *ContextMessage) []EntitySource {
 
 // Bare lowercase entity type
 func (a *TelegramAdapter) EntityType(entity MessageEntity) string {
-	parts := strings.Split(pyrepr.Str(entity.Type), ".")
+	parts := strings.Split(anyutil.String(entity.Type), ".")
 	return strings.ToLower(parts[len(parts)-1])
 }
 

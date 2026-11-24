@@ -16,9 +16,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // One variable this process published from a dotenv file
@@ -549,8 +549,8 @@ func atomicReplaceFile(tmp, target string) error {
 	if err == nil {
 		return nil
 	}
-	contended := pyfs.IsContendedReplaceError(err)
-	if !pyfs.IsCrossDeviceError(err) && !contended {
+	contended := fsutil.IsRenameContended(err)
+	if !fsutil.IsRenameCrossDevice(err) && !contended {
 		return err
 	}
 	if contended {
@@ -560,11 +560,11 @@ func atomicReplaceFile(tmp, target string) error {
 			if retryErr == nil {
 				return nil
 			}
-			if pyfs.IsCrossDeviceError(retryErr) {
+			if fsutil.IsRenameCrossDevice(retryErr) {
 				contended = false
 				break
 			}
-			if !pyfs.IsContendedReplaceError(retryErr) {
+			if !fsutil.IsRenameContended(retryErr) {
 				return retryErr
 			}
 		}

@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Names the plugins.disabled list of a home parks
@@ -60,7 +60,7 @@ func selectedMemoryProviderManifest(h string) *Manifest {
 
 // Whether a provider directory sits directly in the bundled memory plugins directory
 func bundledMemoryProviderDir(pluginDir string) bool {
-	dir, err := pypath.Realpath(pluginDir, pypath.Lax)
+	dir, err := pathutil.Resolve(pluginDir)
 	if err != nil {
 		dir = pluginDir
 	}
@@ -69,7 +69,7 @@ func bundledMemoryProviderDir(pluginDir string) bool {
 		return false
 	}
 	root := filepath.Join(override, "memory")
-	if resolved, err := pypath.Realpath(root, pypath.Lax); err == nil {
+	if resolved, err := pathutil.Resolve(root); err == nil {
 		root = resolved
 	}
 	return filepath.Dir(dir) == root

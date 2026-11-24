@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type staleRefreshCalls struct {
@@ -20,7 +20,7 @@ type staleRefreshCalls struct {
 // Runs the stale Bot Chat restore of one surface, recording the surface builder, the tool refresh and the pin
 func runStaleRefresh(t *testing.T, platform string, policy gateway.ActiveLaunchPolicy) *staleRefreshCalls {
 	t.Helper()
-	row := pyjson.NewObject()
+	row := jsonutil.NewObject()
 	row.Set("system_prompt", "SYSTEM PROMPT BODY\n\nConversation started: Monday, January 05, 2026\nModel: test-model\nProvider: openrouter\nPlatform: tui")
 	row.Set("tool_names", nil)
 	a, _ := restoreAgent(t, restoreRowStore(t, row), "NEW_PROMPT")

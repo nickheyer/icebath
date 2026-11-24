@@ -9,18 +9,18 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
+	tarutil "github.com/nickheyer/icebath/pkg/utils/tar"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -52,11 +52,11 @@ func placeholders(n int) string {
 }
 
 // Raw driver connection of a tracked sqlite connection for the online backup API
-func rawConnOf(conn state.SQLiteConn) (pysqlite.RawConn, error) {
+func rawConnOf(conn state.SQLiteConn) (sqliteutil.RawConn, error) {
 	if tracked, ok := conn.(*state.TrackedConn); ok {
 		conn = tracked.SQLiteConn
 	}
-	raw, ok := conn.(pysqlite.RawConn)
+	raw, ok := conn.(sqliteutil.RawConn)
 	if !ok {
 		return nil, &TypeError{"connection does not expose its sqlite handle"}
 	}
@@ -83,7 +83,7 @@ func snapshotDB(source, target string) error {
 	if err != nil {
 		return err
 	}
-	return pysqlite.Backup(srcRaw, dstRaw, -1, nil, 250*time.Millisecond)
+	return sqliteutil.Backup(srcRaw, dstRaw, -1, nil, 250*time.Millisecond)
 }
 
 // Strips claims, pids, sessions and gateway subscriptions from a board copy, the caller owning the transaction
@@ -125,7 +125,7 @@ func scrubLocalState(ctx context.Context, conn state.SQLiteConn) error {
 
 // Writes a mapping as two space indented UTF-8 JSON with a trailing newline
 func writeJSONFile(path string, payload any) error {
-	text, err := pyjson.Dumps(payload, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -133,8 +133,8 @@ func writeJSONFile(path string, payload any) error {
 }
 
 // Row count of every exported table in order
-func countTableRows(ctx context.Context, conn state.SQLiteConn) (*pyjson.Object, error) {
-	out := pyjson.NewObject()
+func countTableRows(ctx context.Context, conn state.SQLiteConn) (*jsonutil.Object, error) {
+	out := jsonutil.NewObject()
 	for _, t := range countedTables {
 		row, err := QueryOne(ctx, conn, "SELECT COUNT(*) AS n FROM "+t)
 		if err != nil {
@@ -150,7 +150,7 @@ func countTableRows(ctx context.Context, conn state.SQLiteConn) (*pyjson.Object,
 }
 
 // Exports a board to a tar.gz with a scrubbed database snapshot, optional attachments and logs, returning a summary
-func ExportBoard(ctx context.Context, board *string, outputPath string, includeAttachments, includeLogs bool) (*pyjson.Object, error) {
+func ExportBoard(ctx context.Context, board *string, outputPath string, includeAttachments, includeLogs bool) (*jsonutil.Object, error) {
 	slug, err := normalizeBoardSlug(board)
 	if err != nil {
 		return nil, err
@@ -168,8 +168,8 @@ func ExportBoard(ctx context.Context, board *string, outputPath string, includeA
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil, &FileNotFoundError{fmt.Sprintf("board %s has no database at %s", errchain.Show(slug), dbPath)}
 	}
-	base := strings.TrimSuffix(strings.TrimSuffix(pypath.PathStr(pypath.Expanduser(outputPath)), ".tar.gz"), ".tgz")
-	if err := os.MkdirAll(pypath.PathParent(base), 0o777); err != nil {
+	base := strings.TrimSuffix(strings.TrimSuffix(filepath.Clean(pathutil.ExpandUser(outputPath)), ".tar.gz"), ".tgz")
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(base)), 0o777); err != nil {
 		return nil, err
 	}
 	tmpdir, err := os.MkdirTemp("", "")
@@ -189,7 +189,7 @@ func ExportBoard(ctx context.Context, board *string, outputPath string, includeA
 	if err != nil {
 		return nil, err
 	}
-	counts, err := func() (*pyjson.Object, error) {
+	counts, err := func() (*jsonutil.Object, error) {
 		defer snapshot.Close()
 		if _, err := snapshot.ExecContext(ctx, "BEGIN"); err != nil {
 			return nil, err
@@ -222,7 +222,7 @@ func ExportBoard(ctx context.Context, board *string, outputPath string, includeA
 		if err != nil {
 			return nil, err
 		}
-		if attachments, err = pyfs.CopyRegularFiles(root, filepath.Join(staged, "attachments")); err != nil {
+		if attachments, err = fsutil.CopyRegularFiles(root, filepath.Join(staged, "attachments")); err != nil {
 			return nil, err
 		}
 	}
@@ -231,7 +231,7 @@ func ExportBoard(ctx context.Context, board *string, outputPath string, includeA
 		if err != nil {
 			return nil, err
 		}
-		if logs, err = pyfs.CopyRegularFiles(root, filepath.Join(staged, "logs")); err != nil {
+		if logs, err = fsutil.CopyRegularFiles(root, filepath.Join(staged, "logs")); err != nil {
 			return nil, err
 		}
 	}
@@ -240,22 +240,22 @@ func ExportBoard(ctx context.Context, board *string, outputPath string, includeA
 		return nil, err
 	}
 	boardName := any(slug)
-	if v, _ := meta.Get("name"); pyrepr.Truthy(v) {
+	if v, _ := meta.Get("name"); anyutil.IsTrue(v) {
 		boardName = v
 	}
-	allCounts := counts.Copy()
+	allCounts := counts.Clone()
 	allCounts.Set("attachment_files", attachments)
 	allCounts.Set("log_files", logs)
-	manifest := pyjson.ObjectOf(
+	manifest := jsonutil.ObjectOf(
 		"format", ArchiveFormat, "format_version", ArchiveFormatVersion, "board", slug, "board_name", boardName,
 		"exported_at", time.Now().Unix(), archiveVersionKey, info.BaseVersion,
-		"includes", pyjson.ObjectOf("attachments", includeAttachments, "logs", includeLogs),
+		"includes", jsonutil.ObjectOf("attachments", includeAttachments, "logs", includeLogs),
 		"counts", allCounts,
 	)
 	if err := writeJSONFile(filepath.Join(staged, "manifest.json"), manifest); err != nil {
 		return nil, err
 	}
-	archive, err := pyfs.MakeTargz(base, tmpdir, slug)
+	archive, err := tarutil.CreateTarGz(base, tmpdir, slug)
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ func ExportBoard(ctx context.Context, board *string, outputPath string, includeA
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("board", slug, "archive", archive, "size", st.Size(), "counts", allCounts), nil
+	return jsonutil.ObjectOf("board", slug, "archive", archive, "size", st.Size(), "counts", allCounts), nil
 }
 
 // Preferred slug or the first free numbered variant of it
@@ -286,7 +286,7 @@ func availableSlug(preferred string) string {
 }
 
 // Validated manifest of an extracted archive root
-func readManifest(root string) (*pyjson.Object, error) {
+func readManifest(root string) (*jsonutil.Object, error) {
 	path := filepath.Join(root, "manifest.json")
 	if _, err := os.Stat(path); err != nil {
 		return nil, &ValueError{"archive is not an Icebath kanban board export (no manifest.json)"}
@@ -295,15 +295,15 @@ func readManifest(root string) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(pystr.DecodeUTF8SigReplace(raw))
+	decoded, err := jsonutil.Decode(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError)))
 	if err != nil {
-		var de *pyjson.DecodeError
+		var de *jsonutil.SyntaxError
 		if errors.As(err, &de) {
 			return nil, &ValueError{"archive manifest is not valid JSON: " + err.Error()}
 		}
 		return nil, err
 	}
-	manifest, ok := decoded.(*pyjson.Object)
+	manifest, ok := decoded.(*jsonutil.Object)
 	var format any
 	if ok {
 		format, _ = manifest.Get("format")
@@ -325,19 +325,19 @@ func readManifest(root string) (*pyjson.Object, error) {
 }
 
 // board.json of an archive, empty when missing, unreadable or not a mapping
-func readArchiveBoardMetadata(path string) *pyjson.Object {
+func readArchiveBoardMetadata(path string) *jsonutil.Object {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	decoded, err := pyjson.Loads(pystr.DecodeUTF8SigReplace(raw))
+	decoded, err := jsonutil.Decode(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError)))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	if obj, ok := decoded.(*pyjson.Object); ok {
+	if obj, ok := decoded.(*jsonutil.Object); ok {
 		return obj
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Re-anchors imported rows to this machine, returning the restored attachment and parked task counts with warnings
@@ -359,7 +359,7 @@ func relocateImportedRows(ctx context.Context, conn state.SQLiteConn, slug strin
 		}
 		dropped := 0
 		for _, row := range rows {
-			landed := filepath.Join(attachmentsDir, pyrepr.Str(row.Get("task_id")), pypath.PathName(pyrepr.Str(row.Get("stored_path"))))
+			landed := filepath.Join(attachmentsDir, anyutil.String(row.Get("task_id")), pathutil.Name(anyutil.String(row.Get("stored_path"))))
 			if st, err := os.Stat(landed); err == nil && st.Mode().IsRegular() {
 				if _, err := conn.ExecContext(ctx, "UPDATE task_attachments SET stored_path = ? WHERE id = ?", landed, row.Get("id")); err != nil {
 					return err
@@ -383,7 +383,7 @@ func relocateImportedRows(ctx context.Context, conn state.SQLiteConn, slug strin
 		parked := map[string]bool{}
 		parkedIDs := make([]any, 0, len(parkedRows))
 		for _, r := range parkedRows {
-			id := pyrepr.Str(r.Get("id"))
+			id := anyutil.String(r.Get("id"))
 			parked[id] = true
 			parkedIDs = append(parkedIDs, id)
 		}
@@ -403,8 +403,8 @@ func relocateImportedRows(ctx context.Context, conn state.SQLiteConn, slug strin
 			return err
 		}
 		for _, r := range all {
-			id := pyrepr.Str(r.Get("id"))
-			body, err := pyjson.Dumps(pyjson.ObjectOf("board", slug, "parked", parked[id]), pyjson.EnsureASCII(false))
+			id := anyutil.String(r.Get("id"))
+			body, err := jsonutil.Encode(jsonutil.ObjectOf("board", slug, "parked", parked[id]))
 			if err != nil {
 				return err
 			}
@@ -434,24 +434,24 @@ func shutilMove(src, dst string) error {
 		return err
 	}
 	if st.IsDir() {
-		if err := pyshutil.CopyTree(src, dst, true, false); err != nil {
+		if err := fsutil.CopyTree(src, dst, fsutil.CopyTreeOptions{Symlinks: true}); err != nil {
 			return err
 		}
-		return pyshutil.Rmtree(src)
+		return os.RemoveAll(src)
 	}
-	if err := pyshutil.Copy2(src, dst); err != nil {
+	if err := fsutil.CopyFile(src, dst); err != nil {
 		return err
 	}
 	return os.Remove(src)
 }
 
 // Imports an archive as a new board, the slug suffixed when taken, returning a summary
-func ImportBoard(ctx context.Context, archivePath string, slug *string, activate bool) (*pyjson.Object, error) {
-	archive := pypath.PathStr(pypath.Expanduser(archivePath))
+func ImportBoard(ctx context.Context, archivePath string, slug *string, activate bool) (*jsonutil.Object, error) {
+	archive := filepath.Clean(pathutil.ExpandUser(archivePath))
 	if _, err := os.Stat(archive); err != nil {
 		return nil, &FileNotFoundError{"archive not found: " + archive}
 	}
-	roots, err := pyfs.ArchiveRootDirs(archive)
+	roots, err := tarutil.RootDirs(archive)
 	if err != nil {
 		return nil, err
 	}
@@ -467,7 +467,7 @@ func ImportBoard(ctx context.Context, archivePath string, slug *string, activate
 		return nil, err
 	}
 	defer os.RemoveAll(tmpdir)
-	if err := pyfs.SafeExtractTargz(archive, tmpdir); err != nil {
+	if err := tarutil.ExtractTarGz(archive, tmpdir); err != nil {
 		return nil, err
 	}
 	extracted := filepath.Join(tmpdir, archiveRoot)
@@ -482,10 +482,10 @@ func ImportBoard(ctx context.Context, archivePath string, slug *string, activate
 	var want any = archiveRoot
 	if slug != nil && *slug != "" {
 		want = *slug
-	} else if v, _ := manifest.Get("board"); pyrepr.Truthy(v) {
+	} else if v, _ := manifest.Get("board"); anyutil.IsTrue(v) {
 		want = v
 	}
-	wantText := pyrepr.Str(want)
+	wantText := anyutil.String(want)
 	requested, err := normalizeBoardSlug(&wantText)
 	if err != nil {
 		return nil, err
@@ -515,8 +515,8 @@ func ImportBoard(ctx context.Context, archivePath string, slug *string, activate
 	}
 	firstTruthy := func(vals ...any) string {
 		for _, v := range vals {
-			if pyrepr.Truthy(v) {
-				return pyrepr.Str(v)
+			if anyutil.IsTrue(v) {
+				return anyutil.String(v)
 			}
 		}
 		return ""
@@ -534,7 +534,7 @@ func ImportBoard(ctx context.Context, archivePath string, slug *string, activate
 	}
 	var rehomed, parked int
 	var warnings []string
-	var counts *pyjson.Object
+	var counts *jsonutil.Object
 	if err := ConnectClosing(ctx, "", &target, func(conn state.SQLiteConn) error {
 		var err error
 		if rehomed, parked, warnings, err = relocateImportedRows(ctx, conn, target); err != nil {
@@ -560,10 +560,10 @@ func ImportBoard(ctx context.Context, archivePath string, slug *string, activate
 	if !has {
 		version, _ = manifest.Get(retiredArchiveVersionKey)
 	}
-	return pyjson.ObjectOf(
+	return jsonutil.ObjectOf(
 		"board", target, "requested_board", requested, "renamed", target != requested, "name", name,
 		"path", boardRoot, "db_path", dbPath,
-		"source", pyjson.ObjectOf("board", srcBoard, "exported_at", exportedAt, archiveVersionKey, version),
+		"source", jsonutil.ObjectOf("board", srcBoard, "exported_at", exportedAt, archiveVersionKey, version),
 		"counts", counts, "attachments_restored", rehomed, "tasks_parked", parked,
 		"warnings", stringsAny(warnings), "activated", activate,
 	), nil

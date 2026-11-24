@@ -12,8 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // 429 once the concurrent run cap is reached, the current request's own reservation not counted
@@ -47,14 +47,14 @@ func bindAPIServerSession(env *tools.Env, chatID, sessionKey, sessionID, profile
 }
 
 // Sanitized actual and requested runtime of a finished turn, an error when a confirmed lock ran elsewhere
-func (a *APIServerAdapter) turnRuntimeMetadata(ag *agent.AIAgent, route map[string]string, requestedRuntime *pyjson.Object, routeSource string, confirmedRuntimeLock bool) (*pyjson.Object, error) {
-	runtime := pyjson.NewObject()
+func (a *APIServerAdapter) turnRuntimeMetadata(ag *agent.AIAgent, route map[string]string, requestedRuntime *jsonutil.Object, routeSource string, confirmedRuntimeLock bool) (*jsonutil.Object, error) {
+	runtime := jsonutil.NewObject()
 	if info, ok := apiRuntimeOf(ag); ok {
-		runtime = pyjson.ObjectOf("provider", info.provider, "model", info.model, "route_source", info.routeSource)
+		runtime = jsonutil.ObjectOf("provider", info.provider, "model", info.model, "route_source", info.routeSource)
 	}
 	actualProvider := cleanRuntimeID(ag.Provider(), 80)
 	actualModel := cleanRuntimeID(ag.Model(), 200)
-	resolvedProvider := cleanRuntimeID(runtime.GetOr("provider", nil), 80)
+	resolvedProvider := cleanRuntimeID(runtime.ValueOr("provider", nil), 80)
 	for _, pair := range [][2]string{{"provider", actualProvider}, {"model", actualModel}} {
 		if pair[1] != "" {
 			runtime.Set(pair[0], pair[1])
@@ -66,12 +66,12 @@ func (a *APIServerAdapter) turnRuntimeMetadata(ag *agent.AIAgent, route map[stri
 		route = map[string]string{}
 	}
 	if requestedRuntime == nil {
-		requestedRuntime = pyjson.NewObject()
+		requestedRuntime = jsonutil.NewObject()
 	}
 	if confirmedRuntimeLock {
 		reqProvider := route["provider"]
 		if reqProvider == "" {
-			reqProvider = fmt.Sprint(nonNil(requestedRuntime.GetOr("provider", nil)))
+			reqProvider = fmt.Sprint(nonNil(requestedRuntime.ValueOr("provider", nil)))
 		}
 		requestedProvider := cleanRuntimeID(reqProvider, 80)
 		expectedProvider := resolvedProvider
@@ -81,7 +81,7 @@ func (a *APIServerAdapter) turnRuntimeMetadata(ag *agent.AIAgent, route map[stri
 		expectedProvider = cleanRuntimeID(expectedProvider, 80)
 		reqModel := route["model"]
 		if reqModel == "" {
-			reqModel = fmt.Sprint(nonNil(requestedRuntime.GetOr("model", nil)))
+			reqModel = fmt.Sprint(nonNil(requestedRuntime.ValueOr("model", nil)))
 		}
 		expectedModel := cleanRuntimeID(reqModel, 200)
 		if (expectedProvider != "" && actualProvider != expectedProvider) || (expectedModel != "" && actualModel != expectedModel) {
@@ -102,17 +102,17 @@ func (a *APIServerAdapter) turnRuntimeMetadata(ag *agent.AIAgent, route map[stri
 	}
 	if requestedRuntime.Len() > 0 {
 		m, p := requestedIDs(requestedRuntime)
-		runtime.Set("requested", pyjson.ObjectOf("provider", p, "model", m))
+		runtime.Set("requested", jsonutil.ObjectOf("provider", p, "model", m))
 	}
 	source := routeSource
 	if source == "" {
-		source = fmt.Sprint(nonNil(runtime.GetOr("route_source", nil)))
+		source = fmt.Sprint(nonNil(runtime.ValueOr("route_source", nil)))
 	}
 	if source == "" {
 		source = "global"
 	}
 	runtime.Set("route_source", source)
-	var requested *pyjson.Object
+	var requested *jsonutil.Object
 	if requestedRuntime.Len() > 0 {
 		requested = requestedRuntime
 	}
@@ -135,7 +135,7 @@ func nonNil(v any) any {
 }
 
 // Usage, effective session id, the compressed flag and runtime metadata attached to a finished turn
-func (a *APIServerAdapter) finishTurnResult(ag *agent.AIAgent, result map[string]any, sessionID string, route map[string]string, requestedRuntime *pyjson.Object, routeSource string, confirmedRuntimeLock bool) (map[string]any, map[string]any, error) {
+func (a *APIServerAdapter) finishTurnResult(ag *agent.AIAgent, result map[string]any, sessionID string, route map[string]string, requestedRuntime *jsonutil.Object, routeSource string, confirmedRuntimeLock bool) (map[string]any, map[string]any, error) {
 	usage := map[string]any{"input_tokens": int64(ag.SessionPromptTokens()), "output_tokens": int64(ag.SessionCompletionTokens()),
 		"total_tokens": int64(ag.SessionTotalTokens())}
 	effective := ag.SessionID()
@@ -178,7 +178,7 @@ type runAgentOptions struct {
 	modelOptions            any
 	route                   map[string]string
 	sessionModel            string
-	requestedRuntime        *pyjson.Object
+	requestedRuntime        *jsonutil.Object
 	routeSource             string
 	confirmedRuntimeLock    bool
 	bindDeclaredConversaton bool
@@ -186,8 +186,8 @@ type runAgentOptions struct {
 	historyFromSession      bool
 	runOwnerScope           any
 	sessionHistoryDelivery  string
-	turnAuthor              *pyjson.Object
-	relayMetadata           *pyjson.Object
+	turnAuthor              *jsonutil.Object
+	relayMetadata           *jsonutil.Object
 	notificationCategory    string
 	resumeUnansweredTurn    bool
 	approvalNotifyCallback  tools.GatewayNotifyFunc
@@ -294,10 +294,10 @@ func (a *APIServerAdapter) runAgent(ctx context.Context, o runAgentOptions) (map
 		a.mu.Unlock()
 		runOpts := agent.RunConversationOptions{ConversationHistory: history, TaskID: taskID}
 		if o.turnAuthor != nil {
-			runOpts.TurnAuthor = pyjson.Plain(o.turnAuthor).(map[string]any)
+			runOpts.TurnAuthor = jsonutil.Plain(o.turnAuthor).(map[string]any)
 		}
 		if o.relayMetadata != nil && o.relayMetadata.Len() > 0 {
-			runOpts.RelayMetadata = pyjson.Plain(o.relayMetadata).(map[string]any)
+			runOpts.RelayMetadata = jsonutil.Plain(o.relayMetadata).(map[string]any)
 		}
 		approvalBound := o.approvalNotifyCallback != nil && o.approvalSessionKey != ""
 		if approvalBound {

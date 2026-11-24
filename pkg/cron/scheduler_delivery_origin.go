@@ -1,5 +1,9 @@
 package cron
 
+import (
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+)
+
 // Stamps the origin scope id and the relay user id onto a live send metadata without overriding
 func stampOriginDiscriminators(t *targetDelivery, routeMeta, mediaMeta map[string]any) {
 	var scope, user any
@@ -13,7 +17,7 @@ func stampOriginDiscriminators(t *targetDelivery, routeMeta, mediaMeta map[strin
 		key   string
 		value any
 	}{{"scope_id", scope}, {"user_id", user}} {
-		if !pyTruthy(kv.value) {
+		if !anyutil.IsTrue(kv.value) {
 			continue
 		}
 		text := optionalStr(kv.value)

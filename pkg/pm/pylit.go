@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
+	unicodeutil "github.com/nickheyer/icebath/pkg/utils/unicode"
 )
 
 // Appends a code point, a lone surrogate written in its generalized UTF-8 form
@@ -98,7 +98,7 @@ func pyStringLiteral(text string) (string, bool) {
 			if end >= len(body) || end == i+2 {
 				return "", false
 			}
-			r, ok := pyunicode.Lookup(string(body[i+2 : end]))
+			r, ok := unicodeutil.Lookup(string(body[i+2 : end]))
 			if !ok {
 				return "", false
 			}

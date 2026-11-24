@@ -13,13 +13,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 const launchdLabelBase = "app.icebath.gateway"
@@ -39,25 +37,13 @@ var (
 	hostRecordLive      = recordNamesLiveOwner
 )
 
-// Python int of trimmed text when it parses
-func pyIntText(s string) (int, bool) {
-	n, ok := pyint.Parse(strings.TrimSpace(s))
-	if !ok || !n.IsInt64() {
-		return 0, false
-	}
-	return int(n.Int64()), true
-}
-
-// Value when it parses as a positive int
+// Value when it parses as a positive int, white space around it allowed
 func positivePID(value string) (int, bool) {
-	if value == "" {
-		value = "0"
-	}
-	n, ok := pyint.Parse(value)
-	if !ok || !n.IsInt64() || n.Int64() <= 0 {
+	n, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil || n <= 0 {
 		return 0, false
 	}
-	return int(n.Int64()), true
+	return n, true
 }
 
 // Launchd label of the profile in effect
@@ -257,7 +243,7 @@ func collectSystemdScopePIDs(ctx context.Context, scope []string, pattern string
 		if err != nil {
 			return err
 		}
-		if pid, ok := pyIntText(out.Stdout); ok && pid > 0 {
+		if pid, err := strconv.Atoi(strings.TrimSpace(out.Stdout)); err == nil && pid > 0 {
 			pids[pid] = true
 		}
 	}
@@ -313,7 +299,7 @@ func collectLaunchdPIDs(ctx context.Context, allProfiles bool, pids map[int]bool
 	for _, line := range textutil.Lines(strings.TrimSpace(res.Stdout)) {
 		parts := strings.Fields(line)
 		if len(parts) >= 3 && isGatewayLaunchdLabel(parts[len(parts)-1]) {
-			if pid, ok := pyIntText(parts[0]); ok && pid > 0 {
+			if pid, err := strconv.Atoi(parts[0]); err == nil && pid > 0 {
 				pids[pid] = true
 			}
 		}
@@ -375,7 +361,7 @@ func iterProcCmdlines(exclude map[int]bool) ([]pidCommand, error) {
 	me := scanGetpid()
 	var out []pidCommand
 	for _, entry := range entries {
-		if !pystr.StrIsDigit(entry.Name()) {
+		if !textutil.IsDigits(entry.Name()) {
 			continue
 		}
 		pid, err := strconv.Atoi(entry.Name())
@@ -398,13 +384,13 @@ func parsePSLine(line string) (int, string, bool) {
 		return 0, "", false
 	}
 	if parts := textutil.FieldsN(stripped, 1); len(parts) == 2 {
-		if pid, ok := pyIntText(parts[0]); ok {
+		if pid, err := strconv.Atoi(parts[0]); err == nil {
 			return pid, parts[1], true
 		}
 	}
 	aux := strings.Fields(stripped)
-	if len(aux) > 10 && pystr.StrIsDigit(aux[1]) {
-		if pid, ok := pyIntText(aux[1]); ok {
+	if len(aux) > 10 && textutil.IsDigits(aux[1]) {
+		if pid, err := strconv.Atoi(aux[1]); err == nil {
 			return pid, strings.Join(aux[10:], " "), true
 		}
 	}
@@ -420,7 +406,7 @@ func iterWindowsListProcesses(listing string) []pidCommand {
 		if strings.HasPrefix(line, "CommandLine=") {
 			current = line[len("CommandLine="):]
 		} else if strings.HasPrefix(line, "ProcessId=") {
-			if pid, ok := pyIntText(line[len("ProcessId="):]); ok {
+			if pid, err := strconv.Atoi(strings.TrimSpace(line[len("ProcessId="):])); err == nil {
 				out = append(out, pidCommand{pid, current})
 			}
 			current = ""
@@ -490,7 +476,8 @@ func pidUID(ctx context.Context, pid int) (int, bool) {
 	if err != nil || res.ReturnCode != 0 || strings.TrimSpace(res.Stdout) == "" {
 		return 0, false
 	}
-	return pyIntText(res.Stdout)
+	uid, err := strconv.Atoi(strings.TrimSpace(res.Stdout))
+	return uid, err == nil
 }
 
 // True when another Unix user than this non root caller owns the pid
@@ -533,7 +520,7 @@ func cmdlineForPID(ctx context.Context, pid int) ([]string, bool) {
 	if command == "" {
 		return nil, false
 	}
-	argv, err := pyshlex.SplitPOSIX(command, false)
+	argv, err := shellutil.Split(command)
 	if err != nil {
 		argv = strings.Fields(command)
 	}
@@ -549,11 +536,11 @@ func pidPasswdHome(pid int) string {
 			return ""
 		}
 	}
-	pw, err := pypwd.Getpwuid(uid)
+	pw, err := userutil.LookupID(uid)
 	if err != nil {
 		return ""
 	}
-	return pw.Dir
+	return pw.Home
 }
 
 // Value of the first profile flag in argv
@@ -600,7 +587,7 @@ func IcebathHomeForPID(ctx context.Context, pid int, requireLaunchIdentity bool)
 			return "", false, nil
 		}
 	}
-	if !hasProfile && envHome != "" && filepath.Base(pypath.PathParent(envHome)) == "profiles" {
+	if !hasProfile && envHome != "" && filepath.Base(filepath.Dir(filepath.Clean(envHome))) == "profiles" {
 		return envHome, true, nil
 	}
 	var defaultHome string
@@ -649,11 +636,11 @@ func IcebathHomeForPID(ctx context.Context, pid int, requireLaunchIdentity bool)
 
 // Install identity key of a home so symlinked or differently spelled roots compare equal
 func NormalizedHomeForCompare(h string) string {
-	resolved, err := pypath.Resolve(h)
+	resolved, err := pathutil.Resolve(h)
 	if err != nil {
 		resolved = h
 	}
-	return pypath.Normcase(resolved)
+	return pathutil.FoldCase(resolved)
 }
 
 // This home's own gateway pid, only on fresh ownership evidence
@@ -730,7 +717,7 @@ func scanGatewayPIDs(ctx context.Context, exclude map[int]bool, allProfiles, inc
 	for p := range getAncestorPIDs() {
 		excl[p] = true
 	}
-	currentHome, err := pypath.Resolve(home.Dir(ctx))
+	currentHome, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return nil, err
 	}

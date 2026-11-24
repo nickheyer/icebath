@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -33,7 +33,7 @@ func (m *ForwardedRecordsParseMiddleware) Handle(ctx context.Context, ic *Inboun
 		case err != nil && ctx.Err() != nil:
 			return ctx.Err()
 		case err != nil:
-			pkgLog().Warn(fmt.Sprintf("[%s] forwarded-records deep parse failed: %s", ic.Adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] forwarded-records deep parse failed: %s", ic.Adapter.Name(), err.Error()))
 		default:
 			ic.RawText = text
 		}
@@ -50,7 +50,7 @@ var forwardMediaKinds = map[string]string{"image": "image", "file": "file", "doc
 
 // Marker text of one multimedia entry, with its media ref when a resource id and URL make it resolvable
 func mediaMarker(media map[string]any, plainText any) (string, *InboundMediaRef, error) {
-	typeText, err := strMethod(pyrepr.Or(dictGetOr(media, "type", ""), dictGetOr(media, "doc_type", "")), "the media type")
+	typeText, err := strMethod(anyutil.Or(dictGetOr(media, "type", ""), dictGetOr(media, "doc_type", "")), "the media type")
 	if err != nil {
 		return "", nil, err
 	}
@@ -72,24 +72,24 @@ func mediaMarker(media map[string]any, plainText any) (string, *InboundMediaRef,
 	}
 	switch {
 	case kind == "image":
-		return strings.TrimRightFunc("[image] "+pyrepr.Str(pyrepr.Or(name, plainText)), unicode.IsSpace), nil, nil
+		return strings.TrimRightFunc("[image] "+anyutil.String(anyutil.Or(name, plainText)), unicode.IsSpace), nil, nil
 	case kind == "file":
 		return strings.TrimRightFunc("[file] "+name, unicode.IsSpace), nil, nil
 	case kind == "video":
-		return strings.TrimRightFunc("[video] "+pyrepr.Str(pyrepr.Or(name, url)), unicode.IsSpace), nil, nil
+		return strings.TrimRightFunc("[video] "+anyutil.String(anyutil.Or(name, url)), unicode.IsSpace), nil, nil
 	case mediaType == "url":
-		return strings.TrimRightFunc("[link] "+pyrepr.Str(pyrepr.Or(name, strOrEmpty(media["title"])))+" "+url, unicode.IsSpace), nil, nil
+		return strings.TrimRightFunc("[link] "+anyutil.String(anyutil.Or(name, strOrEmpty(media["title"])))+" "+url, unicode.IsSpace), nil, nil
 	}
-	return strings.TrimRightFunc("["+pyrepr.Str(pyrepr.Or(mediaType, "media"))+"] "+pyrepr.Str(pyrepr.Or(url, name)), unicode.IsSpace), nil, nil
+	return strings.TrimRightFunc("["+anyutil.String(anyutil.Or(mediaType, "media"))+"] "+anyutil.String(anyutil.Or(url, name)), unicode.IsSpace), nil, nil
 }
 
 // Visits the sender, capped body and media refs of each forwarded record in order
-func walkForwardMsgs(forwardData *pyjson.Object, visit func(sender any, body string, refs []InboundMediaRef)) error {
+func walkForwardMsgs(forwardData *jsonutil.Object, visit func(sender any, body string, refs []InboundMediaRef)) error {
 	var msgs any
 	if forwardData != nil {
-		msgs = forwardData.GetOr("msg", nil)
+		msgs = forwardData.ValueOr("msg", nil)
 	}
-	if !pyrepr.Truthy(msgs) {
+	if !anyutil.IsTrue(msgs) {
 		return nil
 	}
 	records, err := iterOf(msgs)
@@ -105,7 +105,7 @@ func walkForwardMsgs(forwardData *pyjson.Object, visit func(sender any, body str
 		refs := []InboundMediaRef{}
 		parts := []any{}
 		var contents []any
-		if raw := dictGetOr(msg, "msgContent", []any{}); pyrepr.Truthy(raw) {
+		if raw := dictGetOr(msg, "msgContent", []any{}); anyutil.IsTrue(raw) {
 			if contents, err = iterOf(raw); err != nil {
 				return err
 			}
@@ -121,7 +121,7 @@ func walkForwardMsgs(forwardData *pyjson.Object, visit func(sender any, body str
 				parts = append(parts, dictGetOr(mc, "text", ""))
 			case equalsInt(mcType, 2):
 				var medias []any
-				if raw := dictGetOr(mc, "multimedia", []any{}); pyrepr.Truthy(raw) {
+				if raw := dictGetOr(mc, "multimedia", []any{}); anyutil.IsTrue(raw) {
 					if medias, err = iterOf(raw); err != nil {
 						return err
 					}
@@ -142,13 +142,13 @@ func walkForwardMsgs(forwardData *pyjson.Object, visit func(sender any, body str
 				}
 			case equalsInt(mcType, 3):
 				parts = append(parts, "[嵌套聊天记录]")
-			case pyrepr.Truthy(plainText):
+			case anyutil.IsTrue(plainText):
 				parts = append(parts, plainText)
 			}
 		}
 		truthy := make([]any, 0, len(parts))
 		for _, p := range parts {
-			if pyrepr.Truthy(p) {
+			if anyutil.IsTrue(p) {
 				truthy = append(truthy, p)
 			}
 		}
@@ -173,10 +173,10 @@ func walkForwardMsgs(forwardData *pyjson.Object, visit func(sender any, body str
 }
 
 // Forwarded records as sender and body lines, a dispatch also adding the media refs and the user's own text as a footer
-func buildForwardText(forwardData *pyjson.Object, ic *InboundContext, isDispatch bool) (string, error) {
-	lines := []string{"当前用户的昵称为" + pyrepr.Str(pyrepr.Or(ic.SenderNickname, "用户")), "以下为用户的聊天记录"}
+func buildForwardText(forwardData *jsonutil.Object, ic *InboundContext, isDispatch bool) (string, error) {
+	lines := []string{"当前用户的昵称为" + anyutil.String(anyutil.Or(ic.SenderNickname, "用户")), "以下为用户的聊天记录"}
 	err := walkForwardMsgs(forwardData, func(sender any, body string, refs []InboundMediaRef) {
-		lines = append(lines, pyrepr.Str(sender)+"："+body)
+		lines = append(lines, anyutil.String(sender)+"："+body)
 		if isDispatch {
 			ic.MediaRefs = append(ic.MediaRefs, refs...)
 		}

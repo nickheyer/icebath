@@ -14,10 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Largest owner handshake reply read before the attachment is refused
@@ -31,7 +32,7 @@ func attachLocalOrigin(raw, scheme string) (string, int, error) {
 	}
 	host := parts.Hostname()
 	addr, ok := pyipaddress.IPAddress(host)
-	local := ok && pyipaddress.IsLoopback(addr)
+	local := ok && addr.IsLoopback()
 	refused := errors.New("Shared runtime endpoint must be an explicit loopback address and port.")
 	if parts.Scheme != scheme || !local || strings.Contains(parts.Netloc, "@") || parts.Fragment != "" {
 		return "", 0, refused
@@ -122,11 +123,11 @@ func attachHandshake(ctx context.Context, endpoint string) (any, error) {
 			return nil, &attachTransportError{rerr}
 		}
 	}
-	text, err := pyjson.DecodeBytes(body)
+	text, err := jsonutil.Text(body)
 	if err != nil {
 		return nil, err
 	}
-	reply, err := pyjson.Loads(text)
+	reply, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, &attachTransportError{err}
 	}
@@ -138,7 +139,7 @@ func discoverAttachURL(ctx context.Context, sessionID, registryHome string) (str
 	if registryHome == "" {
 		registryHome = home.Dir(ctx)
 	}
-	profileHome, err := pypath.Resolve(registryHome)
+	profileHome, err := pathutil.Resolve(registryHome)
 	if err != nil {
 		return "", false, err
 	}
@@ -146,9 +147,9 @@ func discoverAttachURL(ctx context.Context, sessionID, registryHome string) (str
 	if err != nil {
 		return "", false, err
 	}
-	var owners []*pyjson.Object
+	var owners []*jsonutil.Object
 	for _, entry := range entries {
-		if pyjson.Equal(entry.GetOr("session_id", nil), sessionID) {
+		if anyutil.Equal(entry.Value("session_id"), sessionID) {
 			owners = append(owners, entry)
 		}
 	}
@@ -160,8 +161,8 @@ func discoverAttachURL(ctx context.Context, sessionID, registryHome string) (str
 	}
 	owner := owners[0]
 	var endpoint any
-	if metadata, ok := owner.GetOr("metadata", nil).(*pyjson.Object); ok {
-		endpoint = metadata.GetOr("shared_runtime_url", nil)
+	if metadata, ok := owner.Value("metadata").(*jsonutil.Object); ok {
+		endpoint = metadata.Value("shared_runtime_url")
 	}
 	endpointText, _ := endpoint.(string)
 	if endpointText == "" {
@@ -181,8 +182,8 @@ func discoverAttachURL(ctx context.Context, sessionID, registryHome string) (str
 	if (parts.Path != "" && parts.Path != "/") || parts.Query != "" {
 		return "", false, errors.New("Shared runtime endpoint must be an origin without a path or query.")
 	}
-	leaseID := owner.GetOr("lease_id", nil)
-	query := pyurl.URLEncode([][2]string{{"session_id", sessionID}, {"lease_id", pyrepr.Str(leaseID)}, {"profile_home", profileHome}})
+	leaseID := owner.Value("lease_id")
+	query := urlutil.EncodeQuery([][2]string{{"session_id", sessionID}, {"lease_id", anyutil.String(leaseID)}, {"profile_home", profileHome}})
 	reply, err := attachHandshake(ctx, strings.TrimRight(endpointText, "/")+"/api/session-attach?"+query)
 	var transport *attachTransportError
 	if errors.As(err, &transport) {
@@ -194,13 +195,13 @@ func discoverAttachURL(ctx context.Context, sessionID, registryHome string) (str
 	if err != nil {
 		return "", false, err
 	}
-	replyObj, ok := reply.(*pyjson.Object)
-	if !ok || !pyjson.Equal(replyObj.GetOr("session_id", nil), sessionID) ||
-		!pyjson.Equal(replyObj.GetOr("lease_id", nil), leaseID) || !pyjson.Equal(replyObj.GetOr("profile_home", nil), profileHome) {
+	replyObj, ok := reply.(*jsonutil.Object)
+	if !ok || !anyutil.Equal(replyObj.Value("session_id"), sessionID) ||
+		!anyutil.Equal(replyObj.Value("lease_id"), leaseID) || !anyutil.Equal(replyObj.Value("profile_home"), profileHome) {
 		return "", false, errors.New("Shared runtime handshake identity does not match the requested owner.")
 	}
 	differentEndpoint := errors.New("Shared runtime handshake returned a different endpoint.")
-	websocketURL, ok := replyObj.GetOr("websocket_url", nil).(string)
+	websocketURL, ok := replyObj.Value("websocket_url").(string)
 	if !ok {
 		return "", false, differentEndpoint
 	}

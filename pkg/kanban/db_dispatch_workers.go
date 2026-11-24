@@ -12,9 +12,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const UnverifiedWorkerFingerprint = "unverified"
@@ -122,7 +122,7 @@ var (
 	dispatchSleep = time.Sleep
 )
 
-// Integer value of an optional Python int pid, false for None or a non number
+// Integer value of an optional pid, false for nil or a non number
 func pidOf(v any) (int, bool) {
 	if v == nil {
 		return 0, false
@@ -130,11 +130,11 @@ func pidOf(v any) (int, bool) {
 	if f, ok := v.(float64); ok {
 		return int(f), true
 	}
-	n, ok := pyint.Instance(v)
-	if !ok || !n.IsInt64() {
+	n, ok := anyutil.Int(v)
+	if !ok {
 		return 0, false
 	}
-	return int(n.Int64()), true
+	return int(n), true
 }
 
 // True when pid runs on this host, an exited zombie awaiting its reap counting as dead
@@ -242,7 +242,7 @@ func sigkill(kill SignalFunc, pid int) bool {
 }
 
 // Terminates a host local worker for a reclaim path, never signalling a recycled or unverified pid
-func terminateReclaimedWorker(pid any, claimLock *string, signalFn SignalFunc, startedAt any) *pyjson.Object {
+func terminateReclaimedWorker(pid any, claimLock *string, signalFn SignalFunc, startedAt any) *jsonutil.Object {
 	info := payload("prev_pid", nil, "host_local", false, "termination_attempted", false, "terminated", false, "sigkill", false)
 	n, ok := pidOf(pid)
 	if ok && n != 0 {
@@ -283,7 +283,7 @@ func terminateReclaimedWorker(pid any, claimLock *string, signalFn SignalFunc, s
 }
 
 // True when a signalled or refused host local worker is still alive after termination
-func workerSurvivedTermination(termination *pyjson.Object) bool {
+func workerSurvivedTermination(termination *jsonutil.Object) bool {
 	get := func(k string) bool {
 		v, _ := termination.Get(k)
 		return truthy(v)
@@ -292,7 +292,7 @@ func workerSurvivedTermination(termination *pyjson.Object) bool {
 }
 
 // Holds a claim whose worker survived termination by extending it and recording reclaim_deferred
-func deferReclaimForLiveWorker(ctx context.Context, conn state.SQLiteConn, taskID string, claimLock *string, now int64, termination *pyjson.Object, reason string) error {
+func deferReclaimForLiveWorker(ctx context.Context, conn state.SQLiteConn, taskID string, claimLock *string, now int64, termination *jsonutil.Object, reason string) error {
 	grace := now + ReclaimDeferGraceSeconds
 	return WriteTxn(ctx, conn, false, func() error {
 		res, err := conn.ExecContext(ctx, "UPDATE tasks SET claim_expires = ? WHERE id = ? AND status = 'running' AND claim_lock IS ?",
@@ -310,7 +310,7 @@ func deferReclaimForLiveWorker(ctx context.Context, conn state.SQLiteConn, taskI
 			}
 		}
 		body := payload("reason", reason, "claim_lock", optStrValue(claimLock), "claim_expires_now", grace)
-		body.Update(termination)
+		body.Merge(termination)
 		return appendEvent(ctx, conn, taskID, "reclaim_deferred", body, runID)
 	})
 }
@@ -339,7 +339,7 @@ type deadWorker struct {
 	Code              *int
 	ErrorText         string
 	EventKind         string
-	EventPayload      *pyjson.Object
+	EventPayload      *jsonutil.Object
 	ProtocolViolation bool
 	RateLimited       bool
 	TerminalProvider  bool
@@ -384,14 +384,14 @@ func EnforceMaxRuntime(ctx context.Context, conn state.SQLiteConn, signalFn Sign
 			started = *te
 		}
 		elapsed := now - started
-		limit, err := pyIntOf(row.Get("max_runtime_seconds"))
+		limit, err := cellIntOf(row.Get("max_runtime_seconds"))
 		if err != nil {
 			return timedOut, err
 		}
 		if elapsed < limit {
 			continue
 		}
-		pid64, err := pyIntOf(row.Get("worker_pid"))
+		pid64, err := cellIntOf(row.Get("worker_pid"))
 		if err != nil {
 			return timedOut, err
 		}
@@ -493,7 +493,7 @@ func AdoptWorkerPid(ctx context.Context, conn state.SQLiteConn, taskID string, r
 	live := false
 	err := WriteTxn(ctx, conn, false, func() error {
 		row, err := QueryOne(ctx, conn, "SELECT status, current_run_id, worker_pid, claim_lock FROM tasks WHERE id = ?", taskID)
-		if err != nil || row == nil || row.Get("status") != "running" || !pyEqualInt(row.Get("current_run_id"), runID) {
+		if err != nil || row == nil || row.Get("status") != "running" || !intColumnIs(row.Get("current_run_id"), runID) {
 			return err
 		}
 		live = true
@@ -515,10 +515,10 @@ func AdoptWorkerPid(ctx context.Context, conn state.SQLiteConn, taskID string, r
 	return live, nil
 }
 
-// Python equality of a column value with an integer
-func pyEqualInt(v any, n int64) bool {
-	m, ok := pyint.Instance(v)
-	return ok && m.IsInt64() && m.Int64() == n
+// Whether a column value is the integer n
+func intColumnIs(v any, n int64) bool {
+	m, ok := anyutil.Int(v)
+	return ok && m == n
 }
 
 const staleHeartbeatGapSeconds = 3600
@@ -596,7 +596,7 @@ func DetectStaleRunning(ctx context.Context, conn state.SQLiteConn, staleTimeout
 			}
 			body := payload("elapsed_seconds", elapsed, "last_heartbeat_at", optIntValue(lastHB), "heartbeat_age_seconds", optIntValue(hbAge),
 				"timeout_seconds", staleTimeoutSeconds, "pid", pidValue, "retry_status", retryStatus)
-			body.Update(termination)
+			body.Merge(termination)
 			errText := "no heartbeat ever"
 			if hbAge != nil {
 				errText = fmt.Sprintf("no heartbeat for %ds ", *hbAge)

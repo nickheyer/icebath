@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyplist"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	plistutil "github.com/nickheyer/icebath/pkg/utils/plist"
 )
 
 // Final component suffix the way pathlib computes it, empty for dot files and trailing dots
@@ -27,7 +29,7 @@ func ServicePinnedHome(definition string) (string, error) {
 	if err != nil {
 		return "", nil
 	}
-	data, err := pyplist.Load(raw)
+	data, err := plistutil.Decode(raw)
 	if err != nil {
 		return "", nil
 	}
@@ -44,5 +46,5 @@ func ServicePinnedHome(definition string) (string, error) {
 	if !present || value == nil {
 		return "", nil
 	}
-	return strings.TrimSpace(pyplist.Str(value)), nil
+	return strings.TrimSpace(anyutil.String(value)), nil
 }

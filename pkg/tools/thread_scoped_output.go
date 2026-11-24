@@ -8,8 +8,7 @@ import (
 	"sync"
 
 	"github.com/mattn/go-isatty"
-
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // Shared silencing registry of one stream, kept across proxy generations so redirects never leak a sink
@@ -30,7 +29,7 @@ var (
 	installedStreams  = map[string]*threadRoutingStream{}
 	streamSinks       = map[string]io.Writer{}
 	routingStates     = map[string]*routingState{}
-	processStreams    = map[string]io.Writer{"stdout": pysys.Stdout, "stderr": pysys.Stderr}
+	processStreams    = map[string]io.Writer{"stdout": termutil.Stdout, "stderr": termutil.Stderr}
 	openStreamSink    = func() (io.Writer, error) { return os.OpenFile(os.DevNull, os.O_WRONLY, 0) }
 )
 
@@ -115,9 +114,9 @@ func ensureStreamInstalled(attr string) *threadRoutingStream {
 	passthrough := current
 	if passthrough == nil {
 		if attr == "stderr" {
-			passthrough = pysys.Stderr
+			passthrough = termutil.Stderr
 		} else {
-			passthrough = pysys.Stdout
+			passthrough = termutil.Stdout
 		}
 	}
 	sink := streamSinks[attr]

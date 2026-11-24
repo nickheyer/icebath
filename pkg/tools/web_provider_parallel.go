@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const parallelMissingKey = "PARALLEL_API_KEY environment variable not set. Get your API key at https://parallel.ai"
@@ -224,8 +224,8 @@ func parallelShouldRetry(resp *sdkResponse) bool {
 // Status error message, the parsed JSON body in Python form when the body parses
 func parallelStatusError(resp *sdkResponse) error {
 	text := strings.TrimSpace(resp.text())
-	if parsed, err := pyjson.Loads(text); err == nil {
-		return &parallelAPIError{message: fmt.Sprintf("Error code: %d - %s", resp.status, pyrepr.Str(parsed))}
+	if parsed, err := jsonutil.Decode(text); err == nil {
+		return &parallelAPIError{message: fmt.Sprintf("Error code: %d - %s", resp.status, anyutil.String(parsed))}
 	}
 	if text != "" {
 		return &parallelAPIError{message: text}
@@ -241,12 +241,12 @@ func parallelResponseData(resp *sdkResponse) (any, error) {
 	}
 	contentType = strings.SplitN(contentType, ";", 2)[0]
 	if !strings.HasSuffix(contentType, "json") {
-		if data, err := pyjson.LoadsBytes(resp.body); err == nil {
+		if data, err := jsonutil.Decode(resp.body); err == nil {
 			return data, nil
 		}
 		return resp.text(), nil
 	}
-	data, err := pyjson.LoadsBytes(resp.body)
+	data, err := jsonutil.Decode(resp.body)
 	if err != nil {
 		return nil, verbatim(err.Error())
 	}
@@ -254,8 +254,8 @@ func parallelResponseData(resp *sdkResponse) (any, error) {
 }
 
 // Posts with the SDK retry policy, connection failures and retryable statuses retried twice
-func (c *parallelClient) post(ctx context.Context, path string, body *pyjson.Object) (any, error) {
-	payload, err := pyjson.Dumps(body, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+func (c *parallelClient) post(ctx context.Context, path string, body *jsonutil.Object) (any, error) {
+	payload, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +406,7 @@ func (p *parallelProvider) Extract(ctx context.Context, env *Env, urls []string,
 			if err != nil {
 				return nil, err
 			}
-			if !pyTruthy(content) {
+			if !anyutil.IsTrue(content) {
 				excerpts, err := parallelAttr(r, "ExtractResult", "excerpts", false)
 				if err != nil {
 					return nil, err

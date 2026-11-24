@@ -11,9 +11,6 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // One query pair of a lark request, the value sent the way requests encodes params
@@ -61,11 +58,11 @@ func requestsParamValues(v any) []string {
 		default:
 			seq, ok := pyIterItems(x)
 			if !ok {
-				out = append(out, pyrepr.Str(x))
+				out = append(out, anyutil.String(x))
 				continue
 			}
 			for _, elt := range seq {
-				out = append(out, pyrepr.Str(elt))
+				out = append(out, anyutil.String(elt))
 			}
 		}
 	}
@@ -77,9 +74,9 @@ func pyIterItems(v any) ([]any, bool) {
 	switch x := v.(type) {
 	case []any:
 		return x, true
-	case *pyjson.Object:
-		keys := make([]any, len(x.Keys))
-		for i, k := range x.Keys {
+	case *jsonutil.Object:
+		keys := make([]any, x.Len())
+		for i, k := range x.Keys() {
 			keys[i] = k
 		}
 		return keys, true
@@ -109,17 +106,17 @@ type larkResponse struct {
 func larkResponseOf(raw *larkcore.ApiResp) larkResponse {
 	resp := larkResponse{raw: raw}
 	if strings.HasPrefix(raw.Header.Get("Content-Type"), "application/json") {
-		text, err := pystr.DecodeUTF8(raw.RawBody)
+		text, err := textutil.DecodeUTF8(raw.RawBody)
 		if err != nil {
 			panic(err)
 		}
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			panic(err)
 		}
 		switch d := parsed.(type) {
 		case nil:
-		case *pyjson.Object:
+		case *jsonutil.Object:
 			resp.code, _ = d.Get("code")
 			resp.msg, _ = d.Get("msg")
 		default:
@@ -149,15 +146,15 @@ func larkCall(ctx context.Context, client feishuclient.API, method, uri string, 
 }
 
 // Parsed JSON object of the raw body, nil when it is absent, unparseable or not a dict
-func larkRawBody(resp larkResponse) *pyjson.Object {
-	parsed, err := pyjson.LoadsBytes(resp.raw.RawBody)
+func larkRawBody(resp larkResponse) *jsonutil.Object {
+	parsed, err := jsonutil.Decode(resp.raw.RawBody)
 	if err != nil {
-		if _, isJSON := err.(*pyjson.DecodeError); isJSON {
+		if _, isJSON := err.(*jsonutil.SyntaxError); isJSON {
 			return nil
 		}
 		panic(err)
 	}
-	body, _ := parsed.(*pyjson.Object)
+	body, _ := parsed.(*jsonutil.Object)
 	return body
 }
 
@@ -165,10 +162,10 @@ func larkRawBody(resp larkResponse) *pyjson.Object {
 func larkResponseData(resp larkResponse) any {
 	body := larkRawBody(resp)
 	if body == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	return body.GetOr("data", pyjson.NewObject())
+	return body.ValueOr("data", jsonutil.NewObject())
 }
 
 // Python truth of code equal to zero, the success test of a lark answer
-func larkCodeOK(code any) bool { return pyrepr.Equal(code, int64(0)) }
+func larkCodeOK(code any) bool { return anyutil.Equal(code, int64(0)) }

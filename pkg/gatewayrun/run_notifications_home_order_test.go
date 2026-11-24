@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Gateway config with one enabled platform whose home channel is the chat id
@@ -24,8 +23,8 @@ func homeOrderConfig(platform gateway.Platform, chatID string) *gateway.GatewayC
 func TestServedHomeChannelsWalkProfilesInConfigOrder(t *testing.T) {
 	r, _ := makeRestartRunner(t)
 	r.config = homeOrderConfig(gateway.PlatformTelegram, "launch-home")
-	r.profileConfigs = pydict.New[string, *gateway.GatewayConfig]()
-	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
+	r.profileConfigs = orderedutil.NewMap[string, *gateway.GatewayConfig]()
+	r.profileAdapters = orderedutil.NewMap[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]()
 	for _, name := range []string{"zeta", "alpha", "mid"} {
 		r.profileConfigs.Set(name, homeOrderConfig(gateway.PlatformTelegram, name+"-home"))
 		r.profileAdapters.Set(name, adapterDict(gateway.PlatformTelegram, newRestartTestAdapter()))

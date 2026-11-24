@@ -8,9 +8,10 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var capturePNG = append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 8)...)
@@ -74,8 +75,8 @@ func TestMissingStagingSiblingDoesNotSkipRemainingImageHashes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			row := pyjson.ObjectOf("status", "queued", "payload", committed)
-			admitted := func() (*pyjson.Object, error) { return row, nil }
+			row := jsonutil.ObjectOf("status", "queued", "payload", committed)
+			admitted := func() (*jsonutil.Object, error) { return row, nil }
 			if err := os.Remove(paths[missing]); err != nil {
 				t.Fatal(err)
 			}
@@ -93,7 +94,7 @@ func TestMissingStagingSiblingDoesNotSkipRemainingImageHashes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !pyjson.Equal(again, committed) {
+			if !anyutil.Equal(again, committed) {
 				t.Fatalf("retry payload %v, want %v", again, committed)
 			}
 		})
@@ -109,7 +110,7 @@ func TestRejectedBatchPublishesNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	owned := rowString(first[0].(*pyjson.Object), "path")
+	owned := rowString(first[0].(*jsonutil.Object), "path")
 	_, err = CaptureNativeMedia(ctx, []string{stagedImage(t, ctx, "owned.png", 512), stagedImage(t, ctx, "a.png", 2*1024), stagedImage(t, ctx, "b.png", 2*1024)})
 	if !isRuntimeRefusal(err, "invalid_params") {
 		t.Fatalf("over budget batch: %v", err)
@@ -135,13 +136,13 @@ func TestEqualBytesUnderDifferentBasenamesAreFullyReleased(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	for _, name := range []string{"a.png", "b.png"} {
 		media, err := CaptureNativeMedia(ctx, []string{stagedImage(t, ctx, name, 64)})
 		if err != nil {
 			t.Fatal(err)
 		}
-		payload := pyjson.ObjectOf("text", name, "attachments_v1", pyjson.ObjectOf("media", media, "media_types", []any{"image/png"}))
+		payload := jsonutil.ObjectOf("text", name, "attachments_v1", jsonutil.ObjectOf("media", media, "media_types", []any{"image/png"}))
 		row, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: "p", SessionID: "s", RequestID: name, Payload: payload})
 		if err != nil {
 			t.Fatal(err)
@@ -153,7 +154,7 @@ func TestEqualBytesUnderDifferentBasenamesAreFullyReleased(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstMedia := nativeAttachmentMedia(t, rows[0])
-	digestDir := filepath.Join(root, rowString(firstMedia[0].(*pyjson.Object), "sha256"))
+	digestDir := filepath.Join(root, rowString(firstMedia[0].(*jsonutil.Object), "sha256"))
 	if names := dirEntryNames(t, digestDir); !slices.Equal(names, []string{"a.png", "b.png"}) {
 		t.Fatalf("digest directory holds %v", names)
 	}
@@ -181,10 +182,10 @@ func TestEqualBytesUnderDifferentBasenamesAreFullyReleased(t *testing.T) {
 }
 
 // Committed attachment media references of an admission row
-func nativeAttachmentMedia(t *testing.T, row *pyjson.Object) []any {
+func nativeAttachmentMedia(t *testing.T, row *jsonutil.Object) []any {
 	t.Helper()
 	value, _ := rowPayload(row).Get("attachments_v1")
-	attachments, ok := value.(*pyjson.Object)
+	attachments, ok := value.(*jsonutil.Object)
 	if !ok {
 		t.Fatalf("row carries no attachments: %v", row)
 	}

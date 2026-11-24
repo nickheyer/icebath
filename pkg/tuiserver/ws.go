@@ -13,9 +13,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Bounds of one connection, the dispatch queue, the side lane of expensive reads and the wait for a profile start
@@ -128,7 +129,7 @@ func disableNagle(ws ServedSocket) {
 
 // Session authority projection of one socket that requests go through when the backend serves one
 type authorityConn interface {
-	Dispatch(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error)
+	Dispatch(ctx context.Context, request *jsonutil.Object) (*jsonutil.Object, error)
 	Close(ctx context.Context) error
 	Actor() gateway.Principal
 	AwaitsProfileStart(ctx context.Context, request map[string]any, held []string) (string, <-chan struct{}, bool, error)
@@ -157,7 +158,7 @@ func newWSAuthorityConnection(authority *gateway.SessionAuthority, transport *tu
 
 // One request answered by the connection's session authority, a response frame settling its open server request
 func wsDispatchRequest(ctx context.Context, authority authorityConn, req any, transport *tuihost.WSTransport) (any, error) {
-	request, isDict := req.(*pyjson.Object)
+	request, isDict := req.(*jsonutil.Object)
 	if isDict && request != nil && tuihost.IsResponseFrame(request) && tuihost.ResolveResponseOf(request, transport) {
 		return nil, nil
 	}
@@ -253,8 +254,8 @@ func (c *wsConnection) reply(frame any, reason, msg string) error {
 }
 
 // JSON RPC error frame of a request id
-func wsError(code int, message string, reqID any) *pyjson.Object {
-	return pyjson.ObjectOf("jsonrpc", "2.0", "error", pyjson.ObjectOf("code", code, "message", message), "id", reqID)
+func wsError(code int, message string, reqID any) *jsonutil.Object {
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "error", jsonutil.ObjectOf("code", code, "message", message), "id", reqID)
 }
 
 // Id and method of a request object, nil and empty for anything else
@@ -269,22 +270,22 @@ func requestIDAndMethod(req any) (any, string) {
 
 // Method member of a request as the log lines print it, nothing when the frame carries none
 func requestMethodText(req any) string {
-	if obj, isDict := req.(*pyjson.Object); isDict && obj != nil {
-		return errchain.Show(obj.GetOr("method", nil))
+	if obj, isDict := req.(*jsonutil.Object); isDict && obj != nil {
+		return errchain.Show(obj.ValueOr("method", nil))
 	}
 	return "nothing"
 }
 
 // Refuses a request whose method is a list or a mapping, which ends the read loop
 func requestMethodHashable(req any) error {
-	obj, isDict := req.(*pyjson.Object)
+	obj, isDict := req.(*jsonutil.Object)
 	if !isDict || obj == nil {
 		return nil
 	}
-	switch obj.GetOr("method", nil).(type) {
+	switch obj.ValueOr("method", nil).(type) {
 	case []any:
 		return &pyjson.TypeError{Msg: "the request method must be text, got a list"}
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return &pyjson.TypeError{Msg: "the request method must be text, got a mapping"}
 	}
 	return nil
@@ -312,13 +313,13 @@ func (c *wsConnection) dispatchOne(req any) error {
 		c.mu.Lock()
 		c.dispatchCrashes++
 		c.mu.Unlock()
-		pkgLog().Error(fmt.Sprintf("ws dispatch crash peer=%s id=%s method=%s: %s", c.peer, pyrepr.Str(reqID), methodText, failureText(crash)))
+		pkgLog().Error(fmt.Sprintf("ws dispatch crash peer=%s id=%s method=%s: %s", c.peer, anyutil.String(reqID), methodText, failureText(crash)))
 		return c.reply(wsError(-32603, "internal error", reqID), "send_failed_after_dispatch_crash",
-			fmt.Sprintf("ws dispatch-crash reply send failed peer=%s id=%s method=%s", c.peer, pyrepr.Str(reqID), methodText))
+			fmt.Sprintf("ws dispatch-crash reply send failed peer=%s id=%s method=%s", c.peer, anyutil.String(reqID), methodText))
 	}
 	if resp != nil {
 		return c.reply(resp, "send_failed_after_response",
-			fmt.Sprintf("ws response send failed peer=%s id=%s method=%s", c.peer, pyrepr.Str(reqID), methodText))
+			fmt.Sprintf("ws response send failed peer=%s id=%s method=%s", c.peer, anyutil.String(reqID), methodText))
 	}
 	return nil
 }
@@ -712,8 +713,8 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 	c.authority = authority
 	skinPayload := wsResolveSkin(c.ctx)
 	readyPayload := map[string]any{"skin": skinPayload, "replay_epoch": tuihost.ReplayEpoch(), "build": tuigateway.BuildID()}
-	readyOK := c.transport.WriteAsync(pyjson.ObjectOf("jsonrpc", "2.0", "method", "event",
-		"params", pyjson.ObjectOf("type", "gateway.ready", "payload", tuigateway.SealPayload("gateway.ready", readyPayload))))
+	readyOK := c.transport.WriteAsync(jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event",
+		"params", jsonutil.ObjectOf("type", "gateway.ready", "payload", tuigateway.SealPayload("gateway.ready", readyPayload))))
 	if readyOK {
 		wsEnsureSkinWatcher(c.ctx)
 		wsEnsureLeaseWatcher()
@@ -752,7 +753,7 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 		var disconnect *SocketDisconnect
 		if errors.As(err, &disconnect) {
 			c.mu.Lock()
-			c.disconnectReason = fmt.Sprintf("client_disconnect(code=%s,reason=%s)", pyrepr.Str(disconnect.Code), pyrepr.Str(disconnect.Reason))
+			c.disconnectReason = fmt.Sprintf("client_disconnect(code=%s,reason=%s)", anyutil.String(disconnect.Code), anyutil.String(disconnect.Reason))
 			c.mu.Unlock()
 			return nil
 		}
@@ -771,7 +772,7 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 		c.messages++
 		index := c.messages
 		c.mu.Unlock()
-		req, err := pyjson.Loads(line)
+		req, err := jsonutil.Decode(line)
 		if err != nil {
 			c.mu.Lock()
 			c.parseErrors++
@@ -780,17 +781,17 @@ func (c *wsConnection) serve(subprotocol *string, authIdentity map[string]any, o
 			if len(preview) > wsLogPayloadPreview {
 				preview = preview[:wsLogPayloadPreview]
 			}
-			pkgLog().Warn(fmt.Sprintf("ws parse error peer=%s index=%d error=%s payload=%s", c.peer, index, err, pyrepr.Repr(string(preview))))
+			pkgLog().Warn(fmt.Sprintf("ws parse error peer=%s index=%d error=%s payload=%s", c.peer, index, err, anyutil.Quote(string(preview))))
 			if err := c.reply(wsError(-32700, "parse error", nil), "send_failed_after_parse_error",
 				fmt.Sprintf("ws parse-error reply send failed peer=%s", c.peer)); err != nil {
 				return err
 			}
 			continue
 		}
-		if obj, isDict := req.(*pyjson.Object); isDict && obj.GetOr("method", nil) == "gateway.ping" {
-			reqID := obj.GetOr("id", nil)
-			if err := c.reply(pyjson.ObjectOf("jsonrpc", "2.0", "result", pyjson.ObjectOf("ok", true), "id", reqID), "send_failed_after_heartbeat",
-				fmt.Sprintf("ws heartbeat reply send failed peer=%s id=%s", c.peer, pyrepr.Str(reqID))); err != nil {
+		if obj, isDict := req.(*jsonutil.Object); isDict && obj.ValueOr("method", nil) == "gateway.ping" {
+			reqID := obj.ValueOr("id", nil)
+			if err := c.reply(jsonutil.ObjectOf("jsonrpc", "2.0", "result", jsonutil.ObjectOf("ok", true), "id", reqID), "send_failed_after_heartbeat",
+				fmt.Sprintf("ws heartbeat reply send failed peer=%s id=%s", c.peer, anyutil.String(reqID))); err != nil {
 				return err
 			}
 			continue

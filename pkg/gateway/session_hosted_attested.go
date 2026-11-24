@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -55,7 +55,7 @@ func driverIdentifier(value any, label string) (string, error) {
 
 // One validated attachment manifest entry
 func safeManifestEntry(value any) (map[string]any, error) {
-	entry, ok := pyjson.Plain(value).(map[string]any)
+	entry, ok := jsonutil.Plain(value).(map[string]any)
 	if !ok {
 		return nil, &AttachmentError{"each attachment manifest entry must be an object"}
 	}
@@ -144,7 +144,7 @@ func validateTaskManifest(value []any) ([]map[string]any, error) {
 
 // Store metadata plus the exact source event of each bound task input
 func validateBoundTaskManifest(value any) ([]map[string]any, error) {
-	list, ok := pyjson.Plain(value).([]any)
+	list, ok := jsonutil.Plain(value).([]any)
 	if !ok || len(list) == 0 {
 		return nil, &DriverValidationError{"attachments must be a non-empty list"}
 	}
@@ -187,7 +187,7 @@ func validateBoundTaskManifest(value any) ([]map[string]any, error) {
 // One bound input and its content addressed retained reference
 type attestedInput struct {
 	item      map[string]any
-	reference *pyjson.Object
+	reference *jsonutil.Object
 }
 
 // Manifest items with their retained references derived from source attested digests alone
@@ -196,7 +196,7 @@ func attestedInputs(ctx context.Context, attachments, digests any) ([]attestedIn
 	if err != nil {
 		return nil, err
 	}
-	list, ok := pyjson.Plain(digests).([]any)
+	list, ok := jsonutil.Plain(digests).([]any)
 	if !ok || len(list) != len(manifest) {
 		return nil, runtimeRefusal("permission_denied")
 	}
@@ -216,15 +216,15 @@ func attestedInputs(ctx context.Context, attachments, digests any) ([]attestedIn
 		if attachmentMimes[item["mime"].(string)] {
 			name = digest + pathSuffix(name)
 		}
-		inputs[i] = attestedInput{item: item, reference: pyjson.ObjectOf("path", filepath.Join(root, digest, name), "sha256", digest, "size", item["size"])}
+		inputs[i] = attestedInput{item: item, reference: jsonutil.ObjectOf("path", filepath.Join(root, digest, name), "sha256", digest, "size", item["size"])}
 	}
 	return inputs, nil
 }
 
 // Payload the committed submission carries for these inputs, derived from source attested digests alone
-func attestedSubmissionPayload(ctx context.Context, prompt string, attachments, digests any) (*pyjson.Object, error) {
+func attestedSubmissionPayload(ctx context.Context, prompt string, attachments, digests any) (*jsonutil.Object, error) {
 	if !pyTruthy(attachments) {
-		return pyjson.ObjectOf("text", prompt), nil
+		return jsonutil.ObjectOf("text", prompt), nil
 	}
 	inputs, err := attestedInputs(ctx, attachments, digests)
 	if err != nil {
@@ -246,9 +246,9 @@ func attestedSubmissionPayload(ctx context.Context, prompt string, attachments, 
 	for _, path := range documents {
 		text += HostedDocumentLine + path + "\n"
 	}
-	out := pyjson.ObjectOf("text", text)
+	out := jsonutil.ObjectOf("text", text)
 	if len(media) > 0 {
-		out.Set("attachments_v1", pyjson.ObjectOf("media", media, "media_types", mediaTypes))
+		out.Set("attachments_v1", jsonutil.ObjectOf("media", media, "media_types", mediaTypes))
 	}
 	return out, nil
 }

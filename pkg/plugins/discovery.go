@@ -7,9 +7,10 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Environment variable enabling project local plugin discovery
@@ -42,7 +43,7 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 	}
 	entries, err := pluginDirRead(path)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", path, pyErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", path, errchain.OSText(err)))
 		return out
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
@@ -72,12 +73,12 @@ func scanDirectory(path, source string, skipNames map[string]bool, prefix string
 		if err == nil && !hasPortable {
 			if lst, lerr := os.Lstat(portableFile); lerr == nil {
 				hasPortable = lst.Mode()&os.ModeSymlink != 0
-			} else if !pypath.PathlibIgnoredError(lerr) {
+			} else if !pathutil.IsMissing(lerr) {
 				err = lerr
 			}
 		}
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, pyErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", child, errchain.OSText(err)))
 			continue
 		}
 		switch {

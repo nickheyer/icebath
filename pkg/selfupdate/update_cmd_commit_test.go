@@ -64,8 +64,8 @@ func uoRecord() (string, []any) {
 	if record == nil {
 		return "", nil
 	}
-	sha, _ := record.Vals["expected_sha"].(string)
-	owners, _ := record.Vals["owners"].([]any)
+	sha, _ := record.Value("expected_sha").(string)
+	owners, _ := record.Value("owners").([]any)
 	return sha, owners
 }
 

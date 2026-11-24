@@ -7,23 +7,23 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Client safe full task plan snapshot of a decoded value, nil when malformed or the unused empty store
-func NormalizeTodoState(value any) *pyjson.Object {
-	obj, ok := value.(*pyjson.Object)
+func NormalizeTodoState(value any) *jsonutil.Object {
+	obj, ok := value.(*jsonutil.Object)
 	if !ok || obj == nil {
 		return nil
 	}
-	todos, ok := obj.GetOr("todos", nil).([]any)
+	todos, ok := obj.ValueOr("todos", nil).([]any)
 	if !ok {
 		return nil
 	}
-	raw := obj.GetOr("revision", nil)
-	if !pyrepr.Truthy(raw) {
+	raw := obj.ValueOr("revision", nil)
+	if !anyutil.IsTrue(raw) {
 		raw = int64(0)
 	}
 	revision, err := pyint.Of(raw)
@@ -36,7 +36,7 @@ func NormalizeTodoState(value any) *pyjson.Object {
 	if len(todos) == 0 && revision.Sign() == 0 {
 		return nil
 	}
-	return pyjson.ObjectOf("todos", append([]any{}, todos...), "revision", pyint.Value(revision))
+	return jsonutil.ObjectOf("todos", append([]any{}, todos...), "revision", pyint.Value(revision))
 }
 
 // Rows of a transcript field that is a list of dicts
@@ -47,7 +47,7 @@ func historyRows(value any) []map[string]any {
 	case []any:
 		out := make([]map[string]any, 0, len(rows))
 		for _, row := range rows {
-			if m, ok := pyjson.Dict(row); ok {
+			if m, ok := jsonutil.AsMap(row); ok {
 				out = append(out, m)
 			}
 		}
@@ -57,7 +57,7 @@ func historyRows(value any) []map[string]any {
 }
 
 // Latest task plan snapshot of a loaded transcript, the newest result paired with an assistant plan tool call
-func TodoStateFromHistory(history []map[string]any) *pyjson.Object {
+func TodoStateFromHistory(history []map[string]any) *jsonutil.Object {
 	if len(history) == 0 {
 		return nil
 	}
@@ -65,13 +65,13 @@ func TodoStateFromHistory(history []map[string]any) *pyjson.Object {
 	for _, msg := range history {
 		for _, call := range historyRows(msg["tool_calls"]) {
 			id := call["id"]
-			if !pyrepr.Truthy(id) {
+			if !anyutil.IsTrue(id) {
 				continue
 			}
 			if !reflect.TypeOf(id).Comparable() {
 				return nil
 			}
-			fn, _ := pyjson.Dict(call["function"])
+			fn, _ := jsonutil.AsMap(call["function"])
 			name, _ := fn["name"].(string)
 			if tools.IsTodoToolCall(name, fn["arguments"]) {
 				todoCallIDs[id] = true
@@ -100,7 +100,7 @@ func TodoStateFromHistory(history []map[string]any) *pyjson.Object {
 		if !isText || utf8.RuneCountInString(content) > tools.MaxTodoResultChars || !strings.Contains(content, `"todos"`) {
 			continue
 		}
-		decoded, err := pyjson.Loads(content)
+		decoded, err := jsonutil.Decode(content)
 		if err != nil {
 			continue
 		}

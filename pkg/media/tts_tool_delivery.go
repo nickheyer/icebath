@@ -14,9 +14,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 const fallbackMaxTextLength = 4000
@@ -242,7 +242,7 @@ func packAudioFilesForDelivery(audioPaths []string, profile audioDeliveryProfile
 		if err != nil {
 			return nil, err
 		}
-		size, suffix := int(info.Size()), strings.ToLower(pypath.Suffix(path))
+		size, suffix := int(info.Size()), strings.ToLower(pathutil.Suffix(path))
 		if len(current) > 0 && (currentSize+size > profile.targetFileBytes() || suffix != currentSuffix) {
 			groups = append(groups, current)
 			current, currentSize = nil, 0
@@ -491,7 +491,7 @@ func repairOggContainer(fileStr string) (string, error) {
 
 // Absolute path the way os.path.abspath spells it
 func absPath(p string) string {
-	a, err := pypath.Abspath(p)
+	a, err := filepath.Abs(p)
 	if err != nil {
 		return p
 	}
@@ -522,25 +522,25 @@ func concatAudioFiles(audioPaths []string, outputPath string, voiceCompatible bo
 	if err := os.MkdirAll(filepath.Dir(destination), 0o777); err != nil {
 		return "", err
 	}
-	concatPath := withName(destination, "."+pypath.Name(destination)+"."+randomHex(16)+".concat.txt")
-	tempOutput := withName(destination, "."+pypath.PathStem(destination)+"."+randomHex(16)+".combining"+pypath.Suffix(destination))
+	concatPath := withName(destination, "."+pathutil.Name(destination)+"."+randomHex(16)+".concat.txt")
+	tempOutput := withName(destination, "."+pathutil.Stem(destination)+"."+randomHex(16)+".combining"+pathutil.Suffix(destination))
 	defer func() {
 		removeQuietly(concatPath)
 		removeQuietly(tempOutput)
 	}()
 	var entries strings.Builder
 	for _, p := range audioPaths {
-		entries.WriteString("file " + pyshlex.Quote(absPath(p)) + "\n")
+		entries.WriteString("file " + shellutil.Quote(absPath(p)) + "\n")
 	}
 	if err := os.WriteFile(concatPath, []byte(entries.String()), 0o666); err != nil {
 		pkgLog().Warn(fmt.Sprintf("ffmpeg audio combine failed: %s", errchain.OSText(err)))
 		return "", nil
 	}
 	args := []string{"-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", concatPath, "-vn"}
-	suffix := strings.ToLower(pypath.Suffix(destination))
+	suffix := strings.ToLower(pathutil.Suffix(destination))
 	allMP3 := true
 	for _, p := range audioPaths {
-		allMP3 = allMP3 && strings.ToLower(pypath.Suffix(p)) == ".mp3"
+		allMP3 = allMP3 && strings.ToLower(pathutil.Suffix(p)) == ".mp3"
 	}
 	if voiceCompatible || suffix == ".ogg" || suffix == ".opus" {
 		args = append(args, "-c:a", "libopus", "-ac", "1", "-b:a", "64k", "-vbr", "off")
@@ -589,7 +589,7 @@ func buildAudioDeliveryFiles(audioPaths []string, outputPath string, profile aud
 			return append([]string(nil), group...), nil
 		}
 		combineIndex++
-		scratch := withName(base, fmt.Sprintf(".%s.delivery%03d.%s%s", pypath.PathStem(base), combineIndex, randomHex(16), pypath.Suffix(base)))
+		scratch := withName(base, fmt.Sprintf(".%s.delivery%03d.%s%s", pathutil.Stem(base), combineIndex, randomHex(16), pathutil.Suffix(base)))
 		combined, err := ttsConcatAudioFiles(group, scratch, voiceCompatible)
 		if err != nil {
 			return nil, err
@@ -645,11 +645,11 @@ func buildAudioDeliveryFiles(audioPaths []string, outputPath string, profile aud
 	for index, source := range packed {
 		destination := base
 		if len(packed) > 1 {
-			suffix := pypath.Suffix(source)
+			suffix := pathutil.Suffix(source)
 			if suffix == "" {
-				suffix = pypath.Suffix(base)
+				suffix = pathutil.Suffix(base)
 			}
-			destination = withName(base, fmt.Sprintf("%s.part%02d%s", pypath.PathStem(base), index+1, suffix))
+			destination = withName(base, fmt.Sprintf("%s.part%02d%s", pathutil.Stem(base), index+1, suffix))
 		}
 		if absPath(source) != absPath(destination) {
 			if err := os.MkdirAll(filepath.Dir(destination), 0o777); err != nil {

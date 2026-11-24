@@ -12,8 +12,6 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Resumes a session by exact id first and then by title, the way chat --resume resolves a name
@@ -35,7 +33,7 @@ func discardResume(ctx context.Context, client *gateway.GatewayClient, name stri
 func discardConfirm(w io.Writer, sessionID string, rows []map[string]any) (bool, error) {
 	fmt.Fprintf(w, "Discard %d lost turn(s) on session %s? They are acknowledged, not replayed.\n", len(rows), sessionID)
 	for _, row := range rows {
-		fmt.Fprintf(w, "  %s\n", pyrepr.Str(row["admission_id"]))
+		fmt.Fprintf(w, "  %s\n", anyutil.String(row["admission_id"]))
 	}
 	line, err := console().Input("Proceed? [y/N] ")
 	if errors.Is(err, cliui.ErrEOF) {
@@ -60,7 +58,7 @@ func discard(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
 		return 1, err
 	}
 	sessionID := snapshot["session_id"]
-	if !pyrepr.Truthy(sessionID) {
+	if !anyutil.IsTrue(sessionID) {
 		sessionID = snapshot["stored_session_id"]
 	}
 	var unknown []map[string]any
@@ -75,7 +73,7 @@ func discard(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
 		chosen = nil
 		found := map[string]bool{}
 		for _, row := range unknown {
-			if id := pyrepr.Str(row["admission_id"]); slices.Contains(wanted, id) {
+			if id := anyutil.String(row["admission_id"]); slices.Contains(wanted, id) {
 				chosen = append(chosen, row)
 				found[id] = true
 			}
@@ -92,7 +90,7 @@ func discard(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
 		}
 	}
 	if len(chosen) == 0 {
-		fmt.Fprintf(w, "Nothing to discard: session %s has no unknown admission.\n", pyrepr.Str(sessionID))
+		fmt.Fprintf(w, "Nothing to discard: session %s has no unknown admission.\n", anyutil.String(sessionID))
 		return 0, nil
 	}
 	if !nsTruthy(ns, "yes") {
@@ -100,7 +98,7 @@ func discard(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
 			fmt.Fprintln(stderrWriter(), "Refusing to discard without confirmation on a non-interactive stdin; pass --yes.")
 			return 2, nil
 		}
-		confirmed, err := discardConfirm(w, pyrepr.Str(sessionID), chosen)
+		confirmed, err := discardConfirm(w, anyutil.String(sessionID), chosen)
 		if err != nil {
 			return 1, err
 		}
@@ -114,7 +112,7 @@ func discard(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
 			"execution_generation": row["execution_generation"]}, 0); err != nil {
 			return 1, err
 		}
-		fmt.Fprintf(w, "Discarded %s\n", pyrepr.Str(row["admission_id"]))
+		fmt.Fprintf(w, "Discarded %s\n", anyutil.String(row["admission_id"]))
 	}
 	return 0, nil
 }
@@ -135,7 +133,7 @@ func cmdDiscard(ctx context.Context, h string, ns map[string]any, w io.Writer) (
 	switch {
 	case errors.As(err, &clientErr):
 		fmt.Fprintln(stderrWriter(), "Error: "+clientErr.Msg)
-	case pypath.IsOSError(err), errors.Is(err, context.DeadlineExceeded), os.IsTimeout(err), isWebSocketError(err):
+	case errorutil.IsSystem(err), errors.Is(err, context.DeadlineExceeded), os.IsTimeout(err), isWebSocketError(err):
 		fmt.Fprintln(stderrWriter(), "Error: Gateway connection/read failed")
 	default:
 		return 1, err

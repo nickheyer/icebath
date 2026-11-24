@@ -12,8 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var localeKeyExports = map[string]string{"tui": "_keys.tui.json"}
@@ -61,12 +61,12 @@ func referenceKeys(ctx context.Context, surface string) (map[string]bool, error)
 	if err := strictUTF8(raw); err != nil {
 		return nil, err
 	}
-	data, err := pyjson.LoadsBytes(stripBOM(raw))
+	data, err := jsonutil.Decode(stripBOM(raw))
 	if err != nil {
 		return nil, err
 	}
 	keys := data
-	if obj, ok := data.(*pyjson.Object); ok {
+	if obj, ok := data.(*jsonutil.Object); ok {
 		keys, _ = obj.Get("keys")
 	}
 	list, ok := keys.([]any)
@@ -75,7 +75,7 @@ func referenceKeys(ctx context.Context, surface string) (map[string]bool, error)
 	}
 	out := map[string]bool{}
 	for _, k := range list {
-		out[pyrepr.Str(k)] = true
+		out[anyutil.String(k)] = true
 	}
 	return out, nil
 }

@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhost"
+	cpythonutil "github.com/nickheyer/icebath/pkg/utils/cpython"
 )
 
 // Hidden verb of the binary that hosts nemo_relay in an embedded interpreter
@@ -45,17 +45,17 @@ func runChild(ctx context.Context, args []string) int {
 		fmt.Fprintf(os.Stderr, "relay host: %v\n", err)
 		return exitStartFailed
 	}
-	in, err := pyhost.Discover(args[1])
+	in, err := cpythonutil.Discover(args[1])
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "relay host: %v\n", err)
 		return exitStartFailed
 	}
-	h, err := pyhost.Start(pyhost.Options{Interpreter: in, Argv: []string{args[1]}})
+	h, err := cpythonutil.Start(cpythonutil.Options{Interpreter: in, Argv: []string{args[1]}})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "relay host: %v\n", err)
 		return exitStartFailed
 	}
-	c := &child{h: h, refs: map[int64]*pyhost.Ref{}, runs: map[int64]*childRun{}, excClasses: map[string]*pyhost.Ref{}}
+	c := &child{h: h, refs: map[int64]*cpythonutil.Ref{}, runs: map[int64]*childRun{}, excClasses: map[string]*cpythonutil.Ref{}}
 	if err := h.Do(c.setup); err != nil {
 		fmt.Fprintf(os.Stderr, "relay host: %v\n", err)
 		return finalize(h, exitStartFailed)
@@ -70,7 +70,7 @@ func runChild(ctx context.Context, args []string) int {
 }
 
 // Finalizes the interpreter, a native thread holding it past the deadline ending the process
-func finalize(h *pyhost.Host, code int) int {
+func finalize(h *cpythonutil.Host, code int) int {
 	timer := time.AfterFunc(finalizeDeadline, func() {
 		fmt.Fprintf(os.Stderr, "relay host: Py_FinalizeEx did not return within %s\n", finalizeDeadline)
 		os.Exit(exitFinalizeHung)
@@ -86,32 +86,32 @@ func finalize(h *pyhost.Host, code int) int {
 
 // Interpreter side state of the relay host, Python objects the parent holds by id
 type child struct {
-	h          *pyhost.Host
+	h          *cpythonutil.Host
 	c          *conn
 	mu         sync.Mutex
-	refs       map[int64]*pyhost.Ref
+	refs       map[int64]*cpythonutil.Ref
 	nextRef    int64
 	runs       map[int64]*childRun
-	excClasses map[string]*pyhost.Ref
-	relay      *pyhost.Ref
-	asyncio    *pyhost.Ref
-	contextvar *pyhost.Ref
-	serving    *pyhost.Ref
-	environ    *pyhost.Ref
-	osModule   *pyhost.Ref
-	exception  *pyhost.Ref
-	callable   *pyhost.Ref
-	iterator   *pyhost.Ref
+	excClasses map[string]*cpythonutil.Ref
+	relay      *cpythonutil.Ref
+	asyncio    *cpythonutil.Ref
+	contextvar *cpythonutil.Ref
+	serving    *cpythonutil.Ref
+	environ    *cpythonutil.Ref
+	osModule   *cpythonutil.Ref
+	exception  *cpythonutil.Ref
+	callable   *cpythonutil.Ref
+	iterator   *cpythonutil.Ref
 }
 
 // Loop and future of one awaiting run op, the targets of a parent cancel
 type childRun struct {
-	loop, future, task *pyhost.Ref
+	loop, future, task *cpythonutil.Ref
 }
 
 // Scope owning the new references an op body creates
 type pyScope struct {
-	g    *pyhost.GIL
+	g    *cpythonutil.GIL
 	held []uintptr
 }
 
@@ -139,8 +139,8 @@ func (s *pyScope) method(o uintptr, name string, args []any, kwargs map[string]a
 }
 
 // Imports the modules and builds the helper classes every op uses
-func (c *child) setup(g *pyhost.GIL) error {
-	own := func(o uintptr, err error) (*pyhost.Ref, error) {
+func (c *child) setup(g *cpythonutil.GIL) error {
+	own := func(o uintptr, err error) (*cpythonutil.Ref, error) {
 		if err != nil {
 			return nil, err
 		}
@@ -174,30 +174,30 @@ func (c *child) setup(g *pyhost.GIL) error {
 		return err
 	}
 	if c.callable, err = own(g.NewClass("icebath_relay", "ParentCallable", nil, map[string]any{
-		"__call__": pyhost.RawFunc(c.callableCall),
-		"__del__":  pyhost.RawFunc(c.releaseParent),
+		"__call__": cpythonutil.RawFunc(c.callableCall),
+		"__del__":  cpythonutil.RawFunc(c.releaseParent),
 	})); err != nil {
 		return err
 	}
 	c.iterator, err = own(g.NewClass("icebath_relay", "ParentAsyncIterator", nil, map[string]any{
-		"__aiter__": pyhost.RawFunc(func(g *pyhost.GIL, args, _ uintptr) (uintptr, error) {
+		"__aiter__": cpythonutil.RawFunc(func(g *cpythonutil.GIL, args, _ uintptr) (uintptr, error) {
 			self := g.TupleItem(args, 0)
-			return g.ToPython(pyhost.Borrowed(self))
+			return g.ToPython(cpythonutil.Borrowed(self))
 		}),
-		"__anext__": pyhost.RawFunc(func(g *pyhost.GIL, args, _ uintptr) (uintptr, error) {
+		"__anext__": cpythonutil.RawFunc(func(g *cpythonutil.GIL, args, _ uintptr) (uintptr, error) {
 			id, err := parentID(g, g.TupleItem(args, 0))
 			if err != nil {
 				return 0, err
 			}
 			return c.iteratorStep(g, id, "iter_next")
 		}),
-		"__del__": pyhost.RawFunc(c.releaseParent),
+		"__del__": cpythonutil.RawFunc(c.releaseParent),
 	}))
 	return err
 }
 
 // Parent id an instance of a helper class stands for
-func parentID(g *pyhost.GIL, self uintptr) (int64, error) {
+func parentID(g *cpythonutil.GIL, self uintptr) (int64, error) {
 	o, err := g.Attr(self, "_icebath_id")
 	if err != nil {
 		return 0, err
@@ -212,7 +212,7 @@ func parentID(g *pyhost.GIL, self uintptr) (int64, error) {
 }
 
 // Calls the parent callback an instance stands for, events projected to their public attributes
-func (c *child) callableCall(g *pyhost.GIL, args, kwargs uintptr) (uintptr, error) {
+func (c *child) callableCall(g *cpythonutil.GIL, args, kwargs uintptr) (uintptr, error) {
 	self := g.TupleItem(args, 0)
 	id, err := parentID(g, self)
 	if err != nil {
@@ -231,14 +231,14 @@ func (c *child) callableCall(g *pyhost.GIL, args, kwargs uintptr) (uintptr, erro
 		return 0, err
 	}
 	rest := all.([]any)[1:]
-	if self, ok := all.([]any)[0].(*pyhost.Ref); ok {
+	if self, ok := all.([]any)[0].(*cpythonutil.Ref); ok {
 		self.Release()
 	}
 	var lowered []any
 	if kind == "event" && len(rest) == 1 {
-		ref, _ := rest[0].(*pyhost.Ref)
+		ref, _ := rest[0].(*cpythonutil.Ref)
 		if ref == nil {
-			return 0, &pyhost.Exception{Type: "TypeError", Message: "subscriber event is not an object"}
+			return 0, &cpythonutil.Exception{Type: "TypeError", Message: "subscriber event is not an object"}
 		}
 		event, err := c.eventView(g, ref.Ptr())
 		if err != nil {
@@ -256,7 +256,7 @@ func (c *child) callableCall(g *pyhost.GIL, args, kwargs uintptr) (uintptr, erro
 	}
 	if kwargs != 0 {
 		if n, _ := g.FromPython(kwargs); len(n.(map[string]any)) > 0 {
-			return 0, &pyhost.Exception{Type: "TypeError", Message: "parent callbacks take positional arguments only"}
+			return 0, &cpythonutil.Exception{Type: "TypeError", Message: "parent callbacks take positional arguments only"}
 		}
 	}
 	result, err := c.callParent(g, "callback", map[string]any{"id": id, "args": lowered})
@@ -267,8 +267,8 @@ func (c *child) callableCall(g *pyhost.GIL, args, kwargs uintptr) (uintptr, erro
 }
 
 // Coroutine running one blocking parent iterator step off the loop on a worker thread
-func (c *child) iteratorStep(g *pyhost.GIL, id int64, op string) (uintptr, error) {
-	step, err := g.NewFunc(op, func(g *pyhost.GIL, _ []any, _ map[string]any) (any, error) {
+func (c *child) iteratorStep(g *cpythonutil.GIL, id int64, op string) (uintptr, error) {
+	step, err := g.NewFunc(op, func(g *cpythonutil.GIL, _ []any, _ map[string]any) (any, error) {
 		s := &pyScope{g: g}
 		defer s.close()
 		result, err := c.callParent(g, op, map[string]any{"id": id})
@@ -285,11 +285,11 @@ func (c *child) iteratorStep(g *pyhost.GIL, id int64, op string) (uintptr, error
 		return 0, err
 	}
 	defer g.Decref(step)
-	return g.CallMethod(c.asyncio.Ptr(), "to_thread", []any{pyhost.Borrowed(step)}, nil)
+	return g.CallMethod(c.asyncio.Ptr(), "to_thread", []any{cpythonutil.Borrowed(step)}, nil)
 }
 
 // Tells the parent the Python side dropped the callback or iterator an instance stood for
-func (c *child) releaseParent(g *pyhost.GIL, args, _ uintptr) (uintptr, error) {
+func (c *child) releaseParent(g *cpythonutil.GIL, args, _ uintptr) (uintptr, error) {
 	if id, err := parentID(g, g.TupleItem(args, 0)); err == nil && id != 0 && c.c != nil {
 		raw, _ := json.Marshal(map[string]any{"ids": []int64{id}})
 		_ = c.c.send(&message{Op: "release", Args: raw})
@@ -298,7 +298,7 @@ func (c *child) releaseParent(g *pyhost.GIL, args, _ uintptr) (uintptr, error) {
 }
 
 // Serving request id of the running context, the origin of a parent call made from here
-func (c *child) servingID(g *pyhost.GIL) int64 {
+func (c *child) servingID(g *cpythonutil.GIL) int64 {
 	o, err := g.CallMethod(c.serving.Ptr(), "get", nil, nil)
 	if err != nil {
 		return 0
@@ -310,7 +310,7 @@ func (c *child) servingID(g *pyhost.GIL) int64 {
 }
 
 // Calls the parent and waits with the GIL released, running nested parent requests on this thread
-func (c *child) callParent(g *pyhost.GIL, op string, args map[string]any) (any, error) {
+func (c *child) callParent(g *cpythonutil.GIL, op string, args map[string]any) (any, error) {
 	_, ch, err := c.c.open(op, c.servingID(g), args)
 	if err != nil {
 		return nil, err
@@ -320,7 +320,7 @@ func (c *child) callParent(g *pyhost.GIL, op string, args map[string]any) (any, 
 		var ok bool
 		g.Unblocked(func() { m, ok = <-ch })
 		if !ok {
-			return nil, &pyhost.Exception{Type: "RuntimeError", Message: "NeMo Relay host parent closed the channel"}
+			return nil, &cpythonutil.Exception{Type: "RuntimeError", Message: "NeMo Relay host parent closed the channel"}
 		}
 		if m.Op != "" {
 			c.handle(g, m)
@@ -338,16 +338,16 @@ func (c *child) callParent(g *pyhost.GIL, op string, args map[string]any) (any, 
 }
 
 // Python exception for a parent failure, a class named after the Go error type carrying its id
-func (c *child) raiseParentError(g *pyhost.GIL, e *wireError) error {
+func (c *child) raiseParentError(g *cpythonutil.GIL, e *wireError) error {
 	if e.Module == "" {
-		return &pyhost.Exception{Type: e.Class, Message: e.Message}
+		return &cpythonutil.Exception{Type: e.Class, Message: e.Message}
 	}
 	key := e.Module + "." + e.Class
 	c.mu.Lock()
 	cls := c.excClasses[key]
 	c.mu.Unlock()
 	if cls == nil {
-		o, err := g.NewClass(e.Module, e.Class, []any{pyhost.Borrowed(c.exception.Ptr())}, nil)
+		o, err := g.NewClass(e.Module, e.Class, []any{cpythonutil.Borrowed(c.exception.Ptr())}, nil)
 		if err != nil {
 			return err
 		}
@@ -372,14 +372,14 @@ func (c *child) raiseParentError(g *pyhost.GIL, e *wireError) error {
 // Runs top level parent requests on their own goroutine holding the GIL
 func (c *child) serve(m *message) {
 	go func() {
-		if err := c.h.Do(func(g *pyhost.GIL) error { c.handle(g, m); return nil }); err != nil {
+		if err := c.h.Do(func(g *cpythonutil.GIL) error { c.handle(g, m); return nil }); err != nil {
 			_ = c.c.reply(m.ID, nil, &wireError{Class: "RuntimeError", Message: err.Error()})
 		}
 	}()
 }
 
 // Runs one parent request on the calling thread and replies
-func (c *child) handle(g *pyhost.GIL, m *message) {
+func (c *child) handle(g *cpythonutil.GIL, m *message) {
 	result, err := c.dispatch(g, m)
 	if m.Op == "release" || m.Op == "cancel" {
 		return
@@ -392,12 +392,12 @@ func (c *child) handle(g *pyhost.GIL, m *message) {
 }
 
 // Wire form of an op failure, the parent error id kept when the exception came from a parent callback
-func (c *child) wireFailure(g *pyhost.GIL, err error) *wireError {
+func (c *child) wireFailure(g *cpythonutil.GIL, err error) *wireError {
 	var we *wireError
 	if errors.As(err, &we) {
 		return we
 	}
-	var pe *pyhost.PyError
+	var pe *cpythonutil.Error
 	if !errors.As(err, &pe) {
 		return &wireError{Class: "RuntimeError", Message: err.Error()}
 	}
@@ -412,7 +412,7 @@ func (c *child) wireFailure(g *pyhost.GIL, err error) *wireError {
 	return out
 }
 
-func (c *child) dispatch(g *pyhost.GIL, m *message) (any, error) {
+func (c *child) dispatch(g *cpythonutil.GIL, m *message) (any, error) {
 	raw, err := decodeJSON(m.Args)
 	if err != nil {
 		return nil, err
@@ -443,7 +443,7 @@ func (c *child) dispatch(g *pyhost.GIL, m *message) (any, error) {
 		return nil, nil
 	case "release":
 		ids, _ := args["ids"].([]any)
-		var dropped []*pyhost.Ref
+		var dropped []*cpythonutil.Ref
 		c.mu.Lock()
 		for _, id := range ids {
 			if r := c.refs[wireInt(id)]; r != nil {
@@ -470,7 +470,7 @@ var helloPaths = []string{"scope", "scope.push", "scope.pop", "scope.get_handle"
 	"codecs.OpenAIResponsesCodec", "codecs.AnthropicMessagesCodec", "ToolExecutionResult"}
 
 // Imports nemo_relay and reports which binding attributes exist, the scope types and the pop signature
-func (c *child) hello(g *pyhost.GIL) (any, error) {
+func (c *child) hello(g *cpythonutil.GIL) (any, error) {
 	s := &pyScope{g: g}
 	defer s.close()
 	if c.relay == nil {
@@ -508,12 +508,12 @@ func (c *child) hello(g *pyhost.GIL) (any, error) {
 }
 
 // Parameter names of scope.pop and whether each is the variadic keyword one
-func (c *child) popParameters(g *pyhost.GIL, s *pyScope, pop uintptr) ([]any, error) {
+func (c *child) popParameters(g *cpythonutil.GIL, s *pyScope, pop uintptr) ([]any, error) {
 	inspect, err := s.keep(g.Import("inspect"))
 	if err != nil {
 		return nil, err
 	}
-	sig, err := s.method(inspect, "signature", []any{pyhost.Borrowed(pop)}, nil)
+	sig, err := s.method(inspect, "signature", []any{cpythonutil.Borrowed(pop)}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -554,9 +554,9 @@ func (c *child) popParameters(g *pyhost.GIL, s *pyScope, pop uintptr) ([]any, er
 }
 
 // Attribute path under nemo_relay, a borrowed object kept alive by the scope
-func (c *child) resolve(g *pyhost.GIL, s *pyScope, path string) (uintptr, error) {
+func (c *child) resolve(g *cpythonutil.GIL, s *pyScope, path string) (uintptr, error) {
 	if c.relay == nil {
-		return 0, &pyhost.Exception{Type: "ModuleNotFoundError", Message: pythonNoRelayModule}
+		return 0, &cpythonutil.Exception{Type: "ModuleNotFoundError", Message: pythonNoRelayModule}
 	}
 	o := c.relay.Ptr()
 	for _, part := range strings.Split(path, ".") {
@@ -574,12 +574,12 @@ func (c *child) ref(id int64) (uintptr, error) {
 	defer c.mu.Unlock()
 	r := c.refs[id]
 	if r == nil {
-		return 0, &pyhost.Exception{Type: "ReferenceError", Message: fmt.Sprintf("NeMo Relay host object %d was released", id)}
+		return 0, &cpythonutil.Exception{Type: "ReferenceError", Message: fmt.Sprintf("NeMo Relay host object %d was released", id)}
 	}
 	return r.Ptr(), nil
 }
 
-func (c *child) keepRef(g *pyhost.GIL, o uintptr) int64 {
+func (c *child) keepRef(g *cpythonutil.GIL, o uintptr) int64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.nextRef++
@@ -588,7 +588,7 @@ func (c *child) keepRef(g *pyhost.GIL, o uintptr) int64 {
 }
 
 // Callable an op targets, a nemo_relay attribute path or a method of a held object, or the object itself
-func (c *child) target(g *pyhost.GIL, s *pyScope, fn any) (uintptr, error) {
+func (c *child) target(g *cpythonutil.GIL, s *pyScope, fn any) (uintptr, error) {
 	switch x := fn.(type) {
 	case string:
 		return c.resolve(g, s, x)
@@ -602,11 +602,11 @@ func (c *child) target(g *pyhost.GIL, s *pyScope, fn any) (uintptr, error) {
 		}
 		return o, nil
 	}
-	return 0, &pyhost.Exception{Type: "TypeError", Message: "relay host op has no target"}
+	return 0, &cpythonutil.Exception{Type: "TypeError", Message: "relay host op has no target"}
 }
 
 // Fresh copy of the context the parent named, an empty context when it named none
-func (c *child) context(g *pyhost.GIL, s *pyScope, id int64, opID int64) (uintptr, error) {
+func (c *child) context(g *cpythonutil.GIL, s *pyScope, id int64, opID int64) (uintptr, error) {
 	var ctx uintptr
 	var err error
 	if id == 0 {
@@ -625,14 +625,14 @@ func (c *child) context(g *pyhost.GIL, s *pyScope, id int64, opID int64) (uintpt
 	if err != nil {
 		return 0, err
 	}
-	if _, err := s.method(ctx, "run", []any{pyhost.Borrowed(setter), opID}, nil); err != nil {
+	if _, err := s.method(ctx, "run", []any{cpythonutil.Borrowed(setter), opID}, nil); err != nil {
 		return 0, err
 	}
 	return ctx, nil
 }
 
 // Positional and keyword arguments of an op converted to Python
-func (c *child) callArgs(g *pyhost.GIL, s *pyScope, args map[string]any) ([]any, map[string]any, error) {
+func (c *child) callArgs(g *cpythonutil.GIL, s *pyScope, args map[string]any) ([]any, map[string]any, error) {
 	positional, _ := args["args"].([]any)
 	keywords, _ := args["kwargs"].(map[string]any)
 	pos, err := liftValue(positional, c.liftTag)
@@ -667,7 +667,7 @@ func (c *child) callArgs(g *pyhost.GIL, s *pyScope, args map[string]any) ([]any,
 }
 
 // Applies the parent's environment and working directory before plugin discovery reads them
-func (c *child) applyEnvironment(g *pyhost.GIL, args map[string]any) error {
+func (c *child) applyEnvironment(g *cpythonutil.GIL, args map[string]any) error {
 	env, ok := args["env"].(map[string]any)
 	if !ok {
 		return nil
@@ -691,7 +691,7 @@ func (c *child) applyEnvironment(g *pyhost.GIL, args map[string]any) error {
 }
 
 // Synchronous call inside a copy of the parent's context, returning the value and the context it left
-func (c *child) call(g *pyhost.GIL, opID int64, args map[string]any) (any, error) {
+func (c *child) call(g *cpythonutil.GIL, opID int64, args map[string]any) (any, error) {
 	s := &pyScope{g: g}
 	defer s.close()
 	if err := c.applyEnvironment(g, args); err != nil {
@@ -709,7 +709,7 @@ func (c *child) call(g *pyhost.GIL, opID int64, args map[string]any) (any, error
 	if err != nil {
 		return nil, err
 	}
-	result, err := s.method(ctx, "run", append([]any{pyhost.Borrowed(fn)}, pos...), kw)
+	result, err := s.method(ctx, "run", append([]any{cpythonutil.Borrowed(fn)}, pos...), kw)
 	if err != nil {
 		return nil, err
 	}
@@ -721,7 +721,7 @@ func (c *child) call(g *pyhost.GIL, opID int64, args map[string]any) (any, error
 }
 
 // Awaits a call on an event loop inside a copy of the parent's context, the way asyncio.run drives a coroutine
-func (c *child) run(g *pyhost.GIL, opID int64, args map[string]any) (any, error) {
+func (c *child) run(g *cpythonutil.GIL, opID int64, args map[string]any) (any, error) {
 	running, err := g.CallMethod(c.asyncio.Ptr(), "_get_running_loop", nil, nil)
 	if err != nil {
 		return nil, err
@@ -736,7 +736,7 @@ func (c *child) run(g *pyhost.GIL, opID int64, args map[string]any) (any, error)
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		if err := c.h.Do(func(g *pyhost.GIL) error { out, outErr = c.runHere(g, opID, args); return nil }); err != nil {
+		if err := c.h.Do(func(g *cpythonutil.GIL) error { out, outErr = c.runHere(g, opID, args); return nil }); err != nil {
 			outErr = err
 		}
 	}()
@@ -744,7 +744,7 @@ func (c *child) run(g *pyhost.GIL, opID int64, args map[string]any) (any, error)
 	return out, outErr
 }
 
-func (c *child) runHere(g *pyhost.GIL, opID int64, args map[string]any) (any, error) {
+func (c *child) runHere(g *cpythonutil.GIL, opID int64, args map[string]any) (any, error) {
 	s := &pyScope{g: g}
 	defer s.close()
 	if err := c.applyEnvironment(g, args); err != nil {
@@ -802,16 +802,16 @@ func (c *child) runHere(g *pyhost.GIL, opID int64, args map[string]any) (any, er
 			state.task.Release()
 		}
 	}()
-	starter, err := s.keep(g.NewFunc("relay_start", func(g *pyhost.GIL, _ []any, _ map[string]any) (any, error) {
+	starter, err := s.keep(g.NewFunc("relay_start", func(g *cpythonutil.GIL, _ []any, _ map[string]any) (any, error) {
 		return nil, c.start(g, loop, future, fn, invoke, pos, kw, state)
 	}))
 	if err != nil {
 		return nil, err
 	}
-	if _, err := s.method(loop, "call_soon", []any{pyhost.Borrowed(starter)}, map[string]any{"context": pyhost.Borrowed(ctx)}); err != nil {
+	if _, err := s.method(loop, "call_soon", []any{cpythonutil.Borrowed(starter)}, map[string]any{"context": cpythonutil.Borrowed(ctx)}); err != nil {
 		return nil, err
 	}
-	result, err := s.method(loop, "run_until_complete", []any{pyhost.Borrowed(future)}, nil)
+	result, err := s.method(loop, "run_until_complete", []any{cpythonutil.Borrowed(future)}, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -828,7 +828,7 @@ func (c *child) runHere(g *pyhost.GIL, opID int64, args map[string]any) (any, er
 }
 
 // Calls the target on the running loop and chains the awaitable it returns into the op future
-func (c *child) start(g *pyhost.GIL, loop, future, fn uintptr, invoke bool, pos []any, kw map[string]any, state *childRun) error {
+func (c *child) start(g *cpythonutil.GIL, loop, future, fn uintptr, invoke bool, pos []any, kw map[string]any, state *childRun) error {
 	s := &pyScope{g: g}
 	defer s.close()
 	settle := func(name string, value any) error {
@@ -839,9 +839,9 @@ func (c *child) start(g *pyhost.GIL, loop, future, fn uintptr, invoke bool, pos 
 	if invoke {
 		v, err := s.call(fn, pos, kw)
 		if err != nil {
-			var pe *pyhost.PyError
+			var pe *cpythonutil.Error
 			if errors.As(err, &pe) && pe.Exception() != nil {
-				return settle("set_exception", pyhost.Borrowed(pe.Exception().Ptr()))
+				return settle("set_exception", cpythonutil.Borrowed(pe.Exception().Ptr()))
 			}
 			return err
 		}
@@ -852,27 +852,27 @@ func (c *child) start(g *pyhost.GIL, loop, future, fn uintptr, invoke bool, pos 
 		return err
 	}
 	if !awaitable {
-		return settle("set_result", pyhost.Borrowed(value))
+		return settle("set_result", cpythonutil.Borrowed(value))
 	}
-	task, err := s.method(c.asyncio.Ptr(), "ensure_future", []any{pyhost.Borrowed(value)}, map[string]any{"loop": pyhost.Borrowed(loop)})
+	task, err := s.method(c.asyncio.Ptr(), "ensure_future", []any{cpythonutil.Borrowed(value)}, map[string]any{"loop": cpythonutil.Borrowed(loop)})
 	if err != nil {
 		return err
 	}
 	c.mu.Lock()
 	state.task = g.NewRef(task)
 	c.mu.Unlock()
-	chain, err := s.keep(g.NewRawFunc("relay_chain", func(g *pyhost.GIL, args, _ uintptr) (uintptr, error) {
+	chain, err := s.keep(g.NewRawFunc("relay_chain", func(g *cpythonutil.GIL, args, _ uintptr) (uintptr, error) {
 		return c.chain(g, future, g.TupleItem(args, 0))
 	}))
 	if err != nil {
 		return err
 	}
-	_, err = s.method(task, "add_done_callback", []any{pyhost.Borrowed(chain)}, nil)
+	_, err = s.method(task, "add_done_callback", []any{cpythonutil.Borrowed(chain)}, nil)
 	return err
 }
 
 // Copies a finished task's outcome into the op future
-func (c *child) chain(g *pyhost.GIL, future, task uintptr) (uintptr, error) {
+func (c *child) chain(g *cpythonutil.GIL, future, task uintptr) (uintptr, error) {
 	s := &pyScope{g: g}
 	defer s.close()
 	done, err := s.method(future, "done", nil, nil)
@@ -897,7 +897,7 @@ func (c *child) chain(g *pyhost.GIL, future, task uintptr) (uintptr, error) {
 		return 0, err
 	}
 	if !g.IsNone(exc) {
-		if _, err := s.method(future, "set_exception", []any{pyhost.Borrowed(exc)}, nil); err != nil {
+		if _, err := s.method(future, "set_exception", []any{cpythonutil.Borrowed(exc)}, nil); err != nil {
 			return 0, err
 		}
 		return g.ToPython(nil)
@@ -906,42 +906,42 @@ func (c *child) chain(g *pyhost.GIL, future, task uintptr) (uintptr, error) {
 	if err != nil {
 		return 0, err
 	}
-	if _, err := s.method(future, "set_result", []any{pyhost.Borrowed(result)}, nil); err != nil {
+	if _, err := s.method(future, "set_result", []any{cpythonutil.Borrowed(result)}, nil); err != nil {
 		return 0, err
 	}
 	return g.ToPython(nil)
 }
 
 // Cancels what is left on a fresh loop, shuts down its generators and executor and closes it
-func (c *child) closeLoop(g *pyhost.GIL, loop uintptr) {
+func (c *child) closeLoop(g *cpythonutil.GIL, loop uintptr) {
 	s := &pyScope{g: g}
 	defer s.close()
-	tasks, err := s.method(c.asyncio.Ptr(), "all_tasks", []any{pyhost.Borrowed(loop)}, nil)
+	tasks, err := s.method(c.asyncio.Ptr(), "all_tasks", []any{cpythonutil.Borrowed(loop)}, nil)
 	if err == nil {
 		var pending []any
 		_ = g.Iterate(tasks, func(item uintptr) error {
 			if _, err := s.method(item, "cancel", nil, nil); err != nil {
 				return err
 			}
-			pending = append(pending, pyhost.Borrowed(item))
+			pending = append(pending, cpythonutil.Borrowed(item))
 			return nil
 		})
 		if len(pending) > 0 {
 			if gathered, err := s.method(c.asyncio.Ptr(), "gather", pending, map[string]any{"return_exceptions": true}); err == nil {
-				_, _ = s.method(loop, "run_until_complete", []any{pyhost.Borrowed(gathered)}, nil)
+				_, _ = s.method(loop, "run_until_complete", []any{cpythonutil.Borrowed(gathered)}, nil)
 			}
 		}
 	}
 	for _, name := range []string{"shutdown_asyncgens", "shutdown_default_executor"} {
 		if coro, err := s.method(loop, name, nil, nil); err == nil {
-			_, _ = s.method(loop, "run_until_complete", []any{pyhost.Borrowed(coro)}, nil)
+			_, _ = s.method(loop, "run_until_complete", []any{cpythonutil.Borrowed(coro)}, nil)
 		}
 	}
 	_, _ = s.method(loop, "close", nil, nil)
 }
 
 // Closes a released event loop the parent kept for a stream once nothing runs it
-func (c *child) closeIdleLoop(g *pyhost.GIL, o uintptr) {
+func (c *child) closeIdleLoop(g *cpythonutil.GIL, o uintptr) {
 	s := &pyScope{g: g}
 	defer s.close()
 	base, err := s.attr(c.asyncio.Ptr(), "AbstractEventLoop")
@@ -964,7 +964,7 @@ func (c *child) closeIdleLoop(g *pyhost.GIL, o uintptr) {
 }
 
 // Cancels the task and future of an awaiting op from any thread
-func (c *child) cancel(g *pyhost.GIL, id int64) {
+func (c *child) cancel(g *cpythonutil.GIL, id int64) {
 	c.mu.Lock()
 	state := c.runs[id]
 	c.mu.Unlock()
@@ -973,18 +973,18 @@ func (c *child) cancel(g *pyhost.GIL, id int64) {
 	}
 	s := &pyScope{g: g}
 	defer s.close()
-	for _, target := range []*pyhost.Ref{state.task, state.future} {
+	for _, target := range []*cpythonutil.Ref{state.task, state.future} {
 		if target == nil {
 			continue
 		}
 		if cancel, err := s.attr(target.Ptr(), "cancel"); err == nil {
-			_, _ = s.method(state.loop.Ptr(), "call_soon_threadsafe", []any{pyhost.Borrowed(cancel)}, nil)
+			_, _ = s.method(state.loop.Ptr(), "call_soon_threadsafe", []any{cpythonutil.Borrowed(cancel)}, nil)
 		}
 	}
 }
 
 // Python argument for a lifted wire value, creating the objects tagged nodes stand for
-func (c *child) pythonArg(g *pyhost.GIL, s *pyScope, v any) (any, error) {
+func (c *child) pythonArg(g *cpythonutil.GIL, s *pyScope, v any) (any, error) {
 	switch x := v.(type) {
 	case []any:
 		out := make([]any, len(x))
@@ -1011,7 +1011,7 @@ func (c *child) pythonArg(g *pyhost.GIL, s *pyScope, v any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		return pyhost.Borrowed(o), nil
+		return cpythonutil.Borrowed(o), nil
 	}
 	return v, nil
 }
@@ -1038,14 +1038,14 @@ func (c *child) liftTag(tag string, body any) (any, error) {
 }
 
 // Python object of a tagged node, a held object, a parent callable or iterator, or a nemo_relay value class
-func (c *child) materialize(g *pyhost.GIL, s *pyScope, p pendingObject) (uintptr, error) {
+func (c *child) materialize(g *cpythonutil.GIL, s *pyScope, p pendingObject) (uintptr, error) {
 	switch p.tag {
 	case "$r":
 		return c.ref(wireInt(p.body))
 	case "$c", "$x":
 		parts, _ := p.body.([]any)
 		if len(parts) == 0 {
-			return 0, &pyhost.Exception{Type: "ValueError", Message: "parent object without id"}
+			return 0, &cpythonutil.Exception{Type: "ValueError", Message: "parent object without id"}
 		}
 		cls := c.callable
 		if p.tag == "$x" {
@@ -1065,13 +1065,13 @@ func (c *child) materialize(g *pyhost.GIL, s *pyScope, p pendingObject) (uintptr
 		}
 		if p.tag == "$x" && len(parts) > 1 && parts[1] == true {
 			id := wireInt(parts[0])
-			closer, err := s.keep(g.NewRawFunc("aclose", func(g *pyhost.GIL, _, _ uintptr) (uintptr, error) {
+			closer, err := s.keep(g.NewRawFunc("aclose", func(g *cpythonutil.GIL, _, _ uintptr) (uintptr, error) {
 				return c.iteratorStep(g, id, "iter_close")
 			}))
 			if err != nil {
 				return 0, err
 			}
-			if err := g.SetAttr(inst, "aclose", pyhost.Borrowed(closer)); err != nil {
+			if err := g.SetAttr(inst, "aclose", cpythonutil.Borrowed(closer)); err != nil {
 				return 0, err
 			}
 		}
@@ -1079,7 +1079,7 @@ func (c *child) materialize(g *pyhost.GIL, s *pyScope, p pendingObject) (uintptr
 	case "$q":
 		parts, _ := p.body.([]any)
 		if len(parts) != 2 {
-			return 0, &pyhost.Exception{Type: "ValueError", Message: "LLMRequest needs headers and content"}
+			return 0, &cpythonutil.Exception{Type: "ValueError", Message: "LLMRequest needs headers and content"}
 		}
 		cls, err := c.resolve(g, s, "LLMRequest")
 		if err != nil {
@@ -1125,11 +1125,11 @@ func (c *child) materialize(g *pyhost.GIL, s *pyScope, p pendingObject) (uintptr
 		}
 		return s.method(cls, "fromisoformat", []any{p.body}, nil)
 	}
-	return 0, &pyhost.Exception{Type: "ValueError", Message: "unknown wire object " + p.tag}
+	return 0, &cpythonutil.Exception{Type: "ValueError", Message: "unknown wire object " + p.tag}
 }
 
 // Python object for a value the parent returned, a new reference
-func (c *child) toPython(g *pyhost.GIL, s *pyScope, v any) (uintptr, error) {
+func (c *child) toPython(g *cpythonutil.GIL, s *pyScope, v any) (uintptr, error) {
 	arg, err := c.pythonArg(g, s, v)
 	if err != nil {
 		return 0, err
@@ -1138,7 +1138,7 @@ func (c *child) toPython(g *pyhost.GIL, s *pyScope, v any) (uintptr, error) {
 }
 
 // Wire tree of a Python object
-func (c *child) lowerObject(g *pyhost.GIL, o uintptr) (any, error) {
+func (c *child) lowerObject(g *cpythonutil.GIL, o uintptr) (any, error) {
 	v, err := g.FromPython(o)
 	if err != nil {
 		return nil, err
@@ -1147,9 +1147,9 @@ func (c *child) lowerObject(g *pyhost.GIL, o uintptr) (any, error) {
 }
 
 // Wire tree of a converted Python value, nemo_relay value classes by content and other objects by id
-func (c *child) lowerPy(g *pyhost.GIL, v any) (any, error) {
+func (c *child) lowerPy(g *cpythonutil.GIL, v any) (any, error) {
 	return lowerValue(v, 0, func(v any, depth int) (any, bool, error) {
-		ref, ok := v.(*pyhost.Ref)
+		ref, ok := v.(*cpythonutil.Ref)
 		if !ok {
 			return nil, false, nil
 		}
@@ -1197,7 +1197,7 @@ func (c *child) lowerPy(g *pyhost.GIL, v any) (any, error) {
 	})
 }
 
-func (c *child) lowerAttr(g *pyhost.GIL, s *pyScope, o uintptr, name string) (any, error) {
+func (c *child) lowerAttr(g *cpythonutil.GIL, s *pyScope, o uintptr, name string) (any, error) {
 	v, err := s.attr(o, name)
 	if err != nil {
 		return nil, err
@@ -1209,7 +1209,7 @@ func (c *child) lowerAttr(g *pyhost.GIL, s *pyScope, o uintptr, name string) (an
 var eventFields = []string{"kind", "name", "category", "scope_category", "category_profile", "metadata", "data"}
 
 // Event projected to the attributes a subscriber reads, a missing attribute as None
-func (c *child) eventView(g *pyhost.GIL, o uintptr) (any, error) {
+func (c *child) eventView(g *cpythonutil.GIL, o uintptr) (any, error) {
 	s := &pyScope{g: g}
 	defer s.close()
 	out := map[string]any{}

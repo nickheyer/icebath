@@ -8,12 +8,12 @@ import (
 	"io"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -119,12 +119,12 @@ func settled(state map[string]string) bool {
 }
 
 // Runs a systemctl verb on a unit for the pause, printing to the pause stream
-func runUnitJob(ctx context.Context, manageCmd, scopeCmd []string, verb, svcName string, timeout float64) (*pysubprocess.Completed, error) {
+func runUnitJob(ctx context.Context, manageCmd, scopeCmd []string, verb, svcName string, timeout float64) (*executil.Completed, error) {
 	return runUnitJobTo(ctx, posixPauseOut, manageCmd, scopeCmd, verb, svcName, timeout)
 }
 
 // Runs a systemctl verb on a unit, a client timeout answered by waiting for the unit's job to settle
-func runUnitJobTo(ctx context.Context, w io.Writer, manageCmd, scopeCmd []string, verb, svcName string, timeout float64) (*pysubprocess.Completed, error) {
+func runUnitJobTo(ctx context.Context, w io.Writer, manageCmd, scopeCmd []string, verb, svcName string, timeout float64) (*executil.Completed, error) {
 	started := fleetMonotonic()
 	result, err := systemctl(ctx, fleetArgv(manageCmd, verb, svcName), timeout)
 	expired := asCommandTimeout(err)
@@ -158,7 +158,7 @@ func runUnitJobTo(ctx context.Context, w io.Writer, manageCmd, scopeCmd []string
 			sub = "?"
 		}
 		fmt.Fprintf(w, "  ⏳ systemctl %s %s timed out after %.0fs; systemd's job is still running after %.0fs (%s/%s)\n", verb, svcName, timeout, waited, active, sub)
-		return &pysubprocess.Completed{Args: argv, Returncode: unitJobStillRunning, Stdout: []byte{}, Stderr: []byte(fmt.Sprintf("systemd's %s job still running", verb))}, nil
+		return &executil.Completed{Args: argv, ExitCode: unitJobStillRunning, Stdout: []byte{}, Stderr: []byte(fmt.Sprintf("systemd's %s job still running", verb))}, nil
 	}
 	reached := active == "inactive" || active == "failed"
 	if verb == "start" || verb == "restart" {
@@ -166,9 +166,9 @@ func runUnitJobTo(ctx context.Context, w io.Writer, manageCmd, scopeCmd []string
 	}
 	fmt.Fprintf(w, "  ⏳ systemctl %s %s timed out after %.0fs; systemd finished the job after %.0fs (%s)\n", verb, svcName, timeout, waited, active)
 	if reached {
-		return &pysubprocess.Completed{Args: argv, Returncode: 0, Stdout: []byte{}, Stderr: []byte{}}, nil
+		return &executil.Completed{Args: argv, ExitCode: 0, Stdout: []byte{}, Stderr: []byte{}}, nil
 	}
-	return &pysubprocess.Completed{Args: argv, Returncode: 1, Stdout: []byte{}, Stderr: []byte("unit settled " + active)}, nil
+	return &executil.Completed{Args: argv, ExitCode: 1, Stdout: []byte{}, Stderr: []byte("unit settled " + active)}, nil
 }
 
 // RestartUSec of the unit in seconds, the fallback when it is unset, infinite or unreadable
@@ -190,7 +190,7 @@ func serviceRestartSec(ctx context.Context, scopeCmd []string, svcName string, f
 			if !strings.HasSuffix(part, unit.suffix) {
 				continue
 			}
-			if value, err := pyint.ParseFloat(strings.TrimSuffix(part, unit.suffix)); err == nil {
+			if value, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSuffix(part, unit.suffix)), 64); err == nil {
 				total += value * unit.mult
 				matched = true
 			}

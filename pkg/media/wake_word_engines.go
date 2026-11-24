@@ -16,14 +16,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/fetch"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
-	wakeImportPyOpenWakeWord = importPyOpenWakeWord
-	wakeImportSherpaOnnx     = importSherpaOnnx
-	wakeImportPvporcupine    = importPvporcupine
+	wakeImportOpenWakeWord = importOpenWakeWord
+	wakeImportSherpaOnnx   = importSherpaOnnx
+	wakeImportPvporcupine  = importPvporcupine
 )
 
 // WakeEngine is the hotword engine contract, int16 frames in and a fire verdict out
@@ -72,8 +72,8 @@ type owwModel interface {
 	Close()
 }
 
-// The pyopen_wakeword names the engine imports
-type pyOpenWakeWordModule interface {
+// The pyopen_wakeword bundle calls the engine makes
+type openWakeWordModule interface {
 	FeaturesFromBuiltin() (owwFeatures, error)
 	ModelFromModel(modelPath string) (owwModel, error)
 }
@@ -89,18 +89,18 @@ type openWakeWordEngine struct {
 	labels        []string
 }
 
-// Builds the openWakeWord engine on the configured model file, a ValueError naming the setting when none is set
+// Builds the openWakeWord engine on the configured model file, an invalid setting error naming the setting when none is set
 func newOpenWakeWordEngine(ctx context.Context, cfg *WakeConfig) (WakeEngine, error) {
 	modelRef := cfg.OpenWakeWordModel
 	if modelRef == "" {
-		return nil, &WakeWordError{Class: "ValueError", Msg: "wake_word.openwakeword.model is not set. openWakeWord detects only the phrase " +
+		return nil, &WakeWordError{Kind: errWakeInvalid, Msg: "wake_word.openwakeword.model is not set. openWakeWord detects only the phrase " +
 			"its model file was trained for; set the path of that file, or set wake_word.provider to auto so the open vocabulary engine detects " +
 			errchain.Show(cfg.Phrase) + "."}
 	}
 	if err := wakeRequireExtra(ctx, "wake-openwakeword"); err != nil {
 		return nil, err
 	}
-	lib, err := wakeImportPyOpenWakeWord(ctx)
+	lib, err := wakeImportOpenWakeWord(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -199,7 +199,7 @@ func ensureSherpaModel(ctx context.Context, root string) (string, error) {
 	}
 	target := filepath.Join(tree, sherpaKWSModelDir)
 	if !fileExists(filepath.Join(target, "tokens.txt")) {
-		return "", &WakeWordError{Class: "RuntimeError", Msg: "sherpa KWS model archive lacks tokens.txt: " + target}
+		return "", &WakeWordError{Kind: errWakeFailed, Msg: "sherpa KWS model archive lacks tokens.txt: " + target}
 	}
 	return target, nil
 }
@@ -255,7 +255,7 @@ func newSherpaKwsEngine(ctx context.Context, cfg *WakeConfig) (WakeEngine, error
 		}
 	}
 	if _, err := os.Stat(filepath.Join(d, "tokens.txt")); err != nil {
-		return nil, &WakeWordError{Class: "RuntimeError", Msg: "sherpa KWS model not found at " + d}
+		return nil, &WakeWordError{Kind: errWakeFailed, Msg: "sherpa KWS model not found at " + d}
 	}
 	phrase := strings.TrimSpace(cfg.Phrase)
 	var phrases []string
@@ -281,7 +281,7 @@ func newSherpaKwsEngine(ctx context.Context, cfg *WakeConfig) (WakeEngine, error
 		return nil, err
 	}
 	e := &sherpaKwsEngine{wakeEngineBase: wakeEngineBase{frameLength: 1280}, displayToProfile: map[string]string{}}
-	tmpDir, err := pypath.Gettempdir()
+	tmpDir, err := pathutil.TempDir()
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +309,7 @@ func newSherpaKwsEngine(ctx context.Context, cfg *WakeConfig) (WakeEngine, error
 	modelFile := func(part string) (string, error) {
 		hits := sherpaModelGlob(d, part)
 		if len(hits) == 0 {
-			return "", &WakeWordError{Class: "RuntimeError", Msg: fmt.Sprintf("sherpa KWS model file missing: %s/%s-*[!8].onnx", d, part)}
+			return "", &WakeWordError{Kind: errWakeFailed, Msg: fmt.Sprintf("sherpa KWS model file missing: %s/%s-*[!8].onnx", d, part)}
 		}
 		return hits[0], nil
 	}
@@ -435,7 +435,7 @@ func newPorcupineEngine(ctx context.Context, cfg *WakeConfig) (WakeEngine, error
 	}
 	accessKey := wakeAccessKey(ctx)
 	if accessKey == "" {
-		return nil, &WakeWordError{Class: "RuntimeError", Msg: "Porcupine wake word requires PORCUPINE_ACCESS_KEY " +
+		return nil, &WakeWordError{Kind: errWakeInvalid, Msg: "Porcupine wake word requires PORCUPINE_ACCESS_KEY " +
 			"(get a free key at https://console.picovoice.ai)."}
 	}
 	keyword := strings.TrimSpace(cfg.PorcupineKeyword)

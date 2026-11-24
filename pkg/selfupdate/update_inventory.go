@@ -13,8 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One running or expected runtime on this machine
@@ -26,12 +26,12 @@ type RuntimeRecord struct {
 	CodeSHA     *string
 	CodeVersion any
 	RestartVia  string
-	Detail      *pyjson.Object
+	Detail      *jsonutil.Object
 }
 
 // Runtime fields as an ordered JSON object in declaration order
-func (r *RuntimeRecord) ToDict() *pyjson.Object {
-	out := pyjson.NewObject()
+func (r *RuntimeRecord) ToDict() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("kind", r.Kind)
 	out.Set("profile", r.Profile)
 	if r.PID != nil {
@@ -49,7 +49,7 @@ func (r *RuntimeRecord) ToDict() *pyjson.Object {
 	out.Set("restart_via", r.RestartVia)
 	detail := r.Detail
 	if detail == nil {
-		detail = pyjson.NewObject()
+		detail = jsonutil.NewObject()
 	}
 	out.Set("detail", detail)
 	return out
@@ -72,8 +72,8 @@ func NewUpdatePlan() *UpdatePlan {
 }
 
 // Plan fields as an ordered JSON object, every runtime as its own object
-func (p *UpdatePlan) ToDict() *pyjson.Object {
-	out := pyjson.NewObject()
+func (p *UpdatePlan) ToDict() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("install_method", p.InstallMethod)
 	out.Set("updatable_in_place", p.UpdatableInPlace)
 	out.Set("update_mechanism", p.UpdateMechanism)
@@ -108,7 +108,7 @@ func UpdatePlanFromDict(data any) (*UpdatePlan, error) {
 		plan.InstallMethod = s
 	}
 	if v, ok := planField(data, "updatable_in_place"); ok {
-		plan.UpdatableInPlace = pyrepr.Truthy(v)
+		plan.UpdatableInPlace = anyutil.IsTrue(v)
 	}
 	if v, ok := planField(data, "update_mechanism"); ok {
 		s, isStr := v.(string)
@@ -142,7 +142,7 @@ func UpdatePlanFromDict(data any) (*UpdatePlan, error) {
 			}
 			plan.Runtimes = append(plan.Runtimes, record)
 		}
-	} else if pyrepr.Truthy(rows) {
+	} else if anyutil.IsTrue(rows) {
 		return nil, typeError("runtimes", rows)
 	}
 	return plan, nil
@@ -150,13 +150,13 @@ func UpdatePlanFromDict(data any) (*UpdatePlan, error) {
 
 // Runtime rebuilt from its JSON form, a row lacking kind or profile refused like the missing constructor argument
 func runtimeRecordFromDict(row any) (*RuntimeRecord, error) {
-	record := &RuntimeRecord{Supervisor: "manual", Detail: pyjson.NewObject()}
+	record := &RuntimeRecord{Supervisor: "manual", Detail: jsonutil.NewObject()}
 	for _, required := range []string{"kind", "profile"} {
 		value, present := planField(row, required)
 		if !present {
 			return nil, fmt.Errorf("a runtime record has no %s", required)
 		}
-		text := pyrepr.Str(value)
+		text := anyutil.String(value)
 		if required == "kind" {
 			record.Kind = text
 		} else {
@@ -170,24 +170,24 @@ func runtimeRecordFromDict(row any) (*RuntimeRecord, error) {
 		}
 	}
 	if v, ok := planField(row, "supervisor"); ok {
-		record.Supervisor = pyrepr.Str(v)
+		record.Supervisor = anyutil.String(v)
 	}
 	if v, ok := planField(row, "code_sha"); ok && v != nil {
-		sha := pyrepr.Str(v)
+		sha := anyutil.String(v)
 		record.CodeSHA = &sha
 	}
 	if v, ok := planField(row, "code_version"); ok {
 		record.CodeVersion = v
 	}
 	if v, ok := planField(row, "restart_via"); ok {
-		record.RestartVia = pyrepr.Str(v)
+		record.RestartVia = anyutil.String(v)
 	}
 	if v, ok := planField(row, "detail"); ok {
 		switch detail := v.(type) {
-		case *pyjson.Object:
+		case *jsonutil.Object:
 			record.Detail = detail
 		case map[string]any:
-			ordered := pyjson.NewObject()
+			ordered := jsonutil.NewObject()
 			keys := make([]string, 0, len(detail))
 			for key := range detail {
 				keys = append(keys, key)
@@ -272,14 +272,14 @@ func DescribeRestartMechanism(mechanism, profile string) string {
 }
 
 // Runtime record with restart_via derived from its supervisor
-func newRuntime(kind, profile string, pid *int, supervisor string, codeSHA, codeVersion any, detail *pyjson.Object) *RuntimeRecord {
+func newRuntime(kind, profile string, pid *int, supervisor string, codeSHA, codeVersion any, detail *jsonutil.Object) *RuntimeRecord {
 	record := &RuntimeRecord{Kind: kind, Profile: profile, PID: pid, Supervisor: supervisor, CodeVersion: codeVersion,
 		RestartVia: restartMechanism(supervisor), Detail: detail}
 	if record.Detail == nil {
-		record.Detail = pyjson.NewObject()
+		record.Detail = jsonutil.NewObject()
 	}
-	if pyrepr.Truthy(codeSHA) {
-		sha := pyrepr.Str(codeSHA)
+	if anyutil.IsTrue(codeSHA) {
+		sha := anyutil.String(codeSHA)
 		record.CodeSHA = &sha
 	}
 	return record
@@ -356,7 +356,7 @@ func collectGatewayRuntimes(ctx context.Context, plan *UpdatePlan, profileHomes 
 	supervisor := supervisorClassifier(ctx)
 	inventoryProbe("Gateway-state inventory", func() error {
 		for _, ph := range profileHomes {
-			var record *pyjson.Object
+			var record *jsonutil.Object
 			var pid int
 			var sup string
 			if sockPID, identity, ok := fleetSocketIdentity(ph.home); ok {
@@ -378,7 +378,7 @@ func collectGatewayRuntimes(ctx context.Context, plan *UpdatePlan, profileHomes 
 				}
 				pid = livePID
 				if record = fleetReadStatus(filepath.Join(ph.home, "gateway_state.json")); record == nil || record.Len() == 0 {
-					record = pyjson.NewObject()
+					record = jsonutil.NewObject()
 				}
 				seen[pid] = true
 				sup = supervisor(pid)

@@ -11,8 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -62,8 +62,8 @@ func safeProgress(cb any, event, name, preview string, extra map[string]any) {
 // One clean line of an error payload, the traceback's last line or the first non empty line, capped
 func cleanErrorText(errText any, maxChars int) string {
 	s := ""
-	if pyrepr.Truthy(errText) {
-		s = pyrepr.Str(errText)
+	if anyutil.IsTrue(errText) {
+		s = anyutil.String(errText)
 	}
 	var lines []string
 	for _, ln := range textutil.Lines(strings.TrimSpace(tools.RedactChildText(nil, s, false))) {
@@ -413,8 +413,8 @@ func (r *childProgressRelay) identityKwargs() map[string]any {
 	}
 	r.sessionRefMu.Lock()
 	for _, pair := range [][2]string{{"session_id", "child_session_id"}, {"delegation_id", "delegation_id"}} {
-		if v := r.sessionRef[pair[0]]; pyrepr.Truthy(v) {
-			kw[pair[1]] = pyrepr.Str(v)
+		if v := r.sessionRef[pair[0]]; anyutil.IsTrue(v) {
+			kw[pair[1]] = anyutil.String(v)
 		}
 	}
 	r.sessionRefMu.Unlock()
@@ -480,7 +480,7 @@ func (r *childProgressRelay) onComplete(preview string, kwargs map[string]any) {
 			ctx = parent.homeContext()
 		}
 		errText := kwargs["summary"]
-		if !pyrepr.Truthy(errText) {
+		if !anyutil.IsTrue(errText) {
 			errText = preview
 		}
 		_, _ = config.RenderNotification(ctx, func() error {

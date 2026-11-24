@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Chat, cron, API and deferred work the drain waits on, a managed worker turn counting as chat
@@ -34,7 +33,7 @@ func (r *GatewayRunner) drainActiveAgents(ctx context.Context, timeout float64, 
 	lastCounts := r.drainWorkCounts()
 	lastStatusAt := 0.0
 	maybeUpdateStatus := func(force bool) {
-		now := pythread.Monotonic()
+		now := timeutil.Monotonic()
 		counts := r.drainWorkCounts()
 		if force || counts != lastCounts || now-lastStatusAt >= 1.0 {
 			r.updateRuntimeStatus(ctx, optStr("draining"), nil)
@@ -45,14 +44,14 @@ func (r *GatewayRunner) drainActiveAgents(ctx context.Context, timeout float64, 
 	if r.runningAgentCount() == 0 && !lastCounts.any() {
 		return snapshot, false, nil
 	}
-	started := pythread.Monotonic()
+	started := timeutil.Monotonic()
 	deadline := started + timeout
 	cronDeadline := started + timeout
 	if cronTimeout != nil {
 		cronDeadline = started + *cronTimeout
 	}
 	stillDraining := func() bool {
-		now := pythread.Monotonic()
+		now := timeutil.Monotonic()
 		c := r.drainWorkCounts()
 		return ((c.agents != 0 || c.deferred != 0) && now < deadline) || ((c.cron != 0 || c.api != 0) && now < cronDeadline)
 	}

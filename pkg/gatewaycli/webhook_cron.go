@@ -7,8 +7,8 @@ import (
 	"errors"
 
 	"github.com/nickheyer/icebath/pkg/cron"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Cron reference resolver of webhook routes, swapped by tests
@@ -30,10 +30,10 @@ func init() {
 
 // Resolves a cron reference in the route profile store, the caller home for the default profile
 func resolveRouteCronJob(ctx context.Context, h string, profile any, reference string) (*cron.Job, error) {
-	if pyrepr.Equal(profile, "default") {
+	if anyutil.Equal(profile, "default") {
 		return webhookCronJobRef(ctx, h, reference)
 	}
-	dir, err := profiles.GetProfileDir(pyrepr.Str(profile))
+	dir, err := profiles.GetProfileDir(anyutil.String(profile))
 	if err != nil {
 		return nil, err
 	}

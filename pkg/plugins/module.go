@@ -15,8 +15,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Higher package collaborators the top level wiring installs so pkg/plugins never imports them
@@ -208,10 +208,10 @@ func persistPluginToolsetKeys(ctx context.Context) {
 	}
 	sort.Strings(keys)
 	portable := sortedKeys(GetPluginManager(ctx).GetPortableMCPServers())
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("toolset_keys", keys)
 	payload.Set("portable_mcp", portable)
-	text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(payload)
 	data := []byte(text)
 	if err == nil {
 		path := pluginToolsetKeysCachePath(ctx)

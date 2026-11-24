@@ -13,9 +13,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const (
@@ -85,7 +85,7 @@ type TelegramAdapter struct {
 	postConnectTask         *gateway.AdapterTask
 	botUsernameObserved     string
 	botIdentityCheckedAt    *float64
-	dmTopics                *pydict.Dict[string, int64]
+	dmTopics                *orderedutil.Map[string, int64]
 	forumCommandRegistered  map[int64]bool
 	commandMenuFingerprint  string
 	forumLock               sync.Mutex
@@ -102,7 +102,7 @@ type TelegramAdapter struct {
 	approvalCounter         int
 	slashConfirmState       map[string]string
 	clarifyState            map[string]string
-	statusMessageIDs        *pydict.Dict[[2]string, string]
+	statusMessageIDs        *orderedutil.Map[[2]string, string]
 	lastOverflowPreview     map[[2]string]string
 	topicTransferFn         TopicTransferFn
 	reconnectWaitSeconds    float64
@@ -124,10 +124,10 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 		retriggerTasks: map[string]*gateway.AdapterTask{}, retriggerAt: map[string]float64{},
 		pendingPhotoBatches: map[string]*gateway.MessageEvent{}, pendingPhotoBatchTasks: map[string]*gateway.AdapterTask{},
 		mediaGroupEvents: map[string]*gateway.MessageEvent{}, mediaGroupTasks: map[string]*gateway.AdapterTask{},
-		committedFlushTasks: map[[2]string]*gateway.AdapterTask{}, dmTopics: pydict.New[string, int64](),
+		committedFlushTasks: map[[2]string]*gateway.AdapterTask{}, dmTopics: orderedutil.NewMap[string, int64](),
 		forumCommandRegistered: map[int64]bool{}, modelPickerState: map[string]*modelPickerState{},
 		choicePickerState: map[string]*choicePickerState{}, approvalState: map[int]string{}, slashConfirmState: map[string]string{},
-		clarifyState: map[string]string{}, statusMessageIDs: pydict.New[[2]string, string](), lastOverflowPreview: map[[2]string]string{},
+		clarifyState: map[string]string{}, statusMessageIDs: orderedutil.NewMap[[2]string, string](), lastOverflowPreview: map[[2]string]string{},
 		topics: &TopicRouting{}, coreHandlers: map[Handler]struct{}{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(cfg, gateway.PlatformTelegram, a)
 	a.Traits.SupportsCodeBlocks, a.Traits.SplitsLongMessages, a.Traits.MaxMessageLength = true, true, maxMessageLength
@@ -142,7 +142,7 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 	a.admission = NewUpdateAdmission(a.homeDir)
 	a.replyToMode = "first"
 	if mode := cfg.ReplyToMode; pyTruthy(mode) {
-		a.replyToMode = pyrepr.Str(mode)
+		a.replyToMode = anyutil.String(mode)
 	}
 	a.disableLinkPreviews = a.core.coerceBoolExtra("disable_link_previews", false)
 	sctx := gateway.SettingsContext(ctx)
@@ -159,10 +159,10 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 	a.statusIndicatorEnabled = pyTruthy(extra["status_indicator"])
 	a.statusOnlineText, a.statusOfflineText = "Online", "Offline"
 	if v, ok := extra["status_online"]; ok {
-		a.statusOnlineText = pyrepr.Str(v)
+		a.statusOnlineText = anyutil.String(v)
 	}
 	if v, ok := extra["status_offline"]; ok {
-		a.statusOfflineText = pyrepr.Str(v)
+		a.statusOfflineText = anyutil.String(v)
 	}
 	a.dropPendingOnColdBoot = a.core.coerceBoolExtra("drop_pending_on_cold_boot", true)
 	a.dmTopicsConfig = []any{}
@@ -173,7 +173,7 @@ func NewTelegramAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *Teleg
 	for _, raw := range a.dmTopicsConfig {
 		if entry, ok := raw.(map[string]any); ok {
 			if cid, has := entry["chat_id"]; has {
-				a.dmTopicChatIDs[pyrepr.Str(cid)] = true
+				a.dmTopicChatIDs[anyutil.String(cid)] = true
 			}
 		}
 	}
@@ -264,7 +264,7 @@ func (a *TelegramAdapter) ShouldDropDelayedDelivery() bool { return a.dropDelaye
 
 // Gateway runner surface listing the live adapters by platform
 type liveAdapters interface {
-	Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	Adapters() *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 }
 
 // Live adapter that replaced this one in the runner, nil when none
@@ -367,7 +367,7 @@ func tokenText(token any) string {
 	if s, ok := token.(string); ok {
 		return s
 	}
-	return pyrepr.Str(token)
+	return anyutil.String(token)
 }
 
 // Whether the extra value is set and non empty
@@ -376,7 +376,7 @@ func extraString(extra map[string]any, key string) string {
 	if !ok || !pyTruthy(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Bot API default server of the SDK the PTB default base url maps onto

@@ -25,11 +25,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -133,7 +132,7 @@ func RecoveryClosureVerified(closure, pre string) bool {
 	if err != nil {
 		return false
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return false
 	}
@@ -171,7 +170,7 @@ func RecoveryClosureVerified(closure, pre string) bool {
 
 // Whether path still runs as git, --version exiting 0 and saying git version
 func isGit(path string) bool {
-	out, err := pysubprocess.RunWith(context.Background(), []string{path, "--version"}, pysubprocess.Options{Timeout: 30 * time.Second})
+	out, err := executil.Run(context.Background(), []string{path, "--version"}, executil.Options{Timeout: 30 * time.Second})
 	if err != nil {
 		return false
 	}
@@ -679,7 +678,7 @@ func keepAside(file string) (string, error) {
 
 // Whether go test or a pytest case drives this process against its own checkout, which no repair may touch
 func testOwnsLiveCheckout(root string) bool {
-	resolved, err := pypath.Resolve(root)
+	resolved, err := pathutil.Resolve(root)
 	return err == nil && pm.LiveCheckoutUnderTest(resolved)
 }
 
@@ -689,7 +688,7 @@ func readMarkerFields(marker string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -897,7 +896,7 @@ func adviseKilledMerge(gitDir, root, target, stash string) {
 	if err != nil {
 		return
 	}
-	text, _ := pystr.DecodeUTF8Sig(raw)
+	text, _ := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if strings.TrimSpace(text) != target {
 		return
 	}
@@ -1095,7 +1094,7 @@ func rememberForeignLock(marker, lock string) error {
 	if err != nil {
 		return err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return err
 	}

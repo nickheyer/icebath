@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const ManifestVersion = 1
@@ -25,15 +25,15 @@ func LoadManifest(root string) (*Recipe, error) {
 	if err != nil {
 		return nil, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, nil
 	}
-	manifest, err := pyjson.Loads(pystr.TranslateNewlines(text))
+	manifest, err := jsonutil.Decode(textutil.NormalizeNewlines(text))
 	if err != nil {
 		return nil, nil
 	}
-	obj, ok := manifest.(*pyjson.Object)
+	obj, ok := manifest.(*jsonutil.Object)
 	if !ok {
 		return nil, nil
 	}
@@ -49,9 +49,9 @@ func SaveManifest(root string, recipe *Recipe) (string, error) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return "", &OSError{Err: err}
 	}
-	payload := pyjson.ObjectOf("version", int64(ManifestVersion), "recipe", recipe.ToDict(),
-		"updatedAt", pydatetime.ISOFormatUTC(time.Now()))
-	text, err := pyjson.Dumps(payload, pyjson.Indent(2))
+	payload := jsonutil.ObjectOf("version", int64(ManifestVersion), "recipe", recipe.ToDict(),
+		"updatedAt", time.Now().UTC().Format(timeutil.RFC3339Micro))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return "", err
 	}

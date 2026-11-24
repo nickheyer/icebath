@@ -3,8 +3,8 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fills the current route from the config file, the defaults kept when it cannot be read
@@ -19,7 +19,7 @@ func LocalAuthorityLive(runner any, source *SessionSource) (*SessionAuthority, *
 }
 
 // Defers a typed model pick as the local session's canonical model mutation for the next boundary
-func DeferLocalModelPick(ctx context.Context, a *SessionAuthority, live *LiveSession, result provider.ModelSwitchResult, effort string) (*pyjson.Object, error) {
+func DeferLocalModelPick(ctx context.Context, a *SessionAuthority, live *LiveSession, result provider.ModelSwitchResult, effort string) (*jsonutil.Object, error) {
 	return deferLocalModelPick(ctx, a, live, result, effort)
 }
 

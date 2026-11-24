@@ -15,11 +15,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/settings"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Worktrees settings of the active profile
@@ -52,8 +52,8 @@ type Decision struct {
 }
 
 // Field map of the decision in declaration order, absent branch, lock state and size as null
-func (d *Decision) AsDict() *pyjson.Object {
-	o := pyjson.NewObject()
+func (d *Decision) AsDict() *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("name", d.Name)
 	o.Set("path", d.Path)
 	o.Set("action", d.Action)
@@ -162,7 +162,7 @@ func psutilLivePids(roots []string, exclude map[int]bool) map[string][]int {
 		if err != nil {
 			continue
 		}
-		real, err := pypath.Realpath(cwd, pypath.Lax)
+		real, err := pathutil.Resolve(cwd)
 		if err != nil {
 			continue
 		}
@@ -177,7 +177,7 @@ func psutilLivePids(roots []string, exclude map[int]bool) map[string][]int {
 func LiveProcessPids(paths []string, exclude []int) map[string][]int {
 	real := map[string]string{}
 	for _, p := range paths {
-		r, err := pypath.Realpath(p, pypath.Lax)
+		r, err := pathutil.Resolve(p)
 		if err != nil {
 			r = p
 		}
@@ -218,8 +218,8 @@ func lastActivity(path string) float64 {
 		return nowSeconds()
 	}
 	env["GIT_OPTIONAL_LOCKS"] = "0"
-	run := func(timeout time.Duration, args ...string) (*pysubprocess.Completed, error) {
-		return pysubprocess.RunWith(context.Background(), append([]string{"git"}, args...), pysubprocess.Options{Dir: path, Env: mapToEnviron(env), Timeout: timeout})
+	run := func(timeout time.Duration, args ...string) (*executil.Completed, error) {
+		return executil.Run(context.Background(), append([]string{"git"}, args...), executil.Options{Dir: path, Env: mapToEnviron(env), Timeout: timeout})
 	}
 	gd, err := run(10*time.Second, "rev-parse", "--absolute-git-dir")
 	if err != nil {
@@ -360,7 +360,7 @@ func PlanSweep(ctx context.Context, repoRoot string, maxAgeHours int, s *SweepCo
 			continue
 		}
 		age := (now - float64(st.ModTime().UnixNano())/1e9) / 3600
-		d := &Decision{Name: name, Path: entry, Action: "skip-young", Reason: "younger than its age tier", AgeHours: pyint.Round(age, 1)}
+		d := &Decision{Name: name, Path: entry, Action: "skip-young", Reason: "younger than its age tier", AgeHours: mathutil.Round(age, 1)}
 		if kanbanTreeFullRe.MatchString(name) {
 			d.Action, d.Reason = "skip-kanban", "owned by kanban gc"
 		}
@@ -381,7 +381,7 @@ func PlanSweep(ctx context.Context, repoRoot string, maxAgeHours int, s *SweepCo
 	for _, v := range verdicts {
 		name := filepath.Base(v.entry)
 		tier := PruneTierHours(name, float64(maxAgeHours))
-		d := &Decision{Name: name, Path: v.entry, AgeHours: pyint.Round((now-v.mtime)/3600, 1), Mtime: v.mtime, Force: v.force,
+		d := &Decision{Name: name, Path: v.entry, AgeHours: mathutil.Round((now-v.mtime)/3600, 1), Mtime: v.mtime, Force: v.force,
 			Verdict: v.verdict, LockState: v.lockState, TierHours: tier, PlannedAt: now}
 		_, archivable := archiveReasons[v.verdict]
 		switch {
@@ -395,7 +395,7 @@ func PlanSweep(ctx context.Context, repoRoot string, maxAgeHours int, s *SweepCo
 			var active float64
 			d.Action, d.Reason, d.LockState, active = planSurvivor(repoRoot, v.entry, v.verdict, cfg, tier, now)
 			if active != 0 {
-				d.AgeHours = min(d.AgeHours, pyint.Round((now-active)/3600, 1))
+				d.AgeHours = min(d.AgeHours, mathutil.Round((now-active)/3600, 1))
 			}
 		default:
 			if blocked := RemovalBlocked(v.entry); blocked != nil {
@@ -508,7 +508,7 @@ func ArchiveThenRemove(repoRoot, path, reason string, maxUntrackedMB float64, un
 	var skipped []SkippedUntracked
 	if list, ok := skippedV.([]any); ok {
 		for _, item := range list {
-			if o, ok := item.(*pyjson.Object); ok {
+			if o, ok := item.(*jsonutil.Object); ok {
 				p, _ := o.Get("path")
 				b, _ := o.Get("bytes")
 				ps, _ := p.(string)

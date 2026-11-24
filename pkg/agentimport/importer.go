@@ -17,13 +17,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -82,12 +80,12 @@ func readText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pystr.TranslateNewlines(pystr.DecodeUTF8SigReplace(raw)), nil
+	return textutil.NormalizeNewlines(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError))), nil
 }
 
 // Writes text through a temp file and rename, an existing file keeping its mode and a link its target
 func atomicWriteText(ctx context.Context, path, content string) error {
-	return pyfs.AtomicWriteTextWith(ctx, path, content, pyfs.TextWrite{Prefix: ".tmp_", PreserveMode: true})
+	return fsutil.WriteFile(ctx, path, []byte(content), fsutil.WriteOptions{Prefix: ".tmp_", KeepOwner: true, NativeLineEnds: true})
 }
 
 // ConfigReadError is an existing config.yaml that cannot be read or parsed, so a merge must not replace it
@@ -295,18 +293,18 @@ func DetectAgents() []string {
 }
 
 // SanitizeMCPEnv splits an MCP env mapping into kept values and the stripped secret names
-func SanitizeMCPEnv(env any) (*pyjson.Object, []string) {
-	kept := pyjson.NewObject()
-	o, ok := env.(*pyjson.Object)
+func SanitizeMCPEnv(env any) (*jsonutil.Object, []string) {
+	kept := jsonutil.NewObject()
+	o, ok := env.(*jsonutil.Object)
 	if !ok || o == nil {
 		return kept, nil
 	}
 	var stripped []string
-	for _, k := range o.Keys {
+	for _, k := range o.Keys() {
 		if IsSecretKey(k) {
 			stripped = append(stripped, k)
 		} else {
-			kept.Set(k, o.Vals[k])
+			kept.Set(k, o.Value(k))
 		}
 	}
 	return kept, stripped
@@ -331,24 +329,24 @@ func truthy(v any) bool {
 		return t.Sign() != 0
 	case []any:
 		return len(t) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t != nil && t.Len() > 0
 	case map[string]any:
 		return len(t) > 0
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Value of a key of a decoded object, nil when absent or not an object
 func get(v any, key string) any {
-	if o, ok := v.(*pyjson.Object); ok && o != nil {
-		return o.Vals[key]
+	if o, ok := v.(*jsonutil.Object); ok && o != nil {
+		return o.Value(key)
 	}
 	return nil
 }
 
-func asObject(v any) (*pyjson.Object, bool) {
-	o, ok := v.(*pyjson.Object)
+func asObject(v any) (*jsonutil.Object, bool) {
+	o, ok := v.(*jsonutil.Object)
 	return o, ok && o != nil
 }
 
@@ -357,18 +355,18 @@ func pyStr(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Config value of a decoded value, objects becoming ordered config mappings
 func toConfig(v any) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		m := map[string]any{}
-		for _, k := range t.Keys {
-			m[k] = toConfig(t.Vals[k])
+		for _, k := range t.Keys() {
+			m[k] = toConfig(t.Value(k))
 		}
-		config.SetMappingKeys(m, append([]string(nil), t.Keys...))
+		config.SetMappingKeys(m, append([]string(nil), t.Keys()...))
 		return m
 	case []any:
 		out := make([]any, len(t))
@@ -392,39 +390,39 @@ func setOrdered(m map[string]any, key string, v any) {
 }
 
 // Maps one Claude or Codex MCP server entry to the config shape with the stripped secret paths
-func translateMCPServer(name string, srv *pyjson.Object) (map[string]any, []string) {
+func translateMCPServer(name string, srv *jsonutil.Object) (map[string]any, []string) {
 	out := map[string]any{}
 	var stripped []string
-	if truthy(srv.Vals["command"]) {
-		setOrdered(out, "command", toConfig(srv.Vals["command"]))
-		if truthy(srv.Vals["args"]) {
-			setOrdered(out, "args", toConfig(srv.Vals["args"]))
+	if truthy(srv.Value("command")) {
+		setOrdered(out, "command", toConfig(srv.Value("command")))
+		if truthy(srv.Value("args")) {
+			setOrdered(out, "args", toConfig(srv.Value("args")))
 		}
-		kept, gone := SanitizeMCPEnv(srv.Vals["env"])
+		kept, gone := SanitizeMCPEnv(srv.Value("env"))
 		if kept.Len() > 0 {
 			setOrdered(out, "env", toConfig(kept))
 		}
 		for _, k := range gone {
 			stripped = append(stripped, fmt.Sprintf("mcp_servers.%s.env.%s", name, k))
 		}
-		if truthy(srv.Vals["cwd"]) {
-			setOrdered(out, "cwd", toConfig(srv.Vals["cwd"]))
+		if truthy(srv.Value("cwd")) {
+			setOrdered(out, "cwd", toConfig(srv.Value("cwd")))
 		}
 	}
-	if truthy(srv.Vals["url"]) {
-		setOrdered(out, "url", toConfig(srv.Vals["url"]))
-		if headers, ok := asObject(srv.Vals["headers"]); ok {
-			kept := pyjson.NewObject()
-			for _, k := range headers.Keys {
+	if truthy(srv.Value("url")) {
+		setOrdered(out, "url", toConfig(srv.Value("url")))
+		if headers, ok := asObject(srv.Value("headers")); ok {
+			kept := jsonutil.NewObject()
+			for _, k := range headers.Keys() {
 				if !IsSecretKey(k) && !strings.Contains(strings.ToLower(k), "authorization") {
-					kept.Set(k, headers.Vals[k])
+					kept.Set(k, headers.Value(k))
 				}
 			}
 			if kept.Len() > 0 {
 				setOrdered(out, "headers", toConfig(kept))
 			}
-			for _, k := range headers.Keys {
-				if _, ok := kept.Vals[k]; !ok {
+			for _, k := range headers.Keys() {
+				if _, ok := kept.Get(k); !ok {
 					stripped = append(stripped, fmt.Sprintf("mcp_servers.%s.headers.%s", name, k))
 				}
 			}
@@ -641,7 +639,7 @@ func (b *base) mergeMemoryEntries(kind, source, destination string, incoming []s
 		step := "back up existing"
 		if exists(destination) {
 			backup := fmt.Sprintf("%s.bak.%d", destination, time.Now().Unix())
-			if err := pyshutil.Copy2(destination, backup); err != nil {
+			if err := fsutil.CopyFile(destination, backup); err != nil {
 				return fmt.Sprintf("Could not %s memory file: %s", step, pyErrText(err)), nil
 			}
 			details["backup"] = backup
@@ -660,7 +658,7 @@ func (b *base) mergeMemoryEntries(kind, source, destination string, incoming []s
 }
 
 // Merges MCP servers into config.yaml mcp_servers, existing names a conflict unless overwriting
-func (b *base) importMCPServers(servers *pyjson.Object, kind string) error {
+func (b *base) importMCPServers(servers *jsonutil.Object, kind string) error {
 	destination := filepath.Join(b.targetRoot, "config.yaml")
 	if servers == nil || servers.Len() == 0 {
 		b.record(kind, "", destination, "skipped", "No MCP servers found", nil)
@@ -675,8 +673,8 @@ func (b *base) importMCPServers(servers *pyjson.Object, kind string) error {
 		existing = map[string]any{}
 	}
 	added := 0
-	for _, name := range servers.Keys {
-		srv, ok := asObject(servers.Vals[name])
+	for _, name := range servers.Keys() {
+		srv, ok := asObject(servers.Value(name))
 		if !ok {
 			b.record(kind, name, "", "skipped", "Server entry is not a mapping", nil)
 			continue
@@ -752,12 +750,12 @@ func (a *AgentImporter) runClaudeCode() error {
 		return err
 	}
 	claudeJSON := a.loadSourceMapping("mcp-servers", filepath.Join(filepath.Dir(a.sourceRoot), ".claude.json"), parseJSON, false, "")
-	servers := pyjson.NewObject()
-	for _, src := range []any{claudeJSON.Vals["mcpServers"], settings.Vals["mcpServers"]} {
+	servers := jsonutil.NewObject()
+	for _, src := range []any{claudeJSON.Value("mcpServers"), settings.Value("mcpServers")} {
 		if o, ok := asObject(src); ok {
-			for _, name := range o.Keys {
-				if _, has := servers.Vals[name]; !has {
-					servers.Set(name, o.Vals[name])
+			for _, name := range o.Keys() {
+				if _, has := servers.Get(name); !has {
+					servers.Set(name, o.Value(name))
 				}
 			}
 		}
@@ -783,7 +781,7 @@ func (a *AgentImporter) runCodex() error {
 	if err := a.importContextFile(filepath.Join(a.sourceRoot, "AGENTS.md"), "agents-md"); err != nil {
 		return err
 	}
-	mcp, _ := asObject(cfg.Vals["mcp_servers"])
+	mcp, _ := asObject(cfg.Value("mcp_servers"))
 	if err := a.importMCPServers(mcp, "mcp-servers"); err != nil {
 		return err
 	}
@@ -814,7 +812,7 @@ func (a *AgentImporter) runCursor() error {
 		return err
 	}
 	mcpFile := a.loadSourceMapping("mcp-servers", filepath.Join(a.sourceRoot, "mcp.json"), parseJSON, false, "")
-	mcp, _ := asObject(mcpFile.Vals["mcpServers"])
+	mcp, _ := asObject(mcpFile.Value("mcpServers"))
 	if err := a.importMCPServers(mcp, "mcp-servers"); err != nil {
 		return err
 	}
@@ -831,18 +829,18 @@ func globEscape(dir string) string {
 }
 
 // Parses JSON text into ordered objects
-func parseJSON(text string) (any, error) { return pyjson.Loads(text) }
+func parseJSON(text string) (any, error) { return jsonutil.Decode(text) }
 
 // Parses TOML text into ordered objects in document order
 func parseTOML(text string) (any, error) { return loadsTOMLOrdered(text) }
 
 // Mapping parsed from a source file, problems recorded as items and an empty mapping returned
-func (a *AgentImporter) loadSourceMapping(kind, path string, parse func(string) (any, error), recordMissing bool, nonMappingError string) *pyjson.Object {
+func (a *AgentImporter) loadSourceMapping(kind, path string, parse func(string) (any, error), recordMissing bool, nonMappingError string) *jsonutil.Object {
 	if _, err := os.Stat(path); err != nil {
 		if recordMissing {
 			a.record(kind, "", "", "skipped", "No "+filepath.Base(path)+" found", nil)
 		}
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	text, err := readText(path)
 	var data any
@@ -851,7 +849,7 @@ func (a *AgentImporter) loadSourceMapping(kind, path string, parse func(string) 
 	}
 	if err != nil {
 		a.record(kind, path, "", "error", fmt.Sprintf("Could not parse %s: %s", filepath.Base(path), pyErrText(err)), nil)
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	if o, ok := asObject(data); ok {
 		return o
@@ -859,7 +857,7 @@ func (a *AgentImporter) loadSourceMapping(kind, path string, parse func(string) 
 	if nonMappingError != "" {
 		a.record(kind, path, "", "error", nonMappingError, nil)
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Python str of an OS or decode error
@@ -916,13 +914,13 @@ var permissionRules = map[string]struct {
 }
 
 // settings.json permissions allow and deny rules merged into command_allowlist and approvals.deny
-func (a *AgentImporter) importPermissionRules(settings *pyjson.Object, key string) error {
+func (a *AgentImporter) importPermissionRules(settings *jsonutil.Object, key string) error {
 	spec := permissionRules[key]
 	label := "settings.json permissions." + key
 	destination := filepath.Join(a.targetRoot, "config.yaml")
 	var rules []any
-	if perms, ok := asObject(settings.Vals["permissions"]); ok {
-		rules, _ = perms.Vals[key].([]any)
+	if perms, ok := asObject(settings.Value("permissions")); ok {
+		rules, _ = perms.Value(key).([]any)
 	}
 	if len(rules) == 0 {
 		a.record(spec.kind, "", destination, "skipped", "No permissions."+key+" rules found", nil)
@@ -1003,7 +1001,7 @@ func stringsOrEmpty(s []string) []string {
 
 func containsValue(list []any, v any) bool {
 	for _, item := range list {
-		if pyjson.Equal(item, v) {
+		if anyutil.Equal(item, v) {
 			return true
 		}
 	}
@@ -1087,7 +1085,7 @@ func (a *AgentImporter) importSkills(sourceRoot string, recursive bool) error {
 					return "", err
 				}
 			}
-			return "", pyfs.CopyTree(src, dst, false, false, nil)
+			return "", fsutil.CopyTree(src, dst, fsutil.CopyTreeOptions{})
 		}
 		if err := a.apply("skill", skillDir, destination, "Would copy skill directory", copyTree, nil); err != nil {
 			return err

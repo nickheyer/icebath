@@ -17,11 +17,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -95,7 +95,7 @@ func shallowCopy(m map[string]any) map[string]any {
 func strSet(v any) map[string]bool {
 	set := map[string]bool{}
 	for _, item := range listItems(orEmptyList(v)) {
-		set[pyrepr.Str(item)] = true
+		set[anyutil.String(item)] = true
 	}
 	return set
 }
@@ -154,7 +154,7 @@ func pyStrSet(v any) (map[string]bool, error) {
 	}
 	set := map[string]bool{}
 	for _, item := range items {
-		set[pyrepr.Str(item)] = true
+		set[anyutil.String(item)] = true
 	}
 	return set, nil
 }
@@ -185,7 +185,7 @@ func pyDictUpdate(target map[string]any, v any) error {
 		case []any, map[string]any:
 			return fmt.Errorf("pause record key is %s where text was expected", errchain.Kind(key))
 		default:
-			spelled, err := pyjson.Dumps(key)
+			spelled, err := jsonutil.Encode(key)
 			if err != nil {
 				return err
 			}
@@ -197,7 +197,7 @@ func pyDictUpdate(target map[string]any, v any) error {
 
 func listContains(list []any, v any) bool {
 	for _, x := range list {
-		if pyrepr.Equal(x, v) {
+		if anyutil.Equal(x, v) {
 			return true
 		}
 	}
@@ -244,10 +244,10 @@ func WritePause(ctx context.Context, token, owner map[string]any, path string) e
 	if err != nil {
 		return err
 	}
-	same := existing != nil && pyrepr.Equal(pauseTokenOf(existing)["pause_id"], token["pause_id"])
+	same := existing != nil && anyutil.Equal(pauseTokenOf(existing)["pause_id"], token["pause_id"])
 	if existing != nil && !same {
-		if !pyrepr.Equal(existing["install_root"], PauseInstallRoot()) {
-			return &PauseRecordError{Kind: "RecordConflict", Msg: fmt.Sprintf("%s holds gateways paused for another checkout (%s)", path, pyrepr.Str(existing["install_root"]))}
+		if !anyutil.Equal(existing["install_root"], PauseInstallRoot()) {
+			return &PauseRecordError{Kind: "RecordConflict", Msg: fmt.Sprintf("%s holds gateways paused for another checkout (%s)", path, anyutil.String(existing["install_root"]))}
 		}
 		recorded, err := getterOrEmpty(existing["owner"])
 		if err != nil {
@@ -258,7 +258,7 @@ func WritePause(ctx context.Context, token, owner map[string]any, path string) e
 			if err != nil {
 				return err
 			}
-			return &PauseRecordError{Kind: "RecordConflict", Msg: fmt.Sprintf("%s holds gateways paused by live process %s", path, pyrepr.Str(live["pid"]))}
+			return &PauseRecordError{Kind: "RecordConflict", Msg: fmt.Sprintf("%s holds gateways paused by live process %s", path, anyutil.String(live["pid"]))}
 		}
 		dropped, err := DropNeverStopped(shallowCopy(pauseTokenOf(existing)))
 		if err != nil {
@@ -346,7 +346,7 @@ func DischargePause(ctx context.Context, token map[string]any, path string) erro
 	if err != nil {
 		return err
 	}
-	if existing != nil && pyrepr.Equal(pauseTokenOf(existing)["pause_id"], token["pause_id"]) {
+	if existing != nil && anyutil.Equal(pauseTokenOf(existing)["pause_id"], token["pause_id"]) {
 		return retirePause(path, []PauseFile{{path, existing}})
 	}
 	return nil
@@ -411,9 +411,9 @@ func pauseRetired(path string) (map[string]bool, error) {
 		return nil, &PauseRecordError{Kind: "RetiredUnknown", Msg: fmt.Sprintf("cannot read the retired paused-gateway list %s: %s", target, errchain.OSText(err))}
 	}
 	var ids any
-	if v, err := pyjson.Loads(strings.ToValidUTF8(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))), "\uFFFD")); err == nil {
-		if obj, ok := v.(*pyjson.Object); ok {
-			ids = obj.Vals["ids"]
+	if v, err := jsonutil.Decode(strings.ToValidUTF8(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))), "\uFFFD")); err == nil {
+		if obj, ok := v.(*jsonutil.Object); ok {
+			ids = obj.Value("ids")
 		}
 	}
 	list, ok := ids.([]any)
@@ -422,7 +422,7 @@ func pauseRetired(path string) (map[string]bool, error) {
 	}
 	set := map[string]bool{}
 	for _, i := range list {
-		set[pyrepr.Str(pyjson.Plain(i))] = true
+		set[anyutil.String(jsonutil.Plain(i))] = true
 	}
 	return set, nil
 }
@@ -451,7 +451,7 @@ func retirePause(path string, carriers []PauseFile) error {
 		}
 		for _, i := range append([]any{token["pause_id"]}, absorbed...) {
 			if truthy(i) {
-				ids[pyrepr.Str(i)] = true
+				ids[anyutil.String(i)] = true
 			}
 		}
 	}
@@ -504,8 +504,8 @@ func pauseRedundant(found []PauseFile, held, retired map[string]bool) (map[strin
 			return nil, err
 		}
 		for _, oid := range absorbed {
-			if _, ok := carriers[pyrepr.Str(oid)]; !ok {
-				carriers[pyrepr.Str(oid)] = f.Src
+			if _, ok := carriers[anyutil.String(oid)]; !ok {
+				carriers[anyutil.String(oid)] = f.Src
 			}
 		}
 	}
@@ -516,7 +516,7 @@ func pauseRedundant(found []PauseFile, held, retired map[string]bool) (map[strin
 		raw := pauseTokenOf(f.Body)["pause_id"]
 		oid := ""
 		if truthy(raw) {
-			oid = pyrepr.Str(raw)
+			oid = anyutil.String(raw)
 		}
 		if oid == "" {
 			continue
@@ -683,7 +683,7 @@ func prunePauseRetired(path string) error {
 	}
 	carried := map[string]bool{}
 	for _, b := range bodies {
-		carried[pyrepr.Str(pauseTokenOf(b)["pause_id"])] = true
+		carried[anyutil.String(pauseTokenOf(b)["pause_id"])] = true
 	}
 	keep := map[string]bool{}
 	for id := range retired {
@@ -726,7 +726,7 @@ func claimLocked(ctx context.Context, path, src, mine string) (map[string]any, e
 	if err != nil {
 		return nil, err
 	}
-	if body == nil || !pyrepr.Equal(body["install_root"], PauseInstallRoot()) {
+	if body == nil || !anyutil.Equal(body["install_root"], PauseInstallRoot()) {
 		return nil, nil
 	}
 	found, held, redundant, err := pauseSurvey(path)
@@ -864,7 +864,7 @@ func pauseWithout(token map[string]any, pids map[string]bool) (map[string]any, e
 	}
 	profiles := map[string]any{}
 	for p, pid := range source {
-		if !pids[pyrepr.Str(pid)] {
+		if !pids[anyutil.String(pid)] {
 			profiles[p] = pid
 		}
 	}
@@ -896,7 +896,7 @@ func filterByPID(v any, pids map[string]bool, inside bool) ([]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if pids[pyrepr.Str(entry["pid"])] == inside {
+		if pids[anyutil.String(entry["pid"])] == inside {
 			out = append(out, u)
 		}
 	}
@@ -909,7 +909,7 @@ func requestOnDisk(token map[string]any, pid string) (*bool, error) {
 	if !truthy(raw) {
 		return boolPtr(false), nil
 	}
-	path := pyrepr.Str(raw)
+	path := anyutil.String(raw)
 	ttl := plannedStopProbe.TTL
 	first, err := namesRequest(token, pid, path, &ttl)
 	if err != nil {
@@ -937,15 +937,15 @@ func namesRequest(token map[string]any, pid, path string, ttl *int) (*bool, erro
 	if err != nil {
 		return nil, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, nil
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil
 	}
-	marker, ok := v.(*pyjson.Object)
+	marker, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, nil
 	}
@@ -983,7 +983,7 @@ func namesRequest(token map[string]any, pid, path string, ttl *int) (*bool, erro
 	}
 	expected, _ := marker.Get("target_start_time")
 	actual := plannedStopProbe.StartTime(int(wantPID))
-	return boolPtr(expected == nil || actual == nil || pyrepr.Equal(expected, actual)), nil
+	return boolPtr(expected == nil || actual == nil || anyutil.Equal(expected, actual)), nil
 }
 
 // Pids this update asked to stop and pids whose request evidence cannot be read
@@ -1001,7 +1001,7 @@ func pauseAsked(token map[string]any) (map[string]bool, map[string]bool, error) 
 		return nil, nil, err
 	}
 	for _, raw := range requested {
-		p := pyrepr.Str(raw)
+		p := anyutil.String(raw)
 		if sent[p] {
 			continue
 		}
@@ -1046,7 +1046,7 @@ func SplitDraining(token map[string]any) (map[string]any, error) {
 	}
 	profiles := map[string]any{}
 	for p, pid := range source {
-		if live[pyrepr.Str(pid)] {
+		if live[anyutil.String(pid)] {
 			profiles[p] = pid
 		}
 	}
@@ -1152,7 +1152,7 @@ func MergePauseInto(token, adopted map[string]any) (map[string]any, error) {
 			return nil, err
 		}
 		for _, k := range asked {
-			req[pyrepr.Str(k)] = true
+			req[anyutil.String(k)] = true
 		}
 		got, err := pyStrSet(token["stop_sent"])
 		if err != nil {
@@ -1322,7 +1322,7 @@ func relaunchKeys(token map[string]any) map[string]bool {
 	}
 	for _, u := range listItems(orEmptyList(token["unmapped"])) {
 		if truthy(mapOf(u)["argv"]) {
-			keys["unmapped:"+pyrepr.Str(mapOf(u)["pid"])] = true
+			keys["unmapped:"+anyutil.String(mapOf(u)["pid"])] = true
 		}
 	}
 	for _, u := range listItems(orEmptyList(token["posix_units"])) {
@@ -1333,9 +1333,9 @@ func relaunchKeys(token map[string]any) map[string]bool {
 
 func unitKey(u map[string]any) string {
 	if truthy(u["unit"]) {
-		return pyrepr.Str(u["unit"])
+		return anyutil.String(u["unit"])
 	}
-	return pyrepr.Str(u["label"])
+	return anyutil.String(u["label"])
 }
 
 func pyFloatOf(v any) float64 {
@@ -1377,7 +1377,7 @@ func holdBackingOff(token, held map[string]any) {
 	}
 	heldUnmapped := listItems(held["unmapped"])
 	for _, u := range listItems(token["unmapped"]) {
-		if truthy(mapOf(u)["argv"]) && waiting["unmapped:"+pyrepr.Str(mapOf(u)["pid"])] {
+		if truthy(mapOf(u)["argv"]) && waiting["unmapped:"+anyutil.String(mapOf(u)["pid"])] {
 			heldUnmapped = append(heldUnmapped, u)
 		}
 	}

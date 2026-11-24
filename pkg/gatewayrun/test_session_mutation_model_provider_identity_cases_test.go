@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner whose session runtime is the frozen policy's own route, the chain never walked
@@ -55,8 +55,8 @@ func pickAfterEdit(t *testing.T, before, after func() map[string]any, providerNa
 	}
 	runner.policy = policy
 	writeJSONConfig(t, h, after())
-	prepared := pyjson.ObjectOf("snapshot", pyjson.ObjectOf("receipt", pyjson.ObjectOf("session_id", "sid", "policy", policy.AsDict())))
-	committed, err := gateway.PrepareModel(ctx, authority, &gateway.LiveSession{Route: "r"}, pyjson.ObjectOf("model", "switched", "provider", providerName), prepared)
+	prepared := jsonutil.ObjectOf("snapshot", jsonutil.ObjectOf("receipt", jsonutil.ObjectOf("session_id", "sid", "policy", policy.AsDict())))
+	committed, err := gateway.PrepareModel(ctx, authority, &gateway.LiveSession{Route: "r"}, jsonutil.ObjectOf("model", "switched", "provider", providerName), prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,11 +80,11 @@ func pickAfterEdit(t *testing.T, before, after func() map[string]any, providerNa
 	out.warmCfg, out.warm = read(authority, runner)
 	coldAuthority, coldRunner := pickOwner(db, policy)
 	out.coldCfg, out.cold = read(coldAuthority, coldRunner)
-	frozen, err := pyjson.Loads(next.ConfigJSON)
+	frozen, err := jsonutil.Decode(next.ConfigJSON)
 	if err != nil {
 		t.Fatal(err)
 	}
-	out.frozen, _ = pyjson.Plain(frozen).(map[string]any)
+	out.frozen, _ = jsonutil.Plain(frozen).(map[string]any)
 	return out
 }
 

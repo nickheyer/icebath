@@ -1,6 +1,8 @@
 package tuihost
 
-import "github.com/nickheyer/icebath/pkg/internal/pyrepr"
+import (
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+)
 
 // Risk badge payload of a tool row from the risk metadata the executor attached, nil without metadata
 func OutputRiskPayload(name string, kw map[string]any) map[string]any {
@@ -20,7 +22,7 @@ func OutputRiskPayload(name string, kw map[string]any) map[string]any {
 		}
 	case []any:
 		for _, item := range list {
-			findings = append(findings, pyrepr.Str(item))
+			findings = append(findings, anyutil.String(item))
 		}
 	}
 	redacted, _ := metadata["redacted"].(bool)

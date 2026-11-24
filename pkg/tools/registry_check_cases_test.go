@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Fresh registry with the verdict and definition caches cleared before and after the test
@@ -45,8 +44,8 @@ func secretProbe(name string) func(*Env) bool {
 	}
 }
 
-func checkSchema(name string) *pyjson.Object {
-	return pyjson.ObjectOf("name", name, "description", "test-only probe", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
+func checkSchema(name string) *jsonutil.Object {
+	return jsonutil.ObjectOf("name", name, "description", "test-only probe", "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf()))
 }
 
 // Snapshot of the recorded log records
@@ -111,8 +110,8 @@ func TestCoreToolDropAfterSuccessWarnsOnceNeverConfiguredStaysInfo(t *testing.T)
 	core := true
 	coreGate := func(*Env) bool { return core }
 	neverGate := func(*Env) bool { return false }
-	r.Register(Def{Name: "core_probe_tool", Toolset: "core_probe_tool", Schema: pyjson.ObjectOf("name", "core_probe_tool"), Handler: constHandler("{}"), Check: coreGate})
-	r.Register(Def{Name: "never_probe_tool", Toolset: "never_probe_tool", Schema: pyjson.ObjectOf("name", "never_probe_tool"), Handler: constHandler("{}"), Check: neverGate})
+	r.Register(Def{Name: "core_probe_tool", Toolset: "core_probe_tool", Schema: jsonutil.ObjectOf("name", "core_probe_tool"), Handler: constHandler("{}"), Check: coreGate})
+	r.Register(Def{Name: "never_probe_tool", Toolset: "never_probe_tool", Schema: jsonutil.ObjectOf("name", "never_probe_tool"), Handler: constHandler("{}"), Check: neverGate})
 	ctx := context.Background()
 	if !r.checkCached(ctx, env, coreGate) || r.checkCached(ctx, env, neverGate) {
 		t.Fatal("initial verdicts wrong")

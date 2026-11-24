@@ -14,12 +14,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const interruptScaffoldMarker = "[This response was interrupted by a user correction.]"
@@ -550,7 +550,7 @@ func persistSystemPrompt(ctx context.Context, a *AIAgent, failureMessage string,
 }
 
 // Pins the tools to the session's persisted array, returning the names this surface built before the pin
-func restorePinnedTools(ctx context.Context, a *AIAgent, sessionRow *pyjson.Object) []string {
+func restorePinnedTools(ctx context.Context, a *AIAgent, sessionRow *jsonutil.Object) []string {
 	built := mcp.AgentToolNames(a)
 	var saved any
 	if sessionRow != nil {
@@ -558,7 +558,7 @@ func restorePinnedTools(ctx context.Context, a *AIAgent, sessionRow *pyjson.Obje
 	}
 	var pin any
 	if s, ok := saved.(string); ok && s != "" {
-		if v, err := pyjson.Loads(s); err == nil {
+		if v, err := jsonutil.Decode(s); err == nil {
 			pin = v
 		}
 	}
@@ -612,7 +612,7 @@ func refreshBotChatTools(ctx context.Context, a *AIAgent) {
 func restoreOrBuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string, conversationHistory []map[string]any) error {
 	log := pkgLog()
 	storedPrompt, storedState := "", "missing"
-	var sessionRow *pyjson.Object
+	var sessionRow *jsonutil.Object
 	if len(conversationHistory) > 0 && a.sessionDB != nil {
 		row, err := a.sessionDB.GetSession(ctx, a.sessionID)
 		if err != nil {
@@ -682,7 +682,7 @@ func restoreOrBuildSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *
 }
 
 // Reuses a stored prompt whose runtime identity matches, rebuilding on a Bot Chat epoch change or a refresh request
-func restoreStoredSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string, conversationHistory []map[string]any, storedPrompt string, sessionRow *pyjson.Object) error {
+func restoreStoredSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string, conversationHistory []map[string]any, storedPrompt string, sessionRow *jsonutil.Object) error {
 	if botChatPromptStale(ctx, a, storedPrompt) {
 		pkgLog().Info(fmt.Sprintf("Bot Chat capability epoch changed for session %s; rebuilding system prompt to "+
 			"adopt the new capability surface (one-time prefix-cache break).", a.sessionID))
@@ -792,7 +792,7 @@ const (
 
 type canonEntry struct{ key, value string }
 
-var canonArgsLoads = pyjson.Loads
+var canonArgsLoads = jsonutil.Decode
 
 var canonArgsCache = struct {
 	sync.Mutex
@@ -814,7 +814,7 @@ func canonicalizeToolCallArguments(argStr string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	canonical, err := pyjson.Dumps(parsed, pyjson.Separators(",", ":"), pyjson.SortKeys(true))
+	canonical, err := jsonutil.Encode(parsed, jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}
@@ -858,8 +858,8 @@ func cloneMessageForSend(msg any) any {
 			out[i] = cloneMessageForSend(x).(map[string]any)
 		}
 		return out
-	case *pyjson.Object:
-		return pyjson.Clone(v)
+	case *jsonutil.Object:
+		return jsonutil.Clone(v)
 	}
 	return msg
 }
@@ -877,8 +877,8 @@ func canonicalizeAPIToolCalls(apiMessages []any) {
 		}
 		newTCs := make([]any, 0, len(tcs))
 		for _, raw := range tcs {
-			tc, isMap := pyjson.Dict(raw)
-			fn, hasFn := pyjson.Dict(tc["function"])
+			tc, isMap := jsonutil.AsMap(raw)
+			fn, hasFn := jsonutil.AsMap(tc["function"])
 			if !isMap || !hasFn {
 				newTCs = append(newTCs, raw)
 				continue

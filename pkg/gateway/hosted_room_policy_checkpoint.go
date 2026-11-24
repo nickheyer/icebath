@@ -7,10 +7,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -80,18 +79,18 @@ type PolicySnapshot struct {
 
 // Python str of a mapping value, empty for a falsy one
 func policyText(mapping map[string]any, key string) string {
-	if !pyrepr.Truthy(mapping[key]) {
+	if !anyutil.IsTrue(mapping[key]) {
 		return ""
 	}
-	return pyrepr.Str(mapping[key])
+	return anyutil.String(mapping[key])
 }
 
 // Python int of a mapping value, zero for a falsy one
 func policyInt(mapping map[string]any, key string) (int64, error) {
-	if !pyrepr.Truthy(mapping[key]) {
+	if !anyutil.IsTrue(mapping[key]) {
 		return 0, nil
 	}
-	return pyint.Int64(mapping[key])
+	return anyutil.ToInt(mapping[key])
 }
 
 // Refuses a room the store does not hold
@@ -180,7 +179,7 @@ func policyStoreActiveEvent(ctx context.Context, conn state.SQLiteConn, event ma
 	if err != nil {
 		return err
 	}
-	seq, err := pyint.Int64(event["seq"])
+	seq, err := anyutil.ToInt(event["seq"])
 	if err != nil {
 		return err
 	}
@@ -192,7 +191,7 @@ func policyStoreActiveEvent(ctx context.Context, conn state.SQLiteConn, event ma
 
 // References one event in the thread transcript, trimming it to its message bound
 func policyStoreTranscriptEvent(ctx context.Context, conn state.SQLiteConn, event map[string]any, threadID string, settledSeq *int64) error {
-	seq, err := pyint.Int64(event["seq"])
+	seq, err := anyutil.ToInt(event["seq"])
 	if err != nil {
 		return err
 	}
@@ -200,7 +199,7 @@ func policyStoreTranscriptEvent(ctx context.Context, conn state.SQLiteConn, even
 	if settledSeq != nil {
 		settled = *settledSeq
 	}
-	kind := pyrepr.Str(event["kind"])
+	kind := anyutil.String(event["kind"])
 	if _, err := conn.ExecContext(ctx, `INSERT INTO hosted_room_policy_transcript(
                    room_id, thread_id, seq, kind, settled_seq
                ) VALUES (?, ?, ?, ?, ?)
@@ -224,7 +223,7 @@ func policyStoreTranscriptEvent(ctx context.Context, conn state.SQLiteConn, even
 // Thread transcript merged with the active projection in sequence order
 func (c *HostedRoomPolicyCheckpoint) discussionEvents(ctx context.Context, conn state.SQLiteConn, roomID, threadID, discussionEventID, boundError string) ([]map[string]any, error) {
 	bySeq := map[int64]map[string]any{}
-	var active []*pyjson.Object
+	var active []*jsonutil.Object
 	for _, pass := range []struct {
 		receipts int
 		bound    int64
@@ -261,7 +260,7 @@ func (c *HostedRoomPolicyCheckpoint) discussionEvents(ctx context.Context, conn 
 			return nil, err
 		}
 		event, _ := decoded.(map[string]any)
-		seq, err := pyint.Int64(event["seq"])
+		seq, err := anyutil.ToInt(event["seq"])
 		if err != nil {
 			return nil, err
 		}
@@ -290,7 +289,7 @@ func policyApplyUserMessage(ctx context.Context, conn state.SQLiteConn, event, p
 	if threadID == "" || eventID == "" {
 		return nil
 	}
-	seq, err := pyint.Int64(event["seq"])
+	seq, err := anyutil.ToInt(event["seq"])
 	if err != nil {
 		return err
 	}
@@ -299,7 +298,7 @@ func policyApplyUserMessage(ctx context.Context, conn state.SQLiteConn, event, p
                ) VALUES (?, ?, ?, ?, 0)
                ON CONFLICT(room_id, thread_id) DO UPDATE SET
                    discussion_event_id=excluded.discussion_event_id,
-                   latest_user_seq=excluded.latest_user_seq, completed=0`, pyrepr.Str(event["room_id"]), threadID, eventID, seq); err != nil {
+                   latest_user_seq=excluded.latest_user_seq, completed=0`, anyutil.String(event["room_id"]), threadID, eventID, seq); err != nil {
 		return err
 	}
 	if err := policyStoreActiveEvent(ctx, conn, event, threadID, eventID); err != nil {
@@ -310,8 +309,8 @@ func policyApplyUserMessage(ctx context.Context, conn state.SQLiteConn, event, p
 
 // Indexes member messages and terminal outcomes of a known discussion
 func policyApplyDiscussionEvent(ctx context.Context, conn state.SQLiteConn, event, payload map[string]any) error {
-	roomID, kind := pyrepr.Str(event["room_id"]), policyText(event, "kind")
-	seq, err := pyint.Int64(event["seq"])
+	roomID, kind := anyutil.String(event["room_id"]), policyText(event, "kind")
+	seq, err := anyutil.ToInt(event["seq"])
 	if err != nil {
 		return err
 	}
@@ -347,7 +346,7 @@ func policyApplyDiscussionEvent(ctx context.Context, conn state.SQLiteConn, even
 	if err != nil {
 		return err
 	}
-	if kind == "turn.settled" && pyrepr.Truthy(payload["message_event_id"]) {
+	if kind == "turn.settled" && anyutil.IsTrue(payload["message_event_id"]) {
 		committed, err := policySettledMessage(ctx, conn, roomID, discussionEventID, payload["message_event_id"])
 		if err != nil {
 			return err
@@ -374,7 +373,7 @@ func policyApplyDiscussionEvent(ctx context.Context, conn state.SQLiteConn, even
 
 // Drops a discussion the room activity closed
 func policyApplyRoomActivity(ctx context.Context, conn state.SQLiteConn, event, payload map[string]any) error {
-	roomID := pyrepr.Str(event["room_id"])
+	roomID := anyutil.String(event["room_id"])
 	if _, err := conn.ExecContext(ctx, policyDeleteActiveEventsSQL, roomID, policyText(payload, "discussion_event_id")); err != nil {
 		return err
 	}
@@ -384,7 +383,7 @@ func policyApplyRoomActivity(ctx context.Context, conn state.SQLiteConn, event, 
 
 // Reopens a discussion its cap completed, restoring its thread row and active projection from the room log
 func policyApplyContinued(ctx context.Context, conn state.SQLiteConn, event, payload map[string]any) error {
-	roomID, discussionEventID := pyrepr.Str(event["room_id"]), policyText(payload, "discussion_event_id")
+	roomID, discussionEventID := anyutil.String(event["room_id"]), policyText(payload, "discussion_event_id")
 	source, err := state.QueryRowObject(ctx, conn, "SELECT "+hostedEventColumns+" FROM hosted_room_events WHERE room_id=? AND event_id=?", roomID, discussionEventID)
 	if err != nil || source == nil || hrStr(source, "kind") != "message.user" {
 		return err
@@ -395,7 +394,7 @@ func policyApplyContinued(ctx context.Context, conn state.SQLiteConn, event, pay
 	}
 	sourcePayload, _ := sourceEvent["payload"].(map[string]any)
 	threadID, sourceSeq := policyText(sourcePayload, "thread_id"), hrInt(source, "seq")
-	seq, err := pyint.Int64(event["seq"])
+	seq, err := anyutil.ToInt(event["seq"])
 	if err != nil {
 		return err
 	}
@@ -436,12 +435,12 @@ func policyApplyContinued(ctx context.Context, conn state.SQLiteConn, event, pay
 
 // Advances the stop fence of the room cursor
 func policyApplyStopRequested(ctx context.Context, conn state.SQLiteConn, event, _ map[string]any) error {
-	seq, err := pyint.Int64(event["seq"])
+	seq, err := anyutil.ToInt(event["seq"])
 	if err != nil {
 		return err
 	}
 	_, err = conn.ExecContext(ctx, `UPDATE hosted_room_policy_cursors
-               SET stopped_through_seq=MAX(stopped_through_seq, ?) WHERE room_id=?`, seq, pyrepr.Str(event["room_id"]))
+               SET stopped_through_seq=MAX(stopped_through_seq, ?) WHERE room_id=?`, seq, anyutil.String(event["room_id"]))
 	return err
 }
 
@@ -573,8 +572,8 @@ func (c *HostedRoomPolicyCheckpoint) Sync(ctx context.Context, roomID string, la
 				}
 			}
 			updatedAt := 0.0
-			if last := rows[len(rows)-1]; pyrepr.Truthy(last["created_at"]) {
-				if updatedAt, err = pyint.Float(last["created_at"]); err != nil {
+			if last := rows[len(rows)-1]; anyutil.IsTrue(last["created_at"]) {
+				if updatedAt, err = anyutil.ToFloat(last["created_at"]); err != nil {
 					return err
 				}
 			}
@@ -611,14 +610,14 @@ func (c *HostedRoomPolicyCheckpoint) Snapshot(ctx context.Context, roomID string
 		if err != nil || thread == nil {
 			return err
 		}
-		threadID := pyrepr.Str(thread.Vals["thread_id"])
-		if out.Events, err = c.discussionEvents(ctx, conn, roomID, threadID, pyrepr.Str(thread.Vals["discussion_event_id"]), "active room policy projection exceeded its bound"); err != nil {
+		threadID := anyutil.String(thread.Value("thread_id"))
+		if out.Events, err = c.discussionEvents(ctx, conn, roomID, threadID, anyutil.String(thread.Value("discussion_event_id")), "active room policy projection exceeded its bound"); err != nil {
 			return err
 		}
 		rows, err := state.QueryObjects(ctx, conn, `SELECT member_id, seen_through_seq FROM hosted_room_policy_watermarks
                    WHERE room_id=? AND thread_id=?`, roomID, threadID)
 		for _, row := range rows {
-			out.Watermarks[[2]string{threadID, pyrepr.Str(row.Vals["member_id"])}] = hrInt(row, "seen_through_seq")
+			out.Watermarks[[2]string{threadID, anyutil.String(row.Value("member_id"))}] = hrInt(row, "seen_through_seq")
 		}
 		return err
 	})
@@ -712,13 +711,13 @@ func (c *HostedRoomPolicyCheckpoint) EventsForTask(ctx context.Context, roomID s
 		if err != nil {
 			return err
 		}
-		events, err := c.discussionEvents(ctx, conn, roomID, policyText(source["payload"].(map[string]any), "thread_id"), pyrepr.Str(source["event_id"]), "task policy projection exceeded its bound")
+		events, err := c.discussionEvents(ctx, conn, roomID, policyText(source["payload"].(map[string]any), "thread_id"), anyutil.String(source["event_id"]), "task policy projection exceeded its bound")
 		if err != nil {
 			return err
 		}
 		bySeq := map[int64]map[string]any{}
 		for _, event := range append(events, published...) {
-			seq, err := pyint.Int64(event["seq"])
+			seq, err := anyutil.ToInt(event["seq"])
 			if err != nil {
 				return err
 			}
@@ -739,7 +738,7 @@ func (c *HostedRoomPolicyCheckpoint) CompactCompleted(ctx context.Context, roomI
 			return err
 		}
 		for _, row := range rows {
-			if _, err := conn.ExecContext(ctx, policyDeleteActiveEventsSQL, roomID, pyrepr.Str(row.Vals["discussion_event_id"])); err != nil {
+			if _, err := conn.ExecContext(ctx, policyDeleteActiveEventsSQL, roomID, anyutil.String(row.Value("discussion_event_id"))); err != nil {
 				return err
 			}
 		}

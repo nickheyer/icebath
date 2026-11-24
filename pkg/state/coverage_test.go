@@ -89,7 +89,7 @@ func TestRepairedReloadCommitArchivesOnlyHeldRows(t *testing.T) {
 			}
 			var live []any
 			for _, r := range rows {
-				live = append(live, r.Vals["content"])
+				live = append(live, r.Value("content"))
 			}
 			if !slices.Equal(live, c.expected) {
 				t.Fatalf("live %q want %q", live, c.expected)
@@ -100,7 +100,7 @@ func TestRepairedReloadCommitArchivesOnlyHeldRows(t *testing.T) {
 			}
 			var texts []any
 			for _, r := range recalled {
-				texts = append(texts, r.Vals["content"])
+				texts = append(texts, r.Value("content"))
 			}
 			for _, content := range live {
 				if countOf(texts, content) != 1 {

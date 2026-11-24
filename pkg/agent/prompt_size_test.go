@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -77,7 +77,7 @@ func TestSkillsBreakdownShapeSortedAndAttributed(t *testing.T) {
 		}
 	}
 	for _, s := range entries {
-		keys := s.Object().Keys
+		keys := s.Object().Keys()
 		for _, k := range []string{"name", "index_line_bytes", "skill_md_bytes", "path"} {
 			if !slices.Contains(keys, k) {
 				t.Fatalf("entry %s keys %v lack %s", s.Name, keys, k)
@@ -142,10 +142,7 @@ func TestSkillsBreakdownAttributesDemotedCategorySharedLine(t *testing.T) {
 	if !found {
 		t.Fatalf("no demoted demo line in %q", skillsBlock)
 	}
-	entries, err := computeSkillsBreakdown(env, skillsBlock)
-	if err != nil {
-		t.Fatal(err)
-	}
+	entries := computeSkillsBreakdown(env, skillsBlock)
 	var names []string
 	for _, e := range entries {
 		names = append(names, e.Name)
@@ -172,24 +169,18 @@ func TestSkillsBreakdownAttributesDemotedCategorySharedLine(t *testing.T) {
 func TestComputeSkillsBreakdownParsesRowsAndSharedLines(t *testing.T) {
 	_, env := promptSizeHome(t)
 	block := "<available_skills>\n  demo [names only]: alpha-skill, beta-skill,  gamma , \n  code:\n    - codex:rescue: desc: more\n    -  \n  - solo\n- top: x\n</available_skills>"
-	entries, err := computeSkillsBreakdown(env, block)
-	if err != nil {
-		t.Fatal(err)
-	}
+	entries := computeSkillsBreakdown(env, block)
 	var rows []any
 	for _, e := range entries {
 		rows = append(rows, e.Object())
 	}
-	got, err := pyjson.Dumps(rows, pyjson.EnsureASCII(false))
+	got, err := jsonutil.Encode(rows)
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := `[{"name": "alpha-skill", "index_line_bytes": 21, "index_line_total_bytes": 55, "index_line_shared_bytes": 10, "index_line_skill_count": 3, "skill_md_bytes": null, "path": ""}, {"name": "beta-skill", "index_line_bytes": 20, "index_line_total_bytes": 55, "index_line_shared_bytes": 10, "index_line_skill_count": 3, "skill_md_bytes": null, "path": ""}, {"name": "codex:rescue", "index_line_bytes": 30, "index_line_total_bytes": 30, "index_line_shared_bytes": 0, "index_line_skill_count": 1, "skill_md_bytes": null, "path": ""}, {"name": "gamma", "index_line_bytes": 14, "index_line_total_bytes": 55, "index_line_shared_bytes": 9, "index_line_skill_count": 3, "skill_md_bytes": null, "path": ""}, {"name": "solo", "index_line_bytes": 8, "index_line_total_bytes": 8, "index_line_shared_bytes": 0, "index_line_skill_count": 1, "skill_md_bytes": null, "path": ""}, {"name": "top", "index_line_bytes": 8, "index_line_total_bytes": 8, "index_line_shared_bytes": 0, "index_line_skill_count": 1, "skill_md_bytes": null, "path": ""}]`
+	want := `[{"name":"alpha-skill","index_line_bytes":21,"index_line_total_bytes":55,"index_line_shared_bytes":10,"index_line_skill_count":3,"skill_md_bytes":null,"path":""},{"name":"beta-skill","index_line_bytes":20,"index_line_total_bytes":55,"index_line_shared_bytes":10,"index_line_skill_count":3,"skill_md_bytes":null,"path":""},{"name":"codex:rescue","index_line_bytes":30,"index_line_total_bytes":30,"index_line_shared_bytes":0,"index_line_skill_count":1,"skill_md_bytes":null,"path":""},{"name":"gamma","index_line_bytes":14,"index_line_total_bytes":55,"index_line_shared_bytes":9,"index_line_skill_count":3,"skill_md_bytes":null,"path":""},{"name":"solo","index_line_bytes":8,"index_line_total_bytes":8,"index_line_shared_bytes":0,"index_line_skill_count":1,"skill_md_bytes":null,"path":""},{"name":"top","index_line_bytes":8,"index_line_total_bytes":8,"index_line_shared_bytes":0,"index_line_skill_count":1,"skill_md_bytes":null,"path":""}]`
 	if got != want {
 		t.Fatalf("breakdown\n got %s\nwant %s", got, want)
-	}
-	if _, err := computeSkillsBreakdown(env, "  - a\xed\xa0\x80b"); err == nil || err.Error() != "text holds a lone surrogate that UTF-8 cannot encode" {
-		t.Fatalf("surrogate line error %v", err)
 	}
 }
 
@@ -220,7 +211,7 @@ func TestSkillMDPathsByNameKeysFrontmatterAndDirName(t *testing.T) {
 }
 
 func TestPromptToolNameShapes(t *testing.T) {
-	obj := pyjson.NewObject()
+	obj := jsonutil.NewObject()
 	obj.Set("name", "ordered")
 	for _, tc := range []struct {
 		tool any
@@ -261,8 +252,8 @@ func TestComputeToolsetsBreakdownGroupsLargestFirst(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	knownJSON, _ := pyjson.Dumps(list[1], pyjson.EnsureASCII(false))
-	unknown := ToolsetBreakdownEntry{Toolset: "(unknown)", ToolCount: 3, JSONBytes: 21 + 5 + 21}
+	knownJSON, _ := jsonutil.Encode(list[1])
+	unknown := ToolsetBreakdownEntry{Toolset: "(unknown)", ToolCount: 3, JSONBytes: 20 + 5 + 20}
 	knownRow := ToolsetBreakdownEntry{Toolset: m[known], ToolCount: 1, JSONBytes: len(knownJSON)}
 	want := []ToolsetBreakdownEntry{unknown, knownRow}
 	if knownRow.JSONBytes > unknown.JSONBytes || (knownRow.JSONBytes == unknown.JSONBytes && knownRow.Toolset < unknown.Toolset) {
@@ -316,7 +307,7 @@ func TestPromptBreakdownJSONMatchesPythonDump(t *testing.T) {
 		SkillsBreakdown: []SkillBreakdownEntry{{Name: "a", IndexLineBytes: 7, IndexLineTotalBytes: 7, IndexLineSkillCount: 1, SkillMDBytes: &md, Path: "/h/skills/a/SKILL.md"},
 			{Name: "b", IndexLineBytes: 3, IndexLineTotalBytes: 9, IndexLineSharedBytes: 2, IndexLineSkillCount: 2}},
 		ToolsetsBreakdown: []ToolsetBreakdownEntry{{"web", 1, 40}}}
-	got, err := pyjson.Dumps(data.Object(), pyjson.EnsureASCII(false), pyjson.Indent(2))
+	got, err := jsonutil.Encode(data.Object(), jsonutil.Indent(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -338,14 +329,14 @@ func TestCmdPromptSizePrintsTextJSONAndFailure(t *testing.T) {
 	if err != nil || code != 0 {
 		t.Fatalf("json %d %v", code, err)
 	}
-	parsed, err := pyjson.Loads(out.String())
+	parsed, err := jsonutil.Decode(out.String())
 	if err != nil {
 		t.Fatalf("json output %v %q", err, out.String())
 	}
-	obj := parsed.(*pyjson.Object)
+	obj := parsed.(*jsonutil.Object)
 	wantKeys := []string{"platform", "model", "system_prompt", "skills_index", "memory", "user_profile", "tools", "sections", "skills_breakdown", "toolsets_breakdown"}
-	if !slices.Equal(obj.Keys, wantKeys) || obj.Vals["platform"] != "telegram" {
-		t.Fatalf("json keys %v platform %v", obj.Keys, obj.Vals["platform"])
+	if !slices.Equal(obj.Keys(), wantKeys) || obj.Value("platform") != "telegram" {
+		t.Fatalf("json keys %v platform %v", obj.Keys(), obj.Value("platform"))
 	}
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("agent: oops\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -364,8 +355,8 @@ func TestPromptSizeHelpers(t *testing.T) {
 	if got := promptFmtKB(0); got != "0.0 KB" {
 		t.Fatalf("kb zero %q", got)
 	}
-	if s, err := promptSize("héllo"); err != nil || s != (PromptTextSize{5, 6}) {
-		t.Fatalf("size %v %v", s, err)
+	if s := promptSize("héllo"); s != (PromptTextSize{5, 6}) {
+		t.Fatalf("size %v", s)
 	}
 	for _, tc := range [][4]int{{7, 2, 3, 1}, {-7, 2, -4, 1}, {7, -2, -4, -1}, {6, 3, 2, 0}} {
 		if q, r := promptDivmod(tc[0], tc[1]); q != tc[2] || r != tc[3] {

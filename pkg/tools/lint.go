@@ -17,10 +17,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // Shell linters by extension, tsx deliberately absent so LSP covers it
@@ -54,7 +57,7 @@ func looksLikeLinterUnusable(baseCmd, output string) bool {
 	if len(patterns) == 0 {
 		return false
 	}
-	lower := pyLower(output)
+	lower := cases.Lower(language.Und).String(output)
 	for _, p := range patterns {
 		if strings.Contains(lower, p) {
 			return true
@@ -106,23 +109,18 @@ func lintTOMLInproc(content string) (bool, string) {
 	return true, ""
 }
 
-// Python syntax verdict from ast.parse of the surrogateescape encoded content as compile reports it
+// Python syntax verdict from parsing the content's bytes, with the error kind, message and position
 func lintPythonInproc(content string) (bool, string) {
-	data, err := pystr.SurrogateEscapeEncode(content)
-	if err != nil {
-		return false, "UnicodeEncodeError: " + err.Error()
-	}
-	if _, err := pyast.ParseBytes(data); err != nil {
-		var se *pyast.SyntaxError
+	if _, err := pythonutil.ParseBytes([]byte(content)); err != nil {
+		var se *pythonutil.SyntaxError
 		if errors.As(err, &se) {
 			loc := ""
-			if se.Lineno != 0 {
-				loc = " (line " + strconv.Itoa(se.Lineno) + ", column " + strconv.Itoa(se.Offset) + ")"
+			if se.Line != 0 {
+				loc = " (line " + strconv.Itoa(se.Line) + ", column " + strconv.Itoa(se.Column) + ")"
 			}
-			return false, se.Class + ": " + se.Msg + loc
+			return false, se.Kind.String() + ": " + se.Msg + loc
 		}
-		le := err.(*pyast.LimitError)
-		return false, le.Class + ": " + le.Msg
+		return false, err.Error()
 	}
 	return true, ""
 }
@@ -134,19 +132,19 @@ const pyJSONMaxDepth = 52154
 const pyIntMaxStrDigits = 4300
 
 // json.loads outcome as exception type and message, the decode error set for JSONDecodeError
-func pyJSONLoadsCheck(text string) (string, string, *pyjson.DecodeError) {
+func pyJSONLoadsCheck(text string) (string, string, *jsonutil.SyntaxError) {
 	rs := []rune(text)
 	if len(rs) > 0 && rs[0] == 0xfeff {
-		return "JSONDecodeError", "", &pyjson.DecodeError{Msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", Pos: 0, Lineno: 1, Colno: 1}
+		return "JSONDecodeError", "", &jsonutil.SyntaxError{Msg: "Unexpected UTF-8 BOM (decode using utf-8-sig)", Pos: 0, Lineno: 1, Colno: 1}
 	}
 	scan := scanJSONHazards(rs)
 	parseText := text
 	if scan.overflowAt >= 0 {
 		parseText = string(rs[:scan.overflowAt]) + "0"
 	}
-	_, err := pyjson.Loads(parseText)
+	_, err := jsonutil.Decode(parseText)
 	errPos := -1
-	var jerr *pyjson.DecodeError
+	var jerr *jsonutil.SyntaxError
 	if err != nil {
 		if !errors.As(err, &jerr) {
 			return "ValueError", err.Error(), nil
@@ -303,7 +301,7 @@ func refuseIntroducedJSONConstant(path, content string, preContent *string) *Wri
 
 // Syntax check of a path through the in process linter for its extension, else the shell linter table
 func (s *shellFileOps) checkLint(path string, content *string) *LintResult {
-	ext := pyLower(pySplitextExt(path))
+	ext := cases.Lower(language.Und).String(pySplitextExt(path))
 	if inproc, ok := lintersInproc[ext]; ok {
 		if content == nil {
 			readResult := s.exec("cat "+s.escapeShellArg(path, true)+" 2>/dev/null", "", 0)
@@ -565,7 +563,7 @@ func (s *shellFileOps) lspHandlesExtension(ext string) (handled bool) {
 		ok, err := svc.HandlesExtension(ext)
 		return err == nil && ok
 	}
-	return lspStaticRegistryHandles(pyLower(ext))
+	return lspStaticRegistryHandles(cases.Lower(language.Und).String(ext))
 }
 
 // Whether a tsconfig.json sits in the path's directory or any ancestor, false off the host
@@ -773,7 +771,7 @@ func tomllibLoadsError(content string) (result string) {
 func tomllibDecode(s string) []rune {
 	out := make([]rune, 0, len(s))
 	for i := 0; i < len(s); {
-		r, size := pystr.DecodeRune(s[i:])
+		r, size := utf8.DecodeRuneInString(s[i:])
 		if r == '\n' && len(out) > 0 && out[len(out)-1] == '\r' {
 			out[len(out)-1] = '\n'
 		} else {
@@ -2269,30 +2267,11 @@ func yamlParserInitialize(input string) *yamlParser {
 	}
 }
 
-// Message CPython raises strictly encoding the str to UTF-8 at its first run of surrogates
+// Message for content that is not valid UTF-8, naming the byte offset of the first invalid sequence
 func ruamelUTF8EncodeError(content string) string {
-	pos := 0
-	for i := 0; i < len(content); {
-		r, w := pystr.DecodeRune(content[i:])
-		if !pystr.IsSurrogate(r) {
-			i += w
-			pos++
-			continue
-		}
-		bad := r
-		run := 0
-		for i < len(content) {
-			r, w = pystr.DecodeRune(content[i:])
-			if !pystr.IsSurrogate(r) {
-				break
-			}
-			run++
-			i += w
-		}
-		if run == 1 {
-			return fmt.Sprintf("invalid YAML: the file holds a lone surrogate U+%04X at character %d, which UTF-8 cannot encode", bad, pos)
-		}
-		return fmt.Sprintf("invalid YAML: the file holds lone surrogates at characters %d to %d, which UTF-8 cannot encode", pos, pos+run-1)
+	var bad *textutil.InvalidUTF8Error
+	if errors.As(textutil.ValidateUTF8(content), &bad) {
+		return fmt.Sprintf("invalid YAML: the file is not valid UTF-8 at byte %d", bad.Offset)
 	}
 	return ""
 }

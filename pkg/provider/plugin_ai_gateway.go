@@ -1,6 +1,8 @@
 package provider
 
-import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+import (
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 // Profiles the bundled ai-gateway plugin registers
 func aiGatewayPluginProfiles() []Profile {
@@ -13,13 +15,13 @@ func aiGatewayPluginProfiles() []Profile {
 }
 
 // Reasoning passed through as sent, enabled at medium when unset and nothing when the model cannot reason
-func aiGatewayBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
+func aiGatewayBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
 	if supports, ok := kw["supports_reasoning"].(bool); ok && !supports {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
-	cfg := pyjson.ObjectOf("enabled", true, "effort", "medium")
+	cfg := jsonutil.ObjectOf("enabled", true, "effort", "medium")
 	if reasoning != nil {
 		cfg = reasoningConfigObject(reasoning)
 	}
-	return pyjson.ObjectOf("reasoning", cfg), map[string]any{}
+	return jsonutil.ObjectOf("reasoning", cfg), map[string]any{}
 }

@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Waits up to five seconds for the flow's worker to return
@@ -399,8 +399,8 @@ func TestOAuthDeliverCallbackPropagatesProviderError(t *testing.T) {
 }
 
 // Hands a redirect to the flow of a session the way its loopback listener does, answering the listener's verdict
-func deliverOAuthCallback(ctx context.Context, sessionID, serverName, code, state, errText, iss string) *pyjson.Object {
-	out := pyjson.NewObject()
+func deliverOAuthCallback(ctx context.Context, sessionID, serverName, code, state, errText, iss string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	rec, msg := oauthLookup(ctx, sessionID, serverName, "")
 	if rec == nil {
 		out.Set("ok", false)

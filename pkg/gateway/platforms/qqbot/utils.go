@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 )
 
@@ -22,7 +21,7 @@ func icebathVersion() string {
 // BuildUserAgent names the adapter version, the runtime, the OS and the icebath version
 func BuildUserAgent() string {
 	return fmt.Sprintf("QQBotAdapter/%s (Go/%s; %s; Icebath/%s)", QQBotVersion,
-		strings.TrimPrefix(runtime.Version(), "go"), strings.ToLower(pyplatform.System()), icebathVersion())
+		strings.TrimPrefix(runtime.Version(), "go"), runtime.GOOS, icebathVersion())
 }
 
 // Kind of a connect or reconnect failure and the proxy's host when a proxy URL holds a secret the raw error text could repeat, empty otherwise: the

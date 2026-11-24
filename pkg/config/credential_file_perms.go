@@ -3,16 +3,17 @@ package config
 import (
 	"fmt"
 	"log/slog"
+	"path/filepath"
 	"runtime"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Warns with a chmod 600 hint when a POSIX credential file is group or world readable, true when it warned
 func WarnIfCredentialFileBroadlyReadable(path, label string, log *slog.Logger) bool {
-	shown := pypath.PurePathStr(path)
-	mode, ok := pyfs.PreserveFileMode(shown)
+	shown := filepath.Clean(path)
+	mode, ok := fsutil.PermBits(shown)
 	if !ok {
 		return false
 	}
@@ -26,6 +27,6 @@ func WarnIfCredentialFileBroadlyReadable(path, label string, log *slog.Logger) b
 	if label != "" {
 		prefix = label + " "
 	}
-	log.Warn(fmt.Sprintf("%s%s is group/world-readable (mode 0%o) and contains secrets. Run: chmod 600 %s", prefix, pypath.PathName(shown), mode, shown))
+	log.Warn(fmt.Sprintf("%s%s is group/world-readable (mode 0%o) and contains secrets. Run: chmod 600 %s", prefix, pathutil.Name(shown), mode, shown))
 	return true
 }

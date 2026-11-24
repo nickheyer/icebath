@@ -21,7 +21,7 @@ const (
 
 var (
 	indexBlockRe     = regexp.MustCompile(`(?s)<available_skills>\n?(.*?)</available_skills>`)
-	indexNamesOnlyRe = regexp.MustCompile(`\[names only\]:[` + pySpaceClass + `]*(.+)$`)
+	indexNamesOnlyRe = regexp.MustCompile(`\[names only\]:[` + spaceClass + `]*(.+)$`)
 )
 
 // Names a note added and removed

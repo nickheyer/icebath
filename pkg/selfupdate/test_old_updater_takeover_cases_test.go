@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestAFinishChildThatCannotStartAfterTheCommitIsOwedNotFailed(t *testing.T) {
@@ -34,7 +34,7 @@ func TestAFinishChildThatCannotStartAfterTheCommitIsOwedNotFailed(t *testing.T) 
 	takeoverAcquireLock = func(context.Context, string) (bool, *updaterecord.UpdateHolder, func(), error) {
 		return true, nil, func() {}, nil
 	}
-	takeoverPrepare = func(context.Context, *pyjson.Object) (string, []string, error) {
+	takeoverPrepare = func(context.Context, *jsonutil.Object) (string, []string, error) {
 		return os.Args[0], os.Environ(), nil
 	}
 	takeoverPopen = func(context.Context, []string, string, ChildOptions) (*exec.Cmd, error) {

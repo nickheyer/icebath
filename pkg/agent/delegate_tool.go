@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -35,7 +35,7 @@ func (e *delegateValueError) Error() string { return e.msg }
 // Live transcript writer of one task, the delegation_live_log LiveTranscriptWriter
 type delegationLiveWriter interface {
 	Path() string
-	Finalize(entry *pyjson.Object) error
+	Finalize(entry *jsonutil.Object) error
 	observe(eventType any, toolName, preview, args any, kwargs map[string]any)
 	flushStream()
 }
@@ -71,7 +71,7 @@ type delegateBatch struct {
 	Origin       delegationOrigin
 	OverallStart time.Time
 	LiveHome     string
-	Refused      []*pyjson.Object
+	Refused      []*jsonutil.Object
 	Group        *string
 	UnitID       string
 }
@@ -313,7 +313,7 @@ func routesFor(ctx context.Context, taskList []map[string]any, cfg, credentialsC
 }
 
 // Finalizes the transcripts of refused tasks and marks them settled in the manifest
-func settleRefusedTranscripts(refused []*pyjson.Object, liveDelegID string, liveWriters []delegationLiveWriter, liveHome string) {
+func settleRefusedTranscripts(refused []*jsonutil.Object, liveDelegID string, liveWriters []delegationLiveWriter, liveHome string) {
 	for _, entry := range refused {
 		raw, _ := entry.Get("task_index")
 		idx, _ := raw.(int)
@@ -426,7 +426,7 @@ func delegateTask(ctx context.Context, parent *AIAgent, kwargs map[string]any) (
 		return delegateToolError(msg), nil
 	}
 	var runnable []*tools.TaskRoute
-	var refused []*pyjson.Object
+	var refused []*jsonutil.Object
 	var refusals []string
 	for i, r := range routes {
 		if r.Error == "" {
@@ -488,7 +488,7 @@ func sessionJoinsDelegation(a *AIAgent) bool {
 	}
 	for _, t := range a.tools {
 		m, _ := t.(map[string]any)
-		fn, _ := pyjson.Dict(m["function"])
+		fn, _ := jsonutil.AsMap(m["function"])
 		if fn != nil && fn["name"] == "delegate_task" {
 			description, _ := fn["description"].(string)
 			return strings.Contains(description, tools.OneshotDescriptionDelivery)

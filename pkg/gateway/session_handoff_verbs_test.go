@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Detail text of a runtime refusal, failing the case for any other error
@@ -27,7 +27,7 @@ func TestHandoffVerbsQueuePollAndFailTheSessionRow(t *testing.T) {
 	actor := Principal{Subject: "human", ProfileID: "owned", Capabilities: map[string]bool{"session:read": true, "session:control": true}, TransportID: "cli"}
 	c := &AuthorityConnection{authority: a, actor: actor}
 	request := func(platform string) (any, error) {
-		return requestHandoff(ctx, c, testRef, pyjson.ObjectOf("session_id", "s", "platform", platform))
+		return requestHandoff(ctx, c, testRef, jsonutil.ObjectOf("session_id", "s", "platform", platform))
 	}
 	for platform, want := range map[string]string{
 		"nosuch":   "Unknown platform 'nosuch'.",
@@ -47,8 +47,8 @@ func TestHandoffVerbsQueuePollAndFailTheSessionRow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	queued := got.(*pyjson.Object)
-	if queued.GetOr("queued", nil) != true || queued.GetOr("platform", nil) != "telegram" || queued.GetOr("session_key", nil) != "s" {
+	queued := got.(*jsonutil.Object)
+	if queued.ValueOr("queued", nil) != true || queued.ValueOr("platform", nil) != "telegram" || queued.ValueOr("session_key", nil) != "s" {
 		t.Fatalf("queued %v", queued)
 	}
 	if _, err := request("telegram"); err == nil {
@@ -56,18 +56,18 @@ func TestHandoffVerbsQueuePollAndFailTheSessionRow(t *testing.T) {
 	} else if reason, detail := refusalText(t, err); reason != "session_busy" || detail != "Session is already in flight for handoff. Wait for it to settle, then retry." {
 		t.Fatalf("in flight refused %s %q", reason, detail)
 	}
-	polled, err := handoffState(ctx, c, testRef, pyjson.ObjectOf("session_id", "s"))
-	if err != nil || polled.(*pyjson.Object).GetOr("state", nil) != "pending" || polled.(*pyjson.Object).GetOr("platform", nil) != "telegram" {
+	polled, err := handoffState(ctx, c, testRef, jsonutil.ObjectOf("session_id", "s"))
+	if err != nil || polled.(*jsonutil.Object).ValueOr("state", nil) != "pending" || polled.(*jsonutil.Object).ValueOr("platform", nil) != "telegram" {
 		t.Fatalf("state %v %v", polled, err)
 	}
-	failed, err := failHandoff(ctx, c, testRef, pyjson.ObjectOf("session_id", "s", "error", "timed out waiting for gateway"))
-	if err != nil || failed.(*pyjson.Object).GetOr("failed", nil) != true || failed.(*pyjson.Object).GetOr("state", nil) != "failed" {
+	failed, err := failHandoff(ctx, c, testRef, jsonutil.ObjectOf("session_id", "s", "error", "timed out waiting for gateway"))
+	if err != nil || failed.(*jsonutil.Object).ValueOr("failed", nil) != true || failed.(*jsonutil.Object).ValueOr("state", nil) != "failed" {
 		t.Fatalf("fail %v %v", failed, err)
 	}
-	if row := db.GetHandoffState(ctx, "s"); row.GetOr("error", nil) != "timed out waiting for gateway" {
+	if row := db.GetHandoffState(ctx, "s"); row.ValueOr("error", nil) != "timed out waiting for gateway" {
 		t.Fatalf("row %v", row)
 	}
-	if _, err := requestHandoff(ctx, c, testRef, pyjson.ObjectOf("session_id", "s", "platform", "telegram", "extra", 1)); err == nil {
+	if _, err := requestHandoff(ctx, c, testRef, jsonutil.ObjectOf("session_id", "s", "platform", "telegram", "extra", 1)); err == nil {
 		t.Fatal("an unknown param was accepted")
 	}
 }

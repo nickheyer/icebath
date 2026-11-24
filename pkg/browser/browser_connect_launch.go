@@ -15,10 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -36,14 +35,17 @@ func debugCandidatePaths(system string) []string {
 	var out []string
 	installBases := []string{os.Getenv("ProgramFiles"), os.Getenv("ProgramFiles(x86)"), os.Getenv("LOCALAPPDATA")}
 	which := func(name string) string {
-		found, _ := pyshutil.Which(name, nil)
+		found, err := exec.LookPath(name)
+		if err != nil {
+			return ""
+		}
 		return found
 	}
 	for _, b := range chromiumProducts {
 		switch system {
-		case "Darwin":
+		case "darwin":
 			out = append(out, b.macApp)
-		case "Windows":
+		case "windows":
 			for _, name := range b.winBins {
 				out = append(out, which(name))
 			}
@@ -62,7 +64,7 @@ func debugCandidatePaths(system string) []string {
 			out = append(out, b.linuxPaths...)
 		}
 	}
-	if system != "Darwin" && system != "Windows" {
+	if system != "darwin" && system != "windows" {
 		for _, b := range chromiumProducts {
 			for _, base := range []string{"/mnt/c/Program Files", "/mnt/c/Program Files (x86)"} {
 				for _, parts := range b.winInstall {
@@ -82,7 +84,7 @@ func GetChromeDebugCandidates(system string) []string {
 		if p == "" {
 			continue
 		}
-		normalized := pypath.Normcase(pypath.Normpath(p))
+		normalized := pathutil.FoldCase(filepath.Clean(p))
 		if seen[normalized] || !isFilePath(p) {
 			continue
 		}
@@ -165,13 +167,13 @@ func ManualChromeDebugCommand(ctx context.Context, port int, system string) stri
 	system = systemOr(system)
 	if candidates := GetChromeDebugCandidates(system); len(candidates) > 0 {
 		argv := append([]string{candidates[0]}, chromeDebugArgs(ctx, port)...)
-		if system == "Windows" {
-			return pysubprocess.List2cmdline(argv)
+		if system == "windows" {
+			return executil.WindowsCommandLine(argv)
 		}
-		return pyshlex.Join(argv)
+		return shellutil.Join(argv)
 	}
-	if system == "Darwin" {
-		return `open -a "Google Chrome" --args ` + pyshlex.Join(chromeDebugArgs(ctx, port))
+	if system == "darwin" {
+		return `open -a "Google Chrome" --args ` + shellutil.Join(chromeDebugArgs(ctx, port))
 	}
 	return ""
 }

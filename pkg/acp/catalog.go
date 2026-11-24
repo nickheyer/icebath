@@ -5,14 +5,14 @@ import (
 	"os"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Rich session rows the gateway session store reader lists
 type RichSessionLister interface {
-	ListSessionsRich(ctx context.Context, o state.ListSessionsRichOptions) ([]*pyjson.Object, error)
+	ListSessionsRich(ctx context.Context, o state.ListSessionsRichOptions) ([]*jsonutil.Object, error)
 }
 
 // Gateway session store reader over a state database, assigned in cmd/icebath/wiring.go
@@ -28,9 +28,9 @@ func openReadOnly(ctx context.Context, path string) (*state.SessionDB, error) {
 }
 
 // ACP session rows of a state database keyed by id, empty when the database is absent
-func ReadCatalogRows(ctx context.Context, path string) (map[string]*pyjson.Object, []string, error) {
+func ReadCatalogRows(ctx context.Context, path string) (map[string]*jsonutil.Object, []string, error) {
 	if !pathExists(path) {
-		return map[string]*pyjson.Object{}, nil, nil
+		return map[string]*jsonutil.Object{}, nil, nil
 	}
 	db, err := openReadOnly(ctx, path)
 	if err != nil {
@@ -42,10 +42,10 @@ func ReadCatalogRows(ctx context.Context, path string) (map[string]*pyjson.Objec
 	if err != nil {
 		return nil, nil, err
 	}
-	out := map[string]*pyjson.Object{}
+	out := map[string]*jsonutil.Object{}
 	var order []string
 	for _, r := range rows {
-		id := pyStr(dget(r, "id"))
+		id := anyutil.String(dget(r, "id"))
 		if _, seen := out[id]; !seen {
 			order = append(order, id)
 		}
@@ -82,11 +82,11 @@ func localOwners(ctx context.Context, db *state.SessionDB) (map[string]string, e
 		return nil, err
 	}
 	for _, raw := range raws {
-		receipt, err := pyjson.Loads(raw)
+		receipt, err := jsonutil.Decode(raw)
 		if err != nil {
 			continue
 		}
-		obj, ok := receipt.(*pyjson.Object)
+		obj, ok := receipt.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -146,7 +146,7 @@ func LogicalSessionID(ctx context.Context, path, sessionID string) (string, erro
 }
 
 // Historical ACP sessions with messages, optionally under one cwd, one row per logical owner newest first
-func CatalogSessions(ctx context.Context, path, cwd string) ([]*pyjson.Object, error) {
+func CatalogSessions(ctx context.Context, path, cwd string) ([]*jsonutil.Object, error) {
 	normalized := ""
 	if cwd != "" {
 		normalized = normalizeCwdForCompare(cwd)
@@ -159,24 +159,24 @@ func CatalogSessions(ctx context.Context, path, cwd string) ([]*pyjson.Object, e
 	if err != nil {
 		return nil, err
 	}
-	results := map[string]*pyjson.Object{}
+	results := map[string]*jsonutil.Object{}
 	var keys []string
 	for _, id := range order {
 		row := rows[id]
 		sid := id
-		if root := dget(row, "_lineage_root_id"); truthy(root) {
-			sid = pyStr(root)
+		if root := dget(row, "_lineage_root_id"); anyutil.IsTrue(root) {
+			sid = anyutil.String(root)
 		}
 		if o, ok := owners[sid]; ok {
 			sid = o
 		}
-		count := int(pyIntValue(pyrepr.Or(dget(row, "message_count"), int64(0))))
-		sessionCwd := pyStr(pyrepr.Or(dget(row, "cwd"), dgetOr(parseModelConfig(dget(row, "model_config")), "cwd", ".")))
+		count := int(pyIntValue(anyutil.Or(dget(row, "message_count"), int64(0))))
+		sessionCwd := anyutil.String(anyutil.Or(dget(row, "cwd"), dgetOr(parseModelConfig(dget(row, "model_config")), "cwd", ".")))
 		if count <= 0 || (normalized != "" && normalizeCwdForCompare(sessionCwd) != normalized) {
 			continue
 		}
-		info := sessionInfo(sid, sessionCwd, pyrepr.Or(dget(row, "model"), ""), count, dget(row, "title"),
-			dget(row, "preview"), pyrepr.Or(dget(row, "last_active"), dget(row, "started_at")))
+		info := sessionInfo(sid, sessionCwd, anyutil.Or(dget(row, "model"), ""), count, dget(row, "title"),
+			dget(row, "preview"), anyutil.Or(dget(row, "last_active"), dget(row, "started_at")))
 		held, ok := results[sid]
 		if !ok {
 			keys = append(keys, sid)
@@ -185,7 +185,7 @@ func CatalogSessions(ctx context.Context, path, cwd string) ([]*pyjson.Object, e
 			results[sid] = info
 		}
 	}
-	out := make([]*pyjson.Object, 0, len(keys))
+	out := make([]*jsonutil.Object, 0, len(keys))
 	for _, k := range keys {
 		out = append(out, results[k])
 	}

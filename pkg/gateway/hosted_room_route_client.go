@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Peer client that recovers one exact admission by receipt or idempotent replay
@@ -142,7 +142,7 @@ func (c *routeStatusPeerClient) Prepare(ctx context.Context, req PeerPrepare) (m
 	return trackedCall(c, "prepare", func() (map[string]any, error) { return c.client.Prepare(ctx, req) })
 }
 
-func (c *routeStatusPeerClient) Dispatch(ctx context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
+func (c *routeStatusPeerClient) Dispatch(ctx context.Context, dispatch *jsonutil.Object, grant string) (map[string]any, error) {
 	grant, err := c.refreshGrant(dispatch, grant)
 	if err != nil {
 		return nil, err
@@ -158,7 +158,7 @@ func (c *routeStatusPeerClient) Status(ctx context.Context, roomID, profile, ses
 	return trackedCall(c, "status", func() (map[string]any, error) { return c.client.Status(ctx, roomID, profile, sessionID, grant) })
 }
 
-func (c *routeStatusPeerClient) Stop(ctx context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
+func (c *routeStatusPeerClient) Stop(ctx context.Context, dispatch *jsonutil.Object, grant string) (map[string]any, error) {
 	return trackedCall(c, "stop", func() (map[string]any, error) { return c.client.Stop(ctx, dispatch, grant) })
 }
 

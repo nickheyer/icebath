@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // The re-executed spawn test modes run only on POSIX hosts
@@ -47,7 +47,7 @@ func TestNativeWindowsSpawnNeverRetriesWithoutBreakaway(t *testing.T) {
 		calls = append(calls, cmd)
 		return nil, &os.PathError{Op: "CreateProcess", Path: cmd.Path, Err: os.ErrPermission}
 	})
-	_, err := SpawnUnmanagedGateway(context.Background(), t.TempDir(), pythread.Monotonic()+5, false, false)
+	_, err := SpawnUnmanagedGateway(context.Background(), t.TempDir(), timeutil.Monotonic()+5, false, false)
 	var start *RuntimeStartError
 	if !errors.As(err, &start) || start.Reason != "windows_breakaway_unavailable" {
 		t.Fatal(err)

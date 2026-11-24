@@ -21,9 +21,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const ProtocolVersion = 1
@@ -63,10 +62,10 @@ type HostBuiltinError struct {
 func (e *HostBuiltinError) Error() string { return e.Message }
 
 // Class names of the remote exception through BaseException, its type(exc).__mro__ without object
-func (e *HostBuiltinError) PyExceptionMRO() []string { return append([]string{e.Type}, e.Bases...) }
+func (e *HostBuiltinError) ClassChain() []string { return append([]string{e.Type}, e.Bases...) }
 
 // Class names of the remote exception through BaseException, the parent side raise standing as PluginHostError
-func (e *PluginHostError) PyExceptionMRO() []string {
+func (e *PluginHostError) ClassChain() []string {
 	if e.TypeName == "" {
 		return []string{"PluginHostError", "Exception", "BaseException"}
 	}
@@ -74,8 +73,8 @@ func (e *PluginHostError) PyExceptionMRO() []string {
 }
 
 var (
-	_ interface{ PyExceptionMRO() []string } = (*HostBuiltinError)(nil)
-	_ interface{ PyExceptionMRO() []string } = (*PluginHostError)(nil)
+	_ interface{ ClassChain() []string } = (*HostBuiltinError)(nil)
+	_ interface{ ClassChain() []string } = (*PluginHostError)(nil)
 )
 
 var remoteBuiltinErrors = map[string]bool{
@@ -128,8 +127,8 @@ func (o *Opaque) Attr(name string) error {
 
 // Python class name a Go value reports across the wire
 func wireTypeName(v any) string {
-	if n, ok := v.(pyrepr.PyTypeNamed); ok && n.PyTypeName() != "" {
-		return n.PyTypeName()
+	if n, ok := v.(interface{ ErrorKind() string }); ok && n.ErrorKind() != "" {
+		return n.ErrorKind()
 	}
 	t := reflect.TypeOf(v)
 	for t != nil && t.Kind() == reflect.Pointer {
@@ -185,13 +184,13 @@ func wireEncodeDepth(value any, refs func(any) map[string]any, depth int) any {
 			out[k] = wireEncodeDepth(item, refs, depth+1)
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return nil
 		}
-		out := pyjson.NewObject()
-		for _, k := range v.Keys {
-			out.Set(k, wireEncodeDepth(v.Vals[k], refs, depth+1))
+		out := jsonutil.NewObject()
+		for _, k := range v.Keys() {
+			out.Set(k, wireEncodeDepth(v.Value(k), refs, depth+1))
 		}
 		return out
 	}
@@ -338,7 +337,7 @@ func wireDecode(value any, resolve func(map[string]any) (any, error)) (any, erro
 		}
 		if raw, ok := v["__opaque__"]; ok {
 			text := ""
-			if pyrepr.Truthy(v["repr"]) {
+			if anyutil.IsTrue(v["repr"]) {
 				text = config.PyStr(v["repr"])
 			}
 			return &Opaque{TypeName: config.PyStr(raw), Text: text}, nil
@@ -363,21 +362,16 @@ func wireDecode(value any, resolve func(map[string]any) (any, error)) (any, erro
 	return value, nil
 }
 
-// Bytes of a __bytes__ payload decoded like base64.b64decode, raising its binascii.Error, ValueError or TypeError
+// Bytes of a __bytes__ payload, the padded standard base64 the plugin host writes, refused with the binascii.Error or TypeError a plugin catches
 func wireDecodeBytes(raw any) (any, error) {
 	s, ok := raw.(string)
 	if !ok {
 		return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("bytes payload is %s where base64 text was expected", errchain.Kind(raw)), Bases: []string{"Exception", "BaseException"}}
 	}
-	b, err := pybase64.B64Decode(s)
-	var binErr *pybase64.Error
-	switch {
-	case errors.As(err, &binErr):
+	b, err := base64.StdEncoding.DecodeString(s)
+	if err != nil {
 		pkgLog().Debug("bytes payload refused: " + errchain.Text(err))
 		return nil, &HostBuiltinError{Type: "Error", Message: "bytes payload is not valid base64", Bases: []string{"ValueError", "Exception", "BaseException"}}
-	case err != nil:
-		pkgLog().Debug("bytes payload refused: " + errchain.Text(err))
-		return nil, &HostBuiltinError{Type: "ValueError", Message: "bytes payload is not valid base64", Bases: []string{"Exception", "BaseException"}}
 	}
 	return b, nil
 }
@@ -623,7 +617,7 @@ func (c *Channel) dispatchFrame(line []byte) {
 	parsed, err := pyJSONLoads(line)
 	message, ok := parsed.(map[string]any)
 	if err != nil || !ok {
-		text := pyrepr.BytesRepr(line)
+		text := strconv.Quote(string(line))
 		if len(text) > 200 {
 			text = text[:200]
 		}
@@ -659,18 +653,18 @@ func WithOrderedResult(ctx context.Context) context.Context {
 
 // Result of a reply frame decoded with every object in its wire key order, false when it carries an error
 func orderedResultOf(frame []byte) (any, bool) {
-	parsed, err := pyjson.LoadsBytes(frame)
+	parsed, err := jsonutil.Decode(frame)
 	if err != nil {
 		return nil, false
 	}
-	msg, ok := parsed.(*pyjson.Object)
+	msg, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return nil, false
 	}
 	if _, failed := msg.Get("error"); failed {
 		return nil, false
 	}
-	return msg.Vals["result"], true
+	return msg.Value("result"), true
 }
 
 // Serves one peer request on its own goroutine in the caller context its origin names
@@ -864,15 +858,15 @@ func pyJSONWrite(b *strings.Builder, v any) error {
 			}
 		}
 		b.WriteByte('}')
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		b.WriteByte('{')
-		for i, k := range x.Keys {
+		for i, k := range x.Keys() {
 			if i > 0 {
 				b.WriteByte(',')
 			}
 			pyJSONString(b, k)
 			b.WriteByte(':')
-			if err := pyJSONWrite(b, x.Vals[k]); err != nil {
+			if err := pyJSONWrite(b, x.Value(k)); err != nil {
 				return err
 			}
 		}

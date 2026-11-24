@@ -14,12 +14,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // File refusals no retry can change, the member's media cap, binding, expiry or corruption
@@ -36,7 +35,7 @@ func AppendUserEvent(ctx context.Context, service *HostedRoomService, roomID, ev
 		manifest = []any{}
 	}
 	var transitioned []string
-	if pyrepr.Truthy(manifest) {
+	if anyutil.IsTrue(manifest) {
 		room, err := service.room(roomID)
 		if err != nil {
 			return nil, err
@@ -45,7 +44,7 @@ func AppendUserEvent(ctx context.Context, service *HostedRoomService, roomID, ev
 		members, _ := room["members"].([]any)
 		for _, raw := range members {
 			member, _ := hostedMapping(raw)
-			recipients = append(recipients, pyrepr.Str(member["member_id"]))
+			recipients = append(recipients, anyutil.String(member["member_id"]))
 		}
 		if _, transitioned, err = store.CommitMessageWithReceipt(AttachmentCommit{RoomID: roomID, EventID: eventID, Manifest: manifest,
 			RecipientMemberIDs: recipients, ViewerAccess: true, HoldUntilEvent: true}); err != nil {
@@ -114,7 +113,7 @@ func StoreUpload(ctx context.Context, service *HostedRoomService, roomID string,
 		return nil, roomRefusal("invalid_params", fmt.Sprintf("%v is about %s, over the %s limit for one room file", params["name"],
 			roomBytes(int64(length)/4*3), roomBytes(maxAttachmentBytes)))
 	}
-	data, err := pybase64.B64DecodeValidate(encoded)
+	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, &state.RuntimeStoreError{Reason: "invalid_params", Cause: err}
 	}
@@ -127,7 +126,7 @@ func StoreUpload(ctx context.Context, service *HostedRoomService, roomID string,
 
 // One committed file with its bytes as base64 for a live room viewer on either route
 func ReadDownload(ctx context.Context, service *HostedRoomService, roomID string, params map[string]any) (map[string]any, error) {
-	if !pyrepr.Truthy(params["event_id"]) {
+	if !anyutil.IsTrue(params["event_id"]) {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	gatewayID, epoch, err := service.ownedAuthority(roomID)
@@ -154,7 +153,7 @@ func SubmissionPayload(ctx context.Context, rpc *HostedRoomAuthorityRPC, prompt 
 }
 
 // Committed admission payload of the producer's turn, its staged images admitted as durable media fields
-func CommittedSubmissionPayload(ctx context.Context, rpc *HostedRoomAuthorityRPC, prompt string, attachments any) (*pyjson.Object, error) {
+func CommittedSubmissionPayload(ctx context.Context, rpc *HostedRoomAuthorityRPC, prompt string, attachments any) (*jsonutil.Object, error) {
 	payload, err := SubmissionPayload(ctx, rpc, prompt, attachments)
 	if err != nil {
 		return nil, err
@@ -163,9 +162,9 @@ func CommittedSubmissionPayload(ctx context.Context, rpc *HostedRoomAuthorityRPC
 	if err != nil {
 		return nil, err
 	}
-	out := pyjson.ObjectOf("text", payload["text"])
-	for _, key := range admitted.Keys {
-		out.Set(key, admitted.Vals[key])
+	out := jsonutil.ObjectOf("text", payload["text"])
+	for _, key := range admitted.Keys() {
+		out.Set(key, admitted.Value(key))
 	}
 	return out, nil
 }
@@ -178,7 +177,7 @@ type TransferredAttachment struct {
 
 // Member turn text with document path lines and owner local image staging paths, identical on both routes
 func BoundSubmissionPayload(ctx context.Context, dbPath, roomID string, memberID any, prompt string, attachments any, transferred *[]TransferredAttachment) (map[string]any, error) {
-	if !pyrepr.Truthy(attachments) {
+	if !anyutil.IsTrue(attachments) {
 		return map[string]any{"text": prompt}, nil
 	}
 	manifest, err := validateBoundTaskManifest(attachments)
@@ -208,7 +207,7 @@ func BoundSubmissionPayload(ctx context.Context, dbPath, roomID string, memberID
 				return nil, err
 			}
 			for _, key := range []string{"kind", "name", "mime", "size"} {
-				if !pyrepr.Equal(saved.Attachment[key], item[key]) {
+				if !anyutil.Equal(saved.Attachment[key], item[key]) {
 					return nil, runtimeRefusal("permission_denied")
 				}
 			}
@@ -261,7 +260,7 @@ func transferredMatches(transferred []TransferredAttachment, manifest []map[stri
 		return false
 	}
 	for i, pair := range transferred {
-		if !pyrepr.Equal(pair.Item, manifest[i]) {
+		if !anyutil.Equal(pair.Item, manifest[i]) {
 			return false
 		}
 	}
@@ -304,7 +303,7 @@ func stageRoomImage(ctx context.Context, path, name string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	staging, err := pypath.Resolve(cache)
+	staging, err := pathutil.Resolve(cache)
 	if err != nil {
 		return "", err
 	}
@@ -313,7 +312,7 @@ func stageRoomImage(ctx context.Context, path, name string) (string, error) {
 	}
 	digest := sha256.Sum256(data)
 	target := filepath.Join(staging, hex.EncodeToString(digest[:])+pathSuffix(name))
-	found, err := pypath.PathlibStat(target)
+	found, err := pathutil.StatIfExists(target)
 	if err != nil {
 		return "", err
 	}

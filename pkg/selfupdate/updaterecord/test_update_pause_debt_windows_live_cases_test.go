@@ -16,9 +16,8 @@ import (
 	"testing"
 	"time"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"golang.org/x/sys/windows"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Windows stand-ins of the restart debt cases, a plain reader holding a file and the updater that paused
@@ -232,7 +231,7 @@ func TestAPartlyResumedClaimIsWhatTheNextLaunchResumesNotTheCopyWindowsKept(t *t
 	for _, f := range found {
 		owed = append(owed, pauseTokenOf(f.Body)["profiles"])
 	}
-	if !pyrepr.Equal(owed, []any{map[string]any{"work": 4343}}) {
+	if !anyutil.Equal(owed, []any{map[string]any{"work": 4343}}) {
 		t.Fatalf("the next launch would restart a gateway this launch already restarted: %v", owed)
 	}
 }

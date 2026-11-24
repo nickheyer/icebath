@@ -2,8 +2,6 @@ package state
 
 import (
 	"context"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 const (
@@ -16,11 +14,11 @@ func aggregateInt(v any) (int, error) {
 	if !pyTruthy(v) {
 		return 0, nil
 	}
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return 0, err
 	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Records a refresh request for every session or one session, returning the new epoch of the shared counter

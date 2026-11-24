@@ -9,10 +9,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Adopts the profile default toolsets the gateway resolved for display and prints its unknown toolsets warning
@@ -20,7 +20,7 @@ func adoptGatewayToolsets(c *CLI, store *gatewaycli.GatewaySessionStore) {
 	current := store.Current()
 	var info map[string]any
 	if current != nil {
-		info, _ = pyjson.Plain(current.Vals["info"]).(map[string]any)
+		info, _ = jsonutil.Plain(current.Value("info")).(map[string]any)
 	}
 	if listed, isList := info["enabled_toolsets"].([]any); c.enabledToolsets == nil && isList {
 		names := make([]string, 0, len(listed))
@@ -34,7 +34,7 @@ func adoptGatewayToolsets(c *CLI, store *gatewaycli.GatewaySessionStore) {
 		for i, name := range unknown {
 			names[i] = fmt.Sprint(name)
 		}
-		c.consolePrint("[bold red]" + i18n.T(c.ctx, "cli.startup.unknown_toolsets", "", map[string]any{"names": strings.Join(names, ", ")}) + "[/]")
+		c.consolePrint("[bold red]" + consoleutil.Escape(i18n.T(c.ctx, "cli.startup.unknown_toolsets", "", map[string]any{"names": strings.Join(names, ", ")})) + "[/]")
 	}
 }
 

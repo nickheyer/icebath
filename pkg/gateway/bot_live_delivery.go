@@ -24,10 +24,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const DeliveryDirName = "bot_live_delivery"
@@ -81,7 +81,7 @@ func botChatTip(ctx context.Context, profileHome string) (string, error) {
 	if err != nil || row == nil {
 		return "", err
 	}
-	id, _ := row.Vals["id"].(string)
+	id, _ := row.Value("id").(string)
 	return db.GetCompressionTip(ctx, id)
 }
 
@@ -262,8 +262,8 @@ func prepareMailbox(ctx context.Context, root string) (string, error) {
 		deliveryWarn(warnedUnhardened, root, fmt.Sprintf("bot_live_delivery: could not harden mailbox directory %s (%s)", root, deliveryOSErrorText(err)))
 	}
 	if created {
-		pyfs.FsyncDirectory(filepath.Dir(root))
-		pyfs.FsyncDirectory(filepath.Dir(filepath.Dir(root)))
+		fsutil.SyncDir(filepath.Dir(root))
+		fsutil.SyncDir(filepath.Dir(filepath.Dir(root)))
 	}
 	lock := filepath.Join(root, ".lock")
 	f, err := os.OpenFile(lock, os.O_CREATE|os.O_WRONLY, 0o600)
@@ -303,15 +303,15 @@ func readTicket(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.LoadsBytes(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
+	decoded, err := jsonutil.Decode(bytes.TrimPrefix(data, []byte("\xef\xbb\xbf")))
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := decoded.(*pyjson.Object)
+	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("ticket %s is not a JSON object (%s)", filepath.Base(path), errchain.Kind(decoded))
 	}
-	return pyjson.Plain(obj).(map[string]any), nil
+	return jsonutil.Plain(obj).(map[string]any), nil
 }
 
 func deliveryIsInt(v any) bool {
@@ -335,7 +335,7 @@ func ticketShapeError(path string, record map[string]any) string {
 	}
 	status, ok := record["status"].(string)
 	if !ok || !(status == "queued" || status == "claimed" || deliveryTerminal[status]) {
-		return "unknown status " + pyrepr.Repr(record["status"])
+		return "unknown status " + anyutil.Quote(record["status"])
 	}
 	if !deliveryIsInt(createdAt) || !deliveryIsInt(sequence) {
 		return "created_at/sequence are not integers"
@@ -353,7 +353,7 @@ func ticketShapeError(path string, record map[string]any) string {
 }
 
 func writeTicket(ctx context.Context, path string, record map[string]any) error {
-	return config.AtomicJSONWriteMode(ctx, path, record, 0o600, pyjson.SortKeys(true))
+	return config.AtomicJSONWriteMode(ctx, path, record, 0o600, jsonutil.SortKeys())
 }
 
 // Durable admission answered at once without waiting for the owner

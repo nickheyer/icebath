@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Context scoped to the authority's owning profile, its secrets hydrated when asked
@@ -52,7 +52,7 @@ func ReleaseUnknownTurnMarkers(ctx context.Context, runner any, store *SessionSt
 		unknown := map[string]bool{}
 		for _, row := range rows {
 			v, _ := row.Get("target_session_id")
-			unknown[pyrepr.Str(v)] = true
+			unknown[anyutil.String(v)] = true
 		}
 		if len(unknown) == 0 {
 			continue
@@ -82,7 +82,7 @@ type nativeRecoveryRunner interface {
 }
 
 // Binds one authority's queued native rows to the adapters connected now, returning each session's verdict
-func RecoverProfileNativeSessions(ctx context.Context, runner any, authority *SessionAuthority) (*pyjson.Object, error) {
+func RecoverProfileNativeSessions(ctx context.Context, runner any, authority *SessionAuthority) (*jsonutil.Object, error) {
 	r, ok := runner.(nativeRecoveryRunner)
 	if !ok {
 		return nil, fmt.Errorf("the gateway runner (%T) has no session store", runner)
@@ -95,7 +95,7 @@ func RecoverProfileNativeSessions(ctx context.Context, runner any, authority *Se
 	pending := map[string]bool{}
 	for _, row := range rows {
 		v, _ := row.Get("target_session_id")
-		pending[pyrepr.Str(v)] = true
+		pending[anyutil.String(v)] = true
 	}
 	var bindings []NativeBinding
 	for _, entry := range r.SessionStore().ListSessions(scoped, nil) {
@@ -132,9 +132,9 @@ func RecoverProfileNativeSessions(ctx context.Context, runner any, authority *Se
 	for _, sid := range detached {
 		outcome.Set(sid, "detached")
 	}
-	for _, sid := range outcome.Keys {
+	for _, sid := range outcome.Keys() {
 		verdict, _ := outcome.Get(sid)
-		pkgLog().Info(fmt.Sprintf("Native session startup recovery %s (%s): %s", sid, authority.ProfileID, pyrepr.Str(verdict)))
+		pkgLog().Info(fmt.Sprintf("Native session startup recovery %s (%s): %s", sid, authority.ProfileID, anyutil.String(verdict)))
 	}
 	return outcome, nil
 }

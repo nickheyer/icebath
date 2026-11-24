@@ -16,8 +16,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -52,7 +52,7 @@ func (a *PhotonAdapter) sidecarCall(ctx context.Context, path string, body map[s
 	if data == nil {
 		data = map[string]any{}
 	}
-	if !pyrepr.Truthy(data["ok"]) {
+	if !anyutil.IsTrue(data["ok"]) {
 		return nil, sidecarErrorFromResponse(path, resp.StatusCode, string(raw), data)
 	}
 	return data, nil
@@ -83,14 +83,14 @@ func (a *PhotonAdapter) postSend(ctx context.Context, path string, body map[stri
 		}
 		return gateway.SendResult{Success: false, Error: err.Error(), Retryable: photonRetryable(err.Error())}
 	}
-	messageID := pyrepr.Str(orEmpty(data["messageId"]))
+	messageID := anyutil.String(data["messageId"])
 	if messageID != "" {
 		a.mu.Lock()
 		a.sentMessageIDs.put(messageID, time.Now())
 		a.mu.Unlock()
 	}
 	if sentText != "" {
-		gateway.RichSentRecord(ctx, normalizeChatKey(pyrepr.Str(orEmpty(body["spaceId"]))), messageID, sentText)
+		gateway.RichSentRecord(ctx, normalizeChatKey(anyutil.String(body["spaceId"])), messageID, sentText)
 	}
 	var id any
 	if messageID != "" {
@@ -331,10 +331,10 @@ func standaloneError(status int, raw string) map[string]any {
 	var data map[string]any
 	_ = json.Unmarshal([]byte(raw), &data)
 	errorClass := "sidecar_error"
-	if pyrepr.Truthy(data["error_class"]) {
-		errorClass = pyrepr.Str(data["error_class"])
+	if anyutil.IsTrue(data["error_class"]) {
+		errorClass = anyutil.String(data["error_class"])
 	}
-	retryable := pyrepr.Truthy(data["retryable"])
+	retryable := anyutil.IsTrue(data["retryable"])
 	var text string
 	switch {
 	case errorClass == "target_not_allowed":
@@ -342,7 +342,7 @@ func standaloneError(status int, raw string) map[string]any {
 	case status != http.StatusOK:
 		text = fmt.Sprintf("sidecar returned %d: %s", status, textutil.First(raw, 200))
 	default:
-		text = pyrepr.Str(orEmpty(data["error"]))
+		text = anyutil.String(data["error"])
 		if text == "" {
 			text = "sidecar reported failure"
 		}
@@ -356,9 +356,9 @@ func standaloneError(status int, raw string) map[string]any {
 func standaloneTokenFromRecord(ctx context.Context, port int) (string, int, string) {
 	record := readRuntimeRecord(ctx)
 	staleHint := ""
-	if record != nil && pyrepr.Truthy(record["token"]) {
+	if record != nil && anyutil.IsTrue(record["token"]) {
 		if sidecarPIDAlive(record["pid"]) {
-			return pyrepr.Str(record["token"]), gateway.CoercePort(record["port"], port), ""
+			return anyutil.String(record["token"]), gateway.CoercePort(record["port"], port), ""
 		}
 		staleHint = fmt.Sprintf(" A stale sidecar runtime record was found (pid %v is not running) — the gateway appears to be down.", record["pid"])
 	}
@@ -375,7 +375,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if pconfig != nil {
 		portRaw = pconfig.Extra["sidecar_port"]
 	}
-	if !pyrepr.Truthy(portRaw) {
+	if !anyutil.IsTrue(portRaw) {
 		portRaw, _ = gateway.GetScopedSecret(ctx, "PHOTON_SIDECAR_PORT", "", false)
 	}
 	port := gateway.CoercePort(portRaw, defaultSidecarPort)
@@ -411,7 +411,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		}
 		var data map[string]any
 		_ = json.Unmarshal(raw, &data)
-		if !pyrepr.Truthy(data["ok"]) {
+		if !anyutil.IsTrue(data["ok"]) {
 			return resp.StatusCode, string(raw), nil, nil
 		}
 		return resp.StatusCode, string(raw), data, nil
@@ -449,7 +449,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			data = d
 		}
 		lastMessageID = data["messageId"]
-		gateway.RichSentRecord(ctx, normalizeChatKey(chatID), pyrepr.Str(orEmpty(lastMessageID)), message)
+		gateway.RichSentRecord(ctx, normalizeChatKey(chatID), anyutil.String(lastMessageID), message)
 	}
 	for _, media := range standaloneMedia(kwargs["media_files"]) {
 		safe, err := gateway.ValidateMediaDeliveryPath(ctx, media.path, "")
@@ -468,10 +468,10 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if data == nil {
 			return standaloneError(status, raw), nil
 		}
-		if pyrepr.Truthy(data["messageId"]) {
+		if anyutil.IsTrue(data["messageId"]) {
 			lastMessageID = data["messageId"]
 		}
-		gateway.RichSentRecord(ctx, normalizeChatKey(chatID), pyrepr.Str(orEmpty(data["messageId"])), attachmentLabel(kind, filepath.Base(safe)))
+		gateway.RichSentRecord(ctx, normalizeChatKey(chatID), anyutil.String(data["messageId"]), attachmentLabel(kind, filepath.Base(safe)))
 	}
 	return map[string]any{"success": true, "message_id": lastMessageID}, nil
 }
@@ -493,7 +493,7 @@ func standaloneMedia(raw any) []standaloneFile {
 	case []any:
 		for _, item := range v {
 			if pair, ok := item.([]any); ok && len(pair) == 2 {
-				out = append(out, standaloneFile{pyrepr.Str(pair[0]), pyrepr.Truthy(pair[1])})
+				out = append(out, standaloneFile{anyutil.String(pair[0]), anyutil.IsTrue(pair[1])})
 			}
 		}
 	}

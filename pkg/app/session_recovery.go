@@ -15,11 +15,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Recovery failure, safety for a path or overwrite guard and source for unreadable canonical tables
@@ -106,8 +107,8 @@ func recoverySidecar(dbPath, suffix string) string {
 
 // Not yet created output path under its strictly resolved parent
 func recoveryResolvedOutput(path string) (string, error) {
-	expanded := pypath.Expanduser(path)
-	parent, err := pypath.Realpath(recoveryPathParent(expanded), pypath.StrictAll)
+	expanded := pathutil.ExpandUser(path)
+	parent, err := pathutil.ResolveExisting(recoveryPathParent(expanded))
 	if err != nil {
 		return "", err
 	}
@@ -134,7 +135,7 @@ func recoveryPathName(p string) string {
 
 // Lax resolution of a path that may not exist
 func recoveryResolveLax(p string) string {
-	resolved, err := pypath.Realpath(p, pypath.Lax)
+	resolved, err := pathutil.Resolve(p)
 	if err != nil {
 		abs, _ := filepath.Abs(p)
 		return abs
@@ -144,7 +145,7 @@ func recoveryResolveLax(p string) string {
 
 // Validated source, optional output and work root, refusing anything that could touch the source or an existing output
 func recoveryValidatePaths(sourcePath, outputPath, workDir string) (string, string, string, error) {
-	source, err := pypath.Realpath(pypath.Expanduser(sourcePath), pypath.StrictAll)
+	source, err := pathutil.ResolveExisting(pathutil.ExpandUser(sourcePath))
 	if err != nil {
 		return "", "", "", err
 	}
@@ -172,7 +173,7 @@ func recoveryValidatePaths(sourcePath, outputPath, workDir string) (string, stri
 	var workRoot string
 	switch {
 	case workDir != "":
-		if workRoot, err = pypath.Realpath(pypath.Expanduser(workDir), pypath.StrictAll); err != nil {
+		if workRoot, err = pathutil.ResolveExisting(pathutil.ExpandUser(workDir)); err != nil {
 			return "", "", "", err
 		}
 	case output != "":
@@ -190,10 +191,10 @@ func recoveryValidatePaths(sourcePath, outputPath, workDir string) (string, stri
 var recoverySourceFingerprint = recoverySourceFingerprintOf
 
 // Size and nanosecond mtime of the source and each sidecar present, keyed main or by suffix
-func recoverySourceFingerprintOf(source string) (*pyjson.Object, error) {
-	fingerprint := pyjson.NewObject()
+func recoverySourceFingerprintOf(source string) (*jsonutil.Object, error) {
+	fingerprint := jsonutil.NewObject()
 	for _, suffix := range recoverySidecarSuffixes {
-		info, err := pypath.PathlibStat(recoverySidecar(source, suffix))
+		info, err := pathutil.StatIfExists(recoverySidecar(source, suffix))
 		if err != nil {
 			return nil, err
 		}
@@ -204,7 +205,7 @@ func recoverySourceFingerprintOf(source string) (*pyjson.Object, error) {
 		if key == "" {
 			key = "main"
 		}
-		fingerprint.Set(key, pyjson.ObjectOf("size", info.Size(), "mtime_ns", info.ModTime().UnixNano()))
+		fingerprint.Set(key, jsonutil.ObjectOf("size", info.Size(), "mtime_ns", info.ModTime().UnixNano()))
 	}
 	return fingerprint, nil
 }
@@ -224,8 +225,8 @@ func recoveryFormatBytes(value int64) string {
 
 // Whether two existing directories share a device, else whether their anchors match case insensitively
 func recoverySameFilesystem(left, right string) bool {
-	ldev, _, lerr := pyfs.LstatIdentity(left)
-	rdev, _, rerr := pyfs.LstatIdentity(right)
+	ldev, _, lerr := fsutil.Identity(left)
+	rdev, _, rerr := fsutil.Identity(right)
 	if lerr == nil && rerr == nil {
 		return ldev == rdev
 	}
@@ -244,7 +245,7 @@ func recoveryAnchor(p string) string {
 
 // Free bytes of the filesystem holding path
 func recoveryDiskFree(path string) (int64, error) {
-	_, _, free, err := pyfs.DiskUsage(path)
+	_, _, free, err := fsutil.DiskUsage(path)
 	if err != nil {
 		return 0, err
 	}
@@ -255,15 +256,15 @@ func recoveryDiskFree(path string) (int64, error) {
 }
 
 // Requires free space for the disposable bundle, the output and safety headroom, returning the space report
-func recoveryDiskSpacePreflight(source, workRoot, outputParent string) (*pyjson.Object, error) {
+func recoveryDiskSpacePreflight(source, workRoot, outputParent string) (*jsonutil.Object, error) {
 	var bundle int64
 	fingerprint, err := recoverySourceFingerprint(source)
 	if err != nil {
 		return nil, err
 	}
-	for _, key := range fingerprint.Keys {
+	for _, key := range fingerprint.Keys() {
 		info, _ := fingerprint.Get(key)
-		size, _ := info.(*pyjson.Object).Get("size")
+		size, _ := info.(*jsonutil.Object).Get("size")
 		bundle += size.(int64)
 	}
 	outputAllowance := int64(0)
@@ -275,7 +276,7 @@ func recoveryDiskSpacePreflight(source, workRoot, outputParent string) (*pyjson.
 	if err != nil {
 		return nil, err
 	}
-	report := pyjson.ObjectOf("source_bundle_bytes", bundle, "estimated_output_bytes", outputAllowance, "headroom_bytes", headroom,
+	report := jsonutil.ObjectOf("source_bundle_bytes", bundle, "estimated_output_bytes", outputAllowance, "headroom_bytes", headroom,
 		"work_dir", workRoot, "work_dir_free_bytes", workFree)
 	if outputParent == "" || recoverySameFilesystem(workRoot, outputParent) {
 		required := bundle + outputAllowance + headroom
@@ -319,7 +320,7 @@ func recoveryDiskSpacePreflight(source, workRoot, outputParent string) (*pyjson.
 }
 
 // File copy of the snapshot bundle, parked by the lifecycle lock case inside the copy
-var recoveryCopy2 = pyfs.Copy2
+var recoveryCopy2 = fsutil.CopyFile
 
 // Copies the source and its sidecars into the snapshot dir under the connection lifecycle lock
 func recoveryCopySourceBundle(source, snapshotDir string) (string, []string, error) {
@@ -447,7 +448,7 @@ func recoveryTableColumns(conn state.SQLiteConn, table string) ([]string, error)
 	}
 	out := make([]string, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, pyrepr.Str(row[1]))
+		out = append(out, anyutil.String(row[1]))
 	}
 	return out, nil
 }
@@ -488,7 +489,7 @@ func recoveryImmediate(conn state.SQLiteConn, fn func() error) (err error) {
 }
 
 // Columns shared by source and destination, setting a terminal status and returning false when there are none
-func recoveryCompatibleColumns(source, destination state.SQLiteConn, table string, result *pyjson.Object) ([]string, bool, error) {
+func recoveryCompatibleColumns(source, destination state.SQLiteConn, table string, result *jsonutil.Object) ([]string, bool, error) {
 	sourceColumns, err := recoveryTableColumns(source, table)
 	if err != nil {
 		return nil, false, err
@@ -528,14 +529,14 @@ func recoveryQuotedColumns(columns []string) (string, string) {
 }
 
 // Integer value of a report counter
-func recoveryCounter(result *pyjson.Object, key string) int64 {
+func recoveryCounter(result *jsonutil.Object, key string) int64 {
 	v, _ := result.Get(key)
 	n, _ := v.(int64)
 	return n
 }
 
 // Adds delta to a report counter
-func recoveryBump(result *pyjson.Object, key string, delta int64) {
+func recoveryBump(result *jsonutil.Object, key string, delta int64) {
 	result.Set(key, recoveryCounter(result, key)+delta)
 }
 
@@ -557,7 +558,7 @@ func recoveryFetchMany(rows *sql.Rows, size int) ([][]any, error) {
 
 // Chunked straight copy filling status and error on the result
 func recoveryCopyRows(source, destination state.SQLiteConn, selectSQL string, params []any, insertSQL, table string,
-	chunkSize int, progress func(*pyjson.Object), expected *int64, result *pyjson.Object) (*pyjson.Object, error) {
+	chunkSize int, progress func(*jsonutil.Object), expected *int64, result *jsonutil.Object) (*jsonutil.Object, error) {
 	copyErr := func() error {
 		rows, err := source.QueryContext(context.Background(), selectSQL, params...)
 		if err != nil {
@@ -584,7 +585,7 @@ func recoveryCopyRows(source, destination state.SQLiteConn, selectSQL string, pa
 			}
 			recoveryBump(result, "copied_rows", int64(len(chunk)))
 			if progress != nil {
-				progress(pyjson.ObjectOf("table", table, "copied_rows", recoveryCounter(result, "copied_rows"), "source_rows", recoveryOptional(expected)))
+				progress(jsonutil.ObjectOf("table", table, "copied_rows", recoveryCounter(result, "copied_rows"), "source_rows", recoveryOptional(expected)))
 			}
 		}
 	}()
@@ -618,8 +619,8 @@ func recoveryOptional(v *int64) any {
 }
 
 // Availability, columns and row count of one table, a read error recorded on the entry
-func recoveryTableInventory(conn state.SQLiteConn, table string) (*pyjson.Object, error) {
-	result := pyjson.ObjectOf("available", false, "columns", []any{}, "rows", nil)
+func recoveryTableInventory(conn state.SQLiteConn, table string) (*jsonutil.Object, error) {
+	result := jsonutil.ObjectOf("available", false, "columns", []any{}, "rows", nil)
 	columns, err := recoveryTableColumns(conn, table)
 	if err == nil {
 		if len(columns) == 0 {
@@ -647,16 +648,16 @@ func recoveryJournalMode(conn state.SQLiteConn) (any, error) {
 	if err != nil || !ok {
 		return nil, err
 	}
-	return strings.ToLower(pyrepr.Str(row[0])), nil
+	return strings.ToLower(anyutil.String(row[0])), nil
 }
 
 // Readability inventory of every reported table, recoverable when sessions and messages read completely
-func recoveryInspectConnection(conn state.SQLiteConn) (*pyjson.Object, error) {
+func recoveryInspectConnection(conn state.SQLiteConn) (*jsonutil.Object, error) {
 	if _, err := recoveryExec(conn, "PRAGMA writable_schema=ON"); err != nil {
 		return nil, err
 	}
 	var errs, warnings []any
-	report := pyjson.ObjectOf("tables", pyjson.NewObject(), "errors", nil, "warnings", nil)
+	report := jsonutil.ObjectOf("tables", jsonutil.NewObject(), "errors", nil, "warnings", nil)
 	mode, err := recoveryJournalMode(conn)
 	if err != nil {
 		if !isSQLiteDatabaseError(err) {
@@ -666,7 +667,7 @@ func recoveryInspectConnection(conn state.SQLiteConn) (*pyjson.Object, error) {
 		warnings = append(warnings, "journal mode: "+sessionsExcText(err))
 	}
 	report.Set("journal_mode", mode)
-	tables := pyjson.NewObject()
+	tables := jsonutil.NewObject()
 	for _, table := range recoveryInventoryTables() {
 		inventory, err := recoveryTableInventory(conn, table)
 		if err != nil {
@@ -677,9 +678,9 @@ func recoveryInspectConnection(conn state.SQLiteConn) (*pyjson.Object, error) {
 	report.Set("tables", tables)
 	for _, required := range []string{"sessions", "messages"} {
 		entry, _ := tables.Get(required)
-		obj := entry.(*pyjson.Object)
+		obj := entry.(*jsonutil.Object)
 		rows, _ := obj.Get("rows")
-		if !pyTruthyValue(obj.GetOr("available", nil)) || rows == nil {
+		if !pyTruthyValue(obj.Value("available")) || rows == nil {
 			errs = append(errs, fmt.Sprintf("required table %s is not completely readable", required))
 		}
 	}
@@ -698,28 +699,28 @@ func recoveryList(items []any) []any {
 }
 
 // Inventory entry of a table in an inspection
-func recoveryTableEntry(inspection *pyjson.Object, table string) *pyjson.Object {
-	tables, _ := inspection.GetOr("tables", nil).(*pyjson.Object)
+func recoveryTableEntry(inspection *jsonutil.Object, table string) *jsonutil.Object {
+	tables, _ := inspection.Value("tables").(*jsonutil.Object)
 	if tables == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	entry, _ := tables.GetOr(table, nil).(*pyjson.Object)
+	entry, _ := tables.Value(table).(*jsonutil.Object)
 	if entry == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return entry
 }
 
 // Row count an inventory entry reports, nil when unknown
-func recoveryEntryRows(entry *pyjson.Object) *int64 {
-	if n, ok := entry.GetOr("rows", nil).(int64); ok {
+func recoveryEntryRows(entry *jsonutil.Object) *int64 {
+	if n, ok := entry.Value("rows").(int64); ok {
 		return &n
 	}
 	return nil
 }
 
 // Copies the source bundle into a fresh temp dir under the work root and inspects the copy
-func recoverySnapshotAndInspect(source, workRoot string) (string, string, *pyjson.Object, error) {
+func recoverySnapshotAndInspect(source, workRoot string) (string, string, *jsonutil.Object, error) {
 	before, err := recoverySourceFingerprint(source)
 	if err != nil {
 		return "", "", nil, err
@@ -728,7 +729,7 @@ func recoverySnapshotAndInspect(source, workRoot string) (string, string, *pyjso
 	if err != nil {
 		return "", "", nil, err
 	}
-	snapshotSource, inspection, err := func() (string, *pyjson.Object, error) {
+	snapshotSource, inspection, err := func() (string, *jsonutil.Object, error) {
 		snapshotSource, copied, err := recoveryCopySourceBundle(source, tempDir)
 		if err != nil {
 			return "", nil, err
@@ -737,7 +738,7 @@ func recoverySnapshotAndInspect(source, workRoot string) (string, string, *pyjso
 		if err != nil {
 			return "", nil, err
 		}
-		if !pyjson.Equal(after, before) {
+		if !anyutil.Equal(after, before) {
 			return "", nil, recoverySafetyError("The source database bundle changed while it was being copied. Stop every Icebath process using this " +
 				"profile and retry. This includes the interactive `icebath` CLI session this command may have been " +
 				"launched from: a running parent CLI writes session bookkeeping (compression ticks, context " +
@@ -768,7 +769,7 @@ func recoverySnapshotAndInspect(source, workRoot string) (string, string, *pyjso
 }
 
 // Inspects canonical table readability on a disposable copy without opening the source itself
-func inspectSessionDatabase(ctx context.Context, sourcePath, workDir string) (*pyjson.Object, error) {
+func inspectSessionDatabase(ctx context.Context, sourcePath, workDir string) (*jsonutil.Object, error) {
 	source, _, workRoot, err := recoveryValidatePaths(sourcePath, "", workDir)
 	if err != nil {
 		return nil, err
@@ -782,8 +783,8 @@ func inspectSessionDatabase(ctx context.Context, sourcePath, workDir string) (*p
 		return nil, err
 	}
 	defer os.RemoveAll(tempDir)
-	report := pyjson.ObjectOf("operation", "inspect", "source", source, "disk_space", diskSpace)
-	for _, key := range inspection.Keys {
+	report := jsonutil.ObjectOf("operation", "inspect", "source", source, "disk_space", diskSpace)
+	for _, key := range inspection.Keys() {
 		v, _ := inspection.Get(key)
 		report.Set(key, v)
 	}
@@ -792,7 +793,7 @@ func inspectSessionDatabase(ctx context.Context, sourcePath, workDir string) (*p
 	if err != nil {
 		return nil, err
 	}
-	report.Set("source_unchanged", pyjson.Equal(now, fingerprint))
+	report.Set("source_unchanged", anyutil.Equal(now, fingerprint))
 	return report, nil
 }
 
@@ -824,14 +825,14 @@ func recoveryFreshDestination(ctx context.Context, output string, topicTables bo
 
 // Copies one canonical table, straight chunked or by rowid range salvage
 func recoveryCopyTable(source, destination state.SQLiteConn, table string, salvage bool, chunkSize int,
-	progress func(*pyjson.Object), sourceRows *int64) (*pyjson.Object, error) {
+	progress func(*jsonutil.Object), sourceRows *int64) (*jsonutil.Object, error) {
 	if table == "state_meta" {
 		return recoveryCopyStateMeta(source, destination, salvage, chunkSize, progress, sourceRows)
 	}
 	if salvage {
 		return recoveryCopyTableSalvage(source, destination, table, chunkSize, progress, sourceRows, "INSERT", nil)
 	}
-	result := pyjson.ObjectOf("source_rows", recoveryOptional(sourceRows), "copied_rows", int64(0))
+	result := jsonutil.ObjectOf("source_rows", recoveryOptional(sourceRows), "copied_rows", int64(0))
 	columns, ok, err := recoveryCompatibleColumns(source, destination, table, result)
 	if err != nil || !ok {
 		return result, err
@@ -842,24 +843,24 @@ func recoveryCopyTable(source, destination state.SQLiteConn, table string, salva
 }
 
 // Records a skipped rowid range, merging an adjacent range with the same error
-func recoveryAppendSkippedRange(result *pyjson.Object, low, high int64, msg string) {
-	ranges, _ := result.GetOr("skipped_rowid_ranges", nil).([]any)
+func recoveryAppendSkippedRange(result *jsonutil.Object, low, high int64, msg string) {
+	ranges, _ := result.Value("skipped_rowid_ranges").([]any)
 	if n := len(ranges); n > 0 {
-		last := ranges[n-1].(*pyjson.Object)
-		lastHigh, _ := last.GetOr("high", nil).(int64)
-		if lastHigh != math.MaxInt64 && lastHigh+1 == low && pyjson.Equal(last.GetOr("error", nil), msg) {
+		last := ranges[n-1].(*jsonutil.Object)
+		lastHigh, _ := last.Value("high").(int64)
+		if lastHigh != math.MaxInt64 && lastHigh+1 == low && anyutil.Equal(last.Value("error"), msg) {
 			last.Set("high", high)
 			return
 		}
 	}
-	result.Set("skipped_rowid_ranges", append(ranges, pyjson.ObjectOf("low", low, "high", high, "error", msg)))
+	result.Set("skipped_rowid_ranges", append(ranges, jsonutil.ObjectOf("low", low, "high", high, "error", msg)))
 }
 
 // Readable rowid edges of a table, galloping for a finite bound where an edge is damaged
-func recoverySalvageRowidBounds(source state.SQLiteConn, table string) (*pyjson.Object, error) {
+func recoverySalvageRowidBounds(source state.SQLiteConn, table string) (*jsonutil.Object, error) {
 	var errs []any
 	var fallback []any
-	result := pyjson.ObjectOf("errors", []any{}, "fallback_edges", []any{})
+	result := jsonutil.ObjectOf("errors", []any{}, "fallback_edges", []any{})
 	edges := map[string]*int64{"low": nil, "high": nil}
 	for _, edge := range []struct{ name, direction string }{{"low", "ASC"}, {"high", "DESC"}} {
 		row, ok, err := recoveryQueryOne(source, fmt.Sprintf(`SELECT rowid FROM "%s" ORDER BY rowid %s LIMIT 1`, table, edge.direction))
@@ -925,14 +926,14 @@ func recoverySalvageRowidBounds(source state.SQLiteConn, table string) (*pyjson.
 			if !recoveryContainsAny(fallback, pair[0]) {
 				continue
 			}
-			anchor, _ := result.GetOr(pair[1], nil).(int64)
+			anchor, _ := result.Value(pair[1]).(int64)
 			probe, err := recoveryProbePopulatedEdge(source, table, pair[0], anchor)
 			if err != nil {
 				return nil, err
 			}
 			probes = append(probes, probe)
-			if pyTruthyValue(probe.GetOr("capped", nil)) {
-				result.Set(pair[0], probe.GetOr("bound", nil))
+			if pyTruthyValue(probe.Value("capped")) {
+				result.Set(pair[0], probe.Value("bound"))
 			}
 		}
 		result.Set("edge_probes", recoveryList(probes))
@@ -951,7 +952,7 @@ func recoveryContainsAny(list []any, s string) bool {
 }
 
 // Finite bound for a damaged rowid edge galloping outward from the readable anchor with doubling offsets
-func recoveryProbePopulatedEdge(source state.SQLiteConn, table, edge string, anchor int64) (*pyjson.Object, error) {
+func recoveryProbePopulatedEdge(source state.SQLiteConn, table, edge string, anchor int64) (*jsonutil.Object, error) {
 	ascending := edge == "high"
 	comparison, order := ">", "ASC"
 	domain := big.NewInt(math.MaxInt64)
@@ -960,7 +961,7 @@ func recoveryProbePopulatedEdge(source state.SQLiteConn, table, edge string, anc
 		domain = big.NewInt(math.MinInt64)
 	}
 	probeSQL := fmt.Sprintf(`SELECT rowid FROM "%s" WHERE rowid %s ? ORDER BY rowid %s LIMIT 1`, table, comparison, order)
-	result := pyjson.ObjectOf("edge", edge, "probes", int64(0), "capped", false)
+	result := jsonutil.ObjectOf("edge", edge, "probes", int64(0), "capped", false)
 	position := big.NewInt(anchor)
 	span := big.NewInt(1)
 	for {
@@ -998,10 +999,10 @@ type recoveryRangeSalvage struct {
 	source, destination  state.SQLiteConn
 	table                string
 	chunkSize            int
-	progress             func(*pyjson.Object)
+	progress             func(*jsonutil.Object)
 	sourceRows           *int64
 	rowFilter            func(row []any, columns []string) bool
-	result               *pyjson.Object
+	result               *jsonutil.Object
 	columnNames          []string
 	selectSQL, insertSQL string
 	exactSQL             string
@@ -1010,8 +1011,8 @@ type recoveryRangeSalvage struct {
 
 // Bisecting copy of one table with its select, insert and exact rowid statements, counters on result
 func newRecoveryRangeSalvage(source, destination state.SQLiteConn, table string, columns []string, chunkSize int,
-	progress func(*pyjson.Object), sourceRows *int64, insertPrefix string, rowFilter func(row []any, columns []string) bool,
-	result *pyjson.Object) *recoveryRangeSalvage {
+	progress func(*jsonutil.Object), sourceRows *int64, insertPrefix string, rowFilter func(row []any, columns []string) bool,
+	result *jsonutil.Object) *recoveryRangeSalvage {
 	quoted, marks := recoveryQuotedColumns(columns)
 	return &recoveryRangeSalvage{source: source, destination: destination, table: table, chunkSize: chunkSize,
 		progress: progress, sourceRows: sourceRows, rowFilter: rowFilter, result: result, columnNames: append([]string{}, columns...),
@@ -1121,8 +1122,8 @@ func (s *recoveryRangeSalvage) copyRange(low, high int64) error {
 			last := recoveryInt(fetched[len(fetched)-1][0])
 			lastCommitted = &last
 			if s.progress != nil {
-				ranges, _ := s.result.GetOr("skipped_rowid_ranges", nil).([]any)
-				s.progress(pyjson.ObjectOf("table", s.table, "copied_rows", recoveryCounter(s.result, "copied_rows"),
+				ranges, _ := s.result.Value("skipped_rowid_ranges").([]any)
+				s.progress(jsonutil.ObjectOf("table", s.table, "copied_rows", recoveryCounter(s.result, "copied_rows"),
 					"source_rows", recoveryOptional(s.sourceRows), "skipped_ranges", int64(len(ranges))))
 			}
 		}
@@ -1161,9 +1162,9 @@ func (s *recoveryRangeSalvage) copyRange(low, high int64) error {
 }
 
 // Rowid range copy that continues past damaged source pages
-func recoveryCopyTableSalvage(source, destination state.SQLiteConn, table string, chunkSize int, progress func(*pyjson.Object),
-	sourceRows *int64, insertPrefix string, rowFilter func([]any, []string) bool) (*pyjson.Object, error) {
-	result := pyjson.ObjectOf("mode", "rowid_range_salvage", "source_rows", recoveryOptional(sourceRows), "copied_rows", int64(0),
+func recoveryCopyTableSalvage(source, destination state.SQLiteConn, table string, chunkSize int, progress func(*jsonutil.Object),
+	sourceRows *int64, insertPrefix string, rowFilter func([]any, []string) bool) (*jsonutil.Object, error) {
+	result := jsonutil.ObjectOf("mode", "rowid_range_salvage", "source_rows", recoveryOptional(sourceRows), "copied_rows", int64(0),
 		"excluded_rows", int64(0), "columns", []any{}, "range_queries", int64(0), "exact_lookup_recovered", int64(0),
 		"destination_rejected_rows", int64(0), "skipped_rowid_ranges", []any{})
 	columns, ok, err := recoveryCompatibleColumns(source, destination, table, result)
@@ -1175,17 +1176,17 @@ func recoveryCopyTableSalvage(source, destination state.SQLiteConn, table string
 		return nil, err
 	}
 	result.Set("rowid_bounds", bounds)
-	if pyTruthyValue(bounds.GetOr("empty", nil)) {
+	if pyTruthyValue(bounds.Value("empty")) {
 		result.Set("status", "complete")
 		return result, nil
 	}
-	low, lowOK := bounds.GetOr("low", nil).(int64)
-	high, highOK := bounds.GetOr("high", nil).(int64)
+	low, lowOK := bounds.Value("low").(int64)
+	high, highOK := bounds.Value("high").(int64)
 	if !lowOK || !highOK {
 		var details []string
-		errs, _ := bounds.GetOr("errors", nil).([]any)
+		errs, _ := bounds.Value("errors").([]any)
 		for _, e := range errs {
-			details = append(details, pyrepr.Str(e))
+			details = append(details, anyutil.String(e))
 		}
 		msg := "could not determine a rowid range for salvage"
 		if len(details) > 0 {
@@ -1200,12 +1201,12 @@ func recoveryCopyTableSalvage(source, destination state.SQLiteConn, table string
 	if err := salvage.copyRange(low, high); err != nil {
 		return nil, err
 	}
-	ranges, _ := result.GetOr("skipped_rowid_ranges", nil).([]any)
+	ranges, _ := result.Value("skipped_rowid_ranges").([]any)
 	span := new(big.Int)
 	for _, item := range ranges {
-		entry := item.(*pyjson.Object)
-		lo, _ := entry.GetOr("low", nil).(int64)
-		hi, _ := entry.GetOr("high", nil).(int64)
+		entry := item.(*jsonutil.Object)
+		lo, _ := entry.Value("low").(int64)
+		hi, _ := entry.Value("high").(int64)
 		span.Add(span, new(big.Int).Add(new(big.Int).Sub(big.NewInt(hi), big.NewInt(lo)), big.NewInt(1)))
 	}
 	if span.IsInt64() {
@@ -1240,8 +1241,8 @@ func recoverySortedGeneratedMeta() []any {
 }
 
 // Base state_meta result with any extra fields
-func recoveryStateMetaResult(sourceRows *int64, extra ...any) *pyjson.Object {
-	result := pyjson.ObjectOf("source_meta_rows", recoveryOptional(sourceRows), "copied_rows", int64(0),
+func recoveryStateMetaResult(sourceRows *int64, extra ...any) *jsonutil.Object {
+	result := jsonutil.ObjectOf("source_meta_rows", recoveryOptional(sourceRows), "copied_rows", int64(0),
 		"columns", []any{"key", "value"}, "excluded_keys", recoverySortedGeneratedMeta())
 	for i := 0; i+1 < len(extra); i += 2 {
 		result.Set(extra[i].(string), extra[i+1])
@@ -1250,7 +1251,7 @@ func recoveryStateMetaResult(sourceRows *int64, extra ...any) *pyjson.Object {
 }
 
 // Terminal state_meta result when the key value schema is unusable, nil otherwise
-func recoveryStateMetaPrecheck(source, destination state.SQLiteConn, sourceRows *int64, salvage bool) (*pyjson.Object, error) {
+func recoveryStateMetaPrecheck(source, destination state.SQLiteConn, sourceRows *int64, salvage bool) (*jsonutil.Object, error) {
 	var extra []any
 	if salvage {
 		extra = []any{"mode", "rowid_range_salvage"}
@@ -1278,8 +1279,8 @@ func recoveryStateMetaPrecheck(source, destination state.SQLiteConn, sourceRows 
 }
 
 // Copies user metadata rows, the derived FTS and topic keys regenerated rather than copied
-func recoveryCopyStateMeta(source, destination state.SQLiteConn, salvage bool, chunkSize int, progress func(*pyjson.Object),
-	sourceRows *int64) (*pyjson.Object, error) {
+func recoveryCopyStateMeta(source, destination state.SQLiteConn, salvage bool, chunkSize int, progress func(*jsonutil.Object),
+	sourceRows *int64) (*jsonutil.Object, error) {
 	problem, err := recoveryStateMetaPrecheck(source, destination, sourceRows, salvage)
 	if err != nil || problem != nil {
 		return problem, err
@@ -1288,7 +1289,7 @@ func recoveryCopyStateMeta(source, destination state.SQLiteConn, salvage bool, c
 		keepUserMeta := func(row []any, columns []string) bool {
 			for i, c := range columns {
 				if c == "key" {
-					return !recoveryContains(recoveryGeneratedMeta, pyrepr.Str(row[i]))
+					return !recoveryContains(recoveryGeneratedMeta, anyutil.String(row[i]))
 				}
 			}
 			return true
@@ -1297,7 +1298,7 @@ func recoveryCopyStateMeta(source, destination state.SQLiteConn, salvage bool, c
 		if err != nil {
 			return nil, err
 		}
-		v, _ := result.Pop("source_rows")
+		v, _ := result.Take("source_rows")
 		result.Set("source_meta_rows", v)
 		result.Set("excluded_keys", recoverySortedGeneratedMeta())
 		return result, nil
@@ -1337,8 +1338,8 @@ func recoverySyntheticTitles(destination state.SQLiteConn, prefix string) func()
 }
 
 // Recreates synthetic sessions for salvaged messages whose session row did not survive
-func recoveryReconstructMissingSessions(destination state.SQLiteConn) (*pyjson.Object, error) {
-	result := pyjson.ObjectOf("sessions_reconstructed", int64(0), "messages_retained", int64(0))
+func recoveryReconstructMissingSessions(destination state.SQLiteConn) (*jsonutil.Object, error) {
+	result := jsonutil.ObjectOf("sessions_reconstructed", int64(0), "messages_retained", int64(0))
 	sessionColumns, err := recoveryTableColumns(destination, "sessions")
 	if err != nil {
 		return nil, err
@@ -1416,8 +1417,8 @@ func recoveryReconcile(destination state.SQLiteConn, table, where, mutation stri
 }
 
 // Reconciles references to unsalvageable sessions after rebuilding synthetic owners for orphaned messages
-func recoveryCleanupPartialOrphans(destination state.SQLiteConn) (*pyjson.Object, error) {
-	result := pyjson.ObjectOf("session_prompt_refs_cleared", int64(0), "system_prompts_removed", int64(0), "sessions_parent_cleared", int64(0),
+func recoveryCleanupPartialOrphans(destination state.SQLiteConn) (*jsonutil.Object, error) {
+	result := jsonutil.ObjectOf("session_prompt_refs_cleared", int64(0), "system_prompts_removed", int64(0), "sessions_parent_cleared", int64(0),
 		"sessions_reconstructed", int64(0), "messages_retained", int64(0))
 	for _, table := range recoveryDependentTables {
 		result.Set(table+"_removed", int64(0))
@@ -1427,7 +1428,7 @@ func recoveryCleanupPartialOrphans(destination state.SQLiteConn) (*pyjson.Object
 		if err != nil {
 			return err
 		}
-		result.Update(rebuilt)
+		result.Merge(rebuilt)
 		n, err := recoveryReconcile(destination, "sessions", "parent_session_id IS NOT NULL AND NOT EXISTS ("+
 			"SELECT 1 FROM sessions AS parent WHERE parent.id = sessions.parent_session_id)", "UPDATE sessions SET parent_session_id = NULL")
 		if err != nil {
@@ -1484,26 +1485,26 @@ func recoveryCleanupPartialOrphans(destination state.SQLiteConn) (*pyjson.Object
 }
 
 // Appends a verification error
-func recoveryVerifyError(verification *pyjson.Object, msg string) {
-	errs, _ := verification.GetOr("errors", nil).([]any)
+func recoveryVerifyError(verification *jsonutil.Object, msg string) {
+	errs, _ := verification.Value("errors").([]any)
 	verification.Set("errors", append(errs, msg))
 }
 
 // Appends a verification warning
-func recoveryVerifyWarning(verification *pyjson.Object, msg string) {
-	warnings, _ := verification.GetOr("warnings", nil).([]any)
+func recoveryVerifyWarning(verification *jsonutil.Object, msg string) {
+	warnings, _ := verification.Value("warnings").([]any)
 	verification.Set("warnings", append(warnings, msg))
 }
 
 // Integrity, foreign keys, journal mode, schema version and FTS meta of the recovered file
-func recoveryVerifyStructure(conn state.SQLiteConn, verification *pyjson.Object) error {
+func recoveryVerifyStructure(conn state.SQLiteConn, verification *jsonutil.Object) error {
 	rows, err := recoveryQueryAll(conn, "PRAGMA integrity_check")
 	if err != nil {
 		return err
 	}
 	var integrity []any
 	for _, row := range rows {
-		integrity = append(integrity, pyrepr.Str(row[0]))
+		integrity = append(integrity, anyutil.String(row[0]))
 	}
 	verification.Set("integrity_check", recoveryList(integrity))
 	if len(integrity) != 1 || integrity[0] != "ok" {
@@ -1546,12 +1547,12 @@ func recoveryVerifyStructure(conn state.SQLiteConn, verification *pyjson.Object)
 	if err != nil {
 		return err
 	}
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	for _, row := range metaRows {
-		meta.Set(pyrepr.Str(row[0]), row[1])
+		meta.Set(anyutil.String(row[0]), row[1])
 	}
 	verification.Set("fts_meta", meta)
-	if !pyjson.Equal(meta.GetOr("fts_storage_version", nil), fmt.Sprint(state.FTSStorageVersion)) {
+	if !anyutil.Equal(meta.Value("fts_storage_version"), fmt.Sprint(state.FTSStorageVersion)) {
 		recoveryVerifyError(verification, "fresh FTS storage version was not established")
 	}
 	var pending []string
@@ -1569,8 +1570,8 @@ func recoveryVerifyStructure(conn state.SQLiteConn, verification *pyjson.Object)
 }
 
 // Integrity command and empty match probe of each FTS index present
-func recoveryVerifyFTSIndexes(conn state.SQLiteConn, verification *pyjson.Object) error {
-	checks := pyjson.NewObject()
+func recoveryVerifyFTSIndexes(conn state.SQLiteConn, verification *jsonutil.Object) error {
+	checks := jsonutil.NewObject()
 	for _, table := range []string{"messages_fts", "messages_fts_trigram", "messages_fts_cjk"} {
 		columns, err := recoveryTableColumns(conn, table)
 		if err != nil {
@@ -1598,8 +1599,8 @@ func recoveryVerifyFTSIndexes(conn state.SQLiteConn, verification *pyjson.Object
 }
 
 // Compares recovered counts and copy statuses against the source, classifying shortfalls as loss
-func recoveryVerifyRowCounts(conn state.SQLiteConn, verification *pyjson.Object, expected map[string]*int64,
-	copyReport *pyjson.Object, allowPartial bool, orphanCleanup *pyjson.Object) error {
+func recoveryVerifyRowCounts(conn state.SQLiteConn, verification *jsonutil.Object, expected map[string]*int64,
+	copyReport *jsonutil.Object, allowPartial bool, orphanCleanup *jsonutil.Object) error {
 	flag := func(msg string, soft bool) {
 		if soft {
 			recoveryVerifyWarning(verification, msg)
@@ -1608,7 +1609,7 @@ func recoveryVerifyRowCounts(conn state.SQLiteConn, verification *pyjson.Object,
 		}
 		recoveryVerifyError(verification, msg)
 	}
-	counts := pyjson.NewObject()
+	counts := jsonutil.NewObject()
 	for _, table := range recoveryInventoryTables() {
 		columns, err := recoveryTableColumns(conn, table)
 		if err != nil {
@@ -1624,10 +1625,10 @@ func recoveryVerifyRowCounts(conn state.SQLiteConn, verification *pyjson.Object,
 		counts.Set(table, n)
 	}
 	verification.Set("table_counts", counts)
-	countOf := func(table string) any { return counts.GetOr(table, nil) }
+	countOf := func(table string) any { return counts.Value(table) }
 	for _, table := range append([]string{"sessions", "messages"}, recoveryAuxiliaryTables...) {
 		want := expected[table]
-		if want != nil && !pyjson.Equal(countOf(table), *want) {
+		if want != nil && !anyutil.Equal(countOf(table), *want) {
 			shown := "None"
 			if v := countOf(table); v != nil {
 				shown = fmt.Sprint(v)
@@ -1637,15 +1638,15 @@ func recoveryVerifyRowCounts(conn state.SQLiteConn, verification *pyjson.Object,
 	}
 	cleanup := orphanCleanup
 	if cleanup == nil {
-		cleanup = pyjson.NewObject()
+		cleanup = jsonutil.NewObject()
 	}
-	rebuilt := recoveryInt(cleanup.GetOr("sessions_reconstructed", nil))
-	retained := recoveryInt(cleanup.GetOr("messages_retained", nil))
-	removed := recoveryInt(cleanup.GetOr("messages_removed", nil))
-	fullyReconstructed := rebuilt > 0 && pyjson.Equal(countOf("sessions"), rebuilt) && pyjson.Equal(countOf("messages"), retained) && removed == 0
-	for _, table := range copyReport.Keys {
-		entry, _ := copyReport.GetOr(table, nil).(*pyjson.Object)
-		status := entry.GetOr("status", nil)
+	rebuilt := recoveryInt(cleanup.Value("sessions_reconstructed"))
+	retained := recoveryInt(cleanup.Value("messages_retained"))
+	removed := recoveryInt(cleanup.Value("messages_removed"))
+	fullyReconstructed := rebuilt > 0 && anyutil.Equal(countOf("sessions"), rebuilt) && anyutil.Equal(countOf("messages"), retained) && removed == 0
+	for _, table := range copyReport.Keys() {
+		entry, _ := copyReport.Value(table).(*jsonutil.Object)
+		status := entry.Value("status")
 		if status != "failed" && status != "partial" {
 			continue
 		}
@@ -1653,7 +1654,7 @@ func recoveryVerifyRowCounts(conn state.SQLiteConn, verification *pyjson.Object,
 		flag(fmt.Sprintf("%s copy status is %s", table, status), allowPartial && tolerable)
 	}
 	if orphanCleanup != nil && orphanCleanup.Len() > 0 {
-		if orphanCount := recoveryInt(orphanCleanup.GetOr("total_removed_or_relinked", nil)); orphanCount != 0 {
+		if orphanCount := recoveryInt(orphanCleanup.Value("total_removed_or_relinked")); orphanCount != 0 {
 			flag(fmt.Sprintf("%d orphaned reference(s) were removed or relinked", orphanCount), true)
 		}
 		if rebuilt != 0 {
@@ -1665,9 +1666,9 @@ func recoveryVerifyRowCounts(conn state.SQLiteConn, verification *pyjson.Object,
 }
 
 // Health probe, structure, counts and FTS checks of the recovered output
-func recoveryVerifyRecoveredDatabase(ctx context.Context, output string, expected map[string]*int64, copyReport *pyjson.Object,
-	allowPartial bool, orphanCleanup *pyjson.Object) (*pyjson.Object, error) {
-	verification := pyjson.ObjectOf("errors", []any{}, "warnings", []any{}, "loss_detected", false)
+func recoveryVerifyRecoveredDatabase(ctx context.Context, output string, expected map[string]*int64, copyReport *jsonutil.Object,
+	allowPartial bool, orphanCleanup *jsonutil.Object) (*jsonutil.Object, error) {
+	verification := jsonutil.ObjectOf("errors", []any{}, "warnings", []any{}, "loss_detected", false)
 	reason, unhealthy, err := state.DBOpensCleanly(ctx, output)
 	if err != nil {
 		return nil, err
@@ -1699,10 +1700,10 @@ func recoveryVerifyRecoveredDatabase(ctx context.Context, output string, expecte
 	if closeErr != nil {
 		return nil, closeErr
 	}
-	errs, _ := verification.GetOr("errors", nil).([]any)
+	errs, _ := verification.Value("errors").([]any)
 	healthy := len(errs) == 0
 	verification.Set("healthy", healthy)
-	verification.Set("complete", healthy && !pyTruthyValue(verification.GetOr("loss_detected", nil)))
+	verification.Set("complete", healthy && !pyTruthyValue(verification.Value("loss_detected")))
 	return verification, nil
 }
 
@@ -1732,7 +1733,7 @@ func recoveryRepairOutOfWindowTimestamps(destination state.SQLiteConn) (int64, e
 	if err != nil {
 		return 0, err
 	}
-	ok := "BETWEEN " + pyrepr.Repr(state.EpochMin) + " AND " + pyrepr.Repr(state.EpochMax)
+	ok := "BETWEEN " + anyutil.Quote(state.EpochMin) + " AND " + anyutil.Quote(state.EpochMax)
 	now := "CAST(strftime('%s', 'now') AS REAL)"
 	var repaired int64
 	err = recoveryImmediate(destination, func() error {
@@ -1773,7 +1774,7 @@ func recoveryRepairOutOfWindowTimestamps(destination state.SQLiteConn) (int64, e
 }
 
 // Sanitizes copied JSON and timestamps and stamps the FTS storage version the fresh destination owns
-func recoveryFinalizeDerivedMetadata(destination state.SQLiteConn) (*pyjson.Object, error) {
+func recoveryFinalizeDerivedMetadata(destination state.SQLiteConn) (*jsonutil.Object, error) {
 	modelConfigReset, err := recoverySanitizeModelConfig(destination)
 	if err != nil {
 		return nil, err
@@ -1788,14 +1789,14 @@ func recoveryFinalizeDerivedMetadata(destination state.SQLiteConn) (*pyjson.Obje
 	}
 	present := map[string]bool{}
 	for _, row := range rows {
-		present[pyrepr.Str(row[0])] = true
+		present[anyutil.String(row[0])] = true
 	}
 	var names []string
 	for name := range present {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	result := pyjson.ObjectOf("fts_tables", recoveryStrings(names), "finalized", false, "model_config_reset", modelConfigReset,
+	result := jsonutil.ObjectOf("fts_tables", recoveryStrings(names), "finalized", false, "model_config_reset", modelConfigReset,
 		"timestamps_repaired", timestampsRepaired)
 	if len(present) != 2 || !present["messages_fts"] || !present["messages_fts_trigram"] {
 		result.Set("error", "fresh destination is missing required FTS tables")
@@ -1823,41 +1824,41 @@ func recoveryFinalizeDerivedMetadata(destination state.SQLiteConn) (*pyjson.Obje
 }
 
 // Recover report with the shared header, mode fields and verdict, a changed source clearing the named verification flag
-func recoveryReport(source, output string, inspection, diskSpace, verification *pyjson.Object, onSourceChange string, fields ...any) (*pyjson.Object, error) {
-	fingerprint := inspection.GetOr("source_fingerprint", nil)
+func recoveryReport(source, output string, inspection, diskSpace, verification *jsonutil.Object, onSourceChange string, fields ...any) (*jsonutil.Object, error) {
+	fingerprint := inspection.Value("source_fingerprint")
 	now, err := recoverySourceFingerprint(source)
 	if err != nil {
 		return nil, err
 	}
-	unchanged := pyjson.Equal(now, fingerprint)
+	unchanged := anyutil.Equal(now, fingerprint)
 	if !unchanged {
 		recoveryVerifyError(verification, "the source database bundle changed during recovery")
 		verification.Set(onSourceChange, false)
 	}
-	report := pyjson.ObjectOf("operation", "recover", "source", source, "output", output,
-		"source_bundle", inspection.GetOr("source_bundle", nil), "source_fingerprint", fingerprint,
+	report := jsonutil.ObjectOf("operation", "recover", "source", source, "output", output,
+		"source_bundle", inspection.Value("source_bundle"), "source_fingerprint", fingerprint,
 		"source_unchanged", unchanged, "disk_space", diskSpace,
-		"inspection", pyjson.ObjectOf("journal_mode", inspection.GetOr("journal_mode", nil), "tables", inspection.GetOr("tables", nil),
-			"errors", inspection.GetOr("errors", nil), "warnings", inspection.GetOr("warnings", nil)))
+		"inspection", jsonutil.ObjectOf("journal_mode", inspection.Value("journal_mode"), "tables", inspection.Value("tables"),
+			"errors", inspection.Value("errors"), "warnings", inspection.Value("warnings")))
 	for i := 0; i+1 < len(fields); i += 2 {
 		report.Set(fields[i].(string), fields[i+1])
 	}
-	excluded := pyjson.NewObject()
+	excluded := jsonutil.NewObject()
 	for _, table := range recoveryRuntimeTables {
 		excluded.Set(table, recoveryTableEntry(inspection, table))
 	}
 	report.Set("verification", verification)
-	report.Set("complete", pyTruthyValue(verification.GetOr("complete", nil)) && unchanged)
-	report.Set("partial", pyTruthyValue(verification.GetOr("loss_detected", nil)))
-	report.Set("verified", pyTruthyValue(verification.GetOr("healthy", nil)) && unchanged)
+	report.Set("complete", pyTruthyValue(verification.Value("complete")) && unchanged)
+	report.Set("partial", pyTruthyValue(verification.Value("loss_detected")))
+	report.Set("verified", pyTruthyValue(verification.Value("healthy")) && unchanged)
 	report.Set("installed", false)
-	report.Set("runtime_state", pyjson.ObjectOf("policy", "transcript-only; runtime ledger excluded; fresh epoch on activation",
+	report.Set("runtime_state", jsonutil.ObjectOf("policy", "transcript-only; runtime ledger excluded; fresh epoch on activation",
 		"excluded_tables", excluded))
 	return report, nil
 }
 
 // Salvages canonical rows into a separate output, a state.db output first reserving offline ownership of its home
-func recoverSessionDatabase(ctx context.Context, sourcePath, outputPath, workDir string, chunkSize int, progress func(*pyjson.Object), allowPartial bool) (*pyjson.Object, error) {
+func recoverSessionDatabase(ctx context.Context, sourcePath, outputPath, workDir string, chunkSize int, progress func(*jsonutil.Object), allowPartial bool) (*jsonutil.Object, error) {
 	_, output, _, err := recoveryValidatePaths(sourcePath, outputPath, workDir)
 	if err != nil {
 		return nil, err
@@ -1883,7 +1884,7 @@ func recoverSessionDatabase(ctx context.Context, sourcePath, outputPath, workDir
 }
 
 // Recovers canonical rows into a separate current schema database from a copy of the source bundle
-func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, workDir string, chunkSize int, progress func(*pyjson.Object), allowPartial bool) (*pyjson.Object, error) {
+func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, workDir string, chunkSize int, progress func(*jsonutil.Object), allowPartial bool) (*jsonutil.Object, error) {
 	if chunkSize <= 0 {
 		return nil, recoverySafetyError("chunk_size must be greater than zero")
 	}
@@ -1900,11 +1901,11 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 		return nil, err
 	}
 	defer os.RemoveAll(tempDir)
-	if !pyTruthyValue(inspection.GetOr("recoverable", nil)) && !allowPartial {
+	if !pyTruthyValue(inspection.Value("recoverable")) && !allowPartial {
 		var reasons []string
-		errs, _ := inspection.GetOr("errors", nil).([]any)
+		errs, _ := inspection.Value("errors").([]any)
 		for _, e := range errs {
-			reasons = append(reasons, pyrepr.Str(e))
+			reasons = append(reasons, anyutil.String(e))
 		}
 		if len(reasons) == 0 {
 			reasons = []string{"unknown source error"}
@@ -1915,7 +1916,7 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 	}
 	var missingRequired []string
 	for _, table := range []string{"sessions", "messages"} {
-		if !pyTruthyValue(recoveryTableEntry(inspection, table).GetOr("available", nil)) {
+		if !pyTruthyValue(recoveryTableEntry(inspection, table).Value("available")) {
 			missingRequired = append(missingRequired, table)
 		}
 	}
@@ -1926,8 +1927,8 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 	if err != nil {
 		return nil, err
 	}
-	copyReport := pyjson.NewObject()
-	var orphanCleanup, derived *pyjson.Object
+	copyReport := jsonutil.NewObject()
+	var orphanCleanup, derived *jsonutil.Object
 	copyErr := func() error {
 		defer sourceConn.Close()
 		if _, err := recoveryExec(sourceConn, "PRAGMA writable_schema=ON"); err != nil {
@@ -1935,7 +1936,7 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 		}
 		topic := false
 		for _, table := range recoveryTopicTables {
-			if pyTruthyValue(recoveryTableEntry(inspection, table).GetOr("available", nil)) {
+			if pyTruthyValue(recoveryTableEntry(inspection, table).Value("available")) {
 				topic = true
 			}
 		}
@@ -1947,8 +1948,8 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 		tables := append(append(append(append([]string{}, recoveryCanonicalTables...), "state_meta"), recoveryTopicTables...), recoveryAuxiliaryTables...)
 		for _, table := range tables {
 			entry := recoveryTableEntry(inspection, table)
-			if !recoveryContains(recoveryCanonicalTables, table) && !pyTruthyValue(entry.GetOr("available", nil)) {
-				copyReport.Set(table, pyjson.ObjectOf("status", "missing", "copied_rows", int64(0)))
+			if !recoveryContains(recoveryCanonicalTables, table) && !pyTruthyValue(entry.Value("available")) {
+				copyReport.Set(table, jsonutil.ObjectOf("status", "missing", "copied_rows", int64(0)))
 				continue
 			}
 			if init, ok := recoveryAuxiliarySchemas[table]; ok {
@@ -1976,7 +1977,7 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 	expected := map[string]*int64{}
 	for _, table := range append(append([]string{}, recoveryCanonicalTables...), recoveryAuxiliaryTables...) {
 		entry := recoveryTableEntry(inspection, table)
-		if recoveryContains(recoveryCanonicalTables, table) || pyTruthyValue(entry.GetOr("available", nil)) {
+		if recoveryContains(recoveryCanonicalTables, table) || pyTruthyValue(entry.Value("available")) {
 			expected[table] = recoveryEntryRows(entry)
 		}
 	}
@@ -1993,12 +1994,12 @@ func recoverSessionDatabaseOutput(ctx context.Context, sourcePath, outputPath, w
 }
 
 // Writes the JSON report to a new file, refusing to overwrite an existing one
-func writeRecoveryReport(path string, report *pyjson.Object) (string, error) {
+func writeRecoveryReport(path string, report *jsonutil.Object) (string, error) {
 	destination, err := recoveryResolvedOutput(path)
 	if err != nil {
 		return "", err
 	}
-	text, err := pyjson.Dumps(report, pyjson.Indent(2), pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(report, jsonutil.Indent(2), jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}

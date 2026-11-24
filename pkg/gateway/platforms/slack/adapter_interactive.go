@@ -11,11 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -100,7 +100,7 @@ type modelPickerState struct {
 }
 
 // Value under key popped from the dict, def when absent
-func dictPop[K comparable, V any](d *pydict.Dict[K, V], key K, def V) V {
+func dictPop[K comparable, V any](d *orderedutil.Map[K, V], key K, def V) V {
 	v, ok := d.Get(key)
 	if !ok {
 		return def
@@ -142,7 +142,7 @@ func (a *SlackAdapter) postInteractiveBlocks(ctx context.Context, chatID, text s
 
 // Shared Block Kit prompt sender marking the posted message unresolved for the double click guard
 func (a *SlackAdapter) sendInteractivePrompt(ctx context.Context, chatID string, metadata map[string]any, build func() (string, []any), label string,
-	resolved *pydict.Dict[any, bool], resolvedMax int, teamScopedKey, sanitize bool) gateway.SendResult {
+	resolved *orderedutil.Map[any, bool], resolvedMax int, teamScopedKey, sanitize bool) gateway.SendResult {
 	if a.currentApp() == nil {
 		return gateway.SendResult{Success: false, Error: "Not connected"}
 	}
@@ -153,7 +153,7 @@ func (a *SlackAdapter) sendInteractivePrompt(ctx context.Context, chatID string,
 		pkgLog().Error(fmt.Sprintf("[Slack] %s failed: %v", label, err))
 		return gateway.SendResult{Success: false, Error: err.Error()}
 	}
-	msgTS := pyrepr.Str(getOr(result.Data, "ts", ""))
+	msgTS := anyutil.String(getOr(result.Data, "ts", ""))
 	if msgTS != "" && resolved != nil {
 		var key any = msgTS
 		if teamScopedKey {
@@ -260,7 +260,7 @@ func (a *SlackAdapter) buildModelPickerProviderBlocks(ctx context.Context, provi
 		if idx >= 100 {
 			break
 		}
-		options = append(options, pickerOption(textutil.First(fmt.Sprintf("%s (%s models)", pyrepr.Str(p["name"]), pyrepr.Str(providerModelCount(p))), 75), idx))
+		options = append(options, pickerOption(textutil.First(fmt.Sprintf("%s (%s models)", anyutil.String(p["name"]), anyutil.String(providerModelCount(p))), 75), idx))
 	}
 	extra := ""
 	if len(providers) > 100 {
@@ -283,7 +283,7 @@ func (a *SlackAdapter) buildModelPickerProviderBlocks(ctx context.Context, provi
 // Provider row with the slug, nil when none matches
 func pickerProvider(providers []map[string]any, slug string) map[string]any {
 	for _, p := range providers {
-		if pyrepr.Str(p["slug"]) == slug {
+		if anyutil.String(p["slug"]) == slug {
 			return p
 		}
 	}
@@ -294,7 +294,7 @@ func pickerProvider(providers []map[string]any, slug string) map[string]any {
 func providerModels(p map[string]any) []string {
 	var out []string
 	for _, m := range asList(p["models"]) {
-		out = append(out, pyrepr.Str(m))
+		out = append(out, anyutil.String(m))
 	}
 	return out
 }
@@ -304,7 +304,7 @@ func (a *SlackAdapter) buildModelPickerModelBlocks(ctx context.Context, provider
 	provider := pickerProvider(providers, providerSlug)
 	pname := providerSlug
 	if provider != nil {
-		pname = pyrepr.Str(getOr(provider, "name", providerSlug))
+		pname = anyutil.String(getOr(provider, "name", providerSlug))
 	}
 	models := providerModels(provider)
 	if len(models) > 100 {
@@ -330,8 +330,8 @@ func (a *SlackAdapter) buildModelPickerModelBlocks(ctx context.Context, provider
 		extra = i18n.T(ctx, "platform.slack.picker.more_available", "", map[string]any{"count": strconv.FormatInt(total-int64(len(models)), 10)})
 	}
 	planLine := ""
-	if provider != nil && pyrepr.Truthy(provider["plan_line"]) {
-		planLine = "⚠️ " + pyrepr.Str(provider["plan_line"]) + "\n"
+	if provider != nil && anyutil.IsTrue(provider["plan_line"]) {
+		planLine = "⚠️ " + anyutil.String(provider["plan_line"]) + "\n"
 	}
 	sectionText := planLine + i18n.T(ctx, "platform.slack.picker.model_header", "", map[string]any{"provider": pname, "extra": extra})
 	elements := []any{map[string]any{"type": "static_select",
@@ -377,7 +377,7 @@ func (a *SlackAdapter) SendModelPicker(ctx context.Context, chatID string, provi
 		pkgLog().Error(fmt.Sprintf("[Slack] send_model_picker failed: %v", err))
 		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
-	msgTS := pyrepr.Str(getOr(result.Data, "ts", ""))
+	msgTS := anyutil.String(getOr(result.Data, "ts", ""))
 	if msgTS == "" {
 		return gateway.SendResult{Success: false, Error: "No message timestamp returned"}, nil
 	}
@@ -403,12 +403,12 @@ func (a *SlackAdapter) updatePickerMessage(ctx context.Context, channelID, teamI
 func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc, body, action map[string]any) {
 	_ = ack(nil)
 	teamID := eventTeamID(map[string]any{}, body)
-	actionID := currentActionID(pyrepr.Str(getOr(action, "action_id", "")))
-	msgTS := pyrepr.Str(getOr(asMap(getOr(body, "message", map[string]any{})), "ts", ""))
-	channelID := pyrepr.Str(getOr(asMap(getOr(body, "channel", map[string]any{})), "id", ""))
+	actionID := currentActionID(anyutil.String(getOr(action, "action_id", "")))
+	msgTS := anyutil.String(getOr(asMap(getOr(body, "message", map[string]any{})), "ts", ""))
+	channelID := anyutil.String(getOr(asMap(getOr(body, "channel", map[string]any{})), "id", ""))
 	user := asMap(getOr(body, "user", map[string]any{}))
-	userName := pyrepr.Str(getOr(user, "name", "unknown"))
-	userID := pyrepr.Str(getOr(user, "id", ""))
+	userName := anyutil.String(getOr(user, "name", "unknown"))
+	userID := anyutil.String(getOr(user, "id", ""))
 	if !a.isInteractiveUserAuthorized(ctx, userID, channelID, &userName, teamID) {
 		pkgLog().Warn(fmt.Sprintf("[Slack] Unauthorized model picker click by %s (%s) - ignoring", userName, userID))
 		return
@@ -421,7 +421,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 	state, _ := a.modelPickerState.Get(marker)
 	a.mu.Unlock()
 	if state == nil {
-		pkgLog().Debug(fmt.Sprintf("[Slack] Model picker state not found for marker=%s", pyrepr.Repr(marker)))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Model picker state not found for marker=%s", anyutil.Quote(marker)))
 		a.updatePickerMessage(ctx, channelID, teamID, msgTS, modelPickerExpiredNotice(ctx))
 		return
 	}
@@ -442,13 +442,13 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 			picked = providers[idx]
 		}
 		if picked == nil {
-			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid provider picker index token: %s", pyrepr.Repr(idxToken)))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid provider picker index token: %s", anyutil.Quote(idxToken)))
 			dropState()
 			a.updatePickerMessage(ctx, channelID, teamID, msgTS, modelPickerExpiredNotice(ctx))
 			return
 		}
-		providerSlug := pyrepr.Str(getOr(picked, "slug", ""))
-		if !pyrepr.Truthy(picked["models"]) {
+		providerSlug := anyutil.String(getOr(picked, "slug", ""))
+		if !anyutil.IsTrue(picked["models"]) {
 			a.updatePickerMessage(ctx, channelID, teamID, msgTS, i18n.T(ctx, "platform.slack.picker.no_models_for_provider", "", map[string]any{"provider": providerSlug}))
 			dropState()
 			return
@@ -458,7 +458,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 		a.mu.Unlock()
 		blocks := a.buildModelPickerModelBlocks(ctx, providers, providerSlug)
 		_, err := a.getClient(channelID, teamID).call(ctx, "chat.update", map[string]any{"channel": channelID, "ts": msgTS,
-			"text":   i18n.T(ctx, "platform.slack.picker.fallback_model", "", map[string]any{"provider": pyrepr.Str(getOr(picked, "name", providerSlug))}),
+			"text":   i18n.T(ctx, "platform.slack.picker.fallback_model", "", map[string]any{"provider": anyutil.String(getOr(picked, "name", providerSlug))}),
 			"blocks": SanitizeBlocks(blocks)})
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("[Slack] Failed to update model picker (provider→model): %v", err))
@@ -484,7 +484,7 @@ func (a *SlackAdapter) handleModelPickerAction(ctx context.Context, ack ackFunc,
 			modelID, found = models[idx], true
 		}
 		if !found {
-			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid model picker index token: %s", pyrepr.Repr(idxToken)))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid model picker index token: %s", anyutil.Quote(idxToken)))
 			dropState()
 			a.updatePickerMessage(ctx, channelID, teamID, msgTS, modelPickerExpiredNotice(ctx))
 			return
@@ -628,10 +628,10 @@ func interactionFields(body, action map[string]any) interaction {
 	message := asMap(getOr(body, "message", map[string]any{}))
 	user := asMap(getOr(body, "user", map[string]any{}))
 	return interaction{
-		actionID: currentActionID(pyrepr.Str(getOr(action, "action_id", ""))), value: pyrepr.Str(getOr(action, "value", "")),
-		message: message, msgTS: pyrepr.Str(getOr(message, "ts", "")),
-		channelID: pyrepr.Str(getOr(asMap(getOr(body, "channel", map[string]any{})), "id", "")),
-		userName:  pyrepr.Str(getOr(user, "name", "unknown")), userID: pyrepr.Str(getOr(user, "id", ""))}
+		actionID: currentActionID(anyutil.String(getOr(action, "action_id", ""))), value: anyutil.String(getOr(action, "value", "")),
+		message: message, msgTS: anyutil.String(getOr(message, "ts", "")),
+		channelID: anyutil.String(getOr(asMap(getOr(body, "channel", map[string]any{})), "id", "")),
+		userName:  anyutil.String(getOr(user, "name", "unknown")), userID: anyutil.String(getOr(user, "id", ""))}
 }
 
 // Acks a button click, unpacks it and authorizes the clicker, nil when unauthorized
@@ -656,7 +656,7 @@ func sectionText(message map[string]any, limit int) string {
 	for _, raw := range asList(getOr(message, "blocks", []any{})) {
 		block := asMap(raw)
 		if block["type"] == "section" {
-			original = pyrepr.Str(getOr(asMap(firstTruthyValue(block["text"], map[string]any{})), "text", ""))
+			original = anyutil.String(getOr(asMap(firstTruthyValue(block["text"], map[string]any{})), "text", ""))
 			break
 		}
 	}
@@ -726,9 +726,9 @@ func (a *SlackAdapter) handleFeedbackAction(_ context.Context, ack ackFunc, body
 	_ = ack(nil)
 	value := strOrEmpty(action["value"])
 	message := asMap(firstTruthyValue(body["message"], map[string]any{}))
-	channelID := pyrepr.Str(getOr(asMap(firstTruthyValue(body["channel"], map[string]any{})), "id", ""))
-	userID := pyrepr.Str(getOr(asMap(firstTruthyValue(body["user"], map[string]any{})), "id", ""))
-	pkgLog().Info(fmt.Sprintf("[Slack] Feedback button clicked: value=%s user=%s channel=%s ts=%s", value, userID, channelID, pyrepr.Str(getOr(message, "ts", ""))))
+	channelID := anyutil.String(getOr(asMap(firstTruthyValue(body["channel"], map[string]any{})), "id", ""))
+	userID := anyutil.String(getOr(asMap(firstTruthyValue(body["user"], map[string]any{})), "id", ""))
+	pkgLog().Info(fmt.Sprintf("[Slack] Feedback button clicked: value=%s user=%s channel=%s ts=%s", value, userID, channelID, anyutil.String(getOr(message, "ts", ""))))
 }
 
 // Approval button click resolving the waiting approval once and rewriting the prompt
@@ -839,7 +839,7 @@ func (a *SlackAdapter) handleClarifyAction(ctx context.Context, ack ackFunc, bod
 		a.updateClarifyMessage(ctx, in.channelID, in.msgTS, originalText,
 			i18n.T(ctx, "platform.slack.clarify.resolved", "", map[string]any{"user": in.userName, "choice": displayText}))
 		pkgLog().Info(fmt.Sprintf("Slack button resolved clarify (id=%s, choice_index=%d, user=%s)", clarifyID, idx, in.userName))
-		pkgLog().Debug(fmt.Sprintf("Slack clarify choice text (id=%s): %s", clarifyID, textutil.First(pyrepr.Repr(*resolvedText), 100)))
+		pkgLog().Debug(fmt.Sprintf("Slack clarify choice text (id=%s): %s", clarifyID, textutil.First(anyutil.Quote(*resolvedText), 100)))
 		return
 	}
 	a.updateClarifyMessage(ctx, in.channelID, in.msgTS, originalText, expiredText)

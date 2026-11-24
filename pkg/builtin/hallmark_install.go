@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -166,7 +166,7 @@ func (h *hallmarkInstaller) hookProjects(ctx context.Context) ([]string, error) 
 
 // Reports whether the lint hook is installed globally or for a project holding the session cwd
 func (h *hallmarkInstaller) hookInstalled(ctx context.Context, cwd string) bool {
-	if v, err := h.get(ctx, hallmarkHookGlobalKey, false); err == nil && pyrepr.Truthy(v) {
+	if v, err := h.get(ctx, hallmarkHookGlobalKey, false); err == nil && anyutil.IsTrue(v) {
 		return true
 	}
 	projects, err := h.hookProjects(ctx)
@@ -225,7 +225,7 @@ func (h *hallmarkInstaller) installHook(ctx context.Context, rawArgs string) (an
 		if err != nil {
 			return nil, err
 		}
-		if (global && !pyrepr.Truthy(on)) || (!global && !listed) {
+		if (global && !anyutil.IsTrue(on)) || (!global && !listed) {
 			return fmt.Sprintf("no Hallmark lint hook in %s; nothing to remove\n", scope), nil
 		}
 		if global {

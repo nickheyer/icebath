@@ -12,11 +12,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const sweepWaitSeconds = 120.0
@@ -38,16 +38,16 @@ func init() {
 }
 
 // Stored job dict the scheduler may fire that is not in a terminal state, read with Python truthiness
-func rawJobActive(job *pyjson.Object) bool {
-	if enabled, ok := job.Get("enabled"); ok && !pyrepr.Truthy(enabled) {
+func rawJobActive(job *jsonutil.Object) bool {
+	if enabled, ok := job.Get("enabled"); ok && !anyutil.IsTrue(enabled) {
 		return false
 	}
 	state, _ := job.Get("state")
 	stateText := ""
 	if state != nil {
-		stateText = pyrepr.Str(state)
+		stateText = anyutil.String(state)
 	}
-	if pausedAt, _ := job.Get("paused_at"); strings.TrimSpace(stateText) == "paused" || pyrepr.Truthy(pausedAt) {
+	if pausedAt, _ := job.Get("paused_at"); strings.TrimSpace(stateText) == "paused" || anyutil.IsTrue(pausedAt) {
 		return false
 	}
 	text, isText := state.(string)
@@ -102,11 +102,11 @@ func claimDueWorktreeRepos(repos []string, intervalSeconds float64) []string {
 	lastWorktreePrune.Lock()
 	defer lastWorktreePrune.Unlock()
 	for _, repo := range repos {
-		resolved, err := pypath.Realpath(repo, pypath.Lax)
+		resolved, err := pathutil.Resolve(repo)
 		if err != nil {
 			resolved = repo
 		}
-		key := pypath.Normcase(resolved)
+		key := pathutil.FoldCase(resolved)
 		last, seen := lastWorktreePrune.at[key]
 		if !seen || now-last >= intervalSeconds {
 			lastWorktreePrune.at[key] = now

@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const emptySummaryResponse = "I reached the iteration limit and couldn't generate a summary."
@@ -43,7 +43,7 @@ func iterationSummaryAPIMessages(agent ChatCompletionAgent, messages []map[strin
 	sanitizeModel := agent.Model()
 	if needsSanitize && agent.Provider() == "moa" {
 		if holder, ok := agent.Client().(moaAggregatorSlotHolder); ok {
-			if model := holder.LastAggregatorSlot()["model"]; pyrepr.Truthy(model) {
+			if model := holder.LastAggregatorSlot()["model"]; anyutil.IsTrue(model) {
 				sanitizeModel = fmt.Sprint(model)
 			}
 		}
@@ -133,7 +133,7 @@ func routerTimeoutShimResponse(response any) bool {
 	choice, _ := choices[0].(map[string]any)
 	message, _ := choice["message"].(map[string]any)
 	content, ok := message["content"].(string)
-	if !ok || strings.TrimSpace(content) != routerTimeoutShim || pyrepr.Truthy(message["tool_calls"]) {
+	if !ok || strings.TrimSpace(content) != routerTimeoutShim || anyutil.IsTrue(message["tool_calls"]) {
 		return false
 	}
 	usage, _ := obj["usage"].(map[string]any)

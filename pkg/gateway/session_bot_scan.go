@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Statuses an admission backed Bot mailbox receipt may carry
@@ -51,7 +51,7 @@ func canonicalRecordError(path string, record map[string]any, required []string)
 	}
 	status, isText := record["status"].(string)
 	if !isText || !canonicalReceiptStatuses[status] {
-		return "unknown canonical status " + pyrepr.Repr(record["status"])
+		return "unknown canonical status " + anyutil.Quote(record["status"])
 	}
 	return ""
 }

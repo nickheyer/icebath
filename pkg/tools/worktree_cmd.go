@@ -10,9 +10,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Worktree command the subcommand dispatch calls, the worktree_cmd attribute tests patch
@@ -38,7 +37,7 @@ func worktreeNsString(ns map[string]any, key string) string {
 // Truthiness of a namespace value, false for an absent entry
 func worktreeNsBool(ns map[string]any, key string) bool {
 	v, ok := ns[key]
-	return ok && pyTruthy(v)
+	return ok && anyutil.IsTrue(v)
 }
 
 // Optional float namespace value, nil for an absent, nil or non numeric entry
@@ -47,7 +46,7 @@ func worktreeNsFloat(ns map[string]any, key string) *float64 {
 	if !ok || v == nil {
 		return nil
 	}
-	f, err := pyint.Float(v)
+	f, err := anyutil.ToFloat(v)
 	if err != nil {
 		return nil
 	}
@@ -64,8 +63,8 @@ func worktreeHead(s string, n int) string {
 }
 
 // Ordered dict of a tree record in its dataclass field order
-func treeRecordDict(r TreeRecord) *pyjson.Object {
-	o := pyjson.NewObject()
+func treeRecordDict(r TreeRecord) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("name", r.Name)
 	o.Set("path", r.Path)
 	o.Set("branch", r.Branch)
@@ -86,8 +85,8 @@ func treeRecordDict(r TreeRecord) *pyjson.Object {
 }
 
 // Ordered dict of an external tree record in its dataclass field order
-func externalTreeRecordDict(e ExternalTreeRecord) *pyjson.Object {
-	o := pyjson.NewObject()
+func externalTreeRecordDict(e ExternalTreeRecord) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("path", e.Path)
 	o.Set("branch", e.Branch)
 	o.Set("locked", e.Locked)
@@ -96,8 +95,8 @@ func externalTreeRecordDict(e ExternalTreeRecord) *pyjson.Object {
 }
 
 // Ordered dict of a branch record in its dataclass field order
-func branchRecordDict(b BranchRecord) *pyjson.Object {
-	o := pyjson.NewObject()
+func branchRecordDict(b BranchRecord) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("name", b.Name)
 	o.Set("verdict", b.Verdict)
 	o.Set("reason", b.Reason)
@@ -105,15 +104,15 @@ func branchRecordDict(b BranchRecord) *pyjson.Object {
 }
 
 // Ordered dict of an archive in its dataclass field order
-func archiveDict(a Archive) *pyjson.Object {
-	o := pyjson.NewObject()
+func archiveDict(a Archive) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("ref", a.Ref)
 	o.Set("name", a.Name)
 	o.Set("sha", a.Sha)
 	o.Set("created", a.Created)
 	meta := a.Meta
 	if meta == nil {
-		meta = pyjson.NewObject()
+		meta = jsonutil.NewObject()
 	}
 	o.Set("meta", meta)
 	o.Set("staged", a.Staged)
@@ -121,20 +120,20 @@ func archiveDict(a Archive) *pyjson.Object {
 }
 
 // Meta text under a key, the fallback for an absent or empty value
-func worktreeMetaText(meta *pyjson.Object, key, fallback string) string {
+func worktreeMetaText(meta *jsonutil.Object, key, fallback string) string {
 	if meta == nil {
 		return fallback
 	}
 	v, _ := meta.Get(key)
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return fallback
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Writes the two space indented JSON of an ordered object followed by a newline
-func worktreePrintJSON(w io.Writer, o *pyjson.Object) error {
-	text, err := pyjson.Dumps(o, pyjson.Indent(2))
+func worktreePrintJSON(w io.Writer, o *jsonutil.Object) error {
+	text, err := jsonutil.Encode(o, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -162,7 +161,7 @@ func worktreeCmdList(ctx context.Context, repoRoot string, ns map[string]any, w 
 		return 0, err
 	}
 	if worktreeNsBool(ns, "json") {
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		o.Set("repo", repoRoot)
 		trees := make([]any, 0, len(records))
 		for _, r := range records {
@@ -256,7 +255,7 @@ func worktreePrintArchives(w io.Writer, archives []Archive) {
 		}
 		skipped := 0
 		if a.Meta != nil {
-			if v, _ := a.Meta.Get("skipped_untracked"); pyTruthy(v) {
+			if v, _ := a.Meta.Get("skipped_untracked"); anyutil.IsTrue(v) {
 				if list, ok := v.([]any); ok {
 					skipped = len(list)
 				}
@@ -418,7 +417,7 @@ func worktreeCmdPrune(ctx context.Context, repoRoot string, ns map[string]any, w
 		actions = append(actions, branches...)
 	}
 	if asJSON {
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		o.Set("repo", repoRoot)
 		o.Set("dry_run", dryRun)
 		actionList := make([]any, 0, len(actions))
@@ -473,23 +472,23 @@ func worktreeCmdRestore(ctx context.Context, repoRoot string, ns map[string]any,
 	fmt.Fprintf(w, "✓ Restored %s → %s\n", result.Ref, result.Path)
 	if result.Detached {
 		branch := "-"
-		if pyTruthy(result.Branch) {
-			branch = pyrepr.Str(result.Branch)
+		if anyutil.IsTrue(result.Branch) {
+			branch = anyutil.String(result.Branch)
 		}
 		fmt.Fprintf(w, "  Detached at %s (branch %s moved or is checked out elsewhere); create a branch with `git switch -c <name>`.\n", worktreeHead(result.Head, 12), branch)
 	} else {
-		fmt.Fprintf(w, "  Branch: %s\n", pyrepr.Str(result.Branch))
+		fmt.Fprintf(w, "  Branch: %s\n", anyutil.String(result.Branch))
 	}
 	if items, ok := result.SkippedUntracked.([]any); ok {
 		for _, item := range items {
-			o, ok := item.(*pyjson.Object)
+			o, ok := item.(*jsonutil.Object)
 			if !ok {
 				continue
 			}
 			p, _ := o.Get("path")
 			b, _ := o.Get("bytes")
-			size, _ := pyint.Float(b)
-			fmt.Fprintf(w, "  Not captured (over the size cap): %s (%d MB)\n", pyrepr.Str(p), int64(math.Floor(size/(1024*1024))))
+			size, _ := anyutil.ToFloat(b)
+			fmt.Fprintf(w, "  Not captured (over the size cap): %s (%d MB)\n", anyutil.String(p), int64(math.Floor(size/(1024*1024))))
 		}
 	}
 	return 0, nil

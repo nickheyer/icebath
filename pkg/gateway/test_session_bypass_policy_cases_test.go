@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store refusal reason of err, empty for any other error
@@ -56,13 +56,13 @@ func TestBypassPolicyIsTypedFrozenAndSafeImpliesIgnore(t *testing.T) {
 	if configOnly.SafeMode || !configOnly.IgnoreUserConfig {
 		t.Fatalf("config only %v %v", configOnly.SafeMode, configOnly.IgnoreUserConfig)
 	}
-	request, err := pyjson.Loads(safe.RequestJSON)
+	request, err := jsonutil.Decode(safe.RequestJSON)
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantRequest := map[string]any{"cwd": tmp, "model": "m", "safe_mode": true, "source": "cli"}
-	if !safe.IgnoreRules() || !reflect.DeepEqual(pyjson.Plain(request), wantRequest) {
-		t.Fatalf("ignore rules %v request %v", safe.IgnoreRules(), pyjson.Plain(request))
+	if !safe.IgnoreRules() || !reflect.DeepEqual(jsonutil.Plain(request), wantRequest) {
+		t.Fatalf("ignore rules %v request %v", safe.IgnoreRules(), jsonutil.Plain(request))
 	}
 	restored, err := restorePolicy(safe.asDict())
 	if err != nil {

@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // test_runner_startup_failures.py test_is_global_startup_conflict_matches_lock_code_families
@@ -29,7 +29,7 @@ func TestIsGlobalStartupConflictMatchesLockCodeFamilies(t *testing.T) {
 // Field of a JSON object read from the runtime status, nil when absent
 func runtimeStatusField(obj any, keys ...string) any {
 	for _, k := range keys {
-		o, ok := obj.(*pyjson.Object)
+		o, ok := obj.(*jsonutil.Object)
 		if !ok {
 			return nil
 		}
@@ -39,7 +39,7 @@ func runtimeStatusField(obj any, keys ...string) any {
 }
 
 // Runtime status record the runner wrote under the case home
-func caseRuntimeStatus(t *testing.T, home string) *pyjson.Object {
+func caseRuntimeStatus(t *testing.T, home string) *jsonutil.Object {
 	t.Helper()
 	state := gateway.ReadRuntimeStatus(filepath.Join(home, "gateway_state.json"))
 	if state == nil {

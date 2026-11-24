@@ -7,10 +7,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Receipt binding the streamed reply to its stored row, nil for a result that is not a dict
@@ -20,9 +20,9 @@ func persistedTurn(a *agent.AIAgent, agentHistory []map[string]any, result map[s
 	}
 	status := "complete"
 	switch {
-	case pyrepr.Truthy(result["interrupted"]):
+	case anyutil.IsTrue(result["interrupted"]):
 		status = "interrupted"
-	case pyrepr.Truthy(result["failed"]) || pyrepr.Truthy(result["error"]):
+	case anyutil.IsTrue(result["failed"]) || anyutil.IsTrue(result["error"]):
 		status = "error"
 	}
 	unchanged := false
@@ -63,8 +63,8 @@ func historyRows(value any) []map[string]any {
 			switch row := item.(type) {
 			case map[string]any:
 				out = append(out, row)
-			case *pyjson.Object:
-				plain, _ := pyjson.Plain(row).(map[string]any)
+			case *jsonutil.Object:
+				plain, _ := jsonutil.Plain(row).(map[string]any)
 				out = append(out, plain)
 			}
 		}
@@ -84,15 +84,15 @@ func rowsAsAny(rows []map[string]any) []any {
 // Replay history, observed group context and media paths already in it, preserving a live cached transcript that outran disk
 func (t *TurnRunner) loadTurnHistory(ctx context.Context, a *agent.AIAgent, reusedCachedAgent bool) ([]map[string]any, *string, map[string]struct{}, error) {
 	tc := t.ctx
-	if api := gateway.APIExecution(ctx); api != nil && api.GetOr("history", nil) != nil {
-		history := historyRows(api.GetOr("history", nil))
+	if api := gateway.APIExecution(ctx); api != nil && api.ValueOr("history", nil) != nil {
+		history := historyRows(api.ValueOr("history", nil))
 		var tail map[string]any
 		if len(history) > 0 {
 			tail = history[len(history)-1]
 		}
-		if pyrepr.Truthy(api.GetOr("resume_unanswered", nil)) && tail != nil && tail["role"] == "user" {
+		if anyutil.IsTrue(api.ValueOr("resume_unanswered", nil)) && tail != nil && tail["role"] == "user" {
 			history = append([]map[string]any(nil), history...)
-			agent.AdoptUnansweredTurn(&history, api.GetOr("content", nil), a)
+			agent.AdoptUnansweredTurn(&history, api.ValueOr("content", nil), a)
 		}
 		media, err := gateway.CollectHistoryMediaPaths(ctx, rowsAsAny(history))
 		return history, nil, media, err
@@ -118,8 +118,8 @@ func (t *TurnRunner) loadTurnHistory(ctx context.Context, a *agent.AIAgent, reus
 				suffix = "; state.db is not receiving this session's writes and needs operator attention"
 			}
 			msg := "Persisted transcript lagged live cached history for session " + tc.sessionKey + " (disk=" +
-				pyrepr.Str(len(agentHistory)) + ", memory=" + pyrepr.Str(len(selected)) + ", consecutive_turns=" +
-				pyrepr.Str(streak) + "); preserving live conversation context (possible FTS write corruption)" + suffix
+				anyutil.String(len(agentHistory)) + ", memory=" + anyutil.String(len(selected)) + ", consecutive_turns=" +
+				anyutil.String(streak) + "); preserving live conversation context (possible FTS write corruption)" + suffix
 			if streak >= transcriptLagEscalationTurns {
 				pkgLog().Error(msg)
 			} else {
@@ -153,7 +153,7 @@ func (t *TurnRunner) prepareTurnMessage(ctx context.Context, agentHistory []map[
 			cleanText = tc.message
 		}
 		persistOverride = cleanText
-		tc.message = pyrepr.Str(apiText)
+		tc.message = anyutil.String(apiText)
 	}
 	t.prependPendingNote(&r.pendingModelNotes)
 	window := gateway.AutoContinueFreshnessWindow(ctx)
@@ -216,13 +216,13 @@ func (t *TurnRunner) runConversationWithApproval(ctx context.Context, a *agent.A
 	opts := agent.RunConversationOptions{ConversationHistory: agentHistory, TaskID: tc.sessionID}
 	api := gateway.APIExecution(ctx)
 	if api != nil {
-		if relay, ok := api.GetOr("relay_metadata", nil).(map[string]any); ok && len(relay) > 0 {
+		if relay, ok := api.ValueOr("relay_metadata", nil).(map[string]any); ok && len(relay) > 0 {
 			opts.RelayMetadata = relay
-		} else if relayObj, ok := api.GetOr("relay_metadata", nil).(*pyjson.Object); ok && relayObj.Len() > 0 {
-			opts.RelayMetadata, _ = pyjson.Plain(relayObj).(map[string]any)
+		} else if relayObj, ok := api.ValueOr("relay_metadata", nil).(*jsonutil.Object); ok && relayObj.Len() > 0 {
+			opts.RelayMetadata, _ = jsonutil.Plain(relayObj).(map[string]any)
 		}
-		opts.TurnAuthor = authorMap(api.GetOr("turn_author", nil))
-	} else if author := gateway.AdmissionAuthorOf(ctx); pyrepr.Truthy(author) {
+		opts.TurnAuthor = authorMap(api.ValueOr("turn_author", nil))
+	} else if author := gateway.AdmissionAuthorOf(ctx); anyutil.IsTrue(author) {
 		opts.TurnAuthor = authorMap(author)
 	} else {
 		var id, name any
@@ -276,7 +276,7 @@ func (t *TurnRunner) runConversationWithApproval(ctx context.Context, a *agent.A
 		incoming := max(0, a.SessionPromptTokens()-beforePrompt)
 		outgoing := max(0, a.SessionCompletionTokens()-beforeCompletion)
 		usage := map[string]any{"input_tokens": incoming, "output_tokens": outgoing, "total_tokens": incoming + outgoing}
-		captured.Set("usage", pyjson.ObjectOf("input_tokens", incoming, "output_tokens", outgoing, "total_tokens", incoming+outgoing))
+		captured.Set("usage", jsonutil.ObjectOf("input_tokens", incoming, "output_tokens", outgoing, "total_tokens", incoming+outgoing))
 		if err := settleAPIRuntimeLock(ctx, a, result, map[string]any{"usage": usage}); err != nil {
 			return nil, err
 		}
@@ -289,8 +289,8 @@ func authorMap(value any) map[string]any {
 	switch typed := value.(type) {
 	case map[string]any:
 		return typed
-	case *pyjson.Object:
-		plain, _ := pyjson.Plain(typed).(map[string]any)
+	case *jsonutil.Object:
+		plain, _ := jsonutil.Plain(typed).(map[string]any)
 		return plain
 	}
 	return nil
@@ -320,7 +320,7 @@ func (t *TurnRunner) syncSessionAfterRun(ctx context.Context, agentHistory []map
 			case !tc.runStillCurrent():
 				generation := "None"
 				if tc.runGeneration != nil {
-					generation = pyrepr.Str(*tc.runGeneration)
+					generation = anyutil.String(*tc.runGeneration)
 				}
 				pkgLog().Info("Skipping session split sync for stale run " + keyLabel + " — generation " + generation + " is no longer current")
 			case entry.SessionID == agentSessionID:
@@ -350,7 +350,7 @@ func (t *TurnRunner) syncSessionAfterRun(ctx context.Context, agentHistory []map
 	if _, inboundID, _ := r.turnReplyAnchors(tc); inboundID != nil {
 		inbound = *inboundID
 	}
-	if !pyrepr.Truthy(gateway.CLITurn(ctx, inbound).GetOr("model_override", nil)) {
+	if !anyutil.IsTrue(gateway.CLITurn(ctx, inbound).ValueOr("model_override", nil)) {
 		r.syncSessionModelFromAgent(ctx, agentSessionID, a)
 	}
 	offset := len(agentHistory)

@@ -11,11 +11,11 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Builds an adapter for a platform config
@@ -170,8 +170,8 @@ type loadingCtxKey struct{ r *PlatformRegistry }
 // Central registry of platform adapters, plugin entries isolated per profile home and loaded lazily
 type PlatformRegistry struct {
 	mu                sync.Mutex
-	entries           *pydict.Dict[string, *PlatformEntry]
-	scopedEntries     map[string]*pydict.Dict[string, *PlatformEntry]
+	entries           *orderedutil.Map[string, *PlatformEntry]
+	scopedEntries     map[string]*orderedutil.Map[string, *PlatformEntry]
 	deferred          map[string]*plugins.DeferredPlatformLoader
 	scopedDeferred    map[string]map[string]*plugins.DeferredPlatformLoader
 	inflight          map[loadKey]chan struct{}
@@ -184,7 +184,7 @@ type PlatformRegistry struct {
 // Empty registry
 func NewPlatformRegistry() *PlatformRegistry {
 	return &PlatformRegistry{
-		entries: pydict.New[string, *PlatformEntry](), scopedEntries: map[string]*pydict.Dict[string, *PlatformEntry]{},
+		entries: orderedutil.NewMap[string, *PlatformEntry](), scopedEntries: map[string]*orderedutil.Map[string, *PlatformEntry]{},
 		deferred: map[string]*plugins.DeferredPlatformLoader{}, scopedDeferred: map[string]map[string]*plugins.DeferredPlatformLoader{},
 		inflight: map[loadKey]chan struct{}{}, inflightLoaders: map[loadKey]*plugins.DeferredPlatformLoader{},
 		cancelledInflight: map[loadKey]bool{}, consumedLoaders: map[loadKey]*plugins.DeferredPlatformLoader{},
@@ -199,13 +199,13 @@ var Registry = NewPlatformRegistry()
 func CurrentScopeKey(ctx context.Context) string { return home.Key(home.Dir(ctx)) }
 
 // Entry and loader maps of a scope, created on demand when asked
-func (r *PlatformRegistry) scopeMaps(scope string, create bool) (*pydict.Dict[string, *PlatformEntry], map[string]*plugins.DeferredPlatformLoader) {
+func (r *PlatformRegistry) scopeMaps(scope string, create bool) (*orderedutil.Map[string, *PlatformEntry], map[string]*plugins.DeferredPlatformLoader) {
 	if scope == "" {
 		return r.entries, r.deferred
 	}
 	if create {
 		if r.scopedEntries[scope] == nil {
-			r.scopedEntries[scope] = pydict.New[string, *PlatformEntry]()
+			r.scopedEntries[scope] = orderedutil.NewMap[string, *PlatformEntry]()
 		}
 		if r.scopedDeferred[scope] == nil {
 			r.scopedDeferred[scope] = map[string]*plugins.DeferredPlatformLoader{}
@@ -466,7 +466,7 @@ func (r *PlatformRegistry) PendingNames(ctx context.Context) []string {
 func (r *PlatformRegistry) visibleEntries(scope string) []*PlatformEntry {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := pydict.Merge(r.entries, r.scopedEntries[scope]).Values()
+	out := orderedutil.Merge(r.entries, r.scopedEntries[scope]).Values()
 	if out == nil {
 		out = []*PlatformEntry{}
 	}
@@ -660,7 +660,7 @@ func (r *PlatformRegistry) registeredNamesIn(scope string) map[string]bool {
 	defer r.mu.Unlock()
 	out := map[string]bool{}
 	entries, deferred := r.scopeMaps(scope, false)
-	for _, m := range []*pydict.Dict[string, *PlatformEntry]{entries, r.entries} {
+	for _, m := range []*orderedutil.Map[string, *PlatformEntry]{entries, r.entries} {
 		for n := range m.All() {
 			out[n] = true
 		}
@@ -683,7 +683,7 @@ func (r *PlatformRegistry) requiredEnvNamesIn(scope string) map[string]bool {
 	defer r.mu.Unlock()
 	out := map[string]bool{}
 	entries, _ := r.scopeMaps(scope, false)
-	for _, m := range []*pydict.Dict[string, *PlatformEntry]{r.entries, entries} {
+	for _, m := range []*orderedutil.Map[string, *PlatformEntry]{r.entries, entries} {
 		for _, e := range m.All() {
 			for _, n := range e.RequiredEnv {
 				out[n] = true
@@ -713,7 +713,7 @@ func (r *PlatformRegistry) CreateAdapter(ctx context.Context, name string, cfg *
 	probe := func(fn func() (bool, error), failureMsg string) (ok bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				pkgLog().Warn(fmt.Sprintf(failureMsg, entry.Label, pyrepr.Str(rec)))
+				pkgLog().Warn(fmt.Sprintf(failureMsg, entry.Label, anyutil.String(rec)))
 				ok = false
 			}
 		}()
@@ -771,7 +771,7 @@ func guardedCall[T any](fn func() (T, error)) (out T, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			var zero T
-			out, err = zero, errors.New(pyrepr.Str(rec))
+			out, err = zero, errors.New(anyutil.String(rec))
 		}
 	}()
 	return fn()

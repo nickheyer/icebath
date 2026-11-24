@@ -9,8 +9,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Provider, model, base URL, key and api mode an auxiliary task resolved to, empty strings for None
@@ -156,7 +156,7 @@ func customProviderModelMatches(agentModel string, entry map[string]any) bool {
 		}
 	case []any:
 		for _, m := range models {
-			catalog = append(catalog, strings.ToLower(strings.TrimSpace(pyrepr.Str(m))))
+			catalog = append(catalog, strings.ToLower(strings.TrimSpace(anyutil.String(m))))
 		}
 	case []string:
 		for _, m := range models {
@@ -255,7 +255,7 @@ func auxGetTaskExtraBody(ctx context.Context, task string) (map[string]any, erro
 	if parsed := ParseReasoningEffort(effort); parsed != nil {
 		result["reasoning"] = parsed
 	} else {
-		pkgLog().Warn(fmt.Sprintf("auxiliary.%s.reasoning_effort %s is not a valid level (none, minimal, low, medium, high, xhigh, max, ultra) — ignoring", task, pyrepr.Repr(effort)))
+		pkgLog().Warn(fmt.Sprintf("auxiliary.%s.reasoning_effort %s is not a valid level (none, minimal, low, medium, high, xhigh, max, ultra) — ignoring", task, anyutil.Quote(effort)))
 	}
 	return result, nil
 }
@@ -366,7 +366,7 @@ func auxLoopClosed(other any) bool {
 
 // True when a profile payload carries a reasoning wire control at any depth
 func auxContainsProfileReasoningFields(value any) bool {
-	m, ok := pyjson.Dict(value)
+	m, ok := jsonutil.AsMap(value)
 	if !ok {
 		return false
 	}
@@ -420,7 +420,7 @@ func auxDedupeToolNames(tools []any, provider, model string) []any {
 	for _, tool := range tools {
 		name := ""
 		if t, ok := tool.(map[string]any); ok {
-			if fn, ok := pyjson.Dict(t["function"]); ok {
+			if fn, ok := jsonutil.AsMap(t["function"]); ok {
 				name, _ = fn["name"].(string)
 			}
 		}
@@ -438,8 +438,8 @@ func auxDedupeToolNames(tools []any, provider, model string) []any {
 
 // Provider profile projection of a request, partial when the projection raised
 type auxProfileProjection struct {
-	Body             *pyjson.Object
-	ReasoningExtra   *pyjson.Object
+	Body             *jsonutil.Object
+	ReasoningExtra   *jsonutil.Object
 	TopLevel         map[string]any
 	HandlesReasoning bool
 	MessagesWire     bool
@@ -459,7 +459,7 @@ func auxRoutesToCustomEndpoint(ctx context.Context, providerNorm string) bool {
 var auxProjectProviderProfileFn = auxProjectProviderProfile
 
 func auxProjectProviderProfile(ctx context.Context, provider, providerNorm, model, effectiveBase string, reasoningConfig map[string]any) auxProfileProjection {
-	p := auxProfileProjection{Body: pyjson.NewObject(), ReasoningExtra: pyjson.NewObject(), TopLevel: map[string]any{}}
+	p := auxProfileProjection{Body: jsonutil.NewObject(), ReasoningExtra: jsonutil.NewObject(), TopLevel: map[string]any{}}
 	if err := auxRecoverRaise(func() {
 		profile, found := auxGetProviderProfileFn(ctx, providerNorm)
 		if !found && auxRoutesToCustomEndpoint(ctx, providerNorm) {
@@ -493,43 +493,43 @@ func auxProjectProviderProfile(ctx context.Context, provider, providerNorm, mode
 }
 
 // OpenAI compatible extra_body fallback for a route whose profile declares no reasoning shape
-func auxGenericNestedReasoning(reasoningConfig map[string]any) *pyjson.Object {
+func auxGenericNestedReasoning(reasoningConfig map[string]any) *jsonutil.Object {
 	if len(reasoningConfig) == 0 {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	if enabled, ok := reasoningConfig["enabled"].(bool); ok && !enabled {
-		return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", false))
+		return jsonutil.ObjectOf("reasoning", jsonutil.ObjectOf("enabled", false))
 	}
 	effort := reasoningConfig["effort"]
 	if !auxTruthy(effort) {
 		effort = "medium"
 	}
-	return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", true, "effort", effort))
+	return jsonutil.ObjectOf("reasoning", jsonutil.ObjectOf("enabled", true, "effort", effort))
 }
 
 // Caller extra_body merged with the profile body and reasoning and the generic reasoning fallback
-func auxMergeAuxExtraBody(ctx context.Context, extraBody any, projection auxProfileProjection, reasoningConfig map[string]any, providerNorm string) *pyjson.Object {
-	merged := pyjson.NewObject()
-	if src, ok := pyjson.AsObject(extraBody); ok {
-		merged = src.Copy()
+func auxMergeAuxExtraBody(ctx context.Context, extraBody any, projection auxProfileProjection, reasoningConfig map[string]any, providerNorm string) *jsonutil.Object {
+	merged := jsonutil.NewObject()
+	if src, ok := jsonutil.AsObject(extraBody); ok {
+		merged = src.Clone()
 	}
-	callerReasoning := pyjson.NewObject()
-	for _, k := range merged.Keys {
+	callerReasoning := jsonutil.NewObject()
+	for _, k := range merged.Keys() {
 		lk := strings.ToLower(strings.TrimSpace(k))
 		if auxProfileReasoningKeys[lk] && lk != "reasoning" {
-			callerReasoning.Set(k, merged.Vals[k])
+			callerReasoning.Set(k, merged.Value(k))
 		}
 	}
 	if enabled, ok := reasoningConfig["enabled"].(bool); reasoningConfig != nil && ok && !enabled {
 		merged.Delete("reasoning")
 	}
-	merged.Update(projection.Body)
-	merged.Update(projection.ReasoningExtra)
-	merged.Update(callerReasoning)
+	merged.Merge(projection.Body)
+	merged.Merge(projection.ReasoningExtra)
+	merged.Merge(callerReasoning)
 	if !projection.HandlesReasoning {
-		merged.Update(auxGenericNestedReasoning(reasoningConfig))
+		merged.Merge(auxGenericNestedReasoning(reasoningConfig))
 	}
-	if r, ok := pyjson.AsObject(merged.Vals["reasoning"]); ok {
+	if r, ok := jsonutil.AsObject(merged.Value("reasoning")); ok {
 		merged.Set("reasoning", clampReasoningConfigObject(r, openAICompatWireEfforts))
 	}
 	return merged
@@ -667,13 +667,13 @@ func auxValidateLLMResponse(ctx context.Context, response any, task, provider, b
 	if !auxHasChoiceMessage(response) {
 		recovered := auxRecoverAuxResponseMessage(response)
 		if recovered == nil {
-			text := []rune(pyrepr.Str(response))
+			text := []rune(anyutil.String(response))
 			if len(text) > 120 {
 				text = text[:120]
 			}
 			invalid := &AuxRuntimeError{
 				Message: fmt.Sprintf("Auxiliary %s: LLM returned invalid response (type=%s): %s. Expected object with .choices[0].message — check provider "+
-					"adapter or custom endpoint compatibility.", label, pyrepr.TypeName(response), pyrepr.Repr(string(text))),
+					"adapter or custom endpoint compatibility.", label, anyutil.Kind(response), anyutil.Quote(string(text))),
 				ProviderError: auxEmbeddedProviderError(response),
 				Fault:         AuxReplyMalformed,
 			}

@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // The candidate plugin set was refused with config and environment untouched
@@ -63,7 +63,7 @@ func admitPluginSetChange(ctx context.Context, enabled, disabled map[string]bool
 	if opts.ActivePluginsDir != "" {
 		h = filepath.Dir(opts.ActivePluginsDir)
 	}
-	resolvedHome, err := pypath.Realpath(h, pypath.Lax)
+	resolvedHome, err := pathutil.Resolve(h)
 	if err != nil {
 		return &AdmissionRefused{Msg: err.Error()}
 	}
@@ -72,7 +72,7 @@ func admitPluginSetChange(ctx context.Context, enabled, disabled map[string]bool
 	}
 	extra := []any{}
 	for _, d := range opts.ExtraDirs {
-		r, err := pypath.Realpath(d, pypath.Lax)
+		r, err := pathutil.Resolve(d)
 		if err != nil {
 			return &AdmissionRefused{Msg: err.Error()}
 		}

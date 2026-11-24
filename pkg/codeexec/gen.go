@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
 )
 
 // Tools allowed inside the sandbox, intersected with the session's enabled tools to pick the generated stubs
@@ -251,7 +251,7 @@ func generateToolsModule(enabledTools []string, transport string) string {
 			continue
 		}
 		s := toolStubs[name]
-		stubs = append(stubs, fmt.Sprintf("def %s(%s):\n    %s\n    return _call(%s, %s)\n", name, s.sig, s.doc, pyrepr.StrRepr(name), s.argsExpr))
+		stubs = append(stubs, fmt.Sprintf("def %s(%s):\n    %s\n    return _call(%s, %s)\n", name, s.sig, s.doc, pythonutil.Quote(name), s.argsExpr))
 	}
 	return header + strings.Join(stubs, "\n")
 }

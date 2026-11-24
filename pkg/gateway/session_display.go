@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -149,7 +149,7 @@ func WorkerDisplayKwargs(ctx context.Context) map[string]any {
 	if committed["kind"] == any(DisplayHidden) {
 		out["persist_user_display_kind"] = DisplayHidden
 	}
-	if preview, ok := committed["title_preview"]; ok && pyrepr.Truthy(preview) {
+	if preview, ok := committed["title_preview"]; ok && anyutil.IsTrue(preview) {
 		out["persist_user_display_metadata"] = map[string]any{"title_preview": preview}
 	}
 	return out

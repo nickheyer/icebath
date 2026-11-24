@@ -11,11 +11,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -118,7 +118,7 @@ func logStorageFailure(profile, method string, sessionID any, err error, class s
 	first := !storageTracebacks[key]
 	storageTracebacks[key] = true
 	storageTracebacksMu.Unlock()
-	shown := pyrepr.Repr(sessionID)
+	shown := anyutil.Quote(sessionID)
 	if length := utf8.RuneCountInString(shown); length > 64 {
 		shown = fmt.Sprintf("%s… (%d chars)", textutil.First(shown, 48), length)
 	}
@@ -169,7 +169,7 @@ func NewAuthorityConnection(a *SessionAuthority, transport tuihost.Transport, id
 		for _, item := range items {
 			name, isText := item.(string)
 			if !isText {
-				return nil, &PyError{Kind: "TypeError", Msg: "unhashable capability " + pyrepr.Repr(item)}
+				return nil, &PyError{Kind: "TypeError", Msg: "unhashable capability " + anyutil.Quote(item)}
 			}
 			capabilities[name] = true
 		}
@@ -179,7 +179,7 @@ func NewAuthorityConnection(a *SessionAuthority, transport tuihost.Transport, id
 		capabilities["session:operator"] = true
 	}
 	instance, hasInstance := identity["instance_id"]
-	if !pyTruthy(identity["user_id"]) || (hasInstance && !pyrepr.Equal(instance, a.InstanceID)) {
+	if !pyTruthy(identity["user_id"]) || (hasInstance && !anyutil.Equal(instance, a.InstanceID)) {
 		capabilities = map[string]bool{}
 	}
 	subject, err := PrincipalSubject(identity)
@@ -347,8 +347,8 @@ func (c *AuthorityConnection) ping(params map[string]any) (map[string]any, error
 
 // Binds a native or host owner connection that may create sessions as a legacy transport of the authority
 func bindNativeTransport(a *SessionAuthority, actor Principal, identity map[string]any) {
-	native := identity["provider"] == "local" && pyrepr.Equal(identity["profile_id"], a.ProfileID) &&
-		pyrepr.Equal(identity["instance_id"], a.InstanceID)
+	native := identity["provider"] == "local" && anyutil.Equal(identity["profile_id"], a.ProfileID) &&
+		anyutil.Equal(identity["instance_id"], a.InstanceID)
 	if (native || actor.Subject == HostOwnerSubject()) && actor.ProfileID == a.ProfileID && actor.Capabilities["session:create"] {
 		a.mu.Lock()
 		if a.nativeLegacyTransports == nil {

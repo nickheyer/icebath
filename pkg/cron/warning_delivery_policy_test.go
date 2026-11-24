@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Gateway config with telegram enabled, the autouse configured_transport fixture of the Python file
@@ -37,7 +37,7 @@ func countStandaloneSends(t *testing.T) *int {
 // Job record decoded from its Python dict form
 func jobFromDict(t *testing.T, pairs ...any) *Job {
 	t.Helper()
-	job, err := objectJob(pyjson.ObjectOf(pairs...))
+	job, err := objectJob(jsonutil.ObjectOf(pairs...))
 	if err != nil {
 		t.Fatal(err)
 	}

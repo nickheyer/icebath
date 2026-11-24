@@ -11,11 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Binds the wake word and voice method handlers
@@ -67,7 +67,7 @@ func wakeProbe(ctx context.Context, cfg *media.WakeConfig) media.WakeRequirement
 func persistWakeEnabled(ctx context.Context, enabled bool) (saved bool) {
 	defer func() {
 		if failure := recover(); failure != nil {
-			pkgLog().Warn(fmt.Sprintf("wake: failed to persist wake_word.enabled=%v: %s", pyrepr.Repr(enabled), failureText(failure)))
+			pkgLog().Warn(fmt.Sprintf("wake: failed to persist wake_word.enabled=%v: %s", anyutil.Quote(enabled), failureText(failure)))
 			saved = false
 		}
 	}()
@@ -88,7 +88,7 @@ func wakeDetectHandler(ctx context.Context, transport tuihost.Transport, sid, ph
 		if !matched {
 			matchedPhrase, matchedProfile = phrase, ""
 		}
-		pkgLog().Info(fmt.Sprintf("wake.detected: emitting to sid=%s (transport=%T, profile=%s)", pyrepr.Repr(sid), transport, pyrepr.Repr(matchedProfile)))
+		pkgLog().Info(fmt.Sprintf("wake.detected: emitting to sid=%s (transport=%T, profile=%s)", anyutil.Quote(sid), transport, anyutil.Quote(matchedProfile)))
 		if matchedPhrase == "" {
 			matchedPhrase = phrase
 		}
@@ -122,7 +122,7 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 		pkgLog().Warn(fmt.Sprintf("wake.start(%s): not available — %s", surface, reqs.Hint))
 		return refused("unavailable", map[string]any{"hint": reqs.Hint})
 	}
-	enabledPersisted := truthy(params["persist"]) && !cfg.Enabled && persistWakeEnabled(ctx, true)
+	enabledPersisted := anyutil.IsTrue(params["persist"]) && !cfg.Enabled && persistWakeEnabled(ctx, true)
 	if enabledPersisted {
 		next := *cfg
 		next.Enabled = true
@@ -133,7 +133,7 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 		if !cfg.Enabled {
 			reason = "disabled"
 		}
-		pkgLog().Info(fmt.Sprintf("wake.start(%s): %s (enabled=%s, surface=%s)", surface, reason, pyrepr.Repr(cfg.Enabled), pyrepr.Repr(cfg.Surface)))
+		pkgLog().Info(fmt.Sprintf("wake.start(%s): %s (enabled=%s, surface=%s)", surface, reason, anyutil.Quote(cfg.Enabled), anyutil.Quote(cfg.Surface)))
 		return refused(reason, nil)
 	}
 	existingOwner, existingSurface := wakeOwnerSnapshot()
@@ -164,7 +164,7 @@ func wakeStart(ctx context.Context, rid any, params map[string]any) map[string]a
 	if !armed {
 		phrase, provider = reqs.Phrase, reqs.Provider
 	}
-	pkgLog().Info(fmt.Sprintf("wake.start(%s): listening for %s (%s)", surface, pyrepr.Repr(phrase), provider))
+	pkgLog().Info(fmt.Sprintf("wake.start(%s): listening for %s (%s)", surface, anyutil.Quote(phrase), provider))
 	return ok(rid, map[string]any{"started": true, "phrase": phrase, "provider": provider, "owner_surface": surface,
 		"enabled_persisted": enabledPersisted})
 }
@@ -175,7 +175,7 @@ func wakeStop(ctx context.Context, rid any, params map[string]any) map[string]an
 	phrase, provider, running := media.ListeningFor(transport)
 	stopped := releaseWakeForTransport(transport)
 	disabledPersisted := false
-	if truthy(params["persist"]) {
+	if anyutil.IsTrue(params["persist"]) {
 		currentlyEnabled := true
 		suppress(func() { currentlyEnabled = media.LoadWakeWordConfig(ctx).Enabled })
 		disabledPersisted = currentlyEnabled && persistWakeEnabled(ctx, false)
@@ -190,7 +190,7 @@ func wakeStop(ctx context.Context, rid any, params map[string]any) map[string]an
 // Reclaims the microphone after a pause, nothing when the listener is not armed
 func wakeResume(ctx context.Context, rid any, _ map[string]any) map[string]any {
 	resumed := wakeResumeIfOwner(callerTransport(ctx), 15e9, 1e9)
-	pkgLog().Info(fmt.Sprintf("wake.resume: detector resumed=%s", pyrepr.Repr(resumed)))
+	pkgLog().Info(fmt.Sprintf("wake.resume: detector resumed=%s", anyutil.Quote(resumed)))
 	return ownerResult(rid, "resumed", resumed, nil)
 }
 
@@ -261,7 +261,7 @@ func ttsLeaseAsync(ctx context.Context, lease string, active bool) {
 	go func() {
 		defer func() {
 			if failure := recover(); failure != nil {
-				pkgLog().Debug(fmt.Sprintf("voice: tts lease %s active=%s failed: %s", lease, pyrepr.Repr(active), failureText(failure)))
+				pkgLog().Debug(fmt.Sprintf("voice: tts lease %s active=%s failed: %s", lease, anyutil.Quote(active), failureText(failure)))
 			}
 		}()
 		if active {
@@ -353,7 +353,7 @@ func voiceToggle(ctx context.Context, rid any, params map[string]any) map[string
 		setVoiceTTS(ctx, !voiceTTSEnabled())
 		return ok(rid, voiceStatusPayload(ctx, nil))
 	}
-	return rpcErr(rid, 4013, fmt.Sprintf("unknown voice action: %s", pyrepr.Str(action)), nil)
+	return rpcErr(rid, 4013, fmt.Sprintf("unknown voice action: %s", anyutil.String(action)), nil)
 }
 
 // Wraps fn so it runs only while the capture it was registered for is current
@@ -384,7 +384,7 @@ func voiceRecord(ctx context.Context, rid any, params map[string]any) (response 
 		action = "start"
 	}
 	if action != "start" && action != "stop" {
-		return rpcErr(rid, 4019, fmt.Sprintf("unknown voice action: %s", pyrepr.Str(action)), nil)
+		return rpcErr(rid, 4019, fmt.Sprintf("unknown voice action: %s", anyutil.String(action)), nil)
 	}
 	transport := callerTransport(ctx)
 	if wakeOwner, _ := wakeOwnerSnapshot(); wakeOwner != nil && wakeOwner != transport {

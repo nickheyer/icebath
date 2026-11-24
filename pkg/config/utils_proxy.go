@@ -1,13 +1,12 @@
 package config
 
 import (
+	"net/netip"
 	"os"
 	"regexp"
 	"slices"
 	"strings"
 	"unicode"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
 )
 
 // Proxy URL variables rewritten to canonical forms, both casings
@@ -40,8 +39,8 @@ func bareIPv6Literal(entry string) string {
 	if m == nil {
 		return ""
 	}
-	ip, ok := pyipaddress.IPAddress(m[1])
-	if !ok || ip.Is4() {
+	ip, err := netip.ParseAddr(m[1])
+	if err != nil || ip.Is4() {
 		return ""
 	}
 	return m[1]

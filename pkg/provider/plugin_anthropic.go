@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // Profiles the bundled anthropic plugin registers
@@ -26,7 +25,7 @@ func anthropicProfileFetchModels(ctx context.Context, apiKey, baseURL string, ti
 	if timeout <= 0 {
 		timeout = 8 * time.Second
 	}
-	headers := pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "x-api-key", Value: apiKey}, pyhttpx.HeaderLine{Name: "anthropic-version", Value: "2023-06-01"}, pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"})
+	headers := map[string]string{"x-api-key": apiKey, "anthropic-version": "2023-06-01", "Accept": "application/json"}
 	var models []string
 	seenCursors := map[string]bool{}
 	cursor := ""

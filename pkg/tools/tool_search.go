@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // The connector search route answers 7 use cases per request and fails on 8 or more
@@ -224,7 +224,7 @@ func ListingTokenBudget(cfg ToolSearchConfig, contextLength int) int {
 }
 
 // One OpenAI style function schema for a bridge tool
-func toolSearchBridgeSchema(name, description string, properties *pyjson.Object, required []string) map[string]any {
+func toolSearchBridgeSchema(name, description string, properties *jsonutil.Object, required []string) map[string]any {
 	req := make([]any, len(required))
 	for i, r := range required {
 		req[i] = r
@@ -376,10 +376,10 @@ func toolSearchClipDescription(text string, cap int) string {
 }
 
 // One record for the shared tools map carrying required names for trivial calls
-func toolSearchSharedToolRecord(entry CatalogEntry) *pyjson.Object {
+func toolSearchSharedToolRecord(entry CatalogEntry) *jsonutil.Object {
 	required := []any{}
-	if fn, ok := pyjson.Dict(entry.Schema["function"]); ok {
-		if params, ok := pyjson.Dict(fn["parameters"]); ok {
+	if fn, ok := jsonutil.AsMap(entry.Schema["function"]); ok {
+		if params, ok := jsonutil.AsMap(fn["parameters"]); ok {
 			if list, ok := params["required"].([]any); ok {
 				for _, r := range list {
 					s, ok := r.(string)
@@ -402,19 +402,19 @@ func toolSearchSharedToolRecord(entry CatalogEntry) *pyjson.Object {
 }
 
 // Deterministic summaries of connected and declared unavailable sources
-func toolSearchAvailableSourceSummary(ctx context.Context, env *Env, catalog []CatalogEntry) []*pyjson.Object {
+func toolSearchAvailableSourceSummary(ctx context.Context, env *Env, catalog []CatalogEntry) []*jsonutil.Object {
 	counts := map[string]int{}
 	for _, entry := range catalog {
 		counts[catalogListingGroupLabel(entry.SourceName)]++
 	}
-	rows := make([]*pyjson.Object, 0, len(counts))
+	rows := make([]*jsonutil.Object, 0, len(counts))
 	for _, name := range sortedStringKeys(counts) {
 		rows = append(rows, Dict("name", name, "tool_count", counts[name]))
 	}
 	for _, hidden := range HiddenDeclaredSources(ctx, env) {
 		rows = append(rows, Dict("name", hidden.Name, "tool_count", hidden.ToolCount, "unavailable", hidden.Unavailable))
 	}
-	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Vals["name"].(string) < rows[j].Vals["name"].(string) })
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Value("name").(string) < rows[j].Value("name").(string) })
 	return rows
 }
 
@@ -489,7 +489,7 @@ func DispatchToolSearch(ctx context.Context, env *Env, args map[string]any, curr
 		limit = toolSearchClampedInt(rawLimit, c.SearchDefaultLimit, 1, c.MaxSearchLimit)
 	}
 	catalog := BuildCatalog(ctx, env, toolSearchDeferrableIn(ctx, env, currentToolDefs))
-	results := make([]*pyjson.Object, 0, len(queries))
+	results := make([]*jsonutil.Object, 0, len(queries))
 	toolsMap := Dict()
 	availableSources := toolSearchAvailableSourceSummary(ctx, env, catalog)
 	for _, query := range queries {

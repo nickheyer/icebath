@@ -8,7 +8,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const chatBypassSSE = "data: {\"id\":\"1\",\"object\":\"chat.completion.chunk\",\"created\":1,\"model\":\"m\"," +
@@ -83,7 +83,7 @@ func TestChatSDKBypassBulkFieldsRideInExtraBodyAndTheWireBytesAreIdentical(t *te
 	client, send := chatBypassRecorder(t)
 	body := chatBypassWireBody()
 	moved := BypassChatSDKRequestTransform(copyMap(body), client)
-	extra := pyjson.Plain(moved["extra_body"]).(map[string]any)
+	extra := jsonutil.Plain(moved["extra_body"]).(map[string]any)
 	if m, _ := moved["messages"].([]any); m == nil || len(m) != 0 {
 		t.Fatalf("messages slot %v", moved["messages"])
 	}

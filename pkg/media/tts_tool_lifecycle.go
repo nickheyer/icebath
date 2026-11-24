@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -65,7 +64,7 @@ func signalUserTTSProvider(ctx context.Context, env *tools.Env, name string, req
 			bound := context.WithoutCancel(ctx)
 			go func() {
 				if _, err := lifecycleRunCommandProvider(bound, env, command, p.Timeout.Seconds(), p.EnvPassthrough); err != nil {
-					pkgLog().Debug(fmt.Sprintf("[TTS] %s_command for %s failed: %s", hook, name, pyrepr.ExceptionMessage(err)))
+					pkgLog().Debug(fmt.Sprintf("[TTS] %s_command for %s failed: %s", hook, name, err.Error()))
 				}
 			}()
 			return hook, nil
@@ -88,7 +87,7 @@ func signalUserTTSProvider(ctx context.Context, env *tools.Env, name string, req
 		return hook, nil
 	}()
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("[TTS] %s hook for %s failed: %s", hook, name, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("[TTS] %s hook for %s failed: %s", hook, name, err.Error()))
 		return "error"
 	}
 	return out
@@ -111,8 +110,8 @@ func WarmTTSProvider(ctx context.Context, env *tools.Env, providerName string) m
 		}
 		started := time.Now()
 		if err := warmer(ctx, env, req); err != nil {
-			pkgLog().Warn(fmt.Sprintf("[TTS] warm-up for %s failed: %s", name, pyrepr.ExceptionMessage(err)))
-			result["action"], result["error"] = "error", pyrepr.ExceptionMessage(err)
+			pkgLog().Warn(fmt.Sprintf("[TTS] warm-up for %s failed: %s", name, err.Error()))
+			result["action"], result["error"] = "error", err.Error()
 			return result
 		}
 		after := 0

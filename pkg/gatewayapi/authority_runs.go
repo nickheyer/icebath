@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Status of a refused store reason, the documented 409 for every other reason
@@ -52,7 +52,7 @@ func continuedSession(ctx context.Context, a *APIServerAdapter, sessionID string
 // Authority and ledger row of one API run, the run id resolving through a streaming alias first
 type authorityRunAdmission struct {
 	authority *gateway.SessionAuthority
-	row       *pyjson.Object
+	row       *jsonutil.Object
 }
 
 // Canonical admission of a run id under the routed authority, nil when there is none
@@ -68,7 +68,7 @@ func runAdmission(ctx context.Context, a *APIServerAdapter, runID string) (*auth
 	if alias != "" {
 		column, value = "admission_id", alias
 	}
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err = authority.DB.ReadCtx(ctx, func(conn state.SQLiteConn) error {
 		var queryErr error
 		rows, queryErr = state.QueryObjects(ctx, conn, "SELECT * FROM session_admissions WHERE principal_id='api' AND "+column+"=?", value)
@@ -91,7 +91,7 @@ func runAdmission(ctx context.Context, a *APIServerAdapter, runID string) (*auth
 }
 
 // Authority and ledger row of a run's canonical admission, the ownership check's view of the adapter
-func (a *APIServerAdapter) RunAdmission(ctx context.Context, runID string) (*gateway.SessionAuthority, *pyjson.Object, error) {
+func (a *APIServerAdapter) RunAdmission(ctx context.Context, runID string) (*gateway.SessionAuthority, *jsonutil.Object, error) {
 	owned, err := runAdmission(ctx, a, runID)
 	if err != nil || owned == nil {
 		return nil, nil, err
@@ -100,13 +100,13 @@ func (a *APIServerAdapter) RunAdmission(ctx context.Context, runID string) (*gat
 }
 
 // Text of a ledger row field
-func rowText(row *pyjson.Object, key string) string {
-	text, _ := row.GetOr(key, nil).(string)
+func rowText(row *jsonutil.Object, key string) string {
+	text, _ := row.ValueOr(key, nil).(string)
 	return text
 }
 
 // Pollable projection of an authority run, its prompts pending while it waits for approval
-func runProjection(ctx context.Context, a *APIServerAdapter, runID string) (*pyjson.Object, error) {
+func runProjection(ctx context.Context, a *APIServerAdapter, runID string) (*jsonutil.Object, error) {
 	owned, err := runAdmission(ctx, a, runID)
 	if err != nil || owned == nil {
 		return nil, err
@@ -122,28 +122,28 @@ func runProjection(ctx context.Context, a *APIServerAdapter, runID string) (*pyj
 	case "unknown":
 		status = "unknown"
 	case "terminal":
-		status = row.GetOr("outcome", nil)
+		status = row.ValueOr("outcome", nil)
 	}
 	saved, err := gateway.AdmissionResult(ctx, authority.DB, rowText(row, "admission_id"))
 	if err != nil {
 		return nil, err
 	}
-	savedDict, _ := saved.(*pyjson.Object)
-	result := pyjson.NewObject()
+	savedDict, _ := saved.(*jsonutil.Object)
+	result := jsonutil.NewObject()
 	if savedDict != nil {
-		if stored, ok := savedDict.GetOr("result", pyjson.NewObject()).(*pyjson.Object); ok {
+		if stored, ok := savedDict.ValueOr("result", jsonutil.NewObject()).(*jsonutil.Object); ok {
 			result = stored
 		}
 	}
 	if rowStatus == "terminal" {
-		outcome := row.GetOr("outcome", nil)
+		outcome := row.ValueOr("outcome", nil)
 		switch {
-		case pyrepr.Truthy(result.GetOr("interrupted", nil)) || outcome == "interrupted":
+		case anyutil.IsTrue(result.ValueOr("interrupted", nil)) || outcome == "interrupted":
 			status = "cancelled"
-		case pyrepr.Truthy(result.GetOr("failed", nil)) || pyrepr.Truthy(result.GetOr("error", nil)):
+		case anyutil.IsTrue(result.ValueOr("failed", nil)) || anyutil.IsTrue(result.ValueOr("error", nil)):
 			status = "failed"
 		case outcome == "completed" && savedDict != nil:
-			plain, _ := pyjson.Plain(result).(map[string]any)
+			plain, _ := jsonutil.Plain(result).(map[string]any)
 			status, _ = terminalRunStatus(plain)
 		}
 	}
@@ -151,25 +151,25 @@ func runProjection(ctx context.Context, a *APIServerAdapter, runID string) (*pyj
 	sessionID := rowText(row, "target_session_id")
 	if rowStatus == "started" {
 		var generation *int64
-		if value, isInt := row.GetOr("generation", nil).(int64); isInt {
+		if value, isInt := row.ValueOr("generation", nil).(int64); isInt {
 			generation = &value
 		}
 		if prompts, live := authority.PendingPrompts(sessionID, generation); live {
 			for _, prompt := range prompts {
 				pending = append(pending, prompt)
-				if prompt.GetOr("kind", nil) == "approval" {
+				if prompt.ValueOr("kind", nil) == "approval" {
 					status = "waiting_for_approval"
 				}
 			}
 		}
 	}
-	usage := any(pyjson.NewObject())
+	usage := any(jsonutil.NewObject())
 	if savedDict != nil {
-		usage = savedDict.GetOr("usage", pyjson.NewObject())
+		usage = savedDict.ValueOr("usage", jsonutil.NewObject())
 	}
-	return pyjson.ObjectOf("pending_controls", pending, "run_id", runID, "status", status, "session_id", sessionID,
-		"admission_id", row.GetOr("admission_id", nil), "execution_generation", row.GetOr("generation", nil),
-		"output", result.GetOr("final_response", ""), "usage", usage), nil
+	return jsonutil.ObjectOf("pending_controls", pending, "run_id", runID, "status", status, "session_id", sessionID,
+		"admission_id", row.ValueOr("admission_id", nil), "execution_generation", row.ValueOr("generation", nil),
+		"output", result.ValueOr("final_response", ""), "usage", usage), nil
 }
 
 // Acknowledges a clarify question for a running canonical API session, the shared prompt registered after it
@@ -201,7 +201,7 @@ func capabilities(names ...string) map[string]bool {
 }
 
 // Answers an authority run's pending approval or clarify prompt for its exact running generation
-func respondRun(ctx context.Context, a *APIServerAdapter, runID string, body *pyjson.Object, kind string) (*pyjson.Object, error) {
+func respondRun(ctx context.Context, a *APIServerAdapter, runID string, body *jsonutil.Object, kind string) (*jsonutil.Object, error) {
 	owned, err := runAdmission(ctx, a, runID)
 	if err != nil {
 		return nil, err
@@ -210,8 +210,8 @@ func respondRun(ctx context.Context, a *APIServerAdapter, runID string, body *py
 		return nil, state.NewRuntimeStoreError("not_found", nil, nil)
 	}
 	authority, row := owned.authority, owned.row
-	generation := body.GetOr("execution_generation", nil)
-	promptID := body.GetOr("request_id", nil)
+	generation := body.ValueOr("execution_generation", nil)
+	promptID := body.ValueOr("request_id", nil)
 	field := "answer"
 	if kind == "approval" {
 		field = "choice"
@@ -220,13 +220,13 @@ func respondRun(ctx context.Context, a *APIServerAdapter, runID string, body *py
 	if body.Len() != len(expected) {
 		return nil, state.NewRuntimeStoreError("invalid_params", nil, nil)
 	}
-	for _, key := range body.Keys {
+	for _, key := range body.Keys() {
 		if !expected[key] {
 			return nil, state.NewRuntimeStoreError("invalid_params", nil, nil)
 		}
 	}
 	stamp, isInt := generation.(int64)
-	if rowText(row, "status") != "started" || !isInt || !pyjson.Equal(stamp, row.GetOr("generation", nil)) {
+	if rowText(row, "status") != "started" || !isInt || !anyutil.Equal(stamp, row.ValueOr("generation", nil)) {
 		return nil, state.NewRuntimeStoreError("stale_generation", nil, nil)
 	}
 	ref := gateway.SessionRef{ProfileID: authority.ProfileID, SessionID: rowText(row, "target_session_id")}
@@ -239,7 +239,7 @@ func respondRun(ctx context.Context, a *APIServerAdapter, runID string, body *py
 	result, err := func() (any, error) {
 		pending := false
 		for _, prompt := range snapshot.Prompts {
-			if pyjson.Equal(prompt["prompt_id"], promptID) && pyjson.Equal(prompt["kind"], kind) {
+			if anyutil.Equal(prompt["prompt_id"], promptID) && anyutil.Equal(prompt["kind"], kind) {
 				pending = true
 				break
 			}
@@ -247,7 +247,7 @@ func respondRun(ctx context.Context, a *APIServerAdapter, runID string, body *py
 		if !pending {
 			return nil, state.NewRuntimeStoreError("approval_not_pending", nil, nil)
 		}
-		return authority.Respond(ctx, actor, ref, generation, promptID, pyjson.ObjectOf(field, body.GetOr(field, nil)), kind)
+		return authority.Respond(ctx, actor, ref, generation, promptID, jsonutil.ObjectOf(field, body.ValueOr(field, nil)), kind)
 	}()
 	if detachErr := authority.Detach(context.WithoutCancel(ctx), actor, snapshot.SubscriptionID, "", false); detachErr != nil {
 		return nil, detachErr
@@ -255,12 +255,12 @@ func respondRun(ctx context.Context, a *APIServerAdapter, runID string, body *py
 	if err != nil {
 		return nil, err
 	}
-	answer, _ := result.(*pyjson.Object)
+	answer, _ := result.(*jsonutil.Object)
 	return answer, nil
 }
 
 // Stops an authority run, cancelling a queued admission or interrupting the exact running claim
-func stopRun(ctx context.Context, a *APIServerAdapter, runID string) (*pyjson.Object, error) {
+func stopRun(ctx context.Context, a *APIServerAdapter, runID string) (*jsonutil.Object, error) {
 	owned, err := runAdmission(ctx, a, runID)
 	if err != nil {
 		return nil, err
@@ -288,7 +288,7 @@ func stopRun(ctx context.Context, a *APIServerAdapter, runID string) (*pyjson.Ob
 				return nil, err
 			}
 			if again == nil {
-				return nil, &gateway.PyError{Kind: "TypeError", Msg: "cannot unpack non-iterable NoneType object"}
+				return nil, &gateway.PyError{Kind: "TypeError", Msg: "run admission vanished after a stale generation refusal"}
 			}
 			authority, row = again.authority, again.row
 		default:
@@ -297,14 +297,14 @@ func stopRun(ctx context.Context, a *APIServerAdapter, runID string) (*pyjson.Ob
 	}
 	switch rowText(row, "status") {
 	case "started":
-		generation, _ := row.GetOr("generation", nil).(int64)
+		generation, _ := row.ValueOr("generation", nil).(int64)
 		if _, err := authority.Interrupt(ctx, actor, ref, generation); err != nil {
 			return nil, err
 		}
 		a.mu.Lock()
 		a.stoppingRunIDs[runID] = true
 		a.mu.Unlock()
-		return pyjson.ObjectOf("run_id", runID, "status", "stopping", "admission_id", row.GetOr("admission_id", nil)), nil
+		return jsonutil.ObjectOf("run_id", runID, "status", "stopping", "admission_id", row.ValueOr("admission_id", nil)), nil
 	case "unknown":
 		return nil, state.NewRuntimeStoreError("unknown_execution", nil, nil)
 	}
@@ -320,7 +320,7 @@ func bodyGeneration(value any) int64 {
 }
 
 // Acknowledges the exact unknown admission durably bound to an owned API run
-func resolveUnknownRun(ctx context.Context, a *APIServerAdapter, runID string, body any) (*pyjson.Object, error) {
+func resolveUnknownRun(ctx context.Context, a *APIServerAdapter, runID string, body any) (*jsonutil.Object, error) {
 	owned, err := runAdmission(ctx, a, runID)
 	if err != nil {
 		return nil, err
@@ -329,7 +329,7 @@ func resolveUnknownRun(ctx context.Context, a *APIServerAdapter, runID string, b
 		return nil, state.NewRuntimeStoreError("not_found", nil, nil)
 	}
 	authority, row := owned.authority, owned.row
-	dict, isDict := body.(*pyjson.Object)
+	dict, isDict := body.(*jsonutil.Object)
 	if !isDict || dict.Len() != 2 {
 		return nil, state.NewRuntimeStoreError("invalid_params", nil, nil)
 	}
@@ -338,7 +338,7 @@ func resolveUnknownRun(ctx context.Context, a *APIServerAdapter, runID string, b
 	if !hasAdmission || !hasGeneration {
 		return nil, state.NewRuntimeStoreError("invalid_params", nil, nil)
 	}
-	if !pyjson.Equal(admissionID, row.GetOr("admission_id", nil)) {
+	if !anyutil.Equal(admissionID, row.ValueOr("admission_id", nil)) {
 		return nil, state.NewRuntimeStoreError("not_found", nil, nil)
 	}
 	actor := gateway.Principal{Subject: "api", ProfileID: authority.ProfileID,
@@ -354,7 +354,7 @@ func resolveUnknownRun(ctx context.Context, a *APIServerAdapter, runID string, b
 // Agent a steer reaches for an authority run's running generation, or the latch when the turn has not adopted one
 func steerAuthorityRun(ctx context.Context, owned *authorityRunAdmission, text string) (*agent.AIAgent, bool, error) {
 	authority, row := owned.authority, owned.row
-	generation, _ := row.GetOr("generation", nil).(int64)
+	generation, _ := row.ValueOr("generation", nil).(int64)
 	steered, latched, err := authority.SteerRunningGeneration(ctx, rowText(row, "target_session_id"), generation, text)
 	if err != nil {
 		var refusal *state.RuntimeStoreError

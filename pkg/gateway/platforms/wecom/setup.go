@@ -13,13 +13,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	qrutil "github.com/nickheyer/icebath/pkg/utils/qr"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Admin console endpoints of the QR bot creation, which back the console rather than the public API
@@ -31,20 +30,16 @@ const (
 	qrPollTimeout  = 300
 )
 
-// Fetches and decodes a JSON document like urlopen, a seam tests replace
+// Fetches and decodes a JSON document, a seam tests replace
 var qrGetJSON = func(ctx context.Context, url string, timeout time.Duration) (any, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
 	req.Header.Set("User-Agent", "icebath-agent/1.0")
-	resp, err := (&http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}}).Do(req)
+	resp, err := (&http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: httputil.Proxy}}).Do(req)
 	if err != nil {
-		reason := err.Error()
-		if pypath.OSErrorClass(err) != "OSError" {
-			reason = pypath.OSErrorText(err)
-		}
-		return nil, errors.New("<urlopen error " + reason + ">")
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
@@ -54,11 +49,7 @@ var qrGetJSON = func(ctx context.Context, url string, timeout time.Duration) (an
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8(raw)
-	if err != nil {
-		return nil, err
-	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(raw)
 }
 
 // Sleep between polls that a Ctrl-C cuts short, a seam tests replace
@@ -68,29 +59,29 @@ var qrSleep = func(w *gateway.InterruptWatch, seconds float64) error { return w.
 var qrClockBase = time.Now()
 var qrMonotonic = func() float64 { return time.Since(qrClockBase).Seconds() }
 
-// Dict get on a decoded JSON object, the AttributeError of anything that is not a dict
+// Value under key of a decoded JSON object, an error for anything that is not an object
 func dictGet(v any, key string) (any, error) {
-	o, ok := v.(*pyjson.Object)
+	o, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
-	return o.Vals[key], nil
+	return o.Value(key), nil
 }
 
-// A dict value or an empty dict for a falsy one, like value or {}
+// The value, an empty object in place of an empty or missing one
 func orDict(v any) any {
-	if !pyrepr.Truthy(v) {
-		return pyjson.NewObject()
+	if !anyutil.IsTrue(v) {
+		return jsonutil.NewObject()
 	}
 	return v
 }
 
-// Stripped str of a falsy defaulted value, like str(value or "").strip()
+// Trimmed text of a value, empty for an empty or missing one
 func textOf(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Fetches and renders a WeCom QR code then polls until scanned, the bot id and secret when it succeeds
@@ -99,7 +90,7 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 	watch := gateway.WatchInterrupt()
 	defer watch.Stop()
 	fail := func(logMsg string, detail any, shown string) (string, string, bool, error) {
-		pkgLog().Error(fmt.Sprintf(logMsg, pyrepr.Str(detail)))
+		pkgLog().Error(fmt.Sprintf(logMsg, anyutil.String(detail)))
 		fmt.Fprintf(out, " failed: %s\n", shown)
 		return "", "", false, nil
 	}
@@ -129,21 +120,21 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 		return fail("WeCom QR: unexpected response format: %s", raw, "unexpected response format")
 	}
 	fmt.Fprint(out, " done.\n\n")
-	pageURL := qrCodePage + pyurl.Quote(scode, "/")
-	if code, err := pyqrcode.Make(authURL, pyqrcode.ErrorCorrectM, 4); err == nil {
-		fmt.Fprint(out, code.PrintASCII(true))
+	pageURL := qrCodePage + urlutil.Escape(scode, "/")
+	if code, err := qrutil.Encode(authURL, qrutil.Medium); err == nil {
+		fmt.Fprint(out, code.HalfBlocks(4, true))
 		fmt.Fprintf(out, "\n  Scan the QR code above, or open this URL directly:\n  %s\n", pageURL)
 	} else {
 		fmt.Fprintf(out, "  Open this URL in WeCom on your phone:\n\n  %s\n\n", pageURL)
 	}
 	fmt.Fprint(out, "\n  Fetching configuration results...")
 	deadline := qrMonotonic() + float64(timeoutSeconds)
-	queryURL := qrQueryURL + "?scode=" + pyurl.Quote(scode, "/")
+	queryURL := qrQueryURL + "?scode=" + urlutil.Escape(scode, "/")
 	for qrMonotonic() < deadline {
 		result, err := qrGetJSON(ctx, queryURL, 10*time.Second)
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("WeCom QR poll error: %s", err.Error()))
-			result = pyjson.NewObject()
+			result = jsonutil.NewObject()
 		} else {
 			fmt.Fprint(out, ".")
 		}
@@ -171,7 +162,7 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 		}
 		botInfo = orDict(botInfo)
 		botid, _ := dictGet(botInfo, "botid")
-		if !pyrepr.Truthy(botid) {
+		if !anyutil.IsTrue(botid) {
 			botid, _ = dictGet(botInfo, "bot_id")
 		}
 		secretRaw, _ := dictGet(botInfo, "secret")
@@ -180,7 +171,7 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 			fmt.Fprintln(out)
 			return botID, secret, true, nil
 		}
-		pkgLog().Warn(fmt.Sprintf("WeCom QR: scan reported success but bot_info missing or incomplete: %s", pyrepr.Str(resultData)))
+		pkgLog().Warn(fmt.Sprintf("WeCom QR: scan reported success but bot_info missing or incomplete: %s", anyutil.String(resultData)))
 		fmt.Fprintln(out, "\n  QR scan reported success but no bot credentials were returned.\n"+
 			"  This usually means the bot was not actually created on the WeCom side.\n  Falling back to manual credential entry.")
 		return "", "", false, nil
@@ -189,7 +180,7 @@ func qrScanForBotInfo(ctx context.Context, timeoutSeconds int) (string, string, 
 	return "", "", false, nil
 }
 
-// QR bot creation of the wizard, the qr_scan_for_bot_info name its tests replace
+// QR bot creation of the wizard, a seam tests replace
 var qrScanFn = qrScanForBotInfo
 
 // Steps of finding an existing smart robot's credentials

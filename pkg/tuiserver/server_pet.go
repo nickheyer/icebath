@@ -6,9 +6,9 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // display.pet of the canonical config, empty on any failure
@@ -39,8 +39,8 @@ func configuredPetSelection(ctx context.Context) (bool, *pet.InstalledPet, float
 	var active *pet.InstalledPet
 	if enabled {
 		slug := ""
-		if value := conf["slug"]; pyrepr.Truthy(value) {
-			slug = pyrepr.Str(value)
+		if value := conf["slug"]; anyutil.IsTrue(value) {
+			slug = anyutil.String(value)
 		}
 		resolved, err := pet.ResolveActivePet(home.Dir(ctx), slug)
 		if err != nil {
@@ -49,7 +49,7 @@ func configuredPetSelection(ctx context.Context) (bool, *pet.InstalledPet, float
 		active = resolved
 	}
 	rawScale, present := conf["scale"]
-	if !present || !pyrepr.Truthy(rawScale) {
+	if !present || !anyutil.IsTrue(rawScale) {
 		return enabled, active, pet.DefaultScale, nil
 	}
 	scale, err := pyFloat(rawScale)

@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 	"golang.org/x/text/unicode/norm"
@@ -307,7 +307,7 @@ func orderedFieldOr(row *OrderedObject, key string) string {
 	if !ok {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Every pinned URL the pool serves, the table's libraries and license plus the lockfile's bionic tools
@@ -323,7 +323,7 @@ func TermuxPins(table *OrderedObject, lockfile *Lockfile) ([]Pin, error) {
 			if err != nil {
 				return nil, err
 			}
-			out = append(out, Pin{Scope: "library", Name: name, URL: pyrepr.Str(u), Version: orderedFieldOr(libs.Values[name].(*OrderedObject), "version")})
+			out = append(out, Pin{Scope: "library", Name: name, URL: anyutil.String(u), Version: orderedFieldOr(libs.Values[name].(*OrderedObject), "version")})
 		}
 	}
 	if licenses, _ := table.Get("licenses"); truthyOrdered(licenses) {
@@ -331,7 +331,7 @@ func TermuxPins(table *OrderedObject, lockfile *Lockfile) ([]Pin, error) {
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, Pin{Scope: "license", Name: "termux-licenses", URL: pyrepr.Str(u), Version: orderedFieldOr(licenses.(*OrderedObject), "version")})
+		out = append(out, Pin{Scope: "license", Name: "termux-licenses", URL: anyutil.String(u), Version: orderedFieldOr(licenses.(*OrderedObject), "version")})
 	}
 	for _, name := range lockfile.Names() {
 		artifacts := lockfile.PinnedArtifacts(name)
@@ -361,7 +361,7 @@ func truthyOrdered(v any) bool {
 	if obj, ok := v.(*OrderedObject); ok {
 		return len(obj.Keys) > 0
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Rows of a target's pin, a single object standing for a one row list

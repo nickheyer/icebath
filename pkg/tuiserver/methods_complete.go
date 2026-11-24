@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -18,15 +19,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -171,10 +172,10 @@ func fuzzyBasenameItems(root, pathPart, prefixTag string) []map[string]any {
 		}
 	}
 	for _, rel := range listRepoFiles(root) {
-		consider(rel, pypath.Basename(rel), false)
-		for parent := pypath.Dirname(rel); parent != "" && !walkedDirs[parent]; parent = pypath.Dirname(parent) {
+		consider(rel, path.Base(rel), false)
+		for parent := path.Dir(rel); parent != "." && !walkedDirs[parent]; parent = path.Dir(parent) {
 			walkedDirs[parent] = true
-			consider(parent, pypath.Basename(parent), true)
+			consider(parent, path.Base(parent), true)
 		}
 	}
 	slices.SortStableFunc(ranked, func(a, b rankedEntry) int {
@@ -190,13 +191,17 @@ func fuzzyBasenameItems(root, pathPart, prefixTag string) []map[string]any {
 		if r.isDir {
 			out = append(out, completionItem("@folder:"+r.rel+"/", "dir", r.name+"/"))
 		} else {
-			out = append(out, completionItem("@"+tag+":"+r.rel, pypath.Dirname(r.rel), r.name))
+			dir := path.Dir(r.rel)
+			if dir == "." {
+				dir = ""
+			}
+			out = append(out, completionItem("@"+tag+":"+r.rel, dir, r.name))
 		}
 	}
 	return out
 }
 
-// Python ordering of two booleans, False first
+// Order of two booleans, false first
 func boolOrder(a, b bool) int {
 	switch {
 	case a == b:
@@ -243,26 +248,26 @@ type dirEntry struct {
 // Entries of one directory inside the non local terminal backend of the session, the backend's failure when it cannot list
 func backendDirEntries(ctx context.Context, searchDir, sessionKey string) (entries []dirEntry, err error) {
 	timeout := 3
-	command := "sh -c " + pyshlex.Quote(backendListingCode) + " sh " + pyshlex.Quote(searchDir)
+	command := "sh -c " + shellutil.Quote(backendListingCode) + " sh " + shellutil.Quote(searchDir)
 	raw := terminalTool(ctx, tools.EnvForProfileHome(ctx, tools.ToolEnvFrom(ctx), home.Dir(ctx)),
 		tools.TerminalRequest{Command: command, TaskID: sessionKey, Timeout: &timeout, Force: true})
-	decoded, err := pyjson.Loads(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, fmt.Errorf("the terminal backend answered a listing that is not JSON: %w", err)
 	}
-	result, isDict := pyjson.Plain(decoded).(map[string]any)
-	if !isDict {
-		return nil, fmt.Errorf("the terminal backend answered a listing that is %s, not an object", errchain.Kind(pyjson.Plain(decoded)))
+	result, isObject := decoded.(*jsonutil.Object)
+	if !isObject {
+		return nil, fmt.Errorf("the terminal backend answered a listing that is %s, not an object", errchain.Kind(decoded))
 	}
-	if pyrepr.Truthy(result["error"]) {
-		return nil, fmt.Errorf("the terminal backend could not list %s: %s", searchDir, pyrepr.Str(result["error"]))
+	if failure := result.Value("error"); anyutil.IsTrue(failure) {
+		return nil, fmt.Errorf("the terminal backend could not list %s: %s", searchDir, anyutil.String(failure))
 	}
-	if exitCode, hasExit := result["exit_code"]; hasExit && exitCode != nil && !pyrepr.Equal(exitCode, 0) {
-		return nil, fmt.Errorf("listing %s in the terminal backend exited %s: %s", searchDir, pyrepr.Str(exitCode), pyrepr.Str(result["output"]))
+	if exitCode := result.Value("exit_code"); exitCode != nil && !anyutil.Equal(exitCode, 0) {
+		return nil, fmt.Errorf("listing %s in the terminal backend exited %s: %s", searchDir, anyutil.String(exitCode), anyutil.String(result.Value("output")))
 	}
 	output := ""
-	if pyrepr.Truthy(result["output"]) {
-		output = pyrepr.Str(result["output"])
+	if listed := result.Value("output"); anyutil.IsTrue(listed) {
+		output = anyutil.String(listed)
 	}
 	for _, line := range textutil.Lines(output) {
 		name := strings.TrimRight(line, "/")
@@ -285,9 +290,46 @@ type completionPathOps struct {
 }
 
 var (
-	hostPathOps  = completionPathOps{pypath.Dirname, pypath.Basename, pypath.Normpath, pypath.IsAbs, pypath.Join, pypath.Relpath}
-	posixPathOps = completionPathOps{pypath.PosixDirname, pypath.PosixBasename, pypath.PosixNormpath, pypath.PosixIsAbs, pypath.PosixJoin, pypath.PosixRelpath}
+	hostPathOps  = completionPathOps{filepath.Dir, hostBase, filepath.Clean, filepath.IsAbs, pathutil.Join, hostRelpath}
+	posixPathOps = completionPathOps{path.Dir, path.Base, path.Clean, path.IsAbs, slashJoin, slashRelpath}
 )
+
+// Final element of a host path as written, empty when the path ends in a separator or names only a volume
+func hostBase(p string) string {
+	if p == "" || os.IsPathSeparator(p[len(p)-1]) {
+		return ""
+	}
+	if name := filepath.Base(p); name != string(filepath.Separator) {
+		return name
+	}
+	return ""
+}
+
+// Relative path from start to p on this host, both made absolute against the working directory first
+func hostRelpath(p, start string) (string, error) {
+	base, err := filepath.Abs(start)
+	if err != nil {
+		return "", err
+	}
+	target, err := filepath.Abs(p)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Rel(base, target)
+}
+
+// Slash paths joined, cleaned
+func slashJoin(base string, elem ...string) string {
+	return path.Join(append([]string{base}, elem...)...)
+}
+
+// Relative slash path from start to p on the remote side, the cleaned path itself when one is absolute and the other is not
+func slashRelpath(p, start string) (string, error) {
+	if rel, err := pathutil.SlashRel(start, p); err == nil {
+		return rel, nil
+	}
+	return path.Clean(p), nil
+}
 
 // Prefix matched entries of the directory the path part points at, at most thirty
 func dirListingItems(ctx context.Context, root, word, pathPart, prefixTag string, isContext bool, sessionKey string, local bool) ([]map[string]any, error) {
@@ -303,15 +345,8 @@ func dirListingItems(ctx context.Context, root, word, pathPart, prefixTag string
 		}
 	}
 	searchDir, match := expanded, ""
-	if expanded == "." || expanded == "" || strings.HasSuffix(expanded, "/") {
-		if searchDir == "" {
-			searchDir = "."
-		}
-	} else {
+	if expanded != "." && expanded != "" && !strings.HasSuffix(expanded, "/") {
 		searchDir, match = pth.dirname(expanded), pth.basename(expanded)
-		if searchDir == "" {
-			searchDir = "."
-		}
 	}
 	if !(pth.isabs(searchDir) || strings.HasPrefix(searchDir, "~")) {
 		searchDir = pth.join(root, searchDir)
@@ -372,7 +407,7 @@ func dirListingItems(ctx context.Context, root, word, pathPart, prefixTag string
 		case strings.HasPrefix(word, "~"):
 			userHome := "~"
 			if local {
-				userHome = pypath.Expanduser("~")
+				userHome = pathutil.ExpandUser("~")
 			}
 			fromHome, err := pth.relpath(full, userHome)
 			if err != nil {
@@ -512,7 +547,7 @@ func modelDisconnect(ctx context.Context, rid any, params map[string]any) (map[s
 	}
 	h := home.Dir(ctx)
 	pconfig := provider.RegistryRow(ctx, slug)
-	if !truthy(params["all"]) {
+	if !anyutil.IsTrue(params["all"]) {
 		if resp, handled, err := disconnectOneLogin(ctx, rid, slug, strings.TrimSpace(strOr(params["login"])), pconfig); handled || err != nil {
 			return resp, err
 		}

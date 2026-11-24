@@ -11,9 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -83,7 +83,7 @@ type stopContext struct {
 
 // Seconds since the stop began
 func (c *stopContext) elapsed() float64 {
-	return pythread.Monotonic() - *c.startedAt
+	return timeutil.Monotonic() - *c.startedAt
 }
 
 // API server adapter interrupting its own runs outside the running agent map
@@ -593,7 +593,7 @@ func (r *GatewayRunner) scaleToZeroHoldRedial(held bool) (took bool) {
 // Pauses a queued platform with the reason, a manual platform pause only
 func (r *GatewayRunner) pauseFailedPlatform(ctx context.Context, platform gateway.Platform, reason string) {
 	info, ok := r.failedPlatforms.Get(platform)
-	if !ok || info == nil || pyrepr.Truthy(info["paused"]) {
+	if !ok || info == nil || anyutil.IsTrue(info["paused"]) {
 		return
 	}
 	info["paused"] = true
@@ -614,13 +614,13 @@ func (r *GatewayRunner) pauseFailedPlatform(ctx context.Context, platform gatewa
 // Unpauses a platform for a retry on the next watcher tick, true when it was paused
 func (r *GatewayRunner) resumePausedPlatform(ctx context.Context, platform gateway.Platform) bool {
 	info, ok := r.failedPlatforms.Get(platform)
-	if !ok || info == nil || !pyrepr.Truthy(info["paused"]) {
+	if !ok || info == nil || !anyutil.IsTrue(info["paused"]) {
 		return false
 	}
 	info["paused"] = false
 	delete(info, "pause_reason")
 	info["attempts"] = 0
-	info["next_retry"] = pythread.Monotonic()
+	info["next_retry"] = timeutil.Monotonic()
 	r.updatePlatformRuntimeStatus(ctx, string(platform), platformStatus{state: optStr("retrying")})
 	pkgLog().Info(fmt.Sprintf("%s resumed — retrying on next watcher tick", platform))
 	return true

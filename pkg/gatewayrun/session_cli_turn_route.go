@@ -9,10 +9,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Run result keys a one shot chat viewer reads that the gateway projection does not carry
@@ -28,12 +28,12 @@ func runtimeText(runtimeKwargs map[string]any, key string) string {
 }
 
 // Model and runtime of a committed model override for this one turn, resolved by the model switch pipeline
-func oneTurnRuntime(ctx context.Context, override *pyjson.Object, model string, runtimeKwargs map[string]any, cfg map[string]any) (string, map[string]any, error) {
+func oneTurnRuntime(ctx context.Context, override *jsonutil.Object, model string, runtimeKwargs map[string]any, cfg map[string]any) (string, map[string]any, error) {
 	if cfg == nil {
 		cfg = map[string]any{}
 	}
-	rawModel, _ := override.GetOr("model", "").(string)
-	explicit, _ := override.GetOr("provider", "").(string)
+	rawModel, _ := override.ValueOr("model", "").(string)
+	explicit, _ := override.ValueOr("provider", "").(string)
 	userProviders, _ := cfg["providers"].(map[string]any)
 	custom := []any{}
 	for _, entry := range provider.ProviderEntriesOf(userProviders) {
@@ -99,12 +99,12 @@ func oneTurnRuntime(ctx context.Context, override *pyjson.Object, model string, 
 }
 
 // Committed model override of the executing admission, nil for any other turn
-func turnModelOverride(ctx context.Context, t *TurnRunner) *pyjson.Object {
+func turnModelOverride(ctx context.Context, t *TurnRunner) *jsonutil.Object {
 	var inbound any
 	if _, inboundID, _ := t.runner.turnReplyAnchors(t.ctx); inboundID != nil {
 		inbound = *inboundID
 	}
-	override, _ := gateway.CLITurn(ctx, inbound).GetOr("model_override", nil).(*pyjson.Object)
+	override, _ := gateway.CLITurn(ctx, inbound).ValueOr("model_override", nil).(*jsonutil.Object)
 	if override == nil || override.Len() == 0 {
 		return nil
 	}
@@ -133,7 +133,7 @@ func oneTurnRoute(ctx context.Context, t *TurnRunner, policy *gateway.LocalSessi
 }
 
 // Receipt only fields of a one shot chat turn, pending steer removed from the raw result
-func takeCLIResultFields(ctx context.Context, result map[string]any, auxBefore *pyjson.Object, db *state.SessionDB, sessionID string) map[string]any {
+func takeCLIResultFields(ctx context.Context, result map[string]any, auxBefore *jsonutil.Object, db *state.SessionDB, sessionID string) map[string]any {
 	if result == nil {
 		return map[string]any{}
 	}
@@ -144,26 +144,26 @@ func takeCLIResultFields(ctx context.Context, result map[string]any, auxBefore *
 		}
 	}
 	finalResponse := result["final_response"]
-	if !pyrepr.Truthy(finalResponse) {
+	if !anyutil.IsTrue(finalResponse) {
 		finalResponse = ""
 	}
 	fields["final_response"] = finalResponse
 	steer := result["pending_steer"]
 	delete(result, "pending_steer")
-	if !pyrepr.Truthy(steer) {
+	if !anyutil.IsTrue(steer) {
 		steer = nil
 	}
 	fields["pending_steer"] = steer
 	if auxBefore != nil {
 		holderSession := result["session_id"]
-		if !pyrepr.Truthy(holderSession) {
+		if !anyutil.IsTrue(holderSession) {
 			holderSession = sessionID
 		}
 		holder := map[string]any{"session_id": holderSession}
 		agent.AttachAuxiliaryUsage(ctx, holder, db, auxBefore, sessionID)
 		usage := holder["auxiliary_usage"]
-		if !pyrepr.Truthy(usage) {
-			usage = pyjson.NewObject()
+		if !anyutil.IsTrue(usage) {
+			usage = jsonutil.NewObject()
 		}
 		fields["auxiliary_usage"] = usage
 	}
@@ -179,7 +179,7 @@ func runClassicCLITurn(ctx context.Context, t *TurnRunner, run func() (map[strin
 	if !classic {
 		return run()
 	}
-	var auxBefore *pyjson.Object
+	var auxBefore *jsonutil.Object
 	var cliDB *state.SessionDB
 	if required, ok := gateway.FiniteTurnRequired(ctx).(bool); ok && required {
 		if runnerDB := t.runner.sessionDB(ctx); runnerDB != nil {

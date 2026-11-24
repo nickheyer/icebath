@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func effortCfg(effort string) *Reasoning { return &Reasoning{Enabled: bptr(true), Effort: effort} }
@@ -48,13 +48,13 @@ func TestOpencodePluginProfilesMatchUpstreamRegistration(t *testing.T) {
 func TestOpencodeZenOxAlphaReasoning(t *testing.T) {
 	zen := bundledPluginProfile(t, "opencode-zen")
 	eb, tl := zen.BuildAPIKwargsExtras(effortCfg("max"), map[string]any{"model": "x-preview-f-free"})
-	assertExtras(t, "max", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{"reasoning_effort": "max"})
+	assertExtras(t, "max", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{"reasoning_effort": "max"})
 	for _, r := range []*Reasoning{nil, {Enabled: bptr(false)}} {
 		eb, tl := zen.BuildAPIKwargsExtras(r, map[string]any{"model": "x-preview-f-free"})
-		assertExtras(t, "unset or disabled", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
+		assertExtras(t, "unset or disabled", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	}
 	eb, tl = zen.BuildAPIKwargsExtras(effortCfg("max"), map[string]any{"model": "gemini-3-flash"})
-	assertExtras(t, "other model", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
+	assertExtras(t, "other model", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	for requested, expected := range map[string]string{"medium": "low", "xhigh": "max"} {
 		_, tl := zen.BuildAPIKwargsExtras(effortCfg(requested), map[string]any{"model": "x-preview-f-free"})
 		assertExtras(t, requested, map[string]any{}, tl, map[string]any{}, map[string]any{"reasoning_effort": expected})
@@ -79,7 +79,7 @@ func TestOpencodeGoKimiReasoning(t *testing.T) {
 	}
 	for _, c := range cases {
 		eb, tl := goP.BuildAPIKwargsExtras(c.r, map[string]any{"model": c.model})
-		assertExtras(t, c.model, pyjson.Plain(eb).(map[string]any), tl, c.eb, c.tl)
+		assertExtras(t, c.model, jsonutil.Plain(eb).(map[string]any), tl, c.eb, c.tl)
 	}
 }
 
@@ -87,13 +87,13 @@ func TestOpencodeGoDeepSeekThinking(t *testing.T) {
 	goP := bundledPluginProfile(t, "opencode-go")
 	for _, effort := range []string{"xhigh", "max"} {
 		eb, tl := goP.BuildAPIKwargsExtras(effortCfg(effort), map[string]any{"model": "deepseek/deepseek-v4-pro"})
-		assertExtras(t, effort, pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{"reasoning_effort": "max"})
+		assertExtras(t, effort, jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{"reasoning_effort": "max"})
 	}
 	for _, model := range []string{"deepseek-flash", "deepseek/deepseek-flash"} {
 		_, tl := goP.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": model})
 		assertExtras(t, model, map[string]any{}, tl, map[string]any{}, map[string]any{"reasoning_effort": "high"})
 		eb, tl := goP.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, map[string]any{"model": model})
-		assertExtras(t, model, pyjson.Plain(eb).(map[string]any), tl, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
+		assertExtras(t, model, jsonutil.Plain(eb).(map[string]any), tl, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
 	}
 }
 
@@ -104,17 +104,17 @@ func TestOpencodeGoGLM52AliasSpellingsRecognized(t *testing.T) {
 		assertExtras(t, model, map[string]any{}, tl, map[string]any{}, map[string]any{"reasoning_effort": "max"})
 	}
 	eb, tl := goP.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(true), Effort: "none"}, map[string]any{"model": "glm-5.2"})
-	assertExtras(t, "none", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
+	assertExtras(t, "none", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 }
 
 func TestOpencodeGoNonTargetModelsEmitNothing(t *testing.T) {
 	goP := bundledPluginProfile(t, "opencode-go")
 	for _, model := range []string{"glm-5.1", "glm-5", "qwen3.6-plus", "minimax-m2.7", "deepseek-v3.1", "deepseek-chat", ""} {
 		eb, tl := goP.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": model})
-		assertExtras(t, model, pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
+		assertExtras(t, model, jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	}
 	eb, tl := goP.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{})
-	assertExtras(t, "no model", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
+	assertExtras(t, "no model", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 }
 
 func TestOpencodeGoPlanWindowsReachUsageThroughProfileHook(t *testing.T) {

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Reason of a runtime store refusal, empty for any other error
@@ -160,7 +160,7 @@ func TestPhysicalHoldersAndUncertainStatDenyCollection(t *testing.T) {
 func TestCancelQueuedSettlesNativeWaiterAndPublishesTerminalCompletion(t *testing.T) {
 	ctx, _, a := newTestAuthority(t, "")
 	holdDrains(t)
-	var frames []*pyjson.Object
+	var frames []*jsonutil.Object
 	receipt, err := submitText(ctx, a, "queued-then-cancelled")
 	if err != nil {
 		t.Fatal(err)
@@ -168,13 +168,13 @@ func TestCancelQueuedSettlesNativeWaiterAndPublishesTerminalCompletion(t *testin
 	waiter := newAdmissionWaiter()
 	a.nativeWaiters[receipt.AdmissionID] = true
 	a.waiters[receipt.AdmissionID] = waiter
-	a.Sessions["s"].EventStream.Observers[&SessionEventObserver{Observe: func(frame *pyjson.Object) { frames = append(frames, frame) }}] = true
-	completions := func() []*pyjson.Object {
-		var out []*pyjson.Object
+	a.Sessions["s"].EventStream.Observers[&SessionEventObserver{Observe: func(frame *jsonutil.Object) { frames = append(frames, frame) }}] = true
+	completions := func() []*jsonutil.Object {
+		var out []*jsonutil.Object
 		for _, frame := range frames {
 			params, _ := frame.Get("params")
-			if kind, _ := params.(*pyjson.Object).Get("type"); kind == "message.complete" {
-				out = append(out, params.(*pyjson.Object))
+			if kind, _ := params.(*jsonutil.Object).Get("type"); kind == "message.complete" {
+				out = append(out, params.(*jsonutil.Object))
 			}
 		}
 		return out
@@ -200,10 +200,10 @@ func TestCancelQueuedSettlesNativeWaiterAndPublishesTerminalCompletion(t *testin
 		t.Fatalf("completion stamped %v", id)
 	}
 	payload, _ := terminal[0].Get("payload")
-	if outcome, _ := payload.(*pyjson.Object).Get("outcome"); outcome != "cancelled" {
+	if outcome, _ := payload.(*jsonutil.Object).Get("outcome"); outcome != "cancelled" {
 		t.Fatalf("completion outcome %v", outcome)
 	}
-	if id, _ := payload.(*pyjson.Object).Get("admission_id"); id != receipt.AdmissionID {
+	if id, _ := payload.(*jsonutil.Object).Get("admission_id"); id != receipt.AdmissionID {
 		t.Fatalf("completion payload names %v", id)
 	}
 	if _, err := a.CancelQueued(ctx, testActor, testRef, receipt.AdmissionID); err != nil {

@@ -7,13 +7,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Replays the newest paired todo tool result into the todo store when its revision is newer
@@ -65,14 +65,14 @@ func (a *AIAgent) latestTodoResponse(history []map[string]any) ([]any, any, bool
 		if !strings.Contains(content, `"todos"`) {
 			continue
 		}
-		data, err := pyjson.Loads(content)
+		data, err := jsonutil.Decode(content)
 		if err != nil {
 			continue
 		}
 		switch d := data.(type) {
-		case *pyjson.Object:
+		case *jsonutil.Object:
 			if v, ok := d.Get("todos"); ok {
-				if list, ok := pyjson.Plain(v).([]any); ok {
+				if list, ok := jsonutil.Plain(v).([]any); ok {
 					rev, has := d.Get("revision")
 					if !has {
 						rev = 1
@@ -132,9 +132,9 @@ func assistantHasTodoToolCall(assistantMsg map[string]any, toolCallID string) bo
 // Raw arguments of a tool call entry in dict or struct form
 func toolCallArguments(tc any) any {
 	switch t := tc.(type) {
-	case map[string]any, *pyjson.Object:
-		d, _ := pyjson.Dict(t)
-		if fn, ok := pyjson.Dict(d["function"]); ok {
+	case map[string]any, *jsonutil.Object:
+		d, _ := jsonutil.AsMap(t)
+		if fn, ok := jsonutil.AsMap(d["function"]); ok {
 			return fn["arguments"]
 		}
 	case state.ToolCall:
@@ -150,9 +150,9 @@ func toolCallArguments(tc any) any {
 // Function name of a tool call entry in dict or struct form
 func getToolCallNameStatic(tc any) string {
 	switch t := tc.(type) {
-	case map[string]any, *pyjson.Object:
-		d, _ := pyjson.Dict(t)
-		if fn, ok := pyjson.Dict(d["function"]); ok {
+	case map[string]any, *jsonutil.Object:
+		d, _ := jsonutil.AsMap(t)
+		if fn, ok := jsonutil.AsMap(d["function"]); ok {
 			name, _ := fn["name"].(string)
 			return name
 		}
@@ -261,8 +261,8 @@ func deduplicateToolCalls(toolCalls []state.ToolCall) []state.ToolCall {
 	unique := make([]state.ToolCall, 0, len(toolCalls))
 	for _, tc := range toolCalls {
 		args := tc.Function.Arguments
-		if v, err := pyjson.Loads(args); err == nil {
-			if canon, err := pyjson.Dumps(v, pyjson.Separators(",", ":"), pyjson.SortKeys(true)); err == nil {
+		if v, err := jsonutil.Decode(args); err == nil {
+			if canon, err := jsonutil.Encode(v, jsonutil.SortKeys()); err == nil {
 				args = canon
 			}
 		}
@@ -400,7 +400,7 @@ func (a *AIAgent) DispatchDelegateTask(ctx context.Context, args map[string]any)
 
 // Word wraps verbose tool output to the terminal width with continuation lines indented
 func wrapVerbose(label, text, indent string) string {
-	cols, _ := pyshutil.GetTerminalSize(120, 24)
+	cols, _ := termutil.Size(120, 24)
 	wrapWidth := max(40, cols-utf8.RuneCountInString(indent))
 	var out []string
 	for _, raw := range strings.Split(text, "\n") {
@@ -408,7 +408,7 @@ func wrapVerbose(label, text, indent string) string {
 			out = append(out, raw)
 			continue
 		}
-		wrapped := pystr.TextwrapWrapNoHyphenBreak(raw, wrapWidth, true)
+		wrapped := textutil.Wrap(raw, wrapWidth, textutil.WrapOptions{NoHyphenBreaks: true})
 		if len(wrapped) == 0 {
 			wrapped = []string{raw}
 		}

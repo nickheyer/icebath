@@ -5,8 +5,9 @@ package tuiserver
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Answers the pending default image switch, approve pinning the new image and false the current one
@@ -21,7 +22,7 @@ func displaySwitchSandboxImage(ctx context.Context, rid any, params map[string]a
 	}
 	approve := true
 	if raw, present := params["approve"]; present {
-		approve = truthy(raw)
+		approve = anyutil.IsTrue(raw)
 	}
 	image, err := tools.DecideSandboxImageSwitch(ctx, env, sw, approve)
 	if err != nil {
@@ -31,9 +32,9 @@ func displaySwitchSandboxImage(ctx context.Context, rid any, params map[string]a
 	if err != nil {
 		panic(err)
 	}
-	out := pyjson.ObjectOf("docker_image", image)
-	for _, key := range snap.Keys {
-		out.Set(key, snap.Vals[key])
+	out := jsonutil.ObjectOf("docker_image", image)
+	for _, key := range snap.Keys() {
+		out.Set(key, snap.Value(key))
 	}
 	return ok(rid, out)
 }

@@ -5,9 +5,9 @@ import (
 	"regexp"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Host and container halves of a docker volume spec with its optional options
@@ -44,10 +44,10 @@ func NewGatewayRunner(ctx context.Context, config *gateway.GatewayConfig) (*Gate
 // Constructor body shared by every config source, from the multiplex flag to the clocks
 func (r *GatewayRunner) initGatewayRunner(ctx context.Context) error {
 	provider.SetMultiplexActive(r.multiplexing())
-	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	r.adapters = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	r.sessionStoreOutage = nil
-	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
-	r.profileConfigs = pydict.New[string, *gateway.GatewayConfig]()
+	r.profileAdapters = orderedutil.NewMap[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]()
+	r.profileConfigs = orderedutil.NewMap[string, *gateway.GatewayConfig]()
 	r.warnIfDockerMediaDeliveryIsRisky(ctx)
 	gateway.SetGatewayRunnerRef(r)
 	r.initRuntimeSettings(ctx)

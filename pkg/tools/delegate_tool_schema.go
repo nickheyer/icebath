@@ -6,7 +6,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -62,9 +62,9 @@ var DelegateTask func(ctx context.Context, env *Env, req DelegateTaskRequest) st
 func checkDelegateRequirements(*Env) bool { return true }
 
 // Parameter schema with type first, extra keywords next and the description last
-func delegateParam(typ, description string, extra *pyjson.Object) *pyjson.Object {
+func delegateParam(typ, description string, extra *jsonutil.Object) *jsonutil.Object {
 	out := Dict("type", typ)
-	out.Update(extra)
+	out.Merge(extra)
 	out.Set("description", description)
 	return out
 }
@@ -157,26 +157,26 @@ func buildDelegateTasksParamDescription(ctx context.Context) string {
 }
 
 // Per build description and parameters reflecting the user limits and the active provider parameters
-func buildDelegateDynamicSchemaOverrides(env *Env) *pyjson.Object {
+func buildDelegateDynamicSchemaOverrides(env *Env) *jsonutil.Object {
 	ctx := delegationEnvContext(env)
 	independent := IndependentCompletions(ctx)
-	static := DelegateTaskSchema.Vals["parameters"].(*pyjson.Object)
-	params := static.Copy()
-	props := pyjson.NewObject()
-	staticProps := static.Vals["properties"].(*pyjson.Object)
-	for _, k := range staticProps.Keys {
-		props.Set(k, staticProps.Vals[k].(*pyjson.Object).Copy())
+	static := DelegateTaskSchema.Value("parameters").(*jsonutil.Object)
+	params := static.Clone()
+	props := jsonutil.NewObject()
+	staticProps := static.Value("properties").(*jsonutil.Object)
+	for _, k := range staticProps.Keys() {
+		props.Set(k, staticProps.Value(k).(*jsonutil.Object).Clone())
 	}
 	params.Set("properties", props)
-	tasks := props.Vals["tasks"].(*pyjson.Object)
+	tasks := props.Value("tasks").(*jsonutil.Object)
 	tasks.Set("description", buildDelegateTasksParamDescription(ctx))
 	if !independent {
-		items := tasks.Vals["items"].(*pyjson.Object).Copy()
-		itemProps := pyjson.NewObject()
-		src := items.Vals["properties"].(*pyjson.Object)
-		for _, k := range src.Keys {
+		items := tasks.Value("items").(*jsonutil.Object).Clone()
+		itemProps := jsonutil.NewObject()
+		src := items.Value("properties").(*jsonutil.Object)
+		for _, k := range src.Keys() {
 			if k != "group" {
-				itemProps.Set(k, src.Vals[k])
+				itemProps.Set(k, src.Value(k))
 			}
 		}
 		items.Set("properties", itemProps)
@@ -184,9 +184,9 @@ func buildDelegateDynamicSchemaOverrides(env *Env) *pyjson.Object {
 	}
 	extra, addendum := SchemaExtension(ctx, LoadDelegationConfig(ctx))
 	if extra.Len() > 0 {
-		items := tasks.Vals["items"].(*pyjson.Object).Copy()
-		itemProps := items.Vals["properties"].(*pyjson.Object).Copy()
-		itemProps.Update(extra)
+		items := tasks.Value("items").(*jsonutil.Object).Clone()
+		itemProps := items.Value("properties").(*jsonutil.Object).Clone()
+		itemProps.Merge(extra)
 		items.Set("properties", itemProps)
 		tasks.Set("items", items)
 	}
@@ -198,29 +198,29 @@ func buildDelegateDynamicSchemaOverrides(env *Env) *pyjson.Object {
 }
 
 // Exported buildDelegateDynamicSchemaOverrides
-func BuildDelegateDynamicSchemaOverrides(env *Env) *pyjson.Object {
+func BuildDelegateDynamicSchemaOverrides(env *Env) *jsonutil.Object {
 	return buildDelegateDynamicSchemaOverrides(env)
 }
 
 var liveControlParams = map[string]bool{"action": true, "subagent_id": true, "message": true}
 
 // Built delegate_task definition without live control for a one shot session whose children join in the call
-func OneshotDelegateFunction(function *pyjson.Object) *pyjson.Object {
-	description, _ := function.Vals["description"].(string)
+func OneshotDelegateFunction(function *jsonutil.Object) *jsonutil.Object {
+	description, _ := function.Value("description").(string)
 	for _, delivery := range []string{delegationDeliveryIndependent, delegationDeliveryJoined} {
 		description = strings.ReplaceAll(description, fmt.Sprintf(delegateDescriptionDelivery, delivery), oneshotDescriptionDelivery)
 	}
-	params := schemaObject(function.Vals["parameters"])
-	props := pyjson.NewObject()
-	src := schemaObject(params.Vals["properties"])
-	for _, k := range src.Keys {
+	params := schemaObject(function.Value("parameters"))
+	props := jsonutil.NewObject()
+	src := schemaObject(params.Value("properties"))
+	for _, k := range src.Keys() {
 		if !liveControlParams[k] {
-			props.Set(k, src.Vals[k])
+			props.Set(k, src.Value(k))
 		}
 	}
-	out := function.Copy()
+	out := function.Clone()
 	out.Set("description", description)
-	newParams := params.Copy()
+	newParams := params.Clone()
 	newParams.Set("properties", props)
 	out.Set("parameters", newParams)
 	return out
@@ -250,8 +250,8 @@ func stripModelHiddenTaskFields(tasks any) any {
 		switch v := t.(type) {
 		case map[string]any:
 			m = v
-		case *pyjson.Object:
-			m = v.Vals
+		case *jsonutil.Object:
+			m = v.Map()
 		}
 		return m != nil && slices.ContainsFunc(modelHiddenTaskFields, func(k string) bool { _, has := m[k]; return has })
 	})
@@ -260,11 +260,11 @@ func stripModelHiddenTaskFields(tasks any) any {
 	}
 	out := make([]any, len(list))
 	for i, t := range list {
-		if o, isObject := t.(*pyjson.Object); isObject {
-			cp := pyjson.NewObject()
-			for _, k := range o.Keys {
+		if o, isObject := t.(*jsonutil.Object); isObject {
+			cp := jsonutil.NewObject()
+			for _, k := range o.Keys() {
 				if !slices.Contains(modelHiddenTaskFields, k) {
-					cp.Set(k, o.Vals[k])
+					cp.Set(k, o.Value(k))
 				}
 			}
 			out[i] = cp

@@ -14,12 +14,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Agent with the attribute surface the make agent namespace carries, gates off unless the case sets them
@@ -912,8 +912,8 @@ func (s promptRowStore) GetConversationRoot(string) (string, error) {
 	return "", fmt.Errorf("AttributeError: 'SimpleNamespace' object has no attribute 'get_conversation_root'")
 }
 
-func (s promptRowStore) GetSession(context.Context, string) (*pyjson.Object, error) {
-	row := pyjson.NewObject()
+func (s promptRowStore) GetSession(context.Context, string) (*jsonutil.Object, error) {
+	row := jsonutil.NewObject()
 	row.Set("system_prompt", s.prompt)
 	return row, nil
 }

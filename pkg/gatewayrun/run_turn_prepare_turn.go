@@ -7,10 +7,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Inputs to the agent run assembled by the prepare phase
@@ -36,7 +36,7 @@ func autoSkillNames(auto any) []string {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, name := range v {
-			out = append(out, pyrepr.Str(name))
+			out = append(out, anyutil.String(name))
 		}
 		return out
 	}
@@ -94,7 +94,7 @@ func (r *GatewayRunner) hmwaPrepareTurn(ctx context.Context, event *gateway.Mess
 		text := event.Text
 		titleUserMessage = &text
 	}
-	if isNewSession && pyrepr.Truthy(event.AutoSkill) {
+	if isNewSession && anyutil.IsTrue(event.AutoSkill) {
 		r.hmwaAutoLoadSkills(ctx, event, autoSkillNames(event.AutoSkill), quickKey, sessionKey)
 	}
 	if err := r.hmwaAcquireTurnLease(ctx, quickKey, runGeneration, entry, sessionEnv); err != nil {
@@ -144,7 +144,7 @@ func (r *GatewayRunner) hmwaPrepareTurn(ctx context.Context, event *gateway.Mess
 	r.bindAdapterRunGeneration(adapter, sessionKey, &generation)
 	var owner string
 	if event.MessageID != nil && *event.MessageID != "" {
-		namespace, err := pyjson.Dumps([]any{string(source.Platform), optJSON(source.Profile), optJSON(source.ScopeID),
+		namespace, err := jsonutil.Encode([]any{string(source.Platform), optJSON(source.Profile), optJSON(source.ScopeID),
 			source.ChatID, optJSON(source.ThreadID), *event.MessageID})
 		if err != nil {
 			return nil, nil, sessionEnv, err

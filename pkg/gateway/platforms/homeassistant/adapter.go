@@ -15,11 +15,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 const (
@@ -57,7 +59,7 @@ func validateHAConfig(ctx context.Context, config *gateway.PlatformConfig) (bool
 	if config != nil {
 		token = config.Token
 	}
-	if !pyrepr.Truthy(token) {
+	if !anyutil.IsTrue(token) {
 		scoped, err := gateway.GetScopedSecret(ctx, "HASS_TOKEN", "", false)
 		if err != nil {
 			return false, err
@@ -71,7 +73,7 @@ func validateHAConfig(ctx context.Context, config *gateway.PlatformConfig) (bool
 	return strings.TrimSpace(text) != "", nil
 }
 
-// Domain of an entity id, empty without a dot, the TypeError of a value that is not a str
+// Domain of an entity id, empty without a dot, a TypeError for a value that is not text
 func domainOf(entityID any) (string, error) {
 	id, ok := entityID.(string)
 	if !ok {
@@ -86,7 +88,7 @@ func domainOf(entityID any) (string, error) {
 
 // Bearer and JSON content headers of a token
 func authHeaders(token any) map[string]string {
-	return map[string]string{"Authorization": "Bearer " + pyrepr.Str(token), "Content-Type": "application/json"}
+	return map[string]string{"Authorization": "Bearer " + anyutil.String(token), "Content-Type": "application/json"}
 }
 
 // Error text with the macOS Local Network Privacy remedy for a launchd gateway the LAN refused
@@ -115,7 +117,7 @@ type HomeAssistantAdapter struct {
 
 	mu            sync.Mutex
 	msgID         int64
-	ws            *pyaiohttpws.Conn
+	ws            *websocketutil.Conn
 	restSession   *http.Client
 	listenTask    *gateway.AdapterTask
 	lastEventTime keyedMap
@@ -150,7 +152,7 @@ func NewHomeAssistantAdapter(ctx context.Context, config *gateway.PlatformConfig
 		extra = map[string]any{}
 	}
 	var rawURL any = extra["url"]
-	if !pyrepr.Truthy(rawURL) {
+	if !anyutil.IsTrue(rawURL) {
 		scoped, err := gateway.GetScopedSecret(ctx, "HASS_URL", defaultHassURL, false)
 		if err != nil {
 			return nil, err
@@ -163,7 +165,7 @@ func NewHomeAssistantAdapter(ctx context.Context, config *gateway.PlatformConfig
 	}
 	a.hassURL = strings.TrimRight(urlText, "/")
 	a.hassToken = config.Token
-	if !pyrepr.Truthy(a.hassToken) {
+	if !anyutil.IsTrue(a.hassToken) {
 		scoped, err := gateway.GetScopedSecret(ctx, "HASS_TOKEN", "", false)
 		if err != nil {
 			return nil, err
@@ -189,7 +191,7 @@ func (a *HomeAssistantAdapter) nextID() int64 {
 
 // Validates the token and URL, opens the event subscription and starts the listener with its REST session
 func (a *HomeAssistantAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
-	if !pyrepr.Truthy(a.hassToken) {
+	if !anyutil.IsTrue(a.hassToken) {
 		pkgLog().Warn(fmt.Sprintf("[%s] No HASS_TOKEN configured", a.Name()))
 		return false, nil
 	}
@@ -231,19 +233,19 @@ func (a *HomeAssistantAdapter) Connect(ctx context.Context, isReconnect bool) (b
 // Opens the WebSocket, authenticates and subscribes to state_changed, false after a logged handshake failure
 func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
 	wsURL := wsBaseURL(a.hassURL) + "/api/websocket"
-	connectCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	connectCtx, handshake := withTLSTrace(connectCtx)
-	conn, err := pyaiohttpws.Connect(connectCtx, wsURL, pyaiohttpws.Options{
-		Heartbeat: 30 * time.Second, CloseTimeout: 30 * time.Second, TrustEnv: gateway.GatewayTrustEnv(ctx),
-		MaxMsgSize: 4 * 1024 * 1024})
+	opts := websocketutil.Options{PingInterval: 30 * time.Second, PingTimeout: 15 * time.Second, CloseTimeout: 30 * time.Second,
+		MaxMessageSize: 4 * 1024 * 1024}
+	if gateway.GatewayTrustEnv(ctx) {
+		opts.Proxy = httputil.Proxy
+	}
+	const connectLimit = 30 * time.Second
+	connectCtx, cancel := context.WithTimeout(ctx, connectLimit)
+	conn, err := websocketutil.Connect(connectCtx, wsURL, opts)
 	timedOut := errors.Is(connectCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
 	cancel()
 	if err != nil {
 		if timedOut {
-			return false, &timeoutError{}
-		}
-		if tlsErr := handshake.get(); tlsErr != nil && ctx.Err() == nil {
-			return false, sslConnectError(wsURL, tlsErr)
+			return false, &timeoutError{what: "websocket connect to " + wsURL, limit: connectLimit}
 		}
 		return false, err
 	}
@@ -258,10 +260,10 @@ func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !pyrepr.Equal(kind, "auth_required") {
-		return a.handshakeFailed(ctx, fmt.Sprintf("Expected auth_required, got: %s", pyrepr.Str(kind)))
+	if kind != "auth_required" {
+		return a.handshakeFailed(ctx, fmt.Sprintf("Expected auth_required, got: %s", anyutil.String(kind)))
 	}
-	if err := sendJSON(conn, pyjson.ObjectOf("type", "auth", "access_token", a.hassToken)); err != nil {
+	if err := sendJSON(conn, jsonutil.ObjectOf("type", "auth", "access_token", a.hassToken)); err != nil {
 		return false, err
 	}
 	if msg, err = receiveJSON(ctx, conn); err != nil {
@@ -270,10 +272,10 @@ func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
 	if kind, err = pyGet(msg, "type", nil); err != nil {
 		return false, err
 	}
-	if !pyrepr.Equal(kind, "auth_ok") {
-		return a.handshakeFailed(ctx, "Auth failed: "+pyrepr.Str(msg))
+	if kind != "auth_ok" {
+		return a.handshakeFailed(ctx, "Auth failed: "+anyutil.String(msg))
 	}
-	if err := sendJSON(conn, pyjson.ObjectOf("id", a.nextID(), "type", "subscribe_events", "event_type", "state_changed")); err != nil {
+	if err := sendJSON(conn, jsonutil.ObjectOf("id", a.nextID(), "type", "subscribe_events", "event_type", "state_changed")); err != nil {
 		return false, err
 	}
 	if msg, err = receiveJSON(ctx, conn); err != nil {
@@ -283,8 +285,8 @@ func (a *HomeAssistantAdapter) wsConnect(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if !pyrepr.Truthy(success) {
-		return a.handshakeFailed(ctx, "Failed to subscribe to events: "+pyrepr.Str(msg))
+	if !anyutil.IsTrue(success) {
+		return a.handshakeFailed(ctx, "Failed to subscribe to events: "+anyutil.String(msg))
 	}
 	return true, nil
 }
@@ -303,7 +305,7 @@ func (a *HomeAssistantAdapter) cleanupWS(ctx context.Context) {
 	a.ws = nil
 	a.mu.Unlock()
 	if conn != nil && !conn.Closed() {
-		conn.Close(ctx)
+		conn.CloseWith(ctx, websocketutil.CloseNormal, "")
 	}
 }
 
@@ -374,7 +376,7 @@ func (a *HomeAssistantAdapter) listenLoop(ctx context.Context) error {
 	return nil
 }
 
-// Handles event messages until the WebSocket closes or errors, skipping non text frames and invalid JSON
+// Handles event messages until the WebSocket closes or fails, skipping binary messages and invalid JSON
 func (a *HomeAssistantAdapter) readEvents(ctx context.Context) error {
 	a.mu.Lock()
 	conn := a.ws
@@ -385,17 +387,17 @@ func (a *HomeAssistantAdapter) readEvents(ctx context.Context) error {
 	for {
 		msg, err := conn.Receive(ctx)
 		if err != nil {
+			var closed *websocketutil.CloseError
+			if errors.As(err, &closed) {
+				return nil
+			}
 			return err
 		}
-		switch msg.Type {
-		case pyaiohttpws.Close, pyaiohttpws.Closing, pyaiohttpws.Closed, pyaiohttpws.Error:
-			return nil
-		case pyaiohttpws.Text:
-		default:
+		if msg.Type != websocketutil.Text {
 			continue
 		}
-		text, _ := msg.Data.(string)
-		data, err := pyjson.Loads(text)
+		text := string(msg.Data)
+		data, err := jsonutil.Decode(msg.Data)
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("Invalid JSON from HA WS: %s", textutil.First(text, 200)))
 			continue
@@ -404,10 +406,10 @@ func (a *HomeAssistantAdapter) readEvents(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if !pyrepr.Equal(kind, "event") {
+		if kind != "event" {
 			continue
 		}
-		event, err := pyGet(data, "event", pyjson.NewObject())
+		event, err := pyGet(data, "event", jsonutil.NewObject())
 		if err != nil {
 			return err
 		}
@@ -435,7 +437,7 @@ func (a *HomeAssistantAdapter) passesFilters(entityID any) (bool, error) {
 
 // Forwards one state_changed event as a channel message after the filters and the per entity cooldown
 func (a *HomeAssistantAdapter) handleHAEvent(ctx context.Context, event any) error {
-	eventData, err := pyGet(event, "data", pyjson.NewObject())
+	eventData, err := pyGet(event, "data", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
@@ -443,7 +445,7 @@ func (a *HomeAssistantAdapter) handleHAEvent(ctx context.Context, event any) err
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(entityID) {
+	if !anyutil.IsTrue(entityID) {
 		return nil
 	}
 	if passes, err := a.passesFilters(entityID); err != nil || !passes {
@@ -469,11 +471,11 @@ func (a *HomeAssistantAdapter) handleHAEvent(ctx context.Context, event any) err
 	if err != nil {
 		return err
 	}
-	oldState, err := pyGet(eventData, "old_state", pyjson.NewObject())
+	oldState, err := pyGet(eventData, "old_state", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
-	newState, err := pyGet(eventData, "new_state", pyjson.NewObject())
+	newState, err := pyGet(eventData, "new_state", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
@@ -484,7 +486,7 @@ func (a *HomeAssistantAdapter) handleHAEvent(ctx context.Context, event any) err
 	chatName, userID, userName := "Home Assistant Events", "homeassistant", "Home Assistant"
 	source := a.BuildSource(ctx, "ha_events", gateway.SourceFields{ChatName: &chatName, ChatType: "channel", UserID: &userID,
 		UserName: &userName})
-	messageID := fmt.Sprintf("ha_%s_%d", pyrepr.Str(entityID), int64(now))
+	messageID := fmt.Sprintf("ha_%s_%d", anyutil.String(entityID), int64(now))
 	messageEvent := gateway.NewMessageEvent(message)
 	messageEvent.MessageType, messageEvent.Source = gateway.MessageTypeText, source
 	messageEvent.MessageID = &messageID
@@ -494,11 +496,11 @@ func (a *HomeAssistantAdapter) handleHAEvent(ctx context.Context, event any) err
 
 // Human readable description of a state change, false when the new state is empty or unchanged
 func formatStateChange(entityID, oldState, newState any) (string, bool, error) {
-	if !pyrepr.Truthy(newState) {
+	if !anyutil.IsTrue(newState) {
 		return "", false, nil
 	}
 	var oldVal any = "unknown"
-	if pyrepr.Truthy(oldState) {
+	if anyutil.IsTrue(oldState) {
 		v, err := pyGet(oldState, "state", "unknown")
 		if err != nil {
 			return "", false, err
@@ -509,10 +511,10 @@ func formatStateChange(entityID, oldState, newState any) (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	if pyrepr.Equal(oldVal, newVal) {
+	if anyutil.Equal(oldVal, newVal) {
 		return "", false, nil
 	}
-	attrs, err := pyGet(newState, "attributes", pyjson.NewObject())
+	attrs, err := pyGet(newState, "attributes", jsonutil.NewObject())
 	if err != nil {
 		return "", false, err
 	}
@@ -533,18 +535,18 @@ func formatStateChange(entityID, oldState, newState any) (string, bool, error) {
 	target, _ := attr("temperature", "?")
 	unit, _ := attr("unit_of_measurement", "")
 	onOff := "off"
-	if pyrepr.Equal(newVal, "on") {
+	if newVal == "on" {
 		onOff = "on"
 	}
 	triggered := func(v any) string {
-		if pyrepr.Equal(v, "on") {
+		if v == "on" {
 			return "triggered"
 		}
 		return "cleared"
 	}
 	fields := map[string]any{"name": name, "entity_id": entityID, "old": oldVal, "new": newVal, "temp": temp,
 		"target": target, "unit": unit, "on_off": onOff, "new_trig": triggered(newVal), "old_trig": triggered(oldVal)}
-	text, err := pyrepr.FormatMap(template, fields)
+	text, err := templateutil.Format(template, fields)
 	if err != nil {
 		return "", false, err
 	}
@@ -554,7 +556,7 @@ func formatStateChange(entityID, oldState, newState any) (string, bool, error) {
 // Posts the reply as a persistent notification over REST so the WebSocket listener is never raced
 func (a *HomeAssistantAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	target := a.hassURL + "/api/services/persistent_notification/create"
-	payload := pyjson.ObjectOf("title", notificationTitle, "message", textutil.First(content, maxMessageLength))
+	payload := jsonutil.ObjectOf("title", notificationTitle, "message", textutil.First(content, maxMessageLength))
 	a.mu.Lock()
 	session := a.restSession
 	a.mu.Unlock()
@@ -576,11 +578,7 @@ func (a *HomeAssistantAdapter) Send(ctx context.Context, chatID, content, replyT
 	if resp.status < 300 {
 		return gateway.SendResult{Success: true, MessageID: strings.ReplaceAll(uuid.NewString(), "-", "")[:12]}, nil
 	}
-	text, err := resp.text()
-	if err != nil {
-		return gateway.SendResult{Success: false, Error: err.Error()}, nil
-	}
-	return gateway.SendResult{Success: false, Error: fmt.Sprintf("HTTP %d: %s", resp.status, text)}, nil
+	return gateway.SendResult{Success: false, Error: fmt.Sprintf("HTTP %d: %s", resp.status, resp.text())}, nil
 }
 
 // Chat info of the event channel with the instance URL

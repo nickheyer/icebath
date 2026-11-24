@@ -13,13 +13,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // CuratorArgs holds every flag and positional of the curator subcommands
@@ -82,7 +82,7 @@ func curatorCLIParseTS(ts any) (time.Time, bool) {
 	if !ok {
 		return time.Time{}, false
 	}
-	t, aware, err := pydatetime.ParseISOFormat(s)
+	t, aware, err := timeutil.ParseISOZone(s, time.UTC)
 	if err != nil {
 		return time.Time{}, false
 	}
@@ -94,7 +94,7 @@ func curatorCLIParseTS(ts any) (time.Time, bool) {
 
 // Relative age of a timestamp such as 5m ago, never for empty values
 func (c *CuratorCLI) fmtTS(ts any) string {
-	if !pyrepr.Truthy(ts) {
+	if !anyutil.IsTrue(ts) {
 		return "never"
 	}
 	dt, ok := curatorCLIParseTS(ts)
@@ -142,7 +142,7 @@ func curatorCLIInt(v any) int {
 	return curatorBigToInt(n)
 }
 
-func (c *CuratorCLI) printSkillRows(title string, rows []*pyjson.Object) {
+func (c *CuratorCLI) printSkillRows(title string, rows []*jsonutil.Object) {
 	c.printf("\n%s:\n", title)
 	for _, r := range rows {
 		c.printf("  %s  activity=%3d  use=%3d  view=%3d  patches=%3d  last_activity=%s\n", curatorPad(pyStr(curatorGetOr(r, "name", nil)), 40, false),
@@ -160,7 +160,7 @@ func (c *CuratorCLI) printUnmanagedSummary(ctx context.Context) {
 	}
 	legacy := 0
 	for _, r := range unmanaged {
-		if !pyrepr.Truthy(curatorGetOr(r, "has_provenance_key", nil)) {
+		if !anyutil.IsTrue(curatorGetOr(r, "has_provenance_key", nil)) {
 			legacy++
 		}
 	}
@@ -177,7 +177,7 @@ func (c *CuratorCLI) printCuratorConfig(ctx context.Context) error {
 	}
 	status := "DISABLED"
 	switch {
-	case pyrepr.Truthy(curatorGetOr(st, "paused", false)):
+	case anyutil.IsTrue(curatorGetOr(st, "paused", false)):
 		status = "PAUSED"
 	case CuratorIsEnabled(ctx):
 		status = "ENABLED"
@@ -186,7 +186,7 @@ func (c *CuratorCLI) printCuratorConfig(ctx context.Context) error {
 	c.printf("  runs:           %s\n", pyStr(curatorGetOr(st, "run_count", 0)))
 	c.printf("  last run:       %s\n", c.fmtTS(curatorGetOr(st, "last_run_at", nil)))
 	summary := "(none)"
-	if v := curatorGetOr(st, "last_run_summary", nil); pyrepr.Truthy(v) {
+	if v := curatorGetOr(st, "last_run_summary", nil); anyutil.IsTrue(v) {
 		summary = pyStr(v)
 	}
 	lines := []string{summary}
@@ -200,7 +200,7 @@ func (c *CuratorCLI) printCuratorConfig(ctx context.Context) error {
 	for _, l := range lines[1:] {
 		c.printf("                  %s\n", l)
 	}
-	if report := curatorGetOr(st, "last_report_path", nil); pyrepr.Truthy(report) {
+	if report := curatorGetOr(st, "last_report_path", nil); anyutil.IsTrue(report) {
 		missing := " (missing)"
 		if curatorExists(pyStr(report)) {
 			missing = ""
@@ -223,9 +223,9 @@ func (c *CuratorCLI) printCuratorConfig(ctx context.Context) error {
 	return nil
 }
 
-func curatorSortKeyStr(r *pyjson.Object, keys ...string) string {
+func curatorSortKeyStr(r *jsonutil.Object, keys ...string) string {
 	for _, k := range keys {
-		if v := curatorGetOr(r, k, nil); pyrepr.Truthy(v) {
+		if v := curatorGetOr(r, k, nil); anyutil.IsTrue(v) {
 			return pyStr(v)
 		}
 	}
@@ -253,13 +253,13 @@ func (c *CuratorCLI) cmdStatus(ctx context.Context, _ CuratorArgs) (int, error) 
 		c.printUnmanagedSummary(ctx)
 		return 0, nil
 	}
-	byState := map[string][]*pyjson.Object{}
+	byState := map[string][]*jsonutil.Object{}
 	var pinned []string
 	agent, bundled := 0, 0
 	for _, r := range rows {
 		state := pyStr(curatorGetOr(r, "state", "active"))
 		byState[state] = append(byState[state], r)
-		if pyrepr.Truthy(curatorGetOr(r, "pinned", nil)) {
+		if anyutil.IsTrue(curatorGetOr(r, "pinned", nil)) {
 			pinned = append(pinned, pyStr(curatorGetOr(r, "name", nil)))
 		}
 		switch curatorGetOr(r, "provenance", "agent") {
@@ -281,25 +281,25 @@ func (c *CuratorCLI) cmdStatus(ctx context.Context, _ CuratorArgs) (int, error) 
 	if len(active) == 0 {
 		return 0, nil
 	}
-	recency := append([]*pyjson.Object{}, active...)
+	recency := append([]*jsonutil.Object{}, active...)
 	sort.SliceStable(recency, func(i, j int) bool {
 		return curatorSortKeyStr(recency[i], "last_activity_at", "created_at") < curatorSortKeyStr(recency[j], "last_activity_at", "created_at")
 	})
 	c.printSkillRows("least recently active (top 5)", recency[:min(5, len(recency))])
-	freqLess := func(a, b *pyjson.Object) bool {
+	freqLess := func(a, b *jsonutil.Object) bool {
 		fa, fb := curatorCount(a, "activity_count"), curatorCount(b, "activity_count")
 		if fa != fb {
 			return fa < fb
 		}
 		return curatorSortKeyStr(a, "last_activity_at") < curatorSortKeyStr(b, "last_activity_at")
 	}
-	most := append([]*pyjson.Object{}, active...)
+	most := append([]*jsonutil.Object{}, active...)
 	sort.SliceStable(most, func(i, j int) bool { return freqLess(most[j], most[i]) })
 	most = most[:min(5, len(most))]
 	if curatorCount(most[0], "activity_count") > 0 {
 		c.printSkillRows("most active (top 5)", most)
 	}
-	least := append([]*pyjson.Object{}, active...)
+	least := append([]*jsonutil.Object{}, active...)
 	sort.SliceStable(least, func(i, j int) bool { return freqLess(least[i], least[j]) })
 	c.printSkillRows("least active (top 5)", least[:min(5, len(least))])
 	return 0, nil
@@ -328,7 +328,7 @@ func (c *CuratorCLI) cmdRun(ctx context.Context, a CuratorArgs) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	auto, _ := curatorGetOr(res, "auto_transitions", nil).(*pyjson.Object)
+	auto, _ := curatorGetOr(res, "auto_transitions", nil).(*jsonutil.Object)
 	if auto != nil && auto.Len() > 0 && a.DryRun {
 		c.printf("auto (preview): %d candidate skill(s) — no transitions applied in dry-run\n", curatorCount(auto, "checked"))
 	} else if auto != nil && auto.Len() > 0 {
@@ -455,15 +455,15 @@ func (c *CuratorCLI) cmdListUnmanaged(ctx context.Context, _ CuratorArgs) (int, 
 		return 0, nil
 	}
 	c.printf("unmanaged skills (%d):\n", len(rows))
-	sorted := append([]*pyjson.Object{}, rows...)
+	sorted := append([]*jsonutil.Object{}, rows...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		return pyStr(curatorGetOr(sorted[i], "name", nil)) < pyStr(curatorGetOr(sorted[j], "name", nil))
 	})
 	for _, r := range sorted {
 		why := "no marker"
-		if pyrepr.Truthy(curatorGetOr(r, "has_provenance_key", nil)) {
+		if anyutil.IsTrue(curatorGetOr(r, "has_provenance_key", nil)) {
 			by := curatorGetOr(r, "created_by", nil)
-			if !pyrepr.Truthy(by) {
+			if !anyutil.IsTrue(by) {
 				by = "null"
 			}
 			why = "created_by:" + pyStr(by)
@@ -554,7 +554,7 @@ func (c *CuratorCLI) cmdArchive(ctx context.Context, a CuratorArgs) (int, error)
 	if err != nil {
 		return 1, err
 	}
-	if pyrepr.Truthy(curatorGetOr(rec, "pinned", nil)) {
+	if anyutil.IsTrue(curatorGetOr(rec, "pinned", nil)) {
 		c.printf("curator: '%s' is pinned — unpin first with `icebath curator unpin %s`\n", a.Skill, a.Skill)
 		return 1, nil
 	}
@@ -562,12 +562,12 @@ func (c *CuratorCLI) cmdArchive(ctx context.Context, a CuratorArgs) (int, error)
 }
 
 // Days since last activity or creation, false when neither parses
-func (c *CuratorCLI) idleDays(r *pyjson.Object) (int, bool) {
+func (c *CuratorCLI) idleDays(r *jsonutil.Object) (int, bool) {
 	ts := curatorGetOr(r, "last_activity_at", nil)
-	if !pyrepr.Truthy(ts) {
+	if !anyutil.IsTrue(ts) {
 		ts = curatorGetOr(r, "created_at", nil)
 	}
-	if !pyrepr.Truthy(ts) {
+	if !anyutil.IsTrue(ts) {
 		return 0, false
 	}
 	dt, ok := curatorCLIParseTS(pyStr(ts))
@@ -597,7 +597,7 @@ func (c *CuratorCLI) cmdPrune(ctx context.Context, a CuratorArgs) (int, error) {
 	}
 	var cands []cand
 	for _, r := range rows {
-		if pyrepr.Truthy(curatorGetOr(r, "pinned", nil)) || curatorGetOr(r, "state", nil) == skills.StateArchived {
+		if anyutil.IsTrue(curatorGetOr(r, "pinned", nil)) || curatorGetOr(r, "state", nil) == skills.StateArchived {
 			continue
 		}
 		if idle, ok := c.idleDays(r); ok && idle >= days {
@@ -694,9 +694,9 @@ func (c *CuratorCLI) cmdLedger(ctx context.Context, a CuratorArgs) (int, error) 
 	for _, r := range rows {
 		evidence := curatorGetOr(r, "evidence", nil)
 		extra := ""
-		if v := curatorGetOr(evidence, "absorbed_into", nil); pyrepr.Truthy(v) {
+		if v := curatorGetOr(evidence, "absorbed_into", nil); anyutil.IsTrue(v) {
 			extra = fmt.Sprintf("  → absorbed into '%s'", pyStr(v))
-		} else if v := curatorGetOr(evidence, "rollback_target", nil); pyrepr.Truthy(v) {
+		} else if v := curatorGetOr(evidence, "rollback_target", nil); anyutil.IsTrue(v) {
 			extra = "  → rollback of " + pyStr(v)
 		}
 		c.printf("%s %s %s %s %s%s\n", curatorPad(pyStr(curatorGetOr(r, "id", "?")), 14, false), curatorPad(c.fmtTS(curatorGetOr(r, "ts", nil)), 12, false),
@@ -708,7 +708,7 @@ func (c *CuratorCLI) cmdLedger(ctx context.Context, a CuratorArgs) (int, error) 
 }
 
 // Archive timestamp of an archived skill dir, the newer of its record archived_at and the dir mtime
-func curatorArchivedTS(usage *pyjson.Object, p string) (float64, error) {
+func curatorArchivedTS(usage *jsonutil.Object, p string) (float64, error) {
 	st, err := os.Stat(p)
 	if err != nil {
 		return 0, err
@@ -719,7 +719,7 @@ func curatorArchivedTS(usage *pyjson.Object, p string) (float64, error) {
 		return mtime, nil
 	}
 	raw := curatorGetOr(rec, "archived_at", nil)
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return mtime, nil
 	}
 	at, ok := curatorCLIParseTS(pyStr(raw))
@@ -788,7 +788,7 @@ func (c *CuratorCLI) cmdPurge(ctx context.Context, a CuratorArgs) (int, error) {
 	purged := 0
 	for _, p := range cands {
 		name := filepath.Base(p)
-		var before []*pyjson.Object
+		var before []*jsonutil.Object
 		for _, item := range scope.LedgerCaptureBefore(ctx, p, true, name) {
 			before = append(before, curatorEntry("path", item["path"], "sha256", item["sha256"]))
 		}
@@ -831,7 +831,7 @@ func (c *CuratorCLI) rollbackLedgerEntry(ctx context.Context, a CuratorArgs) (in
 	for _, key := range []string{"before", "after"} {
 		list, _ := curatorGetOr(entry, key, nil).([]any)
 		for _, item := range list {
-			touched[pyrepr.Repr(curatorGetOr(item, "path", nil))] = true
+			touched[anyutil.Quote(curatorGetOr(item, "path", nil))] = true
 		}
 	}
 	c.printf("  files:  %d\n", len(touched))
@@ -885,16 +885,16 @@ func (c *CuratorCLI) cmdRollback(ctx context.Context, a CuratorArgs) (int, error
 		return 1, err
 	}
 	c.printf("Rollback target: %s\n", filepath.Base(target))
-	if pyrepr.Truthy(manifest) {
+	if anyutil.IsTrue(manifest) {
 		c.printf("  reason:      %s\n", pyStr(curatorGetOr(manifest, "reason", "?")))
 		c.printf("  created_at:  %s\n", pyStr(curatorGetOr(manifest, "created_at", "?")))
 		c.printf("  skill files: %s\n", pyStr(curatorGetOr(manifest, "skill_files", "?")))
 		cron := curatorGetOr(manifest, "cron_jobs", nil)
-		if !pyrepr.Truthy(cron) {
-			cron = pyjson.NewObject()
+		if !anyutil.IsTrue(cron) {
+			cron = jsonutil.NewObject()
 		}
 		if curatorIsDict(cron) {
-			if pyrepr.Truthy(curatorGetOr(cron, "backed_up", nil)) {
+			if anyutil.IsTrue(curatorGetOr(cron, "backed_up", nil)) {
 				c.printf("  cron jobs:   %s (will be restored for skill-link fields only)\n", pyStr(curatorGetOr(cron, "jobs_count", 0)))
 			} else {
 				c.printf("  cron jobs:   not in snapshot (%s)\n", pyStr(curatorGetOr(cron, "reason", "not captured")))
@@ -930,7 +930,7 @@ func (c *CuratorCLI) cmdUsage(ctx context.Context, a CuratorArgs) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	rows := []*pyjson.Object{}
+	rows := []*jsonutil.Object{}
 	for _, r := range all {
 		if a.Provenance == "" || curatorGetOr(r, "provenance", nil) == a.Provenance {
 			rows = append(rows, r)
@@ -951,7 +951,7 @@ func (c *CuratorCLI) cmdUsage(ctx context.Context, a CuratorArgs) (int, error) {
 		})
 	}
 	if a.JSON {
-		s, err := pyjson.Dumps(curatorObjList(rows), pyjson.Indent(2), pyjson.EnsureASCII(false))
+		s, err := jsonutil.Encode(curatorObjList(rows), jsonutil.Indent(2))
 		if err != nil {
 			return 1, err
 		}

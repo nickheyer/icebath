@@ -23,8 +23,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Extra wait past the inner poll deadline before the outer backstop fires
@@ -252,36 +254,36 @@ func SandboxDir(env *Env) (string, error) {
 }
 
 // Snapshot store read as the dict json.loads gives, missing or damaged files count as empty
-func envLoadJSONStore(path string) *pyjson.Object {
+func envLoadJSONStore(path string) *jsonutil.Object {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	text, err := pystr.DecodeUTF8Sig(data)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	parsed, err := pyjson.Loads(text)
-	out, ok := parsed.(*pyjson.Object)
+	parsed, err := jsonutil.Decode(text)
+	out, ok := parsed.(*jsonutil.Object)
 	if err != nil || !ok || out == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return out
 }
 
 // Writes the store as two space indented json.dumps text through an atomic rename
-func envSaveJSONStore(ctx context.Context, path string, data *pyjson.Object) error {
+func envSaveJSONStore(ctx context.Context, path string, data *jsonutil.Object) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	return config.AtomicJSONWriteWith(ctx, path, data, pyjson.Indent(2))
+	return config.AtomicJSONWriteWith(ctx, path, data, jsonutil.Indent(2))
 }
 
 // Seconds to wait for the snapshot store lock
 const jsonStoreLockTimeout = 10 * time.Second
 
 // Read modify write of a JSON store under its cross process lock, unlocked when the lock is unusable
-func envUpdateJSONStore(ctx context.Context, path string, update func(*pyjson.Object)) error {
+func envUpdateJSONStore(ctx context.Context, path string, update func(*jsonutil.Object)) error {
 	lockPath := path + ".lock"
 	os.MkdirAll(filepath.Dir(lockPath), 0o755)
 	unlock, err := lockStoreFile(lockPath, jsonStoreLockTimeout)
@@ -291,9 +293,9 @@ func envUpdateJSONStore(ctx context.Context, path string, update func(*pyjson.Ob
 		defer unlock()
 	}
 	data := envLoadJSONStore(path)
-	before := data.Copy()
+	before := data.Clone()
 	update(data)
-	if pyjson.Equal(data, before) {
+	if anyutil.Equal(data, before) {
 		return nil
 	}
 	return envSaveJSONStore(ctx, path, data)
@@ -748,7 +750,7 @@ type ExecProcess struct {
 	pgidStart string
 }
 
-// Writes data encoded with surrogateescape to the child stdin on a goroutine, recording an encode failure, then closes it
+// Writes data to the child stdin on a goroutine, recording a missing pipe, then closes it
 func pipeStdin(p *ExecProcess, w *os.File, data string) {
 	p.stdinDone = make(chan struct{})
 	go func() {
@@ -758,12 +760,7 @@ func pipeStdin(p *ExecProcess, w *os.File, data string) {
 			return
 		}
 		defer w.Close()
-		raw, err := pystr.SurrogateEscapeEncode(data)
-		if err != nil {
-			p.stdinErr = err.Error()
-			return
-		}
-		w.Write(raw)
+		w.WriteString(data)
 	}()
 }
 

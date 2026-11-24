@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -35,7 +35,7 @@ var runWhich = func(name string) (string, int, error) {
 	if runtime.GOOS == "windows" {
 		tool = "where"
 	}
-	res, err := pysubprocess.RunWith(context.Background(), []string{tool, name}, pysubprocess.Options{Timeout: 5 * time.Second})
+	res, err := executil.Run(context.Background(), []string{tool, name}, executil.Options{Timeout: 5 * time.Second})
 	if err != nil {
 		return "", -1, err
 	}
@@ -44,7 +44,7 @@ var runWhich = func(name string) (string, int, error) {
 
 // Reports whether a which or where launch failed the way subprocess.run raises FileNotFoundError or TimeoutExpired
 func whichSkippable(err error) bool {
-	var timeout *pysubprocess.TimeoutExpired
+	var timeout *executil.TimeoutError
 	return errors.As(err, &timeout) || errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist)
 }
 
@@ -92,7 +92,7 @@ func FindOurWrapper(alias string) (string, error) {
 }
 
 // First n characters of a utf-8-sig text file read the way a text mode open reads them
-func readTextHead(path string, n int) (string, error) { return pyfs.ReadTextChars(path, n, true) }
+func readTextHead(path string, n int) (string, error) { return fsutil.ReadText(path, n) }
 
 // Reports whether path reads as a generated wrapper
 func isOurWrapper(path string) bool {

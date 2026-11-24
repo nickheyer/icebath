@@ -1,6 +1,7 @@
 package botdesktop
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -11,18 +12,18 @@ import (
 	"path/filepath"
 	goruntime "runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -153,12 +154,12 @@ type DesktopStatus struct {
 	MemoryAvailableMB *int
 	MemoryLimitMB     *int
 	Placement         string
-	ImageSwitch       *pyjson.Object
+	ImageSwitch       *jsonutil.Object
 }
 
 // Field dict in dataclass order
-func (s DesktopStatus) AsDict() *pyjson.Object {
-	o := pyjson.NewObject()
+func (s DesktopStatus) AsDict() *jsonutil.Object {
+	o := jsonutil.NewObject()
 	opt := func(k string, v any) {
 		switch t := v.(type) {
 		case *int:
@@ -173,7 +174,7 @@ func (s DesktopStatus) AsDict() *pyjson.Object {
 			} else {
 				o.Set(k, *t)
 			}
-		case *pyjson.Object:
+		case *jsonutil.Object:
 			if t == nil {
 				o.Set(k, nil)
 			} else {
@@ -245,12 +246,11 @@ func launcherIdentity(env *tools.Env) *launcherID {
 	if !isDigits(pidS) || bornS == "" {
 		return nil
 	}
-	n, ok := pyint.Parse(pidS)
-	born, err := pyint.ParseFloat(bornS)
-	if !ok || err != nil || !n.IsInt64() {
+	pid, perr := strconv.Atoi(pidS)
+	born, err := strconv.ParseFloat(strings.TrimSpace(bornS), 64)
+	if perr != nil || err != nil {
 		return nil
 	}
-	pid := int(n.Int64())
 	actual, ok := createTime(pid)
 	if ok && math.Abs(actual-born) < 0.01 && pidAlive(pid) {
 		return &launcherID{pid, born}
@@ -275,11 +275,11 @@ func recordedLauncherPid(env *tools.Env) (int, bool) {
 	if !isDigits(pidS) || bornS == "" {
 		return 0, false
 	}
-	n, ok := pyint.Parse(pidS)
-	if !ok || !n.IsInt64() {
+	pid, err := strconv.Atoi(pidS)
+	if err != nil {
 		return 0, false
 	}
-	return int(n.Int64()), true
+	return pid, true
 }
 
 var (
@@ -293,11 +293,11 @@ func xLockPid(num int) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	n, ok := pyint.Parse(text)
-	if !ok || !n.IsInt64() {
+	pid, err := strconv.Atoi(text)
+	if err != nil {
 		return 0, false
 	}
-	return int(n.Int64()), true
+	return pid, true
 }
 
 // True while the abstract X11 socket of the display is bound
@@ -366,8 +366,8 @@ func reapOrphanedServer(env *tools.Env, sd string) bool {
 	recorded, _ := readState(filepath.Join(sd, "display"))
 	pid, havePid := 0, false
 	if isDigits(recorded) {
-		if n, ok := pyint.Parse(recorded); ok && n.IsInt64() {
-			pid, havePid = xLockPid(int(n.Int64()))
+		if num, err := strconv.Atoi(recorded); err == nil {
+			pid, havePid = xLockPid(num)
 		}
 	}
 	if !havePid || !pidAlive(pid) {
@@ -443,7 +443,7 @@ func killGroupThenWait(pgid *int, pid int, grace float64) {
 		return ok, ok
 	}
 	signal(syscall.SIGTERM)
-	if pydeadline.PollUntil(gone, time.Duration(grace*float64(time.Second)), 50*time.Millisecond) {
+	if syncutil.PollUntil(context.Background(), time.Duration(grace*float64(time.Second)), 50*time.Millisecond, gone) {
 		return
 	}
 	signal(syscall.SIGKILL)
@@ -465,8 +465,8 @@ var allocLock = func() string {
 func pickDisplay(env *tools.Env) (int, error) {
 	recorded, _ := readState(filepath.Join(StateDir(env), "display"))
 	if isDigits(recorded) {
-		if n, ok := pyint.Parse(recorded); ok && n.IsInt64() && !displayInUse(int(n.Int64())) {
-			return int(n.Int64()), nil
+		if num, err := strconv.Atoi(recorded); err == nil && !displayInUse(num) {
+			return num, nil
 		}
 	}
 	for num := displayMin; num <= displayMax; num++ {
@@ -581,7 +581,7 @@ func shouldAutoStart(env *tools.Env, environ map[string]string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(cfg["auto_start"]), nil
+	return anyutil.IsTrue(cfg["auto_start"]), nil
 }
 
 // Stamps the screen activity file
@@ -617,7 +617,7 @@ func IdleStopSeconds(env *tools.Env) (float64, error) {
 	if v, ok := cfg["idle_stop_minutes"]; ok {
 		raw = v
 	}
-	minutes, err := pyint.Float(raw)
+	minutes, err := anyutil.ToFloat(raw)
 	if err != nil {
 		minutes = DefaultIdleStopMinutes
 	}
@@ -785,8 +785,8 @@ func Geometry(env *tools.Env) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if raw := cfg["geometry"]; pyrepr.Truthy(raw) {
-		return pyrepr.Str(raw), nil
+	if raw := cfg["geometry"]; anyutil.IsTrue(raw) {
+		return anyutil.String(raw), nil
 	}
 	return "1440x900", nil
 }
@@ -873,7 +873,7 @@ func sandboxStatus(env *tools.Env, profile string, where Placement) (DesktopStat
 	}
 	running := published["DISPLAY"] != ""
 	var blocker *string
-	var imageSwitch *pyjson.Object
+	var imageSwitch *jsonutil.Object
 	if len(missing) > 0 {
 		advice := PluginImageAdvice(where.Backend)
 		if advice == "" {
@@ -889,7 +889,7 @@ func sandboxStatus(env *tools.Env, profile string, where Placement) (DesktopStat
 				return DesktopStatus{}, err
 			}
 			if sw != nil {
-				imageSwitch = pyjson.NewObject()
+				imageSwitch = jsonutil.NewObject()
 				imageSwitch.Set("current_image", sw.CurrentImage)
 				imageSwitch.Set("target_image", sw.TargetImage)
 				imageSwitch.Set("containers", len(sw.Containers))
@@ -1061,7 +1061,7 @@ func spawnAndWait(env *tools.Env, sd string, waitSeconds float64) (DesktopStatus
 	zero := 0.0
 	quoted := []string{}
 	for _, a := range idleCommand() {
-		quoted = append(quoted, pyshlex.Quote(a))
+		quoted = append(quoted, shellutil.Quote(a))
 	}
 	for k, v := range map[string]string{
 		"ICEBATH_BD_PROFILE":          ProfileName(env),
@@ -1112,7 +1112,7 @@ func spawnAndWait(env *tools.Env, sd string, waitSeconds float64) (DesktopStatus
 	born, ok := createTime(pid)
 	bornS := "0"
 	if ok {
-		bornS = pyrepr.Float(born)
+		bornS = strconv.FormatFloat(born, 'f', -1, 64)
 	}
 	if err := os.WriteFile(filepath.Join(sd, "launcher.pid"), []byte(fmt.Sprintf("%d %s", pid, bornS)), 0o666); err != nil {
 		return DesktopStatus{}, err

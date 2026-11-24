@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type auxCallFakeClient struct {
@@ -418,7 +418,7 @@ func auxTaskExtraBodyCase(t *testing.T, async bool, taskExtra, explicit, want ma
 		"messages": []any{map[string]any{"role": "user", "content": "hello"}}, "extra_body": explicit}); err != nil {
 		t.Fatal(err)
 	}
-	body, _ := pyjson.Plain(client.sent[len(client.sent)-1]["extra_body"]).(map[string]any)
+	body, _ := jsonutil.Plain(client.sent[len(client.sent)-1]["extra_body"]).(map[string]any)
 	for k, v := range want {
 		if fmt.Sprint(body[k]) != fmt.Sprint(v) {
 			t.Fatalf("extra_body %v, want %s=%v", body, k, v)

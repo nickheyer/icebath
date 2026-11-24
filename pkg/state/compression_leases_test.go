@@ -211,7 +211,7 @@ func TestTurnLeaseAcquisitionSweepsLongExpiredRowsOfOtherConversations(t *testin
 	}
 	var got []string
 	for _, r := range rows {
-		got = append(got, pyStr(r.Vals["conversation_id"])+"="+pyStr(r.Vals["holder"]))
+		got = append(got, pyStr(r.Value("conversation_id"))+"="+pyStr(r.Value("holder")))
 	}
 	want := []string{"fresh=" + leaseHolder("next"), "recent=" + leaseHolder("starved"), "within-grace=pid=1:turn=suspended"}
 	if strings.Join(got, ",") != strings.Join(want, ",") {

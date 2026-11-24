@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
@@ -24,9 +25,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	xunicode "golang.org/x/text/encoding/unicode"
 	"golang.org/x/text/encoding/unicode/utf32"
 )
@@ -320,7 +321,7 @@ func rowURLs(rows []any) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		urls = append(urls, pyrepr.Str(value))
+		urls = append(urls, anyutil.String(value))
 	}
 	return urls, nil
 }
@@ -819,7 +820,7 @@ func LlamaAppBucketVersions() []string {
 	if err != nil {
 		return []string{}
 	}
-	if !pyrepr.Truthy(data) {
+	if !anyutil.IsTrue(data) {
 		return []string{}
 	}
 	entries, err := jsonIter(data)
@@ -856,7 +857,7 @@ func githubReleasePages(repo string, pages int, each func(release any) (bool, er
 		if err != nil {
 			return err
 		}
-		if !pyrepr.Truthy(data) {
+		if !anyutil.IsTrue(data) {
 			return nil
 		}
 		releases, err := jsonIter(data)
@@ -886,7 +887,7 @@ func unpublished(release any) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(draft) || pyrepr.Truthy(pre), nil
+	return anyutil.IsTrue(draft) || anyutil.IsTrue(pre), nil
 }
 
 // Newest first version shaped release tags of a GitHub repo, a prefix stripped and drafts and prereleases skipped
@@ -1018,7 +1019,7 @@ func btbn() (btbnBuilds, error) {
 		if err != nil {
 			return builds, err
 		}
-		if !pyrepr.Truthy(data) {
+		if !anyutil.IsTrue(data) {
 			break
 		}
 		items, err := jsonIter(data)
@@ -1296,7 +1297,7 @@ func syncVenvStep(ctx context.Context, out io.Writer) (bool, error) {
 
 // Splices new bootstrap pins into a checkout's installers, a lock outside a checkout feeding none
 func regenerateBootstrapPins(ctx context.Context, lockfile *Lockfile) (int, error) {
-	script := pypath.Join(pypath.Join(pypath.Dirname(pypath.Dirname(lockfile.Path)), "scripts"), "gen-bootstrap-pins.py")
+	script := pathutil.Join(pathutil.Join(filepath.Dir(filepath.Dir(lockfile.Path)), "scripts"), "gen-bootstrap-pins.py")
 	if !isRegularFile(script) {
 		return 0, nil
 	}
@@ -1438,7 +1439,7 @@ func refreshNPMLock(ctx context.Context, out io.Writer) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	env := NpmEnv(pypath.Join(writable, ".npm-cache"), EnvFor([]string{"npm"}, nil))
+	env := NpmEnv(pathutil.Join(writable, ".npm-cache"), EnvFor([]string{"npm"}, nil))
 	code, tail, err := updateRunLive(ctx, out, []string{npm.Binary, "update"}, RepoRoot(), env, 3600*time.Second)
 	if err != nil {
 		return 0, err
@@ -1677,12 +1678,12 @@ func pinArtifacts(p Package, d *Resolved, current map[string]any) (map[string]an
 			var pinned []any
 			for _, u := range urls {
 				var digest any = known[u]
-				if !pyrepr.Truthy(digest) {
+				if !anyutil.IsTrue(digest) {
 					if h, ok := hashes[u]; ok && h != "" {
 						digest = h
 					}
 				}
-				if !pyrepr.Truthy(digest) {
+				if !anyutil.IsTrue(digest) {
 					sha, err := p.KnownSHA256(tv.Version, u)
 					if err != nil {
 						return nil, err

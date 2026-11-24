@@ -9,12 +9,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const recoverSummary = state.SummaryPrefix + "\nearlier turns summarized"
@@ -22,8 +22,8 @@ const recoverSummary = state.SummaryPrefix + "\nearlier turns summarized"
 // Stand in runner with a real session store, a live adapter map and no cached agent
 type recoverTestRunner struct {
 	store    *SessionStore
-	adapters *pydict.Dict[Platform, PlatformAdapter]
-	profiles *pydict.Dict[string, *pydict.Dict[Platform, PlatformAdapter]]
+	adapters *orderedutil.Map[Platform, PlatformAdapter]
+	profiles *orderedutil.Map[string, *orderedutil.Map[Platform, PlatformAdapter]]
 	registry *SessionAuthorities
 	launch   *SessionAuthority
 	draining bool
@@ -31,31 +31,31 @@ type recoverTestRunner struct {
 	restored func(entry *SessionEntry) *SessionSource
 }
 
-func (r *recoverTestRunner) SessionRuntimeDescriptor() map[string]any          { return nil }
-func (r *recoverTestRunner) Draining() bool                                    { return r.draining }
-func (r *recoverTestRunner) Running() bool                                     { return true }
-func (r *recoverTestRunner) SessionStore() *SessionStore                       { return r.store }
-func (r *recoverTestRunner) MultiplexProfiles() bool                           { return false }
-func (r *recoverTestRunner) SessionAuthorities() *SessionAuthorities           { return r.registry }
-func (r *recoverTestRunner) SessionAuthority() *SessionAuthority               { return r.launch }
-func (r *recoverTestRunner) EvictCachedAgent(route string)                     { r.evicted = append(r.evicted, route) }
-func (r *recoverTestRunner) Adapters() *pydict.Dict[Platform, PlatformAdapter] { return r.adapters }
+func (r *recoverTestRunner) SessionRuntimeDescriptor() map[string]any              { return nil }
+func (r *recoverTestRunner) Draining() bool                                        { return r.draining }
+func (r *recoverTestRunner) Running() bool                                         { return true }
+func (r *recoverTestRunner) SessionStore() *SessionStore                           { return r.store }
+func (r *recoverTestRunner) MultiplexProfiles() bool                               { return false }
+func (r *recoverTestRunner) SessionAuthorities() *SessionAuthorities               { return r.registry }
+func (r *recoverTestRunner) SessionAuthority() *SessionAuthority                   { return r.launch }
+func (r *recoverTestRunner) EvictCachedAgent(route string)                         { r.evicted = append(r.evicted, route) }
+func (r *recoverTestRunner) Adapters() *orderedutil.Map[Platform, PlatformAdapter] { return r.adapters }
 func (r *recoverTestRunner) AdapterForSource(ctx context.Context, source *SessionSource) (PlatformAdapter, error) {
 	adapter, _ := r.adapters.Get(source.Platform)
 	return adapter, nil
 }
-func (r *recoverTestRunner) AdaptersForProfile(profile *string) *pydict.Dict[Platform, PlatformAdapter] {
+func (r *recoverTestRunner) AdaptersForProfile(profile *string) *orderedutil.Map[Platform, PlatformAdapter] {
 	if profile == nil {
 		return r.adapters
 	}
 	adapters, _ := r.profiles.Get(*profile)
 	return adapters
 }
-func (r *recoverTestRunner) ProfileAdapterMap(name string) *pydict.Dict[Platform, PlatformAdapter] {
+func (r *recoverTestRunner) ProfileAdapterMap(name string) *orderedutil.Map[Platform, PlatformAdapter] {
 	if adapters, _ := r.profiles.Get(name); adapters != nil {
 		return adapters
 	}
-	adapters := pydict.New[Platform, PlatformAdapter]()
+	adapters := orderedutil.NewMap[Platform, PlatformAdapter]()
 	r.profiles.Set(name, adapters)
 	return adapters
 }
@@ -76,12 +76,12 @@ func newRecoverAuthority(t *testing.T) (context.Context, *SessionAuthority, *rec
 	}
 	store := NewSessionStore(ctx, filepath.Join(t.TempDir(), "sessions"), DefaultGatewayConfig(ctx), nil)
 	store.PinDB(db)
-	key, err := pypath.Resolve(db.Path())
+	key, err := pathutil.Resolve(db.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.bindLocalAuthorityEpoch(key, epoch, true)
-	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
+	runner := &recoverTestRunner{store: store, adapters: orderedutil.NewMap[Platform, PlatformAdapter](), profiles: orderedutil.NewMap[string, *orderedutil.Map[Platform, PlatformAdapter]]()}
 	a := NewSessionAuthority(runner, "fixture", "first", db, epoch)
 	runner.launch = a
 	return ctx, a, runner
@@ -113,11 +113,11 @@ func installPrefillLoaders(t *testing.T) {
 		if err != nil {
 			return []any{}
 		}
-		decoded, err := pyjson.Loads(string(raw))
+		decoded, err := jsonutil.Decode(string(raw))
 		if err != nil {
 			return []any{}
 		}
-		list, _ := pyjson.Plain(decoded).([]any)
+		list, _ := jsonutil.Plain(decoded).([]any)
 		return list
 	}
 	t.Cleanup(func() { ResolvePrefillMessagesFile, LoadPrefillMessages = prevResolve, prevLoad })
@@ -228,7 +228,7 @@ func recoverShape(rows []map[string]any) [][2]any {
 
 func recoverDumpLen(t *testing.T, rows []map[string]any) int {
 	t.Helper()
-	text, err := pyjson.Dumps(rows)
+	text, err := jsonutil.Encode(rows)
 	if err != nil {
 		t.Fatal(err)
 	}

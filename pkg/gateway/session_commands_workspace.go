@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Context bound to the session's frozen terminal policy with its launch cwd as the session cwd
@@ -21,7 +21,7 @@ func sessionWorkspace(ctx context.Context, runner AuthorityRunner, source *Sessi
 	}
 	terminal := tools.TerminalPolicy{}
 	for key, value := range fields {
-		terminal[key] = pyrepr.Str(value)
+		terminal[key] = anyutil.String(value)
 	}
 	env := &tools.Env{}
 	if current := tools.ToolEnvFrom(ctx); current != nil {

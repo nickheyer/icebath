@@ -7,7 +7,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Signal death notes keyed by signum, used for both negative and 128 plus signum encodings
@@ -258,7 +258,7 @@ func finalizeForegroundResult(ctx context.Context, env *Env, command string, res
 
 // Encodes key value pairs as json.dumps writes a dict of them with ensure_ascii off
 func orderedJSON(fields [][2]any) string {
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, kv := range fields {
 		out.Set(kv[0].(string), kv[1])
 	}

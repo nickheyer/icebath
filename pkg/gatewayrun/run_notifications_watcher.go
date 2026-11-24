@@ -12,10 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func init() {
@@ -82,12 +81,12 @@ func (r *GatewayRunner) sendWatcherMessage(ctx context.Context, platformName str
 	if err != nil {
 		return err
 	}
-	chat := pyrepr.Str(pyrepr.Or(chatID, ""))
-	if adapter == nil || !pyrepr.Truthy(chatID) {
+	chat := anyutil.String(anyutil.Or(chatID, ""))
+	if adapter == nil || !anyutil.IsTrue(chatID) {
 		return nil
 	}
 	var sendMeta map[string]any
-	if pyrepr.Truthy(threadID) {
+	if anyutil.IsTrue(threadID) {
 		sendMeta = map[string]any{"thread_id": threadID}
 	}
 	_, sendErr := adapter.Send(ctx, chat, messageText, "", nonConversationalMetadata(sendMeta, gateway.Platform(platformName)))
@@ -132,7 +131,7 @@ func buildProcessCompletionEvent(ctx context.Context, watcher map[string]any, fi
 	if fields.ExitCode != nil {
 		exitCode = *fields.ExitCode
 	}
-	parent := pyrepr.Or(watcher["parent_session_id"], pyrepr.Or(fields.ParentSessionID, ""))
+	parent := anyutil.Or(watcher["parent_session_id"], anyutil.Or(fields.ParentSessionID, ""))
 	evt["owner_task_id"] = fields.OwnerTaskID
 	evt["task_id"] = fields.TaskID
 	evt["message_id"] = messageID
@@ -217,12 +216,12 @@ func finalMessageSurfaces(notifyMode string, exitCode *int) bool {
 // Polls a background process and pushes updates by the notification mode until it exits
 func (r *GatewayRunner) watchProcess(ctx context.Context, watcher map[string]any) error {
 	registry := tools.DefaultProcessRegistry()
-	sessionID := pyrepr.Str(watcher["session_id"])
-	interval, err := pyint.Float(watcher["check_interval"])
+	sessionID := anyutil.String(watcher["session_id"])
+	interval, err := anyutil.ToFloat(watcher["check_interval"])
 	if err != nil {
 		return err
 	}
-	platformName := pyrepr.Str(pyrepr.Or(watcher["platform"], ""))
+	platformName := anyutil.String(anyutil.Or(watcher["platform"], ""))
 	chatID, ok := watcher["chat_id"]
 	if !ok {
 		chatID = ""
@@ -231,10 +230,10 @@ func (r *GatewayRunner) watchProcess(ctx context.Context, watcher map[string]any
 	if !ok {
 		threadID = ""
 	}
-	agentNotify := pyrepr.Truthy(watcher["notify_on_complete"])
+	agentNotify := anyutil.IsTrue(watcher["notify_on_complete"])
 	notifyMode := loadBackgroundNotificationsMode(ctx)
 	pkgLog().Debug(fmt.Sprintf("Process watcher started: %s (every %ss, notify=%s, agent_notify=%s)",
-		sessionID, pyrepr.Str(watcher["check_interval"]), notifyMode, pyrepr.Str(agentNotify)))
+		sessionID, anyutil.String(watcher["check_interval"]), notifyMode, anyutil.String(agentNotify)))
 	silent := notifyMode == "off" && !agentNotify
 	lastOutputLen := 0
 	completionAttempts := 0

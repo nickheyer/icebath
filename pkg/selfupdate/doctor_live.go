@@ -18,12 +18,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 const doctorLiveDefaultProbeTimeout = 10.0
@@ -146,9 +146,9 @@ func (e *doctorLiveEnv) doctorLiveHear(name, provider string) (doctorLiveProbeRe
 	if err != nil {
 		return doctorLiveProbeResult{name, "fail", "(" + provider + ") " + err.Error()}, nil
 	}
-	transcript := pyrepr.Str(reply["transcript"])
-	if !pyrepr.Truthy(reply["success"]) {
-		return doctorLiveProbeResult{name, "fail", "(" + provider + ") " + pyrepr.Str(reply["error"])}, nil
+	transcript := anyutil.String(reply["transcript"])
+	if !anyutil.IsTrue(reply["success"]) {
+		return doctorLiveProbeResult{name, "fail", "(" + provider + ") " + anyutil.String(reply["error"])}, nil
 	}
 	heard := map[string]bool{}
 	for _, word := range doctorLiveWords(transcript) {
@@ -187,9 +187,9 @@ func (e *doctorLiveEnv) doctorLiveHTTPGet(target string, headers [][2]string, ti
 	for _, h := range headers {
 		req.Header.Set(h[0], h[1])
 	}
-	resp, err := pyhttpx.Do(pyhttpx.EnvProxyClient(false), req, time.Duration(timeout*float64(time.Second)))
+	resp, err := httputil.Do(httputil.Client(false), req, httputil.EachPhase(time.Duration(timeout*float64(time.Second))))
 	if err != nil {
-		return 0, errors.New(pyhttpx.ErrorText(err))
+		return 0, errors.New(err.Error())
 	}
 	return resp.StatusCode, nil
 }
@@ -245,12 +245,12 @@ func (e *doctorLiveEnv) doctorLiveProbeBrowser(timeout float64) (doctorLiveProbe
 func (e *doctorLiveEnv) doctorLiveProbeAudio(kind string, cfg map[string]any, timeout float64) (doctorLiveProbeResult, error) {
 	name := strings.ToUpper(kind)
 	providerName := ""
-	if section := cfg[kind]; pyrepr.Truthy(section) {
+	if section := cfg[kind]; anyutil.IsTrue(section) {
 		block, ok := section.(map[string]any)
 		if !ok {
 			return doctorLiveProbeResult{}, fmt.Errorf("config %s section is %s where a mapping was expected", kind, errchain.Kind(section))
 		}
-		if raw := block["provider"]; pyrepr.Truthy(raw) {
+		if raw := block["provider"]; anyutil.IsTrue(raw) {
 			text, isStr := raw.(string)
 			if !isStr {
 				return doctorLiveProbeResult{}, fmt.Errorf("config %s provider is %s where text was expected", kind, errchain.Kind(raw))
@@ -310,7 +310,7 @@ func (e *doctorLiveEnv) doctorLiveReport(result doctorLiveProbeResult, issues *[
 
 // Reports whether an error is one Python raises as the builtin TimeoutError
 func doctorLiveIsTimeout(err error) bool {
-	var timeout *pyhttpx.TimeoutError
+	var timeout *httputil.TimeoutError
 	return errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, syscall.ETIMEDOUT) ||
 		errors.As(err, &timeout)
 }
@@ -398,7 +398,7 @@ func (e *doctorLiveEnv) doctorRunLiveChecks(issues *[]string) ([]doctorLiveProbe
 
 // Runs the live probes only when the live flag is set, printing a failed run as a warning
 func (e *doctorLiveEnv) doctorMaybeRunLiveChecks(ns map[string]any, issues *[]string) []doctorLiveProbeResult {
-	if !pyrepr.Truthy(ns["live"]) {
+	if !anyutil.IsTrue(ns["live"]) {
 		return nil
 	}
 	results, err := e.doctorRunLiveChecks(issues)

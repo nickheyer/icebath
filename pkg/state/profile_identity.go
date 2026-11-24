@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Lazily created tables whose identity columns depend on optional migrations
@@ -129,7 +129,7 @@ func (d *SessionDB) RekeyProfileState(oldName, newName string) (map[string]int, 
 			return err
 		}
 		if collision != nil {
-			return fmt.Errorf("profile routing collision in scope %s: %s", pyrepr.Repr(collision["scope"]), pyrepr.Repr(collision["target"]))
+			return fmt.Errorf("profile routing collision in scope %s: %s", anyutil.Quote(collision["scope"]), anyutil.Quote(collision["target"]))
 		}
 		for _, spec := range []struct {
 			table   string
@@ -176,7 +176,7 @@ func (d *SessionDB) RekeyProfileState(oldName, newName string) (map[string]int, 
 			if !ok {
 				continue
 			}
-			if v, _ := payload.get("profile"); !pyrepr.Equal(v, old) {
+			if v, _ := payload.get("profile"); !anyutil.Equal(v, old) {
 				continue
 			}
 			text, err := pyDumps(pyObjectSet(payload, "profile", nw), pyJSONUnicode)
@@ -226,7 +226,7 @@ func (d *SessionDB) RekeyProfileState(oldName, newName string) (map[string]int, 
 						payload = pyObjectSet(payload, "session_key", newNS+runeSuffix(sk, nsLen))
 					}
 					if origin, ok := mustGet(payload, "origin").(pyObject); ok {
-						if v, _ := origin.get("profile"); pyrepr.Equal(v, old) {
+						if v, _ := origin.get("profile"); anyutil.Equal(v, old) {
 							payload = pyObjectSet(payload, "origin", pyObjectSet(origin, "profile", nw))
 						}
 					}

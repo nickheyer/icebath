@@ -10,7 +10,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // tsserver category to LSP severity, as typescript-language-server maps it
@@ -53,7 +53,7 @@ func syncRequest(ctx context.Context, c *Client, absPath string, timeout time.Du
 			return nil, false, err
 		}
 		var body any
-		if m, ok := reply.(map[string]any); ok && pyrepr.Truthy(dgetOr(m, "success", true)) {
+		if m, ok := reply.(map[string]any); ok && anyutil.IsTrue(dgetOr(m, "success", true)) {
 			body = m["body"]
 		}
 		items, ok := body.([]any)
@@ -100,7 +100,7 @@ func pyMinusOne(v any) (any, error) {
 	case float64:
 		return t - 1, nil
 	}
-	return nil, &pyExc{typ: "TypeError", text: fmt.Sprintf("unsupported operand type(s) for -: '%s' and 'int'", pyrepr.TypeName(v))}
+	return nil, &pyExc{typ: "TypeError", text: fmt.Sprintf("unsupported operand type(s) for -: '%s' and 'int'", anyutil.Kind(v))}
 }
 
 // One tsserver diagnostic in the 0 based shape typescript-language-server pushes
@@ -133,13 +133,13 @@ func fromTsserver(item any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	severity, ok := tsSeverity[pyrepr.Str(pyOr(m["category"], "error"))]
+	severity, ok := tsSeverity[anyutil.String(pyOr(m["category"], "error"))]
 	if !ok {
 		severity = 1
 	}
 	diag := map[string]any{
 		"range":    map[string]any{"start": s, "end": e},
-		"message":  pyrepr.Str(pyOr(m["message"], "")),
+		"message":  anyutil.String(pyOr(m["message"], "")),
 		"severity": severity,
 		"source":   pyOr(m["source"], "typescript"),
 	}

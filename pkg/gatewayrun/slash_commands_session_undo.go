@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -128,12 +128,12 @@ func (r *GatewayRunner) handleUndoCommand(ctx context.Context, event *gateway.Me
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				pkgLog().Debug(fmt.Sprintf("undo: cached-agent eviction skipped: %s", pyrepr.Str(rec)))
+				pkgLog().Debug(fmt.Sprintf("undo: cached-agent eviction skipped: %s", anyutil.String(rec)))
 			}
 		}()
 		sessionKey, err := r.sessionKeyForSource(ctx, source)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("undo: cached-agent eviction skipped: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("undo: cached-agent eviction skipped: %s", err.Error()))
 			return
 		}
 		r.evictCachedAgent(ctx, sessionKey, false, false)

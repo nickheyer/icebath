@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Points the alias overlay at a missing file and the directory at dir, restoring both after the test
@@ -35,7 +35,7 @@ func TestLoadDirectory(t *testing.T) {
 		result := loadChannelDirectory(context.Background())
 		platforms, _ := result.Get("platforms")
 		updated, has := result.Get("updated_at")
-		if obj, ok := platforms.(*pyjson.Object); !ok || obj.Len() != 0 || !has || updated != nil {
+		if obj, ok := platforms.(*jsonutil.Object); !ok || obj.Len() != 0 || !has || updated != nil {
 			t.Fatalf("result %v", result)
 		}
 	})
@@ -157,11 +157,11 @@ func TestChannelAliases(t *testing.T) {
 			t.Fatalf("%q %v", got, err)
 		}
 		platforms, _ := loadChannelDirectory(ctx).Get("platforms")
-		entries, _ := platforms.(*pyjson.Object).Get("whatsapp")
-		var injected []*pyjson.Object
+		entries, _ := platforms.(*jsonutil.Object).Get("whatsapp")
+		var injected []*jsonutil.Object
 		for _, e := range entries.([]any) {
-			if id, _ := e.(*pyjson.Object).Get("id"); id == "999@g.us" {
-				injected = append(injected, e.(*pyjson.Object))
+			if id, _ := e.(*jsonutil.Object).Get("id"); id == "999@g.us" {
+				injected = append(injected, e.(*jsonutil.Object))
 			}
 		}
 		if len(injected) == 0 {
@@ -187,7 +187,7 @@ func TestChannelAliases(t *testing.T) {
 			t.Fatalf("%q %v", got, err)
 		}
 		platforms, _ := loadChannelDirectory(ctx).Get("platforms")
-		entries, _ := platforms.(*pyjson.Object).Get("telegram")
+		entries, _ := platforms.(*jsonutil.Object).Get("telegram")
 		if len(entries.([]any)) != 1 {
 			t.Fatalf("an empty alias added an entry %v", entries)
 		}

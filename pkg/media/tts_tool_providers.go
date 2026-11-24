@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -26,16 +27,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/media/edgetts"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -100,7 +100,7 @@ func (e *ttsTypeError) Error() string { return e.msg }
 // Python float() of a config value with the raised error text
 func ttsFloat(v any) (float64, error) {
 	if s, ok := v.(string); ok {
-		f, err := pyint.ParseFloat(s)
+		f, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 		if err != nil {
 			return 0, &ttsValueError{msg: fmt.Sprintf("%s is not a number", s)}
 		}
@@ -336,7 +336,7 @@ func auxiliaryReplyText(resp any) string {
 	if !pyTruthy(content) {
 		content = ""
 	}
-	clean := strings.TrimSpace(pyrepr.Str(content))
+	clean := strings.TrimSpace(anyutil.String(content))
 	if match, _ := auxFenceRe.FindStringMatch(clean); match != nil {
 		return strings.TrimSpace(match.GroupByNumber(1).String())
 	}
@@ -425,7 +425,7 @@ func generateElevenLabs(ctx context.Context, env *tools.Env, text, outputPath st
 		if json.Unmarshal(raw, &parsed) == nil {
 			body = parsed
 		}
-		return "", &ttsRuntimeError{msg: fmt.Sprintf("status_code: %d, body: %s", resp.StatusCode, pyrepr.Str(body))}
+		return "", &ttsRuntimeError{msg: fmt.Sprintf("status_code: %d, body: %s", resp.StatusCode, anyutil.String(body))}
 	}
 	f, err := os.Create(outputPath)
 	if err != nil {
@@ -664,7 +664,7 @@ func raiseMiniMaxAPIError(result map[string]any) error {
 	if n, ok := pyRealNumber(status); ok && n == 0 {
 		return nil
 	}
-	return &ttsRuntimeError{msg: fmt.Sprintf("MiniMax TTS API error (code %s): %s", pyrepr.Str(status), pyrepr.Str(dictGetDefault(baseResp, "status_msg", "unknown error")))}
+	return &ttsRuntimeError{msg: fmt.Sprintf("MiniMax TTS API error (code %s): %s", anyutil.String(status), anyutil.String(dictGetDefault(baseResp, "status_msg", "unknown error")))}
 }
 
 // MiniMax speech via t2a_v2 hex audio JSON or the legacy raw audio endpoint, detected from the URL
@@ -763,7 +763,7 @@ func generateMiniMaxTTS(ctx context.Context, env *tools.Env, text, outputPath st
 
 // Python bytes.fromhex
 func pyBytesFromHex(s string) ([]byte, error) {
-	b, err := pystr.BytesFromHex(s)
+	b, err := hex.DecodeString(s)
 	if err != nil {
 		return nil, &ttsValueError{msg: err.Error()}
 	}
@@ -853,13 +853,13 @@ func readGeminiPersonaPrompt(ctx context.Context, env *tools.Env, raw string) st
 	if strings.TrimSpace(raw) == "" {
 		return ""
 	}
-	path := pypath.Expanduser(pypath.Expandvars(strings.TrimSpace(raw)))
+	path := pathutil.ExpandUser(pathutil.ExpandEnv(strings.TrimSpace(raw)))
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(ttsHome(ctx, env), path)
 	}
 	data, err := os.ReadFile(path)
 	if err == nil {
-		text, derr := pystr.DecodeUTF8Sig(data)
+		text, derr := textutil.DecodeUTF8(textutil.TrimBOM(data))
 		if derr == nil {
 			return strings.TrimSpace(text)
 		}
@@ -932,7 +932,7 @@ func geminiErrorDetail(resp *http.Response) (string, error) {
 	if parsed, perr := parseTTSJSONBody(raw); perr == nil {
 		if e, ok := asStrMap(parsed["error"]); ok {
 			if msg := e["message"]; pyTruthy(msg) {
-				return pyrepr.Str(msg), nil
+				return anyutil.String(msg), nil
 			}
 		}
 	}

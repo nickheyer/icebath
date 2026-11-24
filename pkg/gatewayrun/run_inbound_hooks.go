@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Post admission plugin hook once per inbound message, never while an admitted row executes
@@ -26,7 +25,7 @@ func (r *GatewayRunner) hmPreGatewayDispatchHook(ctx context.Context, event *gat
 	results := func() (results []any) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				pkgLog().Warn(fmt.Sprintf("pre_gateway_dispatch invocation failed: %s", pyrepr.Str(rec)))
+				pkgLog().Warn(fmt.Sprintf("pre_gateway_dispatch invocation failed: %s", anyutil.String(rec)))
 				results = nil
 			}
 		}()
@@ -50,7 +49,7 @@ func (r *GatewayRunner) hmPreGatewayDispatchHook(ctx context.Context, event *gat
 			if source.ChatID != "" {
 				chat = source.ChatID
 			}
-			pkgLog().Info(fmt.Sprintf("pre_gateway_dispatch skip: reason=%s platform=%s chat=%s", pyrepr.Str(result["reason"]), platform, chat))
+			pkgLog().Info(fmt.Sprintf("pre_gateway_dispatch skip: reason=%s platform=%s chat=%s", anyutil.String(result["reason"]), platform, chat))
 			return nil
 		case "rewrite":
 			if text, ok := result["text"].(string); ok {
@@ -77,8 +76,8 @@ func (r *GatewayRunner) hmQuickCommands() map[string]any {
 // Rewrites the event text to an alias quick command target and returns the new command name, false without a target
 func hmExpandAliasQuickCommand(event *gateway.MessageEvent, qcmd map[string]any) (string, bool) {
 	target := ""
-	if raw := qcmd["target"]; pyrepr.Truthy(raw) {
-		target = strings.TrimSpace(pyrepr.Str(raw))
+	if raw := qcmd["target"]; anyutil.IsTrue(raw) {
+		target = strings.TrimSpace(anyutil.String(raw))
 	}
 	if target == "" {
 		return "", false

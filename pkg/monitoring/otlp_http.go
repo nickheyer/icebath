@@ -14,7 +14,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Span is one finished monitoring span with its attributes
@@ -192,7 +192,7 @@ func NewOTLPHTTPSpanExporter(endpoint string, headers map[string]string) *OTLPHT
 
 // Export posts one ExportTraceServiceRequest, a non 2xx status an error
 func (e *OTLPHTTPSpanExporter) Export(spans []*Span) error {
-	body, err := pyjson.Dumps(exportTraceRequest(e.Resource, spans))
+	body, err := jsonutil.Encode(exportTraceRequest(e.Resource, spans))
 	if err != nil {
 		return err
 	}
@@ -219,43 +219,43 @@ func (e *OTLPHTTPSpanExporter) Export(spans []*Span) error {
 func (e *OTLPHTTPSpanExporter) Shutdown() error { return nil }
 
 // The OTLP JSON body of a resource with its spans
-func exportTraceRequest(resource map[string]string, spans []*Span) *pyjson.Object {
+func exportTraceRequest(resource map[string]string, spans []*Span) *jsonutil.Object {
 	resAttrs := []any{}
 	for _, key := range sortedKeys(resource) {
-		resAttrs = append(resAttrs, pyjson.ObjectOf("key", key, "value", pyjson.ObjectOf("stringValue", resource[key])))
+		resAttrs = append(resAttrs, jsonutil.ObjectOf("key", key, "value", jsonutil.ObjectOf("stringValue", resource[key])))
 	}
 	out := []any{}
 	for _, s := range spans {
 		attrs := []any{}
 		for _, key := range sortedAnyKeys(s.Attributes) {
-			attrs = append(attrs, pyjson.ObjectOf("key", key, "value", anyValue(s.Attributes[key])))
+			attrs = append(attrs, jsonutil.ObjectOf("key", key, "value", anyValue(s.Attributes[key])))
 		}
-		out = append(out, pyjson.ObjectOf("traceId", s.TraceID, "spanId", s.SpanID, "name", s.Name, "kind", 1,
+		out = append(out, jsonutil.ObjectOf("traceId", s.TraceID, "spanId", s.SpanID, "name", s.Name, "kind", 1,
 			"startTimeUnixNano", strconv.FormatInt(s.Start.UnixNano(), 10), "endTimeUnixNano", strconv.FormatInt(s.End.UnixNano(), 10),
 			"attributes", attrs))
 	}
-	scope := pyjson.ObjectOf("scope", pyjson.ObjectOf("name", "icebath.monitoring"), "spans", out)
-	return pyjson.ObjectOf("resourceSpans", []any{pyjson.ObjectOf("resource", pyjson.ObjectOf("attributes", resAttrs), "scopeSpans", []any{scope})})
+	scope := jsonutil.ObjectOf("scope", jsonutil.ObjectOf("name", "icebath.monitoring"), "spans", out)
+	return jsonutil.ObjectOf("resourceSpans", []any{jsonutil.ObjectOf("resource", jsonutil.ObjectOf("attributes", resAttrs), "scopeSpans", []any{scope})})
 }
 
 // OTLP AnyValue of a Go attribute value
-func anyValue(v any) *pyjson.Object {
+func anyValue(v any) *jsonutil.Object {
 	switch t := v.(type) {
 	case bool:
-		return pyjson.ObjectOf("boolValue", t)
+		return jsonutil.ObjectOf("boolValue", t)
 	case int:
-		return pyjson.ObjectOf("intValue", strconv.Itoa(t))
+		return jsonutil.ObjectOf("intValue", strconv.Itoa(t))
 	case int64:
-		return pyjson.ObjectOf("intValue", strconv.FormatInt(t, 10))
+		return jsonutil.ObjectOf("intValue", strconv.FormatInt(t, 10))
 	case float64:
 		if t == float64(int64(t)) {
-			return pyjson.ObjectOf("intValue", strconv.FormatInt(int64(t), 10))
+			return jsonutil.ObjectOf("intValue", strconv.FormatInt(int64(t), 10))
 		}
-		return pyjson.ObjectOf("doubleValue", t)
+		return jsonutil.ObjectOf("doubleValue", t)
 	case string:
-		return pyjson.ObjectOf("stringValue", t)
+		return jsonutil.ObjectOf("stringValue", t)
 	}
-	return pyjson.ObjectOf("stringValue", fmt.Sprint(v))
+	return jsonutil.ObjectOf("stringValue", fmt.Sprint(v))
 }
 
 // Keys of a string map in sorted order

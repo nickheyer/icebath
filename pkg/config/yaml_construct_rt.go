@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
+	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
 )
 
@@ -23,7 +23,7 @@ type (
 	rtBool struct{ b bool }
 	// TimeStamp of a datetime written with a T separator or an offset
 	rtStamp struct {
-		v pydatetime.DateTime
+		v time.Time
 		t bool
 	}
 	// Comment slots the round trip containers attach per key, the four slot lists of CommentedBase.ca.items
@@ -65,25 +65,25 @@ func rtTypeName(v any) string {
 	return pyObjType(v)
 }
 
-// Python repr of a TimeStamp, the datetime repr under its own class name
+// Repr of a TimeStamp, its datetime text under the class name
 func (s *rtStamp) repr() string {
-	return "TimeStamp" + strings.TrimPrefix(s.v.PyRepr(), "datetime.datetime")
+	return "TimeStamp(" + s.str() + ")"
 }
 
-// Python str of a TimeStamp, isoformat with T or a space
+// Text of a TimeStamp, the ISO datetime with T or a space between date and time as the source wrote it
 func (s *rtStamp) str() string {
 	if !s.t {
-		return s.v.PyStr()
+		return representTime(s.v)
 	}
-	return strings.Replace(s.v.PyStr(), " ", "T", 1)
+	return strings.Replace(representTime(s.v), " ", "T", 1)
 }
 
 func (t *rtTagged) repr() string {
 	style := "None"
 	if t.style != 0 {
-		style = pyrepr.StrRepr(string(t.style))
+		style = strconv.Quote(string(t.style))
 	}
-	return "TaggedScalar(value=" + pyrepr.StrRepr(t.value) + ", style=" + style + ", tag=Tag(" + pyrepr.StrRepr(t.tag) + "))"
+	return "TaggedScalar(value=" + strconv.Quote(t.value) + ", style=" + style + ", tag=Tag(" + strconv.Quote(t.tag) + "))"
 }
 
 // Round trip dispatch of RoundTripConstructor, unknown tags kept as tagged objects
@@ -117,7 +117,7 @@ func (c *safeConstructor) constructScalarTagRT(n *ry.Node, tag string) any {
 		low := strings.ToLower(value)
 		b, ok := boolValues[low]
 		if !ok {
-			panic(pyErr("KeyError", pyrepr.StrRepr(low)))
+			panic(pyErr("KeyError", strconv.Quote(low)))
 		}
 		if n.Anchor != nil {
 			return &rtBool{b}
@@ -182,7 +182,7 @@ func (c *safeConstructor) constructScalarRT(n *ry.Node) string {
 // Tagged value of an unknown tag, any failure building it turned into the undetermined constructor error
 func (c *safeConstructor) constructUnknown(n *ry.Node) any {
 	refuse := func() {
-		panic(constructorError("", nil, "could not determine a constructor for the tag "+pyrepr.StrRepr(n.Tag()), n.Start))
+		panic(constructorError("", nil, "could not determine a constructor for the tag "+strconv.Quote(n.Tag()), n.Start))
 	}
 	guard := func(f func()) {
 		defer func() {
@@ -315,12 +315,15 @@ var (
 func (c *safeConstructor) constructTimestampRT(n *ry.Node) any {
 	v := c.constructTimestamp(n).(*pyTime)
 	full := timestampRegexp.FindStringSubmatch(n.Value)
-	if full == nil {
+	if full == nil && strings.HasSuffix(n.Value, "\n") {
 		full = timestampRegexp.FindStringSubmatch(n.Value[:len(n.Value)-1])
 	}
+	dt, ok := v.v.(time.Time)
+	if !ok || full == nil {
+		return v
+	}
 	group := func(name string) string { return full[timestampRegexp.SubexpIndex(name)] }
-	dt, ok := v.v.(pydatetime.DateTime)
-	if !ok || (group("t") == "" && group("tz_sign") == "" && group("tz_hour") == "" && group("tz_minute") == "") {
+	if group("t") == "" && group("tz_sign") == "" && group("tz_hour") == "" && group("tz_minute") == "" {
 		return v
 	}
 	return &rtStamp{v: dt, t: group("t") != ""}

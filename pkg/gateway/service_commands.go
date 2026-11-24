@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Captured subprocess run with text output decoded with replacement characters
@@ -130,7 +130,7 @@ func userSystemdOverrides() [][2]string {
 		out = append(out, [2]string{"XDG_RUNTIME_DIR", dir})
 	}
 	if _, ok := os.LookupEnv("DBUS_SESSION_BUS_ADDRESS"); !ok {
-		if bus := pypath.PathJoin(dir, "bus"); pathExistsSafe(bus) {
+		if bus := pathutil.Join(dir, "bus"); pathExistsSafe(bus) {
 			out = append(out, [2]string{"DBUS_SESSION_BUS_ADDRESS", "unix:path=" + bus})
 		}
 	}

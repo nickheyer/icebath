@@ -12,9 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -58,10 +58,10 @@ func skillsInstall(ctx context.Context, rid any, p tuigateway.SkillsManageParams
 	identifier := p.Query
 	var mu sync.Mutex
 	var lines []string
-	captured := &pyrich.Console{Width: 80, Capture: func(raw string) {
+	captured := &consoleutil.Console{Width: 80, Capture: func(raw string) {
 		mu.Lock()
 		defer mu.Unlock()
-		lines = append(lines, pyrich.Plain(raw))
+		lines = append(lines, consoleutil.Plain(raw))
 	}}
 	x := skillsHubCLI(ctx)
 	verdict, err := x.DoInstall(ctx, identifier, skills.HubInstallOptions{SkipConfirm: true, Console: captured})

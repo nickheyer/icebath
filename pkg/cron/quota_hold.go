@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -45,7 +45,7 @@ func quotaHoldSecondsFromFailure(err error) (float64, bool) {
 			if m == nil {
 				return 0, false
 			}
-			v, perr := pyint.ParseFloat(m[1])
+			v, perr := strconv.ParseFloat(strings.TrimSpace(m[1]), 64)
 			if perr != nil {
 				return 0, false
 			}
@@ -152,5 +152,5 @@ func quotaHoldNotice(s *Store, job *Job, holdSeconds float64) string {
 	return fmt.Sprintf("\nThe provider's usage window is closed for about %.1fh. This job is held "+
 		"through %s and resumes at the first safe "+
 		"opportunity afterwards; no further alerts are sent while the provider is unavailable.",
-		hours, config.SafeStrftime(windowEnd, "%Y-%m-%d %H:%M %Z"))
+		hours, windowEnd.Format("2006-01-02 15:04 MST"))
 }

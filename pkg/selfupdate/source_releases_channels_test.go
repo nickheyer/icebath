@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Origin with installed, published and unpublished commits and a clone detached at the installed one
@@ -190,15 +190,15 @@ func chReaderResult(t *testing.T, s *chSource, name, destination, repository str
 	manifest := map[string]any{"schema": 1, "request": map[string]any{"buildId": "build-fixture", "channel": terminalName,
 		"sequence": 1, "repository": repository, "commit": s.commits[1], "sourceVersion": "1.2.3", "version": "0.0.1",
 		"identity": map[string]any{}, "publicBase": sourcePublicBase}}
-	return &ChannelResolution{Requested: jv(t, record(name, state)).(*pyjson.Object), Terminal: jv(t, terminal).(*pyjson.Object),
-		Manifest: jv(t, manifest).(*pyjson.Object)}
+	return &ChannelResolution{Requested: jv(t, record(name, state)).(*jsonutil.Object), Terminal: jv(t, terminal).(*jsonutil.Object),
+		Manifest: jv(t, manifest).(*jsonutil.Object)}
 }
 
 func chInstallReader(t *testing.T, result *ChannelResolution) {
 	saved := resolveChannel
 	resolveChannel = func(context.Context, string, string) (*ChannelResolution, error) {
-		return &ChannelResolution{Requested: pyjson.Clone(result.Requested).(*pyjson.Object),
-			Terminal: pyjson.Clone(result.Terminal).(*pyjson.Object), Manifest: pyjson.Clone(result.Manifest).(*pyjson.Object)}, nil
+		return &ChannelResolution{Requested: jsonutil.Clone(result.Requested).(*jsonutil.Object),
+			Terminal: jsonutil.Clone(result.Terminal).(*jsonutil.Object), Manifest: jsonutil.Clone(result.Manifest).(*jsonutil.Object)}, nil
 	}
 	t.Cleanup(func() { resolveChannel = saved })
 }

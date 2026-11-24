@@ -8,17 +8,16 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyemail"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mailutil "github.com/nickheyer/icebath/pkg/utils/mail"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -91,15 +90,15 @@ func (c *RelayMediaClient) UploadWithError(ctx context.Context, filePath string,
 		pkgLog().Warn(fmt.Sprintf("relay media upload: %s size %d outside (0, %d]", filePath, len(data), RelayMediaMaxBytes))
 		return "", fmt.Sprintf("attachment size %d outside (0, %d]", len(data), RelayMediaMaxBytes), nil
 	}
-	baseName := pypath.Name(filePath)
+	baseName := pathutil.Name(filePath)
 	if filename != nil && *filename != "" {
 		baseName = *filename
 	}
 	contentType := ""
 	if mime != nil && *mime != "" {
 		contentType = *mime
-	} else if guessed, _, gerr := pymimetypes.GuessType(baseName, true); gerr == nil {
-		contentType = guessed
+	} else {
+		contentType = mimeutil.TypeByName(baseName)
 	}
 	if contentType == "" {
 		contentType = "application/octet-stream"
@@ -158,20 +157,20 @@ func (c *RelayMediaClient) postMedia(url string, data []byte, contentType, name 
 		}
 		return "", "transport error: " + relayURLErrorReason(err), true, nil
 	}
-	text, err := pystr.DecodeUTF8(body)
+	text, err := textutil.DecodeUTF8(body)
 	if err != nil {
 		return "", "unreadable connector response: " + err.Error(), false, nil
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return "", "unreadable connector response: " + err.Error(), false, nil
 	}
-	obj, ok := pyjson.AsObject(parsed)
+	obj, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		return "", "", false, fmt.Errorf("the relay media reply is %s, expected a mapping", errchain.Kind(parsed))
 	}
-	if mediaID := obj.Vals["id"]; pyrepr.Truthy(mediaID) {
-		return c.baseURL + "/relay/media/" + pyrepr.Str(mediaID), "", false, nil
+	if mediaID := obj.Value("id"); anyutil.IsTrue(mediaID) {
+		return c.baseURL + "/relay/media/" + anyutil.String(mediaID), "", false, nil
 	}
 	return "", "connector answered without a media id", false, nil
 }
@@ -228,11 +227,11 @@ func (c *RelayMediaClient) fetchMedia(url string, headers http.Header, suggested
 	}
 	defer resp.Body.Close()
 	if raw := resp.Header.Get("Content-Length"); raw != "" {
-		n, ok := pyint.Parse(raw)
-		if !ok {
+		n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return "", "", fmt.Errorf("the relay media size %v is not a whole number", raw)
 		}
-		if n.Int64() > RelayMediaMaxBytes || !n.IsInt64() {
+		if err != nil || n > RelayMediaMaxBytes {
 			pkgLog().Warn(fmt.Sprintf("relay media download too large: %s", url))
 			return "", "", nil
 		}
@@ -254,19 +253,19 @@ func (c *RelayMediaClient) fetchMedia(url string, headers http.Header, suggested
 	}
 	ext := ""
 	if name != "" {
-		ext = pypath.Suffix(name)
+		ext = pathutil.Suffix(name)
 	}
 	if !relayASCIIAlnumExt(ext) || len([]rune(ext)) > 16 {
 		ext = ""
 	}
 	if ext == "" {
 		mime, _, _ := strings.Cut(resp.Header.Get("Content-Type"), ";")
-		ext = pymimetypes.GuessExtension(mime, true)
+		ext = mimeutil.ExtensionByType(mime)
 		if ext == "" {
 			ext = ".bin"
 		}
 	}
-	tmpDir, err := pypath.Gettempdir()
+	tmpDir, err := pathutil.TempDir()
 	if err != nil {
 		return "", "", err
 	}
@@ -312,25 +311,6 @@ func relayContentDispositionFilename(header string) string {
 	if header == "" {
 		return ""
 	}
-	params, err := pyemail.GetParams(header)
-	if err != nil {
-		return ""
-	}
-	plain, extended := "", ""
-	for _, p := range params[1:] {
-		if strings.ToLower(p.Name) != "filename" {
-			continue
-		}
-		if p.RFC2231 {
-			if extended == "" {
-				extended = pyemail.CollapseRFC2231Value(p)
-			}
-		} else if plain == "" {
-			plain = pyemail.Unquote(p.Value)
-		}
-	}
-	if extended != "" {
-		return CleanAttachmentFilename(extended)
-	}
-	return CleanAttachmentFilename(plain)
+	_, params := mailutil.ParseParams(header)
+	return CleanAttachmentFilename(params["filename"])
 }

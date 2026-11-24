@@ -5,9 +5,9 @@ import (
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // True for a decoded JSON object
@@ -25,7 +25,7 @@ func rowLookup(v any, key string) (value any, present, isDict bool) {
 		}
 		value, present = row[key]
 		return value, present, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if row == nil {
 			return nil, false, false
 		}
@@ -51,7 +51,7 @@ func rowValueOr(v any, key string, fallback any) any {
 
 // Elements of a truthy list, none for a falsy value, an error for any other value
 func rowsOf(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	items, ok := v.([]any)
@@ -77,7 +77,7 @@ func pyKeyErrorText(key string) string { return "missing " + key }
 
 // Value of key in a JSON object, the KeyError or TypeError text when it is absent or not subscriptable
 func pyDictItem(holder any, key string) (any, error) {
-	obj, ok := holder.(*pyjson.Object)
+	obj, ok := holder.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("record is %s where a mapping holding %s was expected", errchain.Kind(holder), key)
 	}
@@ -94,11 +94,11 @@ func readRequestFile(path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 // Items of a JSON value iterated the way a Python for loop does, a TypeError for a non iterable
@@ -114,9 +114,9 @@ func pyIterable(value any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := make([]any, 0, v.Len())
-		for _, key := range v.Keys {
+		for _, key := range v.Keys() {
 			out = append(out, key)
 		}
 		return out, nil

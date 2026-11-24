@@ -7,8 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
 // SecretSourceRefusal is a secret store change refused for what was asked or for what the store answered
@@ -127,14 +126,14 @@ func bitwardenBinary() (string, error) {
 	}
 	binary, err := backend.install()
 	if err != nil {
-		return "", &SecretSourceRefusal{Message: "could not install the Bitwarden helper: " + pyrepr.ExceptionMessage(err)}
+		return "", &SecretSourceRefusal{Message: "could not install the Bitwarden helper: " + err.Error()}
 	}
 	return binary, nil
 }
 
 // Secrets CLI context of a home that prints nowhere, for the probes that take one
 func quietSecretsCLI(ctx context.Context, h string) *secretsCLI {
-	return &secretsCLI{ctx: ctx, home: h, console: pyrich.NewConsole(io.Discard)}
+	return &secretsCLI{ctx: ctx, home: h, console: consoleutil.NewConsole(io.Discard)}
 }
 
 // SecretSourcesState is how both secret stores are set up for the home
@@ -216,7 +215,7 @@ func SetUpBitwarden(h, token, serverURL, projectID string) (*SecretPreview, erro
 	secrets, warnings, err := loadBw().fetch(BitwardenFetchOptions{AccessToken: token, ProjectID: projectID, Binary: binary,
 		CacheTTL: 300, UseCache: false, ServerURL: serverURL, HomePath: h})
 	if err != nil {
-		return nil, &SecretSourceRefusal{Message: pyrepr.ExceptionMessage(err)}
+		return nil, &SecretSourceRefusal{Message: err.Error()}
 	}
 	if token != stored {
 		if err := secretsSaveEnvValue(h, tokenEnv, token); err != nil {
@@ -282,7 +281,7 @@ func PreviewBitwarden(h string) (*SecretPreview, error) {
 	secrets, warnings, err := loadBw().fetch(BitwardenFetchOptions{AccessToken: token, ProjectID: projectID,
 		CacheTTL: 300, UseCache: false, ServerURL: cfgStr(bw, "server_url"), HomePath: h})
 	if err != nil {
-		return nil, &SecretSourceRefusal{Message: pyrepr.ExceptionMessage(err)}
+		return nil, &SecretSourceRefusal{Message: err.Error()}
 	}
 	preview := &SecretPreview{Warnings: warnings}
 	for _, name := range sortedStringKeys(secrets) {
@@ -428,7 +427,7 @@ func PreviewOnePassword(h string) (*SecretPreview, error) {
 	secrets, warnings, err := FetchOnePasswordSecrets(OnePasswordFetchOptions{References: refs, Account: cfgStr(op, "account"),
 		TokenEnv: tokenEnv, BinaryPath: cfgStr(op, "binary_path"), UseCache: false, CacheTTL: 300, HomePath: h})
 	if err != nil {
-		return nil, &SecretSourceRefusal{Message: pyrepr.ExceptionMessage(err)}
+		return nil, &SecretSourceRefusal{Message: err.Error()}
 	}
 	preview := &SecretPreview{Warnings: warnings}
 	for _, name := range sortedAnyKeys(refs) {

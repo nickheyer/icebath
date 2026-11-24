@@ -15,12 +15,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // One icebath pets invocation with its home, namespace, output and tool environment
@@ -260,22 +260,22 @@ func (r *petsRun) cmdShow() (int, error) {
 		}
 	}
 	var scaleVal any = r.ns["scale"]
-	if !pyrepr.Truthy(scaleVal) {
+	if !anyutil.IsTrue(scaleVal) {
 		scaleVal = cfg["scale"]
 		if _, present := cfg["scale"]; !present {
 			scaleVal = pet.DefaultScale
 		}
-		if !pyrepr.Truthy(scaleVal) {
+		if !anyutil.IsTrue(scaleVal) {
 			scaleVal = pet.DefaultScale
 		}
 	}
-	scale, err := pyint.Float(scaleVal)
+	scale, err := anyutil.ToFloat(scaleVal)
 	if err != nil {
 		return 1, err
 	}
 	unicodeCols := 0
 	if v, ok := cfg["unicode_cols"]; ok && v != nil {
-		n, err := pyint.Int64(v)
+		n, err := anyutil.ToInt(v)
 		if err != nil {
 			return 1, err
 		}
@@ -309,7 +309,7 @@ func (r *petsRun) cmdShow() (int, error) {
 	isUnicode := renderer.Mode == "unicode"
 	frames := max(1, renderer.FrameCount(states[0]))
 	frameDelay := max(0.05, (float64(pet.LoopMS)/1000.0)/float64(frames))
-	termCols, _ := pyshutil.GetTerminalSize(80, 24)
+	termCols, _ := termutil.Size(80, 24)
 	spriteCols := cols
 	if !isUnicode {
 		spriteCols = max(1, int(float64(renderer.FrameW)*renderer.Scale)/8)
@@ -404,7 +404,7 @@ func (r *petsRun) cmdDoctor() (int, error) {
 	r.printf("petdex doctor")
 	r.printf("  pets dir:        %s", dir)
 	r.printf("  installed:       %d (%s)", len(pets), installedText)
-	r.printf("  display.pet.enabled:     %s", pyrepr.Str(enabled))
+	r.printf("  display.pet.enabled:     %s", anyutil.String(enabled))
 	r.printf("  display.pet.slug:        %s", slugText)
 	r.printf("  active (resolved):       %s", activeText)
 	r.printf("  display.pet.render_mode: %s", modeCfg)

@@ -10,8 +10,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -19,7 +19,7 @@ import (
 var (
 	checkpointsStoreStatusFn = CheckpointStoreStatus
 	checkpointsPruneFn       = PruneCheckpoints
-	checkpointsInputFn       = func(prompt string) (string, error) { return pyrich.NewConsole(os.Stdout).Input(prompt) }
+	checkpointsInputFn       = func(prompt string) (string, error) { return consoleutil.NewConsole(os.Stdout).Input(prompt) }
 )
 
 // Age of a unix timestamp as seconds, minutes, hours or days ago, a dash for a non numeric value
@@ -27,7 +27,7 @@ func checkpointsFmtAge(ts any) string {
 	if ts == nil {
 		return "\u2014"
 	}
-	stamp, err := pyint.Float(ts)
+	stamp, err := anyutil.ToFloat(ts)
 	if err != nil {
 		return "\u2014"
 	}
@@ -51,7 +51,7 @@ func checkpointsLastTouch(v any) float64 {
 	if v == nil {
 		return 0
 	}
-	f, err := pyint.Float(v)
+	f, err := anyutil.ToFloat(v)
 	if err != nil {
 		return 0
 	}
@@ -129,8 +129,8 @@ func checkpointsPrintArchives(w io.Writer, archives []CheckpointLegacyArchive) {
 
 // Prunes orphan and stale projects after confirming exactly the orphans previewed
 func checkpointsCmdPrune(env *Env, ns map[string]any, w io.Writer) (int, error) {
-	deleteOrphans := !pyTruthy(ns["keep_orphans"])
-	force := pyTruthy(ns["force"])
+	deleteOrphans := !anyutil.IsTrue(ns["keep_orphans"])
+	force := anyutil.IsTrue(ns["force"])
 	retentionDays := checkpointsNsInt(ns, "retention_days", 7)
 	maxSizeMB := checkpointsNsInt(ns, "max_size_mb", 500)
 	var orphanAllowlist map[string]bool
@@ -224,7 +224,7 @@ func checkpointsConfirm(w io.Writer, prompt string) bool {
 
 // The force flag or an interactive yes, printing Aborted otherwise
 func checkpointsConfirmed(ns map[string]any, w io.Writer, prompt string) bool {
-	if pyTruthy(ns["force"]) || checkpointsConfirm(w, prompt) {
+	if anyutil.IsTrue(ns["force"]) || checkpointsConfirm(w, prompt) {
 		return true
 	}
 	fmt.Fprintln(w, "Aborted.")

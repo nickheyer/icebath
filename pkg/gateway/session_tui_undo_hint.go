@@ -4,10 +4,10 @@ import (
 	"math"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Epoch seconds a message stamp names, a positive finite number or an ISO date, false for anything else
@@ -29,7 +29,7 @@ func undoEpoch(value any) (float64, bool) {
 		if err != nil {
 			return 0, false
 		}
-		return pydatetime.Timestamp(parsed.T), true
+		return timeutil.Epoch(parsed.T), true
 	}
 	if math.IsNaN(number) || math.IsInf(number, 0) || number <= 0 {
 		return 0, false

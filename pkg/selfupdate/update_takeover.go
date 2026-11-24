@@ -15,14 +15,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -59,8 +58,8 @@ func takeoverRemove(path string) error {
 }
 
 // Provisions the new dependency graph and returns the managed interpreter with its activation environment
-func prepare(ctx context.Context, request *pyjson.Object) (string, []string, error) {
-	root := pyrepr.Str(request.GetOr("root", nil))
+func prepare(ctx context.Context, request *jsonutil.Object) (string, []string, error) {
+	root := anyutil.String(request.ValueOr("root", nil))
 	tools.ConvertTreelessCheckoutFirst(ctx, root)
 	if err := RefuseForeignOwnedVenv(ctx, root); err != nil {
 		return "", nil, err
@@ -71,7 +70,7 @@ func prepare(ctx context.Context, request *pyjson.Object) (string, []string, err
 	if err := armFleetObligation(ctx, root); err != nil {
 		return "", nil, err
 	}
-	correlation := pyrepr.Str(request.GetOr("update_id", nil))
+	correlation := anyutil.String(request.ValueOr("update_id", nil))
 	repairMarker := filepath.Join(pm.InstallStateDir(ctx, root), ".repair-incomplete")
 	err := func() error {
 		leave := pm.WorkerContext(ctx, &correlation)
@@ -139,8 +138,8 @@ func armFleetObligation(ctx context.Context, root string) error {
 
 // HEAD of a checkout from git, else from the ref files git itself reads, empty when neither names one
 func headSHA(ctx context.Context, root string) string {
-	head, err := pysubprocess.RunWith(ctx, []string{takeoverGitExecutable(ctx), "-C", root, "rev-parse", "HEAD"},
-		pysubprocess.Options{Timeout: 60 * time.Second})
+	head, err := executil.Run(ctx, []string{takeoverGitExecutable(ctx), "-C", root, "rev-parse", "HEAD"},
+		executil.Options{Timeout: 60 * time.Second})
 	if err == nil && head.Returncode == 0 {
 		if sha := strings.TrimSpace(strings.ToValidUTF8(string(head.Stdout), "\uFFFD")); takeoverSHA.MatchString(sha) {
 			return sha
@@ -159,7 +158,7 @@ func headSHA(ctx context.Context, root string) string {
 		if err != nil {
 			return "", false
 		}
-		text, err := pystr.DecodeUTF8Sig(raw)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		return text, err == nil
 	}
 	text, ok := read(filepath.Join(gitDir, "HEAD"))
@@ -169,7 +168,7 @@ func headSHA(ctx context.Context, root string) string {
 	sha := strings.TrimSpace(text)
 	if strings.HasPrefix(sha, "ref:") {
 		ref := strings.TrimSpace(strings.TrimPrefix(sha, "ref:"))
-		loose := pypath.Join(common, ref)
+		loose := pathutil.Join(common, ref)
 		if takeoverIsFile(loose) {
 			if text, ok = read(loose); !ok {
 				return ""
@@ -206,10 +205,10 @@ func publishGatewayExitCode(ctx context.Context, code int) error {
 
 // Writes the acknowledgement the waiting updater reads
 func takeoverAcknowledge(result string, receiptHandled bool) error {
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("receipt_handled", receiptHandled)
 	body.Set("resume_handled", false)
-	text, err := pyjson.Dumps(body)
+	text, err := jsonutil.Encode(body)
 	if err != nil {
 		return err
 	}
@@ -217,10 +216,10 @@ func takeoverAcknowledge(result string, receiptHandled bool) error {
 }
 
 // Records a failed takeover on the receipt, the gateway exit code and the acknowledgement
-func recordFailure(ctx context.Context, request *pyjson.Object, result string, code int, detail string) error {
+func recordFailure(ctx context.Context, request *jsonutil.Object, result string, code int, detail string) error {
 	takeoverRecordStep(ctx, "historical_takeover", false, detail)
 	saved := takeoverFinalize(ctx, &code, detail)
-	if pyrepr.Truthy(request.GetOr("gateway_mode", nil)) {
+	if anyutil.IsTrue(request.ValueOr("gateway_mode", nil)) {
 		if err := publishGatewayExitCode(ctx, code); err != nil {
 			return err
 		}
@@ -230,20 +229,20 @@ func recordFailure(ctx context.Context, request *pyjson.Object, result string, c
 
 // Finishes an update a historical updater handed off, returning the status the waiting updater reports
 func CmdUpdateTakeover(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
-	contextPath, result := pyrepr.Str(ns["context"]), pyrepr.Str(ns["result"])
+	contextPath, result := anyutil.String(ns["context"]), anyutil.String(ns["result"])
 	raw, err := os.ReadFile(contextPath)
 	if err != nil {
 		return 0, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return 0, err
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return 0, err
 	}
-	request, ok := decoded.(*pyjson.Object)
+	request, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return 0, fmt.Errorf("the takeover request %s is not an object", contextPath)
 	}
@@ -251,7 +250,7 @@ func CmdUpdateTakeover(ctx context.Context, ns map[string]any, w io.Writer) (int
 	if !hasRoot {
 		return 0, fmt.Errorf("the takeover request %s has no root", contextPath)
 	}
-	root := pyrepr.Str(rootValue)
+	root := anyutil.String(rootValue)
 	held, holder, release, err := takeoverAcquireLock(ctx, root)
 	if err != nil {
 		return 0, err
@@ -261,12 +260,12 @@ func CmdUpdateTakeover(ctx context.Context, ns map[string]any, w io.Writer) (int
 		return 2, nil
 	}
 	defer release()
-	oldReceipt, _ := request.GetOr("receipt", nil).(*pyjson.Object)
+	oldReceipt, _ := request.ValueOr("receipt", nil).(*jsonutil.Object)
 	if oldReceipt == nil {
-		oldReceipt = pyjson.NewObject()
+		oldReceipt = jsonutil.NewObject()
 	}
 	previous := ""
-	if id, ok := oldReceipt.GetOr("update_id", nil).(string); ok {
+	if id, ok := oldReceipt.ValueOr("update_id", nil).(string); ok {
 		previous = id
 	}
 	updaterecord.BeginUpdateReceipt(ctx, oldReceipt, previous)
@@ -283,7 +282,7 @@ func CmdUpdateTakeover(ctx context.Context, ns map[string]any, w io.Writer) (int
 		}
 		request.Set("receipt", data)
 		var encoded string
-		if encoded, err = pyjson.Dumps(request); err == nil {
+		if encoded, err = jsonutil.Encode(request); err == nil {
 			err = os.WriteFile(contextPath, []byte(encoded), 0o666)
 		}
 	}
@@ -312,14 +311,14 @@ func CmdUpdateTakeover(ctx context.Context, ns map[string]any, w io.Writer) (int
 func takeoverStatus(err error) (int, error) {
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
-		return pysubprocess.Returncode(exit), nil
+		return executil.ExitCode(exit.ProcessState), nil
 	}
 	return 0, err
 }
 
 // Runs the finish child holding the checkout custody and records a failure it did not acknowledge
-func runFinishChild(ctx context.Context, request *pyjson.Object, contextPath, result, python string, env []string) (int, error) {
-	root := pyrepr.Str(request.GetOr("root", nil))
+func runFinishChild(ctx context.Context, request *jsonutil.Object, contextPath, result, python string, env []string) (int, error) {
+	root := anyutil.String(request.ValueOr("root", nil))
 	command := updateFinishArgv(python, contextPath, result)
 	child, err := takeoverPopen(ctx, command, "update finish child", ChildOptions{Dir: root, Env: env})
 	if err != nil {
@@ -348,7 +347,7 @@ func runFinishChild(ctx context.Context, request *pyjson.Object, contextPath, re
 }
 
 // Records a finish child that could not run as an owed follow up of an installed update, never failing
-func recordOwedFinish(ctx context.Context, request *pyjson.Object, result, detail string) {
+func recordOwedFinish(ctx context.Context, request *jsonutil.Object, result, detail string) {
 	fmt.Fprintf(takeoverStderr, "  ⚠ The update is installed, but its finishing steps did not run: %s. "+
 		"The next `icebath` launch finishes them.\n", detail)
 	saved := ""
@@ -358,7 +357,7 @@ func recordOwedFinish(ctx context.Context, request *pyjson.Object, result, detai
 		zero := 0
 		saved = takeoverFinalize(ctx, &zero, "committed; finishing steps owed: "+detail)
 	}()
-	if pyrepr.Truthy(request.GetOr("gateway_mode", nil)) {
+	if anyutil.IsTrue(request.ValueOr("gateway_mode", nil)) {
 		_ = publishGatewayExitCode(ctx, 0)
 	}
 	_ = takeoverAcknowledge(result, saved != "")

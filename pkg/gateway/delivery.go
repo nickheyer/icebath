@@ -6,14 +6,15 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // MaxPlatformOutput caps cron output before truncation for adapters that do not split long messages
@@ -99,7 +100,7 @@ func adapterFor(adapters any, platform Platform) any {
 		return m[string(platform)]
 	case map[Platform]any:
 		return m[platform]
-	case *pydict.Dict[Platform, PlatformAdapter]:
+	case *orderedutil.Map[Platform, PlatformAdapter]:
 		adapter, _ := m.Get(platform)
 		return adapter
 	}
@@ -122,14 +123,14 @@ func ResolveDeliveryTransport(ctx context.Context, platform Platform, config *Ga
 
 // True when the chat id is a positive integer, the Telegram private chat shape
 func LooksLikeTelegramPrivateChatID(chatID string) bool {
-	n, ok := pyint.Parse(strings.TrimSpace(chatID))
-	return ok && n.Sign() > 0
+	n, err := textutil.ParseInt(chatID)
+	return (err == nil || errors.Is(err, strconv.ErrRange)) && n > 0
 }
 
-// True when Python int accepts the value
+// True when the value is a whole number in base ten, a sign and underscores between digits allowed
 func LooksLikeInt(value string) bool {
-	_, ok := pyint.Parse(strings.TrimSpace(value))
-	return ok
+	_, err := textutil.ParseInt(value)
+	return err == nil || errors.Is(err, strconv.ErrRange)
 }
 
 // Error text of a failed send result, nil on success
@@ -143,8 +144,8 @@ func sendResultError(result any) *string {
 	}
 	errVal, _ := sendResultAttr(result, "error")
 	text := ""
-	if pyrepr.Truthy(errVal) {
-		text = pyrepr.Str(errVal)
+	if anyutil.IsTrue(errVal) {
+		text = anyutil.String(errVal)
 	}
 	return &text
 }
@@ -256,7 +257,7 @@ func (r *DeliveryRouter) Deliver(ctx context.Context, content string, targets []
 			if metadata != nil {
 				meta = map[string]any{}
 				for _, kv := range metadata {
-					meta[pyrepr.Str(kv[0])] = kv[1]
+					meta[anyutil.String(kv[0])] = kv[1]
 				}
 			}
 			result, err = r.DeliverToPlatform(ctx, target, content, meta, nil)
@@ -303,7 +304,7 @@ func (r *DeliveryRouter) deliverLocal(content, jobID, jobName string, metadata [
 		lines = append(lines, "**Job ID:** "+jobID)
 	}
 	for _, kv := range metadata {
-		lines = append(lines, fmt.Sprintf("**%s:** %s", pyrepr.Str(kv[0]), pyrepr.Str(kv[1])))
+		lines = append(lines, fmt.Sprintf("**%s:** %s", anyutil.String(kv[0]), anyutil.String(kv[1])))
 	}
 	lines = append(lines, "", "---", "", content)
 	if err := os.WriteFile(outputPath, []byte(strings.Join(lines, "\n")), 0o644); err != nil {
@@ -367,7 +368,7 @@ func (r *DeliveryRouter) DeliverToPlatform(ctx context.Context, target DeliveryT
 	adapter := transport.Adapter
 	jobID := "unknown"
 	if v, ok := metadata["job_id"]; ok {
-		jobID = pyrepr.Str(v)
+		jobID = anyutil.String(v)
 	}
 	content, err := r.capOversizedOutput(ctx, adapter, content, jobID)
 	if err != nil {
@@ -379,7 +380,7 @@ func (r *DeliveryRouter) DeliverToPlatform(ctx context.Context, target DeliveryT
 		if len(head) > 40 {
 			head = head[:40]
 		}
-		pkgLog().Warn(fmt.Sprintf("Dropped silence-narration outbound to %s (chat=%s): %s", target.Platform, target.ChatID, pyrepr.Repr(string(head))))
+		pkgLog().Warn(fmt.Sprintf("Dropped silence-narration outbound to %s (chat=%s): %s", target.Platform, target.ChatID, anyutil.Quote(string(head))))
 		return map[string]any{"success": true, "filtered": "silence_narration", "delivered": false}, nil
 	}
 	sendMetadata := map[string]any{}

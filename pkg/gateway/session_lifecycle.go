@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Python datetime value, naive ones holding local wall time and aware ones their own offset
@@ -30,9 +30,9 @@ func newRoutedSessionID(now pyDatetime) string { return state.NewSessionIDAt(now
 // Python isoformat of the value in its naive or aware form
 func (d pyDatetime) isoformat() string {
 	if d.Aware {
-		return pydatetime.ISOFormat(d.T)
+		return d.T.Format(timeutil.RFC3339Micro)
 	}
-	return pydatetime.ISOFormatNaive(d.T)
+	return d.T.Format(timeutil.RFC3339Micro)
 }
 
 // Epoch seconds, a naive value read as local time
@@ -48,7 +48,7 @@ func isoOf(d *pyDatetime) any {
 
 // Strict fromisoformat that keeps a naive value as local wall time
 func fromISOFormat(value string) (pyDatetime, error) {
-	t, aware, err := pydatetime.ParseISOFormat(value)
+	t, aware, err := timeutil.ParseISOZone(value, time.UTC)
 	if err != nil {
 		return pyDatetime{}, err
 	}
@@ -125,7 +125,7 @@ func (s *SessionStore) localReceiptTarget(ctx context.Context, entry *SessionEnt
 		return "", nil
 	}
 	inner, _ := receipt.Get("entry")
-	obj, ok := inner.(*pyjson.Object)
+	obj, ok := inner.(*jsonutil.Object)
 	if !ok {
 		return "", nil
 	}
@@ -154,16 +154,16 @@ func (s *SessionStore) apiBound(ctx context.Context, entry *SessionEntry) (bool,
 
 // Whether a saved API binding receipt names the route, false for a receipt of another shape
 func apiBindingNamesRoute(saved, sessionKey string) bool {
-	parsed, err := pyjson.Loads(saved)
+	parsed, err := jsonutil.Decode(saved)
 	if err != nil {
 		return false
 	}
-	outer, ok := parsed.(*pyjson.Object)
+	outer, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return false
 	}
 	inner, _ := outer.Get("entry")
-	obj, ok := inner.(*pyjson.Object)
+	obj, ok := inner.(*jsonutil.Object)
 	if !ok {
 		return false
 	}

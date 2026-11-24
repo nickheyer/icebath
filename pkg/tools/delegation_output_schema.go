@@ -9,9 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Python frames under coerce_output_schema and validate_output when delegate_task runs in the reference tool worker thread
@@ -26,7 +24,7 @@ func CoerceOutputSchema(raw any) (any, string) {
 		return nil, ""
 	}
 	if s, ok := raw.(string); ok {
-		parsed, err := pyjson.Loads(s)
+		parsed, err := jsonutil.Decode(s)
 		if err != nil {
 			return nil, "output_schema must be a JSON Schema object, got a non-JSON string."
 		}
@@ -36,7 +34,7 @@ func CoerceOutputSchema(raw any) (any, string) {
 		raw = parsed
 	}
 	if !isJSONObject(raw) {
-		return nil, fmt.Sprintf("output_schema must be a JSON Schema object, got %s.", pyrepr.TypeName(raw))
+		return nil, fmt.Sprintf("output_schema must be a JSON Schema object, got %s.", anyutil.Kind(raw))
 	}
 	if err := pyjsonschema.CheckSchema(raw, coerceOutputSchemaFrameDepth); err != nil {
 		text, failed := pyjsonschema.Str(err, coerceOutputSchemaFrameDepth)
@@ -58,12 +56,12 @@ func WithPythonTaskSchemas(tasks, pyTasks any) any {
 	out := make([]any, len(list))
 	for i, t := range list {
 		out[i] = t
-		pyTask, isObject := pyList[i].(*pyjson.Object)
+		pyTask, isObject := pyList[i].(*jsonutil.Object)
 		m, isMap := t.(map[string]any)
 		if !isObject || !isMap {
 			continue
 		}
-		schema, has := pyTask.Vals["output_schema"]
+		schema, has := pyTask.Get("output_schema")
 		if !has {
 			continue
 		}
@@ -79,7 +77,7 @@ func WithPythonTaskSchemas(tasks, pyTasks any) any {
 
 func isJSONObject(v any) bool {
 	switch v.(type) {
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		return true
 	}
 	return false
@@ -87,9 +85,9 @@ func isJSONObject(v any) bool {
 
 // Child context with the machine validated output contract block appended
 func AppendOutputContract(context string, schema any) string {
-	schemaText, err := pyjson.Dumps(schema, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	schemaText, err := jsonutil.Encode(schema, jsonutil.Indent(2))
 	if err != nil {
-		schemaText = pyrepr.Str(schema)
+		schemaText = anyutil.String(schema)
 	}
 	block := "OUTPUT CONTRACT (machine-validated):\n" +
 		"Your FINAL response must be ONLY the JSON value that validates against this JSON " +
@@ -134,7 +132,7 @@ func ExtractJSONCandidate(text string) string {
 		return cmp.Or(cmp.Compare(a.start, b.start), strings.Compare(a.candidate, b.candidate))
 	})
 	for _, s := range spans {
-		if _, err := pyjson.Loads(s.candidate); err == nil {
+		if _, err := jsonutil.Decode(s.candidate); err == nil {
 			return s.candidate
 		}
 	}
@@ -155,7 +153,7 @@ func ValidateOutputAt(text string, schema any, validateDepth int) (bool, []strin
 	if strings.TrimSpace(candidate) == "" {
 		return false, []string{"Response was empty — expected a JSON object matching the schema."}, nil
 	}
-	parsed, err := pyjson.Loads(candidate)
+	parsed, err := jsonutil.Decode(candidate)
 	if err != nil {
 		return false, []string{"Response is not valid JSON: " + err.Error()}, nil
 	}
@@ -164,7 +162,7 @@ func ValidateOutputAt(text string, schema any, validateDepth int) (bool, []strin
 		return false, nil, err
 	}
 	var typeErr error
-	slices.SortStableFunc(errs, func(a, b *pyjsonschema.IterError) int {
+	slices.SortStableFunc(errs, func(a, b *jsonschemautil.ValidationError) int {
 		c, err := comparePaths(a.AbsolutePath, b.AbsolutePath)
 		if err != nil && typeErr == nil {
 			typeErr = err
@@ -182,7 +180,7 @@ func ValidateOutputAt(text string, schema any, validateDepth int) (bool, []strin
 			if n, ok := p.(int); ok {
 				b.WriteString("[" + strconv.Itoa(n) + "]")
 			} else {
-				b.WriteString("." + pyrepr.Str(p))
+				b.WriteString("." + anyutil.String(p))
 			}
 		}
 		rendered = append(rendered, b.String()+": "+e.Message)
@@ -201,7 +199,7 @@ func comparePaths(a, b []any) (int, error) {
 				return c, nil
 			}
 		case !aInt && !bInt:
-			if c := strings.Compare(pyrepr.Str(a[i]), pyrepr.Str(b[i])); c != 0 {
+			if c := strings.Compare(anyutil.String(a[i]), anyutil.String(b[i])); c != 0 {
 				return c, nil
 			}
 		default:

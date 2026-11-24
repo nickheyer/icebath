@@ -16,9 +16,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	_ "github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 const (
@@ -49,7 +49,7 @@ func TestMain(m *testing.M) {
 		os.Exit(4)
 	}
 	if out := os.Getenv(envOwner); out != "" {
-		start := envChild + "=" + pyshlex.Quote(out) + " exec " + pyshlex.Quote(os.Args[0]) + " -test.run='^$'"
+		start := envChild + "=" + shellutil.Quote(out) + " exec " + shellutil.Quote(os.Args[0]) + " -test.run='^$'"
 		opts := verify.NewVerifyOptions()
 		opts.Phases, opts.ReadyTimeout = []string{"start"}, 120
 		go func() {
@@ -97,7 +97,7 @@ func runStart(t *testing.T, r *verify.Recipe, readyTimeout float64, portOverride
 
 func TestReadinessAgainstLiveServer(t *testing.T) {
 	port := freePort(t)
-	start := fmt.Sprintf("%s=%d exec %s -test.run='^$'", envServe, port, pyshlex.Quote(os.Args[0]))
+	start := fmt.Sprintf("%s=%d exec %s -test.run='^$'", envServe, port, shellutil.Quote(os.Args[0]))
 	res := runStart(t, &verify.Recipe{Name: "x", Start: &start, Port: intp(port), ReadinessPath: "/"}, 15, nil)
 	if res.Readiness == nil || !res.Readiness.Ready || *res.Readiness.StatusCode != 200 || !res.OK() {
 		t.Fatalf("readiness %#v", res.Readiness)

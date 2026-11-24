@@ -7,10 +7,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var skinHexRe = regexp.MustCompile(`^#[0-9a-fA-F]{6}\n?$`)
@@ -62,7 +63,7 @@ func orderedCopy(m map[string]any) map[string]any {
 // Sets one hex color of a user skin in place or of a forked copy of a built in, then activates the fork
 func skinSet(ctx context.Context, key, value, skin string, src ConfigCommandSources, stdout, stderr io.Writer) (int, error) {
 	if !skinHexRe.MatchString(value) {
-		fmt.Fprintf(stderr, "✗ %s is not a #rrggbb hex color\n", pyrepr.StrRepr(value))
+		fmt.Fprintf(stderr, "✗ %s is not a #rrggbb hex color\n", strconv.Quote(value))
 		return 1, nil
 	}
 	name := skin
@@ -145,15 +146,7 @@ func skinList(ctx context.Context, stdout io.Writer) (int, error) {
 		if pyEq(s.Name, active) {
 			mark = "*"
 		}
-		name, err := pyrepr.Format(s.Name, "<16")
-		if err != nil {
-			return 0, err
-		}
-		source, err := pyrepr.Format(s.Source, "<8")
-		if err != nil {
-			return 0, err
-		}
-		fmt.Fprintf(stdout, "%s %s %s %s\n", mark, name, source, pyrepr.Str(s.Description))
+		fmt.Fprintf(stdout, "%s %-16s %-8s %s\n", mark, anyutil.String(s.Name), s.Source, anyutil.String(s.Description))
 	}
 	return 0, nil
 }

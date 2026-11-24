@@ -3,9 +3,9 @@ package tuihost
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Plugin hook a hosted room member's live runtime events are projected to
@@ -29,8 +29,8 @@ func mappingGet(m any, key string) any {
 	switch x := m.(type) {
 	case map[string]any:
 		return x[key]
-	case *pyjson.Object:
-		return x.GetOr(key, nil)
+	case *jsonutil.Object:
+		return x.ValueOr(key, nil)
 	}
 	return nil
 }
@@ -43,9 +43,9 @@ func mappingCopy(m any) map[string]any {
 		for k, v := range x {
 			out[k] = v
 		}
-	case *pyjson.Object:
-		for _, k := range x.Keys {
-			out[k] = x.Vals[k]
+	case *jsonutil.Object:
+		for _, k := range x.Keys() {
+			out[k] = x.Value(k)
 		}
 	}
 	return out
@@ -55,7 +55,7 @@ func isMapping(m any) bool {
 	switch x := m.(type) {
 	case map[string]any:
 		return x != nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x != nil
 	}
 	return false
@@ -72,29 +72,29 @@ func EmitRoomMemberActivity(ctx context.Context, hostedTask any, kind string, pa
 }
 
 // Fires the hook for an outgoing event or server request frame of a session that is running a room turn
-func ProjectRoomMemberActivity(ctx context.Context, frame *pyjson.Object, session func(sid string) *Session) bool {
-	params, ok := frame.GetOr("params", nil).(*pyjson.Object)
+func ProjectRoomMemberActivity(ctx context.Context, frame *jsonutil.Object, session func(sid string) *Session) bool {
+	params, ok := frame.ValueOr("params", nil).(*jsonutil.Object)
 	if !ok {
 		return false
 	}
 	text := func(v any) string {
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			return ""
 		}
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	var kind string
 	var known bool
 	var payload any
-	if frame.GetOr("method", nil) == "event" {
-		kind, known = kindByFrameType[text(params.GetOr("type", nil))]
-		payload = params.GetOr("payload", nil)
+	if frame.ValueOr("method", nil) == "event" {
+		kind, known = kindByFrameType[text(params.ValueOr("type", nil))]
+		payload = params.ValueOr("payload", nil)
 	} else if _, hasID := frame.Get("id"); hasID {
-		kind, known = kindByRequestMethod[text(frame.GetOr("method", nil))]
-		rest := pyjson.NewObject()
-		for _, k := range params.Keys {
+		kind, known = kindByRequestMethod[text(frame.ValueOr("method", nil))]
+		rest := jsonutil.NewObject()
+		for _, k := range params.Keys() {
 			if k != "session_id" {
-				rest.Set(k, params.Vals[k])
+				rest.Set(k, params.Value(k))
 			}
 		}
 		payload = rest
@@ -104,12 +104,12 @@ func ProjectRoomMemberActivity(ctx context.Context, frame *pyjson.Object, sessio
 	if !known {
 		return false
 	}
-	hostedTask := session(text(params.GetOr("session_id", nil))).Get("_hosted_room_task")
+	hostedTask := session(text(params.ValueOr("session_id", nil))).Get("_hosted_room_task")
 	if !isMapping(hostedTask) {
 		return false
 	}
 	if !isMapping(payload) {
 		payload = nil
 	}
-	return EmitRoomMemberActivity(ctx, hostedTask, kind, payload, params.GetOr("seq", nil))
+	return EmitRoomMemberActivity(ctx, hostedTask, kind, payload, params.ValueOr("seq", nil))
 }

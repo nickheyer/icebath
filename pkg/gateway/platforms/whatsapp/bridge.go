@@ -29,7 +29,6 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Launch arguments of the bridge, the --port, --session, --mode, --pair-only and --pair-json of bridge.js
@@ -167,8 +166,8 @@ type bridgeHost struct {
 	generation       int
 	closedGeneration int
 	connectionState  string
-	messageQueue     []*pyjson.Object
-	deliveryQueue    []*pyjson.Object
+	messageQueue     []*jsonutil.Object
+	deliveryQueue    []*jsonutil.Object
 	server           *http.Server
 	cachedVersion    *store.WAVersionContainer
 	mediaRetries     map[types.MessageID]chan *events.MediaRetry
@@ -177,7 +176,7 @@ type bridgeHost struct {
 	recentlySent   *outboundIDTracker
 	processedPolls *outboundIDTracker
 	messageStore   *boundedLRU[*storedMessage]
-	quotedMedia    *boundedLRU[*pyjson.Object]
+	quotedMedia    *boundedLRU[*jsonutil.Object]
 	inbound        chan *events.Message
 
 	exitOnce sync.Once
@@ -217,7 +216,7 @@ func startBridge(ctx context.Context, args bridgeArgs, out io.Writer, env map[st
 	b := &bridgeHost{ctx: ctx, cfg: cfg, console: &bridgeConsole{out: out}, scriptHash: fileContentHash(exe),
 		started: time.Now(), connectionState: "disconnected", mediaRetries: map[types.MessageID]chan *events.MediaRetry{},
 		recentlySent: newOutboundIDTracker(512), processedPolls: newOutboundIDTracker(512),
-		messageStore: newBoundedLRU[*storedMessage](512), quotedMedia: newBoundedLRU[*pyjson.Object](512),
+		messageStore: newBoundedLRU[*storedMessage](512), quotedMedia: newBoundedLRU[*jsonutil.Object](512),
 		inbound: make(chan *events.Message, 256), done: make(chan struct{})}
 	if c, ok := out.(io.Closer); ok && out != os.Stdout && out != os.Stderr {
 		b.logFile = c
@@ -409,13 +408,13 @@ func (b *bridgeHost) exited() bool {
 }
 
 // Pair event JSON line with its timestamp, only in --pair-json mode
-func (b *bridgeHost) emitPairEvent(event *pyjson.Object) {
+func (b *bridgeHost) emitPairEvent(event *jsonutil.Object) {
 	if !b.cfg.pairJSON {
 		return
 	}
 	line := jsonObj("ts", time.Now().UnixMilli())
-	for _, k := range event.Keys {
-		line.Set(k, event.Vals[k])
+	for k, v := range event.All() {
+		line.Set(k, v)
 	}
 	b.console.jsonLine(line)
 }
@@ -691,7 +690,7 @@ func (b *bridgeHost) writeCredsIdentity(client *whatsmeow.Client) {
 	if client.Store.PushName != "" {
 		me.Set("name", client.Store.PushName)
 	}
-	text, err := pyjson.Dumps(jsonObj("me", me, "registered", true, "platform", "whatsmeow"), pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(jsonObj("me", me, "registered", true, "platform", "whatsmeow"), jsonutil.Indent(2))
 	if err != nil {
 		return
 	}
@@ -710,7 +709,7 @@ func (b *bridgeHost) socket() (*whatsmeow.Client, string) {
 }
 
 // Queues an inbound event for the next poll, dropping the oldest past the bound
-func (b *bridgeHost) pushMessage(event *pyjson.Object) int {
+func (b *bridgeHost) pushMessage(event *jsonutil.Object) int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.messageQueue = append(b.messageQueue, event)
@@ -722,7 +721,7 @@ func (b *bridgeHost) pushMessage(event *pyjson.Object) int {
 }
 
 // Queues a delivery status event under its own bound
-func (b *bridgeHost) pushDelivery(event *pyjson.Object) {
+func (b *bridgeHost) pushDelivery(event *jsonutil.Object) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.deliveryQueue = append(b.deliveryQueue, event)

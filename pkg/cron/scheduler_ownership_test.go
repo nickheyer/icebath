@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Two profile homes under one root, the second a named profile, with the ticked set reset afterwards
@@ -43,12 +43,12 @@ func foreignGateway(record map[string]any) {
 	gatewayProbes.ownsRuntimeLock = func() bool { return false }
 	gatewayProbes.runtimeLockActive = func(string) (bool, error) { return true, nil }
 	gatewayProbes.runningPid = func(string, bool) (int, bool, error) { return 4321, true, nil }
-	gatewayProbes.runtimeStatusIsStale = func(*pyjson.Object, int) bool { return false }
-	gatewayProbes.readRuntimeStatus = func(string) *pyjson.Object {
+	gatewayProbes.runtimeStatusIsStale = func(*jsonutil.Object, int) bool { return false }
+	gatewayProbes.readRuntimeStatus = func(string) *jsonutil.Object {
 		if record == nil {
 			return nil
 		}
-		obj := pyjson.NewObject()
+		obj := jsonutil.NewObject()
 		for _, k := range []string{"pid", "code_sha", "icebath_home", "served_profiles"} {
 			if v, ok := record[k]; ok {
 				obj.Set(k, v)
@@ -144,7 +144,7 @@ func TestLiveGatewayTickingIsAnsweredPerServedProfile(t *testing.T) {
 		t.Fatal("record of a different pid was trusted")
 	}
 	foreignGateway(map[string]any{"pid": int64(4321), "icebath_home": a})
-	gatewayProbes.runtimeStatusIsStale = func(*pyjson.Object, int) bool { return true }
+	gatewayProbes.runtimeStatusIsStale = func(*jsonutil.Object, int) bool { return true }
 	if liveGatewayTicking(a) != nil {
 		t.Fatal("stale heartbeat was trusted")
 	}
@@ -178,7 +178,7 @@ func TestRecordServesProfileFallsBackToTheProcessHome(t *testing.T) {
 	if recordServesProfile(nil, a) {
 		t.Fatal("nil record proved a home")
 	}
-	rec := pyjson.NewObject()
+	rec := jsonutil.NewObject()
 	rec.Set("icebath_home", "   ")
 	if !recordServesProfile(rec, a) {
 		t.Fatal("blank icebath_home did not fall back to the process home")

@@ -8,8 +8,6 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Handler that checks the client and the stripped required keys, then sends the request and wraps its data
@@ -44,7 +42,7 @@ func feishuCommentOp(keys []string, missingMsg, label, method, uri string, queri
 		}
 		code, msg, data := larkCall(ctx, client, method, uri, paths, q, b)
 		if !larkCodeOK(code) {
-			return toolErrorJSON(fmt.Sprintf("%s failed: code=%s msg=%s", label, pyrepr.Str(code), pyrepr.Str(msg)), nil)
+			return toolErrorJSON(fmt.Sprintf("%s failed: code=%s msg=%s", label, anyutil.String(code), anyutil.String(msg)), nil)
 		}
 		if flagSuccess {
 			return ToolResult(Dict("success", true, "data", data))
@@ -55,7 +53,7 @@ func feishuCommentOp(keys []string, missingMsg, label, method, uri string, queri
 
 // File type argument, docx when absent or falsy
 func feishuFileType(args map[string]any) any {
-	if v, ok := args["file_type"]; ok && pyrepr.Truthy(v) {
+	if v, ok := args["file_type"]; ok && anyutil.IsTrue(v) {
 		return v
 	}
 	return "docx"
@@ -67,13 +65,13 @@ func feishuPagedQueries(args map[string]any, extra ...larkQuery) []larkQuery {
 	if v, ok := args["page_size"]; ok {
 		pageSize = v
 	}
-	queries := []larkQuery{{"file_type", feishuFileType(args)}, {"user_id_type", "open_id"}, {"page_size", pyrepr.Str(pageSize)}}
+	queries := []larkQuery{{"file_type", feishuFileType(args)}, {"user_id_type", "open_id"}, {"page_size", anyutil.String(pageSize)}}
 	queries = append(queries, extra...)
 	var pageToken any = ""
 	if v, ok := args["page_token"]; ok {
 		pageToken = v
 	}
-	if pyrepr.Truthy(pageToken) {
+	if anyutil.IsTrue(pageToken) {
 		queries = append(queries, larkQuery{"page_token", pageToken})
 	}
 	return queries
@@ -85,19 +83,19 @@ const (
 	feishuAddCommentURI = "/open-apis/drive/v1/files/:file_token/new_comments"
 )
 
-func feishuFileTokenProp() *pyjson.Object {
+func feishuFileTokenProp() *jsonutil.Object {
 	return Dict("type", "string", "description", "The document file token.")
 }
 
-func feishuFileTypeProp() *pyjson.Object {
+func feishuFileTypeProp() *jsonutil.Object {
 	return Dict("type", "string", "description", "File type (default: docx).", "default", "docx")
 }
 
-func feishuPageTokenProp() *pyjson.Object {
+func feishuPageTokenProp() *jsonutil.Object {
 	return Dict("type", "string", "description", "Pagination token for next page.")
 }
 
-func feishuDriveSchema(name, description string, properties *pyjson.Object, required ...any) *pyjson.Object {
+func feishuDriveSchema(name, description string, properties *jsonutil.Object, required ...any) *jsonutil.Object {
 	return Dict("name", name, "description", description,
 		"parameters", Dict("type", "object", "properties", properties, "required", required))
 }
@@ -170,7 +168,7 @@ var feishuDriveAddCommentSchema = feishuDriveSchema("feishu_drive_add_comment",
 
 var handleFeishuListComments = feishuCommentOp([]string{"file_token"}, "file_token is required", "List comments", "GET", feishuCommentsURI,
 	func(a map[string]any) []larkQuery {
-		if pyrepr.Truthy(a["is_whole"]) {
+		if anyutil.IsTrue(a["is_whole"]) {
 			return feishuPagedQueries(a, larkQuery{"is_whole", "true"})
 		}
 		return feishuPagedQueries(a)
@@ -195,7 +193,7 @@ var handleFeishuAddComment = feishuCommentOp([]string{"file_token", "content"}, 
 
 func init() {
 	for _, t := range []struct {
-		schema      *pyjson.Object
+		schema      *jsonutil.Object
 		handler     Handler
 		desc, emoji string
 	}{
@@ -204,7 +202,7 @@ func init() {
 		{feishuDriveReplySchema, handleFeishuReplyComment, "Reply to a document comment", "✉️"},
 		{feishuDriveAddCommentSchema, handleFeishuAddComment, "Add a whole-document comment", "✉️"},
 	} {
-		Register(Def{Name: t.schema.Vals["name"].(string), Toolset: "feishu_drive", Schema: t.schema, Handler: t.handler,
+		Register(Def{Name: t.schema.Value("name").(string), Toolset: "feishu_drive", Schema: t.schema, Handler: t.handler,
 			Check: feishuToolsReady, RequiresEnv: []string{}, Description: t.desc, Emoji: t.emoji})
 	}
 }

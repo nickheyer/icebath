@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // One held same sender busy burst, its merged head, hold window, timer, commit task and absorbed inputs
@@ -98,7 +98,7 @@ func dispatchBusyBurst(ctx context.Context, adapter PlatformAdapter, event *Mess
 		if kind != "" && kind == b.burstKind(burst.head) && b.canMergeTextDebounceEvents(burst.head, event) {
 			MergePendingMessageEvent(map[string]*MessageEvent{sessionKey: burst.head}, sessionKey, event, kind == "text")
 			burst.absorbed = append(burst.absorbed, event)
-			burst.lastTS = pythread.Monotonic()
+			burst.lastTS = timeutil.Monotonic()
 			b.armBurstLocked(ctx, adapter, sessionKey, burst)
 			bi.mu.Unlock()
 			return burstAccepted(ctx, adapter, burst, event)
@@ -131,7 +131,7 @@ func dispatchBusyBurst(ctx context.Context, adapter PlatformAdapter, event *Mess
 		}
 		return dispatchSharedBusy(ctx, adapter, event, sessionKey, false)
 	}
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	burst := &busyBurst{head: event, done: newBusyFuture(), firstTS: now, lastTS: now}
 	lazyAttr(&bi.bursts)[sessionKey] = burst
 	b.armBurstLocked(ctx, adapter, sessionKey, burst)
@@ -159,7 +159,7 @@ func (b *BasePlatformAdapter) armBurstLocked(ctx context.Context, adapter Platfo
 	b.mu.Lock()
 	debounce, hardCap := b.busyTextDebounceSeconds, b.busyTextHardCapSeconds
 	b.mu.Unlock()
-	delay := max(0.0, min(burst.lastTS+debounce, burst.firstTS+hardCap)-pythread.Monotonic())
+	delay := max(0.0, min(burst.lastTS+debounce, burst.firstTS+hardCap)-timeutil.Monotonic())
 	bi := &b.busyIngress
 	burst.timer = spawnAdapterTask(ctx, func(tctx context.Context) error {
 		if err := sleepSeconds(tctx, delay); err != nil {

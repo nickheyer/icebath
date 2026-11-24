@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -26,11 +26,11 @@ func boundJSONErrorResult(env *Env, result string) string {
 	if utf8.RuneCountInString(result) <= maxToolErrorChars || !strings.Contains(result, `"error"`) {
 		return result
 	}
-	decoded, err := pyjson.Loads(result)
+	decoded, err := jsonutil.Decode(result)
 	if err != nil {
 		return result
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return result
 	}
@@ -40,7 +40,7 @@ func boundJSONErrorResult(env *Env, result string) string {
 		return result
 	}
 	payload.Set("error", boundModelErrorText(env, errText))
-	out, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(payload)
 	if err != nil {
 		return result
 	}

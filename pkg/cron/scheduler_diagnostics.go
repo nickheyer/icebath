@@ -6,9 +6,10 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const workerStderrTailChars = 1500
@@ -43,7 +44,7 @@ func externalWorkerStderrTail(s *Store, path string) string {
 	if err != nil {
 		return ""
 	}
-	text := strings.TrimSpace(pystr.DecodeUTF8SigReplace(raw))
+	text := strings.TrimSpace(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError)))
 	if text == "" {
 		return ""
 	}

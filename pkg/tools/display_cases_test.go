@@ -10,7 +10,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Resets the configured preview length around a display case
@@ -204,7 +204,7 @@ func TestGetToolEmojiCustomDefault(t *testing.T) {
 
 func TestGetToolEmojiSkinOverrideOnlyForMatchingTool(t *testing.T) {
 	env := &Env{Home: t.TempDir()}
-	if err := Default.RegisterScoped(ScopeKey(envHome(env)), Def{Name: "web_search", Toolset: "web", Emoji: "\U0001f50d", Handler: func(context.Context, *Call) string { return "" }, Schema: pyjson.ObjectOf("name", "web_search", "description", "search", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))}); err != nil {
+	if err := Default.RegisterScoped(ScopeKey(envHome(env)), Def{Name: "web_search", Toolset: "web", Emoji: "\U0001f50d", Handler: func(context.Context, *Call) string { return "" }, Schema: jsonutil.ObjectOf("name", "web_search", "description", "search", "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf()))}); err != nil {
 		t.Fatal(err)
 	}
 	SetSkinToolEmojis(func() map[string]string { return map[string]string{"terminal": "\u2694"} })

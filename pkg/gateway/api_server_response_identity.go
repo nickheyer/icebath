@@ -5,8 +5,8 @@ import (
 	"encoding/hex"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var apiItemIDPrefixes = map[string]string{"function_call": "fc", "function_call_output": "fco", "reasoning": "rs", "message": "msg"}
@@ -27,13 +27,13 @@ func APIDurableResponseID(requestKey string) string {
 // Stable item id derived from the response id, the item kind, call id, commentary flag and occurrence
 func apiNextItemID(responseID string, counters map[apiItemCounterKey]int, kind string, callID any, commentary bool) (string, error) {
 	switch callID.(type) {
-	case *pyjson.Object, map[string]any, []any:
+	case *jsonutil.Object, map[string]any, []any:
 		return "", &PyError{Kind: "TypeError", Msg: "the tool call id is " + errchain.Kind(callID) + ", expected text"}
 	}
 	key := apiItemCounterKey{Kind: kind, CallID: callID, Commentary: commentary}
 	occurrence := counters[key]
 	counters[key] = occurrence + 1
-	encoded, err := pyjson.Dumps([]any{responseID, kind, callID, commentary, occurrence}, pyjson.Separators(",", ":"))
+	encoded, err := jsonutil.Encode([]any{responseID, kind, callID, commentary, occurrence})
 	if err != nil {
 		return "", err
 	}
@@ -46,9 +46,9 @@ func apiNextItemID(responseID string, counters map[apiItemCounterKey]int, kind s
 }
 
 // Output items copied with their stable ids
-func apiIdentifyOutput(items []*pyjson.Object, responseID string) ([]*pyjson.Object, error) {
+func apiIdentifyOutput(items []*jsonutil.Object, responseID string) ([]*jsonutil.Object, error) {
 	counters := map[apiItemCounterKey]int{}
-	out := make([]*pyjson.Object, 0, len(items))
+	out := make([]*jsonutil.Object, 0, len(items))
 	for _, item := range items {
 		kind, found := item.Get("type")
 		if !found {
@@ -56,13 +56,13 @@ func apiIdentifyOutput(items []*pyjson.Object, responseID string) ([]*pyjson.Obj
 		}
 		kindText, ok := kind.(string)
 		if !ok {
-			return nil, &pyKeyError{pyrepr.Str(kind)}
+			return nil, &pyKeyError{anyutil.String(kind)}
 		}
-		id, err := apiNextItemID(responseID, counters, kindText, item.GetOr("call_id", nil), item.GetOr("phase", nil) == "commentary")
+		id, err := apiNextItemID(responseID, counters, kindText, item.ValueOr("call_id", nil), item.ValueOr("phase", nil) == "commentary")
 		if err != nil {
 			return nil, err
 		}
-		copied := item.Copy()
+		copied := item.Clone()
 		copied.Set("id", id)
 		out = append(out, copied)
 	}

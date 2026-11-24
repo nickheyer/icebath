@@ -11,10 +11,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Test override of the sessions index, the live profile index when empty
@@ -29,12 +29,12 @@ func resolveSessionsIndex(ctx context.Context) string {
 }
 
 // Origin user id of an index entry as text
-func originUserID(entry *pyjson.Object) string {
-	origin, _ := entry.Vals["origin"].(*pyjson.Object)
-	if origin == nil || !pyrepr.Truthy(origin.Vals["user_id"]) {
+func originUserID(entry *jsonutil.Object) string {
+	origin, _ := entry.Value("origin").(*jsonutil.Object)
+	if origin == nil || !anyutil.IsTrue(origin.Value("user_id")) {
 		return ""
 	}
-	return pyrepr.Str(origin.Vals["user_id"])
+	return anyutil.String(origin.Value("user_id"))
 }
 
 // MirrorOptions are the optional thread, sender, role and exact session of a mirror
@@ -111,21 +111,21 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 	if err != nil {
 		return "", nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return "", nil
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return "", nil
 	}
-	data, isObj := parsed.(*pyjson.Object)
+	data, isObj := parsed.(*jsonutil.Object)
 	if !isObj {
 		return "", mirrorShapeError("the sessions index", parsed, "a mapping")
 	}
-	var candidates []*pyjson.Object
-	for _, k := range data.Keys {
-		entry, ok := data.Vals[k].(*pyjson.Object)
+	var candidates []*jsonutil.Object
+	for _, k := range data.Keys() {
+		entry, ok := data.Value(k).(*jsonutil.Object)
 		if strings.HasPrefix(k, "_") || !ok {
 			continue
 		}
@@ -141,7 +141,7 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 		return "", nil
 	}
 	if userID != nil && *userID != "" {
-		var exact []*pyjson.Object
+		var exact []*jsonutil.Object
 		for _, e := range candidates {
 			if originUserID(e) == *userID {
 				exact = append(exact, e)
@@ -174,7 +174,7 @@ func findMirrorSessionID(ctx context.Context, platform, chatID string, threadID,
 			best, bestKey = e, key
 		}
 	}
-	return mirrorSessionIDText(best.Vals["session_id"])
+	return mirrorSessionIDText(best.Value("session_id"))
 }
 
 // Refusal of a decoded mirror value of the wrong kind
@@ -183,17 +183,17 @@ func mirrorShapeError(what string, v any, want string) error {
 }
 
 // Whether an index entry's origin names the platform, chat and thread, with the AttributeError a non mapping origin raises
-func mirrorEntryMatches(entry *pyjson.Object, platform, chatID string, threadID *string) (bool, error) {
-	originValue := entry.Vals["origin"]
-	if !pyrepr.Truthy(originValue) {
-		originValue = pyjson.NewObject()
+func mirrorEntryMatches(entry *jsonutil.Object, platform, chatID string, threadID *string) (bool, error) {
+	originValue := entry.Value("origin")
+	if !anyutil.IsTrue(originValue) {
+		originValue = jsonutil.NewObject()
 	}
-	origin, isObj := originValue.(*pyjson.Object)
+	origin, isObj := originValue.(*jsonutil.Object)
 	if !isObj {
 		return false, mirrorShapeError("a session origin", originValue, "a mapping")
 	}
-	plat := origin.Vals["platform"]
-	if !pyrepr.Truthy(plat) {
+	plat := origin.Value("platform")
+	if !anyutil.IsTrue(plat) {
 		plat = ""
 		if v, ok := entry.Get("platform"); ok {
 			plat = v
@@ -210,21 +210,21 @@ func mirrorEntryMatches(entry *pyjson.Object, platform, chatID string, threadID 
 	if !ok {
 		chat = ""
 	}
-	if pyrepr.Str(chat) != chatID {
+	if anyutil.String(chat) != chatID {
 		return false, nil
 	}
 	if threadID == nil {
 		return true, nil
 	}
-	thread := origin.Vals["thread_id"]
-	if !pyrepr.Truthy(thread) {
+	thread := origin.Value("thread_id")
+	if !anyutil.IsTrue(thread) {
 		thread = ""
 	}
-	return pyrepr.Str(thread) == *threadID, nil
+	return anyutil.String(thread) == *threadID, nil
 }
 
 // updated_at of an index entry, empty when missing
-func updatedAt(e *pyjson.Object) any {
+func updatedAt(e *jsonutil.Object) any {
 	if v, ok := e.Get("updated_at"); ok {
 		return v
 	}
@@ -246,7 +246,7 @@ func mirrorPyGreater(a, b any) (bool, error) {
 	if la, ok := a.([]any); ok {
 		if lb, ok := b.([]any); ok {
 			for i := 0; i < len(la) && i < len(lb); i++ {
-				if !pyjson.Equal(la[i], lb[i]) {
+				if !anyutil.Equal(la[i], lb[i]) {
 					return mirrorPyGreater(la[i], lb[i])
 				}
 			}
@@ -281,7 +281,7 @@ func mirrorPyNumber(v any) (*big.Float, bool) {
 
 // Session id an index entry holds as bound text, empty when falsy, the binding error for a list or mapping
 func mirrorSessionIDText(v any) (string, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	switch n := v.(type) {
@@ -289,10 +289,10 @@ func mirrorSessionIDText(v any) (string, error) {
 		return n, nil
 	case bool:
 		return "1", nil
-	case []any, *pyjson.Object, map[string]any:
+	case []any, *jsonutil.Object, map[string]any:
 		return "", fmt.Errorf("the mirror lookup value is %s, which the database cannot match", errchain.Kind(n))
 	}
-	return pyrepr.Str(v), nil
+	return anyutil.String(v), nil
 }
 
 // Shared session db registry acquire and release, swapped by tests

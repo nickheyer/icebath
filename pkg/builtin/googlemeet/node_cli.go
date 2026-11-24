@@ -8,10 +8,11 @@ import (
 	"net"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/spf13/cobra"
 )
 
@@ -98,8 +99,8 @@ func nodeCommand(ns map[string]any) int {
 			fmt.Fprintln(cliOut, "no nodes registered")
 		}
 		for _, n := range nodes {
-			tok := []rune(pyrepr.Str(n.Vals["token"]))
-			fmt.Fprintf(cliOut, "%s\t%s\ttoken=%s…\n", pyrepr.Str(n.Vals["name"]), pyrepr.Str(n.Vals["url"]), string(tok[:min(6, len(tok))]))
+			tok := []rune(anyutil.String(n.Value("token")))
+			fmt.Fprintf(cliOut, "%s\t%s\ttoken=%s…\n", anyutil.String(n.Value("name")), anyutil.String(n.Value("url")), string(tok[:min(6, len(tok))]))
 		}
 		return 0
 	case "approve":
@@ -107,7 +108,7 @@ func nodeCommand(ns map[string]any) int {
 			fmt.Fprintf(cliErr, "could not approve the node: %v\n", err)
 			return 1
 		}
-		fmt.Fprintf(cliOut, "approved node %s at %s\n", pyrepr.StrRepr(nsStr(ns, "name")), nsStr(ns, "url"))
+		fmt.Fprintf(cliOut, "approved node %s at %s\n", strconv.Quote(nsStr(ns, "name")), nsStr(ns, "url"))
 		return 0
 	case "remove":
 		ok, err := reg.remove(ctx, nsStr(ns, "name"))
@@ -116,15 +117,15 @@ func nodeCommand(ns map[string]any) int {
 			return 1
 		}
 		if ok {
-			fmt.Fprintf(cliOut, "removed %s\n", pyrepr.StrRepr(nsStr(ns, "name")))
+			fmt.Fprintf(cliOut, "removed %s\n", strconv.Quote(nsStr(ns, "name")))
 			return 0
 		}
-		fmt.Fprintf(cliOut, "no such node: %s\n", pyrepr.StrRepr(nsStr(ns, "name")))
+		fmt.Fprintf(cliOut, "no such node: %s\n", strconv.Quote(nsStr(ns, "name")))
 		return 1
 	case "status", "ping":
 		return nodePing(reg, nsStr(ns, "name"))
 	default:
-		fmt.Fprintf(cliErr, "unknown node command: %s\n", pyrepr.Repr(ns["node_cmd"]))
+		fmt.Fprintf(cliErr, "unknown node command: %s\n", anyutil.Quote(ns["node_cmd"]))
 		return 2
 	}
 }
@@ -137,24 +138,24 @@ func nodePing(reg *nodeRegistry, name string) int {
 		return 1
 	}
 	if entry == nil {
-		fmt.Fprintf(cliErr, "no such node: %s\n", pyrepr.StrRepr(name))
+		fmt.Fprintf(cliErr, "no such node: %s\n", strconv.Quote(name))
 		return 1
 	}
-	url, _ := entry.Vals["url"].(string)
-	tok, _ := entry.Vals["token"].(string)
-	var result *pyjson.Object
+	url, _ := entry.Value("url").(string)
+	tok, _ := entry.Value("token").(string)
+	var result *jsonutil.Object
 	client, err := newNodeClient(url, tok, 10*time.Second)
 	if err == nil {
 		result, err = client.ping()
 	}
 	if err != nil {
-		text, _ := pyjson.Dumps(pyjson.ObjectOf("ok", false, "error", err.Error()))
+		text, _ := jsonutil.Encode(jsonutil.ObjectOf("ok", false, "error", err.Error()))
 		fmt.Fprintln(cliOut, text)
 		return 1
 	}
-	out := pyjson.ObjectOf("ok", true, "node", name)
-	out.Update(result)
-	text, _ := pyjson.Dumps(out)
+	out := jsonutil.ObjectOf("ok", true, "node", name)
+	out.Merge(result)
+	text, _ := jsonutil.Encode(out)
 	fmt.Fprintln(cliOut, text)
 	return 0
 }
@@ -165,7 +166,7 @@ func nodeRun(ctx context.Context, ns map[string]any) int {
 	server := newNodeServer(ctx, host, port, "", nsStr(ns, "display_name"))
 	token, err := server.ensureToken(ctx)
 	if err != nil {
-		fmt.Fprintf(cliErr, "%s: %v\n", pyExcName(err), err)
+		fmt.Fprintf(cliErr, "%v\n", err)
 		return 1
 	}
 	fmt.Fprintf(cliOut, "[meet-node] display_name=%s\n[meet-node] listening on ws://%s:%d\n[meet-node] token (copy to gateway): %s\n[meet-node] approve with:\n             icebath meet node approve <name> ws://<host>:%d %s\n",
@@ -175,7 +176,7 @@ func nodeRun(ctx context.Context, ns map[string]any) int {
 	if err := server.serve(runCtx); err != nil {
 		var opErr *net.OpError
 		if errors.As(err, &opErr) {
-			fmt.Fprintf(cliErr, "OSError: %v\n", err)
+			fmt.Fprintf(cliErr, "%v\n", err)
 			return 1
 		}
 		fmt.Fprintf(cliErr, "[meet-node] error: %v\n", err)

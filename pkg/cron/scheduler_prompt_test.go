@@ -11,8 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func promptStore(t *testing.T) *Store {
@@ -114,7 +114,7 @@ func TestNotepadReadFailureDoesNotBreakPrompt(t *testing.T) {
 	s := promptStore(t)
 	job, _ := s.createJob(context.Background(), CreateJobOptions{Prompt: prompt("Check the feed"), Schedule: "every 1h"})
 	saved := notepadLister
-	notepadLister = func(*Notepad, string) ([]*pyjson.Object, error) { return nil, errors.New("db unavailable") }
+	notepadLister = func(*Notepad, string) ([]*jsonutil.Object, error) { return nil, errors.New("db unavailable") }
 	t.Cleanup(func() { notepadLister = saved })
 	out := mustPrompt(t, s, job, buildPromptOptions{})
 	if !strings.Contains(out, "Check the feed") || strings.Contains(strings.ToLower(out), "notepad") {

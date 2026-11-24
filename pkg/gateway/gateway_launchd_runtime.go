@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyplist"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	plistutil "github.com/nickheyer/icebath/pkg/utils/plist"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Label prefix of one off runtime jobs, never the installed gateway service prefix fleet scans read
@@ -31,7 +31,7 @@ var (
 
 // Seconds up to limit that stay inside the caller deadline, zero once it has passed
 func launchdRuntimeBudget(deadline, limit float64) float64 {
-	return max(0, min(limit, deadline-pythread.Monotonic()))
+	return max(0, min(limit, deadline-timeutil.Monotonic()))
 }
 
 // Captured launchctl run, false when the budget is spent or the command fails to run or times out
@@ -58,10 +58,10 @@ func (j *launchdRuntimeJob) Poll() (int, bool) {
 	if j.status != nil {
 		return *j.status, true
 	}
-	if pythread.Monotonic()-j.checked < launchdRuntimePollInterval {
+	if timeutil.Monotonic()-j.checked < launchdRuntimePollInterval {
 		return 0, false
 	}
-	j.checked = pythread.Monotonic()
+	j.checked = timeutil.Monotonic()
 	done, ok := launchdRuntimeLaunchctl(j.ctx, launchdRuntimeBudget(j.deadline, 5), "print", j.target)
 	if !ok {
 		return 0, false
@@ -145,7 +145,7 @@ func startGatewayJob(ctx context.Context, command []string, env map[string]strin
 	for k, v := range env {
 		envVars[k] = v
 	}
-	payload, dumpErr := pyplist.DumpXML(map[string]any{
+	payload, dumpErr := plistutil.EncodeXML(map[string]any{
 		"Label":                label,
 		"ProgramArguments":     LaunchdProgramArguments(wrapped, logPath, logPath),
 		"EnvironmentVariables": envVars,

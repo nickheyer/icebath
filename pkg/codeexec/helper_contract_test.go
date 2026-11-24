@@ -32,7 +32,7 @@ func dispatchExecuteCode(t *testing.T, env *tools.Env, code string, reset bool) 
 
 func TestSchemaHelperInstructionsWorkAcrossKernelLifetimes(t *testing.T) {
 	env := kernelEnv(t, nil)
-	description, _ := tools.Default.Get("execute_code").Schema.Vals["description"].(string)
+	description, _ := tools.Default.Get("execute_code").Schema.Value("description").(string)
 	var imports []string
 	for _, m := range regexp.MustCompile("`(from icebath_tools import [\\w, ]+)`").FindAllStringSubmatch(description, -1) {
 		imports = append(imports, m[1])

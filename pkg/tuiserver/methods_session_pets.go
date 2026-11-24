@@ -16,12 +16,12 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/pet/generate"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Payload a disabled pet surface answers with
@@ -108,8 +108,8 @@ func petInfo(ctx context.Context, rid any, params map[string]any, _ string) (map
 		payload[key] = value
 	}
 	known := ""
-	if raw := params["knownRevision"]; truthy(raw) {
-		known = pyrepr.Str(raw)
+	if raw := params["knownRevision"]; anyutil.IsTrue(raw) {
+		known = anyutil.String(raw)
 	}
 	if known != "" && known == payload["spritesheetRevision"] {
 		delete(payload, "spritesheetBase64")
@@ -131,8 +131,8 @@ func petInfoMeta(ctx context.Context, rid any, _ map[string]any, _ string) (map[
 // Kitty placement payload of a state for a terminal that speaks it, nil otherwise
 func petKittyCells(p *pet.InstalledPet, petConf map[string]any, state string, scale float64, terminal string) map[string]any {
 	configured := "auto"
-	if raw := petConf["render_mode"]; truthy(raw) {
-		configured = strings.ToLower(pyrepr.Str(raw))
+	if raw := petConf["render_mode"]; anyutil.IsTrue(raw) {
+		configured = strings.ToLower(anyutil.String(raw))
 	} else if _, present := petConf["render_mode"]; present {
 		configured = ""
 	}
@@ -167,8 +167,8 @@ func petCells(ctx context.Context, rid any, params map[string]any, _ string) (ma
 	var active *pet.InstalledPet
 	if provider.IsTruthyValue(petConf["enabled"]) {
 		slug := ""
-		if raw := petConf["slug"]; truthy(raw) {
-			slug = pyrepr.Str(raw)
+		if raw := petConf["slug"]; anyutil.IsTrue(raw) {
+			slug = anyutil.String(raw)
 		}
 		resolved, err := pet.ResolveActivePet(home.Dir(ctx), slug)
 		if err != nil {
@@ -180,11 +180,11 @@ func petCells(ctx context.Context, rid any, params map[string]any, _ string) (ma
 		return ok(rid, map[string]any{"enabled": false}), nil
 	}
 	state := string(pet.StateIdle)
-	if raw := params["state"]; truthy(raw) {
-		state = pyrepr.Str(raw)
+	if raw := params["state"]; anyutil.IsTrue(raw) {
+		state = anyutil.String(raw)
 	}
 	scale := pet.DefaultScale
-	if raw := petConf["scale"]; truthy(raw) {
+	if raw := petConf["scale"]; anyutil.IsTrue(raw) {
 		parsed, err := pyFloat(raw)
 		if err != nil {
 			return nil, err
@@ -192,21 +192,21 @@ func petCells(ctx context.Context, rid any, params map[string]any, _ string) (ma
 		scale = parsed
 	}
 	cols := 0
-	if raw := params["cols"]; truthy(raw) {
+	if raw := params["cols"]; anyutil.IsTrue(raw) {
 		cols = intParamOr(raw, 0)
 	}
 	if cols == 0 {
 		unicodeCols := 0
-		if raw := petConf["unicode_cols"]; truthy(raw) {
+		if raw := petConf["unicode_cols"]; anyutil.IsTrue(raw) {
 			unicodeCols = intParamOr(raw, 0)
 		}
 		cols = pet.ResolveCols(scale, unicodeCols)
 	}
 	base := map[string]any{"enabled": true, "slug": active.Slug, "displayName": active.DisplayName, "state": state}
-	if truthy(params["graphics"]) {
+	if anyutil.IsTrue(params["graphics"]) {
 		terminal := ""
-		if raw := params["terminal"]; truthy(raw) {
-			terminal = pyrepr.Str(raw)
+		if raw := params["terminal"]; anyutil.IsTrue(raw) {
+			terminal = anyutil.String(raw)
 		}
 		if kitty := petKittyCells(active, petConf, state, scale, terminal); kitty != nil {
 			for key, value := range kitty {
@@ -242,7 +242,7 @@ func petCells(ctx context.Context, rid any, params map[string]any, _ string) (ma
 
 // Petdex gallery with the local install state, the remote manifest skipped for localOnly
 func petGallery(ctx context.Context, rid any, params map[string]any, _ string) (map[string]any, error) {
-	localOnly := truthy(params["localOnly"])
+	localOnly := anyutil.IsTrue(params["localOnly"])
 	petConf := petCfg(ctx)
 	h := home.Dir(ctx)
 	pets, err := pet.InstalledPets(h)
@@ -286,8 +286,8 @@ func petGallery(ctx context.Context, rid any, params map[string]any, _ string) (
 			"generated": local.Generated()})
 	}
 	active := ""
-	if raw := petConf["slug"]; truthy(raw) {
-		active = pyrepr.Str(raw)
+	if raw := petConf["slug"]; anyutil.IsTrue(raw) {
+		active = anyutil.String(raw)
 	}
 	return ok(rid, map[string]any{"enabled": provider.IsTruthyValue(petConf["enabled"]), "active": active, "pets": gallery}), nil
 }
@@ -572,12 +572,12 @@ func petHatch(ctx context.Context, rid any, params map[string]any, _ string) (ma
 		petEmit(ctx, "pet.hatch.progress", payload, "pet.hatch progress")
 	}
 	description := ""
-	if raw := params["description"]; truthy(raw) {
-		description = pyrepr.Str(raw)
+	if raw := params["description"]; anyutil.IsTrue(raw) {
+		description = anyutil.String(raw)
 	}
 	concept := name
-	if raw := params["prompt"]; truthy(raw) {
-		concept = pyrepr.Str(raw)
+	if raw := params["prompt"]; anyutil.IsTrue(raw) {
+		concept = anyutil.String(raw)
 	}
 	result, err := generate.HatchPet(ctx, petEnv(ctx), generate.HatchOptions{BaseImage: base, Slug: slug, DisplayName: name,
 		Description: description, Concept: concept, Style: strParam(params, "style", "auto"), Provider: sprite, OnProgress: onProgress,

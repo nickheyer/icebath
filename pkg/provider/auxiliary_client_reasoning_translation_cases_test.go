@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestAnthropicAuxiliaryReasoningTranslationReasoningConfigReachesNativeAnthropicWireKwargs(t *testing.T) {
@@ -79,7 +79,7 @@ func TestAuxiliaryProviderProfileReasoningKimiReasoningUsesTopLevelEffort(t *tes
 	if err != nil || kwargs["reasoning_effort"] != "high" {
 		t.Fatalf("kwargs %v err %v", kwargs, err)
 	}
-	body, _ := pyjson.Plain(kwargs["extra_body"]).(map[string]any)
+	body, _ := jsonutil.Plain(kwargs["extra_body"]).(map[string]any)
 	if _, has := body["reasoning"]; has {
 		t.Fatalf("extra_body reasoning %v", body)
 	}
@@ -100,7 +100,7 @@ func TestAuxiliaryProviderProfileReasoningAsyncCallLlmPreservesProfileReasoningK
 		t.Fatalf("result %v err %v", result, err)
 	}
 	final := client.sent[len(client.sent)-1]
-	body, _ := pyjson.Plain(final["extra_body"]).(map[string]any)
+	body, _ := jsonutil.Plain(final["extra_body"]).(map[string]any)
 	if _, has := body["reasoning"]; final["reasoning_effort"] != "high" || has {
 		t.Fatalf("final kwargs %v", final)
 	}

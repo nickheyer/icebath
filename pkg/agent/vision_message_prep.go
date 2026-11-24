@@ -11,12 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var visionImagePartTypes = map[string]bool{"image_url": true, "input_image": true}
@@ -39,10 +38,10 @@ type visionPrepState struct {
 
 // Python str of a value after the or default, empty for falsy values
 func pyStrOr(v any, def string) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return def
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // True for a dict whose type is an image part type of the vision module
@@ -194,17 +193,17 @@ func analyzeImageDescription(ctx context.Context, env *tools.Env, source, prompt
 			description = fmt.Sprintf("Image analysis failed: %v", r)
 		}
 	}()
-	parsed, err := pyjson.Loads(tools.VisionAnalyzeTool(ctx, env, source, prompt))
+	parsed, err := jsonutil.Decode(tools.VisionAnalyzeTool(ctx, env, source, prompt))
 	if err != nil {
 		pkgLog().Debug("vision tool reply unreadable: " + errchain.Text(err))
 		return "Image analysis failed: the vision tool reply is not valid JSON"
 	}
-	obj, ok := parsed.(*pyjson.Object)
+	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return fmt.Sprintf("Image analysis failed: the vision tool replied with %s where a mapping was expected", errchain.Kind(parsed))
 	}
 	analysis, _ := obj.Get("analysis")
-	if !pyrepr.Truthy(analysis) {
+	if !anyutil.IsTrue(analysis) {
 		return ""
 	}
 	text, ok := analysis.(string)
@@ -248,7 +247,7 @@ func (a *AIAgent) preprocessAnthropicContent(ctx context.Context, content any, r
 		} else {
 			imageURL = pyStrOr(imageData, "")
 		}
-		if !pyrepr.Truthy(imageURL) {
+		if !anyutil.IsTrue(imageURL) {
 			notes = append(notes, "[An image was attached but no image source was available.]")
 			continue
 		}
@@ -304,7 +303,7 @@ func (a *AIAgent) prepareMessagesForNonVisionModel(ctx context.Context, apiMessa
 	if !hasImages || a.modelSupportsVision(ctx) {
 		return apiMessages, nil
 	}
-	transformed := pycopy.Of(apiMessages)
+	transformed := anyutil.Clone(apiMessages)
 	for _, msg := range transformed {
 		m, ok := msg.(map[string]any)
 		if !ok {
@@ -334,7 +333,7 @@ func (a *AIAgent) toolResultContentForActiveModel(ctx context.Context, toolName 
 		return result
 	}
 	content := result.(map[string]any)["content"]
-	if !pyrepr.Truthy(content) {
+	if !anyutil.IsTrue(content) {
 		content = []any{}
 	}
 	if !contentHasImageParts(content) {
@@ -354,13 +353,13 @@ func (a *AIAgent) toolResultContentForActiveModel(ctx context.Context, toolName 
 	}
 	summary := tools.MultimodalTextSummary(result)
 	if toolName == "computer_use" {
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("error", "computer_use returned screenshot/image content, but the active "+
 			"model/provider does not support image input. Switch to a "+
 			"vision-capable model for desktop computer use, or use browser "+
 			"tools for browser tasks.")
 		payload.Set("text_summary", summary)
-		text, _ := pyjson.Dumps(payload)
+		text, _ := jsonutil.Encode(payload)
 		return text
 	}
 	pkgLog().Warn(fmt.Sprintf("Tool %s returned image content for non-vision model %s/%s; falling back to text summary", toolName, a.provider, a.model))
@@ -431,7 +430,7 @@ func (a *AIAgent) isQwenPortal() bool {
 
 // Deep copy of the messages shaped for Qwen Portal
 func (a *AIAgent) qwenPrepareChatMessages(apiMessages []any) []any {
-	prepared := pycopy.Of(apiMessages)
+	prepared := anyutil.Clone(apiMessages)
 	a.qwenPrepareChatMessagesInplace(prepared)
 	return prepared
 }

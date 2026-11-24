@@ -6,9 +6,9 @@ import (
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner surface that builds and runs the side agents of a local session on its frozen route
@@ -20,22 +20,22 @@ type tuiSideRunner interface {
 // Background and side question verbs of a local session
 func tuiSideHandlers(c *AuthorityConnection) map[string]controlHandler {
 	return map[string]controlHandler{
-		"prompt.background": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"prompt.background": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return sideBackground(ctx, c, ref, params)
 		},
-		"prompt.btw": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"prompt.btw": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return sideBtw(ctx, c, ref, params)
 		},
 	}
 }
 
 // Live session, frozen policy, request text and fresh task id of an admitted side request
-func admitSide(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, prefix, required string, optional ...string) (*LiveSession, *LocalSessionPolicy, string, string, error) {
-	text, isStr := params.GetOr(required, nil).(string)
+func admitSide(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object, prefix, required string, optional ...string) (*LiveSession, *LocalSessionPolicy, string, string, error) {
+	text, isStr := params.ValueOr(required, nil).(string)
 	allowed := append([]string{"session_id", "profile", required}, optional...)
 	invalid := paramsOutside(params, allowed...) || ref.SessionID == "" || !isStr || strings.TrimSpace(text) == ""
 	for _, key := range optional {
-		if value := params.GetOr(key, nil); value != nil {
+		if value := params.ValueOr(key, nil); value != nil {
 			if _, ok := value.(string); !ok {
 				invalid = true
 			}
@@ -101,7 +101,7 @@ func (h *sideAgentHold) Abandoned() bool {
 }
 
 // Background prompt run to completion by a fresh agent on the session's route
-func sideBackground(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func sideBackground(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	live, policy, text, taskID, err := admitSide(ctx, c, ref, params, "bg", "text")
 	if err != nil {
 		return nil, err
@@ -171,7 +171,7 @@ func (s *sideQuestionStop) Abandoned() bool {
 func (s *sideQuestionStop) HolderAgent() any { return s }
 
 // Side question over a snapshot of the conversation, the live history and FIFO untouched
-func sideBtw(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func sideBtw(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	_, policy, text, taskID, err := admitSide(ctx, c, ref, params, "btw", "text")
 	if err != nil {
 		return nil, err
@@ -216,5 +216,5 @@ func sideBtw(ctx context.Context, c *AuthorityConnection, ref SessionRef, params
 		})
 		return out, err
 	}
-	return SpawnSideAgent(ctx, a, ref, taskID, "btw.complete", body, pyjson.ObjectOf("question", text), handle), nil
+	return SpawnSideAgent(ctx, a, ref, taskID, "btw.complete", body, jsonutil.ObjectOf("question", text), handle), nil
 }

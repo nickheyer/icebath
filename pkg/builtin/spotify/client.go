@@ -10,11 +10,13 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Marks the Spotify tool errors whose text is shown to the model as is
@@ -60,7 +62,7 @@ func (e *pyError) PyTypeName() string { return e.kind }
 
 // Python class name of an error raised inside a tool
 func exceptionName(err error) string {
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	if errors.As(err, &pe) {
 		return pe.Kind
 	}
@@ -90,20 +92,20 @@ var newSpotifyClient = func(ctx context.Context, h string) (apiClient, error) {
 
 // Requests the tool handlers issue against the Spotify Web API
 type apiClient interface {
-	Request(method, path string, params, jsonBody *pyjson.Object, opts ...requestOption) (any, error)
+	Request(method, path string, params, jsonBody *jsonutil.Object, opts ...requestOption) (any, error)
 	GetPlaybackState(market any) (any, error)
 	GetCurrentlyPlaying(market any) (any, error)
 }
 
 type requestOptions struct {
 	allowRetryOn401 bool
-	emptyResponse   *pyjson.Object
+	emptyResponse   *jsonutil.Object
 }
 
 type requestOption func(*requestOptions)
 
 // Payload a 204 or empty answer returns instead of the default empty marker
-func withEmptyResponse(o *pyjson.Object) requestOption {
+func withEmptyResponse(o *jsonutil.Object) requestOption {
 	return func(r *requestOptions) { r.emptyResponse = o }
 }
 
@@ -124,20 +126,20 @@ func (c *spotifyClient) resolveRuntime(forceRefresh, refreshIfExpiring bool) (ma
 // API base URL of the runtime without a trailing slash
 func (c *spotifyClient) baseURL() string {
 	v := c.runtime["base_url"]
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimRight(pyrepr.Str(v), "/")
+	return strings.TrimRight(anyutil.String(v), "/")
 }
 
 // Copy of an ordered mapping without its None values
-func stripNone(o *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
+func stripNone(o *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	if o == nil {
 		return out
 	}
-	for _, k := range o.Keys {
-		if v := o.Vals[k]; v != nil {
+	for _, k := range o.Keys() {
+		if v := o.Value(k); v != nil {
 			out.Set(k, v)
 		}
 	}
@@ -155,14 +157,14 @@ func queryValue(v any) string {
 	case nil:
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // httpx query params of a mapping, a list value repeating its key
-func queryParams(o *pyjson.Object) pyhttpx.Params {
+func queryParams(o *jsonutil.Object) pyhttpx.Params {
 	var out pyhttpx.Params
-	for _, k := range o.Keys {
-		switch t := o.Vals[k].(type) {
+	for _, k := range o.Keys() {
+		switch t := o.Value(k).(type) {
 		case []any:
 			for _, item := range t {
 				out = append(out, [2]string{k, queryValue(item)})
@@ -179,16 +181,16 @@ func queryParams(o *pyjson.Object) pyhttpx.Params {
 }
 
 // Calls the Web API with one forced refresh and retry on a 401, mapping errors to friendly messages
-func (c *spotifyClient) Request(method, path string, params, jsonBody *pyjson.Object, opts ...requestOption) (any, error) {
+func (c *spotifyClient) Request(method, path string, params, jsonBody *jsonutil.Object, opts ...requestOption) (any, error) {
 	o := requestOptions{allowRetryOn401: true}
 	for _, opt := range opts {
 		opt(&o)
 	}
-	target := pyhttpx.MergeParams(c.baseURL()+path, queryParams(stripNone(params)))
+	target := httputil.MergeQuery(c.baseURL()+path, queryParams(stripNone(params)))
 	var body io.Reader
-	headers := map[string]string{"Authorization": "Bearer " + pyrepr.Str(c.runtime["access_token"]), "Content-Type": "application/json"}
+	headers := map[string]string{"Authorization": "Bearer " + anyutil.String(c.runtime["access_token"]), "Content-Type": "application/json"}
 	if jsonBody != nil {
-		encoded, err := pyjson.Dumps(stripNone(jsonBody))
+		encoded, err := jsonutil.Encode(stripNone(jsonBody))
 		if err != nil {
 			return nil, err
 		}
@@ -215,40 +217,40 @@ func (c *spotifyClient) Request(method, path string, params, jsonBody *pyjson.Ob
 		if o.emptyResponse != nil && o.emptyResponse.Len() > 0 {
 			return o.emptyResponse, nil
 		}
-		return pyjson.ObjectOf("success", true, "status_code", int64(resp.StatusCode), "empty", true), nil
+		return jsonutil.ObjectOf("success", true, "status_code", int64(resp.StatusCode), "empty", true), nil
 	}
 	if strings.Contains(resp.Header.Get("Content-Type"), "application/json") {
 		return resp.JSON()
 	}
-	return pyjson.ObjectOf("success", true, "text", resp.Text()), nil
+	return jsonutil.ObjectOf("success", true, "text", resp.Text()), nil
 }
 
 // Explanatory payload a player read returns for a bare 204
-func empty204(message string) *pyjson.Object {
-	return pyjson.ObjectOf("status_code", int64(204), "empty", true, "message", message)
+func empty204(message string) *jsonutil.Object {
+	return jsonutil.ObjectOf("status_code", int64(204), "empty", true, "message", message)
 }
 
 // Playback state, an explanatory payload when no session is active
 func (c *spotifyClient) GetPlaybackState(market any) (any, error) {
-	return c.Request("GET", "/me/player", pyjson.ObjectOf("market", market), nil, withEmptyResponse(empty204(
+	return c.Request("GET", "/me/player", jsonutil.ObjectOf("market", market), nil, withEmptyResponse(empty204(
 		"No active Spotify playback session was found. Open Spotify on a device and start playback, or transfer playback to an available device.")))
 }
 
 // Currently playing item, an explanatory payload when nothing plays
 func (c *spotifyClient) GetCurrentlyPlaying(market any) (any, error) {
-	return c.Request("GET", "/me/player/currently-playing", pyjson.ObjectOf("market", market), nil, withEmptyResponse(empty204(
+	return c.Request("GET", "/me/player/currently-playing", jsonutil.ObjectOf("market", market), nil, withEmptyResponse(empty204(
 		"Spotify is not currently playing anything. Start playback in Spotify and try again.")))
 }
 
 // Spotify's error message from an error or error.message body, the raw text otherwise
-func extractSpotifyErrorDetail(resp *pyhttpx.Response, fallback string) string {
+func extractSpotifyErrorDetail(resp *httputil.Response, fallback string) string {
 	detail := fallback
 	if payload, err := resp.JSON(); err == nil {
-		if obj, ok := payload.(*pyjson.Object); ok {
-			switch errObj := obj.GetOr("error", nil).(type) {
-			case *pyjson.Object:
-				if msg := errObj.GetOr("message", nil); pyrepr.Truthy(msg) {
-					detail = pyrepr.Str(msg)
+		if obj, ok := payload.(*jsonutil.Object); ok {
+			switch errObj := obj.ValueOr("error", nil).(type) {
+			case *jsonutil.Object:
+				if msg := errObj.ValueOr("message", nil); anyutil.IsTrue(msg) {
+					detail = anyutil.String(msg)
 				}
 			case string:
 				detail = errObj

@@ -56,7 +56,7 @@ func TestCliClaimActiveSessionRespectsGlobalLimit(t *testing.T) {
 	}
 	var ids []string
 	for _, e := range entries {
-		ids = append(ids, e.GetOr("session_id", nil).(string))
+		ids = append(ids, e.Value("session_id").(string))
 	}
 	if !slices.Equal(ids, []string{"new-cli-session"}) {
 		t.Fatalf("snapshot %v", ids)

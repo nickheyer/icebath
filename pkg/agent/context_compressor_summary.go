@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // SummaryDispatchCompressor is the compressor state the summary route pin and window dispatch read and write
@@ -15,7 +15,7 @@ type SummaryDispatchCompressor interface {
 	SummaryModelFallenBack() bool
 	MainRoute() (providerName, model, baseURL, apiKey, apiMode string)
 	SetLastSummaryError(text string)
-	ActiveCompressionTelemetry() *pyjson.Object
+	ActiveCompressionTelemetry() *jsonutil.Object
 	DeriveAutoFocusTopic(messages []map[string]any) *string
 	GenerateWindowSummary(ctx context.Context, turns []map[string]any, focusTopic *string, memoryContext string) (*string, error)
 	RestoreSummaryState(previousSummary *string, hasUserTurn *bool)
@@ -45,7 +45,7 @@ func ApplySummaryRoute(c SummaryDispatchCompressor, callKwargs map[string]any, p
 		return
 	}
 	task := callKwargs["task"]
-	if !pyrepr.Truthy(task) {
+	if !anyutil.IsTrue(task) {
 		task = "compression"
 	}
 	callKwargs["task"] = provider.NewAuthoritativeAuxiliaryTask(task)

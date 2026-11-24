@@ -99,7 +99,7 @@ func updateFleet(t *testing.T) (context.Context, *[]updateCall) {
 	updateAllOne = func(_ context.Context, name, _ string, _ *Console, interactive, _ bool) (bool, error) {
 		calls = append(calls, updateCall{name, interactive})
 		if name == "cat" {
-			return false, errors.New("TimeoutError: catalog pin refused")
+			return false, errors.New("catalog pin refused")
 		}
 		return true, nil
 	}

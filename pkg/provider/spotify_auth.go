@@ -16,6 +16,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,11 +25,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -68,12 +69,12 @@ func spotifyErr(message, code string, relogin bool) *AuthError {
 	return &AuthError{Message: message, Provider: SpotifyProvider, Code: code, ReloginRequired: relogin}
 }
 
-// Python str of value or empty string, stripped
+// Text of a value trimmed, empty for a false value
 func spotifyClean(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Requested scope, whitespace normalized and deduplicated in first seen order
@@ -150,15 +151,15 @@ func spotifyAccountsBaseURL(ctx context.Context, h string, state map[string]any)
 
 // Authorize URL of the PKCE flow with its query in the order Spotify documents
 func spotifyBuildAuthorizeURL(clientID, redirectURI, scope, state, codeChallenge, accountsBaseURL string) string {
-	query := pyurl.URLEncode([][2]string{
+	query := urlutil.EncodeQuery([][2]string{
 		{"client_id", clientID}, {"response_type", "code"}, {"redirect_uri", redirectURI},
 		{"scope", scope}, {"state", state}, {"code_challenge_method", "S256"}, {"code_challenge", codeChallenge},
 	})
 	return accountsBaseURL + "/authorize?" + query
 }
 
-// Path of a urlparse result, the params after the last segment's semicolon split off
-func spotifyURLPath(u pyurl.URL) string {
+// Path of a parsed URL, the parameters after the last segment's semicolon split off
+func spotifyURLPath(u *url.URL) string {
 	path := u.Path
 	if i := strings.LastIndex(path, "/"); i >= 0 {
 		if j := strings.Index(path[i:], ";"); j >= 0 {
@@ -172,11 +173,11 @@ func spotifyURLPath(u pyurl.URL) string {
 
 // Host, port and path of an http or https loopback redirect URI with an explicit port
 func spotifyValidateRedirectURI(redirectURI string) (string, int, string, error) {
-	parsed, err := pyurl.Split(redirectURI)
+	parsed, err := url.Parse(redirectURI)
 	if err != nil {
 		return "", 0, "", err
 	}
-	host := parsed.Hostname()
+	host := strings.ToLower(parsed.Hostname())
 	problem := ""
 	port := 0
 	switch {
@@ -185,7 +186,7 @@ func spotifyValidateRedirectURI(redirectURI string) (string, int, string, error)
 	case host != "127.0.0.1" && host != "localhost":
 		problem = "must point to localhost or 127.0.0.1."
 	default:
-		n, present, err := parsed.Port()
+		n, present, err := urlutil.Port(parsed)
 		if err != nil {
 			return "", 0, "", err
 		}
@@ -268,7 +269,7 @@ func spotifyWaitForCallback(h, redirectURI string, timeoutSeconds float64) (map[
 	if err != nil {
 		return nil, err
 	}
-	if parsed, _ := pyurl.Split(redirectURI); parsed.Scheme == "https" {
+	if parsed, err := url.Parse(redirectURI); err == nil && parsed.Scheme == "https" {
 		cfg, err := spotifyLoopbackTLSConfig(h)
 		if err != nil {
 			_ = server.listener.Close()
@@ -280,51 +281,39 @@ func spotifyWaitForCallback(h, redirectURI string, timeoutSeconds float64) (map[
 	return serveLoopbackCallback(context.Background(), server, result, time.Duration(timeoutSeconds*float64(time.Second)), errFn, "spotify_callback_timeout")
 }
 
-// Whole non negative seconds of an expires_in value, zero when int() of it fails
+// Whole non negative seconds of an expires_in value, zero when it is not a number
 func spotifyTTLSeconds(v any) int64 {
-	n, err := pyint.Of(v)
-	if err != nil || n.Sign() < 0 {
+	n, err := anyutil.ToInt(v)
+	if err != nil || n < 0 {
 		return 0
 	}
-	if !n.IsInt64() {
-		return 0
-	}
-	return n.Int64()
-}
-
-// Python datetime isoformat of a UTC time, the fraction left out at zero microseconds
-func spotifyISOFormat(t time.Time) string {
-	t = t.UTC()
-	if t.Nanosecond()/1000 == 0 {
-		return t.Format("2006-01-02T15:04:05-07:00")
-	}
-	return t.Format("2006-01-02T15:04:05.000000-07:00")
+	return n
 }
 
 // Provider state of a token response merged over the previous state
-func spotifyTokenPayloadToState(payload *pyjson.Object, clientID, redirectURI, requestedScope, accountsBaseURL, apiBaseURL string, previous map[string]any) map[string]any {
+func spotifyTokenPayloadToState(payload *jsonutil.Object, clientID, redirectURI, requestedScope, accountsBaseURL, apiBaseURL string, previous map[string]any) map[string]any {
 	now := nowFunc().UTC().Truncate(time.Microsecond)
-	expiresIn := spotifyTTLSeconds(payload.GetOr("expires_in", int64(0)))
+	expiresIn := spotifyTTLSeconds(payload.ValueOr("expires_in", int64(0)))
 	expiresAt := now.Add(time.Duration(expiresIn) * time.Second)
 	state := map[string]any{}
 	for k, v := range previous {
 		state[k] = v
 	}
-	granted := payload.GetOr("scope", nil)
+	granted := payload.ValueOr("scope", nil)
 	grantedText := requestedScope
-	if pyrepr.Truthy(granted) {
-		grantedText = pyrepr.Str(granted)
+	if anyutil.IsTrue(granted) {
+		grantedText = anyutil.String(granted)
 	}
-	tokenType := payload.GetOr("token_type", "Bearer")
-	if !pyrepr.Truthy(tokenType) {
+	tokenType := payload.ValueOr("token_type", "Bearer")
+	if !anyutil.IsTrue(tokenType) {
 		tokenType = "Bearer"
 	}
 	cleanedType := spotifyClean(tokenType)
 	if cleanedType == "" {
 		cleanedType = "Bearer"
 	}
-	refresh := payload.GetOr("refresh_token", nil)
-	if !pyrepr.Truthy(refresh) {
+	refresh := payload.ValueOr("refresh_token", nil)
+	if !anyutil.IsTrue(refresh) {
 		refresh = state["refresh_token"]
 	}
 	state["client_id"] = clientID
@@ -334,59 +323,25 @@ func spotifyTokenPayloadToState(payload *pyjson.Object, clientID, redirectURI, r
 	state["scope"] = requestedScope
 	state["granted_scope"] = strings.TrimSpace(grantedText)
 	state["token_type"] = cleanedType
-	state["access_token"] = spotifyClean(payload.GetOr("access_token", nil))
+	state["access_token"] = spotifyClean(payload.ValueOr("access_token", nil))
 	state["refresh_token"] = spotifyClean(refresh)
-	state["obtained_at"] = spotifyISOFormat(now)
-	state["expires_at"] = spotifyISOFormat(expiresAt)
+	state["obtained_at"] = now.Format(timeutil.RFC3339Micro)
+	state["expires_at"] = expiresAt.Format(timeutil.RFC3339Micro)
 	state["expires_in"] = expiresIn
 	state["auth_type"] = "oauth_pkce"
 	return state
 }
 
-// Error of a Spotify request that failed in transit, its httpx class name and text
-type spotifyTransportError struct {
-	name string
-	text string
-}
-
-func (e *spotifyTransportError) Error() string      { return e.text }
-func (e *spotifyTransportError) PyTypeName() string { return e.name }
-
-// httpx exception of a request that failed in transit, timeouts named by their phase
-func spotifyHTTPXError(err error) error {
-	var te *pyhttpx.TimeoutError
-	if errors.As(err, &te) {
-		name := "ReadTimeout"
-		switch te.Phase {
-		case "connect":
-			name = "ConnectTimeout"
-		case "write":
-			name = "WriteTimeout"
-		case "pool":
-			name = "PoolTimeout"
-		}
-		return &spotifyTransportError{name: name, text: pyhttpx.ErrorText(err)}
-	}
-	return &spotifyTransportError{name: pkceTransportErrorName(err), text: pyhttpx.ErrorText(err)}
-}
-
-// SpotifyHTTPDo sends one Spotify request like a default httpx call, failures named as the httpx exception
-func SpotifyHTTPDo(ctx context.Context, method, rawURL string, body io.Reader, headers map[string]string, timeoutSeconds float64) (*pyhttpx.Response, error) {
-	if msg := pyhttpx.ProtocolError(rawURL); msg != "" {
-		return nil, &spotifyTransportError{name: "UnsupportedProtocol", text: msg}
-	}
+// SpotifyHTTPDo sends one Spotify request without following redirects, the timeout applying to each phase on its own
+func SpotifyHTTPDo(ctx context.Context, method, rawURL string, body io.Reader, headers map[string]string, timeoutSeconds float64) (*httputil.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, method, rawURL, body)
 	if err != nil {
-		return nil, &spotifyTransportError{name: "InvalidURL", text: err.Error()}
+		return nil, err
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := pyhttpx.Do(pyhttpx.PlainClient(false), req, time.Duration(timeoutSeconds*float64(time.Second)))
-	if err != nil {
-		return nil, spotifyHTTPXError(err)
-	}
-	return resp, nil
+	return httputil.Do(httputil.Client(false), req, httputil.EachPhase(time.Duration(timeoutSeconds*float64(time.Second))))
 }
 
 type spotifyTokenPost struct {
@@ -395,8 +350,8 @@ type spotifyTokenPost struct {
 }
 
 // Posts Spotify's token endpoint and returns the JSON object carrying an access token
-func spotifyPostToken(ctx context.Context, accountsBaseURL string, data [][2]string, timeoutSeconds float64, p spotifyTokenPost) (*pyjson.Object, error) {
-	resp, err := SpotifyHTTPDo(ctx, http.MethodPost, accountsBaseURL+"/api/token", strings.NewReader(pyurl.URLEncode(data)),
+func spotifyPostToken(ctx context.Context, accountsBaseURL string, data [][2]string, timeoutSeconds float64, p spotifyTokenPost) (*jsonutil.Object, error) {
+	resp, err := SpotifyHTTPDo(ctx, http.MethodPost, accountsBaseURL+"/api/token", strings.NewReader(urlutil.EncodeQuery(data)),
 		map[string]string{"Content-Type": "application/x-www-form-urlencoded"}, timeoutSeconds)
 	if err != nil {
 		return nil, spotifyErr(fmt.Sprintf("Spotify %s failed: %s", p.what, err.Error()), p.failedCode, false)
@@ -413,8 +368,8 @@ func spotifyPostToken(ctx context.Context, accountsBaseURL string, data [][2]str
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := payload.(*pyjson.Object)
-	if !ok || spotifyClean(obj.GetOr("access_token", nil)) == "" {
+	obj, ok := payload.(*jsonutil.Object)
+	if !ok || spotifyClean(obj.ValueOr("access_token", nil)) == "" {
 		return nil, spotifyErr(p.invalidMessage, p.invalidCode, p.reloginRequired)
 	}
 	return obj, nil
@@ -451,8 +406,8 @@ var spotifyRefreshOAuthState = func(ctx context.Context, h string, state map[str
 		return nil, err
 	}
 	requested := SpotifyDefaultScope
-	if pyrepr.Truthy(state["scope"]) {
-		requested = pyrepr.Str(state["scope"])
+	if anyutil.IsTrue(state["scope"]) {
+		requested = anyutil.String(state["scope"])
 	}
 	return spotifyTokenPayloadToState(payload, clientID, redirectURI, requested, accountsBaseURL, apiBaseURL, state), nil
 }
@@ -490,7 +445,7 @@ func SpotifyResolveRuntimeCredentials(ctx context.Context, h string, forceRefres
 			}
 		}
 		var authErr *AuthError
-		if errors.As(err, &authErr) && authErr.ReloginRequired && pyrepr.Truthy(state["refresh_token"]) {
+		if errors.As(err, &authErr) && authErr.ReloginRequired && anyutil.IsTrue(state["refresh_token"]) {
 			quarantineFlatOAuthState(state, SpotifyProvider, authErr)
 			store.StoreProviderState(data, SpotifyProvider, state)
 			if saveErr := store.Save(data); saveErr != nil {
@@ -519,11 +474,11 @@ func SpotifyResolveRuntimeCredentials(ctx context.Context, h string, forceRefres
 		return nil, err
 	}
 	tokenType := "Bearer"
-	if v, ok := state["token_type"]; ok && pyrepr.Truthy(v) {
-		tokenType = pyrepr.Str(v)
+	if v, ok := state["token_type"]; ok && anyutil.IsTrue(v) {
+		tokenType = anyutil.String(v)
 	}
 	scope := state["granted_scope"]
-	if !pyrepr.Truthy(scope) {
+	if !anyutil.IsTrue(scope) {
 		scope = state["scope"]
 	}
 	return map[string]any{
@@ -549,7 +504,7 @@ func SpotifyAuthStatus(h string) (map[string]any, error) {
 		authType = "oauth_pkce"
 	}
 	scope := state["granted_scope"]
-	if !pyrepr.Truthy(scope) {
+	if !anyutil.IsTrue(scope) {
 		scope = state["scope"]
 	}
 	return map[string]any{
@@ -646,8 +601,8 @@ func SpotifyLogin(ctx context.Context, h string, opts SpotifyLoginOptions, out i
 		return err
 	}
 	rawScope := opts.Scope
-	if rawScope == "" && pyrepr.Truthy(existing["scope"]) {
-		rawScope = pyrepr.Str(existing["scope"])
+	if rawScope == "" && anyutil.IsTrue(existing["scope"]) {
+		rawScope = anyutil.String(existing["scope"])
 	}
 	scope := spotifyScopeString(rawScope)
 	accountsBaseURL, err := spotifyAccountsBaseURL(ctx, h, existing)
@@ -680,12 +635,12 @@ func SpotifyLogin(ctx context.Context, h string, opts SpotifyLoginOptions, out i
 	if err != nil {
 		return err
 	}
-	if pyrepr.Truthy(callback["error"]) {
+	if anyutil.IsTrue(callback["error"]) {
 		detail := callback["error_description"]
-		if !pyrepr.Truthy(detail) {
+		if !anyutil.IsTrue(detail) {
 			detail = callback["error"]
 		}
-		return &AuthExitError{Code: 1, Message: "Spotify authorization failed: " + pyrepr.Str(detail)}
+		return &AuthExitError{Code: 1, Message: "Spotify authorization failed: " + anyutil.String(detail)}
 	}
 	if got, _ := callback["state"].(string); got != stateNonce {
 		return &AuthExitError{Code: 1, Message: "Spotify authorization failed: state mismatch."}
@@ -695,8 +650,8 @@ func SpotifyLogin(ctx context.Context, h string, opts SpotifyLoginOptions, out i
 		tokenTimeout = 20.0
 	}
 	code := ""
-	if pyrepr.Truthy(callback["code"]) {
-		code = pyrepr.Str(callback["code"])
+	if anyutil.IsTrue(callback["code"]) {
+		code = anyutil.String(callback["code"])
 	}
 	payload, err := spotifyPostToken(ctx, accountsBaseURL, [][2]string{
 		{"client_id", clientID}, {"grant_type", "authorization_code"}, {"code", code},

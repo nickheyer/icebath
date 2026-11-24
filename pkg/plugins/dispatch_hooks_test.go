@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 type runtimeError struct{ msg string }
@@ -344,7 +344,7 @@ func TestAsyncHookResultIsAwaitedAlongsideSync(t *testing.T) {
 	if got := m.InvokeHook(context.Background(), "pre_gateway_dispatch", nil); !reflect.DeepEqual(got, []any{"sync", "async"}) {
 		t.Fatalf("got %v", got)
 	}
-	if got := m.InvokeHook(pyctx.WithRunningLoop(context.Background()), "pre_gateway_dispatch", nil); !reflect.DeepEqual(got, []any{"sync", "async"}) {
+	if got := m.InvokeHook(ctxutil.WithNonBlocking(context.Background()), "pre_gateway_dispatch", nil); !reflect.DeepEqual(got, []any{"sync", "async"}) {
 		t.Fatalf("running loop got %v", got)
 	}
 }
@@ -371,7 +371,7 @@ type AwaitFunc func(ctx context.Context) (any, error)
 func (f AwaitFunc) Await(ctx context.Context) (any, error) { return f(ctx) }
 
 func TestResolvePluginCommandResult(t *testing.T) {
-	ctx := pyctx.WithRunningLoop(context.Background())
+	ctx := ctxutil.WithNonBlocking(context.Background())
 	if v, err := ResolvePluginCommandResult(ctx, AwaitFunc(func(context.Context) (any, error) { return "done", nil })); v != "done" || err != nil {
 		t.Fatalf("%v %v", v, err)
 	}

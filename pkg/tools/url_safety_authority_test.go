@@ -307,7 +307,7 @@ func TestIsAlwaysBlockedURLCases(t *testing.T) {
 		t.Error("scoped mapped imds passed")
 	}
 	authorityResolvesTo(t, "93.184.216.34")
-	for _, raw := range []string{"https://example.com/path", "http://127.0.0.1:8080/", "http://100.64.0.1/", "not a url at all", "http://[::1/"} {
+	for _, raw := range []string{"https://example.com/path", "http://127.0.0.1:8080/", "http://100.64.0.1/", "not a url at all"} {
 		if isAlwaysBlockedURL(env, raw) {
 			t.Errorf("floor blocked %q", raw)
 		}
@@ -388,10 +388,10 @@ func TestAuthorityAmbiguityExportCarriesTheURLSplitError(t *testing.T) {
 		{"http://1.1.1.1:80x/", false, "invalid port", ""},
 		{"\x01http://example.com/", true, "control character in URL", ""},
 		{"about:blank", false, "", ""},
-		{"http://[::1/", true, "", "Invalid IPv6 URL"},
-		{"http://[1.2.3.4]/", false, "", "An IPv4 address cannot be in brackets"},
-		{"https://[::g]/", true, "", "'::g' does not appear to be an IPv4 or IPv6 address"},
-		{"http://ex℀mple.com/", false, "", "netloc 'ex℀mple.com' contains invalid characters under NFKC normalization"},
+		{"http://[::1/", true, "", `invalid host: unbalanced or misplaced brackets in "[::1"`},
+		{"http://[1.2.3.4]/", false, "", `invalid host: IPv4 address "1.2.3.4" in brackets`},
+		{"https://[::g]/", true, "", `invalid host: "::g" is not an IPv6 address`},
+		{"http://ex℀mple.com/", false, "", `invalid host: "ex℀mple.com" gains URL delimiters under NFKC normalization`},
 	} {
 		reason, err := AuthorityAmbiguity(c.raw, c.floor)
 		got := ""
@@ -417,8 +417,8 @@ func TestURLHostnameExportCarriesTheURLSplitError(t *testing.T) {
 		{"http://a:b:c/", false, "a", ""},
 		{"http://169.254.169.254。/", false, "169.254.169.254", ""},
 		{"http://[FE80::1%Eth0]:8/", false, "fe80::1%eth0", ""},
-		{"http://[::1]x/", false, "", "Invalid IPv6 URL"},
-		{"http://a[::1]/", true, "", "Invalid IPv6 URL"},
+		{"http://[::1]x/", false, "", `invalid host: text after the closing bracket in "[::1]x"`},
+		{"http://a[::1]/", true, "", `invalid host: unbalanced or misplaced brackets in "a[::1]"`},
 	} {
 		host, err := URLHostname(c.raw, c.decode)
 		got := ""
@@ -435,17 +435,17 @@ func TestURLSafetyErrorsFollowThePythonExceptClauses(t *testing.T) {
 	var buf bytes.Buffer
 	env := authorityEnv(t, nil)
 	env.Log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	if isAlwaysBlockedURL(env, "http://[::1/") {
-		t.Fatal("floor blocked an unparseable url")
+	if !isAlwaysBlockedURL(env, "http://[::1/") {
+		t.Fatal("floor allowed an unparseable url")
 	}
-	if !strings.Contains(buf.String(), "level=DEBUG") || !strings.Contains(buf.String(), "is_always_blocked_url error for http://[::1/: Invalid IPv6 URL") {
+	if !strings.Contains(buf.String(), "level=WARN") || !strings.Contains(buf.String(), "Blocked request, unparseable URL (always-blocked floor) http://[::1/: invalid host: unbalanced or misplaced brackets in ") {
 		t.Fatalf("floor log %q", buf.String())
 	}
 	buf.Reset()
 	if isSafeURL(env, "http://[::1/") {
 		t.Fatal("unparseable url allowed")
 	}
-	if !strings.Contains(buf.String(), "level=WARN") || !strings.Contains(buf.String(), "URL safety check error for http://[::1/: Invalid IPv6 URL") {
+	if !strings.Contains(buf.String(), "level=WARN") || !strings.Contains(buf.String(), "URL safety check error for http://[::1/: invalid host: unbalanced or misplaced brackets in ") {
 		t.Fatalf("safety log %q", buf.String())
 	}
 }

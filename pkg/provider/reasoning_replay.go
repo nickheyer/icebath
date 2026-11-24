@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type echoRule struct {
@@ -173,7 +173,7 @@ func NativeAnthropicAccountingProjection(messages any) (any, []string) {
 			delete(shadow, "reasoning_content")
 		}
 		for _, block := range carrier {
-			b, _ := pyjson.Dict(block)
+			b, _ := jsonutil.AsMap(block)
 			if text, ok := b["thinking"].(string); ok && b["type"] == "thinking" && text != "" {
 				replayed = append(replayed, text)
 			}
@@ -243,7 +243,7 @@ func RejectedReasoningFields(errorBody any, sentMessages any) map[string]bool {
 		if s, ok := errorBody.(string); ok {
 			text = s
 		} else {
-			text = pyrepr.Str(errorBody)
+			text = anyutil.String(errorBody)
 		}
 	}
 	body := strings.ToLower(text)

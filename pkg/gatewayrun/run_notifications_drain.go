@@ -6,9 +6,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Profile runtime scope of the session a completion event targets, the launch scope for an unrouted event
@@ -54,7 +54,7 @@ func (r *GatewayRunner) servedAPIServerEventScope(ctx context.Context, evt map[s
 // Drains queued watch events and injects each one its owning profile lets surface, requeueing refusals on backoff
 func (r *GatewayRunner) drainWatchNotifications(ctx context.Context, queue *tools.EventQueue) error {
 	for _, evt := range drainGatewayWatchEvents(queue) {
-		if next, ok := evt["_watch_next_retry_at"].(float64); ok && next > pythread.Monotonic() {
+		if next, ok := evt["_watch_next_retry_at"].(float64); ok && next > timeutil.Monotonic() {
 			queue.Put(evt)
 			continue
 		}

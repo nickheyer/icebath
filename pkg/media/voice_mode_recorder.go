@@ -12,14 +12,14 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const liveSessionsMax = 8
@@ -35,7 +35,7 @@ type liveSTTSession interface {
 }
 
 var (
-	voiceMonotonic            = pythread.Monotonic
+	voiceMonotonic            = timeutil.Monotonic
 	voiceTranscribeAudio      = TranscribeAudio
 	voiceOpenStreamingSession = func(ctx context.Context, onPartial func(string)) (liveSTTSession, error) {
 		session, err := OpenStreamingSession(ctx, onPartial)
@@ -71,7 +71,7 @@ func newRecordingPath(ext string) (string, error) {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return "", err
 	}
-	return pypath.Join(dir, "recording_"+time.Now().Format("20060102_150405")+"."+ext), nil
+	return pathutil.Join(dir, "recording_"+time.Now().Format("20060102_150405")+"."+ext), nil
 }
 
 // Ends a live session's audio and parks it under its WAV, cancelling it without a WAV or past the cap
@@ -240,11 +240,11 @@ func (r *TermuxAudioRecorder) Start(context.Context, func()) error {
 	}
 	command := []string{micCmd, "-f", path, "-l", "0", "-e", "aac", "-r", fmt.Sprint(voiceSampleRate), "-c", fmt.Sprint(voiceChannels)}
 	if _, err := runQuiet(command, 15, true); err != nil {
-		var called *pysubprocess.CalledProcessError
+		var called *executil.StatusError
 		if errors.As(err, &called) {
-			details, _ := pycodecs.DecodeReplace(called.Stderr, "utf-8")
+			details, _ := charsetutil.DecodeReplace(called.Stderr, "utf-8")
 			if details == "" {
-				details, _ = pycodecs.DecodeReplace(called.Stdout, "utf-8")
+				details, _ = charsetutil.DecodeReplace(called.Stdout, "utf-8")
 			}
 			if details == "" {
 				details = called.Error()
@@ -311,7 +311,7 @@ func (r *TermuxAudioRecorder) Shutdown() { r.Cancel() }
 // AudioRecorder captures through PortAudio with speech confirmation, silence auto stop and a length cap
 type AudioRecorder struct {
 	recorderBase
-	stream            pysounddevice.InputStream
+	stream            portaudioutil.InputStream
 	frames            [][]int16
 	sampleRate        int
 	onSilenceStop     func()
@@ -428,7 +428,7 @@ func (r *AudioRecorder) fireSilenceCallback() {
 	}()
 }
 
-// Keeps the block, feeds the live session and tracks the level, false for an empty block numpy cannot average
+// Keeps the block, feeds the live session and tracks the level, false for an empty block, which ends the stream
 func (r *AudioRecorder) onAudioBlock(indata []int16) bool {
 	r.mu.Lock()
 	r.frames = append(r.frames, append([]int16(nil), indata...))
@@ -440,7 +440,7 @@ func (r *AudioRecorder) onAudioBlock(indata []int16) bool {
 	if len(indata) == 0 {
 		return false
 	}
-	rms := int(pynumpy.RMSInt16(indata))
+	rms := int(mathutil.RMS(indata))
 	r.mu.Lock()
 	r.currentRMS = rms
 	r.peakRMS = max(r.peakRMS, rms)
@@ -457,14 +457,14 @@ func (r *AudioRecorder) onAudioBlock(indata []int16) bool {
 	return true
 }
 
-func (r *AudioRecorder) callback(indata []int16, _ int, status pysounddevice.CallbackFlags) pysounddevice.CallbackResult {
+func (r *AudioRecorder) callback(indata []int16, _ int, status portaudioutil.CallbackFlags) portaudioutil.CallbackResult {
 	if status != 0 {
-		pkgLog().Debug(fmt.Sprintf("sounddevice status: %s", status))
+		pkgLog().Debug(fmt.Sprintf("PortAudio input status: %s", status))
 	}
 	if r.IsRecording() && !r.onAudioBlock(indata) {
-		return pysounddevice.Abort
+		return portaudioutil.Abort
 	}
-	return pysounddevice.Continue
+	return portaudioutil.Continue
 }
 
 // Keeps one live input stream, rebuilding an inactive one and retrying a timed out start once
@@ -490,16 +490,16 @@ func (r *AudioRecorder) ensureStream() error {
 	r.mu.Lock()
 	rate := r.sampleRate
 	r.mu.Unlock()
-	var opened pysounddevice.InputStream
+	var opened portaudioutil.InputStream
 	for attempt := 0; attempt < 2; attempt++ {
-		opened, err = sd.InputStream(pysounddevice.StreamParams{Samplerate: float64(rate), Channels: voiceChannels}, r.callback)
+		opened, err = sd.OpenInput(portaudioutil.StreamParams{SampleRate: float64(rate), Channels: voiceChannels}, r.callback)
 		if err == nil {
 			if err = opened.Start(); err == nil {
 				break
 			}
 		}
 		if opened != nil {
-			_ = opened.Close(true)
+			_ = opened.Close()
 		}
 		opened = nil
 		if attempt > 0 || !strings.Contains(strings.ToLower(err.Error()), "timed out") {
@@ -518,7 +518,7 @@ func (r *AudioRecorder) Start(ctx context.Context, onSilenceStop func()) error {
 	sd, err := importAudio()
 	switch {
 	case err == nil:
-	case isAudioOSError(err):
+	case isAudioLibraryError(err):
 		return errors.New(portaudioMissingMessage())
 	case isAudioImportError(err):
 		return errors.New("Voice mode requires the PortAudio library.\n" + voiceCaptureInstallHint(err))
@@ -564,8 +564,8 @@ func (r *AudioRecorder) closeStreamWithTimeout(timeout float64) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		quietStream(func() { _ = stream.Stop(true) })
-		quietStream(func() { _ = stream.Close(true) })
+		quietStream(func() { _ = stream.Stop() })
+		quietStream(func() { _ = stream.Close() })
 	}()
 	select {
 	case <-done:
@@ -574,7 +574,7 @@ func (r *AudioRecorder) closeStreamWithTimeout(timeout float64) {
 	}
 }
 
-// Runs one stream call, swallowing a panic like suppress(Exception)
+// Runs one stream call, swallowing a panic
 func quietStream(call func()) {
 	defer func() { _ = recover() }()
 	call()
@@ -672,12 +672,12 @@ func liveResult(wavPath string) map[string]any {
 		return nil
 	}
 	result := session.Finalize(streamingFinalizeTimeout)
-	if pyTruthy(result["success"]) && pyTruthy(result["transcript"]) && strings.TrimSpace(pyrepr.Str(result["transcript"])) != "" {
+	if anyutil.IsTrue(result["success"]) && anyutil.IsTrue(result["transcript"]) && strings.TrimSpace(anyutil.String(result["transcript"])) != "" {
 		return result
 	}
 	reason := "empty"
-	if pyTruthy(result["error"]) {
-		reason = pyrepr.Str(result["error"])
+	if anyutil.IsTrue(result["error"]) {
+		reason = anyutil.String(result["error"])
 	}
 	pkgLog().Info(fmt.Sprintf("Live STT gave no transcript (%s); transcribing the recording", reason))
 	return nil
@@ -693,17 +693,17 @@ func TranscribeRecording(ctx context.Context, wavPath, model string) (map[string
 		}
 		result = transcribed
 	}
-	if pyTruthy(result["success"]) {
+	if anyutil.IsTrue(result["success"]) {
 		raw := ""
 		if v, ok := result["transcript"]; ok {
-			raw = pyrepr.Str(v)
+			raw = anyutil.String(v)
 		}
 		if isWhisperHallucination(raw) && !isVoiceStopPhrase(ctx, raw, nil) {
 			pkgLog().Info(fmt.Sprintf("Filtered Whisper hallucination: %s", errchain.Show(result["transcript"])))
 			return map[string]any{"success": true, "transcript": "", "filtered": true}, nil
 		}
 	}
-	if pyTruthy(result["no_speech"]) {
+	if anyutil.IsTrue(result["no_speech"]) {
 		return map[string]any{"success": true, "transcript": "", "no_speech": true}, nil
 	}
 	return result, nil

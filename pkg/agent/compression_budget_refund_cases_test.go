@@ -6,10 +6,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const marathonThreshold = 10_000
@@ -77,7 +77,7 @@ func runMarathonTurn(t *testing.T, iterations, providerPromptTokens int) (*AIAge
 	a.contextCompressor = engine
 	reg := tools.NewRegistry()
 	payload := `{"ok": true, "payload": "` + strings.Repeat("x", 60_000) + `"}`
-	schema := pyjson.ObjectOf("name", "web_search", "description", "web_search tool", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject()))
+	schema := jsonutil.ObjectOf("name", "web_search", "description", "web_search tool", "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject()))
 	reg.Register(tools.Def{Name: "web_search", Toolset: "web", Schema: schema, Handler: func(context.Context, *tools.Call) string { return payload }})
 	a.toolDispatcher = tools.NewDispatcher(reg)
 	a.tools = []any{map[string]any{"type": "function", "function": schema}}
@@ -93,7 +93,7 @@ func runMarathonTurn(t *testing.T, iterations, providerPromptTokens int) (*AIAge
 		compacted := make([]map[string]any, len(messages))
 		for i, m := range messages {
 			compacted[i] = m
-			if content := m["content"]; pyrepr.Truthy(content) && len([]rune(pyrepr.Str(content))) > 5_000 {
+			if content := m["content"]; anyutil.IsTrue(content) && len([]rune(anyutil.String(content))) > 5_000 {
 				compacted[i] = shallowRow(m)
 				compacted[i]["content"] = "[summarized]"
 			}

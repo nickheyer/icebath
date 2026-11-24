@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // CodexRuntimeTurnHooks are the agent turn helpers the runtime reaches through the agent like a getattr
@@ -96,7 +96,7 @@ func codexTurnEffort(agent CodexRuntimeAgent, model string) *string {
 	}
 	cfg := reasoningCfg{set: true, disabled: disabled}
 	if !disabled {
-		cfg.effort = strings.ToLower(strings.TrimSpace(pyrepr.Str(rc["effort"])))
+		cfg.effort = strings.ToLower(strings.TrimSpace(anyutil.String(rc["effort"])))
 	}
 	route := classifyResponsesRoute(agent.Provider(), agent.BaseURL())
 	effort, _ := resolveReasoning(model, codexParams{ctx: home.WithOverride(context.Background(), codexAgentHome(agent)), reasoning: cfg,
@@ -305,7 +305,7 @@ func RunCodexAppServerTurn(agent CodexRuntimeAgent, userMessage string, original
 	}
 	interrupted, interruptMessage := consumeUserInterrupt(agent, turn.Interrupted)
 	if turn.ShouldRetire {
-		pkgLog().Warn(fmt.Sprintf("codex app-server session retired (turn error: %s)", pyrepr.Str(codexNoneIfEmpty(turn.Error))))
+		pkgLog().Warn(fmt.Sprintf("codex app-server session retired (turn error: %s)", anyutil.String(codexNoneIfEmpty(turn.Error))))
 		closeCodexSession(agent)
 	}
 	reply, err := transformCodexReply(agent, turn, turnID)

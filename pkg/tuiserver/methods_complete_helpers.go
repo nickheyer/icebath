@@ -12,9 +12,9 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -222,11 +222,11 @@ func fuzzyBasenameRank(name, query string) (int, int, bool) {
 func absCompletionPrefixExists(pathPart string) bool {
 	expanded := normalizeCompletionPath(pathPart)
 	trimmed := strings.TrimRight(expanded, "/")
-	parent := pypath.Dirname(trimmed)
+	parent := filepath.Dir(trimmed)
 	if parent == "" {
 		parent = "/"
 	}
-	tail := pypath.Basename(trimmed)
+	tail := pathutil.Name(trimmed)
 	if !isDir(parent) {
 		return false
 	}

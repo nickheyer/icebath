@@ -10,8 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Planned stop marker inside a profile home, the request a pausing update leaves for its gateway
@@ -21,12 +21,12 @@ func plannedStopMarkerPath(profilePath string) string {
 
 // Writes the planned stop request naming pid into a profile home, false when the home refuses the write
 func writeUpdatePlannedStopMarker(ctx context.Context, profilePath string, pid int) (bool, error) {
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("target_pid", pid)
 	body.Set("target_start_time", gateway.GetProcessStartTime(pid))
 	body.Set("stopper_pid", os.Getpid())
-	body.Set("written_at", pydatetime.ISOFormatUTC(time.Now()))
-	err := config.AtomicJSONWriteWith(ctx, plannedStopMarkerPath(profilePath), body, pyjson.Separators(",", ":"))
+	body.Set("written_at", time.Now().UTC().Format(timeutil.RFC3339Micro))
+	err := config.AtomicJSONWriteWith(ctx, plannedStopMarkerPath(profilePath), body)
 	if err == nil {
 		return true, nil
 	}

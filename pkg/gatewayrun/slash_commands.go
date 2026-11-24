@@ -9,7 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -172,7 +172,7 @@ func (r *GatewayRunner) handleBundlesCommand(ctx context.Context, event *gateway
 		return "", err
 	}
 	if msg, ok := reply.Data["error"]; ok {
-		pkgLog().Warn(fmt.Sprintf("Bundles command unavailable: %s", pyrepr.Str(msg)))
+		pkgLog().Warn(fmt.Sprintf("Bundles command unavailable: %s", anyutil.String(msg)))
 		return reply.Text, nil
 	}
 	bundles := bundleMaps(reply.Data["bundles"])
@@ -183,7 +183,7 @@ func (r *GatewayRunner) handleBundlesCommand(ctx context.Context, event *gateway
 	for _, info := range bundles {
 		skills := stringItems(info["skills"])
 		desc := info["description"]
-		if !pyrepr.Truthy(desc) {
+		if !anyutil.IsTrue(desc) {
 			desc = i18n.T(ctx, "gateway.bundles.default_desc", "", map[string]any{"count": len(skills)})
 		}
 		lines = append(lines, i18n.T(ctx, "gateway.bundles.item", "", map[string]any{"slug": info["slug"], "desc": desc, "count": len(skills)}))
@@ -220,7 +220,7 @@ func stringItems(v any) []string {
 	case []any:
 		out := make([]string, 0, len(s))
 		for _, item := range s {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 		return out
 	}

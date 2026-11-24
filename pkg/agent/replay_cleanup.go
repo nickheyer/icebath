@@ -8,12 +8,12 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Orphan recovery notices, side effecting first, for an interrupted block and for a dangling tail
@@ -45,11 +45,11 @@ func IsInterruptedToolResult(content any) bool {
 	}
 	output := text
 	if strings.HasPrefix(strings.TrimLeftFunc(text, unicode.IsSpace), "{") {
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return false
 		}
-		envelope, ok := parsed.(*pyjson.Object)
+		envelope, ok := parsed.(*jsonutil.Object)
 		if !ok {
 			return false
 		}
@@ -82,19 +82,19 @@ func IsInterruptedToolResult(content any) bool {
 }
 
 func replayCallName(call map[string]any) string {
-	fn, _ := pyjson.Dict(call["function"])
-	if name := fn["name"]; pyrepr.Truthy(name) {
-		return pyrepr.Str(name)
+	fn, _ := jsonutil.AsMap(call["function"])
+	if name := fn["name"]; anyutil.IsTrue(name) {
+		return anyutil.String(name)
 	}
 	return ""
 }
 
 func replayCallID(call map[string]any) string {
-	if id := call["id"]; pyrepr.Truthy(id) {
-		return pyrepr.Str(id)
+	if id := call["id"]; anyutil.IsTrue(id) {
+		return anyutil.String(id)
 	}
-	if id := call["call_id"]; pyrepr.Truthy(id) {
-		return pyrepr.Str(id)
+	if id := call["call_id"]; anyutil.IsTrue(id) {
+		return anyutil.String(id)
 	}
 	return ""
 }
@@ -104,7 +104,7 @@ func replayCalls(v any) []map[string]any {
 	list, _ := listOfAny(v)
 	out := make([]map[string]any, 0, len(list))
 	for _, c := range list {
-		if m, ok := pyjson.Dict(c); ok {
+		if m, ok := jsonutil.AsMap(c); ok {
 			out = append(out, m)
 		}
 	}
@@ -168,8 +168,8 @@ func StripInterruptedToolTails(history []map[string]any) []map[string]any {
 					for _, r := range results {
 						if IsInterruptedToolResult(rowContent(r)) {
 							id := ""
-							if v := r["tool_call_id"]; pyrepr.Truthy(v) {
-								id = pyrepr.Str(v)
+							if v := r["tool_call_id"]; anyutil.IsTrue(v) {
+								id = anyutil.String(v)
 							}
 							disposition, content := orphanRecovery(names[id], interruptedNotices)
 							rewritten := make(map[string]any, len(r)+1)
@@ -204,7 +204,7 @@ func StripDanglingToolCallTail(history []map[string]any) []map[string]any {
 		return history
 	}
 	last := history[len(history)-1]
-	if last == nil || last["role"] != "assistant" || !pyrepr.Truthy(last["tool_calls"]) {
+	if last == nil || last["role"] != "assistant" || !anyutil.IsTrue(last["tool_calls"]) {
 		return history
 	}
 	calls := replayCalls(last["tool_calls"])
@@ -309,7 +309,7 @@ func StripStaleDangerousConfirmations(history []map[string]any, now, expirySecon
 			continue
 		}
 		age := math.Inf(1)
-		if tsF, ok := pydatetime.CoerceEpoch(ts, "", "message timestamp"); ok {
+		if tsF, ok := timeutil.StoredEpoch(ts, "", "message timestamp"); ok {
 			age = now - tsF
 		}
 		if age >= 0 && age <= expirySeconds {

@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type secretOwnerDouble struct {
@@ -88,7 +88,7 @@ func TestNonSecretPolicyChangeKeepsTheReference(t *testing.T) {
 	config := policyObject(policy.ConfigJSON)
 	config["agent"] = map[string]any{"reasoning_effort": "low"}
 	config["mcp_servers"].(map[string]any)["extra"] = map[string]any{"command": "extra-mcp"}
-	text, _ := pyjson.Dumps(config)
+	text, _ := jsonutil.Encode(config)
 	moved := *policy
 	other, later := "other", "later field"
 	moved.Model, moved.Toolsets, moved.SkillsPrompt, moved.ConfigJSON = &other, []string{"web"}, &later, text
@@ -138,7 +138,7 @@ func TestSecretPairedWithAMovedEndpointIsRefusedByName(t *testing.T) {
 			config["mcp_servers"].(map[string]any)["docs"].(map[string]any)["command"] = "other-mcp"
 		}
 		repointed := *policy
-		repointed.ConfigJSON, _ = pyjson.Dumps(config)
+		repointed.ConfigJSON, _ = jsonutil.Encode(config)
 		_, err := recoverConfigSecrets(ctx, owner("", ""), &repointed)
 		if got, detail := refusedField(t, err); got != field || !strings.Contains(detail, "endpoint") {
 			t.Fatalf("%s refusal %q %q", moved, got, detail)
@@ -172,7 +172,7 @@ func TestLegacyReferenceKeepsTheWholePolicyGuard(t *testing.T) {
 		delete(data, name)
 	}
 	source["policy"] = sortedDigest(data)
-	text, _ := pyjson.Dumps(source, pyjson.SortKeys(true))
+	text, _ := jsonutil.Encode(source, jsonutil.SortKeys())
 	legacy := *policy
 	ref := configSecretPrefix + text
 	legacy.ConfigSecretRef = &ref
@@ -234,7 +234,7 @@ func TestPolicyIdentityPreservesPreEditorCredentialBinding(t *testing.T) {
 		"client_env_remote", "client_env_rules_json", "edit_approval_policy"} {
 		delete(legacy, name)
 	}
-	text, _ := pyjson.Dumps(legacy, pyjson.SortKeys(true))
+	text, _ := jsonutil.Encode(legacy, jsonutil.SortKeys())
 	sum := sha256.Sum256([]byte(text))
 	if got := policyIdentity(policy, nil); got != hex.EncodeToString(sum[:]) {
 		t.Fatalf("identity %s", got)

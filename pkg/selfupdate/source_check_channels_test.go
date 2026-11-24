@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Channel fixture home and checkout pinned as ambient home and project root, every release host unreachable
@@ -52,7 +52,7 @@ func chSetChannel(t *testing.T, s *chSource, name string) {
 	}
 }
 
-func chStatus(t *testing.T, s *chSource, h string, channel *string) *pyjson.Object {
+func chStatus(t *testing.T, s *chSource, h string, channel *string) *jsonutil.Object {
 	t.Helper()
 	return scCheck(t, SourceCheckOptions{InstallRoot: s.root, Home: h, Channel: channel, Force: true})
 }
@@ -70,10 +70,10 @@ func TestSourceCheckMissingChannelCannotFallBackToMain(t *testing.T) {
 			t.Cleanup(func() { resolveChannel = saved })
 			status := chStatus(t, s, h, nil)
 			if v, _ := status.Get("error"); v != "release-unavailable" {
-				t.Fatalf("status %v", status.Vals)
+				t.Fatalf("status %v", status)
 			}
 			if _, ok := status.Get("targetSha"); ok {
-				t.Fatalf("a missing channel offered a target %v", status.Vals)
+				t.Fatalf("a missing channel offered a target %v", status)
 			}
 		})
 	}
@@ -100,7 +100,7 @@ func TestSourceCheckMainFollowsTheGitBranchWithoutReadingAChannelRecord(t *testi
 			t.Cleanup(func() { resolveChannel = saved })
 			status := chStatus(t, s, h, nil)
 			if _, failed := status.Get("error"); failed || scGet(t, status, "targetSha") != s.commits[2] || len(reads) != 0 {
-				t.Fatalf("status %v reads %v", status.Vals, reads)
+				t.Fatalf("status %v reads %v", status, reads)
 			}
 		})
 	}
@@ -115,11 +115,11 @@ func TestSourceCheckPassiveCheckReportsRetirementWithoutAdoptingIt(t *testing.T)
 	chInstallReader(t, chReaderResult(t, s, name, "stable", OfficialRepository))
 	status := chStatus(t, s, h, nil)
 	if scGet(t, status, "channel") != name || scGet(t, status, "targetSha") != s.commits[1] || scGet(t, status, "updateAvailable") != true {
-		t.Fatalf("status %v", status.Vals)
+		t.Fatalf("status %v", status)
 	}
-	retirement, ok := scGet(t, status, "retirement").(*pyjson.Object)
-	if !ok || len(retirement.Keys) != 2 || retirement.Vals["destination"] != "stable" || retirement.Vals["sourceOnly"] != true {
-		t.Fatalf("retirement %v", status.Vals["retirement"])
+	retirement, ok := scGet(t, status, "retirement").(*jsonutil.Object)
+	if !ok || retirement.Len() != 2 || retirement.Value("destination") != "stable" || retirement.Value("sourceOnly") != true {
+		t.Fatalf("retirement %v", status.Value("retirement"))
 	}
 	if after := chSaved(t, s, h); !reflect.DeepEqual(after, before) {
 		t.Fatalf("a passive check adopted the retirement %v -> %v", before, after)
@@ -134,7 +134,7 @@ func TestSourceCheckRealHTTPReaderResolvesTaglessBuild(t *testing.T) {
 	a.publishChannelBuild(t, name, strings.Repeat("b", 32), s.commits[1], 1, false)
 	status := chStatus(t, s, h, &name)
 	if v, _ := status.Get("targetSha"); v != s.commits[1] {
-		t.Fatalf("status %v", status.Vals)
+		t.Fatalf("status %v", status)
 	}
 }
 
@@ -162,12 +162,12 @@ func TestSourceCheckOfflineRetirementUsesQualifiedBuildBeforeCurrentStable(t *te
 			status := chStatus(t, s, h, nil)
 			if fault != "" {
 				if v, _ := status.Get("error"); v != "release-unavailable" {
-					t.Fatalf("status %v", status.Vals)
+					t.Fatalf("status %v", status)
 				}
 			} else {
 				buildID := fixture.qualified["head"].(map[string]any)["buildId"]
 				if v, _ := status.Get("targetSha"); v != s.commits[1] || scGet(t, status, "buildId") != buildID {
-					t.Fatalf("status %v", status.Vals)
+					t.Fatalf("status %v", status)
 				}
 			}
 			if after := chSaved(t, s, h); !reflect.DeepEqual(after, original) {
@@ -182,18 +182,18 @@ func TestSourceCheckSourceBranchRecordHasNoBundle(t *testing.T) {
 	h := chCheckHome(t, s)
 	record := jv(t, map[string]any{"schema": 1, "name": "main", "repository": OfficialRepository, "policy": "source-branch",
 		"state": "active", "identity": nil, "nextSequence": 2, "head": nil,
-		"delivery": map[string]any{"kind": "source-branch", "branch": "main"}}).(*pyjson.Object)
+		"delivery": map[string]any{"kind": "source-branch", "branch": "main"}}).(*jsonutil.Object)
 	saved := resolveChannel
 	resolveChannel = func(context.Context, string, string) (*ChannelResolution, error) {
-		return &ChannelResolution{Requested: pyjson.Clone(record).(*pyjson.Object), Terminal: pyjson.Clone(record).(*pyjson.Object)}, nil
+		return &ChannelResolution{Requested: jsonutil.Clone(record).(*jsonutil.Object), Terminal: jsonutil.Clone(record).(*jsonutil.Object)}, nil
 	}
 	t.Cleanup(func() { resolveChannel = saved })
 	status := chStatus(t, s, h, nil)
 	if v, _ := status.Get("targetSha"); v != s.commits[2] {
-		t.Fatalf("status %v", status.Vals)
+		t.Fatalf("status %v", status)
 	}
 	if _, ok := status.Get("buildId"); ok {
-		t.Fatalf("a source branch record carried a build %v", status.Vals)
+		t.Fatalf("a source branch record carried a build %v", status)
 	}
 }
 
@@ -224,7 +224,7 @@ func TestSourceCheckCommitBuildNeverChecksUpstreamOrReusesSourceCache(t *testing
 		probe.Close()
 		checkProjectRoot, sourceGitRun, sourceGitHubAPI = savedRoot, savedGit, savedAPI
 		if behind, ok := status.Get("behind"); !ok || behind != nil {
-			t.Fatalf("passive=%v status %v", passive, status.Vals)
+			t.Fatalf("passive=%v status %v", passive, status)
 		}
 	}
 }

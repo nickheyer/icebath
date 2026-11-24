@@ -138,7 +138,7 @@ func TestRateLimitErrorClassificationAndRetryAfter(t *testing.T) {
 	if signalSendTimeout(0) != 30 || signalSendTimeout(3) != 60 || signalSendTimeout(20) != 100 {
 		t.Fatal("send timeout")
 	}
-	if st := GetScheduler().State(); st.Keys[0] != "tokens" || st.Vals["capacity"] != 50 || st.Vals["refill_seconds_per_token"] != 4.0 {
+	if st := GetScheduler().State(); st.Keys()[0] != "tokens" || st.Value("capacity") != 50 || st.Value("refill_seconds_per_token") != 4.0 {
 		t.Fatalf("%+v", st)
 	}
 	t.Setenv("ICEBATH_HOME", t.TempDir())

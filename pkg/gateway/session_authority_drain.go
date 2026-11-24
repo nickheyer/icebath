@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Capped backoff bounds in seconds of a claim refused by transient storage
@@ -88,7 +88,7 @@ func (w *admissionWaiter) wait(ctx context.Context) (any, error) {
 
 // Hosted room service that reauthorizes a queued hosted admission at its claim
 type HostedAdmissionChecker interface {
-	CheckAdmission(ctx context.Context, ref SessionRef, row *pyjson.Object) error
+	CheckAdmission(ctx context.Context, ref SessionRef, row *jsonutil.Object) error
 }
 
 // Runner surface of the classic turn slots a route may hold outside the FIFO
@@ -100,21 +100,21 @@ type classicTurnRunner interface {
 
 // Outcome of one settlement attempt, the committed row and the reply it carries once it landed
 type TurnSettlement struct {
-	Settled  *pyjson.Object
+	Settled  *jsonutil.Object
 	Response any
 }
 
 // Result of one claim attempt with the queued head its checks validated
 type claimAttempt struct {
-	row         *pyjson.Object
+	row         *jsonutil.Object
 	reread      bool
 	classicBusy bool
-	first       *pyjson.Object
+	first       *jsonutil.Object
 }
 
 // Claim write result, the claimed row and whether the validated head moved under the write
 type claimWrite struct {
-	row   *pyjson.Object
+	row   *jsonutil.Object
 	moved bool
 }
 
@@ -177,7 +177,7 @@ func (a *SessionAuthority) classicTurnHolds(ctx context.Context, route string) b
 	if !ok || !runner.IsSessionRunning(route) {
 		return false
 	}
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	a.mu.Lock()
 	if a.classicEvictAt == nil {
 		a.classicEvictAt = map[string]float64{}
@@ -215,7 +215,7 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 	if err != nil {
 		return claimAttempt{}, err
 	}
-	var first *pyjson.Object
+	var first *jsonutil.Object
 	for _, row := range pending {
 		if rowString(row, "status") == AdmissionUnknown {
 			return claimAttempt{}, runtimeRefusal("unknown_execution")
@@ -352,14 +352,14 @@ func (a *SessionAuthority) claimNext(ctx context.Context, ref SessionRef, live *
 }
 
 // Stamps the claim's execution on the stream in the same tracked task as its commit
-func (a *SessionAuthority) StampClaim(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object) error {
+func (a *SessionAuthority) StampClaim(ctx context.Context, ref SessionRef, live *LiveSession, row *jsonutil.Object) error {
 	if row == nil {
 		return nil
 	}
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()
 	generation, _ := row.Get("generation")
-	live.EventStream.Execution = pyjson.ObjectOf("authority_epoch", a.Epoch, "execution_generation", generation,
+	live.EventStream.Execution = jsonutil.ObjectOf("authority_epoch", a.Epoch, "execution_generation", generation,
 		"admission_id", rowString(row, "admission_id"))
 	a.mu.Lock()
 	if a.executing == nil {
@@ -415,7 +415,7 @@ func (a *SessionAuthority) refuseHead(ctx context.Context, ref SessionRef, admis
 		}
 		return false, err
 	}
-	row := result.(*pyjson.Object)
+	row := result.(*jsonutil.Object)
 	if outcome, _ := row.Get("outcome"); rowString(row, "status") != AdmissionTerminal || outcome != "cancelled" {
 		discard()
 		return false, nil
@@ -442,7 +442,7 @@ func transientClaimFailure(err error) bool {
 	if class, ok := state.SQLiteClassOf(err); ok {
 		return class == state.SQLiteOperationalError
 	}
-	return pypath.IsOSError(err)
+	return errorutil.IsSystem(err)
 }
 
 // Tells the operator and the session's chat once per outage that its queued input waits for a store that stopped working
@@ -638,7 +638,7 @@ func (a *SessionAuthority) claimWithRetry(ctx context.Context, ref SessionRef, l
 // Drops the stamps and latches of the session's claim once its execution or settlement is over
 func (a *SessionAuthority) clearClaim(live *LiveSession, sessionID string) {
 	live.EventStream.Lock.Lock()
-	live.EventStream.Execution = pyjson.NewObject()
+	live.EventStream.Execution = jsonutil.NewObject()
 	live.EventStream.Lock.Unlock()
 	a.mu.Lock()
 	delete(a.pendingStops, sessionID)
@@ -658,7 +658,7 @@ func (a *SessionAuthority) EndExecution(live *LiveSession, sessionID string) {
 }
 
 // Runs the claimed admission, its reply and outcome, a lost managed worker settling or pausing the FIFO
-func (a *SessionAuthority) executeClaimed(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object) (any, string, error) {
+func (a *SessionAuthority) executeClaimed(ctx context.Context, ref SessionRef, live *LiveSession, row *jsonutil.Object) (any, string, error) {
 	if live.ReviewRun != nil && !live.ReviewRun.RequestDone() {
 		cancelLiveReviewForTurn(live)
 	}
@@ -699,7 +699,7 @@ const (
 )
 
 // Settles a finished turn and publishes its completion, recovering a settlement that failed after its commit
-func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, live *LiveSession, row *pyjson.Object, response *any, outcome string, settled **pyjson.Object) (settleNext, error) {
+func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, live *LiveSession, row *jsonutil.Object, response *any, outcome string, settled **jsonutil.Object) (settleNext, error) {
 	admissionID := rowString(row, "admission_id")
 	err := func() error {
 		a.mu.Lock()
@@ -733,8 +733,8 @@ func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, li
 	}
 	a.mu.Lock()
 	if _, held := a.PendingResults[admissionID]; !held {
-		a.PendingResults[admissionID] = pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", *response, "failed", outcome == "failed"),
-			"usage", pyjson.NewObject())
+		a.PendingResults[admissionID] = jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", *response, "failed", outcome == "failed"),
+			"usage", jsonutil.NewObject())
 	}
 	a.mu.Unlock()
 	if _, err := recoverFailedSettlement(ctx, a, row); err != nil {
@@ -786,7 +786,7 @@ func (a *SessionAuthority) settleClaimed(ctx context.Context, ref SessionRef, li
 	if pyTruthy(text) {
 		*response = text
 	}
-	captured, _ := stored.(*pyjson.Object)
+	captured, _ := stored.(*jsonutil.Object)
 	return settleDeliver, publishTerminal(ctx, a, ref, row, *settled, *response, captured)
 }
 
@@ -853,7 +853,7 @@ func drainSessionFIFO(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 			}
 			return err
 		}
-		var settled *pyjson.Object
+		var settled *jsonutil.Object
 		next, settleErr := a.settleClaimed(ctx, ref, live, row, &response, outcome, &settled)
 		a.clearClaim(live, ref.SessionID)
 		closing := context.WithoutCancel(ctx)

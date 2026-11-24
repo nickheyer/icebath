@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type messageCapture struct {
@@ -27,24 +27,24 @@ func (h messageCapture) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h messageCapture) WithGroup(string) slog.Handler      { return h }
 
 // Collects every log message for the test and returns a reader of the attempt telemetry payloads
-func captureAttemptRecords(t *testing.T) func() []*pyjson.Object {
+func captureAttemptRecords(t *testing.T) func() []*jsonutil.Object {
 	t.Helper()
 	var mu sync.Mutex
 	var msgs []string
 	prev := slog.Default()
 	slog.SetDefault(slog.New(messageCapture{&mu, &msgs}))
 	t.Cleanup(func() { slog.SetDefault(prev) })
-	return func() []*pyjson.Object {
+	return func() []*jsonutil.Object {
 		mu.Lock()
 		defer mu.Unlock()
-		var out []*pyjson.Object
+		var out []*jsonutil.Object
 		for _, m := range msgs {
 			if _, rest, ok := strings.Cut(m, "context compression attempt telemetry: "); ok {
-				v, err := pyjson.Loads(rest)
+				v, err := jsonutil.Decode(rest)
 				if err != nil {
 					t.Fatal(err)
 				}
-				out = append(out, v.(*pyjson.Object))
+				out = append(out, v.(*jsonutil.Object))
 			}
 		}
 		return out
@@ -65,7 +65,7 @@ func TestGenericCallerVerdictsDeferToTheRecordedFailureClass(t *testing.T) {
 	for _, k := range cases {
 		records := captureAttemptRecords(t)
 		c := newCompressorWith(t, 100_000, nil)
-		c.Last = pyjson.ObjectOf("failure_class", k.recorded, "attempt_id", k.attemptID)
+		c.Last = jsonutil.ObjectOf("failure_class", k.recorded, "attempt_id", k.attemptID)
 		a := &AIAgent{contextCompressor: c, sessionID: "session-telemetry-test"}
 		a.compressionAttemptID = "this-attempt"
 		emitAbortedAttemptTelemetry(context.Background(), a, time.Now(), k.caller, nil)
@@ -88,7 +88,7 @@ func TestBlockedRecordNeverCarriesTheCooldownSeconds(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("%d records", len(got))
 	}
-	text, _ := pyjson.Dumps(got[0])
+	text, _ := jsonutil.Encode(got[0])
 	if class, _ := got[0].Get("failure_class"); class != "blocked:structural_backoff" || strings.Contains(text, "917") {
 		t.Fatalf("record %s", text)
 	}

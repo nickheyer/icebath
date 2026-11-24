@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // TypeError raised where a value is unpacked or called with the wrong shape
@@ -28,7 +29,7 @@ func errLower(err error) string {
 	if err == nil {
 		return ""
 	}
-	return strings.ToLower(pyrepr.ExceptionMessage(err))
+	return strings.ToLower(err.Error())
 }
 
 // Server retry_after of a RetryAfter error, nil for every other error
@@ -91,7 +92,7 @@ func (a *TelegramAdapter) sendChunkMarkdownOrPlain(ctx context.Context, chunk st
 	}
 	low := errLower(err)
 	if strings.Contains(low, "parse") || strings.Contains(low, "markdown") {
-		pkgLog().Warn(fmt.Sprintf("[%s] MarkdownV2 parse failed, falling back to plain text: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] MarkdownV2 parse failed, falling back to plain text: %s", a.Name(), err.Error()))
 		return a.boundedSendMessage(ctx, a.sendMessageParams(kw, stripMdv2(chunk), ""))
 	}
 	return nil, err
@@ -127,7 +128,7 @@ func (a *TelegramAdapter) sendChunkWithRetries(ctx context.Context, chatID, chun
 			if isPTBError(sendErr, "BadRequest") {
 				if isThreadNotFoundError(sendErr) && effectiveThreadID != nil {
 					if privateDMTopicSend || pyTruthy(metadata["telegram_dm_topic_created_for_send"]) {
-						return nil, usedThreadFallback, &gateway.SendResult{Success: false, Error: pyrepr.ExceptionMessage(sendErr)}, nil
+						return nil, usedThreadFallback, &gateway.SendResult{Success: false, Error: sendErr.Error()}, nil
 					}
 					if !retriedThreadNotFound {
 						retriedThreadNotFound = true
@@ -439,7 +440,7 @@ func tupleStrings(v any) []string {
 	}
 	out := make([]string, 0, len(items))
 	for _, item := range items {
-		out = append(out, pyrepr.Str(item))
+		out = append(out, anyutil.String(item))
 	}
 	return out
 }
@@ -492,7 +493,7 @@ func (a *TelegramAdapter) SendOrUpdateStatus(ctx context.Context, chatID, status
 		if result.Success {
 			a.mu.Lock()
 			if current, ok := a.statusMessageIDs.Get(key); ok && current == cachedID && pyTruthy(result.MessageID) {
-				a.statusMessageIDs.Set(key, pyrepr.Str(result.MessageID))
+				a.statusMessageIDs.Set(key, anyutil.String(result.MessageID))
 			}
 			a.mu.Unlock()
 			return result, nil
@@ -513,7 +514,7 @@ func (a *TelegramAdapter) SendOrUpdateStatus(ctx context.Context, chatID, status
 				a.statusMessageIDs.Delete(stale)
 			}
 		}
-		a.statusMessageIDs.Set(key, pyrepr.Str(result.MessageID))
+		a.statusMessageIDs.Set(key, anyutil.String(result.MessageID))
 		a.mu.Unlock()
 	}
 	return result, nil
@@ -911,7 +912,7 @@ func (a *TelegramAdapter) SendDraft(ctx context.Context, chatID string, draftID 
 				draftID, redactTelegramErrorText(sendErr)))
 			continue
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] sendMessageDraft failed (chat=%s draft_id=%d): %s", a.Name(), chatID, draftID, pyrepr.ExceptionMessage(sendErr)))
+		pkgLog().Debug(fmt.Sprintf("[%s] sendMessageDraft failed (chat=%s draft_id=%d): %s", a.Name(), chatID, draftID, sendErr.Error()))
 		return gateway.SendResult{Success: false, Error: redactTelegramErrorText(sendErr)}, nil
 	}
 	return gateway.SendResult{Success: false, Error: "draft_rejected"}, nil
@@ -975,7 +976,7 @@ func (a *TelegramAdapter) richTransientResult(err error, what string, retryAfter
 
 // Indexes sent rich content since Telegram never echoes it in reply_to_message
 func recordRichSent(ctx context.Context, chatID, messageID any, content string) {
-	gateway.RichSentRecord(ctx, pyrepr.Str(chatID), pyrepr.Str(messageID), content)
+	gateway.RichSentRecord(ctx, anyutil.String(chatID), anyutil.String(messageID), content)
 }
 
 var retryInRE = regexp.MustCompile(`(?i)retry\s+(?:in\s+)?(\d+)`)
@@ -1042,7 +1043,7 @@ func jsonIDText(v any) string {
 	if f, ok := v.(float64); ok && f == math.Trunc(f) {
 		return strconv.FormatInt(int64(f), 10)
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Rich payload with the normalized chat id and the link preview switch
@@ -1178,7 +1179,7 @@ func (a *TelegramAdapter) GetChatInfo(ctx context.Context, chatID string) (map[s
 	if err != nil {
 		err = ptbError(err)
 		pkgLog().Error(fmt.Sprintf("[%s] Failed to get Telegram chat info for %s: %s", a.Name(), chatID, redactTelegramErrorText(err)))
-		return map[string]any{"name": chatID, "type": "dm", "error": pyrepr.ExceptionMessage(err)}, nil
+		return map[string]any{"name": chatID, "type": "dm", "error": err.Error()}, nil
 	}
 	chatType := "dm"
 	switch chat.Type {

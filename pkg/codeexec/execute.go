@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Loopback TCP replaces unix sockets on Windows so the sandbox runs on every platform, swapped by tests
@@ -161,7 +161,7 @@ var toolDocLines = []struct{ name, doc string }{
 }
 
 // Schema listing only the enabled sandbox tools, nil meaning all, with the cwd sentence of the mode
-func buildExecuteCodeSchema(env *tools.Env, enabledSandboxTools []string, mode string) *pyjson.Object {
+func buildExecuteCodeSchema(env *tools.Env, enabledSandboxTools []string, mode string) *jsonutil.Object {
 	if enabledSandboxTools == nil {
 		enabledSandboxTools = sandboxAllowedTools
 	}
@@ -215,16 +215,16 @@ func buildExecuteCodeSchema(env *tools.Env, enabledSandboxTools []string, mode s
 		"json_parse(text) — tolerant " +
 		"json.loads for terminal() output; shell_quote(s) — shlex.quote for " +
 		"dynamic shell args; retry(fn, max_attempts=3, delay=2) — exponential backoff."
-	return pyjson.ObjectOf(
+	return jsonutil.ObjectOf(
 		"name", "execute_code",
 		"description", description,
-		"parameters", pyjson.ObjectOf(
+		"parameters", jsonutil.ObjectOf(
 			"type", "object",
-			"properties", pyjson.ObjectOf(
-				"code", pyjson.ObjectOf("type", "string", "description", "Python code to execute. Import tools with "+
+			"properties", jsonutil.ObjectOf(
+				"code", jsonutil.ObjectOf("type", "string", "description", "Python code to execute. Import tools with "+
 					"`from icebath_tools import "+importStr+"` "+
 					"and print your final result to stdout."),
-				"reset", pyjson.ObjectOf("type", "boolean", "description", "Discard the kernel's persistent state and start fresh before running this code."),
+				"reset", jsonutil.ObjectOf("type", "boolean", "description", "Discard the kernel's persistent state and start fresh before running this code."),
 			),
 			"required", []any{"code"},
 		),
@@ -248,7 +248,7 @@ func executeCodeHandler(ctx context.Context, call *tools.Call) string {
 			"requires Python source as a string. Retry as execute_code(code=\"...\").")
 	}
 	enabled, _ := tools.EnabledToolsOf(ctx)
-	return executeCode(ctx, call.Env, code, call.TaskID, enabled, pyrepr.Truthy(configValue(args, "reset", false)))
+	return executeCode(ctx, call.Env, code, call.TaskID, enabled, anyutil.IsTrue(configValue(args, "reset", false)))
 }
 
 // Model facing execute_code definition listing only the sandbox tools available this session
@@ -264,7 +264,7 @@ func rewriteExecuteCode(env *tools.Env, _ map[string]any, available map[string]b
 
 func init() {
 	tools.Register(tools.Def{
-		Name: "execute_code", Toolset: "code_execution", SchemaBuilder: func() *pyjson.Object { return buildExecuteCodeSchema(nil, nil, "") },
+		Name: "execute_code", Toolset: "code_execution", SchemaBuilder: func() *jsonutil.Object { return buildExecuteCodeSchema(nil, nil, "") },
 		Handler: executeCodeHandler, Check: checkSandboxRequirements, Emoji: "\U0001f40d",
 		MaxResultChars: 100_000,
 	})

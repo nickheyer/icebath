@@ -20,12 +20,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
+
+	"golang.org/x/text/cases"
 )
 
 var (
@@ -52,7 +53,7 @@ func normalizeLocalSTTLanguage(language any, supported []string) string {
 		return ""
 	}
 	raw := strings.TrimSpace(s)
-	folded := strings.ReplaceAll(pystr.Casefold(raw), "_", "-")
+	folded := strings.ReplaceAll(cases.Fold().String(raw), "_", "-")
 	candidate, aliased := localLanguageAliases[raw]
 	if !aliased {
 		candidate = strings.SplitN(folded, "-", 2)[0]
@@ -71,7 +72,7 @@ func normalizeLocalSTTLanguage(language any, supported []string) string {
 	if supported != nil {
 		found := false
 		for _, code := range supported {
-			if pystr.Casefold(code) == candidate {
+			if cases.Fold().String(code) == candidate {
 				found = true
 			}
 		}
@@ -94,7 +95,7 @@ func whisperCppCommand(ctx context.Context) (string, error) {
 	if err != nil || installed == nil {
 		return "", err
 	}
-	quote := func(p string) string { return pyshlex.Quote(filepath.ToSlash(p)) }
+	quote := func(p string) string { return shellutil.Quote(filepath.ToSlash(p)) }
 	models := whisperCppModelDir(ctx)
 	return quote(installed.Binary) + " -m " + quote(filepath.Join(models, "ggml-base.bin")) + " " +
 		"-f {input_path} -l {language} -t 4 -bs 5 -bo 5 -ng -nt -otxt " +
@@ -171,7 +172,7 @@ func localCommandTemplate(ctx context.Context) (string, error) {
 		return managed, err
 	}
 	if bin := findWhisperBinary(); bin != "" {
-		return pyshlex.Quote(bin) + " {input_path} --model {model} --output_format txt --output_dir {output_dir} --language {language}", nil
+		return shellutil.Quote(bin) + " {input_path} --model {model} --output_format txt --output_dir {output_dir} --language {language}", nil
 	}
 	return "", nil
 }
@@ -232,7 +233,7 @@ var sttSysctlValue = func(name string) string {
 	if err != nil {
 		return ""
 	}
-	s, _ := pycodecs.DecodeReplace(out, "utf-8")
+	s, _ := charsetutil.DecodeReplace(out, "utf-8")
 	return strings.TrimSpace(s)
 }
 
@@ -536,11 +537,11 @@ func transcribeLocalCommand(ctx context.Context, filePath, modelName string, h s
 	if err == nil {
 		return result, nil
 	}
-	var fe *pyrepr.FormatError
+	var me *templateutil.MissingError
 	var pe *sttProcessError
 	switch {
-	case errors.As(err, &fe) && fe.Class == "KeyError":
-		return sttError(fmt.Sprintf("Invalid %s template, missing placeholder: %s", localSTTCommandEnv, fe.Msg)), nil
+	case errors.As(err, &me):
+		return sttError(fmt.Sprintf("Invalid %s template, missing placeholder: %s", localSTTCommandEnv, me.Name)), nil
 	case errors.As(err, &pe):
 		details := processErrorDetail(pe)
 		pkgLog().Error(fmt.Sprintf("Local STT command failed for %s: %s", filePath, details))
@@ -575,8 +576,8 @@ func runLocalCommand(ctx context.Context, filePath, template, language, model st
 	if prepError != "" {
 		return sttError(prepError), nil
 	}
-	command, err := pyrepr.FormatMap(template, map[string]any{"input_path": pyshlex.Quote(prepared), "output_dir": pyshlex.Quote(outputDir),
-		"language": pyshlex.Quote(language), "model": pyshlex.Quote(model)})
+	command, err := templateutil.Format(template, map[string]any{"input_path": shellutil.Quote(prepared), "output_dir": shellutil.Quote(outputDir),
+		"language": shellutil.Quote(language), "model": shellutil.Quote(model)})
 	if err != nil {
 		return nil, err
 	}
@@ -584,7 +585,7 @@ func runLocalCommand(ctx context.Context, filePath, template, language, model st
 	if err != nil {
 		return nil, err
 	}
-	argv, err := pyshlex.SplitPOSIX(command, false)
+	argv, err := shellutil.Split(command)
 	if err != nil {
 		return nil, err
 	}
@@ -600,7 +601,7 @@ func runLocalCommand(ctx context.Context, filePath, template, language, model st
 	if err != nil {
 		return nil, err
 	}
-	text, err := pycodecs.Decode(raw, "utf-8-sig")
+	text, err := charsetutil.Decode(raw, "utf-8-sig")
 	if err != nil {
 		return nil, err
 	}

@@ -17,15 +17,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tui"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Exit status a launch step ends the process with, the sys.exit of the launcher
@@ -43,23 +43,23 @@ func readTUIActiveSessionFile(path string) string {
 	if err != nil {
 		return ""
 	}
-	text, err := pystr.DecodeUTF8(raw)
+	text, err := textutil.DecodeUTF8(raw)
 	if err != nil {
 		return ""
 	}
-	data, err := pyjson.Loads(strings.TrimPrefix(text, "\ufeff"))
+	data, err := jsonutil.Decode(strings.TrimPrefix(text, "\ufeff"))
 	if err != nil {
 		return ""
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return ""
 	}
-	value := obj.GetOr("session_id", nil)
+	value := obj.Value("session_id")
 	if !pyTruthyValue(value) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(value))
+	return strings.TrimSpace(anyutil.String(value))
 }
 
 // Python truthiness of a decoded JSON value
@@ -79,7 +79,7 @@ func pyTruthyValue(v any) bool {
 		return x.Sign() != 0
 	case []any:
 		return len(x) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len() > 0
 	}
 	return true
@@ -108,7 +108,7 @@ func normalizeTUIToolsets(toolsets string) []string {
 
 // Working directory for the TUI child, the PWD hint or the project root when the cwd was deleted
 func safeTUICwd(env map[string]string) (string, error) {
-	cwd, err := pypath.Getcwd()
+	cwd, err := os.Getwd()
 	if err == nil {
 		return cwd, nil
 	}
@@ -242,7 +242,7 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 		fmt.Fprintf(deps.stderr, "Error: %v\n", err)
 		return 1
 	}
-	tmpDir, err := pypath.Gettempdir()
+	tmpDir, err := pathutil.TempDir()
 	if err != nil {
 		return tuiLaunchExitCode(err, deps.stderr)
 	}
@@ -279,7 +279,7 @@ func launchTUIWith(ctx context.Context, l TUILaunch, deps tuiLaunchDeps) int {
 	if err != nil {
 		return tuiLaunchExitCode(err, deps.stderr)
 	}
-	clientEnvJSON, err := pyjson.Dumps(clientEnv, pyjson.SortKeys(false))
+	clientEnvJSON, err := jsonutil.Encode(clientEnv)
 	if err != nil {
 		return tuiLaunchExitCode(err, deps.stderr)
 	}
@@ -373,7 +373,7 @@ func printNotRun(w io.Writer, why string, queued [][]string) {
 	}
 	fmt.Fprintln(w, why)
 	for _, argv := range queued {
-		fmt.Fprintln(w, "  icebath "+pyshlex.Join(argv))
+		fmt.Fprintln(w, "  icebath "+shellutil.Join(argv))
 	}
 }
 
@@ -387,7 +387,7 @@ func runAfterExit(deps tuiLaunchDeps, queued [][]string) (bool, []string) {
 	}
 	var env []string
 	run := func(argv []string) int {
-		line := "icebath " + pyshlex.Join(argv)
+		line := "icebath " + shellutil.Join(argv)
 		fmt.Fprintf(deps.stdout, "\n󰆧 %s\n\n", line)
 		code, err := runAndWait(append([]string{exe}, argv...), env)
 		if err != nil {

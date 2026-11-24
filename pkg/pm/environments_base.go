@@ -14,9 +14,9 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -66,12 +66,12 @@ func ImportPathEntries() []string { return importPathEntries() }
 // Puts the running tree first on the import path, dropping entries that resolve to the same tree
 func EnsureProjectRootOnPath() {
 	root := RepoRoot()
-	normalized := pypath.Normcase(realpathOrSelf(root))
+	normalized := pathutil.FoldCase(realpathOrSelf(root))
 	importPath.Lock()
 	defer importPath.Unlock()
 	kept := []string{root}
 	for _, entry := range importPath.entries {
-		if entry == "" || pypath.Normcase(realpathOrSelf(entry)) != normalized {
+		if entry == "" || pathutil.FoldCase(realpathOrSelf(entry)) != normalized {
 			kept = append(kept, entry)
 		}
 	}
@@ -80,7 +80,7 @@ func EnsureProjectRootOnPath() {
 
 // Resolved path, or the path as given when resolving raises, as a relative path does under a deleted cwd
 func realpathOrSelf(path string) string {
-	resolved, err := pypath.Realpath(path, pypath.Lax)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return path
 	}
@@ -227,7 +227,7 @@ func recoverPluginPublication(ctx context.Context, project string, row map[strin
 		!strings.HasPrefix(filepath.Base(backup), ".previous-") || metadata != filepath.Join(parent, ".install-metadata.json") {
 		return &PyError{Class: "ValueError", Message: "plugin publication paths escape their home"}
 	}
-	committed := pyrepr.Truthy(row["committed"])
+	committed := anyutil.IsTrue(row["committed"])
 	if !committed {
 		before, err := rowItem(row, "facts_before")
 		if err != nil {
@@ -287,7 +287,7 @@ func recoverPluginPublication(ctx context.Context, project string, row map[strin
 			if err != nil {
 				return err
 			}
-			if !pyrepr.Truthy(existed) && pathExists(target) {
+			if !anyutil.IsTrue(existed) && pathExists(target) {
 				if err := rmtreeForce(target); err != nil {
 					return err
 				}
@@ -442,7 +442,7 @@ func VenvPythonVersion(venv string) (major, minor string, ok bool, err error) {
 	parse := func(text string) (string, string, bool, error) {
 		head, rest, _ := strings.Cut(text, ".")
 		tail, _, _ := strings.Cut(rest, ".")
-		if !pystr.All(head, unicode.IsDigit) || !pystr.All(tail, unicode.IsDigit) {
+		if !textutil.IsDigits(head) || !textutil.IsDigits(tail) {
 			return "", "", false, nil
 		}
 		a, err := pyIntText(head)
@@ -576,7 +576,7 @@ func runningFromSelectedEnvironment(ctx context.Context, projectRoot string) (bo
 
 // Reports a failure an except clause naming OSError, RuntimeError and ValueError catches, subclasses included
 func pyOSRuntimeOrValueError(err error) bool {
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return true
 	}
 	switch errorClass(err) {

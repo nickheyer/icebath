@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type sessionEndRecorder struct {
@@ -136,7 +136,7 @@ func TestRefusedCandidateFromMutatingEngineReturnsOriginalTranscript(t *testing.
 			records := captureAttemptRecords(t)
 			a, db := newRefusalAgent(t, "REFUSED_CANDIDATE", engine)
 			messages := refusalTranscript()
-			original := pycopy.DeepCopy(messages).([]map[string]any)
+			original := any(anyutil.Clone(messages)).([]map[string]any)
 			tokens := 120000
 			system := "sys"
 			returned, _, err := compressContext(context.Background(), a, messages, &system, compressContextOptions{ApproxTokens: &tokens, CommitFence: NewCompressionCommitFence()})
@@ -169,7 +169,7 @@ func TestRaisingMutatingEngineRestoresOriginalTranscript(t *testing.T) {
 		return nil, errors.New("context engine failed")
 	})
 	messages := refusalTranscript()
-	original := pycopy.DeepCopy(messages).([]map[string]any)
+	original := any(anyutil.Clone(messages)).([]map[string]any)
 	tokens := 120000
 	system := "sys"
 	_, _, err := compressContext(context.Background(), a, messages, &system, compressContextOptions{ApproxTokens: &tokens, CommitFence: NewCompressionCommitFence()})

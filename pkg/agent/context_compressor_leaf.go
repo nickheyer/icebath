@@ -5,10 +5,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -69,7 +69,7 @@ func tcGet(obj any, key string, def any) any {
 			return v
 		}
 		return def
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v, ok := o.Get(key); ok {
 			return v
 		}
@@ -90,7 +90,7 @@ func partText(item any) (any, bool) {
 		return p, true
 	case map[string]any:
 		return p["text"], true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		v, _ := p.Get("text")
 		return v, true
 	}
@@ -119,7 +119,7 @@ func contentTextForContains(content any) string {
 	case string:
 		return c
 	}
-	return pyrepr.Str(content)
+	return anyutil.String(content)
 }
 
 func isPartList(content any) bool {
@@ -144,8 +144,8 @@ func rewritten(msg map[string]any, content any) map[string]any {
 // Label and the first 80 code points of the whitespace collapsed reason on one line
 func failureSuffix(reason any, label string) string {
 	preview := ""
-	if pyrepr.Truthy(reason) {
-		preview = strings.Join(strings.Fields(pyrepr.Str(reason)), " ")
+	if anyutil.IsTrue(reason) {
+		preview = strings.Join(strings.Fields(anyutil.String(reason)), " ")
 		if rs := []rune(preview); len(rs) > 80 {
 			preview = string(rs[:80])
 		}
@@ -160,37 +160,37 @@ func failureSuffix(reason any, label string) string {
 func resultFailureSuffix(content string) string { return payloadFailureSuffix(jsonDict(content)) }
 
 // Failure suffix for an already parsed payload
-func payloadFailureSuffix(payload *pyjson.Object) string {
+func payloadFailureSuffix(payload *jsonutil.Object) string {
 	errValue, _ := payload.Get("error")
 	success, hasSuccess := payload.Get("success")
-	if !pyrepr.Truthy(errValue) && !(hasSuccess && success == false) {
+	if !anyutil.IsTrue(errValue) && !(hasSuccess && success == false) {
 		return ""
 	}
 	return failureSuffix(errValue, "FAILED")
 }
 
 // Parses text as a JSON object, an empty object for empty, invalid or non object input
-func jsonDict(text any) *pyjson.Object {
+func jsonDict(text any) *jsonutil.Object {
 	var parsed any
 	var err error
 	switch t := text.(type) {
 	case string:
 		if t == "" {
-			return &pyjson.Object{}
+			return &jsonutil.Object{}
 		}
-		parsed, err = pyjson.Loads(t)
+		parsed, err = jsonutil.Decode(t)
 	case []byte:
 		if len(t) == 0 {
-			return &pyjson.Object{}
+			return &jsonutil.Object{}
 		}
-		parsed, err = pyjson.LoadsBytes(t)
+		parsed, err = jsonutil.Decode(t)
 	default:
-		return &pyjson.Object{}
+		return &jsonutil.Object{}
 	}
-	if obj, ok := parsed.(*pyjson.Object); ok && err == nil {
+	if obj, ok := parsed.(*jsonutil.Object); ok && err == nil {
 		return obj
 	}
-	return &pyjson.Object{}
+	return &jsonutil.Object{}
 }
 
 // Match rank of one model_thresholds key as substring length and scope, false when it does not apply
@@ -228,7 +228,7 @@ func resolveModelThreshold(model string, modelThresholds map[string]float64, def
 }
 
 // Route pinned for the next summary LLM call of one attempt, a context variable so a detached stalled worker never sees it
-var summaryRoutePin = pyctx.NewVar("icebath_summary_route_pin", nil)
+var summaryRoutePin = ctxutil.NewVar[any]("icebath_summary_route_pin", nil)
 
 var pinnedRouteFields = []string{"provider", "model", "base_url", "api_key", "api_mode", "timeout"}
 

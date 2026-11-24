@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func batchSK(n string) string {
@@ -163,7 +163,7 @@ func TestBatchCrossSkillRollbackKeepsPreExistingDirContent(t *testing.T) {
 	gamma := filepath.Join(skills, "gamma")
 	os.Mkdir(gamma, 0o755)
 	real := batchSteps.applyOp
-	batchSteps.applyOp = func(sc *Scope, ctx context.Context, payload map[string]any, taskID, sessionID string) (*pyjson.Object, error) {
+	batchSteps.applyOp = func(sc *Scope, ctx context.Context, payload map[string]any, taskID, sessionID string) (*jsonutil.Object, error) {
 		if payload["action"] == "write_file" {
 			os.WriteFile(filepath.Join(gamma, "dropped.txt"), []byte("keep me"), 0o644)
 		}
@@ -259,7 +259,7 @@ func pendingSkillRecords(t *testing.T, s *Scope) []map[string]any {
 	t.Helper()
 	var out []map[string]any
 	for _, rec := range tools.ListPending(s.Env, tools.WriteApprovalSkills) {
-		text, err := pyjson.Dumps(rec)
+		text, err := jsonutil.Encode(rec)
 		if err != nil {
 			t.Fatal(err)
 		}

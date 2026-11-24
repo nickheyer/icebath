@@ -16,7 +16,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Started control server for home with the given verbs, stopped when the test ends
@@ -41,7 +42,7 @@ func fixedVerb(result map[string]any) ControlVerbHandler {
 // Plain JSON form of a decoded value for comparisons
 func controlJSON(t *testing.T, v any) string {
 	t.Helper()
-	text, err := json.Marshal(pyjson.Plain(v))
+	text, err := json.Marshal(jsonutil.Plain(v))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +143,7 @@ func TestVerbHandlerReceivesParams(t *testing.T) {
 		},
 		"bare": fixedVerb(map[string]any{"ok": 1}),
 	})
-	got := QueryGatewayControl(h, "with-params", pyjson.ObjectOf("old", "a", "new", "b"), DefaultControlClientTimeout)
+	got := QueryGatewayControl(h, "with-params", jsonutil.ObjectOf("old", "a", "new", "b"), DefaultControlClientTimeout)
 	bare := QueryGatewayControl(h, "bare", nil, DefaultControlClientTimeout)
 	if controlJSON(t, got) != `{"echo":{"new":"b","old":"a"}}` {
 		t.Fatalf("with params %s", controlJSON(t, got))
@@ -315,12 +316,12 @@ func TestDefaultIdentifyPayloadShape(t *testing.T) {
 	if ident == nil {
 		t.Fatal("no identify answer")
 	}
-	if !pyEq(recGet(ident, "protocol"), int64(ControlProtocolVersion)) || !pyEq(recGet(ident, "pid"), int64(os.Getpid())) {
+	if !anyutil.Equal(recGet(ident, "protocol"), int64(ControlProtocolVersion)) || !anyutil.Equal(recGet(ident, "pid"), int64(os.Getpid())) {
 		t.Fatalf("identify %v", ident)
 	}
 	for _, key := range []string{"icebath_home", "supervisor", "kind", "start_time"} {
 		if _, ok := ident.Get(key); !ok {
-			t.Fatalf("missing %s in %v", key, ident.Keys)
+			t.Fatalf("missing %s in %v", key, ident.Keys())
 		}
 	}
 	switch recGet(ident, "supervisor") {
@@ -371,7 +372,7 @@ func TestPauseClientRoundtripOverRealSocket(t *testing.T) {
 		return map[string]any{"pausing": true, "already_stopping": false, "pid": 4242, "drain_timeout": 12.5}, nil
 	}})
 	result := PauseGatewayForUpdate(h, 5*time.Second)
-	if len(acks) != 1 || result == nil || recGet(result, "pausing") != true || !pyEq(recGet(result, "drain_timeout"), 12.5) {
+	if len(acks) != 1 || result == nil || recGet(result, "pausing") != true || !anyutil.Equal(recGet(result, "drain_timeout"), 12.5) {
 		t.Fatalf("acks %v result %v", acks, result)
 	}
 }

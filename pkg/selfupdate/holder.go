@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 var holderValueFlagsFallback = []string{
@@ -54,7 +54,7 @@ func holderValueFlags() map[string]bool {
 
 // Lowercased icebath subcommand a holder command line runs, false when no entry token or subcommand is found
 func icebathHolderSubcommand(cmdline string) (string, bool) {
-	tokens, err := pyshlex.SplitNonPOSIX(cmdline)
+	tokens, err := shellutil.SplitRaw(cmdline)
 	if err != nil {
 		tokens = strings.Fields(cmdline)
 	}

@@ -6,9 +6,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Replays every served secondary profile's process checkpoint under its own scope, returning how many were re adopted
@@ -16,7 +16,7 @@ func (r *GatewayRunner) recoverSecondaryProcessCheckpoints(ctx context.Context, 
 	if !r.multiplexing() {
 		return 0, nil
 	}
-	launchHome, err := pypath.Resolve(home.Dir(ctx))
+	launchHome, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return 0, err
 	}
@@ -26,7 +26,7 @@ func (r *GatewayRunner) recoverSecondaryProcessCheckpoints(ctx context.Context, 
 	}
 	recovered := 0
 	for _, profile := range served {
-		resolved, err := pypath.Resolve(profile.Home)
+		resolved, err := pathutil.Resolve(profile.Home)
 		if err == nil && resolved == launchHome {
 			continue
 		}

@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Reports whether a started process has exited, reaped or not
@@ -259,7 +260,7 @@ func TestAGitElsewhereExitingMidScanIsGoneNotAHiddenHolder(t *testing.T) {
 	repo := glRepo(t)
 	tmp := t.TempDir()
 	other := filepath.Join(tmp, "other")
-	if err := pyshutil.CopyTreeIgnore(repo, other, false, false, pyshutil.IgnorePatterns("*.lock")); err != nil {
+	if err := pyshutil.CopyTreeIgnore(repo, other, false, false, fsutil.IgnorePatterns("*.lock")); err != nil {
 		t.Fatal(err)
 	}
 	lock := filepath.Join(repo, ".git", "index.lock")

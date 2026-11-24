@@ -181,7 +181,7 @@ func (qqbotPlatformPlugin) Register(ctx *plugins.Context) error {
 		AdapterFactory: gateway.AdapterFactory(func(fctx context.Context, cfg *gateway.PlatformConfig) (any, error) { return newAdapter(fctx, cfg) }),
 		Check:          checkQQRequirements,
 		RequiredEnv:    []string{"QQ_APP_ID", "QQ_CLIENT_SECRET"},
-		InstallHint:    "QQBot: aiohttp/httpx missing or QQ_APP_ID/QQ_CLIENT_SECRET not configured",
+		InstallHint:    "QQBot: QQ_APP_ID/QQ_CLIENT_SECRET not configured",
 		Extra:          extra,
 	})
 	return err

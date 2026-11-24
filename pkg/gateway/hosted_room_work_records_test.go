@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func hrWorkCreate(db, roomID string) {
@@ -59,7 +59,7 @@ func TestAuthorityChangeFencesPendingEvidence(t *testing.T) {
 		hrOK(conn.ExecContext(ctx, "UPDATE hosted_rooms SET next_seq=3 WHERE room_id='room'"))
 	})
 	successor := hrOK(CaptureWorkRecord(ctx, db, "room", "owner-b", nil))
-	if successor["version"] != int64(2) || !pyjson.Equal(successor["incompleteness"], []any{"prior_authority_work_unknown"}) {
+	if successor["version"] != int64(2) || !anyutil.Equal(successor["incompleteness"], []any{"prior_authority_work_unknown"}) {
 		t.Fatalf("successor %v", successor)
 	}
 	hrWithConn(t, db, func(conn state.SQLiteConn) {
@@ -164,7 +164,7 @@ func TestRemoteReceiptIsCapturedWithoutAnotherDriverTransition(t *testing.T) {
 		t.Fatal(err)
 	}
 	evidence := hrOK(roomLoads(hrStr(hrRawRow(t, db, "SELECT record_json FROM "+WorkSourceTable+" WHERE disposition='current' ORDER BY revision DESC LIMIT 1"), "record_json")))
-	if !pyjson.Equal(evidence.(map[string]any)["receipts"], []any{record}) {
+	if !anyutil.Equal(evidence.(map[string]any)["receipts"], []any{record}) {
 		t.Fatalf("evidence %v", evidence)
 	}
 }
@@ -204,7 +204,7 @@ func TestDriverTransitionsCaptureWithoutManualPublication(t *testing.T) {
 		t.Fatalf("queued %v", queued)
 	}
 	hrOK(DriverAdmitTask(ctx, db, identity, payload, hrTen))
-	if !pyjson.Equal(hrSnapshot(t, db), queued) {
+	if !anyutil.Equal(hrSnapshot(t, db), queued) {
 		t.Fatal("idempotent admission changed evidence")
 	}
 	lease := hrOK(DriverAcquireLease(ctx, db, "room", "owner", 1, "process-a", 10, hrTen))
@@ -221,7 +221,7 @@ func TestDriverTransitionsCaptureWithoutManualPublication(t *testing.T) {
 	}
 	_, err := DriverStartTask(ctx, db, identity, successor, 0, at21)
 	hrRequireErr[InvalidTaskTransitionError](t, err, "")
-	if !pyjson.Equal(hrSnapshot(t, db), unknown) {
+	if !anyutil.Equal(hrSnapshot(t, db), unknown) {
 		t.Fatal("refused start changed evidence")
 	}
 	hrOK(DriverBeginTaskCancel(ctx, db, identity, "stop", 0, at21))

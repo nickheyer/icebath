@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // StoreError is raised on install and IO failures of the pet store
@@ -42,49 +42,49 @@ func PetsDir(h string) (string, error) {
 }
 
 // Decoded pet.json of a pet directory, empty when the file is absent or unreadable
-func readPetJSON(directory string) (*pyjson.Object, error) {
+func readPetJSON(directory string) (*jsonutil.Object, error) {
 	path := filepath.Join(directory, "pet.json")
 	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-		return &pyjson.Object{}, nil
+		return &jsonutil.Object{}, nil
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("unreadable pet.json in %s: %s", directory, err))
-		return &pyjson.Object{}, nil
+		return &jsonutil.Object{}, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("unreadable pet.json in %s: %s", directory, err))
-		return &pyjson.Object{}, nil
+		return &jsonutil.Object{}, nil
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("unreadable pet.json in %s: %s", directory, err))
-		return &pyjson.Object{}, nil
+		return &jsonutil.Object{}, nil
 	}
-	obj, ok := decoded.(*pyjson.Object)
+	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+		return nil, fmt.Errorf("'%s' object has no attribute 'get'", anyutil.Kind(decoded))
 	}
 	return obj, nil
 }
 
 // Text of a pet.json key, the fallback when it is absent or falsy
-func metaText(meta *pyjson.Object, key, fallback string) string {
-	if v, ok := meta.Get(key); ok && pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+func metaText(meta *jsonutil.Object, key, fallback string) string {
+	if v, ok := meta.Get(key); ok && anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return fallback
 }
 
 // Honors spritesheetPath, else probes the conventional names, the webp name when none is on disk
-func resolveSpritesheet(directory string, meta *pyjson.Object) string {
+func resolveSpritesheet(directory string, meta *jsonutil.Object) string {
 	names := []string{}
 	if declared := strings.TrimSpace(metaText(meta, "spritesheetPath", "")); declared != "" {
 		names = append(names, declared)
 	}
 	for _, name := range append(names, "spritesheet.webp", "spritesheet.png", "sprite.webp", "sprite.png") {
-		path := pypath.PathJoin(directory, name)
+		path := pathutil.Join(directory, name)
 		if info, err := os.Stat(path); err == nil && info.Mode().IsRegular() {
 			return path
 		}
@@ -94,7 +94,7 @@ func resolveSpritesheet(directory string, meta *pyjson.Object) string {
 
 // One bare path segment of a slug so it can never escape the pets directory, empty when it has none
 func safeSlug(slug string) string {
-	segment := pypath.PathName(strings.TrimSpace(slug))
+	segment := pathutil.Name(strings.TrimSpace(slug))
 	if segment == "." || segment == ".." {
 		return ""
 	}

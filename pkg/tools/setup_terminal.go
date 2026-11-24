@@ -12,9 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // SetupConsole is the prompt and print surface the terminal backend setup flow runs on
@@ -100,7 +100,7 @@ func setDefault(m map[string]any, key string, value any) {
 // Reports whether an SDK sync failure is the install, OS or value error class the wizard reports
 func setupSyncFailureHandled(err error) bool {
 	var installErr *pm.InstallError
-	if errors.As(err, &installErr) || pypath.IsOSError(err) {
+	if errors.As(err, &installErr) || errorutil.IsSystem(err) {
 		return true
 	}
 	var pyErr *pm.PyError
@@ -139,7 +139,7 @@ func runSetupSSH(ctx context.Context, argv []string) (int, string, error) {
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	if runCtx.Err() == context.DeadlineExceeded {
-		return 0, "", fmt.Errorf("Command %s timed out after 10 seconds", pyrepr.Repr(argv))
+		return 0, "", fmt.Errorf("Command %s timed out after 10 seconds", anyutil.Quote(argv))
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -195,7 +195,7 @@ func SetupTerminalBackend(ctx context.Context, env *Env, cfg map[string]any) err
 	if !ok {
 		current = "local"
 	}
-	currentBackend := pyrepr.Str(current)
+	currentBackend := anyutil.String(current)
 	backends := slices.DeleteFunc(slices.Clone(builtinTerminalBackends), func(row [2]string) bool { return builtinBackend(row[0]) == nil })
 	pluginRows, pluginNames := s.pluginBackendRows()
 	backends = append(backends, pluginRows...)

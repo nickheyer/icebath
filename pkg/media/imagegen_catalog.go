@@ -1,6 +1,8 @@
 package media
 
-import "github.com/nickheyer/icebath/pkg/internal/pystr"
+import (
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+)
 
 var falPresetSizes = map[string]any{"landscape": "landscape_16_9", "square": "square_hd", "portrait": "portrait_16_9"}
 
@@ -131,7 +133,7 @@ func init() {
 		{"flare", "Fast", "Everyday creation, natural lighting and textures"},
 		{"sunburst", "Slower", "Precision editing, subject and composition consistency"},
 	} {
-		addFalModel("openai/gpt-image-2.5/"+v[0]+"/text-to-image", falModel("GPT Image 2.5 "+pystr.Title(v[0]), v[1], v[2], "Token-based pricing", falModelSpec{
+		addFalModel("openai/gpt-image-2.5/"+v[0]+"/text-to-image", falModel("GPT Image 2.5 "+textutil.Title(v[0]), v[1], v[2], "Token-based pricing", falModelSpec{
 			sizes:    map[string]any{"landscape": "landscape_4_3", "square": "square_hd", "portrait": "portrait_4_3"},
 			defaults: map[string]any{"quality": "medium", "num_images": 1, "output_format": "png"},
 			supports: []string{"prompt", "image_size", "quality", "num_images", "output_format", "background",

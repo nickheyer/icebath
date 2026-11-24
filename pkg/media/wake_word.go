@@ -4,6 +4,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
 	"os"
@@ -14,12 +15,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
 )
 
 // WakeSampleRate is the 16 kHz mono int16 rate every wake engine consumes
@@ -70,15 +71,31 @@ type WakeWordInUse struct {
 func (e *WakeWordInUse) Error() string { return e.Msg }
 func (e *WakeWordInUse) Unwrap() error { return e.Cause }
 
-// WakeWordError is a Python exception of the wake word API with its class and cause
+// Kinds of wake word failure a WakeWordError wraps, told apart with errors.Is
+var (
+	errWakeInvalid      = errors.New("invalid wake word setting")
+	errWakeNotInstalled = errors.New("wake word engine not installed")
+	errWakeUnavailable  = errors.New("wake word engine cannot load")
+	errWakeTimeout      = errors.New("wake word microphone timed out")
+	errWakeFailed       = errors.New("wake word engine failed")
+)
+
+// WakeWordError is a failure of the wake word API: Kind tells what failed, Cause what made it fail
 type WakeWordError struct {
-	Class string
+	Kind  error
 	Msg   string
 	Cause error
 }
 
 func (e *WakeWordError) Error() string { return e.Msg }
-func (e *WakeWordError) Unwrap() error { return e.Cause }
+
+// Kind and Cause, for errors.Is and errors.As
+func (e *WakeWordError) Unwrap() []error {
+	if e.Cause == nil {
+		return []error{e.Kind}
+	}
+	return []error{e.Kind, e.Cause}
+}
 
 var (
 	wakeExtraSupported  = wakeEngineSupported
@@ -168,17 +185,6 @@ func wakeInputSelector(text string) any {
 	return text
 }
 
-// Python max then min clamp keeping the first operand on ties and NaN
-func pyClampFloat(n, lo, hi float64) float64 {
-	if lo > n {
-		n = lo
-	}
-	if hi < n {
-		n = hi
-	}
-	return n
-}
-
 // Configured provider, auto taking sherpa unless an openWakeWord model is configured, else the first supported engine
 func wakeProvider(ctx context.Context, cfg *WakeConfig, supported func(string) (bool, error)) (string, error) {
 	if cfg.Provider != "" && cfg.Provider != "auto" {
@@ -209,7 +215,7 @@ func wakeAccessKey(ctx context.Context) string {
 }
 
 // Input channel count of a PortAudio device record
-func inputChannels(info pysounddevice.Device) int { return info.MaxInputChannels }
+func inputChannels(info portaudioutil.Device) int { return info.MaxInputChannels }
 
 // True when PortAudio loads and at least one input device or a default input exists
 func localInputDeviceReady() bool {
@@ -217,7 +223,7 @@ func localInputDeviceReady() bool {
 	if err != nil {
 		return false
 	}
-	devices, err := sd.QueryDevices()
+	devices, err := sd.Devices()
 	if err != nil {
 		return false
 	}
@@ -226,7 +232,7 @@ func localInputDeviceReady() bool {
 			return true
 		}
 	}
-	dev, err := sd.QueryDevice(nil, "input")
+	dev, err := sd.Device(nil, portaudioutil.Input)
 	return err == nil && inputChannels(dev) > 0
 }
 
@@ -340,9 +346,9 @@ type WakeInputDeviceDetails struct {
 }
 
 // Resolves a PortAudio selector into diagnostics, importing the audio layer unless sd is given
-func describeInputDevice(selector any, sd pysounddevice.Module) WakeInputDeviceDetails {
+func describeInputDevice(selector any, sd portaudioutil.Audio) WakeInputDeviceDetails {
 	details := WakeInputDeviceDetails{Selector: selector}
-	var info pysounddevice.Device
+	var info portaudioutil.Device
 	err := func() error {
 		if sd == nil {
 			var err error
@@ -351,7 +357,7 @@ func describeInputDevice(selector any, sd pysounddevice.Module) WakeInputDeviceD
 			}
 		}
 		var err error
-		info, err = sd.QueryDevice(selector, "input")
+		info, err = sd.Device(selector, portaudioutil.Input)
 		return err
 	}()
 	if err != nil {
@@ -363,9 +369,9 @@ func describeInputDevice(selector any, sd pysounddevice.Module) WakeInputDeviceD
 		name := info.Name
 		details.Name = &name
 	}
-	channels, rate, index := info.MaxInputChannels, info.DefaultSamplerate, info.HostAPI
+	channels, rate, index := info.MaxInputChannels, info.DefaultSampleRate, info.HostAPI
 	details.MaxInputChannels, details.DefaultSamplerate, details.HostAPIIndex = &channels, &rate, &index
-	if hostapi, err := sd.QueryHostAPI(index); err == nil && hostapi.Name != "" {
+	if hostapi, err := sd.HostAPI(index); err == nil && hostapi.Name != "" {
 		name := hostapi.Name
 		details.HostAPI = &name
 	}
@@ -384,7 +390,7 @@ func resampleAudioFrame(frame []int16, outputLength int) []int16 {
 	}
 	values := make([]float64, outputLength)
 	if n > outputLength {
-		raw, _ := pynumpy.Linspace(0, float64(n), outputLength+1, true)
+		raw, _ := mathutil.Linspace(0, float64(n), outputLength+1, true)
 		edges := make([]int, len(raw))
 		for i, e := range raw {
 			edges[i] = int(math.Floor(e))
@@ -406,18 +412,18 @@ func resampleAudioFrame(frame []int16, outputLength int) []int16 {
 			values[i] = sum / float64(edges[i+1]-edges[i])
 		}
 	} else {
-		xs, _ := pynumpy.Linspace(0, float64(n-1), outputLength, true)
+		xs, _ := mathutil.Linspace(0, float64(n-1), outputLength, true)
 		for i, x := range xs {
 			values[i] = interpLinear(x, frame)
 		}
 	}
 	for i, v := range values {
-		out[i] = int16(pyClampFloat(math.RoundToEven(v), -32768, 32767))
+		out[i] = int16(min(max(math.RoundToEven(v), math.MinInt16), math.MaxInt16))
 	}
 	return out
 }
 
-// numpy interp of x against integer sample positions 0..len-1
+// Linear interpolation of the samples at position x, clamped to the first and last sample outside 0..len-1
 func interpLinear(x float64, fp []int16) float64 {
 	last := len(fp) - 1
 	switch {
@@ -458,7 +464,7 @@ func SilentAudioHint(details WakeInputDeviceDetails) string {
 		if details.Selector == nil {
 			label = "system default"
 		} else {
-			label = pyrepr.Str(details.Selector)
+			label = anyutil.String(details.Selector)
 		}
 	}
 	if details.HostAPI != nil {
@@ -476,7 +482,7 @@ var wakeEngineClasses = map[string]func(ctx context.Context, cfg *WakeConfig) (W
 	"_PorcupineEngine":    newPorcupineEngine,
 }
 
-// Builds the engine of the resolved provider, a ValueError for an unknown alias
+// Builds the engine of the resolved provider, an invalid setting error for an unknown alias
 var wakeBuildEngine = func(ctx context.Context, cfg *WakeConfig) (WakeEngine, error) {
 	provider, err := wakeProvider(ctx, cfg, nil)
 	if err != nil {
@@ -484,7 +490,7 @@ var wakeBuildEngine = func(ctx context.Context, cfg *WakeConfig) (WakeEngine, er
 	}
 	entry, ok := WakeProviders[provider]
 	if !ok {
-		return nil, &WakeWordError{Class: "ValueError", Msg: "Unknown wake_word provider: " + errchain.Show(provider)}
+		return nil, &WakeWordError{Kind: errWakeInvalid, Msg: "Unknown wake_word provider: " + errchain.Show(provider)}
 	}
 	return wakeEngineClasses[entry.Engine](ctx, cfg)
 }
@@ -533,7 +539,7 @@ func requireWakeExtra(ctx context.Context, extra string) error {
 	if err != nil || ok {
 		return err
 	}
-	return &WakeWordError{Class: "ModuleNotFoundError", Msg: "the " + extra + " wake engine is not provisioned. Run `" + pm.InstallHint(extra) + "`"}
+	return &WakeWordError{Kind: errWakeNotInstalled, Msg: "the " + extra + " wake engine is not provisioned. Run `" + pm.InstallHint(extra) + "`"}
 }
 
 // Whether an engine's dependencies are present, the compiled in sherpa engine needing only its library build

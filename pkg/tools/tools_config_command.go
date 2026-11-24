@@ -8,6 +8,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Entry of icebath tools and setup tools, first install skipping the menu, cfg receiving the saved platform lists
@@ -23,7 +24,7 @@ func (s *ToolsSetup) ToolsCommand(ns map[string]any, firstInstall bool, cfg conf
 		return err
 	}
 	s.println("")
-	if pyTruthy(ns["summary"]) {
+	if anyutil.IsTrue(ns["summary"]) {
 		return s.printToolsSummary(cfg, enabledPlatforms)
 	}
 	s.printColor("󰆧 Icebath Tool Configuration", cliui.Cyan, cliui.Bold)
@@ -44,7 +45,7 @@ func (s *ToolsSetup) ToolsCommand(ns map[string]any, firstInstall bool, cfg conf
 	}
 	m.globalIdx = m.addRow("Configure all platforms (global)", len(m.platformKeys) > 1)
 	m.reconfigIdx = m.addRow("Reconfigure an existing tool's provider or API key", true)
-	m.mcpIdx = m.addRow("Configure MCP server tools", pyTruthy(cfg["mcp_servers"]))
+	m.mcpIdx = m.addRow("Configure MCP server tools", anyutil.IsTrue(cfg["mcp_servers"]))
 	doneIdx := m.addRow("Done", true)
 	for {
 		idx, err := s.promptChoice("Select an option:", m.choices, 0)
@@ -131,7 +132,7 @@ func CmdTools(ctx context.Context, env *Env, ns map[string]any, w io.Writer) (in
 	case "post-setup":
 		return s.RunPostSetupCommand(ns), nil
 	}
-	if pyTruthy(ns["summary"]) {
+	if anyutil.IsTrue(ns["summary"]) {
 		return 0, s.ToolsCommand(ns, false, nil)
 	}
 	if !s.Con.StdinIsTTY() {

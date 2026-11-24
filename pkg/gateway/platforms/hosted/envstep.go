@@ -6,8 +6,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Env step of a hosted plugin, upstream EnvCred rows and step partials as their Go types and any other callable run in the child
@@ -15,7 +15,7 @@ func envStep(item any) (gateway.EnvStep, error) {
 	f, ok := item.(*plugins.HostedCallable)
 	if !ok {
 		return gateway.EnvStepFunc(func(context.Context, *gateway.GatewayConfig) error {
-			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not callable", pyrepr.TypeName(item))}
+			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a function, got %s", anyutil.Kind(item))}
 		}), nil
 	}
 	shape := f.Shape
@@ -159,7 +159,7 @@ func specFn(v any) func(string) any {
 	f, ok := v.(*plugins.HostedCallable)
 	if !ok {
 		return func(string) any {
-			panic(&gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not callable", pyrepr.TypeName(v))})
+			panic(&gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a function, got %s", anyutil.Kind(v))})
 		}
 	}
 	return func(value string) any { return mustCall(f, value) }

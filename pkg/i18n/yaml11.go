@@ -11,8 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"gopkg.in/yaml.v3"
 )
 
@@ -130,7 +129,7 @@ func constructMapping(n *yaml.Node) (any, error) {
 			return nil, fmt.Errorf("while constructing a mapping: found unhashable key at line %d", kn.Line)
 		}
 		if own.index(k) >= 0 {
-			return nil, fmt.Errorf("while constructing a mapping: found duplicate key %q at line %d", pyrepr.Str(k), kn.Line)
+			return nil, fmt.Errorf("while constructing a mapping: found duplicate key %q at line %d", anyutil.String(k), kn.Line)
 		}
 		v, err := constructNode(vn)
 		if err != nil {

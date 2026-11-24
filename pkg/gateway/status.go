@@ -22,12 +22,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -58,7 +59,7 @@ var (
 )
 
 // Python value of a record key, nil when the record or the key is missing
-func recGet(r *pyjson.Object, key string) any {
+func recGet(r *jsonutil.Object, key string) any {
 	if r == nil {
 		return nil
 	}
@@ -67,7 +68,7 @@ func recGet(r *pyjson.Object, key string) any {
 }
 
 // Home value of a record key, accepting the spelling a record of an older icebath carries
-func recHome(r *pyjson.Object, key string) any {
+func recHome(r *jsonutil.Object, key string) any {
 	if r == nil {
 		return nil
 	}
@@ -89,7 +90,7 @@ func pyEq(a, b any) bool {
 		y, ok := b.(string)
 		return ok && x == y
 	}
-	return pyrepr.Repr(a) == pyrepr.Repr(b)
+	return anyutil.Quote(a) == anyutil.Quote(b)
 }
 
 // Exact rational of a Python number, nil for NaN and infinities which equal nothing finite
@@ -126,7 +127,7 @@ func processIcebathHome() string { return home.Process() }
 
 // Stable absolute home path for persisted identity data
 func canonicalIcebathHome(p string) (string, error) {
-	return pypath.Realpath(pypath.Expanduser(p), pypath.Lax)
+	return pathutil.Resolve(pathutil.ExpandUser(p))
 }
 
 // Compares two home paths with the host platform case rules for callers outside this package
@@ -142,11 +143,11 @@ func sameIcebathHome(left, right string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pypath.Normcase(l) == pypath.Normcase(r), nil
+	return pathutil.FoldCase(l) == pathutil.FoldCase(r), nil
 }
 
 // Whether a persisted record names a different home than expected, failing closed when the comparison errors
-func RecordedGatewayHomeConflicts(record *pyjson.Object, expectedHome string) bool {
+func RecordedGatewayHomeConflicts(record *jsonutil.Object, expectedHome string) bool {
 	recorded, ok := recHome(record, home.RecordKey).(string)
 	if !ok || strings.TrimSpace(recorded) == "" {
 		return false
@@ -170,8 +171,8 @@ func profileLabelForHomeLive(h string) string {
 	if err != nil {
 		return ""
 	}
-	if pypath.PathName(pypath.PathParent(canonical)) == "profiles" && profileLabelRe.MatchString(pypath.PathName(canonical)) {
-		return pypath.PathName(canonical)
+	if pathutil.Name(filepath.Dir(filepath.Clean(canonical))) == "profiles" && profileLabelRe.MatchString(pathutil.Name(canonical)) {
+		return pathutil.Name(canonical)
 	}
 	for _, defaultHome := range []func() string{home.Root, home.PlatformDefault} {
 		if same, err := sameIcebathHome(canonical, defaultHome()); err == nil && same {
@@ -183,7 +184,7 @@ func profileLabelForHomeLive(h string) string {
 
 // Profile label of a scoped lock owner from its profile field or its recorded home, empty when unknown
 func ScopedLockOwnerLabel(record any) string {
-	r, ok := record.(*pyjson.Object)
+	r, ok := record.(*jsonutil.Object)
 	if !ok {
 		return ""
 	}
@@ -197,7 +198,9 @@ func ScopedLockOwnerLabel(record any) string {
 }
 
 // Sibling of path named name, Path.with_name
-func pathWithName(path, name string) string { return pypath.PathJoin(pypath.PathParent(path), name) }
+func pathWithName(path, name string) string {
+	return pathutil.Join(filepath.Dir(filepath.Clean(path)), name)
+}
 
 func pidPath() string { return filepath.Join(processIcebathHome(), "gateway.pid") }
 
@@ -206,7 +209,7 @@ func gatewayLockPathLive(p string) string {
 	if p == "" {
 		p = pidPath()
 	}
-	return pypath.PathJoin(pypath.PathParent(p), gatewayLockFilename)
+	return pathutil.Join(filepath.Dir(filepath.Clean(p)), gatewayLockFilename)
 }
 
 var statusGatewayLockPath = gatewayLockPathLive
@@ -216,16 +219,18 @@ func runtimeStatusPath() string { return filepath.Join(processIcebathHome(), run
 // Per user rendezvous directory for machine local locks, ICEBATH_GATEWAY_LOCK_DIR overriding
 func GatewayLockDir() string {
 	if override := os.Getenv("ICEBATH_GATEWAY_LOCK_DIR"); override != "" {
-		return pypath.PathStr(override)
+		return filepath.Clean(override)
 	}
 	stateHome := os.Getenv("XDG_STATE_HOME")
-	if !pypath.IsAbs(stateHome) {
-		stateHome = pypath.PathJoin(pypath.Expanduser("~"), ".local", "state")
+	if !filepath.IsAbs(stateHome) {
+		stateHome = pathutil.Join(pathutil.ExpandUser("~"), ".local", "state")
 	}
-	return pypath.PathJoin(stateHome, "icebath", locksDirname)
+	return pathutil.Join(stateHome, "icebath", locksDirname)
 }
 
-func utcNowISO() string { return pydatetime.ISOFormat(time.Now().UTC().Truncate(time.Microsecond)) }
+func utcNowISO() string {
+	return time.Now().UTC().Truncate(time.Microsecond).Format(timeutil.RFC3339Micro)
+}
 
 // Persisted updated_at coerced to an RFC3339 string, false for garbage, an error for an int too large for float
 func NormalizeUpdatedAt(value any) (string, bool, error) {
@@ -235,21 +240,21 @@ func NormalizeUpdatedAt(value any) (string, bool, error) {
 		if strings.HasSuffix(raw, "Z") || strings.HasSuffix(raw, "z") {
 			raw = raw[:len(raw)-1] + "+00:00"
 		}
-		parsed, aware, err := pydatetime.ParseISOFormat(raw)
+		parsed, aware, err := timeutil.ParseISOZone(raw, time.UTC)
 		if err != nil {
 			return "", false, nil
 		}
 		if !aware {
 			parsed = time.Date(parsed.Year(), parsed.Month(), parsed.Day(), parsed.Hour(), parsed.Minute(), parsed.Second(), parsed.Nanosecond(), time.UTC)
 		}
-		return pydatetime.ISOFormat(parsed), true, nil
+		return parsed.Format(timeutil.RFC3339Micro), true, nil
 	case bool:
 		return "", false, nil
 	}
 	if _, isNum := pyNumber(value); !isNum {
 		return "", false, nil
 	}
-	seconds, err := pyint.Float(value)
+	seconds, err := anyutil.ToFloat(value)
 	if err != nil {
 		return "", false, err
 	}
@@ -263,7 +268,7 @@ func NormalizeUpdatedAt(value any) (string, bool, error) {
 		whole++
 		us -= 1e6
 	}
-	return pydatetime.ISOFormat(time.Unix(int64(whole), int64(us)*1000).UTC()), true, nil
+	return time.Unix(int64(whole), int64(us)*1000).UTC().Format(timeutil.RFC3339Micro), true, nil
 }
 
 // Error kinds terminate_pid raises, OSError refusals and the os.kill failures
@@ -314,7 +319,7 @@ func TerminatePid(pid int, force bool, expectedStartTime any) error {
 
 // Whether every recorded fingerprint is positive and within a millisecond of current, an error for junk
 func startTimesAgree(current any, recorded ...any) (bool, error) {
-	cur, err := pyint.Float(current)
+	cur, err := anyutil.ToFloat(current)
 	if err != nil {
 		return false, err
 	}
@@ -322,7 +327,7 @@ func startTimesAgree(current any, recorded ...any) (bool, error) {
 		return false, nil
 	}
 	for _, r := range recorded {
-		f, err := pyint.Float(r)
+		f, err := anyutil.ToFloat(r)
 		if err != nil {
 			return false, err
 		}
@@ -353,7 +358,7 @@ func scopeHash(identity string) string {
 }
 
 func scopeLockPath(scope, identity string) string {
-	return pypath.PathJoin(GatewayLockDir(), scope+"-"+scopeHash(identity)+".lock")
+	return pathutil.Join(GatewayLockDir(), scope+"-"+scopeHash(identity)+".lock")
 }
 
 // Start time fingerprint of pid, /proc ticks or psutil birth in centiseconds, nil when unavailable
@@ -366,14 +371,14 @@ func looksLikeGatewayProcessLive(pid int) bool {
 }
 
 // Whether persisted record metadata names a gateway runtime when the live command line is unreadable
-func recordLooksLikeGateway(record *pyjson.Object) bool {
+func recordLooksLikeGateway(record *jsonutil.Object) bool {
 	argv, ok := recGet(record, "argv").([]any)
 	if !pyEq(recGet(record, "kind"), gatewayKind) || !ok || len(argv) == 0 {
 		return false
 	}
 	parts := make([]string, len(argv))
 	for i, part := range argv {
-		parts[i] = pyrepr.Str(part)
+		parts[i] = anyutil.String(part)
 	}
 	return LooksLikeGatewayRuntimeCommandLine(strings.Join(parts, " "))
 }
@@ -392,13 +397,13 @@ func recordArgvLive() []any {
 	return argv
 }
 
-func buildPidRecordLive() *pyjson.Object {
+func buildPidRecordLive() *jsonutil.Object {
 	pid := statusGetpid()
 	h, err := canonicalIcebathHome(processIcebathHome())
 	if err != nil {
 		panic(fmt.Sprintf("gateway: process home %q cannot be resolved: %v", processIcebathHome(), err))
 	}
-	r := pyjson.NewObject()
+	r := jsonutil.NewObject()
 	r.Set("pid", int64(pid))
 	r.Set("kind", gatewayKind)
 	r.Set("argv", statusRecordArgv())
@@ -413,16 +418,16 @@ func codeIdentityFields() [][2]any {
 	if err != nil {
 		return nil
 	}
-	return [][2]any{{"code_sha", identity.Vals["sha"]}, {"code_version", identity.Vals["version"]}}
+	return [][2]any{{"code_sha", identity.Value("sha")}, {"code_version", identity.Value("version")}}
 }
 
 // Whether a record's home is this process home, a legacy record without one counting as ours
-func pidRecordBelongsToCurrentProfile(record *pyjson.Object) (bool, error) {
+func pidRecordBelongsToCurrentProfile(record *jsonutil.Object) (bool, error) {
 	if record == nil {
 		return false, nil
 	}
 	recordHome := recHome(record, home.RecordKey)
-	if !pyrepr.Truthy(recordHome) {
+	if !anyutil.IsTrue(recordHome) {
 		return true, nil
 	}
 	s, ok := recordHome.(string)
@@ -432,18 +437,18 @@ func pidRecordBelongsToCurrentProfile(record *pyjson.Object) (bool, error) {
 	return sameIcebathHome(s, processIcebathHome())
 }
 
-func buildRuntimeStatusRecord() *pyjson.Object {
-	r := pyjson.NewObject()
+func buildRuntimeStatusRecord() *jsonutil.Object {
+	r := jsonutil.NewObject()
 	pidRecord := statusBuildPidRecord()
-	for _, k := range pidRecord.Keys {
+	for _, k := range pidRecord.Keys() {
 		r.Set(k, recGet(pidRecord, k))
 	}
 	r.Set("gateway_state", "starting")
 	r.Set("exit_reason", nil)
 	r.Set("restart_requested", false)
 	r.Set("active_agents", int64(0))
-	r.Set("platforms", pyjson.NewObject())
-	store := pyjson.NewObject()
+	r.Set("platforms", jsonutil.NewObject())
+	store := jsonutil.NewObject()
 	store.Set("status", "unknown")
 	r.Set("session_store", store)
 	r.Set("updated_at", utcNowISO())
@@ -454,7 +459,7 @@ func buildRuntimeStatusRecord() *pyjson.Object {
 }
 
 // JSON object stored at path, nil when absent, empty, undecodable or not an object, bare pids accepted on request
-func readJSONFile(path string, barePidOK bool) *pyjson.Object {
+func readJSONFile(path string, barePidOK bool) *jsonutil.Object {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
@@ -467,7 +472,7 @@ func readJSONFile(path string, barePidOK bool) *pyjson.Object {
 	if raw == "" {
 		return nil
 	}
-	payload, err := pyjson.Loads(raw)
+	payload, err := jsonutil.Decode(raw)
 	if err != nil {
 		payload = nil
 		if barePidOK {
@@ -478,30 +483,30 @@ func readJSONFile(path string, barePidOK bool) *pyjson.Object {
 	}
 	if barePidOK {
 		if _, isBool := payload.(bool); isBool || pyIsInt(payload) {
-			r := pyjson.NewObject()
+			r := jsonutil.NewObject()
 			r.Set("pid", payload)
 			return r
 		}
 	}
-	obj, _ := payload.(*pyjson.Object)
+	obj, _ := payload.(*jsonutil.Object)
 	return obj
 }
 
 // Writes a compact JSON record atomically
 func writeJSONFile(ctx context.Context, path string, payload any) error {
-	return config.AtomicJSONWriteWith(ctx, path, payload, pyjson.Separators(",", ":"))
+	return config.AtomicJSONWriteWith(ctx, path, payload)
 }
 
 func unlinkQuietly(path string) { _ = os.Remove(path) }
 
-func readPidRecord(p string) *pyjson.Object {
+func readPidRecord(p string) *jsonutil.Object {
 	if p == "" {
 		p = pidPath()
 	}
 	return readJSONFile(p, true)
 }
 
-func readGatewayLockRecord(p string) *pyjson.Object {
+func readGatewayLockRecord(p string) *jsonutil.Object {
 	if p == "" {
 		p = statusGatewayLockPath("")
 	}
@@ -509,7 +514,7 @@ func readGatewayLockRecord(p string) *pyjson.Object {
 }
 
 // Integer pid stored under key, false when missing or not convertible like int()
-func pidFromRecord(record *pyjson.Object, key string) (int, bool) {
+func pidFromRecord(record *jsonutil.Object, key string) (int, bool) {
 	if record == nil {
 		return 0, false
 	}
@@ -530,7 +535,7 @@ func startTimesConflict(recorded, current any) bool {
 }
 
 // Record pid when it is alive and passes the start time reuse guard
-func liveFromRecord(record *pyjson.Object) (int, bool) {
+func liveFromRecord(record *jsonutil.Object) (int, bool) {
 	pid, ok := pidFromRecord(record, "pid")
 	if !ok || !statusPidExists(pid) {
 		return 0, false
@@ -589,4 +594,4 @@ func cleanupInvalidPidPath(p string, cleanupStale bool) {
 }
 
 // Parsed gateway.lock record at a path for callers outside this package, nil when absent or unreadable
-func ReadGatewayLockRecord(p string) *pyjson.Object { return readGatewayLockRecord(p) }
+func ReadGatewayLockRecord(p string) *jsonutil.Object { return readGatewayLockRecord(p) }

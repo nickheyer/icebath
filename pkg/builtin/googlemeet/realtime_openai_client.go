@@ -2,22 +2,21 @@ package googlemeet
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/browser"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -72,7 +71,7 @@ func decodeAudio(b64 string) []byte {
 	if b64 == "" {
 		return nil
 	}
-	out, err := pybase64.B64Decode(b64)
+	out, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		return nil
 	}
@@ -113,7 +112,7 @@ func (s *realtimeSession) connect() error {
 		return err
 	}
 	s.ws = ws
-	return s.sendJSON(pyjson.ObjectOf("type", "session.update", "session", pyjson.ObjectOf(
+	return s.sendJSON(jsonutil.ObjectOf("type", "session.update", "session", jsonutil.ObjectOf(
 		"voice", s.voice, "instructions", s.instructions, "modalities", []any{"audio", "text"},
 		"output_audio_format", "pcm16", "input_audio_format", "pcm16")))
 }
@@ -127,16 +126,16 @@ func (s *realtimeSession) close() {
 }
 
 // Sends text and appends the audio response to the sink, returning ok, bytes written and duration
-func (s *realtimeSession) speak(text string, timeout float64) (*pyjson.Object, error) {
+func (s *realtimeSession) speak(text string, timeout float64) (*jsonutil.Object, error) {
 	if s.ws == nil {
 		return nil, errors.New("RealtimeSession.connect() must be called first")
 	}
 	start := time.Now()
-	if err := s.sendJSON(pyjson.ObjectOf("type", "conversation.item.create", "item", pyjson.ObjectOf(
-		"type", "message", "role", "user", "content", []any{pyjson.ObjectOf("type", "input_text", "text", text)}))); err != nil {
+	if err := s.sendJSON(jsonutil.ObjectOf("type", "conversation.item.create", "item", jsonutil.ObjectOf(
+		"type", "message", "role", "user", "content", []any{jsonutil.ObjectOf("type", "input_text", "text", text)}))); err != nil {
 		return nil, err
 	}
-	if err := s.sendJSON(pyjson.ObjectOf("type", "response.create", "response", pyjson.ObjectOf("modalities", []any{"audio"}))); err != nil {
+	if err := s.sendJSON(jsonutil.ObjectOf("type", "response.create", "response", jsonutil.ObjectOf("modalities", []any{"audio"}))); err != nil {
 		return nil, err
 	}
 	bytesWritten := 0
@@ -167,16 +166,16 @@ func (s *realtimeSession) speak(text string, timeout float64) (*pyjson.Object, e
 		}
 		if ftype == "error" {
 			detail, _ := frame.Get("error")
-			if !truthyJSON(detail) {
+			if !anyutil.IsTrue(detail) {
 				detail = frame
 			}
-			return nil, fmt.Errorf("realtime error: %s", pyrepr.Str(detail))
+			return nil, fmt.Errorf("realtime error: %s", anyutil.String(detail))
 		}
 		if ftype != "response.audio.delta" || sink == nil {
 			continue
 		}
 		raw, _ := frame.Get("delta")
-		if !truthyJSON(raw) {
+		if !anyutil.IsTrue(raw) {
 			raw, _ = frame.Get("audio")
 		}
 		b64, _ := raw.(string)
@@ -193,7 +192,7 @@ func (s *realtimeSession) speak(text string, timeout float64) (*pyjson.Object, e
 		s.lastAudioOutAt = nowSeconds()
 		s.countMu.Unlock()
 	}
-	return pyjson.ObjectOf("ok", true, "bytes_written", bytesWritten,
+	return jsonutil.ObjectOf("ok", true, "bytes_written", bytesWritten,
 		"duration_ms", float64(time.Since(start).Nanoseconds())/1e6), nil
 }
 
@@ -202,12 +201,12 @@ func (s *realtimeSession) cancelResponse() bool {
 	if s.ws == nil {
 		return false
 	}
-	return s.sendJSON(pyjson.ObjectOf("type", "response.cancel")) == nil
+	return s.sendJSON(jsonutil.ObjectOf("type", "response.cancel")) == nil
 }
 
 // Serializes one JSON frame under the send lock
-func (s *realtimeSession) sendJSON(payload *pyjson.Object) error {
-	text, err := pyjson.Dumps(payload)
+func (s *realtimeSession) sendJSON(payload *jsonutil.Object) error {
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return err
 	}
@@ -217,11 +216,11 @@ func (s *realtimeSession) sendJSON(payload *pyjson.Object) error {
 }
 
 // Next object frame before deadline, skipping non object and unparsable frames
-func (s *realtimeSession) recvFrame(deadline time.Time, timeout float64) (*pyjson.Object, error) {
+func (s *realtimeSession) recvFrame(deadline time.Time, timeout float64) (*jsonutil.Object, error) {
 	for {
 		remaining := time.Until(deadline)
 		if remaining <= 0 {
-			return nil, fmt.Errorf("realtime response did not complete within %ss", pyrepr.Float(timeout))
+			return nil, fmt.Errorf("realtime response did not complete within %ss", strconv.FormatFloat(timeout, 'f', -1, 64))
 		}
 		raw, err := s.ws.Recv(remaining)
 		if err != nil {
@@ -231,25 +230,12 @@ func (s *realtimeSession) recvFrame(deadline time.Time, timeout float64) (*pyjso
 			}
 			return nil, err
 		}
-		if v, err := pyjson.Loads(raw); err == nil {
-			if obj, ok := v.(*pyjson.Object); ok {
+		if v, err := jsonutil.Decode(raw); err == nil {
+			if obj, ok := v.(*jsonutil.Object); ok {
 				return obj, nil
 			}
 		}
 	}
-}
-
-// Python truthiness of a decoded JSON value
-func truthyJSON(v any) bool {
-	switch x := v.(type) {
-	case *pyjson.Object:
-		return x.Len() > 0
-	case *big.Int:
-		return x.Sign() != 0
-	case int64:
-		return x != 0
-	}
-	return truthy(v)
 }
 
 // Python type name of a decoded JSON value
@@ -265,7 +251,7 @@ func pyTypeName(v any) string {
 		return "str"
 	case []any:
 		return "list"
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return "dict"
 	}
 	return "int"
@@ -273,7 +259,7 @@ func pyTypeName(v any) string {
 
 // Session surface the speaker needs
 type speakerSession interface {
-	speak(text string, timeout float64) (*pyjson.Object, error)
+	speak(text string, timeout float64) (*jsonutil.Object, error)
 }
 
 // JSONL say queue drained one entry at a time through a realtime session
@@ -281,7 +267,7 @@ type realtimeSpeaker struct {
 	session       speakerSession
 	queuePath     string
 	processedPath string
-	readQueue     func() ([]*pyjson.Object, error)
+	readQueue     func() ([]*jsonutil.Object, error)
 }
 
 // Speaker over queuePath recording results in processedPath when set
@@ -292,7 +278,7 @@ func newRealtimeSpeaker(session speakerSession, queuePath, processedPath string)
 }
 
 // Queue entries, blank and malformed lines skipped and entries without an id given one
-func (s *realtimeSpeaker) readQueueFile() ([]*pyjson.Object, error) {
+func (s *realtimeSpeaker) readQueueFile() ([]*jsonutil.Object, error) {
 	raw, err := os.ReadFile(s.queuePath)
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -300,20 +286,20 @@ func (s *realtimeSpeaker) readQueueFile() ([]*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	var out []*pyjson.Object
+	var out []*jsonutil.Object
 	for _, line := range textutil.Lines(text) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		v, err := pyjson.Loads(line)
+		v, err := jsonutil.Decode(line)
 		if err != nil {
 			continue
 		}
-		if entry, ok := v.(*pyjson.Object); ok {
+		if entry, ok := v.(*jsonutil.Object); ok {
 			if _, has := entry.Get("id"); !has {
 				entry.Set("id", uuid.NewString())
 			}
@@ -324,10 +310,10 @@ func (s *realtimeSpeaker) readQueueFile() ([]*pyjson.Object, error) {
 }
 
 // Rewrites the queue with the remaining entries, keeping an empty file when drained
-func (s *realtimeSpeaker) rewriteQueue(remaining []*pyjson.Object) error {
+func (s *realtimeSpeaker) rewriteQueue(remaining []*jsonutil.Object) error {
 	var b strings.Builder
 	for _, e := range remaining {
-		text, err := pyjson.Dumps(e)
+		text, err := jsonutil.Encode(e)
 		if err != nil {
 			return err
 		}
@@ -337,7 +323,7 @@ func (s *realtimeSpeaker) rewriteQueue(remaining []*pyjson.Object) error {
 }
 
 // Appends the spoken entry and its result to the processed log when one is configured
-func (s *realtimeSpeaker) appendProcessed(entry, result *pyjson.Object) error {
+func (s *realtimeSpeaker) appendProcessed(entry, result *jsonutil.Object) error {
 	if s.processedPath == "" {
 		return nil
 	}
@@ -349,7 +335,7 @@ func (s *realtimeSpeaker) appendProcessed(entry, result *pyjson.Object) error {
 	if !ok {
 		text = ""
 	}
-	line, err := pyjson.Dumps(pyjson.ObjectOf("id", id, "text", text, "result", result))
+	line, err := jsonutil.Encode(jsonutil.ObjectOf("id", id, "text", text, "result", result))
 	if err != nil {
 		return err
 	}
@@ -378,17 +364,17 @@ func (s *realtimeSpeaker) runUntilStopped(stop func() bool, poll time.Duration) 
 		head := entries[0]
 		rawText, _ := head.Get("text")
 		text := ""
-		if truthyJSON(rawText) {
+		if anyutil.IsTrue(rawText) {
 			str, ok := rawText.(string)
 			if !ok {
 				return fmt.Errorf("'%s' object has no attribute 'strip'", pyTypeName(rawText))
 			}
 			text = strings.TrimSpace(str)
 		}
-		result := pyjson.ObjectOf("ok", true, "bytes_written", 0, "duration_ms", 0.0)
+		result := jsonutil.ObjectOf("ok", true, "bytes_written", 0, "duration_ms", 0.0)
 		if text != "" {
 			if spoken, err := s.session.speak(text, 30.0); err != nil {
-				result = pyjson.ObjectOf("ok", false, "error", err.Error())
+				result = jsonutil.ObjectOf("ok", false, "error", err.Error())
 			} else {
 				result = spoken
 			}
@@ -404,7 +390,7 @@ func (s *realtimeSpeaker) runUntilStopped(stop func() bool, poll time.Duration) 
 }
 
 // Re reads the queue under the lock and drops the spoken head by position or id
-func (s *realtimeSpeaker) dropHead(head *pyjson.Object) error {
+func (s *realtimeSpeaker) dropHead(head *jsonutil.Object) error {
 	release, err := sayQueueLock(s.queuePath)
 	if err != nil {
 		return err
@@ -416,13 +402,13 @@ func (s *realtimeSpeaker) dropHead(head *pyjson.Object) error {
 	}
 	headID, _ := head.Get("id")
 	if len(latest) > 0 {
-		if firstID, _ := latest[0].Get("id"); pyjson.Equal(firstID, headID) {
+		if firstID, _ := latest[0].Get("id"); anyutil.Equal(firstID, headID) {
 			return s.rewriteQueue(latest[1:])
 		}
 	}
-	var keep []*pyjson.Object
+	var keep []*jsonutil.Object
 	for _, e := range latest {
-		if id, _ := e.Get("id"); !pyjson.Equal(id, headID) {
+		if id, _ := e.Get("id"); !anyutil.Equal(id, headID) {
 			keep = append(keep, e)
 		}
 	}

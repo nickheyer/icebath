@@ -13,10 +13,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Inputs of the update command, its argparse namespace, the checkout it updates and its output streams
@@ -65,10 +65,10 @@ func updatePreflightHandled(ctx context.Context, w io.Writer, args map[string]an
 	root := fleetProjectRoot()
 	var setChannel *string
 	if value := args["set_channel"]; value != nil {
-		text := pyrepr.Str(value)
+		text := anyutil.String(value)
 		setChannel = &text
 	}
-	handled, err := HandleMetadataArgs(ctx, w, pyrepr.Truthy(args["install_id"]), setChannel, root)
+	handled, err := HandleMetadataArgs(ctx, w, anyutil.IsTrue(args["install_id"]), setChannel, root)
 	if err != nil {
 		return true, err
 	}
@@ -80,13 +80,13 @@ func updatePreflightHandled(ctx context.Context, w io.Writer, args map[string]an
 		config.ManagedError(ctx, h, "update Icebath Agent")
 		return true, nil
 	}
-	if pyrepr.Truthy(args["plan"]) {
+	if anyutil.IsTrue(args["plan"]) {
 		printUpdatePlan(w, CollectRuntimeInventory(ctx))
 		return true, nil
 	}
-	if pyrepr.Truthy(args["list_venv_holders"]) {
+	if anyutil.IsTrue(args["list_venv_holders"]) {
 		holders := listVenvHolders(ctx)
-		text, err := pyjson.Dumps(holders, pyjson.Indent(2))
+		text, err := jsonutil.Encode(holders, jsonutil.Indent(2))
 		if err != nil {
 			return true, err
 		}
@@ -105,13 +105,13 @@ func updatePreflightHandled(ctx context.Context, w io.Writer, args map[string]an
 		recordRefusalReceipt(ctx, refusal)
 		return true, updateExit(2)
 	}
-	if pyrepr.Truthy(args["check"]) {
+	if anyutil.IsTrue(args["check"]) {
 		var channel *string
-		if pyrepr.Truthy(args["channel"]) {
-			text := pyrepr.Str(args["channel"])
+		if anyutil.IsTrue(args["channel"]) {
+			text := anyutil.String(args["channel"])
 			channel = &text
 		}
-		return true, cmdUpdateCheck(ctx, w, resolveUpdateBranch(args), pyrepr.Truthy(args["branch"]), channel)
+		return true, cmdUpdateCheck(ctx, w, resolveUpdateBranch(args), anyutil.IsTrue(args["branch"]), channel)
 	}
 	return false, nil
 }
@@ -162,7 +162,7 @@ func cmdUpdate(ctx context.Context, u UpdateInvocation) error {
 	if handled, err := updatePreflight(ctx, u.Stdout, args); err != nil || handled {
 		return err
 	}
-	gatewayMode := pyrepr.Truthy(args["gateway"])
+	gatewayMode := anyutil.IsTrue(args["gateway"])
 	ioState := updateInstallHangup(u.Stdout, u.Stderr, gatewayMode)
 	w := u.Stdout
 	if ioState != nil {

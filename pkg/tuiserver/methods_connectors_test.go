@@ -7,8 +7,8 @@ import (
 	"slices"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func rpcCode(response map[string]any) int {
@@ -54,15 +54,15 @@ type fakeMCPBackend struct {
 	attempts map[string]*fakeMCPAttempt
 }
 
-func (b *fakeMCPBackend) RequiredEnv(context.Context, string) ([]*pyjson.Object, error) {
+func (b *fakeMCPBackend) RequiredEnv(context.Context, string) ([]*jsonutil.Object, error) {
 	return nil, nil
 }
 func (b *fakeMCPBackend) InstallsWithOAuth(context.Context, string) (bool, error) { return true, nil }
-func (b *fakeMCPBackend) Install(context.Context, string, *pyjson.Object) ([]string, error) {
+func (b *fakeMCPBackend) Install(context.Context, string, *jsonutil.Object) ([]string, error) {
 	return nil, errors.New("install is not driven by these cases")
 }
 func (b *fakeMCPBackend) Enable(context.Context, string) error { return nil }
-func (b *fakeMCPBackend) StartInstallOAuth(ctx context.Context, name string, _ *pyjson.Object) (mcp.ConnectorAttempt, error) {
+func (b *fakeMCPBackend) StartInstallOAuth(ctx context.Context, name string, _ *jsonutil.Object) (mcp.ConnectorAttempt, error) {
 	return b.StartOAuth(ctx, name)
 }
 

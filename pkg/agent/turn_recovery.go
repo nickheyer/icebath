@@ -6,17 +6,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
+	"math"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -92,7 +92,7 @@ func interruptibleBackoffSleep(ctx context.Context, a *AIAgent, waitTime float64
 // The code and message of a failed or cancelled Codex response error, empty when absent
 func codexSoftFailureError(response any) map[string]any {
 	errorObj := state.ToolCallField(response, "error")
-	if !pyrepr.Truthy(errorObj) {
+	if !anyutil.IsTrue(errorObj) {
 		return map[string]any{}
 	}
 	var fields map[string]any
@@ -104,7 +104,7 @@ func codexSoftFailureError(response any) map[string]any {
 	} else if code, message := state.ToolCallField(errorObj, "code"), state.ToolCallField(errorObj, "message"); code != nil || message != nil {
 		fields = map[string]any{"code": code, "message": message}
 	} else {
-		fields = map[string]any{"message": pyrepr.Str(errorObj)}
+		fields = map[string]any{"message": anyutil.String(errorObj)}
 	}
 	out := map[string]any{}
 	for k, v := range fields {
@@ -118,10 +118,10 @@ func codexSoftFailureError(response any) map[string]any {
 // Lowered stripped status string of a response, empty when it carries none
 func responseStatus(response any) string {
 	status := state.ToolCallField(response, "status")
-	if !pyrepr.Truthy(status) {
+	if !anyutil.IsTrue(status) {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(status)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(status)))
 }
 
 // Classified verdict and error context of a failed or cancelled Codex response, nil when it is not one
@@ -180,8 +180,8 @@ func validateResponseShape(a *AIAgent, response any) (bool, []string, error) {
 			return false, []string{}, nil
 		}
 		log.Warn(fmt.Sprintf("Codex response.output is empty after stream backfill (status=%s, incomplete_details=%s, model=%s). %s",
-			pyrepr.Str(state.ToolCallField(response, "status")), pyrepr.Str(state.ToolCallField(response, "incomplete_details")),
-			pyrepr.Str(state.ToolCallField(response, "model")), fmt.Sprintf("api_mode=%s provider=%s", a.apiMode, a.provider)))
+			anyutil.String(state.ToolCallField(response, "status")), anyutil.String(state.ToolCallField(response, "incomplete_details")),
+			anyutil.String(state.ToolCallField(response, "model")), fmt.Sprintf("api_mode=%s provider=%s", a.apiMode, a.provider)))
 		return true, []string{"response.output is empty"}, nil
 	}
 	var detail string
@@ -203,36 +203,35 @@ func validateResponseShape(a *AIAgent, response any) (bool, []string, error) {
 // Error message, provider name and failure hint for an empty or malformed response
 func describeInvalidResponse(a *AIAgent, response any, apiDuration float64) (string, string, string) {
 	errorMsg, providerName := "Unknown", "Unknown"
-	responseTruthy := pyrepr.Truthy(response)
+	responseTruthy := anyutil.IsTrue(response)
 	errValue := state.ToolCallField(response, "error")
-	hasError := responseTruthy && pyrepr.Truthy(errValue)
+	hasError := responseTruthy && anyutil.IsTrue(errValue)
 	if hasError {
 		errorMsg, _ = codexSoftFailureError(response)["message"].(string)
 		if errorMsg == "" {
-			errorMsg = pyrepr.Str(errValue)
+			errorMsg = anyutil.String(errValue)
 		}
-		if metadata := state.ToolCallField(errValue, "metadata"); !isPyDict(errValue) && pyrepr.Truthy(metadata) {
+		if metadata := state.ToolCallField(errValue, "metadata"); !isPyDict(errValue) && anyutil.IsTrue(metadata) {
 			providerName = "Unknown"
 			if name := state.ToolCallField(metadata, "provider_name"); name != nil {
-				providerName = pyrepr.Str(name)
+				providerName = anyutil.String(name)
 			}
 		}
-	} else if message := state.ToolCallField(response, "message"); responseTruthy && pyrepr.Truthy(message) {
-		errorMsg = pyrepr.Str(message)
+	} else if message := state.ToolCallField(response, "message"); responseTruthy && anyutil.IsTrue(message) {
+		errorMsg = anyutil.String(message)
 	}
-	if model := state.ToolCallField(response, "model"); providerName == "Unknown" && responseTruthy && pyrepr.Truthy(model) {
-		providerName = "model=" + pyrepr.Str(model)
+	if model := state.ToolCallField(response, "model"); providerName == "Unknown" && responseTruthy && anyutil.IsTrue(model) {
+		providerName = "model=" + anyutil.String(model)
 	}
 	if providerName == "Unknown" && responseTruthy && a.verboseLogging {
-		pkgLog().Debug(fmt.Sprintf("Response attributes for invalid response: %s", pyrepr.Str(responseAttrs(response))))
+		pkgLog().Debug(fmt.Sprintf("Response attributes for invalid response: %s", anyutil.String(responseAttrs(response))))
 	}
 	var code *int64
 	if hasError {
 		raw := state.ToolCallField(errValue, "code")
 		if raw != nil {
-			if n, err := pyint.Of(raw); err == nil && n.IsInt64() {
-				v := n.Int64()
-				code = &v
+			if n, err := anyutil.ToInt(raw); err == nil {
+				code = &n
 			}
 		}
 	}
@@ -245,7 +244,7 @@ func responseAttrs(response any) map[string]any {
 	if m, ok := response.(map[string]any); ok {
 		for k, v := range m {
 			if !strings.HasPrefix(k, "_") {
-				out[k] = textutil.First(pyrepr.Str(v), 100)
+				out[k] = textutil.First(anyutil.String(v), 100)
 			}
 		}
 	}
@@ -282,8 +281,8 @@ func failureHintFor(code *int64, apiDuration float64) string {
 var (
 	recoveryPrint       = func(out io.Writer, line string) { fmt.Fprintln(out, line) }
 	recoveryLocaleEnv   = os.Getenv
-	imagePatchLimitRe   = regexp.MustCompile(`exceeding the limit of\s*(\p{Nd}{2,7})`)
-	imageMaxAllowedRe   = regexp.MustCompile(`max allowed size(?:\s+for [^:]+)?:\s*(\p{Nd}{3,5})\s*pixels?`)
+	imagePatchLimitRe   = regexp.MustCompile(`exceeding the limit of\s*([0-9]{2,7})`)
+	imageMaxAllowedRe   = regexp.MustCompile(`max allowed size(?:\s+for [^:]+)?:\s*([0-9]{3,5})\s*pixels?`)
 	asciiLocaleCodesets = map[string]bool{"ascii": true, "us-ascii": true, "ansi-x3.4-1968": true}
 )
 
@@ -352,11 +351,11 @@ func imageErrorMaxDimension(err error) *int {
 		if m == nil {
 			return nil
 		}
-		limit, ok := pyint.Parse(m[1])
-		if !ok {
+		limit, err := strconv.ParseInt(m[1], 10, 64)
+		if err != nil {
 			return nil
 		}
-		return inRange(new(big.Int).Sqrt(limit).Int64() * 32)
+		return inRange(int64(math.Sqrt(float64(limit))) * 32)
 	}
 	if !strings.Contains(text, "image") || !strings.Contains(text, "dimension") || !strings.Contains(text, "max allowed size") {
 		return nil
@@ -365,11 +364,11 @@ func imageErrorMaxDimension(err error) *int {
 	if m == nil {
 		return nil
 	}
-	n, ok := pyint.Parse(m[1])
-	if !ok {
+	n, err := strconv.ParseInt(m[1], 10, 64)
+	if err != nil {
 		return nil
 	}
-	return inRange(n.Int64())
+	return inRange(n)
 }
 
 // Strips image parts from this attempt's request copy, leaving the model unmarked, true when any were removed

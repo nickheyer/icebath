@@ -8,8 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Active skin name and its user file mtime, nil mtime for a built in skin
@@ -54,8 +52,8 @@ func SkinPayload(ctx context.Context, cfg map[string]any) (payload map[string]an
 func SkinSig(ctx context.Context) SkinSignature {
 	display, _ := loadCfg(ctx)["display"].(map[string]any)
 	name := "default"
-	if value := display["skin"]; pyrepr.Truthy(value) {
-		name = pyrepr.Str(value)
+	if value := display["skin"]; anyutil.IsTrue(value) {
+		name = anyutil.String(value)
 	}
 	info, err := os.Stat(filepath.Join(home.Dir(ctx), "skins", name+".yaml"))
 	if err != nil {
@@ -74,11 +72,11 @@ func SkinHomeFor(profileID string) string {
 	if err != nil || !info.IsDir() {
 		return ""
 	}
-	resolved, err := pypath.Resolve(profileID)
+	resolved, err := pathutil.Resolve(profileID)
 	if err != nil {
 		return ""
 	}
-	launch, err := pypath.Resolve(home.Process())
+	launch, err := pathutil.Resolve(home.Process())
 	if err != nil || resolved == launch {
 		return ""
 	}

@@ -9,8 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // API adapter double answering the store, routes and run aliases the admission reads
@@ -79,7 +80,7 @@ func newAPITurnOwner(t *testing.T) (context.Context, *SessionAuthority, *apiTurn
 }
 
 // Policy the reviewer profile advertises for the room policy cases
-func apiRoomPolicy(t *testing.T) *pyjson.Object {
+func apiRoomPolicy(t *testing.T) *jsonutil.Object {
 	t.Helper()
 	return roomTestPolicy(t, "manual", 12)
 }
@@ -111,16 +112,16 @@ func TestQueuedPolicyOnlyAdmissionFromAnOlderBuildIsNotRecovered(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored := pyjson.Clone(admitted.Row.GetOr("payload", nil)).(*pyjson.Object)
-	turn := stored.GetOr("api_turn_v1", nil).(*pyjson.Object)
-	turn.GetOr("settings", nil).(*pyjson.Object).Set("room_execution_policy", apiRoomPolicy(t))
-	encoded, err := pyjson.Dumps(stored)
+	stored := jsonutil.Clone(admitted.Row.ValueOr("payload", nil)).(*jsonutil.Object)
+	turn := stored.ValueOr("api_turn_v1", nil).(*jsonutil.Object)
+	turn.ValueOr("settings", nil).(*jsonutil.Object).Set("room_execution_policy", apiRoomPolicy(t))
+	encoded, err := jsonutil.Encode(stored)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := owner.DB.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
 		_, err := conn.ExecContext(ctx, "UPDATE session_admissions SET payload_json=? WHERE admission_id=?", encoded,
-			admitted.Row.GetOr("admission_id", nil))
+			admitted.Row.ValueOr("admission_id", nil))
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -167,7 +168,7 @@ func TestDispatchWithItsCatalogPolicyIsAdmittedAndBound(t *testing.T) {
 		"target_install_id": install, "target_profile": "reviewer", "task_id": "task-1",
 		"execution_generation": int64(1), "source_event_seq": int64(1), "cancellation_scope_id": "cancel-1",
 		"prompt": prompt, "prompt_digest": hex.EncodeToString(sum[:]), "capability_digest": catalog.CatalogDigest,
-		"execution_policy_digest": policy.GetOr("policy_digest", nil), "trace_id": "trace-1"})
+		"execution_policy_digest": policy.ValueOr("policy_digest", nil), "trace_id": "trace-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,19 +182,19 @@ func TestDispatchWithItsCatalogPolicyIsAdmittedAndBound(t *testing.T) {
 		t.Fatal(err)
 	}
 	if rowString(admitted.Row, "status") != AdmissionQueued {
-		t.Fatalf("status = %v", admitted.Row.GetOr("status", nil))
+		t.Fatalf("status = %v", admitted.Row.ValueOr("status", nil))
 	}
-	payload := admitted.Row.GetOr("payload", nil).(*pyjson.Object)
+	payload := admitted.Row.ValueOr("payload", nil).(*jsonutil.Object)
 	if _, err := checkAPITurn(ctx, owner, admitted.Ref, payload); err != nil {
 		t.Fatal(err)
 	}
-	settings := payload.GetOr("api_turn_v1", nil).(*pyjson.Object).GetOr("settings", nil)
-	scoped, err := APIPolicyScope(BindAPIExecution(ctx, pyjson.ObjectOf("settings", settings)))
+	settings := payload.ValueOr("api_turn_v1", nil).(*jsonutil.Object).ValueOr("settings", nil)
+	scoped, err := APIPolicyScope(BindAPIExecution(ctx, jsonutil.ObjectOf("settings", settings)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	bound := CurrentRoomExecutionPolicy(scoped)
-	if bound == nil || !pyjson.Equal(bound.AsMapping(), policy) {
+	if bound == nil || !anyutil.Equal(bound.AsMapping(), policy) {
 		t.Fatalf("bound policy = %v, want %v", bound, policy)
 	}
 	if CurrentRoomExecutionPolicy(ctx) != nil {
@@ -203,7 +204,7 @@ func TestDispatchWithItsCatalogPolicyIsAdmittedAndBound(t *testing.T) {
 
 func TestRequestRelayMetadataReachesTheExecutingTurn(t *testing.T) {
 	ctx, owner, api := newAPITurnOwner(t)
-	metadata := pyjson.ObjectOf("relay.trace", "trace-7", "tenant", "acme")
+	metadata := jsonutil.ObjectOf("relay.trace", "trace-7", "tenant", "acme")
 	admitted, err := AdmitAPITurn(ctx, api, &APITurn{SessionID: "relay-meta", UserMessage: "hello", ConversationHistory: []any{},
 		RelayMetadata: metadata})
 	if err != nil {
@@ -211,14 +212,14 @@ func TestRequestRelayMetadataReachesTheExecutingTurn(t *testing.T) {
 	}
 	var seen any
 	owner.Runner.(*apiOwnerRunner).handle = func(ctx context.Context, _ *MessageEvent) (any, error) {
-		seen = APIExecution(ctx).GetOr("relay_metadata", nil)
-		executionResultOf(ctx).Set("result", pyjson.ObjectOf("final_response", "ok"))
+		seen = APIExecution(ctx).ValueOr("relay_metadata", nil)
+		executionResultOf(ctx).Set("result", jsonutil.ObjectOf("final_response", "ok"))
 		return "ok", nil
 	}
 	if _, err := executeAdmission(ctx, owner, admitted.Ref, admitted.Row); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(seen, metadata) {
+	if !anyutil.Equal(seen, metadata) {
 		t.Fatalf("relay_metadata = %v, want %v", seen, metadata)
 	}
 }

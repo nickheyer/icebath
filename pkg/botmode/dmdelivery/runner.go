@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
@@ -18,13 +19,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Parsed run delivery argv, the author JSON when given, transport mode, DM file and transport argv
@@ -94,7 +94,7 @@ func deliveryLock(ctx context.Context, argv []string, stdinFile bool) (func(), e
 }
 
 // Admits a local DM only through the profile authority, a peer stdin transport run with the DM file as input
-func runDelivery(ctx context.Context, argv []string, dmFile string, stdinFile bool, profileHome string, author *pyjson.Object, stdout, stderr io.Writer) (int, error) {
+func runDelivery(ctx context.Context, argv []string, dmFile string, stdinFile bool, profileHome string, author *jsonutil.Object, stdout, stderr io.Writer) (int, error) {
 	if !stdinFile {
 		target := profileHome
 		if target == "" {
@@ -124,7 +124,7 @@ func runDelivery(ctx context.Context, argv []string, dmFile string, stdinFile bo
 				return waitAdmitted(ctx, stdout, record, dmFile)
 			}
 		}
-		text, err := pyjson.Dumps(pyjson.ObjectOf("reason", "runtime_unavailable", "error", "No canonical Bot Chat authority; payload retained."))
+		text, err := jsonutil.Encode(jsonutil.ObjectOf("reason", "runtime_unavailable", "error", "No canonical Bot Chat authority; payload retained."))
 		if err != nil {
 			return 0, err
 		}
@@ -150,11 +150,11 @@ func runDelivery(ctx context.Context, argv []string, dmFile string, stdinFile bo
 	if err != nil {
 		return 0, err
 	}
-	text, err := pystr.DecodeUTF8SigFile(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return 0, err
 	}
-	return runTransport(argv, []byte(pystr.TranslateNewlines(text)), env, stdout, stderr)
+	return runTransport(argv, []byte(textutil.NormalizeNewlines(text)), env, stdout, stderr)
 }
 
 // Whether a path exists as os.path.exists reports it, any stat error reading as absent
@@ -218,7 +218,7 @@ func runTransport(argv []string, input []byte, env map[string]string, stdout, st
 	err = cmd.Run()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return pysubprocess.Returncode(exitErr), nil
+		return executil.ExitCode(exitErr.ProcessState), nil
 	}
 	if err != nil {
 		return 0, err
@@ -232,7 +232,7 @@ func DeliveryMain(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	if !ok {
 		return 2
 	}
-	var author *pyjson.Object
+	var author *jsonutil.Object
 	if parsed.author != nil {
 		if author = provider.ParseTurnAuthor(*parsed.author); author == nil {
 			return 2
@@ -240,7 +240,7 @@ func DeliveryMain(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	}
 	argv, profileHome := parsed.argv, ""
 	if len(argv) >= 2 && argv[0] == "--profile-home" {
-		profileHome, argv = pypath.PathStr(argv[1]), argv[2:]
+		profileHome, argv = filepath.Clean(argv[1]), argv[2:]
 	}
 	code, err := runDelivery(ctx, argv, parsed.dmFile, parsed.mode == "stdin", profileHome, author, stdout, stderr)
 	if err == nil {
@@ -251,7 +251,7 @@ func DeliveryMain(ctx context.Context, args []string, stdout, stderr io.Writer) 
 	case *fs.PathError, *os.LinkError:
 		reasonErr = errors.New(excText(err))
 	}
-	payload, dumpErr := pyjson.Dumps(pyjson.ObjectOf("error", excText(err), "reason", tools.DeliveryFailureReason(reasonErr)))
+	payload, dumpErr := jsonutil.Encode(jsonutil.ObjectOf("error", excText(err), "reason", tools.DeliveryFailureReason(reasonErr)))
 	if dumpErr != nil {
 		fmt.Fprintf(stderr, "DM delivery failed (%s) and its failure report could not be encoded: %s\n", err, dumpErr)
 		pkgLog().Error("DM delivery failure report could not be encoded: "+dumpErr.Error(), "delivery_error_chain", errchain.Text(err), "error_chain", errchain.Text(dumpErr))

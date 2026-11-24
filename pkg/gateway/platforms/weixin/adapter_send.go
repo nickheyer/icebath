@@ -7,18 +7,19 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var (
@@ -42,7 +43,7 @@ func newClientID() string { return "icebath-weixin-" + uuidHex() }
 
 // Sends one local file through the sender its extension selects, voice flagged media always as voice
 func (a *WeixinAdapter) deliverLocalFile(ctx context.Context, chatID, path string, isVoice bool, metadata map[string]any) error {
-	ext := strings.ToLower(pypath.Suffix(path))
+	ext := strings.ToLower(pathutil.Suffix(path))
 	var err error
 	switch {
 	case isVoice || voiceExts[ext]:
@@ -100,7 +101,7 @@ func (a *WeixinAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				pkgLog().Warn(fmt.Sprintf("[%s] %s delivery failed for %s: %s", a.Name(), d.label, d.path, errText(err)))
+				pkgLog().Warn(fmt.Sprintf("[%s] %s delivery failed for %s: %s", a.Name(), d.label, d.path, err.Error()))
 			}
 		}
 		var chunks []string
@@ -158,16 +159,16 @@ func (a *WeixinAdapter) setTyping(ctx context.Context, chatID string, status int
 	_, send := a.sessions()
 	var err error
 	if send == nil {
-		err = &pyErr{"AttributeError", "'NoneType' object has no attribute 'post'"}
+		err = errSessionClosed
 	} else {
-		_, err = apiPost(ctx, send, a.baseURL, epSendTyping, pyjson.ObjectOf("ilink_user_id", chatID, "typing_ticket", ticket, "status", int64(status)),
+		_, err = apiPost(ctx, send, a.baseURL, epSendTyping, jsonutil.ObjectOf("ilink_user_id", chatID, "typing_ticket", ticket, "status", int64(status)),
 			a.token, configTimeoutMS)
 	}
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] typing %s failed for %s: %s", a.Name(), label, safeID(chatID), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] typing %s failed for %s: %s", a.Name(), label, safeID(chatID), err.Error()))
 	}
 	return nil
 }
@@ -193,8 +194,15 @@ func (a *WeixinAdapter) SendImage(ctx context.Context, chatID, imageURL, caption
 		}
 		filePath = downloaded
 	} else {
-		filePath = strings.ReplaceAll(imageURL, "file://", "")
-		if !pypath.IsAbs(filePath) {
+		filePath = imageURL
+		if strings.HasPrefix(strings.ToLower(imageURL), "file:") {
+			local, err := urlutil.FilePath(imageURL)
+			if err != nil {
+				return gateway.SendResult{}, err
+			}
+			filePath = local
+		}
+		if !filepath.IsAbs(filePath) {
 			abs, err := filepath.Abs(filePath)
 			if err != nil {
 				return gateway.SendResult{}, err
@@ -261,13 +269,13 @@ func (a *WeixinAdapter) downloadRemoteMedia(ctx context.Context, rawURL string) 
 	}
 	_, send := a.sessions()
 	if send == nil {
-		return "", &pyErr{"AssertionError", ""}
+		return "", errSessionClosed
 	}
 	data, err := downloadBytes(ctx, send, rawURL, 30)
 	if err != nil {
 		return "", err
 	}
-	suffix := pypath.Suffix(strings.SplitN(rawURL, "?", 2)[0])
+	suffix := pathutil.Suffix(strings.SplitN(rawURL, "?", 2)[0])
 	if suffix == "" {
 		suffix = ".bin"
 	}
@@ -283,44 +291,38 @@ func (a *WeixinAdapter) downloadRemoteMedia(ctx context.Context, rawURL string) 
 }
 
 // Outbound media item of an uploaded file with the fields its item type carries
-func mediaItem(itemType int, encryptQueryParam, aesKeyForAPI string, fields *pyjson.Object) *pyjson.Object {
+func mediaItem(itemType int, encryptQueryParam, aesKeyForAPI string, fields *jsonutil.Object) *jsonutil.Object {
 	keys := map[int]string{itemFile: "file_item", itemImage: "image_item", itemVideo: "video_item", itemVoice: "voice_item"}
-	body := pyjson.ObjectOf("media", pyjson.ObjectOf("encrypt_query_param", encryptQueryParam, "aes_key", aesKeyForAPI, "encrypt_type", int64(1)))
-	body.Update(fields)
-	return pyjson.ObjectOf("type", int64(itemType), keys[itemType], body)
+	body := jsonutil.ObjectOf("media", jsonutil.ObjectOf("encrypt_query_param", encryptQueryParam, "aes_key", aesKeyForAPI, "encrypt_type", int64(1)))
+	body.Merge(fields)
+	return jsonutil.ObjectOf("type", int64(itemType), keys[itemType], body)
 }
 
 // Upload media type and outbound item type of a path, audio and unknown types going out as file attachments
-func outboundMediaBuilder(path string, forceFileAttachment bool) (int, int, error) {
-	mime, _, err := pymimetypes.GuessType(path, true)
-	if err != nil {
-		return 0, 0, err
-	}
+func outboundMediaBuilder(path string, forceFileAttachment bool) (int, int) {
+	mime := mimeutil.TypeByName(path)
 	switch {
 	case strings.HasPrefix(mime, "image/"):
-		return mediaImage, itemImage, nil
+		return mediaImage, itemImage
 	case strings.HasPrefix(mime, "video/"):
-		return mediaVideo, itemVideo, nil
+		return mediaVideo, itemVideo
 	case strings.HasSuffix(path, ".silk") && !forceFileAttachment:
-		return mediaVoice, itemVoice, nil
+		return mediaVoice, itemVoice
 	}
-	return mediaFile, itemFile, nil
+	return mediaFile, itemFile
 }
 
 // Encrypts and uploads a file to the CDN, then sends its caption and media item, returning the last client id
 func (a *WeixinAdapter) sendFile(ctx context.Context, chatID, path, caption string, forceFileAttachment bool) (string, error) {
 	_, send := a.sessions()
 	if send == nil {
-		return "", &pyErr{"AssertionError", ""}
+		return "", errSessionClosed
 	}
 	plaintext, err := os.ReadFile(path)
 	if err != nil {
-		return "", &pyErr{pypath.OSErrorClass(err), pypath.OSErrorText(err)}
-	}
-	mediaType, itemType, err := outboundMediaBuilder(path, forceFileAttachment)
-	if err != nil {
 		return "", err
 	}
+	mediaType, itemType := outboundMediaBuilder(path, forceFileAttachment)
 	filekeyBytes, aesKey := make([]byte, 16), make([]byte, 16)
 	_, _ = rand.Read(filekeyBytes)
 	_, _ = rand.Read(aesKey)
@@ -331,17 +333,17 @@ func (a *WeixinAdapter) sendFile(ctx context.Context, chatID, path, caption stri
 	if err != nil {
 		return "", err
 	}
-	uploadParam := strOf(uploadResponse.Vals["upload_param"])
+	uploadParam := strOf(uploadResponse.Value("upload_param"))
 	ciphertext, err := aes128ECBEncrypt(plaintext, aesKey)
 	if err != nil {
 		return "", err
 	}
-	uploadURL := strOf(uploadResponse.Vals["upload_full_url"])
+	uploadURL := strOf(uploadResponse.Value("upload_full_url"))
 	if uploadURL == "" && uploadParam != "" {
-		uploadURL = strings.TrimRight(a.cdnBaseURL, "/") + "/upload?encrypted_query_param=" + pyurl.Quote(uploadParam, "") + "&filekey=" + pyurl.Quote(filekey, "")
+		uploadURL = strings.TrimRight(a.cdnBaseURL, "/") + "/upload?encrypted_query_param=" + url.QueryEscape(uploadParam) + "&filekey=" + url.QueryEscape(filekey)
 	}
 	if uploadURL == "" {
-		return "", runtimeError("getUploadUrl returned neither upload_param nor upload_full_url: " + pyrepr.Str(uploadResponse))
+		return "", runtimeError("getUploadUrl returned neither upload_param nor upload_full_url: " + anyutil.String(uploadResponse))
 	}
 	encryptedQueryParam, err := uploadCiphertext(ctx, send, ciphertext, uploadURL)
 	if err != nil {
@@ -349,16 +351,16 @@ func (a *WeixinAdapter) sendFile(ctx context.Context, chatID, path, caption stri
 	}
 	contextToken := a.tokenStore.get(a.accountID, chatID)
 	aesKeyForAPI := base64.StdEncoding.EncodeToString([]byte(aesKeyHex))
-	var fields *pyjson.Object
+	var fields *jsonutil.Object
 	switch itemType {
 	case itemFile:
-		fields = pyjson.ObjectOf("file_name", pypath.Name(path), "len", fmt.Sprint(rawsize))
+		fields = jsonutil.ObjectOf("file_name", pathutil.Name(path), "len", fmt.Sprint(rawsize))
 	case itemImage:
-		fields = pyjson.ObjectOf("mid_size", int64(len(ciphertext)))
+		fields = jsonutil.ObjectOf("mid_size", int64(len(ciphertext)))
 	case itemVideo:
-		fields = pyjson.ObjectOf("video_size", int64(len(ciphertext)), "play_length", int64(0), "video_md5", rawfilemd5)
+		fields = jsonutil.ObjectOf("video_size", int64(len(ciphertext)), "play_length", int64(0), "video_md5", rawfilemd5)
 	case itemVoice:
-		fields = pyjson.ObjectOf("encode_type", nil, "bits_per_sample", nil, "sample_rate", nil, "playtime", int64(0))
+		fields = jsonutil.ObjectOf("encode_type", nil, "bits_per_sample", nil, "sample_rate", nil, "playtime", int64(0))
 		if mediaType == mediaVoice && strings.HasSuffix(path, ".silk") {
 			fields.Set("encode_type", int64(6))
 			fields.Set("bits_per_sample", int64(16))
@@ -367,7 +369,7 @@ func (a *WeixinAdapter) sendFile(ctx context.Context, chatID, path, caption stri
 	}
 	itemLists := [][]any{{mediaItem(itemType, encryptedQueryParam, aesKeyForAPI, fields)}}
 	if caption != "" {
-		itemLists = append([][]any{{pyjson.ObjectOf("type", int64(itemText), "text_item", pyjson.ObjectOf("text", a.FormatMessage(caption)))}}, itemLists...)
+		itemLists = append([][]any{{jsonutil.ObjectOf("type", int64(itemText), "text_item", jsonutil.ObjectOf("text", a.FormatMessage(caption)))}}, itemLists...)
 	}
 	lastMessageID := ""
 	for _, itemList := range itemLists {
@@ -387,12 +389,12 @@ func (a *WeixinAdapter) sendFile(ctx context.Context, chatID, path, caption stri
 				pkgLog().Warn(fmt.Sprintf("[%s] session expired for %s; re-sending media without context_token", a.Name(), safeID(chatID)))
 				continue
 			}
-			errmsg := pyrepr.Or(resp.Vals["errmsg"], resp.Vals["msg"])
+			errmsg := anyutil.Or(resp.Value("errmsg"), resp.Value("msg"))
 			if isStaleSessionRet(ret, errcode, errmsg) {
 				return "", sessionNotReadyError(ret, errcode, errmsg)
 			}
-			return "", runtimeError(fmt.Sprintf("iLink sendmessage error: ret=%s errcode=%s errmsg=%s", pyrepr.Str(ret), pyrepr.Str(errcode),
-				pyrepr.Str(pyrepr.Or(errmsg, "unknown error"))))
+			return "", runtimeError(fmt.Sprintf("iLink sendmessage error: ret=%s errcode=%s errmsg=%s", anyutil.String(ret), anyutil.String(errcode),
+				anyutil.String(anyutil.Or(errmsg, "unknown error"))))
 		}
 	}
 	return lastMessageID, nil

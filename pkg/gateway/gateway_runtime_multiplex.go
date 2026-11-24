@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Default root that may multiplex home when home is a named profile under it, empty otherwise
@@ -59,10 +59,10 @@ func MultiplexerServesHome(ctx context.Context, h string) (string, error) {
 	}
 	names := map[string]bool{}
 	for _, p := range served {
-		if !pyrepr.Truthy(p) {
+		if !anyutil.IsTrue(p) {
 			continue
 		}
-		name, err := profiles.NormalizeProfileName(pyrepr.Str(p))
+		name, err := profiles.NormalizeProfileName(anyutil.String(p))
 		if err != nil {
 			return "", err
 		}

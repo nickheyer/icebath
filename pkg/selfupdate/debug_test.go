@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const dbgRedactToken = "sk-proj-A1B2C3D4E5F6G7H8I9J0aA"
@@ -538,16 +538,16 @@ func TestScheduleAutoDeleteDedupesSameURL(t *testing.T) {
 	ctx := context.Background()
 	debugScheduleAutoDelete(ctx, []string{"https://paste.rs/dup"}, 10)
 	debugScheduleAutoDelete(ctx, []string{"https://paste.rs/dup"}, 100)
-	if entries := debugLoadPending(ctx); len(entries) != 1 || entries[0].Vals["url"] != "https://paste.rs/dup" {
+	if entries := debugLoadPending(ctx); len(entries) != 1 || entries[0].Value("url") != "https://paste.rs/dup" {
 		t.Fatal(entries)
 	}
 }
 
 func dbgSavePending(t *testing.T, rows ...[2]any) {
 	t.Helper()
-	entries := []*pyjson.Object{}
+	entries := []*jsonutil.Object{}
 	for _, r := range rows {
-		entries = append(entries, pyjson.ObjectOf("url", r[0], "expire_at", r[1]))
+		entries = append(entries, jsonutil.ObjectOf("url", r[0], "expire_at", r[1]))
 	}
 	debugSavePending(context.Background(), entries)
 }
@@ -563,7 +563,7 @@ func TestSweepExpiredPastesSweepDeletesExpiredEntries(t *testing.T) {
 	if err != nil || deleted != 1 || remaining != 1 || len(calls) != 1 || calls[0] != "https://paste.rs/expired" {
 		t.Fatal(deleted, remaining, err, calls)
 	}
-	if entries := debugLoadPending(context.Background()); len(entries) != 1 || entries[0].Vals["url"] != "https://paste.rs/future" {
+	if entries := debugLoadPending(context.Background()); len(entries) != 1 || entries[0].Value("url") != "https://paste.rs/future" {
 		t.Fatal(entries)
 	}
 }
@@ -612,7 +612,7 @@ func TestSweepExpiredPastesShareScheduledDuringSweepDeletesIsKept(t *testing.T) 
 	if got := <-result; got != (res{1, 1}) {
 		t.Fatal(got)
 	}
-	if entries := debugLoadPending(context.Background()); len(entries) != 1 || entries[0].Vals["url"] != "https://paste.rs/new" {
+	if entries := debugLoadPending(context.Background()); len(entries) != 1 || entries[0].Value("url") != "https://paste.rs/new" {
 		t.Fatal(entries)
 	}
 }

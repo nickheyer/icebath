@@ -8,14 +8,14 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	"golang.org/x/sys/unix"
 )
 
 // Text pasted at a terminal up to Ctrl-D, read with line mode off so long lines are not cut
 func readTerminalPaste(c *cliui.Console) (string, error) {
 	c.PrintInfo("Press Ctrl-D once it has all pasted (Ctrl-Z then Enter on Windows).")
-	fdp, ok := pysys.Fileno(c.In)
+	fdp, ok := termutil.Fd(c.In)
 	if !ok {
 		raw, err := io.ReadAll(c.In)
 		return string(raw), err
@@ -56,7 +56,7 @@ func readTerminalPaste(c *cliui.Console) (string, error) {
 
 // Drops the rest of a paste still streaming in, flushing until the input stays quiet for half a second
 func discardPendingInput(c *cliui.Console) {
-	fdp, ok := pysys.Fileno(c.In)
+	fdp, ok := termutil.Fd(c.In)
 	if !ok || !c.StdinIsTTY() {
 		return
 	}

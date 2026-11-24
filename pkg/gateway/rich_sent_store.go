@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -29,20 +29,20 @@ func richSentStorePath(ctx context.Context) string {
 }
 
 // Index contents, empty for a missing, unparseable or non object file
-func richSentLoad(path string) *pyjson.Object {
+func richSentLoad(path string) *jsonutil.Object {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	data, err := pyjson.Loads(text)
-	if obj, ok := data.(*pyjson.Object); err == nil && ok {
+	data, err := jsonutil.Decode(text)
+	if obj, ok := data.(*jsonutil.Object); err == nil && ok {
 		return obj
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Merges fields into the chat and message entry with a fresh timestamp, trimming the oldest past the cap
@@ -55,10 +55,10 @@ func richSentUpdate(ctx context.Context, chatID, messageID any, fields map[strin
 	}
 	data := richSentLoad(path)
 	key := fmt.Sprintf("%v:%v", chatID, messageID)
-	merged := pyjson.NewObject()
-	if prior, ok := data.GetOr(key, nil).(*pyjson.Object); ok {
-		for _, k := range prior.Keys {
-			merged.Set(k, prior.Vals[k])
+	merged := jsonutil.NewObject()
+	if prior, ok := data.ValueOr(key, nil).(*jsonutil.Object); ok {
+		for _, k := range prior.Keys() {
+			merged.Set(k, prior.Value(k))
 		}
 	}
 	for _, k := range []string{"t", "m"} {
@@ -69,8 +69,8 @@ func richSentUpdate(ctx context.Context, chatID, messageID any, fields map[strin
 	merged.Set("ts", time.Now().Unix())
 	data.Set(key, merged)
 	if data.Len() > richSentMaxEntries {
-		keys := append([]string(nil), data.Keys...)
-		sort.SliceStable(keys, func(i, j int) bool { return richSentTS(data.Vals[keys[i]]) < richSentTS(data.Vals[keys[j]]) })
+		keys := append([]string(nil), data.Keys()...)
+		sort.SliceStable(keys, func(i, j int) bool { return richSentTS(data.Value(keys[i])) < richSentTS(data.Value(keys[j])) })
 		for _, k := range keys[:data.Len()-richSentMaxEntries] {
 			data.Delete(k)
 		}
@@ -80,11 +80,11 @@ func richSentUpdate(ctx context.Context, chatID, messageID any, fields map[strin
 
 // Timestamp of one entry, zero when it has none
 func richSentTS(entry any) float64 {
-	obj, ok := entry.(*pyjson.Object)
+	obj, ok := entry.(*jsonutil.Object)
 	if !ok {
 		return 0
 	}
-	switch v := obj.GetOr("ts", 0).(type) {
+	switch v := obj.ValueOr("ts", 0).(type) {
 	case int64:
 		return float64(v)
 	case int:
@@ -122,26 +122,26 @@ func RichSentRecordMedia(ctx context.Context, chatID, messageID any, media [][2]
 }
 
 // Stored entry of the chat and message, empty when absent
-func richSentEntry(ctx context.Context, chatID, messageID any) *pyjson.Object {
+func richSentEntry(ctx context.Context, chatID, messageID any) *jsonutil.Object {
 	if messageID == nil || chatID == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	if obj, ok := richSentLoad(richSentStorePath(ctx)).GetOr(fmt.Sprintf("%v:%v", chatID, messageID), nil).(*pyjson.Object); ok {
+	if obj, ok := richSentLoad(richSentStorePath(ctx)).ValueOr(fmt.Sprintf("%v:%v", chatID, messageID), nil).(*jsonutil.Object); ok {
 		return obj
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Stored text of the chat and message, false when none was recorded
 func RichSentLookup(ctx context.Context, chatID, messageID any) (string, bool) {
-	text, ok := richSentEntry(ctx, chatID, messageID).GetOr("t", nil).(string)
+	text, ok := richSentEntry(ctx, chatID, messageID).ValueOr("t", nil).(string)
 	return text, ok && text != ""
 }
 
 // Stored path and mime pairs of the chat and message whose file still exists
 func RichSentLookupMedia(ctx context.Context, chatID, messageID any) [][2]string {
 	out := [][2]string{}
-	pairs, _ := richSentEntry(ctx, chatID, messageID).GetOr("m", nil).([]any)
+	pairs, _ := richSentEntry(ctx, chatID, messageID).ValueOr("m", nil).([]any)
 	for _, raw := range pairs {
 		pair, ok := raw.([]any)
 		if !ok || len(pair) != 2 {

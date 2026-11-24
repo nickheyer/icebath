@@ -5,13 +5,13 @@ import (
 	"context"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Install and profile locations of one Chromium family product
@@ -127,8 +127,8 @@ var darwinChannelBundles = []string{
 // Sentinel for a recognized Chromium pre release channel default, distinct from no Chromium default
 const UnsupportedChannel = "__unsupported_channel__"
 
-// Platform name of the host, the module attribute tests patch
-var connectSystem = pyplatform.System
+// Operating system of the host as runtime.GOOS names it, a seam tests replace
+var connectSystem = func() string { return runtime.GOOS }
 
 func systemOr(system string) string {
 	if system != "" {
@@ -138,7 +138,7 @@ func systemOr(system string) string {
 }
 
 func userHomeText() string {
-	h, err := pypath.PathHome()
+	h, err := pathutil.Home()
 	if err != nil {
 		return "~"
 	}
@@ -158,27 +158,27 @@ func realProfileDataDir(browser, system string) string {
 	}
 	system = systemOr(system)
 	homeDir := userHomeText()
-	if system == "Darwin" {
-		return pypath.PosixJoin(homeDir, append([]string{"Library", "Application Support"}, b.macSupport...)...)
+	if system == "darwin" {
+		return path.Join(append([]string{homeDir}, append([]string{"Library", "Application Support"}, b.macSupport...)...)...)
 	}
-	if system == "Windows" {
+	if system == "windows" {
 		local := os.Getenv("LOCALAPPDATA")
 		if local == "" {
-			local = pypath.NtJoin(homeDir, "AppData", "Local")
+			local = pathutil.WindowsJoin(homeDir, "AppData", "Local")
 		}
-		return pypath.NtJoin(local, b.winProfile...)
+		return pathutil.WindowsJoin(local, b.winProfile...)
 	}
 	configDir := os.Getenv("XDG_CONFIG_HOME")
 	if configDir == "" {
-		configDir = pypath.PosixJoin(homeDir, ".config")
+		configDir = path.Join(homeDir, ".config")
 	}
 	linuxParts := strings.Split(b.linuxConfig, "/")
-	candidates := []string{pypath.PosixJoin(configDir, linuxParts...)}
+	candidates := []string{path.Join(append([]string{configDir}, linuxParts...)...)}
 	if parts, ok := linuxSnapProfileParts[browser]; ok {
-		candidates = append(candidates, pypath.PosixJoin(homeDir, parts...))
+		candidates = append(candidates, path.Join(append([]string{homeDir}, parts...)...))
 	}
 	if id, ok := linuxFlatpakIDs[browser]; ok {
-		candidates = append(candidates, pypath.PosixJoin(homeDir, append([]string{".var", "app", id, "config"}, linuxParts...)...))
+		candidates = append(candidates, path.Join(append([]string{homeDir}, append([]string{".var", "app", id, "config"}, linuxParts...)...)...))
 	}
 	for _, c := range candidates {
 		if isDirPath(c) {
@@ -211,18 +211,18 @@ func realChromiumExecutable(browser, system string) string {
 		return ""
 	}
 	system = systemOr(system)
-	if system == "Darwin" {
+	if system == "darwin" {
 		return firstPresent([]string{b.macApp})
 	}
-	if system == "Windows" {
+	if system == "windows" {
 		bases := []string{
 			connectEnvOr("PROGRAMFILES", `C:\Program Files`),
 			connectEnvOr("PROGRAMFILES(X86)", `C:\Program Files (x86)`),
-			connectEnvOr("LOCALAPPDATA", pypath.PathJoin(userHomeText(), "AppData", "Local"))}
+			connectEnvOr("LOCALAPPDATA", pathutil.Join(userHomeText(), "AppData", "Local"))}
 		candidates := []string{}
 		for _, base := range bases {
 			for _, parts := range b.winInstall {
-				candidates = append(candidates, pypath.Join(base, parts...))
+				candidates = append(candidates, pathutil.Join(base, parts...))
 			}
 		}
 		return firstPresent(candidates)
@@ -232,7 +232,7 @@ func realChromiumExecutable(browser, system string) string {
 		names = b.linuxBins
 	}
 	for _, name := range names {
-		if found, ok := pyshutil.Which(name, nil); ok && found != "" {
+		if found, err := exec.LookPath(name); err == nil {
 			return found
 		}
 	}
@@ -358,9 +358,9 @@ func detectDefaultLinux() string {
 // Canonical key of the default Chromium browser, empty when the default is not one
 func detectDefaultChromium(system string) string {
 	switch systemOr(system) {
-	case "Windows":
+	case "windows":
 		return detectDefaultWindows()
-	case "Darwin":
+	case "darwin":
 		return detectDefaultDarwin()
 	}
 	return detectDefaultLinux()

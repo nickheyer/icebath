@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Private secret path the editor MCP server list is held under in owner memory
@@ -18,7 +18,7 @@ var editorMCPPrivateKey = secretPath{"editor_mcp"}
 
 // Sorted compact JSON every editor MCP fingerprint and size bound reads
 func editorMCPJSON(value any) (string, error) {
-	return pyjson.Dumps(value, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	return jsonutil.Encode(value, jsonutil.SortKeys())
 }
 
 // Hex sha256 of the sorted compact JSON of a server list
@@ -143,7 +143,7 @@ func (v *acpValidator) why() string {
 
 // Refuses a non list, oversized or malformed server list or one with a duplicate or empty name
 func validateServers(servers any) error {
-	servers = pyjson.Plain(servers)
+	servers = jsonutil.Plain(servers)
 	list, ok := servers.([]any)
 	if !ok {
 		return invalidParams("editor.mcp_servers", "must be a list, got "+errchain.Kind(servers))
@@ -203,7 +203,7 @@ func serverSpecProblem(spec any, names map[string]bool) string {
 // Moves a launch request's editor servers into private memory, leaving only their fingerprint in the request
 func privateEditorRequest(request map[string]any, private *RecoveredSecrets) error {
 	editor := map[string]any{}
-	if raw := pyjson.Plain(request["editor"]); pyrepr.Truthy(raw) {
+	if raw := jsonutil.Plain(request["editor"]); anyutil.IsTrue(raw) {
 		m, ok := raw.(map[string]any)
 		if !ok {
 			return fmt.Errorf("editor settings are %s, expected a mapping", errchain.Kind(raw))
@@ -211,7 +211,7 @@ func privateEditorRequest(request map[string]any, private *RecoveredSecrets) err
 		editor = m
 	}
 	servers := editor["mcp_servers"]
-	if !pyrepr.Truthy(servers) {
+	if !anyutil.IsTrue(servers) {
 		return nil
 	}
 	if private == nil {
@@ -241,16 +241,16 @@ func editorMCPRoundTrip(servers any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	loaded, err := pyjson.Loads(text)
+	loaded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Plain(loaded), nil
+	return jsonutil.Plain(loaded), nil
 }
 
 // Store payload and owner held servers of an editor_mcp or server naming branch mutation
 func privateMutationPayload(operation string, payload any) (any, any, error) {
-	fields, isMap := pyjson.Plain(payload).(map[string]any)
+	fields, isMap := jsonutil.Plain(payload).(map[string]any)
 	if operation == "editor_mcp" {
 		if _, has := fields["mcp_servers"]; !isMap || len(fields) != 1 || !has {
 			return nil, nil, state.NewRuntimeStoreError("invalid_params", nil, nil)
@@ -269,9 +269,9 @@ func privateMutationPayload(operation string, payload any) (any, any, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if object, ok := payload.(*pyjson.Object); ok {
-		stored := object.Copy()
-		stored.Set("mcp_servers", pyjson.ObjectOf("fingerprint", digest))
+	if object, ok := payload.(*jsonutil.Object); ok {
+		stored := object.Clone()
+		stored.Set("mcp_servers", jsonutil.ObjectOf("fingerprint", digest))
 		return stored, servers, nil
 	}
 	stored := make(map[string]any, len(fields))

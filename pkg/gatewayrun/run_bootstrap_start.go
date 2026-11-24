@@ -11,13 +11,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Seconds the cron ticker and the housekeeping goroutine may take to exit after shutdown
@@ -86,7 +86,7 @@ func startGatewayMakeShutdownSignalHandler(ctx context.Context, r *GatewayRunner
 		} else if plannedStopSeen && !takeover {
 			plannedStop = true
 		}
-		shutdownCtx, _ := bestEffort(func() (*pyjson.Object, error) { return gateway.SnapshotShutdownContext(sig), nil }, "snapshot_shutdown_context failed: %s")
+		shutdownCtx, _ := bestEffort(func() (*jsonutil.Object, error) { return gateway.SnapshotShutdownContext(sig), nil }, "snapshot_shutdown_context failed: %s")
 		sigName := ""
 		if shutdownCtx != nil {
 			if v, ok := shutdownCtx.Get("signal"); ok && v != nil {
@@ -245,14 +245,14 @@ func startGatewayRunRunner(ctx context.Context, r *GatewayRunner, signalInitiate
 
 // Cron and housekeeping goroutines of a running gateway with the stop event they share
 type cronHousekeeping struct {
-	stop         *pythread.Event
+	stop         *syncutil.Event
 	ticker       cronTicker
 	housekeeping *bootThread
 }
 
 // Teardown after the runner stopped, returning the process exit verdict
 func startGatewayShutdownTail(ctx context.Context, r *GatewayRunner, control *gateway.GatewayControlServer, ch cronHousekeeping,
-	plannedStop *pythread.Event, plannedStopThread *bootThread, signalInitiated *bool) (bool, error) {
+	plannedStop *syncutil.Event, plannedStopThread *bootThread, signalInitiated *bool) (bool, error) {
 	if control != nil {
 		func() {
 			defer func() {
@@ -285,7 +285,7 @@ func startGatewayShutdownTail(ctx context.Context, r *GatewayRunner, control *ga
 
 // Starts the cron ticker and the housekeeping goroutine sharing one stop event
 func startGatewayStartCronAndHousekeeping(ctx context.Context, r *GatewayRunner) cronHousekeeping {
-	stop := &pythread.Event{}
+	stop := &syncutil.Event{}
 	var ticker cronTicker
 	if startCronTicker != nil {
 		ticker = startCronTicker(ctx, r, stop)
@@ -390,7 +390,7 @@ func StartGateway(ctx context.Context, o StartGatewayOptions) (bool, error) {
 func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gateway.GatewayConfig) (verdict bool, err error) {
 	var control *gateway.GatewayControlServer
 	var r *GatewayRunner
-	var plannedStop *pythread.Event
+	var plannedStop *syncutil.Event
 	loop := gateway.NewCallbackLoop()
 	settled := context.WithoutCancel(ctx)
 	loopCtx, stopLoop := context.WithCancel(settled)
@@ -454,7 +454,7 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 	loop.SetExceptionHandler(gatewayLoopExceptionHandler)
 	taskExceptionLoop.Store(loop)
 	stopSignals = startGatewayInstallSignalHandlers(loop, shutdownHandler, restartHandler)
-	plannedStop = &pythread.Event{}
+	plannedStop = &syncutil.Event{}
 	plannedStopThread := startBootThread(func() { runPlannedStopWatcher(plannedStop, r, loop, shutdownHandler, 1.0) })
 	control = startGatewayStartControlSocket(ctx, r, loop)
 	if control == nil {
@@ -465,7 +465,7 @@ func runStartedGateway(ctx context.Context, o StartGatewayOptions, resolved *gat
 	if err := startGatewayRuntimeAPI(ctx, r); err != nil {
 		return false, err
 	}
-	unclean, _ := bestEffort(func() (*pyjson.Object, error) { return gateway.RecordStartup(ctx, "", true), nil }, "Lifecycle ledger startup record failed: %s")
+	unclean, _ := bestEffort(func() (*jsonutil.Object, error) { return gateway.RecordStartup(ctx, "", true), nil }, "Lifecycle ledger startup record failed: %s")
 	early, err := startGatewayRunRunner(ctx, r, &signalInitiated)
 	if err != nil {
 		return false, err

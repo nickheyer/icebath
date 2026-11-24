@@ -12,7 +12,6 @@ import (
 
 	"github.com/bwmarrin/discordgo"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Ids the tracker state file holds on disk
@@ -22,7 +21,7 @@ func trackerFileIDs(t *testing.T, home string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := pyjson.Loads(string(raw))
+	data, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}

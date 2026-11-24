@@ -8,11 +8,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
@@ -26,8 +26,8 @@ var (
 )
 
 // Creation flags set truthy in this shell's environment, in declaration order
-func EnvLaunchFlags() *pyjson.Object {
-	flags := pyjson.NewObject()
+func EnvLaunchFlags() *jsonutil.Object {
+	flags := jsonutil.NewObject()
 	for _, pair := range envLaunchFlagNames {
 		if value, ok := os.LookupEnv(pair[1]); ok && provider.IsTruthyValue(value) {
 			flags.Set(pair[0], true)
@@ -78,8 +78,8 @@ func policyValue(v any) any {
 }
 
 // Creation flags the user passed, by identity so a zero max turns stays a value
-func launchFlags(args map[string]any) *pyjson.Object {
-	flags := pyjson.NewObject()
+func launchFlags(args map[string]any) *jsonutil.Object {
+	flags := jsonutil.NewObject()
 	for _, key := range chatPolicyFields {
 		value := policyValue(args[key])
 		if value == nil || value == false {
@@ -102,9 +102,9 @@ func splitNames(text string) []any {
 }
 
 // Launch flags as session.create policy, toolsets and skills as lists and the source as its create label
-func RequestedPolicy(args map[string]any) *pyjson.Object {
+func RequestedPolicy(args map[string]any) *jsonutil.Object {
 	policy := launchFlags(args)
-	if toolsets, ok := policy.Vals["toolsets"].(string); ok {
+	if toolsets, ok := policy.Value("toolsets").(string); ok {
 		policy.Set("toolsets", splitNames(toolsets))
 	}
 	if skills, ok := policy.Get("skills"); ok {
@@ -115,7 +115,7 @@ func RequestedPolicy(args map[string]any) *pyjson.Object {
 		names := []any{}
 		seen := map[string]bool{}
 		for _, item := range raw {
-			for _, name := range splitNames(pyrepr.Str(item)) {
+			for _, name := range splitNames(anyutil.String(item)) {
 				if !seen[name.(string)] {
 					seen[name.(string)] = true
 					names = append(names, name)
@@ -127,8 +127,8 @@ func RequestedPolicy(args map[string]any) *pyjson.Object {
 			policy.Delete("skills")
 		}
 	}
-	if pyrepr.Truthy(args["source"]) {
-		policy.Set("source", pyrepr.Str(args["source"]))
+	if anyutil.IsTrue(args["source"]) {
+		policy.Set("source", anyutil.String(args["source"]))
 	}
 	return policy
 }
@@ -137,8 +137,8 @@ func RequestedPolicy(args map[string]any) *pyjson.Object {
 func ResumeOverrides(ctx context.Context, args map[string]any, snapshot any) (map[string]any, error) {
 	requested := RequestedPolicy(args)
 	requested.Delete("source")
-	if pyrepr.Truthy(args["in_dir"]) {
-		resolved, err := pypath.Resolve(pypath.Expanduser(pyrepr.Str(args["in_dir"])))
+	if anyutil.IsTrue(args["in_dir"]) {
+		resolved, err := pathutil.Resolve(pathutil.ExpandUser(anyutil.String(args["in_dir"])))
 		if err != nil {
 			return nil, err
 		}
@@ -149,8 +149,8 @@ func ResumeOverrides(ctx context.Context, args map[string]any, snapshot any) (ma
 		return overrides, nil
 	}
 	var info map[string]any
-	if snap, ok := pyjson.AsObject(snapshot); ok {
-		info, _ = plainDict(snap.Vals["info"])
+	if snap, ok := jsonutil.AsObject(snapshot); ok {
+		info, _ = plainDict(snap.Value("info"))
 	}
 	frozen, _ := plainDict(info["launch_request"])
 	if frozen == nil {
@@ -163,9 +163,9 @@ func ResumeOverrides(ctx context.Context, args map[string]any, snapshot any) (ma
 	if model, ok := requested.Get("model"); ok {
 		compared["model"] = model
 		_, hasRequested := frozen["model_requested"]
-		if pyjson.Equal(model, frozen["model_requested"]) {
+		if anyutil.Equal(model, frozen["model_requested"]) {
 			compared["model"] = frozen["model"]
-		} else if !pyjson.Equal(model, frozen["model"]) && !hasRequested {
+		} else if !anyutil.Equal(model, frozen["model"]) && !hasRequested {
 			flags := map[string]any{}
 			for _, key := range []string{"model", "provider", "base_url", "api_key"} {
 				if value, ok := requested.Get(key); ok {
@@ -186,13 +186,13 @@ func ResumeOverrides(ctx context.Context, args map[string]any, snapshot any) (ma
 			compared["model"] = route["model"]
 		}
 	}
-	for _, key := range requested.Keys {
+	for _, key := range requested.Keys() {
 		value, ok := compared[key]
 		if !ok {
-			value = requested.Vals[key]
+			value = requested.Value(key)
 		}
-		if key != "api_key" && !pyjson.Equal(frozen[key], value) {
-			overrides[key] = requested.Vals[key]
+		if key != "api_key" && !anyutil.Equal(frozen[key], value) {
+			overrides[key] = requested.Value(key)
 		}
 	}
 	return overrides, nil

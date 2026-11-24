@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const (
@@ -26,7 +26,7 @@ var profileSignatureFiles = []string{".env"}
 func statSignature(path string) []any {
 	version, err := config.FileCacheVersion(path, true)
 	if err != nil {
-		if pypath.IsOSError(err) {
+		if errorutil.IsSystem(err) {
 			return nil
 		}
 		panic(err)
@@ -61,7 +61,7 @@ func profileServeSignature(ctx context.Context, profileHome string) ([]any, erro
 		switch {
 		case err == nil:
 			sig = append(sig, version)
-		case pypath.IsOSError(err):
+		case errorutil.IsSystem(err):
 			sig = append(sig, nil)
 		default:
 			return nil, err
@@ -110,7 +110,7 @@ func (r *GatewayRunner) servedProfileNames() []string {
 
 // Remembers the served set and each home's serve signature, keeping signatures already taken
 func (r *GatewayRunner) noteServedProfiles(ctx context.Context, profileHomes []profiles.ServedProfile) error {
-	homes := pydict.New[string, string]()
+	homes := orderedutil.NewMap[string, string]()
 	for _, p := range profileHomes {
 		homes.Set(p.Name, p.Home)
 	}

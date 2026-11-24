@@ -10,12 +10,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pytoml"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	tomlutil "github.com/nickheyer/icebath/pkg/utils/toml"
 )
 
-func codexMigrationEntry(pairs ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func codexMigrationEntry(pairs ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i < len(pairs); i += 2 {
 		o.Set(pairs[i].(string), pairs[i+1])
 	}
@@ -71,7 +71,7 @@ func TestCodexMigrationTranslateOneServer(t *testing.T) {
 		if err != nil || len(skipped) != 0 {
 			t.Fatalf("skipped %v err %v", skipped, err)
 		}
-		got, _ := pyjson.Dumps(out)
+		got, _ := jsonutil.Encode(out)
 		if got != `{"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", "/tmp"], "env": {"FOO": "bar"}}` {
 			t.Fatalf("entry %s", got)
 		}
@@ -86,7 +86,7 @@ func TestCodexMigrationTranslateOneServer(t *testing.T) {
 		}
 	})
 	t.Run("url transport timeouts and flags", func(t *testing.T) {
-		cfg := pyjson.NewObject()
+		cfg := jsonutil.NewObject()
 		cfg.Set("url", "https://h/mcp")
 		cfg.Set("headers", map[string]any{"Authorization": "Bearer x", "N": 1})
 		cfg.Set("transport", "sse")
@@ -98,7 +98,7 @@ func TestCodexMigrationTranslateOneServer(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		got, _ := pyjson.Dumps(out)
+		got, _ := jsonutil.Encode(out)
 		if got != `{"url": "https://h/mcp", "http_headers": {"Authorization": "Bearer x", "N": "1"}, "tool_timeout_sec": 12.0, "enabled": false}` {
 			t.Fatalf("entry %s", got)
 		}
@@ -109,7 +109,7 @@ func TestCodexMigrationTranslateOneServer(t *testing.T) {
 	})
 	t.Run("command wins over url and odd shapes", func(t *testing.T) {
 		out, skipped, _ := codexTranslateOneServer("s", map[string]any{"command": "c", "url": "u", "args": "ab", "cwd": "/w", "timeout": nil})
-		got, _ := pyjson.Dumps(out)
+		got, _ := jsonutil.Encode(out)
 		if got != `{"command": "c", "args": ["a", "b"], "cwd": "/w"}` || !slices.Equal(skipped, []string{"url (both command and url set; preferring stdio)", "timeout (not numeric)"}) {
 			t.Fatalf("entry %s skipped %q", got, skipped)
 		}
@@ -186,7 +186,7 @@ func TestCodexMigrationTOMLValueFormatter(t *testing.T) {
 
 func TestCodexMigrationRenderTOML(t *testing.T) {
 	t.Run("test_servers_sorted_alphabetically", func(t *testing.T) {
-		out, err := RenderCodexTOMLSection(map[string]*pyjson.Object{
+		out, err := RenderCodexTOMLSection(map[string]*jsonutil.Object{
 			"zoo": codexMigrationEntry("command", "z"), "alpha": codexMigrationEntry("command", "a"), "middle": codexMigrationEntry("command", "m"),
 		}, nil, "")
 		if err != nil {
@@ -198,7 +198,7 @@ func TestCodexMigrationRenderTOML(t *testing.T) {
 		}
 	})
 	t.Run("test_server_with_args_and_env", func(t *testing.T) {
-		out, _ := RenderCodexTOMLSection(map[string]*pyjson.Object{
+		out, _ := RenderCodexTOMLSection(map[string]*jsonutil.Object{
 			"fs": codexMigrationEntry("command", "npx", "args", []any{"-y", "filesystem"}, "env", codexMigrationEntry("PATH", "/usr/bin")),
 		}, nil, "")
 		for _, want := range []string{"[mcp_servers.fs]", `command = "npx"`, `args = ["-y", "filesystem"]`, `env = { PATH = "/usr/bin" }`} {
@@ -331,7 +331,7 @@ func TestCodexMigrationMigrate(t *testing.T) {
 		if !strings.Contains(final, "user-above") || !strings.Contains(final, "user-below") || !strings.Contains(final, "[mcp_servers.icebath-mcp]") {
 			t.Fatalf("final\n%s", final)
 		}
-		if _, err := pytoml.Loads(final); err != nil {
+		if _, err := tomlutil.Decode(final); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -390,7 +390,7 @@ func TestCodexMigrationStripUnmanagedPluginTables(t *testing.T) {
 		if strings.Contains(stripped, `["nested"]`) || strings.Contains(stripped, "allowed") || !strings.Contains(stripped, "[features]") || !strings.Contains(stripped, "x = 1") {
 			t.Fatalf("stripped %q", stripped)
 		}
-		if _, err := pytoml.Loads(stripped); err != nil {
+		if _, err := tomlutil.Decode(stripped); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -413,7 +413,7 @@ func TestCodexMigrationStripUnmanagedPluginTables(t *testing.T) {
 		if !(start < idx && idx < end) {
 			t.Fatalf("plugin outside managed block\n%s", text)
 		}
-		if _, err := pytoml.Loads(text); err != nil {
+		if _, err := tomlutil.Decode(text); err != nil {
 			t.Fatal(err)
 		}
 	})
@@ -459,7 +459,7 @@ func TestCodexMigrationPluginQuery(t *testing.T) {
 	if err != nil || reason != "" || opened.CodexBin != "/bin/codex" || opened.CodexHome != "/ch" || fake.requests[0].method != "plugin/list" || !fake.closed {
 		t.Fatalf("query %v %q %v %+v %v", plugins, reason, err, opened, fake.closed)
 	}
-	got, _ := pyjson.Dumps(plugins, pyjson.SortKeys(true))
+	got, _ := jsonutil.Encode(plugins, jsonutil.SortKeys())
 	if got != `[{"enabled": true, "marketplace": "openai-curated", "name": "tasks"}, {"enabled": false, "marketplace": "openai-curated", "name": "ok"}, {"enabled": true, "marketplace": "team", "name": "tasks"}]` {
 		t.Fatalf("plugins %s", got)
 	}
@@ -485,7 +485,7 @@ func TestCodexMigrationIcebathHomeLeakGuard(t *testing.T) {
 	t.Run("test_real_icebath_home_propagates", func(t *testing.T) {
 		t.Setenv("ICEBATH_HOME", "/Users/alice/.icebath")
 		env, _ := codexBuildToolsMCPEntry().Get("env")
-		if v, _ := env.(*pyjson.Object).Get("ICEBATH_HOME"); v != "/Users/alice/.icebath" {
+		if v, _ := env.(*jsonutil.Object).Get("ICEBATH_HOME"); v != "/Users/alice/.icebath" {
 			t.Fatalf("env %v", env)
 		}
 	})
@@ -493,7 +493,7 @@ func TestCodexMigrationIcebathHomeLeakGuard(t *testing.T) {
 		t.Setenv("ICEBATH_HOME", "")
 		os.Unsetenv("ICEBATH_HOME")
 		env, _ := codexBuildToolsMCPEntry().Get("env")
-		if _, ok := env.(*pyjson.Object).Get("ICEBATH_HOME"); ok {
+		if _, ok := env.(*jsonutil.Object).Get("ICEBATH_HOME"); ok {
 			t.Fatalf("ICEBATH_HOME should not be set when env var is unset, got %v", env)
 		}
 	})
@@ -501,8 +501,8 @@ func TestCodexMigrationIcebathHomeLeakGuard(t *testing.T) {
 		t.Setenv("ICEBATH_HOME", "/tmp/pytest-of-nick/pytest-3/home")
 		t.Setenv("PYTHONPATH", "/wt")
 		exe, _ := os.Executable()
-		got, _ := pyjson.Dumps(codexBuildToolsMCPEntry())
-		want, _ := pyjson.Dumps(codexMigrationEntry("command", exe, "args", []any{CodexToolsMCPServerEntry},
+		got, _ := jsonutil.Encode(codexBuildToolsMCPEntry())
+		want, _ := jsonutil.Encode(codexMigrationEntry("command", exe, "args", []any{CodexToolsMCPServerEntry},
 			"env", codexMigrationEntry("PYTHONPATH", "/wt", "ICEBATH_QUIET", "1", "ICEBATH_REDACT_SECRETS", "true"),
 			"startup_timeout_sec", 30.0, "tool_timeout_sec", 600.0))
 		if got != want {
@@ -528,7 +528,7 @@ func TestCodexMigrationSameNameUserMCPTable(t *testing.T) {
 			t.Fatal(err)
 		}
 		text := codexMigrationRead(t, target)
-		parsed, err := pytoml.Loads(text)
+		parsed, err := tomlutil.Decode(text)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -548,7 +548,7 @@ func TestCodexMigrationSameNameUserMCPTable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		parsed, err := pytoml.Loads(codexMigrationRead(t, target))
+		parsed, err := tomlutil.Decode(codexMigrationRead(t, target))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -677,7 +677,7 @@ func TestCodexMigrationWorkerOverridesTargetTheMigratedServer(t *testing.T) {
 	if err != nil || len(report.Errors) != 0 {
 		t.Fatalf("report %+v err %v", report, err)
 	}
-	parsed, err := pytoml.Loads(codexMigrationRead(t, filepath.Join(codexHome, "config.toml")))
+	parsed, err := tomlutil.Decode(codexMigrationRead(t, filepath.Join(codexHome, "config.toml")))
 	if err != nil {
 		t.Fatal(err)
 	}

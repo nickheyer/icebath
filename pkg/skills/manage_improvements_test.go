@@ -13,7 +13,7 @@ func TestFuzzyPatchExactAndWhitespaceTrimmedMatches(t *testing.T) {
 	s, skills := manageScope(t)
 	mustObj(s.createSkill(context.Background(), "test-skill", improvementSkillContent, nil))
 	if res := mustObj(s.patchSkill(context.Background(), "test-skill", strp("Step 1: Do the thing."), strp("Step 1: Done!"), nil, false)); !objSuccess(res) {
-		t.Fatalf("exact %v", res.Vals)
+		t.Fatalf("exact %v", res)
 	}
 	if !strings.Contains(readText(t, filepath.Join(skills, "test-skill", "SKILL.md")), "Step 1: Done!") {
 		t.Fatal("exact patch not on disk")
@@ -22,7 +22,7 @@ func TestFuzzyPatchExactAndWhitespaceTrimmedMatches(t *testing.T) {
 	mustObj(s.createSkill(context.Background(), "ws-skill", ws, nil))
 	res := mustObj(s.patchSkill(context.Background(), "ws-skill", strp("def hello():\n    print(\"hi\")"), strp("def hello():\n    print(\"hello world\")"), nil, false))
 	if !objSuccess(res) || !strings.Contains(readText(t, filepath.Join(skills, "ws-skill", "SKILL.md")), `print("hello world")`) {
-		t.Fatalf("whitespace trimmed %v", res.Vals)
+		t.Fatalf("whitespace trimmed %v", res)
 	}
 }
 
@@ -31,7 +31,7 @@ func TestFuzzyPatchMultipleMatchesBlockedWithoutReplaceAll(t *testing.T) {
 	mustObj(s.createSkill(context.Background(), "dup-skill", "---\nname: dup-skill\ndescription: Duplicate test\n---\n\nword word word\n", nil))
 	res := mustObj(s.patchSkill(context.Background(), "dup-skill", strp("word"), strp("replaced"), nil, false))
 	if objSuccess(res) || !strings.Contains(strings.ToLower(objStr(res, "error")), "match") {
-		t.Fatalf("ambiguous patch %v", res.Vals)
+		t.Fatalf("ambiguous patch %v", res)
 	}
 }
 
@@ -50,11 +50,11 @@ func TestScanBlockRollsBackCreateAndNewSupportingFile(t *testing.T) {
 	forceScanBlocked(t)
 	created := mustObj(s.createSkill(context.Background(), "blocked-skill", improvementSkillContent, nil))
 	if objSuccess(created) || lexists(filepath.Join(skills, "blocked-skill")) {
-		t.Fatalf("blocked create kept %v", created.Vals)
+		t.Fatalf("blocked create kept %v", created)
 	}
 	reference := filepath.Join(skills, "rollback-skill", "references", "example.md")
 	written := mustObj(s.writeFile(context.Background(), "rollback-skill", "references/example.md", strp("blocked\n")))
 	if objSuccess(written) || lexists(reference) {
-		t.Fatalf("blocked new file kept %v", written.Vals)
+		t.Fatalf("blocked new file kept %v", written)
 	}
 }

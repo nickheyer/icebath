@@ -19,12 +19,12 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var lfMessageRoles = map[string]bool{"user": true, "assistant": true, "tool": true, "system": true}
@@ -97,18 +97,18 @@ func lfParseSQLite3CLIVersion(binary string) (state.VersionTuple, bool) {
 
 var (
 	lfLastRefusalMu sync.Mutex
-	lfLastRefusal   = pyjson.NewObject()
+	lfLastRefusal   = jsonutil.NewObject()
 )
 
 // Why the last sqlite3 CLI search refused, empty when it succeeded
-func findSQLite3CLIRefusal() *pyjson.Object {
+func findSQLite3CLIRefusal() *jsonutil.Object {
 	lfLastRefusalMu.Lock()
 	defer lfLastRefusalMu.Unlock()
-	return lfLastRefusal.Copy()
+	return lfLastRefusal.Clone()
 }
 
 // Records the refusal of the current sqlite3 CLI search
-func lfSetRefusal(refusal *pyjson.Object) {
+func lfSetRefusal(refusal *jsonutil.Object) {
 	lfLastRefusalMu.Lock()
 	lfLastRefusal = refusal
 	lfLastRefusalMu.Unlock()
@@ -116,21 +116,21 @@ func lfSetRefusal(refusal *pyjson.Object) {
 
 // Salvage safe recover capable sqlite3 CLI on PATH, false with the refusal recorded otherwise
 func findSQLite3CLI() (string, bool) {
-	lfSetRefusal(pyjson.NewObject())
-	binary, ok := pyshutil.Which("sqlite3", nil)
-	if !ok {
-		lfSetRefusal(pyjson.ObjectOf("reason", "missing"))
+	lfSetRefusal(jsonutil.NewObject())
+	binary, lookErr := exec.LookPath("sqlite3")
+	if lookErr != nil {
+		lfSetRefusal(jsonutil.ObjectOf("reason", "missing"))
 		return "", false
 	}
 	if !lfCLISupportsRecover(binary) {
-		lfSetRefusal(pyjson.ObjectOf("reason", "no_dbpage", "binary", binary))
+		lfSetRefusal(jsonutil.ObjectOf("reason", "no_dbpage", "binary", binary))
 		return "", false
 	}
 	if version, ok := lfParseSQLite3CLIVersion(binary); ok && state.IsSQLiteWALResetVulnerable(version) {
 		text := version[0].String() + "." + version[1].String() + "." + version[2].String()
 		pkgLog().Warn(fmt.Sprintf("sqlite3 CLI %s reports version %s, which still carries the "+
 			"WAL-reset opener bug; refusing to use it for salvage", binary, text))
-		lfSetRefusal(pyjson.ObjectOf("reason", "wal_reset_vulnerable", "binary", binary, "version", text,
+		lfSetRefusal(jsonutil.ObjectOf("reason", "wal_reset_vulnerable", "binary", binary, "version", text,
 			"detail", "reports version "+text+", which has "+lfWALResetVulnerableGuidance))
 		return "", false
 	}
@@ -139,7 +139,7 @@ func findSQLite3CLI() (string, bool) {
 
 // True when the binary runs recover on a scratch database without missing sqlite_dbpage
 func lfCLISupportsRecover(binary string) bool {
-	tmp, err := pypath.Gettempdir()
+	tmp, err := pathutil.TempDir()
 	if err != nil {
 		return false
 	}
@@ -176,18 +176,18 @@ func lfCLISupportsRecover(binary string) bool {
 }
 
 // Runs recover streamed into a fresh scratch database, zeroing a refused page one header of the snapshot and retrying
-func runCLILostAndFoundRecover(source, lfPath, sqlite3Bin string, timeout time.Duration) (*pyjson.Object, error) {
+func runCLILostAndFoundRecover(source, lfPath, sqlite3Bin string, timeout time.Duration) (*jsonutil.Object, error) {
 	attempts, err := lfCLIRecoverAttempts(source, lfPath, sqlite3Bin, timeout)
 	if err != nil {
 		return nil, err
 	}
-	usable := func() bool { return pyTruthyValue(attempts[len(attempts)-1].GetOr("usable", nil)) }
+	usable := func() bool { return pyTruthyValue(attempts[len(attempts)-1].Value("usable")) }
 	if usable() {
-		return pyjson.ObjectOf("binary", sqlite3Bin, "attempts", lfAttemptList(attempts)), nil
+		return jsonutil.ObjectOf("binary", sqlite3Bin, "attempts", lfAttemptList(attempts)), nil
 	}
 	notADatabase := false
 	for _, a := range attempts {
-		if strings.Contains(pyrepr.Str(a.GetOr("dump_stderr_tail", "")), "not a database") {
+		if strings.Contains(anyutil.String(a.Value("dump_stderr_tail")), "not a database") {
 			notADatabase = true
 		}
 	}
@@ -209,23 +209,23 @@ func runCLILostAndFoundRecover(source, lfPath, sqlite3Bin string, timeout time.D
 		}
 		attempts = append(attempts, more...)
 		if usable() {
-			return pyjson.ObjectOf("binary", sqlite3Bin, "attempts", lfAttemptList(attempts), "header_zeroed", true), nil
+			return jsonutil.ObjectOf("binary", sqlite3Bin, "attempts", lfAttemptList(attempts), "header_zeroed", true), nil
 		}
 	}
 	var details []string
 	for _, a := range attempts {
-		tail := pyrepr.Str(a.GetOr("dump_stderr_tail", ""))
+		tail := anyutil.String(a.Value("dump_stderr_tail"))
 		if tail == "" {
-			tail = pyrepr.Str(a.GetOr("load_stderr_tail", ""))
+			tail = anyutil.String(a.Value("load_stderr_tail"))
 		}
-		details = append(details, strings.TrimSpace(fmt.Sprintf("[%s] dump rc=%s load rc=%s %s", pyrepr.Str(a.GetOr("command", "")),
-			pyrepr.Str(a.GetOr("dump_returncode", nil)), pyrepr.Str(a.GetOr("load_returncode", nil)), tail)))
+		details = append(details, strings.TrimSpace(fmt.Sprintf("[%s] dump rc=%s load rc=%s %s", anyutil.String(a.Value("command")),
+			anyutil.String(a.Value("dump_returncode")), anyutil.String(a.Value("load_returncode")), tail)))
 	}
 	return nil, &lostAndFoundError{"sqlite3 .recover did not produce a usable lost_and_found database: " + strings.Join(details, "; ")}
 }
 
 // Attempts as a JSON list
-func lfAttemptList(attempts []*pyjson.Object) []any {
+func lfAttemptList(attempts []*jsonutil.Object) []any {
 	out := make([]any, len(attempts))
 	for i, a := range attempts {
 		out[i] = a
@@ -243,24 +243,24 @@ func lfTail(data []byte, n int) string {
 	return string(runes[len(runes)-n:])
 }
 
-// Exit status of a finished command as subprocess reports it, negative for a signal
+// Exit status of a finished command, negative for a signal
 func lfReturncode(cmd *exec.Cmd) any {
 	if cmd.ProcessState == nil {
 		return nil
 	}
-	return int64(pysubprocess.Returncode(&exec.ExitError{ProcessState: cmd.ProcessState}))
+	return int64(executil.ExitCode(cmd.ProcessState))
 }
 
 // Recover with ignore freelist first and plain recover for older shells, stopping at the first usable output
-func lfCLIRecoverAttempts(source, lfPath, sqlite3Bin string, timeout time.Duration) ([]*pyjson.Object, error) {
-	var attempts []*pyjson.Object
+func lfCLIRecoverAttempts(source, lfPath, sqlite3Bin string, timeout time.Duration) ([]*jsonutil.Object, error) {
+	var attempts []*jsonutil.Object
 	for _, command := range []string{".recover --ignore-freelist", ".recover"} {
 		if _, err := os.Stat(lfPath); err == nil {
 			if err := os.Remove(lfPath); err != nil {
 				return nil, err
 			}
 		}
-		tmp, err := pypath.Gettempdir()
+		tmp, err := pathutil.TempDir()
 		if err != nil {
 			return nil, err
 		}
@@ -269,7 +269,7 @@ func lfCLIRecoverAttempts(source, lfPath, sqlite3Bin string, timeout time.Durati
 			return nil, err
 		}
 		_ = os.Remove(dumpStderr.Name())
-		attempt, err := func() (*pyjson.Object, error) {
+		attempt, err := func() (*jsonutil.Object, error) {
 			defer dumpStderr.Close()
 			reader, writer, err := os.Pipe()
 			if err != nil {
@@ -331,7 +331,7 @@ func lfCLIRecoverAttempts(source, lfPath, sqlite3Bin string, timeout time.Durati
 			if _, err := dumpStderr.ReadAt(buf, end-tailSize); err != nil && !errors.Is(err, io.EOF) {
 				return nil, err
 			}
-			return pyjson.ObjectOf("command", command, "dump_returncode", lfReturncode(dump), "load_returncode", lfReturncode(load),
+			return jsonutil.ObjectOf("command", command, "dump_returncode", lfReturncode(dump), "load_returncode", lfReturncode(load),
 				"dump_stderr_tail", lfTail(buf, 2000), "load_stderr_tail", lfTail(loadErr.Bytes(), 2000),
 				"usable", lfDBUsable(lfPath)), nil
 		}()
@@ -339,7 +339,7 @@ func lfCLIRecoverAttempts(source, lfPath, sqlite3Bin string, timeout time.Durati
 			return nil, err
 		}
 		attempts = append(attempts, attempt)
-		if pyTruthyValue(attempt.GetOr("usable", nil)) {
+		if pyTruthyValue(attempt.Value("usable")) {
 			break
 		}
 	}
@@ -373,12 +373,12 @@ func lfNotNullDefaults(conn state.SQLiteConn, table string) (map[int]any, error)
 			continue
 		}
 		if row[4] != nil {
-			substitutes[index] = lfParseSQLDefault(pyrepr.Str(row[4]))
+			substitutes[index] = lfParseSQLDefault(anyutil.String(row[4]))
 			continue
 		}
 		declared := ""
 		if pyTruthyValue(row[2]) {
-			declared = strings.ToUpper(pyrepr.Str(row[2]))
+			declared = strings.ToUpper(anyutil.String(row[2]))
 		}
 		if strings.Contains(declared, "INT") || strings.Contains(declared, "REAL") {
 			substitutes[index] = int64(0)
@@ -584,9 +584,9 @@ func lfDeclaredTypes(conn state.SQLiteConn, table string) (map[string]string, er
 	for _, row := range rows {
 		declared := ""
 		if pyTruthyValue(row[2]) {
-			declared = pyrepr.Str(row[2])
+			declared = anyutil.String(row[2])
 		}
-		out[pyrepr.Str(row[1])] = declared
+		out[anyutil.String(row[1])] = declared
 	}
 	return out, nil
 }
@@ -784,7 +784,7 @@ func lfValueKey(value any) string {
 	case []byte:
 		return "b:" + string(x)
 	}
-	return "o:" + pyrepr.Repr(value)
+	return "o:" + anyutil.Quote(value)
 }
 
 // Evidence layout inference needs from a population, gathered in one streaming pass
@@ -927,12 +927,12 @@ func inferPhysicalLayouts(evidence *lfLayoutEvidence, destTypes map[string]strin
 }
 
 // Inserts salvaged cells by source column name, unplaced NOT NULL columns taking their substitutes
-func lfInsertNamedRow(dest state.SQLiteConn, table string, layout []*string, cells []any, destColumns []string, substitutes map[int]any, overrides *pyjson.Object) (bool, error) {
+func lfInsertNamedRow(dest state.SQLiteConn, table string, layout []*string, cells []any, destColumns []string, substitutes map[int]any, overrides *jsonutil.Object) (bool, error) {
 	destIndex := map[string]int{}
 	for i, name := range destColumns {
 		destIndex[name] = i
 	}
-	mapped := pyjson.NewObject()
+	mapped := jsonutil.NewObject()
 	for i := 0; i < min(len(layout), len(cells)); i++ {
 		if layout[i] == nil {
 			continue
@@ -958,13 +958,13 @@ func lfInsertNamedRow(dest state.SQLiteConn, table string, layout []*string, cel
 		}
 	}
 	if overrides != nil {
-		mapped.Update(overrides)
+		mapped.Merge(overrides)
 	}
-	values := make([]any, len(mapped.Keys))
-	for i, key := range mapped.Keys {
+	values := make([]any, mapped.Len())
+	for i, key := range mapped.Keys() {
 		values[i], _ = mapped.Get(key)
 	}
-	return lfExecuteInsert(dest, table, mapped.Keys, values)
+	return lfExecuteInsert(dest, table, mapped.Keys(), values)
 }
 
 // INSERT OR IGNORE of one row, true when it landed
@@ -975,8 +975,8 @@ func lfExecuteInsert(dest state.SQLiteConn, table string, columns []string, valu
 }
 
 // Copies rows recover attributed to real canonical tables, creating a lazy gateway table first
-func lfCopyDirectTables(ctx context.Context, lfConn, dest state.SQLiteConn) (*pyjson.Object, error) {
-	copied := pyjson.NewObject()
+func lfCopyDirectTables(ctx context.Context, lfConn, dest state.SQLiteConn) (*jsonutil.Object, error) {
+	copied := jsonutil.NewObject()
 	for _, table := range append(append([]string{}, recoveryCanonicalTables...), recoveryAuxiliaryTables...) {
 		sourceColumns, err := recoveryTableColumns(lfConn, table)
 		if err != nil {
@@ -1105,12 +1105,12 @@ func lfRecords(lfConn state.SQLiteConn, lfTables []string, yield func(lfRecord) 
 }
 
 // Maps a recover output database into a fresh session store by inferred physical layout
-func mapLostAndFoundRows(ctx context.Context, lfConn, dest state.SQLiteConn) (*pyjson.Object, error) {
-	mapped := pyjson.ObjectOf("sessions", int64(0), "messages", int64(0), "session_model_usage", int64(0))
-	widthsByKind := pyjson.NewObject()
-	report := pyjson.ObjectOf("direct_table_rows", pyjson.NewObject(), "mapped", mapped, "legacy_minimal_sessions", int64(0),
+func mapLostAndFoundRows(ctx context.Context, lfConn, dest state.SQLiteConn) (*jsonutil.Object, error) {
+	mapped := jsonutil.ObjectOf("sessions", int64(0), "messages", int64(0), "session_model_usage", int64(0))
+	widthsByKind := jsonutil.NewObject()
+	report := jsonutil.ObjectOf("direct_table_rows", jsonutil.NewObject(), "mapped", mapped, "legacy_minimal_sessions", int64(0),
 		"mapped_by_layout", int64(0), "unrecognized_layout_rows", int64(0), "unrecognized_layout_widths", widthsByKind,
-		"inferred_layouts", pyjson.NewObject(), "unmapped_rows", int64(0), "insert_conflicts", int64(0), "lost_and_found_tables", []any{})
+		"inferred_layouts", jsonutil.NewObject(), "unmapped_rows", int64(0), "insert_conflicts", int64(0), "lost_and_found_tables", []any{})
 	kinds := []string{"sessions", "messages", "session_model_usage"}
 	protected := map[string][]string{"sessions": {"id", "source"}, "messages": {"session_id", "role"}, "session_model_usage": {"session_id", "model"}}
 	err := recoveryImmediate(dest, func() error {
@@ -1153,7 +1153,7 @@ func mapLostAndFoundRows(ctx context.Context, lfConn, dest state.SQLiteConn) (*p
 		}
 		var lfTables []string
 		for _, row := range tableRows {
-			lfTables = append(lfTables, pyrepr.Str(row[0]))
+			lfTables = append(lfTables, anyutil.String(row[0]))
 		}
 		report.Set("lost_and_found_tables", recoveryStrings(lfTables))
 		evidence := map[string]*lfLayoutEvidence{}
@@ -1171,7 +1171,7 @@ func mapLostAndFoundRows(ctx context.Context, lfConn, dest state.SQLiteConn) (*p
 			return err
 		}
 		layouts := map[string]map[int][]*string{}
-		inferred := pyjson.NewObject()
+		inferred := jsonutil.NewObject()
 		for _, kind := range kinds {
 			if layouts[kind], err = inferPhysicalLayouts(evidence[kind], destTypes[kind]); err != nil {
 				return err
@@ -1184,7 +1184,7 @@ func mapLostAndFoundRows(ctx context.Context, lfConn, dest state.SQLiteConn) (*p
 				widths = append(widths, w)
 			}
 			sort.Ints(widths)
-			byWidth := pyjson.NewObject()
+			byWidth := jsonutil.NewObject()
 			for _, w := range widths {
 				names := make([]any, len(layouts[kind][w]))
 				for i, n := range layouts[kind][w] {
@@ -1206,7 +1206,7 @@ func mapLostAndFoundRows(ctx context.Context, lfConn, dest state.SQLiteConn) (*p
 			legacyMinimal := r.kind == "sessions" && r.nfield == lfSessionsLegacyMinimalNfield
 			if !hasLayout && !legacyMinimal {
 				recoveryBump(report, "unrecognized_layout_rows", 1)
-				widths, _ := widthsByKind.GetOr(r.kind, nil).([]any)
+				widths, _ := widthsByKind.Value(r.kind).([]any)
 				if !recoveryContainsInt(widths, int64(len(r.cells))) {
 					widths = append(widths, int64(len(r.cells)))
 				}
@@ -1216,9 +1216,9 @@ func mapLostAndFoundRows(ctx context.Context, lfConn, dest state.SQLiteConn) (*p
 			var err error
 			switch {
 			case hasLayout:
-				var overrides *pyjson.Object
+				var overrides *jsonutil.Object
 				if r.kind == "messages" {
-					overrides = pyjson.ObjectOf("id", r.lfRowid)
+					overrides = jsonutil.ObjectOf("id", r.lfRowid)
 				}
 				inserted, err = lfInsertNamedRow(dest, r.kind, layout, r.cells, columns, defaults, overrides)
 				if err == nil && inserted {
@@ -1291,8 +1291,8 @@ func recoveryContainsInt(list []any, n int64) bool {
 }
 
 // Fabricates marked synthetic parents for salvaged child rows and repairs dangling session references
-func fabricateMissingParentSessions(dest state.SQLiteConn) (*pyjson.Object, error) {
-	result := pyjson.ObjectOf("sessions_stubbed", int64(0), "messages_retained", int64(0), "usage_rows_retained", int64(0))
+func fabricateMissingParentSessions(dest state.SQLiteConn) (*jsonutil.Object, error) {
+	result := jsonutil.ObjectOf("sessions_stubbed", int64(0), "messages_retained", int64(0), "usage_rows_retained", int64(0))
 	err := recoveryImmediate(dest, func() error {
 		type orphan struct {
 			startedAt float64
@@ -1309,7 +1309,7 @@ func fabricateMissingParentSessions(dest state.SQLiteConn) (*pyjson.Object, erro
 			if row[1] != nil {
 				startedAt = recoveryFloat(row[1])
 			}
-			orphans[pyrepr.Str(row[0])] = orphan{startedAt, recoveryInt(row[2])}
+			orphans[anyutil.String(row[0])] = orphan{startedAt, recoveryInt(row[2])}
 		}
 		usage, err := recoveryQueryAll(dest, "SELECT DISTINCT u.session_id FROM session_model_usage AS u WHERE u.session_id IS NOT NULL AND NOT "+
 			"EXISTS (SELECT 1 FROM sessions WHERE sessions.id = u.session_id)")
@@ -1317,8 +1317,8 @@ func fabricateMissingParentSessions(dest state.SQLiteConn) (*pyjson.Object, erro
 			return err
 		}
 		for _, row := range usage {
-			if _, ok := orphans[pyrepr.Str(row[0])]; !ok {
-				orphans[pyrepr.Str(row[0])] = orphan{}
+			if _, ok := orphans[anyutil.String(row[0])]; !ok {
+				orphans[anyutil.String(row[0])] = orphan{}
 			}
 		}
 		ids := make([]string, 0, len(orphans))
@@ -1365,8 +1365,8 @@ func fabricateMissingParentSessions(dest state.SQLiteConn) (*pyjson.Object, erro
 }
 
 // Rebuilds the derived FTS indexes from the salvaged canonical rows
-func rebuildFTSIndexes(dest state.SQLiteConn) (*pyjson.Object, error) {
-	results := pyjson.NewObject()
+func rebuildFTSIndexes(dest state.SQLiteConn) (*jsonutil.Object, error) {
+	results := jsonutil.NewObject()
 	for _, table := range []string{"messages_fts", "messages_fts_trigram", "messages_fts_cjk"} {
 		columns, err := recoveryTableColumns(dest, table)
 		if err != nil {
@@ -1423,15 +1423,15 @@ func lostAndFoundPlausibilityErrors(conn state.SQLiteConn) ([]any, error) {
 }
 
 // Page level salvage through the sqlite3 CLI recover when table schemas are unreadable
-func recoverViaLostAndFound(ctx context.Context, source, snapshotSource, snapshotDir, output string, inspection, diskSpace *pyjson.Object,
-	missingRequired []string) (*pyjson.Object, error) {
+func recoverViaLostAndFound(ctx context.Context, source, snapshotSource, snapshotDir, output string, inspection, diskSpace *jsonutil.Object,
+	missingRequired []string) (*jsonutil.Object, error) {
 	missing := strings.Join(missingRequired, ", ")
 	sqlite3Bin, ok := findSQLite3CLI()
 	if !ok {
 		refusal := findSQLite3CLIRefusal()
-		if refusal.GetOr("reason", nil) == "wal_reset_vulnerable" {
+		if refusal.Value("reason") == "wal_reset_vulnerable" {
 			return nil, recoverySourceError("Partial recovery requires a page-level salvage shell, but " +
-				"the only sqlite3 CLI on PATH is not safe to use for it: it " + pyrepr.Str(refusal.GetOr("detail", "")) +
+				"the only sqlite3 CLI on PATH is not safe to use for it: it " + anyutil.String(refusal.Value("detail")) +
 				". The readable table schemas for: " + missing + " are still required.")
 		}
 		return nil, recoverySourceError("Partial recovery still requires readable table schemas for: " + missing + ". " + lfSQLite3CLIGuidance)
@@ -1439,7 +1439,7 @@ func recoverViaLostAndFound(ctx context.Context, source, snapshotSource, snapsho
 	lfPath := filepath.Join(snapshotDir, "lost_and_found.db")
 	cliReport, err := runCLILostAndFoundRecover(snapshotSource, lfPath, sqlite3Bin, 3600*time.Second)
 	var lfErr *lostAndFoundError
-	if err != nil && (errors.As(err, &lfErr) || pypath.IsOSError(err)) {
+	if err != nil && (errors.As(err, &lfErr) || errorutil.IsSystem(err)) {
 		return nil, recoverySourceError("Partial recovery could not read the table schemas for: " + missing +
 			", and page-level .recover salvage failed: " + sessionsExcText(err))
 	}
@@ -1455,7 +1455,7 @@ func recoverViaLostAndFound(ctx context.Context, source, snapshotSource, snapsho
 		lfConn.Close()
 		return nil, err
 	}
-	var mapping, fabricated, fts, derived *pyjson.Object
+	var mapping, fabricated, fts, derived *jsonutil.Object
 	mapErr := func() error {
 		var err error
 		if mapping, err = mapLostAndFoundRows(ctx, lfConn, destination); err != nil {
@@ -1475,23 +1475,23 @@ func recoverViaLostAndFound(ctx context.Context, source, snapshotSource, snapsho
 	if mapErr != nil {
 		return nil, mapErr
 	}
-	copyReport := pyjson.NewObject()
-	direct, _ := mapping.GetOr("direct_table_rows", nil).(*pyjson.Object)
-	mappedCounts, _ := mapping.GetOr("mapped", nil).(*pyjson.Object)
+	copyReport := jsonutil.NewObject()
+	direct, _ := mapping.Value("direct_table_rows").(*jsonutil.Object)
+	mappedCounts, _ := mapping.Value("mapped").(*jsonutil.Object)
 	for _, table := range []string{"sessions", "messages", "session_model_usage"} {
-		copyReport.Set(table, pyjson.ObjectOf("mode", "lost_and_found_salvage", "status", "partial",
-			"copied_rows", recoveryInt(direct.GetOr(table, nil))+recoveryInt(mappedCounts.GetOr(table, nil)),
+		copyReport.Set(table, jsonutil.ObjectOf("mode", "lost_and_found_salvage", "status", "partial",
+			"copied_rows", recoveryInt(direct.Value(table))+recoveryInt(mappedCounts.Value(table)),
 			"error", "recovered via page-level lost_and_found salvage; row completeness cannot be verified against the source"))
 	}
-	orphanCleanup := pyjson.ObjectOf("sessions_reconstructed", fabricated.GetOr("sessions_stubbed", nil),
-		"messages_retained", fabricated.GetOr("messages_retained", nil), "messages_removed", int64(0), "total_removed_or_relinked", int64(0))
+	orphanCleanup := jsonutil.ObjectOf("sessions_reconstructed", fabricated.Value("sessions_stubbed"),
+		"messages_retained", fabricated.Value("messages_retained"), "messages_removed", int64(0), "total_removed_or_relinked", int64(0))
 	verification, err := recoveryVerifyRecoveredDatabase(ctx, output, map[string]*int64{"sessions": nil, "messages": nil}, copyReport, true, orphanCleanup)
 	if err != nil {
 		return nil, err
 	}
 	recoveryVerifyWarning(verification, "BEST-EFFORT page-level salvage: the source table schemas were unreadable, so rows were rebuilt from raw "+
 		"pages and mapped heuristically. Review every count before trusting this output.")
-	if pyTruthyValue(cliReport.GetOr("header_zeroed", nil)) {
+	if pyTruthyValue(cliReport.Value("header_zeroed")) {
 		recoveryVerifyWarning(verification, "header salvage: SQLite refused the source outright (page-1 header damaged, 'file is not a "+
 			"database'); the header of the private snapshot copy was zeroed so .recover could walk the "+
 			"surviving pages. Rows written only to a -wal after the last checkpoint are not included.")
@@ -1507,13 +1507,13 @@ func recoverViaLostAndFound(ctx context.Context, source, snapshotSource, snapsho
 	if err != nil {
 		return nil, err
 	}
-	if guessed := recoveryInt(mapping.GetOr("unrecognized_layout_rows", nil)); guessed != 0 {
-		widthsByKind, _ := mapping.GetOr("unrecognized_layout_widths", nil).(*pyjson.Object)
-		kinds := append([]string{}, widthsByKind.Keys...)
+	if guessed := recoveryInt(mapping.Value("unrecognized_layout_rows")); guessed != 0 {
+		widthsByKind, _ := mapping.Value("unrecognized_layout_widths").(*jsonutil.Object)
+		kinds := append([]string{}, widthsByKind.Keys()...)
 		sort.Strings(kinds)
 		var parts []string
 		for _, kind := range kinds {
-			list, _ := widthsByKind.GetOr(kind, nil).([]any)
+			list, _ := widthsByKind.Value(kind).([]any)
 			var ws []int64
 			for _, w := range list {
 				ws = append(ws, recoveryInt(w))
@@ -1529,7 +1529,7 @@ func recoverViaLostAndFound(ctx context.Context, source, snapshotSource, snapsho
 			"positionally (%s); their fields may be shifted. Inspect those sessions before trusting them.", guessed, strings.Join(parts, ", ")))
 	}
 	if len(plausibility) > 0 {
-		errs, _ := verification.GetOr("errors", nil).([]any)
+		errs, _ := verification.Value("errors").([]any)
 		verification.Set("errors", append(errs, plausibility...))
 		verification.Set("healthy", false)
 	}

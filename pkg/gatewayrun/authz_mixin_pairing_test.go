@@ -6,8 +6,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/settings"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Bare runner whose pairing store holds the user approved or not
@@ -105,7 +105,7 @@ func TestRevokeWhatsappSoleEntryDeniesLiveAdapterWithoutRestart(t *testing.T) {
 	waCfg.Enabled = true
 	waCfg.Extra = map[string]any{"dm_policy": "allowlist", "allow_from": []any{"15551234567"}}
 	r.config = &gateway.GatewayConfig{Platforms: map[gateway.Platform]*gateway.PlatformConfig{gateway.PlatformWhatsApp: waCfg}}
-	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	r.adapters = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	r.adapters.Set(gateway.PlatformWhatsApp, adapter)
 	r.pairingStore = store
 	gateway.SetGatewayRunnerRef(r)

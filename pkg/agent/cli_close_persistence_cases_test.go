@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Session store under a private home with the given session row created first when source is set
@@ -32,7 +32,7 @@ func closeCaseDB(t *testing.T, sessionID, source string) *state.SessionDB {
 // Persistence seam of a real agent whose live transcript shares the given dicts
 func closeCaseAgent(db *state.SessionDB, sessionID string, sessionMessages []map[string]any) *AIAgent {
 	a := &AIAgent{sessionDB: db, sessionDBCreated: true, sessionID: sessionID, platform: "cli", model: "test-model",
-		cachedSystemPrompt: "test system prompt", sessionPersistLock: &pythread.RLock{}}
+		cachedSystemPrompt: "test system prompt", sessionPersistLock: &syncutil.ReentrantMutex{}}
 	a.SetUnflushedSessionMessagesForTests(sessionMessages)
 	return a
 }

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runs the adapter with the Messages create captured and returns the api kwargs it built
@@ -96,7 +96,7 @@ func TestAnthropicStructuredOutputTranslation(t *testing.T) {
 	t.Run("unrelated extra body keys still pass through", func(t *testing.T) {
 		got := auxCaptureAnthropicKwargs(t, map[string]any{"response_format": map[string]any{"type": "json_object"},
 			"metadata": map[string]any{"user_id": "thread-autotitle"}, "vendor_option": true}, false, nil)
-		if !reflect.DeepEqual(pyjson.Plain(got["extra_body"]), map[string]any{"metadata": map[string]any{"user_id": "thread-autotitle"}, "vendor_option": true}) {
+		if !reflect.DeepEqual(jsonutil.Plain(got["extra_body"]), map[string]any{"metadata": map[string]any{"user_id": "thread-autotitle"}, "vendor_option": true}) {
 			t.Fatalf("extra_body %v", got["extra_body"])
 		}
 	})

@@ -25,10 +25,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
+	browserutil "github.com/nickheyer/icebath/pkg/utils/browser"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -876,7 +876,7 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 	var stateRaw [32]byte
 	fillRandom(stateRaw[:])
 	oauthState := base64.RawURLEncoding.EncodeToString(stateRaw[:])
-	authURL := "https://claude.ai/oauth/authorize?" + pyurl.URLEncode([][2]string{
+	authURL := "https://claude.ai/oauth/authorize?" + urlutil.EncodeQuery([][2]string{
 		{"code", "true"}, {"client_id", anthropicOAuthClientID}, {"response_type", "code"},
 		{"redirect_uri", anthropicOAuthRedirectURI}, {"scope", anthropicOAuthScopes}, {"code_challenge", challenge},
 		{"code_challenge_method", "S256"}, {"state", oauthState},
@@ -890,7 +890,7 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 		"", "  " + authURL, "",
 	}, "\n"))
 	if openBrowser && canOpenGraphicalBrowser() {
-		if _, err := pywebbrowser.Open(authURL, 0); err == nil {
+		if err := browserutil.Open(context.Background(), authURL); err == nil {
 			fmt.Fprintln(out, "  (Browser opened automatically)")
 		}
 	}
@@ -913,7 +913,7 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 		env.log().Warn("OAuth state mismatch — possible CSRF, aborting")
 		return nil
 	}
-	exchangeBody, err := pyhttpx.JSONBody(pyjson.ObjectOf("grant_type", "authorization_code", "client_id", anthropicOAuthClientID,
+	exchangeBody, err := httputil.JSONBody(jsonutil.ObjectOf("grant_type", "authorization_code", "client_id", anthropicOAuthClientID,
 		"code", code, "state", receivedState, "redirect_uri", anthropicOAuthRedirectURI, "code_verifier", verifier))
 	if err != nil {
 		fmt.Fprintf(out, "Token exchange failed: %v\n", err)
@@ -931,26 +931,14 @@ func RunIcebathOAuthLoginTo(env PoolEnv, out io.Writer, prompt func(label string
 	return oauthTokenState(result, "")
 }
 
-// Browser registry answer that no registered browser took the URL
-var errBrowserNotOpened = errors.New("no browser opened the URL")
+// Error wrapped by every failure to hand a URL to a browser
+var errBrowserNotOpened = browserutil.ErrNoBrowser
 
-// Opens a URL through the browser registry in the window mode given, an error when no browser took it
-func openBrowserWith(target string, mode int) error {
-	opened, err := pywebbrowser.Open(target, mode)
-	if err != nil {
-		return err
-	}
-	if !opened {
-		return errBrowserNotOpened
-	}
-	return nil
-}
+// Opens an http or https URL with the first launcher that takes it, an error when none did
+func openBrowserURL(target string) error { return browserutil.Open(context.Background(), target) }
 
-// Opens a URL in the same window of the first registry browser that takes it
-func openBrowserURL(target string) error { return openBrowserWith(target, 0) }
-
-// Opens a URL in a new tab through the browser registry for callers outside the package
-func OpenBrowserTab(target string) error { return openBrowserWith(target, 2) }
+// Opens an http or https URL in a browser for callers outside the package, the platform opener deciding between window and tab
+func OpenBrowserTab(target string) error { return browserutil.Open(context.Background(), target) }
 
 // Fills the buffer from the OS entropy source, panicking when the kernel refuses
 func fillRandom(buf []byte) {

@@ -4,11 +4,11 @@ import (
 	"context"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Skill names grouped by category for the TUI server session info
-func AvailableSkills(ctx context.Context) *pyjson.Object { return getAvailableSkills(ctx) }
+func AvailableSkills(ctx context.Context) *jsonutil.Object { return getAvailableSkills(ctx) }
 
 // Commits behind of the background update check, nil while unknown, waiting at most the timeout
 func UpdateResult(timeout time.Duration) *int64 { return getUpdateResult(timeout) }

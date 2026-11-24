@@ -3,14 +3,15 @@ package gateway
 import (
 	"context"
 	"os"
+	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Value under the key path of nested dicts, a KeyError when a key is absent
@@ -18,7 +19,7 @@ func pyItem(v any, keys ...string) (any, error) {
 	for _, key := range keys {
 		var found bool
 		switch m := v.(type) {
-		case *pyjson.Object:
+		case *jsonutil.Object:
 			v, found = m.Get(key)
 		case map[string]any:
 			v, found = m[key]
@@ -31,7 +32,7 @@ func pyItem(v any, keys ...string) (any, error) {
 }
 
 // Frozen policy of the receipt a prepared snapshot carries
-func preparedPolicy(prepared *pyjson.Object) (*LocalSessionPolicy, error) {
+func preparedPolicy(prepared *jsonutil.Object) (*LocalSessionPolicy, error) {
 	raw, err := pyItem(prepared, "snapshot", "receipt", "policy")
 	if err != nil {
 		return nil, err
@@ -40,18 +41,18 @@ func preparedPolicy(prepared *pyjson.Object) (*LocalSessionPolicy, error) {
 }
 
 // Session id of the receipt a prepared snapshot carries
-func preparedSessionID(prepared *pyjson.Object) (string, error) {
+func preparedSessionID(prepared *jsonutil.Object) (string, error) {
 	raw, err := pyItem(prepared, "snapshot", "receipt", "session_id")
 	if err != nil {
 		return "", err
 	}
-	return pyrepr.Str(raw), nil
+	return anyutil.String(raw), nil
 }
 
 // Copy of a prepared result with extra fields set over it
-func preparedWith(prepared *pyjson.Object, pairs ...any) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, key := range prepared.Keys {
+func preparedWith(prepared *jsonutil.Object, pairs ...any) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, key := range prepared.Keys() {
 		value, _ := prepared.Get(key)
 		out.Set(key, value)
 	}
@@ -62,7 +63,7 @@ func preparedWith(prepared *pyjson.Object, pairs ...any) *pyjson.Object {
 }
 
 // Prepared result with the policy rebound to the old launch key and config secrets, extra fields beside it
-func rebindPrepared(ctx context.Context, a *SessionAuthority, prepared *pyjson.Object, old, policy *LocalSessionPolicy, extra ...any) (*pyjson.Object, error) {
+func rebindPrepared(ctx context.Context, a *SessionAuthority, prepared *jsonutil.Object, old, policy *LocalSessionPolicy, extra ...any) (*jsonutil.Object, error) {
 	secrets := &RecoveredSecrets{}
 	if old.ConfigSecretRef != nil {
 		recovered, err := recoverConfigSecrets(ctx, a, old)
@@ -87,7 +88,7 @@ func rebindPrepared(ctx context.Context, a *SessionAuthority, prepared *pyjson.O
 }
 
 // Session scope reasoning level frozen into the policy, a nil effort giving the level back to the profile
-func prepareReasoning(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error) {
+func prepareReasoning(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, prepared *jsonutil.Object) (*jsonutil.Object, error) {
 	old, err := preparedPolicy(prepared)
 	if err != nil {
 		return nil, err
@@ -115,7 +116,7 @@ func prepareReasoning(ctx context.Context, a *SessionAuthority, live *LiveSessio
 			return nil, err
 		}
 	}
-	text, err := pyjson.Dumps(frozen)
+	text, err := jsonutil.Encode(frozen)
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +126,7 @@ func prepareReasoning(ctx context.Context, a *SessionAuthority, live *LiveSessio
 }
 
 // Moves the execution cwd and TERMINAL_CWD together, recording the new checkout's branch and common root
-func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error) {
+func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, prepared *jsonutil.Object) (*jsonutil.Object, error) {
 	old, err := preparedPolicy(prepared)
 	if err != nil {
 		return nil, err
@@ -134,7 +135,7 @@ func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSessio
 	if err != nil {
 		return nil, err
 	}
-	cwd, err := pypath.Abspath(pypath.Expanduser(home.TranslateCwdForWSLBackend(pyrepr.Str(raw))))
+	cwd, err := filepath.Abs(pathutil.ExpandUser(home.TranslateCwdForWSLBackend(anyutil.String(raw))))
 	if err != nil {
 		return nil, err
 	}
@@ -142,16 +143,16 @@ func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSessio
 		return nil, state.NewRuntimeStoreError("invalid_params", nil, nil)
 	}
 	branch, root := tuihost.Branch(cwd), tuihost.CommonRepoRoot(cwd)
-	loaded, err := pyjson.Loads(old.TerminalJSON)
+	loaded, err := jsonutil.Decode(old.TerminalJSON)
 	if err != nil {
 		return nil, err
 	}
-	ordered, ok := loaded.(*pyjson.Object)
+	ordered, ok := loaded.(*jsonutil.Object)
 	if !ok {
 		return nil, &PyError{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
 	}
 	ordered.Set("TERMINAL_CWD", cwd)
-	text, err := pyjson.Dumps(ordered)
+	text, err := jsonutil.Encode(ordered)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +162,7 @@ func prepareWorkspace(ctx context.Context, a *SessionAuthority, live *LiveSessio
 }
 
 // Freezes an ACP session's edit approval policy, a noop when the policy is already selected
-func prepareEditPolicy(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error) {
+func prepareEditPolicy(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, prepared *jsonutil.Object) (*jsonutil.Object, error) {
 	old, err := preparedPolicy(prepared)
 	if err != nil {
 		return nil, err
@@ -174,16 +175,16 @@ func prepareEditPolicy(ctx context.Context, a *SessionAuthority, live *LiveSessi
 	if err != nil {
 		return nil, err
 	}
-	if pyjson.Equal(old.EditApprovalPolicy, picked) {
-		return pyjson.ObjectOf("status", "noop", "edit_approval_policy", old.EditApprovalPolicy), nil
+	if anyutil.Equal(old.EditApprovalPolicy, picked) {
+		return jsonutil.ObjectOf("status", "noop", "edit_approval_policy", old.EditApprovalPolicy), nil
 	}
 	policy := *old
-	policy.EditApprovalPolicy = pyrepr.Str(picked)
+	policy.EditApprovalPolicy = anyutil.String(picked)
 	return rebindPrepared(ctx, a, prepared, old, &policy)
 }
 
 // Prepare step of a policy only mutation
-type policyPreparer func(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error)
+type policyPreparer func(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, prepared *jsonutil.Object) (*jsonutil.Object, error)
 
 // Prepare steps of the policy only operations
 var policyPreparers = map[string]policyPreparer{"reasoning": prepareReasoning, "workspace": prepareWorkspace, "edit_policy": prepareEditPolicy,
@@ -193,7 +194,7 @@ var policyPreparers = map[string]policyPreparer{"reasoning": prepareReasoning, "
 var launchRouteFields = []string{"model", "provider", "base_url"}
 
 // Lays a resume's launch flags over the frozen policy, a newly set bypass flag rebuilding it from code defaults
-func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error) {
+func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, prepared *jsonutil.Object) (*jsonutil.Object, error) {
 	old, err := preparedPolicy(prepared)
 	if err != nil {
 		return nil, err
@@ -202,10 +203,10 @@ func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, 
 	if err != nil {
 		return nil, err
 	}
-	overrides, _ := pyjson.Plain(payload).(map[string]any)
+	overrides, _ := jsonutil.Plain(payload).(map[string]any)
 	cwd := old.Cwd
 	if raw, moved := overrides["cwd"]; moved {
-		if cwd, err = pypath.Abspath(pypath.Expanduser(home.TranslateCwdForWSLBackend(pyrepr.Str(raw)))); err != nil {
+		if cwd, err = filepath.Abs(pathutil.ExpandUser(home.TranslateCwdForWSLBackend(anyutil.String(raw)))); err != nil {
 			return nil, err
 		}
 		if !isDir(cwd) {
@@ -295,10 +296,10 @@ func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, 
 			return nil, err
 		}
 	}
-	if policy.ConfigJSON, err = pyjson.Dumps(frozen); err != nil {
+	if policy.ConfigJSON, err = jsonutil.Encode(frozen); err != nil {
 		return nil, err
 	}
-	if policy.RequestJSON, err = pyjson.Dumps(request, pyjson.SortKeys(true)); err != nil {
+	if policy.RequestJSON, err = jsonutil.Encode(request, jsonutil.SortKeys()); err != nil {
 		return nil, err
 	}
 	secrets := &RecoveredSecrets{}
@@ -310,7 +311,7 @@ func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, 
 		block, _ := frozen["model"].(map[string]any)
 		for i, path := range recovered.paths {
 			if len(path) == 2 && path[0] == "model" {
-				if _, kept := block[pyrepr.Str(path[1])]; !kept {
+				if _, kept := block[anyutil.String(path[1])]; !kept {
 					continue
 				}
 			}
@@ -329,8 +330,8 @@ func prepareLaunch(ctx context.Context, a *SessionAuthority, live *LiveSession, 
 }
 
 // Policy of a resume that newly asks for a bypass launch, built from code defaults with the session's own bindings kept
-func relaunchBypass(ctx context.Context, a *SessionAuthority, prepared *pyjson.Object, old *LocalSessionPolicy, sid string, request map[string]any,
-	cwd string, moved bool) (*pyjson.Object, error) {
+func relaunchBypass(ctx context.Context, a *SessionAuthority, prepared *jsonutil.Object, old *LocalSessionPolicy, sid string, request map[string]any,
+	cwd string, moved bool) (*jsonutil.Object, error) {
 	params := map[string]any{}
 	for key, value := range request {
 		if CreateFields[key] && key != "request_id" && key != "skills" {
@@ -365,20 +366,20 @@ func relaunchBypass(ctx context.Context, a *SessionAuthority, prepared *pyjson.O
 }
 
 // Prepared result of a relaunched policy bound to its key and secrets, the moved cwd with its git identity
-func bindRelaunched(ctx context.Context, a *SessionAuthority, prepared *pyjson.Object, policy *LocalSessionPolicy, sid, cwd string,
-	moved bool, key *string, secrets *RecoveredSecrets) (*pyjson.Object, error) {
+func bindRelaunched(ctx context.Context, a *SessionAuthority, prepared *jsonutil.Object, policy *LocalSessionPolicy, sid, cwd string,
+	moved bool, key *string, secrets *RecoveredSecrets) (*jsonutil.Object, error) {
 	extra := []any{}
 	if moved {
-		loaded, err := pyjson.Loads(policy.TerminalJSON)
+		loaded, err := jsonutil.Decode(policy.TerminalJSON)
 		if err != nil {
 			return nil, err
 		}
-		ordered, ok := loaded.(*pyjson.Object)
+		ordered, ok := loaded.(*jsonutil.Object)
 		if !ok {
 			return nil, &PyError{Kind: "TypeError", Msg: "the workspace policy is " + errchain.Kind(loaded) + ", expected a mapping"}
 		}
 		ordered.Set("TERMINAL_CWD", cwd)
-		if policy.TerminalJSON, err = pyjson.Dumps(ordered); err != nil {
+		if policy.TerminalJSON, err = jsonutil.Encode(ordered); err != nil {
 			return nil, err
 		}
 		policy.Cwd = cwd

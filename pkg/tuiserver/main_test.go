@@ -11,12 +11,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 func TestMain(m *testing.M) {
@@ -90,7 +90,7 @@ func serverState(t *testing.T) func() {
 }
 
 // Puts the main thread context back to its values before the test, as a fresh test process starts clean
-func mainContextState(*testing.T) func() { return pyctx.SnapshotMainForTests() }
+func mainContextState(*testing.T) func() { return ctxutil.StoreOf(context.Background()).Checkpoint() }
 
 // Platform default home of each case inside its own temp dir, never the developer's real one
 func isolatedPlatformDefault(t *testing.T) func() { return home.PatchPlatformDefault(t.TempDir()) }

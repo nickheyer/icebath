@@ -4,17 +4,19 @@ import (
 	"crypto/rand"
 	_ "embed"
 	"encoding/base64"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -39,19 +41,19 @@ var (
 
 // Text of a value with the five HTML special characters escaped
 func escapeHTML(text any) string {
-	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;").Replace(pyrepr.Str(text))
+	return strings.NewReplacer("&", "&amp;", "<", "&lt;", ">", "&gt;", `"`, "&quot;", "'", "&#39;").Replace(anyutil.String(text))
 }
 
 // Local date and time of a stored timestamp, N/A when unset or corrupt
 func htmlFormatTimestamp(ts any) string {
-	if !pyrepr.Truthy(ts) {
+	if !anyutil.IsTrue(ts) {
 		return "N/A"
 	}
-	epoch, ok := pydatetime.CoerceEpoch(ts, "", "timestamp")
+	epoch, ok := timeutil.StoredEpoch(ts, "", "timestamp")
 	if !ok || epoch == 0 {
 		return "N/A"
 	}
-	return pydatetime.Strftime(pydatetime.FromTimestamp(epoch), "%Y-%m-%d %H:%M:%S")
+	return timeutil.FromEpoch(epoch).Format(time.DateTime)
 }
 
 // Display text of a message content, the text parts of a multimodal list joined and images named
@@ -62,10 +64,10 @@ func htmlContentText(content any) (any, error) {
 	}
 	var parts []string
 	for _, part := range list {
-		obj, isObject := part.(*pyjson.Object)
+		obj, isObject := part.(*jsonutil.Object)
 		if !isObject {
 			if m, isMap := part.(map[string]any); isMap {
-				obj, isObject = pyjson.NewObject(), true
+				obj, isObject = jsonutil.NewObject(), true
 				for k, v := range m {
 					obj.Set(k, v)
 				}
@@ -73,7 +75,7 @@ func htmlContentText(content any) (any, error) {
 		}
 		switch {
 		case !isObject:
-			parts = append(parts, pyrepr.Str(part))
+			parts = append(parts, anyutil.String(part))
 		case rowValue(obj, "type") == "text":
 			text, present := obj.Get("text")
 			if !present {
@@ -81,7 +83,7 @@ func htmlContentText(content any) (any, error) {
 			}
 			s, isString := text.(string)
 			if !isString {
-				return nil, &pyint.Error{Kind: "TypeError", Msg: "sequence item " + pyrepr.Str(len(parts)) + ": expected str instance, " + pyrepr.TypeName(text) + " found"}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: "sequence item " + anyutil.String(len(parts)) + ": expected str instance, " + anyutil.Kind(text) + " found"}
 			}
 			parts = append(parts, s)
 		case rowValue(obj, "type") == "image_url":
@@ -109,7 +111,7 @@ func htmlCollapsible(kind, icon, title, inner, indent, outerClass string) string
 }
 
 // Value of a key that may be absent, the fallback when it is
-func htmlGetOr(row *pyjson.Object, key string, fallback any) any {
+func htmlGetOr(row *jsonutil.Object, key string, fallback any) any {
 	if row != nil {
 		if v, ok := row.Get(key); ok {
 			return v
@@ -119,7 +121,7 @@ func htmlGetOr(row *pyjson.Object, key string, fallback any) any {
 }
 
 // Message blocks of a session, tool calls and reasoning folded, every stored text escaped
-func generateMessagesHTML(messages []*pyjson.Object) (string, error) {
+func generateMessagesHTML(messages []*jsonutil.Object) (string, error) {
 	var blocks []string
 	for i, msg := range messages {
 		role := htmlGetOr(msg, "role", "unknown")
@@ -127,7 +129,7 @@ func generateMessagesHTML(messages []*pyjson.Object) (string, error) {
 			continue
 		}
 		raw := rowValue(msg, "content")
-		if !pyrepr.Truthy(raw) {
+		if !anyutil.IsTrue(raw) {
 			raw = ""
 		}
 		content, err := htmlContentText(raw)
@@ -135,8 +137,8 @@ func generateMessagesHTML(messages []*pyjson.Object) (string, error) {
 			return "", err
 		}
 		var roleClass strings.Builder
-		for _, c := range strings.ToLower(pyrepr.Str(role)) {
-			if pystr.IsAlnum(c) || c == '-' || c == '_' {
+		for _, c := range strings.ToLower(anyutil.String(role)) {
+			if (unicode.IsLetter(c) || unicode.IsNumber(c)) || c == '-' || c == '_' {
 				roleClass.WriteRune(c)
 			} else {
 				roleClass.WriteByte('-')
@@ -144,7 +146,7 @@ func generateMessagesHTML(messages []*pyjson.Object) (string, error) {
 		}
 		delayStyle := ""
 		if i < 10 {
-			delayStyle = ` style="animation-delay: ` + pyrepr.Float(min(float64(i)*0.05, 1.0)) + `s"`
+			delayStyle = ` style="animation-delay: ` + strconv.FormatFloat(min(float64(i)*0.05, 1.0), 'f', -1, 64) + `s"`
 		}
 		icon := iconTerminal
 		if name, ok := role.(string); ok {
@@ -158,15 +160,15 @@ func generateMessagesHTML(messages []*pyjson.Object) (string, error) {
 			`    <div class="timestamp">` + htmlFormatTimestamp(htmlGetOr(msg, "timestamp", 0)) + `</div>` +
 			`  </div>` +
 			`  <div class="message-body">`
-		if calls := exportJSONValue(rowValue(msg, "tool_calls")); pyrepr.Truthy(calls) {
+		if calls := exportJSONValue(rowValue(msg, "tool_calls")); anyutil.IsTrue(calls) {
 			list, _ := calls.([]any)
 			for _, tc := range list {
-				fn, _ := htmlGetOr(asExportObject(tc), "function", pyjson.NewObject()).(*pyjson.Object)
+				fn, _ := htmlGetOr(asExportObject(tc), "function", jsonutil.NewObject()).(*jsonutil.Object)
 				html += htmlCollapsible("tool-call", iconWrench, "Tool Call: "+escapeHTML(htmlGetOr(fn, "name", "unknown")),
 					"<pre><code>"+escapeHTML(htmlGetOr(fn, "arguments", "{}"))+"</code></pre>", strings.Repeat(" ", 16), "")
 			}
 		}
-		if pyrepr.Truthy(content) {
+		if anyutil.IsTrue(content) {
 			escaped := escapeHTML(content)
 			if role == "tool" || role == shellLineRole {
 				escaped = "<pre><code>" + escaped + "</code></pre>"
@@ -174,10 +176,10 @@ func generateMessagesHTML(messages []*pyjson.Object) (string, error) {
 			html += `  <div class="content">` + escaped + `</div>`
 		}
 		reasoning := rowValue(msg, "reasoning")
-		if !pyrepr.Truthy(reasoning) {
+		if !anyutil.IsTrue(reasoning) {
 			reasoning = rowValue(msg, "reasoning_content")
 		}
-		if pyrepr.Truthy(reasoning) {
+		if anyutil.IsTrue(reasoning) {
 			html += htmlCollapsible("reasoning", iconSparkles, "Reasoning", `<div class="content">`+escapeHTML(reasoning)+`</div>`, strings.Repeat(" ", 12), "")
 		}
 		blocks = append(blocks, html+"  </div></div>")
@@ -186,12 +188,12 @@ func generateMessagesHTML(messages []*pyjson.Object) (string, error) {
 }
 
 // Decoded JSON object of a value, nil when it is not one
-func asExportObject(v any) *pyjson.Object {
+func asExportObject(v any) *jsonutil.Object {
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x
 	case map[string]any:
-		obj := pyjson.NewObject()
+		obj := jsonutil.NewObject()
 		for k, value := range x {
 			obj.Set(k, value)
 		}
@@ -201,12 +203,12 @@ func asExportObject(v any) *pyjson.Object {
 }
 
 // Sidebar link of one session with its clipped title, id prefix and start date
-func sidebarItemHTML(s *pyjson.Object) string {
-	sid := pyrepr.Str(htmlGetOr(s, "id", "N/A"))
+func sidebarItemHTML(s *jsonutil.Object) string {
+	sid := anyutil.String(htmlGetOr(s, "id", "N/A"))
 	title := "Untitled Session"
 	for _, key := range []string{"title", "preview"} {
-		if v := rowValue(s, key); pyrepr.Truthy(v) {
-			title = pyrepr.Str(v)
+		if v := rowValue(s, key); anyutil.IsTrue(v) {
+			title = anyutil.String(v)
 			break
 		}
 	}
@@ -225,7 +227,7 @@ func sidebarItemHTML(s *pyjson.Object) string {
 }
 
 // Sidebar of a multi session export with the brand, the search box and one link per session
-func sidebarHTML(sessions []*pyjson.Object) string {
+func sidebarHTML(sessions []*jsonutil.Object) string {
 	var items strings.Builder
 	for _, s := range sessions {
 		items.WriteString(sidebarItemHTML(s))
@@ -248,10 +250,10 @@ func sidebarHTML(sessions []*pyjson.Object) string {
 }
 
 // One session view with its header, its system prompt section and its messages
-func sessionViewHTML(s *pyjson.Object, isMulti bool) (string, error) {
-	escapedSID := escapeHTML(pyrepr.Str(htmlGetOr(s, "id", "N/A")))
+func sessionViewHTML(s *jsonutil.Object, isMulti bool) (string, error) {
+	escapedSID := escapeHTML(anyutil.String(htmlGetOr(s, "id", "N/A")))
 	systemHTML := ""
-	if prompt := rowValue(s, "system_prompt"); pyrepr.Truthy(prompt) {
+	if prompt := rowValue(s, "system_prompt"); anyutil.IsTrue(prompt) {
 		systemHTML = htmlCollapsible("system-prompt", iconShield, "System Prompt (Persona)", `<div class="content">`+escapeHTML(prompt)+`</div>`,
 			strings.Repeat(" ", 12), "system-prompt-section active")
 	}
@@ -260,10 +262,10 @@ func sessionViewHTML(s *pyjson.Object, isMulti bool) (string, error) {
 		viewClass = "session-view"
 	}
 	title, model := any("Icebath Session"), any("Unknown")
-	if v := rowValue(s, "title"); pyrepr.Truthy(v) {
+	if v := rowValue(s, "title"); anyutil.IsTrue(v) {
 		title = v
 	}
-	if v := rowValue(s, "model"); pyrepr.Truthy(v) {
+	if v := rowValue(s, "model"); anyutil.IsTrue(v) {
 		model = v
 	}
 	messages, err := generateMessagesHTML(exportDisplayRows(s))
@@ -288,12 +290,12 @@ func sessionViewHTML(s *pyjson.Object, isMulti bool) (string, error) {
 }
 
 // Fills the page template for the sessions with a generation time and a script nonce
-func renderHTMLExport(sessions []*pyjson.Object, generatedAt, nonce string) (string, error) {
+func renderHTMLExport(sessions []*jsonutil.Object, generatedAt, nonce string) (string, error) {
 	isMulti := len(sessions) > 1
 	pageTitle, sidebar, margin, layout := "Icebath Session Export", sidebarHTML(sessions), "var(--sidebar-width)", "layout-multi"
 	if !isMulti {
 		title := any("Icebath Session")
-		if v := rowValue(sessions[0], "title"); pyrepr.Truthy(v) {
+		if v := rowValue(sessions[0], "title"); anyutil.IsTrue(v) {
 			title = v
 		}
 		pageTitle, sidebar, margin, layout = escapeHTML(title), "", "0", "layout-single"
@@ -306,12 +308,12 @@ func renderHTMLExport(sessions []*pyjson.Object, generatedAt, nonce string) (str
 		}
 		views = append(views, view)
 	}
-	return pyrepr.FormatMap(htmlExportTemplate, map[string]any{"page_title": pageTitle, "sidebar_html": sidebar,
+	return templateutil.Format(htmlExportTemplate, map[string]any{"page_title": pageTitle, "sidebar_html": sidebar,
 		"sessions_html": strings.Join(views, "\n"), "main_margin": margin, "layout_class": layout, "generated_at": generatedAt, "script_nonce": nonce})
 }
 
 // One self contained HTML page for the sessions, a sidebar switching between several
-func GenerateMultiSessionHTMLExport(sessions []*pyjson.Object) (string, error) {
+func GenerateMultiSessionHTMLExport(sessions []*jsonutil.Object) (string, error) {
 	if len(sessions) == 0 {
 		return "<html><body><h1>No sessions to export.</h1></body></html>", nil
 	}
@@ -319,10 +321,10 @@ func GenerateMultiSessionHTMLExport(sessions []*pyjson.Object) (string, error) {
 	if _, err := rand.Read(token); err != nil {
 		return "", err
 	}
-	return renderHTMLExport(sessions, pydatetime.Strftime(time.Now(), "%Y-%m-%d %H:%M:%S"), base64.RawURLEncoding.EncodeToString(token))
+	return renderHTMLExport(sessions, time.Now().Format(time.DateTime), base64.RawURLEncoding.EncodeToString(token))
 }
 
 // Self contained HTML page of one session
-func GenerateHTMLExport(session *pyjson.Object) (string, error) {
-	return GenerateMultiSessionHTMLExport([]*pyjson.Object{session})
+func GenerateHTMLExport(session *jsonutil.Object) (string, error) {
+	return GenerateMultiSessionHTMLExport([]*jsonutil.Object{session})
 }

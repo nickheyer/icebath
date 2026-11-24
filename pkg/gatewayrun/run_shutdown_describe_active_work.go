@@ -5,7 +5,6 @@ import (
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // One entry per in flight work unit the restart wait holds for, an unreadable source omitted
@@ -22,7 +21,7 @@ func (r *GatewayRunner) describeActiveWork(ctx context.Context) []map[string]any
 		}
 		unit := map[string]any{"kind": "chat", "session": key, "pid": pid}
 		if startedTS != 0 {
-			unit["elapsed_s"] = pyint.Round(now-startedTS, 1)
+			unit["elapsed_s"] = mathutil.Round(now-startedTS, 1)
 		}
 		if a != agentPendingSentinel {
 			unit["model"] = a.Model()

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Separator between a delegated child's execution id and its parent's, so descendants share one prefix
@@ -72,11 +71,11 @@ func runtimeLineage(ctx context.Context, conn SQLiteConn, sessionID string) (map
 // True when the stored receipt lineage, defaulting to the owner alone, lists the session
 func receiptLineageHolds(raw any, owner, sessionID string) (bool, error) {
 	text, _ := raw.(string)
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return false, pyValueError(err.Error())
 	}
-	receipt, ok := decoded.(*pyjson.Object)
+	receipt, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return false, &stateTypedError{"AttributeError", "receipt has no attribute get"}
 	}
@@ -89,7 +88,7 @@ func receiptLineageHolds(raw any, owner, sessionID string) (bool, error) {
 		if s, isStr := lineage.(string); isStr {
 			return strings.Contains(s, sessionID), nil
 		}
-		if keyed, isObj := lineage.(*pyjson.Object); isObj {
+		if keyed, isObj := lineage.(*jsonutil.Object); isObj {
 			_, held := keyed.Get(sessionID)
 			return held, nil
 		}
@@ -114,7 +113,7 @@ func workerStates(ctx context.Context, conn SQLiteConn, sessionID string) (map[s
 		ids = append(ids, sid)
 	}
 	slices.Sort(ids)
-	encoded, err := pyjson.Dumps(stringsToAny(ids))
+	encoded, err := jsonutil.Encode(stringsToAny(ids))
 	if err != nil {
 		return nil, err
 	}
@@ -223,10 +222,10 @@ func compactReceipts(ctx context.Context, conn SQLiteConn, executionID string) e
 
 // True when a stored receipt result is exactly the retired marker
 func RetiredReceipt(resultJSON string) (bool, error) {
-	decoded, err := pyjson.Loads(resultJSON)
+	decoded, err := jsonutil.Decode(resultJSON)
 	if err != nil {
 		return false, pyValueError(err.Error())
 	}
-	obj, ok := decoded.(*pyjson.Object)
-	return ok && obj.Len() == 1 && pyjson.Equal(obj, pyjson.ObjectOf("retired", true)), nil
+	obj, ok := decoded.(*jsonutil.Object)
+	return ok && obj.Len() == 1 && anyutil.Equal(obj, jsonutil.ObjectOf("retired", true)), nil
 }

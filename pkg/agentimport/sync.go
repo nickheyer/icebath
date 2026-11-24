@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // SyncManifestName is the per profile file listing every imported source
@@ -88,9 +86,9 @@ func SkillTreeDigest(skillDir string) string {
 func ManagedSkills(entry any) map[string]any {
 	out := map[string]any{}
 	switch skills := get(entry, "imported_skills").(type) {
-	case *pyjson.Object:
-		for _, name := range skills.Keys {
-			out[name] = skills.Vals[name]
+	case *jsonutil.Object:
+		for _, name := range skills.Keys() {
+			out[name] = skills.Value(name)
 		}
 	case []any:
 		for _, name := range skills {
@@ -101,12 +99,12 @@ func ManagedSkills(entry any) map[string]any {
 }
 
 // Fresh manifest with no sources
-func emptyManifest() *pyjson.Object {
-	return pyjson.ObjectOf("version", int64(1), "agents", pyjson.NewObject())
+func emptyManifest() *jsonutil.Object {
+	return jsonutil.ObjectOf("version", int64(1), "agents", jsonutil.NewObject())
 }
 
 // LoadSyncManifest reads the manifest, a missing, unreadable or malformed file giving an empty one
-func LoadSyncManifest(targetRoot string) *pyjson.Object {
+func LoadSyncManifest(targetRoot string) *jsonutil.Object {
 	path := SyncManifestPath(targetRoot)
 	if !exists(path) {
 		return emptyManifest()
@@ -114,7 +112,7 @@ func LoadSyncManifest(targetRoot string) *pyjson.Object {
 	text, err := readText(path)
 	var data any
 	if err == nil {
-		data, err = pyjson.Loads(text)
+		data, err = jsonutil.Decode(text)
 	}
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Unreadable %s — starting a fresh sync manifest", path))
@@ -124,15 +122,15 @@ func LoadSyncManifest(targetRoot string) *pyjson.Object {
 	if !ok {
 		return emptyManifest()
 	}
-	if _, ok := asObject(o.Vals["agents"]); !ok {
+	if _, ok := asObject(o.Value("agents")); !ok {
 		return emptyManifest()
 	}
 	return o
 }
 
 // SaveSyncManifest writes the manifest as sorted indented JSON
-func SaveSyncManifest(ctx context.Context, targetRoot string, manifest *pyjson.Object) error {
-	text, err := pyjson.Dumps(manifest, pyjson.Indent(2), pyjson.SortKeys(true))
+func SaveSyncManifest(ctx context.Context, targetRoot string, manifest *jsonutil.Object) error {
+	text, err := jsonutil.Encode(manifest, jsonutil.Indent(2), jsonutil.SortKeys())
 	if err != nil {
 		return err
 	}
@@ -142,10 +140,10 @@ func SaveSyncManifest(ctx context.Context, targetRoot string, manifest *pyjson.O
 // UpdateSyncManifest records a real import with every skill digest it wrote, refreshDigest false keeping the old source digest
 func UpdateSyncManifest(ctx context.Context, agent, sourceRoot, targetRoot string, overwrite bool, report *Report, refreshDigest bool) error {
 	manifest := LoadSyncManifest(targetRoot)
-	agents, _ := asObject(manifest.Vals["agents"])
-	entry, ok := asObject(agents.Vals[agent])
+	agents, _ := asObject(manifest.Value("agents"))
+	entry, ok := asObject(agents.Value(agent))
 	if !ok {
-		entry = pyjson.NewObject()
+		entry = jsonutil.NewObject()
 	}
 	skills := ManagedSkills(entry)
 	for _, it := range report.Items {
@@ -158,7 +156,7 @@ func UpdateSyncManifest(ctx context.Context, agent, sourceRoot, targetRoot strin
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	imported := pyjson.NewObject()
+	imported := jsonutil.NewObject()
 	for _, n := range names {
 		imported.Set(n, skills[n])
 	}
@@ -166,7 +164,7 @@ func UpdateSyncManifest(ctx context.Context, agent, sourceRoot, targetRoot strin
 	entry.Set("overwrite", overwrite)
 	entry.Set("last_import", time.Now().Unix())
 	entry.Set("imported_skills", imported)
-	if _, has := entry.Vals["digest"]; refreshDigest || !has {
+	if _, has := entry.Get("digest"); refreshDigest || !has {
 		entry.Set("digest", ComputeSourceDigest(agent, sourceRoot))
 	}
 	agents.Set(agent, entry)
@@ -176,11 +174,11 @@ func UpdateSyncManifest(ctx context.Context, agent, sourceRoot, targetRoot strin
 // Re-imports every registered source whose digest changed, prompt free, a dry run touching nothing
 func syncImportedAgents(ctx context.Context, args Args) error {
 	c := args.Console
-	h, err := pypath.Resolve(home.Dir(ctx))
+	h, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		h = home.Dir(ctx)
 	}
-	agents, _ := asObject(LoadSyncManifest(h).Vals["agents"])
+	agents, _ := asObject(LoadSyncManifest(h).Value("agents"))
 	if agents == nil || agents.Len() == 0 {
 		fmt.Fprintln(c.Out)
 		c.PrintInfo("No import sources registered yet.")
@@ -189,20 +187,20 @@ func syncImportedAgents(ctx context.Context, args Args) error {
 	}
 	fmt.Fprintln(c.Out)
 	c.PrintHeader("Import Sync")
-	names := append([]string(nil), agents.Keys...)
+	names := append([]string(nil), agents.Keys()...)
 	sort.Strings(names)
 	synced, unchanged, failed := 0, 0, 0
 	for _, name := range names {
-		entry, ok := asObject(agents.Vals[name])
-		if !ok || !truthy(entry.Vals["source"]) {
+		entry, ok := asObject(agents.Value(name))
+		if !ok || !truthy(entry.Value("source")) {
 			continue
 		}
-		sourceDir := pyStr(entry.Vals["source"])
+		sourceDir := pyStr(entry.Value("source"))
 		if !isDir(sourceDir) {
 			c.PrintInfo(fmt.Sprintf("%s: source %s no longer exists — skipped", name, sourceDir))
 			continue
 		}
-		if d, ok := entry.Vals["digest"].(string); ok && ComputeSourceDigest(name, sourceDir) == d {
+		if d, ok := entry.Value("digest").(string); ok && ComputeSourceDigest(name, sourceDir) == d {
 			c.PrintInfo(name + ": unchanged since last import")
 			unchanged++
 			continue
@@ -212,7 +210,7 @@ func syncImportedAgents(ctx context.Context, args Args) error {
 			suffix = " (dry run)"
 		}
 		c.PrintInfo(fmt.Sprintf("%s: changes detected in %s%s", name, sourceDir, suffix))
-		overwrite := truthy(entry.Vals["overwrite"])
+		overwrite := truthy(entry.Value("overwrite"))
 		report, err := func() (*Report, error) {
 			imp, err := NewAgentImporter(ctx, name, sourceDir, h, !args.DryRun, overwrite, ManagedSkills(entry))
 			if err != nil {

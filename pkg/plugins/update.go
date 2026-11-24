@@ -12,9 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Install record of a plugin, the AttributeError a non mapping row raises on get
@@ -89,7 +89,7 @@ func recloneUpdate(ctx context.Context, h, target, source string, previousRevisi
 	}
 	revision := ""
 	if v := record["revision"]; jsonTruthy(v) {
-		revision = pyrepr.Str(v)
+		revision = anyutil.String(v)
 	}
 	previous, _ := previousRevision.(string)
 	if revision != "" && revision == previous {
@@ -132,7 +132,7 @@ func updateOne(ctx context.Context, name, target string, console *Console, inter
 	output, err := pullPluginUpdate(ctx, h, target,
 		func(rec map[string]any) string {
 			return fmt.Sprintf("Plugin '%s' is pinned to %s. To move it, run `icebath plugins install %s --force --ref <40-character commit SHA>`.",
-				name, pyrepr.Str(rec["revision"]), pyrich.Escape(pyrepr.Str(recordGet(rec, "source", "<source>"))))
+				name, anyutil.String(rec["revision"]), consoleutil.Escape(anyutil.String(recordGet(rec, "source", "<source>"))))
 		},
 		func() string {
 			return fmt.Sprintf("Plugin '%s' was not installed from git (no .git directory). Cannot update.", name)
@@ -148,7 +148,7 @@ func updateOne(ctx context.Context, name, target string, console *Console, inter
 	}
 	pluginID := filepath.Base(target)
 	if v := updated["name"]; jsonTruthy(v) {
-		pluginID = pyrepr.Str(v)
+		pluginID = anyutil.String(v)
 	}
 	if declared := declaredCapabilitiesFromManifest(updated, pluginID); len(declared) > 0 {
 		hctx := homeContext(h)
@@ -317,10 +317,10 @@ func CmdTrustUpdateURL(ctx context.Context, name string, out io.Writer) error {
 	}
 	shownOld, shownNew := "(none)", "(none)"
 	if saved != nil {
-		shownOld = pyrepr.Str(saved)
+		shownOld = anyutil.String(saved)
 	}
 	if jsonTruthy(claimed) {
-		shownNew = pyrepr.Str(claimed)
+		shownNew = anyutil.String(claimed)
 	}
 	console.Print(fmt.Sprintf("[green]✓[/green] Trusted [bold]%s[/bold] update_url:\n  old: %s\n  new: %s", name, shownOld, shownNew))
 	return nil
@@ -330,13 +330,13 @@ func pyEqual(a, b any) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	return pyrepr.Repr(a) == pyrepr.Repr(b)
+	return anyutil.Quote(a) == anyutil.Quote(b)
 }
 
 // Ordered check result mapping in the to_json key order
-func checkResultObject(r *CheckResult) *pyjson.Object {
+func checkResultObject(r *CheckResult) *jsonutil.Object {
 	m := r.ToJSON()
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	for _, k := range []string{"name", "class", "current", "latest", "update_available", "needs_fixing", "min_icebath", "reason"} {
 		o.Set(k, m[k])
 	}
@@ -358,7 +358,7 @@ func CmdCheckUpdates(ctx context.Context, asJSON bool, out io.Writer) error {
 		for _, r := range results {
 			list = append(list, checkResultObject(r))
 		}
-		text, err := pyjson.Dumps(list, pyjson.Indent(2))
+		text, err := jsonutil.Encode(list, jsonutil.Indent(2))
 		if err != nil {
 			return err
 		}
@@ -492,7 +492,7 @@ func unattendedUpdateStep(ctx context.Context, h, name, target string, acceptCap
 	msg, err := pullPluginUpdate(ctx, h, target,
 		func(rec map[string]any) string {
 			return fmt.Sprintf("Plugin '%s' is pinned to %s; run `icebath plugins install %s --force --ref <40-character commit SHA>` to move it.",
-				name, pyrepr.Str(rec["revision"]), pyrepr.Str(recordGet(rec, "source", "<source>")))
+				name, anyutil.String(rec["revision"]), anyutil.String(recordGet(rec, "source", "<source>")))
 		},
 		func() string { return fmt.Sprintf("Plugin '%s' is not a git checkout; cannot pull updates.", name) },
 		nil, false, force, nil)

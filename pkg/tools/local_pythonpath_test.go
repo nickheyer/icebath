@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Replaces the cached running venv site packages for one test
@@ -69,7 +69,7 @@ func mustStrip(t *testing.T, child map[string]string) {
 }
 
 func resolvedPath(t *testing.T, p string) string {
-	r, err := pypath.Resolve(p)
+	r, err := pathutil.Resolve(p)
 	if err != nil {
 		t.Fatal(err)
 	}

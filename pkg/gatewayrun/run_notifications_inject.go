@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Injects a watch or completion notification as a synthetic event, true on acceptance, false to retry, nil with no route
@@ -21,7 +21,7 @@ func boolp(v bool) *bool { return &v }
 
 // Injection routed from the queued event, a refusal raised to durable callers when raiseNotAccepted is set
 func (r *GatewayRunner) injectWatchNotification(ctx context.Context, synthText string, evt map[string]any, raiseNotAccepted bool) (*bool, error) {
-	if err := gateway.RestoreCompletionRoute(ctx, r, pyrepr.Str(pyrepr.Or(evt["session_key"], ""))); err != nil {
+	if err := gateway.RestoreCompletionRoute(ctx, r, anyutil.String(anyutil.Or(evt["session_key"], ""))); err != nil {
 		return nil, err
 	}
 	queued := evt
@@ -46,7 +46,7 @@ func (r *GatewayRunner) injectWatchNotification(ctx context.Context, synthText s
 			pkgLog().Debug(fmt.Sprintf("Deferring watch notification for raw session %s: no api_server adapter to self-post through", rawSID))
 			return boolp(false), nil
 		}
-		pkgLog().Warn(fmt.Sprintf("Dropping watch notification with no routing metadata for process %s", pyrepr.Str(evtGet(evt, "session_id", "unknown"))))
+		pkgLog().Warn(fmt.Sprintf("Dropping watch notification with no routing metadata for process %s", anyutil.String(evtGet(evt, "session_id", "unknown"))))
 		return nil, nil
 	}
 	platformName := string(source.Platform)
@@ -61,7 +61,7 @@ func (r *GatewayRunner) injectWatchNotification(ctx context.Context, synthText s
 		return boolp(false), nil
 	}
 	if !gateway.AdapterSupportsPush(adapter) {
-		rawSID := strings.TrimSpace(pyrepr.Str(pyrepr.Or(evt["origin_session_id"], "")))
+		rawSID := strings.TrimSpace(anyutil.String(anyutil.Or(evt["origin_session_id"], "")))
 		if rawSID == "" {
 			rawSID = source.ChatID
 		}
@@ -102,12 +102,12 @@ func (r *GatewayRunner) injectWatchNotification(ctx context.Context, synthText s
 func (r *GatewayRunner) admitWatchNotification(ctx context.Context, adapter gateway.PlatformAdapter, synthText string, evt map[string]any, source *gateway.SessionSource, platformName string) (err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			err = fmt.Errorf("%s", pyrepr.Str(rec))
+			err = fmt.Errorf("%s", anyutil.String(rec))
 		}
 	}()
 	synthText = gateway.MarkInternalNotification(synthText)
 	metadata := watchNotificationMetadata(evt, source)
-	if trigger := strings.TrimSpace(pyrepr.Str(pyrepr.Or(evt["message_id"], ""))); trigger != "" {
+	if trigger := strings.TrimSpace(anyutil.String(anyutil.Or(evt["message_id"], ""))); trigger != "" {
 		metadata["original_trigger_message_id"] = trigger
 	}
 	if source.MessageID != nil && *source.MessageID != "" {

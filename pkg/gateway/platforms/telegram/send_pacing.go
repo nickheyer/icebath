@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // FIFO lock handing ownership to waiters in arrival order
@@ -36,7 +35,7 @@ func newSendPacer(typingCooldownSeconds float64) *sendPacer {
 const telegramChatOutboundBudgetSecs = 1.0
 
 // Bot API normalized chat id as the pacing key
-func chatKey(chatID any) string { return pyrepr.Str(NormalizeTelegramChatID(chatID)) }
+func chatKey(chatID any) string { return anyutil.String(NormalizeTelegramChatID(chatID)) }
 
 type chatLockKey struct{ key string }
 

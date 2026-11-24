@@ -10,11 +10,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 const (
@@ -39,7 +39,7 @@ type startupWatchdogSeams struct {
 	exit             func(code int)
 	sleep            func(seconds float64)
 	dumpTraceback    func(file *os.File) error
-	writeDumpRecord  func(record *pyjson.Object)
+	writeDumpRecord  func(record *jsonutil.Object)
 	markExited       func(ctx context.Context, exitCode *int, reason string, h string)
 	maxCPUExtensions int
 }
@@ -106,9 +106,9 @@ func appendStartupWatchdogDump(write func(f *os.File) error, failureMsg string) 
 }
 
 // Appends one JSON metadata line beside the stack dump
-func writeStartupWatchdogDumpRecord(record *pyjson.Object) {
+func writeStartupWatchdogDumpRecord(record *jsonutil.Object) {
 	appendStartupWatchdogDump(func(f *os.File) error {
-		text, err := pyjson.Dumps(record, pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+		text, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 		if err != nil {
 			return err
 		}
@@ -179,7 +179,7 @@ func (h *StartupWatchdogHandle) Disarm() {
 
 // Pushes the deadline out to now plus the timeout plus extra seconds, garbage counting as zero
 func (h *StartupWatchdogHandle) Kick(extraS any) {
-	extra, err := pyint.Float(extraS)
+	extra, err := anyutil.ToFloat(extraS)
 	if err != nil || !(extra > 0) {
 		extra = 0
 	}
@@ -190,7 +190,7 @@ func (h *StartupWatchdogHandle) Kick(extraS any) {
 
 // Claims a progress lease of up to expected seconds for a phase, clamped per call
 func (h *StartupWatchdogHandle) Lease(expectedS any, phase string) {
-	expected, err := pyint.Float(expectedS)
+	expected, err := anyutil.ToFloat(expectedS)
 	if err != nil || !(expected > 0) {
 		return
 	}
@@ -237,12 +237,12 @@ func (h *StartupWatchdogHandle) fire() {
 		"and shows no CPU progress; dumping all thread stacks and "+
 		"exiting with code %d so the service supervisor can restart "+
 		"it (OOF-298).", h.TimeoutS, elapsed, extensions, h.ExitCode))
-	h.seams.writeDumpRecord(pyjson.ObjectOf(
+	h.seams.writeDumpRecord(jsonutil.ObjectOf(
 		"ts", startupWatchdogISONow(),
 		"tag", "startup_watchdog.fired",
 		"pid", os.Getpid(),
 		"timeout_s", h.TimeoutS,
-		"elapsed_s", pyint.Round(elapsed, 3),
+		"elapsed_s", mathutil.Round(elapsed, 3),
 		"extensions", extensions,
 		"lease_count", leaseCount,
 		"last_lease_phase", leasePhase,
@@ -326,7 +326,7 @@ func (h *StartupWatchdogHandle) run() {
 				phase = "unknown"
 			}
 			startupWatchdogLogQuietly(slog.LevelWarn, fmt.Sprintf("Gateway startup exceeded %.0fs but phase %s holds a "+
-				"progress lease for another %.0fs — honoring it.", h.TimeoutS, pyrepr.Repr(phase), leaseUntil.Sub(now).Seconds()))
+				"progress lease for another %.0fs — honoring it.", h.TimeoutS, anyutil.Quote(phase), leaseUntil.Sub(now).Seconds()))
 			lastCPU, lastOK = h.seams.cpuSeconds()
 			continue
 		}
@@ -397,7 +397,7 @@ func armStartupWatchdog(ctx context.Context, timeoutS any, exitCode int) (handle
 	}
 	resolved := 0.0
 	if timeoutS != nil {
-		value, err := pyint.Float(timeoutS)
+		value, err := anyutil.ToFloat(timeoutS)
 		if err != nil {
 			pkgLog().Debug("Failed to arm gateway startup watchdog", "exc_info", err)
 			return nil

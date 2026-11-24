@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 func TestResolveShutdownWatchdogDelayAddsGrace(t *testing.T) {
@@ -37,7 +37,7 @@ func TestArmShutdownWatchdogFiresWithDumpAndExit(t *testing.T) {
 	var mu sync.Mutex
 	var exitCodes []int
 	snapshotCalls := 0
-	fired := &pythread.Event{}
+	fired := &syncutil.Event{}
 	patch(t, &watchdogOSExit, func(code int) {
 		mu.Lock()
 		exitCodes = append(exitCodes, code)
@@ -46,7 +46,7 @@ func TestArmShutdownWatchdogFiresWithDumpAndExit(t *testing.T) {
 	})
 	code := 9
 	ArmShutdownWatchdog(context.Background(), 0.15, ShutdownWatchdogOptions{
-		Done: &pythread.Event{},
+		Done: &syncutil.Event{},
 		SnapshotFn: func() (any, error) {
 			mu.Lock()
 			snapshotCalls++
@@ -176,7 +176,7 @@ func TestLoopTickWitnessFallsBackToTCPWhenThePathOverflowsSunPath(t *testing.T) 
 
 func TestLoopLivenessWatchdogFiresOnAFrozenLoopAndStaysQuietOnALiveOne(t *testing.T) {
 	statusHome(t)
-	fired := &pythread.Event{}
+	fired := &syncutil.Event{}
 	patch(t, &watchdogOSExit, func(code int) {
 		if code == GatewayServiceRestartExitCode {
 			fired.Set()

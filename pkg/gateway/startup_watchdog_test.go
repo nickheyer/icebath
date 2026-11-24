@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func resetStartupWatchdogForTests() {
@@ -617,7 +617,7 @@ func TestBoundedExitExitsEvenWhenDumpWriteHangs(t *testing.T) {
 	capture := captureWatchdogExit(t)
 	startupWatchdogDefaults.sleep = func(float64) { time.Sleep(200 * time.Millisecond) }
 	forever := make(chan struct{})
-	startupWatchdogDefaults.writeDumpRecord = func(*pyjson.Object) {
+	startupWatchdogDefaults.writeDumpRecord = func(*jsonutil.Object) {
 		select {
 		case <-forever:
 		case <-time.After(30 * time.Second):
@@ -659,7 +659,7 @@ func TestDumpPathDumpWriteFailureIsSwallowed(t *testing.T) {
 	saved := startupWatchdogDumpPathFn
 	startupWatchdogDumpPathFn = func() string { return "/dev/null/nope" }
 	t.Cleanup(func() { startupWatchdogDumpPathFn = saved })
-	writeStartupWatchdogDumpRecord(pyjson.ObjectOf("tag", "x"))
+	writeStartupWatchdogDumpRecord(jsonutil.ObjectOf("tag", "x"))
 }
 
 func (h *StartupWatchdogHandle) Disarmed() bool {

@@ -10,10 +10,10 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Producers whose profile URL prefix names the profile explicitly on the host's listener
@@ -59,7 +59,7 @@ type relayTransportAdapter interface {
 
 // Runner surface native callback provenance binds against
 type provenanceRunner interface {
-	Adapters() *pydict.Dict[Platform, PlatformAdapter]
+	Adapters() *orderedutil.Map[Platform, PlatformAdapter]
 	RunnerConfig() *GatewayConfig
 	AdapterCredentialFingerprint(adapter PlatformAdapter) *string
 }
@@ -71,7 +71,7 @@ type legacyFingerprintRunner interface {
 
 // Runner holding the adapter maps of its served secondary profiles
 type servedProfileAdaptersRunner interface {
-	ProfileAdapters() *pydict.Dict[string, *pydict.Dict[Platform, PlatformAdapter]]
+	ProfileAdapters() *orderedutil.Map[string, *orderedutil.Map[Platform, PlatformAdapter]]
 }
 
 // Adapter that rechecks a role grant against its platform
@@ -122,7 +122,7 @@ func RelayPassthroughEvent(ctx context.Context, transport, forward, event any) c
 func RegisterTransportHome(runner AuthorityRunner, profile *string, profileHome *string) error {
 	var resolved *string
 	if profileHome != nil {
-		path, err := pypath.Resolve(*profileHome)
+		path, err := pathutil.Resolve(*profileHome)
 		if err != nil {
 			return err
 		}
@@ -152,7 +152,7 @@ func NativeCallback(ctx context.Context, runner AuthorityRunner, event *MessageE
 		}
 		return ctx, nil
 	}
-	resolved, err := pypath.Resolve(*transportHome)
+	resolved, err := pathutil.Resolve(*transportHome)
 	if err != nil {
 		return nil, err
 	}
@@ -209,8 +209,9 @@ func relayConnector(adapter PlatformAdapter, source *SessionSource) (relayTransp
 		transport.DescriptorForPlatform(platform) == nil || transport.BotIDFor(platform) == nil {
 		return nil, "", runtimeRefusal("permission_denied")
 	}
-	identity, err := pyjson.Dumps([]any{transport.RelayURL(), transport.RelayGatewayID(), transport.RelayIdentities()},
-		pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	identity, err := jsonutil.Encode([]any{transport.RelayURL(), transport.RelayGatewayID(), transport.RelayIdentities()},
+		jsonutil.SortKeys())
+
 	if err != nil {
 		return nil, "", err
 	}
@@ -225,8 +226,8 @@ func relayHMAC(secret, text string) string {
 }
 
 // Seal binding a provenance to the exact source and bot flag it was captured for
-func relaySeal(transport relayTransport, source *SessionSource, provenance *pyjson.Object) (string, error) {
-	binding, err := pyjson.Dumps([]any{provenance, source.ToDict(), source.IsBot}, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+func relaySeal(transport relayTransport, source *SessionSource, provenance *jsonutil.Object) (string, error) {
+	binding, err := jsonutil.Encode([]any{provenance, source.ToDict(), source.IsBot}, jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}
@@ -234,8 +235,8 @@ func relaySeal(transport relayTransport, source *SessionSource, provenance *pyjs
 }
 
 // Provenance rebound to the stored source dict, only for a seal the caller already verified
-func resealRelay(ctx context.Context, adapter PlatformAdapter, source, provenance *pyjson.Object) (*pyjson.Object, error) {
-	plain, _ := pyjson.Plain(source).(map[string]any)
+func resealRelay(ctx context.Context, adapter PlatformAdapter, source, provenance *jsonutil.Object) (*jsonutil.Object, error) {
+	plain, _ := jsonutil.Plain(source).(map[string]any)
 	stored, err := SessionSourceFromDict(ctx, plain)
 	if err != nil {
 		return nil, err
@@ -245,8 +246,8 @@ func resealRelay(ctx context.Context, adapter PlatformAdapter, source, provenanc
 		return nil, &pyKeyError{"is_bot"}
 	}
 	stored.IsBot = pyTruthy(bot)
-	base := pyjson.NewObject()
-	for _, key := range provenance.Keys {
+	base := jsonutil.NewObject()
+	for _, key := range provenance.Keys() {
 		if key != "relay" {
 			value, _ := provenance.Get(key)
 			base.Set(key, value)
@@ -264,7 +265,7 @@ func resealRelay(ctx context.Context, adapter PlatformAdapter, source, provenanc
 	if err != nil {
 		return nil, err
 	}
-	resealed := base.Copy()
+	resealed := base.Clone()
 	resealed.Set("relay", seal)
 	return resealed, nil
 }
@@ -318,8 +319,8 @@ func isDirPath(path string) bool {
 }
 
 // Registered adapter, transport home, runtime home and provenance a native source binds to, refused when unproven
-func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *SessionSource, profile *string) (PlatformAdapter, string, string, *pyjson.Object, error) {
-	refuse := func(reason string) (PlatformAdapter, string, string, *pyjson.Object, error) {
+func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *SessionSource, profile *string) (PlatformAdapter, string, string, *jsonutil.Object, error) {
+	refuse := func(reason string) (PlatformAdapter, string, string, *jsonutil.Object, error) {
 		return nil, "", "", nil, runtimeRefusal(reason)
 	}
 	bound, ok := runner.(provenanceRunner)
@@ -328,7 +329,7 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 	}
 	type registry struct {
 		owner   *string
-		mapping *pydict.Dict[Platform, PlatformAdapter]
+		mapping *orderedutil.Map[Platform, PlatformAdapter]
 	}
 	registries := []registry{{nil, bound.Adapters()}}
 	if secondary, ok := runner.(servedProfileAdaptersRunner); ok {
@@ -379,7 +380,7 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 		homes := map[string]string{}
 		seen := map[string]bool{}
 		for _, served := range *cfg.runtimeProfileHomes {
-			canonical, err := pypath.Resolve(served.Home)
+			canonical, err := pathutil.Resolve(served.Home)
 			if err != nil {
 				return nil, "", "", nil, err
 			}
@@ -389,7 +390,7 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 			homes[served.Name] = canonical
 			seen[canonical] = true
 		}
-		launch, err := pypath.Resolve(home.Process())
+		launch, err := pathutil.Resolve(home.Process())
 		if err != nil {
 			return nil, "", "", nil, err
 		}
@@ -449,7 +450,7 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 		}
 		connector = "adapter:" + string(source.Platform) + ":" + owner
 	}
-	provenance := pyjson.ObjectOf("transport_home", homePath, "runtime_home", runtimeHome, "platform", string(source.Platform), "connector", connector)
+	provenance := jsonutil.ObjectOf("transport_home", homePath, "runtime_home", runtimeHome, "platform", string(source.Platform), "connector", connector)
 	if multiplex {
 		if profile != nil {
 			provenance.Set("transport_profile", *profile)
@@ -468,23 +469,23 @@ func provenanceBinding(ctx context.Context, runner AuthorityRunner, source *Sess
 }
 
 // Whether recorded provenance equals expected once its connector is the fingerprint an older icebath hashed
-func legacyConnectorMatches(runner AuthorityRunner, adapter PlatformAdapter, recorded, expected *pyjson.Object) bool {
+func legacyConnectorMatches(runner AuthorityRunner, adapter PlatformAdapter, recorded, expected *jsonutil.Object) bool {
 	bound, ok := runner.(provenanceRunner)
 	legacy, hasLegacy := runner.(legacyFingerprintRunner)
 	if !ok || !hasLegacy {
 		return false
 	}
 	current, old := bound.AdapterCredentialFingerprint(adapter), legacy.LegacyAdapterCredentialFingerprint(adapter)
-	if current == nil || old == nil || !pyrepr.Equal(expected.GetOr("connector", nil), *current) {
+	if current == nil || old == nil || !anyutil.Equal(expected.ValueOr("connector", nil), *current) {
 		return false
 	}
-	variant := expected.Copy()
+	variant := expected.Clone()
 	variant.Set("connector", *old)
-	return pyrepr.Equal(recorded, variant)
+	return anyutil.Equal(recorded, variant)
 }
 
 // Provenance of the native callback event a server created, nil for an event no callback carries
-func captureProvenance(ctx context.Context, runner AuthorityRunner, event *MessageEvent) (*pyjson.Object, error) {
+func captureProvenance(ctx context.Context, runner AuthorityRunner, event *MessageEvent) (*jsonutil.Object, error) {
 	boundRunner, boundEvent, boundHome, profile, ok := nativeCallbackOf(ctx)
 	if !ok || boundRunner != runner || boundEvent != event {
 		return nil, nil
@@ -526,10 +527,10 @@ func captureProvenance(ctx context.Context, runner AuthorityRunner, event *Messa
 
 // Rebinds a source to the connector and home its provenance names today, returning the runtime home
 func restoreProvenance(ctx context.Context, runner AuthorityRunner, source *SessionSource, provenance any) (*string, error) {
-	recorded, ok := provenance.(*pyjson.Object)
+	recorded, ok := provenance.(*jsonutil.Object)
 	if !ok {
 		if plain, isMap := provenance.(map[string]any); isMap {
-			recorded = pyjson.NewObject()
+			recorded = jsonutil.NewObject()
 			for key, value := range plain {
 				recorded.Set(key, value)
 			}
@@ -553,7 +554,7 @@ func restoreProvenance(ctx context.Context, runner AuthorityRunner, source *Sess
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Equal(recorded, expected) && !legacyConnectorMatches(runner, adapter, recorded, expected) {
+	if !anyutil.Equal(recorded, expected) && !legacyConnectorMatches(runner, adapter, recorded, expected) {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
 	source.DeliveredViaUpstreamRelay = candidate.DeliveredViaUpstreamRelay
@@ -593,16 +594,16 @@ func reauthorizeRoles(ctx context.Context, runner AuthorityRunner, source *Sessi
 	if !ok {
 		return false, runtimeRefusal("permission_denied")
 	}
-	recorded, _ := provenance.(*pyjson.Object)
+	recorded, _ := provenance.(*jsonutil.Object)
 	transportHome := ""
 	if recorded != nil {
 		value, found := recorded.Get("transport_home")
 		if !found {
 			return false, &pyKeyError{"transport_home"}
 		}
-		transportHome = pyrepr.Str(value)
+		transportHome = anyutil.String(value)
 	} else if plain, isMap := provenance.(map[string]any); isMap {
-		transportHome = pyrepr.Str(plain["transport_home"])
+		transportHome = anyutil.String(plain["transport_home"])
 	}
 	allowed, err := check.ReauthorizeNativeRoles(ProfileRuntimeScope(ctx, transportHome, true), source)
 	if err != nil {

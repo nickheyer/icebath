@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestBuildToolPreview(t *testing.T) {
@@ -104,10 +104,10 @@ func TestLabelsAndVerbs(t *testing.T) {
 }
 
 func TestVerboseToolArgsTextPrintsArgsAsPythonJSONDumps(t *testing.T) {
-	if got := VerboseToolArgsText(pyjson.ObjectOf("a", "x\ny"), 0, true); got != "```\n{\"a\": \"x\ny\"}\n```" {
+	if got := VerboseToolArgsText(jsonutil.ObjectOf("a", "x\ny"), 0, true); got != "```\n{\"a\": \"x\ny\"}\n```" {
 		t.Fatalf("code block %q", got)
 	}
-	args := pyjson.ObjectOf("zeta", int64(1), "alpha", 1.0, "path", "caf\u00e9\ttab", "nested", pyjson.ObjectOf("b", []any{int64(2), 2.5, nil, true}), "odd", struct{ X int }{3})
+	args := jsonutil.ObjectOf("zeta", int64(1), "alpha", 1.0, "path", "caf\u00e9\ttab", "nested", jsonutil.ObjectOf("b", []any{int64(2), 2.5, nil, true}), "odd", struct{ X int }{3})
 	want := `{"zeta": 1, "alpha": 1.0, "path": "café\ttab", "nested": {"b": [2, 2.5, null, true]}, "odd": "{3}"}`
 	if got := VerboseToolArgsText(args, 0, false); got != want {
 		t.Fatalf("plain got %q want %q", got, want)
@@ -118,7 +118,7 @@ func TestVerboseToolArgsTextPrintsArgsAsPythonJSONDumps(t *testing.T) {
 	if got := VerboseToolArgsText(args, 0, true); got != "```\n"+strings.ReplaceAll(want, `\t`, "\t")+"\n```" {
 		t.Fatalf("code block with a tab %q", got)
 	}
-	fenced := pyjson.ObjectOf("code", "```go\nx```")
+	fenced := jsonutil.ObjectOf("code", "```go\nx```")
 	if got := VerboseToolArgsText(fenced, 0, true); got != `{"code": "`+"```go\\nx```"+`"}` {
 		t.Fatalf("args holding a fence %q", got)
 	}

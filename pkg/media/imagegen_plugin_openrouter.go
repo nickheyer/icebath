@@ -20,12 +20,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -289,10 +289,10 @@ func orImageEnum(env *tools.Env, name string, explicit any, allowed []string, no
 }
 
 // Image API request body with every knob filtered against what the model declares, plus the notes of what was dropped
-func orBuildImageAPIPayload(env *tools.Env, modelID, prompt, semantic string, refs []string, kwargs map[string]any) (*pyjson.Object, []string) {
+func orBuildImageAPIPayload(env *tools.Env, modelID, prompt, semantic string, refs []string, kwargs map[string]any) (*jsonutil.Object, []string) {
 	meta := orImageAPIModelMeta(modelID)
 	var notes []string
-	payload := pyjson.ObjectOf("model", modelID, "prompt", prompt)
+	payload := jsonutil.ObjectOf("model", modelID, "prompt", prompt)
 	if ratio := orPickAspectRatio(semantic, meta, orImageSetting(env, "aspect_ratio", kwargs["aspect_ratio_exact"]), &notes); ratio != "" {
 		payload.Set("aspect_ratio", ratio)
 	}
@@ -335,7 +335,7 @@ func orBuildImageAPIPayload(env *tools.Env, modelID, prompt, semantic string, re
 		if len(usable) > 0 {
 			parts := make([]any, len(usable))
 			for i, u := range usable {
-				parts[i] = pyjson.ObjectOf("type", "image_url", "image_url", pyjson.ObjectOf("url", u))
+				parts[i] = jsonutil.ObjectOf("type", "image_url", "image_url", jsonutil.ObjectOf("url", u))
 			}
 			payload.Set("input_references", parts)
 		}
@@ -471,7 +471,7 @@ func orLoadReferences(env *tools.Env, refs []string) (parts, unreadable []string
 		if blocked := tools.ReadBlockError(env, ref); blocked != "" {
 			return nil, nil, &imageValueError{blocked}
 		}
-		raw, readErr := os.ReadFile(pypath.Expanduser(ref))
+		raw, readErr := os.ReadFile(pathutil.ExpandUser(ref))
 		if readErr != nil {
 			pkgLog().Debug(fmt.Sprintf("could not read reference image %s: %v", ref, readErr))
 			unreadable = append(unreadable, ref)
@@ -843,7 +843,7 @@ func (p *openRouterImageGenProvider) viaImageAPI(ctx context.Context, env *tools
 		}
 		return fail(failure.Error, "api_error"), orImageAPIFallbackStatuses[status]
 	}
-	plain := pyjson.Plain(body)
+	plain := jsonutil.Plain(body)
 	recordTokenUsage(ctx, dictAt(plain, "usage"), a.modelID, orImageProvider, a.baseURL)
 	var entries []map[string]any
 	for _, item := range listAt(plain, "data") {
@@ -907,16 +907,16 @@ func (p *openRouterImageGenProvider) viaChat(ctx context.Context, env *tools.Env
 		notes = append(notes, fmt.Sprintf("%d reference image(s) supplied but this model accepts %d; extras dropped", len(usable), orImageChatMaxRefs))
 		usable = usable[:orImageChatMaxRefs]
 	}
-	content := []any{pyjson.ObjectOf("type", "text", "text", a.prompt)}
+	content := []any{jsonutil.ObjectOf("type", "text", "text", a.prompt)}
 	for _, u := range usable {
-		content = append(content, pyjson.ObjectOf("type", "image_url", "image_url", pyjson.ObjectOf("url", u)))
+		content = append(content, jsonutil.ObjectOf("type", "image_url", "image_url", jsonutil.ObjectOf("url", u)))
 	}
 	ratio, ok := orChatAspectRatios[a.aspect]
 	if !ok {
 		ratio = "1:1"
 	}
-	payload := pyjson.ObjectOf("model", a.modelID, "modalities", []any{"image", "text"},
-		"messages", []any{pyjson.ObjectOf("role", "user", "content", content)}, "image_config", pyjson.ObjectOf("aspect_ratio", ratio))
+	payload := jsonutil.ObjectOf("model", a.modelID, "modalities", []any{"image", "text"},
+		"messages", []any{jsonutil.ObjectOf("role", "user", "content", content)}, "image_config", jsonutil.ObjectOf("aspect_ratio", ratio))
 	body, failure, err := postJSON(ctx, a.baseURL+"/chat/completions", a.headers, payload,
 		requestsTimeout{Connect: orImageRequestTimeout, Read: orImageRequestTimeout}, orImageLabel, nil, true)
 	if err != nil {
@@ -935,7 +935,7 @@ func (p *openRouterImageGenProvider) viaChat(ctx context.Context, env *tools.Env
 		}
 		return fail(failure.Error, "api_error"), ""
 	}
-	plain := pyjson.Plain(body)
+	plain := jsonutil.Plain(body)
 	recordTokenUsage(ctx, dictAt(plain, "usage"), a.modelID, orImageProvider, a.baseURL)
 	images := orChatImages(plain)
 	if len(images) == 0 {

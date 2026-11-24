@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Tool env bound to an approval session key like the Python contextvar
@@ -27,13 +27,13 @@ type dispatchRecord struct {
 	mu    sync.Mutex
 	calls int
 	req   tools.AsyncDelegationRequest
-	out   chan *pyjson.Object
+	out   chan *jsonutil.Object
 }
 
 // Replaces the async registry with one that runs the runner on a goroutine and reports dispatched
 func installDispatch(t *testing.T, status string) *dispatchRecord {
 	t.Helper()
-	rec := &dispatchRecord{out: make(chan *pyjson.Object, 1)}
+	rec := &dispatchRecord{out: make(chan *jsonutil.Object, 1)}
 	prev := dispatchAsyncDelegationSeam
 	t.Cleanup(func() { dispatchAsyncDelegationSeam = prev })
 	dispatchAsyncDelegationSeam = func(env *tools.Env, req tools.AsyncDelegationRequest) map[string]any {
@@ -77,7 +77,7 @@ func markOK(ctx context.Context, s *Store, job *Job) bool {
 	return true
 }
 
-func waitOut(t *testing.T, rec *dispatchRecord) *pyjson.Object {
+func waitOut(t *testing.T, rec *dispatchRecord) *jsonutil.Object {
 	t.Helper()
 	select {
 	case o := <-rec.out:

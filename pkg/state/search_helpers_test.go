@@ -11,12 +11,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-func objText(t *testing.T, o *pyjson.Object) string {
+func objText(t *testing.T, o *jsonutil.Object) string {
 	t.Helper()
-	s, err := pyjson.Dumps(o)
+	s, err := jsonutil.Encode(o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -122,14 +121,14 @@ func TestSearchQueryHelpers(t *testing.T) {
 	if !searchIsCJK(0x3000) || !searchIsCJK(0x2A6DF) || searchIsCJK(0x2A6E0) || searchIsCJK('a') {
 		t.Fatal("search cjk ranges")
 	}
-	decoded, err := pyjson.Loads(`[{"type": "text", "text": " hello "}, {"type": "image_url"}, {"type": "text", "text": ""}, {"type": "text", "text": "world"}, "loose"]`)
+	decoded, err := jsonutil.Decode(`[{"type": "text", "text": " hello "}, {"type": "image_url"}, {"type": "text", "text": ""}, {"type": "text", "text": "world"}, "loose"]`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if got, err := flattenText(decoded); err != nil || got != "hello  world" {
 		t.Fatalf("flatten = %q %v", got, err)
 	}
-	images, _ := pyjson.Loads(`[{"type": "image_url"}]`)
+	images, _ := jsonutil.Decode(`[{"type": "image_url"}]`)
 	if got, _ := flattenText(images); got != "[multimodal content]" {
 		t.Fatalf("marker = %q", got)
 	}
@@ -139,7 +138,7 @@ func TestSearchQueryHelpers(t *testing.T) {
 	if got, _ := flattenText(int64(3)); got != "" {
 		t.Fatal("other values flatten to empty")
 	}
-	bad, _ := pyjson.Loads(`[{"type": "text", "text": "a"}, {"type": "text", "text": 5}]`)
+	bad, _ := jsonutil.Decode(`[{"type": "text", "text": "a"}, {"type": "text", "text": 5}]`)
 	if _, err := flattenText(bad); err == nil || !strings.Contains(err.Error(), "text part 1 is a number, expected text") {
 		t.Fatalf("join type error = %v", err)
 	}

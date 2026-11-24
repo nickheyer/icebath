@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const reconnectSID = "local-abc"
@@ -169,7 +168,7 @@ func TestATurnLostToARestartIsReportedPlainlyAndTheNextTurnRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	message := pyrepr.Str(lost["error"])
+	message := anyutil.String(lost["error"])
 	if lost["failed"] != true || lost["failure_reason"] != "gateway_connection" {
 		t.Fatalf("lost %v", lost)
 	}

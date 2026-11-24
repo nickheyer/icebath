@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func stickerIDs(list []*pyjson.Object) []string {
+func stickerIDs(list []*jsonutil.Object) []string {
 	out := make([]string, 0, len(list))
 	for _, s := range list {
 		out = append(out, stickerField(s, "sticker_id"))
@@ -19,11 +19,11 @@ func stickerIDs(list []*pyjson.Object) []string {
 }
 
 func TestStickerMapShape(t *testing.T) {
-	if StickerMap.Len() != 59 || StickerMap.Keys[0] != "六六六" || StickerMap.Keys[58] != "烟花" {
-		t.Fatalf("catalogue = %d keys %q", StickerMap.Len(), StickerMap.Keys)
+	if StickerMap.Len() != 59 || StickerMap.Keys()[0] != "六六六" || StickerMap.Keys()[58] != "烟花" {
+		t.Fatalf("catalogue = %d keys %q", StickerMap.Len(), StickerMap.Keys())
 	}
-	s := StickerMap.Vals["ok"].(*pyjson.Object)
-	got, err := pyjson.Dumps(s, pyjson.EnsureASCII(false))
+	s := StickerMap.Value("ok").(*jsonutil.Object)
+	got, err := jsonutil.Encode(s)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,16 +129,16 @@ func TestSearchStickersRanking(t *testing.T) {
 }
 
 func TestBuildStickerMsgBody(t *testing.T) {
-	body, err := BuildStickerMsgBody(StickerMap.Vals["六六六"].(*pyjson.Object))
+	body, err := BuildStickerMsgBody(StickerMap.Value("六六六").(*jsonutil.Object))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, _ := pyjson.Dumps(body, pyjson.EnsureASCII(false))
+	got, _ := jsonutil.Encode(body)
 	want := `[{"msg_type": "TIMFaceElem", "msg_content": {"index": 0, "data": "{\"sticker_id\":\"278\",\"package_id\":\"1003\",\"width\":128,\"height\":128,\"formats\":\"png\",\"name\":\"六六六\"}"}}]`
 	if got != want {
 		t.Fatalf("got %s", got)
 	}
-	bare := pyjson.NewObject()
+	bare := jsonutil.NewObject()
 	bare.Set("name", "x")
 	bare.Set("package_id", "1")
 	bare.Set("sticker_id", "9")
@@ -146,7 +146,7 @@ func TestBuildStickerMsgBody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _ := body[0].(*pyjson.Object).Vals["msg_content"].(*pyjson.Object).Get("data")
+	data, _ := body[0].(*jsonutil.Object).Value("msg_content").(*jsonutil.Object).Get("data")
 	if data != `{"sticker_id":"9","package_id":"1","width":128,"height":128,"formats":"png","name":"x"}` {
 		t.Fatalf("defaults = %v", data)
 	}
@@ -155,7 +155,7 @@ func TestBuildStickerMsgBody(t *testing.T) {
 	if _, err = BuildStickerMsgBody(bare); !errors.As(err, &ke) || err.Error() != "the sticker has no sticker_id" {
 		t.Fatalf("missing key = %v", err)
 	}
-	face, _ := pyjson.Dumps(BuildFaceMsgBody(5, nil))
+	face, _ := jsonutil.Encode(BuildFaceMsgBody(5, nil))
 	if face != `[{"msg_type": "TIMFaceElem", "msg_content": {"index": 5}}]` {
 		t.Fatalf("face = %s", face)
 	}

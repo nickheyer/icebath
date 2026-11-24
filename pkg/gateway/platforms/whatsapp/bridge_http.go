@@ -12,12 +12,11 @@ import (
 	"strings"
 	"time"
 
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/types"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Host values the bridge accepts, loopback aliases only against DNS rebinding
@@ -58,7 +57,7 @@ func (b *bridgeHost) httpHandler() http.Handler {
 
 // Compact JSON response with the status code
 func writeJSON(w http.ResponseWriter, status int, payload any) {
-	text, err := pyjson.Dumps(payload, pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		text = `{"error":"` + strings.ReplaceAll(err.Error(), `"`, `'`) + `"}`
 		status = 500
@@ -69,26 +68,26 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 }
 
 // Request JSON object, empty for a non JSON content type, an error for a malformed body
-func readBody(r *http.Request) (*pyjson.Object, error) {
+func readBody(r *http.Request) (*jsonutil.Object, error) {
 	if !strings.HasPrefix(strings.ToLower(r.Header.Get("Content-Type")), "application/json") {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	raw, err := io.ReadAll(io.LimitReader(r.Body, 100*1024))
 	if err != nil {
 		return nil, err
 	}
 	if len(strings.TrimSpace(string(raw))) == 0 {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	v, err := pyjson.LoadsBytes(raw)
+	v, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, err
 	}
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x, nil
 	case []any:
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	return nil, errors.New("strict JSON body must be an object or array")
 }
@@ -104,7 +103,7 @@ func (b *bridgeHost) requireConnected(w http.ResponseWriter, text string) *whats
 }
 
 // Parsed request body, writing the 400 answer for a malformed one
-func (b *bridgeHost) body(w http.ResponseWriter, r *http.Request) *pyjson.Object {
+func (b *bridgeHost) body(w http.ResponseWriter, r *http.Request) *jsonutil.Object {
 	obj, err := readBody(r)
 	if err != nil {
 		writeJSON(w, 400, jsonObj("error", err.Error()))
@@ -205,7 +204,7 @@ func (b *bridgeHost) handleSend(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	chatID, message := jsTruthyString(req.GetOr("chatId", nil)), jsTruthyString(req.GetOr("message", nil))
+	chatID, message := jsTruthyString(req.ValueOr("chatId", nil)), jsTruthyString(req.ValueOr("message", nil))
 	if chatID == "" || message == "" {
 		writeJSON(w, 400, jsonObj("error", "chatId and message are required"))
 		return
@@ -222,7 +221,7 @@ func (b *bridgeHost) handleSend(w http.ResponseWriter, r *http.Request) {
 		var replyTo any
 		var mentions []string
 		if i == 0 {
-			replyTo, mentions = req.GetOr("replyTo", nil), mentionList(req.GetOr("mentions", nil))
+			replyTo, mentions = req.ValueOr("replyTo", nil), mentionList(req.ValueOr("mentions", nil))
 		}
 		payload := b.buildTextSendPayload(client, chunk, replyTo, mentions)
 		id, at, err := b.sendOne(client, chat, payload)
@@ -255,7 +254,7 @@ func (b *bridgeHost) handleEdit(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	chatID, messageID, message := jsTruthyString(req.GetOr("chatId", nil)), jsTruthyString(req.GetOr("messageId", nil)), jsTruthyString(req.GetOr("message", nil))
+	chatID, messageID, message := jsTruthyString(req.ValueOr("chatId", nil)), jsTruthyString(req.ValueOr("messageId", nil)), jsTruthyString(req.ValueOr("message", nil))
 	if chatID == "" || messageID == "" || message == "" {
 		writeJSON(w, 400, jsonObj("error", "chatId, messageId, and message are required"))
 		return
@@ -362,7 +361,7 @@ func (b *bridgeHost) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	chatID, filePath := jsTruthyString(req.GetOr("chatId", nil)), jsTruthyString(req.GetOr("filePath", nil))
+	chatID, filePath := jsTruthyString(req.ValueOr("chatId", nil)), jsTruthyString(req.ValueOr("filePath", nil))
 	if chatID == "" || filePath == "" {
 		writeJSON(w, 400, jsonObj("error", "chatId and filePath are required"))
 		return
@@ -383,12 +382,12 @@ func (b *bridgeHost) handleSendMedia(w http.ResponseWriter, r *http.Request) {
 	}
 	lowered := strings.ToLower(filePath)
 	ext := lowered[strings.LastIndex(lowered, ".")+1:]
-	kind := jsTruthyString(req.GetOr("mediaType", nil))
+	kind := jsTruthyString(req.ValueOr("mediaType", nil))
 	if kind == "" {
 		kind = inferMediaType(ext)
 	}
-	caption, fileName := jsTruthyString(req.GetOr("caption", nil)), jsTruthyString(req.GetOr("fileName", nil))
-	mentions := mentionList(req.GetOr("mentions", nil))
+	caption, fileName := jsTruthyString(req.ValueOr("caption", nil)), jsTruthyString(req.ValueOr("fileName", nil))
+	mentions := mentionList(req.ValueOr("mentions", nil))
 	type plan struct {
 		kind, mime, fileName string
 		data                 []byte
@@ -465,13 +464,13 @@ func (b *bridgeHost) handleSendPoll(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	chatID := jsTruthyString(req.GetOr("chatId", nil))
-	options, isList := req.GetOr("options", nil).([]any)
-	if chatID == "" || !jsTruthy(req.GetOr("question", nil)) || !isList {
+	chatID := jsTruthyString(req.ValueOr("chatId", nil))
+	options, isList := req.ValueOr("options", nil).([]any)
+	if chatID == "" || !jsTruthy(req.ValueOr("question", nil)) || !isList {
 		writeJSON(w, 400, jsonObj("error", "chatId, question, and options are required"))
 		return
 	}
-	question, opts, count, err := buildPollPayload(req.GetOr("question", nil), options, req.GetOr("selectableCount", nil))
+	question, opts, count, err := buildPollPayload(req.ValueOr("question", nil), options, req.ValueOr("selectableCount", nil))
 	if err != nil {
 		writeJSON(w, 400, jsonObj("error", err.Error()))
 		return
@@ -502,7 +501,7 @@ func (b *bridgeHost) handleSendLocation(w http.ResponseWriter, r *http.Request) 
 	}
 	lat, hasLat := req.Get("latitude")
 	lon, hasLon := req.Get("longitude")
-	chatID := jsTruthyString(req.GetOr("chatId", nil))
+	chatID := jsTruthyString(req.ValueOr("chatId", nil))
 	if chatID == "" || !hasLat || !hasLon {
 		writeJSON(w, 400, jsonObj("error", "chatId, latitude, and longitude are required"))
 		return
@@ -518,10 +517,10 @@ func (b *bridgeHost) handleSendLocation(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	loc := &waE2E.LocationMessage{DegreesLatitude: proto.Float64(latitude), DegreesLongitude: proto.Float64(longitude)}
-	if name := jsTruthyString(req.GetOr("name", nil)); name != "" {
+	if name := jsTruthyString(req.ValueOr("name", nil)); name != "" {
 		loc.Name = proto.String(name)
 	}
-	if address := jsTruthyString(req.GetOr("address", nil)); address != "" {
+	if address := jsTruthyString(req.ValueOr("address", nil)); address != "" {
 		loc.Address = proto.String(address)
 	}
 	payload := &waE2E.Message{LocationMessage: loc}
@@ -543,7 +542,7 @@ func (b *bridgeHost) handleTyping(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	chatID := jsTruthyString(req.GetOr("chatId", nil))
+	chatID := jsTruthyString(req.ValueOr("chatId", nil))
 	if chatID == "" {
 		writeJSON(w, 400, jsonObj("error", "chatId required"))
 		return
@@ -564,19 +563,19 @@ func (b *bridgeHost) handleRead(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	key, _ := req.GetOr("key", nil).(*pyjson.Object)
-	if !b.cfg.sendReadReceipts || key == nil || jsTruthy(key.GetOr("fromMe", nil)) || !jsTruthy(key.GetOr("id", nil)) || !jsTruthy(key.GetOr("remoteJid", nil)) {
+	key, _ := req.ValueOr("key", nil).(*jsonutil.Object)
+	if !b.cfg.sendReadReceipts || key == nil || jsTruthy(key.ValueOr("fromMe", nil)) || !jsTruthy(key.ValueOr("id", nil)) || !jsTruthy(key.ValueOr("remoteJid", nil)) {
 		writeJSON(w, 200, jsonObj("success", true, "marked", false))
 		return
 	}
-	chat, err := parseChat(jsString(key.GetOr("remoteJid", nil)))
+	chat, err := parseChat(jsString(key.ValueOr("remoteJid", nil)))
 	if err == nil {
 		sender := types.EmptyJID
-		if chat.Server == types.GroupServer && jsTruthy(key.GetOr("participant", nil)) {
-			sender, err = parseChat(jsString(key.GetOr("participant", nil)))
+		if chat.Server == types.GroupServer && jsTruthy(key.ValueOr("participant", nil)) {
+			sender, err = parseChat(jsString(key.ValueOr("participant", nil)))
 		}
 		if err == nil {
-			err = client.MarkRead(b.ctx, []types.MessageID{jsString(key.GetOr("id", nil))}, time.Now(), chat, sender)
+			err = client.MarkRead(b.ctx, []types.MessageID{jsString(key.ValueOr("id", nil))}, time.Now(), chat, sender)
 		}
 	}
 	if err != nil {
@@ -597,7 +596,7 @@ func (b *bridgeHost) handleReact(w http.ResponseWriter, r *http.Request) {
 	if req == nil {
 		return
 	}
-	chatID, messageID, emoji := jsTruthyString(req.GetOr("chatId", nil)), jsTruthyString(req.GetOr("messageId", nil)), jsTruthyString(req.GetOr("emoji", nil))
+	chatID, messageID, emoji := jsTruthyString(req.ValueOr("chatId", nil)), jsTruthyString(req.ValueOr("messageId", nil)), jsTruthyString(req.ValueOr("emoji", nil))
 	if chatID == "" || messageID == "" || emoji == "" {
 		writeJSON(w, 400, jsonObj("error", "chatId, messageId, and emoji are required"))
 		return

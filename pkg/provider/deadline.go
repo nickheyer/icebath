@@ -2,16 +2,17 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math"
 	"os"
 	"runtime"
+	"strconv"
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Longest wait handed to any platform primitive, a year off Windows and the DWORD millisecond cap on it
@@ -99,7 +100,7 @@ func dumpAllStacks() error {
 
 // Warns that an expiry went unprocessed past the grace window and dumps every goroutine stack
 func dumpBlockedLoopDiagnostics(label string, timeout time.Duration) {
-	pkgLog().Warn(fmt.Sprintf("[deadline] %s deadline (%.0fs) expired but the event loop has not processed the expiry after a further %.0fs — the loop thread appears BLOCKED in a synchronous call, which is why no asyncio timeout can fire. Dumping all thread stacks to stderr to identify the blocking frame.", pyrepr.StrRepr(label), timeout.Seconds(), LoopBlockedDumpGrace.Seconds()))
+	pkgLog().Warn(fmt.Sprintf("[deadline] %s deadline (%.0fs) expired but the event loop has not processed the expiry after a further %.0fs — the loop thread appears BLOCKED in a synchronous call, which is why no asyncio timeout can fire. Dumping all thread stacks to stderr to identify the blocking frame.", strconv.Quote(label), timeout.Seconds(), LoopBlockedDumpGrace.Seconds()))
 	if err := dumpAllStacks(); err != nil {
 		pkgLog().Debug(fmt.Sprintf("faulthandler traceback dump failed: %v", err))
 	}
@@ -118,7 +119,14 @@ func runAbandonCleanup(ctx context.Context, onAbandon func(ctx context.Context) 
 }
 
 // BoundedResult is the outcome of a bounded operation, operation errors never land here
-type BoundedResult = pydeadline.Result
+type BoundedResult struct {
+	TimedOut bool
+	Value    any
+	Elapsed  time.Duration
+	Timeout  time.Duration
+	Bounded  bool
+	Label    string
+}
 
 // ClampTimeout maps NaN, infinite, or non positive seconds to unbounded and caps the rest
 func ClampTimeout(seconds float64) (time.Duration, bool) {
@@ -172,8 +180,32 @@ func startBounded(ctx context.Context, fn func(ctx context.Context) (any, error)
 
 // RunBounded runs fn on a worker keeping the caller context values, abandoning the worker uncancelled on expiry
 func RunBounded(ctx context.Context, fn func(ctx context.Context) (any, error), timeout time.Duration, bounded bool, label string, onTimeout func(), backend any) (BoundedResult, error) {
-	return pydeadline.RunBounded(ctx, fn, timeout, bounded, label, pydeadline.Hooks{Now: deadlineNow, OnTimeout: onTimeout,
-		MarkSuspect: func() { markBackendSuspect(backend, label, timeout) }})
+	start := deadlineNow()
+	if !bounded {
+		v, err := fn(ctx)
+		return BoundedResult{Value: v, Elapsed: deadlineNow().Sub(start), Label: label}, err
+	}
+	v, timedOut, err := syncutil.RunBounded(ctx, timeout, fn)
+	res := BoundedResult{Value: v, TimedOut: timedOut, Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}
+	if pe := (*syncutil.PanicError)(nil); errors.As(err, &pe) {
+		err = fmt.Errorf("%s %w", label, err)
+	}
+	if !timedOut {
+		return res, err
+	}
+	pkgLog().Warn(fmt.Sprintf("[deadline] %q timed out after %.1fs; worker abandoned", label, timeout.Seconds()))
+	markBackendSuspect(backend, label, timeout)
+	if onTimeout != nil {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					pkgLog().Debug(fmt.Sprintf("deadline on_timeout callback failed: %v", r))
+				}
+			}()
+			onTimeout()
+		}()
+	}
+	return res, nil
 }
 
 // RunBoundedAsync runs fn under a timer driven deadline, cancelling and abandoning it on expiry or caller cancellation
@@ -225,6 +257,6 @@ func RunBoundedAsync(ctx context.Context, fn func(ctx context.Context) (any, err
 	if onAbandon != nil {
 		go runAbandonCleanup(context.WithoutCancel(ctx), onAbandon)
 	}
-	pkgLog().Warn(fmt.Sprintf("[deadline] %s timed out after %.1fs; task abandoned", pyrepr.StrRepr(label), timeout.Seconds()))
+	pkgLog().Warn(fmt.Sprintf("[deadline] %s timed out after %.1fs; task abandoned", strconv.Quote(label), timeout.Seconds()))
 	return BoundedResult{TimedOut: true, Elapsed: deadlineNow().Sub(start), Timeout: timeout, Bounded: true, Label: label}, nil
 }

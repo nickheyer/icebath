@@ -10,9 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Tool environment of a plugin facing call, the bound session env else the active home with its config
@@ -125,7 +125,7 @@ func portableDeclaration(decl plugins.AgentPluginServerDeclaration) (*tools.Plat
 	if decl.Requires != nil {
 		requires = decl.Requires
 	}
-	return tools.ParsePlatformDeclaration(decl.Name, app, requires, "plugin.json extension server "+pyrepr.Repr(decl.Name))
+	return tools.ParsePlatformDeclaration(decl.Name, app, requires, "plugin.json extension server "+anyutil.Quote(decl.Name))
 }
 
 // Install time availability verdict of a portable server declaration

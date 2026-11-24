@@ -4,6 +4,7 @@ package media
 
 import (
 	"context"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -285,7 +286,7 @@ func TestBuildEngineDispatch(t *testing.T) {
 	}
 	_, err := wakeBuildEngine(ctx, &WakeConfig{Provider: "bogus"})
 	var we *WakeWordError
-	if !asError(err, &we) || we.Class != "ValueError" || we.Msg != "Unknown wake_word provider: bogus" {
+	if !asError(err, &we) || !errors.Is(err, errWakeInvalid) || we.Msg != "Unknown wake_word provider: bogus" {
 		t.Fatalf("bogus provider error = %v", err)
 	}
 }
@@ -494,7 +495,7 @@ func TestRequirementsDepsPresentButNoAudioHint(t *testing.T) {
 func TestOpenwakewordCustomModelPathUsed(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	var paths []string
-	swap(t, &wakeImportPyOpenWakeWord, func(context.Context) (pyOpenWakeWordModule, error) { return fakeOWWModule{paths: &paths}, nil })
+	swap(t, &wakeImportOpenWakeWord, func(context.Context) (openWakeWordModule, error) { return fakeOWWModule{paths: &paths}, nil })
 	swap(t, &wakeRequireExtra, func(context.Context, string) error { return nil })
 	eng, err := newOpenWakeWordEngine(context.Background(), &WakeConfig{Provider: "openwakeword", OpenWakeWordModel: "/models/hey_jarvis.tflite"})
 	if err != nil {

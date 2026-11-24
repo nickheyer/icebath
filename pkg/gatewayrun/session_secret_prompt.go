@@ -7,8 +7,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds the masked secret prompt waits for a viewer, the CLI secret panel deadline
@@ -31,7 +31,7 @@ func secretPromptScope(ctx context.Context, t *TurnRunner, a *agent.AIAgent) con
 		if !ok || live == nil {
 			return secretSkipped(varName, "cancelled", "Secret setup was skipped."), nil
 		}
-		params := pyjson.ObjectOf("env_var", varName, "prompt", prompt)
+		params := jsonutil.ObjectOf("env_var", varName, "prompt", prompt)
 		if len(metadata) > 0 {
 			params.Set("metadata", secretMetadataObject(metadata))
 		}
@@ -51,8 +51,8 @@ func secretPromptScope(ctx context.Context, t *TurnRunner, a *agent.AIAgent) con
 }
 
 // Capture metadata in the order the skill setup builds it, skill name then help then required for
-func secretMetadataObject(metadata map[string]any) *pyjson.Object {
-	out := pyjson.NewObject()
+func secretMetadataObject(metadata map[string]any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, key := range []string{"skill_name", "help", "required_for"} {
 		if v, ok := metadata[key]; ok {
 			out.Set(key, v)

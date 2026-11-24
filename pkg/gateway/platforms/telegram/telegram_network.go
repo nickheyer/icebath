@@ -21,10 +21,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	netutil "github.com/nickheyer/icebath/pkg/utils/net"
 )
 
 const TelegramAPIHost = "api.telegram.org"
@@ -282,7 +285,7 @@ func (t *TelegramFallbackTransport) resetPrimary(transport InnerTransport) error
 	t.primary = next
 	t.primaryMu.Unlock()
 	if err := transport.Close(); err != nil {
-		pkgLog().Debug(fmt.Sprintf("[Telegram] Error closing primary transport: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("[Telegram] Error closing primary transport: %s", err.Error()))
 	}
 	return nil
 }
@@ -297,7 +300,7 @@ func (t *TelegramFallbackTransport) resetFallback(ip string) {
 		return
 	}
 	if err := transport.Close(); err != nil {
-		pkgLog().Debug(fmt.Sprintf("[Telegram] Error closing fallback transport %s: %s", ip, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("[Telegram] Error closing fallback transport %s: %s", ip, err.Error()))
 	}
 }
 
@@ -462,10 +465,10 @@ func normalizeFallbackIPs(values []string) []string {
 		addr, ok := pyipaddress.IPAddress(raw)
 		switch {
 		case !ok:
-			pkgLog().Warn(fmt.Sprintf("Ignoring invalid Telegram fallback IP: %s", pyrepr.Repr(raw)))
+			pkgLog().Warn(fmt.Sprintf("Ignoring invalid Telegram fallback IP: %s", anyutil.Quote(raw)))
 		case !addr.Is4():
 			pkgLog().Warn(fmt.Sprintf("Ignoring non-IPv4 Telegram fallback IP: %s", raw))
-		case pyipaddress.IsPrivate(addr) || pyipaddress.IsLoopback(addr) || pyipaddress.IsLinkLocal(addr) || addr.IsUnspecified():
+		case netutil.IsPrivate(addr) || addr.IsLoopback() || addr.IsLinkLocalUnicast() || addr.IsUnspecified():
 			pkgLog().Warn(fmt.Sprintf("Ignoring private/internal Telegram fallback IP: %s", raw))
 		default:
 			normalized = append(normalized, addr.String())
@@ -515,32 +518,32 @@ func resolveSystemDNS() []string {
 func queryDoHProvider(client *http.Client, p dohProvider) []string {
 	ips, err := queryDoH(client, p)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("DoH query to %s failed: %s", p.URL, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("DoH query to %s failed: %s", p.URL, err.Error()))
 		return nil
 	}
 	return ips
 }
 
 func queryDoH(client *http.Client, p dohProvider) ([]string, error) {
-	req, err := http.NewRequest(http.MethodGet, pyhttpx.MergeParams(p.URL, p.Params), nil)
+	req, err := http.NewRequest(http.MethodGet, httputil.MergeQuery(p.URL, p.Params), nil)
 	if err != nil {
 		return nil, err
 	}
 	for k, v := range p.Headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := pyhttpx.DoTimeout(client, req, pyhttpx.Timeout{Connect: dohTimeout, Read: dohTimeout, Write: dohTimeout, Pool: dohTimeout})
+	resp, err := httputil.Do(client, req, httputil.Timeout{Connect: dohTimeout, Read: dohTimeout, Write: dohTimeout, Pool: dohTimeout})
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, errors.New(pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
+		return nil, &httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.URL, Location: resp.Header.Get("Location")}
 	}
 	data, err := resp.JSON()
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("the DNS over HTTPS reply is %s, expected a mapping", errchain.Kind(data))
 	}
@@ -554,7 +557,7 @@ func queryDoH(client *http.Client, p dohProvider) ([]string, error) {
 	}
 	ips := []string{}
 	for _, item := range list {
-		answer, ok := item.(*pyjson.Object)
+		answer, ok := item.(*jsonutil.Object)
 		if !ok {
 			return nil, fmt.Errorf("a DNS over HTTPS answer is %s, expected a mapping", errchain.Kind(item))
 		}
@@ -600,7 +603,7 @@ func DiscoverFallbackIPs(ctx context.Context) []string {
 
 // DoH client verifying with the shared platform trust context and honouring the proxy env
 func newDoHClient() *http.Client {
-	return &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, TLSClientConfig: provider.PlatformTLSConfig()}, CheckRedirect: pyhttpx.RedirectPolicy(false)}
+	return &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: http.ProxyFromEnvironment, TLSClientConfig: provider.PlatformTLSConfig()}, CheckRedirect: httputil.RedirectPolicy(false)}
 }
 
 func discoverFallbackIPs(ctx context.Context, client *http.Client, resolveSystem func() []string) []string {

@@ -6,18 +6,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Exported telegram session with a user turn, a tool calling assistant turn and its tool result
-func mdExportSession(overrides ...any) *pyjson.Object {
-	session := pyjson.ObjectOf("id", "20260706_123456_abcd1234", "title", "Export Test", "source", "telegram", "model", "gpt-5.5",
+func mdExportSession(overrides ...any) *jsonutil.Object {
+	session := jsonutil.ObjectOf("id", "20260706_123456_abcd1234", "title", "Export Test", "source", "telegram", "model", "gpt-5.5",
 		"billing_provider", "openai-codex", "cwd", "/tmp/project", "started_at", 1783331696.0, "last_active", 1783331705.0,
 		"ended_at", 1783331710.0, "message_count", 3, "tool_call_count", 1, "archived", 0, "messages", []any{
-			pyjson.ObjectOf("role", "user", "content", "Hello", "created_at", 1783331697.0),
-			pyjson.ObjectOf("role", "assistant", "content", "", "tool_calls", []any{pyjson.ObjectOf("function",
-				pyjson.ObjectOf("name", "terminal", "arguments", "{\"command\": \"pwd\"}"))}, "created_at", 1783331698.0),
-			pyjson.ObjectOf("role", "tool", "name", "terminal", "content", "output", "created_at", 1783331699.0),
+			jsonutil.ObjectOf("role", "user", "content", "Hello", "created_at", 1783331697.0),
+			jsonutil.ObjectOf("role", "assistant", "content", "", "tool_calls", []any{jsonutil.ObjectOf("function",
+				jsonutil.ObjectOf("name", "terminal", "arguments", "{\"command\": \"pwd\"}"))}, "created_at", 1783331698.0),
+			jsonutil.ObjectOf("role", "tool", "name", "terminal", "content", "output", "created_at", 1783331699.0),
 		})
 	for i := 0; i+1 < len(overrides); i += 2 {
 		session.Set(overrides[i].(string), overrides[i+1])
@@ -30,10 +30,10 @@ func TestSafeSessionFilenameIsDeterministicAndPathSafe(t *testing.T) {
 	if err != nil || !strings.HasPrefix(filename, "20260706_123456_abcd1234-") || !strings.HasSuffix(filename, ".qmd") || strings.ContainsAny(filename, "/:*?") {
 		t.Fatalf("file name %q %v", filename, err)
 	}
-	if got, _ := SafeSessionFilename(pyjson.ObjectOf("id", "x", "title", "Bad / title: * ?"), "qmd"); got != "x-bad-title.qmd" {
+	if got, _ := SafeSessionFilename(jsonutil.ObjectOf("id", "x", "title", "Bad / title: * ?"), "qmd"); got != "x-bad-title.qmd" {
 		t.Fatalf("file name %q", got)
 	}
-	if got, _ := SafeSessionFilename(pyjson.ObjectOf("title", "...___"), "md"); got != "unknown-session-session.md" {
+	if got, _ := SafeSessionFilename(jsonutil.ObjectOf("title", "...___"), "md"); got != "unknown-session-session.md" {
 		t.Fatalf("slugless file name %q", got)
 	}
 	if _, err := SafeSessionFilename(mdExportSession(), "html"); err == nil || err.Error() != "fmt must be 'md' or 'qmd'" {
@@ -66,18 +66,18 @@ func TestVerifyExportFileChecksCountAndSha(t *testing.T) {
 func TestExportBodyMatchesTheReferenceRendering(t *testing.T) {
 	session := mdExportSession()
 	messages, _ := session.Get("messages")
-	session.Set("messages", append(messages.([]any), pyjson.ObjectOf("role", "assistant", "content",
-		[]any{pyjson.ObjectOf("type", "text", "text", "caf\u00e9  ")}, "timestamp", 1783331700.25)))
+	session.Set("messages", append(messages.([]any), jsonutil.ObjectOf("role", "assistant", "content",
+		[]any{jsonutil.ObjectOf("type", "text", "text", "caf\u00e9  ")}, "timestamp", 1783331700.25)))
 	if got, err := exportBodyWithoutHash(session, "md", 1783331800.5); err != nil || got != "---\nsession_id: \"20260706_123456_abcd1234\"\ntitle: \"Export Test\"\nsource: \"telegram\"\ncreated_at: \"2026-07-06T09:54:56Z\"\nupdated_at: \"2026-07-06T09:55:05Z\"\nended_at: \"2026-07-06T09:55:10Z\"\nmodel: \"gpt-5.5\"\nprovider: \"openai-codex\"\ncwd: \"/tmp/project\"\narchived: false\nmessage_count: 4\ntool_call_count: 1\nformat: \"md\"\nexported_at: \"2026-07-06T09:56:40.500000Z\"\nexporter: \"icebath sessions export (md/qmd) v1\"\n---\n\n# Export Test\n\nSession ID: `20260706_123456_abcd1234`\n\nSource: `telegram`\n\nWorking directory: `/tmp/project`\n\n## Messages\n\n### User \u2014 2026-07-06T09:54:57Z\n\nHello\n\n\n### Assistant \u2014 2026-07-06T09:54:58Z\n\n\n\n## Tool calls\n\n```json\n[\n  {\n    \"function\": {\n      \"name\": \"terminal\",\n      \"arguments\": \"{\\\"command\\\": \\\"pwd\\\"}\"\n    }\n  }\n]\n```\n\n\n### Tool \u2014 terminal \u2014 2026-07-06T09:54:59Z\n\noutput\n\n\n### Assistant \u2014 2026-07-06T09:55:00.250000Z\n\n```json\n[\n  {\n    \"type\": \"text\",\n    \"text\": \"caf\u00e9  \"\n  }\n]\n```\n\n## Export verification\n\n- Session id: `20260706_123456_abcd1234`\n- Exported messages: `4`\n- Source DB message count at export: `3`\n- Exported at: `2026-07-06T09:56:40.500000Z`\n- SHA256 of exported body: `__SHA256_PLACEHOLDER__`\n" {
 		t.Fatalf("body %v\n%q", err, got)
 	}
-	lineage := pyjson.ObjectOf("session_id", "tip", "lineage_session_ids", []any{"root", "tip"}, "segments", []any{
-		pyjson.ObjectOf("id", "root", "messages", []any{pyjson.ObjectOf("role", "user", "content", "one\n\n")}),
-		pyjson.ObjectOf("id", "tip", "messages", []any{})})
+	lineage := jsonutil.ObjectOf("session_id", "tip", "lineage_session_ids", []any{"root", "tip"}, "segments", []any{
+		jsonutil.ObjectOf("id", "root", "messages", []any{jsonutil.ObjectOf("role", "user", "content", "one\n\n")}),
+		jsonutil.ObjectOf("id", "tip", "messages", []any{})})
 	if got, err := exportBodyWithoutHash(lineage, "qmd", 1783331800.0); err != nil || got != "---\nsession_id: \"tip\"\ntitle: null\nsource: null\ncreated_at: \"\"\nupdated_at: \"\"\nended_at: \"\"\nmodel: null\nprovider: null\ncwd: null\narchived: false\nmessage_count: 1\ntool_call_count: 0\nlineage_session_ids: [\"root\", \"tip\"]\nformat: \"qmd\"\nexported_at: \"2026-07-06T09:56:40Z\"\nexporter: \"icebath sessions export (md/qmd) v1\"\n---\n\n# tip\n\nSession ID: `tip`\n\n## Messages\n\n## Compression segment: root\n\n### User\n\none\n\n\n## Compression segment: tip\n\n## Export verification\n\n- Session id: `tip`\n- Exported messages: `1`\n- Source DB message count at export: `1`\n- Exported at: `2026-07-06T09:56:40Z`\n- SHA256 of exported body: `__SHA256_PLACEHOLDER__`\n" {
 		t.Fatalf("lineage body %v\n%q", err, got)
 	}
-	if got, err := exportBodyWithoutHash(pyjson.NewObject(), "md", 1783331800.0); err != nil || got != "---\nsession_id: \"unknown-session\"\ntitle: null\nsource: null\ncreated_at: \"\"\nupdated_at: \"\"\nended_at: \"\"\nmodel: null\nprovider: null\ncwd: null\narchived: false\nmessage_count: 0\ntool_call_count: 0\nformat: \"md\"\nexported_at: \"2026-07-06T09:56:40Z\"\nexporter: \"icebath sessions export (md/qmd) v1\"\n---\n\n# unknown-session\n\nSession ID: `unknown-session`\n\n## Messages\n\n_No messages in this session._\n\n## Export verification\n\n- Session id: `unknown-session`\n- Exported messages: `0`\n- Source DB message count at export: `0`\n- Exported at: `2026-07-06T09:56:40Z`\n- SHA256 of exported body: `__SHA256_PLACEHOLDER__`\n" {
+	if got, err := exportBodyWithoutHash(jsonutil.NewObject(), "md", 1783331800.0); err != nil || got != "---\nsession_id: \"unknown-session\"\ntitle: null\nsource: null\ncreated_at: \"\"\nupdated_at: \"\"\nended_at: \"\"\nmodel: null\nprovider: null\ncwd: null\narchived: false\nmessage_count: 0\ntool_call_count: 0\nformat: \"md\"\nexported_at: \"2026-07-06T09:56:40Z\"\nexporter: \"icebath sessions export (md/qmd) v1\"\n---\n\n# unknown-session\n\nSession ID: `unknown-session`\n\n## Messages\n\n_No messages in this session._\n\n## Export verification\n\n- Session id: `unknown-session`\n- Exported messages: `0`\n- Source DB message count at export: `0`\n- Exported at: `2026-07-06T09:56:40Z`\n- SHA256 of exported body: `__SHA256_PLACEHOLDER__`\n" {
 		t.Fatalf("empty body %v\n%q", err, got)
 	}
 }
@@ -115,28 +115,28 @@ func TestWriteSessionMarkdownRefusesAnExistingFileAndTheManifestRecordsEachExpor
 
 func TestRedactSessionDataMasksSecretsInMessagesOnly(t *testing.T) {
 	secret := "sk-proj-abcdefghijklmnopqrstuvwxyz0123456789ABCD"
-	session := pyjson.ObjectOf("id", "s", "title", "key "+secret, "messages", []any{
-		pyjson.ObjectOf("role", "user", "content", "my key is "+secret, "n", 3),
-		pyjson.ObjectOf("role", "assistant", "content", []any{pyjson.ObjectOf("type", "text", "text", "use "+secret)})})
+	session := jsonutil.ObjectOf("id", "s", "title", "key "+secret, "messages", []any{
+		jsonutil.ObjectOf("role", "user", "content", "my key is "+secret, "n", 3),
+		jsonutil.ObjectOf("role", "assistant", "content", []any{jsonutil.ObjectOf("type", "text", "text", "use "+secret)})})
 	redacted := RedactSessionData(session)
 	if title, _ := redacted.Get("title"); title != "key "+secret {
 		t.Fatalf("title %v", title)
 	}
 	messages, _ := redacted.Get("messages")
-	first := messages.([]any)[0].(*pyjson.Object)
+	first := messages.([]any)[0].(*jsonutil.Object)
 	if content, _ := first.Get("content"); strings.Contains(content.(string), secret) || !strings.HasPrefix(content.(string), "my key is ") {
 		t.Fatalf("content %v", content)
 	}
 	if n, _ := first.Get("n"); n != 3 {
 		t.Fatalf("number %v", n)
 	}
-	second := messages.([]any)[1].(*pyjson.Object)
+	second := messages.([]any)[1].(*jsonutil.Object)
 	parts, _ := second.Get("content")
-	if text, _ := parts.([]any)[0].(*pyjson.Object).Get("text"); strings.Contains(text.(string), secret) {
+	if text, _ := parts.([]any)[0].(*jsonutil.Object).Get("text"); strings.Contains(text.(string), secret) {
 		t.Fatalf("nested text %v", text)
 	}
 	original, _ := session.Get("messages")
-	if content, _ := original.([]any)[0].(*pyjson.Object).Get("content"); content != "my key is "+secret {
+	if content, _ := original.([]any)[0].(*jsonutil.Object).Get("content"); content != "my key is "+secret {
 		t.Fatalf("the source session was changed: %v", content)
 	}
 }

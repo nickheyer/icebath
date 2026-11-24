@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Temp home with a fresh job registry and every route seam restored when the test ends
@@ -96,13 +96,13 @@ func lmStatusOf(err error) int {
 // Sum of the covered bytes the job's ranges mapping records
 func lmRangesTotal(t *testing.T, v any) int64 {
 	t.Helper()
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		t.Fatalf("ranges is %T", v)
 	}
 	var total int64
-	for _, key := range obj.Keys {
-		for _, row := range obj.Vals[key].([]any) {
+	for _, key := range obj.Keys() {
+		for _, row := range obj.Value(key).([]any) {
 			pair := row.([]any)
 			total += pair[1].(int64) - pair[0].(int64)
 		}

@@ -17,7 +17,6 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Tool env rooted in a fresh temp home with the adapter secret hooks installed
@@ -156,7 +155,7 @@ func TestSnapshotStoreReadsDictAndToleratesMissingOrDamagedFile(t *testing.T) {
 		t.Fatalf("missing store should be empty, got %v", got)
 	}
 	os.WriteFile(path, []byte(`{"task": "snapshot"}`), 0o644)
-	if got := envLoadJSONStore(path); got.Vals["task"] != "snapshot" {
+	if got := envLoadJSONStore(path); got.Value("task") != "snapshot" {
 		t.Fatalf("got %v", got)
 	}
 	os.WriteFile(path, []byte(`["not a mapping"]`), 0o644)
@@ -171,14 +170,14 @@ func TestSnapshotStoreReadsDictAndToleratesMissingOrDamagedFile(t *testing.T) {
 
 func TestUpdateJSONStoreIsLockedAndAtomic(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "store", "snapshots.json")
-	if err := envUpdateJSONStore(context.Background(), path, func(m *pyjson.Object) { m.Set("a", "1") }); err != nil {
+	if err := envUpdateJSONStore(context.Background(), path, func(m *jsonutil.Object) { m.Set("a", "1") }); err != nil {
 		t.Fatal(err)
 	}
-	if err := envUpdateJSONStore(context.Background(), path, func(m *pyjson.Object) { m.Set("b", "2") }); err != nil {
+	if err := envUpdateJSONStore(context.Background(), path, func(m *jsonutil.Object) { m.Set("b", "2") }); err != nil {
 		t.Fatal(err)
 	}
 	got := envLoadJSONStore(path)
-	if got.Vals["a"] != "1" || got.Vals["b"] != "2" {
+	if got.Value("a") != "1" || got.Value("b") != "2" {
 		t.Fatalf("got %v", got)
 	}
 	if _, err := os.Stat(path + ".lock"); err != nil {
@@ -1134,7 +1133,7 @@ func TestUpdateJSONStoreKeepsStoredNumberTypesAndOrder(t *testing.T) {
 	if err := os.WriteFile(path, []byte(`{"zeta": 1, "alpha": 1.0, "big": 1e2, "nested": {"y": [1, 1.0], "x": -0.0}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := envUpdateJSONStore(context.Background(), path, func(m *pyjson.Object) { m.Set("task", "é<") }); err != nil {
+	if err := envUpdateJSONStore(context.Background(), path, func(m *jsonutil.Object) { m.Set("task", "é<") }); err != nil {
 		t.Fatal(err)
 	}
 	got, err := os.ReadFile(path)

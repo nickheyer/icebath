@@ -5,7 +5,7 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Reporter caps on diagnostics per file, block size and attacker controlled fields
@@ -36,7 +36,7 @@ func sanitizeField(v any, limit int, isPrintable func(rune) bool) string {
 	if v == nil {
 		return ""
 	}
-	raw := strings.ReplaceAll(strings.ReplaceAll(pyrepr.Str(v), "\r", " "), "\n", " ")
+	raw := strings.ReplaceAll(strings.ReplaceAll(anyutil.String(v), "\r", " "), "\n", " ")
 	var b strings.Builder
 	for _, r := range raw {
 		if r == ' ' || isPrintable(r) {
@@ -50,7 +50,7 @@ func sanitizeField(v any, limit int, isPrintable func(rune) bool) string {
 func severityName(v any) (string, error) {
 	switch v.(type) {
 	case []any, map[string]any:
-		return "", &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))}
+		return "", &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(v))}
 	}
 	if n, ok := pyNumber(v); ok {
 		if name, ok := severityNames[n]; ok {
@@ -109,7 +109,7 @@ func ReportForFile(filePath string, diagnostics []map[string]any, isPrintable fu
 		sev := pyOr(d["severity"], int64(1))
 		switch sev.(type) {
 		case []any, map[string]any:
-			return "", &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(sev))}
+			return "", &pyExc{typ: "TypeError", text: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(sev))}
 		}
 		if n, ok := pyNumber(sev); ok && n == 1 {
 			filtered = append(filtered, d)

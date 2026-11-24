@@ -25,18 +25,17 @@ import (
 	"encoding/base64"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pytoml"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	tomlutil "github.com/nickheyer/icebath/pkg/utils/toml"
 )
 
 // One obligation record as a run found or left it, present false when the file was absent
@@ -206,7 +205,7 @@ func restoreArmedRecord(rec armedRecord, armed map[string]armedRecord) error {
 		return nil
 	}
 	if !rec.present {
-		if err := pypath.Unlink(rec.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := os.Remove(rec.path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 		return nil
@@ -441,7 +440,7 @@ func absoluteGit(gitCmd []string) string {
 	if !ok || found == "" {
 		return ""
 	}
-	abs, err := pypath.Abspath(found)
+	abs, err := filepath.Abs(found)
 	if err != nil {
 		return ""
 	}
@@ -473,21 +472,21 @@ func filesAddedBy(ctx context.Context, gitCmd []string, root, pre, target string
 func dropAddedFiles(root string, added []string) bool {
 	gone := true
 	for _, rel := range added {
-		if err := pypath.Unlink(filepath.Join(root, filepath.FromSlash(rel))); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := os.Remove(filepath.Join(root, filepath.FromSlash(rel))); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			gone = false
 		}
 	}
 	seen := map[string]bool{}
 	var parents []string
 	for _, rel := range added {
-		for _, parent := range pypath.PathParents(rel) {
-			if pypath.PathStr(parent) != "." && !seen[parent] {
+		for _, parent := range pathutil.Parents(rel) {
+			if filepath.Clean(parent) != "." && !seen[parent] {
 				seen[parent] = true
 				parents = append(parents, parent)
 			}
 		}
 	}
-	depth := func(p string) int { return len(strings.Split(pypath.PathAsPosix(p), "/")) }
+	depth := func(p string) int { return len(strings.Split(filepath.ToSlash(filepath.Clean(p)), "/")) }
 	sort.SliceStable(parents, func(i, j int) bool { return depth(parents[i]) > depth(parents[j]) })
 	for _, parent := range parents {
 		_ = syscall.Rmdir(filepath.Join(root, filepath.FromSlash(parent)))
@@ -541,7 +540,7 @@ func requiresPythonSpec(pyproject []byte) (string, bool) {
 	if len(pyproject) == 0 || !utf8.Valid(pyproject) {
 		return "", false
 	}
-	document, err := pytoml.Loads(string(pyproject))
+	document, err := tomlutil.Decode(string(pyproject))
 	if err != nil {
 		return "", false
 	}
@@ -578,11 +577,11 @@ func requiresOtherPython(pyproject []byte) (bool, error) {
 
 // Stdout of a read only interpreter child, false when it could not run or exited nonzero
 func runPython(ctx context.Context, argv []string, stdin string, timeout time.Duration) (string, bool) {
-	done, err := pysubprocess.RunWith(ctx, argv, pysubprocess.Options{Input: []byte(stdin), Timeout: timeout, Attr: tools.WindowsHideAttr()})
+	done, err := executil.Run(ctx, argv, executil.Options{Input: []byte(stdin), Timeout: timeout, Attr: tools.WindowsHideAttr()})
 	if err != nil || done == nil || done.Returncode != 0 {
 		return "", false
 	}
-	return pystr.TranslateNewlines(strings.ToValidUTF8(string(done.Stdout), "\uFFFD")), true
+	return textutil.NormalizeNewlines(strings.ToValidUTF8(string(done.Stdout), "\uFFFD")), true
 }
 
 // An installed python3.N the target's requires-python admits, newest first, false when the machine has none
@@ -621,12 +620,12 @@ func admittedPython(ctx context.Context, spec string) (string, bool, error) {
 // First source the running interpreter's compiler rejects, with its exception class and text
 func compileHere(sources []sourceFile) (*syntaxFault, error) {
 	for _, source := range sources {
-		if err := pyast.Compile(source.Data, source.Rel); err != nil {
-			var syntax *pyast.SyntaxError
+		if err := pythonutil.Compile(source.Data, source.Rel); err != nil {
+			var syntax *pythonutil.SyntaxError
 			if errors.As(err, &syntax) {
 				return &syntaxFault{Path: source.Rel, Error: syntax.Class + ": " + syntax.Error()}, nil
 			}
-			var other *pyast.LimitError
+			var other *pythonutil.LimitError
 			if errors.As(err, &other) && other.Class == "ValueError" {
 				return &syntaxFault{Path: source.Rel, Error: other.Msg}, nil
 			}
@@ -668,18 +667,18 @@ func startupSyntaxError(ctx context.Context, sources []sourceFile, pyproject []b
 		for _, source := range present {
 			pairs = append(pairs, source.Rel, base64.StdEncoding.EncodeToString(source.Data))
 		}
-		payload, err := pyjson.Dumps(pyjson.ObjectOf(pairs...))
+		payload, err := jsonutil.Encode(jsonutil.ObjectOf(pairs...))
 		if err != nil {
 			return nil, err
 		}
 		out, _ := runPython(ctx, []string{python, "-I", "-c", compileAll}, payload, 120*time.Second)
 		if lines := textutil.Lines(strings.TrimSpace(out)); len(lines) > 0 {
-			if verdict, err := pyjson.Loads(lines[len(lines)-1]); err == nil {
+			if verdict, err := jsonutil.Decode(lines[len(lines)-1]); err == nil {
 				if verdict == nil {
 					return nil, nil
 				}
 				if pair, ok := verdict.([]any); ok && len(pair) == 2 {
-					return &syntaxFault{Path: pyrepr.Str(pair[0]), Error: pyrepr.Str(pair[1]) + " (judged by " + python + ")"}, nil
+					return &syntaxFault{Path: anyutil.String(pair[0]), Error: anyutil.String(pair[1]) + " (judged by " + python + ")"}, nil
 				}
 			}
 		}

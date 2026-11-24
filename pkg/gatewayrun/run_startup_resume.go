@@ -4,12 +4,11 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Resume reasons the boot auto continue picks up
@@ -34,10 +33,10 @@ func coerceGatewayTimestamp(value any) *float64 {
 		if text == "" {
 			return nil
 		}
-		if f, err := pyint.ParseFloat(text); err == nil {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(text), 64); err == nil {
 			return scaled(f)
 		}
-		t, aware, err := pydatetime.ParseISOFormat(text)
+		t, aware, err := timeutil.ParseISOZone(text, time.UTC)
 		if err != nil {
 			return nil
 		}
@@ -47,7 +46,7 @@ func coerceGatewayTimestamp(value any) *float64 {
 		f := float64(t.UnixNano()) / 1e9
 		return &f
 	}
-	if f, err := pyint.Float(value); err == nil {
+	if f, err := anyutil.ToFloat(value); err == nil {
 		return scaled(f)
 	}
 	return nil

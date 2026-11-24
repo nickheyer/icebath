@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Creates a forum topic in a private chat, nil when the bot is absent or the topic cannot be created
@@ -68,7 +67,7 @@ func (a *TelegramAdapter) CreateHandoffThread(ctx context.Context, parentChatID,
 func (a *TelegramAdapter) dmTopicConfig(chatID string, name string) (map[string]any, map[string]any) {
 	for _, raw := range a.dmTopicsConfig {
 		entry, ok := raw.(map[string]any)
-		if !ok || pyrepr.Str(entry["chat_id"]) != chatID {
+		if !ok || anyutil.String(entry["chat_id"]) != chatID {
 			continue
 		}
 		topics, _ := entry["topics"].([]any)
@@ -140,7 +139,7 @@ func (a *TelegramAdapter) EnsureDMTopic(ctx context.Context, chatID, name string
 	}
 	var emoji *string
 	if v, ok := topicConf["icon_custom_emoji_id"]; ok && v != nil {
-		s := pyrepr.Str(v)
+		s := anyutil.String(v)
 		emoji = &s
 	}
 	threadID, err := a.CreateDMTopic(ctx, chatIDInt, name, iconColor, emoji)
@@ -251,7 +250,7 @@ func (a *TelegramAdapter) persistDMTopicThreadID(ctx context.Context, chatID int
 		return nil
 	}()
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[%s] Failed to persist thread_id to config: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to persist thread_id to config: %s", a.Name(), err.Error()))
 	}
 }
 
@@ -283,31 +282,31 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 		if !pyTruthy(chatID) || len(topics) == 0 {
 			continue
 		}
-		pkgLog().Info(fmt.Sprintf("[%s] Setting up %d DM topic(s) for chat %s", a.Name(), len(topics), pyrepr.Str(chatID)))
+		pkgLog().Info(fmt.Sprintf("[%s] Setting up %d DM topic(s) for chat %s", a.Name(), len(topics), anyutil.String(chatID)))
 		for _, t := range topics {
 			topicConf, ok := t.(map[string]any)
 			if !ok {
 				continue
 			}
-			topicName := pyrepr.Str(pyrepr.Or(topicConf["name"], ""))
+			topicName := anyutil.String(anyutil.Or(topicConf["name"], ""))
 			if !pyTruthy(topicConf["name"]) {
 				continue
 			}
-			cacheKey := pyrepr.Str(chatID) + ":" + topicName
+			cacheKey := anyutil.String(chatID) + ":" + topicName
 			if existing := topicConf["thread_id"]; pyTruthy(existing) {
 				n, ok := configInt(existing)
 				if !ok {
-					return &valueError{msg: "invalid literal for int() with base 10: " + pyrepr.Repr(existing)}
+					return &valueError{msg: "invalid literal for int() with base 10: " + anyutil.Quote(existing)}
 				}
 				a.mu.Lock()
 				a.dmTopics.Set(cacheKey, n)
 				a.mu.Unlock()
-				pkgLog().Info(fmt.Sprintf("[%s] DM topic loaded from config: %s -> thread_id=%s", a.Name(), cacheKey, pyrepr.Str(existing)))
+				pkgLog().Info(fmt.Sprintf("[%s] DM topic loaded from config: %s -> thread_id=%s", a.Name(), cacheKey, anyutil.String(existing)))
 				continue
 			}
 			normalized, ok := configInt(NormalizeTelegramChatID(chatID))
 			if !ok {
-				return &valueError{msg: "invalid literal for int() with base 10: " + pyrepr.Repr(chatID)}
+				return &valueError{msg: "invalid literal for int() with base 10: " + anyutil.Quote(chatID)}
 			}
 			var iconColor *int
 			if c, ok := configInt(topicConf["icon_color"]); ok {
@@ -316,7 +315,7 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 			}
 			var emoji *string
 			if v, ok := topicConf["icon_custom_emoji_id"]; ok && v != nil {
-				s := pyrepr.Str(v)
+				s := anyutil.String(v)
 				emoji = &s
 			}
 			threadID, err := a.CreateDMTopic(ctx, normalized, topicName, iconColor, emoji)
@@ -334,7 +333,7 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 			thread := int(*threadID)
 			_, seedErr := a.boundedSendMessage(ctx, &bot.SendMessageParams{ChatID: normalized, MessageThreadID: thread, Text: "\U0001f4cc " + topicName})
 			if seedErr != nil {
-				pkgLog().Debug(fmt.Sprintf("[%s] Could not send seed message to topic '%s': %s", a.Name(), topicName, pyrepr.ExceptionMessage(seedErr)))
+				pkgLog().Debug(fmt.Sprintf("[%s] Could not send seed message to topic '%s': %s", a.Name(), topicName, seedErr.Error()))
 			}
 		}
 	}
@@ -345,7 +344,7 @@ func (a *TelegramAdapter) setupDMTopics(ctx context.Context) error {
 func (a *TelegramAdapter) reloadDMTopicsFromConfig(ctx context.Context) {
 	tree, err := config.LoadReadonly(ctx, home.Dir(ctx), nil)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("[%s] Failed to reload dm_topics from config: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to reload dm_topics from config: %s", a.Name(), err.Error()))
 		return
 	}
 	platforms, _ := tree["platforms"].(map[string]any)
@@ -363,7 +362,7 @@ func (a *TelegramAdapter) reloadDMTopicsFromConfig(ctx context.Context) {
 	for _, raw := range dmTopics {
 		if entry, ok := raw.(map[string]any); ok {
 			if cid, has := entry["chat_id"]; has {
-				a.dmTopicChatIDs[pyrepr.Str(cid)] = true
+				a.dmTopicChatIDs[anyutil.String(cid)] = true
 			}
 		}
 	}
@@ -372,25 +371,25 @@ func (a *TelegramAdapter) reloadDMTopicsFromConfig(ctx context.Context) {
 		if !ok || !pyTruthy(entry["chat_id"]) {
 			continue
 		}
-		cid := pyrepr.Str(entry["chat_id"])
+		cid := anyutil.String(entry["chat_id"])
 		topics, _ := entry["topics"].([]any)
 		for _, t := range topics {
 			topic, ok := t.(map[string]any)
 			if !ok || !pyTruthy(topic["thread_id"]) || !pyTruthy(topic["name"]) {
 				continue
 			}
-			key := cid + ":" + pyrepr.Str(topic["name"])
+			key := cid + ":" + anyutil.String(topic["name"])
 			if a.dmTopics.Has(key) {
 				continue
 			}
 			n, ok := configInt(topic["thread_id"])
 			if !ok {
 				pkgLog().Debug(fmt.Sprintf("[%s] Failed to reload dm_topics from config: %s", a.Name(),
-					"invalid literal for int() with base 10: "+pyrepr.Repr(topic["thread_id"])))
+					"invalid literal for int() with base 10: "+anyutil.Quote(topic["thread_id"])))
 				return
 			}
 			a.dmTopics.Set(key, n)
-			pkgLog().Info(fmt.Sprintf("[%s] Hot-loaded DM topic from config: %s -> thread_id=%s", a.Name(), key, pyrepr.Str(topic["thread_id"])))
+			pkgLog().Info(fmt.Sprintf("[%s] Hot-loaded DM topic from config: %s -> thread_id=%s", a.Name(), key, anyutil.String(topic["thread_id"])))
 		}
 	}
 }
@@ -408,7 +407,7 @@ func (a *TelegramAdapter) dmTopicInfo(ctx context.Context, chatID, threadID stri
 	}
 	tid, err := strconv.ParseInt(strings.TrimSpace(threadID), 10, 64)
 	if err != nil {
-		return nil, &valueError{msg: "invalid literal for int() with base 10: " + pyrepr.Repr(threadID)}
+		return nil, &valueError{msg: "invalid literal for int() with base 10: " + anyutil.Quote(threadID)}
 	}
 	lookup := func() map[string]any {
 		a.mu.Lock()
@@ -420,7 +419,7 @@ func (a *TelegramAdapter) dmTopicInfo(ctx context.Context, chatID, threadID stri
 			topicName := key[strings.Index(key, ":")+1:]
 			for _, raw := range a.dmTopicsConfig {
 				entry, ok := raw.(map[string]any)
-				if !ok || pyrepr.Str(entry["chat_id"]) != chatID {
+				if !ok || anyutil.String(entry["chat_id"]) != chatID {
 					continue
 				}
 				topics, _ := entry["topics"].([]any)

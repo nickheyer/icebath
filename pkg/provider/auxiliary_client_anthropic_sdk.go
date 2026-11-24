@@ -12,9 +12,6 @@ import (
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Anthropic SDK style client over the Messages wire, taking raw api kwargs and returning raw Message maps
@@ -145,7 +142,7 @@ func anthSDKRequest(apiKwargs map[string]any, stream bool) (map[string]any, map[
 		switch k {
 		case "stream", "extra_query", "timeout":
 		case "extra_body":
-			if extra, ok := pyjson.AsObject(v); ok && extra.Len() > 0 {
+			if extra, ok := jsonutil.AsObject(v); ok && extra.Len() > 0 {
 				body["extra_body"] = extra
 			}
 		case "extra_headers":
@@ -214,16 +211,16 @@ func anthOfferResponse(call anthMessageCall, resp *http.Response) {
 }
 
 // Per request httpx limits of a timeout keyword, a number applying to every phase
-func anthRequestTimeout(raw any) (pyhttpx.Timeout, bool) {
-	if limits, ok := raw.(pyhttpx.Timeout); ok {
+func anthRequestTimeout(raw any) (httputil.Timeout, bool) {
+	if limits, ok := raw.(httputil.Timeout); ok {
 		return limits, true
 	}
 	seconds, ok := finitePositive(raw)
 	if !ok {
-		return pyhttpx.Timeout{}, false
+		return httputil.Timeout{}, false
 	}
 	d := secondsDuration(seconds)
-	return pyhttpx.Timeout{Connect: d, Read: d, Write: d, Pool: d}, true
+	return httputil.Timeout{Connect: d, Read: d, Write: d, Pool: d}, true
 }
 
 // Call options of SDK kwargs, the timeout keyword in the str forms the Stainless headers carry
@@ -236,7 +233,7 @@ func anthCallOptions(apiKwargs map[string]any) anthSDKCall {
 	switch v := raw.(type) {
 	case nil:
 		return anthSDKCall{timeoutText: "None", timeoutNone: true}
-	case pyhttpx.Timeout:
+	case httputil.Timeout:
 		if v.Read <= 0 {
 			return anthSDKCall{timeoutText: "None", timeoutNone: true}
 		}
@@ -246,7 +243,7 @@ func anthCallOptions(apiKwargs map[string]any) anthSDKCall {
 	case float32:
 		text = pyFloatRepr(float64(v))
 	default:
-		text = pyrepr.Str(v)
+		text = anyutil.String(v)
 	}
 	return anthSDKCall{timeoutText: text, readTimeout: text}
 }
@@ -269,12 +266,12 @@ func (c *anthropicSDKClient) post(ctx context.Context, apiKwargs map[string]any,
 	}
 	if limits, ok := anthRequestTimeout(apiKwargs["timeout"]); ok {
 		scoped := *client
-		scoped.Transport = pyhttpx.PhaseTimeoutTransport(client.Transport, limits)
+		scoped.Transport = httputil.TimeoutTransport(client.Transport, limits)
 		client = &scoped
 	}
 	resp, err := client.Do(httpReq)
 	if err != nil {
-		var phased *pyhttpx.TimeoutError
+		var phased *httputil.TimeoutError
 		if errors.As(err, &phased) {
 			err = &TimeoutPhaseError{Phase: phased.Phase, Err: err}
 		}

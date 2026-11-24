@@ -17,7 +17,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Slack source of a chat type and chat with an optional thread, user and workspace
@@ -61,7 +60,7 @@ func driveStopWith(t *testing.T, source *gateway.SessionSource, running map[stri
 	r.config = gateway.DefaultGatewayConfig(ctx)
 	r.sessionStore = gateway.NewSessionStore(ctx, filepath.Join(h, "sessions"), r.config, nil)
 	r.sessions = map[string]*SessionState{}
-	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	r.adapters = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	if adapter != nil {
 		r.adapters.Set(source.Platform, adapter)
 	}

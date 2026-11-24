@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Runner reading the busy input mode a messaging source runs under
@@ -45,14 +45,14 @@ func SessionBusyMode(ctx context.Context, runner AuthorityRunner, live *LiveSess
 		return "", err
 	}
 	var value any
-	if display := cfg["display"]; pyrepr.Truthy(display) {
+	if display := cfg["display"]; anyutil.IsTrue(display) {
 		section, ok := display.(map[string]any)
 		if !ok {
 			return "", fmt.Errorf("display settings are %s, expected a mapping", errchain.Kind(display))
 		}
 		value = section["busy_input_mode"]
 	}
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return fallback, nil
 	}
 	if valid(value) {

@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Ping recorded with the home and media policy active when it was sent
@@ -92,7 +92,7 @@ func TestNotifierPingsRunUnderTheSubscribersProfile(t *testing.T) {
 	r.config.MultiplexProfiles = &on
 	r.config.ProfileRoutes = nil
 	alphaAdapter := newProfileRecordingAdapter()
-	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
+	r.profileAdapters = orderedutil.NewMap[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]()
 	r.profileAdapters.Set("alpha", adapterDict(gateway.PlatformTelegram, alphaAdapter))
 	r.primaryProfileName = "default"
 	runOneNotifierTick(t, r)

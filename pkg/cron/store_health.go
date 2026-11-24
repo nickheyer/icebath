@@ -14,8 +14,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // ProbeIntervalSeconds spaces dispatch write retries and idle re probes of a degraded store
@@ -92,7 +93,7 @@ func DescribeStoreError(err error) string {
 	text := ""
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		text = pypath.Strerror(errno)
+		text = errno.Error()
 	}
 	if text == "" {
 		text = errchain.OSText(err)
@@ -137,7 +138,7 @@ func notifyStoreTransition(log *slog.Logger, event string, record *StoreDegraded
 }
 
 func storeHealthKey(cronDir string) string {
-	resolved, err := pypath.Realpath(cronDir, pypath.Lax)
+	resolved, err := pathutil.Resolve(cronDir)
 	if err != nil {
 		return filepath.Clean(cronDir)
 	}
@@ -370,7 +371,7 @@ func ProbeStore(cronDir string) error {
 	if st, err := os.Stat(jobsFile); err == nil {
 		size += st.Size()
 	}
-	resolved, err := pypath.Realpath(jobsFile, pypath.Lax)
+	resolved, err := pathutil.Resolve(jobsFile)
 	if err != nil {
 		resolved = jobsFile
 	}
@@ -379,7 +380,7 @@ func ProbeStore(cronDir string) error {
 			return &fs.PathError{Op: "access", Path: target, Err: syscall.EACCES}
 		}
 	}
-	f, err := pyfs.MkstempBeside(jobsFile, ".probe_", "")
+	f, err := fsutil.CreateTempBeside(jobsFile, ".probe_", "")
 	if err != nil {
 		return err
 	}

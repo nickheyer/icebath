@@ -12,8 +12,8 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Hooks pkg/tools sets in an init so formatters and stdio redact the way agent.redact does
@@ -28,7 +28,7 @@ var (
 	errRedactDropped  = errors.New("RuntimeError: the redaction hook did not pass the formatted line on")
 )
 
-var sessionContext pythread.Local
+var sessionContext syncutil.GoroutineLocal[any]
 
 // Tags every record the calling goroutine logs with the session id
 func SetSessionContext(sessionID string) { sessionContext.Set(sessionID) }
@@ -38,7 +38,7 @@ func ClearSessionContext() { sessionContext.Delete() }
 
 // Record with the calling goroutine's session tag and the resolved home ctx names
 func makeRecord(ctx context.Context, name string, level int, msg string, created time.Time, pc uintptr) *Record {
-	rec := &Record{Name: name, Levelno: level, Levelname: LevelName(level), Msg: msg, Created: created, Thread: pythread.GoroutineID(), PC: pc}
+	rec := &Record{Name: name, Levelno: level, Levelname: LevelName(level), Msg: msg, Created: created, Thread: syncutil.GoroutineID(), PC: pc}
 	if v, ok := sessionContext.Get(); ok {
 		if sid, _ := v.(string); sid != "" {
 			rec.SessionTag = " [" + sid + "]"
@@ -55,7 +55,7 @@ func recordHome(ctx context.Context) (h string) {
 			h = ""
 		}
 	}()
-	resolved, err := pypath.Realpath(home.Dir(ctx), pypath.Lax)
+	resolved, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return ""
 	}

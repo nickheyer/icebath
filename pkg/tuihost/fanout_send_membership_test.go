@@ -9,30 +9,30 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Streamed text event of a session
-func deltaEvent(text, sessionID string) *pyjson.Object {
-	return pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params",
-		pyjson.ObjectOf("type", "message.delta", "session_id", sessionID, "payload", pyjson.ObjectOf("text", text)))
+func deltaEvent(text, sessionID string) *jsonutil.Object {
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event", "params",
+		jsonutil.ObjectOf("type", "message.delta", "session_id", sessionID, "payload", jsonutil.ObjectOf("text", text)))
 }
 
 // Label a frame line carries as params.payload.text
 func frameLabel(line string) string {
-	frame, err := pyjson.LoadsDict(strings.TrimSpace(line))
+	frame, err := jsonutil.DecodeObject(strings.TrimSpace(line))
 	if err != nil {
 		return ""
 	}
-	params, _ := frame.GetOr("params", nil).(*pyjson.Object)
+	params, _ := frame.ValueOr("params", nil).(*jsonutil.Object)
 	if params == nil {
 		return ""
 	}
-	payload, _ := params.GetOr("payload", nil).(*pyjson.Object)
+	payload, _ := params.ValueOr("payload", nil).(*jsonutil.Object)
 	if payload == nil {
 		return ""
 	}
-	label, _ := payload.GetOr("text", "").(string)
+	label, _ := payload.ValueOr("text", "").(string)
 	return label
 }
 
@@ -93,7 +93,7 @@ func (s *gatedSocket) sorted() []string {
 	return out
 }
 
-func sortedFrameTexts(t *testing.T, frames ...*pyjson.Object) []string {
+func sortedFrameTexts(t *testing.T, frames ...*jsonutil.Object) []string {
 	t.Helper()
 	out := []string{}
 	for _, frame := range frames {
@@ -112,7 +112,7 @@ func TestDetachDiscardsBatchWaitingForSendLock(t *testing.T) {
 			fanout := NewFanoutTransport(transport)
 			otherSession := NewFanoutTransport(transport)
 			buffered := deltaEvent("buffered", "other-session")
-			reply := pyjson.ObjectOf("jsonrpc", "2.0", "id", "private-reply", "result", pyjson.ObjectOf("ok", true))
+			reply := jsonutil.ObjectOf("jsonrpc", "2.0", "id", "private-reply", "result", jsonutil.ObjectOf("ok", true))
 			notice := deltaEvent("resume-required", "session")
 			transport.sendLock.lock()
 			held := true
@@ -138,7 +138,7 @@ func TestDetachDiscardsBatchWaitingForSendLock(t *testing.T) {
 				FanoutMaxPendingFrames = 2
 				defer func() { FanoutMaxPendingFrames = savedFrames }()
 				for index := range 3 {
-					fanout.WriteOverflow(deltaEvent(pyStrInt(index), "session"), func(Transport) *pyjson.Object { return notice })
+					fanout.WriteOverflow(deltaEvent(pyStrInt(index), "session"), func(Transport) *jsonutil.Object { return notice })
 				}
 				if fanout.Contains(transport) {
 					t.Fatal("overflowed peer kept its subscription")
@@ -181,7 +181,7 @@ func TestDetachDiscardsBatchWaitingForSendLock(t *testing.T) {
 				t.Fatal("reply never sent")
 			}
 			waitUntil(t, "both fanout writers drained", func() bool { return fanoutIdle(fanout) && fanoutIdle(otherSession) })
-			expected := []*pyjson.Object{buffered, reply, deltaEvent("other", "other-session")}
+			expected := []*jsonutil.Object{buffered, reply, deltaEvent("other", "other-session")}
 			if action == "reattach" || action == "overflow-reattach" {
 				expected = append(expected, deltaEvent("fresh", "session"))
 			}
@@ -211,7 +211,7 @@ func TestDetachDiscardsUnsentTailOfCapturedBatch(t *testing.T) {
 			socket := &gatedSocket{gates: newSendGates("seed", "first")}
 			transport := NewWSTransport(socket, "", nil)
 			fanout := NewFanoutTransport(transport)
-			reply := pyjson.ObjectOf("jsonrpc", "2.0", "id", "reply", "result", pyjson.ObjectOf("ok", true))
+			reply := jsonutil.ObjectOf("jsonrpc", "2.0", "id", "reply", "result", jsonutil.ObjectOf("ok", true))
 			defer func() {
 				fanout.Close()
 				for _, gate := range socket.gates {
@@ -249,7 +249,7 @@ func TestDetachDiscardsUnsentTailOfCapturedBatch(t *testing.T) {
 				t.Fatal("reply never sent")
 			}
 			waitUntil(t, "captured fanout batch drained", func() bool { return fanoutIdle(fanout) })
-			expected := []*pyjson.Object{deltaEvent("seed", "session"), deltaEvent("first", "session"), reply}
+			expected := []*jsonutil.Object{deltaEvent("seed", "session"), deltaEvent("first", "session"), reply}
 			if reattach {
 				expected = append(expected, deltaEvent("fresh", "session"))
 			}

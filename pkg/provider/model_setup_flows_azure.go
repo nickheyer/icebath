@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -159,8 +158,8 @@ func azurePickModel(r *ModelFlowRun, discoveredModels []string, currentModel str
 	if pick == "" {
 		return def, true, nil
 	}
-	if pystr.StrIsDigit(pick) {
-		n, err := parsePyInt(pick)
+	if textutil.IsDigits(pick) {
+		n, err := parseWholeNumber(pick)
 		if err != nil {
 			return "", false, err
 		}

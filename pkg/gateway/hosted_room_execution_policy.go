@@ -6,14 +6,15 @@ import (
 	"encoding/hex"
 	"math/big"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -31,9 +32,6 @@ type RoomExecutionPolicyError struct{ Msg string }
 
 func (e *RoomExecutionPolicyError) Error() string { return e.Msg }
 
-// Python class name of the error
-func (e *RoomExecutionPolicyError) PyTypeName() string { return "RoomExecutionPolicyError" }
-
 func roomPolicyError(msg string) error { return &RoomExecutionPolicyError{msg} }
 
 // Immutable target policy applied at the agent and approval boundaries
@@ -47,7 +45,7 @@ type RoomExecutionPolicy struct {
 }
 
 // Sha256 hex of the compact ASCII JSON of the unsigned policy
-func roomPolicyDigest(unsigned *pyjson.Object) (string, error) {
+func roomPolicyDigest(unsigned *jsonutil.Object) (string, error) {
 	text, err := roomCompactJSON(unsigned, true)
 	if err != nil {
 		return "", err
@@ -59,8 +57,8 @@ func roomPolicyDigest(unsigned *pyjson.Object) (string, error) {
 // Identifier of a policy field after str of the value, so non strings also fail as invalid
 func roomPolicyIdentifier(value any, field string) (string, error) {
 	text := ""
-	if pyrepr.Truthy(value) {
-		text = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		text = anyutil.String(value)
 	}
 	return roomIdentifier(text, roomIdentifierSpec{label: field, invalid: field + " is invalid"}, roomPolicyError)
 }
@@ -76,7 +74,7 @@ func RoomExecutionPolicyFromMapping(value any) (*RoomExecutionPolicy, error) {
 			return nil, roomPolicyError("execution policy fields are invalid")
 		}
 	}
-	if !pyjson.Equal(fields["version"], int64(roomPolicyVersion)) {
+	if !anyutil.Equal(fields["version"], int64(roomPolicyVersion)) {
 		return nil, roomPolicyError("execution policy version is unsupported")
 	}
 	targetProfile, err := roomPolicyIdentifier(fields["target_profile"], "target_profile")
@@ -102,8 +100,8 @@ func RoomExecutionPolicyFromMapping(value any) (*RoomExecutionPolicy, error) {
 		return nil, roomPolicyError("enabled_toolsets are invalid")
 	}
 	approvalMode := ""
-	if pyrepr.Truthy(fields["approval_mode"]) {
-		approvalMode = pyrepr.Str(fields["approval_mode"])
+	if anyutil.IsTrue(fields["approval_mode"]) {
+		approvalMode = anyutil.String(fields["approval_mode"])
 	}
 	approvalMode = strings.ToLower(strings.TrimSpace(approvalMode))
 	if approvalMode != "manual" && approvalMode != "smart" && approvalMode != "off" {
@@ -120,8 +118,8 @@ func RoomExecutionPolicyFromMapping(value any) (*RoomExecutionPolicy, error) {
 		return nil, err
 	}
 	supplied := ""
-	if pyrepr.Truthy(fields["policy_digest"]) {
-		supplied = pyrepr.Str(fields["policy_digest"])
+	if anyutil.IsTrue(fields["policy_digest"]) {
+		supplied = anyutil.String(fields["policy_digest"])
 	}
 	supplied = strings.ToLower(strings.TrimSpace(supplied))
 	if supplied != digest {
@@ -132,17 +130,17 @@ func RoomExecutionPolicyFromMapping(value any) (*RoomExecutionPolicy, error) {
 }
 
 // Policy fields without the digest, in dataclass order
-func (p *RoomExecutionPolicy) unsigned() *pyjson.Object {
+func (p *RoomExecutionPolicy) unsigned() *jsonutil.Object {
 	toolsets := make([]any, len(p.EnabledToolsets))
 	for i, name := range p.EnabledToolsets {
 		toolsets[i] = name
 	}
-	return pyjson.ObjectOf("version", p.Version, "target_profile", p.TargetProfile, "enabled_toolsets", toolsets,
+	return jsonutil.ObjectOf("version", p.Version, "target_profile", p.TargetProfile, "enabled_toolsets", toolsets,
 		"approval_mode", p.ApprovalMode, "max_iterations", p.MaxIterations)
 }
 
 // Wire mapping of the policy with its toolsets as a list
-func (p *RoomExecutionPolicy) AsMapping() *pyjson.Object {
+func (p *RoomExecutionPolicy) AsMapping() *jsonutil.Object {
 	mapping := p.unsigned()
 	mapping.Set("policy_digest", p.PolicyDigest)
 	return mapping
@@ -158,7 +156,7 @@ func servedProfileScope(ctx context.Context, targetProfile string) (context.Cont
 		return ctx, nil
 	}
 	if !profiles.ProfileExists(targetProfile) {
-		return nil, roomPolicyError("target_profile " + pyrepr.StrRepr(targetProfile) + " is not a live profile")
+		return nil, roomPolicyError("target_profile " + strconv.Quote(targetProfile) + " is not a live profile")
 	}
 	dir, err := profiles.GetProfileDir(targetProfile)
 	if err != nil {
@@ -168,7 +166,7 @@ func servedProfileScope(ctx context.Context, targetProfile string) (context.Cont
 }
 
 // Effective API server policy from the served profile's own config, loaded inside its scope when cfg is nil
-func ExecutionPolicyMapping(ctx context.Context, targetProfile string, cfg any) (*pyjson.Object, error) {
+func ExecutionPolicyMapping(ctx context.Context, targetProfile string, cfg any) (*jsonutil.Object, error) {
 	targetProfile, err := roomPolicyIdentifier(targetProfile, "target_profile")
 	if err != nil {
 		return nil, err
@@ -214,13 +212,13 @@ func ExecutionPolicyMapping(ctx context.Context, targetProfile string, cfg any) 
 	if maxIterations > MaxPolicyIterations {
 		maxIterations = MaxPolicyIterations
 	}
-	unsigned := pyjson.ObjectOf("version", int64(roomPolicyVersion), "target_profile", targetProfile,
+	unsigned := jsonutil.ObjectOf("version", int64(roomPolicyVersion), "target_profile", targetProfile,
 		"enabled_toolsets", toolsets, "approval_mode", approvalMode, "max_iterations", maxIterations)
 	digest, err := roomPolicyDigest(unsigned)
 	if err != nil {
 		return nil, err
 	}
-	value := unsigned.Copy()
+	value := unsigned.Clone()
 	value.Set("policy_digest", digest)
 	policy, err := RoomExecutionPolicyFromMapping(value)
 	if err != nil {

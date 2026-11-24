@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Messaging platform a row source label names, false for the API transport, local labels and unknown labels
@@ -24,15 +24,15 @@ func IsMessagingPlatformSource(source string) bool {
 }
 
 // Source from the row persisted origin, else from its columns, nil when the row has no chat id
-func rowSource(ctx context.Context, row *pyjson.Object, platform Platform, profile string) *SessionSource {
+func rowSource(ctx context.Context, row *jsonutil.Object, platform Platform, profile string) *SessionSource {
 	raw, _ := row.Get("origin_json")
 	if text, ok := raw.(string); ok {
-		if parsed, err := pyjson.Loads(text); err == nil {
-			obj, isObject := parsed.(*pyjson.Object)
+		if parsed, err := jsonutil.Decode(text); err == nil {
+			obj, isObject := parsed.(*jsonutil.Object)
 			if !isObject {
 				panic(&PyError{Kind: "AttributeError", Msg: "the stored session source is " + errchain.Kind(parsed) + ", expected a mapping"})
 			}
-			if source, err := SessionSourceFromDict(ctx, pyjson.Plain(obj).(map[string]any)); err == nil {
+			if source, err := SessionSourceFromDict(ctx, jsonutil.Plain(obj).(map[string]any)); err == nil {
 				return source
 			}
 		}
@@ -54,12 +54,12 @@ func rowSource(ctx context.Context, row *pyjson.Object, platform Platform, profi
 }
 
 // Optional text column of a row, nil for a missing or null value
-func rowOptStr(row *pyjson.Object, key string) *string {
+func rowOptStr(row *jsonutil.Object, key string) *string {
 	v, ok := row.Get(key)
 	if !ok || v == nil {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	if text, ok := v.(string); ok {
 		s = text
 	}

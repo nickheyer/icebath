@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Real OpenAI wire SSE server recording every chat completion body, optionally stalling after the first chunk
@@ -118,7 +118,7 @@ func spyClientGoroutine(t *testing.T) *uint64 {
 	var issuedOn uint64
 	prev := openAIClientConstructor
 	openAIClientConstructor = func(kwargs map[string]any) (any, error) {
-		issuedOn = pythread.GoroutineID()
+		issuedOn = syncutil.GoroutineID()
 		return prev(kwargs)
 	}
 	t.Cleanup(func() { openAIClientConstructor = prev })
@@ -157,8 +157,8 @@ func TestDirectContextsStreamOnTheWireAndOnTheCallingThread(t *testing.T) {
 			if completions[len(completions)-1]["stream"] != true {
 				t.Fatalf("%s turn went out non-streaming: stream=%v", platform, completions[len(completions)-1]["stream"])
 			}
-			if *issuedOn != pythread.GoroutineID() {
-				t.Fatalf("request dispatched from goroutine %d, caller is %d", *issuedOn, pythread.GoroutineID())
+			if *issuedOn != syncutil.GoroutineID() {
+				t.Fatalf("request dispatched from goroutine %d, caller is %d", *issuedOn, syncutil.GoroutineID())
 			}
 			content, finish := inlineResponseText(t, resp)
 			if content != "hello world" || finish != "stop" {
@@ -179,8 +179,8 @@ func TestInteractivePlatformStillUsesTheWorkerThread(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if *issuedOn == 0 || *issuedOn == pythread.GoroutineID() {
-		t.Fatalf("request dispatched from goroutine %d, caller is %d", *issuedOn, pythread.GoroutineID())
+	if *issuedOn == 0 || *issuedOn == syncutil.GoroutineID() {
+		t.Fatalf("request dispatched from goroutine %d, caller is %d", *issuedOn, syncutil.GoroutineID())
 	}
 	if content, _ := inlineResponseText(t, resp); content != "hello world" {
 		t.Fatalf("content %q", content)

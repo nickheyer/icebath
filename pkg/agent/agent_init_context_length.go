@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Providers whose runtime is resolved before any custom provider URL lookup
@@ -30,7 +30,7 @@ func cfgText(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // URL with its query removed and the fragment kept like urlunparse over a query free urlparse
@@ -127,7 +127,7 @@ func scopeContextLengthToDefaultRuntime(ctx context.Context, a *AIAgent, customP
 			pin = *configContextLength
 		}
 		pkgLog().Debug(fmt.Sprintf("Ignoring model.context_length=%s for startup runtime %s at %s (configured default is %s at %s)",
-			pyrepr.Str(pin), a.model, shownURL, configuredModel, configuredShown))
+			anyutil.String(pin), a.model, shownURL, configuredModel, configuredShown))
 		return nil
 	}
 	return configContextLength

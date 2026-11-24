@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type snapAgent struct {
@@ -175,7 +175,7 @@ func useSnapshotRegistry(t *testing.T, toolsets map[string]string, schemas ...ma
 		if ts == "" {
 			ts = "snapshot_test"
 		}
-		reg.Register(tools.Def{Name: name, Toolset: ts, Schema: pyjson.Ordered(schema).(*pyjson.Object),
+		reg.Register(tools.Def{Name: name, Toolset: ts, Schema: jsonutil.Ordered(schema).(*jsonutil.Object),
 			Handler: func(context.Context, *tools.Call) string { return "" }})
 	}
 	prev := agentToolRegistry
@@ -197,7 +197,7 @@ func registeredNames(t *testing.T, names ...string) *tools.Registry {
 
 func mustDump(t *testing.T, v any) string {
 	t.Helper()
-	s, err := pyjson.Dumps(v, pyjson.SortKeys(true))
+	s, err := jsonutil.Encode(v, jsonutil.SortKeys())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -431,7 +431,7 @@ type memPinStore struct {
 }
 
 func (s *memPinStore) UpdateSessionToolNames(sessionID string, pin any) error {
-	text, err := pyjson.Dumps(pin)
+	text, err := jsonutil.Encode(pin)
 	if err != nil {
 		return err
 	}
@@ -444,7 +444,7 @@ func (s *memPinStore) UpdateSessionToolNames(sessionID string, pin any) error {
 func (s *memPinStore) load(t *testing.T, sessionID string) any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	v, err := pyjson.Loads(s.pins[sessionID])
+	v, err := jsonutil.Decode(s.pins[sessionID])
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -488,16 +488,16 @@ func TestResumeOnAnotherSurfaceRestoresThePinnedToolBytes(t *testing.T) {
 	if !reflect.DeepEqual(resumed.names, snapSet("read_file", "delegate_task", "skill_manage", "tool_search")) {
 		t.Fatalf("resumed names %v", resumed.names)
 	}
-	if repinned != pinBefore || mustDump(t, db.load(t, "s1").(*pyjson.Object).Vals["tools"]) != mustDump(t, defsAsAny(sent.tools)) {
+	if repinned != pinBefore || mustDump(t, db.load(t, "s1").(*jsonutil.Object).Value("tools")) != mustDump(t, defsAsAny(sent.tools)) {
 		t.Fatalf("same code pin rewritten: %s", repinned)
 	}
 	wantUpdated := []map[string]any{thisSurface[0], thisSurface[1], {"type": "function", "function": static}, thisSurface[2]}
 	if mustDump(t, defsAsAny(updated.tools)) != mustDump(t, defsAsAny(wantUpdated)) {
 		t.Fatalf("updated tools %v", updated.tools)
 	}
-	upgraded := db.load(t, "s2").(*pyjson.Object)
-	if !reflect.DeepEqual(upgraded.Keys, []string{"version", "tools"}) || upgraded.Vals["version"] != "sha-after-update" ||
-		mustDump(t, upgraded.Vals["tools"]) != mustDump(t, defsAsAny(updated.tools)) {
+	upgraded := db.load(t, "s2").(*jsonutil.Object)
+	if !reflect.DeepEqual(upgraded.Keys(), []string{"version", "tools"}) || upgraded.Value("version") != "sha-after-update" ||
+		mustDump(t, upgraded.Value("tools")) != mustDump(t, defsAsAny(updated.tools)) {
 		t.Fatalf("upgraded pin %s", db.pins["s2"])
 	}
 }
@@ -522,7 +522,7 @@ func TestReprobeToolAvailabilityDropsCachedCheckVerdicts(t *testing.T) {
 	reg := tools.NewRegistry()
 	var verdictMu sync.Mutex
 	verdict := false
-	reg.Register(tools.Def{Name: "probe_tool", Toolset: "probe_toolset", Schema: pyjson.ObjectOf("name", "probe_tool", "description", "", "parameters", pyjson.ObjectOf()),
+	reg.Register(tools.Def{Name: "probe_tool", Toolset: "probe_toolset", Schema: jsonutil.ObjectOf("name", "probe_tool", "description", "", "parameters", jsonutil.ObjectOf()),
 		Handler: func(context.Context, *tools.Call) string { return "" },
 		Check: func(*tools.Env) bool {
 			verdictMu.Lock()

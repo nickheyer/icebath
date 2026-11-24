@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -64,8 +63,8 @@ func (r *GatewayRunner) executeMCPReload(ctx context.Context, event *gateway.Mes
 	}
 	reply, err := r.mcpReloadBody(ctx, event, multiplex)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("MCP reload failed: %s", pyrepr.ExceptionMessage(err)))
-		return i18n.T(ctx, "gateway.reload_mcp.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		pkgLog().Warn(fmt.Sprintf("MCP reload failed: %s", err.Error()))
+		return i18n.T(ctx, "gateway.reload_mcp.failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	return reply, nil
 }

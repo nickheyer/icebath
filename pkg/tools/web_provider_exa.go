@@ -5,12 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const exaMissingKey = "EXA_API_KEY environment variable not set. Get your API key at https://exa.ai"
@@ -19,7 +20,7 @@ const exaMissingKey = "EXA_API_KEY environment variable not set. Get your API ke
 var exaBaseURL = "https://api.exa.ai"
 
 // Exa client limit for connecting and for each wait on the server
-var exaRequestTimeout = pyrequests.Seconds(600.0)
+var exaRequestTimeout = httputil.EachPhase(time.Duration(float64(600.0) * float64(time.Second)))
 
 // Longest stretch of a non JSON Exa body quoted in the error
 const exaNonJSONBodySnippet = 500
@@ -46,8 +47,8 @@ func getExaClient(ctx context.Context, env *Env) (*exaClient, error) {
 }
 
 // Posts a payload and returns the decoded body, a failed status or non JSON body raised verbatim
-func (c *exaClient) request(ctx context.Context, env *Env, endpoint string, data *pyjson.Object) (any, error) {
-	body, err := pyjson.Dumps(data)
+func (c *exaClient) request(ctx context.Context, env *Env, endpoint string, data *jsonutil.Object) (any, error) {
+	body, err := jsonutil.Encode(data)
 	if err != nil {
 		return nil, err
 	}
@@ -72,9 +73,9 @@ func decodeExaJSON(resp *sdkResponse) (any, error) {
 	var payload any
 	var err error
 	if strings.Contains(strings.ToLower(resp.header.Get("Content-Type")), "charset=") {
-		payload, err = pyjson.Loads(resp.text())
+		payload, err = jsonutil.Decode(resp.text())
 	} else {
-		payload, err = pyjson.LoadsBytes(resp.body)
+		payload, err = jsonutil.Decode(resp.body)
 	}
 	if err == nil {
 		return payload, nil
@@ -131,7 +132,7 @@ func checkExaCostDollars(data any) error {
 	if err != nil {
 		return err
 	}
-	if pyTruthy(raw) {
+	if anyutil.IsTrue(raw) {
 		if _, err := pyDictGet(raw, "total"); err != nil {
 			return err
 		}
@@ -140,7 +141,7 @@ func checkExaCostDollars(data any) error {
 }
 
 // Result rows of an answer in snake_case, the KeyError of a missing results list
-func exaResultRows(data any) ([]*pyjson.Object, error) {
+func exaResultRows(data any) ([]*jsonutil.Object, error) {
 	d, _ := pyDict(data)
 	raw, ok := d.Get("results")
 	if !ok {
@@ -150,7 +151,7 @@ func exaResultRows(data any) ([]*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows := make([]*pyjson.Object, 0, len(items))
+	rows := make([]*jsonutil.Object, 0, len(items))
 	for _, item := range items {
 		row, ok := pyDict(item)
 		if !ok {
@@ -166,7 +167,7 @@ func exaResultRows(data any) ([]*pyjson.Object, error) {
 }
 
 // Mapping the SDK reads with get, the AttributeError of any other value
-func exaMapping(v any) (*pyjson.Object, error) {
+func exaMapping(v any) (*jsonutil.Object, error) {
 	if d, ok := pyDict(v); ok {
 		return d, nil
 	}
@@ -175,7 +176,7 @@ func exaMapping(v any) (*pyjson.Object, error) {
 
 // Raises what the SDK entity parsing raises on a malformed result entities list
 func exaCheckEntities(raw any) error {
-	if !pyTruthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return nil
 	}
 	items, err := pyIter(raw)
@@ -198,12 +199,12 @@ func exaCheckEntities(raw any) error {
 		}
 		for _, key := range []string{"id", "version"} {
 			if _, ok := entity.Get(key); !ok {
-				return errors.New(pyrepr.StrRepr(key))
+				return errors.New(strconv.Quote(key))
 			}
 		}
 		props, ok := entity.Get("properties")
 		if !ok {
-			props = pyjson.NewObject()
+			props = jsonutil.NewObject()
 		}
 		if err := check(props); err != nil {
 			return err
@@ -214,7 +215,7 @@ func exaCheckEntities(raw any) error {
 
 // Reads of an optional nested mapping, skipped when falsy like the SDK's not data guard
 func exaCheckOptional(v any) error {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil
 	}
 	_, err := exaMapping(v)
@@ -238,7 +239,7 @@ func exaCheckCompanyProperties(raw any) error {
 	if err := exaCheckOptional(financials); err != nil {
 		return err
 	}
-	if pyTruthy(financials) {
+	if anyutil.IsTrue(financials) {
 		f, _ := exaMapping(financials)
 		round, _ := f.Get("fundingLatestRound")
 		if err := exaCheckOptional(round); err != nil {
@@ -283,7 +284,7 @@ func exaCheckPersonProperties(raw any) error {
 		}
 	}
 	research, _ := d.Get("research")
-	if err := exaCheckOptional(research); err != nil || !pyTruthy(research) {
+	if err := exaCheckOptional(research); err != nil || !anyutil.IsTrue(research) {
 		return err
 	}
 	r, _ := exaMapping(research)
@@ -304,7 +305,7 @@ func exaCheckPersonProperties(raw any) error {
 }
 
 // Search returning query relevant highlights for each result
-func (c *exaClient) search(ctx context.Context, env *Env, query string, numResults int) ([]*pyjson.Object, error) {
+func (c *exaClient) search(ctx context.Context, env *Env, query string, numResults int) ([]*jsonutil.Object, error) {
 	data, err := c.request(ctx, env, "/search", pyObject("query", query, "contents", pyObject("highlights", true), "numResults", numResults))
 	if err != nil {
 		return nil, err
@@ -323,7 +324,7 @@ type exaContentStatus struct {
 }
 
 // Page text of each URL with the per URL statuses the API reports
-func (c *exaClient) getContents(ctx context.Context, env *Env, urls []string) ([]*pyjson.Object, []exaContentStatus, error) {
+func (c *exaClient) getContents(ctx context.Context, env *Env, urls []string) ([]*jsonutil.Object, []exaContentStatus, error) {
 	data, err := c.request(ctx, env, "/contents", pyObject("urls", urls, "text", true))
 	if err != nil {
 		return nil, nil, err
@@ -369,7 +370,7 @@ func exaStatusOrigin(s exaContentStatus) any {
 	if !s.errorPresented {
 		return nil
 	}
-	if pyTruthy(s.httpCode) {
+	if anyutil.IsTrue(s.httpCode) {
 		return s.httpCode
 	}
 	if code, ok := exaCrawlStatus(pyStrField(pyOr(s.tag, ""))); ok {

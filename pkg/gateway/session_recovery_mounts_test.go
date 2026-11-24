@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestLocalSessionAdapterAuthorizesOnlyTheRegisteredSource(t *testing.T) {
@@ -295,7 +295,7 @@ func TestRestoreRoutedSessionMountsAMessagingRowAndDetachesASupersededOne(t *tes
 	if err != nil {
 		t.Fatal(err)
 	}
-	origin, err := pyjson.Dumps(source.ToDict())
+	origin, err := jsonutil.Encode(source.ToDict())
 	if err != nil {
 		t.Fatal(err)
 	}

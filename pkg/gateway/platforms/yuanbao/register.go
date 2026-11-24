@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const installHint = "Yuanbao: websockets not installed. Run: pip install websockets"
@@ -42,7 +42,7 @@ func isConnected(ctx context.Context, config *gateway.PlatformConfig) (bool, err
 	}
 	appID := extra["app_id"]
 	for _, name := range []string{"YUANBAO_APP_ID", "YUANBAO_APP_KEY"} {
-		if pyrepr.Truthy(appID) {
+		if anyutil.IsTrue(appID) {
 			break
 		}
 		value, err := gateway.FacadeEnvValue(ctx, name)
@@ -52,7 +52,7 @@ func isConnected(ctx context.Context, config *gateway.PlatformConfig) (bool, err
 		appID = value
 	}
 	secret := extra["app_secret"]
-	if !pyrepr.Truthy(secret) {
+	if !anyutil.IsTrue(secret) {
 		value, err := gateway.FacadeEnvValue(ctx, "YUANBAO_APP_SECRET")
 		if err != nil {
 			return false, err
@@ -93,7 +93,7 @@ func parseSendTarget(ref string) any {
 	if parsed := prefixedSendTarget(ref); parsed != nil {
 		return parsed
 	}
-	if stripped := strings.TrimSpace(ref); pystr.StrIsDigit(stripped) {
+	if stripped := strings.TrimSpace(ref); textutil.IsDigits(stripped) {
 		chatID := "group:" + stripped
 		return &gateway.TargetRefParse{ChatID: &chatID}
 	}

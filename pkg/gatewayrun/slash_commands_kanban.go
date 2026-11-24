@@ -13,9 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/kanban"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -31,7 +30,7 @@ func (r *GatewayRunner) runKanbanCommand(ctx context.Context, event *gateway.Mes
 	var requestedBoard *string
 	action := ""
 	if text != "" {
-		tokens, err := pyshlex.SplitPOSIX(text, false)
+		tokens, err := shellutil.Split(text)
 		if err != nil {
 			return "", err
 		}
@@ -54,14 +53,14 @@ func (r *GatewayRunner) runKanbanCommand(ctx context.Context, event *gateway.Mes
 	}
 	output, err := kanban.RunSlash(ctx, text)
 	if err != nil {
-		return i18n.T(ctx, "gateway.kanban.error_prefix", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.kanban.error_prefix", "", map[string]any{"error": err.Error()}), nil
 	}
 	if action == "create" && output != "" {
 		if m, _ := kanbanCreatedRe.FindStringMatch(output); m != nil {
 			taskID := m.GroupByNumber(1).String()
 			subscribed, err := r.kanbanAutoSubscribe(ctx, event, taskID, requestedBoard)
 			if err != nil {
-				pkgLog().Warn(fmt.Sprintf("kanban create auto-subscribe failed: %s", pyrepr.ExceptionMessage(err)))
+				pkgLog().Warn(fmt.Sprintf("kanban create auto-subscribe failed: %s", err.Error()))
 			} else if subscribed {
 				output = strings.TrimRightFunc(output, unicode.IsSpace) + "\n" + i18n.T(ctx, "gateway.kanban.subscribed_suffix", "", map[string]any{"task_id": taskID})
 			}

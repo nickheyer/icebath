@@ -10,8 +10,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // One argparse action of a parser in declaration order
@@ -232,7 +232,7 @@ type apFormatter struct {
 }
 
 func newAPFormatter(prog string) *apFormatter {
-	cols, _ := pyshutil.GetTerminalSize(80, 24)
+	cols, _ := termutil.Size(80, 24)
 	width := cols - 2
 	return &apFormatter{prog: prog, width: width, maxHelpPos: min(24, max(width-20, 4))}
 }
@@ -496,9 +496,8 @@ func (f *apFormatter) text(text string, raw bool) string {
 		}
 		return b.String() + "\n\n"
 	}
-	o := pystr.DefaultTextwrap(width)
-	o.InitialIndent, o.SubsequentIndent = indent, indent
-	return strings.Join(pystr.TextwrapWrap(strings.TrimSpace(apWhitespaceRe.ReplaceAllString(text, " ")), o), "\n") + "\n\n"
+	return strings.Join(textutil.Wrap(strings.TrimSpace(apWhitespaceRe.ReplaceAllString(text, " ")), width,
+		textutil.WrapOptions{Indent: indent, NextIndent: indent}), "\n") + "\n\n"
 }
 
 // Records the widest invocation the way add_argument does before any section renders
@@ -532,7 +531,7 @@ func (f *apFormatter) action(it *apItem) string {
 		indentFirst = helpPos
 	}
 	if it.hasHelp && strings.TrimSpace(it.Help) != "" {
-		lines := pystr.TextwrapWrap(strings.TrimSpace(apWhitespaceRe.ReplaceAllString(it.Help, " ")), pystr.DefaultTextwrap(helpWidth))
+		lines := textutil.Wrap(strings.TrimSpace(apWhitespaceRe.ReplaceAllString(it.Help, " ")), helpWidth, textutil.WrapOptions{})
 		b.WriteString(strings.Repeat(" ", indentFirst) + lines[0] + "\n")
 		for _, line := range lines[1:] {
 			b.WriteString(strings.Repeat(" ", helpPos) + line + "\n")

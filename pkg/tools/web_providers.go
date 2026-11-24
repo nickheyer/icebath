@@ -28,14 +28,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -83,7 +82,7 @@ func argB(args map[string]any, key string, fallback bool) bool {
 
 // Text of json.dumps with ensure_ascii off and separators comma and colon without spaces
 func jsonCompact(v any) string {
-	b, err := pyjson.EncodeWTF8(v)
+	b, err := jsonutil.Append(nil, v)
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -92,7 +91,7 @@ func jsonCompact(v any) string {
 
 // Two space indented JSON without HTML escaping
 func jsonIndent(v any) string {
-	b, err := pyjson.EncodeWTF8Indent(v, "", "  ")
+	b, err := jsonutil.Append(nil, v, jsonutil.Indent(2))
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -106,11 +105,11 @@ func boundErrorText(text string) string { return boundModelErrorText(nil, text) 
 func BoundErrorText(text string) string { return boundErrorText(text) }
 
 // Error envelope with the bounded error first and the extra keys after it in their own order
-func toolErrorJSON(message string, extra *pyjson.Object) string {
+func toolErrorJSON(message string, extra *jsonutil.Object) string {
 	out := Dict("error", boundErrorText(message))
 	if extra != nil {
-		for _, k := range extra.Keys {
-			out.Set(k, extra.Vals[k])
+		for _, k := range extra.Keys() {
+			out.Set(k, extra.Value(k))
 		}
 	}
 	return JSON(out)
@@ -203,7 +202,7 @@ func truthyValue(v any, fallback bool) bool {
 	case bool:
 		return x
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Shared transport so vendor calls reuse connections
@@ -322,19 +321,17 @@ func asStr(v any) string {
 		return strconv.Itoa(s)
 	case int64:
 		return strconv.FormatInt(s, 10)
-	case *big.Int:
-		return s.String()
 	}
 	return ""
 }
 
 // json.loads of text into plain maps keeping Python int and float types, NaN and Infinity accepted
 func decodePyJSON(text string) (any, error) {
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Plain(v), nil
+	return jsonutil.Plain(v), nil
 }
 
 // ---- result shapes -------------------------------------------------------------------------------
@@ -398,7 +395,7 @@ func (r *WebSearchResponse) MarshalJSON() ([]byte, error) {
 	var buf bytes.Buffer
 	buf.WriteString(`{"success":` + strconv.FormatBool(r.Success))
 	if r.Data != nil {
-		b, err := pyjson.EncodeWTF8(r.Data)
+		b, err := jsonutil.Append(nil, r.Data)
 		if err != nil {
 			return nil, err
 		}
@@ -546,26 +543,25 @@ func isOriginHTTPError(err string) bool {
 	return pyreSearch(originHTTPErrorRe(), err) != nil
 }
 
-// Error text when int of status is 400 or above, the OverflowError of an infinite status returned
+// Error text when the integer of status is 400 or above, nothing for a status with no integer form, the range error of a status beyond int64 (infinity included) returned
 func originHTTPError(status any, reason any) (string, error) {
 	if _, ok := status.(bool); ok {
 		return "", nil
 	}
-	code, err := pyint.Of(status)
+	code, err := anyutil.ToInt(status)
 	if err != nil {
-		var pe *pyint.Error
-		if errors.As(err, &pe) && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
+		if errors.Is(err, anyutil.ErrNotNumber) {
 			return "", nil
 		}
 		return "", err
 	}
-	if code.Cmp(big.NewInt(400)) < 0 {
+	if code < 400 {
 		return "", nil
 	}
-	if detail := strings.TrimSpace(pyrepr.Str(pyOr(reason, ""))); detail != "" {
-		return "HTTP " + code.String() + " from origin: " + detail, nil
+	if detail := strings.TrimSpace(anyutil.String(anyutil.Or(reason, ""))); detail != "" {
+		return "HTTP " + strconv.FormatInt(code, 10) + " from origin: " + detail, nil
 	}
-	return "HTTP " + code.String() + " from origin", nil
+	return "HTTP " + strconv.FormatInt(code, 10) + " from origin", nil
 }
 
 var exaCrawlStatusRe = pyreOnce(`\bCRAWL_(?:HTTP_(\d{3})|(NOT_FOUND))\s*$`)
@@ -577,8 +573,8 @@ func exaCrawlStatus(text string) (int, bool) {
 		return 0, false
 	}
 	if m[1] != "" {
-		n, _ := pyint.Parse(m[1])
-		return int(n.Int64()), true
+		n, _ := strconv.Atoi(m[1])
+		return n, true
 	}
 	return 404, true
 }
@@ -587,14 +583,14 @@ var keenableOriginMessageRe = pyreOnce(`(?i)\A(?:the (?:target server|page does 
 
 // Origin error when a Keenable fetch error describes the target's answer
 func keenableOriginError(status int, body string) (string, error) {
-	v, err := pyjson.Loads(body)
+	v, err := jsonutil.Decode(body)
 	if err != nil {
 		return "", nil
 	}
 	message := ""
 	if d, ok := pyDict(v); ok {
 		m, _ := d.Get("message")
-		message = strings.TrimSpace(pyrepr.Str(pyOr(m, "")))
+		message = strings.TrimSpace(anyutil.String(pyOr(m, "")))
 	}
 	if pyreSearch(keenableOriginMessageRe(), message) == nil {
 		return "", nil
@@ -623,9 +619,9 @@ func vendorErrorEntry(u string, status any, reason any, body any) (*WebPage, err
 	var entry *WebPage
 	if origin != "" {
 		entry = pageError(u, origin)
-		entry.Content = pyrepr.Str(pyOr(body, ""))
+		entry.Content = anyutil.String(pyOr(body, ""))
 	} else {
-		entry = pageError(u, pyrepr.Str(pyOr(pyOr(body, reason), "extraction failed")))
+		entry = pageError(u, anyutil.String(pyOr(pyOr(body, reason), "extraction failed")))
 	}
 	entry.Metadata = map[string]any{"sourceURL": u}
 	return entry, nil
@@ -987,19 +983,19 @@ func parseMCPBody(body string) (string, error) {
 		if !strings.HasPrefix(payload, "{") {
 			return "", false, nil
 		}
-		data, err := pyjson.Loads(payload)
+		data, err := jsonutil.Decode(payload)
 		if err != nil {
 			return "", false, err
 		}
-		if errObj, _ := pyDictGet(data, "error"); pyTruthy(errObj) {
+		if errObj, _ := pyDictGet(data, "error"); anyutil.IsTrue(errObj) {
 			msg, err := pyDictGet(errObj, "message")
 			if err != nil {
 				return "", true, err
 			}
-			return "", true, keylessErr("%s", pyrepr.Str(pyOr(msg, errObj)))
+			return "", true, keylessErr("%s", anyutil.String(pyOr(msg, errObj)))
 		}
 		raw, _ := pyDictGet(data, "result")
-		result := pyOr(raw, pyjson.NewObject())
+		result := pyOr(raw, jsonutil.NewObject())
 		content, err := pyDictGet(result, "content")
 		if err != nil {
 			return "", true, err
@@ -1020,11 +1016,11 @@ func parseMCPBody(body string) (string, error) {
 		}
 		truthy := []any{}
 		for _, t := range texts {
-			if pyTruthy(t) {
+			if anyutil.IsTrue(t) {
 				truthy = append(truthy, t)
 			}
 		}
-		if isError, _ := pyDictGet(result, "isError"); pyTruthy(isError) {
+		if isError, _ := pyDictGet(result, "isError"); anyutil.IsTrue(isError) {
 			msg, err := pyJoin(" ", truthy)
 			if err != nil {
 				return "", true, err
@@ -1035,7 +1031,7 @@ func parseMCPBody(body string) (string, error) {
 			return "", true, keylessErr("%s", msg)
 		}
 		if len(truthy) > 0 {
-			return pyrepr.Str(truthy[0]), true, nil
+			return anyutil.String(truthy[0]), true, nil
 		}
 		return "", true, nil
 	}
@@ -1053,7 +1049,7 @@ func parseMCPBody(body string) (string, error) {
 	for _, candidate := range candidates {
 		text, isEnvelope, err := fromPayload(candidate)
 		if err != nil {
-			var de *pyjson.DecodeError
+			var de *jsonutil.SyntaxError
 			if !errors.As(err, &de) {
 				return "", err
 			}
@@ -1112,11 +1108,12 @@ func keylessHTTP(ctx context.Context, method, target string, params map[string]s
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := pyrequests.Send(ctx, webHTTPTransport, pyrequests.Seconds(keylessTimeout.Seconds()), req)
+	client := &http.Client{Transport: httputil.TrustEnvCA(phasedWebTransport), CheckRedirect: httputil.RedirectPolicy(true)}
+	resp, err := httputil.Do(client, req, httputil.EachPhase(keylessTimeout))
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	return resp.Status, resp.Header, resp.Body, nil
+	return resp.StatusCode, resp.Header, resp.Content, nil
 }
 
 // Body decoded with the declared charset else UTF-8, undecodable bytes replaced like _response_text
@@ -1128,7 +1125,7 @@ func keylessResponseText(header http.Header, raw []byte) (string, error) {
 			return "", err
 		}
 		if declared != "" {
-			return pycodecs.DecodeReplace(raw, declared)
+			return charsetutil.DecodeReplace(raw, declared)
 		}
 	}
 	return strings.ToValidUTF8(string(raw), "\uFFFD"), nil
@@ -1218,7 +1215,7 @@ func parallelSearchKeyless(ctx context.Context, query string, limit int) (*WebSe
 		if err != nil {
 			return nil, err
 		}
-		data, err := pyjson.Loads(text)
+		data, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil, err
 		}
@@ -1252,7 +1249,7 @@ func parallelSearchKeyless(ctx context.Context, query string, limit int) (*WebSe
 		}
 		return hits, nil
 	}, func(err error) bool {
-		var de *pyjson.DecodeError
+		var de *jsonutil.SyntaxError
 		var te *pyTypeError
 		return errors.As(err, &de) || errors.As(err, &te)
 	}, func(err error) string {
@@ -1265,7 +1262,7 @@ func parallelExtractKeyless(ctx context.Context, urls []string) ([]*WebPage, err
 	text, err := mcpCall(ctx, parallelMCPURL, "web_fetch", map[string]any{"urls": urls, "objective": "Full page content", "session_id": keylessSessionID})
 	var data any
 	if err == nil {
-		data, err = pyjson.Loads(text)
+		data, err = jsonutil.Decode(text)
 	}
 	if err != nil {
 		return extractFail(urls, keylessFailMsg("parallel", "extract", err, true)), nil
@@ -1326,10 +1323,10 @@ func parallelKeylessDocument(r any) (*WebPage, error) {
 	}
 	title, _ := pyDictGet(r, "title")
 	content, _ := pyDictGet(r, "full_content")
-	if !pyTruthy(content) {
+	if !anyutil.IsTrue(content) {
 		content, _ = pyDictGet(r, "content")
 	}
-	if !pyTruthy(content) {
+	if !anyutil.IsTrue(content) {
 		excerpts, _ := pyDictGet(r, "excerpts")
 		joined, err := pyJoin("\n\n", pyOr(excerpts, []any{}))
 		if err != nil {
@@ -1494,9 +1491,9 @@ func requestsJSON(header http.Header, raw []byte) (any, error) {
 	}
 	if declared == "" && len(raw) > 3 {
 		if guessed := requestsGuessJSONUTF(raw); guessed != "" {
-			if text, err := pycodecs.Decode(raw, guessed); err == nil {
-				return pyjson.Loads(text)
-			} else if _, isDecode := err.(*pycodecs.UnicodeDecodeError); !isDecode {
+			if text, err := charsetutil.Decode(raw, guessed); err == nil {
+				return jsonutil.Decode(text)
+			} else if _, isDecode := err.(*charsetutil.DecodeError); !isDecode {
 				return nil, err
 			}
 		}
@@ -1504,15 +1501,14 @@ func requestsJSON(header http.Header, raw []byte) (any, error) {
 	if declared == "" {
 		declared = requestsApparentEncoding(raw)
 	}
-	text, err := pycodecs.DecodeReplace(raw, declared)
+	text, err := charsetutil.DecodeReplace(raw, declared)
 	if err != nil {
-		var le *pycodecs.LookupError
-		if !errors.As(err, &le) {
+		if !errors.Is(err, charsetutil.ErrUnknown) {
 			return nil, err
 		}
 		text = strings.ToValidUTF8(string(raw), "\uFFFD")
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 // UTF codec requests guess_json_utf infers from the BOM or the null byte pattern of the first four bytes

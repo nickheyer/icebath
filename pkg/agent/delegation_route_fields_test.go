@@ -13,8 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -137,11 +137,11 @@ func spawnRouteFields(t *testing.T, routes []map[string]any, opts routeFieldsOpt
 	}
 	runDelegateBatchFn = func(_ context.Context, batch *delegateBatch, _ bool) (string, error) {
 		batches = append(batches, batch)
-		payload := pyjson.ObjectOf("status", "built")
+		payload := jsonutil.ObjectOf("status", "built")
 		if len(batch.Refused) > 0 {
 			payload.Set("refused", batch.Refused)
 		}
-		return pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+		return jsonutil.Encode(payload)
 	}
 	t.Cleanup(func() { newChildAIAgentFn, runDelegateBatchFn = prevNew, prevRun })
 	parent := opts.parent
@@ -180,8 +180,8 @@ func refusedEntries(t *testing.T, result map[string]any) []map[string]any {
 	return out
 }
 
-func routeFieldsReport(entry *pyjson.Object) map[string]any {
-	route, _ := entryValue(entry, "route").(*pyjson.Object)
+func routeFieldsReport(entry *jsonutil.Object) map[string]any {
+	route, _ := entryValue(entry, "route").(*jsonutil.Object)
 	if route == nil {
 		return nil
 	}
@@ -355,7 +355,7 @@ func TestLabelledRouteResultReportsWhatTheChildRanOn(t *testing.T) {
 }
 
 func TestEveryBackendRoutedResultNamesItsBackendAndTheDefaultKeepsItsShape(t *testing.T) {
-	entryOf := func(child *AIAgent) *pyjson.Object {
+	entryOf := func(child *AIAgent) *jsonutil.Object {
 		return buildResultEntry(child, map[string]any{"final_response": "ok", "completed": true}, 0, 1.0, schemaOutcome{})
 	}
 	routed := spawnRouteFields(t, []map[string]any{withRoute(routeFieldsLocal, "reasoning_effort", "high")}, routeFieldsOptions{})

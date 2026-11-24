@@ -9,11 +9,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Drops index.lock once the killed update run behind it is proven gone, whatever the lock's age
@@ -74,20 +74,20 @@ func releaseKilledUpdateLocks(ctx context.Context, root string, candidates func(
 
 // Epoch seconds of an ISO timestamp, a naive value read as local time, false when it does not parse
 func receiptTime(value any) (float64, bool) {
-	t, aware, err := pydatetime.ParseISOFormat(pyrepr.Str(value))
+	t, aware, err := timeutil.ParseISOZone(anyutil.String(value), time.UTC)
 	if err != nil {
 		return 0, false
 	}
 	if !aware {
 		t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.Local)
 	}
-	return pydatetime.Timestamp(t), true
+	return timeutil.Epoch(t), true
 }
 
 // Reports a receipt outcome of running or interrupted
-func receiptUnfinished(record *pyjson.Object) bool {
-	outcome := record.Vals["outcome"]
-	return pyrepr.Equal(outcome, "running") || pyrepr.Equal(outcome, "interrupted")
+func receiptUnfinished(record *jsonutil.Object) bool {
+	outcome := record.Value("outcome")
+	return anyutil.Equal(outcome, "running") || anyutil.Equal(outcome, "interrupted")
 }
 
 // Reports whether the last update run that started before lock was written died unfinished with its processes gone
@@ -97,7 +97,7 @@ func killedUpdateOwns(ctx context.Context, lock string) bool {
 		return false
 	}
 	written := statMtime(info)
-	var records []*pyjson.Object
+	var records []*jsonutil.Object
 	for _, directory := range updaterecord.ReceiptDirs(ctx) {
 		entries, err := os.ReadDir(directory)
 		if err != nil {
@@ -111,7 +111,7 @@ func killedUpdateOwns(ctx context.Context, lock string) bool {
 			if err != nil {
 				continue
 			}
-			if record, ok := loaded.(*pyjson.Object); ok {
+			if record, ok := loaded.(*jsonutil.Object); ok {
 				records = append(records, record)
 			}
 		}
@@ -121,18 +121,18 @@ func killedUpdateOwns(ctx context.Context, lock string) bool {
 	}
 	type run struct {
 		started float64
-		record  *pyjson.Object
+		record  *jsonutil.Object
 	}
 	runs := map[string]run{}
 	var order []string
 	for _, record := range records {
-		started, ok := receiptTime(record.Vals["started_at"])
+		started, ok := receiptTime(record.Value("started_at"))
 		if !ok || started > written {
 			continue
 		}
 		key := fmt.Sprintf("%p", record)
-		if id := record.Vals["update_id"]; pyrepr.Truthy(id) {
-			key = pyrepr.Str(id)
+		if id := record.Value("update_id"); anyutil.IsTrue(id) {
+			key = anyutil.String(id)
 		}
 		held, seen := runs[key]
 		if !seen {

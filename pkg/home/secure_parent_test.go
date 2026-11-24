@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 type chmodCall struct {
@@ -93,7 +93,7 @@ func TestSecureParentDir(t *testing.T) {
 
 // Number of pathlib parts including the anchor
 func pathDepth(p string) int {
-	anchor, parts := pypath.PathParts(p)
+	anchor, parts := pathutil.Parts(p)
 	if anchor != "" {
 		return len(parts) + 1
 	}

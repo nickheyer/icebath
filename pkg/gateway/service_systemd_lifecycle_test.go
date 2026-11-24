@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Swaps every lifecycle seam for the duration of the test and captures printed output
@@ -202,8 +202,8 @@ func TestWaitAcceptsADegradedReplacementAsRestarted(t *testing.T) {
 		return map[string]string{"ActiveState": "active", "MainPID": "777"}, nil
 	}
 	lifecycleRunningPid = func() (int, bool) { return 777, true }
-	lifecycleRuntimeStatus = func() *pyjson.Object {
-		o := pyjson.NewObject()
+	lifecycleRuntimeStatus = func() *jsonutil.Object {
+		o := jsonutil.NewObject()
 		o.Set("pid", int64(777))
 		o.Set("gateway_state", "degraded")
 		return o
@@ -353,8 +353,8 @@ func TestRecoverPendingRestartClearsFailedPlannedExit(t *testing.T) {
 	lifecycleReadProps = func(context.Context, bool, ...string) (map[string]string, error) {
 		return map[string]string{"ActiveState": "failed", "ExecMainStatus": "75"}, nil
 	}
-	lifecycleRuntimeStatus = func() *pyjson.Object {
-		o := pyjson.NewObject()
+	lifecycleRuntimeStatus = func() *jsonutil.Object {
+		o := jsonutil.NewObject()
 		o.Set("restart_requested", true)
 		return o
 	}
@@ -368,7 +368,7 @@ func TestRecoverPendingRestartClearsFailedPlannedExit(t *testing.T) {
 	if err != nil || !ok || strings.Join(calls, ",") != "reset-failed,start" || !strings.Contains(out.String(), "Clearing failed state") {
 		t.Fatalf("ok %v err %v calls %v", ok, err, calls)
 	}
-	lifecycleRuntimeStatus = func() *pyjson.Object { return pyjson.NewObject() }
+	lifecycleRuntimeStatus = func() *jsonutil.Object { return jsonutil.NewObject() }
 	if ok, _ := recoverPendingSystemdRestart(context.Background(), false, 0, false); ok {
 		t.Fatal("recovered without a requested restart")
 	}

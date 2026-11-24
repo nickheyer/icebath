@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const sampleLongText = "This is a sample document fetched from a web page. This is a sample document fetched from a web page. This is a sample document fetched from a web page. This is a sample document fetched from a web page. "
@@ -356,7 +356,7 @@ func TestExpandLocalToolBatches(t *testing.T) {
 		t.Fatalf("blocks %v", blocks)
 	}
 	for i, block := range blocks {
-		input, err := pyjson.Dumps(block.(map[string]any)["input"], pyjson.EnsureASCII(false))
+		input, err := jsonutil.Encode(block.(map[string]any)["input"])
 		if err != nil || input != expanded[i].Function.Arguments {
 			t.Fatalf("block %d input %q %v, want the child arguments %q", i, input, err, expanded[i].Function.Arguments)
 		}

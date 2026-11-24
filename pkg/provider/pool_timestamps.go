@@ -4,6 +4,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // ParseAbsoluteTimestamp converts epoch seconds, epoch milliseconds or ISO 8601 text into epoch seconds
@@ -48,38 +50,10 @@ func scaleEpoch(n float64) (float64, bool) {
 	return n, true
 }
 
-// parseISO accepts every date and datetime shape Python fromisoformat accepts and treats naive values as UTC
+// Instant of ISO 8601 text, a value without a UTC offset read as UTC
 func parseISO(raw string) (time.Time, bool) {
-	text := strings.TrimSpace(raw)
-	if len(text) > 10 && text[10] == ' ' {
-		text = text[:10] + "T" + text[11:]
-	}
-	if strings.HasSuffix(text, "Z") {
-		text = text[:len(text)-1] + "+00:00"
-	}
-	layouts := []string{
-		"2006-01-02T15:04:05.999999999-07:00",
-		"2006-01-02T15:04:05.999999999-0700",
-		"2006-01-02T15:04:05-07:00",
-		"2006-01-02T15:04:05.999999999",
-		"2006-01-02T15:04:05",
-		"2006-01-02T15:04-07:00",
-		"2006-01-02T15:04",
-		"2006-01-02T15-07:00",
-		"2006-01-02T15",
-		"2006-01-02",
-		"20060102T150405",
-		"20060102",
-	}
-	for _, layout := range layouts {
-		if t, err := time.Parse(layout, text); err == nil {
-			if t.Location() == time.UTC || strings.Contains(layout, "-07") {
-				return t, true
-			}
-			return time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.UTC), true
-		}
-	}
-	return time.Time{}, false
+	t, err := timeutil.ParseISO(raw, time.UTC)
+	return t, err == nil
 }
 
 // ParseISOTimestamp returns epoch seconds for ISO 8601 text and false for anything else

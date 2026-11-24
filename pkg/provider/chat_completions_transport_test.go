@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Chat completions transport kwargs for a user ping, failing the test on a build error
@@ -25,7 +25,7 @@ func ccTransportKwargs(t *testing.T, model string, messages []map[string]any, pa
 
 // Extra body of built kwargs, empty when absent
 func ccExtraBody(kw map[string]any) map[string]any {
-	eb, _ := pyjson.Plain(kw["extra_body"]).(map[string]any)
+	eb, _ := jsonutil.Plain(kw["extra_body"]).(map[string]any)
 	if eb == nil {
 		return map[string]any{}
 	}
@@ -456,7 +456,7 @@ func TestChatCompletionsMoonshotToolSchemas(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return pyjson.Plain(kw["tools"].([]map[string]any)[0]["function"]).(map[string]any)["parameters"].(map[string]any)
+		return jsonutil.Plain(kw["tools"].([]map[string]any)[0]["function"]).(map[string]any)["parameters"].(map[string]any)
 	}
 	missingType := func() map[string]any {
 		return map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"description": "query"}}}
@@ -585,11 +585,11 @@ func TestPromptCacheKeyCallerOverrides(t *testing.T) {
 }
 
 func TestProfileHookWithoutLMStudioKeywordStillCalled(t *testing.T) {
-	old := Profile{Name: "old-signature", BuildAPIKwargsExtrasHook: func(_ *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
+	old := Profile{Name: "old-signature", BuildAPIKwargsExtrasHook: func(_ *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
 		if _, has := kw["lmstudio_reasoning_options"]; has {
 			t.Fatal("lmstudio_reasoning_options reached a hook whose caller passed none")
 		}
-		return pyjson.NewObject(), map[string]any{"reasoning_effort": "low"}
+		return jsonutil.NewObject(), map[string]any{"reasoning_effort": "low"}
 	}}
 	if kw := ccTransportKwargs(t, "m", []map[string]any{{"role": "user", "content": "Hi"}}, map[string]any{"provider_profile": old}); kw["reasoning_effort"] != "low" {
 		t.Fatal(kw)

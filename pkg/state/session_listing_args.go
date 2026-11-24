@@ -4,9 +4,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -18,7 +18,7 @@ var sessionListingSearchWords = map[string]bool{"search": true, "find": true}
 
 // Sessions style arguments as all sources, unnamed kept, resume target and search query, nil when no search was asked
 func ParseSessionListingArgs(rawArgs string) (includeAll, includeUnnamed bool, target string, searchQuery *string, err error) {
-	parts, err := pyshlex.SplitPOSIX(rawArgs, false)
+	parts, err := shellutil.Split(rawArgs)
 	if err != nil {
 		return false, false, "", nil, err
 	}
@@ -48,13 +48,13 @@ func ParseSessionListingArgs(rawArgs string) (includeAll, includeUnnamed bool, t
 }
 
 // Compact markdown session list for gateway messengers, the notice above the footer when given
-func FormatGatewaySessionListing(rows []*pyjson.Object, includeSource bool, title string, notice *string) string {
-	field := func(row *pyjson.Object, key string) string {
+func FormatGatewaySessionListing(rows []*jsonutil.Object, includeSource bool, title string, notice *string) string {
+	field := func(row *jsonutil.Object, key string) string {
 		v, _ := row.Get(key)
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			return ""
 		}
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	if len(rows) == 0 {
 		out := []string{"No sessions found.\nUse `/title My Session` to name this chat, or `/sessions full` to include unnamed sessions."}
@@ -66,7 +66,7 @@ func FormatGatewaySessionListing(rows []*pyjson.Object, includeSource bool, titl
 	lines := []string{"📋 **" + title + "**", ""}
 	for idx, row := range rows {
 		currentPart := ""
-		if v, _ := row.Get("is_current_session"); pyrepr.Truthy(v) {
+		if v, _ := row.Get("is_current_session"); anyutil.IsTrue(v) {
 			currentPart = " (current)"
 		}
 		preview := textutil.First(field(row, "preview"), 40)

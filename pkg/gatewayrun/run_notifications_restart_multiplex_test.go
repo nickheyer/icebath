@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Host multiplexer with the launch profile on Discord and the served profile coder on Telegram, a restart notice owed
@@ -20,9 +19,9 @@ func multiplexRestartRunner(t *testing.T) (*GatewayRunner, string) {
 	r.config = homeOrderConfig(gateway.PlatformDiscord, "launch-home")
 	r.config.SessionsDir = filepath.Join(tmp, "sessions")
 	r.adapters = adapterDict()
-	r.profileConfigs = pydict.New[string, *gateway.GatewayConfig]()
+	r.profileConfigs = orderedutil.NewMap[string, *gateway.GatewayConfig]()
 	r.profileConfigs.Set("coder", homeOrderConfig(gateway.PlatformTelegram, "coder-home"))
-	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
+	r.profileAdapters = orderedutil.NewMap[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]()
 	r.profileAdapters.Set("coder", adapterDict())
 	marker := filepath.Join(tmp, ".restart_pending.json")
 	if err := os.WriteFile(marker, []byte("{}"), 0o600); err != nil {

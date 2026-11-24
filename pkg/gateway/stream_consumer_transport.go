@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Longest interim edit interval flood backoff may reach
@@ -44,10 +44,10 @@ type StreamTruncater interface {
 
 // Message id of a send result as text, empty when absent
 func sendResultID(id any) string {
-	if !pyrepr.Truthy(id) {
+	if !anyutil.IsTrue(id) {
 		return ""
 	}
-	return pyrepr.Str(id)
+	return anyutil.String(id)
 }
 
 // Edits through the adapter with the consumer's chat routing
@@ -71,7 +71,7 @@ func tryFrame(sent bool, err error, failLog string, excInfo bool) bool {
 		if excInfo {
 			pkgLog().Debug(failLog, "error", err)
 		} else {
-			pkgLog().Debug(strings.Replace(failLog, "%s", pyrepr.ExceptionMessage(err), 1))
+			pkgLog().Debug(strings.Replace(failLog, "%s", err.Error(), 1))
 		}
 		return false
 	}
@@ -155,7 +155,7 @@ func (s *GatewayStreamConsumer) deletePreviews(ctx context.Context, staleIDs idS
 			_, err = deleter.DeleteMessage(ctx, s.chatID, staleID)
 		}
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("%s preview cleanup failed (%s): %s", label, staleID, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("%s preview cleanup failed (%s): %s", label, staleID, err.Error()))
 		}
 	}
 }
@@ -179,7 +179,7 @@ func (s *GatewayStreamConsumer) resolveDraftStreaming() bool {
 		return s.adapter.SupportsDraftStreaming(s.cfg.ChatType, s.metadata, s.chatID)
 	}()
 	if !supported && transport == "draft" {
-		pkgLog().Debug(fmt.Sprintf("Draft streaming requested but unsupported (chat=%s, type=%s) — falling back to edit", s.chatID, pyrepr.Repr(s.cfg.ChatType)))
+		pkgLog().Debug(fmt.Sprintf("Draft streaming requested but unsupported (chat=%s, type=%s) — falling back to edit", s.chatID, anyutil.Quote(s.cfg.ChatType)))
 	}
 	return supported
 }
@@ -212,7 +212,7 @@ func (s *GatewayStreamConsumer) sendDraftFrame(ctx context.Context, text string)
 	}
 	result, err := s.adapter.SendDraft(ctx, s.chatID, int(*s.draftID), text, s.draftMetadata())
 	if err != nil {
-		pkgLog().Debug("send_draft raised, disabling draft transport for this run: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("send_draft raised, disabling draft transport for this run: " + err.Error())
 	} else {
 		if result.Success {
 			s.lastSentText = text
@@ -222,7 +222,7 @@ func (s *GatewayStreamConsumer) sendDraftFrame(ctx context.Context, text string)
 			pkgLog().Warn("send_draft DECLINED by the connector's egress guard; suppressing every later send for this run (the destination is not approved for this connection)")
 			s.egressDeclined = true
 		}
-		pkgLog().Debug("send_draft returned success=False, disabling draft transport: " + pyrepr.Str(pyrepr.Or(result.Error, "unknown")))
+		pkgLog().Debug("send_draft returned success=False, disabling draft transport: " + anyutil.String(anyutil.Or(result.Error, "unknown")))
 	}
 	s.draftFailures++
 	s.useDraftStreaming = false
@@ -243,7 +243,7 @@ func (s *GatewayStreamConsumer) abandonNativeStream(ctx context.Context) {
 		text = cleanForDisplay(s.accumulated)
 	}
 	if _, err := abandoner.AbandonOpenDraft(ctx, s.chatID, text, s.draftMetadata()); err != nil {
-		pkgLog().Debug("abandon_open_draft failed (best-effort): " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("abandon_open_draft failed (best-effort): " + err.Error())
 	}
 }
 
@@ -258,7 +258,7 @@ func (s *GatewayStreamConsumer) shouldSendFreshFinal() bool {
 	if threshold <= 0 || !s.hasRealPreview() || s.messageCreatedTS == nil {
 		return false
 	}
-	return pythread.Monotonic()-*s.messageCreatedTS >= threshold
+	return timeutil.Monotonic()-*s.messageCreatedTS >= threshold
 }
 
 // Records a real preview message id for finalization cleanup
@@ -307,7 +307,7 @@ func (s *GatewayStreamConsumer) tryFreshFinal(ctx context.Context, text string, 
 	staleIDs := s.stalePreviewIDs(false)
 	result, err := s.adapter.Send(ctx, s.chatID, text, "", s.metadataForSend(true, false))
 	if err != nil {
-		pkgLog().Debug("Fresh-final send failed, falling back to edit: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("Fresh-final send failed, falling back to edit: " + err.Error())
 		return false
 	}
 	if !result.Success {
@@ -330,7 +330,7 @@ func (s *GatewayStreamConsumer) tryFreshFinal(ctx context.Context, text string, 
 func (s *GatewayStreamConsumer) adoptMessageID(messageID string) {
 	if messageID != "" {
 		s.messageID = messageID
-		now := pythread.Monotonic()
+		now := timeutil.Monotonic()
 		s.messageCreatedTS = &now
 		return
 	}
@@ -379,7 +379,7 @@ func (s *GatewayStreamConsumer) sendOrEdit(ctx context.Context, text string, fin
 		}
 		ok, err := s.firstSend(ctx, text, finalize)
 		if err != nil {
-			pkgLog().Error("Stream send/edit error: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Error("Stream send/edit error: " + err.Error())
 			return false
 		}
 		return ok
@@ -389,7 +389,7 @@ func (s *GatewayStreamConsumer) sendOrEdit(ctx context.Context, text string, fin
 	}
 	ok, err := s.editExisting(ctx, text, finalize, isTurnFinal)
 	if err != nil {
-		pkgLog().Error("Stream send/edit error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("Stream send/edit error: " + err.Error())
 		return false
 	}
 	return ok
@@ -432,7 +432,7 @@ func (s *GatewayStreamConsumer) nativePush(ctx context.Context, text string, fin
 	s.useNativeStreaming.Store(false)
 	if s.nativeStreamOpened.Load() {
 		if _, err := s.sendFrame(ctx, text, true); err != nil {
-			pkgLog().Debug("Native fallback: failed to finalize stream: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Debug("Native fallback: failed to finalize stream: " + err.Error())
 		} else {
 			pkgLog().Debug("Native fallback: finalized stream (best-effort close)")
 		}
@@ -507,7 +507,7 @@ func (s *GatewayStreamConsumer) editExisting(ctx context.Context, text string, f
 	if !result.Success {
 		return s.onEditFailure(ctx, result, text, finalize, isTurnFinal), nil
 	}
-	if raw, ok := result.RawResponse.(map[string]any); ok && pyrepr.Truthy(raw["skipped"]) {
+	if raw, ok := result.RawResponse.(map[string]any); ok && anyutil.IsTrue(raw["skipped"]) {
 		return true, nil
 	}
 	s.alreadySent = true
@@ -546,7 +546,7 @@ func (s *GatewayStreamConsumer) onEditFailure(ctx context.Context, result SendRe
 		s.finalContentDelivered = true
 		s.recordTurnFinalPayload(text)
 	}
-	if raw, ok := result.RawResponse.(map[string]any); ok && pyrepr.Truthy(raw["partial_overflow"]) {
+	if raw, ok := result.RawResponse.(map[string]any); ok && anyutil.IsTrue(raw["partial_overflow"]) {
 		messageID := sendResultID(raw["last_message_id"])
 		if messageID == "" {
 			messageID = sendResultID(result.MessageID)
@@ -581,7 +581,7 @@ func (s *GatewayStreamConsumer) onEditFailure(ctx context.Context, result SendRe
 			immediateFinalFallback = turnFinal && flood.FallbackOnFinalEditFlood()
 		}
 		if s.floodStrikes < maxFloodStrikes && !immediateFinalFallback {
-			s.lastEditTime = pythread.Monotonic()
+			s.lastEditTime = timeutil.Monotonic()
 			return false
 		}
 		if immediateFinalFallback {

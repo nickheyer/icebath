@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 )
 
 // Finding is what one doctor check contributed, auto fixable issues, manual only issues and fixes applied
@@ -177,7 +176,7 @@ func doctorEnsureDir(w io.Writer, f *Finding, shouldFix bool, path, existsMsg, c
 		doctorCheckWarn(w, missingMsg, "(will be created on first use)")
 		return nil
 	}
-	if err := pyfs.Makedirs(path, 0o777, true); err != nil {
+	if err := os.MkdirAll(path, 0o777); err != nil {
 		return err
 	}
 	doctorCheckOK(w, createdMsg, "")

@@ -14,7 +14,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	_ "github.com/nickheyer/icebath/pkg/gatewayapi"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Hidden first argument of a re-executed test binary whose command line reads as a running gateway
@@ -166,10 +165,10 @@ func (f *migrateFleet) serviceOp(ctx context.Context, _ io.Writer, kind string, 
 	case (verb == "start" || verb == "restart") && name == "default":
 		f.writePidRecord()
 		runtimePath := filepath.Join(f.root, "gateway_state.json")
-		runtime := pyjson.NewObject()
+		runtime := jsonutil.NewObject()
 		if raw, err := os.ReadFile(runtimePath); err == nil {
-			if v, err := pyjson.Loads(string(raw)); err == nil {
-				runtime = v.(*pyjson.Object)
+			if v, err := jsonutil.Decode(string(raw)); err == nil {
+				runtime = v.(*jsonutil.Object)
 			}
 		}
 		runtime.Set("pid", int64(f.gatewayPid))
@@ -184,7 +183,7 @@ func (f *migrateFleet) serviceOp(ctx context.Context, _ io.Writer, kind string, 
 }
 
 func (f *migrateFleet) writeJSON(path string, v any) {
-	text, err := pyjson.Dumps(v)
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -192,7 +191,7 @@ func (f *migrateFleet) writeJSON(path string, v any) {
 }
 
 func (f *migrateFleet) writePidRecord() {
-	f.writeJSON(filepath.Join(f.root, "gateway.pid"), pyjson.ObjectOf("pid", int64(f.gatewayPid), "icebath_home", f.root))
+	f.writeJSON(filepath.Join(f.root, "gateway.pid"), jsonutil.ObjectOf("pid", int64(f.gatewayPid), "icebath_home", f.root))
 }
 
 func (f *migrateFleet) fakeSpawn(string) bool {
@@ -205,15 +204,15 @@ func pidOfStartedGateway(h string) int {
 	if err != nil {
 		return 0
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return 0
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return 0
 	}
-	pid, _ := obj.GetOr("pid", nil).(int64)
+	pid, _ := obj.ValueOr("pid", nil).(int64)
 	return int(pid)
 }
 
@@ -292,9 +291,9 @@ func (f *migrateFleet) readOut() string {
 }
 
 // Applies and returns the manifest as written, read mid flight because a confirmed convergence deletes it
-func (f *migrateFleet) applyCapturingManifest(plan *MigrationPlan, wait float64, restore bool) (bool, *pyjson.Object) {
+func (f *migrateFleet) applyCapturingManifest(plan *MigrationPlan, wait float64, restore bool) (bool, *jsonutil.Object) {
 	f.t.Helper()
-	var seen *pyjson.Object
+	var seen *jsonutil.Object
 	real := migrateWaitForServed
 	migrateWaitForServed = func(ctx context.Context, defaultHome string, expected map[string]bool, timeout time.Duration) ([]string, bool, error) {
 		seen = readManifest(defaultHome)

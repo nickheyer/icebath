@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Replay route decision with the api mode, route, echo opt in and rejected carriers it was computed for
@@ -76,11 +76,11 @@ func sanitizeToolCallsForStrictAPI(apiMsg map[string]any, model, baseURL, provid
 	out := make([]any, len(toolCalls))
 	for i, tc := range toolCalls {
 		switch m := tc.(type) {
-		case *pyjson.Object:
-			kept := pyjson.NewObject()
-			for _, k := range m.Keys {
+		case *jsonutil.Object:
+			kept := jsonutil.NewObject()
+			for _, k := range m.Keys() {
 				if !strip[k] {
-					kept.Set(k, m.Vals[k])
+					kept.Set(k, m.Value(k))
 				}
 			}
 			out[i] = kept

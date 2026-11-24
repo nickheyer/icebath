@@ -15,7 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -138,7 +138,7 @@ func loadJSON(raw []byte) (any, error) {
 	if !utf8.Valid(raw) {
 		return nil, fmt.Errorf("invalid utf-8")
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -147,12 +147,12 @@ func loadJSON(raw []byte) (any, error) {
 
 func plain(v any) any {
 	switch c := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := make(map[string]any, c.Len())
-		for _, k := range c.Keys {
-			out[k] = plain(c.Vals[k])
+		for _, k := range c.Keys() {
+			out[k] = plain(c.Value(k))
 		}
-		config.SetMappingKeys(out, c.Keys)
+		config.SetMappingKeys(out, c.Keys())
 		return out
 	case []any:
 		out := make([]any, len(c))

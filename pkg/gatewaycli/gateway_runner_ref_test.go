@@ -8,14 +8,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 type cronRunnerDouble struct{}
 
 var _ cron.GatewayRunner = cronRunnerDouble{}
 
-func (cronRunnerDouble) AdaptersForProfile(*string) *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (cronRunnerDouble) AdaptersForProfile(*string) *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	return nil
 }
 func (cronRunnerDouble) IsSharedBotSatellite(context.Context, string, gateway.Platform) bool {

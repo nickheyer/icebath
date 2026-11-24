@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestMissedSteerRetentionPendingSteerLandsInCompletionEntry(t *testing.T) {
@@ -67,7 +67,7 @@ func TestMissedSteerRetentionAcceptedSteerRacingCompletionIsDurablyRetained(t *t
 		return map[string]any{"final_response": "done", "completed": true, "interrupted": false, "api_calls": 1, "messages": []any{}}, nil
 	})
 	parent := &AIAgent{env: env}
-	results := make(chan *pyjson.Object, 1)
+	results := make(chan *jsonutil.Object, 1)
 	go func() {
 		results <- runSingleChild(tools.WithToolEnv(context.Background(), env), 0, "race", child, parent, "", nil, nil)
 	}()

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var callIDs atomic.Int64
@@ -55,7 +55,7 @@ func trackedJSON(t *testing.T, h string) []any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := pyjson.Loads(string(data))
+	v, err := jsonutil.Decode(string(data))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -105,7 +105,7 @@ func TestWriteFileTestPatternTracked(t *testing.T) {
 	if len(data) != 1 {
 		t.Fatalf("%v", data)
 	}
-	if c, _ := data[0].(*pyjson.Object).Get("category"); c != "test" {
+	if c, _ := data[0].(*jsonutil.Object).Get("category"); c != "test" {
 		t.Fatalf("category %v", c)
 	}
 }
@@ -117,7 +117,7 @@ func TestTerminalCommandPicksUpPaths(t *testing.T) {
 	resolved, _ := resolvePath(p)
 	found := false
 	for _, i := range trackedJSON(t, h) {
-		if v, _ := i.(*pyjson.Object).Get("path"); v == resolved {
+		if v, _ := i.(*jsonutil.Object).Get("path"); v == resolved {
 			found = true
 		}
 	}

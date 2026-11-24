@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -22,20 +21,17 @@ const (
 // Invalid or conflicting replica operation
 type ReplicaError struct{ *HostedRoomError }
 
-func (e *ReplicaError) Unwrap() error      { return e.HostedRoomError }
-func (e *ReplicaError) PyTypeName() string { return "ReplicaError" }
+func (e *ReplicaError) Unwrap() error { return e.HostedRoomError }
 
 // Page that does not start at the replica's next expected sequence
 type ReplicaGapError struct{ *ReplicaError }
 
-func (e *ReplicaGapError) Unwrap() error      { return e.ReplicaError }
-func (e *ReplicaGapError) PyTypeName() string { return "ReplicaGapError" }
+func (e *ReplicaGapError) Unwrap() error { return e.ReplicaError }
 
 // Page or demotion carrying an older authority epoch than stored
 type ReplicaEpochRegressionError struct{ *ReplicaError }
 
-func (e *ReplicaEpochRegressionError) Unwrap() error      { return e.ReplicaError }
-func (e *ReplicaEpochRegressionError) PyTypeName() string { return "ReplicaEpochRegressionError" }
+func (e *ReplicaEpochRegressionError) Unwrap() error { return e.ReplicaError }
 
 func replicaError(msg string) error { return &ReplicaError{&HostedRoomError{msg}} }
 func replicaGap(msg string) error   { return &ReplicaGapError{&ReplicaError{&HostedRoomError{msg}}} }
@@ -108,20 +104,20 @@ func replicaAppendControlEvent(ctx context.Context, conn state.SQLiteConn, roomI
 
 // Accounted bytes of one replicated event
 func replicaEventBytes(event map[string]any) (int64, error) {
-	actor, err := pyjson.Dumps(event["actor"], pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	actor, err := jsonutil.Encode(event["actor"])
 	if err != nil {
 		return 0, err
 	}
-	payload, err := pyjson.Dumps(event["payload"], pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	payload, err := jsonutil.Encode(event["payload"])
 	if err != nil {
 		return 0, err
 	}
-	return int64(roomUTF8Len(pyrepr.Str(event["event_id"]), pyrepr.Str(event["kind"]), actor, payload)), nil
+	return int64(roomUTF8Len(anyutil.String(event["event_id"]), anyutil.String(event["kind"]), actor, payload)), nil
 }
 
 // Contiguous validated events of a read_events page and its authority
 func replicaValidatePage(page any) ([]map[string]any, map[string]any, error) {
-	fields, ok := pyjson.Plain(page).(map[string]any)
+	fields, ok := jsonutil.Plain(page).(map[string]any)
 	if !ok {
 		return nil, nil, replicaError("page must be an object")
 	}
@@ -243,8 +239,8 @@ func IngestReplicaPage(ctx context.Context, dbPath string, roomIDValue, roomName
 				return err
 			}
 			createdAt := timestamp
-			if pyrepr.Truthy(event["created_at"]) {
-				if createdAt, err = pyint.Float(event["created_at"]); err != nil {
+			if anyutil.IsTrue(event["created_at"]) {
+				if createdAt, err = anyutil.ToFloat(event["created_at"]); err != nil {
 					return err
 				}
 			}
@@ -259,7 +255,7 @@ func IngestReplicaPage(ctx context.Context, dbPath string, roomIDValue, roomName
 			newLast, _ = hostedStrictInt(fresh[len(fresh)-1]["seq"])
 		}
 		latestSeq = newLast
-		if value, isInt := hostedStrictInt(pyjson.Plain(page).(map[string]any)["latest_seq"]); isInt {
+		if value, isInt := hostedStrictInt(jsonutil.Plain(page).(map[string]any)["latest_seq"]); isInt {
 			latestSeq = value
 		}
 		values := []any{roomName, membersJSON, authority["gateway_id"], authority["epoch"], newLast, max(latestSeq, newLast)}
@@ -287,7 +283,7 @@ func ReplicaState(ctx context.Context, dbPath string, roomIDValue any) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	if err := replicaTransaction(ctx, dbPath, func(conn state.SQLiteConn) (err error) {
 		row, err = state.QueryRowObject(ctx, conn, replicaSelect, roomID)
 		return err
@@ -301,8 +297,8 @@ func ReplicaState(ctx context.Context, dbPath string, roomIDValue any) (map[stri
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"room_id": row.Vals["room_id"], "name": row.Vals["name"], "members": members,
-		"authority": map[string]any{"gateway_id": row.Vals["authority_gateway_id"], "epoch": hrInt(row, "authority_epoch")},
+	return map[string]any{"room_id": row.Value("room_id"), "name": row.Value("name"), "members": members,
+		"authority": map[string]any{"gateway_id": row.Value("authority_gateway_id"), "epoch": hrInt(row, "authority_epoch")},
 		"last_seq":  hrInt(row, "last_seq"), "latest_seq": hrInt(row, "latest_seq"), "event_bytes": hrInt(row, "event_bytes"),
 		"created_at": hrFloat(row, "created_at"), "updated_at": hrFloat(row, "updated_at")}, nil
 }
@@ -346,7 +342,7 @@ func PromoteReplica(ctx context.Context, dbPath string, roomIDValue, reason any,
 			}
 			return roomConflict("room_id belongs to a disbanded room")
 		}
-		previousGateway, previousEpoch := fmt.Sprint(replica.Vals["authority_gateway_id"]), hrInt(replica, "authority_epoch")
+		previousGateway, previousEpoch := fmt.Sprint(replica.Value("authority_gateway_id")), hrInt(replica, "authority_epoch")
 		targetEpoch, claimSeq := previousEpoch+1, hrInt(replica, "last_seq")+1
 		claim, err := replicaControlEvent("claimed", targetEpoch, map[string]any{"previous_gateway_id": previousGateway, "authority_gateway_id": localGateway,
 			"authority_epoch": targetEpoch, "promoted_from_replica": true, "reason": text})
@@ -356,7 +352,7 @@ func PromoteReplica(ctx context.Context, dbPath string, roomIDValue, reason any,
 		if _, err := conn.ExecContext(ctx, `INSERT INTO hosted_rooms
                (room_id, name, members_json, authority_gateway_id, authority_epoch, next_seq, event_bytes,
                 revision, created_at, updated_at, disbanded_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)`, roomID, replica.Vals["name"], replica.Vals["members_json"], localGateway, targetEpoch,
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, NULL)`, roomID, replica.Value("name"), replica.Value("members_json"), localGateway, targetEpoch,
 			claimSeq+1, hrInt(replica, "event_bytes")+int64(roomUTF8Len(claim[:]...)), timestamp, timestamp); err != nil {
 			return err
 		}
@@ -412,7 +408,7 @@ func DemoteRoom(ctx context.Context, dbPath string, roomIDValue, observedGateway
 		if row == nil {
 			return replicaError("room not found in the local authoritative store")
 		}
-		currentGateway, currentEpoch := fmt.Sprint(row.Vals["authority_gateway_id"]), hrInt(row, "authority_epoch")
+		currentGateway, currentEpoch := fmt.Sprint(row.Value("authority_gateway_id")), hrInt(row, "authority_epoch")
 		if currentGateway == observedGateway && currentEpoch == observedEpoch {
 			out = map[string]any{"room_id": roomID, "authority_gateway_id": currentGateway, "authority_epoch": currentEpoch, "idempotent": true}
 			return nil

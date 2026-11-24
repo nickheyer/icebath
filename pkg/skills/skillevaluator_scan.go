@@ -1,11 +1,9 @@
 package skills
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,12 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -37,7 +33,7 @@ var SecretsClassChecks = map[string]bool{"database_credentials": true, "hardcode
 // Tier1Finding is one SkillEvaluator finding reduced to what install time shows
 type Tier1Finding struct {
 	Check, Validator, Severity, Message, File string
-	Line                                      *big.Int
+	Line                                      int64
 	Suggestion                                string
 }
 
@@ -46,8 +42,8 @@ func (f Tier1Finding) IsSecretsClass() bool { return SecretsClassChecks[f.Check]
 
 // File and line of the finding, the file alone without a line, a question mark without either
 func (f Tier1Finding) Location() string {
-	if f.File != "" && f.Line != nil && f.Line.Sign() != 0 {
-		return f.File + ":" + f.Line.String()
+	if f.File != "" && f.Line != 0 {
+		return f.File + ":" + strconv.FormatInt(f.Line, 10)
 	}
 	if f.File != "" {
 		return f.File
@@ -92,50 +88,32 @@ func (s *Scope) Tier1AdvisoryEnabled() (enabled bool) {
 	if text, isStr := value.(string); isStr {
 		return !slices.Contains([]string{"false", "0", "no", "off"}, strings.ToLower(strings.TrimSpace(text)))
 	}
-	return pyrepr.Truthy(value)
-}
-
-func pyCut200(s string) string {
-	n := 0
-	for i := range s {
-		if n == 200 {
-			return s[:i]
-		}
-		n++
-	}
-	return s
-}
-
-func pyOr(v, def any) any {
-	if pyrepr.Truthy(v) {
-		return v
-	}
-	return def
+	return anyutil.IsTrue(value)
 }
 
 // Findings and pass signal of a SkillEvaluator JSON report, incomplete validators kept out of the signal
-func parseTier1Report(report *pyjson.Object) (out Tier1Report, err error) {
+func parseTier1Report(report *jsonutil.Object) (out Tier1Report, err error) {
 	defer hubRecover(&err)
 	findings, incomplete, failed := []Tier1Finding{}, []string{}, false
-	for _, res := range pyIterate(pyOr(pyGet(report, "results", []any{}), []any{})) {
-		validator := pyrepr.Str(pyGet(res, "validator", "unknown"))
-		if strings.ToLower(pyrepr.Str(pyGet(res, "status", ""))) == "incomplete" {
+	for _, res := range pyIterate(anyutil.Or(pyGet(report, "results", []any{}), []any{})) {
+		validator := anyutil.String(pyGet(res, "validator", "unknown"))
+		if strings.ToLower(anyutil.String(pyGet(res, "status", ""))) == "incomplete" {
 			incomplete = append(incomplete, validator)
 		} else {
-			failed = failed || !pyrepr.Truthy(pyGet(res, "passed", true))
+			failed = failed || !anyutil.IsTrue(pyGet(res, "passed", true))
 		}
-		for _, f := range pyIterate(pyOr(pyGet(res, "findings", []any{}), []any{})) {
-			if _, isDict := f.(*pyjson.Object); !isDict {
+		for _, f := range pyIterate(anyutil.Or(pyGet(res, "findings", []any{}), []any{})) {
+			if _, isDict := f.(*jsonutil.Object); !isDict {
 				continue
 			}
-			line, lerr := pyint.Of(pyOr(pyGet(f, "line_number", nil), 0))
-			if lerr != nil {
+			line, lerr := anyutil.ToInt(anyutil.Or(pyGet(f, "line_number", nil), 0))
+			if lerr != nil && !errors.Is(lerr, anyutil.ErrRange) {
 				hubRaise(lerr)
 			}
 			findings = append(findings, Tier1Finding{
-				Check: pyrepr.Str(pyGet(f, "check_name", "")), Validator: validator,
-				Severity: strings.ToLower(pyrepr.Str(pyGet(f, "severity", "info"))), Message: pyCut200(pyrepr.Str(pyGet(f, "message", ""))),
-				File: pyrepr.Str(pyGet(f, "file_path", "")), Line: line, Suggestion: pyCut200(pyrepr.Str(pyGet(f, "suggestion", ""))),
+				Check: anyutil.String(pyGet(f, "check_name", "")), Validator: validator,
+				Severity: strings.ToLower(anyutil.String(pyGet(f, "severity", "info"))), Message: textutil.First(anyutil.String(pyGet(f, "message", "")), 200),
+				File: anyutil.String(pyGet(f, "file_path", "")), Line: line, Suggestion: textutil.First(anyutil.String(pyGet(f, "suggestion", "")), 200),
 			})
 		}
 	}
@@ -191,19 +169,15 @@ func RunTier1Scan(ctx context.Context, skillDir string, timeout int) (Tier1Repor
 	if err != nil {
 		return unavailable(fmt.Sprintf("unparseable report: %v", err))
 	}
-	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
-	for i := 0; i < len(data); {
-		r, size := utf8.DecodeRune(data[i:])
-		if r == utf8.RuneError && size <= 1 {
-			return Tier1Report{}, pystr.UTF8DecodeError(data, i)
-		}
-		i += size
+	data = textutil.TrimBOM(data)
+	if err := textutil.ValidateUTF8(data); err != nil {
+		return Tier1Report{}, err
 	}
-	parsed, err := pyjson.Loads(string(data))
+	parsed, err := jsonutil.Decode(data)
 	if err != nil {
 		return unavailable(fmt.Sprintf("unparseable report: %v", err))
 	}
-	obj, ok := parsed.(*pyjson.Object)
+	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return unavailable("unexpected report shape")
 	}

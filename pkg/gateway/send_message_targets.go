@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var phonePlatforms = map[string]bool{"photon": true, "signal": true, "sms": true, "whatsapp": true}
@@ -64,7 +64,7 @@ func parseTargetRef(ctx context.Context, platformName, targetRef string) (chatID
 			return &stripped, nil, true
 		}
 	}
-	if pystr.StrIsDigit(strings.TrimLeft(targetRef, "-")) ||
+	if textutil.IsDigits(strings.TrimLeft(targetRef, "-")) ||
 		(platformName == "matrix" && (strings.HasPrefix(targetRef, "!") || strings.HasPrefix(targetRef, "@"))) ||
 		(platformName == "xmpp" && strings.Contains(targetRef, "@")) {
 		ref := targetRef

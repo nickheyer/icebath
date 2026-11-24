@@ -2,36 +2,30 @@ package bluebubbles
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Whether an associatedMessageType is a tapback code, 2000 to 2005 added and 3000 to 3005 removed
 func isTapback(v any) bool {
-	n, ok := pyint.Instance(v)
-	if !ok || !n.IsInt64() {
-		return false
-	}
-	code := n.Int64()
-	return (code >= 2000 && code <= 2005) || (code >= 3000 && code <= 3005)
+	code, ok := anyutil.Int(v)
+	return ok && ((code >= 2000 && code <= 2005) || (code >= 3000 && code <= 3005))
 }
 
 // Message record of a webhook payload, the data dict, the first dict in a data list, message or the payload
 func extractPayloadRecord(payload map[string]any) map[string]any {
 	data := payload["data"]
-	if m, ok := pyjson.Dict(data); ok {
+	if m, ok := jsonutil.AsMap(data); ok {
 		return m
 	}
 	if items, ok := data.([]any); ok {
 		for _, item := range items {
-			if m, isDict := pyjson.Dict(item); isDict {
+			if m, isDict := jsonutil.AsMap(item); isDict {
 				if len(m) > 0 {
 					return m
 				}
@@ -39,7 +33,7 @@ func extractPayloadRecord(payload map[string]any) map[string]any {
 			}
 		}
 	}
-	if m, ok := pyjson.Dict(payload["message"]); ok {
+	if m, ok := jsonutil.AsMap(payload["message"]); ok {
 		return m
 	}
 	return payload
@@ -60,35 +54,36 @@ func valueOf(candidates ...any) string {
 // Webhook body as JSON, else a form with a JSON payload, data or message field
 func parseWebhookBody(raw []byte) (any, error) {
 	body := strings.ToValidUTF8(string(raw), "\uFFFD")
-	if v, err := pyjson.Loads(body); err == nil {
+	if v, err := jsonutil.Decode(body); err == nil {
 		return v, nil
 	}
-	form := pyurl.ParseQS(body, false)
+	pairs := urlutil.QueryPairs(body)
 	payloadStr := ""
 	for _, key := range []string{"payload", "data", "message"} {
-		if vals := form[key]; len(vals) > 0 {
-			payloadStr = vals[0]
+		for _, kv := range pairs {
+			if kv[0] == key && kv[1] != "" {
+				payloadStr = kv[1]
+				break
+			}
+		}
+		if payloadStr != "" {
 			break
 		}
 	}
 	if payloadStr == "" {
 		return map[string]any{}, nil
 	}
-	return pyjson.Loads(payloadStr)
+	return jsonutil.Decode(payloadStr)
 }
 
-// Items of an iterated payload field, the TypeError or AttributeError iterating a non list raises
+// Objects of a list payload field, nothing for a falsy value, a kind error for anything but a list of objects
 func iterDicts(v any) ([]map[string]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	items, ok := v.([]any)
 	if !ok {
-		_, isStr := v.(string)
-		if _, isDict := pyjson.Dict(v); isStr || isDict {
-			return nil, noAttr("", "get")
-		}
-		return nil, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+		return nil, kindError("an array", v)
 	}
 	out := make([]map[string]any, 0, len(items))
 	for _, item := range items {
@@ -166,22 +161,19 @@ func webhookToken(request *gateway.WebRequest) (string, bool) {
 	return "", false
 }
 
-// First element of a chats field when it is a dict, the error indexing a dict or number raises
+// First element of a chats list when it is an object, nothing for a falsy value or text, a kind error for any other value
 func firstChat(chats any) (map[string]any, error) {
-	if !pyrepr.Truthy(chats) {
+	if !anyutil.IsTrue(chats) {
 		return nil, nil
 	}
 	switch c := chats.(type) {
 	case []any:
-		m, _ := pyjson.Dict(c[0])
+		m, _ := jsonutil.AsMap(c[0])
 		return m, nil
 	case string:
 		return nil, nil
 	}
-	if _, isDict := pyjson.Dict(chats); isDict {
-		return nil, &pyErr{"KeyError", "0"}
-	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(chats))}
+	return nil, kindError("an array", chats)
 }
 
 // Chat GUID, chat identifier and sender read from the many BlueBubbles payload shapes
@@ -193,12 +185,12 @@ func resolveChatAndSender(payload, record map[string]any) (string, string, strin
 			return "", "", "", err
 		}
 		if chat != nil {
-			chatGUID = textOf(pyrepr.Or(chat["guid"], chat["chatGuid"]))
+			chatGUID = textOf(anyutil.Or(chat["guid"], chat["chatGuid"]))
 		}
 	}
 	chatIdentifier := valueOf(record["chatIdentifier"], record["identifier"], payload["chatIdentifier"], payload["identifier"])
 	var handleAddr any
-	if handle, ok := pyjson.Dict(record["handle"]); ok {
+	if handle, ok := jsonutil.AsMap(record["handle"]); ok {
 		handleAddr = handle["address"]
 	}
 	sender := valueOf(handleAddr, record["sender"], record["from"], record["address"])
@@ -217,7 +209,7 @@ func resolveChatAndSender(payload, record map[string]any) (string, string, strin
 // Authenticates a server callback, normalises the message and dispatches it with a read receipt
 func (a *BlueBubblesAdapter) handleWebhook(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
 	if token, ok := webhookToken(request); !ok || token != a.password {
-		return gateway.WebJSONResponse(pyjson.ObjectOf("error", "unauthorized"), http.StatusUnauthorized, nil)
+		return gateway.WebJSONResponse(jsonutil.ObjectOf("error", "unauthorized"), http.StatusUnauthorized, nil)
 	}
 	raw, err := request.Read()
 	var payload any
@@ -225,8 +217,8 @@ func (a *BlueBubblesAdapter) handleWebhook(ctx context.Context, request *gateway
 		payload, err = parseWebhookBody(raw)
 	}
 	if err != nil {
-		pkgLog().Error("[bluebubbles] webhook parse error: " + pyrepr.ExceptionMessage(err))
-		return gateway.WebJSONResponse(pyjson.ObjectOf("error", "invalid payload"), http.StatusBadRequest, nil)
+		pkgLog().Error("[bluebubbles] webhook parse error: " + err.Error())
+		return gateway.WebJSONResponse(jsonutil.ObjectOf("error", "invalid payload"), http.StatusBadRequest, nil)
 	}
 	pm, err := dictOf(payload)
 	if err != nil {
@@ -236,7 +228,7 @@ func (a *BlueBubblesAdapter) handleWebhook(ctx context.Context, request *gateway
 		return okResponse(), nil
 	}
 	record := extractPayloadRecord(pm)
-	if pyrepr.Truthy(record["isFromMe"]) || pyrepr.Truthy(record["fromMe"]) || pyrepr.Truthy(record["is_from_me"]) {
+	if anyutil.IsTrue(record["isFromMe"]) || anyutil.IsTrue(record["fromMe"]) || anyutil.IsTrue(record["is_from_me"]) {
 		return okResponse(), nil
 	}
 	if isTapback(record["associatedMessageType"]) {
@@ -251,7 +243,7 @@ func (a *BlueBubblesAdapter) handleWebhook(ctx context.Context, request *gateway
 	if sessionChatID == "" {
 		sessionChatID = chatIdentifier
 	}
-	isGroup := pyrepr.Truthy(record["isGroup"]) || strings.Contains(chatGUID, ";+;")
+	isGroup := anyutil.IsTrue(record["isGroup"]) || strings.Contains(chatGUID, ";+;")
 	if isGroup && a.requireMention {
 		if !a.messageMatchesMentionPatterns(text) {
 			pkgLog().Debug("[bluebubbles] ignoring group message (require_mention=true, no mention pattern matched)")
@@ -267,7 +259,7 @@ func (a *BlueBubblesAdapter) handleWebhook(ctx context.Context, request *gateway
 		text = "(attachment)"
 	}
 	if sender == "" || (chatGUID == "" && chatIdentifier == "") || text == "" {
-		return gateway.WebJSONResponse(pyjson.ObjectOf("error", "missing message fields"), http.StatusBadRequest, nil)
+		return gateway.WebJSONResponse(jsonutil.ObjectOf("error", "missing message fields"), http.StatusBadRequest, nil)
 	}
 	chatType := "dm"
 	if isGroup {

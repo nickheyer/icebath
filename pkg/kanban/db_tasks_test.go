@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Optional string of a literal
@@ -520,7 +520,7 @@ func TestLinkTasksEmitsDependencyWaitWhenDemotingReadyChild(t *testing.T) {
 	if len(wait) == 0 {
 		t.Fatal("demotion not recorded")
 	}
-	p := wait[len(wait)-1].Payload.(*pyjson.Object)
+	p := wait[len(wait)-1].Payload.(*jsonutil.Object)
 	if objGet(p, "reason") != "parent_not_done" || objGet(p, "demoted") != true || objGet(p, "parent") != parent {
 		t.Fatal("dependency_wait payload", p)
 	}

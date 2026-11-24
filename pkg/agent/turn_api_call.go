@@ -6,11 +6,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // A client that reports itself a test double takes the non streaming path like a unittest Mock
@@ -162,7 +162,7 @@ func (a *AIAgent) performAPICall(ctx context.Context, r APICallRequest) (APICall
 				a.modelRequestActive.Clear()
 			}
 			if a.pendingRedirectLock != nil {
-				crossed = pyrepr.Truthy(a.pendingRedirect)
+				crossed = anyutil.IsTrue(a.pendingRedirect)
 			} else {
 				crossed = a.hasPendingRedirect()
 			}

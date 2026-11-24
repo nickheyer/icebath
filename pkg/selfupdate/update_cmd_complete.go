@@ -14,11 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Name the Windows gateway resume is registered under among the command's exit hooks
@@ -79,10 +79,10 @@ var (
 func sourceUpdateChannel(ctx context.Context, args map[string]any, channel *string, branchExplicit bool) (string, error) {
 	transient := channel
 	if value := args["channel"]; transient == nil && value != nil {
-		text := pyrepr.Str(value)
+		text := anyutil.String(value)
 		transient = &text
 	}
-	return SourceUpdateChannel(ctx, branchExplicit || pyrepr.Truthy(args["branch"]), transient, fleetProjectRoot())
+	return SourceUpdateChannel(ctx, branchExplicit || anyutil.IsTrue(args["branch"]), transient, fleetProjectRoot())
 }
 
 // Implements the update check, fetching and reporting behind-ness without installing
@@ -197,7 +197,7 @@ func sourceCompletionRequest(ctx context.Context, opts *updateOptions, plan *Upd
 		updaterecord.BeginUpdateReceipt(ctx, nil, "")
 		current = updaterecord.CurrentReceipt(ctx)
 	}
-	source, err := pypath.Resolve(fleetProjectRoot())
+	source, err := pathutil.Resolve(fleetProjectRoot())
 	if err != nil {
 		return nil, err
 	}
@@ -205,8 +205,8 @@ func sourceCompletionRequest(ctx context.Context, opts *updateOptions, plan *Upd
 		"schema": 1, "source": source, "home": home.Dir(ctx), "branch": "main",
 		"assume_yes": opts.AssumeYes, "gateway_mode": gatewayMode, "no_gateway_restart": opts.NoGatewayRestart,
 		"pre_update_version": optionalValue(opts.PreUpdateVersion), "snapshot_id": optionalValue(snapshotID),
-		"sibling_snapshots": pyjson.Clone(lastSiblingSnapshots), "plan": nil,
-		"receipt": pyjson.Clone(current.Data), "windows_resume": nil,
+		"sibling_snapshots": jsonutil.Clone(lastSiblingSnapshots), "plan": nil,
+		"receipt": jsonutil.Clone(current.Data), "windows_resume": nil,
 	}
 	if plan != nil {
 		request["plan"] = plan.ToDict()
@@ -225,11 +225,11 @@ func settleWindowsResume(request map[string]any) {
 
 // Update id of the receipt frozen on a completion request, nil when it has none
 func requestUpdateID(request map[string]any) *string {
-	receipt, ok := pyjson.AsObject(request["receipt"])
+	receipt, ok := jsonutil.AsObject(request["receipt"])
 	if !ok {
 		return nil
 	}
-	id, ok := receipt.Vals["update_id"].(string)
+	id, ok := receipt.Value("update_id").(string)
 	if !ok {
 		return nil
 	}
@@ -238,7 +238,7 @@ func requestUpdateID(request map[string]any) *string {
 
 // The command's last resume of the gateways it paused, a failure owed as a followup and never raised
 func resumePausedGatewaysAtExit(ctx context.Context, w io.Writer, token, request map[string]any) error {
-	if len(token) == 0 || !pyrepr.Truthy(token["resume_needed"]) || pyrepr.Truthy(request["windows_resume_settled"]) {
+	if len(token) == 0 || !anyutil.IsTrue(token["resume_needed"]) || anyutil.IsTrue(request["windows_resume_settled"]) {
 		return nil
 	}
 	err := resumeWindowsGatewaysAfterUpdate(ctx, w, token)
@@ -299,25 +299,25 @@ func handOffSourceUpdate(ctx context.Context, w io.Writer, request map[string]an
 		request["completion_message"] = unrestored
 	}
 	outcome := "success"
-	if pyrepr.Truthy(request["completion_message"]) {
+	if anyutil.IsTrue(request["completion_message"]) {
 		outcome = "skipped"
 	}
 	mode, ok := request["apply_mode"]
 	if !ok {
 		mode = "git"
 	}
-	updaterecord.RecordStage(ctx, "apply", outcome, pyjson.ObjectOf("mode", mode))
+	updaterecord.RecordStage(ctx, "apply", outcome, jsonutil.ObjectOf("mode", mode))
 	if current := updaterecord.CurrentReceipt(ctx); current != nil {
-		request["receipt"] = pyjson.Clone(current.Data)
+		request["receipt"] = jsonutil.Clone(current.Data)
 	}
 	if source, present := request["source"]; present {
-		if err := rebuildSourceCheckout(ctx, w, pyrepr.Str(source)); err != nil {
+		if err := rebuildSourceCheckout(ctx, w, anyutil.String(source)); err != nil {
 			return err
 		}
 	}
 	var expectedSHA string
-	if pyrepr.Truthy(request["expected_sha"]) {
-		expectedSHA = pyrepr.Str(request["expected_sha"])
+	if anyutil.IsTrue(request["expected_sha"]) {
+		expectedSHA = anyutil.String(request["expected_sha"])
 	} else {
 		expectedSHA = currentCheckoutSHA(ctx)
 	}
@@ -349,8 +349,8 @@ func handOffSourceUpdate(ctx context.Context, w io.Writer, request map[string]an
 		updaterecord.FinalizeInterruptedUpdateReceipt(ctx, "the completion was interrupted after the code was updated", 130)
 	} else if !lost && result["receipt"] == nil && exitCode != 0 {
 		reason := fmt.Sprintf("the completion process exited %d", exitCode)
-		if pyrepr.Truthy(result["error"]) {
-			reason = pyrepr.Str(result["error"])
+		if anyutil.IsTrue(result["error"]) {
+			reason = anyutil.String(result["error"])
 		}
 		result, err = settleLostCompletion(ctx, w, request, reason)
 		if err != nil {
@@ -382,7 +382,7 @@ func handOffSourceUpdate(ctx context.Context, w io.Writer, request map[string]an
 			token[key] = value
 		}
 		settleWindowsResume(request)
-	} else if len(token) > 0 && pyrepr.Truthy(token["resume_needed"]) && exitCode == 0 {
+	} else if len(token) > 0 && anyutil.IsTrue(token["resume_needed"]) && exitCode == 0 {
 		if err := resumeWindowsGatewaysAfterUpdate(ctx, w, token); err != nil {
 			if isUpdateExit(err) {
 				return err
@@ -412,7 +412,7 @@ func handOffSourceUpdate(ctx context.Context, w io.Writer, request map[string]an
 	}
 	if adopted {
 		retirement, _ := request["channel_retirement"].(map[string]any)
-		fmt.Fprintf(w, "→ Source subscription moved to %s\n", pyrepr.Str(retirement["destination"]))
+		fmt.Fprintf(w, "→ Source subscription moved to %s\n", anyutil.String(retirement["destination"]))
 	}
 	return nil
 }

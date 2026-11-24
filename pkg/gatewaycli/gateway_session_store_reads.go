@@ -3,8 +3,8 @@ package gatewaycli
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Stored session row from the read only reader, nil without a reader or a row
@@ -56,7 +56,7 @@ func (s *GatewaySessionStore) IsKanbanOwnedSession(ctx context.Context, sessionI
 }
 
 // Rich session page from the reader with created surface matching
-func (s *GatewaySessionStore) ListSessionsRich(ctx context.Context, o state.ListSessionsRichOptions) ([]*pyjson.Object, error) {
+func (s *GatewaySessionStore) ListSessionsRich(ctx context.Context, o state.ListSessionsRichOptions) ([]*jsonutil.Object, error) {
 	if db := s.Reader(ctx); db != nil {
 		return db.ListSessionsRich(ctx, o)
 	}
@@ -104,7 +104,7 @@ func (s *GatewaySessionStore) ResolveSessionByTitle(ctx context.Context, title s
 }
 
 // Stored message rows of a session from the reader
-func (s *GatewaySessionStore) GetMessages(ctx context.Context, sessionID string, o state.GetMessagesOptions) ([]*pyjson.Object, error) {
+func (s *GatewaySessionStore) GetMessages(ctx context.Context, sessionID string, o state.GetMessagesOptions) ([]*jsonutil.Object, error) {
 	if db := s.Reader(ctx); db != nil {
 		return db.DB().GetMessages(ctx, sessionID, o)
 	}

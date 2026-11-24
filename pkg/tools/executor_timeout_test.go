@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type callPost struct{ callID, name, status, errorType, errorMessage string }
@@ -40,7 +40,7 @@ func registryExecutor(t *testing.T, defs ...Def) (*Executor, *fakeExecutorHost, 
 }
 
 func handlerDef(name string, handler func(ctx context.Context, call *Call) string) Def {
-	return Def{Name: name, Toolset: "web", Schema: pyjson.ObjectOf("name", name, "parameters", pyjson.ObjectOf("type", "object")),
+	return Def{Name: name, Toolset: "web", Schema: jsonutil.ObjectOf("name", name, "parameters", jsonutil.ObjectOf("type", "object")),
 		Check: func(*Env) bool { return true }, Handler: handler}
 }
 

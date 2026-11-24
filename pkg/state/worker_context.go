@@ -4,17 +4,17 @@ import (
 	"context"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Handler of one worker receipt operation, run on the receipt transaction connection without committing
-type WorkerHandler func(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error)
+type WorkerHandler func(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error)
 
 // model_config sidecar keys a worker may patch
 var SidecarKeys = map[string]bool{"_usage_anchor": true, "_proactive_prune_rearm_tokens": true, "_anthropic_rejected_thinking": true}
 
 // True when the payload holds exactly the given keys
-func payloadKeysExactly(payload *pyjson.Object, keys ...string) bool {
+func payloadKeysExactly(payload *jsonutil.Object, keys ...string) bool {
 	if payload.Len() != len(keys) {
 		return false
 	}
@@ -27,8 +27,8 @@ func payloadKeysExactly(payload *pyjson.Object, keys ...string) bool {
 }
 
 // True when some payload key lies outside the allowed set
-func payloadHasKeysOutside(payload *pyjson.Object, allowed map[string]bool) bool {
-	for _, k := range payload.Keys {
+func payloadHasKeysOutside(payload *jsonutil.Object, allowed map[string]bool) bool {
+	for _, k := range payload.Keys() {
 		if !allowed[k] {
 			return true
 		}
@@ -46,7 +46,7 @@ func runtimeTextOf(value any) (string, error) {
 }
 
 // First row object of a statement on the caller connection, nil when none matches
-func connObject(ctx context.Context, conn SQLiteConn, query string, args ...any) (*pyjson.Object, error) {
+func connObject(ctx context.Context, conn SQLiteConn, query string, args ...any) (*jsonutil.Object, error) {
 	rows, err := queryObjects(ctx, conn, query, args...)
 	if err != nil || len(rows) == 0 {
 		return nil, err
@@ -64,7 +64,7 @@ func execRowcount(ctx context.Context, conn SQLiteConn, query string, args ...an
 }
 
 // Session row with its prompt and tools pin resolved, the receipt connection view of get_session
-func workerSessionRow(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string) (*pyjson.Object, error) {
+func workerSessionRow(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string) (*jsonutil.Object, error) {
 	row, err := connObject(ctx, conn, "SELECT s.*, COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved, "+
 		"COALESCE(tp.prompt, s.tool_names) AS _tool_names_resolved "+
 		"FROM sessions s LEFT JOIN system_prompts sp ON sp.hash=s.system_prompt_hash "+
@@ -79,7 +79,7 @@ func workerSessionRow(d *SessionDB, ctx context.Context, conn SQLiteConn, sessio
 }
 
 // Session row of the assignment, refusing any payload content
-func workerContext(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerContext(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	if payload.Len() > 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -87,11 +87,11 @@ func workerContext(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("session", session), nil
+	return jsonutil.ObjectOf("session", session), nil
 }
 
 // Replaces the frozen system prompt through the content addressed prompt table
-func workerPrompt(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerPrompt(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	prompt, _ := payload.Get("system_prompt")
 	if _, isStr := prompt.(string); !payloadKeysExactly(payload, "system_prompt") || (prompt != nil && !isStr) {
 		return nil, runtimeRefusal("invalid_params")
@@ -106,13 +106,13 @@ func workerPrompt(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID 
 	if err := deleteUnreferencedSystemPrompts(ctx, conn); err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", nil), nil
+	return jsonutil.ObjectOf("value", nil), nil
 }
 
 // Merges a sidecar only patch into the stored model_config
-func workerSidecars(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerSidecars(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	raw, _ := payload.Get("patch")
-	patch, ok := raw.(*pyjson.Object)
+	patch, ok := raw.(*jsonutil.Object)
 	if !payloadKeysExactly(payload, "patch") || !ok || payloadHasKeysOutside(patch, SidecarKeys) {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -123,7 +123,7 @@ func workerSidecars(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionI
 	if _, err := conn.ExecContext(ctx, "UPDATE sessions SET model_config=? WHERE id=?", merged, sessionID); err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", nil), nil
+	return jsonutil.ObjectOf("value", nil), nil
 }
 
 // Validates a tools pin, a name list or the version and tools dict with an optional delegation backend
@@ -139,7 +139,7 @@ func validToolNamesPin(pin any) bool {
 			}
 		}
 		return true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		backend, has := p.Get("delegation_backend")
 		if !has {
 			backend = ""
@@ -160,7 +160,7 @@ func validToolNamesPin(pin any) bool {
 }
 
 // Persists the tools pin through the prompt table with a four megabyte bound, nil clearing it
-func workerToolNames(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerToolNames(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	if !payloadKeysExactly(payload, "tool_names") {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -170,7 +170,7 @@ func workerToolNames(d *SessionDB, ctx context.Context, conn SQLiteConn, session
 	}
 	var encoded any
 	if pin != nil {
-		text, err := pyjson.Dumps(pin)
+		text, err := jsonutil.Encode(pin)
 		if err != nil {
 			return nil, err
 		}
@@ -189,11 +189,11 @@ func workerToolNames(d *SessionDB, ctx context.Context, conn SQLiteConn, session
 	if err := deleteUnreferencedSystemPrompts(ctx, conn); err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", nil), nil
+	return jsonutil.ObjectOf("value", nil), nil
 }
 
 // Role of the newest active conversation row, nil for an empty transcript
-func workerTailRole(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerTailRole(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	if payload.Len() > 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -202,11 +202,11 @@ func workerTailRole(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionI
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", role), nil
+	return jsonutil.ObjectOf("value", role), nil
 }
 
 // Role of one active row of this transcript, nil for any other row
-func workerRowRole(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerRowRole(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	raw, _ := payload.Get("row_id")
 	rowID, ok := exactInt(raw)
 	if !payloadKeysExactly(payload, "row_id") || !ok {
@@ -216,5 +216,5 @@ func workerRowRole(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", role), nil
+	return jsonutil.ObjectOf("value", role), nil
 }

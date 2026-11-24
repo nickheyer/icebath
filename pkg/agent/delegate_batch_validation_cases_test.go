@@ -6,8 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -28,13 +28,13 @@ func stubCompletedChildRuns(t *testing.T, summaries ...string) *int32 {
 	t.Helper()
 	prev := runSingleChildFn
 	var calls int32
-	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
+	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
 		atomic.AddInt32(&calls, 1)
 		summary := "ok"
 		if i < len(summaries) {
 			summary = summaries[i]
 		}
-		return pyjson.ObjectOf("task_index", i, "status", "completed", "summary", summary, "api_calls", 1, "duration_seconds", 1.0, "_child_role", nil)
+		return jsonutil.ObjectOf("task_index", i, "status", "completed", "summary", summary, "api_calls", 1, "duration_seconds", 1.0, "_child_role", nil)
 	}
 	t.Cleanup(func() { runSingleChildFn = prev })
 	return &calls
@@ -48,13 +48,13 @@ func batchGoals(goals ...string) []any {
 	return tasks
 }
 
-func callBatch(t *testing.T, parent *AIAgent, tasks []any) *pyjson.Object {
+func callBatch(t *testing.T, parent *AIAgent, tasks []any) *jsonutil.Object {
 	t.Helper()
 	out, err := delegateTask(context.Background(), parent, map[string]any{"tasks": tasks})
 	return dispatchPayload(t, out, err)
 }
 
-func batchResults(t *testing.T, payload *pyjson.Object) []any {
+func batchResults(t *testing.T, payload *jsonutil.Object) []any {
 	t.Helper()
 	raw, _ := payload.Get("results")
 	results, _ := raw.([]any)

@@ -7,7 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"golang.org/x/text/cases"
 )
 
 // Surface prompt taking a question and shown labels, returning the picked label or false
@@ -89,7 +90,7 @@ func choiceGetter(choice any) (func(string) (any, bool), error) {
 	return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("model choice is %s where a mapping was expected", errchain.Kind(choice))}
 }
 
-// Picked choice value from the bound asker, false with no asker, on an event loop, on cancel or an unknown answer
+// Picked choice value from the bound asker, false with no asker, on cancel or an unknown answer
 func askChoice(ctx context.Context, question any, choices []any) (string, bool, error) {
 	asker := boundAsker(ctx)
 	options, err := choiceOptions(choices)
@@ -99,21 +100,17 @@ func askChoice(ctx context.Context, question any, choices []any) (string, bool, 
 	if asker == nil || len(options) == 0 {
 		return "", false, nil
 	}
-	if runningLoop(ctx) {
-		pkgLog().Warn("ask_choice needs a sync slash-command handler: an async one would block the event loop that delivers the answer; returning None")
-		return "", false, nil
-	}
 	labels := make([]string, len(options))
 	for i, o := range options {
 		labels[i] = o.shown
 	}
 	picked, _ := asker(config.PyStr(question), labels)
-	typed := pystr.Casefold(strings.TrimSpace(picked))
+	typed := cases.Fold().String(strings.TrimSpace(picked))
 	if typed == "" {
 		return "", false, nil
 	}
 	for _, o := range options {
-		if typed == pystr.Casefold(o.shown) || typed == pystr.Casefold(o.label) || typed == pystr.Casefold(o.value) {
+		if typed == cases.Fold().String(o.shown) || typed == cases.Fold().String(o.label) || typed == cases.Fold().String(o.value) {
 			return o.value, true, nil
 		}
 	}

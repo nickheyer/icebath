@@ -13,8 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Home with the critical state files and a one row sessions database
@@ -33,13 +34,13 @@ func quickHome(t *testing.T) string {
 }
 
 // Parsed manifest of a published snapshot
-func snapshotManifest(t *testing.T, h, snapID string) *pyjson.Object {
+func snapshotManifest(t *testing.T, h, snapID string) *jsonutil.Object {
 	t.Helper()
 	raw, err := os.ReadFile(filepath.Join(h, quickSnapshotsDir, snapID, "manifest.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	obj, err := pyjson.LoadsDict(string(raw))
+	obj, err := jsonutil.DecodeObject(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,18 +48,18 @@ func snapshotManifest(t *testing.T, h, snapID string) *pyjson.Object {
 }
 
 // Keys of a manifest object field
-func manifestKeys(t *testing.T, m *pyjson.Object, field string) []string {
+func manifestKeys(t *testing.T, m *jsonutil.Object, field string) []string {
 	t.Helper()
 	v, _ := m.Get(field)
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		t.Fatalf("%s is %T", field, v)
 	}
-	return obj.Keys
+	return obj.Keys()
 }
 
 // Strings of a manifest list field
-func manifestList(t *testing.T, m *pyjson.Object, field string) []string {
+func manifestList(t *testing.T, m *jsonutil.Object, field string) []string {
 	t.Helper()
 	v, _ := m.Get(field)
 	items, ok := v.([]any)
@@ -173,7 +174,7 @@ func TestQuickSnapshotOversizedDbSuppressesPruning(t *testing.T) {
 	}
 	ids := map[string]bool{}
 	for _, s := range snaps {
-		id, _ := s.(*pyjson.Object).Get("id")
+		id, _ := s.(*jsonutil.Object).Get("id")
 		ids[id.(string)] = true
 	}
 	if !ids[firstID] || !ids[secondID] {
@@ -290,9 +291,9 @@ func TestQuickSnapshotIsPublishedWithManifest(t *testing.T) {
 	m := snapshotManifest(t, h, snapID)
 	id, _ := m.Get("id")
 	files, _ := m.Get("files")
-	want := pyjson.NewObject()
+	want := jsonutil.NewObject()
 	want.Set("config.yaml", int64(10))
-	if id != snapID || !pyjson.Equal(files, want) {
+	if id != snapID || !anyutil.Equal(files, want) {
 		t.Fatalf("manifest %v", m)
 	}
 }
@@ -425,12 +426,12 @@ func TestAllProfileSnapshotsEachSiblingSnapshottedIntoOwnHome(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	names := append([]string{}, result.Keys...)
+	names := append([]string{}, result.Keys()...)
 	slices.Sort(names)
 	if !slices.Equal(names, []string{"sparks", "work"}) {
 		t.Fatalf("%v", names)
 	}
-	for _, name := range result.Keys {
+	for _, name := range result.Keys() {
 		v, _ := result.Get(name)
 		snapID := v.(string)
 		snapDir := filepath.Join(p[name], quickSnapshotsDir, snapID)

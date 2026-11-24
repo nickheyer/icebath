@@ -18,10 +18,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -115,9 +115,9 @@ func (t *TurnRunner) drainProgressQueue() {
 // Remembers a delivered progress or status message id for end of turn cleanup
 func (t *TurnRunner) trackProgressResult(result any) {
 	sent, ok := result.(gateway.SendResult)
-	if t.ctx.cleanupProgress && ok && sent.Success && pyrepr.Truthy(sent.MessageID) {
+	if t.ctx.cleanupProgress && ok && sent.Success && anyutil.IsTrue(sent.MessageID) {
 		t.ctx.holderMu.Lock()
-		t.ctx.cleanupMsgIDs = append(t.ctx.cleanupMsgIDs, pyrepr.Str(sent.MessageID))
+		t.ctx.cleanupMsgIDs = append(t.ctx.cleanupMsgIDs, anyutil.String(sent.MessageID))
 		t.ctx.holderMu.Unlock()
 	}
 }
@@ -144,14 +144,14 @@ func (t *TurnRunner) progressSubagentNotice(preview any, kwargs map[string]any) 
 		return
 	}
 	errText := kwargs["summary"]
-	if !pyrepr.Truthy(errText) {
+	if !anyutil.IsTrue(errText) {
 		errText = preview
 	}
 	goal := ""
 	if g, ok := kwargs["goal"].(string); ok {
 		goal = g
 	}
-	line := agent.FormatSubagentFailureLine(goal, pyrepr.Str(status), errText, kwargs["duration_seconds"], kwargs["failure_reason"])
+	line := agent.FormatSubagentFailureLine(goal, anyutil.String(status), errText, kwargs["duration_seconds"], kwargs["failure_reason"])
 	_, err := config.RenderNotification(t.turnCtx, func() error {
 		t.schedule(func(ctx context.Context) (any, error) {
 			return nil, t.runner.deliverPlatformNotice(ctx, tc.source, line)
@@ -219,7 +219,7 @@ func isTruthyValue(value any, def bool) bool {
 		}
 		return false
 	}
-	return pyrepr.Truthy(value)
+	return anyutil.IsTrue(value)
 }
 
 // One line preview budget of the all and new modes, 40 when unset
@@ -279,7 +279,7 @@ func (t *TurnRunner) progressBuildMessage(toolName string, preview string, args 
 			line = *code
 		case len(args) > 0:
 			supports := adapter != nil && adapter.Base().Traits.SupportsCodeBlocks
-			ordered := pyjson.NewObject()
+			ordered := jsonutil.NewObject()
 			keys := make([]any, 0, len(args))
 			for _, k := range slices.Sorted(maps.Keys(args)) {
 				keys = append(keys, k)

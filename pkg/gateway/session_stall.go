@@ -5,7 +5,7 @@ import (
 	"math"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Whether a pending inbound session idle past the timeout owes its one stall notice
@@ -36,7 +36,7 @@ func finiteFloat(value any) *float64 {
 	if _, isBool := value.(bool); isBool {
 		return nil
 	}
-	result, err := pyint.Float(value)
+	result, err := anyutil.ToFloat(value)
 	if err != nil || math.IsInf(result, 0) || math.IsNaN(result) {
 		return nil
 	}

@@ -7,10 +7,10 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func cacheMarkers(messages []map[string]any) []map[string]any {
@@ -163,14 +163,14 @@ func TestBindSubagentParentDoesNotPinAgent(t *testing.T) {
 
 func TestSessionJoinsDelegationFollowsTheCarriedSchema(t *testing.T) {
 	built := tools.DelegateTaskSchema
-	joined := tools.OneshotDelegateFunction(pyjson.ObjectOf("name", "delegate_task",
-		"description", "x "+tools.OneshotDescriptionDelivery, "parameters", built.Vals["parameters"]))
+	joined := tools.OneshotDelegateFunction(jsonutil.ObjectOf("name", "delegate_task",
+		"description", "x "+tools.OneshotDescriptionDelivery, "parameters", built.Value("parameters")))
 	inline := &AIAgent{tools: []any{map[string]any{"type": "function", "function": joined}}}
 	if !sessionJoinsDelegation(inline) {
 		t.Fatal("joined schema does not join")
 	}
 	background := &AIAgent{tools: []any{map[string]any{"type": "function", "function": map[string]any{
-		"name": "delegate_task", "description": "END YOUR TURN", "parameters": built.Vals["parameters"]}}}}
+		"name": "delegate_task", "description": "END YOUR TURN", "parameters": built.Value("parameters")}}}}
 	if sessionJoinsDelegation(background) || sessionJoinsDelegation(&AIAgent{}) {
 		t.Fatal("background or absent delegate_task joins")
 	}

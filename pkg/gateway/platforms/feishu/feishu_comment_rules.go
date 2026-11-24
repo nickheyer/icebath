@@ -16,10 +16,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Patched rules and pairing file paths, empty follows the active profile home at call time
@@ -92,7 +92,7 @@ func PairingFilePath(ctx context.Context) string {
 
 type mtimeEntry struct {
 	version []any
-	data    *pyjson.Object
+	data    *jsonutil.Object
 }
 
 // MtimeCache serves a JSON object file per resolved path and rereads it only when its cache version changes
@@ -115,14 +115,14 @@ func (c *MtimeCache) Invalidate(ctx context.Context) {
 }
 
 // Load returns the cached object, an empty object for a missing or unreadable file, and an error for invalid UTF-8
-func (c *MtimeCache) Load(ctx context.Context) (*pyjson.Object, error) {
+func (c *MtimeCache) Load(ctx context.Context) (*jsonutil.Object, error) {
 	path := c.resolve(ctx)
 	version, verr := config.FileCacheVersion(path, false)
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if verr != nil && errors.Is(verr, fs.ErrNotExist) {
 		delete(c.entries, path)
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	if verr != nil {
 		version = nil
@@ -139,24 +139,24 @@ func (c *MtimeCache) Load(ctx context.Context) (*pyjson.Object, error) {
 }
 
 // Reads a utf-8-sig JSON file, logging and returning an empty object on read or decode failure
-func readJSONObject(path string) (*pyjson.Object, error) {
+func readJSONObject(path string) (*jsonutil.Object, error) {
 	raw, err := os.ReadFile(path)
 	var value any
 	if err == nil {
-		text, derr := pystr.DecodeUTF8Sig(raw)
+		text, derr := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if derr != nil {
 			return nil, derr
 		}
-		value, err = pyjson.Loads(text)
+		value, err = jsonutil.Decode(text)
 	}
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("[Feishu-Rules] Failed to read %s, using empty config", path))
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	if obj, ok := value.(*pyjson.Object); ok {
+	if obj, ok := value.(*jsonutil.Object); ok {
 		return obj, nil
 	}
-	return pyjson.NewObject(), nil
+	return jsonutil.NewObject(), nil
 }
 
 var (
@@ -172,7 +172,7 @@ func parseFrozenset(raw any) StringSet {
 	}
 	out := StringSet{}
 	for _, u := range items {
-		if s := strings.TrimSpace(pyrepr.Str(u)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(u)); s != "" {
 			out[s] = struct{}{}
 		}
 	}
@@ -184,7 +184,7 @@ func parsePolicy(raw any, def *string) *string {
 	if raw == nil {
 		return def
 	}
-	policy := strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
+	policy := strings.ToLower(strings.TrimSpace(anyutil.String(raw)))
 	for _, p := range validPolicies {
 		if p == policy {
 			return &policy
@@ -194,17 +194,17 @@ func parsePolicy(raw any, def *string) *string {
 }
 
 // Builds a per document rule where absent fields inherit from the lower tier
-func parseDocumentRule(raw *pyjson.Object) CommentDocumentRule {
+func parseDocumentRule(raw *jsonutil.Object) CommentDocumentRule {
 	rule := CommentDocumentRule{Policy: parsePolicy(objGet(raw, "policy", nil), nil), AllowFrom: parseFrozenset(objGet(raw, "allow_from", nil))}
 	if enabled := objGet(raw, "enabled", nil); enabled != nil {
-		b := pyrepr.Truthy(enabled)
+		b := anyutil.IsTrue(enabled)
 		rule.Enabled = &b
 	}
 	return rule
 }
 
-func objGet(o *pyjson.Object, key string, def any) any {
-	if v, ok := o.Vals[key]; ok {
+func objGet(o *jsonutil.Object, key string, def any) any {
+	if v, ok := o.Get(key); ok {
 		return v
 	}
 	return def
@@ -220,9 +220,9 @@ func LoadConfig(ctx context.Context) (CommentsConfig, error) {
 		return DefaultCommentsConfig(), nil
 	}
 	documents := map[string]CommentDocumentRule{}
-	if docs, ok := objGet(raw, "documents", pyjson.NewObject()).(*pyjson.Object); ok {
-		for _, key := range docs.Keys {
-			if ruleRaw, ok := docs.Vals[key].(*pyjson.Object); ok {
+	if docs, ok := objGet(raw, "documents", jsonutil.NewObject()).(*jsonutil.Object); ok {
+		for _, key := range docs.Keys() {
+			if ruleRaw, ok := docs.Value(key).(*jsonutil.Object); ok {
 				documents[key] = parseDocumentRule(ruleRaw)
 			}
 		}
@@ -309,15 +309,15 @@ var loadPairingApproved = func(ctx context.Context) (StringSet, error) {
 		return nil, err
 	}
 	out := StringSet{}
-	switch approved := objGet(data, "approved", pyjson.NewObject()).(type) {
-	case *pyjson.Object:
-		for _, k := range approved.Keys {
+	switch approved := objGet(data, "approved", jsonutil.NewObject()).(type) {
+	case *jsonutil.Object:
+		for _, k := range approved.Keys() {
 			out[k] = struct{}{}
 		}
 	case []any:
 		for _, u := range approved {
-			if pyrepr.Truthy(u) {
-				out[pyrepr.Str(u)] = struct{}{}
+			if anyutil.IsTrue(u) {
+				out[anyutil.String(u)] = struct{}{}
 			}
 		}
 	}
@@ -325,12 +325,12 @@ var loadPairingApproved = func(ctx context.Context) (StringSet, error) {
 }
 
 // Writes the pairing store atomically through a .tmp sibling and drops its cache slot
-func savePairing(ctx context.Context, data *pyjson.Object) error {
+func savePairing(ctx context.Context, data *jsonutil.Object) error {
 	pairingFile := PairingFilePath(ctx)
 	if err := os.MkdirAll(filepath.Dir(pairingFile), 0o777); err != nil {
 		return err
 	}
-	text, err := pyjson.Dumps(data, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(data, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -351,16 +351,16 @@ func mutatePairing(ctx context.Context, userOpenID string, add bool) (bool, erro
 	if err != nil {
 		return false, err
 	}
-	approved, ok := objGet(data, "approved", nil).(*pyjson.Object)
+	approved, ok := objGet(data, "approved", nil).(*jsonutil.Object)
 	if !ok {
-		approved = pyjson.NewObject()
+		approved = jsonutil.NewObject()
 	}
-	_, present := approved.Vals[userOpenID]
+	_, present := approved.Get(userOpenID)
 	if present == add {
 		return false, nil
 	}
 	if add {
-		entry := pyjson.NewObject()
+		entry := jsonutil.NewObject()
 		entry.Set("approved_at", float64(time.Now().UnixNano())/1e9)
 		approved.Set(userOpenID, entry)
 	} else {
@@ -384,15 +384,15 @@ func PairingRemove(ctx context.Context, userOpenID string) (bool, error) {
 }
 
 // PairingList returns a copy of the approved dict keyed by user open_id
-func PairingList(ctx context.Context) (*pyjson.Object, error) {
+func PairingList(ctx context.Context) (*jsonutil.Object, error) {
 	data, err := pairingCache.Load(ctx)
 	if err != nil {
 		return nil, err
 	}
-	out := pyjson.NewObject()
-	if approved, ok := objGet(data, "approved", pyjson.NewObject()).(*pyjson.Object); ok {
-		for _, k := range approved.Keys {
-			out.Set(k, approved.Vals[k])
+	out := jsonutil.NewObject()
+	if approved, ok := objGet(data, "approved", jsonutil.NewObject()).(*jsonutil.Object); ok {
+		for _, k := range approved.Keys() {
+			out.Set(k, approved.Value(k))
 		}
 	}
 	return out, nil
@@ -418,7 +418,7 @@ func listRepr(members []string) string {
 	for i, m := range members {
 		items[i] = m
 	}
-	return pyrepr.Repr(items)
+	return anyutil.Quote(items)
 }
 
 func fmtAllow(allow StringSet) string {
@@ -433,11 +433,11 @@ func pathExists(path string) bool {
 	return err == nil
 }
 
-// Reads a key of an approved entry the way dict.get does, failing like Python on a non dict entry
+// Value of a key of an approved entry, the default when absent, an error for an entry that is not an object
 func metaGet(meta any, key string, def any) (any, error) {
-	obj, ok := meta.(*pyjson.Object)
+	obj, ok := meta.(*jsonutil.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(meta))
+		return nil, fmt.Errorf("expected an approval entry object, got %s", anyutil.Kind(meta))
 	}
 	return objGet(obj, key, def), nil
 }
@@ -449,8 +449,8 @@ func printStatus(ctx context.Context, w io.Writer) error {
 		return err
 	}
 	rulesFile, pairingFile := RulesFilePath(ctx), PairingFilePath(ctx)
-	fmt.Fprintf(w, "Rules file: %s\n  exists: %s\nPairing file: %s\n  exists: %s\n\n", rulesFile, pyrepr.Str(pathExists(rulesFile)), pairingFile, pyrepr.Str(pathExists(pairingFile)))
-	fmt.Fprintf(w, "Top-level:\n  enabled:    %s\n  policy:     %s\n  allow_from: %s\n\n", pyrepr.Str(cfg.Enabled), cfg.Policy, fmtAllow(cfg.AllowFrom))
+	fmt.Fprintf(w, "Rules file: %s\n  exists: %s\nPairing file: %s\n  exists: %s\n\n", rulesFile, anyutil.String(pathExists(rulesFile)), pairingFile, anyutil.String(pathExists(pairingFile)))
+	fmt.Fprintf(w, "Top-level:\n  enabled:    %s\n  policy:     %s\n  allow_from: %s\n\n", anyutil.String(cfg.Enabled), cfg.Policy, fmtAllow(cfg.AllowFrom))
 	if len(cfg.Documents) > 0 {
 		fmt.Fprintf(w, "Document rules (%d):\n", len(cfg.Documents))
 	} else {
@@ -465,7 +465,7 @@ func printStatus(ctx context.Context, w io.Writer) error {
 		rule := cfg.Documents[key]
 		var parts []string
 		if rule.Enabled != nil {
-			parts = append(parts, "enabled="+pyrepr.Str(*rule.Enabled))
+			parts = append(parts, "enabled="+anyutil.String(*rule.Enabled))
 		}
 		if rule.Policy != nil {
 			parts = append(parts, "policy="+*rule.Policy)
@@ -485,14 +485,14 @@ func printStatus(ctx context.Context, w io.Writer) error {
 		return err
 	}
 	fmt.Fprintf(w, "Pairing approved (%d):\n", approved.Len())
-	uids := append([]string(nil), approved.Keys...)
+	uids := append([]string(nil), approved.Keys()...)
 	sort.Strings(uids)
 	for _, uid := range uids {
-		at, err := metaGet(approved.Vals[uid], "approved_at", int64(0))
+		at, err := metaGet(approved.Value(uid), "approved_at", int64(0))
 		if err != nil {
 			return err
 		}
-		fmt.Fprintf(w, "  %s  (approved_at=%s)\n", uid, pyrepr.Str(at))
+		fmt.Fprintf(w, "  %s  (approved_at=%s)\n", uid, anyutil.String(at))
 	}
 	return nil
 }
@@ -517,7 +517,7 @@ func doCheck(ctx context.Context, w io.Writer, docKey, userOpenID string) error 
 	if allowed {
 		result = "ALLOWED"
 	}
-	fmt.Fprintf(w, "Document:     %s\nUser:         %s\nResolved rule:\n  enabled:      %s\n  policy:       %s\n", docKey, userOpenID, pyrepr.Str(rule.Enabled), rule.Policy)
+	fmt.Fprintf(w, "Document:     %s\nUser:         %s\nResolved rule:\n  enabled:      %s\n  policy:       %s\n", docKey, userOpenID, anyutil.String(rule.Enabled), rule.Policy)
 	fmt.Fprintf(w, "  allow_from:   %s\n  match_source: %s\nResult:       %s\n", fmtAllow(rule.AllowFrom), rule.MatchSource, result)
 	return nil
 }
@@ -547,15 +547,15 @@ func pairingCmd(ctx context.Context, w io.Writer, args []string) (int, error) {
 			fmt.Fprintln(w, "(no approved users)")
 			return 0, nil
 		}
-		uids := append([]string(nil), approved.Keys...)
+		uids := append([]string(nil), approved.Keys()...)
 		sort.Strings(uids)
 		lines := make([]string, 0, len(uids))
 		for _, uid := range uids {
-			at, err := metaGet(approved.Vals[uid], "approved_at", "?")
+			at, err := metaGet(approved.Value(uid), "approved_at", "?")
 			if err != nil {
 				return 0, err
 			}
-			lines = append(lines, fmt.Sprintf("  %s  approved_at=%s", uid, pyrepr.Str(at)))
+			lines = append(lines, fmt.Sprintf("  %s  approved_at=%s", uid, anyutil.String(at)))
 		}
 		fmt.Fprintln(w, strings.Join(lines, "\n"))
 		return 0, nil

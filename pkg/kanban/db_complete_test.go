@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Initialized default board connection in a sandboxed kanban home
@@ -26,11 +27,11 @@ func openTestBoard(t *testing.T) state.SQLiteConn {
 }
 
 // Decoded payload object of an event, empty when none
-func payloadOf(e *Event) *pyjson.Object {
-	if o, ok := e.Payload.(*pyjson.Object); ok && o != nil {
+func payloadOf(e *Event) *jsonutil.Object {
+	if o, ok := e.Payload.(*jsonutil.Object); ok && o != nil {
 		return o
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Event kinds of a task in id order
@@ -606,7 +607,7 @@ func TestBlockLoopDetectedEventEmitted(t *testing.T) {
 	p := payloadOf(events[len(events)-1])
 	rec, _ := p.Get("recurrences")
 	kind, _ := p.Get("kind")
-	if !pyjson.Equal(rec, int64(2)) || kind != "capability" {
+	if !anyutil.Equal(rec, int64(2)) || kind != "capability" {
 		t.Fatal(rec, kind)
 	}
 }

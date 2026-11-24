@@ -7,17 +7,16 @@ import (
 	"os"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // Streams the facade prompts read from and its plain output is printed to
 var (
-	FacadeStdout io.Writer = pysys.Stdout
+	FacadeStdout io.Writer = termutil.Stdout
 	FacadeStdin  io.Reader = os.Stdin
 )
 
@@ -179,27 +178,13 @@ func pyInvalidUTF8Len(raw []byte) int {
 	return n
 }
 
-var (
-	envWriteLockHoldersGuard sync.Mutex
-	envWriteLockHolders      = map[string]*pyfs.LockHolder{}
-)
-
-// Reentrancy tracker of one .env path so multiplexed profiles each get their own
-func envWriteLockHolder(envPath string) *pyfs.LockHolder {
-	envWriteLockHoldersGuard.Lock()
-	defer envWriteLockHoldersGuard.Unlock()
-	holder, ok := envWriteLockHolders[envPath]
-	if !ok {
-		holder = &pyfs.LockHolder{}
-		envWriteLockHolders[envPath] = holder
-	}
-	return holder
-}
-
 // Serializes a whole .env read modify write cycle across goroutines and processes, reentrant per goroutine
 func envWriteLock(envPath string) (func(), error) {
-	return pyfs.HolderFileLock(envPath+".lock", envWriteLockHolder(envPath), 15*time.Second,
-		fmt.Sprintf("Timed out waiting for the environment file lock (%s)", envPath))
+	release, err := fsutil.SharedFileLock(envPath+".lock").Lock(context.Background(), 15*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("environment file lock (%s): %w", envPath, err)
+	}
+	return release, nil
 }
 
 // Holds the .env write lock for the duration of fn

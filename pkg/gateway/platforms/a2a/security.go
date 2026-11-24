@@ -9,9 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,13 +23,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	netutil "github.com/nickheyer/icebath/pkg/utils/net"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -214,7 +217,7 @@ func (s *A2ASecurityContext) SignPushPayload(payload any) (string, error) {
 	if s.PushSecret == "" {
 		return "", nil
 	}
-	body, err := pyjson.Dumps(payload, pyjson.SortKeys(true), pyjson.EnsureASCII(false))
+	body, err := jsonutil.Encode(payload, jsonutil.SortKeys(), jsonutil.Spaced())
 	if err != nil {
 		return "", err
 	}
@@ -307,7 +310,7 @@ func WrapInbound(peer, text string) string {
 	if peer == "" {
 		peer = "unknown"
 	}
-	return fmt.Sprintf(PrivacyPrefix, pyrepr.StrRepr(peer)) + FilterInbound(strings.TrimSpace(text))
+	return fmt.Sprintf(PrivacyPrefix, strconv.Quote(peer)) + FilterInbound(strings.TrimSpace(text))
 }
 
 // Outbound text with credentials scrubbed by the egress redactor and e-mail addresses masked
@@ -332,14 +335,14 @@ func IsLoopbackHostHeader(hostHeader, publicURL string) bool {
 	if value == "" || strings.ContainsAny(value, "@/\\?# \t") {
 		return false
 	}
-	parts, err := pyurl.Split("//" + value)
+	parts, err := url.Parse("//" + value)
 	if err != nil {
 		return false
 	}
-	if _, _, err := parts.Port(); err != nil {
+	if _, _, err := urlutil.Port(parts); err != nil {
 		return false
 	}
-	public, err := pyurl.Split(publicURL)
+	public, err := url.Parse(publicURL)
 	if err != nil {
 		return false
 	}
@@ -359,30 +362,28 @@ func IsSafeCallbackURL(ctx context.Context, rawURL string, localhostMode *bool) 
 	if rawURL == "" {
 		return false
 	}
-	parsed, err := pyurl.Split(rawURL)
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return false
 	}
 	hostname := ""
 	if parsed.Scheme == "http" || parsed.Scheme == "https" {
-		hostname = parsed.Hostname()
+		hostname = strings.ToLower(parsed.Hostname())
 	}
 	if hostname == "" {
 		return false
 	}
-	lower := strings.ToLower(hostname)
-	if lower == "localhost" {
+	if hostname == "localhost" {
 		return local
 	}
 	for _, prefix := range blockedPrefixes {
-		if strings.HasPrefix(lower, prefix) {
+		if strings.HasPrefix(hostname, prefix) {
 			return local && (prefix == "127." || prefix == "::1")
 		}
 	}
-	if ip, ok := pyipaddress.IPAddress(hostname); ok {
-		loop := pyipaddress.IsLoopback(ip)
-		if loop || pyipaddress.IsLinkLocal(ip) || pyipaddress.IsPrivate(ip) || pyipaddress.IsReserved(ip) {
-			return local && loop
+	if ip, err := netip.ParseAddr(hostname); err == nil {
+		if netutil.IsPrivate(ip) || netutil.IsReserved(ip) {
+			return local && ip.IsLoopback()
 		}
 	}
 	return true
@@ -391,9 +392,9 @@ func IsSafeCallbackURL(ctx context.Context, rawURL string, localhostMode *bool) 
 // Appends one audit record to a2a_audit.jsonl under the home, logging and swallowing every failure
 func Audit(ctx context.Context, direction, peer, taskID, summary string) {
 	h := home.Dir(ctx)
-	rec := pyjson.ObjectOf("ts", float64(time.Now().UnixNano())/1e9, "direction", direction, "peer", peer,
+	rec := jsonutil.ObjectOf("ts", float64(time.Now().UnixNano())/1e9, "direction", direction, "peer", peer,
 		"task_id", taskID, "summary", textutil.First(summary, 500))
-	line, err := pyjson.Dumps(rec, pyjson.EnsureASCII(false))
+	line, err := jsonutil.Encode(rec)
 	if err == nil {
 		err = os.MkdirAll(h, 0o777)
 	}

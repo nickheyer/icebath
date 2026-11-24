@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Pins the model window the compressor resolves for the test
@@ -1003,13 +1003,12 @@ func TestSummaryAccessOrQuotaClassifier(t *testing.T) {
 	})
 }
 
-// Infinite max_tokens raises the OverflowError int() raises in Python rather than reading as no reservation
-func TestCoerceMaxTokensInfinityRaisesOverflowError(t *testing.T) {
+// Infinite max_tokens fails with the range error of the conversion rather than reading as no reservation
+func TestCoerceMaxTokensInfinityRaisesRangeError(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	defer func() {
 		failure := recover()
-		var pyErr *pyint.Error
-		if err, isError := failure.(error); !isError || !errors.As(err, &pyErr) || pyErr.Kind != "OverflowError" {
+		if err, isError := failure.(error); !isError || !errors.Is(err, anyutil.ErrRange) {
 			t.Fatalf("recovered %v", failure)
 		}
 	}()

@@ -5,9 +5,9 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hops an ancestor walk takes before it gives up, the registry default
@@ -38,8 +38,8 @@ type steerable interface{ Steer(text string) bool }
 type dbPathHolder interface{ Path() string }
 
 type compressionChildReader interface {
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
-	IsCompressionChildRow(ctx context.Context, child *pyjson.Object) (bool, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
+	IsCompressionChildRow(ctx context.Context, child *jsonutil.Object) (bool, error)
 }
 
 type compressionLineageReader interface {
@@ -103,10 +103,10 @@ func hasFallbackEvictedAncestor(agent any, targetSids map[string]bool, expectedD
 			continue
 		}
 		db := agentSessionDB(current)
-		if (expectedDB != nil || db != nil) && !pyrepr.Is(db, expectedDB) {
+		if db != expectedDB {
 			continue
 		}
-		if route != nil && !pyjson.Equal(marker, route) {
+		if route != nil && !anyutil.Equal(marker, route) {
 			continue
 		}
 		if key := agentGatewayKey(current); route == nil && isStr && key != nil && key != text {
@@ -199,7 +199,7 @@ func compressionLineageOf(ctx context.Context, db any, sessionID string) (map[st
 			if !ok {
 				return nil, errors.New("a session row has no parent_session_id")
 			}
-			parentID := pyrepr.Str(parentValue)
+			parentID := anyutil.String(parentValue)
 			if ids[parentID] || len(ids) >= 200 {
 				break
 			}
@@ -227,7 +227,7 @@ func SteerOwnedSubagent(subagentID string, child any, text string) bool {
 	activeSubagentsMu.Lock()
 	defer activeSubagentsMu.Unlock()
 	record := activeSubagents.get(subagentID)
-	if isNilAgent(child) || record == nil || !pyrepr.Is(record["agent"], child) || !pyTruthy(record["accepting_steer"]) {
+	if isNilAgent(child) || record == nil || record["agent"] != child || !pyTruthy(record["accepting_steer"]) {
 		return false
 	}
 	target, ok := child.(steerable)
@@ -254,7 +254,7 @@ func nilValue(v any) bool {
 }
 
 // Control snapshot of a segment, a persisted row that does not parse refused as storage_unavailable
-func ControlSnapshotOrRefusal(ctx context.Context, getMeta func(ctx context.Context, key string) (string, bool, error), target string) (*pyjson.Object, error) {
+func ControlSnapshotOrRefusal(ctx context.Context, getMeta func(ctx context.Context, key string) (string, bool, error), target string) (*jsonutil.Object, error) {
 	snapshot, err := ControlSnapshot(ctx, getMeta, target)
 	var parse *ControlStoreError
 	if errors.As(err, &parse) {

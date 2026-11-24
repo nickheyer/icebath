@@ -1,6 +1,8 @@
 package state
 
-import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+import (
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 var originalVisibleSQL = "COALESCE(" + sqlJSONExtract("original.display_metadata", "$."+ModelOnlyKey) + ", 0) = 0"
 
@@ -14,8 +16,8 @@ func notALaterToolCopySQL(alias string) string {
 }
 
 // Ids of display rows that repeat an archived tool result held in an earlier display slot
-func laterToolCopyIDs(rows []*pyjson.Object) map[int64]bool {
-	var tools []*pyjson.Object
+func laterToolCopyIDs(rows []*jsonutil.Object) map[int64]bool {
+	var tools []*jsonutil.Object
 	for _, row := range rows {
 		if rowValue(row, "role") == "tool" {
 			tools = append(tools, row)
@@ -25,7 +27,7 @@ func laterToolCopyIDs(rows []*pyjson.Object) map[int64]bool {
 	if len(tools) == 0 || !rowHas(tools[0], "compacted") {
 		return out
 	}
-	var candidates []*pyjson.Object
+	var candidates []*jsonutil.Object
 	for _, row := range tools {
 		if pyTruthy(rowValue(row, "active")) || pyTruthy(rowValue(row, "compacted")) {
 			candidates = append(candidates, row)
@@ -34,7 +36,7 @@ func laterToolCopyIDs(rows []*pyjson.Object) map[int64]bool {
 	if len(candidates) == 0 || !rowHas(candidates[0], "display_order") {
 		return out
 	}
-	owner := func(row *pyjson.Object) string {
+	owner := func(row *jsonutil.Object) string {
 		return pyReprValue(rowValue(row, "session_id")) + "\x00" + pyReprValue(rowValue(row, "message_uid")) + "\x00" + pyReprValue(rowValue(row, "timestamp"))
 	}
 	firstSlot := map[string]int64{}
@@ -60,13 +62,13 @@ func laterToolCopyIDs(rows []*pyjson.Object) map[int64]bool {
 }
 
 // Whether a row carries the column at all
-func rowHas(row *pyjson.Object, key string) bool {
+func rowHas(row *jsonutil.Object, key string) bool {
 	_, ok := row.Get(key)
 	return ok
 }
 
 // Integer column of a row, false when absent or NULL
-func rowInt(row *pyjson.Object, key string) (int64, bool) {
+func rowInt(row *jsonutil.Object, key string) (int64, bool) {
 	switch v := rowValue(row, key).(type) {
 	case int64:
 		return v, true
@@ -84,7 +86,7 @@ func rowInt(row *pyjson.Object, key string) (int64, bool) {
 }
 
 // Whether a row is model only, the twin of the display visible SQL filter
-func isModelOnlyRow(row *pyjson.Object) bool {
+func isModelOnlyRow(row *jsonutil.Object) bool {
 	meta := decodeDisplayMetadata(rowValue(row, "display_metadata"))
 	v, _ := mappingGet(meta, ModelOnlyKey)
 	return pyTruthy(v)

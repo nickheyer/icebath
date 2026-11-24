@@ -4,15 +4,14 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"math/big"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -22,8 +21,8 @@ var (
 
 // Integer default of a runtime config key
 func runtimeDefault(key string) int64 {
-	v, _ := pyrepr.Int(config.Defaults().Map("runtime")[key])
-	return v.Int64()
+	v, _ := anyutil.Int(config.Defaults().Map("runtime")[key])
+	return v
 }
 
 // Config loader of the runtime knobs when the caller passes none
@@ -32,46 +31,40 @@ var resourceLimitsLoadConfig = func() (map[string]any, error) {
 	return config.LoadReadonly(ctx, home.Dir(ctx), nil)
 }
 
-// Positive int runtime key, the default when missing, nil when disabled, malformed or unloadable
-func runtimeInt(cfg map[string]any, key string, def int64) *big.Int {
+// Positive integer runtime key, the default when missing, false when disabled, malformed or unloadable
+func runtimeInt(cfg map[string]any, key string, def int64) (int64, bool) {
 	if cfg == nil {
 		loaded, err := resourceLimitsLoadConfig()
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("Could not load config for runtime.%s: %v", key, err))
-			return nil
+			return 0, false
 		}
 		cfg = loaded
 	}
 	runtimeRaw, ok := cfg["runtime"]
 	if !ok {
-		return big.NewInt(def)
+		return def, true
 	}
 	runtime, isMap := runtimeRaw.(map[string]any)
 	if t, isTree := runtimeRaw.(config.Tree); isTree {
 		runtime, isMap = t, true
 	}
 	if !isMap {
-		return nil
+		return 0, false
 	}
 	raw, ok := runtime[key]
 	if !ok {
-		return big.NewInt(def)
+		return def, true
 	}
-	if _, isBool := raw.(bool); isBool {
-		return nil
+	n, isInt := anyutil.Int(raw)
+	if !isInt || n <= 0 {
+		return 0, false
 	}
-	if _, isFloat := raw.(float64); isFloat {
-		return nil
-	}
-	n, isInt := pyrepr.Int(raw)
-	if !isInt || n.Sign() <= 0 {
-		return nil
-	}
-	return n
+	return n, true
 }
 
-// Configured runtime.nofile_soft_limit shared by the in process floor and service generators
-func ConfiguredNofileSoftLimit(cfg map[string]any) *big.Int {
+// Configured runtime.nofile_soft_limit shared by the in process floor and service generators, false when disabled
+func ConfiguredNofileSoftLimit(cfg map[string]any) (int64, bool) {
 	return runtimeInt(cfg, "nofile_soft_limit", DefaultNofileSoftLimit)
 }
 
@@ -80,8 +73,8 @@ func ApplyNofileSoftLimit(cfg map[string]any) bool {
 	if !nofileSupported {
 		return false
 	}
-	target := ConfiguredNofileSoftLimit(cfg)
-	if target == nil {
+	target, ok := ConfiguredNofileSoftLimit(cfg)
+	if !ok {
 		return false
 	}
 	soft, hard, err := getNofile()
@@ -89,21 +82,17 @@ func ApplyNofileSoftLimit(cfg map[string]any) bool {
 		pkgLog().Debug(fmt.Sprintf("Could not raise RLIMIT_NOFILE soft limit: %v", err))
 		return false
 	}
-	if soft == rlimInfinity || new(big.Int).SetUint64(soft).Cmp(target) >= 0 {
+	if target <= 0 || soft == rlimInfinity || soft >= uint64(target) {
 		return false
 	}
-	newSoft := target
-	if hard != rlimInfinity && new(big.Int).SetUint64(hard).Cmp(target) < 0 {
-		newSoft = new(big.Int).SetUint64(hard)
+	newSoft := uint64(target)
+	if hard != rlimInfinity && hard < newSoft {
+		newSoft = hard
 	}
-	if newSoft.Cmp(new(big.Int).SetUint64(soft)) <= 0 {
+	if newSoft <= soft {
 		return false
 	}
-	if !newSoft.IsUint64() {
-		pkgLog().Debug("Could not raise RLIMIT_NOFILE soft limit: Python int too large to convert to C long")
-		return false
-	}
-	if err := setNofile(newSoft.Uint64(), hard); err != nil {
+	if err := setNofile(newSoft, hard); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Could not raise RLIMIT_NOFILE soft limit: %v", err))
 		return false
 	}
@@ -157,11 +146,11 @@ func lookupIn(env map[string]string) func(string) (string, bool) {
 
 // Positive C int of a decimal string, false when unparseable or outside 1 to INT_MAX
 func positiveCInt(value string) (int32, bool) {
-	n, ok := pyint.Parse(value)
-	if !ok || n.Sign() <= 0 || n.Cmp(big.NewInt(cIntMax)) > 0 {
+	n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64)
+	if err != nil || n <= 0 || n > cIntMax {
 		return 0, false
 	}
-	return int32(n.Int64()), true
+	return int32(n), true
 }
 
 // Caps glibc malloc arenas for this process through mallopt, true only when the cap was set
@@ -186,11 +175,11 @@ func ApplyMallocArenaMax(cfg map[string]any) bool {
 		}
 		target = n
 	} else {
-		n := runtimeInt(cfg, "malloc_arena_max", DefaultMallocArenaMax)
-		if n == nil || n.Cmp(big.NewInt(cIntMax)) > 0 {
+		n, ok := runtimeInt(cfg, "malloc_arena_max", DefaultMallocArenaMax)
+		if !ok || n > cIntMax {
 			return false
 		}
-		target = int32(n.Int64())
+		target = int32(n)
 	}
 	return libc.Mallopt(mArenaMax, target) != 0
 }

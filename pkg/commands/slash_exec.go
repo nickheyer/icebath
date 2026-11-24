@@ -4,18 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // CommandReply is the surface independent text of a shared executor with the data it derived
@@ -79,10 +78,10 @@ func execEgress(ctx context.Context, _ CommandContext) (CommandReply, error) {
 // Option string a surface passed, empty when absent or falsy
 func optionText(cc CommandContext, key string) string {
 	v, ok := cc.Options[key]
-	if !ok || !pyrepr.Truthy(v) {
+	if !ok || !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Active profile name and home, a multiplexed gateway passing its own per source values in options
@@ -146,12 +145,12 @@ func execBundles(ctx context.Context, _ CommandContext) (CommandReply, error) {
 	for _, info := range bundles {
 		names := bundleSkills(info)
 		desc := info["description"]
-		if !pyrepr.Truthy(desc) {
+		if !anyutil.IsTrue(desc) {
 			desc = i18n.T(ctx, "gateway.bundles.default_desc", "", map[string]any{"count": len(names)})
 		}
 		lines = append(lines, i18n.T(ctx, "gateway.bundles.item_plain", "", map[string]any{"slug": info["slug"], "desc": desc, "count": len(names)}))
 		for _, s := range names {
-			lines = append(lines, "    · "+pyrepr.Str(s))
+			lines = append(lines, "    · "+anyutil.String(s))
 		}
 	}
 	lines = append(lines, i18n.T(ctx, "gateway.bundles.invoke_hint_plain", "", nil))
@@ -220,7 +219,7 @@ func execHelp(ctx context.Context, cc CommandContext) (CommandReply, error) {
 				listed = false
 				break
 			}
-			lines = append(lines, "`"+cmd+"` — "+pyrepr.Str(desc))
+			lines = append(lines, "`"+cmd+"` — "+anyutil.String(desc))
 		}
 		if listed && len(names) > 10 {
 			lines = append(lines, i18n.T(ctx, "gateway.help.more_use_commands", "", map[string]any{"count": len(names) - 10}))
@@ -271,38 +270,31 @@ func commandListingExtras(ctx context.Context, skillCmds skills.SkillCommands) [
 	return entries
 }
 
-// Page size option as Python int reads it, twenty when absent or unconvertible
-func pageSizeOption(cc CommandContext) (int64, error) {
+// Page size option as an integer at least one and at most 1<<62, twenty when absent or not a number
+func pageSizeOption(cc CommandContext) int64 {
 	raw, ok := cc.Options["page_size"]
 	if !ok {
-		return 20, nil
+		return 20
 	}
-	n, err := pyint.Of(raw)
-	var conv *pyint.Error
-	if errors.As(err, &conv) && (conv.Kind == "TypeError" || conv.Kind == "ValueError") {
-		return 20, nil
+	n, err := anyutil.ToInt(raw)
+	if errors.Is(err, anyutil.ErrNotNumber) {
+		return 20
 	}
-	if err != nil {
-		return 0, err
-	}
-	if n.Cmp(big.NewInt(1)) < 0 {
-		return 1, nil
-	}
-	if !n.IsInt64() {
-		return 1 << 62, nil
-	}
-	return n.Int64(), nil
+	return min(max(n, 1), 1<<62)
 }
 
 // Paginated gateway listing of every command and skill command with page navigation
 func execCommands(ctx context.Context, cc CommandContext) (CommandReply, error) {
-	requested := big.NewInt(1)
+	requested, requestedText := int64(1), "1"
 	if s := strings.TrimSpace(cc.Args); s != "" {
-		n, ok := pyint.Parse(s)
-		if !ok {
+		n, err := strconv.ParseInt(s, 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return markdownReply(i18n.T(ctx, "gateway.commands.usage", "", nil)), nil
 		}
-		requested = n
+		requested, requestedText = n, strconv.FormatInt(n, 10)
+		if err != nil {
+			requestedText = strings.TrimPrefix(s, "+")
+		}
 	}
 	allowed := allowedOption(cc)
 	entries := defaultGatewayHelpLines(ctx, allowed)
@@ -314,17 +306,14 @@ func execCommands(ctx context.Context, cc CommandContext) (CommandReply, error) 
 	if len(entries) == 0 {
 		return markdownReply(i18n.T(ctx, "gateway.commands.none", "", nil)), nil
 	}
-	pageSize, err := pageSizeOption(cc)
-	if err != nil {
-		return CommandReply{}, err
-	}
+	pageSize := pageSizeOption(cc)
 	totalPages := max(1, (int64(len(entries))+pageSize-1)/pageSize)
 	page := totalPages
 	switch {
-	case requested.Cmp(big.NewInt(1)) < 0:
+	case requested < 1:
 		page = 1
-	case requested.Cmp(big.NewInt(totalPages)) < 0:
-		page = requested.Int64()
+	case requested < totalPages:
+		page = requested
 	}
 	start := (page - 1) * pageSize
 	end := min(start+pageSize, int64(len(entries)))
@@ -340,8 +329,8 @@ func execCommands(ctx context.Context, cc CommandContext) (CommandReply, error) 
 		}
 		lines = append(lines, "", strings.Join(nav, " | "))
 	}
-	if big.NewInt(page).Cmp(requested) != 0 {
-		lines = append(lines, i18n.T(ctx, "gateway.commands.out_of_range", "", map[string]any{"requested": requested.String(), "page": page}))
+	if page != requested {
+		lines = append(lines, i18n.T(ctx, "gateway.commands.out_of_range", "", map[string]any{"requested": requestedText, "page": page}))
 	}
 	return markdownReply(strings.Join(lines, "\n")), nil
 }

@@ -7,8 +7,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const openAINativeUnsupportedMsg = "openai-native declares OpenAI's server-side web_search tool; it cannot run as a " +
@@ -26,10 +26,10 @@ func dget(obj any, key string) any {
 
 // Stripped str of a value or empty for a falsy one, the str(x or "").strip() idiom
 func pyStrOrEmptyStripped(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Test seam for the codex credential probe
@@ -49,7 +49,7 @@ func probeCodexCredentials(env *Env) bool {
 		return false
 	}
 	text := strings.TrimPrefix(string(raw), "\ufeff")
-	store, err := pyjson.Loads(text)
+	store, err := jsonutil.Decode(text)
 	if err != nil {
 		return false
 	}

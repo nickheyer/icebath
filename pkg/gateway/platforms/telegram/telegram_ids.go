@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var telegramUsernameRE = regexp.MustCompile(`^@[A-Za-z0-9_]{4,32}$`)
@@ -18,7 +18,7 @@ var sendTargetParser = gateway.RegexGroupsParser(sendTargetPattern, true)
 
 // Bot API chat id, an int64 or big int for numeric text and the stripped string otherwise
 func NormalizeTelegramChatID(chatID any) any {
-	text := strings.TrimSpace(pyrepr.Str(chatID))
+	text := strings.TrimSpace(anyutil.String(chatID))
 	n, ok := pystr.IntText(text)
 	if !ok {
 		return text
@@ -31,12 +31,12 @@ func NormalizeTelegramChatID(chatID any) any {
 
 // Whether the stripped text of the value is an at sign username of four to thirty two word characters
 func LooksLikeTelegramUsername(chatID any) bool {
-	return telegramUsernameRE.MatchString(strings.TrimSpace(pyrepr.Str(chatID)))
+	return telegramUsernameRE.MatchString(strings.TrimSpace(anyutil.String(chatID)))
 }
 
 // Stripped target when it is an at sign username, false otherwise
 func ParseTelegramUsernameTarget(targetRef any) (string, bool) {
-	value := strings.TrimSpace(pyrepr.Str(targetRef))
+	value := strings.TrimSpace(anyutil.String(targetRef))
 	if LooksLikeTelegramUsername(value) {
 		return value, true
 	}
@@ -65,7 +65,7 @@ func ParseTelegramMessageID(value any) *big.Int {
 	}
 	text := ""
 	if value != nil {
-		text = strings.TrimSpace(pyrepr.Str(value))
+		text = strings.TrimSpace(anyutil.String(value))
 	}
 	if text == "" {
 		return nil

@@ -10,8 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Whether stdin is a terminal an operator can answer the apply prompt on
@@ -30,7 +30,7 @@ func CmdMigrate(ctx context.Context, w io.Writer, ns map[string]any) error {
 	if err != nil {
 		return err
 	}
-	dryRun := pyrepr.Truthy(ns["dry_run"])
+	dryRun := anyutil.IsTrue(ns["dry_run"])
 	printLines(w, FormatPlan(plan, dryRun))
 	if dryRun || plan.AlreadyMultiplexed() {
 		return nil
@@ -41,7 +41,7 @@ func CmdMigrate(ctx context.Context, w io.Writer, ns map[string]any) error {
 		}
 		return &gateway.SystemExitError{Code: 0}
 	}
-	if !pyrepr.Truthy(ns["yes"]) && migrateStdinIsTTY() {
+	if !anyutil.IsTrue(ns["yes"]) && migrateStdinIsTTY() {
 		if !migratePromptYesNo("Apply this migration now?", true) {
 			fmt.Fprintln(w, "Aborted; nothing changed.")
 			return nil

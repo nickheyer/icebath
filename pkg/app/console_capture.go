@@ -10,20 +10,46 @@ import (
 	"sync"
 	"unicode"
 
+	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/backup"
+	"github.com/nickheyer/icebath/pkg/botdesktop"
+	"github.com/nickheyer/icebath/pkg/botmode/dmdelivery"
+	"github.com/nickheyer/icebath/pkg/browser"
+	"github.com/nickheyer/icebath/pkg/builtin/teamspipeline"
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/config/remote"
+	"github.com/nickheyer/icebath/pkg/cron"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/photon"
+	"github.com/nickheyer/icebath/pkg/gateway/platforms/wecom"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
+	"github.com/nickheyer/icebath/pkg/gatewayrun"
+	"github.com/nickheyer/icebath/pkg/install"
+	"github.com/nickheyer/icebath/pkg/kanban"
+	"github.com/nickheyer/icebath/pkg/mcp"
+	"github.com/nickheyer/icebath/pkg/media"
+	"github.com/nickheyer/icebath/pkg/pet"
+	"github.com/nickheyer/icebath/pkg/pet/generate"
+	"github.com/nickheyer/icebath/pkg/plugins"
+	"github.com/nickheyer/icebath/pkg/pm"
+	"github.com/nickheyer/icebath/pkg/profiles/manage"
+	"github.com/nickheyer/icebath/pkg/provider"
+	"github.com/nickheyer/icebath/pkg/selfupdate"
+	"github.com/nickheyer/icebath/pkg/state"
+	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	"github.com/nickheyer/icebath/pkg/webhooksubs"
 )
 
-// A user facing console command failure, reported like a RuntimeError subclass
+// A user facing console command failure, its message shown as the command's error result
 type ConsoleCommandError struct{ Msg string }
 
 func (e *ConsoleCommandError) Error() string { return e.Msg }
 
-// Python class the console failure stands for
-func (e *ConsoleCommandError) PyTypeName() string { return "ConsoleCommandError" }
-
-// Exception classes deriving from RuntimeError, the ones a console handler turns into an error
-var consoleRuntimeErrorClasses = map[string]bool{
+// Kinds of the failures a console command reports as its error result instead of ending the console: RuntimeError, the labels errors carry and the Go type names of failures read by name
+var consoleFailureKinds = map[string]bool{
 	"ActiveSessionRegistryError": true, "AdmissionRefused": true, "AnonChallengeRequired": true, "AnonCredentialDead": true, "ArchiveError": true, "ArtifactPreservationError": true,
 	"AttachmentsUnsupportedError": true, "AttemptCanceled": true, "AuditError": true, "AuthError": true, "AuxiliaryClientUnavailable": true, "BackupInProgressError": true,
 	"BinaryResolutionError": true, "BrowseBudgetExceeded": true, "BudgetExceeded": true, "BuildFailure": true, "CapturedCDPInvalid": true, "CodexAppServerError": true,
@@ -58,12 +84,70 @@ var consoleRuntimeErrorClasses = map[string]bool{
 	"_Refused": true, "_RelayPluginConfigurationLoadError": true, "_SQLiteBackupRestarted": true, "_SQLiteBackupTimeout": true, "_SQLiteSnapshotError": true, "_SiblingStillBusy": true,
 	"_StdioChildExited": true}
 
-// Whether err stands for a Python RuntimeError subclass by its class name
-func consoleIsRuntimeError(err error) bool {
-	return consoleRuntimeErrorClasses[pyrepr.ExceptionName(err)]
+// Matchers of the failure types a console command reports as its error result, anywhere in the error chain
+var consoleFailureTypes = []func(error) bool{
+	chainHas[*plugins.AdmissionRefused], chainHas[*tools.ArchiveError], chainHas[*kanban.ArtifactPreservationError],
+	chainHas[*gateway.AttachmentsUnsupportedError], chainHas[*mcp.AttemptCanceled], chainHas[*provider.AuthError],
+	chainHas[*provider.AuxiliaryClientUnavailable], chainHas[*backup.BackupInProgressError], chainHas[*provider.BinaryResolutionError],
+	chainHas[*state.BrowseBudgetExceeded], chainHas[*pm.BuildFailure], chainHas[*provider.CodexAppServerError],
+	chainHas[*provider.CodexAppServerTransportError], chainHas[*provider.CodexThreadResumeError], chainHas[*provider.CommandTokenError],
+	chainHas[*provider.CompressionCheckpointUnavailable], chainHas[*state.CompressionSessionBusyError], chainHas[*state.CompressionSessionClosedError],
+	chainHas[*config.ConfigLockedError], chainHas[*config.ConfigValueError], chainHas[*config.ConfigWriteError],
+	chainHas[*remote.CredentialDestinationError], chainHas[*provider.CredentialNotSavedError], chainHas[*provider.CredentialPersistError],
+	chainHas[*cron.CronExecutionUnknown], chainHas[*cron.CronSchedulerRegistrationError], chainHas[*cron.CronTickYielded],
+	chainHas[*state.DeclarativeDriftError], chainHas[*state.DeletedWalGenerationError], chainHas[*plugins.DependencyConflict], chainHas[*pm.DownloadError],
+	chainHas[*provider.EmptyStreamError], chainHas[*tools.EnvironmentConnectionError], chainHas[*tools.FileFetchError],
+	chainHas[*gatewaycli.GatewayNotRegisteredError], chainHas[*generate.GenerationError], chainHas[*state.HeldRowRewrittenError],
+	chainHas[*config.HomeInitializationError], chainHas[*botdesktop.HumanHasControl], chainHas[*gateway.IdentityUnresolved],
+	chainHas[*botdesktop.InstallBusy], chainHas[*pm.InstallError], chainHas[*config.InvalidUserConfigError], chainHas[*tools.KeylessMCPError],
+	chainHas[*state.LiveConnectionError], chainHas[*dmdelivery.LiveTargetHeldError], chainHas[*dmdelivery.LiveTargetUnavailableError],
+	chainHas[*state.LiveSystemGuardError], chainHas[*gatewaycli.LoopThreadError], chainHas[*gateway.ManagedExecutionUnknown], chainHas[*pet.ManifestError],
+	chainHas[*messagetools.MicrosoftGraphAPIError], chainHas[*messagetools.MicrosoftGraphClientError], chainHas[*messagetools.MicrosoftGraphConfigError],
+	chainHas[*messagetools.MicrosoftGraphTokenError], chainHas[*gatewayrun.MultiplexConfigError], chainHas[*pm.NoCommittedEnvironment],
+	chainHas[*gatewaycli.NotImplementedError], chainHas[*mcp.OAuthNonInteractiveError], chainHas[*tools.OperationAlreadyOpen],
+	chainHas[*gateway.OwnershipConflict], chainHas[*gateway.PartialDeliveryError], chainHas[*selfupdate.PauseRefused], chainHas[*gateway.PeerRunsHTTPError],
+	chainHas[*photon.PhotonDashboardAuthError], chainHas[*remote.PlaneCredentialError], chainHas[*browser.PluginBackendError],
+	chainHas[*plugins.PluginHostError], chainHas[*plugins.PluginHostUnavailable], chainHas[*plugins.PluginHostUnsupported],
+	chainHas[*agent.PreflightCompressionTimedOut], chainHas[*manage.ProfileIdentitySettlementPending], chainHas[*gatewayrun.ProfileOwnershipRetained],
+	chainHas[*gateway.ProfileRouteRejected], chainHas[*provider.ProviderCredentialsExhaustedError], chainHas[*provider.ProviderNotConfiguredError],
+	chainHas[*state.PruneRowStaleError], chainHas[*state.PruneRowUnresolvedError], chainHas[*mcp.RefreshFenceTimeout], chainHas[*gateway.RelayRouteUnknown],
+	chainHas[*pm.ResolutionConflict], chainHas[*tools.RestartSafeScopeUnavailable], chainHas[*state.RetiredGenerationCaptureError],
+	chainHas[*gateway.RetryRewriteRefused], chainHas[*state.RewindRuntimeError], chainHas[*config.RuntimeError], chainHas[*kanban.RuntimeError],
+	chainHas[*manage.RuntimeError], chainHas[*mcp.RuntimeError], chainHas[*gateway.RuntimeStartError], chainHas[*gatewaycli.S6CommandError],
+	chainHas[*selfupdate.ServicePauseFailed], chainHas[*state.SessionActiveWriteGuardError], chainHas[*state.SessionCompressionInProgressError],
+	chainHas[*state.SessionLedgeredError], chainHas[*state.SessionTurnLeaseLostError], chainHas[*provider.SignInCopyError], chainHas[*install.StageError],
+	chainHas[*agent.StaleHeldHistory], chainHas[*pet.StoreError], chainHas[*provider.StreamEventOrderError],
+	chainHas[*webhooksubs.SubscriptionMutationConflict], chainHas[*gateway.SystemScopeRequiresRootError],
+	chainHas[*teamspipeline.TeamsMeetingArtifactNotFoundError], chainHas[*teamspipeline.TeamsMeetingError],
+	chainHas[*teamspipeline.TeamsMeetingNotFoundError], chainHas[*teamspipeline.TeamsMeetingPermissionError],
+	chainHas[*teamspipeline.TeamsPipelineArtifactNotFoundError], chainHas[*teamspipeline.TeamsPipelineError],
+	chainHas[*teamspipeline.TeamsPipelineRetryableError], chainHas[*teamspipeline.TeamsPipelineSinkError], chainHas[*gateway.TranscriptReadError],
+	chainHas[*remote.TransportError], chainHas[*tools.TurnBusyError], chainHas[*provider.UnscopedSecretError], chainHas[*state.UntrackableConnectionError],
+	chainHas[*gateway.UserSystemdUnavailableError], chainHas[*gateway.WakeNotAccepted], chainHas[*media.WakeWordInUse],
+	chainHas[*wecom.WeComStreamExpiredError], chainHas[*tools.WorkerPersistenceError],
+	chainHas[gateway.SystemctlUnavailableError],
 }
 
-// Process stdout and stderr swapped for pipes, the redirect_stdout and redirect_stderr pair of a console command
+// Whether a T is in the chain of err
+func chainHas[T error](err error) bool {
+	var target T
+	return errors.As(err, &target)
+}
+
+// Whether err is a failure a console command reports as its error result: a kind or type of the console failures, or an unsupported operation
+func consoleIsCommandFailure(err error) bool {
+	if consoleFailureKinds[errorutil.Kind(err)] || errors.Is(err, errors.ErrUnsupported) {
+		return true
+	}
+	for _, matches := range consoleFailureTypes {
+		if matches(err) {
+			return true
+		}
+	}
+	return false
+}
+
+// Process stdout and stderr swapped for pipes while a console command runs
 type consoleCapture struct {
 	savedOut, savedErr *os.File
 	outW, errW         *os.File
@@ -108,7 +192,7 @@ func (c *consoleCapture) stop() (string, string) {
 	return c.out.String(), c.errs.String()
 }
 
-// Runs fn with stdout and stderr captured, a nonzero status or RuntimeError becoming a console command error
+// Runs fn with stdout and stderr captured, a nonzero status or a command failure becoming a console command error
 func consoleCaptureOutput(fn func() (int, error)) (string, error) {
 	c, err := startConsoleCapture()
 	if err != nil {
@@ -129,7 +213,7 @@ func consoleCaptureOutput(fn func() (int, error)) (string, error) {
 	return consoleSettle(code, raised, stdout, stderr)
 }
 
-// Text of a finished captured command, its exit status and exception mapped the way _capture_output maps them
+// Text of a finished captured command, its exit status and error mapped to the console result
 func consoleSettle(code int, raised error, stdout, stderr string) (string, error) {
 	message := ""
 	if raised != nil {
@@ -145,8 +229,8 @@ func consoleSettle(code int, raised error, stdout, stderr string) (string, error
 			} else if exit.Msg != "" {
 				message = exit.Msg
 			}
-		case consoleIsRuntimeError(raised):
-			message, code = pyrepr.ExceptionMessage(raised), 1
+		case consoleIsCommandFailure(raised):
+			message, code = raised.Error(), 1
 		default:
 			return "", raised
 		}

@@ -9,11 +9,12 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Detects a project's run recipe and smoke tests it
@@ -22,7 +23,7 @@ func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer)
 	if root == "" {
 		root = "."
 	}
-	if resolved, err := pypath.Resolve(root); err == nil {
+	if resolved, err := pathutil.Resolve(root); err == nil {
 		root = resolved
 	}
 	if info, err := os.Stat(root); err != nil || !info.IsDir() {
@@ -32,12 +33,12 @@ func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer)
 	asJSON := nsVerifyBool(ns, "json")
 	recipe, source, err := verify.LoadOrDetect(root)
 	if err != nil {
-		fmt.Fprintln(errw, pyrepr.ExceptionRepr(err))
+		fmt.Fprintln(errw, errorutil.Kind(err)+": "+err.Error())
 		return 1
 	}
 	if recipe == nil {
 		if asJSON {
-			fmt.Fprintln(w, mustDumps(pyjson.ObjectOf("ok", false, "error", "no-recipe", "root", root), false))
+			fmt.Fprintln(w, mustDumps(jsonutil.ObjectOf("ok", false, "error", "no-recipe", "root", root), false))
 		} else {
 			fmt.Fprintf(errw, "No recognizable project found at %s.\nCreate %s to define a recipe manually.\n", root, verify.ManifestPath(root))
 		}
@@ -53,7 +54,7 @@ func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer)
 	if nsVerifyBool(ns, "save") {
 		path, err := verify.SaveManifest(root, recipe)
 		if err != nil {
-			fmt.Fprintln(errw, pyrepr.ExceptionRepr(err))
+			fmt.Fprintln(errw, errorutil.Kind(err)+": "+err.Error())
 			return 1
 		}
 		if !asJSON {
@@ -61,7 +62,7 @@ func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer)
 		}
 	}
 	if nsVerifyBool(ns, "detect_only") {
-		fmt.Fprintln(w, mustDumps(pyjson.ObjectOf("source", source, "recipe", recipe.ToDict()), !asJSON))
+		fmt.Fprintln(w, mustDumps(jsonutil.ObjectOf("source", source, "recipe", recipe.ToDict()), !asJSON))
 		return 0
 	}
 	phases := nsVerifyStrings(ns, "phase")
@@ -78,7 +79,7 @@ func RunVerifyCommand(ctx context.Context, ns map[string]any, w, errw io.Writer)
 	}
 	result, err := verify.RunVerify(ctx, root, recipe, opts)
 	if err != nil {
-		fmt.Fprintln(errw, pyrepr.ExceptionRepr(err))
+		fmt.Fprintln(errw, errorutil.Kind(err)+": "+err.Error())
 		return 1
 	}
 	recordVerifyEvidence(ctx, root, recipe, result, len(phases) > 0 || opts.SkipStart)
@@ -208,13 +209,13 @@ func printVerifyHumanReport(w io.Writer, recipe *verify.Recipe, source string, r
 	}
 }
 
-// json.dumps text of a payload, indent 2 when pretty
+// JSON text of a payload, indented by two spaces when pretty
 func mustDumps(v any, pretty bool) string {
-	opts := []pyjson.Option{}
+	opts := []jsonutil.Option{}
 	if pretty {
-		opts = append(opts, pyjson.Indent(2))
+		opts = append(opts, jsonutil.Indent(2))
 	}
-	text, err := pyjson.Dumps(v, opts...)
+	text, err := jsonutil.Encode(v, opts...)
 	if err != nil {
 		panic(err)
 	}
@@ -229,7 +230,7 @@ func nsVerifyString(ns map[string]any, key string) string {
 }
 
 func nsVerifyBool(ns map[string]any, key string) bool {
-	return pyrepr.Truthy(ns[key])
+	return anyutil.IsTrue(ns[key])
 }
 
 func nsVerifyInt(ns map[string]any, key string) int {
@@ -263,7 +264,7 @@ func nsVerifyStrings(ns map[string]any, key string) []string {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, item := range v {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 		return out
 	}

@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // CompressionSettings is the parsed compression config section
@@ -73,8 +72,8 @@ func autoraiseFloat(autoraise map[string]any, key string) (float64, error) {
 
 func autoraiseModel(autoraise map[string]any, fallback string) string {
 	model := fallback
-	if pyrepr.Truthy(autoraise["model"]) {
-		model = pyrepr.Str(autoraise["model"])
+	if anyutil.IsTrue(autoraise["model"]) {
+		model = anyutil.String(autoraise["model"])
 	}
 	model = strings.ToLower(strings.TrimSpace(model))
 	return model[strings.LastIndex(model, "/")+1:]

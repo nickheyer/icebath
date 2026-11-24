@@ -16,9 +16,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -75,7 +75,7 @@ func mtime(path string) fileMtime {
 }
 
 // Stages the Bot Screen line as a note for the next turn of every open chat of the profile
-func notifyAgentsOfScreenChange(profileKey string, payload *pyjson.Object) {
+func notifyAgentsOfScreenChange(profileKey string, payload *jsonutil.Object) {
 	line, built := func() (line string, built bool) {
 		defer func() {
 			if recover() != nil {
@@ -83,11 +83,11 @@ func notifyAgentsOfScreenChange(profileKey string, payload *pyjson.Object) {
 			}
 		}()
 		holder := ""
-		if lease, isDict := payload.GetOr("lease", nil).(*pyjson.Object); isDict {
-			holder = strOr(lease.GetOr("holder", nil))
+		if lease, isDict := payload.ValueOr("lease", nil).(*jsonutil.Object); isDict {
+			holder = strOr(lease.ValueOr("holder", nil))
 		}
-		display, _ := payload.GetOr("display", nil).(string)
-		return agent.BotScreenNote(pyrepr.Truthy(payload.GetOr("running", nil)), display, holder), true
+		display, _ := payload.ValueOr("display", nil).(string)
+		return agent.BotScreenNote(anyutil.IsTrue(payload.ValueOr("running", nil)), display, holder), true
 	}()
 	if !built || line == "" || gateway.StageProfileTurnNote == nil {
 		return
@@ -96,10 +96,10 @@ func notifyAgentsOfScreenChange(profileKey string, payload *pyjson.Object) {
 }
 
 // Shallow map of an ordered snapshot for a global event payload
-func objectPayload(o *pyjson.Object) map[string]any {
+func objectPayload(o *jsonutil.Object) map[string]any {
 	out := make(map[string]any, o.Len())
-	for _, k := range o.Keys {
-		out[k] = o.Vals[k]
+	for _, k := range o.Keys() {
+		out[k] = o.Value(k)
 	}
 	return out
 }
@@ -173,7 +173,7 @@ func pollLeaseFiles() {
 		seen, known := leaseEpochs[key]
 		leaseEpochs[key] = lease.Epoch
 		leaseWatchMu.Unlock()
-		if !known || pyrepr.Equal(seen, lease.Epoch) {
+		if !known || anyutil.Equal(seen, lease.Epoch) {
 			continue
 		}
 		broadcastGlobalEvent("display.lease", leaseEventPayload(key, lease))

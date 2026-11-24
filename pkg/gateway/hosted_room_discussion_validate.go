@@ -10,12 +10,13 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+
+	"golang.org/x/text/cases"
 )
 
 const (
@@ -62,20 +63,17 @@ func keySet(keys ...string) map[string]bool {
 // Invalid policy input or unreconstructable state, a ValueError
 type DiscussionPolicyError struct{ Msg string }
 
-func (e *DiscussionPolicyError) Error() string      { return e.Msg }
-func (e *DiscussionPolicyError) PyTypeName() string { return "DiscussionPolicyError" }
+func (e *DiscussionPolicyError) Error() string { return e.Msg }
 
 // Malformed room, roster, payload or typed event
 type DiscussionValidationError struct{ *DiscussionPolicyError }
 
-func (e *DiscussionValidationError) Unwrap() error      { return e.DiscussionPolicyError }
-func (e *DiscussionValidationError) PyTypeName() string { return "DiscussionValidationError" }
+func (e *DiscussionValidationError) Unwrap() error { return e.DiscussionPolicyError }
 
 // Persisted task that durable state cannot reproduce
 type DiscussionReconstructionError struct{ *DiscussionPolicyError }
 
-func (e *DiscussionReconstructionError) Unwrap() error      { return e.DiscussionPolicyError }
-func (e *DiscussionReconstructionError) PyTypeName() string { return "DiscussionReconstructionError" }
+func (e *DiscussionReconstructionError) Unwrap() error { return e.DiscussionPolicyError }
 
 func discussionInvalid(msg string) error {
 	return &DiscussionValidationError{&DiscussionPolicyError{msg}}
@@ -120,7 +118,7 @@ type DiscussionMember struct {
 // Whether two members are the same frozen roster entry
 func (m DiscussionMember) Equal(other DiscussionMember) bool {
 	return m.MemberID == other.MemberID && m.Profile == other.Profile && m.Handle == other.Handle && m.DisplayName == other.DisplayName &&
-		pyjson.Equal(m.Target, other.Target) && (m.Target == nil) == (other.Target == nil)
+		anyutil.Equal(m.Target, other.Target) && (m.Target == nil) == (other.Target == nil)
 }
 
 // Validated policy projection of one active hosted room
@@ -214,7 +212,7 @@ func ValidateUserPayload(value any) (map[string]any, error) {
 	if !ok || len(text) > maxUserTextBytes {
 		return nil, discussionInvalid("user payload text must be a bounded string")
 	}
-	if strings.TrimSpace(text) == "" && !pyrepr.Truthy(normalized["attachments"]) {
+	if strings.TrimSpace(text) == "" && !anyutil.IsTrue(normalized["attachments"]) {
 		return nil, discussionInvalid("user payload must contain text or attachments")
 	}
 	normalized["text"] = strings.TrimSpace(text)
@@ -335,7 +333,7 @@ func discussionMember(raw any, index int, known map[string]bool) (DiscussionMemb
 
 // Validated frozen roster of two to six members on this gateway
 func ValidateRoster(value any, localProfiles []string) ([]DiscussionMember, error) {
-	list, ok := pyjson.Plain(value).([]any)
+	list, ok := jsonutil.Plain(value).([]any)
 	if !ok {
 		return nil, discussionInvalid("members must be a list")
 	}
@@ -369,9 +367,9 @@ func ValidateRoster(value any, localProfiles []string) ([]DiscussionMember, erro
 			key     string
 			seen    map[string]bool
 			message string
-		}{{pystr.Casefold(targetKey), targets, "member " + unique + " must be unique"},
-			{pystr.Casefold(member.Handle), handles, "member handles must be unique and cannot reserve @all or @everyone"},
-			{pystr.Casefold(member.MemberID), ids, "member ids must be unique"}} {
+		}{{cases.Fold().String(targetKey), targets, "member " + unique + " must be unique"},
+			{cases.Fold().String(member.Handle), handles, "member handles must be unique and cannot reserve @all or @everyone"},
+			{cases.Fold().String(member.MemberID), ids, "member ids must be unique"}} {
 			if check.seen[check.key] {
 				return nil, discussionInvalid(check.message)
 			}
@@ -427,12 +425,12 @@ func IsPassText(value any) bool {
 func ResolveMentions(texts []string, members []DiscussionMember, defaultAll bool) []DiscussionMember {
 	byHandle := map[string]bool{}
 	for _, member := range members {
-		byHandle[pystr.Casefold(member.Handle)] = true
+		byHandle[cases.Fold().String(member.Handle)] = true
 	}
 	mentioned, everyone := map[string]bool{}, false
 	for _, text := range texts {
 		for _, match := range discussionMentionRE.FindAllStringSubmatch(text, -1) {
-			handle := pystr.Casefold(match[1])
+			handle := cases.Fold().String(match[1])
 			if handle == "all" || handle == "everyone" {
 				everyone = true
 			} else if byHandle[handle] {
@@ -445,7 +443,7 @@ func ResolveMentions(texts []string, members []DiscussionMember, defaultAll bool
 	}
 	var out []DiscussionMember
 	for _, member := range members {
-		if mentioned[pystr.Casefold(member.Handle)] {
+		if mentioned[cases.Fold().String(member.Handle)] {
 			out = append(out, member)
 		}
 	}
@@ -459,9 +457,9 @@ func discussionUnaddressedMentions(messages []discussionEvent, room DiscussionRo
 		if event.kind != "message.member" {
 			continue
 		}
-		speaker := pyrepr.Str(event.payload["member_id"])
+		speaker := anyutil.String(event.payload["member_id"])
 		lastPostAt[speaker] = event.seq
-		for _, member := range ResolveMentions([]string{pyrepr.Str(event.payload["text"])}, room.Members, false) {
+		for _, member := range ResolveMentions([]string{anyutil.String(event.payload["text"])}, room.Members, false) {
 			if member.MemberID != speaker {
 				citedAt[member.MemberID] = event.seq
 			}
@@ -556,7 +554,7 @@ func discussionValidateMemberMessage(payload, actor map[string]any, room Discuss
 	if _, err := discussionExactFields(payload, "message.member payload", append(append([]string{}, discussionCoordinateFields...), "text"), "attachments", "recipient_member_ids"); err != nil {
 		return nil, err
 	}
-	out := pyjson.Plain(payload).(map[string]any)
+	out := jsonutil.Plain(payload).(map[string]any)
 	if attachments, has := out["attachments"]; has {
 		manifest, err := discussionMessageManifest(attachments)
 		if err != nil {
@@ -601,7 +599,7 @@ func discussionValidateMemberMessage(payload, actor map[string]any, room Discuss
 		expected["connection_id"] = nil
 	}
 	for key, value := range expected {
-		if !pyjson.Equal(actor[key], value) {
+		if !anyutil.Equal(actor[key], value) {
 			return nil, discussionInvalid("message.member actor does not match roster")
 		}
 	}
@@ -671,7 +669,7 @@ func discussionValidateEvent(raw any, room DiscussionRoom, previousSeq int64) (d
 	if !ok {
 		return discussionEvent{}, discussionInvalid("room event must be an object")
 	}
-	fields = pyjson.Plain(fields).(map[string]any)
+	fields = jsonutil.Plain(fields).(map[string]any)
 	if fields["room_id"] != room.RoomID {
 		return discussionEvent{}, discussionInvalid("room event belongs to a different room")
 	}
@@ -700,7 +698,7 @@ func discussionValidateEvent(raw any, room DiscussionRoom, previousSeq int64) (d
 	}
 	_, gatewayKind := discussionGatewayEvents[kind]
 	gatewayKind = gatewayKind || kind == continuedEventKind
-	if stamped := discussionTerminalExtras[kind] != nil || kind == "message.member" || gatewayKind; stamped && !pyjson.Equal(fields["authority_epoch"], room.AuthorityEpoch) {
+	if stamped := discussionTerminalExtras[kind] != nil || kind == "message.member" || gatewayKind; stamped && !anyutil.Equal(fields["authority_epoch"], room.AuthorityEpoch) {
 		return discussionEvent{}, discussionInvalid(kind + " authority epoch does not match the room")
 	}
 	if kind == "message.user" || kind == "message.member" || discussionTerminalExtras[kind] != nil || gatewayKind {
@@ -747,7 +745,7 @@ func discussionDeriveWatermarks(events []discussionEvent) (map[[2]string]int64, 
 		if discussionTerminalExtras[event.kind] == nil {
 			continue
 		}
-		taskID := pyrepr.Str(event.payload["task_id"])
+		taskID := anyutil.String(event.payload["task_id"])
 		if previous, has := terminalByTask[taskID]; has {
 			if previous.kind != "turn.deferred" {
 				return nil, discussionInvalid(fmt.Sprintf("task '%s' has more than one terminal room event", taskID))
@@ -759,12 +757,12 @@ func discussionDeriveWatermarks(events []discussionEvent) (map[[2]string]int64, 
 			}
 		}
 		terminalByTask[taskID] = event
-		key := [2]string{pyrepr.Str(event.payload["thread_id"]), pyrepr.Str(event.payload["member_id"])}
+		key := [2]string{anyutil.String(event.payload["thread_id"]), anyutil.String(event.payload["member_id"])}
 		watermark, _ := hostedStrictInt(event.payload["seen_through_seq"])
 		if passed, _ := event.payload["passed"].(bool); event.kind == "turn.settled" && !passed {
-			message, has := messages[pyrepr.Str(event.payload["message_event_id"])]
-			if !has || !pyjson.Equal(message.payload["task_id"], event.payload["task_id"]) || !pyjson.Equal(message.payload["member_id"], event.payload["member_id"]) ||
-				!pyjson.Equal(message.payload["thread_id"], event.payload["thread_id"]) {
+			message, has := messages[anyutil.String(event.payload["message_event_id"])]
+			if !has || !anyutil.Equal(message.payload["task_id"], event.payload["task_id"]) || !anyutil.Equal(message.payload["member_id"], event.payload["member_id"]) ||
+				!anyutil.Equal(message.payload["thread_id"], event.payload["thread_id"]) {
 				return nil, discussionInvalid("turn.settled references no matching member message")
 			}
 			discussionSeq := int64(-1)

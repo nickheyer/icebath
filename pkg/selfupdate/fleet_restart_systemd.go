@@ -17,10 +17,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -34,7 +35,7 @@ type systemdScope struct {
 type systemdUnitListing struct {
 	Scope    string
 	ScopeCmd []string
-	Listing  *pysubprocess.Completed
+	Listing  *executil.Completed
 }
 
 var (
@@ -56,9 +57,9 @@ var (
 	fleetEUID      = os.Geteuid
 
 	// Runs one captured command under a timeout in seconds, the call the tests replace
-	fleetRunCommand = func(ctx context.Context, cmd []string, timeout float64) (*pysubprocess.Completed, error) {
-		result, err := pysubprocess.RunWith(ctx, cmd, pysubprocess.Options{Timeout: time.Duration(timeout * float64(time.Second))})
-		var expired *pysubprocess.TimeoutExpired
+	fleetRunCommand = func(ctx context.Context, cmd []string, timeout float64) (*executil.Completed, error) {
+		result, err := executil.Run(ctx, cmd, executil.Options{Timeout: time.Duration(timeout * float64(time.Second))})
+		var expired *executil.TimeoutError
 		if errors.As(err, &expired) && timeout != math.Trunc(timeout) {
 			expired.TimeoutFloat = &timeout
 		}
@@ -67,7 +68,7 @@ var (
 		}
 		return result, nil
 	}
-	fleetSystemctl = func(ctx context.Context, cmd []string, timeout float64) (*pysubprocess.Completed, error) {
+	fleetSystemctl = func(ctx context.Context, cmd []string, timeout float64) (*executil.Completed, error) {
 		return fleetRunCommand(ctx, cmd, timeout)
 	}
 )
@@ -84,13 +85,13 @@ func isCommandMissing(err error) bool {
 }
 
 // Timeout failure of a command, nil for any other error
-func asCommandTimeout(err error) *pysubprocess.TimeoutExpired {
-	var expired *pysubprocess.TimeoutExpired
+func asCommandTimeout(err error) *executil.TimeoutError {
+	var expired *executil.TimeoutError
 	if errors.As(err, &expired) {
 		return expired
 	}
 	if errors.Is(err, gateway.ErrCommandTimeout) {
-		return &pysubprocess.TimeoutExpired{}
+		return &executil.TimeoutError{}
 	}
 	return nil
 }
@@ -105,7 +106,7 @@ func timeoutCmdText(err error) string {
 }
 
 // Captured stdout of a finished command as text with undecodable bytes replaced
-func completedStdout(result *pysubprocess.Completed) string {
+func completedStdout(result *executil.Completed) string {
 	if result == nil {
 		return ""
 	}
@@ -113,7 +114,7 @@ func completedStdout(result *pysubprocess.Completed) string {
 }
 
 // Captured stderr of a finished command as text with undecodable bytes replaced
-func completedStderr(result *pysubprocess.Completed) string {
+func completedStderr(result *executil.Completed) string {
 	if result == nil {
 		return ""
 	}
@@ -121,7 +122,7 @@ func completedStderr(result *pysubprocess.Completed) string {
 }
 
 // Runs one systemctl or sudo systemctl invocation capturing utf-8 text under a timeout in seconds
-func systemctl(ctx context.Context, cmd []string, timeout float64) (*pysubprocess.Completed, error) {
+func systemctl(ctx context.Context, cmd []string, timeout float64) (*executil.Completed, error) {
 	return fleetSystemctl(ctx, cmd, timeout)
 }
 
@@ -156,7 +157,7 @@ func needsSudo(scope string) bool {
 func unitMainPid(ctx context.Context, scopeCmd []string, svcName string) (int, error) {
 	result, err := systemctl(ctx, fleetArgv(scopeCmd, "show", svcName, "--property=MainPID", "--value"), 10)
 	if err != nil {
-		if pypath.IsOSError(err) || isCommandMissing(err) || asCommandTimeout(err) != nil {
+		if errorutil.IsSystem(err) || isCommandMissing(err) || asCommandTimeout(err) != nil {
 			return 0, nil
 		}
 		return 0, err
@@ -221,7 +222,7 @@ func (t *systemdRestartTargets) collapse(ctx context.Context, w io.Writer) []str
 }
 
 // Clears a unit's failed state then restarts it, waiting out the unit's own stop and start budgets
-func systemctlResetAndRestart(ctx context.Context, w io.Writer, manageCmd []string, svcName string, scopeCmd []string) (*pysubprocess.Completed, error) {
+func systemctlResetAndRestart(ctx context.Context, w io.Writer, manageCmd []string, svcName string, scopeCmd []string) (*executil.Completed, error) {
 	if scopeCmd == nil {
 		scopeCmd = manageCmd
 	}
@@ -336,7 +337,7 @@ func repairUnitWithoutFatalExitPark(ctx context.Context, w io.Writer, svcName, s
 	if system {
 		unitDir = fleetSystemUnitDir()
 	}
-	data, err := os.ReadFile(pypath.PathJoin(unitDir, svcName+".service"))
+	data, err := os.ReadFile(pathutil.Join(unitDir, svcName+".service"))
 	if err != nil {
 		return nil
 	}

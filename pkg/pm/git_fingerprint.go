@@ -4,8 +4,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -13,7 +14,7 @@ import (
 func ReadGitRevisionFingerprint(repoRoot string) (string, bool) {
 	fp, err := gitRevisionFingerprint(repoRoot)
 	if err != nil {
-		if pypath.IsOSError(err) {
+		if errorutil.IsSystem(err) {
 			return "", false
 		}
 		panic(err)
@@ -23,8 +24,8 @@ func ReadGitRevisionFingerprint(repoRoot string) (string, bool) {
 
 // Fingerprint as git ref and sha, the unresolved ref marker or the detached head value
 func gitRevisionFingerprint(repoRoot string) (string, error) {
-	gitDir := pypath.PathJoin(repoRoot, ".git")
-	fi, err := pypath.PathlibStat(gitDir)
+	gitDir := pathutil.Join(repoRoot, ".git")
+	fi, err := pathutil.StatIfExists(gitDir)
 	if err != nil {
 		return "", err
 	}
@@ -36,7 +37,7 @@ func gitRevisionFingerprint(repoRoot string) (string, error) {
 		for _, line := range textutil.Lines(text) {
 			key, value, _ := strings.Cut(line, ":")
 			if strings.TrimSpace(key) == "gitdir" && strings.TrimSpace(value) != "" {
-				if gitDir, err = pypath.Resolve(pypath.PathJoin(repoRoot, strings.TrimSpace(value))); err != nil {
+				if gitDir, err = pathutil.Resolve(pathutil.Join(repoRoot, strings.TrimSpace(value))); err != nil {
 					return "", err
 				}
 				break
@@ -44,21 +45,21 @@ func gitRevisionFingerprint(repoRoot string) (string, error) {
 		}
 	}
 	commonDir := gitDir
-	commondirFile := pypath.PathJoin(gitDir, "commondir")
-	fi, err = pypath.PathlibStat(commondirFile)
+	commondirFile := pathutil.Join(gitDir, "commondir")
+	fi, err = pathutil.StatIfExists(commondirFile)
 	if err != nil {
 		return "", err
 	}
 	if fi != nil {
 		resolved, err := readCommonDir(gitDir, commondirFile)
-		if err != nil && !pypath.IsOSError(err) {
+		if err != nil && !errorutil.IsSystem(err) {
 			return "", err
 		}
 		if err == nil && resolved != "" {
 			commonDir = resolved
 		}
 	}
-	text, err := readGitText(pypath.PathJoin(gitDir, "HEAD"))
+	text, err := readGitText(pathutil.Join(gitDir, "HEAD"))
 	if err != nil {
 		return "", err
 	}
@@ -69,8 +70,8 @@ func gitRevisionFingerprint(repoRoot string) (string, error) {
 	_, rest, _ := strings.Cut(head, ":")
 	ref := strings.TrimSpace(rest)
 	for _, candidate := range []string{gitDir, commonDir} {
-		refFile := pypath.PathJoin(candidate, ref)
-		fi, err := pypath.PathlibStat(refFile)
+		refFile := pathutil.Join(candidate, ref)
+		fi, err := pathutil.StatIfExists(refFile)
 		if err != nil {
 			return "", err
 		}
@@ -98,12 +99,12 @@ func readCommonDir(gitDir, commondirFile string) (string, error) {
 	if rel == "" {
 		return "", nil
 	}
-	return pypath.Resolve(pypath.PathJoin(gitDir, rel))
+	return pathutil.Resolve(pathutil.Join(gitDir, rel))
 }
 
 // Sha a packed-refs file records for a ref, empty when unreadable or absent
 func readPackedRef(commonDir, ref string) string {
-	text, err := readGitText(pypath.PathJoin(commonDir, "packed-refs"))
+	text, err := readGitText(pathutil.Join(commonDir, "packed-refs"))
 	if err != nil {
 		return ""
 	}
@@ -125,5 +126,5 @@ func readGitText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pycodecs.DecodeReplace(data, "utf-8-sig")
+	return charsetutil.DecodeReplace(data, "utf-8-sig")
 }

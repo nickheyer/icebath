@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -108,8 +108,8 @@ func TestObserveMapsChildCallbackEventsToLines(t *testing.T) {
 		"terminal ok 0.5s: ok output", "final reply streamed in parts", "status=completed", "did the thing")
 }
 
-func liveEntry(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func liveEntry(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -250,7 +250,7 @@ func TestManifestUpdateUsesSameExplicitHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	id, _, paths := createLiveTranscripts(context.Background(), []map[string]any{{"goal": "pin me"}}, nil, nil, nil, own)
-	updateManifestStatuses(id, []*pyjson.Object{liveEntry("task_index", 0, "status", "completed")}, own, true)
+	updateManifestStatuses(id, []*jsonutil.Object{liveEntry("task_index", 0, "status", "completed")}, own, true)
 	m := liveManifest(t, filepath.Join(filepath.Dir(paths[0]), "manifest.json"))
 	if m["tasks"].([]any)[0].(map[string]any)["status"] != "completed" {
 		t.Fatalf("manifest %v", m)
@@ -260,7 +260,7 @@ func TestManifestUpdateUsesSameExplicitHome(t *testing.T) {
 func TestManifestRecordsInheritedChildModel(t *testing.T) {
 	tmp := t.TempDir()
 	id, _, paths := createLiveTranscripts(context.Background(), []map[string]any{{"goal": "a"}, {"goal": "b"}}, nil, nil, nil, tmp)
-	updateManifestStatuses(id, []*pyjson.Object{
+	updateManifestStatuses(id, []*jsonutil.Object{
 		liveEntry("task_index", 0, "status", "completed", "model", "parent/model"),
 		liveEntry("task_index", 1, "status", "completed", "model", "parent/model"),
 	}, tmp, true)

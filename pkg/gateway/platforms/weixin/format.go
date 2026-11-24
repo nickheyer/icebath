@@ -1,19 +1,18 @@
 package weixin
 
 import (
+	"context"
+	"fmt"
+	"path/filepath"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
-	"context"
-	"path/filepath"
-	"strings"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -79,8 +78,7 @@ func wrapCopyFriendlyLinesForWeixin(content string) string {
 	if content == "" {
 		return content
 	}
-	options := pystr.DefaultTextwrap(weixinCopyLineWidth)
-	options.BreakLongWords, options.BreakOnHyphens, options.ReplaceWhitespace = false, false, false
+	options := textutil.WrapOptions{KeepLongWords: true, NoHyphenBreaks: true, KeepWhitespace: true}
 	var wrapped []string
 	for _, l := range walkMarkdownLines(content) {
 		stripped := strings.TrimSpace(l.line)
@@ -89,7 +87,7 @@ func wrapCopyFriendlyLinesForWeixin(content string) string {
 			wrapped = append(wrapped, l.line)
 			continue
 		}
-		parts := pystr.TextwrapWrap(l.line, options)
+		parts := textutil.Wrap(l.line, weixinCopyLineWidth, options)
 		if len(parts) == 0 {
 			parts = []string{l.line}
 		}
@@ -247,13 +245,13 @@ func splitTextForWeixinDelivery(content string, maxLength int, splitPerLine bool
 	return []string{content}
 }
 
-// Items of a message item list that are objects, the AttributeError of any other item
-func itemObjects(itemList []any) ([]*pyjson.Object, error) {
-	out := make([]*pyjson.Object, 0, len(itemList))
+// Items of a message item list that are objects, an error for any other item
+func itemObjects(itemList []any) ([]*jsonutil.Object, error) {
+	out := make([]*jsonutil.Object, 0, len(itemList))
 	for _, raw := range itemList {
-		item, ok := pyjson.AsObject(raw)
+		item, ok := jsonutil.AsObject(raw)
 		if !ok {
-			return nil, &pyErr{"AttributeError", "'" + pyrepr.TypeName(raw) + "' object has no attribute 'get'"}
+			return nil, fmt.Errorf("item_list entry: expected an object, got %s", anyutil.Kind(raw))
 		}
 		out = append(out, item)
 	}
@@ -277,32 +275,32 @@ func extractText(itemList []any) (string, error) {
 		return "", err
 	}
 	for _, item := range items {
-		if !equalsInt(item.Vals["type"], itemText) {
+		if !equalsInt(item.Value("type"), itemText) {
 			continue
 		}
-		textItem, err := objOrEmpty(item.Vals["text_item"])
+		textItem, err := objOrEmpty(item.Value("text_item"))
 		if err != nil {
 			return "", err
 		}
-		text := strOf(textItem.Vals["text"])
-		ref, err := objOrEmpty(item.Vals["ref_msg"])
+		text := strOf(textItem.Value("text"))
+		ref, err := objOrEmpty(item.Value("ref_msg"))
 		if err != nil {
 			return "", err
 		}
-		refItem, err := objOrEmpty(ref.Vals["message_item"])
+		refItem, err := objOrEmpty(ref.Value("message_item"))
 		if err != nil {
 			return "", err
 		}
-		if isMediaItemType(refItem.Vals["type"]) {
-			if title := ref.Vals["title"]; pyrepr.Truthy(title) {
-				return strings.TrimSpace("[引用媒体: " + pyrepr.Str(title) + "]\n" + text), nil
+		if isMediaItemType(refItem.Value("type")) {
+			if title := ref.Value("title"); anyutil.IsTrue(title) {
+				return strings.TrimSpace("[引用媒体: " + anyutil.String(title) + "]\n" + text), nil
 			}
 			return strings.TrimSpace("[引用媒体]\n" + text), nil
 		}
-		if len(refItem.Keys) > 0 {
+		if refItem.Len() > 0 {
 			var parts []string
-			if title := ref.Vals["title"]; pyrepr.Truthy(title) {
-				parts = append(parts, pyrepr.Str(title))
+			if title := ref.Value("title"); anyutil.IsTrue(title) {
+				parts = append(parts, anyutil.String(title))
 			}
 			quoted, err := extractText([]any{refItem})
 			if err != nil {
@@ -318,15 +316,15 @@ func extractText(itemList []any) (string, error) {
 		return text, nil
 	}
 	for _, item := range items {
-		if !equalsInt(item.Vals["type"], itemVoice) {
+		if !equalsInt(item.Value("type"), itemVoice) {
 			continue
 		}
-		voiceItem, err := objOrEmpty(item.Vals["voice_item"])
+		voiceItem, err := objOrEmpty(item.Value("voice_item"))
 		if err != nil {
 			return "", err
 		}
-		voiceText := strOf(voiceItem.Vals["text"])
-		if !pyrepr.Truthy(voiceItem.Vals["media"]) && voiceText != "" {
+		voiceText := strOf(voiceItem.Value("text"))
+		if !anyutil.IsTrue(voiceItem.Value("media")) && voiceText != "" {
 			return "[Voice transcription provided by Weixin]\n" + voiceText, nil
 		}
 	}
@@ -363,11 +361,11 @@ func loadSyncBuf(home, accountID string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	data, ok := readJSON(filepath.Join(dir, accountID+".sync.json")).(*pyjson.Object)
+	data, ok := readJSON(filepath.Join(dir, accountID+".sync.json")).(*jsonutil.Object)
 	if !ok {
 		return "", nil
 	}
-	buf, present := data.Vals["get_updates_buf"]
+	buf, present := data.Get("get_updates_buf")
 	if !present {
 		return "", nil
 	}
@@ -380,5 +378,5 @@ func saveSyncBuf(ctx context.Context, home, accountID, syncBuf string) error {
 	if err != nil {
 		return err
 	}
-	return config.AtomicJSONWrite(ctx, filepath.Join(dir, accountID+".sync.json"), pyjson.ObjectOf("get_updates_buf", syncBuf))
+	return config.AtomicJSONWrite(ctx, filepath.Join(dir, accountID+".sync.json"), jsonutil.ObjectOf("get_updates_buf", syncBuf))
 }

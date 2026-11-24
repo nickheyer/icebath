@@ -11,19 +11,19 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Parsed JSON object of a tool result
 func parseToolResult(t *testing.T, raw string) map[string]any {
 	t.Helper()
-	parsed, err := pyjson.Loads(raw)
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		t.Fatal(raw, err)
 	}
-	m, _ := pyjson.Plain(parsed).(map[string]any)
+	m, _ := jsonutil.Plain(parsed).(map[string]any)
 	return m
 }
 
@@ -96,7 +96,7 @@ func TestFleetCapabilityCoverageEveryProviderDeclaresEveryAxis(t *testing.T) {
 
 func TestFleetCapabilityCoverageAbcDefaultFailsClosed(t *testing.T) {
 	caps := newOpenAICompatibleVideoGenProvider(openAICompatibleVideoGenProvider{providerID: "t"}).Capabilities()
-	if !pyrepr.Equal(caps["modalities"], []any{"text"}) {
+	if !anyutil.Equal(caps["modalities"], []any{"text"}) {
 		t.Fatal(caps)
 	}
 	for _, axis := range []string{"supports_audio", "supports_negative_prompt", "supports_seed", "supports_upscale"} {
@@ -109,7 +109,7 @@ func TestFleetCapabilityCoverageAbcDefaultFailsClosed(t *testing.T) {
 			t.Fatal("ABC default missing", axis)
 		}
 	}
-	if d := defaultVideoCapabilities(); !pyrepr.Equal(d["modalities"], []any{"text"}) {
+	if d := defaultVideoCapabilities(); !anyutil.Equal(d["modalities"], []any{"text"}) {
 		t.Fatal(d)
 	}
 }
@@ -143,7 +143,7 @@ func schemaWith(t *testing.T, caps map[string]any, modelMeta map[string]any) map
 	videoResolveActiveProvider = func(context.Context, *tools.Env) VideoGenProvider { return p }
 	readConfiguredVideoModel = func(context.Context, *tools.Env) string { return "m1" }
 	defer func() { videoResolveActiveProvider, readConfiguredVideoModel = prevResolve, prevModel }()
-	return pyjson.Plain(buildDynamicVideoSchema(nil)).(map[string]any)
+	return jsonutil.Plain(buildDynamicVideoSchema(nil)).(map[string]any)
 }
 
 func TestFleetCapabilityCoverageAlwaysOnAudioSurfacesInDescriptionNotParam(t *testing.T) {
@@ -170,10 +170,10 @@ func TestDynamicParamGatingFullFeaturedBackendGetsAllParams(t *testing.T) {
 		t.Fatal(props["reference_image_urls"])
 	}
 	d := props["duration"].(map[string]any)
-	if !pyrepr.Equal(d["minimum"], 2) || !pyrepr.Equal(d["maximum"], 12) {
+	if !anyutil.Equal(d["minimum"], 2) || !anyutil.Equal(d["maximum"], 12) {
 		t.Fatal(d)
 	}
-	if !pyrepr.Equal(props["aspect_ratio"].(map[string]any)["enum"], []any{"16:9"}) {
+	if !anyutil.Equal(props["aspect_ratio"].(map[string]any)["enum"], []any{"16:9"}) {
 		t.Fatal(props["aspect_ratio"])
 	}
 }
@@ -226,7 +226,7 @@ func TestDynamicSchemaBuilderBuilderWiredIntoRegistry(t *testing.T) {
 	prev := ensurePluginsDiscoveredHook
 	ensurePluginsDiscoveredHook = func(context.Context, bool) {}
 	defer func() { ensurePluginsDiscoveredHook = prev }()
-	if _, ok := entry.DynamicSchema(nil).Vals["description"]; !ok {
+	if _, ok := entry.DynamicSchema(nil).Get("description"); !ok {
 		t.Fatal("no description")
 	}
 }
@@ -255,7 +255,7 @@ func TestDynamicSchemaBuilderBothModalitiesModelClaimsBoth(t *testing.T) {
 		t.Fatal(props)
 	}
 	d := props["duration"].(map[string]any)
-	if !pyrepr.Equal(d["minimum"], 1) || !pyrepr.Equal(d["maximum"], 15) {
+	if !anyutil.Equal(d["minimum"], 1) || !anyutil.Equal(d["maximum"], 15) {
 		t.Fatal(d)
 	}
 }
@@ -267,13 +267,13 @@ func TestDynamicSchemaBuilderI2vOnlyModelDoesNotClaimTextToVideo(t *testing.T) {
 		caps:   map[string]any{"modalities": []any{"text", "image"}, "min_duration": 1, "max_duration": 30}}, "")
 	cfgHome(t, config.Tree{"video_gen": map[string]any{"provider": "dual-i2v", "model": "gemini-like"}})
 	schema := buildDynamicVideoSchema(nil)
-	desc := schema.Vals["description"].(string)
+	desc := schema.Value("description").(string)
 	if !strings.Contains(desc, "image-to-video only") || strings.Contains(desc, "supports both text-to-video") {
 		t.Fatal(desc)
 	}
 	props := schemaProps(schema)
 	d := props["duration"].(map[string]any)
-	if !pyrepr.Equal(d["minimum"], 3) || !pyrepr.Equal(d["maximum"], 10) {
+	if !anyutil.Equal(d["minimum"], 3) || !anyutil.Equal(d["maximum"], 10) {
 		t.Fatal(d)
 	}
 	if _, ok := props["image_url"]; !ok {
@@ -299,8 +299,8 @@ func (m *videoMatrix) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	if r.Method == http.MethodPost {
 		raw, _ := io.ReadAll(r.Body)
-		parsed, _ := pyjson.Loads(string(raw))
-		js, _ := pyjson.Plain(parsed).(map[string]any)
+		parsed, _ := jsonutil.Decode(string(raw))
+		js, _ := jsonutil.Plain(parsed).(map[string]any)
 		m.xai = append(m.xai, orCall{url: r.URL.String(), json: js})
 		return reply(`{"request_id": "req-1"}`), nil
 	}
@@ -314,7 +314,7 @@ func (m *videoMatrix) RoundTrip(r *http.Request) (*http.Response, error) {
 	if model == "" {
 		model = "grok-imagine-video"
 	}
-	body, _ := pyjson.Dumps(map[string]any{"status": "done", "model": model, "video": map[string]any{"url": "https://xai-cdn/out.mp4", "duration": 8,
+	body, _ := jsonutil.Encode(map[string]any{"status": "done", "model": model, "video": map[string]any{"url": "https://xai-cdn/out.mp4", "duration": 8,
 		"file_output": map[string]any{"file_id": "file-123", "filename": filename, "public_url": "https://xai-files.example/out.mp4",
 			"public_url_expires_at": 1234567890}}})
 	return reply(body), nil
@@ -465,7 +465,7 @@ func TestModelIsNeverAnAgentChoice(t *testing.T) {
 	if res["success"] != true || res["model"] != "pixverse-v6" || m.fal[0].endpoint != "fal-ai/pixverse/v6/text-to-video" {
 		t.Fatal(res, m.fal)
 	}
-	for _, schema := range []*pyjson.Object{buildDynamicVideoSchema(&tools.Env{Home: m.home}), xaiVideoEditSchema(), xaiVideoExtendSchema()} {
+	for _, schema := range []*jsonutil.Object{buildDynamicVideoSchema(&tools.Env{Home: m.home}), xaiVideoEditSchema(), xaiVideoExtendSchema()} {
 		if _, ok := schemaProps(schema)["model"]; ok {
 			t.Fatal(schema)
 		}

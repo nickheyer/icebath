@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Capture stand in driven by a read function, recording its closes in a shared list
@@ -54,7 +54,7 @@ func recoveryEngine() *fakeWakeEngine {
 }
 
 func TestListenerRecoversAfterTransientCaptureFailure(t *testing.T) {
-	recovered := &pythread.Event{}
+	recovered := &syncutil.Event{}
 	opened, closed := &captureList{}, &captureList{}
 	engine := recoveryEngine()
 	det := NewWakeWordDetector(engine, noWake, WakeDetectorOptions{InputDevice: "chosen microphone"})
@@ -85,7 +85,7 @@ func TestListenerRecoversAfterTransientCaptureFailure(t *testing.T) {
 	if err := det.Start(); err != nil {
 		t.Fatal(err)
 	}
-	ok := recovered.Wait(3)
+	ok := recovered.WaitTimeout(3 * time.Second)
 	det.Stop()
 	if !ok {
 		t.Fatal("listener never reopened capture after a transient read failure")
@@ -124,7 +124,7 @@ func TestCaptureRecoveryIsBoundedAndCancellable(t *testing.T) {
 				}
 				return false
 			}
-			ready := &pythread.Event{}
+			ready := &syncutil.Event{}
 			var errs []error
 			det.run(ready, &errs)
 			if !ready.IsSet() || len(errs) != 0 {
@@ -152,7 +152,7 @@ func TestCaptureRecoveryIsBoundedAndCancellable(t *testing.T) {
 }
 
 func TestHaltReleasesReaderWedgedInRecoveredCapture(t *testing.T) {
-	recovered := &pythread.Event{}
+	recovered := &syncutil.Event{}
 	opened, closed := &captureList{}, &captureList{}
 	det := NewWakeWordDetector(recoveryEngine(), noWake, WakeDetectorOptions{})
 	det.openCapture = func(int) (wakeCapture, error) {
@@ -175,7 +175,7 @@ func TestHaltReleasesReaderWedgedInRecoveredCapture(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer det.Stop()
-	if !recovered.Wait(3) {
+	if !recovered.WaitTimeout(3 * time.Second) {
 		t.Fatal("listener never hit the transient read failure")
 	}
 	waitFor(3*time.Second, func() bool { return len(opened.snapshot()) >= 2 })

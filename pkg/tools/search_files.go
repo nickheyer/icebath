@@ -12,6 +12,8 @@ import (
 	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
 )
@@ -614,10 +616,11 @@ func (s *shellFileOps) pathNotFoundResult(path string) *SearchResult {
 	if strings.Contains(parentCheck.Stdout, "yes") && basenameQuery != "" {
 		ls := s.exec("ls -1 "+s.escapeShellArg(parent, true)+" 2>/dev/null | head -20", "", 0)
 		if ls.ExitCode == 0 && pyStrip(ls.Stdout) != "" {
-			lq := pyLower(basenameQuery)
+			lower := cases.Lower(language.Und)
+			lq := lower.String(basenameQuery)
 			var candidates []string
 			for _, e := range strings.Split(pyStrip(ls.Stdout), "\n") {
-				le := pyLower(e)
+				le := lower.String(e)
 				if e != "" && (strings.Contains(le, lq) || strings.Contains(lq, le) || strings.HasPrefix(le, runePrefix(lq, 3))) {
 					candidates = append(candidates, pathJoinOS(parent, e))
 				}

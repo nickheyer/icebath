@@ -611,7 +611,7 @@ func TestLightpandaRecordStartTime(t *testing.T) {
 	for _, c := range []struct {
 		in   any
 		want string
-	}{{nil, "nil"}, {int64(111), "111"}, {111.0, "111"}, {false, "0"}, {"", "-1"}, {111.5, "-1"}} {
+	}{{nil, "nil"}, {int64(111), "111"}, {111.0, "111"}, {false, "-1"}, {"", "-1"}, {111.5, "-1"}} {
 		got := "nil"
 		if p := recordStartTime(c.in); p != nil {
 			got = strconv.FormatInt(*p, 10)

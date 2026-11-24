@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/spf13/cobra"
 )
 
@@ -39,10 +38,10 @@ func (v *nonNegativeKeep) Set(text string) error {
 			return refusal
 		}
 	}
-	n, ok := pyint.Parse(text)
-	if !ok || !n.IsInt64() || n.Int64() > math.MaxInt {
+	n, err := strconv.ParseInt(text, 10, 64)
+	if err != nil || n > math.MaxInt {
 		return refusal
 	}
-	*v = nonNegativeKeep(n.Int64())
+	*v = nonNegativeKeep(n)
 	return nil
 }

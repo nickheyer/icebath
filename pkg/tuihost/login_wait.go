@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Wait before an armed retry that found its session busy tries again
@@ -230,7 +230,7 @@ func SessionLoginWait(ctx context.Context, sessions LoginSessions, p tuigateway.
 func RearmLoginWaits(ctx context.Context, sessions LoginSessions, db *state.SessionDB) {
 	ids, err := db.SessionsWithModelConfigKey(ctx, provider.ModelConfigLoginWait)
 	if err != nil {
-		serverLog().Warn("could not read the armed login waits: " + pyrepr.Str(err))
+		serverLog().Warn("could not read the armed login waits: " + anyutil.String(err))
 		return
 	}
 	for _, id := range ids {

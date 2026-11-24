@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -32,10 +32,10 @@ func dequeuePendingEvent(adapter gateway.PlatformAdapter, sessionKey string) *ga
 
 // Whether an interrupt message is internal control flow rather than user text
 func isControlInterruptMessage(message any) bool {
-	if !pyrepr.Truthy(message) {
+	if !anyutil.IsTrue(message) {
 		return false
 	}
-	normalized := strings.Join(strings.Fields(strings.TrimSpace(pyrepr.Str(message))), " ")
+	normalized := strings.Join(strings.Fields(strings.TrimSpace(anyutil.String(message))), " ")
 	return controlInterruptMessages[strings.ToLower(normalized)]
 }
 
@@ -46,21 +46,21 @@ func (r *GatewayRunner) runAgentDrainPending(ctx context.Context, result map[str
 	pending := ""
 	if len(result) > 0 && adapter != nil && sessionKey != "" {
 		pendingEvent = dequeuePendingEvent(adapter, sessionKey)
-		if pyrepr.Truthy(result["compression_exhausted"]) && pendingEvent != nil {
+		if anyutil.IsTrue(result["compression_exhausted"]) && pendingEvent != nil {
 			r.deferPastExhaustionReset(result, adapter, source, sessionKey, pendingEvent)
 			return nil, ""
 		}
 		pendingEvent = r.promoteQueuedEvent(sessionKey, adapter, pendingEvent)
-		if pyrepr.Truthy(result["interrupted"]) && pendingEvent == nil && pyrepr.Truthy(result["interrupt_message"]) {
+		if anyutil.IsTrue(result["interrupted"]) && pendingEvent == nil && anyutil.IsTrue(result["interrupt_message"]) {
 			interruptMessage := result["interrupt_message"]
 			if isControlInterruptMessage(interruptMessage) {
 				key := sessionKey
 				if key == "" {
 					key = "?"
 				}
-				pkgLog().Info(fmt.Sprintf("Ignoring control interrupt message for session %s: %s", key, pyrepr.Str(interruptMessage)))
+				pkgLog().Info(fmt.Sprintf("Ignoring control interrupt message for session %s: %s", key, anyutil.String(interruptMessage)))
 			} else if !gateway.ExecutingAdmission(ctx) {
-				pending = pyrepr.Str(interruptMessage)
+				pending = anyutil.String(interruptMessage)
 			}
 		} else if pendingEvent != nil {
 			pendingText := pendingEvent.Text

@@ -7,6 +7,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -17,11 +18,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // One icebath sessions invocation with its home, parsed namespace, output and the gateway owner a prune found
@@ -53,7 +56,7 @@ func nsText(ns map[string]any, key string) string {
 }
 
 // Python truthiness of a namespace dest, false when absent
-func nsTruthy(ns map[string]any, key string) bool { return pyrepr.Truthy(ns[key]) }
+func nsTruthy(ns map[string]any, key string) bool { return anyutil.IsTrue(ns[key]) }
 
 // Namespace integer of a dest with its presence
 func nsInt(ns map[string]any, key string) (int, bool) {
@@ -69,7 +72,7 @@ func nsInt(ns map[string]any, key string) (int, bool) {
 }
 
 // Value of a row key, nil when the row or the key is missing
-func rowGet(row *pyjson.Object, key string) any {
+func rowGet(row *jsonutil.Object, key string) any {
 	if row == nil {
 		return nil
 	}
@@ -78,7 +81,7 @@ func rowGet(row *pyjson.Object, key string) any {
 }
 
 // String value of a row key, empty when missing, None or another type
-func rowText(row *pyjson.Object, key string) string {
+func rowText(row *jsonutil.Object, key string) string {
 	s, _ := rowGet(row, key).(string)
 	return s
 }
@@ -115,18 +118,18 @@ func sessionsExcText(err error) string {
 	if _, ok := state.SQLiteClassOf(err); ok {
 		return state.ErrText(err)
 	}
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return errchain.OSText(err)
 	}
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }
 
 // Base name of a path under the path rules of the running platform
 func sessionsBasename(p string) string {
 	if runtime.GOOS == "windows" {
-		return pypath.NtBasename(p)
+		return pathutil.WindowsBase(p)
 	}
-	return pypath.PosixBasename(p)
+	return path.Base(p)
 }
 
 // File size in megabytes, zero when the path does not exist
@@ -196,14 +199,14 @@ func notFound(r *sessionsRun, sessionID string) int {
 }
 
 // Lists up to a hundred sessions a filtered export would write
-func printDryRunPreview(r *sessionsRun, candidates []*pyjson.Object, filters map[string]any) {
+func printDryRunPreview(r *sessionsRun, candidates []*jsonutil.Object, filters map[string]any) {
 	r.printf("Would export %d session(s) (%s).", len(candidates), describeFilters(filters))
 	for _, row := range candidates[:min(len(candidates), 100)] {
 		source := ""
 		if v, ok := row.Get("source"); ok {
-			source = pyrepr.Str(v)
+			source = anyutil.String(v)
 		}
-		r.printf("  %s  %s", pyrepr.Str(rowGet(row, "id")), source)
+		r.printf("  %s  %s", anyutil.String(rowGet(row, "id")), source)
 	}
 	if len(candidates) > 100 {
 		more := len(candidates) - 100
@@ -236,7 +239,7 @@ func anyFilterArgs(ns map[string]any) bool {
 // Directory of a multi file export, session-exports under the home when the output is empty or a dash
 func exportDir(r *sessionsRun, output string) (string, error) {
 	if output != "" && output != "-" {
-		return pypath.PathExpanduser(pypath.PathStr(output))
+		return pathutil.ExpandUserPath(filepath.Clean(output))
 	}
 	return filepath.Join(r.getIcebathHome(), "session-exports"), nil
 }
@@ -255,9 +258,9 @@ func outputFileInDir(output, defaultName string) (string, error) {
 		return "", err
 	}
 	if runtime.GOOS == "windows" {
-		return pypath.NtJoin(output, defaultName), nil
+		return pathutil.WindowsJoin(output, defaultName), nil
 	}
-	return pypath.PosixJoin(output, defaultName), nil
+	return path.Join(output, defaultName), nil
 }
 
 // Writes text to stdout for an empty or dash output, otherwise to the file followed by the summary line
@@ -279,7 +282,7 @@ func nsPath(ns map[string]any, key string) (string, bool) {
 	if !ok {
 		return "", false
 	}
-	return pypath.PathStr(s), true
+	return filepath.Clean(s), true
 }
 
 // Offline recovery working on a disposable copy of the source, never touching the active database
@@ -289,15 +292,15 @@ func cmdRecover(r *sessionsRun) (int, error) {
 	inspectOnly, allowPartial := nsTruthy(r.ns, "inspect_only"), nsTruthy(r.ns, "allow_partial")
 	reportPath, hasReport := nsPath(r.ns, "report")
 	if !inspectOnly && hasOutput && !hasReport {
-		name := pypath.PathName(output)
+		name := pathutil.Name(output)
 		if name == "" {
 			return 1, fmt.Errorf("the recovery output path %s has no file name", output)
 		}
-		reportPath, hasReport = pypath.PathJoin(pypath.PathParent(output), name+".recovery.json"), true
+		reportPath, hasReport = pathutil.Join(filepath.Dir(filepath.Clean(output)), name+".recovery.json"), true
 	}
 	reportExists := false
 	if hasReport {
-		expanded, err := pypath.PathExpanduser(reportPath)
+		expanded, err := pathutil.ExpandUserPath(reportPath)
 		if err != nil {
 			return 1, err
 		}
@@ -320,7 +323,7 @@ func cmdRecover(r *sessionsRun) (int, error) {
 		}
 	}
 	workDir, _ := nsPath(r.ns, "work_dir")
-	var report *pyjson.Object
+	var report *jsonutil.Object
 	var err error
 	if inspectOnly {
 		report, err = inspectSessionDatabase(r.ctx, source, workDir)
@@ -339,14 +342,14 @@ func cmdRecover(r *sessionsRun) (int, error) {
 	if err != nil {
 		var recoveryErr *sessionRecoveryError
 		class, sqliteErr := state.SQLiteClassOf(err)
-		if !errors.As(err, &recoveryErr) && !pypath.IsOSError(err) && !(sqliteErr && class != state.SQLiteInterfaceError) {
+		if !errors.As(err, &recoveryErr) && !errorutil.IsSystem(err) && !(sqliteErr && class != state.SQLiteInterfaceError) {
 			return 1, err
 		}
 		r.printf("Error: session recovery failed: %s\nThe supplied source database was not replaced or deleted.", sessionsExcText(err))
 		return 1, nil
 	}
 	if !hasReport {
-		text, err := pyjson.Dumps(report, pyjson.Indent(2), pyjson.SortKeys(true))
+		text, err := jsonutil.Encode(report, jsonutil.Indent(2), jsonutil.SortKeys())
 		if err != nil {
 			return 1, err
 		}
@@ -354,7 +357,7 @@ func cmdRecover(r *sessionsRun) (int, error) {
 	} else {
 		written, err := writeRecoveryReport(reportPath, report)
 		if err != nil {
-			if !errors.Is(err, fs.ErrExist) && !pypath.IsOSError(err) {
+			if !errors.Is(err, fs.ErrExist) && !errorutil.IsSystem(err) {
 				return 1, err
 			}
 			r.printf("Error: could not write recovery report: %s", sessionsExcText(err))
@@ -363,7 +366,7 @@ func cmdRecover(r *sessionsRun) (int, error) {
 		r.printf("Recovery report: %s", written)
 	}
 	if inspectOnly {
-		if pyrepr.Truthy(rowGet(report, "recoverable")) {
+		if anyutil.IsTrue(rowGet(report, "recoverable")) {
 			return 0, nil
 		}
 		return 1, nil
@@ -393,11 +396,11 @@ func groupedInt(v any) string {
 }
 
 // Draws the copied row count of the table a progress report names, opening a new line when the table changes
-func (p *recoveryProgress) call(info *pyjson.Object) {
+func (p *recoveryProgress) call(info *jsonutil.Object) {
 	table := rowGet(info, "table")
-	if !pyrepr.Equal(table, p.table) {
+	if !anyutil.Equal(table, p.table) {
 		p.finish()
-		fmt.Fprintf(p.r.w, "  %s: ", pyrepr.Str(table))
+		fmt.Fprintf(p.r.w, "  %s: ", anyutil.String(table))
 		p.table = table
 	}
 	suffix := ""
@@ -405,10 +408,10 @@ func (p *recoveryProgress) call(info *pyjson.Object) {
 		suffix = "/" + groupedInt(total)
 	}
 	copied := rowGet(info, "copied_rows")
-	if !pyrepr.Truthy(copied) {
+	if !anyutil.IsTrue(copied) {
 		copied = 0
 	}
-	fmt.Fprintf(p.r.w, "\r  %s: %s%s", pyrepr.Str(table), groupedInt(copied), suffix)
+	fmt.Fprintf(p.r.w, "\r  %s: %s%s", anyutil.String(table), groupedInt(copied), suffix)
 }
 
 // Ends the live line of the last table drawn
@@ -419,19 +422,19 @@ func (p *recoveryProgress) finish() {
 }
 
 // Says whether the recovered database passed verification and returns the exit code
-func printRecoveryVerdict(r *sessionsRun, report *pyjson.Object, output string, allowPartial bool) int {
-	if pyrepr.Truthy(rowGet(report, "complete")) {
+func printRecoveryVerdict(r *sessionsRun, report *jsonutil.Object, output string, allowPartial bool) int {
+	if anyutil.IsTrue(rowGet(report, "complete")) {
 		r.print("✓ Recovered database verified at: " + output + "\n" +
 			"  The active session database was not changed.\n" +
 			"  Review the JSON report before installing this database.")
 		return 0
 	}
-	if allowPartial && pyrepr.Truthy(rowGet(report, "verified")) {
-		var counts *pyjson.Object
-		if verification, ok := rowGet(report, "verification").(*pyjson.Object); ok {
-			counts, _ = rowGet(verification, "table_counts").(*pyjson.Object)
+	if allowPartial && anyutil.IsTrue(rowGet(report, "verified")) {
+		var counts *jsonutil.Object
+		if verification, ok := rowGet(report, "verification").(*jsonutil.Object); ok {
+			counts, _ = rowGet(verification, "table_counts").(*jsonutil.Object)
 		}
-		if pyrepr.Truthy(rowGet(report, "best_effort")) {
+		if anyutil.IsTrue(rowGet(report, "best_effort")) {
 			r.print("✓ BEST-EFFORT page-level salvage verified at: " + output + "\n" +
 				"  The source table schemas were unreadable; rows were rebuilt from raw pages " +
 				"via sqlite3 .recover and mapped heuristically.")
@@ -439,7 +442,7 @@ func printRecoveryVerdict(r *sessionsRun, report *pyjson.Object, output string, 
 			r.print("✓ Partial recovery output verified at: " + output)
 		}
 		count := func(key string) string {
-			if v := rowGet(counts, key); pyrepr.Truthy(v) {
+			if v := rowGet(counts, key); anyutil.IsTrue(v) {
 				return groupedInt(v)
 			}
 			return "0"
@@ -496,14 +499,14 @@ func cmdList(r *sessionsRun, db *state.SessionDB) (int, error) {
 	if truncated {
 		sessions = sessions[:limit]
 	}
-	wsKey := func(s *pyjson.Object) string {
+	wsKey := func(s *jsonutil.Object) string {
 		key, _ := state.WorkspaceKey(s)
 		return key
 	}
 	wsFilter := strings.TrimSpace(nsText(r.ns, "workspace"))
 	if wsFilter != "" {
 		needle := strings.ToLower(wsFilter)
-		var kept []*pyjson.Object
+		var kept []*jsonutil.Object
 		for _, s := range sessions {
 			key := strings.ToLower(wsKey(s))
 			if key != "" && (strings.Contains(key, needle) || needle == sessionsBasename(strings.TrimRight(key, "/\\"))) {
@@ -519,9 +522,9 @@ func cmdList(r *sessionsRun, db *state.SessionDB) (int, error) {
 	hasWS, hasTitles := wsFilter != "", false
 	for _, s := range sessions {
 		hasWS = hasWS || wsKey(s) != ""
-		hasTitles = hasTitles || pyrepr.Truthy(rowGet(s, "title"))
+		hasTitles = hasTitles || anyutil.IsTrue(rowGet(s, "title"))
 	}
-	ws := func(s *pyjson.Object) string {
+	ws := func(s *jsonutil.Object) string {
 		key := wsKey(s)
 		if key == "" {
 			return "—"
@@ -532,48 +535,48 @@ func cmdList(r *sessionsRun, db *state.SessionDB) (int, error) {
 		}
 		return runePrefix(base, 16)
 	}
-	title := func(s *pyjson.Object, n int) string {
+	title := func(s *jsonutil.Object, n int) string {
 		t := rowText(s, "title")
 		if t == "" {
 			t = "—"
 		}
 		return runePrefix(t, n)
 	}
-	preview := func(s *pyjson.Object, n int) string { return runePrefix(rowText(s, "preview"), n) }
+	preview := func(s *jsonutil.Object, n int) string { return runePrefix(rowText(s, "preview"), n) }
 	now := time.Now()
-	ago := func(s *pyjson.Object) string {
-		return pydatetime.RelativeTime(rowGet(s, "last_active"), rowText(s, "id"), now)
+	ago := func(s *jsonutil.Object) string {
+		return timeutil.RelativeAge(rowGet(s, "last_active"), rowText(s, "id"), now)
 	}
-	src := func(s *pyjson.Object) string {
-		created, source := rowText(s, "created_source"), pyrepr.Str(rowGet(s, "source"))
+	src := func(s *jsonutil.Object) string {
+		created, source := rowText(s, "created_source"), anyutil.String(rowGet(s, "source"))
 		if created != "" && created != source {
 			return created + "→" + source
 		}
 		return source
 	}
-	id := func(s *pyjson.Object) string { return pyrepr.Str(rowGet(s, "id")) }
+	id := func(s *jsonutil.Object) string { return anyutil.String(rowGet(s, "id")) }
 	var header string
 	var rule int
-	var format func(s *pyjson.Object) string
+	var format func(s *jsonutil.Object) string
 	switch {
 	case hasWS && hasTitles:
 		header, rule = padRight("Title", 28)+" "+padRight("Workspace", 18)+" "+padRight("Last Active", 13)+" ID", 110
-		format = func(s *pyjson.Object) string {
+		format = func(s *jsonutil.Object) string {
 			return padRight(title(s, 26), 28) + " " + padRight(ws(s), 18) + " " + padRight(ago(s), 13) + " " + id(s)
 		}
 	case hasWS:
 		header, rule = padRight("Preview", 38)+" "+padRight("Workspace", 18)+" "+padRight("Last Active", 13)+" "+padRight("Src", 16)+" ID", 110
-		format = func(s *pyjson.Object) string {
+		format = func(s *jsonutil.Object) string {
 			return padRight(preview(s, 36), 38) + " " + padRight(ws(s), 18) + " " + padRight(ago(s), 13) + " " + padRight(src(s), 16) + " " + id(s)
 		}
 	case hasTitles:
 		header, rule = padRight("Title", 32)+" "+padRight("Preview", 40)+" "+padRight("Last Active", 13)+" ID", 110
-		format = func(s *pyjson.Object) string {
+		format = func(s *jsonutil.Object) string {
 			return padRight(title(s, 30), 32) + " " + padRight(preview(s, 38), 40) + " " + padRight(ago(s), 13) + " " + id(s)
 		}
 	default:
 		header, rule = padRight("Preview", 50)+" "+padRight("Last Active", 13)+" "+padRight("Src", 16)+" ID", 105
-		format = func(s *pyjson.Object) string {
+		format = func(s *jsonutil.Object) string {
 			return padRight(preview(s, 48), 50) + " " + padRight(ago(s), 13) + " " + padRight(src(s), 16) + " " + id(s)
 		}
 	}

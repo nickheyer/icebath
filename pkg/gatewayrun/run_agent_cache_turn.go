@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Clears a session's pending slash confirm, the tools slash_confirm module the command layer owns
@@ -141,7 +141,7 @@ func (r *GatewayRunner) rehydrateSessionModelOverride(ctx context.Context, sessi
 			return nil, false
 		}
 		out := map[string]any{}
-		for _, k := range raw.Keys {
+		for _, k := range raw.Keys() {
 			out[k], _ = raw.Get(k)
 		}
 		return out, false
@@ -180,12 +180,12 @@ func (r *GatewayRunner) rehydrateSessionModelOverride(ctx context.Context, sessi
 			if override["capabilities"] == nil {
 				override["capabilities"] = map[string]any{}
 			}
-			if !pyrepr.Truthy(override["base_url"]) || provider.LlamacppAliases[strings.ToLower(strings.TrimSpace(providerName))] {
+			if !anyutil.IsTrue(override["base_url"]) || provider.LlamacppAliases[strings.ToLower(strings.TrimSpace(providerName))] {
 				override["base_url"] = runtime["base_url"]
 			}
-			if provider.OpenCodeFamily(providerName) != "" && pyrepr.Truthy(override["base_url"]) {
+			if provider.OpenCodeFamily(providerName) != "" && anyutil.IsTrue(override["base_url"]) {
 				apiMode, _ := override["api_mode"].(string)
-				override["base_url"] = provider.NormalizeOpenCodeBaseURL(providerName, provider.APIMode(apiMode), pyrepr.Str(override["base_url"]))
+				override["base_url"] = provider.NormalizeOpenCodeBaseURL(providerName, provider.APIMode(apiMode), anyutil.String(override["base_url"]))
 			}
 		}()
 	}
@@ -198,7 +198,7 @@ func (r *GatewayRunner) rehydrateSessionModelOverride(ctx context.Context, sessi
 	if !adopted {
 		return
 	}
-	pkgLog().Info(fmt.Sprintf("Rehydrated persisted /model override for session=%s: model=%s provider=%s", sessionKey, pyrepr.Str(override["model"]), providerName))
+	pkgLog().Info(fmt.Sprintf("Rehydrated persisted /model override for session=%s: model=%s provider=%s", sessionKey, anyutil.String(override["model"]), providerName))
 }
 
 // Layers a session model override onto the model and runtime kwargs, skipping unset fields
@@ -222,8 +222,8 @@ func (r *GatewayRunner) applySessionModelOverride(ctx context.Context, sessionKe
 			runtimeKwargs["request_overrides"] = ro
 		}
 	}
-	if pyrepr.Truthy(runtimeKwargs["api_key"]) && runtimeKwargs["credential_pool"] == nil && pyrepr.Truthy(override["provider"]) {
-		if pool := credentialPoolForProvider(ctx, pyrepr.Str(override["provider"])); pool != nil {
+	if anyutil.IsTrue(runtimeKwargs["api_key"]) && runtimeKwargs["credential_pool"] == nil && anyutil.IsTrue(override["provider"]) {
+		if pool := credentialPoolForProvider(ctx, anyutil.String(override["provider"])); pool != nil {
 			runtimeKwargs["credential_pool"] = pool
 		} else {
 			runtimeKwargs["credential_pool"] = nil
@@ -243,8 +243,8 @@ func (r *GatewayRunner) fallbackBaselineModel(ctx context.Context, sessionKey st
 	overrideProvider, hasProvider := override["provider"]
 	var model string
 	switch {
-	case pyrepr.Truthy(override["model"]) && (!hasProvider || overrideProvider == nil || overrideProvider == "" || overrideProvider == providerName):
-		model = pyrepr.Str(override["model"])
+	case anyutil.IsTrue(override["model"]) && (!hasProvider || overrideProvider == nil || overrideProvider == "" || overrideProvider == providerName):
+		model = anyutil.String(override["model"])
 	case policyModel != "":
 		model = policyModel
 	case source != nil:

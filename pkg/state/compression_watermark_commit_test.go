@@ -103,8 +103,8 @@ func TestTailClonePreservesEveryColumn(t *testing.T) {
 	byContent := map[any]map[string]any{}
 	for _, r := range rows {
 		m := map[string]any{}
-		for _, k := range r.Keys {
-			m[k] = r.Vals[k]
+		for _, k := range r.Keys() {
+			m[k] = r.Value(k)
 		}
 		byContent[m["content"]] = m
 	}

@@ -3,8 +3,8 @@ package manage
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Hook of the gateway cli package, panicking with the hook name when pkg/gatewaycli is not linked
@@ -47,7 +47,7 @@ func gatewayServicePinnedHome(definition string) (string, bool) {
 
 // Expanded and resolved path, empty when resolution fails
 func gatewayServiceResolve(p string) string {
-	resolved, err := pypath.Resolve(pypath.Expanduser(p))
+	resolved, err := pathutil.Resolve(pathutil.ExpandUser(p))
 	if err != nil {
 		return ""
 	}

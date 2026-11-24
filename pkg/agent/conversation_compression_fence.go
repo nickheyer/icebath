@@ -12,11 +12,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -197,7 +198,7 @@ func (c *ContextCompressor) SnapshotAttemptState() map[string]any {
 		"_last_compression_telemetry": c.Last, "_active_compression_telemetry": c.Active, "_compression_telemetry_seed": c.Seed,
 		"_proactive_prune_rearm_tokens": c.proactivePruneRearmTokens,
 	}
-	return pycopy.DeepCopy(values).(map[string]any)
+	return any(anyutil.Clone(values)).(map[string]any)
 }
 
 // Writes back every snapshotted field present in values
@@ -308,7 +309,7 @@ func rollbackDurableCooldown(compressor any, snapshot map[string]any, authoritat
 	}
 	swallowCompression("compression cooldown persistence rollback failed", true, func() error {
 		deadline, _ := snapshot["_summary_failure_cooldown_until"].(float64)
-		remaining := math.Max(0, deadline-pythread.Monotonic())
+		remaining := math.Max(0, deadline-timeutil.Monotonic())
 		if db == nil {
 			return nil
 		}
@@ -332,7 +333,7 @@ func restoreCompressorAttemptState(compressor any, snapshot map[string]any, dura
 			*attemptGeneration, currentAttemptGeneration(compressor)))
 		return nil
 	}
-	restored := pycopy.DeepCopy(snapshot).(map[string]any)
+	restored := any(anyutil.Clone(snapshot)).(map[string]any)
 	if lock := compressorAttemptSerialLock(compressor); lock != nil {
 		lock.Lock()
 		defer lock.Unlock()
@@ -403,7 +404,7 @@ type CompressionCommitFence struct {
 	mu                                 sync.Mutex
 	cancelled                          atomic.Bool
 	commitStarted                      atomic.Bool
-	commitPhase                        pythread.Event
+	commitPhase                        syncutil.Event
 	admissionRevoked                   atomic.Bool
 	lockReleaseGuard                   sync.Mutex
 	cancelledLockRelease               *cancelledLockRelease
@@ -420,7 +421,7 @@ var _ CompressionDeadlineFence = (*CompressionCommitFence)(nil)
 // Fence with no deadline armed and its progress clock started now
 func NewCompressionCommitFence() *CompressionCommitFence {
 	f := &CompressionCommitFence{}
-	f.lastProgress.Store(math.Float64bits(pythread.Monotonic()))
+	f.lastProgress.Store(math.Float64bits(timeutil.Monotonic()))
 	return f
 }
 
@@ -435,7 +436,7 @@ func (f *CompressionCommitFence) SetTotalCeilingSeconds(seconds float64) error {
 	if seconds <= 0 {
 		return errors.New("total compression ceiling must be positive")
 	}
-	d := pythread.Monotonic() + seconds
+	d := timeutil.Monotonic() + seconds
 	f.deadline.Store(&d)
 	return nil
 }
@@ -456,7 +457,7 @@ func (f *CompressionCommitFence) TryExtendDeadline(seconds float64) bool {
 	}
 	defer f.mu.Unlock()
 	d := f.deadline.Load()
-	alive := d != nil && *d > pythread.Monotonic() && !f.IsCancelled()
+	alive := d != nil && *d > timeutil.Monotonic() && !f.IsCancelled()
 	if alive {
 		next := *d + seconds
 		f.deadline.Store(&next)
@@ -468,7 +469,7 @@ func (f *CompressionCommitFence) ExtendDeadline(seconds float64) { f.TryExtendDe
 
 // Records forward progress such as a streamed token
 func (f *CompressionCommitFence) TouchProgress() {
-	f.lastProgress.Store(math.Float64bits(pythread.Monotonic()))
+	f.lastProgress.Store(math.Float64bits(timeutil.Monotonic()))
 	f.progressObserved.Store(true)
 }
 
@@ -476,7 +477,7 @@ func (f *CompressionCommitFence) ProgressObserved() bool { return f.progressObse
 
 func (f *CompressionCommitFence) DeadlineExceeded() bool {
 	d := f.deadline.Load()
-	return d != nil && pythread.Monotonic() >= *d
+	return d != nil && timeutil.Monotonic() >= *d
 }
 
 // Armed absolute monotonic deadline, false while none is armed
@@ -488,7 +489,7 @@ func (f *CompressionCommitFence) DeadlineMonotonic() (float64, bool) {
 }
 
 func (f *CompressionCommitFence) SecondsSinceProgress() float64 {
-	return math.Max(0, pythread.Monotonic()-math.Float64frombits(f.lastProgress.Load()))
+	return math.Max(0, timeutil.Monotonic()-math.Float64frombits(f.lastProgress.Load()))
 }
 
 // Cancels a pending commit and returns true, or blocks until an active commit finishes and returns false
@@ -620,8 +621,8 @@ func (f *CompressionCommitFence) ReleaseCancelledCompressionLock() {
 	}
 }
 
-func asPyObject(v any) *pyjson.Object {
-	o, _ := v.(*pyjson.Object)
+func asPyObject(v any) *jsonutil.Object {
+	o, _ := v.(*jsonutil.Object)
 	return o
 }
 

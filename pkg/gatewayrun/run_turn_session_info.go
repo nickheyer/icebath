@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // One time note a fresh session after an automatic reset carries to the agent, by reset reason
@@ -55,11 +55,11 @@ func (r *GatewayRunner) formatSessionInfo(ctx context.Context) string {
 		preset, _ := settings.MoaPresets.Get(ctx)[resolved.model].(map[string]any)
 		if agg, _ := preset["aggregator"].(map[string]any); len(agg) > 0 {
 			lines = append(lines, i18n.T(ctx, "gateway.session.info_acting_model", "",
-				map[string]any{"provider": pyrepr.Str(agg["provider"]), "model": pyrepr.Str(agg["model"])}))
+				map[string]any{"provider": anyutil.String(agg["provider"]), "model": anyutil.String(agg["model"])}))
 		}
 	}
 	if resolved.baseURL != "" {
-		if host, err := pyurl.BaseURLHostname(resolved.baseURL); err == nil && (host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0") {
+		if host, err := urlutil.BaseHost(resolved.baseURL); err == nil && (host == "localhost" || host == "127.0.0.1" || host == "0.0.0.0") {
 			lines = append(lines, i18n.T(ctx, "gateway.session.info_endpoint", "", map[string]any{"url": resolved.baseURL}))
 		}
 	}

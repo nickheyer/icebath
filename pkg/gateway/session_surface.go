@@ -1,7 +1,7 @@
 package gateway
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -35,7 +35,7 @@ func optionalBool(value any) (bool, bool) {
 }
 
 // Committed surface fields of a submission, empty when it names none
-func admitSurface(params map[string]any) (*pyjson.Object, error) {
+func admitSurface(params map[string]any) (*jsonutil.Object, error) {
 	surface, context := params["surface"], params["voice_context"]
 	name, isName := surface.(string)
 	if surface != nil && (!isName || !turnSurfaces[name]) {
@@ -50,7 +50,7 @@ func admitSurface(params map[string]any) (*pyjson.Object, error) {
 	if !okInterrupted || !okVoiceTurn {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	committed := pyjson.NewObject()
+	committed := jsonutil.NewObject()
 	if name != "" {
 		committed.Set("surface", name)
 	}
@@ -64,7 +64,7 @@ func admitSurface(params map[string]any) (*pyjson.Object, error) {
 		committed.Set("voice_turn", true)
 	}
 	if committed.Len() == 0 {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	return pyjson.ObjectOf("surface_v1", committed), nil
+	return jsonutil.ObjectOf("surface_v1", committed), nil
 }

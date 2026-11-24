@@ -6,11 +6,12 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Admits one queued input and returns its admission id
-func admitQueued(t *testing.T, db *SessionDB, epoch int64, principal, sid, request string, payload *pyjson.Object) string {
+func admitQueued(t *testing.T, db *SessionDB, epoch int64, principal, sid, request string, payload *jsonutil.Object) string {
 	t.Helper()
 	row, err := db.AdmitSessionInput(context.Background(), SessionInput{Epoch: epoch, PrincipalID: principal, SessionID: sid, RequestID: request, Payload: payload})
 	if err != nil {
@@ -71,8 +72,8 @@ func TestRetargetLocalAutomationRewritesOnlyStaleDescriptors(t *testing.T) {
 	defer db.Close()
 	readSession(t, db, NewSession{ID: "fresh", Source: "test"})
 	epoch, _ := db.BeginRuntimeEpoch(ctx, "boot")
-	automation := func(target string) *pyjson.Object {
-		return pyjson.ObjectOf("text", "notice", "local_automation_v1", pyjson.ObjectOf("target", target, "kind", "peer"))
+	automation := func(target string) *jsonutil.Object {
+		return jsonutil.ObjectOf("text", "notice", "local_automation_v1", jsonutil.ObjectOf("target", target, "kind", "peer"))
 	}
 	stale := admitQueued(t, db, epoch, "bot", "s", "a", automation("old"))
 	admitQueued(t, db, epoch, "bot", "s", "b", automation("other"))
@@ -93,7 +94,7 @@ func TestRetargetLocalAutomationRewritesOnlyStaleDescriptors(t *testing.T) {
 	if row, _ := db.GetSessionAdmission(ctx, stale); objStr(row, "target_session_id") != "s" {
 		t.Fatalf("owner moved %v", row)
 	}
-	admitQueued(t, db, epoch, "bot", "s", "e", pyjson.ObjectOf("local_automation_v1", pyjson.ObjectOf("target", []any{"old"})))
+	admitQueued(t, db, epoch, "bot", "s", "e", jsonutil.ObjectOf("local_automation_v1", jsonutil.ObjectOf("target", []any{"old"})))
 	if _, err := db.RetargetLocalAutomation(ctx, epoch, "s", "bot", []string{"other"}, "fresh"); err == nil {
 		t.Fatal("unhashable target accepted")
 	}
@@ -133,11 +134,11 @@ func TestMutationReceiptReplaysOnlyTheExactRequest(t *testing.T) {
 	db := runtimeStore(t, filepath.Join(t.TempDir(), "state.db"))
 	defer db.Close()
 	gen := int64(2)
-	key, digest, err := MutationReceiptKey("human", "s", "r", "title", pyjson.ObjectOf("title", "x"), 1, &gen)
+	key, digest, err := MutationReceiptKey("human", "s", "r", "title", jsonutil.ObjectOf("title", "x"), 1, &gen)
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, other, _ := MutationReceiptKey("human", "s", "r", "title", pyjson.ObjectOf("title", "x"), 1, nil)
+	_, other, _ := MutationReceiptKey("human", "s", "r", "title", jsonutil.ObjectOf("title", "x"), 1, nil)
 	if other == digest {
 		t.Fatal("expected generation left out of the digest")
 	}
@@ -159,7 +160,7 @@ func TestMutationReceiptReplaysOnlyTheExactRequest(t *testing.T) {
 	}
 	_ = db.readCtx(ctx, false, func(conn SQLiteConn) error {
 		replay, err := ReplayMutationReceipt(ctx, conn, key, digest)
-		if err != nil || !pyjson.Equal(replay, pyjson.ObjectOf("revision", int64(2))) {
+		if err != nil || !anyutil.Equal(replay, jsonutil.ObjectOf("revision", int64(2))) {
 			t.Fatalf("replay %v %v", replay, err)
 		}
 		if _, err := ReplayMutationReceipt(ctx, conn, key, other); refusalReason(t, err) != "admission_conflict" {

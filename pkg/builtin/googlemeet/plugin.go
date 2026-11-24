@@ -3,13 +3,12 @@ package googlemeet
 import (
 	"context"
 	"fmt"
-	"strings"
+	"runtime"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const pluginDescription = "Join a Google Meet call, transcribe live captions, speak in realtime, and follow up afterwards. v1 transcribe-only is the default; v2 realtime duplex audio via OpenAI Realtime + BlackHole/PulseAudio ships with mode='realtime'; v3 remote node host lets the bot run on a different machine than the gateway (gateway on Linux, Chrome+signed-in profile on the user's Mac). Explicit-by-design: only joins meet.google.com URLs passed in — no calendar scanning, no auto-dial."
@@ -22,7 +21,7 @@ type Plugin struct{}
 // Name, schema, handler and emoji of each tool in registration order
 var meetTools = []struct {
 	name    string
-	schema  *pyjson.Object
+	schema  *jsonutil.Object
 	handler tools.Handler
 	emoji   string
 }{
@@ -52,7 +51,7 @@ func (Plugin) Manifest() plugins.Manifest {
 
 // Registers the five tools, the meet CLI and the session end hook on Linux and macOS
 func (Plugin) Register(ctx *plugins.Context) error {
-	system := strings.ToLower(pyplatform.System())
+	system := runtime.GOOS
 	if system != "linux" && system != "darwin" {
 		pkgLog().Info(fmt.Sprintf("google_meet plugin: platform=%s not supported (linux/macos only)", system))
 		return nil
@@ -76,7 +75,7 @@ var sessionEndStop = pmStop
 // Leaves a still running call so no headless Chromium is orphaned, logging any failure at debug
 func onSessionEnd(ctx context.Context, _ map[string]any) (any, error) {
 	status, err := pmStatus(ctx)
-	if err == nil && pyrepr.Truthy(getOr(status, "ok", nil)) && pyrepr.Truthy(getOr(status, "alive", nil)) {
+	if err == nil && anyutil.IsTrue(getOr(status, "ok", nil)) && anyutil.IsTrue(getOr(status, "alive", nil)) {
 		_, err = sessionEndStop(ctx, "session ended")
 	}
 	if err != nil {

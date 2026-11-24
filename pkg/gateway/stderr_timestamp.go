@@ -16,8 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // Hidden first argument that runs the stderr timestamping wrapper instead of the CLI
@@ -59,7 +58,7 @@ func StampLine(line string) string {
 
 // Opens the error log for appending after creating its parent directory
 func openStderrLog(logPath string) (*os.File, error) {
-	if err := pyfs.Makedirs(filepath.Dir(logPath), 0o777, true); err != nil {
+	if err := os.MkdirAll(filepath.Dir(logPath), 0o777); err != nil {
 		return nil, err
 	}
 	return os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
@@ -74,7 +73,7 @@ func writeTimestampedLine(w io.Writer, line string) error {
 	if _, err := io.WriteString(w, text); err != nil {
 		return err
 	}
-	if f, ok := pysys.Attr[interface{ Flush() error }](w); ok {
+	if f, ok := termutil.As[interface{ Flush() error }](w); ok {
 		return f.Flush()
 	}
 	return nil

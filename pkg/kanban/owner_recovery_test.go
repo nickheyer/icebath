@@ -205,7 +205,7 @@ func TestASettledAdmissionIsProofEvenWhileTheOwnerGatewayIsAlive(t *testing.T) {
 	if run.Get("outcome") != "reclaimed" || !strings.Contains(cellStr(run.Get("error")), "owner admission settled interrupted") {
 		t.Fatal("run", run.Get("outcome"), run.Get("error"))
 	}
-	if n, _ := pyIntOf(b.state("t_gateway").Get("consecutive_failures")); n != 1 {
+	if n, _ := cellIntOf(b.state("t_gateway").Get("consecutive_failures")); n != 1 {
 		t.Fatal("consecutive_failures", n)
 	}
 	if b.state("t_bound").Get("status") != "running" {
@@ -250,7 +250,7 @@ func TestAnInterpreterBoundAfterTheGateKeepsItsClaim(t *testing.T) {
 				t.Fatal("gate verdicts", calls)
 			}
 			row := b.state("t_ghost")
-			if row.Get("status") != "running" || !pyEqualInt(row.Get("current_run_id"), run) {
+			if row.Get("status") != "running" || !intColumnIs(row.Get("current_run_id"), run) {
 				t.Fatal("claim lost", row.Get("status"), row.Get("current_run_id"))
 			}
 		})
@@ -276,7 +276,7 @@ func TestAForeignHostInterpreterBoundAfterTheGateKeepsItsClaim(t *testing.T) {
 				t.Fatal("reclaimed a remote attempt")
 			}
 			row := b.state("t_remote")
-			if row.Get("status") != "running" || !pyEqualInt(row.Get("current_run_id"), run) {
+			if row.Get("status") != "running" || !intColumnIs(row.Get("current_run_id"), run) {
 				t.Fatal("claim lost", row.Get("status"), row.Get("current_run_id"))
 			}
 		})

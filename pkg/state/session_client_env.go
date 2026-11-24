@@ -10,7 +10,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var (
@@ -40,8 +39,8 @@ type ClientEnvRules struct {
 }
 
 // Rules as the dict frozen into client_env_rules_json
-func (r *ClientEnvRules) Object() *pyjson.Object {
-	out := pyjson.NewObject()
+func (r *ClientEnvRules) Object() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, kv := range []struct {
 		key  string
 		list []string
@@ -61,7 +60,7 @@ func (r *ClientEnvRules) Object() *pyjson.Object {
 
 // Rules from their decoded dict, a missing key a KeyError and a non string list a TypeError
 func ParseClientEnvRules(raw any) (*ClientEnvRules, error) {
-	obj, ok := raw.(*pyjson.Object)
+	obj, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return nil, &stateTypedError{"TypeError", "client_env rules must be a dict"}
 	}
@@ -102,7 +101,7 @@ func configDictGet(v any, key string) (any, bool) {
 	case map[string]any:
 		x, ok := m[key]
 		return x, ok
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return m.Get(key)
 	}
 	return nil, false
@@ -263,9 +262,9 @@ func clientEnvFlatMap(value any) (map[string]string, error) {
 			}
 			out[k] = s
 		}
-	case *pyjson.Object:
-		for _, k := range m.Keys {
-			s, ok := m.Vals[k].(string)
+	case *jsonutil.Object:
+		for _, k := range m.Keys() {
+			s, ok := m.Value(k).(string)
 			if !ok {
 				return nil, errClientEnvNotFlatMap
 			}
@@ -303,7 +302,7 @@ func NormaliseClientEnv(value any, rules *ClientEnvRules) (map[string]string, er
 }
 
 // Whether a retried session.create carries the client environment the committed session froze
-func RetryMatches(committed, request *pyjson.Object) (bool, error) {
+func RetryMatches(committed, request *jsonutil.Object) (bool, error) {
 	stored, _ := committed.Get("client_env_json")
 	sentRaw, hasSent := request.Get("client_env")
 	if stored == nil || !hasSent {
@@ -316,7 +315,7 @@ func RetryMatches(committed, request *pyjson.Object) (bool, error) {
 		if !ok {
 			return false, &stateTypedError{"TypeError", "the stored retry rules are " + errchain.Kind(rulesRaw) + ", expected JSON text"}
 		}
-		decoded, derr := pyjson.Loads(text)
+		decoded, derr := jsonutil.Decode(text)
 		if derr != nil {
 			return false, nil
 		}
@@ -338,16 +337,16 @@ func RetryMatches(committed, request *pyjson.Object) (bool, error) {
 	if !ok {
 		return false, &stateTypedError{"TypeError", "the stored retry request is " + errchain.Kind(stored) + ", expected JSON text"}
 	}
-	decodedStored, err := pyjson.Loads(storedText)
+	decodedStored, err := jsonutil.Decode(storedText)
 	if err != nil {
 		return false, err
 	}
-	obj, ok := decodedStored.(*pyjson.Object)
+	obj, ok := decodedStored.(*jsonutil.Object)
 	if !ok || obj.Len() != len(sent) {
 		return false, nil
 	}
-	for _, k := range obj.Keys {
-		if s, ok := obj.Vals[k].(string); !ok || sent[k] != s {
+	for _, k := range obj.Keys() {
+		if s, ok := obj.Value(k).(string); !ok || sent[k] != s {
 			return false, nil
 		}
 		if _, ok := sent[k]; !ok {

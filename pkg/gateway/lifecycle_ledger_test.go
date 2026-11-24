@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const ledgerDeadPid = int64(1<<22 + 12345)
@@ -28,17 +28,17 @@ func writeLedgerFile(t *testing.T, path, data string) {
 	writeBytes(t, path, data)
 }
 
-func writeLedgerSentinel(t *testing.T, h string, payload *pyjson.Object) {
+func writeLedgerSentinel(t *testing.T, h string, payload *jsonutil.Object) {
 	t.Helper()
 	writeRecord(t, GetLifecycleSentinelPath(bg, h), payload)
 }
 
-func readLedgerSentinel(t *testing.T, h string) *pyjson.Object {
+func readLedgerSentinel(t *testing.T, h string) *jsonutil.Object {
 	t.Helper()
 	return readRecord(t, GetLifecycleSentinelPath(bg, h))
 }
 
-func exitDiagRecords(t *testing.T, h string) []*pyjson.Object {
+func exitDiagRecords(t *testing.T, h string) []*jsonutil.Object {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(h, "logs", "gateway-exit-diag.log"))
 	if os.IsNotExist(err) {
@@ -47,21 +47,21 @@ func exitDiagRecords(t *testing.T, h string) []*pyjson.Object {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out []*pyjson.Object
+	var out []*jsonutil.Object
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		v, err := pyjson.Loads(line)
+		v, err := jsonutil.Decode(line)
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, v.(*pyjson.Object))
+		out = append(out, v.(*jsonutil.Object))
 	}
 	return out
 }
 
-func deadSentinel(startedAt string) *pyjson.Object {
+func deadSentinel(startedAt string) *jsonutil.Object {
 	return rec("phase", "running", "pid", ledgerDeadPid, "start_time", 1000.0, "started_at", startedAt)
 }
 
@@ -198,7 +198,7 @@ func TestReplaceHandoverIsNotADeathAndPidReuseIs(t *testing.T) {
 	h := t.TempDir()
 	patch(t, &statusPidExists, func(int) bool { return true })
 	patch(t, &ledgerProcessCreateTime, fixedCreateTime(5000.0))
-	live := func(kv ...any) *pyjson.Object {
+	live := func(kv ...any) *jsonutil.Object {
 		r := rec("phase", "running", "pid", int64(4242), "start_time", 5003.7, "started_at", "x")
 		for i := 0; i+1 < len(kv); i += 2 {
 			r.Set(kv[i].(string), kv[i+1])
@@ -206,7 +206,7 @@ func TestReplaceHandoverIsNotADeathAndPidReuseIs(t *testing.T) {
 		return r
 	}
 	for _, c := range []struct {
-		sentinel *pyjson.Object
+		sentinel *jsonutil.Object
 		death    bool
 	}{
 		{live("create_time", 5000.0), false},

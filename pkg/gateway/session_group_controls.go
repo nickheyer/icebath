@@ -20,12 +20,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/installidentity"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Capability each room verb requires
@@ -103,7 +104,7 @@ type rosterSibling struct {
 }
 
 // Runs a room verb or profiles.list for the connection's own profile under that profile's runtime scope
-func dispatchGroupControl(ctx context.Context, c *AuthorityConnection, method string, params *pyjson.Object) (any, error) {
+func dispatchGroupControl(ctx context.Context, c *AuthorityConnection, method string, params *jsonutil.Object) (any, error) {
 	a, actor := c.authority, c.actor
 	capability, ok := groupMethods[method]
 	if !ok {
@@ -119,24 +120,24 @@ func dispatchGroupControl(ctx context.Context, c *AuthorityConnection, method st
 	if !known || params == nil {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	for _, key := range params.Keys {
+	for _, key := range params.Keys() {
 		if key != "profile" && !slices.Contains(allowed, key) {
 			return nil, runtimeRefusal("invalid_params")
 		}
 	}
 	profileHome := a.ProfileID
-	dbPath, err := pypath.Resolve(a.DB.Path())
+	dbPath, err := pathutil.Resolve(a.DB.Path())
 	if err != nil {
 		return nil, err
 	}
-	resolvedHome, err := pypath.Resolve(profileHome)
+	resolvedHome, err := pathutil.Resolve(profileHome)
 	if err != nil {
 		return nil, err
 	}
 	if filepath.Dir(dbPath) != resolvedHome {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
-	profile := params.GetOr("profile", nil)
+	profile := params.ValueOr("profile", nil)
 	profileName, isText := profile.(string)
 	if profile != nil && !isText {
 		return nil, runtimeRefusal("invalid_params")
@@ -145,9 +146,9 @@ func dispatchGroupControl(ctx context.Context, c *AuthorityConnection, method st
 		return nil, runtimeRefusal("profile_mismatch")
 	}
 	supplied := map[string]any{}
-	for _, key := range params.Keys {
+	for _, key := range params.Keys() {
 		if key != "profile" {
-			supplied[key] = params.GetOr(key, nil)
+			supplied[key] = params.ValueOr(key, nil)
 		}
 	}
 	var siblings []rosterSibling
@@ -190,7 +191,7 @@ func dispatchGroupControl(ctx context.Context, c *AuthorityConnection, method st
 // Errors of the Python ValueError and TypeError families a room verb folds into invalid_params
 func groupValueOrTypeError(err error) bool {
 	if errAs[*AttachmentError](err) || errAs[*HostedRoomPeerError](err) || errAs[*DiscussionPolicyError](err) ||
-		errAs[*DriverStateError](err) || errAs[*pyjson.DecodeError](err) {
+		errAs[*DriverStateError](err) || errAs[*jsonutil.SyntaxError](err) {
 		return true
 	}
 	family := map[string]bool{"ValueError": true, "TypeError": true, "UnicodeDecodeError": true, "JSONDecodeError": true}
@@ -198,12 +199,12 @@ func groupValueOrTypeError(err error) bool {
 	if errors.As(err, &pyErr) && family[pyErr.Kind] {
 		return true
 	}
-	var intErr *pyint.Error
+	var intErr *errorutil.Error
 	if errors.As(err, &intErr) && family[intErr.Kind] {
 		return true
 	}
-	var typed interface{ PyTypeName() string }
-	return errors.As(err, &typed) && family[typed.PyTypeName()]
+	var typed interface{ ErrorKind() string }
+	return errors.As(err, &typed) && family[typed.ErrorKind()]
 }
 
 // Python int of an include_disbanded flag read as the SQL truth value
@@ -283,11 +284,11 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		if !ok {
 			return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the hosted room service (%T) has no database path", hosted)}
 		}
-		serviceDB, err := pypath.Resolve(store.StorePath())
+		serviceDB, err := pathutil.Resolve(store.StorePath())
 		if err != nil {
 			return nil, err
 		}
-		ownDB, err := pypath.Resolve(dbPath)
+		ownDB, err := pathutil.Resolve(dbPath)
 		if err != nil {
 			return nil, err
 		}
@@ -383,7 +384,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("protocol_version", HostedProtocolVersion, "driver", running,
+		return jsonutil.ObjectOf("protocol_version", HostedProtocolVersion, "driver", running,
 			"persistent_process", true, "authority_gateway_id", gatewayID, "room_link", roomLink,
 			"features", []any{"room_identity", "monotonic_log", "replayable_disband", "room_shares", "peer_members"}, "methods", methods,
 			"max_log_limit", MaxRoomLogLimit, "seatable_profiles", seatable), nil
@@ -405,7 +406,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 				return nil, err
 			}
 		}
-		return pyjson.ObjectOf("peers", peers, "shares", shares), nil
+		return jsonutil.ObjectOf("peers", peers, "shares", shares), nil
 	case "groups.share", "groups.unshare":
 		if !running {
 			return nil, runtimeRefusal("runtime_coordination_required")
@@ -425,7 +426,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("share", share), nil
+		return jsonutil.ObjectOf("share", share), nil
 	case "groups.replica_state", "groups.promote":
 		return nil, roomRefusal("invalid_params", "this room is hosted on this gateway")
 	case "groups.create":
@@ -448,7 +449,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		if err != nil {
 			return nil, err
 		}
-		result := pyjson.ObjectOf("room", room)
+		result := jsonutil.ObjectOf("room", room)
 		if running && room["disbanded_at"] == nil {
 			service, err := driver("status")
 			if err != nil {
@@ -487,7 +488,7 @@ func groupControl(ctx context.Context, a *SessionAuthority, actor Principal, met
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("room", room), nil
+		return jsonutil.ObjectOf("room", room), nil
 	case "groups.disband":
 		return groupDisband(ctx, running, driver, dbPath, gatewayID, params)
 	}
@@ -526,7 +527,7 @@ func groupListing(ctx context.Context, a *SessionAuthority, actor Principal, dbP
 		if limit != nil && int64(len(result)) == limit.Int64() {
 			next = pyint.Native(new(big.Int).Add(offset, limit))
 		}
-		return pyjson.ObjectOf("rooms", rooms, "next_offset", next), nil
+		return jsonutil.ObjectOf("rooms", rooms, "next_offset", next), nil
 	}
 	if !hasAuthorizer {
 		return nil, runtimeRefusal("permission_denied")
@@ -572,7 +573,7 @@ func groupListing(ctx context.Context, a *SessionAuthority, actor Principal, dbP
 			break
 		}
 	}
-	return pyjson.ObjectOf("rooms", found, "next_offset", next), nil
+	return jsonutil.ObjectOf("rooms", found, "next_offset", next), nil
 }
 
 // Creates a room after the roster check, through the service while its driver runs
@@ -618,7 +619,7 @@ func groupCreate(ctx context.Context, a *SessionAuthority, service *CanonicalHos
 			if err != nil {
 				return nil, err
 			}
-			return nil, roomRefusal("invalid_params", "this room id belongs to a room replicated from "+pyrepr.Str(link["home"]))
+			return nil, roomRefusal("invalid_params", "this room id belongs to a room replicated from "+anyutil.String(link["home"]))
 		}
 	}
 	if service != nil {
@@ -647,7 +648,7 @@ func groupCreate(ctx context.Context, a *SessionAuthority, service *CanonicalHos
 			}
 			return nil, err
 		}
-		return pyjson.ObjectOf("room", room), nil
+		return jsonutil.ObjectOf("room", room), nil
 	}
 	normalized := make([]any, len(members))
 	for i, m := range members {
@@ -655,7 +656,7 @@ func groupCreate(ctx context.Context, a *SessionAuthority, service *CanonicalHos
 		for k, v := range m.Target {
 			target[k] = v
 		}
-		row := pyjson.ObjectOf("member_id", m.MemberID, "profile", m.Profile, "handle", m.Handle, "target", target)
+		row := jsonutil.ObjectOf("member_id", m.MemberID, "profile", m.Profile, "handle", m.Handle, "target", target)
 		if m.DisplayName != "" {
 			row.Set("display_name", m.DisplayName)
 		}
@@ -666,7 +667,7 @@ func groupCreate(ctx context.Context, a *SessionAuthority, service *CanonicalHos
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("room", room), nil
+	return jsonutil.ObjectOf("room", room), nil
 }
 
 // Tombstones a room after stopping its work and revoking its routes, refusing active work without a driver
@@ -712,7 +713,7 @@ func groupDisband(ctx context.Context, running bool, driver func(attribute strin
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("tombstone", tombstone), nil
+	return jsonutil.ObjectOf("tombstone", tombstone), nil
 }
 
 // Send, stop, continue, retry, discard and approve of a room through the canonical service
@@ -749,23 +750,23 @@ func groupExecutionControl(ctx context.Context, service *CanonicalHostedRoomServ
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("event", event, "client_event_id", params["event_id"], "accepted", true, "driver_started", true), nil
+		return jsonutil.ObjectOf("event", event, "client_event_id", params["event_id"], "accepted", true, "driver_started", true), nil
 	case "groups.stop":
 		cancelled, err := groupStopRoom(ctx, service, params["room_id"], groupOr(params, "cancel_id", "group-stop"), false)
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("cancelled", cancelled), nil
+		return jsonutil.ObjectOf("cancelled", cancelled), nil
 	case "groups.continue":
 		roomID, err := groupRoomID(params["room_id"])
 		if err != nil {
 			return nil, err
 		}
-		event, err := service.ContinueRoom(roomID, pyrepr.Str(groupOr(params, "discussion_event_id", "")))
+		event, err := service.ContinueRoom(roomID, anyutil.String(groupOr(params, "discussion_event_id", "")))
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("continued", true, "event", event), nil
+		return jsonutil.ObjectOf("continued", true, "event", event), nil
 	case "groups.retry", "groups.discard":
 		if _, ok := generation(); !ok || !pyTruthy(params["member_id"]) || !pyTruthy(params["task_id"]) {
 			return nil, runtimeRefusal("invalid_params")
@@ -784,14 +785,14 @@ func groupExecutionControl(ctx context.Context, service *CanonicalHostedRoomServ
 			return nil, err
 		}
 		identity := hrTaskIdentity(task)
-		receipt := pyjson.ObjectOf("room_id", identity.RoomID, "task_id", identity.TaskID, "thread_id", identity.ThreadID,
+		receipt := jsonutil.ObjectOf("room_id", identity.RoomID, "task_id", identity.TaskID, "thread_id", identity.ThreadID,
 			"turn_id", identity.TurnID, "status", task["status"], "execution_generation", task["execution_generation"],
 			"cancel_generation", task["cancel_generation"])
 		verb := "retried"
 		if method == "groups.discard" {
 			verb = "discarded"
 		}
-		return pyjson.ObjectOf(verb, true, "task", receipt), nil
+		return jsonutil.ObjectOf(verb, true, "task", receipt), nil
 	case "groups.approve":
 		executionGeneration, ok := generation()
 		choice := params["choice"]
@@ -809,7 +810,7 @@ func groupExecutionControl(ctx context.Context, service *CanonicalHostedRoomServ
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("approved", true, "result", result), nil
+		return jsonutil.ObjectOf("approved", true, "result", result), nil
 	}
 	return nil, &pyKeyError{key: method}
 }
@@ -874,8 +875,8 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 	}
 	fields := map[string]any{"last_session": nil, "worker_session": nil, "canonical_session": nil}
 	err := db.ReadCtx(ctx, func(conn state.SQLiteConn) error {
-		summary := func(root *pyjson.Object) (*pyjson.Object, error) {
-			rootID := pyStrOf(root.GetOr("id", nil))
+		summary := func(root *jsonutil.Object) (*jsonutil.Object, error) {
+			rootID := pyStrOf(root.ValueOr("id", nil))
 			tip, err := state.CompressionTipOn(ctx, conn, rootID)
 			if err != nil {
 				return nil, err
@@ -894,24 +895,24 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 			}
 			text := ""
 			if message != nil {
-				text = strings.Join(strings.Fields(pyStrOf(groupTruthyOr(message.GetOr("content", nil), ""))), " ")
+				text = strings.Join(strings.Fields(pyStrOf(groupTruthyOr(message.ValueOr("content", nil), ""))), " ")
 			}
 			preview := text
 			if runes := []rune(text); len(runes) > 80 {
 				preview = string(runes[:80]) + "..."
 			}
-			return pyjson.ObjectOf("id", root.GetOr("id", nil), "resolved_id", tip,
-				"title", groupTruthyOr(target.GetOr("title", nil), ""), "root_title", groupTruthyOr(root.GetOr("title", nil), ""),
-				"preview", preview, "started_at", groupTruthyOr(target.GetOr("started_at", nil), int64(0)),
-				"last_active", groupTruthyOr(target.GetOr("last_activity_at", nil), groupTruthyOr(target.GetOr("started_at", nil), int64(0))),
-				"message_count", groupTruthyOr(target.GetOr("message_count", nil), int64(0))), nil
+			return jsonutil.ObjectOf("id", root.ValueOr("id", nil), "resolved_id", tip,
+				"title", groupTruthyOr(target.ValueOr("title", nil), ""), "root_title", groupTruthyOr(root.ValueOr("title", nil), ""),
+				"preview", preview, "started_at", groupTruthyOr(target.ValueOr("started_at", nil), int64(0)),
+				"last_active", groupTruthyOr(target.ValueOr("last_activity_at", nil), groupTruthyOr(target.ValueOr("started_at", nil), int64(0))),
+				"message_count", groupTruthyOr(target.ValueOr("message_count", nil), int64(0))), nil
 		}
 		canonical, err := state.QueryRowObject(ctx, conn, "SELECT * FROM sessions WHERE title=? AND "+groupLocalChat,
 			"Bot Chat", state.LocalLegacyPrefix)
 		if err != nil {
 			return err
 		}
-		if canonical != nil && (SameOwner(canonical.GetOr("user_id", nil), subject) || operator) && !pyTruthy(canonical.GetOr("archived", nil)) {
+		if canonical != nil && (SameOwner(canonical.ValueOr("user_id", nil), subject) || operator) && !pyTruthy(canonical.ValueOr("archived", nil)) {
 			if fields["canonical_session"], err = summary(canonical); err != nil {
 				return err
 			}
@@ -923,10 +924,10 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 		if err != nil {
 			return err
 		}
-		canonicalSummary, _ := fields["canonical_session"].(*pyjson.Object)
+		canonicalSummary, _ := fields["canonical_session"].(*jsonutil.Object)
 		switch {
-		case latest != nil && canonicalSummary != nil && pyjson.Equal(latest.GetOr("id", nil), canonical.GetOr("id", nil)):
-			fields["last_session"] = canonicalSummary.Copy()
+		case latest != nil && canonicalSummary != nil && anyutil.Equal(latest.ValueOr("id", nil), canonical.ValueOr("id", nil)):
+			fields["last_session"] = canonicalSummary.Clone()
 		case latest != nil:
 			if fields["last_session"], err = summary(latest); err != nil {
 				return err
@@ -938,9 +939,9 @@ func readBotSessions(ctx context.Context, db *state.SessionDB, subject string, o
 			return err
 		}
 		if worker != nil {
-			fields["worker_session"] = pyjson.ObjectOf("id", worker.GetOr("id", nil),
-				"source", strings.ToLower(strings.TrimSpace(pyStrOf(groupTruthyOr(worker.GetOr("source", nil), "")))),
-				"title", groupTruthyOr(worker.GetOr("title", nil), ""), "last_active", groupTruthyOr(worker.GetOr("last_active", nil), int64(0)))
+			fields["worker_session"] = jsonutil.ObjectOf("id", worker.ValueOr("id", nil),
+				"source", strings.ToLower(strings.TrimSpace(pyStrOf(groupTruthyOr(worker.ValueOr("source", nil), "")))),
+				"title", groupTruthyOr(worker.ValueOr("title", nil), ""), "last_active", groupTruthyOr(worker.ValueOr("last_active", nil), int64(0)))
 		}
 		return nil
 	})
@@ -1003,7 +1004,7 @@ func siblingSessions(ctx context.Context, a *SessionAuthority, reader Principal)
 var rosterSessionKeys = []string{"last_session", "worker_session", "canonical_session"}
 
 // Copies session fields onto a roster row in their row order
-func rosterUpdate(row *pyjson.Object, fields map[string]any) {
+func rosterUpdate(row *jsonutil.Object, fields map[string]any) {
 	for _, key := range rosterSessionKeys {
 		if value, ok := fields[key]; ok {
 			row.Set(key, value)
@@ -1039,7 +1040,7 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 	if err != nil {
 		return nil, err
 	}
-	row := pyjson.ObjectOf("name", name, "path", profileHome, "is_default", info.IsDefault, "model", info.Model,
+	row := jsonutil.ObjectOf("name", name, "path", profileHome, "is_default", info.IsDefault, "model", info.Model,
 		"provider", info.Provider, "description", info.Description, "display_name", info.DisplayName, "skill_count", info.SkillCount)
 	meta := map[string]any{}
 	if metaPath := filepath.Join(profileHome, "profile.yaml"); groupIsFile(metaPath) {
@@ -1058,7 +1059,7 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 			meta = mapping
 		}
 	}
-	revisions := pyjson.NewObject()
+	revisions := jsonutil.NewObject()
 	if mapping, ok := meta["_ui_meta_revisions"].(map[string]any); ok {
 		for _, key := range config.MappingKeys(mapping) {
 			value := mapping[key]
@@ -1096,13 +1097,13 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 		rosterUpdate(row, fields)
 	}
 	rows := []any{row}
-	ownResolved, err := pypath.Resolve(profileHome)
+	ownResolved, err := pathutil.Resolve(profileHome)
 	if err != nil {
 		return nil, err
 	}
 	seen := map[string]bool{ownResolved: true}
 	discovered := func(configured, target string, reachAuthority *SessionAuthority, reader *Principal) error {
-		resolved, err := pypath.Resolve(target)
+		resolved, err := pathutil.Resolve(target)
 		if err != nil {
 			return err
 		}
@@ -1110,7 +1111,7 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 			return nil
 		}
 		seen[resolved] = true
-		entry := pyjson.ObjectOf("name", configured, "path", target, "is_default", configured == "default", "model", "",
+		entry := jsonutil.ObjectOf("name", configured, "path", target, "is_default", configured == "default", "model", "",
 			"provider", "", "description", "", "display_name", configured, "skill_count", 0)
 		if includeSessions && reachAuthority != nil {
 			rosterUpdate(entry, siblingSessions(ctx, reachAuthority, *reader))
@@ -1162,7 +1163,7 @@ func groupProfiles(ctx context.Context, a *SessionAuthority, actor Principal, pr
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("profiles", rows, "bot_mode_protocol", true, "install_id", installID), nil
+	return jsonutil.ObjectOf("profiles", rows, "bot_mode_protocol", true, "install_id", installID), nil
 }
 
 // Cached named profile listing keyed on the profiles root and every entry's identity markers and tombstone

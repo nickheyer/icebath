@@ -7,8 +7,6 @@ import (
 	"math"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const todoToolsSQL = "tool_name IN ('todo_list', 'todo')"
@@ -137,7 +135,7 @@ func todoResultCheck(priorCalls, callID, content any) (bool, error) {
 		if !isMapping(call) {
 			return false, nil
 		}
-		if id, _ := mappingGet(call, "id"); !pyrepr.Equal(id, callID) {
+		if id, _ := mappingGet(call, "id"); !anyutil.Equal(id, callID) {
 			return false, nil
 		}
 		function, _ := mappingGet(call, "function")
@@ -230,7 +228,7 @@ func pyIntConvertible(v any) error {
 }
 
 // Copy identities the removal aware display dedupe gives a Todo result row
-func todoCopies(row *pyjson.Object, identity any) ([]string, error) {
+func todoCopies(row *jsonutil.Object, identity any) ([]string, error) {
 	hashed := ""
 	if pyTruthy(identity) {
 		hashed = "h:" + string(identityBytes(identity))
@@ -274,7 +272,7 @@ func removedTodoCopies(ctx context.Context, conn SQLiteConn, sessionIDs []string
 }
 
 // Whether a newer copy of the row was removed so the resume must not restore it
-func todoCopyRemoved(row *pyjson.Object, removed map[string]int64) (bool, error) {
+func todoCopyRemoved(row *jsonutil.Object, removed map[string]int64) (bool, error) {
 	if len(removed) == 0 {
 		return false, nil
 	}

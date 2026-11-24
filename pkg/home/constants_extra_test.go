@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Clean process for home resolution with the user home at tmp, the home variable unset and the warning latch reset
@@ -301,7 +301,7 @@ func TestExplicitHomeScratchDirNeverReadsTheEffectiveHome(t *testing.T) {
 
 // Key computed without the cache the way the Python tests compute it
 func hcUncached(path string) string {
-	expanded, err := pypath.PathExpanduser(path)
+	expanded, err := pathutil.ExpandUserPath(path)
 	if err != nil {
 		panic(err)
 	}
@@ -309,7 +309,7 @@ func hcUncached(path string) string {
 	if err != nil {
 		panic(err)
 	}
-	return normcase(resolved)
+	return pathutil.FoldCase(resolved)
 }
 
 func TestMatchesTheUncachedCalculation(t *testing.T) {

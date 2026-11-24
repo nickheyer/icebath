@@ -5,16 +5,16 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -43,7 +43,7 @@ func sendSuccess(chatID string, warnings []string, fields ...any) map[string]any
 
 // QQ file type of a local path and voice flag
 func qqbotMediaFileType(mediaPath string, isVoice bool) int {
-	_, ext := pypath.Splitext(mediaPath)
+	_, ext := pathutil.SplitExt(mediaPath)
 	ext = strings.ToLower(ext)
 	switch {
 	case isVoice || senderVoiceExts[ext]:
@@ -59,7 +59,7 @@ func qqbotMediaFileType(mediaPath string, isVoice bool) int {
 }
 
 // One JSON call against the QQ API with the standalone headers, a RuntimeError for an HTTP error status
-func qqbotAPIJSON(ctx context.Context, client *http.Client, headers map[string]string, method, path string, body *pyjson.Object, timeout float64) (map[string]any, error) {
+func qqbotAPIJSON(ctx context.Context, client *http.Client, headers map[string]string, method, path string, body *jsonutil.Object, timeout float64) (map[string]any, error) {
 	var payload []byte
 	if body != nil {
 		var err error
@@ -77,18 +77,18 @@ func qqbotAPIJSON(ctx context.Context, client *http.Client, headers map[string]s
 			data = decoded
 		}
 	}
-	dict, isDict := asDict(data)
+	dict, isDict := jsonutil.AsMap(data)
 	if resp.StatusCode >= 400 {
 		var detail any
 		if isDict {
 			detail = getOr(dict, "message", data)
-		} else if pyrepr.Truthy(data) {
+		} else if anyutil.IsTrue(data) {
 			return nil, notDictErr(data)
 		}
-		if !pyrepr.Truthy(detail) {
+		if !anyutil.IsTrue(detail) {
 			detail = textutil.First(resp.Text(), 200)
 		}
-		return nil, &RuntimeError{Msg: fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, pyrepr.Str(detail)), BizCode: bizCodeOf(dict)}
+		return nil, &RuntimeError{Msg: fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, anyutil.String(detail)), BizCode: bizCodeOf(dict)}
 	}
 	if !isDict {
 		return map[string]any{}, nil
@@ -102,13 +102,13 @@ func qqbotUploadLocalFile(ctx context.Context, client *http.Client, headers map[
 	if err != nil {
 		return nil, err
 	}
-	apiRequest := func(ctx context.Context, method, path string, body *pyjson.Object, timeout float64) (any, error) {
+	apiRequest := func(ctx context.Context, method, path string, body *jsonutil.Object, timeout float64) (any, error) {
 		if timeout == 0 {
 			timeout = FileUploadTimeout
 		}
 		return qqbotAPIJSON(ctx, client, headers, method, path, body, timeout)
 	}
-	return NewChunkedUploader(apiRequest, httpPutVia(client), "send_message.qqbot").Upload(ctx, chatType, chatID, localPath, fileType, pypath.Name(localPath))
+	return NewChunkedUploader(apiRequest, httpPutVia(client), "send_message.qqbot").Upload(ctx, chatType, chatID, localPath, fileType, pathutil.Name(localPath))
 }
 
 // Asks QQ to fetch a URL into its media store and returns the upload response
@@ -151,7 +151,7 @@ func qqbotSendTextMessage(ctx context.Context, client *http.Client, headers map[
 			if err != nil {
 				return nil, err
 			}
-			dict, ok := asDict(decoded)
+			dict, ok := jsonutil.AsMap(decoded)
 			if !ok {
 				return nil, notDictErr(decoded)
 			}
@@ -172,11 +172,11 @@ func qqbotDeliverOneMedia(ctx context.Context, client *http.Client, headers map[
 			var upload any
 			var err error
 			if sourceIsURL {
-				parsed, perr := pyurl.Parse(mediaPath)
+				parsed, perr := url.Parse(mediaPath)
 				if perr != nil {
 					return nil, perr
 				}
-				name := pypath.Name(parsed.Path)
+				name := pathutil.Name(parsed.Path)
 				if name == "" {
 					name = "media"
 				}
@@ -189,7 +189,7 @@ func qqbotDeliverOneMedia(ctx context.Context, client *http.Client, headers map[
 			}
 			fileInfo := extractFileInfo(upload)
 			if fileInfo == nil {
-				failures = append(failures, fmt.Sprintf("%s: upload returned no file_info: %s", chatType, pyrepr.Str(upload)))
+				failures = append(failures, fmt.Sprintf("%s: upload returned no file_info: %s", chatType, anyutil.String(upload)))
 				return nil, nil
 			}
 			sendData, err := qqbotSendMediaMessage(ctx, client, headers, chatType, chatID, fileInfo, caption)
@@ -202,7 +202,7 @@ func qqbotDeliverOneMedia(ctx context.Context, client *http.Client, headers map[
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
 			}
-			failures = append(failures, chatType+": "+cmp.Or(describeSendProxyError(err), errText(err)))
+			failures = append(failures, chatType+": "+cmp.Or(describeSendProxyError(err), err.Error()))
 			continue
 		}
 		if result != nil {
@@ -236,29 +236,29 @@ func sendQQBot(ctx context.Context, pconfig *gateway.PlatformConfig, chatID, mes
 		}
 	}
 	appID := extra["app_id"]
-	if !pyrepr.Truthy(appID) {
+	if !anyutil.IsTrue(appID) {
 		secret, err := gateway.GetScopedSecret(ctx, "QQ_APP_ID", "", false)
 		if err != nil {
 			return nil, err
 		}
 		appID = secret
 	}
-	secret := pyrepr.Or(token, extra["client_secret"])
-	if !pyrepr.Truthy(secret) {
+	secret := anyutil.Or(token, extra["client_secret"])
+	if !anyutil.IsTrue(secret) {
 		scoped, err := gateway.GetScopedSecret(ctx, "QQ_CLIENT_SECRET", "", false)
 		if err != nil {
 			return nil, err
 		}
 		secret = scoped
 	}
-	if !pyrepr.Truthy(appID) || !pyrepr.Truthy(secret) {
+	if !anyutil.IsTrue(appID) || !anyutil.IsTrue(secret) {
 		return gateway.SendError("QQBot: QQ_APP_ID / QQ_CLIENT_SECRET not configured."), nil
 	}
 	clientTimeout := 15.0
 	if len(mediaFiles) > 0 {
 		clientTimeout = FileUploadTimeout
 	}
-	result, err := sendQQBotWith(ctx, pyrepr.Str(appID), pyrepr.Str(secret), chatID, message, mediaFiles, caption, clientTimeout)
+	result, err := sendQQBotWith(ctx, anyutil.String(appID), anyutil.String(secret), chatID, message, mediaFiles, caption, clientTimeout)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -268,7 +268,7 @@ func sendQQBot(ctx context.Context, pconfig *gateway.PlatformConfig, chatID, mes
 			return gateway.SendError("QQBot send failed: " + shown), nil
 		}
 		pkgLog().Debug("QQBot standalone send failed", "error", err)
-		return gateway.SendError("QQBot send failed: " + errText(err)), nil
+		return gateway.SendError("QQBot send failed: " + err.Error()), nil
 	}
 	return result, nil
 }
@@ -279,7 +279,7 @@ func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, m
 	if transport == nil {
 		transport = netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	}
-	client := &http.Client{Transport: transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}
+	client := &http.Client{Transport: transport, CheckRedirect: httputil.RedirectPolicy(false)}
 	defer client.CloseIdleConnections()
 	tokenBody, err := jsonBody(obj("appId", appID, "clientSecret", secret))
 	if err != nil {
@@ -297,15 +297,15 @@ func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, m
 	if err != nil {
 		return nil, err
 	}
-	tokenData, ok := asDict(decoded)
+	tokenData, ok := jsonutil.AsMap(decoded)
 	if !ok {
 		return nil, notDictErr(decoded)
 	}
 	accessToken := tokenData["access_token"]
-	if !pyrepr.Truthy(accessToken) {
+	if !anyutil.IsTrue(accessToken) {
 		return gateway.SendError("QQBot: no access_token in response"), nil
 	}
-	headers := map[string]string{"Authorization": "QQBot " + pyrepr.Str(accessToken), "Content-Type": "application/json"}
+	headers := map[string]string{"Authorization": "QQBot " + anyutil.String(accessToken), "Content-Type": "application/json"}
 	if len(mediaFiles) == 0 {
 		return qqbotSendTextMessage(ctx, client, headers, chatID, message, clientTimeout)
 	}
@@ -317,7 +317,7 @@ func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, m
 		if err != nil {
 			return nil, err
 		}
-		if pyrepr.Truthy(textResult["error"]) {
+		if anyutil.IsTrue(textResult["error"]) {
 			return textResult, nil
 		}
 		lastResult = textResult
@@ -339,9 +339,9 @@ func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, m
 		if err != nil {
 			return nil, err
 		}
-		if failure := result["error"]; pyrepr.Truthy(failure) {
-			warnings = append(warnings, pyrepr.Str(failure))
-			pkgLog().Warn(fmt.Sprintf("QQBot media delivery failed, omitting attachment: %s", pyrepr.Str(failure)))
+		if failure := result["error"]; anyutil.IsTrue(failure) {
+			warnings = append(warnings, anyutil.String(failure))
+			pkgLog().Warn(fmt.Sprintf("QQBot media delivery failed, omitting attachment: %s", anyutil.String(failure)))
 			continue
 		}
 		lastResult = result
@@ -358,7 +358,7 @@ func sendQQBotWith(ctx context.Context, appID, secret, chatID, message string, m
 		if err != nil {
 			return nil, err
 		}
-		if pyrepr.Truthy(textResult["error"]) {
+		if anyutil.IsTrue(textResult["error"]) {
 			return withWarnings(textResult, warnings), nil
 		}
 		lastResult = textResult

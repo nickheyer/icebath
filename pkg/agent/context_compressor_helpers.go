@@ -17,14 +17,14 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	"golang.org/x/text/cases"
 )
 
 var summaryPermanentQuotaMarkers = []string{"insufficient_quota", "quota exceeded", "quota_exceeded", "out of funds", "out of credits",
@@ -185,12 +185,12 @@ func pyStrOf(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Whether a cooldown error belongs only to pre agent hygiene and so never blocks the in agent compressor
 func isHygienePreagentOnlyCooldown(errValue any) bool {
-	text := pystr.Casefold(strings.TrimSpace(pyStrOf(errValue)))
+	text := cases.Fold().String(strings.TrimSpace(pyStrOf(errValue)))
 	for _, marker := range hygienePreagentOnlyCooldownMarkers {
 		if strings.Contains(text, marker) {
 			return true
@@ -226,7 +226,7 @@ func isSummaryRefusal(content string) bool {
 	if m, _ := markdownHeadingLineRE.FindStringMatch(content); m != nil {
 		return false
 	}
-	head := pystr.Casefold(textutil.First(normalized, 400))
+	head := cases.Fold().String(textutil.First(normalized, 400))
 	return strings.Contains(head, "summar") || strings.Contains(head, "checkpoint")
 }
 
@@ -563,7 +563,7 @@ func isPyTimeoutError(err error) bool {
 }
 
 func isJSONDecodeError(err error) bool {
-	var pe *pyjson.DecodeError
+	var pe *jsonutil.SyntaxError
 	var se *json.SyntaxError
 	return errors.As(err, &pe) || errors.As(err, &se)
 }
@@ -929,11 +929,11 @@ func collectPathsFromJSONish(obj any, relevantFiles *[]string) {
 		collectPathsFromJSONish(val, relevantFiles)
 	}
 	switch x := obj.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if x == nil {
 			return
 		}
-		for _, k := range x.Keys {
+		for _, k := range x.Keys() {
 			v, _ := x.Get(k)
 			visit(k, v)
 		}
@@ -1022,7 +1022,7 @@ func serializedLengthForBudget(value any) int {
 	if s, ok := value.(string); ok {
 		return utf8.RuneCountInString(s)
 	}
-	out, err := pyjson.Dumps(value, pyjson.EnsureASCII(false), pyjson.SortKeys(true), pyjson.Default(func(v any) (any, error) { return pyStrOf(v), nil }))
+	out, err := jsonutil.Encode(value, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return pyStrOf(v), nil }))
 	if err != nil {
 		return utf8.RuneCountInString(pyStrOf(value))
 	}
@@ -1043,8 +1043,8 @@ func reasoningDetailsTextChars(value any) int {
 	}
 	total := 0
 	for _, part := range parts {
-		if obj, isObj := part.(*pyjson.Object); isObj && obj != nil {
-			part = obj.Vals
+		if obj, isObj := part.(*jsonutil.Object); isObj && obj != nil {
+			part = obj.Map()
 		}
 		switch p := part.(type) {
 		case string:
@@ -1077,8 +1077,8 @@ func estimateMsgBudgetTokens(ctx context.Context, msg map[string]any, chargeStal
 	tokens += 10
 	calls, _ := msg["tool_calls"].([]any)
 	for _, tc := range calls {
-		if _, ok := pyjson.Dict(tc); ok {
-			tokens += provider.EstimateTokens(pyrepr.Str(tc))
+		if _, ok := jsonutil.AsMap(tc); ok {
+			tokens += provider.EstimateTokens(anyutil.String(tc))
 		}
 	}
 	for _, key := range alwaysReplayedBudgetKeys {
@@ -1439,7 +1439,7 @@ func imagePartLabel(part map[string]any) string {
 }
 
 // String argument of a decoded tool argument object, the default for None
-func strArg(args *pyjson.Object, key, def string) string {
+func strArg(args *jsonutil.Object, key, def string) string {
 	val, ok := args.Get(key)
 	if !ok {
 		return def

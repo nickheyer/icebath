@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const hostChildEnv = "ICEBATH_TEST_HOST_CHILD"
@@ -243,7 +243,7 @@ func TestFreeHostLockMeansAttachDoesNotTreatARecycledPidAsOwner(t *testing.T) {
 	os.Mkdir(home, 0o700)
 	writeHostRecord(t, gatewayRecord(child.pid(), HostProcessCreateTime(child.pid()), GetProcessStartTime(child.pid()), home))
 	prev := hostIdentifyGateway
-	hostIdentifyGateway = func(string, time.Duration) *pyjson.Object { return nil }
+	hostIdentifyGateway = func(string, time.Duration) *jsonutil.Object { return nil }
 	t.Cleanup(func() { hostIdentifyGateway = prev })
 	invalidateHostGatewayCache()
 	d, err := DecideHostAttach(t.Context(), home, false)
@@ -272,7 +272,7 @@ func TestNullCreateTimeRecordOnARecycledPidStartsInsteadOfRefusingForever(t *tes
 	r.UpdatedAt = "2020-01-01T00:00:00+00:00"
 	writeHostRecord(t, r)
 	prev := hostIdentifyGateway
-	hostIdentifyGateway = func(string, time.Duration) *pyjson.Object { return nil }
+	hostIdentifyGateway = func(string, time.Duration) *jsonutil.Object { return nil }
 	t.Cleanup(func() { hostIdentifyGateway = prev })
 	invalidateHostGatewayCache()
 	if d, err := DecideHostAttach(t.Context(), home, false); err != nil || d.Outcome != HostAttachStart {

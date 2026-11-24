@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -36,10 +36,10 @@ const commitInstructions = "You write git commit messages. Given a diff of stage
 // Variable rendered as str of its value, empty for a missing or falsy one
 func oneshotVar(variables map[string]any, key string) string {
 	v := variables[key]
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Instructions and user input describing a staged diff, with recent subjects and a message to avoid

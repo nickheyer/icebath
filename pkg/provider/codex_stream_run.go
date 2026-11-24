@@ -13,10 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds the post terminal drain may block, agent.stream_drain_timeout clamped at zero
@@ -193,9 +193,9 @@ func sanitizeConsumerCodexRequest(agent any, request map[string]any) map[string]
 		droppedFrom = append(droppedFrom, "top-level")
 	}
 	delete(sanitized, "prompt_cache_retention")
-	if extraBody, ok := pyjson.AsObject(sanitized["extra_body"]); ok {
+	if extraBody, ok := jsonutil.AsObject(sanitized["extra_body"]); ok {
 		if _, has := extraBody.Get("prompt_cache_retention"); has {
-			rest := extraBody.Copy()
+			rest := extraBody.Clone()
 			rest.Delete("prompt_cache_retention")
 			sanitized["extra_body"] = rest
 			if rest.Len() == 0 {
@@ -213,7 +213,7 @@ func sanitizeConsumerCodexRequest(agent any, request map[string]any) map[string]
 			}
 		}
 		pkgLog().Warn(fmt.Sprintf("Dropped unsupported prompt_cache_retention at consumer Codex wire boundary (model=%s, via %s).",
-			pyrepr.Str(model), strings.Join(droppedFrom, ", ")))
+			anyutil.String(model), strings.Join(droppedFrom, ", ")))
 	}
 	return sanitized
 }
@@ -342,7 +342,7 @@ func (w *codexWriterClaim) reset() {
 // Runs one streaming Responses API request over raw create events with one physical retry
 func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs map[string]any, client any, onFirstDelta func()) (any, error) {
 	activeClient := client
-	if !pyrepr.Truthy(activeClient) {
+	if !anyutil.IsTrue(activeClient) {
 		ensurer, ok := agent.(codexPrimaryClientEnsurer)
 		if !ok {
 			return nil, &auxAttributeError{msg: fmt.Sprintf("the agent (%T) cannot open its primary OpenAI client", agent)}
@@ -356,7 +356,7 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 	model := apiKwargs["model"]
 	modelText := ""
 	if model != nil {
-		modelText = pyrepr.Str(model)
+		modelText = anyutil.String(model)
 	}
 	var localParts []string
 	keeper, keeps := agent.(codexStreamedTextKeeper)
@@ -399,7 +399,7 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 				kwModel = "unknown"
 			}
 			pkgLog().Warn(fmt.Sprintf("Codex streaming attempt superseded by a newer stream; suppressing its live deltas while "+
-				"consuming to completion so the final response is not truncated (model=%s).", pyrepr.Str(kwModel)))
+				"consuming to completion so the final response is not truncated (model=%s).", anyutil.String(kwModel)))
 		}
 		return false
 	}
@@ -453,10 +453,10 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 			watchdog.Mu.Unlock()
 		}
 		if firstEvent {
-			pkgLog().Info(fmt.Sprintf("Codex stream first parsed event at %.3f (attempt=%d/%d, model=%s)", now, attempt+1, maxStreamRetries+1, pyrepr.Str(model)))
+			pkgLog().Info(fmt.Sprintf("Codex stream first parsed event at %.3f (attempt=%d/%d, model=%s)", now, attempt+1, maxStreamRetries+1, anyutil.String(model)))
 		}
 		if firstProgress {
-			pkgLog().Info(fmt.Sprintf("Codex stream first substantive progress at %.3f (attempt=%d/%d, model=%s)", now, attempt+1, maxStreamRetries+1, pyrepr.Str(model)))
+			pkgLog().Info(fmt.Sprintf("Codex stream first substantive progress at %.3f (attempt=%d/%d, model=%s)", now, attempt+1, maxStreamRetries+1, anyutil.String(model)))
 		}
 		agent.TouchActivity("receiving stream response")
 		return nil
@@ -503,7 +503,7 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 		writer.mu.Lock()
 		writer.opened, writer.token, writer.rawStream = true, token, raw
 		writer.mu.Unlock()
-		pkgLog().Debug(fmt.Sprintf("Codex stream opened (attempt=%d/%d, model=%s)", attempt+1, maxStreamRetries+1, pyrepr.Str(model)))
+		pkgLog().Debug(fmt.Sprintf("Codex stream opened (attempt=%d/%d, model=%s)", attempt+1, maxStreamRetries+1, anyutil.String(model)))
 		return nil
 	}
 	drainForFinalizer := func(ctx context.Context, eventStream codexManagedStream) {
@@ -620,7 +620,7 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 		name = "codex"
 	}
 	modelName := ""
-	if pyrepr.Truthy(model) {
+	if anyutil.IsTrue(model) {
 		modelName = modelText
 	}
 
@@ -739,7 +739,7 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 				streamed += len([]rune(p))
 			}
 			pkgLog().Warn(fmt.Sprintf("Codex Responses stream terminal status=%s (incomplete_details=%s, error=%s, streamed_chars=%d). %s",
-				status, pyrepr.Str(final["incomplete_details"]), pyrepr.Str(final["error"]), streamed, agent.ClientLogContext()))
+				status, anyutil.String(final["incomplete_details"]), anyutil.String(final["error"]), streamed, agent.ClientLogContext()))
 		}
 		return final, false, nil
 	}
@@ -755,7 +755,7 @@ func RunCodexStream(ctx context.Context, agent ChatCompletionAgent, apiKwargs ma
 			watchdog.Mu.Lock()
 			started := epochSeconds(agentNonStreamClock())
 			watchdog.RetryStartedTs, watchdog.LastEventTs, watchdog.LastProgressTs = &started, nil, nil
-			pkgLog().Info(fmt.Sprintf("Codex physical stream retry at %.3f (attempt=%d/%d, model=%s)", started, attempt+1, maxStreamRetries+1, pyrepr.Str(model)))
+			pkgLog().Info(fmt.Sprintf("Codex physical stream retry at %.3f (attempt=%d/%d, model=%s)", started, attempt+1, maxStreamRetries+1, anyutil.String(model)))
 			watchdog.Mu.Unlock()
 		}
 		result, retry, err := runAttempt()

@@ -14,8 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Extension to bridge media kind for out of process sends
@@ -72,7 +70,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (result map[stri
 		return gateway.SendError("WhatsApp send failed: " + err.Error()), nil
 	}
 	ownSession := sessionDir(ctx, extra)
-	normalizedChatID := gateway.ToWhatsAppJID(pyrepr.Str(kwargs["chat_id"]))
+	normalizedChatID := gateway.ToWhatsAppJID(anyutil.String(kwargs["chat_id"]))
 	mediaCaption := ""
 	if caption != "" && len(media) == 1 {
 		mediaCaption = caption
@@ -123,21 +121,21 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (result map[stri
 	if status != 200 {
 		return gateway.SendError(fmt.Sprintf("WhatsApp bridge on port %d answered /health with HTTP %d; nothing was sent.", bridgePort, status)), nil
 	}
-	decoded, err := pyjson.LoadsBytes(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return failed(err)
 	}
-	health, ok := decoded.(*pyjson.Object)
+	health, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return failed(fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(decoded)))
 	}
-	if reported := health.GetOr("session", nil); pyrepr.Truthy(reported) && pyrepr.Str(reported) != ownSession {
+	if reported := health.ValueOr("session", nil); anyutil.IsTrue(reported) && anyutil.String(reported) != ownSession {
 		return gateway.SendError(fmt.Sprintf("WhatsApp bridge on port %d serves another profile's session (%s); "+
-			"nothing was sent. Give each profile its own platforms.whatsapp.extra.bridge_port.", bridgePort, pyrepr.Str(reported))), nil
+			"nothing was sent. Give each profile its own platforms.whatsapp.extra.bridge_port.", bridgePort, anyutil.String(reported))), nil
 	}
 	if len(pending) > 0 {
-		caps, _ := health.GetOr("capabilities", nil).(*pyjson.Object)
-		if caps == nil || !pyrepr.Truthy(caps.GetOr("outboundMentions", nil)) {
+		caps, _ := health.ValueOr("capabilities", nil).(*jsonutil.Object)
+		if caps == nil || !anyutil.IsTrue(caps.ValueOr("outboundMentions", nil)) {
 			return map[string]any{"error": "WhatsApp bridge does not support native mentions; restart it from the same Icebath version."}, nil
 		}
 	}
@@ -147,12 +145,12 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (result map[stri
 			return nil, nil, err
 		}
 		if status == 200 {
-			data, err := pyjson.LoadsBytes(raw)
+			data, err := jsonutil.Decode(raw)
 			if err != nil {
 				return nil, nil, err
 			}
-			if obj, ok := data.(*pyjson.Object); ok {
-				return obj.GetOr("messageId", nil), nil, nil
+			if obj, ok := data.(*jsonutil.Object); ok {
+				return obj.ValueOr("messageId", nil), nil, nil
 			}
 			return nil, nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(data))
 		}
@@ -196,7 +194,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (result map[stri
 		if len(errPayload) > 0 {
 			return errPayload, nil
 		}
-		if pyrepr.Truthy(id) {
+		if anyutil.IsTrue(id) {
 			lastMessageID = id
 		}
 	}

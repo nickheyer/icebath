@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Kanban statuses the embedded dispatcher acts on without a human
@@ -57,7 +57,7 @@ func kanbanTaskBusy(ctx context.Context) (string, error) {
 			return "", err
 		}
 		if found {
-			return "kanban work on board " + pyrepr.Str(slugValue), nil
+			return "kanban work on board " + anyutil.String(slugValue), nil
 		}
 	}
 	return "", nil

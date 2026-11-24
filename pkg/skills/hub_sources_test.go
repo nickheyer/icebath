@@ -4,45 +4,46 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hub whose policy checks pass and whose guarded hops answer from fn, the patched module attributes
-func publicHub(t *testing.T, fn func(url string) *pyhttpx.Response) (*Hub, *[]string) {
+func publicHub(t *testing.T, fn func(url string) *httputil.Response) (*Hub, *[]string) {
 	h, _ := newTestHub(t)
 	var calls []string
 	h.io.isSafeURL = func(string) bool { return true }
 	h.io.siteAccess = func(string) *tools.WebsiteBlock { return nil }
 	h.io.readIndexCache = func(string) (any, error) { return nil, nil }
 	h.io.writeIndexCache = func(string, any) error { return nil }
-	h.io.ssrfGet = func(_ context.Context, url string, _ time.Duration, _ map[string]string) (*pyhttpx.Response, error) {
+	h.io.ssrfGet = func(_ context.Context, url string, _ time.Duration, _ map[string]string) (*httputil.Response, error) {
 		calls = append(calls, url)
 		return fn(url), nil
 	}
 	return h, &calls
 }
 
-func jsonResp(t *testing.T, body string) *pyhttpx.Response {
-	if _, err := pyjson.Loads(body); err != nil {
+func jsonResp(t *testing.T, body string) *httputil.Response {
+	if _, err := jsonutil.Decode(body); err != nil {
 		t.Fatal(err)
 	}
-	return &pyhttpx.Response{StatusCode: 200, Header: http.Header{}, Content: []byte(body)}
+	return &httputil.Response{StatusCode: 200, Header: http.Header{}, Content: []byte(body)}
 }
 
-func textResp(status int, body string) *pyhttpx.Response {
-	return &pyhttpx.Response{StatusCode: status, Header: http.Header{}, Content: []byte(body)}
+func textResp(status int, body string) *httputil.Response {
+	return &httputil.Response{StatusCode: status, Header: http.Header{}, Content: []byte(body)}
 }
 
 func TestWellKnownSearchReadsIndexFromWellKnownURL(t *testing.T) {
-	h, _ := publicHub(t, func(string) *pyhttpx.Response {
+	h, _ := publicHub(t, func(string) *httputil.Response {
 		return jsonResp(t, `{"skills": [{"name": "git-workflow", "description": "Git rules", "files": ["SKILL.md"]},
 			{"name": "code-review", "description": "Review code", "files": ["SKILL.md", "references/checklist.md"]}]}`)
 	})
@@ -58,7 +59,7 @@ func TestWellKnownSearchReadsIndexFromWellKnownURL(t *testing.T) {
 }
 
 func TestWellKnownFetchRejectsUnsafeFilePaths(t *testing.T) {
-	h, calls := publicHub(t, func(url string) *pyhttpx.Response {
+	h, calls := publicHub(t, func(url string) *httputil.Response {
 		switch {
 		case strings.HasSuffix(url, "/index.json"):
 			return jsonResp(t, `{"skills": [{"name": "code-review", "description": "Review code", "files": ["SKILL.md", "../../../escape.txt"]}]}`)
@@ -92,7 +93,7 @@ func TestUrlSourceMatchesBareMDURLAndLeavesWellKnownURLs(t *testing.T) {
 }
 
 func TestUrlSourceBlocksPrivateURLsAndRedirects(t *testing.T) {
-	h, calls := publicHub(t, func(string) *pyhttpx.Response { return textResp(200, "x") })
+	h, calls := publicHub(t, func(string) *httputil.Response { return textResp(200, "x") })
 	h.io.isSafeURL = func(string) bool { return false }
 	u := NewUrlSource(h)
 	if m, err := u.Inspect(context.Background(), "http://127.0.0.1/SKILL.md"); m != nil || err != nil {
@@ -106,9 +107,9 @@ func TestUrlSourceBlocksPrivateURLsAndRedirects(t *testing.T) {
 	}
 	safe := []bool{true, false}
 	h.io.isSafeURL = func(string) bool { v := safe[0]; safe = safe[1:]; return v }
-	h.io.ssrfGet = func(_ context.Context, url string, _ time.Duration, _ map[string]string) (*pyhttpx.Response, error) {
+	h.io.ssrfGet = func(_ context.Context, url string, _ time.Duration, _ map[string]string) (*httputil.Response, error) {
 		*calls = append(*calls, url)
-		return &pyhttpx.Response{StatusCode: 302, Header: http.Header{"Location": {"http://127.0.0.1/private/SKILL.md"}}}, nil
+		return &httputil.Response{StatusCode: 302, Header: http.Header{"Location": {"http://127.0.0.1/private/SKILL.md"}}}, nil
 	}
 	if b, err := u.Fetch(context.Background(), "https://example.com/SKILL.md"); b != nil || err != nil || len(*calls) != 1 {
 		t.Fatalf("redirect fetch gave %v %v after %v", b, err, *calls)
@@ -117,7 +118,7 @@ func TestUrlSourceBlocksPrivateURLsAndRedirects(t *testing.T) {
 
 func TestUrlSourceFetchSkipsMissingSupportFileInsteadOfAborting(t *testing.T) {
 	md := "---\nname: my-skill\ndescription: Has support files.\n---\n\nSee `references/good.md` and `references/missing.md`.\n"
-	h, _ := publicHub(t, func(url string) *pyhttpx.Response {
+	h, _ := publicHub(t, func(url string) *httputil.Response {
 		switch {
 		case strings.HasSuffix(url, "SKILL.md"):
 			return textResp(200, md)
@@ -162,7 +163,7 @@ func TestUrlSourceIsValidSkillNameRejectsSentinelAndGarbage(t *testing.T) {
 }
 
 func TestLobeHubConvertToSkillMDBasicConversion(t *testing.T) {
-	data, _ := pyjson.Loads(`{"identifier": "test-agent", "meta": {"title": "Test Agent", "description": "A test agent.",
+	data, _ := jsonutil.Decode(`{"identifier": "test-agent", "meta": {"title": "Test Agent", "description": "A test agent.",
 		"tags": ["testing", "demo"]}, "config": {"systemRole": "You are a helpful test agent."}}`)
 	md := lobeHubConvertToSkillMD(data)
 	for _, want := range []string{"---", "name: test-agent", "description: A test agent.", "tags: [testing, demo]", "# Test Agent",
@@ -210,7 +211,7 @@ func TestHubIndexCacheAndPlainGets(t *testing.T) {
 	}))
 	defer srv.Close()
 	ctx := context.Background()
-	if v, err := h.getJSON(ctx, srv.URL+"/json", hubGet{Params: pyhttpx.Params{{"q", "v"}}}); err != nil || v.(*pyjson.Object).Vals["q"] != "v" {
+	if v, err := h.getJSON(ctx, srv.URL+"/json", hubGet{Params: url.Values{"q": {"v"}}}); err != nil || v.(*jsonutil.Object).Value("q") != "v" {
 		t.Fatalf("getJSON gave %v %v", v, err)
 	}
 	if v, err := h.getJSON(ctx, srv.URL+"/missing", hubGet{}); v != nil || err != nil {
@@ -224,9 +225,9 @@ func TestHubIndexCacheAndPlainGets(t *testing.T) {
 	}
 	h.io.isSafeURL = func(string) bool { return true }
 	h.io.siteAccess = func(string) *tools.WebsiteBlock { return nil }
-	h.io.ssrfGet = func(ctx context.Context, url string, timeout time.Duration, headers map[string]string) (*pyhttpx.Response, error) {
+	h.io.ssrfGet = func(ctx context.Context, url string, timeout time.Duration, headers map[string]string) (*httputil.Response, error) {
 		req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
-		return pyhttpx.Do(pyhttpx.PlainClient(false), req, timeout)
+		return httputil.Do(httputil.Client(false), req, httputil.EachPhase(timeout))
 	}
 	if text, ok := h.fetchText(ctx, srv.URL+"/hop"); !ok || !strings.Contains(text, "redirected") {
 		t.Fatalf("guarded redirect gave %q %v", text, ok)
@@ -284,13 +285,13 @@ func TestUrlSourceFetchesOnlyReferencedAllowedSupportDirectories(t *testing.T) {
 		}
 	}
 	if got["assets/logo.png"] != "\x89PNG\r\n\x1a\n\x00\xff" || got["references/foo#bar.md"] != "encoded delimiter\n" ||
-		got["references/my guide.md"] != "encoded space\n" || b.Metadata.Vals["source_url"] != url {
-		t.Fatalf("bundle contents %v metadata %v", got, b.Metadata.Vals)
+		got["references/my guide.md"] != "encoded space\n" || b.Metadata.Value("source_url") != url {
+		t.Fatalf("bundle contents %v metadata %v", got, b.Metadata)
 	}
 }
 
 func TestUrlSourceRejectsTraversalReference(t *testing.T) {
-	h, _ := publicHub(t, func(string) *pyhttpx.Response {
+	h, _ := publicHub(t, func(string) *httputil.Response {
 		return textResp(200, "---\nname: bad\ndescription: bad\n---\n[bad](references/../../secret.txt)\n")
 	})
 	if b, err := NewUrlSource(h).Fetch(context.Background(), "https://example.com/bad/SKILL.md"); b != nil || err != nil {
@@ -322,7 +323,7 @@ func TestSameDirLinkedSiblingsAreFetchedAndOutsideLinksSkipped(t *testing.T) {
 
 func TestBrowseShSearchAndInspect(t *testing.T) {
 	h, _ := newTestHub(t)
-	catalog, _ := pyjson.Loads(`[{"slug": "airbnb.com/search-listings-ddgioa", "name": "search-listings", "title": "Airbnb Search Listings",
+	catalog, _ := jsonutil.Decode(`[{"slug": "airbnb.com/search-listings-ddgioa", "name": "search-listings", "title": "Airbnb Search Listings",
 		"description": "Search and browse Airbnb listings by location and dates.", "hostname": "airbnb.com", "category": "travel",
 		"tags": ["travel", "accommodation"], "sourceUrl": "https://github.com/browserbase/browse.sh/blob/main/skills/airbnb.com/search-listings-ddgioa/SKILL.md",
 		"recommendedMethod": "stagehand", "proxies": false, "installCount": 42},
@@ -347,15 +348,15 @@ func TestBrowseShSearchAndInspect(t *testing.T) {
 		t.Fatalf("result %+v", m)
 	}
 	meta, err := src.Inspect(context.Background(), "browse-sh/airbnb.com/search-listings-ddgioa")
-	if err != nil || meta == nil || meta.Name != "search-listings" || meta.Extra.Vals["hostname"] != "airbnb.com" ||
-		meta.Extra.Vals["category"] != "travel" || meta.Extra.Vals["install_count"] != int64(42) {
+	if err != nil || meta == nil || meta.Name != "search-listings" || meta.Extra.Value("hostname") != "airbnb.com" ||
+		meta.Extra.Value("category") != "travel" || meta.Extra.Value("install_count") != int64(42) {
 		t.Fatalf("inspect gave %+v %v", meta, err)
 	}
 }
 
 func TestGuardedRedirectToInvalidIPv6RaisesLikeUrljoin(t *testing.T) {
-	h, _ := publicHub(t, func(string) *pyhttpx.Response {
-		return &pyhttpx.Response{StatusCode: 302, Header: http.Header{"Location": {"http://[bad/SKILL.md"}}}
+	h, _ := publicHub(t, func(string) *httputil.Response {
+		return &httputil.Response{StatusCode: 302, Header: http.Header{"Location": {"http://[bad/SKILL.md"}}}
 	})
 	b, err := NewUrlSource(h).Fetch(context.Background(), "https://example.com/SKILL.md")
 	if b != nil || err == nil || err.Error() != "Invalid IPv6 URL" {

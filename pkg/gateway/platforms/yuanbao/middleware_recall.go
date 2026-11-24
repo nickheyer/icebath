@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Session store surface the inbound middlewares read and rewrite transcripts through
@@ -59,7 +59,7 @@ const recallRedacted = "[This message was recalled/withdrawn by the sender; orig
 func (m *RecallGuardMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
 	var cmd any = ""
 	if ic.Push != nil && ic.Push.Len() > 0 {
-		cmd = ic.Push.GetOr("callback_command", "")
+		cmd = ic.Push.ValueOr("callback_command", "")
 	}
 	if err := unhashable(cmd); err != nil {
 		return err
@@ -97,7 +97,7 @@ func redactEntry(ctx context.Context, adapter *YuanbaoAdapter, store sessionStor
 	entry map[string]any, okMsg, failMsg string) {
 	entry["content"] = recallRedacted
 	if err := recovered(func() { store.RewriteTranscript(ctx, sid, transcript, true, false) }); err != nil {
-		pkgLog().Warn(fmt.Sprintf(failMsg, adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf(failMsg, adapter.Name(), err.Error()))
 		return
 	}
 	pkgLog().Info(okMsg)
@@ -106,29 +106,29 @@ func redactEntry(ctx context.Context, adapter *YuanbaoAdapter, store sessionStor
 // Walks the recalled ids of a callback, interrupting one in progress and patching the transcript of the others
 func (m *RecallGuardMiddleware) handleRecall(ctx context.Context, ic *InboundContext, cmd string) error {
 	adapter := ic.Adapter
-	push := pyjson.NewObject()
+	push := jsonutil.NewObject()
 	if ic.Push != nil {
 		push = ic.Push
 	}
 	var seqList any
 	if cmd == "Group.CallbackAfterRecallMsg" {
-		seqList = pyrepr.Or(push.GetOr("recall_msg_seq_list", nil), []any{})
+		seqList = anyutil.Or(push.ValueOr("recall_msg_seq_list", nil), []any{})
 	} else {
-		mid, seq := pyrepr.Or(push.GetOr("msg_id", nil), ""), push.GetOr("msg_seq", nil)
+		mid, seq := anyutil.Or(push.ValueOr("msg_id", nil), ""), push.ValueOr("msg_seq", nil)
 		seqList = []any{}
-		if pyrepr.Truthy(mid) || pyrepr.Truthy(seq) {
-			seqList = []any{pyjson.ObjectOf("msg_id", mid, "msg_seq", seq)}
+		if anyutil.IsTrue(mid) || anyutil.IsTrue(seq) {
+			seqList = []any{jsonutil.ObjectOf("msg_id", mid, "msg_seq", seq)}
 		}
 	}
-	if !pyrepr.Truthy(seqList) {
+	if !anyutil.IsTrue(seqList) {
 		pkgLog().Debug(fmt.Sprintf("[%s] Recall callback with empty seq_list, skipping", adapter.Name()))
 		return nil
 	}
-	groupCode, err := strMethod(pyrepr.Or(push.GetOr("group_code", nil), ""), "group_code")
+	groupCode, err := strMethod(anyutil.Or(push.ValueOr("group_code", nil), ""), "group_code")
 	if err != nil {
 		return err
 	}
-	fromAccount, err := strMethod(pyrepr.Or(push.GetOr("from_account", nil), ""), "from_account")
+	fromAccount, err := strMethod(anyutil.Or(push.ValueOr("from_account", nil), ""), "from_account")
 	if err != nil {
 		return err
 	}
@@ -143,13 +143,13 @@ func (m *RecallGuardMiddleware) handleRecall(ctx context.Context, ic *InboundCon
 			return err
 		}
 		recalled := d["msg_id"]
-		if !pyrepr.Truthy(recalled) {
+		if !anyutil.IsTrue(recalled) {
 			recalled = strOrEmpty(d["msg_seq"])
 		}
-		if !pyrepr.Truthy(recalled) {
+		if !anyutil.IsTrue(recalled) {
 			continue
 		}
-		recalledID := pyrepr.Str(recalled)
+		recalledID := anyutil.String(recalled)
 		if matched, ok := findProcessingSession(adapter, recalledID); ok {
 			interruptForRecall(ctx, adapter, matched, recalledID, groupCode, fromAccount)
 			continue
@@ -213,7 +213,7 @@ func scheduleContentRedact(ctx context.Context, adapter *YuanbaoAdapter, session
 			transcript, err := store.LoadTranscript(tctx, sid)
 			var unreadable *gateway.TranscriptReadError
 			if errors.As(err, &unreadable) {
-				pkgLog().Warn(fmt.Sprintf("[%s] Recall redact: transcript unreadable for session %s: %s", adapter.Name(), sid, errText(err)))
+				pkgLog().Warn(fmt.Sprintf("[%s] Recall redact: transcript unreadable for session %s: %s", adapter.Name(), sid, err.Error()))
 				return nil
 			}
 			if err != nil {
@@ -227,7 +227,7 @@ func scheduleContentRedact(ctx context.Context, adapter *YuanbaoAdapter, session
 				return err
 			}
 			for _, entry := range rows {
-				if pyrepr.Equal(entry["role"], "user") && pyrepr.Equal(entry["content"], recalledText) {
+				if anyutil.Equal(entry["role"], "user") && anyutil.Equal(entry["content"], recalledText) {
 					redactEntry(tctx, adapter, store, sid, rows, entry,
 						fmt.Sprintf("[%s] Recall redact: session %s", adapter.Name(), textutil.First(sessionKey, 30)),
 						"[%s] Recall redact failed: %s")
@@ -251,19 +251,19 @@ func patchTranscript(ctx context.Context, adapter *YuanbaoAdapter, recalledID, g
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] Recall: failed to resolve session: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Recall: failed to resolve session: %s", adapter.Name(), err.Error()))
 		return nil
 	}
 	transcript, err := store.LoadTranscript(ctx, sid)
 	var unreadable *gateway.TranscriptReadError
 	switch {
 	case errors.As(err, &unreadable):
-		pkgLog().Warn(fmt.Sprintf("[%s] Recall: transcript unreadable: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Recall: transcript unreadable: %s", adapter.Name(), err.Error()))
 		return nil
 	case err != nil && ctx.Err() != nil:
 		return ctx.Err()
 	case err != nil:
-		pkgLog().Warn(fmt.Sprintf("[%s] Recall: failed to load transcript: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Recall: failed to load transcript: %s", adapter.Name(), err.Error()))
 		return nil
 	}
 	rows, err := transcriptRows(transcript)
@@ -272,7 +272,7 @@ func patchTranscript(ctx context.Context, adapter *YuanbaoAdapter, recalledID, g
 	}
 	var target map[string]any
 	for _, entry := range rows {
-		if pyrepr.Equal(entry["message_id"], recalledID) {
+		if anyutil.Equal(entry["message_id"], recalledID) {
 			target = entry
 			break
 		}
@@ -280,7 +280,7 @@ func patchTranscript(ctx context.Context, adapter *YuanbaoAdapter, recalledID, g
 	branchLabel := "branch A1: id match"
 	if target == nil && recalledContent != "" {
 		for _, entry := range rows {
-			if pyrepr.Equal(entry["role"], "user") && pyrepr.Equal(entry["content"], recalledContent) {
+			if anyutil.Equal(entry["role"], "user") && anyutil.Equal(entry["content"], recalledContent) {
 				target = entry
 				break
 			}
@@ -293,7 +293,7 @@ func patchTranscript(ctx context.Context, adapter *YuanbaoAdapter, recalledID, g
 			"[%s] Recall: rewrite_transcript failed: %s")
 		return nil
 	}
-	note := map[string]any{"role": "system", "timestamp": pydatetime.ISOFormatUTC(time.Now()),
+	note := map[string]any{"role": "system", "timestamp": time.Now().UTC().Format(timeutil.RFC3339Micro),
 		"content": "[recall] message_id=\"" + recalledID + "\" has been recalled; do not quote or reference it."}
 	if err := store.AppendToTranscript(ctx, sid, note, false); err != nil {
 		return err

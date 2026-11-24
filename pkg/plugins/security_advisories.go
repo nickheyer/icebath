@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -13,12 +14,9 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -240,11 +238,11 @@ const (
 
 // Banner cache file under the home cache directory, created on demand, false when it cannot be made
 func advisoryBannerCachePath(ctx context.Context) (string, bool) {
-	cacheDir := pypath.PathJoin(home.Dir(ctx), "cache")
-	if err := pyfs.Makedirs(cacheDir, 0o777, true); err != nil {
+	cacheDir := pathutil.Join(home.Dir(ctx), "cache")
+	if err := os.MkdirAll(cacheDir, 0o777); err != nil {
 		return "", false
 	}
-	return pypath.PathJoin(cacheDir, advisoryBannerCacheFile), true
+	return pathutil.Join(cacheDir, advisoryBannerCacheFile), true
 }
 
 // One advisory id of the banner cache with the epoch second its banner was last shown
@@ -274,7 +272,7 @@ func advisoryReadBannerCache(ctx context.Context) []advisoryBannerSeen {
 		if len(parts) != 2 {
 			continue
 		}
-		ts, err := pyint.ParseFloat(parts[1])
+		ts, err := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
 		if err != nil {
 			continue
 		}
@@ -296,7 +294,7 @@ func advisoryWriteBannerCache(ctx context.Context, seen []advisoryBannerSeen) {
 	}
 	lines := make([]string, 0, len(seen))
 	for _, s := range seen {
-		lines = append(lines, s.id+" "+pyrepr.Float(s.ts))
+		lines = append(lines, s.id+" "+strconv.FormatFloat(s.ts, 'f', -1, 64))
 	}
 	if err := os.WriteFile(p, []byte(strings.Join(lines, "\n")+"\n"), 0o666); err != nil {
 		pkgLog().Debug("Could not write advisory banner cache", "error", err)

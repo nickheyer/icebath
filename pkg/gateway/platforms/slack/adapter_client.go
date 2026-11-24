@@ -19,9 +19,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	slackapi "github.com/slack-go/slack"
 )
 
@@ -71,7 +71,7 @@ type slackAPIError struct {
 }
 
 func (e *slackAPIError) Error() string {
-	return "The request to the Slack API failed. (url: " + e.URL + ")\nThe server responded with: " + pyrepr.Repr(e.Response)
+	return "The request to the Slack API failed. (url: " + e.URL + ")\nThe server responded with: " + anyutil.Quote(e.Response)
 }
 
 // Web API call result with its decoded body and response headers
@@ -148,11 +148,11 @@ func (c *webClient) call(ctx context.Context, method string, args map[string]any
 
 // Body decoded as JSON into plain values, kept as raw bytes when it is not JSON
 func decodeWebBody(raw []byte) *webResponse {
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return &webResponse{Data: raw}
 	}
-	return &webResponse{Data: pyjson.Plain(v)}
+	return &webResponse{Data: jsonutil.Plain(v)}
 }
 
 // Query string form of an argument, JSON for containers and Python str for scalars
@@ -169,7 +169,7 @@ func queryValue(v any) string {
 		b, _ := json.Marshal(t)
 		return string(b)
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // One file of a files_upload_v2 call, a local path or in memory content

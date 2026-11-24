@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const cuTestPNG8 = "iVBORw0KGgoAAAANSUhEUgAAAAgAAAAICAYAAADED76LAAAADUlEQVR4nG" +
@@ -78,21 +78,21 @@ func cuRespond(t *testing.T, env *tools.Env, c *CaptureResult, sessionID string)
 }
 
 func cuIsMultimodal(v any) bool {
-	o, ok := v.(*pyjson.Object)
-	return ok && o.Vals["_multimodal"] == true
+	o, ok := v.(*jsonutil.Object)
+	return ok && o.Value("_multimodal") == true
 }
 
-func cuDecode(t *testing.T, v any) *pyjson.Object {
+func cuDecode(t *testing.T, v any) *jsonutil.Object {
 	t.Helper()
 	s, ok := v.(string)
 	if !ok {
 		t.Fatalf("result %T", v)
 	}
-	d, err := pyjson.Loads(s)
+	d, err := jsonutil.Decode(s)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return d.(*pyjson.Object)
+	return d.(*jsonutil.Object)
 }
 
 func TestCaptureResponseReturnsMultimodalEnvelopeWhenNative(t *testing.T) {
@@ -101,17 +101,17 @@ func TestCaptureResponseReturnsMultimodalEnvelopeWhenNative(t *testing.T) {
 	if !cuIsMultimodal(resp) {
 		t.Fatalf("not multimodal %T", resp)
 	}
-	o := resp.(*pyjson.Object)
-	img := o.Vals["content"].([]any)[1].(*pyjson.Object)
-	if img.Vals["type"] != "image_url" || !strings.HasPrefix(img.Vals["image_url"].(*pyjson.Object).Vals["url"].(string), "data:image/png;base64,") {
-		t.Fatalf("image part %v", img.Vals)
+	o := resp.(*jsonutil.Object)
+	img := o.Value("content").([]any)[1].(*jsonutil.Object)
+	if img.Value("type") != "image_url" || !strings.HasPrefix(img.Value("image_url").(*jsonutil.Object).Value("url").(string), "data:image/png;base64,") {
+		t.Fatalf("image part %v", img)
 	}
-	if _, ok := o.Vals["vision_analysis"]; ok {
+	if _, ok := o.Get("vision_analysis"); ok {
 		t.Fatal("vision_analysis on the native path")
 	}
-	meta := o.Vals["meta"].(*pyjson.Object)
-	if strings.Join(meta.Keys[:5], ",") != "mode,width,height,elements,png_bytes" || meta.Vals["width"] != 8 {
-		t.Fatalf("meta %v %v", meta.Keys, meta.Vals)
+	meta := o.Value("meta").(*jsonutil.Object)
+	if strings.Join(meta.Keys()[:5], ",") != "mode,width,height,elements,png_bytes" || meta.Value("width") != 8 {
+		t.Fatalf("meta %v %v", meta.Keys(), meta)
 	}
 }
 
@@ -132,10 +132,10 @@ func TestCaptureResponseRoutedToAuxVisionReturnsTextWithAnalysis(t *testing.T) {
 		t.Fatalf("routed result %T %v", resp, resp)
 	}
 	body := cuDecode(t, resp)
-	if body.Vals["mode"] != "som" || body.Vals["app"] != "Safari" || body.Vals["window_title"] != "GitHub – Issue #24015" ||
-		!strings.Contains(body.Vals["vision_analysis"].(string), "Sign in") || body.Vals["vision_analysis_routed_via"] != "auxiliary.vision" ||
-		len(body.Vals["elements"].([]any)) != 2 {
-		t.Fatalf("body %v", body.Vals)
+	if body.Value("mode") != "som" || body.Value("app") != "Safari" || body.Value("window_title") != "GitHub – Issue #24015" ||
+		!strings.Contains(body.Value("vision_analysis").(string), "Sign in") || body.Value("vision_analysis_routed_via") != "auxiliary.vision" ||
+		len(body.Value("elements").([]any)) != 2 {
+		t.Fatalf("body %v", body)
 	}
 	if !strings.HasPrefix(gotPath, filepath.Join(env.Home, "cache", "vision")) || !strings.Contains(gotPrompt, "Sign in") {
 		t.Fatalf("analysis call %q %q", gotPath, gotPrompt)
@@ -149,8 +149,8 @@ func TestCaptureResponseInvalidAuxResponseDegradesToTextPayload(t *testing.T) {
 	cuRoute(t, true)
 	cuSwap(t, &cuVisionAnalyze, func(context.Context, *tools.Env, string, string) string { return "" })
 	body := cuDecode(t, cuRespond(t, cuCaptureEnv(t), cuRoutedCapture("som"), ""))
-	if body.Vals["vision_unavailable"] != true || !strings.Contains(body.Vals["summary"].(string), "vision unavailable") {
-		t.Fatalf("body %v", body.Vals)
+	if body.Value("vision_unavailable") != true || !strings.Contains(body.Value("summary").(string), "vision unavailable") {
+		t.Fatalf("body %v", body)
 	}
 }
 
@@ -204,10 +204,10 @@ func TestScreenshotDedupOmitsUnchangedFrames(t *testing.T) {
 	}
 	again := cuRespond(t, env, cuDedupCapture(t, 1, "kate"), "s1")
 	data := cuDecode(t, again)
-	if data.Vals["screen_unchanged"] != true || !strings.Contains(data.Vals["summary"].(string), "screen unchanged") || data.Vals["app"] != "kate" {
-		t.Fatalf("identical frame %v", data.Vals)
+	if data.Value("screen_unchanged") != true || !strings.Contains(data.Value("summary").(string), "screen unchanged") || data.Value("app") != "kate" {
+		t.Fatalf("identical frame %v", data)
 	}
-	if _, ok := data.Vals["elements"]; !ok {
+	if _, ok := data.Get("elements"); !ok {
 		t.Fatal("elements missing")
 	}
 	if !cuIsMultimodal(cuRespond(t, env, cuDedupCapture(t, 2, "kate"), "s1")) {
@@ -262,8 +262,8 @@ func TestScreenshotDedupStreakCapRedeliversPixels(t *testing.T) {
 		t.Fatal("streak did not restart")
 	}
 	ax := &CaptureResult{Mode: "ax", Width: 64, Height: 64, App: "kate", WindowTitle: "notes"}
-	if body := cuDecode(t, cuRespond(t, env, ax, "s1")); body.Vals["screen_unchanged"] != nil {
-		t.Fatalf("ax mode deduped %v", body.Vals)
+	if body := cuDecode(t, cuRespond(t, env, ax, "s1")); body.Value("screen_unchanged") != nil {
+		t.Fatalf("ax mode deduped %v", body)
 	}
 }
 
@@ -301,8 +301,8 @@ func TestExplicitCaptureAfterInputIsSubjectToDedup(t *testing.T) {
 	}
 	after := run("click", map[string]any{"element": int64(1), "capture_after": true})
 	body := cuDecode(t, after)
-	if body.Vals["screen_unchanged"] != true || body.Vals["ok"] != true {
-		t.Fatalf("capture_after %v", body.Vals)
+	if body.Value("screen_unchanged") != true || body.Value("ok") != true {
+		t.Fatalf("capture_after %v", body)
 	}
 	if cuIsMultimodal(run("capture", map[string]any{"mode": "som"})) {
 		t.Fatal("explicit capture not deduped")
@@ -314,12 +314,12 @@ func TestExplicitCaptureAfterInputIsSubjectToDedup(t *testing.T) {
 
 func TestElementBoundsNulledOnlyForZeroRect(t *testing.T) {
 	zero := elementToDict(UIElement{Index: 2, Role: "radio button", Label: "Deg"})
-	if zero.Vals["bounds"] != nil || zero.Vals["index"] != 2 {
-		t.Fatalf("zero rect %v", zero.Vals)
+	if zero.Value("bounds") != nil || zero.Value("index") != 2 {
+		t.Fatalf("zero rect %v", zero)
 	}
 	real := elementToDict(UIElement{Index: 2, Role: "radio button", Label: "Deg", Bounds: [4]int{10, 20, 30, 40}})
-	if fmt.Sprint(real.Vals["bounds"]) != "[10 20 30 40]" {
-		t.Fatalf("real rect %v", real.Vals["bounds"])
+	if fmt.Sprint(real.Value("bounds")) != "[10 20 30 40]" {
+		t.Fatalf("real rect %v", real.Value("bounds"))
 	}
 }
 
@@ -350,7 +350,7 @@ func TestCaptureResponseAppendsNoteLine(t *testing.T) {
 	capture := &CaptureResult{Mode: "vision", Width: 8, Height: 8, PNGB64: &b64, App: "screen", WindowTitle: "Full screen (composited)",
 		PNGBytesLen: len(raw), Note: "full-screen capture has no interactable elements; call capture(app='desktop') for the desktop shell"}
 	resp := cuRespond(t, cuCaptureEnv(t), capture, "")
-	if !strings.Contains(resp.(*pyjson.Object).Vals["text_summary"].(string), "full-screen capture has no interactable elements") {
+	if !strings.Contains(resp.(*jsonutil.Object).Value("text_summary").(string), "full-screen capture has no interactable elements") {
 		t.Fatalf("note missing %v", resp)
 	}
 }
@@ -381,7 +381,7 @@ func TestFrameCapturedAcrossATakeoverIsDroppedBeforeAnySink(t *testing.T) {
 			return nil
 		})
 		got := cuHandle(t, env, args)
-		if !strings.Contains(got, `"code": "human_has_control"`) || len(leaked) != 0 || strings.Contains(got, secret) {
+		if !strings.Contains(got, `"code":"human_has_control"`) || len(leaked) != 0 || strings.Contains(got, secret) {
 			t.Fatalf("%v leaked %v result %s", args, leaked, got)
 		}
 	}

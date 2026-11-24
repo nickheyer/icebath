@@ -8,35 +8,25 @@ import (
 	"time"
 	_ "time/tzdata"
 
-	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
-// Pins the system zone and the localtime model of the timestamp helpers for one test
-func pinTimestampZone(t *testing.T, name string, windows bool) *time.Location {
+// Pins the system zone of the timestamp helpers for one test
+func pinTimestampZone(t *testing.T, name string) *time.Location {
 	t.Helper()
 	loc, err := time.LoadLocation(name)
 	if err != nil {
 		t.Fatal(err)
 	}
-	prevZone, prevAccepts := timestampLocalZone, timestampLocaltimeAccepts
-	t.Cleanup(func() { timestampLocalZone, timestampLocaltimeAccepts = prevZone, prevAccepts })
+	prevZone := timestampLocalZone
+	t.Cleanup(func() { timestampLocalZone = prevZone })
 	timestampLocalZone = func() *time.Location { return loc }
-	timestampLocaltimeAccepts = func(int64) bool { return true }
-	if windows {
-		timestampLocaltimeAccepts = pydatetime.WindowsLocaltimeAccepts
-	}
 	return loc
 }
 
-func eachTimestampPlatform(t *testing.T, windowsOnly bool, body func(t *testing.T, local *time.Location)) {
+func eachTimestampPlatform(t *testing.T, body func(t *testing.T, local *time.Location)) {
 	for _, zone := range []string{"America/Los_Angeles", "Europe/Berlin", "UTC"} {
-		for _, windows := range []bool{false, true} {
-			if windowsOnly && !windows {
-				continue
-			}
-			t.Run(fmt.Sprintf("%s/windows=%v", zone, windows), func(t *testing.T) { body(t, pinTimestampZone(t, zone, windows)) })
-		}
+		t.Run(zone, func(t *testing.T) { body(t, pinTimestampZone(t, zone)) })
 	}
 }
 
@@ -51,7 +41,7 @@ func renderTS(t *testing.T, content, value any, tz *time.Location) any {
 
 // Naive isoformat of the local wall time of an epoch
 func naiveLocalISO(epoch float64, local *time.Location) string {
-	wall, _ := pydatetime.FromTimestampIn(epoch, local, nil)
+	wall := timeutil.FromEpoch(epoch).In(local)
 	text := wall.Format("2006-01-02T15:04:05")
 	if us := wall.Nanosecond() / 1000; us != 0 {
 		text += fmt.Sprintf(".%06d", us)
@@ -60,9 +50,9 @@ func naiveLocalISO(epoch float64, local *time.Location) string {
 }
 
 func TestRenderNumericTimestampPreservesInstantInSystemTimezone(t *testing.T) {
-	eachTimestampPlatform(t, false, func(t *testing.T, local *time.Location) {
+	eachTimestampPlatform(t, func(t *testing.T, local *time.Location) {
 		for _, epoch := range []float64{1.0, 1_000_000_000.0} {
-			prefix := config.SafeStrftime(time.Unix(int64(epoch), 0).In(local), "%a %Y-%m-%d %H:%M:%S %Z")
+			prefix := time.Unix(int64(epoch), 0).In(local).Format("Mon 2006-01-02 15:04:05 MST")
 			if got := renderTS(t, "hello", epoch, nil); got != "["+prefix+"] hello" {
 				t.Errorf("%v rendered %q", epoch, got)
 			}
@@ -71,7 +61,7 @@ func TestRenderNumericTimestampPreservesInstantInSystemTimezone(t *testing.T) {
 }
 
 func TestEarlyNaiveISOPreservesSystemLocalInstant(t *testing.T) {
-	eachTimestampPlatform(t, true, func(t *testing.T, local *time.Location) {
+	eachTimestampPlatform(t, func(t *testing.T, local *time.Location) {
 		for _, epoch := range []float64{0.0, 1.123456, 86_399.0} {
 			got, ok, err := CoerceMessageTimestamp(naiveLocalISO(epoch, local), nil)
 			if err != nil || !ok || math.Abs(got-epoch) > 1e-6 {
@@ -82,10 +72,10 @@ func TestEarlyNaiveISOPreservesSystemLocalInstant(t *testing.T) {
 }
 
 func TestEarlyEmbeddedLocalTimePreservesInstant(t *testing.T) {
-	eachTimestampPlatform(t, true, func(t *testing.T, local *time.Location) {
+	eachTimestampPlatform(t, func(t *testing.T, local *time.Location) {
 		for _, epoch := range []float64{0.0, 1.0, 86_399.0} {
-			wall, _ := pydatetime.FromTimestampIn(epoch, local, nil)
-			for _, stamp := range []string{config.SafeStrftime(wall, "%a %Y-%m-%d %H:%M:%S"), naiveLocalISO(epoch, local)} {
+			wall := timeutil.FromEpoch(epoch).In(local)
+			for _, stamp := range []string{wall.Format("Mon 2006-01-02 15:04:05"), naiveLocalISO(epoch, local)} {
 				if got, want := renderTS(t, "["+stamp+"] hello", 1_000_000_000.0, nil), renderTS(t, "hello", epoch, nil); got != want {
 					t.Errorf("%q rendered %q, want %q", stamp, got, want)
 				}
@@ -95,23 +85,19 @@ func TestEarlyEmbeddedLocalTimePreservesInstant(t *testing.T) {
 }
 
 func TestModernLocalConversionKeepsExistingFoldAndGapBehavior(t *testing.T) {
-	for _, windows := range []bool{false, true} {
-		pinTimestampZone(t, "America/New_York", windows)
-		for _, c := range []struct {
-			wall string
-			fold int
-			utc  string
-		}{
-			{"2026-01-15 12:00", 0, "2026-01-15 17:00"}, {"2026-01-15 12:00", 1, "2026-01-15 17:00"},
-			{"2026-07-15 12:00", 0, "2026-07-15 16:00"}, {"2026-07-15 12:00", 1, "2026-07-15 16:00"},
-			{"2026-03-08 02:30", 0, "2026-03-08 07:30"}, {"2026-03-08 02:30", 1, "2026-03-08 06:30"},
-			{"2026-11-01 01:30", 0, "2026-11-01 05:30"}, {"2026-11-01 01:30", 1, "2026-11-01 06:30"},
-		} {
-			wall, _ := time.Parse("2006-01-02 15:04", c.wall)
-			want, _ := time.Parse("2006-01-02 15:04", c.utc)
-			if got, ok := localizeTimestamp(wall, false, c.fold, nil); !ok || got != float64(want.Unix()) {
-				t.Errorf("%s fold %d windows %v gave %v", c.wall, c.fold, windows, time.Unix(int64(got), 0).UTC())
-			}
+	pinTimestampZone(t, "America/New_York")
+	for _, c := range []struct {
+		wall string
+		utc  string
+	}{
+		{"2026-01-15 12:00", "2026-01-15 17:00"},
+		{"2026-07-15 12:00", "2026-07-15 16:00"},
+		{"2026-03-08 02:30", "2026-03-08 06:30"},
+		{"2026-11-01 01:30", "2026-11-01 05:30"},
+	} {
+		want, _ := time.Parse("2006-01-02 15:04", c.utc)
+		if got, ok := parseTimestampISO(c.wall, nil); !ok || got != float64(want.Unix()) {
+			t.Errorf("%s gave %v", c.wall, time.Unix(int64(got), 0).UTC())
 		}
 	}
 }
@@ -128,31 +114,15 @@ func TestExplicitTimezoneParsingPreservesWallTime(t *testing.T) {
 	}
 }
 
-func TestUnsupportedLocalISOIsUninterpretableInsteadOfRaising(t *testing.T) {
-	eachTimestampPlatform(t, true, func(t *testing.T, _ *time.Location) {
-		if got, ok, err := CoerceMessageTimestamp("1969-06-01T12:00:00", nil); ok || err != nil {
-			t.Fatalf("pre epoch local iso coerced to %v %v", got, err)
-		}
-	})
-}
-
 func TestUnrenderableEpochPreservesTheMessageBody(t *testing.T) {
-	eachTimestampPlatform(t, true, func(t *testing.T, _ *time.Location) {
-		for _, epoch := range []float64{math.NaN(), math.Inf(1), -1.0} {
+	eachTimestampPlatform(t, func(t *testing.T, _ *time.Location) {
+		for _, epoch := range []float64{math.NaN(), math.Inf(1)} {
 			if got, err := FormatMessageTimestamp(epoch, nil); got != "" || err != nil {
 				t.Errorf("%v formatted %q %v", epoch, got, err)
 			}
 			if got := renderTS(t, "hello", epoch, nil); got != "hello" {
 				t.Errorf("%v rendered %q", epoch, got)
 			}
-		}
-	})
-}
-
-func TestUnsupportedEmbeddedTimeKeepsMetadataFallback(t *testing.T) {
-	eachTimestampPlatform(t, true, func(t *testing.T, _ *time.Location) {
-		if got, want := renderTS(t, "[Sun 1969-06-01 12:00:00] hello", 1_000_000_000.0, nil), renderTS(t, "hello", 1_000_000_000.0, nil); got != want {
-			t.Fatalf("rendered %q, want %q", got, want)
 		}
 	})
 }
@@ -166,8 +136,8 @@ func TestRenderUserContentDeduplicatesExistingTimestampAndPreservesEmbeddedTime(
 	}
 }
 
-func TestTimestampHelpersFollowPythonEdgeCases(t *testing.T) {
-	pinTimestampZone(t, "UTC", false)
+func TestTimestampHelpersEdgeCases(t *testing.T) {
+	pinTimestampZone(t, "UTC")
 	for value, want := range map[any]float64{
 		true: 1, int64(7): 7, " 1_000.5 ": 1000.5, "[Tue 2026-04-28 13:40:53 CEST] x": 1777383653,
 		"2026-04-28T13:40:53+0200": 1777376453, "[2026-04-28T13:40:53+02:00] x": 1777376453, time.Unix(5, 250_000_000): 5.25,
@@ -182,14 +152,14 @@ func TestTimestampHelpersFollowPythonEdgeCases(t *testing.T) {
 		}
 	}
 	if _, _, err := CoerceMessageTimestamp(new(big.Int).Lsh(big.NewInt(1), 1100), nil); err == nil {
-		t.Fatal("huge int converted without OverflowError")
+		t.Fatal("huge int converted without a range error")
 	}
 	clean, embedded := StripLeadingMessageTimestamps("[Tue 2026-04-28 13:40:53] [Wed 2026-04-29 10:00:00 UTC]  [sender] hi", nil)
 	if clean != "[sender] hi" || embedded == nil || *embedded != 1777456800 {
 		t.Fatalf("closest prefix wins %q %v", clean, embedded)
 	}
 	parts := []any{map[string]any{"type": "text"}}
-	if got := renderTS(t, parts, 0.0, nil); got != "[Thu 1970-01-01 00:00:00 UTC] [{'type': 'text'}]" {
+	if got := renderTS(t, parts, 0.0, nil); got != `[Thu 1970-01-01 00:00:00 UTC] [{"type":"text"}]` {
 		t.Fatalf("list content %q", got)
 	}
 	if got := renderTS(t, parts, nil, nil); fmt.Sprint(got) != fmt.Sprint(parts) {

@@ -9,10 +9,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -59,19 +59,19 @@ func LaunchCredentialsCopy(ctx context.Context, err any) string {
 		data = map[string]any{}
 	}
 	field := pyAttr(err, "field")
-	if !pyrepr.Truthy(field) {
+	if !anyutil.IsTrue(field) {
 		field = state.ToolCallField(data, "field")
 	}
 	detail := pyAttr(err, "detail")
-	if !pyrepr.Truthy(detail) {
+	if !anyutil.IsTrue(detail) {
 		detail = state.ToolCallField(data, "detail")
 	}
 	named := ""
-	if pyrepr.Truthy(field) {
-		named = " (" + pyrepr.Str(field) + ": " + pyStrOr(detail, "unavailable") + ")"
+	if anyutil.IsTrue(field) {
+		named = " (" + anyutil.String(field) + ": " + pyStrOr(detail, "unavailable") + ")"
 	}
 	text := i18n.T(ctx, "gateway.errors.launch_credentials_unavailable", "", map[string]any{"detail": named})
-	if pyrepr.Truthy(field) {
+	if anyutil.IsTrue(field) {
 		return text + "\n\nDetails: launch_credentials_unavailable" + named
 	}
 	return text
@@ -91,7 +91,7 @@ func FailedTurnNoticeFor(turnMessages any) string {
 			continue
 		}
 		role := state.ToolCallField(row, "role")
-		if role == "tool" || (role == "assistant" && pyrepr.Truthy(state.ToolCallField(row, "tool_calls"))) {
+		if role == "tool" || (role == "assistant" && anyutil.IsTrue(state.ToolCallField(row, "tool_calls"))) {
 			return PartialFailedTurnNotice
 		}
 	}
@@ -172,11 +172,11 @@ func InvalidResponseFailureReason(response any) string {
 	if code == nil {
 		return "invalid_response"
 	}
-	n, err := pyint.Of(code)
-	if err != nil || !n.IsInt64() {
+	n, err := anyutil.ToInt(code)
+	if err != nil {
 		return "invalid_response"
 	}
-	if reason, ok := invalidResponseCodes[n.Int64()]; ok {
+	if reason, ok := invalidResponseCodes[n]; ok {
 		return reason
 	}
 	return "invalid_response"
@@ -263,7 +263,7 @@ var authCopy = map[string]string{
 // Chat copy once retries and fallback are exhausted, naming a known reset window or the lifetime cap
 func ExhaustedCopy(reason, label string, attempts int, summary string, resetSeconds *float64, err error) string {
 	if lifetime, ok := err.(*provider.StreamLifetimeExceededError); ok {
-		capText, _ := pyrepr.Format(lifetime.Cap, "g")
+		capText := strconv.FormatFloat(lifetime.Cap, 'g', 6, 64)
 		return "The response was still streaming when agent.stream_max_lifetime (" + capText + "s) cut it, " +
 			"on all " + strconv.Itoa(attempts) + " attempts. Raise agent.stream_max_lifetime, or set it to 0 to turn the " +
 			"cap off, if this model legitimately streams this long."
@@ -333,7 +333,7 @@ func NonretryableCopy(ctx context.Context, classified *provider.Classified, prov
 	if prefixSuggestion != "" {
 		prefixHint = " If you typed the name yourself it may be missing its vendor prefix — did you mean '" + prefixSuggestion + "'?"
 	}
-	body, err := i18n.PyFormat(template, map[string]any{
+	body, err := templateutil.Format(template, map[string]any{
 		"label": label, "model": model, "home": home.Display(home.Dir(ctx)), "prefix_hint": prefixHint,
 		"relogin": provider.OAuthReloginCommand(pyStrOr(prov, "")),
 	})
@@ -351,7 +351,7 @@ func ContentPolicyCopy(label, summary string) string {
 
 // First line of an error text capped at limit characters for a trailing details line
 func ShortDetail(exc any, limit int) string {
-	text := pyrepr.Str(exc)
+	text := anyutil.String(exc)
 	if text == "" {
 		text = "no details given"
 	}

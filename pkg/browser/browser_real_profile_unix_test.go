@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/tools"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Stores or reads a marker in a real auth database so the snapshot exercises SQLite
@@ -72,7 +73,7 @@ func snapshotFixture(t *testing.T) (*tools.Env, string, string) {
 }
 
 func TestRealProfileResolversDataDirUnknownBrowserIsNone(t *testing.T) {
-	if got := realProfileDataDir("firefox", "Windows"); got != "" {
+	if got := realProfileDataDir("firefox", "windows"); got != "" {
 		t.Fatalf("data dir %q", got)
 	}
 }
@@ -272,10 +273,10 @@ func TestChannelIdentityChannelSentinelFailsClosedInCdp(t *testing.T) {
 }
 
 func TestChannelIdentityDataDirRejectsSentinel(t *testing.T) {
-	if got := realProfileDataDir(UnsupportedChannel, "Linux"); got != "" {
+	if got := realProfileDataDir(UnsupportedChannel, "linux"); got != "" {
 		t.Fatalf("data dir %q", got)
 	}
-	if got := realChromiumExecutable(UnsupportedChannel, "Linux"); got != "" {
+	if got := realChromiumExecutable(UnsupportedChannel, "linux"); got != "" {
 		t.Fatalf("executable %q", got)
 	}
 }
@@ -496,9 +497,9 @@ func TestReviewRound3SnapshotFailsFastWhenLocked(t *testing.T) {
 	pinLocked(t, false)
 	copies := 0
 	realCopyTree := connectCopyTree
-	pin(t, &connectCopyTree, func(src, dst string, symlinks, dirsExistOK bool, ignore func(string, []string) []string) error {
+	pin(t, &connectCopyTree, func(src, dst string, o fsutil.CopyTreeOptions) error {
 		copies++
-		return realCopyTree(src, dst, symlinks, dirsExistOK, ignore)
+		return realCopyTree(src, dst, o)
 	})
 	dst, err := snapshotRealProfile(env, "chrome", src)
 	if dst != "" || !strings.HasPrefix(err, profileLockedPrefix) || copies != 0 {

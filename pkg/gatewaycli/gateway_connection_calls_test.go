@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestKeyedResumeFallsBackPlainOnlyWhenTheKeyDoesNotApply(t *testing.T) {
@@ -57,9 +56,9 @@ func TestKeyedResumeFallsBackPlainOnlyWhenTheKeyDoesNotApply(t *testing.T) {
 	}
 }
 
-func eventFrame(kind, sessionID string, payload map[string]any) *pyjson.Object {
-	return pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params",
-		pyjson.ObjectOf("type", kind, "session_id", sessionID, "payload", payload))
+func eventFrame(kind, sessionID string, payload map[string]any) *jsonutil.Object {
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event", "params",
+		jsonutil.ObjectOf("type", kind, "session_id", sessionID, "payload", payload))
 }
 
 func nextEvent(t *testing.T, conn *GatewayConnection) any {
@@ -134,11 +133,11 @@ func TestReplyAnswersAServerRequestOnTheLiveSocket(t *testing.T) {
 	client.mu.Lock()
 	frames := append([]string{}, client.frames...)
 	client.mu.Unlock()
-	decoded, err := pyjson.Loads(frames[0])
+	decoded, err := jsonutil.Decode(frames[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantEqual(t, pyjson.Plain(decoded), map[string]any{"jsonrpc": "2.0", "id": 7, "result": map[string]any{"password": "pw"}})
+	wantEqual(t, jsonutil.Plain(decoded), map[string]any{"jsonrpc": "2.0", "id": 7, "result": map[string]any{"password": "pw"}})
 	if NewGatewayConnection(nil).Reply(7, nil) {
 		t.Fatal("reply claimed a send with no socket")
 	}

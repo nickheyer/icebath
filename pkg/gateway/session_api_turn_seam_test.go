@@ -3,10 +3,10 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Context carrying prepared as the executing API admission, for the runner and its cases
-func BindAPIExecution(ctx context.Context, prepared *pyjson.Object) context.Context {
+func BindAPIExecution(ctx context.Context, prepared *jsonutil.Object) context.Context {
 	return bindAPIExecution(ctx, prepared)
 }

@@ -12,8 +12,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 const openAIRelayChunkPrefix = `data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1,"model":"test/model",`
@@ -84,7 +84,7 @@ func openAIStreamThroughRelay(t *testing.T, body string, finalizeBefore func(chu
 		}
 		return streamExecute(c, operation, request, provider, forced, runFinalizer, kwargs)
 	}
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	lease := tools.RelayCoordinator.AcquireConversation(ctx, tools.RelayConversation{ProfileKey: tools.CurrentRelayProfileKey(ctx), SessionID: agent.SessionID(), Platform: "cli"})
 	turn, err := tools.RelayCoordinator.BeginTurn(ctx, lease, "openai-relay-turn", "openai-relay-task", nil)
 	if err != nil {

@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Insert statement columns in bind order so a row rewrite diffs bind values by name
@@ -30,7 +30,7 @@ type PruneChange struct {
 
 // Keyword arguments of rewrite_pruned_rows, a nil TurnLeaseTTLSeconds meaning 300 seconds
 type PruneRewriteOptions struct {
-	ModelConfigPatch    *pyjson.Object
+	ModelConfigPatch    *jsonutil.Object
 	TurnLeaseHolder     *string
 	TurnLeaseTTLSeconds *float64
 }
@@ -150,7 +150,7 @@ func (d *SessionDB) heldRowMismatches(ctx context.Context, conn SQLiteConn, sess
 		if err != nil {
 			return nil, err
 		}
-		if !pyrepr.Equal(heldIdentity, storedIdentity) {
+		if !anyutil.Equal(heldIdentity, storedIdentity) {
 			mismatches = append(mismatches, rowID)
 		}
 	}
@@ -228,7 +228,7 @@ func (d *SessionDB) resolvePrunedRow(ctx context.Context, conn SQLiteConn, sessi
 			if err != nil {
 				return nil, err
 			}
-			if pyrepr.Equal(got, wanted) {
+			if anyutil.Equal(got, wanted) {
 				id, _ := pyIntID(row["id"])
 				ids = append(ids, id)
 			}
@@ -263,7 +263,7 @@ func (d *SessionDB) resolvePrunedRow(ctx context.Context, conn SQLiteConn, sessi
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Equal(mine, theirs) {
+	if !anyutil.Equal(mine, theirs) {
 		return nil, stale
 	}
 	return row, nil
@@ -311,7 +311,7 @@ func (d *SessionDB) rewritePrunedRowsOnConn(ctx context.Context, conn SQLiteConn
 		var columns []string
 		var values []any
 		for i, column := range messageRowColumns {
-			if i < len(before) && i < len(after) && !pyrepr.Equal(before[i], after[i]) && !pruneFixedColumns[column] {
+			if i < len(before) && i < len(after) && !anyutil.Equal(before[i], after[i]) && !pruneFixedColumns[column] {
 				columns = append(columns, column)
 				values = append(values, after[i])
 			}

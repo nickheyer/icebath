@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/botmode/dmdelivery"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Runs message_agent through the registered inline executor and decodes its JSON answer
@@ -144,7 +144,7 @@ func TestMessageAgentHandsAPeerMessageToTheBackgroundRunner(t *testing.T) {
 	if !req.Background || !req.NotifyOnComplete || !req.HostLocal || req.CompletionOutputChars != 18000 || req.TaskID != "task-7" {
 		t.Fatalf("request %+v", req)
 	}
-	argv, err := pyshlex.SplitPOSIX(req.Command.(string), false)
+	argv, err := shellutil.Split(req.Command.(string))
 	if err != nil {
 		t.Fatal(err)
 	}

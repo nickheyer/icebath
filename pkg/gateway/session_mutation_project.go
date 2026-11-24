@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Metadata operations that leave the transcript and policy alone
@@ -42,7 +42,7 @@ func dropSessionTerminal(ctx context.Context, a *SessionAuthority, ref SessionRe
 		return err
 	}
 	ids := []string{ref.SessionID}
-	if other := pyrepr.Str(entrySID); other != ref.SessionID {
+	if other := anyutil.String(entrySID); other != ref.SessionID {
 		ids = append(ids, other)
 	}
 	live, ok := a.live(ref.SessionID)
@@ -66,7 +66,7 @@ func dropSessionTerminal(ctx context.Context, a *SessionAuthority, ref SessionRe
 }
 
 // Runtime projections of a committed receipt, idempotent reads repeated by an exact retry
-func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, params mutationParams, result *pyjson.Object, editorServers any, applied bool) error {
+func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, params mutationParams, result *jsonutil.Object, editorServers any, applied bool) error {
 	operation := params.Operation
 	current, err := a.DB.GetSession(ctx, ref.SessionID)
 	if err != nil {
@@ -79,7 +79,7 @@ func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 	if value, has := result.Get("execution_generation"); has {
 		generation = value
 	}
-	owns := current != nil && pyjson.Equal(rowValue(current, "runtime_generation"), generation)
+	owns := current != nil && anyutil.Equal(rowValue(current, "runtime_generation"), generation)
 	if operation == "compress" && applied && owns && live != nil {
 		noteCompression(a, ref, live)
 	} else if operation == "reset" && applied && live != nil {
@@ -90,7 +90,7 @@ func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 		if branched, has := result.Get("branched_session_id"); has {
 			target = branched
 		}
-		if err := installEditorMCP(ctx, a, pyrepr.Str(target), editorServers); err != nil {
+		if err := installEditorMCP(ctx, a, anyutil.String(target), editorServers); err != nil {
 			return err
 		}
 		if operation == "editor_mcp" && !pyTruthy(editorServers) {
@@ -125,7 +125,7 @@ func projectResult(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 }
 
 // Value of a row column, nil when absent
-func rowValue(row *pyjson.Object, key string) any {
+func rowValue(row *jsonutil.Object, key string) any {
 	value, _ := row.Get(key)
 	return value
 }
@@ -140,7 +140,7 @@ func projectedLive(a *SessionAuthority, sessionID string) (*LiveSession, error) 
 }
 
 // Publishes a committed receipt's runtime projections, safe to repeat on exact retry
-func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, operation string, result *pyjson.Object) error {
+func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, operation string, result *jsonutil.Object) error {
 	if mutationPolicy[operation] {
 		if err := publishLocalPolicy(ctx, a, ref.SessionID, operation != "edit_policy"); err != nil {
 			return err
@@ -178,7 +178,7 @@ func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		if err != nil {
 			return err
 		}
-		if _, err := restoreLocalSession(ctx, a, pyrepr.Str(branched)); err != nil {
+		if _, err := restoreLocalSession(ctx, a, anyutil.String(branched)); err != nil {
 			return err
 		}
 	}
@@ -195,7 +195,7 @@ func projectCommitted(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		list, _ := deleted.([]any)
 		ids := make([]string, len(list))
 		for i, sid := range list {
-			ids[i] = pyrepr.Str(sid)
+			ids[i] = anyutil.String(sid)
 		}
 		return retireLiveSessions(ctx, a, ids, true)
 	}
@@ -227,7 +227,7 @@ func projectBoundary(ctx context.Context, a *SessionAuthority, ref SessionRef) e
 	if err != nil {
 		return err
 	}
-	data, ok := pyjson.AsObject(raw)
+	data, ok := jsonutil.AsObject(raw)
 	if !ok {
 		return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the project boundary record is %s, expected a mapping", errchain.Kind(raw))}
 	}

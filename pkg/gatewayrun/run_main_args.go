@@ -8,8 +8,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Program name the module entry parser prints, the binary followed by its entry word
@@ -303,7 +303,7 @@ func parseRunMainArgs(argv []string, stdout, stderr io.Writer) (configPath *stri
 			explicit := *m.explicit
 			if !m.option.takes && m.optionString[1] != '-' && explicit != "" {
 				if m.sep != "" || explicit[0] == '-' {
-					return fail(m.option, "ignored explicit argument "+pyrepr.Repr(explicit))
+					return fail(m.option, "ignored explicit argument "+anyutil.Quote(explicit))
 				}
 				actions = append(actions, taken{option: m.option})
 				_, firstLen := utf8.DecodeRuneInString(explicit)
@@ -326,7 +326,7 @@ func parseRunMainArgs(argv []string, stdout, stderr io.Writer) (configPath *stri
 				continue
 			}
 			if !m.option.takes {
-				return fail(m.option, "ignored explicit argument "+pyrepr.Repr(explicit))
+				return fail(m.option, "ignored explicit argument "+anyutil.Quote(explicit))
 			}
 			actions = append(actions, taken{option: m.option, value: &explicit})
 			break

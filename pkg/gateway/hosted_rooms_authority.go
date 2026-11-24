@@ -11,9 +11,6 @@ type HostedRoomError struct{ Msg string }
 
 func (e *HostedRoomError) Error() string { return e.Msg }
 
-// Python class name of the error
-func (e *HostedRoomError) PyTypeName() string { return "HostedRoomError" }
-
 func hostedRoomError(msg string) error { return &HostedRoomError{msg} }
 
 // Bounded actor identifier of a hosted room field

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One statement a traced connection ran, with its bound arguments
@@ -82,16 +82,16 @@ func (s *statementTracer) Raw(f func(driverConn any) error) error {
 	}
 }
 
-var indexChoiceReaders = map[string]func(ctx context.Context, db *SessionDB) ([]*pyjson.Object, error){
-	"sidebar": func(ctx context.Context, db *SessionDB) ([]*pyjson.Object, error) {
+var indexChoiceReaders = map[string]func(ctx context.Context, db *SessionDB) ([]*jsonutil.Object, error){
+	"sidebar": func(ctx context.Context, db *SessionDB) ([]*jsonutil.Object, error) {
 		limit := 2
 		return db.ListSessionsRich(ctx, ListSessionsRichOptions{Limit: &limit, OrderByLastActive: true, IncludePinned: true})
 	},
-	"session_search": func(ctx context.Context, db *SessionDB) ([]*pyjson.Object, error) {
+	"session_search": func(ctx context.Context, db *SessionDB) ([]*jsonutil.Object, error) {
 		limit := 2
 		return db.ListRecentSessionsBounded(ctx, RecentSessionsBoundedOptions{Limit: &limit})
 	},
-	"telegram_unlinked": func(ctx context.Context, db *SessionDB) ([]*pyjson.Object, error) {
+	"telegram_unlinked": func(ctx context.Context, db *SessionDB) ([]*jsonutil.Object, error) {
 		return db.ListUnlinkedTelegramSessionsForUser(ctx, "u", "", 2)
 	},
 }

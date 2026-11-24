@@ -10,12 +10,12 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var errAudioProbe = errors.New("audio probe failed")
@@ -36,7 +36,7 @@ func formatDuration(seconds float64) (string, error) {
 
 // Formatted duration of an audio file from its WAV header, Opus granule or ffprobe, false on failure
 func probeAudioDuration(ctx context.Context, path string) (string, bool) {
-	_, ext := pypath.Splitext(path)
+	_, ext := pathutil.SplitExt(path)
 	ext = strings.ToLower(ext)
 	if ext == ".wav" {
 		if seconds, err := wavDuration(path); err == nil {
@@ -61,11 +61,11 @@ func probeAudioDuration(ctx context.Context, path string) (string, bool) {
 	if err := cmd.Run(); err != nil {
 		return "", false
 	}
-	text, err := pystr.DecodeUTF8(stdout.Bytes())
+	text, err := textutil.DecodeUTF8(stdout.Bytes())
 	if err != nil {
 		return "", false
 	}
-	seconds, err := pyint.ParseFloat(strings.TrimSpace(text))
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(strings.TrimSpace(text)), 64)
 	if err != nil {
 		return "", false
 	}

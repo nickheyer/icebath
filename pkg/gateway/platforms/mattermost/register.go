@@ -13,11 +13,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -105,7 +105,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if errors.As(err, &ce) {
 		return gateway.SendError("Mattermost send failed (network): " + cmp.Or(shown, ce.text)), nil
 	}
-	return gateway.SendError("Mattermost send failed: " + cmp.Or(shown, pyrepr.ExceptionMessage(err))), nil
+	return gateway.SendError("Mattermost send failed: " + cmp.Or(shown, err.Error())), nil
 }
 
 // Uploads each existing media file, then creates the post with the collected file ids
@@ -117,13 +117,13 @@ func standalonePost(ctx context.Context, proxyURL, baseURL, chatID, message stri
 	defer client.CloseIdleConnections()
 	fileIDs := []any{}
 	for _, media := range standaloneMediaPaths(mediaFiles) {
-		if !pyrepr.Truthy(media) {
+		if !anyutil.IsTrue(media) {
 			continue
 		}
 		filePath, ok := media.(string)
 		if !ok {
 			return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("stat: path should be string, bytes, os.PathLike or integer, not %s",
-				pyrepr.TypeName(media))}
+				anyutil.Kind(media))}
 		}
 		if _, err := os.Stat(filePath); err != nil {
 			continue
@@ -132,7 +132,7 @@ func standalonePost(ctx context.Context, proxyURL, baseURL, chatID, message stri
 		if err != nil {
 			return nil, err
 		}
-		form, formType, err := uploadForm(chatID, data, pypath.Basename(filePath), "application/octet-stream")
+		form, formType, err := uploadForm(chatID, data, pathutil.Name(filePath), "application/octet-stream")
 		if err != nil {
 			return nil, err
 		}
@@ -157,19 +157,19 @@ func standalonePost(ctx context.Context, proxyURL, baseURL, chatID, message stri
 			if err != nil {
 				return nil, err
 			}
-			if pyrepr.Truthy(id) {
+			if anyutil.IsTrue(id) {
 				fileIDs = append(fileIDs, id)
 			}
 		}
 	}
-	payload := pyjson.ObjectOf("channel_id", chatID, "message", message)
-	if pyrepr.Truthy(threadID) {
+	payload := jsonutil.ObjectOf("channel_id", chatID, "message", message)
+	if anyutil.IsTrue(threadID) {
 		payload.Set("root_id", threadID)
 	}
 	if len(fileIDs) > 0 {
 		payload.Set("file_ids", fileIDs)
 	}
-	body, err := pyjson.Dumps(payload)
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}

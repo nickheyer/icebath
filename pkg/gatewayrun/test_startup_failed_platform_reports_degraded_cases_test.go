@@ -10,8 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Api server adapter that loses the bind race, fatal and non retryable so it is parked
@@ -101,7 +99,7 @@ func errorLogs(t *testing.T, fn func()) string {
 }
 
 // Runtime status after the queued writes are flushed
-func flushedStatus(t *testing.T, r *GatewayRunner) *pyjson.Object {
+func flushedStatus(t *testing.T, r *GatewayRunner) *jsonutil.Object {
 	t.Helper()
 	if !gateway.FlushRuntimeStatus(5 * time.Second) {
 		t.Fatal("runtime status did not flush")
@@ -110,7 +108,7 @@ func flushedStatus(t *testing.T, r *GatewayRunner) *pyjson.Object {
 }
 
 // Asserts the platform's runtime status fields
-func assertPlatformStatus(t *testing.T, state *pyjson.Object, platform string, want map[string]any) {
+func assertPlatformStatus(t *testing.T, state *jsonutil.Object, platform string, want map[string]any) {
 	t.Helper()
 	for k, v := range want {
 		if got := runtimeStatusField(state, "platforms", platform, k); got != v {
@@ -282,7 +280,7 @@ func TestAdapterlessPlatformHealsOnceItsAdapterAppears(t *testing.T) {
 		t.Fatalf("start = %v, %v", ok, err)
 	}
 	assertPlatformStatus(t, flushedStatus(t, r), "discord", map[string]any{"error_code": "adapter_unavailable", "needs_attention": true})
-	if err := r.reconnectFailedPlatform(ctx, platform, pythread.Monotonic()+60); err != nil {
+	if err := r.reconnectFailedPlatform(ctx, platform, timeutil.Monotonic()+60); err != nil {
 		t.Fatal(err)
 	}
 	if info, _ := r.failedPlatforms.Get(platform); info == nil || info["attempts"] != 2 {
@@ -293,7 +291,7 @@ func TestAdapterlessPlatformHealsOnceItsAdapterAppears(t *testing.T) {
 	}
 	healthy := newHealthyAdapter(platform)
 	injectRegistryAdapters(t, func(gateway.Platform) gateway.PlatformAdapter { return healthy }, platform)
-	if err := r.reconnectFailedPlatform(ctx, platform, pythread.Monotonic()+3600); err != nil {
+	if err := r.reconnectFailedPlatform(ctx, platform, timeutil.Monotonic()+3600); err != nil {
 		t.Fatal(err)
 	}
 	if got, _ := r.adapters.Get(platform); got != gateway.PlatformAdapter(healthy) {
@@ -311,7 +309,7 @@ func TestAdapterlessPlatformHealsOnceItsAdapterAppears(t *testing.T) {
 	}
 	t.Cleanup(func() { _, _ = gateway.Registry.Unregister(ctx, "slack", "") })
 	r.failedPlatforms.Set(slack, r.startupRetryEntry(slack, nil, &gateway.PlatformConfig{Enabled: true, Token: "***"}, true))
-	if err := r.reconnectFailedPlatform(ctx, slack, pythread.Monotonic()+3600); err != nil {
+	if err := r.reconnectFailedPlatform(ctx, slack, timeutil.Monotonic()+3600); err != nil {
 		t.Fatal(err)
 	}
 	if r.failedPlatforms.Has(slack) {

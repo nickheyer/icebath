@@ -5,9 +5,9 @@ import (
 	"errors"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Agent surface a managed worker's turns drive, the AIAgent of the child
@@ -20,7 +20,7 @@ type WorkerTurnAgent interface {
 }
 
 // Runs a managed worker turn under its frame turn scope with the surface armed like the in process runner
-func RunWorkerTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, history []map[string]any) (map[string]any, error) {
+func RunWorkerTurns(ctx context.Context, a WorkerTurnAgent, frame *jsonutil.Object, history []map[string]any) (map[string]any, error) {
 	scoped, err := gateway.WorkerTurnScope(ctx, frame)
 	if err != nil {
 		return nil, err
@@ -30,7 +30,7 @@ func RunWorkerTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object
 }
 
 // Chat turn in the session workspace, or a kanban attempt whose exit code is booked on the board
-func runWorkerTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, history []map[string]any) (map[string]any, error) {
+func runWorkerTurns(ctx context.Context, a WorkerTurnAgent, frame *jsonutil.Object, history []map[string]any) (map[string]any, error) {
 	kctx, err := gateway.WorkerKanbanContext(frame)
 	if err != nil {
 		return nil, err
@@ -44,14 +44,14 @@ func runWorkerTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object
 		if meta, ok := display["persist_user_display_metadata"].(map[string]any); ok {
 			o.PersistUserDisplayMetadata = meta
 		}
-		if author, ok := frame.GetOr("turn_author", nil).(*pyjson.Object); ok {
-			o.TurnAuthor, _ = pyjson.Plain(author).(map[string]any)
+		if author, ok := frame.ValueOr("turn_author", nil).(*jsonutil.Object); ok {
+			o.TurnAuthor, _ = jsonutil.Plain(author).(map[string]any)
 		}
 		var result map[string]any
 		err := gateway.WorkerWorkspace(ctx, a.Env(), frame, func(taskID string) error {
 			o.TaskID = taskID
 			var runErr error
-			result, runErr = a.RunConversationContent(ctx, frame.GetOr("text", nil), o)
+			result, runErr = a.RunConversationContent(ctx, frame.ValueOr("text", nil), o)
 			return runErr
 		})
 		return result, err
@@ -64,4 +64,4 @@ func runWorkerTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object
 }
 
 // Kanban attempt turns of a managed worker, installed by the extras tier that carries kanban
-var kanbanAttemptTurns func(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, history []map[string]any, kctx any) (map[string]any, error)
+var kanbanAttemptTurns func(ctx context.Context, a WorkerTurnAgent, frame *jsonutil.Object, history []map[string]any, kctx any) (map[string]any, error)

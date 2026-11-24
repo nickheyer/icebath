@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const emptyResponseError = "Agent completed but produced empty response (model error, timeout, or misconfiguration)"
@@ -35,7 +36,7 @@ func classifyDeliveryOutcome(deliveryError *string, shouldDeliver, unresolvedOri
 	switch {
 	case deliveryError != nil && *deliveryError != "":
 		return "failed"
-	case shouldDeliver && pyTruthy(deliveryQueued):
+	case shouldDeliver && anyutil.IsTrue(deliveryQueued):
 		return "queued"
 	case notificationSuppressed:
 		return "suppressed"
@@ -52,7 +53,7 @@ func classifyDeliveryOutcome(deliveryError *string, shouldDeliver, unresolvedOri
 // Owner fenced mark plus the ledger row for a run that reached delivery, false while a foreign firer owns the row
 func (s *Store) finishCompletedRun(ctx context.Context, d *runDelivery, fireOwner *string, executionID string, recovered bool) (bool, error) {
 	job := d.job
-	if !d.shouldDeliver && pyTruthy(job.LastDeliveryQueued) {
+	if !d.shouldDeliver && anyutil.IsTrue(job.LastDeliveryQueued) {
 		if _, err := s.updateJob(home.WithOverride(ctx, s.home), job.ID, map[string]any{"last_delivery_queued": nil}); err != nil {
 			return false, err
 		}
@@ -76,7 +77,7 @@ func (s *Store) finishCompletedRun(ctx context.Context, d *runDelivery, fireOwne
 		opts.QuotaHoldSeconds = hold
 		opts.RecoverConsumedFire = job.ScheduledInstant != nil && *job.ScheduledInstant != ""
 	}
-	if d.success && d.deliveryError == nil && d.shouldDeliver && pyTruthy(job.LastDeliveryQueued) {
+	if d.success && d.deliveryError == nil && d.shouldDeliver && anyutil.IsTrue(job.LastDeliveryQueued) {
 		opts.Status = strPtr("delivery_queued")
 	}
 	if fireOwner != nil {
@@ -132,7 +133,7 @@ func (s *Store) finishCompletedRun(ctx context.Context, d *runDelivery, fireOwne
 			return false, nil
 		}
 	}
-	if pyTruthy(job.LastDeliveryQueued) {
+	if anyutil.IsTrue(job.LastDeliveryQueued) {
 		s.settleQuietly(ctx, job.ID, executionID)
 	}
 	if err := os.Remove(journal); err != nil && !os.IsNotExist(err) {

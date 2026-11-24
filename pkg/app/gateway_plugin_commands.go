@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Plugin toolsets of one gateway life
@@ -38,7 +38,7 @@ func gatewayPluginToolsets(c *CLI) ([]tools.ConfigurableToolset, map[string]bool
 		pkgLog().Debug(fmt.Sprintf("plugins.list unavailable: %s", err.Error()))
 		return []tools.ConfigurableToolset{}, map[string]bool{}, true
 	}
-	reply, _ := pyjson.Plain(raw).(map[string]any)
+	reply, _ := jsonutil.Plain(raw).(map[string]any)
 	var rows []tools.ConfigurableToolset
 	listed, _ := reply["toolsets"].([]any)
 	for _, rawRow := range listed {
@@ -47,9 +47,9 @@ func gatewayPluginToolsets(c *CLI) ([]tools.ConfigurableToolset, map[string]bool
 		if !isStr {
 			continue
 		}
-		label := pyrepr.Str(row["key"])
-		if pyrepr.Truthy(row["label"]) {
-			label = pyrepr.Str(row["label"])
+		label := anyutil.String(row["key"])
+		if anyutil.IsTrue(row["label"]) {
+			label = anyutil.String(row["label"])
 		}
 		rows = append(rows, tools.ConfigurableToolset{Key: key, Label: label, Description: strOrEmpty(row["description"])})
 	}

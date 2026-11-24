@@ -25,11 +25,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Release string stamped into user agents and attribution tags, set by the build
@@ -428,9 +428,9 @@ func clampReasoningCfg(c reasoningCfg, supported []string) reasoningCfg {
 }
 
 // Moonshot or DeepSeek style thinking toggle and top level effort split
-func thinkingToggleExtras(c reasoningCfg, efforts []string, overrides map[string]string, alwaysToggle bool) (*pyjson.Object, map[string]any) {
+func thinkingToggleExtras(c reasoningCfg, efforts []string, overrides map[string]string, alwaysToggle bool) (*jsonutil.Object, map[string]any) {
 	if c.set && c.disabled {
-		return pyjson.ObjectOf("thinking", pyjson.ObjectOf("type", "disabled")), map[string]any{}
+		return jsonutil.ObjectOf("thinking", jsonutil.ObjectOf("type", "disabled")), map[string]any{}
 	}
 	effort := requestedEffort(c)
 	if effort == "none" {
@@ -438,13 +438,13 @@ func thinkingToggleExtras(c reasoningCfg, efforts []string, overrides map[string
 	}
 	clamped := clampEffort(effort, efforts, overrides)
 	if effort != "" && containsStr(efforts, clamped) {
-		extra := pyjson.ObjectOf()
+		extra := jsonutil.ObjectOf()
 		if alwaysToggle {
-			extra.Set("thinking", pyjson.ObjectOf("type", "enabled"))
+			extra.Set("thinking", jsonutil.ObjectOf("type", "enabled"))
 		}
 		return extra, map[string]any{"reasoning_effort": clamped}
 	}
-	return pyjson.ObjectOf("thinking", pyjson.ObjectOf("type", "enabled")), map[string]any{}
+	return jsonutil.ObjectOf("thinking", jsonutil.ObjectOf("type", "enabled")), map[string]any{}
 }
 
 func tokenhubEffort(requested string) string {
@@ -455,33 +455,33 @@ func tokenhubEffort(requested string) string {
 }
 
 // Generic nested reasoning fallback for routes without a declared shape
-func genericNestedReasoning(c reasoningCfg) *pyjson.Object {
+func genericNestedReasoning(c reasoningCfg) *jsonutil.Object {
 	if !c.set {
-		return pyjson.ObjectOf()
+		return jsonutil.ObjectOf()
 	}
 	if c.disabled {
-		return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", false))
+		return jsonutil.ObjectOf("reasoning", jsonutil.ObjectOf("enabled", false))
 	}
 	effort := c.effort
 	if effort == "" {
 		effort = "medium"
 	}
-	return pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", true, "effort", effort))
+	return jsonutil.ObjectOf("reasoning", jsonutil.ObjectOf("enabled", true, "effort", effort))
 }
 
 var dashscopePreserveModels = []string{"qwen3.6", "qwen3.7", "qwen3.8", "kimi-k2.6", "kimi-k2.7"}
 
-func dashscopePreserveThinkingExtras(model string) *pyjson.Object {
+func dashscopePreserveThinkingExtras(model string) *jsonutil.Object {
 	m := strings.ToLower(strings.TrimSpace(model))
 	for _, tok := range dashscopePreserveModels {
 		if strings.Contains(m, tok) {
-			return pyjson.ObjectOf("preserve_thinking", true)
+			return jsonutil.ObjectOf("preserve_thinking", true)
 		}
 	}
 	if strings.HasPrefix(m, "glm-5") {
-		return pyjson.ObjectOf("clear_thinking", false)
+		return jsonutil.ObjectOf("clear_thinking", false)
 	}
-	return pyjson.ObjectOf()
+	return jsonutil.ObjectOf()
 }
 
 var lmValidEfforts = map[string]bool{"none": true, "minimal": true, "low": true, "medium": true, "high": true, "xhigh": true}
@@ -1065,15 +1065,15 @@ func aliasReservedTools(tools []map[string]any, reserved []string, nameOf func(m
 }
 
 func chatToolName(t map[string]any) string {
-	fn, _ := pyjson.Dict(t["function"])
+	fn, _ := jsonutil.AsMap(t["function"])
 	return stringOf(fn["name"])
 }
 
 func chatToolRename(t map[string]any, alias string) map[string]any {
-	fn, _ := pyjson.AsObject(t["function"])
-	nf := pyjson.NewObject()
+	fn, _ := jsonutil.AsObject(t["function"])
+	nf := jsonutil.NewObject()
 	if fn != nil {
-		nf = fn.Copy()
+		nf = fn.Clone()
 	}
 	nf.Set("name", alias)
 	nt := make(map[string]any, len(t))
@@ -1126,8 +1126,8 @@ func isMoonshotModel(model string) bool {
 	return strings.Contains(bare, "moonshot") || strings.Contains(bare, "/kimi") || strings.HasPrefix(bare, "kimi")
 }
 
-func moonshotEmptyObject() *pyjson.Object {
-	return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject(), "required", []any{})
+func moonshotEmptyObject() *jsonutil.Object {
+	return jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject(), "required", []any{})
 }
 
 // Schema node rewritten into the Moonshot flavored JSON schema subset, dicts rebuilt in their own key order
@@ -1139,19 +1139,19 @@ func moonshotRepairSchema(node any) any {
 			out[i] = moonshotRepairSchema(it)
 		}
 		return out
-	case *pyjson.Object, map[string]any:
-		src, _ := pyjson.AsObject(n)
-		repaired := pyjson.NewObject()
-		for _, k := range src.Keys {
-			v := src.Vals[k]
-			_, isDict := pyjson.Dict(v)
+	case *jsonutil.Object, map[string]any:
+		src, _ := jsonutil.AsObject(n)
+		repaired := jsonutil.NewObject()
+		for _, k := range src.Keys() {
+			v := src.Value(k)
+			_, isDict := jsonutil.AsMap(v)
 			_, isList := v.([]any)
 			switch {
 			case moonshotSchemaMapKeys[k] && isDict:
-				vm, _ := pyjson.AsObject(v)
-				sub := pyjson.NewObject()
-				for _, sk := range vm.Keys {
-					sub.Set(sk, moonshotRepairSchema(vm.Vals[sk]))
+				vm, _ := jsonutil.AsObject(v)
+				sub := jsonutil.NewObject()
+				for _, sk := range vm.Keys() {
+					sub.Set(sk, moonshotRepairSchema(vm.Value(sk)))
 				}
 				repaired.Set(k, sub)
 			case moonshotSchemaListKeys[k] && isList, moonshotSchemaNodeKeys[k] && isDict:
@@ -1160,11 +1160,11 @@ func moonshotRepairSchema(node any) any {
 				repaired.Set(k, v)
 			}
 		}
-		if anyOf, ok := repaired.Vals["anyOf"].([]any); ok {
+		if anyOf, ok := repaired.Value("anyOf").([]any); ok {
 			repaired.Delete("type")
 			var nonNull []any
 			for _, b := range anyOf {
-				bm, isDict := pyjson.Dict(b)
+				bm, isDict := jsonutil.AsMap(b)
 				if !isDict {
 					continue
 				}
@@ -1180,14 +1180,14 @@ func moonshotRepairSchema(node any) any {
 				repaired.Set("anyOf", nonNull)
 				return repaired
 			}
-			merged := pyjson.NewObject()
-			for _, k := range repaired.Keys {
+			merged := jsonutil.NewObject()
+			for _, k := range repaired.Keys() {
 				if k != "anyOf" {
-					merged.Set(k, repaired.Vals[k])
+					merged.Set(k, repaired.Value(k))
 				}
 			}
-			if only, ok := pyjson.AsObject(nonNull[0]); ok {
-				merged.Update(only)
+			if only, ok := jsonutil.AsObject(nonNull[0]); ok {
+				merged.Merge(only)
 			}
 			repaired = merged
 		}
@@ -1195,7 +1195,7 @@ func moonshotRepairSchema(node any) any {
 		if _, hasRef := repaired.Get("$ref"); !hasRef {
 			repaired = moonshotFillMissingType(repaired)
 		}
-		if enum, ok := repaired.Vals["enum"].([]any); ok && moonshotScalarTypes[stringOf(repaired.Vals["type"])] {
+		if enum, ok := repaired.Value("enum").([]any); ok && moonshotScalarTypes[stringOf(repaired.Value("type"))] {
 			var cleaned []any
 			for _, v := range enum {
 				if v == nil || v == "" {
@@ -1209,7 +1209,7 @@ func moonshotRepairSchema(node any) any {
 				repaired.Delete("enum")
 			}
 		}
-		if stringOf(repaired.Vals["type"]) == "object" {
+		if stringOf(repaired.Value("type")) == "object" {
 			repaired = moonshotEnsureRequired(repaired)
 		}
 		return repaired
@@ -1217,9 +1217,9 @@ func moonshotRepairSchema(node any) any {
 	return node
 }
 
-func moonshotEnsureRequired(node *pyjson.Object) *pyjson.Object {
-	props, hasProps := pyjson.Dict(node.Vals["properties"])
-	if req, ok := node.Vals["required"].([]any); ok {
+func moonshotEnsureRequired(node *jsonutil.Object) *jsonutil.Object {
+	props, hasProps := jsonutil.AsMap(node.Value("properties"))
+	if req, ok := node.Value("required").([]any); ok {
 		if hasProps {
 			kept := make([]any, 0, len(req))
 			for _, r := range req {
@@ -1238,13 +1238,13 @@ func moonshotEnsureRequired(node *pyjson.Object) *pyjson.Object {
 }
 
 // Copy of the node with an inferred type set in place, the node itself when it already has one
-func moonshotFillMissingType(node *pyjson.Object) *pyjson.Object {
-	withType := func(t string) *pyjson.Object {
-		out := node.Copy()
+func moonshotFillMissingType(node *jsonutil.Object) *jsonutil.Object {
+	withType := func(t string) *jsonutil.Object {
+		out := node.Clone()
 		out.Set("type", t)
 		return out
 	}
-	if list, ok := node.Vals["type"].([]any); ok {
+	if list, ok := node.Value("type").([]any); ok {
 		concrete := "string"
 		for _, t := range list {
 			if ts, ok := t.(string); ok && ts != "" && ts != "null" {
@@ -1268,7 +1268,7 @@ func moonshotFillMissingType(node *pyjson.Object) *pyjson.Object {
 	case hasItems || hasPrefix:
 		return withType("array")
 	}
-	if enum, ok := node.Vals["enum"].([]any); ok && len(enum) > 0 {
+	if enum, ok := node.Value("enum").([]any); ok && len(enum) > 0 {
 		switch v := enum[0].(type) {
 		case bool:
 			return withType("boolean")
@@ -1293,17 +1293,17 @@ func moonshotFillMissingType(node *pyjson.Object) *pyjson.Object {
 }
 
 // Deep copied Moonshot compatible object schema, the input never mutated
-func sanitizeMoonshotToolParameters(params any) *pyjson.Object {
-	if _, ok := pyjson.Dict(params); !ok {
+func sanitizeMoonshotToolParameters(params any) *jsonutil.Object {
+	if _, ok := jsonutil.AsMap(params); !ok {
 		return moonshotEmptyObject()
 	}
-	repaired, ok := moonshotRepairSchema(pyjson.Clone(params)).(*pyjson.Object)
+	repaired, ok := moonshotRepairSchema(jsonutil.Clone(params)).(*jsonutil.Object)
 	if !ok {
 		return moonshotEmptyObject()
 	}
 	repaired.Set("type", "object")
 	if _, ok := repaired.Get("properties"); !ok {
-		repaired.Set("properties", pyjson.NewObject())
+		repaired.Set("properties", jsonutil.NewObject())
 	}
 	return moonshotEnsureRequired(repaired)
 }
@@ -1315,14 +1315,14 @@ func sanitizeMoonshotTools(tools []map[string]any) []map[string]any {
 	out := make([]map[string]any, 0, len(tools))
 	anyChange := false
 	for _, tool := range tools {
-		fn, ok := pyjson.AsObject(tool["function"])
+		fn, ok := jsonutil.AsObject(tool["function"])
 		if !ok {
 			out = append(out, tool)
 			continue
 		}
 		anyChange = true
-		nf := fn.Copy()
-		nf.Set("parameters", sanitizeMoonshotToolParameters(fn.Vals["parameters"]))
+		nf := fn.Clone()
+		nf.Set("parameters", sanitizeMoonshotToolParameters(fn.Value("parameters")))
 		nt := make(map[string]any, len(tool))
 		for k, v := range tool {
 			nt[k] = v
@@ -1418,7 +1418,7 @@ func contentCacheKey(instructions string, tools []map[string]any, scope string) 
 		sort.SliceStable(sorted, func(i, j int) bool {
 			return toolSortName(sorted[i]) < toolSortName(sorted[j])
 		})
-		text, _ := pyjson.Dumps(sorted, pyjson.SortKeys(true), pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+		text, _ := jsonutil.Encode(sorted, jsonutil.SortKeys())
 		toolsPart = text
 	}
 	sum := sha256.Sum256([]byte(scope + "\x00" + instructions + "\x00" + toolsPart))
@@ -1565,10 +1565,10 @@ type capsDiskRow struct {
 
 func (c *capsCatalog) saveDisk(ctx context.Context, caps map[string]reasoningCaps) {
 	path := reasoningCapsDiskPath()
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	if raw, err := os.ReadFile(path); err == nil {
-		if v, err := pyjson.Loads(string(raw)); err == nil {
-			if obj, ok := v.(*pyjson.Object); ok {
+		if v, err := jsonutil.Decode(string(raw)); err == nil {
+			if obj, ok := v.(*jsonutil.Object); ok {
 				data = obj
 			}
 		}
@@ -1578,10 +1578,10 @@ func (c *capsCatalog) saveDisk(ctx context.Context, caps map[string]reasoningCap
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	rows := pyjson.NewObject()
+	rows := jsonutil.NewObject()
 	for _, id := range ids {
 		cp := caps[id]
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		row.Set("known", cp.known)
 		row.Set("supports_reasoning", cp.supports)
 		if len(cp.supportedEfforts) > 0 {
@@ -1594,11 +1594,11 @@ func (c *capsCatalog) saveDisk(ctx context.Context, caps map[string]reasoningCap
 		row.Set("mandatory", cp.mandatory)
 		rows.Set(id, row)
 	}
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("ts", float64(time.Now().UnixNano())/1e9)
 	entry.Set("caps", rows)
 	data.Set(c.url, entry)
-	if err := modelsWriteJSONCache(ctx, path, data, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
+	if err := modelsWriteJSONCache(ctx, path, data, jsonutil.Indent(0)); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to save reasoning-caps disk cache: %v", err))
 	}
 }
@@ -2286,12 +2286,12 @@ func (c *ccRoute) serviceTier(req *Request) string {
 func (c *ccRoute) applyProviderReasoning(req *Request, rcfg reasoningCfg, supports bool, settings wireSettings, body, extra *omap, top map[string]any) {
 	sticky := cacheScopeFromSessionID(firstNonEmpty(req.CacheScope, req.SessionID))
 	known := knownProviders[c.provider]
-	putExtra := func(m *pyjson.Object) {
+	putExtra := func(m *jsonutil.Object) {
 		if m == nil {
 			return
 		}
-		for _, k := range m.Keys {
-			extra.Set(k, m.Vals[k])
+		for _, k := range m.Keys() {
+			extra.Set(k, m.Value(k))
 		}
 	}
 	switch {
@@ -2353,7 +2353,7 @@ func (c *ccRoute) applyProviderReasoning(req *Request, rcfg reasoningCfg, suppor
 		}
 	case c.provider == "kimi-coding" || c.provider == "kimi-coding-cn":
 		e, t := thinkingToggleExtras(rcfg, kimiK3Efforts, kimiK3Overrides, false)
-		if th, ok := e.Vals["thinking"].(*pyjson.Object); ok && th.Vals["type"] == "enabled" && strings.Contains(c.modelLower, "k2") {
+		if th, ok := e.Value("thinking").(*jsonutil.Object); ok && th.Value("type") == "enabled" && strings.Contains(c.modelLower, "k2") {
 			th.Set("keep", "all")
 		}
 		putExtra(e)
@@ -2708,7 +2708,7 @@ func validatedOpenRouterProviderSort(raw any) (string, bool) {
 	case "throughput", "latency", "price":
 		return value, true
 	}
-	pkgLog().Warn(fmt.Sprintf("Ignoring invalid OpenRouter provider.sort value %s (allowed: latency, price, throughput)", pyrepr.Repr(raw)))
+	pkgLog().Warn(fmt.Sprintf("Ignoring invalid OpenRouter provider.sort value %s (allowed: latency, price, throughput)", anyutil.Quote(raw)))
 	return "", false
 }
 

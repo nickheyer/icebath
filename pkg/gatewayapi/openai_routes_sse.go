@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Durable admission identity of a chat completions Idempotency-Key in the authenticated namespace
@@ -59,22 +59,14 @@ func (a *APIServerAdapter) implicitChatSession(ctx context.Context, request *gat
 
 // Runtime store, SQLite and OS errors a store error response answers
 func isStoreError(err error) bool {
-	var runtimeErr *state.RuntimeStoreError
-	if errors.As(err, &runtimeErr) {
+	if _, ok := state.SQLiteClassOf(err); ok {
 		return true
 	}
-	var typed interface{ PyTypeName() string }
-	if errors.As(err, &typed) {
-		switch typed.PyTypeName() {
-		case "OperationalError", "DatabaseError", "IntegrityError", "OSError", "sqlite3.Error":
-			return true
-		}
-	}
-	return false
+	return errors.As(err, new(*state.RuntimeStoreError)) || errors.As(err, new(*state.CorruptStoreError)) || errorutil.IsSystem(err)
 }
 
 // Runs compute once per principal scope, route and Idempotency-Key plus body fingerprint
-func (a *APIServerAdapter) runIdempotent(ctx context.Context, request *gateway.WebRequest, body *pyjson.Object, compute func() ([2]map[string]any, error), logLabel string, fingerprintKeys []string, route string) ([2]map[string]any, *gateway.WebResponse) {
+func (a *APIServerAdapter) runIdempotent(ctx context.Context, request *gateway.WebRequest, body *jsonutil.Object, compute func() ([2]map[string]any, error), logLabel string, fingerprintKeys []string, route string) ([2]map[string]any, *gateway.WebResponse) {
 	key := request.Header.Get("Idempotency-Key")
 	var outcome [2]map[string]any
 	var err error
@@ -127,9 +119,9 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 	if err != nil {
 		return nil, err
 	}
-	chunk := func(delta *pyjson.Object, finish any, extra ...any) *pyjson.Object {
-		out := pyjson.ObjectOf("id", completionID, "object", "chat.completion.chunk", "created", created, "model", model,
-			"choices", []any{pyjson.ObjectOf("index", int64(0), "delta", delta, "finish_reason", finish)})
+	chunk := func(delta *jsonutil.Object, finish any, extra ...any) *jsonutil.Object {
+		out := jsonutil.ObjectOf("id", completionID, "object", "chat.completion.chunk", "created", created, "model", model,
+			"choices", []any{jsonutil.ObjectOf("index", int64(0), "delta", delta, "finish_reason", finish)})
 		for i := 0; i+1 < len(extra); i += 2 {
 			out.Set(extra[i].(string), extra[i+1])
 		}
@@ -144,7 +136,7 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 	}
 	contentSent := false
 	streamErr := func() error {
-		if err := write(chunk(pyjson.ObjectOf("role", "assistant"), nil), ""); err != nil {
+		if err := write(chunk(jsonutil.ObjectOf("role", "assistant"), nil), ""); err != nil {
 			return err
 		}
 		err := iterStreamItems(ctx, q, task, response, func(item any, eos bool) error {
@@ -160,7 +152,7 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 					}
 					return write(v.payload, "icebath.tool.progress")
 				case "__reasoning__":
-					return write(chunk(pyjson.ObjectOf("reasoning_content", v.payload.GetOr("text", "")), nil), "")
+					return write(chunk(jsonutil.ObjectOf("reasoning_content", v.payload.ValueOr("text", "")), nil), "")
 				case "__status__":
 					return write(v.payload, "icebath.status")
 				case "__approval__":
@@ -170,7 +162,7 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 				if v != "" {
 					contentSent = true
 				}
-				return write(chunk(pyjson.ObjectOf("content", v), nil), "")
+				return write(chunk(jsonutil.ObjectOf("content", v), nil), "")
 			}
 			return nil
 		})
@@ -188,19 +180,19 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 		completed, isPartial, isFailed, errMsg := resultFlags(result)
 		if agentErr != nil {
 			isFailed = true
-			if !pyrepr.Truthy(errMsg) {
+			if !anyutil.IsTrue(errMsg) {
 				errMsg = agentErr.Error()
 			}
 		}
 		exhausted := budgetExhausted(result)
 		finish := finishReason(completed, isPartial, isFailed, errMsg, agentErr, exhausted)
-		finishChunk := chunk(pyjson.NewObject(), finish, "usage", chatUsagePayload(usage))
+		finishChunk := chunk(jsonutil.NewObject(), finish, "usage", chatUsagePayload(usage))
 		var suppressed *presentationSuppressedError
 		muted := (result != nil && result["_notification_presentation_suppressed"] == true) || errors.As(agentErr, &suppressed)
 		if !contentSent && !muted && result != nil {
 			final, _ := result["final_response"].(string)
 			if fallback := gateway.APIResolveMediaToDataURLs(ctx, final); fallback != "" {
-				if err := write(chunk(pyjson.ObjectOf("content", fallback), nil), ""); err != nil {
+				if err := write(chunk(jsonutil.ObjectOf("content", fallback), nil), ""); err != nil {
 					return err
 				}
 			}
@@ -210,18 +202,18 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 				if !appended {
 					text = transformedNotice(ctx) + tail
 				}
-				if err := write(chunk(pyjson.ObjectOf("content", text), nil), ""); err != nil {
+				if err := write(chunk(jsonutil.ObjectOf("content", text), nil), ""); err != nil {
 					return err
 				}
 			}
 		}
 		if finish != "stop" {
-			if pyrepr.Truthy(errMsg) && !muted {
+			if anyutil.IsTrue(errMsg) && !muted {
 				errType := "agent_error"
 				if agentErr != nil {
-					errType = pyTypeName(agentErr)
+					errType = errorutil.Kind(agentErr)
 				}
-				finishChunk.Set("error", pyjson.ObjectOf("message", errMsg, "type", errType))
+				finishChunk.Set("error", jsonutil.ObjectOf("message", errMsg, "type", errType))
 			}
 			var extrasErr any = errMsg
 			if muted {
@@ -240,7 +232,7 @@ func (a *APIServerAdapter) writeSSEChatCompletion(ctx context.Context, request *
 			pkgLog().Info(fmt.Sprintf("SSE client disconnected; interrupted agent task %s", completionID))
 		} else {
 			pkgLog().Error(fmt.Sprintf("Agent crashed mid-stream for %s: %.300s", completionID, streamErr.Error()))
-			if err := write(chunk(pyjson.NewObject(), "error"), ""); err == nil {
+			if err := write(chunk(jsonutil.NewObject(), "error"), ""); err == nil {
 				_ = response.Write([]byte("data: [DONE]\n\n"))
 			}
 		}
@@ -318,27 +310,27 @@ func (a *APIServerAdapter) writeSSEResponses(ctx context.Context, request *gatew
 }
 
 // Re-emits a settled idempotent record as SSE, its exact frames or created plus its terminal event
-func (a *APIServerAdapter) replaySSEResponses(request *gateway.WebRequest, replay *pyjson.Object) (*gateway.WebResponse, error) {
-	stored, _ := replay.GetOr("headers", nil).(*pyjson.Object)
+func (a *APIServerAdapter) replaySSEResponses(request *gateway.WebRequest, replay *jsonutil.Object) (*gateway.WebResponse, error) {
+	stored, _ := replay.ValueOr("headers", nil).(*jsonutil.Object)
 	headers := storedHeaders(stored)
 	response, err := a.prepareSSEResponse(request, headers["X-Icebath-Session-Id"], headers["X-Icebath-Session-Key"])
 	if err != nil {
 		return nil, err
 	}
-	events, _ := replay.GetOr("events", nil).([]any)
+	events, _ := replay.ValueOr("events", nil).([]any)
 	if len(events) == 0 {
-		env, _ := replay.GetOr("response", nil).(*pyjson.Object)
-		created := pyjson.NewObject()
+		env, _ := replay.ValueOr("response", nil).(*jsonutil.Object)
+		created := jsonutil.NewObject()
 		for _, k := range []string{"id", "object", "created_at", "model"} {
 			v, _ := env.Get(k)
 			created.Set(k, v)
 		}
 		created.Set("status", "in_progress")
 		created.Set("output", []any{})
-		status := pyrepr.Str(env.GetOr("status", ""))
+		status := anyutil.String(env.ValueOr("status", ""))
 		events = []any{
-			[]any{"response.created", pyjson.ObjectOf("type", "response.created", "response", created, "sequence_number", int64(0))},
-			[]any{"response." + status, pyjson.ObjectOf("type", "response."+status, "response", env, "sequence_number", int64(1))},
+			[]any{"response.created", jsonutil.ObjectOf("type", "response.created", "response", created, "sequence_number", int64(0))},
+			[]any{"response." + status, jsonutil.ObjectOf("type", "response."+status, "response", env, "sequence_number", int64(1))},
 		}
 	}
 	for _, raw := range events {
@@ -346,7 +338,7 @@ func (a *APIServerAdapter) replaySSEResponses(request *gateway.WebRequest, repla
 		if len(pair) != 2 {
 			continue
 		}
-		frame, err := gateway.APISSEFrame(pair[1], pyrepr.Str(pair[0]), true, nil)
+		frame, err := gateway.APISSEFrame(pair[1], anyutil.String(pair[0]), true, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -358,7 +350,7 @@ func (a *APIServerAdapter) replaySSEResponses(request *gateway.WebRequest, repla
 }
 
 // Canonical Idempotency-Key replay of a responses request, the durable key and a replayed answer when settled
-func (a *APIServerAdapter) responsesDurableReplay(ctx context.Context, request *gateway.WebRequest, body *pyjson.Object, stream bool) (string, string, string, string, *gateway.WebResponse, error) {
+func (a *APIServerAdapter) responsesDurableReplay(ctx context.Context, request *gateway.WebRequest, body *jsonutil.Object, stream bool) (string, string, string, string, *gateway.WebResponse, error) {
 	idempotencyKey := request.Header.Get("Idempotency-Key")
 	_, canonical := a.sessionAuthority()
 	if !canonical || idempotencyKey == "" {
@@ -373,7 +365,7 @@ func (a *APIServerAdapter) responsesDurableReplay(ctx context.Context, request *
 	}
 	binding := requestBinding(ctx, a, request, durableKey, fingerprint)
 	var matches bool
-	var replay *pyjson.Object
+	var replay *jsonutil.Object
 	if _, err := store.Atomically(ctx, func(ctx context.Context) (any, error) {
 		var err error
 		matches, replay, err = matchingReplay(ctx, store, durableKey, binding)
@@ -398,8 +390,8 @@ func (a *APIServerAdapter) responsesDurableReplay(ctx context.Context, request *
 			resp, err := a.replaySSEResponses(request, replay)
 			return durableKey, fingerprint, scope, idempotencyKey, resp, err
 		}
-		stored, _ := replay.GetOr("headers", nil).(*pyjson.Object)
-		return durableKey, fingerprint, scope, idempotencyKey, jsonResponse(replay.GetOr("response", nil), http.StatusOK, storedHeaders(stored)), nil
+		stored, _ := replay.ValueOr("headers", nil).(*jsonutil.Object)
+		return durableKey, fingerprint, scope, idempotencyKey, jsonResponse(replay.ValueOr("response", nil), http.StatusOK, storedHeaders(stored)), nil
 	}
 	return durableKey, fingerprint, scope, idempotencyKey, nil, nil
 }

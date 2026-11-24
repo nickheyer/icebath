@@ -7,7 +7,6 @@ import (
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var optionIDToIcebath = map[string]string{
@@ -17,16 +16,16 @@ var optionIDToIcebath = map[string]string{
 var permissionRequestIDs atomic.Int64
 
 // Client permission request the ACP connection sends
-type RequestPermissionFunc func(ctx context.Context, sessionID string, toolCall *pyacp.ToolCallProgress, options []pyacp.PermissionOption) (*pyacp.RequestPermissionResponse, error)
+type RequestPermissionFunc func(ctx context.Context, sessionID string, toolCall *acputil.ToolCallProgress, options []acputil.PermissionOption) (*acputil.RequestPermissionResponse, error)
 
 // Reports whether the schema accepts a permission option kind
 func permissionOptionSupportsKind(kind string) bool {
-	_, err := pyacp.Validate[pyacp.PermissionOption](permissionProbe(kind))
+	_, err := pyacp.Validate[acputil.PermissionOption](permissionProbe(kind))
 	return err == nil
 }
 
-func permissionProbe(kind string) *pyjson.Object {
-	o := pyjson.NewObject()
+func permissionProbe(kind string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("optionId", "__probe__")
 	o.Set("kind", kind)
 	o.Set("name", "probe")
@@ -34,45 +33,45 @@ func permissionProbe(kind string) *pyjson.Object {
 }
 
 // Permission options matching icebath approval semantics, once and deny only when the gate re-asks
-func buildPermissionOptions(allowPermanent, allowSession, smartDenied bool) []pyacp.PermissionOption {
+func buildPermissionOptions(allowPermanent, allowSession, smartDenied bool) []acputil.PermissionOption {
 	onceOnly := smartDenied || !allowSession
-	options := []pyacp.PermissionOption{{OptionID: "allow_once", Kind: "allow_once", Name: "Allow once"}}
+	options := []acputil.PermissionOption{{OptionID: "allow_once", Kind: "allow_once", Name: "Allow once"}}
 	if !onceOnly {
-		options = append(options, pyacp.PermissionOption{OptionID: "allow_session", Kind: "allow_always", Name: "Allow for session"})
+		options = append(options, acputil.PermissionOption{OptionID: "allow_session", Kind: "allow_always", Name: "Allow for session"})
 		if allowPermanent {
-			options = append(options, pyacp.PermissionOption{OptionID: "allow_always", Kind: "allow_always", Name: "Allow always"})
+			options = append(options, acputil.PermissionOption{OptionID: "allow_always", Kind: "allow_always", Name: "Allow always"})
 		}
 	}
-	options = append(options, pyacp.PermissionOption{OptionID: "deny", Kind: "reject_once", Name: "Deny"})
+	options = append(options, acputil.PermissionOption{OptionID: "deny", Kind: "reject_once", Name: "Deny"})
 	if !onceOnly && permissionOptionSupportsKind("reject_always") {
-		options = append(options, pyacp.PermissionOption{OptionID: "deny_always", Kind: "reject_always", Name: "Deny always"})
+		options = append(options, acputil.PermissionOption{OptionID: "deny_always", Kind: "reject_always", Name: "Deny always"})
 	}
 	return options
 }
 
 // Pending execute tool call update attached to a permission request with a unique perm-check id
-func buildPermissionToolCall(command, description string) *pyacp.ToolCallProgress {
+func buildPermissionToolCall(command, description string) *acputil.ToolCallProgress {
 	content, title := "$ "+command, command
 	if description != "" {
 		content = description + "\n$ " + command
 		title = description + ": " + command
 	}
-	raw := pyjson.NewObject()
+	raw := jsonutil.NewObject()
 	raw.Set("command", command)
 	raw.Set("description", description)
-	return pyacp.UpdateToolCall(fmt.Sprintf("perm-check-%d", permissionRequestIDs.Add(1)), pyacp.ToolCallFields{
-		Title: pyacp.Ptr(title), Kind: pyacp.Ptr("execute"), Status: pyacp.Ptr("pending"),
-		Content:  []pyacp.ToolCallContent{pyacp.ToolContent(pyacp.TextBlock(content))},
+	return acputil.UpdateToolCall(fmt.Sprintf("perm-check-%d", permissionRequestIDs.Add(1)), acputil.ToolCallFields{
+		Title: new(title), Kind: new("execute"), Status: new("pending"),
+		Content:  []acputil.ToolCallContent{acputil.ToolContent(acputil.TextBlock(content))},
 		RawInput: raw,
 	})
 }
 
 // Reports whether a response selected one of the allow options
-func permissionAllowed(resp *pyacp.RequestPermissionResponse, options []pyacp.PermissionOption) bool {
+func permissionAllowed(resp *acputil.RequestPermissionResponse, options []acputil.PermissionOption) bool {
 	if resp == nil {
 		return false
 	}
-	sel, ok := resp.Outcome.(*pyacp.AllowedOutcome)
+	sel, ok := resp.Outcome.(*acputil.AllowedOutcome)
 	if !ok {
 		return false
 	}

@@ -6,9 +6,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Registry of the session authorities one runtime serves keyed by the home key of each profile home
@@ -16,9 +16,9 @@ type SessionAuthorities struct {
 	LaunchKey   string
 	Multiplexed bool
 	mu          sync.Mutex
-	byKey       *pydict.Dict[string, *SessionAuthority]
-	names       *pydict.Dict[string, *string]
-	starting    *pydict.Dict[string, chan struct{}]
+	byKey       *orderedutil.Map[string, *SessionAuthority]
+	names       *orderedutil.Map[string, *string]
+	starting    *orderedutil.Map[string, chan struct{}]
 }
 
 // Registry holding no slot yet for the launch home, multiplexed when the config says so
@@ -26,9 +26,9 @@ func NewSessionAuthorities(launchHome string, multiplexed bool) *SessionAuthorit
 	return &SessionAuthorities{
 		LaunchKey:   home.Key(launchHome),
 		Multiplexed: multiplexed,
-		byKey:       pydict.New[string, *SessionAuthority](),
-		names:       pydict.New[string, *string](),
-		starting:    pydict.New[string, chan struct{}](),
+		byKey:       orderedutil.NewMap[string, *SessionAuthority](),
+		names:       orderedutil.NewMap[string, *string](),
+		starting:    orderedutil.NewMap[string, chan struct{}](),
 	}
 }
 

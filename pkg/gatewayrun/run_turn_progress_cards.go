@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Adapter rendering tool progress as native plan and task cards
@@ -52,8 +52,8 @@ func newTaskCardState(adapter gateway.PlatformAdapter) *taskCardState {
 // Whitespace collapsed text cut to the limit with an ellipsis
 func taskCardCompact(value any, limit int) string {
 	raw := ""
-	if pyrepr.Truthy(value) {
-		raw = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		raw = anyutil.String(value)
 	}
 	text := strings.Join(strings.Fields(raw), " ")
 	if utf8.RuneCountInString(text) <= limit {
@@ -107,16 +107,16 @@ func (s *taskCardState) applyEvent(raw any) bool {
 		return false
 	}
 	callID := ""
-	if pyrepr.Truthy(event["tool_call_id"]) {
-		callID = pyrepr.Str(event["tool_call_id"])
+	if anyutil.IsTrue(event["tool_call_id"]) {
+		callID = anyutil.String(event["tool_call_id"])
 	}
 	if callID == "" {
 		s.anonymousSeq++
-		callID = "anonymous_" + pyrepr.Str(s.anonymousSeq)
+		callID = "anonymous_" + anyutil.String(s.anonymousSeq)
 	}
 	toolName := "tool"
-	if pyrepr.Truthy(event["tool_name"]) {
-		toolName = pyrepr.Str(event["tool_name"])
+	if anyutil.IsTrue(event["tool_name"]) {
+		toolName = anyutil.String(event["tool_name"])
 	}
 	if eventType == "tool.started" {
 		preview := taskCardCompact(event["preview"], 64)
@@ -131,7 +131,7 @@ func (s *taskCardState) applyEvent(raw any) bool {
 	if !ok {
 		task = s.upsert(callID, toolName)
 	}
-	if pyrepr.Truthy(event["is_error"]) {
+	if anyutil.IsTrue(event["is_error"]) {
 		task["status"] = "error"
 	} else {
 		task["status"] = "complete"
@@ -143,7 +143,7 @@ func sendResultText(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Edits the fallback task card message or sends a new one, a declined edit suppressing the rest of the turn
@@ -170,8 +170,8 @@ func (t *TurnRunner) taskCardSendOrEditFallback(ctx context.Context, st *taskCar
 	if err != nil {
 		return err
 	}
-	if result.Success && pyrepr.Truthy(result.MessageID) {
-		id := pyrepr.Str(result.MessageID)
+	if result.Success && anyutil.IsTrue(result.MessageID) {
+		id := anyutil.String(result.MessageID)
 		st.fallbackMsgID = &id
 	}
 	return nil
@@ -217,7 +217,7 @@ func (t *TurnRunner) taskCardPublish(ctx context.Context, st *taskCardState) err
 			return nil
 		}
 		st.nativeFailed = true
-		reason := pyrepr.Str(result.Error)
+		reason := anyutil.String(result.Error)
 		if result.Error != nil && cardDestinationRefusals[reason] {
 			t.taskCardUncardableDestination(st, reason)
 			if st.publicationSuppressed {
@@ -336,15 +336,15 @@ func (t *TurnRunner) editProgressMessage(ctx context.Context, st *progressEditSt
 	tc := t.ctx
 	finalize := st.adapter.Base() != nil && st.adapter.Base().Traits.RequiresEditFinalize
 	if st.editAcceptsMetadata {
-		return st.adapter.(metadataMessageEditor).EditMessageWithMetadata(ctx, tc.source.ChatID, pyrepr.Str(messageID), content, finalize, tc.progressMetadata)
+		return st.adapter.(metadataMessageEditor).EditMessageWithMetadata(ctx, tc.source.ChatID, anyutil.String(messageID), content, finalize, tc.progressMetadata)
 	}
-	return st.adapter.EditMessage(ctx, tc.source.ChatID, pyrepr.Str(messageID), content, finalize)
+	return st.adapter.EditMessage(ctx, tc.source.ChatID, anyutil.String(messageID), content, finalize)
 }
 
 func progressText(lines []any) string {
 	parts := make([]string, len(lines))
 	for i, line := range lines {
-		parts[i] = pyrepr.Str(line)
+		parts[i] = anyutil.String(line)
 	}
 	return strings.Join(parts, "\n")
 }
@@ -411,7 +411,7 @@ func (t *TurnRunner) rollProgressOverflowIfNeeded(ctx context.Context, st *progr
 		if err != nil {
 			return false, err
 		}
-		if result.Success && pyrepr.Truthy(result.MessageID) {
+		if result.Success && anyutil.IsTrue(result.MessageID) {
 			st.progressMsgID = result.MessageID
 		}
 	}
@@ -439,7 +439,7 @@ func progressAbsorb(st *progressEditState, raw any) any {
 }
 
 func (t *TurnRunner) flushProgressEdit(ctx context.Context, st *progressEditState) {
-	if st.canEdit && len(st.progressLines) > 0 && pyrepr.Truthy(st.progressMsgID) {
+	if st.canEdit && len(st.progressLines) > 0 && anyutil.IsTrue(st.progressMsgID) {
 		_, _ = t.editProgressMessage(ctx, st, st.progressMsgID, progressText(st.progressLines))
 	}
 }
@@ -467,7 +467,7 @@ func (t *TurnRunner) drainProgressOnCancel(ctx context.Context, st *progressEdit
 			}
 		}
 	}()
-	if st.canEdit && len(st.progressLines) > 0 && pyrepr.Truthy(st.progressMsgID) {
+	if st.canEdit && len(st.progressLines) > 0 && anyutil.IsTrue(st.progressMsgID) {
 		if _, err := t.rollProgressOverflowIfNeeded(ctx, st); err != nil {
 			return err
 		}
@@ -509,12 +509,12 @@ func (t *TurnRunner) progressSendOrEdit(ctx context.Context, st *progressEditSta
 		} else {
 			st.canEdit = false
 		}
-		if _, err := t.sendProgressText(ctx, st.adapter, pyrepr.Str(msg)); err != nil {
+		if _, err := t.sendProgressText(ctx, st.adapter, anyutil.String(msg)); err != nil {
 			return false, err
 		}
 		return true, nil
 	}
-	text := pyrepr.Str(msg)
+	text := anyutil.String(msg)
 	if st.canEdit {
 		text = progressText(st.progressLines)
 	}
@@ -522,7 +522,7 @@ func (t *TurnRunner) progressSendOrEdit(ctx context.Context, st *progressEditSta
 	if err != nil {
 		return false, err
 	}
-	if result.Success && pyrepr.Truthy(result.MessageID) {
+	if result.Success && anyutil.IsTrue(result.MessageID) {
 		st.progressMsgID = result.MessageID
 	}
 	return true, nil
@@ -581,7 +581,7 @@ func (t *TurnRunner) sendProgressMessages(ctx context.Context) error {
 				return err
 			}
 			if !rolled {
-				remaining := editInterval - (pythread.Monotonic() - lastEditTS)
+				remaining := editInterval - (timeutil.Monotonic() - lastEditTS)
 				if remaining > 0 {
 					return sleepCtx(ctx, remaining)
 				}
@@ -593,7 +593,7 @@ func (t *TurnRunner) sendProgressMessages(ctx context.Context) error {
 					return err
 				}
 			}
-			lastEditTS = pythread.Monotonic()
+			lastEditTS = timeutil.Monotonic()
 			return t.progressRestoreTyping(ctx, st)
 		}()
 		switch {

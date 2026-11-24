@@ -3,7 +3,7 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Maximum compression hops any chain walk follows
@@ -66,7 +66,7 @@ func stampCompressionAncestors(ctx context.Context, conn SQLiteConn, sessionID s
 	if err != nil {
 		return err
 	}
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	if len(rows) > 0 {
 		row = rows[0]
 	}
@@ -113,7 +113,7 @@ func stampCompressionAncestors(ctx context.Context, conn SQLiteConn, sessionID s
 }
 
 // Whether a child row is a genuine compression continuation of a parent that ended by compression
-func (d *SessionDB) isCompressionChildRow(ctx context.Context, child *pyjson.Object) (bool, error) {
+func (d *SessionDB) isCompressionChildRow(ctx context.Context, child *jsonutil.Object) (bool, error) {
 	parentID, _ := rowValue(child, "parent_session_id").(string)
 	if parentID == "" || isExplicitForkChildRow(child, true) {
 		return false, nil
@@ -126,6 +126,6 @@ func (d *SessionDB) isCompressionChildRow(ctx context.Context, child *pyjson.Obj
 }
 
 // Whether a child row is a genuine compression continuation, for callers outside this package
-func (d *SessionDB) IsCompressionChildRow(ctx context.Context, child *pyjson.Object) (bool, error) {
+func (d *SessionDB) IsCompressionChildRow(ctx context.Context, child *jsonutil.Object) (bool, error) {
 	return d.isCompressionChildRow(ctx, child)
 }

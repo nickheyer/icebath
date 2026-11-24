@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Home under root whose config sets the reconnect attention threshold
@@ -29,7 +28,7 @@ func TestThresholdFollowsBoundProfileScopeABA(t *testing.T) {
 	homeB := homeWithThreshold(t, root, "b", "100000")
 	t.Setenv("ICEBATH_HOME", homeA)
 	ctx := context.Background()
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	queued := func() map[string]any { return map[string]any{"queued_at": now - 20} }
 	if !reconnectNeedsAttention(ctx, queued(), now) {
 		t.Fatal("launch profile threshold 10s should escalate a 20s queue")

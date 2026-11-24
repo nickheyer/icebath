@@ -13,8 +13,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Gateway runtime ownership seams the host wires, the lock a browse reconcile and the explicit repair hold
@@ -24,7 +24,7 @@ var (
 	LiveRuntimeOwner      func(home string) (pid int, live bool, err error)
 	CanonicalHome         func(home string) (string, error)
 	ProfileLabelForHome   func(home string) string
-	ReadGatewayLockRecord func(path string) *pyjson.Object
+	ReadGatewayLockRecord func(path string) *jsonutil.Object
 )
 
 // Panics unless every gateway ownership seam a reconcile needs is wired
@@ -418,7 +418,7 @@ func integrityProblem(ctx context.Context, path string, budget *browseBudget) (s
 		return "", false, err
 	}
 	timeout := budget.busyTimeout()
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	conn, err := connectReadOnlyTracked(path, &timeout)
 	if err == nil {
 		err = func() error {
@@ -447,10 +447,10 @@ func integrityProblem(ctx context.Context, path string, budget *browseBudget) (s
 	}
 	problems := []string{}
 	for _, row := range rows {
-		if len(row.Keys) == 0 {
+		if row.Len() == 0 {
 			continue
 		}
-		text := pyStr(row.Vals[row.Keys[0]])
+		text := pyStr(row.Value(row.Keys()[0]))
 		if strings.ToLower(text) != "ok" {
 			problems = append(problems, text)
 		}

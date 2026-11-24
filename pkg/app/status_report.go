@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -99,8 +98,8 @@ func buildStatusFields(in statusFieldsInput) map[string]any {
 		"title":         title,
 		"model":         firstNonEmpty(in.agentModel, in.model),
 		"provider":      firstNonEmpty(in.agentProvider, in.provider),
-		"created":       pydatetime.Strftime(created, statusStamp),
-		"last_activity": pydatetime.Strftime(lastActivity, statusStamp),
+		"created":       created.Format("2006-01-02 15:04"),
+		"last_activity": lastActivity.Format("2006-01-02 15:04"),
 		"tokens":        textutil.Thousands(int64(in.agentTokens)),
 		"agent_running": in.agentRunning,
 	}

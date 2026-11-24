@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -225,7 +224,7 @@ func (r *GatewayRunner) startColdRefine(ctx context.Context, source *gateway.Ses
 			return
 		}
 		if startedSet {
-			pkgLog().Warn("cold /refine failed after it started", "error", pyrepr.ExceptionMessage(err))
+			pkgLog().Warn("cold /refine failed after it started", "error", err.Error())
 			return
 		}
 		started <- err

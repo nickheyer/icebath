@@ -7,20 +7,20 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Ordered JSON objects turned into plain mappings, recursively through lists
 func plainJSON(v any) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := make(map[string]any, t.Len())
-		for _, k := range t.Keys {
+		for _, k := range t.Keys() {
 			val, _ := t.Get(k)
 			out[k] = plainJSON(val)
 		}
-		config.SetMappingKeys(out, t.Keys)
+		config.SetMappingKeys(out, t.Keys())
 		return out
 	case []any:
 		out := make([]any, len(t))

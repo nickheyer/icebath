@@ -4,19 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -54,7 +51,7 @@ func strList(values []string) []any {
 }
 
 // Manifest mapping with the grok field names in dataclass order
-func (r *Recipe) ToDict() *pyjson.Object {
+func (r *Recipe) ToDict() *jsonutil.Object {
 	var start, port any
 	if r.Start != nil {
 		start = *r.Start
@@ -64,7 +61,7 @@ func (r *Recipe) ToDict() *pyjson.Object {
 	} else if r.Port != nil {
 		port = int64(*r.Port)
 	}
-	return pyjson.ObjectOf("name", r.Name, "kind", r.Kind, "bootstrap", strList(r.Bootstrap),
+	return jsonutil.ObjectOf("name", r.Name, "kind", r.Kind, "bootstrap", strList(r.Bootstrap),
 		"build", strList(r.Build), "test", strList(r.Test), "start", start, "port", port,
 		"readinessPath", r.ReadinessPath, "evidence", strList(r.Evidence))
 }
@@ -72,7 +69,7 @@ func (r *Recipe) ToDict() *pyjson.Object {
 // Mapping view of a decoded JSON object or a Go map, false for any other value
 func asDict(raw any) (func(string) any, bool) {
 	switch d := raw.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return func(k string) any { v, _ := d.Get(k); return v }, true
 	case map[string]any:
 		return func(k string) any { return d[k] }, true
@@ -84,7 +81,7 @@ func asDict(raw any) (func(string) any, bool) {
 func firstOr(get func(string) any, keys ...string) any {
 	var v any
 	for _, k := range keys {
-		if v = get(k); pyrepr.Truthy(v) {
+		if v = get(k); anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -131,9 +128,9 @@ func RecipeFromDict(raw any) (*Recipe, error) {
 		r.Start = &s
 	}
 	portRaw := firstOr(get, "port", "startPort")
-	if s, ok := portRaw.(string); ok && pystr.StrIsDigit(strings.TrimSpace(s)) {
-		n, err := pyint.Of(strings.TrimSpace(s))
-		if err != nil {
+	if s, ok := portRaw.(string); ok && textutil.IsDigits(strings.TrimSpace(s)) {
+		n, err := anyutil.ToInt(s)
+		if err != nil && !errors.Is(err, anyutil.ErrRange) {
 			return nil, err
 		}
 		portRaw = n
@@ -144,8 +141,8 @@ func RecipeFromDict(raw any) (*Recipe, error) {
 			one := 1
 			r.Port = &one
 		}
-	} else if n, ok := pyint.Instance(portRaw); ok && n.Sign() > 0 && n.Cmp(big.NewInt(65536)) < 0 {
-		p := int(n.Int64())
+	} else if n, ok := anyutil.Int(portRaw); ok && n > 0 && n < 65536 {
+		p := int(n)
 		r.Port = &p
 	}
 	if readiness, ok := firstOr(get, "readinessPath", "readiness_path").(string); ok && strings.HasPrefix(readiness, "/") {
@@ -180,16 +177,16 @@ func readText(root, name string) (*string, error) {
 	if err != nil {
 		return nil, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	text = pystr.TranslateNewlines(text)
+	text = textutil.NormalizeNewlines(text)
 	return &text, nil
 }
 
 // package.json as a mapping, nil when it is absent, undecodable, malformed or not an object
-func readPackageJSON(root string) *pyjson.Object {
+func readPackageJSON(root string) *jsonutil.Object {
 	text, err := readText(root, "package.json")
 	if err != nil {
 		return nil
@@ -198,18 +195,18 @@ func readPackageJSON(root string) *pyjson.Object {
 	if text != nil {
 		src = *text
 	}
-	parsed, err := pyjson.Loads(src)
+	parsed, err := jsonutil.Decode(src)
 	if err != nil {
 		return nil
 	}
-	obj, _ := parsed.(*pyjson.Object)
+	obj, _ := parsed.(*jsonutil.Object)
 	return obj
 }
 
 // pathlib exists, the ignored stat errors answering false and any other error raised
 func exists(path string) (bool, error) {
 	if _, err := os.Stat(path); err != nil {
-		if pypath.PathlibIgnoredError(err) {
+		if pathutil.IsMissing(err) {
 			return false, nil
 		}
 		return false, &OSError{Err: err}
@@ -263,7 +260,7 @@ func mustPyre(pattern string) *regexp2.Regexp {
 
 // Port named by a --port or -p flag or a PORT assignment in a start command, nil when none is
 func inferPortFromCommand(command any) (*int, error) {
-	if !pyrepr.Truthy(command) {
+	if !anyutil.IsTrue(command) {
 		return nil, nil
 	}
 	s, ok := command.(string)
@@ -276,11 +273,11 @@ func inferPortFromCommand(command any) (*int, error) {
 			return nil, err
 		}
 		if m != nil {
-			n, ok := pystr.IntText(m.GroupByNumber(1).String())
-			if !ok {
+			n, err := textutil.ParseInt(m.GroupByNumber(1).String())
+			if err != nil {
 				return nil, fmt.Errorf("port %s in the start command is not a number", m.GroupByNumber(1).String())
 			}
-			p := int(n.Int64())
+			p := int(n)
 			return &p, nil
 		}
 	}
@@ -331,17 +328,17 @@ func scriptRunner(packageManager, entry string) string {
 }
 
 // Node recipe from package.json scripts and dependencies, the first framework dependency deciding kind and port
-func detectNodeRecipe(root string, pkg *pyjson.Object) (*Recipe, error) {
-	scripts := pyjson.NewObject()
+func detectNodeRecipe(root string, pkg *jsonutil.Object) (*Recipe, error) {
+	scripts := jsonutil.NewObject()
 	if raw, _ := pkg.Get("scripts"); raw != nil {
-		if s, ok := raw.(*pyjson.Object); ok {
+		if s, ok := raw.(*jsonutil.Object); ok {
 			scripts = s
 		}
 	}
 	deps := map[string]bool{}
 	for _, key := range []string{"dependencies", "devDependencies"} {
-		if section, ok := pkgGet(pkg, key).(*pyjson.Object); ok {
-			for _, k := range section.Keys {
+		if section, ok := pkgGet(pkg, key).(*jsonutil.Object); ok {
+			for _, k := range section.Keys() {
 				deps[k] = true
 			}
 		}
@@ -360,7 +357,7 @@ func detectNodeRecipe(root string, pkg *pyjson.Object) (*Recipe, error) {
 	runners := func(names ...string) []string {
 		var cmds []string
 		for _, s := range names {
-			if pyrepr.Truthy(pkgGet(scripts, s)) {
+			if anyutil.IsTrue(pkgGet(scripts, s)) {
 				cmds = append(cmds, scriptRunner(packageManager, s))
 			}
 		}
@@ -368,7 +365,7 @@ func detectNodeRecipe(root string, pkg *pyjson.Object) (*Recipe, error) {
 	}
 	r := &Recipe{Name: label, Kind: kind, ReadinessPath: "/"}
 	for _, s := range []string{"dev", "start"} {
-		if pyrepr.Truthy(pkgGet(scripts, s)) {
+		if anyutil.IsTrue(pkgGet(scripts, s)) {
 			start := runners(s)[0]
 			r.Start = &start
 			port, err := inferPortFromCommand(pkgGet(scripts, s))
@@ -392,7 +389,7 @@ func detectNodeRecipe(root string, pkg *pyjson.Object) (*Recipe, error) {
 	r.Bootstrap = []string{install}
 	r.Build = runners("build", "typecheck")
 	r.Test = runners("test", "check", "lint")
-	scriptNames := strings.Join(scripts.Keys, ", ")
+	scriptNames := strings.Join(scripts.Keys(), ", ")
 	if scriptNames == "" {
 		scriptNames = "(none)"
 	}
@@ -404,7 +401,7 @@ func detectNodeRecipe(root string, pkg *pyjson.Object) (*Recipe, error) {
 	return r, nil
 }
 
-func pkgGet(o *pyjson.Object, key string) any {
+func pkgGet(o *jsonutil.Object, key string) any {
 	v, _ := o.Get(key)
 	return v
 }

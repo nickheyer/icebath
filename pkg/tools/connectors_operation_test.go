@@ -4,7 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func twoTargets(kind string) []*ConnTarget {
@@ -13,7 +14,7 @@ func twoTargets(kind string) []*ConnTarget {
 
 func textPtr(s string) *string { return &s }
 
-func mustTransition(t *testing.T, o *ConnectionOperation, name string, to TargetState, actor ConnActor, f TransitionFields) *pyjson.Object {
+func mustTransition(t *testing.T, o *ConnectionOperation, name string, to TargetState, actor ConnActor, f TransitionFields) *jsonutil.Object {
 	t.Helper()
 	change, err := o.Transition(name, to, actor, f)
 	if err != nil {
@@ -47,8 +48,8 @@ func TestTransitionReturnsTheChangeAndWakesTheWaiter(t *testing.T) {
 		t.Fatal("wake set before any change")
 	}
 	change := mustTransition(t, operation, "gmail", TargetInitiated, ActorBackendWatcher, TransitionFields{Detail: textPtr("link minted")})
-	want := pyjson.ObjectOf("target", "gmail", "from", "pending", "to", "initiated", "actor", "backend_watcher", "detail", "link minted")
-	if !pyjson.Equal(change, want) {
+	want := jsonutil.ObjectOf("target", "gmail", "from", "pending", "to", "initiated", "actor", "backend_watcher", "detail", "link minted")
+	if !anyutil.Equal(change, want) {
 		t.Fatalf("change %v", change)
 	}
 	if !operation.Wake.IsSet() {
@@ -79,13 +80,13 @@ func TestSettleIsExactlyOnceAndStampsNotConnected(t *testing.T) {
 	if operation.Settle(SettleDeadline) {
 		t.Fatal("second settle accepted")
 	}
-	if !pyjson.Equal(operation.Result(context.Background(), nil, true), frozen) {
+	if !anyutil.Equal(operation.Result(context.Background(), nil, true), frozen) {
 		t.Fatal("result changed after settling")
 	}
-	by := map[string]*pyjson.Object{}
+	by := map[string]*jsonutil.Object{}
 	rows, _ := frozen.Get("targets")
 	for _, row := range rows.([]any) {
-		obj := row.(*pyjson.Object)
+		obj := row.(*jsonutil.Object)
 		name, _ := obj.Get("name")
 		by[name.(string)] = obj
 	}
@@ -140,9 +141,9 @@ func TestRequestPayloadCarriesTheLiveTargetSnapshot(t *testing.T) {
 	if len(rows.([]any)) != 1 {
 		t.Fatalf("targets %v", rows)
 	}
-	want := pyjson.ObjectOf("name", "gmail", "kind", "mcp", "action", "authorize", "state", "initiated", "resolved", false,
+	want := jsonutil.ObjectOf("name", "gmail", "kind", "mcp", "action", "authorize", "state", "initiated", "resolved", false,
 		"instructions", "Finish setup", "connect_url", "https://l/gmail")
-	if !pyjson.Equal(rows.([]any)[0], want) {
+	if !anyutil.Equal(rows.([]any)[0], want) {
 		t.Fatalf("target %v", rows.([]any)[0])
 	}
 	if id, _ := payload.Get("tool_call_id"); id != "call-1" {

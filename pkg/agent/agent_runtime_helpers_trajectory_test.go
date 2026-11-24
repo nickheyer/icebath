@@ -9,15 +9,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func trajectoryValues(t *testing.T, traj []any) []string {
 	t.Helper()
 	out := make([]string, len(traj))
 	for i, turn := range traj {
-		obj := turn.(*pyjson.Object)
+		obj := turn.(*jsonutil.Object)
 		from, _ := obj.Get("from")
 		value, _ := obj.Get("value")
 		s, _ := value.(string)
@@ -66,7 +66,7 @@ func TestConvertToTrajectoryFormatReplacesImagesAndRaisesOnMissingRole(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	value, _ := traj[2].(*pyjson.Object).Get("value")
+	value, _ := traj[2].(*jsonutil.Object).Get("value")
 	if first := value.([]any)[0].(map[string]any); first["text"] != "[screenshot]" {
 		t.Fatalf("image part %v", value)
 	}

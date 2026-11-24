@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"math"
 	"net/url"
+	"strconv"
 	"sync"
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -224,7 +225,7 @@ func (c *streamCall) current() int {
 func (c *streamCall) discard(attempt int, chunk any) {
 	size := 0
 	if chunk != nil {
-		size = utf8.RuneCountInString(pyrepr.Repr(chunk))
+		size = utf8.RuneCountInString(anyutil.Quote(chunk))
 	}
 	c.mu.Lock()
 	c.discardedChunks++
@@ -281,11 +282,11 @@ func newStreamWatchdog(requestCtx context.Context, cancel context.CancelFunc, ki
 	if t.lifetime > 0 {
 		w.lifeTimer = time.NewTimer(t.lifetime)
 	}
-	staleText, _ := pyrepr.Format(t.stale.Seconds(), ".0f")
+	staleText := strconv.FormatFloat(t.stale.Seconds(), 'f', 0, 64)
 	if t.stale >= secondsDuration(math.Inf(1)) {
 		staleText = "inf"
 	}
-	capText, _ := pyrepr.Format(t.lifetime.Seconds(), ".0f")
+	capText := strconv.FormatFloat(t.lifetime.Seconds(), 'f', 0, 64)
 	pkgLog().Debug(fmt.Sprintf("stream watchdog armed: stale=%ss cap=%ss model=%s", staleText, capText, w.model))
 	return w
 }

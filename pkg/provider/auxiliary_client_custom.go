@@ -4,15 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Runtime provider resolution seam for an explicitly requested provider
@@ -115,13 +116,13 @@ func auxValidateProxyEnvURLs() error {
 		if value == "" {
 			continue
 		}
-		parsed, err := pyurl.Parse(value)
+		parsed, err := urlutil.Split(value)
 		if err == nil && parsed.Scheme != "" {
 			_, _, err = parsed.Port()
 		}
 		if err != nil {
 			return &AuxRuntimeError{Message: fmt.Sprintf("Malformed proxy environment variable %s=%s. "+
-				"Fix or unset your proxy settings and try again.", key, pyrepr.Repr(value))}
+				"Fix or unset your proxy settings and try again.", key, anyutil.Quote(value))}
 		}
 	}
 	return nil
@@ -136,13 +137,13 @@ func auxValidateBaseURL(baseURL string) error {
 	if candidate == "" || strings.HasPrefix(candidate, "acp://") {
 		return nil
 	}
-	parsed, err := pyurl.Parse(candidate)
+	parsed, err := url.Parse(candidate)
 	if err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https") {
-		_, _, err = parsed.Port()
+		_, _, err = urlutil.Port(parsed)
 	}
 	if err != nil {
 		return &AuxRuntimeError{Message: fmt.Sprintf("Malformed custom endpoint URL: %s. "+
-			"Run `icebath model`, or start `icebath` and type `/setup model`, and enter a valid http(s) base URL.", pyrepr.Repr(candidate))}
+			"Run `icebath model`, or start `icebath` and type `/setup model`, and enter a valid http(s) base URL.", anyutil.Quote(candidate))}
 	}
 	return nil
 }
@@ -292,7 +293,7 @@ func auxTryAzureFoundry(ctx context.Context, model string, explicitAPIKey any, e
 	finalModel := auxNormalizeResolvedModel(ctx, requested, "azure-foundry")
 	if finalModel == "" {
 		pkgLog().Debug(fmt.Sprintf("Auxiliary azure-foundry: no model resolved (model=%s, default=%s)",
-			pyrepr.Repr(auxNoneIfEmpty(model)), pyrepr.Repr(settings.Model.Get(ctx))))
+			anyutil.Quote(auxNoneIfEmpty(model)), anyutil.Quote(settings.Model.Get(ctx))))
 		return nil, "", nil
 	}
 	cleanBase, query, err := auxExtractURLQueryParams(baseURL)
@@ -365,7 +366,7 @@ func auxTryAnthropic(ctx context.Context, explicitAPIKey any, explicitBaseURL st
 	if overrideURL := strings.TrimRight(strings.TrimSpace(explicitBaseURL), "/"); overrideURL != "" {
 		if !auxIsAnthropicCompatibleHost(overrideURL) {
 			pkgLog().Warn(fmt.Sprintf("Auxiliary client: refusing anthropic explicit base_url %s — not an "+
-				"Anthropic-compatible host; no client built and no request sent.", pyrepr.Repr(overrideURL)))
+				"Anthropic-compatible host; no client built and no request sent.", anyutil.Quote(overrideURL)))
 			return nil, "", nil
 		}
 		baseURL = overrideURL
@@ -382,7 +383,7 @@ func auxTryAnthropic(ctx context.Context, explicitAPIKey any, explicitBaseURL st
 	if auxProbeActive(ctx) {
 		return &auxProbeClient{apiKey: "", baseURL: baseURL}, model, nil
 	}
-	pkgLog().Debug(fmt.Sprintf("Auxiliary client: Anthropic native (%s) at %s (oauth=%s)", model, baseURL, pyrepr.Str(isOAuth)))
+	pkgLog().Debug(fmt.Sprintf("Auxiliary client: Anthropic native (%s) at %s (oauth=%s)", model, baseURL, anyutil.String(isOAuth)))
 	real, err := auxBuildAnthropicClientFn(ctx, token, baseURL, 0, false)
 	if err != nil {
 		return nil, "", err

@@ -1,6 +1,8 @@
 package kanban
 
-import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+import (
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 const (
 	descTaskIDDefault = "Task id. If omitted, defaults to ICEBATH_KANBAN_TASK from the env — the task the dispatcher spawned you to work on. That default only exists for a dispatcher-spawned worker; any other caller has no default and must pass an explicit task_id (use kanban_list to discover ids)."
@@ -8,19 +10,19 @@ const (
 )
 
 // One typed schema property with its model facing description
-func kanbanSchemaProp(typ, description string) *pyjson.Object {
-	return pyjson.ObjectOf("type", typ, "description", description)
+func kanbanSchemaProp(typ, description string) *jsonutil.Object {
+	return jsonutil.ObjectOf("type", typ, "description", description)
 }
 
 // Schema fragment of the optional board parameter every kanban tool takes
-func kanbanBoardSchemaProp() *pyjson.Object { return kanbanSchemaProp("string", descBoard) }
+func kanbanBoardSchemaProp() *jsonutil.Object { return kanbanSchemaProp("string", descBoard) }
 
 // Tool schema carrying the given properties followed by the optional board parameter
-func kanbanToolSchema(name, description string, properties *pyjson.Object, required []any) *pyjson.Object {
-	props := properties.Copy()
+func kanbanToolSchema(name, description string, properties *jsonutil.Object, required []any) *jsonutil.Object {
+	props := properties.Clone()
 	props.Set("board", kanbanBoardSchemaProp())
-	return pyjson.ObjectOf("name", name, "description", description,
-		"parameters", pyjson.ObjectOf("type", "object", "properties", props, "required", required))
+	return jsonutil.ObjectOf("name", name, "description", description,
+		"parameters", jsonutil.ObjectOf("type", "object", "properties", props, "required", required))
 }
 
 // Status filter values of kanban_list, every workflow column in board order then archived
@@ -34,12 +36,12 @@ func kanbanStatusEnum() []any {
 }
 
 var (
-	kanbanShowSchema = kanbanToolSchema("kanban_show", "Read a task's full state: body, assignee, parent handoffs, attempts, comments. It also carries the title and recent events. Use this to (re)orient yourself before starting work, especially on retries. The response includes a pre-formatted ``worker_context`` string suitable for inclusion verbatim in your reasoning. Outside a dispatcher-spawned worker there is no default task: a bare call returns a pointer to ``kanban_list`` instead of task state.", pyjson.ObjectOf(
+	kanbanShowSchema = kanbanToolSchema("kanban_show", "Read a task's full state: body, assignee, parent handoffs, attempts, comments. It also carries the title and recent events. Use this to (re)orient yourself before starting work, especially on retries. The response includes a pre-formatted ``worker_context`` string suitable for inclusion verbatim in your reasoning. Outside a dispatcher-spawned worker there is no default task: a bare call returns a pointer to ``kanban_list`` instead of task state.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 	), []any{})
-	kanbanListSchema = kanbanToolSchema("kanban_list", "List Kanban task summaries so an orchestrator can discover work to route. Supports the same core filters as the CLI: assignee, status, tenant, include_archived, and limit. Returns compact rows with ids, title, status, assignee, priority, parent/child ids, and counts. Bounded to 50 rows by default, 200 max, with truncation metadata. Also recomputes ready tasks before listing, matching the CLI. Orchestrator-only — dispatcher-spawned task workers never see this tool.", pyjson.ObjectOf(
+	kanbanListSchema = kanbanToolSchema("kanban_list", "List Kanban task summaries so an orchestrator can discover work to route. Supports the same core filters as the CLI: assignee, status, tenant, include_archived, and limit. Returns compact rows with ids, title, status, assignee, priority, parent/child ids, and counts. Bounded to 50 rows by default, 200 max, with truncation metadata. Also recomputes ready tasks before listing, matching the CLI. Orchestrator-only — dispatcher-spawned task workers never see this tool.", jsonutil.ObjectOf(
 		"assignee", kanbanSchemaProp("string", "Optional assignee/profile filter."),
-		"status", pyjson.ObjectOf(
+		"status", jsonutil.ObjectOf(
 			"type", "string",
 			"enum", kanbanStatusEnum(),
 			"description", "Optional task status filter.",
@@ -48,100 +50,100 @@ var (
 		"include_archived", kanbanSchemaProp("boolean", "Include archived tasks. Defaults to false."),
 		"limit", kanbanSchemaProp("integer", "Optional maximum rows to return (default 50, max 200)."),
 	), []any{})
-	kanbanCompleteSchema = kanbanToolSchema("kanban_complete", "Mark your current task done with a structured handoff for others. Prefer ``summary`` for a human-readable 1-3 sentence description of what you did; put machine-readable facts in ``metadata`` (changed_files, tests_run, decisions, findings, etc). At least one of ``summary`` or ``result`` is required. If you created new tasks via ``kanban_create`` during this run, list their ids in ``created_cards`` — the kernel verifies them so phantom references are caught before they leak into downstream automation. If you produced deliverable files (charts, PDFs, spreadsheets, generated images), list their absolute paths in ``artifacts`` — the gateway notifier will upload them as native attachments to the human who subscribed to the task, so the deliverable lands in their chat alongside the summary instead of being a path they have to fetch by hand.", pyjson.ObjectOf(
+	kanbanCompleteSchema = kanbanToolSchema("kanban_complete", "Mark your current task done with a structured handoff for others. Prefer ``summary`` for a human-readable 1-3 sentence description of what you did; put machine-readable facts in ``metadata`` (changed_files, tests_run, decisions, findings, etc). At least one of ``summary`` or ``result`` is required. If you created new tasks via ``kanban_create`` during this run, list their ids in ``created_cards`` — the kernel verifies them so phantom references are caught before they leak into downstream automation. If you produced deliverable files (charts, PDFs, spreadsheets, generated images), list their absolute paths in ``artifacts`` — the gateway notifier will upload them as native attachments to the human who subscribed to the task, so the deliverable lands in their chat alongside the summary instead of being a path they have to fetch by hand.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 		"summary", kanbanSchemaProp("string", "Human-readable handoff, 1-3 sentences. Appears in downstream workers' context."),
 		"metadata", kanbanSchemaProp("object", "Free-form dict of structured facts about this attempt — {\"changed_files\": [...], \"tests_run\": 12, \"findings\": [...]}. Surfaced to downstream workers alongside ``summary``."),
 		"result", kanbanSchemaProp("string", "Short result log line (legacy field, maps to task.result). Use ``summary`` instead when possible; this exists for compatibility with callers that still set --result on the CLI."),
-		"created_cards", pyjson.ObjectOf(
+		"created_cards", jsonutil.ObjectOf(
 			"type", "array",
-			"items", pyjson.ObjectOf(
+			"items", jsonutil.ObjectOf(
 				"type", "string",
 			),
 			"description", "Optional structured manifest of task ids you created via ``kanban_create`` during this run. The kernel verifies each id exists and was created by this worker's profile; any phantom id blocks the completion with an error listing what went wrong (auditable in the task's events). Only list ids you got back from a successful ``kanban_create`` call — do not invent or remember ids from prose. Omit the field if you did not create any cards.",
 		),
-		"artifacts", pyjson.ObjectOf(
+		"artifacts", jsonutil.ObjectOf(
 			"type", "array",
-			"items", pyjson.ObjectOf(
+			"items", jsonutil.ObjectOf(
 				"type", "string",
 			),
 			"description", "Optional list of absolute paths to deliverable files you produced during this run — generated charts, PDFs, spreadsheets, images, archives. Examples: [\"~/.icebath/cache/scratch/q3-revenue.png\", \"~/.icebath/cache/scratch/report.pdf\"]. The gateway notifier uploads each path as a native attachment to the subscribed chat (images embed inline, everything else uploads as a file) so the deliverable lands with the completion notification. Skip intermediate scratch files and references that are not the deliverable. The path must exist on disk at completion. Files inside a managed scratch workspace are copied to durable task attachments before cleanup; a missing declared scratch artifact keeps the task in-flight so you can fix the path and retry.",
 		),
 	), []any{})
-	kanbanBlockSchema = kanbanToolSchema("kanban_block", "Stop work on this task and route it according to WHY you're stuck. Set ``kind`` to say which: 'dependency' (waiting on another task — goes to todo and auto-resumes when that task finishes, no human needed), 'needs_input' (you need a human decision/answer), 'capability' (a hard wall: no access, missing credentials, an action no agent can do), or 'transient' (a flaky failure that may clear). ``reason`` is shown to the human on the board. If a task keeps getting unblocked and re-blocked for the same reason, it is auto-escalated to triage. Use for genuine blockers only — don't block on things you can resolve yourself.", pyjson.ObjectOf(
+	kanbanBlockSchema = kanbanToolSchema("kanban_block", "Stop work on this task and route it according to WHY you're stuck. Set ``kind`` to say which: 'dependency' (waiting on another task — goes to todo and auto-resumes when that task finishes, no human needed), 'needs_input' (you need a human decision/answer), 'capability' (a hard wall: no access, missing credentials, an action no agent can do), or 'transient' (a flaky failure that may clear). ``reason`` is shown to the human on the board. If a task keeps getting unblocked and re-blocked for the same reason, it is auto-escalated to triage. Use for genuine blockers only — don't block on things you can resolve yourself.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 		"reason", kanbanSchemaProp("string", "What you need answered or what stopped you, in one or two sentences. Don't paste the whole conversation; the human has the board and can ask follow-ups via comments."),
-		"kind", pyjson.ObjectOf(
+		"kind", jsonutil.ObjectOf(
 			"type", "string",
 			"enum", []any{"dependency", "needs_input", "capability", "transient"},
 			"description", "Why you're blocked. 'dependency' waits in todo and resumes automatically when an incomplete parent finishes; if no parent is open it is recorded as needs_input instead. The others surface to a human. Omit only if none apply.",
 		),
 	), []any{"reason"})
-	kanbanScheduleSchema = kanbanToolSchema("kanban_schedule", "Park your task as 'scheduled' while it waits for a time or external event. This ends the current run and makes the task non-dispatchable until an orchestrator unblocks it; it does not create a timer. Put any wake-up marker such as ``SCHEDULED_UNTIL=<ISO8601>`` in ``reason``.", pyjson.ObjectOf(
+	kanbanScheduleSchema = kanbanToolSchema("kanban_schedule", "Park your task as 'scheduled' while it waits for a time or external event. This ends the current run and makes the task non-dispatchable until an orchestrator unblocks it; it does not create a timer. Put any wake-up marker such as ``SCHEDULED_UNTIL=<ISO8601>`` in ``reason``.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 		"reason", kanbanSchemaProp("string", "Optional reason or machine-readable wake-up marker recorded on the completed run and scheduled event."),
 	), []any{})
-	kanbanRequestReviewSchema = kanbanToolSchema("kanban_request_review", "Hand a finished, self-verified task to a human or reviewer before it is done. Moves the task to the 'review' column and notifies the subscriber. Unlike ``kanban_block`` this is NOT a blocker — it never counts toward unblock-loop detection, so a task can cycle through review across follow-ups without ever being falsely escalated to triage. Use this instead of blocking with a free-form 'review-required:' reason.", pyjson.ObjectOf(
+	kanbanRequestReviewSchema = kanbanToolSchema("kanban_request_review", "Hand a finished, self-verified task to a human or reviewer before it is done. Moves the task to the 'review' column and notifies the subscriber. Unlike ``kanban_block`` this is NOT a blocker — it never counts toward unblock-loop detection, so a task can cycle through review across follow-ups without ever being falsely escalated to triage. Use this instead of blocking with a free-form 'review-required:' reason.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 		"summary", kanbanSchemaProp("string", "What was implemented and how it was verified, in one or two sentences — shown to the reviewer. Don't paste the whole diff; the reviewer has the board and the PR."),
 		"reviewer", kanbanSchemaProp("string", "Optional reviewer profile. When provided, the task is reassigned to that profile before review dispatch."),
-		"metadata", pyjson.ObjectOf(
+		"metadata", jsonutil.ObjectOf(
 			"type", "object",
 			"description", "Optional structured handoff facts for the reviewer, such as changed_files, tests_run, commit, or decisions.",
 			"additionalProperties", true,
 		),
-		"artifacts", pyjson.ObjectOf(
+		"artifacts", jsonutil.ObjectOf(
 			"type", "array",
-			"items", pyjson.ObjectOf(
+			"items", jsonutil.ObjectOf(
 				"type", "string",
 			),
 			"description", "Optional list of absolute paths to deliverable files this handoff names — generated charts, PDFs, spreadsheets, images, archives. Examples: ['~/.icebath/cache/scratch/q3-revenue.png', '~/.icebath/cache/scratch/report.pdf']. A review handoff is the last implementer transition, so the kernel copies these into the task's durable attachments before the reviewer's completion cleans the scratch workspace up, and the gateway notifier uploads them as native attachments to the subscribed chat. A missing declared scratch artifact keeps the task in place so you can fix the path and retry.",
 		),
 	), []any{"summary"})
-	kanbanRequestChangesSchema = kanbanToolSchema("kanban_request_changes", "Reviewer verdict: send the task back to its implementer with required changes. This closes the review run, reapplies parent dependency gating, and requeues the task without using block-loop accounting. Only use from a task claimed from the review column; use kanban_block only for a genuine external blocker.", pyjson.ObjectOf(
+	kanbanRequestChangesSchema = kanbanToolSchema("kanban_request_changes", "Reviewer verdict: send the task back to its implementer with required changes. This closes the review run, reapplies parent dependency gating, and requeues the task without using block-loop accounting. Only use from a task claimed from the review column; use kanban_block only for a genuine external blocker.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 		"reason", kanbanSchemaProp("string", "Specific, actionable changes the implementer must make before requesting another review."),
 	), []any{"reason"})
-	kanbanHeartbeatSchema = kanbanToolSchema("kanban_heartbeat", "Signal you're still alive during a long operation (training, encoding, crawls). Call every few minutes so humans see liveness separately from PID checks. Pure side effect — no work changes.", pyjson.ObjectOf(
+	kanbanHeartbeatSchema = kanbanToolSchema("kanban_heartbeat", "Signal you're still alive during a long operation (training, encoding, crawls). Call every few minutes so humans see liveness separately from PID checks. Pure side effect — no work changes.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 		"note", kanbanSchemaProp("string", "Optional short note describing current progress. Shown in the event log."),
 	), []any{})
-	kanbanCommentSchema = kanbanToolSchema("kanban_comment", "Append a comment to a task's thread. Use for durable notes that should outlive this run (questions for the next worker, partial findings, rationale). Ephemeral reasoning doesn't belong here — use your normal response instead.", pyjson.ObjectOf(
+	kanbanCommentSchema = kanbanToolSchema("kanban_comment", "Append a comment to a task's thread. Use for durable notes that should outlive this run (questions for the next worker, partial findings, rationale). Ephemeral reasoning doesn't belong here — use your normal response instead.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", "Task id. Required (may be your own task or another's — comment threads are per-task). Outside a dispatcher-spawned worker there is no default; use kanban_list to discover ids."),
 		"body", kanbanSchemaProp("string", "Markdown-supported comment body."),
 	), []any{"task_id", "body"})
-	kanbanAttachSchema = kanbanToolSchema("kanban_attach", "Attach a file to a task by passing its bytes inline (base64). Use for genuine file artifacts the next worker or a human should be able to download — generated reports, images, exports. The file is stored as a real attachment (not a comment link) under the task's attachments dir, capped at 25 MB. Prefer kanban_attach_url when you only have a URL.", pyjson.ObjectOf(
+	kanbanAttachSchema = kanbanToolSchema("kanban_attach", "Attach a file to a task by passing its bytes inline (base64). Use for genuine file artifacts the next worker or a human should be able to download — generated reports, images, exports. The file is stored as a real attachment (not a comment link) under the task's attachments dir, capped at 25 MB. Prefer kanban_attach_url when you only have a URL.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 		"filename", kanbanSchemaProp("string", "File name to store it under (e.g. 'report.pdf'). Directory components are stripped; only the leaf is kept."),
-		"content_base64", pyjson.ObjectOf(
+		"content_base64", jsonutil.ObjectOf(
 			"type", "string",
 			"description", "The file contents, base64-encoded. Max 25 MB decoded.",
 		),
 		"content_type", kanbanSchemaProp("string", "Optional MIME type (e.g. 'application/pdf')."),
 	), []any{"filename", "content_base64"})
-	kanbanAttachURLSchema = kanbanToolSchema("kanban_attach_url", "Attach a file to a task by URL (Icebath downloads it server-side, max 25 MB). Use when you have a link rather than the bytes. Only http/https URLs are accepted.", pyjson.ObjectOf(
+	kanbanAttachURLSchema = kanbanToolSchema("kanban_attach_url", "Attach a file to a task by URL (Icebath downloads it server-side, max 25 MB). Use when you have a link rather than the bytes. Only http/https URLs are accepted.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 		"url", kanbanSchemaProp("string", "http(s) URL to fetch and store."),
 		"filename", kanbanSchemaProp("string", "Optional name to store it under. Defaults to the URL path's leaf component."),
 		"content_type", kanbanSchemaProp("string", "Optional MIME type override. Defaults to the Content-Type the server returns."),
 	), []any{"url"})
-	kanbanAttachmentsSchema = kanbanToolSchema("kanban_attachments", "List a task's attached files, with the absolute on-disk path you can read. Rows carry id, filename, content_type, size and uploader.", pyjson.ObjectOf(
+	kanbanAttachmentsSchema = kanbanToolSchema("kanban_attachments", "List a task's attached files, with the absolute on-disk path you can read. Rows carry id, filename, content_type, size and uploader.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", descTaskIDDefault),
 	), []any{})
-	kanbanCreateSchema = kanbanToolSchema("kanban_create", "Create a kanban task, optionally a child of the current one (via ``parents``). Used by orchestrator workers to fan out — decompose work into child tasks with specific assignees, link them into a pipeline, then complete your own task. The dispatcher picks up the new tasks on its next tick and spawns the assigned profiles.", pyjson.ObjectOf(
+	kanbanCreateSchema = kanbanToolSchema("kanban_create", "Create a kanban task, optionally a child of the current one (via ``parents``). Used by orchestrator workers to fan out — decompose work into child tasks with specific assignees, link them into a pipeline, then complete your own task. The dispatcher picks up the new tasks on its next tick and spawns the assigned profiles.", jsonutil.ObjectOf(
 		"title", kanbanSchemaProp("string", "Short task title (required)."),
 		"assignee", kanbanSchemaProp("string", "Profile name that should execute this task (e.g. 'researcher-a', 'reviewer', 'writer'). Required — tasks without an assignee are never dispatched."),
 		"body", kanbanSchemaProp("string", "Opening post: full spec, acceptance criteria, links. The assigned worker reads this as part of its context."),
-		"parents", pyjson.ObjectOf(
+		"parents", jsonutil.ObjectOf(
 			"type", "array",
-			"items", pyjson.ObjectOf(
+			"items", jsonutil.ObjectOf(
 				"type", "string",
 			),
 			"description", "Parent task ids. The new task stays in 'todo' until every parent reaches 'done'; then it auto-promotes to 'ready'. Typical fan-in: list all the researcher task ids when creating a synthesizer task.",
 		),
 		"tenant", kanbanSchemaProp("string", "Optional namespace for multi-project isolation. Defaults to ICEBATH_TENANT env if set."),
 		"priority", kanbanSchemaProp("integer", "Dispatcher tiebreaker. Higher = picked sooner when multiple ready tasks share an assignee."),
-		"workspace_kind", pyjson.ObjectOf(
+		"workspace_kind", jsonutil.ObjectOf(
 			"type", "string",
 			"enum", []any{"scratch", "dir", "worktree"},
 			"description", "Workspace flavor: 'scratch' (fresh tmp dir, default), 'dir' (shared directory, requires absolute workspace_path), 'worktree' (git worktree).",
@@ -151,14 +153,14 @@ var (
 		"triage", kanbanSchemaProp("boolean", "If true, task lands in 'triage' instead of 'todo' — a specifier profile is expected to flesh out the body before work starts."),
 		"idempotency_key", kanbanSchemaProp("string", "If a non-archived task with this key already exists, return that task's id instead of creating a duplicate. Useful for retry-safe automation."),
 		"max_runtime_seconds", kanbanSchemaProp("integer", "Per-task runtime cap. When exceeded, the dispatcher SIGTERMs the worker and re-queues the task with outcome='timed_out'."),
-		"initial_status", pyjson.ObjectOf(
+		"initial_status", jsonutil.ObjectOf(
 			"type", "string",
 			"enum", []any{"running", "blocked"},
 			"description", "Initial card status. Use 'blocked' for tasks that require immediate human ops (R3 gate) to skip the brief running-to-blocked transition. Defaults to 'running', which preserves the usual dispatch path.",
 		),
-		"skills", pyjson.ObjectOf(
+		"skills", jsonutil.ObjectOf(
 			"type", "array",
-			"items", pyjson.ObjectOf(
+			"items", jsonutil.ObjectOf(
 				"type", "string",
 			),
 			"description", "Skill names to force-load into the dispatched worker. The kanban lifecycle is already injected automatically; use this to pin a task to a specialist context — e.g. ['translation'] for a translation task, ['github-code-review'] for a reviewer task. The names must match skills installed on the assignee's profile.",
@@ -169,15 +171,15 @@ var (
 		"model", kanbanSchemaProp("string", "Pin the dispatched worker to this model instead of the assignee profile's configured model. Use the exact model name the target provider expects. Omit to use the profile default."),
 		"provider", kanbanSchemaProp("string", "Provider the 'model' belongs to (e.g. 'openrouter', 'anthropic', 'openai-codex'). Set this whenever the model is not from the assignee profile's configured provider — a model name alone is resolved against the profile's provider and will fail if it belongs to a different one. Requires 'model'."),
 	), []any{"title", "assignee"})
-	kanbanUnblockSchema = kanbanToolSchema("kanban_unblock", "Unblock a Kanban task. It moves to ready when all parents are done, or todo while any parent remains open. Orchestrator-only — only profiles with the kanban toolset can unblock routed work; dispatcher-spawned task workers never see this tool.", pyjson.ObjectOf(
+	kanbanUnblockSchema = kanbanToolSchema("kanban_unblock", "Unblock a Kanban task. It moves to ready when all parents are done, or todo while any parent remains open. Orchestrator-only — only profiles with the kanban toolset can unblock routed work; dispatcher-spawned task workers never see this tool.", jsonutil.ObjectOf(
 		"task_id", kanbanSchemaProp("string", "Blocked task id to move to ready or parent-gated todo."),
 	), []any{"task_id"})
-	kanbanLinkSchema = kanbanToolSchema("kanban_link", "Add a parent→child dependency edge after both tasks already exist. The child won't promote to 'ready' until all parents are 'done'. Cycles and self-links are rejected. A running child is rejected unless the active owning worker is linking its own card for a dependency handoff.", pyjson.ObjectOf(
-		"parent_id", pyjson.ObjectOf(
+	kanbanLinkSchema = kanbanToolSchema("kanban_link", "Add a parent→child dependency edge after both tasks already exist. The child won't promote to 'ready' until all parents are 'done'. Cycles and self-links are rejected. A running child is rejected unless the active owning worker is linking its own card for a dependency handoff.", jsonutil.ObjectOf(
+		"parent_id", jsonutil.ObjectOf(
 			"type", "string",
 			"description", "Parent task id.",
 		),
-		"child_id", pyjson.ObjectOf(
+		"child_id", jsonutil.ObjectOf(
 			"type", "string",
 			"description", "Child task id.",
 		),

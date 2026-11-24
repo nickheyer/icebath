@@ -8,8 +8,8 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 const forcedReleaseHistory = 20
@@ -19,23 +19,23 @@ var executionTerminalStates = map[string]bool{"completed": true, "failed": true,
 // Forced release counters, waiter keys and shutdown interruption tokens shared under the registry lock
 var inflightGuard = struct {
 	forcedReleaseCount int
-	forcedReleases     []*pyjson.Object
+	forcedReleases     []*jsonutil.Object
 	restartSafeWaiters map[inflightKey]bool
 	interrupted        map[any]bool
 }{restartSafeWaiters: map[inflightKey]bool{}, interrupted: map[any]bool{}}
 
 // Keeps a bounded history of one forced release and appends it to the profile's jsonl record
 func (s *Store) recordForcedRelease(jobID, name string, ageSeconds, allowanceSeconds float64) {
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("job_id", jobID)
 	entry.Set("name", name)
-	entry.Set("age_seconds", pyint.Round(ageSeconds, 1))
-	entry.Set("allowance_seconds", pyint.Round(allowanceSeconds, 1))
+	entry.Set("age_seconds", mathutil.Round(ageSeconds, 1))
+	entry.Set("allowance_seconds", mathutil.Round(allowanceSeconds, 1))
 	entry.Set("at", s.clk.nowISO())
 	inflight.Lock()
 	inflightGuard.forcedReleases = append(inflightGuard.forcedReleases, entry)
 	if n := len(inflightGuard.forcedReleases); n > forcedReleaseHistory {
-		inflightGuard.forcedReleases = append([]*pyjson.Object(nil), inflightGuard.forcedReleases[n-forcedReleaseHistory:]...)
+		inflightGuard.forcedReleases = append([]*jsonutil.Object(nil), inflightGuard.forcedReleases[n-forcedReleaseHistory:]...)
 	}
 	inflight.Unlock()
 	err := func() error {
@@ -43,7 +43,7 @@ func (s *Store) recordForcedRelease(jobID, name string, ageSeconds, allowanceSec
 		if err := s.ensureStoreDir(filepath.Dir(path)); err != nil {
 			return err
 		}
-		line, err := pyjson.Dumps(entry)
+		line, err := jsonutil.Encode(entry)
 		if err != nil {
 			return err
 		}

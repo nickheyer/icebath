@@ -2,14 +2,15 @@ package gateway
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -59,14 +60,14 @@ func readCgroupPids(cgroupPath string) ([]int, error) {
 	}
 	var pids []int
 	for _, line := range textutil.Lines(raw) {
-		n, ok := pystr.IntText(line)
-		if !ok {
+		n, err := textutil.ParseInt(line)
+		if errors.Is(err, strconv.ErrRange) || err == nil && n != int64(int(n)) {
+			return nil, errors.New("a cgroup process id is too large")
+		}
+		if err != nil {
 			continue
 		}
-		if !n.IsInt64() || n.Int64() != int64(int(n.Int64())) {
-			return nil, fmt.Errorf("a cgroup process id is too large")
-		}
-		pids = append(pids, int(n.Int64()))
+		pids = append(pids, int(n))
 	}
 	return pids, nil
 }

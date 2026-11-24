@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Isolated home with a fresh cache, every registry handle under it closed afterwards
@@ -36,7 +36,7 @@ func goalsTestHome(t *testing.T) string {
 }
 
 func TestGoalStateSubgoalsBackcompatOldStateMetaRowLoadsWithoutSubgoals(t *testing.T) {
-	legacy, err := pyjson.Dumps(pyjson.ObjectOf("goal", "do a thing", "status", "active", "turns_used", int64(2),
+	legacy, err := jsonutil.Encode(jsonutil.ObjectOf("goal", "do a thing", "status", "active", "turns_used", int64(2),
 		"max_turns", int64(20), "created_at", 1.0, "last_turn_at", 2.0, "consecutive_parse_failures", int64(0)))
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestLoopThreadCacheMissConstructsOffLoop(t *testing.T) {
 	goalsTestHome(t)
 	log := patchGoalsAcquire(t, 0)
 	loopID := goalsTestGoroutineID()
-	inline := SessionDB(pyctx.WithRunningLoop(context.Background()))
+	inline := SessionDB(ctxutil.WithNonBlocking(context.Background()))
 	if inline == nil {
 		t.Fatal("grace window did not return the fast init")
 	}
@@ -262,7 +262,7 @@ func TestLoopThreadCacheHitReturnsCachedInstance(t *testing.T) {
 	goalsDBMu.Lock()
 	goalsDBCache[home.Dir(ctx)] = sentinel
 	goalsDBMu.Unlock()
-	if got := SessionDB(pyctx.WithRunningLoop(ctx)); got != sentinel {
+	if got := SessionDB(ctxutil.WithNonBlocking(ctx)); got != sentinel {
 		t.Fatalf("got %p want %p", got, sentinel)
 	}
 }
@@ -284,7 +284,7 @@ func TestSlowConstructionDoesNotBlockTheLoop(t *testing.T) {
 	goalsDBInitWait, goalsDBLoopWait = 300*time.Millisecond, 50*time.Millisecond
 	t.Cleanup(func() { goalsDBInitWait, goalsDBLoopWait = prevInit, prevLoop })
 	patchGoalsAcquire(t, 1500*time.Millisecond)
-	ctx := pyctx.WithRunningLoop(context.Background())
+	ctx := ctxutil.WithNonBlocking(context.Background())
 	t0 := time.Now()
 	result := SessionDB(ctx)
 	elapsed := time.Since(t0)
@@ -394,7 +394,7 @@ func TestGateRoundtripThroughGoalstateJson(t *testing.T) {
 }
 
 func TestGateFromDictDefaultsAndGarbage(t *testing.T) {
-	g, err := GoalGateFromDict(pyjson.ObjectOf("command", "true"))
+	g, err := GoalGateFromDict(jsonutil.ObjectOf("command", "true"))
 	if err != nil || g.TimeoutSeconds != DefaultGateTimeoutSeconds || g.MaxRetries != DefaultGateMaxRetries {
 		t.Fatalf("gate %+v %v", g, err)
 	}
@@ -406,7 +406,7 @@ func TestGateFromDictDefaultsAndGarbage(t *testing.T) {
 }
 
 func TestOldStateRowsWithoutGatesLoadClean(t *testing.T) {
-	raw, err := pyjson.Dumps(pyjson.ObjectOf("goal", "legacy", "status", "active"))
+	raw, err := jsonutil.Encode(jsonutil.ObjectOf("goal", "legacy", "status", "active"))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -157,7 +157,7 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 			return nil, "", nil, &auxAttributeError{msg: "a message is " + errchain.Kind(raw) + ", expected a mapping"}
 		}
 		content := msg["content"]
-		if !pyrepr.Truthy(content) {
+		if !anyutil.IsTrue(content) {
 			content = ""
 		}
 		role, hasRole := msg["role"]
@@ -168,40 +168,40 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 			if s, ok := content.(string); ok {
 				instructions = s
 			} else {
-				instructions = pyrepr.Str(content)
+				instructions = anyutil.String(content)
 			}
 			continue
 		}
-		if len(renamed) > 0 && pyrepr.Truthy(msg["tool_calls"]) {
+		if len(renamed) > 0 && anyutil.IsTrue(msg["tool_calls"]) {
 			calls, err := auxIterKwarg(msg, "tool_calls")
 			if err != nil {
 				return nil, "", nil, err
 			}
 			rewritten := make([]any, 0, len(calls))
 			for _, call := range calls {
-				tc, isMap := pyjson.AsObject(call)
+				tc, isMap := jsonutil.AsObject(call)
 				if !isMap {
 					rewritten = append(rewritten, call)
 					continue
 				}
-				fn := pyjson.NewObject()
-				if fnRaw := tc.Vals["function"]; pyrepr.Truthy(fnRaw) {
-					if fn, isMap = pyjson.AsObject(fnRaw); !isMap {
+				fn := jsonutil.NewObject()
+				if fnRaw := tc.Value("function"); anyutil.IsTrue(fnRaw) {
+					if fn, isMap = jsonutil.AsObject(fnRaw); !isMap {
 						return nil, "", nil, &auxAttributeError{msg: "a tool call function is " + errchain.Kind(fnRaw) + ", expected a mapping"}
 					}
 				}
-				name, isStr := fn.Vals["name"].(string)
+				name, isStr := fn.Value("name").(string)
 				alias, hit := renamed[name]
 				if !isStr || !hit {
 					rewritten = append(rewritten, call)
 					continue
 				}
-				fnCopy := fn.Copy()
+				fnCopy := fn.Clone()
 				fnCopy.Set("name", alias)
-				tcCopy := tc.Copy()
+				tcCopy := tc.Clone()
 				if _, plain := call.(map[string]any); plain {
-					tcCopy.Set("function", fnCopy.Vals)
-					rewritten = append(rewritten, tcCopy.Vals)
+					tcCopy.Set("function", fnCopy.Map())
+					rewritten = append(rewritten, tcCopy.Map())
 					continue
 				}
 				tcCopy.Set("function", fnCopy)
@@ -235,16 +235,16 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 	if headers, ok := auxDictKwarg(kwargs["extra_headers"]); ok && len(headers) > 0 {
 		resp["extra_headers"] = headers
 	}
-	if extraBody, ok := pyjson.Dict(kwargs["extra_body"]); ok {
+	if extraBody, ok := jsonutil.AsMap(kwargs["extra_body"]); ok {
 		if tier, ok := extraBody["service_tier"].(string); ok && pyStripSpace(tier) != "" && !isXAI {
 			resp["service_tier"] = pyStripSpace(tier)
 		}
-		if reasoning, ok := pyjson.Dict(extraBody["reasoning"]); ok {
+		if reasoning, ok := jsonutil.AsMap(extraBody["reasoning"]); ok {
 			supported := codexEffortsForRoute(model, host, route.isCodexBackend)
 			enabled, enabledSet := reasoning["enabled"].(bool)
 			if len(supported) > 0 && !(enabledSet && !enabled) {
 				effort := "medium"
-				if pyrepr.Truthy(reasoning["effort"]) {
+				if anyutil.IsTrue(reasoning["effort"]) {
 					effort = pyStr(reasoning["effort"])
 				}
 				resp["reasoning"] = map[string]any{"effort": clampEffort(effort, supported, nil), "summary": "auto"}
@@ -263,11 +263,11 @@ func (a *auxCodexCompletionsAdapter) buildResponsesKwargs(ctx context.Context, k
 	resp["_issuer_kind"] = issuerKind
 	if _, has := resp["prompt_cache_key"]; !isXAI && route.endpoint.promptCacheKey && !has {
 		scopeID := auxRuntimeMainValue(ctx, "cache_scope")
-		if !pyrepr.Truthy(scopeID) {
+		if !anyutil.IsTrue(scopeID) {
 			scopeID = auxRuntimeMainValue(ctx, "session_id")
 		}
 		scope := ""
-		if pyrepr.Truthy(scopeID) {
+		if anyutil.IsTrue(scopeID) {
 			scope = cacheScopeFromSessionID(pyStr(scopeID))
 		}
 		if key := contentCacheKey(instructions, wireTools, scope); key != "" {
@@ -340,7 +340,7 @@ func (a *auxCodexCompletionsAdapter) create(ctx context.Context, kwargs map[stri
 	issuerKind := pyStr(resp["_issuer_kind"])
 	delete(resp, "_issuer_kind")
 	issuerModel := model
-	if pyrepr.Truthy(resp["model"]) {
+	if anyutil.IsTrue(resp["model"]) {
 		issuerModel = pyStr(resp["model"])
 	}
 	total, hasTotal := auxPositiveSeconds(timeout)

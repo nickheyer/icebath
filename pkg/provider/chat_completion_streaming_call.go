@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -180,7 +180,7 @@ func (c *streamingCall) streamAttemptWasCancelled(id int) bool {
 
 // Counts a chunk of a superseded attempt, warning on the first and debug logging the rest
 func (c *streamingCall) discardStaleStreamChunk(id int, chunk any) {
-	size := len(pyrepr.Repr(chunk))
+	size := len(anyutil.Quote(chunk))
 	c.mu.Lock()
 	c.discardedChunks++
 	c.discardedBytes += size
@@ -272,7 +272,7 @@ type chunkIdentity struct {
 }
 
 func (c *streamingCall) observeChunkIdentity(diag *StreamDiag, chunk map[string]any, id *chunkIdentity) {
-	if m := stringOf(chunk["model"]); m != "" && pyrepr.Truthy(chunk["model"]) {
+	if m := stringOf(chunk["model"]); m != "" && anyutil.IsTrue(chunk["model"]) {
 		id.model = m
 	}
 	if s, ok := chunk["id"].(string); ok && s != "" && id.responseID == "" {
@@ -324,21 +324,21 @@ func streamingChoicelessChunk(chunk map[string]any, finishReason string) (map[st
 		usage = nil
 	}
 	errType, errMsg := chunk["error_type"], chunk["error_message"]
-	if pyrepr.Truthy(errType) || pyrepr.Truthy(errMsg) {
+	if anyutil.IsTrue(errType) || anyutil.IsTrue(errMsg) {
 		status := statusCodeFromPayload(map[string]any{"code": errType, "message": errMsg})
 		if status == 0 {
 			status = statusCodeFromValue(errType)
 		}
 		code := any("provider_in_stream_error")
-		if pyrepr.Truthy(errType) {
+		if anyutil.IsTrue(errType) {
 			code = errType
 		}
-		msg := pyrepr.Str(chunk)
-		if pyrepr.Truthy(errMsg) {
-			msg = pyrepr.Str(errMsg)
+		msg := anyutil.String(chunk)
+		if anyutil.IsTrue(errMsg) {
+			msg = anyutil.String(errMsg)
 		}
 		return nil, finishReason, &ProviderStreamError{StatusCode: status, Body: providerErrorBody(map[string]any{"code": code, "message": msg}, status),
-			RawText: fmt.Sprintf("%s: %s", pyrepr.Str(errType), pyrepr.Str(errMsg))}
+			RawText: fmt.Sprintf("%s: %s", anyutil.String(errType), anyutil.String(errMsg))}
 	}
 	switch last := chunk["lastOne"].(type) {
 	case bool:
@@ -451,11 +451,11 @@ func (c *streamingCall) acceptChatChunk(id int, chunk any) bool {
 		if choice != nil {
 			delta, _ = choice["delta"].(map[string]any)
 		}
-		if pyrepr.Truthy(delta["tool_calls"]) {
+		if anyutil.IsTrue(delta["tool_calls"]) {
 			c.providerToolInFlight.Store(true)
 		}
-		if choice != nil && pyrepr.Truthy(choice["finish_reason"]) && !pyrepr.Truthy(delta["content"]) && !pyrepr.Truthy(delta["tool_calls"]) &&
-			!pyrepr.Truthy(delta["reasoning_content"]) && !pyrepr.Truthy(delta["reasoning"]) {
+		if choice != nil && anyutil.IsTrue(choice["finish_reason"]) && !anyutil.IsTrue(delta["content"]) && !anyutil.IsTrue(delta["tool_calls"]) &&
+			!anyutil.IsTrue(delta["reasoning_content"]) && !anyutil.IsTrue(delta["reasoning"]) {
 			return true
 		}
 	}
@@ -476,7 +476,7 @@ func (c *streamingCall) writerStillCurrent(label string) bool {
 	}
 	model := "unknown"
 	if m, ok := c.apiKwargs["model"]; ok {
-		model = pyrepr.Str(m)
+		model = anyutil.String(m)
 	}
 	pkgLog().Warn(fmt.Sprintf("%s attempt superseded by a newer stream; stopping consumption to preserve the single-writer invariant (model=%s).", label, model))
 	return false
@@ -493,7 +493,7 @@ func (r *sdkChunkSource) Close() error { return r.s.Close() }
 func (c *streamingCall) callChatCompletions(id int) (any, error) {
 	base, read, connCap := c.streamTimeouts()
 	var contentParts, reasoningParts, detailDisplayParts, refusalParts, pendingText []string
-	var reasoningDetails []*pyjson.Object
+	var reasoningDetails []*jsonutil.Object
 	tools := newCCToolCallAccumulator()
 	carriers := newStreamCarriers(c.ctx)
 	var finishReason string
@@ -741,7 +741,7 @@ func (c *streamingCall) callChatCompletions(id int) (any, error) {
 func (c *streamingCall) logRunawayCut(channel string) {
 	model := "unknown"
 	if m, ok := c.apiKwargs["model"]; ok {
-		model = pyrepr.Str(m)
+		model = anyutil.String(m)
 	}
 	prov := c.agent.Provider()
 	if prov == "" {
@@ -807,7 +807,7 @@ func partialStreamCutResponse(content, reasoning any, model string, usage any, d
 }
 
 // Assembles the non streaming shaped response, a drop without a finish reason becoming a cut response
-func (c *streamingCall) finishChatStream(resp *http.Response, contentParts, reasoningParts []string, tools *ccToolCallAccumulator, finishReason string, ident *chunkIdentity, usage map[string]any, flushPending func(), reasoningDetails []*pyjson.Object, refusalParts []string) (map[string]any, error) {
+func (c *streamingCall) finishChatStream(resp *http.Response, contentParts, reasoningParts []string, tools *ccToolCallAccumulator, finishReason string, ident *chunkIdentity, usage map[string]any, flushPending func(), reasoningDetails []*jsonutil.Object, refusalParts []string) (map[string]any, error) {
 	fullContent := strings.Join(contentParts, "")
 	fullReasoning := strings.Join(reasoningParts, "")
 	if fullReasoning == "" && fullContent != "" {
@@ -830,7 +830,7 @@ func (c *streamingCall) finishChatStream(resp *http.Response, contentParts, reas
 			}
 			dropped = append(dropped, name)
 		}
-		pkgLog().Warn(fmt.Sprintf("Clean EOF, no finish_reason: server ended the stream (no transport exception) while a tool call's arguments were still incomplete (tools=%s). The server or a proxy closed the stream cleanly; not an output-length truncation.", pyrepr.Repr(dropped)))
+		pkgLog().Warn(fmt.Sprintf("Clean EOF, no finish_reason: server ended the stream (no transport exception) while a tool call's arguments were still incomplete (tools=%s). The server or a proxy closed the stream cleanly; not an output-length truncation.", anyutil.Quote(dropped)))
 		return partialStreamCutResponse(noneIfEmpty(fullContent), noneIfEmpty(fullReasoning), ident.model, usageValue, dropped, false, true, ""), nil
 	}
 	if finishReason == "" && (len(contentParts) > 0 || len(reasoningParts) > 0) && tools.Len() == 0 && usage == nil {
@@ -1019,7 +1019,7 @@ func (c *streamingCall) partialDeliveryResponse(err error) any {
 		if c.agent.WarningPresentationEnabled() {
 			quietCall(func() { c.agent.FireStreamDelta(warn) })
 		}
-		pkgLog().Warn(fmt.Sprintf("Partial stream dropped tool call(s) %s after %d chars of text; surfaced warning to user: %v", pyrepr.Repr(names), len([]rune(partial)), err))
+		pkgLog().Warn(fmt.Sprintf("Partial stream dropped tool call(s) %s after %d chars of text; surfaced warning to user: %v", anyutil.Quote(names), len([]rune(partial)), err))
 	}
 	var reason FailoverReason
 	func() {

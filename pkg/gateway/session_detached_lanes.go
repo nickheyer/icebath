@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Commits and drops the cached agent of a key no conversation holds, forgetting its ids and source
@@ -76,11 +76,11 @@ func authorityForHome(runner any, profileHome string) (*SessionAuthority, error)
 	if authority == nil {
 		return nil, nil
 	}
-	dbPath, err := pypath.Resolve(authority.DB.Path())
+	dbPath, err := pathutil.Resolve(authority.DB.Path())
 	if err != nil {
 		return nil, err
 	}
-	wanted, err := pypath.Resolve(profileHome)
+	wanted, err := pathutil.Resolve(profileHome)
 	if err != nil {
 		return nil, err
 	}

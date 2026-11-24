@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"os/exec"
 	"strings"
@@ -14,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Contract faithful run to completion backend answering each command from a handler table
@@ -127,7 +126,7 @@ type remoteOpts struct {
 	tools   []string
 }
 
-func runRemote(t *testing.T, ctx context.Context, env *tools.Env, envr tools.Environment, o remoteOpts) (*pyjson.Object, error) {
+func runRemote(t *testing.T, ctx context.Context, env *tools.Env, envr tools.Environment, o remoteOpts) (*jsonutil.Object, error) {
 	t.Helper()
 	if o.task == "" {
 		o.task = "t1"
@@ -139,10 +138,10 @@ func runRemote(t *testing.T, ctx context.Context, env *tools.Env, envr tools.Env
 		o.tools = []string{"read_file"}
 	}
 	return executeInRemoteKernel(ctx, env, envr, "print(1)", remoteCell{envType: "ssh", taskEnvID: o.task,
-		sandboxTools: o.tools, timeout: o.timeout, maxToolCalls: 5, reset: o.reset, idleExit: big.NewInt(1800)})
+		sandboxTools: o.tools, timeout: o.timeout, maxToolCalls: 5, reset: o.reset, idleExit: 1800})
 }
 
-func mustRemote(t *testing.T, ctx context.Context, env *tools.Env, envr tools.Environment, o remoteOpts) *pyjson.Object {
+func mustRemote(t *testing.T, ctx context.Context, env *tools.Env, envr tools.Environment, o remoteOpts) *jsonutil.Object {
 	t.Helper()
 	result, err := runRemote(t, ctx, env, envr, o)
 	if err != nil || result == nil {
@@ -151,9 +150,9 @@ func mustRemote(t *testing.T, ctx context.Context, env *tools.Env, envr tools.En
 	return result
 }
 
-func remoteInfo(t *testing.T, result *pyjson.Object) *pyjson.Object {
+func remoteInfo(t *testing.T, result *jsonutil.Object) *jsonutil.Object {
 	t.Helper()
-	info, _ := objGet(result, "kernel", nil).(*pyjson.Object)
+	info, _ := objGet(result, "kernel", nil).(*jsonutil.Object)
 	if info == nil {
 		t.Fatalf("no kernel info in %v", result)
 	}
@@ -405,12 +404,12 @@ func TestExecuteRemoteUsesKernelResult(t *testing.T) {
 	env := testEnv(t)
 	writeCodeExecConfig(t, env, map[string]any{"timeout": 30, "max_tool_calls": 5})
 	envr := newScriptedEnv(t, scriptHandler{"command -v python3", reply("OK\n", 0)})
-	withRemoteEntry(t, envr, func(context.Context, *tools.Env, tools.Environment, string, remoteCell) (*pyjson.Object, error) {
-		info := pyjson.NewObject()
+	withRemoteEntry(t, envr, func(context.Context, *tools.Env, tools.Environment, string, remoteCell) (*jsonutil.Object, error) {
+		info := jsonutil.NewObject()
 		info.Set("reused", true)
 		info.Set("remote", true)
 		info.Set("execution_count", 3)
-		fake := pyjson.NewObject()
+		fake := jsonutil.NewObject()
 		for _, kv := range [][2]any{{"status", "success"}, {"stdout", "kernel says hi\n"}, {"stderr", ""}, {"traceback", ""}, {"tool_calls_made", 0}, {"kernel", info}} {
 			fake.Set(kv[0].(string), kv[1])
 		}
@@ -423,7 +422,7 @@ func TestExecuteRemoteUsesKernelResult(t *testing.T) {
 }
 
 // Routes the remote path to a fixed backend and kernel entry for one test
-func withRemoteEntry(t *testing.T, envr tools.Environment, entry func(context.Context, *tools.Env, tools.Environment, string, remoteCell) (*pyjson.Object, error)) {
+func withRemoteEntry(t *testing.T, envr tools.Environment, entry func(context.Context, *tools.Env, tools.Environment, string, remoteCell) (*jsonutil.Object, error)) {
 	t.Helper()
 	prevEnv, prevEntry := getOrCreateEnv, executeInRemoteKernelFn
 	getOrCreateEnv = func(context.Context, *tools.Env, string) (tools.Environment, string, error) { return envr, "ssh", nil }
@@ -435,7 +434,7 @@ func TestExecuteRemoteFallsOpenToPerCall(t *testing.T) {
 	env := remoteKernelEnv(t)
 	writeCodeExecConfig(t, env, map[string]any{"timeout": 30, "max_tool_calls": 5})
 	envr := newScriptedEnv(t, scriptHandler{"command -v python3", reply("OK\n", 0)}, scriptHandler{"python3 script.py", reply("per-call ran\n", 0)})
-	withRemoteEntry(t, envr, func(context.Context, *tools.Env, tools.Environment, string, remoteCell) (*pyjson.Object, error) {
+	withRemoteEntry(t, envr, func(context.Context, *tools.Env, tools.Environment, string, remoteCell) (*jsonutil.Object, error) {
 		return nil, nil
 	})
 	result := decodeResult(t, executeRemote(t.Context(), env, "print()", "t", []string{"read_file"}, false))

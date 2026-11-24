@@ -16,9 +16,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Splits launch arguments with the CLI parser the boot installs
@@ -546,7 +546,7 @@ func TestRelaunchRunsZipLaunchersAndPreservesInterpreterOptions(t *testing.T) {
 			case "command":
 				cmd.Args[0] = "-c"
 			case "wrapper launcher":
-				vsWrite(t, launcher, "#!/bin/sh\nexec "+pyshlex.Quote(binary)+" \"$@\"\n")
+				vsWrite(t, launcher, "#!/bin/sh\nexec "+shellutil.Quote(binary)+" \"$@\"\n")
 				if err := os.Chmod(launcher, 0o755); err != nil {
 					t.Fatal(err)
 				}

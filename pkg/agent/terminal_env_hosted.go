@@ -14,9 +14,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 const (
@@ -258,7 +258,7 @@ func (e *hostedTerminalEnv) FetchFile(ctx context.Context, remotePath, localDest
 		data = fetched
 	} else {
 		marker := "__ICEBATH_FETCH_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12] + "__"
-		quoted := pyshlex.Quote(remotePath)
+		quoted := shellutil.Quote(remotePath)
 		cmd := fmt.Sprintf("[ -f %s ] && echo %s && head -c %d < %s | base64 && echo %s", quoted, marker, maxBytes+1, quoted, marker)
 		result, err := e.Execute(ctx, cmd, tools.ExecOptions{Timeout: hostedFetchTimeoutSeconds, NoCompoundRewrite: true})
 		if err != nil {
@@ -290,7 +290,7 @@ func (e *hostedTerminalEnv) FetchRealpath(ctx context.Context, remotePath string
 		path, _ := v.(string)
 		return path
 	}
-	result, err := e.Execute(ctx, "readlink -f "+pyshlex.Quote(remotePath)+" 2>/dev/null", tools.ExecOptions{NoCompoundRewrite: true})
+	result, err := e.Execute(ctx, "readlink -f "+shellutil.Quote(remotePath)+" 2>/dev/null", tools.ExecOptions{NoCompoundRewrite: true})
 	if err != nil || result.ReturnCode != 0 {
 		return ""
 	}

@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
 const journalHint = `journalctl --user -u icebath-gateway --since "5 min ago"`
@@ -41,7 +40,7 @@ func ExplainServiceFailure(err error) []string {
 	}
 	var cmd []string
 	var gwErr *gateway.CalledProcessError
-	var spErr *pysubprocess.CalledProcessError
+	var spErr *executil.StatusError
 	switch {
 	case errors.As(err, &gwErr):
 		cmd, err = gwErr.Cmd, gwErr

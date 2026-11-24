@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Live catalog prefixes of image generation and transcription models kept out of the agent picker
@@ -43,7 +43,7 @@ func metaAIPluginProfiles() []Profile {
 }
 
 // Top level effort always sent, off or none mapping to minimal and unset or bespoke levels to medium
-func metaAIBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (*pyjson.Object, map[string]any) {
+func metaAIBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (*jsonutil.Object, map[string]any) {
 	r := Reasoning{}
 	if reasoning != nil {
 		r = *reasoning
@@ -55,5 +55,5 @@ func metaAIBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (*pyjson
 	} else if clamped := clampEffort(effort, metaAIEfforts, nil); containsStr(metaAIEfforts, clamped) {
 		mapped = clamped
 	}
-	return pyjson.ObjectOf(), map[string]any{"reasoning_effort": mapped}
+	return jsonutil.ObjectOf(), map[string]any{"reasoning_effort": mapped}
 }

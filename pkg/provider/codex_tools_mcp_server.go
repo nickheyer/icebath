@@ -8,7 +8,6 @@ import (
 	"io"
 	"log/slog"
 	"math"
-	"math/big"
 	"os"
 	"os/signal"
 	"slices"
@@ -20,10 +19,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // CodexToolsMCPServerName is the mcp_servers key the runtime migration registers the icebath tools server under
@@ -86,8 +85,8 @@ type codexToolsSignature struct {
 // Property names of a schema in wire order for a decoded object and sorted for a plain map
 func codexToolsPropertyNames(props any) []string {
 	switch p := props.(type) {
-	case *pyjson.Object:
-		return slices.Clone(p.Keys)
+	case *jsonutil.Object:
+		return slices.Clone(p.Keys())
 	case map[string]any:
 		names := make([]string, 0, len(p))
 		for k := range p {
@@ -104,7 +103,7 @@ func codexToolsSignatureFromSchema(schema any) (codexToolsSignature, map[string]
 	props := cxOr(cxGet(cxOr(schema, map[string]any{}), "properties"), map[string]any{})
 	required := map[string]bool{}
 	for _, r := range cxList(cxOr(cxGet(cxOr(schema, map[string]any{}), "required"), []any{})) {
-		required[pyrepr.Str(r)] = true
+		required[anyutil.String(r)] = true
 	}
 	sig := codexToolsSignature{ReturnAnnotation: "str"}
 	annots := map[string]string{}
@@ -125,12 +124,12 @@ func codexToolsSignatureFromSchema(schema any) (codexToolsSignature, map[string]
 
 // Pydantic title of a field or model name
 func codexToolsTitle(name string) string {
-	return strings.TrimSpace(strings.ReplaceAll(pystr.Title(name), "_", " "))
+	return strings.TrimSpace(strings.ReplaceAll(textutil.Title(name), "_", " "))
 }
 
 // JSON schema pydantic emits for one bare Python type, keys already in sorted order
-func codexToolsTypeSchema(py string) *pyjson.Object {
-	o := pyjson.NewObject()
+func codexToolsTypeSchema(py string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	switch py {
 	case "str":
 		o.Set("type", "string")
@@ -141,7 +140,7 @@ func codexToolsTypeSchema(py string) *pyjson.Object {
 	case "bool":
 		o.Set("type", "boolean")
 	case "list":
-		o.Set("items", pyjson.NewObject())
+		o.Set("items", jsonutil.NewObject())
 		o.Set("type", "array")
 	case "dict":
 		o.Set("additionalProperties", true)
@@ -151,26 +150,30 @@ func codexToolsTypeSchema(py string) *pyjson.Object {
 }
 
 // Pydantic model JSON schema of a signature, the input schema FastMCP derives for a handler
-func codexToolsInputSchema(toolName string, sig codexToolsSignature) *pyjson.Object {
-	props := pyjson.NewObject()
+func codexToolsInputSchema(toolName string, sig codexToolsSignature) *jsonutil.Object {
+	props := jsonutil.NewObject()
 	var required []any
 	for _, p := range sig.Params {
-		field := pyjson.NewObject()
+		field := jsonutil.NewObject()
 		inner := codexToolsTypeSchema(p.PyType)
 		if p.Required || p.HasDefault {
-			for _, k := range inner.Keys {
-				field.Set(k, inner.Vals[k])
+			for _, k := range inner.Keys() {
+				field.Set(k, inner.Value(k))
 			}
 			if p.HasDefault {
 				field.Set("default", p.Default)
 			}
 			field.Set("title", codexToolsTitle(p.Name))
-			field.Keys = codexSortedKeys(field.Keys)
+			sorted := jsonutil.NewObject()
+			for _, k := range codexSortedKeys(field.Keys()) {
+				sorted.Set(k, field.Value(k))
+			}
+			field = sorted
 			if p.Required {
 				required = append(required, p.Name)
 			}
 		} else {
-			null := pyjson.NewObject()
+			null := jsonutil.NewObject()
 			null.Set("type", "null")
 			field.Set("anyOf", []any{inner, null})
 			field.Set("default", nil)
@@ -178,7 +181,7 @@ func codexToolsInputSchema(toolName string, sig codexToolsSignature) *pyjson.Obj
 		}
 		props.Set(p.Name, field)
 	}
-	schema := pyjson.NewObject()
+	schema := jsonutil.NewObject()
 	schema.Set("properties", props)
 	if len(required) > 0 {
 		schema.Set("required", required)
@@ -195,13 +198,13 @@ func codexSortedKeys(keys []string) []string {
 }
 
 // Wrapped output schema FastMCP derives for a handler annotated to return str
-func codexToolsOutputSchema(toolName string) *pyjson.Object {
-	result := pyjson.NewObject()
+func codexToolsOutputSchema(toolName string) *jsonutil.Object {
+	result := jsonutil.NewObject()
 	result.Set("title", "Result")
 	result.Set("type", "string")
-	props := pyjson.NewObject()
+	props := jsonutil.NewObject()
 	props.Set("result", result)
-	schema := pyjson.NewObject()
+	schema := jsonutil.NewObject()
 	schema.Set("properties", props)
 	schema.Set("required", []any{"result"})
 	schema.Set("title", toolName+"Output")
@@ -244,13 +247,13 @@ func (e *codexToolsValidationError) Error() string {
 	}
 	fmt.Fprintf(&b, "%d validation error%s for %s", len(e.errors), plural, e.title)
 	for _, le := range e.errors {
-		r := []rune(pyrepr.Repr(le.input))
+		r := []rune(anyutil.Quote(le.input))
 		value := string(r)
 		if len(r) > 50 {
 			value = string(r[:25]) + "..." + string(r[len(r)-24:])
 		}
 		fmt.Fprintf(&b, "\n%s\n  %s [type=%s, input_value=%s, input_type=%s]\n    For further information visit https://errors.pydantic.dev/%s/v/%s",
-			le.loc, codexToolsErrorMessages[le.kind], le.kind, value, pyrepr.TypeName(le.input), codexToolsPydanticDocsVersion, le.kind)
+			le.loc, codexToolsErrorMessages[le.kind], le.kind, value, anyutil.Kind(le.input), codexToolsPydanticDocsVersion, le.kind)
 	}
 	return b.String()
 }
@@ -273,8 +276,8 @@ func codexToolsCoerce(py string, v any) (any, string) {
 			}
 			return int64(0), ""
 		}
-		if n, ok := pyrepr.Int(v); ok {
-			return pyjson.ParseInt(n.String()), ""
+		if n, ok := anyutil.Int(v); ok {
+			return n, ""
 		}
 		if f, ok := v.(float64); ok {
 			if math.IsNaN(f) || math.IsInf(f, 0) {
@@ -283,7 +286,7 @@ func codexToolsCoerce(py string, v any) (any, string) {
 			if f != math.Trunc(f) {
 				return nil, "int_from_float"
 			}
-			return pyjson.ParseInt(strconv.FormatFloat(f, 'f', 0, 64)), ""
+			return codexToolsIntegralFloat(f), ""
 		}
 		if s, ok := v.(string); ok {
 			t := strings.TrimSpace(s)
@@ -291,7 +294,7 @@ func codexToolsCoerce(py string, v any) (any, string) {
 				return n, ""
 			}
 			if f, err := strconv.ParseFloat(t, 64); err == nil && f == math.Trunc(f) && !math.IsInf(f, 0) {
-				return pyjson.ParseInt(strconv.FormatFloat(f, 'f', 0, 64)), ""
+				return codexToolsIntegralFloat(f), ""
 			}
 			return nil, "int_parsing"
 		}
@@ -306,9 +309,8 @@ func codexToolsCoerce(py string, v any) (any, string) {
 		if f, ok := v.(float64); ok {
 			return f, ""
 		}
-		if n, ok := pyrepr.Int(v); ok {
-			f, _ := new(big.Float).SetInt(n).Float64()
-			return f, ""
+		if n, ok := anyutil.Int(v); ok {
+			return float64(n), ""
 		}
 		if s, ok := v.(string); ok {
 			if f, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(s), "_", ""), 64); err == nil {
@@ -321,9 +323,9 @@ func codexToolsCoerce(py string, v any) (any, string) {
 		if isBool {
 			return v, ""
 		}
-		if n, ok := pyrepr.Int(v); ok {
-			if n.IsInt64() && (n.Int64() == 0 || n.Int64() == 1) {
-				return n.Int64() == 1, ""
+		if n, ok := anyutil.Int(v); ok {
+			if n == 0 || n == 1 {
+				return n == 1, ""
 			}
 			return nil, "bool_parsing"
 		}
@@ -357,7 +359,15 @@ func codexToolsCoerce(py string, v any) (any, string) {
 	return v, ""
 }
 
-// Python int() text parsing with sign and underscores between digits
+// Integer an integral float stands for, the float itself past the int64 range
+func codexToolsIntegralFloat(f float64) any {
+	if math.Abs(f) < 1<<63 {
+		return int64(f)
+	}
+	return f
+}
+
+// Integer of text with one optional sign and single underscores between digits, a float64 past the int64 range
 func codexToolsParseIntText(t string) (any, bool) {
 	body := strings.TrimLeft(t, "+-")
 	if len(t)-len(body) > 1 || body == "" || strings.HasPrefix(body, "_") || strings.HasSuffix(body, "_") || strings.Contains(body, "__") {
@@ -368,29 +378,31 @@ func codexToolsParseIntText(t string) (any, bool) {
 			return nil, false
 		}
 	}
-	return pyjson.ParseInt(strings.TrimPrefix(strings.ReplaceAll(t, "_", ""), "+")), true
+	text := strings.TrimPrefix(strings.ReplaceAll(t, "_", ""), "+")
+	if n, err := strconv.ParseInt(text, 10, 64); err == nil {
+		return n, true
+	}
+	f, _ := strconv.ParseFloat(text, 64)
+	return f, true
 }
 
 // FastMCP pre parse that decodes JSON text sent for a field not annotated as plain str
-func codexToolsPreParse(sig codexToolsSignature, args *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range args.Keys {
-		out.Set(k, args.Vals[k])
+func codexToolsPreParse(sig codexToolsSignature, args *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, k := range args.Keys() {
+		out.Set(k, args.Value(k))
 	}
 	for _, p := range sig.Params {
-		s, ok := args.Vals[p.Name].(string)
+		s, ok := args.Value(p.Name).(string)
 		if !ok || p.Annotation() == "str" {
 			continue
 		}
-		parsed, err := pyjson.Loads(s)
+		parsed, err := jsonutil.Decode(s)
 		if err != nil {
 			continue
 		}
 		switch parsed.(type) {
-		case string, float64, bool:
-			continue
-		}
-		if _, isInt := pyrepr.Int(parsed); isInt {
+		case string, float64, bool, int64:
 			continue
 		}
 		out.Set(p.Name, parsed)
@@ -399,12 +411,12 @@ func codexToolsPreParse(sig codexToolsSignature, args *pyjson.Object) *pyjson.Ob
 }
 
 // Validates call arguments against the signature model and returns every field in signature order
-func codexToolsValidate(toolName string, sig codexToolsSignature, args *pyjson.Object) (*pyjson.Object, error) {
+func codexToolsValidate(toolName string, sig codexToolsSignature, args *jsonutil.Object) (*jsonutil.Object, error) {
 	data := codexToolsPreParse(sig, args)
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	verr := &codexToolsValidationError{title: toolName + "Arguments"}
 	for _, p := range sig.Params {
-		v, present := data.Vals[p.Name]
+		v, present := data.Get(p.Name)
 		if !present {
 			switch {
 			case p.Required:
@@ -438,7 +450,7 @@ type codexToolsTool struct {
 	name, description string
 	sig               codexToolsSignature
 	inputSchema       any
-	handler           func(kwargs *pyjson.Object) string
+	handler           func(kwargs *jsonutil.Object) string
 }
 
 // Stdio MCP server over registered tools, a concurrent one running each call on its own worker
@@ -482,7 +494,7 @@ func codexToolsAssemble(defs []map[string]any, call func(name string, args map[s
 	all := map[string]any{}
 	for _, td := range defs {
 		if cxGet(td, "type") == "function" {
-			all[pyrepr.Str(cxGet(cxGet(td, "function"), "name"))] = cxGet(td, "function")
+			all[anyutil.String(cxGet(cxGet(td, "function"), "name"))] = cxGet(td, "function")
 		}
 	}
 	for _, name := range codexToolsExposedTools {
@@ -502,17 +514,17 @@ func codexToolsAssemble(defs []map[string]any, call func(name string, args map[s
 		sig, _ := codexToolsSignatureFromSchema(params)
 		toolName := name
 		server.tools = append(server.tools, &codexToolsTool{name: name, description: description, sig: sig,
-			handler: func(kwargs *pyjson.Object) (result string) {
+			handler: func(kwargs *jsonutil.Object) (result string) {
 				defer func() {
 					if r := recover(); r != nil {
 						pkgLog().Error(fmt.Sprintf("tool %s raised", toolName), "panic", r)
-						result = cxMustDumps(map[string]any{"error": pyrepr.Str(r), "tool": toolName})
+						result = cxMustDumps(map[string]any{"error": anyutil.String(r), "tool": toolName})
 					}
 				}()
 				args := map[string]any{}
-				for _, k := range kwargs.Keys {
-					if kwargs.Vals[k] != nil {
-						args[k] = kwargs.Vals[k]
+				for _, k := range kwargs.Keys() {
+					if kwargs.Value(k) != nil {
+						args[k] = kwargs.Value(k)
 					}
 				}
 				return call(toolName, args)
@@ -522,8 +534,8 @@ func codexToolsAssemble(defs []map[string]any, call func(name string, args map[s
 	return server
 }
 
-func (s *CodexToolsServer) send(msg *pyjson.Object) error {
-	text, err := pyjson.Dumps(msg, pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
+func (s *CodexToolsServer) send(msg *jsonutil.Object) error {
+	text, err := jsonutil.Encode(msg)
 	if err != nil {
 		return err
 	}
@@ -533,8 +545,8 @@ func (s *CodexToolsServer) send(msg *pyjson.Object) error {
 	return err
 }
 
-func codexToolsObject(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func codexToolsObject(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -552,14 +564,14 @@ func (s *CodexToolsServer) handle(method string, params any) (any, int, string) 
 				version = requested
 			}
 		}
-		caps := codexToolsObject("experimental", pyjson.NewObject(),
+		caps := codexToolsObject("experimental", jsonutil.NewObject(),
 			"prompts", codexToolsObject("listChanged", false),
 			"resources", codexToolsObject("subscribe", false, "listChanged", false),
 			"tools", codexToolsObject("listChanged", false))
 		return codexToolsObject("protocolVersion", version, "capabilities", caps,
 			"serverInfo", codexToolsObject("name", s.name, "version", baseVersion()), "instructions", s.instructions), 0, ""
 	case "ping":
-		return pyjson.NewObject(), 0, ""
+		return jsonutil.NewObject(), 0, ""
 	case "tools/list":
 		var list []any
 		for _, t := range s.tools {
@@ -587,9 +599,9 @@ func (s *CodexToolsServer) handle(method string, params any) (any, int, string) 
 }
 
 // Runs a tool and wraps its text as content plus the structured result, failures as an error result
-func (s *CodexToolsServer) callTool(params any) *pyjson.Object {
-	name := pyrepr.Str(cxGet(params, "name"))
-	errResult := func(text string) *pyjson.Object {
+func (s *CodexToolsServer) callTool(params any) *jsonutil.Object {
+	name := anyutil.String(cxGet(params, "name"))
+	errResult := func(text string) *jsonutil.Object {
 		return codexToolsObject("content", []any{codexToolsObject("type", "text", "text", text)}, "isError", true)
 	}
 	var tool *codexToolsTool
@@ -601,9 +613,9 @@ func (s *CodexToolsServer) callTool(params any) *pyjson.Object {
 	if tool == nil {
 		return errResult("Unknown tool: " + name)
 	}
-	args, ok := cxGet(params, "arguments").(*pyjson.Object)
+	args, ok := cxGet(params, "arguments").(*jsonutil.Object)
 	if !ok {
-		args = pyjson.NewObject()
+		args = jsonutil.NewObject()
 		if m, isMap := cxGet(params, "arguments").(map[string]any); isMap {
 			for _, k := range codexSortedKeys(slices.Collect(func(yield func(string) bool) {
 				for k := range m {
@@ -629,14 +641,14 @@ func (s *CodexToolsServer) callTool(params any) *pyjson.Object {
 }
 
 // Runs a handler and returns its text, or the str of what it raised with failed set
-func codexToolsRunHandler(tool *codexToolsTool, kwargs *pyjson.Object) (text, raised string, failed bool) {
+func codexToolsRunHandler(tool *codexToolsTool, kwargs *jsonutil.Object) (text, raised string, failed bool) {
 	defer func() {
 		if r := recover(); r != nil {
 			failed = true
 			if e, ok := r.(error); ok {
 				raised = e.Error()
 			} else {
-				raised = pyrepr.Str(r)
+				raised = anyutil.String(r)
 			}
 		}
 	}()
@@ -662,9 +674,9 @@ func (s *CodexToolsServer) Run() error {
 }
 
 func (s *CodexToolsServer) dispatchLine(line string) {
-	msg, err := pyjson.Loads(line)
+	msg, err := jsonutil.Decode(line)
 	if err != nil || !cxIsObject(msg) {
-		pkgLog().Error(fmt.Sprintf("Received exception from stream: invalid JSON-RPC message %s", pyrepr.Repr(strings.TrimSpace(line))))
+		pkgLog().Error(fmt.Sprintf("Received exception from stream: invalid JSON-RPC message %s", anyutil.Quote(strings.TrimSpace(line))))
 		return
 	}
 	method, hasMethod := cxGet(msg, "method").(string)

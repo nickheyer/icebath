@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
 )
 
 // Icebath surfaces documented for plugin authors, module entries or module:Name entries
@@ -68,9 +68,9 @@ func privateLocalModules(files []parsedSource) map[string]bool {
 }
 
 // Nodes inside the body of an if TYPE_CHECKING block
-func typeCheckingNodes(tree *pyast.Node) map[*pyast.Node]bool {
-	skipped := map[*pyast.Node]bool{}
-	for _, node := range pyast.Walk(tree) {
+func typeCheckingNodes(tree *pythonutil.Node) map[*pythonutil.Node]bool {
+	skipped := map[*pythonutil.Node]bool{}
+	for node := range pythonutil.Walk(tree) {
 		if !node.Is("If") {
 			continue
 		}
@@ -81,7 +81,7 @@ func typeCheckingNodes(tree *pyast.Node) map[*pyast.Node]bool {
 		}
 		if test.Is("Name", "Attribute") && key == "TYPE_CHECKING" {
 			for _, stmt := range node.Children("body") {
-				for _, n := range pyast.Walk(stmt) {
+				for n := range pythonutil.Walk(stmt) {
 					skipped[n] = true
 				}
 			}
@@ -93,7 +93,7 @@ func typeCheckingNodes(tree *pyast.Node) map[*pyast.Node]bool {
 type importedName struct{ module, name string }
 
 // Module and name pairs an import node binds, the name empty for a plain module import
-func importedNames(node *pyast.Node) ([]importedName, error) {
+func importedNames(node *pythonutil.Node) ([]importedName, error) {
 	switch {
 	case node.Is("Import"):
 		out := []importedName{}
@@ -123,7 +123,7 @@ func importedNames(node *pyast.Node) ([]importedName, error) {
 		if !ok {
 			return nil, nil
 		}
-		fn, err := pyast.Unparse(node.Child("func"))
+		fn, err := pythonutil.Unparse(node.Child("func"))
 		if err != nil {
 			return nil, err
 		}
@@ -187,7 +187,7 @@ func privateImportFindings(files []parsedSource) ([]string, error) {
 	found := map[site]bool{}
 	for _, f := range files {
 		skipped := typeCheckingNodes(f.tree)
-		for _, node := range pyast.Walk(f.tree) {
+		for node := range pythonutil.Walk(f.tree) {
 			if skipped[node] {
 				continue
 			}
@@ -197,7 +197,7 @@ func privateImportFindings(files []parsedSource) ([]string, error) {
 			}
 			for _, imp := range names {
 				if target := privateTarget(imp.module, imp.name, core, local); target != "" {
-					found[site{f.rel, node.Lineno, target, imp.module}] = true
+					found[site{f.rel, node.Line, target, imp.module}] = true
 				}
 			}
 		}
@@ -237,7 +237,7 @@ func privateImportFindings(files []parsedSource) ([]string, error) {
 func privateOwnNames(files []parsedSource) map[string]bool {
 	own := map[string]bool{}
 	for _, f := range files {
-		for _, node := range pyast.Walk(f.tree) {
+		for node := range pythonutil.Walk(f.tree) {
 			switch {
 			case node.Is("FunctionDef", "AsyncFunctionDef", "ClassDef"):
 				name, _ := node.Str("name")
@@ -265,7 +265,7 @@ func privateAttributeFindings(files []parsedSource) ([]string, error) {
 	}
 	found := map[site]bool{}
 	for _, f := range files {
-		for _, node := range pyast.Walk(f.tree) {
+		for node := range pythonutil.Walk(f.tree) {
 			attr, _ := node.Str("attr")
 			if !node.Is("Attribute") || !private[attr] || own[attr] {
 				continue
@@ -273,14 +273,14 @@ func privateAttributeFindings(files []parsedSource) ([]string, error) {
 			if id, _ := node.Child("value").Str("id"); node.Child("value").Is("Name") && (id == "self" || id == "cls") {
 				continue
 			}
-			expr, err := pyast.Unparse(node)
+			expr, err := pythonutil.Unparse(node)
 			if err != nil {
 				return nil, err
 			}
 			if runes := []rune(expr); len(runes) > 80 {
 				expr = string(runes[:80])
 			}
-			found[site{f.rel, node.Lineno, expr}] = true
+			found[site{f.rel, node.Line, expr}] = true
 		}
 	}
 	sorted := make([]site, 0, len(found))

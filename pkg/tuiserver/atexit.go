@@ -4,7 +4,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -48,5 +48,5 @@ func failureText(failure any) string {
 	if err, isError := failure.(error); isError {
 		return err.Error()
 	}
-	return pyrepr.Str(failure)
+	return anyutil.String(failure)
 }

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // AuxiliaryClientUnavailable reports that no auxiliary client could be built for the task
@@ -166,5 +166,5 @@ func MissingProviderCredentialsMessage(ctx context.Context, providerID string) s
 	if remedy != "" {
 		return fmt.Sprintf("Provider '%s' is set in config.yaml but %s. %s, or %s", providerID, problem, remedy, switchText)
 	}
-	return fmt.Sprintf("Provider '%s' is set in config.yaml but %s. %s", providerID, problem, pystr.Capitalize(switchText))
+	return fmt.Sprintf("Provider '%s' is set in config.yaml but %s. %s", providerID, problem, textutil.UpperFirst(strings.ToLower(switchText)))
 }

@@ -5,8 +5,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Owner memory snapshot a staged create receipt publishes with the transaction that creates its row
@@ -18,9 +16,9 @@ type OnCreateSnapshot interface {
 
 // Staged local create receipt with the owner only parts never stored
 type LocalCreateReceipt struct {
-	Receipt *pyjson.Object
+	Receipt *jsonutil.Object
 	// The staged request's own client env, nil when the receipt carries none
-	ClientRequest *pyjson.Object
+	ClientRequest *jsonutil.Object
 	OnCreate      OnCreateSnapshot
 }
 
@@ -30,7 +28,7 @@ func isoTimestamp(value any) (float64, error) {
 	if !ok {
 		return 0, &stateTypedError{"TypeError", "the timestamp is not ISO 8601 text"}
 	}
-	t, aware, err := pydatetime.ParseISOFormat(text)
+	t, aware, err := timeutil.ParseISOZone(text, time.UTC)
 	if err != nil {
 		return 0, pyValueError(err.Error())
 	}
@@ -41,21 +39,21 @@ func isoTimestamp(value any) (float64, error) {
 }
 
 // The sessions row cwd, the create request's row_cwd when it sent one else the execution cwd
-func rowCwd(policy *pyjson.Object) (any, error) {
+func rowCwd(policy *jsonutil.Object) (any, error) {
 	requestJSON, _ := policy.Get("request_json")
 	var request any
 	if text, ok := requestJSON.(string); ok && text != "" {
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err == nil {
 			request = decoded
 		}
 	} else if requestJSON != nil && pyTruthy(requestJSON) {
 		request = nil
 	} else {
-		request = pyjson.NewObject()
+		request = jsonutil.NewObject()
 	}
 	var value any
-	if obj, ok := request.(*pyjson.Object); ok {
+	if obj, ok := request.(*jsonutil.Object); ok {
 		value, _ = obj.Get("row_cwd")
 	}
 	text, isStr := value.(string)
@@ -69,21 +67,21 @@ func rowCwd(policy *pyjson.Object) (any, error) {
 }
 
 // Reserves the row, route and immutable policy of a local session together before publication
-func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged LocalCreateReceipt) (*pyjson.Object, error) {
+func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged LocalCreateReceipt) (*jsonutil.Object, error) {
 	request := staged.ClientRequest
 	if request == nil {
 		policy, err := receiptItem(staged.Receipt, "policy")
 		if err != nil {
 			return nil, err
 		}
-		policyObj, ok := policy.(*pyjson.Object)
+		policyObj, ok := policy.(*jsonutil.Object)
 		if !ok {
 			return nil, &stateTypedError{"TypeError", "the commit policy is " + errchain.Kind(policy) + ", expected a mapping"}
 		}
 		if clientEnv, _ := policyObj.Get("client_env_json"); clientEnv != nil {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		request = pyjson.NewObject()
+		request = jsonutil.NewObject()
 	}
 	if staged.OnCreate != nil {
 		if err := staged.OnCreate.Read(); err != nil {
@@ -94,11 +92,11 @@ func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged 
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(encoded)
+	decoded, err := jsonutil.Decode(encoded)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
-	receipt := decoded.(*pyjson.Object)
+	receipt := decoded.(*jsonutil.Object)
 	sidValue, err := receiptItem(receipt, "session_id")
 	if err != nil {
 		return nil, err
@@ -109,7 +107,7 @@ func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged 
 	}
 	sid, route := pyStr(sidValue), pyStr(routeValue)
 	key := LocalPolicyPrefix + sid
-	var out *pyjson.Object
+	var out *jsonutil.Object
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
 		out = nil
 		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
@@ -167,11 +165,11 @@ func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged 
 		if err != nil {
 			return err
 		}
-		policy, ok := policyValue.(*pyjson.Object)
+		policy, ok := policyValue.(*jsonutil.Object)
 		if !ok {
 			return &stateTypedError{"TypeError", "policy must be a dict"}
 		}
-		entry, ok := entryValue.(*pyjson.Object)
+		entry, ok := entryValue.(*jsonutil.Object)
 		if !ok {
 			return &stateTypedError{"TypeError", "entry must be a dict"}
 		}
@@ -248,16 +246,16 @@ func (d *SessionDB) CommitLocalSession(ctx context.Context, epoch int64, staged 
 }
 
 // Whether a stored create receipt is the exact retry of this one, the saved receipt returned
-func sameLocalCreate(old any, receipt, request *pyjson.Object) (*pyjson.Object, bool, error) {
+func sameLocalCreate(old any, receipt, request *jsonutil.Object) (*jsonutil.Object, bool, error) {
 	text, ok := old.(string)
 	if !ok {
 		return nil, false, &stateTypedError{"TypeError", "the stored create request is " + errchain.Kind(old) + ", expected JSON text"}
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, false, pyValueError(err.Error())
 	}
-	saved, ok := decoded.(*pyjson.Object)
+	saved, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, false, &stateTypedError{"TypeError", "saved receipt is not a dict"}
 	}
@@ -270,7 +268,7 @@ func sameLocalCreate(old any, receipt, request *pyjson.Object) (*pyjson.Object, 
 		if err != nil {
 			return nil, false, err
 		}
-		if !pyjson.Equal(savedValue, value) {
+		if !anyutil.Equal(savedValue, value) {
 			return saved, false, nil
 		}
 	}
@@ -278,7 +276,7 @@ func sameLocalCreate(old any, receipt, request *pyjson.Object) (*pyjson.Object, 
 	if err != nil {
 		return nil, false, err
 	}
-	savedPolicyObj, ok := savedPolicy.(*pyjson.Object)
+	savedPolicyObj, ok := savedPolicy.(*jsonutil.Object)
 	if !ok {
 		return nil, false, &stateTypedError{"TypeError", "policy must be a dict"}
 	}

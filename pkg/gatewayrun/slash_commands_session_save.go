@@ -5,25 +5,25 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Final path component under the host os path rules
 func osPathBasename(p string) string {
 	if runtime.GOOS == "windows" {
-		return pypath.NtBasename(p)
+		return pathutil.WindowsBase(p)
 	}
-	return pypath.PosixBasename(p)
+	return path.Base(p)
 }
 
 // Exports the current session and sends it to the chat as a document
@@ -41,7 +41,7 @@ func (r *GatewayRunner) handleSaveCommand(ctx context.Context, event *gateway.Me
 		if !isValueError(err) {
 			return "", err
 		}
-		return pyrepr.ExceptionMessage(err) + "\n\n" + state.SaveUsage, nil
+		return err.Error() + "\n\n" + state.SaveUsage, nil
 	}
 	source := event.Source
 	entry, err := r.slashStore().GetOrCreateSession(ctx, source, false, true)
@@ -60,13 +60,13 @@ func (r *GatewayRunner) handleSaveCommand(ctx context.Context, event *gateway.Me
 	if filename = osPathBasename(filename); filename == "" {
 		filename = state.DefaultSaveFilename(sessionID, format)
 	}
-	exportData, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) (*pyjson.Object, error) {
+	exportData, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) (*jsonutil.Object, error) {
 		return state.LoadSaveSnapshot(ctx, d, sessionID, format)
 	})
 	if err != nil {
 		var tooLarge *state.SessionExportTooLargeError
 		if errors.As(err, &tooLarge) {
-			return pyrepr.ExceptionMessage(err), nil
+			return err.Error(), nil
 		}
 		return "", err
 	}
@@ -110,8 +110,8 @@ func (r *GatewayRunner) handleSaveCommand(ctx context.Context, event *gateway.Me
 		return i18n.T(ctx, "gateway.save.complete", "", nil), nil
 	}()
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Session /save failed: %s", pyrepr.ExceptionMessage(err)))
-		return i18n.T(ctx, "gateway.save.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		pkgLog().Warn(fmt.Sprintf("Session /save failed: %s", err.Error()))
+		return i18n.T(ctx, "gateway.save.failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	return reply, nil
 }
@@ -152,7 +152,7 @@ func (r *GatewayRunner) handleTitleCommand(ctx context.Context, event *gateway.M
 	}
 	sanitized, err := state.SanitizeTitle(titleArg)
 	if err != nil {
-		return i18n.T(ctx, "gateway.shared.warn_passthrough", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.shared.warn_passthrough", "", map[string]any{"error": err.Error()}), nil
 	}
 	if sanitized == "" {
 		return i18n.T(ctx, "gateway.title.empty_after_clean", "", nil), nil
@@ -162,7 +162,7 @@ func (r *GatewayRunner) handleTitleCommand(ctx context.Context, event *gateway.M
 		if !isValueError(err) {
 			return "", err
 		}
-		return i18n.T(ctx, "gateway.shared.warn_passthrough", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.shared.warn_passthrough", "", map[string]any{"error": err.Error()}), nil
 	}
 	if !ok {
 		return i18n.T(ctx, "gateway.title.not_found", "", nil), nil

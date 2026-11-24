@@ -19,11 +19,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -54,10 +53,10 @@ const tmpGraphPrefix = "tmp_graph_"
 const pgrepGit = `^git(-.*|\.exe)?$`
 
 // Updater git runner update_custody.run_git, pkg/selfupdate installs its RunGit here at init
-var GitlockRunGit func(ctx context.Context, gitCmd, args []string, o pysubprocess.Options) (*pysubprocess.Completed, error)
+var GitlockRunGit func(ctx context.Context, gitCmd, args []string, o executil.Options) (*executil.Completed, error)
 
 // The subprocess.run gitlock spawns its probes and treeless conversion through, swapped by tests
-var gitlockSubprocessRun = pysubprocess.RunWith
+var gitlockSubprocessRun = executil.Run
 
 // Whether psutil is importable, the process scan the stale sweeps trust outside Windows
 var gitlockPsutil = true
@@ -78,7 +77,7 @@ var gitlockRemove = os.Remove
 var checkpointGitProcRunning = gitProcRunning
 
 // Runs one updater git call through the runner the updater binds
-func gitlockRunGit(ctx context.Context, gitCmd, args []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
+func gitlockRunGit(ctx context.Context, gitCmd, args []string, o executil.Options) (*executil.Completed, error) {
 	if GitlockRunGit == nil {
 		return nil, errors.New(linktier.Missing("the updater git runner", linktier.Extras))
 	}
@@ -105,7 +104,7 @@ func gitProcRunning(env *Env) bool {
 	if gitlockWindows {
 		argv = []string{"tasklist", "/FO", "CSV", "/NH"}
 	}
-	res, err := gitlockSubprocessRun(context.Background(), argv, pysubprocess.Options{Timeout: 10 * time.Second, Attr: gitlockHideAttr()})
+	res, err := gitlockSubprocessRun(context.Background(), argv, executil.Options{Timeout: 10 * time.Second, Attr: gitlockHideAttr()})
 	if err != nil {
 		envLog(env).Debug("git process probe failed; assuming git may be running")
 		return true
@@ -284,8 +283,8 @@ var tree0MaintenanceOff = [][2]string{
 }
 
 // Runs a run_git config call in repo with captured output and the console hidden
-func gitlockConfigRun(ctx context.Context, repo string, check bool, args ...string) (*pysubprocess.Completed, error) {
-	return gitlockRunGit(ctx, []string{"git"}, args, pysubprocess.Options{Dir: repo, Timeout: 30 * time.Second, Check: check, Attr: gitlockHideAttr()})
+func gitlockConfigRun(ctx context.Context, repo string, check bool, args ...string) (*executil.Completed, error) {
+	return gitlockRunGit(ctx, []string{"git"}, args, executil.Options{Dir: repo, Timeout: 30 * time.Second, RequireSuccess: check, Attr: gitlockHideAttr()})
 }
 
 // Keeps git from writing a commit graph in a partial clone, idempotent and never failing
@@ -371,9 +370,9 @@ func ClearStaleTmpPacks(repoRoot string, minAge *int) []string {
 
 // Nonblank stripped stdout lines of a read only git query in repo, empty on any failure
 func GitlockStdoutLines(ctx context.Context, repoRoot string, args []string) []string {
-	res, err := gitlockRunGit(ctx, []string{"git"}, args, pysubprocess.Options{Dir: repoRoot, Timeout: 10 * time.Second, Attr: gitlockHideAttr()})
+	res, err := gitlockRunGit(ctx, []string{"git"}, args, executil.Options{Dir: repoRoot, Timeout: 10 * time.Second, Attr: gitlockHideAttr()})
 	if err != nil {
-		envLog(nil).Debug(fmt.Sprintf("git query failed: %s", pyrepr.Repr(anySlice(args))))
+		envLog(nil).Debug(fmt.Sprintf("git query failed: %s", anyutil.Quote(anySlice(args))))
 		return nil
 	}
 	if res.Returncode != 0 {
@@ -416,7 +415,7 @@ func batchMissingParents(ctx context.Context, repoRoot string, candidates []stri
 }
 
 func batchMissingParentsErr(ctx context.Context, repoRoot string, candidates []string) (map[string]bool, error) {
-	res, err := gitlockRunGit(ctx, []string{"git"}, []string{"cat-file", "--batch"}, pysubprocess.Options{
+	res, err := gitlockRunGit(ctx, []string{"git"}, []string{"cat-file", "--batch"}, executil.Options{
 		Dir: repoRoot, Input: []byte(strings.Join(candidates, "\n") + "\n"), Timeout: 30 * time.Second, Attr: gitlockHideAttr()})
 	if err != nil {
 		return nil, err
@@ -455,7 +454,7 @@ func batchMissingParentsErr(ctx context.Context, repoRoot string, candidates []s
 				}
 				fields := bytesFields(line)
 				if len(fields) >= 2 && string(fields[0]) == "parent" {
-					sha, err := pystr.DecodeUTF8(fields[1])
+					sha, err := textutil.DecodeUTF8(fields[1])
 					if err != nil {
 						return nil, err
 					}
@@ -474,7 +473,7 @@ func batchMissingParentsErr(ctx context.Context, repoRoot string, candidates []s
 		return nil, nil
 	}
 	sorted := sortedSet(parents)
-	check, err := gitlockRunGit(ctx, []string{"git"}, []string{"cat-file", "--batch-check"}, pysubprocess.Options{
+	check, err := gitlockRunGit(ctx, []string{"git"}, []string{"cat-file", "--batch-check"}, executil.Options{
 		Dir: repoRoot, Input: []byte(strings.Join(sorted, "\n") + "\n"), Timeout: 10 * time.Second, Attr: gitlockHideAttr()})
 	if err != nil {
 		return nil, err
@@ -576,7 +575,7 @@ func writeShallow(shallowPath, content, suffix string) error {
 
 // Lines of the shallow file bytes, decoded as utf-8-sig and split like str.splitlines
 func shallowLines(original []byte) ([]string, error) {
-	text, err := pystr.DecodeUTF8Sig(original)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(original))
 	if err != nil {
 		return nil, err
 	}
@@ -605,7 +604,7 @@ func repairBrokenShallowBoundaries(ctx context.Context, repoRoot string) (int, e
 		return 0, nil
 	}
 	probe, err := gitlockRunGit(ctx, []string{"git"}, []string{"rev-list", "--count", "--all", "--reflog"},
-		pysubprocess.Options{Dir: repoRoot, Timeout: 10 * time.Second, Attr: gitlockHideAttr()})
+		executil.Options{Dir: repoRoot, Timeout: 10 * time.Second, Attr: gitlockHideAttr()})
 	if err != nil {
 		return 0, err
 	}
@@ -727,7 +726,7 @@ func pruneStaleShallowGrafts(ctx context.Context, repoRoot string) (int, error) 
 			}
 			if pins {
 				if _, err := gitlockRunGit(ctx, []string{"git"}, []string{"reflog", "expire", "--expire=now", ref},
-					pysubprocess.Options{Dir: repoRoot, Timeout: 10 * time.Second, Attr: gitlockHideAttr()}); err != nil {
+					executil.Options{Dir: repoRoot, Timeout: 10 * time.Second, Attr: gitlockHideAttr()}); err != nil {
 					return 0, err
 				}
 			}
@@ -755,14 +754,14 @@ func pruneStaleShallowGrafts(ctx context.Context, repoRoot string) (int, error) 
 }
 
 // Runs a run_git text query in repo with the caller's run keywords and a 30 second timeout
-func gitlockKwRun(ctx context.Context, repo string, kw pysubprocess.Options, args ...string) (*pysubprocess.Completed, error) {
+func gitlockKwRun(ctx context.Context, repo string, kw executil.Options, args ...string) (*executil.Completed, error) {
 	o := kw
 	o.Dir, o.Timeout = repo, 30*time.Second
 	return gitlockRunGit(ctx, []string{"git"}, args, o)
 }
 
 // The checkout's own partial clone filter, empty for a clone that is not partial
-func PartialCloneFilter(ctx context.Context, repoRoot string, kw pysubprocess.Options) (string, error) {
+func PartialCloneFilter(ctx context.Context, repoRoot string, kw executil.Options) (string, error) {
 	res, err := gitlockKwRun(ctx, repoRoot, kw, "config", "--get", "remote.origin.promisor")
 	if err != nil {
 		return "", err
@@ -778,7 +777,7 @@ func PartialCloneFilter(ctx context.Context, repoRoot string, kw pysubprocess.Op
 }
 
 // Unshallows a stale installer checkout before the bounded fetch, reporting whether it was shallow
-func HealShallowHistory(ctx context.Context, repoRoot, branch string, kw pysubprocess.Options) (bool, error) {
+func HealShallowHistory(ctx context.Context, repoRoot, branch string, kw executil.Options) (bool, error) {
 	if shallowFilePath(ctx, repoRoot) == "" {
 		return false, nil
 	}
@@ -792,7 +791,7 @@ const tagRefreshTimeout = 30 * time.Second
 const historyFetchTimeout = 900 * time.Second
 
 // Refreshes release tags and fills shallow history keeping the clone's mode, reporting whether it unshallowed
-func FetchFullCommitGraph(ctx context.Context, repoRoot string, extraRefspecs []string, kw pysubprocess.Options) (shallow bool, err error) {
+func FetchFullCommitGraph(ctx context.Context, repoRoot string, extraRefspecs []string, kw executil.Options) (shallow bool, err error) {
 	shallowPath := shallowFilePath(ctx, repoRoot)
 	shallow = shallowPath != ""
 	kw.Attr = withHideFlags(kw.Attr)
@@ -806,7 +805,7 @@ func FetchFullCommitGraph(ctx context.Context, repoRoot string, extraRefspecs []
 		if err != nil {
 			return false, err
 		}
-		text, err := pystr.DecodeUTF8Sig(raw)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if err != nil {
 			return false, err
 		}
@@ -859,8 +858,8 @@ func IsPartialClonePackObjectsCrash(stderr string) bool {
 }
 
 // Runs a fetch and on the pack-objects BUG marks the unmarked packs and retries it once
-func FetchWithPartialCloneRecovery(runner func(gitCmd, args []string) (*pysubprocess.Completed, error), gitCmd, fetchArgs []string,
-	repoRoot string) (*pysubprocess.Completed, error) {
+func FetchWithPartialCloneRecovery(runner func(gitCmd, args []string) (*executil.Completed, error), gitCmd, fetchArgs []string,
+	repoRoot string) (*executil.Completed, error) {
 	result, err := runner(gitCmd, fetchArgs)
 	if err != nil {
 		return nil, err
@@ -874,7 +873,7 @@ func FetchWithPartialCloneRecovery(runner func(gitCmd, args []string) (*pysubpro
 }
 
 // Turns a treeless checkout into the blobless layout, recording the filter only once its history is whole
-func ConvertTreelessCheckout(ctx context.Context, repoRoot string, kw pysubprocess.Options) (bool, error) {
+func ConvertTreelessCheckout(ctx context.Context, repoRoot string, kw executil.Options) (bool, error) {
 	kw.Attr = withHideFlags(kw.Attr)
 	filter, err := PartialCloneFilter(ctx, repoRoot, kw)
 	if err != nil {
@@ -918,7 +917,7 @@ func ConvertTreelessCheckout(ctx context.Context, repoRoot string, kw pysubproce
 			return false, err
 		}
 		if !complete {
-			return false, &pysubprocess.CalledProcessError{Cmd: refetch, Returncode: 1, Stderr: []byte("the checked-out history is still missing trees")}
+			return false, &executil.StatusError{Args: refetch, ExitCode: 1, Stderr: []byte("the checked-out history is still missing trees")}
 		}
 	}
 	cfgKw := kw
@@ -930,10 +929,10 @@ func ConvertTreelessCheckout(ctx context.Context, repoRoot string, kw pysubproce
 }
 
 // Run keywords of no_prompt_git_kwargs, the prompt disabled and the console hidden
-func noPromptGitKwargs() pysubprocess.Options {
+func noPromptGitKwargs() executil.Options {
 	env := os.Environ()
 	env = append(env, "GIT_TERMINAL_PROMPT=0", "GCM_INTERACTIVE=Never")
-	return pysubprocess.Options{Env: dedupeEnviron(env), Attr: gitlockHideAttr()}
+	return executil.Options{Env: dedupeEnviron(env), Attr: gitlockHideAttr()}
 }
 
 // Keeps the last assignment of every environment name
@@ -952,8 +951,8 @@ func ConvertTreelessCheckoutFirst(ctx context.Context, repoRoot string) {
 		return
 	}
 	text := err.Error()
-	var cpe *pysubprocess.CalledProcessError
-	var te *pysubprocess.TimeoutExpired
+	var cpe *executil.StatusError
+	var te *executil.TimeoutError
 	name := "OSError"
 	if errors.As(err, &cpe) {
 		name = "CalledProcessError"
@@ -978,7 +977,7 @@ func ConvertTreelessCheckoutFirst(ctx context.Context, repoRoot string) {
 var gitVersionRe = regexp.MustCompile(`(\d+)\.(\d+)`)
 
 // Major and minor of the git on PATH, zeros when the output names none
-func gitlockGitVersion(ctx context.Context, kw pysubprocess.Options) (int, int, error) {
+func gitlockGitVersion(ctx context.Context, kw executil.Options) (int, int, error) {
 	o := kw
 	o.Timeout = 30 * time.Second
 	res, err := gitlockSubprocessRun(ctx, []string{"git", "--version"}, o)
@@ -995,7 +994,7 @@ func gitlockGitVersion(ctx context.Context, kw pysubprocess.Options) (int, int, 
 }
 
 // Whether every tree in HEAD's history is local, checked without lazy fetching
-func historyTreesComplete(ctx context.Context, repoRoot string, kw pysubprocess.Options) (bool, error) {
+func historyTreesComplete(ctx context.Context, repoRoot string, kw executil.Options) (bool, error) {
 	m := noninteractiveGitEnv(nil)
 	if len(kw.Env) > 0 {
 		m = environToMap(kw.Env)
@@ -1020,7 +1019,7 @@ func historyTreesComplete(ctx context.Context, repoRoot string, kw pysubprocess.
 
 // Persists the commit graph off keys on a partial clone while a full clone keeps stock maintenance, never failing
 func SettlePartialCloneMaintenance(ctx context.Context, repoRoot string) {
-	filter, err := PartialCloneFilter(ctx, repoRoot, pysubprocess.Options{Attr: gitlockHideAttr()})
+	filter, err := PartialCloneFilter(ctx, repoRoot, executil.Options{Attr: gitlockHideAttr()})
 	if err != nil {
 		envLog(nil).Debug("partial-clone maintenance settings failed for " + repoRoot)
 		return

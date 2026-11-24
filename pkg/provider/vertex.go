@@ -19,6 +19,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/settings"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 const (
@@ -428,17 +429,17 @@ func (t *anthVertexTransport) Request(ctx context.Context, op anthOperation, bod
 	if err != nil {
 		return nil, err
 	}
-	payload := params.Copy()
+	payload := params.Clone()
 	if _, ok := payload.Get("anthropic_version"); !ok {
 		payload.Set("anthropic_version", vertexAnthropicVersion)
 	}
 	prefix := fmt.Sprintf("%s/v1/projects/%s/locations/%s/publishers/anthropic/models/", origin, project, region)
 	var target string
-	stream, _ := payload.Vals["stream"].(bool)
+	stream, _ := payload.Value("stream").(bool)
 	if op == anthOpCountTokens {
 		target = prefix + "count-tokens:rawPredict"
 	} else {
-		modelValue, _ := payload.Pop("model")
+		modelValue, _ := payload.Take("model")
 		model, _ := modelValue.(string)
 		if model == "" {
 			model = t.route.Model
@@ -449,7 +450,7 @@ func (t *anthVertexTransport) Request(ctx context.Context, op anthOperation, bod
 		}
 		target = prefix + model + ":" + specifier
 	}
-	data, err := pyhttpx.JSONBody(anthMergedWireBody(payload, extra))
+	data, err := httputil.JSONBody(anthMergedWireBody(payload, extra))
 	if err != nil {
 		return nil, fmt.Errorf("provider: encode vertex anthropic body: %w", err)
 	}

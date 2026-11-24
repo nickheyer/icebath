@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func clearActualEnv(t *testing.T) {
@@ -34,7 +34,7 @@ func TestActualPluginProfileMatchesUpstreamRegistration(t *testing.T) {
 func TestActualProfileTranslatesExplicitReasoningControls(t *testing.T) {
 	p := bundledPluginProfile(t, "actual")
 	eb, tl := p.BuildAPIKwargsExtras(nil, map[string]any{})
-	assertExtras(t, "nil", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
+	assertExtras(t, "nil", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	if got, ok, err := p.SupportedReasoningEfforts(context.Background(), "zai-org/GLM-5.3"); err != nil || !ok || !reflect.DeepEqual(got, []string{"none", "low", "medium", "high", "max"}) {
 		t.Fatalf("efforts %v %v", got, ok)
 	}
@@ -46,7 +46,7 @@ func TestActualProfileTranslatesExplicitReasoningControls(t *testing.T) {
 		{&Reasoning{Enabled: bptr(false), Effort: "high"}, "disabled", ""}, {effortCfg("none"), "disabled", "none"},
 	} {
 		eb, tl := p.BuildAPIKwargsExtras(c.r, map[string]any{"model": "zai-org/GLM-5.3"})
-		if !reflect.DeepEqual(pyjson.Plain(eb), map[string]any{"thinking": map[string]any{"type": c.toggle}}) {
+		if !reflect.DeepEqual(jsonutil.Plain(eb), map[string]any{"thinking": map[string]any{"type": c.toggle}}) {
 			t.Fatalf("%s extra body %#v", c.r.Effort, eb)
 		}
 		if got, ok := tl["reasoning_effort"]; c.effort == "" && ok || c.effort != "" && got != c.effort {

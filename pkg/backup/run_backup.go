@@ -1,25 +1,29 @@
 package backup
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
 // Archive subtree of memory provider state stored relative to the user home
@@ -46,8 +50,8 @@ var stageSQLiteSnapshot = func(dir string) (string, error) {
 	return f.Name(), f.Close()
 }
 
-// ZipFile.write of one member, a seam tests replace to fail a member part way
-var zipWrite = func(zf *pyzip.ZipFile, path, arcname string) error { return zf.Write(path, arcname) }
+// One member added from disk, a seam tests replace to fail a member part way
+var zipWrite = func(zw *ziputil.Writer, path, arcname string) error { return zw.AddFile(path, arcname) }
 
 // WAL safe SQLite copy of the backup and snapshot paths, a seam tests replace or spy on
 var copySQLite = func(ctx context.Context, src, dst string) (bool, error) { return safeCopyDB(ctx, src, dst, 10.0) }
@@ -81,8 +85,7 @@ func (e *SystemExit) Error() string { return fmt.Sprintf("exit status %d", e.Cod
 // Another process already owns the backup slot
 type BackupInProgressError struct{ Msg string }
 
-func (e *BackupInProgressError) Error() string      { return e.Msg }
-func (e *BackupInProgressError) PyTypeName() string { return "BackupInProgressError" }
+func (e *BackupInProgressError) Error() string { return e.Msg }
 
 // SQLite snapshot failure that aborts an automatic archive
 type sqliteSnapshotError struct{ rel string }
@@ -97,8 +100,8 @@ func snapshotRecoveryHint() string {
 
 // Runs body while holding the cross process backup slot of a home, refusing after the timeout
 func backupOperationLock(h string, timeoutSeconds float64, body func() error) error {
-	lockPath := pypath.PathJoin(h, backupLockName)
-	if err := home.PathMkdir(pypath.PathParent(lockPath), 0o777, true, true); err != nil {
+	lockPath := pathutil.Join(h, backupLockName)
+	if err := home.PathMkdir(filepath.Dir(filepath.Clean(lockPath)), 0o777, true, true); err != nil {
 		return err
 	}
 	handle, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
@@ -108,16 +111,13 @@ func backupOperationLock(h string, timeoutSeconds float64, body func() error) er
 	acquired := false
 	defer func() {
 		if acquired {
-			pyfs.UnlockFile(handle)
+			fsutil.UnlockFile(handle)
 		}
 		handle.Close()
 	}()
 	deadline := time.Now().Add(time.Duration(max(0, timeoutSeconds) * float64(time.Second)))
-	if err := prepareLockFile(lockPath, handle); err != nil {
-		return err
-	}
 	for !acquired {
-		if ok, _ := pyfs.TryLockFile(handle); ok {
+		if ok, _ := fsutil.TryLockFile(handle); ok {
 			acquired = true
 			break
 		}
@@ -131,8 +131,8 @@ func backupOperationLock(h string, timeoutSeconds float64, body func() error) er
 
 // Hidden sibling of the final path that body fills, published only after body succeeds
 func atomicOutputPath(finalPath string, publishPath func() (string, bool), body func(partial string) error) (err error) {
-	partial := pypath.PathJoin(pypath.PathParent(finalPath),
-		fmt.Sprintf(".%s.%d-%d.partial", pypath.PathName(finalPath), os.Getpid(), pythread.GoroutineID()))
+	partial := pathutil.Join(filepath.Dir(filepath.Clean(finalPath)),
+		fmt.Sprintf(".%s.%d-%d.partial", pathutil.Name(finalPath), os.Getpid(), syncutil.GoroutineID()))
 	if err := unlinkMissingOK(partial); err != nil {
 		return err
 	}
@@ -171,21 +171,21 @@ func collectMemoryProviderExternalPaths(ctx context.Context, h string) []string 
 	}
 	declared, err := provider.BackupPaths()
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("backup_paths() failed for memory provider %s: %s", pyrepr.StrRepr(active), excText(err)))
+		pkgLog().Warn(fmt.Sprintf("backup_paths() failed for memory provider %s: %s", strconv.Quote(active), excText(err)))
 		return nil
 	}
 	var out []string
 	seen := map[string]bool{}
 	for _, raw := range declared {
-		p, err := pypath.PathExpanduser(pypath.PathStr(raw))
+		p, err := pathutil.ExpandUserPath(filepath.Clean(raw))
 		if err != nil {
 			continue
 		}
-		p = pypath.PathStr(p)
+		p = filepath.Clean(p)
 		if _, err := os.Stat(p); err != nil {
 			continue
 		}
-		resolved, err := pypath.Resolve(p)
+		resolved, err := pathutil.Resolve(p)
 		if err != nil {
 			continue
 		}
@@ -206,54 +206,35 @@ func iterExternalFiles(base string) []string {
 		return nil
 	}
 	var files []string
-	pyfs.Walk(base, false, func(dirpath string, dirnames, filenames []string) []string {
-		var keep []string
-		for _, d := range dirnames {
-			if !excludedDirs[d] {
-				keep = append(keep, d)
-			}
+	filepath.WalkDir(base, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
 		}
-		for _, f := range filenames {
-			fp := pypath.PathJoin(dirpath, f)
-			name := pypath.PathName(fp)
-			if !(isNonRegularPath(fp) || excludedNames[name] || hasAnySuffix(name, excludedSuffixes)) {
-				files = append(files, fp)
+		if d.IsDir() {
+			if p != base && excludedDirs[d.Name()] {
+				return fs.SkipDir
 			}
+			return nil
 		}
-		return keep
+		name := d.Name()
+		if !(isNonRegularPath(p) || excludedNames[name] || hasAnySuffix(name, excludedSuffixes)) {
+			files = append(files, p)
+		}
+		return nil
 	})
 	return files
 }
 
 // Reports whether an archive loop error is one the loop records and continues past
 func recordedArchiveError(err error) bool {
-	var ve *pypath.ValueError
-	return pypath.IsOSError(err) || pyzip.IsValueError(err) || errors.As(err, &ve)
-}
-
-// Drops the members a failed write created from the central directory and cuts their bytes off the file
-func discardFailedZipMembers(zf *pyzip.ZipFile, filelistLen int) error {
-	if len(zf.Filelist) <= filelistLen {
-		return nil
-	}
-	offset := zf.Filelist[filelistLen].HeaderOffset
-	if err := zf.TruncateAt(offset); err != nil {
-		return err
-	}
-	zf.StartDir = offset
-	zf.Filelist = zf.Filelist[:filelistLen]
-	clear(zf.NameToInfo)
-	for _, info := range zf.Filelist {
-		zf.NameToInfo[info.Filename] = info
-	}
-	return nil
+	return errorutil.IsSystem(err) || errors.Is(err, fs.ErrInvalid)
 }
 
 // Writes one member, keeping a failed partial write out of the archive
-func writeZipFile(zf *pyzip.ZipFile, path, arcname string) error {
-	filelistLen := len(zf.Filelist)
-	if err := zipWrite(zf, path, arcname); err != nil {
-		if derr := discardFailedZipMembers(zf, filelistLen); derr != nil {
+func writeZipFile(zw *ziputil.Writer, path, arcname string) error {
+	n := zw.Len()
+	if err := zipWrite(zw, path, arcname); err != nil {
+		if derr := zw.Truncate(n); derr != nil {
 			return derr
 		}
 		return err
@@ -262,8 +243,8 @@ func writeZipFile(zf *pyzip.ZipFile, path, arcname string) error {
 }
 
 // Adds a WAL safe snapshot staged beside the output zip, its size and false when the copy failed
-func zipSQLiteSnapshot(ctx context.Context, zf *pyzip.ZipFile, absPath, relPath, outPath string) (size int64, ok bool, err error) {
-	tmpDB, err := stageSQLiteSnapshot(pypath.PathStr(pypath.PathParent(outPath)))
+func zipSQLiteSnapshot(ctx context.Context, zf *ziputil.Writer, absPath, relPath, outPath string) (size int64, ok bool, err error) {
+	tmpDB, err := stageSQLiteSnapshot(filepath.Clean(filepath.Dir(filepath.Clean(outPath))))
 	if err != nil {
 		return 0, false, err
 	}
@@ -295,12 +276,12 @@ type zipEntryHooks struct {
 }
 
 // Adds every home file, databases through the WAL safe snapshot, and returns the bytes archived
-func writeZipEntries(ctx context.Context, zf *pyzip.ZipFile, files []backupFile, outPath string, hooks zipEntryHooks) (int64, error) {
+func writeZipEntries(ctx context.Context, zf *ziputil.Writer, files []backupFile, outPath string, hooks zipEntryHooks) (int64, error) {
 	var total int64
 	for i, f := range files {
 		skipped := false
 		err := func() error {
-			if pypath.Suffix(f.abs) == ".db" {
+			if pathutil.Suffix(f.abs) == ".db" {
 				size, ok, err := zipSQLiteSnapshot(ctx, zf, f.abs, f.rel, outPath)
 				if err != nil {
 					return err
@@ -358,34 +339,34 @@ func resolveBackupOutputPath(w io.Writer, output string) (string, error) {
 	defaultName := runBackupPrefix + backupNow().Format("2006-01-02-150405") + ".zip"
 	err := func() error {
 		if output != "" {
-			p, err := pypath.PathExpanduser(output)
+			p, err := pathutil.ExpandUserPath(output)
 			if err != nil {
 				return err
 			}
-			if outPath, err = pypath.Resolve(p); err != nil {
+			if outPath, err = pathutil.Resolve(p); err != nil {
 				return err
 			}
 			if isDir(outPath) {
-				outPath = pypath.PathJoin(outPath, defaultName)
+				outPath = pathutil.Join(outPath, defaultName)
 			}
 		} else {
 			userHome, err := home.UserHome()
 			if err != nil {
 				return err
 			}
-			outPath = pypath.PathJoin(userHome, defaultName)
+			outPath = pathutil.Join(userHome, defaultName)
 		}
-		if suffix := pypath.Suffix(outPath); strings.ToLower(suffix) != ".zip" {
-			withZip, err := pypath.WithSuffix(outPath, suffix+".zip")
+		if suffix := pathutil.Suffix(outPath); strings.ToLower(suffix) != ".zip" {
+			withZip, err := pathutil.WithSuffix(outPath, suffix+".zip")
 			if err != nil {
 				return err
 			}
-			outPath = pypath.PathStr(withZip)
+			outPath = filepath.Clean(withZip)
 		}
-		return home.PathMkdir(pypath.PathParent(outPath), 0o777, true, true)
+		return home.PathMkdir(filepath.Dir(filepath.Clean(outPath)), 0o777, true, true)
 	}()
 	if err != nil {
-		if !pypath.IsOSError(err) {
+		if !errorutil.IsSystem(err) {
 			return "", err
 		}
 		shown := output
@@ -407,29 +388,29 @@ func collectExternalEntries(ctx context.Context, h string) ([]externalEntry, []s
 	if err != nil {
 		return nil, nil, err
 	}
-	homeDir, err := pypath.Resolve(userHome)
+	homeDir, err := pathutil.Resolve(userHome)
 	if err != nil {
 		return nil, nil, err
 	}
 	var entries []externalEntry
 	var skipped []string
 	for _, base := range memoryProviderExternalPaths(ctx, h) {
-		resolved, err := pypath.Resolve(base)
+		resolved, err := pathutil.Resolve(base)
 		if err != nil {
 			skipped = append(skipped, base)
 			continue
 		}
-		if _, inside := pypath.PathRelativeTo(resolved, homeDir); !inside {
+		if _, inside := pathutil.RelativeTo(resolved, homeDir); !inside {
 			skipped = append(skipped, base)
 			continue
 		}
 		for _, fpath := range iterExternalFiles(base) {
-			resolved, err := pypath.Resolve(fpath)
+			resolved, err := pathutil.Resolve(fpath)
 			if err != nil {
 				continue
 			}
-			if rel, inside := pypath.PathRelativeTo(resolved, homeDir); inside {
-				entries = append(entries, externalEntry{fpath, externalPrefix + pypath.PathAsPosix(rel)})
+			if rel, inside := pathutil.RelativeTo(resolved, homeDir); inside {
+				entries = append(entries, externalEntry{fpath, externalPrefix + filepath.ToSlash(filepath.Clean(rel))})
 			}
 		}
 	}
@@ -508,7 +489,7 @@ func runBackupLocked(ctx context.Context, h string, ns map[string]any, w io.Writ
 	t0 := time.Now()
 	var totalBytes int64
 	err = atomicOutputPath(outPath, nil, func(archivePath string) error {
-		zf, err := pyzip.Create(archivePath, pyzip.Deflated, ptr(zipCompressSix))
+		zf, err := ziputil.Create(archivePath, zip.Deflate, zipCompressSix)
 		if err != nil {
 			return err
 		}
@@ -592,10 +573,10 @@ func runBackupLocked(ctx context.Context, h string, ns map[string]any, w io.Writ
 	if len(errs) > 0 {
 		printCapped(w, fmt.Sprintf("\n  Archive kept, but %d file(s) could not be added:", len(errs)), errs, "  ")
 	} else {
-		fmt.Fprintf(w, "\nRestore with: icebath import %s\n", pypath.PathName(outPath))
+		fmt.Fprintf(w, "\nRestore with: icebath import %s\n", pathutil.Name(outPath))
 	}
-	if keep := nsKeep(ns); keep != 0 && len(errs) == 0 && strings.HasPrefix(pypath.PathName(outPath), runBackupPrefix) {
-		pruned, err := prunePrefixedZips(pypath.PathParent(outPath), runBackupPrefix, keep, "backup")
+	if keep := nsKeep(ns); keep != 0 && len(errs) == 0 && strings.HasPrefix(pathutil.Name(outPath), runBackupPrefix) {
+		pruned, err := prunePrefixedZips(filepath.Dir(filepath.Clean(outPath)), runBackupPrefix, keep, "backup")
 		if err != nil {
 			return false, err
 		}

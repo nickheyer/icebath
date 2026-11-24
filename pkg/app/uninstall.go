@@ -19,16 +19,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/install"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Platform remover of the gateway service and the warning label shown when it fails
@@ -50,7 +48,7 @@ var (
 	uninstallNodeSymlinksStep     = removeNodeSymlinks
 	uninstallLegacyRuntimeStep    = removeLegacyRuntimeTrees
 	uninstallRmtreeStep           = rmtreeStep
-	uninstallRmtree               = pyshutil.Rmtree
+	uninstallRmtree               = os.RemoveAll
 	uninstallNodeSymlinkDirs      = nodeSymlinkCandidateDirs
 	uninstallFindGatewayPids      = func(ctx context.Context) ([]int, error) { return gateway.FindGatewayPIDsFor(ctx, nil, false) }
 	uninstallKillGatewayProcesses = func(ctx context.Context, w io.Writer) (int, error) {
@@ -62,9 +60,10 @@ var (
 	uninstallRunDataMode           = RunDataUninstall
 	uninstallRunAgentMode          = RunUninstall
 	uninstallGatewayServiceRemover = map[string]gatewayServiceRemover{
-		"Linux":   {removeSystemdGateway, "Could not check systemd gateway services"},
-		"Darwin":  {removeLaunchdGateway, "Could not remove launchd gateway service"},
-		"Windows": {removeWindowsGateway, "Could not check Windows gateway service"},
+		"linux":   {removeSystemdGateway, "Could not check systemd gateway services"},
+		"android": {removeSystemdGateway, "Could not check systemd gateway services"},
+		"darwin":  {removeLaunchdGateway, "Could not remove launchd gateway service"},
+		"windows": {removeWindowsGateway, "Could not check Windows gateway service"},
 	}
 )
 
@@ -77,10 +76,10 @@ func uninstallWarn(w io.Writer, msg string)    { uninstallLine(w, "⚠", cliui.Y
 
 // str of an exception an uninstall step raised, OSError text for filesystem failures
 func uninstallErrText(err error) string {
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return errchain.OSText(err)
 	}
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }
 
 // Stripped lowercased answer to a prompt, false after printing Cancelled on an interrupt or EOF
@@ -187,16 +186,16 @@ func removePathFromShellConfigs(ctx context.Context, w io.Writer) []string {
 			if err != nil {
 				return err
 			}
-			decoded, err := pystr.DecodeUTF8Sig(raw)
+			decoded, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 			if err != nil {
 				return err
 			}
-			original := pystr.TranslateNewlines(decoded)
+			original := textutil.NormalizeNewlines(decoded)
 			updated := stripShellConfigPath(original)
 			if updated == original {
 				return nil
 			}
-			if err := pyfs.AtomicWriteTextWith(ctx, cfg, updated, pyfs.TextWrite{PreserveMode: true}); err != nil {
+			if err := fsutil.WriteFile(ctx, cfg, []byte(updated), fsutil.WriteOptions{KeepOwner: true, NativeLineEnds: true}); err != nil {
 				return err
 			}
 			removedFrom = append(removedFrom, cfg)
@@ -222,7 +221,7 @@ func removeWrapperScript(w io.Writer) []string {
 		}
 		err := func() error {
 			if pm.OwnsLauncher(wrapper, root) {
-				if err := pypath.Unlink(wrapper); err != nil {
+				if err := os.Remove(wrapper); err != nil {
 					return err
 				}
 				removed = append(removed, wrapper)
@@ -232,12 +231,12 @@ func removeWrapperScript(w io.Writer) []string {
 			if err != nil {
 				return err
 			}
-			content, err := pystr.DecodeUTF8Sig(raw)
+			content, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 			if err != nil {
 				return err
 			}
 			if strings.Contains(content, "icebath_cli") || strings.Contains(content, "icebath-agent") {
-				if err := pypath.Unlink(wrapper); err != nil {
+				if err := os.Remove(wrapper); err != nil {
 					return err
 				}
 				removed = append(removed, wrapper)
@@ -262,7 +261,7 @@ func nodeSymlinkCandidateDirs() []string {
 
 // Removes the node, npm and npx symlinks that still resolve into this home's node dir
 func removeNodeSymlinks(w io.Writer, h string) []string {
-	nodeDir, nodeErr := pypath.Resolve(filepath.Join(h, "node"))
+	nodeDir, nodeErr := pathutil.Resolve(filepath.Join(h, "node"))
 	var candidates []string
 	for _, name := range []string{"node", "npm", "npx"} {
 		for _, dir := range uninstallNodeSymlinkDirs() {
@@ -277,14 +276,14 @@ func removeNodeSymlinks(w io.Writer, h string) []string {
 		if nodeErr != nil {
 			return false, nodeErr
 		}
-		target, err := pypath.Resolve(link)
+		target, err := pathutil.Resolve(link)
 		if err != nil {
 			return false, err
 		}
 		if !pathEq(target, nodeDir) && !pathUnder(target, nodeDir) {
 			return false, nil
 		}
-		if err := pypath.Unlink(link); err != nil {
+		if err := os.Remove(link); err != nil {
 			return false, err
 		}
 		return true, nil
@@ -315,7 +314,7 @@ func uninstallGatewayService(ctx context.Context, w io.Writer) bool {
 	if os.Getenv("TERMUX_VERSION") != "" || strings.Contains(os.Getenv("PREFIX"), "com.termux/files/usr") {
 		return stopped
 	}
-	remover, ok := uninstallGatewayServiceRemover[pyplatform.System()]
+	remover, ok := uninstallGatewayServiceRemover[runtime.GOOS]
 	if ok && remover.remove != nil {
 		removed, err := remover.remove(ctx, w)
 		if err != nil {
@@ -329,7 +328,7 @@ func uninstallGatewayService(ctx context.Context, w io.Writer) bool {
 
 // subprocess.run with captured output and no check, the OSError or TimeoutExpired it raises returned
 func runUninstallCommand(argv []string, timeout time.Duration) error {
-	_, err := pysubprocess.RunWith(context.Background(), argv, pysubprocess.Options{Timeout: timeout, Env: gateway.UserSystemdEnv()})
+	_, err := executil.Run(context.Background(), argv, executil.Options{Timeout: timeout, Env: gateway.UserSystemdEnv()})
 	return err
 }
 
@@ -369,7 +368,7 @@ func removeSystemdGateway(ctx context.Context, w io.Writer) (bool, error) {
 					return err
 				}
 			}
-			if err := pypath.Unlink(unitPath); err != nil {
+			if err := os.Remove(unitPath); err != nil {
 				return err
 			}
 			if err := uninstallRunCommand(append(slices.Clone(cmd), "daemon-reload"), 0); err != nil {
@@ -399,11 +398,11 @@ func launchdGatewayPlists(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	agents := pypath.PathParent(plist)
+	agents := filepath.Dir(filepath.Clean(plist))
 	seen := map[string]bool{}
 	var out []string
 	for _, pattern := range launchdGatewayPlistPatterns {
-		matches, err := pypath.Glob(agents, pattern)
+		matches, err := pathutil.Glob(agents, pattern)
 		if err != nil {
 			return nil, err
 		}
@@ -426,7 +425,7 @@ func removeLaunchdGateway(ctx context.Context, w io.Writer) (bool, error) {
 	}
 	uid := os.Getuid()
 	for _, plist := range plists {
-		label := pypath.PathStem(plist)
+		label := pathutil.Stem(plist)
 		for _, domain := range []string{fmt.Sprintf("gui/%d", uid), fmt.Sprintf("user/%d", uid)} {
 			if err := uninstallRunCommand([]string{"launchctl", "bootout", domain + "/" + label}, 0); err != nil {
 				return false, err
@@ -435,7 +434,7 @@ func removeLaunchdGateway(ctx context.Context, w io.Writer) (bool, error) {
 		if err := uninstallRunCommand([]string{"launchctl", "unload", plist}, 0); err != nil {
 			return false, err
 		}
-		if err := pypath.Unlink(plist); err != nil {
+		if err := os.Remove(plist); err != nil {
 			return false, err
 		}
 		uninstallSuccess(w, fmt.Sprintf("Removed macOS gateway service (%s)", plist))
@@ -538,10 +537,10 @@ func removeAppLeftovers(w io.Writer, fullUninstall bool) []string {
 // Unlinks a file or symlink or removes a tree, false on any OSError
 func removePathOrTree(p string) (bool, error) {
 	if st, err := os.Lstat(p); err == nil && st.Mode()&fs.ModeSymlink != 0 {
-		return pypath.Unlink(p) == nil, nil
+		return os.Remove(p) == nil, nil
 	}
 	if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
-		return pypath.Unlink(p) == nil, nil
+		return os.Remove(p) == nil, nil
 	}
 	return uninstallRmtree(p) == nil, nil
 }
@@ -560,7 +559,7 @@ func removeLegacyRuntimeTrees(w io.Writer, h string) []string {
 	for _, uvName := range []string{"uv", "uv.exe"} {
 		uvBinary := filepath.Join(h, "bin", uvName)
 		if st, err := os.Stat(uvBinary); err == nil && st.Mode().IsRegular() {
-			if err := pypath.Unlink(uvBinary); err != nil {
+			if err := os.Remove(uvBinary); err != nil {
 				uninstallWarn(w, fmt.Sprintf("Could not remove %s: %s", uvBinary, uninstallErrText(err)))
 			} else {
 				removed = append(removed, uvBinary)
@@ -607,7 +606,7 @@ func removeWindowsBinLaunchers(w io.Writer, windows bool) []string {
 		if st, err := os.Stat(launcher); err != nil || !st.Mode().IsRegular() {
 			continue
 		}
-		if err := pypath.Unlink(launcher); err == nil {
+		if err := os.Remove(launcher); err == nil {
 			removed = append(removed, launcher)
 			continue
 		}
@@ -624,7 +623,7 @@ func removeWindowsBinLaunchers(w io.Writer, windows bool) []string {
 
 // Whether the home is the default non profile root, false when either cannot be resolved
 func isDefaultIcebathHome(h string) bool {
-	resolved, err := pypath.Resolve(h)
+	resolved, err := pathutil.Resolve(h)
 	if err != nil {
 		return false
 	}
@@ -632,7 +631,7 @@ func isDefaultIcebathHome(h string) bool {
 	if err != nil {
 		return false
 	}
-	resolvedRoot, err := pypath.Resolve(root)
+	resolvedRoot, err := pathutil.Resolve(root)
 	return err == nil && pathEq(resolved, resolvedRoot)
 }
 
@@ -660,9 +659,9 @@ func uninstallProfile(ctx context.Context, w io.Writer, profile manage.ProfileIn
 	for _, subcmd := range []string{"stop", "uninstall"} {
 		err := exeErr
 		if err == nil {
-			_, err = pysubprocess.RunWith(ctx, []string{exe, "--profile", name, "gateway", subcmd}, pysubprocess.Options{Timeout: 60 * time.Second})
+			_, err = executil.Run(ctx, []string{exe, "--profile", name, "gateway", subcmd}, executil.Options{Timeout: 60 * time.Second})
 		}
-		var timeout *pysubprocess.TimeoutExpired
+		var timeout *executil.TimeoutError
 		switch {
 		case errors.As(err, &timeout):
 			uninstallWarn(w, fmt.Sprintf("  Gateway %s timed out for '%s'", subcmd, name))
@@ -671,7 +670,7 @@ func uninstallProfile(ctx context.Context, w io.Writer, profile manage.ProfileIn
 		}
 	}
 	if alias := profile.AliasPath; alias != "" && uninstallPathExists(alias) {
-		if err := pypath.Unlink(alias); err != nil {
+		if err := os.Remove(alias); err != nil {
 			uninstallWarn(w, fmt.Sprintf("  Could not remove alias %s: %s", alias, uninstallErrText(err)))
 		} else {
 			uninstallSuccess(w, "  Removed alias "+alias)
@@ -938,7 +937,7 @@ func performUninstall(ctx context.Context, w io.Writer, projectRoot, h string, f
 		{true, "Removing PATH entries from shell configs...", func() []string { return uninstallShellConfigsStep(ctx, w) },
 			"Updated {}", "No PATH entries found to remove in shell rc files"},
 		{windows, "Removing PATH entries from Windows User environment...",
-			func() []string { return removePathFromWindowsRegistry(w, pypath.Expandvars(h), sweepManagedBin) },
+			func() []string { return removePathFromWindowsRegistry(w, pathutil.ExpandEnv(h), sweepManagedBin) },
 			"Removed from User PATH: {}", "No Icebath-owned PATH entries in User environment"},
 		{windows, "Removing ICEBATH_HOME / ICEBATH_GIT_BASH_PATH User env vars...", func() []string { return removeIcebathEnvVarsWindows(w) },
 			"Removed User env var: {}", "No Icebath-set User env vars to remove"},

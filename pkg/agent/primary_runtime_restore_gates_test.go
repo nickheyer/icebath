@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const codexRestoreURL = "https://chatgpt.com/backend-api/codex"
@@ -225,7 +225,7 @@ func pinToFallback(t *testing.T, a *AIAgent) {
 	t.Helper()
 	a.fallbackIndex = 0
 	mustActivate(t, a, "")
-	a.rateLimitedUntil = pythread.Monotonic() + 3*86400
+	a.rateLimitedUntil = timeutil.Monotonic() + 3*86400
 }
 
 func restoreWithQuota(t *testing.T, a *AIAgent, quotaRestored bool) bool {
@@ -413,7 +413,7 @@ func TestResetAwareRestoreGateCrossProviderFallbackLoadsPrimaryPool(t *testing.T
 
 func TestResetAwareRestoreGateTransientCooldownStillRespected(t *testing.T) {
 	a := resetGateAgent(t)
-	a.rateLimitedUntil = pythread.Monotonic() + 60
+	a.rateLimitedUntil = timeutil.Monotonic() + 60
 	a.credentialPool = restorePool(a, "custom")
 	script := &scriptedReset{}
 	scriptResets(t, map[*provider.Pool]*scriptedReset{a.credentialPool: script})
@@ -441,9 +441,9 @@ func TestBackoffCounterResetsOnSuccessfulPrimaryRestore(t *testing.T) {
 	if !mustRestore(t, a) || a.rateLimitBackoffCount != 0 {
 		t.Fatalf("backoff %d after restore", a.rateLimitBackoffCount)
 	}
-	before := pythread.Monotonic()
+	before := timeutil.Monotonic()
 	a.tryActivateFallback(context.Background(), provider.ReasonRateLimit)
-	after := pythread.Monotonic()
+	after := timeutil.Monotonic()
 	if a.rateLimitedUntil < before+60 || a.rateLimitedUntil > after+60 {
 		t.Fatalf("cooldown %v outside %v..%v", a.rateLimitedUntil, before+60, after+60)
 	}

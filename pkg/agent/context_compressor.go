@@ -1,20 +1,18 @@
 package agent
 
 import (
+	"context"
+	"maps"
+	"math"
+	"strings"
 	"unicode"
 	"unicode/utf8"
 
-	"context"
-	"errors"
-	"maps"
-	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -213,15 +211,14 @@ func coerceMaxTokens(value any) *int {
 	if value == nil {
 		return nil
 	}
-	n, err := pyint.Of(value)
-	var pyErr *pyint.Error
-	if errors.As(err, &pyErr) && pyErr.Kind == "OverflowError" {
+	n, err := anyutil.ToInt(value)
+	if f, isFloat := anyutil.Float(value); isFloat && math.IsInf(f, 0) {
 		panic(err)
 	}
-	if err != nil || n.Sign() <= 0 || !n.IsInt64() {
+	if err != nil || n <= 0 {
 		return nil
 	}
-	v := int(n.Int64())
+	v := int(n)
 	return &v
 }
 
@@ -326,8 +323,8 @@ func usageInt(usage map[string]any, key string, def int) int {
 	if !ok {
 		return def
 	}
-	if n, err := pyint.Of(v); err == nil && n.IsInt64() {
-		return int(n.Int64())
+	if n, err := anyutil.ToInt(v); err == nil {
+		return int(n)
 	}
 	return def
 }
@@ -407,7 +404,7 @@ func (c *ContextCompressor) LastSummaryError() string {
 	return *c.lastSummaryError
 }
 
-func (c *ContextCompressor) ActiveCompressionTelemetry() *pyjson.Object { return c.Active }
+func (c *ContextCompressor) ActiveCompressionTelemetry() *jsonutil.Object { return c.Active }
 
 func (c *ContextCompressor) RestoreSummaryState(previousSummary *string, hasUserTurn *bool) {
 	c.previousSummary, c.summaryHasUserTurn = previousSummary, hasUserTurn
@@ -660,7 +657,7 @@ func (c *ContextCompressor) PruneToolResultsOnly(messages []map[string]any, curr
 func (c *ContextCompressor) cloneForAgent() ContextEngine {
 	clone := *c
 	clone.ModelThresholds = maps.Clone(c.ModelThresholds)
-	clone.customProviders = pycopy.Of(c.customProviders)
+	clone.customProviders = anyutil.Clone(c.customProviders)
 	for _, p := range []**int{&clone.thresholdTokensCap, &clone.auxContextCeiling, &clone.maxTokens, &clone.configContextLength, &clone.resolvedContextLength, &clone.thresholdTokens, &clone.tailTokenBudget, &clone.maxSummaryTokens} {
 		if *p != nil {
 			v := **p
@@ -684,9 +681,9 @@ func (c *ContextCompressor) cloneForAgent() ContextEngine {
 		clone.lastReclaimBlockWarn = &v
 	}
 	clone.attempt = c.attempt.copySlots()
-	for _, p := range []**pyjson.Object{&clone.Seed, &clone.Active, &clone.Last} {
+	for _, p := range []**jsonutil.Object{&clone.Seed, &clone.Active, &clone.Last} {
 		if *p != nil {
-			*p = pycopy.Of(*p)
+			*p = anyutil.Clone(*p)
 		}
 	}
 	clone.preparedCompaction = nil

@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Outbound dispatch partition of video files for MEDIA and local file delivery
@@ -56,7 +56,7 @@ func StreamingTTSTurnKey(sessionKey string, turnMarker any, event *MessageEvent)
 	if turnMarker == nil {
 		return "", false
 	}
-	return sessionKey + ":" + pyrepr.Str(turnMarker), true
+	return sessionKey + ":" + anyutil.String(turnMarker), true
 }
 
 // Whether the turn already streamed its audio so the whole file auto TTS is skipped
@@ -190,7 +190,7 @@ func (b *BasePlatformAdapter) streamingTTSTurnCompleted(sessionKey string, turnM
 
 // User visible notice that a MEDIA upload failed after its tag was stripped from the text
 func (b *BasePlatformAdapter) notifyMediaDeliveryFailure(ctx context.Context, chatID, mediaPath string, isVoice bool, metadata map[string]any) {
-	ext := strings.ToLower(pypath.PathSuffix(mediaPath))
+	ext := strings.ToLower(pathutil.Suffix(mediaPath))
 	var text string
 	switch {
 	case isVoice || ShouldSendMediaAsAudio(b.Platform, ext, isVoice):
@@ -198,7 +198,7 @@ func (b *BasePlatformAdapter) notifyMediaDeliveryFailure(ctx context.Context, ch
 	case videoExts[ext]:
 		text = mediaFailureText(ctx, "video", "")
 	default:
-		text = mediaFailureText(ctx, "file", pypath.Basename(mediaPath))
+		text = mediaFailureText(ctx, "file", pathutil.Name(mediaPath))
 	}
 	var problem any
 	notice, err := b.Self().EmitWarning(ctx, chatID, text, "", metadata, "")

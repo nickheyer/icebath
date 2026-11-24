@@ -91,14 +91,6 @@ func bashExecute(heredoc bool, intercept func(command string) (*ExecResult, bool
 			}
 		}
 		stdin := opts.Stdin
-		if stdin != nil {
-			raw, err := pystr.SurrogateEscapeEncode(*stdin)
-			if err != nil {
-				return &ExecResult{Output: "[stdin write failed: " + err.Error() + "]", StdinError: err.Error()}, nil
-			}
-			encoded := string(raw)
-			stdin = &encoded
-		}
 		if heredoc && stdin != nil && *stdin != "" {
 			command = embedStdinHeredoc(command, *stdin)
 			stdin = nil
@@ -267,14 +259,14 @@ func TestFileOpsSearchResultKeyOrderAndCounts(t *testing.T) {
 }
 
 func TestFileOpsLintResultToDict(t *testing.T) {
-	if d := (&LintResult{Skipped: true, Message: "m"}).toDict(); d.Vals["status"] != "skipped" || d.Vals["message"] != "m" || strings.Join(d.Keys, ",") != "status,message" {
-		t.Fatalf("skipped %v", d.Vals)
+	if d := (&LintResult{Skipped: true, Message: "m"}).toDict(); d.Value("status") != "skipped" || d.Value("message") != "m" || strings.Join(d.Keys(), ",") != "status,message" {
+		t.Fatalf("skipped %v", d)
 	}
-	if d := newLintResult().toDict(); d.Vals["status"] != "ok" || d.Vals["output"] != "" || strings.Join(d.Keys, ",") != "status,output" {
-		t.Fatalf("ok %v", d.Vals)
+	if d := newLintResult().toDict(); d.Value("status") != "ok" || d.Value("output") != "" || strings.Join(d.Keys(), ",") != "status,output" {
+		t.Fatalf("ok %v", d)
 	}
-	if d := (&LintResult{Output: "bad", Message: "n"}).toDict(); strings.Join(d.Keys, ",") != "status,output,message" || d.Vals["status"] != "error" || d.Vals["output"] != "bad" || d.Vals["message"] != "n" {
-		t.Fatalf("error %v", d.Vals)
+	if d := (&LintResult{Output: "bad", Message: "n"}).toDict(); strings.Join(d.Keys(), ",") != "status,output,message" || d.Value("status") != "error" || d.Value("output") != "bad" || d.Value("message") != "n" {
+		t.Fatalf("error %v", d)
 	}
 	if n, over := searchLineNumber("007"); n != 7 || over != "" {
 		t.Fatalf("leading zeros %d %q", n, over)
@@ -1346,11 +1338,11 @@ func TestFileOpsReadFileRawPreservesUndecodableBytesAndSha(t *testing.T) {
 		body := "head\n" + strings.Repeat("a", 1000) + "\n\xff\xfe tail\n"
 		data := []byte("\xef\xbb\xbf" + body)
 		r := ops.ReadFileRaw(writeTestFile(t, dir, "mixed.txt", data))
-		if r.Error != "" || r.Content != pystr.SurrogateEscapeDecode([]byte(body)) || r.ContentSha256 == nil || *r.ContentSha256 != fmt.Sprintf("%x", sha256.Sum256(data)) {
+		if r.Error != "" || r.Content != body || r.ContentSha256 == nil || *r.ContentSha256 != fmt.Sprintf("%x", sha256.Sum256(data)) {
 			t.Fatalf("native=%v %+v", native, r)
 		}
-		if encoded, err := pystr.SurrogateEscapeEncode(r.Content); err != nil || string(encoded) != body {
-			t.Fatalf("native=%v round trip %q %v", native, encoded, err)
+		if r.Content != body {
+			t.Fatalf("native=%v round trip %q", native, r.Content)
 		}
 	}
 }
@@ -1359,7 +1351,7 @@ func TestFileOpsWriteFileSurrogateEscapeRoundTrips(t *testing.T) {
 	for _, native := range []bool{true, false} {
 		ops, _, dir := hostFileOps(t, native)
 		p := filepath.Join(dir, "surrogate.bin")
-		r := ops.WriteFile(p, pystr.SurrogateEscapeDecode([]byte{0xff, 0x00, 0xfe}), nil)
+		r := ops.WriteFile(p, string([]byte{0xff, 0x00, 0xfe}), nil)
 		if r.Error != "" || r.BytesWritten != 3 || r.Verified == nil || !*r.Verified {
 			t.Fatalf("native=%v %+v", native, r)
 		}
@@ -1370,7 +1362,7 @@ func TestFileOpsWriteFileSurrogateEscapeRoundTrips(t *testing.T) {
 			t.Fatalf("native=%v temp left %v", native, left)
 		}
 		mixed := filepath.Join(dir, "mixed.bin")
-		r = ops.WriteFile(mixed, "head\n"+pystr.SurrogateEscapeDecode([]byte{0xff})+"\ntail\n", nil)
+		r = ops.WriteFile(mixed, "head\n"+string([]byte{0xff})+"\ntail\n", nil)
 		if data, _ := os.ReadFile(mixed); r.Error != "" || r.Verified == nil || !*r.Verified || string(data) != "head\n\xff\ntail\n" {
 			t.Fatalf("native=%v mixed %+v %q", native, r, data)
 		}
@@ -1408,7 +1400,7 @@ func TestFileOpsFailClosedSyntaxGate(t *testing.T) {
 		broken := filepath.Join(dir, "broken.py")
 		bad := "def foo(:\n    pass\n"
 		r = ops.WriteFile(broken, bad, nil)
-		if r.Error != "" || r.Lint == nil || r.Lint.Vals["status"] != "error" || !strings.Contains(fmt.Sprint(r.Lint.Vals["output"]), "SyntaxError") {
+		if r.Error != "" || r.Lint == nil || r.Lint.Value("status") != "error" || !strings.Contains(fmt.Sprint(r.Lint.Value("output")), "SyntaxError") {
 			t.Fatalf("native=%v python %+v", native, r)
 		}
 		if data, _ := os.ReadFile(broken); string(data) != bad {
@@ -1571,12 +1563,6 @@ func TestFileOpsSuggestSimilarFilesScoring(t *testing.T) {
 }
 
 func TestFileOpsPyLowerAndSplitext(t *testing.T) {
-	if got := pyLower("ΟΔΟΣ ΑΣ"); got != "οδος ας" {
-		t.Fatalf("final sigma %q", got)
-	}
-	if got := pyLower("\xc4\xb0x"); got != "i\xcc\x87x" {
-		t.Fatalf("dotted capital %q", got)
-	}
 	for in, want := range map[string]string{"a/b.TXT": ".TXT", ".bashrc": "", "a/.b.c": ".c", "a.b/c": "", "x..": ".", "...": ""} {
 		if got := pySplitextExt(in); got != want {
 			t.Fatalf("%s gave %q", in, got)
@@ -1647,7 +1633,7 @@ func surrogateWaitOrKill(t *testing.T, p *ExecProcess) int {
 
 func TestPipeStdinRoundTripsSurrogateEscapeBytes(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "out.bin")
-	content := pystr.SurrogateEscapeDecode([]byte{0xff, 0x00, 0xfe})
+	content := string([]byte{0xff, 0x00, 0xfe})
 	p := surrogateCatProc(t, out, &content)
 	if code := surrogateWaitOrKill(t, p); code != 0 {
 		t.Fatalf("exit %d", code)
@@ -1656,18 +1642,6 @@ func TestPipeStdinRoundTripsSurrogateEscapeBytes(t *testing.T) {
 		t.Fatalf("bytes %q", data)
 	}
 	if e := p.JoinStdin(5 * time.Second); e != "" {
-		t.Fatalf("stdin error %q", e)
-	}
-}
-
-func TestPipeStdinUnencodableSurrogateCapturesErrorAndClosesStdin(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "out.bin")
-	content := "\xed\xa0\x80"
-	p := surrogateCatProc(t, out, &content)
-	if code := surrogateWaitOrKill(t, p); code != 0 {
-		t.Fatalf("exit %d", code)
-	}
-	if e := p.JoinStdin(5 * time.Second); e != "'utf-8' codec can't encode character '\\ud800' in position 0: surrogates not allowed" {
 		t.Fatalf("stdin error %q", e)
 	}
 }
@@ -1753,8 +1727,8 @@ func TestFileOpsByteExactReadSurvivesXtraceShell(t *testing.T) {
 		t.Fatalf("sample %q %v", sample, ok)
 	}
 	raw := ops.ReadFileRaw(target)
-	if encoded, err := pystr.SurrogateEscapeEncode(raw.Content); raw.Error != "" || err != nil || !bytes.Equal(encoded, original) {
-		t.Fatalf("raw %+v %v", raw.Error, err)
+	if raw.Error != "" || raw.Content != string(original) {
+		t.Fatalf("raw %+v", raw.Error)
 	}
 }
 

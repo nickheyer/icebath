@@ -22,13 +22,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -55,13 +54,13 @@ func resolveRaftProfile(ctx context.Context) string {
 
 // Whether the raft CLI is on PATH, a silent probe run on every gateway config load
 func checkRaftRequirements() bool {
-	_, found := pyshutil.Which("raft", nil)
-	return found
+	_, err := exec.LookPath("raft")
+	return err == nil
 }
 
 // JSON failure body with the given status
 func errorResponse(reason string, status int) (*gateway.WebResponse, error) {
-	return gateway.WebJSONResponse(pyjson.ObjectOf("ok", false, "error", reason), status, nil)
+	return gateway.WebJSONResponse(jsonutil.ObjectOf("ok", false, "error", reason), status, nil)
 }
 
 // One spawned bridge child with the channel closed once it was reaped
@@ -107,8 +106,8 @@ func NewRaftAdapter(ctx context.Context, config *gateway.PlatformConfig) (*RaftA
 	if !strings.HasPrefix(a.path, "/") {
 		a.path = "/" + a.path
 	}
-	if token := extra["bridge_token"]; pyrepr.Truthy(token) {
-		a.bridgeToken = strings.TrimSpace(pyrepr.Str(token))
+	if token := extra["bridge_token"]; anyutil.IsTrue(token) {
+		a.bridgeToken = strings.TrimSpace(anyutil.String(token))
 	}
 	if a.runtimeSession = settings.RaftRuntimeSession.Get(sctx); a.runtimeSession == "" {
 		a.runtimeSession = settings.RaftRuntimeSession.Default
@@ -199,8 +198,8 @@ func (a *RaftAdapter) Disconnect(ctx context.Context) error {
 
 // Starts raft agent bridge as an owned child pointed at the wake endpoint, skipped without the CLI or a profile
 func (a *RaftAdapter) spawnBridge(ctx context.Context, port int) error {
-	raftBin, found := pyshutil.Which("raft", nil)
-	if !found {
+	raftBin, lookErr := exec.LookPath("raft")
+	if lookErr != nil {
 		pkgLog().Warn("[raft] raft CLI not found in PATH; bridge not spawned — wake-only polling mode")
 		return nil
 	}
@@ -217,7 +216,7 @@ func (a *RaftAdapter) spawnBridge(ctx context.Context, port int) error {
 	a.mu.Unlock()
 	realHome, ok := env["ICEBATH_REAL_HOME"]
 	if !ok {
-		return &gateway.PyError{Kind: "KeyError", Msg: "'ICEBATH_REAL_HOME'"}
+		return errors.New("subprocess environment has no ICEBATH_REAL_HOME")
 	}
 	env["HOME"] = realHome
 	cmd := exec.Command(raftBin, args...)
@@ -291,8 +290,8 @@ func (a *RaftAdapter) GetChatInfo(ctx context.Context, chatID string) (map[strin
 
 // Health document with the runtime session and the activity queue size and endpoints
 func (a *RaftAdapter) handleHealth(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
-	activity := pyjson.ObjectOf("queueSize", a.activityQueue.Size(), "endpoint", "/activity", "drainEndpoint", "/activity/drain")
-	return gateway.WebJSONResponse(pyjson.ObjectOf("status", "ok", "platform", "raft", "runtimeSession", a.runtimeSession,
+	activity := jsonutil.ObjectOf("queueSize", a.activityQueue.Size(), "endpoint", "/activity", "drainEndpoint", "/activity/drain")
+	return gateway.WebJSONResponse(jsonutil.ObjectOf("status", "ok", "platform", "raft", "runtimeSession", a.runtimeSession,
 		"activity", activity), 200, nil)
 }
 
@@ -320,7 +319,7 @@ func (a *RaftAdapter) readBridgeBody(request *gateway.WebRequest, text bool) ([]
 	}
 	body, err := request.Read()
 	if err == nil && text {
-		_, err = pystr.DecodeUTF8(body)
+		_, err = textutil.DecodeUTF8(body)
 	}
 	if err != nil {
 		var httpErr *gateway.WebHTTPError
@@ -329,7 +328,7 @@ func (a *RaftAdapter) readBridgeBody(request *gateway.WebRequest, text bool) ([]
 		}
 		reason := "bad_request"
 		if text {
-			reason = pyrepr.ExceptionMessage(err)
+			reason = err.Error()
 		}
 		resp, rerr := errorResponse(reason, 400)
 		return nil, resp, rerr
@@ -348,15 +347,15 @@ func (a *RaftAdapter) handleWake(ctx context.Context, request *gateway.WebReques
 	}
 	var payload any = map[string]any{}
 	if len(bytes.TrimSpace(rawBody)) > 0 {
-		parsed, perr := pyjson.LoadsBytes(rawBody)
+		parsed, perr := jsonutil.Decode(rawBody)
 		if perr != nil {
-			var decodeErr *pyjson.DecodeError
+			var decodeErr *jsonutil.SyntaxError
 			if errors.As(perr, &decodeErr) {
 				return errorResponse("invalid_json", 400)
 			}
 			return nil, perr
 		}
-		payload = pyjson.Plain(parsed)
+		payload = jsonutil.Plain(parsed)
 	}
 	fields, ok := payload.(map[string]any)
 	if !ok {
@@ -366,7 +365,7 @@ func (a *RaftAdapter) handleWake(ctx context.Context, request *gateway.WebReques
 		return errorResponse("content_not_allowed", 400)
 	}
 	notReady := func() (*gateway.WebResponse, error) {
-		return gateway.WebJSONResponse(pyjson.ObjectOf("ok", false, "error", "not_ready", "runtimeSession", a.runtimeSession), 503, nil)
+		return gateway.WebJSONResponse(jsonutil.ObjectOf("ok", false, "error", "not_ready", "runtimeSession", a.runtimeSession), 503, nil)
 	}
 	if a.MessageHandler() == nil {
 		pkgLog().Warn("[raft] Wake received before gateway message handler was attached")
@@ -374,8 +373,8 @@ func (a *RaftAdapter) handleWake(ctx context.Context, request *gateway.WebReques
 	}
 	deliveryID := ""
 	for _, key := range wakeIDKeys {
-		if v := fields[key]; pyrepr.Truthy(v) {
-			deliveryID = pyrepr.Str(v)
+		if v := fields[key]; anyutil.IsTrue(v) {
+			deliveryID = anyutil.String(v)
 			break
 		}
 	}
@@ -395,7 +394,7 @@ func (a *RaftAdapter) handleWake(ctx context.Context, request *gateway.WebReques
 		pkgLog().Error("[raft] Failed to inject wake event", "error", err)
 		return notReady()
 	}
-	return gateway.WebJSONResponse(pyjson.ObjectOf("ok", true, "runtimeSession", a.runtimeSession), 202, nil)
+	return gateway.WebJSONResponse(jsonutil.ObjectOf("ok", true, "runtimeSession", a.runtimeSession), 202, nil)
 }
 
 // Queues one activity event the bridge posts
@@ -404,18 +403,18 @@ func (a *RaftAdapter) handleActivity(ctx context.Context, request *gateway.WebRe
 	if failure != nil || err != nil {
 		return failure, err
 	}
-	parsed, perr := pyjson.Loads(string(rawText))
+	parsed, perr := jsonutil.Decode(string(rawText))
 	if perr == nil {
 		perr = a.activityQueue.Push(parsed)
 	}
 	if perr != nil {
-		var decodeErr *pyjson.DecodeError
+		var decodeErr *jsonutil.SyntaxError
 		if errors.As(perr, &decodeErr) {
 			return errorResponse("invalid_json", 400)
 		}
-		return errorResponse(pyrepr.ExceptionMessage(perr), 400)
+		return errorResponse(perr.Error(), 400)
 	}
-	return gateway.WebJSONResponse(pyjson.ObjectOf("ok", true), 202, nil)
+	return gateway.WebJSONResponse(jsonutil.ObjectOf("ok", true), 202, nil)
 }
 
 // Drains up to the max query count of queued activity events for an authorized caller
@@ -451,7 +450,7 @@ func (a *RaftAdapter) HandleMessage(ctx context.Context, event *gateway.MessageE
 }
 
 // Queues an activity event from a hook, an invalid one dropped
-func (a *RaftAdapter) ReportActivity(event *pyjson.Object) {
+func (a *RaftAdapter) ReportActivity(event *jsonutil.Object) {
 	if err := a.activityQueue.Push(event); err != nil {
 		pkgLog().Debug("[raft] activity event dropped during validation", "error", err)
 	}

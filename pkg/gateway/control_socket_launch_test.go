@@ -3,19 +3,19 @@ package gateway
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestLaunchSupervisorPrefersTheLaunchValueAndNeverAnswersNone(t *testing.T) {
-	identity := func(pairs ...any) *pyjson.Object {
-		obj := pyjson.NewObject()
+	identity := func(pairs ...any) *jsonutil.Object {
+		obj := jsonutil.NewObject()
 		for i := 0; i+1 < len(pairs); i += 2 {
 			obj.Set(pairs[i].(string), pairs[i+1])
 		}
 		return obj
 	}
 	for _, c := range []struct {
-		identity *pyjson.Object
+		identity *jsonutil.Object
 		want     string
 	}{
 		{identity("launch_supervisor", "external", "supervisor", "none"), "external"},

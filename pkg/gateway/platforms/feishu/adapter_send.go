@@ -19,13 +19,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -101,7 +101,7 @@ func responseErrorResult(r *larkResp, defaultMessage, overrideError string) gate
 	if overrideError != "" {
 		return gateway.SendResult{Success: false, Error: overrideError, RawResponse: raw}
 	}
-	return gateway.SendResult{Success: false, Error: fmt.Sprintf("[%s] %s", pyrepr.Str(respCode(r)), respMsg(r, defaultMessage)), RawResponse: raw}
+	return gateway.SendResult{Success: false, Error: fmt.Sprintf("[%s] %s", anyutil.String(respCode(r)), respMsg(r, defaultMessage)), RawResponse: raw}
 }
 
 // Send result of a response, its message id on success
@@ -117,12 +117,12 @@ func finalizeSendResult(r *larkResp, defaultMessage string) gateway.SendResult {
 }
 
 func dumpsNoASCII(v any) string {
-	out, _ := pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	out, _ := jsonutil.Encode(v)
 	return out
 }
 
 func textPayload(text string) string {
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("text", text)
 	return dumpsNoASCII(o)
 }
@@ -190,7 +190,7 @@ func (a *FeishuAdapter) EditMessage(ctx context.Context, chatID, messageID, cont
 	}
 	msgType, payload := a.buildOutboundPayload(content, false)
 	result, err := update(msgType, payload)
-	if err == nil && !result.Success && msgType == "post" && reSearch(postContentInvalidRe, pyrepr.Str(orEmpty(result.Error))) {
+	if err == nil && !result.Success && msgType == "post" && reSearch(postContentInvalidRe, anyutil.String(result.Error)) {
 		pkgLog().Warn("[Feishu] Invalid post update payload rejected by API; falling back to plain text")
 		result, err = update("text", textPayload(stripMarkdownToPlainText(content)))
 	}
@@ -202,13 +202,6 @@ func (a *FeishuAdapter) EditMessage(ctx context.Context, chatID, messageID, cont
 		result.MessageID = messageID
 	}
 	return result, nil
-}
-
-func orEmpty(v any) any {
-	if v == nil {
-		return ""
-	}
-	return v
 }
 
 // Deletes a bot posted message, false when the API rejects it or the call fails
@@ -236,7 +229,7 @@ func (a *FeishuAdapter) DeleteMessage(ctx context.Context, chatID, messageID str
 	if r != nil {
 		code, msg = r.code, r.msg
 	}
-	pkgLog().Debug(fmt.Sprintf("[Feishu] Delete of message %s rejected: code=%s msg=%s", messageID, pyrepr.Str(code), pyrepr.Str(msg)))
+	pkgLog().Debug(fmt.Sprintf("[Feishu] Delete of message %s rejected: code=%s msg=%s", messageID, anyutil.String(code), anyutil.String(msg)))
 	return false, nil
 }
 
@@ -281,7 +274,7 @@ func (a *FeishuAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gate
 		if style == "" {
 			style = "default"
 		}
-		value := pyjson.NewObject()
+		value := jsonutil.NewObject()
 		value.Set(cardApprovalKey, eaCardActions[act.Choice])
 		value.Set("approval_id", int64(approvalID))
 		actions = append(actions, cardButton(act.Label, style, value))
@@ -298,7 +291,7 @@ func (a *FeishuAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gate
 }
 
 // Sends a button card and records where it went so a click can be validated
-func (a *FeishuAdapter) sendInteractiveCard(ctx context.Context, chatID string, card *pyjson.Object, metadata map[string]any, failure string,
+func (a *FeishuAdapter) sendInteractiveCard(ctx context.Context, chatID string, card *jsonutil.Object, metadata map[string]any, failure string,
 	states map[int]map[string]string, stateID int, sessionKey string, extra map[string]string) (gateway.SendResult, error) {
 	response, err := a.feishuSendWithRetry(ctx, chatID, "interactive", dumpsNoASCII(card), "", metadata)
 	if err != nil {
@@ -319,13 +312,13 @@ func (a *FeishuAdapter) sendInteractiveCard(ctx context.Context, chatID string, 
 }
 
 // Update prompt card with yes and no buttons and the default answer hint
-func buildUpdatePromptCard(ctx context.Context, prompt, def string, promptID int) *pyjson.Object {
+func buildUpdatePromptCard(ctx context.Context, prompt, def string, promptID int) *jsonutil.Object {
 	hint := ""
 	if def != "" {
 		hint = i18n.T(ctx, "platform.feishu.update_prompt.default_hint", "", map[string]any{"default": def})
 	}
-	btn := func(label, answer, btnType string) *pyjson.Object {
-		value := pyjson.NewObject()
+	btn := func(label, answer, btnType string) *jsonutil.Object {
+		value := jsonutil.NewObject()
 		value.Set(cardUpdatePromptKey, answer)
 		value.Set("update_prompt_id", int64(promptID))
 		return cardButton(label, btnType, value)
@@ -354,7 +347,7 @@ func (a *FeishuAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, de
 }
 
 // Card shown in place of the approval buttons once resolved, the request body kept above the decision
-func buildResolvedApprovalCard(ctx context.Context, choice, userName string, body *string) *pyjson.Object {
+func buildResolvedApprovalCard(ctx context.Context, choice, userName string, body *string) *jsonutil.Object {
 	icon, template := "✅", "green"
 	if choice == "deny" {
 		icon, template = "❌", "red"
@@ -373,7 +366,7 @@ func buildResolvedApprovalCard(ctx context.Context, choice, userName string, bod
 }
 
 // Card shown in place of the update prompt buttons once answered
-func buildResolvedUpdatePromptCard(ctx context.Context, answer, userName string) *pyjson.Object {
+func buildResolvedUpdatePromptCard(ctx context.Context, answer, userName string) *jsonutil.Object {
 	yes := answer == "y"
 	icon, word, template := "❌", "platform.feishu.update_prompt.word_no", "red"
 	if yes {
@@ -399,7 +392,7 @@ func (a *FeishuAdapter) SendVoice(ctx context.Context, chatID, audioPath, captio
 		return a.SendDocument(ctx, chatID, audioPath, caption, "", replyTo, metadata, nil)
 	}
 	transcoded := ""
-	ext := strings.ToLower(pypath.Suffix(audioPath))
+	ext := strings.ToLower(pathutil.Suffix(audioPath))
 	if !feishuOpusUploadExtensions[ext] {
 		if out, err := gateway.TranscodeToOggOpus(ctx, audioPath, "32k", 60*time.Second, ""); err == nil && out != "" {
 			transcoded = out
@@ -454,9 +447,9 @@ func (a *FeishuAdapter) SendImageFile(ctx context.Context, chatID, imagePath, ca
 	if imageKey == nil || *imageKey == "" {
 		return responseErrorResult(uploadResp, "image upload failed", "Feishu image upload missing image_key"), nil
 	}
-	keyPayload := pyjson.NewObject()
+	keyPayload := jsonutil.NewObject()
 	keyPayload.Set("image_key", *imageKey)
-	tag := pyjson.NewObject()
+	tag := jsonutil.NewObject()
 	tag.Set("tag", "img")
 	tag.Set("image_key", *imageKey)
 	msg, err := a.sendUploadedKey(ctx, chatID, replyTo, metadata, caption, "image", keyPayload, tag)
@@ -527,7 +520,7 @@ func (a *FeishuAdapter) GetChatInfo(ctx context.Context, chatID string) (map[str
 	}
 	r := wrapResp(resp)
 	if !responseSucceeded(r) {
-		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to get chat info for %s: [%s] %s", chatID, pyrepr.Str(respCode(r)), respMsg(r, "chat lookup failed")))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to get chat info for %s: [%s] %s", chatID, anyutil.String(respCode(r)), respMsg(r, "chat lookup failed")))
 		return fallback, nil
 	}
 	var rawType, name string
@@ -648,9 +641,9 @@ func (a *FeishuAdapter) sendUploadedFileMessage(ctx context.Context, chatID, fil
 	if fileKey == nil || *fileKey == "" {
 		return responseErrorResult(uploadResp, "file upload failed", "Feishu file upload missing file_key"), nil
 	}
-	keyPayload := pyjson.NewObject()
+	keyPayload := jsonutil.NewObject()
 	keyPayload.Set("file_key", *fileKey)
-	tag := pyjson.NewObject()
+	tag := jsonutil.NewObject()
 	tag.Set("tag", "media")
 	tag.Set("file_key", *fileKey)
 	tag.Set("file_name", displayName)
@@ -659,12 +652,12 @@ func (a *FeishuAdapter) sendUploadedFileMessage(ctx context.Context, chatID, fil
 		return fail(err)
 	}
 	threadID := metadata["thread_id"]
-	if caption == "" && !responseSucceeded(msg) && msg != nil && msg.code == 99992402 && messageType == "audio" && pyrepr.Truthy(threadID) {
+	if caption == "" && !responseSucceeded(msg) && msg != nil && msg.code == 99992402 && messageType == "audio" && anyutil.IsTrue(threadID) {
 		payload := dumpsNoASCII(keyPayload)
 		threadMsgID := ""
-		if v := metadata["reply_to_message_id"]; pyrepr.Truthy(v) {
-			threadMsgID = pyrepr.Str(v)
-		} else if id := a.fetchLastMessageInThread(ctx, pyrepr.Str(threadID)); id != nil {
+		if v := metadata["reply_to_message_id"]; anyutil.IsTrue(v) {
+			threadMsgID = anyutil.String(v)
+		} else if id := a.fetchLastMessageInThread(ctx, anyutil.String(threadID)); id != nil {
 			threadMsgID = *id
 		}
 		if threadMsgID != "" {
@@ -685,7 +678,7 @@ func (a *FeishuAdapter) sendUploadedFileMessage(ctx context.Context, chatID, fil
 
 // Sends an uploaded key as a captioned post or as a bare key message
 func (a *FeishuAdapter) sendUploadedKey(ctx context.Context, chatID, replyTo string, metadata map[string]any, caption, keyMsgType string,
-	keyPayload, mediaTag *pyjson.Object) (*larkResp, error) {
+	keyPayload, mediaTag *jsonutil.Object) (*larkResp, error) {
 	msgType, payload := keyMsgType, dumpsNoASCII(keyPayload)
 	if caption != "" {
 		msgType, payload = "post", buildMediaPostPayload(caption, mediaTag)
@@ -719,17 +712,17 @@ func (a *FeishuAdapter) fetchLastMessageInThread(ctx context.Context, threadID s
 func (a *FeishuAdapter) sendRawMessage(ctx context.Context, chatID, msgType, payload, replyTo string, metadata map[string]any) (*larkResp, error) {
 	client := a.currentClient()
 	if client == nil {
-		return nil, errors.New("'NoneType' object has no attribute 'im'")
+		return nil, errors.New("feishu client is not connected")
 	}
 	threadID := metadata["thread_id"]
 	effective := replyTo
-	if effective == "" && pyrepr.Truthy(threadID) {
-		if v := metadata["reply_to_message_id"]; pyrepr.Truthy(v) {
-			effective = pyrepr.Str(v)
+	if effective == "" && anyutil.IsTrue(threadID) {
+		if v := metadata["reply_to_message_id"]; anyutil.IsTrue(v) {
+			effective = anyutil.String(v)
 		}
 	}
 	if effective != "" {
-		body := larkim.NewReplyMessageReqBodyBuilder().Content(payload).MsgType(msgType).ReplyInThread(pyrepr.Truthy(threadID)).
+		body := larkim.NewReplyMessageReqBodyBuilder().Content(payload).MsgType(msgType).ReplyInThread(anyutil.IsTrue(threadID)).
 			Uuid(uuid.NewString()).Build()
 		req := larkim.NewReplyMessageReqBuilder().MessageId(effective).Body(body).Build()
 		var resp *larkim.ReplyMessageResp
@@ -742,8 +735,8 @@ func (a *FeishuAdapter) sendRawMessage(ctx context.Context, chatID, msgType, pay
 	}
 	var receiveID, receiveIDType string
 	switch {
-	case pyrepr.Truthy(threadID):
-		receiveID, receiveIDType = pyrepr.Str(threadID), "thread_id"
+	case anyutil.IsTrue(threadID):
+		receiveID, receiveIDType = anyutil.String(threadID), "thread_id"
 	case strings.HasPrefix(chatID, "feishu_user_id:"):
 		receiveID, receiveIDType = strings.SplitN(chatID, ":", 2)[1], "user_id"
 	case strings.HasPrefix(chatID, "ou_"):
@@ -769,9 +762,9 @@ func (a *FeishuAdapter) feishuSendWithRetry(ctx context.Context, chatID, msgType
 	for attempt := 0; attempt < feishuSendAttempts; attempt++ {
 		response, err := a.sendRawMessage(ctx, chatID, msgType, payload, active, metadata)
 		if err == nil && active != "" && !responseSucceeded(response) && response != nil && feishuReplyFallbackCodes[response.code] {
-			if threadID := metadata["thread_id"]; pyrepr.Truthy(threadID) {
+			if threadID := metadata["thread_id"]; anyutil.IsTrue(threadID) {
 				pkgLog().Warn(fmt.Sprintf("[Feishu] Reply to %s failed in thread %s (code %d — message withdrawn/missing); "+
-					"skipping top-level fallback to avoid creating a new topic", active, pyrepr.Str(threadID), response.code))
+					"skipping top-level fallback to avoid creating a new topic", active, anyutil.String(threadID), response.code))
 				return response, nil
 			}
 			pkgLog().Warn(fmt.Sprintf("[Feishu] Reply to %s failed (code %d — message withdrawn/missing); falling back to new message in chat %s",
@@ -810,18 +803,18 @@ func buildUpdateMessageRequest(messageID string, body *larkim.UpdateMessageReqBo
 }
 
 // Caption post with the media tag appended as its own row
-func buildMediaPostPayload(caption string, mediaTag *pyjson.Object) string {
+func buildMediaPostPayload(caption string, mediaTag *jsonutil.Object) string {
 	rows := append(buildMarkdownPostRows(caption), []any{mediaTag})
-	locale := pyjson.NewObject()
+	locale := jsonutil.NewObject()
 	locale.Set("content", rows)
-	root := pyjson.NewObject()
+	root := jsonutil.NewObject()
 	root.Set("zh_cn", locale)
 	return dumpsNoASCII(root)
 }
 
 // Upload file type and message type of a file, Opus becoming audio only on a voice send
 func resolveOutboundFileRouting(filePath, requestedType string) (string, string) {
-	ext := strings.ToLower(pypath.Suffix(filePath))
+	ext := strings.ToLower(pathutil.Suffix(filePath))
 	if feishuOpusUploadExtensions[ext] && requestedType == "audio" {
 		return "opus", "audio"
 	}
@@ -852,12 +845,12 @@ func (a *FeishuAdapter) downloadRemoteDocument(ctx context.Context, fileURL, def
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; IcebathAgent/1.0)")
 	req.Header.Set("Accept", "*/*")
-	resp, err := pyhttpx.Do(client, req, 30*time.Second)
+	resp, err := httputil.Do(client, req, httputil.EachPhase(30*time.Second))
 	if err != nil {
 		return "", "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return "", "", errors.New(pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
+		return "", "", &httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.URL, Location: resp.Header.Get("Location")}
 	}
 	filename := deriveRemoteFilename(fileURL, resp.Header.Get("Content-Type"), preferredName, defaultExt)
 	path, err := gateway.CacheDocumentFromBytesAsync(ctx, resp.Content, filename)
@@ -866,7 +859,7 @@ func (a *FeishuAdapter) downloadRemoteDocument(ctx context.Context, fileURL, def
 
 // Known media or document extension of a URL path, def otherwise
 func guessRemoteExtension(rawURL, def string) string {
-	ext := strings.ToLower(pypath.Suffix(strings.SplitN(rawURL, "?", 2)[0]))
+	ext := strings.ToLower(pathutil.Suffix(strings.SplitN(rawURL, "?", 2)[0]))
 	if imageExtensions[ext] || audioExtensions[ext] || videoExtensions[ext] {
 		return ext
 	}
@@ -878,12 +871,12 @@ func guessRemoteExtension(rawURL, def string) string {
 
 // File name of a URL path, given an extension from the content type or the default when it has none
 func deriveRemoteFilename(fileURL, contentType, defaultName, defaultExt string) string {
-	candidate := pypath.Name(strings.SplitN(fileURL, "?", 2)[0])
+	candidate := pathutil.Name(strings.SplitN(fileURL, "?", 2)[0])
 	if candidate == "" {
 		candidate = defaultName
 	}
-	if pypath.Suffix(candidate) == "" {
-		guessed := pymimetypes.GuessExtension(strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0])), true)
+	if pathutil.Suffix(candidate) == "" {
+		guessed := mimeutil.ExtensionByType(contentType)
 		if guessed == "" {
 			guessed = defaultExt
 		}

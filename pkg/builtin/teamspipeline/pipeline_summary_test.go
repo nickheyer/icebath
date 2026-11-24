@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestGenerateSummaryPayloadUsesHeuristicWhenNoModelAnswers(t *testing.T) {
@@ -32,8 +32,8 @@ func TestGenerateSummaryPayloadUsesHeuristicWhenNoModelAnswers(t *testing.T) {
 	if payload.MeetingRef != resolved || payload.Title != "Weekly Sync" || payload.TranscriptText != transcript || len(payload.SourceArtifacts) != 2 {
 		t.Fatalf("payload %+v", payload)
 	}
-	if !reflect.DeepEqual(payload.Participants, []any{"Ada", "Grace"}) || !pyjson.Equal(payload.CallMetrics, obj("participant_count", int64(4), "artifact_count", int64(2))) {
-		t.Fatalf("participants %v metrics %v", payload.Participants, pyrepr.Repr(payload.CallMetrics))
+	if !reflect.DeepEqual(payload.Participants, []any{"Ada", "Grace"}) || !anyutil.Equal(payload.CallMetrics, obj("participant_count", int64(4), "artifact_count", int64(2))) {
+		t.Fatalf("participants %v metrics %v", payload.Participants, anyutil.Quote(payload.CallMetrics))
 	}
 	if payload.Summary != "Decision: ship it Action: write docs risk: none" || !reflect.DeepEqual(payload.KeyDecisions, []any{"Decision: ship it"}) ||
 		!reflect.DeepEqual(payload.ActionItems, []any{"Action: write docs"}) || !reflect.DeepEqual(payload.Risks, []any{"risk: none"}) ||

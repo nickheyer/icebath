@@ -14,9 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Gateway exit codes, 75 asks the supervisor for a restart and 78 is a fatal configuration error
@@ -70,14 +69,14 @@ func pyMinFloat(a, b float64) float64 {
 // Seconds of the exit timeout line in launchctl print output, nil when absent
 func ParseLaunchdExitTimeout(printOutput any) *float64 {
 	text := ""
-	if pyrepr.Truthy(printOutput) {
-		text = pyrepr.Str(printOutput)
+	if anyutil.IsTrue(printOutput) {
+		text = anyutil.String(printOutput)
 	}
 	m := launchdExitTimeoutRE.FindStringSubmatch(text)
 	if m == nil {
 		return nil
 	}
-	v, err := pyint.ParseFloat(m[1])
+	v, err := strconv.ParseFloat(strings.TrimSpace(m[1]), 64)
 	if err != nil {
 		return nil
 	}
@@ -258,7 +257,7 @@ var IsContainerRestartContext = func() bool {
 
 // Non negative float of the value, the fallback when float() rejects it
 func restartSeconds(value any, fallback float64) float64 {
-	f, err := pyint.Float(value)
+	f, err := anyutil.ToFloat(value)
 	if err != nil {
 		return fallback
 	}
@@ -270,7 +269,7 @@ func parseTimeoutKeepingZero(raw any, def float64, finite bool) float64 {
 	if s, ok := raw.(string); raw == nil || ok && strings.TrimSpace(s) == "" {
 		return def
 	}
-	value, err := pyint.Float(raw)
+	value, err := anyutil.ToFloat(raw)
 	if err != nil {
 		return def
 	}
@@ -282,7 +281,7 @@ func parseTimeoutKeepingZero(raw any, def float64, finite bool) float64 {
 
 // Configured restart drain timeout, a falsy value including 0 takes the shipped default
 func ParseRestartDrainTimeout(raw any) float64 {
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = nil
 	}
 	return parseTimeoutKeepingZero(raw, DefaultGatewayRestartDrainTimeout, false)

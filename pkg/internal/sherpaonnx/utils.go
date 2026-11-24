@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tokenizers/sentencepiece"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 )
 
 // What text2token reaches outside the package, the stream print writes to
@@ -35,7 +36,7 @@ func readLines(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pycodecs.Decode(raw, "utf-8")
+	text, err := charsetutil.Decode(raw, "utf-8")
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +55,7 @@ func strList(items []string) string {
 	for i, item := range items {
 		list[i] = item
 	}
-	return pyrepr.Repr(list)
+	return anyutil.Quote(list)
 }
 
 // Encodes texts into token lists for a tokens.txt vocabulary, dropping every text with a token the vocabulary lacks
@@ -81,7 +82,7 @@ func (m *Module) Text2Token(texts []string, tokens string, o Text2TokenOptions) 
 		}
 		id, ok := pyint.Parse(toks[1])
 		if !ok {
-			return nil, &PyError{Class: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.StrRepr(toks[1])}
+			return nil, &PyError{Class: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(toks[1])}
 		}
 		if id.IsInt64() {
 			tokensTable[toks[0]] = int(id.Int64())

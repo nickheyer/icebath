@@ -9,9 +9,9 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -37,7 +37,7 @@ func perplexityMissingKeyError() string {
 }
 
 // POST to Perplexity and parse the answer, a missing key or error body raised verbatim
-func perplexityRequest(ctx context.Context, env *Env, endpoint string, payload *pyjson.Object) (any, error) {
+func perplexityRequest(ctx context.Context, env *Env, endpoint string, payload *jsonutil.Object) (any, error) {
 	apiKey, err := providerEnv(ctx, env, "PERPLEXITY_API_KEY")
 	if err != nil {
 		return nil, err
@@ -106,7 +106,7 @@ func normalizePerplexitySnippets(response any, urls []string) ([]*WebPage, error
 	if err != nil {
 		return nil, err
 	}
-	byURL := map[string]*pyjson.Object{}
+	byURL := map[string]*jsonutil.Object{}
 	for _, r := range rows {
 		d, ok := pyDict(r)
 		if !ok {
@@ -119,7 +119,7 @@ func normalizePerplexitySnippets(response any, urls []string) ([]*WebPage, error
 		switch k := key.(type) {
 		case string:
 			byURL[k] = d
-		case []any, map[string]any, *pyjson.Object:
+		case []any, map[string]any, *jsonutil.Object:
 			return nil, errors.New("a Perplexity result URL is " + errchain.Kind(k) + ", expected text")
 		}
 	}
@@ -127,15 +127,15 @@ func normalizePerplexitySnippets(response any, urls []string) ([]*WebPage, error
 	for _, u := range urls {
 		result := byURL[u]
 		if result == nil {
-			result = pyjson.NewObject()
+			result = jsonutil.NewObject()
 		}
 		textVal, _ := result.Get("text")
 		text := pyOr(textVal, "")
 		doc := &WebPage{URL: u, Content: pyStrField(text), RawContent: pyStrField(text), HasRaw: true, Metadata: map[string]any{"sourceURL": u}}
 		errVal, _ := result.Get("error")
-		if pyTruthy(errVal) {
-			doc.Error = pyrepr.Str(errVal)
-		} else if !pyTruthy(text) {
+		if anyutil.IsTrue(errVal) {
+			doc.Error = anyutil.String(errVal)
+		} else if !anyutil.IsTrue(text) {
 			doc.Error = "no content returned"
 		}
 		docs = append(docs, doc)
@@ -196,7 +196,7 @@ func (p *perplexityProvider) Available(env *Env) bool {
 func (p *perplexityProvider) Search(ctx context.Context, env *Env, query string, limit int) (*WebSearchResponse, error) {
 	return runSearch(ctx, env, "Perplexity", func() (*WebSearchResponse, error) {
 		envLog(env).Info("Perplexity search", "query", query, "limit", limit)
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("query", query)
 		payload.Set("max_results", max(1, min(limit, perplexityMaxSearchResults)))
 		payload.Set("search_context_size", "low")
@@ -220,7 +220,7 @@ func (p *perplexityProvider) Extract(ctx context.Context, env *Env, urls []strin
 		if err != nil {
 			return nil, err
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("query", query)
 		payload.Set("urls", list)
 		payload.Set("max_tokens", perplexityMaxTokens)

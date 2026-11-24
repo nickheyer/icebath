@@ -4,7 +4,7 @@ import (
 	"math"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // BatteryStatus is one battery reading, the percent clamped to a hundred and Plugged nil when unknown
@@ -67,11 +67,11 @@ func readBatteryUncached() (status BatteryStatus) {
 func ReadBattery(useCache bool) BatteryStatus {
 	batteryMu.Lock()
 	defer batteryMu.Unlock()
-	if useCache && batteryCached != nil && pythread.Monotonic()-batteryCacheAt < batteryCacheTTLSeconds {
+	if useCache && batteryCached != nil && timeutil.Monotonic()-batteryCacheAt < batteryCacheTTLSeconds {
 		return *batteryCached
 	}
 	status := readBatteryUncached()
-	batteryCached, batteryCacheAt = &status, pythread.Monotonic()
+	batteryCached, batteryCacheAt = &status, timeutil.Monotonic()
 	return status
 }
 

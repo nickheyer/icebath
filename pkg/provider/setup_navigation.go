@@ -13,9 +13,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // SetupExit is the sys.exit a setup prompt raises on Ctrl-C, recovered at the command boundary
@@ -91,7 +91,7 @@ func SetupInfo(lines ...any) {
 			setupPrintln("")
 			continue
 		}
-		setupUI().PrintInfo(pyrepr.Str(line))
+		setupUI().PrintInfo(anyutil.String(line))
 	}
 }
 
@@ -122,8 +122,8 @@ func setupPromptValue(question string, def any, password bool) any {
 	c := setupUI()
 	display := question + ": "
 	fallback := ""
-	if pyrepr.Truthy(def) {
-		fallback = pyrepr.Str(def)
+	if anyutil.IsTrue(def) {
+		fallback = anyutil.String(def)
 		display = question + " [" + fallback + "]: "
 	}
 	display = c.Color(display, cliui.Yellow)
@@ -144,7 +144,7 @@ func setupPromptValue(question string, def any, password bool) any {
 	if trimmed := strings.TrimSpace(sanitizePastedInput(value)); trimmed != "" {
 		return trimmed
 	}
-	if pyrepr.Truthy(def) {
+	if anyutil.IsTrue(def) {
 		return def
 	}
 	return ""
@@ -182,7 +182,7 @@ func (s *setupNavigationState) reset(sectionIndex int, replay []setupAnswer) {
 func deepCopyChoices(values []setupAnswer) []setupAnswer {
 	out := make([]setupAnswer, 0, len(values))
 	for _, v := range values {
-		out = append(out, setupAnswer{key: v.key, value: pyjson.Clone(v.value)})
+		out = append(out, setupAnswer{key: v.key, value: jsonutil.Clone(v.value)})
 	}
 	return out
 }
@@ -230,7 +230,7 @@ func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*
 		allowBack := state.sectionIndex > 0 || idx > 0
 		if idx < len(state.replayChoices) {
 			if recorded := state.replayChoices[idx]; recorded.key == key {
-				return &cliui.MenuNavigationStart{AllowBack: allowBack, Replay: true, ReplayValue: pyjson.Clone(recorded.value)}, nil
+				return &cliui.MenuNavigationStart{AllowBack: allowBack, Replay: true, ReplayValue: jsonutil.Clone(recorded.value)}, nil
 			}
 			state.replayChoices = state.replayChoices[:idx]
 		}
@@ -239,7 +239,7 @@ func handleSetupMenuNavigation(event cliui.MenuNavigationEvent, value ...any) (*
 		if idx := state.activePromptIndex; idx >= 0 {
 			var resolved any
 			if len(value) > 0 {
-				resolved = pyjson.Clone(value[0])
+				resolved = jsonutil.Clone(value[0])
 			}
 			if idx < len(state.resolvedChoices) {
 				state.resolvedChoices = state.resolvedChoices[:idx]

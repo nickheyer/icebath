@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -87,8 +88,8 @@ func checkpointDefault(name string) any {
 }
 
 // Writes the running process metadata to the checkpoint file atomically under the file lock
-func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []*pyjson.Object) {
-	entries := []*pyjson.Object{}
+func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []*jsonutil.Object) {
+	entries := []*jsonutil.Object{}
 	r.mu.Lock()
 	for _, s := range orderedSessions(r.running, func(s *ProcessSession) int64 { return s.runSeq }) {
 		s.mu.Lock()
@@ -99,7 +100,7 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []*pyjson.Objec
 		if s.HostStartTime == nil && s.PidScope == "host" && s.Pid != 0 {
 			s.HostStartTime = safeHostStartTime(s.Pid)
 		}
-		entry := pyjson.ObjectOf("session_id", s.ID)
+		entry := jsonutil.ObjectOf("session_id", s.ID)
 		for _, f := range checkpointFields {
 			entry.Set(f, s.field(f))
 		}
@@ -115,10 +116,10 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []*pyjson.Objec
 	if len(extraEntries) > 0 {
 		tracked := map[string]bool{}
 		for _, item := range entries {
-			tracked[asStr(item.Vals["session_id"])] = true
+			tracked[asStr(item.Value("session_id"))] = true
 		}
 		for _, item := range extraEntries {
-			if !tracked[asStr(item.Vals["session_id"])] {
+			if !tracked[asStr(item.Value("session_id"))] {
 				entries = append(entries, item)
 			}
 		}
@@ -150,7 +151,7 @@ func (r *ProcessRegistry) writeCheckpoint(env *Env, extraEntries []*pyjson.Objec
 }
 
 // On disk worker handoffs this registry never tracked whose log still decides an outcome
-func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[string]bool) ([]*pyjson.Object, error) {
+func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[string]bool) ([]*jsonutil.Object, error) {
 	onDisk, ok := readCheckpointValue(path)
 	if !ok {
 		return nil, nil
@@ -159,21 +160,21 @@ func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[strin
 	if err != nil {
 		return nil, err
 	}
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	for _, item := range items {
-		entry, ok := item.(*pyjson.Object)
+		entry, ok := item.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
-		switch id := entry.Vals["session_id"].(type) {
+		switch id := entry.Value("session_id").(type) {
 		case string:
 			if known[id] {
 				continue
 			}
-		case []any, *pyjson.Object:
+		case []any, *jsonutil.Object:
 			return nil, &pyjson.TypeError{Msg: "a process checkpoint session id is " + errchain.Kind(id) + ", expected text"}
 		}
-		log := adoptableLog(env, entry.Vals["output_log"])
+		log := adoptableLog(env, entry.Value("output_log"))
 		if log == "" {
 			continue
 		}
@@ -184,7 +185,7 @@ func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[strin
 			out = append(out, entry)
 			continue
 		}
-		pid, _ := asIntValue(entry.Vals["pid"])
+		pid, _ := asIntValue(entry.Value("pid"))
 		if r.detachedHostFate(pid, entryInt64Ptr(entry, "host_start_time")) == "running" {
 			out = append(out, entry)
 		}
@@ -192,8 +193,8 @@ func (r *ProcessRegistry) foreignHandoffs(env *Env, path string, known map[strin
 	return out, nil
 }
 
-func entryInt64Ptr(entry *pyjson.Object, key string) *int64 {
-	n, ok := asIntValue(entry.Vals[key])
+func entryInt64Ptr(entry *jsonutil.Object, key string) *int64 {
+	n, ok := asIntValue(entry.Value(key))
 	if !ok {
 		return nil
 	}
@@ -207,7 +208,7 @@ func readCheckpointValue(path string) (any, bool) {
 	if err != nil || !utf8.Valid(data) {
 		return nil, false
 	}
-	parsed, err := pyjson.Loads(strings.TrimPrefix(string(data), "\xEF\xBB\xBF"))
+	parsed, err := jsonutil.Decode(strings.TrimPrefix(string(data), "\xEF\xBB\xBF"))
 	if err != nil {
 		return nil, false
 	}
@@ -227,9 +228,9 @@ func checkpointItems(v any) ([]any, error) {
 	switch t := v.(type) {
 	case []any:
 		return t, nil
-	case *pyjson.Object:
-		keys := make([]any, len(t.Keys))
-		for i, k := range t.Keys {
+	case *jsonutil.Object:
+		keys := make([]any, t.Len())
+		for i, k := range t.Keys() {
 			keys[i] = k
 		}
 		return keys, nil
@@ -260,29 +261,29 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 		return 0, err
 	}
 	recovered := 0
-	unresolvedScopeEntries := []*pyjson.Object{}
+	unresolvedScopeEntries := []*jsonutil.Object{}
 	for _, item := range items {
-		entry, ok := item.(*pyjson.Object)
+		entry, ok := item.(*jsonutil.Object)
 		if !ok {
 			return 0, &checkpointItemError{fmt.Sprintf("a process checkpoint entry is %s, expected a mapping", errchain.Kind(item))}
 		}
-		pid, _ := asIntValue(entry.Vals["pid"])
+		pid, _ := asIntValue(entry.Value("pid"))
 		pidScope := "host"
-		if v, ok := entry.Vals["pid_scope"]; ok {
+		if v, ok := entry.Get("pid_scope"); ok {
 			pidScope = asStr(v)
 		}
 		if pid == 0 {
 			continue
 		}
-		sessionID := asStr(entry.Vals["session_id"])
+		sessionID := asStr(entry.Value("session_id"))
 		r.mu.Lock()
 		_, alreadyTracked := r.running[sessionID]
 		r.mu.Unlock()
 		if alreadyTracked {
 			continue
 		}
-		command := asStr(entry.Vals["command"])
-		if _, ok := entry.Vals["command"]; !ok {
+		command := asStr(entry.Value("command"))
+		if _, ok := entry.Get("command"); !ok {
 			command = "unknown"
 		}
 		if pidScope != "host" {
@@ -290,7 +291,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 			continue
 		}
 		fate := r.detachedHostFate(pid, entryInt64Ptr(entry, "host_start_time"))
-		log := adoptableLog(env, entry.Vals["output_log"])
+		log := adoptableLog(env, entry.Value("output_log"))
 		if log != "" {
 			fate = "running"
 		}
@@ -303,7 +304,7 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 			continue
 		}
 		if fate != "running" {
-			if unit := asStr(entry.Vals["systemd_unit"]); unit != "" && !stopSystemdUnit(unit) {
+			if unit := asStr(entry.Value("systemd_unit")); unit != "" && !stopSystemdUnit(unit) {
 				envLog(env).Warn(fmt.Sprintf("Could not reap persisted scope %s for dead wrapper pid %d; retaining checkpoint entry for the next startup", unit, pid))
 				unresolvedScopeEntries = append(unresolvedScopeEntries, entry)
 			}
@@ -311,19 +312,19 @@ func (r *ProcessRegistry) RecoverFromCheckpoint(ctx context.Context, env *Env) (
 		}
 		s := NewProcessSession(sessionID, command)
 		for _, f := range checkpointFields {
-			value, ok := entry.Vals[f]
+			value, ok := entry.Get(f)
 			if !ok {
 				value = checkpointDefault(f)
 			}
 			s.setField(f, value)
 		}
 		s.Command = command
-		owner := asStr(entry.Vals["owner_task_id"])
+		owner := asStr(entry.Value("owner_task_id"))
 		if owner == "" {
-			owner = asStr(entry.Vals["task_id"])
+			owner = asStr(entry.Value("task_id"))
 		}
 		s.OwnerTaskID = owner
-		if _, ok := entry.Vals["started_at"]; !ok {
+		if _, ok := entry.Get("started_at"); !ok {
 			s.StartedAt = nowSeconds()
 		}
 		s.OutputLog = log
@@ -493,7 +494,7 @@ func resultPaths(env *Env) []string {
 // Writes the session's durable receipt with its output and command redacted
 func saveCompletedResult(ctx context.Context, env *Env, s *ProcessSession) {
 	s.mu.Lock()
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	for _, key := range resultFields {
 		record.Set(key, s.field(key))
 	}
@@ -887,7 +888,7 @@ func (r *ProcessRegistry) promoteNotify(env *Env, s *ProcessSession) {
 }
 
 // Post processes one process_manage session action result, promoting a silent process to notify_on_complete
-func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string, result *pyjson.Object) *pyjson.Object {
+func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string, result *jsonutil.Object) *jsonutil.Object {
 	if result == nil || !waitPolicyEnabled(env) {
 		return result
 	}
@@ -898,12 +899,12 @@ func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string
 	running := false
 	switch action {
 	case "wait":
-		running = result.Vals["status"] == "timeout"
+		running = result.Value("status") == "timeout"
 	case "poll":
-		running = result.Vals["status"] == "running"
+		running = result.Value("status") == "running"
 	}
 	if !running {
-		if (action != "wait" && action != "poll") || result.Vals["status"] != "interrupted" {
+		if (action != "wait" && action != "poll") || result.Value("status") != "interrupted" {
 			waitPolicyForget(s.ID)
 		}
 		return result
@@ -927,7 +928,7 @@ func applyWaitPollPolicy(ctx context.Context, env *Env, action, sessionID string
 	note := fmt.Sprintf(waitPolicyStopNote, s.ID)
 	result.Set("notify_on_complete", true)
 	if action == "wait" {
-		clamp := asStr(result.Vals["timeout_note"])
+		clamp := asStr(result.Value("timeout_note"))
 		if strings.HasPrefix(clamp, "Requested wait") {
 			clamp = strings.SplitN(clamp, ". Wait window", 2)[0] + ". "
 		} else {
@@ -1126,10 +1127,10 @@ func resultList(v any) []map[string]any {
 	switch list := v.(type) {
 	case []map[string]any:
 		return list
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		for _, item := range list {
 			if item != nil {
-				out = append(out, item.Vals)
+				out = append(out, item.Map())
 			}
 		}
 	case []any:
@@ -1137,9 +1138,9 @@ func resultList(v any) []map[string]any {
 			switch m := item.(type) {
 			case map[string]any:
 				out = append(out, m)
-			case *pyjson.Object:
+			case *jsonutil.Object:
 				if m != nil {
-					out = append(out, m.Vals)
+					out = append(out, m.Map())
 				}
 			}
 		}

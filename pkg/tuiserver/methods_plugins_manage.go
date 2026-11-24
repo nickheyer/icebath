@@ -13,10 +13,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One plugins.manage action handler
@@ -127,8 +127,8 @@ func ensurePluginActivationListener(ctx context.Context) error {
 		pluginActivationsMu.Lock()
 		defer pluginActivationsMu.Unlock()
 		for _, entry := range summaries {
-			pluginActivations[pyrepr.Str(entry["name"])] = entry
-			pluginActivations[pyrepr.Str(entry["key"])] = entry
+			pluginActivations[anyutil.String(entry["name"])] = entry
+			pluginActivations[anyutil.String(entry["key"])] = entry
 		}
 	})
 	return err
@@ -136,16 +136,16 @@ func ensurePluginActivationListener(ctx context.Context) error {
 
 // Result with activation filled from this server's listener when the core returned none
 func withActivation(result map[string]any, name string) map[string]any {
-	if pyrepr.Truthy(result["activation"]) {
+	if anyutil.IsTrue(result["activation"]) {
 		return result
 	}
 	pluginActivationsMu.Lock()
 	defer pluginActivationsMu.Unlock()
 	for _, key := range []any{name, result["plugin_name"], result["name"]} {
-		if !pyrepr.Truthy(key) {
+		if !anyutil.IsTrue(key) {
 			continue
 		}
-		if entry, found := pluginActivations[pyrepr.Str(key)]; found {
+		if entry, found := pluginActivations[anyutil.String(key)]; found {
 			result["activation"] = entry
 			break
 		}
@@ -156,7 +156,7 @@ func withActivation(result map[string]any, name string) map[string]any {
 // First truthy param among the keys, stripped
 func firstParam(params map[string]any, keys ...string) string {
 	for _, key := range keys {
-		if v := params[key]; pyrepr.Truthy(v) {
+		if v := params[key]; anyutil.IsTrue(v) {
 			return strings.TrimSpace(strOr(v))
 		}
 	}
@@ -190,16 +190,16 @@ func pluginsToggle(ctx context.Context, rid any, params map[string]any) (map[str
 	if err := ensurePluginActivationListener(ctx); err != nil {
 		return nil, err
 	}
-	result, err := plugins.SetAgentPluginEnabled(ctx, ident, pyrepr.Truthy(params["enable"]))
+	result, err := plugins.SetAgentPluginEnabled(ctx, ident, anyutil.IsTrue(params["enable"]))
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(result["ok"]) {
+	if !anyutil.IsTrue(result["ok"]) {
 		return rpcErr(rid, 5026, errorOr(result, "toggle failed"), nil), nil
 	}
 	key := ident
-	if pyrepr.Truthy(result["name"]) {
-		key = pyrepr.Str(result["name"])
+	if anyutil.IsTrue(result["name"]) {
+		key = anyutil.String(result["name"])
 	}
 	rows, err := pluginRows(ctx)
 	if err != nil {
@@ -213,23 +213,23 @@ func pluginsToggle(ctx context.Context, rid any, params map[string]any) (map[str
 		}
 	}
 	return ok(rid, withActivation(map[string]any{
-		"ok": true, "unchanged": pyrepr.Truthy(result["unchanged"]),
-		"restart_required": pyrepr.Truthy(result["restart_required"]),
-		"gateway_reloaded": pyrepr.Truthy(result["gateway_reloaded"]), "activation": result["activation"],
+		"ok": true, "unchanged": anyutil.IsTrue(result["unchanged"]),
+		"restart_required": anyutil.IsTrue(result["restart_required"]),
+		"gateway_reloaded": anyutil.IsTrue(result["gateway_reloaded"]), "activation": result["activation"],
 		"name": key, "plugin": row}, key)), nil
 }
 
 // Error text of a failed core result, the fallback when it carries none
 func errorOr(result map[string]any, fallback string) string {
-	if pyrepr.Truthy(result["error"]) {
-		return pyrepr.Str(result["error"])
+	if anyutil.IsTrue(result["error"]) {
+		return anyutil.String(result["error"])
 	}
 	return fallback
 }
 
 // Structured marker of an install refused because the source left the reviewed commit, nil otherwise
 func sourceMovedData(result map[string]any) any {
-	if pyrepr.Truthy(result["source_moved"]) {
+	if anyutil.IsTrue(result["source_moved"]) {
 		return map[string]any{"reason": "source_moved"}
 	}
 	return nil
@@ -247,18 +247,18 @@ func pluginsInstall(ctx context.Context, rid any, params map[string]any) (map[st
 	}
 	enable := true
 	if v, present := params["enable"]; present {
-		enable = pyrepr.Truthy(v)
+		enable = anyutil.IsTrue(v)
 	}
 	result, err := plugins.UnattendedInstallPlugin(ctx, plugins.UnattendedInstallOptions{
-		Identifier: ident, Force: pyrepr.Truthy(params["force"]), Enable: enable, CatalogName: catalogName,
+		Identifier: ident, Force: anyutil.IsTrue(params["force"]), Enable: enable, CatalogName: catalogName,
 		Ref: strArg(params, "ref"), InspectedSha: strArg(params, "inspected_sha")})
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(result["ok"]) {
+	if !anyutil.IsTrue(result["ok"]) {
 		return rpcErr(rid, 5026, errorOr(result, "install failed"), sourceMovedData(result)), nil
 	}
-	if pyrepr.Truthy(result["enabled"]) {
+	if anyutil.IsTrue(result["enabled"]) {
 		return ok(rid, withActivation(result, strOr(result["plugin_name"]))), nil
 	}
 	return ok(rid, result), nil
@@ -287,11 +287,11 @@ func pluginsUpdate(ctx context.Context, rid any, params map[string]any) (map[str
 	if err := ensurePluginActivationListener(ctx); err != nil {
 		return nil, err
 	}
-	result, err := plugins.UnattendedUpdateUserPlugin(ctx, name, pyrepr.Truthy(params["accept_capabilities"]), pyrepr.Truthy(params["force"]))
+	result, err := plugins.UnattendedUpdateUserPlugin(ctx, name, anyutil.IsTrue(params["accept_capabilities"]), anyutil.IsTrue(params["force"]))
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(result["consent_required"]) || pyrepr.Truthy(result["scan_blocked"]) {
+	if anyutil.IsTrue(result["consent_required"]) || anyutil.IsTrue(result["scan_blocked"]) {
 		refusal := map[string]any{}
 		for _, k := range []string{"ok", "name", "sha", "error", "consent_required", "delta", "delta_lines",
 			"scan_blocked", "scan_verdict", "scan_findings"} {
@@ -301,12 +301,12 @@ func pluginsUpdate(ctx context.Context, rid any, params map[string]any) (map[str
 		}
 		return ok(rid, refusal), nil
 	}
-	if !pyrepr.Truthy(result["ok"]) {
+	if !anyutil.IsTrue(result["ok"]) {
 		return rpcErr(rid, 4021, errorOr(result, "update failed"), nil), nil
 	}
 	resultName := name
-	if pyrepr.Truthy(result["name"]) {
-		resultName = pyrepr.Str(result["name"])
+	if anyutil.IsTrue(result["name"]) {
+		resultName = anyutil.String(result["name"])
 	}
 	warnings := []any{}
 	if list, isList := result["warnings"].([]any); isList {
@@ -316,13 +316,13 @@ func pluginsUpdate(ctx context.Context, rid any, params map[string]any) (map[str
 			warnings = append(warnings, w)
 		}
 	}
-	payload := map[string]any{"ok": true, "unchanged": pyrepr.Truthy(result["unchanged"]), "name": resultName, "warnings": warnings}
+	payload := map[string]any{"ok": true, "unchanged": anyutil.IsTrue(result["unchanged"]), "name": resultName, "warnings": warnings}
 	for _, k := range []string{"sha", "gateway_reloaded", "activation", "restart_required"} {
 		if v, present := result[k]; present {
 			payload[k] = v
 		}
 	}
-	if pyrepr.Truthy(result["unchanged"]) {
+	if anyutil.IsTrue(result["unchanged"]) {
 		return ok(rid, payload), nil
 	}
 	return ok(rid, withActivation(payload, resultName)), nil
@@ -338,7 +338,7 @@ func pluginsRemove(ctx context.Context, rid any, params map[string]any) (map[str
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(result["ok"]) {
+	if !anyutil.IsTrue(result["ok"]) {
 		return rpcErr(rid, 5026, errorOr(result, "remove failed"), nil), nil
 	}
 	return ok(rid, result), nil
@@ -435,7 +435,7 @@ func portableServerNames(pluginDir string) ([]string, error) {
 // Named catalog plugins this OS runs in the order asked, each with its app state and disclosure
 func pluginsPresence(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
 	var names []string
-	if raw := params["names"]; pyrepr.Truthy(raw) {
+	if raw := params["names"]; anyutil.IsTrue(raw) {
 		switch v := raw.(type) {
 		case []any:
 			for _, n := range v {
@@ -488,17 +488,17 @@ func applyPluginUpdate(ctx context.Context, name string) (outcome pluginUpdateOu
 	}
 	detail := errorOr(result, "")
 	switch {
-	case pyrepr.Truthy(result["held"]):
+	case anyutil.IsTrue(result["held"]):
 		return pluginUpdateOutcome{name, "held", detail}
-	case pyrepr.Truthy(result["consent_required"]) || pyrepr.Truthy(result["scan_blocked"]):
+	case anyutil.IsTrue(result["consent_required"]) || anyutil.IsTrue(result["scan_blocked"]):
 		return pluginUpdateOutcome{name, "needs_review", detail}
-	case !pyrepr.Truthy(result["ok"]):
+	case !anyutil.IsTrue(result["ok"]):
 		return pluginUpdateOutcome{name, "failed", detail}
 	}
-	if pyrepr.Truthy(result["name"]) {
-		name = pyrepr.Str(result["name"])
+	if anyutil.IsTrue(result["name"]) {
+		name = anyutil.String(result["name"])
 	}
-	if pyrepr.Truthy(result["unchanged"]) {
+	if anyutil.IsTrue(result["unchanged"]) {
 		return pluginUpdateOutcome{name, "current", ""}
 	}
 	return pluginUpdateOutcome{name, "updated", ""}

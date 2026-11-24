@@ -18,15 +18,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
-	"github.com/nickheyer/icebath/pkg/internal/pytoml"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	tomlutil "github.com/nickheyer/icebath/pkg/utils/toml"
 )
 
 const (
@@ -67,7 +66,7 @@ func (e *auditHTTPError) Error() string { return e.err.Error() }
 var (
 	auditHTTPJSON              = osvHTTPJSON
 	auditVenvPins              = venvDistributionPins
-	auditStderr      io.Writer = pysys.Stderr
+	auditStderr      io.Writer = termutil.Stderr
 	auditVersionInfo           = updaterecord.GetVersionInfo
 )
 
@@ -142,12 +141,12 @@ func parseRequirements(text string) [][2]string {
 
 // Exact pins of a pyproject dependencies list and its optional groups, none when the file does not parse
 func parsePyprojectPins(text string) [][2]string {
-	doc, err := pytoml.Loads(text)
+	doc, err := tomlutil.Decode(text)
 	if err != nil {
 		return [][2]string{}
 	}
 	project, _ := doc["project"].(map[string]any)
-	if !pyrepr.Truthy(doc["project"]) {
+	if !anyutil.IsTrue(doc["project"]) {
 		project = map[string]any{}
 	}
 	if project == nil {
@@ -168,7 +167,7 @@ func parsePyprojectPins(text string) [][2]string {
 	for _, group := range groups {
 		if list, ok := group.([]any); ok {
 			for _, item := range list {
-				specs = append(specs, pyrepr.Str(item))
+				specs = append(specs, anyutil.String(item))
 			}
 		}
 	}
@@ -201,7 +200,7 @@ func discoverPlugins(home string) []auditComponent {
 				if err != nil {
 					continue
 				}
-				pins = file.parse(pystr.DecodeUTF8SigReplace(raw))
+				pins = file.parse(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError)))
 			}
 			for _, pin := range pins {
 				out = append(out, auditComponent{Name: pin[0], Version: pin[1], Ecosystem: "PyPI", Source: "plugin:" + entry.Name()})
@@ -259,7 +258,7 @@ func discoverMCP(ctx context.Context) ([]auditComponent, error) {
 			continue
 		}
 		rawArgs := cfg["args"]
-		if !pyrepr.Truthy(rawArgs) {
+		if !anyutil.IsTrue(rawArgs) {
 			rawArgs = []any{}
 		}
 		list, ok := rawArgs.([]any)
@@ -268,11 +267,11 @@ func discoverMCP(ctx context.Context) ([]auditComponent, error) {
 		}
 		args := make([]string, 0, len(list))
 		for _, a := range list {
-			args = append(args, pyrepr.Str(a))
+			args = append(args, anyutil.String(a))
 		}
 		command := ""
-		if pyrepr.Truthy(cfg["command"]) {
-			command = pyrepr.Str(cfg["command"])
+		if anyutil.IsTrue(cfg["command"]) {
+			command = anyutil.String(cfg["command"])
 		}
 		if c, ok := extractMCPComponent(name, command, args); ok {
 			out = append(out, c)
@@ -285,7 +284,7 @@ func discoverMCP(ctx context.Context) ([]auditComponent, error) {
 func osvHTTPJSON(ctx context.Context, url string, payload any) (any, error) {
 	method, body := http.MethodGet, io.Reader(nil)
 	if payload != nil {
-		text, err := pyjson.Dumps(payload)
+		text, err := jsonutil.Encode(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -315,7 +314,7 @@ func osvHTTPJSON(ctx context.Context, url string, payload any) (any, error) {
 	if !utf8.Valid(raw) {
 		return nil, &pm.PyError{Class: "UnicodeDecodeError", Message: "the OSV response is not valid UTF-8"}
 	}
-	return pyjson.Loads(string(raw))
+	return jsonutil.Decode(string(raw))
 }
 
 // Advisory ids per component that has any, from batched OSV queries
@@ -326,9 +325,9 @@ func osvQueryBatch(ctx context.Context, components []auditComponent) ([]auditCom
 		chunk := components[start:min(len(components), start+osvBatchMax)]
 		queries := make([]any, 0, len(chunk))
 		for _, c := range chunk {
-			queries = append(queries, pyjson.ObjectOf("package", pyjson.ObjectOf("name", c.Name, "ecosystem", c.Ecosystem), "version", c.Version))
+			queries = append(queries, jsonutil.ObjectOf("package", jsonutil.ObjectOf("name", c.Name, "ecosystem", c.Ecosystem), "version", c.Version))
 		}
-		resp, err := auditHTTPJSON(ctx, osvBatchURL, pyjson.ObjectOf("queries", queries))
+		resp, err := auditHTTPJSON(ctx, osvBatchURL, jsonutil.ObjectOf("queries", queries))
 		if err != nil {
 			var network *auditHTTPError
 			if errors.As(err, &network) {
@@ -344,8 +343,8 @@ func osvQueryBatch(ctx context.Context, components []auditComponent) ([]auditCom
 			vulns, _ := rowValue(result, "vulns").([]any)
 			var ids []string
 			for _, v := range vulns {
-				if id := rowValue(v, "id"); pyrepr.Truthy(id) {
-					ids = append(ids, pyrepr.Str(id))
+				if id := rowValue(v, "id"); anyutil.IsTrue(id) {
+					ids = append(ids, anyutil.String(id))
 				}
 			}
 			if len(ids) > 0 {
@@ -388,7 +387,7 @@ func osvFixedVersions(record any) []string {
 			events, _ := rowValue(rng, "events").([]any)
 			for _, event := range events {
 				if value, present, _ := rowLookup(event, "fixed"); present {
-					text := pyrepr.Str(value)
+					text := anyutil.String(value)
 					if !seen[text] {
 						seen[text] = true
 						out = append(out, text)
@@ -438,8 +437,8 @@ func osvFetchDetails(ctx context.Context, ids []string) (map[string]auditVulnera
 				return
 			}
 			summary := ""
-			if v := rowValue(rec, "summary"); pyrepr.Truthy(v) {
-				summary = strings.TrimSpace(pyrepr.Str(v))
+			if v := rowValue(rec, "summary"); anyutil.IsTrue(v) {
+				summary = strings.TrimSpace(anyutil.String(v))
 			}
 			results[i] = auditVulnerability{OSVID: vid, Severity: osvSeverityFromRecord(rec), Summary: summary, FixedVersions: osvFixedVersions(rec)}
 		}(i, vid)
@@ -559,19 +558,19 @@ func renderJSON(findings []auditFinding, total int) (string, error) {
 		for _, v := range f.Vuln.FixedVersions {
 			fixed = append(fixed, v)
 		}
-		rows = append(rows, pyjson.ObjectOf("package", f.Component.Name, "version", f.Component.Version,
+		rows = append(rows, jsonutil.ObjectOf("package", f.Component.Name, "version", f.Component.Version,
 			"ecosystem", f.Component.Ecosystem, "source", f.Component.Source, "vuln_id", f.Vuln.OSVID,
 			"severity", f.Vuln.Severity, "summary", f.Vuln.Summary, "fixed_versions", fixed))
 	}
-	return pyjson.Dumps(pyjson.ObjectOf("total_components_scanned", total, "finding_count", len(findings), "findings", rows), pyjson.Indent(2))
+	return jsonutil.Encode(jsonutil.ObjectOf("total_components_scanned", total, "finding_count", len(findings), "findings", rows), jsonutil.Indent(2))
 }
 
 // Audits the venv, plugin and MCP pins against OSV, exit 1 when a finding meets the fail on tier
 func CmdSecurityAudit(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error) {
-	outputJSON := pyrepr.Truthy(ns["json"])
+	outputJSON := anyutil.IsTrue(ns["json"])
 	failOn := "critical"
-	if pyrepr.Truthy(ns["fail_on"]) {
-		failOn = pyrepr.Str(ns["fail_on"])
+	if anyutil.IsTrue(ns["fail_on"]) {
+		failOn = anyutil.String(ns["fail_on"])
 	}
 	failOn = strings.ToUpper(failOn)
 	threshold, known := severityOrder[failOn]
@@ -579,7 +578,7 @@ func CmdSecurityAudit(ctx context.Context, h string, ns map[string]any, w io.Wri
 		fmt.Fprintf(auditStderr, "unknown --fail-on value: %s (choose from: low, moderate, high, critical)\n", strings.ToLower(failOn))
 		return 2, nil
 	}
-	components, err := discoverComponents(ctx, h, pyrepr.Truthy(ns["skip_venv"]), pyrepr.Truthy(ns["skip_plugins"]), pyrepr.Truthy(ns["skip_mcp"]))
+	components, err := discoverComponents(ctx, h, anyutil.IsTrue(ns["skip_venv"]), anyutil.IsTrue(ns["skip_plugins"]), anyutil.IsTrue(ns["skip_mcp"]))
 	if err != nil {
 		return 0, err
 	}

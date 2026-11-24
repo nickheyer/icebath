@@ -14,7 +14,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
@@ -1243,10 +1242,10 @@ var managedRuntimePathEntries = func(env *Env) (entries []string) {
 	var candidates []string
 	for _, d := range strings.Split(managedNodePathEnv(map[string]string{"PATH": ""})["PATH"], string(os.PathListSeparator)) {
 		if d != "" {
-			candidates = append(candidates, pypath.PathStr(d))
+			candidates = append(candidates, filepath.Clean(d))
 		}
 	}
-	candidates = append(candidates, pypath.PathStr(envHome(env)+string(os.PathSeparator)+"bin"))
+	candidates = append(candidates, filepath.Clean(envHome(env)+string(os.PathSeparator)+"bin"))
 	for _, d := range candidates {
 		if st, err := os.Stat(d); err == nil && st.IsDir() {
 			entries = append(entries, d)

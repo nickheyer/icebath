@@ -4,7 +4,7 @@ import (
 	"context"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Tolerant model_config decode into a map, JSON text or a dict copied, anything else empty
@@ -17,20 +17,20 @@ func ParseModelConfig(raw any) map[string]any {
 		return out
 	}
 	parsed := parseModelConfigValue(raw)
-	for _, k := range parsed.Keys {
-		out[k] = parsed.Vals[k]
+	for _, k := range parsed.Keys() {
+		out[k] = parsed.Value(k)
 	}
 	return out
 }
 
 // Ordered patch object of a Go map in sorted key order
-func modelConfigPatchObject(patch map[string]any) *pyjson.Object {
+func modelConfigPatchObject(patch map[string]any) *jsonutil.Object {
 	keys := make([]string, 0, len(patch))
 	for k := range patch {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, k := range keys {
 		out.Set(k, patch[k])
 	}
@@ -38,7 +38,7 @@ func modelConfigPatchObject(patch map[string]any) *pyjson.Object {
 }
 
 // Merges the patch into model_config then runs the statement with the merged text in one write, a missing row a no op
-func (d *SessionDB) writeModelConfigPatch(ctx context.Context, sessionID string, patch *pyjson.Object, query string, params func(merged any) []any) error {
+func (d *SessionDB) writeModelConfigPatch(ctx context.Context, sessionID string, patch *jsonutil.Object, query string, params func(merged any) []any) error {
 	return d.executeWrite(ctx, func(conn SQLiteConn) error {
 		merged, missing, err := mergeModelConfigJSON(ctx, conn, sessionID, patch, false)
 		if err != nil || missing {
@@ -94,7 +94,7 @@ func SessionYoloEnabled(sessionMeta map[string]any) bool {
 
 // Plain model_config of a session row, nested objects as plain maps
 func plainModelConfig(raw any) map[string]any {
-	plain, _ := pyjson.Plain(parseModelConfigValue(raw)).(map[string]any)
+	plain, _ := jsonutil.Plain(parseModelConfigValue(raw)).(map[string]any)
 	if plain == nil {
 		plain = map[string]any{}
 	}
@@ -126,7 +126,7 @@ func (d *SessionDB) UpdateSessionModelConfig(ctx context.Context, sessionID stri
 		}
 		var text any
 		if len(cfg) > 0 {
-			dumped, err := pyjson.Dumps(cfg, pyjson.SortKeys(true))
+			dumped, err := jsonutil.Encode(cfg, jsonutil.SortKeys())
 			if err != nil {
 				return err
 			}

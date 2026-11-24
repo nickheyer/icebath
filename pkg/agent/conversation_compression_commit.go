@@ -12,15 +12,14 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Compressor attributes saved around the memory flush so the live attempt record survives it
@@ -62,7 +61,7 @@ type summaryPhase struct {
 }
 
 // Python monotonic reading of a wall instant on the process clock
-func monotonicOf(t time.Time) float64 { return pythread.Monotonic() - time.Since(t).Seconds() }
+func monotonicOf(t time.Time) float64 { return timeutil.Monotonic() - time.Since(t).Seconds() }
 
 func optionalIntAny(p *int) any {
 	if p == nil {
@@ -156,7 +155,7 @@ func compressorAttr(e ContextEngine, name string) any {
 func setEngineAttr(e ContextEngine, name string, value any) error {
 	switch c := e.(type) {
 	case *ContextCompressor:
-		obj, _ := value.(*pyjson.Object)
+		obj, _ := value.(*jsonutil.Object)
 		switch name {
 		case "_last_compression_telemetry":
 			c.Last = obj
@@ -167,9 +166,9 @@ func setEngineAttr(e ContextEngine, name string, value any) error {
 		case "last_compression_rough_tokens":
 			c.lastCompressionRoughTokens, _ = value.(int)
 		case "awaiting_real_usage_after_compression":
-			c.awaitingRealUsageAfterCompression = pyrepr.Truthy(value)
+			c.awaitingRealUsageAfterCompression = anyutil.IsTrue(value)
 		case "_verify_compaction_cleared_threshold":
-			c.verifyCompactionClearedThreshold = pyrepr.Truthy(value)
+			c.verifyCompactionClearedThreshold = anyutil.IsTrue(value)
 		}
 	case *hostedContextEngine:
 		return c.obj.Set(c.ctx, name, value)
@@ -261,14 +260,14 @@ func publishRotatedCompaction(ctx context.Context, a *AIAgent, messages, compres
 		return err
 	}
 	newSessionID := state.NewSessionID()
-	var modelConfig *pyjson.Object
+	var modelConfig *jsonutil.Object
 	if cfg := tools.WithSessionYolo(a.sessionInitModelConfig, oldSessionID); cfg != nil {
 		keys := make([]string, 0, len(cfg))
 		for k := range cfg {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		modelConfig = pyjson.NewObject()
+		modelConfig = jsonutil.NewObject()
 		for _, k := range keys {
 			modelConfig.Set(k, cfg[k])
 		}
@@ -393,10 +392,10 @@ func candidateRejected(ctx context.Context, a *AIAgent, compressed, messages, me
 		sid = "none"
 	}
 	compressor := a.contextCompressor
-	if pyrepr.Truthy(compressorAttr(compressor, "_last_compress_aborted")) {
+	if anyutil.IsTrue(compressorAttr(compressor, "_last_compress_aborted")) {
 		summaryError := compressorAttr(compressor, "_last_summary_error")
 		errText := "unknown error"
-		if pyrepr.Truthy(summaryError) {
+		if anyutil.IsTrue(summaryError) {
 			errText = pyStr(summaryError)
 		}
 		if a.lastCompressionSummaryWarning == nil || *a.lastCompressionSummaryWarning != errText {
@@ -404,7 +403,7 @@ func candidateRejected(ctx context.Context, a *AIAgent, compressed, messages, me
 			a.emitWarning(fmt.Sprintf("⚠ Compression aborted: %s. No messages were dropped — conversation continues unchanged. Run /compress to retry, or /new to start a fresh session.", errText))
 		}
 		failureClass := ""
-		if pyrepr.Truthy(summaryError) {
+		if anyutil.IsTrue(summaryError) {
 			failureClass = "summary_generation_aborted"
 		}
 		emitAbortedAttemptTelemetry(ctx, a, attempt.startedAt, failureClass, attempt.seed)
@@ -494,7 +493,7 @@ func commitCompaction(ctx context.Context, a *AIAgent, messages *[]map[string]an
 			}
 			if v, had := m[compactionTailMarker]; had {
 				delete(m, compactionTailMarker)
-				if pyrepr.Truthy(v) {
+				if anyutil.IsTrue(v) {
 					tailTagged[rowIdentity(m)] = true
 				}
 			}
@@ -528,7 +527,7 @@ func commitCompaction(ctx context.Context, a *AIAgent, messages *[]map[string]an
 			tailHeld := live[max(0, len(live)-tailCount):]
 			if idx := a.persistUserMessageIdx; a.activeSessionTurnLeaseHolder != nil && idx != nil && *idx >= 0 && *idx < len(live) {
 				for _, m := range live[max(*idx, len(live)-tailCount):] {
-					if m != nil && !pyrepr.Truthy(m[dbPersistedMarker]) && !isPyInt(m["_row_id"]) {
+					if m != nil && !anyutil.IsTrue(m[dbPersistedMarker]) && !isPyInt(m["_row_id"]) {
 						tailCount--
 					}
 				}
@@ -567,7 +566,7 @@ func commitCompaction(ctx context.Context, a *AIAgent, messages *[]map[string]an
 				return err
 			}
 			o := state.ArchiveCompactOptions{
-				ModelConfigPatch: pyjson.ObjectOf(ProactivePruneRearmModelConfigKey, nil), Watermark: watermark,
+				ModelConfigPatch: jsonutil.ObjectOf(ProactivePruneRearmModelConfigKey, nil), Watermark: watermark,
 				LockHolder: lease.holder, TailCount: tailCount, CarriedMessages: carriedMessages,
 			}
 			if ok {
@@ -615,7 +614,7 @@ func commitCompaction(ctx context.Context, a *AIAgent, messages *[]map[string]an
 			if rotationRollback {
 				oldSessionID = nil
 			}
-			*messages, _ = pycopy.DeepCopy(messagesBefore).([]map[string]any)
+			*messages, _ = any(anyutil.Clone(messagesBefore)).([]map[string]any)
 			compressed = *messages
 			out.madeProgress = false
 			restorePruneRearmTokens(a.contextCompressor, attempt.snapshot)
@@ -692,9 +691,9 @@ func runSummaryPhase(ctx context.Context, a *AIAgent, messages []map[string]any,
 			return nil, err
 		}
 		call := resolveCompressCall(a, approxTokens, focusTopic, force, memoryContext, bypassCooldown)
-		before, _ = pycopy.DeepCopy(messages).([]map[string]any)
+		before, _ = any(anyutil.Clone(messages)).([]map[string]any)
 		heartbeat = newCompressionActivityHeartbeat(a, nil, lease.statusEmitted(), fence).start()
-		for i, value := range []any{nil, nil, attempt.seed.Copy()} {
+		for i, value := range []any{nil, nil, attempt.seed.Clone()} {
 			swallowCompression("attempt telemetry seed failed", false, func() error {
 				return setEngineAttr(a.contextCompressor, attemptTelemetryFields[i], value)
 			})
@@ -771,7 +770,7 @@ func beginCompressionAttempt(a *AIAgent, force, deferNotification bool, trigger 
 	if trigger != nil && *trigger != "" {
 		triggerSource = *trigger
 	}
-	seed := pyjson.ObjectOf("attempt_id", attemptID, "session_id", a.sessionID, "trigger_source", triggerSource, "overflow_reason", optionalStringAny(overflowReason))
+	seed := jsonutil.ObjectOf("attempt_id", attemptID, "session_id", a.sessionID, "trigger_source", triggerSource, "overflow_reason", optionalStringAny(overflowReason))
 	a.compressionAttemptID = attemptID
 	return &compressionAttempt{snapshot: snapshot, generation: generation, startedAt: startedAt, seed: seed}, nil
 }
@@ -949,9 +948,9 @@ func compressContext(ctx context.Context, a *AIAgent, messages []map[string]any,
 		lease.release()
 	}()
 	compressor := a.contextCompressor
-	madeProgress := pyrepr.Truthy(compressorAttr(compressor, "_last_compression_made_progress"))
-	usedFallback := pyrepr.Truthy(compressorAttr(compressor, "_last_summary_fallback_used"))
-	feasibilitySkip := pyrepr.Truthy(compressorAttr(compressor, "_last_feasibility_skip"))
+	madeProgress := anyutil.IsTrue(compressorAttr(compressor, "_last_compression_made_progress"))
+	usedFallback := anyutil.IsTrue(compressorAttr(compressor, "_last_summary_fallback_used"))
+	feasibilitySkip := anyutil.IsTrue(compressorAttr(compressor, "_last_feasibility_skip"))
 	if candidateRejected(ctx, a, compressed, messages, before, attempt) {
 		restoreMessagesSnapshot(&messages, before)
 		return existing()

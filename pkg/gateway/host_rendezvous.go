@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -16,10 +17,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -68,8 +69,8 @@ var (
 )
 
 // Record fields in their published key order, the gateway role publishing no bound address or token
-func (r *HostRecord) ToJSON() *pyjson.Object {
-	o := pyjson.NewObject()
+func (r *HostRecord) ToJSON() *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("role", r.Role)
 	o.Set("home", r.Home)
 	o.Set("pid", int64(r.PID))
@@ -111,12 +112,12 @@ func strOrEmpty(v any) string {
 	if !pyTruthy(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Record from a decoded payload, nil unless it is a dict with a positive pid and a known role
 func HostRecordFromJSON(payload any) *HostRecord {
-	obj, ok := payload.(*pyjson.Object)
+	obj, ok := payload.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -190,7 +191,7 @@ func validHostRole(role string) bool {
 
 func validatedRole(role string) string {
 	if !validHostRole(role) {
-		panic(fmt.Errorf("unknown host role: %s", pyrepr.StrRepr(role)))
+		panic(fmt.Errorf("unknown host role: %s", strconv.Quote(role)))
 	}
 	return role
 }
@@ -344,7 +345,7 @@ func readHostRecord(role string, includeStale bool) *HostRecord {
 	if !ok {
 		return nil
 	}
-	decoded, err := pyjson.Loads(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil
 	}
@@ -480,7 +481,7 @@ func PublishHostRecord(ctx context.Context, role string, o HostPublishOptions) *
 		if _, err := EnsureHostStateDir(ctx); err != nil {
 			return err
 		}
-		return config.AtomicJSONWriteMode(ctx, HostRecordPath(role), r.ToJSON(), 0o600, pyjson.Indent(2))
+		return config.AtomicJSONWriteMode(ctx, HostRecordPath(role), r.ToJSON(), 0o600, jsonutil.Indent(2))
 	}()
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("host %s record could not be published; discovery will not find it", role), "error", err)

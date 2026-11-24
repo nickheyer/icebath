@@ -7,10 +7,10 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const compressionNote = "[Note: Some earlier conversation turns have been compacted into a handoff summary to preserve context space. The current session state may still reflect earlier work, so build on that summary and state rather than re-doing work. Your persistent memory (MEMORY.md, USER.md) remains fully authoritative regardless of compaction.]"
@@ -504,7 +504,7 @@ func (c *ContextCompressor) scanWindowHandoffs(messages []map[string]any, start,
 }
 
 // Resets the per attempt outcome flags and opens the attempt telemetry
-func (c *ContextCompressor) beginCompressAttempt(currentTokens *int, force bool) *pyjson.Object {
+func (c *ContextCompressor) beginCompressAttempt(currentTokens *int, force bool) *jsonutil.Object {
 	c.LastSummaryDroppedCount = 0
 	c.LastSummaryFallbackUsed = false
 	c.lastFeasibilitySkip = false
@@ -531,7 +531,7 @@ func (c *ContextCompressor) beginCompressionTelemetry(currentTokens *int) {
 	c.Begin(TelemetryAttempt{CurrentTokens: current, Provider: c.provider, Model: c.model, ContextLength: c.contextLength(), ThresholdTokens: c.thresholdTokensValue()})
 }
 
-func (c *ContextCompressor) structuralNoOpResult(telemetry *pyjson.Object, failureClass, reason string, nMessages int) {
+func (c *ContextCompressor) structuralNoOpResult(telemetry *jsonutil.Object, failureClass, reason string, nMessages int) {
 	telemetry.Set("failure_class", failureClass)
 	c.lastCompressionSavingsPct = 0
 	c.recordStructuralNoOp(reason, nMessages)
@@ -566,7 +566,7 @@ func (c *ContextCompressor) logCompressionStart(displayTokens, start, end, nTurn
 }
 
 // Aborts with messages unchanged on a terminal failure or when configured to, true when aborted
-func (c *ContextCompressor) abortOnSummaryFailureAttempt(ctx context.Context, telemetry *pyjson.Object, nSkipped int, previousBefore *string) bool {
+func (c *ContextCompressor) abortOnSummaryFailureAttempt(ctx context.Context, telemetry *jsonutil.Object, nSkipped int, previousBefore *string) bool {
 	var terminal *terminalSummaryFailure
 	for i := range terminalSummaryFailures {
 		if *c.terminalFailureFlag(terminalSummaryFailures[i].Flag) {
@@ -617,7 +617,7 @@ func (c *ContextCompressor) assembleHead(messages []map[string]any, start int) [
 }
 
 // Deterministic fallback summary for the window, recorded as the new iterative base
-func (c *ContextCompressor) fallbackSummaryForWindow(telemetry *pyjson.Object, turns []map[string]any, nDropped int, feasibilitySkip bool) string {
+func (c *ContextCompressor) fallbackSummaryForWindow(telemetry *jsonutil.Object, turns []map[string]any, nDropped int, feasibilitySkip bool) string {
 	if !c.quietMode && feasibilitySkip {
 		pkgLog().Info("Pre-LLM summary skip — inserting deterministic fallback context summary")
 	} else if !c.quietMode {

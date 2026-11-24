@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"log/slog"
 	"math/big"
+	"path/filepath"
 	"strings"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
@@ -36,7 +37,7 @@ func BridgedToolLabels(ctx context.Context, name string, args map[string]any) []
 
 // Whether a path names something on disk, raising the errors pathlib exists does not swallow
 func pathExists(p string) bool {
-	fi, err := pypath.PathlibStat(pypath.PathStr(p))
+	fi, err := pathutil.StatIfExists(filepath.Clean(p))
 	if err != nil {
 		panic(err)
 	}
@@ -48,7 +49,7 @@ func BuildImageRefMessage(userText string, imagePaths []string) string {
 	var parts []string
 	for _, p := range imagePaths {
 		if pathExists(p) {
-			parts = append(parts, "[The user attached an image: "+pypath.PathName(p)+"]\n[Examine it with the vision_analyze tool using image_url: "+pypath.PathStr(p)+"]")
+			parts = append(parts, "[The user attached an image: "+pathutil.Name(p)+"]\n[Examine it with the vision_analyze tool using image_url: "+filepath.Clean(p)+"]")
 		}
 	}
 	prefix := strings.Join(parts, "\n\n")
@@ -122,7 +123,7 @@ func historyPartImageURL(part map[string]any) string {
 // First truthy value of a dict's keys, else the empty string
 func firstTruthy(d map[string]any, keys ...string) any {
 	for _, key := range keys {
-		if pyrepr.Truthy(d[key]) {
+		if anyutil.IsTrue(d[key]) {
 			return d[key]
 		}
 	}
@@ -133,7 +134,7 @@ func firstTruthy(d map[string]any, keys ...string) any {
 func historyDictText(content map[string]any, imageURLs bool) string {
 	kind, isStr := partKind(content["type"])
 	if isStr && historyTextKinds[kind] {
-		return pyrepr.Str(firstTruthy(content, "text", "content"))
+		return anyutil.String(firstTruthy(content, "text", "content"))
 	}
 	if isStr && historyImageKinds[kind] {
 		rendered := ""
@@ -148,11 +149,11 @@ func historyDictText(content map[string]any, imageURLs bool) string {
 	if isStr && historyAudioKinds[kind] {
 		return "[audio]"
 	}
-	if pyrepr.Truthy(content["type"]) {
-		return "[" + pyrepr.Str(content["type"]) + "]"
+	if anyutil.IsTrue(content["type"]) {
+		return "[" + anyutil.String(content["type"]) + "]"
 	}
 	if _, ok := content["text"]; ok {
-		return pyrepr.Str(firstTruthy(content, "text"))
+		return anyutil.String(firstTruthy(content, "text"))
 	}
 	return "[structured content]"
 }
@@ -173,7 +174,7 @@ func ContentDisplayText(content any) string {
 	case nil:
 		return ""
 	}
-	return pyrepr.Str(content)
+	return anyutil.String(content)
 }
 
 // Plain string of message content keeping image URLs inline unless imageURLs is false
@@ -192,7 +193,7 @@ func CoerceMessageText(content any, imageURLs bool) string {
 			}
 			if text, isStr := d["text"].(string); isStr {
 				chunks.WriteString(text)
-			} else if pyrepr.Truthy(d["type"]) {
+			} else if anyutil.IsTrue(d["type"]) {
 				rendered := historyDictText(d, imageURLs)
 				if kind, isStr := partKind(d["type"]); isStr && historyTextKinds[kind] {
 					chunks.WriteString(rendered)
@@ -207,7 +208,7 @@ func CoerceMessageText(content any, imageURLs bool) string {
 	case nil:
 		return ""
 	}
-	return pyrepr.Str(content)
+	return anyutil.String(content)
 }
 
 // Whether a content part carries only text

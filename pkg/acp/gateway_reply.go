@@ -7,12 +7,13 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Reply text of a message frame, empty when text is absent or null
-func replyText(payload *pyjson.Object) string {
+func replyText(payload *jsonutil.Object) string {
 	text, _ := dget(payload, "text").(string)
 	return text
 }
@@ -20,25 +21,25 @@ func replyText(payload *pyjson.Object) string {
 // Open tool call of a session, its name, arguments and the admission that started it
 type heldTool struct {
 	name      string
-	args      *pyjson.Object
+	args      *jsonutil.Object
 	admission string
 }
 
 type toolKey struct{ session, callID string }
 
 // Projects a tool start or completion the way the in process callbacks did
-func (a *GatewayACPAgent) projectTool(ctx context.Context, kind, sid, editorID, aid string, payload *pyjson.Object) error {
+func (a *GatewayACPAgent) projectTool(ctx context.Context, kind, sid, editorID, aid string, payload *jsonutil.Object) error {
 	toolName := "tool"
 	for _, key := range []string{"tool_name", "name"} {
-		if v := dget(payload, key); truthy(v) {
-			toolName = pyStr(v)
+		if v := dget(payload, key); anyutil.IsTrue(v) {
+			toolName = anyutil.String(v)
 			break
 		}
 	}
 	if !dhas(payload, "tool_call_id") {
 		return errors.New("the gateway tool event has no tool_call_id")
 	}
-	callID := pyStr(dget(payload, "tool_call_id"))
+	callID := anyutil.String(dget(payload, "tool_call_id"))
 	key := toolKey{sid, callID}
 	if kind == "tool.start" {
 		a.closeSegment(aid)
@@ -54,7 +55,7 @@ func (a *GatewayACPAgent) projectTool(ctx context.Context, kind, sid, editorID, 
 	if ok {
 		a.toolArgs.Delete(key)
 	} else {
-		held = heldTool{toolName, pyjson.NewObject(), aid}
+		held = heldTool{toolName, jsonutil.NewObject(), aid}
 	}
 	if a.conn != nil {
 		var result *string
@@ -67,7 +68,7 @@ func (a *GatewayACPAgent) projectTool(ctx context.Context, kind, sid, editorID, 
 }
 
 // Shows the unseen remainder of a settled reply, then closes its message id and the tool calls it left open
-func (a *GatewayACPAgent) finishReply(ctx context.Context, sid, editorID, aid string, payload *pyjson.Object) error {
+func (a *GatewayACPAgent) finishReply(ctx context.Context, sid, editorID, aid string, payload *jsonutil.Object) error {
 	if remainder := a.finalRemainder(aid, payload); remainder != "" && a.conn != nil {
 		if err := a.sessionUpdate(ctx, editorID, a.chunk(sid, remainder, false)); err != nil {
 			return err
@@ -98,7 +99,7 @@ func (a *GatewayACPAgent) flushOpenTools(ctx context.Context, sid, editorID, aid
 }
 
 // Assistant or thought chunk carrying the session's current message id
-func (a *GatewayACPAgent) chunk(sid, text string, thought bool) pyacp.SessionUpdate {
+func (a *GatewayACPAgent) chunk(sid, text string, thought bool) acputil.SessionUpdate {
 	ids, ok := a.messageIDs[sid]
 	if !ok {
 		ids = &AssistantMessageIDAllocator{}
@@ -106,11 +107,11 @@ func (a *GatewayACPAgent) chunk(sid, text string, thought bool) pyacp.SessionUpd
 	}
 	id := ids.Current()
 	if thought {
-		update := pyacp.UpdateAgentThoughtText(text)
+		update := acputil.UpdateAgentThoughtText(text)
 		update.MessageID = &id
 		return update
 	}
-	update := pyacp.UpdateAgentMessageText(text)
+	update := acputil.UpdateAgentMessageText(text)
 	update.MessageID = &id
 	return update
 }
@@ -122,16 +123,16 @@ func (a *GatewayACPAgent) endMessage(sid string) {
 }
 
 // Projects a reasoning delta as a thought chunk or a task list snapshot as the native plan update
-func (a *GatewayACPAgent) projectSideUpdate(ctx context.Context, kind, sid, editorID string, payload *pyjson.Object) error {
-	var update pyacp.SessionUpdate
+func (a *GatewayACPAgent) projectSideUpdate(ctx context.Context, kind, sid, editorID string, payload *jsonutil.Object) error {
+	var update acputil.SessionUpdate
 	if kind == "reasoning.delta" {
 		if text := replyText(payload); text != "" {
 			update = a.chunk(sid, text, true)
 		}
 	} else if todos, ok := dget(payload, "todos").([]any); ok {
-		wrapped := pyjson.NewObject()
+		wrapped := jsonutil.NewObject()
 		wrapped.Set("todos", todos)
-		text, err := pyjson.Dumps(wrapped)
+		text, err := jsonutil.Encode(wrapped)
 		if err != nil {
 			return err
 		}
@@ -155,7 +156,7 @@ func (a *GatewayACPAgent) closeSegment(aid string) {
 }
 
 // Part of the settled reply the editor has not been shown yet
-func (a *GatewayACPAgent) finalRemainder(aid string, payload *pyjson.Object) string {
+func (a *GatewayACPAgent) finalRemainder(aid string, payload *jsonutil.Object) string {
 	text := replyText(payload)
 	streamed := a.streamed[aid]
 	delete(a.streamed, aid)
@@ -172,7 +173,7 @@ func (a *GatewayACPAgent) finalRemainder(aid string, payload *pyjson.Object) str
 	}
 	if dget(payload, "response_reused") == true {
 		painted := false
-		if hasCut || truthy(dget(payload, "receipt")) {
+		if hasCut || anyutil.IsTrue(dget(payload, "receipt")) {
 			painted = segments[strings.TrimSpace(text)] || strings.TrimSpace(text) == strings.TrimSpace(streamed)
 		} else {
 			painted = streamed != "" || len(shown) > 0
@@ -200,12 +201,12 @@ func (a *GatewayACPAgent) finalRemainder(aid string, payload *pyjson.Object) str
 }
 
 // Closes the pending bubble of an answered permission request, completed for an allow and failed otherwise
-func (a *GatewayACPAgent) closeCard(ctx context.Context, editorID string, toolCall *pyacp.ToolCallProgress, options []pyacp.PermissionOption, response *pyacp.RequestPermissionResponse) error {
+func (a *GatewayACPAgent) closeCard(ctx context.Context, editorID string, toolCall *acputil.ToolCallProgress, options []acputil.PermissionOption, response *acputil.RequestPermissionResponse) error {
 	status := "failed"
 	if permissionAllowed(response, options) {
 		status = "completed"
 	}
-	err := a.sessionUpdate(ctx, editorID, pyacp.UpdateToolCall(toolCall.ToolCallID, pyacp.ToolCallFields{Status: &status}))
+	err := a.sessionUpdate(ctx, editorID, acputil.UpdateToolCall(toolCall.ToolCallID, acputil.ToolCallFields{Status: &status}))
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return err

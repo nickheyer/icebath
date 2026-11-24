@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
 // Egress CLI over a temp home with every provider key blanked, the backend bound to the real iron proxy
@@ -24,7 +24,7 @@ func newEgressTestCLI(t *testing.T, ns map[string]any) (*egressCLI, *bytes.Buffe
 	}
 	t.Setenv("PATH", os.Getenv("PATH")+string(os.PathListSeparator)+"/usr/bin"+string(os.PathListSeparator)+"/bin")
 	var out bytes.Buffer
-	console := pyrich.NewConsole(&out)
+	console := consoleutil.NewConsole(&out)
 	console.Width = 200
 	base := map[string]any{"force": false, "tunnel_port": nil, "from_bitwarden": false, "no_bitwarden": false, "rotate_tokens": false, "restart": false, "no_restart": false, "show_tokens": false}
 	for k, v := range ns {

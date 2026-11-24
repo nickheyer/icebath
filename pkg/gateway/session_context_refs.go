@@ -6,10 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Expanded text of one message and the verdict of its @ reference injection
@@ -48,15 +47,15 @@ func expandReferences(ctx context.Context, text, cwd string, contextLength int, 
 
 // Text of a frozen policy model field, empty when unset or falsy
 func policyFieldText(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Managed worker's admitted text expanded in the session workspace with the frozen context length, nil text keeps the committed one
-func managedTurnText(ctx context.Context, a *SessionAuthority, row *pyjson.Object, policy *LocalSessionPolicy) (*string, *string) {
-	text, isText := rowPayload(row).GetOr("text", nil).(string)
+func managedTurnText(ctx context.Context, a *SessionAuthority, row *jsonutil.Object, policy *LocalSessionPolicy) (*string, *string) {
+	text, isText := rowPayload(row).ValueOr("text", nil).(string)
 	if !isText || !strings.Contains(text, "@") {
 		return nil, nil
 	}
@@ -76,13 +75,13 @@ func managedContextLength(ctx context.Context, a *SessionAuthority, policy *Loca
 		return 0, err
 	}
 	modelConfig := cfg["model"]
-	if !pyrepr.Truthy(modelConfig) {
+	if !anyutil.IsTrue(modelConfig) {
 		modelConfig = map[string]any{}
 	}
 	pinned := 0
 	if section, isDict := modelConfig.(map[string]any); isDict {
 		if raw := section["context_length"]; raw != nil {
-			if value, err := pyint.Int64(raw); err == nil {
+			if value, err := anyutil.ToInt(raw); err == nil {
 				pinned = int(value)
 			}
 		}
@@ -100,17 +99,17 @@ func managedContextLength(ctx context.Context, a *SessionAuthority, policy *Loca
 }
 
 // Result of a turn refused at its references, a finite prompt failing with the refusal
-func refusedReferencesResult(row *pyjson.Object, refusal string) *pyjson.Object {
+func refusedReferencesResult(row *jsonutil.Object, refusal string) *jsonutil.Object {
 	if finite, _ := rowPayload(row).Get("finite"); finite == true {
-		return pyjson.ObjectOf("final_response", "", "messages", []any{}, "failed", true, "completed", false, "error", refusal)
+		return jsonutil.ObjectOf("final_response", "", "messages", []any{}, "failed", true, "completed", false, "error", refusal)
 	}
-	return pyjson.ObjectOf("final_response", refusal, "messages", []any{})
+	return jsonutil.ObjectOf("final_response", refusal, "messages", []any{})
 }
 
 // Failed never run turn naming the session's vanished working folder
-func workspaceUnavailableResult(ctx context.Context, policy *LocalSessionPolicy) *pyjson.Object {
+func workspaceUnavailableResult(ctx context.Context, policy *LocalSessionPolicy) *jsonutil.Object {
 	text := i18n.T(ctx, "gateway.errors.workspace_unavailable", "", map[string]any{"path": policy.Cwd})
-	result := pyjson.ObjectOf("final_response", text, "messages", []any{}, "api_calls", 0, "tools", []any{},
+	result := jsonutil.ObjectOf("final_response", text, "messages", []any{}, "api_calls", 0, "tools", []any{},
 		"failed", true, "completed", false, "error", text)
 	stampTurnFailure(result, "workspace_unavailable", false)
 	return result

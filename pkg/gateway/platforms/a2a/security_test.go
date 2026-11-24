@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Clears every A2A security env var and points the home at an empty temp dir
@@ -371,14 +371,14 @@ func TestAuditWritesJsonl(t *testing.T) {
 	if rec["direction"] != "inbound" || rec["peer"] != "peer-y" || rec["task_id"] != "task-1" || rec["summary"] != "hello world" {
 		t.Fatalf("rec %v", rec)
 	}
-	if !strings.HasPrefix(lines[0], `{"ts": `) || !strings.Contains(lines[1], strings.Repeat("é", 500)+`"}`) {
+	if !strings.HasPrefix(lines[0], `{"ts":`) || !strings.Contains(lines[1], strings.Repeat("é", 500)+`"}`) {
 		t.Fatalf("lines %q", lines)
 	}
 }
 
 func TestSignPushPayloadDeterministic(t *testing.T) {
 	ctx := securityEnv(t, map[string]string{"A2A_PUSH_SECRET": "test-secret-123"})
-	payload := pyjson.ObjectOf("statusUpdate", pyjson.ObjectOf("taskId", "task-1"))
+	payload := jsonutil.ObjectOf("statusUpdate", jsonutil.ObjectOf("taskId", "task-1"))
 	sig, err := CaptureSecurityContext(ctx).SignPushPayload(payload)
 	if err != nil || sig == "" {
 		t.Fatalf("sig %q err %v", sig, err)
@@ -392,14 +392,14 @@ func TestSignPushPayloadDeterministic(t *testing.T) {
 
 func TestNoSecretMeansUnsigned(t *testing.T) {
 	ctx := securityEnv(t, nil)
-	if sig, err := CaptureSecurityContext(ctx).SignPushPayload(pyjson.ObjectOf("x", 1)); sig != "" || err != nil {
+	if sig, err := CaptureSecurityContext(ctx).SignPushPayload(jsonutil.ObjectOf("x", 1)); sig != "" || err != nil {
 		t.Fatalf("sig %q err %v", sig, err)
 	}
 }
 
 func TestFallsBackToBearerToken(t *testing.T) {
 	ctx := securityEnv(t, map[string]string{"A2A_BEARER_TOKEN": "bearer-as-push-secret"})
-	if sig, err := CaptureSecurityContext(ctx).SignPushPayload(pyjson.ObjectOf("x", 1)); sig == "" || err != nil {
+	if sig, err := CaptureSecurityContext(ctx).SignPushPayload(jsonutil.ObjectOf("x", 1)); sig == "" || err != nil {
 		t.Fatalf("sig %q err %v", sig, err)
 	}
 }

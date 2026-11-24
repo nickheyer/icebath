@@ -11,13 +11,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
 // A builtin Python exception the package raises, named by its class
@@ -34,10 +30,10 @@ func catCPUInfo() ([]byte, error) {
 	out, err := exec.Command(argv[0], argv[1:]...).Output()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
-		return out, &pysubprocess.CalledProcessError{Cmd: argv, Returncode: pysubprocess.Returncode(exitErr), Stdout: out}
+		return out, &executil.StatusError{Args: argv, ExitCode: executil.ExitCode(exitErr.ProcessState), Stdout: out}
 	}
 	if err != nil {
-		return out, &PyError{Class: pypath.OSErrorClass(err), Msg: pypath.OSErrorText(err)}
+		return out, &PyError{Class: pypath.OSErrorClass(err), Msg: err.Error()}
 	}
 	return out, nil
 }
@@ -61,7 +57,7 @@ func pvLinuxMachine(machine string, is64 bool, cpuInfo func() ([]byte, error)) (
 		if err != nil {
 			return "", err
 		}
-		if info, err = pycodecs.Decode(raw, "utf-8"); err != nil {
+		if info, err = charsetutil.Decode(raw, "utf-8"); err != nil {
 			info = ""
 			return "", err
 		}
@@ -120,7 +116,7 @@ type Module struct {
 
 // Imports the package unpacked at dir for this host
 func Import(dir string) (*Module, error) {
-	return importFor(dir, pyplatform.System(), pyplatform.Machine(), is64bit(), catCPUInfo)
+	return importFor(dir, pyplatform.System(), hostutil.Machine(), is64bit(), catCPUInfo)
 }
 
 // Imports the package unpacked at dir for a given host description
@@ -142,22 +138,22 @@ func (m *Module) PvLibraryPath(relative string) (string, error) {
 	case "Darwin":
 		switch m.Machine {
 		case "x86_64":
-			return pypath.Join(m.Dir, relative, "lib/mac/x86_64/libpv_porcupine.dylib"), nil
+			return pathutil.Join(m.Dir, relative, "lib/mac/x86_64/libpv_porcupine.dylib"), nil
 		case "arm64":
-			return pypath.Join(m.Dir, relative, "lib/mac/arm64/libpv_porcupine.dylib"), nil
+			return pathutil.Join(m.Dir, relative, "lib/mac/arm64/libpv_porcupine.dylib"), nil
 		}
 	case "Linux":
 		if m.Machine == "x86_64" {
-			return pypath.Join(m.Dir, relative, "lib/linux/x86_64/libpv_porcupine.so"), nil
+			return pathutil.Join(m.Dir, relative, "lib/linux/x86_64/libpv_porcupine.so"), nil
 		} else if raspberryPiMachines[m.Machine] {
-			return pypath.Join(m.Dir, relative, fmt.Sprintf("lib/raspberry-pi/%s/libpv_porcupine.so", m.Machine)), nil
+			return pathutil.Join(m.Dir, relative, fmt.Sprintf("lib/raspberry-pi/%s/libpv_porcupine.so", m.Machine)), nil
 		}
 	case "Windows":
 		switch strings.ToLower(m.Machine) {
 		case "amd64":
-			return pypath.Join(m.Dir, relative, "lib/windows/amd64/libpv_porcupine.dll"), nil
+			return pathutil.Join(m.Dir, relative, "lib/windows/amd64/libpv_porcupine.dll"), nil
 		case "arm64":
-			return pypath.Join(m.Dir, relative, "lib/windows/arm64/libpv_porcupine.dll"), nil
+			return pathutil.Join(m.Dir, relative, "lib/windows/arm64/libpv_porcupine.dll"), nil
 		}
 	}
 	return "", &PyError{Class: "NotImplementedError", Msg: "Unsupported platform."}
@@ -165,7 +161,7 @@ func (m *Module) PvLibraryPath(relative string) (string, error) {
 
 // Path of the file holding the model parameters
 func (m *Module) PvModelPath(relative string) string {
-	return pypath.Join(m.Dir, relative, "lib/common/porcupine_params.pv")
+	return pathutil.Join(m.Dir, relative, "lib/common/porcupine_params.pv")
 }
 
 // Keyword files directory name of the host platform
@@ -191,15 +187,15 @@ func (m *Module) PvKeywordPaths(relative string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	keywordFilesDir := pypath.Join(m.Dir, relative, "resources/keyword_files", subdir)
+	keywordFilesDir := pathutil.Join(m.Dir, relative, "resources/keyword_files", subdir)
 	entries, err := os.ReadDir(keywordFilesDir)
 	if err != nil {
-		return nil, &PyError{Class: pypath.OSErrorClass(err), Msg: pypath.OSErrorText(err)}
+		return nil, &PyError{Class: pypath.OSErrorClass(err), Msg: err.Error()}
 	}
 	res := map[string]string{}
 	for _, entry := range entries {
 		x := entry.Name()
-		res[strings.Split(x, "_")[0]] = pypath.Join(keywordFilesDir, x)
+		res[strings.Split(x, "_")[0]] = pathutil.Join(keywordFilesDir, x)
 	}
 	return res, nil
 }
@@ -232,8 +228,8 @@ func (m *Module) PvGetPlatform() (string, error) {
 	case "Windows":
 		return "windows", nil
 	}
-	return "", &PyError{Class: "NotImplementedError", Msg: "(" + pyrepr.StrRepr("Unsupported platform ('%s', '%s').") + ", " +
-		pyrepr.StrRepr(m.System) + ", " + pyrepr.StrRepr(m.Machine) + ")"}
+	return "", &PyError{Class: "NotImplementedError", Msg: "(" + strconv.Quote("Unsupported platform ('%s', '%s').") + ", " +
+		strconv.Quote(m.System) + ", " + strconv.Quote(m.Machine) + ")"}
 }
 
 func contains(list []string, s string) bool {
@@ -269,10 +265,10 @@ func (m *Module) PvTrainModel(ctx context.Context, accessKey, outputPath, langua
 	if utf8.RuneCountInString(phrase) > PorcupinePhraseMaxLength {
 		return &PyError{Class: "ValueError", Msg: fmt.Sprintf("Phrase must not exceed %d characters", PorcupinePhraseMaxLength)}
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("platform", target)
 	payload.Set("phrase", phrase)
-	body, err := pyjson.Dumps(payload)
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		return err
 	}

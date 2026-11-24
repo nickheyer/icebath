@@ -8,9 +8,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Pause reason of a goal the user paused without naming one
@@ -32,12 +34,12 @@ func goalDecision(status any, shouldContinue bool, prompt *string, verdict, reas
 }
 
 // Decision fields as an ordered JSON object
-func (d GoalDecision) ToDict() *pyjson.Object {
+func (d GoalDecision) ToDict() *jsonutil.Object {
 	var prompt any
 	if d.ContinuationPrompt != nil {
 		prompt = *d.ContinuationPrompt
 	}
-	return pyjson.ObjectOf("status", d.Status, "should_continue", d.ShouldContinue, "continuation_prompt", prompt,
+	return jsonutil.ObjectOf("status", d.Status, "should_continue", d.ShouldContinue, "continuation_prompt", prompt,
 		"verdict", d.Verdict, "reason", d.Reason, "message", d.Message)
 }
 
@@ -127,7 +129,7 @@ func countNoun(n int, noun string) string {
 }
 
 // Text of an optional stored value, the fallback when it is falsy
-func textOr(v any, fallback string) string { return pyrepr.Str(pyrepr.Or(v, fallback)) }
+func textOr(v any, fallback string) string { return anyutil.String(anyutil.Or(v, fallback)) }
 
 // One line describing the goal, its budget and any wait barrier
 func (m *GoalManager) StatusLine() string {
@@ -145,7 +147,7 @@ func (m *GoalManager) StatusLine() string {
 	if len(s.Gates) > 0 {
 		meta += ", " + countNoun(len(s.Gates), "gate")
 	}
-	goal := pyrepr.Str(s.Goal)
+	goal := anyutil.String(s.Goal)
 	switch s.Status {
 	case "active":
 		if s.WaitingOnSession != nil && *s.WaitingOnSession != "" && goalSessionWaiting(*s.WaitingOnSession) {
@@ -161,14 +163,14 @@ func (m *GoalManager) StatusLine() string {
 		return fmt.Sprintf("⊙ Goal (active, %s): %s", meta, goal)
 	case "paused":
 		extra := ""
-		if pyrepr.Truthy(s.PausedReason) {
-			extra = " — " + pyrepr.Str(s.PausedReason)
+		if anyutil.IsTrue(s.PausedReason) {
+			extra = " — " + anyutil.String(s.PausedReason)
 		}
 		return fmt.Sprintf("⏸ Goal (paused, %s%s): %s", meta, extra, goal)
 	case "done":
 		return fmt.Sprintf("✓ Goal done (%s): %s", meta, goal)
 	}
-	return fmt.Sprintf("Goal (%s, %s): %s", pyrepr.Str(s.Status), meta, goal)
+	return fmt.Sprintf("Goal (%s, %s): %s", anyutil.String(s.Status), meta, goal)
 }
 
 // Persists the state and returns it
@@ -180,7 +182,7 @@ func (m *GoalManager) save() *GoalState {
 // State of an active or paused goal, a RuntimeError when there is none
 func (m *GoalManager) requireGoal() (*GoalState, error) {
 	if m.state == nil || !m.HasGoal() {
-		return nil, &pyint.Error{Kind: "RuntimeError", Msg: "no active goal"}
+		return nil, &errorutil.Error{Kind: "RuntimeError", Msg: "no active goal"}
 	}
 	return m.state, nil
 }
@@ -188,7 +190,7 @@ func (m *GoalManager) requireGoal() (*GoalState, error) {
 // State of an active goal, a RuntimeError when there is none to park
 func (m *GoalManager) requireActive() (*GoalState, error) {
 	if m.state == nil || m.state.Status != "active" {
-		return nil, &pyint.Error{Kind: "RuntimeError", Msg: "no active goal to park"}
+		return nil, &errorutil.Error{Kind: "RuntimeError", Msg: "no active goal to park"}
 	}
 	return m.state, nil
 }
@@ -210,7 +212,7 @@ func (m *GoalManager) pauseDecision(pausedReason, verdict, reason, message strin
 func (m *GoalManager) Set(goal string, maxTurns int64, contract *GoalContract) (*GoalState, error) {
 	goal = strings.TrimSpace(goal)
 	if goal == "" {
-		return nil, &pyint.Error{Kind: "ValueError", Msg: "goal text is empty"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "goal text is empty"}
 	}
 	if maxTurns == 0 {
 		maxTurns = m.DefaultMaxTurns
@@ -286,7 +288,7 @@ func (m *GoalManager) AddSubgoal(text string) (string, error) {
 	}
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return "", &pyint.Error{Kind: "ValueError", Msg: "subgoal text is empty"}
+		return "", &errorutil.Error{Kind: "ValueError", Msg: "subgoal text is empty"}
 	}
 	state.Subgoals = append(state.Subgoals, text)
 	m.save()
@@ -297,7 +299,7 @@ func (m *GoalManager) AddSubgoal(text string) (string, error) {
 func goalIndex(index1Based int64, length int) (int, error) {
 	idx := index1Based - 1
 	if idx < 0 || idx >= int64(length) {
-		return 0, &pyint.Error{Kind: "IndexError", Msg: fmt.Sprintf("index out of range (1..%d)", length)}
+		return 0, &errorutil.Error{Kind: "IndexError", Msg: fmt.Sprintf("index out of range (1..%d)", length)}
 	}
 	return int(idx), nil
 }
@@ -325,7 +327,7 @@ func (m *GoalManager) popItem(attr string, index1Based int64) (any, error) {
 		removed = state.Gates[idx]
 		state.Gates = append(state.Gates[:idx:idx], state.Gates[idx+1:]...)
 	default:
-		return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'GoalState' object has no attribute '%s'", attr)}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'GoalState' object has no attribute '%s'", attr)}
 	}
 	m.save()
 	return removed, nil
@@ -344,7 +346,7 @@ func (m *GoalManager) clearItems(attr string) (int, error) {
 	case "gates":
 		previous, state.Gates = len(state.Gates), []GoalGate{}
 	default:
-		return 0, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'GoalState' object has no attribute '%s'", attr)}
+		return 0, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'GoalState' object has no attribute '%s'", attr)}
 	}
 	m.save()
 	return previous, nil
@@ -381,7 +383,7 @@ func (m *GoalManager) AddGate(command string, timeoutSeconds, maxRetries int64) 
 	}
 	command = strings.TrimSpace(command)
 	if command == "" {
-		return GoalGate{}, &pyint.Error{Kind: "ValueError", Msg: "gate command is empty"}
+		return GoalGate{}, &errorutil.Error{Kind: "ValueError", Msg: "gate command is empty"}
 	}
 	gate := NewGoalGate(command)
 	if timeoutSeconds != 0 {
@@ -498,10 +500,10 @@ func (m *GoalManager) WaitOn(pid int64, reason string) (*GoalState, error) {
 		return nil, err
 	}
 	if pid <= 0 {
-		return nil, &pyint.Error{Kind: "ValueError", Msg: "pid must be a positive integer"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "pid must be a positive integer"}
 	}
 	if !goalPidAlive(pid) {
-		return nil, &pyint.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
 	}
 	return m.park(reason, func(state *GoalState) { state.WaitingOnPID = &pid })
 }
@@ -513,7 +515,7 @@ func (m *GoalManager) WaitOnSession(sessionID, reason string) (*GoalState, error
 	}
 	sessionID = strings.TrimSpace(sessionID)
 	if sessionID == "" {
-		return nil, &pyint.Error{Kind: "ValueError", Msg: "session_id must be a non-empty string"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "session_id must be a non-empty string"}
 	}
 	return m.park(reason, func(state *GoalState) { state.WaitingOnSession = &sessionID })
 }
@@ -529,11 +531,11 @@ func (m *GoalManager) waitForSeconds(seconds *big.Int, reason string, onDelegati
 		return nil, err
 	}
 	if seconds.Sign() <= 0 {
-		return nil, &pyint.Error{Kind: "ValueError", Msg: "seconds must be a positive integer"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "seconds must be a positive integer"}
 	}
 	span, _ := new(big.Float).SetInt(seconds).Float64()
 	if math.IsInf(span, 0) {
-		return nil, &pyint.Error{Kind: "OverflowError", Msg: "int too large to convert to float"}
+		return nil, &errorutil.Error{Kind: "OverflowError", Msg: "int too large to convert to float"}
 	}
 	until := goalTime() + span
 	return m.park(reason, func(state *GoalState) {
@@ -580,7 +582,7 @@ func (m *GoalManager) IsWaiting() bool {
 		} else if s.WaitingOnPID != nil {
 			target = *s.WaitingOnPID
 		}
-		pkgLog().Info(fmt.Sprintf("goal %s: wait barrier on %s exceeded %ds; resuming judging", m.SessionID, pyrepr.Str(target), maxBarrierWaitS))
+		pkgLog().Info(fmt.Sprintf("goal %s: wait barrier on %s exceeded %ds; resuming judging", m.SessionID, anyutil.String(target), maxBarrierWaitS))
 		still = false
 	}
 	if !still {
@@ -608,13 +610,13 @@ func (m *GoalManager) waitingDecision(state *GoalState) GoalDecision {
 func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, activeDelegations int) (*GoalDecision, error) {
 	target := ""
 	switch {
-	case pyrepr.Truthy(wait["session_id"]):
-		state, err := m.WaitOnSession(pyrepr.Str(wait["session_id"]), reason)
+	case anyutil.IsTrue(wait["session_id"]):
+		state, err := m.WaitOnSession(anyutil.String(wait["session_id"]), reason)
 		if err != nil {
 			return nil, err
 		}
 		target = "session " + *state.WaitingOnSession
-	case pyrepr.Truthy(wait["pid"]):
+	case anyutil.IsTrue(wait["pid"]):
 		pid, err := pyint.Of(wait["pid"])
 		if err != nil {
 			return nil, err
@@ -623,10 +625,10 @@ func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, act
 		if pid.IsInt64() {
 			state, err = goalManagerWaitOn(m, pid.Int64(), reason)
 		} else {
-			err = &pyint.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
+			err = &errorutil.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
 		}
 		if err != nil {
-			if pyErr, isPy := err.(*pyint.Error); isPy && pyErr.Kind == "ValueError" {
+			if pyErr, isPy := err.(*errorutil.Error); isPy && pyErr.Kind == "ValueError" {
 				pkgLog().Info(fmt.Sprintf("goal judge: wait_on_pid %s is not alive on this host; continuing", pid))
 				return nil, nil
 			}
@@ -636,7 +638,7 @@ func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, act
 	default:
 		seconds, present := wait["seconds"]
 		if !present {
-			return nil, &pyint.Error{Kind: "KeyError", Msg: "'seconds'"}
+			return nil, &errorutil.Error{Kind: "KeyError", Msg: "'seconds'"}
 		}
 		n, err := pyint.Of(seconds)
 		if err != nil {
@@ -645,7 +647,7 @@ func (m *GoalManager) applyWaitDirective(wait map[string]any, reason string, act
 		if _, err := m.waitForSeconds(n, reason, int64(activeDelegations)); err != nil {
 			return nil, err
 		}
-		target = pyrepr.Str(seconds) + "s"
+		target = anyutil.String(seconds) + "s"
 	}
 	decision := goalDecision("active", false, nil, "wait", reason, fmt.Sprintf("⏳ Goal parked (judge) — waiting on %s: %s", target, reason))
 	return &decision, nil
@@ -821,7 +823,7 @@ func callRaising(fn func() error) (err error) {
 				err = e
 				return
 			}
-			err = &pyint.Error{Kind: "Exception", Msg: fmt.Sprint(r)}
+			err = &errorutil.Error{Kind: "Exception", Msg: fmt.Sprint(r)}
 		}
 	}()
 	return fn()
@@ -836,7 +838,7 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 	}
 	block := func(message string) {
 		if err := callRaising(func() error { return o.Block(message) }); err != nil {
-			logLine(fmt.Sprintf("kanban goal loop: block_fn failed (%s)", pyrepr.ExceptionMessage(err)))
+			logLine(fmt.Sprintf("kanban goal loop: block_fn failed (%s)", err.Error()))
 		}
 	}
 	turnsUsed := 1
@@ -852,7 +854,7 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 	for {
 		var status *string
 		if err := callRaising(func() (err error) { status, err = o.TaskStatus(); return err }); err != nil {
-			logLine(fmt.Sprintf("kanban goal loop: status check failed (%s); stopping", pyrepr.ExceptionMessage(err)))
+			logLine(fmt.Sprintf("kanban goal loop: status check failed (%s); stopping", err.Error()))
 			return result("stopped", "status check failed")
 		}
 		if status != nil {
@@ -864,7 +866,7 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 		if status == nil || (*status != "running" && *status != "ready") {
 			shown, plain := "None", "None"
 			if status != nil {
-				shown, plain = pyrepr.Repr(*status), *status
+				shown, plain = anyutil.Quote(*status), *status
 			}
 			logLine(fmt.Sprintf("kanban goal loop: task %s status=%s; stopping", o.TaskID, shown))
 			return result("stopped", "status="+plain)
@@ -915,7 +917,7 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 		}
 		var turn any
 		if err := callRaising(func() (err error) { turn, err = o.RunTurn(prompt); return err }); err != nil {
-			logLine(fmt.Sprintf("kanban goal loop: run_turn failed (%s); stopping", pyrepr.ExceptionMessage(err)))
+			logLine(fmt.Sprintf("kanban goal loop: run_turn failed (%s); stopping", err.Error()))
 			return result("stopped", "run_turn error: "+pyrepr.ExceptionName(err))
 		}
 		failed, failureReason := false, ""
@@ -924,11 +926,11 @@ func RunKanbanGoalLoop(ctx context.Context, o GoalLoopOptions) (GoalLoopResult, 
 			if !present {
 				response = ""
 			}
-			lastResponse = pyrepr.Or(response, "")
-			failed = pyrepr.Truthy(dict["failed"])
-			failureReason = pyrepr.Str(pyrepr.Or(dict["failure_reason"], "unknown"))
+			lastResponse = anyutil.Or(response, "")
+			failed = anyutil.IsTrue(dict["failed"])
+			failureReason = anyutil.String(anyutil.Or(dict["failure_reason"], "unknown"))
 		} else {
-			lastResponse = pyrepr.Or(turn, "")
+			lastResponse = anyutil.Or(turn, "")
 		}
 		if failed {
 			logLine(fmt.Sprintf("kanban goal loop: worker failed on turn %d (reason=%s); stopping", turnsUsed, failureReason))

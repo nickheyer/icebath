@@ -6,9 +6,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Canonical authority over a fresh profile state database, the owner fixture of the gateway tests
@@ -21,7 +21,7 @@ func newAPIOwner(t *testing.T) (context.Context, *SessionAuthority, *recoverTest
 	}
 	store := NewSessionStore(ctx, filepath.Join(t.TempDir(), "sessions"), DefaultGatewayConfig(ctx), nil)
 	store.PinDB(db)
-	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
+	runner := &recoverTestRunner{store: store, adapters: orderedutil.NewMap[Platform, PlatformAdapter](), profiles: orderedutil.NewMap[string, *orderedutil.Map[Platform, PlatformAdapter]]()}
 	a := NewSessionAuthority(runner, "default", "first", db, epoch)
 	runner.launch = a
 	return ctx, a, runner
@@ -73,7 +73,7 @@ func mintOnRoute(t *testing.T, ctx context.Context, a *SessionAuthority, caller 
 	now := sessionNow()
 	minted := NewSessionEntry(route, "minted", now, now)
 	minted.Platform = PlatformAPIServer
-	text, err := pyjson.Dumps(minted.ToDict())
+	text, err := jsonutil.Encode(minted.ToDict())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,7 +295,7 @@ func TestKeepPassedFencesReportsAWalkItCouldNotPin(t *testing.T) {
 }
 
 func TestEffortFieldsOfAResolvedRoute(t *testing.T) {
-	plain := func(o *pyjson.Object) map[string]any { return pyjson.Plain(o).(map[string]any) }
+	plain := func(o *jsonutil.Object) map[string]any { return jsonutil.Plain(o).(map[string]any) }
 	off := plain(effortFields(map[string]any{"enabled": false, "effort": "high"}, "", "m", nil, nil, nil))
 	if off["reasoning_effort"] != "none" || off["reasoning_effort_wire"] != "" || off["service_tier"] != "" || off["fast"] != false {
 		t.Fatalf("disabled reasoning %v", off)

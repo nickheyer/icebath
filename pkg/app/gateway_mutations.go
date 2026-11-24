@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One gateway request answered as a plain map, the surface lock released while it waits
@@ -58,7 +58,7 @@ func mutationKeyOf(sessionID, operation string, payload any) (mutationKey, error
 	if _, derived := payload.(mutationDerive); derived {
 		return mutationKey{session: sessionID, operation: operation, derived: true}, nil
 	}
-	text, err := pyjson.Dumps(payload, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(payload, jsonutil.SortKeys())
 	if err != nil {
 		return mutationKey{}, err
 	}
@@ -89,7 +89,7 @@ func (m *PreparedMutations) Apply(ctx context.Context, rpc gatewayRPC, sessionID
 			}
 			body = derived
 		} else {
-			if body, err = pyjson.Loads(key.payload); err != nil {
+			if body, err = jsonutil.Decode(key.payload); err != nil {
 				return nil, err
 			}
 		}
@@ -116,7 +116,7 @@ func (m *PreparedMutations) Apply(ctx context.Context, rpc gatewayRPC, sessionID
 		}
 		entry.result, entry.hasResult = result, true
 		refusal := result
-		if !pyrepr.Equal(refusal["status"], "confirmation_required") {
+		if !anyutil.Equal(refusal["status"], "confirmation_required") {
 			break
 		}
 		entry.result, entry.hasResult = nil, false
@@ -175,7 +175,7 @@ func modelRefusalText(refusal map[string]any, confirmed bool) string {
 	if confirmed {
 		reason = "the session changed before the confirmation landed; run /model again."
 	}
-	return fmt.Sprintf("%s\n\nModel not switched: %s", pyrepr.Str(requireKey(refusal, "confirm_message")), reason)
+	return fmt.Sprintf("%s\n\nModel not switched: %s", anyutil.String(requireKey(refusal, "confirm_message")), reason)
 }
 
 // One prompt title for the owner guard warnings, the single warning title or the generic one
@@ -183,15 +183,15 @@ func confirmationTitle(refusal map[string]any) string {
 	warnings, _ := refusal["warnings"].([]any)
 	if len(warnings) == 1 {
 		first, _ := warnings[0].(map[string]any)
-		return pyrepr.Str(requireKey(first, "title"))
+		return anyutil.String(requireKey(first, "title"))
 	}
 	return "Model Selection Warning"
 }
 
 // Structured compress payload from the raw /compress arguments
-func compressPayload(arg string) (*pyjson.Object, error) {
+func compressPayload(arg string) (*jsonutil.Object, error) {
 	request := agent.ParseCompressArgs(arg)
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	if request.Aggressive {
 		payload.Set("aggressive", true)
 	}
@@ -209,7 +209,7 @@ func compressPayload(arg string) (*pyjson.Object, error) {
 }
 
 // Operation and payload of a /model or /compress line, no operation for a /model that only asks for the current model
-func slashMutation(command, arg string) (string, *pyjson.Object, error) {
+func slashMutation(command, arg string) (string, *jsonutil.Object, error) {
 	name := strings.TrimLeft(command, "/")
 	switch name {
 	case "model":
@@ -217,7 +217,7 @@ func slashMutation(command, arg string) (string, *pyjson.Object, error) {
 		if len(request.Errors) > 0 {
 			return "", nil, &gateway.GatewayClientError{Msg: request.ErrorMessages()[0], ExitStatus: 2}
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		for _, field := range [][2]string{{"model", request.Target}, {"provider", request.ExplicitProvider}, {"reasoning", request.ReasoningEffort}} {
 			if field[1] != "" {
 				payload.Set(field[0], field[1])

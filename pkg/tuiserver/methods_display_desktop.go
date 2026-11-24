@@ -13,10 +13,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -40,13 +40,13 @@ func displayEnv(ctx context.Context) *tools.Env {
 }
 
 // Runtime status of the scoped profile screen with its lease public view and profile key
-func displaySnapshot(ctx context.Context) (*pyjson.Object, error) {
+func displaySnapshot(ctx context.Context) (*jsonutil.Object, error) {
 	env := displayEnv(ctx)
 	st, err := botdesktop.Status(env, "")
 	if err != nil {
 		return nil, err
 	}
-	out := st.AsDict().Copy()
+	out := st.AsDict().Clone()
 	out.Set("lease", botdesktop.LeasePublicView(botdesktop.LeaseGet(home.Dir(ctx))))
 	out.Set("profile_key", home.Key(home.Dir(ctx)))
 	return out, nil
@@ -66,7 +66,7 @@ func installLeaseListener() {
 }
 
 // Snapshot response of the scoped profile screen, the error text under the display code on failure
-func snapshotResponse(ctx context.Context, rid any, extra func(*pyjson.Object)) map[string]any {
+func snapshotResponse(ctx context.Context, rid any, extra func(*jsonutil.Object)) map[string]any {
 	snap, err := displaySnapshot(ctx)
 	if err != nil {
 		return rpcErr(rid, displayErr, err.Error(), nil)
@@ -94,7 +94,7 @@ func displayStart(ctx context.Context, rid any, params map[string]any) map[strin
 
 // Stops the screen, refused while a human holds the lease unless the caller forces it
 func displayStop(ctx context.Context, rid any, params map[string]any) map[string]any {
-	force := truthy(params["force"])
+	force := anyutil.IsTrue(params["force"])
 	released, err := botdesktop.LeaseRelease(botdesktop.LeaseReleaseOptions{ProfileKey: home.Dir(ctx), UnlessHuman: !force})
 	if err != nil {
 		panic(err)
@@ -106,7 +106,7 @@ func displayStop(ctx context.Context, rid any, params map[string]any) map[string
 	if err != nil {
 		return rpcErr(rid, displayErr, err.Error(), nil)
 	}
-	return snapshotResponse(ctx, rid, func(snap *pyjson.Object) { snap.Set("stopped", stopped) })
+	return snapshotResponse(ctx, rid, func(snap *jsonutil.Object) { snap.Set("stopped", stopped) })
 }
 
 // One frame of the scoped screen saved into the image cache, withheld while a person holds the lease or once it moved during the grab
@@ -120,7 +120,7 @@ func displayThumbnail(ctx context.Context, rid any, params map[string]any) map[s
 	if err != nil {
 		return rpcErr(rid, displayErr, err.Error(), nil)
 	}
-	if !pyrepr.Equal(botdesktop.LeaseGet(home.Dir(ctx)).Epoch, before.Epoch) {
+	if !anyutil.Equal(botdesktop.LeaseGet(home.Dir(ctx)).Epoch, before.Epoch) {
 		return ok(rid, withheld)
 	}
 	if len(shot) == 0 {
@@ -150,7 +150,7 @@ func displayLeaseAcquire(ctx context.Context, rid any, params map[string]any) ma
 // Hands the screen back to the agent, by the viewer that took it or by anyone with force, refused with viewer_mismatch while another viewer holds it
 func displayLeaseRelease(ctx context.Context, rid any, params map[string]any) map[string]any {
 	opts := botdesktop.LeaseReleaseOptions{ProfileKey: home.Dir(ctx)}
-	if !truthy(params["force"]) {
+	if !anyutil.IsTrue(params["force"]) {
 		viewerID := strings.TrimSpace(strOr(params["viewer_id"]))
 		if viewerID == "" {
 			return rpcErr(rid, displayErr, "viewer_id required to hand the screen back (or pass force: true)", nil)

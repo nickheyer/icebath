@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Hidden entry of the install binary that runs a gateway restart once the old pid exits or the wait runs out
@@ -36,7 +35,7 @@ func DetachedRestartWatcherMain(ctx context.Context, args []string, stderr io.Wr
 		fmt.Fprintf(stderr, "restart watcher pid %s is not a whole number\n", args[0])
 		return 1
 	}
-	restartAfterS, err := pyint.ParseFloat(args[1])
+	restartAfterS, err := strconv.ParseFloat(strings.TrimSpace(args[1]), 64)
 	if err != nil {
 		fmt.Fprintf(stderr, "restart watcher delay %s is not a number of seconds\n", args[1])
 		return 1

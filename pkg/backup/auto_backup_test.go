@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyzip"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
 // Home tree for the automatic backup cases
@@ -26,11 +26,11 @@ func autoHome(t *testing.T) (string, string) {
 	return tmp, h
 }
 
-// Makes ZipFile.write finalize a large partial member for one arcname, then surface a source read failure
+// Makes the member write finish a large partial member for one arcname, then surface a source read failure
 func failZipWriteAfter(t *testing.T, member string, byteCount int) {
 	t.Helper()
 	real := zipWrite
-	swap(t, &zipWrite, func(zf *pyzip.ZipFile, path, arcname string) error {
+	swap(t, &zipWrite, func(zf *ziputil.Writer, path, arcname string) error {
 		if arcname != member {
 			return real(zf, path, arcname)
 		}
@@ -39,7 +39,7 @@ func failZipWriteAfter(t *testing.T, member string, byteCount int) {
 			return err
 		}
 		defer src.Close()
-		dst, err := zf.Open(arcname)
+		dst, err := zf.Create(arcname)
 		if err != nil {
 			return err
 		}
@@ -227,7 +227,7 @@ func TestPreMigrationBackupRestorableWithIcebathImport(t *testing.T) {
 	if err != nil || out == "" {
 		t.Fatalf("%q %v", out, err)
 	}
-	zr, err := pyzip.OpenReader(out)
+	zr, err := ziputil.OpenReader(out)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Namespace value as text, empty for None
@@ -22,7 +22,7 @@ func nsString(ns map[string]any, key string) string {
 	case string:
 		return v
 	default:
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 }
 
@@ -47,7 +47,7 @@ func nsStringList(ns map[string]any, key string) []string {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, item := range v {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 		return out
 	case string:
@@ -57,8 +57,8 @@ func nsStringList(ns map[string]any, key string) []string {
 }
 
 // Python json.dumps of a value with the default separators
-func pyDumps(v any, opts ...pyjson.Option) string {
-	text, err := pyjson.Dumps(v, opts...)
+func pyDumps(v any, opts ...jsonutil.Option) string {
+	text, err := jsonutil.Encode(v, opts...)
 	if err != nil {
 		panic(err)
 	}
@@ -158,7 +158,7 @@ func suggestCommand(ctx context.Context, env *Env, ns map[string]any, w io.Write
 			applied = append(applied, proposals[i].Pattern)
 		}
 		if asJSON {
-			fmt.Fprintln(w, pyDumps(pyjson.ObjectOf("applied", applied, "allowlist_size", len(merged))))
+			fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("applied", applied, "allowlist_size", len(merged))))
 		} else {
 			fmt.Fprintln(w, "Added to command_allowlist:")
 			for _, pattern := range applied {
@@ -171,10 +171,10 @@ func suggestCommand(ctx context.Context, env *Env, ns map[string]any, w io.Write
 	if asJSON {
 		rows := []any{}
 		for i, p := range proposals {
-			rows = append(rows, pyjson.ObjectOf("n", i+1, "pattern", p.Pattern, "kind", p.Kind, "count", p.Count,
+			rows = append(rows, jsonutil.ObjectOf("n", i+1, "pattern", p.Pattern, "kind", p.Kind, "count", p.Count,
 				"classes", jsonStringList(proposalClasses(p)), "examples", jsonStringList(p.Examples)))
 		}
-		fmt.Fprintln(w, pyDumps(pyjson.ObjectOf("db", dbPath, "days", days, "proposals", rows), pyjson.Indent(2)))
+		fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("db", dbPath, "days", days, "proposals", rows), jsonutil.Indent(2)))
 		return 0, nil
 	}
 	renderProposals(w, proposals, days)
@@ -213,8 +213,8 @@ func approvalsTestCommand(env *Env, ns map[string]any, w io.Writer) (int, error)
 		if verdict.Detail != "" {
 			detail = verdict.Detail
 		}
-		fmt.Fprintln(w, pyDumps(pyjson.ObjectOf("command", verdict.Command, "env_type", verdict.EnvType, "verdict", verdict.Verdict,
-			"exit_code", verdict.ExitCode, "rule", rule, "detail", detail, "normalized_variants", jsonStringList(verdict.NormalizedVariants)), pyjson.Indent(2)))
+		fmt.Fprintln(w, pyDumps(jsonutil.ObjectOf("command", verdict.Command, "env_type", verdict.EnvType, "verdict", verdict.Verdict,
+			"exit_code", verdict.ExitCode, "rule", rule, "detail", detail, "normalized_variants", jsonStringList(verdict.NormalizedVariants)), jsonutil.Indent(2)))
 	} else {
 		fmt.Fprint(w, RenderVerdict(verdict))
 	}

@@ -12,9 +12,8 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -36,7 +35,7 @@ func shippedSkillsIndex() any {
 	if err != nil {
 		panic("skills: shipped index archive: " + err.Error())
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		panic("skills: shipped index document: " + err.Error())
 	}
@@ -88,7 +87,7 @@ func (h *Hub) loadIndex(ctx context.Context) any {
 			log.Debug(fmt.Sprintf("Skills index fetch returned %d", resp.StatusCode))
 			return h.loadStaleIndexCache()
 		}
-		body, derr := pyhttpx.DecodeContent(resp.Header, resp.Content)
+		body, derr := httputil.DecodeContent(resp.Header, resp.Content)
 		if derr != nil {
 			log.Debug(fmt.Sprintf("Skills index decode failed (Accept-Encoding=%s): %s", enc, derr))
 			continue
@@ -106,14 +105,14 @@ func (h *Hub) loadIndex(ctx context.Context) any {
 		data = v
 		break
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return h.loadStaleIndexCache()
 	}
 	if _, has := obj.Get("skills"); !has {
 		return h.loadStaleIndexCache()
 	}
-	if text, err := pyjson.Dumps(obj); err == nil {
+	if text, err := jsonutil.Encode(obj); err == nil {
 		file := h.indexCacheFile()
 		if os.MkdirAll(filepath.Dir(file), 0o755) == nil {
 			os.WriteFile(file, []byte(text), 0o644)
@@ -214,7 +213,7 @@ func selectActiveSources(sources []SkillSource, sourceFilter string) []SkillSour
 }
 
 // Registries to ask after the index answered a non empty unfiltered query with nothing
-func indexMissFallbackSources(sources, active []SkillSource, query string, counts *pyjson.Object, providerFilter string) []SkillSource {
+func indexMissFallbackSources(sources, active []SkillSource, query string, counts *jsonutil.Object, providerFilter string) []SkillSource {
 	if strings.TrimSpace(query) == "" || providerFilter != "" || !slices.ContainsFunc(active, func(s SkillSource) bool { return s.SourceID() == "skills-index" }) {
 		return nil
 	}
@@ -238,7 +237,7 @@ type sourceResult struct {
 
 // Queries the sources in parallel until the deadline, merging finished results in completion order
 func (h *Hub) fanOut(ctx context.Context, active []SkillSource, query string, limits map[string]int, providerFilter string,
-	deadline time.Time, onSourceDone func(string, int), all *[]SkillMeta, counts *pyjson.Object, timedOut *[]string) {
+	deadline time.Time, onSourceDone func(string, int), all *[]SkillMeta, counts *jsonutil.Object, timedOut *[]string) {
 	remaining := time.Until(deadline)
 	if remaining <= 0 {
 		for _, src := range active {
@@ -305,8 +304,8 @@ func (h *Hub) fanOut(ctx context.Context, active []SkillSource, query string, li
 
 // Merged results, per source counts in completion order and the ids of sources that timed out
 func (h *Hub) ParallelSearchSources(ctx context.Context, sources []SkillSource, query string, perSourceLimits map[string]int,
-	sourceFilter string, overallTimeout time.Duration, onSourceDone func(string, int)) ([]SkillMeta, *pyjson.Object, []string) {
-	all, counts, timedOut := []SkillMeta{}, pyjson.NewObject(), []string{}
+	sourceFilter string, overallTimeout time.Duration, onSourceDone func(string, int)) ([]SkillMeta, *jsonutil.Object, []string) {
+	all, counts, timedOut := []SkillMeta{}, jsonutil.NewObject(), []string{}
 	active := selectActiveSources(sources, sourceFilter)
 	providerFilter := providerFilterOf(sourceFilter)
 	if len(active) == 0 {

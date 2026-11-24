@@ -11,11 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Provider client resolver the fallback walk binds candidates through
@@ -39,7 +39,7 @@ func (a *AIAgent) ApplyFallbackChain(chain []map[string]any) {
 		return
 	}
 	newChain := append([]map[string]any{}, chain...)
-	if a.fallbackActivated && a.rateLimitedUntil > pythread.Monotonic() {
+	if a.fallbackActivated && a.rateLimitedUntil > timeutil.Monotonic() {
 		return
 	}
 	oldChain := a.fallbackChain
@@ -73,16 +73,8 @@ func (a *AIAgent) rewritePromptModelIdentity(model, providerName string) {
 
 // Normalized provider, model and base url identity of a chain entry
 func fallbackEntryKey(fb map[string]any) [3]string {
-	return [3]string{strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(fb["provider"])))), strings.TrimSpace(pyrepr.Str(orEmpty(fb["model"]))),
-		strings.TrimRight(strings.TrimSpace(pyrepr.Str(orEmpty(fb["base_url"]))), "/")}
-}
-
-// Value or the empty string when falsy, Python's value or ""
-func orEmpty(v any) any {
-	if !pyrepr.Truthy(v) {
-		return ""
-	}
-	return v
+	return [3]string{strings.ToLower(strings.TrimSpace(anyutil.String(anyutil.Or(fb["provider"], "")))), strings.TrimSpace(anyutil.String(anyutil.Or(fb["model"], ""))),
+		strings.TrimRight(strings.TrimSpace(anyutil.String(anyutil.Or(fb["base_url"], ""))), "/")}
 }
 
 // Messages wire host match shared with the api mode detection
@@ -107,7 +99,7 @@ func (a *AIAgent) fallbackAPIModeResolved(ctx context.Context, fbProvider, fbMod
 	if a.isDirectOpenAIURL(&fbBaseURL) || providerModelRequiresResponsesAPI(ctx, fbModel, fbProvider) {
 		return "codex_responses"
 	}
-	host, err := pyurl.BaseURLHostname(fbBaseURL)
+	host, err := urlutil.BaseHost(fbBaseURL)
 	if err != nil {
 		panic(err)
 	}
@@ -163,7 +155,7 @@ func logFallbackActivated(ctx context.Context, reason provider.FailoverReason, o
 // Always false, arming a short cooldown when a non rate limit failure walked a non empty chain
 func (a *AIAgent) fallbackChainExhausted(reason provider.FailoverReason) bool {
 	if len(a.fallbackChain) > 0 && !provider.RateLimitFailoverReasons[reason] {
-		a.rateLimitedUntil = math.Max(a.rateLimitedUntil, pythread.Monotonic()+fallbackExhaustedCooldownSeconds)
+		a.rateLimitedUntil = math.Max(a.rateLimitedUntil, timeutil.Monotonic()+fallbackExhaustedCooldownSeconds)
 	}
 	return false
 }
@@ -207,7 +199,7 @@ func isEntitlementRejected(ctx context.Context, a *AIAgent, providerName, model 
 func (a *AIAgent) shouldSkipFallbackCandidate(ctx context.Context, fb map[string]any, key [3]string, fbProvider, fbModel string) bool {
 	log := pkgLog()
 	if a.unavailableFallbackKeys[key] {
-		log.Debug(fmt.Sprintf("Fallback skip: %s previously marked unavailable", errchain.Show(pyrepr.Tuple{key[0], key[1], key[2]})))
+		log.Debug(fmt.Sprintf("Fallback skip: %s previously marked unavailable", errchain.Show(key)))
 		return true
 	}
 	if fbProvider == "" || fbModel == "" {
@@ -222,7 +214,7 @@ func (a *AIAgent) shouldSkipFallbackCandidate(ctx context.Context, fb map[string
 		return true
 	}
 	current := provider.BuildBackendIdentity(a.provider, a.model, a.baseURL)
-	candidate := provider.BuildBackendIdentity(fbProvider, fbModel, pyrepr.Str(orEmpty(fb["base_url"])))
+	candidate := provider.BuildBackendIdentity(fbProvider, fbModel, anyutil.String(anyutil.Or(fb["base_url"], "")))
 	if provider.ShouldSkipCandidateIn(ctx, candidate, current, provider.ScopeModel) {
 		where := current.BaseURL
 		if where == "" {
@@ -275,7 +267,7 @@ func (a *AIAgent) rescopeFallbackExtraBody(oldModel, oldProvider, oldBaseURL str
 	if existing, ok := overrides["extra_body"].(map[string]any); ok && len(oldEB) > 0 {
 		scrubbed := map[string]any{}
 		for k, v := range existing {
-			if old, has := oldEB[k]; !has || !pyrepr.Equal(v, old) {
+			if old, has := oldEB[k]; !has || !anyutil.Equal(v, old) {
 				scrubbed[k] = v
 			}
 		}
@@ -319,7 +311,7 @@ func (a *AIAgent) armRateLimitCooldown(reason provider.FailoverReason, resetAt a
 		return nil
 	}
 	current := strings.ToLower(strings.TrimSpace(a.provider))
-	primary := strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(a.primaryRuntime["provider"]))))
+	primary := strings.ToLower(strings.TrimSpace(anyutil.String(anyutil.Or(a.primaryRuntime["provider"], ""))))
 	if a.fallbackActivated && !(primary != "" && current == primary) {
 		return nil
 	}
@@ -333,7 +325,7 @@ func (a *AIAgent) armRateLimitCooldown(reason provider.FailoverReason, resetAt a
 	} else {
 		seconds = int64(math.Min(60*math.Pow(2, float64(count)), 14400))
 	}
-	a.rateLimitedUntil = pythread.Monotonic() + float64(seconds)
+	a.rateLimitedUntil = timeutil.Monotonic() + float64(seconds)
 	pkgLog().Info(fmt.Sprintf("Rate-limit backoff level %d: cooldown %d s (%.1f min, backoff#%d, %s)", count, seconds, float64(seconds)/60, count+1, source))
 	return seconds
 }
@@ -364,7 +356,7 @@ func (a *AIAgent) bindRouteEntry(ctx context.Context, entry map[string]any, prov
 	a.model, a.provider, a.requestedProvider = model, providerName, providerName
 	a.setBaseURL(baseURL)
 	a.apiMode = apiMode
-	a.reasoningEchoFlag = pyrepr.Truthy(entry["reasoning_echo"])
+	a.reasoningEchoFlag = anyutil.IsTrue(entry["reasoning_echo"])
 	clear(a.transportCache)
 	resetCodexReasoningReplay(a)
 	a.fallbackActivated = true
@@ -406,8 +398,8 @@ func (a *AIAgent) tryActivateFallbackAt(ctx context.Context, reason provider.Fai
 		if a.unavailableFallbackKeys == nil {
 			a.unavailableFallbackKeys = map[[3]string]bool{}
 		}
-		fbProvider := strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(fb["provider"]))))
-		fbModel := strings.TrimSpace(pyrepr.Str(orEmpty(fb["model"])))
+		fbProvider := strings.ToLower(strings.TrimSpace(anyutil.String(anyutil.Or(fb["provider"], ""))))
+		fbModel := strings.TrimSpace(anyutil.String(anyutil.Or(fb["model"], "")))
 		if a.shouldSkipFallbackCandidate(ctx, fb, key, fbProvider, fbModel) {
 			continue
 		}
@@ -441,7 +433,7 @@ func (a *AIAgent) activateFallbackEntry(ctx context.Context, fb map[string]any, 
 	notice := fmt.Sprintf("⚠️ Model fallback: %s via %s unavailable (%s); using %s via %s.",
 		oldModel, oldProvider, provider.FallbackReasonText(reason), fbModel, fbProvider)
 	if cooldownSeconds != nil {
-		remaining := math.Max(0, math.Ceil(a.rateLimitedUntil-pythread.Monotonic()))
+		remaining := math.Max(0, math.Ceil(a.rateLimitedUntil-timeutil.Monotonic()))
 		notice += fmt.Sprintf(" Primary retry eligible in ~%d s; recovery is not guaranteed.", int64(remaining))
 	}
 	a.bufferFallbackNotice(notice)

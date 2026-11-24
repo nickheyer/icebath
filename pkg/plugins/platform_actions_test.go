@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -29,8 +29,8 @@ func (a *paAdapter) SetReaction(_ context.Context, chat, msg, emoji string) (boo
 	a.reacted = append(a.reacted, chat+"/"+msg+"/"+emoji)
 	return a.setOK, a.setErr
 }
-func (a *paAdapter) RenameDMTopic(_ context.Context, chat string, thread *big.Int, title string) error {
-	a.renamed = append(a.renamed, chat+"/"+thread.String()+"/"+title)
+func (a *paAdapter) RenameDMTopic(_ context.Context, chat string, thread int64, title string) error {
+	a.renamed = append(a.renamed, chat+"/"+strconv.FormatInt(thread, 10)+"/"+title)
 	return nil
 }
 func (a *paAdapter) RenameThread(_ context.Context, thread, title string, _ ThreadRenameOptions) (bool, error) {
@@ -46,16 +46,16 @@ type paClient struct{ log *[]string }
 type paChannel struct{ log *[]string }
 type paMessage struct{ log *[]string }
 
-func (c paClient) GetChannel(id *big.Int) DiscordActionChannel {
-	*c.log = append(*c.log, "get "+id.String())
+func (c paClient) GetChannel(id int64) DiscordActionChannel {
+	*c.log = append(*c.log, "get "+strconv.FormatInt(id, 10))
 	return nil
 }
-func (c paClient) FetchChannel(_ context.Context, id *big.Int) (DiscordActionChannel, error) {
-	*c.log = append(*c.log, "fetch_channel "+id.String())
+func (c paClient) FetchChannel(_ context.Context, id int64) (DiscordActionChannel, error) {
+	*c.log = append(*c.log, "fetch_channel "+strconv.FormatInt(id, 10))
 	return paChannel(c), nil
 }
-func (c paChannel) FetchMessage(_ context.Context, id *big.Int) (DiscordActionMessage, error) {
-	*c.log = append(*c.log, "fetch_message "+id.String())
+func (c paChannel) FetchMessage(_ context.Context, id int64) (DiscordActionMessage, error) {
+	*c.log = append(*c.log, "fetch_message "+strconv.FormatInt(id, 10))
 	return paMessage(c), nil
 }
 func (m paMessage) AddReaction(_ context.Context, emoji string) error {

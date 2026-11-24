@@ -5,8 +5,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // DoneSSEFrame is the terminal sentinel strict OpenAI clients expect at the end of a stream
@@ -97,12 +97,12 @@ func (t *SseDoneTracker) dispatchEvent() {
 		t.SawMalformedEvent = true
 		return
 	}
-	parsed, err := pyjson.Loads(string(payload))
+	parsed, err := jsonutil.Decode(string(payload))
 	if err != nil {
 		t.SawMalformedEvent = true
 		return
 	}
-	event, ok := parsed.(*pyjson.Object)
+	event, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return
 	}
@@ -116,7 +116,7 @@ func (t *SseDoneTracker) dispatchEvent() {
 	rawChoices, _ := event.Get("choices")
 	choices, _ := rawChoices.([]any)
 	for _, c := range choices {
-		choice, isDict := c.(*pyjson.Object)
+		choice, isDict := c.(*jsonutil.Object)
 		if !isDict {
 			continue
 		}
@@ -142,7 +142,7 @@ func sseLastOne(v any) bool {
 	case string:
 		return x == "true"
 	}
-	return pyrepr.Equal(v, 1)
+	return anyutil.Equal(v, 1)
 }
 
 // True when response headers advertise an SSE body

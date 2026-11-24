@@ -16,11 +16,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var terminalBlockedParams = []string{"background", "pty", "notify", "notify_on_complete", "watch_patterns",
@@ -36,8 +36,8 @@ var handleFunctionCall = tools.HandleFunctionCall
 func defaultDispatch(env *tools.Env, taskID string) dispatchFunc {
 	return func(ctx context.Context, toolName string, args any) string {
 		call := &tools.Call{Name: toolName, TaskID: taskID, Env: env}
-		call.Args, _ = pyjson.Plain(args).(map[string]any)
-		raw, err := pyjson.Dumps(args, pyjson.EnsureASCII(false))
+		call.Args, _ = jsonutil.Plain(args).(map[string]any)
+		raw, err := jsonutil.Encode(args)
 		if err != nil {
 			return toolError(err.Error())
 		}
@@ -57,7 +57,7 @@ func privateDirsCmd(root string, subdirs ...string) string {
 	quote := func(ds []string) string {
 		out := make([]string, len(ds))
 		for i, d := range ds {
-			out[i] = pyshlex.Quote(d)
+			out[i] = shellutil.Quote(d)
 		}
 		return strings.Join(out, " ")
 	}
@@ -78,8 +78,8 @@ func executeChecked(ctx context.Context, envr tools.Environment, cmd, what strin
 
 // Writes content owner only to a remote path with the base64 payload on stdin, never in argv
 func remoteWrite(ctx context.Context, envr tools.Environment, remotePath, content string, atomic bool, timeout int, check bool) (*tools.ExecResult, error) {
-	encoded := base64.StdEncoding.EncodeToString(pystr.EncodeUTF8Replace(content))
-	target := pyshlex.Quote(remotePath)
+	encoded := base64.StdEncoding.EncodeToString([]byte(content))
+	target := shellutil.Quote(remotePath)
 	write := "base64 -d > " + target
 	if atomic {
 		write = fmt.Sprintf("base64 -d > %s.tmp && mv -f %s.tmp %s", target, target, target)
@@ -92,13 +92,13 @@ func remoteWrite(ctx context.Context, envr tools.Environment, remotePath, conten
 }
 
 // Constant time token check where an empty server token fails closed
-func rpcTokenOK(request *pyjson.Object, token string) bool {
+func rpcTokenOK(request *jsonutil.Object, token string) bool {
 	if token == "" {
 		return false
 	}
 	got := ""
-	if v, ok := request.Get("token"); ok && pyrepr.Truthy(v) {
-		got = pyrepr.Str(v)
+	if v, ok := request.Get("token"); ok && anyutil.IsTrue(v) {
+		got = anyutil.String(v)
 	}
 	return subtle.ConstantTimeCompare([]byte(got), []byte(token)) == 1
 }
@@ -157,19 +157,19 @@ func clipRunes(s string, n int) string {
 }
 
 // Enforces the allow list and budget then dispatches one authenticated request, refusals cost nothing
-func handleRPCRequest(ctx context.Context, request *pyjson.Object, budget *rpcBudget, dispatch dispatchFunc, callStart time.Time, where string, log func(string, ...any)) string {
+func handleRPCRequest(ctx context.Context, request *jsonutil.Object, budget *rpcBudget, dispatch dispatchFunc, callStart time.Time, where string, log func(string, ...any)) string {
 	var toolName any = ""
 	if v, ok := request.Get("tool"); ok {
 		toolName = v
 	}
-	var toolArgs any = pyjson.NewObject()
+	var toolArgs any = jsonutil.NewObject()
 	if v, ok := request.Get("args"); ok {
 		toolArgs = v
 	}
 	name, isStr := toolName.(string)
 	if !isStr || !budget.allowed[name] {
 		return toolError(fmt.Sprintf("Tool '%s' is not available in execute_code. Available: %s",
-			pyrepr.Str(toolName), strings.Join(budget.sortedAllowed(), ", ")))
+			anyutil.String(toolName), strings.Join(budget.sortedAllowed(), ", ")))
 	}
 	budget.mu.Lock()
 	exhausted := budget.calls >= budget.maxCalls
@@ -177,7 +177,7 @@ func handleRPCRequest(ctx context.Context, request *pyjson.Object, budget *rpcBu
 	if exhausted {
 		return toolError(fmt.Sprintf("Tool call limit reached (%d). No more tool calls allowed in this execution.", budget.maxCalls))
 	}
-	argsObj, isObj := toolArgs.(*pyjson.Object)
+	argsObj, isObj := toolArgs.(*jsonutil.Object)
 	if name == "terminal" && isObj {
 		for _, p := range terminalBlockedParams {
 			argsObj.Delete(p)
@@ -194,7 +194,7 @@ func handleRPCRequest(ctx context.Context, request *pyjson.Object, budget *rpcBu
 	}()
 	entry := toolCallEntry{
 		Tool:        name,
-		ArgsPreview: clipRunes(pyrepr.Str(toolArgs), 80),
+		ArgsPreview: clipRunes(anyutil.String(toolArgs), 80),
 		Duration:    roundTo(time.Since(callStart).Seconds(), 2),
 		Error:       resultError(result),
 	}
@@ -216,19 +216,19 @@ func resultError(result string) string {
 	if !strings.HasPrefix(result, "{") || !strings.Contains(result, `"error"`) {
 		return ""
 	}
-	body, err := pyjson.Loads(result)
+	body, err := jsonutil.Decode(result)
 	if err != nil {
 		return ""
 	}
-	obj, ok := body.(*pyjson.Object)
+	obj, ok := body.(*jsonutil.Object)
 	if !ok {
 		return ""
 	}
 	value, _ := obj.Get("error")
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return clipRunes(pyrepr.Str(value), 300)
+	return clipRunes(anyutil.String(value), 300)
 }
 
 // Failed in-script tool calls since start, at most five, for the execute_code result
@@ -248,20 +248,12 @@ func toolErrorsSince(log []toolCallEntry, start int) []map[string]any {
 	return out
 }
 
-// Decodes one request line as strict UTF-8 JSON, the Python error text on failure
+// Decodes one request line as strict UTF-8 JSON, an *textutil.InvalidUTF8Error for bytes that are not UTF-8
 func decodeRPCLine(line []byte) (any, error) {
-	if !utf8.Valid(line) {
-		pos := 0
-		for pos < len(line) {
-			r, size := utf8.DecodeRune(line[pos:])
-			if r == utf8.RuneError && size <= 1 {
-				break
-			}
-			pos += size
-		}
-		return nil, pystr.UTF8DecodeError(line, pos)
+	if err := textutil.ValidateUTF8(line); err != nil {
+		return nil, err
 	}
-	return pyjson.Loads(string(line))
+	return jsonutil.Decode(line)
 }
 
 type deadliner interface{ SetDeadline(time.Time) error }
@@ -322,7 +314,7 @@ func rpcServerLoop(ctx context.Context, env *tools.Env, ln net.Listener, taskID 
 					pkgLog(env).Debug("sandbox RPC request unreadable: " + errchain.Text(derr))
 					resp = toolError("Invalid RPC request: the request is not valid JSON text")
 				} else {
-					request, ok := decoded.(*pyjson.Object)
+					request, ok := decoded.(*jsonutil.Object)
 					if !ok {
 						log("RPC request is not a JSON object", "kind", errchain.Kind(decoded))
 						return
@@ -374,7 +366,7 @@ func rpcPollLoop(ctx context.Context, env *tools.Env, envr tools.Environment, rp
 	}
 	log := func(msg string, args ...any) { pkgLog(env).Debug(msg, args...) }
 	pollInterval := 100 * time.Millisecond
-	quotedDir := pyshlex.Quote(rpcDir)
+	quotedDir := shellutil.Quote(rpcDir)
 	exec := func(cmd string, timeout int) (*tools.ExecResult, error) {
 		return envr.Execute(ctx, cmd, tools.ExecOptions{Cwd: "/", Timeout: timeout})
 	}
@@ -400,13 +392,13 @@ func rpcPollLoop(ctx context.Context, env *tools.Env, envr tools.Environment, rp
 				break
 			}
 			callStart := time.Now()
-			quoted := pyshlex.Quote(reqFile)
+			quoted := shellutil.Quote(reqFile)
 			read, err := exec("cat "+quoted, 10)
 			if err != nil {
 				return err
 			}
 			remove := func() error { _, err := exec("rm -f "+quoted, 5); return err }
-			decoded, derr := pyjson.Loads(read.Output)
+			decoded, derr := jsonutil.Decode(read.Output)
 			if derr != nil {
 				log("Malformed RPC request", "file", reqFile)
 				if err := remove(); err != nil {
@@ -414,7 +406,7 @@ func rpcPollLoop(ctx context.Context, env *tools.Env, envr tools.Environment, rp
 				}
 				continue
 			}
-			request, ok := decoded.(*pyjson.Object)
+			request, ok := decoded.(*jsonutil.Object)
 			if !ok {
 				return fmt.Errorf("sandbox tool request is %s where a mapping was expected", errchain.Kind(decoded))
 			}
@@ -429,13 +421,15 @@ func rpcPollLoop(ctx context.Context, env *tools.Env, envr tools.Environment, rp
 			if v, ok := request.Get("seq"); ok {
 				seq = v
 			}
-			seqText, ferr := pyrepr.Format(seq, "06d")
-			if _, isInt := pyrepr.Int(seq); !isInt {
-				if _, isBool := seq.(bool); !isBool {
-					ferr = errors.New("malformed seq")
+			n, isInt := anyutil.Int(seq)
+			if b, isBool := seq.(bool); isBool {
+				isInt = true
+				if b {
+					n = 1
 				}
 			}
-			if ferr != nil {
+			seqText := fmt.Sprintf("%06d", n)
+			if !isInt {
 				log("RPC request with malformed seq", "file", reqFile)
 				if err := remove(); err != nil {
 					return err

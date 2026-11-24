@@ -4,11 +4,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func gatewayHealthDict(name string) *pyjson.Object {
-	o := pyjson.NewObject()
+func gatewayHealthDict(name string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("event", "gateway_health")
 	o.Set("name", name)
 	return o
@@ -32,7 +32,7 @@ func TestProcessSingletonStaysDormantUntilSubscribed(t *testing.T) {
 	if singleton.Stats().Queued != 0 || singleton.started.Load() {
 		t.Fatalf("dormant singleton queued or started: %+v", singleton.Stats())
 	}
-	sub := NewSubscriber(func([]*pyjson.Object) {})
+	sub := NewSubscriber(func([]*jsonutil.Object) {})
 	singleton.Subscribe(sub)
 	Emit(gatewayHealthDict("gateway.lifecycle"))
 	if !singleton.started.Load() {
@@ -45,7 +45,7 @@ func TestUnsubscribeStopsDelivery(t *testing.T) {
 	em := NewMonitoringEmitter(true)
 	var mu sync.Mutex
 	var seen []string
-	cb := NewSubscriber(func(batch []*pyjson.Object) {
+	cb := NewSubscriber(func(batch []*jsonutil.Object) {
 		mu.Lock()
 		defer mu.Unlock()
 		for _, ev := range batch {
@@ -79,8 +79,8 @@ func TestFullQueueDropsOldestAndSubscriberPanicIsIsolated(t *testing.T) {
 	em.started.Store(false)
 	var mu sync.Mutex
 	got := 0
-	em.Subscribe(NewSubscriber(func([]*pyjson.Object) { panic("boom") }))
-	em.Subscribe(NewSubscriber(func(b []*pyjson.Object) { mu.Lock(); got += len(b); mu.Unlock() }))
+	em.Subscribe(NewSubscriber(func([]*jsonutil.Object) { panic("boom") }))
+	em.Subscribe(NewSubscriber(func(b []*jsonutil.Object) { mu.Lock(); got += len(b); mu.Unlock() }))
 	em.Emit(gatewayHealthDict("y"))
 	em.Flush(10)
 	em.Close()

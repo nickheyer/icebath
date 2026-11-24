@@ -2,11 +2,14 @@ package config
 
 import (
 	"errors"
+	"math"
 	"os"
+	"reflect"
+	"strconv"
 	"sync"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runtime components whose start forbids binding a worker policy afterwards
@@ -64,18 +67,22 @@ type WorkerPolicyError struct{ Kind, Msg string }
 
 func (e *WorkerPolicyError) Error() string { return e.Msg }
 
-// Python exception class the error stands for
-func (e *WorkerPolicyError) PyTypeName() string { return e.Kind }
+// Kind of refusal, TypeError, ValueError or RuntimeError
+func (e *WorkerPolicyError) ErrorKind() string { return e.Kind }
 
 // Publishes the one policy of this process before any runtime component starts
 func bindWorkerPolicy(safeMode, ignoreUserConfig bool, cfg map[string]any) (*SafeWorkerPolicy, error) {
 	if cfg == nil {
 		return nil, &WorkerPolicyError{"TypeError", "worker config must be a JSON object"}
 	}
-	serialized, err := pyjson.Dumps(orderedConfigJSON(cfg), pyjson.AllowNaN(false))
-	if errors.Is(err, pyjson.ErrOutOfRange) || errors.Is(err, pyjson.ErrCircular) {
+	tree, err := orderedConfigJSON(cfg, map[any]bool{})
+	if err != nil {
 		return nil, &WorkerPolicyError{"ValueError", err.Error()}
 	}
+	if f, bad := nonFiniteFloat(tree); bad {
+		return nil, &WorkerPolicyError{"ValueError", "worker config holds a non-finite number " + strconv.FormatFloat(f, 'g', -1, 64)}
+	}
+	serialized, err := jsonutil.Encode(tree)
 	if err != nil {
 		return nil, err
 	}
@@ -92,34 +99,86 @@ func bindWorkerPolicy(safeMode, ignoreUserConfig bool, cfg map[string]any) (*Saf
 	return policy, nil
 }
 
-// Config tree as pyjson values with every mapping kept in its recorded key order
-func orderedConfigJSON(v any) any {
+var errConfigCycle = errors.New("worker config holds a mapping or list that contains itself")
+
+// Config tree as JSON values with every mapping kept in its recorded key order, refusing a container nested inside itself; active holds the containers on the current path
+func orderedConfigJSON(v any, active map[any]bool) (any, error) {
+	var id any
 	switch t := v.(type) {
 	case map[string]any:
-		obj := pyjson.NewObject()
-		for _, k := range MappingKeys(t) {
-			obj.Set(k, orderedConfigJSON(t[k]))
+		if len(t) > 0 {
+			id = reflect.ValueOf(t).UnsafePointer()
 		}
-		return obj
+	case []any:
+		if len(t) > 0 {
+			id = &t[0]
+		}
+	}
+	if id != nil {
+		if active[id] {
+			return nil, errConfigCycle
+		}
+		active[id] = true
+		defer delete(active, id)
+	}
+	switch t := v.(type) {
+	case map[string]any:
+		obj := jsonutil.NewObject()
+		for _, k := range MappingKeys(t) {
+			item, err := orderedConfigJSON(t[k], active)
+			if err != nil {
+				return nil, err
+			}
+			obj.Set(k, item)
+		}
+		return obj, nil
 	case []any:
 		out := make([]any, len(t))
 		for i, item := range t {
-			out[i] = orderedConfigJSON(item)
+			conv, err := orderedConfigJSON(item, active)
+			if err != nil {
+				return nil, err
+			}
+			out[i] = conv
 		}
-		return out
+		return out, nil
 	}
-	return v
+	return v, nil
+}
+
+// First NaN or infinity anywhere in a converted config tree
+func nonFiniteFloat(v any) (float64, bool) {
+	switch x := v.(type) {
+	case float64:
+		return x, math.IsNaN(x) || math.IsInf(x, 0)
+	case float32:
+		f := float64(x)
+		return f, math.IsNaN(f) || math.IsInf(f, 0)
+	case *jsonutil.Object:
+		for _, it := range x.All() {
+			if f, bad := nonFiniteFloat(it); bad {
+				return f, true
+			}
+		}
+	case []any:
+		for _, it := range x {
+			if f, bad := nonFiniteFloat(it); bad {
+				return f, true
+			}
+		}
+	}
+	return 0, false
 }
 
 // Decoded JSON as config mappings in document key order with integers as Go ints
 func ConfigFromJSON(v any) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
-		out := make(map[string]any, len(t.Keys))
-		for _, k := range t.Keys {
-			out[k] = ConfigFromJSON(t.Vals[k])
+	case *jsonutil.Object:
+		out := make(map[string]any, t.Len())
+		for _, k := range t.Keys() {
+			out[k] = ConfigFromJSON(t.Value(k))
 		}
-		SetMappingKeys(out, t.Keys)
+		SetMappingKeys(out, t.Keys())
 		return out
 	case []any:
 		out := make([]any, len(t))
@@ -167,7 +226,7 @@ func WorkerConfigSnapshot() map[string]any {
 	if policy == nil {
 		return nil
 	}
-	decoded, err := pyjson.Loads(policy.configJSON)
+	decoded, err := jsonutil.Decode(policy.configJSON)
 	if err != nil {
 		panic("worker config snapshot does not decode: " + err.Error())
 	}

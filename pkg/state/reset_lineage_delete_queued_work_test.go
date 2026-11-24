@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var resetLineageOperations = map[string]func(ctx context.Context, db *SessionDB, s0, s1 string) error{
@@ -40,7 +40,7 @@ var resetLineageOperations = map[string]func(ctx context.Context, db *SessionDB,
 }
 
 // Local conversation reset from its creation id onto a child segment, aged, with an optional queued follower
-func resetConversation(t *testing.T, operation string, queued bool) (*SessionDB, string, string, *pyjson.Object) {
+func resetConversation(t *testing.T, operation string, queued bool) (*SessionDB, string, string, *jsonutil.Object) {
 	t.Helper()
 	installRetirementHooks(t)
 	ctx := context.Background()
@@ -58,7 +58,7 @@ func resetConversation(t *testing.T, operation string, queued bool) (*SessionDB,
 	if err != nil || routed == nil {
 		t.Fatalf("route %v %v", routed, err)
 	}
-	entry := routed.Copy()
+	entry := routed.Clone()
 	entry.Set("session_id", s1)
 	entry.Set("is_fresh_reset", true)
 	if err := db.ResetLocalTarget(ctx, epoch, s0, entry); err != nil {
@@ -69,7 +69,7 @@ func resetConversation(t *testing.T, operation string, queued bool) (*SessionDB,
 	if operation == "prune-child" || operation == "prune-all" || operation == "prune-empty" {
 		profileExec(t, db, "UPDATE sessions SET ended_at=? WHERE id=?", old, s1)
 	}
-	var admission *pyjson.Object
+	var admission *jsonutil.Object
 	if queued {
 		if admission, err = db.AdmitSessionInput(ctx, SessionInput{Epoch: epoch, PrincipalID: "human", SessionID: s0, RequestID: "queued", Payload: admissionText("continue")}); err != nil {
 			t.Fatal(err)
@@ -107,7 +107,7 @@ func TestSegmentDeleteOrSweepKeepsAConversationWithQueuedWork(t *testing.T) {
 			defer db.Close()
 			if operation == "never-active" {
 				rows, err := db.ListNeverActiveKeyedSessions(ctx, 30)
-				if err != nil || !slices.ContainsFunc(rows, func(r *pyjson.Object) bool { return rowValue(r, "id") == s1 }) {
+				if err != nil || !slices.ContainsFunc(rows, func(r *jsonutil.Object) bool { return rowValue(r, "id") == s1 }) {
 					t.Fatalf("segment not listed never active %v %v", rows, err)
 				}
 			}

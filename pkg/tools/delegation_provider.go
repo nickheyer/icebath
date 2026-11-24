@@ -1,6 +1,8 @@
 package tools
 
-import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+import (
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 // Task fields core owns that a delegation provider may never declare as its own task parameter
 var ReservedTaskParameters = map[string]bool{
@@ -28,7 +30,7 @@ type DelegationProvider interface {
 	Settings(config map[string]any) map[string]any
 	Summary() string
 	IsAvailable() bool
-	TaskParameters(config map[string]any) *pyjson.Object
+	TaskParameters(config map[string]any) *jsonutil.Object
 	Description(config map[string]any) string
 	RouteTask(task, config map[string]any) (map[string]any, error)
 }
@@ -52,8 +54,8 @@ func (DelegationProviderDefaults) Summary() string { return "" }
 func (DelegationProviderDefaults) IsAvailable() bool { return true }
 
 // No extra task parameters
-func (DelegationProviderDefaults) TaskParameters(map[string]any) *pyjson.Object {
-	return pyjson.NewObject()
+func (DelegationProviderDefaults) TaskParameters(map[string]any) *jsonutil.Object {
+	return jsonutil.NewObject()
 }
 
 // No description addendum

@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
 // Route a resumed session runs on, false when the stored model is absent or already current
@@ -18,9 +18,9 @@ func storedSessionRoute(ctx context.Context, sessionMeta map[string]any, current
 		return "", "", "", "", false, false
 	}
 	runtime := state.SessionGatewayRuntime(objectFromPlain(sessionMeta))
-	baseURL = cliStr(runtime.GetOr("base_url", ""), "")
-	apiMode = cliStr(runtime.GetOr("api_mode", ""), "")
-	storedProvider := cliStr(runtime.GetOr("provider", ""), "")
+	baseURL = cliStr(runtime.ValueOr("base_url", ""), "")
+	apiMode = cliStr(runtime.ValueOr("api_mode", ""), "")
+	storedProvider := cliStr(runtime.ValueOr("provider", ""), "")
 	prov = healBareCustomProvider(ctx, storedProvider, baseURL, stored)
 	if prov != storedProvider {
 		baseURL = ""
@@ -127,5 +127,5 @@ func (c *CLI) restoreSessionModel(sessionMeta map[string]any, quiet bool) {
 		fmt.Fprintln(stderrWriter(), msg)
 		return
 	}
-	c.consolePrint("[dim]" + pyrich.Escape(msg) + "[/dim]")
+	c.consolePrint("[dim]" + consoleutil.Escape(msg) + "[/dim]")
 }

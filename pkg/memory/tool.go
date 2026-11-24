@@ -12,8 +12,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -189,29 +189,29 @@ const targetsText = "TARGETS: 'user' = who the user is (name, role, preferences,
 	"notes (environment, conventions, tool quirks, lessons)."
 
 // Parameters advertised once inside operations, the handler still accepting the legacy single op shape
-func memoryParameters() *pyjson.Object {
-	return pyjson.ObjectOf(
+func memoryParameters() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"type", "object",
-		"properties", pyjson.ObjectOf(
-			"target", pyjson.ObjectOf(
+		"properties", jsonutil.ObjectOf(
+			"target", jsonutil.ObjectOf(
 				"type", "string",
 				"enum", []any{"memory", "user"},
 				"description", "Which memory store: 'memory' for personal notes, 'user' for user profile.",
 			),
-			"operations", pyjson.ObjectOf(
+			"operations", jsonutil.ObjectOf(
 				"type", "array",
 				"description", "Changes applied atomically in one call against the final char budget; "+
 					"a single change is a one-item list.",
-				"items", pyjson.ObjectOf(
+				"items", jsonutil.ObjectOf(
 					"type", "object",
-					"properties", pyjson.ObjectOf(
-						"action", pyjson.ObjectOf("type", "string", "enum", []any{"add", "patch", "remove"}),
-						"content", pyjson.ObjectOf(
+					"properties", jsonutil.ObjectOf(
+						"action", jsonutil.ObjectOf("type", "string", "enum", []any{"add", "patch", "remove"}),
+						"content", jsonutil.ObjectOf(
 							"type", "string",
 							"description", "Required for 'add' and 'patch'. For 'add', the new entry. For 'patch', "+
 								"the text that replaces old_text; the rest of the entry is kept.",
 						),
-						"old_text", pyjson.ObjectOf(
+						"old_text", jsonutil.ObjectOf(
 							"type", "string",
 							"description", "REQUIRED for 'patch' and 'remove': text from one entry. 'patch' replaces "+
 								"exactly this span (it must occur once in the entry); 'remove' deletes the "+
@@ -228,8 +228,8 @@ func memoryParameters() *pyjson.Object {
 }
 
 // Full OpenAI function schema of the memory tool
-func MemorySchema() *pyjson.Object {
-	return pyjson.ObjectOf("name", "memory", "description", memoryDescription, "parameters", memoryParameters())
+func MemorySchema() *jsonutil.Object {
+	return jsonutil.ObjectOf("name", "memory", "description", memoryDescription, "parameters", memoryParameters())
 }
 
 // Target description and TARGETS replacement when exactly one built in store is enabled
@@ -242,7 +242,7 @@ var singleTargetText = map[string][2]string{
 }
 
 // Narrows the advertised targets to the enabled stores using the availability snapshot
-func memorySchemaOverrides(env *tools.Env) *pyjson.Object {
+func memorySchemaOverrides(env *tools.Env) *jsonutil.Object {
 	var flags [2]bool
 	snapshot := false
 	if env != nil && env.Values != nil {
@@ -262,7 +262,7 @@ func memorySchemaOverrides(env *tools.Env) *pyjson.Object {
 		}
 	}
 	parameters := memoryParameters()
-	targetSchema := parameters.Vals["properties"].(*pyjson.Object).Vals["target"].(*pyjson.Object)
+	targetSchema := parameters.Value("properties").(*jsonutil.Object).Value("target").(*jsonutil.Object)
 	targetSchema.Set("enum", targets)
 	description := memoryDescription
 	if len(names) == 1 {
@@ -270,7 +270,7 @@ func memorySchemaOverrides(env *tools.Env) *pyjson.Object {
 		targetSchema.Set("description", narrowed[0])
 		description = strings.ReplaceAll(description, targetsText, narrowed[1])
 	}
-	return pyjson.ObjectOf("description", description, "parameters", parameters)
+	return jsonutil.ObjectOf("description", description, "parameters", parameters)
 }
 
 // Error envelope with the bounded message and extra fields
@@ -331,7 +331,7 @@ func memoryTargetError(store *Store, target any, operations any) *Result {
 	if name == "user" {
 		label = "USER.md"
 	}
-	r := failure(fmt.Sprintf("Built-in %s writes are disabled in memory config.", label), "disabled", pyjson.ObjectOf("target", name))
+	r := failure(fmt.Sprintf("Built-in %s writes are disabled in memory config.", label), "disabled", jsonutil.ObjectOf("target", name))
 	return &r
 }
 

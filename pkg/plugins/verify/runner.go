@@ -14,11 +14,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -50,13 +49,13 @@ type PhaseResult struct {
 func (p *PhaseResult) OK() bool { return p.ExitCode != nil && *p.ExitCode == 0 && !p.TimedOut }
 
 // JSON mapping of the phase with the duration rounded to milliseconds
-func (p *PhaseResult) ToDict() *pyjson.Object {
+func (p *PhaseResult) ToDict() *jsonutil.Object {
 	var code any
 	if p.ExitCode != nil {
 		code = int64(*p.ExitCode)
 	}
-	return pyjson.ObjectOf("phase", p.Phase, "command", p.Command, "exitCode", code,
-		"duration", pyint.Round(p.Duration, 3), "ok", p.OK(), "timedOut", p.TimedOut, "outputTail", p.OutputTail)
+	return jsonutil.ObjectOf("phase", p.Phase, "command", p.Command, "exitCode", code,
+		"duration", mathutil.Round(p.Duration, 3), "ok", p.OK(), "timedOut", p.TimedOut, "outputTail", p.OutputTail)
 }
 
 // ReadinessResult is the start phase poll of the app URL
@@ -70,7 +69,7 @@ type ReadinessResult struct {
 }
 
 // JSON mapping of the readiness poll with the duration rounded to milliseconds
-func (r *ReadinessResult) ToDict() *pyjson.Object {
+func (r *ReadinessResult) ToDict() *jsonutil.Object {
 	var code, errText any
 	if r.StatusCode != nil {
 		code = int64(*r.StatusCode)
@@ -78,8 +77,8 @@ func (r *ReadinessResult) ToDict() *pyjson.Object {
 	if r.Error != nil {
 		errText = *r.Error
 	}
-	return pyjson.ObjectOf("url", r.URL, "ready", r.Ready, "statusCode", code,
-		"duration", pyint.Round(r.Duration, 3), "error", errText, "outputTail", r.OutputTail)
+	return jsonutil.ObjectOf("url", r.URL, "ready", r.Ready, "statusCode", code,
+		"duration", mathutil.Round(r.Duration, 3), "error", errText, "outputTail", r.OutputTail)
 }
 
 // VerifyResult is a whole verification pass
@@ -104,7 +103,7 @@ func allOK(phases []*PhaseResult) bool {
 }
 
 // JSON mapping of the pass, readiness null when the app never started
-func (v *VerifyResult) ToDict() *pyjson.Object {
+func (v *VerifyResult) ToDict() *jsonutil.Object {
 	phases := make([]any, len(v.Phases))
 	for i, p := range v.Phases {
 		phases[i] = p.ToDict()
@@ -113,7 +112,7 @@ func (v *VerifyResult) ToDict() *pyjson.Object {
 	if v.Readiness != nil {
 		readiness = v.Readiness.ToDict()
 	}
-	return pyjson.ObjectOf("recipe", v.RecipeName, "ok", v.OK(), "phases", phases, "readiness", readiness)
+	return jsonutil.ObjectOf("recipe", v.RecipeName, "ok", v.OK(), "phases", phases, "readiness", readiness)
 }
 
 // Last tail characters of text counted in code points
@@ -121,8 +120,8 @@ func tail(text string) string { return textutil.Last(text, tailChars) }
 
 // Text mode output, the locale codec with errors replace and universal newlines
 func decodeOutput(raw []byte) (string, error) {
-	text, err := pycodecs.DecodeReplace(raw, pycodecs.LocaleEncoding())
-	return pystr.TranslateNewlines(text), err
+	text, err := charsetutil.DecodeReplace(raw, charsetutil.Locale())
+	return textutil.NormalizeNewlines(text), err
 }
 
 // Byte sink shared by a reader goroutine and the timeout path
@@ -145,7 +144,7 @@ func (l *lockedBuffer) snapshot() []byte {
 
 // Shell command with stdin on the null device and stdout plus stderr on one pipe the caller reads
 func shellWithPipe(command, root string) (*exec.Cmd, *os.File, *os.File, error) {
-	cmd, err := pysubprocess.ShellCommand(command)
+	cmd, err := executil.ShellCommand(command)
 	if err != nil {
 		return nil, nil, nil, &OSError{Class: "FileNotFoundError", Err: err}
 	}
@@ -223,7 +222,7 @@ func runPhaseCommandReal(phase, command, root string, timeout float64, onOutput 
 		code := 0
 		var ee *exec.ExitError
 		if errors.As(waitErr, &ee) {
-			code = pysubprocess.Returncode(ee)
+			code = executil.ExitCode(ee.ProcessState)
 		} else if waitErr != nil {
 			return nil, &OSError{Err: waitErr}
 		}
@@ -451,20 +450,20 @@ var composeProbe = func(root string) (*composeProbeResult, error) {
 	res := &composeProbeResult{}
 	var ee *exec.ExitError
 	if errors.As(waitErr, &ee) {
-		res.Returncode = pysubprocess.Returncode(ee)
+		res.Returncode = executil.ExitCode(ee.ProcessState)
 	} else if waitErr != nil {
 		return nil, &OSError{Err: waitErr}
 	}
-	enc := pycodecs.LocaleEncoding()
-	out, err := pycodecs.Decode(stdout.snapshot(), enc)
+	enc := charsetutil.Locale()
+	out, err := charsetutil.Decode(stdout.snapshot(), enc)
 	if err != nil {
 		return nil, err
 	}
-	errText, err := pycodecs.Decode(stderr.snapshot(), enc)
+	errText, err := charsetutil.Decode(stderr.snapshot(), enc)
 	if err != nil {
 		return nil, err
 	}
-	res.Stdout, res.Stderr = pystr.TranslateNewlines(out), pystr.TranslateNewlines(errText)
+	res.Stdout, res.Stderr = textutil.NormalizeNewlines(out), textutil.NormalizeNewlines(errText)
 	return res, nil
 }
 

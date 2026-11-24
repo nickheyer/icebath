@@ -9,10 +9,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Tool arguments as Python values keyed by name
@@ -39,7 +39,7 @@ func checkSpotifyAvailable(env *tools.Env) bool {
 	if err != nil {
 		return false
 	}
-	return pyrepr.Truthy(status["logged_in"])
+	return anyutil.IsTrue(status["logged_in"])
 }
 
 func toolError(message string) string {
@@ -54,7 +54,7 @@ func spotifyToolError(err error) string {
 	if errors.As(err, &se) {
 		return toolError(err.Error())
 	}
-	return toolError(fmt.Sprintf("Spotify tool failed: %s: %s", exceptionName(err), pyrepr.ExceptionMessage(err)))
+	return toolError(fmt.Sprintf("Spotify tool failed: %s: %s", exceptionName(err), err.Error()))
 }
 
 // The value, or a SpotifyError with the message when it is None
@@ -68,8 +68,8 @@ func required(value any, message string) (any, error) {
 // Stripped text of a value, a SpotifyError with the message when blank
 func nonblank(raw any, message string) (string, error) {
 	value := ""
-	if pyrepr.Truthy(raw) {
-		value = strings.TrimSpace(pyrepr.Str(raw))
+	if anyutil.IsTrue(raw) {
+		value = strings.TrimSpace(anyutil.String(raw))
 	}
 	if value == "" {
 		return "", &SpotifyError{Msg: message}
@@ -104,7 +104,7 @@ func asList(raw any) []string {
 	}
 	out := []string{}
 	for _, item := range items {
-		if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(item)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -131,7 +131,7 @@ func pyIntValue(v any) (any, error) {
 // Python int of the offset argument floored at zero
 func offsetArg(a toolArgs) (any, error) {
 	raw := a["offset"]
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = int64(0)
 	}
 	n, err := pyint.Of(raw)
@@ -165,39 +165,39 @@ func limitArg(a toolArgs, def int64) int64 {
 func okResult(action string, result any, extra ...any) string {
 	pairs := append([]any{"success", true, "action", action}, extra...)
 	pairs = append(pairs, "result", result)
-	return toolResult(pyjson.ObjectOf(pairs...))
+	return toolResult(jsonutil.ObjectOf(pairs...))
 }
 
 // Python subscript of a decoded JSON value by a string key with the KeyError or TypeError it raises
 func subscript(v any, key string) (any, error) {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t != nil {
 			if val, ok := t.Get(key); ok {
 				return val, nil
 			}
-			return nil, &pyError{kind: "KeyError", msg: pyrepr.Repr(key)}
+			return nil, &pyError{kind: "KeyError", msg: anyutil.Quote(key)}
 		}
 	case map[string]any:
 		if val, ok := t[key]; ok {
 			return val, nil
 		}
-		return nil, &pyError{kind: "KeyError", msg: pyrepr.Repr(key)}
+		return nil, &pyError{kind: "KeyError", msg: anyutil.Quote(key)}
 	case []any:
 		return nil, &pyError{kind: "TypeError", msg: "list indices must be integers or slices, not str"}
 	case string:
 		return nil, &pyError{kind: "TypeError", msg: "string indices must be integers, not 'str'"}
 	}
-	return nil, &pyError{kind: "TypeError", msg: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v))}
+	return nil, &pyError{kind: "TypeError", msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(v))}
 }
 
 // Action text of the call, the default when blank
 func actionOf(a toolArgs, def string) string {
 	raw := a["action"]
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = def
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(raw)))
 }
 
 // Builds the client outside the error boundary so an auth failure propagates as the tool exception
@@ -250,14 +250,14 @@ func pbRead(fetch func(market any) (any, error), a toolArgs, action string) (str
 	if err != nil {
 		return "", err
 	}
-	if obj, ok := payload.(*pyjson.Object); ok && pyrepr.Truthy(obj.GetOr("empty", nil)) {
+	if obj, ok := payload.(*jsonutil.Object); ok && anyutil.IsTrue(obj.ValueOr("empty", nil)) {
 		flagFallback := emptyPlayback[action]
-		message := obj.GetOr("message", nil)
-		if !pyrepr.Truthy(message) {
+		message := obj.ValueOr("message", nil)
+		if !anyutil.IsTrue(message) {
 			message = flagFallback[1]
 		}
-		payload = pyjson.ObjectOf("success", true, "action", action, flagFallback[0], false,
-			"status_code", obj.GetOr("status_code", int64(204)), "message", message)
+		payload = jsonutil.ObjectOf("success", true, "action", action, flagFallback[0], false,
+			"status_code", obj.ValueOr("status_code", int64(204)), "message", message)
 	}
 	return toolResult(payload), nil
 }
@@ -273,7 +273,7 @@ func pbPlayTracks(c apiClient, a toolArgs, action string, uris []string) (string
 	if err != nil {
 		return "", err
 	}
-	track, err := c.Request("GET", "/tracks/"+trackID, pyjson.ObjectOf("market", "from_token"), nil)
+	track, err := c.Request("GET", "/tracks/"+trackID, jsonutil.ObjectOf("market", "from_token"), nil)
 	if err != nil {
 		return "", err
 	}
@@ -289,13 +289,13 @@ func pbPlayTracks(c apiClient, a toolArgs, action string, uris []string) (string
 	if err != nil {
 		return "", err
 	}
-	body := pyjson.ObjectOf("context_uri", contextURI, "offset", pyjson.ObjectOf("uri", trackURI), "position_ms", a["position_ms"])
-	result, err := c.Request("PUT", "/me/player/play", pyjson.ObjectOf("device_id", a["device_id"]), body)
+	body := jsonutil.ObjectOf("context_uri", contextURI, "offset", jsonutil.ObjectOf("uri", trackURI), "position_ms", a["position_ms"])
+	result, err := c.Request("PUT", "/me/player/play", jsonutil.ObjectOf("device_id", a["device_id"]), body)
 	if err != nil {
 		return "", err
 	}
 	for _, uri := range uris[1:] {
-		if _, err := c.Request("POST", "/me/player/queue", pyjson.ObjectOf("uri", uri, "device_id", a["device_id"]), nil); err != nil {
+		if _, err := c.Request("POST", "/me/player/queue", jsonutil.ObjectOf("uri", uri, "device_id", a["device_id"]), nil); err != nil {
 			return "", err
 		}
 	}
@@ -305,23 +305,23 @@ func pbPlayTracks(c apiClient, a toolArgs, action string, uris []string) (string
 // Starts playback of a context, track list or offset on the chosen device
 func pbPlay(c apiClient, a toolArgs, action string) (string, error) {
 	var payloadOffset any
-	if offset, ok := pyjson.AsObject(a["offset"]); ok {
+	if offset, ok := jsonutil.AsObject(a["offset"]); ok {
 		payloadOffset = stripNone(offset)
 	}
 	var uris []string
-	if pyrepr.Truthy(a["uris"]) {
+	if anyutil.IsTrue(a["uris"]) {
 		normalized, err := normalizeSpotifyURIs(asList(a["uris"]), "track")
 		if err != nil {
 			return "", err
 		}
 		uris = normalized
 	}
-	if len(uris) > 0 && !pyrepr.Truthy(a["context_uri"]) {
+	if len(uris) > 0 && !anyutil.IsTrue(a["context_uri"]) {
 		return pbPlayTracks(c, a, action, uris)
 	}
 	var contextURI any
-	if pyrepr.Truthy(a["context_uri"]) {
-		raw := pyrepr.Str(a["context_uri"])
+	if anyutil.IsTrue(a["context_uri"]) {
+		raw := anyutil.String(a["context_uri"])
 		contextType := ""
 		for _, ct := range contextTypes {
 			if strings.HasPrefix(raw, ct[1]) || strings.Contains(raw, ct[2]) {
@@ -339,8 +339,8 @@ func pbPlay(c apiClient, a toolArgs, action string) (string, error) {
 	if uris != nil {
 		urisValue = stringsToAny(uris)
 	}
-	body := pyjson.ObjectOf("context_uri", contextURI, "uris", urisValue, "offset", payloadOffset, "position_ms", a["position_ms"])
-	result, err := c.Request("PUT", "/me/player/play", pyjson.ObjectOf("device_id", a["device_id"]), body)
+	body := jsonutil.ObjectOf("context_uri", contextURI, "uris", urisValue, "offset", payloadOffset, "position_ms", a["position_ms"])
+	result, err := c.Request("PUT", "/me/player/play", jsonutil.ObjectOf("device_id", a["device_id"]), body)
 	if err != nil {
 		return "", err
 	}
@@ -349,7 +349,7 @@ func pbPlay(c apiClient, a toolArgs, action string) (string, error) {
 
 // Player command whose only free argument is device_id, extra pairs being fixed params
 func pbCmd(c apiClient, a toolArgs, action, method, path string, extra ...any) (string, error) {
-	params := pyjson.ObjectOf(append(extra, "device_id", a["device_id"])...)
+	params := jsonutil.ObjectOf(append(extra, "device_id", a["device_id"])...)
 	result, err := c.Request(method, path, params, nil)
 	if err != nil {
 		return "", err
@@ -379,8 +379,8 @@ func pbRequiredParam(path, param string, convert func(any) (any, error)) actionH
 // Repeat mode of the state argument, track context or off
 func pbRepeatState(a toolArgs) (string, error) {
 	state := ""
-	if pyrepr.Truthy(a["state"]) {
-		state = strings.ToLower(strings.TrimSpace(pyrepr.Str(a["state"])))
+	if anyutil.IsTrue(a["state"]) {
+		state = strings.ToLower(strings.TrimSpace(anyutil.String(a["state"])))
 	}
 	if state != "track" && state != "context" && state != "off" {
 		return "", &SpotifyError{Msg: "state must be one of: track, context, off"}
@@ -391,10 +391,10 @@ func pbRepeatState(a toolArgs) (string, error) {
 // Recently played tracks paged by one of the after or before cursors
 func pbRecentlyPlayed(c apiClient, a toolArgs, _ string) (string, error) {
 	after, before := a["after"], a["before"]
-	if pyrepr.Truthy(after) && pyrepr.Truthy(before) {
+	if anyutil.IsTrue(after) && anyutil.IsTrue(before) {
 		return toolError("Provide only one of 'after' or 'before'"), nil
 	}
-	params := pyjson.ObjectOf("limit", limitArg(a, 20), "after", nil, "before", nil)
+	params := jsonutil.ObjectOf("limit", limitArg(a, 20), "after", nil, "before", nil)
 	if after != nil {
 		v, err := pyIntValue(after)
 		if err != nil {
@@ -471,7 +471,7 @@ var handleSpotifyDevices = dispatcher("spotify_devices", "list", map[string]acti
 		if err != nil {
 			return "", err
 		}
-		result, err := c.Request("PUT", "/me/player", nil, pyjson.ObjectOf("device_ids", []any{deviceID}, "play", coerceBool(a["play"], false)))
+		result, err := c.Request("PUT", "/me/player", nil, jsonutil.ObjectOf("device_ids", []any{deviceID}, "play", coerceBool(a["play"], false)))
 		if err != nil {
 			return "", err
 		}
@@ -482,14 +482,14 @@ var handleSpotifyDevices = dispatcher("spotify_devices", "list", map[string]acti
 // Adds one item to the queue, the URI echoed back
 func queueAdd(c apiClient, a toolArgs, action string) (string, error) {
 	raw := ""
-	if pyrepr.Truthy(a["uri"]) {
-		raw = pyrepr.Str(a["uri"])
+	if anyutil.IsTrue(a["uri"]) {
+		raw = anyutil.String(a["uri"])
 	}
 	uri, err := normalizeSpotifyURI(raw, "")
 	if err != nil {
 		return "", err
 	}
-	result, err := c.Request("POST", "/me/player/queue", pyjson.ObjectOf("uri", uri, "device_id", a["device_id"]), nil)
+	result, err := c.Request("POST", "/me/player/queue", jsonutil.ObjectOf("uri", uri, "device_id", a["device_id"]), nil)
 	if err != nil {
 		return "", err
 	}
@@ -514,17 +514,17 @@ func handleSpotifySearch(ctx context.Context, call *tools.Call) string {
 	a := tools.PythonCallArgs(call)
 	client := mustClient(ctx, call.Env)
 	query := ""
-	if pyrepr.Truthy(a["query"]) {
-		query = strings.TrimSpace(pyrepr.Str(a["query"]))
+	if anyutil.IsTrue(a["query"]) {
+		query = strings.TrimSpace(anyutil.String(a["query"]))
 	}
 	if query == "" {
 		return toolError("query is required")
 	}
 	rawTypes := a["types"]
-	if !pyrepr.Truthy(rawTypes) {
+	if !anyutil.IsTrue(rawTypes) {
 		rawTypes = a["type"]
 	}
-	if !pyrepr.Truthy(rawTypes) {
+	if !anyutil.IsTrue(rawTypes) {
 		rawTypes = []any{"track"}
 	}
 	var selected []string
@@ -540,7 +540,7 @@ func handleSpotifySearch(ctx context.Context, call *tools.Call) string {
 	if err != nil {
 		panic(err)
 	}
-	params := pyjson.ObjectOf("q", query, "type", strings.Join(selected, ","), "limit", limitArg(a, 10), "offset", offset,
+	params := jsonutil.ObjectOf("q", query, "type", strings.Join(selected, ","), "limit", limitArg(a, 10), "offset", offset,
 		"market", a["market"], "include_external", a["include_external"])
 	result, err := client.Request("GET", "/search", params, nil)
 	if err != nil {
@@ -550,20 +550,20 @@ func handleSpotifySearch(ctx context.Context, call *tools.Call) string {
 }
 
 // Limit, offset and market params of a paged read
-func pageParams(a toolArgs) (*pyjson.Object, error) {
+func pageParams(a toolArgs) (*jsonutil.Object, error) {
 	limit := limitArg(a, 20)
 	offset, err := offsetArg(a)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("limit", limit, "offset", offset, "market", a["market"]), nil
+	return jsonutil.ObjectOf("limit", limit, "offset", offset, "market", a["market"]), nil
 }
 
 // API path of the playlist the playlist_id argument names, with a suffix
 func playlistPath(a toolArgs, suffix string) (string, error) {
 	raw := ""
-	if pyrepr.Truthy(a["playlist_id"]) {
-		raw = pyrepr.Str(a["playlist_id"])
+	if anyutil.IsTrue(a["playlist_id"]) {
+		raw = anyutil.String(a["playlist_id"])
 	}
 	id, err := normalizeSpotifyID(raw, "playlist")
 	if err != nil {
@@ -587,14 +587,14 @@ var handleSpotifyPlaylists = dispatcher("spotify_playlists", "list", map[string]
 		if err != nil {
 			return "", err
 		}
-		return resultOf(c.Request("GET", "/me/playlists", pyjson.ObjectOf("limit", limit, "offset", offset), nil))
+		return resultOf(c.Request("GET", "/me/playlists", jsonutil.ObjectOf("limit", limit, "offset", offset), nil))
 	},
 	"get": func(c apiClient, a toolArgs, _ string) (string, error) {
 		path, err := playlistPath(a, "")
 		if err != nil {
 			return "", err
 		}
-		return resultOf(c.Request("GET", path, pyjson.ObjectOf("market", a["market"]), nil))
+		return resultOf(c.Request("GET", path, jsonutil.ObjectOf("market", a["market"]), nil))
 	},
 	"items": func(c apiClient, a toolArgs, _ string) (string, error) {
 		path, err := playlistPath(a, "/items")
@@ -612,7 +612,7 @@ var handleSpotifyPlaylists = dispatcher("spotify_playlists", "list", map[string]
 		if err != nil {
 			return "", err
 		}
-		return resultOf(c.Request("POST", "/me/playlists", nil, pyjson.ObjectOf("name", name, "public", coerceBool(a["public"], false),
+		return resultOf(c.Request("POST", "/me/playlists", nil, jsonutil.ObjectOf("name", name, "public", coerceBool(a["public"], false),
 			"collaborative", coerceBool(a["collaborative"], false), "description", a["description"])))
 	},
 	"add_items": func(c apiClient, a toolArgs, _ string) (string, error) {
@@ -624,7 +624,7 @@ var handleSpotifyPlaylists = dispatcher("spotify_playlists", "list", map[string]
 		if err != nil {
 			return "", err
 		}
-		return resultOf(c.Request("POST", path, nil, pyjson.ObjectOf("uris", stringsToAny(uris), "position", a["position"])))
+		return resultOf(c.Request("POST", path, nil, jsonutil.ObjectOf("uris", stringsToAny(uris), "position", a["position"])))
 	},
 	"remove_items": func(c apiClient, a toolArgs, _ string) (string, error) {
 		path, err := playlistPath(a, "/items")
@@ -637,16 +637,16 @@ var handleSpotifyPlaylists = dispatcher("spotify_playlists", "list", map[string]
 		}
 		items := make([]any, len(uris))
 		for i, u := range uris {
-			items[i] = pyjson.ObjectOf("uri", u)
+			items[i] = jsonutil.ObjectOf("uri", u)
 		}
-		return resultOf(c.Request("DELETE", path, nil, pyjson.ObjectOf("items", items, "snapshot_id", a["snapshot_id"])))
+		return resultOf(c.Request("DELETE", path, nil, jsonutil.ObjectOf("items", items, "snapshot_id", a["snapshot_id"])))
 	},
 	"update_details": func(c apiClient, a toolArgs, _ string) (string, error) {
 		path, err := playlistPath(a, "")
 		if err != nil {
 			return "", err
 		}
-		return resultOf(c.Request("PUT", path, nil, pyjson.ObjectOf("name", a["name"], "public", a["public"],
+		return resultOf(c.Request("PUT", path, nil, jsonutil.ObjectOf("name", a["name"], "public", a["public"],
 			"collaborative", a["collaborative"], "description", a["description"])))
 	},
 }, nil)
@@ -654,12 +654,12 @@ var handleSpotifyPlaylists = dispatcher("spotify_playlists", "list", map[string]
 // Args with the album API path the album_id or id argument names
 func prepareAlbum(a toolArgs) (toolArgs, error) {
 	raw := a["album_id"]
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = a["id"]
 	}
 	text := ""
-	if pyrepr.Truthy(raw) {
-		text = pyrepr.Str(raw)
+	if anyutil.IsTrue(raw) {
+		text = anyutil.String(raw)
 	}
 	id, err := normalizeSpotifyID(text, "album")
 	if err != nil {
@@ -675,22 +675,22 @@ func prepareAlbum(a toolArgs) (toolArgs, error) {
 
 var handleSpotifyAlbums = dispatcher("spotify_albums", "get", map[string]actionHandler{
 	"get": func(c apiClient, a toolArgs, _ string) (string, error) {
-		return resultOf(c.Request("GET", pyrepr.Str(a["_path"]), pyjson.ObjectOf("market", a["market"]), nil))
+		return resultOf(c.Request("GET", anyutil.String(a["_path"]), jsonutil.ObjectOf("market", a["market"]), nil))
 	},
 	"tracks": func(c apiClient, a toolArgs, _ string) (string, error) {
 		params, err := pageParams(a)
 		if err != nil {
 			return "", err
 		}
-		return resultOf(c.Request("GET", pyrepr.Str(a["_path"])+"/tracks", params, nil))
+		return resultOf(c.Request("GET", anyutil.String(a["_path"])+"/tracks", params, nil))
 	},
 }, prepareAlbum)
 
 // Comma joined URIs of the ids or items arguments for a library remove
 func libRemoveURIs(a toolArgs) (string, error) {
-	itemType := pyrepr.Str(a["_item_type"])
+	itemType := anyutil.String(a["_item_type"])
 	raw := a["ids"]
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = a["items"]
 	}
 	var ids []string
@@ -717,25 +717,25 @@ var libraryTable = map[string]actionHandler{
 		if err != nil {
 			return "", err
 		}
-		return resultOf(c.Request("GET", "/me/"+pyrepr.Str(a["kind"]), params, nil))
+		return resultOf(c.Request("GET", "/me/"+anyutil.String(a["kind"]), params, nil))
 	},
 	"save": func(c apiClient, a toolArgs, _ string) (string, error) {
 		raw := a["uris"]
-		if !pyrepr.Truthy(raw) {
+		if !anyutil.IsTrue(raw) {
 			raw = a["items"]
 		}
-		uris, err := normalizeSpotifyURIs(asList(raw), pyrepr.Str(a["_item_type"]))
+		uris, err := normalizeSpotifyURIs(asList(raw), anyutil.String(a["_item_type"]))
 		if err != nil {
 			return "", err
 		}
-		return resultOf(c.Request("PUT", "/me/library", pyjson.ObjectOf("uris", strings.Join(uris, ",")), nil))
+		return resultOf(c.Request("PUT", "/me/library", jsonutil.ObjectOf("uris", strings.Join(uris, ",")), nil))
 	},
 	"remove": func(c apiClient, a toolArgs, _ string) (string, error) {
 		uris, err := libRemoveURIs(a)
 		if err != nil {
 			return "", err
 		}
-		return resultOf(c.Request("DELETE", "/me/library", pyjson.ObjectOf("uris", uris), nil))
+		return resultOf(c.Request("DELETE", "/me/library", jsonutil.ObjectOf("uris", uris), nil))
 	},
 }
 
@@ -743,8 +743,8 @@ var libraryTable = map[string]actionHandler{
 func handleSpotifyLibrary(ctx context.Context, call *tools.Call) string {
 	a := tools.PythonCallArgs(call)
 	kind := ""
-	if pyrepr.Truthy(a["kind"]) {
-		kind = strings.ToLower(strings.TrimSpace(pyrepr.Str(a["kind"])))
+	if anyutil.IsTrue(a["kind"]) {
+		kind = strings.ToLower(strings.TrimSpace(anyutil.String(a["kind"])))
 	}
 	if kind != "tracks" && kind != "albums" {
 		return toolError("kind must be one of: tracks, albums")

@@ -19,13 +19,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -148,12 +147,12 @@ func IterConfiguredOutboundWebhooks(ctx context.Context) ([]*OutboundWebhookTarg
 
 // FlushOutboundWebhooks blocks until every queued delivery finished or the timeout passed, true when drained
 func FlushOutboundWebhooks(timeout time.Duration) bool {
-	return pydeadline.PollUntil(func() (bool, bool) {
+	return syncutil.PollUntil(context.Background(), timeout, 20*time.Millisecond, func() (bool, bool) {
 		outboundPendingMu.Lock()
 		drained := outboundPending == 0
 		outboundPendingMu.Unlock()
 		return drained, drained
-	}, timeout, 20*time.Millisecond)
+	})
 }
 
 // ReRegisterOutboundWebhooks drops the current home's wired keys and registers the saved config again after a force reload
@@ -253,8 +252,8 @@ func parseOutboundWebhookTarget(ctx context.Context, index int, raw any) (*Outbo
 	}
 	timeout := OutboundWebhookDefaultTimeoutSeconds
 	if rawTimeout, present := entry["timeout"]; present {
-		if n, ok := pyIntOf(rawTimeout); ok {
-			timeout = n
+		if n, err := anyutil.ToInt(rawTimeout); err == nil {
+			timeout = int(n)
 		} else {
 			warn(".timeout must be an int (got %s); using default %ds", errchain.Show(rawTimeout), OutboundWebhookDefaultTimeoutSeconds)
 		}
@@ -288,30 +287,6 @@ func outboundSecret(ctx context.Context, name string) (string, error) {
 	}
 	value, _, err := get(ctx, name)
 	return value, err
-}
-
-// Python int() of a config value, false when the value is not an int, a float or a digit string
-func pyIntOf(v any) (int, bool) {
-	switch n := v.(type) {
-	case int:
-		return n, true
-	case int64:
-		return int(n), true
-	case bool:
-		if n {
-			return 1, true
-		}
-		return 0, true
-	case float64:
-		return int(n), true
-	case string:
-		value, ok := pystr.IntText(strings.TrimSpace(n))
-		if !ok || !value.IsInt64() {
-			return 0, false
-		}
-		return int(value.Int64()), true
-	}
-	return 0, false
 }
 
 // Notify only callback invoke_hook runs per firing, the delivery queued and never a directive
@@ -349,11 +324,11 @@ func makeOutboundWebhookCallback(event string, target *OutboundWebhookTarget) Ho
 
 // POST body of one firing, the shell hooks stdin shape plus the delivery id and timestamp inside the signed bytes
 func serializeOutboundWebhookPayload(ctx context.Context, event string, kwargs map[string]any, deliveryID string) ([]byte, error) {
-	payload := pyjson.ObjectOf("hook_event_name", event, "profile", profiles.GetActiveProfileName(ctx))
-	payload.Update(shellHookPayloadFields(ctx, kwargs))
+	payload := jsonutil.ObjectOf("hook_event_name", event, "profile", profiles.GetActiveProfileName(ctx))
+	payload.Merge(shellHookPayloadFields(ctx, kwargs))
 	payload.Set("delivery_id", deliveryID)
 	payload.Set("timestamp", shellHookISO(outboundNow()))
-	text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	text, err := jsonutil.Encode(payload, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
 		return nil, err
 	}
@@ -414,7 +389,7 @@ func outboundWorkerLoop() {
 }
 
 // Transport that refuses redirects so a redirected POST never turns into a body less GET
-var outboundWebhookClient = &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy},
+var outboundWebhookClient = &http.Client{Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: httputil.Proxy},
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
 // POST with bounded retries, connection errors and 5xx retried once, 4xx and 3xx final

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // NeutralPersonalityNames are the names that mean no personality overlay
@@ -108,8 +108,8 @@ func DescribePersonality(value any, width int) string {
 // Canonical lower case form of a personality name, empty for every neutral spelling
 func NormalizePersonalityName(value any) string {
 	name := ""
-	if value != nil && pyrepr.Truthy(value) {
-		name = strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	if value != nil && anyutil.IsTrue(value) {
+		name = strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 	}
 	if NeutralPersonalityNames[name] {
 		return ""
@@ -117,13 +117,13 @@ func NormalizePersonalityName(value any) string {
 	return name
 }
 
-// UnknownPersonalityError is the ValueError raised for a name no personality carries
+// UnknownPersonalityError is the invalid value error for a name no personality carries
 type UnknownPersonalityError struct{ Msg string }
 
 func (e *UnknownPersonalityError) Error() string { return e.Msg }
 
-// Python exception class name the error stands for
-func (e *UnknownPersonalityError) PyTypeName() string { return "ValueError" }
+// ErrorKind labels the error as an invalid value for errorutil.Kind
+func (e *UnknownPersonalityError) ErrorKind() string { return "ValueError" }
 
 // Canonical name and rendered prompt of a requested personality, neutral names resolving to empty
 func ResolvePersonality(value any, cfg config.Tree) (string, string, error) {
@@ -139,7 +139,7 @@ func ResolvePersonality(value any, cfg config.Tree) (string, string, error) {
 			names = append(names, "`"+n+"`")
 		}
 		sort.Strings(names)
-		return "", "", &UnknownPersonalityError{Msg: fmt.Sprintf("Unknown personality: `%s`.\n\nAvailable: `none`, %s", strings.TrimSpace(pyrepr.Str(value)), strings.Join(names, ", "))}
+		return "", "", &UnknownPersonalityError{Msg: fmt.Sprintf("Unknown personality: `%s`.\n\nAvailable: `none`, %s", strings.TrimSpace(anyutil.String(value)), strings.Join(names, ", "))}
 	}
 	return name, RenderPersonalityPrompt(def), nil
 }

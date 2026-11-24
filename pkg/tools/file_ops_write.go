@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // Deletes one file, refusing directories, natively on a local POSIX host else through a backend snippet
@@ -277,7 +280,7 @@ func (s *shellFileOps) WriteFile(path, content string, preContent *string) *Writ
 	if denied := writeDeniedError(s.env, path, "Write", false); denied != "" {
 		return &WriteResult{Error: denied}
 	}
-	ext := pyLower(pySplitextExt(path))
+	ext := cases.Lower(language.Und).String(pySplitextExt(path))
 	if refused := failClosedSyntaxError(path, ext, content); refused != nil {
 		return refused
 	}
@@ -296,10 +299,7 @@ func (s *shellFileOps) WriteFile(path, content string, preContent *string) *Writ
 		content = utf8BOM + content
 	}
 	dirsCreated := pathDirnameOS(path) != ""
-	contentBytes, err := pystr.SurrogateEscapeEncode(content)
-	if err != nil {
-		panic(err)
-	}
+	contentBytes := []byte(content)
 	if wr := s.atomicWrite(path, content); wr.ExitCode != 0 {
 		return &WriteResult{Error: "Failed to write file: " + wr.Stdout}
 	}
@@ -344,7 +344,7 @@ func (s *shellFileOps) verifyPatchPersisted(path, newContent string) *PatchResul
 	if failed != nil {
 		return &PatchResult{Error: "Post-write verification failed: could not re-read " + path}
 	}
-	bomless, _ := stripBOM(pystr.SurrogateEscapeDecode(data))
+	bomless, _ := stripBOM(string(data))
 	onDisk := strings.ReplaceAll(strings.ReplaceAll(bomless, "\r\n", "\n"), "\r", "\n")
 	intended := strings.ReplaceAll(strings.ReplaceAll(newContent, "\r\n", "\n"), "\r", "\n")
 	if onDisk != intended {
@@ -371,7 +371,7 @@ func (s *shellFileOps) patchReplace(path, oldString, newString string, replaceAl
 		}
 		return &PatchResult{Error: msg}
 	}
-	rawContent := pystr.SurrogateEscapeDecode(data)
+	rawContent := string(data)
 	content, _ := stripBOM(rawContent)
 	var correctionNotes []string
 	newContent, matchCount, strategy, errText := FuzzyFindAndReplace(content, oldString, newString, replaceAll, &correctionNotes)

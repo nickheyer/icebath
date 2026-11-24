@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func apWriteJSON(t *testing.T, path string, value any) {
@@ -73,7 +73,7 @@ func apWriteSkill(t *testing.T, root, dir string, fields ...[2]any) string {
 
 func apResolve(t *testing.T, p string) string {
 	t.Helper()
-	r, err := pypath.Resolve(p)
+	r, err := pathutil.Resolve(p)
 	if err != nil {
 		t.Fatal(err)
 	}

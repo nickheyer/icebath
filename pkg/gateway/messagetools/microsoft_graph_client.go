@@ -7,15 +7,17 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const DefaultGraphBaseURL = "https://graph.microsoft.com/v1.0"
@@ -156,7 +158,7 @@ func (c *MicrosoftGraphClient) PatchJSON(ctx context.Context, path string, jsonB
 	if resp.StatusCode != http.StatusNoContent && len(resp.Content) > 0 {
 		return decodeGraphJSON(resp)
 	}
-	return pyjson.NewObject(), nil
+	return jsonutil.NewObject(), nil
 }
 
 // Decoded body of a DELETE, or deleted true with the status code for a 204 or bodiless response
@@ -168,7 +170,7 @@ func (c *MicrosoftGraphClient) DeleteValue(ctx context.Context, path string, hea
 	if resp.StatusCode != http.StatusNoContent && len(resp.Content) > 0 {
 		return decodeGraphJSON(resp)
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("deleted", true)
 	out.Set("status_code", int64(resp.StatusCode))
 	return out, nil
@@ -181,8 +183,8 @@ func (c *MicrosoftGraphClient) Delete(ctx context.Context, path string, headers 
 		return nil, err
 	}
 	switch d := v.(type) {
-	case *pyjson.Object:
-		return d.Vals, nil
+	case *jsonutil.Object:
+		return d.Map(), nil
 	case map[string]any:
 		return d, nil
 	}
@@ -214,7 +216,7 @@ func (c *MicrosoftGraphClient) CollectPaginated(ctx context.Context, path string
 			items = append(items, list...)
 		}
 		next := get("@odata.nextLink")
-		if !pyrepr.Truthy(next) {
+		if !anyutil.IsTrue(next) {
 			break
 		}
 		s, ok := next.(string)
@@ -233,27 +235,27 @@ func (c *MicrosoftGraphClient) DownloadToFile(ctx context.Context, path, destina
 
 // Download reading the body chunkSize bytes at a time
 func (c *MicrosoftGraphClient) DownloadToFileChunked(ctx context.Context, path, destination string, headers map[string]string, chunkSize int) (map[string]any, error) {
-	rawURL, target := c.resolveURL(path), pypath.PathStr(destination)
-	if err := os.MkdirAll(pypath.PathParent(target), 0o777); err != nil {
+	rawURL, target := c.resolveURL(path), filepath.Clean(destination)
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(target)), 0o777); err != nil {
 		return nil, err
 	}
-	name := pypath.PathName(target)
+	name := pathutil.Name(target)
 	if name == "" {
 		return nil, fmt.Errorf("%s has an empty file name", target)
 	}
-	tmpTarget := pypath.PathJoin(pypath.PathParent(target), name+".part")
+	tmpTarget := pathutil.Join(filepath.Dir(filepath.Clean(target)), name+".part")
 	unlinkPart := func() {
 		if ctx.Err() == nil {
 			os.Remove(tmpTarget)
 		}
 	}
-	perform := func(client *http.Client, hdr http.Header) (*pyhttpx.Response, any, error) {
+	perform := func(client *http.Client, hdr http.Header) (*httputil.Response, any, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			return nil, nil, err
 		}
 		req.Header = hdr
-		s, err := pyhttpx.Stream(client, req, c.Timeout)
+		s, err := httputil.Stream(client, req, httputil.EachPhase(c.Timeout))
 		if err != nil {
 			unlinkPart()
 			return nil, nil, transportFailure{err}
@@ -338,12 +340,12 @@ func queryValues(v any) []string {
 	case nil:
 		return []string{""}
 	}
-	return []string{pyrepr.Str(v)}
+	return []string{anyutil.String(v)}
 }
 
 // Response of a JSON request with the method and URL it was sent with
 type graphResponse struct {
-	*pyhttpx.Response
+	*httputil.Response
 	method, url string
 }
 
@@ -363,17 +365,17 @@ func (c *MicrosoftGraphClient) request(ctx context.Context, method, pathOrURL st
 				ps = append(ps, [2]string{k, v})
 			}
 		}
-		reqURL = pyhttpx.MergeParams(rawURL, ps)
+		reqURL = httputil.MergeQuery(rawURL, ps)
 	}
 	var body []byte
 	if jsonBody != nil {
-		text, err := pyjson.Dumps(jsonBody, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+		text, err := jsonutil.Encode(jsonBody)
 		if err != nil {
 			return nil, err
 		}
 		body = []byte(text)
 	}
-	perform := func(client *http.Client, hdr http.Header) (*pyhttpx.Response, any, error) {
+	perform := func(client *http.Client, hdr http.Header) (*httputil.Response, any, error) {
 		var rd io.Reader
 		if body != nil {
 			rd = strings.NewReader(string(body))
@@ -383,7 +385,7 @@ func (c *MicrosoftGraphClient) request(ctx context.Context, method, pathOrURL st
 			return nil, nil, err
 		}
 		req.Header = hdr
-		resp, err := pyhttpx.Do(client, req, c.Timeout)
+		resp, err := httputil.Do(client, req, httputil.EachPhase(c.Timeout))
 		if err != nil {
 			return nil, nil, transportFailure{err}
 		}
@@ -393,7 +395,7 @@ func (c *MicrosoftGraphClient) request(ctx context.Context, method, pathOrURL st
 	if err != nil {
 		return nil, err
 	}
-	return &graphResponse{Response: got.(*pyhttpx.Response), method: method, url: reqURL}, nil
+	return &graphResponse{Response: got.(*httputil.Response), method: method, url: reqURL}, nil
 }
 
 // Request headers with bearer token, accept and user agent, caller headers replacing equal keys
@@ -424,7 +426,7 @@ func (c *MicrosoftGraphClient) requestHeaders(token, accept string, hasJSON bool
 
 // Runs perform under the retry policy, refreshing the token only after a 401 and raising once retries run out
 func (c *MicrosoftGraphClient) withRetries(ctx context.Context, method, rawURL, accept string, hasJSON bool, headers map[string]string,
-	perform func(client *http.Client, hdr http.Header) (*pyhttpx.Response, any, error), kind string) (any, error) {
+	perform func(client *http.Client, hdr http.Header) (*httputil.Response, any, error), kind string) (any, error) {
 	var lastErr error
 	for attempt := 0; attempt <= c.MaxRetries; attempt++ {
 		apiErr, isAPI := lastErr.(*MicrosoftGraphAPIError)
@@ -436,7 +438,7 @@ func (c *MicrosoftGraphClient) withRetries(ctx context.Context, method, rawURL, 
 		client, closeClient := freshHTTPClient(c.transport)
 		resp, result, err := perform(client, c.requestHeaders(token, accept, hasJSON, headers))
 		closeClient()
-		var retryResp *pyhttpx.Response
+		var retryResp *httputil.Response
 		if err != nil {
 			var tf transportFailure
 			if ctx.Err() != nil {
@@ -447,7 +449,7 @@ func (c *MicrosoftGraphClient) withRetries(ctx context.Context, method, rawURL, 
 			}
 			lastErr = tf.err
 			if exhausted {
-				return nil, &MicrosoftGraphClientError{Msg: fmt.Sprintf("Microsoft Graph %s failed for %s %s: %s", kind, method, rawURL, pyhttpx.ErrorText(tf.err)), Err: tf.err}
+				return nil, &MicrosoftGraphClientError{Msg: fmt.Sprintf("Microsoft Graph %s failed for %s %s: %s", kind, method, rawURL, tf.err.Error()), Err: tf.err}
 			}
 		} else {
 			if resp.StatusCode < 400 {
@@ -492,7 +494,7 @@ func decodeGraphJSON(resp *graphResponse) (any, error) {
 }
 
 // Retry-After seconds when the response names them, else half a second doubling per attempt up to eight
-func graphRetryDelay(resp *pyhttpx.Response, attempt int) float64 {
+func graphRetryDelay(resp *httputil.Response, attempt int) float64 {
 	if resp != nil {
 		if v, ok := pyhttpx.RetryAfterSeconds(resp.Header); ok {
 			return v
@@ -502,7 +504,7 @@ func graphRetryDelay(resp *pyhttpx.Response, attempt int) float64 {
 }
 
 // API error from a failed response, the Graph error detail preferred over the raw text
-func buildGraphAPIError(method, rawURL string, resp *pyhttpx.Response) *MicrosoftGraphAPIError {
+func buildGraphAPIError(method, rawURL string, resp *httputil.Response) *MicrosoftGraphAPIError {
 	payload, err := resp.JSON()
 	if err != nil {
 		payload = nil

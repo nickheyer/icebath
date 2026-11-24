@@ -4,23 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
 // A notify service name, the form cron delivery targets take
-var notifyServiceRE = func() interface{ MatchString(string) (bool, error) } {
-	re, err := pyre.CompileFullmatch(`[a-z0-9_]+`)
-	if err != nil {
-		panic(err)
-	}
-	return re
-}()
+var notifyServiceRE = regexutil.Lazy(regexp.MustCompile, `\A[a-z0-9_]+\z`)
 
 // Cron delivery through the target's notify service, grouped notify kept for an unknown service or a blank target
 func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any, error) {
@@ -33,7 +28,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		extra, token = pconfig.Extra, pconfig.Token
 	}
 	var rawURL any = extra["url"]
-	if !pyrepr.Truthy(rawURL) {
+	if !anyutil.IsTrue(rawURL) {
 		scoped, err := gateway.GetScopedSecret(ctx, "HASS_URL", "", false)
 		if err != nil {
 			return nil, err
@@ -45,7 +40,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		return nil, attrErr(rawURL, "the Home Assistant url", "text")
 	}
 	hassURL := strings.TrimRight(urlText, "/")
-	if !pyrepr.Truthy(token) {
+	if !anyutil.IsTrue(token) {
 		scoped, err := gateway.GetScopedSecret(ctx, "HASS_TOKEN", "", false)
 		if err != nil {
 			return nil, err
@@ -65,11 +60,11 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	}
 	type notifyCall struct {
 		url     string
-		payload *pyjson.Object
+		payload *jsonutil.Object
 	}
-	calls := []notifyCall{{hassURL + "/api/services/notify/notify", pyjson.ObjectOf("message", message, "target", chatID)}}
+	calls := []notifyCall{{hassURL + "/api/services/notify/notify", jsonutil.ObjectOf("message", message, "target", chatID)}}
 	var serviceRef any = chatID
-	if !pyrepr.Truthy(serviceRef) {
+	if !anyutil.IsTrue(serviceRef) {
 		serviceRef = ""
 	}
 	serviceText, ok := serviceRef.(string)
@@ -77,10 +72,8 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		return nil, attrErr(serviceRef, "the service", "text")
 	}
 	service := strings.TrimPrefix(strings.TrimSpace(serviceText), "notify.")
-	if matched, err := notifyServiceRE.MatchString(service); err != nil {
-		panic(err)
-	} else if matched {
-		calls = append([]notifyCall{{hassURL + "/api/services/notify/" + service, pyjson.ObjectOf("message", message)}}, calls...)
+	if notifyServiceRE().MatchString(service) {
+		calls = append([]notifyCall{{hassURL + "/api/services/notify/" + service, jsonutil.ObjectOf("message", message)}}, calls...)
 	}
 	session := newSession(gateway.GatewayTrustEnv(ctx))
 	defer session.CloseIdleConnections()
@@ -100,11 +93,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if resp.status == 200 || resp.status == 201 {
 			return map[string]any{"success": true, "platform": platformName, "chat_id": chatID}, nil
 		}
-		text, err := resp.text()
-		if err != nil {
-			return gateway.SendError("Home Assistant send failed: " + err.Error()), nil
-		}
-		errText := fmt.Sprintf("Home Assistant API error (%d) from %s: %s", resp.status, strings.TrimPrefix(call.url, hassURL), text)
+		errText := fmt.Sprintf("Home Assistant API error (%d) from %s: %s", resp.status, strings.TrimPrefix(call.url, hassURL), resp.text())
 		if resp.status != 400 || i == len(calls)-1 {
 			return gateway.SendError(errText), nil
 		}

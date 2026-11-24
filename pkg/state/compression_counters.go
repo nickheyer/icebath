@@ -2,13 +2,9 @@ package state
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
-	"math/big"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const cooldownRowSQL = "SELECT compression_failure_cooldown_until, compression_failure_error FROM sessions WHERE id = ?"
@@ -27,9 +23,9 @@ type CompressionCooldownRow struct {
 	Error         any
 }
 
-// Dict form of the row in its fixed key order for repr and comparison
-func (r CompressionCooldownRow) object() *pyjson.Object {
-	out := pyjson.NewObject()
+// Object form of the row in its fixed key order for display and comparison
+func (r CompressionCooldownRow) object() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("session_exists", r.SessionExists)
 	if r.CooldownUntil == nil {
 		out.Set("cooldown_until", nil)
@@ -40,11 +36,11 @@ func (r CompressionCooldownRow) object() *pyjson.Object {
 	return out
 }
 
-// Cooldown row from raw columns with the deadline cast through Python float
+// Cooldown row from raw columns with the deadline converted to a float
 func cooldownRow(exists bool, cooldownUntil, errValue any) (CompressionCooldownRow, error) {
 	row := CompressionCooldownRow{SessionExists: exists, Error: errValue}
 	if cooldownUntil != nil {
-		f, err := pyint.Float(cooldownUntil)
+		f, err := anyutil.ToFloat(cooldownUntil)
 		if err != nil {
 			return row, err
 		}
@@ -80,7 +76,7 @@ func (d *DB) SetCompressionCooldown(sessionID string, until float64, reason stri
 }
 
 // Unexpired compression failure cooldown with its remaining seconds, nil when none is live
-func (d *SessionDB) GetCompressionFailureCooldown(sessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) GetCompressionFailureCooldown(sessionID string) (*jsonutil.Object, error) {
 	current := now()
 	if sessionID == "" {
 		return nil, nil
@@ -93,11 +89,11 @@ func (d *SessionDB) GetCompressionFailureCooldown(sessionID string) (*pyjson.Obj
 	if raw == nil {
 		return nil, nil
 	}
-	until, err := pyint.Float(raw)
+	until, err := anyutil.ToFloat(raw)
 	if err != nil || until <= current {
 		return nil, err
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("cooldown_until", until)
 	out.Set("remaining_seconds", until-current)
 	out.Set("error", rowValue(row, "compression_failure_error"))
@@ -112,7 +108,7 @@ func (d *DB) CompressionCooldown(sessionID string) (CompressionCooldown, error) 
 	}
 	out := CompressionCooldown{Until: rowValue(row, "cooldown_until").(float64), RemainingSeconds: rowValue(row, "remaining_seconds").(float64)}
 	if v := rowValue(row, "error"); v != nil {
-		out.Error = pyrepr.Str(v)
+		out.Error = anyutil.String(v)
 	}
 	return out, nil
 }
@@ -140,7 +136,7 @@ func (d *SessionDB) RestoreCompressionFailureCooldownRow(sessionID string, snaps
 			return err
 		}
 		if current.SessionExists {
-			return &pyint.Error{Kind: "RuntimeError", Msg: "cannot restore absent compression cooldown row: session now exists"}
+			return &errorutil.Error{Kind: "RuntimeError", Msg: "cannot restore absent compression cooldown row: session now exists"}
 		}
 		return nil
 	}
@@ -174,13 +170,13 @@ func (d *SessionDB) RestoreCompressionFailureCooldownRow(sessionID string, snaps
 	if err != nil {
 		return err
 	}
-	if pyrepr.Repr(actual.object()) != pyrepr.Repr(expected.object()) {
+	if anyutil.Quote(actual.object()) != anyutil.Quote(expected.object()) {
 		if !actual.SessionExists {
 			pkgLog().Warn("compression cooldown rollback session missing after restore: " + sessionID)
 			return nil
 		}
-		return &pyint.Error{Kind: "RuntimeError", Msg: fmt.Sprintf("compression cooldown rollback verification failed: expected=%s, actual=%s",
-			pyrepr.Repr(expected.object()), pyrepr.Repr(actual.object()))}
+		return &errorutil.Error{Kind: "RuntimeError", Msg: fmt.Sprintf("compression cooldown rollback verification failed: expected=%s, actual=%s",
+			anyutil.Quote(expected.object()), anyutil.Quote(actual.object()))}
 	}
 	return nil
 }
@@ -213,22 +209,22 @@ func (d *SessionDB) readSessionNumber(column, sessionID string, asFloat bool) (f
 	if b, ok := raw.([]byte); ok {
 		raw = string(b)
 	}
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return 0, nil
 	}
 	var value float64
 	if asFloat {
-		f, ferr := pyint.Float(raw)
+		f, ferr := anyutil.ToFloat(raw)
 		if ferr != nil {
 			return 0, castFailure(ferr)
 		}
 		value = f
 	} else {
-		n, ierr := pyint.Of(raw)
+		n, ierr := anyutil.ToInt(raw)
 		if ierr != nil {
 			return 0, castFailure(ierr)
 		}
-		value, _ = new(big.Float).SetInt(n).Float64()
+		value = float64(n)
 	}
 	if math.IsNaN(value) || !(value > 0) {
 		return 0, nil
@@ -236,9 +232,9 @@ func (d *SessionDB) readSessionNumber(column, sessionID string, asFloat bool) (f
 	return value, nil
 }
 
-// TypeError and ValueError read as zero, any other cast failure propagates
+// A value with no numeric form reads as zero, any other cast failure propagates
 func castFailure(err error) error {
-	if pe, ok := err.(*pyint.Error); ok && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
+	if errors.Is(err, anyutil.ErrNotNumber) {
 		return nil
 	}
 	return err
@@ -320,11 +316,11 @@ func (d *DB) IncrementCompressionOverloadStreak(sessionID string) (*int, error) 
 			out = nil
 			return err
 		}
-		n, err := pyint.Of(row["compression_overload_streak"])
+		n, err := anyutil.ToInt(row["compression_overload_streak"])
 		if err != nil {
 			return err
 		}
-		v := int(n.Int64())
+		v := int(n)
 		out = &v
 		return nil
 	}, nil)

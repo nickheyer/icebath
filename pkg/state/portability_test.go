@@ -95,7 +95,7 @@ func TestRunLookupIsIndexServedOnNewAndUpgradedStores(t *testing.T) {
 	}
 	var details []string
 	for _, r := range plan {
-		details = append(details, pyStr(r.Vals[r.Keys[len(r.Keys)-1]]))
+		details = append(details, pyStr(r.Value(r.Keys()[r.Len()-1])))
 	}
 	if joined := strings.Join(details, " "); !strings.Contains(joined, "idx_session_admissions_cron_request") {
 		t.Fatalf("plan %s", joined)

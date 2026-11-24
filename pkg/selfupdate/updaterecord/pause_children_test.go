@@ -18,16 +18,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func pcLoad(text string) map[string]any {
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		panic(err)
 	}
-	return pyjson.Plain(v).(map[string]any)
+	return jsonutil.Plain(v).(map[string]any)
 }
 
 // Child stand-ins for the updaters, launches and gateways the pause record tests kill and race
@@ -45,7 +45,7 @@ func pcChild(mode string, args []string) int {
 			for _, name := range pbProfiles(token) {
 				names = append(names, name)
 			}
-			pcPrint("resume " + pyrepr.Repr(names))
+			pcPrint("resume " + anyutil.Quote(names))
 			if hang {
 				time.Sleep(120 * time.Second)
 			}
@@ -69,7 +69,7 @@ func pcChild(mode string, args []string) int {
 			pcPrint("null")
 			return 0
 		}
-		text, err := pyjson.Dumps(mapOf(found[0].Body["token"])["profiles"])
+		text, err := jsonutil.Encode(mapOf(found[0].Body["token"])["profiles"])
 		must(err)
 		pcPrint(text)
 	case "recover":
@@ -110,7 +110,7 @@ func pcChild(mode string, args []string) int {
 		if !ok {
 			pcPrint("null")
 		} else {
-			text, _ := pyjson.Dumps(won)
+			text, _ := jsonutil.Encode(won)
 			pcPrint(text)
 		}
 	case "claim_kill":
@@ -162,7 +162,7 @@ func pcChild(mode string, args []string) int {
 		must(err)
 		body, err := ReadPauseRecord(PauseRecordPath())
 		must(err)
-		text, err := pyjson.Dumps([]any{len(found), body})
+		text, err := jsonutil.Encode([]any{len(found), body})
 		must(err)
 		pcPrint(text)
 	default:
@@ -234,10 +234,10 @@ func TestRecordWrittenByAKilledUpdaterIsOrphanedOnlyAfterItsDeath(t *testing.T) 
 		t.Fatalf("record unreadable: %v", err)
 	}
 	ownerID := mapOf(body["owner"])
-	if !pyrepr.Equal(ownerID["pid"], owner.cmd.Process.Pid) || !strings.HasPrefix(pyrepr.Str(ownerID["ct"]), "ct:") {
+	if !anyutil.Equal(ownerID["pid"], owner.cmd.Process.Pid) || !strings.HasPrefix(anyutil.String(ownerID["ct"]), "ct:") {
 		t.Fatalf("owner identity %v", ownerID)
 	}
-	if profiles := mapOf(mapOf(body["token"])["profiles"]); len(profiles) != 1 || !pyrepr.Equal(profiles["default"], 4242) {
+	if profiles := mapOf(mapOf(body["token"])["profiles"]); len(profiles) != 1 || !anyutil.Equal(profiles["default"], 4242) {
 		t.Fatalf("profiles %v", profiles)
 	}
 	if got := pcOrphaned(t); got != "null" {
@@ -294,7 +294,7 @@ func TestAClaimInTransferCannotBeTakenByASecondLaunch(t *testing.T) {
 			}
 		}
 	}()
-	won, err := pyjson.Loads(first.line(t))
+	won, err := jsonutil.Decode(first.line(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -420,23 +420,23 @@ func TestAnotherCheckoutsWriterNeverImportsOrRelabelsThisCheckoutsDebt(t *testin
 	lines := strings.Split(strings.TrimSpace(out), "\n")
 	pair := pcLoadList(t, lines[len(lines)-1])
 	theirs := mapOf(pair[1])
-	if !pyrepr.Equal(pair[0], 1) || !reflect.DeepEqual(pbProfiles(mapOf(theirs["token"])), []string{"beta"}) {
+	if !anyutil.Equal(pair[0], 1) || !reflect.DeepEqual(pbProfiles(mapOf(theirs["token"])), []string{"beta"}) {
 		t.Fatalf("imported this checkout's set: %v", pair)
 	}
 	ours, err := ReadPauseRecord(PauseRecordPath())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pyrepr.Equal(ours["install_root"], PauseInstallRoot()) || !reflect.DeepEqual(pbProfiles(mapOf(ours["token"])), []string{"alpha"}) {
+	if !anyutil.Equal(ours["install_root"], PauseInstallRoot()) || !reflect.DeepEqual(pbProfiles(mapOf(ours["token"])), []string{"alpha"}) {
 		t.Fatalf("ours %v", ours)
 	}
 }
 
 func pcLoadList(t *testing.T, text string) []any {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pyjson.Plain(v).([]any)
+	return jsonutil.Plain(v).([]any)
 }

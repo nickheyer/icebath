@@ -12,13 +12,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // OSV transport answering the batch with ids per component name and each detail from a record table
-func saFakeOSV(t *testing.T, ids map[string][]string, records map[string]*pyjson.Object) {
+func saFakeOSV(t *testing.T, ids map[string][]string, records map[string]*jsonutil.Object) {
 	vsSwap(t, &auditHTTPJSON, func(_ context.Context, url string, payload any) (any, error) {
 		if payload == nil {
 			id := url[strings.LastIndex(url, "/")+1:]
@@ -29,11 +30,11 @@ func saFakeOSV(t *testing.T, ids map[string][]string, records map[string]*pyjson
 		for _, q := range queries {
 			vulns := []any{}
 			for _, id := range ids[pyjsonText(rowValue(rowValue(q, "package"), "name"))] {
-				vulns = append(vulns, pyjson.ObjectOf("id", id))
+				vulns = append(vulns, jsonutil.ObjectOf("id", id))
 			}
-			results = append(results, pyjson.ObjectOf("vulns", vulns))
+			results = append(results, jsonutil.ObjectOf("vulns", vulns))
 		}
-		return pyjson.ObjectOf("results", results), nil
+		return jsonutil.ObjectOf("results", results), nil
 	})
 }
 
@@ -93,16 +94,16 @@ func TestPluginDiscoverySkipsWhenNoPluginsDir(t *testing.T) {
 }
 
 func TestSeverityExtractionDatabaseSpecificSeverity(t *testing.T) {
-	rec := pyjson.ObjectOf("database_specific", pyjson.ObjectOf("severity", "HIGH"))
+	rec := jsonutil.ObjectOf("database_specific", jsonutil.ObjectOf("severity", "HIGH"))
 	if got := osvSeverityFromRecord(rec); got != "HIGH" {
 		t.Fatal(got)
 	}
 }
 
 func TestSeverityExtractionFixedVersionsExtractedAndDeduped(t *testing.T) {
-	rec := pyjson.ObjectOf("affected", []any{
-		pyjson.ObjectOf("ranges", []any{pyjson.ObjectOf("events", []any{pyjson.ObjectOf("introduced", "0"), pyjson.ObjectOf("fixed", "2.0.0")})}),
-		pyjson.ObjectOf("ranges", []any{pyjson.ObjectOf("events", []any{pyjson.ObjectOf("fixed", "2.0.0"), pyjson.ObjectOf("fixed", "1.9.5")})}),
+	rec := jsonutil.ObjectOf("affected", []any{
+		jsonutil.ObjectOf("ranges", []any{jsonutil.ObjectOf("events", []any{jsonutil.ObjectOf("introduced", "0"), jsonutil.ObjectOf("fixed", "2.0.0")})}),
+		jsonutil.ObjectOf("ranges", []any{jsonutil.ObjectOf("events", []any{jsonutil.ObjectOf("fixed", "2.0.0"), jsonutil.ObjectOf("fixed", "1.9.5")})}),
 	})
 	if got := osvFixedVersions(rec); !reflect.DeepEqual(got, []string{"2.0.0", "1.9.5"}) {
 		t.Fatal(got)
@@ -146,9 +147,9 @@ func TestVenvDiscoveryUnknownReleaseSkipsPlaceholder(t *testing.T) {
 func TestRunAuditFindingsSortedBySeverityDesc(t *testing.T) {
 	tmp := t.TempDir()
 	saWrite(t, filepath.Join(tmp, "plugins", "p", "requirements.txt"), "alpha==1.0.0\nbeta==2.0.0\n")
-	saFakeOSV(t, map[string][]string{"alpha": {"LOW-1"}, "beta": {"CRIT-1"}}, map[string]*pyjson.Object{
-		"LOW-1":  pyjson.ObjectOf("database_specific", pyjson.ObjectOf("severity", "LOW"), "summary", "low"),
-		"CRIT-1": pyjson.ObjectOf("database_specific", pyjson.ObjectOf("severity", "CRITICAL"), "summary", "crit"),
+	saFakeOSV(t, map[string][]string{"alpha": {"LOW-1"}, "beta": {"CRIT-1"}}, map[string]*jsonutil.Object{
+		"LOW-1":  jsonutil.ObjectOf("database_specific", jsonutil.ObjectOf("severity", "LOW"), "summary", "low"),
+		"CRIT-1": jsonutil.ObjectOf("database_specific", jsonutil.ObjectOf("severity", "CRITICAL"), "summary", "crit"),
 	})
 	comps, err := discoverComponents(context.Background(), tmp, true, false, true)
 	if err != nil {
@@ -178,21 +179,21 @@ func TestExitCodesJSONOutputShape(t *testing.T) {
 	vsSwap(t, &auditVenvPins, func(context.Context) ([]pm.DistributionPin, error) {
 		return []pm.DistributionPin{{Name: text("pkg"), Version: text("1.0")}}, nil
 	})
-	saFakeOSV(t, map[string][]string{"pkg": {"X-1"}}, map[string]*pyjson.Object{
-		"X-1": pyjson.ObjectOf("database_specific", pyjson.ObjectOf("severity", "HIGH"), "summary", "bad",
-			"affected", []any{pyjson.ObjectOf("ranges", []any{pyjson.ObjectOf("events", []any{pyjson.ObjectOf("fixed", "1.1")})})}),
+	saFakeOSV(t, map[string][]string{"pkg": {"X-1"}}, map[string]*jsonutil.Object{
+		"X-1": jsonutil.ObjectOf("database_specific", jsonutil.ObjectOf("severity", "HIGH"), "summary", "bad",
+			"affected", []any{jsonutil.ObjectOf("ranges", []any{jsonutil.ObjectOf("events", []any{jsonutil.ObjectOf("fixed", "1.1")})})}),
 	})
 	var out bytes.Buffer
 	ns := map[string]any{"skip_venv": false, "skip_plugins": true, "skip_mcp": true, "json": true, "fail_on": "critical"}
 	if _, err := CmdSecurityAudit(context.Background(), t.TempDir(), ns, &out); err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := pyjson.Loads(out.String())
+	decoded, err := jsonutil.Decode(out.String())
 	if err != nil {
 		t.Fatal(err, out.String())
 	}
 	finding := rowValue(decoded, "findings").([]any)[0]
-	if !pyjson.Equal(rowValue(decoded, "finding_count"), 1) || rowValue(finding, "severity") != "HIGH" ||
+	if !anyutil.Equal(rowValue(decoded, "finding_count"), 1) || rowValue(finding, "severity") != "HIGH" ||
 		!reflect.DeepEqual(rowValue(finding, "fixed_versions"), []any{"1.1"}) {
 		t.Fatal(out.String())
 	}

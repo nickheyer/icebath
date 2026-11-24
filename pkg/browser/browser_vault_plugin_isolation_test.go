@@ -13,9 +13,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -131,7 +131,7 @@ func isolationHome(t *testing.T) *isoHome {
 	ctx, env := vaultProfile(t)
 	loginPluginServices(t)
 	t.Cleanup(func() { tools.ClearVaultRedactionValues(ctx) })
-	local, err := vault.GetVaultStore(ctx).AddItem("login", "Local", pyjson.ObjectOf("identifier_type", "email", "identifier", "me@example.com",
+	local, err := vault.GetVaultStore(ctx).AddItem("login", "Local", jsonutil.ObjectOf("identifier_type", "email", "identifier", "me@example.com",
 		"password", "local-dummy-pw-27"), isoOrigin)
 	if err != nil {
 		t.Fatal(err)
@@ -181,7 +181,7 @@ func (h *isoHome) vault(args map[string]any) string {
 	return handleBrowserVault(h.ctx, &tools.Call{Name: "browser_vault", Args: args, TaskID: "isolation", Env: h.env})
 }
 
-func (h *isoHome) vaultResult(args map[string]any) *pyjson.Object {
+func (h *isoHome) vaultResult(args map[string]any) *jsonutil.Object {
 	h.t.Helper()
 	return loadResult(h.t, h.vault(args), nil)
 }
@@ -197,17 +197,17 @@ func isolationPage(t *testing.T) *isoPage {
 	page := &isoPage{origin: isoOrigin}
 	pin(t, &vaultFocusBoundOrigin, func(context.Context, *tools.Env, string, string, string) string { return "" })
 	pin(t, &vaultCurrentPageOrigin, func(context.Context, *tools.Env, string) string { return page.origin })
-	pin(t, &vaultEvalJS, func(context.Context, *tools.Env, string, string) *pyjson.Object {
-		return pyjson.ObjectOf("success", true, "result", loginControlsJSON)
+	pin(t, &vaultEvalJS, func(context.Context, *tools.Env, string, string) *jsonutil.Object {
+		return jsonutil.ObjectOf("success", true, "result", loginControlsJSON)
 	})
-	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *pyjson.Object {
+	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *jsonutil.Object {
 		page.secretEvals = append(page.secretEvals, expression)
-		return pyjson.ObjectOf("success", true, "result", `{"filled": 1}`)
+		return jsonutil.ObjectOf("success", true, "result", `{"filled": 1}`)
 	})
 	return page
 }
 
-func listedHandles(listed *pyjson.Object) []string {
+func listedHandles(listed *jsonutil.Object) []string {
 	out := []string{}
 	for _, item := range anyGet(listed, "items").([]any) {
 		out = append(out, anyGet(item, "backend").(string)+" "+anyGet(item, "handle").(string))
@@ -553,8 +553,8 @@ func ctxVault(t *testing.T, h *isoHome, controls string) *ctxVaultBackend {
 		return []LoginBackend{b}
 	}})
 	h.load([]string{"ctx_vault"}, map[string]string{"ctxvault": "true"})
-	pin(t, &vaultEvalJS, func(context.Context, *tools.Env, string, string) *pyjson.Object {
-		return pyjson.ObjectOf("success", true, "result", controls)
+	pin(t, &vaultEvalJS, func(context.Context, *tools.Env, string, string) *jsonutil.Object {
+		return jsonutil.ObjectOf("success", true, "result", controls)
 	})
 	return h.backend("ctxvault").(*ctxVaultBackend)
 }
@@ -563,10 +563,10 @@ func TestPluginOtpIsMintedAndWrittenInsideTheBackendsFillContext(t *testing.T) {
 	h := isolationHome(t)
 	page := isolationPage(t)
 	backend := ctxVault(t, h, "["+isoOTPField+"]")
-	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *pyjson.Object {
+	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *jsonutil.Object {
 		backend.calls = append(backend.calls, "write")
 		page.secretEvals = append(page.secretEvals, expression)
-		return pyjson.ObjectOf("success", true, "result", `{"filled": 1}`)
+		return jsonutil.ObjectOf("success", true, "result", `{"filled": 1}`)
 	})
 	raw := h.vault(map[string]any{"action": "enter_code", "handle": "ctxvault:1"})
 	out := loadResult(t, raw, nil)

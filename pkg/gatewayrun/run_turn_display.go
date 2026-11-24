@@ -9,9 +9,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Per turn display, progress, status and streaming surface settings of one agent run
@@ -338,7 +338,7 @@ func (r *GatewayRunner) runAgentProgressThreading(ctx context.Context, source *g
 					if !has {
 						v = true
 					}
-					replyInThread = pyrepr.Truthy(v)
+					replyInThread = anyutil.IsTrue(v)
 				}
 			})
 		}

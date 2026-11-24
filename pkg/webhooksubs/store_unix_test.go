@@ -8,13 +8,13 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestSaveCreatesSecretFileOwnerOnlyUnderPermissiveUmask(t *testing.T) {
 	h := storeHome(t)
 	old := syscall.Umask(0o022)
-	err := Mutate(h, func(s *pyjson.Object) error {
+	err := Mutate(h, func(s *jsonutil.Object) error {
 		s.Set("demo", route("secret", "TOPSECRET", "prompt", "x"))
 		return nil
 	})

@@ -18,13 +18,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Tidy budget seconds and the promisor pack count the merges work down to, both patched by tests
@@ -304,15 +304,15 @@ func readTidyState(gitDir string) (map[string]bool, map[string]bool, int64, bool
 	if err != nil {
 		return nil, nil, 0, false
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, nil, 0, false
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil, 0, false
 	}
-	state, ok := v.(*pyjson.Object)
+	state, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, nil, 0, false
 	}
@@ -331,7 +331,7 @@ func readTidyState(gitDir string) (map[string]bool, map[string]bool, int64, bool
 	}
 	mergeBytes := tidyMergeBatchBytes
 	if mergeV, present := state.Get("merge_bytes"); present && mergeV != nil {
-		f, err := pyint.Float(mergeV)
+		f, err := anyutil.ToFloat(mergeV)
 		if err != nil {
 			return nil, nil, 0, false
 		}
@@ -366,12 +366,12 @@ func saveState(packDir string, state *tidyState) {
 			kept = append(kept, stem)
 		}
 	}
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	data.Set("v", tidyStateVersion)
 	data.Set("kept", kept)
 	data.Set("seen", seen)
 	data.Set("merge_bytes", state.mergeBytes)
-	text, err := pyjson.Dumps(data)
+	text, err := jsonutil.Encode(data)
 	if err == nil {
 		err = os.WriteFile(filepath.Join(filepath.Dir(filepath.Dir(packDir)), tidyStateFile), []byte(text), 0o644)
 	}
@@ -641,7 +641,7 @@ func TidyPartialClonePacks(ctx context.Context, repoRoot string, budgetSeconds f
 		if st, err := os.Stat(packDir); err != nil || !st.IsDir() {
 			return nil
 		}
-		filter, err := tools.PartialCloneFilter(ctx, repoRoot, pysubprocess.Options{Attr: tools.WindowsHideAttr()})
+		filter, err := tools.PartialCloneFilter(ctx, repoRoot, executil.Options{Attr: tools.WindowsHideAttr()})
 		if err != nil {
 			return err
 		}

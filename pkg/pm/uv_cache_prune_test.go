@@ -8,9 +8,8 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // A venv whose interpreter must never run, holding a module and a pth added directory
@@ -57,7 +56,7 @@ func TestEntryKeepsIsolationAndPMOffTheImportPath(t *testing.T) {
 	}
 	state := InstallStateDir(context.Background(), RepoRoot())
 	code := "import json, os, sys, venv_only_dep; print(json.dumps([venv_only_dep.VALUE, [p for p in sys.path if p in ('', os.getcwd()) or p.startswith(" +
-		pyrepr.StrRepr(state) + ")]]))"
+		strconv.Quote(state) + ")]]))"
 	if got := peRunJSON(t, append(append([]string{}, prefix...), "-c", code), tmp); !reflect.DeepEqual(got, []any{"from the venv", []any{}}) {
 		t.Fatalf("got %v", got)
 	}

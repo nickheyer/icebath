@@ -14,9 +14,9 @@ import (
 
 	_ "golang.org/x/image/webp"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // JSON RPC handler of one registered method
@@ -115,7 +115,7 @@ func ask(ctx context.Context, method, sid string, params map[string]any, timeout
 	if text, isText := value.(string); isText {
 		return text
 	}
-	encoded, err := pyjson.Dumps(value, pyjson.EnsureASCII(false))
+	encoded, err := jsonutil.Encode(value)
 	if err != nil {
 		panic(err)
 	}
@@ -123,12 +123,12 @@ func ask(ctx context.Context, method, sid string, params map[string]any, timeout
 }
 
 // Ordered JSON object of a payload map
-func objectOf(payload map[string]any) *pyjson.Object {
+func objectOf(payload map[string]any) *jsonutil.Object {
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		panic(err)
 	}
-	obj, err := pyjson.LoadsDict(string(raw))
+	obj, err := jsonutil.DecodeObject(string(raw))
 	if err != nil {
 		panic(err)
 	}
@@ -139,11 +139,11 @@ func objectOf(payload map[string]any) *pyjson.Object {
 func isTruthyValue(v any) bool { return provider.IsTruthyValue(v) }
 
 // Server request sender of the request helpers, its answer nil when the wait was cancelled or timed out
-type requestSender func(ctx context.Context, method, sid string, params *pyjson.Object, timeout *float64, qids []string) (*pyjson.Object, error)
+type requestSender func(ctx context.Context, method, sid string, params *jsonutil.Object, timeout *float64, qids []string) (*jsonutil.Object, error)
 
 // Sender whose cancelled wait reads as no answer and whose registration failure raises
-func sendResult(ctx context.Context, send requestSender) func(method, sid string, params *pyjson.Object, timeout *float64, qids []string) *pyjson.Object {
-	return func(method, sid string, params *pyjson.Object, timeout *float64, qids []string) *pyjson.Object {
+func sendResult(ctx context.Context, send requestSender) func(method, sid string, params *jsonutil.Object, timeout *float64, qids []string) *jsonutil.Object {
+	return func(method, sid string, params *jsonutil.Object, timeout *float64, qids []string) *jsonutil.Object {
 		result, err := send(ctx, method, sid, params, timeout, qids)
 		if err != nil {
 			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

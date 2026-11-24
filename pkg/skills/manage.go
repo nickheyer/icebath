@@ -16,10 +16,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Content and file budgets of skill_manage writes
@@ -31,7 +32,7 @@ const (
 
 var (
 	validSkillNameRe       = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*\n?$`)
-	manageFrontmatterEndRe = regexp.MustCompile(`\n---[` + pySpaceClass + `]*\n`)
+	manageFrontmatterEndRe = regexp.MustCompile(`\n---[` + spaceClass + `]*\n`)
 	allowedSkillSubdirs    = []string{"assets", "references", "scripts", "templates"}
 )
 
@@ -151,7 +152,7 @@ func validateContentSize(content, label string) string {
 	if n <= MaxSkillContentChars {
 		return ""
 	}
-	return fmt.Sprintf("%s content is %s characters (limit: %s). Consider splitting into a smaller SKILL.md with supporting files in references/ or templates/.", label, commaInt(n), commaInt(MaxSkillContentChars))
+	return fmt.Sprintf("%s content is %s characters (limit: %s). Consider splitting into a smaller SKILL.md with supporting files in references/ or templates/.", label, textutil.Thousands(int64(n)), textutil.Thousands(MaxSkillContentChars))
 }
 
 // First 120 characters of the frontmatter description, empty on any failure
@@ -375,7 +376,7 @@ func validateSkillFilePath(filePath string) string {
 }
 
 // Validated supporting file target inside the skill dir, else the refusal
-func resolveSupportingFile(skillDir, filePath string) (string, *pyjson.Object) {
+func resolveSupportingFile(skillDir, filePath string) (string, *jsonutil.Object) {
 	target := filepath.Join(skillDir, filePath)
 	if filepath.IsAbs(filePath) {
 		target = filePath
@@ -391,7 +392,7 @@ func resolveSupportingFile(skillDir, filePath string) (string, *pyjson.Object) {
 }
 
 // Skill directory for a write, running the review delete guard for deletes
-func (s *Scope) locateForWrite(name, action, notFoundSuffix string) (string, *pyjson.Object) {
+func (s *Scope) locateForWrite(name, action, notFoundSuffix string) (string, *jsonutil.Object) {
 	dir, ok := s.FindSkill(name)
 	if !ok {
 		return "", refusal(s.skillNotFoundError(name, notFoundSuffix))
@@ -415,11 +416,11 @@ func readTextUniversal(path string) (string, error) {
 
 // Atomic write keeping an existing file's mode and owner, the create mode for a new file when given
 func writePreservingMode(ctx context.Context, target, content string, createMode *os.FileMode) error {
-	return pyfs.AtomicWriteTextWith(ctx, target, content, pyfs.TextWrite{PreserveMode: true, CreateMode: createMode})
+	return fsutil.WriteFile(ctx, target, []byte(content), fsutil.WriteOptions{CreateMode: createMode, KeepOwner: true, NativeLineEnds: true})
 }
 
 // Read guard, description budget, atomic write and security scan, restoring the original when blocked
-func (s *Scope) guardedWrite(ctx context.Context, name, skillDir, target, action, label, content string) (*pyjson.Object, error) {
+func (s *Scope) guardedWrite(ctx context.Context, name, skillDir, target, action, label, content string) (*jsonutil.Object, error) {
 	var original *string
 	if _, err := os.Stat(target); err == nil {
 		if guard := s.backgroundReviewReadBeforeWriteGuard(name, target, action, label); guard != nil {
@@ -495,11 +496,11 @@ func isTruthyValue(v any, def bool) bool {
 		}
 		return false
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Adds the prompt preview when the description will be clipped in the index
-func addDescriptionPromptPreview(result *pyjson.Object, content string) *pyjson.Object {
+func addDescriptionPromptPreview(result *jsonutil.Object, content string) *jsonutil.Object {
 	fm, _ := ParseFrontmatter(content)
 	if isSkillDescriptionTruncatedForPrompt(fm) {
 		result.Set("system_prompt_preview", fmt.Sprintf("System prompt will show: \"%s\" — shorten the description to %d chars so the index shows all of it.", extractSkillDescription(fm), SkillPromptDescLimit))
@@ -508,7 +509,7 @@ func addDescriptionPromptPreview(result *pyjson.Object, content string) *pyjson.
 }
 
 // Attaches advisory lint findings, only the rules this write introduced when before is given
-func attachLintFindings(result *pyjson.Object, skillMD string, before *string) {
+func attachLintFindings(result *jsonutil.Object, skillMD string, before *string) {
 	findings, err := LintSkill(skillMD)
 	if err != nil {
 		return
@@ -547,7 +548,7 @@ func clipText(text string, n int, ellipsis string) string {
 }
 
 // Creates a new skill directory with its SKILL.md
-func (s *Scope) createSkill(ctx context.Context, name, content string, category any) (*pyjson.Object, error) {
+func (s *Scope) createSkill(ctx context.Context, name, content string, category any) (*jsonutil.Object, error) {
 	if msg := firstNonEmpty(validateSkillName(name), validateSkillCategory(category), validateSkillFrontmatter(content), validateContentSize(content, "SKILL.md")); msg != "" {
 		return refusal(msg), nil
 	}
@@ -591,7 +592,7 @@ func (s *Scope) createSkill(ctx context.Context, name, content string, category 
 	}
 	result := resultObj("success", true, "message", fmt.Sprintf("Skill '%s' created.", name), "path", display,
 		"skill_md", skillMD, "_change", resultObj("description", descriptionPreview(content)))
-	if pyrepr.Truthy(category) {
+	if anyutil.IsTrue(category) {
 		result.Set("category", category)
 	}
 	result.Set("hint", fmt.Sprintf("To add reference files, templates, or scripts, use skill_manage(action='write_file', name='%s', file_path='references/example.md', file_content='...')", name))
@@ -610,7 +611,7 @@ func firstNonEmpty(msgs ...string) string {
 }
 
 // Replaces the SKILL.md of an existing skill
-func (s *Scope) editSkill(ctx context.Context, name, content string) (*pyjson.Object, error) {
+func (s *Scope) editSkill(ctx context.Context, name, content string) (*jsonutil.Object, error) {
 	if msg := firstNonEmpty(validateSkillFrontmatter(content), validateContentSize(content, "SKILL.md")); msg != "" {
 		return refusal(msg), nil
 	}
@@ -637,11 +638,11 @@ func EditSkill(ctx context.Context, env *tools.Env, name, content string) map[st
 }
 
 // Plain map of an ordered result object, nested objects included
-func objToMap(o *pyjson.Object) map[string]any {
+func objToMap(o *jsonutil.Object) map[string]any {
 	out := make(map[string]any, o.Len())
-	for _, k := range o.Keys {
-		v := o.Vals[k]
-		if nested, ok := v.(*pyjson.Object); ok {
+	for _, k := range o.Keys() {
+		v := o.Value(k)
+		if nested, ok := v.(*jsonutil.Object); ok {
 			v = objToMap(nested)
 		}
 		out[k] = v
@@ -650,7 +651,7 @@ func objToMap(o *pyjson.Object) map[string]any {
 }
 
 // Targeted find and replace in SKILL.md or a supporting file
-func (s *Scope) patchSkill(ctx context.Context, name string, oldString, newString, filePath *string, replaceAll bool) (*pyjson.Object, error) {
+func (s *Scope) patchSkill(ctx context.Context, name string, oldString, newString, filePath *string, replaceAll bool) (*jsonutil.Object, error) {
 	if oldString == nil || *oldString == "" {
 		return refusal(patchNeedsOldString), nil
 	}
@@ -728,7 +729,7 @@ func (s *Scope) patchSkill(ctx context.Context, name string, oldString, newStrin
 }
 
 // Deletes a skill, archiving instead inside the review fork
-func (s *Scope) deleteSkill(ctx context.Context, name string, absorbedInto *string) (*pyjson.Object, error) {
+func (s *Scope) deleteSkill(ctx context.Context, name string, absorbedInto *string) (*jsonutil.Object, error) {
 	skillDir, guard := s.locateForWrite(name, "delete", "")
 	if guard == nil {
 		guard = s.curatorConsolidationDeleteGuard(name, absorbedInto)
@@ -769,7 +770,7 @@ func (s *Scope) deleteSkill(ctx context.Context, name string, absorbedInto *stri
 		}
 		return resultObj("success", true, "message", fmt.Sprintf("Skill '%s' archived (%s).%s", name, msg, note), "_archived", true), nil
 	}
-	if err := pyfs.RmTree(skillDir, nil); err != nil {
+	if err := os.RemoveAll(skillDir); err != nil {
 		return nil, err
 	}
 	if err := rmdirIfEmpty(filepath.Dir(skillDir), skillsRoot); err != nil {
@@ -791,7 +792,7 @@ func rmdirIfEmpty(parent, stop string) error {
 }
 
 // Adds or overwrites a supporting file of a skill
-func (s *Scope) writeFile(ctx context.Context, name string, filePath string, fileContent *string) (*pyjson.Object, error) {
+func (s *Scope) writeFile(ctx context.Context, name string, filePath string, fileContent *string) (*jsonutil.Object, error) {
 	if msg := validateSkillFilePath(filePath); msg != "" {
 		return refusal(msg), nil
 	}
@@ -799,7 +800,7 @@ func (s *Scope) writeFile(ctx context.Context, name string, filePath string, fil
 		return refusal("file_content is required."), nil
 	}
 	if n := len(*fileContent); n > MaxSkillFileBytes {
-		return refusal(fmt.Sprintf("File content is %s bytes (limit: %s bytes / 1 MiB). Consider splitting into smaller files.", commaInt(n), commaInt(MaxSkillFileBytes))), nil
+		return refusal(fmt.Sprintf("File content is %s bytes (limit: %s bytes / 1 MiB). Consider splitting into smaller files.", textutil.Thousands(int64(n)), textutil.Thousands(MaxSkillFileBytes))), nil
 	}
 	if msg := validateContentSize(*fileContent, filePath); msg != "" {
 		return refusal(msg), nil
@@ -824,7 +825,7 @@ func (s *Scope) writeFile(ctx context.Context, name string, filePath string, fil
 }
 
 // Removes a supporting file of a skill, listing what exists when the path misses
-func (s *Scope) removeFile(name, filePath string) (*pyjson.Object, error) {
+func (s *Scope) removeFile(name, filePath string) (*jsonutil.Object, error) {
 	if msg := validateSkillFilePath(filePath); msg != "" {
 		return refusal(msg), nil
 	}
@@ -866,7 +867,7 @@ func (s *Scope) removeFile(name, filePath string) (*pyjson.Object, error) {
 }
 
 // Shared write gate, nil to proceed else the blocked or staged result
-func (s *Scope) runWriteGate(ctx context.Context, staging func() (map[string]any, string)) *pyjson.Object {
+func (s *Scope) runWriteGate(ctx context.Context, staging func() (map[string]any, string)) *jsonutil.Object {
 	decision := tools.CheckWriteApproval(ctx, s.Env, tools.WriteApprovalSkills, "", "")
 	if decision.Allow {
 		return nil
@@ -880,7 +881,7 @@ func (s *Scope) runWriteGate(ctx context.Context, staging func() (map[string]any
 }
 
 // Flat shape gate staging the full arguments for replay, bypassed during replay
-func (s *Scope) applySkillWriteGate(ctx context.Context, a manageArgs) *pyjson.Object {
+func (s *Scope) applySkillWriteGate(ctx context.Context, a manageArgs) *jsonutil.Object {
 	if !skillActions[a.action] || gateBypassed(ctx) {
 		return nil
 	}
@@ -944,18 +945,18 @@ func optStringArg(payload map[string]any, key string) (*string, error) {
 	return &str, nil
 }
 
-// TypeError a non string argument raises inside the Python handlers
+// Argument of the wrong type given to a skill_manage handler
 type manageTypeError struct{ msg string }
 
-func (e *manageTypeError) Error() string      { return e.msg }
-func (e *manageTypeError) PyTypeName() string { return "TypeError" }
+func (e *manageTypeError) Error() string     { return e.msg }
+func (e *manageTypeError) ErrorKind() string { return "TypeError" }
 
 // Flat shape arguments of a payload, operations kept when present and not null
 func parseManageArgs(payload map[string]any, taskID, sessionID string) (manageArgs, error) {
 	a := manageArgs{taskID: taskID, sessionID: sessionID, category: payload["category"]}
 	a.action, _ = payload["action"].(string)
 	a.name, _ = payload["name"].(string)
-	a.replaceAll = pyrepr.Truthy(payload["replace_all"])
+	a.replaceAll = anyutil.IsTrue(payload["replace_all"])
 	if ops, ok := payload["operations"]; ok && ops != nil {
 		a.operations, a.hasOps = ops, true
 	}
@@ -976,7 +977,7 @@ func parseManageArgs(payload map[string]any, taskID, sessionID string) (manageAr
 func truthyStr(p *string) bool { return p != nil && *p != "" }
 
 // Runs the handler of one action, tool error objects for argument shape problems
-func (s *Scope) dispatchAction(ctx context.Context, a manageArgs) (*pyjson.Object, error) {
+func (s *Scope) dispatchAction(ctx context.Context, a manageArgs) (*jsonutil.Object, error) {
 	switch a.action {
 	case "create":
 		return s.createSkill(home.WithOverride(ctx, s.Home), a.name, deref(a.content), a.category)
@@ -1001,9 +1002,9 @@ func (s *Scope) dispatchAction(ctx context.Context, a manageArgs) (*pyjson.Objec
 }
 
 // Ledger row, prompt cache clear and curator telemetry after a successful mutation
-func (s *Scope) recordSuccess(ctx context.Context, a manageArgs, result *pyjson.Object, before []map[string]string) {
+func (s *Scope) recordSuccess(ctx context.Context, a manageArgs, result *jsonutil.Object, before []map[string]string) {
 	post, found := s.FindSkill(a.name)
-	evidence := pyjson.NewObject()
+	evidence := jsonutil.NewObject()
 	if a.action == "delete" {
 		var absorbed any
 		if a.absorbedInto != nil {
@@ -1075,7 +1076,7 @@ func (s *Scope) skillMutationLocks(ctx context.Context, names []string) (context
 }
 
 // Dispatches one flat call or an operations batch to its result object
-func (s *Scope) skillManage(ctx context.Context, a manageArgs) (*pyjson.Object, error) {
+func (s *Scope) skillManage(ctx context.Context, a manageArgs) (*jsonutil.Object, error) {
 	if a.hasOps {
 		return s.skillManageBatch(ctx, a.operations, a.name, a.taskID, a.sessionID)
 	}
@@ -1155,31 +1156,31 @@ func skillManageDescription() string {
 }
 
 // One self contained per action op shape with additional properties refused
-func opSchema(action string, props *pyjson.Object, required ...string) *pyjson.Object {
-	properties := pyjson.ObjectOf("name", pyjson.ObjectOf("type", "string"), "action", pyjson.ObjectOf("type", "string", "enum", []any{action}))
-	properties.Update(props)
+func opSchema(action string, props *jsonutil.Object, required ...string) *jsonutil.Object {
+	properties := jsonutil.ObjectOf("name", jsonutil.ObjectOf("type", "string"), "action", jsonutil.ObjectOf("type", "string", "enum", []any{action}))
+	properties.Merge(props)
 	req := []any{"name", "action"}
 	for _, r := range required {
 		req = append(req, r)
 	}
-	return pyjson.ObjectOf("type", "object", "additionalProperties", false, "properties", properties, "required", req)
+	return jsonutil.ObjectOf("type", "object", "additionalProperties", false, "properties", properties, "required", req)
 }
 
 // Schema of the skill_manage tool advertising only the operations array
-func SkillManageSchema() *pyjson.Object {
-	str := func(desc string) *pyjson.Object { return pyjson.ObjectOf("type", "string", "description", desc) }
-	items := pyjson.ObjectOf("anyOf", []any{
-		opSchema("create", pyjson.ObjectOf("content", str("Full SKILL.md text (YAML frontmatter + markdown body)."), "category", str("Optional category subdir (e.g. 'devops').")), "content"),
-		opSchema("patch", pyjson.ObjectOf("old_string", str("Text to find (same matching semantics as the patch tool)."), "new_string", str("Replacement; empty string deletes the match."), "replace_all", pyjson.ObjectOf("type", "boolean", "description", "Replace all occurrences (default false)."), "file_path", str("Optional supporting file (write_file's shape); default SKILL.md.")), "old_string", "new_string"),
-		opSchema("patch", pyjson.ObjectOf("content", str("Full SKILL.md rewrite (REPLACES the whole file; last resort).")), "content"),
-		opSchema("write_file", pyjson.ObjectOf("file_path", str("Path RELATIVE to the skill's own directory, e.g. 'references/api.md' — no leading slash, never absolute; first segment references/, templates/, scripts/, or assets/."), "file_content", str("Full text of the supporting file.")), "file_path", "file_content"),
-		opSchema("remove_file", pyjson.ObjectOf("file_path", str("Supporting file (write_file's shape).")), "file_path"),
-		opSchema("delete", pyjson.ObjectOf("absorbed_into", str("Curator consolidation only: umbrella skill that absorbed this one (must exist)."))),
+func SkillManageSchema() *jsonutil.Object {
+	str := func(desc string) *jsonutil.Object { return jsonutil.ObjectOf("type", "string", "description", desc) }
+	items := jsonutil.ObjectOf("anyOf", []any{
+		opSchema("create", jsonutil.ObjectOf("content", str("Full SKILL.md text (YAML frontmatter + markdown body)."), "category", str("Optional category subdir (e.g. 'devops').")), "content"),
+		opSchema("patch", jsonutil.ObjectOf("old_string", str("Text to find (same matching semantics as the patch tool)."), "new_string", str("Replacement; empty string deletes the match."), "replace_all", jsonutil.ObjectOf("type", "boolean", "description", "Replace all occurrences (default false)."), "file_path", str("Optional supporting file (write_file's shape); default SKILL.md.")), "old_string", "new_string"),
+		opSchema("patch", jsonutil.ObjectOf("content", str("Full SKILL.md rewrite (REPLACES the whole file; last resort).")), "content"),
+		opSchema("write_file", jsonutil.ObjectOf("file_path", str("Path RELATIVE to the skill's own directory, e.g. 'references/api.md' — no leading slash, never absolute; first segment references/, templates/, scripts/, or assets/."), "file_content", str("Full text of the supporting file.")), "file_path", "file_content"),
+		opSchema("remove_file", jsonutil.ObjectOf("file_path", str("Supporting file (write_file's shape).")), "file_path"),
+		opSchema("delete", jsonutil.ObjectOf("absorbed_into", str("Curator consolidation only: umbrella skill that absorbed this one (must exist)."))),
 	})
-	return pyjson.ObjectOf(
+	return jsonutil.ObjectOf(
 		"name", "skill_manage",
 		"description", skillManageDescription(),
-		"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf("operations", pyjson.ObjectOf(
+		"parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf("operations", jsonutil.ObjectOf(
 			"type", "array", "description", "Ordered ops; each names its target skill (lowercase, hyphens/underscores, max 64 chars). Each action is its own shape; another action's text slot is invalid.", "items", items)),
 			"required", []any{"operations"}),
 	)

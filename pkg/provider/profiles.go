@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Wire protocols routed by providers whose adapters register their own mode constants
@@ -117,9 +117,9 @@ type Profile struct {
 	ResolveAuxModelHook                 func(ctx context.Context, vision bool) string
 	GetHostnameHook                     func() string
 	PrepareMessagesHook                 func(messages []map[string]any) []map[string]any
-	BuildExtraBodyHook                  func(sessionID string, context map[string]any) *pyjson.Object
+	BuildExtraBodyHook                  func(sessionID string, context map[string]any) *jsonutil.Object
 	DefaultReasoningConfigHook          func(model string) *Reasoning
-	BuildAPIKwargsExtrasHook            func(reasoning *Reasoning, context map[string]any) (*pyjson.Object, map[string]any)
+	BuildAPIKwargsExtrasHook            func(reasoning *Reasoning, context map[string]any) (*jsonutil.Object, map[string]any)
 	BuildClientKwargsExtrasHook         func(context map[string]any) map[string]any
 	DefaultVisionModelHook              func(ctx context.Context) string
 	GetModelContextLengthHook           ProfileContextLengthHook
@@ -330,7 +330,7 @@ func Label(providerID string) string {
 
 // Hostname returns the lowercase host of a URL without port, userinfo, or trailing dot
 func Hostname(rawURL string) string {
-	host, err := pyurl.BaseURLHostname(rawURL)
+	host, err := urlutil.BaseHost(rawURL)
 	if err != nil {
 		return ""
 	}
@@ -339,7 +339,7 @@ func Hostname(rawURL string) string {
 
 // URLPath returns the URL path lowercased without a trailing slash, empty for a bare host or a bad netloc
 func URLPath(rawURL string) string {
-	path, err := pyurl.BaseURLPath(rawURL)
+	path, err := urlutil.BasePath(rawURL)
 	if err != nil {
 		return ""
 	}

@@ -13,6 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -74,47 +76,35 @@ type DriverStateError struct{ Msg string }
 
 func (e *DriverStateError) Error() string { return e.Msg }
 
-// Python class name of the error
-func (e *DriverStateError) PyTypeName() string { return "DriverStateError" }
-
 // Hosted room that does not exist or was disbanded
 type RoomUnavailableError struct{ *DriverStateError }
 
-func (e *RoomUnavailableError) Unwrap() error      { return e.DriverStateError }
-func (e *RoomUnavailableError) PyTypeName() string { return "RoomUnavailableError" }
+func (e *RoomUnavailableError) Unwrap() error { return e.DriverStateError }
 
 // Room lease another unexpired driver generation owns
 type LeaseHeldError struct{ *DriverStateError }
 
-func (e *LeaseHeldError) Unwrap() error      { return e.DriverStateError }
-func (e *LeaseHeldError) PyTypeName() string { return "LeaseHeldError" }
+func (e *LeaseHeldError) Unwrap() error { return e.DriverStateError }
 
 // Lease generation that can no longer mutate room state
 type StaleLeaseError struct{ *DriverStateError }
 
-func (e *StaleLeaseError) Unwrap() error      { return e.DriverStateError }
-func (e *StaleLeaseError) PyTypeName() string { return "StaleLeaseError" }
+func (e *StaleLeaseError) Unwrap() error { return e.DriverStateError }
 
 // Idempotency key reused for different task state
 type TaskConflictError struct{ *DriverStateError }
 
-func (e *TaskConflictError) Unwrap() error      { return e.DriverStateError }
-func (e *TaskConflictError) PyTypeName() string { return "TaskConflictError" }
+func (e *TaskConflictError) Unwrap() error { return e.DriverStateError }
 
 // Obsolete task attempt or cancellation trying to commit
 type StaleTaskError struct{ *DriverStateError }
 
-func (e *StaleTaskError) Unwrap() error      { return e.DriverStateError }
-func (e *StaleTaskError) PyTypeName() string { return "StaleTaskError" }
+func (e *StaleTaskError) Unwrap() error { return e.DriverStateError }
 
 // Requested task transition that is not allowed
 type InvalidTaskTransitionError struct{ *DriverStateError }
 
-func (e *InvalidTaskTransitionError) Unwrap() error      { return e.DriverStateError }
-func (e *InvalidTaskTransitionError) PyTypeName() string { return "InvalidTaskTransitionError" }
-
-// Python class name of the error
-func (e *DriverValidationError) PyTypeName() string { return "DriverValidationError" }
+func (e *InvalidTaskTransitionError) Unwrap() error { return e.DriverStateError }
 
 func roomUnavailable(msg string) error { return &RoomUnavailableError{&DriverStateError{msg}} }
 func leaseHeld(msg string) error       { return &LeaseHeldError{&DriverStateError{msg}} }
@@ -187,7 +177,7 @@ type TaskAttempt struct {
 
 // Finite float of a computed value, optionally positive
 func driverFinite(compute func() any, message string, positive bool) (float64, error) {
-	value, err := pyint.Float(compute())
+	value, err := anyutil.ToFloat(compute())
 	if err != nil {
 		return 0, driverValidation(message)
 	}
@@ -223,7 +213,7 @@ func driverLeaseWindow(ttlSeconds any, clock DriverClock) (float64, float64, err
 
 // Normalized task payload, its compact JSON and SHA-256 digest
 func driverTaskPayload(value any) (map[string]any, string, string, error) {
-	fields, ok := pyjson.Plain(value).(map[string]any)
+	fields, ok := jsonutil.Plain(value).(map[string]any)
 	if !ok {
 		return nil, "", "", driverValidation("payload must be an object")
 	}
@@ -479,19 +469,19 @@ func driverTransaction(ctx context.Context, dbPath string, body func(conn state.
 }
 
 // Lease of a stored lease row
-func driverLeaseFromRow(row *pyjson.Object, reclaimed bool) DriverLease {
+func driverLeaseFromRow(row *jsonutil.Object, reclaimed bool) DriverLease {
 	return DriverLease{RoomID: hrStr(row, "room_id"), GatewayID: hrStr(row, "gateway_id"), AuthorityEpoch: hrInt(row, "authority_epoch"),
 		ProcessGeneration: hrStr(row, "process_generation"), LeaseGeneration: hrInt(row, "lease_generation"),
 		ExpiresAt: hrFloat(row, "expires_at"), Reclaimed: reclaimed}
 }
 
 // Identity of a stored task row
-func driverIdentityFromRow(row *pyjson.Object) (TaskIdentity, error) {
-	return NewTaskIdentity(row.Vals["room_id"], row.Vals["task_id"], row.Vals["thread_id"], row.Vals["turn_id"])
+func driverIdentityFromRow(row *jsonutil.Object) (TaskIdentity, error) {
+	return NewTaskIdentity(row.Value("room_id"), row.Value("task_id"), row.Value("thread_id"), row.Value("turn_id"))
 }
 
 // Public task view of a stored row after its payload integrity check
-func driverTaskFromRow(row *pyjson.Object, idempotent bool) (map[string]any, error) {
+func driverTaskFromRow(row *jsonutil.Object, idempotent bool) (map[string]any, error) {
 	decoded, err := roomLoads(hrStr(row, "payload_json"))
 	if err != nil {
 		return nil, taskConflict("stored task payload is invalid")
@@ -514,25 +504,25 @@ func driverTaskFromRow(row *pyjson.Object, idempotent bool) (map[string]any, err
 	}
 	task := map[string]any{"identity": identity, "payload": payload}
 	optionalInt := func(key string) any {
-		if row.Vals[key] == nil {
+		if row.Value(key) == nil {
 			return nil
 		}
 		return hrInt(row, key)
 	}
 	optionalFloat := func(key string) any {
-		if row.Vals[key] == nil {
+		if row.Value(key) == nil {
 			return nil
 		}
 		return hrFloat(row, key)
 	}
 	var result any
-	if row.Vals["result_json"] != nil {
+	if row.Value("result_json") != nil {
 		if result, err = roomLoads(hrStr(row, "result_json")); err != nil {
 			return nil, err
 		}
 	}
 	for _, key := range []string{"payload_digest", "status", "run_gateway_id", "run_process_generation", "cancel_id", "settlement_id", "settlement_status"} {
-		task[key] = row.Vals[key]
+		task[key] = row.Value(key)
 	}
 	task["execution_generation"] = hrInt(row, "execution_generation")
 	task["cancel_generation"] = hrInt(row, "cancel_generation")
@@ -548,7 +538,7 @@ func driverTaskFromRow(row *pyjson.Object, idempotent bool) (map[string]any, err
 }
 
 // Stored row of the task, its identity checked against the turn
-func driverLoadTask(ctx context.Context, conn state.SQLiteConn, identity TaskIdentity, required bool) (*pyjson.Object, error) {
+func driverLoadTask(ctx context.Context, conn state.SQLiteConn, identity TaskIdentity, required bool) (*jsonutil.Object, error) {
 	row, err := state.QueryRowObject(ctx, conn, driverSelectTask, identity.RoomID, identity.TaskID)
 	if err != nil {
 		return nil, err
@@ -570,7 +560,7 @@ func driverLoadTask(ctx context.Context, conn state.SQLiteConn, identity TaskIde
 }
 
 // Room task rows in admission order, optionally of one status
-func driverTasksInOrder(ctx context.Context, conn state.SQLiteConn, roomID string, status *string) ([]*pyjson.Object, error) {
+func driverTasksInOrder(ctx context.Context, conn state.SQLiteConn, roomID string, status *string) ([]*jsonutil.Object, error) {
 	if status == nil {
 		return state.QueryObjects(ctx, conn, "SELECT * FROM hosted_room_driver_tasks WHERE room_id=? "+driverTaskOrder, roomID)
 	}
@@ -578,7 +568,7 @@ func driverTasksInOrder(ctx context.Context, conn state.SQLiteConn, roomID strin
 }
 
 // Live room row, or RoomUnavailableError for a missing, disbanded or uncreated room store
-func driverLoadActiveRoom(ctx context.Context, conn state.SQLiteConn, roomID string) (*pyjson.Object, error) {
+func driverLoadActiveRoom(ctx context.Context, conn state.SQLiteConn, roomID string) (*jsonutil.Object, error) {
 	row, err := state.QueryRowObject(ctx, conn, "SELECT room_id, authority_gateway_id, authority_epoch, disbanded_at FROM hosted_rooms WHERE room_id=?", roomID)
 	if err != nil {
 		if class, ok := state.SQLiteClassOf(err); ok && class == state.SQLiteOperationalError && strings.Contains(strings.ToLower(err.Error()), "no such table") {
@@ -589,14 +579,14 @@ func driverLoadActiveRoom(ctx context.Context, conn state.SQLiteConn, roomID str
 	if row == nil {
 		return nil, roomUnavailable("hosted room does not exist")
 	}
-	if row.Vals["disbanded_at"] != nil {
+	if row.Value("disbanded_at") != nil {
 		return nil, roomUnavailable("hosted room is disbanded")
 	}
 	return row, nil
 }
 
 // Live room row whose authority is still gatewayID at epoch
-func driverRequireRoomAuthority(ctx context.Context, conn state.SQLiteConn, roomID, gatewayID string, epoch int64) (*pyjson.Object, error) {
+func driverRequireRoomAuthority(ctx context.Context, conn state.SQLiteConn, roomID, gatewayID string, epoch int64) (*jsonutil.Object, error) {
 	room, err := driverLoadActiveRoom(ctx, conn, roomID)
 	if err != nil {
 		return nil, err
@@ -613,13 +603,13 @@ func driverRunFenceArgs(lease DriverLease) []any {
 }
 
 // Whether a stored lease row is exactly the lease generation
-func driverLeaseRowMatches(row *pyjson.Object, lease DriverLease) bool {
+func driverLeaseRowMatches(row *jsonutil.Object, lease DriverLease) bool {
 	return row != nil && hrStr(row, "gateway_id") == lease.GatewayID && hrInt(row, "authority_epoch") == lease.AuthorityEpoch &&
 		hrStr(row, "process_generation") == lease.ProcessGeneration && hrInt(row, "lease_generation") == lease.LeaseGeneration
 }
 
 // Stored lease row while the lease is current, unreleased and unexpired
-func driverRequireActiveLease(ctx context.Context, conn state.SQLiteConn, lease DriverLease, now float64) (*pyjson.Object, error) {
+func driverRequireActiveLease(ctx context.Context, conn state.SQLiteConn, lease DriverLease, now float64) (*jsonutil.Object, error) {
 	if _, err := driverRequireRoomAuthority(ctx, conn, lease.RoomID, lease.GatewayID, lease.AuthorityEpoch); err != nil {
 		return nil, err
 	}
@@ -627,7 +617,7 @@ func driverRequireActiveLease(ctx context.Context, conn state.SQLiteConn, lease 
 	if err != nil {
 		return nil, err
 	}
-	if !driverLeaseRowMatches(row, lease) || row.Vals["released_at"] != nil || hrFloat(row, "expires_at") <= now {
+	if !driverLeaseRowMatches(row, lease) || row.Value("released_at") != nil || hrFloat(row, "expires_at") <= now {
 		return nil, staleLease("driver lease is stale or expired")
 	}
 	return row, nil
@@ -673,7 +663,7 @@ func driverTerminalSettlementID(settlementID any, status string) (string, error)
 }
 
 // Replay of a stored row, nil to proceed with the transition
-type driverReplay func(row *pyjson.Object) (map[string]any, error)
+type driverReplay func(row *jsonutil.Object) (map[string]any, error)
 
 // Validated terminal settlement, its time, idempotent replay and SET params
 func driverSettlement(settlementID any, status string, result any, clock DriverClock) (float64, driverReplay, []any, error) {
@@ -681,7 +671,7 @@ func driverSettlement(settlementID any, status string, result any, clock DriverC
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	resultJSON, err := roomCanonicalJSON(pyjson.Plain(result), "result", driverMaxResultJSONBytes, true, driverValidation)
+	resultJSON, err := roomCanonicalJSON(jsonutil.Plain(result), "result", driverMaxResultJSONBytes, true, driverValidation)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -689,11 +679,11 @@ func driverSettlement(settlementID any, status string, result any, clock DriverC
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	replay := func(row *pyjson.Object) (map[string]any, error) {
-		if row.Vals["settlement_id"] == nil {
+	replay := func(row *jsonutil.Object) (map[string]any, error) {
+		if row.Value("settlement_id") == nil {
 			return nil, nil
 		}
-		if hrStr(row, "settlement_id") == id && hrStr(row, "settlement_status") == status && row.Vals["result_json"] != nil && hrStr(row, "result_json") == resultJSON {
+		if hrStr(row, "settlement_id") == id && hrStr(row, "settlement_status") == status && row.Value("result_json") != nil && hrStr(row, "result_json") == resultJSON {
 			return driverTaskFromRow(row, true)
 		}
 		return nil, taskConflict("task already has a different terminal settlement")
@@ -703,8 +693,8 @@ func driverSettlement(settlementID any, status string, result any, clock DriverC
 
 // Replay of the same cancel id already committed in status
 func driverCancelReplay(cancelID, status string) driverReplay {
-	return func(row *pyjson.Object) (map[string]any, error) {
-		if hrStr(row, "status") == status && row.Vals["cancel_id"] != nil && hrStr(row, "cancel_id") == cancelID {
+	return func(row *jsonutil.Object) (map[string]any, error) {
+		if hrStr(row, "status") == status && row.Value("cancel_id") != nil && hrStr(row, "cancel_id") == cancelID {
 			return driverTaskFromRow(row, true)
 		}
 		return nil, nil
@@ -712,12 +702,12 @@ func driverCancelReplay(cancelID, status string) driverReplay {
 }
 
 // Whether a row is in status at both generations
-func driverGenerationsMatch(row *pyjson.Object, status string, executionGeneration, cancelGeneration int64) bool {
+func driverGenerationsMatch(row *jsonutil.Object, status string, executionGeneration, cancelGeneration int64) bool {
 	return hrStr(row, "status") == status && hrInt(row, "execution_generation") == executionGeneration && hrInt(row, "cancel_generation") == cancelGeneration
 }
 
 // Refuses a row whose cancel generation moved
-func driverRequireCancelGeneration(row *pyjson.Object, expected int64) error {
+func driverRequireCancelGeneration(row *jsonutil.Object, expected int64) error {
 	if hrInt(row, "cancel_generation") != expected {
 		return staleTask("task cancellation generation changed")
 	}
@@ -734,7 +724,7 @@ type driverTransitionSpec struct {
 	lease       *DriverLease
 	leaseAfter  bool
 	replay      driverReplay
-	guard       func(row *pyjson.Object) error
+	guard       func(row *jsonutil.Object) error
 }
 
 // Loads, replays, guards and applies one fenced transition, capturing work evidence after
@@ -795,7 +785,7 @@ func driverGenerationTransition(ctx context.Context, dbPath string, identity Tas
 	now float64, setParams []any, replay driverReplay) (map[string]any, error) {
 	spec := driverGenerationTrans[name]
 	return driverTransition(ctx, dbPath, identity, driverTransitionSpec{lease: &lease, now: now, replay: replay,
-		guard: func(row *pyjson.Object) error {
+		guard: func(row *jsonutil.Object) error {
 			if !driverGenerationsMatch(row, spec.status, executionGeneration, cancelGeneration) {
 				return staleTask(spec.generationStale)
 			}
@@ -807,17 +797,17 @@ func driverGenerationTransition(ctx context.Context, dbPath string, identity Tas
 func driverRunFenceTransition(ctx context.Context, dbPath string, attempt TaskAttempt, guardStale string, nullAsZero bool, spec driverTransitionSpec) (map[string]any, error) {
 	lease := attempt.Lease
 	spec.lease = &lease
-	spec.guard = func(row *pyjson.Object) error {
+	spec.guard = func(row *jsonutil.Object) error {
 		if !driverGenerationsMatch(row, "running", attempt.ExecutionGeneration, attempt.CancelGeneration) {
 			return staleTask(guardStale)
 		}
 		leaseGeneration := int64(0)
-		if row.Vals["run_lease_generation"] != nil {
+		if row.Value("run_lease_generation") != nil {
 			leaseGeneration = hrInt(row, "run_lease_generation")
 		} else if !nullAsZero {
 			return &pyjson.TypeError{Msg: "the driver run fence has no number"}
 		}
-		if row.Vals["run_gateway_id"] != lease.GatewayID || row.Vals["run_process_generation"] != lease.ProcessGeneration || leaseGeneration != lease.LeaseGeneration {
+		if row.Value("run_gateway_id") != lease.GatewayID || row.Value("run_process_generation") != lease.ProcessGeneration || leaseGeneration != lease.LeaseGeneration {
 			return staleTask(guardStale)
 		}
 		return nil

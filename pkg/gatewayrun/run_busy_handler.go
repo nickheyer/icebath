@@ -11,9 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Config key of a platform, cli for local
@@ -49,14 +49,14 @@ func busyAckStatusParts(ctx context.Context, now float64, busyState *SessionStat
 	if elapsedMin > 0 {
 		parts = append(parts, i18n.T(ctx, "gateway.busy.elapsed_min", "", map[string]any{"minutes": elapsedMin}))
 	}
-	if pyrepr.Truthy(pyrepr.Or(summary["max_iterations"], 0)) {
-		progress, err := agent.FormatIterationProgress(ctx, pyrepr.Or(summary["api_call_count"], 0), pyrepr.Or(summary["max_iterations"], 0))
+	if anyutil.IsTrue(anyutil.Or(summary["max_iterations"], 0)) {
+		progress, err := agent.FormatIterationProgress(ctx, anyutil.Or(summary["api_call_count"], 0), anyutil.Or(summary["max_iterations"], 0))
 		if err != nil {
 			return parts
 		}
 		parts = append(parts, progress)
 	}
-	if tool := summary["current_tool"]; pyrepr.Truthy(tool) {
+	if tool := summary["current_tool"]; anyutil.IsTrue(tool) {
 		parts = append(parts, i18n.T(ctx, "gateway.busy.running_tool", "", map[string]any{"tool": tool}))
 	}
 	return parts
@@ -146,7 +146,7 @@ func (r *GatewayRunner) handleActiveSessionBusyMessage(ctx context.Context, even
 			platform = string(event.Source.Platform)
 		}
 		pkgLog().Warn(fmt.Sprintf("Dropping message from unauthorized user in active session: user=%s (%s), platform=%s, session=%s",
-			pyrepr.Str(derefOrNone(event.Source.UserID)), pyrepr.Str(derefOrNone(event.Source.UserName)), platform, sessionKey))
+			anyutil.String(derefOrNone(event.Source.UserID)), anyutil.String(derefOrNone(event.Source.UserName)), platform, sessionKey))
 		return true, nil
 	}
 	admitted, err := r.admitBotMessageForSource(ctx, event.Source)
@@ -173,8 +173,8 @@ func (r *GatewayRunner) handleActiveSessionBusyMessage(ctx context.Context, even
 		return false, err
 	}
 	if skill {
-		if pyrepr.Truthy(skillReply) {
-			if err := r.sendBusyReply(ctx, event, adapter, pyrepr.Str(skillReply), false); err != nil {
+		if anyutil.IsTrue(skillReply) {
+			if err := r.sendBusyReply(ctx, event, adapter, anyutil.String(skillReply), false); err != nil {
 				return false, err
 			}
 		}

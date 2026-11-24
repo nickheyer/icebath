@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Adapter processing bracket of one producer admitted turn, its typing refresh and lifecycle hooks
@@ -88,7 +88,7 @@ func producerTurns(a *SessionAuthority) map[string]*producerBracket {
 }
 
 // Marks a producer's freshly queued row as the executor's to bracket, a resent row left alone
-func markProducerAdmission(a *SessionAuthority, event *MessageEvent, row *pyjson.Object) {
+func markProducerAdmission(a *SessionAuthority, event *MessageEvent, row *jsonutil.Object) {
 	if event == nil || !event.producerDelivery || rowString(row, "status") != AdmissionQueued {
 		return
 	}
@@ -144,7 +144,7 @@ func (b *producerBracket) isClosed() bool {
 }
 
 // Opens the bracket of a producer admitted row starting to execute, nil for any other admission
-func openProducerTurn(ctx context.Context, a *SessionAuthority, row *pyjson.Object, event *MessageEvent) (*producerBracket, error) {
+func openProducerTurn(ctx context.Context, a *SessionAuthority, row *jsonutil.Object, event *MessageEvent) (*producerBracket, error) {
 	admissionID := rowString(row, "admission_id")
 	a.mu.Lock()
 	_, marked := producerTurns(a)[admissionID]
@@ -190,12 +190,12 @@ func openProducerTurn(ctx context.Context, a *SessionAuthority, row *pyjson.Obje
 }
 
 // Hook outcome of the result settlement will commit for an executed turn
-func executedOutcome(captured *pyjson.Object) ProcessingOutcome {
+func executedOutcome(captured *jsonutil.Object) ProcessingOutcome {
 	value, ok := captured.Get("terminal_result")
 	if !ok {
 		value, _ = captured.Get("result")
 	}
-	result, _ := value.(*pyjson.Object)
+	result, _ := value.(*jsonutil.Object)
 	if result == nil {
 		return ProcessingSuccess
 	}
@@ -211,7 +211,7 @@ func executedOutcome(captured *pyjson.Object) ProcessingOutcome {
 }
 
 // Runs a claimed row's execution inside its producer bracket, reporting a non success outcome when it ends
-func producerTurn(ctx context.Context, a *SessionAuthority, row *pyjson.Object, event *MessageEvent, captured *pyjson.Object, run func(ctx context.Context) error) error {
+func producerTurn(ctx context.Context, a *SessionAuthority, row *jsonutil.Object, event *MessageEvent, captured *jsonutil.Object, run func(ctx context.Context) error) error {
 	bracket, err := openProducerTurn(ctx, a, row, event)
 	if err != nil {
 		return err

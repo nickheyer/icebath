@@ -7,16 +7,17 @@ import (
 	"math"
 	"math/big"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var insightsTokenKeys = []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens"}
@@ -26,7 +27,7 @@ func insightsFmtEstCost(est float64) string {
 	if math.IsInf(est, 1) {
 		return "~$Infinity"
 	}
-	r, _ := new(big.Rat).SetString(pyrepr.Float(est))
+	r, _ := new(big.Rat).SetString(strconv.FormatFloat(est, 'f', -1, 64))
 	return provider.FormatCostLabel(r)
 }
 
@@ -80,7 +81,7 @@ func insightsShortModel(model string) string {
 
 func insightsDecode(raw any) any {
 	if s, ok := raw.(string); ok {
-		v, err := pyjson.Loads(s)
+		v, err := jsonutil.Decode(s)
 		if err != nil {
 			return nil
 		}
@@ -94,10 +95,10 @@ func insightsFunctions(raw any) []any {
 	calls, _ := insightsDecode(raw).([]any)
 	var out []any
 	for _, call := range calls {
-		if obj, ok := call.(*pyjson.Object); ok {
+		if obj, ok := call.(*jsonutil.Object); ok {
 			fn, found := obj.Get("function")
 			if !found {
-				fn = pyjson.NewObject()
+				fn = jsonutil.NewObject()
 			}
 			out = append(out, fn)
 		}
@@ -106,7 +107,7 @@ func insightsFunctions(raw any) []any {
 }
 
 func insightsAttrGet(fn any, key string) (any, error) {
-	obj, ok := fn.(*pyjson.Object)
+	obj, ok := fn.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("tool call function is %s where a mapping was expected", errchain.Kind(fn))
 	}
@@ -127,14 +128,14 @@ func insightsHour12(hr int) string {
 
 // Month and day of a stored timestamp, a question mark when unset or corrupt
 func insightsDay(ts any) string {
-	if !pyrepr.Truthy(ts) {
+	if !anyutil.IsTrue(ts) {
 		return "?"
 	}
-	c, ok := pydatetime.CoerceEpoch(ts, "", "")
+	c, ok := timeutil.StoredEpoch(ts, "", "")
 	if !ok || c == 0 {
 		return "?"
 	}
-	return pydatetime.Strftime(pydatetime.FromTimestamp(c), "%b %d")
+	return timeutil.FromEpoch(c).Format("Jan 02")
 }
 
 func insightsLocalSurface(alias string) string {
@@ -274,7 +275,7 @@ func insightsCellStr(v any) string {
 	case []byte:
 		return string(x)
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func (e *InsightsEngine) query(ctx context.Context, base string, cutoff float64, source string) ([]map[string]any, error) {
@@ -395,7 +396,7 @@ func (e *InsightsEngine) getSessions(ctx context.Context, cutoff float64, source
 	}
 	for _, row := range rows {
 		for _, col := range []string{"started_at", "ended_at"} {
-			if ts, ok := pydatetime.CoerceEpoch(row[col], insightsCellStr(row["id"]), col); ok {
+			if ts, ok := timeutil.StoredEpoch(row[col], insightsCellStr(row["id"]), col); ok {
 				row[col] = ts
 			} else {
 				row[col] = nil
@@ -433,7 +434,7 @@ func (e *InsightsEngine) getToolUsage(ctx context.Context, cutoff float64, sourc
 	}
 	for _, row := range rows {
 		name := row["tool_name"]
-		k := insightsToolKey{insightsCellStr(row["session_id"]), pyrepr.TypeName(name), insightsCellStr(name)}
+		k := insightsToolKey{insightsCellStr(row["session_id"]), anyutil.Kind(name), insightsCellStr(name)}
 		seen(k, name)
 		n, _ := row["count"].(int64)
 		bySessionTool[k] += n
@@ -449,16 +450,16 @@ func (e *InsightsEngine) getToolUsage(ctx context.Context, cutoff float64, sourc
 			if err != nil {
 				break
 			}
-			if !pyrepr.Truthy(name) {
+			if !anyutil.IsTrue(name) {
 				continue
 			}
 			if _, isList := name.([]any); isList {
 				break
 			}
-			if _, isDict := name.(*pyjson.Object); isDict {
+			if _, isDict := name.(*jsonutil.Object); isDict {
 				break
 			}
-			k := insightsToolKey{insightsCellStr(row["session_id"]), pyrepr.TypeName(name), pyrepr.Repr(name)}
+			k := insightsToolKey{insightsCellStr(row["session_id"]), anyutil.Kind(name), anyutil.Quote(name)}
 			if s, ok := name.(string); ok {
 				k.name = s
 			}
@@ -518,14 +519,14 @@ func (e *InsightsEngine) getSkillUsage(ctx context.Context, cutoff float64, sour
 				return nil, err
 			}
 			switch toolName.(type) {
-			case []any, *pyjson.Object:
+			case []any, *jsonutil.Object:
 				return nil, fmt.Errorf("skill tool name is %s where text was expected", errchain.Kind(toolName))
 			}
 			if toolName != "skill_view" && toolName != "skill_manage" {
 				continue
 			}
 			argsVal, _ := insightsAttrGet(fn, "arguments")
-			args, _ := insightsDecode(argsVal).(*pyjson.Object)
+			args, _ := insightsDecode(argsVal).(*jsonutil.Object)
 			var nameVal any
 			if args != nil {
 				nameVal, _ = args.Get("name")
@@ -650,7 +651,7 @@ func insightsOverview(ctx context.Context, sessions []map[string]any, messageSta
 		}
 		totalCost += estimated
 		var cell any = 0.0
-		if pyrepr.Truthy(s["actual_cost_usd"]) {
+		if anyutil.IsTrue(s["actual_cost_usd"]) {
 			cell = s["actual_cost_usd"]
 		}
 		if actual, err = pyArith("+", actual, cell); err != nil {
@@ -802,7 +803,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 				return err
 			}
 		} else {
-			if pyrepr.Truthy(stored) {
+			if anyutil.IsTrue(stored) {
 				if estimate, err = pyFloat(stored); err != nil {
 					return err
 				}
@@ -812,7 +813,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 			}
 		}
 		d.cost += estimate
-		if pyrepr.Truthy(actualCost) {
+		if anyutil.IsTrue(actualCost) {
 			f, err := pyFloat(actualCost)
 			if err != nil {
 				return err
@@ -863,7 +864,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 		if totals.actual, err = pyArith("+=", totals.actual, insightsOr0f(r["actual_cost_usd"])); err != nil {
 			return nil, err
 		}
-		hasStored := pyrepr.Truthy(r["cost_status"]) || pyrepr.Truthy(r["cost_source"])
+		hasStored := anyutil.IsTrue(r["cost_status"]) || anyutil.IsTrue(r["cost_source"])
 		if err := accumulate(insightsCellStr(r["model"]), insightsCellStr(r["billing_provider"]), insightsCellStr(r["billing_base_url"]), sid, counts,
 			r["estimated_cost_usd"], hasStored, r["actual_cost_usd"], insightsCellStr(r["cost_status"])); err != nil {
 			return nil, err
@@ -882,7 +883,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 			if residual[k], err = insightsPyMax0(diff); err != nil {
 				return nil, err
 			}
-			anyResidual = anyResidual || pyrepr.Truthy(residual[k])
+			anyResidual = anyResidual || anyutil.IsTrue(residual[k])
 		}
 		residualCost, err := insightsResidualFloat(s["estimated_cost_usd"], totals.estimated)
 		if err != nil {
@@ -900,7 +901,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 		}
 	}
 	for _, s := range sessions {
-		if pyrepr.Truthy(s["tool_call_count"]) {
+		if anyutil.IsTrue(s["tool_call_count"]) {
 			d := entry(insightsShortModel(insightsCellStr(s["model"])))
 			if d.toolCalls, err = pyArith("+=", d.toolCalls, s["tool_call_count"]); err != nil {
 				return nil, err
@@ -934,7 +935,7 @@ func (e *InsightsEngine) computeModelBreakdown(ctx context.Context, sessions []m
 }
 
 func insightsOr0f(v any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return 0.0
@@ -943,7 +944,7 @@ func insightsOr0f(v any) any {
 // max(0.0, float(cell or 0.0) - attributed) of a session cost column
 func insightsResidualFloat(cell, attributed any) (float64, error) {
 	f := 0.0
-	if pyrepr.Truthy(cell) {
+	if anyutil.IsTrue(cell) {
 		var err error
 		if f, err = pyFloat(cell); err != nil {
 			return 0, err
@@ -969,7 +970,7 @@ func insightsPlatformBreakdown(sessions []map[string]any) ([]InsightsPlatform, e
 	data := map[string]*acc{}
 	for _, s := range sessions {
 		platform := insightsCellStr(s["source"])
-		if !pyrepr.Truthy(s["source"]) {
+		if !anyutil.IsTrue(s["source"]) {
 			platform = "unknown"
 		}
 		d, ok := data[platform]
@@ -1054,10 +1055,10 @@ func insightsSkillBreakdown(usage []*insightsSkillCount) (InsightsSkills, error)
 			return a.ManageCount > b.ManageCount
 		}
 		var la, lb any = a.LastUsedAt, b.LastUsedAt
-		if !pyrepr.Truthy(la) {
+		if !anyutil.IsTrue(la) {
 			la = int64(0)
 		}
-		if !pyrepr.Truthy(lb) {
+		if !anyutil.IsTrue(lb) {
 			lb = int64(0)
 		}
 		c, err := pyCompare(la, lb)
@@ -1090,7 +1091,7 @@ func insightsActivityPatterns(sessions []map[string]any) *InsightsActivity {
 		if !ok {
 			continue
 		}
-		dt := pydatetime.FromTimestamp(ts)
+		dt := timeutil.FromEpoch(ts)
 		dayCounts[(int(dt.Weekday())+6)%7]++
 		hourCounts[dt.Hour()]++
 		daily[dt.Format("2006-01-02")]++
@@ -1163,12 +1164,12 @@ func insightsTopSessions(sessions []map[string]any) ([]InsightsTopSession, error
 		metric func(map[string]any) (any, error)
 		format func(any) string
 	}{
-		{"Most messages", func(s map[string]any) (any, error) { return or0(s["message_count"]), nil }, func(v any) string { return pyrepr.Str(v) + " msgs" }},
+		{"Most messages", func(s map[string]any) (any, error) { return or0(s["message_count"]), nil }, func(v any) string { return anyutil.String(v) + " msgs" }},
 		{"Most tokens", func(s map[string]any) (any, error) {
 			return pyArith("+", or0(s["input_tokens"]), or0(s["output_tokens"]))
 		},
 			func(v any) string { return pyFormat(v, ",") + " tokens" }},
-		{"Most tool calls", func(s map[string]any) (any, error) { return or0(s["tool_call_count"]), nil }, func(v any) string { return pyrepr.Str(v) + " calls" }},
+		{"Most tool calls", func(s map[string]any) (any, error) { return or0(s["tool_call_count"]), nil }, func(v any) string { return anyutil.String(v) + " calls" }},
 	}
 	for _, m := range metrics {
 		var best map[string]any

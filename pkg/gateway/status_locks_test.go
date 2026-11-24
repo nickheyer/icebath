@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func lockDir(t *testing.T) string {
@@ -43,7 +43,7 @@ func TestAcquireScopedLockReplacesPidReusedByUnrelatedProcess(t *testing.T) {
 	patch(t, &statusReadProcessCmdline, cmdline("/usr/libexec/bluetoothuserd"))
 	acquired, _, err := AcquireScopedLock(context.Background(), "telegram-bot-token", "secret", rec("platform", "telegram"))
 	payload := readRecord(t, lock)
-	if err != nil || !acquired || !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || recGet(recGet(payload, "metadata").(*pyjson.Object), "platform") != "telegram" {
+	if err != nil || !acquired || !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || recGet(recGet(payload, "metadata").(*jsonutil.Object), "platform") != "telegram" {
 		t.Fatalf("%v %v", acquired, err)
 	}
 }
@@ -236,7 +236,7 @@ func TestTakeoverMarker(t *testing.T) {
 	}
 }
 
-func ownerRecord(t *testing.T, targetHome string, pid int64) *pyjson.Object {
+func ownerRecord(t *testing.T, targetHome string, pid int64) *jsonutil.Object {
 	r := rec("pid", pid, "kind", "icebath-gateway", "argv", strs("python", "-m", "icebath_cli.main", "gateway", "run"),
 		"start_time", int64(123), "icebath_home", targetHome)
 	writeRecord(t, filepath.Join(targetHome, "gateway.pid"), r)

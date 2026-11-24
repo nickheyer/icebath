@@ -10,11 +10,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 const LoopCompleteMarker = "LOOP_COMPLETE"
@@ -58,7 +57,7 @@ func loopSelfPacedCeilingSeconds(ctx context.Context) int64 {
 
 // Compact hours minutes seconds rendering of a duration, 90 becoming 1m30s
 func FormatLoopInterval(seconds float64) string {
-	total := int64(pyint.Round(max(0, seconds), 0))
+	total := int64(mathutil.Round(max(0, seconds), 0))
 	h, rem := total/3600, total%3600
 	m, s := rem/60, rem%60
 	var parts []string
@@ -79,7 +78,7 @@ func loopText(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Cadence of the loop, every interval or self paced with its live delay
@@ -116,7 +115,7 @@ func loopTicksLabel(n int64) string {
 
 // Em dash clause carrying a reason, empty without one
 func loopDash(reason any) string {
-	if pyrepr.Truthy(reason) {
+	if anyutil.IsTrue(reason) {
 		return " — " + loopText(reason)
 	}
 	return ""
@@ -144,7 +143,7 @@ func digestLoopResponse(response string) string {
 			text = replaced
 		}
 	}
-	sum := sha256.Sum256(pystr.EncodeUTF8Replace(text))
+	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
 

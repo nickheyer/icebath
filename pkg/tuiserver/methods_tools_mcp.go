@@ -10,12 +10,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var toolsMCPRegistry = &handlerRegistry{}
@@ -96,13 +96,13 @@ func summarizeMCPServer(ctx context.Context, name string, cfg map[string]any, pl
 		cfg = map[string]any{}
 	}
 	transport := "unknown"
-	if truthy(cfg["url"]) {
+	if anyutil.IsTrue(cfg["url"]) {
 		transport = "http"
-	} else if truthy(cfg["command"]) {
+	} else if anyutil.IsTrue(cfg["command"]) {
 		transport = "stdio"
 	}
 	auth := cfg["auth"]
-	if headers, isDict := cfg["headers"].(map[string]any); !truthy(auth) && isDict {
+	if headers, isDict := cfg["headers"].(map[string]any); !anyutil.IsTrue(auth) && isDict {
 		for key := range headers {
 			if strings.ToLower(key) == "authorization" {
 				auth = "header"
@@ -111,13 +111,13 @@ func summarizeMCPServer(ctx context.Context, name string, cfg map[string]any, pl
 		}
 	}
 	args := []any{}
-	if truthy(cfg["args"]) {
+	if anyutil.IsTrue(cfg["args"]) {
 		args = pyListItems(cfg["args"])
 	}
 	envKeys := []string{}
-	if truthy(cfg["env"]) {
+	if anyutil.IsTrue(cfg["env"]) {
 		for _, k := range pyListItems(cfg["env"]) {
-			envKeys = append(envKeys, pyrepr.Str(k))
+			envKeys = append(envKeys, anyutil.String(k))
 		}
 	}
 	sort.Strings(envKeys)
@@ -146,12 +146,12 @@ func transportSpecRepr(t mcp.TransportSpec) string {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	env := pyjson.NewObject()
+	env := jsonutil.NewObject()
 	for _, k := range keys {
 		env.Set(k, t.Env[k])
 	}
-	return fmt.Sprintf("TransportSpec(type=%s, command=%s, args=%s, url=%s, version=%s, env=%s)", pyrepr.Repr(t.Type),
-		pyrepr.Repr(t.Command), pyrepr.Repr(args), pyrepr.Repr(t.URL), pyrepr.Repr(t.Version), pyrepr.Repr(env))
+	return fmt.Sprintf("TransportSpec(type=%s, command=%s, args=%s, url=%s, version=%s, env=%s)", anyutil.Quote(t.Type),
+		anyutil.Quote(t.Command), anyutil.Quote(args), anyutil.Quote(t.URL), anyutil.Quote(t.Version), anyutil.Quote(env))
 }
 
 // Catalog servers of the profile with their install and enable state
@@ -233,7 +233,7 @@ func mcpServersAdd(ctx context.Context, rid any, params map[string]any) (map[str
 		}
 	}
 	var entry *mcp.CatalogEntry
-	if preset != "" && !(truthy(serverConfig["url"]) || truthy(serverConfig["command"])) {
+	if preset != "" && !(anyutil.IsTrue(serverConfig["url"]) || anyutil.IsTrue(serverConfig["command"])) {
 		found, err := mcp.GetEntry(ctx, preset)
 		if err != nil {
 			return nil, err
@@ -252,18 +252,18 @@ func mcpServersAdd(ctx context.Context, rid any, params map[string]any) (map[str
 		} else {
 			var cmdArgs []string
 			for _, a := range pyListItems(serverConfig["args"]) {
-				cmdArgs = append(cmdArgs, pyrepr.Str(a))
+				cmdArgs = append(cmdArgs, anyutil.String(a))
 			}
 			if err := mcp.ApplyMCPPreset(preset, strOr(serverConfig["url"]), strOr(serverConfig["command"]), cmdArgs, serverConfig); err != nil {
 				return rpcErr(rid, 4063, "Unknown MCP catalog entry or preset: "+preset, nil), nil
 			}
 		}
 	}
-	if !truthy(serverConfig["url"]) && !truthy(serverConfig["command"]) {
+	if !anyutil.IsTrue(serverConfig["url"]) && !anyutil.IsTrue(serverConfig["command"]) {
 		return rpcErr(rid, 4063, "config must specify a 'url' (http) or 'command' (stdio), or a valid 'preset'", nil), nil
 	}
-	if token := params["bearer_token"]; truthy(token) {
-		headers, err := mcp.SaveBearerAuthToken(ctx, name, pyrepr.Str(token))
+	if token := params["bearer_token"]; anyutil.IsTrue(token) {
+		headers, err := mcp.SaveBearerAuthToken(ctx, name, anyutil.String(token))
 		if err != nil {
 			return nil, err
 		}
@@ -300,8 +300,8 @@ func mcpServersSetAPIKey(ctx context.Context, rid any, params map[string]any) (m
 		return rpcErr(rid, 4001, "malformed server config", nil), nil
 	}
 	h := home.Dir(ctx)
-	if truthy(entry["url"]) {
-		normalized := mcp.StripBearerPrefix(pyrepr.Str(value))
+	if anyutil.IsTrue(entry["url"]) {
+		normalized := mcp.StripBearerPrefix(anyutil.String(value))
 		if normalized == "" || strings.ToLower(normalized) == "bearer" {
 			return rpcErr(rid, 4063, "value is not a valid credential", nil), nil
 		}
@@ -314,7 +314,7 @@ func mcpServersSetAPIKey(ctx context.Context, rid any, params map[string]any) (m
 			entry["headers"] = map[string]any{"Authorization": "Bearer ${" + envVar + "}"}
 		}
 	} else {
-		if err := config.SaveEnvValueContext(ctx, h, envVar, pyrepr.Str(value)); err != nil {
+		if err := config.SaveEnvValueContext(ctx, h, envVar, anyutil.String(value)); err != nil {
 			return nil, err
 		}
 		envBlock, isDict := entry["env"].(map[string]any)
@@ -420,14 +420,14 @@ func mcpOAuthStart(ctx context.Context, rid any, params map[string]any) (map[str
 	for k, v := range servers[name] {
 		cfg[k] = v
 	}
-	if !truthy(cfg["url"]) {
+	if !anyutil.IsTrue(cfg["url"]) {
 		return rpcErr(rid, 4001, "stdio servers authenticate via env keys, not OAuth", nil), nil
 	}
-	if truthy(cfg["headers"]) && cfg["auth"] != "oauth" {
+	if anyutil.IsTrue(cfg["headers"]) && cfg["auth"] != "oauth" {
 		return rpcErr(rid, 4001, "this server uses header/API-key auth, not OAuth", nil), nil
 	}
 	cfg["auth"] = "oauth"
-	homeDir, err := pypath.Resolve(pypath.Expanduser(home.Dir(ctx)))
+	homeDir, err := pathutil.Resolve(pathutil.ExpandUser(home.Dir(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -437,21 +437,21 @@ func mcpOAuthStart(ctx context.Context, rid any, params map[string]any) (map[str
 	}
 	out := map[string]any{"ok": true}
 	for _, k := range []string{"session_id", "auth_url", "flow"} {
-		out[k] = result.GetOr(k, nil)
+		out[k] = result.ValueOr(k, nil)
 	}
 	return ok(rid, out), nil
 }
 
 // Polls a flow for pending, approved or error, approved tokens persisted per profile
 func mcpOAuthPoll(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	out := pyjson.ObjectOf("ok", true)
-	out.Update(mcp.PollOAuthFlow(ctx, strArg(params, "session_id"), strArg(params, "name")))
+	out := jsonutil.ObjectOf("ok", true)
+	out.Merge(mcp.PollOAuthFlow(ctx, strArg(params, "session_id"), strArg(params, "name")))
 	return ok(rid, out), nil
 }
 
 // Cancels a flow the resolved profile owns, waking its callback worker
 func mcpOAuthCancel(ctx context.Context, rid any, params map[string]any) (map[string]any, error) {
-	homeDir, err := pypath.Resolve(pypath.Expanduser(home.Dir(ctx)))
+	homeDir, err := pathutil.Resolve(pathutil.ExpandUser(home.Dir(ctx)))
 	if err != nil {
 		return nil, err
 	}

@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -213,7 +213,7 @@ func transcribeOversized(path string, limit sttUploadLimit, dispatch func(string
 			return nil, err
 		}
 		if p := result["provider"]; pyTruthy(p) {
-			provider = pyrepr.Str(p)
+			provider = anyutil.String(p)
 		}
 		if pyTruthy(result["no_speech"]) {
 			continue
@@ -223,11 +223,11 @@ func transcribeOversized(path string, limit sttUploadLimit, dispatch func(string
 			if !ok {
 				detail = "unknown error"
 			}
-			return sttError(fmt.Sprintf("Segment %d/%d failed: %s", index+1, len(parts), pyrepr.Str(detail)), "provider", provider), nil
+			return sttError(fmt.Sprintf("Segment %d/%d failed: %s", index+1, len(parts), anyutil.String(detail)), "provider", provider), nil
 		}
 		text := ""
 		if t := result["transcript"]; pyTruthy(t) {
-			text = strings.TrimSpace(pyrepr.Str(t))
+			text = strings.TrimSpace(anyutil.String(t))
 		}
 		if text != "" && !isWhisperHallucination(text) {
 			transcripts = append(transcripts, text)

@@ -9,10 +9,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // AttributeError is the Python exception a non string action raises, named so the dispatcher reports its class
@@ -129,7 +129,7 @@ func cuStrOr(args map[string]any, key, def string) string {
 		if v == nil {
 			return ""
 		}
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return def
 }
@@ -238,8 +238,8 @@ func doClick(c *cuCall, button string, count int) (any, error) {
 	if button == "" {
 		if b, ok := c.args["button"].(string); ok && b != "" {
 			button = b
-		} else if pyrepr.Truthy(c.args["button"]) {
-			button = pyrepr.Str(c.args["button"])
+		} else if anyutil.IsTrue(c.args["button"]) {
+			button = anyutil.String(c.args["button"])
 		} else {
 			button = "left"
 		}
@@ -317,21 +317,21 @@ func doSetValue(c *cuCall) (any, error) {
 	}
 	value, ok := c.args["value"].(string)
 	if !ok {
-		value = pyrepr.Str(c.args["value"])
+		value = anyutil.String(c.args["value"])
 	}
 	return c.backend.SetValue(value, element)
 }
 
 // Routes input to an app, an error JSON without one
 func doFocusApp(c *cuCall) (any, error) {
-	if !pyrepr.Truthy(c.args["app"]) {
+	if !anyutil.IsTrue(c.args["app"]) {
 		return cuDumps(map[string]any{"error": "focus_app requires `app`"}, "error"), nil
 	}
 	app, err := cuOptStr("app", c.args["app"])
 	if err != nil {
 		return nil, err
 	}
-	return c.backend.FocusApp(*app, pyrepr.Truthy(c.args["raise_window"]))
+	return c.backend.FocusApp(*app, anyutil.IsTrue(c.args["raise_window"]))
 }
 
 // Captures the screen in som, vision or ax mode, fenced before the frame is shaped
@@ -413,7 +413,7 @@ func dispatchComputerUse(ctx context.Context, env *tools.Env, backend ComputerUs
 		if err != nil {
 			return nil, err
 		}
-		c.delivery = DeliveryArgs{DeliveryMode: mode, BringToFront: pyrepr.Truthy(args["bring_to_front"])}
+		c.delivery = DeliveryArgs{DeliveryMode: mode, BringToFront: anyutil.IsTrue(args["bring_to_front"])}
 		c.fence, c.sessionID = func() error { return nil }, nil
 	}
 	res, err := spec.handler(c)
@@ -421,10 +421,10 @@ func dispatchComputerUse(ctx context.Context, env *tools.Env, backend ComputerUs
 		return nil, err
 	}
 	switch r := res.(type) {
-	case string, *pyjson.Object:
+	case string, *jsonutil.Object:
 		return r, nil
 	case *ActionResult:
-		return maybeFollowCapture(ctx, env, backend, r, pyrepr.Truthy(args["capture_after"]), fence, sessionID)
+		return maybeFollowCapture(ctx, env, backend, r, anyutil.IsTrue(args["capture_after"]), fence, sessionID)
 	}
 	return res, nil
 }
@@ -436,8 +436,8 @@ func (b *CuaDriverBackend) lastTargetIDs() (pid, windowID *int) {
 	if b.lastTarget == nil {
 		return nil, nil
 	}
-	p, _ := cuOptInt("pid", b.lastTarget.Vals["pid"])
-	w, _ := cuOptInt("window_id", b.lastTarget.Vals["window_id"])
+	p, _ := cuOptInt("pid", b.lastTarget.Value("pid"))
+	w, _ := cuOptInt("window_id", b.lastTarget.Value("window_id"))
 	return p, w
 }
 
@@ -474,14 +474,14 @@ func maybeFollowCapture(ctx context.Context, env *tools.Env, backend ComputerUse
 		return nil, err
 	}
 	payload := actionPayload(res)
-	head, err := pyjson.Dumps(payload)
+	head, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}
-	if obj, ok := resp.(*pyjson.Object); ok && pyrepr.Truthy(obj.Vals["_multimodal"]) {
-		summary := head + "\n\n" + pyrepr.Str(obj.Vals["text_summary"])
-		if content, ok := obj.Vals["content"].([]any); ok && len(content) > 0 {
-			if first, ok := content[0].(*pyjson.Object); ok {
+	if obj, ok := resp.(*jsonutil.Object); ok && anyutil.IsTrue(obj.Value("_multimodal")) {
+		summary := head + "\n\n" + anyutil.String(obj.Value("text_summary"))
+		if content, ok := obj.Value("content").([]any); ok && len(content) > 0 {
+			if first, ok := content[0].(*jsonutil.Object); ok {
 				first.Set("text", summary)
 			}
 		}
@@ -490,18 +490,18 @@ func maybeFollowCapture(ctx context.Context, env *tools.Env, backend ComputerUse
 		return obj, nil
 	}
 	text, _ := resp.(string)
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	merged, ok := decoded.(*pyjson.Object)
+	merged, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("the merged arguments are %s where a mapping was expected", errchain.Kind(decoded))
 	}
-	for _, k := range payload.Keys {
-		merged.Set(k, payload.Vals[k])
+	for _, k := range payload.Keys() {
+		merged.Set(k, payload.Value(k))
 	}
-	out, err := pyjson.Dumps(merged)
+	out, err := jsonutil.Encode(merged)
 	return out, err
 }
 
@@ -524,7 +524,7 @@ func cuRefused(action string, err error) string {
 // Runs one computer_use call through hard blocks, approval scopes, the backend and the lease fenced dispatch
 func handleComputerUse(ctx context.Context, env *tools.Env, args map[string]any, sessionID string) (any, error) {
 	rawAction := args["action"]
-	if rawAction != nil && pyrepr.Truthy(rawAction) {
+	if rawAction != nil && anyutil.IsTrue(rawAction) {
 		if _, ok := rawAction.(string); !ok {
 			return nil, &AttributeError{fmt.Sprintf("action is %s where text was expected", errchain.Kind(rawAction))}
 		}
@@ -548,7 +548,7 @@ func handleComputerUse(ctx context.Context, env *tools.Env, args map[string]any,
 	if spec, ok := cuActions[action]; ok && spec.destructive {
 		scopes = append(scopes, action)
 	}
-	if pyrepr.Truthy(args["bring_to_front"]) || (action == "focus_app" && pyrepr.Truthy(args["raise_window"])) {
+	if anyutil.IsTrue(args["bring_to_front"]) || (action == "focus_app" && anyutil.IsTrue(args["raise_window"])) {
 		scopes = append(scopes, "bring_to_front")
 	}
 	for _, scope := range scopes {

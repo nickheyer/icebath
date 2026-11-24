@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Runs the fatal handler detached and shielded so the failing adapter's own task cannot cancel it mid flight
@@ -278,7 +276,7 @@ func (r *GatewayRunner) platformReconnectWatcher(ctx context.Context) error {
 			}
 			continue
 		}
-		now := pythread.Monotonic()
+		now := timeutil.Monotonic()
 		for _, platform := range r.failedPlatforms.Keys() {
 			if !r.running.Load() {
 				return nil
@@ -361,7 +359,7 @@ func (r *GatewayRunner) reconnectFailedPlatform(ctx context.Context, platform ga
 		case base.HasFatalError() && !base.FatalErrorRetryable():
 			r.markPlatformFatal(ctx, string(platform), adapter)
 			pkgLog().Warn(fmt.Sprintf("Reconnect %s: non-retryable error (%s), removing from retry queue",
-				platform, pyrepr.Str(optAny(base.FatalErrorMessage()))))
+				platform, anyutil.String(optAny(base.FatalErrorMessage()))))
 			if err := disposeUnusedAdapter(ctx, adapter); err != nil {
 				return err
 			}

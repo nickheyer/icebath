@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -14,67 +13,55 @@ import (
 	"strconv"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
-// OSError the restore code raises with its message
-type osError struct{ msg string }
+// Failure the restore code reports with its message
+type restoreError struct{ msg string }
 
-func (e *osError) Error() string      { return e.msg }
-func (e *osError) PyTypeName() string { return "OSError" }
+func (e *restoreError) Error() string { return e.msg }
 
-// ValueError or TypeError of a Python int() conversion the restore code does not catch
-type pyValueError struct {
-	class, msg string
-}
-
-func (e *pyValueError) Error() string      { return e.msg }
-func (e *pyValueError) PyTypeName() string { return e.class }
-
-// Reports whether err is a Python OSError, a filesystem failure or one the restore code raised
-func isOSError(err error) bool {
+// Reports whether err is a failure a restore records and survives: one the restore code reported or one from the operating system, a refused maintenance reservation excluded
+func isRestoreFailure(err error) bool {
 	if err == nil {
 		return false
 	}
-	var own *osError
-	var zipOS *pyzip.OSError
+	var own *restoreError
 	var conflict *gateway.OwnershipConflict
-	if errors.As(err, &own) || errors.As(err, &zipOS) {
+	if errors.As(err, &own) {
 		return true
 	}
 	if errors.As(err, &conflict) {
 		return false
 	}
-	return pypath.IsOSError(err)
+	return errorutil.IsSystem(err)
 }
 
-// Reports whether err is a sqlite3.Error of any class
+// Reports whether err is a SQLite failure of any kind
 func isSQLiteError(err error) bool {
-	var pe *pysqlite.Error
-	if errors.As(err, &pe) {
+	var se *sqliteutil.Error
+	if errors.As(err, &se) {
 		return true
 	}
 	_, ok := state.SQLiteClassOf(err)
 	return ok
 }
 
-// Reports whether err is a ValueError raised for an unrepresentable value or path
-func isValueError(err error) bool {
-	var ve *pyValueError
-	return errors.As(err, &ve) && ve.class == "ValueError"
+// Reports whether err is a stored value that does not convert to an integer
+func isConversionError(err error) bool {
+	return errors.Is(err, anyutil.ErrNotNumber) || errors.Is(err, anyutil.ErrRange)
 }
 
 // Reports whether err is the OwnershipConflict of a refused maintenance reservation
@@ -112,31 +99,28 @@ func connectReadOnly(ctx context.Context, path string) (*sqliteConn, error) {
 
 // pathlib absolute of a path, joined onto the working directory without normalizing it
 func pathAbsolute(p string) (string, error) {
-	if pypath.IsAbs(p) {
-		return pypath.PathStr(p), nil
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p), nil
 	}
-	cwd, err := pypath.Getcwd()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathJoin(cwd, p), nil
+	return pathutil.Join(cwd, p), nil
 }
 
-// Python int of a SQLite value, ValueError and TypeError as int() raises them
-func sqliteInt(v any) (*big.Int, error) {
-	if b, ok := v.([]byte); ok {
-		if n, ok := pyint.Parse(string(b)); ok {
-			return n, nil
-		}
-		return nil, &pyValueError{"ValueError", "invalid literal for int() with base 10: " + pyrepr.BytesRepr(b)}
+// Integer of a SQLite value, a blob read as decimal text; failures wrap anyutil.ErrNotNumber or anyutil.ErrRange
+func sqliteInt(v any) (int64, error) {
+	b, isBlob := v.([]byte)
+	if !isBlob {
+		return anyutil.ToInt(v)
 	}
-	n, err := pyint.Of(v)
+	n, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	if errors.Is(err, strconv.ErrRange) {
+		return n, fmt.Errorf("integer %q: %w", b, anyutil.ErrRange)
+	}
 	if err != nil {
-		var pe *pyint.Error
-		if errors.As(err, &pe) {
-			return nil, &pyValueError{pe.Kind, pe.Msg}
-		}
-		return nil, err
+		return 0, fmt.Errorf("invalid integer %q: %w", b, anyutil.ErrNotNumber)
 	}
 	return n, nil
 }
@@ -147,11 +131,11 @@ func foreignDBHolderPIDs(dbPath string) ([]int, bool) {
 		return nil, false
 	}
 	canonical := func(p string) (string, error) {
-		abs, err := pypath.Abspath(strings.TrimSuffix(p, " (deleted)"))
+		abs, err := filepath.Abs(strings.TrimSuffix(p, " (deleted)"))
 		if err != nil {
 			return "", err
 		}
-		return pypath.Normcase(abs), nil
+		return pathutil.FoldCase(abs), nil
 	}
 	db, err := canonical(dbPath)
 	if err != nil {
@@ -170,7 +154,7 @@ func foreignDBHolderPIDs(dbPath string) ([]int, bool) {
 	own := os.Getpid()
 	pids := []int{}
 	for _, name := range names {
-		if !pystr.All(name, unicode.IsDigit) {
+		if !textutil.IsDigits(name) {
 			continue
 		}
 		pid, err := strconv.Atoi(name)
@@ -210,18 +194,18 @@ func authRestoreTarget(dst string) string {
 	if _, err := os.Stat(dst); err == nil {
 		links, err := linkCount(dst)
 		if err != nil {
-			pkgLog().Error(fmt.Sprintf("Refusing auth.json restore to %s: cannot resolve store identity: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Error(fmt.Sprintf("Refusing auth.json restore to %s: cannot resolve store identity: %s", filepath.Clean(dst), excText(err)))
 			return ""
 		}
 		if links > 1 {
-			pkgLog().Error(fmt.Sprintf("Refusing auth.json restore to %s: it has %d hard links; atomic replacement would split a shared auth store", pypath.PathStr(dst), links))
+			pkgLog().Error(fmt.Sprintf("Refusing auth.json restore to %s: it has %d hard links; atomic replacement would split a shared auth store", filepath.Clean(dst), links))
 			return ""
 		}
 	}
 	if st, err := os.Lstat(dst); err == nil && st.Mode()&os.ModeSymlink != 0 {
-		resolved, err := pypath.Resolve(dst)
+		resolved, err := pathutil.Resolve(dst)
 		if err != nil {
-			pkgLog().Error(fmt.Sprintf("Refusing auth.json restore to %s: cannot resolve store identity: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Error(fmt.Sprintf("Refusing auth.json restore to %s: cannot resolve store identity: %s", filepath.Clean(dst), excText(err)))
 			return ""
 		}
 		return resolved
@@ -244,9 +228,6 @@ func authStoreValue(v any) any {
 		return t
 	case int64:
 		return float64(t)
-	case *big.Int:
-		f, _ := new(big.Float).SetInt(t).Float64()
-		return f
 	}
 	return v
 }
@@ -257,34 +238,34 @@ func restoreAuthJSON(src, dst string) bool {
 	var doc any
 	if err == nil {
 		var text string
-		if text, err = pycodecs.Decode(raw, "utf-8-sig"); err == nil {
-			doc, err = pyjson.Loads(text)
+		if text, err = charsetutil.Decode(raw, "utf-8-sig"); err == nil {
+			doc, err = jsonutil.Decode(text)
 		}
 	}
 	if err != nil {
-		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: %s", pypath.PathStr(src), excText(err)))
+		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: %s", filepath.Clean(src), excText(err)))
 		return false
 	}
-	obj, ok := doc.(*pyjson.Object)
+	obj, ok := doc.(*jsonutil.Object)
 	if !ok {
-		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: top level is not an object", pypath.PathStr(src)))
+		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: top level is not an object", filepath.Clean(src)))
 		return false
 	}
 	isDict := func(key string) bool {
 		v, _ := obj.Get(key)
-		_, ok := v.(*pyjson.Object)
+		_, ok := v.(*jsonutil.Object)
 		return ok
 	}
 	if !isDict("providers") && !isDict("credential_pool") {
-		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: unrecognized auth-store shape", pypath.PathStr(src)))
+		pkgLog().Error(fmt.Sprintf("Refusing auth.json restore from %s: unrecognized auth-store shape", filepath.Clean(src)))
 		return false
 	}
-	snapshot, _ := authStoreValue(pyjson.Plain(obj)).(map[string]any)
+	snapshot, _ := authStoreValue(jsonutil.Plain(obj)).(map[string]any)
 	if err := saveRestoredAuth(snapshot, dst); err != nil {
 		if errors.Is(err, errAuthTargetRefused) {
 			return false
 		}
-		pkgLog().Error(fmt.Sprintf("Failed to restore %s safely: %s", pypath.PathStr(dst), excText(err)))
+		pkgLog().Error(fmt.Sprintf("Failed to restore %s safely: %s", filepath.Clean(dst), excText(err)))
 		return false
 	}
 	return true
@@ -317,7 +298,7 @@ func saveRestoredAuth(snapshot map[string]any, dst string) error {
 func safeRestoreDB(ctx context.Context, src, dst string) (bool, error) {
 	check := VerifySQLiteIntegrity(src, IntegrityOptions{})
 	if !check.Valid {
-		pkgLog().Error(fmt.Sprintf("Refusing SQLite restore from %s: %s", pypath.PathStr(src), check.Message))
+		pkgLog().Error(fmt.Sprintf("Refusing SQLite restore from %s: %s", filepath.Clean(src), check.Message))
 		return false, nil
 	}
 	ok, err := func() (bool, error) {
@@ -325,11 +306,11 @@ func safeRestoreDB(ctx context.Context, src, dst string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		resolved, err := pypath.Resolve(dst)
+		resolved, err := pathutil.Resolve(dst)
 		if err != nil {
 			return false, err
 		}
-		inner, release, err := gateway.ExclusiveMaintenance(ctx, []string{pypath.PathParent(abs), pypath.PathParent(resolved)}, "")
+		inner, release, err := gateway.ExclusiveMaintenance(ctx, []string{filepath.Dir(filepath.Clean(abs)), filepath.Dir(filepath.Clean(resolved))}, "")
 		if err != nil {
 			return false, err
 		}
@@ -339,7 +320,7 @@ func safeRestoreDB(ctx context.Context, src, dst string) (bool, error) {
 		})
 	}()
 	if err != nil {
-		if isOwnershipConflict(err) || isOSError(err) || isSQLiteError(err) {
+		if isOwnershipConflict(err) || isRestoreFailure(err) || isSQLiteError(err) {
 			pkgLog().Error(excText(err))
 			return false, nil
 		}
@@ -354,53 +335,53 @@ func SafeRestoreDB(ctx context.Context, src, dst string) (bool, error) {
 }
 
 // Runtime epoch floor stored in a database, zero when it has none
-func restoreEpoch(ctx context.Context, path string) (*big.Int, error) {
+func restoreEpoch(ctx context.Context, path string) (int64, error) {
 	if _, err := os.Stat(path); err != nil {
-		return big.NewInt(0), nil
+		return 0, nil
 	}
 	c, err := connectReadOnly(ctx, path)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	defer closeQuietly(c)
 	var one any
 	err = c.c.QueryRowContext(ctx, "SELECT 1 FROM sqlite_master WHERE name='runtime_epoch'").Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
-		return big.NewInt(0), nil
+		return 0, nil
 	}
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	var epoch any
 	err = c.c.QueryRowContext(ctx, "SELECT epoch FROM runtime_epoch WHERE singleton=1").Scan(&epoch)
 	if errors.Is(err, sql.ErrNoRows) {
-		return big.NewInt(0), nil
+		return 0, nil
 	}
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	return sqliteInt(epoch)
 }
 
-// Epoch floor of a restore destination, an OSError naming the salvage route when it cannot be read
-func restoreDestinationEpoch(ctx context.Context, dst string) (*big.Int, error) {
+// Epoch floor of a restore destination, a restore failure naming the salvage route when it cannot be read
+func restoreDestinationEpoch(ctx context.Context, dst string) (int64, error) {
 	epoch, err := restoreEpoch(ctx, dst)
-	if err != nil && (isOSError(err) || isSQLiteError(err) || isValueError(err)) {
-		return nil, &osError{fmt.Sprintf("Cannot read the canonical runtime epoch at %s; refusing in-place restore. "+
+	if err != nil && (isRestoreFailure(err) || isSQLiteError(err) || isConversionError(err)) {
+		return 0, &restoreError{fmt.Sprintf("Cannot read the canonical runtime epoch at %s; refusing in-place restore. "+
 			"Use `icebath sessions recover --source <snapshot> --output <separate-path>` "+
-			"to salvage transcripts into a separate output.", pypath.PathStr(dst))}
+			"to salvage transcripts into a separate output.", filepath.Clean(dst))}
 	}
 	return epoch, err
 }
 
 // Hands publish the snapshot, or a staged copy carrying the destination's epoch floor when it is higher
 func restoreEpochSource(ctx context.Context, src, dst string, publish func(prepared string) (bool, error)) (bool, error) {
-	if pypath.PathName(dst) != "state.db" {
-		resolved, err := pypath.Resolve(dst)
+	if pathutil.Name(dst) != "state.db" {
+		resolved, err := pathutil.Resolve(dst)
 		if err != nil {
 			return false, err
 		}
-		if pypath.PathName(resolved) != "state.db" {
+		if pathutil.Name(resolved) != "state.db" {
 			return publish(src)
 		}
 	}
@@ -412,13 +393,10 @@ func restoreEpochSource(ctx context.Context, src, dst string, publish func(prepa
 	if err != nil {
 		return false, err
 	}
-	if floor.Cmp(srcEpoch) <= 0 {
+	if floor <= srcEpoch {
 		return publish(src)
 	}
-	if !floor.IsInt64() {
-		return false, &pyValueError{"OverflowError", "the restore epoch of the destination state.db is beyond the 64-bit integer range SQLite holds"}
-	}
-	work, err := os.MkdirTemp(pypath.PathParent(dst), ".restore-epoch-*")
+	work, err := os.MkdirTemp(filepath.Dir(filepath.Clean(dst)), ".restore-epoch-*")
 	if err != nil {
 		return false, err
 	}
@@ -429,9 +407,9 @@ func restoreEpochSource(ctx context.Context, src, dst string, publish func(prepa
 			return false, err
 		}
 		if !copied {
-			return false, &osError{"Unable to stage a restore with a safe runtime epoch"}
+			return false, &restoreError{"Unable to stage a restore with a safe runtime epoch"}
 		}
-		if err := stampRestoreEpoch(ctx, prepared, floor.Int64()); err != nil {
+		if err := stampRestoreEpoch(ctx, prepared, floor); err != nil {
 			return false, err
 		}
 		st, err := os.Stat(src)
@@ -443,7 +421,7 @@ func restoreEpochSource(ctx context.Context, src, dst string, publish func(prepa
 		}
 		return publish(prepared)
 	}()
-	if rmErr := pyfs.RemoveTempDir(work); rmErr != nil {
+	if rmErr := fsutil.RemoveTempDir(work); rmErr != nil {
 		return false, rmErr
 	}
 	return ok, err
@@ -479,13 +457,13 @@ func restoreDBPages(ctx context.Context, src, dst string) (bool, error) {
 			if !isSQLiteError(err) {
 				return err
 			}
-			pkgLog().Debug(fmt.Sprintf("Pre-restore WAL checkpoint of %s skipped: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Debug(fmt.Sprintf("Pre-restore WAL checkpoint of %s skipped: %s", filepath.Clean(dst), excText(err)))
 		}
 		srcConn, err := connectReadOnly(ctx, src)
 		if err != nil {
 			return err
 		}
-		err = pysqlite.Backup(srcConn, dstConn, -1, nil, 250*time.Millisecond)
+		err = sqliteutil.Backup(srcConn, dstConn, -1, nil, 250*time.Millisecond)
 		closeQuietly(srcConn)
 		if err != nil {
 			return err
@@ -501,21 +479,21 @@ func restoreDBPages(ctx context.Context, src, dst string) (bool, error) {
 			err = chmodFull(dst, statMode(st))
 		}
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Restored %s but could not apply the snapshot's file mode: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Warn(fmt.Sprintf("Restored %s but could not apply the snapshot's file mode: %s", filepath.Clean(dst), excText(err)))
 		}
 		return nil
 	}()
 	if err == nil {
 		return true, nil
 	}
-	if !isSQLiteError(err) && !isOSError(err) && !isValueError(err) {
+	if !isSQLiteError(err) && !isRestoreFailure(err) && !isConversionError(err) {
 		closeQuietly(dstConn)
 		return false, err
 	}
-	pkgLog().Warn(fmt.Sprintf("SQLite safe restore failed for %s -> %s: %s", pypath.PathStr(src), pypath.PathStr(dst), excText(err)))
+	pkgLog().Warn(fmt.Sprintf("SQLite safe restore failed for %s -> %s: %s", filepath.Clean(src), filepath.Clean(dst), excText(err)))
 	if dstConn != nil {
 		if err := dstConn.close(); err != nil {
-			pkgLog().Debug(fmt.Sprintf("Closing %s before the fallback restore failed: %s", pypath.PathStr(dst), excText(err)))
+			pkgLog().Debug(fmt.Sprintf("Closing %s before the fallback restore failed: %s", filepath.Clean(dst), excText(err)))
 		}
 	}
 	return replaceDBFile(src, dst)
@@ -526,13 +504,13 @@ func replaceDBFile(src, dst string) (bool, error) {
 	holders, _ := foreignDBHolderPIDs(dst)
 	if len(holders) > 0 {
 		pkgLog().Error(fmt.Sprintf("Refusing unlink+move restore of %s: process(es) %s still hold the database or its WAL open. Stop them and retry.",
-			pypath.PathStr(dst), pyrepr.Repr(holders)))
+			filepath.Clean(dst), anyutil.Quote(holders)))
 		return false, nil
 	}
 	var swapErr error
 	err := state.OfflineFileAccess(dst, "unlink+move restore of", func() {
-		tmp := filepath.Join(pypath.PathParent(dst), "."+pypath.PathName(dst)+".snap_restore")
-		if swapErr = pyfs.Copy2(src, tmp); swapErr != nil {
+		tmp := filepath.Join(filepath.Dir(filepath.Clean(dst)), "."+pathutil.Name(dst)+".snap_restore")
+		if swapErr = fsutil.CopyFile(src, tmp); swapErr != nil {
 			return
 		}
 		if swapErr = unlinkMissingOK(dst); swapErr != nil {
@@ -543,20 +521,20 @@ func replaceDBFile(src, dst string) (bool, error) {
 				return
 			}
 		}
-		_, swapErr = pyfs.Move(tmp, dst)
+		_, swapErr = fsutil.Move(tmp, dst)
 	})
 	var live *state.LiveConnectionError
 	if errors.As(err, &live) {
 		pkgLog().Error(fmt.Sprintf("Refusing unlink+move restore of %s: %s Close the in-process database handles (or restart Icebath) and retry.",
-			pypath.PathStr(dst), live.Error()))
+			filepath.Clean(dst), live.Error()))
 		return false, nil
 	}
 	if err == nil {
 		err = swapErr
 	}
 	if err != nil {
-		if isOSError(err) || isValueError(err) {
-			pkgLog().Error(fmt.Sprintf("Fallback restore also failed for %s -> %s: %s", pypath.PathStr(src), pypath.PathStr(dst), excText(err)))
+		if isRestoreFailure(err) || isConversionError(err) {
+			pkgLog().Error(fmt.Sprintf("Fallback restore also failed for %s -> %s: %s", filepath.Clean(src), filepath.Clean(dst), excText(err)))
 			return false, nil
 		}
 		return false, err
@@ -565,14 +543,14 @@ func replaceDBFile(src, dst string) (bool, error) {
 }
 
 // Checks that an archive looks like an icebath backup, the reason when it does not
-func validateBackupZip(zr *pyzip.ZipReader) (bool, string) {
-	names := zr.Namelist()
+func validateBackupZip(zr *ziputil.Reader) (bool, string) {
+	names := zr.Names()
 	if len(names) == 0 {
 		return false, "zip archive is empty"
 	}
 	markers := map[string]bool{"config.yaml": true, ".env": true, "state.db": true}
 	for _, n := range names {
-		if markers[pypath.PathName(n)] {
+		if markers[pathutil.Name(n)] {
 			return true, ""
 		}
 	}
@@ -580,9 +558,9 @@ func validateBackupZip(zr *pyzip.ZipReader) (bool, string) {
 }
 
 // Directory prefix wrapping every archive member when it names an icebath home, empty otherwise
-func detectPrefix(zr *pyzip.ZipReader) string {
+func detectPrefix(zr *ziputil.Reader) string {
 	var names []string
-	for _, n := range zr.Namelist() {
+	for _, n := range zr.Names() {
 		if !strings.HasSuffix(n, "/") {
 			names = append(names, n)
 		}
@@ -592,7 +570,7 @@ func detectPrefix(zr *pyzip.ZipReader) string {
 	}
 	first := map[string]bool{}
 	for _, n := range names {
-		anchor, parts := pypath.PathParts(n)
+		anchor, parts := pathutil.Parts(n)
 		if anchor != "" {
 			parts = append([]string{anchor}, parts...)
 		}
@@ -614,19 +592,19 @@ func detectPrefix(zr *pyzip.ZipReader) string {
 func defaultNewFileMode() (uint32, bool) { return processNewFileMode() }
 
 // Archive member open, a seam tests replace with a stream that fails mid restore
-var openMember = func(zr *pyzip.ZipReader, member string) (io.ReadCloser, error) { return zr.Open(member) }
+var openMember = func(zr *ziputil.Reader, member string) (io.ReadCloser, error) { return zr.Open(member) }
 
 // Owner capture of a file about to be replaced, a seam tests replace to force an owner
-var preserveFileOwner = pyfs.PreserveFileOwner
+var preserveFileOwner = fsutil.OwnerOf
 
 // Owner restore of a replaced file, a seam tests replace to record the chown
-var restoreFileOwner = pyfs.RestoreFileOwner
+var restoreFileOwner = fsutil.RestoreOwner
 
 // Atomic publish of a staged member, a seam tests wrap to observe the staged mode
-var atomicReplace = pyfs.AtomicReplace
+var atomicReplace = fsutil.Replace
 
 // Streams an open member into a file and syncs it
-func copyMember(zr *pyzip.ZipReader, member string, dst *os.File) error {
+func copyMember(zr *ziputil.Reader, member string, dst *os.File) error {
 	src, err := openMember(zr, member)
 	if err != nil {
 		return err
@@ -651,15 +629,15 @@ func nameHead(name string, n int) string {
 }
 
 // Restores one archive member onto target through a sibling temp file and an atomic rename
-func extractMemberAtomically(zr *pyzip.ZipReader, member, target string, newMode uint32, newModeOK bool) error {
-	mode, modeOK := pyfs.PreserveFileMode(target)
+func extractMemberAtomically(zr *ziputil.Reader, member, target string, newMode uint32, newModeOK bool) error {
+	mode, modeOK := fsutil.PermBits(target)
 	owner := preserveFileOwner(target)
 	if !modeOK {
 		mode, modeOK = newMode, newModeOK
 	} else {
 		mode &^= 0o4000 | 0o2000
 	}
-	tmp, err := pyfs.MkstempBeside(target, "."+nameHead(pypath.PathName(target), 80)+".", ".partial")
+	tmp, err := fsutil.CreateTempBeside(target, "."+nameHead(pathutil.Name(target), 80)+".", ".partial")
 	if err != nil {
 		return err
 	}
@@ -683,7 +661,9 @@ func extractMemberAtomically(zr *pyzip.ZipReader, member, target string, newMode
 			return err
 		}
 		restoreFileOwner(real, owner)
-		pyfs.RestoreFileMode(real, mode, modeOK)
+		if modeOK {
+			_ = fsutil.SetPermBits(real, mode)
+		}
 		return nil
 	}()
 	if err != nil {
@@ -693,7 +673,7 @@ func extractMemberAtomically(zr *pyzip.ZipReader, member, target string, newMode
 }
 
 // Sessions and messages stored in a session database, nil when it is missing or not a readable session store
-func countSessionRows(ctx context.Context, path string) (*[2]*big.Int, error) {
+func countSessionRows(ctx context.Context, path string) (*[2]int64, error) {
 	if st, err := os.Stat(path); err != nil || !st.Mode().IsRegular() {
 		return nil, nil
 	}
@@ -709,7 +689,7 @@ func countSessionRows(ctx context.Context, path string) (*[2]*big.Int, error) {
 		return nil, err
 	}
 	defer closeQuietly(c)
-	var counts [2]*big.Int
+	var counts [2]int64
 	for i, q := range []string{"SELECT COUNT(*) FROM sessions", "SELECT COUNT(*) FROM messages"} {
 		var v any
 		if err := c.c.QueryRowContext(ctx, q).Scan(&v); err != nil {
@@ -720,8 +700,7 @@ func countSessionRows(ctx context.Context, path string) (*[2]*big.Int, error) {
 		}
 		n, err := sqliteInt(v)
 		if err != nil {
-			var ve *pyValueError
-			if errors.As(err, &ve) && (ve.class == "ValueError" || ve.class == "TypeError") {
+			if errors.Is(err, anyutil.ErrNotNumber) {
 				return nil, nil
 			}
 			return nil, err
@@ -732,19 +711,19 @@ func countSessionRows(ctx context.Context, path string) (*[2]*big.Int, error) {
 }
 
 // Page restores a database member while the target's maintenance reservation is held
-func importDBMember(ctx context.Context, zr *pyzip.ZipReader, member, target string, newMode uint32, newModeOK bool) error {
+func importDBMember(ctx context.Context, zr *ziputil.Reader, member, target string, newMode uint32, newModeOK bool) error {
 	abs, err := pathAbsolute(target)
 	if err != nil {
 		return err
 	}
-	resolved, err := pypath.Resolve(target)
+	resolved, err := pathutil.Resolve(target)
 	if err != nil {
 		return err
 	}
-	inner, release, err := gateway.ExclusiveMaintenance(ctx, []string{pypath.PathParent(abs), pypath.PathParent(resolved)}, "")
+	inner, release, err := gateway.ExclusiveMaintenance(ctx, []string{filepath.Dir(filepath.Clean(abs)), filepath.Dir(filepath.Clean(resolved))}, "")
 	if err != nil {
 		if isOwnershipConflict(err) {
-			return &osError{err.Error()}
+			return &restoreError{err.Error()}
 		}
 		return err
 	}
@@ -755,8 +734,8 @@ func importDBMember(ctx context.Context, zr *pyzip.ZipReader, member, target str
 // Page restore of a database member, a seam tests replace to refuse it
 var safeRestoreDBFn = safeRestoreDB
 
-// Publishes a database member onto target without replacing its inode, an OSError when that cannot be done safely
-func importDBMemberExclusive(ctx context.Context, zr *pyzip.ZipReader, member, target string, newMode uint32, newModeOK bool) error {
+// Publishes a database member onto target without replacing its inode, a restore failure when that cannot be done safely
+func importDBMemberExclusive(ctx context.Context, zr *ziputil.Reader, member, target string, newMode uint32, newModeOK bool) error {
 	if _, err := os.Stat(target); err != nil {
 		holders, _ := foreignDBHolderPIDs(target)
 		if len(holders) > 0 {
@@ -766,15 +745,15 @@ func importDBMemberExclusive(ctx context.Context, zr *pyzip.ZipReader, member, t
 			for i, pid := range sorted {
 				parts[i] = strconv.Itoa(pid)
 			}
-			return &osError{fmt.Sprintf("%s was deleted but is still open in PID(s) %s; publishing a new file would "+
+			return &restoreError{fmt.Sprintf("%s was deleted but is still open in PID(s) %s; publishing a new file would "+
 				"leave them writing an invisible database. Stop those processes and re-run the import.",
-				pypath.PathName(target), strings.Join(parts, ", "))}
+				pathutil.Name(target), strings.Join(parts, ", "))}
 		}
 		return extractMemberAtomically(zr, member, target, newMode, newModeOK)
 	}
-	mode, modeOK := pyfs.PreserveFileMode(target)
+	mode, modeOK := fsutil.PermBits(target)
 	owner := preserveFileOwner(target)
-	tmp, err := os.CreateTemp(pypath.PathParent(target), "."+nameHead(pypath.PathName(target), 80)+".*.dbimport")
+	tmp, err := os.CreateTemp(filepath.Dir(filepath.Clean(target)), "."+nameHead(pathutil.Name(target), 80)+".*.dbimport")
 	if err != nil {
 		return err
 	}
@@ -793,13 +772,15 @@ func importDBMemberExclusive(ctx context.Context, zr *pyzip.ZipReader, member, t
 	}
 	if !restored {
 		if !VerifySQLiteIntegrity(tmpName, IntegrityOptions{}).Valid {
-			return &osError{"the archived database failed its integrity check; the existing database was left untouched."}
+			return &restoreError{"the archived database failed its integrity check; the existing database was left untouched."}
 		}
-		return &osError{"live-safe restore refused or failed; the existing database was left untouched. " +
+		return &restoreError{"live-safe restore refused or failed; the existing database was left untouched. " +
 			"Stop the gateway and TUI processes holding it open and re-run the import."}
 	}
 	restoreFileOwner(target, owner)
-	pyfs.RestoreFileMode(target, mode, modeOK)
+	if modeOK {
+		_ = fsutil.SetPermBits(target, mode)
+	}
 	return nil
 }
 
@@ -839,20 +820,20 @@ func countCronJobs(path string) (*int, error) {
 	if err != nil {
 		return nil, nil
 	}
-	text, err := pycodecs.Decode(raw, "utf-8-sig")
+	text, err := charsetutil.Decode(raw, "utf-8-sig")
 	if err != nil {
 		return nil, err
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
-		var de *pyjson.DecodeError
+		var de *jsonutil.SyntaxError
 		if errors.As(err, &de) {
 			return nil, nil
 		}
 		return nil, err
 	}
 	switch t := data.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		jobs, ok := t.Get("jobs")
 		if !ok {
 			n := 0

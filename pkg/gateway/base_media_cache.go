@@ -5,12 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Audio extensions the gateway delivers natively with their MIME types
@@ -135,7 +135,7 @@ func (m *CachedMedia) ContextNote(ctx context.Context) string {
 func resolveMediaExt(filename, mimeType string) string {
 	ext := ""
 	if filename != "" {
-		_, e := pypath.Splitext(filename)
+		_, e := pathutil.SplitExt(filename)
 		ext = strings.ToLower(e)
 	}
 	if ext != "" {
@@ -148,7 +148,7 @@ func resolveMediaExt(filename, mimeType string) string {
 func mediaDisplayName(filename string) string {
 	var b strings.Builder
 	for _, r := range filename {
-		if pystr.IsAlnum(r) || r == '_' || r == '.' || r == '-' || r == ' ' {
+		if (unicode.IsLetter(r) || unicode.IsNumber(r)) || r == '_' || r == '.' || r == '-' || r == ' ' {
 			b.WriteRune(r)
 		} else {
 			b.WriteByte('_')

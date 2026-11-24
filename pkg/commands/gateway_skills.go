@@ -2,18 +2,19 @@ package commands
 
 import (
 	"context"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Resolved path, or the path itself when resolution fails as pathlib resolve(strict=False) keeps going
 func resolvedOrSelf(p string) string {
-	if r, err := pypath.Resolve(p); err == nil {
+	if r, err := pathutil.Resolve(p); err == nil {
 		return r
 	}
 	return p
@@ -23,7 +24,7 @@ func resolvedOrSelf(p string) string {
 func IterGatewaySkills(scope *skills.Scope, platform string) []GatewaySkill {
 	disabled := scope.DisabledSkillNames(platform)
 	skillsDir := resolvedOrSelf(scope.SkillsDir())
-	hubDir := resolvedOrSelf(pypath.PathJoin(scope.SkillsDir(), ".hub"))
+	hubDir := resolvedOrSelf(pathutil.Join(scope.SkillsDir(), ".hub"))
 	roots := []string{skillsDir}
 	for _, getter := range []func() []string{scope.ExternalSkillsDirs, scope.ProjectSkillsDirs} {
 		for _, d := range getter() {
@@ -39,34 +40,34 @@ func IterGatewaySkills(scope *skills.Scope, platform string) []GatewaySkill {
 	var out []GatewaySkill
 	for _, key := range keys {
 		info := cmds[key]
-		skillPath := pyrepr.Str(info["skill_md_path"])
+		skillPath := anyutil.String(info["skill_md_path"])
 		if info["skill_md_path"] == nil || skillPath == "" {
 			continue
 		}
 		sp := resolvedOrSelf(skillPath)
-		if _, under := pypath.PathRelativeTo(sp, hubDir); under {
+		if _, under := pathutil.RelativeTo(sp, hubDir); under {
 			continue
 		}
 		root := ""
 		for _, r := range roots {
-			if _, under := pypath.PathRelativeTo(sp, r); under {
+			if _, under := pathutil.RelativeTo(sp, r); under {
 				root = r
 				break
 			}
 		}
-		name := pyrepr.Str(info["name"])
+		name := anyutil.String(info["name"])
 		if info["name"] == nil {
 			name = ""
 		}
 		if root == "" || disabled[name] {
 			continue
 		}
-		rel, _ := pypath.PathRelativeTo(pypath.PathParent(sp), root)
+		rel, _ := pathutil.RelativeTo(filepath.Dir(filepath.Clean(sp)), root)
 		var parts []string
 		if rel != "" && rel != "." {
 			parts = strings.Split(rel, "/")
 		}
-		desc := pyrepr.Str(info["description"])
+		desc := anyutil.String(info["description"])
 		if info["description"] == nil {
 			desc = ""
 		}

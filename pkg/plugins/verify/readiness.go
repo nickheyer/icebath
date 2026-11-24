@@ -14,7 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 // Connection whose every read and write gets the five second socket timeout urlopen sets
@@ -37,7 +37,7 @@ func (c *timeoutConn) Write(p []byte) (int, error) {
 func urlopenClient(timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{Timeout: timeout}
 	transport := &http.Transport{
-		Proxy:             pyurl.UrlopenProxy,
+		Proxy:             httputil.Proxy,
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			conn, err := netpref.DialContext(dialer.DialContext)(ctx, network, addr)

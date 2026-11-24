@@ -3,8 +3,8 @@ package gateway
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestClosedLocalConversationLeavesMemoryAndComesBackWithItsSource(t *testing.T) {
@@ -12,7 +12,7 @@ func TestClosedLocalConversationLeavesMemoryAndComesBackWithItsSource(t *testing
 	ref, physical := seedRecoverSession(t, ctx, a, recoverActor(), recoverTUIParams(t.TempDir()))
 	live, _ := a.live(ref.SessionID)
 	source, route := live.Source, live.Route
-	stale := pyjson.NewObject()
+	stale := jsonutil.NewObject()
 	if retired, err := retireClosed(ctx, a, ref.SessionID, live, physical, stale); err != nil || retired {
 		t.Fatalf("a close a later turn superseded retired the conversation: %v %v", retired, err)
 	}
@@ -85,7 +85,7 @@ func TestApiConversationRetiresBetweenRequestsUnlessInputIsPending(t *testing.T)
 	ref := apiBind(t, ctx, a, "api-1")
 	live, _ := a.live("api-1")
 	if _, err := a.DB.AdmitSessionInput(ctx, state.SessionInput{Epoch: a.Epoch, PrincipalID: "api", SessionID: "api-1",
-		RequestID: "r1", Payload: pyjson.ObjectOf("text", "hello")}); err != nil {
+		RequestID: "r1", Payload: jsonutil.ObjectOf("text", "hello")}); err != nil {
 		t.Fatal(err)
 	}
 	if busy, err := viewerBusy(ctx, a, "api-1", "api-1"); err != nil || !busy {
@@ -239,7 +239,7 @@ func TestSessionInfoFieldsOfABuiltAndALazySession(t *testing.T) {
 	if err != nil || policy == nil {
 		t.Fatalf("policy %v %v", policy, err)
 	}
-	plain := func(o *pyjson.Object) map[string]any { return pyjson.Plain(o).(map[string]any) }
+	plain := func(o *jsonutil.Object) map[string]any { return jsonutil.Plain(o).(map[string]any) }
 	built := plain(classicCLIFields(ctx, a, ref, live, infoTestAgent{tools: 3}, policy))
 	if built["title"] != "Some Title" || built["yolo"] != false || built["api_mode"] != "chat_completions" ||
 		built["tool_count"] != 3 || built["credential_hint"] != "sk-a...1234" {

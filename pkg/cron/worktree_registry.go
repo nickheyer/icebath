@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const worktreeRegistryName = "worktree_repos.json"
@@ -29,11 +29,11 @@ func readWorktreeRegistry(path string) []string {
 	if err != nil {
 		return nil
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -73,7 +73,7 @@ func RecordWorktreeRepo(ctx context.Context, h, repoRoot string) {
 }
 
 func recordWorktreeRepo(ctx context.Context, h, repoRoot string) error {
-	repo, err := pypath.Realpath(repoRoot, pypath.Lax)
+	repo, err := pathutil.Resolve(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -113,7 +113,7 @@ func recordWorktreeRepo(ctx context.Context, h, repoRoot string) error {
 	for i, r := range kept {
 		repos[i] = r
 	}
-	doc := pyjson.NewObject()
+	doc := jsonutil.NewObject()
 	doc.Set("version", 1)
 	doc.Set("repos", repos)
 	return config.AtomicJSONWrite(ctx, path, doc)

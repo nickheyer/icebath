@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hidden first argument that routes a re-executed test binary to a venv sync child stand-in
@@ -400,8 +400,8 @@ func TestCliContractFailureExitsNonzero(t *testing.T) {
 	if code != 1 {
 		t.Fatalf("exit %d", code)
 	}
-	doc, err := pyjson.Loads(strings.TrimSpace(stdout))
-	obj, ok := doc.(*pyjson.Object)
+	doc, err := jsonutil.Decode(strings.TrimSpace(stdout))
+	obj, ok := doc.(*jsonutil.Object)
 	if err != nil || !ok {
 		t.Fatalf("stdout %q", stdout)
 	}

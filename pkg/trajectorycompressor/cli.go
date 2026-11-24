@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -14,20 +17,11 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrandom"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
-
-// SamplePercent is a sampling percentage with the Python repr it was given as, an int or a float
-type SamplePercent struct {
-	Value float64
-	Repr  string
-}
 
 // Options are the arguments of the trajectory compressor command
 type Options struct {
@@ -36,14 +30,15 @@ type Options struct {
 	Config          string
 	TargetMaxTokens int
 	Tokenizer       string
-	SamplePercent   *SamplePercent
-	Seed            int64
-	DryRun          bool
+	// Percentage of the trajectories to sample before compressing, nil to compress all of them
+	SamplePercent *float64
+	Seed          int64
+	DryRun        bool
 }
 
-// PurePath name, stem, parent and child join of a path string
+// Last element of a path, empty for the current directory
 func pathName(p string) string {
-	s := pypath.PurePathStr(p)
+	s := filepath.Clean(p)
 	if s == "." || strings.HasSuffix(s, string(filepath.Separator)) {
 		return ""
 	}
@@ -58,7 +53,7 @@ func pathStem(p string) string {
 	return name
 }
 
-func pathParent(p string) string { return filepath.Dir(pypath.PurePathStr(p)) }
+func pathParent(p string) string { return filepath.Dir(filepath.Clean(p)) }
 
 // Loads the YAML config or the defaults when it is missing, then applies the CLI overrides
 func loadCLIConfig(config string, targetMaxTokens int, tokenizer string) (*CompressionConfig, error) {
@@ -87,11 +82,19 @@ func printDryRun(icon, target, outputPath string) {
 	fmt.Printf("%s Would output to: %s\n", icon, outputPath)
 }
 
-// Sample of about sample_percent of entries, at least one and at most all of them
-func sampleEntries(rng *pyrandom.Random, entries []any, percent float64) ([]any, error) {
+// Sample of about percent of the entries in random order, at least one and at most all of them
+func sampleEntries(rng *rand.Rand, entries []any, percent float64) []any {
 	k := min(max(1, int(float64(len(entries))*percent/100)), len(entries))
-	return pyrandom.Sample(rng, entries, k)
+	picked := slices.Clone(entries)
+	for i := range k {
+		j := i + rng.IntN(len(picked)-i)
+		picked[i], picked[j] = picked[j], picked[i]
+	}
+	return picked[:k]
 }
+
+// Text of a sampling percentage as it is shown, an integral one without decimals
+func percentText(p float64) string { return strconv.FormatFloat(p, 'f', -1, 64) }
 
 // Entries of a JSONL file without their line numbers
 func entryValues(entries []jsonlEntry) []any {
@@ -102,7 +105,7 @@ func entryValues(entries []jsonlEntry) []any {
 	return out
 }
 
-// Copies a file with its permission bits as shutil.copy does
+// Copies a file with its permission bits
 func copyFile(src, dst string) error {
 	st, err := os.Stat(src)
 	if err != nil {
@@ -118,9 +121,9 @@ func copyFile(src, dst string) error {
 	return os.Chmod(dst, st.Mode().Perm())
 }
 
-// Temporary directory in the Python tempfile location, removed by the returned cleanup
+// New temporary directory under the system temporary location, removed by the returned cleanup
 func tempDir() (string, func(), error) {
-	base, err := pypath.Gettempdir()
+	base, err := pathutil.TempDir()
 	if err != nil {
 		return "", nil, err
 	}
@@ -132,11 +135,11 @@ func tempDir() (string, func(), error) {
 }
 
 // Single file mode, sampled entries compressed through a temp directory and merged into one output file
-func runFileMode(ctx context.Context, inputPath, output string, cfg *CompressionConfig, sample *SamplePercent, seed int64, dryRun bool) error {
+func runFileMode(ctx context.Context, inputPath, output string, cfg *CompressionConfig, sample *float64, seed int64, dryRun bool) error {
 	fmt.Println("📄 Input mode: Single JSONL file")
 	outputPath := joinPath(pathParent(inputPath), pathStem(inputPath)+cfg.OutputSuffix+".jsonl")
 	if output != "" {
-		outputPath = pypath.PurePathStr(output)
+		outputPath = filepath.Clean(output)
 	}
 	loaded, err := loadJSONL(inputPath, func(n int, e error) { fmt.Printf("⚠️  Skipping invalid JSON at line %d: %s\n", n, e) }, 1)
 	if err != nil {
@@ -146,11 +149,8 @@ func runFileMode(ctx context.Context, inputPath, output string, cfg *Compression
 	total := len(entries)
 	fmt.Printf("   Loaded %s trajectories from %s\n", textutil.Thousands(int64(total)), pathName(inputPath))
 	if sample != nil {
-		rng := pyrandom.New(seed)
-		if entries, err = pyrandom.Sample(rng, entries, max(1, int(float64(total)*sample.Value/100))); err != nil {
-			return err
-		}
-		fmt.Printf("   Sampled %s trajectories (%s%% of %s)\n", textutil.Thousands(int64(len(entries))), sample.Repr, textutil.Thousands(int64(total)))
+		entries = sampleEntries(rand.New(rand.NewPCG(uint64(seed), 0)), entries, *sample)
+		fmt.Printf("   Sampled %s trajectories (%s%% of %s)\n", textutil.Thousands(int64(len(entries))), percentText(*sample), textutil.Thousands(int64(total)))
 	}
 	if dryRun {
 		printDryRun("📄", textutil.Thousands(int64(len(entries)))+" trajectories", outputPath)
@@ -212,15 +212,15 @@ func runFileMode(ctx context.Context, inputPath, output string, cfg *Compression
 }
 
 // Directory mode, compressed in place or sampled per file into a temp directory first
-func runDirMode(ctx context.Context, inputPath, output string, cfg *CompressionConfig, sample *SamplePercent, seed int64, dryRun bool) error {
+func runDirMode(ctx context.Context, inputPath, output string, cfg *CompressionConfig, sample *float64, seed int64, dryRun bool) error {
 	fmt.Println("📁 Input mode: Directory of JSONL files")
 	outputPath := joinPath(pathParent(inputPath), pathName(inputPath)+cfg.OutputSuffix)
 	if output != "" {
-		outputPath = pypath.PurePathStr(output)
+		outputPath = filepath.Clean(output)
 	}
 	if sample == nil {
 		if dryRun {
-			printDryRun("📁", pypath.PurePathStr(inputPath), outputPath)
+			printDryRun("📁", filepath.Clean(inputPath), outputPath)
 			return nil
 		}
 		comp, err := NewCompressor(ctx, cfg)
@@ -233,7 +233,7 @@ func runDirMode(ctx context.Context, inputPath, output string, cfg *CompressionC
 		fmt.Println("\n✅ Compression complete!")
 		return nil
 	}
-	fmt.Printf("\n⚠️  Sampling from directory: will sample %s%% from each file\n", sample.Repr)
+	fmt.Printf("\n⚠️  Sampling from directory: will sample %s%% from each file\n", percentText(*sample))
 	tmp, cleanup, err := tempDir()
 	if err != nil {
 		return err
@@ -243,18 +243,15 @@ func runDirMode(ctx context.Context, inputPath, output string, cfg *CompressionC
 	if err := os.Mkdir(tmpIn, 0o777); err != nil {
 		return err
 	}
-	rng := pyrandom.New(seed)
+	rng := rand.New(rand.NewPCG(uint64(seed), 0))
 	totalOriginal, totalSampled := 0, 0
-	for _, f := range globJSONL(pypath.PurePathStr(inputPath)) {
+	for _, f := range globJSONL(filepath.Clean(inputPath)) {
 		loaded, err := loadJSONL(f, nil, 0)
 		if err != nil {
 			return err
 		}
 		entries := entryValues(loaded)
-		sampled, err := sampleEntries(rng, entries, sample.Value)
-		if err != nil {
-			return err
-		}
+		sampled := sampleEntries(rng, entries, *sample)
 		totalOriginal += len(entries)
 		totalSampled += len(sampled)
 		if err := writeJSONL(filepath.Join(tmpIn, filepath.Base(f)), sampled); err != nil {
@@ -286,11 +283,11 @@ func Run(ctx context.Context, o Options) error {
 		return err
 	}
 	if o.SamplePercent != nil {
-		if o.SamplePercent.Value <= 0 || o.SamplePercent.Value > 100 {
-			fmt.Printf("❌ sample_percent must be between 1 and 100, got %s\n", o.SamplePercent.Repr)
+		if *o.SamplePercent <= 0 || *o.SamplePercent > 100 {
+			fmt.Printf("❌ sample_percent must be between 1 and 100, got %s\n", percentText(*o.SamplePercent))
 			return nil
 		}
-		fmt.Printf("🎲 Will sample %s%% of trajectories (seed=%d)\n", o.SamplePercent.Repr, o.Seed)
+		fmt.Printf("🎲 Will sample %s%% of trajectories (seed=%d)\n", percentText(*o.SamplePercent), o.Seed)
 	}
 	st, err := os.Stat(o.Input)
 	if err != nil {
@@ -303,15 +300,10 @@ func Run(ctx context.Context, o Options) error {
 	return runDirMode(ctx, o.Input, o.Output, cfg, o.SamplePercent, o.Seed, o.DryRun)
 }
 
-// Python literal value of a numeric argument, int or float with its repr
-func parseSamplePercent(s string) (*SamplePercent, error) {
-	if n, err := strconv.ParseInt(strings.ReplaceAll(s, "_", ""), 10, 64); err == nil {
-		return &SamplePercent{Value: float64(n), Repr: strconv.FormatInt(n, 10)}, nil
-	}
-	if f, err := pyint.ParseFloat(s); err == nil && !strings.ContainsAny(strings.ToLower(s), "in") {
-		return &SamplePercent{Value: f, Repr: pyrepr.Float(f)}, nil
-	}
-	return nil, &pyint.Error{Kind: "TypeError", Msg: "'<=' not supported between instances of 'str' and 'int'"}
+// Finite number a numeric argument holds, digits optionally grouped by underscores
+func parseNumber(s string) (float64, bool) {
+	f, err := strconv.ParseFloat(strings.ReplaceAll(strings.TrimSpace(s), "_", ""), 64)
+	return f, err == nil && !math.IsNaN(f) && !math.IsInf(f, 0)
 }
 
 // Truthiness of the literal fire parses from a flag value, bool and number literals by value and other text as a string
@@ -322,8 +314,8 @@ func fireTruthy(v string) bool {
 	case "false", "False", "None", "":
 		return false
 	}
-	if sp, err := parseSamplePercent(v); err == nil {
-		return sp.Value != 0
+	if f, ok := parseNumber(v); ok {
+		return f != 0
 	}
 	return true
 }
@@ -379,19 +371,21 @@ func NewCommand() *cobra.Command {
 			var err error
 			if v, ok := given["target_max_tokens"]; ok {
 				if o.TargetMaxTokens, err = strconv.Atoi(strings.ReplaceAll(v, "_", "")); err != nil {
-					return &pyint.Error{Kind: "TypeError", Msg: "'" + v + "' is not an integer target_max_tokens"}
+					return fmt.Errorf("target_max_tokens must be an integer, got %q", v)
 				}
 			}
 			o.Seed = 42
 			if v, ok := given["seed"]; ok {
 				if o.Seed, err = strconv.ParseInt(strings.ReplaceAll(v, "_", ""), 10, 64); err != nil {
-					return &pyint.Error{Kind: "TypeError", Msg: "'" + v + "' is not an integer seed"}
+					return fmt.Errorf("seed must be an integer, got %q", v)
 				}
 			}
 			if v, ok := given["sample_percent"]; ok {
-				if o.SamplePercent, err = parseSamplePercent(v); err != nil {
-					return err
+				percent, ok := parseNumber(v)
+				if !ok {
+					return fmt.Errorf("sample_percent must be a number, got %q", v)
 				}
+				o.SamplePercent = &percent
 			}
 			if v, ok := given["dry_run"]; ok {
 				o.DryRun = fireTruthy(v)
@@ -414,10 +408,10 @@ func NewCommand() *cobra.Command {
 	return cmd
 }
 
-// Process entry of the compressor binary, the .env files loaded first and a Python style error line on failure
+// Process entry of the compressor binary, the .env files loaded first and an error line on failure
 func Main(ctx context.Context, args []string) int {
 	if _, err := provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{Home: home.Dir(ctx), ProjectEnv: filepath.Join(pm.RepoRoot(), ".env")}); err != nil {
-		fmt.Fprintln(os.Stderr, pyErrorLine(err))
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		return 1
 	}
 	cmd := NewCommand()
@@ -435,17 +429,8 @@ func Main(ctx context.Context, args []string) int {
 			fmt.Fprintln(os.Stderr, ue.msg)
 			return 2
 		}
-		fmt.Fprintln(os.Stderr, pyErrorLine(err))
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		return 1
 	}
 	return 0
-}
-
-// Last traceback line of an uncaught error, the exception class before its message
-func pyErrorLine(err error) string {
-	var pe *pyint.Error
-	if errors.As(err, &pe) {
-		return pe.Kind + ": " + pe.Msg
-	}
-	return err.Error()
 }

@@ -5,12 +5,12 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Peer a JSON RPC frame is forwarded to, Write false once the peer is gone
 type Transport interface {
-	Write(obj *pyjson.Object) bool
+	Write(obj *jsonutil.Object) bool
 	Close()
 }
 
@@ -21,20 +21,20 @@ type abortingTransport interface {
 
 // Transport sending a whole batch and awaiting the real send while its generation stays current
 type batchTransport interface {
-	WriteManyIfCurrentAsync(frames []*pyjson.Object, isCurrent func() bool) bool
+	WriteManyIfCurrentAsync(frames []*jsonutil.Object, isCurrent func() bool) bool
 }
 
 // JSON text of a frame, an internal error frame carrying the original id when it cannot be serialized
-func SerializeFrame(obj *pyjson.Object, peer string, log *slog.Logger) string {
-	text, err := pyjson.Dumps(obj, pyjson.EnsureASCII(false))
+func SerializeFrame(obj *jsonutil.Object, peer string, log *slog.Logger) string {
+	text, err := jsonutil.Encode(obj)
 	if err == nil {
 		return text
 	}
 	rid, _ := obj.Get("id")
 	log.Error(fmt.Sprintf("frame serialization failed peer=%s id=%v error_type=%T error=%v", peer, rid, err, err))
-	fallback := pyjson.ObjectOf("jsonrpc", "2.0", "id", rid,
-		"error", pyjson.ObjectOf("code", -32603, "message", "response serialization error: "+err.Error()))
-	text, err = pyjson.Dumps(fallback, pyjson.EnsureASCII(false))
+	fallback := jsonutil.ObjectOf("jsonrpc", "2.0", "id", rid,
+		"error", jsonutil.ObjectOf("code", -32603, "message", "response serialization error: "+err.Error()))
+	text, err = jsonutil.Encode(fallback)
 	if err != nil {
 		panic(err)
 	}
@@ -42,7 +42,7 @@ func SerializeFrame(obj *pyjson.Object, peer string, log *slog.Logger) string {
 }
 
 type pendingFrame struct {
-	frame *pyjson.Object
+	frame *jsonutil.Object
 	size  int
 }
 
@@ -216,7 +216,7 @@ func (f *FanoutTransport) writeBatch(peer *fanoutPeer, generation int, batch []p
 		}
 	}()
 	if writer, many := peer.transport.(batchTransport); many {
-		frames := make([]*pyjson.Object, len(batch))
+		frames := make([]*jsonutil.Object, len(batch))
 		for i, item := range batch {
 			frames[i] = item.frame
 		}
@@ -245,19 +245,19 @@ func (f *FanoutTransport) signalOverflowDetach(transport Transport) {
 }
 
 // Fans a frame out to every attached peer, true while any peer stays attached
-func (f *FanoutTransport) Write(obj *pyjson.Object) bool {
+func (f *FanoutTransport) Write(obj *jsonutil.Object) bool {
 	return f.WriteOverflow(obj, nil)
 }
 
 // Fans a frame out, an overflowed peer getting the notice overflow returns or its transport closed
-func (f *FanoutTransport) WriteOverflow(obj *pyjson.Object, overflow func(Transport) *pyjson.Object) bool {
+func (f *FanoutTransport) WriteOverflow(obj *jsonutil.Object, overflow func(Transport) *jsonutil.Object) bool {
 	encoded := SerializeFrame(obj, "fanout", slog.Default())
 	size := len(encoded)
-	decoded, err := pyjson.Loads(encoded)
+	decoded, err := jsonutil.Decode(encoded)
 	if err != nil {
 		panic(err)
 	}
-	frame := decoded.(*pyjson.Object)
+	frame := decoded.(*jsonutil.Object)
 	var overflowed []Transport
 	f.mu.Lock()
 	for _, peer := range append([]*fanoutPeer(nil), f.peers...) {
@@ -267,7 +267,7 @@ func (f *FanoutTransport) WriteOverflow(obj *pyjson.Object, overflow func(Transp
 		if len(peer.pending) >= FanoutMaxPendingFrames || peer.pendingBytes+size > fanoutMaxPendingBytes {
 			slog.Warn("fanout subscriber backlog full; detaching peer")
 			f.remove(peer)
-			var notice *pyjson.Object
+			var notice *jsonutil.Object
 			if overflow != nil {
 				notice = overflow(peer.transport)
 			}

@@ -19,24 +19,24 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Value of a lock entry key, false when absent as a KeyError would report
-func objGet(o *pyjson.Object, key string) (any, bool) {
+func objGet(o *jsonutil.Object, key string) (any, bool) {
 	if o == nil {
 		return nil, false
 	}
 	return o.Get(key)
 }
 
-func entryStr(o *pyjson.Object, key, def string) string {
+func entryStr(o *jsonutil.Object, key, def string) string {
 	if v, ok := objGet(o, key); ok {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return def
 }
@@ -44,7 +44,7 @@ func entryStr(o *pyjson.Object, key, def string) string {
 func missingField(key string) error { return fmt.Errorf("the hub record has no %s", key) }
 
 // Lists installed skills as hub, builtin or local with their enabled state in the active profile
-func (x *HubCLI) DoList(ctx context.Context, sourceFilter string, enabledOnly bool, c *pyrich.Console) error {
+func (x *HubCLI) DoList(ctx context.Context, sourceFilter string, enabledOnly bool, c *consoleutil.Console) error {
 	c = x.console(c)
 	if err := x.Hub.EnsureHubDirs(); err != nil {
 		return err
@@ -53,13 +53,13 @@ func (x *HubCLI) DoList(ctx context.Context, sourceFilter string, enabledOnly bo
 	if err != nil {
 		return err
 	}
-	hubInstalled := map[string]*pyjson.Object{}
+	hubInstalled := map[string]*jsonutil.Object{}
 	for _, e := range entries {
 		name, ok := objGet(e, "name")
 		if !ok {
 			return missingField("name")
 		}
-		hubInstalled[pyrepr.Str(name)] = e
+		hubInstalled[anyutil.String(name)] = e
 	}
 	manifest, err := x.S.readManifest()
 	if err != nil {
@@ -78,7 +78,7 @@ func (x *HubCLI) DoList(ctx context.Context, sourceFilter string, enabledOnly bo
 	if enabledOnly {
 		title += " (enabled only)"
 	}
-	table := &pyrich.Table{Title: title, Columns: []pyrich.Column{{Header: "Name", Style: "bold cyan"}, dimCol("Category"),
+	table := &consoleutil.Table{Title: title, Columns: []consoleutil.Column{{Header: "Name", Style: "bold cyan"}, dimCol("Category"),
 		dimCol("Source"), dimCol("Trust"), dimCol("Status")}}
 	sort.SliceStable(all, func(i, j int) bool {
 		if all[i].Category != all[j].Category {
@@ -138,7 +138,7 @@ func (x *HubCLI) checkUpdates(ctx context.Context, name string) ([]SkillUpdateCh
 }
 
 // Checks hub installed skills for upstream updates
-func (x *HubCLI) DoCheck(ctx context.Context, name string, c *pyrich.Console) error {
+func (x *HubCLI) DoCheck(ctx context.Context, name string, c *consoleutil.Console) error {
 	c = x.console(c)
 	results, err := x.checkUpdates(ctx, name)
 	if err != nil {
@@ -148,7 +148,7 @@ func (x *HubCLI) DoCheck(ctx context.Context, name string, c *pyrich.Console) er
 		c.Print("[dim]No hub-installed skills to check.[/]\n")
 		return nil
 	}
-	table := &pyrich.Table{Title: "Skill Updates", Columns: []pyrich.Column{{Header: "Name", Style: "bold cyan"}, dimCol("Source"), dimCol("Status")}}
+	table := &consoleutil.Table{Title: "Skill Updates", Columns: []consoleutil.Column{{Header: "Name", Style: "bold cyan"}, dimCol("Source"), dimCol("Status")}}
 	updates := 0
 	var orphaned []string
 	for _, e := range results {
@@ -170,7 +170,7 @@ func (x *HubCLI) DoCheck(ctx context.Context, name string, c *pyrich.Console) er
 }
 
 // Whether the installed copy no longer matches the install time content hash
-func (x *HubCLI) hasLocalEdits(installed *pyjson.Object) bool {
+func (x *HubCLI) hasLocalEdits(installed *jsonutil.Object) bool {
 	recorded := entryStr(installed, "content_hash", "")
 	path := filepath.Join(x.S.SkillsDir(), entryStr(installed, "install_path", ""))
 	info, err := os.Stat(path)
@@ -187,7 +187,7 @@ func installCategory(installPath string) string {
 }
 
 // Updates hub installed skills, skipping locally edited ones unless forced
-func (x *HubCLI) DoUpdate(ctx context.Context, name string, c *pyrich.Console, force bool) (HubOutcome, error) {
+func (x *HubCLI) DoUpdate(ctx context.Context, name string, c *consoleutil.Console, force bool) (HubOutcome, error) {
 	c = x.console(c)
 	checks, err := x.checkUpdates(ctx, name)
 	if err != nil {
@@ -244,7 +244,7 @@ func (x *HubCLI) DoUpdate(ctx context.Context, name string, c *pyrich.Console, f
 }
 
 // Re-scans installed hub skills, deep adding the AST diagnostic
-func (x *HubCLI) DoAudit(ctx context.Context, name string, c *pyrich.Console, deep bool) error {
+func (x *HubCLI) DoAudit(ctx context.Context, name string, c *consoleutil.Console, deep bool) error {
 	c = x.console(c)
 	installed, err := x.Hub.LockFile("").ListInstalled()
 	if err != nil {
@@ -262,7 +262,7 @@ func (x *HubCLI) DoAudit(ctx context.Context, name string, c *pyrich.Console, de
 			if !ok {
 				return missingField("name")
 			}
-			if pyrepr.Str(n) == name {
+			if anyutil.String(n) == name {
 				targets = append(targets, e)
 			}
 		}
@@ -277,10 +277,10 @@ func (x *HubCLI) DoAudit(ctx context.Context, name string, c *pyrich.Console, de
 		if !ok {
 			return missingField("install_path")
 		}
-		skillPath := filepath.Join(x.S.SkillsDir(), pyrepr.Str(ip))
+		skillPath := filepath.Join(x.S.SkillsDir(), anyutil.String(ip))
 		entryName := entryStr(e, "name", "")
 		if _, err := os.Stat(skillPath); err != nil {
-			c.Print(fmt.Sprintf("[yellow]Warning:[/] %s — path missing: %s", entryName, pyrepr.Str(ip)))
+			c.Print(fmt.Sprintf("[yellow]Warning:[/] %s — path missing: %s", entryName, anyutil.String(ip)))
 			continue
 		}
 		source, ok := objGet(e, "identifier")
@@ -289,7 +289,7 @@ func (x *HubCLI) DoAudit(ctx context.Context, name string, c *pyrich.Console, de
 				return missingField("source")
 			}
 		}
-		c.Print(FormatScanReport(ScanSkill(skillPath, pyrepr.Str(source))))
+		c.Print(FormatScanReport(ScanSkill(skillPath, anyutil.String(source))))
 		if deep {
 			c.Print(FormatASTReport(ASTScanPath(skillPath), entryName))
 		}
@@ -299,7 +299,7 @@ func (x *HubCLI) DoAudit(ctx context.Context, name string, c *pyrich.Console, de
 }
 
 // Removes a hub installed skill after confirmation
-func (x *HubCLI) DoUninstall(ctx context.Context, name string, c *pyrich.Console, skipConfirm, deferCache bool) (HubOutcome, error) {
+func (x *HubCLI) DoUninstall(ctx context.Context, name string, c *consoleutil.Console, skipConfirm, deferCache bool) (HubOutcome, error) {
 	c = x.console(c)
 	if !skipConfirm && !x.confirmOrCancel(c, cancelledLine, fmt.Sprintf("\n[bold]Uninstall '%s'?[/]", name)) {
 		return HubNoop, nil
@@ -322,14 +322,14 @@ func stringList(v any) []string {
 		out = l
 	case []any:
 		for _, s := range l {
-			out = append(out, pyrepr.Str(s))
+			out = append(out, anyutil.String(s))
 		}
 	}
 	return out
 }
 
 // Resets a bundled skill manifest entry, restore also re-copying the bundled version
-func (x *HubCLI) DoReset(ctx context.Context, name string, restore bool, c *pyrich.Console, skipConfirm, deferCache bool) error {
+func (x *HubCLI) DoReset(ctx context.Context, name string, restore bool, c *consoleutil.Console, skipConfirm, deferCache bool) error {
 	c = x.console(c)
 	if !skipConfirm && restore && !x.confirmOrCancel(c, cancelledLine, fmt.Sprintf("\n[bold]Restore '%s' from bundled source?[/]", name),
 		"[dim]This will DELETE your current copy and re-copy the bundled version.[/]") {
@@ -351,7 +351,7 @@ func (x *HubCLI) DoReset(ctx context.Context, name string, restore bool, c *pyri
 }
 
 // Lists the bundled skills the user has edited
-func (x *HubCLI) DoListModified(ctx context.Context, c *pyrich.Console, asJSON bool) error {
+func (x *HubCLI) DoListModified(ctx context.Context, c *consoleutil.Console, asJSON bool) error {
 	c = x.console(c)
 	modified, err := x.S.ListUserModifiedBundledSkills()
 	if err != nil {
@@ -362,7 +362,7 @@ func (x *HubCLI) DoListModified(ctx context.Context, c *pyrich.Console, asJSON b
 		for i, m := range modified {
 			names[i] = m["name"]
 		}
-		text, err := pyjson.Dumps(names)
+		text, err := jsonutil.Encode(names)
 		if err != nil {
 			return err
 		}
@@ -375,7 +375,7 @@ func (x *HubCLI) DoListModified(ctx context.Context, c *pyrich.Console, asJSON b
 	}
 	c.Print(fmt.Sprintf("\n[bold]%d user-modified bundled skill(s)[/] [dim](kept as-is by `icebath update`):[/]", len(modified)))
 	for _, m := range modified {
-		c.Print("  [yellow]~[/] " + pyrepr.Str(m["name"]))
+		c.Print("  [yellow]~[/] " + anyutil.String(m["name"]))
 	}
 	c.Print()
 	c.Print("[dim]See changes:   icebath skills diff <name>[/]")
@@ -385,7 +385,7 @@ func (x *HubCLI) DoListModified(ctx context.Context, c *pyrich.Console, asJSON b
 }
 
 // Unified diff line with light coloring, file headers left plain
-func printDiffLine(c *pyrich.Console, line string) {
+func printDiffLine(c *consoleutil.Console, line string) {
 	for _, ps := range [][2]string{{"+", "green"}, {"-", "red"}, {"@@", "cyan"}} {
 		if strings.HasPrefix(line, ps[0]) && !strings.HasPrefix(line, strings.Repeat(ps[0], 3)) {
 			c.Print("[" + ps[1] + "]" + line + "[/]")
@@ -399,34 +399,34 @@ var diffStatusLine = map[string]string{"added": "[green]+ only in your copy:[/] 
 	"binary": "[yellow]~ %s:[/] binary file differs"}
 
 // Shows how the user copy of a bundled skill differs from the stock version
-func (x *HubCLI) DoDiff(ctx context.Context, name string, c *pyrich.Console) error {
+func (x *HubCLI) DoDiff(ctx context.Context, name string, c *consoleutil.Console) error {
 	c = x.console(c)
 	result, err := x.S.DiffBundledSkill(name)
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(result["ok"]) {
-		printHubError(c, pyrepr.Str(result["message"]))
+	if !anyutil.IsTrue(result["ok"]) {
+		printHubError(c, anyutil.String(result["message"]))
 		return nil
 	}
-	if !pyrepr.Truthy(result["modified"]) {
-		c.Print(fmt.Sprintf("[green]%s[/]\n", pyrepr.Str(result["message"])))
+	if !anyutil.IsTrue(result["modified"]) {
+		c.Print(fmt.Sprintf("[green]%s[/]\n", anyutil.String(result["message"])))
 		return nil
 	}
-	c.Print(fmt.Sprintf("\n[bold]%s[/]\n", pyrepr.Str(result["message"])))
+	c.Print(fmt.Sprintf("\n[bold]%s[/]\n", anyutil.String(result["message"])))
 	diffs, _ := result["diffs"].([]map[string]any)
 	for _, e := range diffs {
 		if e["status"] == "modified" {
-			for _, line := range textutil.Lines(pyrepr.Str(e["diff"])) {
+			for _, line := range textutil.Lines(anyutil.String(e["diff"])) {
 				printDiffLine(c, line)
 			}
 			continue
 		}
-		format, ok := diffStatusLine[pyrepr.Str(e["status"])]
+		format, ok := diffStatusLine[anyutil.String(e["status"])]
 		if !ok {
 			format = diffStatusLine["binary"]
 		}
-		c.Print(fmt.Sprintf(format, pyrepr.Str(e["path"])))
+		c.Print(fmt.Sprintf(format, anyutil.String(e["path"])))
 	}
 	c.Print()
 	c.Print(fmt.Sprintf("[dim]Revert with: icebath skills reset %s --restore[/]\n", name))
@@ -434,13 +434,13 @@ func (x *HubCLI) DoDiff(ctx context.Context, name string, c *pyrich.Console) err
 }
 
 // Writes the bundled skills opt out marker, remove also deleting pristine bundled skills
-func (x *HubCLI) DoOptOut(ctx context.Context, remove bool, c *pyrich.Console, skipConfirm, deferCache bool) error {
+func (x *HubCLI) DoOptOut(ctx context.Context, remove bool, c *consoleutil.Console, skipConfirm, deferCache bool) error {
 	c = x.console(c)
 	res := x.S.SetBundledSkillsOptOut(true)
 	if !reportOK(c, res, "") {
 		return nil
 	}
-	c.Print(fmt.Sprintf("[dim]Marker: %s[/]", pyrepr.Str(res["marker"])))
+	c.Print(fmt.Sprintf("[dim]Marker: %s[/]", anyutil.String(res["marker"])))
 	if !remove {
 		c.Print("[dim]Existing skills on disk were left in place. Re-run with --remove to also delete unmodified bundled skills.[/]\n")
 		return nil
@@ -467,7 +467,7 @@ func (x *HubCLI) DoOptOut(ctx context.Context, remove bool, c *pyrich.Console, s
 	if err != nil {
 		return err
 	}
-	c.Print(fmt.Sprintf("[bold green]%s[/]", pyrepr.Str(result["message"])))
+	c.Print(fmt.Sprintf("[bold green]%s[/]", anyutil.String(result["message"])))
 	printListed(c, "Removed", stringList(result["removed"]))
 	c.Print()
 	x.finishChange(c, !deferCache, "Change will take effect", "apply", false)
@@ -475,7 +475,7 @@ func (x *HubCLI) DoOptOut(ctx context.Context, remove bool, c *pyrich.Console, s
 }
 
 // Removes the opt out marker, sync re-seeding bundled skills now
-func (x *HubCLI) DoOptIn(ctx context.Context, sync bool, c *pyrich.Console, deferCache bool) error {
+func (x *HubCLI) DoOptIn(ctx context.Context, sync bool, c *consoleutil.Console, deferCache bool) error {
 	c = x.console(c)
 	if !reportOK(c, x.S.SetBundledSkillsOptOut(false), "") {
 		return nil
@@ -493,7 +493,7 @@ func (x *HubCLI) DoOptIn(ctx context.Context, sync bool, c *pyrich.Console, defe
 }
 
 // Backfills or restores official optional skills from repo source
-func (x *HubCLI) DoRepairOfficial(ctx context.Context, name string, restore bool, c *pyrich.Console, skipConfirm, deferCache bool) error {
+func (x *HubCLI) DoRepairOfficial(ctx context.Context, name string, restore bool, c *consoleutil.Console, skipConfirm, deferCache bool) error {
 	c = x.console(c)
 	if restore && !skipConfirm && !x.confirmOrCancel(c, cancelledLine, fmt.Sprintf("\n[bold]Restore official optional skill '%s' from repo source?[/]", name),
 		"[dim]Existing matching active copies will be moved to a restore backup before copying the official source.[/]") {
@@ -510,7 +510,7 @@ func (x *HubCLI) DoRepairOfficial(ctx context.Context, name string, restore bool
 	printListed(c, "Backfilled provenance", stringList(result["backfilled"]))
 	if backed := stringList(result["backed_up"]); len(backed) > 0 {
 		c.Print(fmt.Sprintf("[dim]Backed up: %s[/]", strings.Join(backed, ", ")))
-		c.Print(fmt.Sprintf("[dim]Backup dir: %s[/]", pyrepr.Str(result["backup_dir"])))
+		c.Print(fmt.Sprintf("[dim]Backup dir: %s[/]", anyutil.String(result["backup_dir"])))
 	}
 	c.Print()
 	x.finishChange(c, !deferCache, "Change will take effect", "apply", false)
@@ -518,7 +518,7 @@ func (x *HubCLI) DoRepairOfficial(ctx context.Context, name string, restore bool
 }
 
 // Manages taps, the custom GitHub repo sources
-func (x *HubCLI) DoTap(ctx context.Context, action, repo string, c *pyrich.Console) error {
+func (x *HubCLI) DoTap(ctx context.Context, action, repo string, c *consoleutil.Console) error {
 	c = x.console(c)
 	mgr := x.Hub.Taps("")
 	switch action {
@@ -531,15 +531,15 @@ func (x *HubCLI) DoTap(ctx context.Context, action, repo string, c *pyrich.Conso
 			c.Print("[dim]No custom taps configured. Using default sources only.[/]\n")
 			return nil
 		}
-		table := &pyrich.Table{Title: "Configured Taps", Columns: []pyrich.Column{{Header: "Repo", Style: "bold cyan"}, dimCol("Path")}}
+		table := &consoleutil.Table{Title: "Configured Taps", Columns: []consoleutil.Column{{Header: "Repo", Style: "bold cyan"}, dimCol("Path")}}
 		for _, t := range taps {
-			obj, ok := t.(*pyjson.Object)
+			obj, ok := t.(*jsonutil.Object)
 			if !ok {
 				return fmt.Errorf("a tap entry is %s, expected a mapping", errchain.Kind(t))
 			}
 			label := any(nil)
 			for _, k := range []string{"repo", "name"} {
-				if v, _ := obj.Get(k); pyrepr.Truthy(v) {
+				if v, _ := obj.Get(k); anyutil.IsTrue(v) {
 					label = v
 					break
 				}
@@ -547,7 +547,7 @@ func (x *HubCLI) DoTap(ctx context.Context, action, repo string, c *pyrich.Conso
 			if label == nil {
 				label = entryStr(obj, "path", "unknown")
 			}
-			table.AddRow(pyrepr.Str(label), entryStr(obj, "path", "skills/"))
+			table.AddRow(anyutil.String(label), entryStr(obj, "path", "skills/"))
 		}
 		c.PrintTable(table)
 		c.Print()
@@ -593,7 +593,7 @@ func readPublishFrontmatter(skillMD string) (map[string]any, error) {
 		return map[string]any{}, nil
 	}
 	data, err := yamlLoad(skillMD[3 : loc[0]+3])
-	if err != nil || !pyrepr.Truthy(data) {
+	if err != nil || !anyutil.IsTrue(data) {
 		return map[string]any{}, nil
 	}
 	m, ok := data.(map[string]any)
@@ -604,7 +604,7 @@ func readPublishFrontmatter(skillMD string) (map[string]any, error) {
 }
 
 // Publishes a local skill to a registry after a security scan
-func (x *HubCLI) DoPublish(ctx context.Context, skillPath, target, repo string, c *pyrich.Console) error {
+func (x *HubCLI) DoPublish(ctx context.Context, skillPath, target, repo string, c *consoleutil.Console) error {
 	c = x.console(c)
 	path := skillPath
 	if !filepath.IsAbs(path) {
@@ -626,8 +626,8 @@ func (x *HubCLI) DoPublish(ctx context.Context, skillPath, target, repo string, 
 	if err != nil {
 		return err
 	}
-	name := pyrepr.Str(fmGet(fm, "name", filepath.Base(path)))
-	if !pyrepr.Truthy(fmGet(fm, "description", "")) {
+	name := anyutil.String(fmGet(fm, "name", filepath.Base(path)))
+	if !anyutil.IsTrue(fmGet(fm, "description", "")) {
 		printHubError(c, "SKILL.md must have a 'description' in frontmatter.")
 		return nil
 	}
@@ -668,7 +668,7 @@ type ghResp struct {
 	body   []byte
 }
 
-func (r ghResp) json() (any, error) { return pyjson.Loads(string(r.body)) }
+func (r ghResp) json() (any, error) { return jsonutil.Decode(string(r.body)) }
 
 // Forks, branches, uploads every file and opens a PR, transport failures becoming messages
 func (x *HubCLI) githubPublish(ctx context.Context, skillPath, skillName, targetRepo string, auth *GitHubAuth) (bool, string, error) {
@@ -713,12 +713,12 @@ func (x *HubCLI) githubPublish(ctx context.Context, skillPath, skillName, target
 		if err != nil {
 			return false, "", err
 		}
-		obj, _ := data.(*pyjson.Object)
+		obj, _ := data.(*jsonutil.Object)
 		v, ok := objGet(obj, "full_name")
 		if !ok {
 			return false, "", missingField("full_name")
 		}
-		forkRepo = pyrepr.Str(v)
+		forkRepo = anyutil.String(v)
 	case 403:
 		return false, "GitHub token lacks permission to fork repos", nil
 	default:
@@ -727,7 +727,7 @@ func (x *HubCLI) githubPublish(ctx context.Context, skillPath, skillName, target
 	defaultBranch := "main"
 	if r, err := call("GET", targetRepo, 15*time.Second, nil); err == nil {
 		if data, err := r.json(); err == nil {
-			if obj, ok := data.(*pyjson.Object); ok {
+			if obj, ok := data.(*jsonutil.Object); ok {
 				defaultBranch = entryStr(obj, "default_branch", "main")
 			}
 		}
@@ -768,7 +768,7 @@ func (x *HubCLI) githubPublish(ctx context.Context, skillPath, skillName, target
 		if err != nil {
 			return false, "", err
 		}
-		obj, _ := data.(*pyjson.Object)
+		obj, _ := data.(*jsonutil.Object)
 		return true, "PR created: " + entryStr(obj, "html_url", ""), nil
 	}
 	text := []rune(strings.ToValidUTF8(string(pr.body), "\uFFFD"))
@@ -781,20 +781,20 @@ func refSHA(r ghResp) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	obj, _ := data.(*pyjson.Object)
+	obj, _ := data.(*jsonutil.Object)
 	o, ok := objGet(obj, "object")
 	if !ok {
 		return "", missingField("object")
 	}
-	sha, ok := objGet(func() *pyjson.Object { v, _ := o.(*pyjson.Object); return v }(), "sha")
+	sha, ok := objGet(func() *jsonutil.Object { v, _ := o.(*jsonutil.Object); return v }(), "sha")
 	if !ok {
 		return "", missingField("sha")
 	}
-	return pyrepr.Str(sha), nil
+	return anyutil.String(sha), nil
 }
 
 // Exports the hub skill configuration to a portable JSON file, a dash writing it to stdout
-func (x *HubCLI) DoSnapshotExport(ctx context.Context, outputPath string, c *pyrich.Console) error {
+func (x *HubCLI) DoSnapshotExport(ctx context.Context, outputPath string, c *consoleutil.Console) error {
 	c = x.console(c)
 	installed, err := x.Hub.LockFile("").ListInstalled()
 	if err != nil {
@@ -816,15 +816,15 @@ func (x *HubCLI) DoSnapshotExport(ctx context.Context, outputPath string, c *pyr
 		}
 		category := ""
 		if strings.Contains(entryStr(e, "install_path", ""), "/") {
-			category = filepath.Dir(filepath.Clean(pyrepr.Str(ip)))
+			category = filepath.Dir(filepath.Clean(anyutil.String(ip)))
 		}
 		skills[i] = objOf("name", name, "source", fmGetObj(e, "source", ""), "identifier", fmGetObj(e, "identifier", ""), "category", category)
 	}
 	if taps == nil {
 		taps = []any{}
 	}
-	snapshot := objOf("icebath_version", "0.1.0", "exported_at", pydatetime.ISOFormatUTC(x.Now().UTC()), "skills", skills, "taps", taps)
-	payload, err := pyjson.Dumps(snapshot, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	snapshot := objOf("icebath_version", "0.1.0", "exported_at", x.Now().UTC().UTC().Format(timeutil.RFC3339Micro), "skills", skills, "taps", taps)
+	payload, err := jsonutil.Encode(snapshot, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -841,15 +841,15 @@ func (x *HubCLI) DoSnapshotExport(ctx context.Context, outputPath string, c *pyr
 	return nil
 }
 
-func fmGetObj(o *pyjson.Object, key string, def any) any {
+func fmGetObj(o *jsonutil.Object, key string, def any) any {
 	if v, ok := objGet(o, key); ok {
 		return v
 	}
 	return def
 }
 
-func asObject(v any) (*pyjson.Object, error) {
-	o, ok := v.(*pyjson.Object)
+func asObject(v any) (*jsonutil.Object, error) {
+	o, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
@@ -857,7 +857,7 @@ func asObject(v any) (*pyjson.Object, error) {
 }
 
 // Re-installs skills from a snapshot file, failing when it is unreadable or any entry failed
-func (x *HubCLI) DoSnapshotImport(ctx context.Context, inputPath string, force bool, c *pyrich.Console) (HubOutcome, error) {
+func (x *HubCLI) DoSnapshotImport(ctx context.Context, inputPath string, force bool, c *consoleutil.Console) (HubOutcome, error) {
 	c = x.console(c)
 	inp := filepath.Clean(inputPath)
 	raw, err := os.ReadFile(inp)
@@ -871,7 +871,7 @@ func (x *HubCLI) DoSnapshotImport(ctx context.Context, inputPath string, force b
 	if !utf8.Valid(raw) {
 		return HubNoop, errors.New("the snapshot is not valid UTF-8")
 	}
-	parsed, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\uFEFF"))
+	parsed, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\uFEFF"))
 	if err != nil {
 		printHubError(c, fmt.Sprintf("Invalid JSON in %s", inp))
 		return HubFailed, nil

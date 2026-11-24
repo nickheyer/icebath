@@ -3,8 +3,8 @@ package tuiserver
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var imagesRegistry = &handlerRegistry{}
@@ -30,8 +30,8 @@ func imageRender(ctx context.Context, rid any, params map[string]any) map[string
 	mode := resolveInlineMode(configured, graphics, detected)
 	budget := [2]int{}
 	for i, key := range []string{"cols", "rows"} {
-		if raw := params[key]; truthy(raw) {
-			n, err := pyint.Int64(raw)
+		if raw := params[key]; anyutil.IsTrue(raw) {
+			n, err := anyutil.ToInt(raw)
 			if err != nil {
 				return rpcErr(rid, 4072, "cols and rows must be integers", nil)
 			}

@@ -18,15 +18,16 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	tarutil "github.com/nickheyer/icebath/pkg/utils/tar"
 )
 
 // Paths a distribution owns when the manifest names none, config.yaml preserved on update by default
@@ -92,7 +93,7 @@ func parseSemver(v string) ([3]*big.Int, error) {
 	for i := range out {
 		n, ok := pyint.Parse(parts[i])
 		if !ok {
-			return out, distErr("Unparseable version: %s", pyrepr.Repr(v))
+			return out, distErr("Unparseable version: %s", anyutil.Quote(v))
 		}
 		out[i] = n
 	}
@@ -139,7 +140,7 @@ func envTemplateFromManifest(m *profiles.DistributionManifest) string {
 		}
 		def := ""
 		if req.Default != nil {
-			def = pyrepr.Str(req.Default)
+			def = anyutil.String(req.Default)
 		}
 		if req.Required {
 			lines = append(lines, "# (required)", req.Name+"="+def, "")
@@ -198,15 +199,15 @@ func stageSource(ctx context.Context, source, workdir string) (string, string, e
 			return "", "", err
 		}
 		missing = fmt.Sprintf("No %s at the root of %s. This repository is not an Icebath profile distribution.",
-			profiles.ManifestFilename, pyrepr.Repr(src))
-	} else if guess := pypath.Expanduser(src); isDir(guess) {
+			profiles.ManifestFilename, anyutil.Quote(src))
+	} else if guess := pathutil.ExpandUser(src); isDir(guess) {
 		staged = resolvePath(guess)
 		provenance = staged
 		missing = fmt.Sprintf("No %s in %s. A local-directory source must contain a distribution.yaml at its root.",
-			profiles.ManifestFilename, pypath.PathStr(guess))
+			profiles.ManifestFilename, filepath.Clean(guess))
 	} else {
 		return "", "", distErr("Cannot resolve distribution source: %s. Expected a git URL (e.g. github.com/user/repo) or a local directory.",
-			pyrepr.Repr(source))
+			anyutil.Quote(source))
 	}
 	if !isRegularFile(filepath.Join(staged, profiles.ManifestFilename)) {
 		return "", "", &profiles.DistributionError{Msg: missing}
@@ -324,7 +325,7 @@ func ownedEntries(staged string, m *profiles.DistributionManifest) ([]ownedEntry
 		return out, nil
 	}
 	for _, rel := range explicit {
-		parts, err := pyfs.NormalizeArchiveParts(rel)
+		parts, err := tarutil.MemberParts(rel)
 		if err != nil || len(parts) == 0 {
 			continue
 		}
@@ -347,7 +348,7 @@ type ownedEntry struct {
 // Removes one destination entry without following a destination symlink
 func removeExisting(p string) error {
 	if isDir(p) && !isSymlink(p) {
-		return pyfs.RmTree(p, nil)
+		return os.RemoveAll(p)
 	}
 	if lexists(p) {
 		return os.Remove(p)
@@ -357,7 +358,7 @@ func removeExisting(p string) error {
 
 var (
 	distRemoveExisting = removeExisting
-	distCopyTree       = func(src, dst string) error { return pyfs.CopyTree(src, dst, false, false, nil) }
+	distCopyTree       = func(src, dst string) error { return fsutil.CopyTree(src, dst, fsutil.CopyTreeOptions{}) }
 	distRename         = os.Rename
 )
 
@@ -375,7 +376,7 @@ func replaceEntry(src, dest string) (err error) {
 		if err := distRemoveExisting(dest); err != nil {
 			return err
 		}
-		return pyfs.Copy2(src, dest)
+		return fsutil.CopyFile(src, dest)
 	}
 	holder := filepath.Join(filepath.Dir(dest), skills.DistSwapDir)
 	token := uuidHex()
@@ -385,7 +386,7 @@ func replaceEntry(src, dest string) (err error) {
 		return err
 	}
 	defer func() {
-		_ = pyfs.RmTree(staging, func(pyfs.RmTreeOp, string, error) error { return nil })
+		_ = os.RemoveAll(staging)
 		_ = os.Remove(holder)
 	}()
 	if err := distCopyTree(src, staging); err != nil {
@@ -454,23 +455,23 @@ func mergeCronStore(ctx context.Context, src, home string) error {
 }
 
 // Jobs of a shipped cron store keyed by id, loaded from a scratch store removed before returning
-func loadShippedCronJobs(ctx context.Context, src string, load func(ctx context.Context, home string) ([]any, error), wrap func(error) error) (_ *pyjson.Object, err error) {
+func loadShippedCronJobs(ctx context.Context, src string, load func(ctx context.Context, home string) ([]any, error), wrap func(error) error) (_ *jsonutil.Object, err error) {
 	tmp, err := os.MkdirTemp("", "icebath_dist_cron_")
 	if err != nil {
 		return nil, err
 	}
-	defer pyfs.CloseTempDir(tmp, &err)
+	defer fsutil.CleanupTempDir(tmp, &err)
 	if err := os.Mkdir(filepath.Join(tmp, "cron"), 0o777); err != nil {
 		return nil, err
 	}
-	if err := pyfs.Copy2(src, filepath.Join(tmp, "cron", "jobs.json")); err != nil {
+	if err := fsutil.CopyFile(src, filepath.Join(tmp, "cron", "jobs.json")); err != nil {
 		return nil, err
 	}
 	jobs, err := load(ctx, tmp)
 	if err != nil {
 		return nil, wrap(err)
 	}
-	shipped := pyjson.NewObject()
+	shipped := jsonutil.NewObject()
 	for _, j := range jobs {
 		if job, ok := j.(map[string]any); ok && pyTruthy(job["id"]) {
 			shipped.Set(profilesPyStr(job["id"]), job)
@@ -484,7 +485,7 @@ func profilesPyStr(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Python truthiness of a decoded JSON or YAML value
@@ -767,7 +768,7 @@ func InstallDistribution(ctx context.Context, source, name string, force, create
 	if err != nil {
 		return nil, err
 	}
-	defer pyfs.CloseTempDir(tmp, &err)
+	defer fsutil.CleanupTempDir(tmp, &err)
 	plan, err := PlanInstall(ctx, source, tmp, name)
 	if err != nil {
 		return nil, err
@@ -827,7 +828,7 @@ func UpdateDistribution(ctx context.Context, profileName string, forceConfig boo
 	if err != nil {
 		return nil, err
 	}
-	defer pyfs.CloseTempDir(tmp, &err)
+	defer fsutil.CleanupTempDir(tmp, &err)
 	plan, err := PlanInstall(ctx, existing.Source, tmp, canon)
 	if err != nil {
 		return nil, err

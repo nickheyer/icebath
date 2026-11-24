@@ -10,9 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // DecodeMiddleware turns the raw inbound frames, JSON or protobuf, into the push of the context
@@ -25,7 +22,7 @@ func newDecodeMiddleware() InboundMiddleware {
 // JSON message body with either key casing normalized to msg_type and msg_content entries
 func convertJSONMsgBody(rawBody any) ([]any, error) {
 	result := []any{}
-	if !pyrepr.Truthy(rawBody) {
+	if !anyutil.IsTrue(rawBody) {
 		return result, nil
 	}
 	items, err := iterOf(rawBody)
@@ -38,61 +35,61 @@ func convertJSONMsgBody(rawBody any) ([]any, error) {
 			continue
 		}
 		msgType := d["msg_type"]
-		if !pyrepr.Truthy(msgType) {
+		if !anyutil.IsTrue(msgType) {
 			msgType = dictGetOr(d, "MsgType", "")
 		}
 		msgContent := d["msg_content"]
-		if !pyrepr.Truthy(msgContent) {
-			msgContent = dictGetOr(d, "MsgContent", pyjson.NewObject())
+		if !anyutil.IsTrue(msgContent) {
+			msgContent = dictGetOr(d, "MsgContent", jsonutil.NewObject())
 		}
 		if text, isStr := msgContent.(string); isStr {
-			if loaded, err := pyjson.Loads(text); err == nil {
+			if loaded, err := jsonutil.Decode(text); err == nil {
 				msgContent = loaded
 			} else {
-				msgContent = pyjson.ObjectOf("text", text)
+				msgContent = jsonutil.ObjectOf("text", text)
 			}
 		}
-		if !pyrepr.Truthy(msgContent) {
-			msgContent = pyjson.NewObject()
+		if !anyutil.IsTrue(msgContent) {
+			msgContent = jsonutil.NewObject()
 		}
-		result = append(result, pyjson.ObjectOf("msg_type", msgType, "msg_content", msgContent))
+		result = append(result, jsonutil.ObjectOf("msg_type", msgType, "msg_content", msgContent))
 	}
 	return result, nil
 }
 
 // Sender account and group code under either the Tencent IM PascalCase keys or the internal snake_case keys
 func jsonSenderFields(rawJSON map[string]any) (any, any) {
-	fromAccount := pyrepr.Or(dictGetOr(rawJSON, "from_account", ""), dictGetOr(rawJSON, "From_Account", ""))
-	groupCode := pyrepr.Or(pyrepr.Or(dictGetOr(rawJSON, "group_code", ""), dictGetOr(rawJSON, "GroupId", "")),
+	fromAccount := anyutil.Or(dictGetOr(rawJSON, "from_account", ""), dictGetOr(rawJSON, "From_Account", ""))
+	groupCode := anyutil.Or(anyutil.Or(dictGetOr(rawJSON, "group_code", ""), dictGetOr(rawJSON, "GroupId", "")),
 		dictGetOr(rawJSON, "group_id", ""))
 	return fromAccount, groupCode
 }
 
 // JSON push shaped like a decoded protobuf push, nil for an empty push or one with no sender, body or callback command
-func parseJSONPush(rawJSON map[string]any) (*pyjson.Object, error) {
+func parseJSONPush(rawJSON map[string]any) (*jsonutil.Object, error) {
 	if len(rawJSON) == 0 {
 		return nil, nil
 	}
 	fromAccount, groupCode := jsonSenderFields(rawJSON)
-	msgBody, err := convertJSONMsgBody(pyrepr.Or(dictGetOr(rawJSON, "msg_body", []any{}), dictGetOr(rawJSON, "MsgBody", []any{})))
+	msgBody, err := convertJSONMsgBody(anyutil.Or(dictGetOr(rawJSON, "msg_body", []any{}), dictGetOr(rawJSON, "MsgBody", []any{})))
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(fromAccount) && len(msgBody) == 0 && !pyrepr.Truthy(rawJSON["callback_command"]) {
+	if !anyutil.IsTrue(fromAccount) && len(msgBody) == 0 && !anyutil.IsTrue(rawJSON["callback_command"]) {
 		return nil, nil
 	}
 	or := func(first string, firstDef any, second string, secondDef any) any {
-		return pyrepr.Or(dictGetOr(rawJSON, first, firstDef), dictGetOr(rawJSON, second, secondDef))
+		return anyutil.Or(dictGetOr(rawJSON, first, firstDef), dictGetOr(rawJSON, second, secondDef))
 	}
 	var recallList any
-	if pyrepr.Truthy(rawJSON["recall_msg_seq_list"]) {
+	if anyutil.IsTrue(rawJSON["recall_msg_seq_list"]) {
 		recallList = rawJSON["recall_msg_seq_list"]
 	}
 	var traceID any = ""
 	if logExt, isDict := asDict(rawJSON["log_ext"]); isDict {
 		traceID = dictGetOr(logExt, "trace_id", "")
 	}
-	return pyjson.ObjectOf(
+	return jsonutil.ObjectOf(
 		"callback_command", dictGetOr(rawJSON, "callback_command", ""),
 		"from_account", fromAccount,
 		"to_account", or("to_account", "", "To_Account", ""),
@@ -100,7 +97,7 @@ func parseJSONPush(rawJSON map[string]any) (*pyjson.Object, error) {
 		"group_code", groupCode,
 		"group_name", dictGetOr(rawJSON, "group_name", ""),
 		"msg_seq", or("msg_seq", int64(0), "MsgSeq", int64(0)),
-		"msg_id", pyrepr.Or(or("msg_id", "", "msg_key", ""), dictGetOr(rawJSON, "MsgKey", "")),
+		"msg_id", anyutil.Or(or("msg_id", "", "msg_key", ""), dictGetOr(rawJSON, "MsgKey", "")),
 		"msg_body", msgBody,
 		"cloud_custom_data", or("cloud_custom_data", "", "CloudCustomData", ""),
 		"bot_owner_id", or("bot_owner_id", "", "botOwnerId", ""),
@@ -110,10 +107,10 @@ func parseJSONPush(rawJSON map[string]any) (*pyjson.Object, error) {
 }
 
 // Push of one raw frame and the format it decoded from, nil when the frame holds no valid message
-func decodeSingle(data []byte) (*pyjson.Object, string, error) {
+func decodeSingle(data []byte) (*jsonutil.Object, string, error) {
 	var connJSON any
-	if text, err := pystr.DecodeUTF8(data); err == nil {
-		if loaded, err := pyjson.Loads(text); err == nil {
+	if text, err := textutil.DecodeUTF8(data); err == nil {
+		if loaded, err := jsonutil.Decode(text); err == nil {
 			connJSON = loaded
 		}
 	}
@@ -139,7 +136,7 @@ func (m *DecodeMiddleware) Handle(ctx context.Context, ic *InboundContext, next 
 		return nil
 	}
 	name := ic.Adapter.Name()
-	var merged *pyjson.Object
+	var merged *jsonutil.Object
 	for _, data := range ic.RawFrames {
 		push, via, err := decodeSingle(data)
 		if err != nil {
@@ -156,12 +153,12 @@ func (m *DecodeMiddleware) Handle(ctx context.Context, ic *InboundContext, next 
 		case merged == nil:
 			merged, ic.DecodedVia = push, via
 			pkgLog().Info(fmt.Sprintf("[%s] Frame decoded (via=%s): len=%d", name, via, len(data)))
-		case pyrepr.Truthy(push.GetOr("msg_body", []any{})):
-			extra, isList := push.GetOr("msg_body", []any{}).([]any)
-			base, baseIsList := merged.GetOr("msg_body", []any{}).([]any)
+		case anyutil.IsTrue(push.ValueOr("msg_body", []any{})):
+			extra, isList := push.ValueOr("msg_body", []any{}).([]any)
+			base, baseIsList := merged.ValueOr("msg_body", []any{}).([]any)
 			if !isList || !baseIsList {
 				return &pyErr{"TypeError", fmt.Sprintf("msg_body must be a list, got %s",
-					errchain.Kind(push.GetOr("msg_body", []any{})))}
+					errchain.Kind(push.ValueOr("msg_body", []any{})))}
 			}
 			body := append(append(append([]any{}, base...), textElem("\n")), extra...)
 			merged.Set("msg_body", body)
@@ -172,7 +169,7 @@ func (m *DecodeMiddleware) Handle(ctx context.Context, ic *InboundContext, next 
 		return nil
 	}
 	ic.Push = merged
-	body, _ := merged.GetOr("msg_body", []any{}).([]any)
+	body, _ := merged.ValueOr("msg_body", []any{}).([]any)
 	msgTypes := make([]any, 0, len(body))
 	for _, elem := range body {
 		d, err := dictOf(elem)
@@ -182,10 +179,10 @@ func (m *DecodeMiddleware) Handle(ctx context.Context, ic *InboundContext, next 
 		msgTypes = append(msgTypes, dictGetOr(d, "msg_type", ""))
 	}
 	pkgLog().Info(fmt.Sprintf("[%s] Push decoded (via=%s): from=%s group=%s msg_id=%s msg_types=%s", name, ic.DecodedVia,
-		pyrepr.Str(merged.GetOr("from_account", "")), pyrepr.Str(merged.GetOr("group_code", "")),
-		pyrepr.Str(merged.GetOr("msg_id", "")), pyrepr.Repr(msgTypes)))
+		anyutil.String(merged.ValueOr("from_account", "")), anyutil.String(merged.ValueOr("group_code", "")),
+		anyutil.String(merged.ValueOr("msg_id", "")), anyutil.Quote(msgTypes)))
 	if pkgLog().Enabled(ctx, slog.LevelDebug) {
-		pkgLog().Debug(fmt.Sprintf("[%s] Push payload: %s", name, pyrepr.Str(ic.Push)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Push payload: %s", name, anyutil.String(ic.Push)))
 	}
 	return next()
 }
@@ -198,13 +195,13 @@ func newExtractFieldsMiddleware() InboundMiddleware {
 }
 
 func (m *ExtractFieldsMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
-	ic.FromAccount = ic.Push.GetOr("from_account", "")
-	ic.GroupCode = ic.Push.GetOr("group_code", "")
-	ic.GroupName = ic.Push.GetOr("group_name", "")
-	ic.SenderNickname = ic.Push.GetOr("sender_nickname", "")
-	ic.MsgID = ic.Push.GetOr("msg_id", "")
-	ic.CloudCustomData = ic.Push.GetOr("cloud_custom_data", "")
-	body, err := iterOf(ic.Push.GetOr("msg_body", []any{}))
+	ic.FromAccount = ic.Push.ValueOr("from_account", "")
+	ic.GroupCode = ic.Push.ValueOr("group_code", "")
+	ic.GroupName = ic.Push.ValueOr("group_name", "")
+	ic.SenderNickname = ic.Push.ValueOr("sender_nickname", "")
+	ic.MsgID = ic.Push.ValueOr("msg_id", "")
+	ic.CloudCustomData = ic.Push.ValueOr("cloud_custom_data", "")
+	body, err := iterOf(ic.Push.ValueOr("msg_body", []any{}))
 	if err != nil {
 		return err
 	}
@@ -220,8 +217,8 @@ func newDedupMiddleware() InboundMiddleware {
 }
 
 func (m *DedupMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
-	if pyrepr.Truthy(ic.MsgID) && ic.Adapter.dedup.IsDuplicate(pyrepr.Str(ic.MsgID)) {
-		pkgLog().Debug(fmt.Sprintf("[%s] Duplicate message ignored: msg_id=%s", ic.Adapter.Name(), pyrepr.Str(ic.MsgID)))
+	if anyutil.IsTrue(ic.MsgID) && ic.Adapter.dedup.IsDuplicate(anyutil.String(ic.MsgID)) {
+		pkgLog().Debug(fmt.Sprintf("[%s] Duplicate message ignored: msg_id=%s", ic.Adapter.Name(), anyutil.String(ic.MsgID)))
 		return nil
 	}
 	return next()
@@ -236,12 +233,12 @@ func newSkipSelfMiddleware() InboundMiddleware {
 
 // Whether a non empty sender account is the bot account
 func isSelfReference(fromAccount, botID any) bool {
-	return pyrepr.Truthy(fromAccount) && pyrepr.Equal(fromAccount, botID)
+	return anyutil.IsTrue(fromAccount) && anyutil.Equal(fromAccount, botID)
 }
 
 func (m *SkipSelfMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
 	if isSelfReference(ic.FromAccount, ic.Adapter.botIDValue()) {
-		pkgLog().Debug(fmt.Sprintf("[%s] Ignoring self-sent message from %s", ic.Adapter.Name(), pyrepr.Str(ic.FromAccount)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Ignoring self-sent message from %s", ic.Adapter.Name(), anyutil.String(ic.FromAccount)))
 		return nil
 	}
 	return next()
@@ -255,10 +252,10 @@ func newChatRoutingMiddleware() InboundMiddleware {
 }
 
 func (m *ChatRoutingMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
-	if pyrepr.Truthy(ic.GroupCode) {
-		ic.ChatID, ic.ChatType, ic.ChatName = "group:"+pyrepr.Str(ic.GroupCode), "group", pyrepr.Or(ic.GroupName, ic.GroupCode)
+	if anyutil.IsTrue(ic.GroupCode) {
+		ic.ChatID, ic.ChatType, ic.ChatName = "group:"+anyutil.String(ic.GroupCode), "group", anyutil.Or(ic.GroupName, ic.GroupCode)
 	} else {
-		ic.ChatID, ic.ChatType, ic.ChatName = "direct:"+pyrepr.Str(ic.FromAccount), "dm", pyrepr.Or(ic.SenderNickname, ic.FromAccount)
+		ic.ChatID, ic.ChatType, ic.ChatName = "direct:"+anyutil.String(ic.FromAccount), "dm", anyutil.Or(ic.SenderNickname, ic.FromAccount)
 	}
 	return next()
 }
@@ -319,7 +316,7 @@ func (m *AccessGuardMiddleware) Handle(ctx context.Context, ic *InboundContext, 
 			return err
 		}
 		if !allowed {
-			pkgLog().Debug(fmt.Sprintf("[%s] DM from %s blocked by dm_policy=%s", ic.Adapter.Name(), pyrepr.Str(ic.FromAccount), policy.DMPolicy))
+			pkgLog().Debug(fmt.Sprintf("[%s] DM from %s blocked by dm_policy=%s", ic.Adapter.Name(), anyutil.String(ic.FromAccount), policy.DMPolicy))
 			return nil
 		}
 	}
@@ -329,7 +326,7 @@ func (m *AccessGuardMiddleware) Handle(ctx context.Context, ic *InboundContext, 
 			return err
 		}
 		if !allowed {
-			pkgLog().Debug(fmt.Sprintf("[%s] Group %s blocked by group_policy=%s", ic.Adapter.Name(), pyrepr.Str(ic.GroupCode), policy.GroupPolicy))
+			pkgLog().Debug(fmt.Sprintf("[%s] Group %s blocked by group_policy=%s", ic.Adapter.Name(), anyutil.String(ic.GroupCode), policy.GroupPolicy))
 			return nil
 		}
 	}
@@ -370,7 +367,7 @@ func (m *AutoSetHomeMiddleware) Handle(ctx context.Context, ic *InboundContext, 
 // Writes the home channel to config.yaml, the live platform config and the unscoped process env, a failure only warned
 func persistHome(ctx context.Context, adapter *YuanbaoAdapter, ic *InboundContext) {
 	err := func() error {
-		home := gateway.NewHomeChannel(gateway.PlatformYuanbao, ic.ChatID, pyrepr.Str(pyrepr.Or(ic.ChatName, "Home")))
+		home := gateway.NewHomeChannel(gateway.PlatformYuanbao, ic.ChatID, anyutil.String(anyutil.Or(ic.ChatName, "Home")))
 		if err := gateway.PersistHomeChannel(ctx, home, false); err != nil {
 			return err
 		}
@@ -380,10 +377,10 @@ func persistHome(ctx context.Context, adapter *YuanbaoAdapter, ic *InboundContex
 				return err
 			}
 		}
-		pkgLog().Info(fmt.Sprintf("[%s] Auto-sethome: designated %s (%s) as Yuanbao home channel", adapter.Name(), ic.ChatID, pyrepr.Str(ic.ChatName)))
+		pkgLog().Info(fmt.Sprintf("[%s] Auto-sethome: designated %s (%s) as Yuanbao home channel", adapter.Name(), ic.ChatID, anyutil.String(ic.ChatName)))
 		return nil
 	}()
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[%s] Auto-sethome failed: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Auto-sethome failed: %s", adapter.Name(), err.Error()))
 	}
 }

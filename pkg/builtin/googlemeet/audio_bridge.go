@@ -4,18 +4,18 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const blackholeDevice = "BlackHole 2ch"
 
-// Platform name like platform.system, swapped by tests
-var bridgePlatform = pyplatform.System
+// Operating system name as runtime.GOOS spells it, swapped by tests
+var bridgePlatform = func() string { return runtime.GOOS }
 
 // Runs argv with stdin closed and returns stdout, stderr and the exit code, err set when it cannot start
 var bridgeRun = func(argv []string) (string, string, int, error) {
@@ -33,24 +33,8 @@ var bridgeRun = func(argv []string) (string, string, int, error) {
 	return toText(stdout.String()), toText(stderr.String()), 0, nil
 }
 
-// Decodes child output as UTF-8 with replacement like text mode with errors replace
+// Child output as UTF-8 text, invalid bytes replaced
 func toText(s string) string { return strings.ToValidUTF8(s, "�") }
-
-// Non zero exit of a checked command, carrying its captured output
-type calledProcessError struct {
-	argv   []string
-	code   int
-	stdout string
-	stderr string
-}
-
-func (e *calledProcessError) Error() string {
-	items := make([]any, len(e.argv))
-	for i, a := range e.argv {
-		items[i] = a
-	}
-	return fmt.Sprintf("Command %s returned non-zero exit status %d.", pyrepr.Repr(items), e.code)
-}
 
 // Runs pactl with the arguments, a non zero exit being an error only when check is set
 func pactl(check bool, args ...string) (string, error) {
@@ -60,7 +44,7 @@ func pactl(check bool, args ...string) (string, error) {
 		return "", err
 	}
 	if check && code != 0 {
-		return "", &calledProcessError{argv: argv, code: code, stdout: stdout, stderr: stderr}
+		return "", &executil.StatusError{Args: argv, ExitCode: code, Stdout: []byte(stdout), Stderr: []byte(stderr)}
 	}
 	return stdout, nil
 }
@@ -77,11 +61,11 @@ func newAudioBridge(prefix string) *audioBridge { return &audioBridge{namePrefix
 // Provisions the device, refusing unsupported platforms and missing tools
 func (b *audioBridge) setup() (map[string]any, error) {
 	switch system := bridgePlatform(); system {
-	case "Linux":
+	case "linux":
 		return b.setupLinux()
-	case "Darwin":
+	case "darwin":
 		return b.setupDarwin()
-	case "Windows":
+	case "windows":
 		return nil, errors.New("windows not supported in v2")
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", system)
@@ -109,9 +93,9 @@ func (b *audioBridge) finish(tag, device, writeTarget string, moduleIDs []int) m
 
 // Detail of a failed pactl call, its stderr or the error itself
 func stderrOr(err error) string {
-	var cpe *calledProcessError
-	if errors.As(err, &cpe) && cpe.stderr != "" {
-		return cpe.stderr
+	var se *executil.StatusError
+	if errors.As(err, &se) && len(se.Stderr) > 0 {
+		return string(se.Stderr)
 	}
 	return err.Error()
 }
@@ -121,8 +105,8 @@ func (b *audioBridge) setupLinux() (map[string]any, error) {
 	sinkName, srcName := b.namePrefix+"_sink", b.namePrefix+"_src"
 	sinkOut, err := pactl(true, "load-module", "module-null-sink", "sink_name="+sinkName, "sink_properties=device.description=IcebathMeetSink")
 	if err != nil {
-		var cpe *calledProcessError
-		if !errors.As(err, &cpe) {
+		var se *executil.StatusError
+		if !errors.As(err, &se) {
 			return nil, fmt.Errorf("pactl not found — install PulseAudio/pipewire-pulse")
 		}
 		return nil, fmt.Errorf("pactl load-module null-sink failed: %s", stderrOr(err))
@@ -133,8 +117,8 @@ func (b *audioBridge) setupLinux() (map[string]any, error) {
 	}
 	srcOut, err := pactl(true, "load-module", "module-virtual-source", "source_name="+srcName, "master="+sinkName+".monitor")
 	if err != nil {
-		var cpe *calledProcessError
-		if !errors.As(err, &cpe) {
+		var se *executil.StatusError
+		if !errors.As(err, &se) {
 			return nil, err
 		}
 		_, _ = pactl(false, "unload-module", fmt.Sprint(sinkModID))
@@ -170,9 +154,9 @@ func parseModuleID(stdout string) (int, error) {
 	}
 	fields := strings.Fields(strings.TrimSpace(textutil.Lines(text)[0]))
 	token := fields[len(fields)-1]
-	n, ok := pyint.Parse(token)
-	if !ok || !n.IsInt64() {
-		return 0, fmt.Errorf("could not parse pactl module id from: %s", pyrepr.StrRepr(stdout))
+	n, err := strconv.Atoi(token)
+	if err != nil {
+		return 0, fmt.Errorf("could not parse pactl module id from: %s", strconv.Quote(stdout))
 	}
-	return int(n.Int64()), nil
+	return n, nil
 }

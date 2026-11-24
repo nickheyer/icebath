@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Board at an explicit path under a sandboxed home
@@ -61,7 +61,7 @@ func TestReopenDemotesDoneDescendantsWithEventsAndComments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	demoted := map[string]*pyjson.Object{}
+	demoted := map[string]*jsonutil.Object{}
 	for _, entry := range result.Invalidated {
 		id, _ := entry.Get("id")
 		demoted[cellStr(id)] = entry
@@ -126,7 +126,7 @@ func TestRunningDescendantEventPrecedesTerminationViaReclaimHelper(t *testing.T)
 	}
 	var kills []WorkerTermination
 	prev := terminateReclaimedWorkerFn
-	terminateReclaimedWorkerFn = func(pid any, claimLock *string, _ SignalFunc, startedAt any) *pyjson.Object {
+	terminateReclaimedWorkerFn = func(pid any, claimLock *string, _ SignalFunc, startedAt any) *jsonutil.Object {
 		side := mustConnect(t, dbPath, nil)
 		kinds := eventKinds(t, side, child)
 		side.Close()
@@ -263,7 +263,7 @@ func TestShowJsonSurvivesBlobCellsInSiblingTables(t *testing.T) {
 		t.Fatal("events", err)
 	}
 	for _, e := range events {
-		if _, err := pyjson.Dumps(e.Payload, pyjson.EnsureASCII(false)); err != nil {
+		if _, err := jsonutil.Encode(e.Payload); err != nil {
 			t.Fatal("event payload not serializable", err)
 		}
 	}

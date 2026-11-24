@@ -9,9 +9,9 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -108,9 +108,9 @@ func latestUserTaskSnapshot(messages []map[string]any) string {
 		}
 		text, _ = whitespaceRunRE.Replace(text, " ", -1, -1)
 		if utf8.RuneCountInString(text) <= activeTaskMaxChars {
-			text = pyrepr.Repr(text)
+			text = anyutil.Quote(text)
 		} else {
-			text = tools.Elide(pyrepr.Repr(text), activeTaskMaxChars)
+			text = tools.Elide(anyutil.Quote(text), activeTaskMaxChars)
 		}
 		return "User asked (deterministic, from compacted turns): " + text + "\n" +
 			"Historical only; newer protected-tail messages after this summary win."

@@ -4,19 +4,19 @@ import (
 	"context"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Locks one answer of a viewer's clarify batch, expired once the wait already ended
-func clarifyLock(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
-	requestID, okRequest := params.GetOr("request_id", nil).(string)
-	questionID, okQuestion := params.GetOr("question_id", nil).(string)
+func clarifyLock(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
+	requestID, okRequest := params.ValueOr("request_id", nil).(string)
+	questionID, okQuestion := params.ValueOr("question_id", nil).(string)
 	if !okRequest || requestID == "" || !okQuestion || questionID == "" {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	answer := params.GetOr("answer", "")
+	answer := params.ValueOr("answer", "")
 	if _, isStr := answer.(string); answer != nil && !isStr {
-		text, err := pyjson.Dumps(answer, pyjson.EnsureASCII(false))
+		text, err := jsonutil.Encode(answer)
 		if err != nil {
 			return nil, err
 		}
@@ -42,11 +42,11 @@ func clarifyLock(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 		return nil, err
 	}
 	if remaining == nil {
-		return pyjson.ObjectOf("status", "expired"), nil
+		return jsonutil.ObjectOf("status", "expired"), nil
 	}
 	out := make([]any, len(remaining))
 	for i, qid := range remaining {
 		out[i] = qid
 	}
-	return pyjson.ObjectOf("status", "ok", "remaining", out), nil
+	return jsonutil.ObjectOf("status", "ok", "remaining", out), nil
 }

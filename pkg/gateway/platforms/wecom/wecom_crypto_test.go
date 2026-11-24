@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 func TestWecomCryptoRoundtripEncryptDecrypt(t *testing.T) {
@@ -85,7 +85,7 @@ func (c *WXBizMsgCrypt) Encrypt(plaintext, nonce, timestamp string) (string, err
 	if timestamp == "" {
 		timestamp = strconv.FormatInt(time.Now().Unix(), 10)
 	}
-	if err := pystr.StrictUTF8EncodeError(plaintext); err != nil {
+	if err := textutil.ValidateUTF8(plaintext); err != nil {
 		return "", err
 	}
 	encrypt, err := c.encryptBytes([]byte(plaintext))

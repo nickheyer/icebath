@@ -18,16 +18,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -80,13 +81,13 @@ type SummarizeFn func(ctx context.Context, resolvedMeeting *TeamsMeetingRef, tra
 
 // Output sink that writes one summary and returns its sink record
 type SummarySink interface {
-	WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *pyjson.Object) (*pyjson.Object, error)
+	WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *jsonutil.Object) (*jsonutil.Object, error)
 }
 
 // Bare function used as an output sink
-type SinkFn func(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *pyjson.Object) (*pyjson.Object, error)
+type SinkFn func(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *jsonutil.Object) (*jsonutil.Object, error)
 
-func (f SinkFn) WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *pyjson.Object) (*pyjson.Object, error) {
+func (f SinkFn) WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *jsonutil.Object) (*jsonutil.Object, error) {
 	return f(ctx, payload, config, existingRecord)
 }
 
@@ -110,7 +111,7 @@ func dictGetAttr(v any, key string) (any, error) {
 
 // Key of a falsy or dict value, nil for a falsy value and an AttributeError for a truthy non dict
 func orDictGet(v any, key string) (any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	return dictGetAttr(v, key)
@@ -119,7 +120,7 @@ func orDictGet(v any, key string) (any, error) {
 // Value under a required key of a dict, the KeyError or TypeError subscripting raises otherwise
 func subscript(v any, key string) (any, error) {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t != nil {
 			if val, ok := t.Get(key); ok {
 				return val, nil
@@ -145,10 +146,10 @@ func iterItems(v any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t != nil {
-			out := make([]any, 0, len(t.Keys))
-			for _, k := range t.Keys {
+			out := make([]any, 0, t.Len())
+			for _, k := range t.Keys() {
 				out = append(out, k)
 			}
 			return out, nil
@@ -169,9 +170,9 @@ func iterItems(v any) ([]any, error) {
 }
 
 // dict(value or {}) over a config value that may be a Go map or an ordered dict
-func configDict(v any) (*pyjson.Object, error) {
-	if !pyrepr.Truthy(v) {
-		return pyjson.NewObject(), nil
+func configDict(v any) (*jsonutil.Object, error) {
+	if !anyutil.IsTrue(v) {
+		return jsonutil.NewObject(), nil
 	}
 	switch t := v.(type) {
 	case map[string]any:
@@ -191,18 +192,18 @@ func orderedValue(v any) any {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for _, k := range keys {
 			out.Set(k, orderedValue(t[k]))
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return t
 		}
-		out := pyjson.NewObject()
-		for _, k := range t.Keys {
-			out.Set(k, orderedValue(t.Vals[k]))
+		out := jsonutil.NewObject()
+		for _, k := range t.Keys() {
+			out.Set(k, orderedValue(t.Value(k)))
 		}
 		return out
 	case []any:
@@ -237,7 +238,7 @@ func TeamsPipelineConfigFromDict(payload any) (*TeamsPipelineConfig, error) {
 	}
 	flag := func(name string, def bool) bool {
 		if v, ok := data.Get(name); ok {
-			return pyrepr.Truthy(v)
+			return anyutil.IsTrue(v)
 		}
 		return def
 	}
@@ -263,18 +264,18 @@ func TeamsPipelineConfigFromDict(payload any) (*TeamsPipelineConfig, error) {
 	default:
 		cfg.TranscriptMinChars = math.MinInt64
 	}
-	if tmp := or(get(data, "tmp_dir"), get(data, "tmpDir")); pyrepr.Truthy(tmp) {
+	if tmp := or(get(data, "tmp_dir"), get(data, "tmpDir")); anyutil.IsTrue(tmp) {
 		text, ok := tmp.(string)
 		if !ok {
 			return nil, pyError("TypeError", "tmp_dir is "+errchain.Kind(tmp)+" where a path was expected")
 		}
-		cfg.TmpDir = pypath.PurePathStr(text)
+		cfg.TmpDir = filepath.Clean(text)
 	}
 	return cfg, nil
 }
 
 // Notion rich text property holding one text run
-func richText(content any) *pyjson.Object {
+func richText(content any) *jsonutil.Object {
 	return obj("rich_text", []any{obj("text", obj("content", content))})
 }
 
@@ -282,17 +283,17 @@ func richText(content any) *pyjson.Object {
 func bullets(items []any) string {
 	lines := make([]string, len(items))
 	for i, item := range items {
-		lines[i] = "- " + pyrepr.Str(item)
+		lines[i] = "- " + anyutil.String(item)
 	}
 	return strings.Join(lines, "\n")
 }
 
 // Text of a summary field, empty for a falsy value
 func summaryText(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // One summary section, its heading and the body the payload holds for it
@@ -303,7 +304,7 @@ type summarySection struct {
 
 // Value itself when truthy, else the fallback
 func orDefault(v, fallback any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return fallback
@@ -322,7 +323,7 @@ func summaryHead(v any) (any, error) {
 		return textutil.First(t, 1900), nil
 	case []any:
 		return append([]any{}, t[:min(len(t), 1900)]...), nil
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return nil, pyError("TypeError", "the meeting summary is a mapping where text or a list was expected")
 	}
 	return nil, pyError("TypeError", fmt.Sprintf("the meeting summary is %s where text or a list was expected", errchain.Kind(v)))
@@ -383,8 +384,8 @@ func (w *httpSinkWriter) requireAPIKey() error {
 }
 
 // Sends one JSON request on a fresh client with a thirty second timeout and returns the decoded JSON body
-func (w *httpSinkWriter) request(ctx context.Context, method, rawURL string, headers [][2]string, body *pyjson.Object) (any, error) {
-	text, err := pyjson.Dumps(body, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+func (w *httpSinkWriter) request(ctx context.Context, method, rawURL string, headers [][2]string, body *jsonutil.Object) (any, error) {
+	text, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
@@ -395,12 +396,12 @@ func (w *httpSinkWriter) request(ctx context.Context, method, rawURL string, hea
 	for _, h := range headers {
 		req.Header.Set(h[0], h[1])
 	}
-	client, closeClient := &http.Client{Transport: w.transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}, func() {}
+	client, closeClient := &http.Client{Transport: w.transport, CheckRedirect: httputil.RedirectPolicy(false)}, func() {}
 	if w.transport == nil {
 		t := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 		client.Transport, closeClient = t, t.CloseIdleConnections
 	}
-	resp, err := pyhttpx.Do(client, req, 30*time.Second)
+	resp, err := httputil.Do(client, req, httputil.EachPhase(30*time.Second))
 	closeClient()
 	if err != nil {
 		return nil, err
@@ -432,7 +433,7 @@ func NewNotionWriter(ctx context.Context, apiKey string, transport http.RoundTri
 }
 
 // Creates the summary page with its body blocks, or updates only the properties of an existing page
-func (w *NotionWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *pyjson.Object) (*pyjson.Object, error) {
+func (w *NotionWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *jsonutil.Object) (*jsonutil.Object, error) {
 	if err := w.requireAPIKey(); err != nil {
 		return nil, err
 	}
@@ -441,7 +442,7 @@ func (w *NotionWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 	}
 	databaseID := strField(or(get(config, "database_id"), get(config, "databaseId"), ""))
 	pageID := get(existingRecord, "page_id")
-	if databaseID == "" && !pyrepr.Truthy(pageID) {
+	if databaseID == "" && !anyutil.IsTrue(pageID) {
 		return nil, &TeamsPipelineSinkError{TeamsPipelineError{"Notion sink requires database_id or an existing page_id."}}
 	}
 	headers := [][2]string{{"Authorization", "Bearer " + w.APIKey}, {"Notion-Version", notionAPIVersion}, {"Content-Type", "application/json"}}
@@ -450,8 +451,8 @@ func (w *NotionWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 		return nil, err
 	}
 	var record any
-	if pyrepr.Truthy(pageID) {
-		record, err = w.request(ctx, "PATCH", notionAPIBase+"/pages/"+pyrepr.Str(pageID), headers, obj("properties", properties))
+	if anyutil.IsTrue(pageID) {
+		record, err = w.request(ctx, "PATCH", notionAPIBase+"/pages/"+anyutil.String(pageID), headers, obj("properties", properties))
 	} else {
 		body := obj("parent", obj("database_id", databaseID), "properties", properties, "children", w.buildBlocks(payload))
 		record, err = w.request(ctx, "POST", notionAPIBase+"/pages", headers, body)
@@ -463,7 +464,7 @@ func (w *NotionWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 	if err != nil {
 		return nil, err
 	}
-	return obj("page_id", id, "url", get(record.(*pyjson.Object), "url")), nil
+	return obj("page_id", id, "url", get(record.(*jsonutil.Object), "url")), nil
 }
 
 // JSON object key of a property name the way a dict key is hashed and dumped
@@ -480,16 +481,16 @@ func propertyKey(v any) (string, error) {
 		return "false", nil
 	case []any:
 		return "", pyError("TypeError", "a Notion property name is a list where text was expected")
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return "", pyError("TypeError", "a Notion property name is a mapping where text was expected")
 	}
-	return pyrepr.Str(v), nil
+	return anyutil.String(v), nil
 }
 
 // Title property plus the optional summary and meeting id properties named by the config
-func (w *NotionWriter) buildProperties(payload *TeamsMeetingSummaryPayload, config *pyjson.Object) (*pyjson.Object, error) {
+func (w *NotionWriter) buildProperties(payload *TeamsMeetingSummaryPayload, config *jsonutil.Object) (*jsonutil.Object, error) {
 	title := payload.Title
-	if !pyrepr.Truthy(title) {
+	if !anyutil.IsTrue(title) {
 		id, err := payloadMeetingID(payload)
 		if err != nil {
 			return nil, err
@@ -505,7 +506,7 @@ func (w *NotionWriter) buildProperties(payload *TeamsMeetingSummaryPayload, conf
 		return nil, err
 	}
 	properties := obj(key, obj("title", []any{obj("text", obj("content", title))}))
-	if summaryProperty := get(config, "summary_property"); pyrepr.Truthy(summaryProperty) {
+	if summaryProperty := get(config, "summary_property"); anyutil.IsTrue(summaryProperty) {
 		if key, err = propertyKey(summaryProperty); err != nil {
 			return nil, err
 		}
@@ -515,7 +516,7 @@ func (w *NotionWriter) buildProperties(payload *TeamsMeetingSummaryPayload, conf
 		}
 		properties.Set(key, richText(head))
 	}
-	if meetingIDProperty := get(config, "meeting_id_property"); pyrepr.Truthy(meetingIDProperty) {
+	if meetingIDProperty := get(config, "meeting_id_property"); anyutil.IsTrue(meetingIDProperty) {
 		if key, err = propertyKey(meetingIDProperty); err != nil {
 			return nil, err
 		}
@@ -551,7 +552,7 @@ func NewLinearWriter(ctx context.Context, apiKey string, transport http.RoundTri
 }
 
 // Updates the recorded issue or creates one for the configured team, returning its id, identifier and URL
-func (w *LinearWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *pyjson.Object) (*pyjson.Object, error) {
+func (w *LinearWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSummaryPayload, config, existingRecord *jsonutil.Object) (*jsonutil.Object, error) {
 	if err := w.requireAPIKey(); err != nil {
 		return nil, err
 	}
@@ -561,7 +562,7 @@ func (w *LinearWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 	}
 	teamID := strField(or(get(config, "team_id"), get(config, "teamId"), ""))
 	title := payload.Title
-	if !pyrepr.Truthy(title) {
+	if !anyutil.IsTrue(title) {
 		id, err := payloadMeetingID(payload)
 		if err != nil {
 			return nil, err
@@ -573,14 +574,14 @@ func (w *LinearWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 		return nil, err
 	}
 	issueInput := obj("title", title, "description", description)
-	var body *pyjson.Object
-	if existingIssueID := get(existingRecord, "issue_id"); pyrepr.Truthy(existingIssueID) {
+	var body *jsonutil.Object
+	if existingIssueID := get(existingRecord, "issue_id"); anyutil.IsTrue(existingIssueID) {
 		body = obj("query", linearUpdate, "variables", obj("id", existingIssueID, "input", issueInput))
 	} else if teamID == "" {
 		return nil, &TeamsPipelineSinkError{TeamsPipelineError{"Linear sink requires team_id when creating a new issue."}}
 	} else {
 		input := obj("teamId", teamID)
-		input.Update(issueInput)
+		input.Merge(issueInput)
 		body = obj("query", linearCreate, "variables", obj("input", input))
 	}
 	payloadJSON, err := w.request(ctx, "POST", linearAPIURL, headers, body)
@@ -600,13 +601,13 @@ func (w *LinearWriter) WriteSummary(ctx context.Context, payload *TeamsMeetingSu
 		if issue, err = orDictGet(result, "issue"); err != nil {
 			return nil, err
 		}
-		if pyrepr.Truthy(issue) {
+		if anyutil.IsTrue(issue) {
 			break
 		}
 	}
-	found, ok := issue.(*pyjson.Object)
-	if !ok || found == nil || !pyrepr.Truthy(get(found, "id")) {
-		return nil, &TeamsPipelineSinkError{TeamsPipelineError{"Linear write failed: " + pyrepr.Str(payloadJSON)}}
+	found, ok := issue.(*jsonutil.Object)
+	if !ok || found == nil || !anyutil.IsTrue(get(found, "id")) {
+		return nil, &TeamsPipelineSinkError{TeamsPipelineError{"Linear write failed: " + anyutil.String(payloadJSON)}}
 	}
 	return obj("issue_id", get(found, "id"), "identifier", get(found, "identifier"), "url", get(found, "url")), nil
 }
@@ -646,7 +647,7 @@ func NewTeamsMeetingPipeline(client graphClient, store *TeamsPipelineStore, conf
 }
 
 // Records the notification receipt and returns its existing job or a newly stored received job
-func (p *TeamsMeetingPipeline) CreateJobFromNotification(notification *pyjson.Object) (*TeamsMeetingPipelineJob, error) {
+func (p *TeamsMeetingPipeline) CreateJobFromNotification(notification *jsonutil.Object) (*TeamsMeetingPipelineJob, error) {
 	if notification == nil {
 		return nil, pyError("AttributeError", "the notification is empty")
 	}
@@ -661,20 +662,20 @@ func (p *TeamsMeetingPipeline) CreateJobFromNotification(notification *pyjson.Ob
 	if err != nil || existing != nil {
 		return existing, err
 	}
-	resourceData := or(get(notification, "resourceData"), pyjson.NewObject())
+	resourceData := or(get(notification, "resourceData"), jsonutil.NewObject())
 	meetingID, organizerUserID, extraMetadata, err := meetingIDsFromNotification(notification)
 	if err != nil {
 		return nil, err
 	}
-	sourceEventType := pyrepr.Str(or(get(notification, "changeType"), "graph.notification"))
+	sourceEventType := anyutil.String(or(get(notification, "changeType"), "graph.notification"))
 	tenantID, err := dictGetAttr(resourceData, "tenantId")
 	if err != nil {
 		return nil, err
 	}
 	joinWebURL, _ := dictGetAttr(resourceData, "joinWebUrl")
 	callRecordID, _ := dictGetAttr(resourceData, "callRecordId")
-	metadata := obj("notification", notification.Copy(), "join_web_url", joinWebURL, "call_record_id", or(callRecordID, get(notification, "callRecordId")))
-	metadata.Update(extraMetadata)
+	metadata := obj("notification", notification.Clone(), "join_web_url", joinWebURL, "call_record_id", or(callRecordID, get(notification, "callRecordId")))
+	metadata.Merge(extraMetadata)
 	var organizer any
 	if organizerUserID != "" {
 		organizer = organizerUserID
@@ -684,7 +685,7 @@ func (p *TeamsMeetingPipeline) CreateJobFromNotification(notification *pyjson.Ob
 		return nil, err
 	}
 	job := &TeamsMeetingPipelineJob{JobID: "teams-job-" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12], EventID: eventID, DedupeKey: eventID,
-		Status: "received", SourceEventType: sourceEventType, MeetingRef: meetingRef, ErrorInfo: pyjson.NewObject()}
+		Status: "received", SourceEventType: sourceEventType, MeetingRef: meetingRef, ErrorInfo: jsonutil.NewObject()}
 	for _, f := range [][2]string{{"event_id", job.EventID}, {"source_event_type", job.SourceEventType}, {"dedupe_key", job.DedupeKey}} {
 		if strings.TrimSpace(f[1]) == "" {
 			return nil, requiredError("TeamsMeetingPipelineJob", f[0])
@@ -697,7 +698,7 @@ func (p *TeamsMeetingPipeline) CreateJobFromNotification(notification *pyjson.Ob
 }
 
 // Accepts a notification and runs its job unless a duplicate already finished or is in flight
-func (p *TeamsMeetingPipeline) RunNotification(ctx context.Context, notification *pyjson.Object) (*TeamsMeetingPipelineJob, error) {
+func (p *TeamsMeetingPipeline) RunNotification(ctx context.Context, notification *jsonutil.Object) (*TeamsMeetingPipelineJob, error) {
 	job, err := p.CreateJobFromNotification(notification)
 	if err != nil {
 		return nil, err
@@ -734,7 +735,7 @@ func (p *TeamsMeetingPipeline) RunJob(ctx context.Context, jobOrID any) (*TeamsM
 		if err != nil {
 			return nil, err
 		}
-		if !pyrepr.Truthy(callRecordID) {
+		if !anyutil.IsTrue(callRecordID) {
 			callRecordID = get(meetingRef.Metadata, "call_record_id")
 		}
 		callRecord, err := pipelineEnrichMeetingWithCallRecord(ctx, p.GraphClient, resolvedMeeting, textOrEmpty(callRecordID), true)
@@ -786,9 +787,9 @@ func (p *TeamsMeetingPipeline) RunJob(ctx context.Context, jobOrID any) (*TeamsM
 	}
 	var retryable *TeamsPipelineRetryableError
 	if errors.As(err, &retryable) {
-		return p.persistJob(job, "status", "retry_scheduled", "error_info", obj("message", pyrepr.ExceptionMessage(err), "retryable", true))
+		return p.persistJob(job, "status", "retry_scheduled", "error_info", obj("message", err.Error(), "retryable", true))
 	}
-	return p.persistJob(job, "status", "failed", "error_info", obj("message", pyrepr.ExceptionMessage(err), "type", pyrepr.ExceptionName(err)))
+	return p.persistJob(job, "status", "failed", "error_info", obj("message", err.Error(), "type", pyrepr.ExceptionName(err)))
 }
 
 // Summary payload of a summarizer result, a dict result built through the payload constructor
@@ -816,7 +817,7 @@ func (p *TeamsMeetingPipeline) resolveMeeting(ctx context.Context, job *TeamsMee
 	}
 	notification := get(meetingRef.Metadata, "notification")
 	meetingID, organizerUserID := meetingRef.MeetingID, meetingRef.OrganizerUserID
-	if stored, ok := notification.(*pyjson.Object); ok && stored != nil && stored.Len() > 0 {
+	if stored, ok := notification.(*jsonutil.Object); ok && stored != nil && stored.Len() > 0 {
 		parsedID, parsedOrg, _, err := meetingIDsFromNotification(stored)
 		if err != nil {
 			return nil, nil, nil, err
@@ -834,8 +835,8 @@ func (p *TeamsMeetingPipeline) resolveMeeting(ctx context.Context, job *TeamsMee
 		return nil, nil, nil, err
 	}
 	if meetingRef.Metadata != nil && meetingRef.Metadata.Len() > 0 {
-		merged := meetingRef.Metadata.Copy()
-		merged.Update(resolvedMeeting.Metadata)
+		merged := meetingRef.Metadata.Clone()
+		merged.Merge(resolvedMeeting.Metadata)
 		resolvedMeeting.Metadata = merged
 	}
 	resolvedMeeting.OrganizerUserID = or(resolvedMeeting.OrganizerUserID, meetingRef.OrganizerUserID)
@@ -903,9 +904,9 @@ func (p *TeamsMeetingPipeline) coerceJob(jobOrID any) (*TeamsMeetingPipelineJob,
 	if job, ok := jobOrID.(*TeamsMeetingPipelineJob); ok && job != nil {
 		return job, nil
 	}
-	payload := p.Store.GetJob(pyrepr.Str(jobOrID))
+	payload := p.Store.GetJob(anyutil.String(jobOrID))
 	if payload == nil || payload.Len() == 0 {
-		return nil, &TeamsPipelineError{"Unknown Teams pipeline job: " + pyrepr.Str(jobOrID)}
+		return nil, &TeamsPipelineError{"Unknown Teams pipeline job: " + anyutil.String(jobOrID)}
 	}
 	return TeamsMeetingPipelineJobFromDict(payload)
 }
@@ -913,8 +914,8 @@ func (p *TeamsMeetingPipeline) coerceJob(jobOrID any) (*TeamsMeetingPipelineJob,
 // Stored job whose dedupe key equals the given key, nil when none does
 func (p *TeamsMeetingPipeline) findJobByDedupeKey(dedupeKey string) (*TeamsMeetingPipelineJob, error) {
 	jobs := p.Store.ListJobs()
-	for _, id := range jobs.Keys {
-		if payload, ok := jobs.Vals[id].(*pyjson.Object); ok && payload != nil && textOrEmpty(get(payload, "dedupe_key")) == dedupeKey {
+	for _, id := range jobs.Keys() {
+		if payload, ok := jobs.Value(id).(*jsonutil.Object); ok && payload != nil && textOrEmpty(get(payload, "dedupe_key")) == dedupeKey {
 			return TeamsMeetingPipelineJobFromDict(payload)
 		}
 	}
@@ -953,18 +954,18 @@ func (p *TeamsMeetingPipeline) transcribeRecording(ctx context.Context, job *Tea
 	}
 	fallbackName := recording.ArtifactID + ".mp4"
 	displayName := fallbackName
-	if pyrepr.Truthy(recording.DisplayName) {
+	if anyutil.IsTrue(recording.DisplayName) {
 		text, ok := recording.DisplayName.(string)
 		if !ok {
 			return "", pyError("TypeError", "recording display name is "+errchain.Kind(recording.DisplayName)+" where text was expected")
 		}
 		displayName = text
 	}
-	recordingName := pypath.PathName(displayName)
+	recordingName := pathutil.Name(displayName)
 	if recordingName == "" || recordingName == "." || recordingName == ".." {
 		recordingName = fallbackName
 	}
-	recordingPath := pypath.PathJoin(tmpDir, recordingName)
+	recordingPath := pathutil.Join(tmpDir, recordingName)
 	if _, err := pipelineDownloadRecordingArtifact(ctx, p.GraphClient, meetingRef, recording, recordingPath); err != nil {
 		return "", err
 	}
@@ -982,8 +983,8 @@ func (p *TeamsMeetingPipeline) transcribeRecording(ctx context.Context, job *Tea
 	if result == nil {
 		return "", pyError("AttributeError", "the transcription returned nothing")
 	}
-	if !pyrepr.Truthy(result["success"]) {
-		return "", &TeamsPipelineRetryableError{TeamsPipelineError{pyrepr.Str(or(result["error"], "Unknown STT failure"))}}
+	if !anyutil.IsTrue(result["success"]) {
+		return "", &TeamsPipelineRetryableError{TeamsPipelineError{anyutil.String(or(result["error"], "Unknown STT failure"))}}
 	}
 	transcript := strField(result["transcript"])
 	if transcript == "" {
@@ -994,23 +995,23 @@ func (p *TeamsMeetingPipeline) transcribeRecording(ctx context.Context, job *Tea
 
 // Recording itself when it is audio or extraction is off, else a wav extracted beside it by ffmpeg
 func (p *TeamsMeetingPipeline) prepareAudioPath(ctx context.Context, recordingPath string) (string, error) {
-	if audioSuffixes[strings.ToLower(pypath.PathSuffix(recordingPath))] || !p.Config.FFmpegExtractAudio {
+	if audioSuffixes[strings.ToLower(pathutil.Suffix(recordingPath))] || !p.Config.FFmpegExtractAudio {
 		return recordingPath, nil
 	}
 	ffmpeg, ok := pyshutil.Which("ffmpeg", nil)
 	if !ok || ffmpeg == "" {
 		return "", &TeamsPipelineRetryableError{TeamsPipelineError{"Recording fallback requires ffmpeg for audio extraction, but ffmpeg was not found."}}
 	}
-	audioPath, err := pypath.WithSuffix(recordingPath, ".wav")
+	audioPath, err := pathutil.WithSuffix(recordingPath, ".wav")
 	if err != nil {
 		return "", pyError("ValueError", err.Error())
 	}
-	proc, err := pysubprocess.RunWith(ctx, []string{ffmpeg, "-y", "-i", recordingPath, audioPath}, pysubprocess.Options{})
+	proc, err := executil.Run(ctx, []string{ffmpeg, "-y", "-i", recordingPath, audioPath}, executil.Options{})
 	if err != nil {
 		return "", err
 	}
 	if proc.Returncode != 0 {
-		stderr, err := pycodecs.DecodeReplace(proc.Stderr, "utf-8")
+		stderr, err := charsetutil.DecodeReplace(proc.Stderr, "utf-8")
 		if err != nil {
 			return "", err
 		}
@@ -1031,7 +1032,7 @@ func (p *TeamsMeetingPipeline) summaryFieldsFor(ctx context.Context, prompt, tra
 		if cancelled := ctx.Err(); cancelled != nil && errors.Is(err, cancelled) {
 			return summaryFields{}, err
 		}
-		pkgLog().Info("Teams pipeline LLM summary unavailable, using heuristic summary: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Info("Teams pipeline LLM summary unavailable, using heuristic summary: " + err.Error())
 		parsed = heuristicSummary(transcriptText)
 	}
 	return parsed, nil
@@ -1043,7 +1044,7 @@ func (p *TeamsMeetingPipeline) generateSummaryPayload(ctx context.Context, resol
 	if err != nil {
 		return nil, err
 	}
-	teamsDelivery := or(p.Config.TeamsDelivery, pyjson.NewObject())
+	teamsDelivery := or(p.Config.TeamsDelivery, jsonutil.NewObject())
 	participants, err := collectParticipants(resolvedMeeting)
 	if err != nil {
 		return nil, err
@@ -1054,7 +1055,7 @@ func (p *TeamsMeetingPipeline) generateSummaryPayload(ctx context.Context, resol
 	}
 	payload := &TeamsMeetingSummaryPayload{
 		MeetingRef: resolvedMeeting, TranscriptText: transcriptText, SourceArtifacts: artifacts,
-		Title:        pyrepr.Str(or(get(resolvedMeeting.Metadata, "subject"), "Meeting "+resolvedMeeting.MeetingID)),
+		Title:        anyutil.String(or(get(resolvedMeeting.Metadata, "subject"), "Meeting "+resolvedMeeting.MeetingID)),
 		Participants: participants, CallMetrics: callMetrics, Summary: parsed.Summary, Confidence: parsed.Confidence, ConfidenceNotes: parsed.ConfidenceNotes,
 		KeyDecisions: append([]any{}, parsed.KeyDecisions...), ActionItems: append([]any{}, parsed.ActionItems...), Risks: append([]any{}, parsed.Risks...),
 	}
@@ -1088,14 +1089,14 @@ func (p *TeamsMeetingPipeline) writeSinks(ctx context.Context, job *TeamsMeeting
 	}{{"notion", "writing_notion", p.Config.Notion, p.NotionWriter}, {"linear", "writing_linear", p.Config.Linear, p.LinearWriter},
 		{"teams", "sending_teams", p.Config.TeamsDelivery, p.TeamsSender}}
 	for _, s := range sinks {
-		if !pyrepr.Truthy(s.config) {
+		if !anyutil.IsTrue(s.config) {
 			continue
 		}
 		enabled, err := dictGetAttr(s.config, "enabled")
 		if err != nil {
 			return err
 		}
-		if !pyrepr.Truthy(enabled) || s.sink == nil {
+		if !anyutil.IsTrue(enabled) || s.sink == nil {
 			continue
 		}
 		if job, err = p.persistJob(job, "status", s.status); err != nil {
@@ -1125,15 +1126,15 @@ func (p *TeamsMeetingPipeline) writeSinks(ctx context.Context, job *TeamsMeeting
 }
 
 // Metrics of every call record artifact merged in order plus the artifact count
-func collectCallMetrics(artifacts []*MeetingArtifact) (*pyjson.Object, error) {
-	metrics := pyjson.NewObject()
+func collectCallMetrics(artifacts []*MeetingArtifact) (*jsonutil.Object, error) {
+	metrics := jsonutil.NewObject()
 	for _, artifact := range artifacts {
 		if artifact.ArtifactType == "call_record" {
 			found, err := dictField(get(artifact.Metadata, "metrics"))
 			if err != nil {
 				return nil, err
 			}
-			metrics.Update(found)
+			metrics.Merge(found)
 		}
 	}
 	metrics.Set("artifact_count", int64(len(artifacts)))
@@ -1148,12 +1149,12 @@ func collectParticipants(meetingRef *TeamsMeetingRef) ([]any, error) {
 	}
 	names := []any{}
 	for _, entry := range participants {
-		item, ok := entry.(*pyjson.Object)
+		item, ok := entry.(*jsonutil.Object)
 		if !ok || item == nil {
 			continue
 		}
 		name := get(item, "displayName")
-		if !pyrepr.Truthy(name) {
+		if !anyutil.IsTrue(name) {
 			user, err := orDictGet(get(item, "identity"), "user")
 			if err != nil {
 				return nil, err
@@ -1162,36 +1163,36 @@ func collectParticipants(meetingRef *TeamsMeetingRef) ([]any, error) {
 				return nil, err
 			}
 		}
-		if pyrepr.Truthy(name) {
-			names = append(names, pyrepr.Str(name))
+		if anyutil.IsTrue(name) {
+			names = append(names, anyutil.String(name))
 		}
 	}
 	return names, nil
 }
 
 // OData annotation of a payload under its at prefixed name or its bare name
-func odataField(payload *pyjson.Object, name string) any {
+func odataField(payload *jsonutil.Object, name string) any {
 	return or(get(payload, "@"+name), get(payload, name))
 }
 
 // Organizer user id from the organizer user or identity user, else the flat organizer id fields
-func organizerUserIDFromPayload(payload *pyjson.Object) string {
-	if organizer, ok := or(get(payload, "meetingOrganizer"), get(payload, "organizer")).(*pyjson.Object); ok && organizer != nil {
+func organizerUserIDFromPayload(payload *jsonutil.Object) string {
+	if organizer, ok := or(get(payload, "meetingOrganizer"), get(payload, "organizer")).(*jsonutil.Object); ok && organizer != nil {
 		user, present := organizer.Get("user")
 		if !present || user == nil {
-			if identity, ok := get(organizer, "identity").(*pyjson.Object); ok && identity != nil {
+			if identity, ok := get(organizer, "identity").(*jsonutil.Object); ok && identity != nil {
 				user = get(identity, "user")
 			}
 		}
-		if found, ok := user.(*pyjson.Object); ok && found != nil && pyrepr.Truthy(get(found, "id")) {
-			return strings.TrimSpace(pyrepr.Str(get(found, "id")))
+		if found, ok := user.(*jsonutil.Object); ok && found != nil && anyutil.IsTrue(get(found, "id")) {
+			return strings.TrimSpace(anyutil.String(get(found, "id")))
 		}
 	}
 	return strField(or(get(payload, "organizerUserId"), get(payload, "organizer_user_id"), ""))
 }
 
 // Whether the resourceData id names a transcript or recording artifact instead of a meeting
-func resourceDataIDIsArtifact(notification, resourceData *pyjson.Object) bool {
+func resourceDataIDIsArtifact(notification, resourceData *jsonutil.Object) bool {
 	odataType := textOrEmpty(odataField(resourceData, "odata.type"))
 	lowered := strings.ToLower(odataType)
 	if strings.Contains(lowered, "calltranscript") || strings.Contains(lowered, "callrecording") {
@@ -1207,10 +1208,10 @@ func resourceDataIDIsArtifact(notification, resourceData *pyjson.Object) bool {
 }
 
 // Meeting id, organizer user id and artifact id metadata of a Graph change notification, the meeting id never empty
-func meetingIDsFromNotification(notification *pyjson.Object) (string, string, *pyjson.Object, error) {
-	resourceData, _ := get(notification, "resourceData").(*pyjson.Object)
+func meetingIDsFromNotification(notification *jsonutil.Object) (string, string, *jsonutil.Object, error) {
+	resourceData, _ := get(notification, "resourceData").(*jsonutil.Object)
 	if resourceData == nil {
-		resourceData = pyjson.NewObject()
+		resourceData = jsonutil.NewObject()
 	}
 	odataType := textOrEmpty(odataField(resourceData, "odata.type"))
 	var first graphMeetingResource
@@ -1237,7 +1238,7 @@ func meetingIDsFromNotification(notification *pyjson.Object) (string, string, *p
 		}
 		meetingID = key
 	}
-	extraMetadata := pyjson.NewObject()
+	extraMetadata := jsonutil.NewObject()
 	if transcriptID != "" {
 		extraMetadata.Set("transcript_id", transcriptID)
 	}
@@ -1268,7 +1269,7 @@ func buildSummaryPrompt(meetingRef *TeamsMeetingRef, transcriptText string, arti
 		listing = "- none"
 	}
 	return "Meeting ID: " + meetingRef.MeetingID + "\n" +
-		"Title: " + pyrepr.Str(or(get(meetingRef.Metadata, "subject"), "Unknown")) + "\n" +
+		"Title: " + anyutil.String(or(get(meetingRef.Metadata, "subject"), "Unknown")) + "\n" +
 		"Artifacts:\n" + listing + "\n\n" +
 		"Transcript:\n" + textutil.First(transcriptText, 18000)
 }
@@ -1281,7 +1282,7 @@ func cleanItems(values any) ([]any, error) {
 	}
 	out := []any{}
 	for _, item := range items {
-		if text := strings.TrimSpace(pyrepr.Str(item)); text != "" {
+		if text := strings.TrimSpace(anyutil.String(item)); text != "" {
 			out = append(out, text)
 		}
 	}
@@ -1304,7 +1305,7 @@ func parseSummaryJSON(content string) (summaryFields, error) {
 	if start, end := strings.Index(text, "{"), strings.LastIndex(text, "}"); start >= 0 && end > start {
 		text = text[start : end+1]
 	}
-	payload, err := pyjson.Loads(text)
+	payload, err := jsonutil.Decode(text)
 	if err != nil {
 		return summaryFields{}, err
 	}
@@ -1314,7 +1315,7 @@ func parseSummaryJSON(content string) (summaryFields, error) {
 		return summaryFields{}, err
 	}
 	out := summaryFields{Summary: strField(summary)}
-	dict := payload.(*pyjson.Object)
+	dict := payload.(*jsonutil.Object)
 	for _, f := range []struct {
 		key string
 		dst *[]any
@@ -1327,7 +1328,7 @@ func parseSummaryJSON(content string) (summaryFields, error) {
 			return summaryFields{}, err
 		}
 	}
-	out.Confidence = strings.TrimSpace(pyrepr.Str(or(get(dict, "confidence"), "medium")))
+	out.Confidence = strings.TrimSpace(anyutil.String(or(get(dict, "confidence"), "medium")))
 	out.ConfidenceNotes = strField(get(dict, "confidence_notes"))
 	return out, nil
 }
@@ -1393,7 +1394,7 @@ func renderSummaryMarkdown(payload *TeamsMeetingSummaryPayload) (string, error) 
 		}
 		lines = append(lines, "", "## "+s.heading, orDefault(s.body, fallback))
 	}
-	lines = append(lines, "", "Confidence: "+pyrepr.Str(orDefault(payload.Confidence, "unknown")), orDefault(payload.ConfidenceNotes, ""))
+	lines = append(lines, "", "Confidence: "+anyutil.String(orDefault(payload.Confidence, "unknown")), orDefault(payload.ConfidenceNotes, ""))
 	text, err := joinLines(lines)
 	if err != nil {
 		return "", err

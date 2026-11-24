@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Effective gateway model route and context window
@@ -30,17 +30,17 @@ func resolveGatewayModelContext(ctx context.Context, model string, route map[str
 	configuredModel, configuredProvider, configuredBaseURL := settings.Model.Get(ctx), settings.ModelProvider.Get(ctx), settings.ModelBaseURL.Get(ctx)
 	providerName, baseURL, apiKey := configuredProvider, configuredBaseURL, ""
 	customProviders := provider.CustomProviderEntries(ctx)
-	if route != nil && pyrepr.Truthy(route["base_url"]) {
-		if pyrepr.Truthy(route["provider"]) {
+	if route != nil && anyutil.IsTrue(route["base_url"]) {
+		if anyutil.IsTrue(route["provider"]) {
 			providerName = noneText(route["provider"])
 		}
 		baseURL = noneText(route["base_url"])
 		apiKey = noneText(route["api_key"])
 	} else if runtime, err := resolveRuntimeAgentKwargs(ctx); err == nil {
-		if pyrepr.Truthy(runtime["provider"]) {
+		if anyutil.IsTrue(runtime["provider"]) {
 			providerName = noneText(runtime["provider"])
 		}
-		if pyrepr.Truthy(runtime["base_url"]) {
+		if anyutil.IsTrue(runtime["base_url"]) {
 			baseURL = noneText(runtime["base_url"])
 		}
 		apiKey = noneText(runtime["api_key"])

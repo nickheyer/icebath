@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestSignatureFromSchema(t *testing.T) {
@@ -121,11 +121,11 @@ func codexToolsRoundTrip(t *testing.T, s *CodexToolsServer, lines ...string) []a
 	}
 	var replies []any
 	for _, l := range strings.Split(strings.TrimSpace(out.String()), "\n") {
-		v, err := pyjson.Loads(l)
+		v, err := jsonutil.Decode(l)
 		if err != nil {
 			t.Fatalf("%q %v", l, err)
 		}
-		replies = append(replies, pyjson.Plain(v))
+		replies = append(replies, jsonutil.Plain(v))
 	}
 	return replies
 }
@@ -182,7 +182,7 @@ func TestCodexToolsServerProtocol(t *testing.T) {
 	if sl := list[1].(map[string]any); sl["description"] != "Icebath skills_list tool" || !reflect.DeepEqual(sl["inputSchema"], map[string]any{"properties": map[string]any{}, "title": "skills_listArguments", "type": "object"}) {
 		t.Fatalf("skills_list listing %v", sl)
 	}
-	if calls[0]["name"] != "web_search" || !pyrepr.Equal(pyjson.Plain(calls[0]["args"]), map[string]any{"query": "go", "max_results": 5, "filters": map[string]any{"site": "go.dev"}}) {
+	if calls[0]["name"] != "web_search" || !anyutil.Equal(jsonutil.Plain(calls[0]["args"]), map[string]any{"query": "go", "max_results": 5, "filters": map[string]any{"site": "go.dev"}}) {
 		t.Fatalf("dispatched %v", calls[0])
 	}
 	ok := replies[2].(map[string]any)["result"].(map[string]any)
@@ -228,8 +228,8 @@ func TestCodexToolsServerChildModeOverStdio(t *testing.T) {
 		if err != nil {
 			t.Fatalf("child read %v", err)
 		}
-		v, _ := pyjson.Loads(line)
-		lines = append(lines, pyjson.Plain(v))
+		v, _ := jsonutil.Decode(line)
+		lines = append(lines, jsonutil.Plain(v))
 	}
 	stdin.Close()
 	done := make(chan error, 1)
@@ -258,13 +258,13 @@ func TestCodexToolsServerChildModeOverStdio(t *testing.T) {
 func TestCodexToolsPreParseDecodesOnlyContainerJSON(t *testing.T) {
 	sig, _ := codexToolsSignatureFromSchema(map[string]any{"properties": map[string]any{"flag": map[string]any{"type": "boolean"}, "items": map[string]any{"type": "array"},
 		"n": map[string]any{"type": "integer"}, "q": map[string]any{"type": "string"}, "note": map[string]any{"type": "string"}}, "required": []any{"q"}})
-	args := pyjson.NewObject()
+	args := jsonutil.NewObject()
 	for k, v := range map[string]any{"flag": "true", "items": "[1, 2]", "n": "7", "q": "[3]", "note": "[4]"} {
 		args.Set(k, v)
 	}
 	got := codexToolsPreParse(sig, args)
-	if got.Vals["flag"] != "true" || got.Vals["n"] != "7" || got.Vals["q"] != "[3]" || !pyrepr.Equal(got.Vals["items"], []any{1, 2}) || !pyrepr.Equal(got.Vals["note"], []any{4}) {
-		t.Fatalf("pre parse %v", got.Vals)
+	if got.Value("flag") != "true" || got.Value("n") != "7" || got.Value("q") != "[3]" || !anyutil.Equal(got.Value("items"), []any{1, 2}) || !anyutil.Equal(got.Value("note"), []any{4}) {
+		t.Fatalf("pre parse %v", got)
 	}
 }
 

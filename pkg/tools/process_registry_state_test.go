@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestFormatProcessNotificationMatchesTheRegistryFormatter(t *testing.T) {
@@ -42,7 +42,7 @@ func TestNewEventQueueStartsEmpty(t *testing.T) {
 func TestFormatProcessNotificationRendersObjectResults(t *testing.T) {
 	evt := map[string]any{
 		"type": "async_delegation", "delegation_id": "deleg_obj", "is_batch": true, "goals": []any{"the real task"},
-		"results":                []any{pyjson.ObjectOf("task_index", 0, "status", "completed", "summary", "done: the real task", "api_calls", 1, "duration_seconds", 0.1)},
+		"results":                []any{jsonutil.ObjectOf("task_index", 0, "status", "completed", "summary", "done: the real task", "api_calls", 1, "duration_seconds", 0.1)},
 		"total_duration_seconds": 0.5, "role": "leaf", "model": "m",
 	}
 	text := FormatProcessNotification(evt)

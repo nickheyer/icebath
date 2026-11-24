@@ -16,11 +16,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Twilio REST base the Messages endpoint hangs off
@@ -50,7 +50,7 @@ func messagesEndpoint(accountSID, authToken string) (string, map[string]string) 
 
 // Messages.json form body with From, To and Body in that order
 func twilioForm(fromNumber, toNumber, body string) string {
-	return pyurl.URLEncode([][2]string{{"From", fromNumber}, {"To", toNumber}, {"Body", body}})
+	return urlutil.EncodeQuery([][2]string{{"From", fromNumber}, {"To", toNumber}, {"Body", body}})
 }
 
 // HTTP client with the 30 second total timeout of the Twilio session
@@ -86,9 +86,9 @@ func twilioJSON(resp *http.Response, rawURL string) (map[string]any, error) {
 // Twilio error message of a body, its str form when it carries no message
 func twilioErrorMessage(body map[string]any) string {
 	if msg, ok := body["message"]; ok {
-		return pyrepr.Str(msg)
+		return anyutil.String(msg)
 	}
-	return pyrepr.Str(body)
+	return anyutil.String(body)
 }
 
 // Scoped read of the Twilio account SID and auth token both being set
@@ -409,7 +409,7 @@ func (a *SmsAdapter) readForm(request *gateway.WebRequest) (map[string][]string,
 	}
 	var text string
 	if err == nil {
-		text, err = pystr.DecodeUTF8(raw)
+		text, err = textutil.DecodeUTF8(raw)
 	}
 	if err != nil {
 		pkgLog().Error(fmt.Sprintf("[sms] webhook parse error: %v", err))

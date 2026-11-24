@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Reasoning effort levels a bare string may name
@@ -31,15 +31,15 @@ func ParseReasoningEffort(effort any) map[string]any {
 			return map[string]any{"enabled": false}
 		}
 		level := ""
-		if v := m["effort"]; pyrepr.Truthy(v) {
-			level = strings.TrimSpace(pyrepr.Str(v))
+		if v := m["effort"]; anyutil.IsTrue(v) {
+			level = strings.TrimSpace(anyutil.String(v))
 		}
 		if level == "" {
 			return nil
 		}
 		return map[string]any{"enabled": true, "effort": level}
 	}
-	text := strings.ToLower(strings.TrimSpace(pyrepr.Str(effort)))
+	text := strings.ToLower(strings.TrimSpace(anyutil.String(effort)))
 	switch text {
 	case "none", "false", "disabled":
 		return map[string]any{"enabled": false}

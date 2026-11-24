@@ -19,16 +19,16 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -223,7 +223,7 @@ func (a *FeishuAdapter) handleMessageEventData(ctx context.Context, data *larkim
 	message, sender := data.Event.Message, data.Event.Sender
 	messageID := sdkStr(message.MessageId)
 	if messageID == "" {
-		pkgLog().Debug("[Feishu] Dropping duplicate/missing message_id: " + pyrepr.Str(ptrAny(message.MessageId)))
+		pkgLog().Debug("[Feishu] Dropping duplicate/missing message_id: " + anyutil.String(ptrAny(message.MessageId)))
 		return nil
 	}
 	dup, err := a.IsDuplicate(ctx, messageID)
@@ -321,14 +321,14 @@ type cardActionEvent struct {
 // Card action fields of a decoded card.action.trigger payload
 func parseCardAction(payload any) cardActionEvent {
 	out := cardActionEvent{Raw: payload}
-	root, _ := payload.(*pyjson.Object)
-	event, _ := dget(root, "event").(*pyjson.Object)
+	root, _ := payload.(*jsonutil.Object)
+	event, _ := dget(root, "event").(*jsonutil.Object)
 	out.Token = strOr(dget(event, "token"))
-	ctxObj, _ := dget(event, "context").(*pyjson.Object)
+	ctxObj, _ := dget(event, "context").(*jsonutil.Object)
 	out.OpenChatID = strOr(dget(ctxObj, "open_chat_id"))
-	op, _ := dget(event, "operator").(*pyjson.Object)
+	op, _ := dget(event, "operator").(*jsonutil.Object)
 	out.OpenID, out.UserID, out.UnionID = strOr(dget(op, "open_id")), strOr(dget(op, "user_id")), strOr(dget(op, "union_id"))
-	act, _ := dget(event, "action").(*pyjson.Object)
+	act, _ := dget(event, "action").(*jsonutil.Object)
 	out.Tag = strOr(dget(act, "tag"))
 	out.Value = dget(act, "value")
 	return out
@@ -340,9 +340,9 @@ func (a *FeishuAdapter) onCardActionTriggerSDK(ctx context.Context, e *callback.
 	if e != nil && e.EventReq != nil {
 		body = e.EventReq.Body
 	}
-	payload, err := pyjson.Loads(string(body))
+	payload, err := jsonutil.Decode(string(body))
 	if err != nil {
-		payload = pyjson.NewObject()
+		payload = jsonutil.NewObject()
 	}
 	return a.onCardActionTrigger(parseCardAction(payload)), nil
 }
@@ -354,11 +354,11 @@ func (a *FeishuAdapter) onCardActionTrigger(e cardActionEvent) *callback.CardAct
 		pkgLog().Warn("[Feishu] Dropping card action before adapter loop is ready")
 		return cardResponse(nil)
 	}
-	if value, ok := e.Value.(*pyjson.Object); ok {
-		if pyrepr.Truthy(cardValue(value, cardApprovalKey, legacyCardApprovalKey, nil)) {
+	if value, ok := e.Value.(*jsonutil.Object); ok {
+		if anyutil.IsTrue(cardValue(value, cardApprovalKey, legacyCardApprovalKey, nil)) {
 			return a.handleApprovalCardAction(e, value, loop)
 		}
-		if pyrepr.Truthy(cardValue(value, cardUpdatePromptKey, legacyCardUpdatePromptKey, nil)) {
+		if anyutil.IsTrue(cardValue(value, cardUpdatePromptKey, legacyCardUpdatePromptKey, nil)) {
 			return a.handleUpdatePromptCardAction(e, value, loop)
 		}
 	}
@@ -408,7 +408,7 @@ func (a *FeishuAdapter) isInteractiveOperatorAuthorized(openID, userID, unionID,
 }
 
 // Synchronous card callback response, a raw card replacing the clicked one when given
-func cardResponse(card *pyjson.Object) *callback.CardActionTriggerResponse {
+func cardResponse(card *jsonutil.Object) *callback.CardActionTriggerResponse {
 	resp := &callback.CardActionTriggerResponse{}
 	if card != nil {
 		resp.Card = &callback.Card{Type: "raw", Data: card}
@@ -432,7 +432,7 @@ func (a *FeishuAdapter) validateCardAction(e cardActionEvent, state map[string]s
 		return "", "", "", false
 	}
 	if e.OpenChatID != "" && expected != "" && e.OpenChatID != expected {
-		pkgLog().Warn(fmt.Sprintf("[Feishu] %s callback chat mismatch for %d (expected=%s, got=%s)", pystr.Capitalize(label), ident, expected, e.OpenChatID))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] %s callback chat mismatch for %d (expected=%s, got=%s)", textutil.UpperFirst(strings.ToLower(label)), ident, expected, e.OpenChatID))
 		return "", "", "", false
 	}
 	userName := a.getCachedSenderName(e.OpenID)
@@ -468,7 +468,7 @@ func (a *FeishuAdapter) promptState(states map[int]map[string]string, id int) ma
 }
 
 // Schedules approval resolution and answers with the resolved card
-func (a *FeishuAdapter) handleApprovalCardAction(e cardActionEvent, value *pyjson.Object, loop *adapterLoop) *callback.CardActionTriggerResponse {
+func (a *FeishuAdapter) handleApprovalCardAction(e cardActionEvent, value *jsonutil.Object, loop *adapterLoop) *callback.CardActionTriggerResponse {
 	raw := dget(value, "approval_id")
 	if raw == nil {
 		pkgLog().Debug("[Feishu] Card action missing approval_id, ignoring")
@@ -480,10 +480,10 @@ func (a *FeishuAdapter) handleApprovalCardAction(e cardActionEvent, value *pyjso
 		state = a.promptState(a.approvalState, approvalID)
 	}
 	if len(state) == 0 {
-		pkgLog().Debug(fmt.Sprintf("[Feishu] Approval %s already resolved or unknown", pyrepr.Str(raw)))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] Approval %s already resolved or unknown", anyutil.String(raw)))
 		return cardResponse(nil)
 	}
-	choice, ok := approvalChoiceMap[pyrepr.Str(cardValue(value, cardApprovalKey, legacyCardApprovalKey, nil))]
+	choice, ok := approvalChoiceMap[anyutil.String(cardValue(value, cardApprovalKey, legacyCardApprovalKey, nil))]
 	if !ok {
 		choice = "deny"
 	}
@@ -504,7 +504,7 @@ func (a *FeishuAdapter) handleApprovalCardAction(e cardActionEvent, value *pyjso
 }
 
 // Schedules update prompt resolution and answers with the answered card
-func (a *FeishuAdapter) handleUpdatePromptCardAction(e cardActionEvent, value *pyjson.Object, loop *adapterLoop) *callback.CardActionTriggerResponse {
+func (a *FeishuAdapter) handleUpdatePromptCardAction(e cardActionEvent, value *jsonutil.Object, loop *adapterLoop) *callback.CardActionTriggerResponse {
 	raw := dget(value, "update_prompt_id")
 	if raw == nil {
 		pkgLog().Debug("[Feishu] Card action missing update_prompt_id, ignoring")
@@ -516,12 +516,12 @@ func (a *FeishuAdapter) handleUpdatePromptCardAction(e cardActionEvent, value *p
 		state = a.promptState(a.updatePromptState, promptID)
 	}
 	if len(state) == 0 {
-		pkgLog().Debug(fmt.Sprintf("[Feishu] Update prompt %s already resolved or unknown", pyrepr.Str(raw)))
+		pkgLog().Debug(fmt.Sprintf("[Feishu] Update prompt %s already resolved or unknown", anyutil.String(raw)))
 		return cardResponse(nil)
 	}
 	answer := strings.ToLower(strings.TrimSpace(strOr(cardValue(value, cardUpdatePromptKey, legacyCardUpdatePromptKey, ""))))
 	if answer != "y" && answer != "n" {
-		pkgLog().Debug("[Feishu] Card action has invalid update prompt answer=" + pyrepr.Repr(answer))
+		pkgLog().Debug("[Feishu] Card action has invalid update prompt answer=" + anyutil.Quote(answer))
 		return cardResponse(nil)
 	}
 	openID, chatID, userName, ok := a.validateCardAction(e, state, "update prompt", promptID)
@@ -681,12 +681,12 @@ func (a *FeishuAdapter) handleCardActionEvent(ctx context.Context, e cardActionE
 		tag = "button"
 	}
 	text := "/card " + tag
-	if pyrepr.Truthy(e.Value) {
-		if dumped, err := pyjson.Dumps(e.Value, pyjson.EnsureASCII(false)); err == nil {
+	if anyutil.IsTrue(e.Value) {
+		if dumped, err := jsonutil.Encode(e.Value); err == nil {
 			text += " " + dumped
 		}
 	}
-	pkgLog().Info(fmt.Sprintf("[Feishu] Routing card action %s from %s in %s as synthetic command", pyrepr.Repr(tag), e.OpenID, e.OpenChatID))
+	pkgLog().Info(fmt.Sprintf("[Feishu] Routing card action %s from %s in %s as synthetic command", anyutil.Quote(tag), e.OpenID, e.OpenChatID))
 	openID := e.OpenID
 	messageID := e.Token
 	if messageID == "" {
@@ -703,7 +703,7 @@ func (a *FeishuAdapter) dispatchSyntheticEvent(ctx context.Context, text string,
 		return err
 	}
 	info, _ := a.GetChatInfo(ctx, chatID)
-	chatName := firstNonEmpty(pyrepr.Str(orEmpty(info["name"])), chatID, "Feishu Chat")
+	chatName := firstNonEmpty(anyutil.String(info["name"]), chatID, "Feishu Chat")
 	source := a.BuildSource(ctx, chatID, gateway.SourceFields{ChatName: &chatName, ChatType: resolveSourceChatType(info, eventChatType),
 		UserID: profile.UserID, UserName: profile.UserName, UserIDAlt: profile.UserIDAlt})
 	event := gateway.NewMessageEvent(text)
@@ -849,7 +849,7 @@ func (a *FeishuAdapter) reactionOutcome(err error, r *larkResp, verb, messageID,
 	if r != nil {
 		code, msg = r.code, r.msg
 	}
-	pkgLog().Debug(fmt.Sprintf("[Feishu] %s reaction %s on %s rejected: code=%s msg=%s", verb, ident, messageID, pyrepr.Str(code), pyrepr.Str(msg)))
+	pkgLog().Debug(fmt.Sprintf("[Feishu] %s reaction %s on %s rejected: code=%s msg=%s", verb, ident, messageID, anyutil.String(code), anyutil.String(msg)))
 	return false
 }
 
@@ -962,13 +962,13 @@ func (a *FeishuAdapter) processInboundMessage(ctx context.Context, data *larkim.
 		who = "bot"
 	}
 	pkgLog().Info(fmt.Sprintf("[Feishu] Inbound %s message received: id=%s type=%s chat_id=%s sender=%s:%s text=%s media=%d", kind, messageID,
-		string(inboundType), chatID, who, primary, pyrepr.Repr(textutil.First(text, 120)), len(content.mediaURLs)))
+		string(inboundType), chatID, who, primary, anyutil.Quote(textutil.First(text, 120)), len(content.mediaURLs)))
 	info, _ := a.GetChatInfo(ctx, chatID)
 	profile, err := a.ResolveSenderProfile(ctx, sender, isBot)
 	if err != nil {
 		return err
 	}
-	chatName := firstNonEmpty(pyrepr.Str(orEmpty(info["name"])), chatID, "Feishu Chat")
+	chatName := firstNonEmpty(anyutil.String(info["name"]), chatID, "Feishu Chat")
 	msgID := messageID
 	source := a.BuildSource(ctx, chatID, gateway.SourceFields{ChatName: &chatName, ChatType: resolveSourceChatType(info, chatType),
 		UserID: profile.UserID, UserName: profile.UserName, ThreadID: threadID, UserIDAlt: profile.UserIDAlt, IsBot: isBot, MessageID: &msgID})
@@ -1304,7 +1304,7 @@ func (a *FeishuAdapter) maybeExtractTextDocument(cachedPath, mediaType string) s
 	if st.Size() > maxTextInjectBytes {
 		return ""
 	}
-	ext := strings.ToLower(pypath.Suffix(cachedPath))
+	ext := strings.ToLower(pathutil.Suffix(cachedPath))
 	if ext != ".txt" && ext != ".md" && mediaType != "text/plain" && mediaType != "text/markdown" {
 		return ""
 	}
@@ -1312,7 +1312,7 @@ func (a *FeishuAdapter) maybeExtractTextDocument(cachedPath, mediaType string) s
 	if err != nil {
 		return fail()
 	}
-	content, err := pystr.DecodeUTF8Sig(raw)
+	content, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return fail()
 	}
@@ -1344,7 +1344,7 @@ func (a *FeishuAdapter) downloadFeishuImage(ctx context.Context, messageID, imag
 	}
 	r := wrapResp(resp)
 	if !responseSucceeded(r) {
-		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to download image %s: %s %s", imageKey, pyrepr.Str(respCode(r)), respMsg(r, "request failed")))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to download image %s: %s %s", imageKey, anyutil.String(respCode(r)), respMsg(r, "request failed")))
 		return "", ""
 	}
 	data := readBinaryResponse(resp.File)
@@ -1395,7 +1395,7 @@ func (a *FeishuAdapter) downloadResourceAs(ctx context.Context, messageID, fileK
 	r := wrapResp(resp)
 	if !responseSucceeded(r) {
 		pkgLog().Debug(fmt.Sprintf("[Feishu] Resource download failed for %s/%s via type=%s: %s %s", messageID, fileKey, requestType,
-			pyrepr.Str(respCode(r)), respMsg(r, "request failed")))
+			anyutil.String(respCode(r)), respMsg(r, "request failed")))
 		return "", "", false
 	}
 	data := readBinaryResponse(resp.File)
@@ -1426,7 +1426,7 @@ func (a *FeishuAdapter) downloadResourceAs(ctx context.Context, messageID, fileK
 			mediaType = "audio/" + firstNonEmpty(strings.TrimLeft(ext, "."), "ogg")
 		}
 	case strings.HasPrefix(mediaType, "video/"):
-		if pypath.Suffix(filename) == "" {
+		if pathutil.Suffix(filename) == "" {
 			filename += ".mp4"
 		}
 		kind = "video"
@@ -1434,7 +1434,7 @@ func (a *FeishuAdapter) downloadResourceAs(ctx context.Context, messageID, fileK
 			return failed()
 		}
 	default:
-		if ext, ok := gateway.DocumentMimeToExt()[mediaType]; ok && pypath.Suffix(filename) == "" {
+		if ext, ok := gateway.DocumentMimeToExt()[mediaType]; ok && pathutil.Suffix(filename) == "" {
 			filename += ext
 		}
 		kind = "document"
@@ -1451,11 +1451,11 @@ func (a *FeishuAdapter) downloadResourceAs(ctx context.Context, messageID, fileK
 
 // Allowed extension of the file name, else of the content type, else the default
 func guessExtension(filename, contentType, def string, allowed map[string]bool) string {
-	ext := strings.ToLower(pypath.Suffix(filename))
+	ext := strings.ToLower(pathutil.Suffix(filename))
 	if allowed[ext] {
 		return ext
 	}
-	guessed := pymimetypes.GuessExtension(normalizeMediaType(contentType, ""), true)
+	guessed := mimeutil.ExtensionByType(normalizeMediaType(contentType, ""))
 	if allowed[guessed] {
 		return guessed
 	}
@@ -1473,11 +1473,11 @@ func normalizeMediaType(contentType, def string) string {
 
 // Supported document type of a file name, its guessed type, or octet stream
 func guessDocumentMediaType(filename string) string {
-	ext := strings.ToLower(pypath.Suffix(filename))
+	ext := strings.ToLower(pathutil.Suffix(filename))
 	if t, ok := mediacache.SupportedDocumentTypes[ext]; ok {
 		return t
 	}
-	if t, _, _ := pymimetypes.GuessType(filename, true); t != "" {
+	if t := mimeutil.TypeByName(filename); t != "" {
 		return t
 	}
 	return "application/octet-stream"
@@ -1496,10 +1496,10 @@ func displayNameFromCachedPath(path string) string {
 
 // Media type of a file name from its guessed type or its known media extension
 func guessMediaTypeFromFilename(filename string) string {
-	if t, _, _ := pymimetypes.GuessType(filename, true); t != "" {
-		return strings.ToLower(t)
+	if t := mimeutil.TypeByName(filename); t != "" {
+		return t
 	}
-	ext := strings.ToLower(pypath.Suffix(filename))
+	ext := strings.ToLower(pathutil.Suffix(filename))
 	switch {
 	case videoExtensions[ext]:
 		return "video/" + strings.TrimLeft(ext, ".")
@@ -1657,12 +1657,12 @@ func (a *FeishuAdapter) tenantGetRaw(ctx context.Context, uri string, queries []
 }
 
 // Names of bots by open id from the basic batch API, nil on failure
-func (a *FeishuAdapter) fetchBotNames(ctx context.Context, botIDs []string) *pydict.Dict[string, string] {
+func (a *FeishuAdapter) fetchBotNames(ctx context.Context, botIDs []string) *orderedutil.Map[string, string] {
 	if a.currentClient() == nil || len(botIDs) == 0 {
 		return nil
 	}
-	fail := func() *pydict.Dict[string, string] {
-		pkgLog().Debug(fmt.Sprintf("[Feishu] Failed to fetch bot names for %s", pyrepr.Repr(botIDs)))
+	fail := func() *orderedutil.Map[string, string] {
+		pkgLog().Debug(fmt.Sprintf("[Feishu] Failed to fetch bot names for %s", anyutil.Quote(botIDs)))
 		return nil
 	}
 	queries := make([][2]string, 0, len(botIDs))
@@ -1676,11 +1676,11 @@ func (a *FeishuAdapter) fetchBotNames(ctx context.Context, botIDs []string) *pyd
 	if len(content) == 0 {
 		return nil
 	}
-	payload, err := pyjson.Loads(string(content))
+	payload, err := jsonutil.Decode(string(content))
 	if err != nil {
 		return fail()
 	}
-	root, ok := payload.(*pyjson.Object)
+	root, ok := payload.(*jsonutil.Object)
 	if !ok {
 		return fail()
 	}
@@ -1688,25 +1688,25 @@ func (a *FeishuAdapter) fetchBotNames(ctx context.Context, botIDs []string) *pyd
 		return nil
 	}
 	data := dget(root, "data")
-	if !pyrepr.Truthy(data) {
-		data = pyjson.NewObject()
+	if !anyutil.IsTrue(data) {
+		data = jsonutil.NewObject()
 	}
-	dataObj, ok := data.(*pyjson.Object)
+	dataObj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return fail()
 	}
 	bots := dget(dataObj, "bots")
-	if !pyrepr.Truthy(bots) {
-		bots = pyjson.NewObject()
+	if !anyutil.IsTrue(bots) {
+		bots = jsonutil.NewObject()
 	}
-	botsObj, ok := bots.(*pyjson.Object)
+	botsObj, ok := bots.(*jsonutil.Object)
 	if !ok {
 		return fail()
 	}
-	out := pydict.New[string, string]()
-	for _, oid := range botsObj.Keys {
+	out := orderedutil.NewMap[string, string]()
+	for _, oid := range botsObj.Keys() {
 		info, _ := botsObj.Get(oid)
-		infoObj, ok := info.(*pyjson.Object)
+		infoObj, ok := info.(*jsonutil.Object)
 		if !ok {
 			return fail()
 		}
@@ -1742,7 +1742,7 @@ func (a *FeishuAdapter) fetchMessageText(ctx context.Context, messageID string) 
 	}
 	r := wrapResp(resp)
 	if !responseSucceeded(r) {
-		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to fetch parent message %s: [%s] %s", messageID, pyrepr.Str(respCode(r)), respMsg(r, "message lookup failed")))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to fetch parent message %s: [%s] %s", messageID, anyutil.String(respCode(r)), respMsg(r, "message lookup failed")))
 		return nil
 	}
 	var msgType, rawContent string
@@ -1774,7 +1774,7 @@ func (a *FeishuAdapter) extractTextFromRawContent(msgType, rawContent string, me
 		t := n.TextContent
 		return &t
 	}
-	label := strings.TrimSpace(pyrepr.Str(n.Metadata["placeholder_text"]))
+	label := strings.TrimSpace(anyutil.String(n.Metadata["placeholder_text"]))
 	if label == "" {
 		return nil
 	}
@@ -2011,12 +2011,12 @@ func (a *FeishuAdapter) hydrateBotIdentity(ctx context.Context) {
 
 // Applies the open id and name of a bot info payload over stale env values
 func (a *FeishuAdapter) applyBotInfo(content []byte) {
-	payload, err := pyjson.Loads(string(content))
+	payload, err := jsonutil.Decode(string(content))
 	if err != nil {
 		pkgLog().Debug("[Feishu] /bot/v3/info probe failed during hydration")
 		return
 	}
-	root, ok := payload.(*pyjson.Object)
+	root, ok := payload.(*jsonutil.Object)
 	if !ok {
 		pkgLog().Debug("[Feishu] /bot/v3/info probe failed during hydration")
 		return

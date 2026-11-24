@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type auxRejectedRoute struct {
@@ -36,13 +36,13 @@ func auxRouteKey(provider, baseURL string) (string, error) {
 // Response format type carried in extra_body or top level kwargs, nil when absent
 func auxResponseFormatType(kwargs map[string]any) any {
 	var responseFormat any
-	if extraBody, ok := pyjson.Dict(kwargs["extra_body"]); ok {
+	if extraBody, ok := jsonutil.AsMap(kwargs["extra_body"]); ok {
 		responseFormat = extraBody["response_format"]
 	}
 	if responseFormat == nil {
 		responseFormat = kwargs["response_format"]
 	}
-	if m, ok := pyjson.Dict(responseFormat); ok {
+	if m, ok := jsonutil.AsMap(responseFormat); ok {
 		return m["type"]
 	}
 	return nil
@@ -93,7 +93,7 @@ func IsCapabilityRejection(err error) bool {
 // RememberStructuredOutputRejection records the rejected response format type when the error names the capability
 func RememberStructuredOutputRejection(provider, baseURL string, rejectedKwargs map[string]any, err error) error {
 	formatType := auxResponseFormatType(rejectedKwargs)
-	if !pyrepr.Truthy(formatType) || !IsCapabilityRejection(err) {
+	if !anyutil.IsTrue(formatType) || !IsCapabilityRejection(err) {
 		return nil
 	}
 	route, rerr := auxRouteKey(provider, baseURL)
@@ -101,8 +101,8 @@ func RememberStructuredOutputRejection(provider, baseURL string, rejectedKwargs 
 		return rerr
 	}
 	model := ""
-	if v := rejectedKwargs["model"]; pyrepr.Truthy(v) {
-		model = pyrepr.Str(v)
+	if v := rejectedKwargs["model"]; anyutil.IsTrue(v) {
+		model = anyutil.String(v)
 	}
 	if herr := auxHashable(formatType); herr != nil {
 		return herr
@@ -115,7 +115,7 @@ func RememberStructuredOutputRejection(provider, baseURL string, rejectedKwargs 
 
 // Profile or memo verdict on the response format type with the route key the memo uses
 func auxResponseFormatKnownUnsupported(ctx context.Context, provider, baseURL, model string, formatType any) (bool, string, error) {
-	if !pyrepr.Truthy(formatType) {
+	if !anyutil.IsTrue(formatType) {
 		return false, "", nil
 	}
 	known := false
@@ -138,9 +138,9 @@ func auxResponseFormatKnownUnsupported(ctx context.Context, provider, baseURL, m
 }
 
 // WithoutUnsupportedResponseFormat drops a response_format the route and model are known to reject
-func WithoutUnsupportedResponseFormat(ctx context.Context, extraBody *pyjson.Object, provider, baseURL, model, task string) (*pyjson.Object, error) {
+func WithoutUnsupportedResponseFormat(ctx context.Context, extraBody *jsonutil.Object, provider, baseURL, model, task string) (*jsonutil.Object, error) {
 	var formatType any
-	if m, ok := pyjson.Dict(extraBody.Vals["response_format"]); ok {
+	if m, ok := jsonutil.AsMap(extraBody.Value("response_format")); ok {
 		formatType = m["type"]
 	}
 	known, route, err := auxResponseFormatKnownUnsupported(ctx, provider, baseURL, model, formatType)
@@ -161,8 +161,8 @@ func WithoutUnsupportedResponseFormat(ctx context.Context, extraBody *pyjson.Obj
 		modelLabel = "model"
 	}
 	pkgLog().Info(fmt.Sprintf("Auxiliary %s: %s (%s) does not accept response_format %s; sending without it "+
-		"(schema enforcement degrades to prompt compliance)", label, routeLabel, modelLabel, pyrepr.Str(formatType)))
-	out := extraBody.Copy()
+		"(schema enforcement degrades to prompt compliance)", label, routeLabel, modelLabel, anyutil.String(formatType)))
+	out := extraBody.Clone()
 	out.Delete("response_format")
 	return out, nil
 }
@@ -176,9 +176,9 @@ func auxWithoutStructuredOutputFormat(kwargs map[string]any) map[string]any {
 	popped, had := retry["response_format"]
 	delete(retry, "response_format")
 	changed := had && popped != nil
-	if extraBody, ok := pyjson.AsObject(retry["extra_body"]); ok {
+	if extraBody, ok := jsonutil.AsObject(retry["extra_body"]); ok {
 		if _, has := extraBody.Get("response_format"); has {
-			remaining := extraBody.Copy()
+			remaining := extraBody.Clone()
 			remaining.Delete("response_format")
 			if remaining.Len() > 0 {
 				retry["extra_body"] = remaining

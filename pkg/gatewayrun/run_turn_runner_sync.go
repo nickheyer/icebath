@@ -10,11 +10,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Executor thread body of the turn under the session policy, the refused result when the policy cannot bind
@@ -58,15 +58,15 @@ func (t *TurnRunner) runSync(ctx context.Context) (map[string]any, error) {
 		if len(cliFields) > 0 {
 			merged := maps.Clone(result)
 			maps.Copy(merged, cliFields)
-			if pyrepr.Truthy(result["response_previewed"]) {
+			if anyutil.IsTrue(result["response_previewed"]) {
 				merged["response_previewed"] = true
 			}
-			captured.Set("result", pyjson.Ordered(merged))
+			captured.Set("result", jsonutil.Ordered(merged))
 			t.ctx.capturedResult = nil
 		} else {
-			shared := pyjson.Ordered(result)
+			shared := jsonutil.Ordered(result)
 			captured.Set("result", shared)
-			t.ctx.capturedResult, _ = shared.(*pyjson.Object)
+			t.ctx.capturedResult, _ = shared.(*jsonutil.Object)
 		}
 	}
 	return result, nil
@@ -131,7 +131,7 @@ func (t *TurnRunner) resolveTurnRuntime(ctx context.Context, policy *gateway.Loc
 	if err != nil {
 		return "", nil, "", err
 	}
-	pkgLog().Debug(fmt.Sprintf("run_agent resolved: model=%s provider=%s session=%s", model, pyrepr.Str(runtimeKwargs["provider"]), tc.sessionKey))
+	pkgLog().Debug(fmt.Sprintf("run_agent resolved: model=%s provider=%s session=%s", model, anyutil.String(runtimeKwargs["provider"]), tc.sessionKey))
 	return model, runtimeKwargs, pendingFallbackNotice, nil
 }
 
@@ -160,12 +160,12 @@ func (t *TurnRunner) resolveTurnEffort(ctx context.Context, policy *gateway.Loca
 	}
 	runner.serviceTier = tier
 	if api := gateway.APIExecution(ctx); api != nil {
-		settings, _ := api.GetOr("settings", nil).(map[string]any)
+		settings, _ := api.ValueOr("settings", nil).(map[string]any)
 		var modelOptions any
 		if settings != nil {
 			modelOptions = settings["model_options"]
-		} else if obj, ok := api.GetOr("settings", nil).(interface{ GetOr(string, any) any }); ok {
-			modelOptions = obj.GetOr("model_options", nil)
+		} else if obj, ok := api.ValueOr("settings", nil).(interface{ ValueOr(string, any) any }); ok {
+			modelOptions = obj.ValueOr("model_options", nil)
 		}
 		if requested := gateway.APIRequestReasoningConfig(modelOptions); requested != nil {
 			reasoningConfig = requested
@@ -352,7 +352,7 @@ func (t *TurnRunner) projectTurnResult(ctx context.Context, a *agent.AIAgent, ru
 	previewed := resultGet(result, "response_previewed", false)
 	viewerMeta := map[string]any{}
 	if localSinks != nil {
-		previewed = pyrepr.Truthy(previewed) || (finalResponse != "" && a.InterimTextWasDelivered(finalResponse))
+		previewed = anyutil.IsTrue(previewed) || (finalResponse != "" && a.InterimTextWasDelivered(finalResponse))
 		viewerMeta["local_viewer"] = true
 		if block, ok := result["billing_block"].(map[string]any); ok {
 			viewerMeta["billing_block"] = block
@@ -364,7 +364,7 @@ func (t *TurnRunner) projectTurnResult(ctx context.Context, a *agent.AIAgent, ru
 	if finalResponse == "" {
 		finalResponse = normalizeEmptyAgentResponse(ctx, result, "", len(agentHistory))
 		finalResponse = sanitizeGatewayFinalResponse(ctx, tc.source.Platform, finalResponse)
-		if finalResponse == "" && pyrepr.Truthy(result["error"]) {
+		if finalResponse == "" && anyutil.IsTrue(result["error"]) {
 			finalResponse = i18n.T(ctx, "gateway.shared.warn_passthrough", "", map[string]any{"error": result["error"]})
 		}
 		out := map[string]any{"final_response": finalResponse}
@@ -373,7 +373,7 @@ func (t *TurnRunner) projectTurnResult(ctx context.Context, a *agent.AIAgent, ru
 			maps.Copy(out, viewerMeta)
 			out["last_reasoning"] = result["last_reasoning"]
 			out["response_previewed"] = previewed
-			out["response_transformed"] = pyrepr.Truthy(result["response_transformed"])
+			out["response_transformed"] = anyutil.IsTrue(result["response_transformed"])
 		}
 		return out, nil
 	}

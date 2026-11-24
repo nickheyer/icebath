@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Slack Web API base, replaced by tests with a local server
@@ -48,8 +48,8 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL
 	}
 	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
 	defer client.CloseIdleConnections()
-	postAPI := func(method string, payload *pyjson.Object) (*pyjson.Object, error) {
-		body, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+	postAPI := func(method string, payload *jsonutil.Object) (*jsonutil.Object, error) {
+		body, err := jsonutil.Encode(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -58,7 +58,7 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL
 		if err != nil {
 			return nil, err
 		}
-		req.Header.Set("Authorization", "Bearer "+pyrepr.Str(token))
+		req.Header.Set("Authorization", "Bearer "+anyutil.String(token))
 		req.Header.Set("Content-Type", "application/json")
 		resp, err := client.Do(req)
 		if err != nil {
@@ -72,17 +72,17 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL
 		if mt, _, _ := mime.ParseMediaType(resp.Header.Get("Content-Type")); mt != "application/json" {
 			return nil, fmt.Errorf("%d, message='Attempt to decode JSON with unexpected mimetype: %s', url='%s'", resp.StatusCode, mt, url)
 		}
-		v, err := pyjson.LoadsBytes(raw)
+		v, err := jsonutil.Decode(raw)
 		if err != nil {
 			return nil, err
 		}
-		obj, ok := v.(*pyjson.Object)
+		obj, ok := v.(*jsonutil.Object)
 		if !ok || obj == nil {
 			return nil, fmt.Errorf("the Slack reply must be a JSON object, got %s", errchain.Kind(v))
 		}
 		return obj, nil
 	}
-	get := func(o *pyjson.Object, k string, def any) any {
+	get := func(o *jsonutil.Object, k string, def any) any {
 		if v, ok := o.Get(k); ok {
 			return v
 		}
@@ -91,19 +91,19 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL
 	if strings.HasPrefix(chatID, "user_name:") {
 		name := chatID[len("user_name:"):]
 		query := strings.ToLower(strings.TrimLeft(strings.TrimSpace(name), "@"))
-		var matches []*pyjson.Object
+		var matches []*jsonutil.Object
 		var cursor any
 		for page := 0; page < 20; page++ {
-			payload := pyjson.ObjectOf("limit", int64(200))
-			if pyrepr.Truthy(cursor) {
+			payload := jsonutil.ObjectOf("limit", int64(200))
+			if anyutil.IsTrue(cursor) {
 				payload.Set("cursor", cursor)
 			}
 			data, err := postAPI("users.list", payload)
 			if err != nil {
 				return "", nil, err
 			}
-			if !pyrepr.Truthy(get(data, "ok", nil)) {
-				return "", sendError(fmt.Sprintf("Slack users.list error: %s", pyrepr.Str(get(data, "error", "unknown")))), nil
+			if !anyutil.IsTrue(get(data, "ok", nil)) {
+				return "", sendError(fmt.Sprintf("Slack users.list error: %s", anyutil.String(get(data, "error", "unknown")))), nil
 			}
 			members := get(data, "members", []any{})
 			list, ok := members.([]any)
@@ -111,27 +111,27 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL
 				return "", nil, fmt.Errorf("the Slack users.list members must be a list, got %s", errchain.Kind(members))
 			}
 			for _, item := range list {
-				m, ok := item.(*pyjson.Object)
+				m, ok := item.(*jsonutil.Object)
 				if !ok || m == nil {
 					return "", nil, fmt.Errorf("a Slack users.list member must be a mapping, got %s", errchain.Kind(item))
 				}
-				if pyrepr.Truthy(get(m, "deleted", nil)) || pyrepr.Truthy(get(m, "is_bot", nil)) {
+				if anyutil.IsTrue(get(m, "deleted", nil)) || anyutil.IsTrue(get(m, "is_bot", nil)) {
 					continue
 				}
-				if strings.ToLower(strings.TrimSpace(pyrepr.Str(get(m, "name", "")))) == query {
+				if strings.ToLower(strings.TrimSpace(anyutil.String(get(m, "name", "")))) == query {
 					matches = append(matches, m)
 				}
 			}
 			meta := get(data, "response_metadata", nil)
 			cursor = nil
-			if pyrepr.Truthy(meta) {
-				mo, ok := meta.(*pyjson.Object)
+			if anyutil.IsTrue(meta) {
+				mo, ok := meta.(*jsonutil.Object)
 				if !ok {
 					return "", nil, fmt.Errorf("the Slack users.list response_metadata must be a mapping, got %s", errchain.Kind(meta))
 				}
 				cursor = get(mo, "next_cursor", nil)
 			}
-			if !pyrepr.Truthy(cursor) {
+			if !anyutil.IsTrue(cursor) {
 				break
 			}
 		}
@@ -141,26 +141,26 @@ func resolveSlackUserTargetOnce(ctx context.Context, token any, chatID, proxyURL
 		if len(matches) > 1 {
 			return "", sendError(fmt.Sprintf("Slack user '@%s' matched multiple Slack users. Use a Slack user ID instead.", name)), nil
 		}
-		chatID = "user:" + pyrepr.Str(get(matches[0], "id", nil))
+		chatID = "user:" + anyutil.String(get(matches[0], "id", nil))
 	}
-	opened, err := postAPI("conversations.open", pyjson.ObjectOf("users", chatID[len("user:"):]))
+	opened, err := postAPI("conversations.open", jsonutil.ObjectOf("users", chatID[len("user:"):]))
 	if err != nil {
 		return "", nil, err
 	}
-	if !pyrepr.Truthy(get(opened, "ok", nil)) {
-		return "", sendError(fmt.Sprintf("Slack conversations.open error: %s. Check bot permissions (im:write).", pyrepr.Str(get(opened, "error", "unknown")))), nil
+	if !anyutil.IsTrue(get(opened, "ok", nil)) {
+		return "", sendError(fmt.Sprintf("Slack conversations.open error: %s. Check bot permissions (im:write).", anyutil.String(get(opened, "error", "unknown")))), nil
 	}
 	channel := get(opened, "channel", nil)
 	var dmID any
-	if pyrepr.Truthy(channel) {
-		co, ok := channel.(*pyjson.Object)
+	if anyutil.IsTrue(channel) {
+		co, ok := channel.(*jsonutil.Object)
 		if !ok {
 			return "", nil, fmt.Errorf("the Slack conversations.open channel must be a mapping, got %s", errchain.Kind(channel))
 		}
 		dmID = get(co, "id", nil)
 	}
-	if !pyrepr.Truthy(dmID) {
+	if !anyutil.IsTrue(dmID) {
 		return "", sendError("Slack conversations.open did not return a DM channel ID"), nil
 	}
-	return pyrepr.Str(dmID), nil, nil
+	return anyutil.String(dmID), nil, nil
 }

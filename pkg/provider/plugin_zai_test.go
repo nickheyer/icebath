@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -15,7 +15,7 @@ var (
 func zaiExtras(t *testing.T, p Profile, r *Reasoning, model string) (map[string]any, map[string]any) {
 	t.Helper()
 	extra, top := p.BuildAPIKwargsExtras(r, map[string]any{"model": model})
-	plain, _ := pyjson.Plain(extra).(map[string]any)
+	plain, _ := jsonutil.Plain(extra).(map[string]any)
 	return plain, top
 }
 

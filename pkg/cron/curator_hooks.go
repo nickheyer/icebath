@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Installs the cron skill reference reader, rewriter and locked job updater the curator calls
@@ -16,7 +16,7 @@ func init() {
 	memory.CuratorHooks.ReferencedSkillNames = func(ctx context.Context, h string) (map[string]bool, error) {
 		return openCronStore(h, time.Now).referencedSkillNames(ctx), nil
 	}
-	memory.CuratorHooks.RewriteSkillRefs = func(ctx context.Context, h string, consolidated *pyjson.Object, pruned []string) (memory.CuratorCronRewriteReport, error) {
+	memory.CuratorHooks.RewriteSkillRefs = func(ctx context.Context, h string, consolidated *jsonutil.Object, pruned []string) (memory.CuratorCronRewriteReport, error) {
 		report, err := openCronStore(h, time.Now).rewriteSkillRefs(ctx, consolidated, pruned)
 		if err != nil {
 			return memory.CuratorCronRewriteReport{}, err
@@ -54,7 +54,7 @@ func (s *Store) updateRawJobs(ctx context.Context, update func(jobs []any) (bool
 		kept := map[string]bool{}
 		next := make([]*Job, 0, len(raw))
 		for _, item := range raw {
-			text, err := pyjson.Dumps(item, pyjson.EnsureASCII(false))
+			text, err := jsonutil.Encode(item)
 			if err != nil {
 				return err
 			}
@@ -62,8 +62,8 @@ func (s *Store) updateRawJobs(ctx context.Context, update func(jobs []any) (bool
 			if err := json.Unmarshal([]byte(text), &job); err != nil {
 				return fmt.Errorf("invalid cron job record: %w", err)
 			}
-			if obj, ok := item.(*pyjson.Object); ok {
-				job.keyOrder = append([]string(nil), obj.Keys...)
+			if obj, ok := item.(*jsonutil.Object); ok {
+				job.keyOrder = append([]string(nil), obj.Keys()...)
 				job.onlyStoredKeys = true
 			}
 			kept[job.ID] = true
@@ -85,18 +85,18 @@ func storedJobObject(job *Job) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := pyjson.LoadsBytes(data)
+	v, err := jsonutil.Decode(data)
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok || job.keyOrder == nil {
 		return v, nil
 	}
-	out := pyjson.NewObject()
-	for _, k := range obj.Keys {
+	out := jsonutil.NewObject()
+	for _, k := range obj.Keys() {
 		if containsString(job.keyOrder, k) {
-			out.Set(k, obj.Vals[k])
+			out.Set(k, obj.Value(k))
 		}
 	}
 	return out, nil

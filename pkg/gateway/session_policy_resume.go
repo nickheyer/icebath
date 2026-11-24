@@ -5,9 +5,9 @@ import (
 	"crypto/subtle"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Records consent to the profile's configured shell hooks for an accept hooks launch that reads the profile
@@ -64,7 +64,7 @@ func rebindLaunchKey(ctx context.Context, a *SessionAuthority, session SessionRe
 	if !hasPolicy {
 		return &pyKeyError{"policy"}
 	}
-	policy, err := restorePolicy(pyjson.Plain(stored))
+	policy, err := restorePolicy(jsonutil.Plain(stored))
 	if err != nil {
 		return err
 	}

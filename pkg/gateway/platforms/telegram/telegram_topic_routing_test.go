@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type fakeTopicHost struct{ allowed string }
@@ -13,7 +13,7 @@ type fakeTopicHost struct{ allowed string }
 func (fakeTopicHost) Name() string                { return "telegram" }
 func (fakeTopicHost) ChatTypeStr(chat any) string { return chat.(map[string]any)["type"].(string) }
 func (fakeTopicHost) ChatIDStr(message *TopicMessage) string {
-	return pyrepr.Str(message.Chat.(map[string]any)["id"])
+	return anyutil.String(message.Chat.(map[string]any)["id"])
 }
 func (h fakeTopicHost) IsUserAuthorizedFromMessage(message *TopicMessage) bool {
 	return creatorKey(message) == h.allowed
@@ -34,7 +34,7 @@ func topicMsg(messageID int64, sent float64, threadID any, created bool, userID,
 func topicThread(r *TopicRouting, host TopicRoutingHost, m *TopicMessage) *string {
 	var tid *string
 	if m.MessageThreadID != nil {
-		s := pyrepr.Str(m.MessageThreadID)
+		s := anyutil.String(m.MessageThreadID)
 		tid = &s
 	}
 	return r.AdoptCreatedTopicThread(host, m, "dm", tid)

@@ -11,7 +11,7 @@ import (
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 //go:embed builtin_skins.json
@@ -85,12 +85,12 @@ func (s *SkinConfig) GetSpinnerWings() [][2]string {
 // Ordered decode of a JSON object into maps whose key order MappingKeys reports
 func orderedFromJSON(v any) any {
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		m := make(map[string]any, x.Len())
-		for _, k := range x.Keys {
-			m[k] = orderedFromJSON(x.Vals[k])
+		for _, k := range x.Keys() {
+			m[k] = orderedFromJSON(x.Value(k))
 		}
-		SetMappingKeys(m, x.Keys)
+		SetMappingKeys(m, x.Keys())
 		return m
 	case []any:
 		out := make([]any, len(x))
@@ -120,7 +120,7 @@ type skinEntry struct {
 // Built in skin definitions by name and their definition order
 func builtinSkinTable() (map[string]any, []string) {
 	builtinSkinsOnce.Do(func() {
-		doc, err := pyjson.Loads(builtinSkinsJSON)
+		doc, err := jsonutil.Decode(builtinSkinsJSON)
 		if err != nil {
 			panic(err)
 		}

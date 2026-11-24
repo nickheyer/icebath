@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Sanitized POST request view of the API kwargs without the transport keys
@@ -28,7 +28,7 @@ func (a *AIAgent) usageSummaryForAPIRequestHook(response any) map[string]any {
 		return nil
 	}
 	rawUsage := state.ToolCallField(response, "usage")
-	if !pyrepr.Truthy(rawUsage) {
+	if !anyutil.IsTrue(rawUsage) {
 		return nil
 	}
 	cu := provider.NormalizeUsage(rawUsage, a.provider, a.apiMode)

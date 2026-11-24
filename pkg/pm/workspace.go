@@ -16,12 +16,13 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var memberExclude = map[string]bool{".git": true, ".venv": true, "venv": true, "node_modules": true, "__pycache__": true}
@@ -263,7 +264,7 @@ func copyCoreInputs(source, destination string) error {
 		files[r] = true
 	case *OrderedObject:
 		if file, ok := r.Get("file"); ok {
-			files[pyrepr.Str(file)] = true
+			files[anyutil.String(file)] = true
 		}
 	}
 	licenseFiles, err := tomlGet(project, "license-files", []any{})
@@ -275,7 +276,7 @@ func copyCoreInputs(source, destination string) error {
 		return err
 	}
 	for _, pattern := range licensePatterns {
-		matches, err := pypath.Glob(source, pyrepr.Str(pattern))
+		matches, err := pathutil.Glob(source, anyutil.String(pattern))
 		if err != nil {
 			return err
 		}
@@ -285,7 +286,7 @@ func copyCoreInputs(source, destination string) error {
 			}
 		}
 	}
-	pyFiles, err := pypath.Glob(source, "*.py")
+	pyFiles, err := pathutil.Glob(source, "*.py")
 	if err != nil {
 		return err
 	}
@@ -486,7 +487,7 @@ func generatePyproject(ctx context.Context, pluginDirs []MemberDir, root, source
 		}
 		core := NewOrderedObject()
 		core.Set("workspace", true)
-		sources.Set(pyrepr.Str(name), core)
+		sources.Set(anyutil.String(name), core)
 		if err := solveOnlyFor(uvPolicy, target); err != nil {
 			return err
 		}
@@ -563,7 +564,7 @@ func targetEnvironment(ctx context.Context, python string) (map[string]string, e
 
 // Narrows tool.uv.environments to the platform and machine of the installing interpreter
 func solveOnlyFor(uvPolicy *OrderedObject, target map[string]string) error {
-	host := fmt.Sprintf("sys_platform == %s and platform_machine == %s", pyrepr.StrRepr(target["sys_platform"]), pyrepr.StrRepr(target["platform_machine"]))
+	host := fmt.Sprintf("sys_platform == %s and platform_machine == %s", strconv.Quote(target["sys_platform"]), strconv.Quote(target["platform_machine"]))
 	var narrowed []any
 	if existing, ok := uvPolicy.Get("environments"); ok && tomlTruthy(existing) {
 		entries, err := pyIterate(existing)
@@ -571,7 +572,7 @@ func solveOnlyFor(uvPolicy *OrderedObject, target map[string]string) error {
 			return err
 		}
 		for _, entry := range entries {
-			narrowed = append(narrowed, fmt.Sprintf("(%s) and %s", pyrepr.Str(entry), host))
+			narrowed = append(narrowed, fmt.Sprintf("(%s) and %s", anyutil.String(entry), host))
 		}
 	}
 	if len(narrowed) == 0 {
@@ -762,7 +763,7 @@ func selectedMemberExtras(document *OrderedObject, extras []string, target marke
 	if err != nil {
 		return nil, nil, err
 	}
-	own := CanonicalizeName(pyrepr.Str(name))
+	own := CanonicalizeName(anyutil.String(name))
 	selected := map[string]bool{}
 	for _, extra := range extras {
 		if _, ok := declared[ExtraKey(extra)]; ok {
@@ -851,7 +852,7 @@ func pruneMemberSources(settings any, installed map[string]bool) bool {
 			return false
 		}
 		extra, has := row.Get("extra")
-		return !has || installed[ExtraKey(pyrepr.Str(extra))]
+		return !has || installed[ExtraKey(anyutil.String(extra))]
 	}
 	pruned := NewOrderedObject()
 	changed := false
@@ -899,7 +900,7 @@ func renameVirtualMember(document *OrderedObject, name string) error {
 	if declared == nil {
 		declared = ""
 	}
-	own := CanonicalizeName(pyrepr.Str(declared))
+	own := CanonicalizeName(anyutil.String(declared))
 	project.Set("name", name)
 	if own == "" {
 		return nil
@@ -980,7 +981,7 @@ func renameVirtualMember(document *OrderedObject, name string) error {
 			if pkg == nil {
 				pkg = ""
 			}
-			if CanonicalizeName(pyrepr.Str(pkg)) == own {
+			if CanonicalizeName(anyutil.String(pkg)) == own {
 				row.Set("package", name)
 			}
 		}
@@ -1074,7 +1075,7 @@ func runtimeMemberMetadata(document *OrderedObject, extras []string, target mark
 					if _, isGroup := row.Get("group"); isGroup {
 						continue
 					}
-					if extra, hasExtra := row.Get("extra"); hasExtra && !keptExtras[ExtraKey(pyrepr.Str(extra))] {
+					if extra, hasExtra := row.Get("extra"); hasExtra && !keptExtras[ExtraKey(anyutil.String(extra))] {
 						continue
 					}
 				}

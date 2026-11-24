@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDrainProgressReporterPrintsHolderAndConfigKnob(t *testing.T) {
@@ -114,21 +114,21 @@ func testCronJobs(ctx context.Context, h string) ([][2]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc, err := pyjson.Loads(string(raw))
+	doc, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil, err
 	}
 	list, _ := doc.([]any)
-	if obj, ok := doc.(*pyjson.Object); ok {
+	if obj, ok := doc.(*jsonutil.Object); ok {
 		jobs, _ := obj.Get("jobs")
 		list, _ = jobs.([]any)
 	}
 	var pairs [][2]string
 	for _, j := range list {
-		if obj, ok := j.(*pyjson.Object); ok {
+		if obj, ok := j.(*jsonutil.Object); ok {
 			id, _ := obj.Get("id")
 			name, _ := obj.Get("name")
-			pairs = append(pairs, [2]string{pyrepr.Str(id), drainOr(name, "")})
+			pairs = append(pairs, [2]string{anyutil.String(id), drainOr(name, "")})
 		}
 	}
 	return pairs, nil

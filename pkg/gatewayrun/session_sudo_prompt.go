@@ -5,8 +5,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds the masked sudo prompt waits for a viewer, the main sidecar deadline
@@ -17,7 +17,7 @@ func askSudo(events *gateway.SessionEvents, sessionID, command string, cancelled
 	if cancelled == nil {
 		cancelled = func() bool { return false }
 	}
-	return gateway.AskViewer(events, sessionID, "sudo", pyjson.ObjectOf("command", command), cancelled, &timeout)
+	return gateway.AskViewer(events, sessionID, "sudo", jsonutil.ObjectOf("command", command), cancelled, &timeout)
 }
 
 // Installs the viewer sudo prompt on this thread for a local viewer turn and returns its restore

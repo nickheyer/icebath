@@ -13,13 +13,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -154,7 +153,7 @@ func readUTF8Sig(t *testing.T, path string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -162,18 +161,18 @@ func readUTF8Sig(t *testing.T, path string) string {
 }
 
 // Text of an entry field, a parent copy read as the parent sees it
-func entryText(e *pyjson.Object, key string) string {
+func entryText(e *jsonutil.Object, key string) string {
 	v, _ := e.Get(key)
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // test_delegate_summary_budget.py test_small_summaries_pass_through_untouched
 func TestSmallSummariesPassThroughUntouched(t *testing.T) {
 	delegationTestEnv(t, 0, false)
 	parent := budgetParent(200_000, 10_000, 8_000, 10_000)
-	results := []*pyjson.Object{
-		pyjson.ObjectOf("task_index", 0, "summary", "short result A", "status", "completed"),
-		pyjson.ObjectOf("task_index", 1, "summary", "short result B", "status", "completed"),
+	results := []*jsonutil.Object{
+		jsonutil.ObjectOf("task_index", 0, "summary", "short result A", "status", "completed"),
+		jsonutil.ObjectOf("task_index", 1, "summary", "short result B", "status", "completed"),
 	}
 	applySummaryBudget(context.Background(), results, parent)
 	if entryText(results[0], "summary") != "short result A" {
@@ -191,15 +190,15 @@ func TestBatchOverflowTrimmedAndSpilledLosslessly(t *testing.T) {
 	delegationTestEnv(t, 0, false)
 	big := "HEAD_MARKER\n" + strings.Repeat("X", 50_000) + "\nTAIL_MARKER"
 	parent := budgetParent(131_000, 120_000, 8_000, 120_000)
-	results := make([]*pyjson.Object, 5)
+	results := make([]*jsonutil.Object, 5)
 	for i := range results {
-		results[i] = pyjson.ObjectOf("task_index", i, "summary", big, "status", "completed")
+		results[i] = jsonutil.ObjectOf("task_index", i, "summary", big, "status", "completed")
 	}
 	applySummaryBudget(context.Background(), results, parent)
 	for _, r := range results {
 		summary := entryText(r, "summary")
 		if v, _ := r.Get("summary_truncated"); v != true {
-			t.Fatalf("not truncated %v", r.Keys)
+			t.Fatalf("not truncated %v", r.Keys())
 		}
 		if utf8.RuneCountInString(summary) >= utf8.RuneCountInString(big) || !strings.Contains(summary, "HEAD_MARKER") || !strings.Contains(summary, "TAIL_MARKER") {
 			t.Fatalf("head and tail window %q", summary)
@@ -262,7 +261,7 @@ func TestTruncationFootersRenderTheSandboxVisibleCachePath(t *testing.T) {
 	body := strings.Join(rows, "\n")
 	webOut, _ := tools.TruncateWithFooter(env, body, "https://example.com/doc", 3000)
 	delegOut, _ := trimSummaryWithFooter(context.Background(), env, body, 3000, 0)
-	for _, tc := range []struct{ text, subdir string }{{webOut, "cache/web"}, {pyrepr.Str(delegOut), "cache/delegation"}} {
+	for _, tc := range []struct{ text, subdir string }{{webOut, "cache/web"}, {anyutil.String(delegOut), "cache/delegation"}} {
 		m := delegationFooterPathRe.FindStringSubmatch(tc.text)
 		if m == nil || !strings.HasPrefix(m[1], tools.DefaultContainerBase+"/"+tc.subdir+"/") {
 			t.Fatalf("footer path %v for %s", m, tc.subdir)
@@ -308,7 +307,7 @@ func TestChildResultEventsMemoryHooksAndSpillUseRedactedOutput(t *testing.T) {
 				stop = kw
 				break
 			}
-			if stop == nil || strings.Contains(pyrepr.Str(stop["child_summary"]), text) {
+			if stop == nil || strings.Contains(anyutil.String(stop["child_summary"]), text) {
 				t.Fatalf("subagent_stop %v", stop)
 			}
 			spills := delegationSpills(t, env.Home)
@@ -322,7 +321,7 @@ func TestChildResultEventsMemoryHooksAndSpillUseRedactedOutput(t *testing.T) {
 // test_delegated_output_redaction.py test_redacted_schema_verdict_describes_delivered_summary_without_rerunning_child
 func TestRedactedSchemaVerdictDescribesDeliveredSummaryWithoutRerunningChild(t *testing.T) {
 	env := delegationTestEnv(t, 0, false)
-	answer, _ := pyjson.Dumps(map[string]any{"value": delegatedSecret})
+	answer, _ := jsonutil.Encode(map[string]any{"value": delegatedSecret})
 	child, canned := cannedDelegateChild(t, env, answer)
 	child.delegateOutputSchema = map[string]any{
 		"type": "object", "properties": map[string]any{"value": map[string]any{"const": delegatedSecret}}, "required": []any{"value"},
@@ -331,7 +330,7 @@ func TestRedactedSchemaVerdictDescribesDeliveredSummaryWithoutRerunningChild(t *
 
 	entry := runSingleChild(context.Background(), 0, "produce structured output", child, parent, "", nil, nil)
 
-	text, _ := pyjson.Dumps(entry)
+	text, _ := jsonutil.Encode(entry)
 	if v, _ := entry.Get("schema_valid"); entryText(entry, "status") != "completed" || v != false || strings.Contains(text, delegatedSecret) {
 		t.Fatalf("entry %s", text)
 	}
@@ -356,14 +355,14 @@ func TestStructuredScalarSummaryStaysValidJSON(t *testing.T) {
 	for i, tc := range cases {
 		t.Run(fmt.Sprint(i), func(t *testing.T) {
 			env := delegationTestEnv(t, 0, false)
-			summary, _ := pyjson.Dumps(tc.answer)
+			summary, _ := jsonutil.Encode(tc.answer)
 			child, canned := cannedDelegateChild(t, env, summary)
 			child.delegateOutputSchema = tc.schema
 			parent, _ := redactionParent(t, env)
 
 			entry := runSingleChild(context.Background(), 0, "produce structured output", child, parent, "", nil, nil)
 
-			delivered, err := pyjson.Loads(entryText(entry, "summary"))
+			delivered, err := jsonutil.Decode(entryText(entry, "summary"))
 			if v, _ := entry.Get("schema_valid"); err != nil || v != true || len(canned.calls) != 1 {
 				t.Fatalf("entry %v delivered %v %v", entry, delivered, err)
 			}
@@ -435,7 +434,7 @@ func TestParentCopyHonoursOptOutWhilePersistedCopiesStayForced(t *testing.T) {
 		t.Fatalf("memory results %v", rec.results)
 	}
 	calls := stops()
-	if len(calls) == 0 || strings.Contains(pyrepr.Str(calls[0]["child_summary"]), delegatedSecret) {
+	if len(calls) == 0 || strings.Contains(anyutil.String(calls[0]["child_summary"]), delegatedSecret) {
 		t.Fatalf("subagent_stop %v", calls)
 	}
 	spills := delegationSpills(t, env.Home)
@@ -446,7 +445,7 @@ func TestParentCopyHonoursOptOutWhilePersistedCopiesStayForced(t *testing.T) {
 	lastCompletionEvent()
 	record := delegationRecord(t, env)
 	tools.PushCompletionEvent(env, record, map[string]any{"status": "completed", "summary": delegatedSecret}, "completed")
-	if evt := lastCompletionEvent(); evt == nil || !strings.Contains(pyrepr.Str(evt["summary"]), delegatedSecret) {
+	if evt := lastCompletionEvent(); evt == nil || !strings.Contains(anyutil.String(evt["summary"]), delegatedSecret) {
 		t.Fatalf("in process event %v", evt)
 	}
 	if strings.Contains(durableDelegationRow(t, env), delegatedSecret) {
@@ -466,12 +465,12 @@ func TestForcedCopiesAreProjectedFromCompleteOutputBeforeTheParentBudget(t *test
 	cut := strings.Index(pem, "KEY-----\n")
 	tail := pem[cut:] + strings.Repeat("ordinary ending\n", 10)
 	tail += strings.Repeat("x", 500-len(tail))
-	structured, _ := pyjson.Dumps(pyjson.ObjectOf("env", "OPENAI_API_KEY="+delegatedSecret, "pad", strings.Repeat("z", 3000), "n", 2))
+	structured, _ := jsonutil.Encode(jsonutil.ObjectOf("env", "OPENAI_API_KEY="+delegatedSecret, "pad", strings.Repeat("z", 3000), "n", 2))
 	summaries := []string{strings.Repeat("ordinary explanation\n", 200) + pem[:cut] + tail, structured}
 	parent, rec := redactionParent(t, env)
-	entries := make([]*pyjson.Object, len(summaries))
+	entries := make([]*jsonutil.Object, len(summaries))
 	for i, s := range summaries {
-		entries[i] = pyjson.ObjectOf("task_index", i, "status", "completed", "summary", s)
+		entries[i] = jsonutil.ObjectOf("task_index", i, "status", "completed", "summary", s)
 	}
 	entries[1].Set("schema_valid", true)
 	schemaChild := &AIAgent{delegateOutputSchema: map[string]any{"type": "object"}}
@@ -481,7 +480,7 @@ func TestForcedCopiesAreProjectedFromCompleteOutputBeforeTheParentBudget(t *test
 
 	for _, e := range entries {
 		if v, _ := e.Get("summary_truncated"); v != true {
-			t.Fatalf("not truncated %v", e.Keys)
+			t.Fatalf("not truncated %v", e.Keys())
 		}
 	}
 	if !strings.Contains(entryText(entries[0], "summary"), body) {
@@ -490,12 +489,12 @@ func TestForcedCopiesAreProjectedFromCompleteOutputBeforeTheParentBudget(t *test
 	if len(rec.results) == 0 || strings.Contains(rec.results[0], body[len(body)-43:]) {
 		t.Fatalf("memory copy %v", rec.results)
 	}
-	spilled, err := pyjson.Loads(readUTF8Sig(t, entryText(entries[1], "summary_full_path")))
+	spilled, err := jsonutil.Decode(readUTF8Sig(t, entryText(entries[1], "summary_full_path")))
 	if err != nil {
 		t.Fatalf("spill is not valid JSON %v", err)
 	}
-	obj := spilled.(*pyjson.Object)
-	if n, _ := obj.Get("n"); !pyrepr.Equal(n, 2) || strings.Contains(entryText(obj, "env"), delegatedSecret) {
+	obj := spilled.(*jsonutil.Object)
+	if n, _ := obj.Get("n"); !anyutil.Equal(n, 2) || strings.Contains(entryText(obj, "env"), delegatedSecret) {
 		t.Fatalf("spilled %v", obj)
 	}
 
@@ -508,7 +507,7 @@ func TestForcedCopiesAreProjectedFromCompleteOutputBeforeTheParentBudget(t *test
 	if len(results) == 0 {
 		t.Fatalf("batch event %v", evt)
 	}
-	first, _ := pyjson.AsObject(results[0])
+	first, _ := jsonutil.AsObject(results[0])
 	if first == nil || !strings.Contains(entryText(first, "summary"), body) {
 		t.Fatalf("in process batch event %v", evt)
 	}
@@ -521,7 +520,7 @@ func TestForcedCopiesAreProjectedFromCompleteOutputBeforeTheParentBudget(t *test
 func TestDelegateToolTraceHelpers(t *testing.T) {
 	env := delegationTestEnv(t, 0, false)
 	blocks := []any{map[string]any{"type": "text", "text": "Error: boom"}, map[string]any{"type": "image", "n": 1}, 7}
-	if got := stringifyToolContent(blocks); got != "Error: boom\n{\"n\": 1, \"type\": \"image\"}\n7" {
+	if got := stringifyToolContent(blocks); got != "Error: boom\n{\"n\":1,\"type\":\"image\"}\n7" {
 		t.Fatalf("flattened %q", got)
 	}
 	for content, want := range map[string]bool{
@@ -534,12 +533,12 @@ func TestDelegateToolTraceHelpers(t *testing.T) {
 	}
 	args := `{"url": "https://user:pw@Example.com:8443/p?q=1#f", "path": "/tmp/x", "content": "raw payload", "urls": ["http://a.test/x?k=v", 3]}`
 	summary := summarizeToolArguments(env, args)
-	text, _ := pyjson.Dumps(summary)
-	want := `{"argument_keys": ["content", "path", "url", "urls"], "targets": {"url": "https://example.com:8443/p", "path": "/tmp/x", "urls": ["http://a.test/x"]}}`
+	text, _ := jsonutil.Encode(summary)
+	want := `{"argument_keys":["content","path","url","urls"],"targets":{"url":"https://example.com:8443/p","path":"/tmp/x","urls":["http://a.test/x"]}}`
 	if text != want {
 		t.Fatalf("argument summary %s", text)
 	}
-	if text, _ := pyjson.Dumps(summarizeToolArguments(env, "not json")); text != `{"argument_keys": [], "targets": {}}` {
+	if text, _ := jsonutil.Encode(summarizeToolArguments(env, "not json")); text != `{"argument_keys":[],"targets":{}}` {
 		t.Fatalf("malformed arguments %s", text)
 	}
 	result := map[string]any{"messages": []any{
@@ -547,17 +546,17 @@ func TestDelegateToolTraceHelpers(t *testing.T) {
 		map[string]any{"role": "tool", "tool_call_id": "c1", "content": "line one\nline two"},
 		map[string]any{"role": "tool", "tool_call_id": "zz", "content": []any{map[string]any{"text": "Error: wrapped"}}},
 	}}
-	tail, _ := pyjson.Dumps(extractOutputTail(env, result, 8, 600))
-	if tail != `[{"tool": "terminal", "preview": "line one\nline two", "is_error": false}, {"tool": "tool", "preview": "Error: wrapped", "is_error": true}]` {
+	tail, _ := jsonutil.Encode(extractOutputTail(env, result, 8, 600))
+	if tail != `[{"tool":"terminal","preview":"line one\nline two","is_error":false},{"tool":"tool","preview":"Error: wrapped","is_error":true}]` {
 		t.Fatalf("output tail %s", tail)
 	}
-	if one := extractOutputTail(env, result, 1, 3); len(one) != 1 || entryText(one[0].(*pyjson.Object), "preview") != "Err" {
+	if one := extractOutputTail(env, result, 1, 3); len(one) != 1 || entryText(one[0].(*jsonutil.Object), "preview") != "Err" {
 		t.Fatalf("bounded tail %v", one)
 	}
-	trace := []any{pyjson.ObjectOf("tool", "terminal", "status", "ERROR", "args_bytes", 12.7, "result_bytes", true, "input_summary", summary)}
+	trace := []any{jsonutil.ObjectOf("tool", "terminal", "status", "ERROR", "args_bytes", 12.7, "result_bytes", true, "input_summary", summary)}
 	history, err := subagentStopToolCallHistory(env, trace)
-	row, _ := pyjson.Dumps(history)
-	if err != nil || row != `[{"tool_name": "terminal", "tool_input": {"argument_keys": ["content", "path", "url", "urls"], "targets": {"url": "https://example.com:8443/p", "path": "/tmp/x", "urls": ["http://a.test/x"]}}, "input_bytes": 12, "output_bytes": 0, "status": "error"}]` {
+	row, _ := jsonutil.Encode(history)
+	if err != nil || row != `[{"tool_name":"terminal","tool_input":{"argument_keys":["content","path","url","urls"],"targets":{"url":"https://example.com:8443/p","path":"/tmp/x","urls":["http://a.test/x"]}},"input_bytes":12,"output_bytes":0,"status":"error"}]` {
 		t.Fatalf("stop history %s %v", row, err)
 	}
 }
@@ -584,8 +583,8 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 		event[k] = v
 	}
 	event["type"], event["status"], event["summary"], event["error"] = "async_delegation", "failed", delegatedSecret, delegatedSecret
-	eventJSON, _ := pyjson.Dumps(event)
-	resultJSON, _ := pyjson.Dumps(map[string]any{"status": "failed", "summary": delegatedSecret, "error": delegatedSecret})
+	eventJSON, _ := jsonutil.Encode(event)
+	resultJSON, _ := jsonutil.Encode(map[string]any{"status": "failed", "summary": delegatedSecret, "error": delegatedSecret})
 	err := tools.AsyncTransaction(env, func(ctx context.Context, conn state.SQLiteConn) error {
 		_, err := conn.ExecContext(ctx, "UPDATE async_delegations SET state='failed',completed_at=?,event_json=?,result_json=?",
 			float64(time.Now().UnixNano())/1e9, eventJSON, resultJSON)
@@ -598,7 +597,7 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 	if err != nil || stored == nil {
 		t.Fatalf("stored %v %v", stored, err)
 	}
-	if text, _ := pyjson.Dumps(stored["result"]); strings.Contains(text, delegatedSecret) {
+	if text, _ := jsonutil.Encode(stored["result"]); strings.Contains(text, delegatedSecret) {
 		t.Fatalf("stored result %s", text)
 	}
 	lastCompletionEvent()
@@ -610,14 +609,14 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 	if replay["restored"] != true || replay["session_key"] != record["session_key"] {
 		t.Fatalf("replay %v", replay)
 	}
-	if text, _ := pyjson.Dumps(replay); strings.Contains(text, delegatedSecret) {
+	if text, _ := jsonutil.Encode(replay); strings.Contains(text, delegatedSecret) {
 		t.Fatalf("replay %s", text)
 	}
 	failures, err := tools.FailedDelegationsForSession(env, "", "parent-session", 20, nil)
 	if err != nil || len(failures) != 1 || failures[0]["goal"] != record["goal"] {
 		t.Fatalf("failures %v %v", failures, err)
 	}
-	if text, _ := pyjson.Dumps(failures); strings.Contains(text, delegatedSecret) {
+	if text, _ := jsonutil.Encode(failures); strings.Contains(text, delegatedSecret) {
 		t.Fatalf("failures %s", text)
 	}
 }
@@ -632,14 +631,14 @@ func TestStructuredSummaryIsRedactedPerValueAndStaysValidJSON(t *testing.T) {
 	for name, wrap := range wraps {
 		t.Run(name, func(t *testing.T) {
 			key := "sk-proj-" + strings.Repeat("a", 40)
-			answer, _ := pyjson.Dumps(pyjson.ObjectOf("env", "OPENAI_API_KEY="+key, "n", 2))
+			answer, _ := jsonutil.Encode(jsonutil.ObjectOf("env", "OPENAI_API_KEY="+key, "n", 2))
 			entry := tools.RedactChildResult(nil, map[string]any{"summary": wrap(answer), "schema_valid": true}, map[string]any{"type": "object"}, true).(map[string]any)
-			parsed, err := pyjson.Loads(tools.ExtractJSONCandidate(pyrepr.Str(entry["summary"])))
+			parsed, err := jsonutil.Decode(tools.ExtractJSONCandidate(anyutil.String(entry["summary"])))
 			if err != nil {
 				t.Fatalf("summary no longer parses %v", err)
 			}
-			obj := parsed.(*pyjson.Object)
-			if n, _ := obj.Get("n"); !pyrepr.Equal(n, 2) || strings.Contains(entryText(obj, "env"), key) || entry["schema_valid"] != true {
+			obj := parsed.(*jsonutil.Object)
+			if n, _ := obj.Get("n"); !anyutil.Equal(n, 2) || strings.Contains(entryText(obj, "env"), key) || entry["schema_valid"] != true {
 				t.Fatalf("entry %v", entry)
 			}
 		})

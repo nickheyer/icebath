@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Bounded recent browse knobs, nil values taking the defaults of 20 rows and a 3 second deadline
@@ -32,7 +32,7 @@ const recentCompressionParentEdge = `
         `
 
 // Recent conversations resolved across compression lineage under a row ceiling and a cooperative deadline
-func (d *SessionDB) ListRecentSessionsBounded(ctx context.Context, o RecentSessionsBoundedOptions) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListRecentSessionsBounded(ctx context.Context, o RecentSessionsBoundedOptions) ([]*jsonutil.Object, error) {
 	limit := 20
 	if o.Limit != nil {
 		limit = *o.Limit
@@ -148,7 +148,7 @@ func (d *SessionDB) ListRecentSessionsBounded(ctx context.Context, o RecentSessi
 	params = append(params, candidateLimit, lineageLimit, lineageLimit, limit)
 	deadline := time.Now().Add(time.Duration(timeout * float64(time.Second)))
 	interrupted := false
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := d.readCtx(ctx, true, func(conn SQLiteConn) error {
 		raw, ok := rawConnOf(conn)
 		if !ok {
@@ -174,10 +174,10 @@ func (d *SessionDB) ListRecentSessionsBounded(ctx context.Context, o RecentSessi
 		}
 		return nil, err
 	}
-	sessions := make([]*pyjson.Object, 0, len(rows))
+	sessions := make([]*jsonutil.Object, 0, len(rows))
 	for _, row := range rows {
 		session := sessionRowDict(row)
-		rawPreview, _ := session.Pop("_preview_raw")
+		rawPreview, _ := session.Take("_preview_raw")
 		session.Set("preview", shapePreview(rawPreview))
 		unread, err := sessionUnread(session)
 		if err != nil {

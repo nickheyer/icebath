@@ -5,15 +5,15 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"math/big"
 	"reflect"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	jsonschemautil "github.com/nickheyer/icebath/pkg/utils/jsonschema"
 )
 
 // Text block of a structured input list
@@ -91,7 +91,7 @@ func coerceAllowlist(raw any) (map[string]bool, bool) {
 		if !ok {
 			continue
 		}
-		s = strings.ToLower(pyStrip(s))
+		s = strings.ToLower(strings.TrimSpace(s))
 		if s == "*" {
 			star = true
 		} else if s != "" {
@@ -116,7 +116,7 @@ func resolveTrustPolicy(ctx context.Context, pluginID string) trustPolicy {
 	flags := map[string]*bool{"allow_provider_override": &p.allowProviderOverride, "allow_model_override": &p.allowModelOverride,
 		"allow_agent_id_override": &p.allowAgentIDOverride, "allow_profile_override": &p.allowProfileOverride, "allow_task_override": &p.allowTaskOverride}
 	for _, name := range overrideFlags {
-		*flags[name] = pyrepr.Truthy(llm[name])
+		*flags[name] = anyutil.IsTrue(llm[name])
 	}
 	return p
 }
@@ -139,11 +139,11 @@ func gateRefOverride(p trustPolicy, kind, requested string) (string, error) {
 	if !allow {
 		return "", trustDenied(p.pluginID, "override the "+kind, "allow_"+kind+"_override")
 	}
-	if !anyOK && allowed != nil && !allowed[strings.ToLower(pyStrip(requested))] {
+	if !anyOK && allowed != nil && !allowed[strings.ToLower(strings.TrimSpace(requested))] {
 		return "", &PluginLlmTrustError{Message: fmt.Sprintf("Plugin %s %s override %s is not in plugins.entries.%s.llm.allowed_%ss.",
 			errchain.Show(p.pluginID), kind, errchain.Show(requested), p.pluginID, kind)}
 	}
-	return pyStrip(requested), nil
+	return strings.TrimSpace(requested), nil
 }
 
 var flagOnlyOverrides = map[string]string{"agent_id": "run completions against a non-default agent id", "profile": "override the auth profile"}
@@ -171,7 +171,7 @@ func checkOverrides(p trustPolicy, provider, model, agentID, profile *string) (*
 		if !p.allowProfileOverride {
 			return nil, nil, nil, nil, trustDenied(p.pluginID, flagOnlyOverrides["profile"], "allow_profile_override")
 		}
-		v := pyStrip(*profile)
+		v := strings.TrimSpace(*profile)
 		outProfile = &v
 	}
 	return outProvider, outModel, agentID, outProfile, nil
@@ -203,7 +203,7 @@ func resolveTaskOwnership(ctx context.Context, pluginID string) (map[string]bool
 func checkTask(ctx context.Context, p trustPolicy, pluginID string, requested *string) (*string, error) {
 	task := ""
 	if requested != nil {
-		task = pyStrip(*requested)
+		task = strings.TrimSpace(*requested)
 	}
 	if task == "" || strings.ToLower(task) == "auto" {
 		return nil, nil
@@ -255,14 +255,14 @@ func normalizeInputBlock(block any) (map[string]any, error) {
 		}
 		return map[string]any{"type": "text", "text": text}, nil
 	case "image":
-		if _, has := m["data"]; !has && !pyrepr.Truthy(m["url"]) {
+		if _, has := m["data"]; !has && !anyutil.IsTrue(m["url"]) {
 			return nil, llmValueError("image input block requires 'data' bytes or 'url'")
 		}
 		mime, name := m["mime_type"], m["file_name"]
-		if !pyrepr.Truthy(mime) {
+		if !anyutil.IsTrue(mime) {
 			mime = "image/png"
 		}
-		if !pyrepr.Truthy(name) {
+		if !anyutil.IsTrue(name) {
 			name = ""
 		}
 		return map[string]any{"type": "image", "data": m["data"], "url": m["url"], "mime_type": mime, "file_name": name}, nil
@@ -284,22 +284,22 @@ func llmDict(v any) map[string]any {
 // OpenAI image_url part of a normalized image block, bytes becoming a data URL
 func imagePart(norm map[string]any) (map[string]any, error) {
 	url := norm["url"]
-	if !pyrepr.Truthy(url) {
+	if !anyutil.IsTrue(url) {
 		var data []byte
 		switch d := norm["data"].(type) {
 		case nil:
 		case []byte:
 			data = d
 		default:
-			if pyrepr.Truthy(d) {
+			if anyutil.IsTrue(d) {
 				return nil, llmValueError("image input 'data' must be bytes")
 			}
 		}
 		mime := norm["mime_type"]
-		if !pyrepr.Truthy(mime) {
+		if !anyutil.IsTrue(mime) {
 			mime = "image/png"
 		}
-		url = "data:" + pyrepr.Str(mime) + ";base64," + base64.StdEncoding.EncodeToString(data)
+		url = "data:" + anyutil.String(mime) + ";base64," + base64.StdEncoding.EncodeToString(data)
 	}
 	return map[string]any{"type": "image_url", "image_url": map[string]any{"url": url}}, nil
 }
@@ -319,7 +319,7 @@ func buildStructuredMessages(spec PluginLlmStructuredRequest) ([]any, error) {
 	messages := []any{}
 	var sysParts []string
 	if spec.SystemPrompt != "" {
-		sysParts = append(sysParts, pyStrip(spec.SystemPrompt))
+		sysParts = append(sysParts, strings.TrimSpace(spec.SystemPrompt))
 	}
 	if spec.JSONMode || spec.JSONSchema != nil {
 		sysParts = append(sysParts, "Respond with a single JSON object that matches the requested shape. Do not include prose or markdown fences.")
@@ -327,14 +327,14 @@ func buildStructuredMessages(spec PluginLlmStructuredRequest) ([]any, error) {
 	if len(sysParts) > 0 {
 		messages = append(messages, map[string]any{"role": "system", "content": strings.Join(sysParts, "\n\n")})
 	}
-	header := pyStrip(spec.Instructions)
+	header := strings.TrimSpace(spec.Instructions)
 	if spec.SchemaName != "" {
 		header += "\n\nSchema name: " + spec.SchemaName
 	}
 	if spec.JSONSchema != nil {
-		schemaText, err := pyjson.Dumps(spec.JSONSchema, pyjson.EnsureASCII(false), pyjson.SortKeys(true))
+		schemaText, err := jsonutil.Encode(spec.JSONSchema, jsonutil.SortKeys())
 		if err != nil {
-			schemaText = pyrepr.Str(spec.JSONSchema)
+			schemaText = anyutil.String(spec.JSONSchema)
 		}
 		header += "\n\nJSON schema:\n" + schemaText
 	}
@@ -362,9 +362,9 @@ var fenceRe = regexp.MustCompile("(?is)```(?:json)?\\s*(.+?)```")
 // Body of the first fenced code block, or the stripped text when unfenced
 func stripCodeFences(text string) string {
 	if m := fenceRe.FindStringSubmatch(text); m != nil {
-		return pyStrip(m[1])
+		return strings.TrimSpace(m[1])
 	}
-	return pyStrip(text)
+	return strings.TrimSpace(text)
 }
 
 // Python frames under _parse_structured_text when a plugin tool handler calls complete_structured in the reference
@@ -375,19 +375,19 @@ func parseStructuredText(text string, jsonMode bool, schema any) (any, string, e
 	if !(jsonMode || schema != nil) || text == "" {
 		return nil, "text", nil
 	}
-	parsed, err := pyjson.Loads(stripCodeFences(text))
+	parsed, err := jsonutil.Decode(stripCodeFences(text))
 	if err != nil {
 		return nil, "text", nil
 	}
 	if schema != nil {
-		var ve *pyjsonschema.ValidationError
-		if err := pyjsonschema.Validate(parsed, schema, structuredOutputFrameDepth); errors.As(err, &ve) {
+		var ve *jsonschemautil.ValidationError
+		if err := jsonschemautil.Validate(parsed, schema); errors.As(err, &ve) {
 			return nil, "", llmValueError("Plugin LLM structured output did not match schema: " + ve.Message)
 		} else if err != nil {
 			return nil, "", err
 		}
 	}
-	return pyjson.Plain(parsed), "json", nil
+	return jsonutil.Plain(parsed), "json", nil
 }
 
 // Attribute of an OpenAI shaped response object or dict, nil when absent
@@ -397,8 +397,8 @@ func responseField(v any, name string) any {
 		return m[name]
 	case Record:
 		return m[name]
-	case *pyjson.Object:
-		return m.Vals[name]
+	case *jsonutil.Object:
+		return m.Value(name)
 	}
 	if fields, ok := recordFields(reflect.ValueOf(v)); ok {
 		return fields[name]
@@ -414,15 +414,15 @@ func extractUsage(response any) PluginLlmUsage {
 	}
 	g := func(names ...string) int {
 		for _, name := range names {
-			if n, ok := pyrepr.Int(responseField(raw, name)); ok && n.Sign() != 0 && n.IsInt64() {
-				return int(n.Int64())
+			if n, ok := anyutil.Int(responseField(raw, name)); ok && n != 0 {
+				return int(n)
 			}
 			if f, ok := responseField(raw, name).(float64); ok && int(f) != 0 {
 				return int(f)
 			}
 			if s, ok := responseField(raw, name).(string); ok {
-				if n, ok := pyrepr.Int(pyjson.ParseInt(pyStrip(s))); ok && n.Sign() != 0 && n.IsInt64() {
-					return int(n.Int64())
+				if n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil && n != 0 {
+					return int(n)
 				}
 			}
 		}
@@ -482,7 +482,7 @@ func mainConfigValue(reader, def string) (out string) {
 	if reader == "_read_main_model" {
 		v = s.PluginLLM.ReadMainModel()
 	}
-	if v = pyStrip(v); v != "" {
+	if v = strings.TrimSpace(v); v != "" {
 		return v
 	}
 	return def
@@ -497,8 +497,8 @@ func resolveAttribution(providerOverride, modelOverride *string, response any, r
 	if provider == "" {
 		provider = mainConfigValue("_read_main_provider", "auto")
 	}
-	if model, ok := responseField(response, "model").(string); ok && pyStrip(model) != "" {
-		return provider, pyStrip(model)
+	if model, ok := responseField(response, "model").(string); ok && strings.TrimSpace(model) != "" {
+		return provider, strings.TrimSpace(model)
 	}
 	if model := routeInfo["model"]; model != "" {
 		return provider, model
@@ -523,7 +523,7 @@ func jsonResponseFormat(jsonMode bool, schema any) map[string]any {
 
 // Argument check of the structured methods that runs before the trust gate
 func structuredSpec(name string, spec PluginLlmStructuredRequest) error {
-	if pyStrip(spec.Instructions) == "" {
+	if strings.TrimSpace(spec.Instructions) == "" {
 		return llmValueError(name + " requires non-empty instructions")
 	}
 	if len(spec.Input) == 0 {
@@ -815,9 +815,9 @@ func (l *PluginLlm) HostCall(ctx context.Context, method string, args []any, kwa
 		}
 		return l.Complete(ctx, messages, o)
 	}
-	spec := PluginLlmStructuredRequest{JSONSchema: a["json_schema"], JSONMode: pyrepr.Truthy(a["json_mode"])}
-	if pyrepr.Truthy(a["schema_name"]) {
-		spec.SchemaName = pyrepr.Str(a["schema_name"])
+	spec := PluginLlmStructuredRequest{JSONSchema: a["json_schema"], JSONMode: anyutil.IsTrue(a["json_mode"])}
+	if anyutil.IsTrue(a["schema_name"]) {
+		spec.SchemaName = anyutil.String(a["schema_name"])
 	}
 	for name, dst := range map[string]*string{"instructions": &spec.Instructions, "system_prompt": &spec.SystemPrompt} {
 		v, err := hostOptStr(a[name])
@@ -843,7 +843,7 @@ func hostOptStr(v any) (*string, error) {
 	case string:
 		return &s, nil
 	}
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	return nil, &HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("expected text, got %s", errchain.Kind(v))}
@@ -864,8 +864,8 @@ func hostInputList(v any) ([]any, error) {
 func hostLlmOptions(a map[string]any) (PluginLlmOptions, error) {
 	var o PluginLlmOptions
 	for name, dst := range map[string]**string{"agent_id": &o.AgentID, "purpose": &o.Purpose} {
-		if pyrepr.Truthy(a[name]) {
-			v := pyrepr.Str(a[name])
+		if anyutil.IsTrue(a[name]) {
+			v := anyutil.String(a[name])
 			*dst = &v
 		}
 	}
@@ -878,7 +878,7 @@ func hostLlmOptions(a map[string]any) (PluginLlmOptions, error) {
 	}
 	for name, dst := range map[string]**float64{"temperature": &o.Temperature, "timeout": &o.Timeout} {
 		if a[name] != nil {
-			f, ok := pyNumber(a[name])
+			f, ok := anyutil.Float(a[name])
 			if !ok {
 				return o, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("%s must be a number, got %s", name, errchain.Kind(a[name]))}
 			}
@@ -886,23 +886,12 @@ func hostLlmOptions(a map[string]any) (PluginLlmOptions, error) {
 		}
 	}
 	if a["max_tokens"] != nil {
-		n, ok := pyrepr.Int(a["max_tokens"])
-		if !ok || !n.IsInt64() {
+		n, ok := anyutil.Int(a["max_tokens"])
+		if !ok {
 			return o, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("max_tokens must be a whole number, got %s", errchain.Kind(a["max_tokens"]))}
 		}
-		v := int(n.Int64())
+		v := int(n)
 		o.MaxTokens = &v
 	}
 	return o, nil
-}
-
-func pyNumber(v any) (float64, bool) {
-	if f, ok := v.(float64); ok {
-		return f, true
-	}
-	if n, ok := pyrepr.Int(v); ok {
-		f, _ := new(big.Float).SetInt(n).Float64()
-		return f, true
-	}
-	return 0, false
 }

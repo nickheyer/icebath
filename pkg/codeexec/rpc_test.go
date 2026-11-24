@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestWatchPatternsBlocked(t *testing.T) {
@@ -31,7 +30,7 @@ type recordedCall struct {
 // Dispatch fake echoing the call back as JSON and recording every call
 func echoDispatch(mu *sync.Mutex, seen *[]recordedCall) dispatchFunc {
 	return func(ctx context.Context, name string, args any) string {
-		plain, _ := pyjson.Plain(args).(map[string]any)
+		plain, _ := jsonutil.Plain(args).(map[string]any)
 		mu.Lock()
 		*seen = append(*seen, recordedCall{name, plain})
 		mu.Unlock()
@@ -234,7 +233,7 @@ func TestResultErrorAndToolErrorsSince(t *testing.T) {
 		`{"error": ""}`:          "",
 		`{"ok": true}`:           "",
 		`["error"]`:              "",
-		`{"error": {"code": 1}}`: "{'code': 1}",
+		`{"error": {"code": 1}}`: `{"code":1}`,
 		`{"error": "` + strings.Repeat("x", 400) + `"}`: strings.Repeat("x", 300),
 		`{"error" broken`: "",
 	}

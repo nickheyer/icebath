@@ -7,8 +7,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Mapping with the given key value pairs in insertion order, the way a Python dict literal keeps them
@@ -276,7 +274,7 @@ func TestSafeLoadRefusesASecondDocumentAndUnknownTags(t *testing.T) {
 		"a: ! 12\n":           map[string]any{"a": 12},
 		"a: !!str 1\n":        map[string]any{"a": "1"},
 		"!!omap [a: 1, b: 2]": map[string]any{"a": 1, "b": 2},
-		"!!pairs [a: 1]":      []any{pyrepr.Tuple{"a", 1}},
+		"!!pairs [a: 1]":      []any{[]any{"a", 1}},
 	} {
 		got, err := SafeLoad(doc)
 		if err != nil || !reflect.DeepEqual(got, want) {
@@ -306,7 +304,7 @@ func TestSafeLoadHonorsTheYAMLVersionDirective(t *testing.T) {
 		t.Fatalf("2.0 err = %v", err)
 	}
 	_, err = SafeLoad("%YAML 1.3\n---\na: on\n")
-	if ye, _ := err.(*YAMLError); ye == nil || ye.PyTypeName() != "AssertionError" || err.Error() != "version minor part can only be 2 or 1, got (1, 3)" {
+	if ye, _ := err.(*YAMLError); ye == nil || ye.ErrorKind() != "AssertionError" || err.Error() != "version minor part can only be 2 or 1, got (1, 3)" {
 		t.Fatalf("1.3 err = %v", err)
 	}
 }

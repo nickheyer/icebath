@@ -6,8 +6,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Failed never run turn for a scope entry refusal an unchanged resend repeats, nil for any other refusal
@@ -15,7 +15,7 @@ func refusedTurnResult(ctx context.Context, policy *gateway.LocalSessionPolicy, 
 	var result map[string]any
 	switch exc.Reason {
 	case "workspace_unavailable":
-		result, _ = pyjson.Plain(gateway.WorkspaceUnavailableResult(ctx, policy)).(map[string]any)
+		result, _ = jsonutil.Plain(gateway.WorkspaceUnavailableResult(ctx, policy)).(map[string]any)
 	case "launch_credentials_unavailable":
 		text := agent.LaunchCredentialsCopy(ctx, exc)
 		result = agent.StampFailure(map[string]any{"final_response": text, "messages": []any{}, "api_calls": 0, "tools": []any{},
@@ -33,7 +33,7 @@ func oneTurnReasoning(ctx context.Context, t *TurnRunner, reasoningConfig map[st
 	if _, inboundID, _ := t.runner.turnReplyAnchors(t.ctx); inboundID != nil {
 		inbound = *inboundID
 	}
-	override, _ := gateway.CLITurn(ctx, inbound).GetOr("model_override", nil).(*pyjson.Object)
+	override, _ := gateway.CLITurn(ctx, inbound).ValueOr("model_override", nil).(*jsonutil.Object)
 	if override == nil {
 		return reasoningConfig
 	}

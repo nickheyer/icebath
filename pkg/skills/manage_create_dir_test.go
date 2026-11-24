@@ -61,7 +61,7 @@ func TestSkillManageSchemaStableAcrossCreateDirChanges(t *testing.T) {
 	first := tools.Default.Get("skill_manage").Schema
 	s.Config["skills"] = map[string]any{"create_dir": filepath.Join(t.TempDir(), "second-brain")}
 	second := tools.Default.Get("skill_manage").Schema
-	if !reflect.DeepEqual(first, second) || first.Vals["description"] != SkillManageSchema().Vals["description"] {
+	if !reflect.DeepEqual(first, second) || first.Value("description") != SkillManageSchema().Value("description") {
 		t.Fatal("schema changed with create_dir")
 	}
 }

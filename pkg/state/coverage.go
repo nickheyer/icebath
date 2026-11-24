@@ -8,8 +8,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Gateway timestamp prefix the merged user run matcher strips before comparing joined text
@@ -57,7 +58,7 @@ func coverageTextOf(content any) string {
 			continue
 		}
 		if pyTruthy(part["text"]) {
-			parts = append(parts, pyrepr.Str(part["text"]))
+			parts = append(parts, anyutil.String(part["text"]))
 		} else {
 			parts = append(parts, "")
 		}
@@ -116,7 +117,7 @@ func imagesReplaced(stored, held any) bool {
 	}
 	swapped := false
 	for i := range was {
-		if pyrepr.Equal(was[i], now[i]) {
+		if anyutil.Equal(was[i], now[i]) {
 			continue
 		}
 		part, isMap := dictValue(now[i])
@@ -180,7 +181,7 @@ func storedRowIdentity(row map[string]any) (pyrepr.Tuple, error) {
 
 func rowUID(row map[string]any) string {
 	if pyTruthy(row[MessageUID]) {
-		return pyrepr.Str(row[MessageUID])
+		return anyutil.String(row[MessageUID])
 	}
 	return ""
 }
@@ -297,12 +298,12 @@ func (d *SessionDB) claimStoredCopy(row map[string]any, compacted []map[string]a
 	}
 	rowID, _ := pyIntID(row["id"])
 	var candidates []int
-	if named, ok := byRow[rowID]; ok && pyrepr.Equal(named.identity, identity) {
+	if named, ok := byRow[rowID]; ok && anyutil.Equal(named.identity, identity) {
 		candidates = append(candidates, named.index)
 	}
 	if uid := rowUID(row); uid != "" {
 		for _, held := range byUID[uid] {
-			if pyrepr.Equal(held.identity, identity) {
+			if anyutil.Equal(held.identity, identity) {
 				candidates = append(candidates, held.index)
 			}
 		}
@@ -357,21 +358,21 @@ func (d *SessionDB) replaysAs(row, held map[string]any, sameContent bool) (bool,
 	}
 	content := decodeMessageContent(row["content"])
 	rowAPI, heldAPI := row["api_content"], serialized["api_content"]
-	if pyrepr.Equal(rowAPI, content) {
+	if anyutil.Equal(rowAPI, content) {
 		rowAPI = nil
 	}
-	if pyrepr.Equal(heldAPI, held["content"]) {
+	if anyutil.Equal(heldAPI, held["content"]) {
 		heldAPI = nil
 	}
 	for _, column := range ReplaySidecars {
-		if serialized[column] != nil && !pyrepr.Equal(serialized[column], row[column]) {
+		if serialized[column] != nil && !anyutil.Equal(serialized[column], row[column]) {
 			return false, nil
 		}
 	}
 	if heldAPI != nil || rowAPI == nil {
-		return pyrepr.Equal(heldAPI, rowAPI), nil
+		return anyutil.Equal(heldAPI, rowAPI), nil
 	}
-	return !sameContent || pyrepr.Equal(held["content"], rowAPI), nil
+	return !sameContent || anyutil.Equal(held["content"], rowAPI), nil
 }
 
 // Whether held carries the stored row digest of the row's current version
@@ -390,16 +391,16 @@ func orNone(v any) any {
 // True when held differs from the stored row only the way the compressor rewrites a carry it keeps
 func (d *SessionDB) rewriteExplains(row, held map[string]any) (bool, error) {
 	role := row["role"]
-	if !pyrepr.Equal(held["role"], role) || !pyrepr.Equal(orNone(held["tool_call_id"]), orNone(row["tool_call_id"])) {
+	if !anyutil.Equal(held["role"], role) || !anyutil.Equal(orNone(held["tool_call_id"]), orNone(row["tool_call_id"])) {
 		return false, nil
 	}
-	if !pyrepr.Equal(orNone(parseToolCalls(held["tool_calls"])), orNone(parseToolCalls(row["tool_calls"]))) {
+	if !anyutil.Equal(orNone(parseToolCalls(held["tool_calls"])), orNone(parseToolCalls(row["tool_calls"]))) {
 		return false, nil
 	}
 	roleText, _ := role.(string)
 	stored := loadedViewContent(roleText, decodeMessageContent(row["content"]))
 	content := loadedViewContent(roleText, held["content"])
-	replays, err := d.replaysAs(row, held, pyrepr.Equal(stored, content))
+	replays, err := d.replaysAs(row, held, anyutil.Equal(stored, content))
 	if err != nil || !replays {
 		return false, err
 	}
@@ -443,7 +444,7 @@ func uidsActiveOutside(ctx context.Context, conn SQLiteConn, rows []map[string]a
 		}
 		for _, hit := range hits {
 			if id, _ := pyIntID(hit["id"]); !tail[id] {
-				found[pyrepr.Str(hit[MessageUID])] = true
+				found[anyutil.String(hit[MessageUID])] = true
 			}
 		}
 	}
@@ -506,7 +507,7 @@ func (d *SessionDB) resolveCarriedRowIDs(ctx context.Context, conn SQLiteConn, s
 				return nil, nil, err
 			}
 			byID[rid] = identity
-			if ts, ok := pydatetime.CoerceEpoch(row["timestamp"], "", "message timestamp"); ok {
+			if ts, ok := timeutil.StoredEpoch(row["timestamp"], "", "message timestamp"); ok {
 				key := scalarKey(append(slices.Clone([]any(identity)), ts)...)
 				byKey[key] = append(byKey[key], rid)
 			}
@@ -530,7 +531,7 @@ func (d *SessionDB) resolveCarriedRowIDs(ctx context.Context, conn SQLiteConn, s
 	}
 	if allNamed {
 		for _, c := range carried {
-			if stored, ok := byID[c.rowID]; !ok || !pyrepr.Equal(stored, c.identity) {
+			if stored, ok := byID[c.rowID]; !ok || !anyutil.Equal(stored, c.identity) {
 				if byID, byKey, err = index(nil); err != nil {
 					return nil, err
 				}
@@ -541,12 +542,12 @@ func (d *SessionDB) resolveCarriedRowIDs(ctx context.Context, conn SQLiteConn, s
 	var resolved []int64
 	for _, c := range carried {
 		if c.hasRowID {
-			if stored, ok := byID[c.rowID]; ok && pyrepr.Equal(stored, c.identity) {
+			if stored, ok := byID[c.rowID]; ok && anyutil.Equal(stored, c.identity) {
 				resolved = append(resolved, c.rowID)
 				continue
 			}
 		}
-		ts, ok := pydatetime.CoerceEpoch(c.stamp, "", "message timestamp")
+		ts, ok := timeutil.StoredEpoch(c.stamp, "", "message timestamp")
 		if !ok {
 			continue
 		}
@@ -596,7 +597,7 @@ func pyListOf(v any) ([]any, error) {
 func matchingRetiredIDs(ctx context.Context, conn SQLiteConn, sessionID string, retired map[string]any, watermark *int64) ([]int64, error) {
 	role := ""
 	if pyTruthy(retired["role"]) {
-		role = pyrepr.Str(retired["role"])
+		role = anyutil.String(retired["role"])
 	}
 	query, args := "SELECT id, content, tool_call_id, tool_calls FROM messages WHERE session_id = ? AND active = 1 AND role = ?", []any{sessionID, role}
 	if watermark != nil {
@@ -617,10 +618,10 @@ func matchingRetiredIDs(ctx context.Context, conn SQLiteConn, sessionID string, 
 	var matches []int64
 	for _, row := range rows {
 		content := loadedViewContent(role, decodeMessageContent(row["content"]))
-		if !pyrepr.Equal(orNone(content), orNone(retired["content"])) {
+		if !anyutil.Equal(orNone(content), orNone(retired["content"])) {
 			continue
 		}
-		if !pyrepr.Equal(orNone(row["tool_call_id"]), orNone(retired["tool_call_id"])) {
+		if !anyutil.Equal(orNone(row["tool_call_id"]), orNone(retired["tool_call_id"])) {
 			continue
 		}
 		ids := []any{}
@@ -631,7 +632,7 @@ func matchingRetiredIDs(ctx context.Context, conn SQLiteConn, sessionID string, 
 				}
 			}
 		}
-		if !pyrepr.Equal(ids, wantCalls) {
+		if !anyutil.Equal(ids, wantCalls) {
 			continue
 		}
 		id, _ := pyIntID(row["id"])

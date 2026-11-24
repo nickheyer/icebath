@@ -12,8 +12,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -28,11 +28,11 @@ var errSurrogateEncode = errors.New("the control socket path is not valid UTF-8"
 
 // Sixteen hex digits of the sha256 of the expanded, resolved and normcased home
 func controlHomeHash(home string) (string, error) {
-	resolved, err := pypath.Resolve(pypath.Expanduser(home))
+	resolved, err := pathutil.Resolve(pathutil.ExpandUser(home))
 	if err != nil {
 		return "", err
 	}
-	norm := pypath.Normcase(resolved)
+	norm := pathutil.FoldCase(resolved)
 	if !utf8.ValidString(norm) {
 		return "", errSurrogateEncode
 	}
@@ -60,7 +60,7 @@ func fallbackSocketPath(home string) (string, error) {
 	if rt := privateRuntimeDir(); rt != "" {
 		candidates = append(candidates, filepath.Join(rt, name))
 	}
-	tmp, err := pypath.Gettempdir()
+	tmp, err := pathutil.TempDir()
 	if err != nil {
 		return "", err
 	}
@@ -126,15 +126,15 @@ func ResolveClientSocketPath(home string) (string, error) {
 }
 
 // result payload of a control verb answered ok true by the gateway serving home, nil on any failure
-func QueryGatewayControl(home, verb string, params *pyjson.Object, timeout time.Duration) *pyjson.Object {
-	payload := pyjson.NewObject()
+func QueryGatewayControl(home, verb string, params *jsonutil.Object, timeout time.Duration) *jsonutil.Object {
+	payload := jsonutil.NewObject()
 	payload.Set("verb", verb)
 	payload.Set("id", int64(1))
 	payload.Set("protocol", int64(ControlProtocolVersion))
 	if params != nil && params.Len() > 0 {
 		payload.Set("params", params)
 	}
-	text, err := pyjson.Dumps(payload)
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil
 	}
@@ -142,11 +142,11 @@ func QueryGatewayControl(home, verb string, params *pyjson.Object, timeout time.
 	if err != nil || len(raw) == 0 || !utf8.Valid(raw) {
 		return nil
 	}
-	response, err := pyjson.Loads(string(raw))
+	response, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil
 	}
-	obj, ok := response.(*pyjson.Object)
+	obj, ok := response.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -154,7 +154,7 @@ func QueryGatewayControl(home, verb string, params *pyjson.Object, timeout time.
 		return nil
 	}
 	result, _ := obj.Get("result")
-	r, _ := result.(*pyjson.Object)
+	r, _ := result.(*jsonutil.Object)
 	return r
 }
 
@@ -184,17 +184,17 @@ func readResponseLine(read func() ([]byte, error), deadline time.Time) ([]byte, 
 }
 
 // identify answer of the gateway serving home
-func IdentifyGateway(home string, timeout time.Duration) *pyjson.Object {
+func IdentifyGateway(home string, timeout time.Duration) *jsonutil.Object {
 	return QueryGatewayControl(home, "identify", nil, timeout)
 }
 
 // Drain and exit acknowledgement of the gateway serving home for an update
-func PauseGatewayForUpdate(home string, timeout time.Duration) *pyjson.Object {
+func PauseGatewayForUpdate(home string, timeout time.Duration) *jsonutil.Object {
 	return QueryGatewayControl(home, "pause-for-update", nil, timeout)
 }
 
 // Asks the multiplexer serving home to reconcile profiles now
-func RescanGatewayProfiles(home string, timeout time.Duration) *pyjson.Object {
+func RescanGatewayProfiles(home string, timeout time.Duration) *jsonutil.Object {
 	return QueryGatewayControl(home, "rescan-profiles", nil, timeout)
 }
 
@@ -207,27 +207,27 @@ func rescanGatewayProfiles(_ context.Context, root string, timeout time.Duration
 }
 
 // Asks the multiplexer serving home to stop serving name
-func RequestUnserveProfile(home, name string) *pyjson.Object {
+func RequestUnserveProfile(home, name string) *jsonutil.Object {
 	return QueryGatewayControl(home, "unserve-profile", controlParams("name", name), 8*time.Second)
 }
 
 // Asks the multiplexer serving home to hot serve name
-func RequestServeProfileHot(home, name string) *pyjson.Object {
+func RequestServeProfileHot(home, name string) *jsonutil.Object {
 	return QueryGatewayControl(home, "serve-profile", controlParams("name", name), 8*time.Second)
 }
 
 // Asks the multiplexer serving home to rekey a renamed profile routing from old to new
-func MigrateGatewayProfileIdentity(home, oldName, newName string, timeout time.Duration) *pyjson.Object {
+func MigrateGatewayProfileIdentity(home, oldName, newName string, timeout time.Duration) *jsonutil.Object {
 	return QueryGatewayControl(home, "migrate-profile-identity", controlParams("old", oldName, "new", newName), timeout)
 }
 
 // Asks the multiplexer serving home to drop a deleted profile routing identity in memory and on disk
-func PurgeGatewayProfileIdentity(home, name string, timeout time.Duration) *pyjson.Object {
+func PurgeGatewayProfileIdentity(home, name string, timeout time.Duration) *jsonutil.Object {
 	return QueryGatewayControl(home, "purge-profile-identity", controlParams("name", name), timeout)
 }
 
 // Asks the gateway serving home to rediscover plugins for profileHome, home when empty
-func ReloadGatewayPlugins(home, profileHome string, timeout time.Duration) *pyjson.Object {
+func ReloadGatewayPlugins(home, profileHome string, timeout time.Duration) *jsonutil.Object {
 	if profileHome == "" {
 		profileHome = home
 	}
@@ -236,13 +236,13 @@ func ReloadGatewayPlugins(home, profileHome string, timeout time.Duration) *pyjs
 
 // Reload answer as a plain map for the plugin services, nil when no gateway answered
 func ReloadGatewayPluginsAnswer(home, profileHome string, timeout time.Duration) map[string]any {
-	answer, _ := pyjson.Plain(ReloadGatewayPlugins(home, profileHome, timeout)).(map[string]any)
+	answer, _ := jsonutil.Plain(ReloadGatewayPlugins(home, profileHome, timeout)).(map[string]any)
 	return answer
 }
 
 // Ordered params object from alternating keys and values
-func controlParams(kv ...string) *pyjson.Object {
-	o := pyjson.NewObject()
+func controlParams(kv ...string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i], kv[i+1])
 	}
@@ -250,7 +250,7 @@ func controlParams(kv ...string) *pyjson.Object {
 }
 
 // Control answer as an interface value, untyped nil when no gateway answered
-func controlAnswer(r *pyjson.Object) any {
+func controlAnswer(r *jsonutil.Object) any {
 	if r == nil {
 		return nil
 	}

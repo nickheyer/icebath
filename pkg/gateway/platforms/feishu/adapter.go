@@ -19,10 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -120,7 +120,7 @@ func idSet(values any) map[string]bool {
 		}
 	}
 	for _, item := range items {
-		if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(item)); s != "" {
 			out[s] = true
 		}
 	}
@@ -147,7 +147,7 @@ func loadSettings(ctx context.Context, extra map[string]any) (FeishuAdapterSetti
 		if err != nil && firstErr == nil {
 			firstErr = err
 		}
-		return strings.TrimSpace(pyrepr.Str(v))
+		return strings.TrimSpace(anyutil.String(v))
 	}
 	sctx := gateway.SettingsContext(ctx)
 	groupRules := map[string]*FeishuGroupRule{}
@@ -157,7 +157,7 @@ func loadSettings(ctx context.Context, extra map[string]any) (FeishuAdapterSetti
 		if !ok {
 			continue
 		}
-		rule := &FeishuGroupRule{Policy: strings.ToLower(strings.TrimSpace(pyrepr.Str(mapGet(cfg, "policy", "open")))),
+		rule := &FeishuGroupRule{Policy: strings.ToLower(strings.TrimSpace(anyutil.String(mapGet(cfg, "policy", "open")))),
 			Allowlist: idSet(mapGet(cfg, "allowlist", []any{})), Blacklist: idSet(mapGet(cfg, "blacklist", []any{}))}
 		if v, ok := cfg["require_mention"]; ok {
 			b := toBoolean(v)
@@ -536,7 +536,7 @@ func (a *FeishuAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 	a.mu.Lock()
 	a.appLockIdentity = &identity
 	a.mu.Unlock()
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("platform", string(gateway.PlatformFeishu))
 	acquired, existing, err := gateway.AcquireScopedLock(ctx, feishuAppLockScope, identity, meta)
 	if err != nil {
@@ -548,8 +548,8 @@ func (a *FeishuAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 			ownerPID, _ = existing.Get("pid")
 		}
 		message := "Another local Icebath gateway is already using this Feishu app_id"
-		if pyrepr.Truthy(ownerPID) {
-			message += " (PID " + pyrepr.Str(ownerPID) + ")."
+		if anyutil.IsTrue(ownerPID) {
+			message += " (PID " + anyutil.String(ownerPID) + ")."
 		} else {
 			message += "."
 		}
@@ -922,41 +922,41 @@ func (a *FeishuAdapter) loadSeenMessageIDs() {
 	var payload any
 	if err == nil {
 		var text string
-		text, err = pystr.DecodeUTF8Sig(raw)
+		text, err = textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if err == nil {
-			payload, err = pyjson.Loads(text)
+			payload, err = jsonutil.Decode(text)
 		}
 	}
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to load persisted dedup state from %s", a.dedupStatePath))
 		return
 	}
-	var seen any = pyjson.NewObject()
-	if d, ok := payload.(*pyjson.Object); ok {
-		seen = dgetDef(d, "message_ids", pyjson.NewObject())
+	var seen any = jsonutil.NewObject()
+	if d, ok := payload.(*jsonutil.Object); ok {
+		seen = dgetDef(d, "message_ids", jsonutil.NewObject())
 	}
 	entries := map[string]float64{}
 	switch v := seen.(type) {
 	case []any:
 		for _, item := range v {
-			if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
+			if s := strings.TrimSpace(anyutil.String(item)); s != "" {
 				entries[s] = 0.0
 			}
 		}
-	case *pyjson.Object:
-		for _, k := range v.Keys {
+	case *jsonutil.Object:
+		for _, k := range v.Keys() {
 			val, _ := v.Get(k)
 			if strings.TrimSpace(k) == "" {
 				continue
 			}
-			if _, isInt := pyint.Instance(val); !isInt {
+			if _, isInt := anyutil.Int(val); !isInt {
 				if _, isFloat := val.(float64); !isFloat {
 					if _, isStr := val.(string); !isStr {
 						continue
 					}
 				}
 			}
-			if f, ferr := pyint.Float(val); ferr == nil {
+			if f, ferr := anyutil.ToFloat(val); ferr == nil {
 				entries[k] = f
 			}
 		}
@@ -997,14 +997,14 @@ func (a *FeishuAdapter) persistSeenMessageIDs(ctx context.Context) {
 	}
 	a.dedupMu.Lock()
 	start := max(0, len(a.seenMessageOrder)-a.settings.DedupCacheSize)
-	ids := pyjson.NewObject()
+	ids := jsonutil.NewObject()
 	for _, k := range a.seenMessageOrder[start:] {
 		if ts, ok := a.seenMessageIDs[k]; ok {
 			ids.Set(k, ts)
 		}
 	}
 	a.dedupMu.Unlock()
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("message_ids", ids)
 	if err := config.AtomicJSONWriteWith(ctx, a.dedupStatePath, payload); err != nil {
 		pkgLog().Warn(fmt.Sprintf("[Feishu] Failed to persist dedup state to %s", a.dedupStatePath))

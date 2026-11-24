@@ -11,10 +11,12 @@ import (
 	"math"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/pprof"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,12 +25,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Job phases whose byte counter tracks a transfer in flight
@@ -84,13 +86,10 @@ type lmRateSample struct {
 	done int64
 }
 
-// Python KeyError of a missing key, its text the repr of the key
+// Lookup of a key a record or table lacks, its text the quoted key
 type lmKeyError struct{ key string }
 
-func (e *lmKeyError) Error() string { return pyrepr.Repr(e.key) }
-
-// Python exception class the error stands for
-func (e *lmKeyError) PyTypeName() string { return "KeyError" }
+func (e *lmKeyError) Error() string { return strconv.Quote(e.key) }
 
 // Job registry in creation order, the running entries and the single flight quickstart lock
 var (
@@ -244,14 +243,14 @@ func lmHTTPError(status int, prefix string, err error) error {
 	return httpException(status, prefix+err.Error())
 }
 
-// Value of fn or def on failure, warn logging the failure repr after its prefix, debug the failure
+// Value of fn or def on failure, warn logging the failure text after its prefix, debug the failure
 func lmQuiet[T any](fn func() (T, error), def T, warn, debug string) T {
 	v, err := fn()
 	if err == nil {
 		return v
 	}
 	if warn != "" {
-		pkgLog().Warn(warn + pyrepr.ExceptionRepr(err))
+		pkgLog().Warn(warn + err.Error())
 	}
 	if debug != "" {
 		pkgLog().Debug(debug, "error", err)
@@ -267,15 +266,15 @@ func lmDownloadPaused(msg string) error {
 // Whether err is the downloader's pause refusal
 func lmIsDownloadPaused(err error) bool { return pm.IsDownloadKind(err, pm.DownloadWasPaused) }
 
-// Whether err stands for a Python RuntimeError or OSError, the downloader failures an optional download tolerates
+// Whether err is a downloader, transfer, network or system failure, the failures an optional download tolerates
 func lmIsRuntimeOrOSError(err error) bool {
 	var de *pm.DownloadError
 	var he *pm.HTTPError
 	var rd *pm.RemoteDisconnectedError
-	var ue *pyurl.URLError
+	var dial *lmDialError
 	var ne net.Error
-	return errors.As(err, &de) || errors.As(err, &he) || errors.As(err, &rd) || errors.As(err, &ue) ||
-		errors.As(err, &ne) || pypath.IsOSError(err)
+	return errors.As(err, &de) || errors.As(err, &he) || errors.As(err, &rd) || errors.As(err, &dial) || errors.As(err, &ne) ||
+		errorutil.IsSystem(err)
 }
 
 // Job id of a job record
@@ -454,14 +453,14 @@ func lmRefreshRuntime(ctx context.Context, refreshLocal func(ctx context.Context
 	lmQuiet(func() (bool, error) { return refreshLocal(ctx) }, false, "", skipMsg)
 }
 
-// Connection failure urlopen wraps in a URLError
+// Connection the router request could not open, kept apart from failures after the connect
 type lmDialError struct{ err error }
 
 func (e *lmDialError) Error() string { return e.err.Error() }
 
 func (e *lmDialError) Unwrap() error { return e.err }
 
-// Connection whose every read and write gets the socket timeout urlopen sets
+// Connection whose every read and write gets the request timeout as its deadline
 type lmTimeoutConn struct {
 	net.Conn
 	timeout time.Duration
@@ -477,11 +476,11 @@ func (c *lmTimeoutConn) Write(p []byte) (int, error) {
 	return c.Conn.Write(p)
 }
 
-// urlopen of one request with the socket timeout, environment proxies and urllib's error classes
+// Body of one router request under a per socket operation timeout, the proxy each hop picks and the redirects lmRedirect allows
 func lmURLOpen(method, rawURL string, headers map[string]string, body []byte, timeout time.Duration) ([]byte, error) {
 	dialer := &net.Dialer{Timeout: timeout}
 	transport := &http.Transport{
-		Proxy:             pyurl.UrlopenProxy,
+		Proxy:             httputil.Proxy,
 		DisableKeepAlives: true,
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 			conn, err := netpref.DialContext(dialer.DialContext)(ctx, network, addr)
@@ -491,7 +490,7 @@ func lmURLOpen(method, rawURL string, headers map[string]string, body []byte, ti
 			return &lmTimeoutConn{Conn: conn, timeout: timeout}, nil
 		},
 	}
-	client := &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	client := &http.Client{Transport: transport, CheckRedirect: httputil.RedirectPolicy(false)}
 	var visited map[string]int
 	for {
 		var reader io.Reader
@@ -500,7 +499,7 @@ func lmURLOpen(method, rawURL string, headers map[string]string, body []byte, ti
 		}
 		req, err := http.NewRequest(method, rawURL, reader)
 		if err != nil {
-			return nil, fmt.Errorf("unknown url type: %s", pyrepr.Repr(rawURL))
+			return nil, err
 		}
 		for k, v := range headers {
 			req.Header.Set(k, v)
@@ -536,7 +535,7 @@ func lmURLOpen(method, rawURL string, headers map[string]string, body []byte, ti
 	}
 }
 
-// urllib HTTPError of a response urlopen refuses, its text the code and the server's reason phrase
+// Non 2xx answer the router request stops at, its text the code and the server's reason phrase
 type lmHTTPStatusError struct {
 	Code int
 	URL  string
@@ -545,23 +544,15 @@ type lmHTTPStatusError struct {
 
 func (e *lmHTTPStatusError) Error() string { return fmt.Sprintf("HTTP %d %s", e.Code, e.Msg) }
 
-// Python exception class the error stands for
-func (e *lmHTTPStatusError) PyTypeName() string { return "HTTPError" }
-
-// Python module of urllib's HTTPError
-func (e *lmHTTPStatusError) PyModule() string { return "urllib.error" }
-
-// Python repr of urllib's HTTPError, the code and the quoted reason
-func (e *lmHTTPStatusError) PyRepr() string {
-	return fmt.Sprintf("<HTTPError %d: %s>", e.Code, pyrepr.Repr(e.Msg))
-}
+// Kind label of a refused HTTP answer
+func (e *lmHTTPStatusError) ErrorKind() string { return "HTTPError" }
 
 const lmRedirectLoopMsg = "the server redirects in a loop, the last redirect was "
 
-// Next URL urllib's redirect handler follows for a non 2xx response, the HTTPError it raises when it refuses
+// Next URL of a redirect the router request follows: 301, 302 and 303 for GET, HEAD and POST, 307 and 308 for GET and HEAD, to http, https or ftp, at most four visits of one URL and ten URLs in all; any other non 2xx answer an *lmHTTPStatusError
 func lmRedirect(resp *http.Response, method, current string, visited *map[string]int) (string, error) {
 	code := resp.StatusCode
-	reason := strings.TrimPrefix(strings.TrimPrefix(resp.Status, fmt.Sprint(code)), " ")
+	reason := strings.TrimPrefix(strings.TrimPrefix(resp.Status, strconv.Itoa(code)), " ")
 	if code != 301 && code != 302 && code != 303 && code != 307 && code != 308 {
 		return "", &lmHTTPStatusError{code, current, reason}
 	}
@@ -573,24 +564,24 @@ func lmRedirect(resp *http.Response, method, current string, visited *map[string
 		return "", &lmHTTPStatusError{code, current, reason}
 	}
 	newURL := target[0]
-	parts, err := pyurl.Parse(newURL)
+	ref, err := url.Parse(urlutil.Escape(newURL, "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"))
 	if err != nil {
 		return "", err
 	}
-	if parts.Scheme != "http" && parts.Scheme != "https" && parts.Scheme != "ftp" && parts.Scheme != "" {
+	if ref.Scheme != "http" && ref.Scheme != "https" && ref.Scheme != "ftp" && ref.Scheme != "" {
 		return "", &lmHTTPStatusError{code, newURL, fmt.Sprintf("%s, the redirect to %s is not allowed", reason, newURL)}
 	}
-	if parts.Path == "" && parts.Netloc != "" {
-		parts.Path = "/"
+	if ref.Path == "" && ref.Host != "" {
+		ref.Path = "/"
 	}
-	joined, err := pyurl.Join(current, pyurl.Quote(pyurl.Unparse(parts), "!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~"))
+	base, err := url.Parse(current)
 	if err != nil {
 		return "", err
 	}
+	joined := base.ResolveReference(ref).String()
 	if method != http.MethodGet && method != http.MethodHead && (method != http.MethodPost || code > 303) {
 		return "", &lmHTTPStatusError{code, current, reason}
 	}
-	joined = strings.ReplaceAll(joined, " ", "%20")
 	if *visited == nil {
 		*visited = map[string]int{}
 	} else if (*visited)[joined] >= 4 || len(*visited) >= 10 {
@@ -600,18 +591,14 @@ func lmRedirect(resp *http.Response, method, current string, visited *map[string
 	return joined, nil
 }
 
-// urllib's exception for a transport failure, a URLError for the connect and the raw socket error after it
+// Transport failure of a router request: a failed connect wrapped as one, a socket timeout after it as *lmTimeoutError, a connection closed before any answer as pm's disconnect error
 func lmURLOpenError(err error) error {
-	var ne net.Error
-	timedOut := errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout())
 	var de *lmDialError
 	if errors.As(err, &de) {
-		if timedOut {
-			return &pyurl.URLError{Reason: "timed out"}
-		}
-		return &pyurl.URLError{Reason: errchain.OSText(de.err)}
+		return fmt.Errorf("connect: %w", de)
 	}
-	if timedOut {
+	var ne net.Error
+	if errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()) {
 		return &lmTimeoutError{}
 	}
 	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
@@ -620,13 +607,12 @@ func lmURLOpenError(err error) error {
 	return err
 }
 
-// Python TimeoutError of a socket read past its timeout
+// Socket read or write past the request timeout once connected
 type lmTimeoutError struct{}
 
-func (*lmTimeoutError) Error() string      { return "timed out" }
-func (*lmTimeoutError) Timeout() bool      { return true }
-func (*lmTimeoutError) Temporary() bool    { return true }
-func (*lmTimeoutError) PyTypeName() string { return "TimeoutError" }
+func (*lmTimeoutError) Error() string   { return "timed out" }
+func (*lmTimeoutError) Timeout() bool   { return true }
+func (*lmTimeoutError) Temporary() bool { return true }
 
 // Calls the local router with its bearer key, a GET decoding JSON and a POST of payload returning nil
 func lmRouterRequest(endpoint map[string]any, path string, timeout time.Duration, payload []byte) (any, error) {
@@ -663,7 +649,7 @@ func lmJSONLoadsBytes(raw []byte) (any, error) {
 	if v, ok := moaJSONLoads(text); ok {
 		return v, nil
 	}
-	if _, err := pyjson.Loads(text); err != nil {
+	if _, err := jsonutil.Decode(text); err != nil {
 		return nil, err
 	}
 	return nil, errors.New("the reply is empty, expected JSON")
@@ -1055,7 +1041,7 @@ func lmRunDownloadPlan(ctx context.Context, job map[string]any, plan []lmPlanRow
 		return nil
 	}
 	lmJobsMu.Lock()
-	job["done_bytes"], job["total_bytes"], job["ranges"] = int64(0), nil, pyjson.NewObject()
+	job["done_bytes"], job["total_bytes"], job["ranges"] = int64(0), nil, jsonutil.NewObject()
 	lmJobsMu.Unlock()
 	if err := lmStep(job, "downloading", "Downloading the draft model that speeds up generation"); err != nil {
 		return err
@@ -1065,8 +1051,8 @@ func lmRunDownloadPlan(ctx context.Context, job map[string]any, plan []lmPlanRow
 }
 
 // Per destination coverage as the ordered mapping the job carries
-func lmRangesObject(ranges []pm.RangeSet) *pyjson.Object {
-	out := pyjson.NewObject()
+func lmRangesObject(ranges []pm.RangeSet) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, rs := range ranges {
 		rows := make([]any, 0, len(rs.Ranges))
 		for _, r := range rs.Ranges {
@@ -1785,7 +1771,7 @@ func LocalModelsQuickstart(ctx context.Context, modelID string) (map[string]any,
 		if len(downloadPlan) > 0 {
 			lmJobsMu.Lock()
 			if job["phase"] != "downloading" {
-				job["done_bytes"], job["total_bytes"], job["ranges"] = int64(0), nil, pyjson.NewObject()
+				job["done_bytes"], job["total_bytes"], job["ranges"] = int64(0), nil, jsonutil.NewObject()
 			}
 			lmJobsMu.Unlock()
 			if err := lmDeps.runDownloadPlan(ctx, job, downloadPlan, entry.DisplayName, &entry); err != nil {

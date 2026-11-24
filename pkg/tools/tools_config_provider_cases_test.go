@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Provider row of a tool category by its display name
-func categoryRow(t *testing.T, category, name string) *pyjson.Object {
+func categoryRow(t *testing.T, category, name string) *jsonutil.Object {
 	t.Helper()
 	for _, p := range catProviders(categoryOf(category)) {
 		if rowText(p, "name") == name {
@@ -27,8 +27,8 @@ func categoryRow(t *testing.T, category, name string) *pyjson.Object {
 }
 
 // Row built from ordered key value pairs
-func caseRow(pairs ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func caseRow(pairs ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(pairs); i += 2 {
 		o.Set(pairs[i].(string), pairs[i+1])
 	}
@@ -209,7 +209,7 @@ func TestVideoPluginProviderActiveDetectActiveIndexPicksVideoPluginMatch(t *test
 	s, _ := newTestToolsSetup(t, "")
 	t.Setenv("FAL_KEY", "fal-key")
 	cfg := config.Tree{"video_gen": map[string]any{"provider": "xai"}}
-	providers := []*pyjson.Object{
+	providers := []*jsonutil.Object{
 		caseRow("name", "xAI Grok Imagine", "env_vars", []any{}, "video_gen_plugin_name", "xai"),
 		caseRow("name", "FAL.ai", "env_vars", []any{caseRow("key", "FAL_KEY", "prompt", "FAL")}, "video_gen_plugin_name", "fal"),
 	}

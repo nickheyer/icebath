@@ -8,8 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner double the owner authority reads, never draining
@@ -25,7 +26,7 @@ func (ownerTestRunner) AdapterForSource(context.Context, *gateway.SessionSource)
 func (ownerTestRunner) MultiplexProfiles() bool { return false }
 
 // Authority over a fresh store holding live cron session s owned by the cron principal, with its claimed fire
-func claimedCronFire(t *testing.T, s *Store, requestID string) (*gateway.SessionAuthority, *pyjson.Object) {
+func claimedCronFire(t *testing.T, s *Store, requestID string) (*gateway.SessionAuthority, *jsonutil.Object) {
 	t.Helper()
 	ctx := context.Background()
 	db, err := state.NewSessionDB(ctx, filepath.Join(s.Home(), "state.db"), false)
@@ -44,7 +45,7 @@ func claimedCronFire(t *testing.T, s *Store, requestID string) (*gateway.Session
 	owner := state.CronPrincipalID
 	authority.Sessions["s"] = gateway.NewLiveSession(&gateway.SessionSource{UserID: &owner}, "route")
 	if _, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: owner, SessionID: "s",
-		RequestID: requestID, Payload: pyjson.ObjectOf("text", "")}); err != nil {
+		RequestID: requestID, Payload: jsonutil.ObjectOf("text", "")}); err != nil {
 		t.Fatal(err)
 	}
 	row, _, err := db.ClaimSessionInput(ctx, state.ClaimInput{Epoch: epoch, SessionID: "s"})
@@ -55,9 +56,9 @@ func claimedCronFire(t *testing.T, s *Store, requestID string) (*gateway.Session
 }
 
 // Frozen cron policy of a fire
-func cronFirePolicy(t *testing.T, requestID string, job *pyjson.Object) *gateway.LocalSessionPolicy {
+func cronFirePolicy(t *testing.T, requestID string, job *jsonutil.Object) *gateway.LocalSessionPolicy {
 	t.Helper()
-	text, err := pyjson.Dumps(pyjson.ObjectOf("extra_prompt", nil, "request_id", requestID, "cron_job", job))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("extra_prompt", nil, "request_id", requestID, "cron_job", job))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +86,7 @@ func TestCronCancelBetweenClaimAndExecutionRegistrationStopsTheJob(t *testing.T)
 		t.Fatalf("cancel = %v, %v", got, err)
 	}
 	_, err = gateway.CronExecute(ctx, authority, gateway.SessionRef{ProfileID: "p", SessionID: "s"}, row,
-		cronFirePolicy(t, "cron:job:fire", pyjson.ObjectOf("id", "job")))
+		cronFirePolicy(t, "cron:job:fire", jsonutil.ObjectOf("id", "job")))
 	var named interface{ PyTypeName() string }
 	if err == nil || !errors.As(err, &named) || named.PyTypeName() != "RuntimeError" {
 		t.Fatalf("execute error = %v, want RuntimeError", err)
@@ -123,7 +124,7 @@ func TestOwnerExecutionBindsTheSchedulerCronIdentityInsideRunJob(t *testing.T) {
 	}
 	t.Cleanup(func() { ownerRunJob = prev })
 	answer, err := gateway.CronExecute(ctx, authority, gateway.SessionRef{ProfileID: "p", SessionID: "s"}, row,
-		cronFirePolicy(t, requestID, pyjson.ObjectOf("id", "job", "name", "Job")))
+		cronFirePolicy(t, requestID, jsonutil.ObjectOf("id", "job", "name", "Job")))
 	if err != nil || answer != "answer" {
 		t.Fatalf("execute = %q, %v", answer, err)
 	}
@@ -133,8 +134,8 @@ func TestOwnerExecutionBindsTheSchedulerCronIdentityInsideRunJob(t *testing.T) {
 	if identity == nil || identity.JobID != "job" || identity.JobName != "Job" || identity.ExecutionID != executionID {
 		t.Fatalf("identity = %+v", identity)
 	}
-	if identity.Source != "builtin" || !pyjson.Equal(optAny(identity.ScheduledInstant), record["scheduled_instant"]) ||
-		!pyjson.Equal(optAny(identity.StartedAt), record["started_at"]) {
+	if identity.Source != "builtin" || !anyutil.Equal(optAny(identity.ScheduledInstant), record["scheduled_instant"]) ||
+		!anyutil.Equal(optAny(identity.StartedAt), record["started_at"]) {
 		t.Fatalf("identity = %+v, record %v", identity, record)
 	}
 	if CurrentCronExecution(ctx) != nil {
@@ -152,7 +153,7 @@ func (c ownerTestConnection) CronAuthority() *gateway.SessionAuthority { return 
 func (c ownerTestConnection) CronActor() *gateway.Principal            { return c.actor }
 
 // String column of an admission row
-func rowField(row *pyjson.Object, key string) string {
+func rowField(row *jsonutil.Object, key string) string {
 	v, _ := row.Get(key)
 	s, _ := v.(string)
 	return s

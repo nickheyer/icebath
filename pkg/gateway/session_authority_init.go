@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Runner that holds the session database of the profile it launched with
@@ -31,7 +31,7 @@ func backfillLegacySessionOwners(ctx context.Context, db *state.SessionDB) int {
 		return 0
 	}
 	if stamped != 0 {
-		pkgLog().Info(fmt.Sprintf("Stamped %d legacy session row(s) with owner profile %s", stamped, pyrepr.Repr(stamp)))
+		pkgLog().Info(fmt.Sprintf("Stamped %d legacy session row(s) with owner profile %s", stamped, anyutil.Quote(stamp)))
 	}
 	return stamped
 }
@@ -58,7 +58,7 @@ func InitializeSessionAuthority(ctx context.Context, runner AuthorityRunner, pro
 		}
 		db = holder.SessionDB(ctx)
 	}
-	dbKey, err := pypath.Resolve(db.Path())
+	dbKey, err := pathutil.Resolve(db.Path())
 	if err != nil {
 		return nil, err
 	}

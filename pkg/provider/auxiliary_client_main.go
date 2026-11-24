@@ -7,8 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Full config load seam that api key and base URL reads and the MoA lookup go through
@@ -78,7 +78,7 @@ func auxResolveMoaAggregator(ctx context.Context, presetName string) (string, st
 		provider, model, ok = resolveMoaAggregator(ctx, presetName)
 	})
 	if err != nil || !ok {
-		pkgLog().Debug(fmt.Sprintf("MoA aggregator resolution failed for preset %s", pyrepr.Repr(presetName)), "error", err)
+		pkgLog().Debug(fmt.Sprintf("MoA aggregator resolution failed for preset %s", anyutil.Quote(presetName)), "error", err)
 		return "", ""
 	}
 	if provider != "" && model != "" && strings.ToLower(provider) != "moa" {
@@ -104,7 +104,7 @@ type auxOrigin struct {
 
 // Origin triple of a base URL, the urlparse ValueError propagating
 func auxBaseURLOrigin(raw string) (auxOrigin, error) {
-	s, h, p, err := pyurl.BaseURLOrigin(raw)
+	s, h, p, err := urlutil.BaseOrigin(raw)
 	return auxOrigin{s, h, p}, err
 }
 

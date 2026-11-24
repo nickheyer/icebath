@@ -7,12 +7,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 func TestDispatchInlineRPCDoesNotBlockUnderGilPressure(t *testing.T) {
-	released := &pythread.Event{}
+	released := &syncutil.Event{}
 	t.Cleanup(released.Set)
 	slowManage := func(_ context.Context, rid any, _ map[string]any) map[string]any {
 		released.Wait(5)
@@ -52,10 +52,10 @@ type recordingTransport struct {
 	frames []map[string]any
 }
 
-func (r *recordingTransport) Write(obj *pyjson.Object) bool {
+func (r *recordingTransport) Write(obj *jsonutil.Object) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	frame, _ := pyjson.Plain(obj).(map[string]any)
+	frame, _ := jsonutil.Plain(obj).(map[string]any)
 	r.frames = append(r.frames, frame)
 	return true
 }

@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Approval choices to the card action ids their buttons carry
@@ -68,7 +68,7 @@ func (a *TeamsAdapter) sendViaConvRef(ctx context.Context, chatID string, activi
 }
 
 // Sends an adaptive card through the stored conversation reference when there is one
-func (a *TeamsAdapter) sendCard(ctx context.Context, chatID string, card *pyjson.Object) (*sentActivity, error) {
+func (a *TeamsAdapter) sendCard(ctx context.Context, chatID string, card *jsonutil.Object) (*sentActivity, error) {
 	if !a.appReady() {
 		return nil, nil
 	}
@@ -137,8 +137,8 @@ func (a *TeamsAdapter) SendExecApprovalPrompt(ctx context.Context, prompt *gatew
 	a.mu.Unlock()
 	actions := []any{}
 	for _, action := range prompt.Actions {
-		data := pyjson.ObjectOf("session_key", prompt.SessionKey, "prompt_id", promptID, "icebath_action", eaCardActions[action.Choice])
-		btn := pyjson.ObjectOf("type", "Action.Execute", "title", action.Label, "verb", "icebath_approve", "data", data)
+		data := jsonutil.ObjectOf("session_key", prompt.SessionKey, "prompt_id", promptID, "icebath_action", eaCardActions[action.Choice])
+		btn := jsonutil.ObjectOf("type", "Action.Execute", "title", action.Label, "verb", "icebath_approve", "data", data)
 		if action.Style != "" {
 			btn.Set("style", eaCardStyles[action.Style])
 		}
@@ -184,7 +184,7 @@ func (a *TeamsAdapter) sendMediaAttachment(ctx context.Context, chatID, source, 
 			contentURL = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
 		}
 		activity := map[string]any{"type": "message",
-			"attachments": []any{pyjson.ObjectOf("contentType", mimeType, "contentUrl", contentURL)}}
+			"attachments": []any{jsonutil.ObjectOf("contentType", mimeType, "contentUrl", contentURL)}}
 		if caption != "" {
 			activity["text"] = caption
 		}

@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Supervision class attributes of the runner with their values
@@ -23,8 +22,8 @@ const (
 // Fans a normalised reaction event out to the hook registry, a failing emit only logged
 func (r *GatewayRunner) handleReactionEvent(ctx context.Context, hookCtx map[string]any) {
 	eventName := "reaction:added"
-	if name := hookCtx["event_name"]; pyrepr.Truthy(name) {
-		eventName = pyrepr.Str(name)
+	if name := hookCtx["event_name"]; anyutil.IsTrue(name) {
+		eventName = anyutil.String(name)
 	}
 	if err := r.hooks.emit(ctx, eventName, hookCtx); err != nil {
 		logSuppressedExc(slog.LevelDebug, err, "[Gateway] reaction hook emit failed")
@@ -87,7 +86,7 @@ func sleepCtx(ctx context.Context, seconds float64) error {
 
 // Launches a long lived supervised background task that logs its death and respawns with capped backoff
 func (r *GatewayRunner) spawnSupervised(factory func(ctx context.Context) error, name string, restart bool, attempt int, hooks supervisedHooks) *gatewayTask {
-	started := pythread.Monotonic()
+	started := timeutil.Monotonic()
 	task := spawnGatewayTask(context.Background(), name, func(taskCtx context.Context) (any, error) {
 		return nil, factory(taskCtx)
 	})
@@ -124,7 +123,7 @@ func (r *GatewayRunner) spawnSupervised(factory func(ctx context.Context) error,
 			return
 		}
 		effective := attempt
-		if pythread.Monotonic()-started >= float64(r.supervisedHealthySecs) {
+		if timeutil.Monotonic()-started >= float64(r.supervisedHealthySecs) {
 			effective = 0
 		}
 		if effective >= r.maxSupervisedRestarts {

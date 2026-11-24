@@ -6,8 +6,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var DingTalkTypeMapping = map[string]string{"picture": "image", "voice": "audio"}
@@ -60,12 +60,12 @@ func asDict(v any) (map[string]any, bool) {
 
 // Top level json.loads object as a payload dict so the URL lookup reads it like any other dict
 func loadedDict(v any) any {
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return v
 	}
 	out := make(map[string]any, obj.Len())
-	for _, k := range obj.Keys {
+	for _, k := range obj.Keys() {
 		out[k], _ = obj.Get(k)
 	}
 	return out
@@ -80,18 +80,18 @@ func dictGet(d map[string]any, key string, def any) any {
 
 func or(vals ...any) any {
 	for _, v := range vals[:len(vals)-1] {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v
 		}
 	}
 	return vals[len(vals)-1]
 }
 
-// Payload value of the wrong kind, keeping the exception class callers read
+// Payload value of the wrong kind, labelled with the kind of failure callers read
 type payloadError struct{ class, msg string }
 
-func (e *payloadError) Error() string      { return e.msg }
-func (e *payloadError) PyTypeName() string { return e.class }
+func (e *payloadError) Error() string     { return e.msg }
+func (e *payloadError) ErrorKind() string { return e.class }
 
 func strip(v any) (string, error) {
 	s, ok := v.(string)
@@ -129,11 +129,11 @@ func extContent(m *ChatbotMessage) map[string]any {
 // Rich text item list from the current rich_text_content shape or the legacy rich_text field
 func richList(m *ChatbotMessage) ([]any, bool) {
 	richText := or(m.RichTextContent, m.RichText)
-	if !pyrepr.Truthy(richText) {
+	if !anyutil.IsTrue(richText) {
 		return nil, false
 	}
 	list := richText
-	if rc, ok := richText.(*RichTextContent); ok && pyrepr.Truthy(rc.RichTextList) {
+	if rc, ok := richText.(*RichTextContent); ok && anyutil.IsTrue(rc.RichTextList) {
 		list = rc.RichTextList
 	}
 	out, ok := list.([]any)
@@ -155,17 +155,17 @@ func cardText(m *ChatbotMessage) (string, error) {
 		title, rawContent := dictGet(card, "title", ""), dictGet(card, "content", "")
 		docURL := urlOf(rawContent)
 		if s, isStr := rawContent.(string); isStr && strings.TrimSpace(s) != "" {
-			if parsed, err := pyjson.Loads(strings.TrimSpace(s)); err == nil {
+			if parsed, err := jsonutil.Decode(strings.TrimSpace(s)); err == nil {
 				docURL = urlOf(loadedDict(parsed))
 			} else {
 				docURL = rawContent
 			}
 		}
 		var parts []any
-		if pyrepr.Truthy(title) {
-			parts = append(parts, "[文档] "+pyrepr.Str(title))
+		if anyutil.IsTrue(title) {
+			parts = append(parts, "[文档] "+anyutil.String(title))
 		}
-		if pyrepr.Truthy(docURL) {
+		if anyutil.IsTrue(docURL) {
 			parts = append(parts, docURL)
 		}
 		var err error
@@ -189,15 +189,15 @@ func interactiveCardText(m *ChatbotMessage) (string, error) {
 		ec = map[string]any{}
 	}
 	docURL, title := dictGet(ec, "biz_custom_action_url", ""), dictGet(ec, "title", "")
-	if !pyrepr.Truthy(docURL) && !pyrepr.Truthy(title) {
+	if !anyutil.IsTrue(docURL) && !anyutil.IsTrue(title) {
 		return "", nil
 	}
 	head := "[文档卡片]"
-	if pyrepr.Truthy(title) {
-		head = "[文档卡片] " + pyrepr.Str(title)
+	if anyutil.IsTrue(title) {
+		head = "[文档卡片] " + anyutil.String(title)
 	}
 	parts := []any{head}
-	if pyrepr.Truthy(docURL) {
+	if anyutil.IsTrue(docURL) {
 		parts = append(parts, docURL)
 	}
 	return join(parts)
@@ -213,8 +213,8 @@ func extField(m *ChatbotMessage, field string) any {
 var emptyTextFallbacks = map[string]func(*ChatbotMessage) (string, error){
 	"audio": func(m *ChatbotMessage) (string, error) { return strip(or(extField(m, "recognition"), "")) },
 	"file": func(m *ChatbotMessage) (string, error) {
-		if name := extField(m, "fileName"); pyrepr.Truthy(name) {
-			return "[文件] " + pyrepr.Str(name), nil
+		if name := extField(m, "fileName"); anyutil.IsTrue(name) {
+			return "[文件] " + anyutil.String(name), nil
 		}
 		return "", nil
 	},
@@ -238,7 +238,7 @@ func ExtractText(m *ChatbotMessage) (string, error) {
 	} else if d, ok := asDict(text); ok {
 		raw = dictGet(d, "content", "")
 	} else {
-		raw = pyrepr.Str(text)
+		raw = anyutil.String(text)
 	}
 	content, err := strip(raw)
 	if err != nil {
@@ -248,7 +248,7 @@ func ExtractText(m *ChatbotMessage) (string, error) {
 		if list, ok := richList(m); ok {
 			var parts []any
 			for _, it := range list {
-				if t := richItemText(it); pyrepr.Truthy(t) {
+				if t := richItemText(it); anyutil.IsTrue(t) {
 					parts = append(parts, t)
 				}
 			}
@@ -271,7 +271,7 @@ func codeString(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func hashableKey(v any) (string, bool, error) {
@@ -283,9 +283,9 @@ func hashableKey(v any) (string, bool, error) {
 	return s, ok, nil
 }
 
-// Extension used for the MIME lookup of a file name, raising like Python on a truthy non string name
+// Extension used for the MIME lookup of a file name, an error for a truthy name that is not text
 func fileNameExt(fname any) (string, error) {
-	if !pyrepr.Truthy(fname) {
+	if !anyutil.IsTrue(fname) {
 		return "", nil
 	}
 	if s, ok := fname.(string); ok {
@@ -298,7 +298,7 @@ func fileNameExt(fname any) (string, error) {
 	switch c := fname.(type) {
 	case []any:
 		for _, e := range c {
-			contains = contains || pyrepr.Equal(e, ".")
+			contains = contains || anyutil.Equal(e, ".")
 		}
 	default:
 		d, ok := asDict(fname)
@@ -329,7 +329,7 @@ func ExtractMedia(m *ChatbotMessage) (gateway.MessageType, []string, []string, e
 			continue
 		}
 		dlCode := or(item["downloadCode"], item["download_code"], "")
-		if !pyrepr.Truthy(dlCode) {
+		if !anyutil.IsTrue(dlCode) {
 			continue
 		}
 		itemType, isStr, err := hashableKey(dictGet(item, "type", ""))
@@ -378,7 +378,7 @@ func ExtractMedia(m *ChatbotMessage) (gateway.MessageType, []string, []string, e
 		if ec == nil {
 			ec = map[string]any{}
 		}
-		if dlCode := or(ec["downloadCode"], ""); pyrepr.Truthy(dlCode) {
+		if dlCode := or(ec["downloadCode"], ""); anyutil.IsTrue(dlCode) {
 			ext, err := fileNameExt(dictGet(ec, "fileName", ""))
 			if err != nil {
 				return "", nil, nil, err
@@ -414,14 +414,14 @@ func CollectDownloadCodes(m *ChatbotMessage) []DownloadCodeRef {
 				continue
 			}
 			for _, key := range []string{"downloadCode", "pictureDownloadCode", "download_code"} {
-				if pyrepr.Truthy(item[key]) {
+				if anyutil.IsTrue(item[key]) {
 					codes = append(codes, DownloadCodeRef{item, key})
 				}
 			}
 		}
 	}
 	if m.MessageType == "file" || m.MessageType == "image" {
-		if ec := extContent(m); len(ec) > 0 && pyrepr.Truthy(ec["downloadCode"]) {
+		if ec := extContent(m); len(ec) > 0 && anyutil.IsTrue(ec["downloadCode"]) {
 			codes = append(codes, DownloadCodeRef{ec, "downloadCode"})
 		}
 	}

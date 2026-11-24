@@ -35,8 +35,7 @@ func kanbanGoalLoopRun(c *CLI, firstResponse string, runTurn func(string) (any, 
 	rawRunID := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_RUN_ID"))
 	var workerRunID *int64
 	if rawRunID != "" {
-		if n, ok := pyIntOf(rawRunID); ok {
-			id := int64(n)
+		if id, err := textutil.ParseInt(rawRunID); err == nil {
 			workerRunID = &id
 		} else {
 			pkgLog().Warn(fmt.Sprintf("invalid ICEBATH_KANBAN_RUN_ID=%s", errchain.Show(rawRunID)))

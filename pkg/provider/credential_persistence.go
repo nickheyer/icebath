@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var safeSecretishMetadataKeys = map[string]bool{
@@ -131,8 +131,8 @@ func SanitizeBorrowedCredentialPayload(payload map[string]any) map[string]any {
 		result[k] = v
 	}
 	source := ""
-	if raw := result["source"]; pyrepr.Truthy(raw) {
-		source = pyrepr.Str(raw)
+	if raw := result["source"]; anyutil.IsTrue(raw) {
+		source = anyutil.String(raw)
 	}
 	if !IsBorrowedCredentialSource(source) {
 		return result

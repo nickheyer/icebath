@@ -5,8 +5,9 @@ import (
 	"errors"
 	"math"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -29,7 +30,7 @@ func unionKeys(sets ...map[string]bool) map[string]bool {
 
 // True for a Python ValueError however the port represents it
 func isPyValueError(err error) bool {
-	var typed *pyint.Error
+	var typed *errorutil.Error
 	if errors.As(err, &typed) {
 		return typed.Kind == "ValueError"
 	}
@@ -38,14 +39,14 @@ func isPyValueError(err error) bool {
 }
 
 // String of a payload value, empty for nil
-func payloadString(payload *pyjson.Object, key string) string {
+func payloadString(payload *jsonutil.Object, key string) string {
 	v, _ := payload.Get(key)
 	s, _ := v.(string)
 	return s
 }
 
 // Keep existing constructor backfill of the reserved row, refusing foreign identity or unreserved config
-func workerCreate(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerCreate(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	if _, has := payload.Get("source"); payloadHasKeysOutside(payload, workerCreateFields) || !has {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -54,11 +55,11 @@ func workerCreate(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID 
 		return nil, err
 	}
 	source, _ := payload.Get("source")
-	if row == nil || !pyjson.Equal(source, rowValue(row, "source")) {
+	if row == nil || !anyutil.Equal(source, rowValue(row, "source")) {
 		return nil, runtimeRefusal("permission_denied")
 	}
 	for key := range workerIdentityFields {
-		if value, _ := payload.Get(key); value != nil && !pyjson.Equal(value, rowValue(row, key)) {
+		if value, _ := payload.Get(key); value != nil && !anyutil.Equal(value, rowValue(row, key)) {
 			return nil, runtimeRefusal("permission_denied")
 		}
 	}
@@ -73,9 +74,9 @@ func workerCreate(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID 
 		}
 	}
 	rawConfig, _ := payload.Get("model_config")
-	var config *pyjson.Object
+	var config *jsonutil.Object
 	if rawConfig != nil {
-		obj, ok := rawConfig.(*pyjson.Object)
+		obj, ok := rawConfig.(*jsonutil.Object)
 		if !ok || payloadHasKeysOutside(obj, workerConstructorConfig) {
 			return nil, runtimeRefusal("invalid_params")
 		}
@@ -95,7 +96,7 @@ func workerCreate(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID 
 		return nil, err
 	}
 	if config != nil && config.Len() > 0 {
-		text, err := pyjson.Dumps(config)
+		text, err := jsonutil.Encode(config)
 		if err != nil {
 			return nil, err
 		}
@@ -104,11 +105,11 @@ func workerCreate(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID 
 			return nil, err
 		}
 	}
-	return pyjson.ObjectOf("value", sessionID), nil
+	return jsonutil.ObjectOf("value", sessionID), nil
 }
 
 // Ends the session once with the given reason, keeping an earlier end stamp
-func workerEnd(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerEnd(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	raw, _ := payload.Get("end_reason")
 	reason, ok := raw.(string)
 	if !payloadKeysExactly(payload, "end_reason") || !ok || reason == "" {
@@ -118,11 +119,11 @@ func workerEnd(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID str
 		[]any{now(), reason, sessionID}, sessionID, reason); err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", nil), nil
+	return jsonutil.ObjectOf("value", nil), nil
 }
 
 // Lifecycle status of the transcript tail, empty when no row exists
-func workerLifecycle(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerLifecycle(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	if payload.Len() > 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -135,7 +136,7 @@ func workerLifecycle(d *SessionDB, ctx context.Context, conn SQLiteConn, session
 	if row != nil {
 		value = ClassifySessionStatus(row["role"], pyTruthy(row["has_tool_calls"]), row["finish_reason"])
 	}
-	return pyjson.ObjectOf("value", value), nil
+	return jsonutil.ObjectOf("value", value), nil
 }
 
 // True when the source is one of user, derived or llm
@@ -145,7 +146,7 @@ func validTitleSource(v any) bool {
 }
 
 // Applies the title rules in the receipt, an invalid or conflicting title answering false with its candidate
-func workerTitle(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerTitle(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	title, _ := payload.Get("title")
 	source, _ := payload.Get("source")
 	if _, isStr := title.(string); !payloadKeysExactly(payload, "title", "source") || !validTitleSource(source) || (title != nil && !isStr) {
@@ -155,15 +156,15 @@ func workerTitle(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID s
 	affected, err := d.setSessionTitleInTransaction(ctx, conn, sessionID, text, source.(string))
 	if err != nil {
 		if isPyValueError(err) {
-			return pyjson.ObjectOf("value", false, "error", "Title unavailable or invalid", "title_candidate", title), nil
+			return jsonutil.ObjectOf("value", false, "error", "Title unavailable or invalid", "title_candidate", title), nil
 		}
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", len(affected) > 0), nil
+	return jsonutil.ObjectOf("value", len(affected) > 0), nil
 }
 
 // Rewrites the title source of a titled session
-func workerTitleSource(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerTitleSource(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	source, _ := payload.Get("source")
 	if !payloadKeysExactly(payload, "source") || !validTitleSource(source) {
 		return nil, runtimeRefusal("invalid_params")
@@ -172,11 +173,11 @@ func workerTitleSource(d *SessionDB, ctx context.Context, conn SQLiteConn, sessi
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", n > 0), nil
+	return jsonutil.ObjectOf("value", n > 0), nil
 }
 
 // Next numbered title for a base the session holds or has attempted in a receipt
-func workerNextTitle(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerNextTitle(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	raw, _ := payload.Get("base_title")
 	candidate, ok := raw.(string)
 	if !payloadKeysExactly(payload, "base_title") || !ok {
@@ -192,14 +193,14 @@ func workerNextTitle(d *SessionDB, ctx context.Context, conn SQLiteConn, session
 	if err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(candidate, title) && attempted == nil {
+	if !anyutil.Equal(candidate, title) && attempted == nil {
 		return nil, runtimeRefusal("permission_denied")
 	}
 	next, err := nextTitleInLineage(ctx, conn, candidate)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", next), nil
+	return jsonutil.ObjectOf("value", next), nil
 }
 
 // True when the value is a Python int or float
@@ -221,7 +222,7 @@ func payloadFloat(v any) float64 {
 }
 
 // Stamps mid turn activity without moving the activity clock backwards
-func workerActivity(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerActivity(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	if !payloadKeysExactly(payload, "ts", "description", "provenance") {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -247,11 +248,11 @@ func workerActivity(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionI
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", nil), nil
+	return jsonutil.ObjectOf("value", nil), nil
 }
 
 // Clears the activity description and provenance
-func workerActivityClear(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerActivityClear(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	if payload.Len() > 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -259,16 +260,16 @@ func workerActivityClear(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 		"", string(ActivityProvenanceUnknown), sessionID); err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", nil), nil
+	return jsonutil.ObjectOf("value", nil), nil
 }
 
 // Rewrites the billing route, the billing mode only when given
-func workerBillingRoute(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerBillingRoute(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	if !payloadKeysExactly(payload, "provider", "base_url", "billing_mode") {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	for _, k := range payload.Keys {
-		if v := payload.Vals[k]; v != nil {
+	for _, k := range payload.Keys() {
+		if v := payload.Value(k); v != nil {
 			if _, ok := v.(string); !ok {
 				return nil, runtimeRefusal("invalid_params")
 			}
@@ -281,11 +282,11 @@ func workerBillingRoute(d *SessionDB, ctx context.Context, conn SQLiteConn, sess
 		"WHERE id=?", provider, baseURL, mode, sessionID); err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", nil), nil
+	return jsonutil.ObjectOf("value", nil), nil
 }
 
 // Backfills the newest active user row's api_content when its content still matches
-func workerAPIContent(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerAPIContent(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	apiContent, _ := payload.Get("api_content")
 	if _, ok := apiContent.(string); !payloadKeysExactly(payload, "content", "api_content") || !ok {
 		return nil, runtimeRefusal("invalid_params")
@@ -297,11 +298,11 @@ func workerAPIContent(d *SessionDB, ctx context.Context, conn SQLiteConn, sessio
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", n), nil
+	return jsonutil.ObjectOf("value", n), nil
 }
 
 // Positive integer row id of the payload
-func payloadRowID(payload *pyjson.Object) (int64, error) {
+func payloadRowID(payload *jsonutil.Object) (int64, error) {
 	raw, _ := payload.Get("row_id")
 	rowID, ok := exactInt(raw)
 	if !ok || rowID <= 0 {
@@ -311,7 +312,7 @@ func payloadRowID(payload *pyjson.Object) (int64, error) {
 }
 
 // Backfills one active user row's api_content by row id when its content still matches
-func workerMessageAPIContent(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerMessageAPIContent(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	apiContent, _ := payload.Get("api_content")
 	if _, ok := apiContent.(string); !payloadKeysExactly(payload, "row_id", "content", "api_content") || !ok {
 		return nil, runtimeRefusal("invalid_params")
@@ -326,11 +327,11 @@ func workerMessageAPIContent(d *SessionDB, ctx context.Context, conn SQLiteConn,
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", n), nil
+	return jsonutil.ObjectOf("value", n), nil
 }
 
 // Rewrites one active user row of this session, display metadata replacing the api copy when given
-func workerUserContent(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerUserContent(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	_, hasDisplay := payload.Get("display_metadata")
 	_, hasRow := payload.Get("row_id")
 	_, hasContent := payload.Get("content")
@@ -353,7 +354,7 @@ func workerUserContent(d *SessionDB, ctx context.Context, conn SQLiteConn, sessi
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("value", n), nil
+		return jsonutil.ObjectOf("value", n), nil
 	}
 	display, _ := payload.Get("display_metadata")
 	metadata, err := encodeDisplayMetadata(display)
@@ -365,7 +366,7 @@ func workerUserContent(d *SessionDB, ctx context.Context, conn SQLiteConn, sessi
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("value", n), nil
+	return jsonutil.ObjectOf("value", n), nil
 }
 
 // Worker lifecycle operations by wire name

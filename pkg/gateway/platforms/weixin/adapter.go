@@ -13,11 +13,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 )
 
 // Connected adapters by bot token, the registry standalone sends reuse a live session through
@@ -127,11 +126,11 @@ func NewWeixinAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Weixin
 		return value
 	}
 	a.accountID = setting("account_id", "")
-	tokenRaw := pyrepr.Or(cfg.Token, extra["token"])
-	if err == nil && !pyrepr.Truthy(tokenRaw) {
+	tokenRaw := anyutil.Or(cfg.Token, extra["token"])
+	if err == nil && !anyutil.IsTrue(tokenRaw) {
 		tokenRaw, err = gateway.GetScopedSecret(ctx, "WEIXIN_TOKEN", "", false)
 	}
-	a.token = strings.TrimSpace(pyrepr.Str(tokenRaw))
+	a.token = strings.TrimSpace(anyutil.String(tokenRaw))
 	a.baseURL = strings.TrimRight(settings.WeixinBaseURL.Get(gateway.SettingsContext(ctx)), "/")
 	a.cdnBaseURL = strings.TrimRight(settings.WeixinCdnBaseURL.Get(gateway.SettingsContext(ctx)), "/")
 	sctx := gateway.SettingsContext(ctx)
@@ -159,9 +158,9 @@ func NewWeixinAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Weixin
 		if err != nil {
 			return nil, err
 		}
-		if persisted != nil && len(persisted.Keys) > 0 {
-			a.token = textOf(persisted.Vals["token"])
-			a.baseURL = strings.TrimRight(strings.TrimSpace(pyrepr.Str(pyrepr.Or(persisted.Vals["base_url"], a.baseURL))), "/")
+		if persisted != nil && persisted.Len() > 0 {
+			a.token = textOf(persisted.Value("token"))
+			a.baseURL = strings.TrimRight(strings.TrimSpace(anyutil.String(anyutil.Or(persisted.Value("base_url"), a.baseURL))), "/")
 		}
 	}
 	return a, nil
@@ -213,7 +212,7 @@ func (a *WeixinAdapter) Connect(ctx context.Context, isReconnect bool) (bool, er
 	case err != nil && ctx.Err() != nil:
 		return false, ctx.Err()
 	case err != nil:
-		pkgLog().Debug(fmt.Sprintf("[%s] Token lock unavailable (non-fatal): %s", a.Name(), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Token lock unavailable (non-fatal): %s", a.Name(), err.Error()))
 	case !acquired:
 		return false, nil
 	}
@@ -303,13 +302,13 @@ func (a *WeixinAdapter) pollLoop(ctx context.Context) error {
 		pollErr := func() error {
 			session, _ := a.sessions()
 			if session == nil {
-				return &pyErr{"AssertionError", ""}
+				return errSessionClosed
 			}
 			response, err := getUpdates(ctx, session, a.baseURL, a.token, syncBuf, timeoutMS)
 			if err != nil {
 				return err
 			}
-			if suggested, ok := response.Vals["longpolling_timeout_ms"].(int64); ok && suggested > 0 {
+			if suggested, ok := response.Value("longpolling_timeout_ms").(int64); ok && suggested > 0 {
 				timeoutMS = int(suggested)
 			}
 			ret, errcode := getOr(response, "ret", int64(0)), getOr(response, "errcode", int64(0))
@@ -323,17 +322,17 @@ func (a *WeixinAdapter) pollLoop(ctx context.Context) error {
 					return nil
 				}
 				consecutiveFailures++
-				pkgLog().Warn(fmt.Sprintf("[%s] getUpdates failed ret=%s errcode=%s errmsg=%s (%d/%d)", a.Name(), pyrepr.Str(ret), pyrepr.Str(errcode),
-					pyrepr.Str(getOr(response, "errmsg", "")), consecutiveFailures, maxConsecutiveFailures))
+				pkgLog().Warn(fmt.Sprintf("[%s] getUpdates failed ret=%s errcode=%s errmsg=%s (%d/%d)", a.Name(), anyutil.String(ret), anyutil.String(errcode),
+					anyutil.String(getOr(response, "errmsg", "")), consecutiveFailures, maxConsecutiveFailures))
 				var err error
 				consecutiveFailures, err = backoff()
 				return err
 			}
 			consecutiveFailures = 0
-			if msgs := response.Vals["msgs"]; pyrepr.Truthy(msgs) {
+			if msgs := response.Value("msgs"); anyutil.IsTrue(msgs) {
 				list, ok := msgs.([]any)
 				if !ok {
-					return &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(msgs))}
+					return fmt.Errorf("getupdates msgs: expected an array, got %s", anyutil.Kind(msgs))
 				}
 				for _, message := range list {
 					gateway.SpawnAdapterTask(ctx, func(tctx context.Context) error {
@@ -342,9 +341,9 @@ func (a *WeixinAdapter) pollLoop(ctx context.Context) error {
 					})
 				}
 			}
-			if cursor := response.Vals["get_updates_buf"]; pyrepr.Truthy(cursor) && !pyrepr.Equal(pyrepr.Str(cursor), syncBuf) {
-				syncBuf = pyrepr.Str(cursor)
-				return saveSyncBuf(ctx, a.home, a.accountID, pyrepr.Str(cursor))
+			if cursor := response.Value("get_updates_buf"); anyutil.IsTrue(cursor) && !anyutil.Equal(anyutil.String(cursor), syncBuf) {
+				syncBuf = anyutil.String(cursor)
+				return saveSyncBuf(ctx, a.home, a.accountID, anyutil.String(cursor))
 			}
 			return nil
 		}()
@@ -355,7 +354,7 @@ func (a *WeixinAdapter) pollLoop(ctx context.Context) error {
 			continue
 		}
 		consecutiveFailures++
-		pkgLog().Error(fmt.Sprintf("[%s] poll error (%d/%d): %s", a.Name(), consecutiveFailures, maxConsecutiveFailures, errText(pollErr)))
+		pkgLog().Error(fmt.Sprintf("[%s] poll error (%d/%d): %s", a.Name(), consecutiveFailures, maxConsecutiveFailures, pollErr.Error()))
 		var err error
 		if consecutiveFailures, err = backoff(); err != nil {
 			break
@@ -368,8 +367,8 @@ func (a *WeixinAdapter) pollLoop(ctx context.Context) error {
 }
 
 // Value under key or the default when the key is absent
-func getOr(o *pyjson.Object, key string, def any) any {
-	if v, ok := o.Vals[key]; ok {
+func getOr(o *jsonutil.Object, key string, def any) any {
+	if v, ok := o.Get(key); ok {
 		return v
 	}
 	return def
@@ -396,31 +395,31 @@ func (a *WeixinAdapter) processMessageSafe(ctx context.Context, message any) {
 		return
 	}
 	var from any
-	if m, ok := pyjson.AsObject(message); ok {
-		from = m.Vals["from_user_id"]
+	if m, ok := jsonutil.AsObject(message); ok {
+		from = m.Value("from_user_id")
 	}
-	pkgLog().Error(fmt.Sprintf("[%s] unhandled inbound error from=%s: %s", a.Name(), safeID(from), errText(err)), "error", err)
+	pkgLog().Error(fmt.Sprintf("[%s] unhandled inbound error from=%s: %s", a.Name(), safeID(from), err.Error()), "error", err)
 }
 
 // Dedups, gates and converts one inbound message, caching its context token and media before dispatch
 func (a *WeixinAdapter) processMessage(ctx context.Context, raw any) error {
-	message, ok := pyjson.AsObject(raw)
+	message, ok := jsonutil.AsObject(raw)
 	if !ok {
-		return &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))}
+		return fmt.Errorf("inbound message: expected an object, got %s", anyutil.Kind(raw))
 	}
 	pollSession, _ := a.sessions()
 	if pollSession == nil {
-		return &pyErr{"AssertionError", ""}
+		return errSessionClosed
 	}
-	senderID := textOf(message.Vals["from_user_id"])
-	messageID := textOf(message.Vals["message_id"])
+	senderID := textOf(message.Value("from_user_id"))
+	messageID := textOf(message.Value("message_id"))
 	if senderID == "" || senderID == a.accountID || (messageID != "" && a.dedup.IsDuplicate(messageID)) {
 		return nil
 	}
 	var itemList []any
-	if items := message.Vals["item_list"]; pyrepr.Truthy(items) {
+	if items := message.Value("item_list"); anyutil.IsTrue(items) {
 		if itemList, ok = items.([]any); !ok {
-			return &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(items))}
+			return fmt.Errorf("item_list: expected an array, got %s", anyutil.Kind(items))
 		}
 	}
 	text, err := extractText(itemList)
@@ -444,7 +443,7 @@ func (a *WeixinAdapter) processMessage(ctx context.Context, raw any) error {
 	if err != nil || !allowed {
 		return err
 	}
-	contextToken := textOf(message.Vals["context_token"])
+	contextToken := textOf(message.Value("context_token"))
 	if contextToken != "" {
 		a.tokenStore.set(ctx, a.accountID, senderID, contextToken)
 	}
@@ -460,12 +459,12 @@ func (a *WeixinAdapter) processMessage(ctx context.Context, raw any) error {
 		return err
 	}
 	for _, item := range items {
-		ref, err := objOrEmpty(item.Vals["ref_msg"])
+		ref, err := objOrEmpty(item.Value("ref_msg"))
 		if err != nil {
 			return err
 		}
-		candidates := []*pyjson.Object{item}
-		if refItem, isDict := pyjson.AsObject(ref.Vals["message_item"]); isDict {
+		candidates := []*jsonutil.Object{item}
+		if refItem, isDict := jsonutil.AsObject(ref.Value("message_item")); isDict {
 			candidates = append(candidates, refItem)
 		}
 		for _, candidate := range candidates {
@@ -496,8 +495,8 @@ func (a *WeixinAdapter) processMessage(ctx context.Context, raw any) error {
 }
 
 // Cached path and MIME type of one media item, empty for an item type that carries no media
-func (a *WeixinAdapter) collectMedia(ctx context.Context, item *pyjson.Object) (string, string, error) {
-	itemType, ok := item.Vals["type"].(int64)
+func (a *WeixinAdapter) collectMedia(ctx context.Context, item *jsonutil.Object) (string, string, error) {
+	itemType, ok := item.Value("type").(int64)
 	if !ok {
 		return "", "", nil
 	}
@@ -509,33 +508,29 @@ func (a *WeixinAdapter) collectMedia(ctx context.Context, item *pyjson.Object) (
 }
 
 // Downloads and decrypts one inbound media item into the cache, an empty path and the MIME type when it fails
-func (a *WeixinAdapter) downloadMedia(ctx context.Context, item *pyjson.Object, spec inboundMediaSpec) (string, string, error) {
-	payload, err := objOrEmpty(item.Vals[spec.itemKey])
+func (a *WeixinAdapter) downloadMedia(ctx context.Context, item *jsonutil.Object, spec inboundMediaSpec) (string, string, error) {
+	payload, err := objOrEmpty(item.Value(spec.itemKey))
 	if err != nil {
 		return "", "", err
 	}
-	media, err := objOrEmpty(payload.Vals["media"])
+	media, err := objOrEmpty(payload.Value("media"))
 	if err != nil {
 		return "", "", err
 	}
 	filename := "document.bin"
-	if name := payload.Vals["file_name"]; pyrepr.Truthy(name) {
-		filename = pyrepr.Str(name)
+	if name := payload.Value("file_name"); anyutil.IsTrue(name) {
+		filename = anyutil.String(name)
 	}
 	mime := spec.mime
 	if mime == "" {
-		guessed, _, err := pymimetypes.GuessType(filename, true)
-		if err != nil {
-			return "", "", err
-		}
-		if mime = guessed; mime == "" {
+		if mime = mimeutil.TypeByName(filename); mime == "" {
 			mime = "application/octet-stream"
 		}
 	}
 	path, err := func() (string, error) {
-		aesKeyB64 := media.Vals["aes_key"]
-		if rawKey := payload.Vals["aeskey"]; spec.itemKey == "image_item" && pyrepr.Truthy(rawKey) {
-			keyBytes, err := pystr.BytesFromHex(pyrepr.Str(rawKey))
+		aesKeyB64 := media.Value("aes_key")
+		if rawKey := payload.Value("aeskey"); spec.itemKey == "image_item" && anyutil.IsTrue(rawKey) {
+			keyBytes, err := hex.DecodeString(anyutil.String(rawKey))
 			if err != nil {
 				return "", err
 			}
@@ -545,9 +540,9 @@ func (a *WeixinAdapter) downloadMedia(ctx context.Context, item *pyjson.Object, 
 		}
 		session, _ := a.sessions()
 		if session == nil {
-			return "", &pyErr{"AttributeError", "'NoneType' object has no attribute 'get'"}
+			return "", errSessionClosed
 		}
-		data, err := downloadAndDecryptMedia(ctx, session, a.cdnBaseURL, media.Vals["encrypt_query_param"], aesKeyB64, media.Vals["full_url"], spec.timeoutSeconds)
+		data, err := downloadAndDecryptMedia(ctx, session, a.cdnBaseURL, media.Value("encrypt_query_param"), aesKeyB64, media.Value("full_url"), spec.timeoutSeconds)
 		if err != nil {
 			return "", err
 		}
@@ -557,7 +552,7 @@ func (a *WeixinAdapter) downloadMedia(ctx context.Context, item *pyjson.Object, 
 		if ctx.Err() != nil {
 			return "", "", ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] %s download failed: %s", a.Name(), spec.label, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s download failed: %s", a.Name(), spec.label, err.Error()))
 		return "", mime, nil
 	}
 	return path, mime, nil
@@ -568,11 +563,11 @@ func (a *WeixinAdapter) fetchTypingTicket(ctx context.Context, session *ilinkSes
 	response, err := getConfig(ctx, session, a.baseURL, a.token, userID, contextToken)
 	if err != nil {
 		if ctx.Err() == nil {
-			pkgLog().Debug(fmt.Sprintf("[%s] %s for %s: %s", a.Name(), failureLabel, safeID(userID), errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] %s for %s: %s", a.Name(), failureLabel, safeID(userID), err.Error()))
 		}
 		return ""
 	}
-	ticket := strOf(response.Vals["typing_ticket"])
+	ticket := strOf(response.Value("typing_ticket"))
 	if ticket != "" {
 		a.typingCache.set(userID, ticket)
 	}
@@ -611,11 +606,11 @@ func (a *WeixinAdapter) recordRateLimitEvent() bool {
 }
 
 // ret and errcode of a send response
-func retAndErrcode(resp *pyjson.Object) (any, any) {
-	if resp == nil || len(resp.Keys) == 0 {
+func retAndErrcode(resp *jsonutil.Object) (any, any) {
+	if resp == nil || resp.Len() == 0 {
 		return nil, nil
 	}
-	return resp.Vals["ret"], resp.Vals["errcode"]
+	return resp.Value("ret"), resp.Value("errcode")
 }
 
 // Sends one text chunk under the text gate with retries, a stale session resent once without its context token
@@ -630,10 +625,10 @@ func (a *WeixinAdapter) sendTextChunk(ctx context.Context, chatID, chunk, contex
 			return runtimeError(fmt.Sprintf("iLink sendmessage rate limited; cooldown active for %.1fs", a.rateLimitCooldownRemaining()))
 		}
 		_, session := a.sessions()
-		var resp *pyjson.Object
+		var resp *jsonutil.Object
 		var err error
 		if session == nil {
-			err = &pyErr{"AttributeError", "'NoneType' object has no attribute 'post'"}
+			err = errSessionClosed
 		} else {
 			resp, err = sendMessage(ctx, session, a.baseURL, a.token, chatID, chunk, contextToken, clientID)
 		}
@@ -645,7 +640,7 @@ func (a *WeixinAdapter) sendTextChunk(ctx context.Context, chatID, chunk, contex
 				a.mu.Unlock()
 				return nil
 			}
-			errmsg := pyrepr.Or(resp.Vals["errmsg"], resp.Vals["msg"])
+			errmsg := anyutil.Or(resp.Value("errmsg"), resp.Value("msg"))
 			if isSessionExpired(resp, ret, errcode) && !retriedWithoutToken && contextToken != "" {
 				retriedWithoutToken, contextToken = true, ""
 				a.tokenStore.drop(a.accountID, chatID)
@@ -657,14 +652,14 @@ func (a *WeixinAdapter) sendTextChunk(ctx context.Context, chatID, chunk, contex
 				break
 			}
 			if !equalsInt(ret, rateLimitErrcode) && !equalsInt(errcode, rateLimitErrcode) {
-				err = runtimeError(fmt.Sprintf("iLink sendmessage error: ret=%s errcode=%s errmsg=%s", pyrepr.Str(ret), pyrepr.Str(errcode),
-					pyrepr.Str(pyrepr.Or(errmsg, "unknown error"))))
+				err = runtimeError(fmt.Sprintf("iLink sendmessage error: ret=%s errcode=%s errmsg=%s", anyutil.String(ret), anyutil.String(errcode),
+					anyutil.String(anyutil.Or(errmsg, "unknown error"))))
 			} else {
-				limited := pyrepr.Str(pyrepr.Or(errmsg, "rate limited"))
-				lastError = runtimeError(fmt.Sprintf("iLink sendmessage rate limited: ret=%s errcode=%s errmsg=%s", pyrepr.Str(ret), pyrepr.Str(errcode), limited))
+				limited := anyutil.String(anyutil.Or(errmsg, "rate limited"))
+				lastError = runtimeError(fmt.Sprintf("iLink sendmessage rate limited: ret=%s errcode=%s errmsg=%s", anyutil.String(ret), anyutil.String(errcode), limited))
 				if a.recordRateLimitEvent() {
 					lastError = runtimeError(fmt.Sprintf("iLink sendmessage rate limited (ret=%s errcode=%s errmsg=%s); cooldown active for %.1fs",
-						pyrepr.Str(ret), pyrepr.Str(errcode), limited, a.rateLimitCooldownRemaining()))
+						anyutil.String(ret), anyutil.String(errcode), limited, a.rateLimitCooldownRemaining()))
 					break
 				}
 				if attempt >= a.sendChunkRetries {

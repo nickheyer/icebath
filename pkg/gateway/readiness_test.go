@@ -7,8 +7,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Home with a state database holding one probe table
@@ -31,11 +32,11 @@ func readinessHome(t *testing.T, withDB bool) (context.Context, string) {
 	return home.WithOverride(context.Background(), h), h
 }
 
-func readinessCheckStatus(t *testing.T, result *pyjson.Object, name string) any {
+func readinessCheckStatus(t *testing.T, result *jsonutil.Object, name string) any {
 	t.Helper()
 	checks, _ := result.Get("checks")
-	check, _ := checks.(*pyjson.Object).Get(name)
-	status, _ := check.(*pyjson.Object).Get("status")
+	check, _ := checks.(*jsonutil.Object).Get(name)
+	status, _ := check.(*jsonutil.Object).Get("status")
 	return status
 }
 
@@ -44,8 +45,8 @@ func TestCollectRuntimeReadinessReportsHealthyLocalRuntime(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h, "config.yaml"), []byte("model:\n  provider: openrouter\n  default: test/model\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	result := CollectRuntimeReadiness(ctx, "test/model", pyjson.ObjectOf("gateway_state", "running",
-		"platforms", pyjson.ObjectOf("telegram", pyjson.ObjectOf("state", "connected")), "updated_at", "2026-07-09T00:00:00Z"), 2, 0, 0)
+	result := CollectRuntimeReadiness(ctx, "test/model", jsonutil.ObjectOf("gateway_state", "running",
+		"platforms", jsonutil.ObjectOf("telegram", jsonutil.ObjectOf("state", "connected")), "updated_at", "2026-07-09T00:00:00Z"), 2, 0, 0)
 	if s, _ := result.Get("status"); s != "ok" {
 		t.Fatalf("status = %v, result %v", s, result)
 	}
@@ -55,8 +56,8 @@ func TestCollectRuntimeReadinessReportsHealthyLocalRuntime(t *testing.T) {
 		}
 	}
 	checks, _ := result.Get("checks")
-	queues, _ := checks.(*pyjson.Object).Get("background_queues")
-	if runs, _ := queues.(*pyjson.Object).Get("active_api_runs"); runs != int64(2) {
+	queues, _ := checks.(*jsonutil.Object).Get("background_queues")
+	if runs, _ := queues.(*jsonutil.Object).Get("active_api_runs"); runs != int64(2) {
 		t.Fatalf("active_api_runs = %v", runs)
 	}
 	if disk := readinessCheckStatus(t, result, "disk"); disk != "ok" && disk != "degraded" {
@@ -70,7 +71,7 @@ func TestCollectRuntimeReadinessDegradesOnInvalidConfigAndStoppedGateway(t *test
 	if err := os.WriteFile(path, []byte("model: [unterminated"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	result := CollectRuntimeReadiness(ctx, "", pyjson.ObjectOf("gateway_state", "stopped", "platforms", pyjson.NewObject()), 0, 0, 0)
+	result := CollectRuntimeReadiness(ctx, "", jsonutil.ObjectOf("gateway_state", "stopped", "platforms", jsonutil.NewObject()), 0, 0, 0)
 	if s, _ := result.Get("status"); s != "degraded" {
 		t.Fatalf("status = %v", s)
 	}
@@ -86,24 +87,24 @@ func TestCollectRuntimeReadinessDegradesOnInvalidConfigAndStoppedGateway(t *test
 
 func TestReadinessUsesRunningSessionStoreStateOverIndependentProbe(t *testing.T) {
 	ctx, _ := readinessHome(t, true)
-	unavailable := CollectRuntimeReadiness(ctx, "test/model", pyjson.ObjectOf("gateway_state", "running", "platforms", pyjson.NewObject(),
-		"session_store", pyjson.ObjectOf("status", "unavailable")), 0, 0, 0)
+	unavailable := CollectRuntimeReadiness(ctx, "test/model", jsonutil.ObjectOf("gateway_state", "running", "platforms", jsonutil.NewObject(),
+		"session_store", jsonutil.ObjectOf("status", "unavailable")), 0, 0, 0)
 	if got := readinessCheckStatus(t, unavailable, "state_db"); got != "ok" {
 		t.Fatalf("state_db = %v", got)
 	}
 	checks, _ := unavailable.Get("checks")
-	store, _ := checks.(*pyjson.Object).Get("session_store")
-	if !pyjson.Equal(store, pyjson.ObjectOf("status", "unavailable")) {
+	store, _ := checks.(*jsonutil.Object).Get("session_store")
+	if !anyutil.Equal(store, jsonutil.ObjectOf("status", "unavailable")) {
 		t.Fatalf("session_store = %v", store)
 	}
 	if s, _ := unavailable.Get("status"); s != "degraded" {
 		t.Fatalf("status = %v", s)
 	}
-	recovered := CollectRuntimeReadiness(ctx, "test/model", pyjson.ObjectOf("gateway_state", "running", "platforms", pyjson.NewObject(),
-		"session_store", pyjson.ObjectOf("status", "ok")), 0, 0, 0)
+	recovered := CollectRuntimeReadiness(ctx, "test/model", jsonutil.ObjectOf("gateway_state", "running", "platforms", jsonutil.NewObject(),
+		"session_store", jsonutil.ObjectOf("status", "ok")), 0, 0, 0)
 	checks, _ = recovered.Get("checks")
-	store, _ = checks.(*pyjson.Object).Get("session_store")
-	if !pyjson.Equal(store, pyjson.ObjectOf("status", "ok")) {
+	store, _ = checks.(*jsonutil.Object).Get("session_store")
+	if !anyutil.Equal(store, jsonutil.ObjectOf("status", "ok")) {
 		t.Fatalf("session_store = %v", store)
 	}
 }

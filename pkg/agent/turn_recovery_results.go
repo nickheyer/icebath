@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Base failed turn result shared by the two terminal paths
@@ -89,7 +89,7 @@ func printNonretryableAuthGuidance(ctx context.Context, a *AIAgent, classified *
 		"   💡 Your API key was rejected by the provider. Check:",
 		"      • Is the key valid? Start icebath and type /setup model",
 		fmt.Sprintf("      • Does your account have access to %s?", model))
-	if matches, _ := pyurl.BaseURLHostMatches(baseURL, "openrouter.ai"); matches {
+	if matches, _ := urlutil.BaseHostMatches(baseURL, "openrouter.ai"); matches {
 		vlines(a, "      • Check credits: https://openrouter.ai/settings/credits")
 	}
 }

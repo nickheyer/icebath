@@ -1,6 +1,8 @@
 package provider
 
-import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+import (
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 // Profiles the bundled fireworks plugin registers
 func fireworksPluginProfiles() []Profile {
@@ -16,15 +18,15 @@ func fireworksPluginProfiles() []Profile {
 }
 
 // Top level effort as sent, none when thinking is disabled and nothing without a reasoning config
-func fireworksBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (*pyjson.Object, map[string]any) {
+func fireworksBuildAPIKwargsExtras(reasoning *Reasoning, _ map[string]any) (*jsonutil.Object, map[string]any) {
 	if reasoning == nil {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
 	if reasoning.Enabled != nil && !*reasoning.Enabled {
-		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": "none"}
+		return jsonutil.ObjectOf(), map[string]any{"reasoning_effort": "none"}
 	}
 	if reasoning.Effort == "" {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
-	return pyjson.ObjectOf(), map[string]any{"reasoning_effort": reasoning.Effort}
+	return jsonutil.ObjectOf(), map[string]any{"reasoning_effort": reasoning.Effort}
 }

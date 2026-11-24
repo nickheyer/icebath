@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var sessionInterruptRegistry = &handlerRegistry{}
@@ -25,10 +25,10 @@ func callerTransport(ctx context.Context) tuihost.Transport {
 // Trimmed text of a param, the default for a missing or falsy value
 func strParam(params map[string]any, key, def string) string {
 	raw := params[key]
-	if !truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = ""
 	}
-	if text := strings.TrimSpace(pyrepr.Str(raw)); text != "" {
+	if text := strings.TrimSpace(anyutil.String(raw)); text != "" {
 		return text
 	}
 	return def

@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Model pick made while a turn ran and committed at the next turn boundary
@@ -17,7 +16,7 @@ const DeferredPickPrefix = "gateway.deferred_pick.v1."
 
 const mutationReceiptsSQL = "FROM state_meta WHERE key GLOB 'gateway.mutation.v1.*' AND json_valid(value) "
 
-type policyHandler func(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error)
+type policyHandler func(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error)
 
 var policyHandlers = map[string]policyHandler{
 	"model":       modelInTransaction,
@@ -67,16 +66,16 @@ func requiredScalar(ctx context.Context, conn SQLiteConn, query string, args ...
 }
 
 // Decoded JSON object of a stored text value, ValueError on bad JSON and TypeError on a non dict
-func loadsStoredObject(raw any) (*pyjson.Object, error) {
+func loadsStoredObject(raw any) (*jsonutil.Object, error) {
 	text, ok := raw.(string)
 	if !ok {
 		return nil, &stateTypedError{"TypeError", fmt.Sprintf("the stored mutation value is %s, expected JSON text", errchain.Kind(raw))}
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
-	obj, isObj := decoded.(*pyjson.Object)
+	obj, isObj := decoded.(*jsonutil.Object)
 	if !isObj {
 		return nil, &stateTypedError{"TypeError", fmt.Sprintf("the stored mutation object is %s, expected a mapping", errchain.Kind(decoded))}
 	}
@@ -84,7 +83,7 @@ func loadsStoredObject(raw any) (*pyjson.Object, error) {
 }
 
 // Frozen local policy receipt of a session, refused as runtime_coordination_required when absent
-func savedLocalPolicy(ctx context.Context, conn SQLiteConn, sessionID string) (*pyjson.Object, error) {
+func savedLocalPolicy(ctx context.Context, conn SQLiteConn, sessionID string) (*jsonutil.Object, error) {
 	raw, ok, err := fetchScalar(ctx, conn, "SELECT value FROM state_meta WHERE key=?", LocalPolicyPrefix+sessionID)
 	if err != nil {
 		return nil, err
@@ -96,7 +95,7 @@ func savedLocalPolicy(ctx context.Context, conn SQLiteConn, sessionID string) (*
 }
 
 // Receipt, physical target and target revision a prepared mutation is revalidated against
-func (d *SessionDB) LocalSnapshot(ctx context.Context, conn SQLiteConn, sessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) LocalSnapshot(ctx context.Context, conn SQLiteConn, sessionID string) (*jsonutil.Object, error) {
 	saved, err := savedLocalPolicy(ctx, conn, sessionID)
 	if err != nil {
 		return nil, err
@@ -112,7 +111,7 @@ func (d *SessionDB) LocalSnapshot(ctx context.Context, conn SQLiteConn, sessionI
 	if err != nil {
 		return nil, err
 	}
-	snapshot := pyjson.NewObject()
+	snapshot := jsonutil.NewObject()
 	snapshot.Set("receipt", saved)
 	snapshot.Set("target", target)
 	snapshot.Set("target_revision", revision)
@@ -120,7 +119,7 @@ func (d *SessionDB) LocalSnapshot(ctx context.Context, conn SQLiteConn, sessionI
 }
 
 // Current snapshot when it still equals the prepared one, revision_conflict when anything moved
-func (d *SessionDB) ValidatePrepared(ctx context.Context, conn SQLiteConn, sessionID string, prepared *pyjson.Object) (*pyjson.Object, error) {
+func (d *SessionDB) ValidatePrepared(ctx context.Context, conn SQLiteConn, sessionID string, prepared *jsonutil.Object) (*jsonutil.Object, error) {
 	if prepared == nil {
 		return nil, runtimeRefusal("runtime_coordination_required")
 	}
@@ -132,20 +131,20 @@ func (d *SessionDB) ValidatePrepared(ctx context.Context, conn SQLiteConn, sessi
 	if err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(current, expected) {
+	if !anyutil.Equal(current, expected) {
 		return nil, runtimeRefusal("revision_conflict")
 	}
 	return current, nil
 }
 
 // Writes the prepared policy over its snapshot receipt and opens the next execution generation
-func (d *SessionDB) commitPolicy(ctx context.Context, conn SQLiteConn, sessionID string, prepared *pyjson.Object) (*pyjson.Object, any, error) {
+func (d *SessionDB) commitPolicy(ctx context.Context, conn SQLiteConn, sessionID string, prepared *jsonutil.Object) (*jsonutil.Object, any, error) {
 	snapshot, err := d.ValidatePrepared(ctx, conn, sessionID, prepared)
 	if err != nil {
 		return nil, nil, err
 	}
 	receipt, _ := snapshot.Get("receipt")
-	saved := receipt.(*pyjson.Object)
+	saved := receipt.(*jsonutil.Object)
 	policy, err := receiptItem(prepared, "policy")
 	if err != nil {
 		return nil, nil, err
@@ -173,7 +172,7 @@ func bumpRuntimeGeneration(ctx context.Context, conn SQLiteConn, sessionID strin
 	return requiredScalar(ctx, conn, "SELECT runtime_generation FROM sessions WHERE id=?", sessionID)
 }
 
-func snapshotTarget(snapshot *pyjson.Object) string {
+func snapshotTarget(snapshot *jsonutil.Object) string {
 	target, _ := snapshot.Get("target")
 	return target.(string)
 }
@@ -190,7 +189,7 @@ func receiptPath(v any, keys ...string) (any, error) {
 }
 
 // Commits a model pick to the policy and target row, superseding a deferred model pick
-func modelInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func modelInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	snapshot, generation, err := d.commitPolicy(ctx, conn, sessionID, prepared)
 	if err != nil {
 		return nil, nil, err
@@ -248,7 +247,7 @@ func modelInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sess
 	if level == nil {
 		_, err = conn.ExecContext(ctx, "DELETE FROM state_meta WHERE key=?", key)
 	} else {
-		kept := pyjson.NewObject()
+		kept := jsonutil.NewObject()
 		kept.Set("reasoning", level)
 		var text string
 		if text, err = runtimeJSON(kept); err == nil {
@@ -258,7 +257,7 @@ func modelInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sess
 	if err != nil {
 		return nil, nil, err
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("model", model)
 	result.Set("provider", provider)
 	result.Set("execution_generation", generation)
@@ -269,7 +268,7 @@ func modelInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sess
 }
 
 // Commits a reasoning level, dropping any level still deferred beside or inside a model pick
-func reasoningInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func reasoningInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	snapshot, generation, err := d.commitPolicy(ctx, conn, sessionID, prepared)
 	if err != nil {
 		return nil, nil, err
@@ -281,7 +280,7 @@ func reasoningInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, 
 	if err != nil {
 		return nil, nil, err
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("effort", effort)
 	result.Set("execution_generation", generation)
 	return distinctSessionIDs(sessionID, snapshotTarget(snapshot)), result, nil
@@ -298,13 +297,13 @@ func dropDeferredReasoning(ctx context.Context, conn SQLiteConn, sessionID strin
 	if err != nil {
 		return err
 	}
-	pick.Pop("reasoning")
+	pick.Take("reasoning")
 	if inner, has := pick.Get("payload"); has {
-		innerObj, isObj := inner.(*pyjson.Object)
+		innerObj, isObj := inner.(*jsonutil.Object)
 		if !isObj {
 			return &stateTypedError{"AttributeError", fmt.Sprintf("the stored reasoning is %s, expected a mapping", errchain.Kind(inner))}
 		}
-		innerObj.Pop("reasoning")
+		innerObj.Take("reasoning")
 	}
 	if _, has := pick.Get("application_id"); has {
 		text, err := runtimeJSON(pick)
@@ -319,9 +318,9 @@ func dropDeferredReasoning(ctx context.Context, conn SQLiteConn, sessionID strin
 }
 
 // Commits a resume's relaunched policy, moving the conversation rows when the cwd changed
-func launchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func launchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	var affected []string
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	var err error
 	if _, moved := payload.Get("cwd"); moved {
 		if affected, result, err = workspaceInTransaction(d, ctx, conn, sessionID, payload, prepared); err != nil {
@@ -332,7 +331,7 @@ func launchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 		if err != nil {
 			return nil, nil, err
 		}
-		affected, result = distinctSessionIDs(sessionID, snapshotTarget(snapshot)), pyjson.NewObject()
+		affected, result = distinctSessionIDs(sessionID, snapshotTarget(snapshot)), jsonutil.NewObject()
 		result.Set("execution_generation", generation)
 	}
 	if effort, has := payload.Get("reasoning"); has {
@@ -341,12 +340,12 @@ func launchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 		}
 		result.Set("effort", effort)
 	}
-	result.Set("relaunched", stringsToAny(payload.Keys))
+	result.Set("relaunched", stringsToAny(payload.Keys()))
 	return affected, result, nil
 }
 
 // Moves the policy cwd and every row of the conversation to the new workspace, replacing git identity
-func workspaceInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func workspaceInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	snapshot, generation, err := d.commitPolicy(ctx, conn, sessionID, prepared)
 	if err != nil {
 		return nil, nil, err
@@ -374,7 +373,7 @@ func workspaceInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, 
 			return nil, nil, err
 		}
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("cwd", cwd)
 	result.Set("branch", orNone(branch))
 	result.Set("git_repo_root", orNone(root))
@@ -383,7 +382,7 @@ func workspaceInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, 
 }
 
 // Commits the editor MCP selection the owner prepared and reports whether tools changed
-func editorMCPInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func editorMCPInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	snapshot, generation, err := d.commitPolicy(ctx, conn, sessionID, prepared)
 	if err != nil {
 		return nil, nil, err
@@ -396,7 +395,7 @@ func editorMCPInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, 
 	if err != nil {
 		return nil, nil, err
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("tools_changed", toolsChanged)
 	result.Set("mcp_servers", servers)
 	result.Set("execution_generation", generation)
@@ -404,7 +403,7 @@ func editorMCPInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, 
 }
 
 // Commits an ACP session's edit approval policy
-func editPolicyInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func editPolicyInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	snapshot, generation, err := d.commitPolicy(ctx, conn, sessionID, prepared)
 	if err != nil {
 		return nil, nil, err
@@ -413,7 +412,7 @@ func editPolicyInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn,
 	if err != nil {
 		return nil, nil, err
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("edit_approval_policy", policy)
 	result.Set("execution_generation", generation)
 	return distinctSessionIDs(sessionID, snapshotTarget(snapshot)), result, nil
@@ -425,7 +424,7 @@ func loadsAny(raw any) (any, error) {
 	if !ok {
 		return nil, &stateTypedError{"TypeError", fmt.Sprintf("the stored mutation value is %s, expected JSON text", errchain.Kind(raw))}
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
@@ -494,7 +493,7 @@ func picksOn(ctx context.Context, conn SQLiteConn, sessionID any, before any) (m
 // Whether the receipt holds picks, the Python in operator over a dict, list or str
 func hasPicksMember(decoded any) bool {
 	switch v := decoded.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, has := v.Get("picks")
 		return has
 	case []any:
@@ -595,10 +594,10 @@ func (d *SessionDB) CommitRefreshedPolicy(ctx context.Context, epoch int64, sess
 		if err != nil {
 			return err
 		}
-		if !pyjson.Equal(policy, old) || !ok || !pyjson.Equal(current, generation) {
+		if !anyutil.Equal(policy, old) || !ok || !anyutil.Equal(current, generation) {
 			return runtimeRefusal("revision_conflict")
 		}
-		prepared := pyjson.NewObject()
+		prepared := jsonutil.NewObject()
 		prepared.Set("snapshot", snapshot)
 		prepared.Set("policy", new)
 		_, next, err = d.commitPolicy(ctx, conn, sessionID, prepared)

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -52,12 +52,12 @@ func StripRecommended(text string) string {
 // Strips presentation from a locked answer, a multi select answer being a list, a JSON array string, or one typed answer
 func clarifyCleanAnswer(raw any, multi bool) any {
 	if !multi {
-		return StripRecommended(pyrepr.Str(raw))
+		return StripRecommended(anyutil.String(raw))
 	}
 	var items []any
 	switch v := raw.(type) {
 	case string:
-		decoded, err := pyjson.Loads(v)
+		decoded, err := jsonutil.Decode(v)
 		if parsed, isList := decoded.([]any); err == nil && isList {
 			items = parsed
 		} else {
@@ -74,7 +74,7 @@ func clarifyCleanAnswer(raw any, multi bool) any {
 	}
 	out := []string{}
 	for _, item := range items {
-		if text := pyrepr.Str(item); strings.TrimSpace(text) != "" {
+		if text := anyutil.String(item); strings.TrimSpace(text) != "" {
 			out = append(out, StripRecommended(text))
 		}
 	}

@@ -11,12 +11,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -225,7 +225,7 @@ func (e *xaiUnhashableError) PyTypeName() string { return "TypeError" }
 // String form, truthiness and hashability of a caller model kwarg
 func xaiCallerModel(v any) (string, bool, error) {
 	switch v.(type) {
-	case []any, []string, map[string]any, *pyjson.Object:
+	case []any, []string, map[string]any, *jsonutil.Object:
 		return "", true, &xaiUnhashableError{errchain.Kind(v)}
 	}
 	s, _ := v.(string)
@@ -313,11 +313,11 @@ func xaiImageField(env *tools.Env, source string) (map[string]any, error) {
 	if blocked := tools.ReadBlockError(env, source); blocked != "" {
 		return nil, &imageValueError{blocked}
 	}
-	raw, err := os.ReadFile(pypath.Expanduser(source))
+	raw, err := os.ReadFile(pathutil.ExpandUser(source))
 	if err != nil {
 		return nil, fmt.Errorf("%s", errchain.OSText(err))
 	}
-	_, ext := pypath.Splitext(source)
+	_, ext := pathutil.SplitExt(source)
 	ext = strings.ToLower(strings.TrimLeft(ext, "."))
 	if ext == "" {
 		ext = "png"
@@ -337,7 +337,7 @@ func checkXAISourceImages(sources []string, imageURL string, fail errorFn) map[s
 		if hasXAIRemotePrefix(source) {
 			continue
 		}
-		if p, err := pypath.PathExpanduser(source); err == nil {
+		if p, err := pathutil.ExpandUserPath(source); err == nil {
 			if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
 				continue
 			}
@@ -434,7 +434,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	storageOptions := buildXAIStorageOptions(env, "image_gen", "icebath-xai-image", "png")
 	storageNotice := maybeMarkXAIStorageNoticeSeen(env, "image_gen")
 	storageCfg := readXAIStorageConfig(env, "image_gen")
-	var payload *pyjson.Object
+	var payload *jsonutil.Object
 	var endpointURL string
 	if isEdit {
 		if modelID, err = resolveXAIEditModel(ctx, env, req.Kwargs["model"]); err != nil {
@@ -448,7 +448,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 			}
 			fields = append(fields, field)
 		}
-		payload = pyjson.ObjectOf("model", modelID, "prompt", req.Prompt)
+		payload = jsonutil.ObjectOf("model", modelID, "prompt", req.Prompt)
 		if len(fields) == 1 {
 			payload.Set("image", fields[0])
 		} else {
@@ -460,7 +460,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 		if !ok {
 			ratio = "1:1"
 		}
-		payload = pyjson.ObjectOf("model", modelID, "prompt", req.Prompt, "aspect_ratio", ratio, "resolution", xaiRes)
+		payload = jsonutil.ObjectOf("model", modelID, "prompt", req.Prompt, "aspect_ratio", ratio, "resolution", xaiRes)
 		endpointURL = baseURL + "/images/generations"
 	}
 	if storageOptions != nil {
@@ -477,7 +477,7 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 		}
 		return fail(failure.Error, failure.ErrorType), nil
 	}
-	obj, ok := pyjson.AsObject(result)
+	obj, ok := jsonutil.AsObject(result)
 	if !ok {
 		return nil, fmt.Errorf("xAI image reply is %s where a mapping was expected", errchain.Kind(result))
 	}
@@ -492,21 +492,21 @@ func (p *xaiImageGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	if !ok {
 		return nil, fmt.Errorf("xAI image data is %s where a list was expected", errchain.Kind(data))
 	}
-	first, isObj := pyjson.AsObject(items[0])
-	fileOutput := pyjson.NewObject()
+	first, isObj := jsonutil.AsObject(items[0])
+	fileOutput := jsonutil.NewObject()
 	if isObj {
-		if fo, ok := pyjson.AsObject(first.Vals["file_output"]); ok {
+		if fo, ok := jsonutil.AsObject(first.Value("file_output")); ok {
 			fileOutput = fo
 		}
 	}
-	publicURL, _ := fileOutput.Vals["public_url"].(string)
+	publicURL, _ := fileOutput.Value("public_url").(string)
 	imageRef := publicURL
 	if publicURL == "" {
 		if !isObj {
 			return nil, fmt.Errorf("xAI image item is %s where a mapping was expected", errchain.Kind(items[0]))
 		}
-		b64, _ := first.Vals["b64_json"].(string)
-		rawURL, _ := first.Vals["url"].(string)
+		b64, _ := first.Value("b64_json").(string)
+		rawURL, _ := first.Value("url").(string)
 		var envelope map[string]any
 		imageRef, envelope = materializeImage(ctx, env, b64, rawURL, materializeOptions{Prefix: "xai_" + modelID, Label: "xAI", Provider: "xai",
 			Model: modelID, Prompt: req.Prompt, Aspect: aspect, ProviderBase: baseURL, Log: pkgLog()})

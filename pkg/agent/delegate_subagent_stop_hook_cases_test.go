@@ -6,9 +6,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Parent of test_subagent_stop_hook.py _make_parent with the child builder replaced by a bare agent
@@ -34,7 +34,7 @@ func captureSubagentStopWithGoroutine(t *testing.T) func() []map[string]any {
 	var calls []map[string]any
 	c := plugins.NewContext(&plugins.Manifest{Name: "stop-probe", Key: "stop-probe"}, m)
 	c.RegisterHook("subagent_stop", func(_ context.Context, kw map[string]any) (any, error) {
-		copied := map[string]any{"_goroutine": pythread.GoroutineID()}
+		copied := map[string]any{"_goroutine": syncutil.GoroutineID()}
 		for k, v := range kw {
 			copied[k] = v
 		}
@@ -51,17 +51,17 @@ func captureSubagentStopWithGoroutine(t *testing.T) func() []map[string]any {
 }
 
 // Replaces the single child run with scripted entries keyed by task index
-func scriptChildEntries(t *testing.T, entries ...*pyjson.Object) {
+func scriptChildEntries(t *testing.T, entries ...*jsonutil.Object) {
 	t.Helper()
 	prev := runSingleChildFn
-	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
+	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
 		return entries[i]
 	}
 	t.Cleanup(func() { runSingleChildFn = prev })
 }
 
-func stopHookEntry(i int, summary string, apiCalls int, duration float64, role any) *pyjson.Object {
-	return pyjson.ObjectOf("task_index", i, "status", "completed", "summary", summary, "api_calls", apiCalls, "duration_seconds", duration, "_child_role", role)
+func stopHookEntry(i int, summary string, apiCalls int, duration float64, role any) *jsonutil.Object {
+	return jsonutil.ObjectOf("task_index", i, "status", "completed", "summary", summary, "api_calls", apiCalls, "duration_seconds", duration, "_child_role", role)
 }
 
 func TestSingleTaskFiresOnce(t *testing.T) {
@@ -85,7 +85,7 @@ func TestSingleTaskFiresOnParentThread(t *testing.T) {
 	parent := stopHookParent(t, "parent-1")
 	captured := captureSubagentStopWithGoroutine(t)
 	scriptChildEntries(t, stopHookEntry(0, "x", 1, 0.1, nil))
-	main := pythread.GoroutineID()
+	main := syncutil.GoroutineID()
 	if _, err := delegateTask(context.Background(), parent, map[string]any{"goal": "go"}); err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestBatchModeAllFiresOnParentThread(t *testing.T) {
 	parent := stopHookParent(t, "parent-1")
 	captured := captureSubagentStopWithGoroutine(t)
 	scriptChildEntries(t, stopHookEntry(0, "A", 1, 1.0, nil), stopHookEntry(1, "B", 2, 2.0, nil))
-	main := pythread.GoroutineID()
+	main := syncutil.GoroutineID()
 	_, err := delegateTask(context.Background(), parent, map[string]any{"tasks": batchGoals("Investigate module A", "Investigate module B")})
 	if err != nil {
 		t.Fatal(err)
@@ -152,15 +152,15 @@ func TestBatchModeAllFiresOnParentThread(t *testing.T) {
 func TestPayloadShapeIncludesRedactedToolCallHistory(t *testing.T) {
 	parent := stopHookParent(t, "parent-1")
 	captured := captureSubagentStopWithGoroutine(t)
-	trace := []any{pyjson.ObjectOf(
+	trace := []any{jsonutil.ObjectOf(
 		"tool", "write_file", "args_bytes", 128, "result_bytes", 32, "status", "ok",
-		"input_summary", pyjson.ObjectOf(
+		"input_summary", jsonutil.ObjectOf(
 			"argument_keys", []any{"content", "path", "token"},
-			"targets", pyjson.ObjectOf("path", "/private/report.json", "url", "https://user:password@example.test:8443/upload?token=secret", "token", "must-not-leak"),
+			"targets", jsonutil.ObjectOf("path", "/private/report.json", "url", "https://user:password@example.test:8443/upload?token=secret", "token", "must-not-leak"),
 		),
-		"args", pyjson.ObjectOf("path", "/private/report.json"), "result", "secret output",
+		"args", jsonutil.ObjectOf("path", "/private/report.json"), "result", "secret output",
 	)}
-	scriptChildEntries(t, pyjson.ObjectOf("task_index", 0, "status", "completed", "summary", "wrote the report", "api_calls", 1, "duration_seconds", 0.1, "tool_trace", trace))
+	scriptChildEntries(t, jsonutil.ObjectOf("task_index", 0, "status", "completed", "summary", "wrote the report", "api_calls", 1, "duration_seconds", 0.1, "tool_trace", trace))
 	if _, err := delegateTask(context.Background(), parent, map[string]any{"goal": "do X"}); err != nil {
 		t.Fatal(err)
 	}
@@ -188,7 +188,7 @@ func TestPayloadShapeResultDoesNotLeakChildRoleField(t *testing.T) {
 	raw, err := delegateTask(context.Background(), parent, map[string]any{"goal": "do X"})
 	parsed := dispatchPayload(t, raw, err)
 	results := batchResults(t, parsed)
-	if len(results) == 0 || entryHas(results[0].(*pyjson.Object), "_child_role") {
+	if len(results) == 0 || entryHas(results[0].(*jsonutil.Object), "_child_role") {
 		t.Fatalf("parsed %v", parsed)
 	}
 }

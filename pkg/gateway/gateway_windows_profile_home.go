@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Context whose home is the profile home given, the caller's own home when empty
@@ -22,7 +21,7 @@ func profileHomeContext(ctx context.Context, profileHome string) context.Context
 
 // False for an attestation whose timestamp is missing, unparsable or past the horizon
 func attestationWithinHorizon(data any) bool {
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok || obj == nil {
 		return false
 	}
@@ -30,7 +29,7 @@ func attestationWithinHorizon(data any) bool {
 	if !present {
 		return false
 	}
-	stamp, aware, err := pydatetime.ParseISOFormat(pyrepr.Str(raw))
+	stamp, aware, err := timeutil.ParseISOZone(anyutil.String(raw), time.UTC)
 	if err != nil {
 		return false
 	}
@@ -43,15 +42,15 @@ func attestationWithinHorizon(data any) bool {
 
 // Marker instance identity of an attestation, false when it carries none
 func attestationGeneration(data any) (string, bool) {
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok || obj == nil {
 		return "", false
 	}
 	value, _ := obj.Get("generation")
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return "", false
 	}
-	return pyrepr.Str(value), true
+	return anyutil.String(value), true
 }
 
 // Clears the start attestation of a profile home only while it is still the generation acted on
@@ -102,8 +101,8 @@ func confirmGatewayStableIn(ctx context.Context, initial []int, confirmS, interv
 		return initial, nil
 	}
 	pids := initial
-	deadline := pythread.Monotonic() + confirmS
-	for pythread.Monotonic() < deadline {
+	deadline := timeutil.Monotonic() + confirmS
+	for timeutil.Monotonic() < deadline {
 		winSleep(time.Duration(intervalS * float64(time.Second)))
 		var err error
 		if pids, err = LiveGatewayPidsIn(ctx, allProfiles, profileHome, pidFilter); err != nil {
@@ -118,8 +117,8 @@ func confirmGatewayStableIn(ctx context.Context, initial []int, confirmS, interv
 
 // Polls for a gateway that stays visible through the confirmation window, empty at the timeout
 func WaitForGatewayReadyIn(ctx context.Context, timeoutS float64, allProfiles bool, profileHome string, pidFilter func([]int) ([]int, error)) ([]int, error) {
-	deadline := pythread.Monotonic() + timeoutS
-	for pythread.Monotonic() < deadline {
+	deadline := timeutil.Monotonic() + timeoutS
+	for timeutil.Monotonic() < deadline {
 		pids, err := LiveGatewayPidsIn(ctx, allProfiles, profileHome, pidFilter)
 		if err != nil {
 			return nil, err

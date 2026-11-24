@@ -2,8 +2,8 @@ package kanban
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"math"
 	"slices"
 	"sort"
 	"strings"
@@ -11,10 +11,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -25,17 +25,17 @@ var SeverityOrder = []string{"warning", "error", "critical"}
 type DiagnosticAction struct {
 	Kind      string
 	Label     string
-	Payload   *pyjson.Object
+	Payload   *jsonutil.Object
 	Suggested bool
 }
 
 // Ordered mapping of the action fields
-func (a *DiagnosticAction) ToDict() *pyjson.Object {
+func (a *DiagnosticAction) ToDict() *jsonutil.Object {
 	payload := a.Payload
 	if payload == nil {
-		payload = pyjson.NewObject()
+		payload = jsonutil.NewObject()
 	}
-	return pyjson.ObjectOf("kind", a.Kind, "label", a.Label, "payload", pyjson.Clone(payload), "suggested", a.Suggested)
+	return jsonutil.ObjectOf("kind", a.Kind, "label", a.Label, "payload", jsonutil.Clone(payload), "suggested", a.Suggested)
 }
 
 // Diagnostic is one active distress signal on a task
@@ -49,22 +49,22 @@ type Diagnostic struct {
 	LastSeenAt  int64
 	Count       int64
 	RunID       *int64
-	Data        *pyjson.Object
+	Data        *jsonutil.Object
 }
 
 // Ordered mapping of the diagnostic fields with every action expanded
-func (d *Diagnostic) ToDict() *pyjson.Object {
+func (d *Diagnostic) ToDict() *jsonutil.Object {
 	actions := make([]any, 0, len(d.Actions))
 	for _, a := range d.Actions {
 		actions = append(actions, a.ToDict())
 	}
 	data := d.Data
 	if data == nil {
-		data = pyjson.NewObject()
+		data = jsonutil.NewObject()
 	}
-	return pyjson.ObjectOf("kind", d.Kind, "severity", d.Severity, "title", d.Title, "detail", d.Detail,
+	return jsonutil.ObjectOf("kind", d.Kind, "severity", d.Severity, "title", d.Title, "detail", d.Detail,
 		"actions", actions, "first_seen_at", d.FirstSeenAt, "last_seen_at", d.LastSeenAt, "count", d.Count,
-		"run_id", optIntValue(d.RunID), "data", pyjson.Clone(data))
+		"run_id", optIntValue(d.RunID), "data", jsonutil.Clone(data))
 }
 
 // diagRuleError is a Python exception raised inside a rule, which drops that rule only
@@ -95,7 +95,7 @@ func diagField(obj any, name string, def any) any {
 		if o != nil {
 			v, ok = o.Lookup(name)
 		}
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if o != nil {
 			v, ok = o.Get(name)
 		}
@@ -150,25 +150,13 @@ func mustDictGet(d any, key string, def any) any {
 	return def
 }
 
-// Python int of a value, raising inside the rule on failure
+// Integer of a value saturated at the int64 bounds, raising inside the rule when it has none
 func diagInt(v any) int64 {
-	if b, ok := v.(bool); ok {
-		if b {
-			return 1
-		}
-		return 0
-	}
-	n, err := pyint.Of(v)
-	if err != nil {
+	n, err := anyutil.ToInt(v)
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		diagFail("%s", err.Error())
 	}
-	if !n.IsInt64() {
-		if n.Sign() < 0 {
-			return math.MinInt64
-		}
-		return math.MaxInt64
-	}
-	return n.Int64()
+	return n
 }
 
 // Event payload as a dict whether stored decoded or as JSON text, empty otherwise
@@ -178,24 +166,24 @@ func parsePayload(ev any) any {
 		return p
 	}
 	if s, ok := p.(string); ok {
-		decoded, err := pyjson.Loads(s)
-		if err != nil || !pyrepr.Truthy(decoded) {
-			return pyjson.NewObject()
+		decoded, err := jsonutil.Decode(s)
+		if err != nil || !anyutil.IsTrue(decoded) {
+			return jsonutil.NewObject()
 		}
 		return decoded
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Kind of an event, empty when absent
 func eventKind(ev any) string {
 	v := diagField(ev, "kind", "")
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	s, ok := v.(string)
 	if !ok {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return s
 }
@@ -203,7 +191,7 @@ func eventKind(ev any) string {
 // Creation epoch of an event, zero when absent
 func eventTS(ev any) int64 {
 	v := diagField(ev, "created_at", 0)
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0
 	}
 	return diagInt(v)
@@ -233,7 +221,7 @@ func latestGaveUpIsTerminalProvider(events []any) bool {
 	for i := len(events) - 1; i >= 0; i-- {
 		switch eventKind(events[i]) {
 		case "gave_up":
-			return pyrepr.Truthy(mustDictGet(parsePayload(events[i]), "terminal_provider", nil))
+			return anyutil.IsTrue(mustDictGet(parsePayload(events[i]), "terminal_provider", nil))
 		case "unblocked", "promoted", "completed", "claimed":
 			return false
 		}
@@ -243,7 +231,7 @@ func latestGaveUpIsTerminalProvider(events []any) bool {
 
 // Action showing a CLI command
 func cliHint(label, command string, suggested bool) *DiagnosticAction {
-	return &DiagnosticAction{Kind: "cli_hint", Label: label, Payload: pyjson.ObjectOf("command", command), Suggested: suggested}
+	return &DiagnosticAction{Kind: "cli_hint", Label: label, Payload: jsonutil.ObjectOf("command", command), Suggested: suggested}
 }
 
 // Suggested hint to read the task's worker log
@@ -254,7 +242,7 @@ func logHintAction(taskID string) *DiagnosticAction {
 
 // First 500 characters of an error with an ellipsis, empty when absent
 func errorSnippet(lastErr any) string {
-	if !pyrepr.Truthy(lastErr) {
+	if !anyutil.IsTrue(lastErr) {
 		return ""
 	}
 	s, ok := lastErr.(string)
@@ -299,7 +287,7 @@ func uniquePayloadIDs(hits []any, key string) []any {
 	out := []any{}
 	for _, ev := range hits {
 		v := mustDictGet(parsePayload(ev), key, []any{})
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			continue
 		}
 		items, ok := v.([]any)
@@ -307,7 +295,7 @@ func uniquePayloadIDs(hits []any, key string) []any {
 			diagFail("diagnostic %s is %s where a list was expected", key, errchain.Kind(v))
 		}
 		for _, pid := range items {
-			if !slices.ContainsFunc(out, func(x any) bool { return pyjson.Equal(x, pid) }) {
+			if !slices.ContainsFunc(out, func(x any) bool { return anyutil.Equal(x, pid) }) {
 				out = append(out, pid)
 			}
 		}
@@ -319,9 +307,9 @@ func uniquePayloadIDs(hits []any, key string) []any {
 func genericRecoveryActions(running bool) []*DiagnosticAction {
 	var out []*DiagnosticAction
 	if running {
-		out = append(out, &DiagnosticAction{Kind: "reclaim", Label: "Reclaim task", Payload: pyjson.NewObject()})
+		out = append(out, &DiagnosticAction{Kind: "reclaim", Label: "Reclaim task", Payload: jsonutil.NewObject()})
 	}
-	return append(out, &DiagnosticAction{Kind: "reassign", Label: "Reassign to different profile", Payload: pyjson.ObjectOf("reclaim_first", running)})
+	return append(out, &DiagnosticAction{Kind: "reassign", Label: "Reassign to different profile", Payload: jsonutil.ObjectOf("reclaim_first", running)})
 }
 
 // Whether the task is running
@@ -380,7 +368,7 @@ func ruleHallucinatedCards(task any, events, runs []any, now int64, cfg *Diagnos
 	if len(hits) == 0 {
 		return nil
 	}
-	actions := append([]*DiagnosticAction{{Kind: "comment", Label: "Add a comment explaining what to do", Payload: pyjson.NewObject()}},
+	actions := append([]*DiagnosticAction{{Kind: "comment", Label: "Add a comment explaining what to do", Payload: jsonutil.NewObject()}},
 		genericRecoveryActions(isRunningTask(task))...)
 	return []*Diagnostic{{
 		Kind: "hallucinated_cards", Severity: "error",
@@ -391,7 +379,7 @@ func ruleHallucinatedCards(task any, events, runs []any, now int64, cfg *Diagnos
 			"from kanban_create.",
 		Actions:     actions,
 		FirstSeenAt: eventTS(hits[0]), LastSeenAt: eventTS(hits[len(hits)-1]), Count: int64(len(hits)),
-		Data: pyjson.ObjectOf("phantom_ids", uniquePayloadIDs(hits, "phantom_cards")),
+		Data: jsonutil.ObjectOf("phantom_ids", uniquePayloadIDs(hits, "phantom_cards")),
 	}}
 }
 
@@ -424,8 +412,8 @@ func ruleTriageAuxUnavailable(task any, events, runs []any, now int64, cfg *Diag
 	}
 	taskIDValue := diagField(task, "id", nil)
 	taskID := "<task_id>"
-	if pyrepr.Truthy(taskIDValue) {
-		taskID = pyrepr.Str(taskIDValue)
+	if anyutil.IsTrue(taskIDValue) {
+		taskID = anyutil.String(taskIDValue)
 	}
 	actions := []*DiagnosticAction{cliHint("Configure "+slot.primary, "icebath config set "+slot.primary+".provider auto", true)}
 	if !fallbackExplicit && !mainVisible {
@@ -436,7 +424,7 @@ func ruleTriageAuxUnavailable(task any, events, runs []any, now int64, cfg *Diag
 		actions = append(actions, cliHint("Specify manually: "+cmd, cmd, false))
 	}
 	var dataTaskID any = "<task_id>"
-	if pyrepr.Truthy(taskIDValue) {
+	if anyutil.IsTrue(taskIDValue) {
 		dataTaskID = taskIDValue
 	}
 	return []*Diagnostic{{
@@ -448,7 +436,7 @@ func ruleTriageAuxUnavailable(task any, events, runs []any, now int64, cfg *Diag
 			"or set a main model so the auto fallback can take over.",
 		Actions:     actions,
 		FirstSeenAt: now, LastSeenAt: now, Count: 1,
-		Data: pyjson.ObjectOf("task_id", dataTaskID, "auto_decompose", autoDecompose,
+		Data: jsonutil.ObjectOf("task_id", dataTaskID, "auto_decompose", autoDecompose,
 			"primary_slot", slot.primary, "main_model_visible", mainVisible),
 	}}
 }
@@ -467,7 +455,7 @@ func ruleProsePhantomRefs(task any, events, runs []any, now int64, cfg *Diagnost
 			"pointed at cards that never existed.",
 		Actions:     genericRecoveryActions(isRunningTask(task)),
 		FirstSeenAt: eventTS(hits[0]), LastSeenAt: eventTS(hits[len(hits)-1]), Count: int64(len(hits)),
-		Data: pyjson.ObjectOf("phantom_refs", uniquePayloadIDs(hits, "phantom_refs")),
+		Data: jsonutil.ObjectOf("phantom_refs", uniquePayloadIDs(hits, "phantom_refs")),
 	}}
 }
 
@@ -496,7 +484,7 @@ func ruleRepeatedFailures(task any, events, runs []any, now int64, cfg *Diagnost
 	if !terminalTrip && (failuresValue == nil || diagLess(failuresValue, threshold)) {
 		return nil
 	}
-	if !pyrepr.Truthy(failuresValue) {
+	if !anyutil.IsTrue(failuresValue) {
 		failuresValue = int64(0)
 	}
 	failures := diagInt(failuresValue)
@@ -510,13 +498,13 @@ func ruleRepeatedFailures(task any, events, runs []any, now int64, cfg *Diagnost
 		}
 	}
 	var actions []*DiagnosticAction
-	if mostRecentOutcome == "spawn_failed" && pyrepr.Truthy(assignee) && assignee != "default" {
-		who := pyrepr.Str(assignee)
+	if mostRecentOutcome == "spawn_failed" && anyutil.IsTrue(assignee) && assignee != "default" {
+		who := anyutil.String(assignee)
 		doctor, auth := "icebath -p "+who+" doctor", "icebath -p "+who+" auth"
 		actions = append(actions, cliHint("Verify profile: "+doctor, doctor, true), cliHint("Fix profile auth: "+auth, auth, false))
 	} else if mostRecentOutcome == "timed_out" || mostRecentOutcome == "crashed" {
-		if taskID := diagField(task, "id", nil); pyrepr.Truthy(taskID) {
-			actions = append(actions, logHintAction(pyrepr.Str(taskID)))
+		if taskID := diagField(task, "id", nil); anyutil.IsTrue(taskID) {
+			actions = append(actions, logHintAction(anyutil.String(taskID)))
 		}
 	}
 	actions = append(actions, genericRecoveryActions(isRunningTask(task))...)
@@ -552,7 +540,7 @@ func ruleRepeatedFailures(task any, events, runs []any, now int64, cfg *Diagnost
 	return []*Diagnostic{{
 		Kind: "repeated_failures", Severity: severity, Title: title, Detail: detail, Actions: actions,
 		FirstSeenAt: now, LastSeenAt: now, Count: failures,
-		Data: pyjson.ObjectOf("consecutive_failures", failures, "most_recent_outcome", mostRecentOutcome,
+		Data: jsonutil.ObjectOf("consecutive_failures", failures, "most_recent_outcome", mostRecentOutcome,
 			"last_error", lastErr, "failure_threshold", threshold, "failure_limit", failureLimit),
 	}}
 }
@@ -564,7 +552,7 @@ func ruleRepeatedCrashes(task any, events, runs []any, now int64, cfg *Diagnosti
 		return nil
 	}
 	current := diagField(task, "consecutive_failures", 0)
-	if !pyrepr.Truthy(current) {
+	if !anyutil.IsTrue(current) {
 		current = int64(0)
 	}
 	if !diagLess(current, cfg.FailureThreshold) {
@@ -588,8 +576,8 @@ func ruleRepeatedCrashes(task any, events, runs []any, now int64, cfg *Diagnosti
 		return nil
 	}
 	var actions []*DiagnosticAction
-	if taskID := diagField(task, "id", nil); pyrepr.Truthy(taskID) {
-		actions = append(actions, logHintAction(pyrepr.Str(taskID)))
+	if taskID := diagField(task, "id", nil); anyutil.IsTrue(taskID) {
+		actions = append(actions, logHintAction(anyutil.String(taskID)))
 	}
 	actions = append(actions, genericRecoveryActions(isRunningTask(task))...)
 	severity := "error"
@@ -609,14 +597,14 @@ func ruleRepeatedCrashes(task any, events, runs []any, now int64, cfg *Diagnosti
 	return []*Diagnostic{{
 		Kind: "repeated_crashes", Severity: severity, Title: title, Detail: detail, Actions: actions,
 		FirstSeenAt: now, LastSeenAt: now, Count: consecutive,
-		Data: pyjson.ObjectOf("consecutive_crashes", consecutive, "last_error", lastErr),
+		Data: jsonutil.ObjectOf("consecutive_crashes", consecutive, "last_error", lastErr),
 	}}
 }
 
 // List of a graph key, empty when absent or falsy
 func graphList(graph any, key string) []any {
 	v, _ := dictGet(graph, key)
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil
 	}
 	items, ok := v.([]any)
@@ -642,10 +630,10 @@ func ruleReviewDependencyDeadlock(task any, events, runs []any, now int64, cfg *
 		return nil
 	}
 	reasonValue := mustDictGet(parsePayload(latestBlock), "reason", nil)
-	if !pyrepr.Truthy(reasonValue) {
+	if !anyutil.IsTrue(reasonValue) {
 		reasonValue = ""
 	}
-	reason := strings.TrimSpace(pyrepr.Str(reasonValue))
+	reason := strings.TrimSpace(anyutil.String(reasonValue))
 	if !strings.HasPrefix(strings.ToLower(reason), "review-required:") {
 		return nil
 	}
@@ -662,13 +650,13 @@ func ruleReviewDependencyDeadlock(task any, events, runs []any, now int64, cfg *
 		return nil
 	}
 	taskID := ""
-	if v := diagField(task, "id", nil); pyrepr.Truthy(v) {
-		taskID = pyrepr.Str(v)
+	if v := diagField(task, "id", nil); anyutil.IsTrue(v) {
+		taskID = anyutil.String(v)
 	}
 	childIDs := []any{}
 	for _, child := range waiting {
-		if id, _ := dictGet(child, "id"); pyrepr.Truthy(id) {
-			childIDs = append(childIDs, pyrepr.Str(id))
+		if id, _ := dictGet(child, "id"); anyutil.IsTrue(id) {
+			childIDs = append(childIDs, anyutil.String(id))
 		}
 	}
 	var actions []*DiagnosticAction
@@ -691,7 +679,7 @@ func ruleReviewDependencyDeadlock(task any, events, runs []any, now int64, cfg *
 			"review lifecycle.",
 		Actions:     actions,
 		FirstSeenAt: blockedAt, LastSeenAt: blockedAt, Count: int64(len(childIDs)),
-		Data: pyjson.ObjectOf("blocked_parent_id", taskID, "waiting_child_ids", childIDs, "block_reason", reason),
+		Data: jsonutil.ObjectOf("blocked_parent_id", taskID, "waiting_child_ids", childIDs, "block_reason", reason),
 	}}
 }
 
@@ -710,7 +698,7 @@ func ruleRunningWithOpenParents(task any, events, runs []any, now int64, cfg *Di
 		}
 		id, _ := dictGet(parent, "id")
 		st, _ := dictGet(parent, "status")
-		if pyrepr.Truthy(id) && st != "done" && st != "archived" {
+		if anyutil.IsTrue(id) && st != "done" && st != "archived" {
 			open = append(open, parent)
 		}
 	}
@@ -718,19 +706,19 @@ func ruleRunningWithOpenParents(task any, events, runs []any, now int64, cfg *Di
 		return nil
 	}
 	taskID := ""
-	if v := diagField(task, "id", nil); pyrepr.Truthy(v) {
-		taskID = pyrepr.Str(v)
+	if v := diagField(task, "id", nil); anyutil.IsTrue(v) {
+		taskID = anyutil.String(v)
 	}
 	parentIDs := make([]string, 0, len(open))
 	openParents := make([]any, 0, len(open))
 	for _, p := range open {
 		id, _ := dictGet(p, "id")
 		st, _ := dictGet(p, "status")
-		parentIDs = append(parentIDs, pyrepr.Str(id))
-		openParents = append(openParents, pyjson.ObjectOf("id", id, "status", st))
+		parentIDs = append(parentIDs, anyutil.String(id))
+		openParents = append(openParents, jsonutil.ObjectOf("id", id, "status", st))
 	}
 	seenAt := int64(0)
-	if v := diagField(task, "started_at", 0); pyrepr.Truthy(v) {
+	if v := diagField(task, "started_at", 0); anyutil.IsTrue(v) {
 		seenAt = diagInt(v)
 	}
 	if seenAt == 0 {
@@ -745,7 +733,7 @@ func ruleRunningWithOpenParents(task any, events, runs []any, now int64, cfg *Di
 			"to gate this run.",
 		Actions:     []*DiagnosticAction{cliHint("Unlink the parent that should not gate this run", fmt.Sprintf("icebath kanban unlink %s %s", parentIDs[0], taskID), false)},
 		FirstSeenAt: seenAt, LastSeenAt: now, Count: int64(len(parentIDs)),
-		Data: pyjson.ObjectOf("open_parents", openParents),
+		Data: jsonutil.ObjectOf("open_parents", openParents),
 	}}
 }
 
@@ -774,9 +762,9 @@ func ruleStuckInBlocked(task any, events, runs []any, now int64, cfg *Diagnostic
 		Detail: fmt.Sprintf("This task transitioned to blocked %dh ago and has had no comments or "+
 			"unblock attempts since. Blocked tasks are waiting for human input — check the block "+
 			"reason and either unblock with feedback or answer with a comment.", int64(ageHours)),
-		Actions:     []*DiagnosticAction{{Kind: "comment", Label: "Add a comment / unblock the task", Payload: pyjson.NewObject(), Suggested: true}},
+		Actions:     []*DiagnosticAction{{Kind: "comment", Label: "Add a comment / unblock the task", Payload: jsonutil.NewObject(), Suggested: true}},
 		FirstSeenAt: lastBlocked, LastSeenAt: lastBlocked, Count: 1,
-		Data: pyjson.ObjectOf("blocked_at", lastBlocked, "age_hours", pyint.Round(ageHours, 1)),
+		Data: jsonutil.ObjectOf("blocked_at", lastBlocked, "age_hours", mathutil.Round(ageHours, 1)),
 	}}
 }
 
@@ -810,8 +798,8 @@ func ruleBlockUnblockCycling(task any, events, runs []any, now int64, cfg *Diagn
 		return nil
 	}
 	var actions []*DiagnosticAction
-	if taskID := diagField(task, "id", nil); pyrepr.Truthy(taskID) {
-		cmd := "icebath kanban events " + pyrepr.Str(taskID)
+	if taskID := diagField(task, "id", nil); anyutil.IsTrue(taskID) {
+		cmd := "icebath kanban events " + anyutil.String(taskID)
 		actions = append(actions, cliHint("Check block reasons: "+cmd, cmd, true))
 	}
 	first, last := initialBlocked, lastCycleBlocked
@@ -830,7 +818,7 @@ func ruleBlockUnblockCycling(task any, events, runs []any, now int64, cfg *Diagn
 			"change scope, archive) may be needed.", cycles),
 		Actions:     actions,
 		FirstSeenAt: first, LastSeenAt: last, Count: cycles,
-		Data: pyjson.ObjectOf("cycles", cycles, "window_seconds", int64(windowSeconds)),
+		Data: jsonutil.ObjectOf("cycles", cycles, "window_seconds", int64(windowSeconds)),
 	}}
 }
 
@@ -859,11 +847,11 @@ func ruleStrandedInReady(task any, events, runs []any, now int64, cfg *Diagnosti
 	if diagField(task, "status", nil) != "ready" {
 		return nil
 	}
-	if pyrepr.Truthy(diagField(task, "claim_lock", nil)) {
+	if anyutil.IsTrue(diagField(task, "claim_lock", nil)) {
 		return nil
 	}
 	assigneeValue := diagField(task, "assignee", nil)
-	if !pyrepr.Truthy(assigneeValue) {
+	if !anyutil.IsTrue(assigneeValue) {
 		assigneeValue = ""
 	}
 	assignee, ok := assigneeValue.(string)
@@ -875,7 +863,7 @@ func ruleStrandedInReady(task any, events, runs []any, now int64, cfg *Diagnosti
 	}
 	lastReady := latestEventTS(events, "created", "promoted", "reclaimed", "unblocked")
 	if lastReady == 0 {
-		if v := diagField(task, "created_at", 0); pyrepr.Truthy(v) {
+		if v := diagField(task, "created_at", 0); anyutil.IsTrue(v) {
 			lastReady = diagInt(v)
 		}
 	}
@@ -895,11 +883,11 @@ func ruleStrandedInReady(task any, events, runs []any, now int64, cfg *Diagnosti
 			"pool for this lane is down. Confirm the assignee is correct and that a worker is "+
 			"actually polling for it.", ageStr, errchain.Show(assignee)),
 		Actions: []*DiagnosticAction{
-			{Kind: "reassign", Label: "Reassign to a different worker", Payload: pyjson.ObjectOf("current_assignee", assignee)},
+			{Kind: "reassign", Label: "Reassign to a different worker", Payload: jsonutil.ObjectOf("current_assignee", assignee)},
 			cliHint("Check dispatcher status", "icebath kanban diagnostics", false),
 		},
 		FirstSeenAt: lastReady, LastSeenAt: lastReady, Count: 1,
-		Data: pyjson.ObjectOf("ready_since", lastReady, "age_seconds", int64(age), "assignee", assignee,
+		Data: jsonutil.ObjectOf("ready_since", lastReady, "age_seconds", int64(age), "assignee", assignee,
 			"threshold_seconds", int64(thresholdSeconds)),
 	}}
 }
@@ -916,8 +904,8 @@ func ruleStaleRunning(task any, events, runs []any, now int64, cfg *DiagnosticsC
 	}
 	lockValue := diagField(task, "claim_lock", "")
 	lock := ""
-	if pyrepr.Truthy(lockValue) {
-		lock = pyrepr.Str(lockValue)
+	if anyutil.IsTrue(lockValue) {
+		lock = anyutil.String(lockValue)
 	}
 	if !strings.HasPrefix(lock, hostPrefix()) {
 		return nil
@@ -930,7 +918,7 @@ func ruleStaleRunning(task any, events, runs []any, now int64, cfg *DiagnosticsC
 	recorded := []recordedPid{{diagField(task, "worker_pid", nil), diagField(task, "worker_started_at", nil)}}
 	runID := diagField(task, "current_run_id", nil)
 	for _, ev := range events {
-		if runID != nil && !pyjson.Equal(diagField(ev, "run_id", nil), runID) {
+		if runID != nil && !anyutil.Equal(diagField(ev, "run_id", nil), runID) {
 			continue
 		}
 		if k := eventKind(ev); k == "spawned" || k == "worker_bound" {
@@ -940,7 +928,7 @@ func ruleStaleRunning(task any, events, runs []any, now int64, cfg *DiagnosticsC
 	}
 	pidSet := map[int64]bool{}
 	for _, r := range recorded {
-		if pyrepr.Truthy(r.pid) {
+		if anyutil.IsTrue(r.pid) {
 			pidSet[diagInt(r.pid)] = true
 		}
 	}
@@ -950,15 +938,15 @@ func ruleStaleRunning(task any, events, runs []any, now int64, cfg *DiagnosticsC
 	}
 	slices.Sort(pids)
 	for _, r := range recorded {
-		if pyrepr.Truthy(r.pid) && workerAlive(int(diagInt(r.pid)), r.startedAt) {
+		if anyutil.IsTrue(r.pid) && workerAlive(int(diagInt(r.pid)), r.startedAt) {
 			return nil
 		}
 	}
 	expired := float64(now - *expires)
 	ageStr := ageText(expired)
 	taskID := ""
-	if v := diagField(task, "id", nil); pyrepr.Truthy(v) {
-		taskID = pyrepr.Str(v)
+	if v := diagField(task, "id", nil); anyutil.IsTrue(v) {
+		taskID = anyutil.String(v)
 	}
 	pidTexts := make([]string, 0, len(pids))
 	pidList := make([]any, 0, len(pids))
@@ -980,11 +968,11 @@ func ruleStaleRunning(task any, events, runs []any, now int64, cfg *DiagnosticsC
 			"hold its profile's worker slot indefinitely while every card queued behind it "+
 			"stays deferred. Check the card's log, then reclaim it.", ageStr, pidJoined),
 		Actions: []*DiagnosticAction{
-			{Kind: "reclaim", Label: "Reclaim the dead claim", Payload: pyjson.NewObject(), Suggested: true},
+			{Kind: "reclaim", Label: "Reclaim the dead claim", Payload: jsonutil.NewObject(), Suggested: true},
 			cliHint("Reclaim from the CLI", "icebath kanban reclaim "+taskID, false),
 		},
 		FirstSeenAt: *expires, LastSeenAt: *expires, Count: 1,
-		Data: pyjson.ObjectOf("claim_expires", *expires, "expired_seconds", int64(expired), "recorded_pids", pidList,
+		Data: jsonutil.ObjectOf("claim_expires", *expires, "expired_seconds", int64(expired), "recorded_pids", pidList,
 			"last_heartbeat_at", optIntValue(hb), "grace_seconds", int64(grace)),
 	}}
 }
@@ -1056,7 +1044,7 @@ func ComputeTaskDiagnostics(task any, events, runs []any, now *int64, cfg *Diagn
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					pkgLog().Warn(fmt.Sprintf("kanban diagnostics: a rule skipped task %s on a malformed value: %v", pyrepr.Str(diagField(task, "id", nil)), r))
+					pkgLog().Warn(fmt.Sprintf("kanban diagnostics: a rule skipped task %s on a malformed value: %v", anyutil.String(diagField(task, "id", nil)), r))
 				}
 			}()
 			out = append(out, rule(task, events, runs, nowTS, cfg, graph)...)

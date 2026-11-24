@@ -8,7 +8,7 @@ import (
 	"os"
 	"runtime"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Longest temp root that leaves room for Chrome and code kernel AF_UNIX socket names
@@ -19,7 +19,7 @@ func SocketSafeTmpdir() (string, error) {
 	if runtime.GOOS == "darwin" {
 		return "/tmp", nil
 	}
-	candidate, err := pypath.Gettempdir()
+	candidate, err := pathutil.TempDir()
 	if err != nil {
 		return "", err
 	}

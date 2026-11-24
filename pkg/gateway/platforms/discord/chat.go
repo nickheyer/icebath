@@ -7,12 +7,11 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/bwmarrin/discordgo"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Seconds of a Retry-After value or header set, numeric or HTTP date, clamped at zero
@@ -36,7 +35,7 @@ func parseRetryAfterSeconds(raw any) (float64, bool) {
 		if text == "" {
 			return 0, false
 		}
-		if f, err := pyint.ParseFloat(text); err == nil {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(text), 64); err == nil {
 			return math.Max(0, f), true
 		}
 		when, err := http.ParseTime(text)

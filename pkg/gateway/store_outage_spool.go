@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Suffix of a store outage copy taken for re-dispatch, outside every replay glob until its turn settles
@@ -59,7 +59,7 @@ func TakeStoreOutageMessages(ctx context.Context, store *SessionStore) []StoreOu
 // Inbound message of one store outage copy, false for another payload, a copy the store kept or a route with no known chat
 func storeOutageMessage(ctx context.Context, store *SessionStore, appender TranscriptAppender, path string) (*MessageEvent, bool) {
 	parsed, err := readSpoolPayload(path)
-	payload, isObject := parsed.(*pyjson.Object)
+	payload, isObject := parsed.(*jsonutil.Object)
 	if err != nil || !isObject {
 		return nil, false
 	}
@@ -68,17 +68,17 @@ func storeOutageMessage(ctx context.Context, store *SessionStore, appender Trans
 	}
 	if appender != nil {
 		if kept, err := admissionKept(ctx, appender, payload); err == nil && kept {
-			removeReplayed(path, pyStrOf(payload.GetOr("session_key", "")))
+			removeReplayed(path, pyStrOf(payload.ValueOr("session_key", "")))
 			return nil, false
 		}
 	}
 	data, _ := payload.Get("data")
-	obj, isData := data.(*pyjson.Object)
+	obj, isData := data.(*jsonutil.Object)
 	if !isData {
 		return nil, false
 	}
-	text := pyStrOf(obj.GetOr("text", ""))
-	key := pyStrOf(payload.GetOr("session_key", ""))
+	text := pyStrOf(obj.ValueOr("text", ""))
+	key := pyStrOf(payload.ValueOr("session_key", ""))
 	entry := store.LookupBySessionKey(ctx, key)
 	if text == "" || entry == nil || entry.Origin == nil {
 		return nil, false

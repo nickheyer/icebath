@@ -15,10 +15,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -29,8 +29,8 @@ func validateConfig(ctx context.Context, cfg *gateway.PlatformConfig) (bool, err
 		extra = cfg.Extra
 	}
 	secret := func(name string) string { v, _ := gateway.GetScopedSecret(ctx, name, "", false); return v }
-	if (pyrepr.Truthy(extra["project_id"]) || secret("PHOTON_PROJECT_ID") != "") &&
-		(pyrepr.Truthy(extra["project_secret"]) || secret("PHOTON_PROJECT_SECRET") != "") {
+	if (anyutil.IsTrue(extra["project_id"]) || secret("PHOTON_PROJECT_ID") != "") &&
+		(anyutil.IsTrue(extra["project_secret"]) || secret("PHOTON_PROJECT_SECRET") != "") {
 		return true, nil
 	}
 	id, sec, err := LoadProjectCredentials(ctx)
@@ -78,7 +78,7 @@ type setupOptions struct {
 
 // Line read from a terminal prompt, empty off a TTY or on EOF
 func prompt(out io.Writer, label string) string {
-	if !pysys.Isatty(os.Stdin) {
+	if !termutil.IsTerminal(os.Stdin) {
 		return ""
 	}
 	fmt.Fprint(out, label)
@@ -93,12 +93,12 @@ func prompt(out io.Writer, label string) string {
 // Device login that stores the dashboard token, never printing any part of it
 func runDeviceLogin(ctx context.Context, opts setupOptions, out, errOut io.Writer) int {
 	printCode := func(code DeviceCode) {
-		uri := pyrepr.Str(code.VerificationURIComplete)
-		if !pyrepr.Truthy(code.VerificationURIComplete) {
-			uri = pyrepr.Str(code.VerificationURI)
+		uri := anyutil.String(code.VerificationURIComplete)
+		if !anyutil.IsTrue(code.VerificationURIComplete) {
+			uri = anyutil.String(code.VerificationURI)
 		}
 		fmt.Fprintf(out, "\n┌─ Photon device login ────────────────────────────────────────\n│  Open this URL:  %s\n│  Enter the code: %s\n"+
-			"│  (waiting for approval — Ctrl-C to cancel)\n└──────────────────────────────────────────────────────────────\n\n", uri, pyrepr.Str(code.UserCode))
+			"│  (waiting for approval — Ctrl-C to cancel)\n└──────────────────────────────────────────────────────────────\n\n", uri, anyutil.String(code.UserCode))
 	}
 	if _, err := LoginDeviceFlow(ctx, DefaultClientID, !opts.noBrowser, printCode); err != nil {
 		fmt.Fprintf(errOut, "login failed: %v\n", err)
@@ -144,9 +144,9 @@ func setupProject(ctx context.Context, token, name string, out, errOut io.Writer
 		fmt.Fprintf(errOut, "project setup failed: %v\n", err)
 		return ""
 	}
-	if existing != nil && pyrepr.Truthy(existing.Vals["id"]) {
+	if existing != nil && anyutil.IsTrue(existing.Value("id")) {
 		fmt.Fprintf(out, "[2/5] Found existing project '%s'\n", name)
-		return pyrepr.Str(existing.Vals["id"])
+		return anyutil.String(existing.Value("id"))
 	}
 	fmt.Fprintf(out, "[2/5] Creating Photon project '%s'...\n", name)
 	created, err := CreateProject(ctx, token, name, DefaultLocation)
@@ -155,11 +155,11 @@ func setupProject(ctx context.Context, token, name string, out, errOut io.Writer
 		return ""
 	}
 	fmt.Fprintln(out, "  ✓ project created")
-	if created == nil || !pyrepr.Truthy(created.Vals["id"]) {
+	if created == nil || !anyutil.IsTrue(created.Value("id")) {
 		fmt.Fprintln(errOut, "could not resolve a Photon project id")
 		return ""
 	}
-	return pyrepr.Str(created.Vals["id"])
+	return anyutil.String(created.Value("id"))
 }
 
 // Spectrum credentials, an existing valid secret reused so a running sidecar keeps sending, empty on failure
@@ -200,8 +200,8 @@ func lookupIMessageLine(ctx context.Context, token, dashboardID string, errOut i
 		fmt.Fprintf(errOut, "      (could not fetch the assigned line: %v)\n", err)
 		return ""
 	}
-	if obj, ok := line.(*pyjson.Object); ok && pyrepr.Truthy(obj.Vals["phoneNumber"]) {
-		return pyrepr.Str(obj.Vals["phoneNumber"])
+	if obj, ok := line.(*jsonutil.Object); ok && anyutil.IsTrue(obj.Value("phoneNumber")) {
+		return anyutil.String(obj.Value("phoneNumber"))
 	}
 	return ""
 }
@@ -210,14 +210,14 @@ func lookupIMessageLine(ctx context.Context, token, dashboardID string, errOut i
 const optInWaitS = 300
 
 // Opted in user row after a bounded wait on a TTY, nil when skipped or timed out
-func waitForOptIn(ctx context.Context, dashboardID, secret, phone, agentNumber string, out io.Writer) *pyjson.Object {
+func waitForOptIn(ctx context.Context, dashboardID, secret, phone, agentNumber string, out io.Writer) *jsonutil.Object {
 	lineHint := agentNumber
 	if lineHint == "" {
 		lineHint = "the line Photon assigns to your number"
 	}
 	fmt.Fprintln(out, "\n      One manual step: opt in by texting your agent")
 	fmt.Fprintf(out, "      Your number only enters iMessage routing after it has messaged the line\n      Photon assigned to it:\n        1. Open Messages on %s.\n        2. Text %s — one message of any content is enough.\n", phone, lineHint)
-	if !pysys.Isatty(os.Stdin) {
+	if !termutil.IsTerminal(os.Stdin) {
 		fmt.Fprintln(out, "      Non-interactive run — skipping the opt-in wait. Verify later with `icebath photon status`.")
 		return nil
 	}
@@ -288,8 +288,8 @@ func cmdSetup(ctx context.Context, opts setupOptions, out, errOut io.Writer) int
 			fmt.Fprintln(out, "  ✓ phone already registered")
 		}
 		registeredPhone = phone
-		if user != nil && pyrepr.Truthy(user.Vals["id"]) {
-			registeredUserID = pyrepr.Str(user.Vals["id"])
+		if user != nil && anyutil.IsTrue(user.Value("id")) {
+			registeredUserID = anyutil.String(user.Value("id"))
 		}
 		agentNumber = UserAssignedLine(user)
 		if agentNumber == "" {
@@ -517,7 +517,7 @@ func setupCLI(parser any) {
 			state := ""
 			if len(args) == 1 {
 				if state = args[0]; state != "on" && state != "off" {
-					return fmt.Errorf("argument state: invalid choice: %s (choose from 'on', 'off')", pyrepr.Repr(state))
+					return fmt.Errorf("argument state: invalid choice: %s (choose from 'on', 'off')", anyutil.Quote(state))
 				}
 			}
 			return codeErr(cmdTelemetry(ctxOf(c), state, c.OutOrStdout(), c.ErrOrStderr()))

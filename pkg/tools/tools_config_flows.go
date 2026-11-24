@@ -7,8 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/setupflow"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Whether platform_toolsets holds an explicitly saved list for the platform, a list literal string counting
@@ -35,12 +36,12 @@ func platformLabel(pkey string) (string, error) {
 }
 
 // Provider category of a toolset, nil when the toolset has none
-func categoryOf(tsKey string) *pyjson.Object {
+func categoryOf(tsKey string) *jsonutil.Object {
 	v, ok := ToolCategories.Get(tsKey)
-	if !ok || !pyTruthy(v) {
+	if !ok || !anyutil.IsTrue(v) {
 		return nil
 	}
-	cat, _ := v.(*pyjson.Object)
+	cat, _ := v.(*jsonutil.Object)
 	return cat
 }
 

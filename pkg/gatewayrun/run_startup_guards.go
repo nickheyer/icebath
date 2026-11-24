@@ -13,12 +13,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Logs the enforced per turn iteration budget of the profile in ctx
@@ -237,7 +238,7 @@ func (r *GatewayRunner) startLogSystemdTimingAlignment(ctx context.Context) {
 	if alignment == nil {
 		return
 	}
-	if mismatch, _ := alignment.Get("mismatch"); !pyrepr.Truthy(mismatch) {
+	if mismatch, _ := alignment.Get("mismatch"); !anyutil.IsTrue(mismatch) {
 		return
 	}
 	f0 := func(v any) string {
@@ -247,7 +248,7 @@ func (r *GatewayRunner) startLogSystemdTimingAlignment(ctx context.Context) {
 		}
 		return text
 	}
-	must := func(o *pyjson.Object, key string) any {
+	must := func(o *jsonutil.Object, key string) any {
 		v, ok := o.Get(key)
 		if !ok {
 			panic(fmt.Sprintf("the startup timing record has no %s", key))
@@ -258,8 +259,8 @@ func (r *GatewayRunner) startLogSystemdTimingAlignment(ctx context.Context) {
 		"cron_drain_timeout=%ss (expected >=%ss). systemd may SIGKILL the gateway "+
 		"mid-drain. Run `icebath gateway install --force` to regenerate the unit, or shorten "+
 		"agent.restart_drain_timeout / agent.cron_drain_timeout.",
-		pyrepr.Str(alignment.GetOr("unit", "(unknown)")), f0(must(alignment, "timeout_stop_sec")),
-		f0(must(alignment, "drain_timeout")), f0(alignment.GetOr("cron_drain_timeout", gateway.DefaultGatewayCronDrainTimeout)),
+		anyutil.String(alignment.ValueOr("unit", "(unknown)")), f0(must(alignment, "timeout_stop_sec")),
+		f0(must(alignment, "drain_timeout")), f0(alignment.ValueOr("cron_drain_timeout", gateway.DefaultGatewayCronDrainTimeout)),
 		f0(must(alignment, "expected_min"))))
 }
 

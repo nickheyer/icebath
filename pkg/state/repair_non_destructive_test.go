@@ -37,7 +37,7 @@ func ledgerFailures(t *testing.T, path string) int64 {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return n.Int64()
+	return n
 }
 
 // Strategy runner marking the scratch repaired after inserting a session name into it

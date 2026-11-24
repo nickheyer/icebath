@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Path of the native session socket on the gateway listener
@@ -154,7 +155,7 @@ func (l *sessionListener) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 			how = "after its handler had refused it"
 		}
 		pkgLog().Error(fmt.Sprintf("Gateway refused a session WebSocket upgrade from %s %s: %s: %s",
-			sock.peerText(), how, pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)), "exc_info", err)
+			sock.peerText(), how, pyrepr.ExceptionName(err), err.Error()), "exc_info", err)
 	}
 	sock.finish(err)
 }
@@ -211,7 +212,7 @@ func (l *sessionListener) admitSession(sock *sessionSocket) error {
 		return err
 	}
 	allowDraining := !operator
-	admittedInWait := gateway.RestartWaitOpen(runner) && !pyrepr.Truthy(grant["refuse_restart_wait"])
+	admittedInWait := gateway.RestartWaitOpen(runner) && !anyutil.IsTrue(grant["refuse_restart_wait"])
 	if notReady() && !allowDraining && !admittedInWait {
 		sock.refuse()
 		return nil

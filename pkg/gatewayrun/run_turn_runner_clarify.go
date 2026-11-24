@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Adapter whose persistent clarify card is retired once no answer can arrive
@@ -22,8 +22,8 @@ func clarifyEntryField(entry any, key string) any {
 	switch typed := entry.(type) {
 	case map[string]any:
 		return typed[key]
-	case *pyjson.Object:
-		return typed.GetOr(key, nil)
+	case *jsonutil.Object:
+		return typed.ValueOr(key, nil)
 	}
 	return nil
 }
@@ -45,7 +45,7 @@ func (t *TurnRunner) sendSharedClarify(ctx context.Context, entry *tools.Clarify
 // Answers the clarify tool's questions one card at a time, stopping at the first the user never answers
 func (t *TurnRunner) clarifyCallbackSync(ctx context.Context, questions []any) (map[string]any, error) {
 	if finiteViewerTurn(ctx) {
-		reply, _ := pyjson.Plain(gateway.FiniteClarifyReply()).(map[string]any)
+		reply, _ := jsonutil.Plain(gateway.FiniteClarifyReply()).(map[string]any)
 		return reply, nil
 	}
 	if clarifyBatchTurn(ctx, t) {
@@ -59,14 +59,14 @@ func (t *TurnRunner) clarifyCallbackSync(ctx context.Context, questions []any) (
 		hint = "\n" + i18n.T(ctx, "gateway.clarify.skip_hint", "", nil)
 	}
 	for index, entry := range questions {
-		question := pyrepr.Str(clarifyEntryField(entry, "question")) + hint
+		question := anyutil.String(clarifyEntryField(entry, "question")) + hint
 		var choices []string
 		if raw, ok := clarifyEntryField(entry, "choices").([]any); ok {
 			for _, choice := range raw {
-				choices = append(choices, pyrepr.Str(choice))
+				choices = append(choices, anyutil.String(choice))
 			}
 		}
-		raw, answered := t.askClarifyQuestion(ctx, question, choices, pyrepr.Truthy(clarifyEntryField(entry, "multi_select")), index == last)
+		raw, answered := t.askClarifyQuestion(ctx, question, choices, anyutil.IsTrue(clarifyEntryField(entry, "multi_select")), index == last)
 		if raw == tools.ClarifyCancelled {
 			reply["outcome"] = "cancelled"
 			break
@@ -79,7 +79,7 @@ func (t *TurnRunner) clarifyCallbackSync(ctx context.Context, questions []any) (
 			reply["outcome"], reply["notice"] = outcome, raw
 			break
 		}
-		qid := pyrepr.Str(clarifyEntryField(entry, "qid"))
+		qid := anyutil.String(clarifyEntryField(entry, "qid"))
 		if raw == tools.ClarifySkipped {
 			answers[qid] = nil
 		} else {
@@ -178,14 +178,14 @@ func askClarifyBatch(ctx context.Context, t *TurnRunner, questions []any) map[st
 	qids := make([]string, 0, len(questions))
 	known := map[string]bool{}
 	for _, entry := range questions {
-		item := pyjson.NewObject()
+		item := jsonutil.NewObject()
 		for _, key := range clarifyBatchQuestionKeys {
 			if value := clarifyEntryField(entry, key); value != nil {
 				item.Set(key, value)
 			}
 		}
 		wire = append(wire, item)
-		qid := pyrepr.Str(clarifyEntryField(entry, "qid"))
+		qid := anyutil.String(clarifyEntryField(entry, "qid"))
 		qids = append(qids, qid)
 		known[qid] = true
 	}
@@ -194,7 +194,7 @@ func askClarifyBatch(ctx context.Context, t *TurnRunner, questions []any) map[st
 	if timeout > 0 {
 		timeoutArg = &timeout
 	}
-	result := gateway.AskViewerResult(live.EventStream, owner.sessionID, "clarify", pyjson.ObjectOf("questions", wire), interrupted, timeoutArg, qids)
+	result := gateway.AskViewerResult(live.EventStream, owner.sessionID, "clarify", jsonutil.ObjectOf("questions", wire), interrupted, timeoutArg, qids)
 	if result == nil {
 		outcome := "timed_out"
 		if interrupted() {
@@ -202,23 +202,23 @@ func askClarifyBatch(ctx context.Context, t *TurnRunner, questions []any) map[st
 		}
 		return map[string]any{"answers": map[string]any{}, "outcome": outcome}
 	}
-	answers, ok := result.GetOr("answers", nil).(*pyjson.Object)
+	answers, ok := result.ValueOr("answers", nil).(*jsonutil.Object)
 	if !ok {
 		return map[string]any{"answers": map[string]any{}, "outcome": "cancelled"}
 	}
 	clean := map[string]any{}
-	for _, qid := range answers.Keys {
+	for _, qid := range answers.Keys() {
 		if !known[qid] {
 			continue
 		}
-		if s, isStr := answers.Vals[qid].(string); isStr {
+		if s, isStr := answers.Value(qid).(string); isStr {
 			clean[qid] = s
 		} else {
 			clean[qid] = nil
 		}
 	}
 	outcome := "cancelled"
-	switch got := result.GetOr("outcome", nil).(type) {
+	switch got := result.ValueOr("outcome", nil).(type) {
 	case string:
 		if got == "submitted" || got == "timed_out" || got == "cancelled" {
 			outcome = got

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Columns the message insert writes, in statement order
@@ -51,7 +51,7 @@ func decodeDisplayMetadata(raw any) any {
 		return nil
 	}
 	switch meta.(type) {
-	case pyObject, *pyjson.Object:
+	case pyObject, *jsonutil.Object:
 		return meta
 	}
 	pkgLog().Warn("Ignoring non-object display metadata on message row")
@@ -59,10 +59,10 @@ func decodeDisplayMetadata(raw any) any {
 }
 
 // Message row with content, tool_calls and display_metadata decoded and unknown binary columns dropped
-func rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) (*pyjson.Object, error) {
-	msg := pyjson.NewObject()
-	for _, k := range row.Keys {
-		msg.Set(k, row.Vals[k])
+func rowToMessageDict(row *jsonutil.Object, warnContext string, summaryFlag bool) (*jsonutil.Object, error) {
+	msg := jsonutil.NewObject()
+	for _, k := range row.Keys() {
+		msg.Set(k, row.Value(k))
 	}
 	msg.Delete("display_identity")
 	msg.Delete("display_order")
@@ -85,8 +85,8 @@ func rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) 
 	if meta, ok := msg.Get("display_metadata"); ok && meta != nil {
 		msg.Set("display_metadata", decodeDisplayMetadata(meta))
 	}
-	for _, key := range append([]string(nil), msg.Keys...) {
-		if _, isBytes := msg.Vals[key].([]byte); isBytes && !messageSchemaKeys[key] {
+	for _, key := range append([]string(nil), msg.Keys()...) {
+		if _, isBytes := msg.Value(key).([]byte); isBytes && !messageSchemaKeys[key] {
 			msg.Delete(key)
 		}
 	}
@@ -95,9 +95,9 @@ func rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) 
 
 // Up to window messages either side of an anchor id in ascending order, empty for an anchor of another session
 func getMessagesAround(ctx context.Context, readCtx func(context.Context, bool, func(SQLiteConn) error) error,
-	sessionID string, aroundMessageID int64, window int) (*pyjson.Object, error) {
+	sessionID string, aroundMessageID int64, window int) (*jsonutil.Object, error) {
 	window = max(window, 0)
-	var beforeRows, afterRows []*pyjson.Object
+	var beforeRows, afterRows []*jsonutil.Object
 	found := false
 	err := readCtx(ctx, true, func(conn SQLiteConn) error {
 		hit, err := fetchOne(ctx, conn, "SELECT 1 FROM messages WHERE id = ? AND session_id = ? LIMIT 1", aroundMessageID, sessionID)
@@ -116,7 +116,7 @@ func getMessagesAround(ctx context.Context, readCtx func(context.Context, bool, 
 	if err != nil {
 		return nil, err
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	if !found {
 		out.Set("window", []any{})
 		out.Set("messages_before", int64(0))
@@ -124,7 +124,7 @@ func getMessagesAround(ctx context.Context, readCtx func(context.Context, bool, 
 		return out, nil
 	}
 	windowMsgs := []any{}
-	ordered := make([]*pyjson.Object, 0, len(beforeRows)+len(afterRows))
+	ordered := make([]*jsonutil.Object, 0, len(beforeRows)+len(afterRows))
 	for i := len(beforeRows) - 1; i >= 0; i-- {
 		ordered = append(ordered, beforeRows[i])
 	}

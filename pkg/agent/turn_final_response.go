@@ -7,10 +7,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var repetitionStopped = RepetitionCopy("before delivery", "so the repeated output was discarded.", "; refusing to return a")
@@ -69,7 +69,7 @@ func hasSignedThinkingDetail(resp *provider.Response) bool {
 		if (kind == "thinking" || kind == "redacted_thinking") && (pyTruthy(detail["signature"]) || pyTruthy(detail["data"])) {
 			return true
 		}
-		if kind != nil && strings.HasSuffix(pyrepr.Str(kind), ".native_assistant") {
+		if kind != nil && strings.HasSuffix(anyutil.String(kind), ".native_assistant") {
 			return true
 		}
 	}

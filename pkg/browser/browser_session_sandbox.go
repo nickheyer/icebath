@@ -12,11 +12,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/browser/quiet"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -148,12 +148,12 @@ const (
 
 // One exec reporting the live DevTools address, gone when the sandbox says no browser runs, unknown when the exec failed
 func liveSandboxDevtools(env *tools.Env, e tools.Environment, user, udd string) (devtoolsAddr, liveness) {
-	active := pyshlex.Quote(udd + "/DevToolsActivePort")
+	active := shellutil.Quote(udd + "/DevToolsActivePort")
 	script := fmt.Sprintf(`[ -s %s ] || exit %d; p=$(head -n1 %s); ( exec 3<>"/dev/tcp/127.0.0.1/$p" ) 2>/dev/null || exit %d; cat %s`,
 		active, sandboxGoneRC, active, sandboxGoneRC, active)
 	proc, err := sandboxRunIn(e, []string{"bash", "-c", script}, nil, user, 10, nil)
 	if err != nil {
-		cfgOf(env).logger().Debug(fmt.Sprintf("sandbox browser liveness probe failed: %s", pyrepr.ExceptionMessage(err)))
+		cfgOf(env).logger().Debug(fmt.Sprintf("sandbox browser liveness probe failed: %s", err.Error()))
 		return devtoolsAddr{}, livenessUnknown
 	}
 	if proc.ReturnCode == sandboxGoneRC {
@@ -193,10 +193,10 @@ func startSandboxChromium(env *tools.Env, e tools.Environment, user, exe, udd st
 	for _, a := range argv {
 		if !seen[a] {
 			seen[a] = true
-			unique = append(unique, pyshlex.Quote(a))
+			unique = append(unique, shellutil.Quote(a))
 		}
 	}
-	qudd := pyshlex.Quote(udd)
+	qudd := shellutil.Quote(udd)
 	script := fmt.Sprintf(`mkdir -p %s && rm -f %s/DevToolsActivePort && (setsid %s >/dev/null 2>&1 & p=$!; echo "$p $(%s)")`,
 		qudd, qudd, strings.Join(unique, " "), sandboxStartTimeOfP)
 	proc, err := sandboxRunIn(e, []string{"bash", "-c", script}, childEnv, user, 30, nil)
@@ -225,8 +225,8 @@ func startSandboxChromium(env *tools.Env, e tools.Environment, user, exe, udd st
 }
 
 func waitForSandboxPort(e tools.Environment, user, udd string) (devtoolsAddr, error) {
-	deadline := pythread.Monotonic() + sandboxLaunchTimeoutS
-	for pythread.Monotonic() < deadline {
+	deadline := timeutil.Monotonic() + sandboxLaunchTimeoutS
+	for timeutil.Monotonic() < deadline {
 		found, ok, err := readSandboxDevtools(e, user, udd)
 		if err != nil && !isRunInTimeout(err) {
 			return devtoolsAddr{}, err
@@ -330,14 +330,14 @@ func createSandboxSession(env *tools.Env, cacheKey string) (map[string]any, erro
 	info := sessionRecord("sb", fmt.Sprintf("ws://127.0.0.1:%d%s", localPort, found.path), map[string]any{"local": true, "sandbox": true})
 	confirmSandbox(info["cdp_url"].(string), e, found.port)
 	info["shared_profile"], info["launcher_key"] = true, key
-	cfgOf(env).logger().Info(fmt.Sprintf("Created sandbox browser session %s for %s", pyrepr.Str(info["session_name"]), cacheKey))
+	cfgOf(env).logger().Info(fmt.Sprintf("Created sandbox browser session %s for %s", anyutil.String(info["session_name"]), cacheKey))
 	return info, nil
 }
 
 func confirmSandbox(cdpURL string, e tools.Environment, port int) {
 	failures := sandboxForwardFailures(e, port)
 	sandboxMu.Lock()
-	sandboxConfirmed[cdpURL] = sandboxConfirmation{envIdentity(e), port, failures, pythread.Monotonic()}
+	sandboxConfirmed[cdpURL] = sandboxConfirmation{envIdentity(e), port, failures, timeutil.Monotonic()}
 	sandboxMu.Unlock()
 }
 
@@ -351,14 +351,14 @@ func sandboxBrowserAlive(env *tools.Env, info map[string]any) bool {
 		return false
 	}
 	cdpURL := ""
-	if pyrepr.Truthy(info["cdp_url"]) {
-		cdpURL = pyrepr.Str(info["cdp_url"])
+	if anyutil.IsTrue(info["cdp_url"]) {
+		cdpURL = anyutil.String(info["cdp_url"])
 	}
 	sandboxMu.Lock()
 	confirmed, ok := sandboxConfirmed[cdpURL]
 	sandboxMu.Unlock()
 	if ok && confirmed.envID == envIdentity(e) && sandboxForwardFailures(e, confirmed.port) == confirmed.failures &&
-		pythread.Monotonic()-confirmed.confirmedMonotonic < sandboxConfirmedTTLS {
+		timeutil.Monotonic()-confirmed.confirmedMonotonic < sandboxConfirmedTTLS {
 		return true
 	}
 	user, err := sandboxUserFor(e)
@@ -367,7 +367,7 @@ func sandboxBrowserAlive(env *tools.Env, info map[string]any) bool {
 		udd, err = sandboxProfileDir(e)
 	}
 	if err != nil {
-		cfgOf(env).logger().Debug(fmt.Sprintf("sandbox browser liveness probe failed: %s", pyrepr.ExceptionMessage(err)))
+		cfgOf(env).logger().Debug(fmt.Sprintf("sandbox browser liveness probe failed: %s", err.Error()))
 		return true
 	}
 	found, state := liveSandboxDevtools(env, e, user, udd)
@@ -395,11 +395,11 @@ func sandboxBrowserAlive(env *tools.Env, info map[string]any) bool {
 // SIGTERMs the sandbox Chromium this process launched on the session's shared key
 func stopSandboxBrowser(env *tools.Env, info map[string]any) {
 	cdpURL, key := "", ""
-	if pyrepr.Truthy(info["cdp_url"]) {
-		cdpURL = pyrepr.Str(info["cdp_url"])
+	if anyutil.IsTrue(info["cdp_url"]) {
+		cdpURL = anyutil.String(info["cdp_url"])
 	}
-	if pyrepr.Truthy(info["launcher_key"]) {
-		key = pyrepr.Str(info["launcher_key"])
+	if anyutil.IsTrue(info["launcher_key"]) {
+		key = anyutil.String(info["launcher_key"])
 	}
 	sandboxMu.Lock()
 	delete(sandboxConfirmed, cdpURL)
@@ -432,7 +432,7 @@ func stopLaunchedSandbox(env *tools.Env, key string) {
 			launched.start, "--user-data-dir=" + launched.udd}, nil, user, 15, nil)
 	}
 	if err != nil {
-		log.Debug(fmt.Sprintf("sandbox browser stop for pid %d failed: %s", launched.pid, pyrepr.ExceptionMessage(err)))
+		log.Debug(fmt.Sprintf("sandbox browser stop for pid %d failed: %s", launched.pid, err.Error()))
 		return
 	}
 	if proc.ReturnCode == sandboxNotOursRC {

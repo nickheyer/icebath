@@ -10,10 +10,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Raw bytes one file request carries between two gateways
@@ -85,8 +84,8 @@ func (c *PeerRunsHTTPClient) SendFile(_ context.Context, grant string, file map[
 	if err != nil {
 		return nil, err
 	}
-	name, size := pyrepr.Str(file["name"]), int64(len(data))
-	begin := pyjson.ObjectOf("name", file["name"], "kind", file["kind"], "mime", file["mime"], "size", size, "sha256", file["sha256"])
+	name, size := anyutil.String(file["name"]), int64(len(data))
+	begin := jsonutil.ObjectOf("name", file["name"], "kind", file["kind"], "mime", file["mime"], "size", size, "sha256", file["sha256"])
 	var held int64
 	for range 4 {
 		answer, err := c.request("/v1/room-members/files", "POST", begin, nil, scoped)
@@ -105,7 +104,7 @@ func (c *PeerRunsHTTPClient) SendFile(_ context.Context, grant string, file map[
 		for held < size && !lost {
 			end := min(size, held+peerFileChunkBytes)
 			answer, err = c.request("/v1/room-members/files/"+pyurl.Quote(fileID, ""), "PUT",
-				pyjson.ObjectOf("offset", held, "data_base64", base64.StdEncoding.EncodeToString(data[held:end])), nil, scoped)
+				jsonutil.ObjectOf("offset", held, "data_base64", base64.StdEncoding.EncodeToString(data[held:end])), nil, scoped)
 			var failure *PeerRunsHTTPError
 			switch {
 			case errors.As(err, &failure) && failure.ErrorCode == "attachment_offset":
@@ -119,7 +118,7 @@ func (c *PeerRunsHTTPClient) SendFile(_ context.Context, grant string, file map[
 			}
 		}
 		if !lost {
-			if !pyrepr.Truthy(answer["complete"]) {
+			if !anyutil.IsTrue(answer["complete"]) {
 				return nil, newPeerRunsHTTPError("peer did not complete the file", peerErrorFlags{}, nil)
 			}
 			return answer, nil
@@ -130,7 +129,7 @@ func (c *PeerRunsHTTPClient) SendFile(_ context.Context, grant string, file map[
 
 // Reply files of a finished peer run pulled into the room store, digests checked, refusals kept as notes
 func (c *PeerRunsHTTPClient) replyFiles(record map[string]any, listed any, grant string) ([]any, []string, error) {
-	list, ok := pyjson.Plain(listed).([]any)
+	list, ok := jsonutil.Plain(listed).([]any)
 	if !ok {
 		return nil, nil, newPeerRunsHTTPError("peer listed its reply files in an invalid shape", peerErrorFlags{}, nil)
 	}
@@ -151,12 +150,12 @@ func (c *PeerRunsHTTPClient) replyFiles(record map[string]any, listed any, grant
 	if err != nil {
 		return nil, nil, err
 	}
-	roomID, runID := pyrepr.Str(record["room_id"]), pyrepr.Str(record["run_id"])
+	roomID, runID := anyutil.String(record["room_id"]), anyutil.String(record["run_id"])
 	manifest, notes := []any{}, []string{}
 	var total int64
 	for index, raw := range list {
 		item, _ := raw.(map[string]any)
-		name := roomFileName(pyrepr.Str(item["name"]))
+		name := roomFileName(anyutil.String(item["name"]))
 		fileID := hostedStrOrEmpty(item["file_id"])
 		size, sized := hostedStrictInt(item["size"])
 		digest, err := hostedDigest(item["sha256"], "reply file sha256")
@@ -222,7 +221,7 @@ func (c *PeerRunsHTTPClient) pullFile(fileID, name string, size int64, digest, g
 			return nil, newPeerRunsHTTPError(fmt.Sprintf("the reply file %s stopped at %s of %s", name, roomBytes(int64(len(data))), roomBytes(size)),
 				peerErrorFlags{retryable: true}, err)
 		}
-		chunk, err := pybase64.B64DecodeValidate(pyrepr.Str(answer["data_base64"]))
+		chunk, err := base64.StdEncoding.DecodeString(anyutil.String(answer["data_base64"]))
 		if err != nil || len(chunk) == 0 || int64(len(data)+len(chunk)) > size {
 			return nil, newPeerRunsHTTPError("peer sent an invalid reply file chunk", peerErrorFlags{}, err)
 		}

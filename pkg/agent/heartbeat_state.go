@@ -3,15 +3,12 @@ package agent
 import (
 	"context"
 	"fmt"
-	"math/big"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const heartbeatMetaPrefix = "heartbeat:"
@@ -19,7 +16,7 @@ const heartbeatMetaPrefix = "heartbeat:"
 // Serializable per session heartbeat
 type HeartbeatState struct {
 	Prompt          string
-	IntervalSeconds *big.Int
+	IntervalSeconds int64
 	Status          string
 	CreatedAt       float64
 	LastFiredAt     float64
@@ -28,34 +25,34 @@ type HeartbeatState struct {
 
 // Active heartbeat of prompt every intervalSeconds with the dataclass defaults
 func NewHeartbeatState(prompt string, intervalSeconds int64) *HeartbeatState {
-	return &HeartbeatState{Prompt: prompt, IntervalSeconds: big.NewInt(intervalSeconds), Status: "active"}
+	return &HeartbeatState{Prompt: prompt, IntervalSeconds: intervalSeconds, Status: "active"}
 }
 
 // JSON of every field in declaration order with non ASCII kept
 func (s *HeartbeatState) ToJSON() (string, error) {
-	return pyjson.Dumps(pyjson.ObjectOf("prompt", s.Prompt, "interval_seconds", pyint.Value(s.IntervalSeconds), "status", s.Status,
-		"created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt, "fire_count", s.FireCount), pyjson.EnsureASCII(false))
+	return jsonutil.Encode(jsonutil.ObjectOf("prompt", s.Prompt, "interval_seconds", s.IntervalSeconds, "status", s.Status,
+		"created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt, "fire_count", s.FireCount))
 }
 
 // Heartbeat of a stored row with each field coerced and a falsy value taking its default
 func HeartbeatStateFromJSON(raw string) (*HeartbeatState, error) {
-	d, err := pyjson.LoadsDict(raw)
+	d, err := jsonutil.DecodeObject(raw)
 	if err != nil {
 		return nil, errchain.Reword(err, "stored heartbeat state is not a JSON mapping")
 	}
-	get := func(k string) any { return d.GetOr(k, nil) }
-	s := &HeartbeatState{Prompt: pyrepr.Str(pyOr(get("prompt"), ""))}
-	if s.IntervalSeconds, err = pyint.Of(pyOr(get("interval_seconds"), int64(0))); err != nil {
+	get := d.Value
+	s := &HeartbeatState{Prompt: anyutil.String(pyOr(get("prompt"), ""))}
+	if s.IntervalSeconds, err = anyutil.ToInt(pyOr(get("interval_seconds"), int64(0))); err != nil {
 		return nil, err
 	}
-	s.Status = pyrepr.Str(pyOr(get("status"), "active"))
-	if s.CreatedAt, err = pyint.Float(pyOr(get("created_at"), 0.0)); err != nil {
+	s.Status = anyutil.String(pyOr(get("status"), "active"))
+	if s.CreatedAt, err = anyutil.ToFloat(pyOr(get("created_at"), 0.0)); err != nil {
 		return nil, err
 	}
-	if s.LastFiredAt, err = pyint.Float(pyOr(get("last_fired_at"), 0.0)); err != nil {
+	if s.LastFiredAt, err = anyutil.ToFloat(pyOr(get("last_fired_at"), 0.0)); err != nil {
 		return nil, err
 	}
-	if s.FireCount, err = pyint.Int64(pyOr(get("fire_count"), int64(0))); err != nil {
+	if s.FireCount, err = anyutil.ToInt(pyOr(get("fire_count"), int64(0))); err != nil {
 		return nil, err
 	}
 	return s, nil

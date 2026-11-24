@@ -12,8 +12,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Explicit directory and alias file overrides tests set, empty reading the active home
@@ -48,26 +48,26 @@ func readChannelJSON(path string) (any, error) {
 	if !utf8.Valid(raw) {
 		return nil, fmt.Errorf("%s is not valid UTF-8", path)
 	}
-	return pyjson.Loads(string(raw))
+	return jsonutil.Decode(string(raw))
 }
 
 // JSON object of a file, empty when missing, unreadable or not an object
-func loadChannelJSONDict(path string) *pyjson.Object {
+func loadChannelJSONDict(path string) *jsonutil.Object {
 	if _, err := os.Stat(path); err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	data, err := readChannelJSON(path)
-	if obj, ok := data.(*pyjson.Object); err == nil && ok && obj != nil {
+	if obj, ok := data.(*jsonutil.Object); err == nil && ok && obj != nil {
 		return obj
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Overlays alias names onto entries by chat id in place, adding an entry for an alias not yet discovered
-func applyChannelAliases(ctx context.Context, platforms *pyjson.Object) {
+func applyChannelAliases(ctx context.Context, platforms *jsonutil.Object) {
 	aliases := loadChannelJSONDict(channelAliasesFile(ctx))
-	for _, platName := range aliases.Keys {
-		idMap, ok := aliases.Vals[platName].(*pyjson.Object)
+	for _, platName := range aliases.Keys() {
+		idMap, ok := aliases.Value(platName).(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -79,15 +79,15 @@ func applyChannelAliases(ctx context.Context, platforms *pyjson.Object) {
 		if !ok {
 			continue
 		}
-		for _, chatID := range idMap.Keys {
-			friendly, ok := idMap.Vals[chatID].(string)
+		for _, chatID := range idMap.Keys() {
+			friendly, ok := idMap.Value(chatID).(string)
 			if !ok || strings.TrimSpace(friendly) == "" {
 				continue
 			}
 			friendly = strings.TrimSpace(friendly)
 			matched := false
 			for _, e := range entries {
-				if entry, isObj := e.(*pyjson.Object); isObj {
+				if entry, isObj := e.(*jsonutil.Object); isObj {
 					if id, _ := entry.Get("id"); id == chatID {
 						entry.Set("name", friendly)
 						matched = true
@@ -99,7 +99,7 @@ func applyChannelAliases(ctx context.Context, platforms *pyjson.Object) {
 				if strings.HasSuffix(chatID, "@g.us") {
 					kind = "group"
 				}
-				entries = append(entries, pyjson.ObjectOf("id", chatID, "name", friendly, "thread_id", nil, "type", kind))
+				entries = append(entries, jsonutil.ObjectOf("id", chatID, "name", friendly, "thread_id", nil, "type", kind))
 			}
 		}
 		platforms.Set(platName, entries)
@@ -109,8 +109,8 @@ func applyChannelAliases(ctx context.Context, platforms *pyjson.Object) {
 // Whether the alias overlay holds a platform mapping that would write into the directory
 func aliasesNamePlatforms(ctx context.Context) bool {
 	aliases := loadChannelJSONDict(channelAliasesFile(ctx))
-	for _, key := range aliases.Keys {
-		if _, ok := aliases.Vals[key].(*pyjson.Object); ok {
+	for _, key := range aliases.Keys() {
+		if _, ok := aliases.Value(key).(*jsonutil.Object); ok {
 			return true
 		}
 	}
@@ -123,36 +123,36 @@ func normalizeChannelQuery(value string) string {
 }
 
 // Human facing target label of a directory entry
-func channelTargetName(platformName string, channel *pyjson.Object) (string, error) {
+func channelTargetName(platformName string, channel *jsonutil.Object) (string, error) {
 	rawName, has := channel.Get("name")
 	if !has {
 		return "", errors.New("a channel directory entry has no name")
 	}
-	name := pyrepr.Str(rawName)
+	name := anyutil.String(rawName)
 	guild, _ := channel.Get("guild")
 	if platformName == "discord" {
-		if pyrepr.Truthy(guild) {
+		if anyutil.IsTrue(guild) {
 			return "#" + name, nil
 		}
 		return name, nil
 	}
-	if kind, _ := channel.Get("type"); pyrepr.Truthy(kind) {
-		return name + " (" + pyrepr.Str(kind) + ")", nil
+	if kind, _ := channel.Get("type"); anyutil.IsTrue(kind) {
+		return name + " (" + anyutil.String(kind) + ")", nil
 	}
 	return name, nil
 }
 
 // Cached directory with aliases applied on read, an empty directory when the file is missing or unusable
-func loadChannelDirectory(ctx context.Context) *pyjson.Object {
+func loadChannelDirectory(ctx context.Context) *jsonutil.Object {
 	path := channelDirectoryFile(ctx)
 	if _, err := os.Stat(path); err == nil {
 		raw, err := readChannelJSON(path)
-		if data, ok := raw.(*pyjson.Object); err == nil && ok && data != nil {
+		if data, ok := raw.(*jsonutil.Object); err == nil && ok && data != nil {
 			if _, has := data.Get("platforms"); !has {
-				data.Set("platforms", pyjson.NewObject())
+				data.Set("platforms", jsonutil.NewObject())
 			}
 			platforms, _ := data.Get("platforms")
-			if obj, isObj := platforms.(*pyjson.Object); isObj && obj != nil {
+			if obj, isObj := platforms.(*jsonutil.Object); isObj && obj != nil {
 				applyChannelAliases(ctx, obj)
 				return data
 			}
@@ -161,19 +161,19 @@ func loadChannelDirectory(ctx context.Context) *pyjson.Object {
 			}
 		}
 	}
-	base := pyjson.ObjectOf("updated_at", nil, "platforms", pyjson.NewObject())
+	base := jsonutil.ObjectOf("updated_at", nil, "platforms", jsonutil.NewObject())
 	platforms, _ := base.Get("platforms")
-	applyChannelAliases(ctx, platforms.(*pyjson.Object))
+	applyChannelAliases(ctx, platforms.(*jsonutil.Object))
 	return base
 }
 
 // Entries the directory lists for a platform, an error where Python would raise reading them
-func directoryChannels(ctx context.Context, platformName string, iterateFalsy bool) ([]*pyjson.Object, error) {
+func directoryChannels(ctx context.Context, platformName string, iterateFalsy bool) ([]*jsonutil.Object, error) {
 	rawPlatforms, has := loadChannelDirectory(ctx).Get("platforms")
 	if !has {
 		return nil, nil
 	}
-	platforms, ok := rawPlatforms.(*pyjson.Object)
+	platforms, ok := rawPlatforms.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("the channel directory platforms are %s, expected a mapping", errchain.Kind(rawPlatforms))
 	}
@@ -181,9 +181,9 @@ func directoryChannels(ctx context.Context, platformName string, iterateFalsy bo
 	if !has {
 		return nil, nil
 	}
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		switch raw.(type) {
-		case []any, string, *pyjson.Object:
+		case []any, string, *jsonutil.Object:
 			return nil, nil
 		}
 		if iterateFalsy {
@@ -195,9 +195,9 @@ func directoryChannels(ctx context.Context, platformName string, iterateFalsy bo
 	if !ok {
 		return nil, fmt.Errorf("the %s channel directory list is %s, expected a list", platformName, errchain.Kind(raw))
 	}
-	out := make([]*pyjson.Object, len(list))
+	out := make([]*jsonutil.Object, len(list))
 	for i, item := range list {
-		entry, ok := item.(*pyjson.Object)
+		entry, ok := item.(*jsonutil.Object)
 		if !ok {
 			return nil, fmt.Errorf("a %s channel directory entry is %s, expected a mapping", platformName, errchain.Kind(item))
 		}
@@ -227,7 +227,7 @@ func lookupChannelType(ctx context.Context, platformName, chatID string) (any, e
 }
 
 // Name field of an entry normalized, the KeyError or AttributeError Python raises when unusable
-func channelEntryQueryName(ch *pyjson.Object) (string, error) {
+func channelEntryQueryName(ch *jsonutil.Object) (string, error) {
 	raw, has := ch.Get("name")
 	if !has {
 		return "", errors.New("a channel directory entry has no name")
@@ -288,7 +288,7 @@ func resolveChannelName(ctx context.Context, platformName, name string) (string,
 			}
 		}
 	}
-	var matches []*pyjson.Object
+	var matches []*jsonutil.Object
 	for _, ch := range channels {
 		entryName, err := channelEntryQueryName(ch)
 		if err != nil {
@@ -305,10 +305,10 @@ func resolveChannelName(ctx context.Context, platformName, name string) (string,
 }
 
 // Id of a matched entry as the str a send target reads, the KeyError Python raises when absent
-func channelEntryID(ch *pyjson.Object) (string, error) {
+func channelEntryID(ch *jsonutil.Object) (string, error) {
 	id, has := ch.Get("id")
 	if !has {
 		return "", errors.New("a channel directory entry has no id")
 	}
-	return pyrepr.Str(id), nil
+	return anyutil.String(id), nil
 }

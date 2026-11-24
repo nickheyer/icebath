@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Python names reached through platform_call, forwarded when the plugin class defines them outside the upstream base
@@ -136,7 +136,7 @@ func (a *Adapter) IsConnected() bool {
 func lengthFn(v any) func(string) int {
 	f, ok := v.(*plugins.HostedCallable)
 	if !ok {
-		panic(&gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not callable", pyrepr.TypeName(v))})
+		panic(&gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a function, got %s", anyutil.Kind(v))})
 	}
 	return func(s string) int {
 		n, _ := number(mustCall(f, s))
@@ -507,7 +507,7 @@ func (a *Adapter) BeginStreamingTTS(ctx context.Context, chatID string, format g
 	}
 	obj, ok := v.(*plugins.HostedObject)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("begin_streaming_tts returned a %s, not a StreamingTTSHandle", pyrepr.TypeName(v))}
+		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("begin_streaming_tts returned a %s, not a StreamingTTSHandle", anyutil.Kind(v))}
 	}
 	handle := &gateway.StreamingTTSHandle{ChatID: chatID, AudioFormat: format}
 	if err := pullHandle(ctx, obj, handle); err != nil {

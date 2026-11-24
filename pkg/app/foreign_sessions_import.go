@@ -5,9 +5,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var foreignSourceLabels = map[string]string{"claude": "Claude Code", "codex": "Codex CLI"}
@@ -24,7 +25,7 @@ func runSessionsImport(ctx context.Context, ns map[string]any, w io.Writer) (str
 			if strings.Contains(path, "/.claude/") || strings.HasSuffix(path, ".jsonl") && strings.Contains(path, "claude") {
 				source = "claude"
 			}
-			if strings.Contains(path, "/.codex/") || strings.HasPrefix(pypath.PathName(path), "rollout-") {
+			if strings.Contains(path, "/.codex/") || strings.HasPrefix(pathutil.Name(path), "rollout-") {
 				source = "codex"
 			}
 		}
@@ -32,7 +33,7 @@ func runSessionsImport(ctx context.Context, ns map[string]any, w io.Writer) (str
 			fmt.Fprintln(w, "Cannot infer source from path; pass --from claude|codex.")
 			return "", false, nil
 		}
-		path = pypath.PathStr(path)
+		path = filepath.Clean(path)
 	} else {
 		picked, err := PickForeignSession(ctx, source, w)
 		if err != nil {

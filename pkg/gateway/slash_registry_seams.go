@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Slash command row of the command registry or a plugin with its description and args hint
@@ -13,7 +13,7 @@ type SlashCommandEntry struct{ Name, Description, ArgsHint string }
 type SkillCommandEntry struct{ Name, Description, CmdKey string }
 
 // Live adapters of one profile keyed by platform
-type AdapterMap = pydict.Dict[Platform, PlatformAdapter]
+type AdapterMap = orderedutil.Map[Platform, PlatformAdapter]
 
 // Gateway available registry commands in registry order, assigned by the binary to the commands package
 var GatewayRegistryCommands func(ctx context.Context) ([]SlashCommandEntry, error)

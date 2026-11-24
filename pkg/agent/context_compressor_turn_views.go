@@ -1,8 +1,8 @@
 package agent
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // ErrUserTurnIndex and ErrNotUserOriginatedTurn are the IndexError and ValueError of the rewind helper
@@ -37,7 +37,7 @@ func referenceHandoffWouldDriveNextModelCall(messages []map[string]any) bool {
 		}
 		mergedCompletedAssistant := message != nil && message["role"] == "assistant" &&
 			state.ClassifySummaryContent(message["content"]) == "merged" &&
-			message["finish_reason"] == "stop" && !pyrepr.Truthy(message["tool_calls"])
+			message["finish_reason"] == "stop" && !anyutil.IsTrue(message["tool_calls"])
 		if !(handoffCarriesLiveUserContent(message) && !mergedCompletedAssistant) {
 			lastDriving = index
 		}
@@ -50,7 +50,7 @@ func referenceHandoffWouldDriveNextModelCall(messages []map[string]any) bool {
 			continue
 		}
 		role := message["role"]
-		if role == "tool" || (role == "assistant" && pyrepr.Truthy(message["tool_calls"])) || state.IsRealUserTurn(message) ||
+		if role == "tool" || (role == "assistant" && anyutil.IsTrue(message["tool_calls"])) || state.IsRealUserTurn(message) ||
 			(state.IsCompactionSummaryMessage(message) && handoffCarriesLiveUserContent(message)) {
 			return false
 		}

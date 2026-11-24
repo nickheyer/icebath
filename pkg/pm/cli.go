@@ -17,8 +17,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // Context whose pm command errors print to w instead of the process stderr
@@ -249,7 +249,7 @@ func fmtBytes(n int64) string { return fmt.Sprintf("%.1f MiB", float64(n)/(1024*
 // Seams the progress renderer reads, replaced by tests the way Python patches the cli module
 var (
 	enableVT         = enableVTProcessing
-	streamIsTerminal = func(w io.Writer) bool { return pysys.Isatty(w) }
+	streamIsTerminal = func(w io.Writer) bool { return termutil.IsTerminal(w) }
 	stderrStream     = func() io.Writer { return os.Stderr }
 	progressStream   = defaultProgressStream
 )
@@ -819,14 +819,14 @@ func CmdDoctor(ctx context.Context, repair bool) (int, error) {
 			bad += weight
 			continue
 		}
-		entry := location.Store.Entry(pyrepr.Str(fact["entry"]))
+		entry := location.Store.Entry(anyutil.String(fact["entry"]))
 		if reason := p.Verify(entry, target); reason != "" {
 			fmt.Fprintf(out, "✗ %s: installed but failed verification: %s\n", name, reason)
 			bad++
 			continue
 		}
 		if digest, ok := fact["digest"]; ok && digest != nil {
-			text := pyrepr.Str(digest)
+			text := anyutil.String(digest)
 			matches, err := DigestMatches(entry, &text)
 			if err != nil {
 				return 0, err
@@ -837,7 +837,7 @@ func CmdDoctor(ctx context.Context, repair bool) (int, error) {
 				continue
 			}
 		}
-		fmt.Fprintf(out, "✓ %s %s\n", name, pyrepr.Str(fact["version"]))
+		fmt.Fprintf(out, "✓ %s %s\n", name, anyutil.String(fact["version"]))
 	}
 	stale, err := doctorExtras(ctx)
 	if err != nil {

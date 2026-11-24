@@ -16,10 +16,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Parent of the resolved binary, the tree the running code was loaded from
@@ -36,7 +37,7 @@ var runningVenvPrefix = func() (string, bool, error) {
 
 // Directory holding pyvenv.cfg one level above the resolved executable's directory, else beside it, like getpath
 func venvPrefixOf(executable string) (string, bool, error) {
-	resolved, err := pypath.Resolve(executable)
+	resolved, err := pathutil.Resolve(executable)
 	if err != nil {
 		return "", false, err
 	}
@@ -56,11 +57,11 @@ func venvPrefixOf(executable string) (string, bool, error) {
 // In tree venv or .venv of a checkout, venv winning, else the running venv when it installs this very checkout
 func projectVenvDir(root string) (string, error) {
 	for _, name := range []string{"venv", ".venv"} {
-		if candidate := pypath.PathJoin(root, name); isDirectory(candidate) {
+		if candidate := pathutil.Join(root, name); isDirectory(candidate) {
 			return candidate, nil
 		}
 	}
-	resolvedRoot, err := pypath.Resolve(root)
+	resolvedRoot, err := pathutil.Resolve(root)
 	if err != nil {
 		return "", err
 	}
@@ -83,7 +84,7 @@ func ProjectVenvDir(root string) (string, error) { return projectVenvDir(root) }
 
 // pathlib equality, the str form on POSIX and its lowercase on Windows
 func samePurePath(a, b string) bool {
-	a, b = pypath.PathStr(a), pypath.PathStr(b)
+	a, b = filepath.Clean(a), filepath.Clean(b)
 	if runtime.GOOS == "windows" {
 		return strings.ToLower(a) == strings.ToLower(b)
 	}
@@ -99,7 +100,7 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 	for _, dist := range metadataDistributions(site, "icebath-agent") {
 		raw, err := dist.readText("direct_url.json")
 		if err != nil {
-			var decodeErr *pystr.UnicodeDecodeError
+			var decodeErr *textutil.InvalidUTF8Error
 			if errors.As(err, &decodeErr) {
 				continue
 			}
@@ -108,15 +109,15 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 		if raw == "" {
 			raw = "{}"
 		}
-		value, err := pyjson.Loads(raw)
+		value, err := jsonutil.Decode(raw)
 		if err != nil {
-			var jsonErr *pyjson.DecodeError
+			var jsonErr *jsonutil.SyntaxError
 			if errors.As(err, &jsonErr) {
 				continue
 			}
 			return false, err
 		}
-		object, ok := value.(*pyjson.Object)
+		object, ok := value.(*jsonutil.Object)
 		if !ok {
 			return false, &PyError{Class: "AttributeError", Message: fmt.Sprintf("direct_url.json must hold a mapping, got %s", errchain.Kind(value))}
 		}
@@ -135,7 +136,7 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 		if err != nil {
 			return false, err
 		}
-		local, err := pyurl.URL2Pathname(parsed.Path, false, false)
+		local, err := urlutil.FilePath("file:" + parsed.Path)
 		if err != nil {
 			var remote *pyurl.URLError
 			if errors.As(err, &remote) {
@@ -143,7 +144,7 @@ func venvInstallsCheckout(venv, resolvedRoot string) (bool, error) {
 			}
 			return false, err
 		}
-		source, err := pypath.Resolve(local)
+		source, err := pathutil.Resolve(local)
 		if err != nil {
 			return false, err
 		}
@@ -168,7 +169,7 @@ func metadataDistributions(root, name string) []metadataDistribution {
 	normalized := strings.ReplaceAll(strings.ToLower(metadataNameRuns.ReplaceAllString(name, "-")), "-", "_")
 	legacy := strings.ReplaceAll(strings.ToLower(name), "-", "_")
 	children, archive := metadataChildren(root)
-	base := strings.ToLower(pypath.Basename(root))
+	base := strings.ToLower(pathutil.Name(root))
 	var infos, eggs []metadataDistribution
 	for _, child := range children {
 		dist := metadataDistribution{dir: filepath.Join(root, child), archive: archive, member: child}
@@ -244,7 +245,7 @@ func (d metadataDistribution) readText(filename string) (string, error) {
 		return "", err
 	}
 	if !utf8.Valid(data) {
-		return "", pystr.UTF8DecodeError(data, firstInvalidUTF8(data))
+		return "", &textutil.InvalidUTF8Error{Offset: firstInvalidUTF8(data)}
 	}
 	text := strings.ReplaceAll(string(data), "\r\n", "\n")
 	return strings.ReplaceAll(text, "\r", "\n"), nil

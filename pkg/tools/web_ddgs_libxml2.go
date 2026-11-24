@@ -4,8 +4,6 @@ import (
 	"strings"
 
 	"golang.org/x/net/html"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 )
 
 // libxml2 htmlBooleanAttrs, the attributes a value less occurrence spells out as their own name
@@ -89,17 +87,32 @@ func lxmlRef(s string, attr bool) (string, int, bool) {
 		}
 		return lxmlCodePoint(cp), j, true
 	}
-	v, n := pyhtml.LongestEntity(s[1:])
-	if n == 0 {
+	end := 1
+	for end < len(s) && lxmlAlnum(s[end]) {
+		end++
+	}
+	if end == 1 {
 		return "", 0, false
 	}
-	if attr && s[n] != ';' && 1+n < len(s) {
-		if c := s[1+n]; c == '=' || c >= '0' && c <= '9' || c|0x20 >= 'a' && c|0x20 <= 'z' {
-			return "", 0, false
+	bare := html.UnescapeString(s[:end])
+	if end < len(s) && s[end] == ';' {
+		if v := html.UnescapeString(s[:end+1]); v != bare+";" {
+			return v, end + 1, true
 		}
 	}
-	return v, 1 + n, true
+	if bare == s[:end] {
+		return "", 0, false
+	}
+	tail := len(bare) - len(strings.TrimRightFunc(bare, func(r rune) bool { return r < 0x80 && lxmlAlnum(byte(r)) }))
+	n := end - tail
+	if attr && n < len(s) && (s[n] == '=' || lxmlAlnum(s[n])) {
+		return "", 0, false
+	}
+	return bare[:len(bare)-tail], n, true
 }
+
+// ASCII letter or digit, the bytes of a character reference name
+func lxmlAlnum(c byte) bool { return c >= '0' && c <= '9' || c|0x20 >= 'a' && c|0x20 <= 'z' }
 
 // Attribute value with references decoded, NUL replaced and carriage returns turned into line feeds
 func lxmlAttrValue(raw string) string {

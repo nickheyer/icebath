@@ -6,9 +6,9 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const trajectorySystemPrompt = "You are a function calling AI model. You are provided with function signatures within <tools> </tools> XML tags. " +
@@ -61,7 +61,7 @@ func trajectoryStrip(v any) (string, error) {
 // Leading think block from native reasoning tokens, empty without reasoning
 func trajectoryGPTPrefix(msg map[string]any) (string, error) {
 	reasoning := msg["reasoning"]
-	if !pyrepr.Truthy(reasoning) {
+	if !anyutil.IsTrue(reasoning) {
 		return "", nil
 	}
 	stripped, err := trajectoryStrip(reasoning)
@@ -85,7 +85,7 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if c := msg["content"]; pyrepr.Truthy(c) {
+	if c := msg["content"]; anyutil.IsTrue(c) {
 		stripped, err := trajectoryStrip(c)
 		if err != nil {
 			return "", err
@@ -100,7 +100,7 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 	}
 	list, _ := listOfAny(calls)
 	for _, raw := range list {
-		call, ok := pyjson.Dict(raw)
+		call, ok := jsonutil.AsMap(raw)
 		if !ok || len(call) == 0 {
 			continue
 		}
@@ -108,7 +108,7 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		fn, ok := pyjson.Dict(fnValue)
+		fn, ok := jsonutil.AsMap(fnValue)
 		if !ok {
 			return "", fmt.Errorf("a tool call function is %s, expected a mapping", errchain.Kind(fnValue))
 		}
@@ -118,11 +118,11 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 		}
 		arguments := rawArgs
 		if s, isStr := rawArgs.(string); isStr {
-			parsed, perr := pyjson.Loads(s)
+			parsed, perr := jsonutil.Decode(s)
 			if perr != nil {
 				runes := []rune(s)
 				pkgLog().Warn(fmt.Sprintf("Unexpected invalid JSON in trajectory conversion: %s", string(runes[:min(len(runes), 100)])))
-				parsed = pyjson.NewObject()
+				parsed = jsonutil.NewObject()
 			}
 			arguments = parsed
 		}
@@ -130,10 +130,10 @@ func trajectoryToolCallTurn(msg map[string]any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("name", name)
 		payload.Set("arguments", arguments)
-		encoded, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+		encoded, err := jsonutil.Encode(payload)
 		if err != nil {
 			return "", err
 		}
@@ -162,14 +162,14 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 		}
 		if s, ok := toolContent.(string); ok {
 			if trimmed := strings.TrimSpace(s); strings.HasPrefix(trimmed, "{") || strings.HasPrefix(trimmed, "[") {
-				if parsed, perr := pyjson.Loads(s); perr == nil {
+				if parsed, perr := jsonutil.Decode(s); perr == nil {
 					toolContent = parsed
 				}
 			}
 		}
 		name := any("unknown")
 		if idx := len(responses); idx < len(calls) {
-			call, ok := pyjson.Dict(calls[idx])
+			call, ok := jsonutil.AsMap(calls[idx])
 			if !ok {
 				return nil, 0, fmt.Errorf("a tool call is %s, expected a mapping", errchain.Kind(calls[idx]))
 			}
@@ -177,7 +177,7 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 			if err != nil {
 				return nil, 0, err
 			}
-			fn, ok := pyjson.Dict(fnValue)
+			fn, ok := jsonutil.AsMap(fnValue)
 			if !ok {
 				return nil, 0, fmt.Errorf("a tool call function is %s, expected a mapping", errchain.Kind(fnValue))
 			}
@@ -189,11 +189,11 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 		if !ok {
 			toolCallID = ""
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("tool_call_id", toolCallID)
 		payload.Set("name", name)
 		payload.Set("content", toolContent)
-		encoded, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+		encoded, err := jsonutil.Encode(payload)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -204,8 +204,8 @@ func trajectoryToolResponses(msg map[string]any, messages []map[string]any, star
 }
 
 // One trajectory turn in from and value order
-func trajectoryTurn(from string, value any) *pyjson.Object {
-	turn := pyjson.NewObject()
+func trajectoryTurn(from string, value any) *jsonutil.Object {
+	turn := jsonutil.NewObject()
 	turn.Set("from", from)
 	turn.Set("value", value)
 	return turn
@@ -233,7 +233,7 @@ func (a *AIAgent) convertToTrajectoryFormat(messages []map[string]any, userQuery
 		}
 		switch role {
 		case "assistant":
-			if pyrepr.Truthy(msg["tool_calls"]) {
+			if anyutil.IsTrue(msg["tool_calls"]) {
 				turn, err := trajectoryToolCallTurn(msg)
 				if err != nil {
 					return nil, err
@@ -258,7 +258,7 @@ func (a *AIAgent) convertToTrajectoryFormat(messages []map[string]any, userQuery
 				return nil, err
 			}
 			text := ""
-			if pyrepr.Truthy(content) {
+			if anyutil.IsTrue(content) {
 				s, ok := content.(string)
 				if !ok {
 					return nil, fmt.Errorf("message content is %s, expected text", errchain.Kind(content))

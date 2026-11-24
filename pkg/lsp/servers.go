@@ -16,8 +16,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	"github.com/nickheyer/icebath/pkg/workspaces"
 )
 
@@ -128,14 +128,14 @@ var compoundExts = []string{".blade.php"}
 
 // Lower cased extension with compound ones first, or the basename of an extensionless file
 func fileExtOrBasename(path string) string {
-	base := pypath.Basename(path)
+	base := pathutil.Name(path)
 	lower := strings.ToLower(base)
 	for _, c := range compoundExts {
 		if strings.HasSuffix(lower, c) {
 			return c
 		}
 	}
-	if _, ext := pypath.Splitext(base); ext != "" {
+	if _, ext := pathutil.SplitExt(base); ext != "" {
 		return strings.ToLower(ext)
 	}
 	return base
@@ -255,7 +255,7 @@ func spawnPyright(root string, ctx ServerContext) (*SpawnSpec, error) {
 	if err != nil || binPath == "" {
 		return nil, err
 	}
-	stem, suffix := pypath.Splitext(pypath.Basename(binPath))
+	stem, suffix := pathutil.SplitExt(pathutil.Name(binPath))
 	if stem == "pyright" {
 		sibling := filepath.Join(filepath.Dir(binPath), "pyright-langserver"+suffix)
 		if osPathExists(sibling) {
@@ -288,7 +288,7 @@ func detectPython(rt *Runtime, root string) (string, error) {
 	}
 	for _, v := range venvs {
 		for _, sub := range []string{"bin/python", "bin/python3", "Scripts/python.exe"} {
-			if p := pypath.Join(v, sub); osPathExists(p) {
+			if p := pathutil.Join(v, sub); osPathExists(p) {
 				return p, nil
 			}
 		}
@@ -348,7 +348,7 @@ func nodeModulesTrees(rt *Runtime, binPath, root string) ([]string, error) {
 	if root != "" {
 		trees = append(trees, filepath.Join(root, "node_modules"))
 	}
-	real, err := pypath.Realpath(binPath, pypath.Lax)
+	real, err := pathutil.Resolve(binPath)
 	if err != nil {
 		return nil, err
 	}
@@ -386,7 +386,7 @@ func vueServerMajor(rt *Runtime, trees []string) (int, error) {
 		if !ok {
 			version = ""
 		}
-		head, _, _ := strings.Cut(pyrepr.Str(version), ".")
+		head, _, _ := strings.Cut(anyutil.String(version), ".")
 		n, err := pyInt(head)
 		if err != nil {
 			continue
@@ -472,8 +472,8 @@ func findPSESBundle(ctx ServerContext) string {
 	if override := ctx.BinaryOverrides["powershell"]; len(override) > 0 {
 		candidates = append(candidates, override[0])
 	}
-	if init := ctx.InitOverrides["powershell"]; init != nil && pyrepr.Truthy(init["bundlePath"]) {
-		candidates = append(candidates, pyrepr.Str(init["bundlePath"]))
+	if init := ctx.InitOverrides["powershell"]; init != nil && anyutil.IsTrue(init["bundlePath"]) {
+		candidates = append(candidates, anyutil.String(init["bundlePath"]))
 	}
 	candidates = append(candidates, os.Getenv("PSES_BUNDLE_PATH"),
 		filepath.Join(ctx.Runtime.home(), "lsp", "PowerShellEditorServices"))
@@ -696,10 +696,10 @@ func LanguageIDFor(path string, srv *ServerDef) string {
 // Spawn builder for a config declared server, the first command element a path or PATH lookup
 func customSpawn(serverID string, command []string) SpawnFn {
 	return func(root string, ctx ServerContext) (*SpawnSpec, error) {
-		binPath := which(pypath.Expanduser(command[0]))
+		binPath := which(pathutil.ExpandUser(command[0]))
 		if binPath == "" {
 			warnOnce(ctx.Runtime, "custom:"+serverID, fmt.Sprintf("lsp.servers.%s: command %s not found on PATH — server skipped",
-				serverID, pyrepr.StrRepr(command[0])))
+				serverID, strconv.Quote(command[0])))
 			return nil, nil
 		}
 		return makeSpec(root, ctx, serverID, append([]string{binPath}, command[1:]...), nil, false)
@@ -775,16 +775,16 @@ func CustomServers(rt *Runtime, serversCfg any) []*ServerDef {
 		var markers []string
 		if list, ok := entry["root_markers"].([]any); ok && len(list) > 0 {
 			for _, m := range list {
-				markers = append(markers, pyrepr.Str(m))
+				markers = append(markers, anyutil.String(m))
 			}
 		}
 		description := serverID + " — custom (lsp.servers)"
-		if d := entry["description"]; pyrepr.Truthy(d) {
-			description = pyrepr.Str(d)
+		if d := entry["description"]; anyutil.IsTrue(d) {
+			description = anyutil.String(d)
 		}
 		languageID := ""
-		if l := entry["language_id"]; pyrepr.Truthy(l) {
-			languageID = pyrepr.Str(l)
+		if l := entry["language_id"]; anyutil.IsTrue(l) {
+			languageID = anyutil.String(l)
 		}
 		out = append(out, &ServerDef{ServerID: serverID, Extensions: exts, ResolveRoot: markersRoot(markers, nil),
 			BuildSpawn: customSpawn(serverID, command), Description: description, LanguageID: languageID})

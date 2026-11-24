@@ -6,7 +6,6 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Seconds between looks at the queue file inside one housekeeping interval
@@ -76,22 +75,22 @@ func (w *DeliveryQueueWatch) Changed(ctx context.Context) bool {
 }
 
 // Sleeps one housekeeping interval, draining the worker queue the moment it changes
-func waitForNextTick(ctx context.Context, stopEvent *pythread.Event, interval float64, watch *DeliveryQueueWatch, chore func(label string, fn func())) {
+func waitForNextTick(ctx context.Context, stopEvent *syncutil.Event, interval float64, watch *DeliveryQueueWatch, chore func(label string, fn func())) {
 	if watch == nil {
 		stopEvent.Wait(interval)
 		return
 	}
 	watch.refreshHomes()
-	deadline := pythread.Monotonic() + interval
+	deadline := timeutil.Monotonic() + interval
 	for {
-		remaining := max(0.0, deadline-pythread.Monotonic())
+		remaining := max(0.0, deadline-timeutil.Monotonic())
 		if stopEvent.Wait(min(remaining, deliveryQueueWatchSeconds)) {
 			return
 		}
 		if watch.Changed(ctx) {
 			chore(deliveryQueueDrainLabel, watch.Drain)
 		}
-		if pythread.Monotonic() >= deadline {
+		if timeutil.Monotonic() >= deadline {
 			return
 		}
 	}

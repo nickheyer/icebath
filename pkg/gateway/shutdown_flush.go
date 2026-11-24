@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -30,7 +30,7 @@ var (
 
 // Private pending_messages directory under the active home, refused for a deleted or missing named profile
 func defaultShutdownFlushDir(ctx context.Context) (string, error) {
-	flushDir := pypath.PathJoin(home.Dir(ctx), "pending_messages")
+	flushDir := pathutil.Join(home.Dir(ctx), "pending_messages")
 	if err := home.AssertProfileLive(flushDir); err != nil {
 		return "", err
 	}
@@ -46,10 +46,10 @@ func defaultShutdownFlushDir(ctx context.Context) (string, error) {
 }
 
 // Atomically writes one private uniquely named recovery payload and fsyncs its directory entry
-func writeFlushPayload(ctx context.Context, flushDir string, payload *pyjson.Object) (string, error) {
-	finalPath := pypath.PathJoin(flushDir, "pending-"+flushUUIDHex()+".json")
-	if err := config.AtomicJSONWriteMode(ctx, finalPath, payload, 0o600, pyjson.Indent(2),
-		pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil })); err != nil {
+func writeFlushPayload(ctx context.Context, flushDir string, payload *jsonutil.Object) (string, error) {
+	finalPath := pathutil.Join(flushDir, "pending-"+flushUUIDHex()+".json")
+	if err := config.AtomicJSONWriteMode(ctx, finalPath, payload, 0o600, jsonutil.Indent(2),
+		jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil })); err != nil {
 		return "", err
 	}
 	if runtime.GOOS != "windows" {
@@ -78,7 +78,7 @@ func flushValue(ctx context.Context, flushDir, kind, sessionKey string, value an
 	if !ok {
 		return false
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("session_key", sessionKey)
 	for _, f := range extra {
 		payload.Set(f.key, f.value)
@@ -162,7 +162,7 @@ func FlushOverflowToFile(ctx context.Context, overflowBySession map[string][]any
 
 // Whether json.dumps accepts the value
 func flushJSONSafe(value any) bool {
-	_, err := pyjson.Dumps(value)
+	_, err := jsonutil.Encode(value)
 	return err == nil
 }
 
@@ -185,7 +185,7 @@ var flushedEventAttrs = []string{"session_id", "platform", "sender_id", "sender_
 func serialiseFlushValue(value any) (any, bool) {
 	if v, ok := value.(pendingAttrValue); ok {
 		if text, has := v.pendingAttr("text"); has {
-			result := pyjson.NewObject()
+			result := jsonutil.NewObject()
 			result.Set("text", text)
 			for _, attr := range flushedEventAttrs {
 				val, present := v.pendingAttr(attr)
@@ -195,24 +195,24 @@ func serialiseFlushValue(value any) (any, bool) {
 				if flushJSONSafe(val) {
 					result.Set(attr, val)
 				} else {
-					result.Set(attr, pyrepr.Str(val))
+					result.Set(attr, anyutil.String(val))
 				}
 			}
 			return result, true
 		}
 	}
 	if s, ok := value.(string); ok {
-		result := pyjson.NewObject()
+		result := jsonutil.NewObject()
 		result.Set("text", s)
 		return result, true
 	}
 	switch value.(type) {
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		if flushJSONSafe(value) {
 			return value, true
 		}
 	}
-	result := pyjson.NewObject()
-	result.Set("text", pyrepr.Str(value))
+	result := jsonutil.NewObject()
+	result.Set("text", anyutil.String(value))
 	return result, true
 }

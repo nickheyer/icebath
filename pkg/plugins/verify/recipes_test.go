@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func touch(t *testing.T, root string, names ...string) {
@@ -32,9 +32,9 @@ func writeFile(t *testing.T, root, name, text string) {
 	}
 }
 
-func writePkg(t *testing.T, root string, data *pyjson.Object) {
+func writePkg(t *testing.T, root string, data *jsonutil.Object) {
 	t.Helper()
-	text, err := pyjson.Dumps(data)
+	text, err := jsonutil.Encode(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,8 +98,8 @@ func TestPackageManagerDetection(t *testing.T) {
 func TestNodeDetection(t *testing.T) {
 	t.Run("nextjs_with_pnpm", func(t *testing.T) {
 		root := t.TempDir()
-		writePkg(t, root, pyjson.ObjectOf("dependencies", pyjson.ObjectOf("next", "14.0.0"),
-			"scripts", pyjson.ObjectOf("dev", "next dev", "build", "next build", "test", "jest")))
+		writePkg(t, root, jsonutil.ObjectOf("dependencies", jsonutil.ObjectOf("next", "14.0.0"),
+			"scripts", jsonutil.ObjectOf("dev", "next dev", "build", "next build", "test", "jest")))
 		touch(t, root, "pnpm-lock.yaml")
 		r := detect(t, root)
 		eq(t, "kind", r.Kind, "nextjs")
@@ -111,8 +111,8 @@ func TestNodeDetection(t *testing.T) {
 	})
 	t.Run("vite_with_yarn", func(t *testing.T) {
 		root := t.TempDir()
-		writePkg(t, root, pyjson.ObjectOf("devDependencies", pyjson.ObjectOf("vite", "5.0.0"),
-			"scripts", pyjson.ObjectOf("dev", "vite", "build", "vite build")))
+		writePkg(t, root, jsonutil.ObjectOf("devDependencies", jsonutil.ObjectOf("vite", "5.0.0"),
+			"scripts", jsonutil.ObjectOf("dev", "vite", "build", "vite build")))
 		touch(t, root, "yarn.lock")
 		r := detect(t, root)
 		eq(t, "kind", r.Kind, "vite")
@@ -122,7 +122,7 @@ func TestNodeDetection(t *testing.T) {
 	})
 	t.Run("bun_runner", func(t *testing.T) {
 		root := t.TempDir()
-		writePkg(t, root, pyjson.ObjectOf("scripts", pyjson.ObjectOf("start", "node server.js", "build", "tsc")))
+		writePkg(t, root, jsonutil.ObjectOf("scripts", jsonutil.ObjectOf("start", "node server.js", "build", "tsc")))
 		touch(t, root, "bun.lockb")
 		r := detect(t, root)
 		eq(t, "kind", r.Kind, "node")
@@ -131,7 +131,7 @@ func TestNodeDetection(t *testing.T) {
 	})
 	t.Run("generic_node_defaults_to_npm", func(t *testing.T) {
 		root := t.TempDir()
-		writePkg(t, root, pyjson.ObjectOf("scripts", pyjson.ObjectOf("test", "mocha")))
+		writePkg(t, root, jsonutil.ObjectOf("scripts", jsonutil.ObjectOf("test", "mocha")))
 		r := detect(t, root)
 		eq(t, "bootstrap", r.Bootstrap, []string{"npm install"})
 		eq(t, "test", r.Test, []string{"npm run test"})
@@ -141,16 +141,16 @@ func TestNodeDetection(t *testing.T) {
 	})
 	t.Run("port_inferred_from_start_command", func(t *testing.T) {
 		root := t.TempDir()
-		writePkg(t, root, pyjson.ObjectOf("scripts", pyjson.ObjectOf("dev", "node server.js --port 4111")))
+		writePkg(t, root, jsonutil.ObjectOf("scripts", jsonutil.ObjectOf("dev", "node server.js --port 4111")))
 		eq(t, "port", ptrInt(detect(t, root).Port), 4111)
-		writePkg(t, root, pyjson.ObjectOf("scripts", pyjson.ObjectOf("dev", "PORT=4222 node server.js")))
+		writePkg(t, root, jsonutil.ObjectOf("scripts", jsonutil.ObjectOf("dev", "PORT=4222 node server.js")))
 		eq(t, "env port", ptrInt(detect(t, root).Port), 4222)
-		writePkg(t, root, pyjson.ObjectOf("scripts", pyjson.ObjectOf("dev", "XPORT=4222 node -p ٤٣٢١")))
+		writePkg(t, root, jsonutil.ObjectOf("scripts", jsonutil.ObjectOf("dev", "XPORT=4222 node -p ٤٣٢١")))
 		eq(t, "unicode digits", ptrInt(detect(t, root).Port), 4321)
 	})
 	t.Run("non_string_start_script_raises_type_error", func(t *testing.T) {
 		root := t.TempDir()
-		writePkg(t, root, pyjson.ObjectOf("scripts", pyjson.ObjectOf("dev", int64(5))))
+		writePkg(t, root, jsonutil.ObjectOf("scripts", jsonutil.ObjectOf("dev", int64(5))))
 		_, err := DetectRecipe(root)
 		if err == nil || err.Error() != "start command is a number where text was expected" {
 			t.Fatalf("err %v", err)
@@ -158,8 +158,8 @@ func TestNodeDetection(t *testing.T) {
 	})
 	t.Run("cra", func(t *testing.T) {
 		root := t.TempDir()
-		writePkg(t, root, pyjson.ObjectOf("dependencies", pyjson.ObjectOf("react-scripts", "5.0"),
-			"scripts", pyjson.ObjectOf("start", "react-scripts start")))
+		writePkg(t, root, jsonutil.ObjectOf("dependencies", jsonutil.ObjectOf("react-scripts", "5.0"),
+			"scripts", jsonutil.ObjectOf("start", "react-scripts start")))
 		r := detect(t, root)
 		eq(t, "kind", r.Kind, "cra")
 		eq(t, "port", ptrInt(r.Port), 3000)
@@ -300,8 +300,8 @@ func recipeEqual(t *testing.T, got, want *Recipe) {
 	if got == nil || want == nil {
 		t.Fatalf("recipe %v want %v", got, want)
 	}
-	a, _ := pyjson.Dumps(got.ToDict())
-	b, _ := pyjson.Dumps(want.ToDict())
+	a, _ := jsonutil.Encode(got.ToDict())
+	b, _ := jsonutil.Encode(want.ToDict())
 	if a != b {
 		t.Fatalf("recipe %s\nwant %s", a, b)
 	}
@@ -323,14 +323,14 @@ func TestRecipeFromDict(t *testing.T) {
 		recipeEqual(t, fromDict(t, r.ToDict()), r)
 	})
 	t.Run("tolerates_garbage", func(t *testing.T) {
-		for _, raw := range []any{nil, []any{}, pyjson.ObjectOf("kind", "x"), pyjson.ObjectOf("name", "  ")} {
+		for _, raw := range []any{nil, []any{}, jsonutil.ObjectOf("kind", "x"), jsonutil.ObjectOf("name", "  ")} {
 			if r := fromDict(t, raw); r != nil {
 				t.Errorf("%#v gave %#v", raw, r)
 			}
 		}
 	})
 	t.Run("grok_style_keys", func(t *testing.T) {
-		r := fromDict(t, pyjson.ObjectOf("appLabel", "Next.js", "appKind", "nextjs",
+		r := fromDict(t, jsonutil.ObjectOf("appLabel", "Next.js", "appKind", "nextjs",
 			"installCommands", []any{"npm install"}, "buildCommands", []any{"npm run build"},
 			"testCommands", []any{"npm test"}, "startCommand", "npm run dev", "startPort", "3000"))
 		eq(t, "name", r.Name, "Next.js")
@@ -338,15 +338,15 @@ func TestRecipeFromDict(t *testing.T) {
 		eq(t, "bootstrap", r.Bootstrap, []string{"npm install"})
 	})
 	t.Run("invalid_port_dropped", func(t *testing.T) {
-		eq(t, "port", ptrInt(fromDict(t, pyjson.ObjectOf("name", "x", "port", "not-a-port")).Port), nil)
-		eq(t, "port", ptrInt(fromDict(t, pyjson.ObjectOf("name", "x", "port", int64(99999999))).Port), nil)
-		eq(t, "float port", ptrInt(fromDict(t, pyjson.ObjectOf("name", "x", "port", 3000.0)).Port), nil)
-		r := fromDict(t, pyjson.ObjectOf("name", "x", "port", true))
-		text, _ := pyjson.Dumps(r.ToDict().Vals["port"])
+		eq(t, "port", ptrInt(fromDict(t, jsonutil.ObjectOf("name", "x", "port", "not-a-port")).Port), nil)
+		eq(t, "port", ptrInt(fromDict(t, jsonutil.ObjectOf("name", "x", "port", int64(99999999))).Port), nil)
+		eq(t, "float port", ptrInt(fromDict(t, jsonutil.ObjectOf("name", "x", "port", 3000.0)).Port), nil)
+		r := fromDict(t, jsonutil.ObjectOf("name", "x", "port", true))
+		text, _ := jsonutil.Encode(r.ToDict().Value("port"))
 		eq(t, "bool port", text+r.portText(), "trueTrue")
 	})
 	t.Run("bad_readiness_path_normalized", func(t *testing.T) {
-		eq(t, "path", fromDict(t, pyjson.ObjectOf("name", "x", "readinessPath", "health")).ReadinessPath, "/")
-		eq(t, "path", fromDict(t, pyjson.ObjectOf("name", "x", "readinessPath", "/health")).ReadinessPath, "/health")
+		eq(t, "path", fromDict(t, jsonutil.ObjectOf("name", "x", "readinessPath", "health")).ReadinessPath, "/")
+		eq(t, "path", fromDict(t, jsonutil.ObjectOf("name", "x", "readinessPath", "/health")).ReadinessPath, "/health")
 	})
 }

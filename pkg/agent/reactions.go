@@ -7,7 +7,6 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Affection or gratitude aimed at the agent, the only reaction kind
@@ -35,7 +34,7 @@ func mustCompileVibe() *regexp2.Regexp {
 
 // Reaction kind the text expresses, empty when none
 func detectReaction(text any) string {
-	if !pyrepr.Truthy(text) {
+	if !anyutil.IsTrue(text) {
 		return ""
 	}
 	s, ok := text.(string)

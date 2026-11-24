@@ -4,16 +4,14 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"math"
-	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -70,7 +68,7 @@ func geminiRequiresToolCallIDs(model string) bool {
 
 // Text of an OpenAI content item given as a plain string or a text part
 func geminiTextOf(item any) (string, bool) {
-	if m, ok := pyjson.Dict(item); ok {
+	if m, ok := jsonutil.AsMap(item); ok {
 		if m["type"] == "text" {
 			if s, ok := m["text"].(string); ok {
 				return s, true
@@ -101,7 +99,7 @@ func coerceGeminiContentToText(content any) string {
 
 // inlineData part for an image_url item carrying a data URL, nil otherwise
 func geminiInlineDataPart(item map[string]any) map[string]any {
-	img, _ := pyjson.Dict(item["image_url"])
+	img, _ := jsonutil.AsMap(item["image_url"])
 	url, _ := img["url"].(string)
 	if item["type"] != "image_url" || !strings.HasPrefix(url, "data:") {
 		return nil
@@ -140,7 +138,7 @@ func geminiMultimodalPart(item any) map[string]any {
 	if (isText && text != "") || isStr {
 		return map[string]any{"text": text}
 	}
-	if m, ok := pyjson.Dict(item); ok {
+	if m, ok := jsonutil.AsMap(item); ok {
 		return geminiInlineDataPart(m)
 	}
 	return nil
@@ -165,7 +163,7 @@ func extractGeminiMultimodalParts(content any) []any {
 
 // Replayed thoughtSignature from extra_content in the google record or flat form
 func toolCallExtraSignature(holder map[string]any) string {
-	extra, ok := pyjson.Dict(holder["extra_content"])
+	extra, ok := jsonutil.AsMap(holder["extra_content"])
 	if !ok {
 		return ""
 	}
@@ -173,7 +171,7 @@ func toolCallExtraSignature(holder map[string]any) string {
 	if !pyTruthy(sig) {
 		sig = extra["thought_signature"]
 	}
-	if m, ok := pyjson.Dict(sig); ok {
+	if m, ok := jsonutil.AsMap(sig); ok {
 		sig = m["thought_signature"]
 		if !pyTruthy(sig) {
 			sig = m["thoughtSignature"]
@@ -196,7 +194,7 @@ func geminiToolCallID(tc map[string]any) string {
 
 // Decodes JSON text with json.loads rules into maps and json.Number text, functionCall args kept in API key order
 func geminiJSONLoads(text string) (any, error) {
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
@@ -206,14 +204,14 @@ func geminiJSONLoads(text string) (any, error) {
 // Plain maps and json.Number numbers for a decoded value, leaving args under functionCall as ordered Python values
 func geminiPlainJSON(v any, underCall bool) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
-		m := make(map[string]any, len(t.Keys))
-		for _, k := range t.Keys {
+	case *jsonutil.Object:
+		m := make(map[string]any, t.Len())
+		for _, k := range t.Keys() {
 			if underCall && k == "args" {
-				m[k] = t.Vals[k]
+				m[k] = t.Value(k)
 				continue
 			}
-			m[k] = geminiPlainJSON(t.Vals[k], k == "functionCall")
+			m[k] = geminiPlainJSON(t.Value(k), k == "functionCall")
 		}
 		return m
 	case []any:
@@ -225,35 +223,33 @@ func geminiPlainJSON(v any, underCall bool) any {
 	return geminiNumber(v)
 }
 
-// json.Number in Python spelling for a decoded int or finite float, any other value unchanged
+// json.Number of a decoded int or finite float, any other value unchanged
 func geminiNumber(v any) any {
 	switch t := v.(type) {
 	case int64:
 		return json.Number(strconv.FormatInt(t, 10))
-	case *big.Int:
-		return json.Number(t.String())
 	case float64:
 		if math.IsNaN(t) || math.IsInf(t, 0) {
 			return t
 		}
-		return json.Number(pyrepr.Float(t))
+		return json.Number(strconv.FormatFloat(t, 'f', -1, 64))
 	}
 	return v
 }
 
 // Request side decode keeping every object in key order with numbers spelled the way json.dumps writes them
 func geminiRequestJSONLoads(text string) (any, error) {
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
 	var walk func(any) any
 	walk = func(v any) any {
 		switch t := v.(type) {
-		case *pyjson.Object:
-			out := pyjson.NewObject()
-			for _, k := range t.Keys {
-				out.Set(k, walk(t.Vals[k]))
+		case *jsonutil.Object:
+			out := jsonutil.NewObject()
+			for _, k := range t.Keys() {
+				out.Set(k, walk(t.Value(k)))
 			}
 			return out
 		case []any:
@@ -268,16 +264,16 @@ func geminiRequestJSONLoads(text string) (any, error) {
 }
 
 // Single key ordered object as Python builds the wrapper dicts around non object arguments
-func geminiWrap(key string, v any) *pyjson.Object {
-	o := pyjson.NewObject()
+func geminiWrap(key string, v any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set(key, v)
 	return o
 }
 
 // functionCall part with its replayed signature or the skip sentinel
 func translateToolCallToGemini(tc map[string]any, includeIDs bool) map[string]any {
-	fn, _ := pyjson.Dict(tc["function"])
-	var args any = pyjson.NewObject()
+	fn, _ := jsonutil.AsMap(tc["function"])
+	var args any = jsonutil.NewObject()
 	if raw, ok := fn["arguments"].(string); ok && raw != "" {
 		if parsed, err := geminiRequestJSONLoads(raw); err == nil {
 			args = parsed
@@ -285,7 +281,7 @@ func translateToolCallToGemini(tc map[string]any, includeIDs bool) map[string]an
 			args = geminiWrap("_raw", raw)
 		}
 	}
-	if _, ok := args.(*pyjson.Object); !ok {
+	if _, ok := args.(*jsonutil.Object); !ok {
 		args = geminiWrap("_value", args)
 	}
 	call := map[string]any{"name": pyOrStr(fn["name"]), "args": args}
@@ -304,9 +300,9 @@ func translateToolCallToGemini(tc map[string]any, includeIDs bool) map[string]an
 // Reports whether a parsed value holds a local JSON schema ref pointer
 func looksLikeJSONSchema(node any) bool {
 	switch v := node.(type) {
-	case *pyjson.Object:
-		for _, k := range v.Keys {
-			val := v.Vals[k]
+	case *jsonutil.Object:
+		for _, k := range v.Keys() {
+			val := v.Value(k)
 			if s, ok := val.(string); k == "$ref" && ok && strings.HasPrefix(s, "#/") {
 				return true
 			}
@@ -352,7 +348,7 @@ func translateToolResultToGemini(msg map[string]any, nameByCallID map[string]str
 	if t := strings.TrimSpace(content); strings.HasPrefix(t, "{") || strings.HasPrefix(t, "[") {
 		parsed, _ = geminiRequestJSONLoads(content)
 	}
-	pm, isObj := parsed.(*pyjson.Object)
+	pm, isObj := parsed.(*jsonutil.Object)
 	fr := map[string]any{"name": name}
 	if isObj && !looksLikeJSONSchema(pm) {
 		fr["response"] = pm
@@ -365,7 +361,7 @@ func translateToolResultToGemini(msg map[string]any, nameByCallID map[string]str
 	if isGemini3 {
 		var images []any
 		for _, p := range extractGeminiMultimodalParts(raw) {
-			if pm, _ := pyjson.Dict(p); pm["inlineData"] != nil {
+			if pm, _ := jsonutil.AsMap(p); pm["inlineData"] != nil {
 				images = append(images, p)
 			}
 		}
@@ -380,7 +376,7 @@ func translateToolResultToGemini(msg map[string]any, nameByCallID map[string]str
 func hasFunctionResponse(content map[string]any) bool {
 	parts, _ := content["parts"].([]any)
 	for _, p := range parts {
-		if m, ok := pyjson.Dict(p); ok {
+		if m, ok := jsonutil.AsMap(p); ok {
 			if _, ok := m["functionResponse"]; ok {
 				return true
 			}
@@ -423,7 +419,7 @@ func buildGeminiContents(messages []any, includeToolCallIDs, isGemini3 bool) ([]
 	var contents []map[string]any
 	nameByCallID := map[string]string{}
 	for _, raw := range messages {
-		msg, ok := pyjson.Dict(raw)
+		msg, ok := jsonutil.AsMap(raw)
 		if !ok {
 			continue
 		}
@@ -443,11 +439,11 @@ func buildGeminiContents(messages []any, includeToolCallIDs, isGemini3 bool) ([]
 		parts := extractGeminiMultimodalParts(msg["content"])
 		if calls, ok := msg["tool_calls"].([]any); ok {
 			for _, rc := range calls {
-				tc, ok := pyjson.Dict(rc)
+				tc, ok := jsonutil.AsMap(rc)
 				if !ok {
 					continue
 				}
-				fn, _ := pyjson.Dict(tc["function"])
+				fn, _ := jsonutil.AsMap(tc["function"])
 				toolName := pyOrStr(fn["name"])
 				if id := geminiToolCallID(tc); id != "" && toolName != "" {
 					nameByCallID[id] = toolName
@@ -456,7 +452,7 @@ func buildGeminiContents(messages []any, includeToolCallIDs, isGemini3 bool) ([]
 			}
 		}
 		if role == "assistant" && len(parts) > 0 {
-			last, _ := pyjson.Dict(parts[len(parts)-1])
+			last, _ := jsonutil.AsMap(parts[len(parts)-1])
 			if _, isCall := last["functionCall"]; !isCall {
 				if sig := toolCallExtraSignature(msg); sig != "" {
 					withSig := copyAnyMap(last)
@@ -489,11 +485,11 @@ func buildGeminiContents(messages []any, includeToolCallIDs, isGemini3 bool) ([]
 
 // functionDeclaration for one OpenAI tool, nil when it has no name
 func geminiFunctionDeclaration(tool any, jsonSchema bool) map[string]any {
-	t, ok := pyjson.Dict(tool)
+	t, ok := jsonutil.AsMap(tool)
 	if !ok {
 		return nil
 	}
-	fn, ok := pyjson.Dict(t["function"])
+	fn, ok := jsonutil.AsMap(t["function"])
 	if !ok {
 		return nil
 	}
@@ -543,11 +539,11 @@ func translateToolChoiceToGemini(toolChoice any) map[string]any {
 		}
 		return nil
 	}
-	tc, ok := pyjson.Dict(toolChoice)
+	tc, ok := jsonutil.AsMap(toolChoice)
 	if !ok {
 		return nil
 	}
-	fn, _ := pyjson.Dict(tc["function"])
+	fn, _ := jsonutil.AsMap(tc["function"])
 	if name, ok := fn["name"].(string); ok && name != "" {
 		return map[string]any{"functionCallingConfig": map[string]any{"mode": "ANY", "allowedFunctionNames": []any{name}}}
 	}
@@ -584,7 +580,7 @@ func geminiPyNumber(v any) (int, bool) {
 
 // thinkingConfig in camelCase from camel or snake keys, nil when nothing valid remains
 func normalizeGeminiThinkingConfig(config any) map[string]any {
-	cfg, ok := pyjson.Dict(config)
+	cfg, ok := jsonutil.AsMap(config)
 	if !ok {
 		return nil
 	}
@@ -640,13 +636,13 @@ func effectiveGeminiMaxOutputTokens(maxTokens any, thinkingConfig any) int {
 
 // generationConfig JSON output keys for an OpenAI response_format
 func translateGeminiResponseFormat(responseFormat any, jsonSchema bool) map[string]any {
-	rf, ok := pyjson.Dict(responseFormat)
+	rf, ok := jsonutil.AsMap(responseFormat)
 	if !ok || (rf["type"] != "json_object" && rf["type"] != "json_schema") {
 		return map[string]any{}
 	}
 	var schema any
 	if rf["type"] == "json_schema" {
-		if spec, ok := pyjson.Dict(rf["json_schema"]); ok && geminiIsDict(spec["schema"]) {
+		if spec, ok := jsonutil.AsMap(rf["json_schema"]); ok && geminiIsDict(spec["schema"]) {
 			schema = spec["schema"]
 		}
 	}
@@ -716,7 +712,7 @@ func buildGeminiRequest(in geminiRequestInput) map[string]any {
 		gen["thinkingConfig"] = tc
 	}
 	jsonOutput := translateGeminiResponseFormat(in.ResponseFormat, in.ToolsAsJSONSchema)
-	fcc, _ := pyjson.Dict(toolConfig["functionCallingConfig"])
+	fcc, _ := jsonutil.AsMap(toolConfig["functionCallingConfig"])
 	forcedCall := fcc["mode"] == "ANY"
 	if len(jsonOutput) > 0 && (forcedCall || (len(tools) > 0 && !isGemini3)) {
 		if forcedCall {
@@ -753,13 +749,13 @@ var (
 
 // JSON body as httpx encodes the request dict, every nested dict in the order the adapter builds it
 func geminiRequestJSON(request map[string]any) ([]byte, error) {
-	return pyhttpx.JSONBody(geminiWireRequest(request))
+	return httputil.JSONBody(geminiWireRequest(request))
 }
 
 // generateContent body as an ordered dict
-func geminiWireRequest(request map[string]any) *pyjson.Object {
+func geminiWireRequest(request map[string]any) *jsonutil.Object {
 	top, _ := orderedByBuild(request, geminiRequestKeyOrder)
-	if contents, ok := wireListItems(top.Vals["contents"]); ok {
+	if contents, ok := wireListItems(top.Value("contents")); ok {
 		out := make([]any, len(contents))
 		for i, c := range contents {
 			out[i] = geminiWireContent(c)
@@ -769,21 +765,21 @@ func geminiWireRequest(request map[string]any) *pyjson.Object {
 	if si, ok := top.Get("systemInstruction"); ok && si != nil {
 		top = withNested(top, "systemInstruction", geminiWireContent(si))
 	}
-	if tools, ok := wireListItems(top.Vals["tools"]); ok {
+	if tools, ok := wireListItems(top.Value("tools")); ok {
 		out := make([]any, len(tools))
 		for i, t := range tools {
 			out[i] = geminiWireTool(t)
 		}
 		top = withNested(top, "tools", out)
 	}
-	if tc, ok := orderedByBuild(top.Vals["toolConfig"], []string{"functionCallingConfig"}); ok {
-		if fcc, ok := orderedByBuild(tc.Vals["functionCallingConfig"], geminiCallingConfigKeyOrder); ok {
+	if tc, ok := orderedByBuild(top.Value("toolConfig"), []string{"functionCallingConfig"}); ok {
+		if fcc, ok := orderedByBuild(tc.Value("functionCallingConfig"), geminiCallingConfigKeyOrder); ok {
 			tc = withNested(tc, "functionCallingConfig", fcc)
 		}
 		top = withNested(top, "toolConfig", tc)
 	}
-	if gen, ok := orderedByBuild(top.Vals["generationConfig"], geminiGenerationKeyOrder); ok {
-		if th, ok := orderedByBuild(gen.Vals["thinkingConfig"], geminiThinkingKeyOrder); ok {
+	if gen, ok := orderedByBuild(top.Value("generationConfig"), geminiGenerationKeyOrder); ok {
+		if th, ok := orderedByBuild(gen.Value("thinkingConfig"), geminiThinkingKeyOrder); ok {
 			gen = withNested(gen, "thinkingConfig", th)
 		}
 		top = withNested(top, "generationConfig", gen)
@@ -796,7 +792,7 @@ func geminiWireContent(v any) any {
 	if !ok {
 		return v
 	}
-	if parts, ok := wireListItems(content.Vals["parts"]); ok {
+	if parts, ok := wireListItems(content.Value("parts")); ok {
 		out := make([]any, len(parts))
 		for i, p := range parts {
 			out[i] = geminiWirePart(p)
@@ -811,14 +807,14 @@ func geminiWirePart(v any) any {
 	if !ok {
 		return v
 	}
-	if d, ok := orderedByBuild(part.Vals["inlineData"], geminiInlineDataKeyOrder); ok {
+	if d, ok := orderedByBuild(part.Value("inlineData"), geminiInlineDataKeyOrder); ok {
 		part = withNested(part, "inlineData", d)
 	}
-	if fc, ok := orderedByBuild(part.Vals["functionCall"], geminiFunctionCallKeyOrder); ok {
+	if fc, ok := orderedByBuild(part.Value("functionCall"), geminiFunctionCallKeyOrder); ok {
 		part = withNested(part, "functionCall", fc)
 	}
-	if fr, ok := orderedByBuild(part.Vals["functionResponse"], geminiFunctionResponseKeyOrder); ok {
-		if parts, ok := wireListItems(fr.Vals["parts"]); ok {
+	if fr, ok := orderedByBuild(part.Value("functionResponse"), geminiFunctionResponseKeyOrder); ok {
+		if parts, ok := wireListItems(fr.Value("parts")); ok {
 			out := make([]any, len(parts))
 			for i, p := range parts {
 				out[i] = geminiWirePart(p)
@@ -835,7 +831,7 @@ func geminiWireTool(v any) any {
 	if !ok {
 		return v
 	}
-	if decls, ok := wireListItems(tool.Vals["functionDeclarations"]); ok {
+	if decls, ok := wireListItems(tool.Value("functionDeclarations")); ok {
 		out := make([]any, len(decls))
 		for i, d := range decls {
 			out[i] = geminiOrdered(d, geminiDeclarationKeyOrder)
@@ -876,16 +872,20 @@ func geminiNewCallID(fc map[string]any) string {
 	return "call_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
 }
 
-// Function call args as Python json text, an empty object when absent
+// Function call args as JSON text, an empty object when absent
 func geminiDumpCallArgs(fc map[string]any) string { return geminiDumpCallArgsWith(fc, false) }
 
-// Function call args as Python json text with keys sorted when asked, an empty object when absent
+// Function call args as JSON text with keys sorted when asked, an empty object when absent
 func geminiDumpCallArgsWith(fc map[string]any, sortKeys bool) string {
 	args := fc["args"]
 	if !pyTruthy(args) {
 		args = map[string]any{}
 	}
-	out, err := pyjson.Dumps(args, pyjson.EnsureASCII(false), pyjson.SortKeys(sortKeys))
+	var opts []jsonutil.Option
+	if sortKeys {
+		opts = append(opts, jsonutil.SortKeys())
+	}
+	out, err := jsonutil.Encode(args, opts...)
 	if err != nil {
 		return "{}"
 	}

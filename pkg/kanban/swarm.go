@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -36,8 +36,8 @@ type SwarmCreated struct {
 }
 
 // Ordered mapping of the created ids
-func (s *SwarmCreated) AsDict() *pyjson.Object {
-	return pyjson.ObjectOf("root_id", s.RootID, "worker_ids", stringsAny(s.WorkerIDs), "verifier_id", s.VerifierID, "synthesizer_id", s.SynthesizerID)
+func (s *SwarmCreated) AsDict() *jsonutil.Object {
+	return jsonutil.ObjectOf("root_id", s.RootID, "worker_ids", stringsAny(s.WorkerIDs), "verifier_id", s.VerifierID, "synthesizer_id", s.SynthesizerID)
 }
 
 // SwarmOptions are the keyword arguments of a swarm creation
@@ -80,7 +80,7 @@ func swarmContext(rootID, goal string) string {
 }
 
 // Flips the blocked swarm root to done inside the caller's transaction, false when it was not blocked
-func activateRootInline(ctx context.Context, conn state.SQLiteConn, rootID, summary string, metadata *pyjson.Object) (bool, error) {
+func activateRootInline(ctx context.Context, conn state.SQLiteConn, rootID, summary string, metadata *jsonutil.Object) (bool, error) {
 	res, err := conn.ExecContext(ctx, `
         UPDATE tasks
            SET status       = 'done',
@@ -124,7 +124,7 @@ func CreateSwarm(ctx context.Context, conn state.SQLiteConn, o SwarmOptions) (*S
 		}
 		if root != nil && root.Status == "blocked" {
 			ok, err := activateRootInline(ctx, conn, created.RootID, activationSummary,
-				pyjson.ObjectOf("kind", "kanban_swarm_v1", "goal", strings.TrimSpace(o.Goal), "worker_count", len(created.WorkerIDs)))
+				jsonutil.ObjectOf("kind", "kanban_swarm_v1", "goal", strings.TrimSpace(o.Goal), "worker_count", len(created.WorkerIDs)))
 			if err != nil {
 				return err
 			}
@@ -221,15 +221,15 @@ func createSwarmUncommitted(ctx context.Context, conn state.SQLiteConn, o SwarmO
 				return nil, &TypeError{fmt.Sprintf("swarm topology worker_ids are %s where a list was expected", errchain.Kind(ids))}
 			}
 			for _, x := range list {
-				if pyrepr.Truthy(x) {
-					workerIDs = append(workerIDs, pyrepr.Str(x))
+				if anyutil.IsTrue(x) {
+					workerIDs = append(workerIDs, anyutil.String(x))
 				}
 			}
 		}
 		verifierID, _ := dictGet(existing, "verifier_id")
 		synthesizerID, _ := dictGet(existing, "synthesizer_id")
-		if len(workerIDs) > 0 && pyrepr.Truthy(verifierID) && pyrepr.Truthy(synthesizerID) {
-			return &SwarmCreated{root, workerIDs, pyrepr.Str(verifierID), pyrepr.Str(synthesizerID)}, nil
+		if len(workerIDs) > 0 && anyutil.IsTrue(verifierID) && anyutil.IsTrue(synthesizerID) {
+			return &SwarmCreated{root, workerIDs, anyutil.String(verifierID), anyutil.String(synthesizerID)}, nil
 		}
 	}
 	contextSuffix := swarmContext(root, goal)
@@ -294,7 +294,7 @@ func PostBlackboardUpdate(ctx context.Context, conn state.SQLiteConn, rootID, au
 	if key, err = swarmRequireText(key, "key"); err != nil {
 		return 0, err
 	}
-	body, err := pyjson.Dumps(pyjson.ObjectOf("key", key, "value", value), pyjson.EnsureASCII(false), pyjson.SortKeys(true))
+	body, err := jsonutil.Encode(jsonutil.ObjectOf("key", key, "value", value), jsonutil.SortKeys())
 	if err != nil {
 		return 0, err
 	}
@@ -302,9 +302,9 @@ func PostBlackboardUpdate(ctx context.Context, conn state.SQLiteConn, rootID, au
 }
 
 // Merged structured blackboard comments of a root, later keys winning and _authors naming each winner
-func LatestBlackboard(ctx context.Context, conn state.SQLiteConn, rootID string) (*pyjson.Object, error) {
-	merged := pyjson.NewObject()
-	authors := pyjson.NewObject()
+func LatestBlackboard(ctx context.Context, conn state.SQLiteConn, rootID string) (*jsonutil.Object, error) {
+	merged := jsonutil.NewObject()
+	authors := jsonutil.NewObject()
 	comments, err := ListComments(ctx, conn, rootID)
 	if err != nil {
 		return nil, err
@@ -314,23 +314,23 @@ func LatestBlackboard(ctx context.Context, conn state.SQLiteConn, rootID string)
 		if !ok {
 			continue
 		}
-		decoded, err := pyjson.Loads(rest)
+		decoded, err := jsonutil.Decode(rest)
 		if err != nil {
-			var de *pyjson.DecodeError
+			var de *jsonutil.SyntaxError
 			if errors.As(err, &de) {
 				continue
 			}
 			return nil, err
 		}
-		entry, ok := decoded.(*pyjson.Object)
+		entry, ok := decoded.(*jsonutil.Object)
 		if !ok {
 			return nil, &TypeError{fmt.Sprintf("swarm blackboard entry is %s where a mapping was expected", errchain.Kind(decoded))}
 		}
-		key, ok := entry.GetOr("key", nil).(string)
+		key, ok := entry.ValueOr("key", nil).(string)
 		if !ok || key == "" {
 			continue
 		}
-		merged.Set(key, entry.GetOr("value", nil))
+		merged.Set(key, entry.ValueOr("value", nil))
 		authors.Set(key, comment.Author)
 	}
 	if authors.Len() > 0 {

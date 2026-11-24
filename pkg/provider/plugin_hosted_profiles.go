@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Imports one home plugin dir in the plugin host and returns every profile it registers
@@ -317,7 +317,7 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 			return hostedDictList(hc.must(bg, attr, []any{messages}, nil))
 		}
 	case "build_extra_body":
-		p.BuildExtraBodyHook = func(sessionID string, context map[string]any) *pyjson.Object {
+		p.BuildExtraBodyHook = func(sessionID string, context map[string]any) *jsonutil.Object {
 			kwargs := hostedKwargs(context)
 			kwargs["session_id"] = hostedOptStr(sessionID)
 			return hostedObject(hc.must(plugins.WithOrderedResult(bg), attr, nil, kwargs))
@@ -327,14 +327,14 @@ func (hc hostedCalls) install(p *Profile, attr string) {
 			return reasoningPtrOfDict(hostedMapOrNil(hc.must(bg, attr, []any{hostedOptStr(model)}, nil)))
 		}
 	case "build_api_kwargs_extras":
-		p.BuildAPIKwargsExtrasHook = func(reasoning *Reasoning, context map[string]any) (*pyjson.Object, map[string]any) {
+		p.BuildAPIKwargsExtrasHook = func(reasoning *Reasoning, context map[string]any) (*jsonutil.Object, map[string]any) {
 			kwargs := hostedKwargs(context)
 			kwargs["reasoning_config"] = hostedReasoningArg(reasoning)
 			pair := hostedList(hc.must(plugins.WithOrderedResult(bg), attr, nil, kwargs))
 			if len(pair) != 2 {
 				panic(fmt.Errorf("%s.build_api_kwargs_extras returned %d values, expected 2", hc.h.Name, len(pair)))
 			}
-			top, _ := pyjson.Dict(pair[1])
+			top, _ := jsonutil.AsMap(pair[1])
 			if top == nil {
 				top = map[string]any{}
 			}
@@ -721,11 +721,11 @@ func hostedMapOrNil(v any) map[string]any {
 }
 
 // Dict result of a hosted call in its wire key order, empty when the result is not a dict
-func hostedObject(v any) *pyjson.Object {
-	if obj, ok := pyjson.AsObject(v); ok {
+func hostedObject(v any) *jsonutil.Object {
+	if obj, ok := jsonutil.AsObject(v); ok {
 		return obj
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 func hostedMap(v any) map[string]any {

@@ -13,8 +13,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -411,7 +411,7 @@ func readGitPointer(path string) (string, bool, error) {
 	if err != nil {
 		return "", false, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(data)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 	if err != nil {
 		return "", false, err
 	}

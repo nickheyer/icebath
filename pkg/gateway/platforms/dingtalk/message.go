@@ -3,15 +3,18 @@ package dingtalk
 import (
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-// AttributeError an attribute read raises on a value of another type
-func attributeError(v any, attr string) error {
-	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+// Failure for a payload value of the wrong JSON kind, naming the value read and the kind expected
+func kindError(what, want string, v any) error {
+	return fmt.Errorf("%s: expected %s, got %s", what, want, anyutil.Kind(v))
+}
+
+// Failure for a key a payload object must carry
+func missingKey(what, key string) error {
+	return fmt.Errorf("%s: missing key %q", what, key)
 }
 
 // Inbound chatbot message with the callback fields the adapter reads beside the parser fields
@@ -31,34 +34,34 @@ type IncomingMessage struct {
 	SenderStaffID             any
 }
 
-// Callback payload value required to be a JSON object, the AttributeError items raises otherwise
-func requireDict(v any) (*pyjson.Object, error) {
-	obj, ok := v.(*pyjson.Object)
+// Callback payload value required to be a JSON object, a kind error naming what was read otherwise
+func requireDict(what string, v any) (*jsonutil.Object, error) {
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
-		return nil, attributeError(v, "items")
+		return nil, kindError(what, "an object", v)
 	}
 	return obj, nil
 }
 
-// Value of a required payload key, the KeyError a missing one raises
-func requireKey(d *pyjson.Object, key string) (any, error) {
+// Value of a key the payload object named by what must carry, a missing key error otherwise
+func requireKey(what string, d *jsonutil.Object, key string) (any, error) {
 	v, ok := d.Get(key)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "KeyError", Msg: pyrepr.Repr(key)}
+		return nil, missingKey(what, key)
 	}
 	return v, nil
 }
 
 // Maps a callback payload onto a message the way the stream SDK does, unmapped names kept as extensions
 func incomingMessageFromDict(data any) (*IncomingMessage, error) {
-	d, err := requireDict(data)
+	d, err := requireDict("callback data", data)
 	if err != nil {
 		return nil, err
 	}
 	msg := &IncomingMessage{}
 	msg.Extensions = map[string]any{}
-	for _, name := range d.Keys {
-		value := d.Vals[name]
+	for _, name := range d.Keys() {
+		value := d.Value(name)
 		switch name {
 		case "isInAtList":
 			msg.IsInAtList = value
@@ -69,15 +72,11 @@ func incomingMessageFromDict(data any) (*IncomingMessage, error) {
 		case "robotCode":
 			msg.RobotCode = value
 		case "sessionWebhookExpiredTime":
-			n, err := pyint.Of(value)
+			n, err := anyutil.ToInt(value)
 			if err != nil {
 				return nil, err
 			}
-			if n.IsInt64() {
-				msg.SessionWebhookExpiredTime = n.Int64()
-			} else {
-				msg.SessionWebhookExpiredTime = n
-			}
+			msg.SessionWebhookExpiredTime = n
 		case "msgId":
 			msg.MessageID = value
 		case "senderId":
@@ -96,10 +95,10 @@ func incomingMessageFromDict(data any) (*IncomingMessage, error) {
 		case "atUsers":
 			users, ok := value.([]any)
 			if !ok {
-				return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(value))}
+				return nil, kindError("atUsers", "an array", value)
 			}
 			for _, user := range users {
-				if _, err := requireDict(user); err != nil {
+				if _, err := requireDict("atUsers entry", user); err != nil {
 					return nil, err
 				}
 			}
@@ -108,88 +107,80 @@ func incomingMessageFromDict(data any) (*IncomingMessage, error) {
 			msg.MessageType = kind
 			switch kind {
 			case "text":
-				raw, err := requireKey(d, "text")
+				raw, err := requireKey("callback data", d, "text")
 				if err != nil {
 					return nil, err
 				}
-				fields, err := requireDict(raw)
+				fields, err := requireDict("text", raw)
 				if err != nil {
 					return nil, err
 				}
 				content := &TextContent{}
 				if text, ok := fields.Get("content"); ok {
-					content.Content = pyrepr.Str(text)
+					content.Content = anyutil.String(text)
 					if text == nil {
 						content.Content = ""
 					}
 				}
 				msg.Text = content
 			case "picture":
-				raw, err := requireKey(d, "content")
+				raw, err := requireKey("callback data", d, "content")
 				if err != nil {
 					return nil, err
 				}
-				fields, err := requireDict(raw)
+				fields, err := requireDict("content", raw)
 				if err != nil {
 					return nil, err
 				}
 				image := &ImageContent{}
 				if code, ok := fields.Get("downloadCode"); ok && code != nil {
-					image.DownloadCode = pyrepr.Str(code)
+					image.DownloadCode = anyutil.String(code)
 				}
 				msg.ImageContent = image
 			case "richText":
-				raw, err := requireKey(d, "content")
+				raw, err := requireKey("callback data", d, "content")
 				if err != nil {
 					return nil, err
 				}
-				fields, err := requireDict(raw)
+				fields, err := requireDict("content", raw)
 				if err != nil {
 					return nil, err
 				}
 				rich := &RichTextContent{RichTextList: []any{}}
 				if list, ok := fields.Get("richText"); ok {
-					rich.RichTextList = pyjson.Plain(list)
+					rich.RichTextList = jsonutil.Plain(list)
 				}
 				msg.RichTextContent = rich
 			}
 		case "hostingContext":
-			fields, ok := value.(*pyjson.Object)
-			if !ok {
-				return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(value))}
+			fields, err := requireDict("hostingContext", value)
+			if err != nil {
+				return nil, err
 			}
 			for _, key := range []string{"userId", "nick"} {
-				if _, err := requireKey(fields, key); err != nil {
+				if _, err := requireKey("hostingContext", fields, key); err != nil {
 					return nil, err
 				}
 			}
 		case "conversationMsgContext":
 			entries, ok := value.([]any)
 			if !ok {
-				return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(value))}
+				return nil, kindError("conversationMsgContext", "an array", value)
 			}
 			for _, entry := range entries {
-				fields, ok := entry.(*pyjson.Object)
-				if !ok {
-					return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(entry))}
+				fields, err := requireDict("conversationMsgContext entry", entry)
+				if err != nil {
+					return nil, err
 				}
 				for _, key := range []string{"readStatus", "sendTime", "senderUserId"} {
-					if _, err := requireKey(fields, key); err != nil {
+					if _, err := requireKey("conversationMsgContext entry", fields, key); err != nil {
 						return nil, err
 					}
 				}
 			}
 		default:
-			msg.Extensions[name] = pyjson.Plain(value)
+			msg.Extensions[name] = jsonutil.Plain(value)
 		}
 	}
 	return msg, nil
-}
-
-// Value of a message field read with a default for an unset one, the getattr or fallback of the adapter
-func orEmpty(v any) any {
-	if pyrepr.Truthy(v) {
-		return v
-	}
-	return ""
 }

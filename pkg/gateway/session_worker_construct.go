@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner rereading the profile fallback chain for the next agent, GatewayRunner._refresh_fallback_model
@@ -19,7 +19,7 @@ type channelPromptRunner interface {
 }
 
 // Agent construction inputs the owner resolves per turn for a managed worker in the owning profile's scope
-func constructInputs(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, chatID string) (*pyjson.Object, error) {
+func constructInputs(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, chatID string) (*jsonutil.Object, error) {
 	scoped := ownerScope(ctx, a, false)
 	chain, err := fallbackChain(scoped, a, policy)
 	if err != nil {
@@ -37,7 +37,7 @@ func constructInputs(ctx context.Context, a *SessionAuthority, policy *LocalSess
 	if prefill != nil {
 		prefillValue = prefill
 	}
-	return pyjson.ObjectOf("fallback_model", chain, "ephemeral_system_prompt", prompt, "prefill_messages", prefillValue), nil
+	return jsonutil.ObjectOf("fallback_model", chain, "ephemeral_system_prompt", prompt, "prefill_messages", prefillValue), nil
 }
 
 // Fallback chain an in process turn gets, the frozen snapshot for a config only session and none in safe mode

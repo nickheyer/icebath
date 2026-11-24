@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Toolchain lookup the Python environment engine calls, replaceable by tests the way Python patches _toolchain
@@ -57,7 +57,7 @@ func Toolchain(ctx context.Context, realize, explicit bool) (uv, python string, 
 			}
 		}
 		fact, _ := facts.Get(name)
-		binary := p.Binary(store.Entry(pyrepr.Str(fact["entry"])), target)
+		binary := p.Binary(store.Entry(anyutil.String(fact["entry"])), target)
 		if binary == "" || !isRegularFile(binary) {
 			if !realize {
 				return "", "", false, nil

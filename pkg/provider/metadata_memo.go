@@ -6,12 +6,12 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"math/big"
+	"strconv"
 	"sync"
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Entry count bound of the message token memo
@@ -148,14 +148,12 @@ func longStrings(value any, out map[string]bool) {
 			for _, item := range t {
 				stack = append(stack, item)
 			}
-		case *pyjson.Object:
+		case *jsonutil.Object:
 			if t != nil {
-				for _, key := range t.Keys {
-					stack = append(stack, t.Vals[key])
+				for _, key := range t.Keys() {
+					stack = append(stack, t.Value(key))
 				}
 			}
-		case pyrepr.Tuple:
-			stack = append(stack, t...)
 		case string:
 			if utf8.RuneCountInString(t) > 64 {
 				out[t] = true
@@ -217,7 +215,7 @@ func msgFingerprint(value any, pins *MemoPins) (string, bool) {
 		case *big.Int:
 			return []any{"n", "int", t.String()}, true
 		case float64:
-			return []any{"n", "float", pyrepr.Float(t)}, true
+			return []any{"n", "float", strconv.FormatFloat(t, 'f', -1, 64)}, true
 		case json.Number:
 			return []any{"n", "number", t.String()}, true
 		case map[string]any:
@@ -234,17 +232,6 @@ func msgFingerprint(value any, pins *MemoPins) (string, bool) {
 		case []any:
 			out := make([]any, 0, len(t)+1)
 			out = append(out, "l")
-			for _, item := range t {
-				fv, ok := walk(item)
-				if !ok {
-					return nil, false
-				}
-				out = append(out, fv)
-			}
-			return out, true
-		case pyrepr.Tuple:
-			out := make([]any, 0, len(t)+1)
-			out = append(out, "t")
 			for _, item := range t {
 				fv, ok := walk(item)
 				if !ok {

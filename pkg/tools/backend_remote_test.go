@@ -21,8 +21,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fake transport recording uploads and deletes
@@ -266,13 +265,13 @@ func TestModalParamsAndSnapshotStore(t *testing.T) {
 	if id, _ := modalSnapshotRestoreCandidate(env, "t1"); id != "" {
 		t.Fatal("empty store")
 	}
-	envUpdateJSONStore(context.Background(), modalSnapshotStore(env), func(s *pyjson.Object) { s.Set("t1", "im-legacy") })
+	envUpdateJSONStore(context.Background(), modalSnapshotStore(env), func(s *jsonutil.Object) { s.Set("t1", "im-legacy") })
 	if id, legacy := modalSnapshotRestoreCandidate(env, "t1"); id != "im-legacy" || !legacy {
 		t.Fatal(id)
 	}
 	modalStoreDirectSnapshot(context.Background(), env, "t1", "im-new")
 	store := envLoadJSONStore(modalSnapshotStore(env))
-	if store.Vals["direct:t1"] != "im-new" || store.Vals["t1"] != nil {
+	if store.Value("direct:t1") != "im-new" || store.Value("t1") != nil {
 		t.Fatal(store)
 	}
 	if id, legacy := modalSnapshotRestoreCandidate(env, "t1"); id != "im-new" || legacy {
@@ -504,7 +503,7 @@ func TestVercelPayloadStdinIsStagedByteExactNotInArgv(t *testing.T) {
 		session: &vercelSession{id: "sbx_1", cwd: "/vercel/sandbox", status: "running"}, workspaceRoot: "/vercel/sandbox"}
 	initBaseEnv(&v.baseEnv, v, remoteTestEnv(t), "/vercel/sandbox", 30, nil, false)
 	raw := append(bytes.Repeat([]byte("A"), 160*1024), []byte("\x00\xff\xfeTAIL")...)
-	payload := pystr.SurrogateEscapeDecode(raw)
+	payload := string(raw)
 	h, err := v.runBash(context.Background(), "cat > /tmp/out", false, 30, &payload)
 	if err != nil {
 		t.Fatal(err)

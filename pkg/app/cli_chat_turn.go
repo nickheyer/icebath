@@ -13,13 +13,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -169,7 +168,7 @@ func (c *CLI) chat(message any, images []string) (response string, ok bool) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		turn.workerID.Store(pythread.GoroutineID())
+		turn.workerID.Store(syncutil.GoroutineID())
 		c.chatRunAgent(turn, message)
 	}()
 	interruptMsg := c.chatMonitorAgentThread(turn, done)
@@ -288,7 +287,7 @@ func (c *CLI) chatMonitorAgentThread(turn *chatTurn, done <-chan struct{}) any {
 			continue
 		}
 		interruptMsg = msg
-		if !pyrepr.Truthy(interruptPayloadValue(msg)) {
+		if !anyutil.IsTrue(interruptPayloadValue(msg)) {
 			continue
 		}
 		cprint("\n" + c.t("cli.chat.new_message_interrupting", nil))
@@ -339,7 +338,7 @@ func interruptText(msg any) string {
 	if q, ok := msg.(queuedInput); ok {
 		return q.Text
 	}
-	return pyrepr.Str(msg)
+	return anyutil.String(msg)
 }
 
 // Appends the interrupt and the flags of the agent and its children to the home interrupt debug log
@@ -350,8 +349,8 @@ func (c *CLI) writeInterruptDebugLog(msg any) {
 		return
 	}
 	defer f.Close()
-	_, _ = fmt.Fprintf(f, "%s interrupt fired: msg=%s, children=0, parent._interrupt=%s\n", pydatetime.Strftime(time.Now(), "%H:%M:%S"),
-		textutil.First(pyrepr.Str(msg), 60), errchain.Show(c.agentRef().InterruptRequested()))
+	_, _ = fmt.Fprintf(f, "%s interrupt fired: msg=%s, children=0, parent._interrupt=%s\n", time.Now().Format(time.TimeOnly),
+		textutil.First(anyutil.String(msg), 60), errchain.Show(c.agentRef().InterruptRequested()))
 }
 
 // Transcript rows of a turn result, false when the result carries no messages key
@@ -409,7 +408,7 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 		response = cliStr(result["final_response"], "")
 	}
 	if turn.muteNotificationReply {
-		if pending, _ := c.chatResolveInterrupt(turn, done, interruptMsg, response); pyrepr.Truthy(interruptPayloadValue(pending)) {
+		if pending, _ := c.chatResolveInterrupt(turn, done, interruptMsg, response); anyutil.IsTrue(interruptPayloadValue(pending)) {
 			c.pendingInput.Put(pending)
 		}
 		return "", false
@@ -417,7 +416,7 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 	if len(result) > 0 && (cliTruthy(result["failed"]) || cliTruthy(result["partial"])) && response == "" {
 		errText := c.t("cli.chat.unknown_error", nil)
 		if cliTruthy(result["error"]) {
-			errText = pyrepr.Str(result["error"])
+			errText = anyutil.String(result["error"])
 		}
 		response = chatErrorResponse(c.ctx, errText, c.turnProvider(), c.turnModel(), cliStr(result["failure_reason"], ""))
 	}
@@ -441,7 +440,7 @@ func (c *CLI) chatRenderTurn(turn *chatTurn, done <-chan struct{}, interruptMsg 
 			}, "cli", false)
 		}
 	}
-	if pyrepr.Truthy(interruptPayloadValue(pendingMessage)) {
+	if anyutil.IsTrue(interruptPayloadValue(pendingMessage)) {
 		c.requeueInterruptedInput(pendingMessage)
 	}
 	if steer := cliStr(result["pending_steer"], ""); steer != "" {
@@ -463,7 +462,7 @@ func (c *CLI) requeueInterruptedInput(pendingMessage any) {
 		if !got {
 			break
 		}
-		if pyrepr.Truthy(interruptPayloadValue(extra)) {
+		if anyutil.IsTrue(interruptPayloadValue(extra)) {
 			allParts = append(allParts, extra)
 		}
 	}
@@ -475,7 +474,7 @@ func (c *CLI) requeueInterruptedInput(pendingMessage any) {
 			imageParts = append(imageParts, q.Images...)
 			continue
 		}
-		textParts = append(textParts, pyrepr.Str(part))
+		textParts = append(textParts, anyutil.String(part))
 	}
 	combined := strings.Join(textParts, "\n")
 	var payload any = combined
@@ -503,15 +502,15 @@ func (c *CLI) chatResolveInterrupt(turn *chatTurn, done <-chan struct{}, interru
 	c.uiMu.Unlock()
 	if interruptedThisTurn {
 		var pendingMessage any = interruptMsg
-		if acknowledged := result["interrupt_message"]; pyrepr.Truthy(interruptPayloadValue(acknowledged)) {
+		if acknowledged := result["interrupt_message"]; anyutil.IsTrue(interruptPayloadValue(acknowledged)) {
 			pendingMessage = acknowledged
-			if q, bundled := interruptMsg.(queuedInput); bundled && pyrepr.Equal(acknowledged, q.Text) {
+			if q, bundled := interruptMsg.(queuedInput); bundled && anyutil.Equal(acknowledged, q.Text) {
 				pendingMessage = q
 			}
 		}
-		return pendingMessage, response != "" && pyrepr.Truthy(interruptPayloadValue(pendingMessage))
+		return pendingMessage, response != "" && anyutil.IsTrue(interruptPayloadValue(pendingMessage))
 	}
-	if pyrepr.Truthy(interruptPayloadValue(interruptMsg)) {
+	if anyutil.IsTrue(interruptPayloadValue(interruptMsg)) {
 		func() {
 			defer func() { _ = recover() }()
 			if turnDone(done) && c.agentRef() != nil && c.agentRef().InterruptRequested() {
@@ -588,13 +587,11 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 		}
 	case c.modernLayout:
 		cprint(answerLabel(""))
-		if err := defaultChatConsole.PrintRenderableWith(renderFinalAssistantContent(response, mode), pyrich.PrintOptions{Style: respText, SoftWrap: true}); err != nil {
-			panic(err)
-		}
+		defaultChatConsole.PrintRenderableWith(renderFinalAssistantContent(response, mode), consoleutil.PrintOptions{Style: respText, SoftWrap: true})
 		cprint(closingSeparator(true))
 	default:
-		defaultChatConsole.PrintPanel(pyrich.Panel{
-			Content: renderFinalAssistantContent(response, mode), Title: "[" + respColor + " bold]" + label + "[/]", TitleAlign: "left",
+		defaultChatConsole.PrintPanel(consoleutil.Panel{
+			Content: renderFinalAssistantContent(response, mode), Title: "[" + respColor + " bold]" + consoleutil.Escape(label) + "[/]", TitleAlign: "left",
 			BorderStyle: respColor, Style: respText, Box: "horizontals", Padding: &[2]int{1, 0}, Width: scrollbackBoxWidth()})
 	}
 	if result["failure_reason"] != "billing" {
@@ -607,14 +604,11 @@ func (c *CLI) chatPrintResponsePanel(turn *chatTurn, response string) {
 	}
 	tail := "."
 	if url := cliStr(billingBlock["billing_url"], ""); url != "" {
-		tail = ": [bold]" + url + "[/]"
+		tail = ": [bold]" + consoleutil.Escape(url) + "[/]"
 	}
-	ctaLines := []string{c.t("cli.chat.billing_cta_provider", map[string]any{"provider": providerLabel}) + tail,
+	ctaLines := []string{c.t("cli.chat.billing_cta_provider", map[string]any{"provider": consoleutil.Escape(providerLabel)}) + tail,
 		c.t("cli.chat.billing_cta_switch", nil)}
-	func() {
-		defer func() { _ = recover() }()
-		defaultChatConsole.PrintPanel(pyrich.Panel{
-			Body: strings.Join(ctaLines, "\n"), Title: "[#9cc7e8 bold]" + c.t("cli.chat.out_of_credits_title", nil) + "[/]",
-			TitleAlign: "left", BorderStyle: "#9cc7e8", Box: "horizontals", Padding: &[2]int{1, 4}, Width: scrollbackBoxWidth()})
-	}()
+	defaultChatConsole.PrintPanel(consoleutil.Panel{
+		Body: strings.Join(ctaLines, "\n"), Title: "[#9cc7e8 bold]" + c.t("cli.chat.out_of_credits_title", nil) + "[/]",
+		TitleAlign: "left", BorderStyle: "#9cc7e8", Box: "horizontals", Padding: &[2]int{1, 4}, Width: scrollbackBoxWidth()})
 }

@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfernet"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	fernetutil "github.com/nickheyer/icebath/pkg/utils/fernet"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type memoryKeyring struct {
@@ -74,8 +74,8 @@ func vaultHome(t *testing.T, root, name, keyStorage string) string {
 	return h
 }
 
-func testLogin() *pyjson.Object {
-	return pyjson.ObjectOf("identifier_type", "email", "identifier", "jane@example.com", "password", "dummy-pw-not-real-42")
+func testLogin() *jsonutil.Object {
+	return jsonutil.ObjectOf("identifier_type", "email", "identifier", "jane@example.com", "password", "dummy-pw-not-real-42")
 }
 
 func addLogin(t *testing.T, s *VaultStore) string {
@@ -242,7 +242,7 @@ func TestAStrayKeyFileThatCannotOpenTheVaultNeverCostsTheKeychainCopy(t *testing
 	kc := installMemoryKeyring(t)
 	h := vaultHome(t, t.TempDir(), "default", "keychain")
 	item := addLogin(t, cur())
-	os.WriteFile(filepath.Join(h, "vault", "vault.key"), pyfernet.GenerateKey(), 0o600)
+	os.WriteFile(filepath.Join(h, "vault", "vault.key"), fernetutil.GenerateKey(), 0o600)
 	good := map[[2]string]string{}
 	for k, v := range kc.entries {
 		good[k] = v
@@ -300,7 +300,7 @@ func TestMigrationWhosePointerCannotBeSavedLeavesNoUntrackedEntry(t *testing.T) 
 	h := vaultHome(t, t.TempDir(), "default", "")
 	item := addLogin(t, cur())
 	prev := vaultWriteRef
-	vaultWriteRef = func(_ context.Context, path string, ref *pyjson.Object) error {
+	vaultWriteRef = func(_ context.Context, path string, ref *jsonutil.Object) error {
 		return &os.PathError{Op: "write", Path: path, Err: syscall.ENOSPC}
 	}
 	t.Cleanup(func() { vaultWriteRef = prev })
@@ -327,7 +327,7 @@ func TestCopiedVaultKeepsOpeningWhenSavingItsOwnPointerFails(t *testing.T) {
 				t.Fatal(err)
 			}
 			real := vaultWriteRef
-			vaultWriteRef = func(ctx context.Context, path string, ref *pyjson.Object) error {
+			vaultWriteRef = func(ctx context.Context, path string, ref *jsonutil.Object) error {
 				if landed {
 					real(ctx, path, ref)
 				}
@@ -377,14 +377,14 @@ func TestCorruptVaultRaisesVaultErrorOnEveryReader(t *testing.T) {
 		"remove_item":    func(s *VaultStore) error { _, err := s.RemoveItem("vault_x"); return err },
 		"resolve_secret": func(s *VaultStore) error { _, err := s.ResolveSecret("vault_x"); return err },
 		"add_item": func(s *VaultStore) error {
-			_, err := s.AddItem("login", "x", pyjson.ObjectOf("identifier_type", "email", "identifier", "u", "password", "p"), "https://x.example")
+			_, err := s.AddItem("login", "x", jsonutil.ObjectOf("identifier_type", "email", "identifier", "u", "password", "p"), "https://x.example")
 			return err
 		},
 	}
 	for name, op := range ops {
 		t.Run(name, func(t *testing.T) {
 			s := NewVaultStore(context.Background(), filepath.Join(t.TempDir(), "vault"))
-			if _, err := s.AddItem("login", "Example login", pyjson.ObjectOf("identifier_type", "email", "identifier", "u@example.com", "password", "pw"), "https://example.com"); err != nil {
+			if _, err := s.AddItem("login", "Example login", jsonutil.ObjectOf("identifier_type", "email", "identifier", "u@example.com", "password", "pw"), "https://example.com"); err != nil {
 				t.Fatal(err)
 			}
 			f, err := s.fernet()
@@ -408,9 +408,9 @@ func TestRealKeychainStoresReadsAndDeletesADummyEntry(t *testing.T) {
 	if _, err := osKeyring(); err != nil {
 		t.Skipf("no OS keychain on this host: %v", err)
 	}
-	ref := pyjson.ObjectOf("storage", "keychain", "service", VaultKeychainService, "account", "icebath-ci-smoke-"+filepath.Base(t.TempDir()))
+	ref := jsonutil.ObjectOf("storage", "keychain", "service", VaultKeychainService, "account", "icebath-ci-smoke-"+filepath.Base(t.TempDir()))
 	t.Cleanup(func() { vaultDeleteKey(ref) })
-	key := pyfernet.GenerateKey()
+	key := fernetutil.GenerateKey()
 	if err := vaultStoreKey(ref, key); err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +434,7 @@ func TestKeychainModeVaultRoundTripsThroughTheRealKeychain(t *testing.T) {
 	}
 	h := vaultHome(t, t.TempDir(), "icebath-home", "keychain")
 	vault := filepath.Join(h, "vault")
-	var made []*pyjson.Object
+	var made []*jsonutil.Object
 	t.Cleanup(func() {
 		for _, r := range made {
 			vaultDeleteKey(r)
@@ -495,7 +495,7 @@ func TestNormalizeOTPAndOriginAndScrub(t *testing.T) {
 	if _, err := NormalizeOrigin("example.com"); err == nil {
 		t.Fatal("schemeless origin")
 	}
-	got := ScrubSecretFromText("bad pw hunter2 password=hunter2 ok", pyjson.ObjectOf("password", "hunter2"))
+	got := ScrubSecretFromText("bad pw hunter2 password=hunter2 ok", jsonutil.ObjectOf("password", "hunter2"))
 	if got != "bad pw [REDACTED] password=[REDACTED] ok" {
 		t.Fatalf("scrub %q", got)
 	}

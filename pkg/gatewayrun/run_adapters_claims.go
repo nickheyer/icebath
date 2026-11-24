@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Attributes an adapter may hold its credential under, in lookup order
@@ -44,7 +43,7 @@ func adapterListenerClaim(platform gateway.Platform, adapter any) *[4]any {
 	if platform != "photon" || !ok || strings.TrimSpace(bind) == "" {
 		return nil
 	}
-	port, err := pyint.Int64(adapterAttr(adapter, "_sidecar_port"))
+	port, err := anyutil.ToInt(adapterAttr(adapter, "_sidecar_port"))
 	if err != nil {
 		return nil
 	}

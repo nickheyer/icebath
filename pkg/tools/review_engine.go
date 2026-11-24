@@ -9,9 +9,9 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Recent chat messages the reviewer gets
@@ -47,7 +47,7 @@ func reviewMessageText(message map[string]any) string {
 			}
 			var text string
 			if part["type"] == "text" {
-				if v := part["text"]; pyTruthy(v) {
+				if v := part["text"]; anyutil.IsTrue(v) {
 					text = pyStr(v)
 				}
 			} else if typ, present := part["type"]; present {
@@ -73,7 +73,7 @@ func SnapshotRecentMessages(messages []map[string]any, limit int) []map[string]s
 			continue
 		}
 		role := ""
-		if pyTruthy(message["role"]) {
+		if anyutil.IsTrue(message["role"]) {
 			role = pyStr(message["role"])
 		}
 		text := ""
@@ -113,35 +113,35 @@ func CollectParentLoadedSkills(parent any, messages []map[string]any, limit int)
 		}
 		calls, _ := message["tool_calls"].([]any)
 		for _, call := range calls {
-			callMap, ok := pyjson.Dict(call)
+			callMap, ok := jsonutil.AsMap(call)
 			if !ok {
 				continue
 			}
-			fn, _ := pyjson.Dict(callMap["function"])
+			fn, _ := jsonutil.AsMap(callMap["function"])
 			if fn["name"] != "skill_view" {
 				continue
 			}
 			raw := "{}"
-			if pyTruthy(fn["arguments"]) {
+			if anyutil.IsTrue(fn["arguments"]) {
 				s, isString := fn["arguments"].(string)
 				if !isString {
 					continue
 				}
 				raw = s
 			}
-			parsed, err := pyjson.Loads(raw)
+			parsed, err := jsonutil.Decode(raw)
 			if err != nil {
 				continue
 			}
-			args, ok := parsed.(*pyjson.Object)
+			args, ok := parsed.(*jsonutil.Object)
 			if !ok {
 				continue
 			}
-			if filePath, _ := args.Get("file_path"); pyTruthy(filePath) {
+			if filePath, _ := args.Get("file_path"); anyutil.IsTrue(filePath) {
 				continue
 			}
 			name, _ := args.Get("name")
-			if pyTruthy(name) {
+			if anyutil.IsTrue(name) {
 				candidates = append(candidates, pyStr(name))
 			} else {
 				candidates = append(candidates, "")
@@ -230,7 +230,7 @@ func loadReviewCredentialsCfg(ctx context.Context, env *Env) map[string]any {
 }
 
 // Dispatches the reviewer subagent and returns the parsed delegate_task reply, an error when nothing can be reviewed
-func StartReview(ctx context.Context, env *Env, parent any, messages []map[string]any, userPrompt string) (*pyjson.Object, error) {
+func StartReview(ctx context.Context, env *Env, parent any, messages []map[string]any, userPrompt string) (*jsonutil.Object, error) {
 	if isNilValue(parent) {
 		return nil, errors.New("No active agent — send a message first.")
 	}
@@ -242,22 +242,22 @@ func StartReview(ctx context.Context, env *Env, parent any, messages []map[strin
 	credentialsCfg := loadReviewCredentialsCfg(ctx, env)
 	background := true
 	raw := DelegateTask(ctx, env, DelegateTaskRequest{Goal: goal, Context: contextText, Background: &background, ParentAgent: parent, CredentialsCfg: credentialsCfg})
-	parsed, err := pyjson.Loads(raw)
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		parsed = nil
 	}
-	result, isObject := parsed.(*pyjson.Object)
+	result, isObject := parsed.(*jsonutil.Object)
 	if isObject {
-		if errValue, _ := result.Get("error"); pyTruthy(errValue) {
+		if errValue, _ := result.Get("error"); anyutil.IsTrue(errValue) {
 			return nil, errors.New(pyStr(errValue))
 		}
 	}
 	if !isObject {
-		return nil, fmt.Errorf("Review dispatch failed: %s", pyrepr.Repr(raw))
+		return nil, fmt.Errorf("Review dispatch failed: %s", anyutil.Quote(raw))
 	}
 	if _, present := result.Get("review_model"); !present {
 		model := ""
-		if credentialsCfg != nil && pyTruthy(credentialsCfg["model"]) {
+		if credentialsCfg != nil && anyutil.IsTrue(credentialsCfg["model"]) {
 			model = pyStr(credentialsCfg["model"])
 		}
 		result.Set("review_model", model)
@@ -266,12 +266,12 @@ func StartReview(ctx context.Context, env *Env, parent any, messages []map[strin
 }
 
 // Human facing one liner for a successful dispatch, shared by every surface
-func FormatDispatchNote(result *pyjson.Object, userPrompt string) string {
+func FormatDispatchNote(result *jsonutil.Object, userPrompt string) string {
 	if status, _ := result.Get("status"); status == "dispatched" {
 		return "Review started. Results will return here."
 	}
 	model := ""
-	if v, _ := result.Get("review_model"); pyTruthy(v) {
+	if v, _ := result.Get("review_model"); anyutil.IsTrue(v) {
 		model = strings.TrimSpace(pyStr(v))
 	}
 	modelNote := ""
@@ -286,7 +286,7 @@ func FormatDispatchNote(result *pyjson.Object, userPrompt string) string {
 	if results, present := result.Get("results"); present {
 		body = results
 	}
-	dumped, err := pyjson.Dumps(body, pyjson.EnsureASCII(false))
+	dumped, err := jsonutil.Encode(body)
 	if err != nil {
 		panic(err)
 	}

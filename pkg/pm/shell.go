@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Git for Windows bash under the store's git entry, Windows bundles only
@@ -61,18 +61,18 @@ func WindowsBashCandidates(onPath string, env map[string]string) []string {
 	if override := env["ICEBATH_GIT_BASH_PATH"]; override != "" {
 		candidates = append(candidates, override)
 	}
-	roots := []string{pypath.NtJoin(programFiles, "Git")}
+	roots := []string{pathutil.WindowsJoin(programFiles, "Git")}
 	if x86 := env["ProgramFiles(x86)"]; x86 != "" {
-		roots = append(roots, pypath.NtJoin(x86, "Git"))
+		roots = append(roots, pathutil.WindowsJoin(x86, "Git"))
 	}
 	if local := env["LOCALAPPDATA"]; local != "" {
-		roots = append(roots, pypath.NtJoin(local, "icebath", "git"), pypath.NtJoin(local, "Programs", "Git"))
+		roots = append(roots, pathutil.WindowsJoin(local, "icebath", "git"), pathutil.WindowsJoin(local, "Programs", "Git"))
 	}
 	for _, root := range roots {
-		candidates = append(candidates, pypath.NtJoin(root, "bin", "bash.exe"), pypath.NtJoin(root, "usr", "bin", "bash.exe"))
+		candidates = append(candidates, pathutil.WindowsJoin(root, "bin", "bash.exe"), pathutil.WindowsJoin(root, "usr", "bin", "bash.exe"))
 	}
 	if onPath != "" {
-		norm := strings.ToLower(pypath.NtNormpath(onPath))
+		norm := strings.ToLower(pathutil.WindowsClean(onPath))
 		launcher := false
 		for _, dir := range windowsBashLauncherDirs {
 			if strings.Contains(norm, dir) {

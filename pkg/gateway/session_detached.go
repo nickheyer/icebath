@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 	"time"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const detachedSlot = "detached"
@@ -81,7 +83,7 @@ func detachedEntry(ctx context.Context, store *SessionStore, source *SessionSour
 		}
 		if row != nil {
 			if v, _ := row.Get("started_at"); v != nil && v != false {
-				f, err := pyFloat(v)
+				f, err := anyutil.ToFloat(v)
 				if err != nil {
 					return nil, err
 				}

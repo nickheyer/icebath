@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Live host gateway serving every profile through the memoized probe, nil when none answers
@@ -96,6 +96,6 @@ func ServiceHomeForUnit(ctx context.Context, unitPath string, system bool) (stri
 func PrintIndented(text string, emit func(string)) { printIndented(text, emit) }
 
 // Whether a pid record names this process home's profile
-func PidRecordBelongsToCurrentProfile(record *pyjson.Object) (bool, error) {
+func PidRecordBelongsToCurrentProfile(record *jsonutil.Object) (bool, error) {
 	return pidRecordBelongsToCurrentProfile(record)
 }

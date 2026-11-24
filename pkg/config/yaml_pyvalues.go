@@ -7,7 +7,7 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Comparison family of a key, keys of two families raising TypeError in a Python sort
@@ -19,23 +19,15 @@ func pyKeyFamily(k any) string {
 		return "num"
 	case []byte:
 		return "bytes"
-	case pydatetime.Date, *pydatetime.Date:
+	case timeutil.Date, *timeutil.Date:
 		return "date"
-	case pydatetime.DateTime:
-		if t.Zone == nil {
+	case time.Time:
+		if t.Location() == time.UTC {
 			return "naive"
 		}
 		return "aware"
-	case *pydatetime.DateTime:
+	case *time.Time:
 		return pyKeyFamily(*t)
-	case time.Time:
-		switch {
-		case t.Location() != time.UTC:
-			return "aware"
-		case t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0:
-			return "date"
-		}
-		return "naive"
 	case nil:
 		return "none"
 	}
@@ -146,20 +138,14 @@ func pyNumLess(f float64, other any, swapped bool) bool {
 // Instant ordering of a date or datetime key, the wall clock for naive values and the UTC instant for aware ones
 func pyTimeKey(k any) time.Time {
 	switch t := k.(type) {
-	case pydatetime.Date:
-		return time.Date(t.Year, time.Month(t.Month), t.Day, 0, 0, 0, 0, time.UTC)
-	case *pydatetime.Date:
-		return pyTimeKey(*t)
-	case pydatetime.DateTime:
-		wall := time.Date(t.Year, time.Month(t.Month), t.Day, t.Hour, t.Minute, t.Second, t.Microsecond*1000, time.UTC)
-		if t.Zone != nil {
-			wall = wall.Add(-t.Zone.Offset)
-		}
-		return wall
-	case *pydatetime.DateTime:
+	case timeutil.Date:
+		return t.Midnight(time.UTC)
+	case *timeutil.Date:
 		return pyTimeKey(*t)
 	case time.Time:
 		return t
+	case *time.Time:
+		return *t
 	}
 	return time.Time{}
 }

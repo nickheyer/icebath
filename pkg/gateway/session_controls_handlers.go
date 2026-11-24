@@ -4,14 +4,14 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One dispatch handler of an authority connection taking the frame's session reference and params
-type controlHandler func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error)
+type controlHandler func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error)
 
 // Settles the owner request a viewer's response frame answers when this connection or a sibling may settle it
-func (c *AuthorityConnection) resolveResponse(ctx context.Context, frame *pyjson.Object) error {
+func (c *AuthorityConnection) resolveResponse(ctx context.Context, frame *jsonutil.Object) error {
 	var asked []string
 	var settleErr error
 	c.mu.Lock()
@@ -43,7 +43,7 @@ func (c *AuthorityConnection) resolveResponse(ctx context.Context, frame *pyjson
 		if len(asked) > 0 {
 			what = "a server request this connection may not settle"
 		}
-		pkgLog().Debug("dropping response for "+what, "id", frame.GetOr("id", nil))
+		pkgLog().Debug("dropping response for "+what, "id", frame.ValueOr("id", nil))
 	}
 	return nil
 }
@@ -61,7 +61,7 @@ func pyGet(value any, key string, def any) (any, error) {
 			return item, nil
 		}
 		return def, nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return pyDictGet(dict, key, def)
 	}
 	return pyDictGet(value, key, def)

@@ -11,8 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Inbound message of any platform, a user message whose turn the session store refused held until it takes writes again
@@ -355,7 +355,7 @@ func (r *GatewayRunner) hmDispatchCanonicalCommand(ctx context.Context, event *g
 func (r *GatewayRunner) hmRescueOrphanedFIFO(ctx context.Context, event *gateway.MessageEvent, source *gateway.SessionSource, isInternal bool, quickKey string) (outEvent *gateway.MessageEvent, outSource *gateway.SessionSource, outInternal bool) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Debug(fmt.Sprintf("FIFO orphan rescue pre-claim failed for %s", quickKey), "error", pyrepr.Str(rec))
+			pkgLog().Debug(fmt.Sprintf("FIFO orphan rescue pre-claim failed for %s", quickKey), "error", anyutil.String(rec))
 			outEvent, outSource, outInternal = event, source, isInternal
 		}
 	}()

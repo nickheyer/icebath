@@ -14,7 +14,6 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Open Platform calls the adapter makes, the lark SDK client in production
@@ -129,11 +128,11 @@ func (slogLarkLogger) Error(ctx context.Context, args ...any) {
 }
 
 // Button element with a plain text label, type and callback value
-func cardButton(label, btnType string, value *pyjson.Object) *pyjson.Object {
-	text := pyjson.NewObject()
+func cardButton(label, btnType string, value *jsonutil.Object) *jsonutil.Object {
+	text := jsonutil.NewObject()
 	text.Set("tag", "plain_text")
 	text.Set("content", label)
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("tag", "button")
 	out.Set("text", text)
 	out.Set("type", btnType)
@@ -142,26 +141,26 @@ func cardButton(label, btnType string, value *pyjson.Object) *pyjson.Object {
 }
 
 // Wide card with a colored header, one markdown block and an optional button row
-func buildCard(title, template, markdown string, actions []any) *pyjson.Object {
-	md := pyjson.NewObject()
+func buildCard(title, template, markdown string, actions []any) *jsonutil.Object {
+	md := jsonutil.NewObject()
 	md.Set("tag", "markdown")
 	md.Set("content", markdown)
 	elements := []any{md}
 	if actions != nil {
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		row.Set("tag", "action")
 		row.Set("actions", actions)
 		elements = append(elements, row)
 	}
-	config := pyjson.NewObject()
+	config := jsonutil.NewObject()
 	config.Set("wide_screen_mode", true)
-	titleObj := pyjson.NewObject()
+	titleObj := jsonutil.NewObject()
 	titleObj.Set("content", title)
 	titleObj.Set("tag", "plain_text")
-	header := pyjson.NewObject()
+	header := jsonutil.NewObject()
 	header.Set("title", titleObj)
 	header.Set("template", template)
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("config", config)
 	out.Set("header", header)
 	out.Set("elements", elements)

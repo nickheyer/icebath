@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestStoredToolCallsDecodedAsOrderedObjectsNameTheirToolRows(t *testing.T) {
-	call := pyjson.ObjectOf("id", "call_1", "type", "function",
-		"function", pyjson.ObjectOf("name", "read_file", "arguments", `{"path": "notes.md"}`))
+	call := jsonutil.ObjectOf("id", "call_1", "type", "function",
+		"function", jsonutil.ObjectOf("name", "read_file", "arguments", `{"path": "notes.md"}`))
 	history := []any{
 		map[string]any{"role": "user", "content": "read the notes"},
 		map[string]any{"role": "assistant", "content": "", "tool_calls": []any{call}},

@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ClaimedTurnStopped reports whether a Stop is latched or delivered for the claimed owner generation
@@ -20,7 +20,7 @@ func (a *SessionAuthority) ClaimedTurnStopped(owner string, generation int64) bo
 // RecordInterruptedExecution settles the executing admission of the context as an interrupted empty turn
 func RecordInterruptedExecution(ctx context.Context) {
 	if captured := executionResultOf(ctx); captured != nil {
-		captured.Set("result", pyjson.ObjectOf("final_response", "", "messages", []any{}, "interrupted", true))
+		captured.Set("result", jsonutil.ObjectOf("final_response", "", "messages", []any{}, "interrupted", true))
 	}
 }
 

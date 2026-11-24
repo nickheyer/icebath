@@ -17,9 +17,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
 	"github.com/klauspost/compress/zstd"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // InstallError names the package that failed, why, and what the user can do about it
@@ -78,7 +77,7 @@ func ComposeEnv(diffs []EnvDiff, base map[string]string) map[string]string {
 	for _, diff := range diffs {
 		for key, value := range diff {
 			if key != "PATH" {
-				env[key] = Native(pyrepr.Str(value))
+				env[key] = Native(anyutil.String(value))
 			}
 		}
 	}
@@ -105,7 +104,7 @@ func envDirs(value any) []string {
 	if list, ok := envList(value); ok {
 		return list
 	}
-	return []string{pyrepr.Str(value)}
+	return []string{anyutil.String(value)}
 }
 
 // Package is what a package IS, versions and hashes living in lock.json

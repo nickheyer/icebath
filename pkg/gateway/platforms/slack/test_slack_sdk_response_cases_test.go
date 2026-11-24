@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func TestSlackResponsePayloadPlainDictPassesThrough(t *testing.T) {
@@ -70,7 +69,7 @@ func TestStandaloneSendMediaPathTextPostErrorIsSurfaced(t *testing.T) {
 		"pconfig": &gateway.PlatformConfig{Token: "xoxb-test", Extra: map[string]any{}}, "chat_id": "C_GEN",
 		"message": "Here is the report", "media_files": []gateway.MediaRef{{Path: writeReport(t)}},
 	})
-	if !strings.Contains(pyrepr.Str(result["error"]), "channel_not_found") {
+	if !strings.Contains(anyutil.String(result["error"]), "channel_not_found") {
 		t.Fatalf("result %v", result)
 	}
 	if n := len(f.callsTo("files.completeUploadExternal")) + len(f.callsTo("files.getUploadURLExternal")); n != 0 {

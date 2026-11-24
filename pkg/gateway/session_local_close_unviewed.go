@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Stored session a local receipt names, empty for a session with no readable local receipt
@@ -12,11 +12,11 @@ func localCloseTarget(ctx context.Context, a *SessionAuthority, sessionID string
 	if err != nil || receipt == nil {
 		return ""
 	}
-	entry, ok := receipt.GetOr("entry", nil).(*pyjson.Object)
+	entry, ok := receipt.ValueOr("entry", nil).(*jsonutil.Object)
 	if !ok {
 		return ""
 	}
-	target, _ := entry.GetOr("session_id", "").(string)
+	target, _ := entry.ValueOr("session_id", "").(string)
 	return target
 }
 
@@ -36,7 +36,7 @@ func closedAndUnviewed(ctx context.Context, a *SessionAuthority, sessionID strin
 			return false, err
 		}
 		if row != nil {
-			endedAt = row.GetOr("ended_at", nil)
+			endedAt = row.ValueOr("ended_at", nil)
 		}
 	}
 	return closedIdleUnviewed(live, handle.ExecutionState, endedAt), nil

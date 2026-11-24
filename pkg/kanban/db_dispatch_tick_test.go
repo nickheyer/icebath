@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDispatchUnreadableAllowlistWarnsPerLaneTask(t *testing.T) {
@@ -25,7 +25,7 @@ func TestDispatchUnreadableAllowlistWarnsPerLaneTask(t *testing.T) {
 	prevProbes := GatewayDispatchProbes
 	t.Cleanup(func() { GatewayDispatchProbes = prevProbes })
 	GatewayDispatchProbes = GatewayDispatchProbeSet{
-		SampleMemory:     pyjson.NewObject,
+		SampleMemory:     jsonutil.NewObject,
 		ClassifyPressure: func(any, any) string { return "ok" },
 		Liveness:         func(context.Context, string) (any, bool) { return nil, false },
 	}

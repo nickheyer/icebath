@@ -10,11 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // AF_UNIX loop tick listener at the pid suffixed state path, not handled when the path overflows sun_path
@@ -31,10 +31,10 @@ func listenTickUnix(ctx context.Context, h string) (net.Listener, string, bool, 
 	if info, err := os.Stat(path); err == nil && info.Mode()&os.ModeSocket != 0 {
 		err = os.Remove(path)
 		if err != nil {
-			pkgLog().Error(fmt.Sprintf("Unable to check or remove stale UNIX socket %s: %v", pyrepr.StrRepr(path), err))
+			pkgLog().Error(fmt.Sprintf("Unable to check or remove stale UNIX socket %s: %v", strconv.Quote(path), err))
 		}
 	} else if err != nil && !os.IsNotExist(err) {
-		pkgLog().Error(fmt.Sprintf("Unable to check or remove stale UNIX socket %s: %v", pyrepr.StrRepr(path), err))
+		pkgLog().Error(fmt.Sprintf("Unable to check or remove stale UNIX socket %s: %v", strconv.Quote(path), err))
 	}
 	l, err := net.Listen("unix", path)
 	return l, path, true, err

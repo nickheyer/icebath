@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -21,13 +22,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -81,9 +82,9 @@ var (
 
 // Store rooted at home with now as its clock source and the zone of its profile's timezone setting
 func openCronStore(home string, now func() time.Time) *Store {
-	resolved, err := pypath.Realpath(pypath.Expanduser(home), pypath.Lax)
+	resolved, err := pathutil.Resolve(pathutil.ExpandUser(home))
 	if err != nil {
-		resolved = filepath.Clean(pypath.Expanduser(home))
+		resolved = filepath.Clean(pathutil.ExpandUser(home))
 	}
 	s := &Store{home: resolved, log: pkgLog()}
 	s.cronDir = filepath.Join(resolved, "cron")
@@ -223,7 +224,7 @@ func uuid5URLHex(name string) string {
 }
 
 func (s *Store) resolvedCronDir() string {
-	if r, err := pypath.Realpath(s.cronDir, pypath.Lax); err == nil {
+	if r, err := pathutil.Resolve(s.cronDir); err == nil {
 		return r
 	}
 	return s.cronDir
@@ -317,14 +318,14 @@ func (s *Store) selfRemovalDeliveryAllowed(ctx context.Context, tx *jobsTx, jobI
 func (s *Store) jobOutputDir(jobID string) (string, error) {
 	text := strings.TrimSpace(jobID)
 	if text == "" || text == "." || text == ".." || strings.ContainsAny(text, "/\\") || filepath.IsAbs(text) || filepath.VolumeName(text) != "" {
-		return "", fmt.Errorf("Invalid cron job id for output path: %s", pyrepr.Repr(jobID))
+		return "", fmt.Errorf("Invalid cron job id for output path: %s", anyutil.Quote(jobID))
 	}
 	return filepath.Join(s.outputDir, text), nil
 }
 
 // Path sits under a named profile, by its resolved or raw components
 func isNamedProfilePath(path string) bool {
-	if r, err := pypath.Realpath(path, pypath.Lax); err == nil && hasPart(r, "profiles") {
+	if r, err := pathutil.Resolve(path); err == nil && hasPart(r, "profiles") {
 		return true
 	}
 	return hasPart(path, "profiles")
@@ -438,15 +439,15 @@ func parseJobsFile(path string) (any, bool, error) {
 	if !utf8.Valid(raw) {
 		return nil, false, fmt.Errorf("jobs.json is not valid UTF-8")
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err == nil {
 		return v, false, nil
 	}
-	var de *pyjson.DecodeError
+	var de *jsonutil.SyntaxError
 	if !errors.As(err, &de) {
 		return nil, false, err
 	}
-	v, err = pyjson.LoadsLenient(string(raw))
+	v, err = jsonutil.DecodeWith(string(raw), jsonutil.ControlChars())
 	return v, true, err
 }
 
@@ -484,26 +485,26 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 	unmergeable := false
 	var entries []any
 	switch d := data.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		jobsVal, ok := d.Get("jobs")
 		if !ok {
 			jobsVal = []any{}
 		}
 		switch jv := jobsVal.(type) {
-		case *pyjson.Object:
+		case *jsonutil.Object:
 			var skipped []string
-			for _, k := range jv.Keys {
-				v, isObj := jv.Vals[k].(*pyjson.Object)
+			for _, k := range jv.Keys() {
+				v, isObj := jv.Value(k).(*jsonutil.Object)
 				if !isObj {
-					skipped = append(skipped, pyrepr.Repr(k))
+					skipped = append(skipped, anyutil.Quote(k))
 					continue
 				}
-				flat := &pyjson.Object{Keys: append([]string(nil), v.Keys...), Vals: map[string]any{}}
-				for kk, vv := range v.Vals {
-					flat.Vals[kk] = vv
+				flat := &jsonutil.Object{Keys: append([]string(nil), v.Keys()...), Vals: map[string]any{}}
+				for kk, vv := range v.All() {
+					flat.Set(kk, vv)
 				}
 				id, _ := v.Get("id")
-				if !pyrepr.Truthy(id) {
+				if !anyutil.IsTrue(id) {
 					id = k
 				}
 				flat.Set("id", id)
@@ -525,11 +526,11 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 	default:
 		return nil, fmt.Errorf("Cron database corrupted: expected a mapping with a jobs list, got %s", errchain.Kind(data))
 	}
-	var objs []*pyjson.Object
+	var objs []*jsonutil.Object
 	junkTypes := map[string]bool{}
 	junk := 0
 	for _, e := range entries {
-		if o, ok := e.(*pyjson.Object); ok {
+		if o, ok := e.(*jsonutil.Object); ok {
 			objs = append(objs, o)
 			continue
 		}
@@ -592,8 +593,8 @@ func (s *Store) loadJobs(ctx context.Context, tx *jobsTx) ([]*Job, error) {
 }
 
 // Clamps a non int or negative repeat.completed to a non negative int, reporting whether it changed
-func normalizeRepeatCompleted(o *pyjson.Object) bool {
-	rep, ok := o.Vals["repeat"].(*pyjson.Object)
+func normalizeRepeatCompleted(o *jsonutil.Object) bool {
+	rep, ok := o.Value("repeat").(*jsonutil.Object)
 	if !ok {
 		return false
 	}
@@ -630,7 +631,7 @@ func (s *Store) peekJobsUnlocked() ([]any, bool) {
 		return nil, false
 	}
 	switch d := data.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		jobs, ok := d.Get("jobs")
 		if !ok {
 			return []any{}, true
@@ -644,7 +645,7 @@ func (s *Store) peekJobsUnlocked() ([]any, bool) {
 }
 
 // Job record decoded from an ordered JSON object, keeping the object's key order for the next save
-func jobFromObject(o *pyjson.Object) (*Job, error) {
+func jobFromObject(o *jsonutil.Object) (*Job, error) {
 	b, err := o.MarshalJSON()
 	if err != nil {
 		return nil, err
@@ -653,7 +654,7 @@ func jobFromObject(o *pyjson.Object) (*Job, error) {
 	if err := j.UnmarshalJSON(b); err != nil {
 		return nil, err
 	}
-	j.keyOrder = append([]string(nil), o.Keys...)
+	j.keyOrder = append([]string(nil), o.Keys()...)
 	return j, nil
 }
 
@@ -663,7 +664,7 @@ func jobToObject(j *Job) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.LoadsBytes(b)
+	return jsonutil.Decode(b)
 }
 
 // On disk jobs missing from the payload and not deliberately removed, an error when disk is unreadable
@@ -688,15 +689,15 @@ func (s *Store) unmergedDiskJobs(tx *jobsTx, jobs []*Job, removedIDs []string) (
 	}
 	var recovered []*Job
 	for _, d := range disk {
-		o, isObj := d.(*pyjson.Object)
+		o, isObj := d.(*jsonutil.Object)
 		if !isObj {
 			continue
 		}
 		id, _ := o.Get("id")
-		if !pyrepr.Truthy(id) {
+		if !anyutil.IsTrue(id) {
 			continue
 		}
-		key := pyrepr.Str(id)
+		key := anyutil.String(id)
 		if seen[key] {
 			continue
 		}
@@ -720,7 +721,7 @@ func (s *Store) mergeUnexpectedDiskJobs(tx *jobsTx, jobs []*Job, removedIDs []st
 	for i, j := range recovered {
 		ids[i] = j.ID
 	}
-	s.log.Warn(fmt.Sprintf("Preserved %d cron job(s) present on disk but missing from the in-memory save payload (concurrent create under degraded lock or stale writer) (#80624): %s", len(recovered), pyrepr.Repr(ids)))
+	s.log.Warn(fmt.Sprintf("Preserved %d cron job(s) present on disk but missing from the in-memory save payload (concurrent create under degraded lock or stale writer) (#80624): %s", len(recovered), anyutil.Quote(ids)))
 	out := make([]*Job, 0, len(jobs)+len(recovered))
 	return append(append(out, jobs...), recovered...), nil
 }
@@ -735,14 +736,14 @@ func (s *Store) stageJobsPayload(jobs []*Job) (string, error) {
 		}
 		list[i] = o
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("jobs", list)
 	payload.Set("updated_at", s.clk.nowISO())
-	text, err := pyjson.Dumps(payload, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return "", err
 	}
-	f, err := pyfs.MkstempBeside(s.jobsFile, ".jobs_", ".tmp")
+	f, err := fsutil.CreateTempBeside(s.jobsFile, ".jobs_", ".tmp")
 	if err != nil {
 		return "", err
 	}
@@ -802,12 +803,12 @@ func (s *Store) saveJobsLocked(ctx context.Context, tx *jobsTx, jobs []*Job, rem
 				continue
 			}
 		}
-		replaced, err := pyfs.AtomicReplace(tmp, s.jobsFile)
+		replaced, err := fsutil.Replace(tmp, s.jobsFile)
 		if err != nil {
 			os.Remove(tmp)
 			return err
 		}
-		pyfs.FsyncDirectory(filepath.Dir(replaced))
+		fsutil.SyncDir(filepath.Dir(replaced))
 		s.secureFile(home.WithOverride(ctx, s.home), s.jobsFile)
 		s.preserveFileOwnership(s.jobsFile, before)
 		tx.recordLoadStamp(nil)
@@ -834,14 +835,14 @@ func (s *Store) writeMarker(ctx context.Context, name, text, prefix string) {
 	if s.ensureDirs(home.WithOverride(ctx, s.home)) != nil {
 		return
 	}
-	pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.home), filepath.Join(s.cronDir, name), text, prefix, 0o600)
+	fsutil.WriteFile(home.WithOverride(ctx, s.home), filepath.Join(s.cronDir, name), []byte(text), fsutil.WriteOptions{Prefix: prefix, Mode: new(os.FileMode(0o600)), NativeLineEnds: true})
 }
 
 // RecordTickerHeartbeat stamps loop liveness with the writer pid, plus the last success marker when success
 func (s *Store) RecordTickerHeartbeat(ctx context.Context, success bool) {
-	s.writeMarker(home.WithOverride(ctx, s.home), "ticker_heartbeat", fmt.Sprintf("%s %d", pyrepr.Float(epochNow()), os.Getpid()), ".hb_")
+	s.writeMarker(home.WithOverride(ctx, s.home), "ticker_heartbeat", fmt.Sprintf("%s %d", strconv.FormatFloat(epochNow(), 'f', -1, 64), os.Getpid()), ".hb_")
 	if success {
-		s.writeMarker(home.WithOverride(ctx, s.home), "ticker_last_success", pyrepr.Float(epochNow()), ".hb_")
+		s.writeMarker(home.WithOverride(ctx, s.home), "ticker_last_success", strconv.FormatFloat(epochNow(), 'f', -1, 64), ".hb_")
 	}
 }
 
@@ -870,7 +871,7 @@ func (s *Store) epochFileAge(name string) (float64, bool) {
 	if len(fields) == 0 {
 		return 0, false
 	}
-	stamp, err := pyint.ParseFloat(fields[0])
+	stamp, err := strconv.ParseFloat(strings.TrimSpace(fields[0]), 64)
 	if err != nil {
 		return 0, false
 	}
@@ -903,7 +904,7 @@ func (s *Store) TickerSuccessAge() (float64, bool) { return s.epochFileAge("tick
 
 // RecordTickerError persists the latest tick failure for status readers in other processes
 func (s *Store) RecordTickerError(ctx context.Context, message string) {
-	s.writeMarker(home.WithOverride(ctx, s.home), "ticker_last_error", fmt.Sprintf("%s\n%s\n", pyrepr.Float(epochNow()), strings.TrimSpace(message)), ".terr_")
+	s.writeMarker(home.WithOverride(ctx, s.home), "ticker_last_error", fmt.Sprintf("%s\n%s\n", strconv.FormatFloat(epochNow(), 'f', -1, 64), strings.TrimSpace(message)), ".terr_")
 }
 
 // ClearTickerError removes the last tick error marker, ignoring failures
@@ -978,7 +979,7 @@ func (s *Store) SaveJobOutput(ctx context.Context, jobID, output string) (string
 	}
 	config.SecureDir(home.WithOverride(ctx, s.home), s.home, dir)
 	file := filepath.Join(dir, s.clk.now().Format("2006-01-02_15-04-05")+".md")
-	if err := pyfs.AtomicWriteTextMode(home.WithOverride(ctx, s.home), file, output, ".output_", 0o600); err != nil {
+	if err := fsutil.WriteFile(home.WithOverride(ctx, s.home), file, []byte(output), fsutil.WriteOptions{Prefix: ".output_", Mode: new(os.FileMode(0o600)), NativeLineEnds: true}); err != nil {
 		return "", err
 	}
 	s.secureFile(home.WithOverride(ctx, s.home), file)

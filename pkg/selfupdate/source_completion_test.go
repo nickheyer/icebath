@@ -18,9 +18,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hidden first argument that routes a re-executed test binary to a source completion stand in
@@ -116,7 +116,7 @@ func TestCompletedMaintenanceSurvivesStampIoError(t *testing.T) {
 	t.Setenv(home.EnvHome, filepath.Join(tmp, ".icebath"))
 	scDependencies(t, func(context.Context, PostUpdateMaintenance) (bool, error) { return true, nil })
 	prev := sourceCompletionWriteStamp
-	sourceCompletionWriteStamp = func(string, bool) (*pyjson.Object, error) {
+	sourceCompletionWriteStamp = func(string, bool) (*jsonutil.Object, error) {
 		return nil, &pm.PyError{Class: "OSError", Message: "readonly"}
 	}
 	t.Cleanup(func() { sourceCompletionWriteStamp = prev })

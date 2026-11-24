@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/linktier"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Running cron scheduler of a gateway with the ticker goroutine that drives it
@@ -16,7 +16,7 @@ type cronTicker interface {
 	// Whether the ticker goroutine still runs
 	alive() bool
 	// Housekeeping chores of the scheduler, the misfire sweep and the ticker supervisor
-	chores(ctx context.Context, adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter], loop gateway.EventLoop) []housekeepingTask
+	chores(ctx context.Context, adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter], loop gateway.EventLoop) []housekeepingTask
 }
 
 // In flight cron runs split into awaitable, wedged and restart safe for the restart wait
@@ -34,8 +34,8 @@ type blueprintReply struct {
 
 // Cron parts of the gateway runner, bound by the extras tier that carries cron and nil in a build without it
 var (
-	startCronTicker        func(ctx context.Context, r *GatewayRunner, stop *pythread.Event) cronTicker
-	cronDeliveryDrain      func(ctx context.Context, adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter], loop gateway.EventLoop, r *GatewayRunner) error
+	startCronTicker        func(ctx context.Context, r *GatewayRunner, stop *syncutil.Event) cronTicker
+	cronDeliveryDrain      func(ctx context.Context, adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter], loop gateway.EventLoop, r *GatewayRunner) error
 	cronQueuePath          func(home string) string
 	cronStoreNotices       func(ctx context.Context, r *GatewayRunner, loop gateway.EventLoop)
 	cronBusyProbe          func(ctx context.Context, homes []string) (string, error)

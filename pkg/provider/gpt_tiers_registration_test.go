@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var gpt6Tiers = []string{"gpt-6-sol", "gpt-6-luna"}
@@ -150,11 +150,11 @@ func TestOpenRouterOmitsDisableTheOpenAILadderRejects(t *testing.T) {
 	seedOpenRouterReasoningCaps(t, openrouterCapsItem("openai/gpt-6.1-sol", efforts, false), openrouterCapsItem("openai/gpt-6-sol", efforts, false))
 	off := &Reasoning{Enabled: bptr(false)}
 	body, _ := p.BuildAPIKwargsExtras(off, map[string]any{"supports_reasoning": true, "model": "openai/gpt-6.1-sol"})
-	if _, ok := body.Vals["reasoning"]; ok {
+	if _, ok := body.Get("reasoning"); ok {
 		t.Fatalf("6.1 sol sent a disable %v", body)
 	}
 	body, _ = p.BuildAPIKwargsExtras(off, map[string]any{"supports_reasoning": true, "model": "openai/gpt-6-sol"})
-	if !reflect.DeepEqual(pyjson.Plain(body.Vals["reasoning"]), map[string]any{"enabled": false}) {
+	if !reflect.DeepEqual(jsonutil.Plain(body.Value("reasoning")), map[string]any{"enabled": false}) {
 		t.Fatalf("6 sol reasoning %v", body)
 	}
 }

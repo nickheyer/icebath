@@ -11,13 +11,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Housekeeping interval in seconds, the cadence unit of every chore
@@ -25,7 +25,7 @@ const housekeepingIntervalSecs = 60
 
 // Adapters, loop, cron ticker and runner the housekeeping goroutine works with
 type housekeepingArgs struct {
-	adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 	loop     gateway.EventLoop
 	cron     cronTicker
 	runner   *GatewayRunner
@@ -61,7 +61,7 @@ func futureResultWithin(ctx context.Context, fut *gatewayFuture, timeout time.Du
 }
 
 // Rebuilds the channel directory on the gateway loop, waiting up to thirty seconds so failures log
-func housekeepingChannelDirectory(ctx context.Context, adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter], loop gateway.EventLoop) error {
+func housekeepingChannelDirectory(ctx context.Context, adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter], loop gateway.EventLoop) error {
 	if loop == nil {
 		return nil
 	}
@@ -158,7 +158,7 @@ type housekeepingTask struct {
 }
 
 // Gateway only periodic chores on their own goroutine until stop is set, the queue file watched between ticks
-func startGatewayHousekeeping(ctx context.Context, stop *pythread.Event, a housekeepingArgs) {
+func startGatewayHousekeeping(ctx context.Context, stop *syncutil.Event, a housekeepingArgs) {
 	interval := housekeepingIntervalSecs
 	adapters, loop, r := a.adapters, a.loop, a.runner
 	hasSources := adapters != nil || r != nil

@@ -10,9 +10,10 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -41,7 +42,7 @@ func routermintHeaders() (map[string]string, error) {
 
 // QwenCode CLI identity headers the Qwen Portal expects
 func qwenPortalHeaders() map[string]string {
-	ua := fmt.Sprintf("QwenCode/%s (%s; %s)", qwenCodeVersion, strings.ToLower(pyplatform.System()), pyplatform.Machine())
+	ua := fmt.Sprintf("QwenCode/%s (%s; %s)", qwenCodeVersion, strings.ToLower(pyplatform.System()), hostutil.Machine())
 	return map[string]string{"User-Agent": ua, "X-DashScope-CacheControl": "enable", "X-DashScope-UserAgent": ua, "X-DashScope-AuthType": "qwen-oauth"}
 }
 
@@ -96,7 +97,7 @@ func slotKeyEqual(x, y any) bool {
 
 // Goroutine, provider, base url and model of the calling worker for client log lines
 func (a *AIAgent) ClientLogContext() string {
-	id := pythread.GoroutineID()
+	id := syncutil.GoroutineID()
 	return fmt.Sprintf("thread=goroutine-%d:%d provider=%s base_url=%s model=%s", id, id, a.provider, a.baseURL, a.model)
 }
 
@@ -106,11 +107,11 @@ func (a *AIAgent) anthropicLogContext() string {
 }
 
 // Reentrant client lock, created on first use
-func (a *AIAgent) openaiClientLock() *pythread.RLock {
+func (a *AIAgent) openaiClientLock() *syncutil.ReentrantMutex {
 	clientLockInitMu.Lock()
 	defer clientLockInitMu.Unlock()
 	if a.clientLock == nil {
-		a.clientLock = &pythread.RLock{}
+		a.clientLock = &syncutil.ReentrantMutex{}
 	}
 	return a.clientLock
 }

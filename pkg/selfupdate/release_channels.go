@@ -21,6 +21,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -101,11 +104,11 @@ func channelKey(name any) (string, error) {
 }
 
 // Channel object decoded with duplicate keys refused and a top level object required
-func decodeChannelJSON(body []byte) (*pyjson.Object, error) {
+func decodeChannelJSON(body []byte) (*jsonutil.Object, error) {
 	value, err := pyjson.LoadsBytesPairsHook(body, func(keys []string, vals []any) (any, error) {
-		obj := pyjson.NewObject()
+		obj := jsonutil.NewObject()
 		for i, key := range keys {
-			if _, dup := obj.Vals[key]; dup {
+			if _, dup := obj.Get(key); dup {
 				return nil, channelErr("Duplicate JSON key")
 			}
 			obj.Set(key, vals[i])
@@ -115,7 +118,7 @@ func decodeChannelJSON(body []byte) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, channelErr("Invalid channel JSON")
 	}
-	obj, ok := value.(*pyjson.Object)
+	obj, ok := value.(*jsonutil.Object)
 	if !ok {
 		return nil, channelErr("Channel metadata must be an object")
 	}
@@ -195,25 +198,25 @@ func channelInteger(value any, label string, minimum, maximum int64) (int64, err
 	return n.Int64(), nil
 }
 
-func channelSchema(value any) (*pyjson.Object, error) {
-	obj, ok := value.(*pyjson.Object)
+func channelSchema(value any) (*jsonutil.Object, error) {
+	obj, ok := value.(*jsonutil.Object)
 	if !ok {
 		return nil, channelErr("Unsupported channel schema")
 	}
-	if schema, isInt := obj.Vals["schema"].(int64); !isInt || schema != 1 {
+	if schema, isInt := obj.Value("schema").(int64); !isInt || schema != 1 {
 		return nil, channelErr("Unsupported channel schema")
 	}
 	return obj, nil
 }
 
 // Identity object whose token, display name and CLI name match their wire grammar, other fields ignored
-func validateChannelIdentity(value any) (*pyjson.Object, error) {
-	obj, ok := value.(*pyjson.Object)
+func validateChannelIdentity(value any) (*jsonutil.Object, error) {
+	obj, ok := value.(*jsonutil.Object)
 	if !ok {
 		return nil, channelErr("Invalid channel identity")
 	}
 	for _, check := range channelIdentityChecks {
-		if _, err := channelMatch(check.re, obj.Vals[check.field], check.label); err != nil {
+		if _, err := channelMatch(check.re, obj.Value(check.field), check.label); err != nil {
 			return nil, err
 		}
 	}
@@ -222,13 +225,13 @@ func validateChannelIdentity(value any) (*pyjson.Object, error) {
 
 // Reports whether two identity objects agree on every channel identity field
 func sameChannelIdentity(a, b any) bool {
-	left, isLeft := a.(*pyjson.Object)
-	right, isRight := b.(*pyjson.Object)
+	left, isLeft := a.(*jsonutil.Object)
+	right, isRight := b.(*jsonutil.Object)
 	if !isLeft || !isRight {
 		return false
 	}
 	for _, check := range channelIdentityChecks {
-		if !pyjson.Equal(left.Vals[check.field], right.Vals[check.field]) {
+		if !anyutil.Equal(left.Value(check.field), right.Value(check.field)) {
 			return false
 		}
 	}
@@ -245,12 +248,12 @@ func parseAttemptRef(ref string) (string, bool) {
 }
 
 // Build request checked against its policy, repository and archive authority
-func validateChannelRequest(value any, repository, baseURL *string, policy string) (*pyjson.Object, error) {
+func validateChannelRequest(value any, repository, baseURL *string, policy string) (*jsonutil.Object, error) {
 	request, err := channelSchema(value)
 	if err != nil {
 		return nil, err
 	}
-	v := request.Vals
+	v := request.Map()
 	if _, err := channelBuildPrefix(v["buildId"]); err != nil {
 		return nil, err
 	}
@@ -280,7 +283,7 @@ func validateChannelRequest(value any, repository, baseURL *string, policy strin
 		return nil, err
 	}
 	if policy == "preview" {
-		if !pyjson.Equal(v["version"], version) {
+		if !anyutil.Equal(v["version"], version) {
 			return nil, channelErr("Channel version does not match sequence")
 		}
 	} else {
@@ -288,7 +291,7 @@ func validateChannelRequest(value any, repository, baseURL *string, policy strin
 		if err != nil {
 			return nil, err
 		}
-		if !pyjson.Equal(v["version"], tag[1:]) {
+		if !anyutil.Equal(v["version"], tag[1:]) {
 			return nil, channelErr("Release version mismatch")
 		}
 		if archiveRef, present := v["archiveRef"]; present && archiveRef != nil {
@@ -301,7 +304,7 @@ func validateChannelRequest(value any, repository, baseURL *string, policy strin
 				if !isStr || ref != tag {
 					return nil, channelErr("Invalid archive ref")
 				}
-			} else if !pyjson.Equal(parsed, v["version"]) {
+			} else if !anyutil.Equal(parsed, v["version"]) {
 				return nil, channelErr("Archive ref does not name the release version")
 			}
 		}
@@ -333,42 +336,42 @@ func validateChannelRequest(value any, repository, baseURL *string, policy strin
 }
 
 // Validated channel head, nil for an unpublished channel
-func channelHead(value any) (*pyjson.Object, error) {
+func channelHead(value any) (*jsonutil.Object, error) {
 	if value == nil {
 		return nil, nil
 	}
-	head, ok := value.(*pyjson.Object)
+	head, ok := value.(*jsonutil.Object)
 	if !ok {
 		return nil, channelErr("Invalid channel head")
 	}
-	prefix, err := channelBuildPrefix(head.Vals["buildId"])
+	prefix, err := channelBuildPrefix(head.Value("buildId"))
 	if err != nil {
 		return nil, err
 	}
-	if _, err := channelInteger(head.Vals["sequence"], "head sequence", 1, channelMaxSequence); err != nil {
+	if _, err := channelInteger(head.Value("sequence"), "head sequence", 1, channelMaxSequence); err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(head.Vals["manifestKey"], prefix+"build.json") {
+	if !anyutil.Equal(head.Value("manifestKey"), prefix+"build.json") {
 		return nil, channelErr("Invalid channel manifest key")
 	}
-	if _, err := requireChannelSHA256(head.Vals["sha256"]); err != nil {
+	if _, err := requireChannelSHA256(head.Value("sha256")); err != nil {
 		return nil, err
 	}
 	return head, nil
 }
 
-func headSequence(head *pyjson.Object) int64 {
-	n, _ := channelInteger(head.Vals["sequence"], "head sequence", 1, channelMaxSequence)
+func headSequence(head *jsonutil.Object) int64 {
+	n, _ := channelInteger(head.Value("sequence"), "head sequence", 1, channelMaxSequence)
 	return n
 }
 
 // Channel record checked for its fields, authority, policy, head and retirement constraints
-func validateChannelRecord(value any, name, repository *string) (*pyjson.Object, error) {
+func validateChannelRecord(value any, name, repository *string) (*jsonutil.Object, error) {
 	record, err := channelSchema(value)
 	if err != nil {
 		return nil, err
 	}
-	v := record.Vals
+	v := record.Map()
 	for _, field := range []string{"name", "repository", "policy", "state", "revision", "nextSequence", "identity", "head"} {
 		if _, ok := v[field]; !ok {
 			return nil, channelErr("Missing channel record fields")
@@ -377,7 +380,7 @@ func validateChannelRecord(value any, name, repository *string) (*pyjson.Object,
 	if _, err := ValidateChannelName(v["name"]); err != nil {
 		return nil, err
 	}
-	if name != nil && !pyjson.Equal(v["name"], *name) {
+	if name != nil && !anyutil.Equal(v["name"], *name) {
 		return nil, channelErr("Channel name does not match object key")
 	}
 	actualRepo, err := validateChannelRepository(v["repository"])
@@ -407,11 +410,11 @@ func validateChannelRecord(value any, name, repository *string) (*pyjson.Object,
 		return nil, channelErr("Channel head exceeds allocation high-water")
 	}
 	if policy == "source-branch" {
-		delivery, isObj := v["delivery"].(*pyjson.Object)
-		if v["identity"] != nil || head != nil || !isObj || !pyjson.Equal(delivery.Vals["kind"], "source-branch") {
+		delivery, isObj := v["delivery"].(*jsonutil.Object)
+		if v["identity"] != nil || head != nil || !isObj || !anyutil.Equal(delivery.Value("kind"), "source-branch") {
 			return nil, channelErr("Source branch channel carries only its branch delivery")
 		}
-		branch, err := channelMatch(channelBranchRE, delivery.Vals["branch"], "source branch")
+		branch, err := channelMatch(channelBranchRE, delivery.Value("branch"), "source branch")
 		if err != nil {
 			return nil, err
 		}
@@ -439,15 +442,15 @@ func validateChannelRecord(value any, name, repository *string) (*pyjson.Object,
 		if protocol, isInt := v["receiverProtocol"].(int64); !isInt || protocol != 1 {
 			return nil, channelErr("Unsupported retirement receiver protocol")
 		}
-		receiver, isObj := v["receiver"].(*pyjson.Object)
-		if !isObj || !(pyjson.Equal(receiver.Vals["kind"], "in-place") || pyjson.Equal(receiver.Vals["kind"], "discontinued")) {
+		receiver, isObj := v["receiver"].(*jsonutil.Object)
+		if !isObj || !(anyutil.Equal(receiver.Value("kind"), "in-place") || anyutil.Equal(receiver.Value("kind"), "discontinued")) {
 			return nil, channelErr("Invalid retirement receiver kind")
 		}
 		last, err := channelHead(v["lastHead"])
 		if err != nil {
 			return nil, err
 		}
-		if (last == nil) != (head == nil) || (last != nil && !pyjson.Equal(last, head)) {
+		if (last == nil) != (head == nil) || (last != nil && !anyutil.Equal(last, head)) {
 			return nil, channelErr("Retirement last head mismatch")
 		}
 	}
@@ -456,7 +459,7 @@ func validateChannelRecord(value any, name, repository *string) (*pyjson.Object,
 
 // Requested record, the record it resolves to, and that record's verified build manifest
 type ChannelResolution struct {
-	Requested, Terminal, Manifest *pyjson.Object
+	Requested, Terminal, Manifest *jsonutil.Object
 }
 
 // ChannelOpener performs one channel archive request, the urllib opener seam
@@ -495,7 +498,7 @@ func NewChannelReader(baseURL string, repository *string, opener ChannelOpener) 
 	if r.opener == nil {
 		client := &http.Client{
 			Timeout:   30 * time.Second,
-			Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy},
+			Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: httputil.Proxy},
 			CheckRedirect: func(*http.Request, []*http.Request) error {
 				return channelErr("Channel archive redirects are not permitted")
 			},
@@ -588,7 +591,7 @@ func (r *ChannelReader) ReadBytes(ctx context.Context, key string, sha *string) 
 }
 
 // Validated record of one named channel under the reader's repository authority
-func (r *ChannelReader) ReadRecord(ctx context.Context, name string) (*pyjson.Object, error) {
+func (r *ChannelReader) ReadRecord(ctx context.Context, name string) (*jsonutil.Object, error) {
 	key, err := channelKey(name)
 	if err != nil {
 		return nil, err
@@ -611,34 +614,34 @@ func (r *ChannelReader) Resolve(ctx context.Context, name string) (*ChannelResol
 		return nil, err
 	}
 	record := requested
-	retired := requested.Vals["state"] == "retired"
+	retired := requested.Value("state") == "retired"
 	if retired {
-		destination := requested.Vals["destination"].(string)
+		destination := requested.Value("destination").(string)
 		if destination == name {
 			return nil, channelErr("Channel retirement cycle")
 		}
 		if record, err = r.ReadRecord(ctx, destination); err != nil {
 			return nil, err
 		}
-		if !strings.EqualFold(record.Vals["repository"].(string), requested.Vals["repository"].(string)) {
+		if !strings.EqualFold(record.Value("repository").(string), requested.Value("repository").(string)) {
 			return nil, channelErr("Retirement repository authority mismatch")
 		}
-		if record.Vals["state"] != "active" || record.Vals["policy"] != "stable-release" {
+		if record.Value("state") != "active" || record.Value("policy") != "stable-release" {
 			return nil, channelErr("Retirement requires a directly active stable-release destination")
 		}
 	}
-	head, _ := record.Vals["head"].(*pyjson.Object)
+	head, _ := record.Value("head").(*jsonutil.Object)
 	if retired {
-		head, _ = requested.Vals["destinationHead"].(*pyjson.Object)
-		current, _ := record.Vals["head"].(*pyjson.Object)
+		head, _ = requested.Value("destinationHead").(*jsonutil.Object)
+		current, _ := record.Value("head").(*jsonutil.Object)
 		if head == nil || current == nil || headSequence(head) > headSequence(current) {
 			return nil, channelErr("Invalid retirement destination head")
 		}
 	}
-	var manifest *pyjson.Object
+	var manifest *jsonutil.Object
 	if head != nil {
-		sha := head.Vals["sha256"].(string)
-		body, err := r.ReadBytes(ctx, head.Vals["manifestKey"].(string), &sha)
+		sha := head.Value("sha256").(string)
+		body, err := r.ReadBytes(ctx, head.Value("manifestKey").(string), &sha)
 		if err != nil {
 			return nil, err
 		}
@@ -646,18 +649,18 @@ func (r *ChannelReader) Resolve(ctx context.Context, name string) (*ChannelResol
 		if err != nil {
 			return nil, err
 		}
-		pinned := pyjson.Clone(record).(*pyjson.Object)
+		pinned := jsonutil.Clone(record).(*jsonutil.Object)
 		pinned.Set("head", head)
 		if manifest, err = validateChannelManifest(value, pinned, r.baseURL); err != nil {
 			return nil, err
 		}
 	}
 	if retired {
-		if !pyjson.Equal(manifest.Vals["receiverProtocol"], requested.Vals["receiverProtocol"]) {
+		if !anyutil.Equal(manifest.Value("receiverProtocol"), requested.Value("receiverProtocol")) {
 			return nil, channelErr("Stable build has no supported retirement receiver")
 		}
-		actual := manifest.Vals["request"].(*pyjson.Object).Vals["sourceVersion"].(string)
-		if compareDottedInts(actual, requested.Vals["minimumVersion"].(string)) < 0 {
+		actual := manifest.Value("request").(*jsonutil.Object).Value("sourceVersion").(string)
+		if compareDottedInts(actual, requested.Value("minimumVersion").(string)) < 0 {
 			return nil, channelErr("Destination does not meet retirement minimum version")
 		}
 	}
@@ -678,32 +681,32 @@ func compareDottedInts(a, b string) int {
 }
 
 // Build manifest bound to its record's identity, channel and head
-func validateChannelManifest(value any, record *pyjson.Object, baseURL string) (*pyjson.Object, error) {
+func validateChannelManifest(value any, record *jsonutil.Object, baseURL string) (*jsonutil.Object, error) {
 	manifest, err := channelSchema(value)
 	if err != nil {
 		return nil, err
 	}
-	if protocol, ok := manifest.Vals["receiverProtocol"]; ok {
+	if protocol, ok := manifest.Get("receiverProtocol"); ok {
 		if _, err := channelInteger(protocol, "receiver protocol", 1, channelMaxSafeInt); err != nil {
 			return nil, err
 		}
 	}
-	repository, _ := record.Vals["repository"].(string)
-	policy, _ := record.Vals["policy"].(string)
-	request, err := validateChannelRequest(manifest.Vals["request"], &repository, &baseURL, policy)
+	repository, _ := record.Value("repository").(string)
+	policy, _ := record.Value("policy").(string)
+	request, err := validateChannelRequest(manifest.Value("request"), &repository, &baseURL, policy)
 	if err != nil {
 		return nil, err
 	}
-	rv := request.Vals
-	if !sameChannelIdentity(rv["identity"], record.Vals["identity"]) {
+	rv := request.Map()
+	if !sameChannelIdentity(rv["identity"], record.Value("identity")) {
 		return nil, channelErr("Manifest channel identity mismatch")
 	}
-	if !pyjson.Equal(rv["channel"], record.Vals["name"]) {
+	if !anyutil.Equal(rv["channel"], record.Value("name")) {
 		return nil, channelErr("Manifest channel mismatch")
 	}
-	if head, ok := record.Vals["head"].(*pyjson.Object); ok {
+	if head, ok := record.Value("head").(*jsonutil.Object); ok {
 		for _, field := range []string{"buildId", "sequence"} {
-			if !pyjson.Equal(rv[field], head.Vals[field]) {
+			if !anyutil.Equal(rv[field], head.Value(field)) {
 				return nil, channelErr("Manifest does not match channel head")
 			}
 		}

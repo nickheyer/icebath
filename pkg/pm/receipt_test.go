@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Resets every receipt binding of the process scope for one test, the isolated receipt context fixture
@@ -182,7 +182,7 @@ func TestReceiptBeginRecordFinalizeRoundtrip(t *testing.T) {
 			var messages []string
 			for i := range warnings {
 				messages = append(messages, rptItem(t, warnings, i, "message").(string))
-				if !pyrepr.Truthy(rptItem(t, warnings, i, "at")) {
+				if !anyutil.IsTrue(rptItem(t, warnings, i, "at")) {
 					t.Fatalf("warning %d has no time", i)
 				}
 			}

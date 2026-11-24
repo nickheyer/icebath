@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -12,11 +11,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -55,9 +53,9 @@ type YuanbaoAdapter struct {
 	inboundTasks       map[*gateway.AdapterTask]struct{}
 	memberCache        map[string]memberCacheEntry
 	groupQueues        map[string]*groupQueue
-	processingMsgIDs   *pydict.Dict[string, string]
+	processingMsgIDs   *orderedutil.Map[string, string]
 	processingMsgTexts map[string]string
-	msgContentCache    *pydict.Dict[string, string]
+	msgContentCache    *orderedutil.Map[string, string]
 }
 
 // Running adapter of the unscoped process and of each profile home
@@ -117,26 +115,21 @@ func adapterTraits() gateway.AdapterTraits {
 }
 
 // Media resolve concurrency of the extra clamped to its bounds, the default for a value that is not an integer
-func resolveConcurrency(extra map[string]any) (int, error) {
+func resolveConcurrency(extra map[string]any) int {
 	raw, configured := extra["media_resolve_concurrency"]
 	if !configured {
-		return defaultResolveConcurrency, nil
+		return defaultResolveConcurrency
 	}
-	n, err := pyint.Of(raw)
-	var conversion *pyint.Error
+	n, err := anyutil.ToInt(raw)
 	switch {
-	case errors.As(err, &conversion) && (conversion.Kind == "TypeError" || conversion.Kind == "ValueError"):
-		return defaultResolveConcurrency, nil
-	case errors.As(err, &conversion):
-		return 0, &pyErr{conversion.Kind, conversion.Msg}
-	case err != nil:
-		return 0, err
-	case n.Cmp(big.NewInt(minResolveConcurrency)) < 0:
-		return minResolveConcurrency, nil
-	case n.Cmp(big.NewInt(maxResolveConcurrency)) > 0:
-		return maxResolveConcurrency, nil
+	case errors.Is(err, anyutil.ErrNotNumber):
+		return defaultResolveConcurrency
+	case n < minResolveConcurrency:
+		return minResolveConcurrency
+	case n > maxResolveConcurrency:
+		return maxResolveConcurrency
 	}
-	return int(n.Int64()), nil
+	return int(n)
 }
 
 // Adapter for a platform config reading credentials from extra then env, endpoints and access policies from settings
@@ -146,7 +139,7 @@ func NewYuanbaoAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Yu
 	}
 	a := &YuanbaoAdapter{memberCacheTTL: memberCacheTTLS, dedup: gateway.NewMessageDeduplicator(gateway.DefaultDedupMaxSize, dedupTTLSeconds),
 		inboundTasks: map[*gateway.AdapterTask]struct{}{}, memberCache: map[string]memberCacheEntry{}, groupQueues: map[string]*groupQueue{},
-		processingMsgIDs: pydict.New[string, string](), processingMsgTexts: map[string]string{}, msgContentCache: pydict.New[string, string]()}
+		processingMsgIDs: orderedutil.NewMap[string, string](), processingMsgTexts: map[string]string{}, msgContentCache: orderedutil.NewMap[string, string]()}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.PlatformYuanbao, a)
 	a.Traits = adapterTraits()
 	extra := config.Extra
@@ -154,7 +147,7 @@ func NewYuanbaoAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Yu
 		extra = map[string]any{}
 	}
 	setting := func(key string, def any) (string, error) {
-		return strMethod(pyrepr.Or(extra[key], def), key)
+		return strMethod(anyutil.Or(extra[key], def), key)
 	}
 	var err error
 	if a.appKey, err = setting("app_id", ""); err != nil {
@@ -163,15 +156,13 @@ func NewYuanbaoAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Yu
 	if a.appSecret, err = setting("app_secret", ""); err != nil {
 		return nil, err
 	}
-	if botID := extra["bot_id"]; pyrepr.Truthy(botID) {
+	if botID := extra["bot_id"]; anyutil.IsTrue(botID) {
 		a.botID = botID
 	}
 	a.wsURL, a.apiDomain, a.routeEnv = settings.YuanbaoWsURL.Get(gateway.SettingsContext(ctx)), settings.YuanbaoAPIDomain.Get(gateway.SettingsContext(ctx)), settings.YuanbaoRouteEnv.Get(gateway.SettingsContext(ctx))
 	a.appKey, a.appSecret, a.wsURL, a.routeEnv = strings.TrimSpace(a.appKey), strings.TrimSpace(a.appSecret), strings.TrimSpace(a.wsURL), strings.TrimSpace(a.routeEnv)
 	a.apiDomain = strings.TrimRight(a.apiDomain, "/")
-	if a.MediaResolveConcurrency, err = resolveConcurrency(extra); err != nil {
-		return nil, err
-	}
+	a.MediaResolveConcurrency = resolveConcurrency(extra)
 	a.connection = newConnectionManager(a)
 	a.outbound = newOutboundManager(a)
 	sctx := gateway.SettingsContext(ctx)
@@ -395,21 +386,21 @@ func (a *YuanbaoAdapter) ProcessMessageBackground(ctx context.Context, event *ga
 }
 
 // Sends an encoded group query over the socket, the empty answer for a bare response and nil on failure
-func (a *YuanbaoAdapter) wsQuery(ctx context.Context, label, groupCode string, encoded []byte, decode func([]byte) *pyjson.Object, empty *pyjson.Object) (*pyjson.Object, error) {
+func (a *YuanbaoAdapter) wsQuery(ctx context.Context, label, groupCode string, encoded []byte, decode func([]byte) *jsonutil.Object, empty *jsonutil.Object) (*jsonutil.Object, error) {
 	if a.connection.socket() == nil {
 		return nil, nil
 	}
 	name := a.Name()
-	result, err := func() (*pyjson.Object, error) {
+	result, err := func() (*jsonutil.Object, error) {
 		request, err := DecodeConnMsg(encoded)
 		if err != nil {
 			return nil, err
 		}
-		requestHead, err := dictOf(request.GetOr("head", nil))
+		requestHead, err := dictOf(request.ValueOr("head", nil))
 		if err != nil {
 			return nil, err
 		}
-		response, err := a.connection.sendBizRequest(ctx, encoded, pyrepr.Str(requestHead["msg_id"]), defaultSendTimeout)
+		response, err := a.connection.sendBizRequest(ctx, encoded, anyutil.String(requestHead["msg_id"]), defaultSendTimeout)
 		if err != nil {
 			return nil, err
 		}
@@ -417,15 +408,15 @@ func (a *YuanbaoAdapter) wsQuery(ctx context.Context, label, groupCode string, e
 		if err != nil {
 			return nil, err
 		}
-		head, err := dictOf(dictGetOr(fields, "head", pyjson.NewObject()))
+		head, err := dictOf(dictGetOr(fields, "head", jsonutil.NewObject()))
 		if err != nil {
 			return nil, err
 		}
 		if status := dictGetOr(head, "status", int64(0)); !equalsInt(status, 0) {
-			pkgLog().Warn(fmt.Sprintf("[%s] %s failed: status=%s", name, label, pyrepr.Str(status)))
+			pkgLog().Warn(fmt.Sprintf("[%s] %s failed: status=%s", name, label, anyutil.String(status)))
 			return nil, nil
 		}
-		bizData, isBytes := pyrepr.Or(dictGetOr(fields, "data", []byte{}), dictGetOr(fields, "body", []byte{})).([]byte)
+		bizData, isBytes := anyutil.Or(dictGetOr(fields, "data", []byte{}), dictGetOr(fields, "body", []byte{})).([]byte)
 		if isBytes && len(bizData) > 0 {
 			return decode(bizData), nil
 		}
@@ -439,32 +430,32 @@ func (a *YuanbaoAdapter) wsQuery(ctx context.Context, label, groupCode string, e
 	case isTimeout(err):
 		pkgLog().Warn(fmt.Sprintf("[%s] %s timeout: group=%s", name, label, groupCode))
 	default:
-		pkgLog().Warn(fmt.Sprintf("[%s] %s failed: %s", name, label, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] %s failed: %s", name, label, err.Error()))
 	}
 	return nil, nil
 }
 
 // Name, owner and member count of a group, nil on failure
-func (a *YuanbaoAdapter) QueryGroupInfo(ctx context.Context, groupCode string) (*pyjson.Object, error) {
+func (a *YuanbaoAdapter) QueryGroupInfo(ctx context.Context, groupCode string) (*jsonutil.Object, error) {
 	encoded, err := EncodeQueryGroupInfo(groupCode)
 	if err != nil {
 		return nil, err
 	}
-	return a.wsQuery(ctx, "query_group_info", groupCode, encoded, DecodeQueryGroupInfoRsp, pyjson.ObjectOf("group_code", groupCode))
+	return a.wsQuery(ctx, "query_group_info", groupCode, encoded, DecodeQueryGroupInfoRsp, jsonutil.ObjectOf("group_code", groupCode))
 }
 
 // Member list page of a group, nil on failure, its members cached for mention resolution
-func (a *YuanbaoAdapter) GetGroupMemberList(ctx context.Context, groupCode string, offset, limit int64) (*pyjson.Object, error) {
+func (a *YuanbaoAdapter) GetGroupMemberList(ctx context.Context, groupCode string, offset, limit int64) (*jsonutil.Object, error) {
 	encoded, err := EncodeGetGroupMemberList(groupCode, offset, limit)
 	if err != nil {
 		return nil, err
 	}
 	result, err := a.wsQuery(ctx, "get_group_member_list", groupCode, encoded, DecodeGetGroupMemberListRsp,
-		pyjson.ObjectOf("members", []any{}, "next_offset", int64(0), "is_complete", true))
+		jsonutil.ObjectOf("members", []any{}, "next_offset", int64(0), "is_complete", true))
 	if err != nil || result == nil {
 		return nil, err
 	}
-	if members, isList := result.GetOr("members", nil).([]any); isList && len(members) > 0 {
+	if members, isList := result.ValueOr("members", nil).([]any); isList && len(members) > 0 {
 		a.mu.Lock()
 		a.memberCache[groupCode] = memberCacheEntry{wallClock(), members}
 		a.mu.Unlock()

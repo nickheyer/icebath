@@ -20,14 +20,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Argument of the completion entry that runs the libatomic pre install of the new tree
@@ -72,7 +73,7 @@ func (f *forwardedOutput) Unwrap() io.Writer { return f.stream }
 
 // Writes JSON through a sibling with a tmp suffix and replaces the target
 func writeCompletionJSON(path string, data any) error {
-	text, err := pyjson.Dumps(data)
+	text, err := jsonutil.Encode(data)
 	if err != nil {
 		return err
 	}
@@ -101,7 +102,7 @@ func completionUpdateID(request map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pyrepr.Str(id), nil
+	return anyutil.String(id), nil
 }
 
 // Answer of the bootstrap child with the resume token left to the parent
@@ -110,7 +111,7 @@ func writeBootstrapResult(request map[string]any, resultPath string, code int, r
 	if err != nil {
 		return 0, err
 	}
-	err = writeCompletionJSON(resultPath, pyjson.ObjectOf("schema", 1, "update_id", updateID, "exit_code", code,
+	err = writeCompletionJSON(resultPath, jsonutil.ObjectOf("schema", 1, "update_id", updateID, "exit_code", code,
 		"receipt", receipt, "windows_resume", nil, "pm_receipt", request["pm_receipt"]))
 	return code, err
 }
@@ -125,8 +126,8 @@ func bindAndResume(ctx context.Context, w io.Writer, process *os.Process, reques
 		if err != nil {
 			return err
 		}
-		if current := updaterecord.CurrentReceipt(ctx); current != nil && current.Data.GetOr("update_id", nil) == updateID {
-			request["receipt"] = pyjson.Clone(current.Data)
+		if current := updaterecord.CurrentReceipt(ctx); current != nil && current.Data.ValueOr("update_id", nil) == updateID {
+			request["receipt"] = jsonutil.Clone(current.Data)
 			if err := writeCompletionJSON(requestPath, request); err != nil {
 				return err
 			}
@@ -164,7 +165,7 @@ func runCompletion(ctx context.Context, w io.Writer, request map[string]any) (ma
 	if !present {
 		return nil, errors.New(pyKeyErrorText("source"))
 	}
-	root := pyrepr.Str(sourceValue)
+	root := anyutil.String(sourceValue)
 	binary := completionBinary(root)
 	if runtime.GOOS == "linux" && binary != "" {
 		pre := exec.CommandContext(ctx, binary, UpdateCompletionEntry, completionInstallBeforeLock)
@@ -183,7 +184,7 @@ func runCompletion(ctx context.Context, w io.Writer, request map[string]any) (ma
 		}
 		env = append(env, kv)
 	}
-	env = append(env, home.EnvHome+"="+pyrepr.Str(homeValue), "PYTHONUNBUFFERED=1")
+	env = append(env, home.EnvHome+"="+anyutil.String(homeValue), "PYTHONUNBUFFERED=1")
 	directory, err := os.MkdirTemp("", "icebath-completion-")
 	if err != nil {
 		return nil, err
@@ -285,7 +286,7 @@ func runCompletion(ctx context.Context, w io.Writer, request map[string]any) (ma
 		if !errors.As(waitErr, &exit) {
 			return nil, waitErr
 		}
-		code = pysubprocess.Returncode(exit)
+		code = executil.ExitCode(exit.ProcessState)
 	}
 	code = completionExitStatus(code)
 	result, err := readCompletionResult(request, resultPath, code)
@@ -316,11 +317,11 @@ func readCompletionResult(request map[string]any, resultPath string, code int) (
 	if err != nil {
 		return nil, lost(launchErrorText(err))
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, lost(err.Error())
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, lost(err.Error())
 	}
@@ -332,32 +333,32 @@ func readCompletionResult(request map[string]any, resultPath string, code int) (
 	if err != nil {
 		return nil, lost(err.Error())
 	}
-	result := decoded.(*pyjson.Object)
-	if !pyjson.Equal(schema, 1) {
+	result := decoded.(*jsonutil.Object)
+	if !anyutil.Equal(schema, 1) {
 		return nil, lost("completion response identity mismatch")
 	}
 	resultID, err := pyDictItem(result, "update_id")
 	if err != nil {
 		return nil, lost(err.Error())
 	}
-	if !pyjson.Equal(resultID, updateID) {
+	if !anyutil.Equal(resultID, updateID) {
 		return nil, lost("completion response identity mismatch")
 	}
 	exitCode, err := pyDictItem(result, "exit_code")
 	if err != nil {
 		return nil, lost(err.Error())
 	}
-	if !pyjson.Equal(exitCode, code) {
+	if !anyutil.Equal(exitCode, code) {
 		return nil, lost("completion response disagrees with process exit")
 	}
-	receipt := result.GetOr("receipt", nil)
+	receipt := result.ValueOr("receipt", nil)
 	if receipt != nil {
-		obj, ok := receipt.(*pyjson.Object)
+		obj, ok := receipt.(*jsonutil.Object)
 		if !ok {
 			return nil, fmt.Errorf("update result receipt is %s where a mapping was expected", errchain.Kind(receipt))
 		}
-		if !pyjson.Equal(obj.GetOr("update_id", nil), updateID) || !pyrepr.Truthy(obj.GetOr("finished_at", nil)) ||
-			(code == 0) != (obj.GetOr("outcome", nil) == "success") {
+		if !anyutil.Equal(obj.ValueOr("update_id", nil), updateID) || !anyutil.IsTrue(obj.ValueOr("finished_at", nil)) ||
+			(code == 0) != (obj.ValueOr("outcome", nil) == "success") {
 			return nil, lost("completion receipt does not attest this outcome")
 		}
 	}
@@ -365,35 +366,35 @@ func readCompletionResult(request map[string]any, resultPath string, code int) (
 		return nil, lost("completion did not publish a terminal receipt")
 	}
 	out := map[string]any{}
-	for _, key := range result.Keys {
-		out[key] = result.Vals[key]
+	for _, key := range result.Keys() {
+		out[key] = result.Value(key)
 	}
-	if token, ok := out["windows_resume"].(*pyjson.Object); ok {
-		out["windows_resume"] = pyjson.Plain(token)
+	if token, ok := out["windows_resume"].(*jsonutil.Object); ok {
+		out["windows_resume"] = jsonutil.Plain(token)
 	}
 	return out, nil
 }
 
 // Terminal record of the request's run, the finalized one this process holds when the store refused it
-func readTerminalReceipt(ctx context.Context, request map[string]any) (*pyjson.Object, error) {
+func readTerminalReceipt(ctx context.Context, request map[string]any) (*jsonutil.Object, error) {
 	updateID, err := completionUpdateID(request)
 	if err != nil {
 		return nil, err
 	}
-	if _, found, ok := updaterecord.ReadRunRecord(ctx, updateID); ok && pyrepr.Truthy(found.GetOr("finished_at", nil)) {
+	if _, found, ok := updaterecord.ReadRunRecord(ctx, updateID); ok && anyutil.IsTrue(found.ValueOr("finished_at", nil)) {
 		return found, nil
 	}
 	return updaterecord.FinalizedReceipt(updateID), nil
 }
 
 // Still running record of the request's run without its writer pid, nil otherwise
-func runningRecord(ctx context.Context, request map[string]any) (*pyjson.Object, error) {
+func runningRecord(ctx context.Context, request map[string]any) (*jsonutil.Object, error) {
 	updateID, err := completionUpdateID(request)
 	if err != nil {
 		return nil, err
 	}
 	_, found, ok := updaterecord.ReadRunRecord(ctx, updateID)
-	if !ok || found.GetOr("outcome", nil) != "running" {
+	if !ok || found.ValueOr("outcome", nil) != "running" {
 		return nil, nil
 	}
 	found.Delete("writer_pid")
@@ -403,8 +404,8 @@ func runningRecord(ctx context.Context, request map[string]any) (*pyjson.Object,
 // The unsettled autostash notice when this run parked the user's local changes, empty otherwise
 func owedUserAction(request map[string]any) string {
 	message := ""
-	if pyrepr.Truthy(request["completion_message"]) {
-		message = pyrepr.Str(request["completion_message"])
+	if anyutil.IsTrue(request["completion_message"]) {
+		message = anyutil.String(request["completion_message"])
 	}
 	if message != "" && !strings.HasPrefix(message, "✓") {
 		return message
@@ -423,7 +424,7 @@ func recordOwedUserAction(ctx context.Context, request map[string]any) bool {
 
 // Publishes exit 0 for the gateway update watcher of a gateway mode run, an unwritable home only warning
 func publishGatewaySuccess(w io.Writer, request map[string]any) {
-	if !pyrepr.Truthy(request["gateway_mode"]) {
+	if !anyutil.IsTrue(request["gateway_mode"]) {
 		return
 	}
 	err := func() error {
@@ -431,7 +432,7 @@ func publishGatewaySuccess(w io.Writer, request map[string]any) {
 		if !present {
 			return errors.New(pyKeyErrorText("home"))
 		}
-		marker := filepath.Join(pyrepr.Str(homeValue), ".update_exit_code")
+		marker := filepath.Join(anyutil.String(homeValue), ".update_exit_code")
 		temporary := marker + ".tmp"
 		if err := os.WriteFile(temporary, []byte("0"), 0o666); err != nil {
 			return err
@@ -453,7 +454,7 @@ func settleLostCompletion(ctx context.Context, w io.Writer, request map[string]a
 	if receipt == nil {
 		if source, present := request["source"]; !present {
 			fmt.Fprintf(w, "  ⚠ Could not record the owed source-update tail: %s\n", pyKeyErrorText("source"))
-		} else if _, err := ArmCompletion(ctx, pyrepr.Str(source)); err != nil {
+		} else if _, err := ArmCompletion(ctx, anyutil.String(source)); err != nil {
 			if isInterrupt(err) {
 				return nil, err
 			}
@@ -476,7 +477,7 @@ func settleLostCompletion(ctx context.Context, w io.Writer, request map[string]a
 	}
 	var outcome any
 	if receipt != nil {
-		outcome = receipt.GetOr("outcome", nil)
+		outcome = receipt.ValueOr("outcome", nil)
 	}
 	code := 0
 	switch outcome {
@@ -501,8 +502,8 @@ func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any,
 	if !present {
 		return 0, errors.New(pyKeyErrorText("source"))
 	}
-	if _, err := completionArm(ctx, pyrepr.Str(source)); err != nil {
-		if !pypath.IsOSError(err) {
+	if _, err := completionArm(ctx, anyutil.String(source)); err != nil {
+		if !errorutil.IsSystem(err) {
 			return 0, err
 		}
 		fmt.Fprintf(w, "  ⚠ Could not record the owed source-update tail: %s\n", launchErrorText(err))
@@ -517,7 +518,7 @@ func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any,
 			return 0, err
 		}
 		if record == nil {
-			obj, ok := request["receipt"].(*pyjson.Object)
+			obj, ok := request["receipt"].(*jsonutil.Object)
 			if !ok {
 				return 0, fmt.Errorf("update request receipt is %s where a mapping was expected", errchain.Kind(request["receipt"]))
 			}
@@ -543,7 +544,7 @@ func settleAfterCommit(ctx context.Context, w io.Writer, request map[string]any,
 		}
 	}
 	code := 1
-	if receipt != nil && receipt.GetOr("outcome", nil) == "success" {
+	if receipt != nil && receipt.ValueOr("outcome", nil) == "success" {
 		code = 0
 	}
 	if code == 0 {
@@ -562,7 +563,7 @@ func prepareCompletion(ctx context.Context, w io.Writer, request map[string]any,
 	if !present {
 		return 0, errors.New(pyKeyErrorText("source"))
 	}
-	root := pyrepr.Str(source)
+	root := anyutil.String(source)
 	updateID, err := completionUpdateID(request)
 	if err != nil {
 		return 0, err
@@ -632,7 +633,7 @@ func prepareCompletion(ctx context.Context, w io.Writer, request map[string]any,
 		if !errors.As(err, &exit) {
 			return 0, err
 		}
-		code = pysubprocess.Returncode(exit)
+		code = executil.ExitCode(exit.ProcessState)
 	}
 	code = completionExitStatus(code)
 	if _, err := os.Stat(resultPath); err != nil {
@@ -647,7 +648,7 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 	if !present {
 		return false, errors.New(pyKeyErrorText("source"))
 	}
-	root := pyrepr.Str(source)
+	root := anyutil.String(source)
 	fleetProjectRoot = func() string { return root }
 	complete := recordOwedUserAction(ctx, request)
 	item := func(key string) (any, error) {
@@ -661,10 +662,10 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 	if err != nil {
 		return false, err
 	}
-	if obj, ok := pyjson.AsObject(siblings); ok {
+	if obj, ok := jsonutil.AsObject(siblings); ok {
 		lastSiblingSnapshots = obj
 	} else {
-		lastSiblingSnapshots = pyjson.NewObject()
+		lastSiblingSnapshots = jsonutil.NewObject()
 	}
 	planData, err := item("plan")
 	if err != nil {
@@ -680,7 +681,7 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 	if err != nil {
 		return false, err
 	}
-	completionSweep(ctx, w, pyrepr.Str(branch))
+	completionSweep(ctx, w, anyutil.String(branch))
 	followups := [][2]string{}
 	runtimeSafe := false
 	values := map[string]any{}
@@ -690,12 +691,12 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 		}
 	}
 	announce := "\n✓ Code updated!"
-	if pyrepr.Truthy(request["completion_message"]) {
+	if anyutil.IsTrue(request["completion_message"]) {
 		announce = ""
 	}
 	safe, err := completionCompleteTail(ctx, root, SourceCompletion{
-		AssumeYes:   pyrepr.Truthy(values["assume_yes"]),
-		GatewayMode: pyrepr.Truthy(values["gateway_mode"]), PreUpdateSnapshotID: optionalText(values["snapshot_id"]),
+		AssumeYes:   anyutil.IsTrue(values["assume_yes"]),
+		GatewayMode: anyutil.IsTrue(values["gateway_mode"]), PreUpdateSnapshotID: optionalText(values["snapshot_id"]),
 		PreUpdateVersion: optionalText(values["pre_update_version"]), CompletionMessage: optionalText(request["completion_message"]),
 		Announce: announce, Followups: &followups, BeforeMaintenance: func() { resumePausedBeforeMaintenance(ctx, w, request) },
 		Stdout: w, Stderr: errw})
@@ -719,11 +720,11 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 			return false, err
 		}
 	}
-	gatewayMode := pyrepr.Truthy(values["gateway_mode"])
+	gatewayMode := anyutil.IsTrue(values["gateway_mode"])
 	if gatewayMode {
 		updaterecord.WriteGatewayUpdateExitCode(ctx, complete)
 	}
-	if pyrepr.Truthy(request["no_gateway_restart"]) {
+	if anyutil.IsTrue(request["no_gateway_restart"]) {
 		updaterecord.RecordSkip(ctx, "gateway_restart", "--no-gateway-restart: deferred, marker kept")
 		updaterecord.RecordStage(ctx, "restart", "skipped", nil)
 		fmt.Fprintln(w, "→ Gateway restart deferred (--no-gateway-restart); restart gateways separately.")
@@ -770,7 +771,7 @@ func completeSelected(ctx context.Context, w, errw io.Writer, request map[string
 // Restarts the gateways the POSIX pause stopped before post update maintenance, a failure retried once the tail ends
 func resumePausedBeforeMaintenance(ctx context.Context, w io.Writer, request map[string]any) {
 	token, _ := request["windows_resume"].(map[string]any)
-	if len(token) == 0 || !pyrepr.Truthy(token["resume_needed"]) || token["platform"] != "posix" {
+	if len(token) == 0 || !anyutil.IsTrue(token["resume_needed"]) || token["platform"] != "posix" {
 		return
 	}
 	if err := completionResume(ctx, w, token); err != nil {
@@ -780,7 +781,7 @@ func resumePausedBeforeMaintenance(ctx context.Context, w io.Writer, request map
 
 // Runs the prepared completion in the selected tree and writes its correlated result
 func finishCompletion(ctx context.Context, w, errw io.Writer, request map[string]any, resultPath string) (int, error) {
-	receipt, ok := request["receipt"].(*pyjson.Object)
+	receipt, ok := request["receipt"].(*jsonutil.Object)
 	if !ok {
 		return 0, fmt.Errorf("update request receipt is %s where a mapping was expected", errchain.Kind(request["receipt"]))
 	}
@@ -827,10 +828,10 @@ func finishCompletion(ctx context.Context, w, errw io.Writer, request map[string
 	if err != nil {
 		return 0, err
 	}
-	if terminal != nil && terminal.GetOr("outcome", nil) == "success" {
+	if terminal != nil && terminal.ValueOr("outcome", nil) == "success" {
 		code = 0
 	}
-	if code != 0 && pyrepr.Truthy(request["gateway_mode"]) {
+	if code != 0 && anyutil.IsTrue(request["gateway_mode"]) {
 		updaterecord.WriteGatewayUpdateExitCode(ctx, false)
 	}
 	if terminal == nil && code == 0 {
@@ -840,7 +841,7 @@ func finishCompletion(ctx context.Context, w, errw io.Writer, request map[string
 	if terminal != nil {
 		terminalValue = terminal
 	}
-	if err := writeCompletionJSON(resultPath, pyjson.ObjectOf("schema", 1, "update_id", updateID, "exit_code", code,
+	if err := writeCompletionJSON(resultPath, jsonutil.ObjectOf("schema", 1, "update_id", updateID, "exit_code", code,
 		"receipt", terminalValue, "windows_resume", request["windows_resume"])); err != nil {
 		return 0, err
 	}
@@ -854,7 +855,7 @@ func bootstrapCompletion(ctx context.Context, w io.Writer, request map[string]an
 		return code, nil
 	}
 	if isInterrupt(err) {
-		receipt, ok := request["receipt"].(*pyjson.Object)
+		receipt, ok := request["receipt"].(*jsonutil.Object)
 		if !ok {
 			return 0, fmt.Errorf("update request receipt is %s where a mapping was expected", errchain.Kind(request["receipt"]))
 		}
@@ -904,22 +905,22 @@ func updateCompletion(ctx context.Context, args []string, stdout, stderr io.Writ
 	if err != nil {
 		return 0, err
 	}
-	if !pyjson.Equal(schema, 1) {
+	if !anyutil.Equal(schema, 1) {
 		return 0, &pm.PyError{Class: "ValueError", Message: "unsupported source completion request"}
 	}
-	object := decoded.(*pyjson.Object)
+	object := decoded.(*jsonutil.Object)
 	request := map[string]any{}
-	for _, key := range object.Keys {
-		request[key] = object.Vals[key]
+	for _, key := range object.Keys() {
+		request[key] = object.Value(key)
 	}
-	if token, ok := request["windows_resume"].(*pyjson.Object); ok {
-		request["windows_resume"] = pyjson.Plain(token)
+	if token, ok := request["windows_resume"].(*jsonutil.Object); ok {
+		request["windows_resume"] = jsonutil.Plain(token)
 	}
 	exe, err := runningExecutable()
 	if err != nil {
 		return 0, err
 	}
-	resolvedExe, err := pypath.Resolve(exe)
+	resolvedExe, err := pathutil.Resolve(exe)
 	if err != nil {
 		return 0, err
 	}
@@ -927,14 +928,14 @@ func updateCompletion(ctx context.Context, args []string, stdout, stderr io.Writ
 	if err != nil {
 		return 0, err
 	}
-	resolvedSource, err := pypath.Resolve(pyrepr.Str(source))
+	resolvedSource, err := pathutil.Resolve(anyutil.String(source))
 	if err != nil {
 		return 0, err
 	}
 	if filepath.Dir(resolvedExe) != resolvedSource {
 		return 0, &pm.PyError{Class: "ValueError", Message: "completion checkout does not match request"}
 	}
-	isatty := pyrepr.Truthy(request["stdout_isatty"])
+	isatty := anyutil.IsTrue(request["stdout_isatty"])
 	cliui.Default().StdoutTTY = func() bool { return isatty }
 	stdout = &forwardedOutput{stream: stdout, terminal: isatty}
 	if slices.Contains(args[2:], "--prepared") {

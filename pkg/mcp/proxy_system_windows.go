@@ -12,7 +12,7 @@ import (
 
 // proxyBypassSystem applies the Internet Settings ProxyOverride list when the proxy is enabled
 func proxyBypassSystem(host string) bool {
-	k, err := registry.OpenKey(registry.CURRENT_USER, pyurl.InternetSettingsKey, registry.QUERY_VALUE)
+	k, err := registry.OpenKey(registry.CURRENT_USER, `Software\Microsoft\Windows\CurrentVersion\Internet Settings`, registry.QUERY_VALUE)
 	if err != nil {
 		return false
 	}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -16,14 +17,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 var (
 	goos      = runtime.GOOS
-	lockFile  = pyfs.LockFile
+	lockFile  = fsutil.LockFile
 	chown     = os.Chown
 	geteuid   = os.Geteuid
 	isManaged = func(ctx context.Context) bool { return config.IsManaged(ctx, home.Dir(ctx)) }
@@ -72,7 +72,7 @@ func portalockerProbe() (bool, string) {
 	if err := lockFile(f); err != nil {
 		return false, errorRepr(err)
 	}
-	if err := pyfs.UnlockFile(f); err != nil {
+	if err := fsutil.UnlockFile(f); err != nil {
 		return false, errorRepr(err)
 	}
 	return true, ""
@@ -80,7 +80,7 @@ func portalockerProbe() (bool, string) {
 
 // Python repr of the exception an error stands for
 func errorRepr(err error) string {
-	return errorClass(err) + "(" + pyrepr.StrRepr(errorText(err)) + ")"
+	return errorClass(err) + "(" + strconv.Quote(errorText(err)) + ")"
 }
 
 // Lock timeout concurrent-log-handler raises after its retries
@@ -160,7 +160,7 @@ type managedRotatingFileHandler struct {
 
 // Handler for path, opened at once off Windows and lazily under the Windows lock
 func newManagedRotatingFileHandler(ctx context.Context, path string, maxBytes float64, backupCount int) (*managedRotatingFileHandler, error) {
-	abs, err := pypath.Abspath(path)
+	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +451,7 @@ func (h *managedRotatingFileHandler) clhEmit(ctx context.Context, rec *Record) e
 		return err
 	}
 	defer func() {
-		_ = pyfs.UnlockFile(lock)
+		_ = fsutil.UnlockFile(lock)
 		_ = lock.Close()
 	}()
 	if roll, err := h.clhShouldRollover(); err == nil && roll {

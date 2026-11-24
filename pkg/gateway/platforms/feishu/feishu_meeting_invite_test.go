@@ -81,8 +81,8 @@ func TestMeetingInviteParsesBodyContentPayload(t *testing.T) {
 	}
 	raw, _ := json.Marshal(payload)
 	fromJSON := ParseMeetingInvitedEvent(string(raw))
-	if fromJSON == nil || fromJSON.EventID != "evt_1" || fromJSON.InviteTimeS.String() != "1780388292" ||
-		fromJSON.Meeting.StartTimeMs.String() != "1780384522000" || fromJSON.Meeting.HostUser.UnionID != "on_host" {
+	if fromJSON == nil || fromJSON.EventID != "evt_1" || fromJSON.InviteTimeS != 1780388292 ||
+		fromJSON.Meeting.StartTimeMs != 1780384522000 || fromJSON.Meeting.HostUser.UnionID != "on_host" {
 		t.Fatalf("json payload = %+v", fromJSON)
 	}
 	skipped := map[string]any{"event": map[string]any{"body": map[string]any{"content": []any{
@@ -99,7 +99,7 @@ func TestMeetingInviteParsesBodyContentPayload(t *testing.T) {
 	}
 	odd := ParseMeetingInvitedEvent(map[string]any{"meeting": map[string]any{"meeting_no": "1", "start_time": "1.5", "end_time": int64(0)},
 		"inviter": map[string]any{"id": map[string]any{"open_id": " ou_x "}}, "invite_time": " 42 "})
-	if odd == nil || odd.Meeting.StartTimeMs.Sign() != 0 || odd.Inviter.OpenID != "ou_x" || odd.InviteTimeS.String() != "42" {
+	if odd == nil || odd.Meeting.StartTimeMs != 0 || odd.Inviter.OpenID != "ou_x" || odd.InviteTimeS != 42 {
 		t.Fatalf("field coercion = %+v", odd)
 	}
 	if key := meetingDedupKey(odd); key != "vc_invite::ou_x:42" {

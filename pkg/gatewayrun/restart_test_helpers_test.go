@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // One recorded adapter send
@@ -64,7 +63,7 @@ func makeRestartRunner(t *testing.T) (*GatewayRunner, *restartTestAdapter) {
 	cfg.Token = "***"
 	r.config.Platforms[gateway.PlatformTelegram] = cfg
 	r.running.Store(true)
-	r.shutdownEvent = &pythread.Event{}
+	r.shutdownEvent = &syncutil.Event{}
 	r.sessions = map[string]*SessionState{}
 	r.backgroundTasks = map[*gatewayTask]struct{}{}
 	adapter := newRestartTestAdapter()

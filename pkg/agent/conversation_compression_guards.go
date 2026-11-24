@@ -7,16 +7,16 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Per agent owned compression timeout outcome, one slot per goroutine with the attribute mirror
 type compressionTimeoutState struct {
 	compressionTimeoutMu    sync.Mutex
-	compressionTimeoutLocal *pythread.Local
+	compressionTimeoutLocal *syncutil.GoroutineLocal[any]
 	lastCompressionTimedOut bool
 }
 
@@ -61,7 +61,7 @@ func refreshPersistedCompressionGuards(compressor any, includeCooldown bool) {
 }
 
 type sessionRowGetter interface {
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 }
 
 // Whether another path already rotated this compression parent
@@ -90,7 +90,7 @@ func existingSystemPrompt(ctx context.Context, a *AIAgent, systemMessage *string
 // Puts the pre compression deep snapshot back into the caller visible list in place when it drifted
 func restoreMessagesSnapshot(messages *[]map[string]any, snapshot []map[string]any) {
 	if snapshot != nil && !reflect.DeepEqual(*messages, snapshot) {
-		restored := pycopy.DeepCopy(snapshot).([]map[string]any)
+		restored := any(anyutil.Clone(snapshot)).([]map[string]any)
 		if cap(*messages) >= len(restored) {
 			live := (*messages)[:len(restored)]
 			copy(live, restored)
@@ -120,9 +120,9 @@ func compressionSkippedDueToLock(a *AIAgent) bool {
 }
 
 // Lock and goroutine slot of the timeout outcome, the slot created on demand
-func (s *compressionTimeoutState) timeoutSlot(create bool) *pythread.Local {
+func (s *compressionTimeoutState) timeoutSlot(create bool) *syncutil.GoroutineLocal[any] {
 	if create && s.compressionTimeoutLocal == nil {
-		s.compressionTimeoutLocal = &pythread.Local{}
+		s.compressionTimeoutLocal = &syncutil.GoroutineLocal[any]{}
 	}
 	return s.compressionTimeoutLocal
 }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Leaf lock of session transport membership, held with the sessions lock at most above it
@@ -139,7 +139,7 @@ func warnForeignLogin(session *Session, transport Transport) {
 		shown = *creator
 	}
 	serverLog().Warn(fmt.Sprintf("Session %s keeps the user id %s it was created with; a client logged in as %s attached",
-		pyrepr.Str(session.Get("session_key")), shown, *attaching))
+		anyutil.String(session.Get("session_key")), shown, *attaching))
 }
 
 // Adds live peers to a session, a fanout argument flattened into its peers, true when one was attached

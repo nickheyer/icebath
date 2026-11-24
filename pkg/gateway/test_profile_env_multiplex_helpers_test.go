@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Runner of a multiplexing gateway, every owner handler scoped to the profile owning its authority
@@ -73,7 +73,7 @@ func profileEnvOwner(t *testing.T, ctx context.Context, profileHome, work string
 	store := NewSessionStore(ctx, filepath.Join(profileHome, "sessions"), DefaultGatewayConfig(ctx), nil)
 	t.Cleanup(store.CloseAllDBHandles)
 	store.PinDB(db)
-	base := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
+	base := &recoverTestRunner{store: store, adapters: orderedutil.NewMap[Platform, PlatformAdapter](), profiles: orderedutil.NewMap[string, *orderedutil.Map[Platform, PlatformAdapter]]()}
 	var runner AuthorityRunner = secretScopeRunner{base}
 	if multiplex {
 		runner = profileEnvMultiplexRunner{secretScopeRunner{base}}

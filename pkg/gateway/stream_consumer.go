@@ -12,9 +12,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/google/uuid"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Boundary finalize text when nothing has accumulated yet
@@ -652,7 +651,7 @@ func (s *GatewayStreamConsumer) finalizeBoundaryStream(ctx context.Context, reas
 	}
 	ok, err := s.sendFrame(ctx, finalizeText, true)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("%s boundary: finalize failed: %s", reason, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("%s boundary: finalize failed: %s", reason, err.Error()))
 	} else if ok {
 		pkgLog().Debug(fmt.Sprintf("%s boundary: finalized stream (chat=%s, turn=%s)", reason, s.chatID, s.turnID))
 		return true
@@ -660,7 +659,7 @@ func (s *GatewayStreamConsumer) finalizeBoundaryStream(ctx context.Context, reas
 	pkgLog().Warn(fmt.Sprintf("%s boundary: finalize not confirmed, falling back to send() for pre-prompt text (chat=%s)", reason, s.chatID))
 	result, err := s.adapter.Send(ctx, s.chatID, finalizeText, "", nil)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("%s boundary: fallback send also failed: %s", reason, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("%s boundary: fallback send also failed: %s", reason, err.Error()))
 	} else if result.Success {
 		return true
 	}
@@ -738,7 +737,7 @@ func (s *GatewayStreamConsumer) Run(ctx context.Context) {
 				s.suppressSilenceMarker(ctx)
 				return
 			}
-			s.accumulated = pyrepr.Str(StripTrailingSilenceMarker(s.accumulated))
+			s.accumulated = anyutil.String(StripTrailingSilenceMarker(s.accumulated))
 		}
 		if s.shouldEdit(tick) && (s.accumulated != "" || (s.useNativeStreaming.Load() && s.toolProgressActive)) {
 			s.sealOverflowHeads(ctx)
@@ -926,7 +925,7 @@ func (s *GatewayStreamConsumer) shouldEdit(tick *streamTick) bool {
 	if s.useNativeStreaming.Load() {
 		should = s.accumulated != "" || s.toolProgressActive
 	} else {
-		elapsed := pythread.Monotonic() - s.lastEditTime
+		elapsed := timeutil.Monotonic() - s.lastEditTime
 		should = (elapsed >= s.currentEditInterval && s.accumulated != "") ||
 			(utf8.RuneCountInString(s.accumulated) >= s.cfg.BufferThreshold && s.floodStrikes == 0)
 	}
@@ -959,7 +958,7 @@ func (s *GatewayStreamConsumer) splitFirstSend(ctx context.Context, tick *stream
 	s.messageID = ""
 	s.messageCreatedTS = nil
 	s.lastSentText = ""
-	s.lastEditTime = pythread.Monotonic()
+	s.lastEditTime = timeutil.Monotonic()
 	if tick.gotDone {
 		tailDelivered := s.accumulated == "" || s.sendOrEdit(ctx, s.accumulated, true, true)
 		s.finalResponseSent = headsDelivered && tailDelivered
@@ -1017,7 +1016,7 @@ func (s *GatewayStreamConsumer) pushUpdate(ctx context.Context, tick *streamTick
 	}
 	tick.draftFinalFreshSend = tick.gotDone && s.useDraftStreaming && s.messageID == ""
 	tick.updateVisible = s.sendOrEdit(ctx, displayText, tick.gotDone || tick.gotSegmentBreak, tick.gotDone)
-	s.lastEditTime = pythread.Monotonic()
+	s.lastEditTime = timeutil.Monotonic()
 	s.toolProgressActive = false
 }
 
@@ -1095,7 +1094,7 @@ func (s *GatewayStreamConsumer) deliverCommentary(ctx context.Context, commentar
 		s.resetSegmentState(false)
 	}
 	s.sendCommentary(ctx, commentaryText)
-	s.lastEditTime = pythread.Monotonic()
+	s.lastEditTime = timeutil.Monotonic()
 	if !cumulative {
 		s.resetSegmentState(false)
 	}
@@ -1148,5 +1147,5 @@ func cleanForDisplay(text string) string {
 	if err != nil {
 		panic(err)
 	}
-	return pyrepr.Str(StripTrailingSilenceMarker(StripImageTagsForDisplay(stripped)))
+	return anyutil.String(StripTrailingSilenceMarker(StripImageTagsForDisplay(stripped)))
 }

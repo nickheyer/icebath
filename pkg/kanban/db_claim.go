@@ -7,15 +7,15 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Decoded payload of an event row, empty for a missing row
-func eventPayload(row *Row) *pyjson.Object {
+func eventPayload(row *Row) *jsonutil.Object {
 	if row == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return jsonDict(rowGet(row, "payload", nil))
 }
@@ -104,13 +104,13 @@ func RecomputeReady(ctx context.Context, conn state.SQLiteConn, failureLimit *in
 			if curStatus == "blocked" {
 				failures := int64(0)
 				if truthy(row.Get("consecutive_failures")) {
-					if failures, err = pyIntOf(row.Get("consecutive_failures")); err != nil {
+					if failures, err = cellIntOf(row.Get("consecutive_failures")); err != nil {
 						return err
 					}
 				}
 				effective := limit
 				if v := row.Get("max_retries"); v != nil {
-					if effective, err = pyIntOf(v); err != nil {
+					if effective, err = cellIntOf(v); err != nil {
 						return err
 					}
 				}
@@ -173,7 +173,7 @@ func reclaimDanglingRun(ctx context.Context, conn state.SQLiteConn, taskID strin
 	if err != nil || stale == nil || !truthy(stale.Get("current_run_id")) {
 		return err
 	}
-	runID, err := pyIntOf(stale.Get("current_run_id"))
+	runID, err := cellIntOf(stale.Get("current_run_id"))
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ func reclaimDanglingRun(ctx context.Context, conn state.SQLiteConn, taskID strin
 }
 
 // Moves the source status to running under the lock, opens a run and emits claimed, nil when the swap lost
-func claimAndOpenRun(ctx context.Context, conn state.SQLiteConn, taskID, sourceStatus, lock string, expires, now int64, eventExtra *pyjson.Object) (*int64, error) {
+func claimAndOpenRun(ctx context.Context, conn state.SQLiteConn, taskID, sourceStatus, lock string, expires, now int64, eventExtra *jsonutil.Object) (*int64, error) {
 	res, err := conn.ExecContext(ctx, fmt.Sprintf(`
         UPDATE tasks
            SET status        = 'running',
@@ -227,8 +227,8 @@ func claimAndOpenRun(ctx context.Context, conn state.SQLiteConn, taskID, sourceS
 	}
 	body := payload("lock", lock, "expires", expires, "run_id", runID)
 	if eventExtra != nil {
-		for _, k := range eventExtra.Keys {
-			body.Set(k, eventExtra.Vals[k])
+		for _, k := range eventExtra.Keys() {
+			body.Set(k, eventExtra.Value(k))
 		}
 	}
 	if err := appendEvent(ctx, conn, taskID, "claimed", body, &runID); err != nil {
@@ -504,14 +504,14 @@ func ReleaseStaleClaims(ctx context.Context, conn state.SQLiteConn, signalFn Sig
 }
 
 // Closes the active run as reclaimed and emits the reclaimed event merged with the termination report
-func recordReclaim(ctx context.Context, conn state.SQLiteConn, taskID string, termination *pyjson.Object, errText string, body *pyjson.Object) (*int64, error) {
+func recordReclaim(ctx context.Context, conn state.SQLiteConn, taskID string, termination *jsonutil.Object, errText string, body *jsonutil.Object) (*int64, error) {
 	runID, err := endRun(ctx, conn, taskID, "reclaimed", nil, &errText, termination, "reclaimed")
 	if err != nil {
 		return nil, err
 	}
 	if termination != nil {
-		for _, k := range termination.Keys {
-			body.Set(k, termination.Vals[k])
+		for _, k := range termination.Keys() {
+			body.Set(k, termination.Value(k))
 		}
 	}
 	return runID, appendEvent(ctx, conn, taskID, "reclaimed", body, runID)
@@ -531,7 +531,7 @@ func extendLiveStaleClaim(ctx context.Context, conn state.SQLiteConn, row *Row, 
 		if err != nil {
 			return err
 		}
-		pid, err := pyIntOf(row.Get("worker_pid"))
+		pid, err := cellIntOf(row.Get("worker_pid"))
 		if err != nil {
 			return err
 		}

@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Live agent carrying what the review spawn and the turn wrapper read, the bare agent
@@ -28,7 +28,7 @@ func brLiveAgent(t *testing.T) *AIAgent {
 			"_MEMORY_REVIEW_PROMPT": "review memory", "_SKILL_REVIEW_PROMPT": "review skills", "_COMBINED_REVIEW_PROMPT": "review both",
 		}},
 		backgroundReviewLock: &sync.Mutex{}, activeChildrenLock: &sync.Mutex{},
-		hardInterruptRequested: &pythread.Event{},
+		hardInterruptRequested: &syncutil.Event{},
 		env:                    &tools.Env{Values: &sync.Map{}},
 	}
 }
@@ -39,7 +39,7 @@ func brForkInit(fork *AIAgent) {
 	fork.quietMode = true
 	fork.requestOverrides = map[string]any{}
 	fork.pendingRedirectLock = &sync.Mutex{}
-	fork.hardInterruptRequested = &pythread.Event{}
+	fork.hardInterruptRequested = &syncutil.Event{}
 	fork.endSessionOnClose = true
 }
 
@@ -304,7 +304,7 @@ func TestBackgroundReviewRegistersBeforeStartRunsAndCleansUp(t *testing.T) {
 }
 
 func TestLiveTurnWaitsForReviewExitBeforeRelayAndTurnContext(t *testing.T) {
-	var reviewEntered, reviewReturned, allowReviewReturn, waitStarted pythread.Event
+	var reviewEntered, reviewReturned, allowReviewReturn, waitStarted syncutil.Event
 	seen := map[string]any{}
 	var seenMu sync.Mutex
 	rec := recordForks(t, brForkInit)
@@ -334,7 +334,7 @@ func TestLiveTurnWaitsForReviewExitBeforeRelayAndTurnContext(t *testing.T) {
 	if !reviewEntered.Wait(2.0) {
 		t.Fatal("review never entered")
 	}
-	var boundaryReached pythread.Event
+	var boundaryReached syncutil.Event
 	brInstallLiveTurnBoundary(t, func() {
 		seenMu.Lock()
 		seen["review_returned_at_boundary"] = reviewReturned.IsSet()
@@ -389,7 +389,7 @@ func TestLiveTurnCancelsReviewDuringStartupBeforeProvider(t *testing.T) {
 	if run == nil {
 		t.Fatal("no review run")
 	}
-	var boundaryReached pythread.Event
+	var boundaryReached syncutil.Event
 	brInstallLiveTurnBoundary(t, boundaryReached.Set)
 	relay := brInstallRelayRecorder(t, run)
 	liveDone := make(chan brLiveResult, 1)
@@ -419,7 +419,7 @@ func TestLiveTurnCancelsReviewDuringStartupBeforeProvider(t *testing.T) {
 }
 
 func TestLiveTurnProceedsWhenReviewAcknowledgementTimesOut(t *testing.T) {
-	var reviewEntered, allowReviewReturn pythread.Event
+	var reviewEntered, allowReviewReturn syncutil.Event
 	rec := recordForks(t, brForkInit)
 	brForkConversation(t, func(context.Context, *AIAgent, string, []map[string]any) error {
 		reviewEntered.Set()
@@ -477,7 +477,7 @@ func TestLiveTurnProceedsWhenReviewAcknowledgementTimesOut(t *testing.T) {
 func TestLiveTurnInterruptsAReviewWithoutARunTokenButKeepsForegroundPriority(t *testing.T) {
 	agent := brLiveAgent(t)
 	tracked := &AIAgent{quietMode: true, requestOverrides: map[string]any{}, env: &tools.Env{Values: &sync.Map{}},
-		hardInterruptRequested: &pythread.Event{}}
+		hardInterruptRequested: &syncutil.Event{}}
 	agent.backgroundReviewRun = nil
 	agent.backgroundReviewAgent = tracked
 	var boundaryCalls []bool
@@ -502,7 +502,7 @@ func TestLiveTurnInterruptsAReviewWithoutARunTokenButKeepsForegroundPriority(t *
 }
 
 func TestStaleReviewCleanupCannotClearOrSignalNewerReview(t *testing.T) {
-	var firstCleanupEntered, allowFirstCleanup pythread.Event
+	var firstCleanupEntered, allowFirstCleanup syncutil.Event
 	rec := recordForks(t, brForkInit)
 	brForkConversation(t, func(context.Context, *AIAgent, string, []map[string]any) error { return nil })
 	brRecordReleases(t, func(fork *AIAgent) {

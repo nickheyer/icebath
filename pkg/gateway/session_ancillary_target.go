@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Current physical session of a conversation, the local receipt's entry for a local session
@@ -21,7 +21,7 @@ func physicalTarget(ctx context.Context, a *SessionAuthority, ref SessionRef) (s
 	if err != nil {
 		return "", err
 	}
-	entry, ok := receipt.GetOr("entry", nil).(*pyjson.Object)
+	entry, ok := receipt.ValueOr("entry", nil).(*jsonutil.Object)
 	if !ok {
 		return "", fmt.Errorf("the local receipt of session %s has no entry mapping", ref.SessionID)
 	}
@@ -29,5 +29,5 @@ func physicalTarget(ctx context.Context, a *SessionAuthority, ref SessionRef) (s
 	if !ok {
 		return "", &pyKeyError{"session_id"}
 	}
-	return pyrepr.Str(sessionID), nil
+	return anyutil.String(sessionID), nil
 }

@@ -14,7 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/webhooksubs"
 )
 
@@ -38,7 +38,7 @@ func runWebhookCmd(t *testing.T, args WebhookArgs) (int, string, error) {
 	return code, out.String(), err
 }
 
-func stored(t *testing.T, dir string) *pyjson.Object { return webhooksubs.Load(dir) }
+func stored(t *testing.T, dir string) *jsonutil.Object { return webhooksubs.Load(dir) }
 
 func routeField(t *testing.T, dir, name, key string) any {
 	t.Helper()
@@ -46,7 +46,7 @@ func routeField(t *testing.T, dir, name, key string) any {
 	if !ok {
 		t.Fatalf("route %s missing", name)
 	}
-	v, _ := route.(*pyjson.Object).Get(key)
+	v, _ := route.(*jsonutil.Object).Get(key)
 	return v
 }
 
@@ -107,7 +107,7 @@ func TestWebhookStaleUpdateCannotRestoreRemovedOrDisabledRoute(t *testing.T) {
 	var armed bool
 	loaded, allow := make(chan struct{}), make(chan struct{})
 	prev := webhookSubscriptions
-	webhookSubscriptions = func(h string) *pyjson.Object {
+	webhookSubscriptions = func(h string) *jsonutil.Object {
 		subs := prev(h)
 		mu.Lock()
 		pause := armed
@@ -147,9 +147,9 @@ func TestWebhookStaleUpdateCannotRestoreRemovedOrDisabledRoute(t *testing.T) {
 	}
 	runWebhookCmd(t, WebhookArgs{Action: "subscribe", Name: "notifier", Secret: "replacement"})
 	done = stale()
-	if err := webhooksubs.Mutate(dir, func(subs *pyjson.Object) error {
+	if err := webhooksubs.Mutate(dir, func(subs *jsonutil.Object) error {
 		route, _ := subs.Get("notifier")
-		route.(*pyjson.Object).Set("enabled", false)
+		route.(*jsonutil.Object).Set("enabled", false)
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -177,7 +177,7 @@ func TestWebhookProfileRebindRotatesSecret(t *testing.T) {
 	runWebhookCmd(t, WebhookArgs{Action: "subscribe", Name: "notifier", RouteProfile: strp("compta")})
 	if routeField(t, dir, "notifier", "profile") != "compta" || routeField(t, dir, "notifier", "secret") != "rotated-profile-secret" ||
 		routeField(t, dir, "notifier", "created_at") != "2026-01-01T00:00:00Z" {
-		t.Fatalf("rebind record %v", stored(t, dir).Vals["notifier"])
+		t.Fatalf("rebind record %v", stored(t, dir).Value("notifier"))
 	}
 }
 
@@ -255,7 +255,7 @@ func TestWebhookSubscribeResolvesCronInRouteProfile(t *testing.T) {
 			root, coder := cronHomes(t)
 			cronSubscribe(t, strp("coder"), ref)
 			if routeField(t, root, "route", "cron_job") != "coder-job" || routeField(t, root, "route", "profile") != "coder" {
-				t.Fatalf("route %v", stored(t, root).Vals["route"])
+				t.Fatalf("route %v", stored(t, root).Value("route"))
 			}
 			if _, err := os.Stat(webhooksubs.Path(coder)); err == nil {
 				t.Fatal("subscriptions written into the profile home")

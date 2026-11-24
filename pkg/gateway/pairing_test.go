@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Context bound to a fresh home with a store over the given pairing directory
@@ -36,13 +36,13 @@ func writePairingFile(t *testing.T, path, text string) {
 	}
 }
 
-func readPairingObject(t *testing.T, path string) *pyjson.Object {
+func readPairingObject(t *testing.T, path string) *jsonutil.Object {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	object, err := pyjson.LoadsDict(string(raw))
+	object, err := jsonutil.DecodeObject(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestProfileScopedDiscoveryListApprovedScopesPlatformDiscoveryToProfileDir(t
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(approved) != 1 || approved[0].GetOr("user_id", nil) != "tg-456" || approved[0].GetOr("platform", nil) != "telegram" {
+	if len(approved) != 1 || approved[0].ValueOr("user_id", nil) != "tg-456" || approved[0].ValueOr("platform", nil) != "telegram" {
 		t.Fatalf("approved = %v", approved)
 	}
 }
@@ -157,17 +157,17 @@ func TestHashedStoragePendingFileContainsHashAndSalt(t *testing.T) {
 	if raw.Len() != 1 {
 		t.Fatalf("entries = %d", raw.Len())
 	}
-	entry := raw.Vals[raw.Keys[0]].(*pyjson.Object)
-	hash, _ := entry.GetOr("hash", nil).(string)
-	salt, _ := entry.GetOr("salt", nil).(string)
+	entry := raw.Value(raw.Keys()[0]).(*jsonutil.Object)
+	hash, _ := entry.ValueOr("hash", nil).(string)
+	salt, _ := entry.ValueOr("salt", nil).(string)
 	if len(hash) != 64 || !isLowerHex(hash) || len(salt) != 32 || !isLowerHex(salt) {
 		t.Fatalf("hash = %q salt = %q", hash, salt)
 	}
-	for _, key := range raw.Keys {
+	for _, key := range raw.Keys() {
 		if key == code {
 			t.Fatal("the code is a key of the pending file")
 		}
-		for _, field := range raw.Vals[key].(*pyjson.Object).Vals {
+		for _, field := range raw.Value(key).(*jsonutil.Object).All() {
 			if field == code {
 				t.Fatal("the code is stored in the pending file")
 			}
@@ -197,14 +197,14 @@ func TestLegacyPendingFileCompatCleanupExpiredHandlesMalformedEntries(t *testing
 		t.Fatal(err)
 	}
 	if raw := readPairingObject(t, filepath.Join(dir, "telegram-pending.json")); raw.Len() != 0 {
-		t.Fatalf("pending = %v", raw.Keys)
+		t.Fatalf("pending = %v", raw.Keys())
 	}
 }
 
 func TestLegacyPendingFileCompatApproveCodeSkipsMalformedEntries(t *testing.T) {
 	dir := t.TempDir()
-	entry := pyjson.ObjectOf("broken", pyjson.ObjectOf("user_id", "x", "created_at", pairingNow(), "salt", "not-hex", "hash", "doesntmatter"))
-	text, err := pyjson.Dumps(entry)
+	entry := jsonutil.ObjectOf("broken", jsonutil.ObjectOf("user_id", "x", "created_at", pairingNow(), "salt", "not-hex", "hash", "doesntmatter"))
+	text, err := jsonutil.Encode(entry)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -298,8 +298,8 @@ func TestApprovalFlowApproveRequestNeverRevealsOrAcceptsTheCodeDigest(t *testing
 	ctx, store := makePairingStore(t, dir)
 	botCode := mustGenerate(t, ctx, store, "telegram", "user1", "Alice")
 	entry := mustPending(t, ctx, store, "telegram")[0]
-	stored := readPairingObject(t, filepath.Join(dir, "telegram-pending.json")).Vals[entry.RequestID].(*pyjson.Object)
-	digest := stored.GetOr("hash", nil).(string)
+	stored := readPairingObject(t, filepath.Join(dir, "telegram-pending.json")).Value(entry.RequestID).(*jsonutil.Object)
+	digest := stored.ValueOr("hash", nil).(string)
 	for _, value := range []any{entry.Platform, entry.RequestID, entry.UserID, entry.UserName} {
 		if value == botCode {
 			t.Fatal("the pending row reveals the code")
@@ -412,8 +412,8 @@ func TestCodeExpiryExpiredCodesCleanedUp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, entryID := range pending.Keys {
-		pending.Vals[entryID].(*pyjson.Object).Set("created_at", pairingNow()-PairingCodeTTLSeconds-1)
+	for _, entryID := range pending.Keys() {
+		pending.Value(entryID).(*jsonutil.Object).Set("created_at", pairingNow()-PairingCodeTTLSeconds-1)
 	}
 	if err := savePairingJSONFile(ctx, store.pendingPath("telegram"), pending); err != nil {
 		t.Fatal(err)
@@ -459,7 +459,7 @@ func TestRevokeRevokeFromOtherStoreIsNotUndoneByInflightApproval(t *testing.T) {
 	revokeDone := make(chan bool, 1)
 	started := false
 	realLoad := approver.loadJSON
-	approver.loadJSON = func(path string) (*pyjson.Object, error) {
+	approver.loadJSON = func(path string) (*jsonutil.Object, error) {
 		data, err := realLoad(path)
 		if path == approvedPath && !started {
 			started = true
@@ -499,10 +499,10 @@ func TestRevokeRevokeFromOtherStoreIsNotUndoneByInflightApproval(t *testing.T) {
 	}
 	final := readPairingObject(t, approvedPath)
 	if _, ok := final.Get("alice"); !ok {
-		t.Fatalf("alice missing: %v", final.Keys)
+		t.Fatalf("alice missing: %v", final.Keys())
 	}
 	if _, ok := final.Get("carol"); ok {
-		t.Fatalf("the in flight approval wrote carol back: %v", final.Keys)
+		t.Fatalf("the in flight approval wrote carol back: %v", final.Keys())
 	}
 }
 
@@ -513,7 +513,7 @@ func TestListAndClearListApproved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(approved) != 1 || approved[0].GetOr("user_id", nil) != "user1" || approved[0].GetOr("platform", nil) != "telegram" {
+	if len(approved) != 1 || approved[0].ValueOr("user_id", nil) != "user1" || approved[0].ValueOr("platform", nil) != "telegram" {
 		t.Fatalf("approved = %v", approved)
 	}
 }
@@ -664,7 +664,7 @@ func TestProfileScopedStorageProfileUsesDistinctRateLimitFile(t *testing.T) {
 
 func saveApproved(t *testing.T, ctx context.Context, path string, pairs ...any) {
 	t.Helper()
-	if err := savePairingJSONFile(ctx, path, pyjson.ObjectOf(pairs...)); err != nil {
+	if err := savePairingJSONFile(ctx, path, jsonutil.ObjectOf(pairs...)); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -677,8 +677,8 @@ func TestApprovalCacheReusesParseAndObservesReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := store.approvedPath("telegram")
-	saveApproved(t, ctx, path, "user1", pyjson.ObjectOf("user_name", "Alice", "approved_at", 1.0))
-	var parsed *pyjson.Object
+	saveApproved(t, ctx, path, "user1", jsonutil.ObjectOf("user_name", "Alice", "approved_at", 1.0))
+	var parsed *jsonutil.Object
 	for range 5 {
 		if !mustApproved(t, ctx, store, "telegram", "user1") {
 			t.Fatal("user1 not approved")
@@ -695,7 +695,7 @@ func TestApprovalCacheReusesParseAndObservesReplacement(t *testing.T) {
 	if mustApproved(t, ctx, store, "telegram", "user1") {
 		t.Fatal("the revoke of another store was not observed")
 	}
-	saveApproved(t, ctx, path, "user1", pyjson.ObjectOf("user_name", "Alice", "approved_at", 1.0))
+	saveApproved(t, ctx, path, "user1", jsonutil.ObjectOf("user_name", "Alice", "approved_at", 1.0))
 	if !mustApproved(t, ctx, store, "telegram", "user1") {
 		t.Fatal("the restored approval was not observed")
 	}
@@ -729,7 +729,7 @@ func TestApprovalCacheReusesParseAndObservesReplacement(t *testing.T) {
 	if mustApproved(t, ctx, store, "telegram", "user2") {
 		t.Fatal("a removed file still approves")
 	}
-	saveApproved(t, ctx, path, "user3", pyjson.NewObject())
+	saveApproved(t, ctx, path, "user3", jsonutil.NewObject())
 	if !mustApproved(t, ctx, store, "telegram", "user3") {
 		t.Fatal("a recreated file was not observed")
 	}
@@ -762,7 +762,7 @@ func TestCliListedRequestIdAndBotCodeCanBeApproved(t *testing.T) {
 	}
 	ids := []string{}
 	for _, entry := range approved {
-		ids = append(ids, entry.GetOr("user_id", nil).(string))
+		ids = append(ids, entry.ValueOr("user_id", nil).(string))
 	}
 	slices.Sort(ids)
 	if !strings.Contains(requestOutput, "listed-user") || !strings.Contains(out.String(), "code-user") || !slices.Equal(ids, []string{"code-user", "listed-user"}) {

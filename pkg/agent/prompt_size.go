@@ -15,14 +15,12 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -78,21 +76,9 @@ type PromptBreakdown struct {
 	ToolsetsBreakdown []ToolsetBreakdownEntry
 }
 
-// UTF-8 byte length of text, the strict encode error when it holds a lone surrogate
-func promptBytes(s string) (int, error) {
-	if err := pystr.StrictUTF8EncodeError(s); err != nil {
-		return 0, errchain.Reword(err, "text holds a lone surrogate that UTF-8 cannot encode")
-	}
-	return len(s), nil
-}
-
 // Code point and byte counts of text
-func promptSize(text string) (PromptTextSize, error) {
-	n, err := promptBytes(text)
-	if err != nil {
-		return PromptTextSize{}, err
-	}
-	return PromptTextSize{Chars: utf8.RuneCountInString(text), Bytes: n}, nil
+func promptSize(text string) PromptTextSize {
+	return PromptTextSize{Chars: utf8.RuneCountInString(text), Bytes: len(text)}
 }
 
 // Byte count as kilobytes with one decimal and the KB suffix
@@ -100,12 +86,12 @@ func promptFmtKB(n int) string {
 	return strconv.FormatFloat(float64(n)/1024, 'f', 1, 64) + " KB"
 }
 
-// Key lookup over a Python dict value, a Go map or an ordered object, false for any other type
+// Key lookup over a Go map or an ordered object, false for any other type
 func promptDictLookup(v any) (func(string) (any, bool), bool) {
 	switch d := v.(type) {
 	case map[string]any:
 		return func(k string) (any, bool) { x, ok := d[k]; return x, ok }, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if d == nil {
 			return nil, false
 		}
@@ -122,8 +108,8 @@ func promptToolName(tool any) string {
 	}
 	if fnv, _ := get("function"); fnv != nil {
 		if fget, isDict := promptDictLookup(fnv); isDict {
-			if name, _ := fget("name"); pyrepr.Truthy(name) {
-				return pyrepr.Str(name)
+			if name, _ := fget("name"); anyutil.IsTrue(name) {
+				return anyutil.String(name)
 			}
 		}
 	}
@@ -131,7 +117,7 @@ func promptToolName(tool any) string {
 	if !ok {
 		return ""
 	}
-	return pyrepr.Str(name)
+	return anyutil.String(name)
 }
 
 // Offline agent with an inspect only key and the platform toolsets the gateway resolves
@@ -173,10 +159,10 @@ func skillMDPathsByName(env *tools.Env) map[string]string {
 			dirName := filepath.Base(filepath.Dir(skillFile))
 			frontmatterName := dirName
 			if raw, err := os.ReadFile(skillFile); err == nil {
-				if text, decErr := pystr.DecodeUTF8Sig(raw); decErr == nil {
+				if text, decErr := textutil.DecodeUTF8(textutil.TrimBOM(raw)); decErr == nil {
 					frontmatter, _ := skills.ParseFrontmatter(text)
-					if v := frontmatter["name"]; pyrepr.Truthy(v) {
-						frontmatterName = pyrepr.Str(v)
+					if v := frontmatter["name"]; anyutil.IsTrue(v) {
+						frontmatterName = anyutil.String(v)
 					}
 				}
 			}
@@ -197,7 +183,7 @@ func promptDivmod(a, b int) (int, int) {
 }
 
 // Per skill byte breakdown of the rendered available_skills block, largest SKILL.md first
-func computeSkillsBreakdown(env *tools.Env, skillsBlock string) ([]SkillBreakdownEntry, error) {
+func computeSkillsBreakdown(env *tools.Env, skillsBlock string) []SkillBreakdownEntry {
 	nameToPath := skillMDPathsByName(env)
 	entries := []SkillBreakdownEntry{}
 	appendEntry := func(e SkillBreakdownEntry) {
@@ -212,10 +198,7 @@ func computeSkillsBreakdown(env *tools.Env, skillsBlock string) ([]SkillBreakdow
 		entries = append(entries, e)
 	}
 	for _, line := range textutil.Lines(skillsBlock) {
-		lineBytes, err := promptBytes(line)
-		if err != nil {
-			return nil, err
-		}
+		lineBytes := len(line)
 		if m := promptNamesOnlyLineRe.FindStringSubmatch(line); m != nil {
 			var names []string
 			for _, n := range strings.Split(m[promptNamesOnlyLineRe.SubexpIndex("names")], ",") {
@@ -226,9 +209,7 @@ func computeSkillsBreakdown(env *tools.Env, skillsBlock string) ([]SkillBreakdow
 			nameBytes := make([]int, len(names))
 			sum := 0
 			for i, name := range names {
-				if nameBytes[i], err = promptBytes(name); err != nil {
-					return nil, err
-				}
+				nameBytes[i] = len(name)
 				sum += nameBytes[i]
 			}
 			sharedBase, sharedRemainder := 0, 0
@@ -266,7 +247,7 @@ func computeSkillsBreakdown(env *tools.Env, skillsBlock string) ([]SkillBreakdow
 		}
 		return entries[i].Name < entries[j].Name
 	})
-	return entries, nil
+	return entries
 }
 
 // Per toolset schema byte totals with each tool under its canonical toolset, largest first then by name
@@ -284,15 +265,11 @@ func computeToolsetsBreakdown(ctx context.Context, toolList []any) ([]ToolsetBre
 			groups[toolset] = group
 		}
 		group.ToolCount++
-		text, err := pyjson.Dumps(tool, pyjson.EnsureASCII(false))
+		text, err := jsonutil.Encode(tool)
 		if err != nil {
 			return nil, err
 		}
-		n, err := promptBytes(text)
-		if err != nil {
-			return nil, err
-		}
-		group.JSONBytes += n
+		group.JSONBytes += len(text)
 	}
 	out := make([]ToolsetBreakdownEntry, 0, len(groups))
 	for _, g := range groups {
@@ -349,31 +326,17 @@ func ComputePromptBreakdown(ctx context.Context, env *tools.Env, platform string
 		{"stable (identity/guidance/skills)", parts.Stable}, {"context (AGENTS.md/cwd files)", parts.Context},
 		{"volatile (memory/profile/timestamp)", parts.Volatile},
 	} {
-		n, err := promptBytes(tier.text)
-		if err != nil {
-			return nil, err
-		}
-		out.Sections = append(out.Sections, PromptSection{Label: tier.label, Chars: utf8.RuneCountInString(tier.text), Bytes: n})
+		out.Sections = append(out.Sections, PromptSection{Label: tier.label, Chars: utf8.RuneCountInString(tier.text), Bytes: len(tier.text)})
 	}
-	for _, s := range []struct {
-		dst  *PromptTextSize
-		text string
-	}{{&out.SystemPrompt, full}, {&out.SkillsIndex, skillsIndex}, {&out.Memory, memoryBlock}, {&out.UserProfile, userBlock}} {
-		if *s.dst, err = promptSize(s.text); err != nil {
-			return nil, err
-		}
-	}
-	toolsJSON, err := pyjson.Dumps(toolList, pyjson.EnsureASCII(false))
+	out.SystemPrompt, out.SkillsIndex = promptSize(full), promptSize(skillsIndex)
+	out.Memory, out.UserProfile = promptSize(memoryBlock), promptSize(userBlock)
+	toolsJSON, err := jsonutil.Encode(toolList)
 	if err != nil {
 		return nil, err
 	}
 	out.ToolCount = len(toolList)
-	if out.ToolJSONBytes, err = promptBytes(toolsJSON); err != nil {
-		return nil, err
-	}
-	if out.SkillsBreakdown, err = computeSkillsBreakdown(env, skillsIndex); err != nil {
-		return nil, err
-	}
+	out.ToolJSONBytes = len(toolsJSON)
+	out.SkillsBreakdown = computeSkillsBreakdown(env, skillsIndex)
 	if out.ToolsetsBreakdown, err = computeToolsetsBreakdown(ctx, toolList); err != nil {
 		return nil, err
 	}
@@ -381,8 +344,8 @@ func ComputePromptBreakdown(ctx context.Context, env *tools.Env, platform string
 }
 
 // Ordered JSON object of the skill entry in the key order the breakdown emits
-func (e SkillBreakdownEntry) Object() *pyjson.Object {
-	o := pyjson.NewObject()
+func (e SkillBreakdownEntry) Object() *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("name", e.Name)
 	o.Set("index_line_bytes", e.IndexLineBytes)
 	o.Set("index_line_total_bytes", e.IndexLineTotalBytes)
@@ -398,21 +361,21 @@ func (e SkillBreakdownEntry) Object() *pyjson.Object {
 }
 
 // Ordered JSON object of the whole breakdown in the key order the json flag prints
-func (b *PromptBreakdown) Object() *pyjson.Object {
-	size := func(s PromptTextSize) *pyjson.Object {
-		o := pyjson.NewObject()
+func (b *PromptBreakdown) Object() *jsonutil.Object {
+	size := func(s PromptTextSize) *jsonutil.Object {
+		o := jsonutil.NewObject()
 		o.Set("chars", s.Chars)
 		o.Set("bytes", s.Bytes)
 		return o
 	}
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("platform", b.Platform)
 	o.Set("model", b.Model)
 	o.Set("system_prompt", size(b.SystemPrompt))
 	o.Set("skills_index", size(b.SkillsIndex))
 	o.Set("memory", size(b.Memory))
 	o.Set("user_profile", size(b.UserProfile))
-	toolsObj := pyjson.NewObject()
+	toolsObj := jsonutil.NewObject()
 	toolsObj.Set("count", b.ToolCount)
 	toolsObj.Set("json_bytes", b.ToolJSONBytes)
 	o.Set("tools", toolsObj)
@@ -428,7 +391,7 @@ func (b *PromptBreakdown) Object() *pyjson.Object {
 	o.Set("skills_breakdown", skillRows)
 	toolsetRows := make([]any, 0, len(b.ToolsetsBreakdown))
 	for _, ts := range b.ToolsetsBreakdown {
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		row.Set("toolset", ts.Toolset)
 		row.Set("tool_count", ts.ToolCount)
 		row.Set("json_bytes", ts.JSONBytes)
@@ -503,11 +466,11 @@ func CmdPromptSize(ctx context.Context, env *tools.Env, ns map[string]any, w io.
 	}
 	data, err := ComputePromptBreakdown(ctx, env, platform)
 	if err != nil {
-		_, _ = fmt.Fprintln(w, "Could not compute prompt-size breakdown: "+pyrepr.ExceptionMessage(err))
+		_, _ = fmt.Fprintln(w, "Could not compute prompt-size breakdown: "+err.Error())
 		return 0, nil
 	}
-	if pyrepr.Truthy(ns["json"]) {
-		text, err := pyjson.Dumps(data.Object(), pyjson.EnsureASCII(false), pyjson.Indent(2))
+	if anyutil.IsTrue(ns["json"]) {
+		text, err := jsonutil.Encode(data.Object(), jsonutil.Indent(2))
 		if err != nil {
 			return 1, err
 		}

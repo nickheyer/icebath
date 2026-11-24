@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func pinPolicy(t *testing.T, local, allowPrivate bool, safe func(string) bool) *tools.Env {
@@ -21,7 +21,7 @@ func pinPolicy(t *testing.T, local, allowPrivate bool, safe func(string) bool) *
 	return env
 }
 
-func errorText(o *pyjson.Object) string {
+func errorText(o *jsonutil.Object) string {
 	if o == nil {
 		return ""
 	}
@@ -83,7 +83,7 @@ func TestWebsitePolicyBlockCarriesItsRule(t *testing.T) {
 		return &tools.WebsiteBlock{Host: "evil.com", Rule: "evil.com", Source: "config", Message: "Blocked by website policy"}
 	})
 	res := evaluateURLSafety(env, "https://evil.com/", false)
-	got, _ := pyjson.Dumps(res)
+	got, _ := jsonutil.Encode(res)
 	want := `{"success": false, "error": "Blocked by website policy", "blocked_by_policy": {"host": "evil.com", "rule": "evil.com", "source": "config"}}`
 	if got != want {
 		t.Fatalf("got %s", got)

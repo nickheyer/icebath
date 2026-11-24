@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -125,9 +125,8 @@ func SubagentHandleFromDict(value map[string]any) (*SubagentHandle, error) {
 	}
 	ok := true
 	check := func(good bool) { ok = ok && good }
-	n, isInt := pyrepr.Int(value["contract_version"])
-	_, isBool := value["contract_version"].(bool)
-	check(isInt && !isBool && n.IsInt64() && n.Int64() == PublicContractVersion)
+	n, isInt := anyutil.Int(value["contract_version"])
+	check(isInt && n == PublicContractVersion)
 	h.ContractVersion = PublicContractVersion
 	id, good := value["subagent_id"].(string)
 	check(good && id != "")
@@ -137,9 +136,8 @@ func SubagentHandleFromDict(value map[string]any) (*SubagentHandle, error) {
 	check(g)
 	h.CorrelationID, g = optStr(value["correlation_id"])
 	check(g)
-	created, g := pyNumber(value["created_at"])
-	_, isBool = value["created_at"].(bool)
-	check(g && !isBool && !math.IsInf(created, 0) && !math.IsNaN(created))
+	created, g := anyutil.Float(value["created_at"])
+	check(g && !math.IsInf(created, 0) && !math.IsNaN(created))
 	h.CreatedAt = created
 	h.Provider, g = optStr(value["provider"])
 	check(g)
@@ -147,11 +145,10 @@ func SubagentHandleFromDict(value map[string]any) (*SubagentHandle, error) {
 	check(g)
 	h.Role, g = value["role"].(string)
 	check(g)
-	depth, isInt := pyrepr.Int(value["depth"])
-	_, isBool = value["depth"].(bool)
-	check(isInt && !isBool && depth.IsInt64())
-	if isInt && depth.IsInt64() {
-		h.Depth = int(depth.Int64())
+	depth, isInt := anyutil.Int(value["depth"])
+	check(isInt)
+	if isInt {
+		h.Depth = int(depth)
 	}
 	h.Capability, g = value["capability"].(string)
 	check(g)
@@ -304,7 +301,7 @@ func clipResult(v any) *string {
 	if v == nil {
 		return nil
 	}
-	s := []rune(pyrepr.Str(v))
+	s := []rune(anyutil.String(v))
 	if len(s) > maxResultChars {
 		s = s[:maxResultChars]
 	}
@@ -359,7 +356,7 @@ func coerceSubagentRequest(request any) (*SubagentLaunchRequest, error) {
 			if invalid != nil {
 				*invalid = true
 			}
-			s = pyrepr.Str(v)
+			s = anyutil.String(v)
 		}
 		return &s
 	}
@@ -377,7 +374,7 @@ func coerceSubagentRequest(request any) (*SubagentLaunchRequest, error) {
 		if list, ok := values[name].([]any); ok {
 			*dst = make([]string, len(list))
 			for i, item := range list {
-				(*dst)[i] = pyrepr.Str(item)
+				(*dst)[i] = anyutil.String(item)
 			}
 		}
 	}
@@ -385,7 +382,7 @@ func coerceSubagentRequest(request any) (*SubagentLaunchRequest, error) {
 		r.Metadata = m
 	}
 	if t, present := values["timeout_seconds"]; present && t != nil {
-		f, _ := pyNumber(t)
+		f, _ := anyutil.Float(t)
 		r.TimeoutSeconds = &f
 	}
 	return r, nil
@@ -624,7 +621,7 @@ func (s *SubagentLifecycleService) Reconnect(ctx context.Context, handle any) *S
 func (s *SubagentLifecycleService) Steer(ctx context.Context, handle any, text any) bool {
 	record := s.record(ctx, handle)
 	t, ok := text.(string)
-	if record == nil || !ok || pyStrip(t) == "" {
+	if record == nil || !ok || strings.TrimSpace(t) == "" {
 		return false
 	}
 	lifecycleRegistry.mu.Lock()
@@ -637,7 +634,7 @@ func (s *SubagentLifecycleService) Steer(ctx context.Context, handle any, text a
 	if err != nil {
 		return false
 	}
-	return d.Steer(record.handle.SubagentID, pyStrip(t))
+	return d.Steer(record.handle.SubagentID, strings.TrimSpace(t))
 }
 
 // Record of a well formed capability verified handle owned by the active parent
@@ -691,7 +688,7 @@ func runSubagent(ctx context.Context, d SubagentDelegation, record *subagentReco
 	raw, err := func() (raw any, err error) {
 		defer func() {
 			if r := recover(); r != nil {
-				err = &HostBuiltinError{Type: "RuntimeError", Message: pyrepr.Str(r)}
+				err = &HostBuiltinError{Type: "RuntimeError", Message: anyutil.String(r)}
 			}
 		}()
 		return d.RunChild(ctx, goal, agent, parent)
@@ -707,7 +704,7 @@ func runSubagent(ctx context.Context, d SubagentDelegation, record *subagentReco
 		}
 		status := "error"
 		if v, ok := m["status"]; ok {
-			status = pyrepr.Str(v)
+			status = anyutil.String(v)
 		}
 		lifecycleRegistry.mu.Lock()
 		cancelRequested := record.state == SubagentCancelRequested
@@ -723,7 +720,7 @@ func runSubagent(ctx context.Context, d SubagentDelegation, record *subagentReco
 			result.TerminalState = SubagentFailed
 		}
 		result.Summary = clipResult(m["summary"])
-		if pyrepr.Truthy(m["error"]) {
+		if anyutil.IsTrue(m["error"]) {
 			result.ErrorMessage = clipResult(m["error"])
 		}
 		if result.TerminalState != SubagentSucceeded {
@@ -766,10 +763,10 @@ func subagentResultHash(r *SubagentResult) string {
 	if r.StructuredPayload != nil {
 		payload = r.StructuredPayload
 	}
-	text, err := pyjson.Dumps(map[string]any{"handle": handle, "terminal_state": string(r.TerminalState), "ready": r.Ready, "summary": optStrValue(r.Summary),
+	text, err := jsonutil.Encode(map[string]any{"handle": handle, "terminal_state": string(r.TerminalState), "ready": r.Ready, "summary": optStrValue(r.Summary),
 		"structured_payload": payload, "started_at": floatOrNil(r.StartedAt), "completed_at": floatOrNil(r.CompletedAt),
 		"error_classification": optStrValue(r.ErrorClassification), "error_message": optStrValue(r.ErrorMessage), "usage_metadata": r.UsageMetadata,
-		"tool_execution_summary": r.ToolExecutionSummary}, pyjson.SortKeys(true), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+		"tool_execution_summary": r.ToolExecutionSummary}, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
 		panic(err)
 	}
@@ -787,13 +784,13 @@ func lifecycleCapability(subagentID string, parentSession *string, created float
 // Request rejections in upstream order, then metadata size, then toolset existence and parent scope
 func validateSubagentRequest(ctx context.Context, d SubagentDelegation, r *SubagentLaunchRequest, parent any) error {
 	switch {
-	case r.goalInvalid || pyStrip(r.Goal) == "" || len([]rune(r.Goal)) > maxGoalChars:
+	case r.goalInvalid || strings.TrimSpace(r.Goal) == "" || len([]rune(r.Goal)) > maxGoalChars:
 		return lifecycleErr("goal must be a non-empty string of at most 16000 characters.")
 	case r.Context != nil && (r.contextInvalid || len([]rune(*r.Context)) > maxContextChars):
 		return lifecycleErr("context must be a string of at most 32000 characters.")
 	case r.roleInvalid || (r.Role != "leaf" && r.Role != "orchestrator"):
 		return lifecycleErr("role must be 'leaf' or 'orchestrator'.")
-	case r.Provider != nil && (r.providerInvalid || pyStrip(*r.Provider) == "" || len([]rune(*r.Provider)) > 64):
+	case r.Provider != nil && (r.providerInvalid || strings.TrimSpace(*r.Provider) == "" || len([]rune(*r.Provider)) > 64):
 		return lifecycleErr("provider must be a non-empty string of at most 64 characters.")
 	case r.TimeoutSeconds != nil:
 		return lifecycleErr("Per-launch timeout is not supported; configure delegation timeout explicitly.")
@@ -806,7 +803,7 @@ func validateSubagentRequest(ctx context.Context, d SubagentDelegation, r *Subag
 	if metadata == nil {
 		metadata = map[string]any{}
 	}
-	text, err := pyjson.Dumps(metadata, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(metadata, jsonutil.SortKeys())
 	if err != nil {
 		return lifecycleErr("metadata must be JSON-serializable.")
 	}
@@ -870,7 +867,7 @@ func (s *SubagentLifecycleService) HostCall(ctx context.Context, method string, 
 	case "wait":
 		var timeout *float64
 		if a["timeout_seconds"] != nil {
-			f, ok := pyNumber(a["timeout_seconds"])
+			f, ok := anyutil.Float(a["timeout_seconds"])
 			if !ok {
 				return nil, &HostBuiltinError{Type: "TypeError", Message: fmt.Sprintf("timeout_seconds must be a number, got %s", errchain.Kind(a["timeout_seconds"]))}
 			}

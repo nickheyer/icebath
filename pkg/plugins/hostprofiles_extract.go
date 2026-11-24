@@ -17,18 +17,18 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/pluginsdk"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Argv prefix the plugin host process runs under from plugins.host.launcher of the profile of ctx, a sandbox runner, a single line split like a shell command line
 func HostLauncher(ctx context.Context) ([]string, error) {
 	items := settings.PluginsHostLauncher.Strings(ctx)
 	if len(items) == 1 {
-		return pyshlex.SplitPOSIX(items[0], false)
+		return shellutil.Split(items[0])
 	}
 	return append([]string{}, items...), nil
 }
@@ -176,7 +176,7 @@ func profileFingerprint(pluginDir string) (string, error) {
 
 // Extraction payload cached under the home by the plugin fingerprint and module name
 func cachedProfileExtraction(ctx context.Context, pluginDir, moduleName string) (map[string]any, error) {
-	resolved, err := pypath.Resolve(pluginDir)
+	resolved, err := pathutil.Resolve(pluginDir)
 	if err != nil {
 		return nil, err
 	}
@@ -258,11 +258,11 @@ func programGuestProfiles(ctx context.Context, spec *guestSpec, resolvedDir, mod
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	profileHome, err := pypath.Resolve(home.Dir(ctx))
+	profileHome, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return nil, nil, 0, err
 	}
-	userHome, err := pypath.PathHome()
+	userHome, err := pathutil.Home()
 	if err != nil {
 		return nil, nil, 0, err
 	}

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type telegramTopicTable struct {
@@ -106,13 +106,13 @@ func topicRead[T any](ctx context.Context, d *SessionDB, read func() (T, error),
 }
 
 // One topic row or nil, through the self healing topic read
-func (d *SessionDB) topicReadOne(ctx context.Context, query string, args ...any) (*pyjson.Object, error) {
-	return topicRead(ctx, d, func() (*pyjson.Object, error) { return d.readOne(ctx, query, args...) }, nil)
+func (d *SessionDB) topicReadOne(ctx context.Context, query string, args ...any) (*jsonutil.Object, error) {
+	return topicRead(ctx, d, func() (*jsonutil.Object, error) { return d.readOne(ctx, query, args...) }, nil)
 }
 
 // Every topic row, empty when the tables are absent, through the self healing topic read
-func (d *SessionDB) topicReadAll(ctx context.Context, query string, args ...any) ([]*pyjson.Object, error) {
-	return topicRead(ctx, d, func() ([]*pyjson.Object, error) { return d.readAll(ctx, query, args...) }, []*pyjson.Object{})
+func (d *SessionDB) topicReadAll(ctx context.Context, query string, args ...any) ([]*jsonutil.Object, error) {
+	return topicRead(ctx, d, func() ([]*jsonutil.Object, error) { return d.readAll(ctx, query, args...) }, []*jsonutil.Object{})
 }
 
 // Creates the topic tables, rebuilds pre v3 tables into the profile keyed shape and stamps schema version 3
@@ -230,7 +230,7 @@ func (d *SessionDB) IsTelegramTopicModeEnabled(ctx context.Context, chatID, user
 }
 
 // Session binding row of one chat topic thread, nil when unbound
-func (d *SessionDB) GetTelegramTopicBinding(ctx context.Context, chatID, threadID, profileName string) (*pyjson.Object, error) {
+func (d *SessionDB) GetTelegramTopicBinding(ctx context.Context, chatID, threadID, profileName string) (*jsonutil.Object, error) {
 	return d.topicReadOne(ctx, `
                     SELECT * FROM telegram_dm_topic_bindings
                     WHERE profile_name = ? AND chat_id = ? AND thread_id = ?
@@ -238,13 +238,13 @@ func (d *SessionDB) GetTelegramTopicBinding(ctx context.Context, chatID, threadI
 }
 
 // Every binding of one chat newest first, empty when the table is absent
-func (d *SessionDB) ListTelegramTopicBindingsForChat(ctx context.Context, chatID, profileName string) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListTelegramTopicBindingsForChat(ctx context.Context, chatID, profileName string) ([]*jsonutil.Object, error) {
 	return d.topicReadAll(ctx, "SELECT * FROM telegram_dm_topic_bindings WHERE profile_name = ? AND chat_id = ? ORDER BY updated_at DESC",
 		normalizeTelegramTopicProfileName(profileName), chatID)
 }
 
 // Binding row that holds one session, nil when the session is unbound
-func (d *SessionDB) GetTelegramTopicBindingBySession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) GetTelegramTopicBindingBySession(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	return d.topicReadOne(ctx, `
                     SELECT * FROM telegram_dm_topic_bindings
                     WHERE session_id = ?
@@ -344,9 +344,9 @@ func (d *SessionDB) IsTelegramSessionLinkedToTopic(ctx context.Context, sessionI
 }
 
 // Rich rows of the user's telegram sessions bound to no topic, profile scoped once the bindings table exists
-func (d *SessionDB) ListUnlinkedTelegramSessionsForUser(ctx context.Context, userID, profileName string, limit int) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListUnlinkedTelegramSessionsForUser(ctx context.Context, userID, profileName string, limit int) ([]*jsonutil.Object, error) {
 	profileName = normalizeTelegramTopicProfileName(profileName)
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := d.readCtx(ctx, true, func(conn SQLiteConn) error {
 		var err error
 		rows, err = queryObjects(ctx, conn, unlinkedSelectHead+unlinkedScopeClauses+unlinkedSelectTail, userID, profileName, limit)
@@ -358,7 +358,7 @@ func (d *SessionDB) ListUnlinkedTelegramSessionsForUser(ctx context.Context, use
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*pyjson.Object, 0, len(rows))
+	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, richRow(row))
 	}

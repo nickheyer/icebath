@@ -11,8 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Bounds of the per job catch up override in minutes, zero meaning never catch up
@@ -33,7 +32,7 @@ func newKnobWarner(log *slog.Logger) *knobWarner {
 }
 
 func (w *knobWarner) warnOnce(kind string, value any, detail string) {
-	key := kind + ":" + pyrepr.Repr(value)
+	key := kind + ":" + anyutil.Quote(value)
 	w.mu.Lock()
 	seen := w.warned[key]
 	w.warned[key] = true
@@ -42,7 +41,7 @@ func (w *knobWarner) warnOnce(kind string, value any, detail string) {
 		return
 	}
 	w.log.Warn(fmt.Sprintf("Job %s %s is invalid (%s); falling back to the profile setting. Fix or clear it with "+
-		"`icebath cron edit`.", kind, pyrepr.Repr(value), detail))
+		"`icebath cron edit`.", kind, anyutil.Quote(value), detail))
 }
 
 // Whether ZoneInfo accepts a key, a normalized relative path naming a zone file, Local being no file
@@ -68,7 +67,7 @@ func NormalizeTimezone(value any) (*string, error) {
 		return nil, nil
 	}
 	if !zoneInfoKey(name) {
-		return nil, fmt.Errorf("Unknown timezone %s. Use an IANA key from `zoneinfo.available_timezones()`, e.g. 'Asia/Hong_Kong'.", pyrepr.StrRepr(name))
+		return nil, fmt.Errorf("Unknown timezone %s. Use an IANA key from `zoneinfo.available_timezones()`, e.g. 'Asia/Hong_Kong'.", strconv.Quote(name))
 	}
 	return &name, nil
 }
@@ -130,7 +129,7 @@ func (w *knobWarner) zoneForJob(timezone *string) *time.Location {
 	if name == "" {
 		return nil
 	}
-	loc, err := pydatetime.ZoneInfo(name)
+	loc, err := time.LoadLocation(name)
 	if err != nil {
 		w.warnOnce("timezone", *timezone, err.Error())
 		return nil

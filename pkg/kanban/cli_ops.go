@@ -10,11 +10,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runs tick every interval seconds with a floor of 0.1 until Ctrl-C
@@ -55,8 +54,8 @@ func (c *kanbanCLI) cmdTail() (int, error) {
 		for _, e := range events {
 			if e.ID > lastID {
 				pl := ""
-				if pyrepr.Truthy(e.Payload) {
-					pl = " " + pyrepr.Str(e.Payload)
+				if anyutil.IsTrue(e.Payload) {
+					pl = " " + anyutil.String(e.Payload)
 				}
 				fmt.Fprintf(c.w, "[%s] %s%s\n", fmtTS(&e.CreatedAt), e.Kind, pl)
 				lastID = e.ID
@@ -92,7 +91,7 @@ func (c *kanbanCLI) cmdDispatch() (int, error) {
 		return 0, err
 	}
 	if nsBool(c.ns, "json") {
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		out.Set("reclaimed", res.Reclaimed)
 		out.Set("crashed", stringsAny(res.Crashed))
 		out.Set("timed_out", stringsAny(res.TimedOut))
@@ -102,20 +101,20 @@ func (c *kanbanCLI) cmdDispatch() (int, error) {
 		out.Set("reaped_terminal_workers", stringsAny(res.ReapedTerminalWorkers))
 		spawned := []any{}
 		for _, s := range res.Spawned {
-			spawned = append(spawned, pyjson.ObjectOf("task_id", s.TaskID, "assignee", s.Assignee, "workspace", s.WorkspacePath))
+			spawned = append(spawned, jsonutil.ObjectOf("task_id", s.TaskID, "assignee", s.Assignee, "workspace", s.WorkspacePath))
 		}
 		out.Set("spawned", spawned)
 		out.Set("skipped_unassigned", stringsAny(res.SkippedUnassigned))
 		out.Set("skipped_nonspawnable", stringsAny(res.SkippedNonspawnable))
 		capped := []any{}
 		for _, s := range res.SkippedPerProfileCapped {
-			capped = append(capped, pyjson.ObjectOf("task_id", s.TaskID, "assignee", s.Assignee, "current", s.Running))
+			capped = append(capped, jsonutil.ObjectOf("task_id", s.TaskID, "assignee", s.Assignee, "current", s.Running))
 		}
 		out.Set("skipped_per_profile_capped", capped)
 		out.Set("auto_assigned_default", stringsAny(res.AutoAssignedDefault))
 		guarded := []any{}
 		for _, g := range res.RespawnGuarded {
-			guarded = append(guarded, pyjson.ObjectOf("task_id", g.TaskID, "reason", g.Reason))
+			guarded = append(guarded, jsonutil.ObjectOf("task_id", g.TaskID, "reason", g.Reason))
 		}
 		out.Set("respawn_guarded", guarded)
 		out.Set("rate_limited", stringsAny(res.RateLimited))
@@ -206,13 +205,13 @@ func (c *kanbanCLI) cmdDaemon() (int, error) {
 			err = os.WriteFile(pidfile, []byte(strconv.Itoa(os.Getpid())), 0o666)
 		}
 		if err != nil {
-			fmt.Fprintf(c.errw, "warning: could not write pidfile %s: %s\n", pidfile, pyrepr.ExceptionMessage(err))
+			fmt.Fprintf(c.errw, "warning: could not write pidfile %s: %s\n", pidfile, err.Error())
 		}
 	}
 	verbose := nsBool(c.ns, "verbose")
 	interval := nsFloat(c.ns, "interval")
 	fmt.Fprintf(c.errw, "Kanban dispatcher running STANDALONE via --force (interval=%ss, pid=%d). Ctrl-C to stop. NOTE: if a gateway is also running with dispatch_in_gateway=true (default), you have two dispatchers racing for claims.\n",
-		pyrepr.Float(interval), os.Getpid())
+		strconv.FormatFloat(interval, 'f', -1, 64), os.Getpid())
 	badTicks, lastWarnAt := 0, int64(0)
 	readyQueueNonempty := func() bool {
 		found := false
@@ -285,11 +284,11 @@ func (c *kanbanCLI) cmdWatch() (int, error) {
 		if err != nil {
 			return err
 		}
-		n, err := pyint.Of(row.Get("m"))
+		n, err := anyutil.ToInt(row.Get("m"))
 		if err != nil {
 			return err
 		}
-		cursor = n.Int64()
+		cursor = n
 		return nil
 	}); err != nil {
 		return 0, err
@@ -306,30 +305,30 @@ func (c *kanbanCLI) cmdWatch() (int, error) {
 			return err
 		}
 		for _, r := range rows {
-			id, err := pyint.Of(r.Get("id"))
+			id, err := anyutil.ToInt(r.Get("id"))
 			if err != nil {
 				return err
 			}
-			cursor = max(cursor, id.Int64())
-			kind := pyrepr.Str(r.Get("kind"))
+			cursor = max(cursor, id)
+			kind := anyutil.String(r.Get("kind"))
 			if (kinds != nil && !kinds[kind]) || (assignee != "" && r.Get("assignee") != assignee) || (tenant != "" && r.Get("tenant") != tenant) {
 				continue
 			}
 			var decoded any
 			if text, ok := r.Get("payload").(string); ok && text != "" {
-				if v, err := pyjson.Loads(text); err == nil {
+				if v, err := jsonutil.Decode(text); err == nil {
 					decoded = v
 				}
 			}
 			pl := ""
-			if pyrepr.Truthy(decoded) {
-				pl = " " + pyrepr.Str(decoded)
+			if anyutil.IsTrue(decoded) {
+				pl = " " + anyutil.String(decoded)
 			}
 			who := "-"
-			if a := r.Get("assignee"); pyrepr.Truthy(a) {
-				who = pyrepr.Str(a)
+			if a := r.Get("assignee"); anyutil.IsTrue(a) {
+				who = anyutil.String(a)
 			}
-			fmt.Fprintf(c.w, "[%s] %-10s %-18s (@%s)%s\n", fmtTS(toEpoch(r.Get("created_at"))), pyrepr.Str(r.Get("task_id")), kind, who, pl)
+			fmt.Fprintf(c.w, "[%s] %-10s %-18s (@%s)%s\n", fmtTS(toEpoch(r.Get("created_at"))), anyutil.String(r.Get("task_id")), kind, who, pl)
 		}
 		return nil
 	})
@@ -362,7 +361,7 @@ func (c *kanbanCLI) cmdGC() (int, error) {
 			return err
 		}
 		for _, row := range rows {
-			id := pyrepr.Str(row.Get("id"))
+			id := anyutil.String(row.Get("id"))
 			wsPath, _ := row.Get("workspace_path").(string)
 			if row.Get("workspace_kind") == "worktree" {
 				if wsPath != "" && isDir(wsPath) {
@@ -441,14 +440,14 @@ func (c *kanbanCLI) cmdGC() (int, error) {
 func (c *kanbanCLI) cmdRepair() (int, error) {
 	report, err := RepairDB(c.ctx, "", nil)
 	if err != nil {
-		return cliErr(c.errw, "kanban repair: "+pyrepr.ExceptionMessage(err), 1), nil
+		return cliErr(c.errw, "kanban repair: "+err.Error(), 1), nil
 	}
 	if nsBool(c.ns, "json") {
 		var backup any
 		if report.BackupPath != "" {
 			backup = report.BackupPath
 		}
-		out := pyjson.ObjectOf("status", report.Status, "db_path", report.DBPath, "messages", stringsAny(report.Messages),
+		out := jsonutil.ObjectOf("status", report.Status, "db_path", report.DBPath, "messages", stringsAny(report.Messages),
 			"post_repair_messages", stringsAny(report.PostRepairMessages), "backup_path", backup, "reindexed", stringsAny(report.Reindexed))
 		if err := printJSON(c.w, out, true); err != nil {
 			return 0, err

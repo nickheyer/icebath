@@ -8,10 +8,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Context scoped to the owning profile home, the given context when no home is named
@@ -48,11 +48,11 @@ func (e *DisplayMetadataError) PyTypeName() string { return "AttributeError" }
 func phaseMessageItems(message map[string]any, phases map[string]bool, unphased bool) []string {
 	items := message["codex_message_items"]
 	if s, ok := items.(string); ok {
-		decoded, err := pyjson.Loads(s)
+		decoded, err := jsonutil.Decode(s)
 		if err != nil {
 			return []string{}
 		}
-		items = pyjson.Plain(decoded)
+		items = jsonutil.Plain(decoded)
 	}
 	list, ok := items.([]any)
 	if !ok {
@@ -195,16 +195,16 @@ func projectOne(ctx context.Context, message map[string]any, enabled bool) (map[
 
 // Whether display metadata marks the commentary withheld, a truthy non dict failing like a missing get
 func withheldCommentary(meta any) (bool, error) {
-	if !pyrepr.Truthy(meta) {
+	if !anyutil.IsTrue(meta) {
 		return false, nil
 	}
 	switch d := meta.(type) {
 	case map[string]any:
-		return pyrepr.Truthy(d[CommentaryWithheld]), nil
-	case *pyjson.Object:
-		return pyrepr.Truthy(d.GetOr(CommentaryWithheld, nil)), nil
+		return anyutil.IsTrue(d[CommentaryWithheld]), nil
+	case *jsonutil.Object:
+		return anyutil.IsTrue(d.ValueOr(CommentaryWithheld, nil)), nil
 	}
-	return false, &DisplayMetadataError{TypeName: pyrepr.TypeName(meta)}
+	return false, &DisplayMetadataError{TypeName: anyutil.Kind(meta)}
 }
 
 // Whether commentary display is enabled by the profile config, false when the policy is unreadable
@@ -219,7 +219,7 @@ func commentaryEnabled(ctx context.Context) (enabled bool) {
 		return false
 	}
 	display := map[string]any{}
-	if raw := cfg["display"]; pyrepr.Truthy(raw) {
+	if raw := cfg["display"]; anyutil.IsTrue(raw) {
 		d, ok := raw.(map[string]any)
 		if !ok {
 			return false
@@ -241,7 +241,7 @@ func truthyValueDefault(v any, def bool) bool {
 func ProjectHistoryCommentary(ctx context.Context, messages []any, profileHome string) ([]any, error) {
 	if !slices.ContainsFunc(messages, func(m any) bool {
 		d, ok := m.(map[string]any)
-		return ok && pyrepr.Truthy(d["codex_message_items"])
+		return ok && anyutil.IsTrue(d["codex_message_items"])
 	}) {
 		return messages, nil
 	}

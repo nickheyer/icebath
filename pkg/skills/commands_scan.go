@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -15,9 +16,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -127,17 +127,13 @@ func copyCommands(c SkillCommands) SkillCommands {
 	return out
 }
 
-// Text of a SKILL.md decoded as utf-8-sig, a UnicodeDecodeError on invalid bytes
+// Text of a SKILL.md with one leading byte order mark dropped, a *textutil.InvalidUTF8Error on bytes that are not UTF-8
 func readSkillMDStrict(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	data = bytes.TrimPrefix(data, []byte("\xEF\xBB\xBF"))
-	if i, ok := pystr.ValidIndex(data); !ok {
-		return "", pystr.UTF8DecodeError(data, i)
-	}
-	return string(data), nil
+	return textutil.DecodeUTF8(textutil.TrimBOM(data))
 }
 
 // First non heading body line clipped to 80 characters, empty when none
@@ -152,7 +148,7 @@ func firstBodyLine(body string) string {
 
 // Registers one SKILL.md in commands unless filtered, disabled, already seen or colliding
 func (s *Scope) scanSkillMD(skillMD string, disabled, seen map[string]bool, commands SkillCommands) error {
-	_, parts := pypath.PathParts(skillMD)
+	_, parts := pathutil.Parts(skillMD)
 	for _, p := range parts {
 		if scanSkipParts[p] {
 			return nil
@@ -168,7 +164,7 @@ func (s *Scope) scanSkillMD(skillMD string, disabled, seen map[string]bool, comm
 	}
 	nameV, ok := fm["name"]
 	if !ok {
-		nameV = pypath.PathName(pypath.PathParent(skillMD))
+		nameV = pathutil.Name(filepath.Dir(filepath.Clean(skillMD)))
 	}
 	name, isStr := nameV.(string)
 	if !isStr {
@@ -201,8 +197,8 @@ func (s *Scope) scanSkillMD(skillMD string, disabled, seen map[string]bool, comm
 	if !fmTruthy(description) {
 		description = "Invoke the " + name + " skill"
 	}
-	md := pypath.PathStr(skillMD)
-	commands[key] = map[string]any{"name": name, "description": description, "skill_md_path": md, "skill_dir": pypath.PathParent(md)}
+	md := filepath.Clean(skillMD)
+	commands[key] = map[string]any{"name": name, "description": description, "skill_md_path": md, "skill_dir": filepath.Dir(filepath.Clean(md))}
 	return nil
 }
 
@@ -393,10 +389,10 @@ func (s *Scope) GetPluginSkillCommands(ctx context.Context) (SkillCommands, erro
 
 // Python str(value or "") of a metadata field
 func pyStrTruthy(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Builds the plugin skill projection from the files that will load and publishes it with its tag
@@ -429,17 +425,17 @@ func (s *Scope) scanPluginSkillCommands(host PluginSkillHost, metadata []map[str
 			continue
 		}
 		desc := parsed["description"]
-		if !pyrepr.Truthy(desc) {
+		if !anyutil.IsTrue(desc) {
 			desc = entry["description"]
 		}
-		if !pyrepr.Truthy(desc) {
+		if !anyutil.IsTrue(desc) {
 			desc = "Invoke the " + qualified + " plugin skill"
 		}
-		mdPath := pypath.PathStr(md)
+		mdPath := filepath.Clean(md)
 		commands[key] = map[string]any{
-			"name": qualified, "description": strings.TrimSpace(pyrepr.Str(desc)),
+			"name": qualified, "description": strings.TrimSpace(anyutil.String(desc)),
 			"skill_identifier": qualified, "skill_md_path": mdPath,
-			"skill_dir": pypath.PathParent(mdPath), "source": "plugin",
+			"skill_dir": filepath.Dir(filepath.Clean(mdPath)), "source": "plugin",
 		}
 	}
 	skillCmds.mu.Lock()
@@ -512,7 +508,7 @@ func CommandSnapshot(cmds SkillCommands) map[string]any {
 	out := make(map[string]any, len(cmds))
 	for key, info := range cmds {
 		var desc any = ""
-		if info != nil && pyrepr.Truthy(info["description"]) {
+		if info != nil && anyutil.IsTrue(info["description"]) {
 			desc = info["description"]
 		}
 		out[strings.TrimLeft(key, "/")] = desc
@@ -589,10 +585,10 @@ func ResolveSlashKey[V any](command string, table map[string]V) (string, bool) {
 // Payload of a command entry by its plugin identifier or skill dir
 func (s *Scope) loadCommandSkill(ctx context.Context, info map[string]any, taskID string) (loadedSkill, bool) {
 	ident := info["skill_identifier"]
-	if !pyrepr.Truthy(ident) {
+	if !anyutil.IsTrue(ident) {
 		ident = info["skill_dir"]
 	}
-	payload, dir, name, ok := s.loadSkillPayload(ctx, pyrepr.Str(ident), taskID)
+	payload, dir, name, ok := s.loadSkillPayload(ctx, anyutil.String(ident), taskID)
 	return loadedSkill{payload, dir, name}, ok
 }
 

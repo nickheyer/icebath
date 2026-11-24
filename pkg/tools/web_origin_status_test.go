@@ -12,8 +12,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestOriginHTTPErrorIntSemantics(t *testing.T) {
@@ -48,7 +48,7 @@ func TestOriginHTTPErrorIntSemantics(t *testing.T) {
 	}
 	for _, inf := range []float64{math.Inf(1), math.Inf(-1)} {
 		_, err := originHTTPError(inf, nil)
-		var pe *pyint.Error
+		var pe *errorutil.Error
 		if !errors.As(err, &pe) || pe.Kind != "OverflowError" || err.Error() != "cannot convert float infinity to integer" {
 			t.Fatalf("infinity must raise the OverflowError: %v", err)
 		}
@@ -124,7 +124,7 @@ func fakeMCPEndpoint(t *testing.T, target *string, reply func() string) {
 // JSON-RPC result whose single text content is text
 func mcpTextResult(t *testing.T, text string) string {
 	t.Helper()
-	encoded, err := pyjson.Dumps(text)
+	encoded, err := jsonutil.Encode(text)
 	if err != nil {
 		t.Fatal(err)
 	}

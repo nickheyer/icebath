@@ -5,6 +5,7 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/sha1"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -12,8 +13,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // WeComCryptoError is implemented by every callback crypto failure
@@ -76,7 +76,7 @@ func NewWXBizMsgCrypt(token, encodingAESKey, receiveID string) (*WXBizMsgCrypt, 
 			return nil, fmt.Errorf("%s", c.msg)
 		}
 	}
-	key, err := pybase64.B64Decode(encodingAESKey + "=")
+	key, err := base64.StdEncoding.DecodeString(encodingAESKey + "=")
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (c *WXBizMsgCrypt) VerifyURL(msgSignature, timestamp, nonce, echostr string
 	if err != nil {
 		return "", err
 	}
-	return pystr.DecodeUTF8(raw)
+	return textutil.DecodeUTF8(raw)
 }
 
 // Decrypt checks the signature, opens the AES-CBC payload and returns the XML after the receive id check
@@ -108,7 +108,7 @@ func (c *WXBizMsgCrypt) Decrypt(msgSignature, timestamp, nonce, encrypt string) 
 	if sha1Signature(c.Token, timestamp, nonce, encrypt) != msgSignature {
 		return nil, &SignatureError{"signature mismatch"}
 	}
-	cipherText, err := pybase64.B64Decode(encrypt)
+	cipherText, err := base64.StdEncoding.DecodeString(encrypt)
 	if err != nil {
 		return nil, &DecryptError{fmt.Sprintf("invalid base64 payload: %v", err)}
 	}
@@ -146,7 +146,7 @@ func (c *WXBizMsgCrypt) open(cipherText []byte) ([]byte, string, error) {
 	}
 	xmlLength := int(binary.BigEndian.Uint32(content[:4]))
 	end := min(4+xmlLength, len(content))
-	receiveID, err := pystr.DecodeUTF8(content[end:])
+	receiveID, err := textutil.DecodeUTF8(content[end:])
 	if err != nil {
 		return nil, "", err
 	}

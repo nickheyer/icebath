@@ -7,10 +7,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -40,7 +40,7 @@ func cliLines(text, pad string) []string {
 }
 
 // Decoded reply of the cronjob tool called the way the CLI calls it
-func (s *Store) cronAPI(ctx context.Context, a *cronjobArgs) *pyjson.Object {
+func (s *Store) cronAPI(ctx context.Context, a *cronjobArgs) *jsonutil.Object {
 	return cronAPIDoor(s, ctx, a)
 }
 
@@ -48,23 +48,23 @@ func (s *Store) cronAPI(ctx context.Context, a *cronjobArgs) *pyjson.Object {
 var cronAPIDoor = cronAPICall
 
 // Runs the cronjob tool with the CLI defaults and decodes its JSON object reply
-func cronAPICall(s *Store, ctx context.Context, a *cronjobArgs) *pyjson.Object {
+func cronAPICall(s *Store, ctx context.Context, a *cronjobArgs) *jsonutil.Object {
 	if a.Paused == nil {
 		a.Paused = false
 	}
-	v, err := pyjson.Loads(s.cronjob(ctx, a))
+	v, err := jsonutil.Decode(s.cronjob(ctx, a))
 	if err != nil {
 		panic(err)
 	}
-	obj, _ := v.(*pyjson.Object)
+	obj, _ := v.(*jsonutil.Object)
 	if obj == nil {
-		panic(fmt.Sprintf("cronjob reply is not an object: %s", pyrepr.Repr(v)))
+		panic(fmt.Sprintf("cronjob reply is not an object: %s", anyutil.Quote(v)))
 	}
 	return obj
 }
 
 // Value of key in a decoded object, def when the key is absent
-func field(o *pyjson.Object, key string, def any) any {
+func field(o *jsonutil.Object, key string, def any) any {
 	if o != nil {
 		if v, ok := o.Get(key); ok {
 			return v
@@ -74,14 +74,14 @@ func field(o *pyjson.Object, key string, def any) any {
 }
 
 // Decoded job objects of a list reply, none unless the reply succeeded
-func replyJobs(result *pyjson.Object) []*pyjson.Object {
-	if !pyrepr.Truthy(field(result, "success", nil)) {
+func replyJobs(result *jsonutil.Object) []*jsonutil.Object {
+	if !anyutil.IsTrue(field(result, "success", nil)) {
 		return nil
 	}
 	items, _ := field(result, "jobs", nil).([]any)
-	out := make([]*pyjson.Object, 0, len(items))
+	out := make([]*jsonutil.Object, 0, len(items))
 	for _, it := range items {
-		if o, ok := it.(*pyjson.Object); ok {
+		if o, ok := it.(*jsonutil.Object); ok {
 			out = append(out, o)
 		}
 	}
@@ -89,11 +89,11 @@ func replyJobs(result *pyjson.Object) []*pyjson.Object {
 }
 
 // Skill names of a decoded job joined with a comma and a space
-func joinedSkills(job *pyjson.Object) string {
+func joinedSkills(job *jsonutil.Object) string {
 	items, _ := field(job, "skills", nil).([]any)
 	parts := make([]string, len(items))
 	for i, it := range items {
-		parts[i] = pyrepr.Str(it)
+		parts[i] = anyutil.String(it)
 	}
 	return strings.Join(parts, ", ")
 }
@@ -101,7 +101,7 @@ func joinedSkills(job *pyjson.Object) string {
 // Boxed overview with usage and the current jobs and their next runs
 func (s *Store) cronOverviewLines(ctx context.Context) []string {
 	rule := "+" + strings.Repeat("-", 68) + "+"
-	out := []string{"", rule, "|" + pystr.Center(cliT(ctx, "cron.overview_title"), 68) + "|", rule, "", "  " + cliT(ctx, "cron.overview_commands")}
+	out := []string{"", rule, "|" + textutil.Center(cliT(ctx, "cron.overview_title"), 68) + "|", rule, "", "  " + cliT(ctx, "cron.overview_commands")}
 	out = append(out, cliLines(cliT(ctx, "cron.overview_usage"), "    ")...)
 	out = append(out, "")
 	jobs := replyJobs(s.cronAPI(ctx, &cronjobArgs{Action: "list"}))
@@ -110,13 +110,13 @@ func (s *Store) cronOverviewLines(ctx context.Context) []string {
 	}
 	out = append(out, "  "+cliT(ctx, "cron.current_jobs"), "  "+strings.Repeat("-", 63))
 	for _, job := range jobs {
-		out = append(out, fmt.Sprintf("    %-12s | %-15s | %-8s", textutil.First(pyrepr.Str(field(job, "job_id", nil)), 12),
-			pyrepr.Str(field(job, "schedule", nil)), pyrepr.Str(field(job, "repeat", "?"))))
-		if pyrepr.Truthy(field(job, "skills", nil)) {
+		out = append(out, fmt.Sprintf("    %-12s | %-15s | %-8s", textutil.First(anyutil.String(field(job, "job_id", nil)), 12),
+			anyutil.String(field(job, "schedule", nil)), anyutil.String(field(job, "repeat", "?"))))
+		if anyutil.IsTrue(field(job, "skills", nil)) {
 			out = append(out, "      "+cliT(ctx, "cron.skills", "skills", joinedSkills(job)))
 		}
-		out = append(out, "      "+pyrepr.Str(field(job, "prompt_preview", "")))
-		if pyrepr.Truthy(field(job, "next_run_at", nil)) {
+		out = append(out, "      "+anyutil.String(field(job, "prompt_preview", "")))
+		if anyutil.IsTrue(field(job, "next_run_at", nil)) {
 			label, value := s.nextRunRow(job)
 			if label == "Next run" {
 				label = cliT(ctx, "cron.next_short")
@@ -137,7 +137,7 @@ func (s *Store) cronListLines(ctx context.Context, includeDisabled bool) []strin
 	out := []string{"", cliT(ctx, "cron.list_header"), strings.Repeat("-", 80)}
 	for _, job := range jobs {
 		next := "  " + cliT(ctx, "cron.next_run_na")
-		if pyrepr.Truthy(field(job, "next_run_at", nil)) {
+		if anyutil.IsTrue(field(job, "next_run_at", nil)) {
 			label, value := s.nextRunRow(job)
 			next = fmt.Sprintf("  %s: %s", label, value)
 		}
@@ -147,18 +147,18 @@ func (s *Store) cronListLines(ctx context.Context, includeDisabled bool) []strin
 			"  "+cliT(ctx, "cron.state", "state", field(job, "state", "?")),
 			"  "+cliT(ctx, "cron.schedule_repeat", "schedule", field(job, "schedule", nil), "repeat", field(job, "repeat", "?")),
 			next)
-		if pyrepr.Truthy(field(job, "skills", nil)) {
+		if anyutil.IsTrue(field(job, "skills", nil)) {
 			out = append(out, "  "+cliT(ctx, "cron.skills", "skills", joinedSkills(job)))
 		}
 		out = append(out, "  "+cliT(ctx, "cron.prompt", "prompt", field(job, "prompt_preview", "")))
-		if pyrepr.Truthy(field(job, "last_run_at", nil)) {
+		if anyutil.IsTrue(field(job, "last_run_at", nil)) {
 			status := field(job, "last_status", nil)
-			if !pyrepr.Truthy(status) {
+			if !anyutil.IsTrue(status) {
 				status = "?"
 			}
-			if status == "delivery_failed" && pyrepr.Truthy(field(job, "last_delivery_error", nil)) {
+			if status == "delivery_failed" && anyutil.IsTrue(field(job, "last_delivery_error", nil)) {
 				status = cliT(ctx, "cron.status_delivery_failed", "error", field(job, "last_delivery_error", nil))
-			} else if status == "error" && pyrepr.Truthy(field(job, "last_error", nil)) {
+			} else if status == "error" && anyutil.IsTrue(field(job, "last_error", nil)) {
 				status = cliT(ctx, "cron.status_error", "error", field(job, "last_error", nil))
 			}
 			out = append(out, "  "+cliT(ctx, "cron.last_run", "when", field(job, "last_run_at", nil), "status", status))
@@ -266,11 +266,11 @@ func (s *Store) cronAddLines(ctx context.Context, _ string, opts *cronFlags) []s
 		a.Skills = stringsToAny(skills)
 	}
 	result := s.cronAPI(ctx, a)
-	if !pyrepr.Truthy(field(result, "success", nil)) {
+	if !anyutil.IsTrue(field(result, "success", nil)) {
 		return []string{cliT(ctx, "cron.create_failed", "error", field(result, "error", nil))}
 	}
 	out := []string{cliT(ctx, "cron.created", "job_id", field(result, "job_id", nil)), "  " + cliT(ctx, "cron.schedule", "schedule", field(result, "schedule", nil))}
-	if pyrepr.Truthy(field(result, "skills", nil)) {
+	if anyutil.IsTrue(field(result, "skills", nil)) {
 		out = append(out, "  "+cliT(ctx, "cron.skills", "skills", joinedSkills(result)))
 	}
 	return append(out, "  "+cliT(ctx, "cron.next_run", "value", field(result, "next_run_at", nil)))
@@ -329,12 +329,12 @@ func (s *Store) cronEditLines(ctx context.Context, _ string, opts *cronFlags) ([
 	}
 	result := s.cronAPI(ctx, &cronjobArgs{Action: "update", JobID: jobID, Schedule: flagArg(opts.values["schedule"]), Prompt: flagArg(opts.values["prompt"]),
 		Name: flagArg(opts.values["name"]), Deliver: flagArg(opts.values["deliver"]), Repeat: opts.repeat, Skills: finalSkills})
-	if !pyrepr.Truthy(field(result, "success", nil)) {
+	if !anyutil.IsTrue(field(result, "success", nil)) {
 		return []string{cliT(ctx, "cron.update_failed", "error", field(result, "error", nil))}, nil
 	}
-	job, _ := field(result, "job", nil).(*pyjson.Object)
+	job, _ := field(result, "job", nil).(*jsonutil.Object)
 	skillsLine := "  " + cliT(ctx, "cron.skills_none")
-	if pyrepr.Truthy(field(job, "skills", nil)) {
+	if anyutil.IsTrue(field(job, "skills", nil)) {
 		skillsLine = "  " + cliT(ctx, "cron.skills", "skills", joinedSkills(job))
 	}
 	return []string{cliT(ctx, "cron.updated", "job_id", field(job, "job_id", nil)), "  " + cliT(ctx, "cron.schedule", "schedule", field(job, "schedule", nil)), skillsLine}, nil
@@ -355,15 +355,15 @@ func (s *Store) cronJobActionLines(ctx context.Context, subcommand string, opts 
 		reason = "paused from /cron"
 	}
 	result := s.cronAPI(ctx, &cronjobArgs{Action: action, JobID: jobID, Reason: reason})
-	if !pyrepr.Truthy(field(result, "success", nil)) {
+	if !anyutil.IsTrue(field(result, "success", nil)) {
 		return []string{cliT(ctx, "cron."+action+"_failed", "error", field(result, "error", nil))}
 	}
 	if action == "remove" {
-		removed, _ := field(result, "removed_job", nil).(*pyjson.Object)
+		removed, _ := field(result, "removed_job", nil).(*jsonutil.Object)
 		return []string{cliT(ctx, "cron.removed", "name", field(removed, "name", jobID), "job_id", jobID)}
 	}
-	job, _ := field(result, "job", nil).(*pyjson.Object)
-	if action == "run" && pyrepr.Truthy(field(job, "execution_skipped", nil)) {
+	job, _ := field(result, "job", nil).(*jsonutil.Object)
+	if action == "run" && anyutil.IsTrue(field(job, "execution_skipped", nil)) {
 		return []string{cliT(ctx, "cron.did_not_run", "name", field(job, "name", nil), "job_id", jobID, "reason", field(job, "execution_skipped", nil))}
 	}
 	key := map[string]string{"pause": "cron.paused", "resume": "cron.resumed", "run": "cron.triggered"}[action]
@@ -379,7 +379,7 @@ func (s *Store) cronJobActionLines(ctx context.Context, subcommand string, opts 
 
 // Output lines of the slash cron command, the overview when no subcommand is given
 func (s *Store) cronCommandLines(ctx context.Context, arg string) ([]string, error) {
-	tokens, err := pyshlex.SplitPOSIX(arg, false)
+	tokens, err := shellutil.Split(arg)
 	if err != nil {
 		return nil, err
 	}

@@ -3,14 +3,15 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const PromptPinVersion = 1
 
 // Validated durable snapshot of the ephemeral prompt inputs, nil when malformed or of another version
-func SanitizePromptPin(pin any) *pyjson.Object {
-	obj, ok := pin.(*pyjson.Object)
+func SanitizePromptPin(pin any) *jsonutil.Object {
+	obj, ok := pin.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -38,7 +39,7 @@ func SanitizePromptPin(pin any) *pyjson.Object {
 	if _, ok := parentChatID.(string); parentChatID != nil && !ok {
 		return nil
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("version", int64(PromptPinVersion))
 	out.Set("context_key", key)
 	out.Set("context_prompt", contextPrompt)
@@ -75,7 +76,7 @@ func (s *SessionStore) SetPromptPin(ctx context.Context, sessionKey string, pin 
 	if entry == nil || (expectedSessionID != nil && entry.SessionID != *expectedSessionID) {
 		return false, nil
 	}
-	if entry.PromptPin == nil || !pyjson.Equal(entry.PromptPin, cleaned) {
+	if entry.PromptPin == nil || !anyutil.Equal(entry.PromptPin, cleaned) {
 		candidate := *entry
 		candidate.PromptPin = cleaned
 		if err := s.saveEntry(ctx, sessionKey, candidate.ToDict(), true); err != nil {
@@ -87,7 +88,7 @@ func (s *SessionStore) SetPromptPin(ctx context.Context, sessionKey string, pin 
 }
 
 // Copy of the prompt pin while the route still owns the expected session, nil otherwise
-func (s *SessionStore) GetPromptPin(ctx context.Context, sessionKey string, expectedSessionID *string) *pyjson.Object {
+func (s *SessionStore) GetPromptPin(ctx context.Context, sessionKey string, expectedSessionID *string) *jsonutil.Object {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entry := s.entryLocked(ctx, sessionKey)
@@ -97,5 +98,5 @@ func (s *SessionStore) GetPromptPin(ctx context.Context, sessionKey string, expe
 	if entry.PromptPin == nil || entry.PromptPin.Len() == 0 {
 		return nil
 	}
-	return entry.PromptPin.Copy()
+	return entry.PromptPin.Clone()
 }

@@ -8,9 +8,9 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -29,7 +29,7 @@ type peerSeat struct {
 
 // Members a create seats on registered peers, each invited at its peer and rewritten to the exact peer target
 func (c *CanonicalHostedRoomService) invitePeerMembers(roomID string, members any) (any, []peerSeat, error) {
-	list, ok := pyjson.Plain(members).([]any)
+	list, ok := jsonutil.Plain(members).([]any)
 	if !ok {
 		return members, nil, nil
 	}
@@ -77,8 +77,8 @@ func (c *CanonicalHostedRoomService) invitePeerMembers(roomID string, members an
 		if err != nil {
 			return fail(err)
 		}
-		grant := pyrepr.Str(invitation["grant"])
-		profile := pyrepr.Str(invitation["target_profile"])
+		grant := anyutil.String(invitation["grant"])
+		profile := anyutil.String(invitation["target_profile"])
 		seats = append(seats, peerSeat{memberID: memberID, peer: name, targetProfile: profile, grant: grant, catalog: catalog, inviter: inviter})
 		if catalog.EndpointURL == nil || *catalog.EndpointURL == "" {
 			return fail(roomRefusal("invalid_params", fmt.Sprintf("peer '%s' advertises no room link address, set room_link_url in its config", name)))
@@ -155,7 +155,7 @@ var roomLinkRuns struct {
 }
 
 // Whether this gateway can serve as a room link target, its catalog and address when it can, the reason when not
-func groupRoomLinkStatus(ctx context.Context, installationID string) (*pyjson.Object, error) {
+func groupRoomLinkStatus(ctx context.Context, installationID string) (*jsonutil.Object, error) {
 	roomLinkRuns.Lock()
 	if roomLinkRuns.store == nil {
 		store, err := NewRunIdempotencyStore(ctx, "")
@@ -168,10 +168,10 @@ func groupRoomLinkStatus(ctx context.Context, installationID string) (*pyjson.Ob
 	durable := roomLinkRuns.store.Durable()
 	roomLinkRuns.Unlock()
 	if !durable {
-		return pyjson.ObjectOf("enabled", false, "reason", "durable_run_storage_required"), nil
+		return jsonutil.ObjectOf("enabled", false, "reason", "durable_run_storage_required"), nil
 	}
 	if _, err := GatewayRoomGrantSecret(ctx, ""); err != nil {
-		return pyjson.ObjectOf("enabled", false, "reason", "gateway_roomlink_secret_unavailable"), nil
+		return jsonutil.ObjectOf("enabled", false, "reason", "gateway_roomlink_secret_unavailable"), nil
 	}
 	profile := profiles.CurrentProfileName(ctx)
 	if profile == "" {
@@ -187,6 +187,6 @@ func groupRoomLinkStatus(ctx context.Context, installationID string) (*pyjson.Ob
 	if err != nil {
 		return nil, err
 	}
-	plain, _ := pyjson.Plain(catalog).(map[string]any)
-	return pyjson.ObjectOf("enabled", true, "profile", profile, "catalog", plain, "endpoint", plain["endpoint"]), nil
+	plain, _ := jsonutil.Plain(catalog).(map[string]any)
+	return jsonutil.ObjectOf("enabled", true, "profile", profile, "catalog", plain, "endpoint", plain["endpoint"]), nil
 }

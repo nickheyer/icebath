@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // UpstreamCredential is a resolved bearer and base URL ready to forward to
@@ -63,7 +63,7 @@ func getAdapter(env PoolEnv, name string) (UpstreamAdapter, error) {
 		if available == "" {
 			available = "(none)"
 		}
-		return nil, fmt.Errorf("Unknown proxy upstream provider: %s. Available: %s", pyrepr.Repr(name), available)
+		return nil, fmt.Errorf("Unknown proxy upstream provider: %s. Available: %s", anyutil.Quote(name), available)
 	}
 	return ctor(env), nil
 }

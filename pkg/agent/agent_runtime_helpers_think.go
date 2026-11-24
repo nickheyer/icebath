@@ -7,9 +7,9 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -48,15 +48,15 @@ func flattenContentText(content any) string {
 		return b.String()
 	case map[string]any:
 		v := c["text"]
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			v = c["content"]
 		}
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			return ""
 		}
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
-	return pyrepr.Str(content)
+	return anyutil.String(content)
 }
 
 // Text a list part contributes, the string itself or the non empty text of a non reasoning dict
@@ -66,8 +66,8 @@ func flattenContentPart(part any) string {
 		return p
 	case map[string]any:
 		kind := ""
-		if pyrepr.Truthy(p["type"]) {
-			kind = pyrepr.Str(p["type"])
+		if anyutil.IsTrue(p["type"]) {
+			kind = anyutil.String(p["type"])
 		}
 		if text, ok := p["text"].(string); ok && text != "" && !droppedFlattenTypes[strings.ToLower(strings.TrimSpace(kind))] {
 			return text
@@ -78,7 +78,7 @@ func flattenContentPart(part any) string {
 
 // Visible text with reasoning blocks, tool call XML and stray tags removed
 func (a *AIAgent) stripThinkBlocks(content any) string {
-	if !pyrepr.Truthy(content) {
+	if !anyutil.IsTrue(content) {
 		return ""
 	}
 	text := flattenContentText(content)
@@ -145,7 +145,7 @@ func firstTruthyKey(m map[string]any, keys ...string) any {
 		if k == "" && i == len(keys)-1 {
 			return ""
 		}
-		if v = m[k]; pyrepr.Truthy(v) {
+		if v = m[k]; anyutil.IsTrue(v) {
 			return v
 		}
 	}

@@ -11,11 +11,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -32,7 +31,7 @@ const (
 	autoPruneSaveFailed    = "Could not save sessions.auto_prune; check disk space and config.yaml permissions."
 )
 
-var autoPruneDiskUsage = pyfs.DiskUsage
+var autoPruneDiskUsage = fsutil.DiskUsage
 
 // Size of state.db and the free and total bytes of its filesystem
 type DiskSnapshot struct {
@@ -132,15 +131,15 @@ func AutoPruneSnoozed(ctx context.Context, h string, now float64) bool {
 	if err != nil {
 		return false
 	}
-	doc, err := pyjson.LoadsBytes(trimUTF8BOM(data))
+	doc, err := jsonutil.Decode(trimUTF8BOM(data))
 	if err != nil {
 		return false
 	}
-	obj, ok := doc.(*pyjson.Object)
+	obj, ok := doc.(*jsonutil.Object)
 	if !ok {
 		return false
 	}
-	until, err := pyint.Float(obj.GetOr("snoozed_until", int64(0)))
+	until, err := anyutil.ToFloat(obj.ValueOr("snoozed_until", int64(0)))
 	if err != nil {
 		return false
 	}
@@ -152,7 +151,7 @@ func AutoPruneSnoozed(ctx context.Context, h string, now float64) bool {
 
 // Records a later answer that holds for the given seconds
 func AutoPruneSnooze(ctx context.Context, h string, seconds float64) error {
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("snoozed_until", pruneNow()+seconds)
 	return config.AtomicJSONWrite(ctx, autoPruneSnoozePath(ctx, h), record)
 }
@@ -177,7 +176,7 @@ func AutoPruneShouldAsk(ctx context.Context, h string) *DiskSnapshot {
 	return snap
 }
 
-// Truncated quotient of a times b over c computed exactly, the int of a Python true division
+// Truncated quotient of a times b over c, the product kept exact before the division
 func exactScaled(a, b, c int64) int64 {
 	q := new(big.Rat).SetFrac(new(big.Int).Mul(big.NewInt(a), big.NewInt(b)), big.NewInt(c))
 	f, _ := q.Float64()
@@ -185,16 +184,16 @@ func exactScaled(a, b, c int64) int64 {
 }
 
 // Integer column of a one row aggregate, zero when the row is absent
-func pruneRowInt(row *pyjson.Object, key string) int64 {
+func pruneRowInt(row *jsonutil.Object, key string) int64 {
 	if row == nil {
 		return 0
 	}
 	v, _ := row.Get(key)
-	n, err := pyint.Of(v)
-	if err != nil || !n.IsInt64() {
+	n, err := anyutil.ToInt(v)
+	if err != nil {
 		return 0
 	}
-	return n.Int64()
+	return n
 }
 
 // Reclaim figures of a read only store, keeping the figures read before an error stopped the estimate
@@ -260,7 +259,7 @@ func AutoPruneAdvise(ctx context.Context, h string) (*PruneAdvice, error) {
 	advice := &PruneAdvice{Disk: *snap, RetentionDays: retention, PrunableSessions: prunable, TotalSessions: total,
 		ReclaimBytes: reclaim, EstimateOK: estimateOK, VacuumAfterPrune: settings.SessionsVacuumAfterPrune.Get(pruneSettings(ctx, h))}
 	if estimateOK {
-		stored := pyjson.NewObject()
+		stored := jsonutil.NewObject()
 		for _, kv := range [][2]any{{"retention_days", retention}, {"prunable", prunable}, {"total", total},
 			{"db_bytes", snap.DBBytes}, {"reclaim_bytes", reclaim}} {
 			stored.Set(kv[0].(string), kv[1])
@@ -271,19 +270,19 @@ func AutoPruneAdvise(ctx context.Context, h string) (*PruneAdvice, error) {
 }
 
 // Estimate sidecar of a home, empty when missing, unreadable or not an object
-func autoPruneReadEstimate(ctx context.Context, h string) *pyjson.Object {
+func autoPruneReadEstimate(ctx context.Context, h string) *jsonutil.Object {
 	data, err := os.ReadFile(filepath.Join(pruneAdvisorHome(ctx, h), AutoPruneEstimateFile))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	doc, err := pyjson.LoadsBytes(trimUTF8BOM(data))
+	doc, err := jsonutil.Decode(trimUTF8BOM(data))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	if obj, ok := doc.(*pyjson.Object); ok {
+	if obj, ok := doc.(*jsonutil.Object); ok {
 		return obj
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Merges key and value pairs, each stamped with the time, into the estimate sidecar, a failed write only logged
@@ -309,16 +308,16 @@ func autoPruneCachedTotalBytes(ctx context.Context, h string, dbBytes int64) (in
 	if !ok1 || !ok2 || !ok3 {
 		return 0, false
 	}
-	total, err1 := pyint.Of(rawTotal)
-	at, err2 := pyint.Float(rawAt)
-	base, err3 := pyint.Of(rawBase)
-	if err1 != nil || err2 != nil || err3 != nil || !total.IsInt64() || !base.IsInt64() {
+	total, err1 := anyutil.ToInt(rawTotal)
+	at, err2 := anyutil.ToFloat(rawAt)
+	base, err3 := anyutil.ToInt(rawBase)
+	if err1 != nil || err2 != nil || err3 != nil {
 		return 0, false
 	}
-	if pruneNow()-at > AutoPruneTotalBytesTTL || base.Sign() <= 0 || total.Sign() <= 0 {
+	if pruneNow()-at > AutoPruneTotalBytesTTL || base <= 0 || total <= 0 {
 		return 0, false
 	}
-	return exactScaled(total.Int64(), dbBytes, base.Int64()), true
+	return exactScaled(total, dbBytes, base), true
 }
 
 // Stored size of one messages row, the byte length of every text or blob column of the live schema
@@ -330,10 +329,10 @@ func autoPruneRowBytesSQL(ctx context.Context, db *SessionDB) (string, error) {
 	var parts []string
 	for _, r := range rows {
 		typ, _ := r.Get("type")
-		switch strings.ToUpper(pyrepr.Str(typ)) {
+		switch strings.ToUpper(anyutil.String(typ)) {
 		case "TEXT", "BLOB", "":
 			name, _ := r.Get("name")
-			parts = append(parts, `COALESCE(LENGTH(CAST(m."`+pyrepr.Str(name)+`" AS BLOB)), 0)`)
+			parts = append(parts, `COALESCE(LENGTH(CAST(m."`+anyutil.String(name)+`" AS BLOB)), 0)`)
 		}
 	}
 	if len(parts) == 0 {
@@ -388,8 +387,8 @@ func AutoPruneAdviceLines(advice PruneAdvice, commandPrefix string) []string {
 }
 
 // Notification payload for the TUI and gateway, a short status text with the full question as detail
-func AutoPruneNoticePayload(advice PruneAdvice) *pyjson.Object {
-	payload := pyjson.NewObject()
+func AutoPruneNoticePayload(advice PruneAdvice) *jsonutil.Object {
+	payload := jsonutil.NewObject()
 	payload.Set("text", fmt.Sprintf("⚠ Low disk (%s free) · /autoprune on|off|later", pruneGB(advice.Disk.FreeBytes)))
 	payload.Set("detail", strings.Join(AutoPruneAdviceLines(advice, "/"), "\n"))
 	payload.Set("level", "warn")

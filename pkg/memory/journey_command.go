@@ -19,11 +19,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -131,7 +131,7 @@ func journeyRowRuns(palette map[string]string, row []any, color bool) journeyLin
 		if len(run) < 2 {
 			continue
 		}
-		chunk, style := pyrepr.Str(run[0]), pyrepr.Str(run[1])
+		chunk, style := anyutil.String(run[0]), anyutil.String(run[1])
 		alpha := 1.0
 		if len(run) > 2 {
 			if f, ok := journeyFloat(run[2]); ok {
@@ -139,8 +139,8 @@ func journeyRowRuns(palette map[string]string, row []any, color bool) journeyLin
 			}
 		}
 		override := ""
-		if len(run) > 3 && pyrepr.Truthy(run[3]) {
-			override = pyrepr.Str(run[3])
+		if len(run) > 3 && anyutil.IsTrue(run[3]) {
+			override = anyutil.String(run[3])
 		}
 		switch {
 		case !color:
@@ -225,9 +225,9 @@ func journeyFrameLines(palette map[string]string, payload map[string]any, cols, 
 		}
 		glyphStyle := ""
 		if color {
-			glyphStyle = journeyResolve(palette, pyrepr.Str(item["style"]), 1.0)
+			glyphStyle = journeyResolve(palette, anyutil.String(item["style"]), 1.0)
 		}
-		legendLine = append(legendLine, journeyRun{Text: pyrepr.Str(item["glyph"]) + " ", Style: glyphStyle}, journeyRun{Text: pyrepr.Str(item["label"]), Style: styleIf(color, "grey62")})
+		legendLine = append(legendLine, journeyRun{Text: anyutil.String(item["glyph"]) + " ", Style: glyphStyle}, journeyRun{Text: anyutil.String(item["label"]), Style: styleIf(color, "grey62")})
 	}
 	lines = append(lines, legendLine)
 	if len(categories) > 0 {
@@ -238,9 +238,9 @@ func journeyFrameLines(palette map[string]string, payload map[string]any, cols, 
 			}
 			glyphStyle := ""
 			if color {
-				glyphStyle = journeyFade(palette, pyrepr.Str(item["color"]), 1.0)
+				glyphStyle = journeyFade(palette, anyutil.String(item["color"]), 1.0)
 			}
-			catLine = append(catLine, journeyRun{Text: pyrepr.Str(item["glyph"]) + " ", Style: glyphStyle}, journeyRun{Text: pyrepr.Str(item["label"]), Style: styleIf(color, "grey54")})
+			catLine = append(catLine, journeyRun{Text: anyutil.String(item["glyph"]) + " ", Style: glyphStyle}, journeyRun{Text: anyutil.String(item["label"]), Style: styleIf(color, "grey54")})
 		}
 		lines = append(lines, catLine)
 	}
@@ -253,12 +253,12 @@ func journeyFrameLines(palette map[string]string, payload map[string]any, cols, 
 	gap := max(1, inner-utf8.RuneCountInString(axis["start"])-utf8.RuneCountInString(axis["end"]))
 	lines = append(lines, journeyLine{{Text: "  "}, {Text: axis["start"], Style: styleIf(color, "grey54")}, {Text: strings.Repeat(" ", gap)}, {Text: axis["end"], Style: styleIf(color, "grey54")}})
 	pct := int(math.RoundToEven(reveal * 100))
-	date := pyrepr.Str(frame["date"])
-	if !pyrepr.Truthy(frame["date"]) {
+	date := anyutil.String(frame["date"])
+	if !anyutil.IsTrue(frame["date"]) {
 		date = "—"
 	}
 	lines = append(lines, journeyLine{{Text: "  "}, {Text: "◷ ", Style: styleIf(color, "grey54")}, {Text: date, Style: styleIf(color, journeyTitleColor)},
-		{Text: fmt.Sprintf("   %s/%d revealed · %d%%", pyrepr.Str(frame["visible"]), count, pct), Style: styleIf(color, "grey54")}})
+		{Text: fmt.Sprintf("   %s/%d revealed · %d%%", anyutil.String(frame["visible"]), count, pct), Style: styleIf(color, "grey54")}})
 	labels := journeyLabelEntries(frame["labels"])
 	if len(labels) > 0 {
 		lines = append(lines, journeyLine{}, journeyLine{{Text: "  charted signals", Style: styleIf(color, "grey62")}})
@@ -269,14 +269,14 @@ func journeyFrameLines(palette map[string]string, payload map[string]any, cols, 
 				if f, ok := journeyFloat(item["alpha"]); ok {
 					alpha = f
 				}
-				signalStyle = resolveChartedSignal(palette, pyrepr.Str(item["style"]), alpha)
+				signalStyle = resolveChartedSignal(palette, anyutil.String(item["style"]), alpha)
 			}
-			meta := pyrepr.Str(item["meta"])
+			meta := anyutil.String(item["meta"])
 			if utf8.RuneCountInString(meta) > 32 {
 				meta = textutil.First(meta, 29) + "…"
 			}
-			lines = append(lines, journeyLine{{Text: "  "}, {Text: pyrepr.Str(item["key"]) + " ", Style: styleIf(color, "grey70")},
-				{Text: pyrepr.Str(item["glyph"]) + " ", Style: signalStyle}, {Text: pyrepr.Str(item["label"]), Style: signalStyle},
+			lines = append(lines, journeyLine{{Text: "  "}, {Text: anyutil.String(item["key"]) + " ", Style: styleIf(color, "grey70")},
+				{Text: anyutil.String(item["glyph"]) + " ", Style: signalStyle}, {Text: anyutil.String(item["label"]), Style: signalStyle},
 				{Text: "  " + meta, Style: styleIf(color, "grey54")}})
 		}
 	}
@@ -325,7 +325,7 @@ func newJourneyConsole(w io.Writer, color bool, width int, force bool) *journeyC
 		c.ansi, c.system = true, pyrich.TermColorSystem()
 	}
 	if c.width == 0 {
-		c.width = pyrich.DetectWidth()
+		c.width = consoleutil.DetectWidth()
 	}
 	return c
 }
@@ -335,7 +335,7 @@ func (c *journeyConsole) render(run journeyRun) (string, error) {
 	if !c.ansi || run.Style == "" || run.Text == "" {
 		return run.Text, nil
 	}
-	style, err := pyrich.ParseStyle(run.Style)
+	style, err := consoleutil.ParseStyle(run.Style)
 	if err != nil {
 		return "", err
 	}
@@ -353,7 +353,7 @@ func (c *journeyConsole) printLines(lines []journeyLine) error {
 			}
 			b.WriteString(text)
 		}
-		for _, wrapped := range pyrich.WrapStyled(b.String(), c.width, true) {
+		for _, wrapped := range consoleutil.WrapStyled(b.String(), c.width) {
 			fmt.Fprintln(c.out, wrapped)
 		}
 	}
@@ -372,7 +372,7 @@ func (c *journeyConsole) lineCount(lines []journeyLine) (int, error) {
 			}
 			b.WriteString(text)
 		}
-		n += len(pyrich.WrapStyled(b.String(), c.width, true))
+		n += len(consoleutil.WrapStyled(b.String(), c.width))
 	}
 	return n, nil
 }
@@ -383,7 +383,7 @@ var journeyJSONStyles = map[string]string{"brace": "bold", "bool_true": "italic 
 
 // The payload as print_json shows it, indented two and highlighted like rich on a color console
 func (c *journeyConsole) printJSON(payload map[string]any) error {
-	text, err := pyjson.Dumps(payload, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -472,7 +472,7 @@ func journeyClamp(v, lo, hi float64) float64 {
 	return math.Min(v, hi)
 }
 
-func nsJourneyBool(ns map[string]any, key string) bool { return pyrepr.Truthy(ns[key]) }
+func nsJourneyBool(ns map[string]any, key string) bool { return anyutil.IsTrue(ns[key]) }
 
 func nsJourneyInt(ns map[string]any, key string) int {
 	f, ok := journeyFloat(ns[key])
@@ -499,7 +499,7 @@ func journeyCmdShow(ctx context.Context, env *tools.Env, ns map[string]any, w io
 	color := !noColor
 	cols, rows := journeyTermSize(nsJourneyInt(ns, "width"), nsJourneyInt(ns, "height"))
 	console := newJourneyConsole(w, color, cols, nsJourneyBool(ns, "force_color"))
-	if !pyrepr.Truthy(payload["nodes"]) || journeyNodeCount(payload) == 0 {
+	if !anyutil.IsTrue(payload["nodes"]) || journeyNodeCount(payload) == 0 {
 		return 0, console.printLines([]journeyLine{{{Text: "No learning yet — use Icebath a while and your learned skills and memories will start mapping out here.", Style: styleIf(color, "grey62")}}})
 	}
 	palette := journeyPalette(ctx)
@@ -603,14 +603,14 @@ func journeyCmdList(ctx context.Context, env *tools.Env, ns map[string]any, w io
 	var lines []journeyLine
 	for _, node := range nodes {
 		glyph := "●"
-		if pyrepr.Str(node["kind"]) == "memory" {
+		if anyutil.String(node["kind"]) == "memory" {
 			glyph = "◆"
 		}
 		var ts *float64
 		if f, ok := journeyFloat(node["timestamp"]); ok {
 			ts = &f
 		}
-		lines = append(lines, journeyLine{{Text: pyrepr.Str(node["id"]), Style: styleIf(color, "grey54")}, {Text: fmt.Sprintf("  %s %s  ", glyph, pyrepr.Str(node["label"]))},
+		lines = append(lines, journeyLine{{Text: anyutil.String(node["id"]), Style: styleIf(color, "grey54")}, {Text: fmt.Sprintf("  %s %s  ", glyph, anyutil.String(node["label"]))},
 			{Text: FormatDate(ts), Style: styleIf(color, "grey54")}})
 	}
 	return 0, console.printLines(lines)
@@ -638,10 +638,10 @@ func journeyLookupNode(ctx context.Context, env *tools.Env, w io.Writer, nodeID 
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(detail["ok"]) {
+	if !anyutil.IsTrue(detail["ok"]) {
 		message := "not found"
-		if pyrepr.Truthy(detail["message"]) {
-			message = pyrepr.Str(detail["message"])
+		if anyutil.IsTrue(detail["message"]) {
+			message = anyutil.String(detail["message"])
 		}
 		fmt.Fprintf(w, "  %s\n", message)
 		return nil, nil
@@ -651,7 +651,7 @@ func journeyLookupNode(ctx context.Context, env *tools.Env, w io.Writer, nodeID 
 
 // Deletes a learned skill or memory by node id after a confirmation unless --yes
 func journeyCmdDelete(ctx context.Context, env *tools.Env, ns map[string]any, w io.Writer) (int, error) {
-	nodeID := pyrepr.Str(ns["node"])
+	nodeID := anyutil.String(ns["node"])
 	detail, err := journeyLookupNode(ctx, env, w, nodeID)
 	if err != nil {
 		return 1, err
@@ -660,7 +660,7 @@ func journeyCmdDelete(ctx context.Context, env *tools.Env, ns map[string]any, w 
 		return 1, nil
 	}
 	if !nsJourneyBool(ns, "yes") {
-		answer, err := journeyInput(fmt.Sprintf("  Delete %s? [y/N] ", errchain.Show(pyrepr.Str(detail["label"]))))
+		answer, err := journeyInput(fmt.Sprintf("  Delete %s? [y/N] ", errchain.Show(anyutil.String(detail["label"]))))
 		if err != nil {
 			fmt.Fprintln(w, "\n  aborted")
 			return 1, nil
@@ -674,8 +674,8 @@ func journeyCmdDelete(ctx context.Context, env *tools.Env, ns map[string]any, w 
 	if err != nil {
 		return 1, err
 	}
-	fmt.Fprintf(w, "  %s\n", pyrepr.Str(res["message"]))
-	if pyrepr.Truthy(res["ok"]) {
+	fmt.Fprintf(w, "  %s\n", anyutil.String(res["message"]))
+	if anyutil.IsTrue(res["ok"]) {
 		return 0, nil
 	}
 	return 1, nil
@@ -683,7 +683,7 @@ func journeyCmdDelete(ctx context.Context, env *tools.Env, ns map[string]any, w 
 
 // Edits a learned skill or memory by node id in the user's editor
 func journeyCmdEdit(ctx context.Context, env *tools.Env, ns map[string]any, w io.Writer) (int, error) {
-	nodeID := pyrepr.Str(ns["node"])
+	nodeID := anyutil.String(ns["node"])
 	detail, err := journeyLookupNode(ctx, env, w, nodeID)
 	if err != nil {
 		return 1, err
@@ -692,10 +692,10 @@ func journeyCmdEdit(ctx context.Context, env *tools.Env, ns map[string]any, w io
 		return 1, nil
 	}
 	suffix := ".txt"
-	if pyrepr.Str(detail["kind"]) == "skill" {
+	if anyutil.String(detail["kind"]) == "skill" {
 		suffix = ".md"
 	}
-	content := pyrepr.Str(detail["content"])
+	content := anyutil.String(detail["content"])
 	edited, ok := journeyOpenInEditor(w, content, suffix)
 	if !ok || strings.TrimSpace(edited) == strings.TrimSpace(content) {
 		fmt.Fprintln(w, "  no changes")
@@ -705,8 +705,8 @@ func journeyCmdEdit(ctx context.Context, env *tools.Env, ns map[string]any, w io
 	if err != nil {
 		return 1, err
 	}
-	fmt.Fprintf(w, "  %s\n", pyrepr.Str(res["message"]))
-	if pyrepr.Truthy(res["ok"]) {
+	fmt.Fprintf(w, "  %s\n", anyutil.String(res["message"]))
+	if anyutil.IsTrue(res["ok"]) {
 		return 0, nil
 	}
 	return 1, nil
@@ -733,14 +733,14 @@ func journeyOpenInEditor(w io.Writer, initial, suffix string) (string, bool) {
 	}
 	f, err := os.CreateTemp("", "tmp*"+suffix)
 	if err != nil {
-		fmt.Fprintf(w, "  editor failed: %s\n", pyrepr.ExceptionMessage(err))
+		fmt.Fprintf(w, "  editor failed: %s\n", err.Error())
 		return "", false
 	}
 	path := f.Name()
 	defer os.Remove(path)
 	if _, err := f.WriteString(initial); err != nil {
 		f.Close()
-		fmt.Fprintf(w, "  editor failed: %s\n", pyrepr.ExceptionMessage(err))
+		fmt.Fprintf(w, "  editor failed: %s\n", err.Error())
 		return "", false
 	}
 	f.Close()
@@ -748,17 +748,17 @@ func journeyOpenInEditor(w io.Writer, initial, suffix string) (string, bool) {
 	err = journeyRunEditor(argv)
 	var exit *exec.ExitError
 	if err != nil && !errors.As(err, &exit) {
-		fmt.Fprintf(w, "  editor failed: %s\n", pyrepr.ExceptionMessage(err))
+		fmt.Fprintf(w, "  editor failed: %s\n", err.Error())
 		return "", false
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		fmt.Fprintf(w, "  editor failed: %s\n", pyrepr.ExceptionMessage(err))
+		fmt.Fprintf(w, "  editor failed: %s\n", err.Error())
 		return "", false
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
-		fmt.Fprintf(w, "  editor failed: %s\n", pyrepr.ExceptionMessage(err))
+		fmt.Fprintf(w, "  editor failed: %s\n", err.Error())
 		return "", false
 	}
 	return text, true
@@ -767,8 +767,8 @@ func journeyOpenInEditor(w io.Writer, initial, suffix string) (string, bool) {
 // Runs icebath journey, show, list, delete and edit
 func JourneyCommand(ctx context.Context, env *tools.Env, ns map[string]any, w io.Writer) (int, error) {
 	action := ""
-	if pyrepr.Truthy(ns["journey_action"]) {
-		action = pyrepr.Str(ns["journey_action"])
+	if anyutil.IsTrue(ns["journey_action"]) {
+		action = anyutil.String(ns["journey_action"])
 	}
 	switch action {
 	case "list":

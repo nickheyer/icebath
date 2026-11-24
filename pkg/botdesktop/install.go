@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Exit code of an install on an unprivileged host without sudo, the command went to the line sink
@@ -159,7 +159,7 @@ func (p *installProc) waitFor(seconds float64) bool {
 
 // Spawns the install command, feeds the sudo password on stdin, streams output lines and returns the exit code
 func runInstall(cmd string, askPassword func() (string, error), onLine func(string), timeoutSeconds float64) (int, error) {
-	argv, err := pyshlex.SplitPOSIX(cmd, false)
+	argv, err := shellutil.Split(cmd)
 	if err != nil {
 		return 0, err
 	}
@@ -233,7 +233,7 @@ func runInstall(cmd string, askPassword func() (string, error), onLine func(stri
 func installReturncode(err error) int {
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
-		return pysubprocess.Returncode(exit)
+		return executil.ExitCode(exit.ProcessState)
 	}
 	return 0
 }

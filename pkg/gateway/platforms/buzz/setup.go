@@ -8,17 +8,17 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Private key fields of a buzz credentials record in lookup order
 var keyFields = []string{"nsec", "private_key_hex", "private_key"}
 
 // Directory the buzz CLI writes credentials records into
-func defaultCredentialsDir() string { return pypath.Expanduser("~/.config/buzz") }
+func defaultCredentialsDir() string { return pathutil.ExpandUser("~/.config/buzz") }
 
 // Scoped secret read with the one shot profile scope fallback of startup gates
 func getScopedSecret(ctx context.Context, name, def string) (string, error) {
@@ -45,7 +45,7 @@ func credentialsCandidates(ctx context.Context, extra map[string]any) ([]string,
 		return nil, err
 	}
 	if configured != "" {
-		return []string{pypath.Expanduser(configured)}, nil
+		return []string{pathutil.ExpandUser(configured)}, nil
 	}
 	if provider.IsMultiplexActive(ctx) {
 		return nil, nil
@@ -59,9 +59,9 @@ func credentialsCandidates(ctx context.Context, extra map[string]any) ([]string,
 }
 
 // First non empty private key field of a credentials record, stripped
-func credentialsKey(data *pyjson.Object) string {
+func credentialsKey(data *jsonutil.Object) string {
 	for _, field := range keyFields {
-		if value, ok := data.Vals[field].(string); ok && strings.TrimSpace(value) != "" {
+		if value, ok := data.Value(field).(string); ok && strings.TrimSpace(value) != "" {
 			return strings.TrimSpace(value)
 		}
 	}
@@ -69,7 +69,7 @@ func credentialsKey(data *pyjson.Object) string {
 }
 
 // First credentials record that carries a private key, unreadable or malformed files skipped
-func resolveCredentialsData(ctx context.Context, extra map[string]any) (*pyjson.Object, error) {
+func resolveCredentialsData(ctx context.Context, extra map[string]any) (*jsonutil.Object, error) {
 	paths, err := credentialsCandidates(ctx, extra)
 	if err != nil {
 		return nil, err
@@ -79,19 +79,19 @@ func resolveCredentialsData(ctx context.Context, extra map[string]any) (*pyjson.
 		if err != nil {
 			continue
 		}
-		text, err := pystr.DecodeUTF8Sig(raw)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if err != nil {
 			continue
 		}
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			continue
 		}
-		if data, ok := decoded.(*pyjson.Object); ok && credentialsKey(data) != "" {
+		if data, ok := decoded.(*jsonutil.Object); ok && credentialsKey(data) != "" {
 			return data, nil
 		}
 	}
-	return pyjson.NewObject(), nil
+	return jsonutil.NewObject(), nil
 }
 
 // Nostr private key, the scoped secret first and the credentials record after

@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"reflect"
 	"runtime/pprof"
 	"slices"
@@ -19,12 +20,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 const (
@@ -395,7 +391,7 @@ func relaySameHandle(a, b any) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	if relayIdentical(a, b) || pyrepr.Equal(a, b) {
+	if relayIdentical(a, b) || anyutil.Equal(a, b) {
 		return true
 	}
 	ua, ok := a.(RelayHandleWithUUID)
@@ -403,7 +399,7 @@ func relaySameHandle(a, b any) bool {
 		return false
 	}
 	ub, ok := b.(RelayHandleWithUUID)
-	return ok && pyrepr.Equal(ua.UUID(), ub.UUID())
+	return ok && anyutil.Equal(ua.UUID(), ub.UUID())
 }
 
 type relayPluginState int
@@ -447,7 +443,7 @@ func relayActivationConfigPaths(activation any) []string {
 	}
 	out := make([]string, 0, len(paths))
 	for _, p := range paths {
-		out = append(out, pyrepr.Str(p))
+		out = append(out, anyutil.String(p))
 	}
 	return out
 }
@@ -511,7 +507,7 @@ type RelaySession struct {
 	Mu              sync.Mutex
 	Closing         bool
 	Handle          any
-	Context         *pyctx.Context
+	Context         *ctxutil.Store
 	Segment         int
 	SegmentTurns    int
 	RotatePending   bool
@@ -545,9 +541,9 @@ func relayLoadSegmentsConfig(ctx context.Context) relaySegmentsConfig {
 	gateway, _ := cfg["gateway"].(map[string]any)
 	telemetry, _ := gateway["telemetry"].(map[string]any)
 	segments, _ := telemetry["session_segments"].(map[string]any)
-	out.onCompaction = pyrepr.Truthy(segments["on_compaction"])
+	out.onCompaction = anyutil.IsTrue(segments["on_compaction"])
 	raw := segments["max_turns"]
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = 0
 	}
 	if n, err := pyint.Of(raw); err == nil && n.Sign() > 0 {
@@ -789,7 +785,7 @@ type RelayRuntime struct {
 	RuntimeID             string
 	sessionsMu            sync.Mutex
 	consumersMu           sync.Mutex
-	sessions              *pydict.Dict[string, *RelaySession]
+	sessions              *orderedutil.Map[string, *RelaySession]
 	subagentParents       map[string]string
 	subagentParentHandles map[string]any
 	executionConsumers    map[string]bool
@@ -797,8 +793,8 @@ type RelayRuntime struct {
 	deferredScopeOutputs  map[string]map[string]any
 	closing               bool
 	shutdownStarted       bool
-	shutdownComplete      *pythread.Event
-	operationsIdle        *pythread.Event
+	shutdownComplete      *syncutil.Event
+	operationsIdle        *syncutil.Event
 	activeOperations      int
 	pluginState           relayPluginState
 	pluginRegistered      bool
@@ -819,10 +815,10 @@ func NewRelayRuntime(ctx context.Context, relay *NemoRelay, profileKey string) (
 	}
 	r := &RelayRuntime{
 		Relay: relay, ProfileKey: profileKey, RuntimeID: strings.ReplaceAll(uuid.NewString(), "-", ""),
-		sessions: pydict.New[string, *RelaySession](), subagentParents: map[string]string{},
+		sessions: orderedutil.NewMap[string, *RelaySession](), subagentParents: map[string]string{},
 		subagentParentHandles: map[string]any{}, executionConsumers: map[string]bool{},
 		deferredScopeOutputs: map[string]map[string]any{},
-		shutdownComplete:     &pythread.Event{}, operationsIdle: &pythread.Event{},
+		shutdownComplete:     &syncutil.Event{}, operationsIdle: &syncutil.Event{},
 	}
 	r.operationsIdle.Set()
 	r.pluginState = relayPlugins.acquire(ctx, r, relay)
@@ -843,7 +839,7 @@ func relayHandleKey(handle any) (string, bool) {
 	if !ok || h.UUID() == nil {
 		return "", false
 	}
-	return pyrepr.Str(h.UUID()), true
+	return anyutil.String(h.UUID()), true
 }
 
 // Keeps the output of a finished scope a concurrent scope still covers for the orphan drain to close it with
@@ -916,13 +912,13 @@ func (r *RelayRuntime) openSessionScope(ctx context.Context, session *RelaySessi
 		return relayAttributeError("NemoRelayScope", "push")
 	}
 	push := r.Relay.Scope.Push
-	scopeCtx := pyctx.New()
+	scopeCtx := ctxutil.NewStore()
 	kwargs := map[string]any{"handle": parentHandle, "metadata": scopeMetadata, "input": relayScopeInput(session.Cwd)}
 	if data != nil {
 		kwargs["data"] = data
 	}
 	run := func(c context.Context) (any, error) {
-		return push(pyctx.With(c, scopeCtx), RelaySessionScope, r.Relay.ScopeType.Agent, kwargs)
+		return push(ctxutil.WithStore(c, scopeCtx), RelaySessionScope, r.Relay.ScopeType.Agent, kwargs)
 	}
 	future, err := relayScopeOpExecutor().Submit(ctx, run)
 	if err != nil {
@@ -956,8 +952,8 @@ type RelaySessionOptions struct {
 }
 
 func relayEventSessionID(event map[string]any, key string) string {
-	if v := event[key]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := event[key]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -1113,7 +1109,7 @@ func (r *RelayRuntime) GetSession(sessionID string) *RelaySession {
 }
 
 // Copy of the caller context overlaid with the session's saved Relay variables
-func (r *RelayRuntime) sessionContext(ctx context.Context, session *RelaySession, allowClosing, held bool) (*pyctx.Context, error) {
+func (r *RelayRuntime) sessionContext(ctx context.Context, session *RelaySession, allowClosing, held bool) (*ctxutil.Store, error) {
 	if !held {
 		session.Mu.Lock()
 		defer session.Mu.Unlock()
@@ -1124,8 +1120,8 @@ func (r *RelayRuntime) sessionContext(ctx context.Context, session *RelaySession
 	if session.Context == nil || session.Handle == nil {
 		return nil, errors.New("Icebath Relay session context is unavailable")
 	}
-	out := pyctx.CopyContext(ctx)
-	runCtx := pyctx.With(ctx, out)
+	out := ctxutil.CopyStore(ctx)
+	runCtx := ctxutil.WithStore(ctx, out)
 	for _, item := range session.Context.Copy().Items() {
 		item.Var.Set(runCtx, item.Value)
 	}
@@ -1153,7 +1149,7 @@ func (r *RelayRuntime) runInSessionUntracked(ctx context.Context, session *Relay
 		return nil, err
 	}
 	invoke := func(c context.Context) (any, error) {
-		c = pyctx.With(c, scopeCtx)
+		c = ctxutil.WithStore(c, scopeCtx)
 		if r.Relay.GetScopeStack == nil {
 			return nil, relayAttributeError("NemoRelay", "get_scope_stack")
 		}
@@ -1165,7 +1161,7 @@ func (r *RelayRuntime) runInSessionUntracked(ctx context.Context, session *Relay
 	if timeout == nil {
 		return invoke(ctx)
 	}
-	exceeded := "Relay scope operation exceeded " + pyrepr.Repr(*timeout) + "s"
+	exceeded := "Relay scope operation exceeded " + anyutil.Quote(*timeout) + "s"
 	future, err := relayScopeOpExecutor().Submit(ctx, invoke)
 	if err != nil {
 		return RelayRunOnDaemonThread(func() (any, error) { return invoke(ctx) }, "relay-scope-op-exit", timeout,
@@ -1189,7 +1185,7 @@ func (r *RelayRuntime) RunInSessionAsync(ctx context.Context, session *RelaySess
 	if err != nil {
 		return nil, err
 	}
-	c := pyctx.With(ctx, scopeCtx)
+	c := ctxutil.WithStore(ctx, scopeCtx)
 	if r.Relay.GetScopeStack == nil {
 		return nil, relayAttributeError("NemoRelay", "get_scope_stack")
 	}
@@ -1297,7 +1293,7 @@ func (r *RelayRuntime) popWithDrain(ctx context.Context, handle any, output, met
 		drained++
 	}
 	if drained > 0 {
-		relayLogger().WarnContext(ctx, fmt.Sprintf("Icebath Relay drained %d orphaned scope(s) before closing %s", drained, pyrepr.Str(handle)))
+		relayLogger().WarnContext(ctx, fmt.Sprintf("Icebath Relay drained %d orphaned scope(s) before closing %s", drained, anyutil.String(handle)))
 	}
 	_, err := PopRelayScope(ctx, r.Relay, handle, output, metadata, nil)
 	return err
@@ -1424,9 +1420,9 @@ var (
 
 // Canonical profile identity used for runtime isolation
 func CurrentRelayProfileKey(ctx context.Context) string {
-	h := pypath.PathStr(pypath.Expanduser(home.Dir(ctx)))
-	if !pypath.IsAbs(h) {
-		resolved, _ := pypath.Realpath(h, pypath.Lax)
+	h := filepath.Clean(pathutil.ExpandUser(home.Dir(ctx)))
+	if !filepath.IsAbs(h) {
+		resolved, _ := pathutil.Resolve(h)
 		return resolved
 	}
 	relayProfileKeyMu.Lock()
@@ -1434,7 +1430,7 @@ func CurrentRelayProfileKey(ctx context.Context) string {
 	if k := relayProfileKeyCache[h]; k != "" {
 		return k
 	}
-	resolved, _ := pypath.Realpath(h, pypath.Lax)
+	resolved, _ := pathutil.Resolve(h)
 	relayProfileKeyCache[h] = resolved
 	return resolved
 }
@@ -1454,7 +1450,7 @@ func relayConfiguredPluginInputs(ctx context.Context) (string, error) {
 		}
 		if legacy := ConfiguredLegacyRelayEnvVars(environ); len(legacy) > 0 {
 			relayLogger().WarnContext(ctx, fmt.Sprintf("Legacy NeMo Relay exporter variables are set but no %s was provided. %s no longer configure Relay exporters; any standard user or system plugins.toml still applies. Run `icebath migrate relay` (or `icebath update`, which runs it for every profile) to generate %s and select it in .env.",
-				RelayPluginsConfigEnv, strings.Join(legacy, ", "), pypath.PathJoin(home.Dir(ctx), "relay-plugins.toml")))
+				RelayPluginsConfigEnv, strings.Join(legacy, ", "), pathutil.Join(home.Dir(ctx), "relay-plugins.toml")))
 		}
 	}
 	return configPath, nil
@@ -1466,7 +1462,7 @@ func relayExplicitPluginsTOML() (string, error) {
 	if configured == "" {
 		return "", nil
 	}
-	configPath := pypath.PathStr(pypath.Expanduser(configured))
+	configPath := filepath.Clean(pathutil.ExpandUser(configured))
 	fail := func(err error) (string, error) {
 		return "", &RelayPluginConfigurationLoadError{Message: "Icebath Relay plugin configuration could not be loaded from " + configPath + "; continuing without Relay plugins", Err: err}
 	}
@@ -1517,7 +1513,7 @@ func ResolveRelayPluginSources(ctx context.Context, relay *NemoRelay) (RelayPlug
 	out := RelayPluginSources{Enabled: relayReportRequiresManagedExecution(ctx, report)}
 	if paths, ok := report["config_paths"].([]any); ok {
 		for _, p := range paths {
-			out.ConfigPaths = append(out.ConfigPaths, pyrepr.Str(p))
+			out.ConfigPaths = append(out.ConfigPaths, anyutil.String(p))
 		}
 	}
 	for _, d := range rawDiagnostics {
@@ -1526,10 +1522,10 @@ func ResolveRelayPluginSources(ctx context.Context, relay *NemoRelay) (RelayPlug
 			continue
 		}
 		switch {
-		case pyrepr.Equal(diag["level"], "error"):
-			out.Errors = append(out.Errors, pyrepr.Str(diag["message"]))
-		case pyrepr.Equal(diag["level"], "warning") && !pyrepr.Equal(diag["code"], "plugin.configuration_inherited"):
-			out.Warnings = append(out.Warnings, pyrepr.Str(diag["message"]))
+		case anyutil.Equal(diag["level"], "error"):
+			out.Errors = append(out.Errors, anyutil.String(diag["message"]))
+		case anyutil.Equal(diag["level"], "warning") && !anyutil.Equal(diag["code"], "plugin.configuration_inherited"):
+			out.Warnings = append(out.Warnings, anyutil.String(diag["message"]))
 		}
 	}
 	return out, nil

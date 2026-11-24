@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/provider"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 func acmeVendor() Vendor {
@@ -339,7 +339,7 @@ func TestModelDiscoveryDoesNotAllowFileRequests(t *testing.T) {
 // Probe and start doubles that report a missing binary and capture the env the spawn passed
 func captureFailedStart(t *testing.T, captured *map[string]string) {
 	prevProbe, prevStart := probeRun, startProcess
-	probeRun = func(context.Context, []string) (*pysubprocess.Completed, error) {
+	probeRun = func(context.Context, []string) (*executil.Completed, error) {
 		return nil, &fs.PathError{Op: "fork/exec", Path: "acme-agent", Err: fs.ErrNotExist}
 	}
 	startProcess = func(argv []string, cwd string, env map[string]string) (*process, error) {
@@ -391,9 +391,9 @@ func TestRunPromptPassesHomeWhenParentEnvIsClean(t *testing.T) {
 // Probe double answering one completed help run
 func probeAnswers(t *testing.T, returncode int, stdout string, calls *int) {
 	prev := probeRun
-	probeRun = func(context.Context, []string) (*pysubprocess.Completed, error) {
+	probeRun = func(context.Context, []string) (*executil.Completed, error) {
 		*calls++
-		return &pysubprocess.Completed{Returncode: returncode, Stdout: []byte(stdout)}, nil
+		return &executil.Completed{ExitCode: returncode, Stdout: []byte(stdout)}, nil
 	}
 	t.Cleanup(func() { probeRun = prev })
 }
@@ -458,8 +458,8 @@ func selection(t *testing.T, session map[string]any, model, placeholder string, 
 		return "", nil, false
 	}
 	out := map[string]any{}
-	for _, k := range params.Keys {
-		out[k] = params.Vals[k]
+	for _, k := range params.Keys() {
+		out[k] = params.Value(k)
 	}
 	return method, out, true
 }

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Positive integer session cap of a config value, nil when disabled or invalid with a warning logged
@@ -35,7 +35,7 @@ func CoerceMaxConcurrentSessions(value any, key string) *big.Int {
 		}
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s (expected a positive integer; 0/null disables)", key, pyrepr.Repr(value)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring invalid %s=%s (expected a positive integer; 0/null disables)", key, anyutil.Quote(value)))
 		return nil
 	}
 	if parsed.Sign() <= 0 {
@@ -49,16 +49,16 @@ func ResolveMaxConcurrentSessions(config any) *big.Int {
 	var raw any
 	key := "max_concurrent_sessions"
 	cfg, isDict := config.(map[string]any)
-	if obj, ok := config.(*pyjson.Object); ok {
-		cfg, isDict = obj.Vals, true
+	if obj, ok := config.(*jsonutil.Object); ok {
+		cfg, isDict = obj.Map(), true
 	}
 	if isDict {
 		if v, has := cfg["max_concurrent_sessions"]; has {
 			raw = v
 		} else {
 			gw, ok := cfg["gateway"].(map[string]any)
-			if obj, isObj := cfg["gateway"].(*pyjson.Object); isObj {
-				gw, ok = obj.Vals, true
+			if obj, isObj := cfg["gateway"].(*jsonutil.Object); isObj {
+				gw, ok = obj.Map(), true
 			}
 			if ok {
 				raw = gw["max_concurrent_sessions"]

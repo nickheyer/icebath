@@ -10,8 +10,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/linktier"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -246,7 +246,7 @@ func copilotACPAccountStatus(ctx context.Context) (any, error) {
 	default:
 		label = "GitHub Copilot CLI not found on PATH"
 	}
-	return pyjson.ObjectOf("logged_in", verified, "source", "copilot_cli", "source_label", label, "token_preview", nil,
+	return jsonutil.ObjectOf("logged_in", verified, "source", "copilot_cli", "source_label", label, "token_preview", nil,
 		"expires_at", nil, "has_refresh_token", false, "configured", configured), nil
 }
 

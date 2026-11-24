@@ -6,10 +6,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Inbound text the agent reads with attribution, media notes, transcripts, references and reply context, nil when refused
@@ -138,7 +138,7 @@ func (r *GatewayRunner) enrichInboundImages(ctx context.Context, source *gateway
 func (r *GatewayRunner) decideImageInputMode(ctx context.Context, source *gateway.SessionSource, sessionKey string) (mode string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Debug(fmt.Sprintf("image_routing: decision failed, falling back to text — %s", pyrepr.Str(rec)))
+			pkgLog().Debug(fmt.Sprintf("image_routing: decision failed, falling back to text — %s", anyutil.String(rec)))
 			mode = "text"
 		}
 	}()

@@ -18,7 +18,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // File under the home cache dir holding every server's cached tool manifest
@@ -119,12 +119,12 @@ func pyJSONCompactASCII(v any) string {
 				enc(x[k])
 			}
 			b.WriteByte('}')
-		case *pyjson.Object:
+		case *jsonutil.Object:
 			if x == nil {
 				b.WriteString("null")
 				return
 			}
-			enc(x.Vals)
+			enc(x.Map())
 		default:
 			enc(pyStr(v))
 		}
@@ -199,7 +199,7 @@ func loadSchemaCache(ctx context.Context) map[string]any {
 		}
 		return map[string]any{}
 	}
-	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+	data, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Could not read MCP schema cache %s: %v", p, err))
 		return map[string]any{}
@@ -214,13 +214,13 @@ func loadSchemaCache(ctx context.Context) map[string]any {
 // Decoded cache value with every bookkeeping dict a plain map and every tool schema payload kept in its wire order
 func schemaCacheTree(v any, schemaPayload bool) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if schemaPayload {
 			return t
 		}
 		out := make(map[string]any, t.Len())
-		for _, k := range t.Keys {
-			out[k] = schemaCacheTree(t.Vals[k], k == "inputSchema" || k == "schema")
+		for _, k := range t.Keys() {
+			out[k] = schemaCacheTree(t.Value(k), k == "inputSchema" || k == "schema")
 		}
 		return out
 	case []any:
@@ -239,7 +239,7 @@ func saveSchemaCache(ctx context.Context, data map[string]any) error {
 	if err := os.MkdirAll(filepath.Dir(p), 0o700); err != nil {
 		return err
 	}
-	return config.AtomicJSONWriteMode(ctx, p, data, 0o600, pyjson.Indent(2))
+	return config.AtomicJSONWriteMode(ctx, p, data, 0o600, jsonutil.Indent(2))
 }
 
 // Cached entry of a server when its fingerprint matches and its recorded TTL still holds
@@ -308,11 +308,11 @@ func WriteCacheEntry(ctx context.Context, serverName, fingerprint string, tools,
 
 // Value as it reads back after a JSON write, schema payloads keeping their order
 func jsonRoundTrip(v any) (any, error) {
-	text, err := pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		return nil, err
 	}
-	out, err := pyjson.Loads(text)
+	out, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}

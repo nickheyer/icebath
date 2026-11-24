@@ -6,8 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Binds the Teams meeting pipeline to the Graph webhook ingress
@@ -50,7 +48,7 @@ func (r *GatewayRunner) wireTeamsPipelineRuntime(ctx context.Context) {
 		return BindTeamsPipelineRuntime(ctx, r)
 	}()
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Teams pipeline runtime wiring failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Teams pipeline runtime wiring failed: %s", err.Error()))
 		return
 	}
 	if bound {
@@ -61,7 +59,7 @@ func (r *GatewayRunner) wireTeamsPipelineRuntime(ctx context.Context) {
 }
 
 // Primary profile's live adapters by platform
-func (r *GatewayRunner) Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (r *GatewayRunner) Adapters() *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	return r.adapters
 }
 

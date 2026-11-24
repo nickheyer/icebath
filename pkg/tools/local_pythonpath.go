@@ -12,9 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Venv prefix holding pyvenv.cfg above or beside the resolved running binary, ok false outside any venv
@@ -23,7 +23,7 @@ var runningVenvPrefix = func() (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	resolved, err := pypath.Resolve(exe)
+	resolved, err := pathutil.Resolve(exe)
 	if err != nil {
 		return "", false
 	}
@@ -122,7 +122,7 @@ func stripIcebathOwnedPythonpath(child map[string]string) error {
 		delete(child, "PYTHONPATH")
 	}
 	if len(stripped) > 0 {
-		envLog(nil).Debug(fmt.Sprintf("Stripped Icebath-owned entries from PYTHONPATH: %s", pyrepr.Repr(stripped)))
+		envLog(nil).Debug(fmt.Sprintf("Stripped Icebath-owned entries from PYTHONPATH: %s", anyutil.Quote(stripped)))
 	}
 	return nil
 }
@@ -134,13 +134,13 @@ func StripIcebathOwnedPythonpath(child map[string]string) error {
 
 // Reports whether two path spellings name the same components under host filesystem case rules
 func SamePath(left, right string) bool {
-	return samePathParts(left, right, pypath.Normcase)
+	return samePathParts(left, right, pathutil.FoldCase)
 }
 
 // Compares pathlib parts of both spellings after the given normcase
 func samePathParts(left, right string, normcase func(string) string) bool {
-	la, lp := pypath.PathParts(left)
-	ra, rp := pypath.PathParts(right)
+	la, lp := pathutil.Parts(left)
+	ra, rp := pathutil.Parts(right)
 	if normcase(la) != normcase(ra) || len(lp) != len(rp) {
 		return false
 	}
@@ -193,7 +193,7 @@ var runtimeRepoRootAliases = sync.OnceValue(func() []string {
 
 // Aliases of one root spelling from its resolved and lexical absolute forms under the process home
 func repoRootAliasesOf(lexical string) []string {
-	resolved, err := pypath.Resolve(lexical)
+	resolved, err := pathutil.Resolve(lexical)
 	if err != nil {
 		resolved = lexical
 	}
@@ -202,39 +202,39 @@ func repoRootAliasesOf(lexical string) []string {
 
 // Absolute spelling of a path without resolving links or dot dot components
 func pathAbsolute(p string) string {
-	if pypath.IsAbs(p) {
-		return pypath.PathStr(p)
+	if filepath.IsAbs(p) {
+		return filepath.Clean(p)
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
-		return pypath.PathStr(p)
+		return filepath.Clean(p)
 	}
-	return pypath.PathJoin(cwd, p)
+	return pathutil.Join(cwd, p)
 }
 
 // Exact repo root spellings launchers emit, home relative re homes and proven repo junctions included
 func buildIcebathRepoRootAliases(resolvedRoot, lexicalRoot, configuredHome string) []string {
 	candidates := []string{resolvedRoot, lexicalRoot}
 	homes := []string{configuredHome}
-	if pypath.PathName(pypath.PathParent(configuredHome)) == home.ProfilesDir {
-		homes = append(homes, pypath.PathParent(pypath.PathParent(configuredHome)))
+	if pathutil.Name(filepath.Dir(filepath.Clean(configuredHome))) == home.ProfilesDir {
+		homes = append(homes, filepath.Dir(filepath.Clean(filepath.Dir(filepath.Clean(configuredHome)))))
 	}
 	for _, h := range homes {
-		resolvedHome, err := pypath.Resolve(h)
+		resolvedHome, err := pathutil.Resolve(h)
 		if err != nil {
 			continue
 		}
 		if rel, ok := pathPartsBelow(resolvedRoot, resolvedHome); ok {
-			candidates = append(candidates, pypath.PathJoin(h, rel...))
+			candidates = append(candidates, pathutil.Join(h, rel...))
 		}
 	}
 	for _, h := range homes {
-		repoCandidate := pypath.PathJoin(h, pypath.PathName(resolvedRoot))
-		physical, err := pypath.Realpath(repoCandidate, pypath.StrictAll)
+		repoCandidate := pathutil.Join(h, pathutil.Name(resolvedRoot))
+		physical, err := pathutil.ResolveExisting(repoCandidate)
 		if err != nil {
 			continue
 		}
-		root, err := pypath.Realpath(resolvedRoot, pypath.StrictAll)
+		root, err := pathutil.ResolveExisting(resolvedRoot)
 		if err == nil && physical == root {
 			candidates = append(candidates, repoCandidate)
 		}
@@ -257,16 +257,16 @@ func buildIcebathRepoRootAliases(resolvedRoot, lexicalRoot, configuredHome strin
 
 // Components of path below base when the normcased commonpath of both is base itself
 func pathPartsBelow(path, base string) ([]string, bool) {
-	pa, pp := pypath.PathParts(path)
-	ba, bp := pypath.PathParts(base)
+	pa, pp := pathutil.Parts(path)
+	ba, bp := pathutil.Parts(base)
 	if runtime.GOOS != "windows" {
 		pa, ba = posixCommonpathAnchor(pa), posixCommonpathAnchor(ba)
 	}
-	if pypath.Normcase(pa) != pypath.Normcase(ba) || len(pp) < len(bp) {
+	if pathutil.FoldCase(pa) != pathutil.FoldCase(ba) || len(pp) < len(bp) {
 		return nil, false
 	}
 	for i := range bp {
-		if pypath.Normcase(pp[i]) != pypath.Normcase(bp[i]) {
+		if pathutil.FoldCase(pp[i]) != pathutil.FoldCase(bp[i]) {
 			return nil, false
 		}
 	}
@@ -290,7 +290,7 @@ func isRegularFileAt(path string) bool {
 // Producer owned runtime venv, the PM generation, a sealed payload venv, then a proven repo VIRTUAL_ENV
 func ValidatedRuntimeVenv(child map[string]string) (string, bool, error) {
 	ctx := context.Background()
-	root, err := pypath.Resolve(runtimeRepoRootDir())
+	root, err := pathutil.Resolve(runtimeRepoRootDir())
 	if err != nil {
 		return "", false, err
 	}
@@ -310,7 +310,7 @@ func ValidatedRuntimeVenv(child map[string]string) (string, bool, error) {
 	}
 	owned := false
 	for _, alias := range runtimeRepoRootAliases() {
-		if SamePath(virtualEnv, pypath.PathJoin(alias, "venv")) {
+		if SamePath(virtualEnv, pathutil.Join(alias, "venv")) {
 			owned = true
 			break
 		}
@@ -318,5 +318,5 @@ func ValidatedRuntimeVenv(child map[string]string) (string, bool, error) {
 	if !owned || !isRegularFileAt(filepath.Join(virtualEnv, "pyvenv.cfg")) {
 		return "", false, nil
 	}
-	return pypath.PathStr(virtualEnv), true, nil
+	return filepath.Clean(virtualEnv), true, nil
 }

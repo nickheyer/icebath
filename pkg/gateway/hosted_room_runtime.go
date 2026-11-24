@@ -11,9 +11,9 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -30,9 +30,6 @@ var hostedStopAckStatuses = map[string]bool{"cancelled": true, "interrupted": tr
 type AttachmentsUnsupportedError struct{ Msg string }
 
 func (e *AttachmentsUnsupportedError) Error() string { return e.Msg }
-
-// Python type name of the refusal
-func (e *AttachmentsUnsupportedError) PyTypeName() string { return "AttachmentsUnsupportedError" }
 
 // One fenced turn handed to a member transport, its terminal result reported through the callback
 type HostedSubmit struct {
@@ -129,7 +126,7 @@ func startHostedThread(fn func(t *hostedThread)) *hostedThread {
 	t := &hostedThread{done: make(chan struct{})}
 	go func() {
 		defer close(t.done)
-		t.gid.Store(pythread.GoroutineID())
+		t.gid.Store(syncutil.GoroutineID())
 		fn(t)
 	}()
 	return t
@@ -149,7 +146,7 @@ func (t *hostedThread) join(timeout float64) {
 	if timeout <= 0 {
 		return
 	}
-	waiter := &pythread.Event{}
+	waiter := &syncutil.Event{}
 	go func() {
 		select {
 		case <-t.done:
@@ -162,7 +159,7 @@ func (t *hostedThread) join(timeout float64) {
 }
 
 func (t *hostedThread) isCurrent() bool {
-	return t != nil && t.gid.Load() == pythread.GoroutineID()
+	return t != nil && t.gid.Load() == syncutil.GoroutineID()
 }
 
 type hostedRouteRetry struct{ delay, nextAttemptAt float64 }
@@ -196,7 +193,7 @@ type HostedRoomRuntime struct {
 	ProcessGeneration          string
 	roomsProvider              func() ([]HostedRoomBinding, error)
 
-	stop, wake                pythread.Event
+	stop, wake                syncutil.Event
 	thread                    *hostedThread
 	lastError                 any
 	roomThreads               map[string]*hostedThread
@@ -289,8 +286,8 @@ func (r *HostedRoomRuntime) Stop(timeout float64) bool {
 	if thread == nil {
 		return true
 	}
-	deadline := pythread.Monotonic() + max(0.0, timeout)
-	thread.join(max(0.0, deadline-pythread.Monotonic()))
+	deadline := timeutil.Monotonic() + max(0.0, timeout)
+	thread.join(max(0.0, deadline-timeutil.Monotonic()))
 	r.statusLock.Lock()
 	roomThreads := make([]*hostedThread, 0, len(r.roomThreads))
 	for _, t := range r.roomThreads {
@@ -298,7 +295,7 @@ func (r *HostedRoomRuntime) Stop(timeout float64) bool {
 	}
 	r.statusLock.Unlock()
 	for _, t := range roomThreads {
-		t.join(max(0.0, deadline-pythread.Monotonic()))
+		t.join(max(0.0, deadline-timeutil.Monotonic()))
 	}
 	if thread.alive() {
 		return false
@@ -643,8 +640,8 @@ func (r *HostedRoomRuntime) terminalResult(identity TaskIdentity, generation int
 	var files []any
 	if local {
 		text := ""
-		if pyrepr.Truthy(receipt["text"]) {
-			text = pyrepr.Str(receipt["text"])
+		if anyutil.IsTrue(receipt["text"]) {
+			text = anyutil.String(receipt["text"])
 		}
 		prefix := fmt.Sprintf("reply.%s.g%d", strings.TrimPrefix(identity.TaskID, "dtask:"), generation)
 		cleaned, stored, err := memberReplyFiles(r.ctx, r.DBPath, identity.RoomID, prefix, text)
@@ -732,7 +729,7 @@ func (r *HostedRoomRuntime) reportPendingAction(task map[string]any, sessionID s
 		return nil
 	}
 	approvalValue := info["pending_approval"]
-	if !pyrepr.Truthy(approvalValue) {
+	if !anyutil.IsTrue(approvalValue) {
 		approvalValue = info["approval"]
 	}
 	var action map[string]any
@@ -813,11 +810,11 @@ func RoomSessionTitle(roomID string) string { return "Group: " + roomID }
 
 func hostedMemberID(task map[string]any) string {
 	payload, _ := hostedMapping(task["payload"])
-	if v := payload["target_member_id"]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := payload["target_member_id"]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
-	if v := payload["target_profile"]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := payload["target_profile"]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -836,8 +833,8 @@ func hostedSessionID(session map[string]any) (string, error) {
 
 func hostedTruncateUTF8(value any, maxBytes int) (string, bool) {
 	text := ""
-	if pyrepr.Truthy(value) {
-		text = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		text = anyutil.String(value)
 	}
 	encoded := []byte(text)
 	if len(encoded) <= maxBytes {
@@ -879,8 +876,8 @@ func hostedFindTerminalReceipt(history []map[string]any, identity TaskIdentity, 
 	for i := len(history) - 1; i >= 0; i-- {
 		message := history[i]
 		status, _ := message["status"].(string)
-		if !pyrepr.Equal(message["task_id"], identity.TaskID) || !pyrepr.Equal(message["execution_generation"], executionGeneration) ||
-			!pyrepr.Equal(message["role"], "assistant") || (status != "settled" && status != "failed") {
+		if !anyutil.Equal(message["task_id"], identity.TaskID) || !anyutil.Equal(message["execution_generation"], executionGeneration) ||
+			!anyutil.Equal(message["role"], "assistant") || (status != "settled" && status != "failed") {
 			continue
 		}
 		receiptID, ok := message["message_id"].(string)
@@ -902,10 +899,10 @@ func hostedFindTerminalReceipt(history []map[string]any, identity TaskIdentity, 
 
 func hostedInfoActive(info map[string]any) bool {
 	if v, ok := info["active"]; ok {
-		return pyrepr.Truthy(v)
+		return anyutil.IsTrue(v)
 	}
 	if v, ok := info["running"]; ok {
-		return pyrepr.Truthy(v)
+		return anyutil.IsTrue(v)
 	}
 	return false
 }
@@ -918,7 +915,7 @@ func hostedInfoIsActiveFor(info map[string]any, identity TaskIdentity, requireEx
 	if taskID == nil {
 		return !requireExact
 	}
-	return pyrepr.Equal(taskID, identity.TaskID)
+	return anyutil.Equal(taskID, identity.TaskID)
 }
 
 func hrTaskIdentity(task map[string]any) TaskIdentity {
@@ -927,7 +924,7 @@ func hrTaskIdentity(task map[string]any) TaskIdentity {
 }
 
 func hrTaskInt(task map[string]any, key string) int64 {
-	n, _ := pyint.Int64(task[key])
+	n, _ := anyutil.ToInt(task[key])
 	return n
 }
 
@@ -939,18 +936,18 @@ func hrTaskProfile(task map[string]any) string {
 
 // Python int of a value or zero for a falsy one
 func hostedIntOrZero(value any) (int64, error) {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return 0, nil
 	}
-	return pyint.Int64(value)
+	return anyutil.ToInt(value)
 }
 
 // Python str of a value or empty for a falsy one
 func hostedStrOrEmpty(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 func errAs[T error](err error) bool {

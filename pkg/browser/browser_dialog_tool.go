@@ -3,9 +3,9 @@ package browser
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const dialogDescription = "Accept or dismiss a native JS dialog (alert/confirm/prompt) blocking the page.\n\n" +
@@ -22,21 +22,21 @@ const dialogDescription = "Accept or dismiss a native JS dialog (alert/confirm/p
 	"``browser.cdp_url`` in config.yaml."
 
 // Static browser_dialog schema
-func BrowserDialogSchema() *pyjson.Object {
-	return pyjson.ObjectOf(
+func BrowserDialogSchema() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"name", "browser_dialog",
 		"description", dialogDescription,
-		"parameters", pyjson.ObjectOf(
+		"parameters", jsonutil.ObjectOf(
 			"type", "object",
-			"properties", pyjson.ObjectOf(
-				"action", pyjson.ObjectOf("type", "string", "enum", []any{"accept", "dismiss"},
+			"properties", jsonutil.ObjectOf(
+				"action", jsonutil.ObjectOf("type", "string", "enum", []any{"accept", "dismiss"},
 					"description", "'accept' clicks OK / returns the prompt text. "+
 						"'dismiss' clicks Cancel / returns null from prompt(). "+
 						"For ``beforeunload`` dialogs: 'accept' allows the "+
 						"navigation, 'dismiss' keeps the page."),
-				"prompt_text", pyjson.ObjectOf("type", "string", "description", "Response string for a ``prompt()`` dialog. Ignored for "+
+				"prompt_text", jsonutil.ObjectOf("type", "string", "description", "Response string for a ``prompt()`` dialog. Ignored for "+
 					"other dialog types. Defaults to empty string."),
-				"dialog_id", pyjson.ObjectOf("type", "string", "description", "Specific dialog to respond to, from "+
+				"dialog_id", jsonutil.ObjectOf("type", "string", "description", "Specific dialog to respond to, from "+
 					"the candidate ids a previous call listed. Required "+
 					"only when multiple dialogs are queued."),
 			),
@@ -46,7 +46,7 @@ func BrowserDialogSchema() *pyjson.Object {
 }
 
 func dumpsASCII(v any) string {
-	text, err := pyjson.Dumps(v)
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		return tools.ErrorResult(err)
 	}
@@ -60,38 +60,38 @@ func browserDialog(action, promptText, dialogID any, taskID string) string {
 	}
 	sup := supervisors.get(taskID)
 	if sup == nil {
-		return dumpsASCII(pyjson.ObjectOf("success", false, "error", "No CDP supervisor is attached to this task: no browser "+
+		return dumpsASCII(jsonutil.ObjectOf("success", false, "error", "No CDP supervisor is attached to this task: no browser "+
 			"session has been started yet. Call browser_exec or "+
 			"/browser connect first."))
 	}
 	actionName, isStr := action.(string)
-	var res *pyjson.Object
+	var res *jsonutil.Object
 	if !isStr {
-		res = supervisorFail("action must be 'accept' or 'dismiss', got " + pyrepr.Repr(action))
+		res = supervisorFail("action must be 'accept' or 'dismiss', got " + anyutil.Quote(action))
 	} else {
 		var prompt *string
 		if promptText != nil {
-			text := pyrepr.Str(promptText)
+			text := anyutil.String(promptText)
 			prompt = &text
 		}
 		id := ""
-		if pyrepr.Truthy(dialogID) {
-			id = pyrepr.Str(dialogID)
+		if anyutil.IsTrue(dialogID) {
+			id = anyutil.String(dialogID)
 		}
 		res = sup.respondToDialog(actionName, prompt, id, 10.0)
 	}
-	if pyrepr.Truthy(anyGet(res, "ok")) {
+	if anyutil.IsTrue(anyGet(res, "ok")) {
 		dialog, ok := res.Get("dialog")
 		if !ok {
-			dialog = pyjson.NewObject()
+			dialog = jsonutil.NewObject()
 		}
-		return dumpsASCII(pyjson.ObjectOf("success", true, "action", action, "dialog", dialog))
+		return dumpsASCII(jsonutil.ObjectOf("success", true, "action", action, "dialog", dialog))
 	}
 	errVal, ok := res.Get("error")
 	if !ok {
 		errVal = "unknown error"
 	}
-	return dumpsASCII(pyjson.ObjectOf("success", false, "error", errVal))
+	return dumpsASCII(jsonutil.ObjectOf("success", false, "error", errVal))
 }
 
 // Same gate as browser_cdp so the two tools appear together

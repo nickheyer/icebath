@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -40,8 +40,8 @@ func CheckoutContains(ctx context.Context, sha string) (bool, error) {
 	if identity != nil {
 		if source, _ := identity.Get("source"); source == "build-file" {
 			stamped := ""
-			if v, _ := identity.Get("sha"); pyrepr.Truthy(v) {
-				stamped = pyrepr.Str(v)
+			if v, _ := identity.Get("sha"); anyutil.IsTrue(v) {
+				stamped = anyutil.String(v)
 			}
 			return stamped != "" && (stamped == sha || strings.HasPrefix(stamped, sha) || strings.HasPrefix(sha, stamped)), nil
 		}

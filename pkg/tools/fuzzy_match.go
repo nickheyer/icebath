@@ -5,8 +5,6 @@ import (
 	"sort"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Byte span of one match in the original content
@@ -105,7 +103,7 @@ func buildOrigToNormMap(original string, normInRunes bool) normMap {
 	var m normMap
 	pos := 0
 	for i := 0; i < len(original); {
-		r, size := pystr.DecodeRune(original[i:])
+		r, size := utf8.DecodeRuneInString(original[i:])
 		m.origOff = append(m.origOff, i)
 		m.norm = append(m.norm, pos)
 		if repl, ok := unicodeMap[r]; ok {
@@ -222,7 +220,7 @@ func strategyExact(content, pattern string) []matchSpan {
 			if i == len(content) {
 				break
 			}
-			_, size := pystr.DecodeRune(content[i:])
+			_, size := utf8.DecodeRuneInString(content[i:])
 			i += size
 		}
 		return out
@@ -702,7 +700,7 @@ func runeOffsets(s string) []int {
 	offs := make([]int, 0, len(s)+1)
 	for i := 0; i < len(s); {
 		offs = append(offs, i)
-		_, size := pystr.DecodeRune(s[i:])
+		_, size := utf8.DecodeRuneInString(s[i:])
 		i += size
 	}
 	return append(offs, len(s))

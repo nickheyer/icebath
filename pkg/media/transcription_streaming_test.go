@@ -13,8 +13,7 @@ import (
 	"testing"
 
 	"github.com/gorilla/websocket"
-
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // An xAI shaped STT socket answering every audio chunk with a growing partial
@@ -63,7 +62,7 @@ func TestLiveSessionStreamsPartialsBeforeEndAndKeepsEarlyAudio(t *testing.T) {
 	var received [][]byte
 	server := xaiLikeServer(t, &received, &mu)
 	var partials []string
-	seenPartial := &pythread.Event{}
+	seenPartial := &syncutil.Event{}
 	onPartial := func(text string) {
 		mu.Lock()
 		partials = append(partials, text)

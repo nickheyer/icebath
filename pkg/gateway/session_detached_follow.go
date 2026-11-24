@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Runner classifying which conversation a background result belongs to, GatewayRunner._classify_completion_owner
@@ -81,12 +81,12 @@ func recoverDetachedSessions(ctx context.Context, a *SessionAuthority, pending m
 // Background result moved onto its pinned conversation's detached key, else the event itself
 func followDetachedPin(ctx context.Context, runner AuthorityRunner, evt map[string]any) (map[string]any, error) {
 	key := ""
-	if pyrepr.Truthy(evt["session_key"]) {
-		key = pyrepr.Str(evt["session_key"])
+	if anyutil.IsTrue(evt["session_key"]) {
+		key = anyutil.String(evt["session_key"])
 	}
 	pinned := ""
-	if pyrepr.Truthy(evt["parent_session_id"]) {
-		pinned = strings.TrimSpace(pyrepr.Str(evt["parent_session_id"]))
+	if anyutil.IsTrue(evt["parent_session_id"]) {
+		pinned = strings.TrimSpace(anyutil.String(evt["parent_session_id"]))
 	}
 	if key == "" || len(allAuthorities(runner)) == 0 {
 		return evt, nil
@@ -135,7 +135,7 @@ func followDetachedPin(ctx context.Context, runner AuthorityRunner, evt map[stri
 	if err != nil {
 		return nil, err
 	}
-	if row == nil || pyrepr.Truthy(row.GetOr("ended_at", nil)) {
+	if row == nil || anyutil.IsTrue(row.ValueOr("ended_at", nil)) {
 		return evt, nil
 	}
 	live, err := mountedSession(ctx, a, sessionID)

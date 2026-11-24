@@ -13,9 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Subagent lifecycle fields forwarded on the run stream, the free text ones redacted
@@ -43,7 +43,7 @@ const (
 
 // Tool call id field of a progress event when the agent supplied one
 func callIDField(kw map[string]any) []any {
-	if pyrepr.Truthy(kw["tool_call_id"]) {
+	if anyutil.IsTrue(kw["tool_call_id"]) {
 		return []any{"tool_call_id", kw["tool_call_id"]}
 	}
 	return nil
@@ -98,9 +98,9 @@ func toolCompletedPreview(result any) string {
 	}
 	text, ok := result.(string)
 	if !ok {
-		encoded, err := pyjson.Dumps(result, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+		encoded, err := jsonutil.Encode(result, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 		if err != nil {
-			text = pyrepr.Str(result)
+			text = anyutil.String(result)
 		} else {
 			text = encoded
 		}
@@ -116,7 +116,7 @@ func toolCompletedPreview(result any) string {
 // Sequenced event of a run stream, a nil event being the terminal marker
 type runStreamItem struct {
 	seq      int64
-	event    *pyjson.Object
+	event    *jsonutil.Object
 	overflow bool
 }
 
@@ -137,7 +137,7 @@ type runSubscriber struct {
 func newRunStream() *runStream { return &runStream{subscribers: map[*runSubscriber]struct{}{}} }
 
 // Retains and fans out an event, an overflowing subscriber detached with an overflow marker
-func (s *runStream) putNowait(event *pyjson.Object) {
+func (s *runStream) putNowait(event *jsonutil.Object) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.terminal {
@@ -209,10 +209,10 @@ func requestStateOf(ctx context.Context) *requestState {
 }
 
 // Records the grant's status or expiry horizon on the request
-func rememberRoomRetention(ctx context.Context, claims *pyjson.Object) {
+func rememberRoomRetention(ctx context.Context, claims *jsonutil.Object) {
 	st := requestStateOf(ctx)
 	st.mu.Lock()
-	st.roomRetentionUntil = toFloat(firstTruthy(claims.GetOr("status_expires_at", nil), claims.GetOr("expires_at", nil), int64(0)))
+	st.roomRetentionUntil = toFloat(firstTruthy(claims.ValueOr("status_expires_at", nil), claims.ValueOr("expires_at", nil), int64(0)))
 	st.mu.Unlock()
 }
 
@@ -225,8 +225,8 @@ func roomRetentionUntil(ctx context.Context) float64 {
 }
 
 // One SSE run event payload with the envelope keys first
-func runEvent(runID, name string, fields ...any) *pyjson.Object {
-	out := pyjson.ObjectOf("event", name, "run_id", runID, "timestamp", apiNow())
+func runEvent(runID, name string, fields ...any) *jsonutil.Object {
+	out := jsonutil.ObjectOf("event", name, "run_id", runID, "timestamp", apiNow())
 	for i := 0; i+1 < len(fields); i += 2 {
 		out.Set(fields[i].(string), fields[i+1])
 	}
@@ -234,9 +234,9 @@ func runEvent(runID, name string, fields ...any) *pyjson.Object {
 }
 
 // Terminal run status of a turn result and the wire fields every terminal event carries
-func terminalRunStatus(result map[string]any) (string, *pyjson.Object) {
-	interrupted := pyrepr.Truthy(result["interrupted"])
-	finished := !interrupted && !pyrepr.Truthy(result["failed"]) && !pyrepr.Truthy(result["partial"]) && result["completed"] != false
+func terminalRunStatus(result map[string]any) (string, *jsonutil.Object) {
+	interrupted := anyutil.IsTrue(result["interrupted"])
+	finished := !interrupted && !anyutil.IsTrue(result["failed"]) && !anyutil.IsTrue(result["partial"]) && result["completed"] != false
 	status := "failed"
 	switch {
 	case interrupted:
@@ -244,11 +244,11 @@ func terminalRunStatus(result map[string]any) (string, *pyjson.Object) {
 	case finished:
 		status = "completed"
 	}
-	fields := pyjson.ObjectOf("completed", finished, "partial", pyrepr.Truthy(result["partial"]), "interrupted", interrupted)
-	if !finished && pyrepr.Truthy(result["turn_exit_reason"]) {
-		fields.Set("turn_exit_reason", pyrepr.Str(result["turn_exit_reason"]))
+	fields := jsonutil.ObjectOf("completed", finished, "partial", anyutil.IsTrue(result["partial"]), "interrupted", interrupted)
+	if !finished && anyutil.IsTrue(result["turn_exit_reason"]) {
+		fields.Set("turn_exit_reason", anyutil.String(result["turn_exit_reason"]))
 	}
-	if pyrepr.Truthy(result["pending_steer"]) {
+	if anyutil.IsTrue(result["pending_steer"]) {
 		fields.Set("pending_steer", result["pending_steer"])
 	}
 	return status, fields
@@ -270,7 +270,7 @@ type runState struct {
 	activeRunAgents           map[string]*agent.AIAgent
 	activeRunAgentOrder       []string
 	activeRunTasks            map[string]*agentTask
-	runStatuses               map[string]*pyjson.Object
+	runStatuses               map[string]*jsonutil.Object
 	runApprovalSessions       map[string]string
 }
 
@@ -290,7 +290,7 @@ func (a *APIServerAdapter) initializeRunState(ctx context.Context) error {
 	a.runAdmissionAliases, a.runOwners = map[string]string{}, map[string]string{}
 	a.runStreams, a.runStreamsCreated = map[string]*runStream{}, map[string]float64{}
 	a.activeRunAgents, a.activeRunTasks = map[string]*agent.AIAgent{}, map[string]*agentTask{}
-	a.runStatuses, a.runApprovalSessions = map[string]*pyjson.Object{}, map[string]string{}
+	a.runStatuses, a.runApprovalSessions = map[string]*jsonutil.Object{}, map[string]string{}
 	return nil
 }
 
@@ -330,8 +330,8 @@ func (a *APIServerAdapter) forgetActiveRunAgentLocked(runID string) {
 }
 
 // Idempotency capability block of the capabilities payload
-func (a *APIServerAdapter) idempotencyCapabilities() *pyjson.Object {
-	return pyjson.ObjectOf("supported", true, "durable", a.runIdempotencyStore.Durable(),
+func (a *APIServerAdapter) idempotencyCapabilities() *jsonutil.Object {
+	return jsonutil.ObjectOf("supported", true, "durable", a.runIdempotencyStore.Durable(),
 		"retention_seconds", int64(gateway.RunIdempotencyRetentionSeconds))
 }
 
@@ -346,19 +346,19 @@ func (a *APIServerAdapter) closeRunState(ctx context.Context) {
 }
 
 // Updates the pollable run status, persisting an idempotent run on a status, terminal or key field change
-func (a *APIServerAdapter) setRunStatus(ctx context.Context, runID, status string, fields ...any) *pyjson.Object {
+func (a *APIServerAdapter) setRunStatus(ctx context.Context, runID, status string, fields ...any) *jsonutil.Object {
 	a.mu.Lock()
 	now := apiNow()
 	current := a.runStatuses[runID]
 	if current == nil {
-		current = pyjson.NewObject()
+		current = jsonutil.NewObject()
 	}
 	previous := ""
-	if v := current.GetOr("status", nil); pyrepr.Truthy(v) {
-		previous = pyrepr.Str(v)
+	if v := current.ValueOr("status", nil); anyutil.IsTrue(v) {
+		previous = anyutil.String(v)
 	}
 	names := map[string]bool{}
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	for i := 0; i+1 < len(fields); i += 2 {
 		k := fields[i].(string)
 		names[k] = true
@@ -368,12 +368,12 @@ func (a *APIServerAdapter) setRunStatus(ctx context.Context, runID, status strin
 	current.Set("run_id", runID)
 	current.Set("status", status)
 	current.Set("updated_at", now)
-	createdAt, hasCreated := extra.Pop("created_at")
+	createdAt, hasCreated := extra.Take("created_at")
 	if !hasCreated {
 		createdAt = now
 	}
 	setDefault(current, "created_at", createdAt)
-	current.Update(extra)
+	current.Merge(extra)
 	if a.runShutdownRequestedAt != nil && !gateway.APIRunTerminalStatus(status) {
 		setDefault(current, "shutdown_requested_at", *a.runShutdownRequestedAt)
 	}
@@ -388,7 +388,7 @@ func (a *APIServerAdapter) setRunStatus(ctx context.Context, runID, status strin
 		}
 	}
 	idempotent := a.runIdempotencyIDs[runID]
-	snapshot := current.Copy()
+	snapshot := current.Clone()
 	a.mu.Unlock()
 	if idempotent && persist {
 		if err := a.runIdempotencyStore.UpdateStatus(ctx, runID, snapshot); err != nil {
@@ -421,14 +421,14 @@ func (a *APIServerAdapter) markShutdownRequested(ctx context.Context) int {
 	}
 	var unmarked []pending
 	for runID, current := range a.runStatuses {
-		status := pyrepr.Str(current.GetOr("status", ""))
+		status := anyutil.String(current.ValueOr("status", ""))
 		if gateway.APIRunTerminalStatus(status) {
 			continue
 		}
 		if _, ok := current.Get("shutdown_requested_at"); ok {
 			continue
 		}
-		if !pyrepr.Truthy(current.GetOr("status", nil)) {
+		if !anyutil.IsTrue(current.ValueOr("status", nil)) {
 			status = "running"
 		}
 		unmarked = append(unmarked, pending{runID, status})
@@ -442,17 +442,17 @@ func (a *APIServerAdapter) markShutdownRequested(ctx context.Context) int {
 
 // Progress callback pushing structured run events to the run's SSE stream
 func (a *APIServerAdapter) makeRunEventCallback(ctx context.Context, runID string) func(eventType, toolName, preview string, args map[string]any, kwargs map[string]any) {
-	push := func(event *pyjson.Object) {
+	push := func(event *jsonutil.Object) {
 		a.mu.Lock()
 		status := "running"
 		if current := a.runStatuses[runID]; current != nil {
 			if s, ok := current.Get("status"); ok {
-				status = pyrepr.Str(s)
+				status = anyutil.String(s)
 			}
 		}
 		stream := a.runStreams[runID]
 		a.mu.Unlock()
-		a.setRunStatus(ctx, runID, status, "last_event", event.GetOr("event", nil))
+		a.setRunStatus(ctx, runID, status, "last_event", event.ValueOr("event", nil))
 		if stream != nil {
 			stream.putNowait(event)
 		}
@@ -511,7 +511,7 @@ func (a *APIServerAdapter) runIdempotencyScope(ctx context.Context, request *gat
 		rememberRoomRetention(ctx, claims)
 		for _, k := range []string{"room_id", "home_install_id", "authority_gateway_id", "authority_epoch", "member_id", "target_install_id", "target_profile"} {
 			v, _ := claims.Get(k)
-			parts = append(parts, pyrepr.Str(v))
+			parts = append(parts, anyutil.String(v))
 		}
 	} else {
 		profile := requestProfile(ctx)

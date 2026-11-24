@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Backfills the owner reserved row with the constructor facts, the identity fields only confirming the reservation
@@ -17,9 +17,9 @@ func (s *RuntimeSessionStore) CreateSession(n state.NewSession) error {
 	}
 	var config any
 	if n.ModelConfig != nil {
-		config, _ = pyjson.AsObject(n.ModelConfig)
+		config, _ = jsonutil.AsObject(n.ModelConfig)
 	}
-	payload := pyjson.ObjectOf("source", n.Source, "model", noneIfEmpty(n.Model), "model_config", config,
+	payload := jsonutil.ObjectOf("source", n.Source, "model", noneIfEmpty(n.Model), "model_config", config,
 		"system_prompt", noneIfEmpty(n.SystemPrompt), "user_id", noneIfEmpty(n.UserID), "session_key", noneIfEmpty(n.SessionKey),
 		"chat_id", noneIfEmpty(n.ChatID), "chat_type", noneIfEmpty(n.ChatType), "thread_id", noneIfEmpty(n.ThreadID),
 		"parent_session_id", noneIfEmpty(n.ParentSessionID), "cwd", noneIfEmpty(n.Cwd), "profile_name", noneIfEmpty(n.ProfileName),
@@ -30,15 +30,15 @@ func (s *RuntimeSessionStore) CreateSession(n state.NewSession) error {
 
 // Value of a title receipt, its error raised as ValueError
 func titleResult(result any) (bool, error) {
-	obj, ok := result.(*pyjson.Object)
+	obj, ok := result.(*jsonutil.Object)
 	if !ok {
 		return false, &workerStoreError{"AttributeError", fmt.Sprintf("title receipt is %s where a mapping was expected", errchain.Kind(result))}
 	}
-	if failure := obj.GetOr("error", nil); pyrepr.Truthy(failure) {
-		return false, &workerStoreError{"ValueError", pyrepr.Str(failure)}
+	if failure := obj.ValueOr("error", nil); anyutil.IsTrue(failure) {
+		return false, &workerStoreError{"ValueError", anyutil.String(failure)}
 	}
 	value, err := receiptItem(result, "value")
-	return pyrepr.Truthy(value), err
+	return anyutil.IsTrue(value), err
 }
 
 // Sets a user title through the owner
@@ -46,7 +46,7 @@ func (s *RuntimeSessionStore) SetSessionTitle(ctx context.Context, sessionID, ti
 	if err := s.session(sessionID); err != nil {
 		return false, err
 	}
-	result, err := s.apply(ctx, "session.title", pyjson.ObjectOf("title", title, "source", "user"))
+	result, err := s.apply(ctx, "session.title", jsonutil.ObjectOf("title", title, "source", "user"))
 	if err != nil {
 		return false, err
 	}
@@ -61,7 +61,7 @@ func (s *RuntimeSessionStore) SetAutoTitleContext(ctx context.Context, sessionID
 	if err := s.session(sessionID); err != nil {
 		return false, err
 	}
-	result, err := s.apply(ctx, "session.title", pyjson.ObjectOf("title", title, "source", source))
+	result, err := s.apply(ctx, "session.title", jsonutil.ObjectOf("title", title, "source", source))
 	if err != nil {
 		return false, err
 	}
@@ -79,10 +79,10 @@ func (s *RuntimeSessionStore) GetSessionTitleSource(ctx context.Context, session
 	if err != nil {
 		return "", false, err
 	}
-	if row.GetOr("title", nil) == nil {
+	if row.ValueOr("title", nil) == nil {
 		return "", false, nil
 	}
-	source := row.GetOr("title_source", nil)
+	source := row.ValueOr("title_source", nil)
 	if source == nil {
 		return "", false, nil
 	}
@@ -98,13 +98,13 @@ func (s *RuntimeSessionStore) SetSessionTitleSource(ctx context.Context, session
 	if err := s.session(sessionID); err != nil {
 		return false, err
 	}
-	value, err := s.applyValue(ctx, "session.title_source", pyjson.ObjectOf("source", source))
-	return pyrepr.Truthy(value), err
+	value, err := s.applyValue(ctx, "session.title_source", jsonutil.ObjectOf("source", source))
+	return anyutil.IsTrue(value), err
 }
 
 // Next free numbered title in the base title's lineage
 func (s *RuntimeSessionStore) GetNextTitleInLineage(ctx context.Context, baseTitle string) (string, error) {
-	value, err := s.applyValue(ctx, "session.next_title", pyjson.ObjectOf("base_title", baseTitle))
+	value, err := s.applyValue(ctx, "session.next_title", jsonutil.ObjectOf("base_title", baseTitle))
 	if err != nil {
 		return "", err
 	}
@@ -116,7 +116,7 @@ func (s *RuntimeSessionStore) TouchSessionActivity(sessionID string, at *float64
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(context.Background(), "session.activity", pyjson.ObjectOf("ts", noneIfNil(at), "description", noneIfEmpty(description),
+	_, err := s.apply(context.Background(), "session.activity", jsonutil.ObjectOf("ts", noneIfNil(at), "description", noneIfEmpty(description),
 		"provenance", noneIfEmpty(string(provenance))))
 	return err
 }
@@ -126,7 +126,7 @@ func (s *RuntimeSessionStore) ClearSessionActivityLabels(sessionID string) error
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(context.Background(), "session.activity_clear", pyjson.NewObject())
+	_, err := s.apply(context.Background(), "session.activity_clear", jsonutil.NewObject())
 	return err
 }
 
@@ -135,7 +135,7 @@ func (s *RuntimeSessionStore) UpdateSessionBillingRoute(ctx context.Context, ses
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(ctx, "session.billing_route", pyjson.ObjectOf("provider", provider, "base_url", baseURL, "billing_mode", noneIfNil(billingMode)))
+	_, err := s.apply(ctx, "session.billing_route", jsonutil.ObjectOf("provider", provider, "base_url", baseURL, "billing_mode", noneIfNil(billingMode)))
 	return err
 }
 
@@ -144,7 +144,7 @@ func (s *RuntimeSessionStore) SetLatestUserAPIContent(ctx context.Context, sessi
 	if err := s.session(sessionID); err != nil {
 		return 0, err
 	}
-	value, err := s.applyValue(ctx, "session.api_content", pyjson.ObjectOf("content", content, "api_content", apiContent))
+	value, err := s.applyValue(ctx, "session.api_content", jsonutil.ObjectOf("content", content, "api_content", apiContent))
 	if err != nil {
 		return 0, err
 	}
@@ -156,7 +156,7 @@ func (s *RuntimeSessionStore) SetMessageAPIContent(ctx context.Context, sessionI
 	if err := s.session(sessionID); err != nil {
 		return 0, err
 	}
-	value, err := s.applyValue(ctx, "session.message_api_content", pyjson.ObjectOf("row_id", rowID, "content", content, "api_content", apiContent))
+	value, err := s.applyValue(ctx, "session.message_api_content", jsonutil.ObjectOf("row_id", rowID, "content", content, "api_content", apiContent))
 	if err != nil {
 		return 0, err
 	}
@@ -168,7 +168,7 @@ func (s *RuntimeSessionStore) SetUserMessageContent(ctx context.Context, session
 	if err := s.session(sessionID); err != nil {
 		return 0, err
 	}
-	payload := pyjson.ObjectOf("row_id", rowID, "content", content)
+	payload := jsonutil.ObjectOf("row_id", rowID, "content", content)
 	if displayMetadata != nil {
 		payload.Set("display_metadata", displayMetadata)
 	}
@@ -184,7 +184,7 @@ func (s *RuntimeSessionStore) EndSession(sessionID, endReason string) error {
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(context.Background(), "session.end", pyjson.ObjectOf("end_reason", endReason))
+	_, err := s.apply(context.Background(), "session.end", jsonutil.ObjectOf("end_reason", endReason))
 	return err
 }
 
@@ -204,7 +204,7 @@ func (s *RuntimeSessionStore) SessionLifecycleStatuses(ctx context.Context, sess
 	if len(ids) == 0 {
 		return map[string]string{}, nil
 	}
-	value, err := s.applyValue(ctx, "session.lifecycle", pyjson.NewObject())
+	value, err := s.applyValue(ctx, "session.lifecycle", jsonutil.NewObject())
 	if err != nil {
 		return nil, err
 	}

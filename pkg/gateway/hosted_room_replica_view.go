@@ -8,10 +8,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -59,7 +58,7 @@ func replicaViewTransaction(ctx context.Context, dbPath string, immediate bool, 
 
 // Home link of a replicated room, nil when the room is no replica here
 func ReplicaLink(ctx context.Context, dbPath, roomID string) (map[string]any, error) {
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	err := replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) (err error) {
 		row, err = state.QueryRowObject(ctx, conn, `SELECT l.home_gateway_id, l.home_label, l.status_json, l.disbanded_at, l.synced_at
             FROM hosted_room_replica_links l JOIN hosted_room_replicas r ON r.room_id=l.room_id WHERE l.room_id=?`, roomID)
@@ -70,10 +69,10 @@ func ReplicaLink(ctx context.Context, dbPath, roomID string) (map[string]any, er
 	}
 	link := map[string]any{"home_gateway_id": hrStr(row, "home_gateway_id"), "home": hrStr(row, "home_label"),
 		"synced_at": hrFloat(row, "synced_at"), "disbanded_at": nil, "status": nil}
-	if row.Vals["disbanded_at"] != nil {
+	if row.Value("disbanded_at") != nil {
 		link["disbanded_at"] = hrFloat(row, "disbanded_at")
 	}
-	if row.Vals["status_json"] != nil {
+	if row.Value("status_json") != nil {
 		if link["status"], err = roomLoads(hrStr(row, "status_json")); err != nil {
 			return nil, err
 		}
@@ -82,7 +81,7 @@ func ReplicaLink(ctx context.Context, dbPath, roomID string) (map[string]any, er
 }
 
 // Room view of a stored replica, marked as a replica of its home
-func replicaRoomView(row *pyjson.Object) (map[string]any, error) {
+func replicaRoomView(row *jsonutil.Object) (map[string]any, error) {
 	members, err := roomLoads(hrStr(row, "members_json"))
 	if err != nil {
 		return nil, err
@@ -91,7 +90,7 @@ func replicaRoomView(row *pyjson.Object) (map[string]any, error) {
 		"authority_gateway_id": hrStr(row, "authority_gateway_id"), "authority_epoch": hrInt(row, "authority_epoch"),
 		"revision": hrInt(row, "last_seq"), "created_at": hrFloat(row, "created_at"), "updated_at": hrFloat(row, "updated_at"),
 		"idempotent": false, "latest_seq": hrInt(row, "last_seq"), "replica": true, "home": hrStr(row, "home_label")}
-	if row.Vals["disbanded_at"] != nil {
+	if row.Value("disbanded_at") != nil {
 		room["disbanded_at"] = hrFloat(row, "disbanded_at")
 	}
 	return room, nil
@@ -104,7 +103,7 @@ const replicaViewSelect = `SELECT r.room_id, r.name, r.members_json, r.authority
 
 // Replicated rooms most recently changed first, disbanded ones only when asked
 func ReplicaRooms(ctx context.Context, dbPath string, includeDisbanded bool) ([]any, error) {
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) (err error) {
 		rows, err = state.QueryObjects(ctx, conn, replicaViewSelect+" WHERE l.disbanded_at IS NULL OR ? ORDER BY r.updated_at DESC, r.room_id",
 			hostedBoolInt(includeDisbanded))
@@ -126,7 +125,7 @@ func ReplicaRooms(ctx context.Context, dbPath string, includeDisbanded bool) ([]
 
 // One replicated room, a not found error when absent or disbanded and not asked for
 func ReplicaRoom(ctx context.Context, dbPath, roomID string, includeDisbanded bool) (map[string]any, error) {
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	err := replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) (err error) {
 		row, err = state.QueryRowObject(ctx, conn, replicaViewSelect+" WHERE r.room_id=? AND (l.disbanded_at IS NULL OR ?)", roomID, hostedBoolInt(includeDisbanded))
 		return err
@@ -150,8 +149,8 @@ func ReplicaReadEvents(ctx context.Context, dbPath, roomID string, sinceValue, l
 	if err != nil {
 		return nil, err
 	}
-	var replica *pyjson.Object
-	var rows []*pyjson.Object
+	var replica *jsonutil.Object
+	var rows []*jsonutil.Object
 	err = replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) (err error) {
 		if replica, err = state.QueryRowObject(ctx, conn, replicaSelect, roomID); err != nil || replica == nil {
 			return err
@@ -183,7 +182,7 @@ func ReplicaReadEvents(ctx context.Context, dbPath, roomID string, sinceValue, l
 
 // Queues one operation of a local user for the room's home, which applies it on its next sync
 func QueueReplicaOp(ctx context.Context, dbPath, roomID, op string, params map[string]any) (int64, error) {
-	encoded, err := pyjson.Dumps(params, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	encoded, err := jsonutil.Encode(params)
 	if err != nil {
 		return 0, err
 	}
@@ -210,7 +209,7 @@ func ReplicaStateView(ctx context.Context, dbPath, roomID string) (map[string]an
 		return nil, err
 	}
 	var pending int64
-	var failed []*pyjson.Object
+	var failed []*jsonutil.Object
 	err = replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) error {
 		if err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM hosted_room_replica_outbox WHERE room_id=? AND acked=0", roomID).Scan(&pending); err != nil {
 			return err
@@ -250,7 +249,7 @@ func ReplicaUpload(ctx context.Context, dbPath, roomID string, params map[string
 	if !ok || len(encoded) > ((maxAttachmentBytes+2)/3)*4 {
 		return nil, roomRefusal("invalid_params", "attachment is larger than the per-file limit")
 	}
-	data, err := pybase64.B64DecodeValidate(encoded)
+	data, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil || len(data) == 0 {
 		return nil, roomRefusal("invalid_params", "attachment data is not valid base64")
 	}
@@ -295,7 +294,7 @@ func ReplicaDownload(ctx context.Context, dbPath, roomID string, params map[stri
 	if err != nil || saved != nil {
 		return saved, err
 	}
-	var queued *pyjson.Object
+	var queued *jsonutil.Object
 	err = replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) (err error) {
 		queued, err = state.QueryRowObject(ctx, conn, `SELECT 1 AS hit FROM hosted_room_replica_outbox WHERE room_id=? AND op='fetch' AND acked=0
             AND json_extract(params_json, '$.event_id')=? AND json_extract(params_json, '$.attachment_id')=?`, roomID, eventID, attachmentID)
@@ -314,7 +313,7 @@ func ReplicaDownload(ctx context.Context, dbPath, roomID string, params map[stri
 
 // A complete fetched file with its bytes, nil when it has not fully arrived
 func replicaFetchedFile(ctx context.Context, dbPath, roomID, eventID, attachmentID string) (map[string]any, error) {
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	err := replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) (err error) {
 		row, err = state.QueryRowObject(ctx, conn, `SELECT attachment_id, kind, name, mime, size, sha256, data, created_at
             FROM hosted_room_replica_files WHERE room_id=? AND event_id=? AND attachment_id=?`, roomID, eventID, attachmentID)
@@ -323,7 +322,7 @@ func replicaFetchedFile(ctx context.Context, dbPath, roomID, eventID, attachment
 	if err != nil || row == nil {
 		return nil, err
 	}
-	data, _ := row.Vals["data"].([]byte)
+	data, _ := row.Value("data").([]byte)
 	if int64(len(data)) != hrInt(row, "size") {
 		return nil, nil
 	}
@@ -334,10 +333,10 @@ func replicaFetchedFile(ctx context.Context, dbPath, roomID, eventID, attachment
 
 // Appends one pushed chunk of a fetched file in order, a repeated chunk ignored and a corrupt file dropped
 func replicaStoreChunk(ctx context.Context, conn state.SQLiteConn, chunk map[string]any, now float64) error {
-	roomID, eventID, attachmentID := pyrepr.Str(chunk["room_id"]), pyrepr.Str(chunk["event_id"]), pyrepr.Str(chunk["attachment_id"])
+	roomID, eventID, attachmentID := anyutil.String(chunk["room_id"]), anyutil.String(chunk["event_id"]), anyutil.String(chunk["attachment_id"])
 	offset, _ := hostedStrictInt(chunk["offset"])
 	size, _ := hostedStrictInt(chunk["size"])
-	data, err := base64.StdEncoding.DecodeString(pyrepr.Str(chunk["data_base64"]))
+	data, err := base64.StdEncoding.DecodeString(anyutil.String(chunk["data_base64"]))
 	if err != nil || size <= 0 || size > maxAttachmentBytes {
 		return nil
 	}
@@ -347,7 +346,7 @@ func replicaStoreChunk(ctx context.Context, conn state.SQLiteConn, chunk map[str
 	}
 	var have []byte
 	if existing != nil {
-		have, _ = existing.Vals["data"].([]byte)
+		have, _ = existing.Value("data").([]byte)
 	}
 	if offset != int64(len(have)) {
 		return nil
@@ -359,14 +358,14 @@ func replicaStoreChunk(ctx context.Context, conn state.SQLiteConn, chunk map[str
 	}
 	if int64(len(whole)) == size {
 		sum := sha256.Sum256(whole)
-		if hex.EncodeToString(sum[:]) != pyrepr.Str(chunk["sha256"]) {
+		if hex.EncodeToString(sum[:]) != anyutil.String(chunk["sha256"]) {
 			_, err := conn.ExecContext(ctx, "DELETE FROM hosted_room_replica_files WHERE room_id=? AND event_id=? AND attachment_id=?", roomID, eventID, attachmentID)
 			return err
 		}
 	}
 	_, err = conn.ExecContext(ctx, `INSERT INTO hosted_room_replica_files (room_id, event_id, attachment_id, kind, name, mime, size, sha256, data, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(room_id, event_id, attachment_id) DO UPDATE SET data=excluded.data`,
-		roomID, eventID, attachmentID, pyrepr.Str(chunk["kind"]), pyrepr.Str(chunk["name"]), pyrepr.Str(chunk["mime"]), size, pyrepr.Str(chunk["sha256"]), whole, now)
+		roomID, eventID, attachmentID, anyutil.String(chunk["kind"]), anyutil.String(chunk["name"]), anyutil.String(chunk["mime"]), size, anyutil.String(chunk["sha256"]), whole, now)
 	return err
 }
 
@@ -387,7 +386,7 @@ type RoomShareSyncError struct{ Msg string }
 func (e *RoomShareSyncError) Error() string { return e.Msg }
 
 // Takes one sync of a room home, storing its pages and status, answering cursors and the operations local users queued
-func RoomShareSync(ctx context.Context, runner any, body *pyjson.Object) (map[string]any, error) {
+func RoomShareSync(ctx context.Context, runner any, body *jsonutil.Object) (map[string]any, error) {
 	authority, err := ActiveAuthority(ctx, runner)
 	if err != nil {
 		return nil, err
@@ -396,7 +395,7 @@ func RoomShareSync(ctx context.Context, runner any, body *pyjson.Object) (map[st
 		return nil, &RoomShareSyncError{"this gateway serves no session authority for the profile"}
 	}
 	dbPath := authority.DB.Path()
-	fields, _ := pyjson.Plain(body).(map[string]any)
+	fields, _ := jsonutil.Plain(body).(map[string]any)
 	homeID, err := roomIdentifier(fields["home_gateway_id"], roomIdentifierSpec{label: "home_gateway_id", maxChars: maxActorIDChars}, hostedRoomError)
 	if err != nil {
 		return nil, &RoomShareSyncError{err.Error()}
@@ -449,7 +448,7 @@ func RoomShareSync(ctx context.Context, runner any, body *pyjson.Object) (map[st
 		files, _ := fields["files"].([]any)
 		for _, raw := range files {
 			chunk, _ := raw.(map[string]any)
-			link, err := state.QueryRowObject(ctx, conn, "SELECT 1 AS hit FROM hosted_room_replica_links WHERE room_id=? AND home_gateway_id=?", pyrepr.Str(chunk["room_id"]), homeID)
+			link, err := state.QueryRowObject(ctx, conn, "SELECT 1 AS hit FROM hosted_room_replica_links WHERE room_id=? AND home_gateway_id=?", anyutil.String(chunk["room_id"]), homeID)
 			if err != nil {
 				return err
 			}
@@ -499,7 +498,7 @@ func replicaSyncRoom(ctx context.Context, dbPath, local, homeID, label string, r
 		result["error"] = "room id is already used by a room of this gateway"
 		return result
 	}
-	var link *pyjson.Object
+	var link *jsonutil.Object
 	if err := replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) (err error) {
 		link, err = state.QueryRowObject(ctx, conn, "SELECT home_gateway_id FROM hosted_room_replica_links WHERE room_id=?", roomID)
 		return err
@@ -523,7 +522,7 @@ func replicaSyncRoom(ctx context.Context, dbPath, local, homeID, label string, r
 	}
 	var statusJSON any
 	if status, has := room["status"]; has && status != nil {
-		if encoded, err := pyjson.Dumps(status, pyjson.EnsureASCII(false), pyjson.Separators(",", ":")); err == nil {
+		if encoded, err := jsonutil.Encode(status); err == nil {
 			statusJSON = encoded
 		}
 	}
@@ -543,8 +542,8 @@ func replicaSyncRoom(ctx context.Context, dbPath, local, homeID, label string, r
 
 // Operations local users queued on rooms of one home, oldest first, sends carrying their files
 func replicaOutboxFor(ctx context.Context, dbPath, homeID string) ([]any, error) {
-	var rows []*pyjson.Object
-	uploads := map[string]*pyjson.Object{}
+	var rows []*jsonutil.Object
+	uploads := map[string]*jsonutil.Object{}
 	err := replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) error {
 		var err error
 		rows, err = state.QueryObjects(ctx, conn, `SELECT o.outbox_id, o.room_id, o.op, o.params_json FROM hosted_room_replica_outbox o
@@ -576,11 +575,11 @@ func replicaOutboxFor(ctx context.Context, dbPath, homeID string) ([]any, error)
 			files := []any{}
 			for _, raw := range items {
 				item, _ := raw.(map[string]any)
-				upload := uploads[roomID+"\x00"+pyrepr.Str(item["attachment_id"])]
+				upload := uploads[roomID+"\x00"+anyutil.String(item["attachment_id"])]
 				if upload == nil {
 					continue
 				}
-				data, _ := upload.Vals["data"].([]byte)
+				data, _ := upload.Value("data").([]byte)
 				files = append(files, map[string]any{"attachment_id": hrStr(upload, "attachment_id"), "upload_id": hrStr(upload, "upload_id"),
 					"kind": hrStr(upload, "kind"), "name": hrStr(upload, "name"), "mime": hrStr(upload, "mime"),
 					"data_base64": base64.StdEncoding.EncodeToString(data)})
@@ -601,7 +600,7 @@ func (c *CanonicalHostedRoomService) PromoteReplicaRoom(actor Principal, roomID 
 	if link == nil {
 		return nil, roomRefusal("invalid_params", "room is no replica of another gateway")
 	}
-	queued, err := replicaOutboxFor(c.ctx, c.DBPath, pyrepr.Str(link["home_gateway_id"]))
+	queued, err := replicaOutboxFor(c.ctx, c.DBPath, anyutil.String(link["home_gateway_id"]))
 	if err != nil {
 		return nil, err
 	}

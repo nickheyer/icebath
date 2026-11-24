@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ---- events ----
@@ -622,7 +622,7 @@ func codexSpillToolOutput(ctx context.Context, content, toolUseID string) string
 
 // UTF-8 size of the input items as json.dumps writes them with unknown values stringified
 func codexSerializedInputBytes(items any) int {
-	text, _ := pyjson.Dumps(items, pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	text, _ := jsonutil.Encode(items, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	return len(text)
 }
 
@@ -649,11 +649,11 @@ func pruneZeroEventRetryPayload(ctx context.Context, kwargs map[string]any, atte
 	pruned := 0
 	prunedItems := make([]any, 0, len(items))
 	for _, raw := range items {
-		if item, ok := pyjson.Dict(raw); ok && pyrepr.Equal(item["type"], "function_call_output") {
+		if item, ok := jsonutil.AsMap(raw); ok && anyutil.Equal(item["type"], "function_call_output") {
 			if output, isText := item["output"].(string); isText {
 				callID := "call"
-				if id := item["call_id"]; pyrepr.Truthy(id) {
-					callID = pyrepr.Str(id)
+				if id := item["call_id"]; anyutil.IsTrue(id) {
+					callID = anyutil.String(id)
 				}
 				if replaced := codexSpillToolOutput(ctx, output, callID); replaced != output {
 					cp := make(map[string]any, len(item))
@@ -669,10 +669,10 @@ func pruneZeroEventRetryPayload(ctx context.Context, kwargs map[string]any, atte
 		prunedItems = append(prunedItems, raw)
 	}
 	if pruned == 0 {
-		pkgLog().Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): no prunable tool output; resending payload unchanged (serialized_input_bytes=%d, model=%s)", attempt, attempts, before, pyrepr.Str(kwargs["model"])))
+		pkgLog().Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): no prunable tool output; resending payload unchanged (serialized_input_bytes=%d, model=%s)", attempt, attempts, before, anyutil.String(kwargs["model"])))
 		return kwargs
 	}
-	pkgLog().Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): spilled %d oversized tool output(s) before reconnect, serialized_input_bytes=%d -> %d (model=%s)", attempt, attempts, pruned, before, codexSerializedInputBytes(prunedItems), pyrepr.Str(kwargs["model"])))
+	pkgLog().Warn(fmt.Sprintf("Codex zero-event retry (attempt %d/%d): spilled %d oversized tool output(s) before reconnect, serialized_input_bytes=%d -> %d (model=%s)", attempt, attempts, pruned, before, codexSerializedInputBytes(prunedItems), anyutil.String(kwargs["model"])))
 	out := make(map[string]any, len(kwargs))
 	for k, v := range kwargs {
 		out[k] = v

@@ -5,13 +5,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math/big"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -165,38 +164,25 @@ func durableErrSuffix(err error, coercion bool) string {
 	if errors.As(err, &sqliteErr) || errors.Is(err, sql.ErrNoRows) || errors.Is(err, sql.ErrConnDone) {
 		return ""
 	}
-	var pe *pyint.Error
-	if coercion && errors.As(err, &pe) {
+	if coercion && (errors.Is(err, anyutil.ErrNotNumber) || errors.Is(err, anyutil.ErrRange)) {
 		return ""
 	}
 	return " (non-sqlite)"
 }
 
-// Python int or float coercion of a stored number, string or bool
+// Integer or float coercion of a stored number, string or bool
 func coerceDurable(stored any, asFloat bool) (any, bool, error) {
-	switch v := stored.(type) {
+	switch stored.(type) {
 	case int, int64, float64, string, bool:
 		if asFloat {
-			f, err := pyint.Float(v)
+			f, err := anyutil.ToFloat(stored)
 			return f, true, err
 		}
-		n, err := pyint.Of(v)
+		n, err := anyutil.ToInt(stored)
 		if err != nil {
 			return nil, true, err
 		}
-		if !n.IsInt64() {
-			return nil, true, &pyint.Error{Msg: "int too large to convert"}
-		}
-		return int(n.Int64()), true, nil
-	case *big.Int:
-		if asFloat {
-			f, _ := new(big.Float).SetInt(v).Float64()
-			return f, true, nil
-		}
-		if !v.IsInt64() {
-			return nil, true, &pyint.Error{Msg: "int too large to convert"}
-		}
-		return int(v.Int64()), true, nil
+		return int(n), true, nil
 	}
 	return nil, false, nil
 }
@@ -817,7 +803,7 @@ func (c *ContextCompressor) loadFallbackProbeAt() {
 }
 
 // Skips the summary model while two summaries in a row fell back, one probe per recovery window
-func (c *ContextCompressor) fallbackStreakSkip(telemetry *pyjson.Object) bool {
+func (c *ContextCompressor) fallbackStreakSkip(telemetry *jsonutil.Object) bool {
 	if c.fallbackCompressionStreak < 2 {
 		c.setFallbackProbeAt(0)
 		return false
@@ -843,7 +829,7 @@ func (c *ContextCompressor) fallbackStreakSkip(telemetry *pyjson.Object) bool {
 }
 
 // Skips the summary model after a real usage strike when the middle is tiny against the trigger
-func (c *ContextCompressor) feasibilitySkip(telemetry *pyjson.Object, turnsToSummarize []map[string]any, compressStart, compressEnd int) bool {
+func (c *ContextCompressor) feasibilitySkip(telemetry *jsonutil.Object, turnsToSummarize []map[string]any, compressStart, compressEnd int) bool {
 	if c.ineffectiveCompressionCount < 1 {
 		return false
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -14,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type prefixMatcher struct {
@@ -230,7 +232,7 @@ var patternRejectRules = []struct {
 
 // Elements of a Python iterable argument, the TypeError text when it is not iterable
 func iterPatterns(patterns any) ([]any, error) {
-	if patterns == nil || !pyrepr.Truthy(patterns) {
+	if patterns == nil || !anyutil.IsTrue(patterns) {
 		return nil, nil
 	}
 	switch v := patterns.(type) {
@@ -297,13 +299,13 @@ func RegisterRedactionPatterns(patterns any, source string) (int, error) {
 			if errors.As(cerr, &overflow) {
 				return 0, cerr
 			}
-			pkgLog().Warn(fmt.Sprintf("%s: skipping invalid redaction pattern %s (%s)", source, pyrepr.StrRepr(pattern), cerr))
+			pkgLog().Warn(fmt.Sprintf("%s: skipping invalid redaction pattern %s (%s)", source, strconv.Quote(pattern), cerr))
 			continue
 		}
 		rejected := ""
 		for _, rule := range patternRejectRules {
 			if rule.reject(pattern) {
-				rejected = fmt.Sprintf(rule.message, source, pyrepr.StrRepr(pattern))
+				rejected = fmt.Sprintf(rule.message, source, strconv.Quote(pattern))
 				break
 			}
 		}
@@ -312,7 +314,7 @@ func RegisterRedactionPatterns(patterns any, source string) (int, error) {
 			continue
 		}
 		if containsString(known, pattern) || containsString(accepted, pattern) {
-			pkgLog().Debug(fmt.Sprintf("%s: redaction pattern %s already registered", source, pyrepr.StrRepr(pattern)))
+			pkgLog().Debug(fmt.Sprintf("%s: redaction pattern %s already registered", source, strconv.Quote(pattern)))
 			continue
 		}
 		accepted = append(accepted, pattern)

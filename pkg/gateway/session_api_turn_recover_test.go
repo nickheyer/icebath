@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestATurnQueuedWithBrowserControlRecoversAndRunsWithoutIt(t *testing.T) {
@@ -15,16 +15,16 @@ func TestATurnQueuedWithBrowserControlRecoversAndRunsWithoutIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored := pyjson.Clone(admitted.Row.GetOr("payload", nil)).(*pyjson.Object)
-	stored.GetOr("api_turn_v1", nil).(*pyjson.Object).Set("browser_control",
-		pyjson.ObjectOf("principal", "principal:default:abc", "transport_family", "local-api"))
-	encoded, err := pyjson.Dumps(stored)
+	stored := jsonutil.Clone(admitted.Row.ValueOr("payload", nil)).(*jsonutil.Object)
+	stored.ValueOr("api_turn_v1", nil).(*jsonutil.Object).Set("browser_control",
+		jsonutil.ObjectOf("principal", "principal:default:abc", "transport_family", "local-api"))
+	encoded, err := jsonutil.Encode(stored)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := owner.DB.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
 		_, err := conn.ExecContext(ctx, "UPDATE session_admissions SET payload_json=? WHERE admission_id=?", encoded,
-			admitted.Row.GetOr("admission_id", nil))
+			admitted.Row.ValueOr("admission_id", nil))
 		return err
 	}); err != nil {
 		t.Fatal(err)
@@ -50,15 +50,15 @@ func TestATurnQueuedWithBrowserControlRecoversAndRunsWithoutIt(t *testing.T) {
 		t.Fatalf("pending = %v, %v", pending, err)
 	}
 	legacy := pending[0]
-	if _, carried := legacy.GetOr("payload", nil).(*pyjson.Object).GetOr("api_turn_v1", nil).(*pyjson.Object).Get("browser_control"); !carried {
+	if _, carried := legacy.ValueOr("payload", nil).(*jsonutil.Object).ValueOr("api_turn_v1", nil).(*jsonutil.Object).Get("browser_control"); !carried {
 		t.Fatal("stored payload lost browser_control")
 	}
 	var texts []string
-	var executions []*pyjson.Object
+	var executions []*jsonutil.Object
 	owner.Runner.(*apiOwnerRunner).handle = func(ctx context.Context, event *MessageEvent) (any, error) {
 		texts = append(texts, event.Text)
-		executions = append(executions, APIExecution(ctx).Copy())
-		executionResultOf(ctx).Set("result", pyjson.ObjectOf("final_response", "ok"))
+		executions = append(executions, APIExecution(ctx).Clone())
+		executionResultOf(ctx).Set("result", jsonutil.ObjectOf("final_response", "ok"))
 		return "ok", nil
 	}
 	reply, err := executeAdmission(ctx, owner, admitted.Ref, legacy)

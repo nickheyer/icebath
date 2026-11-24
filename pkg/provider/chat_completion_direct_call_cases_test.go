@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 // Client answering a fixed response map while recording the kwargs it was sent
@@ -249,7 +249,7 @@ func TestInlineCallPassesHardReadTimeoutToTheSdk(t *testing.T) {
 	if err != nil || resp.(map[string]any)["id"] != "ok" {
 		t.Fatalf("resp %v err %v", resp, err)
 	}
-	if timeout, ok := sentKwargs(sent)["timeout"].(pyhttpx.Timeout); !ok || timeout.Read != 500*time.Millisecond {
+	if timeout, ok := sentKwargs(sent)["timeout"].(httputil.Timeout); !ok || timeout.Read != 500*time.Millisecond {
 		t.Fatalf("timeout %v", sentKwargs(sent)["timeout"])
 	}
 }

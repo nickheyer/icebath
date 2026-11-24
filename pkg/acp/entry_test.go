@@ -15,11 +15,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func quietEntry(t *testing.T) {
@@ -182,31 +183,31 @@ func probeRecord(msg string, err error) *logging.Record {
 
 func TestFilterSuppressesBenignProbe(t *testing.T) {
 	for _, method := range []string{"ping", "health", "healthcheck"} {
-		if (benignProbeMethodFilter{}).Filter(probeRecord("Background task failed", pyacp.MethodNotFound(method))) {
+		if (benignProbeMethodFilter{}).Filter(probeRecord("Background task failed", acputil.MethodNotFound(method))) {
 			t.Fatalf("%s probe noise passed the filter", method)
 		}
 	}
 }
 
 func TestFilterAllowsDifferentMessageEvenForPing(t *testing.T) {
-	if !(benignProbeMethodFilter{}).Filter(probeRecord("Some other context", pyacp.MethodNotFound("ping"))) {
+	if !(benignProbeMethodFilter{}).Filter(probeRecord("Some other context", acputil.MethodNotFound("ping"))) {
 		t.Fatal("another message was muted")
 	}
 }
 
 type probeAgent struct{}
 
-func (probeAgent) Initialize(ctx context.Context, req *pyacp.InitializeRequest) (*pyacp.InitializeResponse, error) {
-	return &pyacp.InitializeResponse{ProtocolVersion: 1, AgentCapabilities: &pyacp.AgentCapabilities{}}, nil
+func (probeAgent) Initialize(ctx context.Context, req *acputil.InitializeRequest) (*acputil.InitializeResponse, error) {
+	return &acputil.InitializeResponse{ProtocolVersion: 1, AgentCapabilities: &acputil.AgentCapabilities{}}, nil
 }
-func (probeAgent) NewSession(ctx context.Context, req *pyacp.NewSessionRequest) (*pyacp.NewSessionResponse, error) {
-	return &pyacp.NewSessionResponse{SessionID: "test"}, nil
+func (probeAgent) NewSession(ctx context.Context, req *acputil.NewSessionRequest) (*acputil.NewSessionResponse, error) {
+	return &acputil.NewSessionResponse{SessionID: "test"}, nil
 }
-func (probeAgent) Prompt(ctx context.Context, req *pyacp.PromptRequest) (*pyacp.PromptResponse, error) {
-	return &pyacp.PromptResponse{StopReason: "end_turn"}, nil
+func (probeAgent) Prompt(ctx context.Context, req *acputil.PromptRequest) (*acputil.PromptResponse, error) {
+	return &acputil.PromptResponse{StopReason: "end_turn"}, nil
 }
-func (probeAgent) Cancel(ctx context.Context, req *pyacp.CancelNotification) error { return nil }
-func (probeAgent) Authenticate(ctx context.Context, req *pyacp.AuthenticateRequest) (*pyacp.AuthenticateResponse, error) {
+func (probeAgent) Cancel(ctx context.Context, req *acputil.CancelNotification) error { return nil }
+func (probeAgent) Authenticate(ctx context.Context, req *acputil.AuthenticateRequest) (*acputil.AuthenticateResponse, error) {
 	return nil, nil
 }
 
@@ -285,16 +286,16 @@ func TestBarePingRequestProducesProperResponseAndNoStderrNoise(t *testing.T) {
 		t.Fatal("no response to the ping")
 	}
 	time.Sleep(200 * time.Millisecond)
-	response, err := pyjson.Loads(strings.TrimSpace(line))
+	response, err := jsonutil.Decode(strings.TrimSpace(line))
 	if err != nil {
 		t.Fatalf("response %q: %v", line, err)
 	}
-	failure, _ := response.(*pyjson.Object).GetOr("error", nil).(*pyjson.Object)
-	if failure == nil || failure.GetOr("code", nil) != int64(-32601) {
+	failure, _ := response.(*jsonutil.Object).ValueOr("error", nil).(*jsonutil.Object)
+	if failure == nil || failure.ValueOr("code", nil) != int64(-32601) {
 		t.Fatalf("response = %s", line)
 	}
-	data, _ := failure.GetOr("data", nil).(*pyjson.Object)
-	if data == nil || !reflect.DeepEqual(data.Vals, map[string]any{"method": "ping"}) {
+	data, _ := failure.ValueOr("data", nil).(*jsonutil.Object)
+	if data == nil || !reflect.DeepEqual(data.Map(), map[string]any{"method": "ping"}) {
 		t.Fatalf("error data = %s", line)
 	}
 	if logs := handler.text(); strings.Contains(logs, "Background task failed") {

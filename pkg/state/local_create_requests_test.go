@@ -3,25 +3,26 @@ package state
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestClientRequestDropsOwnerStampedAndDerivedFields(t *testing.T) {
 	cases := []struct {
 		name, request string
 		derived       any
-		want          *pyjson.Object
+		want          *jsonutil.Object
 	}{
 		{"pre provenance alias", `{"model":"gpt-x","model_requested":"fast","base_url":"https://a","desktop_local":true,"route_derived":["model"],"cwd":"/w"}`, nil,
-			pyjson.ObjectOf("model_requested", "fast", "cwd", "/w")},
+			jsonutil.ObjectOf("model_requested", "fast", "cwd", "/w")},
 		{"derived fields", `{"model":"gpt-x","model_requested":"fast","base_url":"https://a","api_mode":"chat","route_derived":["api_mode"]}`, []any{"api_mode"},
-			pyjson.ObjectOf("model_requested", "fast", "base_url", "https://a", "route_derived", []any{"api_mode"})},
+			jsonutil.ObjectOf("model_requested", "fast", "base_url", "https://a", "route_derived", []any{"api_mode"})},
 		{"no alias", `{"model":"gpt-x","base_url":"https://a","desktop_local":false}`, nil,
-			pyjson.ObjectOf("model", "gpt-x", "base_url", "https://a")},
+			jsonutil.ObjectOf("model", "gpt-x", "base_url", "https://a")},
 	}
 	for _, c := range cases {
 		got, err := ClientRequest(c.request, c.derived)
-		if err != nil || !pyjson.Equal(got, c.want) {
+		if err != nil || !anyutil.Equal(got, c.want) {
 			t.Fatalf("%s: %v %v", c.name, got, err)
 		}
 	}
@@ -55,17 +56,17 @@ func TestSameCreateRequestComparesWhatTheClientSent(t *testing.T) {
 }
 
 func TestSameCreateRetryJudgesTheClientEnvByTheSavedRules(t *testing.T) {
-	policy := pyjson.ObjectOf("request_json", `{"model":"m"}`, "client_env_json", nil)
-	if same, err := SameCreateRetry(policy, `{"model":"m"}`, pyjson.NewObject()); err != nil || !same {
+	policy := jsonutil.ObjectOf("request_json", `{"model":"m"}`, "client_env_json", nil)
+	if same, err := SameCreateRetry(policy, `{"model":"m"}`, jsonutil.NewObject()); err != nil || !same {
 		t.Fatalf("plain retry %v %v", same, err)
 	}
-	if same, err := SameCreateRetry(policy, `{"model":"m"}`, pyjson.ObjectOf("client_env", pyjson.ObjectOf("A", "1"))); err != nil || same {
+	if same, err := SameCreateRetry(policy, `{"model":"m"}`, jsonutil.ObjectOf("client_env", jsonutil.ObjectOf("A", "1"))); err != nil || same {
 		t.Fatalf("retry adding a client env %v %v", same, err)
 	}
-	if same, err := SameCreateRetry(policy, `{"model":"other"}`, pyjson.NewObject()); err != nil || same {
+	if same, err := SameCreateRetry(policy, `{"model":"other"}`, jsonutil.NewObject()); err != nil || same {
 		t.Fatalf("changed request %v %v", same, err)
 	}
-	if _, err := SameCreateRetry(pyjson.NewObject(), `{"model":"m"}`, pyjson.NewObject()); err == nil {
+	if _, err := SameCreateRetry(jsonutil.NewObject(), `{"model":"m"}`, jsonutil.NewObject()); err == nil {
 		t.Fatal("policy without request_json accepted")
 	}
 }

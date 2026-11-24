@@ -18,8 +18,9 @@ import (
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/webp"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hard ceiling in characters for one MCP text payload, far above the spillover threshold so only floods are lossy
@@ -484,11 +485,11 @@ func contentDualEmitsStructured(result *CallToolResult, structured any) bool {
 		if blk == nil || blk.Text == "" {
 			continue
 		}
-		parsed, err := pyjson.Loads(blk.Text)
+		parsed, err := jsonutil.Decode(blk.Text)
 		if err != nil {
 			continue
 		}
-		if pyjson.Equal(parsed, structured) {
+		if anyutil.Equal(parsed, structured) {
 			return true
 		}
 	}

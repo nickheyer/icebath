@@ -11,9 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 type fakeClock struct {
@@ -46,7 +47,7 @@ func fullFrame(n int, v int16) []int16 {
 }
 
 // The input callback the recorder handed to the last opened stream
-func lastCallback(t *testing.T, sd *fakeSD) pysounddevice.InputCallback {
+func lastCallback(t *testing.T, sd *fakeSD) portaudioutil.InputCallback {
 	t.Helper()
 	sd.mu.Lock()
 	defer sd.mu.Unlock()
@@ -72,7 +73,7 @@ func TestAudioRecorderStartRaisesWithoutAudioLibs(t *testing.T) {
 }
 
 func TestAudioRecorderStartOserrorPointsAtPortaudioNotPip(t *testing.T) {
-	withAudioImportFailure(t, &pysounddevice.LibraryError{Msg: "PortAudio library not found"})
+	withAudioImportFailure(t, &portaudioutil.LibraryError{Err: errors.New("PortAudio library not found")})
 	swapVoice(t, &isTermuxEnvironment, func() bool { return false })
 	err := NewAudioRecorder().Start(context.Background(), nil)
 	if err == nil {
@@ -225,7 +226,7 @@ func TestSilenceDetectionSilenceCallbackFiresAfterSpeechThenSilence(t *testing.T
 	clock := withFakeClock(t)
 	r.silenceDuration = 0.05
 	r.minSpeechDuration = 0.05
-	fired := &pythread.Event{}
+	fired := &syncutil.Event{}
 	if err := r.Start(context.Background(), fired.Set); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +240,7 @@ func TestSilenceDetectionSilenceCallbackFiresAfterSpeechThenSilence(t *testing.T
 	cb(make([]int16, 1600), 1600, 0)
 	clock.advance(0.06)
 	cb(make([]int16, 1600), 1600, 0)
-	if !fired.Wait(5.0) {
+	if !fired.WaitTimeout(5 * time.Second) {
 		t.Fatal("silence callback never fired")
 	}
 	r.Cancel()
@@ -251,7 +252,7 @@ func TestSilenceDetectionMicroPauseToleranceDuringSpeech(t *testing.T) {
 	r.silenceDuration = 0.05
 	r.minSpeechDuration = 0.15
 	r.maxDipTolerance = 0.1
-	fired := &pythread.Event{}
+	fired := &syncutil.Event{}
 	if err := r.Start(context.Background(), fired.Set); err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +281,7 @@ func TestMaxRecordingCapCapFiresOneShotCallbackDuringContinuousSpeech(t *testing
 	r.maxWait = 60.0
 	var mu sync.Mutex
 	fires := 0
-	fired := &pythread.Event{}
+	fired := &syncutil.Event{}
 	if err := r.Start(context.Background(), func() {
 		mu.Lock()
 		fires++
@@ -296,7 +297,7 @@ func TestMaxRecordingCapCapFiresOneShotCallbackDuringContinuousSpeech(t *testing
 	}
 	clock.advance(0.12)
 	cb(fullFrame(1600, 5000), 1600, 0)
-	if !fired.Wait(5.0) {
+	if !fired.WaitTimeout(5 * time.Second) {
 		t.Fatal("cap never fired")
 	}
 	r.mu.Lock()
@@ -321,7 +322,7 @@ func TestMaxRecordingCapDisabledCapNeverFiresOnDuration(t *testing.T) {
 	r.maxRecordingSeconds = 0.0
 	r.silenceDuration = 60.0
 	r.maxWait = 60.0
-	fired := &pythread.Event{}
+	fired := &syncutil.Event{}
 	if err := r.Start(context.Background(), fired.Set); err != nil {
 		t.Fatal(err)
 	}
@@ -329,7 +330,7 @@ func TestMaxRecordingCapDisabledCapNeverFiresOnDuration(t *testing.T) {
 	cb(fullFrame(1600, 5000), 1600, 0)
 	clock.advance(0.12)
 	cb(fullFrame(1600, 5000), 1600, 0)
-	if fired.Wait(0.1) {
+	if fired.WaitTimeout(100 * time.Millisecond) {
 		t.Fatal("disabled cap fired")
 	}
 	r.Cancel()
@@ -382,7 +383,7 @@ func TestConfigurableSilenceParamsCustomThresholdAndDuration(t *testing.T) {
 	r.SetSilenceThreshold(5000)
 	r.SetSilenceDuration(0.05)
 	r.minSpeechDuration = 0.05
-	fired := &pythread.Event{}
+	fired := &syncutil.Event{}
 	if err := r.Start(context.Background(), fired.Set); err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +392,7 @@ func TestConfigurableSilenceParamsCustomThresholdAndDuration(t *testing.T) {
 		cb(fullFrame(1600, 1000), 1600, 0)
 		clock.advance(0.02)
 	}
-	if r.hasSpoken || fired.Wait(0.2) {
+	if r.hasSpoken || fired.WaitTimeout(200*time.Millisecond) {
 		t.Fatal("moderate level must stay below the custom threshold")
 	}
 	cb(fullFrame(1600, 8000), 1600, 0)
@@ -406,7 +407,7 @@ func TestConfigurableSilenceParamsCustomThresholdAndDuration(t *testing.T) {
 func TestStreamLeakOnStartFailureStreamClosedOnStartFailure(t *testing.T) {
 	r, sd := startedRecorder(t)
 	busy := &fakeStream{startErr: errors.New("Audio device busy")}
-	sd.inputFactory = func(pysounddevice.StreamParams, pysounddevice.InputCallback) (pysounddevice.InputStream, error) {
+	sd.inputFactory = func(portaudioutil.StreamParams, portaudioutil.InputCallback) (portaudioutil.InputStream, error) {
 		return busy, nil
 	}
 	err := r.ensureStream()
@@ -420,7 +421,7 @@ func TestStreamStartTimeoutRetryTimedOutStartRetriesOnceAndSucceeds(t *testing.T
 	cold := &fakeStream{startErr: errors.New("Error starting stream: Wait timed out [PaErrorCode -9987]")}
 	warm := &fakeStream{}
 	streams := []*fakeStream{cold, warm}
-	sd.inputFactory = func(pysounddevice.StreamParams, pysounddevice.InputCallback) (pysounddevice.InputStream, error) {
+	sd.inputFactory = func(portaudioutil.StreamParams, portaudioutil.InputCallback) (portaudioutil.InputStream, error) {
 		s := streams[0]
 		streams = streams[1:]
 		return s, nil
@@ -437,7 +438,7 @@ func TestStreamStartTimeoutRetryPersistentTimeoutRaisesAfterSecondAttempt(t *tes
 	r, sd := startedRecorder(t)
 	stuck := &fakeStream{startErr: errors.New("Wait timed out [PaErrorCode -9987]")}
 	opens := 0
-	sd.inputFactory = func(pysounddevice.StreamParams, pysounddevice.InputCallback) (pysounddevice.InputStream, error) {
+	sd.inputFactory = func(portaudioutil.StreamParams, portaudioutil.InputCallback) (portaudioutil.InputStream, error) {
 		opens++
 		return stuck, nil
 	}
@@ -450,7 +451,7 @@ func TestStreamStartTimeoutRetryPersistentTimeoutRaisesAfterSecondAttempt(t *tes
 func TestDefaultInputSamplerateWavWrittenAtCaptureRate(t *testing.T) {
 	r, sd := startedRecorder(t)
 	withVoiceTempDir(t)
-	sd.inputDevice = pysounddevice.Device{DefaultSamplerate: 48000.0}
+	sd.inputDevice = portaudioutil.Device{DefaultSampleRate: 48000.0}
 	if err := r.Start(context.Background(), nil); err != nil {
 		t.Fatal(err)
 	}
@@ -543,7 +544,7 @@ func transcribeWithStopPhrases(t *testing.T, text string, phrases []string) map[
 
 func TestStopPhraseSurvivesHallucinationFilterConfiguredStopPhraseSurvivesBlocklist(t *testing.T) {
 	result := transcribeWithStopPhrases(t, "Bye.", []string{"stop", "bye"})
-	if result["success"] != true || result["transcript"] != "Bye." || pyTruthy(result["filtered"]) {
+	if result["success"] != true || result["transcript"] != "Bye." || anyutil.IsTrue(result["filtered"]) {
 		t.Fatalf("%v", result)
 	}
 }
@@ -557,7 +558,7 @@ func TestStopPhraseSurvivesHallucinationFilterUnconfiguredHallucinationStillFilt
 
 func TestStopPhraseSurvivesHallucinationFilterDefaultStopSurvivesRepeatRegexAdjacentPhrases(t *testing.T) {
 	result := transcribeWithStopPhrases(t, "Stop.", []string{"stop"})
-	if result["transcript"] != "Stop." || pyTruthy(result["filtered"]) {
+	if result["transcript"] != "Stop." || anyutil.IsTrue(result["filtered"]) {
 		t.Fatalf("%v", result)
 	}
 }

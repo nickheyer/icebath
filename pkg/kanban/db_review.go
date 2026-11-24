@@ -3,14 +3,14 @@ package kanban
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seams over run bookkeeping and worker termination that tests replace like the swaps
@@ -26,7 +26,7 @@ type EditTaskOptions struct {
 	Priority *int64
 	Result   *string
 	Summary  *string
-	Metadata *pyjson.Object
+	Metadata *jsonutil.Object
 	Board    *string
 }
 
@@ -121,14 +121,14 @@ func EditTask(ctx context.Context, conn state.SQLiteConn, taskID string, o EditT
 				return err
 			}
 		} else {
-			if runID, err = pyIntOf(run.Get("id")); err != nil {
+			if runID, err = cellIntOf(run.Get("id")); err != nil {
 				return err
 			}
 			if _, err := conn.ExecContext(ctx, "UPDATE task_runs SET summary = ? WHERE id = ?", optStrValue(handoffSummary), runID); err != nil {
 				return err
 			}
 			if o.Metadata != nil {
-				text, err := pyjson.Dumps(o.Metadata, pyjson.EnsureASCII(false))
+				text, err := jsonutil.Encode(o.Metadata)
 				if err != nil {
 					return err
 				}
@@ -210,7 +210,7 @@ func BlockTaskWithKind(ctx context.Context, conn state.SQLiteConn, taskID string
 				rekindReason = "no_open_parent"
 			}
 		}
-		prevRecurrences, err := pyIntOf(orZero(rowGet(curRow, "block_recurrences", nil)))
+		prevRecurrences, err := cellIntOf(orZero(rowGet(curRow, "block_recurrences", nil)))
 		if err != nil {
 			return err
 		}
@@ -279,7 +279,7 @@ type blockRoute struct {
 	EventKind string
 	SetSQL    string
 	Params    []any
-	Payload   *pyjson.Object
+	Payload   *jsonutil.Object
 }
 
 // Routes a block by kind, dependency waiting in todo and a repeated kind counting toward the triage limit
@@ -307,12 +307,12 @@ func redactReviewValue(value any) any {
 	switch v := value.(type) {
 	case string:
 		return tools.RedactSensitiveTextWith(nil, v, tools.RedactOptions{Force: true})
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return v
 		}
-		out := pyjson.NewObject()
-		for _, k := range v.Keys {
+		out := jsonutil.NewObject()
+		for _, k := range v.Keys() {
 			item, _ := v.Get(k)
 			out.Set(k, redactReviewValue(item))
 		}
@@ -337,17 +337,17 @@ func redactOptStr(s *string) *string {
 }
 
 // Redacted copy of an optional metadata dict
-func redactMeta(o *pyjson.Object) *pyjson.Object {
+func redactMeta(o *jsonutil.Object) *jsonutil.Object {
 	if o == nil {
 		return nil
 	}
-	return redactReviewValue(o).(*pyjson.Object)
+	return redactReviewValue(o).(*jsonutil.Object)
 }
 
 // RequestReviewOptions holds the keyword arguments of a review handoff
 type RequestReviewOptions struct {
 	Summary       *string
-	Metadata      *pyjson.Object
+	Metadata      *jsonutil.Object
 	Reviewer      *string
 	ExpectedRunID *int64
 	Force         bool
@@ -466,7 +466,7 @@ func RequestReview(ctx context.Context, conn state.SQLiteConn, taskID string, o 
 	})
 	if err != nil {
 		if len(stagedCopies) > 0 {
-			discardStagedCopyList(stagedCopies, pypath.PathParent(stagedCopies[0]))
+			discardStagedCopyList(stagedCopies, filepath.Dir(filepath.Clean(stagedCopies[0])))
 		}
 		return false, "", err
 	}
@@ -484,7 +484,7 @@ func priorReviewer(ctx context.Context, conn state.SQLiteConn, taskID string) (*
 	if err != nil || changesRun == nil {
 		return nil, false, err
 	}
-	runID, err := pyIntOf(changesRun.Get("id"))
+	runID, err := cellIntOf(changesRun.Get("id"))
 	if err != nil {
 		return nil, false, err
 	}
@@ -528,7 +528,7 @@ func RequestChanges(ctx context.Context, conn state.SQLiteConn, taskID, reason s
 			refusal = "task is not in an active review run"
 			return nil
 		}
-		runID, err := pyIntOf(currentRunID)
+		runID, err := cellIntOf(currentRunID)
 		if err != nil {
 			return err
 		}
@@ -766,7 +766,7 @@ type WorkerTermination struct {
 
 // InvalidationResult lists every demoted descendant and the workers to terminate post commit
 type InvalidationResult struct {
-	Invalidated  []*pyjson.Object
+	Invalidated  []*jsonutil.Object
 	Terminations []WorkerTermination
 }
 

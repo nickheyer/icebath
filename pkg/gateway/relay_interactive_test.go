@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Telegram descriptor advertising every interactive op
@@ -219,9 +219,9 @@ func TestFreeFormReactionPlatformsKeepTheCheckMark(t *testing.T) {
 }
 
 // Event decoded from a wire frame with the source fields given
-func relayWireEvent(t *testing.T, source *pyjson.Object) *MessageEvent {
+func relayWireEvent(t *testing.T, source *jsonutil.Object) *MessageEvent {
 	t.Helper()
-	e, err := relayEventFromWire(context.Background(), pyjson.ObjectOf("text", "hi", "message_id", "m42", "source", source))
+	e, err := relayEventFromWire(context.Background(), jsonutil.ObjectOf("text", "hi", "message_id", "m42", "source", source))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func relayWireEvent(t *testing.T, source *pyjson.Object) *MessageEvent {
 func TestAckPlatformFallsBackThroughTheRealWireDecode(t *testing.T) {
 	for _, platform := range []any{nil, "relay", "not_a_platform"} {
 		a, c := relayConnectorAdapter(t, relayInteractiveDesc)
-		source := pyjson.ObjectOf("chat_id", "ch1", "chat_type", "channel", "user_id", "u1")
+		source := jsonutil.ObjectOf("chat_id", "ch1", "chat_type", "channel", "user_id", "u1")
 		if platform != nil {
 			source.Set("platform", platform)
 		}
@@ -249,7 +249,7 @@ func TestAckPlatformFallsBackThroughTheRealWireDecode(t *testing.T) {
 func TestAckPlatformPrefersTheChatLaneOverThePrimary(t *testing.T) {
 	a, c := relayConnectorAdapter(t, func(d *CapabilityDescriptor) { relayInteractiveDesc(d); d.Platform, d.Label = "slack", "Slack" })
 	a.platformByChat["ch1"] = "telegram"
-	a.OnProcessingComplete(context.Background(), relayWireEvent(t, pyjson.ObjectOf("chat_id", "ch1", "chat_type", "channel")), ProcessingSuccess)
+	a.OnProcessingComplete(context.Background(), relayWireEvent(t, jsonutil.ObjectOf("chat_id", "ch1", "chat_type", "channel")), ProcessingSuccess)
 	if emojis := relayReactEmojis(c); !slices.Equal(emojis, []any{"\U0001f440", "\U0001f44d"}) {
 		t.Fatalf("emojis %v", emojis)
 	}
@@ -257,7 +257,7 @@ func TestAckPlatformPrefersTheChatLaneOverThePrimary(t *testing.T) {
 
 func TestAckOnAGenuinelyGenericRelayKeepsTheCheckMark(t *testing.T) {
 	a, c := relayConnectorAdapter(t, func(d *CapabilityDescriptor) { relayInteractiveDesc(d); d.Platform, d.Label = "relay", "Relay" })
-	a.OnProcessingComplete(context.Background(), relayWireEvent(t, pyjson.ObjectOf("chat_id", "ch1", "chat_type", "channel")), ProcessingSuccess)
+	a.OnProcessingComplete(context.Background(), relayWireEvent(t, jsonutil.ObjectOf("chat_id", "ch1", "chat_type", "channel")), ProcessingSuccess)
 	if emojis := relayReactEmojis(c); !slices.Equal(emojis, []any{"\U0001f440", "✅"}) {
 		t.Fatalf("emojis %v", emojis)
 	}

@@ -10,18 +10,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Static video_generate schema the dynamic overrides rebuild at definition time
-func videoGenerateSchema() *pyjson.Object {
-	return pyjson.ObjectOf(
+func videoGenerateSchema() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"name", "video_generate",
 		"description", "(rebuilt at get_definitions() time — see _build_dynamic_video_schema)",
-		"parameters", pyjson.ObjectOf(
+		"parameters", jsonutil.ObjectOf(
 			"type", "object",
 			"properties", videoStaticProperties(),
 			"required", []any{"prompt"},
@@ -30,15 +31,15 @@ func videoGenerateSchema() *pyjson.Object {
 }
 
 // Prompt, duration, aspect ratio and resolution parameters every schema starts from
-func videoStaticProperties() *pyjson.Object {
-	return pyjson.ObjectOf(
-		"prompt", pyjson.ObjectOf("type", "string",
+func videoStaticProperties() *jsonutil.Object {
+	return jsonutil.ObjectOf(
+		"prompt", jsonutil.ObjectOf("type", "string",
 			"description", "Text instruction describing the desired video, motion, subject, style, camera movement, etc."),
-		"duration", pyjson.ObjectOf("type", "integer",
+		"duration", jsonutil.ObjectOf("type", "integer",
 			"description", "Desired video duration in seconds. Providers clamp to their supported range. Omit for the provider default."),
-		"aspect_ratio", pyjson.ObjectOf("type", "string", "enum", stringsToAny(videoAspectRatios), "description", "Output aspect ratio.",
+		"aspect_ratio", jsonutil.ObjectOf("type", "string", "enum", stringsToAny(videoAspectRatios), "description", "Output aspect ratio.",
 			"default", defaultVideoAspectRatio),
-		"resolution", pyjson.ObjectOf("type", "string", "enum", stringsToAny(videoResolutions), "description", "Output resolution.",
+		"resolution", jsonutil.ObjectOf("type", "string", "enum", stringsToAny(videoResolutions), "description", "Output resolution.",
 			"default", defaultVideoResolution),
 	)
 }
@@ -115,7 +116,7 @@ func dumpVideoResult(m map[string]any) string {
 
 // JSON of a result with the standard keys in envelope order and extras after them sorted, the TypeError dumps raises otherwise
 func encodeVideoResult(m map[string]any) (string, error) {
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	for _, k := range videoResultKeyOrder {
 		if v, ok := m[k]; ok {
 			o.Set(k, v)
@@ -131,7 +132,7 @@ func encodeVideoResult(m map[string]any) (string, error) {
 	for _, k := range rest {
 		o.Set(k, m[k])
 	}
-	return pyjson.Dumps(o)
+	return jsonutil.Encode(o)
 }
 
 // Error JSON naming the unregistered configured provider or pointing at the picker
@@ -173,7 +174,7 @@ func videoCoerceInt(value any) (*int, error) {
 	}
 	n, err := pyint.Of(value)
 	if err != nil {
-		var pe *pyint.Error
+		var pe *errorutil.Error
 		if errors.As(err, &pe) && pe.Kind == "OverflowError" {
 			return nil, &videoHandlerError{"OverflowError", fmt.Sprintf("%s is too large for a 64-bit integer", errchain.Show(value))}
 		}
@@ -330,12 +331,12 @@ func videoGenerate(ctx context.Context, env *tools.Env, args map[string]any, tas
 
 var videoCapabilityParams = []struct {
 	flag, key string
-	param     *pyjson.Object
+	param     *jsonutil.Object
 }{
-	{"supports_negative_prompt", "negative_prompt", pyjson.ObjectOf("type", "string", "description", "Content to avoid in the output.")},
-	{"supports_audio", "audio", pyjson.ObjectOf("type", "boolean", "description", "Enable native audio generation (affects pricing tier).")},
-	{"supports_seed", "seed", pyjson.ObjectOf("type", "integer", "description", "Seed for reproducible outputs.")},
-	{"supports_upscale", "upscale", pyjson.ObjectOf("type", "boolean",
+	{"supports_negative_prompt", "negative_prompt", jsonutil.ObjectOf("type", "string", "description", "Content to avoid in the output.")},
+	{"supports_audio", "audio", jsonutil.ObjectOf("type", "boolean", "description", "Enable native audio generation (affects pricing tier).")},
+	{"supports_seed", "seed", jsonutil.ObjectOf("type", "integer", "description", "Seed for reproducible outputs.")},
+	{"supports_upscale", "upscale", jsonutil.ObjectOf("type", "boolean",
 		"description", "High-resolution pass via the backend's video upscaler (~2x, extra cost/latency). Omit for native resolution.")},
 }
 
@@ -350,9 +351,9 @@ const videoGenericDescription = "Generate video from text, a still image or refe
 	"`video` field — either an HTTP URL or an absolute file path; reference " +
 	"it in your response using the current platform's file-delivery convention."
 
-func videoSchema(description string, properties *pyjson.Object) *pyjson.Object {
-	return pyjson.ObjectOf("description", description,
-		"parameters", pyjson.ObjectOf("type", "object", "properties", properties, "required", []any{"prompt"}))
+func videoSchema(description string, properties *jsonutil.Object) *jsonutil.Object {
+	return jsonutil.ObjectOf("description", description,
+		"parameters", jsonutil.ObjectOf("type", "object", "properties", properties, "required", []any{"prompt"}))
 }
 
 // Strings of a list value, other items skipped
@@ -372,7 +373,7 @@ func stringItems(v any) []string {
 }
 
 // Description and params from the active provider capabilities and the configured model catalog entry
-func buildDynamicVideoSchema(env *tools.Env) *pyjson.Object {
+func buildDynamicVideoSchema(env *tools.Env) *jsonutil.Object {
 	ctx := envContext(context.Background(), env)
 	static := videoStaticProperties()
 	parts := []string{videoGenericDescription}
@@ -381,7 +382,7 @@ func buildDynamicVideoSchema(env *tools.Env) *pyjson.Object {
 	if p == nil {
 		parts = append(parts, "\nNo video backend is available. Calls will return an error "+
 			"until the user picks one via `icebath tools` → Video Generation.")
-		return videoSchema(strings.Join(parts, "\n"), pyjson.ObjectOf("prompt", static.Vals["prompt"]))
+		return videoSchema(strings.Join(parts, "\n"), jsonutil.ObjectOf("prompt", static.Value("prompt")))
 	}
 	caps := providerCall(p.Capabilities, func(m map[string]any) bool { return len(m) == 0 }, map[string]any{})
 	models := providerCall(p.ListModels, func(m []map[string]any) bool { return len(m) == 0 }, nil)
@@ -391,7 +392,7 @@ func buildDynamicVideoSchema(env *tools.Env) *pyjson.Object {
 	}
 	modelMeta := map[string]any{}
 	for _, m := range models {
-		if m != nil && pyrepr.Equal(m["id"], activeModel) {
+		if m != nil && anyutil.Equal(m["id"], activeModel) {
 			modelMeta = m
 			break
 		}
@@ -430,9 +431,9 @@ func buildDynamicVideoSchema(env *tools.Env) *pyjson.Object {
 			parts = append(parts, "- storage: "+notice)
 		}
 	}
-	properties := pyjson.ObjectOf("prompt", static.Vals["prompt"])
+	properties := jsonutil.ObjectOf("prompt", static.Value("prompt"))
 	if canI2V {
-		properties.Set("image_url", pyjson.ObjectOf("type", "string",
+		properties.Set("image_url", jsonutil.ObjectOf("type", "string",
 			"description", "Public HTTPS URL of a still image to animate (image-to-video). Omit for text-to-video."))
 		maxRefs := 0
 		if pyTruthy(caps["max_reference_images"]) {
@@ -441,7 +442,7 @@ func buildDynamicVideoSchema(env *tools.Env) *pyjson.Object {
 			}
 		}
 		if maxRefs > 0 {
-			properties.Set("reference_image_urls", pyjson.ObjectOf("type", "array", "items", pyjson.ObjectOf("type", "string"), "maxItems", maxRefs,
+			properties.Set("reference_image_urls", jsonutil.ObjectOf("type", "array", "items", jsonutil.ObjectOf("type", "string"), "maxItems", maxRefs,
 				"description", fmt.Sprintf("Up to %d public HTTPS reference image URLs (style or character refs).", maxRefs)))
 		}
 	}
@@ -452,7 +453,7 @@ func buildDynamicVideoSchema(env *tools.Env) *pyjson.Object {
 		return caps[key]
 	}
 	minDuration, maxDuration := metaOr("min_duration"), metaOr("max_duration")
-	durationParam := static.Vals["duration"].(*pyjson.Object).Copy()
+	durationParam := static.Value("duration").(*jsonutil.Object).Clone()
 	if pyTruthy(minDuration) && pyTruthy(maxDuration) {
 		lo, err1 := pyint.Of(minDuration)
 		hi, err2 := pyint.Of(maxDuration)
@@ -460,12 +461,12 @@ func buildDynamicVideoSchema(env *tools.Env) *pyjson.Object {
 			durationParam.Set("minimum", pyint.Native(lo))
 			durationParam.Set("maximum", pyint.Native(hi))
 			durationParam.Set("description", fmt.Sprintf("Video duration in seconds (%s-%s). Omit for the provider default.",
-				pyrepr.Str(minDuration), pyrepr.Str(maxDuration)))
+				anyutil.String(minDuration), anyutil.String(maxDuration)))
 		}
 	}
 	properties.Set("duration", durationParam)
 	for _, kv := range [][2]string{{"aspect_ratio", "aspect_ratios"}, {"resolution", "resolutions"}} {
-		param := static.Vals[kv[0]].(*pyjson.Object).Copy()
+		param := static.Value(kv[0]).(*jsonutil.Object).Clone()
 		if pyTruthy(caps[kv[1]]) {
 			if list, ok := caps[kv[1]].([]any); ok {
 				param.Set("enum", append([]any(nil), list...))
@@ -519,32 +520,32 @@ func xaiCoerceInt(value any) *int {
 	return &i
 }
 
-var xaiVideoURLParam = pyjson.ObjectOf("type", "string",
+var xaiVideoURLParam = jsonutil.ObjectOf("type", "string",
 	"description", "Public HTTPS MP4 URL of the source video — the `video` or `public_url` from a prior xAI Imagine result.")
 
-func xaiVideoSchema(name, verb, noun, promptVerb string, extra *pyjson.Object) *pyjson.Object {
-	props := pyjson.ObjectOf(
-		"prompt", pyjson.ObjectOf("type", "string", "description", fmt.Sprintf("Instruction for how xAI should %s the source video.", promptVerb)),
+func xaiVideoSchema(name, verb, noun, promptVerb string, extra *jsonutil.Object) *jsonutil.Object {
+	props := jsonutil.ObjectOf(
+		"prompt", jsonutil.ObjectOf("type", "string", "description", fmt.Sprintf("Instruction for how xAI should %s the source video.", promptVerb)),
 		"video_url", xaiVideoURLParam,
 	)
-	props.Update(extra)
-	return pyjson.ObjectOf(
+	props.Merge(extra)
+	return jsonutil.ObjectOf(
 		"name", name,
 		"description", fmt.Sprintf("%s an existing video with xAI Imagine. This is separate from "+
 			"`video_generate` because video %s is provider-specific. "+
 			"`video_url` must be the public HTTPS MP4 URL from a prior Imagine "+
 			"result (`video` or `public_url` on files-cdn).", verb, noun),
-		"parameters", pyjson.ObjectOf("type", "object", "properties", props, "required", []any{"prompt", "video_url"}),
+		"parameters", jsonutil.ObjectOf("type", "object", "properties", props, "required", []any{"prompt", "video_url"}),
 	)
 }
 
-func xaiVideoEditSchema() *pyjson.Object {
+func xaiVideoEditSchema() *jsonutil.Object {
 	return xaiVideoSchema("xai_video_edit", "Edit", "editing", "modify", nil)
 }
 
-func xaiVideoExtendSchema() *pyjson.Object {
-	return xaiVideoSchema("xai_video_extend", "Extend", "extension", "continue", pyjson.ObjectOf(
-		"duration", pyjson.ObjectOf("type", "integer", "description", "Desired extension duration in seconds. xAI clamps this to its supported range."),
+func xaiVideoExtendSchema() *jsonutil.Object {
+	return xaiVideoSchema("xai_video_extend", "Extend", "extension", "continue", jsonutil.ObjectOf(
+		"duration", jsonutil.ObjectOf("type", "integer", "description", "Desired extension duration in seconds. xAI clamps this to its supported range."),
 	))
 }
 
@@ -590,7 +591,7 @@ func registerVideoGenerateTools() {
 	})
 	for _, d := range []struct {
 		name    string
-		schema  *pyjson.Object
+		schema  *jsonutil.Object
 		handler tools.Handler
 	}{{"xai_video_edit", xaiVideoEditSchema(), handleXAIVideoEdit}, {"xai_video_extend", xaiVideoExtendSchema(), handleXAIVideoExtend}} {
 		tools.Register(tools.Def{Name: d.name, Toolset: "video_gen", Schema: d.schema, Handler: d.handler,

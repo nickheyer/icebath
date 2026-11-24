@@ -1,11 +1,11 @@
 package app
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Monotonic seconds the reasoning block timer counts against
-var monotonic = pythread.Monotonic
+var monotonic = timeutil.Monotonic
 
 // Rings the terminal bell and sends the OS notification of a finished turn when display.bell_on_complete allows
 func (c *CLI) ringBell() {

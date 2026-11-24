@@ -10,10 +10,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Compression chain length one walk of the lineage covers
@@ -32,12 +32,12 @@ func recoverColdOwner(t *testing.T, ctx context.Context, db *state.SessionDB, in
 	}
 	store := NewSessionStore(ctx, filepath.Join(t.TempDir(), "sessions"), DefaultGatewayConfig(ctx), nil)
 	store.PinDB(db)
-	key, err := pypath.Resolve(db.Path())
+	key, err := pathutil.Resolve(db.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.bindLocalAuthorityEpoch(key, epoch, true)
-	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
+	runner := &recoverTestRunner{store: store, adapters: orderedutil.NewMap[Platform, PlatformAdapter](), profiles: orderedutil.NewMap[string, *orderedutil.Map[Platform, PlatformAdapter]]()}
 	a := NewSessionAuthority(runner, "fixture", instanceID, db, epoch)
 	runner.launch = a
 	return a
@@ -105,7 +105,7 @@ func compactChainLike0222(t *testing.T, ctx context.Context, db *state.SessionDB
 	}
 }
 
-func recoverReceipt(t *testing.T, ctx context.Context, db *state.SessionDB, sid string) *pyjson.Object {
+func recoverReceipt(t *testing.T, ctx context.Context, db *state.SessionDB, sid string) *jsonutil.Object {
 	t.Helper()
 	receipt, err := db.LocalReceipt(ctx, sid)
 	if err != nil {
@@ -116,22 +116,22 @@ func recoverReceipt(t *testing.T, ctx context.Context, db *state.SessionDB, sid 
 
 func recoverPlain(t *testing.T, v any) any {
 	t.Helper()
-	text, err := pyjson.Dumps(v)
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pyjson.Plain(decoded)
+	return jsonutil.Plain(decoded)
 }
 
-func recoverNested(t *testing.T, receipt *pyjson.Object, keys ...string) any {
+func recoverNested(t *testing.T, receipt *jsonutil.Object, keys ...string) any {
 	t.Helper()
 	var value any = receipt
 	for _, key := range keys {
-		object, ok := value.(*pyjson.Object)
+		object, ok := value.(*jsonutil.Object)
 		if !ok {
 			t.Fatalf("%v is not an object at %s", keys, key)
 		}
@@ -255,8 +255,8 @@ func TestACompactedReceiptWithAForeignOriginStaysRefused(t *testing.T) {
 	ref, _ := seedRecoverSession(t, ctx, first, recoverActor(), recoverTUIParams(t.TempDir()))
 	compactLike0222(t, ctx, first.DB, ref.SessionID, "classic-child", true)
 	receipt := recoverReceipt(t, ctx, first.DB, ref.SessionID)
-	recoverNested(t, receipt, "entry", "origin").(*pyjson.Object).Set("profile", "other-profile")
-	text, err := pyjson.Dumps(receipt)
+	recoverNested(t, receipt, "entry", "origin").(*jsonutil.Object).Set("profile", "other-profile")
+	text, err := jsonutil.Encode(receipt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,10 +409,10 @@ func recoverWithField(t *testing.T, value any, path ...string) func(string) stri
 		node := receipt
 		for _, key := range path[:len(path)-1] {
 			next, _ := node.Get(key)
-			node = next.(*pyjson.Object)
+			node = next.(*jsonutil.Object)
 		}
 		node.Set(path[len(path)-1], value)
-		text, err := pyjson.Dumps(receipt)
+		text, err := jsonutil.Encode(receipt)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -459,7 +459,7 @@ func TestLiveSessionRebuildsARouteEntryMissingFromTheStore(t *testing.T) {
 }
 
 func TestARefusedReceiptNamesItsFailingCheckInTheLog(t *testing.T) {
-	terminal, err := pyjson.Dumps(pyjson.ObjectOf("TERMINAL_ENV", "local", "TERMINAL_CWD", "/elsewhere"))
+	terminal, err := jsonutil.Encode(jsonutil.ObjectOf("TERMINAL_ENV", "local", "TERMINAL_CWD", "/elsewhere"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -527,12 +527,12 @@ func servedAlphaOwner(t *testing.T, ctx context.Context, db *state.SessionDB, in
 	cfg.MultiplexProfiles = &multiplex
 	store := NewSessionStore(ctx, filepath.Join(t.TempDir(), "sessions"), cfg, nil)
 	store.PinDB(db)
-	key, err := pypath.Resolve(db.Path())
+	key, err := pathutil.Resolve(db.Path())
 	if err != nil {
 		t.Fatal(err)
 	}
 	store.bindLocalAuthorityEpoch(key, epoch, true)
-	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](), profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
+	runner := &recoverTestRunner{store: store, adapters: orderedutil.NewMap[Platform, PlatformAdapter](), profiles: orderedutil.NewMap[string, *orderedutil.Map[Platform, PlatformAdapter]]()}
 	a := NewSessionAuthority(runner, filepath.Dir(db.Path()), instanceID, db, epoch)
 	runner.registry = servedRegistry(t, &SessionAuthority{Runner: runner, ProfileID: t.TempDir()}, a, "alpha")
 	return a
@@ -568,9 +568,9 @@ func servedAlphaSession(t *testing.T) (context.Context, *SessionAuthority, Sessi
 	return ctx, first, ref, launch
 }
 
-func servedAlphaStore(t *testing.T, ctx context.Context, db *state.SessionDB, sid string, receipt *pyjson.Object) {
+func servedAlphaStore(t *testing.T, ctx context.Context, db *state.SessionDB, sid string, receipt *jsonutil.Object) {
 	t.Helper()
-	text, err := pyjson.Dumps(receipt)
+	text, err := jsonutil.Encode(receipt)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -583,19 +583,19 @@ func servedAlphaStore(t *testing.T, ctx context.Context, db *state.SessionDB, si
 }
 
 func TestSecondaryReceiptRestoresWithoutLosingItsOwner(t *testing.T) {
-	origin := func(t *testing.T, receipt *pyjson.Object) *pyjson.Object {
-		return recoverNested(t, receipt, "entry", "origin").(*pyjson.Object)
+	origin := func(t *testing.T, receipt *jsonutil.Object) *jsonutil.Object {
+		return recoverNested(t, receipt, "entry", "origin").(*jsonutil.Object)
 	}
-	aged := map[string]func(t *testing.T, receipt *pyjson.Object){
-		"missing": func(t *testing.T, receipt *pyjson.Object) {},
-		"null":    func(t *testing.T, receipt *pyjson.Object) { origin(t, receipt).Set("profile", nil) },
-		"foreign": func(t *testing.T, receipt *pyjson.Object) { origin(t, receipt).Set("profile", "beta") },
-		"route": func(t *testing.T, receipt *pyjson.Object) {
+	aged := map[string]func(t *testing.T, receipt *jsonutil.Object){
+		"missing": func(t *testing.T, receipt *jsonutil.Object) {},
+		"null":    func(t *testing.T, receipt *jsonutil.Object) { origin(t, receipt).Set("profile", nil) },
+		"foreign": func(t *testing.T, receipt *jsonutil.Object) { origin(t, receipt).Set("profile", "beta") },
+		"route": func(t *testing.T, receipt *jsonutil.Object) {
 			route, _ := receipt.Get("route")
 			receipt.Set("route", strings.Replace(route.(string), "agent:alpha:", "agent:main:", 1))
 		},
-		"home": func(t *testing.T, receipt *pyjson.Object) { receipt.Set("profile_id", t.TempDir()) },
-		"user": func(t *testing.T, receipt *pyjson.Object) { origin(t, receipt).Set("user_id", "another") },
+		"home": func(t *testing.T, receipt *jsonutil.Object) { receipt.Set("profile_id", t.TempDir()) },
+		"user": func(t *testing.T, receipt *jsonutil.Object) { origin(t, receipt).Set("user_id", "another") },
 	}
 	for _, variant := range []string{"current", "missing", "null", "foreign", "route", "home", "user"} {
 		t.Run(variant, func(t *testing.T) {
@@ -652,7 +652,7 @@ func TestSecondaryReceiptRestoresWithoutLosingItsOwner(t *testing.T) {
 func TestACompactedSecondaryReceiptMissingItsOriginProfileRestores(t *testing.T) {
 	ctx, first, ref, _ := servedAlphaSession(t)
 	receipt := recoverReceipt(t, ctx, first.DB, ref.SessionID)
-	recoverNested(t, receipt, "entry", "origin").(*pyjson.Object).Delete("profile")
+	recoverNested(t, receipt, "entry", "origin").(*jsonutil.Object).Delete("profile")
 	servedAlphaStore(t, ctx, first.DB, ref.SessionID, receipt)
 	compactLike0222(t, ctx, first.DB, ref.SessionID, "classic-child", true)
 	restored := servedAlphaBoot(t, ctx, first.DB)
@@ -667,7 +667,7 @@ func TestACompactedSecondaryReceiptMissingItsOriginProfileRestores(t *testing.T)
 	if lineage, _ := after.Get("lineage"); !reflect.DeepEqual(lineage, []any{ref.SessionID, "classic-child"}) {
 		t.Fatalf("lineage %v", lineage)
 	}
-	want := recoverNested(t, receipt, "entry").(*pyjson.Object)
+	want := recoverNested(t, receipt, "entry").(*jsonutil.Object)
 	want.Set("session_id", "classic-child")
 	if entry, _ := after.Get("entry"); !reflect.DeepEqual(recoverPlain(t, entry), recoverPlain(t, want)) {
 		t.Fatalf("entry %v", recoverPlain(t, entry))

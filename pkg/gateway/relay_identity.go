@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Value of key in a decoded JSON object of either representation
@@ -18,7 +18,7 @@ func jsonObjectGet(v any, key string) (any, bool, bool) {
 	case map[string]any:
 		got, ok := d[key]
 		return got, ok, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		got, ok := d.Get(key)
 		return got, ok, true
 	}
@@ -48,7 +48,7 @@ func RelayExplicitlyDisabled(ctx context.Context) (bool, error) {
 	if !isDict {
 		return false, &PyError{"AttributeError", "the relay platform extra settings are " + errchain.Kind(extra) + ", expected a mapping"}
 	}
-	if !pyrepr.Truthy(explicit) {
+	if !anyutil.IsTrue(explicit) {
 		return false, nil
 	}
 	pc, err := PlatformConfigFromDict(ctx, block)
@@ -64,7 +64,7 @@ func relayBotIDsMap() any {
 	if raw == "" {
 		return map[string]any{}
 	}
-	parsed, err := pyjson.Loads(raw)
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		pkgLog().Warn("GATEWAY_RELAY_BOT_IDS is not valid JSON; treating as empty")
 		return map[string]any{}
@@ -85,7 +85,7 @@ func RelayPlatformIdentities() [][2]string {
 	out := make([][2]string, 0, len(platforms))
 	for _, platform := range platforms {
 		entry, _, _ := jsonObjectGet(ids, platform)
-		if !pyrepr.Truthy(entry) {
+		if !anyutil.IsTrue(entry) {
 			entry = map[string]any{}
 		}
 		botID := ""
@@ -93,7 +93,7 @@ func RelayPlatformIdentities() [][2]string {
 			if !has {
 				v = ""
 			}
-			botID = strings.TrimSpace(pyrepr.Str(v))
+			botID = strings.TrimSpace(anyutil.String(v))
 		}
 		out = append(out, [2]string{platform, botID})
 	}

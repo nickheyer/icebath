@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // ResponseUsageOutcome carries the possibly rearmed compression budget and whether the loop clears its preflight latch
@@ -120,7 +120,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 	if providerName == "" {
 		providerName = "unknown"
 	}
-	if !pyrepr.Truthy(rawUsage) {
+	if !anyutil.IsTrue(rawUsage) {
 		if w, ok := compressor.(realUsageAwaiter); ok && w.AwaitingRealUsageAfterCompression() {
 			compressor.UpdateFromResponse(map[string]any{})
 		}
@@ -241,8 +241,8 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 
 	costModel, costProvider, costBaseURL := a.model, a.provider, a.baseURL
 	if s, ok := moaClient.(moaAggregatorSlotClient); ok {
-		if slot := s.LastAggregatorSlot(); len(slot) > 0 && pyrepr.Truthy(slot["model"]) {
-			costModel = pyrepr.Str(slot["model"])
+		if slot := s.LastAggregatorSlot(); len(slot) > 0 && anyutil.IsTrue(slot["model"]) {
+			costModel = anyutil.String(slot["model"])
 			costProvider = pyStrOr(slot["provider"], a.provider)
 			costBaseURL = pyStrOr(slot["base_url"], a.baseURL)
 		}
@@ -255,7 +255,7 @@ func (a *AIAgent) recordResponseUsage(ctx context.Context, response any, message
 		a.sessionEstimatedCostUSD += amount
 	}
 	if moaRefCost != nil {
-		if moaCost, err := pyint.Float(moaRefCost); err == nil {
+		if moaCost, err := anyutil.ToFloat(moaRefCost); err == nil {
 			a.sessionEstimatedCostUSD += moaCost
 			sum := moaCost
 			if costDelta != nil {

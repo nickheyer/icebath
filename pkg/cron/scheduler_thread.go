@@ -6,10 +6,9 @@ import (
 	"log/slog"
 	"os"
 	"runtime/debug"
+	"strconv"
 	"sync"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Thread shaped handle over the in process ticker whose RestartIfDead respawns a ticker that crashed
@@ -131,7 +130,7 @@ func (t *SupervisedTickerThread) RestartIfDead() bool {
 		return false
 	}
 	t.restarts++
-	t.log.Error(fmt.Sprintf("Cron ticker thread %s died without a stop request; restarting (restart #%d). Scheduled jobs did not fire while it was down \u2014 check errors.log for the escaping exception.", pyrepr.StrRepr(t.name), t.restarts))
+	t.log.Error(fmt.Sprintf("Cron ticker thread %s died without a stop request; restarting (restart #%d). Scheduled jobs did not fire while it was down \u2014 check errors.log for the escaping exception.", strconv.Quote(t.name), t.restarts))
 	t.spawnLocked()
 	return true
 }

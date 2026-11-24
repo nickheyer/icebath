@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -25,29 +25,29 @@ const (
 var batchOutcomes = []string{"submitted", "timed_out", "cancelled"}
 
 // Answers and outcome of a batch clarify from its locks, the closing frame result or the way its wait ended
-func settleBatch(locked *pyjson.Object, frameResult any, ended string) *pyjson.Object {
+func settleBatch(locked *jsonutil.Object, frameResult any, ended string) *jsonutil.Object {
 	if ended != "" {
 		outcome := "cancelled"
 		if slices.Contains(batchOutcomes, ended) {
 			outcome = ended
 		}
-		return pyjson.ObjectOf("answers", locked.Copy(), "outcome", outcome)
+		return jsonutil.ObjectOf("answers", locked.Clone(), "outcome", outcome)
 	}
-	if frame, ok := frameResult.(*pyjson.Object); ok {
-		if answers, ok := frame.GetOr("answers", nil).(*pyjson.Object); ok {
-			merged := locked.Copy()
-			merged.Update(answers)
-			out := frame.Copy()
+	if frame, ok := frameResult.(*jsonutil.Object); ok {
+		if answers, ok := frame.ValueOr("answers", nil).(*jsonutil.Object); ok {
+			merged := locked.Clone()
+			merged.Merge(answers)
+			out := frame.Clone()
 			out.Set("answers", merged)
 			outcome := "submitted"
-			if named, ok := frame.GetOr("outcome", nil).(string); ok && slices.Contains(batchOutcomes, named) {
+			if named, ok := frame.ValueOr("outcome", nil).(string); ok && slices.Contains(batchOutcomes, named) {
 				outcome = named
 			}
 			out.Set("outcome", outcome)
 			return out
 		}
 	}
-	return pyjson.ObjectOf("answers", locked.Copy(), "outcome", "cancelled")
+	return jsonutil.ObjectOf("answers", locked.Clone(), "outcome", "cancelled")
 }
 
 // One question the backend asked the renderer, open until a response, a cancel or its deadline settles it
@@ -55,15 +55,15 @@ type ServerRequest struct {
 	ID        string
 	SID       string
 	Method    string
-	Params    *pyjson.Object
+	Params    *jsonutil.Object
 	done      chan struct{}
 	doneOnce  sync.Once
-	result    *pyjson.Object
+	result    *jsonutil.Object
 	answered  bool
 	createdAt time.Time
 	qids      []string
-	locked    *pyjson.Object
-	onResult  func(*pyjson.Object)
+	locked    *jsonutil.Object
+	onResult  func(*jsonutil.Object)
 	declined  []Transport
 	writing   bool
 	withdrawn *string
@@ -71,11 +71,11 @@ type ServerRequest struct {
 	via Transport
 }
 
-func newServerRequest(sid, method string, params *pyjson.Object, qids []string, onResult func(*pyjson.Object)) *ServerRequest {
-	req := &ServerRequest{ID: "srq-" + uuidHex()[:12], SID: sid, Method: method, Params: pyjson.NewObject(), done: make(chan struct{}),
-		createdAt: time.Now(), locked: pyjson.NewObject(), onResult: onResult}
+func newServerRequest(sid, method string, params *jsonutil.Object, qids []string, onResult func(*jsonutil.Object)) *ServerRequest {
+	req := &ServerRequest{ID: "srq-" + uuidHex()[:12], SID: sid, Method: method, Params: jsonutil.NewObject(), done: make(chan struct{}),
+		createdAt: time.Now(), locked: jsonutil.NewObject(), onResult: onResult}
 	if params != nil {
-		req.Params = params.Copy()
+		req.Params = params.Clone()
 	}
 	if len(qids) > 0 {
 		req.qids = slices.Clone(qids)
@@ -86,24 +86,24 @@ func newServerRequest(sid, method string, params *pyjson.Object, qids []string, 
 func (r *ServerRequest) set() { r.doneOnce.Do(func() { close(r.done) }) }
 
 // Params of the request led by its session id
-func (r *ServerRequest) wireParams() *pyjson.Object {
-	params := pyjson.ObjectOf("session_id", r.SID)
-	params.Update(r.Params)
+func (r *ServerRequest) wireParams() *jsonutil.Object {
+	params := jsonutil.ObjectOf("session_id", r.SID)
+	params.Merge(r.Params)
 	return params
 }
 
 // JSON RPC request frame as sent to the client
-func (r *ServerRequest) Frame() *pyjson.Object {
-	return pyjson.ObjectOf("jsonrpc", "2.0", "id", r.ID, "method", r.Method, "params", r.wireParams())
+func (r *ServerRequest) Frame() *jsonutil.Object {
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "id", r.ID, "method", r.Method, "params", r.wireParams())
 }
 
 // Open request entry for a reconnecting client, with the batch answers locked so far
-func (r *ServerRequest) Snapshot() *pyjson.Object {
+func (r *ServerRequest) Snapshot() *jsonutil.Object {
 	params := r.wireParams()
 	if r.locked.Len() > 0 {
-		params.Set("answers", r.locked.Copy())
+		params.Set("answers", r.locked.Clone())
 	}
-	return pyjson.ObjectOf("id", r.ID, "method", r.Method, "params", params)
+	return jsonutil.ObjectOf("id", r.ID, "method", r.Method, "params", params)
 }
 
 // Open requests in send order and the frame sinks the server binds
@@ -111,7 +111,7 @@ var (
 	requestsMu       sync.Mutex
 	openRequests     []*ServerRequest
 	answeringClients []Transport
-	sinkWrite        = func(frame *pyjson.Object) {}
+	sinkWrite        = func(frame *jsonutil.Object) {}
 	sinkEmit         = func(event, sid string, payload map[string]any) {}
 	sinkAnswerable   = func(sid string) bool { return true }
 	sinkClients      = func(sid string) []Transport { return nil }
@@ -122,7 +122,7 @@ func requestsLog() *slog.Logger {
 }
 
 // Binds the frame writer, the event emitter, the answerable check and, when given, the answering client lookup
-func BindSinks(write func(frame *pyjson.Object), emit func(event, sid string, payload map[string]any), answerable func(sid string) bool,
+func BindSinks(write func(frame *jsonutil.Object), emit func(event, sid string, payload map[string]any), answerable func(sid string) bool,
 	clients func(sid string) []Transport) {
 	requestsMu.Lock()
 	defer requestsMu.Unlock()
@@ -156,7 +156,7 @@ func AnswersRequests(transport Transport) bool {
 	return slices.Contains(answeringClients, transport)
 }
 
-func currentSinks() (func(*pyjson.Object), func(string, string, map[string]any), func(string) bool, func(string) []Transport) {
+func currentSinks() (func(*jsonutil.Object), func(string, string, map[string]any), func(string) bool, func(string) []Transport) {
 	requestsMu.Lock()
 	defer requestsMu.Unlock()
 	return sinkWrite, sinkEmit, sinkAnswerable, sinkClients
@@ -213,7 +213,7 @@ func register(ctx context.Context, req *ServerRequest) error {
 	write := sinkWrite
 	requestsMu.Unlock()
 	if direct != nil {
-		write = func(frame *pyjson.Object) { direct.Write(frame) }
+		write = func(frame *jsonutil.Object) { direct.Write(frame) }
 	}
 	var withdrawn *string
 	func() {
@@ -232,10 +232,10 @@ func register(ctx context.Context, req *ServerRequest) error {
 }
 
 // Refusal of the params a server request is about to carry, naming the field that does not fit its typed contract
-func CheckRequestParams(method string, params *pyjson.Object) error {
+func CheckRequestParams(method string, params *jsonutil.Object) error {
 	typed := tuigateway.Lookup(tuigateway.KindRequest, method)
 	if typed == nil {
-		return fmt.Errorf("server request %s has no contract", pyrepr.Repr(method))
+		return fmt.Errorf("server request %s has no contract", anyutil.Quote(method))
 	}
 	if err := typed.FitParams(params); err != nil {
 		return &RequestParamsError{err.Error()}
@@ -244,15 +244,15 @@ func CheckRequestParams(method string, params *pyjson.Object) error {
 }
 
 // Answer a client gave a server request, refused with the field named when it does not fit the typed answer
-func FittedAnswer(method string, raw any) (*pyjson.Object, error) {
+func FittedAnswer(method string, raw any) (*jsonutil.Object, error) {
 	typed := tuigateway.Lookup(tuigateway.KindRequest, method)
 	if typed == nil {
-		return nil, fmt.Errorf("server request %s has no contract", pyrepr.Repr(method))
+		return nil, fmt.Errorf("server request %s has no contract", anyutil.Quote(method))
 	}
 	if err := typed.CheckResult(raw); err != nil {
 		return nil, err
 	}
-	result, _ := pyjson.AsObject(raw)
+	result, _ := jsonutil.AsObject(raw)
 	return result, nil
 }
 
@@ -273,7 +273,7 @@ var requestWait = func(ctx context.Context, done <-chan struct{}, deadline <-cha
 }
 
 // Sends one request and blocks for the result, nil when unanswered, a nil timeout waiting until settled
-func Send(ctx context.Context, method, sid string, params *pyjson.Object, timeout *float64, qids []string) (*pyjson.Object, error) {
+func Send(ctx context.Context, method, sid string, params *jsonutil.Object, timeout *float64, qids []string) (*jsonutil.Object, error) {
 	if unanswerable(method, sid) {
 		return nil, nil
 	}
@@ -298,7 +298,7 @@ func Send(ctx context.Context, method, sid string, params *pyjson.Object, timeou
 	}
 	requestsMu.Lock()
 	timedOut := popOpenLocked(req)
-	answered, result, locked := req.answered, req.result, req.locked.Copy()
+	answered, result, locked := req.answered, req.result, req.locked.Clone()
 	requestsMu.Unlock()
 	if answered {
 		return result, nil
@@ -313,7 +313,7 @@ func Send(ctx context.Context, method, sid string, params *pyjson.Object, timeou
 }
 
 // Sends one request whose wait is owned elsewhere and returns the settle call that withdraws it if still open
-func SendAsync(method, sid string, params *pyjson.Object, onResult func(*pyjson.Object)) (func(reason string), error) {
+func SendAsync(method, sid string, params *jsonutil.Object, onResult func(*jsonutil.Object)) (func(reason string), error) {
 	if unanswerable(method, sid) {
 		onResult(nil)
 		return func(string) {}, nil
@@ -350,9 +350,9 @@ func jsonIsInt(v any, n int) bool {
 	return false
 }
 
-func isNotShown(frame *pyjson.Object) bool {
-	errObj, ok := frame.GetOr("error", nil).(*pyjson.Object)
-	return ok && jsonIsInt(errObj.GetOr("code", nil), NotShownCode)
+func isNotShown(frame *jsonutil.Object) bool {
+	errObj, ok := frame.ValueOr("error", nil).(*jsonutil.Object)
+	return ok && jsonIsInt(errObj.ValueOr("code", nil), NotShownCode)
 }
 
 // Records one client declining and settles with the not shown refusal once every answering client declined
@@ -386,8 +386,8 @@ func decline(rid string, transport Transport) bool {
 		return true
 	}
 	popOpenLocked(req)
-	value, _ := pyjson.Dumps(pyjson.ObjectOf("success", false, "error", NotShownMessage))
-	req.result = pyjson.ObjectOf("value", value)
+	value, _ := jsonutil.Encode(jsonutil.ObjectOf("success", false, "error", NotShownMessage))
+	req.result = jsonutil.ObjectOf("value", value)
 	req.answered = true
 	result := req.result
 	requestsMu.Unlock()
@@ -400,8 +400,8 @@ func decline(rid string, transport Transport) bool {
 
 // Routes one client response frame to its open request, false when nothing waits for that id
 // Settles an open sessionless request only when it was written to this transport, false for any other frame
-func ResolveResponseOf(frame *pyjson.Object, transport Transport) bool {
-	rid, _ := frame.GetOr("id", nil).(string)
+func ResolveResponseOf(frame *jsonutil.Object, transport Transport) bool {
+	rid, _ := frame.ValueOr("id", nil).(string)
 	requestsMu.Lock()
 	req := findOpenLocked(rid)
 	mine := req != nil && req.via != nil && req.via == transport
@@ -409,8 +409,8 @@ func ResolveResponseOf(frame *pyjson.Object, transport Transport) bool {
 	return mine && ResolveResponse(frame, transport)
 }
 
-func ResolveResponse(frame *pyjson.Object, transport Transport) bool {
-	rid, ok := frame.GetOr("id", nil).(string)
+func ResolveResponse(frame *jsonutil.Object, transport Transport) bool {
+	rid, ok := frame.ValueOr("id", nil).(string)
 	if !ok {
 		return false
 	}
@@ -426,9 +426,9 @@ func ResolveResponse(frame *pyjson.Object, transport Transport) bool {
 	}
 	popOpenLocked(req)
 	if errValue, isError := frame.Get("error"); isError {
-		requestsLog().Debug(fmt.Sprintf("server request %s (%s) answered with error: %s", rid, req.Method, pyrepr.Str(errValue)))
+		requestsLog().Debug(fmt.Sprintf("server request %s (%s) answered with error: %s", rid, req.Method, anyutil.String(errValue)))
 		req.result, req.answered = nil, false
-	} else if result, refused := FittedAnswer(req.Method, frame.GetOr("result", nil)); refused != nil {
+	} else if result, refused := FittedAnswer(req.Method, frame.ValueOr("result", nil)); refused != nil {
 		requestsLog().Warn(fmt.Sprintf("server request %s (%s) answer refused: %s", rid, req.Method, refused))
 		req.result, req.answered = nil, false
 	} else {
@@ -511,7 +511,7 @@ func PendingKind(sid string) string {
 
 // True for a client response, an object with an id and a result or error member and no method
 func IsResponseFrame(obj any) bool {
-	frame, ok := obj.(*pyjson.Object)
+	frame, ok := obj.(*jsonutil.Object)
 	if !ok {
 		return false
 	}

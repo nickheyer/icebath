@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Drops the sticky auto prune notice of a local session viewer once autoprune was answered there
@@ -21,7 +21,7 @@ func clearLocalAutoPruneNotice(ctx context.Context, r *GatewayRunner, source *ga
 		return nil
 	}
 	if live := authority.Sessions[source.ChatID]; live != nil {
-		live.EventStream.Publish(source.ChatID, pyjson.ObjectOf("key", state.AutoPruneNoticeKey), "notification.clear", nil)
+		live.EventStream.Publish(source.ChatID, jsonutil.ObjectOf("key", state.AutoPruneNoticeKey), "notification.clear", nil)
 	}
 	return nil
 }

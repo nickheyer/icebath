@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestMessagingPlatformAndRowSource(t *testing.T) {
@@ -15,8 +15,8 @@ func TestMessagingPlatformAndRowSource(t *testing.T) {
 			t.Fatalf("%v: %q %v", label, got, ok)
 		}
 	}
-	row := func(pairs ...any) *pyjson.Object {
-		o := pyjson.NewObject()
+	row := func(pairs ...any) *jsonutil.Object {
+		o := jsonutil.NewObject()
 		for i := 0; i < len(pairs); i += 2 {
 			o.Set(pairs[i].(string), pairs[i+1])
 		}

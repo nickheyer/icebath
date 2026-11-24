@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -82,7 +82,7 @@ func decodeAttachBase64(raw, mimePrefix string, maxBytes int, label string) ([]b
 // Image extension from the filename hint, else the magic bytes, else png
 func sniffImageExt(imgBytes []byte, filename string) string {
 	if filename != "" {
-		if suffix := strings.ToLower(pypath.Suffix(filename)); suffix != "" {
+		if suffix := strings.ToLower(pathutil.Suffix(filename)); suffix != "" {
 			return suffix
 		}
 	}

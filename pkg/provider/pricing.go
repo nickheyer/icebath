@@ -7,10 +7,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"math"
 	"math/big"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -1046,7 +1048,7 @@ func pricingGetJSONHTTP(url string, headers map[string]string, timeout time.Dura
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	var lines []pyhttpx.HeaderLine
-	for _, k := range pyhttpx.HeaderOrder(headers) {
+	for _, k := range slices.Sorted(maps.Keys(headers)) {
 		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
 	}
 	resp, err := urllibOpen(ctx, urllibCall{url: url, headers: lines, credentialed: credentialed, timeout: timeout})

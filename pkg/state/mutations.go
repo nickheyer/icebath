@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Refusal detail clients match when the rewind target was summarized by compaction
@@ -62,11 +61,11 @@ func validLaunchValue(value any, kind string) bool {
 }
 
 // Whether a launch payload names only launch fields, each of its type, and at least one
-func validLaunchPayload(payload *pyjson.Object) bool {
+func validLaunchPayload(payload *jsonutil.Object) bool {
 	if payload.Len() == 0 {
 		return false
 	}
-	for _, key := range payload.Keys {
+	for _, key := range payload.Keys() {
 		kind, known := LaunchFields[key]
 		if !known || !validLaunchValue(rowGet(payload, key), kind) {
 			return false
@@ -94,9 +93,9 @@ func exactPyType(value any, kind string) bool {
 	return false
 }
 
-func payloadKeys(payload *pyjson.Object) map[string]bool {
+func payloadKeys(payload *jsonutil.Object) map[string]bool {
 	keys := make(map[string]bool, payload.Len())
-	for _, key := range payload.Keys {
+	for _, key := range payload.Keys() {
 		keys[key] = true
 	}
 	return keys
@@ -126,7 +125,7 @@ func nonBlankStr(v any) bool {
 
 // Refuses as invalid_params every operation and payload outside the closed mutation set
 func ValidateAction(operation any, payloadValue any) error {
-	payload, isObj := payloadValue.(*pyjson.Object)
+	payload, isObj := payloadValue.(*jsonutil.Object)
 	op, isStr := operation.(string)
 	if !isObj || !isStr {
 		return runtimeRefusal("invalid_params")
@@ -135,7 +134,7 @@ func ValidateAction(operation any, payloadValue any) error {
 	if op == "model" && (keys["model"] || keys["provider"] || keys["refresh"]) &&
 		keysWithin(keys, "model", "provider", "confirm", "reasoning", "persist", "once", "refresh") {
 		valid := true
-		for _, key := range payload.Keys {
+		for _, key := range payload.Keys() {
 			if modelSwitchFlags[key] {
 				valid = valid && rowGet(payload, key) == true
 			} else {
@@ -203,7 +202,7 @@ func ValidateAction(operation any, payloadValue any) error {
 	if !valid {
 		return runtimeRefusal("invalid_params")
 	}
-	for _, key := range payload.Keys {
+	for _, key := range payload.Keys() {
 		if !exactPyType(rowGet(payload, key), metadataFields[key]) {
 			return runtimeRefusal("invalid_params")
 		}
@@ -211,7 +210,7 @@ func ValidateAction(operation any, payloadValue any) error {
 	return nil
 }
 
-func validBranchPayload(payload *pyjson.Object) bool {
+func validBranchPayload(payload *jsonutil.Object) bool {
 	keys := payloadKeys(payload)
 	if !keysWithin(keys, "title", "through_message_id", "mcp_servers") {
 		return false
@@ -229,8 +228,8 @@ func validBranchPayload(payload *pyjson.Object) bool {
 	return !has || (isInt && id > 0)
 }
 
-func validEditorFingerprint(payload *pyjson.Object) bool {
-	servers, ok := rowGet(payload, "mcp_servers").(*pyjson.Object)
+func validEditorFingerprint(payload *jsonutil.Object) bool {
+	servers, ok := rowGet(payload, "mcp_servers").(*jsonutil.Object)
 	if !ok || !keysExactly(payloadKeys(servers), "fingerprint") {
 		return false
 	}
@@ -238,8 +237,8 @@ func validEditorFingerprint(payload *pyjson.Object) bool {
 	return isStr
 }
 
-func validCompressPayload(payload *pyjson.Object) bool {
-	for _, key := range payload.Keys {
+func validCompressPayload(payload *jsonutil.Object) bool {
+	for _, key := range payload.Keys() {
 		kind, known := compressFields[key]
 		if !known || !exactPyType(rowGet(payload, key), kind) {
 			return false
@@ -254,7 +253,7 @@ func validCompressPayload(payload *pyjson.Object) bool {
 }
 
 // Runs the closed mutation handler and returns the affected session ids and the receipt projection
-func (d *SessionDB) applyAction(ctx context.Context, conn SQLiteConn, sessionID, operation string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func (d *SessionDB) applyAction(ctx context.Context, conn SQLiteConn, sessionID, operation string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	switch operation {
 	case "compress":
 		return compressInTransaction(d, ctx, conn, sessionID, payload, prepared)
@@ -272,8 +271,8 @@ func (d *SessionDB) applyAction(ctx context.Context, conn SQLiteConn, sessionID,
 		return resetInTransaction(d, ctx, conn, sessionID, payload)
 	}
 	var affected []string
-	result := pyjson.NewObject()
-	for _, key := range payload.Keys {
+	result := jsonutil.NewObject()
+	for _, key := range payload.Keys() {
 		value := rowGet(payload, key)
 		if key == "title" {
 			title, _ := value.(string)
@@ -313,7 +312,7 @@ func (d *SessionDB) applyAction(ctx context.Context, conn SQLiteConn, sessionID,
 }
 
 // Rewinds the physical target to an active user row, keeping a compaction carrier's handoff
-func (d *SessionDB) rewindMutation(ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) ([]string, *pyjson.Object, error) {
+func (d *SessionDB) rewindMutation(ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	physical, err := localPhysicalTarget(ctx, conn, sessionID)
 	if err != nil {
 		return nil, nil, err
@@ -362,7 +361,7 @@ func (d *SessionDB) rewindMutation(ctx context.Context, conn SQLiteConn, session
 	if replacement != nil {
 		replacementID = *replacement
 	}
-	result := pyjson.ObjectOf("rewound_count", int64(len(ids)), "target_message", message, "new_head_id", head, "replacement_message_id", replacementID)
+	result := jsonutil.ObjectOf("rewound_count", int64(len(ids)), "target_message", message, "new_head_id", head, "replacement_message_id", replacementID)
 	return distinctSessionIDs(sessionID, physical), result, nil
 }
 
@@ -373,9 +372,9 @@ func summarizedByCompaction(ctx context.Context, conn SQLiteConn, physical strin
 		return false, err
 	}
 	if row[0] == physical {
-		return pyjson.Equal(row[2], int64(0)) && pyjson.Equal(row[3], int64(1)), nil
+		return anyutil.Equal(row[2], int64(0)) && anyutil.Equal(row[3], int64(1)), nil
 	}
-	if !pyjson.Equal(row[2], int64(1)) && !pyjson.Equal(row[3], int64(1)) {
+	if !anyutil.Equal(row[2], int64(1)) && !anyutil.Equal(row[3], int64(1)) {
 		return false, nil
 	}
 	lineage := map[string]bool{physical: true}
@@ -420,7 +419,7 @@ func (d *SessionDB) carrierLiveView(ctx context.Context, conn SQLiteConn, sessio
 }
 
 // Imports a validated payload whose first session is the mutated id, detaching foreign parent links
-func (d *SessionDB) importMutation(ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) ([]string, *pyjson.Object, error) {
+func (d *SessionDB) importMutation(ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	rows, _ := rowGet(payload, "sessions").([]any)
 	if len(rows) > importMaxSessions {
 		return nil, nil, runtimeRefusal("invalid_params")
@@ -429,14 +428,14 @@ func (d *SessionDB) importMutation(ctx context.Context, conn SQLiteConn, session
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(errs) > 0 || len(normalized) == 0 || sessionID != pyStr(rowGet(rowGet(normalized[0], "session").(*pyjson.Object), "id")) {
+	if len(errs) > 0 || len(normalized) == 0 || sessionID != pyStr(rowGet(rowGet(normalized[0], "session").(*jsonutil.Object), "id")) {
 		return nil, nil, runtimeRefusal("invalid_params")
 	}
 	var imported, skipped []string
 	type link struct{ sid, parent string }
 	var parents []link
 	for _, item := range normalized {
-		raw := rowGet(item, "session").(*pyjson.Object)
+		raw := rowGet(item, "session").(*jsonutil.Object)
 		sid := pyStr(rowGet(raw, "id"))
 		if _, retired, err := fetchScalar(ctx, conn, "SELECT 1 FROM state_meta WHERE key=?", RetiredPrefix+sid); err != nil {
 			return nil, nil, err
@@ -473,7 +472,7 @@ func (d *SessionDB) importMutation(ctx context.Context, conn SQLiteConn, session
 		if err != nil {
 			return nil, nil, err
 		}
-		if !fresh[l.parent] && (parentBinding == nil || !pyjson.Equal(parentBinding, childBinding)) {
+		if !fresh[l.parent] && (parentBinding == nil || !anyutil.Equal(parentBinding, childBinding)) {
 			foreign++
 			continue
 		}
@@ -483,7 +482,7 @@ func (d *SessionDB) importMutation(ctx context.Context, conn SQLiteConn, session
 	if err != nil {
 		return nil, nil, err
 	}
-	result := pyjson.ObjectOf("ok", true, "imported", int64(len(imported)), "skipped", int64(len(skipped)),
+	result := jsonutil.ObjectOf("ok", true, "imported", int64(len(imported)), "skipped", int64(len(skipped)),
 		"imported_ids", stringsToAny(imported), "skipped_ids", stringsToAny(skipped), "detached", int64(detached+foreign), "errors", []any{})
 	return imported, result, nil
 }

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func riStore(t *testing.T, tmp, cwd string) string {
@@ -50,14 +50,14 @@ func TestRetainedTreeUsesWindowsPathIdentity(t *testing.T) {
 			if err := os.Mkdir(tree, 0o755); err != nil {
 				t.Fatal(err)
 			}
-			resolved, err := pypath.Resolve(tree)
+			resolved, err := pathutil.Resolve(tree)
 			if err != nil {
 				t.Fatal(err)
 			}
 			db := riStore(t, tmp, tc.spell(resolved))
 			prev := insideTreeNormcase
 			t.Cleanup(func() { insideTreeNormcase = prev })
-			insideTreeNormcase = pypath.NtNormcase
+			insideTreeNormcase = pathutil.WindowsFoldCase
 			if got := retainedTreeIsLive(db, tree, false); got != tc.live {
 				t.Fatalf("live %v want %v", got, tc.live)
 			}

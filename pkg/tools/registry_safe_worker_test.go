@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func withSafeWorker(t *testing.T, on bool) {
@@ -42,15 +42,15 @@ func TestSafeWorkerHidesOnlyInitBuiltins(t *testing.T) {
 	withSafeWorker(t, true)
 	r := NewRegistry()
 	h := func(context.Context, *Call) string { return "" }
-	r.registerBuiltin(Def{Name: "web_search", Toolset: "web", Schema: pyjson.ObjectOf(), Handler: h})
-	r.registerBuiltin(Def{Name: "terminal", Toolset: "terminal", Schema: pyjson.ObjectOf(), Handler: h})
+	r.registerBuiltin(Def{Name: "web_search", Toolset: "web", Schema: jsonutil.ObjectOf(), Handler: h})
+	r.registerBuiltin(Def{Name: "terminal", Toolset: "terminal", Schema: jsonutil.ObjectOf(), Handler: h})
 	if r.Get("web_search") != nil || r.Get("terminal") == nil {
 		t.Fatal("safe worker filter wrong on fresh registry")
 	}
 	if err := r.Deregister("web_search", "", ""); err != nil || r.tools["web_search"] == nil {
 		t.Fatalf("hidden builtin deregistered: %v", err)
 	}
-	r.Register(Def{Name: "web_search", Toolset: "web", Schema: pyjson.ObjectOf(), Handler: h, Plugin: "p"})
+	r.Register(Def{Name: "web_search", Toolset: "web", Schema: jsonutil.ObjectOf(), Handler: h, Plugin: "p"})
 	if r.Get("web_search") == nil {
 		t.Fatal("runtime replacement of a builtin hidden")
 	}

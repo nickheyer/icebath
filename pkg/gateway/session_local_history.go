@@ -9,9 +9,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Byte budget the archived rows of a resume reply fill only where the live rows leave room
@@ -53,7 +53,7 @@ func historyRowIDs(rows []map[string]any) (map[int64]bool, error) {
 
 // Length of a row as the JSON text a resume reply carries it in
 func historyRowSize(row map[string]any) (int, error) {
-	text, err := pyjson.Dumps(row, pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	text, err := jsonutil.Encode(row, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
 		return 0, err
 	}
@@ -346,7 +346,7 @@ func releaseHandedOffReceipts(ctx context.Context, db *state.SessionDB, epoch in
 	}
 	for _, moved := range released {
 		pkgLog().Info(fmt.Sprintf("Local session %s was handed off to %s (row %s); released its local receipt",
-			moved.Owner, pyrepr.Str(moved.Source), moved.Target))
+			moved.Owner, anyutil.String(moved.Source), moved.Target))
 	}
 	return nil
 }
@@ -375,7 +375,7 @@ func localReceiptIDs(ctx context.Context, a *SessionAuthority) ([]string, error)
 }
 
 // True when any admission row is in the unknown state
-func anyUnknown(rows []*pyjson.Object) bool {
+func anyUnknown(rows []*jsonutil.Object) bool {
 	for _, row := range rows {
 		if rowString(row, "status") == AdmissionUnknown {
 			return true
@@ -393,7 +393,7 @@ func recoverLocalSessions(ctx context.Context, a *SessionAuthority, schedule boo
 	var orphans []string
 	for _, sid := range ids {
 		ref, err := restoreLocalSession(ctx, a, sid)
-		var pending []*pyjson.Object
+		var pending []*jsonutil.Object
 		if err == nil {
 			pending, err = a.DB.ListSessionAdmissions(ctx, sid, true)
 		}

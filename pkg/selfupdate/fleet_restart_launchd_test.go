@@ -15,9 +15,10 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 const launchdUID = 501
@@ -239,7 +240,7 @@ func TestRestartMacosLaunchdGatewaysKickstartFailureIsRecordedAndRestContinue(t 
 
 func TestRestartMacosLaunchdGatewaysTimeoutDuringDiscoveryIsFailedAndRestContinue(t *testing.T) {
 	labels, located := threeLabelFleet("app.icebath.gateway-wedged")
-	located["app.icebath.gateway-wedged"] = launchdLocation{err: &pysubprocess.TimeoutExpired{Cmd: []string{"launchctl", "print"}, Timeout: 5}}
+	located["app.icebath.gateway-wedged"] = launchdLocation{err: &executil.TimeoutError{Args: []string{"launchctl", "print"}, Timeout: time.Duration(5) * time.Second}}
 	rec := launchdFleet(t, "app.icebath.gateway", launchdFleetConfig{labels: labels, located: located})
 	restarted, failed := runLaunchdRestart(t, io.Discard)
 	wantLaunchd(t, "failed", failed, []string{"app.icebath.gateway-wedged"})
@@ -328,12 +329,12 @@ func TestPendingLaunchdRequiresCompleteSupervision(t *testing.T) {
 				}
 				return nil
 			})
-			vsSwap(t, &fleetRunCommand, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+			vsSwap(t, &fleetRunCommand, func(_ context.Context, cmd []string, _ float64) (*executil.Completed, error) {
 				code := 0
 				if failure == "listing" {
 					code = 1
 				}
-				return &pysubprocess.Completed{Args: cmd, Returncode: code}, nil
+				return &executil.Completed{Args: cmd, ExitCode: code}, nil
 			})
 			restarted, failed := []string{}, []string{}
 			if err := restartMacosLaunchdGateways(context.Background(), io.Discard, &restarted, &failed, 0, true, nil); err != nil {

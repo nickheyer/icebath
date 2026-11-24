@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Parent agent carrying the request inputs a review fork must inherit
@@ -89,7 +89,7 @@ func captureStatusWarnings(a *AIAgent) *[]string {
 func toolNames(tools []any) []string {
 	var names []string
 	for _, tool := range tools {
-		fn, _ := pyjson.Dict(tool.(map[string]any)["function"])
+		fn, _ := jsonutil.AsMap(tool.(map[string]any)["function"])
 		names = append(names, fn["name"].(string))
 	}
 	return names

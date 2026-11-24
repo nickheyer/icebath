@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func unwrapExecutor(t *testing.T, enabled ...string) *Executor {
@@ -22,7 +22,7 @@ func TestSingleLocalUnwrapReachesTheUnderlyingTool(t *testing.T) {
 		if Default.Entry(context.Background(), env, name) != nil {
 			continue
 		}
-		Default.Register(Def{Name: name, Toolset: toolset, Schema: pyjson.ObjectOf("name", name, "parameters", pyjson.ObjectOf("type", "object")),
+		Default.Register(Def{Name: name, Toolset: toolset, Schema: jsonutil.ObjectOf("name", name, "parameters", jsonutil.ObjectOf("type", "object")),
 			Check: func(*Env) bool { return true }, Handler: func(context.Context, *Call) string { return "{}" }})
 		t.Cleanup(func() { _ = Default.Deregister(name, "", "") })
 	}

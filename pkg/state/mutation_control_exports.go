@@ -3,14 +3,14 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Owner identity of a session row, None for a retired hosted account label
-func OwnerUser(row *pyjson.Object) (any, error) { return ownerUser(row) }
+func OwnerUser(row *jsonutil.Object) (any, error) { return ownerUser(row) }
 
 // Normalized import sessions and the problems that refuse them
-func (d *SessionDB) ValidateImportPayload(sessions []any) ([]*pyjson.Object, []any, error) {
+func (d *SessionDB) ValidateImportPayload(sessions []any) ([]*jsonutil.Object, []any, error) {
 	return d.validateImportPayload(sessions)
 }
 
@@ -20,6 +20,6 @@ func LocalLineageOwner(ctx context.Context, conn SQLiteConn, sessionID string) (
 }
 
 // First row of a query on the connection as an object, nil when there is none
-func ConnObject(ctx context.Context, conn SQLiteConn, query string, args ...any) (*pyjson.Object, error) {
+func ConnObject(ctx context.Context, conn SQLiteConn, query string, args ...any) (*jsonutil.Object, error) {
 	return connObject(ctx, conn, query, args...)
 }

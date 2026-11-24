@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Kind and MIME type the home gateway files bytes under, told by their leading bytes and then by their name
@@ -88,7 +88,7 @@ func (s *HostedRoomService) appendMemberMessage(room map[string]any, in AppendEv
 	members, _ := room["members"].([]any)
 	for _, raw := range members {
 		member, _ := hostedMapping(raw)
-		recipients = append(recipients, pyrepr.Str(member["member_id"]))
+		recipients = append(recipients, anyutil.String(member["member_id"]))
 	}
 	_, transitioned, err := store.CommitMessageWithReceipt(AttachmentCommit{RoomID: in.RoomID, EventID: in.EventID, Manifest: manifest,
 		RecipientMemberIDs: recipients, ViewerAccess: true, HoldUntilEvent: true})

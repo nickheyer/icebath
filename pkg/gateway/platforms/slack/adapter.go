@@ -19,8 +19,8 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -85,33 +85,33 @@ type SlackAdapter struct {
 	botUserID      *string
 	botDisplayName *string
 
-	teamClients    *pydict.Dict[string, *webClient]
+	teamClients    *orderedutil.Map[string, *webClient]
 	teamBotUserIDs map[string]string
 	teamBotNames   map[string]string
 
-	userNameCache       *pydict.Dict[teamKey, string]
-	channelNameCache    *pydict.Dict[teamKey, string]
-	userIsBotCache      *pydict.Dict[teamKey, bool]
-	channelTeam         *pydict.Dict[string, string]
-	channelTeams        *pydict.Dict[string, map[string]bool]
-	dmConversationCache *pydict.Dict[string, string]
+	userNameCache       *orderedutil.Map[teamKey, string]
+	channelNameCache    *orderedutil.Map[teamKey, string]
+	userIsBotCache      *orderedutil.Map[teamKey, bool]
+	channelTeam         *orderedutil.Map[string, string]
+	channelTeams        *orderedutil.Map[string, map[string]bool]
+	dmConversationCache *orderedutil.Map[string, string]
 
 	dedup               *gateway.MessageDeduplicator
-	processedMessageTS  *pydict.Dict[string, float64]
+	processedMessageTS  *orderedutil.Map[string, float64]
 	botMessageTS        map[any]bool
 	mentionedThreads    map[any]bool
 	mentionedThreadsCap int
 	processedTSCap      int
 
-	assistantThreads      *pydict.Dict[threadKey, map[string]string]
-	agentViewContexts     *pydict.Dict[teamKey, map[string]string]
-	statusMessageIDs      *pydict.Dict[threadKey, string]
+	assistantThreads      *orderedutil.Map[threadKey, map[string]string]
+	agentViewContexts     *orderedutil.Map[teamKey, map[string]string]
+	statusMessageIDs      *orderedutil.Map[threadKey, string]
 	reactingMessageIDs    map[any]bool
-	activeStatusThreads   *pydict.Dict[threadKey, *statusEntry]
+	activeStatusThreads   *orderedutil.Map[threadKey, *statusEntry]
 	nativeTaskCardStreams map[threadKey]*nativeTaskCardStream
-	slashCommandContexts  *pydict.Dict[[3]string, *slashContext]
+	slashCommandContexts  *orderedutil.Map[[3]string, *slashContext]
 	slashLanes            *SlashHandoffLanes
-	activeStreams         *pydict.Dict[threadKey, *draftStream]
+	activeStreams         *orderedutil.Map[threadKey, *draftStream]
 
 	nativeStreamUnsupported bool
 	appToken                string
@@ -128,11 +128,11 @@ type SlackAdapter struct {
 	pluginActionsApp        *slackApp
 	pluginActionsWired      map[[2]string]bool
 
-	approvalResolved         *pydict.Dict[any, bool]
-	clarifyResolved          *pydict.Dict[any, bool]
-	clarifyMessages          *pydict.Dict[string, clarifyTarget]
-	modelPickerState         *pydict.Dict[any, *modelPickerState]
-	threadContextCache       *pydict.Dict[string, *threadContextCache]
+	approvalResolved         *orderedutil.Map[any, bool]
+	clarifyResolved          *orderedutil.Map[any, bool]
+	clarifyMessages          *orderedutil.Map[string, clarifyTarget]
+	modelPickerState         *orderedutil.Map[any, *modelPickerState]
+	threadContextCache       *orderedutil.Map[string, *threadContextCache]
 	threadRehydrationChecked map[string]bool
 	titledAssistantThreads   map[threadKey]bool
 	compiledMentionPatterns  []*regexp2.Regexp
@@ -145,41 +145,41 @@ func wallTime() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 // Fresh adapter for the platform config with empty caches and the dedup window from config
 func NewSlackAdapter(ctx context.Context, cfg *gateway.PlatformConfig) *SlackAdapter {
 	a := &SlackAdapter{
-		teamClients:            pydict.New[string, *webClient](),
+		teamClients:            orderedutil.NewMap[string, *webClient](),
 		teamBotUserIDs:         map[string]string{},
 		teamBotNames:           map[string]string{},
-		userNameCache:          pydict.New[teamKey, string](),
-		channelNameCache:       pydict.New[teamKey, string](),
-		userIsBotCache:         pydict.New[teamKey, bool](),
-		channelTeam:            pydict.New[string, string](),
-		channelTeams:           pydict.New[string, map[string]bool](),
-		dmConversationCache:    pydict.New[string, string](),
+		userNameCache:          orderedutil.NewMap[teamKey, string](),
+		channelNameCache:       orderedutil.NewMap[teamKey, string](),
+		userIsBotCache:         orderedutil.NewMap[teamKey, bool](),
+		channelTeam:            orderedutil.NewMap[string, string](),
+		channelTeams:           orderedutil.NewMap[string, map[string]bool](),
+		dmConversationCache:    orderedutil.NewMap[string, string](),
 		dedup:                  gateway.NewMessageDeduplicator(2000, slackDedupTTLSeconds(ctx)),
-		processedMessageTS:     pydict.New[string, float64](),
+		processedMessageTS:     orderedutil.NewMap[string, float64](),
 		botMessageTS:           map[any]bool{},
 		mentionedThreads:       map[any]bool{},
 		mentionedThreadsCap:    mentionedThreadsMax,
 		processedTSCap:         processedMessageTSMax,
-		assistantThreads:       pydict.New[threadKey, map[string]string](),
-		agentViewContexts:      pydict.New[teamKey, map[string]string](),
-		statusMessageIDs:       pydict.New[threadKey, string](),
+		assistantThreads:       orderedutil.NewMap[threadKey, map[string]string](),
+		agentViewContexts:      orderedutil.NewMap[teamKey, map[string]string](),
+		statusMessageIDs:       orderedutil.NewMap[threadKey, string](),
 		reactingMessageIDs:     map[any]bool{},
-		activeStatusThreads:    pydict.New[threadKey, *statusEntry](),
+		activeStatusThreads:    orderedutil.NewMap[threadKey, *statusEntry](),
 		nativeTaskCardStreams:  map[threadKey]*nativeTaskCardStream{},
-		slashCommandContexts:   pydict.New[[3]string, *slashContext](),
+		slashCommandContexts:   orderedutil.NewMap[[3]string, *slashContext](),
 		slashLanes:             NewSlashHandoffLanes(),
-		activeStreams:          pydict.New[threadKey, *draftStream](),
+		activeStreams:          orderedutil.NewMap[threadKey, *draftStream](),
 		socketWatchdogInterval: 15 * time.Second,
 		socketPingStaleFactor:  4,
 		socketFirstPingGrace:   60,
 		groupDMScopeWarned:     map[string]bool{},
 		userTokenWarned:        map[string]bool{},
 
-		approvalResolved:         pydict.New[any, bool](),
-		clarifyResolved:          pydict.New[any, bool](),
-		clarifyMessages:          pydict.New[string, clarifyTarget](),
-		modelPickerState:         pydict.New[any, *modelPickerState](),
-		threadContextCache:       pydict.New[string, *threadContextCache](),
+		approvalResolved:         orderedutil.NewMap[any, bool](),
+		clarifyResolved:          orderedutil.NewMap[any, bool](),
+		clarifyMessages:          orderedutil.NewMap[string, clarifyTarget](),
+		modelPickerState:         orderedutil.NewMap[any, *modelPickerState](),
+		threadContextCache:       orderedutil.NewMap[string, *threadContextCache](),
 		threadRehydrationChecked: map[string]bool{},
 		titledAssistantThreads:   map[threadKey]bool{},
 	}
@@ -369,7 +369,7 @@ func (a *SlackAdapter) postEphemeralFallback(ctx context.Context, chatID string,
 			if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusOK {
 				errText := "unexpected_response"
 				if len(apiErr.Response) > 0 {
-					errText = pyrepr.Str(getOr(apiErr.Response, "error", "unknown_error"))
+					errText = anyutil.String(getOr(apiErr.Response, "error", "unknown_error"))
 				}
 				return gateway.SendResult{Success: false, Error: "chat.postEphemeral failed: " + errText}
 			}
@@ -754,7 +754,7 @@ func (a *SlackAdapter) callWithBlockFallback(ctx context.Context, clientFn func(
 	if err == nil {
 		return result, nil
 	}
-	if !pyrepr.Truthy(kwargs["blocks"]) || !isBlockPayloadRejection(err) {
+	if !anyutil.IsTrue(kwargs["blocks"]) || !isBlockPayloadRejection(err) {
 		return nil, err
 	}
 	retry := make(map[string]any, len(kwargs))
@@ -824,7 +824,7 @@ func (a *SlackAdapter) Send(ctx context.Context, chatID, content, replyTo string
 // Posts each message length chunk with Block Kit on a single chunk and broadcast on the first
 func (a *SlackAdapter) postChunks(ctx context.Context, chatID, teamID, content, formatted, threadTS string) (*apiResult, error) {
 	chunks := gateway.TruncateMessage(formatted, maxMessageLength, a.MessageLenFn())
-	broadcast := pyrepr.Truthy(a.extra()["reply_broadcast"])
+	broadcast := anyutil.IsTrue(a.extra()["reply_broadcast"])
 	var blocks []any
 	if len(chunks) == 1 {
 		blocks = a.maybeBlocks(ctx, content)
@@ -860,13 +860,13 @@ func (a *SlackAdapter) sendSlashReply(ctx context.Context, chatID string, sc *sl
 		a.clearThreadStatusQuietly(ctx, chatID, metadata)
 		return ephemeral
 	}
-	pkgLog().Warn(fmt.Sprintf("[Slack] response_url slash reply failed (%s); retrying via chat.postEphemeral", pyrepr.Str(ephemeral.Error)))
+	pkgLog().Warn(fmt.Sprintf("[Slack] response_url slash reply failed (%s); retrying via chat.postEphemeral", anyutil.String(ephemeral.Error)))
 	fallback := a.postEphemeralFallback(ctx, chatID, sc, content)
 	if fallback.Success {
 		a.clearThreadStatusQuietly(ctx, chatID, metadata)
 		return fallback
 	}
-	pkgLog().Error(fmt.Sprintf("[Slack] Ephemeral slash reply failed on both response_url and chat.postEphemeral (%s); dropping rather than posting publicly", pyrepr.Str(fallback.Error)))
+	pkgLog().Error(fmt.Sprintf("[Slack] Ephemeral slash reply failed on both response_url and chat.postEphemeral (%s); dropping rather than posting publicly", anyutil.String(fallback.Error)))
 	return fallback
 }
 
@@ -902,8 +902,8 @@ func (a *SlackAdapter) SendOrUpdateStatus(ctx context.Context, chatID, statusKey
 		result := a.editMessage(ctx, chatID, cachedID, content, false, metadata)
 		if result.Success {
 			a.mu.Lock()
-			if current, _ := a.statusMessageIDs.Get(key); pyrepr.Truthy(result.MessageID) && current == cachedID {
-				a.statusMessageIDs.Set(key, pyrepr.Str(result.MessageID))
+			if current, _ := a.statusMessageIDs.Get(key); anyutil.IsTrue(result.MessageID) && current == cachedID {
+				a.statusMessageIDs.Set(key, anyutil.String(result.MessageID))
 			}
 			a.mu.Unlock()
 			return result, nil
@@ -916,14 +916,14 @@ func (a *SlackAdapter) SendOrUpdateStatus(ctx context.Context, chatID, statusKey
 	if err != nil {
 		return result, err
 	}
-	if result.Success && pyrepr.Truthy(result.MessageID) {
+	if result.Success && anyutil.IsTrue(result.MessageID) {
 		a.mu.Lock()
 		if a.statusMessageIDs.Len() >= statusMessageIDsMax {
 			for _, stale := range a.statusMessageIDs.Keys()[:statusMessageIDsMax/2] {
 				a.statusMessageIDs.Delete(stale)
 			}
 		}
-		a.statusMessageIDs.Set(key, pyrepr.Str(result.MessageID))
+		a.statusMessageIDs.Set(key, anyutil.String(result.MessageID))
 		a.mu.Unlock()
 	}
 	return result, nil
@@ -977,7 +977,7 @@ func (a *SlackAdapter) DeleteMessage(ctx context.Context, chatID, messageID stri
 	if _, err := a.getClient(chatID, "").call(ctx, "chat.delete", map[string]any{"channel": chatID, "ts": messageID}); err != nil {
 		var apiErr *slackAPIError
 		if errors.As(err, &apiErr) && apiErr.Response["ok"] == false && apiErr.StatusCode == http.StatusOK {
-			pkgLog().Debug(fmt.Sprintf("[Slack] chat.delete returned ok=false for message %s in channel %s: %s", messageID, chatID, pyrepr.Str(getOr(apiErr.Response, "error", "unknown"))))
+			pkgLog().Debug(fmt.Sprintf("[Slack] chat.delete returned ok=false for message %s in channel %s: %s", messageID, chatID, anyutil.String(getOr(apiErr.Response, "error", "unknown"))))
 			return false, nil
 		}
 		pkgLog().Debug(fmt.Sprintf("[Slack] Failed to delete message %s in channel %s: %v", messageID, chatID, err))
@@ -1088,7 +1088,7 @@ func (a *SlackAdapter) startStream(ctx context.Context, client *webClient, key t
 		md = map[string]any{}
 	}
 	if userID := firstTruthy(md, "user_id", "sender_id"); userID != nil {
-		kwargs["recipient_user_id"] = pyrepr.Str(userID)
+		kwargs["recipient_user_id"] = anyutil.String(userID)
 	}
 	if teamID != "" {
 		kwargs["recipient_team_id"] = teamID
@@ -1166,7 +1166,7 @@ func (a *SlackAdapter) tryFinalizeStream(ctx context.Context, chatID, content st
 	if md == nil {
 		md = map[string]any{}
 	}
-	if pyrepr.Truthy(md["_interim_send"]) || pyrepr.Truthy(md["expect_edits"]) {
+	if anyutil.IsTrue(md["_interim_send"]) || anyutil.IsTrue(md["expect_edits"]) {
 		return nil
 	}
 	key := a.streamKey(chatID, md)
@@ -1183,7 +1183,7 @@ func (a *SlackAdapter) tryFinalizeStream(ctx context.Context, chatID, content st
 	sent := stream.sent
 	kind, delta := streamRelation(sent, text)
 	if kind == "unrelated" {
-		if !(pyrepr.Truthy(md["notify"]) && strings.TrimSpace(text) != "" && strings.TrimSpace(sent) != "" && mrkdwnInsensitive(text) == mrkdwnInsensitive(sent)) {
+		if !(anyutil.IsTrue(md["notify"]) && strings.TrimSpace(text) != "" && strings.TrimSpace(sent) != "" && mrkdwnInsensitive(text) == mrkdwnInsensitive(sent)) {
 			return nil
 		}
 		return a.commitStream(ctx, *key, stream, text, metadata, "", true)

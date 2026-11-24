@@ -12,10 +12,10 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -196,10 +196,10 @@ func SuspendSelf(env map[string]string, socketPath string, timeout float64) bool
 		return false
 	}
 	statusLine, _, _ := strings.Cut(string(response), "\r\n")
-	statusLine = pystr.DecodeASCIIReplace([]byte(statusLine))
+	statusLine = strings.ToValidUTF8(string(statusLine), string(utf8.RuneError))
 	parts := strings.Fields(statusLine)
 	ok := false
-	if len(parts) >= 2 && pystr.StrIsDigit(parts[1]) {
+	if len(parts) >= 2 && textutil.IsDigits(parts[1]) {
 		if code, err := strconv.Atoi(parts[1]); err == nil {
 			ok = code >= 200 && code < 300
 		}
@@ -215,7 +215,7 @@ func SuspendSelf(env map[string]string, socketPath string, timeout float64) bool
 	if len(body) > scaleToZeroRejectedBodyMaxBytes {
 		body = body[:scaleToZeroRejectedBodyMaxBytes]
 	}
-	dumped, _ := pyjson.Dumps(strings.ToValidUTF8(string(body), "\uFFFD"))
+	dumped, _ := jsonutil.Encode(strings.ToValidUTF8(string(body), "\uFFFD"))
 	pkgLog().Warn(fmt.Sprintf("scale-to-zero: flaps suspend rejected: %s %s", statusLine, textutil.First(dumped, scaleToZeroRejectedBodyMaxBytes)))
 	return false
 }

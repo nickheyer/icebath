@@ -8,7 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -67,7 +68,7 @@ func TestIngestPagePersistsEventsAndLineage(t *testing.T) {
 		t.Fatalf("result %v", result)
 	}
 	replica := hrOK(ReplicaState(context.Background(), rdb, "room-1"))
-	if replica["last_seq"] != int64(3) || !pyjson.Equal(replica["authority"], page["authority"]) || !pyjson.Equal(replica["members"], hrReplicaMembers) {
+	if replica["last_seq"] != int64(3) || !anyutil.Equal(replica["authority"], page["authority"]) || !anyutil.Equal(replica["members"], hrReplicaMembers) {
 		t.Fatalf("replica %v", replica)
 	}
 }
@@ -92,10 +93,10 @@ func TestIngestRejectsSequenceGap(t *testing.T) {
 func TestIngestRejectsEpochRegression(t *testing.T) {
 	adb, rdb := hrReplicaDBs(t)
 	page := hrSeedRoom(t, adb, 3)
-	newer := pyjson.Plain(page).(map[string]any)
+	newer := jsonutil.Plain(page).(map[string]any)
 	newer["authority"].(map[string]any)["epoch"] = 3
 	hrOK(hrIngest(rdb, newer))
-	stale := pyjson.Plain(page).(map[string]any)
+	stale := jsonutil.Plain(page).(map[string]any)
 	stale["authority"].(map[string]any)["epoch"] = 2
 	_, err := hrIngest(rdb, stale)
 	hrRequireErr[ReplicaEpochRegressionError](t, err, "")
@@ -119,14 +120,14 @@ func TestPromoteReplicaContinuesRoomAtNextEpoch(t *testing.T) {
 		t.Fatalf("promoted %v", promoted)
 	}
 	replay := hrOK(ReadEvents(ctx, rdb, "room-1", 0, 100, false))
-	if !pyjson.Equal(hrSeqs(replay), []any{1, 2, 3, 4}) {
+	if !anyutil.Equal(hrSeqs(replay), []any{1, 2, 3, 4}) {
 		t.Fatalf("replay %v", replay)
 	}
 	events := replay["events"].([]any)
 	claim := events[len(events)-1].(map[string]any)
 	payload := claim["payload"].(map[string]any)
-	if claim["kind"] != "authority.claimed" || payload["previous_gateway_id"] != hrAuthA || !pyjson.Equal(payload["authority_epoch"], 2) ||
-		!pyjson.Equal(replay["authority"], map[string]any{"gateway_id": hrAuthB, "epoch": 2}) {
+	if claim["kind"] != "authority.claimed" || payload["previous_gateway_id"] != hrAuthA || !anyutil.Equal(payload["authority_epoch"], 2) ||
+		!anyutil.Equal(replay["authority"], map[string]any{"gateway_id": hrAuthB, "epoch": 2}) {
 		t.Fatalf("claim %v replay %v", claim, replay["authority"])
 	}
 	hrOK(AppendEvent(ctx, rdb, AppendEventInput{RoomID: "room-1", EventID: "post-takeover", Kind: "message.user", Actor: hrReplicaUser,
@@ -165,7 +166,7 @@ func TestDemoteFencesStaleLocalAuthority(t *testing.T) {
 	events := replay["events"].([]any)
 	lost := events[len(events)-1].(map[string]any)
 	if lost["kind"] != "authority.lost" || lost["payload"].(map[string]any)["authority_gateway_id"] != hrAuthB ||
-		!pyjson.Equal(replay["authority"], map[string]any{"gateway_id": hrAuthB, "epoch": 2}) {
+		!anyutil.Equal(replay["authority"], map[string]any{"gateway_id": hrAuthB, "epoch": 2}) {
 		t.Fatalf("lost %v", lost)
 	}
 	hrRequireErr[HostedRoomError](t, hrStaleAppend(adb, "after-demote"), "")
@@ -199,7 +200,7 @@ func TestFullFailoverRoundTrip(t *testing.T) {
 		kinds = append(kinds, event.(map[string]any)["kind"])
 	}
 	want := []any{"message.user", "message.user", "message.user", "message.user", "authority.claimed", "message.user"}
-	if !pyjson.Equal(kinds, want) || replay["authority"].(map[string]any)["gateway_id"] != hrAuthB {
+	if !anyutil.Equal(kinds, want) || replay["authority"].(map[string]any)["gateway_id"] != hrAuthB {
 		t.Fatalf("kinds %v authority %v", kinds, replay["authority"])
 	}
 }

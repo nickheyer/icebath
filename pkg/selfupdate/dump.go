@@ -16,18 +16,18 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -50,7 +50,7 @@ func dotenvKeyNames(h string) map[string]bool {
 	if err != nil {
 		return names
 	}
-	for _, line := range textutil.Lines(pystr.DecodeUTF8SigIgnore(raw)) {
+	for _, line := range textutil.Lines(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), "")) {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") || !strings.Contains(line, "=") {
 			continue
@@ -68,7 +68,7 @@ func dotenvKeyNames(h string) map[string]bool {
 
 // Stripped stdout of git args in projectRoot, empty on any failure
 func dumpGitOutput(projectRoot string, args ...string) string {
-	res, err := pysubprocess.RunWith(context.Background(), append([]string{"git"}, args...), pysubprocess.Options{Dir: projectRoot, Timeout: 5 * time.Second})
+	res, err := executil.Run(context.Background(), append([]string{"git"}, args...), executil.Options{Dir: projectRoot, Timeout: 5 * time.Second})
 	if err != nil || res.Returncode != 0 {
 		return ""
 	}
@@ -77,11 +77,11 @@ func dumpGitOutput(projectRoot string, args ...string) string {
 
 // Reports whether root resolves to the running install the version stamp describes
 func dumpIsRunningInstall(root string) bool {
-	resolved, err := pypath.Realpath(root, pypath.Lax)
+	resolved, err := pathutil.Resolve(root)
 	if err != nil {
 		resolved = root
 	}
-	running, err := pypath.Realpath(dumpProjectRoot(), pypath.Lax)
+	running, err := pathutil.Resolve(dumpProjectRoot())
 	if err != nil {
 		running = dumpProjectRoot()
 	}
@@ -97,10 +97,10 @@ func dumpGetGitCommit(projectRoot string) string {
 		return "(unknown)"
 	}
 	identity, err := dumpCodeIdentity(false)
-	if err != nil || identity == nil || !pyrepr.Truthy(identity.Vals["short_sha"]) {
+	if err != nil || identity == nil || !anyutil.IsTrue(identity.Value("short_sha")) {
 		return "(unknown)"
 	}
-	return pyrepr.Str(identity.Vals["short_sha"])
+	return anyutil.String(identity.Value("short_sha"))
 }
 
 // Date the HEAD commit of projectRoot was authored as YYYY-MM-DD, empty when unknown
@@ -170,31 +170,31 @@ func dumpCronSummary(h string) string {
 	if err != nil {
 		return "(error reading)"
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return "(error reading)"
 	}
-	doc, err := pyjson.Loads(text)
+	doc, err := jsonutil.Decode(text)
 	if err != nil {
 		return "(error reading)"
 	}
-	obc, ok := pyjson.AsObject(doc)
+	obc, ok := jsonutil.AsObject(doc)
 	if !ok {
 		return "(error reading)"
 	}
 	jobs := []any{}
-	if raw, has := obc.Vals["jobs"]; has {
+	if raw, has := obc.Get("jobs"); has {
 		if jobs, ok = raw.([]any); !ok {
 			return "(error reading)"
 		}
 	}
 	active := 0
 	for _, job := range jobs {
-		entry, ok := pyjson.AsObject(job)
+		entry, ok := jsonutil.AsObject(job)
 		if !ok {
 			return "(error reading)"
 		}
-		if enabled, has := entry.Vals["enabled"]; !has || pyrepr.Truthy(enabled) {
+		if enabled, has := entry.Get("enabled"); !has || anyutil.IsTrue(enabled) {
 			active++
 		}
 	}
@@ -214,8 +214,8 @@ var dumpPlatformEnvVars = [][2]string{
 // First truthy value rendered as text, else the fallback
 func dumpFirstTruthy(fallback string, values ...any) string {
 	for _, v := range values {
-		if pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	return fallback
@@ -260,8 +260,8 @@ func dumpConfigOverrides(cfg config.Tree) [][2]string {
 		if !has || userVal == nil {
 			continue
 		}
-		if !pyrepr.Equal(userVal, defaultSection[p[1]]) {
-			overrides = append(overrides, [2]string{p[0] + "." + p[1], pyrepr.Str(userVal)})
+		if !anyutil.Equal(userVal, defaultSection[p[1]]) {
+			overrides = append(overrides, [2]string{p[0] + "." + p[1], anyutil.String(userVal)})
 		}
 	}
 	userToolsets, has := cfg["toolsets"]
@@ -272,11 +272,11 @@ func dumpConfigOverrides(cfg config.Tree) [][2]string {
 	if !has {
 		defaultToolsets = []any{}
 	}
-	if !pyrepr.Equal(userToolsets, defaultToolsets) {
-		overrides = append(overrides, [2]string{"toolsets", pyrepr.Str(userToolsets)})
+	if !anyutil.Equal(userToolsets, defaultToolsets) {
+		overrides = append(overrides, [2]string{"toolsets", anyutil.String(userToolsets)})
 	}
-	if fallbacks := cfg["fallback_providers"]; pyrepr.Truthy(fallbacks) {
-		overrides = append(overrides, [2]string{"fallback_providers", RedactDebugSupportText(pyrepr.Str(dumpFallbackDebugProjection(fallbacks)))})
+	if fallbacks := cfg["fallback_providers"]; anyutil.IsTrue(fallbacks) {
+		overrides = append(overrides, [2]string{"fallback_providers", RedactDebugSupportText(anyutil.String(dumpFallbackDebugProjection(fallbacks)))})
 	}
 	return overrides
 }
@@ -299,7 +299,7 @@ func dumpFallbackDebugProjection(value any) []any {
 		if !ok {
 			continue
 		}
-		item := pyjson.NewObject()
+		item := jsonutil.NewObject()
 		for _, key := range dumpFallbackDebugFields {
 			child := m[key]
 			if key == "max_tokens" {
@@ -311,7 +311,7 @@ func dumpFallbackDebugProjection(value any) []any {
 				item.Set(key, s)
 			}
 		}
-		if pyrepr.Truthy(m["api_key"]) {
+		if anyutil.IsTrue(m["api_key"]) {
 			item.Set("credential_source", "inline")
 		}
 		projected = append(projected, item)
@@ -387,7 +387,7 @@ func dumpLen(v any) int {
 
 // Writes the compact copy pasteable setup summary of the dump command
 func RunDump(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error) {
-	showKeys := pyrepr.Truthy(ns["show_keys"])
+	showKeys := anyutil.IsTrue(ns["show_keys"])
 	projectRoot := dumpProjectRoot()
 	if _, err := provider.LoadIcebathDotenv(ctx, provider.DotenvLoadOptions{Home: h, ProjectEnv: filepath.Join(projectRoot, ".env")}); err != nil {
 		return 1, err
@@ -413,7 +413,7 @@ func RunDump(ctx context.Context, h string, ns map[string]any, w io.Writer) (int
 	lines := []string{
 		"--- icebath dump ---",
 		fmt.Sprintf("%-18s%s", "version:", dumpVersionLine(projectRoot)),
-		fmt.Sprintf("%-18s%s %s %s", "os:", pyplatform.System(), pyplatform.Release(), pyplatform.Machine()),
+		fmt.Sprintf("%-18s%s %s %s", "os:", pyplatform.System(), hostutil.Release(), hostutil.Machine()),
 		fmt.Sprintf("%-18s%s", "go:", hostinfo.GoVersion()),
 		fmt.Sprintf("%-18s%s", "profile:", profile),
 		fmt.Sprintf("%-18s%s", "icebath_home:", home.Display(h)),

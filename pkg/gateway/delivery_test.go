@@ -220,8 +220,8 @@ func TestSessionSourceWireLayout(t *testing.T) {
 	src := (&SessionSource{Platform: PlatformDiscord, ChatID: "c", GuildID: &guild, AutoThreadCreated: true, Profile: strPtr("p")}).Normalize()
 	d := src.ToDict()
 	want := []string{"platform", "chat_id", "chat_name", "chat_type", "user_id", "user_name", "thread_id", "chat_topic", "scope_id", "guild_id", "profile", "auto_thread_created"}
-	if !reflect.DeepEqual(d.Keys, want) || *src.ScopeID != "g1" || src.ChatType != "dm" {
-		t.Fatalf("%v", d.Keys)
+	if !reflect.DeepEqual(d.Keys(), want) || *src.ScopeID != "g1" || src.ChatType != "dm" {
+		t.Fatalf("%v", d.Keys())
 	}
 	back, err := SessionSourceFromDict(ctx, map[string]any{"platform": "discord", "chat_id": 5, "guild_id": "g2", "chat_type": "group", "chat_name": "ops"})
 	if err != nil || back.ChatID != "5" || *back.ScopeID != "g2" || *back.GuildID != "g2" || back.Description() != "group: ops" {

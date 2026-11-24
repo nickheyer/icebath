@@ -4,14 +4,14 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Routing peer recorder of
@@ -21,7 +21,7 @@ type gatewaySessionPeerRecorder interface {
 
 // Peer row finder of
 type gatewaySessionPeerFinder interface {
-	FindLatestGatewaySessionForPeer(ctx context.Context, q state.GatewayPeerQuery) (*pyjson.Object, error)
+	FindLatestGatewaySessionForPeer(ctx context.Context, q state.GatewayPeerQuery) (*jsonutil.Object, error)
 }
 
 // Reset promotion that upgrades an accidental end reason to an explicit boundary, true when a row was written
@@ -29,18 +29,12 @@ type sessionResetPromoter interface {
 	PromoteToSessionReset(ctx context.Context, sessionID, reason string) bool
 }
 
-// Python repr of a decoded value
-func pyReprValue(v any) string { return pyrepr.Repr(v) }
-
-// Python repr of a string
-func pyReprString(v string) string { return pyrepr.Repr(v) }
-
 // Source dict as JSON, empty when absent or unserializable
 func originJSON(source *SessionSource) string {
 	if source == nil {
 		return ""
 	}
-	text, err := pyjson.Dumps(source.ToDict())
+	text, err := jsonutil.Encode(source.ToDict())
 	if err != nil {
 		return ""
 	}
@@ -78,7 +72,7 @@ func (s *SessionStore) activeProfileName() string {
 }
 
 // Whether a recovered row may be revived by this gateway's profile, keyless rows staying adoptable
-func (s *SessionStore) recoveredRowAllowedForActiveProfile(requestedSessionKey string, recovered *pyjson.Object) bool {
+func (s *SessionStore) recoveredRowAllowedForActiveProfile(requestedSessionKey string, recovered *jsonutil.Object) bool {
 	raw, _ := recovered.Get("session_key")
 	recoveredKey := ""
 	if pyTruthy(raw) {
@@ -144,7 +138,7 @@ func (s *SessionStore) claimLegacySlackKey(legacyKey string) bool {
 }
 
 // Rejects a recovered row whose origin belongs to another Slack workspace
-func recoveredRowMatchesSourceScope(recovered *pyjson.Object, source *SessionSource) bool {
+func recoveredRowMatchesSourceScope(recovered *jsonutil.Object, source *SessionSource) bool {
 	if source.Platform != PlatformSlack || source.ChatType == "dm" || source.ScopeID == nil || *source.ScopeID == "" {
 		return true
 	}
@@ -153,11 +147,11 @@ func recoveredRowMatchesSourceScope(recovered *pyjson.Object, source *SessionSou
 	if !pyTruthy(raw) {
 		text = ""
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return false
 	}
-	origin, ok := parsed.(*pyjson.Object)
+	origin, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return false
 	}
@@ -181,7 +175,7 @@ func rowTimestamp(value any, def pyDatetime) pyDatetime {
 			f = 1
 		}
 	case string:
-		parsed, err := pyint.ParseFloat(x)
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
 		if err != nil {
 			return def
 		}
@@ -197,7 +191,7 @@ func rowTimestamp(value any, def pyDatetime) pyDatetime {
 }
 
 // Entry rebuilt from a recovered row, an invalid durable timestamp reading as old
-func (s *SessionStore) createEntryFromRecoveredRow(row *pyjson.Object, sessionKey string, source *SessionSource) *SessionEntry {
+func (s *SessionStore) createEntryFromRecoveredRow(row *jsonutil.Object, sessionKey string, source *SessionSource) *SessionEntry {
 	started, _ := row.Get("started_at")
 	created := rowTimestamp(started, pyDatetime{T: time.Unix(0, 0).In(time.Local)})
 	lastActivity, hasLast := row.Get("last_activity_at")
@@ -219,7 +213,7 @@ func (s *SessionStore) createEntryFromRecoveredRow(row *pyjson.Object, sessionKe
 }
 
 // One durable gateway row for the key, the peer tuple fallback only when allowed
-func (s *SessionStore) findGatewaySessionRow(ctx context.Context, sessionKey string, source *SessionSource, allowPeerFallback, raiseOnLookupError bool) (*pyjson.Object, error) {
+func (s *SessionStore) findGatewaySessionRow(ctx context.Context, sessionKey string, source *SessionSource, allowPeerFallback, raiseOnLookupError bool) (*jsonutil.Object, error) {
 	q := state.GatewayPeerQuery{UserID: source.UserID, ThreadID: source.ThreadID}
 	if allowPeerFallback {
 		chatID, chatType := source.ChatID, source.ChatType
@@ -229,7 +223,7 @@ func (s *SessionStore) findGatewaySessionRow(ctx context.Context, sessionKey str
 }
 
 // Guarded peer finder call, nil for a missing store or finder and for a failed lookup unless raising
-func peerRow(ctx context.Context, db SessionStoreDB, source, sessionKey string, raiseOnLookupError bool, q state.GatewayPeerQuery) (*pyjson.Object, error) {
+func peerRow(ctx context.Context, db SessionStoreDB, source, sessionKey string, raiseOnLookupError bool, q state.GatewayPeerQuery) (*jsonutil.Object, error) {
 	finder, ok := db.(gatewaySessionPeerFinder)
 	if db == nil || !ok || finder == nil {
 		return nil, nil
@@ -287,7 +281,7 @@ func jsonFloat(v any) (float64, bool) {
 	case int64:
 		return float64(x), true
 	case string:
-		f, err := pyint.ParseFloat(x)
+		f, err := strconv.ParseFloat(strings.TrimSpace(x), 64)
 		return f, err == nil
 	}
 	return 0, false

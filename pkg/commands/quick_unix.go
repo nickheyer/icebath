@@ -11,48 +11,36 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Shell argv for the gateway command in a new session, start_new_session making the shell its group leader
 func gatewayProgram(command string, _ bool) (quickProgram, error) {
-	return posixShellProgram([]any{command}, &syscall.SysProcAttr{Setsid: true})
+	return posixShellProgram(command, &syscall.SysProcAttr{Setsid: true})
 }
 
-// Builds sh -c with the items, each checked for its type then an embedded NUL as fork_exec converts them
-func posixShellProgram(items []any, attr *syscall.SysProcAttr) (quickProgram, error) {
-	sh := pysubprocess.UnixShell()
-	argv := []string{sh, "-c"}
-	for _, item := range items {
-		var arg string
-		switch v := item.(type) {
-		case string:
-			arg = v
-		case []byte:
-			arg = string(v)
-		default:
-			return quickProgram{}, notPathLike(item)
-		}
-		if strings.IndexByte(arg, 0) >= 0 {
-			return quickProgram{}, pyError("embedded null byte")
-		}
-		argv = append(argv, arg)
+// Builds sh -c with the command, refusing one holding a NUL byte that no argv entry can carry
+func posixShellProgram(command string, attr *syscall.SysProcAttr) (quickProgram, error) {
+	sh, err := executil.Shell()
+	if err != nil {
+		return quickProgram{}, err
 	}
-	return quickProgram{path: sh, argv: argv, attr: attr}, nil
+	if strings.IndexByte(command, 0) >= 0 {
+		return quickProgram{}, errEmbeddedNUL
+	}
+	return quickProgram{path: sh, argv: []string{sh, "-c", command}, attr: attr}, nil
 }
 
-// ValueError fork_exec raises for a NUL in the environment or the cwd
+// Refuses a NUL byte in the environment or the cwd, which execve and chdir cannot carry
 func finishProgram(prog quickProgram, cwd string, env []string) (quickProgram, error) {
 	for _, kv := range env {
 		if strings.IndexByte(kv, 0) >= 0 {
-			return prog, pyError("embedded null byte")
+			return prog, errEmbeddedNUL
 		}
 	}
 	if strings.IndexByte(cwd, 0) >= 0 {
-		return prog, pyError("embedded null byte")
+		return prog, errEmbeddedNUL
 	}
 	return prog, nil
 }
@@ -60,7 +48,7 @@ func finishProgram(prog quickProgram, cwd string, env []string) (quickProgram, e
 // Environment entries in the insertion order of the build_subprocess_env dict, as execve receives them
 func quickEnvList(env *tools.ChildEnv) []string { return env.Environ() }
 
-// Inherited stdin, none when descriptor zero is closed so the child starts without one as Popen leaves it
+// Inherited stdin, none when descriptor zero is closed so the child starts without one
 func quickStdin() (*os.File, func()) {
 	if _, err := unix.FcntlInt(0, unix.F_GETFD, 0); err != nil {
 		return nil, func() {}
@@ -68,17 +56,15 @@ func quickStdin() (*os.File, func()) {
 	return os.Stdin, func() {}
 }
 
-// Python str of a spawn failure, the cwd named when the child chdir is what failed
-func spawnErrorText(err error, cwd string) string {
+// Spawn failure, the chdir error naming cwd when entering the directory is what failed
+func spawnError(err error, cwd string) error {
 	var pe *fs.PathError
 	if errors.As(err, &pe) && pe.Op == "fork/exec" && cwd != "" {
 		if cerr := chdirError(cwd); cerr != nil {
-			if text, ok := pypath.ErrnoText(cerr); ok {
-				return text + ": " + pyrepr.StrRepr(cwd)
-			}
+			return &fs.PathError{Op: "chdir", Path: cwd, Err: cerr}
 		}
 	}
-	return pypath.OSErrorText(err)
+	return err
 }
 
 // Errno chdir would fail with, resolution then directory type then search permission for the effective ids
@@ -93,7 +79,7 @@ func chdirError(dir string) error {
 	return unix.Faccessat(unix.AT_FDCWD, dir, unix.X_OK, unix.AT_EACCESS)
 }
 
-// Popen.kill, SIGKILL to a shell not yet reaped with ProcessLookupError suppressed and PermissionError returned
+// SIGKILL to a shell not yet reaped, a shell already gone ignored and a refused signal returned
 func killShell(q *quickProc) error {
 	if closed(q.exited) {
 		return nil
@@ -105,7 +91,7 @@ func killShell(q *quickProc) error {
 	return err
 }
 
-// killpg of the group the shell led, ProcessLookupError and PermissionError suppressed
+// SIGKILL to the process group the shell led, a group already gone or not ours ignored
 func killQuickGroup(pid int) {
 	_ = syscall.Kill(-pid, syscall.SIGKILL)
 }

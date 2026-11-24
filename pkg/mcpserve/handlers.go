@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -43,25 +43,25 @@ func optStr(v any) string {
 
 // Value of a or b when a is falsy, the Python a or b
 func pyOr(a any, b func() any) any {
-	if pyrepr.Truthy(a) {
+	if anyutil.IsTrue(a) {
 		return a
 	}
 	return b()
 }
 
 // Messages of a conversation or the JSON error text naming why they cannot be read
-func conversationMessages(ctx context.Context, sessionKey string) ([]*pyjson.Object, string) {
+func conversationMessages(ctx context.Context, sessionKey string) ([]*jsonutil.Object, string) {
 	entry := pyGet(loadSessionsIndex(ctx), sessionKey, nil)
-	if !pyrepr.Truthy(entry) {
-		return nil, dumps(pyjson.ObjectOf("error", "Conversation not found: "+sessionKey), false)
+	if !anyutil.IsTrue(entry) {
+		return nil, dumps(jsonutil.ObjectOf("error", "Conversation not found: "+sessionKey), false)
 	}
 	sessionID := pyGet(entry, "session_id", "")
-	if !pyrepr.Truthy(sessionID) {
-		return nil, dumps(pyjson.ObjectOf("error", "No session ID for this conversation"), false)
+	if !anyutil.IsTrue(sessionID) {
+		return nil, dumps(jsonutil.ObjectOf("error", "No session ID for this conversation"), false)
 	}
-	messages, errText := loadSessionMessages(ctx, pyrepr.Str(sessionID))
+	messages, errText := loadSessionMessages(ctx, anyutil.String(sessionID))
 	if errText != "" {
-		return nil, dumps(pyjson.ObjectOf("error", errText), false)
+		return nil, dumps(jsonutil.ObjectOf("error", errText), false)
 	}
 	return messages, ""
 }
@@ -72,14 +72,14 @@ type toolHandlers struct {
 	bridge *EventBridge
 }
 
-func (h *toolHandlers) conversationsList(kw *pyjson.Object) string {
-	platform, search := kw.Vals["platform"], optStr(kw.Vals["search"])
-	limit := coerceInt(kw.Vals["limit"], 50, 1, 200)
+func (h *toolHandlers) conversationsList(kw *jsonutil.Object) string {
+	platform, search := kw.Value("platform"), optStr(kw.Value("search"))
+	limit := coerceInt(kw.Value("limit"), 50, 1, 200)
 	index := loadSessionsIndex(h.ctx)
-	conversations := []*pyjson.Object{}
-	for _, key := range index.Keys {
-		entry := index.Vals[key]
-		origin := pyGet(entry, "origin", pyjson.NewObject())
+	conversations := []*jsonutil.Object{}
+	for _, key := range index.Keys() {
+		entry := index.Value(key)
+		origin := pyGet(entry, "origin", jsonutil.NewObject())
 		entryPlatform := pyOr(pyGet(entry, "platform", nil), func() any { return pyGet(origin, "platform", "") })
 		if !platformMatches(platform, entryPlatform) {
 			continue
@@ -98,27 +98,27 @@ func (h *toolHandlers) conversationsList(kw *pyjson.Object) string {
 				continue
 			}
 		}
-		conversations = append(conversations, pyjson.ObjectOf(
+		conversations = append(conversations, jsonutil.ObjectOf(
 			"session_key", key, "session_id", pyGet(entry, "session_id", ""), "platform", entryPlatform,
 			"chat_type", pyGet(entry, "chat_type", pyGet(origin, "chat_type", "")),
 			"display_name", displayName, "chat_name", chatName,
 			"user_name", pyGet(origin, "user_name", ""), "updated_at", pyGet(entry, "updated_at", "")))
 	}
-	sortByKey(conversations, func(c *pyjson.Object) any { return pyGet(c, "updated_at", "") }, true)
+	sortByKey(conversations, func(c *jsonutil.Object) any { return pyGet(c, "updated_at", "") }, true)
 	if int64(len(conversations)) > limit {
 		conversations = conversations[:limit]
 	}
-	return dumps(pyjson.ObjectOf("count", len(conversations), "conversations", conversations), true)
+	return dumps(jsonutil.ObjectOf("count", len(conversations), "conversations", conversations), true)
 }
 
-func (h *toolHandlers) conversationGet(kw *pyjson.Object) string {
-	sessionKey := optStr(kw.Vals["session_key"])
+func (h *toolHandlers) conversationGet(kw *jsonutil.Object) string {
+	sessionKey := optStr(kw.Value("session_key"))
 	entry := pyGet(loadSessionsIndex(h.ctx), sessionKey, nil)
-	if !pyrepr.Truthy(entry) {
-		return dumps(pyjson.ObjectOf("error", "Conversation not found: "+sessionKey), false)
+	if !anyutil.IsTrue(entry) {
+		return dumps(jsonutil.ObjectOf("error", "Conversation not found: "+sessionKey), false)
 	}
-	origin := pyGet(entry, "origin", pyjson.NewObject())
-	return dumps(pyjson.ObjectOf(
+	origin := pyGet(entry, "origin", jsonutil.NewObject())
+	return dumps(jsonutil.ObjectOf(
 		"session_key", sessionKey, "session_id", pyGet(entry, "session_id", ""),
 		"platform", pyOr(pyGet(entry, "platform", nil), func() any { return pyGet(origin, "platform", "") }),
 		"chat_type", pyGet(entry, "chat_type", pyGet(origin, "chat_type", "")),
@@ -130,9 +130,9 @@ func (h *toolHandlers) conversationGet(kw *pyjson.Object) string {
 		"total_tokens", pyGet(entry, "total_tokens", int64(0))), true)
 }
 
-func (h *toolHandlers) messagesRead(kw *pyjson.Object) string {
-	sessionKey := optStr(kw.Vals["session_key"])
-	limit := coerceInt(kw.Vals["limit"], 50, 1, 200)
+func (h *toolHandlers) messagesRead(kw *jsonutil.Object) string {
+	sessionKey := optStr(kw.Value("session_key"))
+	limit := coerceInt(kw.Value("limit"), 50, 1, 200)
 	all, errJSON := conversationMessages(h.ctx, sessionKey)
 	if errJSON != "" {
 		return errJSON
@@ -146,91 +146,91 @@ func (h *toolHandlers) messagesRead(kw *pyjson.Object) string {
 			content = extractMessageContent(msg)
 		}
 		if content != "" {
-			filtered = append(filtered, pyjson.ObjectOf("id", pyrepr.Str(pyGet(msg, "id", "")), "role", role,
+			filtered = append(filtered, jsonutil.ObjectOf("id", anyutil.String(pyGet(msg, "id", "")), "role", role,
 				"content", textutil.First(content, 2000), "timestamp", pyGet(msg, "timestamp", "")))
 		}
 	}
 	messages := filtered[max(int64(len(filtered))-limit, 0):]
-	return dumps(pyjson.ObjectOf("session_key", sessionKey, "count", len(messages),
+	return dumps(jsonutil.ObjectOf("session_key", sessionKey, "count", len(messages),
 		"total_in_session", len(filtered), "messages", messages), true)
 }
 
-func (h *toolHandlers) attachmentsFetch(kw *pyjson.Object) string {
-	sessionKey, messageID := optStr(kw.Vals["session_key"]), optStr(kw.Vals["message_id"])
+func (h *toolHandlers) attachmentsFetch(kw *jsonutil.Object) string {
+	sessionKey, messageID := optStr(kw.Value("session_key")), optStr(kw.Value("message_id"))
 	all, errJSON := conversationMessages(h.ctx, sessionKey)
 	if errJSON != "" {
 		return errJSON
 	}
 	var target any
 	for _, m := range all {
-		if pyrepr.Str(pyGet(m, "id", "")) == messageID {
+		if anyutil.String(pyGet(m, "id", "")) == messageID {
 			target = m
 			break
 		}
 	}
-	if !pyrepr.Truthy(target) {
-		return dumps(pyjson.ObjectOf("error", "Message not found: "+messageID), false)
+	if !anyutil.IsTrue(target) {
+		return dumps(jsonutil.ObjectOf("error", "Message not found: "+messageID), false)
 	}
 	attachments := extractAttachments(target)
-	return dumps(pyjson.ObjectOf("message_id", messageID, "count", len(attachments), "attachments", attachments), true)
+	return dumps(jsonutil.ObjectOf("message_id", messageID, "count", len(attachments), "attachments", attachments), true)
 }
 
-func (h *toolHandlers) eventsPoll(kw *pyjson.Object) string {
-	afterCursor := coerceInt(kw.Vals["after_cursor"], 0, 0, maxCursor)
-	limit := coerceInt(kw.Vals["limit"], 20, 1, 200)
-	return dumps(h.bridge.PollEvents(afterCursor, optStr(kw.Vals["session_key"]), limit), true)
+func (h *toolHandlers) eventsPoll(kw *jsonutil.Object) string {
+	afterCursor := coerceInt(kw.Value("after_cursor"), 0, 0, maxCursor)
+	limit := coerceInt(kw.Value("limit"), 20, 1, 200)
+	return dumps(h.bridge.PollEvents(afterCursor, optStr(kw.Value("session_key")), limit), true)
 }
 
-func (h *toolHandlers) eventsWait(kw *pyjson.Object) string {
-	afterCursor := coerceInt(kw.Vals["after_cursor"], 0, 0, maxCursor)
-	timeoutMs := coerceInt(kw.Vals["timeout_ms"], 30000, 0, 300000)
-	if event := h.bridge.WaitForEvent(afterCursor, optStr(kw.Vals["session_key"]), timeoutMs); pyrepr.Truthy(event) {
-		return dumps(pyjson.ObjectOf("event", event), true)
+func (h *toolHandlers) eventsWait(kw *jsonutil.Object) string {
+	afterCursor := coerceInt(kw.Value("after_cursor"), 0, 0, maxCursor)
+	timeoutMs := coerceInt(kw.Value("timeout_ms"), 30000, 0, 300000)
+	if event := h.bridge.WaitForEvent(afterCursor, optStr(kw.Value("session_key")), timeoutMs); anyutil.IsTrue(event) {
+		return dumps(jsonutil.ObjectOf("event", event), true)
 	}
-	return dumps(pyjson.ObjectOf("event", nil, "reason", "timeout"), true)
+	return dumps(jsonutil.ObjectOf("event", nil, "reason", "timeout"), true)
 }
 
-func (h *toolHandlers) messagesSend(kw *pyjson.Object) (result string) {
-	target, message := optStr(kw.Vals["target"]), optStr(kw.Vals["message"])
+func (h *toolHandlers) messagesSend(kw *jsonutil.Object) (result string) {
+	target, message := optStr(kw.Value("target")), optStr(kw.Value("message"))
 	if target == "" || message == "" {
-		return dumps(pyjson.ObjectOf("error", "Both target and message are required"), false)
+		return dumps(jsonutil.ObjectOf("error", "Both target and message are required"), false)
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			result = dumps(pyjson.ObjectOf("error", "Send failed: "+raisedText(r)), false)
+			result = dumps(jsonutil.ObjectOf("error", "Send failed: "+raisedText(r)), false)
 		}
 	}()
 	text, err := messagetools.SendMessageTool(h.ctx, map[string]any{"action": "send", "target": target, "message": message})
 	if err != nil {
-		return dumps(pyjson.ObjectOf("error", "Send failed: "+err.Error()), false)
+		return dumps(jsonutil.ObjectOf("error", "Send failed: "+err.Error()), false)
 	}
 	return text
 }
 
-func (h *toolHandlers) channelsList(kw *pyjson.Object) string {
-	platform := kw.Vals["platform"]
+func (h *toolHandlers) channelsList(kw *jsonutil.Object) string {
+	platform := kw.Value("platform")
 	directory := loadChannelDirectory(h.ctx)
-	if !pyrepr.Truthy(directory) {
+	if !anyutil.IsTrue(directory) {
 		targets, seen := []any{}, map[string]bool{}
 		index := loadSessionsIndex(h.ctx)
-		for _, key := range index.Keys {
-			entry := index.Vals[key]
-			origin := pyGet(entry, "origin", pyjson.NewObject())
+		for _, key := range index.Keys() {
+			entry := index.Value(key)
+			origin := pyGet(entry, "origin", jsonutil.NewObject())
 			p := pyOr(pyGet(entry, "platform", nil), func() any { return pyGet(origin, "platform", "") })
 			chatID := pyGet(origin, "chat_id", "")
-			targetStr := pyrepr.Str(p) + ":" + pyrepr.Str(chatID)
-			if !pyrepr.Truthy(p) || !pyrepr.Truthy(chatID) || !platformMatches(platform, p) || seen[targetStr] {
+			targetStr := anyutil.String(p) + ":" + anyutil.String(chatID)
+			if !anyutil.IsTrue(p) || !anyutil.IsTrue(chatID) || !platformMatches(platform, p) || seen[targetStr] {
 				continue
 			}
 			seen[targetStr] = true
-			targets = append(targets, pyjson.ObjectOf("target", targetStr, "platform", p,
+			targets = append(targets, jsonutil.ObjectOf("target", targetStr, "platform", p,
 				"name", pyOr(pyGet(entry, "display_name", nil), func() any { return pyGet(origin, "chat_name", "") }),
 				"chat_type", pyGet(entry, "chat_type", pyGet(origin, "chat_type", ""))))
 		}
-		return dumps(pyjson.ObjectOf("count", len(targets), "channels", targets), true)
+		return dumps(jsonutil.ObjectOf("count", len(targets), "channels", targets), true)
 	}
 	channels := []any{}
-	keys, vals := pyItems(pyGet(directory, "platforms", pyjson.NewObject()))
+	keys, vals := pyItems(pyGet(directory, "platforms", jsonutil.NewObject()))
 	for _, plat := range keys {
 		entries, isList := vals[plat].([]any)
 		if !platformMatches(platform, plat) || !isList {
@@ -242,25 +242,25 @@ func (h *toolHandlers) channelsList(kw *pyjson.Object) string {
 			}
 			chatID := pyGet(ch, "id", pyGet(ch, "chat_id", ""))
 			target := plat
-			if pyrepr.Truthy(chatID) {
-				target = plat + ":" + pyrepr.Str(chatID)
+			if anyutil.IsTrue(chatID) {
+				target = plat + ":" + anyutil.String(chatID)
 			}
-			channels = append(channels, pyjson.ObjectOf("target", target, "platform", plat,
+			channels = append(channels, jsonutil.ObjectOf("target", target, "platform", plat,
 				"name", pyGet(ch, "name", pyGet(ch, "display_name", "")), "chat_type", pyGet(ch, "type", "")))
 		}
 	}
-	return dumps(pyjson.ObjectOf("count", len(channels), "channels", channels), true)
+	return dumps(jsonutil.ObjectOf("count", len(channels), "channels", channels), true)
 }
 
-func (h *toolHandlers) permissionsListOpen(*pyjson.Object) string {
+func (h *toolHandlers) permissionsListOpen(*jsonutil.Object) string {
 	approvals := h.bridge.ListPendingApprovals()
-	return dumps(pyjson.ObjectOf("count", len(approvals), "approvals", approvals), true)
+	return dumps(jsonutil.ObjectOf("count", len(approvals), "approvals", approvals), true)
 }
 
-func (h *toolHandlers) permissionsRespond(kw *pyjson.Object) string {
-	id, decision := optStr(kw.Vals["id"]), optStr(kw.Vals["decision"])
+func (h *toolHandlers) permissionsRespond(kw *jsonutil.Object) string {
+	id, decision := optStr(kw.Value("id")), optStr(kw.Value("decision"))
 	if decision != "allow-once" && decision != "allow-always" && decision != "deny" {
-		return dumps(pyjson.ObjectOf("error", fmt.Sprintf("Invalid decision: %s. Must be allow-once, allow-always, or deny", decision)), false)
+		return dumps(jsonutil.ObjectOf("error", fmt.Sprintf("Invalid decision: %s. Must be allow-once, allow-always, or deny", decision)), false)
 	}
 	return dumps(h.bridge.RespondToApproval(id, decision), true)
 }
@@ -281,7 +281,7 @@ type bridgeTool struct {
 	name        string
 	description string
 	params      []provider.MCPToolParam
-	handler     func(h *toolHandlers, kw *pyjson.Object) string
+	handler     func(h *toolHandlers, kw *jsonutil.Object) string
 }
 
 // Bridge tools in registration order, which is the tools/list order clients see
@@ -383,7 +383,7 @@ func CreateServer(ctx context.Context, bridge *EventBridge, includeTools bool, i
 	reserved := map[string]bool{}
 	for _, t := range bridgeTools {
 		handler := t.handler
-		server.AddTool(t.name, t.description, t.params, nil, func(kw *pyjson.Object) string { return handler(handlers, kw) })
+		server.AddTool(t.name, t.description, t.params, nil, func(kw *jsonutil.Object) string { return handler(handlers, kw) })
 		reserved[t.name] = true
 	}
 	if includeTools {

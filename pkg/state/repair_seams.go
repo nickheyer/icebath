@@ -4,7 +4,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Repair collaborators as swappable values, the module attributes the repair tests patch
@@ -25,8 +25,8 @@ var (
 	repairLiveWriterFn   = liveWriterHoldsDB
 	applyWALFn           = ApplyWALWithFallback
 	openRepairFn         = RepairStateDBSchema
-	diskUsageFn          = pyfs.DiskUsage
-	copyFileFn           = pyfs.Copy2
+	diskUsageFn          = fsutil.DiskUsage
+	copyFileFn           = fsutil.CopyFile
 	replaceFileFn        = os.Rename
 	snapshotClock        = time.Now
 )

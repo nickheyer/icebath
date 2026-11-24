@@ -11,8 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Logger the platform toolset warnings go to, swapped by tests capturing records
@@ -142,7 +142,7 @@ func enabledPluginToolsets(cfg config.Tree, platform string, names []string, plu
 		switch list := kpt[platform].(type) {
 		case []any:
 			for _, n := range list {
-				known[pyrepr.Str(n)] = true
+				known[anyutil.String(n)] = true
 			}
 		case string:
 			for _, ch := range list {
@@ -167,7 +167,7 @@ func EnabledPluginToolsets(cfg config.Tree, platform string, names []string, plu
 // Whether a non compressor context engine is configured
 func contextEngineActive(cfg config.Tree) bool {
 	ctxCfg := cfg["context"]
-	if !pyTruthy(ctxCfg) {
+	if !anyutil.IsTrue(ctxCfg) {
 		return false
 	}
 	m, ok := pyDictOf(ctxCfg)
@@ -175,10 +175,10 @@ func contextEngineActive(cfg config.Tree) bool {
 		return false
 	}
 	engine := m["engine"]
-	if !pyTruthy(engine) {
+	if !anyutil.IsTrue(engine) {
 		return false
 	}
-	name := strings.ToLower(strings.TrimSpace(pyrepr.Str(engine)))
+	name := strings.ToLower(strings.TrimSpace(anyutil.String(engine)))
 	return name != "" && name != "compressor"
 }
 
@@ -202,7 +202,7 @@ func coercePlatformToolsetsValue(value any, platform string) ([]string, bool) {
 		return names, true
 	}
 	if !markPlatformToolsetsWarned(platform) {
-		toolsConfigLogger().Warn("platform_toolsets." + platform + " is " + pyrepr.Repr(value) +
+		toolsConfigLogger().Warn("platform_toolsets." + platform + " is " + anyutil.Quote(value) +
 			", expected a YAML list of toolset names (e.g. [terminal, file, web]) - falling back to the platform default. Run `icebath tools` to reconfigure.")
 	}
 	return nil, false
@@ -300,18 +300,18 @@ func pyContainsKanban(v any) bool {
 		_, has := m["kanban"]
 		return has
 	}
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return false
 	}
 	panic(errors.New("a platform toolsets entry is " + errchain.Kind(v) + ", expected a list or mapping"))
 }
 
 // Whether every env var a provider row declares is set, true for rows without keys
-func providerEnvReady(ctx context.Context, h string, provider *pyjson.Object) (bool, error) {
+func providerEnvReady(ctx context.Context, h string, provider *jsonutil.Object) (bool, error) {
 	raw, _ := provider.Get("env_vars")
 	vars, _ := raw.([]any)
 	for _, e := range vars {
-		row, _ := e.(*pyjson.Object)
+		row, _ := e.(*jsonutil.Object)
 		if row == nil {
 			return false, errors.New("a provider env_vars entry is not a mapping")
 		}
@@ -319,7 +319,7 @@ func providerEnvReady(ctx context.Context, h string, provider *pyjson.Object) (b
 		if !ok {
 			return false, errors.New("a provider env_vars entry has no key")
 		}
-		v, _, err := config.GetEnvValue(ctx, h, pyrepr.Str(key))
+		v, _, err := config.GetEnvValue(ctx, h, anyutil.String(key))
 		if err != nil {
 			return false, err
 		}

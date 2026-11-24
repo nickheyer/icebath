@@ -9,7 +9,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Route script answering which probed secrets reached it as the JSON payload that replaces the webhook body
@@ -24,12 +24,12 @@ func TestWebhookRouteScriptUnderMultiplexGetsTheServedProfilesSecretsWithoutFail
 	}
 	envRefsWrite(t, filepath.Join(served, "scripts"), "probe.sh", webhookEnvProbe)
 	ctx := ProfileRuntimeScope(context.Background(), served, true)
-	accepted, transformed, err := NewWebhookRouteProcessor(WebhookDefaultScriptTimeoutSeconds).RunRouteScript(ctx, "probe.sh", pyjson.NewObject())
+	accepted, transformed, err := NewWebhookRouteProcessor(WebhookDefaultScriptTimeoutSeconds).RunRouteScript(ctx, "probe.sh", jsonutil.NewObject())
 	if err != nil || !accepted || transformed == nil {
-		t.Fatalf("route script accepted %v payload %v err %v", accepted, pyjson.Plain(transformed), err)
+		t.Fatalf("route script accepted %v payload %v err %v", accepted, jsonutil.Plain(transformed), err)
 	}
 	want := map[string]any{"svc": "served", "skill": "served", "launch": "launch-secret", "key": "", "home": served}
-	if got := pyjson.Plain(transformed); !reflect.DeepEqual(got, want) {
+	if got := jsonutil.Plain(transformed); !reflect.DeepEqual(got, want) {
 		t.Fatalf("script saw %v, want %v", got, want)
 	}
 }

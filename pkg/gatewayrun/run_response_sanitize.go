@@ -10,13 +10,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Programmatic and local surfaces whose replies keep raw text
@@ -168,29 +167,29 @@ func terminalScopeCwd(ctx context.Context, def string) (string, error) {
 
 // True for a retry exhausted turn with hidden reasoning and no visible answer beyond the sentinel
 func isGatewayHiddenReasoningIncompleteTurn(agentResult map[string]any) bool {
-	if agentResult == nil || pyrepr.Truthy(agentResult["failed"]) || pyrepr.Truthy(agentResult["interrupted"]) || !pyrepr.Truthy(agentResult["partial"]) {
+	if agentResult == nil || anyutil.IsTrue(agentResult["failed"]) || anyutil.IsTrue(agentResult["interrupted"]) || !anyutil.IsTrue(agentResult["partial"]) {
 		return false
 	}
 	errorText := ""
-	if v := agentResult["error"]; pyrepr.Truthy(v) {
-		errorText = strings.TrimSpace(pyrepr.Str(v))
+	if v := agentResult["error"]; anyutil.IsTrue(v) {
+		errorText = strings.TrimSpace(anyutil.String(v))
 	}
 	if !strings.Contains(strings.ToLower(errorText), "remained incomplete after") {
 		return false
 	}
 	finalResponse := ""
-	if v := agentResult["final_response"]; pyrepr.Truthy(v) {
-		finalResponse = strings.TrimSpace(pyrepr.Str(v))
+	if v := agentResult["final_response"]; anyutil.IsTrue(v) {
+		finalResponse = strings.TrimSpace(anyutil.String(v))
 	}
 	return finalResponse == "" || finalResponse == errorText
 }
 
 // True only when a gateway turn really completed, so the durable resume marker may clear
 func shouldClearResumePendingAfterTurn(agentResult map[string]any) bool {
-	if agentResult == nil || pyrepr.Truthy(agentResult["interrupted"]) {
+	if agentResult == nil || anyutil.IsTrue(agentResult["interrupted"]) {
 		return false
 	}
-	if pyrepr.Truthy(agentResult["failed"]) || pyrepr.Truthy(agentResult["partial"]) || pyrepr.Truthy(agentResult["error"]) {
+	if anyutil.IsTrue(agentResult["failed"]) || anyutil.IsTrue(agentResult["partial"]) || anyutil.IsTrue(agentResult["error"]) {
 		return false
 	}
 	completed, present := agentResult["completed"]
@@ -204,15 +203,15 @@ func normalizeEmptyAgentResponse(ctx context.Context, agentResult map[string]any
 		return response
 	}
 	t := func(key string, kwargs map[string]any) string { return i18n.T(ctx, key, "", kwargs) }
-	if pyrepr.Truthy(agentResult["failed"]) {
+	if anyutil.IsTrue(agentResult["failed"]) {
 		var errorDetail any = agentResult["error"]
-		if !pyrepr.Truthy(errorDetail) {
+		if !anyutil.IsTrue(errorDetail) {
 			errorDetail = t("gateway.shared.unknown_error", nil)
 		}
-		errorStr := strings.ToLower(pyrepr.Str(errorDetail))
+		errorStr := strings.ToLower(anyutil.String(errorDetail))
 		failureReason := ""
-		if v := agentResult["failure_reason"]; pyrepr.Truthy(v) {
-			failureReason = pyrepr.Str(v)
+		if v := agentResult["failure_reason"]; anyutil.IsTrue(v) {
+			failureReason = anyutil.String(v)
 		}
 		if strings.HasPrefix(failureReason, "session_persistence_failed") || strings.Contains(errorStr, "session storage") {
 			if strings.HasSuffix(failureReason, ":disk") || strings.Contains(errorStr, "disk") {
@@ -223,17 +222,17 @@ func normalizeEmptyAgentResponse(ctx context.Context, agentResult map[string]any
 		if isOverflow {
 			return contextOverflowReply(ctx)
 		}
-		detail := []rune(pyrepr.Str(errorDetail))
+		detail := []rune(anyutil.String(errorDetail))
 		pkgLog().Warn(fmt.Sprintf("Agent turn failed; reply sanitized for chat. Detail: %s", string(detail[:min(len(detail), 500)])))
 		return t("gateway.errors.generic_failed", nil)
 	}
 	apiCalls := 0
-	if v := agentResult["api_calls"]; pyrepr.Truthy(v) {
-		if n, err := pyint.Int64(v); err == nil {
+	if v := agentResult["api_calls"]; anyutil.IsTrue(v) {
+		if n, err := anyutil.ToInt(v); err == nil {
 			apiCalls = int(n)
 		}
 	}
-	if pyrepr.Truthy(agentResult["interrupted"]) {
+	if anyutil.IsTrue(agentResult["interrupted"]) {
 		if apiCalls == 0 {
 			return t("gateway.errors.interrupted_before_start", nil)
 		}
@@ -243,14 +242,14 @@ func normalizeEmptyAgentResponse(ctx context.Context, agentResult map[string]any
 		if isGatewayHiddenReasoningIncompleteTurn(agentResult) {
 			return ""
 		}
-		if pyrepr.Truthy(agentResult["partial"]) {
+		if anyutil.IsTrue(agentResult["partial"]) {
 			err := t("gateway.errors.processing_incomplete", nil)
-			if v := agentResult["error"]; pyrepr.Truthy(v) {
-				err = pyrepr.Str(v)
+			if v := agentResult["error"]; anyutil.IsTrue(v) {
+				err = anyutil.String(v)
 			}
 			failureReason := ""
-			if v := agentResult["failure_reason"]; pyrepr.Truthy(v) {
-				failureReason = pyrepr.Str(v)
+			if v := agentResult["failure_reason"]; anyutil.IsTrue(v) {
+				failureReason = anyutil.String(v)
 			}
 			if agent.SiteFailureCodes[failureReason] && strings.TrimSpace(err) != "" && !looksLikeGatewayProviderError(err) {
 				if strings.HasPrefix(err, "⚠️") {
@@ -269,7 +268,7 @@ func normalizeEmptyAgentResponse(ctx context.Context, agentResult map[string]any
 		}
 		return t("gateway.errors.no_response", nil)
 	}
-	if apiCalls == 0 && !pyrepr.Truthy(agentResult["partial"]) {
+	if apiCalls == 0 && !anyutil.IsTrue(agentResult["partial"]) {
 		return t("gateway.errors.previous_turn_cleanup", nil)
 	}
 	return response

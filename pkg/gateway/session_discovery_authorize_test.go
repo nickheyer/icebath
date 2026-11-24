@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDiscoveryAuthorizesBeforeScanning(t *testing.T) {
@@ -29,17 +29,17 @@ func TestDiscoveryAuthorizesBeforeScanning(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, method := range []string{"commands.catalog", "complete.slash"} {
-			params := pyjson.NewObject()
+			params := jsonutil.NewObject()
 			if method == "complete.slash" {
 				params.Set("text", "/probe")
 			}
-			reply, err := connection.Dispatch(ctx, pyjson.ObjectOf("id", int64(1), "method", method, "params", params))
+			reply, err := connection.Dispatch(ctx, jsonutil.ObjectOf("id", int64(1), "method", method, "params", params))
 			if err != nil {
 				t.Fatalf("%v %s: %v", identity, method, err)
 			}
-			refusal, _ := reply.GetOr("error", nil).(*pyjson.Object)
-			if refusal == nil || refusal.GetOr("message", nil) != "permission_denied" {
-				text, _ := pyjson.Dumps(reply)
+			refusal, _ := reply.ValueOr("error", nil).(*jsonutil.Object)
+			if refusal == nil || refusal.ValueOr("message", nil) != "permission_denied" {
+				text, _ := jsonutil.Encode(reply)
 				t.Fatalf("%v %s = %s", identity, method, text)
 			}
 		}

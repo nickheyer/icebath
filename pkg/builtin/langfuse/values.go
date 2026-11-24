@@ -8,9 +8,8 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One dict entry in iteration order
@@ -19,24 +18,21 @@ type item struct {
 	val any
 }
 
-// Ordered dict literal from alternating string keys and values
-func obj(pairs ...any) *pyjson.Object { return pyjson.ObjectOf(pairs...) }
-
-// Entries of a dict value in Python iteration order, plain maps in sorted key order
+// Entries of a dict value, an object in insertion order and plain maps in sorted key order
 func dictItems(v any) ([]item, bool) {
 	switch t := v.(type) {
 	case nil:
 		return nil, false
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return nil, false
 		}
-		out := make([]item, 0, len(t.Keys))
-		for _, k := range t.Keys {
-			out = append(out, item{k, t.Vals[k]})
+		out := make([]item, 0, t.Len())
+		for k, val := range t.All() {
+			out = append(out, item{k, val})
 		}
 		return out, true
-	case pyjson.Object:
+	case jsonutil.Object:
 		return dictItems(&t)
 	case map[string]any:
 		keys := make([]string, 0, len(t))
@@ -47,12 +43,6 @@ func dictItems(v any) ([]item, bool) {
 		out := make([]item, 0, len(keys))
 		for _, k := range keys {
 			out = append(out, item{k, t[k]})
-		}
-		return out, true
-	case pyrepr.Mapping:
-		var out []item
-		for k, val := range t.PyItems() {
-			out = append(out, item{pyrepr.Str(k), val})
 		}
 		return out, true
 	}
@@ -72,7 +62,7 @@ func dictItems(v any) ([]item, bool) {
 // Value under key of a dict value and whether the key is present
 func dictGet(v any, key string) (any, bool) {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return nil, false
 		}
@@ -118,7 +108,7 @@ func listItems(v any) ([]any, bool) {
 			out[i] = m
 		}
 		return out, true
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		out := make([]any, len(t))
 		for i, o := range t {
 			out[i] = o
@@ -224,12 +214,6 @@ func toInt(v any) int {
 	return 0
 }
 
-// Python truthiness of a value
-func truthy(v any) bool { return pyrepr.Truthy(v) }
-
-// Python str of a value
-func pyStr(v any) string { return pyrepr.Str(v) }
-
 // Attribute of an object the agent hands over as a dict or struct, nil when absent
 func getattr(v any, name string) any {
 	if v == nil {
@@ -278,7 +262,7 @@ func structVars(v any) (any, bool) {
 	if err != nil {
 		return nil, false
 	}
-	decoded, err := pyjson.Loads(string(raw))
+	decoded, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil, false
 	}

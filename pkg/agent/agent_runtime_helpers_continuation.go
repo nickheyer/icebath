@@ -6,7 +6,6 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -64,7 +63,7 @@ func looksLikeDegenerateFinal(text string, userMessage any) bool {
 	anyAlpha, asciiAlnum := false, false
 	for _, ch := range r {
 		anyAlpha = anyAlpha || unicode.IsLetter(ch)
-		asciiAlnum = asciiAlnum || (ch <= unicode.MaxASCII && pystr.IsAlnum(ch))
+		asciiAlnum = asciiAlnum || (ch <= unicode.MaxASCII && (unicode.IsLetter(ch) || unicode.IsNumber(ch)))
 	}
 	if !anyAlpha || asciiAlnum {
 		return false

@@ -1,14 +1,13 @@
 package skills
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
 )
 
 // One AST deep scan hit, the (file, line, pattern_id, description) tuple of tools/skills_ast_audit.py
@@ -40,14 +39,10 @@ func astIsImportlib(name string) bool {
 	return name == "importlib" || strings.HasPrefix(name, "importlib.")
 }
 
-// Findings of one source text, none on a syntax, value or recursion error, MemoryError propagates as a panic
+// Findings of one source text, none when it does not parse, nests past the parser limit or runs past the recursion limit
 func astScanSource(content, relPath string) []ASTFinding {
-	tree, err := pyast.Parse(content)
+	tree, err := pythonutil.Parse(content)
 	if err != nil {
-		var le *pyast.LimitError
-		if errors.As(err, &le) && le.Class == "MemoryError" {
-			panic(err)
-		}
 		return nil
 	}
 	s := &astScanner{rel: relPath}
@@ -61,7 +56,7 @@ type astScanner struct {
 }
 
 // Pattern hits of one node in the order the NodeVisitor methods append them
-func astNodeHits(n *pyast.Node) [][2]string {
+func astNodeHits(n *pythonutil.Node) [][2]string {
 	var hits [][2]string
 	switch n.Type {
 	case "Call":
@@ -95,7 +90,7 @@ func astNodeHits(n *pyast.Node) [][2]string {
 }
 
 // Pre-order visit counting visitor, hit and iter_fields frames, false once one passes the recursion limit
-func (s *astScanner) visit(n *pyast.Node, frames int) bool {
+func (s *astScanner) visit(n *pythonutil.Node, frames int) bool {
 	frames += 2
 	if frames > astScanRecursionLimit {
 		return false
@@ -105,7 +100,7 @@ func (s *astScanner) visit(n *pyast.Node, frames int) bool {
 			if frames+1 > astScanRecursionLimit {
 				return false
 			}
-			s.findings = append(s.findings, ASTFinding{File: s.rel, Line: n.Lineno, PatternID: h[0], Description: h[1]})
+			s.findings = append(s.findings, ASTFinding{File: s.rel, Line: n.Line, PatternID: h[0], Description: h[1]})
 		}
 		if frames++; frames > astScanRecursionLimit {
 			return false
@@ -114,7 +109,7 @@ func (s *astScanner) visit(n *pyast.Node, frames int) bool {
 	if frames+1 > astScanRecursionLimit {
 		return false
 	}
-	for _, c := range pyast.IterChildNodes(n) {
+	for c := range pythonutil.ChildNodes(n) {
 		if !s.visit(c, frames) {
 			return false
 		}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Puts the Graph seams of the pipeline back once the test ends
@@ -38,7 +38,7 @@ func noCallRecord(context.Context, graphClient, *TeamsMeetingRef, string, bool) 
 	return nil, nil
 }
 
-func testArtifact(t *testing.T, kind, id string, displayName, downloadURL any, metadata *pyjson.Object) *MeetingArtifact {
+func testArtifact(t *testing.T, kind, id string, displayName, downloadURL any, metadata *jsonutil.Object) *MeetingArtifact {
 	t.Helper()
 	a, err := newMeetingArtifact(kind, id, displayName, nil, nil, downloadURL, nil, nil, nil, metadata)
 	if err != nil {
@@ -60,7 +60,7 @@ func testPipeline(t *testing.T, config any) (*TeamsMeetingPipeline, *TeamsPipeli
 	return pipeline, store
 }
 
-func meetingNotification(id, changeType, resource string, resourceData *pyjson.Object) *pyjson.Object {
+func meetingNotification(id, changeType, resource string, resourceData *jsonutil.Object) *jsonutil.Object {
 	return obj("id", id, "changeType", changeType, "resource", resource, "resourceData", resourceData)
 }
 
@@ -101,7 +101,7 @@ func TestTeamsMeetingPipelineTranscriptFirstPathPersistsStateAndSkipsRecording(t
 
 type fakeNotionWriter struct{}
 
-func (fakeNotionWriter) WriteSummary(_ context.Context, _ *TeamsMeetingSummaryPayload, _, existingRecord *pyjson.Object) (*pyjson.Object, error) {
+func (fakeNotionWriter) WriteSummary(_ context.Context, _ *TeamsMeetingSummaryPayload, _, existingRecord *jsonutil.Object) (*jsonutil.Object, error) {
 	var pageID any = "page-1"
 	if existingRecord != nil && existingRecord.Len() > 0 {
 		pageID = get(existingRecord, "page_id")
@@ -120,7 +120,7 @@ func TestTeamsMeetingPipelineRecordingFallbackUsesSTTAndUpdatesSinkRecords(t *te
 		return []*MeetingArtifact{testArtifact(t, "recording", "rec-1", "../../nested/recording.mp4", "https://files.example/recording.mp4", nil)}, nil
 	}
 	var downloadedTargets []string
-	pipelineDownloadRecordingArtifact = func(_ context.Context, _ graphClient, _ *TeamsMeetingRef, _ *MeetingArtifact, destination string) (*pyjson.Object, error) {
+	pipelineDownloadRecordingArtifact = func(_ context.Context, _ graphClient, _ *TeamsMeetingRef, _ *MeetingArtifact, destination string) (*jsonutil.Object, error) {
 		downloadedTargets = append(downloadedTargets, destination)
 		if err := os.WriteFile(destination, []byte("video-bytes"), 0o644); err != nil {
 			return nil, err
@@ -142,7 +142,7 @@ func TestTeamsMeetingPipelineRecordingFallbackUsesSTTAndUpdatesSinkRecords(t *te
 			Confidence: "medium", ConfidenceNotes: "Generated from STT fallback.", SourceArtifacts: artifacts}, nil
 	}
 	pipeline.NotionWriter = fakeNotionWriter{}
-	pipeline.TeamsSender = SinkFn(func(_ context.Context, _ *TeamsMeetingSummaryPayload, _, existingRecord *pyjson.Object) (*pyjson.Object, error) {
+	pipeline.TeamsSender = SinkFn(func(_ context.Context, _ *TeamsMeetingSummaryPayload, _, existingRecord *jsonutil.Object) (*jsonutil.Object, error) {
 		var messageID any = "msg-1"
 		if existingRecord != nil && existingRecord.Len() > 0 {
 			messageID = get(existingRecord, "message_id")

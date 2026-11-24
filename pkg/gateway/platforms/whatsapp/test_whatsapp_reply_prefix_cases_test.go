@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestBridgeEnvironmentReplyPrefixReachesBridgeWithExistingPrecedence(t *testing.T) {
@@ -51,7 +50,7 @@ func TestReadReceiptPolicyOrderingAcceptedReceiptKeyIsSentToBridge(t *testing.T)
 	a.httpSession = &http.Client{}
 	key := map[string]any{"id": "incoming-1", "remoteJid": "120363001234567890@g.us", "participant": "15550001111@s.whatsapp.net", "fromMe": false}
 	raw, _ := json.Marshal(map[string]any{"readReceiptKey": key})
-	data, _ := pyjson.LoadsDict(string(raw))
+	data, _ := jsonutil.DecodeObject(string(raw))
 	a.sendReadReceipt(context.Background(), data)
 	if path != "/read" || !reflect.DeepEqual(body, map[string]any{"key": key}) {
 		t.Fatalf("path = %q body = %v", path, body)

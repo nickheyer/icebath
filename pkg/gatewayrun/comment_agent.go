@@ -5,10 +5,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Model and provider credentials of a comment agent turn, resolved the way gateway message handling resolves them
@@ -50,7 +49,7 @@ func RunCommentAgent(ctx context.Context, prompt string, toolsets []any, onRunti
 	}
 	text := func(key string) string {
 		if v := kwargs[key]; v != nil {
-			return pyrepr.Str(v)
+			return anyutil.String(v)
 		}
 		return ""
 	}
@@ -84,7 +83,7 @@ func RunCommentAgent(ctx context.Context, prompt string, toolsets []any, onRunti
 	if s, ok := result["final_response"].(string); ok {
 		run.FinalResponse = s
 	}
-	if n, err := pyint.Int64(result["api_calls"]); err == nil {
+	if n, err := anyutil.ToInt(result["api_calls"]); err == nil {
 		run.APICalls = int(n)
 	}
 	if msgs, ok := result["messages"].([]map[string]any); ok {

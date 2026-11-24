@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Owner and segment ids of one local reset lineage
@@ -47,11 +47,11 @@ func localLineageIndex(ctx context.Context, conn SQLiteConn) (localLineageIndexV
 		return out, err
 	}
 	for _, row := range rows {
-		decoded, err := pyjson.Loads(pyStr(rowValue(row, "value")))
+		decoded, err := jsonutil.Decode(pyStr(rowValue(row, "value")))
 		if err != nil {
 			return out, err
 		}
-		receipt, _ := decoded.(*pyjson.Object)
+		receipt, _ := decoded.(*jsonutil.Object)
 		owner, ok := rowValue(receipt, "session_id").(string)
 		rawLineage, _ := rowValue(receipt, "lineage").([]any)
 		lineage := make([]string, 0, len(rawLineage))
@@ -181,7 +181,7 @@ func (d *SessionDB) excludeSupersededSegments(ctx context.Context, whereClauses 
 			ids = append(ids, id)
 		}
 		sort.Strings(ids)
-		encoded, err := pyjson.Dumps(stringsToAny(ids))
+		encoded, err := jsonutil.Encode(stringsToAny(ids))
 		if err != nil {
 			return nil, err
 		}
@@ -192,7 +192,7 @@ func (d *SessionDB) excludeSupersededSegments(ctx context.Context, whereClauses 
 }
 
 // Names every segment of a local conversation on its representative row as lineage ids
-func annotateLocalLineages(sessions []*pyjson.Object, heads map[string]localLineageHead) []*pyjson.Object {
+func annotateLocalLineages(sessions []*jsonutil.Object, heads map[string]localLineageHead) []*jsonutil.Object {
 	for _, row := range sessions {
 		key := rowValue(row, "_lineage_root_id")
 		if !pyTruthy(key) {

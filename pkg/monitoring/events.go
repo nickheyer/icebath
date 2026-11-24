@@ -3,12 +3,12 @@ package monitoring
 import (
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Event is a typed monitoring event whose dict form leads with its event name in wire order
 type Event interface {
-	ToDict() *pyjson.Object
+	ToDict() *jsonutil.Object
 }
 
 // GatewayHealthEvent is a content free gateway health snapshot or lifecycle event
@@ -83,8 +83,8 @@ func opt[T any](p *T) any {
 }
 
 // Ordered pairs into an object led by the event name
-func eventDict(event string, kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func eventDict(event string, kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("event", event)
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
@@ -92,7 +92,7 @@ func eventDict(event string, kv ...any) *pyjson.Object {
 	return o
 }
 
-func (e GatewayHealthEvent) ToDict() *pyjson.Object {
+func (e GatewayHealthEvent) ToDict() *jsonutil.Object {
 	return eventDict("gateway_health", "name", e.Name, "gateway_state", opt(e.GatewayState), "old_state", opt(e.OldState),
 		"new_state", opt(e.NewState), "exit_reason", opt(e.ExitReason), "restart_requested", opt(e.RestartRequested),
 		"active_agents", e.ActiveAgents, "gateway_busy", e.GatewayBusy, "gateway_drainable", e.GatewayDrainable,
@@ -101,14 +101,14 @@ func (e GatewayHealthEvent) ToDict() *pyjson.Object {
 		"pid", e.PID, "ts_ns", e.TsNS)
 }
 
-func (e GatewayDiagnosticEvent) ToDict() *pyjson.Object {
+func (e GatewayDiagnosticEvent) ToDict() *jsonutil.Object {
 	return eventDict("gateway_diagnostic", "name", e.Name, "subsystem", e.Subsystem, "error_class", e.ErrorClass,
 		"error_code", opt(e.ErrorCode), "platform", opt(e.Platform), "old_state", opt(e.OldState), "new_state",
 		opt(e.NewState), "profile", opt(e.Profile), "version", opt(e.Version), "severity", e.Severity, "ts_ns", e.TsNS,
 		"source_logger", opt(e.SourceLogger))
 }
 
-func (e CronExecutionEvent) ToDict() *pyjson.Object {
+func (e CronExecutionEvent) ToDict() *jsonutil.Object {
 	return eventDict("cron_execution", "status", e.Status, "job_key", e.JobKey, "source", e.Source, "duration_ms",
 		opt(e.DurationMS), "delivery_outcome", opt(e.DeliveryOutcome), "error_class", opt(e.ErrorClass), "ts_ns", e.TsNS)
 }

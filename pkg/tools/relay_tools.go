@@ -10,9 +10,9 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const relayToolLoopError = "Synchronous Icebath Relay tool execution cannot run on an active event-loop thread"
@@ -32,7 +32,7 @@ func relayToolPipeline(ctx context.Context, _ *Env, name string, args map[string
 	}
 	text, isText := value.(string)
 	if !isText {
-		return "", nil, fmt.Errorf("relay tool execution answered %s where the tool result text was due", pyrepr.TypeName(value))
+		return "", nil, fmt.Errorf("relay tool execution answered %s where the tool result text was due", anyutil.Kind(value))
 	}
 	return text, final, nil
 }
@@ -52,7 +52,7 @@ func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any,
 	var hasValue bool
 	var rawValue, rawJSON any
 	var callbackErr error
-	callbackContext := pyctx.CopyContext(ctx)
+	callbackContext := ctxutil.CopyStore(ctx)
 	invoke := func(c context.Context, next any) (any, error) {
 		final, ok := next.(map[string]any)
 		if !ok {
@@ -61,7 +61,7 @@ func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any,
 		mu.Lock()
 		observed = final
 		mu.Unlock()
-		result, err := callback(RelayManagedCallbackGuard(pyctx.With(c, callbackContext.Copy())), final)
+		result, err := callback(RelayManagedCallbackGuard(ctxutil.WithStore(c, callbackContext.Copy())), final)
 		if err != nil {
 			mu.Lock()
 			callbackErr = err
@@ -113,7 +113,7 @@ func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any,
 	}
 	result, ok := managed.(*RelayToolExecutionResult)
 	if !ok || result == nil {
-		return nil, nil, relayAttributeError(pyrepr.TypeName(managed), "result")
+		return nil, nil, relayAttributeError(anyutil.Kind(managed), "result")
 	}
 	if hv && relayToolJSONEqual(result.Result, encoded) {
 		return value, final, nil
@@ -121,7 +121,7 @@ func RelayExecuteTool(ctx context.Context, toolName string, args map[string]any,
 	if s, ok := result.Result.(string); ok {
 		return s, final, nil
 	}
-	out, err := pyjson.Dumps(relayToolJSONable(result.Result), pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(relayToolJSONable(result.Result))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -150,8 +150,8 @@ func relayToolJSONable(value any) any {
 			out[i] = relayToolJSONable(item)
 		}
 		return out
-	case *pyjson.Object:
-		return relayToolJSONable(pyjson.Plain(v))
+	case *jsonutil.Object:
+		return relayToolJSONable(jsonutil.Plain(v))
 	}
 	rv := reflect.ValueOf(value)
 	switch rv.Kind() {
@@ -162,12 +162,12 @@ func relayToolJSONable(value any) any {
 		out := make(map[string]any, rv.Len())
 		iter := rv.MapRange()
 		for iter.Next() {
-			out[pyrepr.Str(iter.Key().Interface())] = relayToolJSONable(iter.Value().Interface())
+			out[anyutil.String(iter.Key().Interface())] = relayToolJSONable(iter.Value().Interface())
 		}
 		return out
 	case reflect.Slice, reflect.Array:
 		if rv.Type().Elem().Kind() == reflect.Uint8 {
-			return pyrepr.Str(value)
+			return anyutil.String(value)
 		}
 		out := make([]any, rv.Len())
 		for i := range out {
@@ -187,7 +187,7 @@ func relayToolJSONable(value any) any {
 	if attributes, ok := relayToolVars(rv); ok {
 		return relayToolJSONable(attributes)
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Every field of a struct value as an attribute dict, false for values without attributes

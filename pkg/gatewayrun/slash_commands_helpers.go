@@ -12,9 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Live running agent of the session, else its cached one, never the pending sentinel
@@ -78,7 +78,7 @@ func (r *GatewayRunner) checkpointManager(ctx context.Context, source *gateway.S
 		cfg = gateway.LoadGatewayConfigMap(ctx, "")
 	}
 	cp := gateway.CheckpointAgentKwargs(cfg)
-	if !pyrepr.Truthy(cp["checkpoints_enabled"]) {
+	if !anyutil.IsTrue(cp["checkpoints_enabled"]) {
 		return nil, nil
 	}
 	options, err := tools.CheckpointManagerOptionsFromKwargs(true, cp)

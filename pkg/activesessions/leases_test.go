@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registry file of a home
@@ -44,7 +44,7 @@ func backdateLeases(t *testing.T, homes ...string) {
 }
 
 // Lease ids of entries in order
-func leaseIDs(entries []*pyjson.Object) []string {
+func leaseIDs(entries []*jsonutil.Object) []string {
 	ids := []string{}
 	for _, e := range entries {
 		ids = append(ids, leaseIDOf(e))
@@ -53,10 +53,10 @@ func leaseIDs(entries []*pyjson.Object) []string {
 }
 
 // Session ids of entries in order
-func sessionIDs(entries []*pyjson.Object) []string {
+func sessionIDs(entries []*jsonutil.Object) []string {
 	ids := []string{}
 	for _, e := range entries {
-		ids = append(ids, e.GetOr("session_id", nil).(string))
+		ids = append(ids, e.ValueOr("session_id", nil).(string))
 	}
 	return ids
 }
@@ -94,7 +94,7 @@ func mustAcquire(t *testing.T, sessionID, surface string, cfg map[string]any, re
 }
 
 // Snapshot of the active registry that must be readable
-func mustSnapshot(t *testing.T, registryHome string) []*pyjson.Object {
+func mustSnapshot(t *testing.T, registryHome string) []*jsonutil.Object {
 	t.Helper()
 	entries, err := RegistrySnapshot(context.Background(), registryHome, false)
 	if err != nil {
@@ -285,7 +285,7 @@ func TestReleaseOrphanedLeasesReclaimsOnlyUnownedOwnPidEntries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entries = append(entries, pyjson.ObjectOf("lease_id", "elsewhere", "session_id", "other", "surface", "cli", "pid", int64(os.Getpid())))
+	entries = append(entries, jsonutil.ObjectOf("lease_id", "elsewhere", "session_id", "other", "surface", "cli", "pid", int64(os.Getpid())))
 	if err := writeEntries(statePathOf(""), entries); err != nil {
 		t.Fatal(err)
 	}
@@ -340,10 +340,10 @@ func TestReleaseOrphanedLeasesSweepsProfileRuntimeRegistries(t *testing.T) {
 
 func TestDropSelfOrphansSparesForeignAndVouchedLeases(t *testing.T) {
 	own := int64(os.Getpid())
-	entries := []*pyjson.Object{
-		pyjson.ObjectOf("lease_id", "orphan", "pid", own),
-		pyjson.ObjectOf("lease_id", "live", "pid", own),
-		pyjson.ObjectOf("lease_id", "foreign", "pid", own+1),
+	entries := []*jsonutil.Object{
+		jsonutil.ObjectOf("lease_id", "orphan", "pid", own),
+		jsonutil.ObjectOf("lease_id", "live", "pid", own),
+		jsonutil.ObjectOf("lease_id", "foreign", "pid", own+1),
 	}
 	if got := dropSelfOrphans(entries, nil); !slices.Equal(got, entries) {
 		t.Fatalf("nil vouch dropped entries: %v", leaseIDs(got))
@@ -433,12 +433,12 @@ func TestStrictRegistryRejectsStructurallyInvalidEntries(t *testing.T) {
 	h := filepath.Join(t.TempDir(), ".icebath")
 	t.Setenv(home.EnvHome, h)
 	statePath := filepath.Join(h, "runtime", "active_sessions.json")
-	base := func() *pyjson.Object {
-		return pyjson.ObjectOf("lease_id", "lease-1", "session_id", "session-1", "surface", "tui", "pid", int64(os.Getpid()), "track_liveness", true)
+	base := func() *jsonutil.Object {
+		return jsonutil.ObjectOf("lease_id", "lease-1", "session_id", "session-1", "surface", "tui", "pid", int64(os.Getpid()), "track_liveness", true)
 	}
-	without := func(key string) *pyjson.Object { o := base(); o.Delete(key); return o }
-	with := func(key string, v any) *pyjson.Object { o := base(); o.Set(key, v); return o }
-	invalid := []*pyjson.Object{
+	without := func(key string) *jsonutil.Object { o := base(); o.Delete(key); return o }
+	with := func(key string, v any) *jsonutil.Object { o := base(); o.Set(key, v); return o }
+	invalid := []*jsonutil.Object{
 		without("lease_id"),
 		with("lease_id", ""),
 		without("session_id"),
@@ -452,7 +452,7 @@ func TestStrictRegistryRejectsStructurallyInvalidEntries(t *testing.T) {
 		with("process_start_time", "nan"),
 	}
 	for _, entry := range invalid {
-		if err := writeEntries(statePath, []*pyjson.Object{entry}); err != nil {
+		if err := writeEntries(statePath, []*jsonutil.Object{entry}); err != nil {
 			t.Fatal(err)
 		}
 		original := readText(t, statePath)
@@ -470,9 +470,9 @@ func TestStrictRegistryRejectsDuplicateLeaseIds(t *testing.T) {
 			t.Setenv(home.EnvHome, h)
 			statePath := filepath.Join(h, "runtime", "active_sessions.json")
 			pid := int64(os.Getpid())
-			if err := writeEntries(statePath, []*pyjson.Object{
-				pyjson.ObjectOf("lease_id", "duplicate-lease", "session_id", "session-a", "surface", "tui", "pid", pid, "track_liveness", true),
-				pyjson.ObjectOf("lease_id", "duplicate-lease", "session_id", tc.second, "surface", "tui", "pid", pid, "track_liveness", true),
+			if err := writeEntries(statePath, []*jsonutil.Object{
+				jsonutil.ObjectOf("lease_id", "duplicate-lease", "session_id", "session-a", "surface", "tui", "pid", pid, "track_liveness", true),
+				jsonutil.ObjectOf("lease_id", "duplicate-lease", "session_id", tc.second, "surface", "tui", "pid", pid, "track_liveness", true),
 			}); err != nil {
 				t.Fatal(err)
 			}
@@ -521,8 +521,8 @@ func TestLivenessGuardRejectsUnknownPidState(t *testing.T) {
 	h := filepath.Join(t.TempDir(), ".icebath")
 	t.Setenv(home.EnvHome, h)
 	statePath := filepath.Join(h, "runtime", "active_sessions.json")
-	if err := writeEntries(statePath, []*pyjson.Object{
-		pyjson.ObjectOf("lease_id", "unknown-owner", "session_id", "session-1", "surface", "tui", "pid", int64(12345), "track_liveness", true),
+	if err := writeEntries(statePath, []*jsonutil.Object{
+		jsonutil.ObjectOf("lease_id", "unknown-owner", "session_id", "session-1", "surface", "tui", "pid", int64(12345), "track_liveness", true),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -550,8 +550,8 @@ func unknownSiblingRegistry(t *testing.T) (string, string) {
 	h := filepath.Join(t.TempDir(), ".icebath")
 	t.Setenv(home.EnvHome, h)
 	statePath := filepath.Join(h, "runtime", "active_sessions.json")
-	if err := writeEntries(statePath, []*pyjson.Object{
-		pyjson.ObjectOf("lease_id", "stale-sibling", "session_id", "old-chat", "surface", "tui", "pid", int64(1), "process_start_time", 1234.5, "track_liveness", true),
+	if err := writeEntries(statePath, []*jsonutil.Object{
+		jsonutil.ObjectOf("lease_id", "stale-sibling", "session_id", "old-chat", "surface", "tui", "pid", int64(1), "process_start_time", 1234.5, "track_liveness", true),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -610,7 +610,7 @@ func TestUnknownSiblingDoesNotBlockGuardedReleaseOrOrphanSweep(t *testing.T) {
 }
 
 // Write seam that fails every registry rewrite
-func failingWrite(string, []*pyjson.Object) error { return errors.New("replace failed") }
+func failingWrite(string, []*jsonutil.Object) error { return errors.New("replace failed") }
 
 func TestLivenessReleaseFailureIsRetryable(t *testing.T) {
 	t.Setenv(home.EnvHome, filepath.Join(t.TempDir(), ".icebath"))
@@ -645,7 +645,7 @@ func TestLivenessTransferUpsertsMissingEntryWithoutConsumingANewSlot(t *testing.
 		t.Fatalf("transfer %v %v", ok, err)
 	}
 	snapshot := mustSnapshot(t, "")
-	if len(snapshot) != 1 || leaseIDOf(snapshot[0]) != lease.LeaseID || snapshot[0].GetOr("session_id", nil) != "session-new" {
+	if len(snapshot) != 1 || leaseIDOf(snapshot[0]) != lease.LeaseID || snapshot[0].ValueOr("session_id", nil) != "session-new" {
 		t.Fatalf("snapshot %v", sessionIDs(snapshot))
 	}
 	blocked, limit, err := TryAcquire(context.Background(), "session-other", "tui", cfg, nil, "", true)
@@ -688,7 +688,7 @@ func TestReleaseWinsAgainstTransferWaitingOnSameLeaseLock(t *testing.T) {
 	var releaseBlocked, transferring atomic.Bool
 	var transferSignal sync.Once
 	originalWrite, originalEnter := writeEntries, enterFileLock
-	swap(t, &writeEntries, func(path string, entries []*pyjson.Object) error {
+	swap(t, &writeEntries, func(path string, entries []*jsonutil.Object) error {
 		err := originalWrite(path, entries)
 		if releaseBlocked.CompareAndSwap(false, true) {
 			close(releaseWrote)
@@ -787,9 +787,9 @@ func TestSnapshotPrunesAfterLockReleaseAndKeepsConcurrentLease(t *testing.T) {
 	h := filepath.Join(t.TempDir(), ".icebath")
 	statePath, lockPath := leasePaths(context.Background(), h)
 	pid := int64(os.Getpid())
-	if err := writeEntries(statePath, []*pyjson.Object{
-		pyjson.ObjectOf("lease_id", "live-1", "session_id", "s-live", "pid", pid),
-		pyjson.ObjectOf("lease_id", "dead-1", "session_id", "s-dead", "pid", int64(1<<30)),
+	if err := writeEntries(statePath, []*jsonutil.Object{
+		jsonutil.ObjectOf("lease_id", "live-1", "session_id", "s-live", "pid", pid),
+		jsonutil.ObjectOf("lease_id", "dead-1", "session_id", "s-dead", "pid", int64(1<<30)),
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -805,13 +805,13 @@ func TestSnapshotPrunesAfterLockReleaseAndKeepsConcurrentLease(t *testing.T) {
 			t.Error(err)
 			return
 		}
-		if err := writeEntries(statePath, append(current, pyjson.ObjectOf("lease_id", "new-1", "session_id", "s-new", "pid", pid))); err != nil {
+		if err := writeEntries(statePath, append(current, jsonutil.ObjectOf("lease_id", "new-1", "session_id", "s-new", "pid", pid))); err != nil {
 			t.Error(err)
 		}
 	}
 	var acquiredDuringPrune []bool
 	realPrune := pruneDead
-	swap(t, &pruneDead, func(entries []*pyjson.Object, strict bool, targetSessionID *string, targetPid *int) ([]*pyjson.Object, error) {
+	swap(t, &pruneDead, func(entries []*jsonutil.Object, strict bool, targetSessionID *string, targetPid *int) ([]*jsonutil.Object, error) {
 		done := make(chan struct{})
 		go func() { concurrentAcquire(); close(done) }()
 		select {

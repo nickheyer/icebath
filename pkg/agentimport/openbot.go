@@ -14,12 +14,14 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 	_ "modernc.org/sqlite"
 )
 
@@ -43,9 +45,9 @@ var bareStepRe = pyre.MustCompile(`^\d+/\d+$`)
 func FindOpenBotUserData(source string) string {
 	var candidates []string
 	if source != "" {
-		resolved, err := pypath.Resolve(pypath.Expanduser(source))
+		resolved, err := pathutil.Resolve(pathutil.ExpandUser(source))
 		if err != nil {
-			resolved = pypath.Expanduser(source)
+			resolved = pathutil.ExpandUser(source)
 		}
 		candidates = []string{resolved}
 	} else {
@@ -108,8 +110,8 @@ func clockFields(v any) (string, bool) {
 }
 
 // Required key of a schedule object, false when missing
-func need(s *pyjson.Object, key string) (any, bool) {
-	v, ok := s.Vals[key]
+func need(s *jsonutil.Object, key string) (any, bool) {
+	v, ok := s.Get(key)
 	return v, ok
 }
 
@@ -135,15 +137,15 @@ func wallOffset(loc *time.Location, wall time.Time) int {
 }
 
 // ScheduleToCron maps an OpenBot routine schedule to a cron schedule firing at the same instants, false when none fits
-func ScheduleToCron(schedule *pyjson.Object, timezone string) (string, bool) {
+func ScheduleToCron(schedule *jsonutil.Object, timezone string) (string, bool) {
 	if timezone == "" {
 		timezone = "UTC"
 	}
-	zone, err := pydatetime.ZoneInfo(timezone)
+	zone, err := time.LoadLocation(timezone)
 	if err != nil {
-		zone, _ = pydatetime.ZoneInfo("UTC")
+		zone, _ = time.LoadLocation("UTC")
 	}
-	kind, _ := schedule.Vals["kind"].(string)
+	kind, _ := schedule.Value("kind").(string)
 	switch kind {
 	case "hourly":
 		m, ok := need(schedule, "minute")
@@ -194,14 +196,14 @@ func ScheduleToCron(schedule *pyjson.Object, timezone string) (string, bool) {
 		if !ok1 || !ok2 {
 			return "", false
 		}
-		parsed, _, err := pydatetime.ParseISOFormat(pyStr(d) + "T" + pyStr(t))
+		parsed, _, err := timeutil.ParseISOZone(pyStr(d)+"T"+pyStr(t), time.UTC)
 		if err != nil {
 			return "", false
 		}
 		y, mo, dd := parsed.Date()
 		wall := time.Date(y, mo, dd, parsed.Hour(), parsed.Minute(), parsed.Second(), parsed.Nanosecond(), time.UTC)
 		off := wallOffset(zone, wall)
-		return pydatetime.ISOFormat(time.Date(y, mo, dd, parsed.Hour(), parsed.Minute(), parsed.Second(), parsed.Nanosecond(), time.FixedZone("", off))), true
+		return time.Date(y, mo, dd, parsed.Hour(), parsed.Minute(), parsed.Second(), parsed.Nanosecond(), time.FixedZone("", off)).Format(timeutil.RFC3339Micro), true
 	case "advanced":
 		return advancedCron(schedule)
 	}
@@ -209,7 +211,7 @@ func ScheduleToCron(schedule *pyjson.Object, timezone string) (string, bool) {
 }
 
 // Interval kept on its anchor phase when the step divides the hour or day, else an interval from the import
-func intervalCron(schedule *pyjson.Object) (string, bool) {
+func intervalCron(schedule *jsonutil.Object) (string, bool) {
 	a, ok1 := need(schedule, "amount")
 	u, ok2 := need(schedule, "unit")
 	anchorRaw, ok3 := need(schedule, "anchorAt")
@@ -221,7 +223,7 @@ func intervalCron(schedule *pyjson.Object) (string, bool) {
 		return "", false
 	}
 	unit := pyStr(u)
-	parsed, aware, err := pydatetime.ParseISOFormat(strings.ReplaceAll(pyStr(anchorRaw), "Z", "+00:00"))
+	parsed, aware, err := timeutil.ParseISOZone(strings.ReplaceAll(pyStr(anchorRaw), "Z", "+00:00"), time.UTC)
 	if err != nil {
 		return "", false
 	}
@@ -260,7 +262,7 @@ func pyMod(a, b int64) int64 {
 }
 
 // Custom expression as given unless a bare step field would fire more often than in OpenBot
-func customCron(schedule *pyjson.Object) (string, bool) {
+func customCron(schedule *jsonutil.Object) (string, bool) {
 	e, ok := need(schedule, "expression")
 	if !ok {
 		return "", false
@@ -284,8 +286,8 @@ func intList(v any) (string, bool) {
 		for _, r := range t {
 			list = append(list, string(r))
 		}
-	case *pyjson.Object:
-		for _, k := range t.Keys {
+	case *jsonutil.Object:
+		for _, k := range t.Keys() {
 			list = append(list, k)
 		}
 	default:
@@ -303,7 +305,7 @@ func intList(v any) (string, bool) {
 }
 
 // Months, day rule and time rule of an advanced schedule as one cron expression
-func advancedCron(schedule *pyjson.Object) (string, bool) {
+func advancedCron(schedule *jsonutil.Object) (string, bool) {
 	m, ok := need(schedule, "months")
 	if !ok {
 		return "", false
@@ -315,20 +317,20 @@ func advancedCron(schedule *pyjson.Object) (string, bool) {
 	if months == "1,2,3,4,5,6,7,8,9,10,11,12" {
 		months = "*"
 	}
-	days, ok1 := asObject(schedule.Vals["days"])
-	tm, ok2 := asObject(schedule.Vals["time"])
+	days, ok1 := asObject(schedule.Value("days"))
+	tm, ok2 := asObject(schedule.Value("time"))
 	if !ok1 || !ok2 {
 		return "", false
 	}
 	listed := ""
-	if raw, has := days.Vals["days"]; has {
+	if raw, has := days.Get("days"); has {
 		var ok bool
 		if listed, ok = intList(raw); !ok {
 			return "", false
 		}
 	}
 	var dom, dow string
-	switch pyStr(days.Vals["kind"]) {
+	switch pyStr(days.Value("kind")) {
 	case "every-day":
 		dom, dow = "*", "*"
 	case "days-of-week":
@@ -339,12 +341,12 @@ func advancedCron(schedule *pyjson.Object) (string, bool) {
 		return "", false
 	}
 	var clock string
-	tkind, hasKind := tm.Vals["kind"]
+	tkind, hasKind := tm.Get("kind")
 	if !hasKind {
 		return "", false
 	}
 	if pyStr(tkind) == "at-time" {
-		t, has := tm.Vals["time"]
+		t, has := tm.Get("time")
 		if !has {
 			return "", false
 		}
@@ -354,8 +356,8 @@ func advancedCron(schedule *pyjson.Object) (string, bool) {
 		}
 		clock = c
 	} else {
-		unit, has := tm.Vals["unit"]
-		amountRaw, hasAmount := tm.Vals["amount"]
+		unit, has := tm.Get("unit")
+		amountRaw, hasAmount := tm.Get("amount")
 		if !has || !hasAmount {
 			return "", false
 		}
@@ -440,7 +442,7 @@ func openSnapshot(ctx context.Context, database, scratch string) (*sql.DB, *sql.
 			return err
 		}
 		defer conn.Close()
-		return pysqlite.Backup(conn, snap, -1, nil, 0)
+		return sqliteutil.Backup(conn, snap, -1, nil, 0)
 	}
 	escape := strings.NewReplacer("%", "%25", "?", "%3f", "#", "%23")
 	if err := backupFrom("file:" + escape.Replace(filepath.ToSlash(database)) + "?mode=ro"); err != nil {
@@ -451,7 +453,7 @@ func openSnapshot(ctx context.Context, database, scratch string) (*sql.DB, *sql.
 		for _, suffix := range []string{"", "-wal", "-shm"} {
 			part := database + suffix
 			if isFile(part) {
-				if err := pyshutil.Copy2(part, filepath.Join(scratch, filepath.Base(part))); err != nil {
+				if err := fsutil.CopyFile(part, filepath.Join(scratch, filepath.Base(part))); err != nil {
 					return fail(err)
 				}
 			}
@@ -513,7 +515,7 @@ func columnJSON(raw any, def any) any {
 	if !ok || s == "" {
 		return def
 	}
-	v, err := pyjson.Loads(s)
+	v, err := jsonutil.Decode(s)
 	if err != nil {
 		return def
 	}
@@ -528,7 +530,7 @@ func colStr(v any) string { return pyStr(v) }
 
 // The agent's own skill folders, one per name, bundled skills left behind
 func openbotSkills(workspace string) ([]any, error) {
-	found := pyjson.NewObject()
+	found := jsonutil.NewObject()
 	for _, rel := range openbotSkillDirs {
 		root := filepath.Join(workspace, filepath.FromSlash(rel))
 		if !isDir(root) {
@@ -546,44 +548,44 @@ func openbotSkills(workspace string) ([]any, error) {
 		for _, folder := range folders {
 			if isFile(filepath.Join(folder, "SKILL.md")) && !exists(filepath.Join(folder, ".openbot-managed.json")) {
 				name := filepath.Base(folder)
-				if _, has := found.Vals[name]; !has {
-					found.Set(name, pyjson.ObjectOf("name", name, "path", folder))
+				if _, has := found.Get(name); !has {
+					found.Set(name, jsonutil.ObjectOf("name", name, "path", folder))
 				}
 			}
 		}
 	}
 	out := make([]any, 0, found.Len())
-	for _, k := range found.Keys {
-		out = append(out, found.Vals[k])
+	for _, k := range found.Keys() {
+		out = append(out, found.Value(k))
 	}
 	return out, nil
 }
 
 // Key and value pairs OpenBot stores for env vars and headers as one object
-func openbotPairs(raw any) *pyjson.Object {
-	out := pyjson.NewObject()
+func openbotPairs(raw any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	items, ok := columnJSON(raw, []any{}).([]any)
 	if !ok {
 		return out
 	}
 	for _, item := range items {
 		o, ok := asObject(item)
-		if !ok || !truthy(o.Vals["key"]) {
+		if !ok || !truthy(o.Value("key")) {
 			continue
 		}
 		value := ""
-		if v, has := o.Vals["value"]; has {
+		if v, has := o.Get("value"); has {
 			value = pyStr(v)
 		}
-		out.Set(pyStr(o.Vals["key"]), value)
+		out.Set(pyStr(o.Value("key")), value)
 	}
 	return out
 }
 
 // OpenBotData holds the agents as normalized bots, the machine wide MCP servers, their env passthrough names and unreadable rows
 type OpenBotData struct {
-	Agents         []*pyjson.Object
-	MCPServers     *pyjson.Object
+	Agents         []*jsonutil.Object
+	MCPServers     *jsonutil.Object
 	PassthroughFor []string
 	Passthrough    map[string][]string
 	Problems       []string
@@ -602,7 +604,7 @@ func readMCPServers(ctx context.Context, db *sql.Conn, data *OpenBotData) error 
 		if name == "" {
 			continue
 		}
-		entry := pyjson.NewObject()
+		entry := jsonutil.NewObject()
 		if s, _ := row["transport"].(string); s == "http" {
 			url := any("")
 			if colTruthy(row["url"]) {
@@ -622,7 +624,7 @@ func readMCPServers(ctx context.Context, db *sql.Conn, data *OpenBotData) error 
 				entry.Set("cwd", row["working_directory"])
 			}
 		}
-		if !truthy(entry.Vals["url"]) && !truthy(entry.Vals["command"]) {
+		if !truthy(entry.Value("url")) && !truthy(entry.Value("command")) {
 			data.Problems = append(data.Problems, fmt.Sprintf("MCP server %s has no command or URL", name))
 			continue
 		}
@@ -635,8 +637,8 @@ func readMCPServers(ctx context.Context, db *sql.Conn, data *OpenBotData) error 
 					names = append(names, pyStr(n))
 				}
 			}
-		case *pyjson.Object:
-			for _, n := range v.Keys {
+		case *jsonutil.Object:
+			for _, n := range v.Keys() {
 				if n != "" {
 					names = append(names, n)
 				}
@@ -657,7 +659,7 @@ func readMCPServers(ctx context.Context, db *sql.Conn, data *OpenBotData) error 
 }
 
 // One OpenBot routine row as a normalized routine
-func openbotRoutine(r map[string]any) *pyjson.Object {
+func openbotRoutine(r map[string]any) *jsonutil.Object {
 	schedule := columnJSON(r["schedule_json"], nil)
 	timezone := "UTC"
 	if colTruthy(r["timezone"]) {
@@ -693,13 +695,13 @@ func openbotRoutine(r map[string]any) *pyjson.Object {
 	details := ""
 	if !hasCron {
 		if truthy(schedule) {
-			text, _ := pyjson.Dumps(schedule)
+			text, _ := jsonutil.Encode(schedule)
 			details = "OpenBot schedule " + text
 		} else {
 			details = "No schedule: run by hand, a script or a webhook in OpenBot"
 		}
 	}
-	return pyjson.ObjectOf("name", name, "instruction", instruction, "timezone", zone, "paused", !truthy(active),
+	return jsonutil.ObjectOf("name", name, "instruction", instruction, "timezone", zone, "paused", !truthy(active),
 		"trigger", trigger, "schedule_cron", cronExpr, "trigger_details", details)
 }
 
@@ -732,7 +734,7 @@ func ReadOpenBotAgents(ctx context.Context, userData, scratchParent string) (*Op
 		}
 		return nil, err
 	}
-	data := &OpenBotData{MCPServers: pyjson.NewObject(), Passthrough: map[string][]string{}}
+	data := &OpenBotData{MCPServers: jsonutil.NewObject(), Passthrough: map[string][]string{}}
 	agentRows, err := queryRows(ctx, db, "SELECT * FROM projection_agents ORDER BY sort_order")
 	if err != nil {
 		return nil, err
@@ -752,8 +754,8 @@ func ReadOpenBotAgents(ctx context.Context, userData, scratchParent string) (*Op
 			continue
 		}
 		workspace := filepath.Join(userHome(), "OpenBot", "Agents", agentID)
-		if truthy(agent.Vals["workspacePath"]) {
-			workspace = pyStr(agent.Vals["workspacePath"])
+		if truthy(agent.Value("workspacePath")) {
+			workspace = pyStr(agent.Value("workspacePath"))
 		}
 		routineRows, err := queryRows(ctx, db, "SELECT r.*, t.schedule_json FROM projection_agent_routines r LEFT JOIN "+
 			"projection_routine_triggers t ON t.routine_id = r.routine_id WHERE r.agent_id = ? "+
@@ -780,16 +782,16 @@ func ReadOpenBotAgents(ctx context.Context, userData, scratchParent string) (*Op
 			return nil, err
 		}
 		name, title, description := any(agentID), any(""), any("")
-		if truthy(agent.Vals["name"]) {
-			name = agent.Vals["name"]
+		if truthy(agent.Value("name")) {
+			name = agent.Value("name")
 		}
-		if truthy(agent.Vals["title"]) {
-			title = agent.Vals["title"]
+		if truthy(agent.Value("title")) {
+			title = agent.Value("title")
 		}
-		if truthy(agent.Vals["description"]) {
-			description = agent.Vals["description"]
+		if truthy(agent.Value("description")) {
+			description = agent.Value("description")
 		}
-		data.Agents = append(data.Agents, pyjson.ObjectOf("name", name, "title", title, "instructions", description,
+		data.Agents = append(data.Agents, jsonutil.ObjectOf("name", name, "title", title, "instructions", description,
 			"memories", memories, "skills", skills, "routines", routines))
 	}
 	if err := readMCPServers(ctx, db, data); err != nil {
@@ -802,7 +804,7 @@ func ReadOpenBotAgents(ctx context.Context, userData, scratchParent string) (*Op
 func NewOpenBotImporter(ctx context.Context, userData, targetRoot string, o BotOptions) *BotImporter {
 	database := filepath.Join(userData, openbotDatabase)
 	g := newBotImporter(ctx, openbotAgent, "OpenBot", "openbot-imports", []string{database}, targetRoot, o, nil)
-	data := &OpenBotData{MCPServers: pyjson.NewObject(), Passthrough: map[string][]string{}}
+	data := &OpenBotData{MCPServers: jsonutil.NewObject(), Passthrough: map[string][]string{}}
 	g.loadBots = func() []sourcedBot {
 		read, err := ReadOpenBotAgents(ctx, userData, filepath.Join(targetRoot, "cache"))
 		if err != nil {

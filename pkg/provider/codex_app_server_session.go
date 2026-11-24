@@ -1,10 +1,12 @@
 package provider
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -12,10 +14,11 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const codexStderrTailLines = 12
@@ -35,7 +38,7 @@ type CodexTurnResult struct {
 	TurnID             string
 	ThreadID           string
 	SubmittedUserText  *string
-	TokenUsageLast     *pyjson.Object
+	TokenUsageLast     *jsonutil.Object
 	ModelContextWindow int
 	Compacted          bool
 	ShouldRetire       bool
@@ -51,7 +54,7 @@ func cxIDText(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // First primary or fallback value over the object sources that is not None
@@ -89,10 +92,10 @@ func codexNotificationBelongsToTurn(note any, threadID, turnID string) bool {
 		return false
 	}
 	seenThread, seenTurn := codexNotificationScopeIDs(note)
-	if threadID != "" && seenThread != nil && pyrepr.Str(seenThread) != threadID {
+	if threadID != "" && seenThread != nil && anyutil.String(seenThread) != threadID {
 		return false
 	}
-	return !(turnID != "" && seenTurn != nil && pyrepr.Str(seenTurn) != turnID)
+	return !(turnID != "" && seenTurn != nil && anyutil.String(seenTurn) != turnID)
 }
 
 var codexTurnTextPartTypes = map[string]bool{"text": true, "input_text": true}
@@ -117,7 +120,15 @@ func codexImagePartToTurnInput(item any) map[string]any {
 			return map[string]any{"type": "image", "url": text}
 		}
 	}
-	return map[string]any{"type": "localImage", "path": strings.TrimPrefix(text, "file://")}
+	path := text
+	if strings.HasPrefix(text, "file://") {
+		if local, err := urlutil.FilePath(text); err == nil {
+			path = local
+		} else {
+			path = strings.TrimPrefix(text, "file://")
+		}
+	}
+	return map[string]any{"type": "localImage", "path": path}
 }
 
 // The turn start input list and the text the wire echoes back, images riding natively
@@ -137,13 +148,13 @@ func codexBuildTurnInput(userInput any) ([]any, string) {
 					keep = strings.TrimSpace(s) != ""
 				}
 				if keep {
-					texts = append(texts, pyrepr.Str(item))
+					texts = append(texts, anyutil.String(item))
 				}
 				continue
 			}
 			partType, _ := cxGet(item, "type").(string)
 			if codexTurnTextPartTypes[partType] {
-				texts = append(texts, pyrepr.Str(cxOr(cxOr(cxGet(item, "text"), cxGet(item, "content")), "")))
+				texts = append(texts, anyutil.String(cxOr(cxOr(cxGet(item, "text"), cxGet(item, "content")), "")))
 			} else if codexTurnImagePartTypes[partType] {
 				if mapped := codexImagePartToTurnInput(item); mapped != nil {
 					images = append(images, mapped)
@@ -166,7 +177,7 @@ func codexBuildTurnInput(userInput any) ([]any, string) {
 		}
 		return append(items, images...), text
 	}
-	text := pyrepr.Str(userInput)
+	text := anyutil.String(userInput)
 	return []any{map[string]any{"type": "text", "text": text}}, text
 }
 
@@ -214,9 +225,7 @@ type CodexThreadResumeError struct {
 	ThreadID string
 }
 
-func (e *CodexThreadResumeError) PyTypeName() string { return "CodexThreadResumeError" }
-
-// Matches a CodexAppServerError target as the Python subclass does
+// Matches a CodexAppServerError target, a refused resume being an app server error too
 func (e *CodexThreadResumeError) As(target any) bool {
 	if t, ok := target.(**CodexAppServerError); ok {
 		*t = &e.CodexAppServerError
@@ -376,7 +385,7 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 			return "", err
 		}
 	}
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("cwd", s.cwd)
 	params.Set("personality", "none")
 	if s.developerInstructions != "" && strings.TrimSpace(s.developerInstructions) != "" {
@@ -414,17 +423,17 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 		raw := codexExtractThreadID(result)
 		if !cxTruthy(raw) {
 			keys := []string{}
-			if o, ok := result.(*pyjson.Object); ok && o != nil {
-				keys = append(keys, o.Keys...)
+			if o, ok := result.(*jsonutil.Object); ok && o != nil {
+				keys = append(keys, o.Keys()...)
 			} else if m, ok := result.(map[string]any); ok {
 				for k := range m {
 					keys = append(keys, k)
 				}
 			} else {
-				return "", &codexPyError{"AttributeError", fmt.Sprintf("the Codex app server start reply is %s, expected a mapping", errchain.Kind(result))}
+				return "", &codexKindError{"AttributeError", fmt.Sprintf("the Codex app server start reply is %s, expected a mapping", errchain.Kind(result))}
 			}
 			sort.Strings(keys)
-			return "", &CodexAppServerError{Code: -32603, Message: fmt.Sprintf("codex thread/start returned no thread id (payload keys: %s)", pyrepr.Repr(keys))}
+			return "", &CodexAppServerError{Code: -32603, Message: fmt.Sprintf("codex thread/start returned no thread id (payload keys: %s)", anyutil.Quote(keys))}
 		}
 		threadID = cxIDText(raw)
 		s.serviceTierSent = codexTierState{}
@@ -435,10 +444,10 @@ func (s *CodexAppServerSession) EnsureStarted() (string, error) {
 }
 
 // thread/resume of the stored id carrying the current thread start params
-func (s *CodexAppServerSession) resumeThread(client CodexRPCClient, wanted string, params *pyjson.Object) (string, error) {
-	body := pyjson.NewObject()
+func (s *CodexAppServerSession) resumeThread(client CodexRPCClient, wanted string, params *jsonutil.Object) (string, error) {
+	body := jsonutil.NewObject()
 	body.Set("threadId", wanted)
-	for _, k := range params.Keys {
+	for _, k := range params.Keys() {
 		v, _ := params.Get(k)
 		body.Set(k, v)
 	}
@@ -451,7 +460,7 @@ func (s *CodexAppServerSession) resumeThread(client CodexRPCClient, wanted strin
 		return "", err
 	}
 	if got := codexExtractThreadID(result); got != wanted {
-		return "", newCodexThreadResumeError(wanted, fmt.Sprintf("app-server answered with thread %s", pyrepr.Repr(textutil.First(pyrepr.Str(got), 8))))
+		return "", newCodexThreadResumeError(wanted, fmt.Sprintf("app-server answered with thread %q", textutil.First(anyutil.String(got), 8)))
 	}
 	return wanted, nil
 }
@@ -493,7 +502,7 @@ func (s *CodexAppServerSession) RequestSteer(text string) (bool, error) {
 	if turnID == "" || threadID == "" || client == nil {
 		return false, nil
 	}
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("threadId", threadID)
 	params.Set("input", []any{map[string]any{"type": "text", "text": cleaned}})
 	params.Set("expectedTurnId", turnID)
@@ -514,7 +523,7 @@ func (s *CodexAppServerSession) RequestSteer(text string) (bool, error) {
 
 func codexIsTimeout(err error) bool {
 	var t *CodexRequestTimeoutError
-	return errors.As(err, &t) || pyrepr.TypeName(err) == "TimeoutError"
+	return errors.As(err, &t) || errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded)
 }
 
 func codexIsAppServerOrTimeout(err error) bool {
@@ -537,7 +546,7 @@ func (s *CodexAppServerSession) formatErrorWithStderr(prefix string, detail any,
 	case string:
 		excStr = d
 	default:
-		excStr = pyrepr.Str(d)
+		excStr = anyutil.String(d)
 	}
 	base := prefix
 	if excStr != "" {
@@ -724,7 +733,7 @@ func (s *CodexAppServerSession) runTurn(userInput any, opts CodexTurnOptions) (*
 	}
 	inputItems, submitted := codexBuildTurnInput(userInput)
 	result.SubmittedUserText = &submitted
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("threadId", s.threadID)
 	params.Set("input", inputItems)
 	if opts.Model != "" {
@@ -774,7 +783,7 @@ func (s *CodexAppServerSession) runStartedTurn(result *CodexTurnResult, ts any, 
 				break
 			}
 			if !codexNotificationBelongsToTurn(pending, s.threadID, result.TurnID) {
-				pkgLog().Debug(fmt.Sprintf("ignoring foreign codex notification while draining server request: method=%s", pyrepr.Str(cxGet(pending, "method"))))
+				pkgLog().Debug(fmt.Sprintf("ignoring foreign codex notification while draining server request: method=%s", anyutil.String(cxGet(pending, "method"))))
 				continue
 			}
 			proj, aborted := s.absorbNotification(result, projector, pending)
@@ -802,8 +811,8 @@ func (s *CodexAppServerSession) runStartedTurn(result *CodexTurnResult, ts any, 
 		turnObj := cxOr(cxGet(cxOr(cxGet(note, "params"), map[string]any{}), "turn"), map[string]any{})
 		status := cxGet(turnObj, "status")
 		if cxTruthy(status) && status != "completed" && status != "interrupted" && cxTruthy(cxGet(turnObj, "error")) {
-			errMsg := formatResponsesError(pyjson.Plain(cxGet(turnObj, "error")), pyrepr.Str(status))
-			s.setClassifiedError(result, "turn ended status="+pyrepr.Str(status), errMsg, errMsg)
+			errMsg := formatResponsesError(jsonutil.Plain(cxGet(turnObj, "error")), anyutil.String(status))
+			s.setClassifiedError(result, "turn ended status="+anyutil.String(status), errMsg, errMsg)
 		}
 		return true
 	}
@@ -868,7 +877,7 @@ func (s *CodexAppServerSession) driveTurn(result *CodexTurnResult, o codexDriveO
 		}
 		method := ""
 		if cxHas(note, "method") {
-			method = pyrepr.Str(cxGet(note, "method"))
+			method = anyutil.String(cxGet(note, "method"))
 		}
 		if o.preScopeFilter != nil && !o.preScopeFilter(note, method) {
 			continue
@@ -888,7 +897,7 @@ func (s *CodexAppServerSession) driveTurn(result *CodexTurnResult, o codexDriveO
 		s.issueInterrupt(result.TurnID)
 		result.Interrupted = true
 		if result.Error == "" {
-			result.Error = s.formatErrorWithStderr(fmt.Sprintf("%s timed out after %ss", o.timeoutLabel, pyrepr.Str(o.turnTimeout)), nil, codexStderrTailLines)
+			result.Error = s.formatErrorWithStderr(fmt.Sprintf("%s timed out after %ss", o.timeoutLabel, strconv.FormatFloat(o.turnTimeout, 'f', -1, 64)), nil, codexStderrTailLines)
 		}
 		result.ShouldRetire = true
 	}
@@ -910,7 +919,7 @@ func (s *CodexAppServerSession) CompactThread(turnTimeout, notificationPollTimeo
 	}
 	s.interrupt.Store(false)
 	projector := NewCodexEventProjector()
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("threadId", s.threadID)
 	if _, ok, err := s.requestFor(result, "thread/compact/start", params, "thread/compact/start"); err != nil || !ok {
 		return result, err
@@ -921,15 +930,15 @@ func (s *CodexAppServerSession) CompactThread(turnTimeout, notificationPollTimeo
 		}
 		observedThread, observedTurn := codexNotificationScopeIDs(note)
 		if method == "turn/started" {
-			if observedThread != nil && pyrepr.Str(observedThread) != s.threadID {
-				pkgLog().Debug(fmt.Sprintf("ignoring foreign compact turn/started: thread=%s", pyrepr.Str(observedThread)))
+			if observedThread != nil && anyutil.String(observedThread) != s.threadID {
+				pkgLog().Debug(fmt.Sprintf("ignoring foreign compact turn/started: thread=%s", anyutil.String(observedThread)))
 				return false
 			}
 			if observedTurn == nil {
 				pkgLog().Debug("ignoring compact turn/started without a turn id")
 				return false
 			}
-			result.TurnID = pyrepr.Str(observedTurn)
+			result.TurnID = anyutil.String(observedTurn)
 		} else if observedTurn != nil || method == "item/completed" || method == "turn/completed" {
 			pkgLog().Debug(fmt.Sprintf("ignoring codex notification before compact turn start: method=%s", method))
 			return false
@@ -955,8 +964,8 @@ func (s *CodexAppServerSession) CompactThread(turnTimeout, notificationPollTimeo
 				result.Error = "compact turn interrupted"
 			}
 		} else if cxTruthy(status) && status != "completed" {
-			errMsg := formatResponsesError(pyjson.Plain(cxGet(turnObj, "error")), pyrepr.Str(status))
-			s.setClassifiedError(result, "compact turn ended status="+pyrepr.Str(status), errMsg, errMsg)
+			errMsg := formatResponsesError(jsonutil.Plain(cxGet(turnObj, "error")), anyutil.String(status))
+			s.setClassifiedError(result, "compact turn ended status="+anyutil.String(status), errMsg, errMsg)
 		}
 		return true
 	}
@@ -974,7 +983,7 @@ func (s *CodexAppServerSession) issueInterrupt(turnID string) {
 	if client == nil || s.threadID == "" || turnID == "" {
 		return
 	}
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("threadId", s.threadID)
 	params.Set("turnId", turnID)
 	if _, err := client.Request("turn/interrupt", params, 5*time.Second); err != nil {
@@ -996,7 +1005,7 @@ func (s *CodexAppServerSession) handleServerRequest(req any) error {
 	}
 	method := ""
 	if cxHas(req, "method") {
-		method = pyrepr.Str(cxGet(req, "method"))
+		method = anyutil.String(cxGet(req, "method"))
 	}
 	rid := cxGet(req, "id")
 	params := cxOr(cxGet(req, "params"), map[string]any{})
@@ -1023,7 +1032,7 @@ func codexRespondElicitation(params any) any {
 	if cxStr(params, "serverName", "") == CodexToolsMCPServerName {
 		action = "accept"
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("action", action)
 	out.Set("content", nil)
 	out.Set("_meta", nil)
@@ -1064,7 +1073,7 @@ func (s *CodexAppServerSession) decideExecApproval(params any) string {
 		}
 		description := "Codex requests exec in " + where
 		if reason := cxGet(params, "reason"); cxTruthy(reason) {
-			description += " — " + pyrepr.Str(reason)
+			description += " — " + anyutil.String(reason)
 		}
 		return cxStr(params, "command", ""), description
 	}
@@ -1077,17 +1086,17 @@ func (s *CodexAppServerSession) decideApplyPatchApproval(params any) string {
 		changeSummary := s.pendingFileChanges[cxKey(cxOr(cxGet(params, "itemId"), ""))]
 		var parts []string
 		if cxTruthy(reason) {
-			parts = append(parts, pyrepr.Str(reason))
+			parts = append(parts, anyutil.String(reason))
 		}
 		if changeSummary != "" {
 			parts = append(parts, changeSummary)
 		}
 		if cxTruthy(grantRoot) {
-			parts = append(parts, "grants write to "+pyrepr.Str(grantRoot))
+			parts = append(parts, "grants write to "+anyutil.String(grantRoot))
 		}
 		detail := changeSummary
 		if detail == "" && cxTruthy(reason) {
-			detail = pyrepr.Str(reason)
+			detail = anyutil.String(reason)
 		}
 		command := "apply_patch"
 		if detail != "" {
@@ -1107,14 +1116,14 @@ func cxKey(v any) string {
 	if s, ok := v.(string); ok {
 		return "s:" + s
 	}
-	return "r:" + pyrepr.Repr(v)
+	return "r:" + anyutil.Quote(v)
 }
 
 // Tracks fileChange items from started to completed so the apply_patch prompt can show the changeset
 func (s *CodexAppServerSession) trackPendingFileChange(note any) {
 	method := ""
 	if cxHas(note, "method") {
-		method = pyrepr.Str(cxGet(note, "method"))
+		method = anyutil.String(cxGet(note, "method"))
 	}
 	item := cxOr(cxGet(cxOr(cxGet(note, "params"), map[string]any{}), "item"), map[string]any{})
 	itemID := cxOr(cxGet(item, "id"), "")
@@ -1165,7 +1174,7 @@ func codexSummarizeFileChanges(rawChanges any) string {
 	return countText
 }
 
-// Python int of a decoded value, bools counting as ints and floats refused
+// Integer of a decoded value, bools counting as 0 and 1 and floats refused
 func cxInt(v any) (int64, bool) {
 	switch x := v.(type) {
 	case bool:
@@ -1173,13 +1182,8 @@ func cxInt(v any) (int64, bool) {
 			return 1, true
 		}
 		return 0, true
-	case float64, float32:
-		return 0, false
 	}
-	if n, ok := pyrepr.Int(v); ok && n.IsInt64() {
-		return n.Int64(), true
-	}
-	return 0, false
+	return anyutil.Int(v)
 }
 
 // Captures token usage and compaction boundaries a notification reports
@@ -1221,11 +1225,11 @@ func codexApplyAccountingNotification(result *CodexTurnResult, note any) {
 }
 
 // Shallow ordered copy of a decoded object
-func codexCopyObject(v any) *pyjson.Object {
-	out := pyjson.NewObject()
+func codexCopyObject(v any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	switch o := v.(type) {
-	case *pyjson.Object:
-		for _, k := range o.Keys {
+	case *jsonutil.Object:
+		for _, k := range o.Keys() {
 			val, _ := o.Get(k)
 			out.Set(k, val)
 		}

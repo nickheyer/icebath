@@ -8,14 +8,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Agent carrying only the interrupt and steer slots, matching an agent built without its constructor
 func bareSteerAgent() *AIAgent {
 	return &AIAgent{pendingSteerLock: &sync.Mutex{}, pendingRedirectLock: &sync.Mutex{},
-		modelRequestActive: &pythread.Event{}, activeChildrenLock: &sync.Mutex{}, quietMode: true, apiMode: "chat_completions"}
+		modelRequestActive: &syncutil.Event{}, activeChildrenLock: &sync.Mutex{}, quietMode: true, apiMode: "chat_completions"}
 }
 
 func TestSteerDrainReturnsAndClears(t *testing.T) {
@@ -348,7 +348,7 @@ func TestResponseBetweenRedirectedRestartsResetsTheBound(t *testing.T) {
 
 func TestHardInterruptReadsTheFenceAWorkerPublishes(t *testing.T) {
 	a := bareSteerAgent()
-	a.hardInterruptRequested = &pythread.Event{}
+	a.hardInterruptRequested = &syncutil.Event{}
 	a.toolWorkerThreadsLock = &sync.Mutex{}
 	fences := make([]*CompressionCommitFence, 50)
 	done := make(chan struct{})

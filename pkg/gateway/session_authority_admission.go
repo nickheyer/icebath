@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var submitPayloadFields = map[string]bool{"text": true, "attachments": true, "finite": true, "unattended": true, "surface": true,
@@ -49,7 +49,7 @@ func markNativeWriteStarted(ctx context.Context) {
 }
 
 // Dataclass dict of an admission receipt
-func admissionReceiptDict(r AdmissionReceipt) *pyjson.Object {
+func admissionReceiptDict(r AdmissionReceipt) *jsonutil.Object {
 	var outcome, generation any
 	if r.Outcome != nil {
 		outcome = *r.Outcome
@@ -57,8 +57,8 @@ func admissionReceiptDict(r AdmissionReceipt) *pyjson.Object {
 	if r.ExecutionGeneration != nil {
 		generation = *r.ExecutionGeneration
 	}
-	return pyjson.ObjectOf("admission_id", r.AdmissionID,
-		"ref", pyjson.ObjectOf("profile_id", r.Ref.ProfileID, "session_id", r.Ref.SessionID),
+	return jsonutil.ObjectOf("admission_id", r.AdmissionID,
+		"ref", jsonutil.ObjectOf("profile_id", r.Ref.ProfileID, "session_id", r.Ref.SessionID),
 		"sequence", r.Sequence, "status", r.Status, "outcome", outcome, "authority_epoch", r.AuthorityEpoch,
 		"execution_generation", generation)
 }
@@ -299,7 +299,7 @@ func (a *SessionAuthority) admitNative(ctx context.Context, event *MessageEvent,
 		return AdmissionReceipt{}, err
 	}
 	nativeValue, _ := payload.Get("native_text_v1")
-	native, _ := nativeValue.(*pyjson.Object)
+	native, _ := nativeValue.(*jsonutil.Object)
 	if native == nil {
 		return AdmissionReceipt{}, &pyKeyError{"native_text_v1"}
 	}
@@ -325,13 +325,14 @@ func (a *SessionAuthority) admitNative(ctx context.Context, event *MessageEvent,
 	if err != nil {
 		return AdmissionReceipt{}, err
 	}
-	identity, err := pyjson.Dumps([]any{optStrAny(source.Profile), string(source.Platform), source.ChatID,
-		optStrAny(source.ThreadID), optStrAny(source.UserID)}, pyjson.Separators(",", ":"))
+	identity, err := jsonutil.Encode([]any{optStrAny(source.Profile), string(source.Platform), source.ChatID,
+		optStrAny(source.ThreadID), optStrAny(source.UserID)})
+
 	if err != nil {
 		return AdmissionReceipt{}, err
 	}
 	eventValue, _ := native.Get("event")
-	nativeEvent, _ := eventValue.(*pyjson.Object)
+	nativeEvent, _ := eventValue.(*jsonutil.Object)
 	if nativeEvent == nil {
 		return AdmissionReceipt{}, &pyKeyError{"event"}
 	}
@@ -341,10 +342,10 @@ func (a *SessionAuthority) admitNative(ctx context.Context, event *MessageEvent,
 	}
 	requestID := uuid4HexString()
 	if pyTruthy(messageID) {
-		requestID = pyrepr.Str(messageID)
+		requestID = anyutil.String(messageID)
 	}
 	if revision, _ := nativeEvent.Get("edit_revision"); pyTruthy(revision) {
-		requestID += ":edit:" + pyrepr.Str(revision)
+		requestID += ":edit:" + anyutil.String(revision)
 	}
 	committed := ref
 	rewrite := takeRetryRewrite(ctx, event, a.DB)
@@ -358,7 +359,7 @@ func (a *SessionAuthority) admitNative(ctx context.Context, event *MessageEvent,
 	result, err := trackedWrite(ctx, a, func(taskCtx context.Context) (any, error) {
 		return a.admitNativeWrite(taskCtx, principal, ref.SessionID, requestID, payload, authorize, event.RawMessage)
 	}, func(taskCtx context.Context, written any) (any, error) {
-		row := written.(*pyjson.Object)
+		row := written.(*jsonutil.Object)
 		target := rowString(row, "target_session_id")
 		if target == "" {
 			target = ref.SessionID
@@ -386,14 +387,14 @@ func (a *SessionAuthority) admitNative(ctx context.Context, event *MessageEvent,
 }
 
 // Reconciles a redelivery against the ledger and commits the row, a refused admission releasing its capture
-func (a *SessionAuthority) admitNativeWrite(ctx context.Context, principalID, sessionID, requestID string, payload *pyjson.Object,
-	authorize func(ctx context.Context, conn state.SQLiteConn) error, raw any) (*pyjson.Object, error) {
+func (a *SessionAuthority) admitNativeWrite(ctx context.Context, principalID, sessionID, requestID string, payload *jsonutil.Object,
+	authorize func(ctx context.Context, conn state.SQLiteConn) error, raw any) (*jsonutil.Object, error) {
 	fresh := nativeMedia(payload)
 	owner, err := a.currentOwner(ctx, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	row, err := func() (*pyjson.Object, error) {
+	row, err := func() (*jsonutil.Object, error) {
 		reconciled, err := reconcileNativeRetry(ctx, a.DB, principalID, owner, requestID, payload, raw)
 		if err != nil {
 			return nil, err
@@ -440,12 +441,12 @@ type NativeBinding struct {
 }
 
 // Binds only server observed native routes and schedules them, each session answering ready or its refusal reason
-func (a *SessionAuthority) RecoverNativeSessions(ctx context.Context, bindings []NativeBinding) (*pyjson.Object, error) {
+func (a *SessionAuthority) RecoverNativeSessions(ctx context.Context, bindings []NativeBinding) (*jsonutil.Object, error) {
 	counts := map[string]int{}
 	for _, binding := range bindings {
 		counts[binding.SessionID]++
 	}
-	results := pyjson.NewObject()
+	results := jsonutil.NewObject()
 	for _, binding := range bindings {
 		err := a.recoverNativeSession(ctx, binding, counts[binding.SessionID])
 		var refusal *state.RuntimeStoreError
@@ -471,7 +472,7 @@ func (a *SessionAuthority) recoverNativeSession(ctx context.Context, binding Nat
 	if err != nil {
 		return err
 	}
-	var last *pyjson.Object
+	var last *jsonutil.Object
 	for _, row := range rows {
 		if _, ok := rowPayload(row).Get("native_text_v1"); ok {
 			last = row
@@ -558,17 +559,17 @@ func (a *SessionAuthority) submit(ctx context.Context, actor Principal, request 
 			return AdmissionReceipt{}, runtimeRefusal("invalid_params")
 		}
 	}
-	payload := pyjson.ObjectOf("text", text)
+	payload := jsonutil.ObjectOf("text", text)
 	finite, err := admitFinite(request.Payload)
 	if err != nil {
 		return AdmissionReceipt{}, err
 	}
-	payload.Update(finite)
+	payload.Merge(finite)
 	surface, err := admitSurface(request.Payload)
 	if err != nil {
 		return AdmissionReceipt{}, err
 	}
-	payload.Update(surface)
+	payload.Merge(surface)
 	display, err := AdmitDisplay(request.Payload)
 	if err != nil {
 		return AdmissionReceipt{}, err
@@ -585,14 +586,14 @@ func (a *SessionAuthority) submit(ctx context.Context, actor Principal, request 
 	if err != nil {
 		return AdmissionReceipt{}, err
 	}
-	payload.Update(cliTurn)
-	attachments, err := admitAttachments(ctx, request.Payload["attachments"], func() (*pyjson.Object, error) {
+	payload.Merge(cliTurn)
+	attachments, err := admitAttachments(ctx, request.Payload["attachments"], func() (*jsonutil.Object, error) {
 		return a.DB.FindSessionAdmission(ctx, actor.Subject, request.Ref.SessionID, request.RequestID)
 	})
 	if err != nil {
 		return AdmissionReceipt{}, err
 	}
-	payload.Update(attachments)
+	payload.Merge(attachments)
 	if opts.KanbanCard != nil {
 		payload.Set("kanban_card_v1", opts.KanbanCard)
 	}
@@ -601,7 +602,7 @@ func (a *SessionAuthority) submit(ctx context.Context, actor Principal, request 
 		return AdmissionReceipt{}, &pyKeyError{request.Ref.SessionID}
 	}
 	if source := live.Source; source != nil && !SameOwner(optStrAny(source.UserID), actor.Subject) {
-		payload.Set("local_operator_v1", pyjson.ObjectOf("profile_id", a.ProfileID, "session_id", request.Ref.SessionID,
+		payload.Set("local_operator_v1", jsonutil.ObjectOf("profile_id", a.ProfileID, "session_id", request.Ref.SessionID,
 			"principal_id", actor.Subject))
 	}
 	var scheduleErr error
@@ -614,7 +615,7 @@ func (a *SessionAuthority) submit(ctx context.Context, actor Principal, request 
 		}
 		return row, err
 	}, func(taskCtx context.Context, written any) (any, error) {
-		return a.admitted(taskCtx, request.Ref, nil, written.(*pyjson.Object))
+		return a.admitted(taskCtx, request.Ref, nil, written.(*jsonutil.Object))
 	}, true, func(any) { scheduleErr = a.scheduleAdmitted(ctx, request.Ref) })
 	if err == nil {
 		err = scheduleErr
@@ -626,9 +627,9 @@ func (a *SessionAuthority) submit(ctx context.Context, actor Principal, request 
 }
 
 // Retires and collects the bytes a refused submission captured, a failure logged and never replacing the refusal
-func (a *SessionAuthority) releaseRefusedCapture(ctx context.Context, request Submission, payload *pyjson.Object) {
+func (a *SessionAuthority) releaseRefusedCapture(ctx context.Context, request Submission, payload *jsonutil.Object) {
 	value, _ := payload.Get("attachments_v1")
-	attachments, _ := value.(*pyjson.Object)
+	attachments, _ := value.(*jsonutil.Object)
 	if attachments == nil {
 		return
 	}
@@ -638,7 +639,7 @@ func (a *SessionAuthority) releaseRefusedCapture(ctx context.Context, request Su
 		return
 	}
 	dropCaptureLease(ctx, nil, nil)
-	retired := pyjson.ObjectOf("attachments_v1", pyjson.ObjectOf("media", media))
+	retired := jsonutil.ObjectOf("attachments_v1", jsonutil.ObjectOf("media", media))
 	err := a.DB.ExecuteWrite(ctx, func(conn state.SQLiteConn) error { return state.RetireMedia(ctx, conn, retired, "") })
 	if err == nil {
 		err = a.DB.CollectRetiredMedia(ctx)

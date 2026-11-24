@@ -14,9 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Read open retry window and read busy timeout
@@ -189,8 +191,8 @@ var reviewHarnessPrefixes = []string{
 // Role membership in a set of strings with the TypeError Python raises for an unhashable role
 func roleIn(role any, roles ...string) (bool, error) {
 	switch r := role.(type) {
-	case []any, *pyjson.Object, map[string]any:
-		return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("the message role is %s, expected text", errchain.Kind(r))}
+	case []any, *jsonutil.Object, map[string]any:
+		return false, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the message role is %s, expected text", errchain.Kind(r))}
 	case string:
 		for _, want := range roles {
 			if r == want {
@@ -243,7 +245,7 @@ func stripBackgroundReviewHarness(messages []any) ([]any, error) {
 		}
 		if skipNextAssistant {
 			skipNextAssistant = false
-			if role, _ := mappingGet(msg, "role"); isMapping(msg) && pyrepr.Equal(role, "assistant") {
+			if role, _ := mappingGet(msg, "role"); isMapping(msg) && anyutil.Equal(role, "assistant") {
 				previousWasHarness = false
 				continue
 			}
@@ -264,7 +266,7 @@ func isStaleToolCallMarkerMessage(msg any) bool {
 	}
 	role, _ := mappingGet(msg, "role")
 	calls, _ := mappingGet(msg, "tool_calls")
-	if !pyrepr.Equal(role, "assistant") || !pyrepr.Truthy(calls) {
+	if !anyutil.Equal(role, "assistant") || !anyutil.IsTrue(calls) {
 		return false
 	}
 	content, _ := mappingGet(msg, "content")
@@ -280,7 +282,7 @@ func stripStaleToolCallMarkers(messages []any) []any {
 			switch m := msg.(type) {
 			case map[string]any:
 				m["content"] = ""
-			case *pyjson.Object:
+			case *jsonutil.Object:
 				m.Set("content", "")
 			}
 			repaired++

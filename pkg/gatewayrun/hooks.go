@@ -11,9 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Loaded hook handler taking the event type and its context, returning a decision or nil
@@ -55,7 +55,7 @@ func loadHookDir(hookDir string) (*loadedHookDir, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8SigFile(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -64,13 +64,13 @@ func loadHookDir(hookDir string) (*loadedHookDir, error) {
 		return nil, err
 	}
 	manifest, ok := doc.(map[string]any)
-	if !pyrepr.Truthy(doc) || !ok {
+	if !anyutil.IsTrue(doc) || !ok {
 		skipHook(filepath.Base(hookDir), "invalid HOOK.yaml")
 		return nil, nil
 	}
 	hookName := filepath.Base(hookDir)
 	if v, ok := manifest["name"]; ok {
-		hookName = pyrepr.Str(v)
+		hookName = anyutil.String(v)
 	}
 	events, err := hookEventNames(manifest["events"])
 	if err != nil {
@@ -119,7 +119,7 @@ func hookEventNames(events any) ([]string, error) {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, e := range v {
-			out = append(out, pyrepr.Str(e))
+			out = append(out, anyutil.String(e))
 		}
 		return out, nil
 	case string:
@@ -171,7 +171,7 @@ func (h *HookRegistry) discoverAndLoad(ctx context.Context) error {
 			return loadHookDir(hookDir)
 		}()
 		if err != nil {
-			fmt.Fprintf(os.Stdout, "[hooks] Error loading hook %s: %s\n", entry.Name(), pyrepr.ExceptionMessage(err))
+			fmt.Fprintf(os.Stdout, "[hooks] Error loading hook %s: %s\n", entry.Name(), err.Error())
 			continue
 		}
 		if loaded == nil {
@@ -186,7 +186,7 @@ func (h *HookRegistry) discoverAndLoad(ctx context.Context) error {
 		}
 		h.loadedHooks = append(h.loadedHooks, map[string]any{"name": loaded.name, "description": loaded.description,
 			"events": listed, "path": hookDir})
-		fmt.Fprintf(os.Stdout, "[hooks] Loaded hook '%s' for events: %s\n", loaded.name, pyrepr.Str(listed))
+		fmt.Fprintf(os.Stdout, "[hooks] Loaded hook '%s' for events: %s\n", loaded.name, anyutil.String(listed))
 	}
 	return nil
 }
@@ -221,7 +221,7 @@ func (h *HookRegistry) emitCollect(ctx context.Context, eventType string, hookCo
 			return fn(ctx, eventType, hookContext)
 		}()
 		if err != nil {
-			fmt.Fprintf(os.Stdout, "[hooks] Error in handler for '%s': %s\n", eventType, pyrepr.ExceptionMessage(err))
+			fmt.Fprintf(os.Stdout, "[hooks] Error in handler for '%s': %s\n", eventType, err.Error())
 			continue
 		}
 		if result != nil {

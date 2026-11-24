@@ -1,16 +1,16 @@
 package backup
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Directory names a backup walk never descends, the codebase checkout pruned at the root only
@@ -86,7 +86,7 @@ func hasAnySuffix(name string, suffixes []string) bool {
 
 // Path parts of a relative path as pathlib splits them
 func relParts(rel string) []string {
-	_, parts := pypath.PathParts(rel)
+	_, parts := pathutil.Parts(rel)
 	return parts
 }
 
@@ -124,7 +124,7 @@ func shouldExclude(rel string) bool {
 			return true
 		}
 	}
-	name := pypath.PathName(rel)
+	name := pathutil.Name(rel)
 	return excludedNames[name] || hasAnyPrefix(name, excludedPrefixes) || hasAnySuffix(name, excludedSuffixes)
 }
 
@@ -134,59 +134,46 @@ func isNonRegularPath(p string) bool {
 	return err == nil && !info.Mode().IsRegular()
 }
 
-// Reports whether a directory entry is a symlink or a Windows reparse point, false when lstat fails
-func isLinkPath(p string) bool {
-	info, err := os.Lstat(p)
-	if err != nil {
-		return false
-	}
-	return info.Mode()&os.ModeSymlink != 0 || isReparsePoint(info)
-}
-
 // Absolute and home relative path of one file a full backup holds
 type backupFile struct{ abs, rel string }
 
-// Every file a full backup holds in walk order, recording pruned directories when asked
+// Every file a full backup holds in lexical walk order, recording pruned directories when asked; symlinked directories are neither descended nor listed
 func iterBackupFiles(root, outPath string, skippedDirs map[string]bool) []backupFile {
 	var out []backupFile
-	pyfs.Walk(root, false, func(dirpath string, dirnames, filenames []string) []string {
-		relDir, _ := pypath.PathRelativeTo(dirpath, root)
-		relDir = pypath.PathStr(relDir)
-		isRoot := relDir == "."
-		join := func(name string) string {
-			if isRoot {
-				return name
-			}
-			return filepath.Join(relDir, name)
+	outResolved, outErr := pathutil.Resolve(outPath)
+	filepath.WalkDir(root, func(p string, d fs.DirEntry, err error) error {
+		if err != nil || p == root {
+			return nil
 		}
-		var kept []string
-		for _, d := range dirnames {
-			if (!excludedDirs[d] || (d == "icebath-agent" && !isRoot)) && !inExcludedRootDir(join(d)) {
-				kept = append(kept, d)
-			} else if skippedDirs != nil {
-				skippedDirs[join(d)] = true
+		rel, _ := filepath.Rel(root, p)
+		name := d.Name()
+		dir := d.IsDir()
+		if !dir && d.Type()&fs.ModeSymlink != 0 {
+			st, serr := os.Stat(p)
+			dir = serr == nil && st.IsDir()
+		}
+		if dir {
+			if (!excludedDirs[name] || (name == "icebath-agent" && filepath.Dir(rel) != ".")) && !inExcludedRootDir(rel) {
+				return nil
+			}
+			if skippedDirs != nil {
+				skippedDirs[rel] = true
+			}
+			if d.IsDir() {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if shouldExclude(rel) || isNonRegularPath(p) {
+			return nil
+		}
+		if outErr == nil {
+			if resolved, err := pathutil.Resolve(p); err == nil && resolved == outResolved {
+				return nil
 			}
 		}
-		descend := []string{}
-		for _, d := range kept {
-			if !isLinkPath(pypath.PathJoin(dirpath, d)) {
-				descend = append(descend, d)
-			}
-		}
-		for _, fname := range filenames {
-			rel := join(fname)
-			fpath := filepath.Join(root, rel)
-			if shouldExclude(rel) || isNonRegularPath(fpath) {
-				continue
-			}
-			if resolved, err := pypath.Resolve(fpath); err == nil {
-				if outResolved, err := pypath.Resolve(outPath); err == nil && resolved == outResolved {
-					continue
-				}
-			}
-			out = append(out, backupFile{abs: fpath, rel: rel})
-		}
-		return descend
+		out = append(out, backupFile{abs: p, rel: rel})
+		return nil
 	})
 	return out
 }

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var authoringMarketing = regexp.MustCompile(`(?i)\b(powerful|comprehensive|seamless|revolutionary|cutting-edge|state-of-the-art)\b`)
@@ -71,8 +71,8 @@ func TestDescriptionHardline(t *testing.T) {
 		t.Run(rel, func(t *testing.T) {
 			fm := authoringFrontmatter(t, rel, files[rel])
 			desc := ""
-			if pyrepr.Truthy(fm["description"]) {
-				desc = pyrepr.Str(fm["description"])
+			if anyutil.IsTrue(fm["description"]) {
+				desc = anyutil.String(fm["description"])
 			}
 			if n := len([]rune(desc)); n > SkillPromptDescLimit {
 				t.Errorf("%s: description %d chars (hardline %d)", rel, n, SkillPromptDescLimit)
@@ -81,7 +81,7 @@ func TestDescriptionHardline(t *testing.T) {
 				t.Errorf("%s: description must end with a period", rel)
 			}
 			if m := authoringMarketing.FindString(desc); m != "" {
-				t.Errorf("%s: marketing word in description: %s", rel, pyrepr.Repr(m))
+				t.Errorf("%s: marketing word in description: %s", rel, anyutil.Quote(m))
 			}
 		})
 	}

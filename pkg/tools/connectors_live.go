@@ -3,11 +3,11 @@ package tools
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // OperationAlreadyOpen is the refusal to open a second live operation in one profile session
@@ -19,7 +19,7 @@ type OperationAlreadyOpen struct {
 // Refusal naming the session and the operation it already holds open
 func newOperationAlreadyOpen(existing *ConnectionOperation) *OperationAlreadyOpen {
 	return &OperationAlreadyOpen{Existing: existing,
-		msg: fmt.Sprintf("session %s already has operation %s open", pyrepr.StrRepr(existing.SessionKey), existing.OpID)}
+		msg: fmt.Sprintf("session %s already has operation %s open", strconv.Quote(existing.SessionKey), existing.OpID)}
 }
 
 func (e *OperationAlreadyOpen) Error() string { return e.msg }

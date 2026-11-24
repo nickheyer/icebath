@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -27,7 +27,7 @@ func (s *Store) cancelsDir() string { return filepath.Join(s.cronDir, "cancels")
 func (s *Store) cancelMarkerPath(executionID string) (string, error) {
 	id := strings.TrimSpace(executionID)
 	if id == "" || strings.ContainsAny(id, "/\\") || id == "." || id == ".." {
-		return "", fmt.Errorf("Not a usable execution id: %s", pyrepr.StrRepr(id))
+		return "", fmt.Errorf("Not a usable execution id: %s", strconv.Quote(id))
 	}
 	return filepath.Join(s.cancelsDir(), id+".cancel"), nil
 }
@@ -80,7 +80,7 @@ func (s *Store) requestCancel(executionID string, reason *string) (string, error
 // Marker presence, os.link and the stale sweep, the Path.exists, os.link and _prune_stale_markers attributes tests patch
 var (
 	cancelMarkerExists = func(path string) (bool, error) {
-		info, err := pypath.PathlibStat(path)
+		info, err := pathutil.StatIfExists(path)
 		return info != nil, err
 	}
 	cancelLink         = os.Link
@@ -292,8 +292,8 @@ func runJobUnlessCancelled[T any](ctx context.Context, s *Store, run func() (T, 
 }
 
 // Requests cancellation of the job's live run, a no op answer when nothing is in flight
-func cancelRun(s *Store, jobID, reason string) (*pyjson.Object, error) {
-	out := pyjson.NewObject()
+func cancelRun(s *Store, jobID, reason string) (*jsonutil.Object, error) {
+	out := jsonutil.NewObject()
 	out.Set("success", true)
 	record, err := openExecutionsLedger(s).Cancellable(context.Background(), jobID)
 	if err != nil {
@@ -321,6 +321,6 @@ func cancelRun(s *Store, jobID, reason string) (*pyjson.Object, error) {
 }
 
 // Stops the job's live run when there is one, leaving its schedule untouched
-func (s *Store) cancelJobRun(jobID, reason string) (*pyjson.Object, error) {
+func (s *Store) cancelJobRun(jobID, reason string) (*jsonutil.Object, error) {
 	return cancelRun(s, jobID, reason)
 }

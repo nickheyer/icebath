@@ -249,8 +249,8 @@ func TestDDGSParseEnvelope(t *testing.T) {
 	close(p.exited)
 	cases := []struct{ raw, want string }{
 		{"  \n", "DDGS worker exited without a result (code=None)"},
-		{"not json", "DDGS worker returned invalid JSON: 'not json'"},
-		{"[1, 2]", "DDGS worker returned an invalid envelope: [1, 2]"},
+		{"not json", `DDGS worker returned invalid JSON: "not json"`},
+		{"[1, 2]", "DDGS worker returned an invalid envelope: [1,2]"},
 		{`{"ok": false, "error": "boom"}`, "boom"},
 		{`{"ok": 0, "error": ""}`, "DDGS worker failed"},
 		{`{"ok": true, "results": {"a": 1}}`, "DDGS worker returned non-list results"},
@@ -288,13 +288,13 @@ func TestDDGSWorkerMainExitCodes(t *testing.T) {
 		code   int
 		out    string
 	}{
-		{"", deny, 2, `{"ok": false, "error": "invalid request: Expecting value: line 1 column 1 (char 0)"}`},
-		{`{"test_hook": "empty"}`, deny, 3, `{"ok": false, "error": "test_hook refused (hooks not enabled)"}`},
-		{`{"test_hook": "empty"}`, allow, 0, `{"ok": true, "results": []}`},
-		{`{"test_hook": "nope"}`, allow, 1, `{"ok": false, "error": "unknown test_hook: 'nope'"}`},
-		{`{"test_hook": 0, "query": "q", "safe_limit": 1}`, deny, 0, `{"ok": true, "results": [{"title": "T", "url": "https://e.com/a+b", "description": "B", "position": 1}]}`},
-		{`{"query": "q", "safe_limit": "5"}`, deny, 0, `{"ok": true, "results": [{"title": "T", "url": "https://e.com/a+b", "description": "B", "position": 1}, {"title": "T2", "url": "https://f.com", "description": "B2", "position": 2}]}`},
-		{`{"query": "q", "safe_limit": 0}`, deny, 0, `{"ok": true, "results": [{"title": "T", "url": "https://e.com/a+b", "description": "B", "position": 1}]}`},
+		{"", deny, 2, `{"ok":false,"error":"invalid request: json: unexpected end of input at line 1, column 1"}`},
+		{`{"test_hook": "empty"}`, deny, 3, `{"ok":false,"error":"test_hook refused (hooks not enabled)"}`},
+		{`{"test_hook": "empty"}`, allow, 0, `{"ok":true,"results":[]}`},
+		{`{"test_hook": "nope"}`, allow, 1, `{"ok":false,"error":"unknown test_hook: \"nope\""}`},
+		{`{"test_hook": 0, "query": "q", "safe_limit": 1}`, deny, 0, `{"ok":true,"results":[{"title":"T","url":"https://e.com/a+b","description":"B","position":1}]}`},
+		{`{"query": "q", "safe_limit": "5"}`, deny, 0, `{"ok":true,"results":[{"title":"T","url":"https://e.com/a+b","description":"B","position":1},{"title":"T2","url":"https://f.com","description":"B2","position":2}]}`},
+		{`{"query": "q", "safe_limit": 0}`, deny, 0, `{"ok":true,"results":[{"title":"T","url":"https://e.com/a+b","description":"B","position":1}]}`},
 		{`{"query": "q", "safe_limit": "x"}`, deny, 1, ``},
 		{`[1]`, deny, 1, ``},
 	}
@@ -306,7 +306,7 @@ func TestDDGSWorkerMainExitCodes(t *testing.T) {
 	}
 	fakeDDGSPackage(t, nil, raise("DDGSException", "No results found."))
 	var out bytes.Buffer
-	if code := ddgsWorkerMain(context.Background(), strings.NewReader(`{"query": "q"}`), &out, deny); code != 1 || out.String() != `{"ok": false, "error": "DDGSException: No results found."}` {
+	if code := ddgsWorkerMain(context.Background(), strings.NewReader(`{"query": "q"}`), &out, deny); code != 1 || out.String() != `{"ok":false,"error":"DDGSException: No results found."}` {
 		t.Fatalf("%d %s", code, out.String())
 	}
 }

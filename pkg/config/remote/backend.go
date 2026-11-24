@@ -19,9 +19,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -157,7 +157,7 @@ type remoteBackend struct {
 	stop          chan struct{}
 	stopOnce      sync.Once
 	managedWarned bool
-	scopes        pythread.Local
+	scopes        syncutil.GoroutineLocal[any]
 }
 
 func newRemoteBackend() config.ConfigBackend {
@@ -264,13 +264,13 @@ func (b *remoteBackend) bootFetch(ctx context.Context, h, key string, fetchLock 
 		if ff.retryable && len(delays) > 0 {
 			wait := min(max(ff.retryAfter, delays[0]), maxRetryWait)
 			delays = delays[1:]
-			slog.Warn(fmt.Sprintf("Remote Config: fetch for profile %s failed (%s); retrying in %.0fs", pyrepr.StrRepr(profile), ff, wait))
+			slog.Warn(fmt.Sprintf("Remote Config: fetch for profile %s failed (%s); retrying in %.0fs", strconv.Quote(profile), ff, wait))
 			sleep(wait)
 			continue
 		}
 		return nil, &config.ConfigBackendUnavailable{Message: fmt.Sprintf("Remote Config: cannot load the config for profile %s from "+
 			"%s: %s. Icebath does not start without its remote config "+
-			"(ICEBATH_CONFIG_BACKEND=remote has no local fallback).", pyrepr.StrRepr(profile), ShownURL(), ff)}
+			"(ICEBATH_CONFIG_BACKEND=remote has no local fallback).", strconv.Quote(profile), ShownURL(), ff)}
 	}
 }
 
@@ -329,7 +329,7 @@ func (b *remoteBackend) fetchInto(ctx context.Context, st *profileState, conditi
 		unlock := lock()
 		defer unlock()
 		if st.installed != started {
-			*notes = append(*notes, fmt.Sprintf("debug:Remote Config: dropped a fetch for profile %s that a write overtook", pyrepr.StrRepr(st.profile)))
+			*notes = append(*notes, fmt.Sprintf("debug:Remote Config: dropped a fetch for profile %s that a write overtook", strconv.Quote(st.profile)))
 			return false, nil
 		}
 		*notes = append(*notes, b.install(st, resp.Body, resp.ETag)...)
@@ -352,7 +352,7 @@ func (b *remoteBackend) install(st *profileState, body map[string]any, etag stri
 	for _, entry := range rawLocks {
 		lock, ok := decodeLock(entry)
 		if !ok {
-			notes = append(notes, "Remote Config: ignoring malformed lock entry "+pyrepr.Repr(wireObject(entry)))
+			notes = append(notes, "Remote Config: ignoring malformed lock entry "+anyutil.Quote(wireObject(entry)))
 			continue
 		}
 		locks = append(locks, lock)
@@ -392,7 +392,7 @@ func decodeLock(entry any) (Lock, bool) {
 	if err != nil {
 		return Lock{}, false
 	}
-	return Lock{Path: path, Level: pyrepr.Str(level)}, true
+	return Lock{Path: path, Level: anyutil.String(level)}, true
 }
 
 // Brings the published doc to its completed postprocess output
@@ -771,7 +771,7 @@ func (b *remoteBackend) intent(ctx context.Context, st *profileState, changes co
 }
 
 // PATCH body applying the intent to the current doc, nil when that is no change
-func (b *remoteBackend) patchBody(st *profileState, in *intent) (*pyjson.Object, *PathMap, []Path, error) {
+func (b *remoteBackend) patchBody(st *profileState, in *intent) (*jsonutil.Object, *PathMap, []Path, error) {
 	base := diffBase(st)
 	next := cloneDoc(base)
 	ApplyIntent(next, in.sets, in.unsets)
@@ -802,7 +802,7 @@ func (b *remoteBackend) patchBody(st *profileState, in *intent) (*pyjson.Object,
 		return nil, nil, nil, nil
 	}
 	setBody, unsetBody := EncodeChanges(sets, unsets)
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("expectedVersion", st.profileVersion)
 	if setBody.Len() > 0 {
 		body.Set("set", setBody)
@@ -929,7 +929,7 @@ func (b *remoteBackend) Destination(_ context.Context, h string) (string, error)
 	if err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("Remote Config (profile %s level)", pyrepr.StrRepr(profile)), nil
+	return fmt.Sprintf("Remote Config (profile %s level)", strconv.Quote(profile)), nil
 }
 
 func (b *remoteBackend) Describe(_ context.Context, h string) string {
@@ -955,7 +955,7 @@ func (b *remoteBackend) Describe(_ context.Context, h string) string {
 		tail = ", last poll failed: " + st.lastError
 	}
 	return fmt.Sprintf("%s: profile %s, profile level v%d, %d lock(s), fetched %ds ago%s",
-		head, pyrepr.StrRepr(st.profile), st.profileVersion, len(st.locks), age, tail)
+		head, strconv.Quote(st.profile), st.profileVersion, len(st.locks), age, tail)
 }
 
 func (b *remoteBackend) pollerAlive() bool {
@@ -1044,14 +1044,14 @@ func (b *remoteBackend) pollOne(st *profileState) bool {
 		st.mu.Unlock()
 		var ff *fetchFailed
 		if errors.As(err, &ff) {
-			msg := fmt.Sprintf("Remote Config: poll for profile %s failed (%s); keeping the loaded config", pyrepr.StrRepr(st.profile), err)
+			msg := fmt.Sprintf("Remote Config: poll for profile %s failed (%s); keeping the loaded config", strconv.Quote(st.profile), err)
 			if ff.status == 401 || ff.status == 403 {
 				slog.Error(msg)
 			} else {
 				slog.Warn(msg)
 			}
 		} else {
-			slog.Warn(fmt.Sprintf("Remote Config: poll for profile %s failed", pyrepr.StrRepr(st.profile)), "error", err)
+			slog.Warn(fmt.Sprintf("Remote Config: poll for profile %s failed", strconv.Quote(st.profile)), "error", err)
 		}
 		changed = false
 	}
@@ -1060,7 +1060,7 @@ func (b *remoteBackend) pollOne(st *profileState) bool {
 	version := st.profileVersion
 	st.mu.Unlock()
 	if changed {
-		slog.Info(fmt.Sprintf("Remote Config: profile %s changed (profile level v%d)", pyrepr.StrRepr(st.profile), version))
+		slog.Info(fmt.Sprintf("Remote Config: profile %s changed (profile level v%d)", strconv.Quote(st.profile), version))
 	}
 	return changed
 }

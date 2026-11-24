@@ -6,11 +6,11 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var _ provider.ChatCompletionAgent = (*AIAgent)(nil)
@@ -106,7 +106,7 @@ func (a *AIAgent) CodexSilentHangHint(model any) (string, error) {
 	case string:
 		return a.codexSilentHangHint(&m), nil
 	default:
-		s := pyrepr.Str(m)
+		s := anyutil.String(m)
 		return a.codexSilentHangHint(&s), nil
 	}
 }

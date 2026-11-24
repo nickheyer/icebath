@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Live connect endpoint of the env's profile, empty for an unbound context on a multiplexed process
@@ -25,8 +25,8 @@ func ensureCDPSupervisor(env *tools.Env, taskID string) {
 		sessionsMu.Lock()
 		info, _ := activeSessions.Get(taskID)
 		sessionCDP := ""
-		if pyrepr.Truthy(info["cdp_url"]) {
-			sessionCDP = pyrepr.Str(info["cdp_url"])
+		if anyutil.IsTrue(info["cdp_url"]) {
+			sessionCDP = anyutil.String(info["cdp_url"])
 		}
 		sessionsMu.Unlock()
 		if sessionCDP != "" {

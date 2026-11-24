@@ -19,9 +19,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Most handles one x_search call may name
@@ -175,17 +175,17 @@ func validateDateRange(fromDate, toDate string) error {
 }
 
 // Content entries of every message item in a Responses payload
-func messageContents(payload *pyjson.Object) []*pyjson.Object {
-	var out []*pyjson.Object
-	items, _ := payload.Vals["output"].([]any)
+func messageContents(payload *jsonutil.Object) []*jsonutil.Object {
+	var out []*jsonutil.Object
+	items, _ := payload.Value("output").([]any)
 	for _, it := range items {
-		item, ok := it.(*pyjson.Object)
-		if !ok || item.Vals["type"] != "message" {
+		item, ok := it.(*jsonutil.Object)
+		if !ok || item.Value("type") != "message" {
 			continue
 		}
-		contents, _ := item.Vals["content"].([]any)
+		contents, _ := item.Value("content").([]any)
 		for _, c := range contents {
-			if m, ok := c.(*pyjson.Object); ok {
+			if m, ok := c.(*jsonutil.Object); ok {
 				out = append(out, m)
 			}
 		}
@@ -195,23 +195,23 @@ func messageContents(payload *pyjson.Object) []*pyjson.Object {
 
 // Stripped str(x or "") of a decoded value
 func strOrEmptyStripped(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Answer text from output_text, else the joined message text parts
-func extractResponseText(payload *pyjson.Object) string {
-	if s := strOrEmptyStripped(payload.Vals["output_text"]); s != "" {
+func extractResponseText(payload *jsonutil.Object) string {
+	if s := strOrEmptyStripped(payload.Value("output_text")); s != "" {
 		return s
 	}
 	var parts []string
 	for _, c := range messageContents(payload) {
-		if t := c.Vals["type"]; t != "output_text" && t != "text" {
+		if t := c.Value("type"); t != "output_text" && t != "text" {
 			continue
 		}
-		if p := strOrEmptyStripped(c.Vals["text"]); p != "" {
+		if p := strOrEmptyStripped(c.Value("text")); p != "" {
 			parts = append(parts, p)
 		}
 	}
@@ -227,16 +227,16 @@ type inlineCitation struct {
 }
 
 // url_citation annotations of every message content
-func extractInlineCitations(payload *pyjson.Object) []inlineCitation {
+func extractInlineCitations(payload *jsonutil.Object) []inlineCitation {
 	out := []inlineCitation{}
 	for _, content := range messageContents(payload) {
-		anns, _ := content.Vals["annotations"].([]any)
+		anns, _ := content.Value("annotations").([]any)
 		for _, a := range anns {
-			m, ok := a.(*pyjson.Object)
-			if !ok || m.Vals["type"] != "url_citation" {
+			m, ok := a.(*jsonutil.Object)
+			if !ok || m.Value("type") != "url_citation" {
 				continue
 			}
-			out = append(out, inlineCitation{URL: m.GetOr("url", ""), Title: m.GetOr("title", ""), StartIndex: m.Vals["start_index"], EndIndex: m.Vals["end_index"]})
+			out = append(out, inlineCitation{URL: m.ValueOr("url", ""), Title: m.ValueOr("title", ""), StartIndex: m.Value("start_index"), EndIndex: m.Value("end_index")})
 		}
 	}
 	return out
@@ -259,8 +259,8 @@ func (e *xaiHTTPError) Error() string {
 
 // Readable xAI error from the JSON body code and error, else the body text, else the status line
 func xaiHTTPErrorMessage(e *xaiHTTPError) string {
-	payload, err := pyjson.Loads(string(e.body))
-	obj, isObj := payload.(*pyjson.Object)
+	payload, err := jsonutil.Decode(string(e.body))
+	obj, isObj := payload.(*jsonutil.Object)
 	if err != nil || !isObj {
 		if text := strings.TrimSpace(string(e.body)); text != "" {
 			return clipRunes(text, 500)
@@ -268,11 +268,11 @@ func xaiHTTPErrorMessage(e *xaiHTTPError) string {
 		return e.Error()
 	}
 	code := ""
-	if v, _ := obj.Get("code"); pyTruthy(v) {
+	if v, _ := obj.Get("code"); anyutil.IsTrue(v) {
 		code = strings.TrimSpace(pyJSONStr(v))
 	}
 	message := ""
-	if v, _ := obj.Get("error"); pyTruthy(v) {
+	if v, _ := obj.Get("error"); anyutil.IsTrue(v) {
 		message = strings.TrimSpace(pyJSONStr(v))
 	}
 	if message == "" {
@@ -500,19 +500,19 @@ func xSearchTool(ctx context.Context, env *Env, query string, allowedHandles, ex
 		log.Error("x_search failed", "error", err)
 		return xSearchErrorJSON(err.Error(), "RuntimeError")
 	}
-	decoded, err := pyjson.LoadsBytes(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		log.Error("x_search failed", "error", err)
 		return xSearchErrorJSON(err.Error(), "JSONDecodeError")
 	}
-	data, ok := decoded.(*pyjson.Object)
+	data, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		msg := fmt.Sprintf("the X search reply is %s, expected a mapping", errchain.Kind(decoded))
 		log.Error("x_search failed", "error", msg)
 		return xSearchErrorJSON(msg, "AttributeError")
 	}
 	citations := []any{}
-	if list, ok := data.Vals["citations"].([]any); ok && len(list) > 0 {
+	if list, ok := data.Value("citations").([]any); ok && len(list) > 0 {
 		citations = list
 	}
 	inline := extractInlineCitations(data)

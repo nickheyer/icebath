@@ -9,20 +9,20 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Bind host as text for logs
-func (a *APIServerAdapter) hostText() string { return pyrepr.Str(a.host) }
+func (a *APIServerAdapter) hostText() string { return anyutil.String(a.host) }
 
 // Bind host as the listener's optional host
 func (a *APIServerAdapter) hostPtr() *string {
 	if a.host == nil {
 		return nil
 	}
-	h := pyrepr.Str(a.host)
+	h := anyutil.String(a.host)
 	return &h
 }
 
@@ -211,7 +211,7 @@ func (a *APIServerAdapter) GetChatInfo(ctx context.Context, chatID string) (map[
 // Bind address, key and model name of this listener for a wake self post
 func (a *APIServerAdapter) SelfPostTarget() (string, int, string, string) {
 	host := ""
-	if pyrepr.Truthy(a.host) {
+	if anyutil.IsTrue(a.host) {
 		host = a.hostText()
 	}
 	return host, a.port, a.apiKey, a.modelName

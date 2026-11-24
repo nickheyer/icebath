@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type fakeTitlesHost struct {
@@ -36,7 +36,7 @@ func (h *fakeTitlesHost) readRetryingIOErr(ctx context.Context, fn func(conn SQL
 	return fn(h.reader)
 }
 
-func (h *fakeTitlesHost) sessionRowDict(row *pyjson.Object) *pyjson.Object {
+func (h *fakeTitlesHost) sessionRowDict(row *jsonutil.Object) *jsonutil.Object {
 	if resolved, ok := row.Get("_system_prompt_resolved"); ok {
 		row.Delete("_system_prompt_resolved")
 		row.Set("system_prompt", resolved)
@@ -88,7 +88,7 @@ func titleRow(t *testing.T, conn SQLiteConn, id string) (any, any) {
 
 func wantValueError(t *testing.T, err error, msg string) {
 	t.Helper()
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	if !errors.As(err, &pe) || pe.Kind != "ValueError" || pe.Msg != msg {
 		t.Fatalf("want ValueError %q, got %v", msg, err)
 	}

@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -47,17 +47,17 @@ func pendingFleetHomes(t *testing.T, records map[string]map[string]any) {
 		}
 		byHome[dir] = record["pid"].(int)
 	}
-	vsSwap(t, &fleetCodeIdentity, func(bool) (*pyjson.Object, error) {
-		return pyjson.ObjectOf("sha", pendingHeadSHA, "version", "1.0"), nil
+	vsSwap(t, &fleetCodeIdentity, func(bool) (*jsonutil.Object, error) {
+		return jsonutil.ObjectOf("sha", pendingHeadSHA, "version", "1.0"), nil
 	})
-	vsSwap(t, &fleetSocketIdentity, func(string) (int, *pyjson.Object, bool) { return 0, nil, false })
+	vsSwap(t, &fleetSocketIdentity, func(string) (int, *jsonutil.Object, bool) { return 0, nil, false })
 	vsSwap(t, &fleetLiveGatewayPID, func(h string) (int, bool, error) {
 		pid, found := byHome[h]
 		return pid, found, nil
 	})
 }
 
-func fleetStates(rows []*pyjson.Object) map[string]string {
+func fleetStates(rows []*jsonutil.Object) map[string]string {
 	states := map[string]string{}
 	for _, row := range rows {
 		profile, _ := rowValue(row, "profile").(string)
@@ -86,7 +86,7 @@ func TestAncestorWithAcceptedSelfRestartIsPendingWhileOtherStaleRowsStillFail(t 
 		t.Fatalf("matrix = %q", out.String())
 	}
 
-	var onlyAncestor []*pyjson.Object
+	var onlyAncestor []*jsonutil.Object
 	for _, row := range fleet {
 		if rowValue(row, "profile") == "default" {
 			onlyAncestor = append(onlyAncestor, row)

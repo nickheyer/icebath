@@ -3,7 +3,7 @@ package config
 import (
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // One optional env entry under its variable name, the unit an ordered table or fill is made of
@@ -28,7 +28,7 @@ type OptionalEnvTable struct {
 }
 
 // Marks the goroutine running a fill so its own reads of any table see the table without the fill
-var optionalEnvFilling pythread.Local
+var optionalEnvFilling syncutil.GoroutineLocal[any]
 
 // Saved table contents and armed fill a test puts back afterwards
 type OptionalEnvState struct {

@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Decodes JSON the way json loads does, numbers normalized to Python's own spelling and NaN or Infinity accepted
@@ -116,7 +114,7 @@ func pyNumberText(n json.Number) any {
 	if err != nil {
 		return n
 	}
-	return json.Number(pyrepr.Float(f))
+	return json.Number(strconv.FormatFloat(f, 'f', -1, 64))
 }
 
 // Replaces NaN and Infinity values with sentinel strings the encoder accepts, nil mappings staying null

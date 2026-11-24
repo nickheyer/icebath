@@ -7,8 +7,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const keylessWarnWindowS = 300.0
@@ -22,7 +22,7 @@ var (
 
 // Warns once per plugin and refusal kind per window that a key less inject was dropped, debug on repeats
 func keylessRefuse(pluginID, kind, detail string) {
-	keylessRefuseAt(pythread.Monotonic(), pluginID, kind, detail)
+	keylessRefuseAt(timeutil.Monotonic(), pluginID, kind, detail)
 }
 
 // Refusal at a monotonic instant, marks older than the window dropped first

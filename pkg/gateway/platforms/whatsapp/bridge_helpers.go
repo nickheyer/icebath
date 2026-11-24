@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf16"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Extension to mime type of outbound media files
@@ -80,7 +80,7 @@ func readMappingFile(sessionDir, identifier, suffix string) string {
 	if err != nil {
 		return ""
 	}
-	parsed, err := pyjson.LoadsBytes(raw)
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		return ""
 	}
@@ -643,8 +643,8 @@ func (c *bridgeConsole) raw(text string) {
 }
 
 // One compact JSON line without a stamp
-func (c *bridgeConsole) jsonLine(payload *pyjson.Object) {
-	text, err := pyjson.Dumps(payload, pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
+func (c *bridgeConsole) jsonLine(payload *jsonutil.Object) {
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return
 	}
@@ -652,8 +652,8 @@ func (c *bridgeConsole) jsonLine(payload *pyjson.Object) {
 }
 
 // Ordered JSON object of alternating keys and values
-func jsonObj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func jsonObj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}

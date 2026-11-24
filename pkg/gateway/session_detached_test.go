@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Detached keys keep the chat route namespace and parse back to their session id
@@ -55,7 +56,7 @@ func TestDetachedEntryResolvesConversationWithoutStoring(t *testing.T) {
 	if entry.SessionKey != key || entry.SessionID != "sid-a" || entry.Origin != source || entry.Platform != PlatformTelegram || entry.ChatType != "dm" {
 		t.Fatalf("entry %+v", entry)
 	}
-	if want, _ := pyFloat(startedAt); entry.CreatedAt.timestamp()-want > 1e-3 || want-entry.CreatedAt.timestamp() > 1e-3 {
+	if want, _ := anyutil.ToFloat(startedAt); entry.CreatedAt.timestamp()-want > 1e-3 || want-entry.CreatedAt.timestamp() > 1e-3 {
 		t.Fatalf("created at %v want %v", entry.CreatedAt.timestamp(), want)
 	}
 	if store.LookupBySessionKey(ctx, key) != nil {

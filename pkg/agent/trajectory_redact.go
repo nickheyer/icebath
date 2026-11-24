@@ -5,8 +5,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Tags whose bodies a trajectory turn carries as JSON
@@ -74,11 +74,11 @@ func redactTrajectoryText(text string) string {
 	var b strings.Builder
 	pos := 0
 	for _, block := range trajectoryJSONBlocks(text) {
-		decoded, err := pyjson.Loads(text[block.bodyStart:block.bodyEnd])
+		decoded, err := jsonutil.Decode(text[block.bodyStart:block.bodyEnd])
 		if err != nil {
 			continue
 		}
-		body, err := pyjson.Dumps(redactTrajectoryJSON(decoded), pyjson.EnsureASCII(false))
+		body, err := jsonutil.Encode(redactTrajectoryJSON(decoded))
 		if err != nil {
 			continue
 		}
@@ -101,13 +101,13 @@ func redactTrajectoryJSON(value any) any {
 		return redactTrajectoryJSON(item)
 	}
 	switch v := value.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return value
 		}
-		out := pyjson.NewObject()
-		for _, key := range v.Keys {
-			out.Set(key, field(key, v.Vals[key]))
+		out := jsonutil.NewObject()
+		for _, key := range v.Keys() {
+			out.Set(key, field(key, v.Value(key)))
 		}
 		return out
 	case map[string]any:
@@ -131,15 +131,15 @@ func redactTrajectoryField(key, value string) any {
 	if cleaned := redactTrajectoryText(value); cleaned != value {
 		return cleaned
 	}
-	doc, err := pyjson.Dumps(pyjson.ObjectOf(key, value), pyjson.EnsureASCII(false))
+	doc, err := jsonutil.Encode(jsonutil.ObjectOf(key, value))
 	if err != nil {
 		return "***"
 	}
-	decoded, err := pyjson.Loads(redactTrajectoryPlain(doc))
+	decoded, err := jsonutil.Decode(redactTrajectoryPlain(doc))
 	if err != nil {
 		return "***"
 	}
-	fields, ok := pyjson.Dict(decoded)
+	fields, ok := jsonutil.AsMap(decoded)
 	if !ok {
 		return "***"
 	}
@@ -161,13 +161,13 @@ func RedactTrajectoryValue(value any) any {
 			out[i] = RedactTrajectoryValue(item)
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return value
 		}
-		out := pyjson.NewObject()
-		for _, key := range v.Keys {
-			out.Set(key, RedactTrajectoryValue(v.Vals[key]))
+		out := jsonutil.NewObject()
+		for _, key := range v.Keys() {
+			out.Set(key, RedactTrajectoryValue(v.Value(key)))
 		}
 		return out
 	case map[string]any:

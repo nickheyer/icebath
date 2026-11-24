@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Admitted webhook ingress rows of a delivery chat id, automation rows on the same chat excluded
@@ -14,7 +14,7 @@ const webhookRetainedDestinationQuery = `SELECT payload_json FROM session_admiss
           AND json_extract(payload_json, '$.native_text_v1.automation') IS NULL`
 
 // Destination of a delivery read back from its admitted ingress, rechecked against today's connector and route
-func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, chatID string) (*pyjson.Object, error) {
+func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, chatID string) (*jsonutil.Object, error) {
 	runner := adapter.Base().GatewayRunner
 	if runner == nil {
 		runner = handlerOwner(adapter)
@@ -34,7 +34,7 @@ func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, ch
 	if scoped != nil {
 		candidates = []*SessionAuthority{scoped}
 	}
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	for _, authority := range candidates {
 		found, err := authority.DB.ReadAll(ctx, webhookRetainedDestinationQuery, chatID)
 		if err != nil {
@@ -46,11 +46,11 @@ func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, ch
 		return nil, runtimeRefusal("not_found")
 	}
 	raw, _ := rows[0].Get("payload_json")
-	decoded, err := pyjson.Loads(anyText(raw))
+	decoded, err := jsonutil.Decode(anyText(raw))
 	if err != nil {
 		return nil, err
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, &PyError{Kind: "TypeError", Msg: "the retained webhook payload is not a mapping"}
 	}
@@ -58,7 +58,7 @@ func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, ch
 	if !found {
 		return nil, &pyKeyError{"native_text_v1"}
 	}
-	envelope, ok := rawEnvelope.(*pyjson.Object)
+	envelope, ok := rawEnvelope.(*jsonutil.Object)
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: "the retained native text envelope is not a mapping"}
 	}
@@ -70,7 +70,7 @@ func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, ch
 	if err != nil {
 		return nil, err
 	}
-	if _, err := validateNative(ctx, authorityRunner, event, envelope.GetOr("provenance", nil), false); err != nil {
+	if _, err := validateNative(ctx, authorityRunner, event, envelope.ValueOr("provenance", nil), false); err != nil {
 		return nil, err
 	}
 	owner, err := authorityRunner.AdapterForSource(ctx, event.Source)
@@ -87,5 +87,5 @@ func webhookRetainedDestination(ctx context.Context, adapter PlatformAdapter, ch
 	if route, _ := envelope.Get("webhook_route"); route != digest {
 		return nil, runtimeRefusal("admission_conflict")
 	}
-	return webhookValidateDestination(ctx, envelope.GetOr("webhook_delivery", nil))
+	return webhookValidateDestination(ctx, envelope.ValueOr("webhook_delivery", nil))
 }

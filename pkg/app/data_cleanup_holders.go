@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -17,21 +18,21 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Control socket probes the holder checks reach, swapped by the cases that answer for a gateway
 var (
-	holdersIdentifyGateway = func(h string) *pyjson.Object {
+	holdersIdentifyGateway = func(h string) *jsonutil.Object {
 		return gateway.IdentifyGateway(h, gateway.DefaultControlClientTimeout)
 	}
-	holdersPauseGateway = func(h string) *pyjson.Object {
+	holdersPauseGateway = func(h string) *jsonutil.Object {
 		return gateway.PauseGatewayForUpdate(h, gateway.DefaultControlClientTimeout)
 	}
 	holdersProcessStartTime = gateway.GetProcessStartTime
@@ -59,7 +60,7 @@ func jsonPyInt(v any) (int, bool) {
 }
 
 // Identify answer of the manually launched gateway owning the home, nil when none runs, an error for a supervised one
-func manualGatewayIdentity(h string) (*pyjson.Object, error) {
+func manualGatewayIdentity(h string) (*jsonutil.Object, error) {
 	return gatewaycli.ManualGatewayIdentity(h, holdersIdentifyGateway, holderErrorf)
 }
 
@@ -91,13 +92,13 @@ func drainManualGateway(h string) error {
 	if err != nil || identity == nil {
 		return err
 	}
-	if served, _ := identity.Get("served_profiles"); pyrepr.Truthy(served) {
+	if served, _ := identity.Get("served_profiles"); anyutil.IsTrue(served) {
 		return holderErrorf("gateway serves multiple profiles; stop it explicitly before deleting one profile's data")
 	}
 	rawPid, _ := identity.Get("pid")
 	start, _ := identity.Get("start_time")
 	pid, isInt := jsonPyInt(rawPid)
-	if !isInt || pid <= 0 || start == nil || !pyrepr.Equal(holdersProcessStartTime(pid), start) {
+	if !isInt || pid <= 0 || start == nil || !anyutil.Equal(holdersProcessStartTime(pid), start) {
 		return holderErrorf("gateway process identity is unverified for %s", h)
 	}
 	response := holdersPauseGateway(h)
@@ -107,7 +108,7 @@ func drainManualGateway(h string) error {
 	var probeErr error
 	gone := func() (bool, bool) {
 		current := holdersProcessStartTime(pid)
-		originalGone := !gateway.PidExists(pid) || (current != nil && !pyrepr.Equal(current, start))
+		originalGone := !gateway.PidExists(pid) || (current != nil && !anyutil.Equal(current, start))
 		if !originalGone || holdersIdentifyGateway(h) != nil {
 			return false, false
 		}
@@ -118,13 +119,13 @@ func drainManualGateway(h string) error {
 		}
 		return !running, !running
 	}
-	drain := response.GetOr("drain_timeout", 30.0)
+	drain := response.ValueOr("drain_timeout", 30.0)
 	seconds, err := drainTimeoutSeconds(drain)
 	if err != nil {
 		return err
 	}
 	timeout := min(120.0, max(5.0, seconds+5.0))
-	exited := pydeadline.PollUntil(gone, time.Duration(timeout*float64(time.Second)), 50*time.Millisecond)
+	exited := syncutil.PollUntil(context.Background(), time.Duration(timeout*float64(time.Second)), 50*time.Millisecond, gone)
 	if probeErr != nil {
 		return probeErr
 	}
@@ -154,11 +155,11 @@ func refuseCronWriters(h string) error {
 		}
 		return err
 	}
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return err
 	}
-	uri, err := pypath.AsURI(resolved)
+	uri, err := pathutil.FileURL(resolved)
 	if err != nil {
 		return err
 	}
@@ -203,19 +204,19 @@ func refuseCronWriters(h string) error {
 	rows.Close()
 	for _, row := range records {
 		pid, isInt := jsonPyInt(row["pid"])
-		if pyrepr.Truthy(row["handoff_pending"]) {
-			return holderErrorf("cron execution %s is being handed to a worker; wait for it to finish", pyrepr.Str(row["id"]))
+		if anyutil.IsTrue(row["handoff_pending"]) {
+			return holderErrorf("cron execution %s is being handed to a worker; wait for it to finish", anyutil.String(row["id"]))
 		}
 		if !isInt {
-			return fmt.Errorf("cron execution %s pid is %s where a whole number was expected", pyrepr.Str(row["id"]), errchain.Kind(row["pid"]))
+			return fmt.Errorf("cron execution %s pid is %s where a whole number was expected", anyutil.String(row["id"]), errchain.Kind(row["pid"]))
 		}
 		if !gateway.PidExists(pid) {
 			continue
 		}
 		current := holdersProcessStartTime(pid)
 		recorded := row["process_started_at"]
-		if current == nil || recorded == nil || pyrepr.Equal(current, recorded) {
-			return holderErrorf("cron execution %s still owns %s (PID %d); stop it before retrying", pyrepr.Str(row["id"]), h, pid)
+		if current == nil || recorded == nil || anyutil.Equal(current, recorded) {
+			return holderErrorf("cron execution %s still owns %s (PID %d); stop it before retrying", anyutil.String(row["id"]), h, pid)
 		}
 	}
 	return nil
@@ -223,7 +224,7 @@ func refuseCronWriters(h string) error {
 
 // Refuses a named profile wipe while the default multiplexer serves it or its scope cannot be proven
 func refuseMultiplexer(h string) error {
-	root, err := pypath.Resolve(home.RootOf(h))
+	root, err := pathutil.Resolve(home.RootOf(h))
 	if err != nil {
 		return err
 	}
@@ -232,12 +233,12 @@ func refuseMultiplexer(h string) error {
 	}
 	identity := holdersIdentifyGateway(root)
 	if identity != nil {
-		served := identity.GetOr("served_profiles", []any{})
-		name := pypath.PathName(h)
+		served := identity.ValueOr("served_profiles", []any{})
+		name := pathutil.Name(h)
 		listed := false
 		switch x := served.(type) {
 		case []any:
-			listed = slices.ContainsFunc(x, func(v any) bool { return pyrepr.Equal(v, name) })
+			listed = slices.ContainsFunc(x, func(v any) bool { return anyutil.Equal(v, name) })
 		case string:
 			listed = strings.Contains(x, name)
 		default:
@@ -260,7 +261,7 @@ func refuseMultiplexer(h string) error {
 
 // Runs body while every writer lock of the home is held, refusing when any live writer still owns it
 func quiescentHome(h string, body func() error) error {
-	h, err := pypath.Resolve(h)
+	h, err := pathutil.Resolve(h)
 	if err != nil {
 		return err
 	}
@@ -310,7 +311,7 @@ func quiescentHome(h string, body func() error) error {
 		seen := map[int]bool{}
 		var pids []int
 		for _, entry := range sessions {
-			pid, _ := jsonPyInt(entry.GetOr("pid", nil))
+			pid, _ := jsonPyInt(entry.Value("pid"))
 			if !seen[pid] {
 				seen[pid] = true
 				pids = append(pids, pid)

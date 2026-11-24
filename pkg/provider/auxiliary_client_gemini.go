@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Socket timeouts of one Gemini facade call in the httpx connect, read and write sense
@@ -97,10 +97,10 @@ func auxGeminiCallTimeouts(kwargs map[string]any) (auxGeminiTimeouts, error) {
 		seconds = float64(v)
 	case time.Duration:
 		seconds = v.Seconds()
-	case pyhttpx.Timeout:
+	case httputil.Timeout:
 		return auxGeminiTimeouts{connect: v.Connect, read: v.Read, write: v.Write}, nil
 	default:
-		return auxGeminiTimeouts{}, fmt.Errorf("Timeout value must be a float, a Timeout or None, got %s", pyrepr.Repr(v))
+		return auxGeminiTimeouts{}, fmt.Errorf("Timeout value must be a float, a Timeout or None, got %s", anyutil.Quote(v))
 	}
 	d := time.Duration(seconds * float64(time.Second))
 	return auxGeminiTimeouts{connect: d, read: d, write: d}, nil
@@ -202,7 +202,7 @@ func (c *geminiNativeClient) CreateChatCompletion(ctx context.Context, kwargs ma
 
 // Native generateContent call for OpenAI kwargs over this client, long decode hops joined, or a chunk stream when stream is set
 func (native *geminiNativeClient) createChatCompletion(ctx context.Context, kwargs map[string]any, connect time.Duration) (any, error) {
-	extra, _ := pyjson.Dict(kwargs["extra_body"])
+	extra, _ := jsonutil.AsMap(kwargs["extra_body"])
 	if extra == nil {
 		extra = map[string]any{}
 	}

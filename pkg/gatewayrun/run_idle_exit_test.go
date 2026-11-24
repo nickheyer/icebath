@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Runner exposing what the idle predicate reads, its launch ledger in a temp home and activity ten seconds old
@@ -41,9 +41,9 @@ func idleExitRunner(t *testing.T) (*GatewayRunner, string, *state.SessionDB) {
 	r.draining.Store(false)
 	r.sessionAuthorities = registry
 	r.adapters = adapterDict(gateway.PlatformLocal, newRestartTestAdapter())
-	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
+	r.profileAdapters = orderedutil.NewMap[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]()
 	r.profileFailedPlatforms = map[string]map[gateway.Platform]*gatewayTask{}
-	r.failedPlatforms = pydict.New[gateway.Platform, map[string]any]()
+	r.failedPlatforms = orderedutil.NewMap[gateway.Platform, map[string]any]()
 	r.config = gateway.DefaultGatewayConfig(context.Background())
 	r.config.Platforms = map[gateway.Platform]*gateway.PlatformConfig{}
 	r.sessionTicketStore = tickets
@@ -64,7 +64,7 @@ func queueAdmission(t *testing.T, db *state.SessionDB, text string) (int64, stri
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: "p", SessionID: "s", RequestID: "r", Payload: pyjson.ObjectOf("text", text)})
+	row, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: "p", SessionID: "s", RequestID: "r", Payload: jsonutil.ObjectOf("text", text)})
 	if err != nil {
 		t.Fatal(err)
 	}

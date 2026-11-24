@@ -6,8 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Declares the stored session listing methods on the session module registry
@@ -16,37 +17,37 @@ func registerSessionListHandlers() {
 }
 
 // Value of a row column or the fallback when the column is falsy
-func rowOr(row *pyjson.Object, key string, fallback any) any {
-	if value := row.GetOr(key, nil); truthy(value) {
+func rowOr(row *jsonutil.Object, key string, fallback any) any {
+	if value := row.ValueOr(key, nil); anyutil.IsTrue(value) {
 		return value
 	}
 	return fallback
 }
 
 // Lowered source of a stored row
-func rowSource(row *pyjson.Object) string {
+func rowSource(row *jsonutil.Object) string {
 	return strings.ToLower(strings.TrimSpace(strOr(rowOr(row, "source", ""))))
 }
 
 // Whether a row's source is hidden from human listings
-func deniedSource(row *pyjson.Object) bool {
+func deniedSource(row *jsonutil.Object) bool {
 	return slices.Contains(gateway.InternalListingSources, rowSource(row))
 }
 
 // Hidden source or the unknown source of a guard row, never a target for auto resume
-func autoResumeDeniedSource(row *pyjson.Object) bool {
+func autoResumeDeniedSource(row *jsonutil.Object) bool {
 	source := rowSource(row)
 	return slices.Contains(gateway.InternalListingSources, source) || source == "unknown"
 }
 
 // Human facing rows most recent first with the deny list applied
-func listingRows(ctx context.Context, db *state.DB, limit int, includeHidden, includeSubagents bool) ([]*pyjson.Object, error) {
+func listingRows(ctx context.Context, db *state.DB, limit int, includeHidden, includeSubagents bool) ([]*jsonutil.Object, error) {
 	rows, err := db.ListSessionsRich(ctx, state.ListSessionsRichOptions{Limit: &limit, OrderByLastActive: true, CompactRows: true,
 		IncludeHidden: includeHidden, IncludeSubagents: includeSubagents})
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*pyjson.Object, 0, len(rows))
+	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, row := range rows {
 		if !deniedSource(row) {
 			out = append(out, row)
@@ -69,7 +70,7 @@ func sessionMostRecent(ctx context.Context, rid any, params map[string]any) map[
 	}
 	for _, row := range rows {
 		if !autoResumeDeniedSource(row) {
-			return ok(rid, map[string]any{"session_id": row.GetOr("id", nil), "title": rowOr(row, "title", ""),
+			return ok(rid, map[string]any{"session_id": row.ValueOr("id", nil), "title": rowOr(row, "title", ""),
 				"started_at": rowOr(row, "started_at", 0), "source": rowOr(row, "source", "")})
 		}
 	}

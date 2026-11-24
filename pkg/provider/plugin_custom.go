@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Profiles the bundled custom plugin registers, any user configured local or relay endpoint
@@ -27,10 +27,10 @@ func customPluginProfiles() []Profile {
 }
 
 // Ollama num_ctx option, reasoning off as effort none with think false on Ollama, Groq default, else the clamped effort
-func customBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
-	extraBody, topLevel := pyjson.ObjectOf(), map[string]any{}
+func customBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
+	extraBody, topLevel := jsonutil.ObjectOf(), map[string]any{}
 	if numCtx := kw["ollama_num_ctx"]; pyTruthy(numCtx) {
-		extraBody.Set("options", pyjson.ObjectOf("num_ctx", numCtx))
+		extraBody.Set("options", jsonutil.ObjectOf("num_ctx", numCtx))
 	}
 	cfg := reasoningConfigMap(reasoning)
 	if len(cfg) == 0 {

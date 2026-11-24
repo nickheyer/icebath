@@ -24,12 +24,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -120,7 +119,7 @@ func lightpandaLogger(env *tools.Env) interface {
 
 // Installer locations then the home's bin directory
 func defaultLightpandaHomeCandidates(env *tools.Env) []string {
-	userHome := pypath.Expanduser("~")
+	userHome := pathutil.ExpandUser("~")
 	return []string{
 		filepath.Join(userHome, ".lightpanda", "lightpanda"),
 		filepath.Join(userHome, ".local", "bin", "lightpanda"),
@@ -152,12 +151,12 @@ func findLightpandaBinary(env *tools.Env) string {
 		return ""
 	}
 	search := lightpandaMergeSanePath(os.Getenv("PATH"))
-	if found, ok := pyshutil.Which("lightpanda", &search); ok {
+	if found, err := fsutil.LookPathIn("lightpanda", search); err == nil {
 		return found
 	}
 	for _, c := range lightpandaHomeCandidates(env) {
 		if st, err := os.Stat(c); err == nil && st.Mode().IsRegular() {
-			if _, ok := pyshutil.Which(c, nil); ok {
+			if _, err := exec.LookPath(c); err == nil {
 				return c
 			}
 		}
@@ -292,14 +291,14 @@ func writeLightpandaRecord(ctx context.Context, env *tools.Env, server *Lightpan
 	if server.StartTime != nil {
 		start = *server.StartTime
 	}
-	record := pyjson.ObjectOf("pid", server.proc.pid(), "port", server.Port, "owner_pid", os.Getpid(),
+	record := jsonutil.ObjectOf("pid", server.proc.pid(), "port", server.Port, "owner_pid", os.Getpid(),
 		"start_time", start, "started_at", float64(time.Now().UnixNano())/1e9)
 	dir, err := lightpandaStateDir(env)
 	if err == nil {
 		err = config.AtomicJSONWriteWith(tools.WithEnvHome(ctx, env), filepath.Join(dir, server.SessionName+".json"), record)
 	}
 	if err != nil {
-		lightpandaLogger(env).Debug(fmt.Sprintf("could not write lightpanda record for %s: %s", server.SessionName, pypath.OSErrorText(err)))
+		lightpandaLogger(env).Debug(fmt.Sprintf("could not write lightpanda record for %s: %s", server.SessionName, err.Error()))
 	}
 }
 
@@ -336,13 +335,13 @@ func launchLightpanda(ctx context.Context, env *tools.Env, sessionName string, b
 	}
 	port, err := lightpandaFreePort()
 	if err != nil {
-		return nil, pypath.OSErrorText(err)
+		return nil, err.Error()
 	}
 	argv := []string{binary, "serve", "--host", "127.0.0.1", "--port", strconv.Itoa(port)}
 	if lightpandaSupportsHTTPCache(binary) {
 		cache, err := lightpandaHTTPCacheDir(env)
 		if err != nil {
-			return nil, pypath.OSErrorText(err)
+			return nil, err.Error()
 		}
 		argv = append(argv, lightpandaHTTPCacheFlag, cache)
 	}
@@ -351,7 +350,7 @@ func launchLightpanda(ctx context.Context, env *tools.Env, sessionName string, b
 	}
 	state, err := lightpandaStateDir(env)
 	if err != nil {
-		return nil, pypath.OSErrorText(err)
+		return nil, err.Error()
 	}
 	logPath := filepath.Join(state, sessionName+".log")
 	child, err := func() (lightpandaChild, error) {
@@ -365,7 +364,7 @@ func launchLightpanda(ctx context.Context, env *tools.Env, sessionName string, b
 		return lightpandaPopen(argv, logFile, procEnv)
 	}()
 	if err != nil {
-		return nil, fmt.Sprintf("Failed to launch lightpanda serve (%s): %s", binary, pypath.OSErrorText(err))
+		return nil, fmt.Sprintf("Failed to launch lightpanda serve (%s): %s", binary, err.Error())
 	}
 	url := "http://127.0.0.1:" + strconv.Itoa(port)
 	deadline := time.Now().Add(lightpandaReadyTimeout)
@@ -444,7 +443,7 @@ func stopLightpanda(env *tools.Env, sessionName string) {
 		err = unlinkMissingOK(filepath.Join(dir, sessionName+".json"))
 	}
 	if err != nil {
-		lightpandaLogger(env).Debug(fmt.Sprintf("could not remove lightpanda record for %s: %s", sessionName, pypath.OSErrorText(err)))
+		lightpandaLogger(env).Debug(fmt.Sprintf("could not remove lightpanda record for %s: %s", sessionName, err.Error()))
 	}
 	if server != nil {
 		lightpandaLogger(env).Debug("Stopped lightpanda serve for session " + sessionName)
@@ -475,11 +474,11 @@ func isLightpandaProcess(pid int, port, startTime any) bool {
 		return false
 	}
 	cmdline, err := lightpandaProcCmdline(pid)
-	if err != nil || !slices.Contains(cmdline, "serve") || !slices.Contains(cmdline, pyrepr.Str(port)) {
+	if err != nil || !slices.Contains(cmdline, "serve") || !slices.Contains(cmdline, anyutil.String(port)) {
 		return false
 	}
-	if pyrepr.Truthy(startTime) {
-		return pyrepr.Equal(lightpandaProcStartTime(pid), startTime)
+	if anyutil.IsTrue(startTime) {
+		return anyutil.Equal(lightpandaProcStartTime(pid), startTime)
 	}
 	return true
 }
@@ -493,24 +492,23 @@ func recordStartTime(v any) *int64 {
 		n := int64(f)
 		return &n
 	}
-	if n, ok := pyint.Instance(v); ok && n.IsInt64() {
-		i := n.Int64()
-		return &i
+	if n, ok := anyutil.Int(v); ok {
+		return &n
 	}
 	unmatchable := int64(-1)
 	return &unmatchable
 }
 
-// Python int of a record pid, the error being the exception int raises out of the sweep
+// Pid a record holds, -1 for a number past the int64 range, the error of a value that is not a number ending the sweep
 func recordPid(v any) (int, error) {
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
+	if errors.Is(err, anyutil.ErrRange) {
+		return -1, nil
+	}
 	if err != nil {
 		return 0, err
 	}
-	if !n.IsInt64() {
-		return -1, nil
-	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Kills lightpanda serve processes whose owner is gone and returns the count, a live owner never touched
@@ -518,7 +516,7 @@ func reapOrphanedLightpanda(env *tools.Env) (int, error) {
 	log := lightpandaLogger(env)
 	stateDir, err := lightpandaStateDir(env)
 	if err != nil {
-		log.Debug("lightpanda state dir unavailable: " + pypath.OSErrorText(err))
+		log.Debug("lightpanda state dir unavailable: " + err.Error())
 		return 0, nil
 	}
 	entries, err := os.ReadDir(stateDir)
@@ -540,11 +538,11 @@ func reapOrphanedLightpanda(env *tools.Env) (int, error) {
 			continue
 		}
 		ownerPid, _ := record.Get("owner_pid")
-		if pyrepr.Equal(ownerPid, int64(os.Getpid())) {
+		if anyutil.Equal(ownerPid, int64(os.Getpid())) {
 			if getLightpandaServer(sessionName) != nil {
 				continue
 			}
-		} else if pyrepr.Truthy(ownerPid) {
+		} else if anyutil.IsTrue(ownerPid) {
 			owner, err := recordPid(ownerPid)
 			if err != nil {
 				return reaped, err
@@ -556,7 +554,7 @@ func reapOrphanedLightpanda(env *tools.Env) (int, error) {
 		pidValue, _ := record.Get("pid")
 		port, _ := record.Get("port")
 		startTime, _ := record.Get("start_time")
-		if pyrepr.Truthy(pidValue) {
+		if anyutil.IsTrue(pidValue) {
 			pid, err := recordPid(pidValue)
 			if err != nil {
 				return reaped, err
@@ -578,7 +576,7 @@ func reapOrphanedLightpanda(env *tools.Env) (int, error) {
 }
 
 // Record object of a state file, false for unreadable, undecodable or non object content
-func readLightpandaRecord(path string) (*pyjson.Object, bool) {
+func readLightpandaRecord(path string) (*jsonutil.Object, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, false
@@ -587,11 +585,11 @@ func readLightpandaRecord(path string) (*pyjson.Object, bool) {
 	if !utf8.Valid(data) {
 		return nil, false
 	}
-	value, err := pyjson.Loads(string(data))
+	value, err := jsonutil.Decode(string(data))
 	if err != nil {
 		return nil, false
 	}
-	return pyjson.AsObject(value)
+	return jsonutil.AsObject(value)
 }
 
 func usingLightpandaEngine(env *tools.Env) bool { return cfgOf(env).usingLightpanda() }

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
+	"github.com/mattn/go-runewidth"
 )
 
 // Narrowest column, the divider's minimum dash run
@@ -12,7 +12,7 @@ const minTableColWidth = 3
 
 // wcswidth of the text clamped to zero or more
 func dispWidth(s string) int {
-	w := pyunicode.WcsWidth(s)
+	w := (&runewidth.Condition{StrictEmojiNeutral: true}).StringWidth(s)
 	if w < 0 {
 		return 0
 	}

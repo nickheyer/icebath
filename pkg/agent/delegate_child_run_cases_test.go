@@ -7,12 +7,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Child double that accepts a hard stop, the attributes AIAgent.hard_interrupt needs
 func interruptibleChild() *AIAgent {
-	return &AIAgent{hardInterruptRequested: &pythread.Event{}, pendingRedirectLock: &sync.Mutex{},
+	return &AIAgent{hardInterruptRequested: &syncutil.Event{}, pendingRedirectLock: &sync.Mutex{},
 		toolWorkerThreads: map[int64]bool{}, toolWorkerThreadsLock: &sync.Mutex{}, activeChildrenLock: &sync.Mutex{},
 		quietMode: true, apiMode: "test"}
 }

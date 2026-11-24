@@ -7,13 +7,14 @@ import (
 	"reflect"
 	"runtime/debug"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Abstract identity every registered provider implements, the stable lowercase config key value
@@ -59,8 +60,8 @@ type Registry[P NamedProvider] struct {
 	Normalize          func(string) string
 	BuiltinNames       map[string]bool
 	onBuiltinCollision func(string) error
-	providers          *pydict.Dict[string, P]
-	scopedProviders    *pydict.Dict[string, *pydict.Dict[string, P]]
+	providers          *orderedutil.Map[string, P]
+	scopedProviders    *orderedutil.Map[string, *orderedutil.Map[string, P]]
 	generation         int
 	scopedGenerations  map[string]int
 	mu                 sync.Mutex
@@ -75,7 +76,7 @@ func New[P NamedProvider](opts Options) *Registry[P] {
 	r := &Registry[P]{
 		Label: opts.Label, ProviderCls: opts.ProviderCls, Logger: opts.Logger, Normalize: opts.Normalize,
 		BuiltinNames: opts.BuiltinNames, onBuiltinCollision: opts.OnBuiltinCollision,
-		providers: pydict.New[string, P](), scopedProviders: pydict.New[string, *pydict.Dict[string, P]](),
+		providers: orderedutil.NewMap[string, P](), scopedProviders: orderedutil.NewMap[string, *orderedutil.Map[string, P]](),
 		scopedGenerations: map[string]int{},
 	}
 	if r.ProviderCls == "" {
@@ -91,8 +92,8 @@ func New[P NamedProvider](opts Options) *Registry[P] {
 		r.BuiltinNames = map[string]bool{}
 	}
 	r.logLabel = opts.Label
-	if !pystr.IsUpper(opts.Label) {
-		first, size := pystr.DecodeRune(opts.Label)
+	if !(strings.ToUpper(opts.Label) == opts.Label && strings.ToLower(opts.Label) != opts.Label) {
+		first, size := utf8.DecodeRuneInString(opts.Label)
 		r.logLabel = strings.ToLower(string(first)) + opts.Label[size:]
 	}
 	return r
@@ -111,7 +112,7 @@ func providerClassName[P any]() string {
 }
 
 // Slot map of a normalized write scope, global for the empty scope, nil for a missing scope without create
-func (r *Registry[P]) target(scope string, create bool) *pydict.Dict[string, P] {
+func (r *Registry[P]) target(scope string, create bool) *orderedutil.Map[string, P] {
 	if scope == "" {
 		return r.providers
 	}
@@ -121,7 +122,7 @@ func (r *Registry[P]) target(scope string, create bool) *pydict.Dict[string, P] 
 	if !create {
 		return nil
 	}
-	m := pydict.New[string, P]()
+	m := orderedutil.NewMap[string, P]()
 	r.scopedProviders.Set(scope, m)
 	return m
 }
@@ -157,7 +158,7 @@ func (r *Registry[P]) register(provider any, scope string) (bool, error) {
 		if strings.ContainsRune("AEIOU", []rune(r.ProviderCls + " ")[0]) {
 			article = "an"
 		}
-		typeName := pyrepr.TypeName(provider)
+		typeName := anyutil.Kind(provider)
 		if IsNil(provider) {
 			typeName = "NoneType"
 		}
@@ -184,20 +185,20 @@ func (r *Registry[P]) register(provider any, scope string) (bool, error) {
 	r.bump(scope)
 	r.mu.Unlock()
 	if had {
-		r.Logger.Debug(fmt.Sprintf("%s provider '%s' re-registered (was %s)", r.Label, key, pyrepr.StrRepr(pyrepr.TypeName(existing))))
+		r.Logger.Debug(fmt.Sprintf("%s provider '%s' re-registered (was %s)", r.Label, key, strconv.Quote(anyutil.Kind(existing))))
 	} else {
-		r.Logger.Debug(fmt.Sprintf("Registered %s provider '%s' (%s)", r.logLabel, key, pyrepr.TypeName(p)))
+		r.Logger.Debug(fmt.Sprintf("Registered %s provider '%s' (%s)", r.logLabel, key, anyutil.Kind(p)))
 	}
 	return true, nil
 }
 
 // Copy of the global map overlaid with the active profile scope map
-func (r *Registry[P]) Merged(ctx context.Context, scope string) *pydict.Dict[string, P] {
+func (r *Registry[P]) Merged(ctx context.Context, scope string) *orderedutil.Map[string, P] {
 	key := ScopeKey(ctx, scope)
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	scoped, _ := r.scopedProviders.Get(key)
-	return pydict.Merge(r.providers, scoped)
+	return orderedutil.Merge(r.providers, scoped)
 }
 
 // Every provider visible in the active scope sorted by name
@@ -294,8 +295,8 @@ func (r *Registry[P]) ResetForTests() {
 
 // Historical module level API of a provider registry module plus its providers, scoped providers and lock test hooks
 type API[P NamedProvider] struct {
-	Providers            *pydict.Dict[string, P]
-	ScopedProviders      *pydict.Dict[string, *pydict.Dict[string, P]]
+	Providers            *orderedutil.Map[string, P]
+	ScopedProviders      *orderedutil.Map[string, *orderedutil.Map[string, P]]
 	Lock                 *sync.Mutex
 	RegisterProvider     func(provider P, scope string) error
 	ListProviders        func(ctx context.Context, scope string) []P
@@ -441,5 +442,5 @@ func PanicText(rec any) string {
 	if err, ok := rec.(error); ok {
 		return err.Error()
 	}
-	return pyrepr.Str(rec)
+	return anyutil.String(rec)
 }

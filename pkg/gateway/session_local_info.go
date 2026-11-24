@@ -6,14 +6,14 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Route and effort a built agent reports as its session's own, mid voice turn included
@@ -61,7 +61,7 @@ func anyText(v any) string {
 	if text, ok := v.(string); ok {
 		return text
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Model a session with no built agent will run, the welcome model when the free tier route would pin it
@@ -88,9 +88,9 @@ func lazyModel(ctx context.Context, a *SessionAuthority, policy *LocalSessionPol
 }
 
 // Effort and tier fields of a session from its built agent, or what the policy's next turn resolves
-func reasoningFields(ctx context.Context, agent sessionInfoAgent, policy *LocalSessionPolicy, model any, a *SessionAuthority, override map[string]any) (*pyjson.Object, error) {
+func reasoningFields(ctx context.Context, agent sessionInfoAgent, policy *LocalSessionPolicy, model any, a *SessionAuthority, override map[string]any) (*jsonutil.Object, error) {
 	if agent == nil && policy == nil {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	if agent != nil {
 		view := agent.SessionRuntime()
@@ -115,7 +115,7 @@ func reasoningFields(ctx context.Context, agent sessionInfoAgent, policy *LocalS
 }
 
 // Session info reasoning effort, wire effort, service tier and fast flag of one resolved route
-func effortFields(reasoning any, tier string, model, providerName, baseURL, apiMode any) *pyjson.Object {
+func effortFields(reasoning any, tier string, model, providerName, baseURL, apiMode any) *jsonutil.Object {
 	effort := ""
 	if cfg, ok := reasoning.(map[string]any); ok && cfg != nil {
 		if cfg["enabled"] == any(false) {
@@ -139,11 +139,11 @@ func effortFields(reasoning any, tier string, model, providerName, baseURL, apiM
 		}
 		fast = provider.ResolveFastModeOverrides(anyText(model), name, base, tier) != nil
 	}
-	return pyjson.ObjectOf("reasoning_effort", effort, "reasoning_effort_wire", wire, "service_tier", tier, "fast", fast)
+	return jsonutil.ObjectOf("reasoning_effort", effort, "reasoning_effort_wire", wire, "service_tier", tier, "fast", fast)
 }
 
 // Session info of a live session, its source, model, route, effort and one shot chat fields
-func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*pyjson.Object, error) {
+func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*jsonutil.Object, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
 		return nil, &pyKeyError{key: ref.SessionID}
@@ -187,7 +187,7 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 	} else if model, err = lazyModel(ctx, a, policy); err != nil {
 		return nil, err
 	}
-	info := pyjson.ObjectOf("source", source, "model", anyText(model), "lazy", agent == nil, "profile_id", a.ProfileID,
+	info := jsonutil.ObjectOf("source", source, "model", anyText(model), "lazy", agent == nil, "profile_id", a.ProfileID,
 		"gateway_protocol", CanonicalGatewayProtocol, "profile_name", servedProfileName(a.ProfileID),
 		"redact_secrets", tools.RedactEnabled(ctx))
 	if policy != nil {
@@ -202,7 +202,7 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 			override = peeked.ReasoningOverride()
 		}
 	}
-	var fields *pyjson.Object
+	var fields *jsonutil.Object
 	if agent == nil && policy == nil && live.Source != nil && live.Source.Platform != PlatformLocal {
 		fields, err = messagingRouteInfo(ctx, a.Runner, live)
 	} else {
@@ -213,7 +213,7 @@ func localSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) 
 	}
 	mergeObject(info, fields)
 	if policy != nil {
-		request, err := pyjson.Loads(policy.RequestJSON)
+		request, err := jsonutil.Decode(policy.RequestJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -258,7 +258,7 @@ func sessionLaunchOptions(ctx context.Context, a *SessionAuthority, policy *Loca
 	if err != nil {
 		return tuigateway.SessionLaunchOptions{}, err
 	}
-	out := tuigateway.SessionLaunchOptions{Checkpoints: pyrepr.Truthy(CheckpointAgentKwargs(cfg)["checkpoints_enabled"]),
+	out := tuigateway.SessionLaunchOptions{Checkpoints: anyutil.IsTrue(CheckpointAgentKwargs(cfg)["checkpoints_enabled"]),
 		PassSessionID: policy.PassSessionID(), IgnoreRules: policy.IgnoreRules(), SafeMode: policy.SafeMode,
 		IgnoreUserConfig: policy.IgnoreUserConfig, RunBudget: budget}
 	if turns := policy.MaxTurns(); turns != config.TurnLimitUnlimited {
@@ -280,20 +280,20 @@ func sessionLaunchOptions(ctx context.Context, a *SessionAuthority, policy *Loca
 }
 
 // Copies every key of src onto dst in order
-func mergeObject(dst, src *pyjson.Object) {
-	for _, key := range src.Keys {
+func mergeObject(dst, src *jsonutil.Object) {
+	for _, key := range src.Keys() {
 		value, _ := src.Get(key)
 		dst.Set(key, value)
 	}
 }
 
 // Stored title text or empty, times, yolo, API mode, tool count and masked credential hint of the session
-func classicCLIFields(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, agent sessionInfoAgent, policy *LocalSessionPolicy) *pyjson.Object {
+func classicCLIFields(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, agent sessionInfoAgent, policy *LocalSessionPolicy) *jsonutil.Object {
 	storedID := ref.SessionID
 	if target, err := receiptEntryTarget(ctx, a.DB, ref.SessionID); err == nil && target != "" {
 		storedID = target
 	}
-	row := pyjson.NewObject()
+	row := jsonutil.NewObject()
 	if stored, err := a.DB.GetSession(ctx, storedID); err == nil && stored != nil {
 		row = stored
 	}
@@ -327,7 +327,7 @@ func classicCLIFields(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	if !pyTruthy(lastActive) {
 		lastActive = started
 	}
-	return pyjson.ObjectOf("title", strings.TrimSpace(anyText(title)), "started_at", started, "last_active_at", lastActive, "yolo", yolo,
+	return jsonutil.ObjectOf("title", strings.TrimSpace(anyText(title)), "started_at", started, "last_active_at", lastActive, "yolo", yolo,
 		"api_mode", apiMode, "tool_count", toolCount, "credential_hint", hint)
 }
 

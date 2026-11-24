@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestFormatMessageBoldDoubleAsteriskToSingle(t *testing.T) {
@@ -48,7 +48,7 @@ func TestFormatMessageProtectsCodeAndNestedSpans(t *testing.T) {
 }
 
 func TestCardSpecToCardsV2WireShape(t *testing.T) {
-	spec, err := pyjson.Loads(`{"card_id": "c1", "header": {"title": "T", "image_url": "u", "image_alt_text": "alt"},
+	spec, err := jsonutil.Decode(`{"card_id": "c1", "header": {"title": "T", "image_url": "u", "image_alt_text": "alt"},
 		"sections": [{"header": "S", "widgets": [{"type": "text", "text": "**hi**"},
 		{"type": "buttons", "buttons": [{"text": "Go", "action": "act", "parameters": {"z": 1, "a": true}}]},
 		{"type": "selection", "name": "n", "items": [{"text": "A", "value": "a", "selected": 1}]},
@@ -60,7 +60,7 @@ func TestCardSpecToCardsV2WireShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := pyjson.Dumps(card)
+	got, err := jsonutil.Encode(card)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,7 +78,7 @@ func TestCardSpecToCardsV2Errors(t *testing.T) {
 		`{"sections": [{"widgets": [{"type": "image"}]}]}`:                                "widget.image_url is required",
 		`{"sections": [{"widgets": [{"type": "selection", "name": "n", "items": [1]}]}]}`: "selection items must be objects",
 	} {
-		v, _ := pyjson.Loads(spec)
+		v, _ := jsonutil.Decode(spec)
 		if _, err := CardSpecToCardsV2(v); err == nil || err.Error() != msg {
 			t.Fatalf("%s: err = %v, want %s", spec, err, msg)
 		}

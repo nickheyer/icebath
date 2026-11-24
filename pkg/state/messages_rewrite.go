@@ -7,6 +7,7 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -116,7 +117,7 @@ func stampKeptLivePrefix(live []map[string]any, messages []map[string]any) (int,
 		if r, ok := msg["role"]; ok {
 			role = r
 		}
-		if !pyrepr.Equal(row["role"], role) || !pyrepr.Equal(row["tool_call_id"], msg["tool_call_id"]) {
+		if !anyutil.Equal(row["role"], role) || !anyutil.Equal(row["tool_call_id"], msg["tool_call_id"]) {
 			break
 		}
 		mine, err := rowIdentity(role, msg["content"], msg["tool_call_id"], parseToolCalls(msg["tool_calls"]))
@@ -127,7 +128,7 @@ func stampKeptLivePrefix(live []map[string]any, messages []map[string]any) (int,
 		if err != nil {
 			return kept, err
 		}
-		if !pyrepr.Equal(mine, theirs) {
+		if !anyutil.Equal(mine, theirs) {
 			break
 		}
 		msg["_row_id"] = row["id"]

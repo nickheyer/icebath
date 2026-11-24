@@ -35,7 +35,7 @@ func displayPaged(t *testing.T, db *SessionDB, sid string) []map[string]any {
 	}
 	out := make([]map[string]any, len(rows))
 	for i, r := range rows {
-		out[i] = r.Vals
+		out[i] = r.Map()
 	}
 	return out
 }
@@ -195,7 +195,7 @@ func TestADisplayReadWithNoRemovedRowHashesNothing(t *testing.T) {
 func TestADisplayReadHashesOnlyRowsAtARemovedRowsTimestamp(t *testing.T) {
 	db := displayIdentitySession(t, true)
 	row, err := db.readOne(context.Background(), "SELECT COUNT(*) AS n FROM messages WHERE active = 0 AND compacted = 0")
-	if err != nil || row.Vals["n"] != int64(2) {
+	if err != nil || row.Value("n") != int64(2) {
 		t.Fatalf("removed = %v err %v", row, err)
 	}
 	for i, read := range displayIdentityReads(t, db) {
@@ -270,7 +270,7 @@ func TestDisplayReadsFetchNoBodyOfARemovedCopy(t *testing.T) {
 			{"role": "user", "content": "U2"}, {"role": "assistant", "content": big}}, ArchiveCompactOptions{TailCount: 2})
 	}
 	row, err := db.readOne(ctx, "SELECT COUNT(*) AS n FROM messages WHERE content = ? AND active = 0 AND compacted = 0", big)
-	if err != nil || row.Vals["n"].(int64) < 5 {
+	if err != nil || row.Value("n").(int64) < 5 {
 		t.Fatalf("removed = %v err %v", row, err)
 	}
 	removed, err := db.withRemovedIdentities(ctx, nil, []string{"s"})
@@ -278,8 +278,8 @@ func TestDisplayReadsFetchNoBodyOfARemovedCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, r := range removed {
-		if r.Vals["content"] == big {
-			t.Fatalf("removed row %v fetched its body", r.Vals["id"])
+		if r.Value("content") == big {
+			t.Fatalf("removed row %v fetched its body", r.Value("id"))
 		}
 	}
 	for i, shown := range [][]map[string]any{displayConversation(t, db, "s", ConversationOptions{IncludeAncestors: true, IncludeCompacted: true}), displayResumed(t, db, "s")} {

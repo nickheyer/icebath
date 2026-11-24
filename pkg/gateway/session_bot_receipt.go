@@ -10,10 +10,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Reply watcher of one delivery, the admission it follows with its task and waiter
@@ -41,7 +41,7 @@ func receiptText(record map[string]any, key string) (string, error) {
 	if text, ok := value.(string); ok {
 		return text, nil
 	}
-	return pyrepr.Str(value), nil
+	return anyutil.String(value), nil
 }
 
 // Request id of a delivery's one retry admission
@@ -91,7 +91,7 @@ func botExpiredOutcome(ctx context.Context, a *SessionAuthority, record map[stri
 		return status, receiptReply(record), nil
 	}
 	if sessionID := record["session_id"]; pyTruthy(sessionID) {
-		sid := pyrepr.Str(sessionID)
+		sid := anyutil.String(sessionID)
 		retired, err := a.DB.RetiredSession(context.WithoutCancel(ctx), sid)
 		if err != nil {
 			return "", nil, err
@@ -105,7 +105,7 @@ func botExpiredOutcome(ctx context.Context, a *SessionAuthority, record map[stri
 		}
 		if row == nil {
 			pkgLog().Warn(fmt.Sprintf("Bot delivery %s: session %s is gone with no deletion marker; settled as ambiguous",
-				pyrepr.Str(record["delivery_id"]), sid))
+				anyutil.String(record["delivery_id"]), sid))
 			return "ambiguous", receiptReply(record), nil
 		}
 	}
@@ -156,7 +156,7 @@ func botAdmissionOutcome(ctx context.Context, a *SessionAuthority, admissionID s
 			status = "ambiguous"
 		}
 	default:
-		return "", nil, &pyKeyError{pyrepr.Str(rawStatus)}
+		return "", nil, &pyKeyError{anyutil.String(rawStatus)}
 	}
 	var reply any = ""
 	if fallback != nil {
@@ -189,7 +189,7 @@ func botAdmissionOutcome(ctx context.Context, a *SessionAuthority, admissionID s
 
 // Result mapping of a committed admission result, the KeyError Python raises without one
 func botSavedResult(saved any) (any, error) {
-	obj, ok := saved.(*pyjson.Object)
+	obj, ok := saved.(*jsonutil.Object)
 	if !ok {
 		return nil, &PyError{Kind: "TypeError", Msg: "the saved bot result is " + errchain.Kind(saved) + ", expected a mapping"}
 	}
@@ -206,7 +206,7 @@ func botFailure(ctx context.Context, a *SessionAuthority, admissionID string) (a
 	if err != nil {
 		return nil, "", err
 	}
-	var result any = pyjson.NewObject()
+	var result any = jsonutil.NewObject()
 	if saved != nil {
 		if got, err := pyDictGet(saved, "result", nil); err != nil {
 			return nil, "", err
@@ -249,14 +249,14 @@ func botResult(ctx context.Context, a *SessionAuthority, record map[string]any) 
 	}
 	current := retryID
 	if current == "" {
-		current = pyrepr.Str(admission)
+		current = anyutil.String(admission)
 	}
 	var status string
 	var reply any
 	if retryID != "" {
 		status, reply, err = botAdmissionOutcome(ctx, a, retryID, nil)
 	} else {
-		status, reply, err = botAdmissionOutcome(ctx, a, pyrepr.Str(admission), record)
+		status, reply, err = botAdmissionOutcome(ctx, a, anyutil.String(admission), record)
 	}
 	if err != nil {
 		return nil, err
@@ -409,7 +409,7 @@ func botMaybeRetry(ctx context.Context, a *SessionAuthority, home string, record
 	if err != nil {
 		return err
 	}
-	for _, key := range notification.Keys {
+	for _, key := range notification.Keys() {
 		event.Metadata[key], _ = notification.Get(key)
 	}
 	if author := record["author"]; author != nil {
@@ -460,7 +460,7 @@ func botRetryTarget(ctx context.Context, a *SessionAuthority, actor Principal, r
 	if err != nil {
 		return nil, nil, err
 	}
-	if !pyjson.Equal(ref.SessionID, record["session_id"]) {
+	if !anyutil.Equal(ref.SessionID, record["session_id"]) {
 		return nil, nil, runtimeRefusal("admission_conflict")
 	}
 	role, err := a.DB.LatestConversationRole(ctx, entry.SessionID)
@@ -530,7 +530,7 @@ func refreshBotReceipt(ctx context.Context, a *SessionAuthority, home, key strin
 					return err
 				}
 			}
-			botWatchReply(ctx, a, home, key, pyrepr.Str(following))
+			botWatchReply(ctx, a, home, key, anyutil.String(following))
 		}
 		if err := botMaybeRetry(ctx, a, home, record); err != nil {
 			return err
@@ -660,7 +660,7 @@ func botTarget(ctx context.Context, a *SessionAuthority, actor Principal) (Sessi
 }
 
 // Id holding the canonical title when the Bot Chat is a conversation no delivery can adopt, else empty
-func displaceableBotChat(ctx context.Context, a *SessionAuthority, row *pyjson.Object, subject any) (string, error) {
+func displaceableBotChat(ctx context.Context, a *SessionAuthority, row *jsonutil.Object, subject any) (string, error) {
 	if strings.HasPrefix(routeStr(rowField(row, "chat_id")), "local-") {
 		return "", nil
 	}
@@ -689,7 +689,7 @@ func displaceableBotChat(ctx context.Context, a *SessionAuthority, row *pyjson.O
 			return rowID, nil
 		}
 	}
-	for _, candidate := range []*pyjson.Object{row, tip} {
+	for _, candidate := range []*jsonutil.Object{row, tip} {
 		if candidate == nil || strings.HasPrefix(routeStr(rowField(candidate, "chat_id")), "local-") {
 			return "", nil
 		}
@@ -723,7 +723,7 @@ func displaceableBotChat(ctx context.Context, a *SessionAuthority, row *pyjson.O
 }
 
 // Whether an unbound local source row is history the Bot Chat door must leave in place
-func keptLocalHistory(db *state.SessionDB, row *pyjson.Object, subject any) (bool, error) {
+func keptLocalHistory(db *state.SessionDB, row *jsonutil.Object, subject any) (bool, error) {
 	source := rowField(row, "source")
 	local := false
 	for _, name := range state.LegacyLocalSources() {
@@ -749,7 +749,7 @@ func keptLocalHistory(db *state.SessionDB, row *pyjson.Object, subject any) (boo
 		first = userID
 	}
 	adopters := []any{first}
-	if !pyjson.Equal(first, owner) {
+	if !anyutil.Equal(first, owner) {
 		adopters = append(adopters, owner)
 	}
 	for _, adopter := range adopters {
@@ -834,7 +834,7 @@ func createBotChat(ctx context.Context, a *SessionAuthority, actor Principal, di
 			return nil, err
 		}
 		sid, _ := staged.Receipt.Get("session_id")
-		restored, err := restoreLocalSession(ctx, a, pyrepr.Str(sid))
+		restored, err := restoreLocalSession(ctx, a, anyutil.String(sid))
 		if err != nil {
 			return nil, err
 		}

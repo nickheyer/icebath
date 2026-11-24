@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 func TestReadProcessCmdlineSources(t *testing.T) {
@@ -127,7 +127,7 @@ func TestNormalizeUpdatedAt(t *testing.T) {
 			t.Errorf("%v = %q %v %v", in, got, ok, err)
 		}
 	}
-	check(1750000000, pydatetime.ISOFormat(time.Unix(1750000000, 0).UTC()))
+	check(1750000000, time.Unix(1750000000, 0).UTC().Format(timeutil.RFC3339Micro))
 	check("2026-07-21T12:00:00Z", "2026-07-21T12:00:00+00:00")
 	check("2026-07-21T12:00:00", "2026-07-21T12:00:00+00:00")
 	check("2026-07-21T12:00:00+00:00", "2026-07-21T12:00:00+00:00")
@@ -141,16 +141,16 @@ func TestNormalizeUpdatedAt(t *testing.T) {
 func TestResolveGatewayLiveness(t *testing.T) {
 	healthCalls, runtimeCalls := 0, 0
 	r := ResolveGatewayLiveness(LivenessOptions{RuntimeGiven: true,
-		HealthProbe:     func() (bool, *pyjson.Object, error) { healthCalls++; return true, rec("pid", int64(999)), nil },
+		HealthProbe:     func() (bool, *jsonutil.Object, error) { healthCalls++; return true, rec("pid", int64(999)), nil },
 		PidProbe:        func(string) (int, bool, error) { return 4242, true, nil },
-		RuntimePidProbe: func(*pyjson.Object, string) (int, bool, error) { runtimeCalls++; return 888, true, nil }})
+		RuntimePidProbe: func(*jsonutil.Object, string) (int, bool, error) { runtimeCalls++; return 888, true, nil }})
 	if !r.Running || r.PID != 4242 || r.Source != "pid" || healthCalls+runtimeCalls != 0 {
 		t.Fatalf("%+v", r)
 	}
 	t.Setenv("ICEBATH_GATEWAY_LOCK_DIR", t.TempDir())
 	r = ResolveGatewayLiveness(LivenessOptions{RuntimeGiven: true,
 		PidProbe:        func(string) (int, bool, error) { return 0, false, errors.New("probe exploded") },
-		RuntimePidProbe: func(*pyjson.Object, string) (int, bool, error) { return 0, false, nil }})
+		RuntimePidProbe: func(*jsonutil.Object, string) (int, bool, error) { return 0, false, nil }})
 	if r.Running || !r.ProbeError {
 		t.Fatalf("%+v", r)
 	}
@@ -159,8 +159,8 @@ func TestResolveGatewayLiveness(t *testing.T) {
 	seen := map[string]string{}
 	ResolveGatewayLiveness(LivenessOptions{ProfileDir: profileDir,
 		PidProbe:        func(p string) (int, bool, error) { seen["pid"] = p; return 0, false, nil },
-		RuntimeReader:   func(p string) (*pyjson.Object, error) { seen["status"] = p; return nil, nil },
-		RuntimePidProbe: func(_ *pyjson.Object, h string) (int, bool, error) { seen["home"] = h; return 0, false, nil }})
+		RuntimeReader:   func(p string) (*jsonutil.Object, error) { seen["status"] = p; return nil, nil },
+		RuntimePidProbe: func(_ *jsonutil.Object, h string) (int, bool, error) { seen["home"] = h; return 0, false, nil }})
 	if seen["pid"] != filepath.Join(profileDir, "gateway.pid") || seen["status"] != filepath.Join(profileDir, "gateway_state.json") || seen["home"] != profileDir {
 		t.Fatalf("%v", seen)
 	}
@@ -285,7 +285,7 @@ func TestSharedListenerMirrorsAndMultiplexerProjection(t *testing.T) {
 		"coder:slack", rec("state", "connected"),
 	))
 	mirrors := SharedListenerMirrorPlatformsFor(runtime, "coder")
-	api := recGet(mirrors, "api_server").(*pyjson.Object)
+	api := recGet(mirrors, "api_server").(*jsonutil.Object)
 	if mirrors.Len() != 1 || recGet(api, "ingress_url") != "http://127.0.0.1:8642/p/coder/v1" || recGet(api, "mirrored_from") != "default" {
 		t.Fatal("mirror")
 	}
@@ -293,12 +293,12 @@ func TestSharedListenerMirrorsAndMultiplexerProjection(t *testing.T) {
 		t.Fatal("listener_base leaked")
 	}
 	coder := ProfilePlatformsFromMultiplexer(runtime, "coder")
-	if strings.Join(coder.Keys, ",") != "api_server,slack" {
-		t.Fatal(coder.Keys)
+	if strings.Join(coder.Keys(), ",") != "api_server,slack" {
+		t.Fatal(coder.Keys())
 	}
 	def := ProfilePlatformsFromMultiplexer(runtime, "default")
-	if strings.Join(def.Keys, ",") != "api_server,webhook,telegram" {
-		t.Fatal(def.Keys)
+	if strings.Join(def.Keys(), ",") != "api_server,webhook,telegram" {
+		t.Fatal(def.Keys())
 	}
 }
 

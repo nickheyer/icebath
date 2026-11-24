@@ -8,9 +8,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Runs the real review fork with config.yaml text, a resolved runtime and a capturing agent hook
@@ -38,7 +38,7 @@ func reviewForkCapture(t *testing.T, cfgYAML string, rt *provider.Runtime) (Cura
 	}
 	errText := ""
 	if v, ok := meta.Get("error"); ok && v != nil {
-		errText = pyrepr.Str(v)
+		errText = anyutil.String(v)
 	}
 	return captured, errText
 }
@@ -53,7 +53,7 @@ func TestReviewForkForwardsRuntimeACPAndOverrides(t *testing.T) {
 	if errText != "" {
 		t.Fatal(errText)
 	}
-	if pyrepr.Repr(req.RequestOverrides) != pyrepr.Repr(map[string]any{"extra_body": map[string]any{"store": false}}) {
+	if anyutil.Quote(req.RequestOverrides) != anyutil.Quote(map[string]any{"extra_body": map[string]any{"store": false}}) {
 		t.Fatalf("overrides %v", req.RequestOverrides)
 	}
 	if req.Route == nil || req.Route.APIKey != "pool-token" || req.Route.BaseURL != "https://hyper.charm.land/v1" || req.Route.Mode != "chat_completions" {
@@ -77,7 +77,7 @@ func TestReviewForkReceivesConfiguredReasoning(t *testing.T) {
 	if errText != "" {
 		t.Fatal(errText)
 	}
-	if pyrepr.Repr(req.ReasoningConfig) != pyrepr.Repr(map[string]any{"enabled": false}) {
+	if anyutil.Quote(req.ReasoningConfig) != anyutil.Quote(map[string]any{"enabled": false}) {
 		t.Fatalf("reasoning %v", req.ReasoningConfig)
 	}
 }

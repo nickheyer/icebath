@@ -10,7 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Isolated home for the hooks command with a config document and an outbound target double
@@ -87,33 +87,33 @@ func TestSyntheticPayloadMatchesProductionShape(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err := pyjson.Loads(string(raw))
+	doc, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	seen := doc.(*pyjson.Object)
+	seen := doc.(*jsonutil.Object)
 	keys := map[string]bool{}
-	for _, k := range seen.Keys {
+	for _, k := range seen.Keys() {
 		keys[k] = true
 	}
 	want := []string{"hook_event_name", "tool_name", "tool_input", "session_id", "cwd", "extra", "profile"}
 	if len(keys) != len(want) {
-		t.Fatalf("payload keys %v, want %v", seen.Keys, want)
+		t.Fatalf("payload keys %v, want %v", seen.Keys(), want)
 	}
 	for _, k := range want {
 		if !keys[k] {
-			t.Fatalf("payload keys %v lack %s", seen.Keys, k)
+			t.Fatalf("payload keys %v lack %s", seen.Keys(), k)
 		}
 	}
-	if seen.Vals["session_id"] != "parent-sess" {
-		t.Fatalf("session_id = %v", seen.Vals["session_id"])
+	if seen.Value("session_id") != "parent-sess" {
+		t.Fatalf("session_id = %v", seen.Value("session_id"))
 	}
-	extra := seen.Vals["extra"].(*pyjson.Object)
-	if _, ok := extra.Vals["parent_session_id"]; ok {
+	extra := seen.Value("extra").(*jsonutil.Object)
+	if _, ok := extra.Get("parent_session_id"); ok {
 		t.Fatal("parent_session_id stayed in extra")
 	}
-	if seen.Vals["tool_name"] != nil || seen.Vals["tool_input"] != nil {
-		t.Fatalf("tool fields = %v %v, want null", seen.Vals["tool_name"], seen.Vals["tool_input"])
+	if seen.Value("tool_name") != nil || seen.Value("tool_input") != nil {
+		t.Fatalf("tool fields = %v %v, want null", seen.Value("tool_name"), seen.Value("tool_input"))
 	}
 }
 
@@ -150,7 +150,7 @@ func TestFlagsMtimeDrift(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	doc, err := pyjson.Dumps(map[string]any{"approvals": []any{map[string]any{"event": "on_session_start", "command": script,
+	doc, err := jsonutil.Encode(map[string]any{"approvals": []any{map[string]any{"event": "on_session_start", "command": script,
 		"approved_at": "2000-01-01T00:00:00Z", "script_mtime_at_approval": "2000-01-01T00:00:00Z"}}})
 	if err != nil {
 		t.Fatal(err)

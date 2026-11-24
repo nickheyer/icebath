@@ -13,10 +13,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Runs one teardown step and swallows its error or panic so sibling steps still run
@@ -208,7 +208,7 @@ func (a *AIAgent) apiKeyValue(ctx context.Context) any {
 // Hostname of the given base URL, or of the agent base URL when nil, panicking on the urlparse ValueError
 func (a *AIAgent) hostnameFor(baseURL *string) string {
 	if baseURL != nil {
-		h, err := pyurl.BaseURLHostname(*baseURL)
+		h, err := urlutil.BaseHost(*baseURL)
 		if err != nil {
 			panic(err)
 		}
@@ -217,7 +217,7 @@ func (a *AIAgent) hostnameFor(baseURL *string) string {
 	if a.baseURLHostname != "" {
 		return a.baseURLHostname
 	}
-	h, err := pyurl.BaseURLHostname(a.baseURLLower)
+	h, err := urlutil.BaseHost(a.baseURLLower)
 	if err != nil {
 		panic(err)
 	}
@@ -235,7 +235,7 @@ func (a *AIAgent) isAzureOpenAIURL(baseURL *string) bool {
 	if baseURL != nil {
 		url = strings.ToLower(*baseURL)
 	}
-	ok, err := pyurl.BaseURLHostMatches(url, "openai.azure.com")
+	ok, err := urlutil.BaseHostMatches(url, "openai.azure.com")
 	if err != nil {
 		panic(err)
 	}
@@ -367,7 +367,7 @@ func pyStrRepr(s string) string {
 
 // True when the base URL targets OpenRouter
 func (a *AIAgent) isOpenRouterURL() bool {
-	ok, err := pyurl.BaseURLHostMatches(a.baseURLLower, "openrouter.ai")
+	ok, err := urlutil.BaseHostMatches(a.baseURLLower, "openrouter.ai")
 	if err != nil {
 		panic(err)
 	}

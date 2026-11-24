@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const quickSnapshotsDir = "state-snapshots"
@@ -66,12 +66,12 @@ func ListQuickSnapshots(limit int, h string) ([]any, error) {
 		manifestPath := filepath.Join(root, name, "manifest.json")
 		if _, err := os.Stat(manifestPath); err == nil {
 			manifest, err := readManifest(manifestPath)
-			var decodeErr *pyjson.DecodeError
+			var decodeErr *jsonutil.SyntaxError
 			switch {
 			case err == nil:
 				results = append(results, manifest)
-			case errors.As(err, &decodeErr) || pypath.IsOSError(err):
-				stub := pyjson.NewObject()
+			case errors.As(err, &decodeErr) || errorutil.IsSystem(err):
+				stub := jsonutil.NewObject()
 				stub.Set("id", name)
 				stub.Set("file_count", int64(0))
 				stub.Set("total_size", int64(0))
@@ -93,11 +93,11 @@ func readManifest(path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pycodecs.Decode(raw, "utf-8-sig")
+	text, err := charsetutil.Decode(raw, "utf-8-sig")
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 // Directory of a restorable quick snapshot, empty for an invalid, escaping or missing id, failing where resolve fails
@@ -108,15 +108,15 @@ func QuickSnapshotDir(snapshotID, h string) (string, error) {
 		return "", nil
 	}
 	snapDir := filepath.Join(root, snapshotID)
-	resolved, err := pypath.Resolve(snapDir)
+	resolved, err := pathutil.Resolve(snapDir)
 	if err != nil {
 		return "", err
 	}
-	resolvedRoot, err := pypath.Resolve(root)
+	resolvedRoot, err := pathutil.Resolve(root)
 	if err != nil {
 		return "", err
 	}
-	if _, inside := pypath.PathRelativeTo(resolved, resolvedRoot); !inside {
+	if _, inside := pathutil.RelativeTo(resolved, resolvedRoot); !inside {
 		pkgLog().Error("Snapshot path traversal blocked for id: " + snapshotID)
 		return "", nil
 	}
@@ -146,7 +146,7 @@ func pruneQuickSnapshotsIn(root string, keep int) (int, error) {
 	}
 	deleted := 0
 	for _, name := range dirs[sliceFrom(len(dirs), keep):] {
-		if err := pyfs.RmTree(filepath.Join(root, name), nil); err != nil {
+		if err := os.RemoveAll(filepath.Join(root, name)); err != nil {
 			pkgLog().Warn(fmt.Sprintf("Failed to prune snapshot %s: %s", name, excText(err)))
 			continue
 		}

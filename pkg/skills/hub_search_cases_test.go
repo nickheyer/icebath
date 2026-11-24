@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Source answering fixed results after an optional sleep and counting its searches
@@ -46,9 +46,9 @@ func metaIDs(ms []SkillMeta) []string {
 	return out
 }
 
-func countsMap(o *pyjson.Object) map[string]any {
+func countsMap(o *jsonutil.Object) map[string]any {
 	out := map[string]any{}
-	for _, k := range o.Keys {
+	for _, k := range o.Keys() {
 		out[k], _ = o.Get(k)
 	}
 	return out
@@ -190,11 +190,11 @@ func TestIndexMissFallbackPassHasItsOwnShortBudget(t *testing.T) {
 func TestLoadIndexFetchDoesNotRequestBrotli(t *testing.T) {
 	h, _ := newTestHub(t)
 	var accept string
-	h.io.httpGet = plainGet(func(_ string, o hubGet) *pyhttpx.Response {
+	h.io.httpGet = plainGet(func(_ string, o hubGet) *httputil.Response {
 		accept = o.Headers["Accept-Encoding"]
 		return jsonResp(t, `{"skills": [{"name": "x"}]}`)
 	})
-	data, err := pyjson.Dumps(h.loadIndex(context.Background()))
+	data, err := jsonutil.Encode(h.loadIndex(context.Background()))
 	if err != nil || data != `{"skills": [{"name": "x"}]}` {
 		t.Fatalf("%s %v", data, err)
 	}
@@ -213,13 +213,13 @@ func TestLoadIndexPersistentDecodingErrorFallsBackToStaleCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	var encodings []string
-	h.io.httpGet = plainGet(func(_ string, o hubGet) *pyhttpx.Response {
+	h.io.httpGet = plainGet(func(_ string, o hubGet) *httputil.Response {
 		encodings = append(encodings, o.Headers["Accept-Encoding"])
 		hd := http.Header{}
 		hd.Set("Content-Encoding", "br")
-		return &pyhttpx.Response{StatusCode: 200, Header: hd, Content: []byte("brotli boom")}
+		return &httputil.Response{StatusCode: 200, Header: hd, Content: []byte("brotli boom")}
 	})
-	data, err := pyjson.Dumps(h.loadIndex(context.Background()))
+	data, err := jsonutil.Encode(h.loadIndex(context.Background()))
 	if err != nil || data != `{"skills": [{"name": "stale"}]}` || !slices.Equal(encodings, []string{"gzip, deflate", "identity"}) {
 		t.Fatalf("%s %v %v", data, err, encodings)
 	}

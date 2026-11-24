@@ -6,13 +6,13 @@ import (
 	"errors"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Runtime dir byte budgets, sun_path minus the bu-NAME.sock stem of a 64 character session
@@ -65,20 +65,20 @@ func harnessHome(env map[string]string) (string, error) {
 	}
 	if root == "" {
 		if xdg := env["XDG_CONFIG_HOME"]; xdg != "" {
-			root = pypath.PathJoin(xdg, "browser-harness")
+			root = pathutil.Join(xdg, "browser-harness")
 		} else {
 			base := env["HOME"]
 			if base == "" {
-				h, err := pypath.PathHome()
+				h, err := pathutil.Home()
 				if err != nil {
 					return "", err
 				}
 				base = h
 			}
-			root = pypath.PathJoin(base, ".config", "browser-harness")
+			root = pathutil.Join(base, ".config", "browser-harness")
 		}
 	}
-	return pypath.PathExpanduser(root)
+	return pathutil.ExpandUserPath(root)
 }
 
 // First twelve hex digits of the SHA-256 of text
@@ -102,9 +102,9 @@ func NamespaceHarnessDirs(env map[string]string, tag string) error {
 		base = env["BH_TMP_DIR"]
 	}
 	if base == "" {
-		base = pypath.PathJoin(root, "runtime")
+		base = pathutil.Join(root, "runtime")
 	}
-	runtimeDir, err := SocketFitRuntimeDir(pypath.PathJoin(base, leaf), base, tag)
+	runtimeDir, err := SocketFitRuntimeDir(pathutil.Join(base, leaf), base, tag)
 	if err != nil {
 		return err
 	}
@@ -112,9 +112,9 @@ func NamespaceHarnessDirs(env map[string]string, tag string) error {
 	env["BH_RUNTIME_DIR_SHARED"] = "1"
 	tmp := env["BH_TMP_DIR"]
 	if tmp == "" {
-		tmp = pypath.PathJoin(root, "tmp")
+		tmp = pathutil.Join(root, "tmp")
 	}
-	env["BH_TMP_DIR"] = pypath.PathJoin(tmp, leaf)
+	env["BH_TMP_DIR"] = pathutil.Join(tmp, leaf)
 	env["BH_TMP_DIR_SHARED"] = "1"
 	return nil
 }
@@ -137,7 +137,7 @@ func FitDefaultSocketDir(env map[string]string) error {
 		name = "default"
 	}
 	stemBudget := *budget + 64 - utf8.RuneCountInString(name)
-	resolved, err := pypath.Resolve(pypath.PathJoin(root, "runtime"))
+	resolved, err := pathutil.Resolve(pathutil.Join(root, "runtime"))
 	if err != nil {
 		return err
 	}
@@ -158,11 +158,11 @@ func FitDefaultSocketDir(env map[string]string) error {
 // The runtime dir as given when its resolved socket path fits, else a private short dir keyed by base and tag
 func SocketFitRuntimeDir(runtimeDir, base, tag string) (string, error) {
 	budget := SocketDirBudget(sysPlatform())
-	expanded, err := pypath.PathExpanduser(runtimeDir)
+	expanded, err := pathutil.ExpandUserPath(runtimeDir)
 	if err != nil {
 		return "", err
 	}
-	resolved, err := pypath.Resolve(expanded)
+	resolved, err := pathutil.Resolve(expanded)
 	if err != nil {
 		return "", err
 	}
@@ -193,7 +193,7 @@ func claimShortDir(key string, budget *int) (string, error) {
 	candidates = append(candidates, tmp, "/tmp")
 	seen := map[string]bool{}
 	for _, candidate := range candidates {
-		root, err := pypath.Realpath(candidate, pypath.Lax)
+		root, err := pathutil.Resolve(candidate)
 		if err != nil {
 			return "", err
 		}
@@ -201,7 +201,7 @@ func claimShortDir(key string, budget *int) (string, error) {
 			continue
 		}
 		seen[root] = true
-		short := pypath.Join(root, "hbh-"+digest)
+		short := pathutil.Join(root, "hbh-"+digest)
 		if FitsSocketBudget(short, budget) && ClaimPrivateDir(short) {
 			return short, nil
 		}
@@ -218,7 +218,7 @@ func PrivateUserRuntimeDir() string {
 	if raw == "" {
 		raw = "/run/user/" + strconv.Itoa(harnessUID())
 	}
-	if !pypath.IsAbs(raw) {
+	if !filepath.IsAbs(raw) {
 		return ""
 	}
 	info, err := os.Lstat(raw)

@@ -15,8 +15,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type fakeResponse struct {
@@ -35,7 +35,7 @@ func (f *fakeResponse) StatusCode() int {
 
 func (f *fakeResponse) JSON() (any, error) {
 	if f.body == nil {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	return f.body, nil
 }
@@ -52,7 +52,7 @@ func (f *fakeResponse) RaiseForStatus() error {
 
 func js(t *testing.T, text string) any {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatalf("fixture %s: %v", text, err)
 	}
@@ -117,7 +117,7 @@ func usersBody(t *testing.T, rows string) photonResponse {
 	return &fakeResponse{body: js(t, `{"succeed": true, "data": {"users": [`+rows+`]}}`)}
 }
 
-func objGet(o *pyjson.Object, key string) any {
+func objGet(o *jsonutil.Object, key string) any {
 	v, _ := o.Get(key)
 	return v
 }
@@ -132,7 +132,7 @@ func TestStoreAndLoadPhotonToken(t *testing.T) {
 		t.Fatalf("token = %q, %v", tok, err)
 	}
 	raw, _ := os.ReadFile(filepath.Join(h, "auth.json"))
-	data := pyjson.Plain(js(t, string(raw))).(map[string]any)
+	data := jsonutil.Plain(js(t, string(raw))).(map[string]any)
 	entry := data["credential_pool"].(map[string]any)["photon"].([]any)[0].(map[string]any)
 	if entry["access_token"] != "abc123def456" {
 		t.Fatalf("auth.json = %s", raw)
@@ -232,7 +232,7 @@ func TestRequestDeviceCodeUsesPhotonCLI(t *testing.T) {
 	if err != nil || code.DeviceCode != "dev-code-xyz" || code.UserCode != "ABCD-1234" || code.ExpiresIn != 600 || code.Interval != 5 {
 		t.Fatalf("code = %+v, %v", code, err)
 	}
-	body := captured.body.(*pyjson.Object)
+	body := captured.body.(*jsonutil.Object)
 	if !strings.Contains(captured.url, "/api/auth/device/code") || objGet(body, "client_id") != "photon-cli" || objGet(body, "scope") != "openid profile email" {
 		t.Fatalf("request = %s %v", captured.url, body)
 	}
@@ -257,7 +257,7 @@ func TestListProjectsUnwrapsList(t *testing.T) {
 		return &fakeResponse{body: js(t, `[{"id": "p1", "name": "Icebath Agent"}]`)}, nil
 	})
 	projects, err := ListProjects(context.Background(), "tok")
-	if err != nil || objGet(projects[0].(*pyjson.Object), "id") != "p1" {
+	if err != nil || objGet(projects[0].(*jsonutil.Object), "id") != "p1" {
 		t.Fatalf("projects = %v, %v", projects, err)
 	}
 }
@@ -282,7 +282,7 @@ func TestCreateProjectOmitsSpectrumFlag(t *testing.T) {
 	if err != nil || objGet(data, "id") != "new-proj" {
 		t.Fatalf("project = %v, %v", data, err)
 	}
-	body := captured.body.(*pyjson.Object)
+	body := captured.body.(*jsonutil.Object)
 	if _, has := body.Get("spectrum"); has || objGet(body, "name") != "Icebath Agent" || objGet(body, "location") != "United States" {
 		t.Fatalf("body = %v", body)
 	}
@@ -324,7 +324,7 @@ func TestRegisterUserIfAbsentDedup(t *testing.T) {
 func TestUserAssignedLine(t *testing.T) {
 	for raw, want := range map[string]string{`{"assignedPhoneNumber": "+16282679185"}`: "+16282679185", `{"phoneNumber": "+15551234567"}`: "",
 		`{"assignedPhoneNumber": ""}`: "", `{}`: ""} {
-		if got := UserAssignedLine(js(t, raw).(*pyjson.Object)); got != want {
+		if got := UserAssignedLine(js(t, raw).(*jsonutil.Object)); got != want {
 			t.Fatalf("%s = %q", raw, got)
 		}
 	}
@@ -445,7 +445,7 @@ func TestGetIMessageLineReturnsExisting(t *testing.T) {
 		return &fakeResponse{body: js(t, `[{"id": "l1", "platform": "imessage", "phoneNumber": "+15559999999", "status": "active"}]`)}, nil
 	})
 	line, err := GetIMessageLine(context.Background(), "tok", "proj", true)
-	if o, ok := line.(*pyjson.Object); err != nil || !ok || objGet(o, "phoneNumber") != "+15559999999" {
+	if o, ok := line.(*jsonutil.Object); err != nil || !ok || objGet(o, "phoneNumber") != "+15559999999" {
 		t.Fatalf("line = %v, %v", line, err)
 	}
 }
@@ -463,7 +463,7 @@ func TestGetIMessageLineProvisionsWhenAbsent(t *testing.T) {
 		return &fakeResponse{body: js(t, `{"line": {"platform": "imessage", "phoneNumber": "+1555"}}`)}, nil
 	})
 	line, err := GetIMessageLine(context.Background(), "tok", "proj", true)
-	if o, ok := line.(*pyjson.Object); err != nil || !ok || objGet(o, "phoneNumber") != "+1555" || !strings.HasSuffix(posted.url, "/api/projects/proj/lines") {
+	if o, ok := line.(*jsonutil.Object); err != nil || !ok || objGet(o, "phoneNumber") != "+1555" || !strings.HasSuffix(posted.url, "/api/projects/proj/lines") {
 		t.Fatalf("provisioned = %v, %v", line, err)
 	}
 	patchPost(t, func(postCall) (photonResponse, error) { return &fakeResponse{status: 500}, nil })
@@ -496,7 +496,7 @@ func TestCredentialSummaryNoSecretLeak(t *testing.T) {
 }
 
 func TestDeviceResponseCandidatesCoversKnownShapes(t *testing.T) {
-	body := js(t, `{"access_token": "tok-snake", "accessToken": "tok-camel", "data": {"access_token": "tok-data"}}`).(*pyjson.Object)
+	body := js(t, `{"access_token": "tok-snake", "accessToken": "tok-camel", "data": {"access_token": "tok-data"}}`).(*jsonutil.Object)
 	bySource := map[string]string{}
 	for _, c := range deviceResponseTokenCandidates(body, http.Header{"set-auth-token": {"Bearer tok-header"}}) {
 		bySource[c.Source] = c.Token
@@ -507,7 +507,7 @@ func TestDeviceResponseCandidatesCoversKnownShapes(t *testing.T) {
 			t.Fatalf("candidates = %v", bySource)
 		}
 	}
-	dup := js(t, `{"access_token": " same ", "session": {"access_token": "bearer same"}, "data": "flat"}`).(*pyjson.Object)
+	dup := js(t, `{"access_token": " same ", "session": {"access_token": "bearer same"}, "data": "flat"}`).(*jsonutil.Object)
 	if got := deviceResponseTokenCandidates(dup, nil); len(got) != 1 || got[0].Token != "same" {
 		t.Fatalf("dedup = %v", got)
 	}
@@ -707,7 +707,7 @@ func TestCreateUserValidatesAndUnwraps(t *testing.T) {
 		return &fakeResponse{body: js(t, `{"data": {"id": "u9"}}`)}, nil
 	})
 	user, err := CreateUser(ctx, "p", "s", "+15551234567", UserFields{FirstName: "Ada"}, true)
-	body := posted.body.(*pyjson.Object)
+	body := posted.body.(*jsonutil.Object)
 	if err != nil || objGet(user, "id") != "u9" || objGet(body, "type") != "shared" || objGet(body, "firstName") != "Ada" || objGet(body, "lastName") != nil {
 		t.Fatalf("user = %v body %v, %v", user, body, err)
 	}

@@ -4,49 +4,49 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Decoded kanban context of a bootstrap frame's policy, nil for a chat turn
-func WorkerKanbanContext(frame *pyjson.Object) (any, error) {
-	policy, _ := frame.GetOr("policy", nil).(*pyjson.Object)
-	raw := policy.GetOr("kanban_json", nil)
-	if !pyrepr.Truthy(raw) {
+func WorkerKanbanContext(frame *jsonutil.Object) (any, error) {
+	policy, _ := frame.ValueOr("policy", nil).(*jsonutil.Object)
+	raw := policy.ValueOr("kanban_json", nil)
+	if !anyutil.IsTrue(raw) {
 		raw = "null"
 	}
 	text, isText := raw.(string)
 	if !isText {
 		return nil, &PyError{Kind: "TypeError", Msg: "the worker kanban context is " + errchain.Kind(raw) + ", expected JSON text"}
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 // Runs body in the session workspace with its session vars bound, the session id as task id when scoped
-func WorkerWorkspace(ctx context.Context, env *tools.Env, frame *pyjson.Object, body func(taskID string) error) error {
-	rawScope := frame.GetOr("scope", nil)
-	scope, isDict := rawScope.(*pyjson.Object)
-	if pyrepr.Truthy(rawScope) && !isDict {
+func WorkerWorkspace(ctx context.Context, env *tools.Env, frame *jsonutil.Object, body func(taskID string) error) error {
+	rawScope := frame.ValueOr("scope", nil)
+	scope, isDict := rawScope.(*jsonutil.Object)
+	if anyutil.IsTrue(rawScope) && !isDict {
 		return &PyError{Kind: "AttributeError", Msg: "the worker workspace scope is " + errchain.Kind(rawScope) + ", expected a mapping"}
 	}
 	sessionID := ""
-	if scope != nil && pyrepr.Truthy(scope.GetOr("session_id", nil)) {
-		sessionID = pyrepr.Str(scope.GetOr("session_id", nil))
+	if scope != nil && anyutil.IsTrue(scope.ValueOr("session_id", nil)) {
+		sessionID = anyutil.String(scope.ValueOr("session_id", nil))
 	}
 	if sessionID == "" {
 		return body("")
 	}
-	policy, err := RestorePolicy(frame.GetOr("policy", nil))
+	policy, err := RestorePolicy(frame.ValueOr("policy", nil))
 	if err != nil {
 		return err
 	}
 	route := sessionID
-	if raw := frame.GetOr("route", nil); pyrepr.Truthy(raw) {
-		route = pyrepr.Str(raw)
+	if raw := frame.ValueOr("route", nil); anyutil.IsTrue(raw) {
+		route = anyutil.String(raw)
 	}
-	homeText, _ := frame.GetOr("home", nil).(string)
+	homeText, _ := frame.ValueOr("home", nil).(string)
 	profile := servedProfileName(homeText)
 	bound := ""
 	if keyed, ok := state.ProfileFromSessionKey(route); ok && keyed == profile {

@@ -18,8 +18,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // RegistryError reports an unreadable registry or an owner whose liveness cannot be proven
@@ -42,13 +42,13 @@ func FormatAge(seconds float64) string {
 }
 
 // Details line every owner refusal message carries, the surface and age of the holding lease
-func SessionOwnerDetails(sessionID string, entry *pyjson.Object) string {
+func SessionOwnerDetails(sessionID string, entry *jsonutil.Object) string {
 	surface := "another surface"
-	if v := entry.GetOr("surface", nil); pyTruthy(v) {
-		surface = pyrepr.Str(v)
+	if v := entry.ValueOr("surface", nil); pyTruthy(v) {
+		surface = anyutil.String(v)
 	}
 	age := ""
-	if started, ok := optionalFloat(entry.GetOr("started_at", nil)); ok && started != 0 {
+	if started, ok := optionalFloat(entry.ValueOr("started_at", nil)); ok && started != 0 {
 		age = " " + FormatAge(float64(time.Now().UnixNano())/1e9-started) + " ago"
 	}
 	return fmt.Sprintf("Details: session %s opened by %s%s.", sessionID, surface, age)
@@ -79,7 +79,7 @@ func registryLockPath(ctx context.Context, registryHome string) string {
 }
 
 // Registry entries, every malformed shape an error when strict and dropped otherwise
-func readEntries(path string, strict bool) ([]*pyjson.Object, error) {
+func readEntries(path string, strict bool) ([]*jsonutil.Object, error) {
 	invalid := func(what string) error {
 		return &RegistryError{msg: fmt.Sprintf("active session registry %s: %s", what, path)}
 	}
@@ -92,7 +92,7 @@ func readEntries(path string, strict bool) ([]*pyjson.Object, error) {
 		if !utf8.Valid(raw) {
 			err = errors.New("invalid utf-8")
 		} else {
-			data, err = pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+			data, err = jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 		}
 	}
 	if err != nil {
@@ -103,8 +103,8 @@ func readEntries(path string, strict bool) ([]*pyjson.Object, error) {
 		return nil, nil
 	}
 	entries := data
-	if obj, ok := data.(*pyjson.Object); ok {
-		entries = obj.GetOr("entries", nil)
+	if obj, ok := data.(*jsonutil.Object); ok {
+		entries = obj.ValueOr("entries", nil)
 	}
 	list, ok := entries.([]any)
 	if !ok {
@@ -113,9 +113,9 @@ func readEntries(path string, strict bool) ([]*pyjson.Object, error) {
 		}
 		return nil, nil
 	}
-	var valid []*pyjson.Object
+	var valid []*jsonutil.Object
 	for _, entry := range list {
-		if obj, ok := entry.(*pyjson.Object); ok {
+		if obj, ok := entry.(*jsonutil.Object); ok {
 			valid = append(valid, obj)
 		}
 	}
@@ -127,19 +127,19 @@ func readEntries(path string, strict bool) ([]*pyjson.Object, error) {
 	}
 	seen := map[string]bool{}
 	for _, entry := range valid {
-		leaseID, _ := entry.GetOr("lease_id", nil).(string)
+		leaseID, _ := entry.ValueOr("lease_id", nil).(string)
 		checks := []struct {
 			bad  func() bool
 			what string
 		}{
-			{func() bool { return !nonblankStr(entry.GetOr("lease_id", nil)) }, "an invalid lease id"},
+			{func() bool { return !nonblankStr(entry.ValueOr("lease_id", nil)) }, "an invalid lease id"},
 			{func() bool { return seen[leaseID] }, "a duplicate lease id"},
-			{func() bool { return !nonblankStr(entry.GetOr("session_id", nil)) }, "an invalid session id"},
-			{func() bool { return registryPid(entry.GetOr("pid", nil)) <= 0 }, "an invalid pid"},
-			{func() bool { return !optionalString(entry.GetOr("surface", nil)) }, "an invalid surface"},
-			{func() bool { return !optionalBool(entry.GetOr("track_liveness", nil)) }, "an invalid liveness marker"},
-			{func() bool { return !optionalObject(entry.GetOr("metadata", nil)) }, "invalid metadata"},
-			{func() bool { return !validProcessStart(entry.GetOr("process_start_time", nil)) }, "an invalid process start time"},
+			{func() bool { return !nonblankStr(entry.ValueOr("session_id", nil)) }, "an invalid session id"},
+			{func() bool { return registryPid(entry.ValueOr("pid", nil)) <= 0 }, "an invalid pid"},
+			{func() bool { return !optionalString(entry.ValueOr("surface", nil)) }, "an invalid surface"},
+			{func() bool { return !optionalBool(entry.ValueOr("track_liveness", nil)) }, "an invalid liveness marker"},
+			{func() bool { return !optionalObject(entry.ValueOr("metadata", nil)) }, "invalid metadata"},
+			{func() bool { return !validProcessStart(entry.ValueOr("process_start_time", nil)) }, "an invalid process start time"},
 		}
 		for _, check := range checks {
 			if check.bad() {
@@ -171,7 +171,7 @@ func optionalBool(v any) bool {
 
 // True for nil or a JSON object
 func optionalObject(v any) bool {
-	_, ok := v.(*pyjson.Object)
+	_, ok := v.(*jsonutil.Object)
 	return v == nil || ok
 }
 
@@ -282,12 +282,12 @@ func pyFloatText(s string) (float64, bool) {
 }
 
 // Writes the entries list as compact sorted JSON through an atomic replace
-var writeEntries = func(path string, entries []*pyjson.Object) error {
+var writeEntries = func(path string, entries []*jsonutil.Object) error {
 	list := make([]any, len(entries))
 	for i, entry := range entries {
 		list[i] = entry
 	}
-	return config.AtomicJSONWriteWith(context.Background(), path, pyjson.ObjectOf("entries", list), pyjson.SortKeys(true))
+	return config.AtomicJSONWriteWith(context.Background(), path, jsonutil.ObjectOf("entries", list), jsonutil.SortKeys())
 }
 
 // Creation time of a process in epoch seconds, false when it cannot be read
@@ -391,15 +391,15 @@ func pythonIntOrZero(v any) int {
 var pidExists = func(pid int) (bool, error) { return proc.Exists(pid), nil }
 
 // Entries whose owner is alive, tracked or strict entries required to be provably alive
-var pruneDead = func(entries []*pyjson.Object, strict bool, targetSessionID *string, targetPid *int) ([]*pyjson.Object, error) {
+var pruneDead = func(entries []*jsonutil.Object, strict bool, targetSessionID *string, targetPid *int) ([]*jsonutil.Object, error) {
 	targeted := targetSessionID != nil || targetPid != nil
-	var live []*pyjson.Object
+	var live []*jsonutil.Object
 	for _, entry := range entries {
-		tracked := strict || pyTruthy(entry.GetOr("track_liveness", nil))
-		state := pidLiveness(entry.GetOr("pid", nil), entry.GetOr("process_start_time", nil), !tracked)
+		tracked := strict || pyTruthy(entry.ValueOr("track_liveness", nil))
+		state := pidLiveness(entry.ValueOr("pid", nil), entry.ValueOr("process_start_time", nil), !tracked)
 		if state == livenessUnknown {
-			sessionMatch := targetSessionID != nil && pyrepr.Str(orEmpty(entry.GetOr("session_id", nil))) == *targetSessionID
-			pidMatch := targetPid != nil && pyjson.Equal(entry.GetOr("pid", nil), int64(*targetPid))
+			sessionMatch := targetSessionID != nil && anyutil.String(orEmpty(entry.ValueOr("session_id", nil))) == *targetSessionID
+			pidMatch := targetPid != nil && anyutil.Equal(entry.ValueOr("pid", nil), int64(*targetPid))
 			if !targeted || sessionMatch || pidMatch {
 				return nil, &RegistryError{msg: "active session owner liveness is unknown"}
 			}
@@ -413,7 +413,7 @@ var pruneDead = func(entries []*pyjson.Object, strict bool, targetSessionID *str
 }
 
 // Live leases of the registry, dead ones written out under a second lock, strict requiring provable owners
-func RegistrySnapshot(ctx context.Context, registryHome string, strict bool) ([]*pyjson.Object, error) {
+func RegistrySnapshot(ctx context.Context, registryHome string, strict bool) ([]*jsonutil.Object, error) {
 	statePath, lockPath := leasePaths(ctx, registryHome)
 	unlock, err := enterFileLock(lockPath)
 	if err != nil {
@@ -450,7 +450,7 @@ func RegistrySnapshot(ctx context.Context, registryHome string, strict bool) ([]
 	if err != nil {
 		return nil, err
 	}
-	var kept []*pyjson.Object
+	var kept []*jsonutil.Object
 	for _, entry := range current {
 		if !dead[leaseIDOf(entry)] {
 			kept = append(kept, entry)
@@ -465,8 +465,8 @@ func RegistrySnapshot(ctx context.Context, registryHome string, strict bool) ([]
 }
 
 // Lease id of an entry as text, empty when falsy
-func leaseIDOf(entry *pyjson.Object) string {
-	return pyrepr.Str(orEmpty(entry.GetOr("lease_id", nil)))
+func leaseIDOf(entry *jsonutil.Object) string {
+	return anyutil.String(orEmpty(entry.ValueOr("lease_id", nil)))
 }
 
 // Value itself when truthy, else the empty string
@@ -494,7 +494,7 @@ func pyTruthy(v any) bool {
 		return x.Sign() != 0
 	case []any:
 		return len(x) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len() > 0
 	}
 	return true

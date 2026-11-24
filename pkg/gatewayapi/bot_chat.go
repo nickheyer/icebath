@@ -12,20 +12,20 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Session store the title fallback reads, the title lookup and the local receipt of a lineage
 type titleOwnerStore interface {
-	GetSessionByTitle(ctx context.Context, title string) (*pyjson.Object, error)
-	LocalReceipt(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	GetSessionByTitle(ctx context.Context, title string) (*jsonutil.Object, error)
+	LocalReceipt(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 }
 
 // The titled creation row of a reset local conversation for an exact title lookup, empty otherwise
-func resetLocalTitleOwner(ctx context.Context, db titleOwnerStore, title string, includeHidden bool, source string) ([]*pyjson.Object, error) {
+func resetLocalTitleOwner(ctx context.Context, db titleOwnerStore, title string, includeHidden bool, source string) ([]*jsonutil.Object, error) {
 	if title == "" {
 		return nil, nil
 	}
@@ -33,11 +33,11 @@ func resetLocalTitleOwner(ctx context.Context, db titleOwnerStore, title string,
 	if err != nil {
 		return nil, err
 	}
-	if row == nil || row.GetOr("end_reason", nil) != "session_reset" || pyrepr.Truthy(row.GetOr("archived", nil)) ||
-		(pyrepr.Truthy(row.GetOr("hidden", nil)) && !includeHidden) || (source != "" && row.GetOr("source", nil) != source) {
+	if row == nil || row.ValueOr("end_reason", nil) != "session_reset" || anyutil.IsTrue(row.ValueOr("archived", nil)) ||
+		(anyutil.IsTrue(row.ValueOr("hidden", nil)) && !includeHidden) || (source != "" && row.ValueOr("source", nil) != source) {
 		return nil, nil
 	}
-	receipt, err := db.LocalReceipt(ctx, pyrepr.Str(row.GetOr("id", "")))
+	receipt, err := db.LocalReceipt(ctx, anyutil.String(row.ValueOr("id", "")))
 	if err != nil {
 		var runtimeErr *state.RuntimeStoreError
 		if errors.As(err, &runtimeErr) {
@@ -45,9 +45,9 @@ func resetLocalTitleOwner(ctx context.Context, db titleOwnerStore, title string,
 		}
 		return nil, err
 	}
-	lineage, _ := receipt.GetOr("lineage", nil).([]any)
+	lineage, _ := receipt.ValueOr("lineage", nil).([]any)
 	if len(lineage) > 1 {
-		return []*pyjson.Object{row}, nil
+		return []*jsonutil.Object{row}, nil
 	}
 	return nil, nil
 }
@@ -79,20 +79,20 @@ func peerCreator(profileID string) gateway.Principal {
 }
 
 // Bot Chat minted by the owner for a peer's titled create under session authority, nil when the ordinary handler answers
-func createPeerBotChat(ctx context.Context, a *APIServerAdapter, body *pyjson.Object) (*gateway.WebResponse, error) {
+func createPeerBotChat(ctx context.Context, a *APIServerAdapter, body *jsonutil.Object) (*gateway.WebResponse, error) {
 	authority, err := botChatAuthority(ctx, a.GatewayRunner)
 	if err != nil {
 		return nil, err
 	}
 	title := ""
-	if raw := body.GetOr("title", nil); pyrepr.Truthy(raw) {
-		title = strings.TrimSpace(pyrepr.Str(raw))
+	if raw := body.ValueOr("title", nil); anyutil.IsTrue(raw) {
+		title = strings.TrimSpace(anyutil.String(raw))
 	}
-	if authority == nil || title != botmode.BotChatTitle || pyrepr.Truthy(body.GetOr("id", nil)) || pyrepr.Truthy(body.GetOr("session_id", nil)) {
+	if authority == nil || title != botmode.BotChatTitle || anyutil.IsTrue(body.ValueOr("id", nil)) || anyutil.IsTrue(body.ValueOr("session_id", nil)) {
 		return nil, nil
 	}
 	var unsupported []string
-	for _, key := range body.Keys {
+	for _, key := range body.Keys() {
 		if !peerCreateFields[key] {
 			unsupported = append(unsupported, key)
 		}
@@ -118,7 +118,7 @@ func createPeerBotChat(ctx context.Context, a *APIServerAdapter, body *pyjson.Ob
 	if err != nil {
 		return nil, err
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(row)), http.StatusCreated, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.session", "session", sessionResponse(row)), http.StatusCreated, nil), nil
 }
 
 // Python text of an optional refusal detail, None for an absent one
@@ -130,11 +130,11 @@ func optionalDetail(value *string) string {
 }
 
 // Reason and error text of a refused peer turn, naming a Bot Chat that is no local chat
-func peerRefusal(ctx context.Context, authority *gateway.SessionAuthority, tip *pyjson.Object, refusal *state.RuntimeStoreError) (string, string, error) {
+func peerRefusal(ctx context.Context, authority *gateway.SessionAuthority, tip *jsonutil.Object, refusal *state.RuntimeStoreError) (string, string, error) {
 	reason := refusal.Reason
 	chatID := ""
-	if raw := tip.GetOr("chat_id", nil); pyrepr.Truthy(raw) {
-		chatID = pyrepr.Str(raw)
+	if raw := tip.ValueOr("chat_id", nil); anyutil.IsTrue(raw) {
+		chatID = anyutil.String(raw)
 	}
 	if reason != "not_found" || strings.HasPrefix(chatID, "local-") {
 		return reason, "Bot Chat admission refused: " + reason, nil
@@ -158,19 +158,19 @@ func peerRefusal(ctx context.Context, authority *gateway.SessionAuthority, tip *
 			hint = "it is local history owned by another login or profile; open or rename it from the client that owns it"
 		}
 	}
-	pkgLog().Warn(fmt.Sprintf("Peer DM into Bot Chat %s refused: %s (not_found: field=%s detail=%s)", pyrepr.Str(tip.GetOr("id", nil)),
+	pkgLog().Warn(fmt.Sprintf("Peer DM into Bot Chat %s refused: %s (not_found: field=%s detail=%s)", anyutil.String(tip.ValueOr("id", nil)),
 		reason, optionalDetail(refusal.Field), optionalDetail(refusal.Detail)))
 	return reason, "Bot Chat admission refused: " + reason + " (this profile's 'Bot Chat' is not a local chat; " + hint + ")", nil
 }
 
 // Canonical Bot Chat's tip row when the session is in its lineage, nil otherwise
-func botChatTip(ctx context.Context, authority *gateway.SessionAuthority, sessionID string) (*pyjson.Object, error) {
+func botChatTip(ctx context.Context, authority *gateway.SessionAuthority, sessionID string) (*jsonutil.Object, error) {
 	db := authority.DB
 	row, err := db.GetSessionByTitle(ctx, "Bot Chat")
 	if err != nil || row == nil {
 		return nil, err
 	}
-	tip, err := db.GetCompressionTip(ctx, pyrepr.Str(row.GetOr("id", nil)))
+	tip, err := db.GetCompressionTip(ctx, anyutil.String(row.ValueOr("id", nil)))
 	if err != nil || tip == "" {
 		return nil, err
 	}
@@ -182,7 +182,7 @@ func botChatTip(ctx context.Context, authority *gateway.SessionAuthority, sessio
 }
 
 // Profile home and receipt of a peer turn the Bot Chat FIFO admitted, empty for any other session
-func admitPeerTurn(ctx context.Context, runner any, sessionID, message string, author *pyjson.Object) (string, map[string]any, error) {
+func admitPeerTurn(ctx context.Context, runner any, sessionID, message string, author *jsonutil.Object) (string, map[string]any, error) {
 	authority, err := botChatAuthority(ctx, runner)
 	if err != nil || authority == nil {
 		return "", nil, err
@@ -191,7 +191,7 @@ func admitPeerTurn(ctx context.Context, runner any, sessionID, message string, a
 	if err != nil || tip == nil {
 		return "", nil, err
 	}
-	profileHome, err := pypath.Resolve(filepath.Dir(authority.DB.Path()))
+	profileHome, err := pathutil.Resolve(filepath.Dir(authority.DB.Path()))
 	if err != nil {
 		return "", nil, err
 	}
@@ -208,14 +208,14 @@ func admitPeerTurn(ctx context.Context, runner any, sessionID, message string, a
 	}
 	actor := peerCreator(authority.ProfileID)
 	if displaced == "" {
-		subject, _ := tip.GetOr("user_id", nil).(string)
+		subject, _ := tip.ValueOr("user_id", nil).(string)
 		actor = gateway.Principal{Subject: subject, ProfileID: authority.ProfileID,
 			Capabilities: capabilities("session:submit", "session:read"), TransportID: "api-peer-dm"}
 	}
 	key := hexUUID()
 	params := map[string]any{"id": key, "profile": gateway.ServedProfileName(profileHome), "message": message}
 	if author != nil {
-		params["author"] = author.Copy()
+		params["author"] = author.Clone()
 	}
 	record, err := gateway.BotDeliver(ctx, authority, actor, params)
 	if err != nil {
@@ -253,14 +253,14 @@ func awaitLiveDeliveryUntil(ctx context.Context, a *APIServerAdapter, profileHom
 	if err != nil {
 		return nil, err
 	}
-	if authority != nil && pyrepr.Truthy(record["admission_id"]) {
+	if authority != nil && anyutil.IsTrue(record["admission_id"]) {
 		return awaitPeerReceipt(ctx, authority, record, timeout, shouldStop)
 	}
 	deliveryID, ok := record["delivery_id"]
 	if !ok {
 		return nil, &gateway.PyError{Kind: "KeyError", Msg: "'delivery_id'"}
 	}
-	settled, err := gateway.AwaitDelivery(ctx, profileHome, pyrepr.Str(deliveryID), secondsDuration(timeout), shouldStop)
+	settled, err := gateway.AwaitDelivery(ctx, profileHome, anyutil.String(deliveryID), secondsDuration(timeout), shouldStop)
 	if err != nil {
 		return nil, err
 	}
@@ -289,7 +289,7 @@ func peerReceipt(ctx context.Context, authority *gateway.SessionAuthority, recor
 // Delivery receipt after it settles for good, the timeout lapses or shouldStop says so, following the one retry
 func awaitPeerReceipt(ctx context.Context, authority *gateway.SessionAuthority, record map[string]any, timeout *float64,
 	shouldStop func() bool) (map[string]any, error) {
-	if !peerPending[pyrepr.Str(record["status"])] {
+	if !peerPending[anyutil.String(record["status"])] {
 		return record, nil
 	}
 	var deadline *time.Time
@@ -310,11 +310,11 @@ func awaitPeerReceipt(ctx context.Context, authority *gateway.SessionAuthority, 
 		if err != nil {
 			return nil, err
 		}
-		status := pyrepr.Str(current["status"])
+		status := anyutil.String(current["status"])
 		if live == "" && peerPending[status] {
 			continue
 		}
-		if live == pyrepr.Str(record["admission_id"]) && !interim && status == "failed" && !pyrepr.Truthy(current["retry_admission_id"]) {
+		if live == anyutil.String(record["admission_id"]) && !interim && status == "failed" && !anyutil.IsTrue(current["retry_admission_id"]) {
 			continue
 		}
 		if interim {
@@ -379,5 +379,5 @@ func ownerPublished(ctx context.Context, authority *gateway.SessionAuthority, re
 		left := max(0, time.Until(*deadline))
 		remaining = &left
 	}
-	return authority.AwaitBotReplyPublished(ctx, pyrepr.Str(record["delivery_id"]), remaining)
+	return authority.AwaitBotReplyPublished(ctx, anyutil.String(record["delivery_id"]), remaining)
 }

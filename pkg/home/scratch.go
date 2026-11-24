@@ -3,11 +3,12 @@ package home
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -70,7 +71,7 @@ func pruneScratchDirOnce(scratch string) {
 	if scratchPrunedOnce.Swap(true) {
 		return
 	}
-	stamp := pypath.PathJoin(scratch, scratchPruneStamp)
+	stamp := pathutil.Join(scratch, scratchPruneStamp)
 	if fi, err := os.Stat(stamp); err == nil && time.Since(fi.ModTime()) < scratchPruneEvery {
 		return
 	}
@@ -99,7 +100,7 @@ func PruneScratchDir(ctx context.Context, scratch string, maxIdleHours float64) 
 	if root == "" {
 		root = scratchDir(ctx, "", false)
 	}
-	logFile := pypath.PathJoin(pypath.PathParent(pypath.PathParent(root)), "logs", "scratch-prune.log")
+	logFile := pathutil.Join(filepath.Dir(filepath.Clean(filepath.Dir(filepath.Clean(root)))), "logs", "scratch-prune.log")
 	return PruneIdleEntries(root, maxIdleHours, map[string]bool{scratchPruneStamp: true}, logFile)
 }
 
@@ -125,7 +126,7 @@ func ScratchDirUsageBytes(ctx context.Context, scratch string) int64 {
 		}
 		var dirs []string
 		for _, e := range entries {
-			p := pypath.Join(top, e.Name())
+			p := pathutil.Join(top, e.Name())
 			isDir := e.IsDir()
 			if e.Type()&os.ModeSymlink != 0 {
 				st, serr := os.Stat(p)

@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var rawUserMentionRE = regexp.MustCompile(`<@!?(\d+)>`)
@@ -168,7 +168,7 @@ func canonicalRoleIDs(entries strSet) (strSet, error) {
 		}
 		n, ok := pyint.Parse(entry)
 		if !ok {
-			return nil, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(entry))
+			return nil, fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(entry))
 		}
 		out[n.String()] = struct{}{}
 	}

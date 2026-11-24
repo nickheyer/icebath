@@ -14,11 +14,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/state"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Doctor over a home whose config.yaml carries the given memory section, with optional stale memory files
@@ -100,14 +100,14 @@ func TestGitHubTokenCheckGhAuthenticatedOnGhWithoutAuthenticatedJsonField(t *tes
 		}
 		return ""
 	})
-	toolsSeam(t, &doctorSubprocessRun, func(_ context.Context, cmd []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
+	toolsSeam(t, &doctorSubprocessRun, func(_ context.Context, cmd []string, _ executil.Options) (*executil.Completed, error) {
 		if len(cmd) < 3 || !reflect.DeepEqual(cmd[:3], []string{"gh", "auth", "status"}) {
 			t.Fatalf("argv = %q", cmd)
 		}
 		if containsString(cmd, "--json") && containsString(cmd, "authenticated") {
-			return &pysubprocess.Completed{Args: cmd, Returncode: 1, Stderr: []byte("unknown JSON field")}, nil
+			return &executil.Completed{Args: cmd, ExitCode: 1, Stderr: []byte("unknown JSON field")}, nil
 		}
-		return &pysubprocess.Completed{Args: cmd, Returncode: 0, Stderr: []byte("Logged in to github.com")}, nil
+		return &executil.Completed{Args: cmd, ExitCode: 0, Stderr: []byte("Logged in to github.com")}, nil
 	})
 	if !doctorGhAuthenticated(context.Background()) {
 		t.Fatal("a logged in gh reads as not authenticated")

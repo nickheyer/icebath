@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds one captured shell command may run
@@ -30,15 +30,15 @@ var localShellBackends = map[string]bool{"": true, "local": true}
 // Shell verb of a connection keyed by method name
 func shellHandlers(c *AuthorityConnection) map[string]controlHandler {
 	return map[string]controlHandler{
-		"shell.exec": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"shell.exec": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return shellExec(ctx, c, ref, params)
 		},
 	}
 }
 
 // Runs one captured command for a local terminal session in its frozen launch cwd behind the dangerous command refusal
-func shellExec(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
-	command, isStr := params.GetOr("command", nil).(string)
+func shellExec(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
+	command, isStr := params.ValueOr("command", nil).(string)
 	if paramsOutside(params, "session_id", "profile", "command") || ref.SessionID == "" || !isStr || strings.TrimSpace(command) == "" {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -67,17 +67,17 @@ func shellExec(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	if policy == nil {
 		return nil, runtimeRefusal("permission_denied")
 	}
-	terminal, err := pyjson.Loads(policy.TerminalJSON)
+	terminal, err := jsonutil.Decode(policy.TerminalJSON)
 	if err != nil {
 		return nil, err
 	}
-	backendValue, err := pyGet(pyjson.Plain(terminal), "TERMINAL_ENV", nil)
+	backendValue, err := pyGet(jsonutil.Plain(terminal), "TERMINAL_ENV", nil)
 	if err != nil {
 		return nil, err
 	}
 	backend := ""
-	if pyrepr.Truthy(backendValue) {
-		backend = strings.ToLower(strings.TrimSpace(pyrepr.Str(backendValue)))
+	if anyutil.IsTrue(backendValue) {
+		backend = strings.ToLower(strings.TrimSpace(anyutil.String(backendValue)))
 	}
 	if !localShellBackends[backend] {
 		field, detail := "terminal.backend", backend
@@ -197,7 +197,7 @@ func runShellCommand(ctx context.Context, command, cwd string) (tuigateway.Shell
 	if err != nil {
 		return tuigateway.ShellExecResult{}, err
 	}
-	cmd, err := pysubprocess.ShellCommand(command)
+	cmd, err := executil.ShellCommand(command)
 	if err != nil {
 		return tuigateway.ShellExecResult{}, runtimeRefusal("command_failed")
 	}
@@ -224,7 +224,7 @@ func runShellCommand(ctx context.Context, command, cwd string) (tuigateway.Shell
 		if !ok {
 			return tuigateway.ShellExecResult{}, runtimeRefusal("command_failed")
 		}
-		code = pysubprocess.Returncode(exitErr)
+		code = executil.ExitCode(exitErr.ProcessState)
 	}
 	redact := func(raw []byte, n int) string {
 		text := universalNewlines(strings.ToValidUTF8(string(raw), "\uFFFD"))

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestAuxiliaryCompletionPathHandsTheSDKOnlyThePlaceholder(t *testing.T) {
@@ -31,7 +31,7 @@ func TestAuxiliaryCompletionPathHandsTheSDKOnlyThePlaceholder(t *testing.T) {
 	if got, _ := auxListValue(seen[0]["messages"]); len(got) != 0 {
 		t.Fatalf("typed messages %v", seen[0]["messages"])
 	}
-	extra, _ := pyjson.Plain(seen[0]["extra_body"]).(map[string]any)
+	extra, _ := jsonutil.Plain(seen[0]["extra_body"]).(map[string]any)
 	if !reflect.DeepEqual(auxMessageList(extra["messages"]), auxMessageList(messages)) {
 		t.Fatalf("extra_body messages %v", extra["messages"])
 	}

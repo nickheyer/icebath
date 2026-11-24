@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Stripped profile name, empty for an absent or blank name
@@ -31,7 +31,7 @@ func (r *GatewayRunner) authorizationAdapter(ctx context.Context, platform gatew
 }
 
 // Live adapter map a profile may deliver through, empty for a named profile without one so it never borrows the default bot
-func (r *GatewayRunner) adaptersForProfile(ctx context.Context, profile *string) *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (r *GatewayRunner) adaptersForProfile(ctx context.Context, profile *string) *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	name := stripProfile(profile)
 	if name == "" || name == "default" {
 		return r.primaryAdapters()
@@ -40,7 +40,7 @@ func (r *GatewayRunner) adaptersForProfile(ctx context.Context, profile *string)
 		if gateway.HasCredentialPlatform(adapters, nil) || !r.isSharedBotSatellite(ctx, name, "") {
 			return adapters
 		}
-		return pydict.Merge(r.primaryAdapters(), adapters)
+		return orderedutil.Merge(r.primaryAdapters(), adapters)
 	}
 	primaryProfile := r.primaryProfileName
 	if primaryProfile == "" {
@@ -49,11 +49,11 @@ func (r *GatewayRunner) adaptersForProfile(ctx context.Context, profile *string)
 	if name == primaryProfile {
 		return r.primaryAdapters()
 	}
-	return pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	return orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 }
 
 // Live adapter map of the profile a source names, the profile adapters seam of the session authority
-func (r *GatewayRunner) AdaptersForProfile(profile *string) *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (r *GatewayRunner) AdaptersForProfile(profile *string) *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	return r.adaptersForProfile(context.Background(), profile)
 }
 
@@ -131,7 +131,7 @@ func (r *GatewayRunner) isSharedBotSatellite(ctx context.Context, profileName st
 	}
 	routed := false
 	for _, route := range r.config.ProfileRoutes {
-		if pyrepr.Truthy(route.Enabled) && route.Profile == profileName && route.BotProfile == nil {
+		if anyutil.IsTrue(route.Enabled) && route.Profile == profileName && route.BotProfile == nil {
 			routed = true
 			break
 		}

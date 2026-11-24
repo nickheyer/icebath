@@ -13,9 +13,10 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 func TestSurvivingGatewayProbeUndeterminableWhenGatewayModuleIsBroken(t *testing.T) {
@@ -164,7 +165,7 @@ func TestFleetRestartTimeoutIsolationTimeoutOnMiddleUnitContinuesRemainingUnits(
 	restarted, failed, timeoutCmds := []string{}, []string{}, [][]string{}
 	err := forEachSystemdGatewayUnit(listUnitsStdout(units...), func(svcName string) error {
 		if svcName == "icebath-gateway-xiaomo5" {
-			return &pysubprocess.TimeoutExpired{Cmd: []string{"systemctl", "--user", "--no-ask-password", "restart", svcName}, Timeout: 15}
+			return &executil.TimeoutError{Args: []string{"systemctl", "--user", "--no-ask-password", "restart", svcName}, Timeout: time.Duration(15) * time.Second}
 		}
 		restarted = append(restarted, svcName)
 		return nil
@@ -256,9 +257,9 @@ func ownLaunchd(t *testing.T, plistExists bool, restartErr error, supervised boo
 		job.restarts++
 		return nil
 	})
-	vsSwap(t, &fleetRunCommand, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+	vsSwap(t, &fleetRunCommand, func(_ context.Context, cmd []string, _ float64) (*executil.Completed, error) {
 		job.commands = append(job.commands, cmd)
-		return &pysubprocess.Completed{Args: cmd}, nil
+		return &executil.Completed{Args: cmd}, nil
 	})
 	vsSwap(t, &fleetLaunchdLabelsForInstall, func(context.Context) ([]string, error) { return []string{"app.icebath.gateway"}, nil })
 	vsSwap(t, &fleetIsPidAncestor, func(int) bool { return false })
@@ -302,7 +303,7 @@ func TestLaunchdRestartAfterUpdateRestartFailureWarnsThatGatewayIsDown(t *testin
 func TestLaunchdRestartAfterUpdateLaunchctlUnusableIsNotSwallowed(t *testing.T) {
 	failures := map[string]error{
 		"missing": fmt.Errorf("%w: %q", gateway.ErrCommandNotFound, "launchctl"),
-		"timeout": &pysubprocess.TimeoutExpired{Cmd: []string{"launchctl", "kickstart"}, Timeout: 90},
+		"timeout": &executil.TimeoutError{Args: []string{"launchctl", "kickstart"}, Timeout: time.Duration(90) * time.Second},
 	}
 	for name, failure := range failures {
 		t.Run(name, func(t *testing.T) {

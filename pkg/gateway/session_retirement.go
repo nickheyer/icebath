@@ -5,9 +5,9 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Platforms whose idle conversations leave the authority's memory
@@ -15,7 +15,7 @@ var retirablePlatforms = map[Platform]bool{PlatformLocal: true, PlatformAPIServe
 
 // Execution stamp the last viewer close completed at
 type closedStamp struct {
-	execution *pyjson.Object
+	execution *jsonutil.Object
 }
 
 // Run token of a cold refine review held on its live session
@@ -110,7 +110,7 @@ func retireIdle(ctx context.Context, a *SessionAuthority, sessionID string, live
 }
 
 // Retires a closed local conversation nobody views unless a turn claimed since the close found the FIFO idle
-func retireClosed(ctx context.Context, a *SessionAuthority, sessionID string, live *LiveSession, target string, idleStamp *pyjson.Object) (bool, error) {
+func retireClosed(ctx context.Context, a *SessionAuthority, sessionID string, live *LiveSession, target string, idleStamp *jsonutil.Object) (bool, error) {
 	a.mu.Lock()
 	live.ClosedStamp = &closedStamp{execution: idleStamp}
 	a.mu.Unlock()

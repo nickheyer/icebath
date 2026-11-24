@@ -13,10 +13,10 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Rough chars per token ratio for ASCII text
@@ -235,9 +235,9 @@ func StripOpaqueReplayItems(items any) any { return stripOpaqueReplayItems(items
 // Text tokens of one message with image payloads stripped, the Python str of a dict row shadow or of the value
 func estimateMessageTokensWithoutImages(msg any) int {
 	if row, ok := msg.(map[string]any); ok {
-		return EstimateTokens(pyrepr.Str(mapShadow(row)))
+		return EstimateTokens(anyutil.String(mapShadow(row)))
 	}
-	return EstimateTokens(pyrepr.Str(msg))
+	return EstimateTokens(anyutil.String(msg))
 }
 
 // Memoized tokens of message rows, each a dict row or any other value, images at the per image price
@@ -375,7 +375,7 @@ func toolNameForCache(tool map[string]any) string {
 	if tool == nil {
 		return ""
 	}
-	if fn, ok := pyjson.Dict(tool["function"]); ok {
+	if fn, ok := jsonutil.AsMap(tool["function"]); ok {
 		if name, isStr := fn["name"].(string); isStr {
 			return name
 		}
@@ -414,7 +414,7 @@ func EstimateToolsTokens(tools []map[string]any) int {
 			continue
 		}
 		src := tool
-		if fn, ok := pyjson.Dict(tool["function"]); ok {
+		if fn, ok := jsonutil.AsMap(tool["function"]); ok {
 			src = fn
 		}
 		for _, field := range []string{"name", "description"} {
@@ -472,11 +472,11 @@ func payloadChars(v any, imageCost int) int {
 			return 0
 		}
 		return payloadChars(c.vals, imageCost)
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if c == nil {
 			return 0
 		}
-		return payloadChars(c.Vals, imageCost)
+		return payloadChars(c.Map(), imageCost)
 	case map[string]any:
 		if t, ok := c["type"].(string); ok && imagePartTypes[t] {
 			for _, k := range []string{"image_url", "image", "source", "file_id"} {
@@ -513,7 +513,7 @@ func payloadChars(v any, imageCost int) int {
 	if generic, ok := payloadGeneric(v); ok {
 		return payloadChars(generic, imageCost)
 	}
-	return utf8.RuneCountInString(pyrepr.Str(v))
+	return utf8.RuneCountInString(anyutil.String(v))
 }
 
 // Typed Go slices and string keyed maps viewed as the list and dict values the wire body holds

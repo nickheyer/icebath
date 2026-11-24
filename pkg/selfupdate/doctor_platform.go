@@ -20,13 +20,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/install"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // doctorPackage is one library, program or runtime package an optional capability loads, no probe when its tier is not linked
@@ -169,7 +169,7 @@ func doctorUnreadableReason(dbPath string) string {
 	if _, err := os.Stat(dbPath); err != nil {
 		return errchain.OSText(err)
 	}
-	if pyfs.Access(dbPath, 4) {
+	if fsutil.Access(dbPath, 4) {
 		return "file could not be read"
 	}
 	return "permission denied: " + dbPath
@@ -224,7 +224,7 @@ func doctorReportDatabaseHolders(w io.Writer, name, dbPath string) error {
 		if byPID[holder.PID] == nil {
 			byPID[holder.PID] = map[string]bool{}
 		}
-		byPID[holder.PID][pypath.Basename(strings.TrimSuffix(holder.Target, " (deleted)"))] = true
+		byPID[holder.PID][pathutil.Name(strings.TrimSuffix(holder.Target, " (deleted)"))] = true
 	}
 	pids := make([]int, 0, len(byPID))
 	for pid := range byPID {

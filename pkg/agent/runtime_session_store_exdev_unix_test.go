@@ -9,8 +9,9 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Device id of a path's filesystem
@@ -49,8 +50,8 @@ func otherFilesystemDir(t *testing.T, path string) string {
 }
 
 func TestOutboxJournalSurvivesACrossDeviceRename(t *testing.T) {
-	store := mustStore(t, cannedCall(func(string, *pyjson.Object) (any, error) { return pyjson.NewObject(), nil }),
-		pyjson.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
+	store := mustStore(t, cannedCall(func(string, *jsonutil.Object) (any, error) { return jsonutil.NewObject(), nil }),
+		jsonutil.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
 	defer store.closeOwner()
 	elsewhere := filepath.Join(otherFilesystemDir(t, filepath.Dir(store.path)), "ro")
 	if err := os.Mkdir(elsewhere, 0o700); err != nil {
@@ -75,7 +76,7 @@ func TestOutboxJournalSurvivesACrossDeviceRename(t *testing.T) {
 	if f := store.Failure(); f != nil {
 		t.Fatalf("store failed %q", *f)
 	}
-	if scope := readJournal(t, store).GetOr("scope", nil); !pyjson.Equal(scope, pyjson.ObjectOf("session_id", "s")) {
+	if scope := readJournal(t, store).ValueOr("scope", nil); !anyutil.Equal(scope, jsonutil.ObjectOf("session_id", "s")) {
 		t.Fatalf("scope %v", scope)
 	}
 	if info, err := os.Stat(target); err != nil || info.Mode().Perm() != 0o600 {

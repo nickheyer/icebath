@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var minimaxAnthropicPrefixes = []string{"https://api.minimax.io/anthropic", "https://api.minimaxi.com/anthropic"}
@@ -29,7 +29,7 @@ func parseBaseURL(raw string) *url.URL {
 
 // Lowercased hostname of a base URL, empty when absent
 func baseURLHostname(raw string) string {
-	host, err := pyurl.BaseURLHostname(raw)
+	host, err := urlutil.BaseHost(raw)
 	if err != nil {
 		return ""
 	}
@@ -38,7 +38,7 @@ func baseURLHostname(raw string) string {
 
 // Reports whether the base URL host is the domain or one of its subdomains
 func baseURLHostMatches(raw, domain string) bool {
-	matches, err := pyurl.BaseURLHostMatches(raw, domain)
+	matches, err := urlutil.BaseHostMatches(raw, domain)
 	return err == nil && matches
 }
 

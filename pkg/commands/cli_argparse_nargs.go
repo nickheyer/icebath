@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/spf13/cobra"
 )
 
@@ -140,16 +139,16 @@ func (v *nonNegativeDays) String() string { return strconv.Itoa(int(*v)) }
 
 func (v *nonNegativeDays) Type() string { return "int" }
 
-// Accepts Python int text at or above zero
+// Accepts decimal integer text at or above zero
 func (v *nonNegativeDays) Set(text string) error {
-	n, ok := pyint.Parse(text)
-	if !ok || !n.IsInt64() {
+	n, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	if err != nil {
 		return errors.New("must be an integer")
 	}
-	if n.Sign() < 0 {
+	if n < 0 {
 		return errors.New("retention days must be >= 0 (0 disables that sweep)")
 	}
-	*v = nonNegativeDays(n.Int64())
+	*v = nonNegativeDays(n)
 	return nil
 }
 

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 )
 
 // The constructor arguments of the keyword spotter
@@ -104,8 +104,8 @@ func (m *Module) NewKeywordSpotter(o KeywordSpotterOptions) (*KeywordSpotter, er
 	if o.Device != 0 {
 		return nil, &PyError{Class: "ValueError", Msg: fmt.Sprintf("device=%d has no field in the sherpa-onnx C API keyword spotter config", o.Device)}
 	}
-	strs := [][]byte{pyctypes.CString(o.Encoder), pyctypes.CString(o.Decoder), pyctypes.CString(o.Joiner), pyctypes.CString(o.Tokens),
-		pyctypes.CString(o.Provider), pyctypes.CString(o.KeywordsFile)}
+	strs := [][]byte{dlutil.CString(o.Encoder), dlutil.CString(o.Decoder), dlutil.CString(o.Joiner), dlutil.CString(o.Tokens),
+		dlutil.CString(o.Provider), dlutil.CString(o.KeywordsFile)}
 	config := &cKeywordSpotterConfig{
 		featConfig: cFeatureConfig{sampleRate: int32(o.SampleRate), featureDim: int32(o.FeatureDim)},
 		modelConfig: cOnlineModelConfig{transducerEncoder: &strs[0][0], transducerDecoder: &strs[1][0], transducerJoiner: &strs[2][0],
@@ -136,7 +136,7 @@ func (k *KeywordSpotter) CreateStream(keywords *string) *OnlineStream {
 	if keywords == nil {
 		handle = k.api.createKeywordStream(k.handle)
 	} else {
-		handle = k.api.createKeywordStreamWithKeywords(k.handle, &pyctypes.CString(*keywords)[0])
+		handle = k.api.createKeywordStreamWithKeywords(k.handle, &dlutil.CString(*keywords)[0])
 	}
 	runtime.KeepAlive(k)
 	return newOnlineStream(k.api, handle)

@@ -43,6 +43,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 const (
@@ -63,7 +64,7 @@ const (
 var (
 	entraNow        = time.Now
 	entraHTTPClient = func() *http.Client {
-		return &http.Client{Timeout: 30 * time.Second, Transport: pyhttpx.EnvProxyTransport()}
+		return &http.Client{Timeout: 30 * time.Second, Transport: httputil.Transport()}
 	}
 	entraSleep    = gcpBackoffSleep
 	entraTenantRe = regexp.MustCompile(`^[0-9A-Za-z.-]+$`)
@@ -580,7 +581,7 @@ func (c *entraManagedIdentityCredential) request(ctx context.Context, resource s
 		if c.clientID != "" {
 			q.Set("client_id", c.clientID)
 		}
-		client.Transport = &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyhttpx.EnvProxy, TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}}
+		client.Transport = &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: httputil.Proxy, TLSClientConfig: &tls.Config{InsecureSkipVerify: true, MinVersion: tls.VersionTLS12}}
 	case "azure_ml":
 		endpoint, headers["secret"] = env("MSI_ENDPOINT"), env("MSI_SECRET")
 		q.Set("api-version", "2017-09-01")

@@ -3,8 +3,8 @@ package gateway
 import (
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Default seconds before dispatch expiry that a grant refresh is scheduled
@@ -21,11 +21,11 @@ func RoomGrantNeedsDispatchRefresh(token string, now *float64, leewaySeconds flo
 			return true
 		}
 	}
-	decoded, err := pyjson.Loads(string(encoded))
+	decoded, err := jsonutil.Decode(string(encoded))
 	if err != nil {
 		return true
 	}
-	payload, isDict := decoded.(*pyjson.Object)
+	payload, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
 		return true
 	}
@@ -33,7 +33,7 @@ func RoomGrantNeedsDispatchRefresh(token string, now *float64, leewaySeconds flo
 	if !has {
 		return true
 	}
-	expiresAt, err := pyint.Float(raw)
+	expiresAt, err := anyutil.ToFloat(raw)
 	if err != nil {
 		return true
 	}

@@ -13,10 +13,10 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -32,10 +32,10 @@ var (
 
 // Python str of a metadata value or empty when the value is falsy
 func relayTruthyStr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func relayAPIMode(metadata map[string]any) string { return relayTruthyStr(metadata["api_mode"]) }
@@ -75,7 +75,7 @@ type relayManagedAttempt struct {
 	codecBaseline map[string]any
 	operation     string
 	relayKwargs   map[string]any
-	context       *pyctx.Context
+	context       *ctxutil.Store
 	rawMu         sync.Mutex
 	hasValue      bool
 	rawValue      any
@@ -150,7 +150,7 @@ func newRelayManagedAttempt(ctx context.Context, rt *tools.RelayRuntime, session
 		"handle": a.parent, "metadata": relayMetadata(name, metadata), "model_name": modelName,
 		"codec": relayCodecValue(codec), "response_codec": relayCodecValue(responseCodec),
 	}
-	a.context = pyctx.CopyContext(ctx)
+	a.context = ctxutil.CopyStore(ctx)
 	return a, nil
 }
 
@@ -160,7 +160,7 @@ func (a *relayManagedAttempt) providerRequest(next any) map[string]any {
 
 // Runs an icebath callback in a fresh copy of the captured context where nested relay calls run unmanaged
 func (a *relayManagedAttempt) runCallback(ctx context.Context, fn func(ctx context.Context) (any, error)) (any, error) {
-	return fn(tools.RelayManagedCallbackGuard(pyctx.With(ctx, a.context.Copy())))
+	return fn(tools.RelayManagedCallbackGuard(ctxutil.WithStore(ctx, a.context.Copy())))
 }
 
 func (a *relayManagedAttempt) record(raw any) any {
@@ -394,7 +394,7 @@ func relayAcloseOnLoop(ctx context.Context, stream any) (bool, error) {
 		"relay-llm-stream-aclose", &timeout, "Relay stream aclose did not finish; abandoning the close attempt")
 	var te *tools.RelayTimeoutError
 	if errors.As(err, &te) {
-		pkgLog().WarnContext(ctx, fmt.Sprintf("Relay stream aclose exceeded %ss; abandoning the close attempt and its private loop", pyrepr.Repr(relayAcloseTimeout)))
+		pkgLog().WarnContext(ctx, fmt.Sprintf("Relay stream aclose exceeded %ss; abandoning the close attempt and its private loop", anyutil.Quote(relayAcloseTimeout)))
 		return false, nil
 	}
 	return true, err
@@ -1057,8 +1057,8 @@ func NewAnthropicStreamAccumulator() *AnthropicStreamAccumulator {
 	return &AnthropicStreamAccumulator{message: map[string]any{}, blocks: map[int]map[string]any{}}
 }
 
-// Python int value of a JSON index, decoded floats with integral value and bools included
-func relayPyInt(v any) (int, bool) {
+// Integer value of a JSON index, decoded floats with integral value and bools included
+func relayJSONInt(v any) (int, bool) {
 	switch n := v.(type) {
 	case bool:
 		if n {
@@ -1071,10 +1071,10 @@ func relayPyInt(v any) (int, bool) {
 		}
 		return 0, false
 	case float32:
-		return relayPyInt(float64(n))
+		return relayJSONInt(float64(n))
 	}
-	if i, ok := pyrepr.Int(v); ok && i.IsInt64() {
-		return int(i.Int64()), true
+	if i, ok := anyutil.Int(v); ok {
+		return int(i), true
 	}
 	return 0, false
 }
@@ -1114,7 +1114,7 @@ func (a *AnthropicStreamAccumulator) onMessageStart(payload map[string]any) {
 
 // Opens the content block at the event's integer index with a copy of its block
 func (a *AnthropicStreamAccumulator) onContentBlockStart(payload map[string]any) {
-	index, iok := relayPyInt(payload["index"])
+	index, iok := relayJSONInt(payload["index"])
 	if block, ok := payload["content_block"].(map[string]any); ok && iok {
 		a.blocks[index] = relayCopyMap(block)
 	}
@@ -1145,7 +1145,7 @@ func (a *AnthropicStreamAccumulator) onMessageDelta(payload map[string]any) {
 }
 
 func (a *AnthropicStreamAccumulator) onContentBlockDelta(payload map[string]any) error {
-	index, iok := relayPyInt(payload["index"])
+	index, iok := relayJSONInt(payload["index"])
 	delta, dok := payload["delta"].(map[string]any)
 	if !iok || !dok {
 		return nil
@@ -1164,7 +1164,7 @@ func (a *AnthropicStreamAccumulator) onContentBlockDelta(payload map[string]any)
 	case "input_json_delta":
 		prior := ""
 		if v, has := block["_partial_json"]; has {
-			prior = pyrepr.Str(v)
+			prior = anyutil.String(v)
 			delete(block, "_partial_json")
 		}
 		block["_partial_json"] = prior + relayTruthyStr(delta["partial_json"])
@@ -1200,8 +1200,8 @@ func (a *AnthropicStreamAccumulator) Finalize() map[string]any {
 		if partial, has := block["_partial_json"]; has {
 			delete(block, "_partial_json")
 			if text, ok := partial.(string); ok {
-				if parsed, err := pyjson.Loads(text); err == nil {
-					partial = pyjson.Plain(parsed)
+				if parsed, err := jsonutil.Decode(text); err == nil {
+					partial = jsonutil.Plain(parsed)
 				}
 			}
 			block["input"] = partial
@@ -1643,7 +1643,7 @@ func relayProviderRequestBody(content, metadata map[string]any) map[string]any {
 	body := relayCopyMap(content)
 	if relayAPIMode(metadata) == "codex_responses" {
 		relayRewriteTools(body, func(t map[string]any) bool {
-			_, ok := pyjson.Dict(t["function"])
+			_, ok := jsonutil.AsMap(t["function"])
 			return t["type"] == "function" && ok
 		}, func(t map[string]any) map[string]any {
 			out := map[string]any{"type": "function"}

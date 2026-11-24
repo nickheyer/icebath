@@ -27,16 +27,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -81,7 +79,7 @@ type peerCLI struct {
 func (c *peerCLI) println(s string)  { fmt.Fprintln(c.out, s) }
 func (c *peerCLI) eprintln(s string) { fmt.Fprintln(c.errOut, s) }
 
-// Python urllib HTTPError, a non success status whose body reads once like the response file it wraps
+// Non success HTTP status of a peer reply, its body readable once like the response it wraps
 type peerHTTPError struct {
 	code    int
 	msg     string
@@ -106,15 +104,15 @@ type peerURLError struct{ reason error }
 
 func (e *peerURLError) Error() string { return "could not reach the peer: " + e.reason.Error() }
 
-// Python OSError or one of its subclasses with the str the exception prints
+// Operating system failure of a peer exchange with the text it reports, timeout marking a socket timeout
 type peerOSError struct {
-	class string
-	text  string
+	text    string
+	timeout bool
 }
 
 func (e *peerOSError) Error() string { return e.text }
 
-// Python exceptions the peer command raises itself, sorted by class for its except clauses
+// Failures the peer command raises itself, one type per handling its callers give them
 type (
 	peerRuntimeError    struct{ msg string }
 	peerLookupError     struct{ msg string }
@@ -136,10 +134,10 @@ func peerIsURLError(err error) bool {
 	return errors.As(err, &ue) || errors.As(err, &he)
 }
 
-// True for a bare TimeoutError, never one wrapped as a URLError reason
+// True for a bare socket timeout, never one wrapped as the reason of a peerURLError
 func peerIsTimeoutError(err error) bool {
 	var oe *peerOSError
-	return errors.As(err, &oe) && oe.class == "TimeoutError"
+	return errors.As(err, &oe) && oe.timeout
 }
 
 // True for OSError and every subclass the request stack raises
@@ -184,13 +182,13 @@ var peerSecret = func(ctx context.Context, name string) string {
 // Method, JSON body, timeout and extra headers of one peer API request
 type peerRequestOptions struct {
 	method  string
-	body    *pyjson.Object
+	body    *jsonutil.Object
 	timeout time.Duration
 	headers [][2]string
 }
 
 // JSON object a peer answers, refusing cross origin credential forwarding and non object replies
-var peerRequest = func(ctx context.Context, rawURL, key string, o peerRequestOptions) (*pyjson.Object, error) {
+var peerRequest = func(ctx context.Context, rawURL, key string, o peerRequestOptions) (*jsonutil.Object, error) {
 	method := o.method
 	if method == "" {
 		method = http.MethodGet
@@ -201,7 +199,7 @@ var peerRequest = func(ctx context.Context, rawURL, key string, o peerRequestOpt
 	}
 	var data io.Reader
 	if o.body != nil {
-		text, err := pyjson.Dumps(o.body)
+		text, err := jsonutil.Encode(o.body)
 		if err != nil {
 			return nil, err
 		}
@@ -230,15 +228,15 @@ var peerRequest = func(ctx context.Context, rawURL, key string, o peerRequestOpt
 		return nil, err
 	}
 	payload := strings.ToValidUTF8(string(raw), "\uFFFD")
-	parsed, err := pyjson.Loads(payload)
+	parsed, err := jsonutil.Decode(payload)
 	if err != nil {
-		var de *pyjson.DecodeError
+		var de *jsonutil.SyntaxError
 		if errors.As(err, &de) {
 			return nil, &peerRuntimeError{"Peer returned non-JSON response: " + tools.SanitizeDisplayText(textutil.First(payload, 200))}
 		}
 		return nil, err
 	}
-	obj, ok := parsed.(*pyjson.Object)
+	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return nil, &peerRuntimeError{"Peer returned a non-object JSON response"}
 	}
@@ -322,7 +320,7 @@ func peerTransportError(err error, wrote bool) error {
 	inner := ue.Err
 	var ne net.Error
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()) {
-		timedOut := &peerOSError{class: "TimeoutError", text: "timed out"}
+		timedOut := &peerOSError{text: "timed out", timeout: true}
 		if wrote {
 			return timedOut
 		}
@@ -332,14 +330,14 @@ func peerTransportError(err error, wrote bool) error {
 		return err
 	}
 	if !wrote {
-		return &peerURLError{&peerOSError{class: pypath.OSErrorClass(inner), text: errchain.OSText(inner)}}
+		return &peerURLError{&peerOSError{text: errchain.OSText(inner)}}
 	}
 	if errors.Is(inner, io.EOF) {
-		return &peerOSError{class: "RemoteDisconnected", text: peerRemoteDisconnectedMsg}
+		return &peerOSError{text: peerRemoteDisconnectedMsg}
 	}
 	var errno syscall.Errno
 	if errors.As(inner, &errno) {
-		return &peerOSError{class: pypath.OSErrorClass(inner), text: errchain.OSText(inner)}
+		return &peerOSError{text: errchain.OSText(inner)}
 	}
 	return fmt.Errorf("the peer reply could not be read: %w", inner)
 }
@@ -351,7 +349,7 @@ func peerReadError(err error, got int, want int64) error {
 	}
 	var ne net.Error
 	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) || (errors.As(err, &ne) && ne.Timeout()) {
-		return &peerOSError{class: "TimeoutError", text: "timed out"}
+		return &peerOSError{text: "timed out", timeout: true}
 	}
 	if errors.Is(err, io.ErrUnexpectedEOF) {
 		if want > int64(got) {
@@ -361,7 +359,7 @@ func peerReadError(err error, got int, want int64) error {
 	}
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return &peerOSError{class: pypath.OSErrorClass(err), text: errchain.OSText(err)}
+		return &peerOSError{text: errchain.OSText(err)}
 	}
 	return err
 }
@@ -369,12 +367,12 @@ func peerReadError(err error, got int, want int64) error {
 // Base URL of a peer, the multiplex mirror of a named profile when one is given
 func peerBaseURL(peer map[string]any, profile string) string {
 	base := ""
-	if v := peer["url"]; pyrepr.Truthy(v) {
-		base = pyrepr.Str(v)
+	if v := peer["url"]; anyutil.IsTrue(v) {
+		base = anyutil.String(v)
 	}
 	base = strings.TrimRight(base, "/")
 	if profile != "" {
-		return base + "/p/" + pyurl.Quote(profile, "")
+		return base + "/p/" + url.PathEscape(profile)
 	}
 	return base
 }
@@ -392,15 +390,15 @@ func peerLacksProfile(err error) (bool, error) {
 		}
 		return false, readErr
 	}
-	parsed, loadErr := pyjson.Loads(strings.ToValidUTF8(string(raw), "\uFFFD"))
+	parsed, loadErr := jsonutil.Decode(strings.ToValidUTF8(string(raw), "\uFFFD"))
 	if loadErr != nil {
-		var de *pyjson.DecodeError
+		var de *jsonutil.SyntaxError
 		if errors.As(loadErr, &de) {
 			return false, nil
 		}
 		return false, loadErr
 	}
-	body, ok := parsed.(*pyjson.Object)
+	body, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return false, nil
 	}
@@ -440,31 +438,31 @@ func peerResolveBase(ctx context.Context, peer map[string]any, profile, key, pee
 
 // Session id of the remote canonical Bot Chat through the exact title hidden aware lookup, empty when none exists
 func peerFindBotChat(ctx context.Context, base, key string) (string, error) {
-	query := pyurl.URLEncode([][2]string{{"limit", "200"}, {"title", peerBotChatTitle}, {"include_hidden", "1"}})
+	query := urlutil.EncodeQuery([][2]string{{"limit", "200"}, {"title", peerBotChatTitle}, {"include_hidden", "1"}})
 	listing, err := peerRequest(ctx, base+"/api/sessions?"+query, key, peerRequestOptions{})
 	if err != nil {
 		return "", err
 	}
 	data, _ := listing.Get("data")
-	if !pyrepr.Truthy(data) {
+	if !anyutil.IsTrue(data) {
 		return "", nil
 	}
 	rows, isList := data.([]any)
 	if !isList {
 		switch data.(type) {
-		case string, *pyjson.Object:
+		case string, *jsonutil.Object:
 			return "", nil
 		}
 		return "", fmt.Errorf("the peer bot chat list is %s, expected a list", errchain.Kind(data))
 	}
 	for _, row := range rows {
-		session, ok := row.(*pyjson.Object)
+		session, ok := row.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
 		title, _ := session.Get("title")
 		text := ""
-		if pyrepr.Truthy(title) {
+		if anyutil.IsTrue(title) {
 			s, isText := title.(string)
 			if !isText {
 				return "", &peerAttributeError{fmt.Sprintf("a peer bot chat title is %s, expected text", errchain.Kind(title))}
@@ -473,10 +471,10 @@ func peerFindBotChat(ctx context.Context, base, key string) (string, error) {
 		}
 		if strings.TrimSpace(text) == peerBotChatTitle {
 			id, _ := session.Get("id")
-			if !pyrepr.Truthy(id) {
+			if !anyutil.IsTrue(id) {
 				return "", nil
 			}
-			return pyrepr.Str(id), nil
+			return anyutil.String(id), nil
 		}
 	}
 	return "", nil
@@ -492,7 +490,7 @@ var peerEnsureBotChat = func(ctx context.Context, base, key string) (string, err
 		return existing, nil
 	}
 	created, err := peerRequest(ctx, base+"/api/sessions", key, peerRequestOptions{method: http.MethodPost,
-		body: pyjson.ObjectOf("title", peerBotChatTitle, "source", "bot_peer_dm")})
+		body: jsonutil.ObjectOf("title", peerBotChatTitle, "source", "bot_peer_dm")})
 	if err != nil {
 		var he *peerHTTPError
 		if errors.As(err, &he) {
@@ -510,17 +508,17 @@ var peerEnsureBotChat = func(ctx context.Context, base, key string) (string, err
 	}
 	session := created
 	if wrapped, _ := created.Get("session"); wrapped != nil {
-		if row, ok := wrapped.(*pyjson.Object); ok {
+		if row, ok := wrapped.(*jsonutil.Object); ok {
 			session = row
 		}
 	}
 	id, _ := session.Get("id")
-	if !pyrepr.Truthy(id) {
+	if !anyutil.IsTrue(id) {
 		id, _ = session.Get("session_id")
 	}
 	sessionID := ""
-	if pyrepr.Truthy(id) {
-		sessionID = pyrepr.Str(id)
+	if anyutil.IsTrue(id) {
+		sessionID = anyutil.String(id)
 	}
 	if sessionID == "" {
 		return "", &peerRuntimeError{"Peer did not return a session id for the new Bot Chat"}
@@ -541,7 +539,7 @@ func peerParseTarget(target any) (string, string, error) {
 		return "", "", &peerValueError{"Peer name required (icebath peer dm <peer>[/<agent>] ...)"}
 	}
 	if profile != "" && !peerProfileRe.MatchString(profile) {
-		return "", "", &peerValueError{"Invalid agent/profile name: " + pyrepr.Repr(profile)}
+		return "", "", &peerValueError{"Invalid agent/profile name: " + anyutil.Quote(profile)}
 	}
 	if profile != "" {
 		if profile, err = profiles.NormalizeProfileName(profile); err != nil {
@@ -558,22 +556,22 @@ func peerHTTPErrorDetail(e *peerHTTPError) string {
 		return tools.SanitizeDisplayText(e.Error())
 	}
 	body := strings.ToValidUTF8(string(raw), "\uFFFD")
-	parsed, err := pyjson.Loads(body)
+	parsed, err := jsonutil.Decode(body)
 	if err != nil {
 		return tools.SanitizeDisplayText(e.Error())
 	}
 	var message any
-	if obj, ok := parsed.(*pyjson.Object); ok {
+	if obj, ok := parsed.(*jsonutil.Object); ok {
 		if refusal, has := obj.Get("error"); has {
-			inner, isObj := refusal.(*pyjson.Object)
+			inner, isObj := refusal.(*jsonutil.Object)
 			if !isObj {
 				return tools.SanitizeDisplayText(e.Error())
 			}
 			message, _ = inner.Get("message")
 		}
 	}
-	if pyrepr.Truthy(message) {
-		return tools.SanitizeDisplayText(pyrepr.Str(message))
+	if anyutil.IsTrue(message) {
+		return tools.SanitizeDisplayText(anyutil.String(message))
 	}
 	return tools.SanitizeDisplayText(textutil.First(body, 200))
 }
@@ -589,7 +587,7 @@ func resolvePeerTarget(c *peerCLI, target any) (string, string, map[string]any, 
 		return "", "", nil, "", err
 	}
 	peer, ok := peers[peerName].(map[string]any)
-	if !ok || !pyrepr.Truthy(peer["url"]) {
+	if !ok || !anyutil.IsTrue(peer["url"]) {
 		return "", "", nil, "", &peerLookupError{fmt.Sprintf("No peer named '%s'. Run: icebath peer list", peerName)}
 	}
 	key := peerSecret(c.ctx, peerName)
@@ -602,7 +600,7 @@ func resolvePeerTarget(c *peerCLI, target any) (string, string, map[string]any, 
 
 // Text of an argparse value after the or empty idiom, stripped, a non string value refusing strip
 func peerText(v any) (string, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	s, ok := v.(string)
@@ -622,12 +620,12 @@ func peerMessageFromArgs(c *peerCLI, ns map[string]any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text, err := pystr.DecodeUTF8(raw)
+	text, err := textutil.DecodeUTF8(raw)
 	if err != nil {
 		return "", err
 	}
 	if runtime.GOOS == "windows" {
-		text = pystr.TranslateNewlines(text)
+		text = textutil.NormalizeNewlines(text)
 	}
 	return strings.TrimSpace(text), nil
 }
@@ -641,15 +639,15 @@ func peerRunDurability(ctx context.Context, base, key string) (*bool, error) {
 		}
 		return nil, nil
 	}
-	features, ok := capabilities.GetOr("features", nil).(*pyjson.Object)
+	features, ok := capabilities.ValueOr("features", nil).(*jsonutil.Object)
 	if !ok {
 		return nil, nil
 	}
-	contract, ok := features.GetOr("runs_idempotency", nil).(*pyjson.Object)
-	if !ok || !pyrepr.Truthy(contract.GetOr("supported", nil)) {
+	contract, ok := features.ValueOr("runs_idempotency", nil).(*jsonutil.Object)
+	if !ok || !anyutil.IsTrue(contract.ValueOr("supported", nil)) {
 		return nil, nil
 	}
-	durable := pyrepr.Truthy(contract.GetOr("durable", nil))
+	durable := anyutil.IsTrue(contract.ValueOr("durable", nil))
 	return &durable, nil
 }
 
@@ -665,9 +663,9 @@ func peerFailure(c *peerCLI, peerName string, err error) int {
 }
 
 // Prints the JSON payload under --json, the text lines otherwise
-func peerEmit(c *peerCLI, ns map[string]any, payload *pyjson.Object, lines []string) (int, error) {
-	if pyrepr.Truthy(ns["json"]) {
-		text, err := pyjson.Dumps(payload)
+func peerEmit(c *peerCLI, ns map[string]any, payload *jsonutil.Object, lines []string) (int, error) {
+	if anyutil.IsTrue(ns["json"]) {
+		text, err := jsonutil.Encode(payload)
 		if err != nil {
 			return 1, err
 		}
@@ -688,14 +686,6 @@ func peerProfileValue(profile string) any {
 	return profile
 }
 
-// First truthy value of the pair like Python or
-func peerOr(a, b any) any {
-	if pyrepr.Truthy(a) {
-		return a
-	}
-	return b
-}
-
 // Registers or updates a peer gateway and stores its key in the home env file
 func peerAdd(c *peerCLI, ns map[string]any) (int, error) {
 	rawName, err := peerText(ns["name"])
@@ -704,7 +694,7 @@ func peerAdd(c *peerCLI, ns map[string]any) (int, error) {
 	}
 	name := strings.ToLower(rawName)
 	if !peerNameRe.MatchString(name) {
-		c.eprintln(fmt.Sprintf("Invalid peer name: %s (lowercase, digits, -, _; max 64)", pyrepr.Repr(name)))
+		c.eprintln(fmt.Sprintf("Invalid peer name: %s (lowercase, digits, -, _; max 64)", anyutil.Quote(name)))
 		return 2, nil
 	}
 	peerURL, err := peerText(ns["url"])
@@ -721,7 +711,7 @@ func peerAdd(c *peerCLI, ns map[string]any) (int, error) {
 		return 1, err
 	}
 	entry := map[string]any{"url": strings.TrimRight(peerURL, "/")}
-	if note := ns["note"]; pyrepr.Truthy(note) {
+	if note := ns["note"]; anyutil.IsTrue(note) {
 		text, err := peerText(note)
 		if err != nil {
 			return 1, err
@@ -795,14 +785,14 @@ func peerList(c *peerCLI, _ map[string]any) (int, error) {
 			hasKey = "key set"
 		}
 		note := ""
-		if v := entry["note"]; pyrepr.Truthy(v) {
-			note = " — " + pyrepr.Str(v)
+		if v := entry["note"]; anyutil.IsTrue(v) {
+			note = " — " + anyutil.String(v)
 		}
 		peerURL, ok := entry["url"]
 		if !ok {
 			peerURL = "?"
 		}
-		c.println(fmt.Sprintf("%s\t%s\t[%s]%s", name, pyrepr.Str(peerURL), hasKey, note))
+		c.println(fmt.Sprintf("%s\t%s\t[%s]%s", name, anyutil.String(peerURL), hasKey, note))
 	}
 	return 0, nil
 }
@@ -818,11 +808,11 @@ func peerRunCtl(c *peerCLI, ns map[string]any, action, peerName, profile, base, 
 		return 2, nil
 	}
 	stop := action == "stop"
-	target := base + "/v1/runs/" + pyurl.Quote(runID, "")
+	target := base + "/v1/runs/" + url.PathEscape(runID)
 	opts := peerRequestOptions{}
 	if stop {
 		target += "/stop"
-		opts = peerRequestOptions{method: http.MethodPost, body: pyjson.NewObject()}
+		opts = peerRequestOptions{method: http.MethodPost, body: jsonutil.NewObject()}
 	}
 	result, err := peerRequest(c.ctx, target, key, opts)
 	if err != nil {
@@ -831,28 +821,28 @@ func peerRunCtl(c *peerCLI, ns map[string]any, action, peerName, profile, base, 
 		}
 		return 1, err
 	}
-	if pyrepr.Truthy(ns["json"]) {
-		merged := pyjson.ObjectOf("peer", peerName, "profile", peerProfileValue(profile))
-		merged.Update(result)
-		text, err := pyjson.Dumps(merged)
+	if anyutil.IsTrue(ns["json"]) {
+		merged := jsonutil.ObjectOf("peer", peerName, "profile", peerProfileValue(profile))
+		merged.Merge(result)
+		text, err := jsonutil.Encode(merged)
 		if err != nil {
 			return 1, err
 		}
 		c.println(text)
 		return 0, nil
 	}
-	c.println(fmt.Sprintf("%s: %s", runID, pyrepr.Str(result.GetOr("status", "unknown"))))
-	if output := result.GetOr("output", nil); !stop && pyrepr.Truthy(output) {
-		c.println(pyrepr.Str(output))
-	} else if failure := result.GetOr("error", nil); !stop && pyrepr.Truthy(failure) {
-		c.eprintln(pyrepr.Str(failure))
+	c.println(fmt.Sprintf("%s: %s", runID, anyutil.String(result.ValueOr("status", "unknown"))))
+	if output := result.ValueOr("output", nil); !stop && anyutil.IsTrue(output) {
+		c.println(anyutil.String(output))
+	} else if failure := result.ValueOr("error", nil); !stop && anyutil.IsTrue(failure) {
+		c.eprintln(anyutil.String(failure))
 	}
 	return 0, nil
 }
 
 // Request body of one turn, the author added only when a dispatcher set the turn author variable
-func peerTurnBody(message, messageKey string, extra ...any) *pyjson.Object {
-	body := pyjson.ObjectOf(append([]any{messageKey, message}, extra...)...)
+func peerTurnBody(message, messageKey string, extra ...any) *jsonutil.Object {
+	body := jsonutil.ObjectOf(append([]any{messageKey, message}, extra...)...)
 	if author := provider.TurnAuthorFromEnv(nil); author != nil {
 		body.Set("author", author)
 	}
@@ -862,7 +852,7 @@ func peerTurnBody(message, messageKey string, extra ...any) *pyjson.Object {
 // Starts one asynchronous peer turn on the canonical Bot Chat under an idempotency key
 func peerRun(c *peerCLI, ns map[string]any, message, peerName, profile, base, key string) (int, error) {
 	rawKey := ns["idempotency_key"]
-	if !pyrepr.Truthy(rawKey) {
+	if !anyutil.IsTrue(rawKey) {
 		rawKey = "peer-" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	}
 	idempotencyKey, err := peerText(rawKey)
@@ -874,7 +864,7 @@ func peerRun(c *peerCLI, ns map[string]any, message, peerName, profile, base, ke
 		return 2, nil
 	}
 	var sessionID string
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	err = func() error {
 		durable, err := peerRunDurability(c.ctx, base, key)
 		if err != nil {
@@ -900,26 +890,26 @@ func peerRun(c *peerCLI, ns map[string]any, message, peerName, profile, base, ke
 		return 1, err
 	}
 	runID := ""
-	if v := result.GetOr("run_id", nil); pyrepr.Truthy(v) {
-		runID = pyrepr.Str(v)
+	if v := result.ValueOr("run_id", nil); anyutil.IsTrue(v) {
+		runID = anyutil.String(v)
 	}
 	if runID == "" {
 		c.eprintln(fmt.Sprintf("Peer '%s' did not return a run ID.", peerName))
 		return 1, nil
 	}
-	status := peerOr(result.GetOr("status", nil), "started")
-	replayed := pyrepr.Truthy(result.GetOr("replayed", false))
-	payload := pyjson.ObjectOf("peer", peerName, "profile", peerProfileValue(profile), "session_id", sessionID, "run_id", runID,
+	status := anyutil.Or(result.Value("status"), "started")
+	replayed := anyutil.IsTrue(result.ValueOr("replayed", false))
+	payload := jsonutil.ObjectOf("peer", peerName, "profile", peerProfileValue(profile), "session_id", sessionID, "run_id", runID,
 		"status", status, "idempotency_key", idempotencyKey, "replayed", replayed)
 	replay := ""
 	if replayed {
 		replay = " (replayed)"
 	}
-	return peerEmit(c, ns, payload, []string{fmt.Sprintf("%s: %s%s", runID, pyrepr.Str(status), replay),
+	return peerEmit(c, ns, payload, []string{fmt.Sprintf("%s: %s%s", runID, anyutil.String(status), replay),
 		"session_id: " + sessionID, "idempotency_key: " + idempotencyKey})
 }
 
-// Seconds of a duration the way Python prints an int or float timeout
+// Seconds of a duration in the shortest decimal form, whole seconds without a fraction
 func peerSeconds(d time.Duration) string {
 	return strconv.FormatFloat(d.Seconds(), 'f', -1, 64)
 }
@@ -927,14 +917,14 @@ func peerSeconds(d time.Duration) string {
 // Runs one synchronous turn in the peer's canonical Bot Chat and prints the reply
 func peerDM(c *peerCLI, ns map[string]any, message, peerName, profile, base, key string) (int, error) {
 	sessionID := ""
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	err := func() error {
 		resolved, err := peerEnsureBotChat(c.ctx, base, key)
 		if err != nil {
 			return err
 		}
 		sessionID = resolved
-		result, err = peerRequest(c.ctx, base+"/api/sessions/"+pyurl.Quote(sessionID, "")+"/chat", key,
+		result, err = peerRequest(c.ctx, base+"/api/sessions/"+url.PathEscape(sessionID)+"/chat", key,
 			peerRequestOptions{method: http.MethodPost, body: peerTurnBody(message, "message"), timeout: peerDMTimeout})
 		return err
 	}()
@@ -956,17 +946,17 @@ func peerDM(c *peerCLI, ns map[string]any, message, peerName, profile, base, key
 		}
 		return peerFailure(c, peerName, err), nil
 	}
-	if object, ok := result.GetOr("object", nil).(string); ok && (object == peerChatQueuedObject || object == peerLegacyQueuedObject) {
-		queuedIn := peerOr(result.GetOr("session_id", nil), sessionID)
-		payload := pyjson.ObjectOf("peer", peerName, "profile", peerProfileValue(profile), "session_id", queuedIn,
-			"status", peerOr(result.GetOr("status", nil), "queued"), "delivery_id", result.GetOr("delivery_id", nil))
+	if object, ok := result.ValueOr("object", nil).(string); ok && (object == peerChatQueuedObject || object == peerLegacyQueuedObject) {
+		queuedIn := anyutil.Or(result.Value("session_id"), sessionID)
+		payload := jsonutil.ObjectOf("peer", peerName, "profile", peerProfileValue(profile), "session_id", queuedIn,
+			"status", anyutil.Or(result.Value("status"), "queued"), "delivery_id", result.ValueOr("delivery_id", nil))
 		return peerEmit(c, ns, payload, []string{fmt.Sprintf("Peer '%s' has its Bot Chat open, so the message went into that chat (session "+
-			"%s) and is answered there. The reply cannot come back on this call. Do NOT resend.", peerName, pyrepr.Str(queuedIn))})
+			"%s) and is answered there. The reply cannot come back on this call. Do NOT resend.", peerName, anyutil.String(queuedIn))})
 	}
 	reply := ""
-	if msg, ok := result.GetOr("message", nil).(*pyjson.Object); ok {
-		if content := msg.GetOr("content", nil); pyrepr.Truthy(content) {
-			reply = pyrepr.Str(content)
+	if msg, ok := result.ValueOr("message", nil).(*jsonutil.Object); ok {
+		if content := msg.ValueOr("content", nil); anyutil.IsTrue(content) {
+			reply = anyutil.String(content)
 		}
 	}
 	if IsIntentionalSilenceResponse(reply) {
@@ -974,8 +964,8 @@ func peerDM(c *peerCLI, ns map[string]any, message, peerName, profile, base, key
 	} else {
 		reply = StripTrailingSilenceMarker(reply).(string)
 	}
-	payload := pyjson.ObjectOf("peer", peerName, "profile", peerProfileValue(profile),
-		"session_id", peerOr(result.GetOr("session_id", nil), sessionID), "reply", reply)
+	payload := jsonutil.ObjectOf("peer", peerName, "profile", peerProfileValue(profile),
+		"session_id", anyutil.Or(result.Value("session_id"), sessionID), "reply", reply)
 	line := reply
 	if line == "" {
 		line = "(no reply)"

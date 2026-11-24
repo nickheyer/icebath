@@ -7,8 +7,7 @@ import (
 	"io"
 	"net"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // One icebath proxy invocation, its pool env, namespace and output streams
@@ -33,7 +32,7 @@ func cmdProxyStart(cli *proxyCLI) (int, error) {
 	}
 	adapter, err := getAdapter(cli.env, provider)
 	if err != nil {
-		proxyErr(cli.errw, "Error: "+pyrepr.ExceptionMessage(err))
+		proxyErr(cli.errw, "Error: "+err.Error())
 		return 2, nil
 	}
 	if !adapter.IsAuthenticated() {
@@ -57,11 +56,11 @@ func cmdProxyStart(cli *proxyCLI) (int, error) {
 		"  Forwarding to: (resolved per-request from your subscription)\n"+
 		"  Use any bearer token in the client — the proxy attaches your real credential.\n"+
 		"\n"+
-		"Press Ctrl+C to stop.", adapter.DisplayName(), pyurl.FormatURLHost(host), port))
+		"Press Ctrl+C to stop.", adapter.DisplayName(), urlutil.FormatHost(host), port))
 	if err := runProxyServer(cli.ctx, adapter, host, port, nil, cli.env.log()); err != nil {
 		var opErr *net.OpError
 		if errors.As(err, &opErr) {
-			proxyErr(cli.errw, fmt.Sprintf("proxy: failed to bind %s:%d: %s", host, port, pyrepr.ExceptionMessage(err)))
+			proxyErr(cli.errw, fmt.Sprintf("proxy: failed to bind %s:%d: %s", host, port, err.Error()))
 			return 1, nil
 		}
 		return 1, err
@@ -84,7 +83,7 @@ func cmdProxyStatus(cli *proxyCLI) (int, error) {
 		}
 		cred, err := adapter.GetCredential()
 		if err != nil {
-			fmt.Fprintf(cli.out, "  [%-8s] %s — credentials need attention (%s)\n", name, adapter.DisplayName(), pyrepr.ExceptionMessage(err))
+			fmt.Fprintf(cli.out, "  [%-8s] %s — credentials need attention (%s)\n", name, adapter.DisplayName(), err.Error())
 			continue
 		}
 		expires := ""

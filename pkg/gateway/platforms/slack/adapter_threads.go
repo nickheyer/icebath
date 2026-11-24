@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Fetched thread context of one thread with the root text and author for mention wake checks
@@ -47,7 +46,7 @@ func renderMessageText(msg map[string]any, botUID string) string {
 		}
 		for _, raw := range blocks {
 			block := asMap(raw)
-			switch pyrepr.Str(getOr(block, "type", "")) {
+			switch anyutil.String(getOr(block, "type", "")) {
 			case "section", "header", "context":
 			default:
 				continue
@@ -165,7 +164,7 @@ func threadCacheKey(channelID, threadTS, teamID string) string {
 // First message whose ts is the thread root, nil when absent
 func threadRootMessage(messages []map[string]any, threadTS string) map[string]any {
 	for _, m := range messages {
-		if pyrepr.Str(getOr(m, "ts", "")) == threadTS {
+		if anyutil.String(getOr(m, "ts", "")) == threadTS {
 			return m
 		}
 	}
@@ -201,7 +200,7 @@ func (a *SlackAdapter) formatThreadContext(ctx context.Context, messages []map[s
 	var parts []string
 	parentText := ""
 	for _, msg := range messages {
-		msgTS := pyrepr.Str(getOr(msg, "ts", ""))
+		msgTS := anyutil.String(getOr(msg, "ts", ""))
 		if msgTS == currentTS {
 			continue
 		}
@@ -319,7 +318,7 @@ func (a *SlackAdapter) fetchThreadParentText(ctx context.Context, channelID, thr
 		return ""
 	}
 	parent := asMap(messages[0])
-	if pyrepr.Str(getOr(parent, "ts", "")) != threadTS {
+	if anyutil.String(getOr(parent, "ts", "")) != threadTS {
 		return ""
 	}
 	botUID := a.teamBotUID(teamID)
@@ -366,7 +365,7 @@ func (a *SlackAdapter) collectThreadRootImages(ctx context.Context, channelID, t
 		mimetype := strOrEmpty(f["mimetype"])
 		url := strOrEmpty(f["url_private_download"])
 		if url == "" {
-			url = pyrepr.Str(getOr(f, "url_private", ""))
+			url = anyutil.String(getOr(f, "url_private", ""))
 		}
 		if !strings.HasPrefix(mimetype, "image/") || url == "" {
 			continue
@@ -414,9 +413,9 @@ func (a *SlackAdapter) handleIcebathCommand(ctx context.Context, ack ackFunc, co
 
 // Slash command turned into a gateway message, serialized per session behind earlier slashes
 func (a *SlackAdapter) handleSlashCommand(ctx context.Context, command map[string]any) error {
-	userID := pyrepr.Str(getOr(command, "user_id", ""))
-	channelID := pyrepr.Str(getOr(command, "channel_id", ""))
-	teamID := pyrepr.Str(getOr(command, "team_id", ""))
+	userID := anyutil.String(getOr(command, "user_id", ""))
+	channelID := anyutil.String(getOr(command, "channel_id", ""))
+	teamID := anyutil.String(getOr(command, "team_id", ""))
 	if teamID != "" && channelID != "" {
 		a.rememberChannelTeam(channelID, teamID)
 	}
@@ -492,7 +491,7 @@ func (a *SlackAdapter) handleSlashCommand(ctx context.Context, command map[strin
 			}
 		}
 	}
-	responseURL := pyrepr.Str(getOr(command, "response_url", ""))
+	responseURL := anyutil.String(getOr(command, "response_url", ""))
 	if responseURL != "" && userID != "" && channelID != "" && strings.HasPrefix(text, "/") {
 		a.stashSlashContext(teamID, channelID, userID, responseURL)
 	}

@@ -4,8 +4,8 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/filedrop"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var promptAttachRegistry = &handlerRegistry{}
@@ -47,7 +47,7 @@ func inputDetectDrop(_ context.Context, rid any, params map[string]any) map[stri
 	if dropped.Remainder != "" {
 		shown += "\n" + dropped.Remainder
 	}
-	result := tuigateway.InputDetectDropResult{Matched: true, IsImage: dropped.IsImage, Path: dropped.Path, Name: pypath.Name(dropped.Path), Text: shown}
+	result := tuigateway.InputDetectDropResult{Matched: true, IsImage: dropped.IsImage, Path: dropped.Path, Name: pathutil.Name(dropped.Path), Text: shown}
 	if dropped.IsImage {
 		_, result.Width, result.Height, result.TokenEstimate = imageSize(dropped.Path)
 	}

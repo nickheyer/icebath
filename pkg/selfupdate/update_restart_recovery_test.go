@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Child stdout of a recovery run that verified or relaunched exactly the named profiles
@@ -85,8 +85,8 @@ func rrList(t *testing.T, result map[string]any, key string) []string {
 func rrSkipped(result map[string]any) [][3]string {
 	var out [][3]string
 	for _, row := range result["skipped"].([]any) {
-		obj := row.(*pyjson.Object)
-		out = append(out, [3]string{obj.GetOr("profile", "").(string), obj.GetOr("kind", "").(string), obj.GetOr("reason", "").(string)})
+		obj := row.(*jsonutil.Object)
+		out = append(out, [3]string{obj.ValueOr("profile", "").(string), obj.ValueOr("kind", "").(string), obj.ValueOr("reason", "").(string)})
 	}
 	return out
 }
@@ -250,9 +250,9 @@ func rrSystemctlPath(t *testing.T, present bool) {
 }
 
 // Bucket lists and covered map of a child result in a comparable form
-func rrBuckets(t *testing.T, result *pyjson.Object) string {
+func rrBuckets(t *testing.T, result *jsonutil.Object) string {
 	t.Helper()
-	text, err := pyjson.Dumps(result, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(result, jsonutil.SortKeys())
 	if err != nil {
 		t.Fatal(err)
 	}

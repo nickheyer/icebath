@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 const (
@@ -35,7 +35,7 @@ var sttM4AEncodeArgs = []string{"-vn", "-ac", "1", "-ar", "16000", "-c:a", "aac"
 var sttFindBinary = func(name string) string {
 	for _, dir := range sttCommonLocalBinDirs {
 		candidate := filepath.Join(dir, name)
-		if _, err := os.Stat(candidate); err == nil && pyfs.Access(candidate, 1) {
+		if _, err := os.Stat(candidate); err == nil && fsutil.Access(candidate, 1) {
 			return candidate
 		}
 	}
@@ -54,7 +54,7 @@ func findWhisperBinary() string { return sttFindBinary("whisper") }
 
 // Text mode output decoding with utf-8 replacement and universal newlines
 func sttDecodeOutput(b []byte) string {
-	s, _ := pycodecs.DecodeReplace(b, "utf-8")
+	s, _ := charsetutil.DecodeReplace(b, "utf-8")
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 }
 
@@ -372,7 +372,7 @@ func trimSilenceForCloudSTT(filePath string, req *sttRequest) string {
 		return ""
 	}
 	keepSeconds := float64(keepMS) / 1000.0
-	keep := pyrepr.Str(keepSeconds)
+	keep := anyutil.String(keepSeconds)
 	filter := fmt.Sprintf("silenceremove=start_periods=1:start_threshold=%ddB:start_silence=%s:stop_periods=-1:stop_threshold=%ddB:stop_silence=%s",
 		thresholdDB, keep, thresholdDB, keep)
 	workDir, err := os.MkdirTemp("", "icebath-stt-trim-")

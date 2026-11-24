@@ -16,40 +16,40 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Liveness probe answering ok with the platform and version
 func (a *APIServerAdapter) handleHealth(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
-	return jsonResponse(pyjson.ObjectOf("status", "ok", "platform", "icebath-agent", "version", icebathVersion()), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("status", "ok", "platform", "icebath-agent", "version", icebathVersion()), http.StatusOK, nil), nil
 }
 
 // Gateway state, platforms, readiness and live API metrics for detailed health probing
 func (a *APIServerAdapter) handleHealthDetailed(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
 	runtime := gateway.ReadRuntimeStatus("")
 	if runtime == nil {
-		runtime = pyjson.NewObject()
+		runtime = jsonutil.NewObject()
 	}
-	gwState := runtime.GetOr("gateway_state", nil)
-	gwActive, err := gateway.ParseActiveAgents(runtime.GetOr("active_agents", int64(0)))
+	gwState := runtime.ValueOr("gateway_state", nil)
+	gwActive, err := gateway.ParseActiveAgents(runtime.ValueOr("active_agents", int64(0)))
 	if err != nil {
 		return nil, err
 	}
-	platforms, _ := runtime.GetOr("platforms", nil).(*pyjson.Object)
+	platforms, _ := runtime.ValueOr("platforms", nil).(*jsonutil.Object)
 	if platforms == nil {
-		platforms = pyjson.NewObject()
+		platforms = jsonutil.NewObject()
 	}
-	platforms = platforms.Copy()
+	platforms = platforms.Clone()
 	now := apiNow()
 	apiStatus := a.apiServerStatusPayload(&now)
-	apiPlatform := pyjson.NewObject()
-	if existing, ok := platforms.GetOr("api_server", nil).(*pyjson.Object); ok {
-		apiPlatform = existing.Copy()
+	apiPlatform := jsonutil.NewObject()
+	if existing, ok := platforms.ValueOr("api_server", nil).(*jsonutil.Object); ok {
+		apiPlatform = existing.Clone()
 	}
 	connected := "disconnected"
 	if a.IsConnected() {
@@ -64,7 +64,7 @@ func (a *APIServerAdapter) handleHealthDetailed(ctx context.Context, request *ga
 	if err != nil {
 		return nil, err
 	}
-	updatedAt, hasUpdatedAt, err := gateway.NormalizeUpdatedAt(runtime.GetOr("updated_at", nil))
+	updatedAt, hasUpdatedAt, err := gateway.NormalizeUpdatedAt(runtime.ValueOr("updated_at", nil))
 	if err != nil {
 		return nil, err
 	}
@@ -75,13 +75,13 @@ func (a *APIServerAdapter) handleHealthDetailed(ctx context.Context, request *ga
 	status, _ := readiness.Get("status")
 	metricsToday, _ := apiStatus.Get("metrics_today")
 	lastHeartbeat, _ := apiStatus.Get("last_heartbeat")
-	return jsonResponse(pyjson.ObjectOf(
+	return jsonResponse(jsonutil.ObjectOf(
 		"status", status, "readiness", readiness, "platform", "icebath-agent",
 		"version", icebathVersion(), "gateway_state", gwState, "platforms", platforms,
 		"api_server", apiStatus, "metrics_today", metricsToday, "last_heartbeat", lastHeartbeat,
 		"active_agents", gwActive, "gateway_busy", busy,
 		"gateway_drainable", gateway.DeriveGatewayDrainable(true, gwState),
-		"exit_reason", runtime.GetOr("exit_reason", nil), "updated_at", updated, "pid", int64(os.Getpid())), http.StatusOK, nil), nil
+		"exit_reason", runtime.ValueOr("exit_reason", nil), "updated_at", updated, "pid", int64(os.Getpid())), http.StatusOK, nil), nil
 }
 
 // Advertised model plus configured route aliases, never their credentials
@@ -91,8 +91,8 @@ func (a *APIServerAdapter) handleModels(ctx context.Context, request *gateway.We
 	if requestProfile(ctx) != "" {
 		modelName = resolveModelName(ctx, "")
 	}
-	model := func(id, root string, parent any) *pyjson.Object {
-		return pyjson.ObjectOf("id", id, "object", "model", "created", now, "owned_by", "icebath", "permission", []any{},
+	model := func(id, root string, parent any) *jsonutil.Object {
+		return jsonutil.ObjectOf("id", id, "object", "model", "created", now, "owned_by", "icebath", "permission", []any{},
 			"root", root, "parent", parent)
 	}
 	models := []any{model(modelName, modelName, nil)}
@@ -106,7 +106,7 @@ func (a *APIServerAdapter) handleModels(ctx context.Context, request *gateway.We
 		}
 		models = append(models, model(alias, root, modelName))
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "list", "data", models), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "list", "data", models), http.StatusOK, nil), nil
 }
 
 // Model picker inventory of the configured provider catalog
@@ -144,26 +144,26 @@ func queryValue(request *gateway.WebRequest, key string) any {
 // Stable machine readable API surface for external UIs
 func (a *APIServerAdapter) handleCapabilities(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
 	_, hasAuthority := a.sessionAuthority()
-	features := pyjson.ObjectOf(
+	features := jsonutil.ObjectOf(
 		"chat_completions", true, "chat_completions_streaming", true,
 		"responses_api", true, "responses_streaming", true, "run_submission", true,
 		"runs_idempotency", a.idempotencyCapabilities())
-	features.Update(staticFeatureFlags)
+	features.Merge(staticFeatureFlags)
 	features.Set("run_unknown_resolution", hasAuthority)
 	features.Set("cors", len(a.corsOrigins) > 0)
-	endpoints := pyjson.NewObject()
+	endpoints := jsonutil.NewObject()
 	for _, e := range capabilityEndpoints {
 		if e.feature != "" {
-			if v, _ := features.Get(e.feature); !pyrepr.Truthy(v) {
+			if v, _ := features.Get(e.feature); !anyutil.IsTrue(v) {
 				continue
 			}
 		}
-		endpoints.Set(e.name, pyjson.ObjectOf("method", e.method, "path", e.path))
+		endpoints.Set(e.name, jsonutil.ObjectOf("method", e.method, "path", e.path))
 	}
-	return jsonResponse(pyjson.ObjectOf(
+	return jsonResponse(jsonutil.ObjectOf(
 		"object", "icebath.api_server.capabilities", "platform", "icebath-agent", "model", a.modelName,
-		"auth", pyjson.ObjectOf("type", "bearer", "required", a.apiKey != ""),
-		"runtime", pyjson.ObjectOf("mode", "server_agent", "tool_execution", "server", "split_runtime", false,
+		"auth", jsonutil.ObjectOf("type", "bearer", "required", a.apiKey != ""),
+		"runtime", jsonutil.ObjectOf("mode", "server_agent", "tool_execution", "server", "split_runtime", false,
 			"description", "The API server creates a server-side Icebath AIAgent; "+
 				"tools execute on the API-server host unless a future "+
 				"explicit split-runtime mode is enabled."),
@@ -192,9 +192,9 @@ func (a *APIServerAdapter) handleSkills(ctx context.Context, request *gateway.We
 	}
 	data := make([]any, 0, len(list))
 	for _, s := range list {
-		data = append(data, pyjson.ObjectOf("name", s["name"], "description", s["description"], "category", s["category"]))
+		data = append(data, jsonutil.ObjectOf("name", s["name"], "description", s["description"], "category", s["category"]))
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "list", "data", data), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "list", "data", data), http.StatusOK, nil), nil
 }
 
 // Toolsets the api_server agent exposes with enabled and configured state and their tool names
@@ -238,7 +238,7 @@ func (a *APIServerAdapter) handleToolsets(ctx context.Context, request *gateway.
 			for _, n := range names {
 				toolList = append(toolList, n)
 			}
-			out = append(out, pyjson.ObjectOf("name", ts.Key, "label", ts.Label, "description", ts.Description,
+			out = append(out, jsonutil.ObjectOf("name", ts.Key, "label", ts.Label, "description", ts.Description,
 				"enabled", enabled[ts.Key], "configured", configured, "tools", toolList))
 		}
 		return out, nil
@@ -247,7 +247,7 @@ func (a *APIServerAdapter) handleToolsets(ctx context.Context, request *gateway.
 		pkgLog().Error("GET /v1/toolsets failed", "error", err)
 		return errorResponse("Failed to enumerate toolsets", http.StatusInternalServerError, errOpts{Type: "server_error"}), nil
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "list", "platform", "api_server", "data", data), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "list", "platform", "api_server", "data", data), http.StatusOK, nil), nil
 }
 
 // Non negative integer of a query value capped at the maximum, the default when unparseable or negative
@@ -298,8 +298,8 @@ var sessionSafeKeys = []string{"id", "source", "user_id", "model", "title", "sta
 	"_lineage_root_id", "pinned", "archived", "hidden"}
 
 // Client safe session representation with flags as booleans and prompt and model config reduced to presence
-func sessionResponse(session *pyjson.Object) *pyjson.Object {
-	payload := pyjson.NewObject()
+func sessionResponse(session *jsonutil.Object) *jsonutil.Object {
+	payload := jsonutil.NewObject()
 	for _, key := range sessionSafeKeys {
 		if v, ok := session.Get(key); ok {
 			payload.Set(key, v)
@@ -307,15 +307,15 @@ func sessionResponse(session *pyjson.Object) *pyjson.Object {
 	}
 	for _, flag := range []string{"pinned", "archived", "hidden"} {
 		if v, ok := payload.Get(flag); ok {
-			payload.Set(flag, pyrepr.Truthy(v))
+			payload.Set(flag, anyutil.IsTrue(v))
 		}
 	}
-	payload.Set("has_system_prompt", pyrepr.Truthy(session.GetOr("system_prompt", nil)))
-	payload.Set("has_model_config", pyrepr.Truthy(session.GetOr("model_config", nil)))
-	raw := session.GetOr("model_config", nil)
+	payload.Set("has_system_prompt", anyutil.IsTrue(session.ValueOr("system_prompt", nil)))
+	payload.Set("has_model_config", anyutil.IsTrue(session.ValueOr("model_config", nil)))
+	raw := session.ValueOr("model_config", nil)
 	var modelConfig any = raw
 	if s, ok := raw.(string); ok {
-		parsed, err := pyjson.Loads(s)
+		parsed, err := jsonutil.Decode(s)
 		if err != nil {
 			modelConfig = nil
 		} else {
@@ -323,8 +323,8 @@ func sessionResponse(session *pyjson.Object) *pyjson.Object {
 		}
 	}
 	internal := false
-	if mc, ok := modelConfig.(*pyjson.Object); ok {
-		internal = mc.GetOr("_delegate_from", nil) != nil
+	if mc, ok := modelConfig.(*jsonutil.Object); ok {
+		internal = mc.ValueOr("_delegate_from", nil) != nil
 	}
 	payload.Set("is_internal_child", internal)
 	return payload
@@ -334,9 +334,9 @@ var messageSafeKeys = []string{"id", "session_id", "role", "content", "tool_call
 	"timestamp", "token_count", "finish_reason", "reasoning", "reasoning_content", "display_kind"}
 
 // Client safe message representation after compaction projection
-func messageResponse(message *pyjson.Object) *pyjson.Object {
+func messageResponse(message *jsonutil.Object) *jsonutil.Object {
 	projected := projectClientMessage(message)
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, key := range messageSafeKeys {
 		if v, ok := projected.Get(key); ok {
 			out.Set(key, v)
@@ -346,20 +346,20 @@ func messageResponse(message *pyjson.Object) *pyjson.Object {
 }
 
 // JSON object body of a request, a 400 when invalid or not an object
-func readJSONBody(request *gateway.WebRequest) (*pyjson.Object, *gateway.WebResponse) {
+func readJSONBody(request *gateway.WebRequest) (*jsonutil.Object, *gateway.WebResponse) {
 	body, err := requestJSON(request)
 	if err != nil {
-		return pyjson.NewObject(), errorResponse("Invalid JSON in request body", http.StatusBadRequest, errOpts{})
+		return jsonutil.NewObject(), errorResponse("Invalid JSON in request body", http.StatusBadRequest, errOpts{})
 	}
-	obj, ok := body.(*pyjson.Object)
+	obj, ok := body.(*jsonutil.Object)
 	if !ok {
-		return pyjson.NewObject(), errorResponse("Request body must be a JSON object", http.StatusBadRequest, errOpts{})
+		return jsonutil.NewObject(), errorResponse("Request body must be a JSON object", http.StatusBadRequest, errOpts{})
 	}
 	return obj, nil
 }
 
 // Session row of an id, a 503 without a store and a 404 when absent
-func (a *APIServerAdapter) getExistingSessionOr404(ctx context.Context, sessionID string) (*pyjson.Object, *gateway.WebResponse, error) {
+func (a *APIServerAdapter) getExistingSessionOr404(ctx context.Context, sessionID string) (*jsonutil.Object, *gateway.WebResponse, error) {
 	db := a.ensureSessionDB(ctx)
 	if db == nil {
 		return nil, sessionDBUnavailable(), nil
@@ -405,7 +405,7 @@ func (a *APIServerAdapter) handleListSessions(ctx context.Context, request *gate
 	includeChildren := gateway.APICoerceRequestBool(queryValue(request, "include_children"), false)
 	titleFilter := strings.TrimSpace(request.QueryGet("title"))
 	includeHidden := titleFilter != "" && gateway.APICoerceRequestBool(queryValue(request, "include_hidden"), false)
-	list := func() ([]*pyjson.Object, error) {
+	list := func() ([]*jsonutil.Object, error) {
 		l := limit
 		rows, err := db.ListSessionsRich(ctx, state.ListSessionsRichOptions{Source: source, Limit: &l, Offset: offset,
 			IncludeChildren: includeChildren, OrderByLastActive: true, IncludePinned: true, SearchQuery: titleFilter,
@@ -416,7 +416,7 @@ func (a *APIServerAdapter) handleListSessions(ctx context.Context, request *gate
 		if titleFilter != "" {
 			kept := rows[:0]
 			for _, s := range rows {
-				if strings.TrimSpace(pyrepr.Str(pyrepr.Or(s.GetOr("title", nil), ""))) == titleFilter {
+				if strings.TrimSpace(anyutil.String(anyutil.Or(s.ValueOr("title", nil), ""))) == titleFilter {
 					kept = append(kept, s)
 				}
 			}
@@ -440,10 +440,10 @@ func (a *APIServerAdapter) handleListSessions(ctx context.Context, request *gate
 				return
 			}
 			stale, err := db.GetSessionByTitle(ctx, titleFilter)
-			if err != nil || stale == nil || !pyrepr.Truthy(stale.GetOr("archived", nil)) {
+			if err != nil || stale == nil || !anyutil.IsTrue(stale.ValueOr("archived", nil)) {
 				return
 			}
-			ok, err := db.UnarchiveRecoverableSession(ctx, pyrepr.Str(stale.GetOr("id", "")))
+			ok, err := db.UnarchiveRecoverableSession(ctx, anyutil.String(stale.ValueOr("id", "")))
 			if err != nil || !ok {
 				return
 			}
@@ -455,12 +455,12 @@ func (a *APIServerAdapter) handleListSessions(ctx context.Context, request *gate
 	windowed := 0
 	data := make([]any, 0, len(sessions))
 	for _, s := range sessions {
-		if !pyrepr.Truthy(s.GetOr("pinned", nil)) {
+		if !anyutil.IsTrue(s.ValueOr("pinned", nil)) {
 			windowed++
 		}
 		data = append(data, sessionResponse(s))
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "list", "data", data, "limit", int64(limit), "offset", int64(offset),
+	return jsonResponse(jsonutil.ObjectOf("object", "list", "data", data, "limit", int64(limit), "offset", int64(offset),
 		"has_more", windowed >= limit), http.StatusOK, nil), nil
 }
 
@@ -479,10 +479,10 @@ func (a *APIServerAdapter) handleCreateSession(ctx context.Context, request *gat
 	if db == nil {
 		return sessionDBUnavailable(), nil
 	}
-	rawID := pyrepr.Or(body.GetOr("id", nil), body.GetOr("session_id", nil))
+	rawID := anyutil.Or(body.ValueOr("id", nil), body.ValueOr("session_id", nil))
 	sessionID := fmt.Sprintf("api_%d_%s", int64(apiNow()), strings.ReplaceAll(uuid.NewString(), "-", "")[:8])
-	if pyrepr.Truthy(rawID) {
-		sessionID = strings.TrimSpace(pyrepr.Str(rawID))
+	if anyutil.IsTrue(rawID) {
+		sessionID = strings.TrimSpace(anyutil.String(rawID))
 	}
 	if sessionID == "" || sessionHeaderUnsafeRE.MatchString(sessionID) || gateway.IsPathUnsafe(sessionID) {
 		return errorResponse("Invalid session ID", http.StatusBadRequest, errOpts{Code: "invalid_session_id"}), nil
@@ -496,7 +496,7 @@ func (a *APIServerAdapter) handleCreateSession(ctx context.Context, request *gat
 			return errorResponse("system_prompt must be a string", http.StatusBadRequest, errOpts{Code: "invalid_system_prompt"}), nil
 		}
 	}
-	source := normalizeSessionSource(pyrepr.Or(body.GetOr("source", nil), "api_server"))
+	source := normalizeSessionSource(anyutil.Or(body.ValueOr("source", nil), "api_server"))
 	r := a.sessionRuntimeRequestFromBody(body)
 	if lockErr := a.runtimeLockError(r); lockErr != nil {
 		return lockErr, nil
@@ -507,17 +507,17 @@ func (a *APIServerAdapter) handleCreateSession(ctx context.Context, request *gat
 	}
 	var modelConfig any
 	if r.requestedModel != "" || r.requestedProvider != "" {
-		cfg := pyjson.ObjectOf("browser_model_lock", pyjson.ObjectOf(
+		cfg := jsonutil.ObjectOf("browser_model_lock", jsonutil.ObjectOf(
 			"provider", r.requestedProvider, "model", r.requestedModel, "model_options", r.modelOptions,
 			"route_source", r.routeSource, "confirmed", r.requireModelLock, "updated_at", apiNow()))
-		encoded, err := pyjson.Dumps(cfg)
+		encoded, err := jsonutil.Encode(cfg)
 		if err != nil {
 			return nil, err
 		}
 		modelConfig = encoded
 	}
 	title, hasTitle := body.Get("title")
-	var session *pyjson.Object
+	var session *jsonutil.Object
 	var conflict [2]string
 	var titleErr string
 	err := db.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
@@ -534,10 +534,9 @@ func (a *APIServerAdapter) handleCreateSession(ctx context.Context, request *gat
 			return err
 		}
 		if hasTitle && title != nil {
-			clean, err := state.SanitizeTitle(pyrepr.Str(title))
+			clean, err := state.SanitizeTitle(anyutil.String(title))
 			if err != nil {
-				var valueErr interface{ PyTypeName() string }
-				if errors.As(err, &valueErr) && valueErr.PyTypeName() == "ValueError" {
+				if errorutil.Kind(err) == "ValueError" {
 					if _, derr := conn.ExecContext(ctx, "DELETE FROM sessions WHERE id = ?", sessionID); derr != nil {
 						return derr
 					}
@@ -548,8 +547,7 @@ func (a *APIServerAdapter) handleCreateSession(ctx context.Context, request *gat
 			}
 			if clean != "" {
 				if _, _, err := db.ResolveTitleConflictOnConn(ctx, conn, sessionID, clean); err != nil {
-					var valueErr interface{ PyTypeName() string }
-					if errors.As(err, &valueErr) && valueErr.PyTypeName() == "ValueError" {
+					if errorutil.Kind(err) == "ValueError" {
 						if _, derr := conn.ExecContext(ctx, "DELETE FROM sessions WHERE id = ?", sessionID); derr != nil {
 							return derr
 						}
@@ -572,7 +570,7 @@ func (a *APIServerAdapter) handleCreateSession(ctx context.Context, request *gat
 			return err
 		}
 		if row == nil {
-			row = pyjson.ObjectOf("id", sessionID, "source", source, "model", modelName, "title", title)
+			row = jsonutil.ObjectOf("id", sessionID, "source", source, "model", modelName, "title", title)
 		}
 		session = row
 		return nil
@@ -586,7 +584,7 @@ func (a *APIServerAdapter) handleCreateSession(ctx context.Context, request *gat
 	if titleErr != "" {
 		return errorResponse(titleErr, http.StatusBadRequest, errOpts{Code: "invalid_title"}), nil
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(session)), http.StatusCreated, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.session", "session", sessionResponse(session)), http.StatusCreated, nil), nil
 }
 
 // One session row
@@ -595,7 +593,7 @@ func (a *APIServerAdapter) handleGetSession(ctx context.Context, request *gatewa
 	if err != nil || errResp != nil {
 		return errResp, err
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(session)), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.session", "session", sessionResponse(session)), http.StatusOK, nil), nil
 }
 
 // Updates the client safe session metadata, a pin applied last so it wins over hidden
@@ -611,7 +609,7 @@ func (a *APIServerAdapter) handlePatchSession(ctx context.Context, request *gate
 	}
 	allowed := map[string]bool{"title": true, "end_reason": true, "pinned": true, "archived": true, "hidden": true, "unread": true}
 	var unknown []string
-	for _, k := range body.Keys {
+	for _, k := range body.Keys() {
 		if !allowed[k] {
 			unknown = append(unknown, k)
 		}
@@ -636,11 +634,10 @@ func (a *APIServerAdapter) handlePatchSession(ctx context.Context, request *gate
 	if v, ok := body.Get("title"); ok {
 		text := ""
 		if v != nil {
-			text = pyrepr.Str(v)
+			text = anyutil.String(v)
 		}
 		if _, err := db.SetSessionTitle(ctx, sessionID, text); err != nil {
-			var valueErr interface{ PyTypeName() string }
-			if errors.As(err, &valueErr) && valueErr.PyTypeName() == "ValueError" {
+			if errorutil.Kind(err) == "ValueError" {
 				return errorResponse(err.Error(), http.StatusBadRequest, errOpts{Code: "invalid_title"}), nil
 			}
 			return nil, err
@@ -666,8 +663,8 @@ func (a *APIServerAdapter) handlePatchSession(ctx context.Context, request *gate
 			return nil, err
 		}
 	}
-	if reason := body.GetOr("end_reason", nil); pyrepr.Truthy(reason) {
-		if err := db.EndSession(sessionID, pyrepr.Str(reason)); err != nil {
+	if reason := body.ValueOr("end_reason", nil); anyutil.IsTrue(reason) {
+		if err := db.EndSession(sessionID, anyutil.String(reason)); err != nil {
 			return nil, err
 		}
 	}
@@ -676,7 +673,7 @@ func (a *APIServerAdapter) handlePatchSession(ctx context.Context, request *gate
 	} else if fresh != nil {
 		session = fresh
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(session)), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.session", "session", sessionResponse(session)), http.StatusOK, nil), nil
 }
 
 // Hard deletes a session with its routing entries and the image bytes nothing else holds
@@ -715,7 +712,7 @@ func (a *APIServerAdapter) handleDeleteSession(ctx context.Context, request *gat
 			return nil, err
 		}
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.session.deleted", "id", sessionID, "deleted", deleted), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.session.deleted", "id", sessionID, "deleted", deleted), http.StatusOK, nil), nil
 }
 
 // One page of a session's messages across its compression lineage
@@ -780,8 +777,8 @@ func (a *APIServerAdapter) handleSessionMessages(ctx context.Context, request *g
 			orderOut = "latest"
 		}
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "list", "session_id", resolvedID, "data", data,
-		"pagination", pyjson.ObjectOf("limit", int64(limit), "offset", int64(offset), "order", orderOut,
+	return jsonResponse(jsonutil.ObjectOf("object", "list", "session_id", resolvedID, "data", data,
+		"pagination", jsonutil.ObjectOf("limit", int64(limit), "offset", int64(offset), "order", orderOut,
 			"returned", int64(len(messages)))), http.StatusOK, nil), nil
 }
 
@@ -797,10 +794,10 @@ func (a *APIServerAdapter) handleForkSession(ctx context.Context, request *gatew
 		return errResp, nil
 	}
 	db := a.ensureSessionDB(ctx)
-	forkRaw := pyrepr.Or(body.GetOr("id", nil), body.GetOr("session_id", nil))
+	forkRaw := anyutil.Or(body.ValueOr("id", nil), body.ValueOr("session_id", nil))
 	forkID := fmt.Sprintf("api_%d_%s", int64(apiNow()), strings.ReplaceAll(uuid.NewString(), "-", "")[:8])
-	if pyrepr.Truthy(forkRaw) {
-		forkID = pyrepr.Str(forkRaw)
+	if anyutil.IsTrue(forkRaw) {
+		forkID = anyutil.String(forkRaw)
 	}
 	forkID = strings.TrimSpace(forkID)
 	if forkID == "" || sessionHeaderUnsafeRE.MatchString(forkID) {
@@ -811,8 +808,8 @@ func (a *APIServerAdapter) handleForkSession(ctx context.Context, request *gatew
 	} else if existing != nil {
 		return errorResponse("Session already exists: "+forkID, http.StatusConflict, errOpts{Code: "session_exists"}), nil
 	}
-	if err := db.CreateSession(state.NewSession{ID: forkID, Source: "api_server", Model: textOf(source.GetOr("model", nil)),
-		SystemPrompt: textOf(source.GetOr("system_prompt", nil)), ParentSessionID: sourceID,
+	if err := db.CreateSession(state.NewSession{ID: forkID, Source: "api_server", Model: textOf(source.ValueOr("model", nil)),
+		SystemPrompt: textOf(source.ValueOr("system_prompt", nil)), ParentSessionID: sourceID,
 		ModelConfig: map[string]any{"_branched_from": sourceID}}); err != nil {
 		return nil, err
 	}
@@ -825,22 +822,21 @@ func (a *APIServerAdapter) handleForkSession(ctx context.Context, request *gatew
 	}
 	rows := make([]map[string]any, 0, len(messages))
 	for _, m := range messages {
-		rows = append(rows, pyjson.Plain(m).(map[string]any))
+		rows = append(rows, jsonutil.Plain(m).(map[string]any))
 	}
 	if err := db.ReplaceMessages(ctx, forkID, rows, state.ReplaceOptions{}); err != nil {
 		return nil, err
 	}
 	title, ok := body.Get("title")
 	if !ok || title == nil {
-		base := pyrepr.Str(pyrepr.Or(source.GetOr("title", nil), "fork"))
+		base := anyutil.String(anyutil.Or(source.ValueOr("title", nil), "fork"))
 		title = base + " fork"
 		if next, err := db.GetNextTitleInLineage(ctx, base); err == nil {
 			title = next
 		}
 	}
-	if _, err := db.SetSessionTitle(ctx, forkID, pyrepr.Str(title)); err != nil {
-		var valueErr interface{ PyTypeName() string }
-		if errors.As(err, &valueErr) && valueErr.PyTypeName() == "ValueError" {
+	if _, err := db.SetSessionTitle(ctx, forkID, anyutil.String(title)); err != nil {
+		if errorutil.Kind(err) == "ValueError" {
 			return errorResponse(err.Error(), http.StatusBadRequest, errOpts{Code: "invalid_title"}), nil
 		}
 		return nil, err
@@ -850,9 +846,9 @@ func (a *APIServerAdapter) handleForkSession(ctx context.Context, request *gatew
 		return nil, err
 	}
 	if fork == nil {
-		fork = pyjson.ObjectOf("id", forkID, "parent_session_id", sourceID)
+		fork = jsonutil.ObjectOf("id", forkID, "parent_session_id", sourceID)
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.session", "session", sessionResponse(fork)), http.StatusCreated, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.session", "session", sessionResponse(fork)), http.StatusCreated, nil), nil
 }
 
 // Session authority of the runner, ok false when the runner has none

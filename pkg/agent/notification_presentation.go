@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type mutedSurfaceKey struct{}
@@ -22,7 +22,7 @@ func EventPresentationMuted(ctx context.Context, event, sessionID string) bool {
 
 // Early failure and watch monitor process events are diagnostics, never the requested final result
 func DiagnosticProcessEvent(event map[string]any) bool {
-	if pyrepr.Truthy(event["task_failure_notice"]) {
+	if anyutil.IsTrue(event["task_failure_notice"]) {
 		return true
 	}
 	switch event["type"] {

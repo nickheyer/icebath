@@ -159,8 +159,8 @@ func TestHubModelHelpers(t *testing.T) {
 	}
 	repo := "o/r"
 	d := skillMetaToDict(SkillMeta{Name: "n", Repo: &repo, Tags: []string{"t"}})
-	if !reflect.DeepEqual(d.Keys, []string{"name", "description", "source", "identifier", "trust_level", "repo", "path", "tags", "extra"}) {
-		t.Fatal(d.Keys)
+	if !reflect.DeepEqual(d.Keys(), []string{"name", "description", "source", "identifier", "trust_level", "repo", "path", "tags", "extra"}) {
+		t.Fatal(d.Keys())
 	}
 	if src := (SourceBase{ID: "x"}); src.TrustLevelFor("y") != "community" || src.SourceID() != "x" {
 		t.Fatal(src)

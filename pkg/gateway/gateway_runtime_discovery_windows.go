@@ -5,11 +5,11 @@ package gateway
 import (
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // identify result of home's control pipe, keeping timeout, access and protocol failures as errors
-func QueryIdentify(home string, timeout time.Duration) (*pyjson.Object, error) {
+func QueryIdentify(home string, timeout time.Duration) (*jsonutil.Object, error) {
 	data, err := queryRuntimeControl(home, identifyRequest, timeout)
 	if err != nil {
 		return nil, err

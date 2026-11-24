@@ -5,7 +5,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Completion event of one finished async delegation with a single goal
@@ -16,7 +15,7 @@ func delegationCompletion(goal string) map[string]any {
 }
 
 // Card the gateway publishes at the claim of a local completion built from the producer metadata
-func claimCard(t *testing.T, evt map[string]any, text string) *pyjson.Object {
+func claimCard(t *testing.T, evt map[string]any, text string) *jsonutil.Object {
 	t.Helper()
 	metadata := watchNotificationMetadata(evt, &gateway.SessionSource{Platform: gateway.PlatformLocal, ChatID: "s1"})
 	display, err := gateway.AutomationDisplayMetadata(func(key string) (any, bool) {
@@ -26,9 +25,9 @@ func claimCard(t *testing.T, evt map[string]any, text string) *pyjson.Object {
 	if err != nil {
 		t.Fatalf("display metadata refused: %v", err)
 	}
-	descriptor := pyjson.ObjectOf("identity", "i", "owner", "s1", "route", "r", "target", "s1")
-	descriptor.Update(display)
-	return gateway.AutomationAdmissionDisplay(pyjson.ObjectOf("text", text, "local_automation_v1", descriptor))
+	descriptor := jsonutil.ObjectOf("identity", "i", "owner", "s1", "route", "r", "target", "s1")
+	descriptor.Merge(display)
+	return gateway.AutomationAdmissionDisplay(jsonutil.ObjectOf("text", text, "local_automation_v1", descriptor))
 }
 
 func TestALongSubagentGoalStillAdmitsItsCompletionCard(t *testing.T) {
@@ -40,7 +39,7 @@ func TestALongSubagentGoalStillAdmitsItsCompletionCard(t *testing.T) {
 		t.Fatalf("title %q", title)
 	}
 	review := claimCard(t, delegationCompletion("Review the work just discussed"), "review text")
-	want := pyjson.ObjectOf("display_kind", "async_delegation_complete",
+	want := jsonutil.ObjectOf("display_kind", "async_delegation_complete",
 		"display_text", "Subagent Task Completed: Review the work just discussed", "text", "review text")
 	if got := picksDump(review); got != picksDump(want) {
 		t.Fatalf("review card %s", got)

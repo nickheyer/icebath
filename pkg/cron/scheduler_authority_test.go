@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func fireCanonical(t *testing.T, s *Store, jobID, eid string, retire bool) {
@@ -71,8 +71,8 @@ func TestPauseForUnknownRecordsAndLiftPauseResumesOnlyThatPause(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(journal)
-	decoded, _ := pyjson.Loads(string(raw))
-	rec := decoded.(*pyjson.Object)
+	decoded, _ := jsonutil.Decode(string(raw))
+	rec := decoded.(*jsonutil.Object)
 	pause, ok := rec.Get("pause_recorded")
 	if !ok || !strings.Contains(string(raw), "\"reason\": \"unverified admission\"") || !strings.HasPrefix(string(raw), "{\n  \"params\"") {
 		t.Fatal(string(raw))
@@ -101,8 +101,8 @@ func TestPauseForUnknownRecordsAndLiftPauseResumesOnlyThatPause(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ = os.ReadFile(journal)
-	decoded, _ = pyjson.Loads(string(raw))
-	pause, _ = decoded.(*pyjson.Object).Get("pause_recorded")
+	decoded, _ = jsonutil.Decode(string(raw))
+	pause, _ = decoded.(*jsonutil.Object).Get("pause_recorded")
 	if err := s.liftPause(context.Background(), job.ID, pause); err != nil {
 		t.Fatal(err)
 	}

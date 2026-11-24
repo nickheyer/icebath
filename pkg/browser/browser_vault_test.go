@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -98,16 +98,16 @@ func (b *fakeLoginBackend) FillContext() (func() error, error) {
 	return nil, nil
 }
 
-func loadResult(t *testing.T, text string, err error) *pyjson.Object {
+func loadResult(t *testing.T, text string, err error) *jsonutil.Object {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, perr := pyjson.Loads(text)
+	parsed, perr := jsonutil.Decode(text)
 	if perr != nil {
 		t.Fatalf("%v in %s", perr, text)
 	}
-	obj, ok := pyjson.AsObject(parsed)
+	obj, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		t.Fatalf("not an object: %s", text)
 	}
@@ -127,7 +127,7 @@ func vaultStore(t *testing.T) (context.Context, *tools.Env, *vault.VaultStore, s
 
 func addLogin(t *testing.T, store *vault.VaultStore, origin, password string) vault.VaultItemMeta {
 	t.Helper()
-	meta, err := store.AddItem("login", "Example login", pyjson.ObjectOf("identifier_type", "email", "identifier", "user@example.com",
+	meta, err := store.AddItem("login", "Example login", jsonutil.ObjectOf("identifier_type", "email", "identifier", "user@example.com",
 		"password", password, "origin", origin), origin)
 	if err != nil {
 		t.Fatal(err)
@@ -135,13 +135,13 @@ func addLogin(t *testing.T, store *vault.VaultStore, origin, password string) va
 	return meta
 }
 
-func cardSecret() *pyjson.Object {
-	return pyjson.ObjectOf("card_number", "4111111111111111", "cardholder_name", "A User", "exp_month", "7", "exp_year", "2029",
+func cardSecret() *jsonutil.Object {
+	return jsonutil.ObjectOf("card_number", "4111111111111111", "cardholder_name", "A User", "exp_month", "7", "exp_year", "2029",
 		"cvc", "123", "billing_postal_code", "94110")
 }
 
-func addressSecret() *pyjson.Object {
-	return pyjson.ObjectOf("address_line1", "1 Main St", "city", "Springfield", "postal_code", "12345", "country", "US")
+func addressSecret() *jsonutil.Object {
+	return jsonutil.ObjectOf("address_line1", "1 Main St", "city", "Springfield", "postal_code", "12345", "country", "US")
 }
 
 func isVaultError(err error) bool {
@@ -203,7 +203,7 @@ func TestVaultStoreRemoveItem(t *testing.T) {
 
 func TestVaultStoreLoginRequiresOrigin(t *testing.T) {
 	_, _, store, _ := vaultStore(t)
-	_, err := store.AddItem("login", "x", pyjson.ObjectOf("identifier_type", "email", "identifier", "a@b.c", "password", "p"), "")
+	_, err := store.AddItem("login", "x", jsonutil.ObjectOf("identifier_type", "email", "identifier", "a@b.c", "password", "p"), "")
 	if !isVaultError(err) {
 		t.Fatalf("err %v", err)
 	}
@@ -255,7 +255,7 @@ func TestVaultStoreCheckoutKindsKeepOnlyCanonicalFields(t *testing.T) {
 
 func TestVaultStoreUnknownKindRejected(t *testing.T) {
 	_, _, store, _ := vaultStore(t)
-	if _, err := store.AddItem("totp", "x", pyjson.NewObject(), ""); !isVaultError(err) {
+	if _, err := store.AddItem("totp", "x", jsonutil.NewObject(), ""); !isVaultError(err) {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -273,7 +273,7 @@ func TestVaultStoreNormalizeOrigin(t *testing.T) {
 }
 
 func TestVaultStoreScrubSecretFromText(t *testing.T) {
-	out := vault.ScrubSecretFromText("boom hunter22x at me@x.io", pyjson.ObjectOf("password", "hunter22x", "identifier", "me@x.io"))
+	out := vault.ScrubSecretFromText("boom hunter22x at me@x.io", jsonutil.ObjectOf("password", "hunter22x", "identifier", "me@x.io"))
 	if strings.Contains(out, "hunter22x") || strings.Contains(out, "me@x.io") {
 		t.Fatalf("out %s", out)
 	}
@@ -376,8 +376,8 @@ func TestClassifierSelectPasswordFillSingleFieldOnly(t *testing.T) {
 	}
 }
 
-func onePasswordFill() []*pyjson.Object {
-	return []*pyjson.Object{pyjson.ObjectOf("index", int64(0), "token", "current-password", "value", "x")}
+func onePasswordFill() []*jsonutil.Object {
+	return []*jsonutil.Object{jsonutil.ObjectOf("index", int64(0), "token", "current-password", "value", "x")}
 }
 
 func TestClassifierBuildFillJsLeavesNoDomMarkerAndBindsTargetToInspection(t *testing.T) {
@@ -423,20 +423,20 @@ const passwordControlJSON = `[{"autocomplete": "current-password", "formIndex": 
 // Page double answering the location read with href and every inspection with controls
 func pinPage(t *testing.T, href, controls string) {
 	t.Helper()
-	pin(t, &vaultEvalJS, func(_ context.Context, _ *tools.Env, _ string, expression string) *pyjson.Object {
+	pin(t, &vaultEvalJS, func(_ context.Context, _ *tools.Env, _ string, expression string) *jsonutil.Object {
 		if strings.Contains(expression, "location.href") {
-			return pyjson.ObjectOf("success", true, "result", href)
+			return jsonutil.ObjectOf("success", true, "result", href)
 		}
-		return pyjson.ObjectOf("success", true, "result", controls)
+		return jsonutil.ObjectOf("success", true, "result", controls)
 	})
 }
 
 func pinSecretEval(t *testing.T, result string) *[]string {
 	t.Helper()
 	scripts := &[]string{}
-	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *pyjson.Object {
+	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *jsonutil.Object {
 		*scripts = append(*scripts, expression)
-		return pyjson.ObjectOf("success", true, "result", result)
+		return jsonutil.ObjectOf("success", true, "result", result)
 	})
 	return scripts
 }
@@ -496,8 +496,8 @@ func TestBrowserVaultToolsFillAllowedOnEverySavedOriginOfAMultiWebsiteItem(t *te
 	t.Cleanup(func() { tools.ClearVaultRedactionValues(ctx) })
 	managerBackend(t, true)
 	pinPageOrigin(t, "https://www.amazon.co.uk")
-	pin(t, &vaultEvalJS, func(context.Context, *tools.Env, string, string) *pyjson.Object {
-		return pyjson.ObjectOf("success", true, "result", loginControlsJSON)
+	pin(t, &vaultEvalJS, func(context.Context, *tools.Env, string, string) *jsonutil.Object {
+		return jsonutil.ObjectOf("success", true, "result", loginControlsJSON)
 	})
 	scripts := pinSecretEval(t, `{"filled": 1}`)
 	raw, err := browserVaultFill(ctx, env, "op:multi", "")
@@ -536,7 +536,7 @@ func TestBrowserVaultToolsFillSuccessReturnsCountsOnly(t *testing.T) {
 	scripts := pinSecretEval(t, `{"filled": 1}`)
 	raw, err := browserVaultFill(ctx, env, meta.ID, "")
 	out := loadResult(t, raw, err)
-	out.Pop("next")
+	out.Take("next")
 	if got := jsonText(out); got != `{"success": true, "filled_fields": 1, "backend": "local", "kind": "login", "origin": "https://example.com"}` {
 		t.Fatalf("fill %s", got)
 	}
@@ -553,11 +553,11 @@ func TestBrowserVaultToolsFillToctouNavigationWritesNothing(t *testing.T) {
 	ctx, env, store, _ := vaultStore(t)
 	meta := addLogin(t, store, "https://example.com", "s3cret-pw")
 	pinPage(t, "https://example.com/login", passwordControlJSON)
-	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *pyjson.Object {
+	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *jsonutil.Object {
 		if !strings.Contains(expression, "window.location.origin") || !strings.Contains(expression, `"https://example.com"`) {
 			t.Error("the evaluated script lacks the origin assert")
 		}
-		return pyjson.ObjectOf("success", true, "result", `{"refused": "origin_changed", "found": "https://evil.com"}`)
+		return jsonutil.ObjectOf("success", true, "result", `{"refused": "origin_changed", "found": "https://evil.com"}`)
 	})
 	raw, err := browserVaultFill(ctx, env, meta.ID, "")
 	out := loadResult(t, raw, err)
@@ -608,8 +608,8 @@ func TestBrowserVaultToolsVaultCanaryRedactedFromBrowserCdpResults(t *testing.T)
 	if out := loadResult(t, text, err); anyGet(out, "success") != true {
 		t.Fatalf("fill %s", text)
 	}
-	cdpResult := pyjson.ObjectOf("result", pyjson.ObjectOf("type", "string", "value", canary), "description", "input value is "+canary)
-	scrubbed, err := pyjson.Dumps(redactCDPOutput(env, cdpResult, nil, nil, 0), pyjson.EnsureASCII(false))
+	cdpResult := jsonutil.ObjectOf("result", jsonutil.ObjectOf("type", "string", "value", canary), "description", "input value is "+canary)
+	scrubbed, err := jsonutil.Encode(redactCDPOutput(env, cdpResult, nil, nil, 0))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -693,8 +693,8 @@ func TestEveryRegisteredToolSchemaDeclaresOpenaiStyleParameters(t *testing.T) {
 		if schema == nil && def.SchemaBuilder != nil {
 			schema = def.SchemaBuilder()
 		}
-		_, hasParameters := schema.Vals["parameters"]
-		_, hasInputSchema := schema.Vals["input_schema"]
+		_, hasParameters := schema.Get("parameters")
+		_, hasInputSchema := schema.Get("input_schema")
 		if !hasParameters || hasInputSchema {
 			missing = append(missing, name)
 		}
@@ -842,17 +842,17 @@ func TestTwoFactorTotpMatchesRfc6238VectorAndSeedNormalisation(t *testing.T) {
 func pinCodePage(t *testing.T, href, controls string) {
 	t.Helper()
 	pin(t, &vaultFocusBoundOrigin, func(context.Context, *tools.Env, string, string, string) string { return "" })
-	pin(t, &vaultEvalJS, func(_ context.Context, _ *tools.Env, _ string, expression string) *pyjson.Object {
+	pin(t, &vaultEvalJS, func(_ context.Context, _ *tools.Env, _ string, expression string) *jsonutil.Object {
 		if strings.Contains(expression, "querySelectorAll") {
-			return pyjson.ObjectOf("success", true, "result", controls)
+			return jsonutil.ObjectOf("success", true, "result", controls)
 		}
-		return pyjson.ObjectOf("success", true, "result", href)
+		return jsonutil.ObjectOf("success", true, "result", href)
 	})
 }
 
 func TestTwoFactorSavedAuthenticatorKeyMintsCodesWithoutAsking(t *testing.T) {
 	ctx, env, store, _ := vaultStore(t)
-	meta, err := store.AddItem("login", "gh", pyjson.ObjectOf("identifier_type", "username", "identifier", "tek", "password", "pw",
+	meta, err := store.AddItem("login", "gh", jsonutil.ObjectOf("identifier_type", "username", "identifier", "tek", "password", "pw",
 		"otp_secret", "JBSWY3DPEHPK3PXP"), "https://github.com")
 	if err != nil {
 		t.Fatal(err)
@@ -888,7 +888,7 @@ func TestTwoFactorWithoutAKeyTheUserIsAskedAndSplitBoxesGetOneDigitEach(t *testi
 	defer tools.SetCodePromptCallback(ctx, nil)
 	boxes := []string{}
 	for i := range 6 {
-		boxes = append(boxes, jsonText(pyjson.ObjectOf("index", int64(i), "type", "tel", "name", "digit"+string(rune('0'+i)), "label", "",
+		boxes = append(boxes, jsonText(jsonutil.ObjectOf("index", int64(i), "type", "tel", "name", "digit"+string(rune('0'+i)), "label", "",
 			"autocomplete", "one-time-code", "formIndex", int64(0), "maxLength", int64(1))))
 	}
 	pin(t, &vaultCanPromptHere, func(context.Context, *tools.Env) bool { return true })

@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Pins the liveness answer the cron gate reads for one case
@@ -80,7 +79,7 @@ func TestQueuedWorkClientsAdaptersAndCronEachKeepItUp(t *testing.T) {
 	if got := busyReason(ctx, r, 60); !strings.Contains(got, "client activity") {
 		t.Fatalf("recent activity: %q", got)
 	}
-	r.idleExitLastActivity.Store(math.Float64bits(pythread.Monotonic() - 120))
+	r.idleExitLastActivity.Store(math.Float64bits(timeutil.Monotonic() - 120))
 	if _, err := r.sessionTicketStore.Mint(h, "u", "interactive", "", false); err != nil {
 		t.Fatal(err)
 	}

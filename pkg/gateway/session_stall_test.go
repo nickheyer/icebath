@@ -49,7 +49,7 @@ func TestResolveIdleUsesSharedActivitySnapshotOnly(t *testing.T) {
 	now := 1_000_000.0
 	at := now - 120
 	snap := agent.BuildActivitySnapshot(&at, "tool: terminal", string(state.ActivityProvenanceUnknown), &now, nil)
-	if got := gateway.ResolveSessionIdleSecondsFromActivity(snap.Vals, &now); got == nil || *got != 120.0 {
+	if got := gateway.ResolveSessionIdleSecondsFromActivity(snap.Map(), &now); got == nil || *got != 120.0 {
 		t.Fatalf("idle = %v, want 120", got)
 	}
 	if gateway.ResolveSessionIdleSecondsFromActivity(nil, &now) != nil || gateway.ResolveSessionIdleSecondsFromActivity(map[string]any{}, &now) != nil {

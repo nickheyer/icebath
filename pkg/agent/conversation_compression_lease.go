@@ -9,13 +9,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Agent slots the compress_context phases read and latch
@@ -48,7 +48,7 @@ type compressionAttempt struct {
 	snapshot                     map[string]any
 	generation                   int
 	startedAt                    time.Time
-	seed                         *pyjson.Object
+	seed                         *jsonutil.Object
 	durableCooldownAuthoritative *bool
 	durableCooldownState         *state.CompressionCooldownRow
 }
@@ -89,11 +89,11 @@ func newCompressionActivityHeartbeat(a *AIAgent, intervalSeconds any, emitClient
 
 // float(interval or 60.0) with the non finite and unparsable values read as 60
 func heartbeatSeconds(v any) float64 {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 60
 	}
-	f, err := pyint.Float(v)
-	var pyErr *pyint.Error
+	f, err := anyutil.ToFloat(v)
+	var pyErr *errorutil.Error
 	if errors.As(err, &pyErr) && pyErr.Kind == "OverflowError" {
 		panic(err)
 	}
@@ -117,7 +117,7 @@ func (h *compressionActivityHeartbeat) start() *compressionActivityHeartbeat {
 func (h *compressionActivityHeartbeat) stop(desc string) {
 	h.stopOnce.Do(func() { close(h.stopCh) })
 	h.heartbeatRoutineM.Lock()
-	self := h.heartbeatRoutine == pythread.GoroutineID()
+	self := h.heartbeatRoutine == syncutil.GoroutineID()
 	h.heartbeatRoutineM.Unlock()
 	if h.started && !self {
 		select {
@@ -176,7 +176,7 @@ func (h *compressionActivityHeartbeat) emitProgressStatus() {
 
 func (h *compressionActivityHeartbeat) run() {
 	h.heartbeatRoutineM.Lock()
-	h.heartbeatRoutine = pythread.GoroutineID()
+	h.heartbeatRoutine = syncutil.GoroutineID()
 	h.heartbeatRoutineM.Unlock()
 	defer close(h.done)
 	ticker := time.NewTicker(h.interval)
@@ -599,11 +599,11 @@ func acquireCompressionLease(ctx context.Context, a *AIAgent, fence *Compression
 
 // float(ttl or 300.0) with TypeError and ValueError keeping 300 and OverflowError raised
 func compressionLockTTL(v any) float64 {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 300
 	}
-	f, err := pyint.Float(v)
-	var pyErr *pyint.Error
+	f, err := anyutil.ToFloat(v)
+	var pyErr *errorutil.Error
 	if errors.As(err, &pyErr) && pyErr.Kind == "OverflowError" {
 		panic(err)
 	}

@@ -151,9 +151,9 @@ func (c *Context) registerProviderRow(row scopedProviderRow, provider any) (*Reg
 	name := registry.ProviderName(provider)
 	switch row.normalize {
 	case "", "strip":
-		name = pyStrip(name)
+		name = strings.TrimSpace(name)
 	case "lower":
-		name = strings.ToLower(pyStrip(name))
+		name = strings.ToLower(strings.TrimSpace(name))
 	}
 	scope := c.manager.home
 	previous := registry.Snapshot(name, scope)

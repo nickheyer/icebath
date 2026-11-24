@@ -2,7 +2,9 @@ package provider
 
 import (
 	"context"
+	"maps"
 	"net/url"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -10,8 +12,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Mutex the goroutine holding it may lock again, released after the matching number of unlocks
@@ -423,11 +425,11 @@ func (p Profile) PrepareMessages(messages []map[string]any) []map[string]any {
 }
 
 // BuildExtraBody returns provider specific extra_body fields, empty by default
-func (p Profile) BuildExtraBody(sessionID string, context map[string]any) *pyjson.Object {
+func (p Profile) BuildExtraBody(sessionID string, context map[string]any) *jsonutil.Object {
 	if p.BuildExtraBodyHook != nil {
 		return p.BuildExtraBodyHook(sessionID, context)
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // DefaultReasoningConfig returns the reasoning config applied when the user set none
@@ -439,11 +441,11 @@ func (p Profile) DefaultReasoningConfig(model string) *Reasoning {
 }
 
 // BuildAPIKwargsExtras returns extra_body and top level request fields, both empty by default
-func (p Profile) BuildAPIKwargsExtras(reasoning *Reasoning, context map[string]any) (*pyjson.Object, map[string]any) {
+func (p Profile) BuildAPIKwargsExtras(reasoning *Reasoning, context map[string]any) (*jsonutil.Object, map[string]any) {
 	if p.BuildAPIKwargsExtrasHook != nil {
 		return p.BuildAPIKwargsExtrasHook(reasoning, context)
 	}
-	return pyjson.NewObject(), map[string]any{}
+	return jsonutil.NewObject(), map[string]any{}
 }
 
 // BuildClientKwargsExtras returns client constructor extras, empty by default
@@ -606,7 +608,7 @@ func (p Profile) FetchModels(ctx context.Context, apiKey, baseURL string, timeou
 	}
 	lines = append(lines, pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "User-Agent", Value: profileUserAgent()})
 	defaults := p.DefaultHeaders()
-	for _, k := range pyhttpx.HeaderOrder(defaults) {
+	for _, k := range slices.Sorted(maps.Keys(defaults)) {
 		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: defaults[k]})
 	}
 	headers := pyhttpx.OrderedHeaderMap(lines...)

@@ -17,9 +17,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 var (
@@ -52,17 +53,17 @@ func testProcessStartTime(pid int) any {
 	if err != nil {
 		return nil
 	}
-	return int64(pyint.Round(birth*100, 0))
+	return int64(mathutil.Round(birth*100, 0))
 }
 
 // Whether every recorded fingerprint is positive and within a millisecond of current
 func testStartTimesAgree(current any, recorded ...any) (bool, error) {
-	cur, err := pyint.Float(current)
+	cur, err := anyutil.ToFloat(current)
 	if err != nil || !(cur > 0) {
 		return false, err
 	}
 	for _, r := range recorded {
-		f, err := pyint.Float(r)
+		f, err := anyutil.ToFloat(r)
 		if err != nil {
 			return false, err
 		}
@@ -347,12 +348,12 @@ func TestMaxRuntimeTerminatesOverrunWorker(t *testing.T) {
 	if i < 0 {
 		t.Fatal("no timed_out event")
 	}
-	ep, _ := events[i].Payload.(*pyjson.Object)
+	ep, _ := events[i].Payload.(*jsonutil.Object)
 	limit, elapsed := objGet(ep, "limit_seconds"), objGet(ep, "elapsed_seconds")
 	if fmt.Sprint(limit) != "1" {
 		t.Fatal("limit_seconds", limit)
 	}
-	if e, err := pyIntOf(elapsed); err != nil || e < 30 {
+	if e, err := cellIntOf(elapsed); err != nil || e < 30 {
 		t.Fatal("elapsed_seconds", elapsed)
 	}
 }

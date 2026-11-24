@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Cache subdirectory holding trees a running process still held at removal
@@ -50,15 +50,6 @@ func SweepPendingPluginDeletes(ctx context.Context) {
 		}
 		_ = tools.RmtreeReadonly(path, true)
 	}
-}
-
-// Whether an error is an OSError in the Python sense
-func isOSError(err error) bool {
-	var pathErr *fs.PathError
-	var linkErr *os.LinkError
-	var sysErr *os.SyscallError
-	var errno syscall.Errno
-	return errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &sysErr) || errors.As(err, &errno)
 }
 
 // Deletes a tree, parking what a windows process still holds in the pending delete area
@@ -150,8 +141,8 @@ func CmdRemove(ctx context.Context, name string, out io.Writer) error {
 	result, err := removeUserPlugin(ctx, dir, name, target)
 	if err != nil {
 		var opErr *PluginOperationError
-		if isOSError(err) || errors.As(err, &opErr) {
-			return fail(console, fmt.Sprintf("[red]Error:[/red] Could not remove plugin '%s': %s", name, pyErrorText(err)))
+		if errorutil.IsSystem(err) || errors.As(err, &opErr) {
+			return fail(console, fmt.Sprintf("[red]Error:[/red] Could not remove plugin '%s': %s", name, errchain.OSText(err)))
 		}
 		return err
 	}
@@ -216,14 +207,6 @@ func removeUserPlugin(ctx context.Context, dir, name, target string) (map[string
 	return mergeResult(map[string]any{"ok": true, "name": name}, forgotten), nil
 }
 
-// Text of a caught OSError or plugin operation error as Python formats it
-func pyErrorText(err error) string {
-	if isOSError(err) {
-		return errchain.OSText(err)
-	}
-	return err.Error()
-}
-
 // Result map with the extra keys merged in
 func mergeResult(base, extra map[string]any) map[string]any {
 	for k, v := range extra {
@@ -258,8 +241,8 @@ func UnattendedRemoveUserPlugin(ctx context.Context, name string) (map[string]an
 	result, err := removeUserPlugin(ctx, dir, name, target)
 	if err != nil {
 		var opErr *PluginOperationError
-		if isOSError(err) || errors.As(err, &opErr) {
-			return map[string]any{"ok": false, "error": fmt.Sprintf("Could not remove plugin '%s': %s", name, pyErrorText(err))}, nil
+		if errorutil.IsSystem(err) || errors.As(err, &opErr) {
+			return map[string]any{"ok": false, "error": fmt.Sprintf("Could not remove plugin '%s': %s", name, errchain.OSText(err))}, nil
 		}
 		return nil, err
 	}

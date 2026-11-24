@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func psHome(t *testing.T) string {
@@ -85,8 +85,8 @@ func TestPauseRecordReadAbsentMalformedAndPathShape(t *testing.T) {
 	}
 }
 
-func psMarker(pid, stopper int64) *pyjson.Object {
-	m := pyjson.NewObject()
+func psMarker(pid, stopper int64) *jsonutil.Object {
+	m := jsonutil.NewObject()
 	m.Set("target_pid", pid)
 	m.Set("stopper_pid", stopper)
 	return m
@@ -124,7 +124,7 @@ func TestPauseMarkStopConsumedCheckpointsOnlyTheMatchingRequest(t *testing.T) {
 	if other, _ := ReadPauseRecord(claim); other["token"].(map[string]any)["stop_sent"] != nil {
 		t.Fatal("another install's claim was checkpointed")
 	}
-	if err := MarkStopConsumed(markerPath, pyjson.NewObject(), same); err == nil || err.Error() != "missing target_pid" {
+	if err := MarkStopConsumed(markerPath, jsonutil.NewObject(), same); err == nil || err.Error() != "missing target_pid" {
 		t.Fatalf("missing target pid: %v", err)
 	}
 }

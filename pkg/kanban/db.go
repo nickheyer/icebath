@@ -12,14 +12,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+
+	"golang.org/x/text/cases"
 )
 
 // Python ValueError raised by board and task validation
@@ -138,7 +139,7 @@ func rowGet(row *Row, col string, def any) any {
 
 // Decoded JSON text column, def for an empty value or any decode failure
 func jsonOr(value any, def any) any {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return def
 	}
 	var text string
@@ -150,7 +151,7 @@ func jsonOr(value any, def any) any {
 	default:
 		return def
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return def
 	}
@@ -158,11 +159,11 @@ func jsonOr(value any, def any) any {
 }
 
 // Decoded JSON object column, an empty object for anything else
-func jsonDict(value any) *pyjson.Object {
-	if o, ok := jsonOr(value, nil).(*pyjson.Object); ok {
+func jsonDict(value any) *jsonutil.Object {
+	if o, ok := jsonOr(value, nil).(*jsonutil.Object); ok {
 		return o
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Stripped stdout of git -C cwd args, nil on any failure or empty output
@@ -206,7 +207,7 @@ func NormalizeReasoningEffort(effort *string) (*string, error) {
 var knownToolsetNames = sync.OnceValue(func() map[string]bool {
 	out := map[string]bool{}
 	for _, name := range tools.Default.ToolsetNames(context.Background(), "") {
-		out[pystr.Casefold(name)] = true
+		out[cases.Fold().String(name)] = true
 	}
 	return out
 })

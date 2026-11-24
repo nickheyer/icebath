@@ -14,7 +14,7 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -280,7 +280,7 @@ func rawGraceMinutes(job *Job) any {
 	if !ok {
 		return nil
 	}
-	v, err := pyjson.LoadsBytes(raw)
+	v, err := jsonutil.Decode(raw)
 	if err != nil {
 		return string(raw)
 	}
@@ -399,10 +399,10 @@ func (s *Store) scheduleCadenceSeconds(sched *Schedule) (float64, bool) {
 }
 
 // Records entry in the bounded recent list and appends it to a jsonl file in the cron dir
-func (s *Store) appendTelemetryRecord(filename string, entry *pyjson.Object, recent *[]map[string]any) {
+func (s *Store) appendTelemetryRecord(filename string, entry *jsonutil.Object, recent *[]map[string]any) {
 	m := map[string]any{}
-	for _, k := range entry.Keys {
-		m[k] = entry.Vals[k]
+	for _, k := range entry.Keys() {
+		m[k] = entry.Value(k)
 	}
 	*recent = append(*recent, m)
 	if len(*recent) > telemetryRecentHistory {
@@ -413,7 +413,7 @@ func (s *Store) appendTelemetryRecord(filename string, entry *pyjson.Object, rec
 		s.log.Debug(fmt.Sprintf("Could not append %s record: %v", filename, err))
 		return
 	}
-	text, err := pyjson.Dumps(entry)
+	text, err := jsonutil.Encode(entry)
 	if err == nil {
 		var f *os.File
 		f, err = os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666)
@@ -438,7 +438,7 @@ func nameOrID(job *Job) any {
 
 // Counts one stale error re-arm and persists its record
 func (s *Store) recordPersistedErrorRecovery(job *Job, previousNextRun string) {
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("job_id", job.ID)
 	entry.Set("name", nameOrID(job))
 	entry.Set("previous_next_run_at", previousNextRun)
@@ -479,7 +479,7 @@ func classifyStaleCronNextRun(sched *Schedule, raw, next time.Time) string {
 
 // Counts one offset migration catch up fire and persists its record
 func (s *Store) recordTimezoneMigrationCatchup(job *Job, raw, next time.Time) {
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("job_id", job.ID)
 	entry.Set("name", nameOrID(job))
 	var expr any

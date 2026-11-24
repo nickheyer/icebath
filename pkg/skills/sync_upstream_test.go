@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Writes text at root/rel creating parent directories and returns the full path
@@ -460,7 +460,7 @@ func TestDroppedBuiltinProvenanceCatalogDropKeepsBuiltinProvenanceWhileACopyExis
 	t.Setenv("ICEBATH_BUNDLED_SKILLS", droppedBundled(t, tmp, "kept", "dropped", "dropped-archived", "dropped-deleted"))
 	mustSync(t, s)
 	os.Mkdir(filepath.Join(skills, ".archive"), 0o755)
-	if _, err := pyfs.Move(filepath.Join(skills, "cat", "dropped-archived"), filepath.Join(skills, ".archive", "dropped-archived")); err != nil {
+	if _, err := fsutil.Move(filepath.Join(skills, "cat", "dropped-archived"), filepath.Join(skills, ".archive", "dropped-archived")); err != nil {
 		t.Fatal(err)
 	}
 	os.RemoveAll(filepath.Join(skills, "cat", "dropped-deleted"))
@@ -710,7 +710,7 @@ func TestUpdateBackupRecoveryStaleBackupDoesNotPoisonFailedUpdate(t *testing.T) 
 
 func TestUpdateBackupRecoveryOrphanedBackupIsRecoveredNotTreatedAsDeleted(t *testing.T) {
 	s, _, skillsDir, dest := backupRecoverySetup(t)
-	if _, err := pyfs.Move(dest, filepath.Join(skillsDir, "old-skill.bak")); err != nil {
+	if _, err := fsutil.Move(dest, filepath.Join(skillsDir, "old-skill.bak")); err != nil {
 		t.Fatal(err)
 	}
 	r := mustSync(t, s)

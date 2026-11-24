@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 // Attempt error already shaped for the retry loop, returned by the consume loop as it is
@@ -657,7 +657,7 @@ func anthropicManagedRelayStream(ctx context.Context, c *anthropicClient, req *R
 		}
 		if limits, ok := anthRequestTimeout(kwargs["timeout"]); ok {
 			scoped := *hc
-			scoped.Transport = pyhttpx.PhaseTimeoutTransport(hc.Transport, limits)
+			scoped.Transport = httputil.TimeoutTransport(hc.Transport, limits)
 			hc = &scoped
 		}
 		resp, err := hc.Do(httpReq)

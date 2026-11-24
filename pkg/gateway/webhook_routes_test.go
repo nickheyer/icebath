@@ -7,14 +7,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Wires a mock runner whose telegram adapter records sends, the wire mock target
 func wireWebhookMockTarget(adapter *WebhookAdapter) *webhookTargetAdapter {
 	target := newWebhookTarget(PlatformTelegram)
-	adapters := pydict.New[Platform, PlatformAdapter]()
+	adapters := orderedutil.NewMap[Platform, PlatformAdapter]()
 	adapters.Set(PlatformTelegram, target)
 	adapter.GatewayRunner = &webhookMockRunner{adapters: adapters, config: &GatewayConfig{}}
 	return target
@@ -54,8 +54,8 @@ func TestPostDeliversDirectlyWithoutAgent(t *testing.T) {
 	resp, err := adapter.handleWebhook(context.Background(), webhookRequest(map[string]string{"Content-Type": "application/json",
 		"X-GitHub-Delivery": "delivery-1"}, []byte(`{"payload": {"user": "alice", "other": "bob"}}`), "match-alert"))
 	status, body := webhookResponseJSON(t, resp, err)
-	if status != 200 || body.GetOr("status", nil) != "delivered" || body.GetOr("route", nil) != "match-alert" || body.GetOr("target", nil) != "telegram" {
-		t.Fatalf("%d %v", status, pyjson.Plain(body))
+	if status != 200 || body.ValueOr("status", nil) != "delivered" || body.ValueOr("route", nil) != "match-alert" || body.ValueOr("target", nil) != "telegram" {
+		t.Fatalf("%d %v", status, jsonutil.Plain(body))
 	}
 	if len(admitted.snapshot()) != 0 {
 		t.Fatal("agent run admitted")
@@ -111,8 +111,8 @@ func TestPostFiresJobWithEventContext(t *testing.T) {
 		"X-GitHub-Delivery": "delivery-cron-1", "X-GitHub-Event": "pull_request_review"},
 		[]byte(`{"number": 7, "review": {"body": "needs tests"}}`), "pr-feedback"))
 	status, body := webhookResponseJSON(t, resp, err)
-	if status != 202 || body.GetOr("status", nil) != "accepted" || body.GetOr("cron_job", nil) != "review-sweeper" {
-		t.Fatalf("%d %v", status, pyjson.Plain(body))
+	if status != 202 || body.ValueOr("status", nil) != "accepted" || body.ValueOr("cron_job", nil) != "review-sweeper" {
+		t.Fatalf("%d %v", status, jsonutil.Plain(body))
 	}
 	drainWebhookBackgroundTasks(t, adapter)
 	if len(*fired) != 1 || (*fired)[0][0] != "review-sweeper" || !strings.Contains((*fired)[0][1], "PR #7 received feedback: needs tests") ||

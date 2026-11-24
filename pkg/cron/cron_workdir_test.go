@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func resolvedDir(t *testing.T, dir string) string {
 	t.Helper()
-	r, err := pypath.Realpath(dir, pypath.Lax)
+	r, err := pathutil.Resolve(dir)
 	if err != nil {
 		t.Fatal(err)
 	}

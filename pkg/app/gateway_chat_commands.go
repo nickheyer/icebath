@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Command listing every command the shared gateway serves
@@ -34,7 +33,7 @@ func gatewayUserTurns(snapshot map[string]any) []map[string]any {
 		row, _ := raw.(map[string]any)
 		kind := row["display_kind"]
 		if gatewayIsInt(row["row_id"]) && (kind == nil || kind == "" || kind == "steer") &&
-			!pyrepr.Truthy(row["archived"]) && agent.IsUserOriginatedTurn(row) {
+			!anyutil.IsTrue(row["archived"]) && agent.IsUserOriginatedTurn(row) {
 			turns = append(turns, row)
 		}
 	}

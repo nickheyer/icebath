@@ -7,8 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Whether the event is plain text with no media
@@ -24,7 +24,7 @@ func (r *GatewayRunner) hmBusySteer(ctx context.Context, event *gateway.MessageE
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					pkgLog().Warn(fmt.Sprintf("PRIORITY steer failed for session %s: %s", quickKey, pyrepr.Str(rec)))
+					pkgLog().Warn(fmt.Sprintf("PRIORITY steer failed for session %s: %s", quickKey, anyutil.String(rec)))
 				}
 			}()
 			withOrigin, err := r.steerTextWithOrigin(ctx, steerText, event)

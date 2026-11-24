@@ -4,13 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Python exception class of an error a conversion or a hosted attribute access raised
 func liveConfigErrorKind(err error) string {
-	if e, ok := err.(*pyint.Error); ok {
+	if e, ok := err.(*errorutil.Error); ok {
 		return e.Kind
 	}
 	return plugins.ErrorTypeName(err)

@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var connCatalog = []string{"figma", "linear", "notion"}
@@ -71,11 +71,11 @@ func (b *fakeConnBackend) callList() [][]any {
 	return slices.Clone(b.calls)
 }
 
-func (b *fakeConnBackend) RequiredEnv(ctx context.Context, name string) ([]*pyjson.Object, error) {
+func (b *fakeConnBackend) RequiredEnv(ctx context.Context, name string) ([]*jsonutil.Object, error) {
 	b.record("required_env", name)
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	for _, key := range b.missingEnv {
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		o.Set("name", key)
 		o.Set("prompt", key+"?")
 		o.Set("required", true)
@@ -102,11 +102,11 @@ func (b *fakeConnBackend) InstallsWithOAuth(ctx context.Context, name string) (b
 	return false, errorString("FakeBackend has no installs_with_oauth")
 }
 
-func (b *fakeConnBackend) StartInstallOAuth(ctx context.Context, name string, env *pyjson.Object) (ConnectorAttempt, error) {
+func (b *fakeConnBackend) StartInstallOAuth(ctx context.Context, name string, env *jsonutil.Object) (ConnectorAttempt, error) {
 	return nil, errorString("FakeBackend has no start_install_oauth")
 }
 
-func (b *fakeConnBackend) Install(ctx context.Context, name string, env *pyjson.Object) ([]string, error) {
+func (b *fakeConnBackend) Install(ctx context.Context, name string, env *jsonutil.Object) ([]string, error) {
 	b.record("install", name, envMap(env))
 	if b.installError != "" {
 		return nil, errorString(b.installError)
@@ -125,10 +125,10 @@ func (e errorString) Error() string { return string(e) }
 
 func itoa(n int) string { b, _ := json.Marshal(n); return string(b) }
 
-func envMap(env *pyjson.Object) map[string]string {
+func envMap(env *jsonutil.Object) map[string]string {
 	out := map[string]string{}
-	for _, k := range env.Keys {
-		out[k], _ = env.Vals[k].(string)
+	for _, k := range env.Keys() {
+		out[k], _ = env.Value(k).(string)
 	}
 	return out
 }
@@ -154,7 +154,7 @@ func connFixture(t *testing.T, backend *fakeConnBackend) {
 		}
 		for _, toolName := range fb.registeredTools {
 			tools.Default.Register(tools.Def{Name: toolName, Toolset: "mcp-" + name,
-				Schema:  pyjson.ObjectOf("name", toolName, "description", "Registered "+toolName, "parameters", pyjson.ObjectOf()),
+				Schema:  jsonutil.ObjectOf("name", toolName, "description", "Registered "+toolName, "parameters", jsonutil.ObjectOf()),
 				Handler: func(context.Context, *tools.Call) string { return "{}" }})
 			registered = append(registered, toolName)
 		}
@@ -191,7 +191,7 @@ func (c *answeringCard) payloads() []map[string]any {
 // A card that emits and answers the live operation a moment later the way connection.respond does
 func answering(ctx context.Context, answer *string) (*answeringCard, tools.ConnCallback) {
 	card := &answeringCard{}
-	return card, func(payload *pyjson.Object) string {
+	return card, func(payload *jsonutil.Object) string {
 		card.mu.Lock()
 		card.seen = append(card.seen, plainJSON(payload))
 		card.mu.Unlock()

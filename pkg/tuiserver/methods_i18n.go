@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const i18nErr = 5400
@@ -37,7 +37,7 @@ func panicMessage(r any) string {
 	if e, isErr := r.(error); isErr {
 		return e.Error()
 	}
-	return pyrepr.Str(r)
+	return anyutil.String(r)
 }
 
 // Every supported language of the profile with its endonym, direction, source and surfaces, beside the language in effect and the id a code, alias
@@ -68,8 +68,8 @@ func i18nLanguages(ctx context.Context, rid any, params map[string]any) (resp ma
 // Pack and overlay messages of one surface for the resolved language, nothing bundled
 func i18nCatalog(ctx context.Context, rid any, params map[string]any) (resp map[string]any) {
 	surface := i18n.CoreSurface
-	if raw := params["surface"]; pyrepr.Truthy(raw) {
-		surface = pyrepr.Str(raw)
+	if raw := params["surface"]; anyutil.IsTrue(raw) {
+		surface = anyutil.String(raw)
 	}
 	if !slices.Contains(i18n.Surfaces, surface) {
 		return rpcErr(rid, 4002, fmt.Sprintf("surface must be one of %s", strings.Join(i18n.Surfaces, ", ")), nil)

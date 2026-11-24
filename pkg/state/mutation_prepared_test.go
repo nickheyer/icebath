@@ -6,7 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func preparedFixture(t *testing.T) (context.Context, *SessionDB, string) {
@@ -16,9 +17,9 @@ func preparedFixture(t *testing.T) (context.Context, *SessionDB, string) {
 	return context.Background(), db, seedLocalSession(t, db, t.TempDir())
 }
 
-func preparedSnapshot(t *testing.T, ctx context.Context, db *SessionDB, sid string) *pyjson.Object {
+func preparedSnapshot(t *testing.T, ctx context.Context, db *SessionDB, sid string) *jsonutil.Object {
 	t.Helper()
-	var snapshot *pyjson.Object
+	var snapshot *jsonutil.Object
 	if err := db.readCtx(ctx, false, func(conn SQLiteConn) error {
 		var err error
 		snapshot, err = db.LocalSnapshot(ctx, conn, sid)
@@ -29,9 +30,9 @@ func preparedSnapshot(t *testing.T, ctx context.Context, db *SessionDB, sid stri
 	return snapshot
 }
 
-func runPolicyHandler(ctx context.Context, db *SessionDB, operation, sid string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func runPolicyHandler(ctx context.Context, db *SessionDB, operation, sid string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	var affected []string
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	err := db.executeWrite(ctx, func(conn SQLiteConn) error {
 		var err error
 		affected, result, err = policyHandlers[operation](db, ctx, conn, sid, payload, prepared)
@@ -60,17 +61,17 @@ func TestModelPickCommitsOverItsSnapshotAndSupersedesTheDeferredModel(t *testing
 		t.Fatalf("target %q", got)
 	}
 	profileExec(t, db, "INSERT INTO state_meta(key,value) VALUES(?,?)", DeferredPickPrefix+sid, `{"model":"later","reasoning":"high"}`)
-	policy := pyjson.ObjectOf("source", "cli", "cwd", "/w", "model", "m2", "config_json", `{"model":{"provider":"p2"}}`)
-	prepared := pyjson.ObjectOf("snapshot", snapshot, "policy", policy)
-	affected, result, err := runPolicyHandler(ctx, db, "model", sid, pyjson.ObjectOf("model", "m2"), prepared)
+	policy := jsonutil.ObjectOf("source", "cli", "cwd", "/w", "model", "m2", "config_json", `{"model":{"provider":"p2"}}`)
+	prepared := jsonutil.ObjectOf("snapshot", snapshot, "policy", policy)
+	affected, result, err := runPolicyHandler(ctx, db, "model", sid, jsonutil.ObjectOf("model", "m2"), prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(affected, []string{sid}) {
 		t.Fatalf("affected %v", affected)
 	}
-	want := pyjson.ObjectOf("model", "m2", "provider", "p2", "execution_generation", int64(1))
-	if !pyjson.Equal(result, want) {
+	want := jsonutil.ObjectOf("model", "m2", "provider", "p2", "execution_generation", int64(1))
+	if !anyutil.Equal(result, want) {
 		t.Fatalf("result %v", result)
 	}
 	if got := storedValue(t, db, "SELECT model_config FROM sessions WHERE id=?", sid); got != `{"provider":"p2"}` {
@@ -83,17 +84,17 @@ func TestModelPickCommitsOverItsSnapshotAndSupersedesTheDeferredModel(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(rowValue(receipt, "policy"), policy) {
+	if !anyutil.Equal(rowValue(receipt, "policy"), policy) {
 		t.Fatalf("policy %v", rowValue(receipt, "policy"))
 	}
-	if _, _, err := runPolicyHandler(ctx, db, "model", sid, pyjson.ObjectOf("model", "m2"), prepared); refusalReason(t, err) != "revision_conflict" {
+	if _, _, err := runPolicyHandler(ctx, db, "model", sid, jsonutil.ObjectOf("model", "m2"), prepared); refusalReason(t, err) != "revision_conflict" {
 		t.Fatal(err)
 	}
-	if _, _, err := runPolicyHandler(ctx, db, "model", sid, pyjson.ObjectOf("model", "m2"), pyjson.ObjectOf("policy", policy)); refusalReason(t, err) != "runtime_coordination_required" {
+	if _, _, err := runPolicyHandler(ctx, db, "model", sid, jsonutil.ObjectOf("model", "m2"), jsonutil.ObjectOf("policy", policy)); refusalReason(t, err) != "runtime_coordination_required" {
 		t.Fatal(err)
 	}
-	withLevel := pyjson.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy)
-	_, result, err = runPolicyHandler(ctx, db, "model", sid, pyjson.ObjectOf("model", "m2", "reasoning", "low"), withLevel)
+	withLevel := jsonutil.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy)
+	_, result, err = runPolicyHandler(ctx, db, "model", sid, jsonutil.ObjectOf("model", "m2", "reasoning", "low"), withLevel)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -107,23 +108,23 @@ func TestModelPickCommitsOverItsSnapshotAndSupersedesTheDeferredModel(t *testing
 
 func TestReasoningPickDropsEveryDeferredLevel(t *testing.T) {
 	ctx, db, sid := preparedFixture(t)
-	policy := pyjson.ObjectOf("source", "cli", "cwd", "/w", "model", "m", "reasoning", "high")
+	policy := jsonutil.ObjectOf("source", "cli", "cwd", "/w", "model", "m", "reasoning", "high")
 	profileExec(t, db, "INSERT INTO state_meta(key,value) VALUES(?,?)", DeferredPickPrefix+sid,
 		`{"application_id":"a","payload":{"model":"x","reasoning":"low"},"reasoning":"low"}`)
-	prepared := pyjson.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy)
-	_, result, err := runPolicyHandler(ctx, db, "reasoning", sid, pyjson.ObjectOf("effort", "high"), prepared)
+	prepared := jsonutil.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy)
+	_, result, err := runPolicyHandler(ctx, db, "reasoning", sid, jsonutil.ObjectOf("effort", "high"), prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(result, pyjson.ObjectOf("effort", "high", "execution_generation", int64(1))) {
+	if !anyutil.Equal(result, jsonutil.ObjectOf("effort", "high", "execution_generation", int64(1))) {
 		t.Fatalf("result %v", result)
 	}
 	if got := storedValue(t, db, "SELECT value FROM state_meta WHERE key=?", DeferredPickPrefix+sid); got != `{"application_id":"a","payload":{"model":"x"}}` {
 		t.Fatalf("deferred pick %v", got)
 	}
 	profileExec(t, db, "UPDATE state_meta SET value=? WHERE key=?", `{"reasoning":"low"}`, DeferredPickPrefix+sid)
-	prepared = pyjson.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy)
-	if _, result, err = runPolicyHandler(ctx, db, "reasoning", sid, pyjson.ObjectOf("effort", nil), prepared); err != nil {
+	prepared = jsonutil.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy)
+	if _, result, err = runPolicyHandler(ctx, db, "reasoning", sid, jsonutil.ObjectOf("effort", nil), prepared); err != nil {
 		t.Fatal(err)
 	}
 	if got, has := result.Get("effort"); !has || got != nil {
@@ -137,25 +138,25 @@ func TestReasoningPickDropsEveryDeferredLevel(t *testing.T) {
 func TestWorkspaceMoveReplacesTheGitIdentityOfEveryRow(t *testing.T) {
 	ctx, db, sid := preparedFixture(t)
 	profileExec(t, db, "UPDATE sessions SET git_branch='old', git_repo_root='/old' WHERE id=?", sid)
-	policy := pyjson.ObjectOf("source", "cli", "cwd", "/new", "model", "m")
-	prepared := pyjson.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy, "git", pyjson.ObjectOf("branch", "", "root", "/new"))
-	_, result, err := runPolicyHandler(ctx, db, "workspace", sid, pyjson.ObjectOf("cwd", "/new"), prepared)
+	policy := jsonutil.ObjectOf("source", "cli", "cwd", "/new", "model", "m")
+	prepared := jsonutil.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy, "git", jsonutil.ObjectOf("branch", "", "root", "/new"))
+	_, result, err := runPolicyHandler(ctx, db, "workspace", sid, jsonutil.ObjectOf("cwd", "/new"), prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(result, pyjson.ObjectOf("cwd", "/new", "branch", nil, "git_repo_root", "/new", "execution_generation", int64(1))) {
+	if !anyutil.Equal(result, jsonutil.ObjectOf("cwd", "/new", "branch", nil, "git_repo_root", "/new", "execution_generation", int64(1))) {
 		t.Fatalf("result %v", result)
 	}
 	if got := storedValue(t, db, "SELECT cwd || '|' || COALESCE(git_branch,'NULL') || '|' || git_repo_root || '|' || git_metadata_generation FROM sessions WHERE id=?", sid); got != "/new|NULL|/new|1" {
 		t.Fatalf("row %v", got)
 	}
 	for _, op := range []string{"editor_mcp", "edit_policy"} {
-		prepared = pyjson.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy, "tools_changed", true, "mcp_servers", []any{"s"})
-		_, result, err = runPolicyHandler(ctx, db, op, sid, pyjson.ObjectOf("policy", "session"), prepared)
+		prepared = jsonutil.ObjectOf("snapshot", preparedSnapshot(t, ctx, db, sid), "policy", policy, "tools_changed", true, "mcp_servers", []any{"s"})
+		_, result, err = runPolicyHandler(ctx, db, op, sid, jsonutil.ObjectOf("policy", "session"), prepared)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := rowValue(result, "execution_generation"); !pyjson.Equal(got, map[string]int64{"editor_mcp": 2, "edit_policy": 3}[op]) {
+		if got := rowValue(result, "execution_generation"); !anyutil.Equal(got, map[string]int64{"editor_mcp": 2, "edit_policy": 3}[op]) {
 			t.Fatalf("%s generation %v", op, got)
 		}
 	}
@@ -196,8 +197,8 @@ func TestCommitRefreshedPolicyReplacesOnlyTheExactOldPolicy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := rowValue(rowValue(preparedSnapshot(t, ctx, db, sid), "receipt").(*pyjson.Object), "policy")
-	fresh := pyjson.ObjectOf("source", "cli", "cwd", "/fresh", "model", "m")
+	old := rowValue(rowValue(preparedSnapshot(t, ctx, db, sid), "receipt").(*jsonutil.Object), "policy")
+	fresh := jsonutil.ObjectOf("source", "cli", "cwd", "/fresh", "model", "m")
 	if _, err := db.CommitRefreshedPolicy(ctx, epoch, sid, fresh, fresh, 0); refusalReason(t, err) != "revision_conflict" {
 		t.Fatal(err)
 	}
@@ -208,11 +209,11 @@ func TestCommitRefreshedPolicyReplacesOnlyTheExactOldPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	next, err := db.CommitRefreshedPolicy(ctx, epoch, sid, old, fresh, 0)
-	if err != nil || !pyjson.Equal(next, int64(1)) {
+	if err != nil || !anyutil.Equal(next, int64(1)) {
 		t.Fatalf("generation %v %v", next, err)
 	}
-	stored := rowValue(rowValue(preparedSnapshot(t, ctx, db, sid), "receipt").(*pyjson.Object), "policy")
-	if !pyjson.Equal(stored, fresh) {
+	stored := rowValue(rowValue(preparedSnapshot(t, ctx, db, sid), "receipt").(*jsonutil.Object), "policy")
+	if !anyutil.Equal(stored, fresh) {
 		t.Fatalf("policy %v", stored)
 	}
 }

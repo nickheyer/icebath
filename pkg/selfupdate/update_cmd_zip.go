@@ -26,12 +26,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/pm"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
 var zipStagingArtifactSuffixes = [2]string{zipStagingSuffix, zipOldSuffix}
@@ -63,7 +62,9 @@ var (
 	zipRename   = os.Rename
 	zipReplace  = os.Rename
 	zipLink     = os.Link
-	zipCopyTree = pyshutil.CopyTree
+	zipCopyTree = func(src, dst string, symlinks, dirsExistOK bool) error {
+		return fsutil.CopyTree(src, dst, fsutil.CopyTreeOptions{Symlinks: symlinks, DirsExistOK: dirsExistOK})
+	}
 )
 
 // A staged copy and the live path it replaces
@@ -144,11 +145,11 @@ func retrieveLocalFile(source *url.URL, path string) error {
 // Removes a directory or file, a missing path changing nothing
 func removePath(path string, ignoreErrors bool) error {
 	if isDirFollow(path) {
-		_ = pyshutil.Rmtree(path)
+		_ = os.RemoveAll(path)
 		return nil
 	}
 	if statExists(path) {
-		if err := pypath.Unlink(path); err != nil && !ignoreErrors {
+		if err := os.Remove(path); err != nil && !ignoreErrors {
 			return err
 		}
 	}
@@ -243,7 +244,7 @@ func copyFileExclusive(src, dst string, sync bool, onCreated func(dst string) er
 		err = cerr
 	}
 	if err != nil {
-		_ = pypath.Unlink(dst)
+		_ = os.Remove(dst)
 	}
 	return err
 }
@@ -276,7 +277,7 @@ func fileBackup(path, backup, tag string, onTemp func(tmp string) error) error {
 		err = zipReplace(tmp, backup)
 	}
 	if err != nil && isUpdateOSError(err) {
-		_ = pypath.Unlink(tmp)
+		_ = os.Remove(tmp)
 	}
 	return err
 }
@@ -497,17 +498,17 @@ func abortZipUpdateIfDirtyTree(ctx context.Context, w io.Writer) error {
 
 // Extracts the archive, rejecting a member that escapes the directory and any symlink member
 func extractZipSafely(zipPath, tmpDir string) error {
-	archive, err := pyzip.OpenReader(zipPath)
+	archive, err := ziputil.OpenReader(zipPath)
 	if err != nil {
 		return err
 	}
 	defer archive.Close()
-	tmpDirReal, err := pypath.Realpath(tmpDir, pypath.Lax)
+	tmpDirReal, err := pathutil.Resolve(tmpDir)
 	if err != nil {
 		return err
 	}
 	for _, member := range archive.Filelist {
-		memberPath, err := pypath.Realpath(pypath.Join(tmpDir, member.Filename), pypath.Lax)
+		memberPath, err := pathutil.Resolve(pathutil.Join(tmpDir, member.Filename))
 		if err != nil {
 			return err
 		}
@@ -523,7 +524,7 @@ func extractZipSafely(zipPath, tmpDir string) error {
 
 // Commit a GitHub archive was made from, read from the ZIP comment, false when it names none
 func archiveCommit(zipPath string) (string, bool, error) {
-	archive, err := pyzip.OpenReader(zipPath)
+	archive, err := ziputil.OpenReader(zipPath)
 	if err != nil {
 		return "", false, err
 	}
@@ -619,7 +620,7 @@ func requireStagingSpace(extracted string, entries []string, projectRoot string)
 		}
 	}
 	required := int64(float64(need) * 1.2)
-	_, _, free, err := pyfs.DiskUsage(projectRoot)
+	_, _, free, err := fsutil.DiskUsage(projectRoot)
 	if err != nil {
 		return err
 	}
@@ -633,7 +634,7 @@ func requireStagingSpace(extracted string, entries []string, projectRoot string)
 // Hardlinks source to destination where the filesystem allows, a byte copy otherwise
 func linkOrCopyArtifact(source, destination string) error {
 	if err := os.Link(source, destination); err != nil {
-		return pyshutil.Copy2(source, destination)
+		return fsutil.CopyFile(source, destination)
 	}
 	return nil
 }
@@ -650,7 +651,7 @@ func graftNestedArtifacts(item, live, staging string) error {
 		if err := os.MkdirAll(filepath.Dir(destination), 0o777); err != nil {
 			return err
 		}
-		if err := pyshutil.CopyTreeFunc(source, destination, true, false, linkOrCopyArtifact); err != nil {
+		if err := fsutil.CopyTree(source, destination, fsutil.CopyTreeOptions{Symlinks: true, DirsExistOK: false, CopyFile: linkOrCopyArtifact}); err != nil {
 			return err
 		}
 	}
@@ -699,7 +700,7 @@ func dropJournalIfClean(w io.Writer, root string, entries []string, suffixes ...
 		fmt.Fprintf(w, "  ⚠ Could not remove the update's own copies of %s; the next `icebath` launch removes them.\n", strings.Join(left, ", "))
 		return nil
 	}
-	if err := pypath.Unlink(filepath.Join(root, ZipSwapJournal)); err != nil && !errors.Is(err, fs.ErrNotExist) {
+	if err := os.Remove(filepath.Join(root, ZipSwapJournal)); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return err
 	}
 	return nil

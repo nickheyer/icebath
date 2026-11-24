@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const auxGatewayKeyCmdConfigYAML = "model:\n  provider: icebath-gw\n  default: main-model\n" +
@@ -116,7 +116,7 @@ func TestKeyedCustomProviderReasoningWireKeyedEntrySendsTopLevelReasoningEffort(
 			if kwargs["reasoning_effort"] != "default" {
 				t.Fatalf("kwargs %v", kwargs)
 			}
-			extra, _ := pyjson.Plain(kwargs["extra_body"]).(map[string]any)
+			extra, _ := jsonutil.Plain(kwargs["extra_body"]).(map[string]any)
 			if _, has := extra["reasoning"]; has {
 				t.Fatalf("extra_body %v", extra)
 			}
@@ -131,7 +131,7 @@ func TestKeyedCustomProviderReasoningWireProfileBackedAndUnknownProvidersKeepThe
 	nested := map[string]any{"reasoning": map[string]any{"enabled": true, "effort": "medium"}}
 	check := func(kwargs map[string]any) {
 		t.Helper()
-		if got := pyjson.Plain(kwargs["extra_body"]); !reflect.DeepEqual(got, nested) {
+		if got := jsonutil.Plain(kwargs["extra_body"]); !reflect.DeepEqual(got, nested) {
 			t.Fatalf("extra_body %v want %v", got, nested)
 		}
 		if _, has := kwargs["reasoning_effort"]; has {
@@ -209,7 +209,7 @@ func auxSentExtraBody(t *testing.T, ctx context.Context, mainRuntime map[string]
 	if len(*sent) == 0 {
 		t.Fatal("request never reached the transport")
 	}
-	body, _ := pyjson.Plain((*sent)[len(*sent)-1]["extra_body"]).(map[string]any)
+	body, _ := jsonutil.Plain((*sent)[len(*sent)-1]["extra_body"]).(map[string]any)
 	if body == nil {
 		body = map[string]any{}
 	}
@@ -251,21 +251,21 @@ func TestAuxInheritsCustomProviderExtraBodyOtherDestinationsDoNotInherit(t *test
 	if err != nil {
 		t.Fatal(err)
 	}
-	if extra, _ := pyjson.Plain(openrouter["extra_body"]).(map[string]any); extra["user"] != nil {
+	if extra, _ := jsonutil.Plain(openrouter["extra_body"]).(map[string]any); extra["user"] != nil {
 		t.Fatalf("openrouter extra_body %v", extra)
 	}
 	other, err := auxBuildCallKwargs(ctx, "custom:other-proxy", "m", msgs, auxCallKwargsOptions{BaseURL: "https://other.example/v1/"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if extra, _ := pyjson.Plain(other["extra_body"]).(map[string]any); extra["user"] != "other-user" {
+	if extra, _ := jsonutil.Plain(other["extra_body"]).(map[string]any); extra["user"] != "other-user" {
 		t.Fatalf("other extra_body %v", other["extra_body"])
 	}
 	stray, err := auxBuildCallKwargs(ctx, "custom", "some-model", msgs, auxCallKwargsOptions{BaseURL: "https://stray.example/v1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if extra, _ := pyjson.Plain(stray["extra_body"]).(map[string]any); extra["user"] != nil {
+	if extra, _ := jsonutil.Plain(stray["extra_body"]).(map[string]any); extra["user"] != nil {
 		t.Fatalf("stray extra_body %v", extra)
 	}
 }

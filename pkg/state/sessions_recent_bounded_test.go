@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Sets the durable activity stamp of a session through the writer
@@ -21,7 +21,7 @@ func setActivity(t *testing.T, db *SessionDB, sid string, when float64) {
 }
 
 // Bounded recent listing with the given knobs
-func boundedRecent(t *testing.T, db *SessionDB, o RecentSessionsBoundedOptions) []*pyjson.Object {
+func boundedRecent(t *testing.T, db *SessionDB, o RecentSessionsBoundedOptions) []*jsonutil.Object {
 	t.Helper()
 	rows, err := db.ListRecentSessionsBounded(context.Background(), o)
 	if err != nil {
@@ -31,7 +31,7 @@ func boundedRecent(t *testing.T, db *SessionDB, o RecentSessionsBoundedOptions) 
 }
 
 // Ids of listed rows in order
-func boundedIDs(rows []*pyjson.Object) []string {
+func boundedIDs(rows []*jsonutil.Object) []string {
 	out := []string{}
 	for _, row := range rows {
 		out = append(out, pyStr(rowValue(row, "id")))
@@ -77,10 +77,10 @@ func TestWritableStartupReconcilesLegacyActivityColumnBeforeIndex(t *testing.T) 
 	}
 	index, err := healed.readOne(ctx, "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_sessions_effective_activity'")
 	if err != nil || !hasColumn || index == nil {
-		t.Fatalf("column %v index %v err %v", hasColumn, pyjson.Plain(index), err)
+		t.Fatalf("column %v index %v err %v", hasColumn, jsonutil.Plain(index), err)
 	}
 	if rows := boundedRecent(t, healed, RecentSessionsBoundedOptions{Limit: intOf(1)}); len(rows) != 0 {
-		t.Fatalf("rows %v", pyjson.Plain(rows))
+		t.Fatalf("rows %v", jsonutil.Plain(rows))
 	}
 }
 
@@ -91,7 +91,7 @@ func TestBoundedRecentOrdersByDurableActivityAndShapesPreview(t *testing.T) {
 	boundedSession(t, db, NewSession{ID: "newer", Source: "cli"}, "newer preview", at-10)
 	rows := boundedRecent(t, db, RecentSessionsBoundedOptions{Limit: intOf(2)})
 	if ids := boundedIDs(rows); !reflect.DeepEqual(ids, []string{"newer", "older"}) || rowValue(rows[0], "preview") != "newer preview" {
-		t.Fatalf("rows %v", pyjson.Plain(rows))
+		t.Fatalf("rows %v", jsonutil.Plain(rows))
 	}
 }
 
@@ -109,7 +109,7 @@ func TestBoundedRecentMapsRecentCompressionTipToLogicalRoot(t *testing.T) {
 	setActivity(t, db, "tip", at)
 	rows := boundedRecent(t, db, RecentSessionsBoundedOptions{Limit: intOf(1)})
 	if len(rows) != 1 || rowValue(rows[0], "id") != "tip" || rowValue(rows[0], "_lineage_root_id") != "root" || rowValue(rows[0], "preview") != "tip preview" {
-		t.Fatalf("rows %v", pyjson.Plain(rows))
+		t.Fatalf("rows %v", jsonutil.Plain(rows))
 	}
 }
 
@@ -246,6 +246,6 @@ func TestBoundedRecentDeadlineInterruptsSqlite(t *testing.T) {
 	}
 	row, err := db.GetSession(ctx, "session-0")
 	if err != nil || row == nil || rowValue(row, "id") != "session-0" {
-		t.Fatalf("connection poisoned after the deadline: %v %v", pyjson.Plain(row), err)
+		t.Fatalf("connection poisoned after the deadline: %v %v", jsonutil.Plain(row), err)
 	}
 }

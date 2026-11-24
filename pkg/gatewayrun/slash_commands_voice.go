@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Voice subcommand to the stored mode and its confirmation key
@@ -77,7 +76,7 @@ func (r *GatewayRunner) handleVoiceCommand(ctx context.Context, event *gateway.M
 				i18n.T(ctx, "gateway.voice.status_participants", "", map[string]any{"count": info["member_count"]}))
 			for _, member := range voiceMembers(info["members"]) {
 				status := ""
-				if pyrepr.Truthy(member["is_speaking"]) {
+				if anyutil.IsTrue(member["is_speaking"]) {
 					status = i18n.T(ctx, "gateway.voice.speaking", "", nil)
 				}
 				lines = append(lines, i18n.T(ctx, "gateway.voice.status_member", "", map[string]any{"name": member["display_name"], "status": status}))

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // The _StubAgent of test_subagent_steer.py, accepting or refusing steers or exploding on them
@@ -132,7 +133,7 @@ func TestStatusSnapshotNeverLeaksOwnerOrLifecycleMetadata(t *testing.T) {
 			t.Fatalf("snapshot leaks %s", key)
 		}
 	}
-	if strings.Contains(pyrepr.Repr(snapshot), "private-owner") {
+	if strings.Contains(anyutil.Quote(snapshot), "private-owner") {
 		t.Fatalf("snapshot leaks the owner %v", snapshot)
 	}
 	for _, v := range snapshot {

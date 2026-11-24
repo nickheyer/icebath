@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -14,12 +15,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -51,7 +51,7 @@ var (
 	ledgerRetryBackoffSecs  = [LedgerMaxAttempts - 1]float64{30.0, 120.0}
 	rawFloodRE              = mustPyre(`(?i)flood control exceeded.*?retry in\s+(\d+(?:\.\d+)?)`)
 	ledgerNow               = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
-	ledgerDBPath            = func() string { return pypath.PathJoin(home.Process(), "state.db") }
+	ledgerDBPath            = func() string { return pathutil.Join(home.Process(), "state.db") }
 	ledgerOwnerStamp        = defaultLedgerOwnerStamp
 	ledgerDeadErrorClassify = ClassifyDeadError
 )
@@ -71,7 +71,7 @@ func rawFloodWait(text string) (float64, bool) {
 	if err != nil || m == nil {
 		return 0, false
 	}
-	wait, err := pyint.ParseFloat(m.GroupByNumber(1).String())
+	wait, err := strconv.ParseFloat(strings.TrimSpace(m.GroupByNumber(1).String()), 64)
 	if err != nil {
 		return 0, false
 	}
@@ -80,10 +80,10 @@ func rawFloodWait(text string) (float64, bool) {
 
 // Python str of a falsy error as empty, otherwise its text, stripped and lowercased
 func ledgerErrorKey(errValue any) string {
-	if !pyrepr.Truthy(errValue) {
+	if !anyutil.IsTrue(errValue) {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(errValue)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(errValue)))
 }
 
 // True for a row only an adapter reconnect may retry with no timer and no backoff
@@ -104,7 +104,7 @@ func FloodWaitSeconds(err any, def float64) float64 {
 	text := ledgerErrorKey(err)
 	wait := def
 	if strings.HasPrefix(text, FloodErrorPrefix) {
-		if parsed, perr := pyint.ParseFloat(strings.TrimSpace(text[len(FloodErrorPrefix):])); perr == nil {
+		if parsed, perr := strconv.ParseFloat(strings.TrimSpace(strings.TrimSpace(text[len(FloodErrorPrefix):])), 64); perr == nil {
 			wait = parsed
 		}
 	} else if raw, ok := rawFloodWait(text); ok {
@@ -118,7 +118,7 @@ func FloodWaitSeconds(err any, def float64) float64 {
 
 // Redelivery timer sleep for a wait of seconds, capped at fifteen minutes plus two seconds of slack
 func FloodRetryDelay(seconds any) float64 {
-	wait, err := pyint.Float(seconds)
+	wait, err := anyutil.ToFloat(seconds)
 	if err != nil {
 		wait = FloodRetryDefaultSeconds
 	}
@@ -127,10 +127,10 @@ func FloodRetryDelay(seconds any) float64 {
 
 // Float of a failed row stamp, zero for a missing or junk value
 func failedStamp(updatedAt any) float64 {
-	if !pyrepr.Truthy(updatedAt) {
+	if !anyutil.IsTrue(updatedAt) {
 		return 0.0
 	}
-	f, err := pyint.Float(updatedAt)
+	f, err := anyutil.ToFloat(updatedAt)
 	if err != nil {
 		return 0.0
 	}
@@ -251,7 +251,7 @@ func defaultLedgerOwnerStamp() (int64, *int64) {
 
 // Integer of a stored owner column, false for NULL, zero or a value int() rejects
 func ledgerOwnerInt(v any) (int64, bool) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, false
 	}
 	switch x := v.(type) {
@@ -260,7 +260,7 @@ func ledgerOwnerInt(v any) (int64, bool) {
 	case float64:
 		return int64(x), true
 	case string, []byte:
-		n, err := pyint.Of(pyrepr.Str(x))
+		n, err := pyint.Of(anyutil.String(x))
 		if err != nil || !n.IsInt64() {
 			return 0, false
 		}
@@ -301,7 +301,7 @@ func ledgerPidProbe(pid int64) (alive bool) {
 
 // Stable 24 hex id over session key, inbound message ref and content
 func ComputeObligationID(sessionKey, messageRef, content string) string {
-	sum := sha256.Sum256(pystr.EncodeUTF8Replace(sessionKey + "|" + messageRef + "|" + content))
+	sum := sha256.Sum256([]byte(sessionKey + "|" + messageRef + "|" + content))
 	return hex.EncodeToString(sum[:])[:24]
 }
 

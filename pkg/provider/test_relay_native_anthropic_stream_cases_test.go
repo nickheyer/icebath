@@ -7,8 +7,8 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 const anthropicRelayStreamBody = `event: message_start
@@ -40,7 +40,7 @@ func TestAnthropicSdkStreamRunsThroughRelayManagedExecution(t *testing.T) {
 	t.Cleanup(srv.Close)
 	f := relayLLMInstallFake(t, "icebath-home")
 	agent := &fakeChatAgent{provider: "anthropic", apiMode: "anthropic_messages", baseURL: "https://api.anthropic.com", model: "claude-test", plat: "cli"}
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	client, err := BuildAnthropicClient(ctx, "test-key", srv.URL, 60, false)
 	if err != nil {
 		t.Fatal(err)

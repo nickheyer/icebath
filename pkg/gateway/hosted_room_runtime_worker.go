@@ -6,10 +6,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Failure of a member turn carrying the admission proof the room driver books it by
@@ -464,7 +463,7 @@ func (r *HostedRoomRuntime) runAttempt(binding HostedRoomBinding, task map[strin
 	if err != nil {
 		return false, err
 	}
-	deadline := pythread.Monotonic() + r.TurnTimeoutSeconds
+	deadline := timeutil.Monotonic() + r.TurnTimeoutSeconds
 	payload, _ := hostedMapping(task["payload"])
 	prompt, _ := payload["prompt"].(string)
 	memberID := hostedMemberID(task)
@@ -511,7 +510,7 @@ func (r *HostedRoomRuntime) onTerminal(binding HostedRoomBinding, attempt TaskAt
 	}
 	terminal.result = result
 	var settlementID any = receipt["settlement_id"]
-	if !pyrepr.Truthy(settlementID) {
+	if !anyutil.IsTrue(settlementID) {
 		settlementID = fmt.Sprintf("reply:%s:%d", attempt.Identity.TaskID, attempt.ExecutionGeneration)
 	}
 	settled, err := DriverSettleTask(r.ctx, r.DBPath, attempt, settlementID, terminal.status, terminal.result, r.driverClock())
@@ -572,7 +571,7 @@ func (r *HostedRoomRuntime) waitForTerminal(binding HostedRoomBinding, profile, 
 			r.wake.Clear()
 			continue
 		}
-		if pythread.Monotonic() >= deadline {
+		if timeutil.Monotonic() >= deadline {
 			return nil, r.expireAttemptDeadline(binding, task, lease)
 		}
 		if lease, err = r.renewLeaseIfNeeded(lease, false); err != nil {
@@ -589,7 +588,7 @@ func (r *HostedRoomRuntime) waitForTerminal(binding HostedRoomBinding, profile, 
 		if err := r.reportPendingAction(task, sessionID, info); err != nil {
 			return nil, err
 		}
-		remaining := max(0.0, deadline-pythread.Monotonic())
+		remaining := max(0.0, deadline-timeutil.Monotonic())
 		r.wake.Wait(min(r.ActivePollIntervalSeconds, remaining))
 		r.wake.Clear()
 	}
@@ -662,7 +661,7 @@ func (r *HostedRoomRuntime) inspectAbandonedAttempts(binding HostedRoomBinding) 
 		return err
 	}
 	for _, task := range running {
-		if pyrepr.Equal(task["run_process_generation"], r.ProcessGeneration) {
+		if anyutil.Equal(task["run_process_generation"], r.ProcessGeneration) {
 			continue
 		}
 		local, err := r.isLocal(binding, task)
@@ -800,14 +799,14 @@ func (r *HostedRoomRuntime) reconcileIndeterminate(binding HostedRoomBinding, le
 		}
 		base := task["indeterminate_at"]
 		for _, next := range []any{task["updated_at"], task["created_at"]} {
-			if pyrepr.Truthy(base) {
+			if anyutil.IsTrue(base) {
 				break
 			}
 			base = next
 		}
 		var baseSeconds float64
-		if pyrepr.Truthy(base) {
-			if baseSeconds, err = pyint.Float(base); err != nil {
+		if anyutil.IsTrue(base) {
+			if baseSeconds, err = anyutil.ToFloat(base); err != nil {
 				return false, err
 			}
 		} else {

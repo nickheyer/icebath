@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type relayLLMTestDelta struct {
@@ -303,7 +303,7 @@ func TestRelayProviderRequestOverlaysInterceptorAddedExtraBody(t *testing.T) {
 	if _, ok := original["extra_body"]; ok {
 		t.Fatal("original mutated")
 	}
-	relayLLMEqual(t, pyjson.Plain(request["extra_body"]), map[string]any{"prompt_cache_retention": "24h"})
+	relayLLMEqual(t, jsonutil.Plain(request["extra_body"]), map[string]any{"prompt_cache_retention": "24h"})
 }
 
 const relayLLMTraceparent = "00-11111111111111111111111111111111-2222222222222222-01"
@@ -477,7 +477,7 @@ func TestRelayStreamUsesRewrittenRequestAndPostInterceptChunks(t *testing.T) {
 
 func TestRelayLiveStreamDefersRuntimeShutdownUntilExhaustion(t *testing.T) {
 	relayLLMInstallFake(t, "stream-shutdown-profile")
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	host := tools.GetRelayRuntime(ctx, true, tools.CurrentRelayProfileKey(ctx))
 	if host == nil {
 		t.Fatal("no runtime")
@@ -542,7 +542,7 @@ func TestRelayJSONableDoesNotProbeDynamicAttributes(t *testing.T) {
 
 func TestRelayAsyncProviderCallbackPreservesCallerContext(t *testing.T) {
 	_, ctx, _ := relayLLMTurn(t)
-	callerValue := pyctx.NewVar("async_llm_caller_value", "default")
+	callerValue := ctxutil.NewVar[any]("async_llm_caller_value", "default")
 	callerValue.Set(ctx, "caller")
 	provider := func(context.Context, map[string]any) (any, error) {
 		return tools.RelayAwaitable(func(c context.Context) (any, error) {
@@ -561,11 +561,11 @@ func TestRelayAsyncProviderCallbackPreservesCallerContext(t *testing.T) {
 
 func TestRelayAnthropicStreamCallbacksDoNotReenterCapturedContext(t *testing.T) {
 	_, ctx, _ := relayLLMTurn(t)
-	callerValue := pyctx.NewVar("anthropic_stream_caller_value", "default")
+	callerValue := ctxutil.NewVar[any]("anthropic_stream_caller_value", "default")
 	callerValue.Set(ctx, "caller")
-	callerContext := pyctx.Current(ctx)
+	callerContext := ctxutil.StoreOf(ctx)
 	var observed []any
-	var contexts []*pyctx.Context
+	var contexts []*ctxutil.Store
 	a := NewAnthropicStreamAccumulator()
 	chunks := []any{
 		map[string]any{"type": "message_start", "message": map[string]any{"id": "message-1", "type": "message", "role": "assistant", "model": "claude-test",
@@ -577,7 +577,7 @@ func TestRelayAnthropicStreamCallbacksDoNotReenterCapturedContext(t *testing.T) 
 			Finalizer: func(context.Context) (any, error) { return a.Finalize(), nil },
 			OnChunk: func(c context.Context, chunk any) error {
 				observed = append(observed, callerValue.Get(c))
-				contexts = append(contexts, pyctx.Current(c))
+				contexts = append(contexts, ctxutil.StoreOf(c))
 				return a.Observe(chunk)
 			},
 			Metadata: map[string]any{"api_mode": "anthropic_messages", "api_request_id": "request-anthropic-context-reentry"}})
@@ -587,7 +587,7 @@ func TestRelayAnthropicStreamCallbacksDoNotReenterCapturedContext(t *testing.T) 
 	entered, release, held := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	go func() {
 		defer close(held)
-		holder := pyctx.With(context.Background(), callerContext)
+		holder := ctxutil.WithStore(context.Background(), callerContext)
 		callerValue.Set(holder, "caller")
 		close(entered)
 		<-release
@@ -888,7 +888,7 @@ func TestRelayAnthropicCodecPreservesToolHistoryAndCachedSystemBlocks(t *testing
 		},
 	}
 	wire := func(v any) string {
-		s, err := pyjson.Dumps(v, pyjson.SortKeys(true), pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+		s, err := jsonutil.Encode(v, jsonutil.SortKeys())
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -17,14 +17,14 @@ import (
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python context the binding last left for a Go context, copied by pyctx the way contextvars copies it
-var relayContextVar = pyctx.NewVar("icebath.relayhost.context", nil)
+var relayContextVar = ctxutil.NewVar[any]("icebath.relayhost.context", nil)
 
 type pyContext struct {
 	client *Client
@@ -302,10 +302,10 @@ func (c *Client) lowerSpecial(v any, depth int) (any, bool, error) {
 			return nil, true, &wireError{Class: "TypeError", Message: "codec was not created by this NeMo Relay binding"}
 		}
 		return map[string]any{"$r": o.id}, true, nil
-	case *pyjson.Object:
-		pairs := make([]any, 0, len(x.Keys))
-		for _, k := range x.Keys {
-			item, err := lowerValue(x.Vals[k], depth+1, c.lowerSpecial)
+	case *jsonutil.Object:
+		pairs := make([]any, 0, x.Len())
+		for _, k := range x.Keys() {
+			item, err := lowerValue(x.Value(k), depth+1, c.lowerSpecial)
 			if err != nil {
 				return nil, true, err
 			}

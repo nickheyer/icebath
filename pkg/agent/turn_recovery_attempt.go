@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -153,7 +153,7 @@ func computeErrorBackoff(a *AIAgent, apiError error, retryCount, maxRetries int,
 		policy = "default"
 	}
 	pkgLog().Warn(fmt.Sprintf("Retrying API call in %ss (attempt %d/%d) %s policy=%s error=%s",
-		pyrepr.Float(wait.Seconds()), retryCount, maxRetries, a.ClientLogContext(), policy, apiError))
+		strconv.FormatFloat(wait.Seconds(), 'f', -1, 64), retryCount, maxRetries, a.ClientLogContext(), policy, apiError))
 	return wait.Seconds()
 }
 

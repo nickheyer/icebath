@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestAtomicJSONWriteKeepsOrderModeAndRawUnicode(t *testing.T) {
@@ -14,7 +14,7 @@ func TestAtomicJSONWriteKeepsOrderModeAndRawUnicode(t *testing.T) {
 	if err := os.WriteFile(path, []byte("{}"), 0o640); err != nil {
 		t.Fatal(err)
 	}
-	obj := pyjson.NewObject()
+	obj := jsonutil.NewObject()
 	obj.Set("z", "café")
 	obj.Set("a", []any{1, true})
 	if err := AtomicJSONWrite(context.Background(), path, obj); err != nil {
@@ -36,7 +36,7 @@ func TestAtomicJSONWriteModeForcesThePrivateMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	data := map[string]any{"b": 1, "a": "é"}
-	if err := AtomicJSONWriteMode(context.Background(), path, data, 0o600, pyjson.Indent(2), pyjson.SortKeys(true)); err != nil {
+	if err := AtomicJSONWriteMode(context.Background(), path, data, 0o600, jsonutil.Indent(2), jsonutil.SortKeys()); err != nil {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(path)

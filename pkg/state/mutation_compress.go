@@ -3,11 +3,11 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Commits a prepared summary, its physical target, generation and receipt in one transaction
-func compressInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func compressInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	snapshot, err := d.ValidatePrepared(ctx, conn, sessionID, prepared)
 	if err != nil {
 		return nil, nil, err
@@ -53,7 +53,7 @@ func compressInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, s
 		}
 		sourceText, _ := source.(string)
 		publish := CompressionChildPublish{ParentSessionID: target, ChildSessionID: child, Source: sourceText, Model: optStringOf(model),
-			Messages: messages, ModelConfig: pyjson.ObjectOf("_compressed_from", target), Cwd: optStringOf(cwd), LeaseTTLSeconds: 300}
+			Messages: messages, ModelConfig: jsonutil.ObjectOf("_compressed_from", target), Cwd: optStringOf(cwd), LeaseTTLSeconds: 300}
 		if err := publishOnConnection(d, ctx, conn, publish); err != nil {
 			return nil, nil, err
 		}
@@ -64,6 +64,6 @@ func compressInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, s
 		return nil, nil, err
 	}
 	summary, _ := prepared.Get("summary")
-	return affected, pyjson.ObjectOf("target_session_id", child, "previous_target_session_id", target,
+	return affected, jsonutil.ObjectOf("target_session_id", child, "previous_target_session_id", target,
 		"execution_generation", generation, "message_count", int64(len(messages)), "summary", summary), nil
 }

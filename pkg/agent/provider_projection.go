@@ -1,14 +1,12 @@
 package agent
 
 import (
-	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
-	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Completion attributes an agent provider hands back with its own transcript rows and tool iteration count
@@ -51,27 +49,14 @@ func spliceProviderProjection(a *AIAgent, response any, messages *[]*state.Messa
 	return len(rows)
 }
 
-// Python int of the iteration attribute or zero, zero again when int raises
+// Positive iteration count of the attribute, the largest int for a count beyond int64, zero for anything else
 func providerToolIterations(raw any) int {
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return 0
 	}
-	if num, ok := raw.(json.Number); ok && strings.ContainsAny(num.String(), ".eE") {
-		f, err := num.Float64()
-		if err != nil {
-			return 0
-		}
-		raw = f
-	}
-	n, err := pyint.Of(raw)
-	if err != nil {
+	n, err := anyutil.ToInt(raw)
+	if (err != nil && !errors.Is(err, anyutil.ErrRange)) || n <= 0 {
 		return 0
 	}
-	if !n.IsInt64() || n.Int64() > math.MaxInt {
-		if n.Sign() > 0 {
-			return math.MaxInt
-		}
-		return 0
-	}
-	return int(n.Int64())
+	return int(min(n, math.MaxInt))
 }

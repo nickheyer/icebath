@@ -11,12 +11,11 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -75,7 +74,7 @@ func truncateText(text string, limit int) string {
 var specifyFenceRE = regexp2.MustCompile("^\\s*```(?:json)?\\s*|\\s*```\\s*$", regexp2.IgnoreCase|regexp2.Unicode)
 
 // First brace to last brace of a fence stripped reply decoded as a JSON object, nil when none parses
-func extractJSONBlob(raw string, fenceRE *regexp2.Regexp) *pyjson.Object {
+func extractJSONBlob(raw string, fenceRE *regexp2.Regexp) *jsonutil.Object {
 	if raw == "" {
 		return nil
 	}
@@ -87,11 +86,11 @@ func extractJSONBlob(raw string, fenceRE *regexp2.Regexp) *pyjson.Object {
 	if first == -1 || last == -1 || last <= first {
 		return nil
 	}
-	val, err := pyjson.Loads(stripped[first : last+1])
+	val, err := jsonutil.Decode(stripped[first : last+1])
 	if err != nil {
 		return nil
 	}
-	obj, _ := val.(*pyjson.Object)
+	obj, _ := val.(*jsonutil.Object)
 	return obj
 }
 
@@ -105,13 +104,13 @@ func nonblank(v any) *string {
 }
 
 // Stripped title and verbatim body of an LLM reply, each nil when missing or blank
-func titleBody(parsed *pyjson.Object) (*string, *string) {
-	title := nonblank(parsed.GetOr("title", nil))
+func titleBody(parsed *jsonutil.Object) (*string, *string) {
+	title := nonblank(parsed.ValueOr("title", nil))
 	if title != nil {
 		t := strings.TrimSpace(*title)
 		title = &t
 	}
-	return title, nonblank(parsed.GetOr("body", nil))
+	return title, nonblank(parsed.ValueOr("body", nil))
 }
 
 // Author for a specifier write, the current profile then $USER then the default
@@ -186,7 +185,7 @@ func callAux(ctx context.Context, verb, taskID, auxTask, system, user string, ma
 		if verb == "specify" {
 			suffix = " — skipping"
 		}
-		logger.Info(fmt.Sprintf("%s: API call failed for %s (%s)%s", verb, taskID, pyrepr.ExceptionMessage(err), suffix))
+		logger.Info(fmt.Sprintf("%s: API call failed for %s (%s)%s", verb, taskID, err.Error(), suffix))
 		return nil, "LLM error: " + provider.AuxExcTypeName(err)
 	}
 	content := auxReplyContent(resp)

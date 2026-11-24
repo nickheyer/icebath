@@ -4,7 +4,7 @@ import (
 	"context"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runs body under the session's frozen launch policy, the policy scope of a turn
@@ -22,7 +22,7 @@ func PolicyTurnToolsets(ctx context.Context, policy *LocalSessionPolicy, cfg map
 }
 
 // Records an owner side terminal failure on the executing admission and returns it
-func RecordTerminalFailure(ctx context.Context, result *pyjson.Object) *pyjson.Object {
+func RecordTerminalFailure(ctx context.Context, result *jsonutil.Object) *jsonutil.Object {
 	return recordTerminalFailure(ctx, result)
 }
 

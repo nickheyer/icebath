@@ -10,8 +10,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Output cap leaving room for a reasoning model's first thinking tokens, timeout in seconds and prompt of one live probe
@@ -96,7 +96,7 @@ func fallbackSecretValues(candidates ...string) []string {
 // Reports whether a response model field can prove which model answered, true only for the SDK client off local, Azure, ARN and router meta routes
 func fallbackReportedModelIsEvidence(ctx context.Context, provider, model string, client AuxClient) (bool, error) {
 	baseURL := client.BaseURL()
-	hostname, err := pyurl.BaseURLHostname(baseURL)
+	hostname, err := urlutil.BaseHost(baseURL)
 	if err != nil {
 		return false, err
 	}
@@ -286,7 +286,7 @@ func fallbackBodyFailure(raw any) (map[string]any, bool) {
 // Reports an error object with at least one non empty field, one whose fields are all empty is no failure
 func fallbackAnyTruthy(errObj map[string]any) bool {
 	for _, value := range errObj {
-		if pyrepr.Truthy(value) {
+		if anyutil.IsTrue(value) {
 			return true
 		}
 	}
@@ -300,7 +300,7 @@ func fallbackOutputMalformed(response any) bool {
 	}
 	output, _ := auxField(response, "output", nil).([]any)
 	for _, item := range output {
-		if itemType := auxField(item, "type", nil); pyrepr.Truthy(itemType) && itemType != "message" {
+		if itemType := auxField(item, "type", nil); anyutil.IsTrue(itemType) && itemType != "message" {
 			continue
 		}
 		switch content := auxField(item, "content", nil).(type) {
@@ -313,7 +313,7 @@ func fallbackOutputMalformed(response any) bool {
 			}
 		case nil, string, map[string]any:
 		default:
-			if pyrepr.Truthy(content) {
+			if anyutil.IsTrue(content) {
 				return true
 			}
 		}
@@ -332,7 +332,7 @@ func fallbackJudgeAnswer(ctx context.Context, result *FallbackEntryCheck, raw an
 			return err
 		}
 		response = unwrapped
-		if !pyrepr.Truthy(auxField(response, "choices", nil)) {
+		if !anyutil.IsTrue(auxField(response, "choices", nil)) {
 			if fallbackOutputMalformed(response) {
 				response = nil
 			} else if recovered := auxRecoverAuxResponseMessage(response); recovered != nil {
@@ -353,10 +353,10 @@ func fallbackJudgeAnswer(ctx context.Context, result *FallbackEntryCheck, raw an
 	switch {
 	case embedded != nil:
 		var shown any = embedded
-		if message := embedded["message"]; pyrepr.Truthy(message) {
+		if message := embedded["message"]; anyutil.IsTrue(message) {
 			shown = message
 		}
-		relayed := &AuxRuntimeError{Message: pyrepr.Str(shown), ProviderError: embedded, Fault: AuxReplyMalformed}
+		relayed := &AuxRuntimeError{Message: anyutil.String(shown), ProviderError: embedded, Fault: AuxReplyMalformed}
 		result.InferenceReady = new(false)
 		result.ErrorClass = "live_" + auxErrorClass(relayed, provider, result.Model)
 		result.Error = fallbackRedacted(redact, relayed.Error(), secrets, 300)
@@ -367,7 +367,7 @@ func fallbackJudgeAnswer(ctx context.Context, result *FallbackEntryCheck, raw an
 		result.Error = "the provider answered without a usable completion"
 	case !AnsweredByRequestedModel(model, returned):
 		result.InferenceReady, result.ErrorClass = new(false), "model_mismatch"
-		result.Error = fallbackRedacted(redact, "requested "+pyrepr.Repr(model)+" but "+pyrepr.Repr(returned)+" answered", secrets, -1)
+		result.Error = fallbackRedacted(redact, "requested "+anyutil.Quote(model)+" but "+anyutil.Quote(returned)+" answered", secrets, -1)
 	default:
 		result.InferenceReady = new(true)
 	}
@@ -394,7 +394,7 @@ func ResolveRouteEntryClient(ctx context.Context, resolve ProviderClientResolver
 		return RouteEntryClient{}, err
 	}
 	if baseURLHint != "" {
-		ollamaCloud, err := pyurl.BaseURLHostMatches(baseURLHint, "ollama.com")
+		ollamaCloud, err := urlutil.BaseHostMatches(baseURLHint, "ollama.com")
 		if err != nil {
 			return RouteEntryClient{}, err
 		}
@@ -413,7 +413,7 @@ func ResolveRouteEntryClient(ctx context.Context, resolve ProviderClientResolver
 	if client != nil && provider != "moa" {
 		raw := model
 		if normErr := auxRecoverRaise(func() { model = NormalizeModelForProviderCtx(ctx, raw, provider) }); normErr != nil {
-			pkgLog().Warn(fmt.Sprintf("Could not normalize fallback model %s for provider %s: %v", pyrepr.Repr(raw), pyrepr.Repr(provider), normErr))
+			pkgLog().Warn(fmt.Sprintf("Could not normalize fallback model %s for provider %s: %v", anyutil.Quote(raw), anyutil.Quote(provider), normErr))
 		}
 	}
 	return RouteEntryClient{Client: client, Model: model, APIModeExplicit: explicit, APIMode: apiMode}, nil

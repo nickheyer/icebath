@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Keyword arguments of one agent run
@@ -56,7 +56,7 @@ func (r *GatewayRunner) runAgentInner(ctx context.Context, p runAgentParams) (ma
 		}
 		if captured := gateway.ExecutionResultOf(ctx); captured != nil {
 			if _, present := captured.Get("result"); !present {
-				captured.Set("result", pyjson.Ordered(result))
+				captured.Set("result", jsonutil.Ordered(result))
 			}
 		}
 		return result, nil
@@ -110,7 +110,7 @@ func (r *GatewayRunner) runAgentInner(ctx context.Context, p runAgentParams) (ma
 		r.runAgentTrackAgent(c, tc)
 		return nil, nil
 	})
-	interruptDetected := &pythread.Event{}
+	interruptDetected := &syncutil.Event{}
 	interruptMonitor := spawnGatewayTask(taskCtx, "interrupt-monitor", func(c context.Context) (any, error) {
 		r.runAgentMonitorForInterrupt(c, tc, interruptDetected)
 		return nil, nil

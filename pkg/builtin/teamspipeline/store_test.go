@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestStorePersistsSubscriptionEventAndJobState(t *testing.T) {
@@ -41,15 +41,15 @@ func TestStorePersistsSubscriptionEventAndJobState(t *testing.T) {
 		t.Fatal(job, sink)
 	}
 	if get(sub, "created_at") == nil || get(sub, "updated_at") == nil {
-		t.Fatal(sub.Keys)
+		t.Fatal(sub.Keys())
 	}
 	b, _ := os.ReadFile(path)
 	if !strings.HasPrefix(string(b), "{\n  \"event_timestamps\": {},\n  \"jobs\": {") {
 		t.Fatal(string(b))
 	}
 	st := reloaded.Stats()
-	if strings.Join(st.Keys, ",") != "subscriptions,notification_receipts,event_timestamps,jobs,sink_records" || get(st, "jobs") != int64(1) {
-		t.Fatal(st.Keys, st.Vals)
+	if strings.Join(st.Keys(), ",") != "subscriptions,notification_receipts,event_timestamps,jobs,sink_records" || get(st, "jobs") != int64(1) {
+		t.Fatal(st.Keys(), st)
 	}
 }
 
@@ -58,11 +58,11 @@ func TestStoreUpsertMergesAndKeepsCreatedAt(t *testing.T) {
 	first, _ := store.UpsertJob("j", obj("status", "received", "retry", int64(0)))
 	second, _ := store.UpsertJob("j", obj("status", "completed"))
 	if get(second, "created_at") != get(first, "created_at") || get(second, "retry") != int64(0) || get(second, "status") != "completed" {
-		t.Fatal(second.Vals)
+		t.Fatal(second)
 	}
 	third, _ := store.UpsertJob("k", obj("created_at", nil))
 	if v, ok := third.Get("created_at"); !ok || v != nil {
-		t.Fatal(third.Vals)
+		t.Fatal(third)
 	}
 	third.Set("status", "mutated")
 	if get(store.GetJob("k"), "status") != nil {
@@ -93,9 +93,9 @@ func TestNotificationReceiptsDedupe(t *testing.T) {
 	if ok, _ := store.RecordNotificationReceipt(hashed, nil, ""); ok {
 		t.Fatal("duplicate accepted")
 	}
-	rec := get(store.list("notification_receipts"), hashed).(*pyjson.Object)
-	if get(rec, "received_at") != "t0" || get(rec, "payload").(*pyjson.Object).Len() != 1 {
-		t.Fatal(rec.Vals)
+	rec := get(store.list("notification_receipts"), hashed).(*jsonutil.Object)
+	if get(rec, "received_at") != "t0" || get(rec, "payload").(*jsonutil.Object).Len() != 1 {
+		t.Fatal(rec)
 	}
 }
 
@@ -143,9 +143,9 @@ func TestModelsRoundTripSnakeAndCamelPayloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := sub.ToDict()
-	if strings.Join(d.Keys, ",") != "subscription_id,resource,change_type,notification_url,expiration_datetime,client_state" ||
+	if strings.Join(d.Keys(), ",") != "subscription_id,resource,change_type,notification_url,expiration_datetime,client_state" ||
 		get(d, "subscription_id") != "sub-1" || get(d, "expiration_datetime") != "2026-01-01T08:00:00.500000Z" {
-		t.Fatal(d.Keys, d.Vals)
+		t.Fatal(d.Keys(), d)
 	}
 	if _, err := GraphSubscriptionFromDict(obj("id", "s", "resource", "r", "changeType", "c", "notificationUrl", "u")); err == nil || err.Error() != "GraphSubscription.expiration_datetime is required." {
 		t.Fatal(err)
@@ -158,7 +158,7 @@ func TestModelsRoundTripSnakeAndCamelPayloads(t *testing.T) {
 	}
 	art, err := MeetingArtifactFromDict(obj("artifactType", "transcript", "id", "t1", "name", "T", "size", "12", "createdDateTime", "2026-01-01T00:00:00"))
 	if err != nil || *art.SizeBytes != 12 || get(art.ToDict(), "created_at") != "2026-01-01T00:00:00Z" || get(art.ToDict(), "display_name") != "T" {
-		t.Fatal(err, art.ToDict().Vals)
+		t.Fatal(err, art.ToDict())
 	}
 	if _, ok := art.ToDict().Get("metadata"); ok {
 		t.Fatal("empty metadata kept")
@@ -172,16 +172,16 @@ func TestModelsRoundTripSnakeAndCamelPayloads(t *testing.T) {
 		t.Fatal(err)
 	}
 	sd := sp.ToDict()
-	if strings.Join(sd.Keys, ",") != "meeting_ref,start_time,key_decisions,source_artifacts" || get(get(sd, "meeting_ref").(*pyjson.Object), "join_web_url") != "https://teams/x" {
-		t.Fatal(sd.Keys)
+	if strings.Join(sd.Keys(), ",") != "meeting_ref,start_time,key_decisions,source_artifacts" || get(get(sd, "meeting_ref").(*jsonutil.Object), "join_web_url") != "https://teams/x" {
+		t.Fatal(sd.Keys())
 	}
 	job, err := TeamsMeetingPipelineJobFromDict(obj("jobId", "j", "eventId", "e", "sourceEventType", "created", "dedupeKey", "d", "status", "received",
 		"retryCount", nil, "meeting_ref", obj("meeting_id", "m1"), "summary_payload", sd))
 	if err != nil || job.RetryCount != 0 || job.MeetingRef.MeetingID != "m1" || job.SummaryPayload.MeetingRef.MeetingID != "m1" {
 		t.Fatal(err, job)
 	}
-	if jd := job.ToDict(); strings.Join(jd.Keys, ",") != "job_id,event_id,source_event_type,dedupe_key,status,retry_count,meeting_ref,summary_payload" {
-		t.Fatal(jd.Keys)
+	if jd := job.ToDict(); strings.Join(jd.Keys(), ",") != "job_id,event_id,source_event_type,dedupe_key,status,retry_count,meeting_ref,summary_payload" {
+		t.Fatal(jd.Keys())
 	}
 	if _, err := TeamsMeetingPipelineJobFromDict(obj("job_id", "j")); err == nil || err.Error() != "TeamsMeetingPipelineJob.event_id is required." {
 		t.Fatal(err)
@@ -216,7 +216,7 @@ func (f *fakeGraph) CollectPaginated(_ context.Context, path string, _ map[strin
 }
 func (f *fakeGraph) PatchJSON(_ context.Context, path string, body any, _ map[string]string) (any, error) {
 	f.patched = append(f.patched, path)
-	return obj("id", "ignored", "expirationDateTime", get(body.(*pyjson.Object), "expirationDateTime"), "status", "patched"), nil
+	return obj("id", "ignored", "expirationDateTime", get(body.(*jsonutil.Object), "expirationDateTime"), "status", "patched"), nil
 }
 
 func TestMaintainGraphSubscriptionsRenewsDueManagedSubscriptions(t *testing.T) {
@@ -226,7 +226,7 @@ func TestMaintainGraphSubscriptionsRenewsDueManagedSubscriptions(t *testing.T) {
 	t.Cleanup(func() { nowUTC = prev })
 	store, _ := NewTeamsPipelineStore(filepath.Join(t.TempDir(), "s.json"))
 	store.UpsertSubscription("gone", obj("resource", "r"))
-	sub := func(id, exp, state string) *pyjson.Object {
+	sub := func(id, exp, state string) *jsonutil.Object {
 		return obj("id", id, "resource", "communications/onlineMeetings", "changeType", "created", "notificationUrl", "https://h", "expirationDateTime", exp, "clientState", state)
 	}
 	g := &fakeGraph{subs: []any{
@@ -243,29 +243,29 @@ func TestMaintainGraphSubscriptionsRenewsDueManagedSubscriptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	if get(out, "remote_subscription_count") != int64(6) || get(out, "synced_subscription_count") != int64(3) || get(out, "renewed_count") != int64(1) || get(out, "candidate_count") != int64(1) {
-		t.Fatal(out.Vals)
+		t.Fatal(out)
 	}
-	cand := get(out, "candidates").([]any)[0].(*pyjson.Object)
+	cand := get(out, "candidates").([]any)[0].(*jsonutil.Object)
 	if get(cand, "new_expiration") != "2026-03-03T20:00:00Z" || get(cand, "current_expiration") != "2026-03-01T20:00:00Z" || len(g.patched) != 1 || g.patched[0] != "/subscriptions/due" {
-		t.Fatal(cand.Vals, g.patched)
+		t.Fatal(cand, g.patched)
 	}
 	reasons := []string{}
 	for _, s := range get(out, "skipped").([]any) {
-		reasons = append(reasons, get(s.(*pyjson.Object), "subscription_id").(string)+"="+get(s.(*pyjson.Object), "reason").(string))
+		reasons = append(reasons, get(s.(*jsonutil.Object), "subscription_id").(string)+"="+get(s.(*jsonutil.Object), "reason").(string))
 	}
 	if strings.Join(reasons, ",") != "later=not_due,expired=already_expired,foreign=not_managed_by_teams_pipeline" {
 		t.Fatal(reasons)
 	}
 	due := store.GetSubscription("due")
 	if get(due, "status") != "active" || get(due, "latest_renewal_at") != "2026-03-01T12:00:00Z" || get(due, "expiration_datetime") != "2026-03-03T20:00:00Z" {
-		t.Fatal(due.Vals)
+		t.Fatal(due)
 	}
 	if get(store.GetSubscription("expired"), "status") != "expired" || get(store.GetSubscription("gone"), "status") != "missing_remote" {
 		t.Fatal(store.ListSubscriptions())
 	}
 	dry, _ := maintainGraphSubscriptions(context.Background(), g, store, 0, 0, true, &cs)
 	if get(dry, "threshold_hours") != int64(1) || get(dry, "dry_run") != true || len(g.patched) != 1 {
-		t.Fatal(dry.Vals)
+		t.Fatal(dry)
 	}
 	if expectedClientState(nil) != nil {
 		t.Fatal("client state from an unset env")
@@ -301,7 +301,7 @@ func TestStoreUpsertRejectsNonePayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.UpsertSinkRecord("notion:m", nil); err == nil || pyrepr.ExceptionName(err) != "TypeError" || pyrepr.ExceptionMessage(err) != "the sink_records record to store is empty" {
+	if _, err := s.UpsertSinkRecord("notion:m", nil); err == nil || pyrepr.ExceptionName(err) != "TypeError" || err.Error() != "the sink_records record to store is empty" {
 		t.Fatalf("err %v", err)
 	}
 	if s.GetSinkRecord("notion:m") != nil {

@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var anthropicClientBuilder = provider.BuildAnthropicClient
@@ -90,7 +90,7 @@ func (a *AIAgent) tryRefreshAnthropicClientCredentials(ctx context.Context) (boo
 	if a.apiMode != "anthropic_messages" || (a.anthropicClient == nil && a.anthropicAPIKey == "") || a.provider != "anthropic" {
 		return false, nil
 	}
-	azure, err := pyurl.BaseURLHostMatches(baseURL, "azure.com")
+	azure, err := urlutil.BaseHostMatches(baseURL, "azure.com")
 	if err != nil {
 		return false, err
 	}
@@ -102,7 +102,7 @@ func (a *AIAgent) tryRefreshAnthropicClientCredentials(ctx context.Context) (boo
 		if official {
 			break
 		}
-		if official, err = pyurl.BaseURLHostMatches(baseURL, host); err != nil {
+		if official, err = urlutil.BaseHostMatches(baseURL, host); err != nil {
 			return false, err
 		}
 	}

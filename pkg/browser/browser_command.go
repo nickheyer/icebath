@@ -6,8 +6,8 @@ import (
 	"io"
 	"os"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const browserCommandDescription = "Helpers for real-profile browsing (browser.use_real_profile). " +
@@ -35,8 +35,8 @@ func BrowserCommand(ctx context.Context, env *tools.Env, ns map[string]any, w io
 		return 2, nil
 	}
 	browser := ""
-	if pyrepr.Truthy(ns["browser"]) {
-		browser = pyrepr.Str(ns["browser"])
+	if anyutil.IsTrue(ns["browser"]) {
+		browser = anyutil.String(ns["browser"])
 	}
 	if browser == "" {
 		browser = connectDetectDefaultChromium("")

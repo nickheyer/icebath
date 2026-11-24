@@ -6,12 +6,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Subscriptions of a task, failing the test on error
-func subsOf(t *testing.T, conn state.SQLiteConn, tid string) []*pyjson.Object {
+func subsOf(t *testing.T, conn state.SQLiteConn, tid string) []*jsonutil.Object {
 	t.Helper()
 	subs, err := ListNotifySubs(context.Background(), conn, &tid, NotifyOwnerScope{})
 	if err != nil {
@@ -21,7 +22,7 @@ func subsOf(t *testing.T, conn state.SQLiteConn, tid string) []*pyjson.Object {
 }
 
 // Field of a subscription object
-func subField(sub *pyjson.Object, key string) any {
+func subField(sub *jsonutil.Object, key string) any {
 	v, _ := sub.Get(key)
 	return v
 }
@@ -144,11 +145,11 @@ func addFullParentSub(t *testing.T, conn state.SQLiteConn, parent string) {
 	t.Helper()
 	mustAddSub(t, conn, NotifySubOptions{TaskID: parent, Platform: "telegram", ChatID: "chat1", ThreadID: sp("topic1"), UserID: sp("user1"),
 		UserIDAlt: sp("alt-1"), ChatType: sp("dm"), NotifierProfile: sp("default"), DeliveryMode: sp("notify+wake"),
-		DeliveryMetadata: pyjson.ObjectOf("reply_fallback", "general", "topic_name", "ops")})
+		DeliveryMetadata: jsonutil.ObjectOf("reply_fallback", "general", "topic_name", "ops")})
 }
 
 // Asserts every routing column survived inheritance
-func assertFullInheritedSub(t *testing.T, subs []*pyjson.Object) {
+func assertFullInheritedSub(t *testing.T, subs []*jsonutil.Object) {
 	t.Helper()
 	if len(subs) != 1 {
 		t.Fatal("subs", len(subs))
@@ -166,7 +167,7 @@ func assertFullInheritedSub(t *testing.T, subs []*pyjson.Object) {
 	if subField(s, "delivery_mode") != "notify+wake" {
 		t.Fatal(s)
 	}
-	md, _ := subField(s, "delivery_metadata").(*pyjson.Object)
+	md, _ := subField(s, "delivery_metadata").(*jsonutil.Object)
 	if fallback, _ := md.Get("reply_fallback"); md == nil || fallback != "general" {
 		t.Fatal("delivery_metadata dropped during inheritance")
 	}
@@ -384,15 +385,15 @@ func TestNotifySubCrud(t *testing.T) {
 	ctx := context.Background()
 	tid := mustCreate(t, conn, CreateTaskOptions{Title: "x"})
 	mustAddSub(t, conn, NotifySubOptions{TaskID: tid, Platform: "telegram", ChatID: "123", UserID: sp("u1"), NotifierProfile: sp("default"),
-		DeliveryMetadata: pyjson.ObjectOf("chat_type", "dm", "telegram_reply_to_message_id", "42")})
+		DeliveryMetadata: jsonutil.ObjectOf("chat_type", "dm", "telegram_reply_to_message_id", "42")})
 	subs := subsOf(t, conn, tid)
 	if len(subs) != 1 || subField(subs[0], "platform") != "telegram" || subField(subs[0], "notifier_profile") != "default" ||
-		!pyjson.Equal(subField(subs[0], "delivery_metadata"), pyjson.ObjectOf("chat_type", "dm", "telegram_reply_to_message_id", "42")) {
+		!anyutil.Equal(subField(subs[0], "delivery_metadata"), jsonutil.ObjectOf("chat_type", "dm", "telegram_reply_to_message_id", "42")) {
 		t.Fatal(subs)
 	}
-	mustAddSub(t, conn, NotifySubOptions{TaskID: tid, Platform: "telegram", ChatID: "123", DeliveryMetadata: pyjson.ObjectOf("chat_type", "dm", "telegram_reply_to_message_id", "43")})
+	mustAddSub(t, conn, NotifySubOptions{TaskID: tid, Platform: "telegram", ChatID: "123", DeliveryMetadata: jsonutil.ObjectOf("chat_type", "dm", "telegram_reply_to_message_id", "43")})
 	subs = subsOf(t, conn, tid)
-	md, _ := subField(subs[0], "delivery_metadata").(*pyjson.Object)
+	md, _ := subField(subs[0], "delivery_metadata").(*jsonutil.Object)
 	if reply, _ := md.Get("telegram_reply_to_message_id"); len(subs) != 1 || reply != "43" {
 		t.Fatal("duplicate add", subs)
 	}

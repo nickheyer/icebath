@@ -6,16 +6,17 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Critical state files and directories of a home a quick snapshot copies, missing ones skipped
@@ -93,15 +94,14 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 	}
 	snapID := baseSnapID
 	for suffix := 2; ; suffix++ {
-		if _, err := os.Stat(pypath.PathJoin(root, snapID)); err != nil {
+		if _, err := os.Stat(pathutil.Join(root, snapID)); err != nil {
 			break
 		}
 		snapID = fmt.Sprintf("%s-%d", baseSnapID, suffix)
 	}
-	snapDir := pypath.PathJoin(root, snapID)
-	stagingDir := pypath.PathJoin(root, fmt.Sprintf(".%s.%d.partial", snapID, os.Getpid()))
-	ignoreErrors := func(pyfs.RmTreeOp, string, error) error { return nil }
-	pyfs.RmTree(stagingDir, ignoreErrors)
+	snapDir := pathutil.Join(root, snapID)
+	stagingDir := pathutil.Join(root, fmt.Sprintf(".%s.%d.partial", snapID, os.Getpid()))
+	_ = os.RemoveAll(stagingDir)
 	if err := home.PathMkdir(root, 0o700, true, true); err != nil {
 		return "", err
 	}
@@ -115,16 +115,16 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 	}
 	pkgLog().Info("quick snapshot phase=copy status=started id=" + snapID)
 
-	manifest := pyjson.NewObject()
+	manifest := jsonutil.NewObject()
 	var totalSize int64
 	var failedDBs, oversizedSkipped []string
 	copyOne := func(src, rel, zeroedTail string) error {
-		dst := pypath.PathJoin(stagingDir, rel)
-		if err := home.PathMkdir(pypath.PathParent(dst), 0o777, true, true); err != nil {
+		dst := pathutil.Join(stagingDir, rel)
+		if err := home.PathMkdir(filepath.Dir(filepath.Clean(dst)), 0o777, true, true); err != nil {
 			return err
 		}
 		err := func() error {
-			if pypath.Suffix(src) == ".db" {
+			if pathutil.Suffix(src) == ".db" {
 				copied, err := copySQLite(ctx, src, dst)
 				if err != nil {
 					return err
@@ -141,7 +141,7 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 					}
 					return nil
 				}
-			} else if err := pyshutil.Copy2(src, dst); err != nil {
+			} else if err := fsutil.CopyFile(src, dst); err != nil {
 				return err
 			}
 			st, err := os.Stat(dst)
@@ -154,7 +154,7 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 		}()
 		if err != nil {
 			var stop *Interrupted
-			if errors.As(err, &stop) || !pypath.IsOSError(err) {
+			if errors.As(err, &stop) || !errorutil.IsSystem(err) {
 				return err
 			}
 			pkgLog().Warn(fmt.Sprintf("Could not snapshot %s: %s", rel, excText(err)))
@@ -163,12 +163,12 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 	}
 
 	for _, rel := range quickStateFiles {
-		src := pypath.PathJoin(h, rel)
+		src := pathutil.Join(h, rel)
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
 		if isDir(src) {
-			subs, err := pypath.Glob(src, "**/*")
+			subs, err := pathutil.Glob(src, "**/*")
 			if err != nil {
 				return "", err
 			}
@@ -176,13 +176,13 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 				if !isFile(sub) {
 					continue
 				}
-				subRel, _ := pypath.PathRelativeTo(sub, h)
-				subRel = pypath.PathAsPosix(subRel)
+				subRel, _ := pathutil.RelativeTo(sub, h)
+				subRel = filepath.ToSlash(filepath.Clean(subRel))
 				if wrapped := "/" + subRel + "/"; strings.Contains(wrapped, "/workspaces/") || strings.Contains(wrapped, "/attachments/") {
 					continue
 				}
 				if tooLarge(sub, subRel) {
-					if pypath.Suffix(sub) == ".db" {
+					if pathutil.Suffix(sub) == ".db" {
 						oversizedSkipped = append(oversizedSkipped, subRel)
 					}
 					continue
@@ -197,7 +197,7 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 			continue
 		}
 		if tooLarge(src, rel) {
-			if pypath.Suffix(src) == ".db" {
+			if pathutil.Suffix(src) == ".db" {
 				oversizedSkipped = append(oversizedSkipped, rel)
 			}
 			continue
@@ -213,14 +213,14 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 		pkgLog().Error("Quick snapshot failed to capture DB file(s): " + strings.Join(failedDBs, ", "))
 	}
 	if manifest.Len() == 0 {
-		pyfs.RmTree(stagingDir, ignoreErrors)
+		_ = os.RemoveAll(stagingDir)
 		if len(failedDBs) > 0 {
 			fmt.Fprintf(w, "  ⚠ Snapshot aborted: no files captured (failed DBs: %s)\n", strings.Join(failedDBs, ", "))
 		}
 		return "", nil
 	}
 
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("id", snapID)
 	meta.Set("timestamp", ts)
 	if label != nil {
@@ -233,11 +233,11 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 	meta.Set("files", manifest)
 	meta.Set("failed_dbs", stringsAny(failedDBs))
 	meta.Set("oversized_skipped", stringsAny(oversizedSkipped))
-	text, err := pyjson.Dumps(meta, pyjson.Indent(2))
+	text, err := jsonutil.Encode(meta, jsonutil.Indent(2))
 	if err != nil {
 		return "", err
 	}
-	if err := writeTextFile(pypath.PathJoin(stagingDir, "manifest.json"), text); err != nil {
+	if err := writeTextFile(pathutil.Join(stagingDir, "manifest.json"), text); err != nil {
 		return "", err
 	}
 
@@ -247,7 +247,7 @@ func createQuickSnapshotLocked(ctx context.Context, w io.Writer, label *string, 
 				return "", err
 			}
 		}
-		paths, err := pypath.Glob(stagingDir, "**/*")
+		paths, err := pathutil.Glob(stagingDir, "**/*")
 		if err != nil {
 			return "", err
 		}
@@ -319,12 +319,12 @@ func writeTextFile(path, text string) error {
 var quickSnapshotForProfile = createQuickSnapshot
 
 // Pre update quick snapshots of every sibling profile into its own home, mapping name to snapshot id
-func CreatePreUpdateSnapshotsAllProfiles(invokingHome string, keep *int, maxFileSize *int64) (*pyjson.Object, error) {
+func CreatePreUpdateSnapshotsAllProfiles(invokingHome string, keep *int, maxFileSize *int64) (*jsonutil.Object, error) {
 	return createPreUpdateSnapshotsAllProfiles(context.Background(), stdout, invokingHome, keep, maxFileSize)
 }
 
-func createPreUpdateSnapshotsAllProfiles(ctx context.Context, w io.Writer, invokingHome string, keep *int, maxFileSize *int64) (*pyjson.Object, error) {
-	results := pyjson.NewObject()
+func createPreUpdateSnapshotsAllProfiles(ctx context.Context, w io.Writer, invokingHome string, keep *int, maxFileSize *int64) (*jsonutil.Object, error) {
+	results := jsonutil.NewObject()
 	h := invokingHome
 	if h == "" {
 		h = home.Dir(ctx)

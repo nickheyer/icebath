@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Slack descriptor of the dedupe cases, draft capable with send, edit and typing advertised
@@ -105,8 +105,8 @@ func TestInboundReplayDedupeSeenSetBounded(t *testing.T) {
 // Wire frame of the dedupe cases decoded the way the transport decodes it, the source platform overridable
 func relayDecodeDedupeWire(t *testing.T, platform string) *MessageEvent {
 	t.Helper()
-	raw := pyjson.ObjectOf("text", "hi", "message_type", "text", "message_id", "1700.100",
-		"source", pyjson.ObjectOf("platform", platform, "chat_id", "C1", "chat_type", "channel", "user_id", "U1", "message_id", "1700.100"))
+	raw := jsonutil.ObjectOf("text", "hi", "message_type", "text", "message_id", "1700.100",
+		"source", jsonutil.ObjectOf("platform", platform, "chat_id", "C1", "chat_type", "channel", "user_id", "U1", "message_id", "1700.100"))
 	e, err := relayEventFromWire(context.Background(), raw)
 	if err != nil {
 		t.Fatal(err)

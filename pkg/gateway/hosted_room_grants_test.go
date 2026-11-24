@@ -36,7 +36,7 @@ func grantTestDispatch(t *testing.T, overrides map[string]any) (*HostedMemberDis
 		"target_install_id": "install-peer", "target_profile": "reviewer", "task_id": "task-1",
 		"execution_generation": int64(1), "source_event_seq": int64(9), "cancellation_scope_id": "cancel-1",
 		"prompt": prompt, "prompt_digest": hex.EncodeToString(sum[:]), "capability_digest": strings.Repeat("a", 64),
-		"execution_policy_digest": policy.GetOr("policy_digest", nil), "trace_id": "trace-1"}
+		"execution_policy_digest": policy.ValueOr("policy_digest", nil), "trace_id": "trace-1"}
 	for key, override := range overrides {
 		value[key] = override
 	}
@@ -165,8 +165,8 @@ func TestRoomGrantIsScopedToExactRoomHomeTargetAndProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims.GetOr("grant_id", nil) != "grant-1" {
-		t.Fatalf("grant_id = %v", claims.GetOr("grant_id", nil))
+	if claims.ValueOr("grant_id", nil) != "grant-1" {
+		t.Fatalf("grant_id = %v", claims.ValueOr("grant_id", nil))
 	}
 	for _, other := range []map[string]any{{"target_profile": "other"}, {"member_id": "member-other"}, {"authority_epoch": int64(999)}} {
 		_, err := VerifyRoomGrant(grantTestSecret, token, mustGrantDispatch(t, other), "dispatch", floatPtr(120))
@@ -181,7 +181,7 @@ func TestRoomGrantFailsClosedForTamperExpiryAndPermission(t *testing.T) {
 	_, err := VerifyRoomGrant(grantTestSecret, token, dispatch, "dispatch", floatPtr(105))
 	requireGrantError(t, err, "allow")
 	claims, err := VerifyRoomGrant(grantTestSecret, token, dispatch, "status", floatPtr(111))
-	if err != nil || claims.GetOr("grant_id", nil) != "grant-1" {
+	if err != nil || claims.ValueOr("grant_id", nil) != "grant-1" {
 		t.Fatalf("status grant = %v, %v", claims, err)
 	}
 	_, err = VerifyRoomGrant(grantTestSecret, token, dispatch, "status", floatPtr(100+30*24*60*60))

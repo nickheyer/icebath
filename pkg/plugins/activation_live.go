@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Installed MCP connector or the error naming the missing service
@@ -45,7 +45,7 @@ func connectPluginMCP(ctx context.Context, activation map[string]any, portable m
 	}
 	for _, name := range names {
 		config := configured[name]
-		if !pyrepr.Truthy(config) {
+		if !anyutil.IsTrue(config) {
 			candidates := map[string]any{}
 			if p, ok := portable[name]; ok {
 				candidates[name] = p
@@ -81,7 +81,7 @@ func connectPluginMCP(ctx context.Context, activation map[string]any, portable m
 		tools, _ := v.([]string)
 		row := map[string]any{"name": name, "connected": len(tools) > 0, "tools": anyList(tools)}
 		if len(tools) == 0 {
-			if reason := serverError(ctx, mcp, name); pyrepr.Truthy(reason) {
+			if reason := serverError(ctx, mcp, name); anyutil.IsTrue(reason) {
 				row["error"] = reason
 			} else {
 				row["error"] = "the server did not connect"
@@ -149,20 +149,20 @@ func liveNotice(activation map[string]any) (string, error) {
 		return "", nil
 	}
 	name := activation["name"]
-	if !pyrepr.Truthy(name) {
+	if !anyutil.IsTrue(name) {
 		name = activation["key"]
 	}
-	lines := []string{"[System note: plugin " + pyrepr.Str(name) + " was installed and is live in this chat now (an Icebath note, " +
+	lines := []string{"[System note: plugin " + anyutil.String(name) + " was installed and is live in this chat now (an Icebath note, " +
 		"not tool output)."}
 	for _, raw := range skills {
 		skill, _ := raw.(map[string]any)
-		lines = append(lines, "- Skill "+pyrepr.Str(skill["name"])+": load it with skill_view.")
+		lines = append(lines, "- Skill "+anyutil.String(skill["name"])+": load it with skill_view.")
 	}
 	anyConnected := false
 	for _, raw := range servers {
 		server, _ := raw.(map[string]any)
-		serverName := pyrepr.Str(server["name"])
-		if pyrepr.Truthy(server["connected"]) {
+		serverName := anyutil.String(server["name"])
+		if anyutil.IsTrue(server["connected"]) {
 			anyConnected = true
 			prefix, err := toolPrefix(serverName)
 			if err != nil {
@@ -175,8 +175,8 @@ func liveNotice(activation map[string]any) (string, error) {
 			lines = append(lines, fmt.Sprintf("- MCP server %s: %d tools, %s*.", serverName, n, prefix))
 		} else {
 			reason := "unknown error"
-			if e := server["error"]; pyrepr.Truthy(e) {
-				reason = pyrepr.Str(e)
+			if e := server["error"]; anyutil.IsTrue(e) {
+				reason = anyutil.String(e)
 			}
 			lines = append(lines, "- MCP server "+serverName+": not connected ("+reason+").")
 		}
@@ -187,14 +187,14 @@ func liveNotice(activation map[string]any) (string, error) {
 	}
 	deferred, _ := activation["deferred"].(map[string]any)
 	var later []string
-	if pyrepr.Truthy(deferred["tools"]) {
+	if anyutil.IsTrue(deferred["tools"]) {
 		n, err := pyLenOr(deferred["tools"])
 		if err != nil {
 			return "", err
 		}
 		later = append(later, fmt.Sprintf("%d Python tools", n))
 	}
-	if pyrepr.Truthy(deferred["prompt"]) {
+	if anyutil.IsTrue(deferred["prompt"]) {
 		n, err := pyLenOr(deferred["prompt"])
 		if err != nil {
 			return "", err

@@ -21,11 +21,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"github.com/nickheyer/icebath/pkg/webhooksubs"
 )
 
@@ -122,7 +122,7 @@ func WebhookCommand(ctx context.Context, w io.Writer, args WebhookArgs) (int, er
 	return 0, nil
 }
 
-func objGet(o *pyjson.Object, key string, def any) any {
+func objGet(o *jsonutil.Object, key string, def any) any {
 	if v, ok := o.Get(key); ok {
 		return v
 	}
@@ -149,9 +149,9 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 	if !isUpdate {
 		expected = webhooksubs.Missing
 	}
-	existing, ok := expected.(*pyjson.Object)
+	existing, ok := expected.(*jsonutil.Object)
 	if !ok {
-		existing = pyjson.NewObject()
+		existing = jsonutil.NewObject()
 	}
 	var profile any
 	if args.RouteProfile == nil {
@@ -171,8 +171,8 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 		}
 		profile = normalized
 	}
-	profileChanged := isUpdate && !pyrepr.Equal(profile, objGet(existing, "profile", "default"))
-	if profileChanged && args.Secret != "" && pyrepr.Equal(args.Secret, objGet(existing, "secret", nil)) {
+	profileChanged := isUpdate && !anyutil.Equal(profile, objGet(existing, "profile", "default"))
+	if profileChanged && args.Secret != "" && anyutil.Equal(args.Secret, objGet(existing, "secret", nil)) {
 		fmt.Fprintln(w, "Error: Rebinding a webhook route requires a new HMAC secret. "+
 			"Omit --secret to generate one automatically, or provide a different secret.")
 		return 1, nil
@@ -183,7 +183,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 		if !profileChanged {
 			secret = objGet(existing, "secret", nil)
 		}
-		if !pyrepr.Truthy(secret) {
+		if !anyutil.IsTrue(secret) {
 			secret = webhookTokenURLSafe(32)
 		}
 	}
@@ -203,7 +203,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 	if deliver == "" {
 		deliver = "log"
 	}
-	route := pyjson.NewObject()
+	route := jsonutil.NewObject()
 	route.Set("description", description)
 	route.Set("events", events)
 	route.Set("secret", secret)
@@ -254,7 +254,7 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 		route.Set("script", script)
 	}
 	if args.DeliverChatID != "" {
-		extra := pyjson.NewObject()
+		extra := jsonutil.NewObject()
 		extra.Set("chat_id", args.DeliverChatID)
 		route.Set("deliver_extra", extra)
 	}
@@ -273,8 +273,8 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 	}
 	fmt.Fprintf(w, "\n  %s webhook subscription: %s\n", verb, name)
 	fmt.Fprintf(w, "  URL:    %s\n", webhooksubs.RouteURL(ctx, h, name, written))
-	fmt.Fprintf(w, "  Profile: %s\n", pyrepr.Str(profile))
-	fmt.Fprintf(w, "  Secret: %s\n", pyrepr.Str(secret))
+	fmt.Fprintf(w, "  Profile: %s\n", anyutil.String(profile))
+	fmt.Fprintf(w, "  Secret: %s\n", anyutil.String(secret))
 	shown := make([]string, len(events))
 	for i, e := range events {
 		shown[i] = e.(string)
@@ -284,30 +284,30 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 		allEvents = "(all)"
 	}
 	fmt.Fprintf(w, "  Events: %s\n", allEvents)
-	fmt.Fprintf(w, "  Deliver: %s\n", pyrepr.Str(objGet(written, "deliver", nil)))
-	if pyrepr.Truthy(objGet(written, "deliver_only", nil)) {
+	fmt.Fprintf(w, "  Deliver: %s\n", anyutil.String(objGet(written, "deliver", nil)))
+	if anyutil.IsTrue(objGet(written, "deliver_only", nil)) {
 		fmt.Fprintln(w, "  Mode: direct delivery (no agent, zero LLM cost)")
 	}
-	if pyrepr.Truthy(objGet(written, "mirror_to_session", nil)) {
+	if anyutil.IsTrue(objGet(written, "mirror_to_session", nil)) {
 		fmt.Fprintln(w, "  Replies: each delivery is mirrored into the target chat's session")
 	}
-	if v := objGet(written, "cron_job", nil); pyrepr.Truthy(v) {
-		fmt.Fprintf(w, "  Mode: cron-job trigger — fires job '%s' on each event\n", pyrepr.Str(v))
+	if v := objGet(written, "cron_job", nil); anyutil.IsTrue(v) {
+		fmt.Fprintf(w, "  Mode: cron-job trigger — fires job '%s' on each event\n", anyutil.String(v))
 	}
-	if v := objGet(written, "prompt", nil); pyrepr.Truthy(v) {
-		runes := []rune(pyrepr.Str(v))
+	if v := objGet(written, "prompt", nil); anyutil.IsTrue(v) {
+		runes := []rune(anyutil.String(v))
 		preview := string(runes[:min(80, len(runes))])
 		if len(runes) > 80 {
 			preview += "..."
 		}
 		label := "Prompt"
-		if pyrepr.Truthy(objGet(written, "deliver_only", nil)) {
+		if anyutil.IsTrue(objGet(written, "deliver_only", nil)) {
 			label = "Message"
 		}
 		fmt.Fprintf(w, "  %s: %s\n", label, preview)
 	}
-	if v := objGet(written, "script", nil); pyrepr.Truthy(v) {
-		fmt.Fprintf(w, "  Script: %s\n", pyrepr.Str(v))
+	if v := objGet(written, "script", nil); anyutil.IsTrue(v) {
+		fmt.Fprintf(w, "  Script: %s\n", anyutil.String(v))
 	}
 	fmt.Fprintln(w, "\n  Configure your service to POST to the URL above.")
 	fmt.Fprintln(w, "  Use the secret for HMAC-SHA256 signature validation.")
@@ -317,11 +317,11 @@ func webhookSubscribe(ctx context.Context, w io.Writer, h string, args WebhookAr
 }
 
 // Route as a dict or the AttributeError a get on another type raises
-func routeObject(route any) (*pyjson.Object, error) {
-	if o, ok := route.(*pyjson.Object); ok {
+func routeObject(route any) (*jsonutil.Object, error) {
+	if o, ok := route.(*jsonutil.Object); ok {
 		return o, nil
 	}
-	return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(route))
+	return nil, fmt.Errorf("'%s' object has no attribute 'get'", anyutil.Kind(route))
 }
 
 // Comma joined event names or the TypeError str.join raises on a non string item
@@ -331,9 +331,9 @@ func joinEvents(v any) (string, error) {
 		if s, isStr := v.(string); isStr {
 			return strings.Join(strings.Split(s, ""), ", "), nil
 		}
-		if o, isObj := v.(*pyjson.Object); isObj {
-			keys := make([]any, len(o.Keys))
-			for i, k := range o.Keys {
+		if o, isObj := v.(*jsonutil.Object); isObj {
+			keys := make([]any, o.Len())
+			for i, k := range o.Keys() {
 				keys[i] = k
 			}
 			return joinEvents(keys)
@@ -344,7 +344,7 @@ func joinEvents(v any) (string, error) {
 	for i, item := range items {
 		s, isStr := item.(string)
 		if !isStr {
-			return "", fmt.Errorf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(item))
+			return "", fmt.Errorf("sequence item %d: expected str instance, %s found", i, anyutil.Kind(item))
 		}
 		parts[i] = s
 	}
@@ -360,8 +360,8 @@ func webhookList(ctx context.Context, w io.Writer, h string, _ WebhookArgs) (int
 		return 0, nil
 	}
 	fmt.Fprintf(w, "\n  %d webhook subscription(s):\n\n", subs.Len())
-	for _, name := range subs.Keys {
-		route, err := routeObject(subs.Vals[name])
+	for _, name := range subs.Keys() {
+		route, err := routeObject(subs.Value(name))
 		if err != nil {
 			return 1, err
 		}
@@ -372,23 +372,23 @@ func webhookList(ctx context.Context, w io.Writer, h string, _ WebhookArgs) (int
 		if events == "" {
 			events = "(all)"
 		}
-		deliver := pyrepr.Str(objGet(route, "deliver", "log"))
-		if pyrepr.Truthy(objGet(route, "deliver_only", nil)) {
+		deliver := anyutil.String(objGet(route, "deliver", "log"))
+		if anyutil.IsTrue(objGet(route, "deliver_only", nil)) {
 			deliver += " (direct — no agent)"
 		}
-		if v := objGet(route, "cron_job", nil); pyrepr.Truthy(v) {
-			deliver = fmt.Sprintf("cron job '%s'", pyrepr.Str(v))
+		if v := objGet(route, "cron_job", nil); anyutil.IsTrue(v) {
+			deliver = fmt.Sprintf("cron job '%s'", anyutil.String(v))
 		}
 		fmt.Fprintf(w, "  ◆ %s\n", name)
-		if desc := objGet(route, "description", ""); pyrepr.Truthy(desc) {
-			fmt.Fprintf(w, "    %s\n", pyrepr.Str(desc))
+		if desc := objGet(route, "description", ""); anyutil.IsTrue(desc) {
+			fmt.Fprintf(w, "    %s\n", anyutil.String(desc))
 		}
 		fmt.Fprintf(w, "    URL:     %s\n", webhooksubs.RouteURL(ctx, h, name, route))
-		fmt.Fprintf(w, "    Profile: %s\n", pyrepr.Str(objGet(route, "profile", "default")))
+		fmt.Fprintf(w, "    Profile: %s\n", anyutil.String(objGet(route, "profile", "default")))
 		fmt.Fprintf(w, "    Events:  %s\n", events)
 		fmt.Fprintf(w, "    Deliver: %s\n", deliver)
-		if v := objGet(route, "script", nil); pyrepr.Truthy(v) {
-			fmt.Fprintf(w, "    Script:  %s\n", pyrepr.Str(v))
+		if v := objGet(route, "script", nil); anyutil.IsTrue(v) {
+			fmt.Fprintf(w, "    Script:  %s\n", anyutil.String(v))
 		}
 		fmt.Fprintln(w)
 	}
@@ -398,7 +398,7 @@ func webhookList(ctx context.Context, w io.Writer, h string, _ WebhookArgs) (int
 // Removes one dynamic subscription under the store lock
 func webhookRemove(_ context.Context, w io.Writer, h string, args WebhookArgs) (int, error) {
 	name := strings.ToLower(strings.TrimSpace(args.Name))
-	err := webhooksubs.Mutate(h, func(subs *pyjson.Object) error {
+	err := webhooksubs.Mutate(h, func(subs *jsonutil.Object) error {
 		if _, ok := subs.Get(name); !ok {
 			return errNoSubscription
 		}
@@ -432,7 +432,7 @@ func webhookTest(ctx context.Context, w io.Writer, h string, args WebhookArgs) (
 	}
 	secret, isStr := objGet(route, "secret", "").(string)
 	if !isStr {
-		return 1, fmt.Errorf("'%s' object has no attribute 'encode'", pyrepr.TypeName(objGet(route, "secret", "")))
+		return 1, fmt.Errorf("'%s' object has no attribute 'encode'", anyutil.Kind(objGet(route, "secret", "")))
 	}
 	url := webhooksubs.RouteURL(ctx, h, name, route)
 	payload := args.Payload
@@ -478,7 +478,7 @@ func postWebhookTest(ctx context.Context, url, payload, sig string) (int, string
 		}
 		return 0, "", err
 	}
-	text, err := pystr.DecodeUTF8Sig(data)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 	if err != nil {
 		return 0, "", err
 	}

@@ -12,9 +12,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // What one scripted dial of the loopback connector does
@@ -200,7 +199,7 @@ func TestSendAllowedOnceRedialInstallsFreshSocket(t *testing.T) {
 		generation := tr.dialGeneration
 		tr.reader = startRelayTask(sctx, func(rctx context.Context) { tr.readLoop(rctx, conn, generation) })
 		tr.mu.Unlock()
-		tr.send(pyjson.ObjectOf("type", "hello", "platform", "discord", "botId", "bot1"))
+		tr.send(jsonutil.ObjectOf("type", "hello", "platform", "discord", "botId", "bot1"))
 		<-park
 	})
 	supervisor := tr.supervisor
@@ -262,7 +261,7 @@ func TestSendRaisingSocketReturnsErrorDict(t *testing.T) {
 	reader := tr.reader
 	tr.mu.Unlock()
 	r, err := tr.SendOutbound(ctx, map[string]any{"op": "send_message", "text": "hi"}, "")
-	if err != nil || r["success"] != false || !strings.Contains(pyrepr.Str(r["error"]), "relay send failed") || tr.pendingCount() != 0 {
+	if err != nil || r["success"] != false || !strings.Contains(anyutil.String(r["error"]), "relay send failed") || tr.pendingCount() != 0 {
 		t.Fatalf("result %v err %v", r, err)
 	}
 	reader.cancel()

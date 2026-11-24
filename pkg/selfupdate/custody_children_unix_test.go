@@ -16,9 +16,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Closes every inherited descriptor naming a filesystem path, as os.closerange does for the build writers
@@ -222,7 +222,7 @@ func cuChild(mode string, args []string) int {
 				names = append(names, name)
 			}
 			sort.Slice(names, func(i, j int) bool { return names[i].(string) < names[j].(string) })
-			fmt.Println("resume " + pyrepr.Repr(names))
+			fmt.Println("resume " + anyutil.Quote(names))
 			token["resume_needed"] = false
 			return nil
 		})

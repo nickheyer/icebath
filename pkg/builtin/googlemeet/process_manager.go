@@ -5,10 +5,10 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -16,11 +16,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -43,11 +41,11 @@ func readActive(ctx context.Context) any {
 	if err != nil {
 		return nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
@@ -55,12 +53,12 @@ func readActive(ctx context.Context) any {
 }
 
 // Active record as a dict, nil when falsy and the AttributeError .get raises for a truthy non dict
-func activeRecord(ctx context.Context) (*pyjson.Object, error) {
+func activeRecord(ctx context.Context) (*jsonutil.Object, error) {
 	v := readActive(ctx)
-	if !truthyJSON(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyTypeName(v))
 	}
@@ -68,7 +66,7 @@ func activeRecord(ctx context.Context) (*pyjson.Object, error) {
 }
 
 // Writes the active pointer atomically
-func writeActive(ctx context.Context, data *pyjson.Object) error {
+func writeActive(ctx context.Context, data *jsonutil.Object) error {
 	return config.AtomicJSONWrite(ctx, activeFile(ctx), data)
 }
 
@@ -81,23 +79,8 @@ var killProcess = killPID
 // Sleep between stop polls, swapped by tests
 var pmSleep = botSleep
 
-// Python int() of a record value
-func pyIntOf(v any) (int, error) {
-	if f, ok := v.(float64); ok {
-		if math.IsNaN(f) || math.IsInf(f, 0) {
-			return 0, fmt.Errorf("cannot convert float %s to integer", pyrepr.Float(f))
-		}
-		return int(f), nil
-	}
-	n, err := pyint.Of(v)
-	if err != nil {
-		return 0, err
-	}
-	return int(n.Int64()), nil
-}
-
 // Record value under key with a default for a missing key
-func getOr(o *pyjson.Object, key string, def any) any {
+func getOr(o *jsonutil.Object, key string, def any) any {
 	if o == nil {
 		return def
 	}
@@ -108,8 +91,8 @@ func getOr(o *pyjson.Object, key string, def any) any {
 }
 
 // Result of every call made while no meeting is active
-func noActive() *pyjson.Object {
-	return pyjson.ObjectOf("ok", false, "reason", "no active meeting")
+func noActive() *jsonutil.Object {
+	return jsonutil.ObjectOf("ok", false, "reason", "no active meeting")
 }
 
 // Options of one bot start, defaults from newStartOptions
@@ -158,18 +141,19 @@ func botArgv() ([]string, error) {
 }
 
 // Spawns the bot for url after stopping any running one, recording the active meeting
-func pmStart(ctx context.Context, url string, o startOptions) (*pyjson.Object, error) {
+func pmStart(ctx context.Context, url string, o startOptions) (*jsonutil.Object, error) {
 	if !isSafeMeetURL(url) {
-		return pyjson.ObjectOf("ok", false, "error", "refusing: only https://meet.google.com/ URLs are allowed. got: "+pyrepr.StrRepr(url)), nil
+		return jsonutil.ObjectOf("ok", false, "error", "refusing: only https://meet.google.com/ URLs are allowed. got: "+strconv.Quote(url)), nil
 	}
 	active, err := activeRecord(ctx)
 	if err != nil {
 		return nil, err
 	}
-	pid, err := pyIntOf(getOr(active, "pid", 0))
+	n, err := anyutil.ToInt(getOr(active, "pid", 0))
 	if err != nil {
 		return nil, err
 	}
+	pid := int(n)
 	if pidAlive(pid) {
 		if _, err := pmStop(ctx, "replaced by new meet_join"); err != nil {
 			return nil, err
@@ -248,36 +232,37 @@ func pmStart(ctx context.Context, url string, o startOptions) (*pyjson.Object, e
 	if err != nil {
 		return nil, err
 	}
-	record := pyjson.ObjectOf("pid", childPID, "meeting_id", meetingID, "out_dir", out, "url", url,
+	record := jsonutil.ObjectOf("pid", childPID, "meeting_id", meetingID, "out_dir", out, "url", url,
 		"started_at", nowSeconds(), "session_id", o.SessionID, "log_path", logPath, "mode", o.Mode)
 	if err := writeActive(ctx, record); err != nil {
 		return nil, err
 	}
-	res := pyjson.ObjectOf("ok", true)
-	res.Update(record)
+	res := jsonutil.ObjectOf("ok", true)
+	res.Merge(record)
 	return res, nil
 }
 
 // Current meeting state merged with the bot status file, or the no active meeting result
-func pmStatus(ctx context.Context) (*pyjson.Object, error) {
+func pmStatus(ctx context.Context) (*jsonutil.Object, error) {
 	active, err := activeRecord(ctx)
 	if err != nil || active == nil {
 		return noActive(), err
 	}
-	pid, err := pyIntOf(getOr(active, "pid", 0))
+	n, err := anyutil.ToInt(getOr(active, "pid", 0))
 	if err != nil {
 		return nil, err
 	}
+	pid := int(n)
 	alive := pid != 0 && pidAlive(pid)
 	outDir, _ := getOr(active, "out_dir", "").(string)
-	res := pyjson.ObjectOf("ok", true, "alive", alive, "pid", pid, "meetingId", getOr(active, "meeting_id", nil),
+	res := jsonutil.ObjectOf("ok", true, "alive", alive, "pid", pid, "meetingId", getOr(active, "meeting_id", nil),
 		"url", getOr(active, "url", nil), "startedAt", getOr(active, "started_at", nil), "outDir", getOr(active, "out_dir", nil))
 	switch st := readJSON(filepath.Join(outDir, "status.json")).(type) {
-	case *pyjson.Object:
-		res.Update(st)
+	case *jsonutil.Object:
+		res.Merge(st)
 	case nil:
 	default:
-		if truthyJSON(st) {
+		if anyutil.IsTrue(st) {
 			return nil, fmt.Errorf("'%s' object is not a mapping", pyTypeName(st))
 		}
 	}
@@ -295,7 +280,7 @@ func tailLines(all []string, last int) []string {
 }
 
 // Transcript lines of the active meeting, the last n when last is non zero
-func pmTranscript(ctx context.Context, last int) (*pyjson.Object, error) {
+func pmTranscript(ctx context.Context, last int) (*jsonutil.Object, error) {
 	active, err := activeRecord(ctx)
 	if err != nil || active == nil {
 		return noActive(), err
@@ -304,7 +289,7 @@ func pmTranscript(ctx context.Context, last int) (*pyjson.Object, error) {
 	tp := filepath.Join(outDir, "transcript.txt")
 	info, statErr := os.Stat(tp)
 	if statErr != nil || !info.Mode().IsRegular() {
-		return pyjson.ObjectOf("ok", true, "meetingId", getOr(active, "meeting_id", nil), "lines", []any{}, "total", 0, "path", tp), nil
+		return jsonutil.ObjectOf("ok", true, "meetingId", getOr(active, "meeting_id", nil), "lines", []any{}, "total", 0, "path", tp), nil
 	}
 	raw, err := os.ReadFile(tp)
 	if err != nil {
@@ -326,21 +311,21 @@ func pmTranscript(ctx context.Context, last int) (*pyjson.Object, error) {
 	for i, l := range lines {
 		items[i] = l
 	}
-	return pyjson.ObjectOf("ok", true, "meetingId", getOr(active, "meeting_id", nil), "lines", items, "total", len(all), "path", tp), nil
+	return jsonutil.ObjectOf("ok", true, "meetingId", getOr(active, "meeting_id", nil), "lines", items, "total", len(all), "path", tp), nil
 }
 
 // Appends a say request to the active realtime meeting's queue under the queue lock
-func pmEnqueueSay(ctx context.Context, text string) (*pyjson.Object, error) {
+func pmEnqueueSay(ctx context.Context, text string) (*jsonutil.Object, error) {
 	text = strings.TrimSpace(text)
 	if text == "" {
-		return pyjson.ObjectOf("ok", false, "reason", "text is required"), nil
+		return jsonutil.ObjectOf("ok", false, "reason", "text is required"), nil
 	}
 	active, err := activeRecord(ctx)
 	if err != nil || active == nil {
 		return noActive(), err
 	}
 	if mode := getOr(active, "mode", nil); mode != "realtime" {
-		return pyjson.ObjectOf("ok", false, "reason", "active meeting is in transcribe mode — pass mode='realtime' to meet_join to enable agent speech"), nil
+		return jsonutil.ObjectOf("ok", false, "reason", "active meeting is in transcribe mode — pass mode='realtime' to meet_join to enable agent speech"), nil
 	}
 	outDir, _ := getOr(active, "out_dir", "").(string)
 	if info, err := os.Stat(outDir); err != nil || !info.IsDir() {
@@ -348,12 +333,12 @@ func pmEnqueueSay(ctx context.Context, text string) (*pyjson.Object, error) {
 		if shown == "" {
 			shown = "."
 		}
-		return pyjson.ObjectOf("ok", false, "reason", "out_dir missing: "+shown), nil
+		return jsonutil.ObjectOf("ok", false, "reason", "out_dir missing: "+shown), nil
 	}
 	queuePath := filepath.Join(outDir, "say_queue.jsonl")
 	id := uuid.New()
 	entryID := hex.EncodeToString(id[:])[:12]
-	line, err := pyjson.Dumps(pyjson.ObjectOf("id", entryID, "text", text))
+	line, err := jsonutil.Encode(jsonutil.ObjectOf("id", entryID, "text", text))
 	if err != nil {
 		return nil, err
 	}
@@ -374,19 +359,20 @@ func pmEnqueueSay(ctx context.Context, text string) (*pyjson.Object, error) {
 	if werr != nil {
 		return nil, werr
 	}
-	return pyjson.ObjectOf("ok", true, "meetingId", getOr(active, "meeting_id", nil), "enqueued_id", entryID, "queue_path", queuePath), nil
+	return jsonutil.ObjectOf("ok", true, "meetingId", getOr(active, "meeting_id", nil), "enqueued_id", entryID, "queue_path", queuePath), nil
 }
 
 // SIGTERMs the active bot, SIGKILL after ten seconds, then clears the active pointer
-func pmStop(ctx context.Context, reason string) (*pyjson.Object, error) {
+func pmStop(ctx context.Context, reason string) (*jsonutil.Object, error) {
 	active, err := activeRecord(ctx)
 	if err != nil || active == nil {
 		return noActive(), err
 	}
-	pid, err := pyIntOf(getOr(active, "pid", 0))
+	n, err := anyutil.ToInt(getOr(active, "pid", 0))
 	if err != nil {
 		return nil, err
 	}
+	pid := int(n)
 	outDir := getOr(active, "out_dir", nil)
 	if pidAlive(pid) {
 		if err := killProcess(pid, syscall.SIGTERM); err != nil {
@@ -410,8 +396,8 @@ func pmStop(ctx context.Context, reason string) (*pyjson.Object, error) {
 		return nil, err
 	}
 	var transcriptPath any
-	if truthyJSON(outDir) {
-		transcriptPath = filepath.Join(pyrepr.Str(outDir), "transcript.txt")
+	if anyutil.IsTrue(outDir) {
+		transcriptPath = filepath.Join(anyutil.String(outDir), "transcript.txt")
 	}
-	return pyjson.ObjectOf("ok", true, "reason", reason, "meetingId", getOr(active, "meeting_id", nil), "transcriptPath", transcriptPath), nil
+	return jsonutil.ObjectOf("ok", true, "reason", reason, "meetingId", getOr(active, "meeting_id", nil), "transcriptPath", transcriptPath), nil
 }

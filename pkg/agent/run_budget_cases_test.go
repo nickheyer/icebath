@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func runBudgetAgent(t *testing.T, configBody string, edit func(*AIAgentOptions)) *AIAgent {
@@ -208,7 +208,7 @@ func TestRunBudget(t *testing.T) {
 		a, db := newPersistTestAgent(t, "budget-proof")
 		a.runBudgetSeconds, a.runBudgetStartedAt = 900, nowSeconds()-800
 		reg := tools.NewRegistry()
-		reg.Register(tools.Def{Name: "probe", Toolset: "web", Schema: pyjson.ObjectOf("name", "probe", "parameters", pyjson.ObjectOf("type", "object")),
+		reg.Register(tools.Def{Name: "probe", Toolset: "web", Schema: jsonutil.ObjectOf("name", "probe", "parameters", jsonutil.ObjectOf("type", "object")),
 			Handler: func(context.Context, *tools.Call) string { return "result two" }})
 		a.validToolNames = map[string]bool{"probe": true}
 		a.toolGuardrails = tools.NewToolCallGuardrailController(nil)

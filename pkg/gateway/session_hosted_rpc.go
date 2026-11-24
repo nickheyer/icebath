@@ -11,11 +11,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Encoded receipts per results read, under the private socket response line
@@ -76,7 +75,7 @@ func (r *HostedRoomAuthorityRPC) init(authority *SessionAuthority, loop context.
 	r.Authority, r.loop, r.RoomID, r.MemberID, r.Profile = authority, loop, roomID, memberID, profile
 	r.Principal, r.Authorizer, r.AuthorizeWrite, r.Timeout = principal, authorize, authorizeWrite, 30*time.Second
 	r.callbacks = map[string]func(map[string]any) error{}
-	binding, err := pyjson.Dumps([]any{roomID, memberID, profile}, pyjson.Separators(",", ":"))
+	binding, err := jsonutil.Encode([]any{roomID, memberID, profile})
 	if err != nil {
 		return err
 	}
@@ -125,11 +124,11 @@ func (r *HostedRoomAuthorityRPC) call(ctx context.Context, operation string, par
 // Checks the bound profile, source, session, title and authorization before running the operation
 func (r *HostedRoomAuthorityRPC) dispatch(ctx context.Context, operation string, params map[string]any) (any, error) {
 	ctx = ownerScope(ctx, r.Authority, false)
-	if value, has := params["profile"]; (has && !pyrepr.Equal(value, r.Profile)) || r.Principal.ProfileID != r.Authority.ProfileID {
+	if value, has := params["profile"]; (has && !anyutil.Equal(value, r.Profile)) || r.Principal.ProfileID != r.Authority.ProfileID {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
 	for key, want := range map[string]string{"source": RoomSessionSource, "session_id": r.Ref.SessionID, "title": r.groupTitle()} {
-		if value, has := params[key]; has && !pyrepr.Equal(value, want) {
+		if value, has := params[key]; has && !anyutil.Equal(value, want) {
 			return nil, runtimeRefusal("permission_denied")
 		}
 	}
@@ -206,7 +205,7 @@ func (r *HostedRoomAuthorityRPC) create(ctx context.Context, params map[string]a
 		}
 	case nil:
 	default:
-		if pyrepr.Truthy(section) {
+		if anyutil.IsTrue(section) {
 			return nil, fmt.Errorf("the hosted room section is %s, expected a list", errchain.Kind(section))
 		}
 	}
@@ -291,7 +290,7 @@ func (r *HostedRoomAuthorityRPC) resume(ctx context.Context) (any, error) {
 
 // One hosted admission row with the task identity and hosted generation its request id names
 type hostedAdmission struct {
-	row        *pyjson.Object
+	row        *jsonutil.Object
 	identity   TaskIdentity
 	generation int64
 }
@@ -301,11 +300,11 @@ func hostedRequestIdentity(requestID string) (TaskIdentity, int64, error) {
 	if !strings.HasPrefix(requestID, "hosted:") {
 		return TaskIdentity{}, 0, &DriverValidationError{"not a hosted admission"}
 	}
-	decoded, err := pyjson.Loads(requestID[7:])
+	decoded, err := jsonutil.Decode(requestID[7:])
 	if err != nil {
 		return TaskIdentity{}, 0, err
 	}
-	pair, ok := pyjson.Plain(decoded).([]any)
+	pair, ok := jsonutil.Plain(decoded).([]any)
 	if !ok || len(pair) != 2 {
 		return TaskIdentity{}, 0, &DriverValidationError{"invalid hosted identity"}
 	}
@@ -375,7 +374,7 @@ func (r *HostedRoomAuthorityRPC) terminal(ctx context.Context, admission hostedA
 		return nil, err
 	}
 	outcome := rowString(admission.row, "outcome")
-	savedMap, hasSaved := hostedMapping(pyjson.Plain(saved))
+	savedMap, hasSaved := hostedMapping(jsonutil.Plain(saved))
 	if !hasSaved && !hostedResultlessOutcomes[outcome] {
 		return nil, runtimeRefusal("storage_unavailable")
 	}
@@ -407,7 +406,7 @@ func (r *HostedRoomAuthorityRPC) terminal(ctx context.Context, admission hostedA
 
 // Admits one fenced member turn under a capture lease, its terminal receipt delivered through the callback
 func (r *HostedRoomAuthorityRPC) submit(ctx context.Context, params map[string]any, task TaskIdentity, generation int64) (any, error) {
-	requestJSON, err := pyjson.Dumps([]any{task.AsDict(), generation}, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	requestJSON, err := jsonutil.Encode([]any{task.AsDict(), generation}, jsonutil.SortKeys())
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +471,7 @@ func (r *HostedRoomAuthorityRPC) submit(ctx context.Context, params map[string]a
 			}
 		}
 	}
-	return pyjson.Plain(admissionReceiptDict(receipt)), nil
+	return jsonutil.Plain(admissionReceiptDict(receipt)), nil
 }
 
 // Publishes the durable terminal receipt once the admission's waiter resolves without a refusal
@@ -584,7 +583,7 @@ func (r *HostedRoomAuthorityRPC) results(ctx context.Context, params map[string]
 		if len(text) > MaxTerminalTextBytes {
 			receipt["text"] = strings.ToValidUTF8(text[:MaxTerminalTextBytes+4], "")
 		}
-		encoded, err := pyjson.Dumps(receipt)
+		encoded, err := jsonutil.Encode(receipt)
 		if err != nil {
 			return nil, err
 		}
@@ -629,7 +628,7 @@ func (r *HostedRoomAuthorityRPC) info(ctx context.Context) (any, error) {
 		return nil, err
 	}
 	for _, prompt := range snapshot.Prompts {
-		if !pyrepr.Equal(prompt["kind"], "approval") {
+		if !anyutil.Equal(prompt["kind"], "approval") {
 			continue
 		}
 		pending := make(map[string]any, len(prompt)+2)
@@ -638,9 +637,9 @@ func (r *HostedRoomAuthorityRPC) info(ctx context.Context) (any, error) {
 		}
 		pending["request_id"] = prompt["prompt_id"]
 		choices := []any{}
-		list, _ := pyjson.Plain(prompt["choices"]).([]any)
+		list, _ := jsonutil.Plain(prompt["choices"]).([]any)
 		for _, choice := range list {
-			if pyrepr.Equal(choice, "once") || pyrepr.Equal(choice, "deny") {
+			if anyutil.Equal(choice, "once") || anyutil.Equal(choice, "deny") {
 				choices = append(choices, choice)
 			}
 		}
@@ -664,7 +663,7 @@ func (r *HostedRoomAuthorityRPC) interrupt(ctx context.Context, params map[strin
 			break
 		}
 	}
-	if current == nil || !pyrepr.Equal(current.identity.TaskID, params["expected_task_id"]) {
+	if current == nil || !anyutil.Equal(current.identity.TaskID, params["expected_task_id"]) {
 		return nil, runtimeRefusal("stale_generation")
 	}
 	row := current.row
@@ -678,7 +677,7 @@ func (r *HostedRoomAuthorityRPC) interrupt(ctx context.Context, params map[strin
 	}
 	if row != nil {
 		raw, _ := row.Get("generation")
-		generation, err := pyint.Int64(raw)
+		generation, err := anyutil.ToInt(raw)
 		if err != nil {
 			return nil, err
 		}
@@ -703,7 +702,7 @@ func (r *HostedRoomAuthorityRPC) discard(ctx context.Context, params map[string]
 	for _, admission := range rows {
 		status := rowString(admission.row, "status")
 		if (status == "unknown" || (status == AdmissionTerminal && rowString(admission.row, "outcome") == "interrupted")) &&
-			pyrepr.Equal(admission.identity.TaskID, params["expected_task_id"]) && admission.generation == generation {
+			anyutil.Equal(admission.identity.TaskID, params["expected_task_id"]) && admission.generation == generation {
 			matches = append(matches, admission)
 		}
 	}
@@ -713,7 +712,7 @@ func (r *HostedRoomAuthorityRPC) discard(ctx context.Context, params map[string]
 	match := matches[0]
 	if rowString(match.row, "status") == "unknown" {
 		raw, _ := match.row.Get("generation")
-		canonical, err := pyint.Int64(raw)
+		canonical, err := anyutil.ToInt(raw)
 		if err != nil {
 			return nil, err
 		}
@@ -726,7 +725,7 @@ func (r *HostedRoomAuthorityRPC) discard(ctx context.Context, params map[string]
 
 // Answers one pending approval prompt of the running generation with once or deny
 func (r *HostedRoomAuthorityRPC) approve(ctx context.Context, params map[string]any) (any, error) {
-	if !pyrepr.Equal(params["choice"], "once") && !pyrepr.Equal(params["choice"], "deny") {
+	if !anyutil.Equal(params["choice"], "once") && !anyutil.Equal(params["choice"], "deny") {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	snapshot, err := r.Authority.Attach(ctx, r.Principal, r.Ref, false, nil)
@@ -735,7 +734,7 @@ func (r *HostedRoomAuthorityRPC) approve(ctx context.Context, params map[string]
 	}
 	found := false
 	for _, prompt := range snapshot.Prompts {
-		if pyrepr.Equal(prompt["prompt_id"], params["request_id"]) && pyrepr.Equal(prompt["kind"], "approval") {
+		if anyutil.Equal(prompt["prompt_id"], params["request_id"]) && anyutil.Equal(prompt["kind"], "approval") {
 			found = true
 			break
 		}
@@ -755,7 +754,7 @@ func hostedResultMap(value any, err error) (map[string]any, error) {
 	if value == nil {
 		return nil, nil
 	}
-	if mapping, ok := hostedMapping(pyjson.Plain(value)); ok {
+	if mapping, ok := hostedMapping(jsonutil.Plain(value)); ok {
 		return mapping, nil
 	}
 	return nil, fmt.Errorf("hosted operation returned %s, not a mapping", errchain.Kind(value))
@@ -766,7 +765,7 @@ func hostedResultRows(value any, err error) ([]map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	switch rows := pyjson.Plain(value).(type) {
+	switch rows := jsonutil.Plain(value).(type) {
 	case []map[string]any:
 		return rows, nil
 	case []any:

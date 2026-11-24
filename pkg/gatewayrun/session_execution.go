@@ -6,8 +6,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Agent a cache lookup reused and the one it evicted under the lock for an off lock release
@@ -31,7 +31,7 @@ func (t *TurnRunner) skipContextFiles(ctx context.Context, platformKey string) (
 		return false, nil
 	}
 	entry, _ := platforms[platformKey].(map[string]any)
-	return pyrepr.Truthy(entry["skip_context_files"]), nil
+	return anyutil.IsTrue(entry["skip_context_files"]), nil
 }
 
 // Session id the cached agent was taken for and whether that session is ended in its store

@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Billing and quota body markers, the main classifier table plus broader phrasings and daily or weekly quota wording
@@ -240,11 +240,11 @@ func auxWithoutReasoningFields(kwargs map[string]any) map[string]any {
 			changed = changed || v != nil
 		}
 	}
-	if extra, ok := pyjson.AsObject(retry["extra_body"]); ok {
-		remaining := pyjson.NewObject()
-		for _, k := range extra.Keys {
+	if extra, ok := jsonutil.AsObject(retry["extra_body"]); ok {
+		remaining := jsonutil.NewObject()
+		for _, k := range extra.Keys() {
 			if !auxProfileReasoningKeys[strings.ToLower(strings.TrimSpace(k))] {
-				remaining.Set(k, extra.Vals[k])
+				remaining.Set(k, extra.Value(k))
 			}
 		}
 		if remaining.Len() != extra.Len() {

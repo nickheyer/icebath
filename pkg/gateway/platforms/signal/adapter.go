@@ -4,33 +4,31 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 	"math/rand"
 	"net/http"
+	"net/url"
 	"os"
+	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -74,26 +72,26 @@ var (
 	cacheDocumentFromBytes = gateway.CacheDocumentFromBytesAsync
 	cacheImageFromURL      = gateway.CacheImageFromURL
 	wallClock              = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
-	lookupFFmpeg           = func() (string, bool) { return pyshutil.Which("ffmpeg", nil) }
+	lookupFFmpeg           = func() (string, bool) { p, err := exec.LookPath("ffmpeg"); return p, err == nil }
 )
 
-// Python exception carried as a Go error with its class name
-type pyErr struct{ kind, msg string }
-
-func (e *pyErr) Error() string      { return e.msg }
-func (e *pyErr) PyTypeName() string { return e.kind }
-
-// AttributeError of calling a method on a value of the wrong type
-func noAttr(v any, attr string) error {
-	return &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+// Error of a decoded value that is not of the kind the code needs
+func unexpectedKind(want string, v any) error {
+	return fmt.Errorf("expected %s, got %s", want, anyutil.Kind(v))
 }
 
-// Dict view of a decoded JSON value, the AttributeError a get call raises otherwise
+// Failure of the HTTP exchange that carries the event stream: the connection or a read of its body
+type sseTransportError struct{ err error }
+
+func (e *sseTransportError) Error() string { return e.err.Error() }
+func (e *sseTransportError) Unwrap() error { return e.err }
+
+// Map of a decoded JSON object, an error for any other value
 func dictOf(v any) (map[string]any, error) {
-	if m, ok := pyjson.Dict(v); ok {
+	if m, ok := jsonutil.AsMap(v); ok {
 		return m, nil
 	}
-	return nil, noAttr(v, "get")
+	return nil, unexpectedKind("a JSON object", v)
 }
 
 // Value under key or the default when the key is absent
@@ -104,10 +102,7 @@ func getOr(m map[string]any, key string, def any) any {
 	return def
 }
 
-// str of an exception as a percent s log argument renders it
-func errText(err error) string { return pyrepr.ExceptionMessage(err) }
-
-// Optional string pointer, nil for the empty value Python holds as None
+// Optional string pointer, nil for the empty value
 func optional(s string) *string {
 	if s == "" {
 		return nil
@@ -120,10 +115,10 @@ func identText(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
-// Optional text of a decoded value, nil for None
+// Optional text of a decoded value, nil for a nil value
 func optText(v any) *string {
 	if v == nil {
 		return nil
@@ -132,7 +127,7 @@ func optText(v any) *string {
 	return &s
 }
 
-// Open SSE response with the httpx flag marking that its body iteration began
+// Open SSE response with the flag marking that its body reading began
 type sseStream struct {
 	body     io.Closer
 	consumed bool
@@ -141,7 +136,7 @@ type sseStream struct {
 // Dict key of a timestamp so equal ints and integral floats share one entry
 func tsKey(v any) string {
 	if f, ok := v.(float64); ok && f == math.Trunc(f) && !math.IsInf(f, 0) {
-		return new(big.Float).SetFloat64(f).Text('f', 0)
+		return strconv.FormatFloat(f, 'f', 0, 64)
 	}
 	if b, ok := v.(bool); ok {
 		if b {
@@ -149,7 +144,7 @@ func tsKey(v any) string {
 		}
 		return "0"
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // File extension from magic bytes, WEBP claimed before the shared sniffer and zip or bin last
@@ -220,9 +215,9 @@ func remuxAACToM4A(ctx context.Context, aacData []byte) ([]byte, bool) {
 		pkgLog().Error("Signal: AAC→M4A remux error", "error", werr)
 		return nil, false
 	}
-	proc, err := pysubprocess.RunWith(ctx, []string{ffmpeg, "-y", "-loglevel", "error", "-i", srcPath, "-c:a", "copy", "-movflags", "+faststart", dstPath},
-		pysubprocess.Options{Timeout: 10 * time.Second})
-	var timeout *pysubprocess.TimeoutExpired
+	proc, err := executil.Run(ctx, []string{ffmpeg, "-y", "-loglevel", "error", "-i", srcPath, "-c:a", "copy", "-movflags", "+faststart", dstPath},
+		executil.Options{Timeout: 10 * time.Second})
+	var timeout *executil.TimeoutError
 	switch {
 	case errors.As(err, &timeout):
 		pkgLog().Warn("Signal: AAC→M4A remux timed out (>10s)")
@@ -249,21 +244,21 @@ func mentionInt(m map[string]any, key string, def int) (int, error) {
 	if !ok {
 		return def, nil
 	}
-	n, isInt := pyint.Instance(v)
-	if !isInt || !n.IsInt64() {
-		return 0, &pyErr{"TypeError", fmt.Sprintf("slice indices must be integers or None or have an __index__ method, not '%s'", pyrepr.TypeName(v))}
+	n, isInt := anyutil.Int(v)
+	if !isInt {
+		return 0, fmt.Errorf("mention %s: %w", key, unexpectedKind("an integer", v))
 	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Mention placeholders replaced from the end with readable at identifiers so earlier offsets hold
 func renderMentions(text string, mentions any) (string, error) {
-	if !pyrepr.Truthy(mentions) || !strings.ContainsRune(text, 0xFFFC) {
+	if !anyutil.IsTrue(mentions) || !strings.ContainsRune(text, 0xFFFC) {
 		return text, nil
 	}
 	list, ok := mentions.([]any)
 	if !ok {
-		return "", &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(mentions))}
+		return "", fmt.Errorf("mentions: %w", unexpectedKind("an array", mentions))
 	}
 	type mention struct {
 		start, length int
@@ -283,7 +278,7 @@ func renderMentions(text string, mentions any) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		parsed = append(parsed, mention{start, length, identText(pyrepr.Or(pyrepr.Or(m["number"], m["uuid"]), "user"))})
+		parsed = append(parsed, mention{start, length, identText(anyutil.Or(anyutil.Or(m["number"], m["uuid"]), "user"))})
 	}
 	sort.SliceStable(parsed, func(i, j int) bool { return parsed[i].start > parsed[j].start })
 	for _, m := range parsed {
@@ -292,15 +287,14 @@ func renderMentions(text string, mentions any) (string, error) {
 	return text, nil
 }
 
-// Whether the text is a UUID the way uuid.UUID accepts it
+// Whether the text is a UUID: 32 hex digits once urn and uuid prefixes, braces and dashes are removed
 func parsesAsUUID(value string) bool {
 	hex := strings.ReplaceAll(strings.ReplaceAll(value, "urn:", ""), "uuid:", "")
 	hex = strings.ReplaceAll(strings.Trim(hex, "{}"), "-", "")
 	if utf8.RuneCountInString(hex) != 32 {
 		return false
 	}
-	_, ok := pyint.ParseBase(hex, 16)
-	return ok
+	return strings.Trim(hex, "0123456789abcdefABCDEF") == ""
 }
 
 // Whether the value already is a Signal service identifier, a PNI or u prefix or a UUID
@@ -322,7 +316,7 @@ func looksLikeE164Number(value string) bool {
 	}
 	digits := value[1:]
 	n := utf8.RuneCountInString(digits)
-	return pystr.StrIsDigit(digits) && 7 <= n && n <= 15
+	return textutil.IsDigits(digits) && 7 <= n && n <= 15
 }
 
 // Signal runtime dependencies are compiled into the binary
@@ -331,7 +325,7 @@ func checkSignalRequirements() bool { return true }
 // Stripped text of an extra value or of the scoped secret when the extra value is falsy
 func extraOrSecretText(ctx context.Context, extra map[string]any, key, env string) (string, error) {
 	v := getOr(extra, key, "")
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		secret, err := gateway.GetScopedSecret(ctx, env, "", false)
 		if err != nil {
 			return "", err
@@ -340,7 +334,7 @@ func extraOrSecretText(ctx context.Context, extra map[string]any, key, env strin
 	}
 	s, ok := v.(string)
 	if !ok {
-		return "", noAttr(v, "strip")
+		return "", unexpectedKind("a string", v)
 	}
 	return strings.TrimSpace(s), nil
 }
@@ -395,8 +389,8 @@ type SignalAdapter struct {
 	lastSSEActivity       float64
 	sseResponse           *sseStream
 	accountNormalized     string
-	recentSentTimestamps  *pydict.Dict[string, float64]
-	sentMessageTimestamps *pydict.Dict[string, struct{}]
+	recentSentTimestamps  *orderedutil.Map[string, float64]
+	sentMessageTimestamps *orderedutil.Map[string, struct{}]
 	recipientUUIDByNumber map[string]string
 	recipientNumberByUUID map[string]string
 	recipientCacheLock    sync.Mutex
@@ -408,7 +402,7 @@ func NewSignalAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Sig
 		config = gateway.NewPlatformConfig()
 	}
 	a := &SignalAdapter{typingTasks: map[string]*gateway.AdapterTask{}, typingFailures: map[string]int{}, typingSkipUntil: map[string]float64{},
-		recentSentTimestamps: pydict.New[string, float64](), sentMessageTimestamps: pydict.New[string, struct{}](),
+		recentSentTimestamps: orderedutil.NewMap[string, float64](), sentMessageTimestamps: orderedutil.NewMap[string, struct{}](),
 		recipientUUIDByNumber: map[string]string{}, recipientNumberByUUID: map[string]string{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.PlatformSignal, a)
 	a.Traits = adapterTraits()
@@ -419,13 +413,13 @@ func NewSignalAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Sig
 	rawURL := getOr(extra, "http_url", "http://127.0.0.1:8080")
 	urlText, ok := rawURL.(string)
 	if !ok {
-		return nil, noAttr(rawURL, "rstrip")
+		return nil, unexpectedKind("a string", rawURL)
 	}
 	a.httpURL = strings.TrimRight(urlText, "/")
 	rawAccount := getOr(extra, "account", "")
 	account, ok := rawAccount.(string)
 	if !ok {
-		return nil, noAttr(rawAccount, "strip")
+		return nil, unexpectedKind("a string", rawAccount)
 	}
 	a.account = account
 	a.ignoreStories = settings.SignalIgnoreStories.Get(gateway.SettingsContext(ctx))
@@ -457,18 +451,18 @@ func (a *SignalAdapter) touchSSEActivity() {
 	a.mu.Unlock()
 }
 
-// One GET with the httpx timeout, transport failures carrying the httpx error text
-func (a *SignalAdapter) get(ctx context.Context, client *http.Client, rawURL string, timeout time.Duration) (*pyhttpx.Response, error) {
+// One GET with every phase held to the timeout, a failure as the *url.Error of the exchange
+func (a *SignalAdapter) get(ctx context.Context, client *http.Client, rawURL string, timeout time.Duration) (*httputil.Response, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := pyhttpx.Do(client, req, timeout)
+	resp, err := httputil.Do(client, req, httputil.EachPhase(timeout))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+		return nil, err
 	}
 	return resp, nil
 }
@@ -485,7 +479,7 @@ func (a *SignalAdapter) Connect(ctx context.Context, isReconnect bool) (connecte
 	case lockErr != nil && ctx.Err() != nil:
 		return false, ctx.Err()
 	case lockErr != nil:
-		pkgLog().Warn(fmt.Sprintf("Signal: Could not acquire phone lock (non-fatal): %s", errText(lockErr)))
+		pkgLog().Warn(fmt.Sprintf("Signal: Could not acquire phone lock (non-fatal): %s", lockErr.Error()))
 	case !acquired:
 		return false, nil
 	default:
@@ -508,7 +502,7 @@ func (a *SignalAdapter) Connect(ctx context.Context, isReconnect bool) (connecte
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		pkgLog().Error(fmt.Sprintf("Signal: cannot reach signal-cli at %s: %s", a.httpURL, errText(err)))
+		pkgLog().Error(fmt.Sprintf("Signal: cannot reach signal-cli at %s: %s", a.httpURL, err.Error()))
 		return false, nil
 	}
 	if resp.StatusCode != 200 {
@@ -572,7 +566,7 @@ func (a *SignalAdapter) handleSSELine(ctx context.Context, line string) error {
 		return nil
 	}
 	a.touchSSEActivity()
-	envelope, err := pyjson.Loads(dataStr)
+	envelope, err := jsonutil.Decode(dataStr)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Signal SSE: invalid JSON: %s", textutil.First(dataStr, 100)))
 		return nil
@@ -590,16 +584,16 @@ func (a *SignalAdapter) handleSSELine(ctx context.Context, line string) error {
 func (a *SignalAdapter) readSSEStream(ctx context.Context, rawURL string, backoff *float64) error {
 	client := a.httpClient()
 	if client == nil {
-		return &pyErr{"AttributeError", "'NoneType' object has no attribute 'stream'"}
+		return errors.New("HTTP client not initialized")
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	stream, err := pyhttpx.Stream(client, req, 0)
+	stream, err := httputil.Stream(client, req, httputil.EachPhase(0))
 	if err != nil {
-		return &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+		return &sseTransportError{err}
 	}
 	defer stream.Body.Close()
 	response := &sseStream{body: stream.Body}
@@ -629,13 +623,13 @@ func (a *SignalAdapter) readSSEStream(ctx context.Context, rawURL string, backof
 		if errors.Is(readErr, io.EOF) {
 			return nil
 		}
-		return &pyErr{"ReadError", pyhttpx.ErrorText(readErr)}
+		return &sseTransportError{readErr}
 	}
 }
 
 // Listens for SSE events from the daemon, reconnecting with jittered exponential backoff
 func (a *SignalAdapter) sseListener(ctx context.Context) error {
-	rawURL := a.httpURL + "/api/v1/events?account=" + pyurl.Quote(a.account, "")
+	rawURL := a.httpURL + "/api/v1/events?account=" + url.QueryEscape(a.account)
 	backoff := sseRetryDelayInitial
 	for a.IsConnected() {
 		pkgLog().Debug(fmt.Sprintf("Signal SSE: connecting to %s", rawURL))
@@ -644,11 +638,11 @@ func (a *SignalAdapter) sseListener(ctx context.Context) error {
 			break
 		}
 		if err != nil && a.IsConnected() {
-			var pe *pyErr
-			if errors.As(err, &pe) && (pe.kind == "ConnectError" || pe.kind == "ReadError") {
-				pkgLog().Warn(fmt.Sprintf("Signal SSE: HTTP error: %s (reconnecting in %.0fs)", errText(err), backoff))
+			var transport *sseTransportError
+			if errors.As(err, &transport) {
+				pkgLog().Warn(fmt.Sprintf("Signal SSE: HTTP error: %s (reconnecting in %.0fs)", err.Error(), backoff))
 			} else {
-				pkgLog().Warn(fmt.Sprintf("Signal SSE: error: %s (reconnecting in %.0fs)", errText(err), backoff))
+				pkgLog().Warn(fmt.Sprintf("Signal SSE: error: %s (reconnecting in %.0fs)", err.Error(), backoff))
 			}
 		}
 		if a.IsConnected() {
@@ -680,10 +674,10 @@ func (a *SignalAdapter) healthMonitor(ctx context.Context) error {
 			continue
 		}
 		pkgLog().Warn(fmt.Sprintf("Signal: SSE idle for %.0fs, checking daemon health", elapsed))
-		var resp *pyhttpx.Response
+		var resp *httputil.Response
 		var err error
 		if client := a.httpClient(); client == nil {
-			err = &pyErr{"AttributeError", "'NoneType' object has no attribute 'get'"}
+			err = errors.New("HTTP client not initialized")
 		} else {
 			resp, err = a.get(ctx, client, a.httpURL+"/api/v1/check", 10*time.Second)
 		}
@@ -691,7 +685,7 @@ func (a *SignalAdapter) healthMonitor(ctx context.Context) error {
 			return nil
 		}
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Signal: health check error: %s, forcing reconnect", errText(err)))
+			pkgLog().Warn(fmt.Sprintf("Signal: health check error: %s, forcing reconnect", err.Error()))
 			a.forceReconnect(ctx)
 			continue
 		}
@@ -724,26 +718,26 @@ func (a *SignalAdapter) forceReconnect(ctx context.Context) {
 
 // Promotes a Note to Self or group sync sent message to a data message envelope, nil for other sync events
 func (a *SignalAdapter) unwrapSyncMessage(envelopeData map[string]any) (map[string]any, error) {
-	syncMsg, isDict := pyjson.Dict(envelopeData["syncMessage"])
+	syncMsg, isDict := jsonutil.AsMap(envelopeData["syncMessage"])
 	if !isDict {
 		return nil, nil
 	}
 	sentRaw := syncMsg["sentMessage"]
-	sentMsg, isDict := pyjson.Dict(sentRaw)
-	if !pyrepr.Truthy(sentRaw) || !isDict {
+	sentMsg, isDict := jsonutil.AsMap(sentRaw)
+	if !anyutil.IsTrue(sentRaw) || !isDict {
 		return nil, nil
 	}
-	dest := pyrepr.Or(sentMsg["destinationNumber"], sentMsg["destination"])
-	if !pyrepr.Equal(dest, a.accountNormalized) {
+	dest := anyutil.Or(sentMsg["destinationNumber"], sentMsg["destination"])
+	if !anyutil.Equal(dest, a.accountNormalized) {
 		groupInfo := sentMsg["groupInfo"]
-		if !pyrepr.Truthy(groupInfo) {
+		if !anyutil.IsTrue(groupInfo) {
 			groupInfo = map[string]any{}
 		}
 		gm, err := dictOf(groupInfo)
 		if err != nil {
 			return nil, err
 		}
-		if !pyrepr.Truthy(gm["groupId"]) {
+		if !anyutil.IsTrue(gm["groupId"]) {
 			return nil, nil
 		}
 	}
@@ -765,17 +759,17 @@ func (a *SignalAdapter) applyGroupMentionRules(text string, dataMessage map[stri
 		mentionedInText := accountNorm != "" && strings.Contains(text, "@"+accountNorm)
 		mentionedInMetadata := false
 		mentions := dataMessage["mentions"]
-		if pyrepr.Truthy(mentions) {
+		if anyutil.IsTrue(mentions) {
 			list, ok := mentions.([]any)
 			if !ok {
-				return false, text, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(mentions))}
+				return false, text, fmt.Errorf("mentions: %w", unexpectedKind("an array", mentions))
 			}
 			for _, item := range list {
 				m, err := dictOf(item)
 				if err != nil {
 					return false, text, err
 				}
-				if pyrepr.Equal(m["number"], accountNorm) || pyrepr.Equal(m["uuid"], accountNorm) {
+				if anyutil.Equal(m["number"], accountNorm) || anyutil.Equal(m["uuid"], accountNorm) {
 					mentionedInMetadata = true
 					break
 				}
@@ -799,23 +793,23 @@ func (a *SignalAdapter) applyGroupMentionRules(text string, dataMessage map[stri
 	return true, text, nil
 }
 
-// Whether a decoded size exceeds the attachment cap, the TypeError comparing a non number raises
+// Whether a decoded size exceeds the attachment cap, an error for a size that is not a number
 func exceedsAttachmentCap(size any) (bool, error) {
 	if f, ok := size.(float64); ok {
 		return f > signalMaxAttachmentSize, nil
 	}
-	n, ok := pyint.Instance(size)
+	n, ok := anyutil.Int(size)
 	if !ok {
-		return false, &pyErr{"TypeError", fmt.Sprintf("'>' not supported between instances of '%s' and 'int'", pyrepr.TypeName(size))}
+		return false, fmt.Errorf("attachment size: %w", unexpectedKind("a number", size))
 	}
-	return n.Cmp(big.NewInt(signalMaxAttachmentSize)) > 0, nil
+	return n > signalMaxAttachmentSize, nil
 }
 
 // Fetches and caches the inbound attachments, returning their cached paths and MIME types
 func (a *SignalAdapter) collectAttachments(ctx context.Context, attachmentsData any) ([]string, []string, error) {
 	list, ok := attachmentsData.([]any)
 	if !ok {
-		return nil, nil, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(attachmentsData))}
+		return nil, nil, fmt.Errorf("attachments: %w", unexpectedKind("an array", attachmentsData))
 	}
 	mediaURLs, mediaTypes := []string{}, []string{}
 	for _, item := range list {
@@ -824,7 +818,7 @@ func (a *SignalAdapter) collectAttachments(ctx context.Context, attachmentsData 
 			return nil, nil, err
 		}
 		attID := att["id"]
-		if !pyrepr.Truthy(attID) {
+		if !anyutil.IsTrue(attID) {
 			continue
 		}
 		tooLarge, err := exceedsAttachmentCap(getOr(att, "size", int64(0)))
@@ -832,7 +826,7 @@ func (a *SignalAdapter) collectAttachments(ctx context.Context, attachmentsData 
 			return nil, nil, err
 		}
 		if tooLarge {
-			pkgLog().Warn(fmt.Sprintf("Signal: attachment too large (%s bytes), skipping", pyrepr.Str(att["size"])))
+			pkgLog().Warn(fmt.Sprintf("Signal: attachment too large (%s bytes), skipping", anyutil.String(att["size"])))
 			continue
 		}
 		cachedPath, ext, err := a.fetchAttachment(ctx, attID)
@@ -840,13 +834,13 @@ func (a *SignalAdapter) collectAttachments(ctx context.Context, attachmentsData 
 			if ctx.Err() != nil {
 				return nil, nil, ctx.Err()
 			}
-			pkgLog().Error(fmt.Sprintf("Signal: failed to fetch attachment %s", pyrepr.Str(attID)), "error", err)
+			pkgLog().Error(fmt.Sprintf("Signal: failed to fetch attachment %s", anyutil.String(attID)), "error", err)
 			continue
 		}
 		if cachedPath != "" {
 			mediaURLs = append(mediaURLs, cachedPath)
 			contentType := att["contentType"]
-			if !pyrepr.Truthy(contentType) {
+			if !anyutil.IsTrue(contentType) {
 				contentType = extToMime(ext)
 			}
 			mediaTypes = append(mediaTypes, identText(contentType))
@@ -858,23 +852,22 @@ func (a *SignalAdapter) collectAttachments(ctx context.Context, attachmentsData 
 // UTC time of an epoch milliseconds value, the current time when it is absent or outside the datetime range
 func envelopeTimestamp(tsMs any) (time.Time, error) {
 	now := time.Now().UTC()
-	if !pyrepr.Truthy(tsMs) {
+	if !anyutil.IsTrue(tsMs) {
 		return now, nil
 	}
 	var seconds float64
 	if f, ok := tsMs.(float64); ok {
 		seconds = f / 1000
-	} else if n, ok := pyint.Instance(tsMs); ok {
-		f, _ := new(big.Float).SetInt(n).Float64()
-		seconds = f / 1000
+	} else if n, ok := anyutil.Int(tsMs); ok {
+		seconds = float64(n) / 1000
 	} else {
-		return now, &pyErr{"TypeError", fmt.Sprintf("unsupported operand type(s) for /: '%s' and 'int'", pyrepr.TypeName(tsMs))}
+		return now, fmt.Errorf("envelope timestamp: %w", unexpectedKind("a number", tsMs))
 	}
 	if math.IsNaN(seconds) {
 		return now, nil
 	}
 	if math.Abs(seconds) >= 9.2e18 {
-		return now, &pyErr{"OverflowError", "timestamp out of range for platform time_t"}
+		return now, fmt.Errorf("envelope timestamp %v ms is out of range", tsMs)
 	}
 	if seconds < -62135596800 || seconds >= 253402300800 {
 		return now, nil
@@ -890,9 +883,9 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 		return err
 	}
 	inner := getOr(outer, "envelope", envelope)
-	envelopeData, isDict := pyjson.Dict(inner)
+	envelopeData, isDict := jsonutil.AsMap(inner)
 	if !isDict {
-		return &pyErr{"TypeError", fmt.Sprintf("argument of type '%s' is not iterable", pyrepr.TypeName(inner))}
+		return fmt.Errorf("envelope: %w", unexpectedKind("a JSON object", inner))
 	}
 	_, isNoteToSelf := envelopeData["syncMessage"]
 	if isNoteToSelf {
@@ -900,25 +893,25 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 			return err
 		}
 	}
-	senderRaw := pyrepr.Or(pyrepr.Or(envelopeData["sourceNumber"], envelopeData["sourceUuid"]), envelopeData["source"])
+	senderRaw := anyutil.Or(anyutil.Or(envelopeData["sourceNumber"], envelopeData["sourceUuid"]), envelopeData["source"])
 	senderNameRaw := getOr(envelopeData, "sourceName", "")
 	senderUUIDRaw := getOr(envelopeData, "sourceUuid", "")
 	a.rememberRecipientIdentifiers(senderRaw, senderUUIDRaw)
-	if !pyrepr.Truthy(senderRaw) {
+	if !anyutil.IsTrue(senderRaw) {
 		pkgLog().Debug("Signal: ignoring envelope with no sender")
 		return nil
 	}
 	sender := identText(senderRaw)
-	if a.accountNormalized != "" && pyrepr.Equal(senderRaw, a.accountNormalized) && !isNoteToSelf {
+	if a.accountNormalized != "" && anyutil.Equal(senderRaw, a.accountNormalized) && !isNoteToSelf {
 		return nil
 	}
-	if a.ignoreStories && pyrepr.Truthy(envelopeData["storyMessage"]) {
+	if a.ignoreStories && anyutil.IsTrue(envelopeData["storyMessage"]) {
 		return nil
 	}
 	dataMessageRaw := envelopeData["dataMessage"]
-	if !pyrepr.Truthy(dataMessageRaw) {
+	if !anyutil.IsTrue(dataMessageRaw) {
 		edit := envelopeData["editMessage"]
-		if !pyrepr.Truthy(edit) {
+		if !anyutil.IsTrue(edit) {
 			edit = map[string]any{}
 		}
 		em, err := dictOf(edit)
@@ -927,7 +920,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 		}
 		dataMessageRaw = em["dataMessage"]
 	}
-	if !pyrepr.Truthy(dataMessageRaw) {
+	if !anyutil.IsTrue(dataMessageRaw) {
 		return nil
 	}
 	dataMessage, err := dictOf(dataMessageRaw)
@@ -936,13 +929,13 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 	}
 	var groupInfo map[string]any
 	var groupIDRaw any
-	if raw := dataMessage["groupInfo"]; pyrepr.Truthy(raw) {
+	if raw := dataMessage["groupInfo"]; anyutil.IsTrue(raw) {
 		if groupInfo, err = dictOf(raw); err != nil {
 			return err
 		}
 		groupIDRaw = groupInfo["groupId"]
 	}
-	isGroup := pyrepr.Truthy(groupIDRaw)
+	isGroup := anyutil.IsTrue(groupIDRaw)
 	groupID := ""
 	if isGroup {
 		groupID = identText(groupIDRaw)
@@ -956,13 +949,13 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 	}
 	textRaw := getOr(dataMessage, "message", "")
 	text := ""
-	if pyrepr.Truthy(textRaw) {
+	if anyutil.IsTrue(textRaw) {
 		s, ok := textRaw.(string)
 		if !ok {
-			return noAttr(textRaw, "strip")
+			return unexpectedKind("a string", textRaw)
 		}
 		text = s
-		if mentions := getOr(dataMessage, "mentions", []any{}); pyrepr.Truthy(mentions) {
+		if mentions := getOr(dataMessage, "mentions", []any{}); anyutil.IsTrue(mentions) {
 			if text, err = renderMentions(text, mentions); err != nil {
 				return err
 			}
@@ -979,7 +972,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 		text = stripped
 	}
 	quoteRaw := dataMessage["quote"]
-	if !pyrepr.Truthy(quoteRaw) {
+	if !anyutil.IsTrue(quoteRaw) {
 		quoteRaw = map[string]any{}
 	}
 	quoteData, err := dictOf(quoteRaw)
@@ -987,13 +980,13 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 		return err
 	}
 	var replyToID *string
-	if id := quoteData["id"]; pyrepr.Truthy(id) {
-		replyToID = optional(pyrepr.Str(id))
+	if id := quoteData["id"]; anyutil.IsTrue(id) {
+		replyToID = optional(anyutil.String(id))
 	}
 	replyToAuthor := extractQuoteAuthor(quoteRaw)
 	attachmentsData := getOr(dataMessage, "attachments", []any{})
 	mediaURLs, mediaTypes := []string{}, []string{}
-	if pyrepr.Truthy(attachmentsData) && !a.IgnoreAttachments {
+	if anyutil.IsTrue(attachmentsData) && !a.IgnoreAttachments {
 		if mediaURLs, mediaTypes, err = a.collectAttachments(ctx, attachmentsData); err != nil {
 			return err
 		}
@@ -1004,7 +997,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 	}
 	fields := gateway.SourceFields{ChatType: "dm", UserID: &sender}
 	senderName := ""
-	if pyrepr.Truthy(senderNameRaw) {
+	if anyutil.IsTrue(senderNameRaw) {
 		senderName = identText(senderNameRaw)
 	}
 	if groupInfo != nil {
@@ -1017,7 +1010,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 		userName = sender
 	}
 	fields.UserName = &userName
-	if pyrepr.Truthy(senderUUIDRaw) {
+	if anyutil.IsTrue(senderUUIDRaw) {
 		alt := identText(senderUUIDRaw)
 		fields.UserIDAlt = &alt
 	}
@@ -1055,7 +1048,7 @@ func (a *SignalAdapter) handleEnvelope(ctx context.Context, envelope any) error 
 	event.ReplyToMessageID = replyToID
 	event.ReplyToText = optText(quoteData["text"])
 	event.ReplyToAuthorID = replyToAuthor
-	event.ReplyToAuthorName = optText(pyrepr.Or(quoteData["authorName"], quoteData["authorProfileName"]))
+	event.ReplyToAuthorName = optText(anyutil.Or(quoteData["authorName"], quoteData["authorProfileName"]))
 	event.ReplyToIsOwnMessage = a.quoteReferencesOwnMessage(replyToID, replyToAuthor)
 	pkgLog().Debug(fmt.Sprintf("Signal: message from %s in %s: %s", gateway.RedactPhone(sender), textutil.First(chatID, 20), textutil.First(text, 50)))
 	return a.HandleMessage(ctx, event)
@@ -1080,7 +1073,7 @@ func (a *SignalAdapter) groupAllowed(groupID string) bool {
 
 // Caches a number to service id mapping observed on an envelope or contact
 func (a *SignalAdapter) rememberRecipientIdentifiers(number, serviceID any) {
-	if !pyrepr.Truthy(number) || !pyrepr.Truthy(serviceID) || !isSignalServiceID(serviceID) {
+	if !anyutil.IsTrue(number) || !anyutil.IsTrue(serviceID) || !isSignalServiceID(serviceID) {
 		return
 	}
 	n, id := identText(number), serviceID.(string)
@@ -1092,13 +1085,13 @@ func (a *SignalAdapter) rememberRecipientIdentifiers(number, serviceID any) {
 
 // Best available sender identifier of quote metadata, nil when it names none
 func extractQuoteAuthor(quoteData any) *string {
-	m, ok := pyjson.Dict(quoteData)
+	m, ok := jsonutil.AsMap(quoteData)
 	if !ok {
 		return nil
 	}
 	for _, k := range quoteAuthorKeys {
-		if v := m[k]; pyrepr.Truthy(v) {
-			s := pyrepr.Str(v)
+		if v := m[k]; anyutil.IsTrue(v) {
+			s := anyutil.String(v)
 			return &s
 		}
 	}
@@ -1134,7 +1127,7 @@ func (a *SignalAdapter) rememberSentMessageTimestamp(timestamp any) {
 	if timestamp == nil {
 		return
 	}
-	key := pyrepr.Str(timestamp)
+	key := anyutil.String(timestamp)
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	a.sentMessageTimestamps.Delete(key)
@@ -1146,16 +1139,16 @@ func (a *SignalAdapter) rememberSentMessageTimestamp(timestamp any) {
 
 // Service id of a listContacts entry whose number or recipient is the phone number, empty otherwise
 func (a *SignalAdapter) extractContactUUID(contact any, phoneNumber string) string {
-	m, ok := pyjson.Dict(contact)
+	m, ok := jsonutil.AsMap(contact)
 	if !ok {
 		return ""
 	}
-	serviceID := pyrepr.Or(m["uuid"], m["serviceId"])
-	if profile, isDict := pyjson.Dict(m["profile"]); !pyrepr.Truthy(serviceID) && isDict {
-		serviceID = pyrepr.Or(profile["serviceId"], profile["uuid"])
+	serviceID := anyutil.Or(m["uuid"], m["serviceId"])
+	if profile, isDict := jsonutil.AsMap(m["profile"]); !anyutil.IsTrue(serviceID) && isDict {
+		serviceID = anyutil.Or(profile["serviceId"], profile["uuid"])
 	}
-	if pyrepr.Truthy(serviceID) && isSignalServiceID(serviceID) &&
-		(pyrepr.Equal(m["number"], phoneNumber) || pyrepr.Equal(m["recipient"], phoneNumber)) {
+	if anyutil.IsTrue(serviceID) && isSignalServiceID(serviceID) &&
+		(anyutil.Equal(m["number"], phoneNumber) || anyutil.Equal(m["recipient"], phoneNumber)) {
 		return serviceID.(string)
 	}
 	return ""
@@ -1181,17 +1174,17 @@ func (a *SignalAdapter) resolveRecipient(ctx context.Context, chatID string) (st
 	if cached := a.cachedRecipientUUID(chatID); cached != "" {
 		return cached, nil
 	}
-	contacts, err := a.rpc(ctx, "listContacts", pyjson.ObjectOf("account", a.account, "allRecipients", true), rpcOptions{})
+	contacts, err := a.rpc(ctx, "listContacts", jsonutil.ObjectOf("account", a.account, "allRecipients", true), rpcOptions{})
 	if err != nil {
 		return "", err
 	}
 	if list, ok := contacts.([]any); ok {
 		for _, contact := range list {
 			var number any
-			if m, isDict := pyjson.Dict(contact); isDict {
+			if m, isDict := jsonutil.AsMap(contact); isDict {
 				number = m["number"]
 			}
-			if serviceID := a.extractContactUUID(contact, chatID); pyrepr.Truthy(number) && serviceID != "" {
+			if serviceID := a.extractContactUUID(contact, chatID); anyutil.IsTrue(number) && serviceID != "" {
 				a.rememberRecipientIdentifiers(number, serviceID)
 			}
 		}
@@ -1203,7 +1196,7 @@ func (a *SignalAdapter) resolveRecipient(ctx context.Context, chatID string) (st
 }
 
 // Adds the groupId or recipient routing key of the chat to the params in place
-func (a *SignalAdapter) withTarget(ctx context.Context, params *pyjson.Object, chatID string, resolve bool) (*pyjson.Object, error) {
+func (a *SignalAdapter) withTarget(ctx context.Context, params *jsonutil.Object, chatID string, resolve bool) (*jsonutil.Object, error) {
 	if strings.HasPrefix(chatID, "group:") {
 		params.Set("groupId", chatID[6:])
 		return params, nil
@@ -1221,25 +1214,25 @@ func (a *SignalAdapter) withTarget(ctx context.Context, params *pyjson.Object, c
 
 // Fetches an attachment over JSON-RPC and caches it, returning the cached path and extension
 func (a *SignalAdapter) fetchAttachment(ctx context.Context, attachmentID any) (string, string, error) {
-	result, err := a.rpc(ctx, "getAttachment", pyjson.ObjectOf("account", a.account, "id", attachmentID), rpcOptions{})
+	result, err := a.rpc(ctx, "getAttachment", jsonutil.ObjectOf("account", a.account, "id", attachmentID), rpcOptions{})
 	if err != nil {
 		return "", "", err
 	}
-	if !pyrepr.Truthy(result) {
+	if !anyutil.IsTrue(result) {
 		return "", "", nil
 	}
-	if m, isDict := pyjson.Dict(result); isDict {
+	if m, isDict := jsonutil.AsMap(result); isDict {
 		result = m["data"]
-		if !pyrepr.Truthy(result) {
+		if !anyutil.IsTrue(result) {
 			pkgLog().Warn("Signal: attachment response missing 'data' key")
 			return "", "", nil
 		}
 	}
 	encoded, ok := result.(string)
 	if !ok {
-		return "", "", &pyErr{"TypeError", fmt.Sprintf("argument should be a bytes-like object or ASCII string, not '%s'", pyrepr.TypeName(result))}
+		return "", "", fmt.Errorf("attachment data: %w", unexpectedKind("base64 text", result))
 	}
-	rawData, err := pybase64.B64Decode(encoded)
+	rawData, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", "", err
 	}

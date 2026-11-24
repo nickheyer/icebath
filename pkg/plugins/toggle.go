@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	xterm "github.com/charmbracelet/x/term"
@@ -14,7 +15,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -477,18 +477,6 @@ func runCompositeUI(ctx context.Context, ui *cliui.Console, keys, labels []strin
 	return nil
 }
 
-// Python int of a stripped answer, zero past the int range and false where int() raises ValueError
-func pyIntAnswer(val string) (int, bool) {
-	n, ok := pyint.Parse(val)
-	if !ok {
-		return 0, false
-	}
-	if !n.IsInt64() || n.Int64() != int64(int(n.Int64())) {
-		return 0, true
-	}
-	return int(n.Int64()), true
-}
-
 // Text menu standing in for the composite screen when curses is unavailable
 func runCompositeFallback(ctx context.Context, ui *cliui.Console, out io.Writer, keys, labels []string, selected map[int]bool, disabled map[string]bool, categories []providerCategory, expected *string) error {
 	fmt.Fprintln(out, ui.Color("\n  Plugins", cliui.Yellow))
@@ -516,8 +504,8 @@ func runCompositeFallback(ctx context.Context, ui *cliui.Console, out io.Writer,
 			if val == "" {
 				break
 			}
-			n, ok := pyIntAnswer(val)
-			if !ok {
+			n, err := strconv.Atoi(val)
+			if err != nil && !errors.Is(err, strconv.ErrRange) {
 				return nil
 			}
 			if idx := n - 1; idx >= 0 && idx < len(keys) {
@@ -541,7 +529,7 @@ func runCompositeFallback(ctx context.Context, ui *cliui.Console, out io.Writer,
 		fmt.Fprintln(out)
 		if answer, err := inputLine(ui.Color("  Configure # (or Enter to skip): ", cliui.Dim)); err == nil {
 			if val := strings.TrimSpace(answer); val != "" {
-				if n, ok := pyIntAnswer(val); ok {
+				if n, err := strconv.Atoi(val); err == nil {
 					if ci := n - 1; ci >= 0 && ci < len(categories) {
 						if _, err := categories[ci].Configure(); err != nil && !errors.Is(err, cliui.ErrInterrupt) && !errors.Is(err, cliui.ErrEOF) {
 							return err

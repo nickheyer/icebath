@@ -17,8 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Stable release tag shape, a three digit major cap keeping CalVer tags out
@@ -122,12 +123,12 @@ var resolveStampFile = func() string {
 }
 
 func optionalString(value any) *string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return nil
 	}
 	s, ok := value.(string)
 	if !ok {
-		s = pyrepr.Str(value)
+		s = anyutil.String(value)
 	}
 	return &s
 }
@@ -150,15 +151,15 @@ func stampVersionInfo() (*VersionInfo, error) {
 	if err != nil {
 		return nil, nil
 	}
-	text, err := pyjson.DecodeBytes(append([]byte("\xef\xbb\xbf"), bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))...))
+	text, err := jsonutil.Text(append([]byte("\xef\xbb\xbf"), bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))...))
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil
 	}
-	data, ok := decoded.(*pyjson.Object)
+	data, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, nil
 	}
@@ -166,12 +167,12 @@ func stampVersionInfo() (*VersionInfo, error) {
 		return nil, nil
 	}
 	mechanisms := pm.UpdateMechanisms()
-	if mechanism, ok := data.Vals["updateMechanism"].(string); !ok || !slices.Contains(mechanisms, mechanism) {
+	if mechanism, ok := data.Value("updateMechanism").(string); !ok || !slices.Contains(mechanisms, mechanism) {
 		return nil, &StampError{Msg: fmt.Sprintf("install-stamp.json at %s is missing a valid 'updateMechanism' (one of %s). The build lane that wrote this stamp must pass --update-mechanism to scripts/write_install_stamp.py (or bake the field directly).",
 			path, strings.Join(mechanisms, ", "))}
 	}
-	commitValue := data.Vals["commit"]
-	if !pyrepr.Truthy(commitValue) {
+	commitValue := data.Value("commit")
+	if !anyutil.IsTrue(commitValue) {
 		return nil, nil
 	}
 	commit, ok := commitValue.(string)
@@ -182,8 +183,8 @@ func stampVersionInfo() (*VersionInfo, error) {
 		return nil, nil
 	}
 	stampSource := ""
-	if value := data.Vals["source"]; pyrepr.Truthy(value) {
-		stampSource = pyrepr.Str(value)
+	if value := data.Value("source"); anyutil.IsTrue(value) {
+		stampSource = anyutil.String(value)
 	}
 	if stampSource == "git" {
 		if _, err := os.Stat(filepath.Join(filepath.Dir(path), ".git")); err == nil {
@@ -194,15 +195,15 @@ func stampVersionInfo() (*VersionInfo, error) {
 		}
 	}
 	base := "unknown"
-	if value := optionalString(data.Vals["baseVersion"]); value != nil {
+	if value := optionalString(data.Value("baseVersion")); value != nil {
 		base = *value
 	}
 	display := base
-	if value := optionalString(data.Vals["displayVersion"]); value != nil {
+	if value := optionalString(data.Value("displayVersion")); value != nil {
 		display = *value
 	}
 	var distance *int64
-	switch value := data.Vals["distance"].(type) {
+	switch value := data.Value("distance").(type) {
 	case string:
 		distance = parseNonnegative(value)
 	case int64:
@@ -213,15 +214,15 @@ func stampVersionInfo() (*VersionInfo, error) {
 		source = stampSource
 	}
 	var distribution *string
-	if value, ok := data.Vals["distribution"].(string); ok && slices.Contains(stampDistributions, value) {
+	if value, ok := data.Value("distribution").(string); ok && slices.Contains(stampDistributions, value) {
 		distribution = &value
 	}
 	var commitDate *int64
-	if value, ok := jsonInt(data.Vals["commitDate"]); ok {
+	if value, ok := jsonInt(data.Value("commitDate")); ok {
 		commitDate = &value
 	}
 	return &VersionInfo{BaseVersion: base, DerivedVersion: display, Distance: distance, Commit: &commit,
-		Branch: optionalString(data.Vals["branch"]), Source: source, Dirty: pyrepr.Truthy(data.Vals["dirty"]),
+		Branch: optionalString(data.Value("branch")), Source: source, Dirty: anyutil.IsTrue(data.Value("dirty")),
 		CommitDate: commitDate, Distribution: distribution}, nil
 }
 
@@ -320,7 +321,7 @@ func UserAgent(product string) (string, error) {
 }
 
 // Flat sha, short sha, version, source and commit date identity, re-resolved when refresh is set
-func GetCodeIdentity(refresh bool) (*pyjson.Object, error) {
+func GetCodeIdentity(refresh bool) (*jsonutil.Object, error) {
 	if refresh {
 		resetVersionInfoCache()
 	}
@@ -328,7 +329,7 @@ func GetCodeIdentity(refresh bool) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	identity := pyjson.NewObject()
+	identity := jsonutil.NewObject()
 	var sha, short, commitDate any
 	if info.Commit != nil {
 		sha = *info.Commit

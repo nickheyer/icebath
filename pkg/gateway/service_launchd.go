@@ -20,11 +20,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -272,7 +272,7 @@ func launchdUnsupportedMarkerExists(ctx context.Context) bool {
 func shlexJoin(argv []string) string {
 	quoted := make([]string, len(argv))
 	for i, a := range argv {
-		quoted[i] = pyshlex.Quote(a)
+		quoted[i] = shellutil.Quote(a)
 	}
 	return strings.Join(quoted, " ")
 }
@@ -283,13 +283,13 @@ func gatewayRunCommand(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	selector, err := pyshlex.SplitPOSIX(arg, false)
+	selector, err := shellutil.Split(arg)
 	if err != nil {
 		return nil, err
 	}
 	if len(selector) == 0 {
-		mine, err1 := pypath.Resolve(home.Dir(ctx))
-		root, err2 := pypath.Resolve(home.RootOf(home.Dir(ctx)))
+		mine, err1 := pathutil.Resolve(home.Dir(ctx))
+		root, err2 := pathutil.Resolve(home.RootOf(home.Dir(ctx)))
 		if err1 != nil || err2 != nil {
 			return nil, errors.Join(err1, err2)
 		}
@@ -303,7 +303,7 @@ func gatewayRunCommand(ctx context.Context) ([]string, error) {
 
 // ProgramArguments running command under osascript so macOS grants the job a Local Network identity
 func LaunchdProgramArguments(command []string, stdoutLog, stderrLog string) []string {
-	shell := fmt.Sprintf("exec %s >> %s 2>> %s", shlexJoin(command), pyshlex.Quote(stdoutLog), pyshlex.Quote(stderrLog))
+	shell := fmt.Sprintf("exec %s >> %s 2>> %s", shlexJoin(command), shellutil.Quote(stdoutLog), shellutil.Quote(stderrLog))
 	javascript := `ObjC.import("stdlib"); ` +
 		fmt.Sprintf("const status=$.system(%s); ", pyJSONString(shell)) +
 		"const signal=status & 127; " +
@@ -359,7 +359,7 @@ func timestampedStderrGatewayCommand(ctx context.Context, errorLog string, exter
 		if err != nil {
 			return nil, err
 		}
-		selector, err := pyshlex.SplitPOSIX(arg, false)
+		selector, err := shellutil.Split(arg)
 		if err != nil {
 			return nil, err
 		}
@@ -469,7 +469,7 @@ func htmlEscapeQuote(s string) string {
 // LaunchAgent plist running this profile's supervised gateway with its PATH, home and restart policy
 func GenerateLaunchdPlist(ctx context.Context) (string, error) {
 	workingDir := stableServiceWorkingDir(ctx)
-	icebathHome, err := pypath.Resolve(home.Dir(ctx))
+	icebathHome, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return "", err
 	}
@@ -611,7 +611,7 @@ func spawnDeferredLaunchdReload(ctx context.Context, domain, label, target, plis
 		return false, err
 	}
 	budget := int(budgetF)
-	qTarget, qLabel, qLog := pyshlex.Quote(target), pyshlex.Quote(label), pyshlex.Quote(reloadLog)
+	qTarget, qLabel, qLog := shellutil.Quote(target), shellutil.Quote(label), shellutil.Quote(reloadLog)
 	stamp := "$(date '+%Y-%m-%d %H:%M:%S %z')"
 	listed := fmt.Sprintf(`launchctl list %s 2>/dev/null | grep -qE '\"PID\" = [0-9]+;'`, qLabel)
 	submitLabel := fmt.Sprintf("%s.reload.%d.%d", label, os.Getpid(), lifecycleNow().Unix())
@@ -622,14 +622,14 @@ func spawnDeferredLaunchdReload(ctx context.Context, domain, label, target, plis
 		fmt.Sprintf("    echo \"[%s] old gateway pid %d still alive after %ds drain wait — bootstrapping anyway\" >> %s; ", stamp, gatewayPid, budget, qLog) +
 		"    break;   fi;   sleep 1; done; " +
 		fmt.Sprintf("sleep 1; _deadline=$(($(date +%%s) + %d)); while :; do ", budget) +
-		fmt.Sprintf("  launchctl bootstrap %s %s 2>/dev/null; ", pyshlex.Quote(domain), pyshlex.Quote(plistPath)) +
+		fmt.Sprintf("  launchctl bootstrap %s %s 2>/dev/null; ", shellutil.Quote(domain), shellutil.Quote(plistPath)) +
 		fmt.Sprintf("  if %s; then break; fi; ", listed) +
 		fmt.Sprintf("  echo \"[%s] bootstrap not yet registered for %s — retrying\" >> %s; ", stamp, qTarget, qLog) +
 		"  if [ $(date +%s) -ge $_deadline ]; then break; fi;   sleep 2; done; " +
 		fmt.Sprintf("if ! %s; then ", listed) +
 		fmt.Sprintf("  echo \"[%s] FAILED launchd reload for %s — service NOT registered after %ds of retries\" >> %s; ", stamp, qTarget, budget, qLog) +
 		"fi; " +
-		fmt.Sprintf("launchctl remove %s 2>/dev/null", pyshlex.Quote(submitLabel))
+		fmt.Sprintf("launchctl remove %s 2>/dev/null", shellutil.Quote(submitLabel))
 	argv := []string{"launchctl", "submit", "-l", submitLabel, "-o", reloadLog, "-e", reloadLog, "--", "/bin/bash", "-c", script}
 	if err := launchdStartBackground(argv, nil, nil); err != nil {
 		pkgLog().Warn(fmt.Sprintf("Deferred launchd reload could not be spawned: %s", err.Error()))
@@ -716,11 +716,11 @@ func RefreshLaunchdPlistIfNeeded(ctx context.Context) (bool, error) {
 
 // Expanded and resolved path, false when resolution fails
 func resolveOrNone(raw string) (string, bool) {
-	expanded, err := pypath.PathExpanduser(raw)
+	expanded, err := pathutil.ExpandUserPath(raw)
 	if err != nil {
 		return "", false
 	}
-	resolved, err := pypath.Resolve(expanded)
+	resolved, err := pathutil.Resolve(expanded)
 	return resolved, err == nil
 }
 
@@ -766,8 +766,8 @@ func RefuseForeignLaunchdPlist(ctx context.Context, verb string) error {
 // Temp directory home baked into a service definition, empty when every pinned home is durable
 func tempHomeInServiceDefinition(definition string) string {
 	roots := map[string]bool{}
-	if tmp, err := pypath.Gettempdir(); err == nil {
-		if resolved, err := pypath.Resolve(tmp); err == nil {
+	if tmp, err := pathutil.TempDir(); err == nil {
+		if resolved, err := pathutil.Resolve(tmp); err == nil {
 			roots[resolved] = true
 		}
 	}
@@ -775,14 +775,14 @@ func tempHomeInServiceDefinition(definition string) string {
 		roots[r] = true
 	}
 	for _, raw := range tools.ServiceDefinitionHomes(definition) {
-		resolved, err := pypath.Resolve(strings.Trim(strings.TrimSpace(raw), `"`))
+		resolved, err := pathutil.Resolve(strings.Trim(strings.TrimSpace(raw), `"`))
 		if err != nil {
 			continue
 		}
 		if roots[resolved] {
 			return strings.TrimSpace(raw)
 		}
-		for _, parent := range pypath.PathParents(resolved) {
+		for _, parent := range pathutil.Parents(resolved) {
 			if roots[parent] {
 				return strings.TrimSpace(raw)
 			}
@@ -944,15 +944,18 @@ func launchdKickstart(ctx context.Context, label, domain string) error {
 // Polls the label every half second until it runs a fresh pid or the timeout passes
 func waitForLaunchdServicePID(ctx context.Context, label string, oldPid int, haveOld bool, timeout float64, domain string) (bool, error) {
 	var probeErr error
-	fresh := pydeadline.PollUntil(func() (bool, bool) {
-		_, pid, ok, err := launchdPrintServicePID(ctx, domain, label)
-		if err != nil {
-			probeErr = err
-			return false, true
-		}
-		got := ok && pid > 0 && (!haveOld || pid != oldPid)
-		return got, got
-	}, time.Duration(math.Max(timeout, 0.5)*float64(time.Second)), launchdServicePIDPollInterval)
+	fresh := syncutil.PollUntil(context.Background(),
+
+		time.Duration(math.Max(timeout, 0.5)*float64(time.Second)), launchdServicePIDPollInterval, func() (bool, bool) {
+			_, pid, ok, err := launchdPrintServicePID(ctx, domain, label)
+			if err != nil {
+				probeErr = err
+				return false, true
+			}
+			got := ok && pid > 0 && (!haveOld || pid != oldPid)
+			return got, got
+		})
+
 	return fresh && probeErr == nil, probeErr
 }
 
@@ -1014,21 +1017,24 @@ func waitForGatewayExit(timeout, forceAfter float64, haveForce bool) bool {
 // Waits until nothing accepts TCP connections on host and port, a refused or unreachable connect counting as free
 func waitForTCPPortFree(host string, port int, timeout float64) bool {
 	addr := net.JoinHostPort(host, strconv.Itoa(port))
-	return pydeadline.PollUntil(func() (bool, bool) {
-		conn, err := launchdTCPConnect(addr, 200*time.Millisecond)
-		if err == nil {
-			conn.Close()
-			return false, false
-		}
-		if errors.Is(err, syscall.ECONNREFUSED) {
+	return syncutil.PollUntil(context.Background(),
+
+		time.Duration(timeout*float64(time.Second)), launchdTCPPortFreePollInterval, func() (bool, bool) {
+			conn, err := launchdTCPConnect(addr, 200*time.Millisecond)
+			if err == nil {
+				conn.Close()
+				return false, false
+			}
+			if errors.Is(err, syscall.ECONNREFUSED) {
+				return true, true
+			}
+			var netErr net.Error
+			if errors.As(err, &netErr) && netErr.Timeout() {
+				return false, false
+			}
 			return true, true
-		}
-		var netErr net.Error
-		if errors.As(err, &netErr) && netErr.Timeout() {
-			return false, false
-		}
-		return true, true
-	}, time.Duration(timeout*float64(time.Second)), launchdTCPPortFreePollInterval)
+		})
+
 }
 
 // Waits for an enabled api_server listen address to stop accepting, warning when it never frees

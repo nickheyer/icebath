@@ -13,9 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -37,11 +37,11 @@ func adoptCellText(v any) string {
 	case []byte:
 		return string(t)
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Unadopted pre gateway local chats of a store, one compression tip each, oldest first
-func adoptableSessions(ctx context.Context, path string) ([]*pyjson.Object, error) {
+func adoptableSessions(ctx context.Context, path string) ([]*jsonutil.Object, error) {
 	db, err := state.NewSessionDB(ctx, path, true)
 	if err != nil {
 		return nil, err
@@ -101,7 +101,7 @@ func adoptableSessions(ctx context.Context, path string) ([]*pyjson.Object, erro
 	if err != nil {
 		return nil, err
 	}
-	found := []*pyjson.Object{}
+	found := []*jsonutil.Object{}
 	seen := map[string]bool{}
 	for _, sid := range ids {
 		tipID, err := db.GetCompressionTip(ctx, sid)
@@ -123,7 +123,7 @@ func adoptableSessions(ctx context.Context, path string) ([]*pyjson.Object, erro
 			continue
 		}
 		key := tipID
-		if chatID := rowGet(tip, "chat_id"); pyrepr.Truthy(chatID) {
+		if chatID := rowGet(tip, "chat_id"); anyutil.IsTrue(chatID) {
 			text, ok := chatID.(string)
 			if !ok {
 				return nil, &appClassedError{class: "TypeError", msg: "session chat_id is " + errchain.Kind(chatID) + " where text was expected"}
@@ -151,8 +151,8 @@ func adoptRefusal(exc *gateway.GatewayRPCError) string {
 	field, detail := exc.Data["field"], exc.Data["detail"]
 	why, ok := adoptSkipHints[reason]
 	if !ok || why == "" {
-		if pyrepr.Truthy(field) && pyrepr.Truthy(detail) {
-			why = pyrepr.Str(field) + ": " + pyrepr.Str(detail)
+		if anyutil.IsTrue(field) && anyutil.IsTrue(detail) {
+			why = anyutil.String(field) + ": " + anyutil.String(detail)
 		} else {
 			why = "refused by the gateway"
 		}
@@ -161,7 +161,7 @@ func adoptRefusal(exc *gateway.GatewayRPCError) string {
 }
 
 // Resumes each row once over the native host connection then detaches, returning adopted and refusal counts
-func adoptSessions(ctx context.Context, rows []*pyjson.Object, report func(string)) (int, map[string]int, error) {
+func adoptSessions(ctx context.Context, rows []*jsonutil.Object, report func(string)) (int, map[string]int, error) {
 	adopted, skipped := 0, map[string]int{}
 	client, err := gateway.ConnectGatewayWith(ctx, gateway.ConnectGatewayOptions{MaxSize: adoptMaxFrameBytes})
 	if err != nil {
@@ -180,7 +180,7 @@ func adoptSessions(ctx context.Context, rows []*pyjson.Object, report func(strin
 			return 0, nil, err
 		}
 		sessionID := snapshot["session_id"]
-		if !pyrepr.Truthy(sessionID) {
+		if !anyutil.IsTrue(sessionID) {
 			sessionID = rowGet(row, "id")
 		}
 		subscriptionID, ok := snapshot["subscription_id"]
@@ -232,7 +232,7 @@ func cmdAdopt(ctx context.Context, h string, ns map[string]any, w io.Writer) (in
 	}
 	counts := map[string]int{}
 	for _, row := range rows {
-		counts[pyrepr.Str(rowGet(row, "source"))]++
+		counts[anyutil.String(rowGet(row, "source"))]++
 	}
 	sources := make([]string, 0, len(counts))
 	for s := range counts {

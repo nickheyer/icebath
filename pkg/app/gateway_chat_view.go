@@ -8,18 +8,18 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -49,7 +49,7 @@ func gatewayPendingPreview(text any) string {
 	}
 	var b strings.Builder
 	for _, r := range tools.StripANSI(s) {
-		if pystr.IsPrintable(r) {
+		if unicode.IsPrint(r) {
 			b.WriteRune(r)
 		} else {
 			b.WriteByte(' ')
@@ -67,7 +67,7 @@ func gatewayQuoted(row map[string]any, fallback string) string {
 	if preview := gatewayPendingPreview(row["text"]); preview != "" {
 		return `    "` + preview + `"`
 	}
-	return fmt.Sprintf("    (%s %s)", fallback, pyrepr.Str(requireKey(row, "admission_id")))
+	return fmt.Sprintf("    (%s %s)", fallback, anyutil.String(requireKey(row, "admission_id")))
 }
 
 // Pending admissions as shown on attach, lost turns with their discard command and queued prompts quoted
@@ -91,7 +91,7 @@ func gatewayPendingLines(pending []any, interactive bool) []string {
 		}
 		lines = append(lines, "  Icebath won't re-run it by itself, since it may already have done part of the work.")
 		if interactive {
-			lines = append(lines, "  To drop it and continue, type:", "/discard "+pyrepr.Str(requireKey(lost[0], "admission_id")))
+			lines = append(lines, "  To drop it and continue, type:", "/discard "+anyutil.String(requireKey(lost[0], "admission_id")))
 		}
 	} else if len(lost) > 0 {
 		lines = append(lines, fmt.Sprintf("⏸ This chat is paused. Icebath couldn't confirm how %d turns ended "+
@@ -103,7 +103,7 @@ func gatewayPendingLines(pending []any, interactive bool) []string {
 		for _, row := range lost {
 			lines = append(lines, gatewayQuoted(row, "lost turn"))
 			if interactive {
-				lines = append(lines, "/discard "+pyrepr.Str(requireKey(row, "admission_id")))
+				lines = append(lines, "/discard "+anyutil.String(requireKey(row, "admission_id")))
 			}
 		}
 	}
@@ -168,7 +168,7 @@ type GatewayChatView struct {
 	client          gatewayChatPeer
 	sessionID       string
 	generation      any
-	prompts         *pydict.Dict[any, map[string]any]
+	prompts         *orderedutil.Map[any, map[string]any]
 	pending         []any
 	model           string
 	emitter         *StreamJSONEmitter
@@ -179,10 +179,10 @@ type GatewayChatView struct {
 	launchAPIKey    string
 	finiteAdmission any
 	finiteEvents    []gatewayHeldEvent
-	streams         *pydict.Dict[any, string]
-	completions     *pydict.Dict[any, map[string]any]
-	cut             *pydict.Dict[any, string]
-	mine            *pydict.Dict[any, struct{}]
+	streams         *orderedutil.Map[any, string]
+	completions     *orderedutil.Map[any, map[string]any]
+	cut             *orderedutil.Map[any, string]
+	mine            *orderedutil.Map[any, struct{}]
 	gaps            int
 	attaching       chan struct{}
 	changed         *gatewayViewEvent
@@ -195,16 +195,16 @@ type GatewayChatView struct {
 
 // Display name of a model id, its last path segment
 func gatewayModelName(v any, fallback string) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return fallback
 	}
-	parts := strings.Split(pyrepr.Str(v), "/")
+	parts := strings.Split(anyutil.String(v), "/")
 	return parts[len(parts)-1]
 }
 
 // Prompts of a snapshot keyed by prompt id in snapshot order
-func gatewaySnapshotPrompts(snapshot map[string]any) *pydict.Dict[any, map[string]any] {
-	prompts := pydict.New[any, map[string]any]()
+func gatewaySnapshotPrompts(snapshot map[string]any) *orderedutil.Map[any, map[string]any] {
+	prompts := orderedutil.NewMap[any, map[string]any]()
 	list, _ := snapshot["prompts"].([]any)
 	for _, raw := range list {
 		p, _ := raw.(map[string]any)
@@ -228,17 +228,17 @@ func newGatewayChatView(client gatewayChatPeer, snapshot map[string]any, quiet b
 	return &GatewayChatView{
 		usageFile:   usageFile,
 		client:      client,
-		sessionID:   pyrepr.Str(requireKey(snapshot, "stored_session_id")),
+		sessionID:   anyutil.String(requireKey(snapshot, "stored_session_id")),
 		generation:  gatewayGetOr(snapshot, "execution_generation", int64(0)),
 		prompts:     gatewaySnapshotPrompts(snapshot),
 		pending:     pending,
 		model:       gatewayModelName(info["model"], "Icebath"),
 		emitter:     emitter,
 		quiet:       quiet || emitter != nil,
-		streams:     pydict.New[any, string](),
-		completions: pydict.New[any, map[string]any](),
-		cut:         pydict.New[any, string](),
-		mine:        pydict.New[any, struct{}](),
+		streams:     orderedutil.NewMap[any, string](),
+		completions: orderedutil.NewMap[any, map[string]any](),
+		cut:         orderedutil.NewMap[any, string](),
+		mine:        orderedutil.NewMap[any, struct{}](),
 		attaching:   make(chan struct{}, 1),
 		changed:     newGatewayViewEvent(),
 		failed:      newGatewayViewEvent(),
@@ -277,10 +277,10 @@ func gatewayAnswerMap(raw any) (map[string]any, error) {
 	if raw == nil {
 		return nil, nil
 	}
-	if m, ok := pyjson.Plain(raw).(map[string]any); ok {
+	if m, ok := jsonutil.Plain(raw).(map[string]any); ok {
 		return m, nil
 	}
-	return nil, fmt.Errorf("the gateway answer is %s, expected a mapping", errchain.Kind(pyjson.Plain(raw)))
+	return nil, fmt.Errorf("the gateway answer is %s, expected a mapping", errchain.Kind(jsonutil.Plain(raw)))
 }
 
 // Waits for the event with the view lock released
@@ -326,7 +326,7 @@ func (v *GatewayChatView) unknownAdmissions() []any {
 	var out []any
 	for _, raw := range v.pending {
 		row, _ := raw.(map[string]any)
-		if pyrepr.Equal(requireKey(row, "status"), "unknown") {
+		if anyutil.Equal(requireKey(row, "status"), "unknown") {
 			out = append(out, requireKey(row, "admission_id"))
 		}
 	}
@@ -343,29 +343,29 @@ func (v *GatewayChatView) showPending() {
 // Prints a pending approval or clarify prompt with the command that answers it
 func (v *GatewayChatView) showPrompt(prompt map[string]any) {
 	title := "Approval required"
-	if pyrepr.Truthy(prompt["description"]) {
-		title = pyrepr.Str(prompt["description"])
-	} else if pyrepr.Truthy(prompt["question"]) {
-		title = pyrepr.Str(prompt["question"])
+	if anyutil.IsTrue(prompt["description"]) {
+		title = anyutil.String(prompt["description"])
+	} else if anyutil.IsTrue(prompt["question"]) {
+		title = anyutil.String(prompt["question"])
 	}
 	v.println(v.errOut, "\n"+title)
-	if pyrepr.Truthy(prompt["command"]) {
-		v.println(v.errOut, pyrepr.Str(prompt["command"]))
+	if anyutil.IsTrue(prompt["command"]) {
+		v.println(v.errOut, anyutil.String(prompt["command"]))
 	}
 	command := "/answer"
-	if pyrepr.Equal(requireKey(prompt, "kind"), "approval") {
+	if anyutil.Equal(requireKey(prompt, "kind"), "approval") {
 		command = "/approve"
 	}
 	var choices []string
 	list, _ := gatewayGetOr(prompt, "choices", []any{}).([]any)
 	for _, c := range list {
-		choices = append(choices, pyrepr.Str(c))
+		choices = append(choices, anyutil.String(c))
 	}
 	joined := strings.Join(choices, "|")
 	if joined == "" {
 		joined = "answer"
 	}
-	v.println(v.errOut, fmt.Sprintf("%s %s <%s>", command, pyrepr.Str(requireKey(prompt, "prompt_id")), joined))
+	v.println(v.errOut, fmt.Sprintf("%s %s <%s>", command, anyutil.String(requireKey(prompt, "prompt_id")), joined))
 }
 
 // Renders owner events of this session until the stream fails or the context ends
@@ -383,9 +383,9 @@ func (v *GatewayChatView) render(ctx context.Context) {
 			v.fail(failure)
 			return
 		}
-		frame, _ := pyjson.Plain(event).(map[string]any)
+		frame, _ := jsonutil.Plain(event).(map[string]any)
 		params, _ := gatewayGetOr(frame, "params", map[string]any{}).(map[string]any)
-		if !pyrepr.Equal(params["session_id"], v.sessionID) {
+		if !anyutil.Equal(params["session_id"], v.sessionID) {
 			continue
 		}
 		kind, _ := params["type"].(string)
@@ -401,7 +401,7 @@ func (v *GatewayChatView) render(ctx context.Context) {
 			continue
 		}
 		admission := params["admission_id"]
-		if !pyrepr.Truthy(admission) {
+		if !anyutil.IsTrue(admission) {
 			admission = payload["admission_id"]
 		}
 		if v.finite && gatewayBlockingControlEvents[kind] {
@@ -409,12 +409,12 @@ func (v *GatewayChatView) render(ctx context.Context) {
 			v.changed.Set()
 			continue
 		}
-		if v.finite && pyrepr.Truthy(admission) {
+		if v.finite && anyutil.IsTrue(admission) {
 			if v.finiteAdmission == nil {
 				v.finiteEvents = append(v.finiteEvents, gatewayHeldEvent{kind, admission, payload})
 				continue
 			}
-			if !pyrepr.Equal(admission, v.finiteAdmission) {
+			if !anyutil.Equal(admission, v.finiteAdmission) {
 				continue
 			}
 		}
@@ -465,7 +465,7 @@ func (v *GatewayChatView) reattach(ctx context.Context) error {
 		}
 	}
 	v.prompts = prompts
-	order := pydict.New[any, struct{}]()
+	order := orderedutil.NewMap[any, struct{}]()
 	for _, k := range v.streams.Keys() {
 		order.Set(k, struct{}{})
 	}
@@ -484,11 +484,11 @@ func (v *GatewayChatView) reattach(ctx context.Context) error {
 // Settles an admission the replay gap hid, from the snapshot status or its receipt
 func (v *GatewayChatView) recover(ctx context.Context, admission any, sid string) error {
 	status := replayGapPendingStatus(v.pending, admission)
-	if pyrepr.Equal(status, "unknown") && v.mine.Has(admission) {
+	if anyutil.Equal(status, "unknown") && v.mine.Has(admission) {
 		v.complete(ctx, admission, map[string]any{"outcome": "unknown", "text": gatewayUnknownOutcome})
 		v.changed.Set()
 	}
-	if !pyrepr.Truthy(admission) || pyrepr.Equal(status, "queued") || pyrepr.Equal(status, "unknown") || v.completions.Has(admission) {
+	if !anyutil.IsTrue(admission) || anyutil.Equal(status, "queued") || anyutil.Equal(status, "unknown") || v.completions.Has(admission) {
 		return nil
 	}
 	streamed, _ := v.streams.Get(admission)
@@ -496,11 +496,11 @@ func (v *GatewayChatView) recover(ctx context.Context, admission any, sid string
 	if !v.cut.Has(admission) {
 		v.cut.Set(admission, streamed)
 	}
-	if pyrepr.Truthy(status) {
+	if anyutil.IsTrue(status) {
 		return nil
 	}
 	for _, held := range v.finiteEvents {
-		if held.kind == "message.complete" && pyrepr.Equal(held.admission, admission) {
+		if held.kind == "message.complete" && anyutil.Equal(held.admission, admission) {
 			return nil
 		}
 	}
@@ -510,7 +510,7 @@ func (v *GatewayChatView) recover(ctx context.Context, admission any, sid string
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		raw, receipt = pyjson.ObjectOf("status", "terminal"), map[string]any{"status": "terminal"}
+		raw, receipt = jsonutil.ObjectOf("status", "terminal"), map[string]any{"status": "terminal"}
 	} else if receipt, err = gatewayAnswerMap(raw); err != nil {
 		return err
 	} else if receipt == nil {
@@ -526,13 +526,13 @@ func (v *GatewayChatView) recover(ctx context.Context, admission any, sid string
 	switch {
 	case verdict != nil && *verdict:
 		outcome := receipt["outcome"]
-		if pyrepr.Equal(outcome, "interrupted") {
+		if anyutil.Equal(outcome, "interrupted") {
 			outcome = "cancelled"
 		}
 		result, _ := receipt["result"].(map[string]any)
 		text := ""
-		if pyrepr.Truthy(result["final_response"]) {
-			text = pyrepr.Str(result["final_response"])
+		if anyutil.IsTrue(result["final_response"]) {
+			text = anyutil.String(result["final_response"])
 		}
 		v.complete(ctx, admission, map[string]any{"outcome": outcome, "_receipt": raw, "text": text})
 		v.changed.Set()
@@ -575,8 +575,8 @@ func (v *GatewayChatView) sessionInfo(admission any, payload map[string]any) {
 // Prints an owner notice on stderr unless quiet
 func (v *GatewayChatView) notice(admission any, payload map[string]any) {
 	text := ""
-	if pyrepr.Truthy(payload["text"]) {
-		text = pyrepr.Str(payload["text"])
+	if anyutil.IsTrue(payload["text"]) {
+		text = anyutil.String(payload["text"])
 	}
 	if !v.quiet && strings.TrimSpace(text) != "" {
 		v.println(v.errOut, strings.TrimSpace(text))
@@ -586,7 +586,7 @@ func (v *GatewayChatView) notice(admission any, payload map[string]any) {
 // Text of a payload value that is a non empty string or other truthy value
 func gatewayText(values ...any) any {
 	for _, value := range values {
-		if pyrepr.Truthy(value) {
+		if anyutil.IsTrue(value) {
 			return value
 		}
 	}
@@ -604,15 +604,15 @@ func (v *GatewayChatView) toolStart(admission any, payload map[string]any) {
 		v.println(v.out, "")
 	}
 	if v.emitter != nil {
-		args, _ := pyjson.Plain(payload["args"]).(map[string]any)
+		args, _ := jsonutil.Plain(payload["args"]).(map[string]any)
 		extra := map[string]any{}
-		if pyrepr.Truthy(payload["tool_call_id"]) {
+		if anyutil.IsTrue(payload["tool_call_id"]) {
 			extra["tool_call_id"] = payload["tool_call_id"]
 		}
 		v.emitter.OnToolProgress("tool.started", gatewayOptionalStr(payload["tool_name"]), "", args, extra)
 	} else if !v.quiet {
-		name := pyrepr.Str(gatewayText(payload["tool_name"], payload["name"], "tool"))
-		args, _ := pyjson.Plain(payload["args"]).(map[string]any)
+		name := anyutil.String(gatewayText(payload["tool_name"], payload["name"], "tool"))
+		args, _ := jsonutil.Plain(payload["args"]).(map[string]any)
 		if args == nil {
 			args = map[string]any{}
 		}
@@ -632,7 +632,7 @@ func gatewayOptionalStr(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Emits the tool result event in stream json mode
@@ -640,9 +640,9 @@ func (v *GatewayChatView) toolComplete(admission any, payload map[string]any) {
 	if v.emitter == nil {
 		return
 	}
-	args, _ := pyjson.Plain(payload["args"]).(map[string]any)
+	args, _ := jsonutil.Plain(payload["args"]).(map[string]any)
 	extra := map[string]any{"result": payload["result"], "is_error": gatewayGetOr(payload, "is_error", false)}
-	if pyrepr.Truthy(payload["tool_call_id"]) {
+	if anyutil.IsTrue(payload["tool_call_id"]) {
 		extra["tool_call_id"] = payload["tool_call_id"]
 	}
 	v.emitter.OnToolProgress("tool.completed", gatewayOptionalStr(payload["tool_name"]), "", args, extra)
@@ -665,7 +665,7 @@ func (v *GatewayChatView) delta(admission any, payload map[string]any) {
 
 // Settles an admission, printing what is owed of its reply and the interrupt cause
 func (v *GatewayChatView) complete(ctx context.Context, admission any, payload map[string]any) {
-	text := pyrepr.Str(gatewayText(payload["text"], payload["content"]))
+	text := anyutil.String(gatewayText(payload["text"], payload["content"]))
 	streamed, _ := v.streams.Get(admission)
 	v.streams.Delete(admission)
 	cut, wasCut := v.cut.Get(admission)
@@ -694,7 +694,7 @@ func (v *GatewayChatView) complete(ctx context.Context, admission any, payload m
 		}
 	}
 	warning, isStr := payload["warning"].(string)
-	if pyrepr.Equal(payload["status"], "interrupted") && isStr && strings.TrimSpace(warning) != "" {
+	if anyutil.Equal(payload["status"], "interrupted") && isStr && strings.TrimSpace(warning) != "" {
 		v.println(v.errOut, strings.TrimSpace(warning))
 	}
 	v.completions.Set(admission, payload)
@@ -738,7 +738,7 @@ func (v *GatewayChatView) submit(ctx context.Context, text string) (map[string]a
 		return receipt, nil
 	}
 	admission := receipt["admission_id"]
-	if pyrepr.Truthy(admission) && !v.completions.Has(admission) && v.sessionID == sid {
+	if anyutil.IsTrue(admission) && !v.completions.Has(admission) && v.sessionID == sid {
 		v.mine.Set(admission, struct{}{})
 		if v.gaps != gaps {
 			if err := v.lockAttaching(ctx); err != nil {
@@ -769,50 +769,50 @@ func (v *GatewayChatView) finiteBlock(admission any) string {
 	var own any
 	for _, raw := range v.pending {
 		row, _ := raw.(map[string]any)
-		if pyrepr.Equal(requireKey(row, "admission_id"), admission) {
+		if anyutil.Equal(requireKey(row, "admission_id"), admission) {
 			own = requireKey(row, "status")
 			break
 		}
 	}
-	if pyrepr.Equal(own, "unknown") {
+	if anyutil.Equal(own, "unknown") {
 		v.completions.Set(admission, map[string]any{"outcome": "unknown", "text": gatewayUnknownOutcome})
 		return ""
 	}
-	if pyrepr.Equal(own, "queued") && len(v.unknownAdmissions()) > 0 {
+	if anyutil.Equal(own, "queued") && len(v.unknownAdmissions()) > 0 {
 		return "This chat is paused behind a turn whose ending Icebath couldn't confirm. " +
 			"Your message is saved and will run once you resume this session and /discard " +
 			"that turn; don't send it again."
 	}
-	if v.prompts.Len() > 0 && (pyrepr.Truthy(own) || v.gaps == 0) {
+	if v.prompts.Len() > 0 && (anyutil.IsTrue(own) || v.gaps == 0) {
 		return "Input required; detached without cancelling. Resume this session interactively."
 	}
 	return ""
 }
 
 // Structured result the owner committed with the admission settlement, empty when unreadable
-func (v *GatewayChatView) settledResult(ctx context.Context, admission any) (*pyjson.Object, error) {
+func (v *GatewayChatView) settledResult(ctx context.Context, admission any) (*jsonutil.Object, error) {
 	raw, err := v.rpcRaw(ctx, "prompt.receipt", map[string]any{"session_id": v.sessionID, "admission_id": admission, "include_result": true}, 0)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		pkgLog().Debug(fmt.Sprintf("settled result for %s unavailable: %v", pyrepr.Str(admission), err))
-		return pyjson.NewObject(), nil
+		pkgLog().Debug(fmt.Sprintf("settled result for %s unavailable: %v", anyutil.String(admission), err))
+		return jsonutil.NewObject(), nil
 	}
-	receipt, ok := raw.(*pyjson.Object)
+	receipt, ok := raw.(*jsonutil.Object)
 	if !ok {
-		pkgLog().Debug(fmt.Sprintf("settled result for %s unavailable: receipt is not a mapping", pyrepr.Str(admission)))
-		return pyjson.NewObject(), nil
+		pkgLog().Debug(fmt.Sprintf("settled result for %s unavailable: receipt is not a mapping", anyutil.String(admission)))
+		return jsonutil.NewObject(), nil
 	}
-	return gatewayResultCopy(receipt.Vals["result"]), nil
+	return gatewayResultCopy(receipt.Value("result")), nil
 }
 
 // Copy of a committed result mapping, empty for a missing or falsy one
-func gatewayResultCopy(result any) *pyjson.Object {
-	out := pyjson.NewObject()
-	if obj, ok := result.(*pyjson.Object); ok {
-		for _, key := range obj.Keys {
-			out.Set(key, obj.Vals[key])
+func gatewayResultCopy(result any) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	if obj, ok := result.(*jsonutil.Object); ok {
+		for _, key := range obj.Keys() {
+			out.Set(key, obj.Value(key))
 		}
 	} else if m, ok := result.(map[string]any); ok {
 		for _, key := range sortedMapKeys(m) {
@@ -834,7 +834,7 @@ func (v *GatewayChatView) printExitIDs(ctx context.Context) {
 
 // Says on stderr that a finite turn was interrupted with no reply and never retried
 func (v *GatewayChatView) reportSilentInterrupt(text string, result map[string]any) {
-	if text != "" || !pyrepr.Truthy(result["interrupted"]) {
+	if text != "" || !anyutil.IsTrue(result["interrupted"]) {
 		return
 	}
 	reason := ""
@@ -852,16 +852,16 @@ func (v *GatewayChatView) reportNoReply(exitCode int) {
 }
 
 // Writes the usage file ledger of the settled turn
-func (v *GatewayChatView) writeUsageFile(result *pyjson.Object, outcome any) {
+func (v *GatewayChatView) writeUsageFile(result *jsonutil.Object, outcome any) {
 	report := gatewayResultCopy(result)
-	sessionID := report.Vals["session_id"]
-	if !pyrepr.Truthy(sessionID) {
+	sessionID := report.Value("session_id")
+	if !anyutil.IsTrue(sessionID) {
 		sessionID = v.sessionID
 	}
 	report.Set("session_id", sessionID)
 	var failure any
-	if !pyrepr.Equal(outcome, "completed") && !pyrepr.Equal(outcome, "cancelled") {
-		failure = gatewayText(report.Vals["error"], outcome, "failed")
+	if !anyutil.Equal(outcome, "completed") && !anyutil.Equal(outcome, "cancelled") {
+		failure = gatewayText(report.Value("error"), outcome, "failed")
 	}
 	oneshotWriteUsageFile(v.usageFile, report, failure)
 }
@@ -912,7 +912,7 @@ func (v *GatewayChatView) runFinite(ctx context.Context, receipt map[string]any)
 	}
 	v.finiteAdmission = admission
 	for _, held := range v.finiteEvents {
-		if pyrepr.Equal(held.admission, admission) && !v.completions.Has(admission) {
+		if anyutil.Equal(held.admission, admission) && !v.completions.Has(admission) {
 			v.dispatchEvent(ctx, held.kind, held.admission, held.payload)
 		}
 	}
@@ -934,19 +934,19 @@ func (v *GatewayChatView) runFinite(ctx context.Context, receipt map[string]any)
 	}
 	terminal, _ := v.completions.Get(admission)
 	outcome := terminal["outcome"]
-	text := pyrepr.Str(gatewayText(terminal["text"], terminal["content"]))
-	var result *pyjson.Object
-	if recovered, ok := terminal["_receipt"].(*pyjson.Object); ok && recovered != nil {
-		result = gatewayResultCopy(recovered.Vals["result"])
+	text := anyutil.String(gatewayText(terminal["text"], terminal["content"]))
+	var result *jsonutil.Object
+	if recovered, ok := terminal["_receipt"].(*jsonutil.Object); ok && recovered != nil {
+		result = gatewayResultCopy(recovered.Value("result"))
 	} else {
 		var err error
 		if result, err = v.settledResult(ctx, admission); err != nil {
 			return 0, err
 		}
 	}
-	result.Set("failed", pyrepr.Truthy(result.Vals["failed"]) || (!pyrepr.Equal(outcome, "completed") && !pyrepr.Equal(outcome, "cancelled")))
-	result.Set("interrupted", pyrepr.Truthy(result.Vals["interrupted"]) || pyrepr.Equal(outcome, "cancelled"))
-	plain, _ := pyjson.Plain(result).(map[string]any)
+	result.Set("failed", anyutil.IsTrue(result.Value("failed")) || (!anyutil.Equal(outcome, "completed") && !anyutil.Equal(outcome, "cancelled")))
+	result.Set("interrupted", anyutil.IsTrue(result.Value("interrupted")) || anyutil.Equal(outcome, "cancelled"))
+	plain, _ := jsonutil.Plain(result).(map[string]any)
 	var exitCode int
 	if v.unattended {
 		exitCode = oneshotExitCode(text, plain)
@@ -962,7 +962,7 @@ func (v *GatewayChatView) runFinite(ctx context.Context, receipt map[string]any)
 			final[k] = val
 		}
 		final["final_response"] = text
-		final["replay_gap"] = pyrepr.Truthy(terminal["replay_gap"])
+		final["replay_gap"] = anyutil.IsTrue(terminal["replay_gap"])
 		return v.emitter.EmitResult(final, v.sessionID, exitCode), nil
 	}
 	v.reportSilentInterrupt(text, plain)
@@ -996,5 +996,5 @@ func gatewayResumeFooter(ctx context.Context, sessionID string) string {
 // Whether a snapshot message row is a micro compaction merge shown by its original prompts instead
 func gatewayModelOnlyRow(row map[string]any) bool {
 	metadata, ok := row["display_metadata"].(map[string]any)
-	return ok && pyrepr.Truthy(metadata[state.ModelOnlyKey])
+	return ok && anyutil.IsTrue(metadata[state.ModelOnlyKey])
 }

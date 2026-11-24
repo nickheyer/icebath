@@ -10,7 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Longest sanitized title a session may carry, counted in code points
@@ -36,11 +35,11 @@ var (
 // SessionDB members the title rules call, implemented by the SessionDB
 type titlesHost interface {
 	executeWrite(ctx context.Context, fn func(conn SQLiteConn) error, patienceS *float64) error
-	readOne(ctx context.Context, query string, args ...any) (*pyjson.Object, error)
-	readAll(ctx context.Context, query string, args ...any) ([]*pyjson.Object, error)
+	readOne(ctx context.Context, query string, args ...any) (*jsonutil.Object, error)
+	readAll(ctx context.Context, query string, args ...any) ([]*jsonutil.Object, error)
 	writeRowcount(ctx context.Context, query string, args []any, patienceS *float64) (int64, error)
 	readRetryingIOErr(ctx context.Context, fn func(conn SQLiteConn) error) error
-	sessionRowDict(row *pyjson.Object) *pyjson.Object
+	sessionRowDict(row *jsonutil.Object) *jsonutil.Object
 }
 
 // Title sanitizing, provenance ranking and lineage lookups, embedded in SessionDB so its methods are SessionDB methods
@@ -59,9 +58,9 @@ func matchNumberedTitle(title any) (*big.Int, string, bool, error) {
 	case string:
 		text = v
 	case []byte:
-		return nil, "", false, &pyint.Error{Kind: "TypeError", Msg: "cannot use a string pattern on a bytes-like object"}
+		return nil, "", false, &errorutil.Error{Kind: "TypeError", Msg: "cannot use a string pattern on a bytes-like object"}
 	default:
-		return nil, "", false, &pyint.Error{Kind: "TypeError", Msg: "the session title is " + errchain.Kind(title) + ", expected text"}
+		return nil, "", false, &errorutil.Error{Kind: "TypeError", Msg: "the session title is " + errchain.Kind(title) + ", expected text"}
 	}
 	m, err := numberedTitleRe.FindStringMatch(text)
 	if err != nil || m == nil {
@@ -121,7 +120,7 @@ func SanitizeTitle(title string) (string, error) {
 		return "", nil
 	}
 	if n := utf8.RuneCountInString(cleaned); n > MaxTitleLength {
-		return "", &pyint.Error{Kind: "ValueError", Msg: "Title too long (" + big.NewInt(int64(n)).String() + " chars, max " + big.NewInt(MaxTitleLength).String() + ")"}
+		return "", &errorutil.Error{Kind: "ValueError", Msg: "Title too long (" + big.NewInt(int64(n)).String() + " chars, max " + big.NewInt(MaxTitleLength).String() + ")"}
 	}
 	return cleaned, nil
 }
@@ -176,7 +175,7 @@ func (t *sessionTitles) resolveTitleConflict(ctx context.Context, conn SQLiteCon
 		}
 		return conflictID, true, nil
 	}
-	return "", false, &pyint.Error{Kind: "ValueError", Msg: "Title '" + title + "' is already in use by session " + conflictID}
+	return "", false, &errorutil.Error{Kind: "ValueError", Msg: "Title '" + title + "' is already in use by session " + conflictID}
 }
 
 // Applies the title rules inside an authority owned transaction without committing, returning the affected session ids
@@ -197,7 +196,7 @@ func (t *sessionTitles) setSessionTitleInTransaction(ctx context.Context, conn S
 	hidden, _ := current.Get("hidden")
 	if held, _ := currentTitle.(string); held == CanonicalBotChatTitle && pyTruthy(hidden) && title != CanonicalBotChatTitle {
 		if isUser {
-			return nil, &pyint.Error{Kind: "ValueError", Msg: "This is the bot's canonical Bot Chat — its name is its " +
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "This is the bot's canonical Bot Chat — its name is its " +
 				"identity, and renaming it would orphan the conversation. " +
 				"To start fresh, create a new bot instead."}
 		}
@@ -252,7 +251,7 @@ func (t *sessionTitles) SetSessionTitle(ctx context.Context, sessionID, title st
 // Sets a derived or llm title, false when a higher authority title holds the row
 func (t *sessionTitles) SetAutoTitle(ctx context.Context, sessionID, title, source string) (bool, error) {
 	if source != TitleSourceDerived && source != TitleSourceLLM {
-		return false, &pyint.Error{Kind: "ValueError", Msg: "invalid automatic title source: " + errchain.Show(source)}
+		return false, &errorutil.Error{Kind: "ValueError", Msg: "invalid automatic title source: " + errchain.Show(source)}
 	}
 	return t.setSessionTitle(ctx, sessionID, title, source)
 }
@@ -302,14 +301,14 @@ func (t *sessionTitles) GetSessionTitleSource(ctx context.Context, sessionID str
 // Overwrites the provenance of a titled session without touching its text
 func (t *sessionTitles) SetSessionTitleSource(ctx context.Context, sessionID, source string) (bool, error) {
 	if _, ok := titleSourceRank[source]; !ok {
-		return false, &pyint.Error{Kind: "ValueError", Msg: "invalid title source: " + errchain.Show(source)}
+		return false, &errorutil.Error{Kind: "ValueError", Msg: "invalid title source: " + errchain.Show(source)}
 	}
 	n, err := t.host.writeRowcount(ctx, "UPDATE sessions SET title_source = ? WHERE id = ? AND title IS NOT NULL", []any{source, sessionID}, nil)
 	return n > 0, err
 }
 
 // Session dict of the exact title holder with its resolved system prompt, nil when none holds it
-func (t *sessionTitles) GetSessionByTitle(ctx context.Context, title string) (*pyjson.Object, error) {
+func (t *sessionTitles) GetSessionByTitle(ctx context.Context, title string) (*jsonutil.Object, error) {
 	row, err := t.host.readOne(ctx,
 		"SELECT s.*, COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved "+
 			"FROM sessions s LEFT JOIN system_prompts sp ON sp.hash = s.system_prompt_hash "+

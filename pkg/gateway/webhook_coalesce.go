@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const (
@@ -23,21 +23,21 @@ const (
 var webhookTemplateFieldRE = regexp.MustCompile(`\{[a-zA-Z0-9_.]+\}`)
 
 // Startup check of a route coalesce block, the ValueError a malformed block raises
-func ValidateCoalesceConfig(routeName string, route *pyjson.Object) error {
+func ValidateCoalesceConfig(routeName string, route *jsonutil.Object) error {
 	coalesce, found := route.Get("coalesce")
 	if !found || coalesce == nil {
 		return nil
 	}
 	for _, exclusive := range []string{"deliver_only", "cron_job"} {
-		if pyrepr.Truthy(route.GetOr(exclusive, nil)) {
+		if anyutil.IsTrue(route.ValueOr(exclusive, nil)) {
 			return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' combines %s with coalesce. Coalescing only "+
 				"applies to agent-mode routes.", routeName, exclusive)}
 		}
 	}
-	block, isDict := pyjson.AsObject(coalesce)
+	block, isDict := jsonutil.AsObject(coalesce)
 	var key any
 	if isDict {
-		key = block.GetOr("key", nil)
+		key = block.ValueOr("key", nil)
 	}
 	if text, ok := key.(string); !ok || strings.TrimSpace(text) == "" {
 		return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' has a coalesce block without a non-empty string 'key'. "+
@@ -45,13 +45,13 @@ func ValidateCoalesceConfig(routeName string, route *pyjson.Object) error {
 			"(e.g. '{repository.full_name}#{number}').", routeName)}
 	}
 	for _, field := range []string{"window_seconds", "max_wait_seconds"} {
-		value := block.GetOr(field, nil)
+		value := block.ValueOr(field, nil)
 		if value == nil {
 			continue
 		}
 		if _, isBool := value.(bool); isBool || !webhookPositiveNumberValue(value) {
 			return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' coalesce.%s must be a positive number, got %s.",
-				routeName, field, pyrepr.Repr(value))}
+				routeName, field, anyutil.Quote(value))}
 		}
 	}
 	return nil
@@ -73,7 +73,7 @@ func webhookPositiveNumberValue(value any) bool {
 
 // Arguments the adapter spawner receives with a settled event besides payload, prompt and delivery id
 type WebhookDispatchArgs struct {
-	RouteConfig *pyjson.Object
+	RouteConfig *jsonutil.Object
 	RouteName   string
 	Profile     *string
 	EventType   any
@@ -126,14 +126,14 @@ type WebhookCoalescer struct {
 	dispatch WebhookCoalesceDispatch
 	render   WebhookCoalesceRender
 	mu       sync.Mutex
-	pending  *pydict.Dict[string, *WebhookPendingEvent]
-	timers   *pydict.Dict[string, *webhookCoalesceTimer]
+	pending  *orderedutil.Map[string, *WebhookPendingEvent]
+	timers   *orderedutil.Map[string, *webhookCoalesceTimer]
 }
 
 // Coalescer dispatching through the adapter spawner and rendering keys with its prompt renderer
 func NewWebhookCoalescer(dispatch WebhookCoalesceDispatch, render WebhookCoalesceRender) *WebhookCoalescer {
-	return &WebhookCoalescer{dispatch: dispatch, render: render, pending: pydict.New[string, *WebhookPendingEvent](),
-		timers: pydict.New[string, *webhookCoalesceTimer]()}
+	return &WebhookCoalescer{dispatch: dispatch, render: render, pending: orderedutil.NewMap[string, *WebhookPendingEvent](),
+		timers: orderedutil.NewMap[string, *webhookCoalesceTimer]()}
 }
 
 // Pending groups by key in arrival order
@@ -174,7 +174,7 @@ func containsRune(text string, r rune) bool {
 }
 
 // Buffers one event, false when the key did not resolve and the caller dispatches at once
-func (c *WebhookCoalescer) Enqueue(routeName string, coalesce *pyjson.Object, payload, eventType any, prompt, deliveryID string,
+func (c *WebhookCoalescer) Enqueue(routeName string, coalesce *jsonutil.Object, payload, eventType any, prompt, deliveryID string,
 	now float64, args WebhookDispatchArgs) (bool, error) {
 	keyValue, _ := coalesce.Get("key")
 	keyText, ok := keyValue.(string)
@@ -187,7 +187,7 @@ func (c *WebhookCoalescer) Enqueue(routeName string, coalesce *pyjson.Object, pa
 	}
 	if !resolved {
 		pkgLog().Info(fmt.Sprintf("[webhook] coalesce key %s unresolved for delivery %s on route %s — dispatching immediately",
-			pyrepr.Repr(keyText), deliveryID, routeName))
+			anyutil.Quote(keyText), deliveryID, routeName))
 		return false, nil
 	}
 	window, err := webhookCoalesceSeconds(coalesce, "window_seconds", webhookCoalesceDefaultWindowSeconds)
@@ -229,12 +229,12 @@ func (c *WebhookCoalescer) Enqueue(routeName string, coalesce *pyjson.Object, pa
 }
 
 // Float of a coalesce timing field, its default when absent
-func webhookCoalesceSeconds(coalesce *pyjson.Object, field string, def float64) (float64, error) {
+func webhookCoalesceSeconds(coalesce *jsonutil.Object, field string, def float64) (float64, error) {
 	value, found := coalesce.Get(field)
 	if !found {
 		return def, nil
 	}
-	return pyint.Float(value)
+	return anyutil.ToFloat(value)
 }
 
 // Waits out the quiet window then settles the group, a cancelled timer leaving the pending entry
@@ -290,7 +290,7 @@ func (c *WebhookCoalescer) Flush() {
 	}
 	c.timers.Clear()
 	pending := c.pending
-	c.pending = pydict.New[string, *WebhookPendingEvent]()
+	c.pending = orderedutil.NewMap[string, *WebhookPendingEvent]()
 	c.mu.Unlock()
 	var handedOff []*adapterTask
 	for groupKey, entry := range pending.All() {

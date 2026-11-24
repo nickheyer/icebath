@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 func plainFormatter() *Formatter { return NewFormatter("%(message)s", "") }
@@ -335,7 +335,7 @@ func TestProfileRouterNeverHoldsItsLockWhileTakingTheLoggingModuleLock(t *testin
 	router := newTestRouter(t, existing, profile)
 	_ = existing.Close()
 	defer func() { _ = router.Close() }()
-	building := &pythread.Event{}
+	building := &syncutil.Event{}
 	prev := newFileHandlerFn
 	newFileHandlerFn = func(ctx context.Context, p string, l int, m float64, b int, f *Formatter) (*managedRotatingFileHandler, error) {
 		building.Set()
@@ -436,7 +436,7 @@ func TestRouterNeverBuildsAChildHandlerUnderALockLoggingShutdownTakes(t *testing
 	existing := newTestRotating(t, filepath.Join(h, "logs", "agent.log"), 0, 0)
 	router := newTestRouter(t, existing, profile)
 	_ = existing.Close()
-	building, proceed := &pythread.Event{}, &pythread.Event{}
+	building, proceed := &syncutil.Event{}, &syncutil.Event{}
 	prev := newFileHandlerFn
 	newFileHandlerFn = func(ctx context.Context, p string, l int, m float64, b int, f *Formatter) (*managedRotatingFileHandler, error) {
 		building.Set()
@@ -446,7 +446,7 @@ func TestRouterNeverBuildsAChildHandlerUnderALockLoggingShutdownTakes(t *testing
 	t.Cleanup(func() { newFileHandlerFn = prev })
 	rec := testRecord("lockorder", LevelWarning, "routed")
 	rec.Home = profile
-	holding, released := &pythread.Event{}, &pythread.Event{}
+	holding, released := &syncutil.Event{}, &syncutil.Event{}
 	var got bool
 	emitterDone, clearerDone := make(chan struct{}), make(chan struct{})
 	go func() {

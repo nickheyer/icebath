@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Child constructor double recording options and the built children, each answering the canned text
@@ -64,7 +64,7 @@ func TestOrchestratorRoleSchemaRoleIsDepthDerivedNotCallerDeclared(t *testing.T)
 }
 
 func TestOrchestratorRoleSchemaSchemaOmitsAcpTransportFields(t *testing.T) {
-	props := pyjson.Plain(tools.DelegateTaskSchema.Vals["parameters"]).(map[string]any)["properties"].(map[string]any)
+	props := jsonutil.Plain(tools.DelegateTaskSchema.Value("parameters")).(map[string]any)["properties"].(map[string]any)
 	taskProps := props["tasks"].(map[string]any)["items"].(map[string]any)["properties"].(map[string]any)
 	for _, key := range []string{"acp_command", "acp_args"} {
 		if _, top := props[key]; top {

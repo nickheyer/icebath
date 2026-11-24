@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Shell lines a committed branch owes its child: those of the parent that ran before the first message left behind
@@ -37,14 +38,14 @@ type RuntimeMutation struct {
 	// Raises to refuse a new write, never seeing replays
 	AuthorizeWrite func(ctx context.Context, conn SQLiteConn) error
 	PrepareOnly    bool
-	Prepared       *pyjson.Object
+	Prepared       *jsonutil.Object
 }
 
 // Operations that fence the execution generation
 var generationFencedOperations = map[string]bool{"delete": true, "rewind": true, "reset": true, "branch": true, "model": true, "compress": true}
 
 // Commits a closed metadata edit and its retry receipt in one transaction, firing the delete event after
-func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation) (*pyjson.Object, error) {
+func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation) (*jsonutil.Object, error) {
 	for _, v := range []string{in.PrincipalID, in.SessionID, in.RequestID} {
 		if err := runtimeText(v); err != nil {
 			return nil, err
@@ -66,16 +67,16 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(encoded)
+	decoded, err := jsonutil.Decode(encoded)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
-	payload := decoded.(*pyjson.Object)
+	payload := decoded.(*jsonutil.Object)
 	key, digest, err := MutationReceiptKey(in.PrincipalID, in.SessionID, in.RequestID, in.Operation, payload, in.ExpectedRevision, in.ExpectedGeneration)
 	if err != nil {
 		return nil, err
 	}
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	var event *SessionGoneEvent
 	var carried *branchShellLines
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
@@ -88,7 +89,7 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 			return err
 		}
 		if replay != nil {
-			stored, ok := replay.(*pyjson.Object)
+			stored, ok := replay.(*jsonutil.Object)
 			if !ok {
 				return &stateTypedError{"TypeError", "stored mutation result is not a dict"}
 			}
@@ -106,10 +107,10 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 		if session != nil {
 			revision = session["runtime_revision"]
 		}
-		if !pyjson.Equal(revision, in.ExpectedRevision) {
+		if !anyutil.Equal(revision, in.ExpectedRevision) {
 			return runtimeRefusal("revision_conflict")
 		}
-		if in.ExpectedGeneration != nil && (session == nil || !pyjson.Equal(session["runtime_generation"], *in.ExpectedGeneration)) {
+		if in.ExpectedGeneration != nil && (session == nil || !anyutil.Equal(session["runtime_generation"], *in.ExpectedGeneration)) {
 			return runtimeRefusal("stale_generation")
 		}
 		if in.LiveGuard != nil {
@@ -138,7 +139,7 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 					return err
 				}
 			}
-			result = pyjson.ObjectOf("snapshot", snapshot)
+			result = jsonutil.ObjectOf("snapshot", snapshot)
 			return nil
 		}
 		affected, projection, err := d.applyAction(ctx, conn, in.SessionID, in.Operation, payload, in.Prepared)
@@ -187,9 +188,9 @@ func (d *SessionDB) MutateRuntimeSession(ctx context.Context, in RuntimeMutation
 				newGeneration = *in.ExpectedGeneration
 			}
 		}
-		out := pyjson.ObjectOf("session_id", in.SessionID, "revision", newRevision, "execution_generation", newGeneration, "operation", in.Operation)
-		out.Update(projection)
-		receipt, err := runtimeJSON(pyjson.ObjectOf("digest", digest, "result", out))
+		out := jsonutil.ObjectOf("session_id", in.SessionID, "revision", newRevision, "execution_generation", newGeneration, "operation", in.Operation)
+		out.Merge(projection)
+		receipt, err := runtimeJSON(jsonutil.ObjectOf("digest", digest, "result", out))
 		if err != nil {
 			return err
 		}
@@ -247,14 +248,14 @@ func canonicalChain(ctx context.Context, conn SQLiteConn, sessionID string) ([]s
 }
 
 // Inserts one frozen legacy admission row against the canonical tip of its target
-func importLegacyRow(ctx context.Context, conn SQLiteConn, row *pyjson.Object, epoch int64, principalID string) error {
+func importLegacyRow(ctx context.Context, conn SQLiteConn, row *jsonutil.Object, epoch int64, principalID string) error {
 	for _, field := range []string{"admission_id", "target_session_id", "root"} {
 		if _, err := runtimeTextOf(rowValue(row, field)); err != nil {
 			return err
 		}
 	}
 	lineageRaw, _ := rowValue(row, "lineage").(string)
-	lineageDecoded, err := pyjson.Loads(lineageRaw)
+	lineageDecoded, err := jsonutil.Decode(lineageRaw)
 	if err != nil {
 		return pyValueError(err.Error())
 	}
@@ -262,7 +263,7 @@ func importLegacyRow(ctx context.Context, conn SQLiteConn, row *pyjson.Object, e
 	targetID := pyStr(rowValue(row, "target_session_id"))
 	inLineage := false
 	for _, item := range lineage {
-		if pyjson.Equal(item, targetID) {
+		if anyutil.Equal(item, targetID) {
 			inLineage = true
 		}
 	}
@@ -270,7 +271,7 @@ func importLegacyRow(ctx context.Context, conn SQLiteConn, row *pyjson.Object, e
 		return runtimeRefusal("invalid_params")
 	}
 	payloadRaw, _ := rowValue(row, "payload").(string)
-	payloadDecoded, err := pyjson.Loads(payloadRaw)
+	payloadDecoded, err := jsonutil.Decode(payloadRaw)
 	if err != nil {
 		return pyValueError(err.Error())
 	}
@@ -278,7 +279,7 @@ func importLegacyRow(ctx context.Context, conn SQLiteConn, row *pyjson.Object, e
 	if err != nil {
 		return err
 	}
-	payload := payloadDecoded.(*pyjson.Object)
+	payload := payloadDecoded.(*jsonutil.Object)
 	intent, has := payload.Get("intent")
 	if !has {
 		intent = "queue"
@@ -323,7 +324,7 @@ func importLegacyRow(ctx context.Context, conn SQLiteConn, row *pyjson.Object, e
 	if err != nil {
 		return err
 	}
-	chainJSON, err := pyjson.Dumps(anyStrings(chain))
+	chainJSON, err := jsonutil.Encode(anyStrings(chain))
 	if err != nil {
 		return err
 	}
@@ -373,7 +374,7 @@ func (d *SessionDB) ImportLegacySessionAdmissions(ctx context.Context, epoch int
 	if err != nil {
 		return 0, err
 	}
-	executions := []*pyjson.Object{}
+	executions := []*jsonutil.Object{}
 	hasExecutions, err := connRow(ctx, source, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='executions'")
 	if err != nil {
 		return 0, err
@@ -383,12 +384,12 @@ func (d *SessionDB) ImportLegacySessionAdmissions(ctx context.Context, epoch int
 			return 0, err
 		}
 	}
-	snapshot, err := runtimeJSON(pyjson.ObjectOf("rows", anyObjectList(rows), "executions", anyObjectList(executions)))
+	snapshot, err := runtimeJSON(jsonutil.ObjectOf("rows", anyObjectList(rows), "executions", anyObjectList(executions)))
 	if err != nil {
 		return 0, err
 	}
 	sum := sha256.Sum256([]byte(snapshot))
-	marker, err := runtimeJSON(pyjson.ObjectOf("source", resolved, "fingerprint", hex.EncodeToString(sum[:]),
+	marker, err := runtimeJSON(jsonutil.ObjectOf("source", resolved, "fingerprint", hex.EncodeToString(sum[:]),
 		"imported_id_count", int64(len(rows)), "principal_id", principalID))
 	if err != nil {
 		return 0, err
@@ -404,7 +405,7 @@ func (d *SessionDB) ImportLegacySessionAdmissions(ctx context.Context, epoch int
 			return err
 		}
 		if has {
-			if !pyjson.Equal(old, marker) {
+			if !anyutil.Equal(old, marker) {
 				return runtimeRefusal("admission_conflict")
 			}
 			return nil
@@ -441,7 +442,7 @@ func (d *SessionDB) ImportLegacySessionAdmissions(ctx context.Context, epoch int
 }
 
 // Row objects as a JSON list value
-func anyObjectList(rows []*pyjson.Object) []any {
+func anyObjectList(rows []*jsonutil.Object) []any {
 	out := make([]any, len(rows))
 	for i, row := range rows {
 		out[i] = row

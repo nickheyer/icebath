@@ -6,15 +6,15 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Seconds between delete checks of one routed profile home
 const profileLivenessRecheckS = 2.0
 
 var (
-	monotonic             = pythread.Monotonic
+	monotonic             = timeutil.Monotonic
 	namedProfileIsDeleted = home.ProfileDeleted
 	newFileHandlerFn      = newFileHandler
 )
@@ -69,7 +69,7 @@ func newProfileRoutingFileHandler(existing *managedRotatingFileHandler, profileH
 
 // Lexically resolved path with symlinks followed where they exist, the Path.resolve form
 func resolvePath(p string) string {
-	if r, err := pypath.Realpath(p, pypath.Lax); err == nil {
+	if r, err := pathutil.Resolve(p); err == nil {
 		return r
 	}
 	return p
@@ -77,11 +77,11 @@ func resolvePath(p string) string {
 
 // Home path with the user expanded and symlinks resolved
 func resolveHome(p string) (string, error) {
-	expanded, err := pypath.PathExpanduser(p)
+	expanded, err := pathutil.ExpandUserPath(p)
 	if err != nil {
 		return "", err
 	}
-	return pypath.Realpath(expanded, pypath.Lax)
+	return pathutil.Resolve(expanded)
 }
 
 // Home a record routes to, the default home unless it carries a live routed profile home

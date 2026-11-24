@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"reflect"
 	"regexp"
 	"sort"
@@ -17,12 +18,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var (
@@ -103,7 +104,7 @@ func (p *PluginPack) seedFor(id string) map[string]any {
 	return nil
 }
 
-// Python typed keys of a loaded pack document for the keys that were not YAML strings
+// Typed keys of a loaded pack document for the keys that were not YAML strings
 type packKeys map[uintptr]map[string]any
 
 func mappingID(m map[string]any) uintptr { return reflect.ValueOf(m).Pointer() }
@@ -119,13 +120,24 @@ func (k packKeys) typed(m map[string]any, key string) (any, bool) {
 	return key, true
 }
 
-// Python str of a mapping key
+// Text of a mapping key
 func (k packKeys) str(m map[string]any, key string) string {
 	v, _ := k.typed(m, key)
-	return pyrepr.Str(v)
+	return anyutil.String(timeKeyText(v))
 }
 
-// Records the Python type of every non string key by walking the node tree beside the loaded value
+// Date and time keys as text, a date and time with its offset and a date as yyyy-mm-dd; any other value unchanged
+func timeKeyText(v any) any {
+	switch x := v.(type) {
+	case time.Time:
+		return x.Format("2006-01-02 15:04:05.999999999Z07:00")
+	case timeutil.Date:
+		return x.String()
+	}
+	return v
+}
+
+// Records the typed value of every non string key by walking the node tree beside the loaded value
 func (k packKeys) walk(n *yaml.Node, v any) {
 	switch n.Kind {
 	case yaml.DocumentNode:
@@ -200,17 +212,17 @@ func yaml11Key(n *yaml.Node) (any, bool) {
 
 // Date or datetime a YAML 1.1 safe loader builds from a plain timestamp mapping key
 func yaml11TimestampKey(text string) (any, bool) {
-	v, ok, err := pydatetime.YAMLTimestamp(text)
+	v, ok, err := timeutil.YAMLTimestamp(text)
 	return v, ok && err == nil
 }
 
-// First ValueError building a date or datetime from a plain timestamp scalar, raised past the YAML error wrap
+// First range error building a date or date and time from a plain timestamp scalar, returned past the YAML error wrap
 func yaml11TimestampValueError(n *yaml.Node) error {
 	if n.Kind == yaml.ScalarNode {
 		if n.Style != 0 {
 			return nil
 		}
-		_, _, err := pydatetime.YAMLTimestamp(n.Value)
+		_, _, err := timeutil.YAMLTimestamp(n.Value)
 		return err
 	}
 	for _, c := range n.Content {
@@ -225,7 +237,7 @@ func yaml11TimestampValueError(n *yaml.Node) error {
 func entryLabel(item any, index int) string {
 	if m, ok := item.(map[string]any); ok {
 		label := m["name"]
-		if !pyrepr.Truthy(label) {
+		if !anyutil.IsTrue(label) {
 			label = m["repo"]
 		}
 		if s, ok := label.(string); ok && strings.TrimSpace(s) != "" {
@@ -296,13 +308,13 @@ func stripForbiddenKeys(value any) any {
 	return value
 }
 
-// None, str, int, float, bool, list or dict as a loaded config holds them
+// Whether v is null, text, a boolean, a number, a list or a mapping as a loaded config holds them
 func yamlScalarOrContainer(v any) bool {
 	switch v.(type) {
 	case nil, string, bool, int, int64, uint64, float64, []any, map[string]any:
 		return true
 	}
-	_, isInt := pyrepr.Int(v)
+	_, isInt := anyutil.Int(v)
 	return isInt
 }
 
@@ -320,7 +332,7 @@ func validateConfigSeed(pluginID string, seed any, keys packKeys) (map[string]an
 	for _, key := range order {
 		typed, isStr := keys.typed(m, key)
 		if !isStr || strings.TrimSpace(key) == "" {
-			return nil, packErrorf("Pack config for plugin '%s' has an invalid key: %s.", pluginID, errchain.Show(typed))
+			return nil, packErrorf("Pack config for plugin '%s' has an invalid key: %s.", pluginID, errchain.Show(timeKeyText(typed)))
 		}
 	}
 	if key, reason, found := firstForbiddenKey(m, "", keys); found {
@@ -380,7 +392,7 @@ func ParsePack(text, source string) (*PluginPack, error) {
 		pack.Plugins = append(pack.Plugins, entry)
 	}
 	configRaw := raw["config"]
-	if !pyrepr.Truthy(configRaw) {
+	if !anyutil.IsTrue(configRaw) {
 		configRaw = map[string]any{}
 	}
 	configMap, ok := configRaw.(map[string]any)
@@ -396,7 +408,7 @@ func ParsePack(text, source string) (*PluginPack, error) {
 		pack.setSeed(id, seed)
 	}
 	skillsRaw := raw["skills"]
-	if !pyrepr.Truthy(skillsRaw) {
+	if !anyutil.IsTrue(skillsRaw) {
 		skillsRaw = []any{}
 	}
 	skills, ok := skillsRaw.([]any)
@@ -404,7 +416,7 @@ func ParsePack(text, source string) (*PluginPack, error) {
 		return nil, packErrorf("Pack %s 'skills' must be a list of skill ids.", source)
 	}
 	for _, s := range skills {
-		if text := strings.TrimSpace(pyrepr.Str(s)); text != "" {
+		if text := strings.TrimSpace(anyutil.String(s)); text != "" {
 			pack.Skills = append(pack.Skills, text)
 		}
 	}
@@ -422,12 +434,12 @@ func (p *PluginPack) setSeed(id string, seed map[string]any) {
 	p.Config = append(p.Config, PackSeed{ID: id, Seed: seed})
 }
 
-// Python str of a value, empty when the value is falsy
+// Text of a value, empty when the value is empty or false
 func packStrOr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Validates one plugins item with name or repo, an exact SHA ref and an optional subdir
@@ -437,14 +449,14 @@ func parsePackEntry(item any, label string) (PackPluginEntry, error) {
 		return PackPluginEntry{}, packErrorf("Pack plugin entry %s must be a mapping.", label)
 	}
 	repoRaw := m["repo"]
-	if !pyrepr.Truthy(repoRaw) {
+	if !anyutil.IsTrue(repoRaw) {
 		repoRaw = m["source"]
 	}
 	repo := ""
 	if s, ok := repoRaw.(string); ok {
 		repo = strings.TrimSpace(strings.TrimPrefix(s, "github:"))
-	} else if pyrepr.Truthy(repoRaw) {
-		repo = pyrepr.Str(repoRaw)
+	} else if anyutil.IsTrue(repoRaw) {
+		repo = anyutil.String(repoRaw)
 	}
 	nameRaw, hasName := m["name"]
 	name := ""
@@ -459,7 +471,7 @@ func parsePackEntry(item any, label string) (PackPluginEntry, error) {
 		return PackPluginEntry{}, packErrorf("Pack plugin entry %s needs either 'name' (community index) or 'repo' (owner/repo or git URL).", label)
 	}
 	refRaw := m["ref"]
-	if !pyrepr.Truthy(refRaw) {
+	if !anyutil.IsTrue(refRaw) {
 		refRaw = m["version"]
 	}
 	ref, ok := refRaw.(string)
@@ -478,7 +490,7 @@ func parsePackEntry(item any, label string) (PackPluginEntry, error) {
 }
 
 // Client the https pack fetch uses, a seam for tests
-var packHTTPClient = func() *http.Client { return pyhttpx.PlainClient(true) }
+var packHTTPClient = func() *http.Client { return httputil.Client(true) }
 
 // Loads a pack from a local file path or an https URL
 func LoadPack(ctx context.Context, pathOrURL string) (*PluginPack, error) {
@@ -497,7 +509,7 @@ func LoadPack(ctx context.Context, pathOrURL string) (*PluginPack, error) {
 			return nil, packErrorf("Pack URLs must use https:// (or pass a local file path).")
 		}
 	}
-	path := pypath.PathStr(pypath.Expanduser(pathOrURL))
+	path := filepath.Clean(pathutil.ExpandUser(pathOrURL))
 	st, err := os.Stat(path)
 	if err != nil || !st.Mode().IsRegular() {
 		return nil, packErrorf("Pack file not found: %s", path)
@@ -509,24 +521,24 @@ func LoadPack(ctx context.Context, pathOrURL string) (*PluginPack, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := strictUTF8(raw); err != nil {
+	if err := textutil.ValidateUTF8(raw); err != nil {
 		return nil, err
 	}
 	return ParsePack(strings.TrimPrefix(string(raw), "\ufeff"), path)
 }
 
-// Body of an https pack after redirects, a non success status raising like raise_for_status
+// Body of an https pack after redirects, a *httputil.StatusError for a non success status
 func fetchPackText(ctx context.Context, url string) (string, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", err
 	}
-	resp, err := pyhttpx.Do(packHTTPClient(), req, packFetchTimeout)
+	resp, err := httputil.Do(packHTTPClient(), req, httputil.EachPhase(packFetchTimeout))
 	if err != nil {
 		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
+		return "", &httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.URL, Location: resp.Header.Get("Location")}
 	}
 	return resp.Text(), nil
 }
@@ -682,7 +694,7 @@ func InstallPackPlugins(ctx context.Context, pack *PluginPack, resolved []Resolv
 			if _, isOp := err.(*PluginOperationError); !isOp {
 				pkgLog().Error("pack install failed for "+display, "error", err)
 			}
-			failed(display, pyErrorText(err))
+			failed(display, errchain.OSText(err))
 			continue
 		}
 		if err := packPromptEnv(ctx, h, manifest, console); err != nil {
@@ -769,8 +781,8 @@ func ExportPack(ctx context.Context, enabledOnly bool, packName string) (string,
 	for _, id := range installed {
 		record, _ := metadata[id].(map[string]any)
 		source := ""
-		if pyrepr.Truthy(record["source"]) {
-			source = pyrepr.Str(record["source"])
+		if anyutil.IsTrue(record["source"]) {
+			source = anyutil.String(record["source"])
 		}
 		revision, isStr := record["revision"].(string)
 		repo, subdir := sourceToRepoSubdir(source)
@@ -902,7 +914,7 @@ func CmdPackExport(ctx context.Context, enabledOnly bool, name string, out, errO
 	console := NewConsole(errOut)
 	text, warnings, err := ExportPack(ctx, enabledOnly, name)
 	if err != nil {
-		console.Print("[red]Error:[/red] Could not export pack: " + pyErrorText(err))
+		console.Print("[red]Error:[/red] Could not export pack: " + errchain.OSText(err))
 		return &CommandExit{Code: 1}
 	}
 	for _, w := range warnings {

@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Plain plugin directories as members that are their own identity
@@ -130,7 +130,7 @@ func TestWorkspaceTrustsCoreLockInsteadOfRecheckingReleaseAge(t *testing.T) {
 	for _, p := range wsAt(wsTOML(t, filepath.Join(core, "uv.lock")), "package").([]any) {
 		if source, ok := wsAt(p, "source").(*OrderedObject); ok {
 			if _, ok := source.Values["registry"]; ok {
-				registry[pyrepr.Str(wsAt(p, "name"))] = true
+				registry[anyutil.String(wsAt(p, "name"))] = true
 			}
 		}
 	}
@@ -252,7 +252,7 @@ func TestWorkspacePluginLocalGroupsDoNotConstrainRuntimeWorkspace(t *testing.T) 
 		t.Fatal(err)
 	}
 	built := wsTOML(t, filepath.Join(buildable, "pyproject.toml"))
-	if _, ok := built.Values["dependency-groups"]; ok || pyrepr.Str(wsAt(built, "project", "name")) != "plugin-member" ||
+	if _, ok := built.Values["dependency-groups"]; ok || anyutil.String(wsAt(built, "project", "name")) != "plugin-member" ||
 		!reflect.DeepEqual(wsStrings(wsAt(built, "project", "dependencies")), []string{"member-dep==1.0"}) {
 		t.Fatalf("buildable member %v", built.Values)
 	}
@@ -358,8 +358,8 @@ func TestWorkspaceSourcesOfPrunedPluginExtrasAndGroupsLeaveWithThem(t *testing.T
 	}
 	sources := wsAt(wsMemberManifest(t, root), "tool", "uv", "sources").(*OrderedObject)
 	otherSources, _ := sources.Values["other-dep"].([]any)
-	if len(otherSources) != 1 || pyrepr.Str(wsAt(otherSources[0], "path")) != wheelPath("other_dep") ||
-		pyrepr.Str(wsAt(otherSources[0], "extra")) != "feature" || len(otherSources[0].(*OrderedObject).Keys) != 2 {
+	if len(otherSources) != 1 || anyutil.String(wsAt(otherSources[0], "path")) != wheelPath("other_dep") ||
+		anyutil.String(wsAt(otherSources[0], "extra")) != "feature" || len(otherSources[0].(*OrderedObject).Keys) != 2 {
 		t.Fatalf("other-dep sources %v", otherSources)
 	}
 	if _, ok := sources.Values["chosen-dep"]; ok || wsAt(sources, "member-dep", "path") == nil {
@@ -408,7 +408,7 @@ func TestWorkspaceVirtualPluginSelfReferenceInstallsItsOwnExtraAfterTheRename(t 
 		t.Fatalf("installed %v", installed)
 	}
 	project := wsAt(wsMemberManifest(t, root), "project")
-	name := pyrepr.Str(wsAt(project, "name"))
+	name := anyutil.String(wsAt(project, "name"))
 	if got := wsStrings(wsAt(project, "dependencies")); !reflect.DeepEqual(got, []string{"member-dep==1.0", name + "[Runtime]>=0"}) {
 		t.Fatalf("dependencies %v", got)
 	}
@@ -427,7 +427,7 @@ func TestWorkspaceVirtualPluginSelfReferencesFollowTheRenameEverywhere(t *testin
 		t.Fatal(err)
 	}
 	document := wsTOML(t, filepath.Join(member, "pyproject.toml"))
-	name := pyrepr.Str(wsAt(document, "project", "name"))
+	name := anyutil.String(wsAt(document, "project", "name"))
 	if !strings.HasPrefix(name, "icebath-plugin-member-") {
 		t.Fatalf("name %s", name)
 	}

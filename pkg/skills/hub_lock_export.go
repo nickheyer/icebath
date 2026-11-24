@@ -1,25 +1,25 @@
 package skills
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Installed entries keyed by identifier in lock order, ClawHub catalog aliases after them, exact ids winning
-func (l *HubLockFile) ByIdentifierObject() (*pyjson.Object, error) {
+func (l *HubLockFile) ByIdentifierObject() (*jsonutil.Object, error) {
 	rows, err := l.ListInstalled()
 	if err != nil {
 		return nil, err
 	}
-	installed := pyjson.NewObject()
-	var kept []*pyjson.Object
+	installed := jsonutil.NewObject()
+	var kept []*jsonutil.Object
 	for _, entry := range rows {
 		id, _ := entry.Get("identifier")
-		if !pyrepr.Truthy(id) {
+		if !anyutil.IsTrue(id) {
 			continue
 		}
 		kept = append(kept, entry)
-		installed.Set(pyrepr.Str(id), entry)
+		installed.Set(anyutil.String(id), entry)
 	}
 	for _, entry := range kept {
 		if src, _ := entry.Get("source"); src == "clawhub" {

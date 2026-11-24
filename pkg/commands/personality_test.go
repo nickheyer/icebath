@@ -71,8 +71,8 @@ func TestResolvePersonalityNeutralAndCaseInsensitive(t *testing.T) {
 
 func TestResolvePersonalityUnknownRaises(t *testing.T) {
 	_, _, err := ResolvePersonality("doesnotexist", config.Tree{})
-	var typed interface{ PyTypeName() string }
-	if !errors.As(err, &typed) || typed.PyTypeName() != "ValueError" {
+	var typed *UnknownPersonalityError
+	if !errors.As(err, &typed) || typed.ErrorKind() != "ValueError" {
 		t.Fatalf("want ValueError, got %v", err)
 	}
 	if !strings.HasPrefix(err.Error(), "Unknown personality: `doesnotexist`.\n\nAvailable: `none`, `catgirl`, ") {

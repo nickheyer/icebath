@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Topic a root DM moves to, created true for a fresh topic and false for the lobby recovery fallback, ok false to decline
@@ -30,7 +29,7 @@ func ApplyRootDMTopicTransfer(ctx context.Context, adapter TopicTransferHost, ev
 	if cmd, _ := event.GetCommand(); event.Internal || cmd != "" {
 		return
 	}
-	if key, ok := event.Metadata["gateway_session_key"]; ok && strings.TrimSpace(pyrepr.Str(truthyOrEmpty(key))) != "" {
+	if key, ok := event.Metadata["gateway_session_key"]; ok && strings.TrimSpace(anyutil.String(truthyOrEmpty(key))) != "" {
 		return
 	}
 	userID := ""
@@ -59,7 +58,7 @@ func ApplyRootDMTopicTransfer(ctx context.Context, adapter TopicTransferHost, ev
 }
 
 func truthyOrEmpty(v any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return ""

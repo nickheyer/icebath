@@ -4,17 +4,19 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Bound on the old agent teardown during a reset before the reset proceeds without it
@@ -25,7 +27,7 @@ var RandomTip func(ctx context.Context) string
 
 // Whether the error is a Python ValueError or one of its subclasses
 func isValueError(err error) bool {
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	if errors.As(err, &pe) && pe.Kind == "ValueError" {
 		return true
 	}
@@ -48,7 +50,7 @@ func discardLostTurns(ctx context.Context, authority *gateway.SessionAuthority, 
 	if err != nil {
 		return "", err
 	}
-	var lost []*pyjson.Object
+	var lost []*jsonutil.Object
 	for _, row := range rows {
 		if status, _ := row.Get("status"); status == "unknown" {
 			lost = append(lost, row)
@@ -62,16 +64,16 @@ func discardLostTurns(ctx context.Context, authority *gateway.SessionAuthority, 
 	for _, row := range lost {
 		admissionID, _ := row.Get("admission_id")
 		generationValue, _ := row.Get("generation")
-		generation, err := pyint.Int64(generationValue)
+		generation, err := anyutil.ToInt(generationValue)
 		if err != nil {
 			return "", err
 		}
-		if _, err := authority.ResolveUnknownAsOwner(ctx, ref, pyrepr.Str(admissionID), generation, nil); err != nil {
+		if _, err := authority.ResolveUnknownAsOwner(ctx, ref, anyutil.String(admissionID), generation, nil); err != nil {
 			var refused *state.RuntimeStoreError
 			if !errors.As(err, &refused) {
 				return "", err
 			}
-			pkgLog().Warn(fmt.Sprintf("/discard of %s refused: %s", pyrepr.Str(admissionID), refused.Reason))
+			pkgLog().Warn(fmt.Sprintf("/discard of %s refused: %s", anyutil.String(admissionID), refused.Reason))
 			continue
 		}
 		done++
@@ -102,11 +104,11 @@ func (r *GatewayRunner) cleanupOldAgentForReset(ctx context.Context, sessionKey 
 	case err := <-done:
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("Agent resource cleanup for session %s failed during /new reset: %s (#35994)",
-				sessionKey, pyrepr.ExceptionMessage(err)))
+				sessionKey, err.Error()))
 		}
 	case <-timer.C:
 		pkgLog().Warn(fmt.Sprintf("Agent resource cleanup for session %s exceeded %ss during /new reset; proceeding with "+
-			"reset (the worker thread is left to finish on its own). (#35994)", sessionKey, pyrepr.Float(resetCleanupTimeoutS)))
+			"reset (the worker thread is left to finish on its own). (#35994)", sessionKey, strconv.FormatFloat(resetCleanupTimeoutS, 'f', -1, 64)))
 	}
 }
 
@@ -276,7 +278,7 @@ func (r *GatewayRunner) resetTitledHeader(ctx context.Context, header, sessionID
 	sanitized, err := state.SanitizeTitle(titleArg)
 	if err != nil {
 		sanitized = ""
-		note = i18n.T(ctx, "gateway.reset.title_rejected", "", map[string]any{"error": pyrepr.ExceptionMessage(err)})
+		note = i18n.T(ctx, "gateway.reset.title_rejected", "", map[string]any{"error": err.Error()})
 	}
 	if sanitized != "" {
 		db := r.sessionDB(ctx)
@@ -285,7 +287,7 @@ func (r *GatewayRunner) resetTitledHeader(ctx context.Context, header, sessionID
 		case err == nil:
 			header = i18n.T(ctx, "gateway.reset.header_titled", "", map[string]any{"title": sanitized})
 		case isValueError(err):
-			note = i18n.T(ctx, "gateway.reset.title_error_untitled", "", map[string]any{"error": pyrepr.ExceptionMessage(err)})
+			note = i18n.T(ctx, "gateway.reset.title_error_untitled", "", map[string]any{"error": err.Error()})
 		}
 	} else if note == "" {
 		note = i18n.T(ctx, "gateway.reset.title_empty_untitled", "", nil)

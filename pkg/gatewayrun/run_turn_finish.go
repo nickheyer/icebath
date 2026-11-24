@@ -12,8 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Cancels the turn's background tasks, flushes the stream, aborts streaming TTS and releases the session slot
@@ -64,7 +64,7 @@ func (r *GatewayRunner) runAgentEditStreamedMessage(ctx context.Context, sc *gat
 		return
 	}
 	if !res.Success {
-		pkgLog().Warn(fmt.Sprintf(failResult, sessionKey, pyrepr.Str(res.Error)))
+		pkgLog().Warn(fmt.Sprintf(failResult, sessionKey, anyutil.String(res.Error)))
 		return
 	}
 	response["already_sent"] = true
@@ -74,7 +74,7 @@ func (r *GatewayRunner) runAgentEditStreamedMessage(ctx context.Context, sc *gat
 // Marks the response already sent when streaming delivered the exact final reply, reconciling a stale finalize by edit
 func (r *GatewayRunner) runAgentMarkStreamedDelivery(ctx context.Context, response map[string]any, tc *TurnContext) {
 	sc, source, sessionKey := tc.streamConsumer(), tc.source, tc.sessionKey
-	if response == nil || pyrepr.Truthy(response["failed"]) {
+	if response == nil || anyutil.IsTrue(response["failed"]) {
 		return
 	}
 	if finite, isBool := gateway.FiniteTurnRequired(ctx).(bool); isBool && finite {
@@ -82,7 +82,7 @@ func (r *GatewayRunner) runAgentMarkStreamedDelivery(ctx context.Context, respon
 	}
 	final, _ := response["final_response"].(string)
 	isEmptySentinel := final == "" || final == "(empty)"
-	previewed := pyrepr.Truthy(response["response_previewed"])
+	previewed := anyutil.IsTrue(response["response_previewed"])
 	contentDelivered := sc != nil && sc.FinalContentDelivered()
 	staleFinalized := false
 	if contentDelivered && !isEmptySentinel {
@@ -94,7 +94,7 @@ func (r *GatewayRunner) runAgentMarkStreamedDelivery(ctx context.Context, respon
 			contentDelivered = false
 		}
 	}
-	transformed := pyrepr.Truthy(response["response_transformed"])
+	transformed := anyutil.IsTrue(response["response_transformed"])
 	streamed := runAgentStreamConfirmedFinalDelivery(sc, final)
 	if isEmptySentinel {
 		return
@@ -103,7 +103,7 @@ func (r *GatewayRunner) runAgentMarkStreamedDelivery(ctx context.Context, respon
 	switch {
 	case !transformed && (streamed || contentDelivered):
 		pkgLog().Info(fmt.Sprintf("Suppressing normal final send for session %s: final delivery already confirmed (streamed=%s previewed=%s content_delivered=%s).",
-			sk, pyrepr.Str(streamed), pyrepr.Str(previewed), pyrepr.Str(contentDelivered)))
+			sk, anyutil.String(streamed), anyutil.String(previewed), anyutil.String(contentDelivered)))
 		response["already_sent"] = true
 	case !transformed && staleFinalized && sc != nil:
 		scMsgID := sc.MessageID()
@@ -120,7 +120,7 @@ func (r *GatewayRunner) runAgentMarkStreamedDelivery(ctx context.Context, respon
 		}
 	case transformed && sc != nil:
 		if scMsgID := sc.MessageID(); scMsgID != "" {
-			r.runAgentEditStreamedMessage(ctx, sc, source, response, pyrepr.Str(response["final_response"]), sk,
+			r.runAgentEditStreamedMessage(ctx, sc, source, response, anyutil.String(response["final_response"]), sk,
 				fmt.Sprintf("Edited streamed message %s for session %s to include plugin-transformed content.", scMsgID, sk),
 				"Transformed-final edit failed for session %s (%s); sending transformed response via normal final send.",
 				"Failed to edit streamed message for session %s: %s")
@@ -129,7 +129,7 @@ func (r *GatewayRunner) runAgentMarkStreamedDelivery(ctx context.Context, respon
 		pkgLog().Warn(fmt.Sprintf("Normal final-send NOT suppressed despite active stream consumer for session %s: "+
 			"streamed=%s previewed=%s content_delivered=%s transformed=%s final_len=%d — "+
 			"possible duplicate send (see wecom ack-timeout RCA).",
-			sk, pyrepr.Str(streamed), pyrepr.Str(previewed), pyrepr.Str(contentDelivered), pyrepr.Str(transformed), utf8.RuneCountInString(final)))
+			sk, anyutil.String(streamed), anyutil.String(previewed), anyutil.String(contentDelivered), anyutil.String(transformed), utf8.RuneCountInString(final)))
 	}
 }
 
@@ -151,7 +151,7 @@ func (r *GatewayRunner) runAgentScheduleBubbleCleanup(response map[string]any, c
 	idsSnapshot := slices.Clone(tc.cleanupMsgIDs)
 	tc.holderMu.Unlock()
 	sessionKey := tc.sessionKey
-	if !tc.cleanupProgress || cleanupAdapter == nil || len(idsSnapshot) == 0 || sessionKey == "" || response == nil || pyrepr.Truthy(response["failed"]) {
+	if !tc.cleanupProgress || cleanupAdapter == nil || len(idsSnapshot) == 0 || sessionKey == "" || response == nil || anyutil.IsTrue(response["failed"]) {
 		return
 	}
 	chatIDSnapshot := tc.source.ChatID
@@ -172,7 +172,7 @@ func (r *GatewayRunner) runAgentScheduleBubbleCleanup(response map[string]any, c
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				pkgLog().Debug(fmt.Sprintf("Post-delivery cleanup registration failed: %s", pyrepr.Str(rec)))
+				pkgLog().Debug(fmt.Sprintf("Post-delivery cleanup registration failed: %s", anyutil.String(rec)))
 			}
 		}()
 		cleanupAdapter.Base().RegisterPostDeliveryCallback(sessionKey, cleanupTempBubbles, tc.runGeneration)
@@ -218,11 +218,11 @@ func longRunningStatusDetail(ctx context.Context, activity map[string]any, wantI
 		parts = append(parts, progress)
 	}
 	action := activity["current_tool"]
-	if !pyrepr.Truthy(action) {
+	if !anyutil.IsTrue(action) {
 		action = activity["last_activity_desc"]
 	}
-	if pyrepr.Truthy(action) {
-		parts = append(parts, pyrepr.Str(action))
+	if anyutil.IsTrue(action) {
+		parts = append(parts, anyutil.String(action))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -296,8 +296,8 @@ func (r *GatewayRunner) runAgentNotifyLongRunning(ctx context.Context, disp *run
 			pkgLog().Debug(fmt.Sprintf("Long-running notification error: %s", err))
 			continue
 		}
-		if res.Success && pyrepr.Truthy(res.MessageID) {
-			heartbeatMsgID = pyrepr.Str(res.MessageID)
+		if res.Success && anyutil.IsTrue(res.MessageID) {
+			heartbeatMsgID = anyutil.String(res.MessageID)
 			if tc.cleanupProgress {
 				tc.holderMu.Lock()
 				tc.cleanupMsgIDs = append(tc.cleanupMsgIDs, heartbeatMsgID)

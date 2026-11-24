@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestSaveJsonFileSetsFilePermissions(t *testing.T) {
 	ctx, _ := makePairingStore(t, t.TempDir())
 	target := filepath.Join(t.TempDir(), "secret.json")
-	if err := savePairingJSONFile(ctx, target, pyjson.ObjectOf("data", 1)); err != nil {
+	if err := savePairingJSONFile(ctx, target, jsonutil.ObjectOf("data", 1)); err != nil {
 		t.Fatal(err)
 	}
 	info, err := os.Stat(target)
@@ -59,7 +59,7 @@ func TestApprovalCacheIsolatedAndUnreadableFilesFailClosed(t *testing.T) {
 	ctx, first := makePairingStore(t, filepath.Join(root, "first"))
 	_, second := makePairingStore(t, filepath.Join(root, "second"))
 	path := first.approvedPath("telegram")
-	saveApproved(t, ctx, path, "user1", pyjson.NewObject())
+	saveApproved(t, ctx, path, "user1", jsonutil.NewObject())
 	if !mustApproved(t, ctx, first, "telegram", "user1") || mustApproved(t, ctx, second, "telegram", "user1") {
 		t.Fatal("the stores share their approvals")
 	}
@@ -67,7 +67,7 @@ func TestApprovalCacheIsolatedAndUnreadableFilesFailClosed(t *testing.T) {
 	if mustApproved(t, ctx, first, "telegram", "user1") {
 		t.Fatal("an unreadable file still approves from the cache")
 	}
-	saveApproved(t, ctx, path, "user2", pyjson.NewObject())
+	saveApproved(t, ctx, path, "user2", jsonutil.NewObject())
 	if mustApproved(t, ctx, first, "telegram", "user1") || !mustApproved(t, ctx, first, "telegram", "user2") {
 		t.Fatal("the replaced file was not observed")
 	}

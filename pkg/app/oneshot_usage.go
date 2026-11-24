@@ -9,9 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Exit code of a turn stopped by an interrupt, the SIGINT convention
@@ -27,10 +24,10 @@ var oneshotAuxCounters = agent.OneshotAuxCounters
 
 // Exit code of a finished one shot turn, 130 interrupted, 2 failed or partial, 1 without text, else 0
 func oneshotExitCode(response string, result map[string]any) int {
-	if pyrepr.Truthy(result["interrupted"]) {
+	if anyutil.IsTrue(result["interrupted"]) {
 		return oneshotInterruptedExitCode
 	}
-	if completed, ok := result["completed"]; pyrepr.Truthy(result["failed"]) || pyrepr.Truthy(result["partial"]) || (ok && completed == false) {
+	if completed, ok := result["completed"]; anyutil.IsTrue(result["failed"]) || anyutil.IsTrue(result["partial"]) || (ok && completed == false) {
 		return 2
 	}
 	if strings.TrimSpace(response) == "" {
@@ -81,69 +78,69 @@ func pyNumAdd(a, b any) any {
 
 // The value when truthy, otherwise the integer zero
 func orIntZero(v any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return int64(0)
 }
 
 // Adds the auxiliary breakdown and the total including auxiliary usage to the ledger
-func oneshotAuxiliaryReport(report *pyjson.Object, byTask *pyjson.Object) {
-	totals := pyjson.NewObject()
+func oneshotAuxiliaryReport(report *jsonutil.Object, byTask *jsonutil.Object) {
+	totals := jsonutil.NewObject()
 	for _, key := range oneshotAuxCounters {
 		var sum any = int64(0)
-		for _, task := range byTask.Keys {
-			counters, _ := pyjson.AsObject(byTask.Vals[task])
+		for _, task := range byTask.Keys() {
+			counters, _ := jsonutil.AsObject(byTask.Value(task))
 			var value any
 			if counters != nil {
-				value = counters.Vals[key]
+				value = counters.Value(key)
 			}
 			sum = pyNumAdd(sum, orIntZero(value))
 		}
 		totals.Set(key, sum)
 	}
-	totals.Set("total_tokens", pyNumAdd(totals.Vals["input_tokens"], totals.Vals["output_tokens"]))
-	auxiliary := pyjson.NewObject()
-	for _, key := range totals.Keys {
-		auxiliary.Set(key, totals.Vals[key])
+	totals.Set("total_tokens", pyNumAdd(totals.Value("input_tokens"), totals.Value("output_tokens")))
+	auxiliary := jsonutil.NewObject()
+	for _, key := range totals.Keys() {
+		auxiliary.Set(key, totals.Value(key))
 	}
 	auxiliary.Set("by_task", byTask)
 	report.Set("auxiliary", auxiliary)
-	mainCost := report.Vals["estimated_cost_usd"]
+	mainCost := report.Value("estimated_cost_usd")
 	var cost any
 	if mainCost != nil {
-		cost = pyNumAdd(mainCost, totals.Vals["estimated_cost_usd"])
+		cost = pyNumAdd(mainCost, totals.Value("estimated_cost_usd"))
 	}
-	report.Set("total_including_auxiliary", pyjson.ObjectOf(
+	report.Set("total_including_auxiliary", jsonutil.ObjectOf(
 		"estimated_cost_usd", cost,
-		"total_tokens", pyNumAdd(orIntZero(report.Vals["total_tokens"]), totals.Vals["total_tokens"]),
-		"api_calls", pyNumAdd(orIntZero(report.Vals["api_calls"]), totals.Vals["api_calls"])))
+		"total_tokens", pyNumAdd(orIntZero(report.Value("total_tokens")), totals.Value("total_tokens")),
+		"api_calls", pyNumAdd(orIntZero(report.Value("api_calls")), totals.Value("api_calls"))))
 }
 
 // Writes the usage file JSON report for pipelines, swallowing every failure so the run outcome stands
-func oneshotWriteUsageFile(path string, result *pyjson.Object, failure any) {
+func oneshotWriteUsageFile(path string, result *jsonutil.Object, failure any) {
 	if path == "" {
 		return
 	}
 	func() {
 		defer func() { _ = recover() }()
-		report := pyjson.NewObject()
+		report := jsonutil.NewObject()
 		for _, key := range oneshotUsageKeys {
-			report.Set(key, result.Vals[key])
+			report.Set(key, result.Value(key))
 		}
-		report.Set("failed", pyrepr.Truthy(result.Vals["failed"]) || failure != nil)
-		report.Set("service_tier", result.Vals["service_tier"])
-		if byTask, ok := result.Vals["auxiliary_usage"].(*pyjson.Object); ok {
+		report.Set("failed", anyutil.IsTrue(result.Value("failed")) || failure != nil)
+		report.Set("service_tier", result.Value("service_tier"))
+		if byTask, ok := result.Value("auxiliary_usage").(*jsonutil.Object); ok {
 			oneshotAuxiliaryReport(report, byTask)
 		}
 		if failure != nil {
 			report.Set("failure", failure)
 		}
-		out := pypath.Expanduser(path)
+		out := pathutil.ExpandUser(path)
 		if err := os.MkdirAll(filepath.Dir(out), 0o777); err != nil {
 			return
 		}
-		text, err := pyjson.Dumps(report, pyjson.Indent(2))
+		text, err := jsonutil.Encode(report, jsonutil.Indent(2))
 		if err != nil {
 			return
 		}

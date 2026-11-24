@@ -12,9 +12,9 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Loopback provider whose every answer is interim text plus one web_search call
@@ -131,7 +131,7 @@ func TestInterimAssistantIsDurableBeforeUIProjectionOnAbnormalExit(t *testing.T)
 	if len(calls) == 0 {
 		t.Fatalf("no tool calls stored %v", durable[1])
 	}
-	if first, _ := pyjson.Dict(calls[0]); first["id"] != "visible-call" {
+	if first, _ := jsonutil.AsMap(calls[0]); first["id"] != "visible-call" {
 		t.Fatalf("tool calls %v", durable[1]["tool_calls"])
 	}
 	resumed := sanitizeAPIMessages(context.Background(), sessionID, durable)

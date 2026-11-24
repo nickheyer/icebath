@@ -5,8 +5,8 @@ import (
 	"errors"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Settings a runs launch hands its admission, None for each override the request did not name
@@ -87,10 +87,10 @@ func (a *APIServerAdapter) admitRunToAuthority(ctx context.Context, launch *runL
 }
 
 // Settled result and usage of a runs admission, its prompts projected to the run stream while it executes
-func observeAPIRun(ctx context.Context, admission any, controlCB func(eventType string, prompt *pyjson.Object), textCB func(string),
+func observeAPIRun(ctx context.Context, admission any, controlCB func(eventType string, prompt *jsonutil.Object), textCB func(string),
 	toolStart func(callID, name string, args map[string]any), toolComplete func(callID, name string, args map[string]any, result string)) (map[string]any, map[string]any, error) {
 	admitted := admission.(*gateway.APIAdmission)
-	release, err := gateway.ObserveAPIControls(ctx, admitted, func(eventType string, prompt *pyjson.Object) error {
+	release, err := gateway.ObserveAPIControls(ctx, admitted, func(eventType string, prompt *jsonutil.Object) error {
 		controlCB(eventType, prompt)
 		return nil
 	})

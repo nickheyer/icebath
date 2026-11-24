@@ -3,17 +3,18 @@ package state
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestLoadTerminalResultExportUnwrapsTheEncodedEnvelope(t *testing.T) {
-	result := pyjson.ObjectOf("result", pyjson.ObjectOf("cron_result", []any{true, "doc", "answer", nil}), "usage", pyjson.NewObject())
-	text, err := pyjson.Dumps(encodeTerminalResult(result))
+	result := jsonutil.ObjectOf("result", jsonutil.ObjectOf("cron_result", []any{true, "doc", "answer", nil}), "usage", jsonutil.NewObject())
+	text, err := jsonutil.Encode(encodeTerminalResult(result))
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := LoadTerminalResult(text)
-	if err != nil || !pyjson.Equal(got, result) {
+	if err != nil || !anyutil.Equal(got, result) {
 		t.Fatalf("loaded = %v, %v", got, err)
 	}
 }

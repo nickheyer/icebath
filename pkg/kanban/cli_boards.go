@@ -6,12 +6,11 @@ import (
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	tarutil "github.com/nickheyer/icebath/pkg/utils/tar"
 )
 
 // Runs one boards subcommand, list when none is named
@@ -47,8 +46,8 @@ func (c *kanbanCLI) dispatchBoards() (int, error) {
 }
 
 // Status to count mapping of a board, empty when it has no database or cannot be read
-func (c *kanbanCLI) boardTaskCounts(slug string) *pyjson.Object {
-	counts := pyjson.NewObject()
+func (c *kanbanCLI) boardTaskCounts(slug string) *jsonutil.Object {
+	counts := jsonutil.NewObject()
 	path, err := KanbanDBPath(c.ctx, &slug)
 	if err != nil {
 		return counts
@@ -62,22 +61,22 @@ func (c *kanbanCLI) boardTaskCounts(slug string) *pyjson.Object {
 		rows, err = QueryRows(c.ctx, conn, "SELECT status, COUNT(*) AS n FROM tasks GROUP BY status")
 		return err
 	}); err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	for _, r := range rows {
-		n, err := pyint.Of(r.Get("n"))
+		n, err := anyutil.ToInt(r.Get("n"))
 		if err != nil {
-			return pyjson.NewObject()
+			return jsonutil.NewObject()
 		}
-		counts.Set(pyrepr.Str(r.Get("status")), n.Int64())
+		counts.Set(anyutil.String(r.Get("status")), n)
 	}
 	return counts
 }
 
 // Count mapping as plain integers for fmtCounts
-func countsMap(counts *pyjson.Object) map[string]int64 {
+func countsMap(counts *jsonutil.Object) map[string]int64 {
 	out := map[string]int64{}
-	for _, k := range counts.Keys {
+	for _, k := range counts.Keys() {
 		v, _ := counts.Get(k)
 		n, _ := v.(int64)
 		out[k] = n
@@ -86,7 +85,7 @@ func countsMap(counts *pyjson.Object) map[string]int64 {
 }
 
 // Sum of a count mapping
-func countsTotal(counts *pyjson.Object) int64 {
+func countsTotal(counts *jsonutil.Object) int64 {
 	var total int64
 	for _, n := range countsMap(counts) {
 		total += n
@@ -99,12 +98,12 @@ func (c *kanbanCLI) boardSlugArg(cmd string, mustExist bool) (string, int) {
 	raw := c.ns["slug"]
 	var slugArg *string
 	if raw != nil {
-		s := pyrepr.Str(raw)
+		s := anyutil.String(raw)
 		slugArg = &s
 	}
 	normed, err := normalizeBoardSlug(slugArg)
 	if err != nil {
-		return "", cliErr(c.errw, fmt.Sprintf("kanban boards %s: %s", cmd, pyrepr.ExceptionMessage(err)), 2)
+		return "", cliErr(c.errw, fmt.Sprintf("kanban boards %s: %s", cmd, err.Error()), 2)
 	}
 	if mustExist {
 		if normed == "" || !BoardExists(&normed) {
@@ -117,7 +116,7 @@ func (c *kanbanCLI) boardSlugArg(cmd string, mustExist bool) (string, int) {
 }
 
 // Metadata field of a board as display text, empty when absent
-func metaText(meta *pyjson.Object, key string) string {
+func metaText(meta *jsonutil.Object, key string) string {
 	v, ok := meta.Get(key)
 	if !ok || v == nil {
 		if ok {
@@ -125,7 +124,7 @@ func metaText(meta *pyjson.Object, key string) string {
 		}
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Lists boards with their task counts, archived ones too with --all
@@ -158,14 +157,14 @@ func (c *kanbanCLI) cmdBoardsList() (int, error) {
 			marker = "●"
 		}
 		name := ""
-		if v, _ := b.Get("name"); pyrepr.Truthy(v) {
-			name = pyrepr.Str(v)
+		if v, _ := b.Get("name"); anyutil.IsTrue(v) {
+			name = anyutil.String(v)
 		}
-		if v, _ := b.Get("archived"); pyrepr.Truthy(v) {
+		if v, _ := b.Get("archived"); anyutil.IsTrue(v) {
 			name += " [archived]"
 		}
 		counts, _ := b.Get("counts")
-		fmt.Fprintf(c.w, "%-2s  %-24s  %-28s  %s\n", marker, metaText(b, "slug"), name, fmtCounts(countsMap(counts.(*pyjson.Object)), "(empty)"))
+		fmt.Fprintf(c.w, "%-2s  %-24s  %-28s  %s\n", marker, metaText(b, "slug"), name, fmtCounts(countsMap(counts.(*jsonutil.Object)), "(empty)"))
 	}
 	fmt.Fprintf(c.w, "\nCurrent board: %s\n", current)
 	if len(boards) > 1 {
@@ -195,12 +194,12 @@ func (c *kanbanCLI) cmdBoardsCreate() (int, error) {
 	slugValue, _ := meta.Get("slug")
 	fmt.Fprintf(c.w, "Board %s %s.\n  Display name: %s\n  DB path:      %s\n", errchain.Show(slugValue), verb, metaText(meta, "name"), metaText(meta, "db_path"))
 	if nsBool(c.ns, "switch") {
-		if _, err := SetCurrentBoard(c.ctx, pyrepr.Str(slugValue)); err != nil {
+		if _, err := SetCurrentBoard(c.ctx, anyutil.String(slugValue)); err != nil {
 			return 0, err
 		}
 		fmt.Fprintf(c.w, "  Switched to %s.\n", errchain.Show(slugValue))
 	} else {
-		fmt.Fprintf(c.w, "  Use `icebath kanban boards switch %s` to make it current.\n", pyrepr.Str(slugValue))
+		fmt.Fprintf(c.w, "  Use `icebath kanban boards switch %s` to make it current.\n", anyutil.String(slugValue))
 	}
 	return 0, nil
 }
@@ -212,7 +211,7 @@ func (c *kanbanCLI) cmdBoardsRm() (int, error) {
 	if err != nil {
 		var ve *ValueError
 		if errors.As(err, &ve) {
-			return cliErr(c.errw, "kanban boards rm: "+pyrepr.ExceptionMessage(err), 1), nil
+			return cliErr(c.errw, "kanban boards rm: "+err.Error(), 1), nil
 		}
 		return 0, err
 	}
@@ -240,7 +239,7 @@ func (c *kanbanCLI) cmdBoardsSwitch() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if v, _ := meta.Get("archived"); pyrepr.Truthy(v) {
+	if v, _ := meta.Get("archived"); anyutil.IsTrue(v) {
 		return cliErr(c.errw, fmt.Sprintf("kanban boards switch: board %s is archived.", errchain.Show(normed)), 1), nil
 	}
 	if _, err := SetCurrentBoard(c.ctx, normed); err != nil {
@@ -259,8 +258,8 @@ func (c *kanbanCLI) cmdBoardsShow() (int, error) {
 	}
 	counts := c.boardTaskCounts(current)
 	fmt.Fprintf(c.w, "Current board: %s\n  Display name: %s\n", current, metaText(meta, "name"))
-	if v, _ := meta.Get("description"); pyrepr.Truthy(v) {
-		fmt.Fprintf(c.w, "  Description:  %s\n", pyrepr.Str(v))
+	if v, _ := meta.Get("description"); anyutil.IsTrue(v) {
+		fmt.Fprintf(c.w, "  Description:  %s\n", anyutil.String(v))
 	}
 	suffix := ""
 	if counts.Len() > 0 {
@@ -295,7 +294,7 @@ func (c *kanbanCLI) cmdBoardsSetDefaultWorkdir() (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if v, _ := meta.Get("default_workdir"); pyrepr.Truthy(v) {
+	if v, _ := meta.Get("default_workdir"); anyutil.IsTrue(v) {
 		fmt.Fprintf(c.w, "Board %s default workdir set to %s.\n", errchain.Show(normed), errchain.Show(v))
 	} else {
 		fmt.Fprintf(c.w, "Board %s default workdir cleared.\n", errchain.Show(normed))
@@ -307,8 +306,8 @@ func (c *kanbanCLI) cmdBoardsSetDefaultWorkdir() (int, error) {
 func isOSOrValueError(err error) bool {
 	var ve *ValueError
 	var fe *FileNotFoundError
-	var ae *pyfs.ArchiveError
-	return pypath.IsOSError(err) || errors.As(err, &ve) || errors.As(err, &fe) || errors.As(err, &ae)
+	var ae *tarutil.MemberError
+	return errorutil.IsSystem(err) || errors.As(err, &ve) || errors.As(err, &fe) || errors.As(err, &ae)
 }
 
 // Human size of a byte count, B below 1024 then one decimal KB, MB, GB and TB
@@ -347,12 +346,12 @@ func (c *kanbanCLI) cmdBoardsExport() (int, error) {
 		return 0, err
 	}
 	countsValue, _ := res.Get("counts")
-	counts := countsValue.(*pyjson.Object)
-	get := func(o *pyjson.Object, k string) any { v, _ := o.Get(k); return v }
+	counts := countsValue.(*jsonutil.Object)
+	get := func(o *jsonutil.Object, k string) any { v, _ := o.Get(k); return v }
 	size, _ := get(res, "size").(int64)
 	fmt.Fprintf(c.w, "Exported board %s → %s\n  Size:        %s\n  Tasks:       %s\n  Comments:    %s\n  Attachments: %s\nImport it with `icebath kanban boards import <archive>`.\n",
-		errchain.Show(get(res, "board")), pyrepr.Str(get(res, "archive")), formatBytes(size),
-		pyrepr.Str(get(counts, "tasks")), pyrepr.Str(get(counts, "task_comments")), pyrepr.Str(get(counts, "attachment_files")))
+		errchain.Show(get(res, "board")), anyutil.String(get(res, "archive")), formatBytes(size),
+		anyutil.String(get(counts, "tasks")), anyutil.String(get(counts, "task_comments")), anyutil.String(get(counts, "attachment_files")))
 	return 0, nil
 }
 
@@ -369,20 +368,20 @@ func (c *kanbanCLI) cmdBoardsImport() (int, error) {
 		return 0, err
 	}
 	get := func(k string) any { v, _ := res.Get(k); return v }
-	fmt.Fprintf(c.w, "Imported board %s (%s).\n", errchain.Show(get("board")), pyrepr.Str(get("name")))
+	fmt.Fprintf(c.w, "Imported board %s (%s).\n", errchain.Show(get("board")), anyutil.String(get("name")))
 	if get("renamed") == true {
 		fmt.Fprintf(c.w, "  Renamed from %s — that slug was taken.\n", errchain.Show(get("requested_board")))
 	}
-	counts := get("counts").(*pyjson.Object)
+	counts := get("counts").(*jsonutil.Object)
 	tasks, _ := counts.Get("tasks")
-	fmt.Fprintf(c.w, "  Path:  %s\n  Tasks: %s\n", pyrepr.Str(get("path")), pyrepr.Str(tasks))
+	fmt.Fprintf(c.w, "  Path:  %s\n  Tasks: %s\n", anyutil.String(get("path")), anyutil.String(tasks))
 	for _, w := range get("warnings").([]any) {
-		fmt.Fprintf(c.w, "  Note:  %s\n", pyrepr.Str(w))
+		fmt.Fprintf(c.w, "  Note:  %s\n", anyutil.String(w))
 	}
 	if get("activated") == true {
 		fmt.Fprintf(c.w, "  Active board is now %s.\n", errchain.Show(get("board")))
 	} else {
-		fmt.Fprintf(c.w, "  Switch to it with `icebath kanban boards switch %s`.\n", pyrepr.Str(get("board")))
+		fmt.Fprintf(c.w, "  Switch to it with `icebath kanban boards switch %s`.\n", anyutil.String(get("board")))
 	}
 	return 0, nil
 }

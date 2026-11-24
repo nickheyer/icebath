@@ -4,13 +4,13 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Commands restarting a systemd unit in its scope, both forms for an unknown scope, an error for an unhashable one
 func SystemdRestartCommands(unit string, scope any) ([]string, error) {
 	userCmd, systemCmd := "systemctl --user restart "+unit, "sudo systemctl restart "+unit
-	if pyrepr.Truthy(scope) {
+	if anyutil.IsTrue(scope) {
 		switch key := scope.(type) {
 		case string:
 			if key == "user" {

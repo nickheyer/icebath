@@ -1,8 +1,8 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Abstract identity every registered provider implements, the stable lowercase config key value
@@ -56,7 +56,7 @@ func (d CatalogProviderDefaults) self() CatalogProviderBase {
 }
 
 // Label shown in icebath tools, the provider name title cased
-func (d CatalogProviderDefaults) DisplayName() string { return pystr.Title(d.self().Name()) }
+func (d CatalogProviderDefaults) DisplayName() string { return textutil.Title(d.self().Name()) }
 
 // Picker row naming the provider by its display name with no badge, tag or env vars
 func (d CatalogProviderDefaults) GetSetupSchema() map[string]any { return defaultSetupSchema(d.self()) }

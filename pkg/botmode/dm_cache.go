@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Folder name of the per user DM payload directory under the temp root
@@ -19,7 +19,7 @@ const DMStaleHours = 24.0
 
 // Per user DM payload directory under the temp root, created private and refused when another user holds it
 func dmDir() (string, error) {
-	root, err := pypath.Gettempdir()
+	root, err := pathutil.TempDir()
 	if err != nil {
 		return "", err
 	}
@@ -55,7 +55,7 @@ func DMDir() (string, error) { return dmDir() }
 
 // Deletes orphaned DM payload files and live delivery intents older than maxAgeHours, returning the count
 func CleanupBotDMCache(maxAgeHours float64, now *float64) int {
-	root, err := pypath.Gettempdir()
+	root, err := pathutil.TempDir()
 	if err != nil {
 		return 0
 	}

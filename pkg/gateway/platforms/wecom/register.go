@@ -5,8 +5,8 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Sends through an adapter and wraps the outcome in the standalone sender envelope
@@ -28,7 +28,7 @@ func sendVia(ctx context.Context, adapter gateway.PlatformAdapter, chatID, messa
 	if result.Success {
 		return map[string]any{"success": true, "platform": "wecom", "chat_id": chatID, "message_id": result.MessageID}, nil
 	}
-	return gateway.SendError("WeCom send failed: " + pyrepr.Str(result.Error)), nil
+	return gateway.SendError("WeCom send failed: " + anyutil.String(result.Error)), nil
 }
 
 // Reuses the active profile's live adapter in process, else connects one ephemeral adapter for the send
@@ -71,12 +71,12 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 
 // Connected means a bot id in the config extra
 func isConnected(cfg *gateway.PlatformConfig) bool {
-	return cfg != nil && pyrepr.Truthy(cfg.Extra["bot_id"])
+	return cfg != nil && anyutil.IsTrue(cfg.Extra["bot_id"])
 }
 
 // Callback mode is connected with a corp id or a multi app apps block
 func callbackIsConnected(cfg *gateway.PlatformConfig) bool {
-	return cfg != nil && (pyrepr.Truthy(cfg.Extra["corp_id"]) || pyrepr.Truthy(cfg.Extra["apps"]))
+	return cfg != nil && (anyutil.IsTrue(cfg.Extra["corp_id"]) || anyutil.IsTrue(cfg.Extra["apps"]))
 }
 
 // Builds the websocket adapter for a platform config

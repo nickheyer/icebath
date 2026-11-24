@@ -166,7 +166,7 @@ func TestGetConnectedPlatformsNeedsEnabledAndToken(t *testing.T) {
 func TestStreamingConfigMalformedNumbersFallBackToDefaults(t *testing.T) {
 	restored := StreamingConfigFromDict(map[string]any{"edit_interval": "oops", "buffer_threshold": "oops", "fresh_final_after_seconds": "oops"})
 	defaults := DefaultStreamingConfig()
-	if restored.EditInterval != defaults.EditInterval || restored.BufferThreshold.Cmp(defaults.BufferThreshold) != 0 ||
+	if restored.EditInterval != defaults.EditInterval || restored.BufferThreshold != defaults.BufferThreshold ||
 		restored.FreshFinalAfterSeconds != defaults.FreshFinalAfterSeconds {
 		t.Fatalf("%+v", restored)
 	}
@@ -178,7 +178,7 @@ func TestGatewayConfigDictRoundtrip(t *testing.T) {
 			t.Fatalf("watchdog %v -> %d", raw, got)
 		}
 	}
-	if got := mustGatewayConfig(t, map[string]any{"max_concurrent_sessions": "many"}).MaxConcurrentSessions; got != nil {
+	if got := mustGatewayConfig(t, map[string]any{"max_concurrent_sessions": "many"}).MaxConcurrentSessions; got != 0 {
 		t.Fatalf("max concurrent sessions %v", got)
 	}
 

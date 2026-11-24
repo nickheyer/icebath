@@ -4,14 +4,14 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const archiveActiveSQL = "UPDATE messages SET active = 0, compacted = 1 WHERE session_id = ? AND active = 1"
 
 // Keyword arguments of an in place compaction, nil standing for an omitted Python argument
 type ArchiveCompactOptions struct {
-	ModelConfigPatch *pyjson.Object
+	ModelConfigPatch *jsonutil.Object
 	Watermark        *int64
 	LockHolder       *string
 	TailCount        int

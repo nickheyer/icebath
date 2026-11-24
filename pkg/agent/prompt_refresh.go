@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const sessionEpochKey = "prompt_refresh_epoch"
@@ -36,7 +36,7 @@ func requestedEpoch(ctx context.Context, a *AIAgent) int {
 }
 
 // Refresh epoch the stored session prompt already satisfies, from its model config
-func appliedEpoch(sessionRow *pyjson.Object) int {
+func appliedEpoch(sessionRow *jsonutil.Object) int {
 	var raw any
 	if sessionRow != nil {
 		raw, _ = sessionRow.Get("model_config")
@@ -44,23 +44,17 @@ func appliedEpoch(sessionRow *pyjson.Object) int {
 	return intEpoch(state.ParseModelConfig(raw)[sessionEpochKey])
 }
 
-// Epoch held by a decoded value when it is a Python int, zero otherwise, clamped to the Go int range
+// Epoch held by a decoded value when it is an integer, zero otherwise, clamped to the Go int range
 func intEpoch(v any) int {
-	n, ok := pyint.Instance(v)
+	n, ok := anyutil.Int(v)
 	if !ok {
 		return 0
 	}
-	if !n.IsInt64() || n.Int64() > math.MaxInt || n.Int64() < math.MinInt {
-		if n.Sign() < 0 {
-			return math.MinInt
-		}
-		return math.MaxInt
-	}
-	return int(n.Int64())
+	return int(min(max(n, math.MinInt), math.MaxInt))
 }
 
 // Epoch to rebuild the stored prompt at, zero when the stored prompt is current
-func storedPromptRefreshEpoch(ctx context.Context, a *AIAgent, sessionRow *pyjson.Object) int {
+func storedPromptRefreshEpoch(ctx context.Context, a *AIAgent, sessionRow *jsonutil.Object) int {
 	epoch := requestedEpoch(ctx, a)
 	if epoch != 0 && appliedEpoch(sessionRow) < epoch {
 		return epoch

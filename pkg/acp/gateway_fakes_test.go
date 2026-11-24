@@ -8,8 +8,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 type rpcCall struct {
@@ -20,17 +18,17 @@ type rpcCall struct {
 type fakeGateway struct {
 	mu     sync.Mutex
 	events *gateway.EventQueue
-	answer func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error)
+	answer func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error)
 	calls  []rpcCall
 	closed bool
 	done   bool
 }
 
-func newFakeGateway(answer func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error)) *fakeGateway {
+func newFakeGateway(answer func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error)) *fakeGateway {
 	return &fakeGateway{events: gateway.NewEventQueue(0), answer: answer}
 }
 
-func (g *fakeGateway) RPC(ctx context.Context, method string, params map[string]any, timeout time.Duration) (*pyjson.Object, error) {
+func (g *fakeGateway) RPC(ctx context.Context, method string, params map[string]any, timeout time.Duration) (*jsonutil.Object, error) {
 	g.mu.Lock()
 	g.calls = append(g.calls, rpcCall{method, params})
 	g.mu.Unlock()
@@ -56,11 +54,11 @@ func (g *fakeGateway) put(frame any) { g.events.PutNowait(frame) }
 
 type editorFake struct {
 	captureConn
-	onUpdate func(sessionID string, update pyacp.SessionUpdate) error
+	onUpdate func(sessionID string, update acputil.SessionUpdate) error
 	request  func(method string, params any) (any, error)
 }
 
-func (e *editorFake) SessionUpdate(ctx context.Context, sessionID string, update pyacp.SessionUpdate, meta *pyjson.Object) error {
+func (e *editorFake) SessionUpdate(ctx context.Context, sessionID string, update acputil.SessionUpdate, meta *jsonutil.Object) error {
 	e.captureConn.SessionUpdate(ctx, sessionID, update, meta)
 	if e.onUpdate != nil {
 		return e.onUpdate(sessionID, update)
@@ -75,18 +73,18 @@ func (e *editorFake) SendRequest(ctx context.Context, method string, params any)
 	return nil, nil
 }
 
-func jsonObj(t testing.TB, text string) *pyjson.Object {
+func jsonObj(t testing.TB, text string) *jsonutil.Object {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatalf("bad json %s: %v", text, err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
-func eventFrame(t testing.TB, kind, payload, session, admission string, seq int) *pyjson.Object {
+func eventFrame(t testing.TB, kind, payload, session, admission string, seq int) *jsonutil.Object {
 	t.Helper()
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("type", kind)
 	params.Set("session_id", session)
 	params.Set("payload", jsonObj(t, payload))
@@ -99,7 +97,7 @@ func eventFrame(t testing.TB, kind, payload, session, admission string, seq int)
 		params.Set("replay_epoch", "e")
 		params.Set("seq", int64(seq))
 	}
-	return pyjson.ObjectOf("method", "event", "params", params)
+	return jsonutil.ObjectOf("method", "event", "params", params)
 }
 
 func shownText(e *editorFake, session string) string {
@@ -108,16 +106,16 @@ func shownText(e *editorFake, session string) string {
 		if u.sessionID != session {
 			continue
 		}
-		var content pyacp.ContentBlock
+		var content acputil.ContentBlock
 		switch update := u.update.(type) {
-		case *pyacp.AgentMessageChunk:
+		case *acputil.AgentMessageChunk:
 			content = update.Content
-		case *pyacp.AgentThoughtChunk:
+		case *acputil.AgentThoughtChunk:
 			content = update.Content
-		case *pyacp.UserMessageChunk:
+		case *acputil.UserMessageChunk:
 			content = update.Content
 		}
-		if text, ok := content.(*pyacp.TextContentBlock); ok {
+		if text, ok := content.(*acputil.TextContentBlock); ok {
 			b.WriteString(text.Text)
 		}
 	}
@@ -143,11 +141,11 @@ func until(t testing.TB, what string, cond func() bool) {
 
 type asked struct {
 	done chan struct{}
-	resp *pyacp.PromptResponse
+	resp *acputil.PromptResponse
 	err  error
 }
 
-func (q *asked) wait(t testing.TB, timeout time.Duration) (*pyacp.PromptResponse, error) {
+func (q *asked) wait(t testing.TB, timeout time.Duration) (*acputil.PromptResponse, error) {
 	t.Helper()
 	select {
 	case <-q.done:
@@ -191,11 +189,11 @@ func testingHome(t testing.TB) string {
 	return dir
 }
 
-func newRig(t testing.TB, answer func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*pyjson.Object, error)) *gatewayRig {
+func newRig(t testing.TB, answer func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error)) *gatewayRig {
 	t.Helper()
 	r := &gatewayRig{t: t, agent: newGatewayAgent(t), editor: &editorFake{}}
 	r.ctx, r.cancel = context.WithCancel(context.Background())
-	r.link = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	r.link = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		return answer(r, ctx, method, params)
 	})
 	a := r.agent
@@ -243,6 +241,6 @@ func (r *gatewayRig) resumed(session string) bool {
 	})
 }
 
-func resumedSnapshot(t testing.TB, pending string) *pyjson.Object {
+func resumedSnapshot(t testing.TB, pending string) *jsonutil.Object {
 	return jsonObj(t, `{"replay_epoch": "e2", "last_sequence": 0, "pending": [`+pending+`], "prompts": [], "resumed": true}`)
 }

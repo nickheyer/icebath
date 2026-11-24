@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func tier1Finding(check, severity, message string, line int) string {
@@ -20,19 +20,19 @@ func tier1Finding(check, severity, message string, line int) string {
 }
 
 // SkillEvaluator report JSON with a PII validator carrying findings and extra validator results appended
-func tier1ReportJSON(t *testing.T, findings []string, extra ...string) *pyjson.Object {
+func tier1ReportJSON(t *testing.T, findings []string, extra ...string) *jsonutil.Object {
 	t.Helper()
 	passed := fmt.Sprint(len(findings) == 0)
 	results := []string{`{"validator": "PII Scan", "passed": ` + passed + `, "findings": [` + strings.Join(findings, ", ") + `]}`,
 		`{"validator": "Unicode Smuggling Detection", "passed": true, "findings": []}`}
-	v, err := pyjson.Loads(`{"overall_passed": ` + passed + `, "results": [` + strings.Join(append(results, extra...), ", ") + `]}`)
+	v, err := jsonutil.Decode(`{"overall_passed": ` + passed + `, "results": [` + strings.Join(append(results, extra...), ", ") + `]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
-func mustTier1(t *testing.T, raw *pyjson.Object) Tier1Report {
+func mustTier1(t *testing.T, raw *jsonutil.Object) Tier1Report {
 	t.Helper()
 	r, err := parseTier1Report(raw)
 	if err != nil {
@@ -68,14 +68,14 @@ func TestTier1ParseReport(t *testing.T) {
 	if len(r.Findings) != 1 || !r.Findings[0].IsSecretsClass() || !slices.Equal(r.IncompleteChecks, []string{"Security Scan"}) || r.Passed {
 		t.Fatalf("incomplete findings %+v", r)
 	}
-	bad, _ := pyjson.Loads(`{"results": ["x"]}`)
-	if _, err := parseTier1Report(bad.(*pyjson.Object)); err == nil || err.Error() != "expected a mapping holding validator, got text" {
+	bad, _ := jsonutil.Decode(`{"results": ["x"]}`)
+	if _, err := parseTier1Report(bad.(*jsonutil.Object)); err == nil || err.Error() != "expected a mapping holding validator, got text" {
 		t.Fatalf("non dict result: %v", err)
 	}
 }
 
 func tier1Same(a, b Tier1Finding) bool {
-	return a.Check == b.Check && a.Message == b.Message && a.Line.Cmp(b.Line) == 0
+	return a.Check == b.Check && a.Message == b.Message && a.Line == b.Line
 }
 
 func patchTier1(t *testing.T, found bool, run func(ctx context.Context, argv []string, timeout time.Duration) (bool, error)) {

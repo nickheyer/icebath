@@ -8,8 +8,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type appendCall struct {
@@ -33,7 +33,7 @@ func (r *recordingAppender) AppendMessage(ctx context.Context, sessionID string,
 
 func writeFlushJSON(t *testing.T, path string, payload any) {
 	t.Helper()
-	text, err := pyjson.Dumps(payload)
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		t.Fatal(err)
 	}

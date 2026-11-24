@@ -1,12 +1,12 @@
 package gateway
 
 import (
+	"encoding/base64"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -105,7 +105,7 @@ func reFind(re *regexp2.Regexp, s string) *regexp2.Match {
 
 // Decodes base64 source strictly as UTF-8 text, false on a binascii or Unicode decode error
 func inlineB64Text(data string) (string, bool) {
-	raw, err := pybase64.B64DecodeValidate(data)
+	raw, err := base64.StdEncoding.DecodeString(data)
 	if err != nil || !utf8.Valid(raw) {
 		return "", false
 	}

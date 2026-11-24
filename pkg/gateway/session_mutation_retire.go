@@ -7,10 +7,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Launch key slots and config secret refs the local policies outside the retired sessions still name
@@ -84,12 +84,12 @@ func releaseLaunchSecrets(ctx context.Context, a *SessionAuthority, sessionIDs [
 		for ref := range slots.configs {
 			owner, owned := "", false
 			if strings.HasPrefix(ref, configSecretPrefix) {
-				loaded, err := pyjson.Loads(ref[len(configSecretPrefix):])
+				loaded, err := jsonutil.Decode(ref[len(configSecretPrefix):])
 				if err != nil {
 					slots.mu.Unlock()
 					return err
 				}
-				fields, ok := loaded.(*pyjson.Object)
+				fields, ok := loaded.(*jsonutil.Object)
 				if !ok {
 					slots.mu.Unlock()
 					return &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the launch secrets record is %s, expected a mapping", errchain.Kind(loaded))}

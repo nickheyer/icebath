@@ -11,14 +11,13 @@ import (
 	"testing"
 	"time"
 
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	colmetrics "go.opentelemetry.io/proto/otlp/collector/metrics/v1"
 	"google.golang.org/protobuf/proto"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestOTLPAttrsRedactStringsAndNeverExportProfile(t *testing.T) {
-	attrs := SpanAttrs(pyjson.ObjectOf(
+	attrs := SpanAttrs(jsonutil.ObjectOf(
 		"event", "gateway_health",
 		"name", "gateway.lifecycle",
 		"profile", "user@example.com",
@@ -52,7 +51,7 @@ func TestResourceAttributesAreAllowlistedAndSanitized(t *testing.T) {
 }
 
 func TestDiagnosticLogAttributesAreAllowlistedRedactedAndProfileFree(t *testing.T) {
-	attrs := diagnosticLogAttributes(pyjson.ObjectOf(
+	attrs := diagnosticLogAttributes(jsonutil.ObjectOf(
 		"event", "gateway_diagnostic",
 		"name", "platform.fatal",
 		"subsystem", "platform.slack",
@@ -138,9 +137,9 @@ func TestRegisteredObservableMetricNamesCoverSnapshotMetrics(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	saved := GatewayReadRuntimeStatus
 	t.Cleanup(func() { GatewayReadRuntimeStatus = saved })
-	GatewayReadRuntimeStatus = func() *pyjson.Object {
-		return pyjson.ObjectOf("gateway_state", "running", "active_agents", 1,
-			"platforms", pyjson.ObjectOf("slack", pyjson.ObjectOf("state", "fatal")))
+	GatewayReadRuntimeStatus = func() *jsonutil.Object {
+		return jsonutil.ObjectOf("gateway_state", "running", "active_agents", 1,
+			"platforms", jsonutil.ObjectOf("slack", jsonutil.ObjectOf("state", "fatal")))
 	}
 	snap, err := readRuntimeSnapshot(context.Background())
 	if err != nil {

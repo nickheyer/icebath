@@ -8,13 +8,13 @@ import (
 	"strings"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	"golang.org/x/sys/windows"
 )
 
 // Target of an NTFS directory junction with the verbatim prefix removed, false for anything else
 func ntfsJunctionTarget(path string) (string, bool) {
-	if pyfs.ReparseTag(path) != windows.IO_REPARSE_TAG_MOUNT_POINT {
+	if fsutil.ReparseTag(path) != windows.IO_REPARSE_TAG_MOUNT_POINT {
 		return "", false
 	}
 	target, err := os.Readlink(path)

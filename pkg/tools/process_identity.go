@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Spawn tags, the machine wide spawn ledger and the owner death supervisor, a shell on POSIX and kill on close jobs on Windows
@@ -219,8 +220,8 @@ type LedgerEntry struct {
 }
 
 // Row of the entry in the ledger's JSON shape and dataclass field order, built without a JSON round trip
-func (e LedgerEntry) asObject() *pyjson.Object {
-	o := pyjson.ObjectOf(
+func (e LedgerEntry) asObject() *jsonutil.Object {
+	o := jsonutil.ObjectOf(
 		"pid", e.Pid, "create_time", nil, "purpose", e.Purpose, "install", e.Install, "spawner_pid", nil,
 		"spawner_create", nil, "registered_at", e.RegisteredAt, "argv", e.Argv, home.RecordKey, e.IcebathHome,
 		"boot_start", nil, "spawner_boot", nil, "boot_id", nil)
@@ -294,19 +295,19 @@ func entryFloat(entry map[string]any, key string) *float64 {
 }
 
 // Entries list, empty for a missing or blank file, nil for a corrupt one
-func readLedger(path string) ([]*pyjson.Object, bool) {
+func readLedger(path string) ([]*jsonutil.Object, bool) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return []*pyjson.Object{}, true
+			return []*jsonutil.Object{}, true
 		}
 		return nil, false
 	}
 	text := strings.TrimPrefix(string(data), "\xEF\xBB\xBF")
 	if strings.TrimSpace(text) == "" {
-		return []*pyjson.Object{}, true
+		return []*jsonutil.Object{}, true
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, false
 	}
@@ -314,9 +315,9 @@ func readLedger(path string) ([]*pyjson.Object, bool) {
 	if !ok {
 		return nil, false
 	}
-	out := make([]*pyjson.Object, 0, len(list))
+	out := make([]*jsonutil.Object, 0, len(list))
 	for _, item := range list {
-		if m, ok := item.(*pyjson.Object); ok {
+		if m, ok := item.(*jsonutil.Object); ok {
 			renameRetiredHomeKey(m)
 			out = append(out, m)
 		}
@@ -325,10 +326,10 @@ func readLedger(path string) ([]*pyjson.Object, bool) {
 }
 
 // Moves the home of a row an older icebath wrote to the current key in place, so the next write carries it
-func renameRetiredHomeKey(row *pyjson.Object) { home.AdoptRecordKey(row.Keys, row.Vals) }
+func renameRetiredHomeKey(row *jsonutil.Object) { home.AdoptRecordKey(row.Keys, row.Vals) }
 
 // Ledger entries, false after parking a corrupt file, caller holds the ledger lock
-func readLedgerOrQuarantine(path string) ([]*pyjson.Object, bool) {
+func readLedgerOrQuarantine(path string) ([]*jsonutil.Object, bool) {
 	entries, ok := readLedger(path)
 	if !ok {
 		parked := path + ".corrupt"
@@ -443,10 +444,10 @@ func appendLedgerEntry(ctx context.Context, entry LedgerEntry) bool {
 		defer unlock()
 	}
 	entries, _ := readLedgerOrQuarantine(path)
-	pruned := make([]*pyjson.Object, 0, len(entries)+1)
+	pruned := make([]*jsonutil.Object, 0, len(entries)+1)
 	for _, e := range entries {
-		pid, ok := entryInt(e.Vals, "pid")
-		if !ok || pid == entry.Pid || !EntryStillRunning(e.Vals) {
+		pid, ok := entryInt(e.Map(), "pid")
+		if !ok || pid == entry.Pid || !EntryStillRunning(e.Map()) {
 			continue
 		}
 		pruned = append(pruned, e)
@@ -465,9 +466,9 @@ func appendLedgerEntry(ctx context.Context, entry LedgerEntry) bool {
 
 // Writes data as indented JSON through a private temp file and an atomic rename
 func procAtomicJSONWrite(path string, data any, mode os.FileMode, ensureASCII bool) error {
-	text, err := pyjson.Dumps(data, pyjson.Indent(2), pyjson.EnsureASCII(ensureASCII))
+	text, err := jsonutil.Encode(data, jsonutil.Indent(2), pyjson.EnsureASCII(ensureASCII))
 	if err == nil && !ensureASCII && !utf8.ValidString(text) {
-		text, err = pyjson.Dumps(data, pyjson.Indent(2), pyjson.EnsureASCII(true))
+		text, err = jsonutil.Encode(data, jsonutil.Indent(2), jsonutil.ASCII())
 	}
 	if err != nil {
 		return err
@@ -581,7 +582,7 @@ func LedgerEntries(opts LedgerOptions) []map[string]any {
 	}
 	out := []map[string]any{}
 	for _, row := range entries {
-		e := row.Vals
+		e := row.Map()
 		if !opts.AllInstalls && e["install"] != wantInstall {
 			continue
 		}

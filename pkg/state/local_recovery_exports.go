@@ -4,19 +4,18 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Local receipt whose current target row another lane now routes
 type MovedReceipt = movedReceipt
 
 // Untracked compression steps a local receipt would adopt with its route entry, nil when nothing is adoptable
-func AdoptableCompression(ctx context.Context, conn SQLiteConn, receipt *pyjson.Object) ([]string, *pyjson.Object, error) {
+func AdoptableCompression(ctx context.Context, conn SQLiteConn, receipt *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	return adoptableCompression(ctx, conn, receipt)
 }
 
 // Physical target of a local receipt once its recorded lineage matches the stored rows
-func ValidateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *pyjson.Object) (string, error) {
+func ValidateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *jsonutil.Object) (string, error) {
 	return validateLocalLineage(ctx, conn, receipt)
 }
 
@@ -67,7 +66,7 @@ func RetireRoutes(ctx context.Context, conn SQLiteConn, sessionIDs, expiring []s
 }
 
 // Decoded receipt object of stored text, the error json loads or the shape check raised otherwise
-func localReceiptDecoded(raw any) (*pyjson.Object, error) {
+func localReceiptDecoded(raw any) (*jsonutil.Object, error) {
 	text, ok := raw.(string)
 	if !ok {
 		b, isBytes := raw.([]byte)
@@ -80,11 +79,11 @@ func localReceiptDecoded(raw any) (*pyjson.Object, error) {
 		}
 		text = decoded
 	}
-	value, err := pyjson.Loads(text)
+	value, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	receipt, isObject := value.(*pyjson.Object)
+	receipt, isObject := value.(*jsonutil.Object)
 	if !isObject {
 		return nil, &stateTypedError{"ValueError", "invalid receipt"}
 	}

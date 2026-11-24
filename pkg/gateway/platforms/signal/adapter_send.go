@@ -17,12 +17,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -35,7 +33,7 @@ type rpcOptions struct {
 }
 
 // Sends one JSON-RPC 2.0 request to signal-cli, nil on any failure and a rate limit error only when asked
-func (a *SignalAdapter) rpc(ctx context.Context, method string, params *pyjson.Object, o rpcOptions) (any, error) {
+func (a *SignalAdapter) rpc(ctx context.Context, method string, params *jsonutil.Object, o rpcOptions) (any, error) {
 	client := a.httpClient()
 	if client == nil {
 		pkgLog().Warn("Signal: RPC called but client not connected")
@@ -53,7 +51,7 @@ func (a *SignalAdapter) rpc(ctx context.Context, method string, params *pyjson.O
 	if o.quietFailures {
 		logFailure = slog.Debug
 	}
-	result, err := a.rpcOnce(ctx, client, method, pyjson.ObjectOf("jsonrpc", "2.0", "method", method, "params", params, "id", rpcID),
+	result, err := a.rpcOnce(ctx, client, method, jsonutil.ObjectOf("jsonrpc", "2.0", "method", method, "params", params, "id", rpcID),
 		time.Duration(timeout*float64(time.Second)), o.raiseOnRateLimit, logFailure)
 	var rateLimit *SignalRateLimitError
 	switch {
@@ -64,13 +62,13 @@ func (a *SignalAdapter) rpc(ctx context.Context, method string, params *pyjson.O
 	case ctx.Err() != nil:
 		return nil, ctx.Err()
 	}
-	logFailure(fmt.Sprintf("Signal RPC %s failed: %s", method, errText(err)))
+	logFailure(fmt.Sprintf("Signal RPC %s failed: %v", method, err))
 	return nil, nil
 }
 
 // One RPC round trip, an RPC error object logged and answered with nil unless it is a wanted rate limit
-func (a *SignalAdapter) rpcOnce(ctx context.Context, client *http.Client, method string, payload *pyjson.Object, timeout time.Duration, raiseOnRateLimit bool, logFailure func(string, ...any)) (any, error) {
-	body, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+func (a *SignalAdapter) rpcOnce(ctx context.Context, client *http.Client, method string, payload *jsonutil.Object, timeout time.Duration, raiseOnRateLimit bool, logFailure func(string, ...any)) (any, error) {
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -80,31 +78,23 @@ func (a *SignalAdapter) rpcOnce(ctx context.Context, client *http.Client, method
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := pyhttpx.Do(client, req, timeout)
+	resp, err := httputil.Do(client, req, httputil.EachPhase(timeout))
 	if err != nil {
-		var te *pyhttpx.TimeoutError
-		if errors.As(err, &te) {
-			return nil, &pyErr{"ReadTimeout", ""}
-		}
-		return nil, &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+		return nil, err
 	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, &pyErr{"HTTPStatusError", resp.StatusErrorText(rawURL)}
+	if err := resp.CheckStatus(); err != nil {
+		return nil, err
 	}
 	decoded, err := resp.JSON()
 	if err != nil {
 		return nil, err
 	}
-	data, isDict := pyjson.Dict(decoded)
+	data, isDict := jsonutil.AsMap(decoded)
 	if !isDict {
-		switch decoded.(type) {
-		case []any, string:
-			return nil, noAttr(decoded, "get")
-		}
-		return nil, &pyErr{"TypeError", fmt.Sprintf("argument of type '%s' is not iterable", pyrepr.TypeName(decoded))}
+		return nil, fmt.Errorf("signal-cli RPC response: %w", unexpectedKind("a JSON object", decoded))
 	}
 	if rpcErr, present := data["error"]; present {
-		if plain := pyjson.Plain(rpcErr); raiseOnRateLimit && isSignalRateLimitError(plain) {
+		if plain := jsonutil.Plain(rpcErr); raiseOnRateLimit && isSignalRateLimitError(plain) {
 			retryAfter, found, err := extractRetryAfterSeconds(plain)
 			if err != nil {
 				return nil, err
@@ -115,15 +105,15 @@ func (a *SignalAdapter) rpcOnce(ctx context.Context, client *http.Client, method
 			}
 			return nil, rateLimit
 		}
-		logFailure(fmt.Sprintf("Signal RPC error (%s): %s", method, pyrepr.Str(rpcErr)))
+		logFailure(fmt.Sprintf("Signal RPC error (%s): %s", method, anyutil.String(rpcErr)))
 		return nil, nil
 	}
 	result := data["result"]
-	if rm, isDict := pyjson.Dict(result); isDict && raiseOnRateLimit {
+	if rm, isDict := jsonutil.AsMap(result); isDict && raiseOnRateLimit {
 		if results, isList := rm["results"].([]any); isList {
 			for _, r := range results {
-				entry, isDict := pyjson.Dict(r)
-				if !isDict || !pyrepr.Equal(entry["type"], "RATE_LIMIT_FAILURE") {
+				entry, isDict := jsonutil.AsMap(r)
+				if !isDict || entry["type"] != "RATE_LIMIT_FAILURE" {
 					continue
 				}
 				rateLimit := &SignalRateLimitError{Message: "Rate limit exceeded for recipient"}
@@ -146,7 +136,7 @@ func (a *SignalAdapter) FormatMessage(content string) string { return content }
 
 // Whether every recipient result of a send response succeeded, with the failure text otherwise
 func validateSendResult(result any) (bool, string) {
-	rm, isDict := pyjson.Dict(result)
+	rm, isDict := jsonutil.AsMap(result)
 	if !isDict {
 		return true, ""
 	}
@@ -155,15 +145,15 @@ func validateSendResult(result any) (bool, string) {
 		return true, ""
 	}
 	for _, r := range results {
-		entry, isDict := pyjson.Dict(r)
+		entry, isDict := jsonutil.AsMap(r)
 		if !isDict {
 			continue
 		}
-		if rtype := entry["type"]; pyrepr.Truthy(rtype) && !pyrepr.Equal(rtype, "SUCCESS") {
-			return false, pyrepr.Str(rtype)
+		if rtype := entry["type"]; anyutil.IsTrue(rtype) && rtype != "SUCCESS" {
+			return false, anyutil.String(rtype)
 		}
-		if success, present := entry["success"]; present && !pyrepr.Truthy(success) {
-			return false, pyrepr.Str(pyrepr.Or(entry["failure"], "Recipient delivery failed"))
+		if success, present := entry["success"]; present && !anyutil.IsTrue(success) {
+			return false, anyutil.String(anyutil.Or(entry["failure"], "Recipient delivery failed"))
 		}
 	}
 	return true, ""
@@ -186,14 +176,14 @@ func stylesForChunk(textStyles []string, chunkStart, chunkEnd int) []string {
 		var start, length int
 		ok := len(parts) == 3
 		if ok {
-			s, sok := pystr.IntText(parts[0])
-			l, lok := pystr.IntText(parts[1])
-			if ok = sok && lok && s.IsInt64() && l.IsInt64(); ok {
-				start, length = int(s.Int64()), int(l.Int64())
+			s, serr := textutil.ParseInt(parts[0])
+			l, lerr := textutil.ParseInt(parts[1])
+			if ok = serr == nil && lerr == nil; ok {
+				start, length = int(s), int(l)
 			}
 		}
 		if !ok {
-			pkgLog().Debug(fmt.Sprintf("[Signal] Ignoring malformed textStyle range: %s", pyrepr.Repr(styleString)))
+			pkgLog().Debug(fmt.Sprintf("[Signal] Ignoring malformed textStyle range: %s", strconv.Quote(styleString)))
 			continue
 		}
 		overlapStart, overlapEnd := max(start, chunkStart), min(start+length, chunkEnd)
@@ -240,7 +230,7 @@ func splitSignalFormattedMessage(plainText string, textStyles []string, maxLengt
 }
 
 // Runs a send RPC, validates and tracks it, returning the result or the failed send result
-func (a *SignalAdapter) rpcSend(ctx context.Context, params *pyjson.Object, failError string) (any, *gateway.SendResult, error) {
+func (a *SignalAdapter) rpcSend(ctx context.Context, params *jsonutil.Object, failError string) (any, *gateway.SendResult, error) {
 	result, err := a.rpc(ctx, "send", params, rpcOptions{})
 	if err != nil {
 		return nil, nil, err
@@ -263,7 +253,7 @@ func (a *SignalAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 	if strings.TrimSpace(content) == "" {
 		return gateway.SendResult{Success: true}, nil
 	}
-	baseParams, err := a.withTarget(ctx, pyjson.ObjectOf("account", a.account), chatID, true)
+	baseParams, err := a.withTarget(ctx, jsonutil.ObjectOf("account", a.account), chatID, true)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
@@ -271,7 +261,7 @@ func (a *SignalAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 	chunks := splitSignalFormattedMessage(plain, styles, a.Traits.MaxMessageLength)
 	var lastResult any
 	for idx, chunk := range chunks {
-		params := baseParams.Copy()
+		params := baseParams.Clone()
 		params.Set("message", chunk.text)
 		if len(chunk.styles) == 1 {
 			params.Set("textStyle", chunk.styles[0])
@@ -293,8 +283,8 @@ func (a *SignalAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 
 // Records an outbound message timestamp for echo filtering under the time to live and the hard cap
 func (a *SignalAdapter) trackSentTimestamp(rpcResult any) {
-	rm, isDict := pyjson.Dict(rpcResult)
-	if !isDict || !pyrepr.Truthy(rm["timestamp"]) {
+	rm, isDict := jsonutil.AsMap(rpcResult)
+	if !isDict || !anyutil.IsTrue(rm["timestamp"]) {
 		return
 	}
 	ts := rm["timestamp"]
@@ -320,7 +310,7 @@ func (a *SignalAdapter) trackSentTimestamp(rpcResult any) {
 
 // Pops a timestamp matching one this adapter sent, true for an echo
 func (a *SignalAdapter) consumeSentTimestamp(ts any) bool {
-	if !pyrepr.Truthy(ts) {
+	if !anyutil.IsTrue(ts) {
 		return false
 	}
 	a.mu.Lock()
@@ -337,7 +327,7 @@ func (a *SignalAdapter) SendTyping(ctx context.Context, chatID string, metadata 
 	if now < skipUntil {
 		return nil
 	}
-	params, err := a.withTarget(ctx, pyjson.ObjectOf("account", a.account), chatID, true)
+	params, err := a.withTarget(ctx, jsonutil.ObjectOf("account", a.account), chatID, true)
 	if err != nil {
 		return err
 	}
@@ -367,7 +357,11 @@ func (a *SignalAdapter) SendTyping(ctx context.Context, chatID string, metadata 
 func (a *SignalAdapter) resolveImagePath(ctx context.Context, imageURL string) (path, reason string, detail any, err error) {
 	var filePath string
 	if strings.HasPrefix(imageURL, "file://") {
-		filePath = pyurl.Unquote(imageURL[7:])
+		local, ferr := urlutil.FilePath(imageURL)
+		if ferr != nil {
+			return "", "missing", nil, nil
+		}
+		filePath = local
 	} else {
 		cached, cerr := cacheImageFromURL(ctx, imageURL, ".jpg", 2)
 		if cerr != nil {
@@ -395,7 +389,7 @@ func (a *SignalAdapter) resolveImagePath(ctx context.Context, imageURL string) (
 func logSkippedImage(reason, imageURL string, detail any) {
 	switch reason {
 	case "download":
-		pkgLog().Warn(fmt.Sprintf("Signal: failed to download image %s: %s", imageURL, errText(detail.(error))))
+		pkgLog().Warn(fmt.Sprintf("Signal: failed to download image %s: %v", imageURL, detail))
 	case "missing":
 		pkgLog().Warn(fmt.Sprintf("Signal: image file not found for %s", imageURL))
 	case "oversize":
@@ -410,7 +404,7 @@ func (a *SignalAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 	}
 	scheduler := GetScheduler()
 	pkgLog().Info(fmt.Sprintf("Signal send_multiple_images: received %d image(s) for %s — scheduler state: %s", len(images),
-		textutil.First(chatID, 30), pyrepr.Str(scheduler.State())))
+		textutil.First(chatID, 30), anyutil.String(scheduler.State())))
 	if err := a.stopTypingIndicator(ctx, chatID); err != nil {
 		return gateway.SendResult{}, err
 	}
@@ -434,7 +428,7 @@ func (a *SignalAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 		return gateway.SendResult{Success: false, Error: "no valid images in batch"}, nil
 	}
 	pkgLog().Info(fmt.Sprintf("Signal send_multiple_images: %d/%d images valid, sending in chunks", len(attachments), len(images)))
-	baseParams, err := a.withTarget(ctx, pyjson.ObjectOf("account", a.account, "message", ""), chatID, true)
+	baseParams, err := a.withTarget(ctx, jsonutil.ObjectOf("account", a.account, "message", ""), chatID, true)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
@@ -452,7 +446,7 @@ func (a *SignalAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 				return gateway.SendResult{}, err
 			}
 		}
-		params := baseParams.Copy()
+		params := baseParams.Clone()
 		params.Set("attachments", batch)
 		accepted, err := a.sendAttachmentBatch(ctx, scheduler, params, n, fmt.Sprintf("%d/%d", idx+1, len(batches)))
 		if err != nil {
@@ -469,7 +463,7 @@ func (a *SignalAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 }
 
 // Sends one attachment batch under the scheduler with rate limit feedback and one transient retry
-func (a *SignalAdapter) sendAttachmentBatch(ctx context.Context, scheduler *SignalAttachmentScheduler, params *pyjson.Object, n int, label string) (bool, error) {
+func (a *SignalAdapter) sendAttachmentBatch(ctx context.Context, scheduler *SignalAttachmentScheduler, params *jsonutil.Object, n int, label string) (bool, error) {
 	sendTimeout, maxAttempts := signalSendTimeout(n), SignalRateLimitMaxAttempts
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if _, err := scheduler.Acquire(ctx, n); err != nil {
@@ -534,7 +528,7 @@ func (a *SignalAdapter) notifyBatchPacing(ctx context.Context, chatID string, ne
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("Signal: failed to send pacing notice: %s", errText(err)))
+		pkgLog().Warn(fmt.Sprintf("Signal: failed to send pacing notice: %v", err))
 	}
 	return nil
 }
@@ -550,7 +544,7 @@ func (a *SignalAdapter) SendImage(ctx context.Context, chatID, imageURL, caption
 	}
 	switch reason {
 	case "download":
-		text := errText(detail.(error))
+		text := detail.(error).Error()
 		pkgLog().Warn(fmt.Sprintf("Signal: failed to download image: %s", text))
 		return gateway.SendResult{Success: false, Error: text}, nil
 	case "missing":
@@ -563,7 +557,7 @@ func (a *SignalAdapter) SendImage(ctx context.Context, chatID, imageURL, caption
 
 // Sends one local file as a Signal attachment through the send RPC
 func (a *SignalAdapter) sendFile(ctx context.Context, chatID, filePath, caption, failError string) (gateway.SendResult, error) {
-	params, err := a.withTarget(ctx, pyjson.ObjectOf("account", a.account, "message", caption, "attachments", []any{filePath}), chatID, true)
+	params, err := a.withTarget(ctx, jsonutil.ObjectOf("account", a.account, "message", caption, "attachments", []any{filePath}), chatID, true)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
@@ -622,7 +616,7 @@ func (a *SignalAdapter) stopTypingIndicator(ctx context.Context, chatID string) 
 	delete(a.typingTasks, chatID)
 	a.mu.Unlock()
 	gateway.CancelTask(ctx, task)
-	if params, err := a.withTarget(ctx, pyjson.ObjectOf("account", a.account), chatID, true); err == nil {
+	if params, err := a.withTarget(ctx, jsonutil.ObjectOf("account", a.account), chatID, true); err == nil {
 		params.Set("stop", true)
 		a.rpc(ctx, "sendTyping", params, rpcOptions{rpcID: "typing-stop", quietFailures: true})
 	}
@@ -642,7 +636,7 @@ func (a *SignalAdapter) StopTyping(ctx context.Context, chatID string, metadata 
 }
 
 // Routes a sendReaction RPC to the chat without the service id upgrade
-func (a *SignalAdapter) sendReactionRPC(ctx context.Context, chatID string, params *pyjson.Object) (bool, error) {
+func (a *SignalAdapter) sendReactionRPC(ctx context.Context, chatID string, params *jsonutil.Object) (bool, error) {
 	if _, err := a.withTarget(ctx, params, chatID, false); err != nil {
 		return false, err
 	}
@@ -692,7 +686,7 @@ func signalReactionTarget(chatID, messageID string) (string, int64, error) {
 
 // Reacts to the message identified by its author and millisecond timestamp
 func (a *SignalAdapter) sendReaction(ctx context.Context, chatID, emoji string, targetAuthor, targetTimestamp any) (bool, error) {
-	ok, err := a.sendReactionRPC(ctx, chatID, pyjson.ObjectOf("account", a.account, "emoji", emoji, "targetAuthor", targetAuthor,
+	ok, err := a.sendReactionRPC(ctx, chatID, jsonutil.ObjectOf("account", a.account, "emoji", emoji, "targetAuthor", targetAuthor,
 		"targetTimestamp", targetTimestamp))
 	if err != nil {
 		return false, err
@@ -705,14 +699,14 @@ func (a *SignalAdapter) sendReaction(ctx context.Context, chatID, emoji string, 
 
 // Removes a reaction by sending an empty emoji with the remove flag
 func (a *SignalAdapter) removeReaction(ctx context.Context, chatID string, targetAuthor, targetTimestamp any) (bool, error) {
-	return a.sendReactionRPC(ctx, chatID, pyjson.ObjectOf("account", a.account, "emoji", "", "targetAuthor", targetAuthor,
+	return a.sendReactionRPC(ctx, chatID, jsonutil.ObjectOf("account", a.account, "emoji", "", "targetAuthor", targetAuthor,
 		"targetTimestamp", targetTimestamp, "remove", true))
 }
 
 // Author and timestamp of the message an event reacts to, false when the raw message carries neither
 func extractReactionTarget(event *gateway.MessageEvent) (author, timestamp any, ok bool) {
 	raw, isDict := event.RawMessage.(map[string]any)
-	if !isDict || !pyrepr.Truthy(raw["sender"]) || !pyrepr.Truthy(raw["timestamp_ms"]) {
+	if !isDict || !anyutil.IsTrue(raw["sender"]) || !anyutil.IsTrue(raw["timestamp_ms"]) {
 		return nil, nil, false
 	}
 	return raw["sender"], raw["timestamp_ms"], true
@@ -770,15 +764,15 @@ func (a *SignalAdapter) GetChatInfo(ctx context.Context, chatID string) (map[str
 	if strings.HasPrefix(chatID, "group:") {
 		return map[string]any{"name": chatID, "type": "group", "chat_id": chatID}, nil
 	}
-	result, err := a.rpc(ctx, "getContact", pyjson.ObjectOf("account", a.account, "contactAddress", chatID), rpcOptions{})
+	result, err := a.rpc(ctx, "getContact", jsonutil.ObjectOf("account", a.account, "contactAddress", chatID), rpcOptions{})
 	if err != nil {
 		return nil, err
 	}
 	var name any
-	if rm, isDict := pyjson.Dict(result); isDict {
-		name = pyrepr.Or(rm["name"], rm["profileName"])
+	if rm, isDict := jsonutil.AsMap(result); isDict {
+		name = anyutil.Or(rm["name"], rm["profileName"])
 	}
-	if !pyrepr.Truthy(name) {
+	if !anyutil.IsTrue(name) {
 		name = chatID
 	}
 	return map[string]any{"name": name, "type": "dm", "chat_id": chatID}, nil

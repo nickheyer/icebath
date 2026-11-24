@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const failoverPrompt = "You are a helpful assistant.\n\nMemory note at line start:\nModel: decoy-from-memory\n\n" +
@@ -142,7 +142,7 @@ func TestRedecoratePromptCacheOnPolicyChange(t *testing.T) {
 				"cache_control": map[string]any{"type": "ephemeral"}}}
 			a := failoverCacheAgent{useCaching: tc.useCaching, native: tc.native, prompt: prompt, static: failoverStatic, provider: tc.provider,
 				tools: registered, directToolCache: tc.native}.build()
-			beforeMessages, beforeTools := pycopy.DeepCopy(messages), pycopy.DeepCopy(registered)
+			beforeMessages, beforeTools := any(anyutil.Clone(messages)), any(anyutil.Clone(registered))
 			decorated, _, planned := redecoratePromptCacheForProvider(ctx, a, messages, nil, nil, nil)
 			if len(planned) != 1 || !reflect.DeepEqual(planned[0]["function"], registered[0].(map[string]any)["function"]) {
 				t.Fatalf("%s planned tools %v", tc.name, planned)
@@ -236,7 +236,7 @@ func TestPeelReferenceGuidanceRoundTrip(t *testing.T) {
 	t.Run("test_list_part_shape", func(t *testing.T) {
 		base := []map[string]any{{"role": "system", "content": "sys"},
 			{"role": "user", "content": []any{map[string]any{"type": "text", "text": "task", "cache_control": map[string]any{"type": "ephemeral"}}}}}
-		attached := attachReferenceGuidance(pycopy.DeepCopy(base).([]map[string]any), guidance)
+		attached := attachReferenceGuidance(any(anyutil.Clone(base)).([]map[string]any), guidance)
 		if reflect.DeepEqual(attached, base) {
 			t.Fatal("attach must change the transcript")
 		}

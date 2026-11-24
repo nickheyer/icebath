@@ -4,8 +4,6 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Whether the source is a Discord thread this gateway just auto created
@@ -36,9 +34,9 @@ func (r *GatewayRunner) recoverDiscordAutoThreadSource(ctx context.Context, sour
 				panic(err)
 			}
 			if row != nil {
-				if raw := row.GetOr("origin_json", nil); pyrepr.Truthy(raw) {
-					if parsed, err := pyjson.Loads(pyrepr.Str(raw)); err == nil {
-						if data, ok := pyjson.Plain(parsed).(map[string]any); ok {
+				if raw := row.ValueOr("origin_json", nil); anyutil.IsTrue(raw) {
+					if parsed, err := jsonutil.Decode(anyutil.String(raw)); err == nil {
+						if data, ok := jsonutil.Plain(parsed).(map[string]any); ok {
 							if recovered, err := gateway.SessionSourceFromDict(ctx, data); err == nil {
 								origin = recovered
 							}

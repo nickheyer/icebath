@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Env of a fresh profile home whose config.yaml holds the browser section
@@ -17,13 +17,13 @@ func browserEnv(t *testing.T, section map[string]any) *tools.Env {
 }
 
 func staticExecProps() map[string]any {
-	return pyjson.Plain(BrowserExecSchema().Vals["parameters"]).(map[string]any)["properties"].(map[string]any)
+	return jsonutil.Plain(BrowserExecSchema().Value("parameters")).(map[string]any)["properties"].(map[string]any)
 }
 
 // test_browser_real_profile.py TestBrowserExecSchemaGating test_local_arg_absent_without_consent
 func TestExecSchemaLocalArgAbsentWithoutConsent(t *testing.T) {
 	overrides := BrowserExecSchemaOverrides(browserEnv(t, map[string]any{"use_real_profile": false}))
-	if _, ok := overrides.Vals["parameters"]; ok {
+	if _, ok := overrides.Get("parameters"); ok {
 		t.Fatal("parameters overridden without consent")
 	}
 	if _, ok := staticExecProps()["local"]; ok {
@@ -34,7 +34,7 @@ func TestExecSchemaLocalArgAbsentWithoutConsent(t *testing.T) {
 // test_browser_real_profile.py TestBrowserExecSchemaGating test_local_arg_present_with_consent
 func TestExecSchemaLocalArgPresentWithConsent(t *testing.T) {
 	overrides := BrowserExecSchemaOverrides(browserEnv(t, map[string]any{"use_real_profile": true}))
-	params := pyjson.Plain(overrides.Vals["parameters"]).(map[string]any)
+	params := jsonutil.Plain(overrides.Value("parameters")).(map[string]any)
 	local, ok := params["properties"].(map[string]any)["local"].(map[string]any)
 	if !ok || local["type"] != "boolean" || local["default"] != false {
 		t.Fatalf("local %v", local)
@@ -65,7 +65,7 @@ func TestRealProfileConsentReadsOnOffWords(t *testing.T) {
 func TestExecDescriptionHeaderLightpanda(t *testing.T) {
 	pin(t, &lightpandaFindBinary, func(*tools.Env) string { return "/opt/lightpanda" })
 	pin(t, &lightpandaCloudProvider, func(*tools.Env) (BrowserProvider, error) { return nil, nil })
-	desc := BrowserExecSchemaOverrides(browserEnv(t, map[string]any{"engine": "lightpanda"})).Vals["description"].(string)
+	desc := BrowserExecSchemaOverrides(browserEnv(t, map[string]any{"engine": "lightpanda"})).Value("description").(string)
 	if desc != execHeaderBase+execHeaderLightpanda+execHelpersDigest || !strings.Contains(desc, "TargetAlreadyLoaded") {
 		t.Fatalf("description %q", desc)
 	}
@@ -75,7 +75,7 @@ func TestExecDescriptionHeaderLightpanda(t *testing.T) {
 func TestBrowserToolsRegistered(t *testing.T) {
 	for name, toolset := range map[string]string{"browser_exec": "browser-use", "browser_cdp": "browser-cdp"} {
 		def := tools.Default.Get(name)
-		if def == nil || def.Toolset != toolset || def.Schema.Vals["name"] != name {
+		if def == nil || def.Toolset != toolset || def.Schema.Value("name") != name {
 			t.Fatalf("%s registered as %+v", name, def)
 		}
 	}
@@ -85,20 +85,20 @@ func TestBrowserToolsRegistered(t *testing.T) {
 	if tools.Default.Get("browser_exec").DynamicSchema == nil || tools.Default.Get("browser_cdp").DynamicSchema != nil {
 		t.Fatal("only browser_exec tailors its schema per session")
 	}
-	if required := pyjson.Plain(BrowserExecSchema().Vals["parameters"]).(map[string]any)["required"].([]any); len(required) != 1 || required[0] != "code" {
+	if required := jsonutil.Plain(BrowserExecSchema().Value("parameters")).(map[string]any)["required"].([]any); len(required) != 1 || required[0] != "code" {
 		t.Fatalf("exec schema requires %v", required)
 	}
-	if pyjson.Plain(BrowserCDPSchema().Vals["parameters"]).(map[string]any)["required"].([]any)[0] != "method" {
+	if jsonutil.Plain(BrowserCDPSchema().Value("parameters")).(map[string]any)["required"].([]any)[0] != "method" {
 		t.Fatal("cdp schema required")
 	}
 }
 
 func TestBrowserExecSchemaCarriesTheReferenceWording(t *testing.T) {
 	schema := BrowserExecSchema()
-	if desc, _ := schema.Vals["description"].(string); !strings.HasPrefix(desc, "Drive a real browser for JS pages, logins, forms and clicks (Browser Use CLI). ") {
+	if desc, _ := schema.Value("description").(string); !strings.HasPrefix(desc, "Drive a real browser for JS pages, logins, forms and clicks (Browser Use CLI). ") {
 		t.Fatalf("description %q", desc[:80])
 	}
-	session := pyjson.Plain(schema.Vals["parameters"]).(map[string]any)["properties"].(map[string]any)["session"].(map[string]any)
+	session := jsonutil.Plain(schema.Value("parameters")).(map[string]any)["properties"].(map[string]any)["session"].(map[string]any)
 	if session["description"] != "Named isolated browser session — its own daemon and (on cloud backends) own browser, so concurrent tasks don't share tabs. Reuse the same name on every related call; omit for the shared default session." {
 		t.Fatalf("session %q", session["description"])
 	}

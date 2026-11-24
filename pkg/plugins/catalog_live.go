@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyversion"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	versionutil "github.com/nickheyer/icebath/pkg/utils/version"
 )
 
 // Site copy of the shipped catalog document the refresh fetches
@@ -39,8 +39,10 @@ var curatedCatalogFields = []string{"onboarding", "title", "default"}
 var (
 	liveFetchMu          sync.Mutex
 	liveFetchFailedUntil float64
-	writeLiveCatalog     = pyfs.AtomicWriteText
-	liveCatalogClient    = &http.Client{Timeout: liveCatalogRequestTimeout}
+	writeLiveCatalog     = func(ctx context.Context, path, content, prefix string) error {
+		return fsutil.WriteFile(ctx, path, []byte(content), fsutil.WriteOptions{Prefix: prefix, NativeLineEnds: true})
+	}
+	liveCatalogClient = &http.Client{Timeout: liveCatalogRequestTimeout}
 )
 
 // Seconds since the epoch as a float
@@ -52,11 +54,11 @@ func readLiveCacheDoc(cache string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	doc, err := pyjson.Loads(string(stripBOM(raw)))
+	doc, err := jsonutil.Decode(string(stripBOM(raw)))
 	if err != nil {
 		return nil, err
 	}
-	data, ok := pyjson.Plain(doc).(map[string]any)
+	data, ok := jsonutil.Plain(doc).(map[string]any)
 	if !ok {
 		return nil, errors.New("live catalog cache is not a JSON object")
 	}
@@ -112,15 +114,15 @@ func downloadLiveCatalog(ctx context.Context, cache string) (map[string]any, err
 	if len(body) > maxLiveCatalogBytes {
 		return nil, errors.New("live catalog payload too large")
 	}
-	text, err := pyjson.DecodeBytes(body)
+	text, err := jsonutil.Text(body)
 	if err != nil {
 		return nil, err
 	}
-	doc, err := pyjson.Loads(text)
+	doc, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	data, ok := pyjson.Plain(doc).(map[string]any)
+	data, ok := jsonutil.Plain(doc).(map[string]any)
 	if !ok {
 		return nil, errors.New("unexpected live catalog payload")
 	}
@@ -130,7 +132,7 @@ func downloadLiveCatalog(ctx context.Context, cache string) (map[string]any, err
 	if _, err := home.Mkdir(ctx, filepath.Dir(cache)); err != nil {
 		return nil, err
 	}
-	dumped, err := pyjson.Dumps(doc)
+	dumped, err := jsonutil.Encode(doc)
 	if err != nil {
 		return nil, err
 	}
@@ -225,7 +227,7 @@ func liveGeneratedTime(data map[string]any) *float64 {
 	if !ok || raw == "" {
 		return nil
 	}
-	t, aware, err := pydatetime.ParseISOFormat(raw)
+	t, aware, err := timeutil.ParseISOZone(raw, time.UTC)
 	if err != nil {
 		return nil
 	}
@@ -245,9 +247,9 @@ func preferInTreeEntry(tree, live *PluginCatalogEntry, treeIsNewer *bool) bool {
 		return *treeIsNewer
 	}
 	if tree.Version != "" && live.Version != "" {
-		a, errA := pyversion.Parse(tree.Version)
-		b, errB := pyversion.Parse(live.Version)
-		return errA == nil && errB == nil && pyversion.Compare(a, b) > 0
+		a, errA := versionutil.Parse(tree.Version)
+		b, errB := versionutil.Parse(live.Version)
+		return errA == nil && errB == nil && versionutil.Compare(a, b) > 0
 	}
 	return false
 }
@@ -280,7 +282,7 @@ func LoadCatalogLive(ctx context.Context) []*PluginCatalogEntry {
 	rawByName := map[string]map[string]any{}
 	for _, raw := range rawEntries {
 		if m, ok := asStringMap(raw); ok {
-			rawByName[pyrepr.Str(m["name"])] = m
+			rawByName[anyutil.String(m["name"])] = m
 		}
 	}
 	out := make([]*PluginCatalogEntry, 0, len(entries))

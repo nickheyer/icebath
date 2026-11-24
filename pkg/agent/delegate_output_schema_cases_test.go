@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func outputSchemaAddress() map[string]any {
@@ -19,7 +19,7 @@ func outputSchemaAddress() map[string]any {
 }
 
 // Runs the real single child path over a canned child the way the run helper does
-func runSchemaChild(t *testing.T, schema any, responses ...string) (*pyjson.Object, *cannedConversation) {
+func runSchemaChild(t *testing.T, schema any, responses ...string) (*jsonutil.Object, *cannedConversation) {
 	t.Helper()
 	env := delegationTestEnv(t, 0, false)
 	child, canned := cannedDelegateChild(t, env, responses...)
@@ -28,7 +28,7 @@ func runSchemaChild(t *testing.T, schema any, responses ...string) (*pyjson.Obje
 	return runSingleChild(context.Background(), 0, "produce the address", child, parent, "", nil, nil), canned
 }
 
-func entryHas(e *pyjson.Object, key string) bool {
+func entryHas(e *jsonutil.Object, key string) bool {
 	_, ok := e.Get(key)
 	return ok
 }
@@ -52,11 +52,11 @@ func TestRunSingleChildSchemaValidationInvalidThenRetryThenValid(t *testing.T) {
 	if !strings.Contains(retry, "rejected") && !strings.Contains(retry, "JSON") {
 		t.Fatalf("retry turn %q", retry)
 	}
-	summary, err := pyjson.Loads(entryText(entry, "summary"))
+	summary, err := jsonutil.Decode(entryText(entry, "summary"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if city, _ := summary.(*pyjson.Object).Get("city"); city != "Oslo" {
+	if city, _ := summary.(*jsonutil.Object).Get("city"); city != "Oslo" {
 		t.Fatalf("summary %v", summary)
 	}
 }
@@ -166,16 +166,16 @@ func dispatchSchemaParent(t *testing.T) (*tools.Env, *AIAgent) {
 	return env, &AIAgent{sessionID: "parent-session", env: env}
 }
 
-func dispatchPayload(t *testing.T, out string, err error) *pyjson.Object {
+func dispatchPayload(t *testing.T, out string, err error) *jsonutil.Object {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload, perr := pyjson.Loads(out)
+	payload, perr := jsonutil.Decode(out)
 	if perr != nil {
 		t.Fatalf("payload %q %v", out, perr)
 	}
-	return payload.(*pyjson.Object)
+	return payload.(*jsonutil.Object)
 }
 
 func TestNonDictOutputSchemaRejected(t *testing.T) {
@@ -225,7 +225,7 @@ func TestChildReceivesContractAndSchemaAttr(t *testing.T) {
 	if len(results) == 0 {
 		t.Fatalf("payload %v", payload)
 	}
-	if valid, _ := results[0].(*pyjson.Object).Get("schema_valid"); valid != true {
+	if valid, _ := results[0].(*jsonutil.Object).Get("schema_valid"); valid != true {
 		t.Fatalf("payload %v", payload)
 	}
 }

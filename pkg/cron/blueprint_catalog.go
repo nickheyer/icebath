@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Reports slot values that fail validation
@@ -35,7 +38,7 @@ type BlueprintSlot struct {
 // Slot with its type checked against the renderer slot types
 func NewBlueprintSlot(s BlueprintSlot) (BlueprintSlot, error) {
 	if !blueprintSlotTypes[s.Type] {
-		return s, fmt.Errorf("unknown slot type %s (slot %s)", pyrepr.StrRepr(s.Type), s.Name)
+		return s, fmt.Errorf("unknown slot type %s (slot %s)", strconv.Quote(s.Type), s.Name)
 	}
 	return s, nil
 }
@@ -97,17 +100,17 @@ func humanizeBlueprintSchedule(b *AutomationBlueprint) string {
 	sched := b.ScheduleTemplate
 	if strings.HasPrefix(sched, "*/") {
 		every := blueprintSlotDefault(b, "interval_min")
-		if !pyrepr.Truthy(every) {
+		if !anyutil.IsTrue(every) {
 			every = strings.Fields(strings.SplitN(sched, "/", 3)[1])[0]
 		}
-		return fmt.Sprintf("every %s minutes", pyrepr.Str(every))
+		return fmt.Sprintf("every %s minutes", anyutil.String(every))
 	}
 	if strings.Contains(sched, "{interval_hours}") {
 		v := blueprintSlotDefault(b, "interval_hours")
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			v = "1"
 		}
-		every := pyrepr.Str(v)
+		every := anyutil.String(v)
 		scope := ""
 		if strings.Contains(sched, "* * 1-5") {
 			scope = "weekdays, "
@@ -122,74 +125,75 @@ func humanizeBlueprintSchedule(b *AutomationBlueprint) string {
 		when = ts.Default
 	}
 	if strings.Contains(sched, "* * 1-5") {
-		if pyrepr.Truthy(when) {
-			return "weekdays at " + pyrepr.Str(when)
+		if anyutil.IsTrue(when) {
+			return "weekdays at " + anyutil.String(when)
 		}
 		return "every weekday"
 	}
 	if strings.Contains(sched, "{dow}") {
 		scope := blueprintSlotDefault(b, "day", "recurrence")
-		if !pyrepr.Truthy(scope) {
+		if !anyutil.IsTrue(scope) {
 			scope = ""
 		}
-		if pyrepr.Truthy(scope) && pyrepr.Truthy(when) {
-			return pyrepr.Str(scope) + " at " + pyrepr.Str(when)
+		if anyutil.IsTrue(scope) && anyutil.IsTrue(when) {
+			return anyutil.String(scope) + " at " + anyutil.String(when)
 		}
-		if pyrepr.Truthy(when) {
-			return "at " + pyrepr.Str(when)
+		if anyutil.IsTrue(when) {
+			return "at " + anyutil.String(when)
 		}
 		return "on a schedule"
 	}
-	if pyrepr.Truthy(when) {
-		return "daily at " + pyrepr.Str(when)
+	if anyutil.IsTrue(when) {
+		return "daily at " + anyutil.String(when)
 	}
 	return "on a schedule"
 }
 
 var (
-	blueprintTimeRe        = mustPyRe(`^([01]?\d|2[0-3]):([0-5]\d)$`)
+	blueprintTimeRe        = regexutil.Lazy(regexp.MustCompile, `^([01]?\d|2[0-3]):([0-5]\d)$`)
 	blueprintPlaceholderRe = regexp.MustCompile(`\{([\p{L}\p{N}_]+)\}`)
 	blueprintDayToDow      = map[string]string{"sunday": "0", "monday": "1", "tuesday": "2", "wednesday": "3", "thursday": "4", "friday": "5", "saturday": "6"}
 )
 
-// Error of a str.format call, a missing key becoming the fill error with the given prefix
+// Error of a template fill, a missing value becoming the fill error with the given prefix
 func blueprintFormatErr(err error, prefix string) error {
-	var fe *pyrepr.FormatError
-	if errors.As(err, &fe) && fe.Class == "KeyError" {
-		return &BlueprintFillError{Msg: prefix + fe.Msg}
+	var me *templateutil.MissingError
+	if errors.As(err, &me) {
+		return &BlueprintFillError{Msg: prefix + me.Name}
 	}
 	return err
 }
 
-func pyIntText(s string) (string, error) {
-	n, ok := pystr.IntText(s)
-	if !ok {
+// Decimal text of the whole number s spells, an error when it is not one
+func wholeNumberText(s string) (string, error) {
+	n, err := textutil.ParseInt(s)
+	if err != nil {
 		return "", fmt.Errorf("%s is not a whole number", s)
 	}
-	return n.String(), nil
+	return strconv.FormatInt(n, 10), nil
 }
 
 // Schedule template filled from resolved slot values
 func resolveBlueprintSchedule(b *AutomationBlueprint, values map[string]any) (string, error) {
 	sched := b.ScheduleTemplate
-	if v := values["schedule"]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v), nil
+	if v := values["schedule"]; anyutil.IsTrue(v) {
+		return anyutil.String(v), nil
 	}
 	repl := map[string]any{}
 	if strings.Contains(sched, "{minute}") || strings.Contains(sched, "{hour}") {
 		timeVal := values["time"]
-		if !pyrepr.Truthy(timeVal) {
+		if !anyutil.IsTrue(timeVal) {
 			return "", &BlueprintFillError{Msg: "a time is required"}
 		}
-		m, _ := blueprintTimeRe.FindStringMatch(strings.TrimSpace(pyrepr.Str(timeVal)))
+		m := blueprintTimeRe().FindStringSubmatch(strings.TrimSpace(anyutil.String(timeVal)))
 		if m == nil {
-			return "", &BlueprintFillError{Msg: fmt.Sprintf("invalid time %s — use HH:MM (24h)", pyrepr.Repr(timeVal))}
+			return "", &BlueprintFillError{Msg: fmt.Sprintf("invalid time %s — use HH:MM (24h)", anyutil.Quote(timeVal))}
 		}
-		hour, err := pyIntText(m.GroupByNumber(1).String())
+		hour, err := wholeNumberText(m[1])
 		if err != nil {
 			return "", err
 		}
-		minute, err := pyIntText(m.GroupByNumber(2).String())
+		minute, err := wholeNumberText(m[2])
 		if err != nil {
 			return "", err
 		}
@@ -197,17 +201,17 @@ func resolveBlueprintSchedule(b *AutomationBlueprint, values map[string]any) (st
 	}
 	if strings.Contains(sched, "{dow}") {
 		if rv, ok := values["recurrence"]; ok {
-			preset := strings.ToLower(pyrepr.Str(rv))
+			preset := strings.ToLower(anyutil.String(rv))
 			dow, known := weekdayPresets[preset]
 			if !known {
-				return "", &BlueprintFillError{Msg: fmt.Sprintf("unknown recurrence %s — one of %s", pyrepr.StrRepr(preset), strings.Join(weekdayPresetOrder, ", "))}
+				return "", &BlueprintFillError{Msg: fmt.Sprintf("unknown recurrence %s — one of %s", strconv.Quote(preset), strings.Join(weekdayPresetOrder, ", "))}
 			}
 			repl["dow"] = dow
 		} else if dv, ok := values["day"]; ok {
-			day := strings.ToLower(pyrepr.Str(dv))
+			day := strings.ToLower(anyutil.String(dv))
 			dow, known := blueprintDayToDow[day]
 			if !known {
-				return "", &BlueprintFillError{Msg: fmt.Sprintf("unknown day %s", pyrepr.StrRepr(day))}
+				return "", &BlueprintFillError{Msg: fmt.Sprintf("unknown day %s", strconv.Quote(day))}
 			}
 			repl["dow"] = dow
 		} else {
@@ -217,18 +221,18 @@ func resolveBlueprintSchedule(b *AutomationBlueprint, values map[string]any) (st
 	if strings.Contains(sched, "{interval_min}") {
 		iv := ""
 		if v, ok := values["interval_min"]; ok {
-			iv = pyrepr.Str(v)
+			iv = anyutil.String(v)
 		}
 		iv = strings.TrimSpace(iv)
-		if !pystr.StrIsDigit(iv) {
-			return "", &BlueprintFillError{Msg: fmt.Sprintf("invalid interval %s — minutes as a positive integer", pyrepr.StrRepr(iv))}
+		if !textutil.IsDigits(iv) {
+			return "", &BlueprintFillError{Msg: fmt.Sprintf("invalid interval %s — minutes as a positive integer", strconv.Quote(iv))}
 		}
-		n, err := pyIntText(iv)
+		n, err := wholeNumberText(iv)
 		if err != nil {
 			return "", err
 		}
 		if strings.TrimLeft(n, "0") == "" {
-			return "", &BlueprintFillError{Msg: fmt.Sprintf("invalid interval %s — minutes as a positive integer", pyrepr.StrRepr(iv))}
+			return "", &BlueprintFillError{Msg: fmt.Sprintf("invalid interval %s — minutes as a positive integer", strconv.Quote(iv))}
 		}
 		repl["interval_min"] = iv
 	}
@@ -237,10 +241,10 @@ func resolveBlueprintSchedule(b *AutomationBlueprint, values map[string]any) (st
 			continue
 		}
 		if v, ok := values[m[1]]; ok {
-			repl[m[1]] = pyrepr.Str(v)
+			repl[m[1]] = anyutil.String(v)
 		}
 	}
-	out, err := pyrepr.FormatMap(sched, repl)
+	out, err := templateutil.Format(sched, repl)
 	if err != nil {
 		return "", blueprintFormatErr(err, "schedule template missing value for ")
 	}
@@ -248,7 +252,7 @@ func resolveBlueprintSchedule(b *AutomationBlueprint, values map[string]any) (st
 }
 
 // Validated values as the create_job keyword arguments, naming any missing or unknown slot
-func fillBlueprint(b *AutomationBlueprint, values map[string]any, origin any) (*pyjson.Object, error) {
+func fillBlueprint(b *AutomationBlueprint, values map[string]any, origin any) (*jsonutil.Object, error) {
 	known := map[string]bool{}
 	names := make([]string, 0, len(b.Slots))
 	for _, s := range b.Slots {
@@ -282,11 +286,11 @@ func fillBlueprint(b *AutomationBlueprint, values map[string]any, origin any) (*
 		if s.Type == "enum" && s.Strict && len(s.Options) > 0 {
 			allowed, opts := false, make([]string, 0, len(s.Options))
 			for _, o := range s.Options {
-				opts = append(opts, pyrepr.Str(o))
-				allowed = allowed || pyrepr.Str(o) == pyrepr.Str(raw)
+				opts = append(opts, anyutil.String(o))
+				allowed = allowed || anyutil.String(o) == anyutil.String(raw)
 			}
 			if !allowed {
-				return nil, &BlueprintFillError{Msg: fmt.Sprintf("%s=%s not allowed — one of %s", s.Name, pyrepr.Repr(raw), strings.Join(opts, ", "))}
+				return nil, &BlueprintFillError{Msg: fmt.Sprintf("%s=%s not allowed — one of %s", s.Name, anyutil.Quote(raw), strings.Join(opts, ", "))}
 			}
 		}
 		resolved[s.Name] = raw
@@ -295,11 +299,11 @@ func fillBlueprint(b *AutomationBlueprint, values map[string]any, origin any) (*
 	if err != nil {
 		return nil, err
 	}
-	prompt, err := pyrepr.FormatMap(b.PromptTemplate, resolved)
+	prompt, err := templateutil.Format(b.PromptTemplate, resolved)
 	if err != nil {
 		return nil, blueprintFormatErr(err, "blueprint prompt missing value for ")
 	}
-	spec := pyjson.NewObject()
+	spec := jsonutil.NewObject()
 	spec.Set("prompt", prompt)
 	spec.Set("schedule", schedule)
 	spec.Set("name", b.Title)

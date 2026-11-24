@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var statusToFailoverReason = map[int]provider.FailoverReason{
@@ -126,10 +126,10 @@ func recoverRateLimit(pool *provider.Pool, hasRetried429 bool, errorContext map[
 
 // Python str of an error context value with every falsy value read as empty
 func contextString(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Recovers through pool rotation, returning recovered and the 429 retry flag, billing rotating at once and auth refreshing first

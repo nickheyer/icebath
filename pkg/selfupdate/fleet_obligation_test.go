@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Sandboxes the home and the host state dir and pins the checkout head and the live fleet for the test
@@ -36,7 +36,7 @@ func newFleetHarness(t *testing.T) *fleetHarness {
 		fleetProjectRoot, gatewaylessInventory = savedRoot, savedInventory
 	})
 	fleetProjectRoot = func() string { return filepath.Join(h.home, "install-tree") }
-	fleetCollectVersions = func() []*pyjson.Object { return nil }
+	fleetCollectVersions = func() []*jsonutil.Object { return nil }
 	gatewaylessInventory = func(context.Context) *UpdatePlan { return NewUpdatePlan() }
 	return h
 }
@@ -53,10 +53,10 @@ func (h *fleetHarness) checkout(sha string) {
 
 // Pins the live fleet matrix to the given rows
 func (h *fleetHarness) fleet(rows ...map[string]any) {
-	fleetCollectVersions = func() []*pyjson.Object {
-		out := make([]*pyjson.Object, len(rows))
+	fleetCollectVersions = func() []*jsonutil.Object {
+		out := make([]*jsonutil.Object, len(rows))
 		for i, row := range rows {
-			obj := pyjson.NewObject()
+			obj := jsonutil.NewObject()
 			for key, value := range row {
 				obj.Set(key, value)
 			}
@@ -547,12 +547,12 @@ func TestHostOwesNoGatewayRestartReadsProfileStatesAndTheInventory(t *testing.T)
 	t.Cleanup(func() { fleetHomes, fleetReadStatus = savedHomes, savedStatus })
 	states := map[string]any{"/p/a": "stopped", "/p/b": nil}
 	fleetHomes = func() []profileHome { return []profileHome{{"a", "/p/a"}, {"b", "/p/b"}} }
-	fleetReadStatus = func(path string) *pyjson.Object {
+	fleetReadStatus = func(path string) *jsonutil.Object {
 		state, has := states[filepath.Dir(path)]
 		if !has || state == nil {
 			return nil
 		}
-		record := pyjson.NewObject()
+		record := jsonutil.NewObject()
 		record.Set("gateway_state", state)
 		return record
 	}

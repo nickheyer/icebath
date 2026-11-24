@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func pruneAssistantCall(callID string) map[string]any {
@@ -51,7 +51,7 @@ func pruneRows(t *testing.T, db *SessionDB, sid string) []pruneRow {
 	}
 	out := make([]pruneRow, len(rows))
 	for i, r := range rows {
-		out[i] = pruneRow{r.Vals["id"].(int64), r.Vals["role"], r.Vals["content"], r.Vals["active"].(int64), r.Vals["compacted"].(int64)}
+		out[i] = pruneRow{r.Value("id").(int64), r.Value("role"), r.Value("content"), r.Value("active").(int64), r.Value("compacted").(int64)}
 	}
 	return out
 }
@@ -232,7 +232,7 @@ func TestInPlacePruneDisplaySurvivesLaterCompactionAndBackfill(t *testing.T) {
 			pruned := pruneLargeResults(t, db, sid, archiveConversation(t, db, sid, false))
 			rows, err := db.readAll(ctx, "SELECT COUNT(*) AS n FROM messages WHERE session_id = ? AND (active = 1 OR compacted = 1) "+
 				"AND (display_order IS NULL OR display_identity IS NULL)", sid)
-			if err != nil || rows[0].Vals["n"] != int64(0) {
+			if err != nil || rows[0].Value("n") != int64(0) {
 				t.Fatalf("unslotted rows %v err %v", rows, err)
 			}
 			expected := archiveContents(pruned)
@@ -248,7 +248,7 @@ func TestInPlacePruneDisplaySurvivesLaterCompactionAndBackfill(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if n, err := db.SetUserMessageContent(ctx, sid, max[0].Vals["m"].(int64), "expanded notes", nil); err != nil || n != 1 {
+			if n, err := db.SetUserMessageContent(ctx, sid, max[0].Value("m").(int64), "expanded notes", nil); err != nil || n != 1 {
 				t.Fatalf("set content n=%d err=%v", n, err)
 			}
 			if got := prunePage(t, db, sid); fmt.Sprint(got) != fmt.Sprint(append(expected, "expanded notes")) {
@@ -285,7 +285,7 @@ func TestInPlacePruneTwiceKeepsOneSearchHitPerUnchangedTurn(t *testing.T) {
 	}
 	n := 0
 	for _, h := range hits {
-		if h.Vals["session_id"] == sid {
+		if h.Value("session_id") == sid {
 			n++
 		}
 	}
@@ -338,14 +338,14 @@ func TestRewritePrunedRowsGuardsAndModelConfigPatch(t *testing.T) {
 		t.Fatalf("lease err = %v", err)
 	}
 	profileExec(t, db, "DELETE FROM session_turn_leases")
-	patch := pyjson.NewObject()
+	patch := jsonutil.NewObject()
 	patch.Set("pruned", true)
 	if n, err := db.RewritePrunedRows(ctx, sid, []PruneChange{{pruneCopy(tool, nil), pruneCopy(tool, "x")}}, PruneRewriteOptions{ModelConfigPatch: patch}); err != nil || n != 1 {
 		t.Fatalf("patched prune n=%d err=%v", n, err)
 	}
 	row, err := db.GetSession(ctx, sid)
-	if err != nil || !strings.Contains(fmt.Sprint(row.Vals["model_config"]), `"pruned": true`) {
-		t.Fatalf("model_config = %v err %v", row.Vals["model_config"], err)
+	if err != nil || !strings.Contains(fmt.Sprint(row.Value("model_config")), `"pruned": true`) {
+		t.Fatalf("model_config = %v err %v", row.Value("model_config"), err)
 	}
 	if n, err := db.RewritePrunedRows(ctx, sid, []PruneChange{{pruneCopy(msgs[4], nil), pruneCopy(msgs[4], nil)}}, PruneRewriteOptions{}); err != nil || n != 0 {
 		t.Fatalf("unchanged replacement n=%d err=%v", n, err)
@@ -396,7 +396,7 @@ func uidFenceSession(t *testing.T) (*SessionDB, []map[string]any, any, int64, in
 		}
 		var out []int64
 		for _, r := range rows {
-			out = append(out, r.Vals["id"].(int64))
+			out = append(out, r.Value("id").(int64))
 		}
 		return out
 	}

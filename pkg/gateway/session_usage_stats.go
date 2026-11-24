@@ -3,15 +3,15 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Agent side usage and context reads of the session readers, assigned from pkg/agent in cmd/icebath/wiring.go
 var ContextAgent struct {
-	UsageStats      func(ctx context.Context, agent any) *pyjson.Object
-	Breakdown       func(ctx context.Context, agent any, conversation []map[string]any) (*pyjson.Object, error)
-	StoredBreakdown func(ctx context.Context, systemPrompt string, tools []map[string]any, conversation []map[string]any) (*pyjson.Object, error)
+	UsageStats      func(ctx context.Context, agent any) *jsonutil.Object
+	Breakdown       func(ctx context.Context, agent any, conversation []map[string]any) (*jsonutil.Object, error)
+	StoredBreakdown func(ctx context.Context, systemPrompt string, tools []map[string]any, conversation []map[string]any) (*jsonutil.Object, error)
 	Marks           func(agent any) any
 }
 
@@ -19,17 +19,17 @@ var ContextAgent struct {
 var storedUsageCounters = []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"}
 
 // Python int of a row figure, zero for a falsy one
-func usageRowInt(row *pyjson.Object, key string) (int64, error) {
+func usageRowInt(row *jsonutil.Object, key string) (int64, error) {
 	value, _ := row.Get(key)
 	if !pyTruthy(value) {
 		return 0, nil
 	}
-	return pyint.Int64(value)
+	return anyutil.ToInt(value)
 }
 
 // Cumulative counters of a session row in the usage stats shape with cache reads and writes in the prompt total
-func storedStats(row *pyjson.Object) (*pyjson.Object, error) {
-	out := pyjson.NewObject()
+func storedStats(row *jsonutil.Object) (*jsonutil.Object, error) {
+	out := jsonutil.NewObject()
 	counts := map[string]int64{}
 	for _, key := range storedUsageCounters {
 		n, err := usageRowInt(row, key)
@@ -56,7 +56,7 @@ func storedStats(row *pyjson.Object) (*pyjson.Object, error) {
 }
 
 // Status bar usage of a resume or info snapshot, from the live agent once it called the model
-func snapshotUsage(ctx context.Context, a *SessionAuthority, ref SessionRef, agent any) (*pyjson.Object, error) {
+func snapshotUsage(ctx context.Context, a *SessionAuthority, ref SessionRef, agent any) (*jsonutil.Object, error) {
 	if !nilAgent(agent) {
 		result := ContextAgent.UsageStats(ctx, agent)
 		if calls, _ := result.Get("api_calls"); pyTruthy(calls) {
@@ -77,7 +77,7 @@ func snapshotUsage(ctx context.Context, a *SessionAuthority, ref SessionRef, age
 }
 
 // Session stats verb, the same dict a session usage frame carries
-func stats(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func stats(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if paramsOutside(params, "session_id", "profile") {
 		return nil, runtimeRefusal("invalid_params")
 	}

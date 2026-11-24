@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -15,10 +16,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -98,7 +98,7 @@ func normalizeSkillList(skill any, skills any) []string {
 	var raw []any
 	switch v := skills.(type) {
 	case nil:
-		if skill != nil && pyrepr.Truthy(skill) {
+		if skill != nil && anyutil.IsTrue(skill) {
 			raw = []any{skill}
 		}
 	case string:
@@ -115,8 +115,8 @@ func normalizeSkillList(skill any, skills any) []string {
 	out := []string{}
 	for _, item := range raw {
 		text := ""
-		if item != nil && pyrepr.Truthy(item) {
-			text = strings.TrimSpace(pyrepr.Str(item))
+		if item != nil && anyutil.IsTrue(item) {
+			text = strings.TrimSpace(anyutil.String(item))
 		}
 		if text != "" && !containsString(out, text) {
 			out = append(out, text)
@@ -298,14 +298,14 @@ func normalizeRepeatValue(repeat any) (*int, error) {
 		case "once", "one", "1x":
 			return intPtr(1), nil
 		}
-		parsed, ok := pyint.Parse(text)
-		if !ok {
-			return nil, fmt.Errorf("Invalid repeat value %s: use an integer, 'forever', or 'once'.", pyrepr.Repr(v))
+		parsed, err := strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("Invalid repeat value %s: use an integer, 'forever', or 'once'.", anyutil.Quote(v))
 		}
-		if parsed.Sign() <= 0 {
+		if parsed <= 0 {
 			return nil, nil
 		}
-		return intPtr(int(parsed.Int64())), nil
+		return intPtr(int(parsed)), nil
 	case bool:
 		if v {
 			return intPtr(1), nil
@@ -367,16 +367,16 @@ func normalizeWorkdir(workdir any) (*string, error) {
 	if workdir == nil {
 		return nil, nil
 	}
-	raw := strings.TrimSpace(pyrepr.Str(workdir))
+	raw := strings.TrimSpace(anyutil.String(workdir))
 	if raw == "" {
 		return nil, nil
 	}
-	expanded := pypath.Expanduser(raw)
+	expanded := pathutil.ExpandUser(raw)
 	if !filepath.IsAbs(expanded) {
 		return nil, fmt.Errorf("Cron workdir must be an absolute path (got %s). "+
-			"Cron jobs run detached from any shell cwd, so relative paths are ambiguous.", pyrepr.Repr(raw))
+			"Cron jobs run detached from any shell cwd, so relative paths are ambiguous.", anyutil.Quote(raw))
 	}
-	resolved, err := pypath.Realpath(expanded, pypath.Lax)
+	resolved, err := pathutil.Resolve(expanded)
 	if err != nil {
 		resolved = filepath.Clean(expanded)
 	}
@@ -428,7 +428,7 @@ func anyList(value any) ([]any, bool) {
 func strippedItems(items []any) []string {
 	out := []string{}
 	for _, item := range items {
-		if t := strings.TrimSpace(pyrepr.Str(item)); t != "" {
+		if t := strings.TrimSpace(anyutil.String(item)); t != "" {
 			out = append(out, t)
 		}
 	}
@@ -485,14 +485,14 @@ func normalizeReasoningEffort(value any) (*string, error) {
 		}
 		value = *p
 	}
-	text := strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	text := strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 	if text == "" {
 		return nil, nil
 	}
 	if provider.ParseReasoningEffort(text) == nil {
 		return nil, fmt.Errorf("Invalid reasoning_effort %s. Valid levels: "+
 			"none, minimal, low, medium, high, xhigh, max, ultra "+
-			"(empty string clears the override).", pyrepr.Repr(value))
+			"(empty string clears the override).", anyutil.Quote(value))
 	}
 	if text == "false" || text == "disabled" {
 		return strPtr("none"), nil
@@ -515,7 +515,7 @@ func normalizeCatchUp(value any) (*bool, error) {
 
 func oneshotPastGraceError(runAt any) error {
 	return &ValueError{fmt.Sprintf("Requested one-shot time %s is more than %ds in the past and cannot be scheduled.",
-		pyrepr.Str(runAt), oneshotGraceSeconds)}
+		anyutil.String(runAt), oneshotGraceSeconds)}
 }
 
 // Next run of a schedule, rejecting a one shot outside the grace window so no ghost job is stored
@@ -530,7 +530,7 @@ func (s *Store) nextRunOrRejectPastOneshot(sched *Schedule, label string, fallba
 			runAt = sched.RunAt
 		}
 		s.log.Warn(fmt.Sprintf("Rejecting one-shot cron job %s'%s': run_at %s is outside the %ds grace window",
-			what, label, pyrepr.Str(runAt), oneshotGraceSeconds))
+			what, label, anyutil.String(runAt), oneshotGraceSeconds))
 		return nil, oneshotPastGraceError(runAt)
 	}
 	return next, nil
@@ -829,7 +829,7 @@ func (s *Store) applyPinUpdate(job *Job, updates map[string]any) error {
 	if _, has := updates["model"]; has {
 		return nil
 	}
-	if pyrepr.Truthy(raw) {
+	if anyutil.IsTrue(raw) {
 		if normalizeOptionalText(skillAny(job.Model), false) == nil {
 			prov, model, err := mainModelPin(s)
 			if err != nil {
@@ -1023,7 +1023,7 @@ func setJobFields(job *Job, fields map[string]any) error {
 			} else if items, ok := anyList(v); ok {
 				list := make([]string, 0, len(items))
 				for _, item := range items {
-					list = append(list, pyrepr.Str(item))
+					list = append(list, anyutil.String(item))
 				}
 				v = list
 			}
@@ -1049,7 +1049,7 @@ func setJobFields(job *Job, fields map[string]any) error {
 func (s *Store) applyScheduleUpdate(updated *Job, updates map[string]any, jobID string) error {
 	sched := updated.scheduleOrEmpty()
 	if d, ok := updates["schedule_display"]; ok {
-		updated.ScheduleDisplay = pyrepr.Str(d)
+		updated.ScheduleDisplay = anyutil.String(d)
 	} else if sched.Display != "" || sched.Kind != "" {
 		updated.ScheduleDisplay = sched.Display
 	}
@@ -1264,7 +1264,7 @@ func (s *Store) rearmOneshot(ctx context.Context, ref string, runAt any) (*Job, 
 	if t, ok := runAt.(time.Time); ok {
 		runAt = FormatISO(t)
 	}
-	parsed, err := s.parseSchedule(pyrepr.Str(runAt))
+	parsed, err := s.parseSchedule(anyutil.String(runAt))
 	if err != nil {
 		return nil, &ValueError{err.Error()}
 	}

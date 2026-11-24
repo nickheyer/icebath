@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const maxACPResourceBytes = 512 * 1024
@@ -61,9 +61,9 @@ func resourceDisplayName(uri, name, title string) (string, error) {
 // Final pathlib component with the separators of the running platform
 func pathName(p string) string {
 	if runtime.GOOS == "windows" {
-		return pypath.NtBasename(strings.TrimRight(p, `\/`))
+		return pathutil.WindowsBase(strings.TrimRight(p, `\/`))
 	}
-	return pypath.Name(p)
+	return pathutil.Name(p)
 }
 
 func mimeMain(mimeType string) string {
@@ -110,13 +110,13 @@ func pathFromFileURI(uri string) (string, bool, error) {
 	case len(pathText) >= 2 && pathText[1] == ':' && isAlphaByte(pathText[0]):
 		drive, rest = pathText[0:1], pathText[2:]
 	default:
-		return pypath.PurePathStr(pathText), true, nil
+		return filepath.Clean(pathText), true, nil
 	}
 	rest = strings.ReplaceAll(strings.TrimLeft(rest, `/\`), `\`, "/")
 	if runtime.GOOS == "windows" {
 		return drive + ":/" + rest, true, nil
 	}
-	return pypath.PurePathStr("/mnt/" + strings.ToLower(drive) + "/" + rest), true, nil
+	return filepath.Clean("/mnt/" + strings.ToLower(drive) + "/" + rest), true, nil
 }
 
 // Resource bytes decoded as text, false for probable binary
@@ -127,7 +127,7 @@ func decodeTextBytes(data []byte, mimeType string) (string, bool) {
 	if utf8.Valid(data) {
 		return strings.TrimPrefix(string(data), "\ufeff"), true
 	}
-	text, _ := pycodecs.Decode(data, "latin-1")
+	text, _ := charsetutil.Decode(data, "latin-1")
 	return text, true
 }
 
@@ -171,7 +171,7 @@ func attr(p *string) string {
 }
 
 // Content parts of a resource link, images inlined as image_url and other files as text
-func resourceLinkToParts(block *pyacp.ResourceContentBlock) ([]map[string]any, error) {
+func resourceLinkToParts(block *acputil.ResourceContentBlock) ([]map[string]any, error) {
 	uri := strings.TrimSpace(block.URI)
 	if uri == "" {
 		return nil, nil
@@ -184,7 +184,7 @@ func resourceLinkToParts(block *pyacp.ResourceContentBlock) ([]map[string]any, e
 	if !ok {
 		return textParts(uri, "[Resource link only; Icebath cannot read non-file ACP resource URIs directly.]", name, title, "")
 	}
-	imageMime := imageSuffixMime[strings.ToLower(pypath.Suffix(path))]
+	imageMime := imageSuffixMime[strings.ToLower(pathutil.Suffix(path))]
 	if isImageResource(mimeType) {
 		imageMime = mimeType
 	}
@@ -199,7 +199,7 @@ func resourceLinkToParts(block *pyacp.ResourceContentBlock) ([]map[string]any, e
 		}
 		if err != nil {
 			pkgLog().Warning("ACP image resource read failed: " + uri)
-			return textParts(uri, "[Could not read attached image: "+pypath.OSErrorText(err)+"]", name, title, "")
+			return textParts(uri, "[Could not read attached image: "+err.Error()+"]", name, title, "")
 		}
 		display, derr := resourceDisplayName(uri, name, title)
 		if derr != nil {
@@ -218,7 +218,7 @@ func resourceLinkToParts(block *pyacp.ResourceContentBlock) ([]map[string]any, e
 	}
 	if err != nil {
 		pkgLog().Warning("ACP resource read failed: " + uri)
-		return textParts(uri, "[Could not read attached file: "+pypath.OSErrorText(err)+"]", name, title, "")
+		return textParts(uri, "[Could not read attached file: "+err.Error()+"]", name, title, "")
 	}
 	size := st.Size()
 	text, isText := decodeTextBytes(data, mimeType)
@@ -237,13 +237,13 @@ func resourceLinkToParts(block *pyacp.ResourceContentBlock) ([]map[string]any, e
 }
 
 // Content parts of an embedded resource, text inline, blobs as image or decoded text
-func embeddedResourceToParts(block *pyacp.EmbeddedResourceContentBlock) ([]map[string]any, error) {
+func embeddedResourceToParts(block *acputil.EmbeddedResourceContentBlock) ([]map[string]any, error) {
 	switch res := block.Resource.(type) {
-	case *pyacp.TextResourceContents:
+	case *acputil.TextResourceContents:
 		return textParts(strings.TrimSpace(res.URI), res.Text, "", "", "")
-	case *pyacp.BlobResourceContents:
+	case *acputil.BlobResourceContents:
 		uri, mimeType := strings.TrimSpace(res.URI), attr(res.MimeType)
-		data, err := pybase64.B64DecodeValidate(res.Blob)
+		data, err := base64.StdEncoding.DecodeString(res.Blob)
 		if err != nil {
 			data = []byte(res.Blob)
 		}
@@ -277,10 +277,10 @@ func embeddedResourceToParts(block *pyacp.EmbeddedResourceContentBlock) ([]map[s
 }
 
 // Plain text of the prompt blocks that carry text, newline joined
-func ExtractText(prompt []pyacp.ContentBlock) string {
+func ExtractText(prompt []acputil.ContentBlock) string {
 	var parts []string
 	for _, b := range prompt {
-		if t, ok := b.(*pyacp.TextContentBlock); ok {
+		if t, ok := b.(*acputil.TextContentBlock); ok {
 			parts = append(parts, t.Text)
 		}
 	}
@@ -288,7 +288,7 @@ func ExtractText(prompt []pyacp.ContentBlock) string {
 }
 
 // OpenAI image_url part of an image block, nil without data or uri
-func imageBlockToOpenAIPart(block *pyacp.ImageContentBlock) map[string]any {
+func imageBlockToOpenAIPart(block *acputil.ImageContentBlock) map[string]any {
 	data, uri := strings.TrimSpace(block.Data), attr(block.URI)
 	mimeType := strings.TrimSpace(block.MimeType)
 	if mimeType == "" {
@@ -319,27 +319,27 @@ func appendParts(parts []map[string]any, textParts []string, newParts []map[stri
 }
 
 // User content of ACP prompt blocks, a string for pure text and parts when media is present
-func ContentBlocksToOpenAIUserContent(prompt []pyacp.ContentBlock) (any, error) {
+func ContentBlocksToOpenAIUserContent(prompt []acputil.ContentBlock) (any, error) {
 	var parts []map[string]any
 	var texts []string
 	for _, block := range prompt {
 		switch b := block.(type) {
-		case *pyacp.TextContentBlock:
+		case *acputil.TextContentBlock:
 			if b.Text != "" {
 				parts = append(parts, map[string]any{"type": "text", "text": b.Text})
 				texts = append(texts, b.Text)
 			}
-		case *pyacp.ImageContentBlock:
+		case *acputil.ImageContentBlock:
 			if p := imageBlockToOpenAIPart(b); p != nil {
 				parts = append(parts, p)
 			}
-		case *pyacp.ResourceContentBlock:
+		case *acputil.ResourceContentBlock:
 			np, err := resourceLinkToParts(b)
 			if err != nil {
 				return nil, err
 			}
 			parts, texts = appendParts(parts, texts, np)
-		case *pyacp.EmbeddedResourceContentBlock:
+		case *acputil.EmbeddedResourceContentBlock:
 			np, err := embeddedResourceToParts(b)
 			if err != nil {
 				return nil, err

@@ -174,7 +174,7 @@ func TestXAIProviderSearchErrors(t *testing.T) {
 	if resp, _ := xaiP().Search(context.Background(), env, "q", 5); resp.Error != "xAI web search returned HTTP 503: "+strings.Repeat("x", 300) {
 		t.Fatalf("%+v", resp)
 	}
-	if resp, _ := xaiP().Search(context.Background(), xaiKeyedEnv(t, "http://127.0.0.1:1", nil), "q", 5); !strings.HasPrefix(resp.Error, "Could not reach xAI: [") {
+	if resp, _ := xaiP().Search(context.Background(), xaiKeyedEnv(t, "http://127.0.0.1:1", nil), "q", 5); !strings.HasPrefix(resp.Error, `Could not reach xAI: Post "http://127.0.0.1:1/responses": dial tcp 127.0.0.1:1: `) {
 		t.Fatalf("%+v", resp)
 	}
 	ctx, cancel := context.WithCancel(context.Background())

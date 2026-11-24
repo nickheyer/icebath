@@ -10,10 +10,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One SQLite write a step sequence yields, for sequences built outside the package
@@ -36,7 +36,7 @@ type APITurnAdapter interface {
 
 // API adapter whose run ids resolve to canonical API admissions
 type APIRunAdmitter interface {
-	RunAdmission(ctx context.Context, runID string) (*SessionAuthority, *pyjson.Object, error)
+	RunAdmission(ctx context.Context, runID string) (*SessionAuthority, *jsonutil.Object, error)
 }
 
 // Keyword arguments of one API turn, its settings holding exactly the setting keys the caller passed
@@ -64,7 +64,7 @@ type APITurn struct {
 type APIAdmission struct {
 	Authority *SessionAuthority
 	Ref       SessionRef
-	Row       *pyjson.Object
+	Row       *jsonutil.Object
 }
 
 // Admission itself, the first three members of any admission tuple a step sequence returns
@@ -107,8 +107,8 @@ func RequireActiveAuthority(ctx context.Context, runner any, store func() (*stat
 }
 
 // Settings of an admission with every setting key present, None for the ones the caller did not pass
-func apiTurnSettings(given map[string]any) *pyjson.Object {
-	settings := pyjson.NewObject()
+func apiTurnSettings(given map[string]any) *jsonutil.Object {
+	settings := jsonutil.NewObject()
 	for _, key := range []string{"ephemeral_system_prompt", "requested_model", "requested_provider", "model_options", "route",
 		"session_model", "confirmed_runtime_lock", "requested_runtime", "route_source", "room_dispatch",
 		"room_execution_policy", "session_history_delivery"} {
@@ -122,11 +122,11 @@ func routeMapping(value any) (map[string]any, bool) {
 	switch route := value.(type) {
 	case map[string]any:
 		return route, route != nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if route == nil {
 			return nil, false
 		}
-		return pyjson.Plain(route).(map[string]any), true
+		return jsonutil.Plain(route).(map[string]any), true
 	case map[string]string:
 		if route == nil {
 			return nil, false
@@ -173,12 +173,12 @@ func AdmitAPISteps(ctx context.Context, adapter APITurnAdapter, turn *APITurn) W
 			return nil, err
 		}
 		settings := apiTurnSettings(turn.Settings)
-		if route, ok := routeMapping(turn.Settings["route"]); ok && len(route) > 0 && pyrepr.Truthy(route["api_key"]) {
-			configured := adapter.ConfiguredModelRoute(settings.GetOr("requested_model", nil))
-			if configured == nil || !pyjson.Equal(configured, route) {
+		if route, ok := routeMapping(turn.Settings["route"]); ok && len(route) > 0 && anyutil.IsTrue(route["api_key"]) {
+			configured := adapter.ConfiguredModelRoute(settings.ValueOr("requested_model", nil))
+			if configured == nil || !anyutil.Equal(configured, route) {
 				return nil, runtimeRefusal("permission_denied")
 			}
-			stripped := pyjson.NewObject()
+			stripped := jsonutil.NewObject()
 			for _, key := range sortedKeys(route) {
 				if key != "api_key" {
 					stripped.Set(key, route[key])
@@ -190,18 +190,18 @@ func AdmitAPISteps(ctx context.Context, adapter APITurnAdapter, turn *APITurn) W
 		if !turn.HistoryFromSession {
 			history = turn.ConversationHistory
 		}
-		text, err := state.RuntimeJSON(pyjson.ObjectOf("text", turn.UserMessage, "api_turn_v1",
-			pyjson.ObjectOf("history", history, "settings", settings)))
+		text, err := state.RuntimeJSON(jsonutil.ObjectOf("text", turn.UserMessage, "api_turn_v1",
+			jsonutil.ObjectOf("history", history, "settings", settings)))
 		if err != nil {
 			return nil, err
 		}
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil, err
 		}
-		payload := decoded.(*pyjson.Object)
+		payload := decoded.(*jsonutil.Object)
 		data, _ := payload.Get("api_turn_v1")
-		envelope := data.(*pyjson.Object)
+		envelope := data.(*jsonutil.Object)
 		if turn.RunOwnerScope != nil {
 			if !validOwnerScope(turn.RunOwnerScope) {
 				return nil, runtimeRefusal("invalid_params")
@@ -213,7 +213,7 @@ func AdmitAPISteps(ctx context.Context, adapter APITurnAdapter, turn *APITurn) W
 			return nil, err
 		}
 		if existing != nil {
-			if source := existing.GetOr("source", nil); source != "api_server" && source != "bot_room" {
+			if source := existing.ValueOr("source", nil); source != "api_server" && source != "bot_room" {
 				return nil, runtimeRefusal("permission_denied")
 			}
 		}
@@ -227,7 +227,7 @@ func AdmitAPISteps(ctx context.Context, adapter APITurnAdapter, turn *APITurn) W
 		if turn.ResumeUnansweredTurn {
 			envelope.Set("resume_unanswered", true)
 		}
-		if pyrepr.Truthy(turn.RelayMetadata) {
+		if anyutil.IsTrue(turn.RelayMetadata) {
 			envelope.Set("relay_metadata", turn.RelayMetadata)
 		}
 		requestID := turn.RequestID
@@ -280,7 +280,7 @@ func sortedKeys(m map[string]any) []string {
 
 // Exact retry of a retired admission, else the session bound and the turn admitted with its settings committed
 func admitAPIPayload(ctx context.Context, run stepRunner, authority *SessionAuthority, adapter APITurnAdapter, sid, requestID string,
-	payload, settings *pyjson.Object, declaredKey string, turn *APITurn) (*APIAdmission, error) {
+	payload, settings *jsonutil.Object, declaredKey string, turn *APITurn) (*APIAdmission, error) {
 	row, err := authority.DB.RetryTerminalAdmission(ctx, state.SessionInput{Epoch: authority.Epoch, PrincipalID: "api",
 		SessionID: sid, RequestID: requestID, Payload: payload})
 	if err != nil {
@@ -306,7 +306,7 @@ func admitAPIPayload(ctx context.Context, run stepRunner, authority *SessionAuth
 		return nil, err
 	}
 	data, _ := payload.Get("api_turn_v1")
-	committed, _ := data.(*pyjson.Object).Get("settings")
+	committed, _ := data.(*jsonutil.Object).Get("settings")
 	clientKey := turn.RequestID != ""
 	admitted, err := run(func(writeCtx context.Context) (any, error) {
 		return authority.DB.AdmitSessionInput(writeCtx, state.SessionInput{Epoch: authority.Epoch, PrincipalID: "api",
@@ -318,7 +318,7 @@ func admitAPIPayload(ctx context.Context, run stepRunner, authority *SessionAuth
 	if err != nil {
 		return nil, err
 	}
-	return &APIAdmission{Authority: authority, Ref: ref, Row: admitted.(*pyjson.Object)}, nil
+	return &APIAdmission{Authority: authority, Ref: ref, Row: admitted.(*jsonutil.Object)}, nil
 }
 
 // One target per request id, the session's settings committed inside the admission's own transaction
@@ -357,7 +357,7 @@ func oneTarget(ctx context.Context, sessionID, requestID string, conn state.SQLi
 		if err != nil {
 			return err
 		}
-		if !pyjson.Equal(target, sessionID) {
+		if !anyutil.Equal(target, sessionID) {
 			return runtimeRefusal("admission_conflict")
 		}
 	}
@@ -419,15 +419,15 @@ func RunAPITurn(ctx context.Context, adapter APITurnAdapter, turn *APITurn) (map
 	admissionID := rowString(admitted.Row, "admission_id")
 	adapter.BindRunAdmissionAlias(turn.ApprovalSessionKey, admissionID)
 	defer adapter.ReleaseRunAdmissionAlias(turn.ApprovalSessionKey, admissionID)
-	sink := func(eventType string, prompt *pyjson.Object) error {
+	sink := func(eventType string, prompt *jsonutil.Object) error {
 		if eventType != "approval.request" {
 			return nil
 		}
 		choices, _ := prompt.Get("choices")
 		data := map[string]any{}
-		for _, key := range prompt.Keys {
+		for _, key := range prompt.Keys() {
 			if key != "kind" && key != "prompt_id" && key != "choices" {
-				data[key] = prompt.Vals[key]
+				data[key] = prompt.Value(key)
 			}
 		}
 		promptID, err := pyItem(prompt, "prompt_id")
@@ -455,7 +455,7 @@ func RunAPITurn(ctx context.Context, adapter APITurnAdapter, turn *APITurn) (map
 
 // Whether a falsy or collection value contains item, the TypeError Python raises for a scalar
 func apiChoicesContain(collection any, item string) (bool, error) {
-	if !pyrepr.Truthy(collection) {
+	if !anyutil.IsTrue(collection) {
 		return false, nil
 	}
 	if text, isText := collection.(string); isText {
@@ -494,7 +494,7 @@ func ObserveAPITurn(ctx context.Context, admitted *APIAdmission, callbacks map[s
 		}
 		if callback := callbacks["stream_delta_callback"]; callback != nil {
 			text := result["final_response"]
-			if !pyrepr.Truthy(text) {
+			if !anyutil.IsTrue(text) {
 				text = ""
 			}
 			if err := callback([]any{text}, nil); err != nil {
@@ -552,10 +552,10 @@ func ObserveAPITurn(ctx context.Context, admitted *APIAdmission, callbacks map[s
 // Mapping of a decoded dict with its values kept as decoded
 func topLevelMap(value any) (map[string]any, error) {
 	switch v := value.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := make(map[string]any, v.Len())
-		for _, key := range v.Keys {
-			out[key] = v.Vals[key]
+		for _, key := range v.Keys() {
+			out[key] = v.Value(key)
 		}
 		return out, nil
 	case map[string]any:
@@ -610,7 +610,7 @@ func settledAPIResult(ctx context.Context, a *SessionAuthority, admissionID stri
 var apiControlEvents = map[string]bool{"approval.request": true, "approval.settled": true, "clarify.request": true, "clarify.settled": true}
 
 // Projects the admission's approval and clarify prompts to sink until the returned call, replaying pending ones first
-func ObserveAPIControls(ctx context.Context, admitted *APIAdmission, sink func(eventType string, prompt *pyjson.Object) error) (func(), error) {
+func ObserveAPIControls(ctx context.Context, admitted *APIAdmission, sink func(eventType string, prompt *jsonutil.Object) error) (func(), error) {
 	a, ref, row := admitted.Authority, admitted.Ref, admitted.Row
 	if err := restoreRetired(ctx, a, ref.SessionID); err != nil {
 		return nil, err
@@ -621,22 +621,22 @@ func ObserveAPIControls(ctx context.Context, admitted *APIAdmission, sink func(e
 	}
 	events := live.EventStream
 	admissionID := rowString(row, "admission_id")
-	observer := &SessionEventObserver{Observe: func(frame *pyjson.Object) {
+	observer := &SessionEventObserver{Observe: func(frame *jsonutil.Object) {
 		rawParams, err := pyItem(frame, "params")
 		if err != nil {
 			panic(err)
 		}
-		params, isDict := rawParams.(*pyjson.Object)
+		params, isDict := rawParams.(*jsonutil.Object)
 		if !isDict {
 			panic(&PyError{Kind: "AttributeError", Msg: "the API control parameters are " + errchain.Kind(rawParams) + ", expected a mapping"})
 		}
-		eventType, _ := params.GetOr("type", nil).(string)
-		if params.GetOr("admission_id", nil) != any(admissionID) || !apiControlEvents[eventType] {
+		eventType, _ := params.ValueOr("type", nil).(string)
+		if params.ValueOr("admission_id", nil) != any(admissionID) || !apiControlEvents[eventType] {
 			return
 		}
-		payload, _ := params.GetOr("payload", nil).(*pyjson.Object)
-		if !pyrepr.Truthy(payload) {
-			payload = pyjson.NewObject()
+		payload, _ := params.ValueOr("payload", nil).(*jsonutil.Object)
+		if !anyutil.IsTrue(payload) {
+			payload = jsonutil.NewObject()
 		}
 		if err := sink(eventType, payload); err != nil {
 			panic(err)
@@ -692,13 +692,13 @@ func ObserveAPIControls(ctx context.Context, admitted *APIAdmission, sink func(e
 }
 
 // Pending prompts after a snapshot settles stale ones, each an ordered copy of its prompt
-func (c *PendingControls) snapshotObjects(sessionID string, generation *int64) []*pyjson.Object {
+func (c *PendingControls) snapshotObjects(sessionID string, generation *int64) []*jsonutil.Object {
 	c.events.Lock.Lock()
 	defer c.events.Lock.Unlock()
 	c.snapshot(sessionID, generation)
-	out := make([]*pyjson.Object, 0, len(c.order))
+	out := make([]*jsonutil.Object, 0, len(c.order))
 	for _, promptID := range c.order {
-		out = append(out, pyjson.Clone(c.pending[promptID].prompt).(*pyjson.Object))
+		out = append(out, jsonutil.Clone(c.pending[promptID].prompt).(*jsonutil.Object))
 	}
 	return out
 }

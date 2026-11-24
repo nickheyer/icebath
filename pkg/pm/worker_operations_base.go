@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Prerequisite policies of worker operations, policy, state and never
@@ -139,7 +139,7 @@ func (k *kwargs) flag(name string, fallback bool) bool {
 	if !ok {
 		return fallback
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Keyword set of an engine function
@@ -173,7 +173,7 @@ func runEnsure(ctx context.Context, args map[string]any, hooks workerHooks) (any
 		}
 		opts.BaseEnv = map[string]string{}
 		for key, value := range object {
-			opts.BaseEnv[key] = pyrepr.Str(value)
+			opts.BaseEnv[key] = anyutil.String(value)
 		}
 	}
 	if _, err := ensure(ctx, name, opts); err != nil {

@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // CompressionDeadlineFence is the commit fence surface the deadline scope reads live and pushes back
@@ -54,7 +54,7 @@ func CompressionDeadlineScope(ctx context.Context, fence CompressionDeadlineFenc
 		if !ok {
 			return time.Time{}, false
 		}
-		return time.Now().Add(time.Duration((deadline - pythread.Monotonic()) * float64(time.Second))), true
+		return time.Now().Add(time.Duration((deadline - timeutil.Monotonic()) * float64(time.Second))), true
 	})
 	return provider.PromptReadingHook(ctx, fence.ExtendDeadline)
 }

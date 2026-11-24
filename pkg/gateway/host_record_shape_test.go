@@ -15,8 +15,8 @@ func TestGatewayHostRecordCarriesThePythonKeySetInOrder(t *testing.T) {
 	o := r.ToJSON()
 	want := []string{"role", "home", "pid", "createTime", "startTime", "bootEpoch", "host", "port",
 		"protocolVersion", "tokenFingerprint", "profiles", "updatedAt"}
-	if !reflect.DeepEqual(o.Keys, want) {
-		t.Fatalf("keys %v", o.Keys)
+	if !reflect.DeepEqual(o.Keys(), want) {
+		t.Fatalf("keys %v", o.Keys())
 	}
 	if host, _ := o.Get("host"); host != "" {
 		t.Fatalf("host %v", host)

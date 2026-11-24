@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
 )
 
 // Replaces a package variable for the test and restores it afterwards
@@ -27,31 +27,24 @@ func swapVoice[T any](t *testing.T, p *T, v T) {
 }
 
 type fakeStream struct {
-	mu         sync.Mutex
-	active     bool
-	activeErr  error
-	startErr   error
-	starts     int
-	stops      int
-	stopErr    error
-	closes     int
-	aborts     int
-	samplerate float64
-	params     pysounddevice.StreamParams
-	callback   pysounddevice.InputCallback
-	reads      [][]int16
+	mu        sync.Mutex
+	active    bool
+	activeErr error
+	startErr  error
+	starts    int
+	stops     int
+	stopErr   error
+	closes    int
+	aborts    int
+	params    portaudioutil.StreamParams
+	callback  portaudioutil.InputCallback
+	reads     [][]int16
 }
 
 func (s *fakeStream) Active() (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.active, s.activeErr
-}
-func (s *fakeStream) Stopped() (bool, error) { return !s.active, nil }
-func (s *fakeStream) Closed() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.closes > 0
 }
 func (s *fakeStream) Start() error {
 	s.mu.Lock()
@@ -63,31 +56,27 @@ func (s *fakeStream) Start() error {
 	s.active = true
 	return nil
 }
-func (s *fakeStream) Stop(bool) error {
+func (s *fakeStream) Stop() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.stops++
 	s.active = false
 	return s.stopErr
 }
-func (s *fakeStream) Abort(bool) error {
+func (s *fakeStream) Abort() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.aborts++
 	s.active = false
 	return nil
 }
-func (s *fakeStream) Close(bool) error {
+func (s *fakeStream) Close() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.closes++
 	s.active = false
 	return nil
 }
-func (s *fakeStream) Samplerate() float64 { return s.samplerate }
-func (s *fakeStream) Blocksize() int      { return s.params.Blocksize }
-func (s *fakeStream) Channels() int       { return 1 }
-func (s *fakeStream) Latency() float64    { return 0 }
 func (s *fakeStream) Read(frames int) ([]int16, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -106,21 +95,21 @@ type fakeSD struct {
 	rates        []float64
 	blocksizes   []int
 	stops        int
-	devices      pysounddevice.DeviceList
+	devices      []portaudioutil.Device
 	devicesErr   error
-	inputDevice  pysounddevice.Device
+	inputDevice  portaudioutil.Device
 	inputErr     error
 	stream       *fakeStream
 	inputs       []*fakeStream
-	inputFactory func(p pysounddevice.StreamParams, cb pysounddevice.InputCallback) (pysounddevice.InputStream, error)
+	inputFactory func(p portaudioutil.StreamParams, cb portaudioutil.InputCallback) (portaudioutil.InputStream, error)
 }
 
-func (f *fakeSD) QueryDevices() (pysounddevice.DeviceList, error) { return f.devices, f.devicesErr }
-func (f *fakeSD) QueryDevice(any, string) (pysounddevice.Device, error) {
+func (f *fakeSD) Devices() ([]portaudioutil.Device, error) { return f.devices, f.devicesErr }
+func (f *fakeSD) Device(any, portaudioutil.Direction) (portaudioutil.Device, error) {
 	return f.inputDevice, f.inputErr
 }
-func (f *fakeSD) QueryHostAPI(int) (pysounddevice.HostAPI, error) {
-	return pysounddevice.HostAPI{}, nil
+func (f *fakeSD) HostAPI(int) (portaudioutil.HostAPI, error) {
+	return portaudioutil.HostAPI{}, nil
 }
 func (f *fakeSD) Play(data []int16, samplerate float64, blocksize int) error {
 	f.mu.Lock()
@@ -135,18 +124,18 @@ func (f *fakeSD) Stop() {
 	defer f.mu.Unlock()
 	f.stops++
 }
-func (f *fakeSD) GetStream() (pysounddevice.Stream, error) { return f.stream, nil }
-func (f *fakeSD) InputStream(p pysounddevice.StreamParams, cb pysounddevice.InputCallback) (pysounddevice.InputStream, error) {
+func (f *fakeSD) Playback() (portaudioutil.Stream, error) { return f.stream, nil }
+func (f *fakeSD) OpenInput(p portaudioutil.StreamParams, cb portaudioutil.InputCallback) (portaudioutil.InputStream, error) {
 	if f.inputFactory != nil {
 		return f.inputFactory(p, cb)
 	}
-	s := &fakeStream{params: p, callback: cb, samplerate: p.Samplerate}
+	s := &fakeStream{params: p, callback: cb}
 	f.mu.Lock()
 	f.inputs = append(f.inputs, s)
 	f.mu.Unlock()
 	return s, nil
 }
-func (f *fakeSD) OutputStream(pysounddevice.StreamParams) (pysounddevice.OutputStream, error) {
+func (f *fakeSD) OpenOutput(portaudioutil.StreamParams) (portaudioutil.OutputStream, error) {
 	return nil, errors.New("output streams are not used by voice mode")
 }
 
@@ -156,17 +145,17 @@ func (f *fakeSD) playCount() int {
 	return len(f.played)
 }
 
-// Installs a fake sounddevice module with one device and an idle playback stream
+// Installs a fake PortAudio with one device and an idle playback stream
 func withFakeSD(t *testing.T) *fakeSD {
-	sd := &fakeSD{devices: pysounddevice.DeviceList{{Name: "dev"}}, stream: &fakeStream{},
-		inputDevice: pysounddevice.Device{DefaultSamplerate: voiceSampleRate}}
-	swapVoice(t, &importAudio, func() (pysounddevice.Module, error) { return sd, nil })
+	sd := &fakeSD{devices: []portaudioutil.Device{{Name: "dev"}}, stream: &fakeStream{},
+		inputDevice: portaudioutil.Device{DefaultSampleRate: voiceSampleRate}}
+	swapVoice(t, &importAudio, func() (portaudioutil.Audio, error) { return sd, nil })
 	swapVoice(t, &audioAvailable, func() (bool, error) { return true, nil })
 	return sd
 }
 
 func withAudioImportFailure(t *testing.T, err error) {
-	swapVoice(t, &importAudio, func() (pysounddevice.Module, error) { return nil, err })
+	swapVoice(t, &importAudio, func() (portaudioutil.Audio, error) { return nil, err })
 }
 
 // Clears forwarding, SSH and Termux variables and pins the host predicates to a plain Linux desktop
@@ -178,7 +167,7 @@ func cleanAudioEnv(t *testing.T) {
 	t.Setenv("XDG_RUNTIME_DIR", t.TempDir())
 	swapVoice(t, &voiceIsContainer, func() bool { return false })
 	swapVoice(t, &voiceIsWSL, func() bool { return false })
-	swapVoice(t, &voicePlatformSystem, func() string { return "Linux" })
+	swapVoice(t, &voicePlatformSystem, func() string { return "linux" })
 	swapVoice(t, &voiceWhich, func(string) (string, bool) { return "", false })
 }
 
@@ -324,7 +313,7 @@ func TestDetectAudioEnvironmentDockerWithPipewireRemoteAndNoDevicesAllowsVoice(t
 	t.Setenv("PIPEWIRE_REMOTE", "/run/user/1000/pipewire-0")
 	swapVoice(t, &voiceIsContainer, func() bool { return true })
 	sd := withFakeSD(t)
-	sd.devices = pysounddevice.DeviceList{}
+	sd.devices = []portaudioutil.Device{}
 	result, _ := DetectAudioEnvironment()
 	lowered := make([]string, len(result.Notices))
 	for i, n := range result.Notices {
@@ -424,8 +413,8 @@ func TestPlayAudioFilePlayWavViaSounddevice(t *testing.T) {
 
 func TestMacOSAudioOutputPolicyPlayAudioFileSkipsSounddeviceOnMacos(t *testing.T) {
 	cleanAudioEnv(t)
-	swapVoice(t, &voicePlatformSystem, func() string { return "Darwin" })
-	swapVoice(t, &importAudio, func() (pysounddevice.Module, error) {
+	swapVoice(t, &voicePlatformSystem, func() string { return "darwin" })
+	swapVoice(t, &importAudio, func() (portaudioutil.Audio, error) {
 		t.Error("sounddevice must not be imported for output on macOS")
 		return nil, errors.New("forbidden")
 	})
@@ -443,8 +432,8 @@ func TestMacOSAudioOutputPolicyPlayAudioFileSkipsSounddeviceOnMacos(t *testing.T
 func TestMacOSAudioOutputPolicyPlayBeepRoutesThroughAfplayOnMacos(t *testing.T) {
 	withVoiceHome(t, "")
 	cleanAudioEnv(t)
-	swapVoice(t, &voicePlatformSystem, func() string { return "Darwin" })
-	swapVoice(t, &importAudio, func() (pysounddevice.Module, error) {
+	swapVoice(t, &voicePlatformSystem, func() string { return "darwin" })
+	swapVoice(t, &importAudio, func() (portaudioutil.Audio, error) {
 		t.Error("sounddevice must not be imported for beeps on macOS")
 		return nil, errors.New("forbidden")
 	})
@@ -541,7 +530,7 @@ func TestGetBeepVolumeLoadConfigExceptionFallsBack(t *testing.T) {
 }
 
 func TestDefaultInputSamplerateUsesDeviceDefaultRate(t *testing.T) {
-	sd := &fakeSD{inputDevice: pysounddevice.Device{DefaultSamplerate: 44100.0}}
+	sd := &fakeSD{inputDevice: portaudioutil.Device{DefaultSampleRate: 44100.0}}
 	if got := defaultInputSamplerate(sd); got != 44100 {
 		t.Fatalf("got %d", got)
 	}
@@ -711,7 +700,7 @@ func TestPlayAudioFileScrubbedEnv(t *testing.T) {
 func wslPipewireBase(t *testing.T) {
 	cleanAudioEnv(t)
 	sd := withFakeSD(t)
-	sd.devices = pysounddevice.DeviceList{{Name: "dev"}}
+	sd.devices = []portaudioutil.Device{{Name: "dev"}}
 	swapVoice(t, &voiceIsWSL, func() bool { return true })
 }
 
@@ -740,13 +729,13 @@ func TestWslWithoutForwardingStillBlocks(t *testing.T) {
 }
 
 type probeAction struct {
-	result *pysubprocess.Completed
+	result *executil.Completed
 	err    error
 }
 
 // Dispatches the Termux package probes by command name, failing on any other command
 func withTermuxProbes(t *testing.T, behaviors map[string]probeAction) {
-	swapVoice(t, &runQuiet, func(cmd []string, _ float64, _ bool) (*pysubprocess.Completed, error) {
+	swapVoice(t, &runQuiet, func(cmd []string, _ float64, _ bool) (*executil.Completed, error) {
 		action, ok := behaviors[cmd[0]]
 		if !ok {
 			t.Errorf("unexpected probe command %v", cmd)
@@ -757,7 +746,7 @@ func withTermuxProbes(t *testing.T, behaviors map[string]probeAction) {
 }
 
 func completed(rc int, stdout, stderr string) probeAction {
-	return probeAction{result: &pysubprocess.Completed{Returncode: rc, Stdout: []byte(stdout), Stderr: []byte(stderr)}}
+	return probeAction{result: &executil.Completed{ExitCode: rc, Stdout: []byte(stdout), Stderr: []byte(stderr)}}
 }
 
 func forceTermux(t *testing.T) {
@@ -783,7 +772,7 @@ func TestTermuxApiAppInstalledProbeLadderPmConfirmsPackageReturnsTrue(t *testing
 func TestTermuxApiAppInstalledProbeLadderPmTimeoutThenCmdConfirms(t *testing.T) {
 	forceTermux(t)
 	withTermuxProbes(t, map[string]probeAction{
-		"pm":  {err: &pysubprocess.TimeoutExpired{Cmd: []string{"pm"}, Timeout: 5}},
+		"pm":  {err: &executil.TimeoutError{Args: []string{"pm"}, Timeout: 5 * time.Second}},
 		"cmd": completed(0, "package:com.termux.api\n", ""),
 	})
 	if !termuxAPIAppInstalled() {

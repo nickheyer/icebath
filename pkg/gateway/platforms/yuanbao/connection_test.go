@@ -2,6 +2,7 @@ package yuanbao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 // Sign token endpoint answering with the given status and a token for bot_999, counting its requests
@@ -109,14 +110,14 @@ func TestConnectBindsSendsAndDispatchesInboundPushes(t *testing.T) {
 	}
 	acks := 0
 	for _, frame := range server.sent("inbound_message_push") {
-		if head := frame.Vals["head"].(*pyjson.Object); pyjson.Equal(head.Vals["cmd_type"], CmdType["PushAck"]) && head.Vals["msg_id"] == "push-1" {
+		if head := frame.Value("head").(*jsonutil.Object); anyutil.Equal(head.Value("cmd_type"), CmdType["PushAck"]) && head.Value("msg_id") == "push-1" {
 			acks++
 		}
 	}
 	if acks != 1 {
 		t.Fatalf("push acks %d", acks)
 	}
-	if err := adapter.Disconnect(ctx); err != nil || GetActive(ctx) != nil || adapter.IsConnected() || adapter.connection.socket() != nil || server.Open() {
+	if err := adapter.Disconnect(ctx); err != nil || GetActive(ctx) != nil || adapter.IsConnected() || adapter.connection.socket() != nil || !server.Closed() {
 		t.Fatalf("disconnect left state behind %v", err)
 	}
 }
@@ -124,7 +125,7 @@ func TestConnectBindsSendsAndDispatchesInboundPushes(t *testing.T) {
 func TestBizRequestsFailWhenUnansweredOrDisconnected(t *testing.T) {
 	loose := makeAdapter(t, nil)
 	if _, err := loose.connection.sendBizRequest(context.Background(), []byte{1}, "req-0", 0.05); err == nil || err.Error() != "Not connected" ||
-		pyrepr.ExceptionName(err) != "RuntimeError" {
+		!errors.As(err, new(*RuntimeError)) {
 		t.Fatalf("unconnected request %v", err)
 	}
 	adapter, server := connectAdapter(t, nil)
@@ -172,7 +173,7 @@ func TestGroupQueriesDecodeAndCacheMembers(t *testing.T) {
 	server.replies["query_group_info"], server.replies["get_group_member_list"] = info.b, members.b
 	server.mu.Unlock()
 	got, err := adapter.QueryGroupInfo(ctx, "grp-1")
-	if err != nil || got == nil || got.GetOr("group_name", nil) != "Team" || got.GetOr("owner_id", nil) != "owner-1" {
+	if err != nil || got == nil || got.ValueOr("group_name", nil) != "Team" || got.ValueOr("owner_id", nil) != "owner-1" {
 		t.Fatalf("group info %v %v", got, err)
 	}
 	list, err := adapter.GetGroupMemberList(ctx, "grp-1", 0, defaultMemberListLimit)
@@ -184,21 +185,21 @@ func TestGroupQueriesDecodeAndCacheMembers(t *testing.T) {
 		t.Fatalf("group send %+v %v", result, err)
 	}
 	elems := bodyElems(t, server.sent("send_group_message")[0], 6)
-	if len(elems) != 3 || elems[1].Vals["msg_type"] != "TIMCustomElem" ||
-		elems[1].Vals["msg_content"].(*pyjson.Object).GetOr("data", nil) != `{"elem_type": 1002, "text": "@Alice", "user_id": "u1"}` {
+	if len(elems) != 3 || elems[1].Value("msg_type") != "TIMCustomElem" ||
+		elems[1].Value("msg_content").(*jsonutil.Object).ValueOr("data", nil) != `{"elem_type": 1002, "text": "@Alice", "user_id": "u1"}` {
 		t.Fatalf("mention body %v", elems)
 	}
 	server.mu.Lock()
 	delete(server.replies, "query_group_info")
 	server.mu.Unlock()
-	if bare, err := adapter.QueryGroupInfo(ctx, "grp-2"); err != nil || bare == nil || bare.GetOr("group_code", nil) != "grp-2" {
+	if bare, err := adapter.QueryGroupInfo(ctx, "grp-2"); err != nil || bare == nil || bare.ValueOr("group_code", nil) != "grp-2" {
 		t.Fatalf("bare response %v %v", bare, err)
 	}
 }
 
 func TestPermanentCloseCodeStopsTheAdapterWithoutAReconnect(t *testing.T) {
 	adapter, server := connectAdapter(t, nil)
-	server.failures <- &pywebsockets.ConnectionClosed{Rcvd: &pywebsockets.Close{Code: 4012, Reason: "kicked"}}
+	server.failures <- &websocketutil.CloseError{Code: 4012, Reason: "kicked"}
 	eventually(t, "the adapter to stop", func() bool { return !adapter.IsConnected() })
 	time.Sleep(20 * time.Millisecond)
 	adapter.connection.mu.Lock()
@@ -217,7 +218,7 @@ func TestReconnectRedialsWithAFreshTokenAndRegistersTheAdapter(t *testing.T) {
 	dials := make(chan *fakeServer, 2)
 	dials <- first
 	dials <- replacement
-	swap(t, &wsDial, func(context.Context, string, pywebsockets.ConnectOptions) (wsConn, error) { return <-dials, nil })
+	swap(t, &wsDial, func(context.Context, string, websocketutil.Options) (wsConn, error) { return <-dials, nil })
 	adapter := makeAdapter(t, map[string]any{"api_domain": tokens.URL})
 	seedToken(t, adapter.appKey)
 	ctx := context.Background()
@@ -226,9 +227,9 @@ func TestReconnectRedialsWithAFreshTokenAndRegistersTheAdapter(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = adapter.Disconnect(ctx) })
 	SetActive(ctx, nil)
-	first.failures <- &pywebsockets.ConnectionClosed{Rcvd: &pywebsockets.Close{Code: 1011, Reason: "restart"}}
+	first.failures <- &websocketutil.CloseError{Code: 1011, Reason: "restart"}
 	eventually(t, "the reconnect", func() bool { return len(replacement.sent("auth-bind")) == 1 && GetActive(ctx) == adapter })
-	if requests.Load() != 1 || adapter.botIDValue() != "bot_999" || !adapter.IsConnected() || adapter.connection.socket() != wsConn(replacement) || first.Open() {
+	if requests.Load() != 1 || adapter.botIDValue() != "bot_999" || !adapter.IsConnected() || adapter.connection.socket() != wsConn(replacement) || !first.Closed() {
 		t.Fatalf("reconnect state token requests %d bot %v", requests.Load(), adapter.botIDValue())
 	}
 }

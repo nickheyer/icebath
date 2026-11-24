@@ -4,18 +4,17 @@ import (
 	"bytes"
 	"context"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Catalog badges, official first
@@ -41,12 +40,12 @@ var (
 
 // Whether a URL is https on a GitHub image host
 func IsAllowedImageURL(raw string) bool {
-	parts, err := pyurl.Split(raw)
+	u, err := url.Parse(raw)
 	if err != nil {
 		return false
 	}
-	host := strings.ToLower(parts.Hostname())
-	if parts.Scheme != "https" || host == "" {
+	host := strings.ToLower(u.Hostname())
+	if u.Scheme != "https" || host == "" {
 		return false
 	}
 	for _, h := range ImageHosts {
@@ -130,7 +129,7 @@ func stringsAny(items []string) []any {
 	return out
 }
 
-// Python str of every str, int or float item of a list, empty for a non list
+// Text of every string, boolean or number item of a list, empty for a non list
 func catalogStrList(raw any) []string {
 	list, ok := raw.([]any)
 	if !ok {
@@ -140,26 +139,26 @@ func catalogStrList(raw any) []string {
 	for _, x := range list {
 		switch x.(type) {
 		case string, bool, int, int64, float64:
-			out = append(out, pyrepr.Str(x))
+			out = append(out, anyutil.String(x))
 		default:
-			if _, isInt := pyrepr.Int(x); isInt {
-				out = append(out, pyrepr.Str(x))
+			if _, isInt := anyutil.Int(x); isInt {
+				out = append(out, anyutil.String(x))
 			}
 		}
 	}
 	return out
 }
 
-// Python str of a mapping value with the falsy default applied
+// Text of a mapping value, the default when the value is empty or false
 func catalogField(data map[string]any, key, def string) string {
 	v := data[key]
 	if !jsonTruthy(v) {
 		return def
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
-// Python truthiness test of a mapping value being exactly True or exactly False
+// Whether a mapping value is exactly the boolean want
 func isPyBool(v any, want bool) bool {
 	b, ok := v.(bool)
 	return ok && b == want
@@ -223,7 +222,7 @@ func EntryFromMapping(raw any, label string) *PluginCatalogEntry {
 	requires := data["requires_icebath"]
 	requiresText := ""
 	if jsonTruthy(requires) {
-		requiresText = strings.TrimSpace(pyrepr.Str(requires))
+		requiresText = strings.TrimSpace(anyutil.String(requires))
 	}
 	return &PluginCatalogEntry{
 		Name: name, Repo: repo, Sha: sha,
@@ -270,7 +269,7 @@ func readCatalogYAML(raw []byte, readErr error, label string) any {
 		pkgLog().Warn("Plugin catalog: failed to read " + label + ": " + errchain.OSText(readErr))
 		return nil
 	}
-	if err := strictUTF8(raw); err != nil {
+	if err := textutil.ValidateUTF8(raw); err != nil {
 		pkgLog().Warn("Plugin catalog: failed to read " + label + ": " + err.Error())
 		return nil
 	}
@@ -283,18 +282,6 @@ func readCatalogYAML(raw []byte, readErr error, label string) any {
 		return map[string]any{}
 	}
 	return doc
-}
-
-// UnicodeDecodeError of a strict utf-8 read of data, nil when it decodes
-func strictUTF8(data []byte) error {
-	for pos := 0; pos < len(data); {
-		r, size := utf8.DecodeRune(data[pos:])
-		if r == utf8.RuneError && size <= 1 {
-			return pystr.UTF8DecodeError(data, pos)
-		}
-		pos += size
-	}
-	return nil
 }
 
 // Catalog files of a directory sorted by name, the embedded in-tree catalog when dir is empty

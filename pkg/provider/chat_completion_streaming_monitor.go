@@ -7,8 +7,8 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Display, heartbeat and stale kill bookkeeping the poll loop owns
@@ -58,7 +58,7 @@ func (l *streamingLifetime) exceeded(attempt int) (float64, bool) {
 
 func (c *streamingCall) kwargsModel(fallback string) string {
 	if m, ok := c.apiKwargs["model"]; ok {
-		return pyrepr.Str(m)
+		return anyutil.String(m)
 	}
 	return fallback
 }

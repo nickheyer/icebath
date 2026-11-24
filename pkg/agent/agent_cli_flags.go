@@ -8,9 +8,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One shot chat launch flags of the gateway agent kept on the in process agent
@@ -186,7 +185,7 @@ func (a *AIAgent) controlMeta(ctx context.Context, key string) (string, error) {
 }
 
 // The stable viewer facing goal fields, nil for no goal or a cleared one
-func safeGoalSnapshot(s *goals.GoalState) *pyjson.Object {
+func safeGoalSnapshot(s *goals.GoalState) *jsonutil.Object {
 	if s == nil || pyStr(s.Status) == "cleared" {
 		return nil
 	}
@@ -200,10 +199,10 @@ func safeGoalSnapshot(s *goals.GoalState) *pyjson.Object {
 		if g.LastExitCode != nil {
 			exit = *g.LastExitCode
 		}
-		gates = append(gates, pyjson.ObjectOf("command", g.Command, "timeout_seconds", g.TimeoutSeconds,
+		gates = append(gates, jsonutil.ObjectOf("command", g.Command, "timeout_seconds", g.TimeoutSeconds,
 			"max_retries", g.MaxRetries, "attempts", g.Attempts, "last_exit_code", exit))
 	}
-	snapshot := pyjson.ObjectOf("title", s.Goal, "status", s.Status, "turns_used", s.TurnsUsed, "max_turns", s.MaxTurns,
+	snapshot := jsonutil.ObjectOf("title", s.Goal, "status", s.Status, "turns_used", s.TurnsUsed, "max_turns", s.MaxTurns,
 		"contract", s.Contract.ToDict(), "subgoals", subgoals, "gates", gates)
 	if s.CreatedAt != 0 {
 		snapshot.Set("created_at", s.CreatedAt)
@@ -227,26 +226,26 @@ func safeGoalSnapshot(s *goals.GoalState) *pyjson.Object {
 }
 
 // The absolute barrier a goal waits on, nil when it waits on nothing the viewer can show
-func goalWaitBarrier(s *goals.GoalState) *pyjson.Object {
+func goalWaitBarrier(s *goals.GoalState) *jsonutil.Object {
 	reason := pyStr(s.WaitingReason)
 	if s.WaitingUntil != 0 && float64(time.Now().UnixNano())/1e9 < s.WaitingUntil {
-		return pyjson.ObjectOf("type", "until", "until_at", s.WaitingUntil, "reason", reason)
+		return jsonutil.ObjectOf("type", "until", "until_at", s.WaitingUntil, "reason", reason)
 	}
 	if s.WaitingOnSession != nil {
-		return pyjson.ObjectOf("type", "session", "session_id", *s.WaitingOnSession, "reason", reason)
+		return jsonutil.ObjectOf("type", "session", "session_id", *s.WaitingOnSession, "reason", reason)
 	}
 	if s.WaitingOnPID != nil {
-		return pyjson.ObjectOf("type", "pid", "pid", *s.WaitingOnPID, "reason", reason)
+		return jsonutil.ObjectOf("type", "pid", "pid", *s.WaitingOnPID, "reason", reason)
 	}
 	return nil
 }
 
 // The allowlisted persisted loop fields without its route, nil for no loop or a cleared one
-func safeLoopSnapshot(s *SessionLoopState, deferredByGoal bool) *pyjson.Object {
+func safeLoopSnapshot(s *SessionLoopState, deferredByGoal bool) *jsonutil.Object {
 	if s == nil || pyStr(s.Status) == "cleared" {
 		return nil
 	}
-	snapshot := pyjson.ObjectOf("prompt", s.Prompt, "status", s.Status, "mode", s.Mode, "interval_seconds", s.IntervalSeconds,
+	snapshot := jsonutil.ObjectOf("prompt", s.Prompt, "status", s.Status, "mode", s.Mode, "interval_seconds", s.IntervalSeconds,
 		"current_delay", s.CurrentDelay, "times", s.Times, "until", s.Until, "max_ticks", s.MaxTicks, "ticks_fired", s.TicksFired,
 		"created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt, "next_due_at", s.NextDueAt,
 		"awaiting_response", s.AwaitingResponse, "deferred_by_goal", deferredByGoal)
@@ -260,16 +259,16 @@ func safeLoopSnapshot(s *SessionLoopState, deferredByGoal bool) *pyjson.Object {
 }
 
 // The persisted heartbeat fields a session snapshot carries, nil for no heartbeat or a cleared one
-func safeHeartbeatSnapshot(s *HeartbeatState) *pyjson.Object {
+func safeHeartbeatSnapshot(s *HeartbeatState) *jsonutil.Object {
 	if s == nil || s.Status == "cleared" {
 		return nil
 	}
-	return pyjson.ObjectOf("prompt", s.Prompt, "status", s.Status, "interval_seconds", pyint.Value(s.IntervalSeconds),
+	return jsonutil.ObjectOf("prompt", s.Prompt, "status", s.Status, "interval_seconds", s.IntervalSeconds,
 		"created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt, "fire_count", s.FireCount)
 }
 
 // Hash of the canonical visible state so equal reads always share a revision, empty with no state
-func controlSnapshotRevision(goal, loop, heartbeat *pyjson.Object) (string, error) {
+func controlSnapshotRevision(goal, loop, heartbeat *jsonutil.Object) (string, error) {
 	if goal == nil && loop == nil && heartbeat == nil {
 		return "", nil
 	}
@@ -283,8 +282,9 @@ func controlSnapshotRevision(goal, loop, heartbeat *pyjson.Object) (string, erro
 	if heartbeat != nil {
 		heartbeatV = heartbeat
 	}
-	canonical, err := pyjson.Dumps(pyjson.ObjectOf("goal", goalV, "loop", loopV, "heartbeat", heartbeatV),
-		pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.SortKeys(true))
+	canonical, err := jsonutil.Encode(jsonutil.ObjectOf("goal", goalV, "loop", loopV, "heartbeat", heartbeatV),
+		jsonutil.SortKeys())
+
 	if err != nil {
 		return "", err
 	}

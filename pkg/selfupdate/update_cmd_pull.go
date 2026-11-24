@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -283,7 +283,7 @@ func rollBackBrokenUpdate(ctx context.Context, w io.Writer, gitCmd []string, pre
 		fmt.Fprintln(w, "  Try ``icebath update`` again later once a fix lands.")
 	} else {
 		fmt.Fprintln(w, "  ✗ Rollback failed. Recover manually with:")
-		fmt.Fprintf(w, "    cd %s && git %s\n", root, pyshlex.Join(rollbackArgs))
+		fmt.Fprintf(w, "    cd %s && git %s\n", root, shellutil.Join(rollbackArgs))
 		if detail := strings.TrimSpace(rollbackResult.Stderr); detail != "" {
 			fmt.Fprintf(w, "    (%s)\n", textutil.Lines(detail)[0])
 		}

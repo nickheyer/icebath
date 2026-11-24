@@ -6,9 +6,7 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Compiled Python pattern, panicking at init on a malformed constant
@@ -66,17 +64,6 @@ func FormatMessage(content string) string {
 	return text
 }
 
-// Dict view over a decoded JSON object or a Go map, ok false for any other value
-func asDict(v any) (map[string]any, bool) {
-	switch d := v.(type) {
-	case *pyjson.Object:
-		return d.Vals, true
-	case map[string]any:
-		return d, true
-	}
-	return nil, false
-}
-
 func getOr(d map[string]any, key string, def any) any {
 	if v, ok := d[key]; ok {
 		return v
@@ -87,7 +74,7 @@ func getOr(d map[string]any, key string, def any) any {
 func requiredStr(m map[string]any, key, context string) (string, error) {
 	value := ""
 	if v := m[key]; v != nil {
-		value = strings.TrimSpace(pyrepr.Str(v))
+		value = strings.TrimSpace(anyutil.String(v))
 	}
 	if value == "" {
 		return "", fmt.Errorf("%s.%s is required", context, key)
@@ -96,10 +83,10 @@ func requiredStr(m map[string]any, key, context string) (string, error) {
 }
 
 // Copies each truthy source value as str into the destination in the given order
-func copyOpt(dst *pyjson.Object, src map[string]any, keys ...[2]string) *pyjson.Object {
+func copyOpt(dst *jsonutil.Object, src map[string]any, keys ...[2]string) *jsonutil.Object {
 	for _, k := range keys {
-		if v := src[k[0]]; pyrepr.Truthy(v) {
-			dst.Set(k[1], pyrepr.Str(v))
+		if v := src[k[0]]; anyutil.IsTrue(v) {
+			dst.Set(k[1], anyutil.String(v))
 		}
 	}
 	return dst
@@ -107,7 +94,7 @@ func copyOpt(dst *pyjson.Object, src map[string]any, keys ...[2]string) *pyjson.
 
 func requiredList(m map[string]any, key, msg string) ([]any, error) {
 	items := m[key]
-	if !pyrepr.Truthy(items) {
+	if !anyutil.IsTrue(items) {
 		return nil, fmt.Errorf("%s", msg)
 	}
 	list, ok := items.([]any)
@@ -117,15 +104,15 @@ func requiredList(m map[string]any, key, msg string) ([]any, error) {
 	return list, nil
 }
 
-func obj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func obj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
 	return o
 }
 
-func buttonToChat(button map[string]any) (*pyjson.Object, error) {
+func buttonToChat(button map[string]any) (*jsonutil.Object, error) {
 	text, err := requiredStr(button, "text", "button")
 	if err != nil {
 		return nil, err
@@ -135,8 +122,8 @@ func buttonToChat(button map[string]any) (*pyjson.Object, error) {
 		return nil, err
 	}
 	rawParams := map[string]any{}
-	if p := button["parameters"]; pyrepr.Truthy(p) {
-		d, ok := asDict(p)
+	if p := button["parameters"]; anyutil.IsTrue(p) {
+		d, ok := jsonutil.AsMap(p)
 		if !ok {
 			return nil, fmt.Errorf("button.parameters must be an object")
 		}
@@ -149,12 +136,12 @@ func buttonToChat(button map[string]any) (*pyjson.Object, error) {
 	sort.Strings(names)
 	parameters := make([]any, 0, len(names))
 	for _, k := range names {
-		parameters = append(parameters, obj("key", k, "value", pyrepr.Str(rawParams[k])))
+		parameters = append(parameters, obj("key", k, "value", anyutil.String(rawParams[k])))
 	}
 	return obj("text", text, "onClick", obj("action", obj("function", action, "parameters", parameters))), nil
 }
 
-func textWidget(widget map[string]any) (*pyjson.Object, error) {
+func textWidget(widget map[string]any) (*jsonutil.Object, error) {
 	text, err := requiredStr(widget, "text", "widget")
 	if err != nil {
 		return nil, err
@@ -169,7 +156,7 @@ func escapeCardText(text string) string {
 	return strings.ReplaceAll(cardHTMLEscaper.Replace(text), "\n", "<br>")
 }
 
-func plainTextWidget(widget map[string]any) (*pyjson.Object, error) {
+func plainTextWidget(widget map[string]any) (*jsonutil.Object, error) {
 	text, err := requiredStr(widget, "text", "widget")
 	if err != nil {
 		return nil, err
@@ -177,7 +164,7 @@ func plainTextWidget(widget map[string]any) (*pyjson.Object, error) {
 	return obj("textParagraph", obj("text", escapeCardText(text))), nil
 }
 
-func markdownTextWidget(widget map[string]any) (*pyjson.Object, error) {
+func markdownTextWidget(widget map[string]any) (*jsonutil.Object, error) {
 	text, err := requiredStr(widget, "text", "widget")
 	if err != nil {
 		return nil, err
@@ -185,7 +172,7 @@ func markdownTextWidget(widget map[string]any) (*pyjson.Object, error) {
 	return obj("textParagraph", obj("text", text, "textSyntax", "MARKDOWN")), nil
 }
 
-func codeBlockWidget(widget map[string]any) (*pyjson.Object, error) {
+func codeBlockWidget(widget map[string]any) (*jsonutil.Object, error) {
 	text, err := requiredStr(widget, "text", "widget")
 	if err != nil {
 		return nil, err
@@ -193,16 +180,16 @@ func codeBlockWidget(widget map[string]any) (*pyjson.Object, error) {
 	return obj("textParagraph", obj("text", "<pre><code>"+cardHTMLEscaper.Replace(text)+"</code></pre>")), nil
 }
 
-func decoratedTextWidget(widget map[string]any) (*pyjson.Object, error) {
+func decoratedTextWidget(widget map[string]any) (*jsonutil.Object, error) {
 	text, err := requiredStr(widget, "text", "widget")
 	if err != nil {
 		return nil, err
 	}
-	decorated := obj("text", FormatMessage(text), "wrapText", pyrepr.Truthy(getOr(widget, "wrap_text", true)))
+	decorated := obj("text", FormatMessage(text), "wrapText", anyutil.IsTrue(getOr(widget, "wrap_text", true)))
 	return obj("decoratedText", copyOpt(decorated, widget, [2]string{"top_label", "topLabel"}, [2]string{"bottom_label", "bottomLabel"})), nil
 }
 
-func imageWidget(widget map[string]any) (*pyjson.Object, error) {
+func imageWidget(widget map[string]any) (*jsonutil.Object, error) {
 	url, err := requiredStr(widget, "image_url", "widget")
 	if err != nil {
 		return nil, err
@@ -210,16 +197,16 @@ func imageWidget(widget map[string]any) (*pyjson.Object, error) {
 	return obj("image", copyOpt(obj("imageUrl", url), widget, [2]string{"alt_text", "altText"})), nil
 }
 
-func buttonsWidget(widget map[string]any) (*pyjson.Object, error) {
+func buttonsWidget(widget map[string]any) (*jsonutil.Object, error) {
 	rawButtons, err := requiredList(widget, "buttons", "button widgets require at least one button")
 	if err != nil {
 		return nil, err
 	}
 	buttons := make([]any, 0, len(rawButtons))
 	for _, b := range rawButtons {
-		d, ok := asDict(b)
+		d, ok := jsonutil.AsMap(b)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(b))
+			return nil, fmt.Errorf("card buttons must be objects, got %s", anyutil.Kind(b))
 		}
 		rendered, err := buttonToChat(d)
 		if err != nil {
@@ -230,8 +217,8 @@ func buttonsWidget(widget map[string]any) (*pyjson.Object, error) {
 	return obj("buttonList", obj("buttons", buttons)), nil
 }
 
-func selectionItem(item any) (*pyjson.Object, error) {
-	d, ok := asDict(item)
+func selectionItem(item any) (*jsonutil.Object, error) {
+	d, ok := jsonutil.AsMap(item)
 	if !ok {
 		return nil, fmt.Errorf("selection items must be objects")
 	}
@@ -243,17 +230,17 @@ func selectionItem(item any) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	return obj("text", text, "value", value, "selected", pyrepr.Truthy(getOr(d, "selected", false))), nil
+	return obj("text", text, "value", value, "selected", anyutil.IsTrue(getOr(d, "selected", false))), nil
 }
 
 func strOr(v any, def string) string {
-	if pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return def
 }
 
-func selectionWidget(widget map[string]any) (*pyjson.Object, error) {
+func selectionWidget(widget map[string]any) (*jsonutil.Object, error) {
 	name, err := requiredStr(widget, "name", "widget")
 	if err != nil {
 		return nil, err
@@ -274,7 +261,7 @@ func selectionWidget(widget map[string]any) (*pyjson.Object, error) {
 		"type", strOr(widget["selection_type"], "CHECK_BOX"), "items", items)), nil
 }
 
-var widgetRenderers = map[string]func(map[string]any) (*pyjson.Object, error){
+var widgetRenderers = map[string]func(map[string]any) (*jsonutil.Object, error){
 	"text":            textWidget,
 	"text_paragraph":  textWidget,
 	"plain_text":      plainTextWidget,
@@ -286,11 +273,11 @@ var widgetRenderers = map[string]func(map[string]any) (*pyjson.Object, error){
 	"selection":       selectionWidget,
 	"selection_input": selectionWidget,
 	"image":           imageWidget,
-	"divider":         func(map[string]any) (*pyjson.Object, error) { return obj("divider", pyjson.NewObject()), nil },
+	"divider":         func(map[string]any) (*jsonutil.Object, error) { return obj("divider", jsonutil.NewObject()), nil },
 }
 
-func widgetToChat(widget any) (*pyjson.Object, error) {
-	d, ok := asDict(widget)
+func widgetToChat(widget any) (*jsonutil.Object, error) {
+	d, ok := jsonutil.AsMap(widget)
 	if !ok {
 		return nil, fmt.Errorf("card widgets must be objects")
 	}
@@ -306,8 +293,8 @@ func widgetToChat(widget any) (*pyjson.Object, error) {
 	return renderer(d)
 }
 
-func sectionToChat(section any) (*pyjson.Object, error) {
-	d, ok := asDict(section)
+func sectionToChat(section any) (*jsonutil.Object, error) {
+	d, ok := jsonutil.AsMap(section)
 	if !ok {
 		return nil, fmt.Errorf("card sections must be objects")
 	}
@@ -326,8 +313,8 @@ func sectionToChat(section any) (*pyjson.Object, error) {
 	return copyOpt(obj("widgets", rendered), d, [2]string{"header", "header"}), nil
 }
 
-func headerToChat(header any) (*pyjson.Object, error) {
-	d, ok := asDict(header)
+func headerToChat(header any) (*jsonutil.Object, error) {
+	d, ok := jsonutil.AsMap(header)
 	if !ok {
 		return nil, fmt.Errorf("card.header must be an object")
 	}
@@ -336,16 +323,16 @@ func headerToChat(header any) (*pyjson.Object, error) {
 		return nil, err
 	}
 	rendered := copyOpt(obj("title", title), d, [2]string{"subtitle", "subtitle"})
-	if url := d["image_url"]; pyrepr.Truthy(url) {
-		rendered.Set("imageUrl", pyrepr.Str(url))
+	if url := d["image_url"]; anyutil.IsTrue(url) {
+		rendered.Set("imageUrl", anyutil.String(url))
 		rendered.Set("imageType", strOr(d["image_type"], "SQUARE"))
 	}
 	return copyOpt(rendered, d, [2]string{"image_alt_text", "imageAltText"}), nil
 }
 
 // CardSpecToCardsV2 renders a card spec into the Chat Cards v2 wire shape with its exact key order
-func CardSpecToCardsV2(cardSpec any) (*pyjson.Object, error) {
-	d, ok := asDict(cardSpec)
+func CardSpecToCardsV2(cardSpec any) (*jsonutil.Object, error) {
+	d, ok := jsonutil.AsMap(cardSpec)
 	if !ok {
 		return nil, fmt.Errorf("card must be an object")
 	}
@@ -362,7 +349,7 @@ func CardSpecToCardsV2(cardSpec any) (*pyjson.Object, error) {
 		sections = append(sections, r)
 	}
 	card := obj("sections", sections)
-	if header := d["header"]; pyrepr.Truthy(header) {
+	if header := d["header"]; anyutil.IsTrue(header) {
 		h, err := headerToChat(header)
 		if err != nil {
 			return nil, err

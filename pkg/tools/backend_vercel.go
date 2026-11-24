@@ -25,9 +25,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -443,14 +443,14 @@ func vercelSnapshotStore(env *Env) string { return filepath.Join(env.Home, verce
 
 func vercelStoreSnapshot(ctx context.Context, env *Env, taskID, snapshotID string) {
 	if taskID != "" && snapshotID != "" {
-		envUpdateJSONStore(WithEnvHome(ctx, env), vercelSnapshotStore(env), func(s *pyjson.Object) { s.Set(taskID, snapshotID) })
+		envUpdateJSONStore(WithEnvHome(ctx, env), vercelSnapshotStore(env), func(s *jsonutil.Object) { s.Set(taskID, snapshotID) })
 	}
 }
 
 // Drops the stored id for the task only while it still equals the snapshot id
 func vercelDeleteSnapshot(ctx context.Context, env *Env, taskID, snapshotID string) {
-	envUpdateJSONStore(WithEnvHome(ctx, env), vercelSnapshotStore(env), func(s *pyjson.Object) {
-		if taskID != "" && s.Vals[taskID] == snapshotID {
+	envUpdateJSONStore(WithEnvHome(ctx, env), vercelSnapshotStore(env), func(s *jsonutil.Object) {
+		if taskID != "" && s.Value(taskID) == snapshotID {
 			s.Delete(taskID)
 		}
 	})
@@ -565,7 +565,7 @@ func (v *vercelEnv) remoteIcebathDir() string {
 func (v *vercelEnv) createSandbox(ctx context.Context) (vercelSession, error) {
 	snapshotID := ""
 	if v.persistent && v.taskID != "" {
-		snapshotID, _ = envLoadJSONStore(vercelSnapshotStore(v.env)).Vals[v.taskID].(string)
+		snapshotID, _ = envLoadJSONStore(vercelSnapshotStore(v.env)).Value(v.taskID).(string)
 	}
 	if snapshotID != "" {
 		session, err := retryVercelCall(v.env, "sandbox restore", vercelCreateRetryAttempts, func() (vercelSession, error) {
@@ -814,10 +814,7 @@ func (v *vercelEnv) runBash(ctx context.Context, cmd string, login bool, timeout
 			}
 			stateMu.Unlock()
 			remoteStdin := v.stagedStdinPath()
-			payload, err := pystr.SurrogateEscapeEncode(*stdinData)
-			if err != nil {
-				return "", 1
-			}
+			payload := []byte(*stdinData)
 			if _, err := retryVercelCall(v.env, "stdin upload", vercelWriteRetryAttempts, func() (struct{}, error) {
 				return struct{}{}, v.client.writeFiles(context.Background(), session.id, []vercelFile{{path: remoteStdin, content: payload, mode: 0o600}})
 			}); err != nil {

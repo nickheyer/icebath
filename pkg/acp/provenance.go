@@ -3,17 +3,17 @@ package acp
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const maxProvenanceWalk = 100
 
 // Session row reader the provenance walk needs
 type SessionGetter interface {
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 }
 
-func provenanceRow(ctx context.Context, db SessionGetter, sessionID string) *pyjson.Object {
+func provenanceRow(ctx context.Context, db SessionGetter, sessionID string) *jsonutil.Object {
 	row, err := db.GetSession(ctx, sessionID)
 	if err != nil || row == nil || row.Len() == 0 {
 		return nil
@@ -21,7 +21,7 @@ func provenanceRow(ctx context.Context, db SessionGetter, sessionID string) *pyj
 	return row
 }
 
-func isCompressionEnd(row *pyjson.Object) bool {
+func isCompressionEnd(row *jsonutil.Object) bool {
 	if row == nil {
 		return false
 	}
@@ -29,7 +29,7 @@ func isCompressionEnd(row *pyjson.Object) bool {
 	return v == "compression"
 }
 
-func rowString(row *pyjson.Object, key string) string {
+func rowString(row *jsonutil.Object, key string) string {
 	if row == nil {
 		return ""
 	}
@@ -39,7 +39,7 @@ func rowString(row *pyjson.Object, key string) string {
 }
 
 // Session provenance of an ACP session walked from the compression chain, nil when unreadable
-func BuildSessionProvenance(ctx context.Context, db SessionGetter, acpSessionID, currentID, previousID string) *pyjson.Object {
+func BuildSessionProvenance(ctx context.Context, db SessionGetter, acpSessionID, currentID, previousID string) *jsonutil.Object {
 	row := provenanceRow(ctx, db, currentID)
 	if row == nil {
 		return nil
@@ -64,7 +64,7 @@ func BuildSessionProvenance(ctx context.Context, db SessionGetter, acpSessionID,
 		cursor = rowString(prow, "parent_session_id")
 	}
 	continuation := parentID != "" && isCompressionEnd(provenanceRow(ctx, db, parentID))
-	prov := pyjson.NewObject()
+	prov := jsonutil.NewObject()
 	prov.Set("acpSessionId", acpSessionID)
 	prov.Set("currentIcebathSessionId", currentID)
 	prov.Set("rootIcebathSessionId", rootID)
@@ -86,14 +86,14 @@ func BuildSessionProvenance(ctx context.Context, db SessionGetter, acpSessionID,
 }
 
 // Meta payload wrapping the provenance under icebath.sessionProvenance, nil when unreadable
-func SessionProvenanceMeta(ctx context.Context, db SessionGetter, acpSessionID, currentID, previousID string) *pyjson.Object {
+func SessionProvenanceMeta(ctx context.Context, db SessionGetter, acpSessionID, currentID, previousID string) *jsonutil.Object {
 	prov := BuildSessionProvenance(ctx, db, acpSessionID, currentID, previousID)
 	if prov == nil {
 		return nil
 	}
-	inner := pyjson.NewObject()
+	inner := jsonutil.NewObject()
 	inner.Set("sessionProvenance", prov)
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("icebath", inner)
 	return meta
 }

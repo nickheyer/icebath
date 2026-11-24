@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Thread archive durations Discord accepts, in minutes
@@ -195,7 +194,7 @@ func (a *DiscordAdapter) RenameThread(ctx context.Context, threadID, name string
 	current := thread.Name
 	if opts.OnlyIfCurrentName != nil && current != *opts.OnlyIfCurrentName {
 		pkgLog().Info(fmt.Sprintf("[%s] Discord semantic thread rename skipped for %s: current name %s != expected %s",
-			a.Name(), threadID, pyrepr.Repr(current), pyrepr.Repr(*opts.OnlyIfCurrentName)))
+			a.Name(), threadID, anyutil.Quote(current), anyutil.Quote(*opts.OnlyIfCurrentName)))
 		return false, nil
 	}
 	if current == cleaned {
@@ -215,7 +214,7 @@ func (a *DiscordAdapter) RenameThread(ctx context.Context, threadID, name string
 		pkgLog().Debug(fmt.Sprintf("[%s] Failed to rename Discord thread %s: %s", a.Name(), threadID, dpyError(err)))
 		return false, nil
 	}
-	pkgLog().Info(fmt.Sprintf("[%s] Renamed Discord thread %s from %s to %s", a.Name(), threadID, pyrepr.Repr(current), pyrepr.Repr(cleaned)))
+	pkgLog().Info(fmt.Sprintf("[%s] Renamed Discord thread %s from %s to %s", a.Name(), threadID, anyutil.Quote(current), anyutil.Quote(cleaned)))
 	return true, nil
 }
 

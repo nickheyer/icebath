@@ -2,9 +2,9 @@ package agent
 
 import (
 	"math"
+	"strconv"
+	"strings"
 	"sync"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // A finite ratio strictly between zero and one with true, false when the budget warning is off
@@ -26,7 +26,7 @@ func NormalizeBudgetWarningRatio(value any) (float64, bool) {
 	case uint64:
 		ratio = float64(v)
 	case string:
-		f, err := pyint.ParseFloat(v)
+		f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
 		if err != nil {
 			return 0, false
 		}

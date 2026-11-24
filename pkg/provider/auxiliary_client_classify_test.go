@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Exception with an optional status code attribute, zero meaning the attribute is absent
@@ -254,7 +254,7 @@ func TestAuxWithoutReasoningFields(t *testing.T) {
 	}
 	in := map[string]any{"model": "m", "reasoning_effort": "none", "_reasoning_config": map[string]any{}, "extra_body": map[string]any{" Thinking ": 1, "top_k": 2}}
 	got := auxWithoutReasoningFields(in)
-	if fmt.Sprint(pyjson.Plain(got)) != "map[extra_body:map[top_k:2] model:m]" || len(in) != 4 {
+	if fmt.Sprint(jsonutil.Plain(got)) != "map[extra_body:map[top_k:2] model:m]" || len(in) != 4 {
 		t.Fatalf("got %v in %v", got, in)
 	}
 	got = auxWithoutReasoningFields(map[string]any{"extra_body": map[string]any{"verbosity": "low"}})

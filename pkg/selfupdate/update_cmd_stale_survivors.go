@@ -8,7 +8,7 @@ import (
 	"io"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var staleSurvivorsLog = pkgLog()
@@ -27,7 +27,7 @@ func staleFleetSurvivorPids(fleet []any, alreadySignalled map[int]bool) []int {
 	pids := []int{}
 	for _, row := range fleet {
 		pid, ok := fleetRowPID(row)
-		if pyrepr.Equal(rowValue(row, "state"), "stale") && ok && !alreadySignalled[pid] {
+		if anyutil.Equal(rowValue(row, "state"), "stale") && ok && !alreadySignalled[pid] {
 			pids = append(pids, pid)
 		}
 	}
@@ -56,8 +56,8 @@ func signalStaleFleetSurvivors(ctx context.Context, w io.Writer, fleet []any, re
 			continue
 		}
 		label := "gateway"
-		if profile := rowValue(row, "profile"); pyrepr.Truthy(profile) {
-			label = pyrepr.Str(profile)
+		if profile := rowValue(row, "profile"); anyutil.IsTrue(profile) {
+			label = anyutil.String(profile)
 		}
 		labels[int(pid)] = label
 	}

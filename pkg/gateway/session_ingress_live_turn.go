@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner seams a producer delivery answers or redirects the chat's running turn through, run_inbound _hm_pending_reply_intercepts and _hm_busy_preempt and run_busy_steer _route_plaintext_approval_while_busy
@@ -83,7 +83,7 @@ func liveTurnReplayKey(event *MessageEvent) (string, bool, error) {
 	if event.Source.Profile != nil {
 		profile = *event.Source.Profile
 	}
-	key, err := pyjson.Dumps([]any{profile, string(event.Source.Platform), event.Source.ChatID, *event.MessageID})
+	key, err := jsonutil.Encode([]any{profile, string(event.Source.Platform), event.Source.ChatID, *event.MessageID})
 	if err != nil {
 		return "", false, err
 	}

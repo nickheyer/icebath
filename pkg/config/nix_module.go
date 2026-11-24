@@ -6,21 +6,21 @@ import (
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Nix module settings JSON with the package config version added when absent, as json.dump writes it
 func NixRenderSettings(settingsJSON string) (string, error) {
-	v, err := pyjson.Loads(settingsJSON)
+	v, err := jsonutil.Decode(settingsJSON)
 	if err != nil {
 		return "", err
 	}
-	obj, ok := pyjson.AsObject(v)
+	obj, ok := jsonutil.AsObject(v)
 	if !ok {
 		return "", fmt.Errorf("the Nix settings are %s, expected a mapping", errchain.Kind(v))
 	}
-	return pyjson.Dumps(obj)
+	return jsonutil.Encode(obj)
 }
 
 // Deep merges the Nix settings JSON into config.yaml, Nix keys replacing those on disk and every other key kept
@@ -29,17 +29,18 @@ func NixMergeConfig(nixJSONPath, configPath string) error {
 	if err != nil {
 		return err
 	}
-	nixValue, err := pyjson.LoadsPairsHook(string(raw), orderedJSONMapping)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return err
 	}
+	nixValue := ConfigFromJSON(decoded)
 	var existing any = map[string]any{}
 	if data, err := os.ReadFile(configPath); err == nil {
 		loaded, err := SafeLoad(data)
 		if err != nil {
 			return err
 		}
-		if pyrepr.Truthy(loaded) {
+		if anyutil.IsTrue(loaded) {
 			existing = loaded
 		}
 	} else if !errors.Is(err, os.ErrNotExist) {
@@ -60,20 +61,6 @@ func NixMergeConfig(nixJSONPath, configPath string) error {
 		return err
 	}
 	return os.WriteFile(configPath, text, 0o666)
-}
-
-// JSON object built as a string keyed map that keeps first occurrence order and the last value of a repeated key
-func orderedJSONMapping(keys []string, vals []any) (any, error) {
-	m := make(map[string]any, len(keys))
-	order := make([]string, 0, len(keys))
-	for i, k := range keys {
-		if _, seen := m[k]; !seen {
-			order = append(order, k)
-		}
-		m[k] = vals[i]
-	}
-	SetMappingKeys(m, order)
-	return m, nil
 }
 
 // Override merged into a copy of base, nested mappings merged and every other value replaced in place or appended

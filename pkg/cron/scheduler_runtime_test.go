@@ -9,12 +9,12 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestUsageAuditAndFDHelpers(t *testing.T) {
 	s, _ := newTestStore(t)
-	rec := pyjson.NewObject()
+	rec := jsonutil.NewObject()
 	rec.Set("job_id", "j1")
 	rec.Set("note", "café")
 	s.writeUsageAudit(rec)

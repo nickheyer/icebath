@@ -13,9 +13,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -45,7 +45,7 @@ func runningAsRoot() string {
 // Non comment lines of sshd_config and its drop in directory
 func auditIterSshdConfigLinesLive() []string {
 	paths := []string{"/etc/ssh/sshd_config"}
-	if matches, err := pypath.Glob("/etc/ssh/sshd_config.d", "*.conf"); err == nil {
+	if matches, err := pathutil.Glob("/etc/ssh/sshd_config.d", "*.conf"); err == nil {
 		slices.Sort(matches)
 		paths = append(paths, matches...)
 	}
@@ -110,7 +110,7 @@ func auditInContainerLive() bool {
 // Whether path sits on a persistent mount, true when the mount table cannot tell
 func pathIsMounted(path string) bool {
 	target := path
-	if resolved, err := pypath.Realpath(path, pypath.Lax); err == nil {
+	if resolved, err := pathutil.Resolve(path); err == nil {
 		target = resolved
 	}
 	data, err := os.ReadFile("/proc/mounts")
@@ -120,7 +120,7 @@ func pathIsMounted(path string) bool {
 	type covering struct{ mountpoint, fstype string }
 	var found []covering
 	parents := map[string]bool{}
-	for _, p := range pypath.PathParents(target) {
+	for _, p := range pathutil.Parents(target) {
 		parents[p] = true
 	}
 	for _, line := range textutil.Lines(strings.ToValidUTF8(string(data), "\ufffd")) {
@@ -165,23 +165,23 @@ func containerNoVolumeMount(ctx context.Context, dataHome string) string {
 func networkListenerWithoutAuth(ctx context.Context) []string {
 	sctx := SettingsContext(ctx)
 	api, ok := settings.Platforms.Get(sctx)[string(PlatformAPIServer)].(map[string]any)
-	if !ok || !pyrepr.Truthy(api["enabled"]) {
+	if !ok || !anyutil.IsTrue(api["enabled"]) {
 		return nil
 	}
 	extra, _ := api["extra"].(map[string]any)
 	host, _ := APIServerListenAddress(sctx, extra)
 	key := ""
 	if v, set := extra["key"]; set {
-		key = pyrepr.Str(v)
+		key = anyutil.String(v)
 	} else if scoped, err := GetScopedSecret(sctx, "API_SERVER_KEY", "", true); err == nil {
 		key = scoped
 	}
-	if !IsNetworkAccessible(ctx, pyrepr.Str(host)) || strings.TrimSpace(key) != "" {
+	if !IsNetworkAccessible(ctx, anyutil.String(host)) || strings.TrimSpace(key) != "" {
 		return nil
 	}
 	return []string{fmt.Sprintf("OpenAI-compatible API server is network-accessible (%s) with NO API_SERVER_KEY. It dispatches "+
 		"terminal-capable agent work \u2014 an unauthenticated network endpoint is remote code execution. "+
-		"Set a strong API_SERVER_KEY.", pyrepr.Str(host))}
+		"Set a strong API_SERVER_KEY.", anyutil.String(host))}
 }
 
 // Every posture finding as readable text, a check that panics contributing nothing

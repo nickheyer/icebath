@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Existing text and the new text joined by a newline when both are set, else the set one
@@ -192,7 +192,7 @@ func isTimeoutError(errText string) bool {
 // Channel prompt for the channel id, then the parent id, with blank prompts counting as absent
 func ResolveChannelPrompt(configExtra map[string]any, channelID string, parentID string) (string, bool) {
 	raw := configExtra["channel_prompts"]
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return "", false
 	}
 	prompts, ok := raw.(map[string]any)
@@ -207,7 +207,7 @@ func ResolveChannelPrompt(configExtra map[string]any, channelID string, parentID
 		if !present || prompt == nil {
 			continue
 		}
-		if text := strings.TrimSpace(pyrepr.Str(prompt)); text != "" {
+		if text := strings.TrimSpace(anyutil.String(prompt)); text != "" {
 			return text, true
 		}
 	}
@@ -233,11 +233,11 @@ func ResolveChannelSkills(configExtra map[string]any, channelID string, parentID
 			if !present {
 				id = ""
 			}
-			if pyrepr.Str(id) != wanted {
+			if anyutil.String(id) != wanted {
 				continue
 			}
 			skills := entry["skills"]
-			if !pyrepr.Truthy(skills) {
+			if !anyutil.IsTrue(skills) {
 				skills = entry["skill"]
 			}
 			switch v := skills.(type) {

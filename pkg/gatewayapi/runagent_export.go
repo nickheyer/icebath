@@ -6,14 +6,12 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Value of key in admission settings held as a JSON object or a plain map, nil when absent
 func settingValue(settings any, key string) any {
 	switch s := settings.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if s == nil {
 			return nil
 		}
@@ -29,11 +27,11 @@ func settingValue(settings any, key string) any {
 func settingRoute(value any) map[string]string {
 	var fields map[string]any
 	switch r := value.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if r == nil {
 			return nil
 		}
-		fields = r.Vals
+		fields = r.Map()
 	case map[string]any:
 		fields = r
 	case map[string]string:
@@ -65,7 +63,7 @@ func (a *APIServerAdapter) PrepareTurnRuntime(ctx context.Context, model string,
 	sessionModel, _ := settingValue(settings, "session_model").(string)
 	selection, err := a.selectAgentRuntime(ctx, runtimeKwargs, model, agentOptions{requestedModel: requestedModel,
 		requestedProvider: requestedProvider, route: route, sessionModel: sessionModel,
-		confirmedRuntimeLock: pyrepr.Truthy(settingValue(settings, "confirmed_runtime_lock"))})
+		confirmedRuntimeLock: anyutil.IsTrue(settingValue(settings, "confirmed_runtime_lock"))})
 	if err != nil {
 		return "", err
 	}
@@ -73,13 +71,13 @@ func (a *APIServerAdapter) PrepareTurnRuntime(ctx context.Context, model string,
 }
 
 // Served runtime of a finished gateway turn under a confirmed model lock, an error when it differs from the lock
-func (a *APIServerAdapter) TurnRuntimeMetadata(ag *agent.AIAgent, settings any, confirmedRuntimeLock bool) (*pyjson.Object, error) {
-	var requested *pyjson.Object
+func (a *APIServerAdapter) TurnRuntimeMetadata(ag *agent.AIAgent, settings any, confirmedRuntimeLock bool) (*jsonutil.Object, error) {
+	var requested *jsonutil.Object
 	switch r := settingValue(settings, "requested_runtime").(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		requested = r
 	case map[string]any:
-		requested = pyjson.NewObject()
+		requested = jsonutil.NewObject()
 		for _, k := range slices.Sorted(maps.Keys(r)) {
 			requested.Set(k, r[k])
 		}

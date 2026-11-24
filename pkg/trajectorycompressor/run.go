@@ -4,48 +4,25 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // One parsed JSONL line and its number
 type jsonlEntry struct {
 	line  int
 	entry any
-}
-
-// UnicodeDecodeError text for the first byte of data that is not UTF-8
-func utf8Error(data []byte) error {
-	for i := 0; i < len(data); {
-		r, size := utf8.DecodeRune(data[i:])
-		if r != utf8.RuneError || size > 1 {
-			i += size
-			continue
-		}
-		b := data[i]
-		reason := "invalid continuation byte"
-		switch {
-		case b < 0xC2 || b > 0xF4:
-			reason = "invalid start byte"
-		case !utf8.FullRune(data[i:]):
-			reason = "unexpected end of data"
-		}
-		return &pyint.Error{Kind: "UnicodeDecodeError", Msg: fmt.Sprintf("'utf-8' codec can't decode byte 0x%02x in position %d: %s", b, i, reason)}
-	}
-	return nil
 }
 
 // Lines of text read in universal newline mode, each keeping its newline
@@ -70,8 +47,8 @@ func loadJSONL(path string, onError func(int, error), start int) ([]jsonlEntry, 
 	if err != nil {
 		return nil, err
 	}
-	if err := utf8Error(data); err != nil {
-		return nil, err
+	if err := textutil.ValidateUTF8(data); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	var entries []jsonlEntry
 	for k, line := range universalLines(string(data)) {
@@ -79,9 +56,9 @@ func loadJSONL(path string, onError func(int, error), start int) ([]jsonlEntry, 
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		v, err := pyjson.Loads(line)
+		v, err := jsonutil.Decode(line)
 		if err != nil {
-			var de *pyjson.DecodeError
+			var de *jsonutil.SyntaxError
 			if !errors.As(err, &de) {
 				return nil, err
 			}
@@ -95,11 +72,11 @@ func loadJSONL(path string, onError func(int, error), start int) ([]jsonlEntry, 
 	return entries, nil
 }
 
-// Writes one ensure_ascii=False JSON document per line
+// Writes one JSON document per line, non-ASCII text written as is
 func writeJSONL(path string, entries []any) error {
 	var b strings.Builder
 	for _, e := range entries {
-		s, err := pyjson.Dumps(e, pyjson.EnsureASCII(false))
+		s, err := jsonutil.Encode(e)
 		if err != nil {
 			return err
 		}
@@ -108,9 +85,9 @@ func writeJSONL(path string, entries []any) error {
 	return os.WriteFile(path, []byte(b.String()), 0o666)
 }
 
-// str of a pathlib path built from a directory and a child name
+// Cleaned path of a child name under a directory
 func joinPath(dir, name string) string {
-	return pypath.PurePathStr(dir + string(filepath.Separator) + name)
+	return filepath.Clean(dir + string(filepath.Separator) + name)
 }
 
 // Sorted paths of the *.jsonl entries of a directory, none when it cannot be listed
@@ -133,7 +110,7 @@ const statusFormat = "[dim]✅ %d compressed | ⏭️ %d skipped | ⏱️ %d tim
 
 // Shared counters and progress handles of one directory run
 type runProgress struct {
-	progress   *pyrich.Progress
+	progress   *consoleutil.Progress
 	mainTask   int
 	statusTask int
 	mu         sync.Mutex
@@ -223,10 +200,10 @@ func (c *Compressor) processOne(ctx context.Context, run *runProgress, filePath 
 
 // Compresses every *.jsonl of inputDir into outputDir with concurrent summary calls, then reports and saves metrics
 func (c *Compressor) ProcessDirectory(ctx context.Context, inputDir, outputDir string) error {
-	console := pyrich.NewConsole(os.Stdout)
-	c.Aggregate.ProcessingStartTime = pydatetime.ISOFormatNaive(time.Now())
+	console := consoleutil.NewConsole(os.Stdout)
+	c.Aggregate.ProcessingStartTime = time.Now().Format(timeutil.RFC3339Micro)
 	started := time.Now()
-	inputDir, outputDir = pypath.PurePathStr(inputDir), pypath.PurePathStr(outputDir)
+	inputDir, outputDir = filepath.Clean(inputDir), filepath.Clean(outputDir)
 	files := globJSONL(inputDir)
 	if len(files) == 0 {
 		c.logger.Warning(fmt.Sprintf("No JSONL files found in %s", inputDir))
@@ -263,17 +240,16 @@ func (c *Compressor) ProcessDirectory(ctx context.Context, inputDir, outputDir s
 	console.Print(fmt.Sprintf("⚡ Max concurrent API calls: %d", c.Config.MaxConcurrentRequests))
 	console.Print(rule + "\n")
 
-	progress := console.NewProgress(10, &pyrich.SpinnerColumn{}, pyrich.TextColumn{Format: "[progress.description]{task.description}"},
-		pyrich.BarColumn{}, pyrich.TaskProgressColumn{}, pyrich.TextColumn{Format: "•"}, pyrich.TimeElapsedColumn{},
-		pyrich.TextColumn{Format: "•"}, pyrich.TimeRemainingColumn{})
+	progress := console.NewProgress(100*time.Millisecond, &consoleutil.SpinnerColumn{}, consoleutil.DescriptionColumn{},
+		consoleutil.BarColumn{}, consoleutil.TaskProgressColumn{}, consoleutil.TextColumn("•"), consoleutil.TimeElapsedColumn{},
+		consoleutil.TextColumn("•"), consoleutil.TimeRemainingColumn{})
 	progress.Start()
-	totalF := float64(total)
 	run := &runProgress{progress: progress}
-	run.mainTask = progress.AddTask("[cyan]Compressing "+textutil.Thousands(int64(total))+" trajectories", &totalF)
-	run.statusTask = progress.AddTask("[dim]Starting...[/dim]", nil)
+	run.mainTask = progress.AddTask("[cyan]Compressing "+textutil.Thousands(int64(total))+" trajectories", total)
+	run.statusTask = progress.AddTask("[dim]Starting...[/dim]", -1)
 	if c.Config.MaxConcurrentRequests < 0 {
 		progress.Stop()
-		return &pyint.Error{Kind: "ValueError", Msg: "Semaphore initial value must be >= 0"}
+		return errors.New("max_concurrent_requests must not be negative")
 	}
 	run.sem = make(chan struct{}, c.Config.MaxConcurrentRequests)
 	outcomes := make([]entryOutcome, total)
@@ -304,12 +280,12 @@ func (c *Compressor) ProcessDirectory(ctx context.Context, inputDir, outputDir s
 			return err
 		}
 	}
-	c.Aggregate.ProcessingEndTime = pydatetime.ISOFormatNaive(time.Now())
+	c.Aggregate.ProcessingEndTime = time.Now().Format(timeutil.RFC3339Micro)
 	c.Aggregate.ProcessingDurationSeconds = time.Since(started).Seconds()
 	c.printSummary()
 	if c.Config.MetricsEnabled {
 		metricsPath := joinPath(outputDir, c.Config.MetricsOutputFile)
-		text, err := pyjson.Dumps(c.Aggregate.ToDict(), pyjson.Indent(2))
+		text, err := jsonutil.Encode(c.Aggregate.ToDict(), jsonutil.Indent(2))
 		if err != nil {
 			return err
 		}
@@ -321,19 +297,10 @@ func (c *Compressor) ProcessDirectory(ctx context.Context, inputDir, outputDir s
 	return nil
 }
 
-// Python format(value, spec) of a report value
-func pf(v any, spec string) string {
-	s, err := pyrepr.Format(v, spec)
-	if err != nil {
-		panic(err)
-	}
-	return s
-}
-
-// Value at a dotted section and key of an ordered metrics dict
-func dictAt(d *pyjson.Object, section, key string) any {
+// Value at a section and key of the metrics object
+func dictAt(d *jsonutil.Object, section, key string) any {
 	sec, _ := d.Get(section)
-	v, _ := sec.(*pyjson.Object).Get(key)
+	v, _ := sec.(*jsonutil.Object).Get(key)
 	return v
 }
 
@@ -359,31 +326,33 @@ func (c *Compressor) printSummary() {
 	total, compressed := s("total_trajectories").(int64), s("trajectories_compressed").(int64)
 	pct := func(n any) float64 { return asFloat(n) / float64(max(total, 1)) * 100 }
 	duration := asFloat(p("duration_seconds"))
-	timeStr := pf(duration, ".1f") + " seconds"
+	timeStr := strconv.FormatFloat(duration, 'f', 1, 64) + " seconds"
 	if duration > 60 {
-		timeStr = pf(duration/60, ".1f") + " minutes"
+		timeStr = strconv.FormatFloat(duration/60, 'f', 1, 64) + " minutes"
 	}
 	pad := strings.Repeat
 	row := func(body string) string { return "║    " + body + "║" }
-	first19 := func(v any) string {
-		r := []rune(v.(string))
-		return string(r[:min(19, len(r))])
+	// Whole number grouped in thousands, right-aligned in width characters
+	count := func(v any, width int) string { return fmt.Sprintf("%*s", width, textutil.Thousands(v.(int64))) }
+	// Fraction as a percentage with one decimal, right-aligned in width characters
+	percent := func(v any, width int) string {
+		return fmt.Sprintf("%*s", width, strconv.FormatFloat(asFloat(v)*100, 'f', 1, 64)+"%")
 	}
 	tokens := []string{
-		row("Before Compression:     " + pf(t("total_before"), ">15,") + " tokens" + pad(" ", 21)),
-		row("After Compression:      " + pf(t("total_after"), ">15,") + " tokens" + pad(" ", 21)),
-		row("Total Saved:            " + pf(t("total_saved"), ">15,") + " tokens" + pad(" ", 21)),
-		row("Overall Compression:    " + pf(t("overall_compression_ratio"), ">14.1%") + pad(" ", 28)),
+		row("Before Compression:     " + count(t("total_before"), 15) + " tokens" + pad(" ", 21)),
+		row("After Compression:      " + count(t("total_after"), 15) + " tokens" + pad(" ", 21)),
+		row("Total Saved:            " + count(t("total_saved"), 15) + " tokens" + pad(" ", 21)),
+		row("Overall Compression:    " + percent(t("overall_compression_ratio"), 14) + pad(" ", 28)),
 	}
 	if before := t("total_before").(int64); before > 0 {
-		tokens = append(tokens, row("Space Savings:          "+pf(float64(t("total_saved").(int64))/float64(before)*100, ">14.1f")+"%"+pad(" ", 28)))
+		tokens = append(tokens, row("Space Savings:          "+fmt.Sprintf("%14.1f", float64(t("total_saved").(int64))/float64(before)*100)+"%"+pad(" ", 28)))
 	}
 	averages := []string{row("No trajectories were compressed" + pad(" ", 38))}
 	if compressed > 0 {
 		averages = []string{
-			row("Avg Compression Ratio:  " + pf(a("avg_compression_ratio"), ">14.1%") + pad(" ", 28)),
-			row("Avg Tokens Saved:       " + pf(a("avg_tokens_saved_per_compressed"), ">14,.0f") + pad(" ", 28)),
-			row("Avg Turns Removed:      " + pf(a("avg_turns_removed_per_compressed"), ">14.1f") + pad(" ", 28)),
+			row("Avg Compression Ratio:  " + percent(a("avg_compression_ratio"), 14) + pad(" ", 28)),
+			row("Avg Tokens Saved:       " + fmt.Sprintf("%14s", textutil.Thousands(int64(math.RoundToEven(asFloat(a("avg_tokens_saved_per_compressed")))))) + pad(" ", 28)),
+			row("Avg Turns Removed:      " + fmt.Sprintf("%14.1f", asFloat(a("avg_turns_removed_per_compressed"))) + pad(" ", 28)),
 		}
 	}
 	sections := []struct {
@@ -392,34 +361,34 @@ func (c *Compressor) printSummary() {
 		rows  []string
 	}{
 		{"📁 TRAJECTORIES", 54, []string{
-			row("Total Processed:        " + pf(total, ">10,") + pad(" ", 32)),
-			row("├─ Compressed:          " + pf(compressed, ">10,") + "  (" + pf(pct(compressed), ">5.1f") + "%)" + pad(" ", 18)),
-			row("├─ Skipped (under limit):" + pf(s("trajectories_skipped_under_target"), ">9,") + "  (" + pf(pct(s("trajectories_skipped_under_target")), ">5.1f") + "%)" + pad(" ", 18)),
-			row("├─ Still over limit:    " + pf(s("trajectories_still_over_limit"), ">10,") + "  (" + pf(pct(s("trajectories_still_over_limit")), ">5.1f") + "%)" + pad(" ", 18)),
-			row("└─ Failed:              " + pf(s("trajectories_failed"), ">10,") + pad(" ", 32)),
+			row("Total Processed:        " + count(total, 10) + pad(" ", 32)),
+			row("├─ Compressed:          " + count(compressed, 10) + "  (" + fmt.Sprintf("%5.1f", pct(compressed)) + "%)" + pad(" ", 18)),
+			row("├─ Skipped (under limit):" + count(s("trajectories_skipped_under_target"), 9) + "  (" + fmt.Sprintf("%5.1f", pct(s("trajectories_skipped_under_target"))) + "%)" + pad(" ", 18)),
+			row("├─ Still over limit:    " + count(s("trajectories_still_over_limit"), 10) + "  (" + fmt.Sprintf("%5.1f", pct(s("trajectories_still_over_limit"))) + "%)" + pad(" ", 18)),
+			row("└─ Failed:              " + count(s("trajectories_failed"), 10) + pad(" ", 32)),
 		}},
 		{"🔢 TOKENS", 60, tokens},
 		{"💬 CONVERSATION TURNS", 48, []string{
-			row("Before Compression:     " + pf(u("total_before"), ">15,") + " turns" + pad(" ", 22)),
-			row("After Compression:      " + pf(u("total_after"), ">15,") + " turns" + pad(" ", 22)),
-			row("Total Removed:          " + pf(u("total_removed"), ">15,") + " turns" + pad(" ", 22)),
+			row("Before Compression:     " + count(u("total_before"), 15) + " turns" + pad(" ", 22)),
+			row("After Compression:      " + count(u("total_after"), 15) + " turns" + pad(" ", 22)),
+			row("Total Removed:          " + count(u("total_removed"), 15) + " turns" + pad(" ", 22)),
 		}},
 		{"📈 AVERAGES (Compressed Trajectories Only)", 27, averages},
 		{"🤖 SUMMARIZATION API", 49, []string{
-			row("API Calls Made:         " + pf(z("total_api_calls"), ">15,") + pad(" ", 27)),
-			row("Errors:                 " + pf(z("total_errors"), ">15,") + pad(" ", 27)),
-			row("Success Rate:           " + pf(z("success_rate"), ">14.1%") + pad(" ", 28)),
+			row("API Calls Made:         " + count(z("total_api_calls"), 15) + pad(" ", 27)),
+			row("Errors:                 " + count(z("total_errors"), 15) + pad(" ", 27)),
+			row("Success Rate:           " + percent(z("success_rate"), 14) + pad(" ", 28)),
 		}},
 		{"⏱️  PROCESSING TIME", 51, []string{
-			row("Duration:               " + pf(timeStr, ">20") + pad(" ", 22)),
-			row("Throughput:             " + pf(float64(total)/max(duration, 0.001), ">15.1f") + " traj/sec" + pad(" ", 18)),
-			row("Started:                " + pf(first19(p("start_time")), ">20") + pad(" ", 22)),
-			row("Finished:               " + pf(first19(p("end_time")), ">20") + pad(" ", 22)),
+			row("Duration:               " + fmt.Sprintf("%20s", timeStr) + pad(" ", 22)),
+			row("Throughput:             " + fmt.Sprintf("%15.1f", float64(total)/max(duration, 0.001)) + " traj/sec" + pad(" ", 18)),
+			row("Started:                " + fmt.Sprintf("%20s", textutil.First(p("start_time").(string), 19)) + pad(" ", 22)),
+			row("Finished:               " + fmt.Sprintf("%20s", textutil.First(p("end_time").(string), 19)) + pad(" ", 22)),
 		}},
 	}
 	fmt.Print("\n\n")
 	fmt.Println("╔" + pad("═", 70) + "╗")
-	fmt.Println("║" + pf("TRAJECTORY COMPRESSION REPORT", "^70") + "║")
+	fmt.Println("║" + textutil.Center("TRAJECTORY COMPRESSION REPORT", 70) + "║")
 	for _, sec := range sections {
 		fmt.Println("╠" + pad("═", 70) + "╣")
 		fmt.Println("║  " + sec.title + pad(" ", sec.pad) + "║")
@@ -440,6 +409,7 @@ func (c *Compressor) printSummary() {
 	ss := append([]int(nil), saved...)
 	sort.Ints(ss)
 	fmt.Println("\n📊 Distribution Summary:")
-	fmt.Printf("   Compression ratios: min=%s, max=%s, median=%s\n", pf(sr[0], ".2%"), pf(sr[len(sr)-1], ".2%"), pf(sr[len(sr)/2], ".2%"))
-	fmt.Printf("   Tokens saved:       min=%s, max=%s, median=%s\n", pf(int64(ss[0]), ","), pf(int64(ss[len(ss)-1]), ","), pf(int64(ss[len(ss)/2]), ","))
+	ratio := func(f float64) string { return strconv.FormatFloat(f*100, 'f', 2, 64) + "%" }
+	fmt.Printf("   Compression ratios: min=%s, max=%s, median=%s\n", ratio(sr[0]), ratio(sr[len(sr)-1]), ratio(sr[len(sr)/2]))
+	fmt.Printf("   Tokens saved:       min=%s, max=%s, median=%s\n", textutil.Thousands(int64(ss[0])), textutil.Thousands(int64(ss[len(ss)-1])), textutil.Thousands(int64(ss[len(ss)/2])))
 }

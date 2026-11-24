@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Multiplex runtime scope of an API request profile, the default profile's under multiplex when unset
@@ -25,7 +25,7 @@ func apiProfileScope(ctx context.Context, profile string) (context.Context, erro
 }
 
 // Execution policy and catalog the API server adapter advertises for one served profile
-func localRoomCatalog(ctx context.Context, adapter PlatformAdapter, profile, installationID string) (*pyjson.Object, *pyjson.Object, error) {
+func localRoomCatalog(ctx context.Context, adapter PlatformAdapter, profile, installationID string) (*jsonutil.Object, *jsonutil.Object, error) {
 	if adapter == nil || adapter.Base() == nil || adapter.Base().Platform != PlatformAPIServer {
 		return nil, nil, &PyError{Kind: "AttributeError", Msg: "the API server adapter has no profile scope"}
 	}

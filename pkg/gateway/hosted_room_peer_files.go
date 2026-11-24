@@ -14,8 +14,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -50,7 +50,7 @@ func peerFileRefuse(status int, code, format string, args ...any) error {
 }
 
 // Scope of a verified room grant, one member seat of one room home, surviving grant refreshes
-func PeerFileScope(claims *pyjson.Object) (string, error) {
+func PeerFileScope(claims *jsonutil.Object) (string, error) {
 	values := make([]any, 0, len(peerFileScopeFields))
 	for _, field := range peerFileScopeFields {
 		value, ok := claims.Get(field)
@@ -156,33 +156,33 @@ func peerFileSizeRule(ctx context.Context, name string, size int64) error {
 }
 
 // Answer naming a held file and the bytes this gateway has of it
-func peerFileAnswer(row *pyjson.Object) map[string]any {
+func peerFileAnswer(row *jsonutil.Object) map[string]any {
 	return map[string]any{"object": "icebath.room_member.file", "file_id": hrStr(row, "file_id"), "size": hrInt(row, "size"),
 		"received": hrInt(row, "received"), "complete": hrInt(row, "complete") != 0}
 }
 
 // Opens or resumes the transfer of one declared turn file, refused with the limit or rule it breaks
-func BeginPeerFile(ctx context.Context, dbPath, scope string, meta *pyjson.Object) (map[string]any, error) {
+func BeginPeerFile(ctx context.Context, dbPath, scope string, meta *jsonutil.Object) (map[string]any, error) {
 	invalid := func(err error) error {
 		return peerFileRefuse(http.StatusBadRequest, "invalid_attachment", "%s", err.Error())
 	}
-	name, err := attachmentName(meta.GetOr("name", nil))
+	name, err := attachmentName(meta.ValueOr("name", nil))
 	if err != nil {
 		return nil, invalid(err)
 	}
-	kind, err := attachmentKind(meta.GetOr("kind", nil))
+	kind, err := attachmentKind(meta.ValueOr("kind", nil))
 	if err != nil {
 		return nil, invalid(err)
 	}
-	mimeType, err := attachmentMime(meta.GetOr("mime", nil))
+	mimeType, err := attachmentMime(meta.ValueOr("mime", nil))
 	if err != nil {
 		return nil, invalid(err)
 	}
-	size, ok := hostedStrictInt(meta.GetOr("size", nil))
+	size, ok := hostedStrictInt(meta.ValueOr("size", nil))
 	if !ok || size <= 0 {
 		return nil, peerFileRefuse(http.StatusBadRequest, "invalid_attachment", "%s needs a positive size", name)
 	}
-	digest, err := hostedDigest(meta.GetOr("sha256", nil), "sha256")
+	digest, err := hostedDigest(meta.ValueOr("sha256", nil), "sha256")
 	if err != nil {
 		return nil, invalid(err)
 	}
@@ -351,7 +351,7 @@ func WritePeerFileChunk(ctx context.Context, dbPath, scope, fileID string, offse
 // Verified bytes of one complete file a dispatch names, refused when it never arrived or no longer matches the item
 func peerDispatchFile(ctx context.Context, dbPath, scope string, item map[string]any) ([]byte, error) {
 	name := fmt.Sprint(item["name"])
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	err := peerFilesTx(ctx, dbPath, func(conn state.SQLiteConn) (err error) {
 		row, err = state.QueryRowObject(ctx, conn, "SELECT * FROM hosted_room_peer_files WHERE scope=? AND direction='in' AND sha256=? AND complete=1",
 			scope, item["sha256"])
@@ -413,8 +413,8 @@ func PeerMemberTurnInput(ctx context.Context, dbPath, scope string, dispatch *Ho
 			if len(images) >= apiImageLimit {
 				return nil, peerFileRefuse(http.StatusRequestEntityTooLarge, "attachment_too_large", "%s passes the %d images one turn takes", name, apiImageLimit)
 			}
-			images = append(images, pyjson.ObjectOf("type", "image_url", "image_url",
-				pyjson.ObjectOf("url", "data:"+mimeType+";base64,"+base64.StdEncoding.EncodeToString(data))))
+			images = append(images, jsonutil.ObjectOf("type", "image_url", "image_url",
+				jsonutil.ObjectOf("url", "data:"+mimeType+";base64,"+base64.StdEncoding.EncodeToString(data))))
 			continue
 		}
 		reference, err := captureRoomInput(ctx, name, data)
@@ -430,8 +430,8 @@ func PeerMemberTurnInput(ctx context.Context, dbPath, scope string, dispatch *Ho
 	if len(images) == 0 {
 		return text, nil
 	}
-	content := append([]any{pyjson.ObjectOf("type", "text", "text", text)}, images...)
-	return []any{pyjson.ObjectOf("role", "user", "content", content)}, nil
+	content := append([]any{jsonutil.ObjectOf("type", "text", "text", text)}, images...)
+	return []any{jsonutil.ObjectOf("role", "user", "content", content)}, nil
 }
 
 // Reply text of a finished run without MEDIA directives, the files they name staged for the room home
@@ -544,7 +544,7 @@ func ReadPeerRunFile(ctx context.Context, dbPath, scope, fileID string, offset i
 	if err != nil {
 		return nil, err
 	}
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	if err := peerFilesTx(ctx, dbPath, func(conn state.SQLiteConn) (err error) {
 		row, err = state.QueryRowObject(ctx, conn, "SELECT * FROM hosted_room_peer_files WHERE file_id=? AND scope=? AND direction='out' AND complete=1", fileID, scope)
 		return err

@@ -13,9 +13,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var (
@@ -32,9 +29,9 @@ const (
 )
 
 // Parameter schema of the find_voices argument
-func findVoicesSchema() *pyjson.Object {
-	str := func(desc string) *pyjson.Object { return pyjson.ObjectOf("type", "string", "description", desc) }
-	return pyjson.ObjectOf(
+func findVoicesSchema() *jsonutil.Object {
+	str := func(desc string) *jsonutil.Object { return jsonutil.ObjectOf("type", "string", "description", desc) }
+	return jsonutil.ObjectOf(
 		"type", "object",
 		"description", "Search voices instead of speaking (text is then not needed). Returns a page of voices "+
 			"with voice_id, labels, description and preview_url; pass next_page back as page. "+
@@ -45,18 +42,18 @@ func findVoicesSchema() *pyjson.Object {
 			"'deep growl') with gender/age and use_case 'characters_animation'. You can't hear "+
 			"voices: choose from labels and description, and give the user preview_url links when "+
 			"the pick matters.",
-		"properties", pyjson.ObjectOf(
+		"properties", jsonutil.ObjectOf(
 			"query", str("Free-text search, e.g. 'orc' or 'gravelly old'."),
-			"source", pyjson.ObjectOf("type", "string", "enum", []any{"library", "account"}),
+			"source", jsonutil.ObjectOf("type", "string", "enum", []any{"library", "account"}),
 			"gender", str("e.g. male, female, neutral."),
 			"age", str("e.g. young, middle_aged, old."),
 			"accent", str("e.g. british, american, scottish."),
 			"language", str("ISO 639-1 code, e.g. en."),
 			"use_case", str("Library only, e.g. characters_animation, narrative_story, conversational."),
-			"sort", pyjson.ObjectOf("type", "string", "enum", []any{"usage_character_count_1y", "trending", "cloned_by_count", "created_date"},
+			"sort", jsonutil.ObjectOf("type", "string", "enum", []any{"usage_character_count_1y", "trending", "cloned_by_count", "created_date"},
 				"description", "Library only; default usage_character_count_1y (most used)."),
 			"page", str("next_page from the previous result."),
-			"page_size", pyjson.ObjectOf("type", "integer", "description", "1-100, default 20."),
+			"page_size", jsonutil.ObjectOf("type", "integer", "description", "1-100, default 20."),
 		),
 	)
 }
@@ -66,7 +63,7 @@ func voiceClip(text any) string {
 	if !pyTruthy(text) {
 		text = ""
 	}
-	s := strings.Join(strings.Fields(pyrepr.Str(text)), " ")
+	s := strings.Join(strings.Fields(anyutil.String(text)), " ")
 	if utf8.RuneCountInString(s) <= voicesDescriptionMaxChars {
 		return s
 	}
@@ -74,9 +71,9 @@ func voiceClip(text any) string {
 }
 
 // One compact voice row, library traits at top level and account traits under labels
-func voiceRow(voice map[string]any) *pyjson.Object {
+func voiceRow(voice map[string]any) *jsonutil.Object {
 	labels, _ := asStrMap(voice["labels"])
-	row := pyjson.ObjectOf("voice_id", voice["voice_id"], "name", voice["name"])
+	row := jsonutil.ObjectOf("voice_id", voice["voice_id"], "name", voice["name"])
 	for _, key := range []string{"gender", "age", "accent", "language", "descriptive", "use_case"} {
 		value := voice[key]
 		if !pyTruthy(value) {
@@ -123,7 +120,7 @@ func voiceRequestParams(source, query string, filters [][2]string, useCase, sort
 		}
 		return "/v2/voices", params, nil
 	}
-	if page != "" && !pystr.StrIsDigit(page) {
+	if page != "" && !textutil.IsDigits(page) {
 		return "", nil, &ttsValueError{msg: fmt.Sprintf("Invalid library page %s: pass next_page from the previous result.", errchain.Show(page))}
 	}
 	if sort != "" && !containsString(elevenLabsLibrarySorts, sort) {
@@ -189,7 +186,7 @@ func searchVoices(ctx context.Context, find map[string]any, req *ttsRequest, api
 		if !pyTruthy(find[name]) {
 			return ""
 		}
-		return strings.TrimSpace(pyrepr.Str(find[name]))
+		return strings.TrimSpace(anyutil.String(find[name]))
 	}
 	source := strings.ToLower(arg("source"))
 	if arg("source") == "" {
@@ -241,7 +238,7 @@ func searchVoices(ctx context.Context, find map[string]any, req *ttsRequest, api
 	if v := strings.TrimSpace(req.ElevenLabs.VoiceID); v != "" {
 		configured = v
 	}
-	result := pyjson.ObjectOf("success", true, "source", source, "count", len(voices), "voices", voices,
+	result := jsonutil.ObjectOf("success", true, "source", source, "count", len(voices), "voices", voices,
 		"next_page", voiceNextPage(source, body, page), "configured_voice_id", configured)
 	if source == "library" && pyTruthy(body["total_count"]) {
 		result.Set("total", body["total_count"])

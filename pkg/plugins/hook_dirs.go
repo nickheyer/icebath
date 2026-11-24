@@ -8,17 +8,17 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Argument vector of the command line a hook directory names, a program that sits inside the directory resolved to its full path
 func ResolveDirectoryHookCommand(hookDir, command string) ([]string, error) {
-	argv, err := pyshlex.SplitCommandLine(pypath.Expanduser(command))
+	argv, err := shellutil.SplitCommandLine(pathutil.ExpandUser(command))
 	if err != nil || len(argv) == 0 {
 		return nil, fmt.Errorf("command %s cannot be parsed", errchain.Show(command))
 	}
@@ -56,9 +56,10 @@ func RunDirectoryHook(ctx context.Context, eventType, hookDir string, argv []str
 	if hookContext == nil {
 		hookContext = map[string]any{}
 	}
-	payload, err := pyjson.Dumps(pyjson.ObjectOf("hook_event_name", eventType, "context", hookContext, "cwd", cwd,
-		"profile", profiles.GetActiveProfileName(ctx)), pyjson.EnsureASCII(false),
-		pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	payload, err := jsonutil.Encode(jsonutil.ObjectOf("hook_event_name", eventType, "context", hookContext, "cwd", cwd,
+		"profile", profiles.GetActiveProfileName(ctx)),
+		jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+
 	if err != nil {
 		return nil, err
 	}
@@ -79,13 +80,13 @@ func RunDirectoryHook(ctx context.Context, eventType, hookDir string, argv []str
 	if stdout == "" {
 		return nil, nil
 	}
-	v, err := pyjson.Loads(stdout)
+	v, err := jsonutil.Decode(stdout)
 	if err != nil {
 		return nil, nil
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, nil
 	}
-	return pyjson.Plain(obj), nil
+	return jsonutil.Plain(obj), nil
 }

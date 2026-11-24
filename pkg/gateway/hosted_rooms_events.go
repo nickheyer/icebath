@@ -7,12 +7,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Claims a legacy authority room for a real gateway behind a fenced claim event
-func hostedAdoptLegacyRoom(ctx context.Context, conn state.SQLiteConn, existing *pyjson.Object, roomID, membersJSON, gatewayID string, now float64) (map[string]any, error) {
+func hostedAdoptLegacyRoom(ctx context.Context, conn state.SQLiteConn, existing *jsonutil.Object, roomID, membersJSON, gatewayID string, now float64) (map[string]any, error) {
 	targetEpoch := hrInt(existing, "authority_epoch") + 1
 	seq := hrInt(existing, "next_seq")
 	claimBytes, err := hostedInsertEventRow(ctx, conn, existing, roomID, seq, "system:authority-adopted", "authority.claimed",
@@ -94,7 +94,7 @@ func CreateRoom(ctx context.Context, dbPath string, in CreateRoomInput) (map[str
 			return err
 		}
 		if existing != nil {
-			if existing.Vals["disbanded_at"] != nil {
+			if existing.Value("disbanded_at") != nil {
 				return roomConflict("room_id belongs to a disbanded room")
 			}
 			legacyAdoption := hrStr(existing, "authority_gateway_id") == "legacy" && gatewayID != "legacy"
@@ -207,7 +207,7 @@ func RenameRoom(ctx context.Context, dbPath string, roomIDValue, eventIDValue, n
 		if err != nil {
 			return err
 		}
-		if room.Vals["disbanded_at"] != nil {
+		if room.Value("disbanded_at") != nil {
 			return roomNotFound("hosted room not found")
 		}
 		existing, err := hostedLoadEvent(ctx, conn, roomID, eventID)
@@ -308,7 +308,7 @@ func AppendEvent(ctx context.Context, dbPath string, in AppendEventInput) (map[s
 	if !ok {
 		return nil, hostedRoomError("payload must be an object")
 	}
-	payloadJSON, err := hostedPayloadJSON(pyjson.Plain(payload))
+	payloadJSON, err := hostedPayloadJSON(jsonutil.Plain(payload))
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +431,7 @@ func RoomState(ctx context.Context, dbPath string, roomIDValue any, includeDisba
 	if err != nil {
 		return nil, err
 	}
-	var row, claimRow *pyjson.Object
+	var row, claimRow *jsonutil.Object
 	err = hostedTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) error {
 		var err error
 		row, err = hostedRoomRow(ctx, conn, "SELECT "+hostedRoomColumns+` FROM hosted_rooms WHERE room_id=? AND (disbanded_at IS NULL
@@ -471,7 +471,7 @@ func RequestRoomStop(ctx context.Context, dbPath string, roomID, cancelIDValue, 
 }
 
 // Idempotent replay of a retired or already disbanded room, nil while the room is live
-func hostedDisbandReplay(ctx context.Context, conn state.SQLiteConn, roomID string, room *pyjson.Object) (map[string]any, error) {
+func hostedDisbandReplay(ctx context.Context, conn state.SQLiteConn, roomID string, room *jsonutil.Object) (map[string]any, error) {
 	if room == nil {
 		retired, err := state.QueryRowObject(ctx, conn, "SELECT retired_at FROM hosted_room_retired_ids WHERE room_id=?", roomID)
 		if err != nil {
@@ -482,7 +482,7 @@ func hostedDisbandReplay(ctx context.Context, conn state.SQLiteConn, roomID stri
 		}
 		return map[string]any{"room_id": roomID, "disbanded_at": hrFloat(retired, "retired_at"), "idempotent": true, "history_expired": true}, nil
 	}
-	if room.Vals["disbanded_at"] == nil {
+	if room.Value("disbanded_at") == nil {
 		return nil, nil
 	}
 	if _, err := conn.ExecContext(ctx, hostedInsertRetired, roomID, hrFloat(room, "disbanded_at")); err != nil {
@@ -585,7 +585,7 @@ func ReadEvents(ctx context.Context, dbPath string, roomIDValue, sinceSeqValue, 
 	}
 	var latestSeq int64
 	var authority map[string]any
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err = hostedTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) error {
 		room, err := hostedRoomRow(ctx, conn, `SELECT next_seq, authority_gateway_id, authority_epoch FROM hosted_rooms
                 WHERE room_id=? AND (disbanded_at IS NULL OR ?)`, []any{roomID, hostedBoolInt(includeDisbanded)}, roomID)
@@ -593,7 +593,7 @@ func ReadEvents(ctx context.Context, dbPath string, roomIDValue, sinceSeqValue, 
 			return err
 		}
 		latestSeq = hrInt(room, "next_seq") - 1
-		authority = map[string]any{"gateway_id": fmt.Sprint(room.Vals["authority_gateway_id"]), "epoch": hrInt(room, "authority_epoch")}
+		authority = map[string]any{"gateway_id": fmt.Sprint(room.Value("authority_gateway_id")), "epoch": hrInt(room, "authority_epoch")}
 		if sinceSeq > latestSeq {
 			return hostedRoomError("since_seq is ahead of the hosted room log")
 		}
@@ -632,7 +632,7 @@ func ReadEvents(ctx context.Context, dbPath string, roomIDValue, sinceSeqValue, 
 		return map[string]any{"events": page, "cursor": cursor, "latest_seq": latestSeq, "has_more": cursor < latestSeq, "authority": authority}
 	}
 	fits := func(page []any) (bool, error) {
-		encoded, err := pyjson.Dumps(buildPage(page), pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+		encoded, err := jsonutil.Encode(buildPage(page))
 		return int64(len(encoded)) <= maxLogPageBytes, err
 	}
 	if len(events) > 0 {

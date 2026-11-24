@@ -7,8 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Discord adapter that speaks a one time acknowledgement in a guild voice channel
@@ -152,7 +152,7 @@ func (t *TurnRunner) combinedToolStartCallback(callID, toolName string, args map
 		name := toolName
 		noteLocalToolStart(t, callID, &name, args)
 	}
-	payload, _ := pyjson.Plain(gateway.ToolLifecyclePayload(t.turnCtx, callID, toolName, args)).(map[string]any)
+	payload, _ := jsonutil.Plain(gateway.ToolLifecyclePayload(t.turnCtx, callID, toolName, args)).(map[string]any)
 	t.publishExecution("tool.start", payload)
 	t.publishAPITool("tool.start", callID, toolName, args, nil)
 	if t.ctx.voiceAckGuild != nil {
@@ -172,11 +172,11 @@ func (t *TurnRunner) combinedToolCompleteCallback(callID, toolName string, args 
 	if local {
 		name := toolName
 		fields := t.takeLocalCompleteFields(callID, &name, args, result)
-		for _, key := range fields.Keys {
-			payload.Set(key, fields.Vals[key])
+		for _, key := range fields.Keys() {
+			payload.Set(key, fields.Value(key))
 		}
 	}
-	plain, _ := pyjson.Plain(payload).(map[string]any)
+	plain, _ := jsonutil.Plain(payload).(map[string]any)
 	t.publishExecution("tool.complete", plain)
 	if todos, ok := plain["todos"].([]any); local && ok {
 		revision, has := plain["revision"]

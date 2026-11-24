@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
@@ -37,8 +36,8 @@ type ServiceSetupOptions struct {
 // ValueError of a service choice that is neither install nor decline
 type ServiceChoiceError struct{ Msg string }
 
-func (e *ServiceChoiceError) Error() string      { return e.Msg }
-func (e *ServiceChoiceError) PyTypeName() string { return "ValueError" }
+func (e *ServiceChoiceError) Error() string     { return e.Msg }
+func (e *ServiceChoiceError) ErrorKind() string { return "ValueError" }
 
 // Console the setup helpers print through
 func serviceConsole(w io.Writer) *cliui.Console {
@@ -357,7 +356,7 @@ func printSystemScopeRemediation(ctx context.Context, con *cliui.Console, action
 	}
 	con.PrintWarning("Gateway is installed as a system-wide service — " + action + " requires root.")
 	con.PrintInfo("  Options:")
-	con.PrintInfo("    1. " + pystr.Capitalize(action) + " it this time:")
+	con.PrintInfo("    1. " + textutil.UpperFirst(strings.ToLower(action)) + " it this time:")
 	con.PrintInfo("         sudo systemctl " + action + " " + name)
 	con.PrintInfo("    2. Switch to a per-user service (recommended for personal use):")
 	con.PrintInfo("         sudo icebath gateway uninstall --system")

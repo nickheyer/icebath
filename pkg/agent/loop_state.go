@@ -8,10 +8,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/goals"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -57,28 +57,29 @@ type SessionLoopState struct {
 	LastResponseDigest string
 	PausedReason       any
 	LastStopReason     any
-	Route              *pyjson.Object
+	Route              *jsonutil.Object
 }
 
 // Active interval loop of prompt with the dataclass defaults
 func NewSessionLoopState(prompt any) *SessionLoopState {
-	return &SessionLoopState{Prompt: prompt, Status: "active", Mode: "interval", MaxTicks: int64(settings.LoopsMaxTicks.Default), Route: pyjson.NewObject()}
+	return &SessionLoopState{Prompt: prompt, Status: "active", Mode: "interval", MaxTicks: int64(settings.LoopsMaxTicks.Default), Route: jsonutil.NewObject()}
 }
 
 // JSON of every field in declaration order with non ASCII kept
 func (s *SessionLoopState) ToJSON() (string, error) {
 	route := s.Route
 	if route == nil {
-		route = pyjson.NewObject()
+		route = jsonutil.NewObject()
 	}
-	return pyjson.Dumps(pyjson.ObjectOf(
+	return jsonutil.Encode(jsonutil.ObjectOf(
 		"prompt", s.Prompt, "status", s.Status, "mode", s.Mode, "interval_seconds", s.IntervalSeconds,
 		"current_delay", s.CurrentDelay, "times", s.Times, "until", s.Until, "max_ticks", s.MaxTicks,
 		"ticks_fired", s.TicksFired, "created_at", s.CreatedAt, "last_fired_at", s.LastFiredAt,
 		"next_due_at", s.NextDueAt, "awaiting_response", s.AwaitingResponse,
 		"last_response_digest", s.LastResponseDigest, "paused_reason", s.PausedReason,
 		"last_stop_reason", s.LastStopReason, "route", route,
-	), pyjson.EnsureASCII(false))
+	))
+
 }
 
 // Loop state of a stored row, a missing key taking its default and a falsy one its type zero
@@ -92,29 +93,29 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	var err error
 	switch t := raw.(type) {
 	case string:
-		v, err = pyjson.Loads(t)
+		v, err = jsonutil.Decode(t)
 	case []byte:
-		v, err = pyjson.LoadsBytes(t)
+		v, err = jsonutil.Decode(t)
 	default:
-		return nil, &pyint.Error{Kind: "TypeError", Msg: "stored loop state is " + errchain.Kind(raw) + " where JSON text was expected"}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: "stored loop state is " + errchain.Kind(raw) + " where JSON text was expected"}
 	}
 	if err != nil {
 		return nil, errchain.Reword(err, "stored loop state is not valid JSON")
 	}
-	d, ok := v.(*pyjson.Object)
+	d, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("stored loop state is %s where a mapping was expected", errchain.Kind(v))
 	}
 	get := func(k string) any { x, _ := d.Get(k); return x }
 	s := &SessionLoopState{
-		Prompt: d.GetOr("prompt", ""), Status: d.GetOr("status", "active"), Mode: d.GetOr("mode", "interval"),
-		PausedReason: get("paused_reason"), LastStopReason: get("last_stop_reason"), Route: pyjson.NewObject(),
+		Prompt: d.ValueOr("prompt", ""), Status: d.ValueOr("status", "active"), Mode: d.ValueOr("mode", "interval"),
+		PausedReason: get("paused_reason"), LastStopReason: get("last_stop_reason"), Route: jsonutil.NewObject(),
 	}
-	if r, ok := get("route").(*pyjson.Object); ok {
+	if r, ok := get("route").(*jsonutil.Object); ok {
 		s.Route = r
 	}
-	float := func(key string) (float64, error) { return pyint.Float(pyOr(d.GetOr(key, 0.0), 0.0)) }
-	integer := func(key string, def int64) (int64, error) { return pyint.Int64(pyOr(d.GetOr(key, def), int64(0))) }
+	float := func(key string) (float64, error) { return anyutil.ToFloat(pyOr(d.ValueOr(key, 0.0), 0.0)) }
+	integer := func(key string, def int64) (int64, error) { return anyutil.ToInt(pyOr(d.ValueOr(key, def), int64(0))) }
 	if s.IntervalSeconds, err = float("interval_seconds"); err != nil {
 		return nil, err
 	}
@@ -124,7 +125,7 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	if s.Times, err = integer("times", 0); err != nil {
 		return nil, err
 	}
-	s.Until = pyrepr.Str(pyOr(d.GetOr("until", ""), ""))
+	s.Until = anyutil.String(pyOr(d.ValueOr("until", ""), ""))
 	if s.MaxTicks, err = integer("max_ticks", int64(settings.LoopsMaxTicks.Default)); err != nil {
 		return nil, err
 	}
@@ -140,8 +141,8 @@ func sessionLoopStateFrom(raw any) (*SessionLoopState, error) {
 	if s.NextDueAt, err = float("next_due_at"); err != nil {
 		return nil, err
 	}
-	s.AwaitingResponse = pyTruthy(d.GetOr("awaiting_response", false))
-	s.LastResponseDigest = pyrepr.Str(pyOr(d.GetOr("last_response_digest", ""), ""))
+	s.AwaitingResponse = pyTruthy(d.ValueOr("awaiting_response", false))
+	s.LastResponseDigest = anyutil.String(pyOr(d.ValueOr("last_response_digest", ""), ""))
 	return s, nil
 }
 
@@ -282,10 +283,10 @@ func (m *LoopManager) save(ctx context.Context) *SessionLoopState {
 }
 
 // Starts a loop replacing any existing one, self paced when intervalSeconds is nil
-func (m *LoopManager) Set(ctx context.Context, prompt string, intervalSeconds *int64, times int64, until string, route *pyjson.Object) (*SessionLoopState, error) {
+func (m *LoopManager) Set(ctx context.Context, prompt string, intervalSeconds *int64, times int64, until string, route *jsonutil.Object) (*SessionLoopState, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
-		return nil, &pyint.Error{Kind: "ValueError", Msg: "loop prompt is empty"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "loop prompt is empty"}
 	}
 	now := nowSeconds()
 	selfPaced := intervalSeconds == nil
@@ -306,7 +307,7 @@ func (m *LoopManager) Set(ctx context.Context, prompt string, intervalSeconds *i
 	st.MaxTicks = loopMaxTicksDefault(ctx)
 	st.CreatedAt, st.NextDueAt = now, now
 	if route != nil {
-		st.Route = route.Copy()
+		st.Route = route.Clone()
 	}
 	m.state = st
 	return m.save(ctx), nil
@@ -361,8 +362,8 @@ func (m *LoopManager) Clear(ctx context.Context) bool {
 // Python membership of a stored value in a set of strings, the TypeError for an unhashable value
 func pyStatusIn(v any, members ...string) (bool, error) {
 	switch v.(type) {
-	case []any, *pyjson.Object:
-		return false, &pyint.Error{Kind: "TypeError", Msg: "stored loop status is " + errchain.Kind(v) + " where text was expected"}
+	case []any, *jsonutil.Object:
+		return false, &errorutil.Error{Kind: "TypeError", Msg: "stored loop status is " + errchain.Kind(v) + " where text was expected"}
 	}
 	for _, m := range members {
 		if v == m {

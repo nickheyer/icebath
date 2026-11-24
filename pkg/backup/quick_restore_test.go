@@ -15,8 +15,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Snapshot id of a home through the public entry point
@@ -188,7 +188,7 @@ func seedConfig(t *testing.T) (string, string) {
 	return h, cfg
 }
 
-func restoreConfig(t *testing.T, id, h string) *pyjson.Object {
+func restoreConfig(t *testing.T, id, h string) *jsonutil.Object {
 	t.Helper()
 	result, err := RestoreConfigModelSettingsIfRewritten(context.Background(), id, h)
 	if err != nil {
@@ -306,7 +306,7 @@ func TestRestoreConfigModelSettingsIsANoOpWithoutFileTooling(t *testing.T) {
 	}
 }
 
-func preUpdateSnaps(t *testing.T, invoking string) *pyjson.Object {
+func preUpdateSnaps(t *testing.T, invoking string) *jsonutil.Object {
 	t.Helper()
 	keep := 1
 	snaps, err := CreatePreUpdateSnapshotsAllProfiles(invoking, &keep, nil)
@@ -346,7 +346,7 @@ func TestPerProfileCronRestoreHealthyProfilesUntouched(t *testing.T) {
 
 func TestPerProfileCronRestoreEmptyMapIsNoop(t *testing.T) {
 	profilesFixture(t)
-	if restored := RestoreCronJobsAllProfiles(pyjson.NewObject(), ""); restored == nil || len(restored) != 0 {
+	if restored := RestoreCronJobsAllProfiles(jsonutil.NewObject(), ""); restored == nil || len(restored) != 0 {
 		t.Fatalf("restored %v", restored)
 	}
 }

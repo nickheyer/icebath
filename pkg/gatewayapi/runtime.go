@@ -12,13 +12,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Validated model routes, invalid shapes dropped with a warning and never raised
@@ -27,9 +27,9 @@ func parseModelRoutes(raw any) *modelRouteTable {
 	var keys []string
 	var get func(string) any
 	switch m := raw.(type) {
-	case *pyjson.Object:
-		keys = m.Keys
-		get = func(k string) any { return m.GetOr(k, nil) }
+	case *jsonutil.Object:
+		keys = m.Keys()
+		get = func(k string) any { return m.ValueOr(k, nil) }
 	case map[string]any:
 		for k := range m {
 			keys = append(keys, k)
@@ -37,8 +37,8 @@ func parseModelRoutes(raw any) *modelRouteTable {
 		sort.Strings(keys)
 		get = func(k string) any { return m[k] }
 	default:
-		if pyrepr.Truthy(raw) {
-			pkgLog().Warn(fmt.Sprintf("api_server model_routes ignored: expected a mapping, got %s", pyrepr.TypeName(raw)))
+		if anyutil.IsTrue(raw) {
+			pkgLog().Warn(fmt.Sprintf("api_server model_routes ignored: expected a mapping, got %s", anyutil.Kind(raw)))
 		}
 		return table
 	}
@@ -47,7 +47,7 @@ func parseModelRoutes(raw any) *modelRouteTable {
 		cfg := get(alias)
 		var fields func(string) (any, bool)
 		switch c := cfg.(type) {
-		case *pyjson.Object:
+		case *jsonutil.Object:
 			fields = c.Get
 		case map[string]any:
 			fields = func(k string) (any, bool) { v, ok := c[k]; return v, ok }
@@ -57,19 +57,19 @@ func parseModelRoutes(raw any) *modelRouteTable {
 			if aliasStr == "" {
 				label = alias
 			}
-			pkgLog().Warn(fmt.Sprintf("api_server model_routes: dropping invalid route entry %s", pyrepr.Repr(label)))
+			pkgLog().Warn(fmt.Sprintf("api_server model_routes: dropping invalid route entry %s", anyutil.Quote(label)))
 			continue
 		}
 		route := map[string]string{}
 		for _, key := range []string{"model", "provider", "api_key", "base_url"} {
 			if v, ok := fields(key); ok && v != nil {
-				if s := strings.TrimSpace(pyrepr.Str(v)); s != "" {
+				if s := strings.TrimSpace(anyutil.String(v)); s != "" {
 					route[key] = s
 				}
 			}
 		}
 		if route["model"] == "" {
-			pkgLog().Warn(fmt.Sprintf("api_server model_routes: route %s has no 'model'; dropping", pyrepr.Repr(aliasStr)))
+			pkgLog().Warn(fmt.Sprintf("api_server model_routes: route %s has no 'model'; dropping", anyutil.Quote(aliasStr)))
 			continue
 		}
 		if _, exists := table.routes[aliasStr]; !exists {
@@ -90,15 +90,15 @@ func (a *APIServerAdapter) resolveRoute(modelAlias any) map[string]string {
 }
 
 // Model persisted on a session row, empty for none or the virtual alias
-func (a *APIServerAdapter) storedSessionModel(session *pyjson.Object) string {
+func (a *APIServerAdapter) storedSessionModel(session *jsonutil.Object) string {
 	if session == nil {
 		return ""
 	}
 	stored, _ := session.Get("model")
-	if !pyrepr.Truthy(stored) || stored == a.modelName {
+	if !anyutil.IsTrue(stored) || stored == a.modelName {
 		return ""
 	}
-	return pyrepr.Str(stored)
+	return anyutil.String(stored)
 }
 
 var runtimeIDUnsafeRE = regexp.MustCompile("[\r\n\x00]")
@@ -107,7 +107,7 @@ var runtimeIDUnsafeRE = regexp.MustCompile("[\r\n\x00]")
 func cleanRuntimeID(value any, maxLen int) string {
 	text := ""
 	if value != nil {
-		text = strings.TrimSpace(pyrepr.Str(value))
+		text = strings.TrimSpace(anyutil.String(value))
 	}
 	if len([]rune(text)) > maxLen || runtimeIDUnsafeRE.MatchString(text) {
 		return ""
@@ -129,27 +129,27 @@ func splitProviderPrefixedModel(model string) (string, string) {
 }
 
 // Reasoning config and service tier a model options mapping asks for
-func runtimeOptionsFromModelOptions(modelOptions any) *pyjson.Object {
-	opts, ok := modelOptions.(*pyjson.Object)
+func runtimeOptionsFromModelOptions(modelOptions any) *jsonutil.Object {
+	opts, ok := modelOptions.(*jsonutil.Object)
 	if !ok {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	out := pyjson.NewObject()
-	if reasoning, ok := opts.GetOr("reasoning", nil).(*pyjson.Object); ok {
+	out := jsonutil.NewObject()
+	if reasoning, ok := opts.ValueOr("reasoning", nil).(*jsonutil.Object); ok {
 		enabled, _ := reasoning.Get("enabled")
-		effort := cleanRuntimeID(reasoning.GetOr("effort", nil), 32)
+		effort := cleanRuntimeID(reasoning.ValueOr("effort", nil), 32)
 		switch {
 		case enabled == false:
-			out.Set("reasoning_config", pyjson.ObjectOf("enabled", false))
+			out.Set("reasoning_config", jsonutil.ObjectOf("enabled", false))
 		case effort != "":
-			out.Set("reasoning_config", pyjson.ObjectOf("enabled", true, "effort", effort))
+			out.Set("reasoning_config", jsonutil.ObjectOf("enabled", true, "effort", effort))
 		case enabled == true:
-			out.Set("reasoning_config", pyjson.ObjectOf("enabled", true))
+			out.Set("reasoning_config", jsonutil.ObjectOf("enabled", true))
 		}
 	}
-	if tier := cleanRuntimeID(opts.GetOr("service_tier", nil), 32); tier != "" {
+	if tier := cleanRuntimeID(opts.ValueOr("service_tier", nil), 32); tier != "" {
 		out.Set("service_tier", tier)
-	} else if gateway.APICoerceRequestBool(opts.GetOr("fast", nil), false) {
+	} else if gateway.APICoerceRequestBool(opts.ValueOr("fast", nil), false) {
 		out.Set("service_tier", "priority")
 	}
 	return out
@@ -160,25 +160,25 @@ type runtimeRequest struct {
 	requestedProvider, requestedModel, requestedRawModel string
 	route                                                map[string]string
 	routeSource                                          string
-	runtimeOptions                                       *pyjson.Object
+	runtimeOptions                                       *jsonutil.Object
 	requireModelLock                                     bool
-	modelOptions                                         *pyjson.Object
+	modelOptions                                         *jsonutil.Object
 	persistedLock                                        bool
 }
 
 // Requested provider and model as the wire mapping
-func (r *runtimeRequest) requested() *pyjson.Object {
+func (r *runtimeRequest) requested() *jsonutil.Object {
 	var model any
 	if r.requestedModel != "" {
 		model = r.requestedModel
 	}
-	return pyjson.ObjectOf("provider", r.requestedProvider, "model", model, "raw_model", r.requestedRawModel)
+	return jsonutil.ObjectOf("provider", r.requestedProvider, "model", model, "raw_model", r.requestedRawModel)
 }
 
 // Runtime request parsed from a session chat body
-func (a *APIServerAdapter) sessionRuntimeRequestFromBody(body *pyjson.Object) *runtimeRequest {
-	rawModel := cleanRuntimeID(pyrepr.Or(body.GetOr("model", nil), body.GetOr("model_id", nil)), 200)
-	rawProvider := cleanRuntimeID(pyrepr.Or(body.GetOr("provider", nil), body.GetOr("provider_id", nil)), 80)
+func (a *APIServerAdapter) sessionRuntimeRequestFromBody(body *jsonutil.Object) *runtimeRequest {
+	rawModel := cleanRuntimeID(anyutil.Or(body.ValueOr("model", nil), body.ValueOr("model_id", nil)), 200)
+	rawProvider := cleanRuntimeID(anyutil.Or(body.ValueOr("provider", nil), body.ValueOr("provider_id", nil)), 80)
 	prefixedProvider, splitModel := splitProviderPrefixedModel(rawModel)
 	providerName := rawProvider
 	if providerName == "" {
@@ -210,13 +210,13 @@ func (a *APIServerAdapter) sessionRuntimeRequestFromBody(body *pyjson.Object) *r
 		}
 		routeSource = "raw_request"
 	}
-	modelOptions, _ := body.GetOr("model_options", nil).(*pyjson.Object)
+	modelOptions, _ := body.ValueOr("model_options", nil).(*jsonutil.Object)
 	if modelOptions == nil {
-		modelOptions = pyjson.NewObject()
+		modelOptions = jsonutil.NewObject()
 	}
 	return &runtimeRequest{requestedProvider: providerName, requestedModel: model, requestedRawModel: rawModel,
-		route: route, routeSource: routeSource, runtimeOptions: runtimeOptionsFromModelOptions(body.GetOr("model_options", nil)),
-		requireModelLock: gateway.APICoerceRequestBool(body.GetOr("require_model_lock", nil), false), modelOptions: modelOptions}
+		route: route, routeSource: routeSource, runtimeOptions: runtimeOptionsFromModelOptions(body.ValueOr("model_options", nil)),
+		requireModelLock: gateway.APICoerceRequestBool(body.ValueOr("require_model_lock", nil), false), modelOptions: modelOptions}
 }
 
 func copyRoute(route map[string]string) map[string]string {
@@ -228,11 +228,11 @@ func copyRoute(route map[string]string) map[string]string {
 }
 
 // Model and provider cleaned from a requested or lock mapping
-func requestedIDs(requested *pyjson.Object) (string, string) {
+func requestedIDs(requested *jsonutil.Object) (string, string) {
 	if requested == nil {
 		return "", ""
 	}
-	return cleanRuntimeID(requested.GetOr("model", nil), 200), cleanRuntimeID(requested.GetOr("provider", nil), 80)
+	return cleanRuntimeID(requested.ValueOr("model", nil), 200), cleanRuntimeID(requested.ValueOr("provider", nil), 80)
 }
 
 // 400 or 409 when a required model lock has nothing to route or would fall back to the global model
@@ -274,7 +274,7 @@ func (a *APIServerAdapter) persistSessionRuntimeLock(ctx context.Context, sessio
 	}
 	routeSource := r.routeSource
 	if err := db.UpdateSessionRuntimeLock(ctx, sessionID, state.RuntimeLock{Model: modelArg, Provider: providerArg,
-		ModelOptions: pyjson.Plain(r.modelOptions), RouteSource: &routeSource, Confirmed: r.requireModelLock}); err != nil {
+		ModelOptions: jsonutil.Plain(r.modelOptions), RouteSource: &routeSource, Confirmed: r.requireModelLock}); err != nil {
 		pkgLog().Warn(fmt.Sprintf("[%s] failed to persist session runtime lock for %s", a.Name(), sessionID), "error", err)
 		return false
 	}
@@ -282,33 +282,33 @@ func (a *APIServerAdapter) persistSessionRuntimeLock(ctx context.Context, sessio
 }
 
 // Session model config as a mapping, a JSON string decoded and anything else empty
-func parseSessionModelConfig(raw any) *pyjson.Object {
+func parseSessionModelConfig(raw any) *jsonutil.Object {
 	switch v := raw.(type) {
-	case *pyjson.Object:
-		return v.Copy()
+	case *jsonutil.Object:
+		return v.Clone()
 	case map[string]any:
-		o, _ := pyjson.AsObject(v)
+		o, _ := jsonutil.AsObject(v)
 		return o
 	case string:
 		if strings.TrimSpace(v) != "" {
-			if parsed, err := pyjson.Loads(v); err == nil {
-				if o, ok := parsed.(*pyjson.Object); ok {
+			if parsed, err := jsonutil.Decode(v); err == nil {
+				if o, ok := parsed.(*jsonutil.Object); ok {
 					return o
 				}
 			}
 		}
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Runtime request a confirmed persisted browser model lock pins, nil without one
-func (a *APIServerAdapter) runtimeRequestFromPersistedSessionLock(session *pyjson.Object, body *pyjson.Object) *runtimeRequest {
+func (a *APIServerAdapter) runtimeRequestFromPersistedSessionLock(session *jsonutil.Object, body *jsonutil.Object) *runtimeRequest {
 	if session == nil {
 		return nil
 	}
-	modelConfig := parseSessionModelConfig(session.GetOr("model_config", nil))
-	lock, ok := modelConfig.GetOr("browser_model_lock", nil).(*pyjson.Object)
-	if !ok || !gateway.APICoerceRequestBool(lock.GetOr("confirmed", nil), false) {
+	modelConfig := parseSessionModelConfig(session.ValueOr("model_config", nil))
+	lock, ok := modelConfig.ValueOr("browser_model_lock", nil).(*jsonutil.Object)
+	if !ok || !gateway.APICoerceRequestBool(lock.ValueOr("confirmed", nil), false) {
 		return nil
 	}
 	model, providerName := requestedIDs(lock)
@@ -316,7 +316,7 @@ func (a *APIServerAdapter) runtimeRequestFromPersistedSessionLock(session *pyjso
 		return nil
 	}
 	var route map[string]string
-	if strings.ToLower(cleanRuntimeID(lock.GetOr("route_source", nil), 64)) == "model_routes" {
+	if strings.ToLower(cleanRuntimeID(lock.ValueOr("route_source", nil), 64)) == "model_routes" {
 		if model != "" {
 			route = a.resolveRoute(model)
 		}
@@ -332,13 +332,13 @@ func (a *APIServerAdapter) runtimeRequestFromPersistedSessionLock(session *pyjso
 	if len(route) == 0 {
 		route = nil
 	}
-	modelOptions, ok := body.GetOr("model_options", nil).(*pyjson.Object)
+	modelOptions, ok := body.ValueOr("model_options", nil).(*jsonutil.Object)
 	if !ok {
-		modelOptions, _ = lock.GetOr("model_options", nil).(*pyjson.Object)
+		modelOptions, _ = lock.ValueOr("model_options", nil).(*jsonutil.Object)
 	}
 	options := runtimeOptionsFromModelOptions(modelOptions)
 	if modelOptions == nil {
-		modelOptions = pyjson.NewObject()
+		modelOptions = jsonutil.NewObject()
 	}
 	return &runtimeRequest{requestedProvider: providerName, requestedModel: model, requestedRawModel: model, route: route,
 		routeSource: "session_model_lock", runtimeOptions: options, requireModelLock: true, modelOptions: modelOptions,
@@ -346,7 +346,7 @@ func (a *APIServerAdapter) runtimeRequestFromPersistedSessionLock(session *pyjso
 }
 
 // Body runtime request, else the persisted session lock when the body names no model or provider
-func (a *APIServerAdapter) effectiveSessionRuntimeRequest(session, body *pyjson.Object) *runtimeRequest {
+func (a *APIServerAdapter) effectiveSessionRuntimeRequest(session, body *jsonutil.Object) *runtimeRequest {
 	r := a.sessionRuntimeRequestFromBody(body)
 	if r.requestedModel != "" || r.requestedProvider != "" {
 		return r
@@ -358,35 +358,35 @@ func (a *APIServerAdapter) effectiveSessionRuntimeRequest(session, body *pyjson.
 }
 
 // Wire runtime metadata with cleaned ids, the requested pair and lock state when present
-func sanitizeRuntimeMetadata(runtime, requestedRuntime *pyjson.Object, routeSource, modelLock string) *pyjson.Object {
-	payload := pyjson.NewObject()
+func sanitizeRuntimeMetadata(runtime, requestedRuntime *jsonutil.Object, routeSource, modelLock string) *jsonutil.Object {
+	payload := jsonutil.NewObject()
 	if runtime != nil {
-		payload = runtime.Copy()
+		payload = runtime.Clone()
 	}
 	if routeSource == "" {
 		routeSource = "global"
 	}
-	providerName := cleanRuntimeID(firstTruthy(payload.GetOr("provider", nil), payload.GetOr("provider_id", nil), payload.GetOr("effective_provider", nil)), 80)
-	model := cleanRuntimeID(firstTruthy(payload.GetOr("model", nil), payload.GetOr("model_id", nil), payload.GetOr("effective_model", nil)), 200)
-	source := cleanRuntimeID(pyrepr.Or(payload.GetOr("route_source", nil), routeSource), 64)
+	providerName := cleanRuntimeID(firstTruthy(payload.ValueOr("provider", nil), payload.ValueOr("provider_id", nil), payload.ValueOr("effective_provider", nil)), 80)
+	model := cleanRuntimeID(firstTruthy(payload.ValueOr("model", nil), payload.ValueOr("model_id", nil), payload.ValueOr("effective_model", nil)), 200)
+	source := cleanRuntimeID(anyutil.Or(payload.ValueOr("route_source", nil), routeSource), 64)
 	if source == "" {
 		source = "global"
 	}
-	result := pyjson.ObjectOf("provider", providerName, "model", model, "route_source", source)
-	payloadRequested, _ := payload.GetOr("requested", nil).(*pyjson.Object)
+	result := jsonutil.ObjectOf("provider", providerName, "model", model, "route_source", source)
+	payloadRequested, _ := payload.ValueOr("requested", nil).(*jsonutil.Object)
 	if (requestedRuntime != nil && requestedRuntime.Len() > 0) || (payloadRequested != nil && payloadRequested.Len() > 0) {
 		src := requestedRuntime
 		if src == nil || src.Len() == 0 {
 			src = payloadRequested
 		}
 		m, p := requestedIDs(src)
-		result.Set("requested", pyjson.ObjectOf("provider", p, "model", m))
+		result.Set("requested", jsonutil.ObjectOf("provider", p, "model", m))
 	}
 	lockValue := any(modelLock)
 	if modelLock == "" {
-		lockValue = payload.GetOr("model_lock", nil)
+		lockValue = payload.ValueOr("model_lock", nil)
 	}
-	if pyrepr.Truthy(lockValue) {
+	if anyutil.IsTrue(lockValue) {
 		result.Set("model_lock", cleanRuntimeID(lockValue, 32))
 	}
 	return result
@@ -395,8 +395,8 @@ func sanitizeRuntimeMetadata(runtime, requestedRuntime *pyjson.Object, routeSour
 // Lowercased session source restricted to known surfaces, browser and its old spelling mapped to icebath_browser
 func normalizeSessionSource(value any) string {
 	text := ""
-	if pyrepr.Truthy(value) {
-		text = strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	if anyutil.IsTrue(value) {
+		text = strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 	}
 	switch text {
 	case "api_server", "icebath_browser", "cli", "telegram", "discord", "slack":
@@ -646,8 +646,8 @@ type agentOptions struct {
 	route                  map[string]string
 	sessionModel           string
 	confirmedRuntimeLock   bool
-	roomDispatch           *pyjson.Object
-	roomExecutionPolicy    *pyjson.Object
+	roomDispatch           *jsonutil.Object
+	roomExecutionPolicy    *jsonutil.Object
 	hasRoomDispatch        bool
 	hasRoomExecutionPolicy bool
 	env                    *tools.Env
@@ -743,7 +743,7 @@ func (a *APIServerAdapter) createAgent(ctx context.Context, o agentOptions) (*ag
 		return nil, err
 	}
 	if requestServiceTier != gateway.APIRequestOptionMissing {
-		opts.ServiceTier = pyrepr.Str(requestServiceTier)
+		opts.ServiceTier = anyutil.String(requestServiceTier)
 		if requestServiceTier == nil {
 			opts.ServiceTier = ""
 		}
@@ -790,7 +790,7 @@ func applyRuntimeKwargs(opts *agent.AIAgentOptions, kwargs map[string]any) {
 		opts.Args = append([]string(nil), args...)
 	case []any:
 		for _, v := range args {
-			opts.Args = append(opts.Args, pyrepr.Str(v))
+			opts.Args = append(opts.Args, anyutil.String(v))
 		}
 	}
 	if pool, ok := kwargs["credential_pool"].(*provider.Pool); ok {
@@ -802,14 +802,14 @@ func applyRuntimeKwargs(opts *agent.AIAgentOptions, kwargs map[string]any) {
 	if caps, ok := kwargs["capabilities"].(map[string]any); ok {
 		opts.Capabilities = map[string]bool{}
 		for k, v := range caps {
-			opts.Capabilities[k] = pyrepr.Truthy(v)
+			opts.Capabilities[k] = anyutil.IsTrue(v)
 		}
 	}
 }
 
 // Copies the checkpoint config kwargs onto the agent options, a limit Python int refuses returning its error
 func applyCheckpointKwargs(opts *agent.AIAgentOptions, kwargs map[string]any) error {
-	opts.CheckpointsEnabled = pyrepr.Truthy(kwargs["checkpoints_enabled"])
+	opts.CheckpointsEnabled = anyutil.IsTrue(kwargs["checkpoints_enabled"])
 	for _, field := range []struct {
 		key   string
 		limit **int

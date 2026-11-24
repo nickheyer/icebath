@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Answer that holds the request until the caller gives up, a turn still running at the owner
@@ -42,7 +41,7 @@ func wireValue(t *testing.T, v any) any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := pyjson.Loads(string(raw))
+	decoded, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +49,7 @@ func wireValue(t *testing.T, v any) any {
 }
 
 func (p *fakeGatewayPeer) RPCTimeout(ctx context.Context, method string, params map[string]any, timeout time.Duration) (any, error) {
-	plain, _ := pyjson.Plain(params).(map[string]any)
+	plain, _ := jsonutil.Plain(params).(map[string]any)
 	p.mu.Lock()
 	p.calls = append(p.calls, fakeGatewayCall{method, plain})
 	p.mu.Unlock()

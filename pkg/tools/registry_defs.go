@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Env copy telling availability checks whether kanban was named explicitly in this schema build
@@ -64,10 +64,10 @@ func (r *Registry) Definitions(ctx context.Context, env *Env, toolNames map[stri
 			}
 			continue
 		}
-		schema := entry.Schema.Copy()
+		schema := entry.Schema.Clone()
 		schema.Set("name", entry.Name)
 		if entry.DynamicSchema != nil {
-			schema.Update(definitionDynamicOverrides(env, entry))
+			schema.Merge(definitionDynamicOverrides(env, entry))
 		}
 		result = append(result, fnDef(schema))
 	}
@@ -75,7 +75,7 @@ func (r *Registry) Definitions(ctx context.Context, env *Env, toolNames map[stri
 }
 
 // Runtime dynamic overrides with a panic falling back to the static schema
-func definitionDynamicOverrides(env *Env, entry *Def) (overrides *pyjson.Object) {
+func definitionDynamicOverrides(env *Env, entry *Def) (overrides *jsonutil.Object) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			overrides = nil
@@ -120,7 +120,7 @@ func ComposeSchemaRewriters(fns ...SchemaRewriter) SchemaRewriter {
 }
 
 // OpenAI function tool envelope around a schema
-func fnDef(schema *pyjson.Object) map[string]any {
+func fnDef(schema *jsonutil.Object) map[string]any {
 	return map[string]any{"type": "function", "function": schema}
 }
 
@@ -128,15 +128,15 @@ func fnDef(schema *pyjson.Object) map[string]any {
 var toolDefKeyOrder = []string{"type", "function"}
 
 // Envelope as an ordered dict in build order, keys added after the build following in sorted order
-func ToolDefObject(td map[string]any) *pyjson.Object {
-	out := pyjson.NewObject()
+func ToolDefObject(td map[string]any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, k := range toolDefKeyOrder {
 		if v, ok := td[k]; ok {
 			out.Set(k, v)
 		}
 	}
 	for _, k := range sortedKeys(td) {
-		if _, placed := out.Vals[k]; !placed {
+		if _, placed := out.Get(k); !placed {
 			out.Set(k, td[k])
 		}
 	}
@@ -144,8 +144,8 @@ func ToolDefObject(td map[string]any) *pyjson.Object {
 }
 
 // Copy of the function schema with its description replaced in place
-func fnWithDescription(fn *pyjson.Object, desc string) *pyjson.Object {
-	out := fn.Copy()
+func fnWithDescription(fn *jsonutil.Object, desc string) *jsonutil.Object {
+	out := fn.Clone()
 	out.Set("description", desc)
 	return out
 }

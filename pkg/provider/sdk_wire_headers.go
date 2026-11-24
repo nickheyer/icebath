@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,10 +22,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
+	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Versions of the pinned openai SDK and httpx whose wire identity the model clients present
@@ -58,7 +62,7 @@ func stainlessOS() string {
 	case "linux":
 		return "Linux"
 	}
-	if label := strings.ToLower(pyplatform.Platform()); label != "" {
+	if label := strings.ToLower(hostutil.Platform()); label != "" {
 		return "Other:" + label
 	}
 	return "Unknown"
@@ -66,7 +70,7 @@ func stainlessOS() string {
 
 // Architecture label get_architecture of a Stainless SDK reports for this host
 func stainlessArch() string {
-	machine := strings.ToLower(pyplatform.Machine())
+	machine := strings.ToLower(hostutil.Machine())
 	switch {
 	case machine == "arm64" || machine == "aarch64":
 		return "arm64"
@@ -238,12 +242,12 @@ func (d *pyHeaderDict) stripped() []pyhttpx.HeaderLine {
 func orderedExtraHeaders(raw any) []pyhttpx.HeaderLine {
 	var out []pyhttpx.HeaderLine
 	switch m := raw.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil
 		}
-		for _, k := range m.Keys {
-			if v := m.Vals[k]; v != nil {
+		for _, k := range m.Keys() {
+			if v := m.Value(k); v != nil {
 				out = append(out, pyhttpx.HeaderLine{Name: k, Value: cfgString(v)})
 			}
 		}
@@ -254,7 +258,7 @@ func orderedExtraHeaders(raw any) []pyhttpx.HeaderLine {
 			}
 		}
 	case map[string]string:
-		for _, k := range pyhttpx.HeaderOrder(m) {
+		for _, k := range slices.Sorted(maps.Keys(m)) {
 			out = append(out, pyhttpx.HeaderLine{Name: k, Value: m[k]})
 		}
 	case []pyhttpx.HeaderLine:
@@ -285,7 +289,7 @@ func OrderedHeaders(m map[string]string, keys []string) map[string]string {
 }
 
 // HeaderKeys are the keys of a header map in the order a Python dict of them iterates
-func HeaderKeys(m map[string]string) []string { return pyhttpx.HeaderOrder(m) }
+func HeaderKeys(m map[string]string) []string { return slices.Sorted(maps.Keys(m)) }
 
 // AnyHeaderMap is a header mapping of arbitrary values as a string map in declaration order, values printed with fmt
 func AnyHeaderMap(m map[string]any) map[string]string {
@@ -657,7 +661,7 @@ func httpxWireTransport(limits httpxLimits, connect time.Duration, wrap func(net
 
 // HTTP/1.1 transport of an httpx client built with the given verify context
 func httpxWireTransportTLS(limits httpxLimits, connect time.Duration, wrap func(net.Conn) net.Conn, cfg *tls.Config) (*http.Transport, error) {
-	proxies, err := pyhttpx.NewEnvProxies(pyurl.Getproxies())
+	proxies, err := pyhttpx.NewEnvProxies(httputil.Proxies())
 	if err != nil {
 		return nil, err
 	}
@@ -776,13 +780,13 @@ func (c *awsServiceClient) botocoreUserAgent(features []string) string {
 	default:
 		osName = ""
 	}
-	release := botocoreUAComponent(pyplatform.Release())
+	release := botocoreUAComponent(hostutil.Release())
 	if osName != "" {
 		parts = append(parts, "os/"+osName+"#"+release)
 	} else {
 		parts = append(parts, "os/other", "md/"+botocoreUAComponent(pyplatform.System())+"#"+release)
 	}
-	if machine := strings.ToLower(pyplatform.Machine()); machine != "" {
+	if machine := strings.ToLower(hostutil.Machine()); machine != "" {
 		parts = append(parts, "md/arch#"+botocoreUAComponent(machine))
 	}
 	parts = append(parts, "lang/python#"+pinnedPythonRuntimeVersion(), "md/pyimpl#CPython")

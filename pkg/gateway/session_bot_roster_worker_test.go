@@ -5,8 +5,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Operator reader of the alpha profile's roster rows
@@ -31,7 +32,7 @@ func storeRosterSession(t *testing.T, ctx context.Context, db *state.SessionDB, 
 // Worker summary fields of a roster read as a plain mapping
 func rosterWorker(t *testing.T, fields map[string]any) map[string]any {
 	t.Helper()
-	worker, _ := pyjson.Plain(fields["worker_session"]).(map[string]any)
+	worker, _ := jsonutil.Plain(fields["worker_session"]).(map[string]any)
 	return worker
 }
 
@@ -54,10 +55,10 @@ func TestTheNewestLiveWorkerIsReportedWithTheContractFields(t *testing.T) {
 	}
 	worker := rosterWorker(t, fields)
 	want := map[string]any{"id": "work-new", "source": "kanban", "title": "Task 9", "last_active": int64(3000)}
-	if !pyjson.Equal(worker, want) {
+	if !anyutil.Equal(worker, want) {
 		t.Fatalf("worker_session %v", worker)
 	}
-	if last, _ := pyjson.Plain(fields["last_session"]).(map[string]any); last != nil && last["id"] == "work-new" {
+	if last, _ := jsonutil.Plain(fields["last_session"]).(map[string]any); last != nil && last["id"] == "work-new" {
 		t.Fatalf("the worker became the last session %v", last)
 	}
 	keys := make([]string, 0, len(fields))
@@ -91,7 +92,7 @@ func TestTheOwnRowAndAHostScopedSiblingRowBothCarryTheWorker(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if worker := rosterWorker(t, own); worker["id"] != "work-alpha" || !pyjson.Equal(worker["last_active"], int64(2000)) {
+	if worker := rosterWorker(t, own); worker["id"] != "work-alpha" || !anyutil.Equal(worker["last_active"], int64(2000)) {
 		t.Fatalf("own worker %v", worker)
 	}
 	if worker := rosterWorker(t, siblingSessions(ctx, a, rosterWorkerReader)); worker["id"] != "work-alpha" {

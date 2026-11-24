@@ -8,8 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type recordedCall struct {
@@ -24,8 +24,8 @@ func webSearchExecutor(t *testing.T) (*Executor, *fakeExecutorHost, func() []rec
 	var mu sync.Mutex
 	var calls []recordedCall
 	r := NewRegistry()
-	r.Register(Def{Name: "web_search", Toolset: "web", Schema: pyjson.ObjectOf("name", "web_search", "description", "search",
-		"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())),
+	r.Register(Def{Name: "web_search", Toolset: "web", Schema: jsonutil.ObjectOf("name", "web_search", "description", "search",
+		"parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf())),
 		Handler: func(_ context.Context, c *Call) string {
 			mu.Lock()
 			calls = append(calls, recordedCall{c.Name, c.Args, c.ToolCallID})

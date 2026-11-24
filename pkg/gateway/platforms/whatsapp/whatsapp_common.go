@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Words a text switch in the platform config counts as on
@@ -186,10 +186,10 @@ func CoerceAllowList(raw any) map[string]bool {
 	var parts []string
 	if list, ok := raw.([]any); ok {
 		for _, part := range list {
-			parts = append(parts, pyrepr.Str(part))
+			parts = append(parts, anyutil.String(part))
 		}
 	} else {
-		parts = strings.Split(pyrepr.Str(raw), ",")
+		parts = strings.Split(anyutil.String(raw), ",")
 	}
 	for _, part := range parts {
 		if part = strings.TrimSpace(part); part != "" {
@@ -244,10 +244,10 @@ func (b *WhatsAppBehaviorMixin) LiveDMAllowFrom(ctx context.Context) (map[string
 
 // WhatsApp id with its device qualifier dropped so it equals the bare form
 func NormalizeWhatsAppID(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	out, err := whatsappDeviceSuffix.Replace(strings.TrimSpace(pyrepr.Str(value)), "", -1, -1)
+	out, err := whatsappDeviceSuffix.Replace(strings.TrimSpace(anyutil.String(value)), "", -1, -1)
 	if err != nil {
 		panic(err)
 	}
@@ -295,7 +295,7 @@ func (b *WhatsAppBehaviorMixin) currentMentionPatterns(ctx context.Context) []*r
 	if v, err := settings.Resolve(gateway.SettingsContext(ctx), settings.WhatsappMentionPatterns.Key); err == nil {
 		raw = v.Value
 	}
-	source := pyrepr.Repr(raw)
+	source := anyutil.Quote(raw)
 	b.mentionPatterns.mu.Lock()
 	defer b.mentionPatterns.mu.Unlock()
 	if b.mentionPatterns.source != source {
@@ -314,7 +314,7 @@ func (b *WhatsAppBehaviorMixin) compileMentionPatterns(patterns any) []*regexp2.
 	}
 	list, ok := patterns.([]any)
 	if !ok {
-		pkgLog().Warn(fmt.Sprintf("[%s] whatsapp mention_patterns must be a list or text; got %s", b.Name, pyrepr.TypeName(patterns)))
+		pkgLog().Warn(fmt.Sprintf("[%s] whatsapp mention_patterns must be a list or text; got %s", b.Name, anyutil.Kind(patterns)))
 		return nil
 	}
 	var compiled []*regexp2.Regexp
@@ -325,7 +325,7 @@ func (b *WhatsAppBehaviorMixin) compileMentionPatterns(patterns any) []*regexp2.
 		}
 		re, err := pyre.CompileIgnoreCase(text)
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("[%s] Invalid WhatsApp mention pattern %s: %s", b.Name, pyrepr.Repr(text), err))
+			pkgLog().Warn(fmt.Sprintf("[%s] Invalid WhatsApp mention pattern %s: %s", b.Name, anyutil.Quote(text), err))
 			continue
 		}
 		compiled = append(compiled, re)
@@ -367,8 +367,8 @@ func MessageMentionsBot(data map[string]any) bool {
 		}
 	}
 	body := ""
-	if pyrepr.Truthy(data["body"]) {
-		body = pyrepr.Str(data["body"])
+	if anyutil.IsTrue(data["body"]) {
+		body = anyutil.String(data["body"])
 	}
 	lowerBody := strings.ToLower(body)
 	for botID := range botIDs {
@@ -383,8 +383,8 @@ func MessageMentionsBot(data map[string]any) bool {
 // Whether a mention pattern of the profile in scope matches the message body
 func (b *WhatsAppBehaviorMixin) MessageMatchesMentionPatterns(ctx context.Context, data map[string]any) bool {
 	body := ""
-	if pyrepr.Truthy(data["body"]) {
-		body = pyrepr.Str(data["body"])
+	if anyutil.IsTrue(data["body"]) {
+		body = anyutil.String(data["body"])
 	}
 	for _, pattern := range b.currentMentionPatterns(ctx) {
 		if m, err := pattern.FindStringMatch(body); err == nil && m != nil {
@@ -421,18 +421,18 @@ func CleanBotMentionText(text string, data map[string]any) string {
 // Whether an inbound message is processed, broadcasts never and groups by policy and mention
 func (b *WhatsAppBehaviorMixin) ShouldProcessMessage(ctx context.Context, data map[string]any) (bool, error) {
 	chatID := ""
-	if pyrepr.Truthy(data["chatId"]) {
-		chatID = pyrepr.Str(data["chatId"])
+	if anyutil.IsTrue(data["chatId"]) {
+		chatID = anyutil.String(data["chatId"])
 	}
 	if IsBroadcastChat(chatID) {
 		return false, nil
 	}
-	if !pyrepr.Truthy(data["isGroup"]) {
+	if !anyutil.IsTrue(data["isGroup"]) {
 		sender := ""
-		if pyrepr.Truthy(data["senderId"]) {
-			sender = pyrepr.Str(data["senderId"])
-		} else if pyrepr.Truthy(data["from"]) {
-			sender = pyrepr.Str(data["from"])
+		if anyutil.IsTrue(data["senderId"]) {
+			sender = anyutil.String(data["senderId"])
+		} else if anyutil.IsTrue(data["from"]) {
+			sender = anyutil.String(data["from"])
 		}
 		return b.IsDMIntakeAllowed(ctx, sender)
 	}
@@ -443,8 +443,8 @@ func (b *WhatsAppBehaviorMixin) ShouldProcessMessage(ctx context.Context, data m
 		return true, nil
 	}
 	body := ""
-	if pyrepr.Truthy(data["body"]) {
-		body = pyrepr.Str(data["body"])
+	if anyutil.IsTrue(data["body"]) {
+		body = anyutil.String(data["body"])
 	}
 	return strings.HasPrefix(strings.TrimSpace(body), "/") || MessageIsReplyToBot(data) || MessageMentionsBot(data) ||
 		b.MessageMatchesMentionPatterns(ctx, data), nil

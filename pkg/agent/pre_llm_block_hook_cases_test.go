@@ -13,9 +13,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -220,14 +220,14 @@ func TestRetryAndUndoAfterABlockResubmitTheTypedText(t *testing.T) {
 		target, _ := rows[0].Get("id")
 		generation := int64(0)
 		receipt, err := db.MutateRuntimeSession(t.Context(), state.RuntimeMutation{Epoch: epoch, PrincipalID: "human", SessionID: "s-block", RequestID: "r",
-			ExpectedRevision: 0, ExpectedGeneration: &generation, Operation: "rewind", Payload: pyjson.ObjectOf("target_message_id", target)})
+			ExpectedRevision: 0, ExpectedGeneration: &generation, Operation: "rewind", Payload: jsonutil.ObjectOf("target_message_id", target)})
 		if err != nil {
 			t.Fatal(err)
 		}
 		message, _ := receipt.Get("target_message")
-		targetMessage, _ := message.(*pyjson.Object)
+		targetMessage, _ := message.(*jsonutil.Object)
 		if targetMessage == nil {
-			t.Fatalf("receipt target message %T %v in %v", message, message, receipt.Keys)
+			t.Fatalf("receipt target message %T %v in %v", message, message, receipt.Keys())
 		}
 		if got, _ := targetMessage.Get("content"); got != typed {
 			t.Fatalf("receipt target content %v", got)

@@ -7,8 +7,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -60,7 +59,7 @@ func commandcodeFetchModels(ctx context.Context, baseURL string, timeout time.Du
 	if timeout <= 0 {
 		timeout = 8 * time.Second
 	}
-	data, err := modelsGetJSON(ctx, commandcodeModelsURLFor(baseURL), timeout, pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "User-Agent", Value: profileUserAgent()}), nil)
+	data, err := modelsGetJSON(ctx, commandcodeModelsURLFor(baseURL), timeout, map[string]string{"Accept": "application/json", "User-Agent": profileUserAgent()}, nil)
 	if err == nil {
 		if _, isDict := data.(map[string]any); !isDict {
 			err = fmt.Errorf("the models reply is %s, expected a mapping", errchain.Kind(data))
@@ -92,14 +91,14 @@ func commandcodeModelsURLFor(baseURL string) string {
 }
 
 // DeepSeek ids get the native DeepSeek wire controls through the registered deepseek profile, other families none
-func commandcodeBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
+func commandcodeBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
 	m := strings.TrimSpace(hookString(kw, "model"))
 	if !strings.HasPrefix(strings.ToLower(m), "deepseek/") {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
 	native, ok := GetProviderProfile(hookCtx(kw), "deepseek")
 	if !ok {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
 	next := copyDict(kw)
 	next["model"] = m[strings.Index(m, "/")+1:]
@@ -118,16 +117,16 @@ func deepseekPluginProfiles() []Profile {
 }
 
 // Explicit thinking toggle with the effort on V4 and version less thinking ids, an off effort disabling thinking
-func deepseekBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
+func deepseekBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
 	m := strings.ToLower(strings.TrimSpace(hookString(kw, "model")))
 	versionedV4Plus := strings.HasPrefix(m, "deepseek-v") && !strings.HasPrefix(m, "deepseek-v3")
 	if !versionedV4Plus && !containsStr(deepseekThinkingCapableIDs, m) {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
 	c := hookReasoningCfg(reasoning)
 	extras, topLevel := thinkingToggleExtras(c, deepseekV4Efforts, deepseekV4Overrides, true)
 	if reasoning != nil && (c.effort == "none" || c.effort == "false" || c.effort == "disabled") {
-		return pyjson.ObjectOf("thinking", pyjson.ObjectOf("type", "disabled")), map[string]any{}
+		return jsonutil.ObjectOf("thinking", jsonutil.ObjectOf("type", "disabled")), map[string]any{}
 	}
 	return extras, topLevel
 }

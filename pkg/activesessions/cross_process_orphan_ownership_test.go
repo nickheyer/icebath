@@ -66,7 +66,7 @@ func TestUnlimitedSessionLeaseIsRealEvenWithoutACap(t *testing.T) {
 		t.Fatal("lease is disabled")
 	}
 	entries, err := RegistrySnapshot(ctx, registryHome, false)
-	if err != nil || len(entries) != 1 || entries[0].GetOr("session_id", nil) != "untracked-session" {
+	if err != nil || len(entries) != 1 || entries[0].ValueOr("session_id", nil) != "untracked-session" {
 		t.Fatalf("registry %v %v", entries, err)
 	}
 	if err := lease.Release(); err != nil {

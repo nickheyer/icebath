@@ -7,8 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Pins the requested model, a pick the model switch refuses recorded as the result's model error instead of a failed step
@@ -109,7 +109,7 @@ func InheritLaunchModel(ctx context.Context, path string) (bool, error) {
 	if !truthy(launchModel["provider"]) || !truthy(launchModel["default"]) {
 		return false, nil
 	}
-	providerName, model := pyrepr.Str(launchModel["provider"]), pyrepr.Str(launchModel["default"])
+	providerName, model := anyutil.String(launchModel["provider"]), anyutil.String(launchModel["default"])
 	if normalizedProvider, normalizedModel := provider.NormalizeMainModelAssignment(launch, providerName, model); normalizedProvider == providerName {
 		model = normalizedModel
 	}

@@ -2,14 +2,16 @@ package commands
 
 import (
 	"strings"
+
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
-// ShlexArgs splits the tokens after the command word, whitespace splitting on unbalanced quotes
+// ShlexArgs splits the tokens after the command word with POSIX shell quoting, whitespace splitting on unbalanced quotes
 func ShlexArgs(cmd string) []string {
 	if strings.TrimSpace(cmd) == "" {
 		return nil
 	}
-	tokens, err := Shlex(cmd)
+	tokens, err := shellutil.Split(cmd)
 	if err != nil {
 		tokens = strings.Fields(cmd)
 	}
@@ -17,69 +19,6 @@ func ShlexArgs(cmd string) []string {
 		return nil
 	}
 	return tokens[1:]
-}
-
-// ShlexError reports unbalanced quoting
-type ShlexError struct{ Message string }
-
-func (e *ShlexError) Error() string { return e.Message }
-
-// Shlex splits a line with POSIX shell quoting rules
-func Shlex(s string) ([]string, error) {
-	var out []string
-	var cur strings.Builder
-	inWord := false
-	runes := []rune(s)
-	for i := 0; i < len(runes); i++ {
-		c := runes[i]
-		switch {
-		case c == '\\':
-			if i+1 >= len(runes) {
-				return nil, &ShlexError{"No escaped character"}
-			}
-			i++
-			cur.WriteRune(runes[i])
-			inWord = true
-		case c == '\'':
-			inWord = true
-			j := i + 1
-			for j < len(runes) && runes[j] != '\'' {
-				j++
-			}
-			if j >= len(runes) {
-				return nil, &ShlexError{"No closing quotation"}
-			}
-			cur.WriteString(string(runes[i+1 : j]))
-			i = j
-		case c == '"':
-			inWord = true
-			j := i + 1
-			for j < len(runes) && runes[j] != '"' {
-				if runes[j] == '\\' && j+1 < len(runes) && strings.ContainsRune("\"\\$`\n", runes[j+1]) {
-					j++
-				}
-				cur.WriteRune(runes[j])
-				j++
-			}
-			if j >= len(runes) {
-				return nil, &ShlexError{"No closing quotation"}
-			}
-			i = j
-		case c == ' ' || c == '\t' || c == '\n' || c == '\r':
-			if inWord {
-				out = append(out, cur.String())
-				cur.Reset()
-				inWord = false
-			}
-		default:
-			cur.WriteRune(c)
-			inWord = true
-		}
-	}
-	if inWord {
-		out = append(out, cur.String())
-	}
-	return out, nil
 }
 
 // SkillInfo describes one installed skill command

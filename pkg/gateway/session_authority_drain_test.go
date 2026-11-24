@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Replaces the execution of claimed admissions for one test
-func replaceExecution(t *testing.T, execute func(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object) (any, error)) {
+func replaceExecution(t *testing.T, execute func(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object) (any, error)) {
 	t.Helper()
 	saved := executeFiniteAdmission
 	executeFiniteAdmission = execute
@@ -37,7 +37,7 @@ func waitDrain(t *testing.T, a *SessionAuthority, timeout time.Duration) {
 }
 
 // Admission of the test session by id
-func admissionByID(t *testing.T, ctx context.Context, db *state.SessionDB, admissionID string) *pyjson.Object {
+func admissionByID(t *testing.T, ctx context.Context, db *state.SessionDB, admissionID string) *jsonutil.Object {
 	t.Helper()
 	rows, err := db.ListSessionAdmissions(ctx, "s", false)
 	if err != nil {
@@ -55,7 +55,7 @@ func admissionByID(t *testing.T, ctx context.Context, db *state.SessionDB, admis
 func TestSettlementFailureIsLoggedAndDoesNotKillTheDrain(t *testing.T) {
 	ctx, db, a := newTestAuthority(t, "")
 	logs := captureLogs(t)
-	replaceExecution(t, func(ctx context.Context, a *SessionAuthority, _ SessionRef, _ *pyjson.Object) (any, error) {
+	replaceExecution(t, func(ctx context.Context, a *SessionAuthority, _ SessionRef, _ *jsonutil.Object) (any, error) {
 		return "done", a.DB.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
 			_, err := conn.ExecContext(ctx, "UPDATE sessions SET runtime_generation=runtime_generation+1 WHERE id='s'")
 			return err
@@ -94,7 +94,7 @@ func TestCancelCommittedBeforeAFailedMediaCleanupStillSettlesObserversOnce(t *te
 		return nil
 	}
 	t.Cleanup(func() { scheduleSession = saved })
-	var frames []*pyjson.Object
+	var frames []*jsonutil.Object
 	receipt, err := submitText(ctx, a, "cancel-then-cleanup-fails")
 	if err != nil {
 		t.Fatal(err)
@@ -103,7 +103,7 @@ func TestCancelCommittedBeforeAFailedMediaCleanupStillSettlesObserversOnce(t *te
 	waiter := newAdmissionWaiter()
 	a.nativeWaiters[receipt.AdmissionID] = true
 	a.waiters[receipt.AdmissionID] = waiter
-	a.Sessions["s"].EventStream.Observers[&SessionEventObserver{Observe: func(frame *pyjson.Object) { frames = append(frames, frame) }}] = true
+	a.Sessions["s"].EventStream.Observers[&SessionEventObserver{Observe: func(frame *jsonutil.Object) { frames = append(frames, frame) }}] = true
 	collect := releaseAdmissionMedia
 	t.Cleanup(func() { releaseAdmissionMedia = collect })
 	releaseAdmissionMedia = func(context.Context, *state.SessionDB, string) error {
@@ -129,9 +129,9 @@ func TestCancelCommittedBeforeAFailedMediaCleanupStillSettlesObserversOnce(t *te
 	var outcomes []any
 	for _, frame := range frames {
 		params, _ := frame.Get("params")
-		if kind, _ := params.(*pyjson.Object).Get("type"); kind == "message.complete" {
-			payload, _ := params.(*pyjson.Object).Get("payload")
-			outcome, _ := payload.(*pyjson.Object).Get("outcome")
+		if kind, _ := params.(*jsonutil.Object).Get("type"); kind == "message.complete" {
+			payload, _ := params.(*jsonutil.Object).Get("payload")
+			outcome, _ := payload.(*jsonutil.Object).Get("outcome")
 			outcomes = append(outcomes, outcome)
 		}
 	}

@@ -8,12 +8,11 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
-// ErrInvalidTag is the cryptography InvalidTag raised when GCM authentication fails
-var ErrInvalidTag = errors.New("InvalidTag")
+// ErrInvalidTag is the error of an encrypted secret whose GCM authentication fails
+var ErrInvalidTag = errors.New("encrypted secret failed GCM authentication")
 
 // GenerateBindKey returns a random base64 256 bit AES key for create_bind_task
 func GenerateBindKey() (string, error) {
@@ -26,20 +25,20 @@ func GenerateBindKey() (string, error) {
 
 // DecryptSecret opens base64 IV(12) ciphertext tag(16) under the base64 AES key and decodes UTF-8
 func DecryptSecret(encryptedBase64, keyBase64 string) (string, error) {
-	raw, err := pybase64.B64Decode(encryptedBase64)
+	raw, err := base64.StdEncoding.DecodeString(encryptedBase64)
 	if err != nil {
 		return "", err
 	}
-	key, err := pybase64.B64Decode(keyBase64)
+	key, err := base64.StdEncoding.DecodeString(keyBase64)
 	if err != nil {
 		return "", err
 	}
 	if n := len(key); n != 16 && n != 24 && n != 32 {
-		return "", fmt.Errorf("AESGCM key must be 128, 192, or 256 bits.")
+		return "", fmt.Errorf("AES key must be 128, 192 or 256 bits, got %d", len(key)*8)
 	}
 	nonce := raw[:min(12, len(raw))]
 	if len(nonce) < 8 {
-		return "", fmt.Errorf("Nonce must be between 8 and 128 bytes")
+		return "", errors.New("encrypted secret is too short to hold its nonce")
 	}
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -53,5 +52,5 @@ func DecryptSecret(encryptedBase64, keyBase64 string) (string, error) {
 	if err != nil {
 		return "", ErrInvalidTag
 	}
-	return pystr.DecodeUTF8(plain)
+	return textutil.DecodeUTF8(plain)
 }

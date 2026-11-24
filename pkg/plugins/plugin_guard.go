@@ -13,8 +13,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
 	"github.com/nickheyer/icebath/pkg/skills"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
 )
 
 // Skills guard engine applied to plugin install and update with plugin sized exemptions
@@ -98,14 +98,14 @@ func finding(patternID, severity, category, file, match, description string) ski
 }
 
 // Whether an if test is the conventional module self test guard comparing __name__ with "__main__"
-func isMainGuard(n *pyast.Node) bool {
+func isMainGuard(n *pythonutil.Node) bool {
 	test := n.Child("test")
 	ops, comps := test.Children("ops"), test.Children("comparators")
 	if !test.Is("Compare") || len(ops) != 1 || !ops[0].Is("Eq") || len(comps) != 1 {
 		return false
 	}
-	isName := func(e *pyast.Node) bool { id, _ := e.Str("id"); return e.Is("Name") && id == "__name__" }
-	isMain := func(e *pyast.Node) bool {
+	isName := func(e *pythonutil.Node) bool { id, _ := e.Str("id"); return e.Is("Name") && id == "__name__" }
+	isMain := func(e *pythonutil.Node) bool {
 		v, ok := e.Get("value").(string)
 		return e.Is("Constant") && ok && v == "__main__"
 	}
@@ -120,19 +120,16 @@ func mainGuardBodyLines(filePath string) map[int]bool {
 	if err != nil || !utf8.Valid(data) {
 		return out
 	}
-	tree, err := pyast.Parse(strings.TrimPrefix(string(data), "\ufeff"))
+	tree, err := pythonutil.Parse(strings.TrimPrefix(string(data), "\ufeff"))
 	if err != nil {
-		if le, ok := err.(*pyast.LimitError); ok {
-			panic(le)
-		}
 		return out
 	}
-	for _, n := range pyast.Walk(tree) {
+	for n := range pythonutil.Walk(tree) {
 		if !n.Is("If") || !isMainGuard(n) {
 			continue
 		}
 		for _, st := range n.Children("body") {
-			for l := st.Lineno; l <= st.EndLineno; l++ {
+			for l := st.Line; l <= st.EndLine; l++ {
 				out[l] = true
 			}
 		}

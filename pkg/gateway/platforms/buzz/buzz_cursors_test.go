@@ -15,7 +15,7 @@ func TestCursorStoreRoundTripAndForeignFiles(t *testing.T) {
 	s.Watch("a", &ChannelCursor{ChatType: "dm"})
 	s.SaveCursors(ctx)
 	raw, err := os.ReadFile(CursorPath(ctx))
-	want := `{"identity": "pk", "relay": "wss://r", "channels": {"b": {"chat_type": "group", "last_ts": 5, "seen": ["e1", "e2"]}, "a": {"chat_type": "dm", "last_ts": 0, "seen": []}}}`
+	want := `{"identity":"pk","relay":"wss://r","channels":{"b":{"chat_type":"group","last_ts":5,"seen":["e1","e2"]},"a":{"chat_type":"dm","last_ts":0,"seen":[]}}}`
 	if err != nil || string(raw) != want {
 		t.Fatalf("%s %v", raw, err)
 	}
@@ -66,7 +66,7 @@ func TestCursorWriterSkipsStaleSnapshotsAndMarks(t *testing.T) {
 	newer()
 	older()
 	raw, _ := os.ReadFile(CursorPath(ctx))
-	if !strings.Contains(string(raw), `"last_ts": 2`) {
+	if !strings.Contains(string(raw), `"last_ts":2`) {
 		t.Fatalf("older write landed after the newer one: %s", raw)
 	}
 	if m := CursorMarkOf(state); m != (CursorMark{LastTS: 2}) {

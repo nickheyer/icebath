@@ -13,8 +13,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Hidden first argument a main or TestMain routes to RunScratchPrune through DispatchScratchPruneEntry before any other parsing
@@ -66,7 +66,7 @@ func encodeLineage(chain []lineageEntry, ok bool) string {
 	}
 	parts := make([]string, len(chain))
 	for i, l := range chain {
-		parts[i] = strconv.Itoa(l.pid) + ":" + pyrepr.Float(l.started)
+		parts[i] = strconv.Itoa(l.pid) + ":" + strconv.FormatFloat(l.started, 'f', -1, 64)
 	}
 	return strings.Join(parts, ",")
 }
@@ -78,15 +78,15 @@ func decodeLineage(text string) ([]lineageEntry, error) {
 		parts := strings.Split(item, ":")
 		if len(parts) != 2 {
 			if len(parts) < 2 {
-				return nil, &pyint.Error{Kind: "ValueError", Msg: fmt.Sprintf("not enough values to unpack (expected 2, got %d)", len(parts))}
+				return nil, &errorutil.Error{Kind: "ValueError", Msg: fmt.Sprintf("not enough values to unpack (expected 2, got %d)", len(parts))}
 			}
-			return nil, &pyint.Error{Kind: "ValueError", Msg: "too many values to unpack (expected 2)"}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "too many values to unpack (expected 2)"}
 		}
 		pid, err := strconv.Atoi(strings.TrimSpace(parts[0]))
 		if err != nil {
-			return nil, &pyint.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.StrRepr(parts[0])}
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(parts[0])}
 		}
-		started, err := pyint.Float(parts[1])
+		started, err := anyutil.ToFloat(parts[1])
 		if err != nil {
 			return nil, err
 		}
@@ -118,7 +118,7 @@ func RunScratchPrune(ctx context.Context, args []string) int {
 	if err != nil {
 		audit := openPruneLog(filepath.Join(filepath.Dir(filepath.Dir(filepath.Clean(scratch))), "logs", "scratch-prune.log"))
 		class, msg := excInfo(err)
-		audit.info(fmt.Sprintf("scratch prune: detached pass failed (%s: %s)", class, pyrepr.StrRepr(msg)))
+		audit.info(fmt.Sprintf("scratch prune: detached pass failed (%s: %s)", class, strconv.Quote(msg)))
 	}
 	return 0
 }

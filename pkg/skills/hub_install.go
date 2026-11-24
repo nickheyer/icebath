@@ -14,11 +14,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Resolved lock install path strictly under the skills dir, refusing redirects and the root itself
@@ -59,7 +58,7 @@ func (h *Hub) QuarantineBundle(b *SkillBundle) (string, error) {
 	}
 	dest := filepath.Join(h.QuarantineDir(), skillName)
 	if _, err := os.Stat(dest); err == nil {
-		if err := pyfs.RmTree(dest, nil); err != nil {
+		if err := os.RemoveAll(dest); err != nil {
 			return "", err
 		}
 	}
@@ -73,11 +72,6 @@ func (h *Hub) QuarantineBundle(b *SkillBundle) (string, error) {
 		fileDest := filepath.Join(append([]string{dest}, strings.Split(rels[i], "/")...)...)
 		if err := os.MkdirAll(filepath.Dir(fileDest), 0o777); err != nil {
 			return "", err
-		}
-		if !f.Binary {
-			if err := pystr.StrictUTF8EncodeError(string(f.Data)); err != nil {
-				return "", err
-			}
 		}
 		if err := os.WriteFile(fileDest, f.Data, 0o666); err != nil {
 			return "", err
@@ -98,7 +92,7 @@ func categorySkillDirs(directory string) ([]string, error) {
 		if strings.HasPrefix(e.Name(), ".") || !isDir(entry) {
 			continue
 		}
-		mds, err := pypath.Glob(entry, "**/SKILL.md")
+		mds, err := pathutil.Glob(entry, "**/SKILL.md")
 		if err != nil {
 			return nil, err
 		}
@@ -148,8 +142,8 @@ var scanProvenanceOrder = []string{"bundle_hash", "scanner_version", "source", "
 	"findings", "rules", "scanned_at", "summary", "fresh"}
 
 // Scan attestation as the ordered mapping skills_guard builds, findings as dataclass field mappings
-func scanProvenanceObject(m map[string]any) *pyjson.Object {
-	o := pyjson.NewObject()
+func scanProvenanceObject(m map[string]any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	keys := slices.Clone(scanProvenanceOrder)
 	var extra []string
 	for k := range m {
@@ -167,7 +161,7 @@ func scanProvenanceObject(m map[string]any) *pyjson.Object {
 		case []Finding:
 			list := make([]any, len(t))
 			for i, f := range t {
-				fo := pyjson.NewObject()
+				fo := jsonutil.NewObject()
 				for _, kv := range [][2]any{{"pattern_id", f.PatternID}, {"severity", f.Severity}, {"category", f.Category},
 					{"file", f.File}, {"line", int64(f.Line)}, {"match", f.Match}, {"description", f.Description}} {
 					fo.Set(kv[0].(string), kv[1])
@@ -189,7 +183,7 @@ func scanProvenanceObject(m map[string]any) *pyjson.Object {
 
 // Moves a scanned skill from quarantine into the skills dir and records its provenance
 func (h *Hub) InstallFromQuarantine(ctx context.Context, quarantinePath, skillName, category string, b *SkillBundle,
-	scan ScanResult, scanProvenance *pyjson.Object) (string, error) {
+	scan ScanResult, scanProvenance *jsonutil.Object) (string, error) {
 	safeName, err := validateHubSkillName(skillName)
 	if err != nil {
 		return "", err
@@ -216,7 +210,7 @@ func (h *Hub) InstallFromQuarantine(ctx context.Context, quarantinePath, skillNa
 		return "", err
 	}
 	if _, err := os.Stat(installDir); err == nil {
-		if err := pyfs.RmTree(installDir, nil); err != nil {
+		if err := os.RemoveAll(installDir); err != nil {
 			return "", err
 		}
 	}
@@ -228,7 +222,7 @@ func (h *Hub) InstallFromQuarantine(ctx context.Context, quarantinePath, skillNa
 		h.S.logger().Warn(fmt.Sprintf("Skill '%s' has a large SKILL.md (%s chars). Large skills consume significant context when loaded. Consider asking the author to split it into smaller files.",
 			safeName, groupThousands(skillSize)))
 	}
-	entries, err := pypath.Glob(quarantinePath, "**/*")
+	entries, err := pathutil.Glob(quarantinePath, "**/*")
 	if err != nil {
 		return "", err
 	}
@@ -244,7 +238,7 @@ func (h *Hub) InstallFromQuarantine(ctx context.Context, quarantinePath, skillNa
 	if err := os.MkdirAll(filepath.Dir(installDir), 0o777); err != nil {
 		return "", err
 	}
-	if _, err := pyfs.Move(quarantinePath, installDir); err != nil {
+	if _, err := fsutil.Move(quarantinePath, installDir); err != nil {
 		return "", err
 	}
 	installedHash := ContentHash(installDir)
@@ -289,10 +283,10 @@ func (h *Hub) UninstallSkill(ctx context.Context, skillName string) (bool, strin
 	if err != nil {
 		return false, "", err
 	}
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return false, fmt.Sprintf("'%s' is not a hub-installed skill (may be a builtin)", skillName), nil
 	}
-	entry, ok := raw.(*pyjson.Object)
+	entry, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return false, "", fmt.Errorf("skills hub lock entry is %s where a mapping was expected", errchain.Kind(raw))
 	}
@@ -309,7 +303,7 @@ func (h *Hub) UninstallSkill(ctx context.Context, skillName string) (bool, strin
 		return false, fmt.Sprintf("Refusing to uninstall '%s': %s", skillName, err), nil
 	}
 	if _, err := os.Stat(installPath); err == nil {
-		if err := pyfs.RmTree(installPath, nil); err != nil {
+		if err := os.RemoveAll(installPath); err != nil {
 			return false, "", err
 		}
 	}
@@ -321,21 +315,16 @@ func (h *Hub) UninstallSkill(ctx context.Context, skillName string) (bool, strin
 	if !ok1 || !ok2 {
 		return false, "", errors.New("the lock entry lacks source or trust_level")
 	}
-	if err := h.AppendAuditLog("UNINSTALL", skillName, pyrepr.Str(source), pyrepr.Str(trust), "n/a", "user_request"); err != nil {
+	if err := h.AppendAuditLog("UNINSTALL", skillName, anyutil.String(source), anyutil.String(trust), "n/a", "user_request"); err != nil {
 		return false, "", err
 	}
 	return true, fmt.Sprintf("Uninstalled '%s' from %s", skillName, ipStr), nil
 }
 
 // Deterministic hash of an in memory bundle, symmetric with the on disk content hash
-func bundleContentHash(b *SkillBundle) (string, error) {
+func bundleContentHash(b *SkillBundle) string {
 	normalized := map[string][]byte{}
 	for _, f := range b.Files {
-		if !f.Binary {
-			if err := pystr.StrictUTF8EncodeError(string(f.Data)); err != nil {
-				return "", err
-			}
-		}
 		normalized[strings.ReplaceAll(f.Path, "\\", "/")] = f.Data
 	}
 	keys := slices.Sorted(maps.Keys(normalized))
@@ -345,7 +334,7 @@ func bundleContentHash(b *SkillBundle) (string, error) {
 		sum.Write([]byte{0})
 		sum.Write(normalized[k])
 	}
-	return "sha256:" + hex.EncodeToString(sum.Sum(nil))[:16], nil
+	return "sha256:" + hex.EncodeToString(sum.Sum(nil))[:16]
 }
 
 var sourceIDAliases = map[string]string{"skills.sh": "skills-sh"}
@@ -376,7 +365,7 @@ type SkillUpdateCheck struct {
 	Bundle                           *SkillBundle
 }
 
-func lockString(entry *pyjson.Object, key, fallback string) string {
+func lockString(entry *jsonutil.Object, key, fallback string) string {
 	v, ok := entry.Get(key)
 	if !ok {
 		return fallback
@@ -384,7 +373,7 @@ func lockString(entry *pyjson.Object, key, fallback string) string {
 	if s, isStr := v.(string); isStr {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Checks installed hub skills against the adapters of their recorded source only
@@ -439,10 +428,10 @@ func (h *Hub) CheckForSkillUpdates(ctx context.Context, name string, lock *HubLo
 			}
 		}
 		recorded := ""
-		if md, ok := entry.Get("metadata"); ok && pyrepr.Truthy(md) {
-			if mo, isObj := md.(*pyjson.Object); isObj {
+		if md, ok := entry.Get("metadata"); ok && anyutil.IsTrue(md) {
+			if mo, isObj := md.(*jsonutil.Object); isObj {
 				if rv, ok := mo.Get("source_revision"); ok {
-					recorded = pyrepr.Str(rv)
+					recorded = anyutil.String(rv)
 				}
 			}
 		}
@@ -471,10 +460,7 @@ func (h *Hub) CheckForSkillUpdates(ctx context.Context, name string, lock *HubLo
 			results = append(results, row)
 			continue
 		}
-		latest, err := bundleContentHash(bundle)
-		if err != nil {
-			return nil, err
-		}
+		latest := bundleContentHash(bundle)
 		row.CurrentHash, row.LatestHash, row.HasHashes, row.Bundle = lockString(entry, "content_hash", ""), latest, true, bundle
 		row.Status = "update_available"
 		if row.CurrentHash == latest {

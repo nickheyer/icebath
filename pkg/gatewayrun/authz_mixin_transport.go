@@ -2,16 +2,15 @@ package gatewayrun
 
 import (
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Adapters of the launch profile, empty when none are bound
-func (r *GatewayRunner) primaryAdapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (r *GatewayRunner) primaryAdapters() *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	return r.adapters
 }
 
 // Adapter maps of the served secondary profiles, empty when none are bound
-func (r *GatewayRunner) profileAdaptersMap() *pydict.Dict[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]] {
+func (r *GatewayRunner) profileAdaptersMap() *orderedutil.Map[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]] {
 	return r.profileAdapters
 }
 

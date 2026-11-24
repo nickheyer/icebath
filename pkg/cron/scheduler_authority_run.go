@@ -12,8 +12,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Canonical owner doors, the seams tests replace the way pytest patches gateway.session_cron and the gateway client
@@ -39,11 +39,11 @@ func canonicalFailure(jobID string, err error) jobRunOutcome {
 func outcomeFromResult(v any) (jobRunOutcome, error) {
 	list, ok := v.([]any)
 	if !ok || len(list) != 4 {
-		return jobRunOutcome{}, fmt.Errorf("canonical cron result is not a four item list: %s", pyrepr.Repr(v))
+		return jobRunOutcome{}, fmt.Errorf("canonical cron result is not a four item list: %s", anyutil.Quote(v))
 	}
-	out := jobRunOutcome{Success: pyTruthy(list[0]), Output: pyStrOrEmpty(list[1]), FinalResponse: pyStrOrEmpty(list[2])}
+	out := jobRunOutcome{Success: anyutil.IsTrue(list[0]), Output: pyStrOrEmpty(list[1]), FinalResponse: pyStrOrEmpty(list[2])}
 	if list[3] != nil {
-		e := pyrepr.Str(list[3])
+		e := anyutil.String(list[3])
 		out.Error = &e
 	}
 	return out, nil
@@ -52,9 +52,9 @@ func outcomeFromResult(v any) (jobRunOutcome, error) {
 // Applies a mapping of job fields onto the live job record
 func applyJobFlags(job *Job, flags any) error {
 	m, _ := flags.(map[string]any)
-	if obj, ok := flags.(*pyjson.Object); ok {
+	if obj, ok := flags.(*jsonutil.Object); ok {
 		m = map[string]any{}
-		for _, k := range obj.Keys {
+		for _, k := range obj.Keys() {
 			m[k], _ = obj.Get(k)
 		}
 	}
@@ -81,7 +81,7 @@ func (s *Store) runCanonicalJob(ctx context.Context, job *Job, extra *string, ca
 		requestID = uuid4Hex()
 		job.ExecutionID = strPtr(requestID)
 	}
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("job_id", job.ID)
 	params.Set("request_id", requestID)
 	var extraVal any
@@ -91,7 +91,7 @@ func (s *Store) runCanonicalJob(ctx context.Context, job *Job, extra *string, ca
 	params.Set("extra_prompt", extraVal)
 	root := filepath.Join(s.home, "cron", "admissions")
 	journal := s.journalPath(job.ID, requestID)
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("params", params)
 	record.Set("receipt", nil)
 	_, statErr := os.Stat(journal)
@@ -219,16 +219,16 @@ func (s *Store) runCanonicalJob(ctx context.Context, job *Job, extra *string, ca
 	return canonicalFailure(job.ID, err), nil
 }
 
-func readJournalRecord(path string) (*pyjson.Object, error) {
+func readJournalRecord(path string) (*jsonutil.Object, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	v, err := pyjson.Loads(string(trimBOM(raw)))
+	v, err := jsonutil.Decode(string(trimBOM(raw)))
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("cron journal %s is not an object", path)
 	}
@@ -247,9 +247,9 @@ func objectMap(v any) map[string]any {
 	switch o := v.(type) {
 	case map[string]any:
 		return o
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		m := map[string]any{}
-		for _, k := range o.Keys {
+		for _, k := range o.Keys() {
 			m[k], _ = o.Get(k)
 		}
 		return m
@@ -339,7 +339,7 @@ func (s *Store) reconcileJournal(ctx context.Context, journal string, allowConne
 		state = map[string]any{"status": "terminal", "job": current, "result": []any{false, fmt.Sprintf("# Cron Job: %s (FAILED)\n\n%s\n", jobID, text), "", text}}
 	}
 	if state["status"] != "terminal" {
-		if pr, _ := record.Get("pause_recorded"); state["status"] == "unknown" && !pyTruthy(pr) {
+		if pr, _ := record.Get("pause_recorded"); state["status"] == "unknown" && !anyutil.IsTrue(pr) {
 			reason := "Canonical cron unknown; no automatic re-execution"
 			paused, err := s.pauseJob(home.WithOverride(ctx, s.home), jobID, &reason)
 			if err != nil {
@@ -387,7 +387,7 @@ func jobFromState(v any) (*Job, error) {
 	if j, ok := v.(*Job); ok {
 		return j.Clone(), nil
 	}
-	raw, err := pyjson.Dumps(v)
+	raw, err := jsonutil.Encode(v)
 	if err != nil {
 		return nil, err
 	}

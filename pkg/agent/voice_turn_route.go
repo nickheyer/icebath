@@ -8,10 +8,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -51,9 +50,9 @@ func (a *AIAgent) SetVoiceTurnPending(pending bool) { a.voiceTurnPending = pendi
 
 // Entry the voice turn binds, nil when the slot follows the main model
 func voiceRouteTarget(ctx context.Context, a *AIAgent, cfg map[string]any) map[string]any {
-	providerName := strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(cfg["provider"]))))
-	model := strings.TrimSpace(pyrepr.Str(orEmpty(cfg["model"])))
-	baseURL := strings.TrimSpace(pyrepr.Str(orEmpty(cfg["base_url"])))
+	providerName := strings.ToLower(strings.TrimSpace(anyutil.String(orEmpty(cfg["provider"]))))
+	model := strings.TrimSpace(anyutil.String(orEmpty(cfg["model"])))
+	baseURL := strings.TrimSpace(anyutil.String(orEmpty(cfg["base_url"])))
 	switch providerName {
 	case "", "auto", "main":
 		switch {
@@ -163,13 +162,13 @@ func reinstallVoiceRoute(ctx context.Context, a *AIAgent, st *voiceRouteState) e
 // Logs every unused voice route and shows the user one notice per agent
 func warnVoiceRouteOnce(a *AIAgent, target map[string]any, reason string) {
 	pkgLog().Warn(fmt.Sprintf("auxiliary.%s route %s/%s not used: %s; the voice turn runs on %s/%s",
-		voiceChatTask, pyrepr.Str(target["provider"]), pyrepr.Str(target["model"]), reason, a.provider, a.model))
+		voiceChatTask, anyutil.String(target["provider"]), anyutil.String(target["model"]), reason, a.provider, a.model))
 	if a.warnedVoiceRoute {
 		return
 	}
 	a.warnedVoiceRoute = true
 	a.emitWarning(fmt.Sprintf("⚠ Voice chat model %s via %s unavailable (%s); using %s.",
-		pyrepr.Str(target["model"]), pyrepr.Str(target["provider"]), reason, a.model))
+		anyutil.String(target["model"]), anyutil.String(target["provider"]), reason, a.model))
 }
 
 // Binds the voice entry, the reason it was not used or empty when the agent now runs on it
@@ -182,7 +181,7 @@ func bindVoiceRoute(ctx context.Context, a *AIAgent, target map[string]any) (rea
 			reason = voiceBindFailureReason(fmt.Sprint(r), "Exception")
 		}
 	}()
-	_, _, bound, err := a.bindRouteEntry(ctx, target, pyrepr.Str(target["provider"]), pyrepr.Str(target["model"]))
+	_, _, bound, err := a.bindRouteEntry(ctx, target, anyutil.String(target["provider"]), anyutil.String(target["model"]))
 	if err != nil {
 		return voiceBindFailureReason(err.Error(), surfaceExceptionName(err))
 	}
@@ -215,7 +214,7 @@ func beginVoiceTurnRoute(ctx context.Context, a *AIAgent, messages []*state.Mess
 	if target == nil && effort == nil {
 		return systemPrompt, nil
 	}
-	st := &voiceRouteState{reasoningConfig: pycopy.Of(a.reasoningConfig)}
+	st := &voiceRouteState{reasoningConfig: anyutil.Clone(a.reasoningConfig)}
 	a.voiceRouteState = st
 	if target != nil {
 		st.snapshot, st.extras = captureVoiceRoute(ctx, a)

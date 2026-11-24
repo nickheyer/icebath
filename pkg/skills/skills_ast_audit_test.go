@@ -112,11 +112,8 @@ func TestASTScanSourceRecursionDepthMatchesCPython(t *testing.T) {
 	}
 }
 
-func TestASTScanSourceMemoryErrorPropagates(t *testing.T) {
-	defer func() {
-		if r := recover(); r == nil || !strings.Contains(r.(error).Error(), "Parser stack overflowed") {
-			t.Fatalf("recovered %v", r)
-		}
-	}()
-	astScanSource("a"+strings.Repeat(" if a else a", 10000)+"\n", "f.py")
+func TestASTScanSourceNestingLimitYieldsNoFindings(t *testing.T) {
+	if findings := astScanSource("a"+strings.Repeat(" if a else a", 10000)+"\n", "f.py"); findings != nil {
+		t.Fatalf("findings %v", findings)
+	}
 }

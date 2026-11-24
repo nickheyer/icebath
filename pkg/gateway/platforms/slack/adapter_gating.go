@@ -16,10 +16,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -154,7 +154,7 @@ func (a *SlackAdapter) slackMentionPatterns(ctx context.Context) []*regexp2.Rege
 		}
 		re, err := compileIgnoreCase(pat)
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid mention pattern %s: %v", pyrepr.Repr(pat), err))
+			pkgLog().Warn(fmt.Sprintf("[Slack] Invalid mention pattern %s: %v", anyutil.Quote(pat), err))
 			continue
 		}
 		compiled = append(compiled, re)

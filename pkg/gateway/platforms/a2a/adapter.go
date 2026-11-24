@@ -10,6 +10,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,15 +23,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -157,11 +157,15 @@ func joinURL(base, prefix string) string {
 	if prefix == "" {
 		return base
 	}
-	joined, err := pyurl.Join(base, prefix+"/")
+	b, err := url.Parse(base)
 	if err != nil {
-		panic(&PyError{"ValueError", err.Error()})
+		panic(err)
 	}
-	return joined
+	joined, err := b.Parse(prefix + "/")
+	if err != nil {
+		panic(err)
+	}
+	return joined.String()
 }
 
 // Profile name of the current home, default when none resolves
@@ -225,11 +229,11 @@ type A2AAdapter struct {
 	advertisedToolsets []any
 	activeProfile      string
 	publicURL          string
-	agents             *pydict.Dict[string, *servedAgent]
+	agents             *orderedutil.Map[string, *servedAgent]
 	tasks              *TaskStore
 	turns              *TurnTracker
 	rateLimiter        *RateLimiter
-	prepareTask        func(params *pyjson.Object, peer string, agent *servedAgent) (*pyjson.Object, *pendingTask)
+	prepareTask        func(params *jsonutil.Object, peer string, agent *servedAgent) (*jsonutil.Object, *pendingTask)
 	forwardToProfile   func(agent *servedAgent, peer, contextID, framedText, inputID string) (string, string)
 
 	mu           sync.Mutex
@@ -242,7 +246,7 @@ type A2AAdapter struct {
 	pending         map[string]pendingEntry
 	pendingOrder    map[string][]string
 	activeTasks     map[string]struct{}
-	forwardedInputs *pydict.Dict[string, struct{}]
+	forwardedInputs *orderedutil.Map[string, struct{}]
 }
 
 // Adapter with the profile scoped security, port, name, toolsets and served agents captured now
@@ -258,7 +262,7 @@ func NewA2AAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (adapter *A
 	}()
 	a := &A2AAdapter{tasks: NewTaskStore(), turns: NewTurnTracker(), rateLimiter: NewRateLimiter(rateLimit(ctx)), replyWait: replyTimeout(ctx),
 		pending: map[string]pendingEntry{}, pendingOrder: map[string][]string{}, activeTasks: map[string]struct{}{},
-		forwardedInputs: pydict.New[string, struct{}]()}
+		forwardedInputs: orderedutil.NewMap[string, struct{}]()}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(cfg, gateway.Platform("a2a"), a)
 	a.prepareTask, a.forwardToProfile = a.prepareTaskImpl, a.forwardToProfileImpl
 	sctx := gateway.SettingsContext(ctx)
@@ -295,11 +299,11 @@ func (a *A2AAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 	a.loopCtx, a.loop = context.WithoutCancel(ctx), loop
 	a.mu.Unlock()
 	if a.port < 0 || a.port > 65535 {
-		return false, &PyError{"OverflowError", "bind(): port must be 0-65535."}
+		return false, fmt.Errorf("a2a: port %d out of range 0-65535", a.port)
 	}
 	ln, err := net.Listen(httpServerNetwork(a.host), net.JoinHostPort(a.host, strconv.Itoa(a.port)))
 	if err != nil {
-		text := pyhttpx.OSErrorText(err)
+		text := err.Error()
 		pkgLog().Error(fmt.Sprintf("A2A: could not bind %s:%d — %s", a.host, a.port, text))
 		a.SetFatalError(ctx, "bind_failed", "A2A bind failed: "+text, true)
 		return false, nil
@@ -319,7 +323,7 @@ func (a *A2AAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 		mode = "localhost-only"
 	}
 	pkgLog().Info(fmt.Sprintf("A2A: serving Agent Card + JSON-RPC on http://%s:%d (%s) as %s; %d routed agent(s)", a.host, a.port, mode,
-		pyrepr.StrRepr(a.agentName), a.agents.Len()))
+		strconv.Quote(a.agentName), a.agents.Len()))
 	if sec.DispatchFailsClosed() {
 		pkgLog().Error(fmt.Sprintf("A2A: exposed on non-loopback bind %s with no A2A_TRUSTED_PEERS; every dispatch will be refused (403). "+
 			"Set A2A_TRUSTED_PEERS, or A2A_ALLOW_ALL_USERS=true for a trusted network.", a.host))
@@ -388,11 +392,11 @@ func (a *A2AAdapter) failOrphansOnce() []string {
 }
 
 // Served agents from a2a.served_agents, the root always the live session
-func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*pydict.Dict[string, *servedAgent], error) {
+func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*orderedutil.Map[string, *servedAgent], error) {
 	sctx := gateway.SettingsContext(ctx)
 	var raw any = settings.A2aServedAgents.Get(sctx)
 	defaultDesc := settings.A2aAgentDescription.Get(sctx)
-	agents := pydict.New[string, *servedAgent]()
+	agents := orderedutil.NewMap[string, *servedAgent]()
 	agents.Set("", &servedAgent{Profile: a.activeProfile, Local: true, Name: a.agentName, Description: defaultDesc,
 		AdvertisedToolsets: a.advertisedToolsets})
 	reserved := map[string]bool{"health": true, "metrics": true, ".well-known": true}
@@ -419,17 +423,17 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*pydict.Dict[string,
 		if !isMapping(val) {
 			continue
 		}
-		slug := cleanSlug(pyrepr.Str(pyOr(pyOr(pyGet(val, "slug", nil), pyGet(val, "id", nil)), it.key)))
+		slug := cleanSlug(anyutil.String(anyutil.Or(anyutil.Or(pyGet(val, "slug", nil), pyGet(val, "id", nil)), it.key)))
 		if slug == "" {
 			continue
 		}
-		pathSegment := cleanSlug(pyrepr.Str(pyOr(pyGet(val, "path", nil), slug)))
+		pathSegment := cleanSlug(anyutil.String(anyutil.Or(pyGet(val, "path", nil), slug)))
 		if pathSegment == "" || reserved[pathSegment] {
-			pkgLog().Warn(fmt.Sprintf("A2A: ignoring served agent %s with reserved/invalid path %s", pyrepr.StrRepr(slug), pyrepr.StrRepr(pathSegment)))
+			pkgLog().Warn(fmt.Sprintf("A2A: ignoring served agent %s with reserved/invalid path %s", strconv.Quote(slug), strconv.Quote(pathSegment)))
 			continue
 		}
-		profile := strings.TrimSpace(pyrepr.Str(pyOr(pyGet(val, "profile", nil), slug)))
-		toolsets := pyOr(pyOr(pyOr(pyGet(val, "advertised_toolsets", nil), pyGet(val, "toolsets", nil)), pyGet(val, "capabilities", nil)), []any{})
+		profile := strings.TrimSpace(anyutil.String(anyutil.Or(pyGet(val, "profile", nil), slug)))
+		toolsets := anyutil.Or(anyutil.Or(anyutil.Or(pyGet(val, "advertised_toolsets", nil), pyGet(val, "toolsets", nil)), pyGet(val, "capabilities", nil)), []any{})
 		if s, ok := toolsets.(string); ok {
 			split := []any{}
 			for _, t := range strings.Split(s, ",") {
@@ -439,11 +443,11 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*pydict.Dict[string,
 			}
 			toolsets = split
 		}
-		tenant := strings.TrimSpace(pyrepr.Str(pyOr(pyGet(val, "tenant", nil), slug)))
+		tenant := strings.TrimSpace(anyutil.String(anyutil.Or(pyGet(val, "tenant", nil), slug)))
 		if tenant != "" {
 			if owner, dup := tenants[tenant]; dup {
 				pkgLog().Warn(fmt.Sprintf("A2A: ignoring served agent %s with duplicate tenant %s already used by %s",
-					pyrepr.StrRepr(slug), pyrepr.StrRepr(tenant), pyrepr.StrRepr(owner)))
+					strconv.Quote(slug), strconv.Quote(tenant), strconv.Quote(owner)))
 				continue
 			}
 			tenants[tenant] = slug
@@ -452,20 +456,20 @@ func (a *A2AAdapter) loadServedAgents(ctx context.Context) (*pydict.Dict[string,
 		if ownProfile == "" {
 			ownProfile = slug
 		}
-		local := pyrepr.Truthy(pyGet(val, "local", nil)) || profile == "" || profile == "default" || profile == a.activeProfile
+		local := anyutil.IsTrue(pyGet(val, "local", nil)) || profile == "" || profile == "default" || profile == a.activeProfile
 		timeoutValue := pyGet(val, "timeout", nil)
-		if !pyrepr.Truthy(timeoutValue) {
+		if !anyutil.IsTrue(timeoutValue) {
 			timeoutValue = a.replyWait
 		}
-		timeout, err := pyint.Of(timeoutValue)
+		timeout, err := anyutil.ToInt(timeoutValue)
 		if err != nil {
 			return nil, err
 		}
 		agents.Set(slug, &servedAgent{Slug: slug, Path: "/" + pathSegment, Tenant: tenant, Profile: ownProfile, Local: local,
-			Name:               pyrepr.Str(pyOr(pyGet(val, "name", nil), "Icebath "+slug)),
-			Description:        pyrepr.Str(pyOr(pyGet(val, "description", nil), fmt.Sprintf("Icebath profile '%s' exposed over A2A.", ownProfile))),
-			AdvertisedToolsets: slices.Clone(pyIter(pyOr(toolsets, []any{}))),
-			Timeout:            int(timeout.Int64())})
+			Name:               anyutil.String(anyutil.Or(pyGet(val, "name", nil), "Icebath "+slug)),
+			Description:        anyutil.String(anyutil.Or(pyGet(val, "description", nil), fmt.Sprintf("Icebath profile '%s' exposed over A2A.", ownProfile))),
+			AdvertisedToolsets: slices.Clone(pyIter(anyutil.Or(toolsets, []any{}))),
+			Timeout:            int(timeout)})
 	}
 	return agents, nil
 }
@@ -511,9 +515,9 @@ func (a *A2AAdapter) routeForPath(rawPath string) route {
 	if rawPath == "" {
 		rawPath = "/"
 	}
-	parts, err := pyurl.Split(rawPath)
+	parts, err := urlutil.Split(rawPath)
 	if err != nil {
-		panic(&PyError{"ValueError", err.Error()})
+		panic(err)
 	}
 	path := parts.Path
 	if path == "" {
@@ -536,10 +540,10 @@ func (a *A2AAdapter) routeForPath(rawPath string) route {
 }
 
 // Path route refined by the v1.0 tenant param, the mismatch error when the tenant names another agent
-func (a *A2AAdapter) routeForRequest(rawPath string, params *pyjson.Object) route {
+func (a *A2AAdapter) routeForRequest(rawPath string, params *jsonutil.Object) route {
 	rt := a.routeForPath(rawPath)
 	agent := rt.agent
-	tenant := pyrepr.Str(pyOr(getOr(params, "tenant"), ""))
+	tenant := anyutil.String(anyutil.Or(getOr(params, "tenant"), ""))
 	if agent.Slug == "" && tenant != "" {
 		for _, ag := range a.agents.Values() {
 			if ag.Tenant == tenant {
@@ -554,13 +558,13 @@ func (a *A2AAdapter) routeForRequest(rawPath string, params *pyjson.Object) rout
 		if slug == "" {
 			slug = "default"
 		}
-		return route{err: fmt.Sprintf("tenant %s does not match routed agent %s", pyrepr.StrRepr(tenant), slug)}
+		return route{err: fmt.Sprintf("tenant %s does not match routed agent %s", strconv.Quote(tenant), slug)}
 	}
 	return rt
 }
 
 // Agent Card of a served agent whose URL follows the request public URL over the bind host
-func (a *A2AAdapter) buildCard(ctx context.Context, publicURL string, agent *servedAgent) *pyjson.Object {
+func (a *A2AAdapter) buildCard(ctx context.Context, publicURL string, agent *servedAgent) *jsonutil.Object {
 	if agent == nil {
 		agent = a.rootAgent()
 	}
@@ -687,7 +691,7 @@ func (a *A2AAdapter) scopeForAgent(agent *servedAgent) (string, string) {
 }
 
 // Completes a task at once, counting a failure, and builds its terminal Task
-func (a *A2AAdapter) endTask(rec TaskRecord, state, text, storedReply string) (*pyjson.Object, *pendingTask) {
+func (a *A2AAdapter) endTask(rec TaskRecord, state, text, storedReply string) (*jsonutil.Object, *pendingTask) {
 	a.tasks.Complete(rec.TaskID, state, storedReply)
 	if state == StateFailed {
 		SharedMetrics.TasksFailed.Add(1)
@@ -699,7 +703,7 @@ func (a *A2AAdapter) endTask(rec TaskRecord, state, text, storedReply string) (*
 func workerContext() context.Context { return context.Background() }
 
 // Validates, registers and dispatches an inbound message, a terminal task or the pending waiter
-func (a *A2AAdapter) prepareTaskImpl(params *pyjson.Object, peer string, agent *servedAgent) (*pyjson.Object, *pendingTask) {
+func (a *A2AAdapter) prepareTaskImpl(params *jsonutil.Object, peer string, agent *servedAgent) (*jsonutil.Object, *pendingTask) {
 	ctx := workerContext()
 	if agent == nil {
 		agent = a.rootAgent()
@@ -788,7 +792,7 @@ func (a *A2AAdapter) prepareTaskImpl(params *pyjson.Object, peer string, agent *
 	userID, userName := peer, peer
 	event.Source = a.BuildSource(loopCtx, contextID, gateway.SourceFields{ChatName: &chatName, ChatType: "dm", UserID: &userID, UserName: &userName})
 	if err := dispatchOnLoop(loopCtx, loop, func(c context.Context) { _ = a.HandleMessage(c, event) }); err != nil {
-		msg := redactOutbound(fmt.Sprintf("Dispatch failed: %s", pyrepr.ExceptionMessage(err)))
+		msg := redactOutbound(fmt.Sprintf("Dispatch failed: %s", err.Error()))
 		defer a.popPending(taskID)
 		return a.endTask(rec, StateFailed, msg, msg)
 	}
@@ -830,11 +834,7 @@ func (a *A2AAdapter) forwardToProfileImpl(agent *servedAgent, peer, contextID, f
 		}
 		timeout := agent.Timeout
 		if timeout == 0 {
-			n, err := pyint.Of(a.replyWait)
-			if err != nil {
-				return nil, err
-			}
-			timeout = int(n.Int64())
+			timeout = int(a.replyWait)
 		}
 		return forwardToOwner(ctx, ownerHome, gateway.A2AForward{Agent: name, Tenant: agent.Tenant, Peer: peer, ContextID: contextID,
 			InputID: inputID, Text: framedText}, time.Duration(timeout)*time.Second)
@@ -844,16 +844,16 @@ func (a *A2AAdapter) forwardToProfileImpl(agent *servedAgent, peer, contextID, f
 		return "[profile reply unverified; accepted work was not cancelled]", StateFailed
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("A2A: dispatch to profile %s unverified", pyrepr.StrRepr(profile)), "exc_info", err)
-		return redactOutbound(fmt.Sprintf("Profile dispatch unverified: %s", pyrepr.ExceptionMessage(err))), StateFailed
+		pkgLog().Warn(fmt.Sprintf("A2A: dispatch to profile %s unverified", strconv.Quote(profile)), "exc_info", err)
+		return redactOutbound(fmt.Sprintf("Profile dispatch unverified: %s", err.Error())), StateFailed
 	}
-	result := pyOr(receipt["result"], map[string]any{})
-	completed := pyrepr.Equal(receipt["outcome"], "completed") && !pyrepr.Truthy(pyGet(result, "failed", nil))
+	result := anyutil.Or(receipt["result"], map[string]any{})
+	completed := receipt["outcome"] == "completed" && !anyutil.IsTrue(pyGet(result, "failed", nil))
 	state := StateFailed
 	if completed {
 		state = StateCompleted
 	}
-	return redactOutbound(pyrepr.Str(pyOr(pyGet(result, "final_response", nil), ""))), state
+	return redactOutbound(anyutil.String(anyutil.Or(pyGet(result, "final_response", nil), ""))), state
 }
 
 // Persists, audits and counts a finished task, marks it terminal and fires its push callback
@@ -921,7 +921,7 @@ func (a *A2AAdapter) awaitReply(pending *pendingTask, keepalive func() error) (s
 }
 
 // SendMessage answered once the agent replied, the v1.0 response wrapping the task
-func (a *A2AAdapter) rpcMessageSend(reqID any, params *pyjson.Object, peer string, agent *servedAgent, v1Response bool) *pyjson.Object {
+func (a *A2AAdapter) rpcMessageSend(reqID any, params *jsonutil.Object, peer string, agent *servedAgent, v1Response bool) *jsonutil.Object {
 	task, pending := a.prepareTask(params, peer, agent)
 	if task == nil {
 		state, reply := a.awaitReply(pending, nil)
@@ -962,7 +962,7 @@ func mustSSE(payload, reqID any) string {
 }
 
 // SendStreamingMessage as an SSE stream of JSON-RPC wrapped StreamResponse events
-func (a *A2AAdapter) rpcMessageStream(q *a2aRequest, reqID any, params *pyjson.Object, peer string, agent *servedAgent) {
+func (a *A2AAdapter) rpcMessageStream(q *a2aRequest, reqID any, params *jsonutil.Object, peer string, agent *servedAgent) {
 	SharedMetrics.StreamsStarted.Add(1)
 	q.sseHeaders()
 	var pending *pendingTask
@@ -970,13 +970,13 @@ func (a *A2AAdapter) rpcMessageStream(q *a2aRequest, reqID any, params *pyjson.O
 		terminal, p := a.prepareTask(params, peer, agent)
 		pending = p
 		if terminal != nil {
-			status := pyGet(terminal, "status", pyjson.NewObject())
-			message, ok := pyOr(pyGet(status, "message", pyjson.NewObject()), pyjson.NewObject()).(*pyjson.Object)
+			status := pyGet(terminal, "status", jsonutil.NewObject())
+			message, ok := anyutil.Or(pyGet(status, "message", jsonutil.NewObject()), jsonutil.NewObject()).(*jsonutil.Object)
 			if !ok {
-				message = pyjson.NewObject()
+				message = jsonutil.NewObject()
 			}
-			return a.emitTerminal(q, pyrepr.Str(getOr(terminal, "id")), pyrepr.Str(getOr(terminal, "contextId")),
-				pyrepr.Str(getOr(status, "state")), ExtractText(message), reqID)
+			return a.emitTerminal(q, anyutil.String(getOr(terminal, "id")), anyutil.String(getOr(terminal, "contextId")),
+				anyutil.String(getOr(status, "state")), ExtractText(message), reqID)
 		}
 		submitted := BuildTask(pending.taskID, pending.contextID, StateSubmitted, "")
 		if err := q.sseWrite(mustSSE(StreamTask(submitted), reqID)); err != nil {
@@ -1000,7 +1000,7 @@ func (a *A2AAdapter) rpcMessageStream(q *a2aRequest, reqID any, params *pyjson.O
 }
 
 // SubscribeToTask reattaching to a task stream until it reaches its terminal state
-func (a *A2AAdapter) rpcTasksSubscribe(q *a2aRequest, reqID any, params *pyjson.Object, agent *servedAgent) {
+func (a *A2AAdapter) rpcTasksSubscribe(q *a2aRequest, reqID any, params *jsonutil.Object, agent *servedAgent) {
 	taskID, rec, errObj := a.findTask(reqID, params, agent)
 	if errObj != nil {
 		q.json(200, errObj)
@@ -1022,8 +1022,8 @@ func (a *A2AAdapter) rpcTasksSubscribe(q *a2aRequest, reqID any, params *pyjson.
 }
 
 // Visible task record of the request, else the task not found error
-func (a *A2AAdapter) findTask(reqID any, params *pyjson.Object, agent *servedAgent) (string, TaskRecord, *pyjson.Object) {
-	taskID := pyrepr.Str(pyOr(pyOr(getOr(params, "taskId"), getOr(params, "id")), ""))
+func (a *A2AAdapter) findTask(reqID any, params *jsonutil.Object, agent *servedAgent) (string, TaskRecord, *jsonutil.Object) {
+	taskID := anyutil.String(anyutil.Or(anyutil.Or(getOr(params, "taskId"), getOr(params, "id")), ""))
 	slug, tenant := a.scopeForAgent(agent)
 	rec, ok := a.tasks.Get(taskID, slug, tenant)
 	if !ok {
@@ -1032,7 +1032,7 @@ func (a *A2AAdapter) findTask(reqID any, params *pyjson.Object, agent *servedAge
 	return taskID, rec, nil
 }
 
-func (a *A2AAdapter) rpcTasksGet(reqID any, params *pyjson.Object, agent *servedAgent) *pyjson.Object {
+func (a *A2AAdapter) rpcTasksGet(reqID any, params *jsonutil.Object, agent *servedAgent) *jsonutil.Object {
 	_, rec, errObj := a.findTask(reqID, params, agent)
 	if errObj != nil {
 		return errObj
@@ -1041,17 +1041,17 @@ func (a *A2AAdapter) rpcTasksGet(reqID any, params *pyjson.Object, agent *served
 }
 
 // Newest first page of visible tasks with the next page token and the total
-func (a *A2AAdapter) rpcTasksList(reqID any, params *pyjson.Object, agent *servedAgent) *pyjson.Object {
-	offset := gateway.CoercePort(pyOr(getOr(params, "pageToken"), 0), 0)
-	pageSize := gateway.CoercePort(pyOr(getOr(params, "pageSize"), 50), 50)
+func (a *A2AAdapter) rpcTasksList(reqID any, params *jsonutil.Object, agent *servedAgent) *jsonutil.Object {
+	offset := gateway.CoercePort(anyutil.Or(getOr(params, "pageToken"), 0), 0)
+	pageSize := gateway.CoercePort(anyutil.Or(getOr(params, "pageSize"), 50), 50)
 	slug, tenant := a.scopeForAgent(agent)
-	recs, next, total, err := a.tasks.List(ListOptions{ContextID: pyrepr.Str(pyOr(getOr(params, "contextId"), "")),
-		State:    pyrepr.Str(pyOr(pyOr(getOr(params, "status"), getOr(params, "state")), "")),
+	recs, next, total, err := a.tasks.List(ListOptions{ContextID: anyutil.String(anyutil.Or(getOr(params, "contextId"), "")),
+		State:    anyutil.String(anyutil.Or(anyutil.Or(getOr(params, "status"), getOr(params, "state")), "")),
 		PageSize: pageSize, Offset: max(0, offset), AgentSlug: slug, Tenant: tenant})
 	if err != nil {
 		panic(err)
 	}
-	includeArtifacts := pyrepr.Truthy(pyGet(params, "includeArtifacts", false))
+	includeArtifacts := anyutil.IsTrue(pyGet(params, "includeArtifacts", false))
 	tasks := make([]any, 0, len(recs))
 	for _, r := range recs {
 		tasks = append(tasks, ToTask(r, includeArtifacts))
@@ -1064,7 +1064,7 @@ func (a *A2AAdapter) rpcTasksList(reqID any, params *pyjson.Object, agent *serve
 }
 
 // Cancels a live task, resetting its context turns and resolving its waiter
-func (a *A2AAdapter) rpcTasksCancel(reqID any, params *pyjson.Object, agent *servedAgent) *pyjson.Object {
+func (a *A2AAdapter) rpcTasksCancel(reqID any, params *jsonutil.Object, agent *servedAgent) *jsonutil.Object {
 	taskID, rec, errObj := a.findTask(reqID, params, agent)
 	if errObj != nil {
 		return errObj
@@ -1083,25 +1083,25 @@ func (a *A2AAdapter) rpcTasksCancel(reqID any, params *pyjson.Object, agent *ser
 }
 
 // Stores the push callback a v1.0 message carries in configuration.taskPushNotificationConfig
-func (a *A2AAdapter) registerInlinePush(taskID string, params *pyjson.Object, agent *servedAgent) {
-	cfg := pyOr(pyGet(pyOr(getOr(params, "configuration"), map[string]any{}), "taskPushNotificationConfig", nil), map[string]any{})
+func (a *A2AAdapter) registerInlinePush(taskID string, params *jsonutil.Object, agent *servedAgent) {
+	cfg := anyutil.Or(pyGet(anyutil.Or(getOr(params, "configuration"), map[string]any{}), "taskPushNotificationConfig", nil), map[string]any{})
 	var url any = ""
 	if isMapping(cfg) {
-		url = pyOr(pyGet(cfg, "url", nil), "")
-		if !pyrepr.Truthy(url) {
-			url = pyOr(pyGet(pyOr(pyGet(cfg, "pushNotificationConfig", nil), map[string]any{}), "url", nil), "")
+		url = anyutil.Or(pyGet(cfg, "url", nil), "")
+		if !anyutil.IsTrue(url) {
+			url = anyutil.Or(pyGet(anyutil.Or(pyGet(cfg, "pushNotificationConfig", nil), map[string]any{}), "url", nil), "")
 		}
 	}
-	if pyrepr.Truthy(url) {
+	if anyutil.IsTrue(url) {
 		slug, tenant := a.scopeForAgent(agent)
-		a.tasks.SetPushConfig(taskID, pyrepr.Str(url), slug, tenant)
+		a.tasks.SetPushConfig(taskID, anyutil.String(url), slug, tenant)
 	}
 }
 
-func (a *A2AAdapter) rpcPushConfigCreate(reqID any, params *pyjson.Object, agent *servedAgent) *pyjson.Object {
-	taskID := pyrepr.Str(pyOr(getOr(params, "taskId"), ""))
-	cfg := pyOr(pyOr(getOr(params, "pushNotificationConfig"), getOr(params, "config")), map[string]any{})
-	url := pyrepr.Str(pyOr(pyGet(cfg, "url", nil), ""))
+func (a *A2AAdapter) rpcPushConfigCreate(reqID any, params *jsonutil.Object, agent *servedAgent) *jsonutil.Object {
+	taskID := anyutil.String(anyutil.Or(getOr(params, "taskId"), ""))
+	cfg := anyutil.Or(anyutil.Or(getOr(params, "pushNotificationConfig"), getOr(params, "config")), map[string]any{})
+	url := anyutil.String(anyutil.Or(pyGet(cfg, "url", nil), ""))
 	if taskID == "" || url == "" {
 		return JsonrpcError(reqID, ErrInvalidParams, "taskId and pushNotificationConfig.url required")
 	}
@@ -1113,21 +1113,21 @@ func (a *A2AAdapter) rpcPushConfigCreate(reqID any, params *pyjson.Object, agent
 }
 
 // Shared push config get, list and delete whose op reports not found as false
-func (a *A2AAdapter) pushConfigOp(reqID any, params *pyjson.Object, agent *servedAgent,
-	op func(taskID, configID, slug, tenant string) (any, bool), render func(any) any) *pyjson.Object {
-	taskID := pyrepr.Str(pyOr(getOr(params, "taskId"), ""))
+func (a *A2AAdapter) pushConfigOp(reqID any, params *jsonutil.Object, agent *servedAgent,
+	op func(taskID, configID, slug, tenant string) (any, bool), render func(any) any) *jsonutil.Object {
+	taskID := anyutil.String(anyutil.Or(getOr(params, "taskId"), ""))
 	if taskID == "" {
 		return JsonrpcError(reqID, ErrInvalidParams, "taskId required")
 	}
 	slug, tenant := a.scopeForAgent(agent)
-	found, ok := op(taskID, pyrepr.Str(pyOr(pyOr(getOr(params, "id"), getOr(params, "configId")), "")), slug, tenant)
+	found, ok := op(taskID, anyutil.String(anyutil.Or(anyutil.Or(getOr(params, "id"), getOr(params, "configId")), "")), slug, tenant)
 	if !ok {
 		return JsonrpcError(reqID, ErrTaskNotFound, "push config not found for task: "+taskID)
 	}
 	return JsonrpcResult(reqID, render(found))
 }
 
-func (a *A2AAdapter) rpcPushConfigGet(reqID any, params *pyjson.Object, agent *servedAgent) *pyjson.Object {
+func (a *A2AAdapter) rpcPushConfigGet(reqID any, params *jsonutil.Object, agent *servedAgent) *jsonutil.Object {
 	return a.pushConfigOp(reqID, params, agent, func(taskID, configID, slug, tenant string) (any, bool) {
 		cfg := a.tasks.GetPushConfig(taskID, configID, slug, tenant)
 		return cfg, cfg != nil && cfg.Len() > 0
@@ -1135,12 +1135,12 @@ func (a *A2AAdapter) rpcPushConfigGet(reqID any, params *pyjson.Object, agent *s
 }
 
 // Push configs of a task, an empty list being a valid result
-func (a *A2AAdapter) rpcPushConfigList(reqID any, params *pyjson.Object, agent *servedAgent) *pyjson.Object {
+func (a *A2AAdapter) rpcPushConfigList(reqID any, params *jsonutil.Object, agent *servedAgent) *jsonutil.Object {
 	return a.pushConfigOp(reqID, params, agent, func(taskID, _, slug, tenant string) (any, bool) {
 		return a.tasks.ListPushConfigs(taskID, slug, tenant), true
 	}, func(found any) any {
 		configs := []any{}
-		for _, c := range found.([]*pyjson.Object) {
+		for _, c := range found.([]*jsonutil.Object) {
 			if c != nil && c.Len() > 0 {
 				configs = append(configs, c)
 			}
@@ -1149,7 +1149,7 @@ func (a *A2AAdapter) rpcPushConfigList(reqID any, params *pyjson.Object, agent *
 	})
 }
 
-func (a *A2AAdapter) rpcPushConfigDelete(reqID any, params *pyjson.Object, agent *servedAgent) *pyjson.Object {
+func (a *A2AAdapter) rpcPushConfigDelete(reqID any, params *jsonutil.Object, agent *servedAgent) *jsonutil.Object {
 	return a.pushConfigOp(reqID, params, agent, func(taskID, configID, slug, tenant string) (any, bool) {
 		return nil, a.tasks.DeletePushConfig(taskID, configID, slug, tenant)
 	}, func(any) any { return obj("deleted", true) })
@@ -1179,7 +1179,7 @@ func (a *A2AAdapter) sendPushNotification(ctx context.Context, taskID, contextID
 	if signature != "" {
 		headers["X-A2A-Signature"] = signature
 	}
-	status, err := urlopenPost(ctx, callbackURL, payload, headers, 10*time.Second)
+	status, err := pushPost(ctx, callbackURL, payload, headers, 10*time.Second)
 	if err != nil {
 		fail("failed: %s", err)
 		return
@@ -1194,7 +1194,7 @@ func (a *A2AAdapter) sendPushNotification(ctx context.Context, taskID, contextID
 
 // Fulfils the oldest reply waiter of the context, only a final notify send satisfying it
 func (a *A2AAdapter) Send(ctx context.Context, chatID, content, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
-	if !pyrepr.Truthy(metadata["notify"]) {
+	if !anyutil.IsTrue(metadata["notify"]) {
 		pkgLog().Debug(fmt.Sprintf("A2A: ignoring non-final send for context %s", chatID))
 	} else if !a.resolveOldestForContext(chatID, StateCompleted, content) {
 		pkgLog().Debug(fmt.Sprintf("A2A: send() for context %s had no pending waiter", chatID))

@@ -143,7 +143,7 @@ func TestBoardMetadataRoundTripListAndRemove(t *testing.T) {
 	}
 	if objGet(meta, "slug") != "atm10_server" || objGet(meta, "name") != "Atm10 Server" || objGet(meta, "description") != "notes" ||
 		objGet(meta, "archived") != false || objGet(meta, "created_at") == nil {
-		t.Fatal(meta.Keys, meta.Vals)
+		t.Fatal(meta.Keys(), meta)
 	}
 	if _, err := os.Stat(objGet(meta, "db_path").(string)); err != nil {
 		t.Fatal("board database not created", err)
@@ -169,7 +169,7 @@ func TestBoardMetadataRoundTripListAndRemove(t *testing.T) {
 	}
 	tomb, _ := ReadBoardMetadata(BoardArg("atm10_server"))
 	if objGet(tomb, "archived") != true || objGet(tomb, "name") != "Atm10 Server" {
-		t.Fatal(tomb.Vals)
+		t.Fatal(tomb)
 	}
 	if active, _ := ListBoards(false); len(active) != 1 {
 		t.Fatal(len(active))

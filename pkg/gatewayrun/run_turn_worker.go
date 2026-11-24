@@ -12,11 +12,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Interrupt reason and tool reason of the inactivity timeout
@@ -32,8 +33,8 @@ type runAgentWorker struct {
 	agentWarning    *float64
 	taskID          string
 	processBaseline map[string]bool
-	workerDone      *pythread.Event
-	timeoutFired    *pythread.Event
+	workerDone      *syncutil.Event
+	timeoutFired    *syncutil.Event
 	cleanupLock     sync.Mutex
 	isCurrent       func() bool
 }
@@ -129,10 +130,10 @@ func abandonTimedOutGatewayTurn(ctx context.Context, tc *TurnContext, w *runAgen
 
 // Watchdog goroutine that abandons the turn once its agent stays idle past the timeout
 func watchGatewayTurnInactivity(ctx context.Context, tc *TurnContext, w *runAgentWorker, timeout, pollInterval float64) {
-	activityOrigin := pythread.Monotonic()
+	activityOrigin := timeutil.Monotonic()
 	awakeIdle := state.NewAwakeIdleMeter()
 	for !w.workerDone.Wait(math.Max(0.01, pollInterval)) {
-		now := pythread.Monotonic()
+		now := timeutil.Monotonic()
 		idleSeconds := now - activityOrigin
 		if a := tc.currentAgent(); a != nil {
 			func() {
@@ -179,7 +180,7 @@ func (r *GatewayRunner) runAgentStartTurnWorker(ctx context.Context, tc *TurnCon
 	tc.processTaskID, tc.processBaseline = taskID, baseline
 	w := &runAgentWorker{
 		agentTimeout: optionalSeconds(settings.AgentGatewayTimeout.Get(ctx)), agentWarning: optionalSeconds(settings.AgentGatewayTimeoutWarning.Get(ctx)),
-		taskID: taskID, processBaseline: baseline, workerDone: &pythread.Event{}, timeoutFired: &pythread.Event{},
+		taskID: taskID, processBaseline: baseline, workerDone: &syncutil.Event{}, timeoutFired: &syncutil.Event{},
 		isCurrent: func() bool { return true },
 	}
 	if tc.runGeneration != nil {
@@ -277,14 +278,14 @@ func (r *GatewayRunner) runAgentTimeoutResult(ctx context.Context, w *runAgentWo
 	if len(tc.toolsHolder) > 0 {
 		turnTools = tc.toolsHolder
 	}
-	failure := pyjson.ObjectOf("final_response", strings.Join(lines, "\n"), "messages", messages, "api_calls", iterN,
+	failure := jsonutil.ObjectOf("final_response", strings.Join(lines, "\n"), "messages", messages, "api_calls", iterN,
 		"tools", turnTools, "history_offset", 0, "failed", true)
-	recorded, _ := pyjson.Plain(gateway.RecordTerminalFailure(ctx, failure)).(map[string]any)
+	recorded, _ := jsonutil.Plain(gateway.RecordTerminalFailure(ctx, failure)).(map[string]any)
 	return recorded, nil
 }
 
 // Polls the executor task with the inactivity timeout and backup interrupt check, a failed run on timeout
-func (r *GatewayRunner) runAgentAwaitTurnWorker(ctx context.Context, w *runAgentWorker, tc *TurnContext, interruptDetected *pythread.Event,
+func (r *GatewayRunner) runAgentAwaitTurnWorker(ctx context.Context, w *runAgentWorker, tc *TurnContext, interruptDetected *syncutil.Event,
 	interruptMonitor *gatewayTask) (map[string]any, error) {
 	warningFired := false
 	for {
@@ -322,7 +323,7 @@ func (r *GatewayRunner) runAgentAwaitTurnWorker(ctx context.Context, w *runAgent
 }
 
 // Polls the adapter for a pending interrupt every 200ms and signals the agent once
-func (r *GatewayRunner) runAgentMonitorForInterrupt(ctx context.Context, tc *TurnContext, interruptDetected *pythread.Event) {
+func (r *GatewayRunner) runAgentMonitorForInterrupt(ctx context.Context, tc *TurnContext, interruptDetected *syncutil.Event) {
 	if tc.sessionKey == "" {
 		return
 	}
@@ -361,7 +362,7 @@ func (r *GatewayRunner) runAgentMonitorForInterrupt(ctx context.Context, tc *Tur
 }
 
 // Catches an interrupt the monitor task missed or died before seeing
-func (r *GatewayRunner) runAgentBackupInterruptCheck(ctx context.Context, tc *TurnContext, interruptDetected *pythread.Event, interruptMonitor *gatewayTask) {
+func (r *GatewayRunner) runAgentBackupInterruptCheck(ctx context.Context, tc *TurnContext, interruptDetected *syncutil.Event, interruptMonitor *gatewayTask) {
 	if interruptDetected.IsSet() || tc.sessionKey == "" {
 		return
 	}

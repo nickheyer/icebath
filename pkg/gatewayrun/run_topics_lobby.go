@@ -5,7 +5,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Seconds between two root DM lobby reminders in one Telegram chat
@@ -28,7 +27,7 @@ func telegramCooldownElapsed(stamps *map[string]float64, source *gateway.Session
 	if key == "" {
 		return true
 	}
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	if now-(*stamps)[key] < cooldownS {
 		return false
 	}

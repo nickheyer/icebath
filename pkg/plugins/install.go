@@ -17,9 +17,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Slow install step ids a connector operation reports while a plugin installs
@@ -46,7 +46,7 @@ func WithSharedDependencyAnswers(ctx context.Context) context.Context {
 // Asks one y or N dependency question, reusing a shared answer for the same key
 func askYesNo(ctx context.Context, key []any, prompt string, console *Console) bool {
 	shared, _ := ctx.Value(sharedAnswersKey{}).(*sharedAnswers)
-	id := pyrepr.Repr(key)
+	id := anyutil.Quote(key)
 	if shared != nil {
 		shared.mu.Lock()
 		answer, ok := shared.answers[id]
@@ -76,7 +76,7 @@ func askYesNo(ctx context.Context, key []any, prompt string, console *Console) b
 // Manifest value at the key as text, the default when the key is absent
 func manifestText(manifest map[string]any, key, def string) string {
 	if v, ok := manifest[key]; ok {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return def
 }
@@ -90,14 +90,14 @@ func promptPluginEnvVars(ctx context.Context, h string, manifest map[string]any,
 	shownHome := home.Display(h)
 	console.Print(fmt.Sprintf("\n[bold]%s[/bold] requires the following environment variables:\n", manifestText(manifest, "name", "this plugin")))
 	for _, spec := range missing {
-		name := pyrepr.Str(spec["name"])
+		name := anyutil.String(spec["name"])
 		line := "  " + name
 		if desc := spec["description"]; jsonTruthy(desc) {
-			line += " — " + pyrepr.Str(desc)
+			line += " — " + anyutil.String(desc)
 		}
 		console.Print(line)
 		if url := spec["url"]; jsonTruthy(url) {
-			console.Print(fmt.Sprintf("  [dim]Get yours at: %s[/dim]", pyrepr.Str(url)))
+			console.Print(fmt.Sprintf("  [dim]Get yours at: %s[/dim]", anyutil.String(url)))
 		}
 		read := inputLine
 		if jsonTruthy(spec["secret"]) {
@@ -384,7 +384,7 @@ func installPluginCore(ctx context.Context, identifier string, opts installCoreO
 	}
 	name := filepath.Base(target)
 	if jsonTruthy(installed["name"]) {
-		name = pyrepr.Str(installed["name"])
+		name = anyutil.String(installed["name"])
 	}
 	return target, installed, name, nil
 }
@@ -419,7 +419,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 	}
 	pluginName := repoNameFromURL(gitURL)
 	if jsonTruthy(manifest["name"]) {
-		pluginName = pyrepr.Str(manifest["name"])
+		pluginName = anyutil.String(manifest["name"])
 	} else if subdir != "" {
 		trimmed := strings.TrimRight(subdir, "/")
 		pluginName = trimmed[strings.LastIndex(trimmed, "/")+1:]
@@ -519,7 +519,7 @@ func placeInstallClone(ctx context.Context, h, dir, tmpClone, identifier, gitURL
 	if len(trackedEdits) > 0 {
 		old := "old"
 		if jsonTruthy(prior["revision"]) {
-			old = pyrepr.Str(prior["revision"])
+			old = anyutil.String(prior["revision"])
 		}
 		backup := filepath.Join(filepath.Dir(dir), "plugins-backup", filepath.Base(target)+"-"+string([]rune(old)[:min(8, len([]rune(old)))]))
 		if err := stashLocalFiles(target, trackedEdits, backup); err != nil {
@@ -847,7 +847,7 @@ func catalogInstallOnDisk(ctx context.Context, h, catalogName, ref, inspectedSha
 	}
 	installedName := filepath.Base(target)
 	if jsonTruthy(manifest["name"]) {
-		installedName = pyrepr.Str(manifest["name"])
+		installedName = anyutil.String(manifest["name"])
 	}
 	enabled := getEnabledSet(h)
 	if enabled[installedName] || enabled[filepath.Base(target)] {

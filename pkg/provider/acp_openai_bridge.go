@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -59,7 +59,7 @@ func bridgeAttr(v any, key string) (any, bool) {
 	case map[string]any:
 		val, ok := o[key]
 		return val, ok
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return o.Get(key)
 	}
 	if val := state.ToolCallField(v, key); val != nil {
@@ -89,7 +89,7 @@ func bridgeIsDict(v any) bool {
 	switch o := v.(type) {
 	case map[string]any:
 		return o != nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return o != nil
 	}
 	return false
@@ -131,7 +131,7 @@ func CompletionToStreamChunks(completion map[string]any) (*StreamChunks, error) 
 		return nil, err
 	}
 	var toolCallDeltas any
-	if pyrepr.Truthy(tc) {
+	if anyutil.IsTrue(tc) {
 		calls, _ := bridgeList(tc)
 		deltas := make([]any, 0, len(calls))
 		for index, toolCall := range calls {
@@ -151,7 +151,7 @@ func CompletionToStreamChunks(completion map[string]any) (*StreamChunks, error) 
 		return nil, err
 	}
 	var content any
-	if pyrepr.Truthy(c) {
+	if anyutil.IsTrue(c) {
 		content = c
 	}
 	delta := map[string]any{
@@ -210,7 +210,7 @@ func namedFunction(container any) (any, string, bool) {
 }
 
 // Flattens OpenAI tools into name, description and parameters specs, skipping malformed entries and those outside a non nil allowlist
-func ToolSpecsFromOpenAITools(tools []any, allowlist []string) []*pyjson.Object {
+func ToolSpecsFromOpenAITools(tools []any, allowlist []string) []*jsonutil.Object {
 	var allowed map[string]bool
 	if allowlist != nil {
 		allowed = make(map[string]bool, len(allowlist))
@@ -218,13 +218,13 @@ func ToolSpecsFromOpenAITools(tools []any, allowlist []string) []*pyjson.Object 
 			allowed[strings.TrimSpace(n)] = true
 		}
 	}
-	specs := []*pyjson.Object{}
+	specs := []*jsonutil.Object{}
 	for _, t := range tools {
 		fn, name, ok := namedFunction(t)
 		if !ok || (allowed != nil && !allowed[name]) {
 			continue
 		}
-		spec := pyjson.NewObject()
+		spec := jsonutil.NewObject()
 		spec.Set("name", name)
 		spec.Set("description", bridgeAttrOr(fn, "description", ""))
 		spec.Set("parameters", bridgeAttrOr(fn, "parameters", map[string]any{}))
@@ -238,14 +238,14 @@ func RenderToolBridgeSections(tools []any, toolChoice any, allowlist []string) (
 	specs := ToolSpecsFromOpenAITools(tools, allowlist)
 	sections := []string{}
 	if len(specs) > 0 {
-		payload, err := pyjson.Dumps(specs, pyjson.EnsureASCII(false))
+		payload, err := jsonutil.Encode(specs)
 		if err != nil {
 			return nil, err
 		}
 		sections = append(sections, ToolCallContract+"\n"+payload)
 	}
 	if toolChoice != nil {
-		hint, err := pyjson.Dumps(toolChoice, pyjson.EnsureASCII(false))
+		hint, err := jsonutil.Encode(toolChoice)
 		if err != nil {
 			return nil, err
 		}
@@ -256,7 +256,7 @@ func RenderToolBridgeSections(tools []any, toolChoice any, allowlist []string) (
 
 // One tool call JSON body as a tool call, ok false when malformed, a missing id becoming acp_call_ordinal
 func parseBridgeToolCall(rawJSON string, ordinal int) (state.ToolCall, bool, error) {
-	obj, err := pyjson.Loads(rawJSON)
+	obj, err := jsonutil.Decode(rawJSON)
 	if err != nil {
 		return state.ToolCall{}, false, nil
 	}
@@ -267,7 +267,7 @@ func parseBridgeToolCall(rawJSON string, ordinal int) (state.ToolCall, bool, err
 	fnArgs := bridgeAttrOr(fn, "arguments", "{}")
 	args, isStr := fnArgs.(string)
 	if !isStr {
-		if args, err = pyjson.Dumps(fnArgs, pyjson.EnsureASCII(false)); err != nil {
+		if args, err = jsonutil.Encode(fnArgs); err != nil {
 			return state.ToolCall{}, false, err
 		}
 	}

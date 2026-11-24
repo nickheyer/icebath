@@ -16,14 +16,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Curator CLI run on argv writing its report, help and errors to out, assigned in cmd/icebath wiring
@@ -52,8 +52,8 @@ type skillGroupRefresher interface {
 func (r *GatewayRunner) handleReloadSkillsCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
 	reply, err := r.reloadSkillsReply(ctx, event)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Skills reload failed: %s", pyrepr.ExceptionMessage(err)))
-		return i18n.T(ctx, "gateway.reload_skills.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		pkgLog().Warn(fmt.Sprintf("Skills reload failed: %s", err.Error()))
+		return i18n.T(ctx, "gateway.reload_skills.failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	return reply, nil
 }
@@ -76,7 +76,7 @@ func (r *GatewayRunner) reloadSkillsReply(ctx context.Context, event *gateway.Me
 		for _, adapter := range r.adapters.Values() {
 			if refresher, ok := adapter.(skillGroupRefresher); ok {
 				if err := refresher.RefreshSkillGroup(ctx); err != nil {
-					pkgLog().Warn(fmt.Sprintf("Adapter %s refresh_skill_group raised: %s", adapter.Name(), pyrepr.ExceptionMessage(err)))
+					pkgLog().Warn(fmt.Sprintf("Adapter %s refresh_skill_group raised: %s", adapter.Name(), err.Error()))
 				}
 			}
 		}
@@ -92,7 +92,7 @@ func (r *GatewayRunner) reloadSkillsReply(ctx context.Context, event *gateway.Me
 		if name == nil {
 			name = ""
 		}
-		if pyrepr.Truthy(desc) {
+		if anyutil.IsTrue(desc) {
 			return i18n.T(ctx, "gateway.reload_skills.item_with_desc", "", map[string]any{"name": name, "desc": desc})
 		}
 		return i18n.T(ctx, "gateway.reload_skills.item_no_desc", "", map[string]any{"name": name})
@@ -126,7 +126,7 @@ func (r *GatewayRunner) reloadSkillsReply(ctx context.Context, event *gateway.Me
 
 // Runs the curator CLI in the session's profile scope, status by default, its printed report the reply
 func (r *GatewayRunner) handleCuratorCommand(ctx context.Context, event *gateway.MessageEvent) (string, error) {
-	tokens, err := pyshlex.SplitPOSIX(event.GetCommandArgs(), false)
+	tokens, err := shellutil.Split(event.GetCommandArgs())
 	if err != nil {
 		return "", err
 	}
@@ -201,8 +201,8 @@ func (r *GatewayRunner) handleUpdateCommand(ctx context.Context, event *gateway.
 	if err != nil {
 		return "", err
 	}
-	pending := pyjson.ObjectOf("platform", string(src.Platform), "chat_id", src.ChatID, "chat_type", src.ChatType,
-		"user_id", optAny(src.UserID), "session_key", sessionKey, "timestamp", pydatetime.ISOFormatNaive(time.Now()))
+	pending := jsonutil.ObjectOf("platform", string(src.Platform), "chat_id", src.ChatID, "chat_type", src.ChatType,
+		"user_id", optAny(src.UserID), "session_key", sessionKey, "timestamp", time.Now().Format(timeutil.RFC3339Micro))
 	for _, kv := range []struct {
 		key   string
 		value *string
@@ -211,7 +211,7 @@ func (r *GatewayRunner) handleUpdateCommand(ctx context.Context, event *gateway.
 			pending.Set(kv.key, *kv.value)
 		}
 	}
-	text, err := pyjson.Dumps(pending)
+	text, err := jsonutil.Encode(pending)
 	if err != nil {
 		return "", err
 	}
@@ -228,7 +228,7 @@ func (r *GatewayRunner) handleUpdateCommand(ctx context.Context, event *gateway.
 	if err := spawnDetachedUpdate(icebathCmd, outputPath, exitCodePath); err != nil {
 		_ = os.Remove(pendingPath)
 		_ = os.Remove(exitCodePath)
-		return i18n.T(ctx, "gateway.update.start_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.update.start_failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	r.scheduleUpdateNotificationWatch(ctx)
 	return i18n.T(ctx, "gateway.update.starting", "", nil), nil

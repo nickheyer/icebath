@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode"
@@ -16,16 +17,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -49,7 +49,7 @@ var kanbanLocalPathRe = pyre.MustCompile(`(?<![\w:/])(?:/(?:Users|home|private|t
 // Value of key in an event payload mapping, nil when the payload is no mapping or lacks it
 func kanbanPayloadGet(payload any, key string) any {
 	switch p := payload.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return objValue(p, key)
 	case map[string]any:
 		return p[key]
@@ -63,10 +63,10 @@ func kanbanDiagnosticEvent(ev *kanban.Event) bool {
 	case "crashed", "timed_out", "gave_up":
 		return true
 	case "blocked", "block_loop_detected":
-		return !pyrepr.Equal(kanbanPayloadGet(ev.Payload, "kind"), "needs_input")
+		return !anyutil.Equal(kanbanPayloadGet(ev.Payload, "kind"), "needs_input")
 	case "status":
 		st := kanbanPayloadGet(ev.Payload, "status")
-		return pyrepr.Equal(st, "blocked") || pyrepr.Equal(st, "triage")
+		return anyutil.Equal(st, "blocked") || anyutil.Equal(st, "triage")
 	}
 	return false
 }
@@ -75,7 +75,7 @@ func kanbanDiagnosticEvent(ev *kanban.Event) bool {
 func safeReviewReason(ctx context.Context, value any, limit int) string {
 	text := ""
 	if value != nil {
-		text = pyrepr.Str(value)
+		text = anyutil.String(value)
 	}
 	reason := tools.RedactSensitiveTextWith(&tools.Env{Home: home.Dir(ctx)}, text, tools.RedactOptions{Force: true, URLCredentials: true})
 	if masked, err := kanbanLocalPathRe.Replace(reason, "[local path]", -1, -1); err == nil {
@@ -89,11 +89,11 @@ func safeReviewReason(ctx context.Context, value any, limit int) string {
 }
 
 // Tenant scope a subscription wake keys to, persisted delivery metadata first, nil for unscoped
-func wakeScopeID(adapter gateway.PlatformAdapter, sub *pyjson.Object) *string {
-	if meta, ok := objValue(sub, "delivery_metadata").(*pyjson.Object); ok {
+func wakeScopeID(adapter gateway.PlatformAdapter, sub *jsonutil.Object) *string {
+	if meta, ok := objValue(sub, "delivery_metadata").(*jsonutil.Object); ok {
 		for _, key := range []string{"scope_id", "guild_id", "slack_team_id", "team_id"} {
-			if v := objValue(meta, key); pyrepr.Truthy(v) {
-				s := pyrepr.Str(v)
+			if v := objValue(meta, key); anyutil.IsTrue(v) {
+				s := anyutil.String(v)
 				return &s
 			}
 		}
@@ -103,15 +103,15 @@ func wakeScopeID(adapter gateway.PlatformAdapter, sub *pyjson.Object) *string {
 		return nil
 	}
 	chat := ""
-	if v := objValue(sub, "chat_id"); pyrepr.Truthy(v) {
-		chat = pyrepr.Str(v)
+	if v := objValue(sub, "chat_id"); anyutil.IsTrue(v) {
+		chat = anyutil.String(v)
 	}
 	resolved, failure := func() (res *string, failure any) {
 		defer func() { failure = recover() }()
 		return resolver.ScopeIDForChat(chat), nil
 	}()
 	if failure != nil {
-		pkgLog().Debug(fmt.Sprintf("kanban notifier: scope lookup failed for chat %s: %s", pyrepr.Str(objValue(sub, "chat_id")), pyrepr.Str(failure)))
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: scope lookup failed for chat %s: %s", anyutil.String(objValue(sub, "chat_id")), anyutil.String(failure)))
 		return nil
 	}
 	if resolved == nil || *resolved == "" {
@@ -133,7 +133,7 @@ var (
 )
 
 // Subscription value as text, empty for a missing or None value
-func subText(sub *pyjson.Object, key string) string {
+func subText(sub *jsonutil.Object, key string) string {
 	v := objValue(sub, key)
 	if v == nil {
 		return ""
@@ -141,37 +141,37 @@ func subText(sub *pyjson.Object, key string) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Truthy subscription value as text, empty otherwise
-func subTruthyText(sub *pyjson.Object, key string) string {
-	if v := objValue(sub, key); pyrepr.Truthy(v) {
+func subTruthyText(sub *jsonutil.Object, key string) string {
+	if v := objValue(sub, key); anyutil.IsTrue(v) {
 		return subText(sub, key)
 	}
 	return ""
 }
 
 // Delivery metadata of a subscription, empty when absent
-func subMetadata(sub *pyjson.Object) *pyjson.Object {
-	if meta, ok := objValue(sub, "delivery_metadata").(*pyjson.Object); ok && meta.Len() > 0 {
+func subMetadata(sub *jsonutil.Object) *jsonutil.Object {
+	if meta, ok := objValue(sub, "delivery_metadata").(*jsonutil.Object); ok && meta.Len() > 0 {
 		return meta
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Identity key of a subscription with an empty thread for none
-func subKeyOf(sub *pyjson.Object, platform string) kanbanSubKey {
+func subKeyOf(sub *jsonutil.Object, platform string) kanbanSubKey {
 	return kanbanSubKey{subText(sub, "task_id"), platform, subText(sub, "chat_id"), subTruthyText(sub, "thread_id")}
 }
 
 // Whether a subscription is shaped like a thread
-func subThreadLike(sub *pyjson.Object, meta *pyjson.Object) bool {
-	if pyrepr.Truthy(objValue(sub, "thread_id")) {
+func subThreadLike(sub *jsonutil.Object, meta *jsonutil.Object) bool {
+	if anyutil.IsTrue(objValue(sub, "thread_id")) {
 		return true
 	}
 	chatType := objValue(sub, "chat_type")
-	if !pyrepr.Truthy(chatType) {
+	if !anyutil.IsTrue(chatType) {
 		chatType = objValue(meta, "chat_type")
 	}
 	s, ok := chatType.(string)
@@ -186,9 +186,9 @@ func subThreadLike(sub *pyjson.Object, meta *pyjson.Object) bool {
 }
 
 // Warns once per row about a thread subscription with no parent chat anchor
-func warnAnchorlessThreadSubOnce(sub *pyjson.Object, platform string) {
+func warnAnchorlessThreadSubOnce(sub *jsonutil.Object, platform string) {
 	meta := subMetadata(sub)
-	if !subThreadLike(sub, meta) || pyrepr.Truthy(objValue(meta, "parent_chat_id")) {
+	if !subThreadLike(sub, meta) || anyutil.IsTrue(objValue(meta, "parent_chat_id")) {
 		return
 	}
 	key := subKeyOf(sub, platform)
@@ -202,11 +202,11 @@ func warnAnchorlessThreadSubOnce(sub *pyjson.Object, platform string) {
 	pkgLog().Warn(fmt.Sprintf("kanban notifier: subscription for %s on %s thread %s has no parent_chat_id anchor and matched no "+
 		"profile route; it will not be delivered. Re-subscribe with `icebath kanban notify-subscribe ... "+
 		"--parent-chat-id <channel id> [--guild-id <guild id>]`.",
-		pyrepr.Str(objValue(sub, "task_id")), platform, pyrepr.Str(objValue(sub, "chat_id"))))
+		anyutil.String(objValue(sub, "task_id")), platform, anyutil.String(objValue(sub, "chat_id"))))
 }
 
 // Warns once per row about a routed subscription the credential gate fails closed
-func warnUnroutableSubOnce(sub *pyjson.Object, platform gateway.Platform, stamped, pinned string) {
+func warnUnroutableSubOnce(sub *jsonutil.Object, platform gateway.Platform, stamped, pinned string) {
 	key := subKeyOf(sub, string(platform))
 	kanbanWarnedMu.Lock()
 	seen := kanbanUnroutableWarned[key]
@@ -218,11 +218,11 @@ func warnUnroutableSubOnce(sub *pyjson.Object, platform gateway.Platform, stampe
 	pkgLog().Warn(fmt.Sprintf("kanban notifier: subscription for %s on %s chat %s is stamped with profile %s but a "+
 		"profile_routes entry pins that chat to profile %s; it will not be delivered. "+
 		"Re-subscribe with `icebath kanban notify-subscribe ... --notifier-profile %s`.",
-		pyrepr.Str(objValue(sub, "task_id")), string(platform), pyrepr.Str(objValue(sub, "chat_id")), stamped, pinned, pinned))
+		anyutil.String(objValue(sub, "task_id")), string(platform), anyutil.String(objValue(sub, "chat_id")), stamped, pinned, pinned))
 }
 
 // Lower cased platform names of an adapters mapping
-func kanbanPlatformNames(m *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]) map[string]bool {
+func kanbanPlatformNames(m *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]) map[string]bool {
 	out := map[string]bool{}
 	for _, p := range m.Keys() {
 		out[strings.ToLower(string(p))] = true
@@ -235,7 +235,7 @@ func routeArg(v any) *string {
 	if v == nil {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	if str, ok := v.(string); ok {
 		s = str
 	}
@@ -244,14 +244,14 @@ func routeArg(v any) *string {
 
 // First truthy of two values, else the second as Python or does
 func pyOr(a, b any) any {
-	if pyrepr.Truthy(a) {
+	if anyutil.IsTrue(a) {
 		return a
 	}
 	return b
 }
 
 // Adapter that may deliver a durable subscription, never letting a missing secondary bot borrow primary authority
-func adapterForSubscription(ctx context.Context, r *GatewayRunner, platform gateway.Platform, sub *pyjson.Object, ownerProfile string) (gateway.PlatformAdapter, error) {
+func adapterForSubscription(ctx context.Context, r *GatewayRunner, platform gateway.Platform, sub *jsonutil.Object, ownerProfile string) (gateway.PlatformAdapter, error) {
 	var owner *string
 	if ownerProfile != "" {
 		owner = &ownerProfile
@@ -285,7 +285,7 @@ func adapterForSubscription(ctx context.Context, r *GatewayRunner, platform gate
 	chat := routeArg(objValue(sub, "chat_id"))
 	thread := routeArg(pyOr(objValue(sub, "thread_id"), nil))
 	userID := routeArg(pyOr(objValue(sub, "user_id"), nil))
-	threadLike := pyrepr.Truthy(objValue(sub, "thread_id")) || subThreadLike(sub, meta)
+	threadLike := anyutil.IsTrue(objValue(sub, "thread_id")) || subThreadLike(sub, meta)
 	for _, route := range r.config.ProfileRoutes {
 		hit, err := route.Matches(ctx, gateway.RouteQuery{Platform: string(platform), GuildID: guild, ChatID: chat,
 			ThreadID: thread, ParentChatID: parent, UserID: userID})
@@ -352,7 +352,7 @@ func deref(p *string) string {
 
 // One subscription's claimed events ready for delivery
 type kanbanDelivery struct {
-	sub       *pyjson.Object
+	sub       *jsonutil.Object
 	oldCursor int64
 	cursor    int64
 	events    []*kanban.Event
@@ -392,7 +392,7 @@ func newKanbanCollector(r *GatewayRunner, notifierProfile string, gcDue bool, gc
 	if r.multiplexing() {
 		names := kanbanPlatformNames(r.adapters)
 		for _, route := range r.config.ProfileRoutes {
-			if pyrepr.Truthy(route.Enabled) && names[routePlatformName(route.Platform)] {
+			if anyutil.IsTrue(route.Enabled) && names[routePlatformName(route.Platform)] {
 				add(route.Profile)
 			}
 		}
@@ -442,8 +442,8 @@ func (c *kanbanCollector) collect(ctx context.Context) ([]*kanbanDelivery, error
 	for _, meta := range boards {
 		slug := boardMetaSlug(meta)
 		resolved := ""
-		if dbPath := objValue(meta, "db_path"); pyrepr.Truthy(dbPath) {
-			p, err := pypath.Resolve(pypath.Expanduser(pyrepr.Str(dbPath)))
+		if dbPath := objValue(meta, "db_path"); anyutil.IsTrue(dbPath) {
+			p, err := pathutil.Resolve(pathutil.ExpandUser(anyutil.String(dbPath)))
 			resolved = p
 			if err != nil {
 				resolved = "slug:" + slug
@@ -451,7 +451,7 @@ func (c *kanbanCollector) collect(ctx context.Context) ([]*kanbanDelivery, error
 		} else {
 			p, err := kanban.KanbanDBPath(pinned, &slug)
 			if err == nil {
-				p, err = pypath.Resolve(p)
+				p, err = pathutil.Resolve(p)
 			}
 			resolved = p
 			if err != nil {
@@ -475,7 +475,7 @@ func (c *kanbanCollector) boardHasSubs(ctx context.Context, slug string) bool {
 	count, err := kanban.CountNotifySubs(ctx, "", &slug, c.ownerScope(), nil, nil, nil)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("kanban notifier: read-only subscription probe failed "+
-			"for board %s (%s); falling back to writable open", slug, pyrepr.Str(err)))
+			"for board %s (%s); falling back to writable open", slug, anyutil.String(err)))
 		return true
 	}
 	if count == 0 {
@@ -485,7 +485,7 @@ func (c *kanbanCollector) boardHasSubs(ctx context.Context, slug string) bool {
 		for i, p := range sorted {
 			items[i] = p
 		}
-		pkgLog().Debug(fmt.Sprintf("kanban notifier: board %s has no subscriptions owned by %s; skipping open", slug, pyrepr.Repr(items)))
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: board %s has no subscriptions owned by %s; skipping open", slug, anyutil.Quote(items)))
 	}
 	return count != 0
 }
@@ -494,7 +494,7 @@ func (c *kanbanCollector) boardHasSubs(ctx context.Context, slug string) bool {
 func (c *kanbanCollector) gcStaleSubs(ctx context.Context, conn state.SQLiteConn, slug string) {
 	purged, err := kanban.PurgeStaleDoneNotifySubs(ctx, conn, c.gcRetentionDays)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("kanban notifier: stale-sub GC failed for board %s: %s", slug, pyrepr.Str(err)))
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: stale-sub GC failed for board %s: %s", slug, anyutil.String(err)))
 		return
 	}
 	if purged > 0 {
@@ -504,7 +504,7 @@ func (c *kanbanCollector) gcStaleSubs(ctx context.Context, conn state.SQLiteConn
 }
 
 // Claims one subscription's unseen events, nil when skipped or nothing is new
-func (c *kanbanCollector) claimForSub(ctx context.Context, conn state.SQLiteConn, slug string, sub *pyjson.Object) (*kanbanDelivery, error) {
+func (c *kanbanCollector) claimForSub(ctx context.Context, conn state.SQLiteConn, slug string, sub *jsonutil.Object) (*kanbanDelivery, error) {
 	ownerProfile := subTruthyText(sub, "notifier_profile")
 	platform := strings.ToLower(subTruthyText(sub, "platform"))
 	if !c.activePlatforms[platform] {
@@ -513,7 +513,7 @@ func (c *kanbanCollector) claimForSub(ctx context.Context, conn state.SQLiteConn
 			shown = "<missing>"
 		}
 		pkgLog().Debug(fmt.Sprintf("kanban notifier: subscription for %s on %s skipped; adapter not connected",
-			pyrepr.Str(objValue(sub, "task_id")), shown))
+			anyutil.String(objValue(sub, "task_id")), shown))
 		return nil, nil
 	}
 	plat, err := gateway.ParsePlatform(ctx, platform)
@@ -557,7 +557,7 @@ func (c *kanbanCollector) collectBoard(ctx context.Context, slug string) error {
 	}
 	conn, err := kanbanConnect(ctx, "", &slug)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("kanban notifier: cannot open board %s: %s", slug, pyrepr.Str(err)))
+		pkgLog().Debug(fmt.Sprintf("kanban notifier: cannot open board %s: %s", slug, anyutil.String(err)))
 		return nil
 	}
 	defer conn.Close()
@@ -575,7 +575,7 @@ func (c *kanbanCollector) collectBoard(ctx context.Context, slug string) error {
 		claimed, err := c.claimForSub(ctx, conn, slug, sub)
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("kanban notifier: subscription for %s on board %s failed: %s",
-				pyrepr.Str(objValue(sub, "task_id")), slug, pyrepr.Str(err)))
+				anyutil.String(objValue(sub, "task_id")), slug, anyutil.String(err)))
 			continue
 		}
 		if claimed != nil {
@@ -592,10 +592,10 @@ func notifierCollect(ctx context.Context, r *GatewayRunner, notifierProfile stri
 
 // Truthy payload value of the event, nil otherwise
 func kanbanPayload(ev *kanban.Event, key string) any {
-	if !pyrepr.Truthy(ev.Payload) {
+	if !anyutil.IsTrue(ev.Payload) {
 		return nil
 	}
-	if v := kanbanPayloadGet(ev.Payload, key); pyrepr.Truthy(v) {
+	if v := kanbanPayloadGet(ev.Payload, key); anyutil.IsTrue(v) {
 		return v
 	}
 	return nil
@@ -612,7 +612,7 @@ func kanbanClip(ctx context.Context, ev *kanban.Event, key, msgKey string, limit
 	if value == nil {
 		return ""
 	}
-	return kt(ctx, msgKey, map[string]any{"value": textutil.First(pyrepr.Str(value), limit)})
+	return kt(ctx, msgKey, map[string]any{"value": textutil.First(anyutil.String(value), limit)})
 }
 
 // First line of the stripped text clipped to limit, the clipped text when it has no line
@@ -638,7 +638,7 @@ type kanbanFormatter func(ctx context.Context, ev *kanban.Event, n *kanbanNotifi
 func fmtCompleted(ctx context.Context, ev *kanban.Event, n *kanbanNotification) (kanbanFormatted, error) {
 	var wakeHandoff *string
 	if summary := kanbanPayload(ev, "summary"); summary != nil {
-		s := kanbanFirstLine(pyrepr.Str(summary), 200)
+		s := kanbanFirstLine(anyutil.String(summary), 200)
 		wakeHandoff = &s
 	} else if n.task != nil && n.task.Result != nil && *n.task.Result != "" {
 		s := kanbanFirstLine(*n.task.Result, 160)
@@ -657,7 +657,7 @@ func fmtReviewRequested(ctx context.Context, ev *kanban.Event, n *kanbanNotifica
 	handoff := ""
 	var wakeHandoff *string
 	if summary := kanbanPayload(ev, "summary"); summary != nil {
-		s := pyrepr.Str(summary)
+		s := anyutil.String(summary)
 		handoff = "\n" + textutil.First(s, 200)
 		first := kanbanFirstLine(s, 200)
 		wakeHandoff = &first
@@ -690,7 +690,7 @@ func fmtChangesRequested(ctx context.Context, ev *kanban.Event, n *kanbanNotific
 // Triage ping for a task re blocked past the limit, decision wording only for an owner input block
 func fmtBlockLoopDetected(ctx context.Context, ev *kanban.Event, n *kanbanNotification) (kanbanFormatted, error) {
 	whyKey := "gateway.kanban.ping.triage_attention"
-	if pyrepr.Equal(kanbanPayload(ev, "kind"), "needs_input") {
+	if anyutil.Equal(kanbanPayload(ev, "kind"), "needs_input") {
 		whyKey = "gateway.kanban.ping.triage_decision"
 	}
 	msg := kt(ctx, "gateway.kanban.ping.triage", map[string]any{"head": n.head, "why": kt(ctx, whyKey, nil),
@@ -703,7 +703,7 @@ func fmtBlockLoopDetected(ctx context.Context, ev *kanban.Event, n *kanbanNotifi
 func fmtGaveUp(ctx context.Context, ev *kanban.Event, n *kanbanNotification) (kanbanFormatted, error) {
 	count := kt(ctx, "gateway.kanban.ping.kept_failing", nil)
 	if failures := kanbanPayload(ev, "failures"); failures != nil {
-		v, err := pyint.Int64(failures)
+		v, err := anyutil.ToInt(failures)
 		if err != nil {
 			return kanbanFormatted{}, err
 		}
@@ -720,7 +720,7 @@ func fmtTimedOut(ctx context.Context, ev *kanban.Event, n *kanbanNotification) (
 	if raw == nil {
 		raw = int64(0)
 	}
-	limit, err := pyint.Int64(raw)
+	limit, err := anyutil.ToInt(raw)
 	if err != nil {
 		return kanbanFormatted{}, err
 	}
@@ -771,7 +771,7 @@ type kanbanNotification struct {
 	runner           *GatewayRunner
 	d                *kanbanDelivery
 	subFailCounts    map[kanbanSubKey]int
-	sub              *pyjson.Object
+	sub              *jsonutil.Object
 	task             *kanban.Task
 	boardSlug        string
 	platformStr      string
@@ -874,7 +874,7 @@ func (n *kanbanNotification) deliveryFailed(ctx context.Context, msg func(fails 
 func (n *kanbanNotification) wakeFailed(ctx context.Context, format string, exc error) error {
 	dropFmt := "kanban notifier: dropping subscription %s on %s after %d consecutive wake failures"
 	return n.deliveryFailed(ctx, func(fails int) string {
-		return fmt.Sprintf(format, n.taskID, fails, kanbanMaxSendFailures, pyrepr.Str(exc))
+		return fmt.Sprintf(format, n.taskID, fails, kanbanMaxSendFailures, anyutil.String(exc))
 	}, dropFmt, exc, true)
 }
 
@@ -979,7 +979,7 @@ func wakeKindsRepr(kinds map[string]bool) string {
 	var parts []string
 	for _, k := range kanbanWakeKinds {
 		if kinds[k] {
-			parts = append(parts, pyrepr.StrRepr(k))
+			parts = append(parts, strconv.Quote(k))
 		}
 	}
 	return "{" + strings.Join(parts, ", ") + "}"
@@ -1041,7 +1041,7 @@ func (n *kanbanNotification) wake(ctx context.Context) error {
 		return nil
 	}
 	meta := subMetadata(sub)
-	chatType := strings.TrimSpace(pyrepr.Str(pyOr(pyOr(objValue(sub, "chat_type"), objValue(meta, "chat_type")), "")))
+	chatType := strings.TrimSpace(anyutil.String(pyOr(pyOr(objValue(sub, "chat_type"), objValue(meta, "chat_type")), "")))
 	if chatType == "" {
 		chatType = "group"
 	}
@@ -1054,7 +1054,7 @@ func (n *kanbanNotification) wake(ctx context.Context) error {
 	}
 	source.SetTransportAdapterRef(n.adapter)
 	if n.subProfile != "" && n.runner.multiplexing() && !profiles.ProfileExists(n.subProfile) {
-		return fmt.Errorf("Kanban wake profile %s no longer exists", pyrepr.StrRepr(n.subProfile))
+		return fmt.Errorf("Kanban wake profile %s no longer exists", strconv.Quote(n.subProfile))
 	}
 	h, err := n.runner.resolveProfileHomeForSource(ctx, source)
 	if err != nil {
@@ -1070,7 +1070,7 @@ func (n *kanbanNotification) wake(ctx context.Context) error {
 }
 
 // Truthy subscription value as an optional string, nil otherwise
-func subOptText(sub *pyjson.Object, key string) *string {
+func subOptText(sub *jsonutil.Object, key string) *string {
 	if s := subTruthyText(sub, key); s != "" {
 		return &s
 	}
@@ -1081,12 +1081,12 @@ func subOptText(sub *pyjson.Object, key string) *string {
 func (n *kanbanNotification) sendEvent(ctx context.Context, ev *kanban.Event, msg string) (bool, error) {
 	sub, adapter := n.sub, n.adapter
 	metadata := map[string]any{}
-	if meta, ok := objValue(sub, "delivery_metadata").(*pyjson.Object); ok {
-		for _, k := range meta.Keys {
+	if meta, ok := objValue(sub, "delivery_metadata").(*jsonutil.Object); ok {
+		for _, k := range meta.Keys() {
 			metadata[k], _ = meta.Get(k)
 		}
 	}
-	if thread := subTruthyText(sub, "thread_id"); thread != "" && !pyrepr.Truthy(metadata["thread_id"]) {
+	if thread := subTruthyText(sub, "thread_id"); thread != "" && !anyutil.IsTrue(metadata["thread_id"]) {
 		metadata["thread_id"] = objValue(sub, "thread_id")
 	}
 	var sendRes *gateway.SendResult
@@ -1107,8 +1107,8 @@ func (n *kanbanNotification) sendEvent(ctx context.Context, ev *kanban.Event, ms
 	}
 	if sendRes != nil && !sendRes.Success {
 		detail := "unknown error"
-		if pyrepr.Truthy(sendRes.Error) {
-			detail = pyrepr.Str(sendRes.Error)
+		if anyutil.IsTrue(sendRes.Error) {
+			detail = anyutil.String(sendRes.Error)
 		}
 		return false, fmt.Errorf("adapter send() reported failure: %s", detail)
 	}
@@ -1116,7 +1116,7 @@ func (n *kanbanNotification) sendEvent(ctx context.Context, ev *kanban.Event, ms
 		ev.Kind, n.taskID, n.platformStr, chatID, boardDisplay(n.boardSlug)))
 	if ev.Kind == "completed" || ev.Kind == "review_requested" {
 		if err := n.runner.deliverKanbanArtifacts(ctx, adapter, chatID, metadata, ev.Payload, n.task); err != nil {
-			pkgLog().Debug(fmt.Sprintf("kanban notifier: artifact delivery for %s failed: %s", n.taskID, pyrepr.Str(err)))
+			pkgLog().Debug(fmt.Sprintf("kanban notifier: artifact delivery for %s failed: %s", n.taskID, anyutil.String(err)))
 		}
 	}
 	return true, nil
@@ -1150,7 +1150,7 @@ func (n *kanbanNotification) sendPings(ctx context.Context) (bool, error) {
 		}
 		lastPing := int64(0)
 		if v, ok := n.sub.Get("last_ping_event_id"); ok {
-			parsed, err := pyint.Int64(v)
+			parsed, err := anyutil.ToInt(v)
 			if err != nil {
 				return false, err
 			}
@@ -1179,7 +1179,7 @@ func (n *kanbanNotification) sendPings(ctx context.Context) (bool, error) {
 			exc := err
 			if err := n.deliveryFailed(ctx, func(fails int) string {
 				return fmt.Sprintf("kanban notifier: send failed for %s on %s (attempt %d/%d): %s",
-					n.taskID, n.platformStr, fails, kanbanMaxSendFailures, pyrepr.Str(exc))
+					n.taskID, n.platformStr, fails, kanbanMaxSendFailures, anyutil.String(exc))
 			}, "kanban notifier: dropping subscription %s on %s after %d consecutive send failures", exc, false); err != nil {
 				return false, err
 			}

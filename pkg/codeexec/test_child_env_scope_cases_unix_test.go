@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type childScopeKey struct{}
@@ -83,11 +83,11 @@ func TestCuaDriverCLIFallbackReadsTheBoundCallersScope(t *testing.T) {
 	}
 	release := b.bindCallContext(ctx)
 	defer release()
-	out, err := b.session.callToolViaCLI("list_apps", pyjson.NewObject(), 5)
+	out, err := b.session.callToolViaCLI("list_apps", jsonutil.NewObject(), 5)
 	if err != nil {
 		t.Fatalf("driver CLI call under the caller's served scope failed: %v", err)
 	}
-	if dumped, _ := pyjson.Dumps(out); !strings.Contains(dumped, "seen=served-skill") {
+	if dumped, _ := jsonutil.Encode(out); !strings.Contains(dumped, "seen=served-skill") {
 		t.Fatalf("driver CLI call saw %s, want the caller's served-skill", dumped)
 	}
 }

@@ -7,12 +7,11 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Picker row of a web backend with no keys and the extra markers in order
-func webTestRow(backend string, extra ...any) *pyjson.Object {
-	row := pyjson.NewObject()
+func webTestRow(backend string, extra ...any) *jsonutil.Object {
+	row := jsonutil.NewObject()
 	row.Set("name", backend)
 	row.Set("web_backend", backend)
 	row.Set("env_vars", []any{})
@@ -35,7 +34,7 @@ func TestWebSelectionReportsTheBackendItWrites(t *testing.T) {
 	}{{"firecrawl"}, {"perplexity"}, {"exa"}} {
 		t.Run(c.backend, func(t *testing.T) {
 			s, out := newTestToolsSetup(t, "")
-			row := pyjson.NewObject()
+			row := jsonutil.NewObject()
 			row.Set("name", "Test provider")
 			row.Set("web_backend", c.backend)
 			row.Set("env_vars", []any{})
@@ -94,13 +93,13 @@ func TestRowActiveIffItServesACapability(t *testing.T) {
 }
 
 // Web picker rows by name over an empty web config, the catalog rows then the registry rows
-func webRowsByName(t *testing.T, s *ToolsSetup) map[string]*pyjson.Object {
+func webRowsByName(t *testing.T, s *ToolsSetup) map[string]*jsonutil.Object {
 	t.Helper()
 	rows, err := s.VisibleProviders(catalogCategory("web"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	out := map[string]*pyjson.Object{}
+	out := map[string]*jsonutil.Object{}
 	for _, row := range rows {
 		out[rowText(row, "name")] = row
 	}
@@ -143,7 +142,7 @@ func TestFirecrawlRowsSplitByTheCredentialSet(t *testing.T) {
 	}
 }
 
-func sortedRowNames(rows map[string]*pyjson.Object) []string {
+func sortedRowNames(rows map[string]*jsonutil.Object) []string {
 	names := make([]string, 0, len(rows))
 	for n := range rows {
 		names = append(names, n)

@@ -18,10 +18,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/browser/quiet"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // DesktopUser is the account the desktop and browser run as inside a sandbox image that has it
@@ -75,19 +75,19 @@ func readMarker(env *tools.Env) map[string]any {
 	if err != nil {
 		return map[string]any{}
 	}
-	v, err := pyjson.Loads(strings.TrimPrefix(string(b), "\ufeff"))
+	v, err := jsonutil.Decode(strings.TrimPrefix(string(b), "\ufeff"))
 	if err != nil {
 		return map[string]any{}
 	}
-	if m, ok := pyjson.Plain(v).(map[string]any); ok {
+	if m, ok := jsonutil.Plain(v).(map[string]any); ok {
 		return m
 	}
 	return map[string]any{}
 }
 
 // Marker fields naming the sandbox, so a restarted gateway can tell a live one from a removed one
-func ownerIdentity(e tools.Environment) *pyjson.Object {
-	ident := pyjson.NewObject()
+func ownerIdentity(e tools.Environment) *jsonutil.Object {
+	ident := jsonutil.NewObject()
 	ident.Set("backend", envClassName(e))
 	if c, ok := e.(interface{ ContainerID() string }); ok && c.ContainerID() != "" {
 		ident.Set("container", c.ContainerID())
@@ -358,7 +358,7 @@ func splitLines(text string) []string {
 
 // Env the live launcher in rdir published, empty when it is down
 func sandboxPublished(e tools.Environment, rdir string) (map[string]string, error) {
-	q := pyshlex.Quote(rdir)
+	q := shellutil.Quote(rdir)
 	user, err := userFor(e)
 	if err != nil {
 		return nil, err
@@ -415,10 +415,10 @@ func SandboxStart(env *tools.Env, e tools.Environment, profile, geometry string,
 	if err != nil {
 		return nil, err
 	}
-	q := pyshlex.Quote(rdir)
+	q := shellutil.Quote(rdir)
 	seed := "set -e; rm -rf " + q + "; mkdir -p " + q + "; cd " + q + ";" +
-		" echo " + pyshlex.Quote(base64.StdEncoding.EncodeToString(launcherScript)) + " | base64 -d > launcher.sh;" +
-		" echo " + pyshlex.Quote(base64.StdEncoding.EncodeToString(wallpaperPNG)) + " | base64 -d > wallpaper.png;" +
+		" echo " + shellutil.Quote(base64.StdEncoding.EncodeToString(launcherScript)) + " | base64 -d > launcher.sh;" +
+		" echo " + shellutil.Quote(base64.StdEncoding.EncodeToString(wallpaperPNG)) + " | base64 -d > wallpaper.png;" +
 		" chmod 0700 . launcher.sh"
 	proc, err := runIn(e, []string{"bash", "-c", seed}, nil, user, 30)
 	if err != nil {
@@ -448,17 +448,20 @@ func SandboxStart(env *tools.Env, e tools.Environment, profile, geometry string,
 		return nil, fmt.Errorf("sandbox desktop launcher did not start: %s", tailText(proc.Stderr, 500))
 	}
 	var pollErr error
-	live = pydeadline.PollUntil(func() (map[string]string, bool) {
-		got, err := sandboxPublished(e, rdir)
-		if err != nil {
-			pollErr = err
-			return nil, true
-		}
-		if got["DISPLAY"] != "" {
-			return got, true
-		}
-		return nil, false
-	}, time.Duration(waitSeconds*float64(time.Second)), 250*time.Millisecond)
+	live = syncutil.PollUntil(context.Background(),
+
+		time.Duration(waitSeconds*float64(time.Second)), 250*time.Millisecond, func() (map[string]string, bool) {
+			got, err := sandboxPublished(e, rdir)
+			if err != nil {
+				pollErr = err
+				return nil, true
+			}
+			if got["DISPLAY"] != "" {
+				return got, true
+			}
+			return nil, false
+		})
+
 	if pollErr != nil {
 		return nil, pollErr
 	}
@@ -482,16 +485,16 @@ func recordMarker(env *tools.Env, e tools.Environment, rdir, profile string, liv
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return nil, err
 	}
-	m := pyjson.NewObject()
+	m := jsonutil.NewObject()
 	m.Set("display", live["DISPLAY"])
 	m.Set("dir", rdir)
 	m.Set("profile", profile)
 	ident := ownerIdentity(e)
-	for _, k := range ident.Keys {
+	for _, k := range ident.Keys() {
 		v, _ := ident.Get(k)
 		m.Set(k, v)
 	}
-	text, err := pyjson.Dumps(m)
+	text, err := jsonutil.Encode(m)
 	if err != nil {
 		return nil, err
 	}
@@ -504,8 +507,8 @@ func recordMarker(env *tools.Env, e tools.Environment, rdir, profile string, liv
 // Kills the launcher session and every process holding the profile dir, true when something was live
 func SandboxStop(env *tools.Env, e tools.Environment, profile string) (bool, error) {
 	rdir := remoteDir(e, profile)
-	q := pyshlex.Quote(rdir)
-	pat := pyshlex.Quote(rdir + "/")
+	q := shellutil.Quote(rdir)
+	pat := shellutil.Quote(rdir + "/")
 	script := "\nlive=0\np=$(cat " + q + "/launcher.pid 2>/dev/null)\n" +
 		"if [ -n \"$p\" ] && kill -0 \"$p\" 2>/dev/null; then live=1; kill -TERM -- -\"$p\" 2>/dev/null || kill -TERM \"$p\" 2>/dev/null; fi\n" +
 		"for pid in $(pgrep -f -- " + pat + " 2>/dev/null); do [ \"$pid\" != \"$$\" ] && { live=1; kill -TERM \"$pid\" 2>/dev/null; }; done\n" +

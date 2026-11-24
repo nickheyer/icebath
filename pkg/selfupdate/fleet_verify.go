@@ -14,10 +14,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -44,7 +44,7 @@ var (
 )
 
 // Prints the post update fleet matrix to w, true when a gateway is provably stale or down
-func printFleetVersionMatrixTo(w io.Writer, fleet []*pyjson.Object) bool {
+func printFleetVersionMatrixTo(w io.Writer, fleet []*jsonutil.Object) bool {
 	saved := fleetStdout
 	fleetStdout = w
 	defer func() { fleetStdout = saved }()
@@ -52,7 +52,7 @@ func printFleetVersionMatrixTo(w io.Writer, fleet []*pyjson.Object) bool {
 }
 
 // Fleet version rows, polled over a bounded settle window when runtimes are expected
-func collectFleetSnapshot(ctx context.Context, restart *gatewayRestartOutcome, rowsExpected bool) ([]*pyjson.Object, error) {
+func collectFleetSnapshot(ctx context.Context, restart *gatewayRestartOutcome, rowsExpected bool) ([]*jsonutil.Object, error) {
 	pending := sortedPIDs(restart.SelfRestartPendingPIDs)
 	if len(pending) == 0 {
 		pending = nil
@@ -65,13 +65,13 @@ func collectFleetSnapshot(ctx context.Context, restart *gatewayRestartOutcome, r
 	for {
 		fleetSleep(2 * time.Second)
 		snapshot := fleetCollectVersionsWith(prePIDs, pending)
-		var unstamped []*pyjson.Object
+		var unstamped []*jsonutil.Object
 		down := false
 		for _, row := range snapshot {
 			if fleetRowIdentityPending(row, prePIDs) {
 				unstamped = append(unstamped, row)
 			}
-			down = down || pyrepr.Equal(rowValue(row, "state"), "down")
+			down = down || anyutil.Equal(rowValue(row, "state"), "down")
 		}
 		if len(snapshot) > 0 && len(unstamped) == 0 && !down {
 			return snapshot, nil
@@ -94,7 +94,7 @@ func collectFleetSnapshot(ctx context.Context, restart *gatewayRestartOutcome, r
 
 // True for an unknown row without a sha from a pid that did not exist when the update started
 func fleetRowIdentityPending(row any, preRestartPIDs []int) bool {
-	if !pyrepr.Equal(rowValue(row, "state"), "unknown") || pyrepr.Truthy(rowValue(row, "code_sha")) {
+	if !anyutil.Equal(rowValue(row, "state"), "unknown") || anyutil.IsTrue(rowValue(row, "code_sha")) {
 		return false
 	}
 	if preRestartPIDs == nil {
@@ -169,15 +169,15 @@ func restartedUnitsGone(ctx context.Context, scopedUnits map[string]bool) (bool,
 }
 
 // Gateway pids alive after the restart phase per profile, from the fleet rows that are not down
-func liveGatewayPidsFromFleet(fleetRows []*pyjson.Object) map[string]map[int]bool {
+func liveGatewayPidsFromFleet(fleetRows []*jsonutil.Object) map[string]map[int]bool {
 	live := map[string]map[int]bool{}
 	for _, row := range fleetRows {
 		profile := rowValue(row, "profile")
 		pid, isInt := pyIntValue(rowValue(row, "pid"))
-		if !pyrepr.Truthy(profile) || !isInt || pyrepr.Equal(rowValue(row, "state"), "down") {
+		if !anyutil.IsTrue(profile) || !isInt || anyutil.Equal(rowValue(row, "state"), "down") {
 			continue
 		}
-		name := pyrepr.Str(profile)
+		name := anyutil.String(profile)
 		if live[name] == nil {
 			live[name] = map[int]bool{}
 		}
@@ -195,7 +195,7 @@ func gatewayUnitRunsOneOf(ctx context.Context, unit string, pids map[int]bool) (
 	for _, scope := range systemdScopes {
 		shown, err := systemctl(ctx, fleetArgv(scope.Cmd, "show", "-p", "LoadState,MainPID", unit), 5)
 		if err != nil {
-			if isCommandMissing(err) || asCommandTimeout(err) != nil || pypath.IsOSError(err) {
+			if isCommandMissing(err) || asCommandTimeout(err) != nil || errorutil.IsSystem(err) {
 				return false, nil
 			}
 			return false, err
@@ -221,14 +221,14 @@ func gatewayUnitRunsOneOf(ctx context.Context, unit string, pids map[int]bool) (
 }
 
 // Credits each failed gateway unit whose own main pid the fleet probe shows serving this checkout
-func settleUnitsProvenCurrent(ctx context.Context, w io.Writer, restart *gatewayRestartOutcome, fleetRows []*pyjson.Object) (bool, error) {
+func settleUnitsProvenCurrent(ctx context.Context, w io.Writer, restart *gatewayRestartOutcome, fleetRows []*jsonutil.Object) (bool, error) {
 	pre := restart.PreRestartGatewayPIDs
 	if pre == nil || len(restart.FailedOrStaleUnits) == 0 {
 		return false, nil
 	}
 	fresh := map[int]bool{}
 	for _, row := range fleetRows {
-		if pid, ok := pyIntValue(rowValue(row, "pid")); ok && pyrepr.Equal(rowValue(row, "state"), "current") {
+		if pid, ok := pyIntValue(rowValue(row, "pid")); ok && anyutil.Equal(rowValue(row, "state"), "current") {
 			fresh[int(pid)] = true
 		}
 	}
@@ -297,7 +297,7 @@ func recordOwedGatewayInventory(ctx context.Context, plan *UpdatePlan, stoppedUn
 	}
 	recorded := []any{}
 	if raw := fields["inventory"]; raw != "" && raw != "null" {
-		inventory, err := pyjson.Loads(raw)
+		inventory, err := jsonutil.Decode(raw)
 		if err != nil {
 			return nil
 		}
@@ -325,13 +325,13 @@ func recordOwedGatewayInventory(ctx context.Context, plan *UpdatePlan, stoppedUn
 	stopped := append([]int{}, stoppedUnmappedPIDs...)
 	sort.Ints(stopped)
 	for _, pid := range stopped {
-		rows = append(rows, pyjson.ObjectOf("kind", "gateway", "profile", nil, "pid", int64(pid), "stopped_unmapped", true))
+		rows = append(rows, jsonutil.ObjectOf("kind", "gateway", "profile", nil, "pid", int64(pid), "stopped_unmapped", true))
 	}
 	owed := []any{}
 	for _, row := range rows {
 		known := false
 		for _, existing := range recorded {
-			known = known || pyrepr.Equal(row, existing)
+			known = known || anyutil.Equal(row, existing)
 		}
 		if !known {
 			owed = append(owed, row)
@@ -386,14 +386,14 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 	fmt.Fprintln(w, "Tip: You can now select a provider and model:")
 	fmt.Fprintln(w, "  icebath model              # Select provider and model")
 
-	fleetSnapshot := []*pyjson.Object{}
+	fleetSnapshot := []*jsonutil.Object{}
 	unitsSettled := false
 	if err := bestEffort(ctx, "Fleet version verification failed: %s", func() error {
 		preRestart, killed := restart.fleetProbeSignals()
 		rowsExpected := fleetProbeExpected(plan, preRestart, windowsGatewayResume, restart.RestartedServices, killed)
 		var err error
 		if fleetSnapshot, err = fleetCollectSnapshot(ctx, restart, rowsExpected); err != nil {
-			fleetSnapshot = []*pyjson.Object{}
+			fleetSnapshot = []*jsonutil.Object{}
 			return err
 		}
 		if unitsSettled, err = settleUnitsProvenCurrent(ctx, w, restart, fleetSnapshot); err != nil {
@@ -496,7 +496,7 @@ func verifyFleetAfterUpdate(ctx context.Context, w io.Writer, restart *gatewayRe
 }
 
 // Fleet rows as generic values for the receipt and the survivor pass
-func fleetRowsAsAny(rows []*pyjson.Object) []any {
+func fleetRowsAsAny(rows []*jsonutil.Object) []any {
 	out := make([]any, len(rows))
 	for i, row := range rows {
 		out[i] = row

@@ -16,8 +16,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -148,7 +148,7 @@ type openAIAPIStatusError struct {
 }
 
 func (e *openAIAPIStatusError) Error() string {
-	return fmt.Sprintf("Error code: %d - %s", e.Status, pyrepr.Str(e.Body))
+	return fmt.Sprintf("Error code: %d - %s", e.Status, anyutil.String(e.Body))
 }
 
 // Error of a failed connection to the OpenAI API

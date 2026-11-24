@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var sqliteHeader = []byte("SQLite format 3\x00")
@@ -69,7 +71,7 @@ func queryColumn(c *sqliteConn, q string) ([]string, error) {
 		if b, ok := v.([]byte); ok {
 			v = string(b)
 		}
-		out = append(out, pyrepr.Str(v))
+		out = append(out, anyutil.String(v))
 	}
 	return out, rows.Err()
 }
@@ -82,7 +84,7 @@ func VerifySQLiteIntegrity(path string, opts IntegrityOptions) IntegrityResult {
 	}
 	info, err := os.Stat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return IntegrityResult{Message: "not found: " + pypath.PathStr(path)}
+		return IntegrityResult{Message: "not found: " + filepath.Clean(path)}
 	}
 	if err != nil {
 		return IntegrityResult{Message: "cannot stat: " + excText(err)}
@@ -100,7 +102,7 @@ func VerifySQLiteIntegrity(path string, opts IntegrityOptions) IntegrityResult {
 			return done("cannot read header", false)
 		}
 		if !bytes.Equal(head, sqliteHeader) {
-			return done("missing SQLite header magic (got "+pyrepr.StrRepr(hex.EncodeToString(head[:min(16, len(head))]))+")", false)
+			return done("missing SQLite header magic (got "+strconv.Quote(hex.EncodeToString(head[:min(16, len(head))]))+")", false)
 		}
 	}
 	if maxBytes > 0 && size > maxBytes {
@@ -118,9 +120,7 @@ func VerifySQLiteIntegrity(path string, opts IntegrityOptions) IntegrityResult {
 			}
 			return done(fmt.Sprintf("schema probe %s: %s", kind, excText(err)), false)
 		}
-		sizeText, _ := pyrepr.Format(size, ",")
-		maxText, _ := pyrepr.Format(maxBytes, ",")
-		return done("size "+sizeText+" bytes exceeds max_bytes "+maxText+"; "+
+		return done("size "+textutil.Thousands(size)+" bytes exceeds max_bytes "+textutil.Thousands(maxBytes)+"; "+
 			"skipped PRAGMA integrity_check (header + schema probe passed)", true)
 	}
 	if !opts.SkipPragma {

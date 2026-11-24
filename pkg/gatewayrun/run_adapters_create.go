@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Adapter of a platform bound to this runner so it resolves inbound profile routes before connecting
@@ -56,7 +55,7 @@ func (r *GatewayRunner) instantiateAdapter(ctx context.Context, platform gateway
 func registryAdapter(ctx context.Context, platform gateway.Platform, config *gateway.PlatformConfig) (created any, registered bool, err error) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			created, registered, err = nil, false, fmt.Errorf("%s", pyrepr.Str(rec))
+			created, registered, err = nil, false, fmt.Errorf("%s", anyutil.String(rec))
 		}
 	}()
 	if !gateway.Registry.IsRegistered(ctx, string(platform)) {

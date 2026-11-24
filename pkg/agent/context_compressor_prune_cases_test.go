@@ -8,9 +8,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Assistant row issuing one function call with the given id, name and arguments
@@ -91,8 +91,8 @@ func TestClarifyAnswersSurviveRepeatedPruning(t *testing.T) {
 			if len(requests) == 0 {
 				t.Fatalf("%d %v: compression dispatched no summary request", size, answer)
 			}
-			dispatched, _ := pyjson.Dumps(requests[0])
-			quoted, _ := pyjson.Dumps(want)
+			dispatched, _ := jsonutil.Encode(requests[0])
+			quoted, _ := jsonutil.Encode(want)
 			if !strings.Contains(dispatched, quoted[1:len(quoted)-1]) {
 				t.Fatalf("%d %v: the summary request lacks %s", size, answer, quoted)
 			}

@@ -9,9 +9,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/dlclark/regexp2/v2"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Reserved bridge names no user, plugin, or MCP tool may take
@@ -55,18 +54,18 @@ func catalogTokenize(text string) []string {
 
 // The function block of a tool def or an empty map when absent
 func toolDefFn(td map[string]any) map[string]any {
-	if fn, ok := pyjson.Dict(td["function"]); ok && fn != nil {
+	if fn, ok := jsonutil.AsMap(td["function"]); ok && fn != nil {
 		return fn
 	}
 	return map[string]any{}
 }
 
 // Ordered function schema of a tool definition, an empty object when absent
-func toolDefFnObject(td map[string]any) *pyjson.Object {
-	if fn, ok := pyjson.AsObject(td["function"]); ok {
+func toolDefFnObject(td map[string]any) *jsonutil.Object {
+	if fn, ok := jsonutil.AsObject(td["function"]); ok {
 		return fn
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 func toolDefName(td map[string]any) string {
@@ -133,7 +132,7 @@ func catalogEntrySearchText(td map[string]any, sourceLabel string) string {
 		}
 	}
 	var paramNames []string
-	if params, ok := pyjson.Dict(fn["parameters"]); ok {
+	if params, ok := jsonutil.AsMap(fn["parameters"]); ok {
 		paramNames = dictKeysInOrder(params["properties"])
 	}
 	desc, _ := fn["description"].(string)

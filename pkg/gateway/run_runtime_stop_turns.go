@@ -4,8 +4,8 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds a stopped turn gets to settle durably before shutdown stops waiting on it
@@ -44,7 +44,7 @@ func requestHardInterruptWith(agent any, message, toolReason string) bool {
 
 // Generation of a decoded generation value, false when it is not an integer
 func generationOf(v any) (int64, bool) {
-	g := rowInt(pyjson.ObjectOf("g", v), "g")
+	g := rowInt(jsonutil.ObjectOf("g", v), "g")
 	if g == nil {
 		return 0, false
 	}
@@ -66,7 +66,7 @@ func StopAuthorityTurns(runner any, a *SessionAuthority, inProcess bool, reason 
 			continue
 		}
 		worker.setCause(reason)
-		if err := worker.control(pyjson.ObjectOf("type", "stop")); err != nil {
+		if err := worker.control(jsonutil.ObjectOf("type", "stop")); err != nil {
 			var refusal *state.RuntimeStoreError
 			if !errors.As(err, &refusal) {
 				panic(err)

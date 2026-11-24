@@ -7,10 +7,10 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const maxScanBytes = 256 * 1024
@@ -62,7 +62,7 @@ func compileRules(rules []Rule) []compiledRule {
 		if r.Regex != "" {
 			re, err := pyre.Compile(r.Regex)
 			if err != nil {
-				pkgLog().Warn(fmt.Sprintf("security-guidance: skipping rule %s — invalid regex %s: %v", r.RuleName, pyrepr.Repr(r.Regex), err))
+				pkgLog().Warn(fmt.Sprintf("security-guidance: skipping rule %s — invalid regex %s: %v", r.RuleName, anyutil.Quote(r.Regex), err))
 				continue
 			}
 			c.re = re
@@ -197,8 +197,8 @@ func onTransformToolResult(_ context.Context, kwargs map[string]any) (any, error
 	if len(findings) == 0 {
 		return nil, nil
 	}
-	if parsed, err := pyjson.Loads(result); err == nil {
-		if o, ok := parsed.(*pyjson.Object); ok {
+	if parsed, err := jsonutil.Decode(result); err == nil {
+		if o, ok := parsed.(*jsonutil.Object); ok {
 			if _, has := o.Get("error"); has && o.Len() <= 2 {
 				return nil, nil
 			}

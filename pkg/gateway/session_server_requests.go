@@ -11,10 +11,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds an owner request waits for a viewer, main's sudo prompt timeout
@@ -29,11 +29,11 @@ type pendingServerRequest struct {
 	sessionID string
 	events    *SessionEvents
 	method    string
-	params    *pyjson.Object
+	params    *jsonutil.Object
 	value     string
-	result    *pyjson.Object
+	result    *jsonutil.Object
 	qids      []string
-	locked    *pyjson.Object
+	locked    *jsonutil.Object
 }
 
 // Wakes the asker once
@@ -91,22 +91,22 @@ func maySettle(ctx context.Context, a *SessionAuthority, actor Principal, sessio
 
 // A viewer's answer to an owner request, a string srq id with a result or error and no method
 func IsResponseFrame(frame any) bool {
-	obj, ok := frame.(*pyjson.Object)
+	obj, ok := frame.(*jsonutil.Object)
 	if !ok {
 		return false
 	}
 	if _, has := obj.Get("method"); has {
 		return false
 	}
-	id, _ := obj.GetOr("id", nil).(string)
+	id, _ := obj.ValueOr("id", nil).(string)
 	_, hasResult := obj.Get("result")
 	_, hasError := obj.Get("error")
 	return strings.HasPrefix(id, "srq-") && (hasResult || hasError)
 }
 
 // Settles the open request a response frame answers, false when nothing here waits for its id
-func ResolveServerRequest(frame *pyjson.Object, sessionOK func(sessionID string, events *SessionEvents) bool) bool {
-	id, _ := frame.GetOr("id", nil).(string)
+func ResolveServerRequest(frame *jsonutil.Object, sessionOK func(sessionID string, events *SessionEvents) bool) bool {
+	id, _ := frame.ValueOr("id", nil).(string)
 	serverRequests.Lock()
 	pending, ok := serverRequests.open[id]
 	if !ok || !sessionOK(pending.sessionID, pending.events) {
@@ -114,9 +114,9 @@ func ResolveServerRequest(frame *pyjson.Object, sessionOK func(sessionID string,
 		return false
 	}
 	popServerRequest(id)
-	var locked *pyjson.Object
+	var locked *jsonutil.Object
 	if pending.qids != nil {
-		locked = pending.locked.Copy()
+		locked = pending.locked.Clone()
 	}
 	serverRequests.Unlock()
 	var result any
@@ -133,8 +133,8 @@ func ResolveServerRequest(frame *pyjson.Object, sessionOK func(sessionID string,
 	}
 	pending.value = ""
 	pending.result = nil
-	if obj, ok := result.(*pyjson.Object); ok {
-		if value, isStr := obj.GetOr("value", nil).(string); isStr {
+	if obj, ok := result.(*jsonutil.Object); ok {
+		if value, isStr := obj.ValueOr("value", nil).(string); isStr {
 			pending.value = value
 		}
 		pending.result = obj
@@ -144,7 +144,7 @@ func ResolveServerRequest(frame *pyjson.Object, sessionOK func(sessionID string,
 }
 
 // Sends a one string request to the session's viewers and waits for its value, empty when unanswered
-func AskViewer(events *SessionEvents, sessionID, method string, params *pyjson.Object, cancelled func() bool, timeout *float64) string {
+func AskViewer(events *SessionEvents, sessionID, method string, params *jsonutil.Object, cancelled func() bool, timeout *float64) string {
 	pending := askServerRequest(events, sessionID, method, params, cancelled, timeout, nil)
 	if pending == nil {
 		return ""
@@ -153,7 +153,7 @@ func AskViewer(events *SessionEvents, sessionID, method string, params *pyjson.O
 }
 
 // The same round trip for a structured answer, a batch when qids are given, nil when unanswered
-func AskViewerResult(events *SessionEvents, sessionID, method string, params *pyjson.Object, cancelled func() bool, timeout *float64, qids []string) *pyjson.Object {
+func AskViewerResult(events *SessionEvents, sessionID, method string, params *jsonutil.Object, cancelled func() bool, timeout *float64, qids []string) *jsonutil.Object {
 	pending := askServerRequest(events, sessionID, method, params, cancelled, timeout, qids)
 	if pending == nil {
 		return nil
@@ -162,20 +162,20 @@ func AskViewerResult(events *SessionEvents, sessionID, method string, params *py
 }
 
 // Requests still waiting on this live session's stream, oldest first, as their frames carried them
-func OpenServerRequests(events *SessionEvents, sessionID string) []*pyjson.Object {
+func OpenServerRequests(events *SessionEvents, sessionID string) []*jsonutil.Object {
 	serverRequests.Lock()
 	defer serverRequests.Unlock()
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	for _, id := range serverRequests.order {
 		p := serverRequests.open[id]
 		if p.sessionID != sessionID || p.events != events {
 			continue
 		}
-		params := p.params.Copy()
+		params := p.params.Clone()
 		if p.locked != nil && p.locked.Len() > 0 {
-			params.Set("answers", p.locked.Copy())
+			params.Set("answers", p.locked.Clone())
 		}
-		out = append(out, pyjson.ObjectOf("id", id, "method", p.method, "params", params))
+		out = append(out, jsonutil.ObjectOf("id", id, "method", p.method, "params", params))
 	}
 	return out
 }
@@ -218,7 +218,7 @@ func LockAnswer(requestID, questionID string, answer any, sessionOK func(session
 }
 
 // Sends the request frame and waits for an answer, an interrupt or the timeout, with the cancel teardown
-func askServerRequest(events *SessionEvents, sessionID, method string, params *pyjson.Object, cancelled func() bool, timeout *float64, qids []string) *pendingServerRequest {
+func askServerRequest(events *SessionEvents, sessionID, method string, params *jsonutil.Object, cancelled func() bool, timeout *float64, qids []string) *pendingServerRequest {
 	if len(events.Fanout.Transports()) == 0 {
 		return nil
 	}
@@ -228,9 +228,9 @@ func askServerRequest(events *SessionEvents, sessionID, method string, params *p
 	buf := make([]byte, 6)
 	_, _ = rand.Read(buf)
 	requestID := "srq-" + hex.EncodeToString(buf)
-	framed := pyjson.ObjectOf("session_id", sessionID)
+	framed := jsonutil.ObjectOf("session_id", sessionID)
 	if params != nil {
-		for _, key := range params.Keys {
+		for _, key := range params.Keys() {
 			value, _ := params.Get(key)
 			framed.Set(key, value)
 		}
@@ -239,7 +239,7 @@ func askServerRequest(events *SessionEvents, sessionID, method string, params *p
 		tuigateway.ReportMisfit("params of request", method, err)
 	}
 	pending := &pendingServerRequest{done: make(chan struct{}), sessionID: sessionID, events: events, method: method,
-		params: framed, locked: pyjson.NewObject()}
+		params: framed, locked: jsonutil.NewObject()}
 	if len(qids) > 0 {
 		pending.qids = slices.Clone(qids)
 	}
@@ -250,7 +250,7 @@ func askServerRequest(events *SessionEvents, sessionID, method string, params *p
 	serverRequests.open[requestID] = pending
 	serverRequests.order = append(serverRequests.order, requestID)
 	serverRequests.Unlock()
-	events.Fanout.Write(pyjson.ObjectOf("jsonrpc", "2.0", "id", requestID, "method", method, "params", pending.params))
+	events.Fanout.Write(jsonutil.ObjectOf("jsonrpc", "2.0", "id", requestID, "method", method, "params", pending.params))
 	waited, reason := 0.0, "timeout"
 	ticker := time.NewTicker(serverRequestPoll)
 	defer ticker.Stop()
@@ -294,5 +294,5 @@ wait:
 // Withdraws a request card from every renderer, a publish failure swallowed
 func publishRequestCancel(events *SessionEvents, sessionID, requestID, method, reason string) {
 	defer func() { _ = recover() }()
-	events.Publish(sessionID, pyjson.ObjectOf("id", requestID, "method", method, "reason", reason), "request.cancel", nil)
+	events.Publish(sessionID, jsonutil.ObjectOf("id", requestID, "method", method, "reason", reason), "request.cancel", nil)
 }

@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Root files a clone edits in place, materialized so a symlinked source is never written through
@@ -54,7 +54,7 @@ func resolvePath(p string) string {
 }
 
 // Copy filter for a full clone, history always skipped and infrastructure skipped when cloning the default home
-func cloneAllCopytreeIgnore(sourceDir string) pyfs.IgnoreFunc {
+func cloneAllCopytreeIgnore(sourceDir string) fsutil.IgnoreFunc {
 	sourceResolved := resolvePath(sourceDir)
 	rootExclude := map[string]bool{}
 	for k := range profiles.CloneAllHistoryExcludeRoot {
@@ -101,7 +101,7 @@ func cloneFile(sourceDir, profileDir, relpath string) error {
 	if err := os.MkdirAll(filepath.Dir(dst), 0o777); err != nil {
 		return err
 	}
-	if err := pyfs.Copy2(src, dst); err != nil {
+	if err := fsutil.CopyFile(src, dst); err != nil {
 		return err
 	}
 	if relpath == ".env" {
@@ -123,7 +123,7 @@ func materializeSymlinkedFiles(profileDir string) ([]string, error) {
 			return done, err
 		}
 		if st, err := os.Stat(target); err == nil && st.Mode().IsRegular() {
-			if err := pyfs.Copy2(target, path); err != nil {
+			if err := fsutil.CopyFile(target, path); err != nil {
 				return done, err
 			}
 		}
@@ -139,7 +139,7 @@ var (
 )
 
 // Tree copy keeping links that recreates NTFS junctions as junctions instead of descending into them
-func copytreeKeepJunctions(src, dst string, ignore pyfs.IgnoreFunc, dirsExistOK bool) error {
+func copytreeKeepJunctions(src, dst string, ignore fsutil.IgnoreFunc, dirsExistOK bool) error {
 	junctions := map[string]string{}
 	var order []string
 	wrapped := func(dir string, names []string) map[string]bool {
@@ -153,7 +153,7 @@ func copytreeKeepJunctions(src, dst string, ignore pyfs.IgnoreFunc, dirsExistOK 
 		}
 		return ignored
 	}
-	if err := pyfs.CopyTree(src, dst, true, dirsExistOK, wrapped); err != nil {
+	if err := fsutil.CopyTree(src, dst, fsutil.CopyTreeOptions{Symlinks: true, DirsExistOK: dirsExistOK, Ignore: wrapped}); err != nil {
 		return err
 	}
 	for _, link := range order {
@@ -162,7 +162,7 @@ func copytreeKeepJunctions(src, dst string, ignore pyfs.IgnoreFunc, dirsExistOK 
 			return err
 		}
 		if err := createJunction(junctions[link], filepath.Join(dst, rel)); err != nil {
-			pkgLog().Warn("clone: skipped junction " + link + " -> " + junctions[link] + " (" + pyfs.OSErrorText(err) + ")")
+			pkgLog().Warn("clone: skipped junction " + link + " -> " + junctions[link] + " (" + err.Error() + ")")
 		}
 	}
 	return nil
@@ -197,7 +197,7 @@ func stripMultiplexFlag(ctx context.Context, configPath string) error {
 }
 
 // Copy filter for a cloned plugins tree that also skips in flight installer staging dirs at the root
-func clonePluginsIgnore(pluginsRoot string) pyfs.IgnoreFunc {
+func clonePluginsIgnore(pluginsRoot string) fsutil.IgnoreFunc {
 	return func(dir string, names []string) map[string]bool {
 		ignored := nonExportableEntries(dir, names)
 		if dir == pluginsRoot {

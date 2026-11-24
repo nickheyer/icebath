@@ -13,8 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // SessionDB members the search mixin calls beyond the FTS lifecycle ones, provided by the SessionDB
@@ -23,16 +21,16 @@ type searchHost interface {
 	readOnly() bool
 	executeWrite(ctx context.Context, fn func(conn SQLiteConn) error, patienceS *float64) error
 	readCtx(ctx context.Context, reopen bool, fn func(conn SQLiteConn) error) error
-	readAll(ctx context.Context, query string, args ...any) ([]*pyjson.Object, error)
-	readOne(ctx context.Context, query string, args ...any) (*pyjson.Object, error)
+	readAll(ctx context.Context, query string, args ...any) ([]*jsonutil.Object, error)
+	readOne(ctx context.Context, query string, args ...any) (*jsonutil.Object, error)
 	decodeContent(content any) any
 	getMeta(ctx context.Context, key string) (string, bool, error)
 	setMeta(ctx context.Context, key, value string, cursor SQLiteConn) error
 	foreignStateDBHolders() ([]Holder, error)
 	ftsMergeMaxPagesPerIndex() int
 	ftsMergeCommandsPerPass() int
-	GetMessagesAround(ctx context.Context, sessionID string, aroundMessageID int64, window int) (*pyjson.Object, error)
-	rowToMessageDict(row *pyjson.Object, warnContext string, summaryFlag bool) (*pyjson.Object, error)
+	GetMessagesAround(ctx context.Context, sessionID string, aroundMessageID int64, window int) (*jsonutil.Object, error)
+	rowToMessageDict(row *jsonutil.Object, warnContext string, summaryFlag bool) (*jsonutil.Object, error)
 }
 
 const (
@@ -98,7 +96,7 @@ func searchMessageFields(fields []string) ([]string, error) {
 	}
 	if len(unknown) > 0 {
 		sort.Strings(unknown)
-		return nil, &pyint.Error{Kind: "ValueError", Msg: "unknown search result field(s): " + strings.Join(unknown, ", ")}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "unknown search result field(s): " + strings.Join(unknown, ", ")}
 	}
 	out := []string{}
 	for _, f := range searchMessageResultFields {
@@ -225,17 +223,17 @@ type ftsRebuildState struct {
 }
 
 // Status payload with pending, total, indexed and the truncated percent capped at 100
-func (st *ftsRebuildState) info() (*pyjson.Object, error) {
+func (st *ftsRebuildState) info() (*jsonutil.Object, error) {
 	ratio, _ := new(big.Rat).SetFrac(new(big.Int).Mul(big.NewInt(100), st.indexed), st.total).Float64()
 	if math.IsInf(ratio, 0) {
-		return nil, &pyint.Error{Kind: "OverflowError", Msg: "integer division result too large for a float"}
+		return nil, &errorutil.Error{Kind: "OverflowError", Msg: "integer division result too large for a float"}
 	}
 	var percent any = 100
 	if ratio < 100 {
 		n, _ := big.NewFloat(ratio).Int(nil)
 		percent = pyint.Native(n)
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("pending", true)
 	out.Set("total", pyint.Value(st.total))
 	out.Set("indexed", pyint.Value(st.indexed))
@@ -244,17 +242,17 @@ func (st *ftsRebuildState) info() (*pyjson.Object, error) {
 }
 
 // Deferred base rebuild progress or nil when none is pending, read through the pooled reader
-func (s *sessionSearch) FTSRebuildStatus(ctx context.Context) (*pyjson.Object, error) {
+func (s *sessionSearch) FTSRebuildStatus(ctx context.Context) (*jsonutil.Object, error) {
 	return s.rebuildStatus(ctx, "fts_rebuild")
 }
 
 // CJK index backfill progress or nil when none is pending
-func (s *sessionSearch) FTSCJKRebuildStatus(ctx context.Context) (*pyjson.Object, error) {
+func (s *sessionSearch) FTSCJKRebuildStatus(ctx context.Context) (*jsonutil.Object, error) {
 	return s.rebuildStatus(ctx, "fts_cjk_rebuild")
 }
 
 // Progress payload of the backfill under prefix, nil when its high water is absent or not positive
-func (s *sessionSearch) rebuildStatus(ctx context.Context, prefix string) (*pyjson.Object, error) {
+func (s *sessionSearch) rebuildStatus(ctx context.Context, prefix string) (*jsonutil.Object, error) {
 	st, err := s.rebuildState(ctx, prefix)
 	if err != nil || st == nil {
 		return nil, err
@@ -593,7 +591,7 @@ func (s *sessionSearch) ftsTeardownTrashStep(ctx context.Context, progress *tear
 				return err
 			}
 			if n > 0 {
-				if err := s.host.setMeta(ctx, markerKey, pyrepr.Str(upper), conn); err != nil {
+				if err := s.host.setMeta(ctx, markerKey, anyutil.String(upper), conn); err != nil {
 					return err
 				}
 			}
@@ -816,7 +814,7 @@ func (s *sessionSearch) seedFTSRebuildMarkers(ctx context.Context, conn SQLiteCo
 	if err != nil {
 		return nil, err
 	}
-	if err := s.host.setMeta(ctx, "fts_rebuild_high_water", pyrepr.Str(row[0]), conn); err != nil {
+	if err := s.host.setMeta(ctx, "fts_rebuild_high_water", anyutil.String(row[0]), conn); err != nil {
 		return nil, err
 	}
 	if err := s.host.setMeta(ctx, "fts_rebuild_progress", "0", conn); err != nil {
@@ -993,18 +991,18 @@ func (s *sessionSearch) backfillProgress(ctx context.Context, phase, prefix stri
 }
 
 // Copy of a progress payload with the paced flag appended
-func withPaced(info *pyjson.Object, paced bool) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range info.Keys {
-		out.Set(k, info.Vals[k])
+func withPaced(info *jsonutil.Object, paced bool) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, k := range info.Keys() {
+		out.Set(k, info.Value(k))
 	}
 	out.Set("paced", paced)
 	return out
 }
 
 // Runs step to completion with adaptive chunk sizes, pacing while a foreign holder is seen and retrying OperationalErrors
-func (s *sessionSearch) optimizeDrive(step func() (bool, error), info func() *pyjson.Object,
-	emit func(*pyjson.Object), watch *holderWatch) error {
+func (s *sessionSearch) optimizeDrive(step func() (bool, error), info func() *jsonutil.Object,
+	emit func(*jsonutil.Object), watch *holderWatch) error {
 	s.fts.ftsChunkRows = ftsRebuildChunkRows
 	failures := 0
 	for {
@@ -1042,7 +1040,7 @@ func (s *sessionSearch) optimizeDrive(step func() (bool, error), info func() *py
 }
 
 // Runs VACUUM then a passive checkpoint, ticking vacuum progress from a side goroutine, false when VACUUM failed
-func (s *sessionSearch) optimizeVacuum(ctx context.Context, tick func(*pyjson.Object)) (bool, error) {
+func (s *sessionSearch) optimizeVacuum(ctx context.Context, tick func(*jsonutil.Object)) (bool, error) {
 	var ticker sync.WaitGroup
 	stop := make(chan struct{})
 	if tick != nil {
@@ -1164,9 +1162,9 @@ func refusalIf(cond bool, reason string) string {
 }
 
 // Repairs an older FTS layout into the v23 shape to completion, reporting ok, reason, vacuumed and vacuum_skipped
-func (s *sessionSearch) OptimizeFTSStorage(ctx context.Context, progressCB func(*pyjson.Object), vacuum bool) (*pyjson.Object, error) {
-	result := func(pairs ...any) *pyjson.Object {
-		out := pyjson.NewObject()
+func (s *sessionSearch) OptimizeFTSStorage(ctx context.Context, progressCB func(*jsonutil.Object), vacuum bool) (*jsonutil.Object, error) {
+	result := func(pairs ...any) *jsonutil.Object {
+		out := jsonutil.NewObject()
 		for i := 0; i < len(pairs); i += 2 {
 			out.Set(pairs[i].(string), pairs[i+1])
 		}
@@ -1217,7 +1215,7 @@ func (s *sessionSearch) OptimizeFTSStorage(ctx context.Context, progressCB func(
 	}
 	emit := progressCB
 	if emit == nil {
-		emit = func(*pyjson.Object) {}
+		emit = func(*jsonutil.Object) {}
 	}
 	teardown := newTeardownProgress()
 	teardown.counted = progressCB != nil
@@ -1245,7 +1243,7 @@ func (s *sessionSearch) OptimizeFTSStorage(ctx context.Context, progressCB func(
 			reason = "backfill_incomplete"
 		}
 		pkgLog().Warn(fmt.Sprintf("FTS storage optimization did not settle (%s): pending=%s trash=%s empty_index=%s",
-			reason, pyrepr.Str(stillPending), pyrepr.Str(stillTrash), pyrepr.Str(emptyIndex)))
+			reason, anyutil.String(stillPending), anyutil.String(stillTrash), anyutil.String(emptyIndex)))
 		return result("ok", false, "reason", reason, "vacuumed", nil), nil
 	}
 	var vacuumOK any
@@ -1289,7 +1287,7 @@ func (s *sessionSearch) OptimizeFTSStorage(ctx context.Context, progressCB func(
 }
 
 // Runs the base and CJK backfills then the trash teardown while the holder watch paces chunks
-func (s *sessionSearch) optimizePasses(ctx context.Context, progressCB, emit func(*pyjson.Object), teardown *teardownProgress) error {
+func (s *sessionSearch) optimizePasses(ctx context.Context, progressCB, emit func(*jsonutil.Object), teardown *teardownProgress) error {
 	watch, err := newHolderWatch(func() (bool, error) {
 		holders, err := s.host.foreignStateDBHolders()
 		return len(holders) > 0, err
@@ -1309,7 +1307,7 @@ func (s *sessionSearch) optimizePasses(ctx context.Context, progressCB, emit fun
 				return err
 			}
 		}
-		var info func() *pyjson.Object
+		var info func() *jsonutil.Object
 		if bf != nil {
 			emit(withPaced(bf.info(), watch.held()))
 			info = bf.info

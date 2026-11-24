@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func TestRelativePathsRaiseFileNotFoundInRemovedCwd(t *testing.T) {
@@ -56,7 +56,7 @@ func TestNodeModulesTreesResolveExistingPrefixOfMissingBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	resolved, err := pypath.Realpath(filepath.Join(dir, "real", "node_modules"), pypath.Lax)
+	resolved, err := pathutil.Resolve(filepath.Join(dir, "real", "node_modules"))
 	if err != nil {
 		t.Fatal(err)
 	}

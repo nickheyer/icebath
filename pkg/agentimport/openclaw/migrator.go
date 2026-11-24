@@ -4,15 +4,16 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Inputs of one migration run, empty paths meaning None and an empty selection meaning every option
@@ -91,31 +92,31 @@ func NewMigrator(o MigratorOptions) (m *Migrator, err error) {
 	}
 	m.outputDir = o.OutputDir
 	if m.outputDir == "" && o.Execute {
-		m.outputDir = pypath.PathJoin(o.TargetRoot, "migration", "openclaw", m.timestamp)
+		m.outputDir = pathutil.Join(o.TargetRoot, "migration", "openclaw", m.timestamp)
 	}
 	if m.outputDir != "" {
-		m.archiveDir = pypath.PathJoin(m.outputDir, "archive")
-		m.backupDir = pypath.PathJoin(m.outputDir, "backups")
-		m.overflowDir = pypath.PathJoin(m.outputDir, "overflow")
+		m.archiveDir = pathutil.Join(m.outputDir, "archive")
+		m.backupDir = pathutil.Join(m.outputDir, "backups")
+		m.overflowDir = pathutil.Join(m.outputDir, "overflow")
 	}
 	ocConfig := m.loadOpenClawConfig()
-	ws := strip(pyStrOrEmpty(or(dget(dget(dget(ocConfig, "agents", pyjson.NewObject()), "defaults", pyjson.NewObject()), "workspace", nil), "")))
+	ws := strip(pyStrOrEmpty(or(dget(dget(dget(ocConfig, "agents", jsonutil.NewObject()), "defaults", jsonutil.NewObject()), "workspace", nil), "")))
 	if ws != "" {
-		expanded, eerr := pypath.PathExpanduser(ws)
+		expanded, eerr := pathutil.ExpandUserPath(ws)
 		if eerr != nil {
 			raise(eerr)
 		}
-		wsPath, rerr := pypath.Resolve(expanded)
+		wsPath, rerr := pathutil.Resolve(expanded)
 		if rerr != nil {
 			raise(rerr)
 		}
 		if isDir(wsPath) {
-			if _, inside := pypath.PathRelativeTo(wsPath, m.sourceRoot); !inside {
+			if _, inside := pathutil.RelativeTo(wsPath, m.sourceRoot); !inside {
 				m.customWorkspace = wsPath
 			}
 		}
 	}
-	cfg, cerr := LoadYAMLFile(pypath.PathJoin(m.targetRoot, "config.yaml"))
+	cfg, cerr := LoadYAMLFile(pathutil.Join(m.targetRoot, "config.yaml"))
 	if cerr != nil {
 		var cre *ConfigReadError
 		if !errors.As(cerr, &cre) {
@@ -158,12 +159,12 @@ func (m *Migrator) record(kind, source, destination, status, reason string, deta
 
 // Appends one item with explicit None handling of source and destination
 func (m *Migrator) recordItem(kind string, source, destination *string, status, reason string, details ...any) {
-	d := pyjson.NewObject()
+	d := jsonutil.NewObject()
 	sensitive := false
 	for i := 0; i+1 < len(details); i += 2 {
 		key := details[i].(string)
 		if key == "sensitive" {
-			sensitive = truthy(details[i+1])
+			sensitive = anyutil.IsTrue(details[i+1])
 			continue
 		}
 		d.Set(key, toJSON(details[i+1]))
@@ -179,18 +180,18 @@ func (m *Migrator) recordItem(kind string, source, destination *string, status, 
 // First existing source path among the candidates, trying the renamed workspace folders and the configured workspace
 func (m *Migrator) sourceCandidate(relativePaths ...string) string {
 	for _, rel := range relativePaths {
-		candidate := pypath.PathJoin(m.sourceRoot, rel)
+		candidate := pathutil.Join(m.sourceRoot, rel)
 		if exists(candidate) {
 			return candidate
 		}
 		if suffix, ok := strings.CutPrefix(rel, "workspace/"); ok {
 			for _, variant := range []string{"workspace-main", "workspace-assistant"} {
-				if alt := pypath.PathJoin(m.sourceRoot, variant, suffix); exists(alt) {
+				if alt := pathutil.Join(m.sourceRoot, variant, suffix); exists(alt) {
 					return alt
 				}
 			}
 		} else if suffix, ok := strings.CutPrefix(rel, "workspace.default/"); ok {
-			if alt := pypath.PathJoin(m.sourceRoot, "workspace-main", suffix); exists(alt) {
+			if alt := pathutil.Join(m.sourceRoot, "workspace-main", suffix); exists(alt) {
 				return alt
 			}
 		}
@@ -199,7 +200,7 @@ func (m *Migrator) sourceCandidate(relativePaths ...string) string {
 		for _, rel := range relativePaths {
 			for _, prefix := range []string{"workspace/", "workspace.default/"} {
 				if suffix, ok := strings.CutPrefix(rel, prefix); ok {
-					if alt := pypath.PathJoin(m.customWorkspace, suffix); exists(alt) {
+					if alt := pathutil.Join(m.customWorkspace, suffix); exists(alt) {
 						return alt
 					}
 					break
@@ -215,11 +216,11 @@ func (m *Migrator) resolveSkillDestination(destination string) string {
 	if m.skillConflictMode != "rename" || !exists(destination) {
 		return destination
 	}
-	name := pypath.PathName(destination)
-	parent := pypath.PathParent(destination)
-	candidate := pypath.PathJoin(parent, name+"-imported")
+	name := pathutil.Name(destination)
+	parent := filepath.Dir(filepath.Clean(destination))
+	candidate := pathutil.Join(parent, name+"-imported")
 	for counter := 2; exists(candidate); counter++ {
-		candidate = pypath.PathJoin(parent, fmt.Sprintf("%s-imported-%d", name, counter))
+		candidate = pathutil.Join(parent, fmt.Sprintf("%s-imported-%d", name, counter))
 	}
 	return candidate
 }
@@ -236,11 +237,11 @@ func (m *Migrator) Migrate() (report *Report, err error) {
 	m.runIfSelected("workspace-agents", m.migrateWorkspaceAgents)
 	m.runIfSelected("memory", func() {
 		m.migrateMemory(m.sourceCandidate("workspace/MEMORY.md", "workspace.default/MEMORY.md"),
-			pypath.PathJoin(m.targetRoot, "memories", "MEMORY.md"), m.memoryLimit, "memory")
+			pathutil.Join(m.targetRoot, "memories", "MEMORY.md"), m.memoryLimit, "memory")
 	})
 	m.runIfSelected("user-profile", func() {
 		m.migrateMemory(m.sourceCandidate("workspace/USER.md", "workspace.default/USER.md"),
-			pypath.PathJoin(m.targetRoot, "memories", "USER.md"), m.userLimit, "user-profile")
+			pathutil.Join(m.targetRoot, "memories", "USER.md"), m.userLimit, "user-profile")
 	})
 	m.runIfSelected("messaging-settings", func() { m.migrateMessagingSettings(cfg) })
 	m.runIfSelected("secret-settings", func() { m.handleSecretSettings(cfg) })
@@ -256,7 +257,7 @@ func (m *Migrator) Migrate() (report *Report, err error) {
 	m.runIfSelected("shared-skills", m.migrateSharedSkills)
 	m.runIfSelected("daily-memory", m.migrateDailyMemory)
 	m.runIfSelected("tts-assets", func() {
-		m.copyTreeNonDestructive(m.sourceCandidate("workspace/tts"), pypath.PathJoin(m.targetRoot, "tts"), "tts-assets",
+		m.copyTreeNonDestructive(m.sourceCandidate("workspace/tts"), pathutil.Join(m.targetRoot, "tts"), "tts-assets",
 			map[string]bool{".venv": true, "generated": true, "__pycache__": true})
 	})
 	m.runIfSelected("archive", m.archiveDocs)
@@ -299,7 +300,7 @@ func (m *Migrator) runIfSelected(optionID string, fn func()) {
 	if !errors.As(err, &cre) {
 		raise(err)
 	}
-	m.record(optionID, "", pypath.PathJoin(m.targetRoot, "config.yaml"), StatusError, cre.Error(), "option_label", meta.Label)
+	m.record(optionID, "", pathutil.Join(m.targetRoot, "config.yaml"), StatusError, cre.Error(), "option_label", meta.Label)
 }
 
 // Report of every recorded item, written to the output directory when there is one
@@ -316,8 +317,8 @@ func (m *Migrator) buildReport() *Report {
 	r := &Report{
 		Timestamp:         m.timestamp,
 		Mode:              mode,
-		SourceRoot:        pypath.PathStr(m.sourceRoot),
-		TargetRoot:        pypath.PathStr(m.targetRoot),
+		SourceRoot:        filepath.Clean(m.sourceRoot),
+		TargetRoot:        filepath.Clean(m.targetRoot),
 		WorkspaceTarget:   strOrNone(m.workspaceTarget),
 		OutputDir:         strOrNone(m.outputDir),
 		MigrateSecrets:    m.migrateSecrets,
@@ -398,7 +399,7 @@ func (m *Migrator) writeOverflowEntries(kind string, entries []string) string {
 		return ""
 	}
 	mkdirAll(m.overflowDir)
-	path := pypath.PathJoin(m.overflowDir, strings.ReplaceAll(kind, "-", "_")+"_overflow.txt")
+	path := pathutil.Join(m.overflowDir, strings.ReplaceAll(kind, "-", "_")+"_overflow.txt")
 	writeText(path, strings.Join(entries, "\n")+"\n")
 	return path
 }
@@ -429,7 +430,7 @@ func (m *Migrator) copyFile(source, destination, kind string, transform func(str
 		if err := copyStat(source, destination); err != nil {
 			raise(err)
 		}
-	} else if err := pyshutil.Copy2(source, destination); err != nil {
+	} else if err := fsutil.CopyFile(source, destination); err != nil {
 		raise(err)
 	}
 	var backup any
@@ -451,7 +452,7 @@ func mustSHA(path string) string {
 // Imports SOUL.md, replacing a seeded default without needing overwrite
 func (m *Migrator) migrateSoul() {
 	source := m.sourceCandidate("workspace/SOUL.md", "workspace.default/SOUL.md")
-	destination := pypath.PathJoin(m.targetRoot, "SOUL.md")
+	destination := pathutil.Join(m.targetRoot, "SOUL.md")
 	if source == "" {
 		m.record("soul", "", destination, StatusSkipped, "No OpenClaw SOUL.md found")
 		return
@@ -471,7 +472,7 @@ func (m *Migrator) migrateWorkspaceAgents() {
 		m.record("workspace-agents", source, "", StatusSkipped, "No workspace target was provided")
 		return
 	}
-	m.copyFile(source, pypath.PathJoin(m.workspaceTarget, workspaceInstructions), "workspace-agents", RebrandText, false)
+	m.copyFile(source, pathutil.Join(m.workspaceTarget, workspaceInstructions), "workspace-agents", RebrandText, false)
 }
 
 // Detail pairs of a memory merge in report order
@@ -537,8 +538,8 @@ func (m *Migrator) writeMergedMemory(kind, source, destination string, merged []
 
 // Merges OpenClaw exec approval patterns into command_allowlist
 func (m *Migrator) migrateCommandAllowlist() {
-	source := pypath.PathJoin(m.sourceRoot, "exec-approvals.json")
-	destination := pypath.PathJoin(m.targetRoot, "config.yaml")
+	source := pathutil.Join(m.sourceRoot, "exec-approvals.json")
+	destination := pathutil.Join(m.targetRoot, "config.yaml")
 	if !exists(source) {
 		m.record("command-allowlist", "", destination, StatusSkipped, "No OpenClaw exec approvals file found")
 		return
@@ -548,13 +549,13 @@ func (m *Migrator) migrateCommandAllowlist() {
 		m.record("command-allowlist", source, destination, StatusError, "Could not read file: "+osErrText(err))
 		return
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		m.record("command-allowlist", source, destination, StatusError, "Invalid JSON: "+err.Error())
 		return
 	}
 	var patterns []any
-	if agents := dget(data, "agents", pyjson.NewObject()); isDict(agents) {
+	if agents := dget(data, "agents", jsonutil.NewObject()); isDict(agents) {
 		for _, agent := range ditems(agents) {
 			var allowlist any = []any{}
 			if isDict(agent.Val) {
@@ -565,7 +566,7 @@ func (m *Migrator) migrateCommandAllowlist() {
 				if isDict(entry) {
 					pattern = dget(entry, "pattern", nil)
 				}
-				if truthy(pattern) {
+				if anyutil.IsTrue(pattern) {
 					patterns = append(patterns, pattern)
 				}
 			}
@@ -607,9 +608,9 @@ func (m *Migrator) migrateCommandAllowlist() {
 }
 
 // Parsed openclaw.json, or the legacy clawdbot.json or moltbot.json, an empty object when none parses as a mapping
-func (m *Migrator) loadOpenClawConfig() *pyjson.Object {
+func (m *Migrator) loadOpenClawConfig() *jsonutil.Object {
 	for _, name := range []string{"openclaw.json", "clawdbot.json", "moltbot.json"} {
-		path := pypath.PathJoin(m.sourceRoot, name)
+		path := pathutil.Join(m.sourceRoot, name)
 		if !exists(path) {
 			continue
 		}
@@ -617,20 +618,20 @@ func (m *Migrator) loadOpenClawConfig() *pyjson.Object {
 		if err != nil {
 			continue
 		}
-		data, err := pyjson.Loads(text)
+		data, err := jsonutil.Decode(text)
 		if err != nil {
 			continue
 		}
-		if o, ok := data.(*pyjson.Object); ok {
+		if o, ok := data.(*jsonutil.Object); ok {
 			return o
 		}
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // The OpenClaw config passed in, reloaded when it is empty
-func (m *Migrator) cfgOr(cfg *pyjson.Object) *pyjson.Object {
+func (m *Migrator) cfgOr(cfg *jsonutil.Object) *jsonutil.Object {
 	if cfg != nil && cfg.Len() > 0 {
 		return cfg
 	}
@@ -639,12 +640,12 @@ func (m *Migrator) cfgOr(cfg *pyjson.Object) *pyjson.Object {
 
 // Pairs of the OpenClaw .env file
 func (m *Migrator) loadOpenClawEnv() map[string]string {
-	return parseEnvMap(pypath.PathJoin(m.sourceRoot, ".env"))
+	return parseEnvMap(pathutil.Join(m.sourceRoot, ".env"))
 }
 
 // Merges env values into the target .env, a differing existing value a conflict unless overwriting
 func (m *Migrator) mergeEnvValues(additions *envFile, kind, source string) {
-	destination := pypath.PathJoin(m.targetRoot, ".env")
+	destination := pathutil.Join(m.targetRoot, ".env")
 	envData := parseEnvFile(destination)
 	added := map[string]bool{}
 	conflicts := []any{}
@@ -694,18 +695,18 @@ func joinUsers(list []any) string {
 }
 
 // Imports the Telegram allowlist and maps the OpenClaw workspace onto terminal.cwd
-func (m *Migrator) migrateMessagingSettings(cfg *pyjson.Object) {
+func (m *Migrator) migrateMessagingSettings(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
 	additions := newAdditions()
-	workspace := dget(dget(dget(cfg, "agents", pyjson.NewObject()), "defaults", pyjson.NewObject()), "workspace", nil)
-	envPath := pypath.PathJoin(m.targetRoot, ".env")
-	allowlistPath := pypath.PathJoin(m.sourceRoot, "credentials", "telegram-default-allowFrom.json")
+	workspace := dget(dget(dget(cfg, "agents", jsonutil.NewObject()), "defaults", jsonutil.NewObject()), "workspace", nil)
+	envPath := pathutil.Join(m.targetRoot, ".env")
+	allowlistPath := pathutil.Join(m.sourceRoot, "credentials", "telegram-default-allowFrom.json")
 	if exists(allowlistPath) {
 		text, rerr := readText(allowlistPath)
 		var data any
 		var jerr error
 		if rerr == nil {
-			data, jerr = pyjson.Loads(text)
+			data, jerr = jsonutil.Decode(text)
 		}
 		switch {
 		case rerr != nil:
@@ -721,9 +722,9 @@ func (m *Migrator) migrateMessagingSettings(cfg *pyjson.Object) {
 		}
 	}
 	if len(additions.keys) > 0 {
-		m.mergeEnvValues(additions, "messaging-settings", pypath.PathJoin(m.sourceRoot, "openclaw.json"))
+		m.mergeEnvValues(additions, "messaging-settings", pathutil.Join(m.sourceRoot, "openclaw.json"))
 	} else {
-		m.record("messaging-settings", pypath.PathJoin(m.sourceRoot, "openclaw.json"), envPath, StatusSkipped, "No Icebath-compatible messaging settings found")
+		m.record("messaging-settings", pathutil.Join(m.sourceRoot, "openclaw.json"), envPath, StatusSkipped, "No Icebath-compatible messaging settings found")
 	}
 	if ws, ok := workspace.(string); ok && strip(ws) != "" {
 		m.migrateWorkingDirectory(strip(ws))
@@ -732,16 +733,16 @@ func (m *Migrator) migrateMessagingSettings(cfg *pyjson.Object) {
 
 // Sets terminal.cwd to the OpenClaw workspace unless it lives inside the OpenClaw directory
 func (m *Migrator) migrateWorkingDirectory(wsPath string) {
-	source := pypath.PathJoin(m.sourceRoot, "openclaw.json")
-	destination := pypath.PathJoin(m.targetRoot, "config.yaml")
+	source := pathutil.Join(m.sourceRoot, "openclaw.json")
+	destination := pathutil.Join(m.targetRoot, "config.yaml")
 	inside := false
-	expanded, err := pypath.PathExpanduser(wsPath)
+	expanded, err := pathutil.ExpandUserPath(wsPath)
 	if err != nil {
 		raise(err)
 	}
-	if resolved, err := pypath.Resolve(expanded); err == nil {
-		if root, err := pypath.Resolve(m.sourceRoot); err == nil {
-			_, inside = pypath.PathRelativeTo(resolved, root)
+	if resolved, err := pathutil.Resolve(expanded); err == nil {
+		if root, err := pathutil.Resolve(m.sourceRoot); err == nil {
+			_, inside = pathutil.RelativeTo(resolved, root)
 		}
 	}
 	if inside {
@@ -777,14 +778,14 @@ func (m *Migrator) migrateWorkingDirectory(wsPath string) {
 func supportedTargets() []any { return stringsToAny(SupportedSecretTargets) }
 
 // Imports the allowlisted secrets when enabled, otherwise records why they were left out
-func (m *Migrator) handleSecretSettings(cfg *pyjson.Object) {
+func (m *Migrator) handleSecretSettings(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
 	if m.migrateSecrets {
 		m.migrateSecretSettings(cfg)
 		return
 	}
-	configPath := pypath.PathJoin(m.sourceRoot, "openclaw.json")
-	envPath := pypath.PathJoin(m.targetRoot, ".env")
+	configPath := pathutil.Join(m.sourceRoot, "openclaw.json")
+	envPath := pathutil.Join(m.targetRoot, ".env")
 	if exists(configPath) {
 		m.record("secret-settings", configPath, envPath, StatusSkipped, "Secret migration disabled. Re-run with --migrate-secrets to import allowlisted secrets.", "supported_targets", supportedTargets())
 	} else {
@@ -793,9 +794,9 @@ func (m *Migrator) handleSecretSettings(cfg *pyjson.Object) {
 }
 
 // Imports the Telegram bot token
-func (m *Migrator) migrateSecretSettings(cfg *pyjson.Object) {
+func (m *Migrator) migrateSecretSettings(cfg *jsonutil.Object) {
 	additions := newAdditions()
-	tg := dget(dget(cfg, "channels", pyjson.NewObject()), "telegram", pyjson.NewObject())
+	tg := dget(dget(cfg, "channels", jsonutil.NewObject()), "telegram", jsonutil.NewObject())
 	var token any
 	if isDict(tg) {
 		token = channelField(tg, "botToken")
@@ -804,10 +805,10 @@ func (m *Migrator) migrateSecretSettings(cfg *pyjson.Object) {
 		additions.set("TELEGRAM_BOT_TOKEN", strip(s))
 	}
 	if len(additions.keys) > 0 {
-		m.mergeEnvValues(additions, "secret-settings", pypath.PathJoin(m.sourceRoot, "openclaw.json"))
+		m.mergeEnvValues(additions, "secret-settings", pathutil.Join(m.sourceRoot, "openclaw.json"))
 		return
 	}
-	m.record("secret-settings", pypath.PathJoin(m.sourceRoot, "openclaw.json"), pypath.PathJoin(m.targetRoot, ".env"), StatusSkipped,
+	m.record("secret-settings", pathutil.Join(m.sourceRoot, "openclaw.json"), pathutil.Join(m.targetRoot, ".env"), StatusSkipped,
 		"No allowlisted Icebath-compatible secrets found", "supported_targets", supportedTargets())
 }
 
@@ -825,8 +826,8 @@ func channelField(ch any, field string) any {
 }
 
 // Channel config under channels.name
-func channelCfg(cfg *pyjson.Object, name string) any {
-	return dget(dget(cfg, "channels", pyjson.NewObject()), name, pyjson.NewObject())
+func channelCfg(cfg *jsonutil.Object, name string) any {
+	return dget(dget(cfg, "channels", jsonutil.NewObject()), name, jsonutil.NewObject())
 }
 
 // Adds a stripped non empty str channel field under envKey
@@ -847,16 +848,16 @@ func addAllowFrom(additions *envFile, ch any, envKey string) {
 
 // Merges channel additions into .env or records that the channel had nothing
 func (m *Migrator) finishChannel(additions *envFile, kind, emptyReason string) {
-	source := pypath.PathJoin(m.sourceRoot, "openclaw.json")
+	source := pathutil.Join(m.sourceRoot, "openclaw.json")
 	if len(additions.keys) > 0 {
 		m.mergeEnvValues(additions, kind, source)
 		return
 	}
-	m.record(kind, source, pypath.PathJoin(m.targetRoot, ".env"), StatusSkipped, emptyReason)
+	m.record(kind, source, pathutil.Join(m.targetRoot, ".env"), StatusSkipped, emptyReason)
 }
 
 // Imports the Discord bot token and allowlist
-func (m *Migrator) migrateDiscordSettings(cfg *pyjson.Object) {
+func (m *Migrator) migrateDiscordSettings(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
 	additions := newAdditions()
 	if ch := channelCfg(cfg, "discord"); isDict(ch) {
@@ -867,7 +868,7 @@ func (m *Migrator) migrateDiscordSettings(cfg *pyjson.Object) {
 }
 
 // Imports the Slack bot and app tokens and allowlist
-func (m *Migrator) migrateSlackSettings(cfg *pyjson.Object) {
+func (m *Migrator) migrateSlackSettings(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
 	additions := newAdditions()
 	if ch := channelCfg(cfg, "slack"); isDict(ch) {
@@ -879,7 +880,7 @@ func (m *Migrator) migrateSlackSettings(cfg *pyjson.Object) {
 }
 
 // Imports the WhatsApp allowlist
-func (m *Migrator) migrateWhatsAppSettings(cfg *pyjson.Object) {
+func (m *Migrator) migrateWhatsAppSettings(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
 	additions := newAdditions()
 	if ch := channelCfg(cfg, "whatsapp"); isDict(ch) {
@@ -889,7 +890,7 @@ func (m *Migrator) migrateWhatsAppSettings(cfg *pyjson.Object) {
 }
 
 // Imports the Signal account, HTTP URL and allowlist
-func (m *Migrator) migrateSignalSettings(cfg *pyjson.Object) {
+func (m *Migrator) migrateSignalSettings(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
 	additions := newAdditions()
 	if ch := channelCfg(cfg, "signal"); isDict(ch) {
@@ -901,10 +902,10 @@ func (m *Migrator) migrateSignalSettings(cfg *pyjson.Object) {
 }
 
 // Imports provider API keys when secrets are enabled, otherwise records why they were left out
-func (m *Migrator) handleProviderKeys(cfg *pyjson.Object) {
+func (m *Migrator) handleProviderKeys(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
 	if !m.migrateSecrets {
-		m.record("provider-keys", pypath.PathJoin(m.sourceRoot, "openclaw.json"), pypath.PathJoin(m.targetRoot, ".env"), StatusSkipped,
+		m.record("provider-keys", pathutil.Join(m.sourceRoot, "openclaw.json"), pathutil.Join(m.targetRoot, ".env"), StatusSkipped,
 			"Secret migration disabled. Re-run with --migrate-secrets to import provider API keys.", "supported_targets", supportedTargets())
 		return
 	}
@@ -918,11 +919,11 @@ var envKeyMapping = []string{
 }
 
 // Collects provider keys from models.providers, TTS settings, the OpenClaw .env, the env object and auth profiles
-func (m *Migrator) migrateProviderKeys(cfg *pyjson.Object) {
+func (m *Migrator) migrateProviderKeys(cfg *jsonutil.Object) {
 	additions := newAdditions()
 	openclawEnv := m.loadOpenClawEnv()
-	configPath := pypath.PathJoin(m.sourceRoot, "openclaw.json")
-	if providers := dget(dget(cfg, "models", pyjson.NewObject()), "providers", pyjson.NewObject()); isDict(providers) {
+	configPath := pathutil.Join(m.sourceRoot, "openclaw.json")
+	if providers := dget(dget(cfg, "models", jsonutil.NewObject()), "providers", jsonutil.NewObject()); isDict(providers) {
 		for _, p := range ditems(providers) {
 			if !isDict(p.Val) {
 				continue
@@ -969,13 +970,13 @@ func (m *Migrator) migrateProviderKeys(cfg *pyjson.Object) {
 			}
 		}
 	}
-	if tts := dget(dget(cfg, "messages", pyjson.NewObject()), "tts", pyjson.NewObject()); isDict(tts) {
-		if el := dget(tts, "elevenlabs", pyjson.NewObject()); isDict(el) {
+	if tts := dget(dget(cfg, "messages", jsonutil.NewObject()), "tts", jsonutil.NewObject()); isDict(tts) {
+		if el := dget(tts, "elevenlabs", jsonutil.NewObject()); isDict(el) {
 			if s, ok := dget(el, "apiKey", nil).(string); ok && strip(s) != "" {
 				additions.set("ELEVENLABS_API_KEY", strip(s))
 			}
 		}
-		if oai := dget(tts, "openai", pyjson.NewObject()); isDict(oai) {
+		if oai := dget(tts, "openai", jsonutil.NewObject()); isDict(oai) {
 			if s, ok := dget(oai, "apiKey", nil).(string); ok && strip(s) != "" {
 				additions.set("VOICE_TOOLS_OPENAI_KEY", strip(s))
 			}
@@ -1009,12 +1010,12 @@ func (m *Migrator) migrateProviderKeys(cfg *pyjson.Object) {
 		m.mergeEnvValues(additions, "provider-keys", configPath)
 		return
 	}
-	m.record("provider-keys", configPath, pypath.PathJoin(m.targetRoot, ".env"), StatusSkipped, "No provider API keys found", "supported_targets", supportedTargets())
+	m.record("provider-keys", configPath, pathutil.Join(m.targetRoot, ".env"), StatusSkipped, "No provider API keys found", "supported_targets", supportedTargets())
 }
 
 // Adds keys from agents/main/agent/auth-profiles.json, unreadable or invalid JSON ignored
 func (m *Migrator) collectAuthProfileKeys(additions *envFile) {
-	path := pypath.PathJoin(m.sourceRoot, "agents", "main", "agent", "auth-profiles.json")
+	path := pathutil.Join(m.sourceRoot, "agents", "main", "agent", "auth-profiles.json")
 	if !exists(path) {
 		return
 	}
@@ -1022,7 +1023,7 @@ func (m *Migrator) collectAuthProfileKeys(additions *envFile) {
 	if err != nil {
 		return
 	}
-	profiles, err := pyjson.Loads(text)
+	profiles, err := jsonutil.Decode(text)
 	if err != nil || !isDict(profiles) {
 		return
 	}
@@ -1056,11 +1057,11 @@ func (m *Migrator) collectAuthProfileKeys(additions *envFile) {
 }
 
 // Sets model.default from agents.defaults.model, a catalog alias resolved to its API id
-func (m *Migrator) migrateModelConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateModelConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	destination := pypath.PathJoin(m.targetRoot, "config.yaml")
-	sourcePath := pypath.PathJoin(m.sourceRoot, "openclaw.json")
-	defaults := dget(dget(cfg, "agents", pyjson.NewObject()), "defaults", pyjson.NewObject())
+	destination := pathutil.Join(m.targetRoot, "config.yaml")
+	sourcePath := pathutil.Join(m.sourceRoot, "openclaw.json")
+	defaults := dget(dget(cfg, "agents", jsonutil.NewObject()), "defaults", jsonutil.NewObject())
 	modelValue := dget(defaults, "model", nil)
 	if modelValue == nil {
 		m.record("model-config", sourcePath, destination, StatusSkipped, "No default model found in OpenClaw config")
@@ -1076,10 +1077,10 @@ func (m *Migrator) migrateModelConfig(cfg *pyjson.Object) {
 		return
 	}
 	modelStr = strip(modelStr)
-	catalog := dget(dget(dget(cfg, "agents", pyjson.NewObject()), "defaults", pyjson.NewObject()), "models", pyjson.NewObject())
+	catalog := dget(dget(dget(cfg, "agents", jsonutil.NewObject()), "defaults", jsonutil.NewObject()), "models", jsonutil.NewObject())
 	if isDict(catalog) && !contains(catalog, modelStr) {
 		for _, e := range ditems(catalog) {
-			if isDict(e.Val) && pyrepr.Equal(dget(e.Val, "alias", nil), modelStr) {
+			if isDict(e.Val) && anyutil.Equal(dget(e.Val, "alias", nil), modelStr) {
 				modelStr = e.Key
 				break
 			}
@@ -1091,11 +1092,11 @@ func (m *Migrator) migrateModelConfig(cfg *pyjson.Object) {
 	}
 	icebathCfg := loadYAML(destination)
 	currentModel := dget(icebathCfg, "model", nil)
-	if pyrepr.Equal(currentModel, modelStr) {
+	if anyutil.Equal(currentModel, modelStr) {
 		m.record("model-config", sourcePath, destination, StatusSkipped, "Model already set to the same value")
 		return
 	}
-	if truthy(currentModel) && !m.overwrite {
+	if anyutil.IsTrue(currentModel) && !m.overwrite {
 		m.record("model-config", sourcePath, destination, StatusConflict, "Model already set and overwrite is disabled", "current", currentModel, "incoming", modelStr)
 		return
 	}
@@ -1118,12 +1119,12 @@ func (m *Migrator) migrateModelConfig(cfg *pyjson.Object) {
 // Preferred provider block when a dict, else the talk provider block when a dict, else the legacy flat block
 func ttsProviderBlock(providers, talkProviders, tts any, name string) any {
 	if isDict(dget(providers, name, nil)) {
-		return or(dget(providers, name, nil), pyjson.NewObject())
+		return or(dget(providers, name, nil), jsonutil.NewObject())
 	}
 	if isDict(dget(talkProviders, name, nil)) {
-		return or(dget(talkProviders, name, nil), pyjson.NewObject())
+		return or(dget(talkProviders, name, nil), jsonutil.NewObject())
 	}
-	return or(dget(tts, name, nil), pyjson.NewObject())
+	return or(dget(tts, name, nil), jsonutil.NewObject())
 }
 
 // Stripped non empty str value of the first truthy candidate
@@ -1136,12 +1137,12 @@ func firstStripped(v any) (string, bool) {
 }
 
 // Merges the TTS provider and voice settings into the tts section
-func (m *Migrator) migrateTTSConfig(cfg *pyjson.Object) {
+func (m *Migrator) migrateTTSConfig(cfg *jsonutil.Object) {
 	cfg = m.cfgOr(cfg)
-	destination := pypath.PathJoin(m.targetRoot, "config.yaml")
-	sourcePath := pypath.PathJoin(m.sourceRoot, "openclaw.json")
-	tts := dget(dget(cfg, "messages", pyjson.NewObject()), "tts", pyjson.NewObject())
-	if !isDict(tts) || !truthy(tts) {
+	destination := pathutil.Join(m.targetRoot, "config.yaml")
+	sourcePath := pathutil.Join(m.sourceRoot, "openclaw.json")
+	tts := dget(dget(cfg, "messages", jsonutil.NewObject()), "tts", jsonutil.NewObject())
+	if !isDict(tts) || !anyutil.IsTrue(tts) {
 		m.record("tts-config", sourcePath, destination, StatusSkipped, "No TTS configuration found in OpenClaw config")
 		return
 	}
@@ -1153,9 +1154,9 @@ func (m *Migrator) migrateTTSConfig(cfg *pyjson.Object) {
 		}
 		dset(ttsData, "provider", p)
 	}
-	providers := or(dget(tts, "providers", nil), pyjson.NewObject())
-	talkCfg := or(dget(m.cfgOr(cfg), "talk", nil), pyjson.NewObject())
-	talkProviders := or(dget(talkCfg, "providers", nil), pyjson.NewObject())
+	providers := or(dget(tts, "providers", nil), jsonutil.NewObject())
+	talkCfg := or(dget(m.cfgOr(cfg), "talk", nil), jsonutil.NewObject())
+	talkProviders := or(dget(talkCfg, "providers", nil), jsonutil.NewObject())
 	if el := ttsProviderBlock(providers, talkProviders, tts, "elevenlabs"); isDict(el) {
 		settings := newYAMLMap()
 		if v, ok := firstStripped(orElse(dget(el, "voiceId", nil), lazyGet(talkCfg, "voiceId"))); ok {
@@ -1182,9 +1183,9 @@ func (m *Migrator) migrateTTSConfig(cfg *pyjson.Object) {
 	}
 	var edge any
 	if isDict(dget(providers, "edge", nil)) || isDict(dget(providers, "microsoft", nil)) {
-		edge = or(dget(providers, "edge", nil), or(dget(providers, "microsoft", nil), pyjson.NewObject()))
+		edge = or(dget(providers, "edge", nil), or(dget(providers, "microsoft", nil), jsonutil.NewObject()))
 	} else {
-		edge = or(dget(tts, "edge", nil), or(dget(tts, "microsoft", nil), pyjson.NewObject()))
+		edge = or(dget(tts, "edge", nil), or(dget(tts, "microsoft", nil), jsonutil.NewObject()))
 	}
 	if isDict(edge) {
 		if v, ok := firstStripped(dget(edge, "voice", nil)); ok {
@@ -1230,7 +1231,7 @@ func lazyGet(d any, key string) func() any { return func() any { return dget(d, 
 
 // Python a or b with b evaluated only when a is falsy
 func orElse(a any, b func() any) any {
-	if truthy(a) {
+	if anyutil.IsTrue(a) {
 		return a
 	}
 	return b()
@@ -1257,15 +1258,15 @@ func mappingKeysOf(d map[string]any) []string {
 
 // Imports managed, personal and project level shared skill directories
 func (m *Migrator) migrateSharedSkills() {
-	userHome, err := pypath.PathHome()
+	userHome, err := pathutil.Home()
 	if err != nil {
 		raise(err)
 	}
 	sources := []struct{ root, kind, desc string }{
-		{pypath.PathJoin(m.sourceRoot, "skills"), "shared-skills", "managed skills"},
-		{pypath.PathJoin(userHome, ".agents", "skills"), "personal-skills", "personal cross-project skills"},
-		{pypath.PathJoin(m.sourceRoot, "workspace", ".agents", "skills"), "project-skills", "project-level shared skills"},
-		{pypath.PathJoin(m.sourceRoot, "workspace.default", ".agents", "skills"), "project-skills", "project-level shared skills"},
+		{pathutil.Join(m.sourceRoot, "skills"), "shared-skills", "managed skills"},
+		{pathutil.Join(userHome, ".agents", "skills"), "personal-skills", "personal cross-project skills"},
+		{pathutil.Join(m.sourceRoot, "workspace", ".agents", "skills"), "project-skills", "project-level shared skills"},
+		{pathutil.Join(m.sourceRoot, "workspace.default", ".agents", "skills"), "project-skills", "project-level shared skills"},
 	}
 	found := false
 	for _, s := range sources {
@@ -1275,7 +1276,7 @@ func (m *Migrator) migrateSharedSkills() {
 		}
 	}
 	if !found {
-		m.record("shared-skills", "", pypath.PathJoin(m.targetRoot, "skills", SkillCategoryDirname), StatusSkipped, "No shared OpenClaw skills directories found")
+		m.record("shared-skills", "", pathutil.Join(m.targetRoot, "skills", SkillCategoryDirname), StatusSkipped, "No shared OpenClaw skills directories found")
 	}
 }
 
@@ -1287,8 +1288,8 @@ func skillDirs(root string) []string {
 	}
 	var out []string
 	for _, e := range entries {
-		p := pypath.PathJoin(root, e.Name())
-		if isDir(p) && exists(pypath.PathJoin(p, "SKILL.md")) {
+		p := pathutil.Join(root, e.Name())
+		if isDir(p) && exists(pathutil.Join(p, "SKILL.md")) {
 			out = append(out, p)
 		}
 	}
@@ -1297,9 +1298,9 @@ func skillDirs(root string) []string {
 
 // Copies each skill directory under openclaw-imports honouring the skill conflict mode
 func (m *Migrator) copySkillDirs(dirs []string, kind, previewReason, renamedReason string) {
-	destinationRoot := pypath.PathJoin(m.targetRoot, "skills", SkillCategoryDirname)
+	destinationRoot := pathutil.Join(m.targetRoot, "skills", SkillCategoryDirname)
 	for _, skillDir := range dirs {
-		destination := pypath.PathJoin(destinationRoot, pypath.PathName(skillDir))
+		destination := pathutil.Join(destinationRoot, pathutil.Name(skillDir))
 		final := destination
 		if exists(destination) {
 			if m.skillConflictMode == "skip" {
@@ -1322,13 +1323,13 @@ func (m *Migrator) copySkillDirs(dirs []string, kind, previewReason, renamedReas
 		if final == destination && exists(destination) {
 			backupPath = m.maybeBackup(destination)
 		}
-		mkdirAll(pypath.PathParent(final))
+		mkdirAll(filepath.Dir(filepath.Clean(final)))
 		if final == destination && exists(destination) {
-			if err := pyshutil.Rmtree(destination); err != nil {
+			if err := os.RemoveAll(destination); err != nil {
 				raise(err)
 			}
 		}
-		if err := pyshutil.CopyTree(skillDir, final, false, false); err != nil {
+		if err := fsutil.CopyTree(skillDir, final, fsutil.CopyTreeOptions{}); err != nil {
 			raise(err)
 		}
 		details := []any{"backup", backupPath}
@@ -1341,13 +1342,13 @@ func (m *Migrator) copySkillDirs(dirs []string, kind, previewReason, renamedReas
 
 // Writes the openclaw-imports category description when missing and reports it on preview and apply
 func (m *Migrator) ensureCategoryDescription(kind string) {
-	descPath := pypath.PathJoin(m.targetRoot, "skills", SkillCategoryDirname, "DESCRIPTION.md")
+	descPath := pathutil.Join(m.targetRoot, "skills", SkillCategoryDirname, "DESCRIPTION.md")
 	if exists(descPath) {
 		return
 	}
 	reason := "Would create category description"
 	if m.execute {
-		mkdirAll(pypath.PathParent(descPath))
+		mkdirAll(filepath.Dir(filepath.Clean(descPath)))
 		writeText(descPath, SkillCategoryDescription+"\n")
 		reason = ""
 	}
@@ -1358,7 +1359,7 @@ func (m *Migrator) ensureCategoryDescription(kind string) {
 func (m *Migrator) importSkillDirectory(sourceRoot, kindLabel, desc string) {
 	dirs := skillDirs(sourceRoot)
 	if len(dirs) == 0 {
-		m.record(kindLabel, sourceRoot, pypath.PathJoin(m.targetRoot, "skills", SkillCategoryDirname), StatusSkipped, "No skills with SKILL.md found in "+desc)
+		m.record(kindLabel, sourceRoot, pathutil.Join(m.targetRoot, "skills", SkillCategoryDirname), StatusSkipped, "No skills with SKILL.md found in "+desc)
 		return
 	}
 	m.copySkillDirs(dirs, kindLabel, "Would copy "+desc+" directory", "Would copy "+desc+" directory under a renamed folder")
@@ -1368,7 +1369,7 @@ func (m *Migrator) importSkillDirectory(sourceRoot, kindLabel, desc string) {
 // Merges every workspace/memory markdown file into MEMORY.md
 func (m *Migrator) migrateDailyMemory() {
 	sourceDir := m.sourceCandidate("workspace/memory")
-	destination := pypath.PathJoin(m.targetRoot, "memories", "MEMORY.md")
+	destination := pathutil.Join(m.targetRoot, "memories", "MEMORY.md")
 	if sourceDir == "" || !isDir(sourceDir) {
 		m.record("daily-memory", "", destination, StatusSkipped, "No workspace/memory/ directory found")
 		return
@@ -1379,8 +1380,8 @@ func (m *Migrator) migrateDailyMemory() {
 	}
 	var mdFiles []string
 	for _, e := range entries {
-		p := pypath.PathJoin(sourceDir, e.Name())
-		if isFile(p) && pypath.PathSuffix(p) == ".md" {
+		p := pathutil.Join(sourceDir, e.Name())
+		if isFile(p) && pathutil.Suffix(p) == ".md" {
 			mdFiles = append(mdFiles, p)
 		}
 	}
@@ -1415,7 +1416,7 @@ func (m *Migrator) migrateDailyMemory() {
 // Imports workspace skills under openclaw-imports
 func (m *Migrator) migrateSkills() {
 	sourceRoot := m.sourceCandidate("workspace/skills")
-	destinationRoot := pypath.PathJoin(m.targetRoot, "skills", SkillCategoryDirname)
+	destinationRoot := pathutil.Join(m.targetRoot, "skills", SkillCategoryDirname)
 	if sourceRoot == "" || !exists(sourceRoot) {
 		m.record("skills", "", destinationRoot, StatusSkipped, "No OpenClaw skills directory found")
 		return
@@ -1441,7 +1442,7 @@ func rglobFiles(root string) []string {
 		}
 		for _, e := range entries {
 			if e.IsDir() {
-				walk(pypath.PathJoin(dir, e.Name()))
+				walk(pathutil.Join(dir, e.Name()))
 			}
 		}
 	}
@@ -1453,7 +1454,7 @@ func rglobFiles(root string) []string {
 			continue
 		}
 		for _, e := range entries {
-			if p := pypath.PathJoin(dir, e.Name()); isFile(p) {
+			if p := pathutil.Join(dir, e.Name()); isFile(p) {
 				files = append(files, p)
 			}
 		}
@@ -1469,8 +1470,8 @@ func (m *Migrator) copyTreeNonDestructive(sourceRoot, destinationRoot, kind stri
 	}
 	var files []string
 	for _, p := range rglobFiles(sourceRoot) {
-		rel, _ := pypath.PathRelativeTo(p, sourceRoot)
-		_, parts := pypath.PathParts(rel)
+		rel, _ := pathutil.RelativeTo(p, sourceRoot)
+		_, parts := pathutil.Parts(rel)
 		ignored := false
 		for _, part := range parts[:max(len(parts)-1, 0)] {
 			if ignoreDirNames[part] {
@@ -1487,8 +1488,8 @@ func (m *Migrator) copyTreeNonDestructive(sourceRoot, destinationRoot, kind stri
 	}
 	copied, unchanged, conflicts := 0, 0, 0
 	for _, source := range files {
-		rel, _ := pypath.PathRelativeTo(source, sourceRoot)
-		destination := pypath.PathJoin(destinationRoot, rel)
+		rel, _ := pathutil.RelativeTo(source, sourceRoot)
+		destination := pathutil.Join(destinationRoot, rel)
 		if exists(destination) {
 			if mustSHA(source) == mustSHA(destination) {
 				unchanged++
@@ -1503,7 +1504,7 @@ func (m *Migrator) copyTreeNonDestructive(sourceRoot, destinationRoot, kind stri
 		if m.execute {
 			m.maybeBackup(destination)
 			ensureParent(destination)
-			if err := pyshutil.Copy2(source, destination); err != nil {
+			if err := fsutil.CopyFile(source, destination); err != nil {
 				raise(err)
 			}
 		}
@@ -1531,7 +1532,7 @@ func (m *Migrator) archiveDocs() {
 		}
 	}
 	for _, rel := range []string{"workspace/.learnings", "workspace/memory"} {
-		if c := pypath.PathJoin(m.sourceRoot, rel); exists(c) {
+		if c := pathutil.Join(m.sourceRoot, rel); exists(c) {
 			m.archivePath(c, archiveReason)
 		}
 	}
@@ -1540,12 +1541,12 @@ func (m *Migrator) archiveDocs() {
 		{"credentials/telegram-default-allowFrom.json", "Selected Icebath-compatible values were extracted; raw credentials file was not copied."},
 	}
 	for _, p := range partial {
-		if c := pypath.PathJoin(m.sourceRoot, p.rel); exists(c) {
+		if c := pathutil.Join(m.sourceRoot, p.rel); exists(c) {
 			m.record("raw-config-skip", c, "", StatusSkipped, p.reason)
 		}
 	}
 	for _, rel := range []string{"memory/main.sqlite", "credentials", "devices", "identity", "workspace.zip"} {
-		if c := pypath.PathJoin(m.sourceRoot, rel); exists(c) {
+		if c := pathutil.Join(m.sourceRoot, rel); exists(c) {
 			m.record("sensitive-skip", c, "", StatusSkipped, "Contains secrets, binary state, or product-specific runtime data")
 		}
 	}
@@ -1555,15 +1556,15 @@ func (m *Migrator) archiveDocs() {
 func (m *Migrator) archivePath(source, reason string) {
 	destination := ""
 	if m.archiveDir != "" {
-		destination = pypath.PathJoin(m.archiveDir, relativeLabel(source, m.sourceRoot))
+		destination = pathutil.Join(m.archiveDir, relativeLabel(source, m.sourceRoot))
 	}
 	if m.execute && destination != "" {
 		ensureParent(destination)
 		if isDir(source) {
-			if err := pyshutil.CopyTree(source, destination, false, true); err != nil {
+			if err := fsutil.CopyTree(source, destination, fsutil.CopyTreeOptions{DirsExistOK: true}); err != nil {
 				raise(err)
 			}
-		} else if err := pyshutil.Copy2(source, destination); err != nil {
+		} else if err := fsutil.CopyFile(source, destination); err != nil {
 			raise(err)
 		}
 	}

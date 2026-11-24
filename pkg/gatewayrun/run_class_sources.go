@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Authorizes source under the live transport's profile rather than the routed runtime
@@ -39,7 +38,7 @@ func (r *GatewayRunner) cacheSessionSource(sessionKey string, source *gateway.Se
 		return
 	}
 	if r.sessionSources == nil {
-		r.sessionSources = pydict.New[string, *gateway.SessionSource]()
+		r.sessionSources = orderedutil.NewMap[string, *gateway.SessionSource]()
 	}
 	cp := *source
 	r.sessionSources.Delete(sessionKey)

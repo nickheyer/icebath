@@ -8,11 +8,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -28,7 +28,7 @@ func TUIStatusRead(ctx context.Context, a *gateway.SessionAuthority, ref gateway
 	stored := gateway.TUIStoredID(ctx, a, ref)
 	row := map[string]any{}
 	if found, err := a.DB.GetSession(ctx, stored); err == nil && found != nil {
-		if plain, ok := pyjson.Plain(found).(map[string]any); ok {
+		if plain, ok := jsonutil.Plain(found).(map[string]any); ok {
 			row = plain
 		}
 	}
@@ -46,8 +46,8 @@ func TUIStatusRead(ctx context.Context, a *gateway.SessionAuthority, ref gateway
 		if model != nil {
 			in.model = *model
 		}
-		if pyrepr.Truthy(policy.Provider()) {
-			in.provider = pyrepr.Str(policy.Provider())
+		if anyutil.IsTrue(policy.Provider()) {
+			in.provider = anyutil.String(policy.Provider())
 		}
 	} else {
 		in.agentModel, in.agentProvider = resident.Model(), resident.Provider()
@@ -59,16 +59,16 @@ func TUIStatusRead(ctx context.Context, a *gateway.SessionAuthority, ref gateway
 		if resident != nil {
 			requested, baseURL = resident.RequestedProvider(), resident.BaseURL()
 		}
-		if baseURL == "" && pyrepr.Truthy(policy.BaseURL()) {
-			baseURL = pyrepr.Str(policy.BaseURL())
+		if baseURL == "" && anyutil.IsTrue(policy.BaseURL()) {
+			baseURL = anyutil.String(policy.BaseURL())
 		}
 		scoped := gateway.ProfileRuntimeScope(ctx, a.ProfileID, true)
-		fields["provider"] = provider.SessionProviderIdentity(scoped, "custom", requested, baseURL, pyrepr.Str(fields["model"]))
+		fields["provider"] = provider.SessionProviderIdentity(scoped, "custom", requested, baseURL, anyutil.String(fields["model"]))
 	}
 	lines := []string{"Icebath TUI Status", ""}
 	lines = append(lines, statusLines(fields, "session_id", "path")...)
 	if project, ok := tuiserver.ProjectInfoForCwd(ctx, policy.Cwd).(map[string]any); ok && project != nil {
-		lines = append(lines, "Project: "+pyrepr.Str(project["name"]))
+		lines = append(lines, "Project: "+anyutil.String(project["name"]))
 	}
 	lines = append(lines, statusLines(fields, "title", "model", "created", "last_activity", "tokens", "agent_running")...)
 	return strings.Join(lines, "\n"), nil
@@ -80,13 +80,13 @@ func displayRole(row any) string {
 	switch typed := row.(type) {
 	case map[string]any:
 		role = typed["role"]
-	case *pyjson.Object:
-		role = typed.GetOr("role", nil)
+	case *jsonutil.Object:
+		role = typed.Value("role")
 	}
-	if !pyrepr.Truthy(role) {
+	if !anyutil.IsTrue(role) {
 		return "unknown"
 	}
-	return pyrepr.Str(role)
+	return anyutil.String(role)
 }
 
 // Main's live context output, role counts and model then the category table or the stored usage

@@ -2,9 +2,10 @@ package tools
 
 import (
 	"context"
+	"net/url"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Test seam for the Brave free tier search endpoint
@@ -22,7 +23,7 @@ func (p *braveFreeProvider) Search(ctx context.Context, env *Env, query string, 
 		return searchFail("BRAVE_SEARCH_API_KEY is not set"), nil
 	}
 	data, failure := httpGetJSON(ctx, env, "Brave Search", braveEndpoint,
-		pyhttpx.Params{{"q", query}, {"count", itoa(max(1, min(limit, 20)))}},
+		url.Values{"q": {query}, "count": {itoa(max(1, min(limit, 20)))}},
 		[][2]string{{"X-Subscription-Token", apiKey}, {"Accept", "application/json"}}, 15*time.Second, "")
 	if failure != nil {
 		return failure, nil
@@ -31,11 +32,11 @@ func (p *braveFreeProvider) Search(ctx context.Context, env *Env, query string, 
 	if err != nil {
 		return nil, err
 	}
-	results, err := pyGetDefault(pyOr(web, map[string]any{}), "results", []any{})
+	results, err := pyGetDefault(anyutil.Or(web, map[string]any{}), "results", []any{})
 	if err != nil {
 		return nil, err
 	}
-	raw := pyOr(results, []any{})
+	raw := anyutil.Or(results, []any{})
 	head, err := pySeqHead(raw, limit)
 	if err != nil {
 		return nil, err
@@ -64,6 +65,3 @@ func (p *braveFreeProvider) SetupSchema() map[string]any {
 func NewBraveFreeWebProvider() WebProvider {
 	return &braveFreeProvider{baseWebProvider{name: "brave-free", display: "Brave Search (Free)", keyEnv: "BRAVE_SEARCH_API_KEY"}}
 }
-
-// Class name the registry log and type errors print, the plugin provider class
-func (*braveFreeProvider) PyTypeName() string { return "BraveFreeWebSearchProvider" }

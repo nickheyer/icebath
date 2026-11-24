@@ -12,12 +12,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Prefix of a durable frozen config secret reference
@@ -103,7 +104,7 @@ func (r *RecoveredSecrets) equal(o *RecoveredSecrets) bool {
 	}
 	for i, path := range r.paths {
 		value, ok := o.Get(path)
-		if !ok || !reflect.DeepEqual(pyjson.Plain(value), pyjson.Plain(r.values[i])) {
+		if !ok || !reflect.DeepEqual(jsonutil.Plain(value), jsonutil.Plain(r.values[i])) {
 			return false
 		}
 	}
@@ -144,7 +145,7 @@ func pathEqual(a, b []any) bool {
 
 // Hashable form of a path for set membership
 func pathKey(path []any) string {
-	text, _ := pyjson.Dumps([]any(path))
+	text, _ := jsonutil.Encode([]any(path))
 	return text
 }
 
@@ -259,7 +260,7 @@ func (p *LocalSessionPolicy) asDict() map[string]any {
 
 // Hex sha256 of sorted key JSON
 func sortedDigest(value any) string {
-	text, _ := pyjson.Dumps(value, pyjson.SortKeys(true))
+	text, _ := jsonutil.Encode(value, jsonutil.SortKeys())
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
@@ -325,7 +326,7 @@ func legacyIdentities(policy *LocalSessionPolicy) map[string]bool {
 func secretFingerprint(value any) any {
 	text, isStr := value.(string)
 	if !isStr {
-		text, _ = pyjson.Dumps(value, pyjson.SortKeys(true))
+		text, _ = jsonutil.Encode(value, jsonutil.SortKeys())
 	}
 	if fp := provider.FingerprintSecretValue(text); fp != "" {
 		return fp
@@ -458,7 +459,7 @@ func secretBinding(ctx context.Context, config map[string]any, path secretPath) 
 
 // Profile home holding the authority database
 func launchOwnerHome(owner launchSecretOwner) (string, error) {
-	resolved, err := pypath.Resolve(owner.launchOwnerDBPath())
+	resolved, err := pathutil.Resolve(owner.launchOwnerDBPath())
 	if err != nil {
 		return "", err
 	}
@@ -481,8 +482,8 @@ func configReference(ctx context.Context, owner launchSecretOwner, sessionID str
 		bound = append(bound, []any{[]any(path), digest})
 		entries = append(entries, []any{[]any(path), secretFingerprint(secrets.values[i])})
 	}
-	text, err := pyjson.Dumps(map[string]any{"home": home, "profile": owner.launchOwnerProfileID(), "session": sessionID,
-		"policy": policyIdentity(policy, nil), "bound": bound, "entries": entries}, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(map[string]any{"home": home, "profile": owner.launchOwnerProfileID(), "session": sessionID,
+		"policy": policyIdentity(policy, nil), "bound": bound, "entries": entries}, jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}
@@ -494,7 +495,7 @@ func secretField(path []any) string {
 	var parts []string
 	for _, part := range path {
 		if part != nil {
-			parts = append(parts, pyrepr.Str(part))
+			parts = append(parts, anyutil.String(part))
 		}
 	}
 	return strings.Join(parts, ".")
@@ -597,11 +598,11 @@ func checkSecretScope(ctx context.Context, owner launchSecretOwner, source map[s
 
 // Decoded body of a durable reference
 func referenceSource(ref string) (any, error) {
-	parsed, err := pyjson.Loads(strings.TrimPrefix(ref, configSecretPrefix))
+	parsed, err := jsonutil.Decode(strings.TrimPrefix(ref, configSecretPrefix))
 	if err != nil {
 		return nil, &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
-	return pyjson.Plain(parsed), nil
+	return jsonutil.Plain(parsed), nil
 }
 
 // Whether the current private values of the sections differ by fingerprint from those the reference froze
@@ -688,7 +689,7 @@ func recoverConfigSecretsSkipping(ctx context.Context, owner launchSecretOwner, 
 	if _, refused := err.(*state.RuntimeStoreError); refused {
 		return nil, err
 	}
-	if fault, ok := err.(*PyError); ok && fault.Kind != "IndexError" || pypath.IsOSError(err) {
+	if fault, ok := err.(*PyError); ok && fault.Kind != "IndexError" || errorutil.IsSystem(err) {
 		kind := "OSError"
 		if ok {
 			kind = fault.Kind
@@ -781,7 +782,7 @@ func recoverReferencedSecrets(ctx context.Context, owner launchSecretOwner, poli
 				return nil, credentialsRefusal(secretField(path), how+" config.yaml since this session started")
 			}
 			pkgLog().Warn(fmt.Sprintf("Session %s: frozen config secret %s no longer matches the profile config; skipping it",
-				pyrepr.Str(source["session"]), pyrepr.Str([]any(path))))
+				anyutil.String(source["session"]), anyutil.String([]any(path))))
 			values.dropped = append(values.dropped, path)
 			continue
 		}
@@ -813,7 +814,7 @@ func entryOwnerPath(ctx context.Context, entry, config map[string]any) secretPat
 // Field of a fallback entry for the removal warning, a question mark for a non mapping entry
 func fallbackLabel(entry any, key string) string {
 	if m, ok := entry.(map[string]any); ok {
-		return pyrepr.Str(m[key])
+		return anyutil.String(m[key])
 	}
 	return "?"
 }
@@ -827,7 +828,7 @@ func disableDroppedSecrets(ctx context.Context, config map[string]any, dropped [
 	tasks := map[string]any{}
 	for _, path := range dropped {
 		if isSection(path[0], "auxiliary") && len(path) > 2 {
-			tasks[pyrepr.Str(path[1])] = path[1]
+			tasks[anyutil.String(path[1])] = path[1]
 		}
 	}
 	order := make([]string, 0, len(tasks))
@@ -853,7 +854,7 @@ func disableDroppedSecrets(ctx context.Context, config map[string]any, dropped [
 		replaced["provider"] = "main"
 		auxiliary[task] = replaced
 		pkgLog().Warn(fmt.Sprintf("Session %s: auxiliary task %s returned to the primary route: its credential changed in "+
-			"config.yaml since this session started", pyrepr.Str(session), task))
+			"config.yaml since this session started", anyutil.String(session), task))
 	}
 	owners := map[string]bool{}
 	for _, path := range dropped {
@@ -891,7 +892,7 @@ func disableDroppedSecrets(ctx context.Context, config map[string]any, dropped [
 		}
 		if own || (owner != nil && owners[pathKey(owner)]) {
 			pkgLog().Warn(fmt.Sprintf("Session %s: fallback %s/%s removed: its credential changed in config.yaml since this "+
-				"session started", pyrepr.Str(session), fallbackLabel(entry, "provider"), fallbackLabel(entry, "model")))
+				"session started", anyutil.String(session), fallbackLabel(entry, "provider"), fallbackLabel(entry, "model")))
 			continue
 		}
 		kept = append(kept, entry)

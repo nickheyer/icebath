@@ -3,10 +3,8 @@ package kanban
 import (
 	"context"
 	"io"
-	"math"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // kanbanCLI is one icebath kanban invocation, its parsed namespace and the writers it prints to
@@ -31,9 +29,9 @@ func nsOptStr(ns map[string]any, key string) *string {
 	return nil
 }
 
-// Python truthiness of a namespace value
+// Whether a namespace value is set to something other than a zero value
 func nsBool(ns map[string]any, key string) bool {
-	return pyrepr.Truthy(ns[key])
+	return anyutil.IsTrue(ns[key])
 }
 
 // Namespace value as an optional integer, nil when absent or None
@@ -42,18 +40,11 @@ func nsOptInt(ns map[string]any, key string) *int64 {
 	if !ok || v == nil {
 		return nil
 	}
-	if _, isBool := v.(bool); isBool {
-		return nil
-	}
-	n, ok := pyint.Instance(v)
+	n, ok := anyutil.Int(v)
 	if !ok {
 		return nil
 	}
-	out := int64(math.MaxInt64)
-	if n.IsInt64() {
-		out = n.Int64()
-	}
-	return &out
+	return &n
 }
 
 // Namespace value as an optional int, nil when absent or None
@@ -87,7 +78,7 @@ func nsStrs(ns map[string]any, key string) []string {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, item := range v {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 		return out
 	case string:

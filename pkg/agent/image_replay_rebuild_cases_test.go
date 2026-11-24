@@ -13,9 +13,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var rebuildPNG, _ = hex.DecodeString("89504e470d0a1a0a0000000d49484452000000010000000108020000009077" +
@@ -52,7 +52,7 @@ func replayLiveTurn(t *testing.T, ctx context.Context, env *tools.Env, tmp, name
 	if err != nil || len(refs) == 0 {
 		t.Fatalf("capture %v %v", refs, err)
 	}
-	path, _ := refs[0].(*pyjson.Object).Get("path")
+	path, _ := refs[0].(*jsonutil.Object).Get("path")
 	parts, skipped, err := tools.BuildNativeContentParts(env, text, []string{path.(string)}, nil)
 	if err != nil || len(skipped) > 0 {
 		t.Fatalf("parts skipped %v %v", skipped, err)
@@ -218,14 +218,14 @@ func TestImageReplay(t *testing.T) {
 				for i, p := range parts {
 					part := p.(map[string]any)
 					if part["type"] != "image_url" {
-						wire[i] = pyjson.ObjectOf("type", part["type"], "text", part["text"])
+						wire[i] = jsonutil.ObjectOf("type", part["type"], "text", part["text"])
 						continue
 					}
-					image := pyjson.ObjectOf("url", url)
+					image := jsonutil.ObjectOf("url", url)
 					if detail, ok := part["image_url"].(map[string]any)["detail"]; ok {
 						image.Set("detail", detail)
 					}
-					wire[i] = pyjson.ObjectOf("type", "image_url", "image_url", image)
+					wire[i] = jsonutil.ObjectOf("type", "image_url", "image_url", image)
 				}
 				parts = wire
 				media, err := gateway.CommitAPIImages(ctx, parts)

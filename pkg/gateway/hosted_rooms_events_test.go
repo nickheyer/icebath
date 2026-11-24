@@ -11,8 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -231,12 +232,12 @@ func TestSinceSeqReturnsOrderedDeltasAndStableCursor(t *testing.T) {
 			Payload: map[string]any{"index": index}, Now: hrFloatPtr(float64(20 + index))}))
 	}
 	first := hrOK(hrRead(db, "room-1", 0, 2, false))
-	if !pyjson.Equal(hrSeqs(first), []any{1, 2}) || first["cursor"] != int64(2) || first["latest_seq"] != int64(4) || first["has_more"] != true ||
-		!pyjson.Equal(first["authority"], map[string]any{"gateway_id": "gateway-a", "epoch": 1}) || len(first) != 5 {
+	if !anyutil.Equal(hrSeqs(first), []any{1, 2}) || first["cursor"] != int64(2) || first["latest_seq"] != int64(4) || first["has_more"] != true ||
+		!anyutil.Equal(first["authority"], map[string]any{"gateway_id": "gateway-a", "epoch": 1}) || len(first) != 5 {
 		t.Fatalf("first %v", first)
 	}
 	second := hrOK(hrRead(db, "room-1", first["cursor"].(int64), 2, false))
-	if !pyjson.Equal(hrSeqs(second), []any{3, 4}) || second["cursor"] != int64(4) || second["has_more"] != false {
+	if !anyutil.Equal(hrSeqs(second), []any{3, 4}) || second["cursor"] != int64(4) || second["has_more"] != false {
 		t.Fatalf("second %v", second)
 	}
 	settled := hrOK(hrRead(db, "room-1", 4, 100, false))
@@ -253,7 +254,7 @@ func TestRoomLogSurvivesStoreReopen(t *testing.T) {
 		t.Fatalf("rooms %v", rooms)
 	}
 	replay := hrOK(hrRead(db, "room-1", 0, 100, false))
-	if !pyjson.Equal(replay["events"].([]any)[0].(map[string]any)["payload"], map[string]any{"text": "persist me"}) {
+	if !anyutil.Equal(replay["events"].([]any)[0].(map[string]any)["payload"], map[string]any{"text": "persist me"}) {
 		t.Fatalf("replay %v", replay)
 	}
 }
@@ -379,10 +380,10 @@ func TestActorIsPartOfEventIdempotencyAndReplay(t *testing.T) {
 	db := hrDB(t)
 	hrOK(hrCreate(db, "room-1"))
 	event := hrOK(hrAppend(db, AppendEventInput{RoomID: "room-1", EventID: "event-1", Kind: "message.user", Actor: hrUser, Payload: map[string]any{"text": "hello"}}))
-	if !pyjson.Equal(event["actor"], hrUser) {
+	if !anyutil.Equal(event["actor"], hrUser) {
 		t.Fatalf("actor %v", event["actor"])
 	}
-	if replayed := hrOK(hrRead(db, "room-1", 0, 100, false))["events"].([]any)[0].(map[string]any)["actor"]; !pyjson.Equal(replayed, hrUser) {
+	if replayed := hrOK(hrRead(db, "room-1", 0, 100, false))["events"].([]any)[0].(map[string]any)["actor"]; !anyutil.Equal(replayed, hrUser) {
 		t.Fatalf("replayed actor %v", replayed)
 	}
 	_, err := hrAppend(db, AppendEventInput{RoomID: "room-1", EventID: "event-1", Kind: "message.user", Actor: map[string]any{"kind": "user", "id": "another-user"}, Payload: map[string]any{"text": "hello"}})
@@ -397,7 +398,7 @@ func TestDisbandIsIdempotentAndRoomIdCannotBeReused(t *testing.T) {
 	repeated := hrOK(hrDisband(db, "room-1", nil, nil, hrFloatPtr(60)))
 	firstEvent := first["event"].(map[string]any)
 	if first["room_id"] != "room-1" || first["disbanded_at"] != 50.0 || first["idempotent"] != false || firstEvent["kind"] != "room.disbanded" ||
-		firstEvent["seq"] != int64(1) || !pyjson.Equal(firstEvent["payload"], map[string]any{"room_id": "room-1"}) {
+		firstEvent["seq"] != int64(1) || !anyutil.Equal(firstEvent["payload"], map[string]any{"room_id": "room-1"}) {
 		t.Fatalf("first %v", first)
 	}
 	if repeated["idempotent"] != true || repeated["event"].(map[string]any)["seq"] != firstEvent["seq"] {
@@ -441,7 +442,7 @@ func TestDisbandRejectsStaleAuthority(t *testing.T) {
 }
 
 // Row of one raw query, nil when it returns none
-func hrRawRow(t *testing.T, db, query string, args ...any) *pyjson.Object {
+func hrRawRow(t *testing.T, db, query string, args ...any) *jsonutil.Object {
 	t.Helper()
 	conn := hrRawConn(t, db)
 	defer conn.Close()

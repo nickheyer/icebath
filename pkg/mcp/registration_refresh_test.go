@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Isolated home and global registry whose MCP tools are dropped again when the test ends
@@ -48,7 +48,7 @@ func toolsOnlyServer(env *tools.Env, name string) *serverTask {
 // Registers a tool straight into the global registry under a server's toolset
 func seedRegistryTool(t *testing.T, name, toolset string) {
 	t.Helper()
-	tools.Default.Register(tools.Def{Name: name, Toolset: toolset, Schema: pyjson.ObjectOf(),
+	tools.Default.Register(tools.Def{Name: name, Toolset: toolset, Schema: jsonutil.ObjectOf(),
 		Handler: func(context.Context, *tools.Call) string { return "" }, Check: func(*tools.Env) bool { return true }})
 }
 

@@ -17,12 +17,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Argv marker of the detached child that installs the default plugins of every home
@@ -146,7 +146,7 @@ func manifestName(target string) string {
 	if err != nil {
 		return ""
 	}
-	text, err := pystr.DecodeUTF8SigFile(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return ""
 	}
@@ -155,10 +155,10 @@ func manifestName(target string) string {
 		return ""
 	}
 	manifest, ok := doc.(map[string]any)
-	if !ok || !pyrepr.Truthy(manifest["name"]) {
+	if !ok || !anyutil.IsTrue(manifest["name"]) {
 		return ""
 	}
-	return pyrepr.Str(manifest["name"])
+	return anyutil.String(manifest["name"])
 }
 
 // Whether one of the names is in plugins.enabled and in plugins.disabled of a home, read through the settings the loader reads
@@ -227,11 +227,11 @@ func installOne(ctx context.Context, h, name, discard string) (ok bool, reason s
 	if err != nil {
 		return false, err.Error()
 	}
-	if pyrepr.Truthy(result["ok"]) {
+	if anyutil.IsTrue(result["ok"]) {
 		return true, ""
 	}
-	if pyrepr.Truthy(result["error"]) {
-		return false, pyrepr.Str(result["error"])
+	if anyutil.IsTrue(result["error"]) {
+		return false, anyutil.String(result["error"])
 	}
 	return false, ""
 }
@@ -372,7 +372,7 @@ func installAllHomes(ctx context.Context, say func(string), wait time.Duration) 
 		return summary, nil
 	}
 	entries := Entries(ctx)
-	if !pyrepr.Truthy(plugins.FetchLiveCatalog(ctx, false)["entries"]) {
+	if !anyutil.IsTrue(plugins.FetchLiveCatalog(ctx, false)["entries"]) {
 		summary.Owed = append(summary.Owed, "live catalog")
 	}
 	if len(entries) == 0 {

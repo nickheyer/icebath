@@ -6,8 +6,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // First row of a read query as a column mapping
@@ -25,7 +25,7 @@ func readRow(t *testing.T, ctx context.Context, db *state.SessionDB, query strin
 }
 
 // Owned cli session, its runtime epoch and a human principal admission claimed as started
-func claimedHumanTurn(t *testing.T, requestID string) (context.Context, *state.SessionDB, *SessionAuthority, *pyjson.Object) {
+func claimedHumanTurn(t *testing.T, requestID string) (context.Context, *state.SessionDB, *SessionAuthority, *jsonutil.Object) {
 	t.Helper()
 	ctx, db := newTestStateDB(t)
 	if err := db.CreateSession(state.NewSession{ID: "owned", Source: "cli"}); err != nil {
@@ -37,7 +37,7 @@ func claimedHumanTurn(t *testing.T, requestID string) (context.Context, *state.S
 	}
 	a := NewSessionAuthority(&authorityRunnerDouble{}, t.TempDir(), "owner", db, epoch)
 	if _, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: "human", SessionID: "owned",
-		RequestID: requestID, Payload: pyjson.NewObject()}); err != nil {
+		RequestID: requestID, Payload: jsonutil.NewObject()}); err != nil {
 		t.Fatal(err)
 	}
 	row, _, err := db.ClaimSessionInput(ctx, state.ClaimInput{Epoch: epoch, SessionID: "owned"})
@@ -59,7 +59,7 @@ func TestWorkerLossFencesSameGenerationParentResult(t *testing.T) {
 	if err := loseAdmissionWorker(ctx, a, row, scope); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := retainResult(ctx, db, a.Epoch, row, pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "STALE"), "usage", pyjson.NewObject())); !isRuntimeRefusal(err, "stale_generation") {
+	if _, err := retainResult(ctx, db, a.Epoch, row, jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "STALE"), "usage", jsonutil.NewObject())); !isRuntimeRefusal(err, "stale_generation") {
 		t.Fatalf("retain after loss: %v", err)
 	}
 	if status := readRow(t, ctx, db, "SELECT status FROM session_admissions")["status"]; status != "unknown" {
@@ -74,7 +74,7 @@ func TestLateBootstrapHandshakeCannotRearmARecoveredAdmission(t *testing.T) {
 	ctx, db, a, row := claimedHumanTurn(t, "lost")
 	lost := rowString(row, "admission_id")
 	follower, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: a.Epoch, PrincipalID: "human", SessionID: "owned",
-		RequestID: "next", Payload: pyjson.NewObject()})
+		RequestID: "next", Payload: jsonutil.NewObject()})
 	if err != nil {
 		t.Fatal(err)
 	}

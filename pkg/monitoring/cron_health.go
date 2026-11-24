@@ -8,9 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var (
@@ -94,10 +92,10 @@ var cronErrorRules = []cronErrorRule{
 
 // First matching error class of the lowered error text, auth by word boundary, unknown when none match
 func ClassifyCronError(raw any) string {
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = ""
 	}
-	text := strings.ToLower(pyrepr.Str(raw))
+	text := strings.ToLower(anyutil.String(raw))
 	for _, rule := range cronErrorRules {
 		if rule.match(text) {
 			return rule.label
@@ -113,10 +111,10 @@ type parsedTime struct {
 
 // ISO timestamp of a truthy value, absent when empty or unparsable
 func parseTime(raw any) (parsedTime, bool) {
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return parsedTime{}, false
 	}
-	t, aware, err := pydatetime.ParseISOFormat(pyrepr.Str(raw))
+	t, aware, err := timeutil.ParseISOZone(anyutil.String(raw), time.UTC)
 	if err != nil {
 		return parsedTime{}, false
 	}
@@ -141,10 +139,10 @@ func durationMS(record map[string]any) *int64 {
 
 // Lowered string of a truthy field or the fallback
 func loweredOr(v any, fallback string) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return fallback
 	}
-	return strings.ToLower(pyrepr.Str(v))
+	return strings.ToLower(anyutil.String(v))
 }
 
 // Content free event of a ledger record with opaque job key and bucketed status, source and outcome

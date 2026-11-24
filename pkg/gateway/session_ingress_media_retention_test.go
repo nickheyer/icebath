@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Forgets when each store was last swept so the next settlement sweeps again
@@ -48,7 +48,7 @@ func TestSettledNativeDocumentNamedByTheTranscriptSurvivesSettlement(t *testing.
 			if err != nil {
 				t.Fatal(err)
 			}
-			retained := rowString(media[0].(*pyjson.Object), "path")
+			retained := rowString(media[0].(*jsonutil.Object), "path")
 			if err := db.CreateSession(state.NewSession{ID: "s", Source: "telegram"}); err != nil {
 				t.Fatal(err)
 			}
@@ -60,7 +60,7 @@ func TestSettledNativeDocumentNamedByTheTranscriptSurvivesSettlement(t *testing.
 				t.Fatal(err)
 			}
 			row, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: "p", SessionID: "s", RequestID: "m1",
-				Payload: pyjson.ObjectOf("text", "page 3?", "native_text_v1", pyjson.ObjectOf("media", media))})
+				Payload: jsonutil.ObjectOf("text", "page 3?", "native_text_v1", jsonutil.ObjectOf("media", media))})
 			if err != nil {
 				t.Fatal(err)
 			}

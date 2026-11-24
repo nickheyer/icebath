@@ -24,11 +24,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Chromium startup flags for a host where its sandbox cannot work, shared with the Bot Desktop dock
@@ -216,7 +216,7 @@ func sharedProfilesRoot() string {
 
 // One digest per profile dir however it is spelled
 func profileDigest(userDataDir string) string {
-	resolved, err := pypath.Realpath(userDataDir, pypath.Lax)
+	resolved, err := pathutil.Resolve(userDataDir)
 	if err != nil {
 		resolved = userDataDir
 	}
@@ -229,8 +229,8 @@ func sameProfile(recorded any, userDataDir string) bool {
 	if !ok {
 		return false
 	}
-	a, errA := pypath.Realpath(s, pypath.Lax)
-	b, errB := pypath.Realpath(userDataDir, pypath.Lax)
+	a, errA := pathutil.Resolve(s)
+	b, errB := pathutil.Resolve(userDataDir)
 	return errA == nil && errB == nil && a == b
 }
 
@@ -240,7 +240,7 @@ func readDevtoolsFile(userDataDir string) (int, string, bool, error) {
 	if err != nil {
 		return 0, "", false, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return 0, "", false, err
 	}
@@ -255,7 +255,7 @@ func readDevtoolsFile(userDataDir string) (int, string, bool, error) {
 	n := 0
 	for _, r := range port {
 		if !unicode.Is(unicode.Nd, r) {
-			return 0, "", false, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(port))
+			return 0, "", false, fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(port))
 		}
 		start := r
 		for unicode.Is(unicode.Nd, start-1) {
@@ -297,7 +297,7 @@ func singletonOwner(userDataDir string) (string, int, bool) {
 
 // Sorted launch record names in a records dir for one profile's browser pid from any namespace
 func recordNames(records, userDataDir string, pid any) []string {
-	stemText := fmt.Sprintf("%s-%s", profileDigest(userDataDir)[:16], pyrepr.Str(pid))
+	stemText := fmt.Sprintf("%s-%s", profileDigest(userDataDir)[:16], anyutil.String(pid))
 	pattern := regexp.MustCompile(`^` + regexp.QuoteMeta(stemText) + `(-n[0-9a-f]{12})?\.json$`)
 	entries, _ := os.ReadDir(records)
 	var names []string
@@ -323,14 +323,14 @@ func devtoolsEndpointLive(port int, path string) bool {
 	if err != nil {
 		return false
 	}
-	decoded, err := pyjson.LoadsBytes(body)
-	obj, ok := decoded.(*pyjson.Object)
+	decoded, err := jsonutil.Decode(body)
+	obj, ok := decoded.(*jsonutil.Object)
 	if err != nil || !ok {
 		return false
 	}
 	ws := ""
 	if v, _ := obj.Get("webSocketDebuggerUrl"); v != nil && v != false && v != "" {
-		ws = pyrepr.Str(v)
+		ws = anyutil.String(v)
 	}
 	return strings.HasSuffix(ws, path)
 }

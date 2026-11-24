@@ -20,12 +20,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -64,7 +64,7 @@ func openRouterPriceLabel(skus any) string {
 	}
 	var perSecond []float64
 	for key, value := range m {
-		amount, err := pyint.Float(value)
+		amount, err := anyutil.ToFloat(value)
 		if err != nil {
 			continue
 		}
@@ -89,12 +89,12 @@ func openRouterPriceLabel(skus any) string {
 
 // Numeric width over height of an aspect ratio string, false when it does not parse
 func openRouterRatio(value any) (float64, bool) {
-	parts := strings.Split(pyrepr.Str(value), ":")
+	parts := strings.Split(anyutil.String(value), ":")
 	if len(parts) != 2 {
 		return 0, false
 	}
-	w, err1 := pyint.ParseFloat(parts[0])
-	h, err2 := pyint.ParseFloat(parts[1])
+	w, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
+	h, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
 	if err1 != nil || err2 != nil || h == 0 {
 		return 0, false
 	}
@@ -104,7 +104,7 @@ func openRouterRatio(value any) (float64, bool) {
 // Whether the value equals any supported entry under Python equality
 func pyIn(value any, supported []any) bool {
 	for _, s := range supported {
-		if pyrepr.Equal(value, s) {
+		if anyutil.Equal(value, s) {
 			return true
 		}
 	}
@@ -133,19 +133,19 @@ func openRouterNearest(value any, supported []any, height map[string]int) any {
 		return best.s
 	}
 	if height != nil {
-		target, ok := height[pyrepr.Str(value)]
+		target, ok := height[anyutil.String(value)]
 		if !ok {
 			return supported[0]
 		}
 		var scores []scored
 		for _, s := range supported {
-			if h, ok := height[pyrepr.Str(s)]; ok {
+			if h, ok := height[anyutil.String(s)]; ok {
 				scores = append(scores, scored{math.Abs(float64(h - target)), s})
 			}
 		}
 		return pick(scores)
 	}
-	if strings.Contains(pyrepr.Str(value), ":") {
+	if strings.Contains(anyutil.String(value), ":") {
 		target, ok := openRouterRatio(value)
 		if !ok {
 			return supported[0]
@@ -197,8 +197,8 @@ func pyLess(a, b any) (bool, bool) {
 		}
 		return false, false
 	}
-	fa, err1 := pyint.Float(a)
-	fb, err2 := pyint.Float(b)
+	fa, err1 := anyutil.ToFloat(a)
+	fb, err2 := anyutil.ToFloat(b)
 	if err1 != nil || err2 != nil {
 		return false, false
 	}
@@ -256,10 +256,10 @@ func openRouterEntryCapabilities(entry map[string]any) map[string]any {
 }
 
 // Image content part naming the URL
-func openRouterImagePart(u string) *pyjson.Object {
-	inner := pyjson.NewObject()
+func openRouterImagePart(u string) *jsonutil.Object {
+	inner := jsonutil.NewObject()
 	inner.Set("url", u)
-	part := pyjson.NewObject()
+	part := jsonutil.NewObject()
 	part.Set("type", "image_url")
 	part.Set("image_url", inner)
 	return part
@@ -282,8 +282,8 @@ type openRouterPayloadInput struct {
 }
 
 // OpenRouter body clamped to the model's live limits with unsupported toggles dropped
-func openRouterBuildPayload(entry map[string]any, in openRouterPayloadInput) *pyjson.Object {
-	payload := pyjson.NewObject()
+func openRouterBuildPayload(entry map[string]any, in openRouterPayloadInput) *jsonutil.Object {
+	payload := jsonutil.NewObject()
 	payload.Set("model", in.Model)
 	payload.Set("prompt", in.Prompt)
 	if in.AspectRatio != "" {
@@ -429,7 +429,7 @@ func (p *openRouterVideoGenProvider) fetchCatalog(ctx context.Context) ([]map[st
 	if err != nil {
 		return nil, err
 	}
-	data, _ := pyjson.Plain(obj["data"]).([]any)
+	data, _ := jsonutil.Plain(obj["data"]).([]any)
 	var entries []map[string]any
 	for _, e := range data {
 		if m, ok := e.(map[string]any); ok && pyTruthy(m["id"]) {
@@ -442,7 +442,7 @@ func (p *openRouterVideoGenProvider) fetchCatalog(ctx context.Context) ([]map[st
 // Catalog row of the model id, empty for an unknown id so the request passes through unclamped
 func (p *openRouterVideoGenProvider) entry(ctx context.Context, modelID string) map[string]any {
 	for _, e := range p.catalog(ctx) {
-		if pyrepr.Equal(e["id"], modelID) {
+		if anyutil.Equal(e["id"], modelID) {
 			return e
 		}
 	}
@@ -467,7 +467,7 @@ func (p *openRouterVideoGenProvider) ListModels() []map[string]any {
 		caps := openRouterEntryCapabilities(entry)
 		var res []string
 		for _, r := range caps["resolutions"].([]any) {
-			res = append(res, pyrepr.Str(r))
+			res = append(res, anyutil.String(r))
 		}
 		extras := []string{fmt.Sprintf("%d-%ds", caps["min_duration"], caps["max_duration"]), strings.Join(res, "/")}
 		if caps["supports_audio"] == true {
@@ -509,7 +509,7 @@ func (p *openRouterVideoGenProvider) GetSetupSchema() map[string]any {
 }
 
 // Polls the job to a terminal status within the deadline, a TimeoutError naming the last status otherwise
-func (p *openRouterVideoGenProvider) poll(ctx context.Context, client *http.Client, jobID, base string, headers map[string]string) (*pyjson.Object, error) {
+func (p *openRouterVideoGenProvider) poll(ctx context.Context, client *http.Client, jobID, base string, headers map[string]string) (*jsonutil.Object, error) {
 	deadline := time.Now().Add(p.pollDeadline)
 	pollURL := base + "/videos/" + jobID
 	last := "unknown"
@@ -532,7 +532,7 @@ func (p *openRouterVideoGenProvider) poll(ctx context.Context, client *http.Clie
 		status, _ := payload.Get("status")
 		last = "unknown"
 		if pyTruthy(status) {
-			last = strings.ToLower(pyrepr.Str(status))
+			last = strings.ToLower(anyutil.String(status))
 		}
 		if openRouterVideoTerminal[last] {
 			return payload, nil
@@ -603,7 +603,7 @@ func (p *openRouterVideoGenProvider) Generate(ctx context.Context, env *tools.En
 		return fail(failure, failureKind), nil
 	}
 	extra := map[string]any{"job_id": jobID}
-	if usage, ok := pyjson.Plain(mustGet(job, "usage")).(map[string]any); ok && usage["cost"] != nil {
+	if usage, ok := jsonutil.Plain(mustGet(job, "usage")).(map[string]any); ok && usage["cost"] != nil {
 		extra["cost"] = usage["cost"]
 	}
 	modality := "text"
@@ -612,7 +612,7 @@ func (p *openRouterVideoGenProvider) Generate(ctx context.Context, env *tools.En
 	}
 	aspectOut := ""
 	if v := mustGet(payload, "aspect_ratio"); pyTruthy(v) {
-		aspectOut = pyrepr.Str(v)
+		aspectOut = anyutil.String(v)
 	}
 	duration := 0
 	if v := mustGet(payload, "duration"); pyTruthy(v) {
@@ -624,8 +624,8 @@ func (p *openRouterVideoGenProvider) Generate(ctx context.Context, env *tools.En
 }
 
 // Submit, poll and download, a failure text for rejected or failed jobs and an error for exceptions
-func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, client *http.Client, base string, headers map[string]string, payload *pyjson.Object) (jobID string, job *pyjson.Object, videoPath, failure, failureKind string, err error) {
-	body, err := pyjson.Dumps(payload)
+func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, client *http.Client, base string, headers map[string]string, payload *jsonutil.Object) (jobID string, job *jsonutil.Object, videoPath, failure, failureKind string, err error) {
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		return "", nil, "", "", "", err
 	}
@@ -640,12 +640,12 @@ func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, cl
 			if !pyTruthy(errField) {
 				errField = map[string]any{}
 			}
-			if m, ok := pyjson.Plain(errField).(map[string]any); ok && pyTruthy(m["message"]) {
-				detail = pyrepr.Str(m["message"])
+			if m, ok := jsonutil.Plain(errField).(map[string]any); ok && pyTruthy(m["message"]) {
+				detail = anyutil.String(m["message"])
 			}
 		}
 		if detail == "" {
-			text, _ := pyjson.DecodeBytes(raw)
+			text, _ := jsonutil.Text(raw)
 			if r := []rune(text); len(r) > 300 {
 				text = string(r[:300])
 			}
@@ -658,7 +658,7 @@ func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, cl
 		return "", nil, "", "", "", err
 	}
 	if pyTruthy(submitted["id"]) {
-		jobID = strings.TrimSpace(pyrepr.Str(submitted["id"]))
+		jobID = strings.TrimSpace(anyutil.String(submitted["id"]))
 	}
 	if jobID == "" {
 		return "", nil, "", "OpenRouter submit response did not contain a job id", "api_error", nil
@@ -669,12 +669,12 @@ func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, cl
 	}
 	status := ""
 	if v := mustGet(job, "status"); pyTruthy(v) {
-		status = strings.ToLower(pyrepr.Str(v))
+		status = strings.ToLower(anyutil.String(v))
 	}
 	if status != "completed" {
 		text := "video job ended with status=" + errchain.Show(status)
 		if v := mustGet(job, "error"); pyTruthy(v) {
-			text = pyrepr.Str(v)
+			text = anyutil.String(v)
 		}
 		return jobID, job, "", text, "job_failed", nil
 	}
@@ -686,7 +686,7 @@ func (p *openRouterVideoGenProvider) run(ctx context.Context, env *tools.Env, cl
 }
 
 // Value of an ordered object key, nil when absent
-func mustGet(o *pyjson.Object, key string) any {
+func mustGet(o *jsonutil.Object, key string) any {
 	if o == nil {
 		return nil
 	}
@@ -700,18 +700,18 @@ func requestsJSONObject(raw []byte) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	m, _ := pyjson.Plain(obj).(map[string]any)
+	m, _ := jsonutil.Plain(obj).(map[string]any)
 	return m, nil
 }
 
 // Ordered JSON object of a response body, the decode error or the AttributeError text get raises
-func requestsJSONObjectOrdered(raw []byte) (*pyjson.Object, error) {
-	text, _ := pyjson.DecodeBytes(raw)
-	parsed, err := pyjson.Loads(text)
+func requestsJSONObjectOrdered(raw []byte) (*jsonutil.Object, error) {
+	text, _ := jsonutil.Text(raw)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := pyjson.AsObject(parsed)
+	obj, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		return nil, fmt.Errorf("OpenRouter video reply is %s where a mapping was expected", errchain.Kind(parsed))
 	}
@@ -767,7 +767,7 @@ func requestsTimeoutError(req *http.Request, timeout time.Duration) error {
 	if p := req.URL.Port(); p != "" {
 		port = p
 	}
-	return fmt.Errorf("%s(host='%s', port=%s): Read timed out. (read timeout=%s)", pool, req.URL.Hostname(), port, pyrepr.Float(timeout.Seconds()))
+	return fmt.Errorf("%s(host='%s', port=%s): Read timed out. (read timeout=%s)", pool, req.URL.Hostname(), port, strconv.FormatFloat(timeout.Seconds(), 'f', -1, 64))
 }
 
 func init() {

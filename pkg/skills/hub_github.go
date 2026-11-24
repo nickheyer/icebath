@@ -4,24 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gitcred"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyjwt"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // GitHub tap repo to the provider label the docs site catalog shows
@@ -61,7 +61,7 @@ func filterResultsByProvider(results []SkillMeta, provider string) []SkillMeta {
 		got := ""
 		if r.Extra != nil {
 			if v, ok := r.Extra.Get("provider"); ok {
-				got = pyrepr.Str(v)
+				got = anyutil.String(v)
 			}
 		}
 		if strings.ToLower(got) == want {
@@ -86,8 +86,8 @@ func tapCacheKey(repo, path, bucket string) string {
 }
 
 // A 429, or a 403 whose remaining quota header reads zero
-func isRateLimitResponse(resp *pyhttpx.Response) bool {
-	return resp.StatusCode == 429 || (resp.StatusCode == 403 && pyhttpx.HeaderGet(resp.Header, "X-RateLimit-Remaining", "") == "0")
+func isRateLimitResponse(resp *httputil.Response) bool {
+	return resp.StatusCode == 429 || (resp.StatusCode == 403 && resp.Header.Get("X-RateLimit-Remaining") == "0")
 }
 
 // GitHub API credentials tried as PAT, gh CLI, GitHub App, then anonymous, skipping rejected ones
@@ -95,13 +95,13 @@ type GitHubAuth struct {
 	S                               *Scope
 	mu                              sync.Mutex
 	cachedToken, cachedMethod       string
-	appTokenExpiry                  float64
+	appTokenExpiry                  time.Time
 	rejectedTokens, rejectedMethods map[string]bool
 	rejected                        []string
 	tryPat, tryGhCLI, tryGitHubApp  func() string
 	appTokenURL                     string
-	appPost                         func(req *http.Request) (*pyhttpx.Response, error)
-	unixNow                         func() float64
+	appPost                         func(req *http.Request) (*httputil.Response, error)
+	clock                           func() time.Time
 }
 
 // Credential chain over the scope secrets
@@ -112,11 +112,11 @@ func NewGitHubAuth(s *Scope) *GitHubAuth {
 	return a
 }
 
-func (a *GitHubAuth) now() float64 {
-	if a.unixNow != nil {
-		return a.unixNow()
+func (a *GitHubAuth) now() time.Time {
+	if a.clock != nil {
+		return a.clock()
 	}
-	return float64(time.Now().UnixNano()) / 1e9
+	return time.Now()
 }
 
 // Accept header plus the token authorization when a credential resolves
@@ -158,7 +158,7 @@ func (a *GitHubAuth) Rejected() []string {
 
 // Cached token while valid, else the first method yielding an unrejected token, anonymous remembered
 func (a *GitHubAuth) resolveToken() string {
-	if a.cachedToken != "" && (a.cachedMethod != "github-app" || a.now() < a.appTokenExpiry) {
+	if a.cachedToken != "" && (a.cachedMethod != "github-app" || a.now().Before(a.appTokenExpiry)) {
 		return a.cachedToken
 	}
 	if a.cachedMethod == "anonymous" {
@@ -175,7 +175,7 @@ func (a *GitHubAuth) resolveToken() string {
 		if token != "" && !a.rejectedTokens[token] {
 			a.cachedToken, a.cachedMethod = token, m.name
 			if m.name == "github-app" {
-				a.appTokenExpiry = a.now() + 3500
+				a.appTokenExpiry = a.now().Add(3500 * time.Second)
 			}
 			return token
 		}
@@ -239,9 +239,12 @@ func (a *GitHubAuth) mintAppToken(appID, keyPath, installationID string) (string
 		return "", fmt.Errorf("private key file %s is not valid UTF-8", keyPath)
 	}
 	key := strings.TrimPrefix(string(raw), "\xEF\xBB\xBF")
-	now := int64(a.now())
-	claims := objectOf("iat", now-60, "exp", now+600, "iss", appID)
-	jwt, err := pyjwt.EncodeRS256(claims, key)
+	signingKey, err := jwt.ParseRSAPrivateKeyFromPEM([]byte(key))
+	if err != nil {
+		return "", err
+	}
+	now := a.now().Unix()
+	appJWT, err := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{"iat": now - 60, "exp": now + 600, "iss": appID}).SignedString(signingKey)
 	if err != nil {
 		return "", err
 	}
@@ -249,12 +252,12 @@ func (a *GitHubAuth) mintAppToken(appID, keyPath, installationID string) (string
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Authorization", "Bearer "+jwt)
+	req.Header.Set("Authorization", "Bearer "+appJWT)
 	req.Header.Set("Accept", githubAcceptJSON)
 	post := a.appPost
 	if post == nil {
-		post = func(r *http.Request) (*pyhttpx.Response, error) {
-			return pyhttpx.Do(pyhttpx.PlainClient(false), r, 10*time.Second)
+		post = func(r *http.Request) (*httputil.Response, error) {
+			return httputil.Do(httputil.Client(false), r, httputil.EachPhase(10*time.Second))
 		}
 	}
 	resp, err := post(req)
@@ -265,15 +268,15 @@ func (a *GitHubAuth) mintAppToken(appID, keyPath, installationID string) (string
 	if err != nil {
 		return "", err
 	}
-	o, ok := data.(*pyjson.Object)
+	o, ok := data.(*jsonutil.Object)
 	if !ok {
 		return "", fmt.Errorf("GitHub token reply is %s where a mapping was expected", errchain.Kind(data))
 	}
 	tok, _ := o.Get("token")
-	if !pyrepr.Truthy(tok) {
+	if !anyutil.IsTrue(tok) {
 		return "", nil
 	}
-	return pyrepr.Str(tok), nil
+	return anyutil.String(tok), nil
 }
 
 // Owner and repo plus the skill path of an identifier with at least three segments
@@ -315,9 +318,9 @@ func pyIterate(v any) []any {
 			out = append(out, string(r))
 		}
 		return out
-	case *pyjson.Object:
-		out := make([]any, len(x.Keys))
-		for i, k := range x.Keys {
+	case *jsonutil.Object:
+		out := make([]any, x.Len())
+		for i, k := range x.Keys() {
 			out[i] = k
 		}
 		return out
@@ -376,7 +379,7 @@ var DefaultGitHubTaps = func() []GitHubTap {
 func tapsFromList(list []any) []GitHubTap {
 	out := make([]GitHubTap, 0, len(list))
 	for _, t := range list {
-		o, ok := t.(*pyjson.Object)
+		o, ok := t.(*jsonutil.Object)
 		if !ok {
 			hubRaise(fmt.Errorf("skills tap is %s where a mapping was expected", errchain.Kind(t)))
 		}
@@ -384,9 +387,9 @@ func tapsFromList(list []any) []GitHubTap {
 		if !found {
 			hubRaise(errors.New("a tap entry has no repo"))
 		}
-		tap := GitHubTap{Repo: pyrepr.Str(repo), Path: pyrepr.Str(pyGet(o, "path", ""))}
-		if b := pyGet(o, "bucket", nil); pyrepr.Truthy(b) {
-			tap.Bucket = pyrepr.Str(b)
+		tap := GitHubTap{Repo: anyutil.String(repo), Path: anyutil.String(pyGet(o, "path", ""))}
+		if b := pyGet(o, "bucket", nil); anyutil.IsTrue(b) {
+			tap.Bucket = anyutil.String(b)
 		}
 		out = append(out, tap)
 	}
@@ -400,7 +403,7 @@ type ghTree struct {
 
 // Options of one GitHub API GET, zero timeout and retries meaning 15 s and three attempts
 type ghGet struct {
-	Params     pyhttpx.Params
+	Params     url.Values
 	Headers    map[string]string
 	Timeout    time.Duration
 	MaxRetries int
@@ -408,8 +411,8 @@ type ghGet struct {
 
 // Overrides of the GitHub source internals tests replace per instance
 type ghSeams struct {
-	githubGet           func(url string, o ghGet) *pyhttpx.Response
-	githubJSON          func(url string, o ghGet) any
+	githubGet           func(rawURL string, o ghGet) *httputil.Response
+	githubJSON          func(rawURL string, o ghGet) any
 	fetchFileContent    func(repo, path, ref string) (string, bool)
 	fetchFileBytes      func(repo, path, ref string) ([]byte, bool)
 	getRepoTree         func(repo string) *ghTree
@@ -543,11 +546,11 @@ func (g *GitHubSource) fetch(ctx context.Context, identifier string) *SkillBundl
 			g.addSupportFile(ctx, repo, skillFilePath(skillDir, rel), rel, &files, rel, "")
 		}
 	}
-	url := "https://github.com/" + repo + "/" + skillPath
+	sourceURL := "https://github.com/" + repo + "/" + skillPath
 	if revision != "" {
-		url = "https://github.com/" + repo + "/tree/" + revision
+		sourceURL = "https://github.com/" + repo + "/tree/" + revision
 		if skillPath != "" {
-			url += "/" + skillPath
+			sourceURL += "/" + skillPath
 		}
 	}
 	name := skillDir[strings.LastIndex(skillDir, "/")+1:]
@@ -555,7 +558,7 @@ func (g *GitHubSource) fetch(ctx context.Context, identifier string) *SkillBundl
 		name = repo[strings.LastIndex(repo, "/")+1:]
 	}
 	return &SkillBundle{Name: name, Files: files, Source: "github", Identifier: identifier, TrustLevel: g.TrustLevelFor(identifier),
-		Metadata: objectOf("source_url", url, "source_revision", revision)}
+		Metadata: objectOf("source_url", sourceURL, "source_revision", revision)}
 }
 
 // Sets a bundle member in place when the path exists, else appends it
@@ -649,7 +652,7 @@ func (g *GitHubSource) inspect(ctx context.Context, identifier string) *SkillMet
 	}
 	fm := hubParseFrontmatter(content)
 	tags := hubTags(fm)
-	if !pyrepr.Truthy(tags) {
+	if !anyutil.IsTrue(tags) {
 		tags = []any{}
 		if l, isList := fm["tags"].([]any); isList {
 			tags = l
@@ -657,20 +660,20 @@ func (g *GitHubSource) inspect(ctx context.Context, identifier string) *SkillMet
 	}
 	tagList := []string{}
 	for _, t := range pyIterate(tags) {
-		tagList = append(tagList, pyrepr.Str(t))
+		tagList = append(tagList, anyutil.String(t))
 	}
 	name := skillPath[strings.LastIndex(skillPath, "/")+1:]
 	if name == "" {
 		name = repo[strings.LastIndex(repo, "/")+1:]
 	}
 	if v, has := fm["name"]; has {
-		name = pyrepr.Str(v)
+		name = anyutil.String(v)
 	}
 	desc := ""
 	if v, has := fm["description"]; has {
-		desc = pyrepr.Str(v)
+		desc = anyutil.String(v)
 	}
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	if p := githubProviderFor(repo); p != "" {
 		extra.Set("provider", p)
 	}
@@ -707,7 +710,7 @@ func (g *GitHubSource) listSkillsInRepo(ctx context.Context, repo, path, bucket 
 		if pyGet(entry, "type", nil) != "dir" {
 			continue
 		}
-		nameV, found := entry.(*pyjson.Object).Get("name")
+		nameV, found := entry.(*jsonutil.Object).Get("name")
 		if !found {
 			hubRaise(errors.New("a GitHub skill entry has no name"))
 		}
@@ -737,7 +740,7 @@ func (g *GitHubSource) listSkillsInRepo(ctx context.Context, repo, path, bucket 
 		}
 		if category != "" {
 			if meta.Extra == nil {
-				meta.Extra = pyjson.NewObject()
+				meta.Extra = jsonutil.NewObject()
 			}
 			meta.Extra.Set("category", category)
 		}
@@ -762,13 +765,13 @@ func (g *GitHubSource) getRepoTree(ctx context.Context, repo string) *ghTree {
 	if repoData == nil {
 		return nil
 	}
-	branch := pyrepr.Str(pyGet(repoData, "default_branch", "main"))
+	branch := anyutil.String(pyGet(repoData, "default_branch", "main"))
 	treeData := g.githubJSON(ctx, githubAPI+"/"+repo+"/git/trees/"+branch,
-		ghGet{Params: pyhttpx.Params{{"recursive", "1"}}, Timeout: 30 * time.Second})
+		ghGet{Params: url.Values{"recursive": {"1"}}, Timeout: 30 * time.Second})
 	if treeData == nil {
 		return nil
 	}
-	if pyrepr.Truthy(pyGet(treeData, "truncated", nil)) {
+	if anyutil.IsTrue(pyGet(treeData, "truncated", nil)) {
 		g.h.S.logger().Debug(fmt.Sprintf("Git tree truncated for %s", repo))
 		return nil
 	}
@@ -781,11 +784,11 @@ func (g *GitHubSource) getRepoTree(ctx context.Context, repo string) *ghTree {
 }
 
 // Decoded body of a 200 API answer, nil otherwise
-func (g *GitHubSource) githubJSON(ctx context.Context, url string, o ghGet) any {
+func (g *GitHubSource) githubJSON(ctx context.Context, rawURL string, o ghGet) any {
 	if g.seams.githubJSON != nil {
-		return g.seams.githubJSON(url, o)
+		return g.seams.githubJSON(rawURL, o)
 	}
-	resp := g.githubGet(ctx, url, o)
+	resp := g.githubGet(ctx, rawURL, o)
 	if resp == nil || resp.StatusCode != 200 {
 		return nil
 	}
@@ -796,8 +799,7 @@ func (g *GitHubSource) githubJSON(ctx context.Context, url string, o ghGet) any 
 	return v
 }
 
-func (g *GitHubSource) sleep(seconds float64) {
-	d := time.Duration(seconds * float64(time.Second))
+func (g *GitHubSource) sleep(d time.Duration) {
 	if g.seams.sleep != nil {
 		g.seams.sleep(d)
 		return
@@ -806,9 +808,9 @@ func (g *GitHubSource) sleep(seconds float64) {
 }
 
 // API GET with backoff on rate limits, 5xx and transport errors, a 401 retried with the next credential
-func (g *GitHubSource) githubGet(ctx context.Context, url string, o ghGet) *pyhttpx.Response {
+func (g *GitHubSource) githubGet(ctx context.Context, rawURL string, o ghGet) *httputil.Response {
 	if g.seams.githubGet != nil {
-		return g.seams.githubGet(url, o)
+		return g.seams.githubGet(rawURL, o)
 	}
 	if o.Timeout == 0 {
 		o.Timeout = 15 * time.Second
@@ -821,17 +823,17 @@ func (g *GitHubSource) githubGet(ctx context.Context, url string, o ghGet) *pyht
 		hdrs = g.Auth.GetHeaders()
 	}
 	log := g.h.S.logger()
-	backoff := 1.0
-	var last *pyhttpx.Response
+	backoff := time.Second
+	var last *httputil.Response
 	for attempt := 0; attempt < o.MaxRetries; attempt++ {
 		lastAttempt := attempt >= o.MaxRetries-1
 		wait := backoff
-		resp, err := g.h.skillsHubHTTPGet(ctx, url, hubGet{Timeout: o.Timeout, Params: o.Params, Headers: hdrs, FollowRedirects: true})
+		resp, err := g.h.skillsHubHTTPGet(ctx, rawURL, hubGet{Timeout: o.Timeout, Params: o.Params, Headers: hdrs, FollowRedirects: true})
 		if err != nil {
 			if pass := hubPassThrough(err); pass != nil {
 				hubRaise(pass)
 			}
-			log.Debug(fmt.Sprintf("GitHub GET %s failed (attempt %d/%d): %s", url, attempt+1, o.MaxRetries, err))
+			log.Debug(fmt.Sprintf("GitHub GET %s failed (attempt %d/%d): %s", rawURL, attempt+1, o.MaxRetries, err))
 			if lastAttempt {
 				return nil
 			}
@@ -852,7 +854,7 @@ func (g *GitHubSource) githubGet(ctx context.Context, url string, o ghGet) *pyht
 				if a, ok := g.Auth.GetHeaders()["Authorization"]; ok {
 					retry["Authorization"] = a
 				}
-				return g.githubGet(ctx, url, ghGet{Params: o.Params, Headers: retry, Timeout: o.Timeout, MaxRetries: o.MaxRetries})
+				return g.githubGet(ctx, rawURL, ghGet{Params: o.Params, Headers: retry, Timeout: o.Timeout, MaxRetries: o.MaxRetries})
 			}
 			if resp.StatusCode == 403 || resp.StatusCode == 429 {
 				limited := isRateLimitResponse(resp)
@@ -864,23 +866,23 @@ func (g *GitHubSource) githubGet(ctx context.Context, url string, o ghGet) *pyht
 					}
 					return resp
 				}
-				reset := pyhttpx.HeaderGet(resp.Header, "X-RateLimit-Reset", "")
-				if ra, ok := pyhttpx.RetryAfterSeconds(resp.Header); ok {
-					wait = math.Min(ra, 60)
+				reset := resp.Header.Get("X-RateLimit-Reset")
+				if ra, ok := httputil.RetryAfter(resp.Header); ok {
+					wait = min(ra, 60*time.Second)
 				} else if reset != "" && !strings.ContainsFunc(reset, func(r rune) bool { return !unicode.IsDigit(r) }) {
-					if f, err := pyint.ParseFloat(reset); err == nil {
-						if delta := f - g.Auth.now(); delta > 0 && delta <= 60 {
+					if sec, err := strconv.ParseInt(reset, 10, 64); err == nil {
+						if delta := time.Unix(sec, 0).Sub(g.Auth.now()); delta > 0 && delta <= 60*time.Second {
 							wait = delta
 						}
 					}
 				}
-				log.Debug(fmt.Sprintf("GitHub rate limited on %s, waiting %.1fs (attempt %d/%d)", url, wait, attempt+1, o.MaxRetries))
+				log.Debug(fmt.Sprintf("GitHub rate limited on %s, waiting %.1fs (attempt %d/%d)", rawURL, wait.Seconds(), attempt+1, o.MaxRetries))
 			} else if resp.StatusCode < 500 || resp.StatusCode >= 600 || lastAttempt {
 				return resp
 			}
 		}
 		g.sleep(wait)
-		backoff = math.Min(backoff*2, 30)
+		backoff = min(backoff*2, 30*time.Second)
 	}
 	return last
 }
@@ -898,7 +900,7 @@ func (g *GitHubSource) findSkillInRepoTree(ctx context.Context, repo, skillName 
 	var dirs []string
 	for _, entry := range pyIterate(tree.Entries) {
 		pathV := pyGet(entry, "path", "")
-		if pyGet(entry, "type", nil) != "blob" || pyGet(entry, "mode", nil) == "120000" || !strings.HasSuffix("/"+pyrepr.Str(pathV), "/SKILL.md") {
+		if pyGet(entry, "type", nil) != "blob" || pyGet(entry, "mode", nil) == "120000" || !strings.HasSuffix("/"+anyutil.String(pathV), "/SKILL.md") {
 			continue
 		}
 		path := pyStrOf(pathV)
@@ -956,7 +958,7 @@ func (g *GitHubSource) fetchFileBytes(ctx context.Context, repo, path, ref strin
 		return g.seams.fetchFileBytes(repo, path, ref)
 	}
 	if ref != "" && !g.rawUnusable {
-		raw, err := g.h.skillsHubHTTPGet(ctx, "https://raw.githubusercontent.com/"+repo+"/"+ref+"/"+pyurl.Quote(path, "/"),
+		raw, err := g.h.skillsHubHTTPGet(ctx, "https://raw.githubusercontent.com/"+repo+"/"+ref+"/"+urlutil.Escape(path, "/"),
 			hubGet{Timeout: 15 * time.Second})
 		if err != nil {
 			var invalid *hubInvalidURLError
@@ -970,11 +972,11 @@ func (g *GitHubSource) fetchFileBytes(ctx context.Context, repo, path, ref strin
 	}
 	hdrs := g.Auth.GetHeaders()
 	hdrs["Accept"] = "application/vnd.github.v3.raw"
-	var params pyhttpx.Params
+	var params url.Values
 	if ref != "" {
-		params = pyhttpx.Params{{"ref", ref}}
+		params = url.Values{"ref": {ref}}
 	}
-	resp := g.githubGet(ctx, githubAPI+"/"+repo+"/contents/"+pyurl.Quote(path, "/"), ghGet{Params: params, Headers: hdrs})
+	resp := g.githubGet(ctx, githubAPI+"/"+repo+"/contents/"+urlutil.Escape(path, "/"), ghGet{Params: params, Headers: hdrs})
 	if resp == nil || resp.StatusCode != 200 {
 		return nil, false
 	}
@@ -999,11 +1001,11 @@ func (g *GitHubSource) getSkillshGroupings(ctx context.Context, repo string) map
 
 // Skill name to grouping title with the first grouping winning, false when the document is unusable
 func parseSkillshGroupings(content string) (map[string]string, bool) {
-	data, err := pyjson.Loads(content)
+	data, err := jsonutil.Decode(content)
 	if err != nil {
 		return nil, false
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil, false
 	}
@@ -1014,7 +1016,7 @@ func parseSkillshGroupings(content string) (map[string]string, bool) {
 	}
 	mapping := map[string]string{}
 	for _, group := range groups {
-		g, ok := group.(*pyjson.Object)
+		g, ok := group.(*jsonutil.Object)
 		if !ok {
 			continue
 		}

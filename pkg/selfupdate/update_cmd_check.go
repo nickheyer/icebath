@@ -17,10 +17,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -174,15 +174,15 @@ func updateCmdCheckFetch(ctx context.Context, w io.Writer, gitCmd []string, root
 }
 
 // Plain runner result of a custody child for the partial clone fetch recovery
-func plainCompleted(done *CompletedProcess) *pysubprocess.Completed {
+func plainCompleted(done *CompletedProcess) *executil.Completed {
 	if done == nil {
 		return nil
 	}
-	return &pysubprocess.Completed{Args: done.Args, Returncode: done.ReturnCode, Stdout: []byte(done.Stdout), Stderr: []byte(done.Stderr)}
+	return &executil.Completed{Args: done.Args, ExitCode: done.ReturnCode, Stdout: []byte(done.Stdout), Stderr: []byte(done.Stderr)}
 }
 
 // Custody result of a plain runner outcome
-func custodyCompleted(done *pysubprocess.Completed) *CompletedProcess {
+func custodyCompleted(done *executil.Completed) *CompletedProcess {
 	if done == nil {
 		return nil
 	}
@@ -207,7 +207,7 @@ func fetchCompareBranch(ctx context.Context, w io.Writer, gitCmd []string, root,
 		}
 	}
 	fmt.Fprintln(w, "→ Fetching from origin...")
-	runner := func(gc, a []string) (*pysubprocess.Completed, error) {
+	runner := func(gc, a []string) (*executil.Completed, error) {
 		done, err := updateCmdCheckGit(ctx, gc, root, a, noPromptGitKwargs())
 		return plainCompleted(done), err
 	}
@@ -319,14 +319,14 @@ func noteChannelRetirement(w io.Writer, args, request, original map[string]any, 
 	if !recorded {
 		previous = "main"
 	}
-	if !pyrepr.Truthy(args["channel"]) && pyrepr.Equal(previous, selected) {
+	if !anyutil.IsTrue(args["channel"]) && anyutil.Equal(previous, selected) {
 		request["channel_retirement"] = map[string]any{"original": original, "destination": target.Channel}
 	}
 }
 
 // Resolves the update's target before any tree write, recording branch, pin and retirement on the request
 func selectApplyTarget(ctx context.Context, w io.Writer, args map[string]any, branch string, request map[string]any, gitCmd []string, stop func() error) (applyTarget, error) {
-	if pyrepr.Truthy(args["branch"]) {
+	if anyutil.IsTrue(args["branch"]) {
 		return applyTarget{Ref: "origin/" + branch}, nil
 	}
 	root := fleetProjectRoot()
@@ -334,7 +334,7 @@ func selectApplyTarget(ctx context.Context, w io.Writer, args map[string]any, br
 	if err != nil {
 		return applyTarget{}, err
 	}
-	cfg, err := checkReadableConfig(ctx, filepath.Join(pyrepr.Str(request["home"]), "config.yaml"))
+	cfg, err := checkReadableConfig(ctx, filepath.Join(anyutil.String(request["home"]), "config.yaml"))
 	if err != nil {
 		return applyTarget{}, err
 	}
@@ -375,10 +375,10 @@ func selectApplyTarget(ctx context.Context, w io.Writer, args map[string]any, br
 
 // Fetches a pinned release's own tag when the checkout lacks it, a failure warned and never fatal
 func fetchReleaseTag(ctx context.Context, w io.Writer, gitCmd []string, root string, request map[string]any) error {
-	if !pyrepr.Truthy(request["release_tag"]) {
+	if !anyutil.IsTrue(request["release_tag"]) {
 		return nil
 	}
-	tag := pyrepr.Str(request["release_tag"])
+	tag := anyutil.String(request["release_tag"])
 	detail, failed, err := func() ([]string, bool, error) {
 		have, err := updateCmdCheckGit(ctx, gitCmd, root, []string{"rev-parse", "--verify", "--quiet", "refs/tags/" + tag}, ChildOptions{})
 		if err == nil && have.ReturnCode == 0 {

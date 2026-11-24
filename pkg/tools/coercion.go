@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -39,11 +39,11 @@ func ResolveLocalSchemaRef(schema, rootSchema any) any {
 }
 
 func schemaResolveLocalRef(schema, rootSchema any, seen map[string]bool) any {
-	m, ok := pyjson.Dict(schema)
+	m, ok := jsonutil.AsMap(schema)
 	if !ok {
 		return schema
 	}
-	root, ok := pyjson.Dict(rootSchema)
+	root, ok := jsonutil.AsMap(rootSchema)
 	if !ok {
 		return schema
 	}
@@ -71,7 +71,7 @@ func schemaResolveLocalRef(schema, rootSchema any, seen map[string]bool) any {
 			return schema
 		}
 		token := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
-		if d, isDict := pyjson.Dict(target); isDict {
+		if d, isDict := jsonutil.AsMap(target); isDict {
 			target = d
 		}
 		switch t := target.(type) {
@@ -94,7 +94,7 @@ func schemaResolveLocalRef(schema, rootSchema any, seen map[string]bool) any {
 			return schema
 		}
 	}
-	targetMap, ok := pyjson.Dict(target)
+	targetMap, ok := jsonutil.AsMap(target)
 	if !ok {
 		return schema
 	}
@@ -110,7 +110,7 @@ func schemaResolveLocalRef(schema, rootSchema any, seen map[string]bool) any {
 			siblings[k] = v
 		}
 	}
-	resolvedMap, ok := pyjson.Dict(resolved)
+	resolvedMap, ok := jsonutil.AsMap(resolved)
 	if len(siblings) == 0 || !ok {
 		return resolved
 	}
@@ -132,11 +132,11 @@ func UnrenameToolArgs(paramsSchema any, args any, rootSchema any) any {
 	if root == nil {
 		root = paramsSchema
 	}
-	resolved, _ := pyjson.Dict(ResolveLocalSchemaRef(paramsSchema, root))
+	resolved, _ := jsonutil.AsMap(ResolveLocalSchemaRef(paramsSchema, root))
 	if resolved == nil {
 		return args
 	}
-	props, ok := pyjson.Dict(resolved["properties"])
+	props, ok := jsonutil.AsMap(resolved["properties"])
 	if !ok {
 		return args
 	}
@@ -148,11 +148,11 @@ func UnrenameToolArgs(paramsSchema any, args any, rootSchema any) any {
 		for key := range a {
 			keys = append(keys, key)
 		}
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if a == nil {
 			return args
 		}
-		keys, vals = a.Keys, a.Vals
+		keys, vals = a.Keys(), a.Map()
 	default:
 		return args
 	}
@@ -160,9 +160,9 @@ func UnrenameToolArgs(paramsSchema any, args any, rootSchema any) any {
 	for orig, renamed := range schemaRenamePropertyKeys(resolved["properties"], "<unrename>") {
 		reverse[renamed] = orig
 	}
-	_, isOrdered := args.(*pyjson.Object)
+	_, isOrdered := args.(*jsonutil.Object)
 	out := make(map[string]any, len(vals))
-	outOrdered := pyjson.NewObject()
+	outOrdered := jsonutil.NewObject()
 	for _, key := range keys {
 		value := vals[key]
 		orig := key
@@ -170,15 +170,15 @@ func UnrenameToolArgs(paramsSchema any, args any, rootSchema any) any {
 			orig = o
 		}
 		sub := map[string]any{}
-		if ps, ok := pyjson.Dict(props[orig]); ok {
-			if r, ok := pyjson.Dict(ResolveLocalSchemaRef(ps, root)); ok {
+		if ps, ok := jsonutil.AsMap(props[orig]); ok {
+			if r, ok := jsonutil.AsMap(ResolveLocalSchemaRef(ps, root)); ok {
 				sub = r
 			}
 		}
 		if coerceIsDict(value) && len(sub) > 0 {
 			value = UnrenameToolArgs(sub, value, root)
 		} else if vl, ok := value.([]any); ok {
-			if items, ok := pyjson.Dict(sub["items"]); ok {
+			if items, ok := jsonutil.AsMap(sub["items"]); ok {
 				rebuilt := make([]any, len(vl))
 				for i, item := range vl {
 					if coerceIsDict(item) {
@@ -204,22 +204,19 @@ type coerceDecoder func(text string) (any, error)
 
 // Decodes into the shapes tool handlers read, every number a float64 and every dict a plain map
 func wtf8CoerceDecoder(text string) (any, error) {
-	v, err := pyjson.DecodeWTF8([]byte(text))
+	v, err := jsonutil.DecodePlain([]byte(text))
 	if err != nil {
-		if _, perr := pyjson.Loads(text); perr != nil {
+		if _, perr := jsonutil.Decode(text); perr != nil {
 			return nil, perr
 		}
 	}
 	return v, err
 }
 
-// Decodes the way Python json.loads does, ints and floats apart and dicts in key order
-func pythonCoerceDecoder(text string) (any, error) { return pyjson.Loads(text) }
-
 // Reports a Python dict, a plain map or an ordered object
 func coerceIsDict(v any) bool {
 	switch v.(type) {
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		return true
 	}
 	return false
@@ -232,7 +229,7 @@ func CoerceToolArgs(ctx context.Context, r *Registry, env *Env, toolName string,
 
 // Coerces args holding Python values, decoded JSON strings kept as Python ints, floats and ordered dicts
 func coercePythonToolArgs(ctx context.Context, r *Registry, env *Env, toolName string, args map[string]any) map[string]any {
-	return coerceToolArgsWith(ctx, r, env, toolName, args, pythonCoerceDecoder)
+	return coerceToolArgsWith(ctx, r, env, toolName, args, jsonutil.Decode)
 }
 
 // Coercion loop of coerce_tool_args parsing JSON strings with the given reader
@@ -246,13 +243,13 @@ func coerceToolArgsWith(ctx context.Context, r *Registry, env *Env, toolName str
 	}
 	var parametersRaw any
 	if def.Schema != nil {
-		parametersRaw = def.Schema.Vals["parameters"]
+		parametersRaw = def.Schema.Value("parameters")
 	}
-	parameters, _ := pyjson.Dict(parametersRaw)
+	parameters, _ := jsonutil.AsMap(parametersRaw)
 	if parameters == nil {
 		return args
 	}
-	properties, _ := pyjson.Dict(parameters["properties"])
+	properties, _ := jsonutil.AsMap(parameters["properties"])
 	if len(properties) == 0 {
 		return args
 	}
@@ -265,7 +262,7 @@ func coerceToolArgsWith(ctx context.Context, r *Registry, env *Env, toolName str
 		if !ok || propRaw == nil {
 			continue
 		}
-		propSchema, _ := pyjson.Dict(ResolveLocalSchemaRef(propRaw, parametersRaw))
+		propSchema, _ := jsonutil.AsMap(ResolveLocalSchemaRef(propRaw, parametersRaw))
 		if propSchema == nil {
 			continue
 		}
@@ -287,7 +284,7 @@ func coerceToolArgsWith(ctx context.Context, r *Registry, env *Env, toolName str
 				continue
 			}
 			args[key] = []any{value}
-			pkgLog().Info(fmt.Sprintf("coerce_tool_args: wrapped bare %s in list for %s.%s", pyrepr.TypeName(value), toolName, key))
+			pkgLog().Info(fmt.Sprintf("coerce_tool_args: wrapped bare %s in list for %s.%s", anyutil.Kind(value), toolName, key))
 			continue
 		}
 		s, isString := value.(string)
@@ -306,7 +303,7 @@ func coerceToolArgsWith(ctx context.Context, r *Registry, env *Env, toolName str
 		if changed {
 			args[key] = coerced
 			switch coerced.(type) {
-			case []any, map[string]any, *pyjson.Object:
+			case []any, map[string]any, *jsonutil.Object:
 				if normalized, changed := coerceNormalizeJSONStringsWith(decode, coerced, propSchema, parameters); changed {
 					args[key] = normalized
 				}
@@ -330,7 +327,7 @@ func coerceTypeEmpty(expected any) bool {
 
 // Reports whether the schema permits the JSON kind through type or any union branch
 func coerceSchemaAcceptsKind(schema any, kind string, rootSchema any, seen map[uintptr]bool) bool {
-	m, ok := pyjson.Dict(schema)
+	m, ok := jsonutil.AsMap(schema)
 	if !ok {
 		return false
 	}
@@ -346,7 +343,7 @@ func coerceSchemaAcceptsKind(schema any, kind string, rootSchema any, seen map[u
 	if rootSchema == nil {
 		rootSchema = m
 	}
-	resolved, ok := pyjson.Dict(ResolveLocalSchemaRef(m, rootSchema))
+	resolved, ok := jsonutil.AsMap(ResolveLocalSchemaRef(m, rootSchema))
 	if !ok {
 		return false
 	}
@@ -378,14 +375,14 @@ func coerceSchemaAcceptsKind(schema any, kind string, rootSchema any, seen map[u
 
 // JSON string normalization reading nested strings with the given JSON reader
 func coerceNormalizeJSONStringsWith(decode coerceDecoder, value any, schema any, rootSchema any) (any, bool) {
-	m, ok := pyjson.Dict(schema)
+	m, ok := jsonutil.AsMap(schema)
 	if !ok {
 		return value, false
 	}
 	if rootSchema == nil {
 		rootSchema = m
 	}
-	resolved, ok := pyjson.Dict(ResolveLocalSchemaRef(m, rootSchema))
+	resolved, ok := jsonutil.AsMap(ResolveLocalSchemaRef(m, rootSchema))
 	if !ok {
 		return value, false
 	}
@@ -411,7 +408,7 @@ func coerceNormalizeJSONStringsWith(decode coerceDecoder, value any, schema any,
 	}
 	switch v := value.(type) {
 	case []any:
-		items, ok := pyjson.Dict(resolved["items"])
+		items, ok := jsonutil.AsMap(resolved["items"])
 		if !ok {
 			return value, changed
 		}
@@ -427,7 +424,7 @@ func coerceNormalizeJSONStringsWith(decode coerceDecoder, value any, schema any,
 		}
 		return value, changed
 	case map[string]any:
-		props, ok := pyjson.Dict(resolved["properties"])
+		props, ok := jsonutil.AsMap(resolved["properties"])
 		if !ok {
 			return value, changed
 		}
@@ -438,7 +435,7 @@ func coerceNormalizeJSONStringsWith(decode coerceDecoder, value any, schema any,
 		anyChanged := false
 		for k, propSchema := range props {
 			val, has := v[k]
-			ps, ok := pyjson.Dict(propSchema)
+			ps, ok := jsonutil.AsMap(propSchema)
 			if !has || !ok {
 				continue
 			}
@@ -450,21 +447,21 @@ func coerceNormalizeJSONStringsWith(decode coerceDecoder, value any, schema any,
 			return out, true
 		}
 		return value, changed
-	case *pyjson.Object:
-		props, ok := pyjson.Dict(resolved["properties"])
+	case *jsonutil.Object:
+		props, ok := jsonutil.AsMap(resolved["properties"])
 		if !ok {
 			return value, changed
 		}
-		out := v.Copy()
+		out := v.Clone()
 		anyChanged := false
 		for k, propSchema := range props {
-			val, has := v.Vals[k]
-			ps, ok := pyjson.Dict(propSchema)
+			val, has := v.Get(k)
+			ps, ok := jsonutil.AsMap(propSchema)
 			if !has || !ok {
 				continue
 			}
 			n, c := coerceNormalizeJSONStringsWith(decode, val, ps, rootSchema)
-			out.Vals[k] = n
+			out.Set(k, n)
 			anyChanged = anyChanged || c
 		}
 		if anyChanged {
@@ -556,13 +553,13 @@ func coerceJSONWith(decode coerceDecoder, value string, expected string) (any, b
 			pkgLog().Debug(fmt.Sprintf("coerce_tool_args: coerced string to %s via json.loads", expected))
 			return parsed, true
 		}
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		if expected == "dict" {
 			pkgLog().Debug(fmt.Sprintf("coerce_tool_args: coerced string to %s via json.loads", expected))
 			return parsed, true
 		}
 	}
-	pkgLog().Warn(fmt.Sprintf("coerce_tool_args: JSON-parsed value is %s, expected %s — skipping coercion", pyrepr.TypeName(parsed), expected))
+	pkgLog().Warn(fmt.Sprintf("coerce_tool_args: JSON-parsed value is %s, expected %s — skipping coercion", anyutil.Kind(parsed), expected))
 	return value, false
 }
 

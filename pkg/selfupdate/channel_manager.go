@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Persists channel for this install in config.yaml and returns its id, refusing commit builds and owned installs
@@ -24,10 +24,10 @@ func SetInstallChannel(ctx context.Context, channel, projectRoot string) (string
 	stamp := pm.ReadInstallStamp(root)
 	if stampGet(stamp, "updateMechanism") == "external" {
 		distribution := stampGet(stamp, "distribution")
-		if !pyrepr.Truthy(distribution) {
+		if !anyutil.IsTrue(distribution) {
 			distribution = "an external steward"
 		}
-		return "", &ValueError{Msg: "channels don't apply here; updates are owned by " + pyrepr.Str(distribution)}
+		return "", &ValueError{Msg: "channels don't apply here; updates are owned by " + anyutil.String(distribution)}
 	}
 	sha16 := InstallID(root)
 	if _, err := writeChannelRecord(ctx, sha16, root, channel, nil, false, ""); err != nil {

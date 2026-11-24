@@ -10,10 +10,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type providerRequestHeadersKey struct{}
@@ -86,13 +86,13 @@ func auxRequestFromChatKwargs(kwargs map[string]any) (*Request, map[string]strin
 		req.Stop = stop
 	case []any:
 		for _, s := range stop {
-			req.Stop = append(req.Stop, pyrepr.Str(s))
+			req.Stop = append(req.Stop, anyutil.String(s))
 		}
 	}
-	extraBody, _ := pyjson.Dict(kwargs["extra_body"])
+	extraBody, _ := jsonutil.AsMap(kwargs["extra_body"])
 	switch {
 	case kwargs["reasoning_effort"] != nil:
-		req.Reasoning = Reasoning{Effort: pyrepr.Str(kwargs["reasoning_effort"])}
+		req.Reasoning = Reasoning{Effort: anyutil.String(kwargs["reasoning_effort"])}
 	case extraBody["reasoning"] != nil:
 		req.Reasoning = reasoningFromConfig(extraBody["reasoning"])
 	}
@@ -117,7 +117,7 @@ func auxRequestFromChatKwargs(kwargs map[string]any) (*Request, map[string]strin
 	if md, ok := kwargs["metadata"].(map[string]any); ok {
 		req.Metadata = make(map[string]string, len(md))
 		for k, v := range md {
-			req.Metadata[k] = pyrepr.Str(v)
+			req.Metadata[k] = anyutil.String(v)
 		}
 	}
 	var headers map[string]string
@@ -127,7 +127,7 @@ func auxRequestFromChatKwargs(kwargs map[string]any) (*Request, map[string]strin
 	case map[string]any:
 		headers = make(map[string]string, len(h))
 		for k, v := range h {
-			headers[k] = pyrepr.Str(v)
+			headers[k] = anyutil.String(v)
 		}
 	}
 	req.Stream = kwargBool(kwargs, "stream", false)

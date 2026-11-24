@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type wpChild struct {
@@ -107,10 +107,10 @@ func TestPauseARequestOnDiskIsOwedEvenBeforeItIsRecordedSent(t *testing.T) {
 	if got := wpLaunches(t, 1); !reflect.DeepEqual(got, nothing) || len(wpRecordFiles(t, tmp)) != 1 {
 		t.Fatalf("an issued request lost its debt %v %v", got, wpRecordFiles(t, tmp))
 	}
-	user := pyjson.NewObject()
+	user := jsonutil.NewObject()
 	user.Set("target_pid", gw.cmd.Process.Pid)
 	user.Set("stopper_pid", 1)
-	text, _ := pyjson.Dumps(user)
+	text, _ := jsonutil.Encode(user)
 	if err := os.WriteFile(marker, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -131,13 +131,13 @@ func TestPausePlannedStopMarkerRecordsTheRequestAndRefusesAnUnwritableHome(t *te
 		t.Fatal(ok, err)
 	}
 	raw, _ := os.ReadFile(plannedStopMarkerPath(home))
-	loaded, err := pyjson.Loads(string(raw))
+	loaded, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := loaded.(*pyjson.Object)
-	if !reflect.DeepEqual(body.Keys, []string{"target_pid", "target_start_time", "stopper_pid", "written_at"}) ||
-		strings.Contains(string(raw), " ") || !strings.HasSuffix(body.Vals["written_at"].(string), "+00:00") {
+	body := loaded.(*jsonutil.Object)
+	if !reflect.DeepEqual(body.Keys(), []string{"target_pid", "target_start_time", "stopper_pid", "written_at"}) ||
+		strings.Contains(string(raw), " ") || !strings.HasSuffix(body.Value("written_at").(string), "+00:00") {
 		t.Fatalf("%s", raw)
 	}
 	if os.Geteuid() == 0 {

@@ -9,8 +9,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Lower cased manifest name of a bundled platform plugin directory of a tree, empty when absent or unreadable
@@ -33,14 +33,14 @@ func bundledPlatformManifestName(tree fs.FS, pluginDir string) string {
 	if err != nil {
 		return ""
 	}
-	if !pyrepr.Truthy(data) {
+	if !anyutil.IsTrue(data) {
 		data = map[string]any{}
 	}
 	m, ok := data.(map[string]any)
 	if !ok {
-		return strings.ToLower(strings.TrimSpace(pyrepr.Str(nil)))
+		return strings.ToLower(strings.TrimSpace(anyutil.String(nil)))
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(m["name"])))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(m["name"])))
 }
 
 // Bundled platform plugin directories holding a manifest, plus manifest names that differ from their directory

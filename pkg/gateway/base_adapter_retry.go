@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -136,7 +136,7 @@ func (b *BasePlatformAdapter) dispatchInlineReply(ctx context.Context, event *Me
 	if err != nil {
 		return err
 	}
-	if ephTTL > 0 && result.Success && pyrepr.Truthy(result.MessageID) {
+	if ephTTL > 0 && result.Success && anyutil.IsTrue(result.MessageID) {
 		b.ScheduleEphemeralDelete(ctx, event.Source.ChatID, fmt.Sprint(result.MessageID), ephTTL)
 	}
 	return nil
@@ -152,7 +152,7 @@ func sendResultErrorText(result SendResult) string {
 	case error:
 		return v.Error()
 	}
-	if !pyrepr.Truthy(result.Error) {
+	if !anyutil.IsTrue(result.Error) {
 		return ""
 	}
 	return fmt.Sprint(result.Error)

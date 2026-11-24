@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 )
 
 // Fresh cache and no env zone for the test, both restored afterwards
@@ -35,7 +34,7 @@ func writeTimezoneHome(t *testing.T, dir, zone string) string {
 
 func requireZone(t *testing.T, name string) *time.Location {
 	t.Helper()
-	loc, err := pydatetime.ZoneInfo(name)
+	loc, err := time.LoadLocation(name)
 	if err != nil {
 		t.Skipf("zoneinfo %s unavailable: %v", name, err)
 	}

@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestPipelineSkipsGuardedMiddlewareAndRunsAsOnion(t *testing.T) {
@@ -54,7 +53,7 @@ func TestPipelineInsertsRelativeToTargetAndTakesMiddlewareInstances(t *testing.T
 func TestDecodeMiddlewareParsesJSONPushAndStopsOnNoFrames(t *testing.T) {
 	adapter := makeAdapter(t, nil)
 	ic := NewInboundContext(adapter, [][]byte{makeJSONPush(t, "alice", "", "hi", "msg-001")})
-	if calls := runMiddleware(t, newDecodeMiddleware(), ic); calls != 1 || ic.DecodedVia != "json" || ic.Push.GetOr("from_account", nil) != "alice" {
+	if calls := runMiddleware(t, newDecodeMiddleware(), ic); calls != 1 || ic.DecodedVia != "json" || ic.Push.ValueOr("from_account", nil) != "alice" {
 		t.Fatalf("decode %d %q %v", calls, ic.DecodedVia, ic.Push)
 	}
 	empty := NewInboundContext(adapter, nil)
@@ -66,7 +65,7 @@ func TestDecodeMiddlewareParsesJSONPushAndStopsOnNoFrames(t *testing.T) {
 func TestFieldDedupSelfAndRoutingMiddlewares(t *testing.T) {
 	adapter := makeAdapter(t, nil)
 	ic := NewInboundContext(adapter, nil)
-	ic.Push = pyjson.ObjectOf("from_account", "alice", "group_code", "grp-1", "group_name", "Test Group", "sender_nickname", "Alice",
+	ic.Push = jsonutil.ObjectOf("from_account", "alice", "group_code", "grp-1", "group_name", "Test Group", "sender_nickname", "Alice",
 		"msg_body", []any{textElem("hi")}, "msg_id", "msg-001", "cloud_custom_data", `{"key": "val"}`)
 	if calls := runMiddleware(t, newExtractFieldsMiddleware(), ic); calls != 1 || ic.FromAccount != "alice" || ic.GroupCode != "grp-1" ||
 		ic.SenderNickname != "Alice" || len(ic.MsgBody) != 1 || ic.MsgID != "msg-001" || ic.CloudCustomData != `{"key": "val"}` {
@@ -202,8 +201,8 @@ func TestAutoSetHomeOnlyForApprovedSenders(t *testing.T) {
 func TestContentPlaceholderAndGroupGuardMiddlewares(t *testing.T) {
 	adapter := makeAdapter(t, nil)
 	ic := NewInboundContext(adapter, nil)
-	ic.MsgBody = []any{textElem("Hello!"), pyjson.ObjectOf("msg_type", "TIMImageElem", "msg_content",
-		pyjson.ObjectOf("image_info_array", []any{pyjson.ObjectOf("url", "https://img.example.com/1.jpg")}))}
+	ic.MsgBody = []any{textElem("Hello!"), jsonutil.ObjectOf("msg_type", "TIMImageElem", "msg_content",
+		jsonutil.ObjectOf("image_info_array", []any{jsonutil.ObjectOf("url", "https://img.example.com/1.jpg")}))}
 	if calls := runMiddleware(t, newExtractContentMiddleware(), ic); calls != 1 || ic.RawText != "Hello! [image]" || len(ic.MediaRefs) != 1 ||
 		ic.MediaRefs[0].Kind != "image" {
 		t.Fatalf("content %q %+v", ic.RawText, ic.MediaRefs)
@@ -220,13 +219,13 @@ func TestContentPlaceholderAndGroupGuardMiddlewares(t *testing.T) {
 	owner := NewInboundContext(adapter, nil)
 	command := "/new"
 	owner.ChatType, owner.OwnerCommand = "group", &command
-	mention, err := pyjson.Dumps(pyjson.ObjectOf("elem_type", int64(1002), "text", "@Bot", "user_id", "bot_123"))
+	mention, err := jsonutil.Encode(jsonutil.ObjectOf("elem_type", int64(1002), "text", "@Bot", "user_id", "bot_123"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	addressed := NewInboundContext(adapter, nil)
 	addressed.ChatType = "group"
-	addressed.MsgBody = []any{pyjson.ObjectOf("msg_type", "TIMCustomElem", "msg_content", pyjson.ObjectOf("data", mention)), textElem("hi")}
+	addressed.MsgBody = []any{jsonutil.ObjectOf("msg_type", "TIMCustomElem", "msg_content", jsonutil.ObjectOf("data", mention)), textElem("hi")}
 	guard := newGroupAtGuardMiddleware()
 	if runMiddleware(t, guard, dm) != 1 || runMiddleware(t, guard, group) != 0 || runMiddleware(t, guard, owner) != 1 || runMiddleware(t, guard, addressed) != 1 {
 		t.Fatal("group guard lets through only DMs, owner commands and bot mentions")
@@ -317,15 +316,15 @@ func TestGroupDispatchesRunOneAtATimePerSession(t *testing.T) {
 		}
 		return nil
 	})
-	mention, err := pyjson.Dumps(pyjson.ObjectOf("elem_type", int64(1002), "text", "@Bot", "user_id", "bot_123"))
+	mention, err := jsonutil.Encode(jsonutil.ObjectOf("elem_type", int64(1002), "text", "@Bot", "user_id", "bot_123"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, text := range []string{"first", "second"} {
-		push := pyjson.ObjectOf("From_Account", "alice", "GroupId", "grp-1", "MsgKey", "msg-"+text, "MsgBody", []any{
-			pyjson.ObjectOf("MsgType", "TIMCustomElem", "MsgContent", pyjson.ObjectOf("data", mention)),
-			pyjson.ObjectOf("MsgType", "TIMTextElem", "MsgContent", pyjson.ObjectOf("text", text))})
-		encoded, err := pyjson.Dumps(push)
+		push := jsonutil.ObjectOf("From_Account", "alice", "GroupId", "grp-1", "MsgKey", "msg-"+text, "MsgBody", []any{
+			jsonutil.ObjectOf("MsgType", "TIMCustomElem", "MsgContent", jsonutil.ObjectOf("data", mention)),
+			jsonutil.ObjectOf("MsgType", "TIMTextElem", "MsgContent", jsonutil.ObjectOf("text", text))})
+		encoded, err := jsonutil.Encode(push)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -8,10 +8,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 // Whether the scoped env names the daemon URL
@@ -32,7 +33,7 @@ func validateConfig(ctx context.Context, config *gateway.PlatformConfig) (bool, 
 	if config == nil {
 		return false, nil
 	}
-	return pyrepr.Truthy(config.Extra["ws_url"]), nil
+	return anyutil.IsTrue(config.Extra["ws_url"]), nil
 }
 
 // Whether SimpleX is configured through the env or the config extra
@@ -81,16 +82,16 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			wsURL = v
 		}
 	}
-	if !pyrepr.Truthy(wsURL) {
+	if !anyutil.IsTrue(wsURL) {
 		return gateway.SendError("SimpleX standalone send: SIMPLEX_WS_URL is required"), nil
 	}
 	failed := func(err error) (map[string]any, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return gateway.SendError("SimpleX send failed: " + cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(pyrepr.Str(wsURL))), pyrepr.ExceptionMessage(err))), nil
+		return gateway.SendError("SimpleX send failed: " + cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(anyutil.String(wsURL))), err.Error())), nil
 	}
-	command, err := sendCmd(chatID, []any{pyjson.ObjectOf("msgContent", pyjson.ObjectOf("type", "text", "text", message))})
+	command, err := sendCmd(chatID, []any{jsonutil.ObjectOf("msgContent", jsonutil.ObjectOf("type", "text", "text", message))})
 	if err != nil {
 		return failed(err)
 	}
@@ -98,7 +99,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if err != nil {
 		return failed(err)
 	}
-	ws, err := pywebsockets.Connect(ctx, pyrepr.Str(wsURL), pywebsockets.ConnectOptions{OpenTimeout: 10 * time.Second,
+	ws, err := websocketutil.Connect(ctx, anyutil.String(wsURL), pywebsockets.ConnectOptions{OpenTimeout: 10 * time.Second,
 		CloseTimeout: 5 * time.Second})
 	if err != nil {
 		return failed(err)

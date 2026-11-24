@@ -11,13 +11,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // JSON receipt of a local reset lineage as the gateway stores it
 func lineageReceipt(t *testing.T, owner string, lineage ...string) string {
 	t.Helper()
-	text, err := pyDumps(pyjson.ObjectOf("session_id", owner, "lineage", stringsToAny(lineage)), pyJSONDefault)
+	text, err := pyDumps(jsonutil.ObjectOf("session_id", owner, "lineage", stringsToAny(lineage)), pyJSONDefault)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -139,18 +140,18 @@ func TestUnchangedSessionListsAndCountsScanReceiptsOnce(t *testing.T) {
 	for range 5 {
 		rows, err := db.ListSessionsRich(ctx, ListSessionsRichOptions{Limit: &limit})
 		if err != nil || len(rows) != 1 || rowValue(rows[0], "id") != "head" {
-			t.Fatalf("rows %v %v", pyjson.Plain(rows), err)
+			t.Fatalf("rows %v %v", jsonutil.Plain(rows), err)
 		}
 		ids, _ := rowValue(rows[0], "_lineage_ids").([]any)
-		if !pyjson.Equal(sortedAny(ids), []any{"head", "owner"}) {
+		if !anyutil.Equal(sortedAny(ids), []any{"head", "owner"}) {
 			t.Fatalf("lineage ids %v", ids)
 		}
 		if n, err := db.SessionCount(ctx, SessionCountOptions{ExcludeChildren: true}); err != nil || n != 1 {
 			t.Fatalf("count %d %v", n, err)
 		}
 		bySource, err := db.SessionCountBySource(ctx, false, false, true)
-		if err != nil || !pyjson.Equal(bySource, pyjson.ObjectOf("cli", int64(1))) {
-			t.Fatalf("by source %v %v", pyjson.Plain(bySource), err)
+		if err != nil || !anyutil.Equal(bySource, jsonutil.ObjectOf("cli", int64(1))) {
+			t.Fatalf("by source %v %v", jsonutil.Plain(bySource), err)
 		}
 	}
 	if n := receiptScans(&mu, &statements); n != 1 {

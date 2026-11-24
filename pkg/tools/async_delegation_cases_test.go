@@ -17,8 +17,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runs a re-exec child mode of the async delegation tests and exits, the subprocess producers
@@ -78,7 +78,7 @@ func asyncChildMain(mode, home, delegationID string) int {
 			fmt.Println("nothing restored")
 			return 3
 		}
-		text, err := pyjson.Dumps(evt, pyjson.SortKeys(true))
+		text, err := jsonutil.Encode(evt, jsonutil.SortKeys())
 		if err != nil {
 			fmt.Println(err)
 			return 1

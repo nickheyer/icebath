@@ -16,12 +16,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/settings"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 // Raised when systemctl --user cannot reach the user D-Bus session, the message is the remediation
@@ -47,7 +47,7 @@ type CalledProcessError struct {
 }
 
 func (e *CalledProcessError) Error() string {
-	return (&pysubprocess.CalledProcessError{Cmd: e.Cmd, Returncode: e.ReturnCode}).Error()
+	return (&executil.StatusError{Args: e.Cmd, ExitCode: e.ReturnCode}).Error()
 }
 
 const (
@@ -80,9 +80,9 @@ var (
 	lifecycleProcessStart                    = GetProcessStartTime
 	lifecycleSendSIGUSR1                     = sendSIGUSR1
 	lifecycleRunningPid                      = func() (int, bool) { pid, ok, err := GetRunningPid("", true); return pid, ok && err == nil }
-	lifecycleRuntimeStatus                   = func() *pyjson.Object { return ReadRuntimeStatus("") }
+	lifecycleRuntimeStatus                   = func() *jsonutil.Object { return ReadRuntimeStatus("") }
 	lifecycleWritePlannedStop                = WritePlannedStopMarker
-	lifecycleGetuser                         = pypwd.Getuser
+	lifecycleGetuser                         = userutil.LoginName
 	lifecycleRefreshSystemdUnit              = refreshSystemdUnitIfNeeded
 	lifecycleUserSystemdSocketUp             = userSystemdSocketReady
 	lifecyclePathExists                      = pathExistsSafe
@@ -231,7 +231,7 @@ func GetSystemdLingerStatus(ctx context.Context, username string) (*bool, string
 		}
 	}
 	if username == "" {
-		pw, err := pypwd.Getpwuid(serviceGetuid())
+		pw, err := userutil.LookupID(serviceGetuid())
 		if err != nil {
 			return nil, "could not determine current user"
 		}
@@ -351,22 +351,22 @@ func ForeignSystemdUnitHome(ctx context.Context, system bool) (string, error) {
 	if err != nil || unitHome == "" {
 		return "", err
 	}
-	expanded, err := pypath.PathExpanduser(unitHome)
+	expanded, err := pathutil.ExpandUserPath(unitHome)
 	if err != nil {
 		return "", err
 	}
-	unit, err := pypath.Resolve(expanded)
+	unit, err := pathutil.Resolve(expanded)
 	if err != nil {
 		return "", nil
 	}
-	mine, err := pypath.Resolve(home.Dir(ctx))
+	mine, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return "", nil
 	}
 	if unit == mine {
 		return "", nil
 	}
-	if def, err := pypath.Resolve(home.AccountDefault(ctx)); err == nil && mine == def {
+	if def, err := pathutil.Resolve(home.AccountDefault(ctx)); err == nil && mine == def {
 		return "", nil
 	}
 	return unitHome, nil
@@ -579,7 +579,7 @@ func systemdResetAndRun(ctx context.Context, action string, system bool, previou
 }
 
 // Pid recorded in a runtime status record, zero when absent, unparsable or not positive
-func runtimeStatePID(state *pyjson.Object) int {
+func runtimeStatePID(state *jsonutil.Object) int {
 	if state == nil {
 		return 0
 	}
@@ -623,7 +623,7 @@ func pyIntOf(v any) (*big.Int, bool) {
 }
 
 // Gateway runtime status record, nil when unreadable
-func readGatewayRuntimeStatus() (state *pyjson.Object) {
+func readGatewayRuntimeStatus() (state *jsonutil.Object) {
 	defer func() {
 		if recover() != nil {
 			state = nil
@@ -633,7 +633,7 @@ func readGatewayRuntimeStatus() (state *pyjson.Object) {
 }
 
 // String form of a runtime status field the way f-strings print it
-func runtimeField(state *pyjson.Object, key string) (any, bool) {
+func runtimeField(state *jsonutil.Object, key string) (any, bool) {
 	if state == nil {
 		return nil, false
 	}
@@ -730,7 +730,7 @@ func pyTruthy(v any) bool {
 		return x.Sign() != 0
 	case []any:
 		return len(x) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len() > 0
 	}
 	return true
@@ -754,7 +754,7 @@ func systemdRestartWaitTimeout(ctx context.Context, system bool) (float64, error
 	for _, name := range []string{"RestartUSec", "TimeoutStartUSec"} {
 		raw := props[name]
 		var us *big.Int
-		if pystr.StrIsDigit(raw) {
+		if textutil.IsDigits(raw) {
 			us, _ = pyint.Parse(raw)
 		} else {
 			us = ParseSystemdDurationToUS(raw)
@@ -944,7 +944,7 @@ func ParseSystemdDurationToUS(raw string) *big.Int {
 		if digits == "" {
 			return false
 		}
-		f, err := pyint.ParseFloat(digits)
+		f, err := strconv.ParseFloat(strings.TrimSpace(digits), 64)
 		if err != nil {
 			return false
 		}

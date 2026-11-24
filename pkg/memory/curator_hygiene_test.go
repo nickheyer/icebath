@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 func TestCuratorRecentViewActivityPreventsFalseStaleTransition(t *testing.T) {
@@ -27,13 +27,13 @@ func TestCuratorRecentViewActivityPreventsFalseStaleTransition(t *testing.T) {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 4, 30, 0, 0, 0, 0, time.UTC)
-	data, err := pyjson.Loads(`{"recently-viewed": {"created_at": "` + pydatetime.ISOFormatUTC(now.Add(-60*24*time.Hour)) +
-		`", "last_viewed_at": "` + pydatetime.ISOFormatUTC(now.Add(-24*time.Hour)) + `", "view_count": 1, "state": "active"}}`)
+	data, err := jsonutil.Decode(`{"recently-viewed": {"created_at": "` + now.Add(-60*24*time.Hour).UTC().Format(timeutil.RFC3339Micro) +
+		`", "last_viewed_at": "` + now.Add(-24*time.Hour).UTC().Format(timeutil.RFC3339Micro) + `", "view_count": 1, "state": "active"}}`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	scope, _, _ := curatorScope(ctx)
-	if !scope.SaveUsage(ctx, data.(*pyjson.Object)) {
+	if !scope.SaveUsage(ctx, data.(*jsonutil.Object)) {
 		t.Fatal("save usage failed")
 	}
 	counts, err := ApplyCuratorTransitions(ctx, now)
@@ -109,7 +109,7 @@ func TestCuratorPruneOnlyPassTakesNoSnapshotButAgesOldOnesOut(t *testing.T) {
 func TestCuratorOnlyOneProcessClaimsADuePass(t *testing.T) {
 	ctx, _ := curTestHome(t, map[string]any{"consolidate": true})
 	due := func() {
-		st := pyjson.NewObject()
+		st := jsonutil.NewObject()
 		st.Set("last_run_at", "2020-01-01T00:00:00+00:00")
 		SaveCuratorState(ctx, st)
 	}
@@ -125,7 +125,7 @@ func TestCuratorOnlyOneProcessClaimsADuePass(t *testing.T) {
 		}
 		return "", false, nil
 	}
-	done := make(chan *pyjson.Object)
+	done := make(chan *jsonutil.Object)
 	go func() { done <- MaybeRunCurator(ctx, nil, nil) }()
 	select {
 	case <-started:
@@ -151,15 +151,15 @@ func TestCuratorOnlyOneProcessClaimsADuePass(t *testing.T) {
 	}
 }
 
-func curReportInput(started time.Time, counts string, before, after []*pyjson.Object, names map[string]bool, meta *pyjson.Object) curatorRunReportInput {
-	c, err := pyjson.Loads(counts)
+func curReportInput(started time.Time, counts string, before, after []*jsonutil.Object, names map[string]bool, meta *jsonutil.Object) curatorRunReportInput {
+	c, err := jsonutil.Decode(counts)
 	if err != nil {
 		panic(err)
 	}
-	return curatorRunReportInput{startedAt: started, elapsed: 12.345, autoCounts: c.(*pyjson.Object), beforeReport: before, beforeNames: names, afterReport: after, llmMeta: meta}
+	return curatorRunReportInput{startedAt: started, elapsed: 12.345, autoCounts: c.(*jsonutil.Object), beforeReport: before, beforeNames: names, afterReport: after, llmMeta: meta}
 }
 
-func curMeta() *pyjson.Object {
+func curMeta() *jsonutil.Object {
 	return curatorEntry("final", "short summary of the pass", "summary", "short summary", "model", "test-model", "provider", "test-provider", "tool_calls", []any{}, "error", nil)
 }
 
@@ -201,8 +201,8 @@ func curToolCall(args map[string]any) any {
 	return curatorEntry("name", "skill_manage", "arguments", string(raw))
 }
 
-func curRows(names ...string) []*pyjson.Object {
-	var out []*pyjson.Object
+func curRows(names ...string) []*jsonutil.Object {
+	var out []*jsonutil.Object
 	for i := 0; i < len(names); i += 2 {
 		out = append(out, curatorEntry("name", names[i], "state", names[i+1], "pinned", false))
 	}
@@ -289,7 +289,7 @@ func TestCuratorThreadedLLMPassKeepsCallersProfileScope(t *testing.T) {
 	curWriteSkill(t, filepath.Join(profile, "skills"), "candidate", "")
 	type seenScope struct{ home, secret string }
 	seen := make(chan seenScope, 1)
-	curatorLLMReview = func(ctx context.Context, _ string) *pyjson.Object {
+	curatorLLMReview = func(ctx context.Context, _ string) *jsonutil.Object {
 		secret, _, _ := provider.GetSecret(ctx, "CURATOR_PROBE_KEY")
 		seen <- seenScope{home.Dir(ctx), secret}
 		return curatorLLMMeta("stub", nil)

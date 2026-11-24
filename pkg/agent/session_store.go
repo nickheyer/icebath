@@ -4,15 +4,15 @@ import (
 	"context"
 	"reflect"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store the agent persists its session through, the canonical SessionDB or a managed worker's RuntimeSessionStore
 type SessionStore interface {
 	CreateSession(n state.NewSession) error
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 	GetSessionTitle(ctx context.Context, sessionID string) (string, bool, error)
 	GetSessionTitleSource(ctx context.Context, sessionID string) (string, bool, error)
 	SetSessionTitle(ctx context.Context, sessionID, title string) (bool, error)

@@ -34,8 +34,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 const (
@@ -193,8 +191,8 @@ func gcpParsePrivateKey(pemText string) (crypto.Signer, error) {
 }
 
 // Compact JWS with compact JSON header and payload, RS256 or ES256 with the key id
-func gcpEncodeJWT(signer crypto.Signer, keyID string, payload *pyjson.Object) (string, error) {
-	header := pyjson.NewObject()
+func gcpEncodeJWT(signer crypto.Signer, keyID string, payload *jsonutil.Object) (string, error) {
+	header := jsonutil.NewObject()
 	header.Set("typ", "JWT")
 	header.Set("alg", "RS256")
 	if _, ok := signer.(*ecdsa.PrivateKey); ok {
@@ -203,11 +201,11 @@ func gcpEncodeJWT(signer crypto.Signer, keyID string, payload *pyjson.Object) (s
 	if keyID != "" {
 		header.Set("kid", keyID)
 	}
-	hb, err := pyjson.Dumps(header, pyjson.Separators(",", ":"))
+	hb, err := jsonutil.Encode(header)
 	if err != nil {
 		return "", err
 	}
-	pb, err := pyjson.Dumps(payload, pyjson.Separators(",", ":"))
+	pb, err := jsonutil.Encode(payload)
 	if err != nil {
 		return "", err
 	}
@@ -274,17 +272,17 @@ func gcpTokenErrorDetails(data any) string {
 }
 
 // Posts to a token endpoint, retrying retryable failures three times with jittered exponential backoff
-func gcpTokenEndpointRequest(ctx context.Context, tokenURI string, form [][2]string, jsonBody *pyjson.Object, header http.Header, canRetry bool, client *http.Client) (map[string]any, error) {
+func gcpTokenEndpointRequest(ctx context.Context, tokenURI string, form [][2]string, jsonBody *jsonutil.Object, header http.Header, canRetry bool, client *http.Client) (map[string]any, error) {
 	var payload []byte
 	contentType := "application/x-www-form-urlencoded"
 	if jsonBody != nil {
-		b, err := pyhttpx.JSONBody(jsonBody)
+		b, err := httputil.JSONBody(jsonBody)
 		if err != nil {
 			return nil, err
 		}
 		payload, contentType = b, "application/json"
 	} else {
-		payload = []byte(pyurl.URLEncode(form))
+		payload = []byte(urlutil.EncodeQuery(form))
 	}
 	if client == nil {
 		client = gcpHTTPClient()
@@ -1574,8 +1572,8 @@ func gcpWireClient(client *http.Client) *http.Client {
 }
 
 // Python dict literal of alternating keys and values in insertion order
-func gcpObject(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func gcpObject(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Provider double of the creation registration contract whose register_job is the given callable
@@ -39,8 +39,8 @@ func (s *spyCronProvider) OnJobsChanged() error {
 }
 
 // Keyword spec of create_job(prompt="echo hi", schedule="every 5m", name="w")
-func notifySpec() *pyjson.Object {
-	spec := pyjson.NewObject()
+func notifySpec() *jsonutil.Object {
+	spec := jsonutil.NewObject()
 	spec.Set("prompt", "echo hi")
 	spec.Set("schedule", "every 5m")
 	spec.Set("name", "w")

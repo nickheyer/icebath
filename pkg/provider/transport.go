@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Transport is the data path of one api mode, messages and tools in, provider kwargs out, raw responses normalized back
@@ -100,7 +100,7 @@ func kwargInt(kwargs map[string]any, key string) int {
 
 // Reasoning config dict of the agent as the provider neutral reasoning controls
 func reasoningFromConfig(v any) Reasoning {
-	cfg, _ := pyjson.Dict(v)
+	cfg, _ := jsonutil.AsMap(v)
 	var r Reasoning
 	if cfg == nil {
 		return r

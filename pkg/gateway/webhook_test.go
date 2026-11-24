@@ -15,9 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Webhook adapter with the test defaults, extra keys overriding them
@@ -223,7 +223,7 @@ func TestGitlabSecretTokenSurvivesUnsignedStandardWebhooksMetadata(t *testing.T)
 
 func TestRenderPromptDotNotation(t *testing.T) {
 	adapter := makeWebhookAdapter(t, nil, nil)
-	payload := pyjson.ObjectOf("pull_request", pyjson.ObjectOf("title", "Fix bug", "number", int64(42)))
+	payload := jsonutil.ObjectOf("pull_request", jsonutil.ObjectOf("title", "Fix bug", "number", int64(42)))
 	got, err := adapter.RenderPrompt("PR #{pull_request.number}: {pull_request.title}", payload, "pull_request", "github")
 	if err != nil || got != "PR #42: Fix bug" {
 		t.Fatalf("got %q %v", got, err)
@@ -232,28 +232,28 @@ func TestRenderPromptDotNotation(t *testing.T) {
 
 func TestRenderDeliveryExtraTemplates(t *testing.T) {
 	adapter := makeWebhookAdapter(t, nil, nil)
-	extra := pyjson.ObjectOf("repo", "{repository.full_name}", "pr_number", "{number}", "static", int64(42))
-	payload := pyjson.ObjectOf("repository", pyjson.ObjectOf("full_name", "org/repo"), "number", int64(7))
+	extra := jsonutil.ObjectOf("repo", "{repository.full_name}", "pr_number", "{number}", "static", int64(42))
+	payload := jsonutil.ObjectOf("repository", jsonutil.ObjectOf("full_name", "org/repo"), "number", int64(7))
 	got, err := adapter.renderDeliveryExtra(extra, payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.GetOr("repo", nil) != "org/repo" || got.GetOr("pr_number", nil) != "7" || !pyrepr.Equal(got.GetOr("static", nil), 42) {
-		t.Fatalf("got %v", pyjson.Plain(got))
+	if got.ValueOr("repo", nil) != "org/repo" || got.ValueOr("pr_number", nil) != "7" || !anyutil.Equal(got.ValueOr("static", nil), 42) {
+		t.Fatalf("got %v", jsonutil.Plain(got))
 	}
 }
 
 // Status and JSON body of a handler response
-func webhookResponseJSON(t *testing.T, resp *WebResponse, err error) (int, *pyjson.Object) {
+func webhookResponseJSON(t *testing.T, resp *WebResponse, err error) (int, *jsonutil.Object) {
 	t.Helper()
 	if err != nil {
 		t.Fatal(err)
 	}
-	decoded, decodeErr := pyjson.Loads(resp.Text())
+	decoded, decodeErr := jsonutil.Decode(resp.Text())
 	if decodeErr != nil {
 		t.Fatalf("body %q: %v", resp.Text(), decodeErr)
 	}
-	obj, _ := decoded.(*pyjson.Object)
+	obj, _ := decoded.(*jsonutil.Object)
 	return resp.Status, obj
 }
 
@@ -331,11 +331,11 @@ func newWebhookTarget(platform Platform) *webhookTargetAdapter {
 
 // Runner exposing one adapter map for every profile and a config without home channels, the MagicMock runner
 type webhookMockRunner struct {
-	adapters *pydict.Dict[Platform, PlatformAdapter]
+	adapters *orderedutil.Map[Platform, PlatformAdapter]
 	config   *GatewayConfig
 }
 
-func (r *webhookMockRunner) AdaptersForProfile(*string) *pydict.Dict[Platform, PlatformAdapter] {
+func (r *webhookMockRunner) AdaptersForProfile(*string) *orderedutil.Map[Platform, PlatformAdapter] {
 	return r.adapters
 }
 func (r *webhookMockRunner) GatewayConfig() *GatewayConfig { return r.config }
@@ -344,11 +344,11 @@ func (r *webhookMockRunner) GatewayConfig() *GatewayConfig { return r.config }
 func webhookAdapterWithMockTarget(t *testing.T) (*WebhookAdapter, *webhookTargetAdapter, string) {
 	adapter := makeWebhookAdapter(t, nil, nil)
 	target := newWebhookTarget(PlatformTelegram)
-	adapters := pydict.New[Platform, PlatformAdapter]()
+	adapters := orderedutil.NewMap[Platform, PlatformAdapter]()
 	adapters.Set(PlatformTelegram, target)
 	adapter.GatewayRunner = &webhookMockRunner{adapters: adapters, config: &GatewayConfig{}}
 	chatID := "webhook:helper-events:d-1"
-	adapter.deliveryInfo[chatID] = pyjson.ObjectOf("deliver", "telegram", "deliver_extra", pyjson.ObjectOf("chat_id", "-100123"))
+	adapter.deliveryInfo[chatID] = jsonutil.ObjectOf("deliver", "telegram", "deliver_extra", jsonutil.ObjectOf("chat_id", "-100123"))
 	adapter.deliveryInfoCreated[chatID] = webhookNow()
 	return adapter, target, chatID
 }
@@ -374,7 +374,7 @@ func TestMarkerFollowedByProseIsNotDelivered(t *testing.T) {
 func TestDeliveryInfoSurvivesMultipleSends(t *testing.T) {
 	adapter := makeWebhookAdapter(t, nil, nil)
 	chatID := "webhook:test:d-xyz"
-	adapter.deliveryInfo[chatID] = pyjson.ObjectOf("deliver", "log", "deliver_extra", pyjson.NewObject())
+	adapter.deliveryInfo[chatID] = jsonutil.ObjectOf("deliver", "log", "deliver_extra", jsonutil.NewObject())
 	adapter.deliveryInfoCreated[chatID] = webhookNow()
 	for _, text := range []string{"Status: switching to fallback", "Final agent response"} {
 		result, err := adapter.Send(context.Background(), chatID, text, "", nil)
@@ -389,7 +389,7 @@ func TestDeliveryInfoSurvivesMultipleSends(t *testing.T) {
 
 func TestRawMixedWithOtherVariables(t *testing.T) {
 	adapter := makeWebhookAdapter(t, nil, nil)
-	got, err := adapter.RenderPrompt("Action={action} Raw={__raw__}", pyjson.ObjectOf("action", "closed", "number", int64(7)), "push", "test")
+	got, err := adapter.RenderPrompt("Action={action} Raw={__raw__}", jsonutil.ObjectOf("action", "closed", "number", int64(7)), "push", "test")
 	if err != nil || !strings.HasPrefix(got, "Action=closed Raw=") || !strings.Contains(got, `"action": "closed"`) || !strings.Contains(got, `"number": 7`) {
 		t.Fatalf("got %q %v", got, err)
 	}
@@ -397,7 +397,7 @@ func TestRawMixedWithOtherVariables(t *testing.T) {
 
 func TestThreadIDPassedAsMetadata(t *testing.T) {
 	adapter, target, _ := webhookAdapterWithMockTarget(t)
-	delivery := pyjson.ObjectOf("deliver_extra", pyjson.ObjectOf("chat_id", "12345", "thread_id", "999"))
+	delivery := jsonutil.ObjectOf("deliver_extra", jsonutil.ObjectOf("chat_id", "12345", "thread_id", "999"))
 	if _, err := adapter.deliverCrossPlatform(context.Background(), "telegram", "hello", delivery); err != nil {
 		t.Fatal(err)
 	}
@@ -480,17 +480,17 @@ func TestExplicitHostStillRejectsLiveListener(t *testing.T) {
 
 func TestRouteProfileValidationFailsClosed(t *testing.T) {
 	worker, other := "worker", "other"
-	if !webhookRouteAllowsProfile(pyjson.NewObject(), nil) {
+	if !webhookRouteAllowsProfile(jsonutil.NewObject(), nil) {
 		t.Fatal("default route refused")
 	}
-	if !webhookRouteAllowsProfile(pyjson.ObjectOf("profile", "worker"), &worker) {
+	if !webhookRouteAllowsProfile(jsonutil.ObjectOf("profile", "worker"), &worker) {
 		t.Fatal("worker route refused")
 	}
-	if webhookRouteAllowsProfile(pyjson.ObjectOf("profile", "worker"), &other) {
+	if webhookRouteAllowsProfile(jsonutil.ObjectOf("profile", "worker"), &other) {
 		t.Fatal("worker route served other")
 	}
 	for _, malformed := range []any{nil, "", "   ", int64(123), []any{"worker"}} {
-		if webhookRouteAllowsProfile(pyjson.ObjectOf("profile", malformed), &worker) {
+		if webhookRouteAllowsProfile(jsonutil.ObjectOf("profile", malformed), &worker) {
 			t.Fatalf("malformed %v accepted", malformed)
 		}
 	}
@@ -507,7 +507,7 @@ func TestConnectRejectsAnUnusableRouteSecret(t *testing.T) {
 		if !asPyError(err, &pyErr) || pyErr.Kind != "ValueError" {
 			t.Fatalf("%v: %T", secret, err)
 		}
-		if adapter.dynamicRouteAllowed("hook", pyjson.ObjectOf("secret", secret)) {
+		if adapter.dynamicRouteAllowed("hook", jsonutil.ObjectOf("secret", secret)) {
 			t.Fatalf("%v dynamic allowed", secret)
 		}
 	}

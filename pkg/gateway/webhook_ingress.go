@@ -10,10 +10,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner seams producer ingress admits through, authz_mixin _owning_profile and run_adapters _canonicalize and _admit_primary_source
@@ -179,7 +180,7 @@ func coalescedRouteRefusal(runner any, profile string, routeConfig map[string]an
 		return "", nil
 	}
 	switch routeConfig["coalesce"].(type) {
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 	default:
 		return "", nil
 	}
@@ -269,7 +270,7 @@ func AdmitProducer(ctx context.Context, adapter PlatformAdapter, event *MessageE
 
 // Runs the retry check, the plugin hooks, the offer to the chat's in flight work and the commit of one delivery
 func admitOnce(ctx context.Context, authority *SessionAuthority, event *MessageEvent, webhook bool, hooks []string, live bool,
-	payload *pyjson.Object, rows []*pyjson.Object) (*AdmissionReceipt, error) {
+	payload *jsonutil.Object, rows []*jsonutil.Object) (*AdmissionReceipt, error) {
 	if webhook {
 		prior, err := webhookRetry(ctx, authority, event, payload, rows)
 		if err != nil || prior != nil {
@@ -358,7 +359,7 @@ func deliveryTurn(ctx context.Context, profileID, principal, requestID string, b
 	if requestID == "" {
 		return body(ctx)
 	}
-	key, err := pyjson.Dumps([]any{profileID, principal, requestID})
+	key, err := jsonutil.Encode([]any{profileID, principal, requestID})
 	if err != nil {
 		return err
 	}
@@ -366,7 +367,7 @@ func deliveryTurn(ctx context.Context, profileID, principal, requestID string, b
 }
 
 // Releases the media a skipped, consumed, refused or cancelled delivery copied into the retained store
-func releasePreparation(ctx context.Context, authority *SessionAuthority, payload *pyjson.Object) error {
+func releasePreparation(ctx context.Context, authority *SessionAuthority, payload *jsonutil.Object) error {
 	native, err := nativeEnvelope(payload)
 	if err != nil {
 		return err
@@ -381,7 +382,7 @@ func releasePreparation(ctx context.Context, authority *SessionAuthority, payloa
 }
 
 // Validated payload of the delivery and its messaging principal, a refused sender raising here
-func preparedDelivery(ctx context.Context, authority *SessionAuthority, event *MessageEvent) (*pyjson.Object, string, error) {
+func preparedDelivery(ctx context.Context, authority *SessionAuthority, event *MessageEvent) (*jsonutil.Object, string, error) {
 	leaseCtx, scope, release := captureLease(ctx, authority)
 	payload, err := prepareNative(leaseCtx, authority.Runner, event)
 	if err != nil {
@@ -403,8 +404,9 @@ func preparedDelivery(ctx context.Context, authority *SessionAuthority, event *M
 		}
 		return *v
 	}
-	identity, err := pyjson.Dumps([]any{opt(source.Profile), string(source.Platform), source.ChatID, opt(source.ThreadID),
-		opt(source.UserID)}, pyjson.Separators(",", ":"))
+	identity, err := jsonutil.Encode([]any{opt(source.Profile), string(source.Platform), source.ChatID, opt(source.ThreadID),
+		opt(source.UserID)})
+
 	if err != nil {
 		return nil, "", err
 	}
@@ -412,13 +414,13 @@ func preparedDelivery(ctx context.Context, authority *SessionAuthority, event *M
 }
 
 // Admission rows of this delivery's identity in the FIFO
-func committedRows(ctx context.Context, authority *SessionAuthority, principal, requestID string) ([]*pyjson.Object, error) {
+func committedRows(ctx context.Context, authority *SessionAuthority, principal, requestID string) ([]*jsonutil.Object, error) {
 	return authority.DB.ReadAll(ctx, "SELECT admission_id FROM session_admissions WHERE principal_id=? AND request_id=?",
 		principal, requestID)
 }
 
 // Receipt of an already committed identical webhook delivery, nil when none is committed
-func webhookRetry(ctx context.Context, authority *SessionAuthority, event *MessageEvent, payload *pyjson.Object, rows []*pyjson.Object) (*AdmissionReceipt, error) {
+func webhookRetry(ctx context.Context, authority *SessionAuthority, event *MessageEvent, payload *jsonutil.Object, rows []*jsonutil.Object) (*AdmissionReceipt, error) {
 	if len(rows) == 0 {
 		return nil, nil
 	}
@@ -430,7 +432,7 @@ func webhookRetry(ctx context.Context, authority *SessionAuthority, event *Messa
 		return nil, &PyError{Kind: "TypeError", Msg: "the webhook retry record is missing"}
 	}
 	stored, _ := row.Get("payload")
-	storedPayload, _ := stored.(*pyjson.Object)
+	storedPayload, _ := stored.(*jsonutil.Object)
 	if storedPayload == nil {
 		return nil, &PyError{Kind: "TypeError", Msg: "the stored webhook record is " + errchain.Kind(stored) + ", expected a mapping"}
 	}
@@ -444,7 +446,7 @@ func webhookRetry(ctx context.Context, authority *SessionAuthority, event *Messa
 		if err != nil {
 			return nil, err
 		}
-		same = pyjson.Equal(prior, fingerprint)
+		same = anyutil.Equal(prior, fingerprint)
 	} else {
 		_, hasDelivery := retained.Get("webhook_delivery")
 		_, hasRoute := retained.Get("webhook_route")
@@ -463,7 +465,7 @@ func webhookRetry(ctx context.Context, authority *SessionAuthority, event *Messa
 				native.Delete("provenance")
 			}
 		}
-		same = pyjson.Equal(stored, payload)
+		same = anyutil.Equal(stored, payload)
 	}
 	if len(rows) != 1 || !same {
 		return nil, runtimeRefusal("admission_conflict")
@@ -539,12 +541,12 @@ func RecoverWebhookFinalizations(ctx context.Context, authority *SessionAuthorit
 }
 
 // Finalizes one settled webhook admission after its route authorization passes
-func recoverWebhookFinalization(ctx context.Context, authority *SessionAuthority, row *pyjson.Object, sid string) (string, error) {
+func recoverWebhookFinalization(ctx context.Context, authority *SessionAuthority, row *jsonutil.Object, sid string) (string, error) {
 	stored, ok := row.Get("payload")
 	if !ok {
 		return "", &pyKeyError{"payload"}
 	}
-	payload, _ := stored.(*pyjson.Object)
+	payload, _ := stored.(*jsonutil.Object)
 	if payload == nil {
 		return "", &PyError{Kind: "TypeError", Msg: "the stored webhook record is " + errchain.Kind(stored) + ", expected a mapping"}
 	}

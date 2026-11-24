@@ -10,10 +10,9 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Kinds a create refuses with, a bad request that made nothing, in the order a failure is matched against them
@@ -39,7 +38,7 @@ const refusedNothingCreated = "the gateway refused the create; nothing was creat
 func CreateErrorText(err error) string {
 	switch err.(type) {
 	case *fs.PathError, *os.LinkError, *os.SyscallError, syscall.Errno, *exec.Error:
-		return pypath.OSErrorText(err)
+		return err.Error()
 	}
 	return err.Error()
 }
@@ -47,7 +46,7 @@ func CreateErrorText(err error) string {
 // Kind of refusal a create failure is, empty for a failure that may have left a profile behind
 func RefusalKind(err error) string {
 	var invalid *profiles.ValueError
-	var undecodable *pyjson.DecodeError
+	var undecodable *jsonutil.SyntaxError
 	var syntax *json.SyntaxError
 	switch {
 	case errors.Is(err, fs.ErrExist):

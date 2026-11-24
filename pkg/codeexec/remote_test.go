@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Backend whose every command outlives the env lifetime, one reaper sweep firing from inside it
@@ -44,11 +44,11 @@ func TestRemoteExecuteCodeCallKeepsItsEnvironmentPastTheLifetime(t *testing.T) {
 	tools.RegisterTaskEnvironment(key, reaping)
 	t.Cleanup(func() { tools.CleanupInactiveEnvs(env, -1) })
 	prev := executeInRemoteKernelFn
-	executeInRemoteKernelFn = func(ctx context.Context, _ *tools.Env, envr tools.Environment, _ string, _ remoteCell) (*pyjson.Object, error) {
+	executeInRemoteKernelFn = func(ctx context.Context, _ *tools.Env, envr tools.Environment, _ string, _ remoteCell) (*jsonutil.Object, error) {
 		if _, err := envr.Execute(ctx, "python3 cell.py", tools.ExecOptions{}); err != nil {
 			return nil, err
 		}
-		result := pyjson.NewObject()
+		result := jsonutil.NewObject()
 		result.Set("status", "success")
 		result.Set("stdout", "1\n")
 		return result, nil

@@ -12,9 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Adapter reporting the connector created auto thread of the latest send into a chat
@@ -297,7 +297,7 @@ func isOperatorTopic(info any) bool {
 	switch v := info.(type) {
 	case map[string]any:
 		return true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return v != nil
 	}
 	return false
@@ -328,7 +328,7 @@ func (r *GatewayRunner) renameTelegramTopicForSessionTitle(ctx context.Context, 
 			pkgLog().Debug("Failed to verify Telegram topic binding before rename", "exc_info", err)
 			return
 		}
-		if binding != nil && binding.Len() > 0 && pyrepr.Str(orEmpty(binding.GetOr("session_id", nil))) != sessionID {
+		if binding != nil && binding.Len() > 0 && anyutil.String(orEmpty(binding.ValueOr("session_id", nil))) != sessionID {
 			return
 		}
 	}
@@ -343,7 +343,7 @@ func (r *GatewayRunner) renameTelegramTopicForSessionTitle(ctx context.Context, 
 
 // Value when truthy, the empty string otherwise
 func orEmpty(v any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return ""

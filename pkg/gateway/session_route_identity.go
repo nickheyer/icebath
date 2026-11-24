@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Every model key that belongs to one endpoint, all dropped together on a route change
@@ -16,10 +16,10 @@ var RouteBoundKeys = []string{"provider", "base_url", "api_mode", "context_lengt
 
 // Text of a config value as str(value or "") spells it
 func routeStr(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Configured named endpoint entry a provider name selects in config without credentials, nil when none matches

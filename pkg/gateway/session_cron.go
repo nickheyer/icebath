@@ -5,17 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -59,7 +61,7 @@ var (
 
 // Resolved path of a home, panicking where pathlib resolve raises
 func resolvedCronHome(p string) string {
-	resolved, err := pypath.Resolve(p)
+	resolved, err := pathutil.Resolve(p)
 	if err != nil {
 		panic(err)
 	}
@@ -68,7 +70,7 @@ func resolvedCronHome(p string) string {
 
 // Registers an authority as the cron owner of its store home for this process while its loop lives
 func bindCronOwner(loop context.Context, authority cronOwnerAuthority) {
-	home := pypath.PathParent(resolvedCronHome(authority.DBPath()))
+	home := filepath.Dir(filepath.Clean(resolvedCronHome(authority.DBPath())))
 	cronOwnersMu.Lock()
 	defer cronOwnersMu.Unlock()
 	cronOwners[home] = boundCronOwner{pid: os.Getpid(), authority: authority, loop: loop}
@@ -76,7 +78,7 @@ func bindCronOwner(loop context.Context, authority cronOwnerAuthority) {
 
 // Drops the cron owner binding of its store home when this authority still holds it
 func unbindCronOwner(authority cronOwnerAuthority) {
-	home := pypath.PathParent(resolvedCronHome(authority.DBPath()))
+	home := filepath.Dir(filepath.Clean(resolvedCronHome(authority.DBPath())))
 	cronOwnersMu.Lock()
 	defer cronOwnersMu.Unlock()
 	if bound, ok := cronOwners[home]; ok && bound.authority == authority {
@@ -142,8 +144,8 @@ func admitLocalDelivery(ctx context.Context, a *SessionAuthority, chatID, text s
 // Python TypeError or AttributeError of a stored terminal result that is not a mapping
 type cronResultShapeError struct{ typeName, msg string }
 
-func (e *cronResultShapeError) Error() string      { return e.msg }
-func (e *cronResultShapeError) PyTypeName() string { return e.typeName }
+func (e *cronResultShapeError) Error() string     { return e.msg }
+func (e *cronResultShapeError) ErrorKind() string { return e.typeName }
 
 // Python KeyError of a missing mapping key
 type pyKeyError struct{ key string }
@@ -154,12 +156,12 @@ func (e *pyKeyError) Error() string { return "missing " + e.key }
 func pyExceptionRepr(err error) string {
 	var keyErr *pyKeyError
 	if errors.As(err, &keyErr) {
-		return "KeyError(" + pyrepr.Repr(keyErr.key) + ")"
+		return "KeyError(" + anyutil.Quote(keyErr.key) + ")"
 	}
 	if err.Error() == "" {
 		return pyrepr.ExceptionName(err) + "()"
 	}
-	return pyrepr.ExceptionName(err) + "(" + pyrepr.Repr(err.Error()) + ")"
+	return pyrepr.ExceptionName(err) + "(" + anyutil.Quote(err.Error()) + ")"
 }
 
 // Seconds a cross goroutine local chat delivery waits for the owner to confirm it
@@ -215,8 +217,8 @@ type timeoutError struct{}
 
 func (*timeoutError) Error() string { return "" }
 
-// Python class name of the stalled owner error
-func (*timeoutError) PyTypeName() string { return "TimeoutError" }
+// Kind label of the stalled owner error
+func (*timeoutError) ErrorKind() string { return "TimeoutError" }
 
 // Cron identity of a fire, the profile scheduler principal with the caller's capabilities and transport
 func cronActor(a *SessionAuthority, actor *Principal) (Principal, error) {
@@ -258,7 +260,7 @@ func SwapCronExecutionIDGuard(guard func(executionID string) bool) func(executio
 }
 
 // Staged creation receipt of a fresh cron session, or the ref of an exact retry restored from the store
-func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, params map[string]any) (*pyjson.Object, *SessionRef, string, error) {
+func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, params map[string]any) (*jsonutil.Object, *SessionRef, string, error) {
 	if !paramsKeysAre(params, "job_id", "request_id", "extra_prompt") {
 		return nil, nil, "", runtimeRefusal("invalid_params")
 	}
@@ -311,7 +313,7 @@ func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, param
 	}
 	name := jid
 	if n, _ := job.Get("name"); pyTruthy(n) {
-		name = pyrepr.Str(n)
+		name = anyutil.String(n)
 	}
 	model, err := hooks.JobModel(ctx, job, jid, name)
 	if err != nil {
@@ -321,7 +323,7 @@ func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, param
 	if params["extra_prompt"] != nil {
 		extraValue = extra
 	}
-	requestJSON, err := pyjson.Dumps(pyjson.ObjectOf("cron_job", job, "extra_prompt", extraValue, "request_id", requestID))
+	requestJSON, err := jsonutil.Encode(jsonutil.ObjectOf("cron_job", job, "extra_prompt", extraValue, "request_id", requestID))
 	if err != nil {
 		return nil, nil, "", err
 	}
@@ -343,17 +345,17 @@ func cronCreate(ctx context.Context, a *SessionAuthority, actor Principal, param
 	entry := NewSessionEntry(route, sid, now, now)
 	entry.Origin = source
 	entry.Platform = PlatformLocal
-	return pyjson.ObjectOf("profile_id", a.ProfileID, "principal_id", actor.Subject, "request_id", requestID,
+	return jsonutil.ObjectOf("profile_id", a.ProfileID, "principal_id", actor.Subject, "request_id", requestID,
 		"session_id", sid, "route", route, "entry", entry.ToDict(), "policy", localPolicyAsDict(bound)), nil, requestID, nil
 }
 
 // Dataclass dict of a frozen local session policy in field order
-func localPolicyAsDict(p *LocalSessionPolicy) *pyjson.Object {
+func localPolicyAsDict(p *LocalSessionPolicy) *jsonutil.Object {
 	toolsets := make([]any, len(p.Toolsets))
 	for i, t := range p.Toolsets {
 		toolsets[i] = t
 	}
-	return pyjson.ObjectOf("source", p.Source, "platform", p.Platform, "cwd", p.Cwd, "model", optStrAny(p.Model),
+	return jsonutil.ObjectOf("source", p.Source, "platform", p.Platform, "cwd", p.Cwd, "model", optStrAny(p.Model),
 		"toolsets", toolsets, "config_json", p.ConfigJSON, "request_json", p.RequestJSON, "terminal_json", p.TerminalJSON,
 		"credential_ref", optStrAny(p.CredentialRef), "config_secret_ref", optStrAny(p.ConfigSecretRef),
 		"editor_mcp_json", optStrAny(p.EditorMCPJSON), "kanban_json", optStrAny(p.KanbanJSON), "safe_mode", p.SafeMode,
@@ -370,11 +372,11 @@ var runJobFlags = []string{"_model_unreachable", "_quota_hold_seconds"}
 
 // Cron scheduler functions the owner reaches, installed by pkg/cron which imports this package
 type CronOwnerHooks struct {
-	GetJob           func(ctx context.Context, jobID string) (*pyjson.Object, error)
-	JobModel         func(ctx context.Context, job *pyjson.Object, jobID, jobName string) (*string, error)
+	GetJob           func(ctx context.Context, jobID string) (*jsonutil.Object, error)
+	JobModel         func(ctx context.Context, job *jsonutil.Object, jobID, jobName string) (*string, error)
 	GetExecution     func(ctx context.Context, executionID string) (map[string]any, error)
-	EnterExecution   func(ctx context.Context, job *pyjson.Object, executionID string, record map[string]any) context.Context
-	RunJob           func(ctx context.Context, job *pyjson.Object, executionID string, extraPrompt *string, cancel *pythread.Event) (CronRunResult, error)
+	EnterExecution   func(ctx context.Context, job *jsonutil.Object, executionID string, record map[string]any) context.Context
+	RunJob           func(ctx context.Context, job *jsonutil.Object, executionID string, extraPrompt *string, cancel *syncutil.Event) (CronRunResult, error)
 	OwnerProgress    func(executionID string) any
 	PopOwnerProgress func(executionID string)
 }
@@ -455,7 +457,7 @@ func cronOperation(ctx context.Context, a *SessionAuthority, name string, params
 				return nil, err
 			}
 			if claimed == nil {
-				claimed = pyjson.ObjectOf("status", "terminal")
+				claimed = jsonutil.ObjectOf("status", "terminal")
 			}
 			row = claimed
 		}
@@ -465,14 +467,14 @@ func cronOperation(ctx context.Context, a *SessionAuthority, name string, params
 		return map[string]any{"ok": true}, nil
 	}
 	var result any
-	flags := any(pyjson.NewObject())
+	flags := any(jsonutil.NewObject())
 	if rowString(row, "status") == AdmissionTerminal {
 		saved, err := admissionResult(ctx, a.DB, rowString(row, "admission_id"))
 		if err != nil {
 			return nil, err
 		}
 		if pyTruthy(saved) {
-			savedObj, ok := saved.(*pyjson.Object)
+			savedObj, ok := saved.(*jsonutil.Object)
 			if !ok {
 				return nil, &cronResultShapeError{"TypeError", fmt.Sprintf("the saved cron result is %s, expected a mapping", errchain.Kind(saved))}
 			}
@@ -480,7 +482,7 @@ func cronOperation(ctx context.Context, a *SessionAuthority, name string, params
 			if !found {
 				return nil, &pyKeyError{key: "result"}
 			}
-			innerObj, ok := inner.(*pyjson.Object)
+			innerObj, ok := inner.(*jsonutil.Object)
 			if !ok {
 				return nil, &cronResultShapeError{"AttributeError", fmt.Sprintf("the cron result payload is %s, expected a mapping", errchain.Kind(inner))}
 			}
@@ -521,7 +523,7 @@ func cronRecover(ctx context.Context, a *SessionAuthority, params map[string]any
 	if err != nil {
 		return nil, err
 	}
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	for _, r := range rows {
 		if principal, _ := r.Get("principal_id"); rowString(r, "request_id") == requestID && SameOwner(principal, actor.Subject) {
 			row = r
@@ -548,11 +550,11 @@ func cronRecover(ctx context.Context, a *SessionAuthority, params map[string]any
 	if !ok {
 		return nil, &pyKeyError{key: sid}
 	}
-	frozenValue, err := pyjson.Loads(policy.RequestJSON)
+	frozenValue, err := jsonutil.Decode(policy.RequestJSON)
 	if err != nil {
 		return nil, err
 	}
-	frozen, ok := frozenValue.(*pyjson.Object)
+	frozen, ok := frozenValue.(*jsonutil.Object)
 	if !ok {
 		return nil, &cronResultShapeError{"TypeError", fmt.Sprintf("the frozen cron result is %s, expected a mapping", errchain.Kind(frozenValue))}
 	}
@@ -560,7 +562,7 @@ func cronRecover(ctx context.Context, a *SessionAuthority, params map[string]any
 	if !found {
 		return nil, &pyKeyError{key: "extra_prompt"}
 	}
-	if !pyjson.Equal(frozenExtra, params["extra_prompt"]) {
+	if !anyutil.Equal(frozenExtra, params["extra_prompt"]) {
 		return nil, runtimeRefusal("admission_conflict")
 	}
 	cronJob, found := frozen.Get("cron_job")
@@ -601,9 +603,9 @@ func cronSubmit(ctx context.Context, a *SessionAuthority, params map[string]any,
 	}
 	result, err := trackedWrite(ctx, a, func(writeCtx context.Context) (any, error) {
 		return a.DB.AdmitSessionInput(writeCtx, state.SessionInput{Epoch: a.Epoch, PrincipalID: actor.Subject, SessionID: ref.SessionID,
-			RequestID: requestID, Payload: pyjson.ObjectOf("text", text), AuthorizeWrite: a.admissionGate(nil, false)})
+			RequestID: requestID, Payload: jsonutil.ObjectOf("text", text), AuthorizeWrite: a.admissionGate(nil, false)})
 	}, func(thenCtx context.Context, row any) (any, error) {
-		return a.admitted(thenCtx, *ref, nil, row.(*pyjson.Object))
+		return a.admitted(thenCtx, *ref, nil, row.(*jsonutil.Object))
 	}, true, func(any) { a.scheduleAdmitted(ctx, *ref) })
 	if err != nil {
 		return nil, err
@@ -612,15 +614,15 @@ func cronSubmit(ctx context.Context, a *SessionAuthority, params map[string]any,
 }
 
 // Cancellation latch of an admission, created on first use so a cancel before execute registers is kept
-func cronCancellationEvent(a *SessionAuthority, admissionID string) *pythread.Event {
+func cronCancellationEvent(a *SessionAuthority, admissionID string) *syncutil.Event {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.cronCancellations == nil {
-		a.cronCancellations = map[string]*pythread.Event{}
+		a.cronCancellations = map[string]*syncutil.Event{}
 	}
 	event, ok := a.cronCancellations[admissionID]
 	if !ok {
-		event = &pythread.Event{}
+		event = &syncutil.Event{}
 		a.cronCancellations[admissionID] = event
 	}
 	return event
@@ -650,7 +652,7 @@ func schedulerExecutionID(jobID, requestID string) string {
 }
 
 // Runs the job inside this fire's cron identity re-bound from its ledger row
-func runIdentified(ctx context.Context, job *pyjson.Object, executionID string, extraPrompt *string, cancel *pythread.Event) (CronRunResult, error) {
+func runIdentified(ctx context.Context, job *jsonutil.Object, executionID string, extraPrompt *string, cancel *syncutil.Event) (CronRunResult, error) {
 	hooks := cronOwnerHooks()
 	record, err := hooks.GetExecution(ctx, executionID)
 	if err != nil {
@@ -663,12 +665,12 @@ func runIdentified(ctx context.Context, job *pyjson.Object, executionID string, 
 }
 
 // Runs a cron session's own frozen fire, any other input settling with the read only descriptor
-func CronExecute(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object, policy *LocalSessionPolicy) (string, error) {
-	dataValue, err := pyjson.Loads(policy.RequestJSON)
+func CronExecute(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object, policy *LocalSessionPolicy) (string, error) {
+	dataValue, err := jsonutil.Decode(policy.RequestJSON)
 	if err != nil {
 		return "", err
 	}
-	data := dataValue.(*pyjson.Object)
+	data := dataValue.(*jsonutil.Object)
 	extraValue, _ := data.Get("extra_prompt")
 	extraText := ""
 	if pyTruthy(extraValue) {
@@ -682,23 +684,23 @@ func CronExecute(ctx context.Context, a *SessionAuthority, ref SessionRef, row *
 	}
 	principal, _ := row.Get("principal_id")
 	admissionID := rowString(row, "admission_id")
-	if !pyjson.Equal(payload, pyjson.ObjectOf("text", extraText)) || rowString(row, "request_id") != dataRequestID ||
-		!pyjson.Equal(principal, optStrAny(live.Source.UserID)) {
+	if !anyutil.Equal(payload, jsonutil.ObjectOf("text", extraText)) || rowString(row, "request_id") != dataRequestID ||
+		!anyutil.Equal(principal, optStrAny(live.Source.UserID)) {
 		text := i18n.T(ctx, "gateway.errors.cron_session_read_only", "", nil)
 		a.mu.Lock()
-		a.PendingResults[admissionID] = pyjson.ObjectOf("result", pyjson.ObjectOf(
+		a.PendingResults[admissionID] = jsonutil.ObjectOf("result", jsonutil.ObjectOf(
 			"final_response", "", "messages", []any{}, "failed", true, "completed", false,
-			"error", text, "error_surface", pyjson.ObjectOf(cronSessionReadOnlySurface...)), "usage", pyjson.NewObject())
+			"error", text, "error_surface", jsonutil.ObjectOf(cronSessionReadOnlySurface...)), "usage", jsonutil.NewObject())
 		a.mu.Unlock()
 		return text, nil
 	}
 	cancel := cronCancellationEvent(a, admissionID)
 	cronJobValue, _ := data.Get("cron_job")
-	cronJob := cronJobValue.(*pyjson.Object)
+	cronJob := cronJobValue.(*jsonutil.Object)
 	jobIDValue, _ := cronJob.Get("id")
 	jobID, _ := jobIDValue.(string)
 	executionID := schedulerExecutionID(jobID, rowString(row, "request_id"))
-	job := cronJob.Copy()
+	job := cronJob.Clone()
 	job.Set("execution_id", executionID)
 	ctx = BindCronExecution(ctx, CronOwnerExecution{DB: a.DB, DBPath: a.DBPath(), SessionID: ref.SessionID, JobID: jobID, ExecutionID: executionID})
 	defer func() {
@@ -707,7 +709,7 @@ func CronExecute(ctx context.Context, a *SessionAuthority, ref SessionRef, row *
 		delete(a.cronCancellations, admissionID)
 		a.mu.Unlock()
 	}()
-	dbPath, err := pypath.Resolve(a.DBPath())
+	dbPath, err := pathutil.Resolve(a.DBPath())
 	if err != nil {
 		return "", err
 	}
@@ -715,11 +717,11 @@ func CronExecute(ctx context.Context, a *SessionAuthority, ref SessionRef, row *
 	if s, ok := extraValue.(string); ok {
 		extraPrompt = &s
 	}
-	result, err := runIdentified(profileRuntimeScope(ctx, pypath.PathParent(dbPath), true), job, executionID, extraPrompt, cancel)
+	result, err := runIdentified(profileRuntimeScope(ctx, filepath.Dir(filepath.Clean(dbPath)), true), job, executionID, extraPrompt, cancel)
 	if err != nil {
 		return "", err
 	}
-	flags := pyjson.NewObject()
+	flags := jsonutil.NewObject()
 	for _, key := range runJobFlags {
 		if v, ok := job.Get(key); ok {
 			flags.Set(key, v)
@@ -730,10 +732,10 @@ func CronExecute(ctx context.Context, a *SessionAuthority, ref SessionRef, row *
 		errorValue = *result.Error
 	}
 	a.mu.Lock()
-	a.PendingResults[admissionID] = pyjson.ObjectOf("result", pyjson.ObjectOf(
+	a.PendingResults[admissionID] = jsonutil.ObjectOf("result", jsonutil.ObjectOf(
 		"final_response", result.FinalResponse,
 		"cron_result", []any{result.Success, result.Output, result.FinalResponse, errorValue},
-		"cron_job_flags", flags, "failed", !result.Success, "completed", result.Success), "usage", pyjson.NewObject())
+		"cron_job_flags", flags, "failed", !result.Success, "completed", result.Success), "usage", jsonutil.NewObject())
 	a.mu.Unlock()
 	if !result.Success {
 		message := "cron execution failed"
@@ -750,5 +752,5 @@ type cronRuntimeError struct{ message string }
 
 func (e *cronRuntimeError) Error() string { return e.message }
 
-// Python class name of a failed cron execution
-func (e *cronRuntimeError) PyTypeName() string { return "RuntimeError" }
+// Kind label of a failed cron execution
+func (e *cronRuntimeError) ErrorKind() string { return "RuntimeError" }

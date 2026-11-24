@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"strconv"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Process exit status of an ensure verdict, deadline 5, authorization 4, else by state
@@ -34,13 +35,13 @@ func noneIfEmpty(s string) any {
 }
 
 // asdict of an ensure verdict and its endpoint
-func ensurePayload(result gateway.ObservedEndpoint) *pyjson.Object {
-	payload := pyjson.NewObject()
+func ensurePayload(result gateway.ObservedEndpoint) *jsonutil.Object {
+	payload := jsonutil.NewObject()
 	payload.Set("state", result.State)
 	payload.Set("reason_code", noneIfEmpty(result.ReasonCode))
 	payload.Set("detail", noneIfEmpty(result.Detail))
 	if ep := result.Endpoint; ep != nil {
-		endpoint := pyjson.NewObject()
+		endpoint := jsonutil.NewObject()
 		endpoint.Set("profile_id", ep.ProfileID)
 		endpoint.Set("instance_id", ep.InstanceID)
 		endpoint.Set("authority_epoch", ep.AuthorityEpoch)
@@ -69,11 +70,11 @@ func invalidInvocation(err error) bool {
 // Ensures a local runtime for this home and prints one credential free JSON verdict, exiting with its code
 func CmdGatewayEnsure(ctx context.Context, ns map[string]any, w io.Writer) (int, error) {
 	invalid := func() (int, error) {
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("endpoint", nil)
 		payload.Set("reason_code", "invalid_invocation")
 		payload.Set("state", "inaccessible")
-		text, err := pyjson.Dumps(payload, pyjson.Separators(",", ":"), pyjson.SortKeys(true))
+		text, err := jsonutil.Encode(payload, jsonutil.SortKeys())
 		if err != nil {
 			return 1, err
 		}
@@ -81,7 +82,7 @@ func CmdGatewayEnsure(ctx context.Context, ns map[string]any, w io.Writer) (int,
 		return 2, nil
 	}
 	raw, _ := ns["timeout"].(string)
-	timeout, err := pyint.ParseFloat(raw)
+	timeout, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil || math.IsNaN(timeout) || math.IsInf(timeout, 0) || timeout <= 0 {
 		return invalid()
 	}
@@ -97,8 +98,8 @@ func CmdGatewayEnsure(ctx context.Context, ns map[string]any, w io.Writer) (int,
 	if err != nil {
 		return 1, err
 	}
-	payload.Set("client_code_sha", identity.GetOr("sha", nil))
-	text, err := pyjson.Dumps(payload, pyjson.Separators(",", ":"), pyjson.SortKeys(true))
+	payload.Set("client_code_sha", identity.ValueOr("sha", nil))
+	text, err := jsonutil.Encode(payload, jsonutil.SortKeys())
 	if err != nil {
 		return 1, err
 	}

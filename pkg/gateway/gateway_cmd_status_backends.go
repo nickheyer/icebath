@@ -14,12 +14,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Runs argv with its output streamed to w under a timeout, the uncaptured subprocess run
@@ -58,7 +58,7 @@ func SystemdStatus(ctx context.Context, w io.Writer, deep, system, full bool, pr
 	if err != nil {
 		return err
 	}
-	scopeLabel := pystr.Capitalize(ServiceScopeLabel(system))
+	scopeLabel := textutil.UpperFirst(strings.ToLower(ServiceScopeLabel(system)))
 	sudo, scopeFlag, userFlag := systemdCLIBits(system)
 	if !pathExistsSafe(unitPath) {
 		printServiceNotInstalled(system)
@@ -241,7 +241,7 @@ func LaunchdStatus(ctx context.Context, w io.Writer, deep bool) error {
 		}
 	}
 	if deep {
-		logFile := pypath.PathJoin(home.Dir(ctx), "logs", "gateway.log")
+		logFile := pathutil.Join(home.Dir(ctx), "logs", "gateway.log")
 		if pathExistsSafe(logFile) {
 			fmt.Fprintln(w)
 			fmt.Fprintln(w, "Recent logs:")
@@ -303,20 +303,20 @@ func windowsProbeMissing(w io.Writer, index int, path, label string) bool {
 }
 
 // Decoded JSON object of a utf-8-sig file, the str of whatever raised otherwise
-func readJSONObjectSig(path string) (*pyjson.Object, error) {
+func readJSONObjectSig(path string) (*jsonutil.Object, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := parsed.(*pyjson.Object)
+	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("the status file is %s, expected a mapping", errchain.Kind(parsed))
 	}
@@ -330,7 +330,7 @@ func windowsProbePidFile(w io.Writer, pidPath string) (int, bool) {
 	data, err := readJSONObjectSig(pidPath)
 	pidValue, have := 0, false
 	if err == nil {
-		if raw := data.GetOr("pid", nil); raw != nil {
+		if raw := data.ValueOr("pid", nil); raw != nil {
 			n, convErr := pyIntArg(raw)
 			if convErr != nil {
 				err = convErr
@@ -405,7 +405,7 @@ func windowsProbePidExists(w io.Writer, pid int, have bool) {
 		return
 	}
 	alive := PidExists(pid)
-	windowsProbe(w, 4, alive, fmt.Sprintf("_pid_exists(%d) => %s", pid, pyrepr.Repr(alive)))
+	windowsProbe(w, 4, alive, fmt.Sprintf("_pid_exists(%d) => %s", pid, anyutil.Quote(alive)))
 }
 
 func windowsProbeStateFile(w io.Writer, statePath string) {
@@ -417,15 +417,15 @@ func windowsProbeStateFile(w io.Writer, statePath string) {
 		windowsProbe(w, 5, false, fmt.Sprintf("gateway_state.json present but unreadable: %s", err))
 		return
 	}
-	gatewayState := data.GetOr("gateway_state", nil)
+	gatewayState := data.ValueOr("gateway_state", nil)
 	ageStr := ""
-	if updatedAt, ok := data.GetOr("updated_at", nil).(string); ok && updatedAt != "" {
-		if stamp, aware, err := pydatetime.ParseISOFormat(updatedAt); err == nil && aware {
+	if updatedAt, ok := data.ValueOr("updated_at", nil).(string); ok && updatedAt != "" {
+		if stamp, aware, err := timeutil.ParseISOZone(updatedAt, time.UTC); err == nil && aware {
 			ageStr = fmt.Sprintf(" (updated %ds ago)", int(time.Since(stamp).Seconds()))
 		}
 	}
 	ok := gatewayState == "running" || gatewayState == "degraded"
-	windowsProbe(w, 5, ok, fmt.Sprintf("gateway_state.json state=%s%s", pyrepr.Repr(gatewayState), ageStr))
+	windowsProbe(w, 5, ok, fmt.Sprintf("gateway_state.json state=%s%s", anyutil.Quote(gatewayState), ageStr))
 }
 
 func windowsProbeExitDiag(w io.Writer, diagPath string) {
@@ -462,32 +462,32 @@ func windowsProbeExitDiag(w io.Writer, diagPath string) {
 		windowsProbe(w, 6, false, fmt.Sprintf("exit-diag log empty: %s", diagPath))
 		return
 	}
-	parsed, err := pyjson.Loads(lastEvent)
-	event, isDict := parsed.(*pyjson.Object)
+	parsed, err := jsonutil.Decode(lastEvent)
+	event, isDict := parsed.(*jsonutil.Object)
 	if err != nil || !isDict {
 		runes := []rune(lastEvent)
 		windowsProbe(w, 6, false, fmt.Sprintf("Last lifecycle line not JSON: %s", string(runes[:min(len(runes), 120)])))
 		return
 	}
-	tag := event.GetOr("tag", "?")
+	tag := event.ValueOr("tag", "?")
 	windowsProbe(w, 6, tag == "gateway.start", fmt.Sprintf("Last lifecycle event: tag=%s pid=%s ts=%s",
-		pyrepr.Str(tag), pyrepr.Str(event.GetOr("pid", "?")), pyrepr.Str(event.GetOr("ts", "?"))))
+		anyutil.String(tag), anyutil.String(event.ValueOr("pid", "?")), anyutil.String(event.ValueOr("ts", "?"))))
 }
 
 // Prints PASS or FAIL for each liveness signal the collapsed summary folds together
 func printWindowsDeepProbes(ctx context.Context, w io.Writer) {
 	h := winHome(ctx)
 	fmt.Fprintln(w, "\nDeep probes:")
-	pidValue, havePid := windowsProbePidFile(w, pypath.PathJoin(h, "gateway.pid"))
-	windowsProbeLockFile(w, pypath.PathJoin(h, "gateway.lock"))
+	pidValue, havePid := windowsProbePidFile(w, pathutil.Join(h, "gateway.pid"))
+	windowsProbeLockFile(w, pathutil.Join(h, "gateway.lock"))
 	runningPid, haveRunning := windowsProbeRunningPid(w)
 	if haveRunning {
 		windowsProbePidExists(w, runningPid, true)
 	} else {
 		windowsProbePidExists(w, pidValue, havePid)
 	}
-	windowsProbeStateFile(w, pypath.PathJoin(h, "gateway_state.json"))
-	windowsProbeExitDiag(w, pypath.PathJoin(h, "logs", "gateway-exit-diag.log"))
+	windowsProbeStateFile(w, pathutil.Join(h, "gateway_state.json"))
+	windowsProbeExitDiag(w, pathutil.Join(h, "logs", "gateway-exit-diag.log"))
 }
 
 // Prints the Windows scheduled task or login item state, the gateway process and on deep each liveness probe
@@ -521,7 +521,7 @@ func WindowsStatus(ctx context.Context, w io.Writer, deep bool) error {
 		}
 		for _, key := range []string{"status", "last run time", "last run result"} {
 			if value, ok := info[key]; ok {
-				fmt.Fprintf(w, "  %s: %s\n", pystr.Title(key), value)
+				fmt.Fprintf(w, "  %s: %s\n", textutil.Title(key), value)
 			}
 		}
 		if err := printScheduledTaskDrift(ctx, taskName); err != nil {

@@ -4,17 +4,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"golang.org/x/text/unicode/norm"
 )
@@ -66,12 +66,12 @@ func wsGit(repoRoot string, timeout time.Duration, args ...string) (*gitResult, 
 		return &gitResult{Returncode: 1, Stderr: tools.GitFilterDiscoveryFailed}, nil
 	}
 	argv := append([]string{"git", "-C", repoRoot}, args...)
-	r, err := pysubprocess.RunWith(context.Background(), argv, pysubprocess.Options{Env: environOf(env), Timeout: timeout})
+	r, err := executil.Run(context.Background(), argv, executil.Options{Env: environOf(env), Timeout: timeout})
 	if err != nil {
 		return nil, err
 	}
-	return &gitResult{r.Returncode, pystr.TranslateNewlines(strings.ToValidUTF8(string(r.Stdout), "\uFFFD")),
-		pystr.TranslateNewlines(strings.ToValidUTF8(string(r.Stderr), "\uFFFD"))}, nil
+	return &gitResult{r.Returncode, textutil.NormalizeNewlines(strings.ToValidUTF8(string(r.Stdout), "\uFFFD")),
+		textutil.NormalizeNewlines(strings.ToValidUTF8(string(r.Stderr), "\uFFFD"))}, nil
 }
 
 // Stripped stderr, or stdout when stderr is empty
@@ -99,7 +99,7 @@ func excText(err error) string {
 	if _, ok := state.SQLiteClassOf(err); ok {
 		return state.ErrText(err)
 	}
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return errchain.OSText(err)
 	}
 	return err.Error()
@@ -140,11 +140,11 @@ func connUsesPath(ctx context.Context, conn state.SQLiteConn, taskID, key string
 		if !truthy(other) {
 			continue
 		}
-		expanded, err := pypath.PathExpanduser(cellStr(other))
+		expanded, err := pathutil.ExpandUserPath(cellStr(other))
 		if err != nil {
 			return false, err
 		}
-		resolved, err := pypath.Resolve(expanded)
+		resolved, err := pathutil.Resolve(expanded)
 		if err != nil {
 			continue
 		}
@@ -159,13 +159,13 @@ func connUsesPath(ctx context.Context, conn state.SQLiteConn, taskID, key string
 func siblingBoardDBFiles(ctx context.Context, conn state.SQLiteConn) ([]string, error) {
 	current := ""
 	if currentFile := mainDBFile(ctx, conn); currentFile != "" {
-		r, err := pypath.Resolve(currentFile)
+		r, err := pathutil.Resolve(currentFile)
 		if err != nil {
 			return nil, err
 		}
 		current = r
 	}
-	candidates := []string{pypath.PathJoin(KanbanHome(), "kanban.db")}
+	candidates := []string{pathutil.Join(KanbanHome(), "kanban.db")}
 	root := BoardsRoot()
 	if isDir(root) {
 		entries, err := os.ReadDir(root)
@@ -173,9 +173,9 @@ func siblingBoardDBFiles(ctx context.Context, conn state.SQLiteConn) ([]string, 
 			return nil, err
 		}
 		for _, e := range entries {
-			child := pypath.PathJoin(root, e.Name())
+			child := pathutil.Join(root, e.Name())
 			if isDir(child) {
-				candidates = append(candidates, pypath.PathJoin(child, "kanban.db"))
+				candidates = append(candidates, pathutil.Join(child, "kanban.db"))
 			}
 		}
 	}
@@ -185,7 +185,7 @@ func siblingBoardDBFiles(ctx context.Context, conn state.SQLiteConn) ([]string, 
 		if !isFile(p) {
 			continue
 		}
-		resolved, err := pypath.Resolve(p)
+		resolved, err := pathutil.Resolve(p)
 		if err != nil {
 			return nil, err
 		}
@@ -200,7 +200,7 @@ func siblingBoardDBFiles(ctx context.Context, conn state.SQLiteConn) ([]string, 
 
 // Reports whether a live task of another board database uses the workspace key
 func otherBoardUsesPath(ctx context.Context, dbFile, taskID, key string) (bool, error) {
-	uri, err := pypath.AsURI(dbFile)
+	uri, err := pathutil.FileURL(dbFile)
 	if err != nil {
 		return false, err
 	}
@@ -215,11 +215,11 @@ func otherBoardUsesPath(ctx context.Context, dbFile, taskID, key string) (bool, 
 // Why a workspace must be kept, shared or unknown, nil when no live task uses it
 func workspaceInUseByOther(ctx context.Context, conn state.SQLiteConn, taskID, path string) (*string, error) {
 	unknown, shared := "unknown", "shared"
-	expanded, err := pypath.PathExpanduser(path)
+	expanded, err := pathutil.ExpandUserPath(path)
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := pypath.Resolve(expanded)
+	resolved, err := pathutil.Resolve(expanded)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Cannot resolve workspace %s for task %s: %s", path, taskID, excText(err)))
 		return &unknown, nil
@@ -279,7 +279,7 @@ func deferSharedWorkspaceCleanup(ctx context.Context, conn state.SQLiteConn, tas
 
 // Defers removing a linked worktree another live task may still use
 func deferSharedWorktreeCleanup(ctx context.Context, conn state.SQLiteConn, taskID, path string) (bool, error) {
-	wt, err := pypath.PathExpanduser(path)
+	wt, err := pathutil.ExpandUserPath(path)
 	if err != nil {
 		return false, err
 	}
@@ -295,11 +295,11 @@ func deferSharedWorktreeCleanup(ctx context.Context, conn state.SQLiteConn, task
 
 // Absolute dot dot collapsed NFC form of a path without following symlinks
 func lexicalPath(p string) (string, error) {
-	abs, err := pypath.Abspath(p)
+	abs, err := filepath.Abs(p)
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathStr(pathKey(abs)), nil
+	return filepath.Clean(pathKey(abs)), nil
 }
 
 // scratchRoot is one managed workspaces root with its resolved and lexical spellings
@@ -311,7 +311,7 @@ type scratchRoot struct {
 
 // Reports whether a path is a strict descendant of a managed workspaces root, with the matching board
 func managedScratchPathInfo(p string) (bool, *string, error) {
-	pAbs, err := pypath.Resolve(p)
+	pAbs, err := pathutil.Resolve(p)
 	if err != nil {
 		return false, nil, nil
 	}
@@ -321,8 +321,8 @@ func managedScratchPathInfo(p string) (bool, *string, error) {
 	}
 	var roots []scratchRoot
 	addRoot := func(anchor, anchorReal string, parts []string, board *string) {
-		root := pypath.PathJoin(anchor, parts...)
-		resolved, err := pypath.Resolve(root)
+		root := pathutil.Join(anchor, parts...)
+		resolved, err := pathutil.Resolve(root)
 		if err != nil {
 			return
 		}
@@ -330,30 +330,30 @@ func managedScratchPathInfo(p string) (bool, *string, error) {
 		if err != nil {
 			return
 		}
-		lexReal, err := lexicalPath(pypath.PathJoin(anchorReal, parts...))
+		lexReal, err := lexicalPath(pathutil.Join(anchorReal, parts...))
 		if err != nil {
 			return
 		}
 		roots = append(roots, scratchRoot{resolved, []string{lex, lexReal}, board})
 	}
 	if override := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_WORKSPACES_ROOT")); override != "" {
-		overrideRoot, err := pypath.PathExpanduser(override)
+		overrideRoot, err := pathutil.ExpandUserPath(override)
 		if err != nil {
 			return false, nil, err
 		}
-		overrideParent := pypath.PathParent(overrideRoot)
-		if parentReal, err := pypath.Resolve(overrideParent); err == nil {
-			addRoot(overrideParent, parentReal, []string{pypath.PathName(overrideRoot)}, nil)
+		overrideParent := filepath.Dir(filepath.Clean(overrideRoot))
+		if parentReal, err := pathutil.Resolve(overrideParent); err == nil {
+			addRoot(overrideParent, parentReal, []string{pathutil.Name(overrideRoot)}, nil)
 		}
 	}
 	home := KanbanHome()
-	if homeReal, err := pypath.Resolve(home); err == nil {
+	if homeReal, err := pathutil.Resolve(home); err == nil {
 		def := DefaultBoard
 		addRoot(home, homeReal, []string{"kanban", "workspaces"}, &def)
-		if boards, err := pypath.Resolve(pypath.PathJoin(home, "kanban", "boards")); err == nil {
+		if boards, err := pathutil.Resolve(pathutil.Join(home, "kanban", "boards")); err == nil {
 			if entries, err := os.ReadDir(boards); err == nil {
 				for _, e := range entries {
-					if isDir(pypath.PathJoin(boards, e.Name())) {
+					if isDir(pathutil.Join(boards, e.Name())) {
 						name := e.Name()
 						addRoot(home, homeReal, []string{"kanban", "boards", name, "workspaces"}, &name)
 					}
@@ -365,14 +365,14 @@ func managedScratchPathInfo(p string) (bool, *string, error) {
 		if pAbs == r.resolved {
 			continue
 		}
-		if _, ok := pypath.PathRelativeTo(pAbs, r.resolved); !ok {
+		if _, ok := pathutil.RelativeTo(pAbs, r.resolved); !ok {
 			continue
 		}
 		for _, lex := range r.lexical {
 			if pLex == lex {
 				continue
 			}
-			if _, ok := pypath.PathRelativeTo(pLex, lex); ok {
+			if _, ok := pathutil.RelativeTo(pLex, lex); ok {
 				return true, r.board, nil
 			}
 		}
@@ -389,7 +389,7 @@ func scratchWorkspace(ctx context.Context, conn state.SQLiteConn, taskID string)
 	if row.Get("workspace_kind") != "scratch" || !truthy(row.Get("workspace_path")) {
 		return nil, nil
 	}
-	p, err := pypath.PathExpanduser(cellStr(row.Get("workspace_path")))
+	p, err := pathutil.ExpandUserPath(cellStr(row.Get("workspace_path")))
 	if err != nil {
 		return nil, err
 	}
@@ -404,7 +404,7 @@ func isManagedScratchPath(p string) (bool, error) {
 
 // Removes a tree ignoring every error like shutil.rmtree with ignore_errors
 func rmtreeIgnoreErrors(p string) {
-	_ = pyfs.RmTree(p, func(pyfs.RmTreeOp, string, error) error { return nil })
+	_ = os.RemoveAll(p)
 }
 
 // Removes a finished task workspace when managed and free, every failure swallowed so completion never blocks
@@ -444,7 +444,7 @@ func cleanupWorkspaceChecked(ctx context.Context, conn state.SQLiteConn, taskID 
 		tryCleanupParentWorkspaces(ctx, conn, taskID)
 		return nil
 	}
-	wp := pypath.PathStr(*path)
+	wp := filepath.Clean(*path)
 	if isDir(wp) {
 		managed, err := isManagedScratchPath(wp)
 		if err != nil {
@@ -477,7 +477,7 @@ func cleanupWorktreeWorkspace(taskID, path string, branchName *string) {
 
 // Worktree removal with its first failure returned, any doubt preserving the tree
 func cleanupWorktreeWorkspaceChecked(taskID, path string, branchName *string) error {
-	wp, err := pypath.PathExpanduser(path)
+	wp, err := pathutil.ExpandUserPath(path)
 	if err != nil {
 		return err
 	}
@@ -488,15 +488,15 @@ func cleanupWorktreeWorkspaceChecked(taskID, path string, branchName *string) er
 	if err != nil {
 		return err
 	}
-	if common == nil || pypath.PathName(*common) != ".git" {
+	if common == nil || pathutil.Name(*common) != ".git" {
 		return nil
 	}
-	repoRoot := pypath.PathParent(*common)
-	worktreePath, err := pypath.Resolve(wp)
+	repoRoot := filepath.Dir(filepath.Clean(*common))
+	worktreePath, err := pathutil.Resolve(wp)
 	if err != nil {
 		return err
 	}
-	rootResolved, err := pypath.Resolve(repoRoot)
+	rootResolved, err := pathutil.Resolve(repoRoot)
 	if err != nil {
 		return err
 	}
@@ -508,12 +508,12 @@ func cleanupWorktreeWorkspaceChecked(taskID, path string, branchName *string) er
 		return nil
 	}
 	cwd, cwdKnown := "", false
-	if raw, err := pypath.Getcwd(); err == nil {
-		if r, err := pypath.Resolve(raw); err == nil {
+	if raw, err := os.Getwd(); err == nil {
+		if r, err := pathutil.Resolve(raw); err == nil {
 			cwd, cwdKnown = r, true
 		}
 	}
-	_, inside := pypath.PathRelativeTo(cwd, worktreePath)
+	_, inside := pathutil.RelativeTo(cwd, worktreePath)
 	if !cwdKnown || cwd == worktreePath || inside {
 		if err := os.Chdir(repoRoot); err != nil {
 			shown := "<deleted cwd>"
@@ -599,7 +599,7 @@ func tryCleanupParentWorkspaces(ctx context.Context, conn state.SQLiteConn, task
 			}
 			continue
 		}
-		wp := pypath.PathStr(*wsPath)
+		wp := filepath.Clean(*wsPath)
 		if !isDir(wp) {
 			continue
 		}
@@ -630,12 +630,12 @@ func cleanupWorkerTmux(ctx context.Context, conn state.SQLiteConn, taskID string
 		return
 	}
 	session := "swarm-" + cellStr(row.Get("assignee"))
-	out, err := pysubprocess.RunWith(context.Background(), []string{"tmux", "list-panes", "-t", session, "-F", "#{pane_dead}"}, pysubprocess.Options{Timeout: 5 * time.Second})
+	out, err := executil.Run(context.Background(), []string{"tmux", "list-panes", "-t", session, "-F", "#{pane_dead}"}, executil.Options{Timeout: 5 * time.Second})
 	if err != nil {
 		return
 	}
 	if strings.TrimSpace(strings.ToValidUTF8(string(out.Stdout), "\uFFFD")) == "1" {
-		if _, err := pysubprocess.RunWith(context.Background(), []string{"tmux", "kill-session", "-t", session}, pysubprocess.Options{Timeout: 5 * time.Second}); err != nil {
+		if _, err := executil.Run(context.Background(), []string{"tmux", "kill-session", "-t", session}, executil.Options{Timeout: 5 * time.Second}); err != nil {
 			return
 		}
 		pkgLog().Debug(fmt.Sprintf("Killed stale tmux session: %s", session))
@@ -650,7 +650,7 @@ const scratchTipMessage = "scratch workspaces are ephemeral — they're deleted 
 
 // Per install sentinel file of the scratch workspace tip
 func scratchTipSentinelPath() string {
-	return pypath.PathJoin(KanbanHome(), scratchTipSentinelName)
+	return pathutil.Join(KanbanHome(), scratchTipSentinelName)
 }
 
 // Reports whether the scratch workspace tip was already emitted on this install
@@ -661,7 +661,7 @@ func scratchTipShown() bool {
 // Touches the sentinel so later scratch workspaces stay silent, a failure left to re emit the tip
 func markScratchTipShown() {
 	p := scratchTipSentinelPath()
-	if err := os.MkdirAll(pypath.PathParent(p), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(p)), 0o777); err != nil {
 		return
 	}
 	now := time.Now()
@@ -695,8 +695,8 @@ func gitToplevel(path string) *string {
 	if out == nil {
 		return nil
 	}
-	expanded := pypath.PathStr(pypath.Expanduser(*out))
-	resolved, err := pypath.Resolve(expanded)
+	expanded := filepath.Clean(pathutil.ExpandUser(*out))
+	resolved, err := pathutil.Resolve(expanded)
 	if err != nil {
 		return &expanded
 	}
@@ -715,7 +715,7 @@ func gitAbsPath(path, flag string) (*string, error) {
 	if out == nil {
 		return nil, nil
 	}
-	resolved, err := pypath.Resolve(pypath.PathStr(pypath.Expanduser(*out)))
+	resolved, err := pathutil.Resolve(filepath.Clean(pathutil.ExpandUser(*out)))
 	if err != nil {
 		return nil, err
 	}
@@ -742,11 +742,11 @@ func isLinkedWorktreeCheckout(path string) (bool, error) {
 	if len(lines) != 2 {
 		return false, nil
 	}
-	gitDir, err := pypath.Resolve(pypath.PathStr(lines[0]))
+	gitDir, err := pathutil.Resolve(filepath.Clean(lines[0]))
 	if err != nil {
 		return false, err
 	}
-	commonDir, err := pypath.Resolve(pypath.PathStr(lines[1]))
+	commonDir, err := pathutil.Resolve(filepath.Clean(lines[1]))
 	if err != nil {
 		return false, err
 	}
@@ -755,9 +755,9 @@ func isLinkedWorktreeCheckout(path string) (bool, error) {
 
 // Closest existing ancestor of a path, the path itself when it exists
 func nearestExistingPath(path string) string {
-	current := pypath.PathStr(path)
+	current := filepath.Clean(path)
 	for !pathExists(current) {
-		parent := pypath.PathParent(current)
+		parent := filepath.Dir(filepath.Clean(current))
 		if parent == current {
 			break
 		}
@@ -768,7 +768,7 @@ func nearestExistingPath(path string) string {
 
 // Git toplevel of the nearest existing ancestor of a worktree target, nil when none is a repo
 func repoRootForWorktreeTarget(path string) (*string, error) {
-	current, err := pypath.Resolve(nearestExistingPath(path))
+	current, err := pathutil.Resolve(nearestExistingPath(path))
 	if err != nil {
 		return nil, err
 	}
@@ -776,7 +776,7 @@ func repoRootForWorktreeTarget(path string) (*string, error) {
 		if root := gitToplevel(current); root != nil {
 			return root, nil
 		}
-		parent := pypath.PathParent(current)
+		parent := filepath.Dir(filepath.Clean(current))
 		if parent == current {
 			return nil, nil
 		}
@@ -786,7 +786,7 @@ func repoRootForWorktreeTarget(path string) (*string, error) {
 
 // Materializes target as a linked git worktree of repoRoot on branchName
 func ensureGitWorktree(repoRoot, target, branchName string) error {
-	target, err := pypath.PathExpanduser(target)
+	target, err := pathutil.ExpandUserPath(target)
 	if err != nil {
 		return err
 	}
@@ -803,7 +803,7 @@ func ensureGitWorktree(repoRoot, target, branchName string) error {
 			return nil
 		}
 	}
-	if err := os.MkdirAll(pypath.PathParent(target), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(target)), 0o777); err != nil {
 		return err
 	}
 	args := []string{"worktree", "add", "-b", branchName, target, "HEAD"}
@@ -822,7 +822,7 @@ func ensureGitWorktree(repoRoot, target, branchName string) error {
 
 // Materializes the canonical repo .worktrees task worktree
 func anchoredWorktree(repoRoot, taskID, branchName string) (string, string, error) {
-	target := pypath.PathJoin(repoRoot, ".worktrees", taskID)
+	target := pathutil.Join(repoRoot, ".worktrees", taskID)
 	if err := ensureGitWorktree(repoRoot, target, branchName); err != nil {
 		return "", "", err
 	}
@@ -857,11 +857,11 @@ func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (s
 				"default workdir (a git repo) or create the task with "+
 				"--workspace worktree:<absolute-repo-path>.", task.ID, errchain.Show(boardSlug))}
 		}
-		anchor, err := pypath.PathExpanduser(boardDefault)
+		anchor, err := pathutil.ExpandUserPath(boardDefault)
 		if err != nil {
 			return "", "", err
 		}
-		if !pypath.IsAbs(anchor) {
+		if !filepath.IsAbs(anchor) {
 			return "", "", &ValueError{fmt.Sprintf("board %s default_workdir %s is not "+
 				"absolute; use an absolute path to a git repo", errchain.Show(boardSlug), errchain.Show(boardDefault))}
 		}
@@ -872,15 +872,15 @@ func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (s
 		}
 		return anchoredWorktree(*repoRoot, task.ID, branchName)
 	}
-	requested, err := pypath.PathExpanduser(*task.WorkspacePath)
+	requested, err := pathutil.ExpandUserPath(*task.WorkspacePath)
 	if err != nil {
 		return "", "", err
 	}
-	if !pypath.IsAbs(requested) {
+	if !filepath.IsAbs(requested) {
 		return "", "", &ValueError{fmt.Sprintf("task %s has non-absolute worktree path "+
 			"%s; use an absolute path", task.ID, errchain.Show(*task.WorkspacePath))}
 	}
-	requestedResolved, err := pypath.Resolve(requested)
+	requestedResolved, err := pathutil.Resolve(requested)
 	if err != nil {
 		return "", "", err
 	}
@@ -894,13 +894,13 @@ func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (s
 			if actualBranch != nil && *actualBranch == branchName {
 				return requestedResolved, *actualBranch, nil
 			}
-			fallbackRoot, err := repoRootForWorktreeTarget(pypath.PathParent(requested))
+			fallbackRoot, err := repoRootForWorktreeTarget(filepath.Dir(filepath.Clean(requested)))
 			if err != nil {
 				return "", "", err
 			}
 			if fallbackRoot != nil {
-				fallback := pypath.PathJoin(*fallbackRoot, ".worktrees", task.ID)
-				fallbackResolved, err := pypath.Resolve(fallback)
+				fallback := pathutil.Join(*fallbackRoot, ".worktrees", task.ID)
+				fallbackResolved, err := pathutil.Resolve(fallback)
 				if err != nil {
 					return "", "", err
 				}
@@ -921,7 +921,7 @@ func resolveWorktreeWorkspace(ctx context.Context, task *Task, board *string) (s
 	if repoRoot := gitToplevel(requested); repoRoot != nil && pathKey(requestedResolved) == pathKey(*repoRoot) {
 		return anchoredWorktree(*repoRoot, task.ID, branchName)
 	}
-	repoRoot, err := repoRootForWorktreeTarget(pypath.PathParent(requested))
+	repoRoot, err := repoRootForWorktreeTarget(filepath.Dir(filepath.Clean(requested)))
 	if err != nil {
 		return "", "", err
 	}
@@ -952,13 +952,13 @@ func ResolveWorkspace(ctx context.Context, task *Task, board *string) (string, e
 		if err != nil {
 			return "", err
 		}
-		p = pypath.PathJoin(root, task.ID)
+		p = pathutil.Join(root, task.ID)
 	case kind == "scratch":
-		expanded, err := pypath.PathExpanduser(*task.WorkspacePath)
+		expanded, err := pathutil.ExpandUserPath(*task.WorkspacePath)
 		if err != nil {
 			return "", err
 		}
-		if !pypath.IsAbs(expanded) {
+		if !filepath.IsAbs(expanded) {
 			return "", &ValueError{fmt.Sprintf("task %s has non-absolute workspace_path "+
 				"%s; workspace paths must be absolute", task.ID, errchain.Show(*task.WorkspacePath))}
 		}
@@ -967,11 +967,11 @@ func ResolveWorkspace(ctx context.Context, task *Task, board *string) (string, e
 		if !hasPath {
 			return "", &ValueError{fmt.Sprintf("task %s has workspace_kind=dir but no workspace_path", task.ID)}
 		}
-		expanded, err := pypath.PathExpanduser(*task.WorkspacePath)
+		expanded, err := pathutil.ExpandUserPath(*task.WorkspacePath)
 		if err != nil {
 			return "", err
 		}
-		if !pypath.IsAbs(expanded) {
+		if !filepath.IsAbs(expanded) {
 			return "", &ValueError{fmt.Sprintf("task %s has non-absolute workspace_path "+
 				"%s; use an absolute path "+
 				"(relative paths are ambiguous against the dispatcher's CWD)", task.ID, errchain.Show(*task.WorkspacePath))}

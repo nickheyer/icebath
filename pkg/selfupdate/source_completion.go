@@ -13,14 +13,15 @@ import (
 	"reflect"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Second phase marker of the entry, the re-executed binary rather than the bootstrap one
@@ -127,7 +128,7 @@ func completeSourceLocked(ctx context.Context, root string, o SourceCompletion) 
 	tailDone := len(owed) == 0
 	if tailDone {
 		if _, err := sourceCompletionWriteStamp(root, false); err != nil {
-			if class := launchErrorClass(err); !pypath.IsOSError(err) && !osErrorClasses[class] && class != "ValueError" {
+			if class := launchErrorClass(err); !errorutil.IsSystem(err) && !osErrorClasses[class] && class != "ValueError" {
 				return false, err
 			}
 			fmt.Fprintf(o.Stderr, "⚠ Source update completed, but the install stamp could not be written: %s\n", launchErrorText(err))
@@ -145,7 +146,7 @@ func ExposePMGit(ctx context.Context, projectRoot string) error {
 		return nil
 	}
 	if found := exposePMGitLocate("git"); len(found) > 0 {
-		resolved, err := pypath.Resolve(found[0])
+		resolved, err := pathutil.Resolve(found[0])
 		if err != nil {
 			return err
 		}
@@ -153,7 +154,7 @@ func ExposePMGit(ctx context.Context, projectRoot string) error {
 		if err != nil {
 			return err
 		}
-		if _, inside := pypath.PathRelativeTo(resolved, store); !inside {
+		if _, inside := pathutil.RelativeTo(resolved, store); !inside {
 			return nil
 		}
 	}
@@ -347,7 +348,7 @@ func parseSourceCompletionArgs(argv []string, stdout, stderr io.Writer) (sourceC
 		}
 		if option == "-h+" {
 			if explicit, help := venvSyncShortHelp(*value); !help {
-				return fail("argument -h/--help: ignored explicit argument " + pyrepr.StrRepr(explicit))
+				return fail("argument -h/--help: ignored explicit argument " + strconv.Quote(explicit))
 			}
 			io.WriteString(stdout, sourceCompletionHelp(pm.ArgparseThemeFor(stdout)))
 			return sourceCompletionArgs{}, 0, false
@@ -368,7 +369,7 @@ func parseSourceCompletionArgs(argv []string, stdout, stderr io.Writer) (sourceC
 			label = "-h/--help"
 		}
 		if value != nil {
-			return fail("argument " + label + ": ignored explicit argument " + pyrepr.StrRepr(*value))
+			return fail("argument " + label + ": ignored explicit argument " + strconv.Quote(*value))
 		}
 		switch option {
 		case "-h", "--help":
@@ -397,7 +398,7 @@ func callSourceCompletion(ctx context.Context, command []string, dir string, env
 	err := cmd.Run()
 	var exit *exec.ExitError
 	if errors.As(err, &exit) {
-		return pysubprocess.Returncode(exit), nil
+		return executil.ExitCode(exit.ProcessState), nil
 	}
 	if err != nil {
 		return 0, err
@@ -422,7 +423,7 @@ func SourceCompletionMain(ctx context.Context, argv []string, stdout, stderr io.
 		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
 		return 1
 	}
-	root, err := pypath.Resolve(args.source)
+	root, err := pathutil.Resolve(args.source)
 	if err != nil {
 		return uncaught(err)
 	}

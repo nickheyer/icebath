@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Providers that are no single fixed route, auto picking its backend per call and moa fanning out a preset, so they keep their static verdict
@@ -94,7 +94,7 @@ func printFallbackCheckTable(w io.Writer, results []*provider.FallbackEntryCheck
 }
 
 // JSON object of one verdict, its fields in declaration order then ready and status
-func fallbackCheckObject(r *provider.FallbackEntryCheck) *pyjson.Object {
+func fallbackCheckObject(r *provider.FallbackEntryCheck) *jsonutil.Object {
 	var inferenceReady, latencyMs any
 	if r.InferenceReady != nil {
 		inferenceReady = *r.InferenceReady
@@ -102,14 +102,14 @@ func fallbackCheckObject(r *provider.FallbackEntryCheck) *pyjson.Object {
 	if r.LatencyMs != nil {
 		latencyMs = *r.LatencyMs
 	}
-	return pyjson.ObjectOf("provider", r.Provider, "model", r.Model, "base_url", r.BaseURL, "api_mode", r.APIMode, "auth_source", r.AuthSource,
+	return jsonutil.ObjectOf("provider", r.Provider, "model", r.Model, "base_url", r.BaseURL, "api_mode", r.APIMode, "auth_source", r.AuthSource,
 		"configured", r.Configured, "auth_ready", r.AuthReady, "inference_ready", inferenceReady, "latency_ms", latencyMs,
 		"model_returned", r.ModelReturned, "error_class", r.ErrorClass, "error", r.Error, "ready", r.Ready(), "status", r.Status())
 }
 
 // FallbackCheckCommand is icebath fallback check, the readiness table or JSON of every chain entry without an agent session, 1 when any entry is not ready
 func FallbackCheckCommand(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error) {
-	live := pyrepr.Truthy(ns["live"])
+	live := anyutil.IsTrue(ns["live"])
 	results, err := RunFallbackChecks(ctx, provider.FallbackChain(home.WithOverride(ctx, h)), live)
 	if err != nil {
 		return 1, err
@@ -119,13 +119,13 @@ func FallbackCheckCommand(ctx context.Context, h string, ns map[string]any, w io
 		ready = ready && r.Ready()
 	}
 	switch {
-	case pyrepr.Truthy(ns["json"]):
+	case anyutil.IsTrue(ns["json"]):
 		rows := make([]any, 0, len(results))
 		for _, r := range results {
 			rows = append(rows, fallbackCheckObject(r))
 		}
-		text, err := pyjson.Dumps(pyjson.ObjectOf("profile", profiles.GetActiveProfileName(ctx), "live", live, "ready", ready,
-			"checked_at", pydatetime.ISOFormatUTC(time.Now()), "results", rows), pyjson.Indent(2))
+		text, err := jsonutil.Encode(jsonutil.ObjectOf("profile", profiles.GetActiveProfileName(ctx), "live", live, "ready", ready,
+			"checked_at", time.Now().UTC().Format(timeutil.RFC3339Micro), "results", rows), jsonutil.Indent(2))
 		if err != nil {
 			return 1, err
 		}

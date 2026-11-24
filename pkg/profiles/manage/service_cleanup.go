@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Runs a supervisor command with output discarded, returning its exit code, errors for a timeout or a missing binary
@@ -113,9 +112,9 @@ func removeWindowsTask(ctx context.Context) (bool, error) {
 		code, _, errText := serviceFacts.ExecSchtasks([]string{"/Delete", "/F", "/TN", task})
 		if code == 0 {
 			removed = true
-			fmt.Fprintf(stdout, "✓ Removed Scheduled Task %s\n", pyrepr.Repr(task))
+			fmt.Fprintf(stdout, "✓ Removed Scheduled Task %s\n", anyutil.Quote(task))
 		} else {
-			fmt.Fprintf(stdout, "⚠ Scheduled Task %s remains (schtasks code %d): %s\n", pyrepr.Repr(task), code, strings.TrimSpace(errText))
+			fmt.Fprintf(stdout, "⚠ Scheduled Task %s remains (schtasks code %d): %s\n", anyutil.Quote(task), code, strings.TrimSpace(errText))
 		}
 	}
 	for _, path := range []string{serviceFacts.WindowsStartupEntryPath(ctx), serviceFacts.WindowsLegacyStartupEntryPath(ctx)} {
@@ -123,7 +122,7 @@ func removeWindowsTask(ctx context.Context) (bool, error) {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			return removed, errors.New(pyfs.OSErrorText(err))
+			return removed, errors.New(err.Error())
 		}
 		removed = true
 		fmt.Fprintf(stdout, "✓ Removed Windows login item: %s\n", path)

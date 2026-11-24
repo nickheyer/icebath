@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -10,16 +11,16 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
-type toolResultSummarizer func(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error)
+type toolResultSummarizer func(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error)
 
 var (
 	terminalExitCodeRe = mustPyRe(`"exit_code"\s*:\s*(-?\d+)`)
@@ -51,7 +52,7 @@ func pySearchGroup(re *regexp2.Regexp, content, def string) string {
 }
 
 // Python args.get(key, def)
-func argOr(args *pyjson.Object, key string, def any) any {
+func argOr(args *jsonutil.Object, key string, def any) any {
 	if v, ok := args.Get(key); ok {
 		return v
 	}
@@ -59,9 +60,9 @@ func argOr(args *pyjson.Object, key string, def any) any {
 }
 
 // Python str of args.get(key, def)
-func getArgText(args *pyjson.Object, key, def string) string {
+func getArgText(args *jsonutil.Object, key, def string) string {
 	if v, ok := args.Get(key); ok {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return def
 }
@@ -99,54 +100,54 @@ func summarizeToolResult(toolName string, toolArgs, toolContent any) (out string
 	return summary
 }
 
-func sumTerminal(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumTerminal(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	cmd := clipWithEllipsis(strArg(args, "command", ""), 80, 77)
 	exitCode := pySearchGroup(terminalExitCodeRe, content, "?")
 	return fmt.Sprintf("[terminal] ran `%s` -> exit %s, %d lines output", cmd, exitCode, lineCount), nil
 }
 
 // A refused write changed nothing, so it keeps its failure instead of reading as a write
-func sumWriteFile(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumWriteFile(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	path := getArgText(args, "path", "?")
 	if failed := resultFailureSuffix(content); failed != "" {
 		return "[write_file] " + path + failed, nil
 	}
 	written := "?"
-	if v, _ := args.Get("content"); pyrepr.Truthy(v) {
+	if v, _ := args.Get("content"); anyutil.IsTrue(v) {
 		written = fmt.Sprint(strings.Count(strArg(args, "content", ""), "\n") + 1)
 	}
 	return "[write_file] wrote to " + path + " (" + written + " lines)", nil
 }
 
-func sumSearchFiles(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumSearchFiles(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	count := pySearchGroup(searchTotalCountRe, content, "?")
 	return "[search_files] " + getArgText(args, "target", "content") + " search for '" + getArgText(args, "pattern", "?") +
 		"' in " + getArgText(args, "path", ".") + " -> " + count + " matches", nil
 }
 
-func sumBrowser(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumBrowser(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	url, ref := argOr(args, "url", ""), argOr(args, "ref", "")
 	detail := ""
-	if pyrepr.Truthy(url) {
-		detail = " " + pyrepr.Str(url)
-	} else if pyrepr.Truthy(ref) {
-		detail = " ref=" + pyrepr.Str(ref)
+	if anyutil.IsTrue(url) {
+		detail = " " + anyutil.String(url)
+	} else if anyutil.IsTrue(ref) {
+		detail = " ref=" + anyutil.String(ref)
 	}
 	return "[" + name + "]" + detail + " (" + groupedInt(contentLen) + " chars)" + resultFailureSuffix(content), nil
 }
 
 // web_search result dicts forwarded to web_extract unwrap to their URL
-func sumWebExtract(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumWebExtract(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	urls, isList := argOr(args, "urls", []any{}).([]any)
 	var first any = "?"
 	if isList && len(urls) > 0 {
 		first = urls[0]
 	}
-	if d, isDict := first.(*pyjson.Object); isDict {
+	if d, isDict := first.(*jsonutil.Object); isDict {
 		first = "?"
-		if u, _ := d.Get("url"); pyrepr.Truthy(u) {
+		if u, _ := d.Get("url"); anyutil.IsTrue(u) {
 			first = u
-		} else if h, _ := d.Get("href"); pyrepr.Truthy(h) {
+		} else if h, _ := d.Get("href"); anyutil.IsTrue(h) {
 			first = h
 		}
 	} else if _, isStr := first.(string); !isStr {
@@ -166,15 +167,15 @@ func sumWebExtract(name string, args *pyjson.Object, content string, contentLen,
 			return "", fmt.Errorf("web extract content is %s, expected text", errchain.Kind(first))
 		}
 	}
-	return "[web_extract] " + pyrepr.Str(first) + " (" + groupedInt(contentLen) + " chars)" + resultFailureSuffix(content), nil
+	return "[web_extract] " + anyutil.String(first) + " (" + groupedInt(contentLen) + " chars)" + resultFailureSuffix(content), nil
 }
 
-func sumDelegateTask(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumDelegateTask(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	goal := clipWithEllipsis(strArg(args, "goal", ""), 60, 57)
 	return "[delegate_task] '" + goal + "' (" + groupedInt(contentLen) + " chars result)" + resultFailureSuffix(content), nil
 }
 
-func sumExecuteCode(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumExecuteCode(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	code := strArg(args, "code", "")
 	preview := strings.ReplaceAll(textutil.First(code, 60), "\n", " ")
 	if utf8.RuneCountInString(code) > 60 {
@@ -184,7 +185,7 @@ func sumExecuteCode(name string, args *pyjson.Object, content string, contentLen
 }
 
 // Any loaded skill body leaves the marker naming it gone and how to reload, a stub keeps its own verdict
-func sumSkillView(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumSkillView(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	skill := argOr(args, "name", "?")
 	failed := resultFailureSuffix(content)
 	if failed == "" && skillViewFailed(content) {
@@ -196,19 +197,19 @@ func sumSkillView(name string, args *pyjson.Object, content string, contentLen, 
 	}
 	marker := ""
 	if skill != "?" && keep {
-		marker = " " + skillPrunedMarker(pyrepr.Str(skill))
+		marker = " " + skillPrunedMarker(anyutil.String(skill))
 	}
-	return "[skill_view] name=" + pyrepr.Str(skill) + failed + " (" + groupedInt(contentLen) + " chars)" + marker, nil
+	return "[skill_view] name=" + anyutil.String(skill) + failed + " (" + groupedInt(contentLen) + " chars)" + marker, nil
 }
 
 // Answers of the answered clarify questions bounded below the prune floor so later passes keep them
-func sumClarify(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumClarify(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	const responsePrefix = "[clarify] user responded: "
 	responsesValue, _ := jsonDict(content).Get("responses")
 	responses, _ := responsesValue.([]any)
 	kept := []any{}
 	for _, raw := range responses {
-		entry, ok := raw.(*pyjson.Object)
+		entry, ok := raw.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -233,21 +234,21 @@ func sumClarify(name string, args *pyjson.Object, content string, contentLen, li
 	if len(kept) == 1 {
 		subject = kept[0]
 	}
-	serialized, err := pyjson.Dumps(subject, pyjson.EnsureASCII(false))
+	serialized, err := jsonutil.Encode(subject)
 	if err != nil {
 		return "", err
 	}
-	return tools.Elide(responsePrefix+pystr.EncodeUTF8BackslashReplace(serialized), pruneMinChars-1), nil
+	return tools.Elide(responsePrefix+serialized, pruneMinChars-1), nil
 }
 
 // Names the operations of either call shape and keeps a failure visible
-func sumSkillManage(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumSkillManage(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	var summary string
 	opsValue, _ := args.Get("operations")
 	if ops, ok := opsValue.([]any); ok && len(ops) > 0 {
 		rendered := []string{}
 		for _, raw := range ops {
-			op, isDict := raw.(*pyjson.Object)
+			op, isDict := raw.(*jsonutil.Object)
 			if !isDict {
 				continue
 			}
@@ -264,7 +265,7 @@ func sumSkillManage(name string, args *pyjson.Object, content string, contentLen
 }
 
 // Category and payload count identify a skills_list call after compression
-func sumSkillsList(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumSkillsList(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	scope := ""
 	if category := strArg(args, "category", ""); category != "" {
 		scope = " category=" + category
@@ -273,20 +274,20 @@ func sumSkillsList(name string, args *pyjson.Object, content string, contentLen,
 	count, _ := jsonDict(content).Get("count")
 	_, isBool := count.(bool)
 	if _, ok := pyrepr.Int(count); ok || isBool {
-		listed = " " + pyrepr.Str(count) + " skills"
+		listed = " " + anyutil.String(count) + " skills"
 	}
 	return "[skills_list]" + scope + listed + resultFailureSuffix(content) + " (" + groupedInt(contentLen) + " chars)", nil
 }
 
 // Action stub plus the outcome of the run it triggered, a skip marked skipped rather than failed
-func sumCronjobManage(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumCronjobManage(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	stub := "[cronjob] " + getArgText(args, "action", "?")
 	payload := jsonDict(content)
 	suffix := payloadFailureSuffix(payload)
 	if suffix == "" {
-		job := &pyjson.Object{}
+		job := &jsonutil.Object{}
 		if j, _ := payload.Get("job"); j != nil {
-			if d, ok := j.(*pyjson.Object); ok {
+			if d, ok := j.(*jsonutil.Object); ok {
 				job = d
 			}
 		}
@@ -303,7 +304,7 @@ func sumCronjobManage(name string, args *pyjson.Object, content string, contentL
 }
 
 // Action stub plus a non zero exit the agent did not cause by killing the process
-func sumProcessManage(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumProcessManage(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	stub := "[process] " + getArgText(args, "action", "?") + " session=" + getArgText(args, "session_id", "?")
 	payload := jsonDict(content)
 	suffix := payloadFailureSuffix(payload)
@@ -321,16 +322,16 @@ func sumProcessManage(name string, args *pyjson.Object, content string, contentL
 
 // Summarizer formatting template from the parsed args over defaults, plus content_len and the outcome
 func sumTemplate(template string, defaults map[string]any) toolResultSummarizer {
-	return func(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+	return func(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 		values := map[string]any{}
 		for k, v := range defaults {
 			values[k] = v
 		}
-		for _, k := range args.Keys {
-			values[k] = args.Vals[k]
+		for _, k := range args.Keys() {
+			values[k] = args.Value(k)
 		}
 		values["content_len"] = contentLen
-		out, err := pyrepr.FormatMap(template, values)
+		out, err := templateutil.Format(template, values)
 		if err != nil {
 			return "", err
 		}
@@ -338,12 +339,12 @@ func sumTemplate(template string, defaults map[string]any) toolResultSummarizer 
 	}
 }
 
-func sumVisionAnalyze(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumVisionAnalyze(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	question := textutil.First(strArg(args, "question", ""), 50)
 	return "[vision_analyze] '" + question + "' (" + groupedInt(contentLen) + " chars)" + resultFailureSuffix(content), nil
 }
 
-func sumTodoList(name string, args *pyjson.Object, content string, contentLen, lineCount int) (string, error) {
+func sumTodoList(name string, args *jsonutil.Object, content string, contentLen, lineCount int) (string, error) {
 	return "[todo] updated task list", nil
 }
 
@@ -377,7 +378,7 @@ var toolResultSummarizers = func() map[string]toolResultSummarizer {
 }()
 
 // Summary for a call an approval or write guard refused, false otherwise, bounded below the prune floor
-func summarizeRefusedToolResult(toolName string, args *pyjson.Object, content string) (string, bool) {
+func summarizeRefusedToolResult(toolName string, args *jsonutil.Object, content string) (string, bool) {
 	payload := jsonDict(content)
 	status, _ := payload.Get("status")
 	errText := ""
@@ -414,7 +415,7 @@ func summarizeToolResultUnguardedImpl(toolName string, toolArgs, toolContent any
 	args := jsonDict(toolArgs)
 	content, isStr := toolContent.(string)
 	if !isStr {
-		if pyrepr.Truthy(toolContent) {
+		if anyutil.IsTrue(toolContent) {
 			return "", fmt.Errorf("tool result content is %s, expected text", errchain.Kind(toolContent))
 		}
 		content = ""
@@ -431,8 +432,8 @@ func summarizeToolResultUnguardedImpl(toolName string, toolArgs, toolContent any
 		return summarizer(toolName, args, content, contentLen, lineCount)
 	}
 	firstArg := ""
-	for _, k := range args.Keys[:min(2, len(args.Keys))] {
-		firstArg += " " + k + "=" + textutil.First(pyrepr.Str(args.Vals[k]), 40)
+	for _, k := range args.Keys()[:min(2, args.Len())] {
+		firstArg += " " + k + "=" + textutil.First(anyutil.String(args.Value(k)), 40)
 	}
 	return "[" + toolName + "]" + firstArg + " (" + groupedInt(contentLen) + " chars result)" + resultFailureSuffix(content), nil
 }
@@ -443,7 +444,7 @@ func memoryProviderSection(env *tools.Env, memoryContext string) string {
 	if sanitized == "" {
 		return ""
 	}
-	serialized, _ := pyjson.Dumps(sanitized, pyjson.EnsureASCII(false))
+	serialized, _ := jsonutil.Encode(sanitized)
 	serialized = strings.NewReplacer("&", "\\u0026", "<", "\\u003c", ">", "\\u003e").Replace(serialized)
 	return "\n\nMEMORY PROVIDER CONTEXT:\n" +
 		"The block contains one JSON string supplied by a memory provider. " +
@@ -455,5 +456,5 @@ func memoryProviderSection(env *tools.Env, memoryContext string) string {
 
 // Date only in the configured timezone for temporal anchoring of the summary
 func todayForPrompt(ctx context.Context) string {
-	return pydatetime.Strftime(icebathNow(ctx), "%Y-%m-%d")
+	return icebathNow(ctx).Format(time.DateOnly)
 }

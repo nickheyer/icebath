@@ -4,14 +4,13 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"math/big"
 	"regexp"
 	"sort"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Largest UTF-8 prompt one hosted room dispatch may carry
@@ -22,27 +21,24 @@ var (
 	hostedDigestRE     = regexp.MustCompile(`^[0-9a-f]{64}$`)
 )
 
-// Malformed or unauthorized peer room input, a ValueError
+// Malformed or unauthorized peer room input
 type HostedRoomPeerError struct{ Msg string }
 
 func (e *HostedRoomPeerError) Error() string { return e.Msg }
 
-// Python class name of the error
-func (e *HostedRoomPeerError) PyTypeName() string { return "HostedRoomPeerError" }
-
 // Recipient validated identity of one remote room member attempt
 type HostedMemberDispatch struct {
-	ProtocolVersion       *big.Int
+	ProtocolVersion       int64
 	RoomID                string
 	HomeInstallID         string
 	AuthorityGatewayID    string
-	AuthorityEpoch        *big.Int
+	AuthorityEpoch        int64
 	MemberID              string
 	TargetInstallID       string
 	TargetProfile         string
 	TaskID                string
-	ExecutionGeneration   *big.Int
-	SourceEventSeq        *big.Int
+	ExecutionGeneration   int64
+	SourceEventSeq        int64
 	CancellationScopeID   string
 	Prompt                string
 	PromptDigest          string
@@ -54,7 +50,7 @@ type HostedMemberDispatch struct {
 
 // Files a dispatch names, each a manifest item with the digest of the bytes the target already holds
 func hostedDispatchAttachments(value any) ([]map[string]any, error) {
-	list, ok := pyjson.Plain(value).([]any)
+	list, ok := jsonutil.Plain(value).([]any)
 	if !ok || len(list) == 0 {
 		return nil, &HostedRoomPeerError{"attachments must be a non-empty list"}
 	}
@@ -108,14 +104,12 @@ func hostedIdentifier(value any, field string) (string, error) {
 	return text, nil
 }
 
-// Positive non bool integer of a peer field
-func hostedPositiveInt(value any, field string) (*big.Int, error) {
-	if _, isBool := value.(bool); !isBool {
-		if n, ok := pyrepr.Int(value); ok && n.Sign() >= 1 {
-			return n, nil
-		}
+// Positive integer of a peer field, a bool refused
+func hostedPositiveInt(value any, field string) (int64, error) {
+	if n, ok := anyutil.Int(value); ok && n >= 1 {
+		return n, nil
 	}
-	return nil, &HostedRoomPeerError{field + " must be a positive integer"}
+	return 0, &HostedRoomPeerError{field + " must be a positive integer"}
 }
 
 // Lowercase sha256 hex digest of a peer field
@@ -132,12 +126,12 @@ func hostedMapping(value any) (map[string]any, bool) {
 	switch v := value.(type) {
 	case map[string]any:
 		return v, v != nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return nil, false
 		}
-		out := make(map[string]any, len(v.Keys))
-		for _, key := range v.Keys {
+		out := make(map[string]any, v.Len())
+		for _, key := range v.Keys() {
 			out[key], _ = v.Get(key)
 		}
 		return out, true
@@ -208,7 +202,7 @@ func HostedMemberDispatchFromMapping(value any) (*HostedMemberDispatch, error) {
 		return nil, &HostedRoomPeerError{"prompt_digest does not match prompt"}
 	}
 	texts := map[string]string{}
-	ints := map[string]*big.Int{}
+	ints := map[string]int64{}
 	for _, field := range hostedDispatchFields {
 		switch field.kind {
 		case "int":

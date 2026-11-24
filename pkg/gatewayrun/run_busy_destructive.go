@@ -8,8 +8,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Acknowledges a slash command that falls through to the agent, onto the local command sink when one is bound
@@ -123,7 +123,7 @@ func (r *GatewayRunner) requestSlashConfirm(ctx context.Context, event *gateway.
 			}
 			if gateway.DeclinedSend(&result) {
 				pkgLog().Warn(fmt.Sprintf("slash-confirm DECLINED by the connector's egress guard for %s on %s — suppressing the text fallback: %s",
-					command, source.Platform, pyrepr.Str(result.Error)))
+					command, source.Platform, anyutil.String(result.Error)))
 				SlashConfirmClear(sessionKey)
 				return nil, nil
 			}

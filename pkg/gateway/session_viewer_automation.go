@@ -1,6 +1,8 @@
 package gateway
 
-import "github.com/nickheyer/icebath/pkg/internal/pyrepr"
+import (
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+)
 
 // Whether a local viewer drives the session's goal and loop judging, or its heartbeat ticks for viewer_heartbeat
 func ViewerDriven(authority *SessionAuthority, sessionID, registry string) bool {
@@ -21,5 +23,5 @@ func ViewerDriven(authority *SessionAuthority, sessionID, registry string) bool 
 	}
 	connection.mu.Lock()
 	defer connection.mu.Unlock()
-	return pyrepr.Truthy(connection.subscriptions[sessionID])
+	return anyutil.IsTrue(connection.subscriptions[sessionID])
 }

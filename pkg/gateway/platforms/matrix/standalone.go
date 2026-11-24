@@ -12,6 +12,7 @@ import (
 	"maps"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -20,10 +21,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // In turn secret read with no env fallback, empty on a miss
@@ -48,7 +48,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if token == "" {
 		secret, err := standaloneSecret(ctx, "MATRIX_ACCESS_TOKEN")
 		if err != nil {
-			return gateway.SendError("Matrix send failed: " + pyrepr.Str(err)), nil
+			return gateway.SendError("Matrix send failed: " + anyutil.String(err)), nil
 		}
 		token = secret
 	}
@@ -63,7 +63,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		random := make([]byte, 4)
 		_, _ = rand.Read(random)
 		txnID := fmt.Sprintf("icebath_%d_%s", time.Now().UnixMilli(), hex.EncodeToString(random))
-		endpoint := homeserver + "/_matrix/client/v3/rooms/" + pyurl.Quote(chatID, "") + "/send/m.room.message/" + txnID
+		endpoint := homeserver + "/_matrix/client/v3/rooms/" + url.PathEscape(chatID) + "/send/m.room.message/" + txnID
 		body, err := json.Marshal(payload)
 		if err != nil {
 			return nil, err
@@ -99,10 +99,10 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			return gateway.SendError("Matrix API timeout (30s)"), nil
 		}
 		if err != nil {
-			return gateway.SendError("Matrix send failed: " + pyrepr.Str(err)), nil
+			return gateway.SendError("Matrix send failed: " + anyutil.String(err)), nil
 		}
 		result = r
-		if !pyTruthy(result["success"]) {
+		if !anyutil.IsTrue(result["success"]) {
 			return result, nil
 		}
 	}

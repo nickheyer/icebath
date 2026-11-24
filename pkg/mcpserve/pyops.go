@@ -6,10 +6,11 @@ import (
 	"math"
 	"math/big"
 	"sort"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python exception raised by a dict, string or comparison operation, str giving Msg
@@ -21,27 +22,27 @@ type pyError struct {
 func (e *pyError) Error() string { return e.Msg }
 
 // Ordered view of a dict value, false for anything Python would not treat as a dict
-func asDict(v any) (*pyjson.Object, bool) {
+func asDict(v any) (*jsonutil.Object, bool) {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t, t != nil
 	case map[string]any:
-		return pyjson.AsObject(t)
+		return jsonutil.AsObject(t)
 	}
 	return nil, false
 }
 
 // Raises the AttributeError of calling method on a value without it
 func noAttribute(v any, method string) {
-	panic(&pyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), method)})
+	panic(&pyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), method)})
 }
 
 // Value of d.get(key, def), an AttributeError when d is no dict
 func pyGet(d any, key string, def any) any {
 	switch t := d.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t != nil {
-			if v, ok := t.Vals[key]; ok {
+			if v, ok := t.Get(key); ok {
 				return v
 			}
 			return def
@@ -60,11 +61,11 @@ func pyGet(d any, key string, def any) any {
 func pyIndex(d any, key string) any {
 	o, ok := asDict(d)
 	if !ok {
-		panic(&pyError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(d))})
+		panic(&pyError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(d))})
 	}
-	v, present := o.Vals[key]
+	v, present := o.Get(key)
 	if !present {
-		panic(&pyError{"KeyError", pyrepr.StrRepr(key)})
+		panic(&pyError{"KeyError", strconv.Quote(key)})
 	}
 	return v
 }
@@ -75,7 +76,7 @@ func pyItems(d any) ([]string, map[string]any) {
 	if !ok {
 		noAttribute(d, "items")
 	}
-	return o.Keys, o.Vals
+	return o.Keys(), o.Map()
 }
 
 // Value of s.lower(), an AttributeError when s is no str
@@ -90,8 +91,8 @@ func pyLower(v any) string {
 // Raises the TypeError a set membership test raises for an unhashable value
 func pyHashable(v any) {
 	switch v.(type) {
-	case []any, map[string]any, *pyjson.Object:
-		panic(&pyError{"TypeError", fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))})
+	case []any, map[string]any, *jsonutil.Object:
+		panic(&pyError{"TypeError", fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(v))})
 	}
 }
 
@@ -109,8 +110,8 @@ func pyNumber(v any) (*big.Float, bool) {
 		}
 		return big.NewFloat(t), true
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		return new(big.Float).SetInt(n), true
+	if n, ok := anyutil.Int(v); ok {
+		return new(big.Float).SetInt64(n), true
 	}
 	return nil, false
 }
@@ -134,13 +135,13 @@ func pyLess(a, b any) bool {
 	lb, bList := b.([]any)
 	if aList && bList {
 		for i := 0; i < len(la) && i < len(lb); i++ {
-			if !pyjson.Equal(la[i], lb[i]) {
+			if !anyutil.Equal(la[i], lb[i]) {
 				return pyLess(la[i], lb[i])
 			}
 		}
 		return len(la) < len(lb)
 	}
-	panic(&pyError{"TypeError", fmt.Sprintf("'<' not supported between instances of '%s' and '%s'", pyrepr.TypeName(a), pyrepr.TypeName(b))})
+	panic(&pyError{"TypeError", fmt.Sprintf("'<' not supported between instances of '%s' and '%s'", anyutil.Kind(a), anyutil.Kind(b))})
 }
 
 // Code point order of two strings as Python compares str
@@ -169,9 +170,9 @@ func dumps(v any, indent bool) string {
 	var text string
 	var err error
 	if indent {
-		text, err = pyjson.Dumps(v, pyjson.Indent(2))
+		text, err = jsonutil.Encode(v, jsonutil.Indent(2))
 	} else {
-		text, err = pyjson.Dumps(v)
+		text, err = jsonutil.Encode(v)
 	}
 	if err != nil {
 		panic(err)
@@ -184,5 +185,5 @@ func raisedText(r any) string {
 	if e, ok := r.(error); ok {
 		return e.Error()
 	}
-	return pyrepr.Str(r)
+	return anyutil.String(r)
 }

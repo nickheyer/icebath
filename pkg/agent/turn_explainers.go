@@ -3,18 +3,19 @@ package agent
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // EmptyResponseExplanation is the English source of the no reply after retries text every surface shows
@@ -123,11 +124,11 @@ func fileMutationIdentity(env *tools.Env, path, taskID string) (string, error) {
 	}
 	resolved, err := tools.ResolvePathForTaskID(env, taskID, path)
 	if err != nil {
-		if resolved, err = pypath.Abspath(pypath.Expanduser(path)); err != nil {
+		if resolved, err = filepath.Abs(pathutil.ExpandUser(path)); err != nil {
 			return "", err
 		}
 	}
-	return pypath.Normcase(pypath.Normpath(resolved)), nil
+	return pathutil.FoldCase(filepath.Clean(resolved)), nil
 }
 
 // Modification time and size of the target, nil when it does not exist or cannot be read
@@ -284,10 +285,10 @@ func formatFileMutationFailureFooter(ctx context.Context, failed *FileMutationFa
 
 // User facing explanation for an abnormal turn ending, empty for normal and unknown reasons
 func formatTurnCompletionExplanation(ctx context.Context, turnExitReason any, persistenceCause, dbPath, model string) string {
-	if !pyrepr.Truthy(turnExitReason) {
+	if !anyutil.IsTrue(turnExitReason) {
 		return ""
 	}
-	reason := pyrepr.Str(turnExitReason)
+	reason := anyutil.String(turnExitReason)
 	if strings.HasPrefix(reason, "text_response") {
 		return ""
 	}
@@ -318,7 +319,7 @@ func formatTurnCompletionExplanation(ctx context.Context, turnExitReason any, pe
 				dbPath = home.StatePath(h)
 			}
 			fill["db_path"] = dbPath
-			fill["backups_dir"] = pypath.Join(home.RootOf(h), "backups")
+			fill["backups_dir"] = pathutil.Join(home.RootOf(h), "backups")
 		}
 		body = i18n.T(ctx, persistenceExplanationKey(persistenceCause), "", fill)
 	}

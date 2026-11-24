@@ -8,13 +8,14 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const mediaFetchMaxBytes = 50 * 1024 * 1024
@@ -107,7 +108,7 @@ func existingRegularFile(raw string) bool {
 	if expanduserRaises(raw) != nil {
 		return false
 	}
-	info, err := os.Stat(pypath.Expanduser(raw))
+	info, err := os.Stat(pathutil.ExpandUser(raw))
 	return err == nil && info.Mode().IsRegular()
 }
 
@@ -139,13 +140,13 @@ func RemotePathIsDenied(p string, remoteHome string) bool {
 	if !strings.HasPrefix(p, "/") {
 		return true
 	}
-	target := pypath.Normpath(p)
+	target := filepath.Clean(p)
 	under := func(root string) bool {
 		return target == root || strings.HasPrefix(target, strings.TrimSuffix(root, "/")+"/")
 	}
 	homeDir := ""
 	if remoteHome != "" {
-		homeDir = pypath.Normpath(remoteHome)
+		homeDir = filepath.Clean(remoteHome)
 	}
 	for _, prefix := range mediaDeliveryDeniedPrefixes {
 		if prefix != homeDir && under(prefix) {
@@ -218,7 +219,7 @@ func FetchRemoteMedia(ctx context.Context, raw string) (string, error) {
 		return "", err
 	}
 	remoteHome := environmentRemoteHome(env)
-	candidate := pypath.Normpath(normalizeMediaTagPath(raw))
+	candidate := filepath.Clean(normalizeMediaTagPath(raw))
 	if candidate == "~" || strings.HasPrefix(candidate, "~/") {
 		if remoteHome == "" {
 			return "", nil
@@ -227,7 +228,7 @@ func FetchRemoteMedia(ctx context.Context, raw string) (string, error) {
 		if len(candidate) > 2 {
 			rest = candidate[2:]
 		}
-		candidate = pypath.Normpath(path.Join(remoteHome, rest))
+		candidate = filepath.Clean(path.Join(remoteHome, rest))
 	}
 	if !strings.HasPrefix(candidate, "/") || RemotePathIsDenied(candidate, remoteHome) {
 		return "", nil

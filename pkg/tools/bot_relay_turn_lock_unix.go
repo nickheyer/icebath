@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Non blocking flock probe with short sleeps up to the budget, a TurnBusyError when exhausted
@@ -29,13 +29,13 @@ func acquireTurnLock(ctx context.Context, root, profile string, timeoutSeconds *
 	if err != nil {
 		return nil, &os.PathError{Op: "open", Path: path, Err: err}
 	}
-	start := pythread.Monotonic()
+	start := timeutil.Monotonic()
 	deadline := start + budget
 	for {
 		if syscall.Flock(fd, syscall.LOCK_EX|syscall.LOCK_NB) == nil {
 			break
 		}
-		now := pythread.Monotonic()
+		now := timeutil.Monotonic()
 		if now >= deadline {
 			_ = syscall.Close(fd)
 			return nil, &TurnBusyError{Profile: profile, WaitedSeconds: now - start}

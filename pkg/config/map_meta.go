@@ -8,7 +8,7 @@ import (
 	"unsafe"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Key order and failed read marker carried by one live map, dropped once the map is collected
@@ -204,4 +204,4 @@ func MappingPyKey(m map[string]any, key string) (any, bool) {
 }
 
 // Map key under which a non str Python key is stored, never equal to a key a YAML str produces
-func PyKeyString(pyKey any) string { return "\x00" + pyrepr.Repr(pyKey) }
+func PyKeyString(pyKey any) string { return "\x00" + anyutil.Quote(pyKey) }

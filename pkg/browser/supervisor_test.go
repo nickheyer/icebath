@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
@@ -16,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func waitFor(t *testing.T, pred func() bool) {
@@ -34,7 +35,10 @@ func waitFor(t *testing.T, pred func() bool) {
 	t.Fatal("condition not reached")
 }
 
-func isClass(err error, class string) bool { return err != nil && pyrepr.ExceptionName(err) == class }
+func isClass(err error, class string) bool {
+	var ce *cloudError
+	return errors.As(err, &ce) && ce.Class == class
+}
 
 // Start stand in giving the supervisor a live thread and loop until stop
 func fakeSupervisorStart(t *testing.T) *[]*cdpSupervisor {
@@ -157,7 +161,7 @@ func TestInitialConnectFailureStaysFatalForStart(t *testing.T) {
 }
 
 // Supervisor with a running loop and an attached page whose CDP replies come from fn
-func evalSupervisor(t *testing.T, sessionID string, fn func(method string, params any) (*pyjson.Object, error)) *cdpSupervisor {
+func evalSupervisor(t *testing.T, sessionID string, fn func(method string, params any) (*jsonutil.Object, error)) *cdpSupervisor {
 	t.Helper()
 	sup, _ := newCDPSupervisor(testEnv(t), "eval", "ws://x", settings.BrowserDialogPolicy.Default, settings.BrowserDialogTimeoutS.Default.Seconds())
 	sup.active, sup.pageSessionID = true, sessionID
@@ -166,36 +170,36 @@ func evalSupervisor(t *testing.T, sessionID string, fn func(method string, param
 	go loop.serve(quit)
 	t.Cleanup(func() { close(quit) })
 	waitFor(t, loop.isRunning)
-	pin(t, &supervisorCDP, func(_ *cdpSupervisor, method string, params any, _ string, _ float64) (*pyjson.Object, error) {
+	pin(t, &supervisorCDP, func(_ *cdpSupervisor, method string, params any, _ string, _ float64) (*jsonutil.Object, error) {
 		return fn(method, params)
 	})
 	return sup
 }
 
-func decodeObj(t *testing.T, text string) *pyjson.Object {
+func decodeObj(t *testing.T, text string) *jsonutil.Object {
 	t.Helper()
 	return decodeResult(t, text)
 }
 
 func TestEvaluateRuntimeResponseShapingPrimitiveValue(t *testing.T) {
 	reply := decodeObj(t, `{"id": 1, "result": {"result": {"type": "number", "value": 42}}}`)
-	sup := evalSupervisor(t, "test-session-id", func(string, any) (*pyjson.Object, error) { return reply, nil })
-	if got, _ := pyjson.Dumps(sup.evaluateRuntime("1 + 41", true, true, 10)); got != `{"ok": true, "result": 42, "result_type": "number"}` {
+	sup := evalSupervisor(t, "test-session-id", func(string, any) (*jsonutil.Object, error) { return reply, nil })
+	if got, _ := jsonutil.Encode(sup.evaluateRuntime("1 + 41", true, true, 10)); got != `{"ok": true, "result": 42, "result_type": "number"}` {
 		t.Fatalf("got %s", got)
 	}
 }
 
 func TestEvaluateRuntimeResponseShapingObjectValueReturnedByValue(t *testing.T) {
 	reply := decodeObj(t, `{"id": 1, "result": {"result": {"type": "object", "value": {"foo": "bar", "n": 7}}}}`)
-	sup := evalSupervisor(t, "test-session-id", func(string, any) (*pyjson.Object, error) { return reply, nil })
+	sup := evalSupervisor(t, "test-session-id", func(string, any) (*jsonutil.Object, error) { return reply, nil })
 	out := sup.evaluateRuntime(`({foo:"bar", n:7})`, true, true, 10)
-	if got, _ := pyjson.Dumps(anyGet(out, "result")); anyGet(out, "ok") != true || got != `{"foo": "bar", "n": 7}` || anyGet(out, "result_type") != "object" {
+	if got, _ := jsonutil.Encode(anyGet(out, "result")); anyGet(out, "ok") != true || got != `{"foo": "bar", "n": 7}` || anyGet(out, "result_type") != "object" {
 		t.Fatalf("got %v", out)
 	}
 }
 
 func TestEvaluateRuntimeResponseShapingNoSessionAttachedReturnsError(t *testing.T) {
-	sup := evalSupervisor(t, "", func(string, any) (*pyjson.Object, error) { return nil, nil })
+	sup := evalSupervisor(t, "", func(string, any) (*jsonutil.Object, error) { return nil, nil })
 	out := sup.evaluateRuntime("1+1", true, true, 10)
 	if anyGet(out, "ok") != false || !strings.Contains(strings.ToLower(objStr(out, "error")), "session") {
 		t.Fatalf("got %v", out)
@@ -206,7 +210,7 @@ func TestEvaluateRuntimeDomNodeCrashRetryReferenceChainCrashRetriesWithoutByValu
 	var mu sync.Mutex
 	var calls []any
 	reply := decodeObj(t, `{"id": 8, "result": {"result": {"type": "object", "subtype": "node", "description": "body"}}}`)
-	sup := evalSupervisor(t, "test-session-id", func(_ string, params any) (*pyjson.Object, error) {
+	sup := evalSupervisor(t, "test-session-id", func(_ string, params any) (*jsonutil.Object, error) {
 		byValue := anyGet(params, "returnByValue")
 		mu.Lock()
 		calls = append(calls, byValue)
@@ -225,7 +229,7 @@ func TestEvaluateRuntimeDomNodeCrashRetryReferenceChainCrashRetriesWithoutByValu
 
 func TestEvaluateRuntimeDomNodeCrashRetryUnrelatedErrorDoesNotRetry(t *testing.T) {
 	var calls []any
-	sup := evalSupervisor(t, "test-session-id", func(_ string, params any) (*pyjson.Object, error) {
+	sup := evalSupervisor(t, "test-session-id", func(_ string, params any) (*jsonutil.Object, error) {
 		calls = append(calls, anyGet(params, "returnByValue"))
 		return nil, runtimeError("CDP error on id=3: {'message': 'Target closed'}")
 	})
@@ -434,8 +438,8 @@ func TestBrowserSupervisorRedactionPendingAndRecentDialogMessagesRedacted(t *tes
 	res := snap.ToDict()
 	pending := anyGet(res, "pending_dialogs").([]any)[0]
 	recent := anyGet(res, "recent_dialogs").([]any)[0]
-	if strings.Contains(pyrepr.Repr(res), "SUPERVISORDIALOGSECRET") || !strings.HasPrefix(objStr(pending, "message"), "Enter API key sk-") ||
+	if strings.Contains(anyutil.Quote(res), "SUPERVISORDIALOGSECRET") || !strings.HasPrefix(objStr(pending, "message"), "Enter API key sk-") ||
 		!strings.HasPrefix(objStr(pending, "default_prompt"), "sk-") || !strings.HasPrefix(objStr(recent, "message"), "Recent key sk-") {
-		t.Fatalf("got %s", pyrepr.Repr(res))
+		t.Fatalf("got %s", anyutil.Quote(res))
 	}
 }

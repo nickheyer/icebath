@@ -12,6 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -47,12 +49,12 @@ func managedScalar(value any) bool {
 
 // Whether a value is a dict of allowed scalar keys of a structured field
 func managedStructured(key string, value any) bool {
-	block, isDict := value.(*pyjson.Object)
+	block, isDict := value.(*jsonutil.Object)
 	if !isDict || block == nil {
 		return false
 	}
-	for _, name := range block.Keys {
-		if !slices.Contains(managedStructuredFields[key], name) || !managedScalar(block.Vals[name]) {
+	for _, name := range block.Keys() {
+		if !slices.Contains(managedStructuredFields[key], name) || !managedScalar(block.Value(name)) {
 			return false
 		}
 	}
@@ -69,10 +71,10 @@ func managedWireValue(value any) bool {
 }
 
 // Worker side receipt fields of a run_conversation result, scalars only and text bounded
-func ResultFrame(result *pyjson.Object) *pyjson.Object {
-	frame := pyjson.NewObject()
-	for _, key := range result.Keys {
-		value := result.Vals[key]
+func ResultFrame(result *jsonutil.Object) *jsonutil.Object {
+	frame := jsonutil.NewObject()
+	for _, key := range result.Keys() {
+		value := result.Value(key)
 		if !slices.Contains(managedResultFields, key) || managedStructuredFields[key] != nil || !managedWireValue(value) {
 			continue
 		}
@@ -82,13 +84,13 @@ func ResultFrame(result *pyjson.Object) *pyjson.Object {
 		frame.Set(key, value)
 	}
 	for _, key := range managedStructuredOrder {
-		block, isDict := result.GetOr(key, nil).(*pyjson.Object)
+		block, isDict := result.ValueOr(key, nil).(*jsonutil.Object)
 		if !isDict || block == nil {
 			continue
 		}
-		kept := pyjson.NewObject()
-		for _, name := range block.Keys {
-			value := block.Vals[name]
+		kept := jsonutil.NewObject()
+		for _, name := range block.Keys() {
+			value := block.Value(name)
 			if !slices.Contains(managedStructuredFields[key], name) || !managedWireValue(value) {
 				continue
 			}
@@ -157,44 +159,44 @@ func scalarFloat(value any) float64 {
 
 // Value or zero when falsy, the Python value or 0
 func orZero(value any) any {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return int64(0)
 	}
 	return value
 }
 
 // Owner side of the worker result frame, the in process turn shaped result and usage or a ValueError
-func AcceptResult(result any) (*pyjson.Object, *pyjson.Object, error) {
-	frame, isDict := result.(*pyjson.Object)
+func AcceptResult(result any) (*jsonutil.Object, *jsonutil.Object, error) {
+	frame, isDict := result.(*jsonutil.Object)
 	if !isDict || frame == nil {
 		return nil, nil, invalidWorkerResult()
 	}
-	for _, key := range frame.Keys {
+	for _, key := range frame.Keys() {
 		if !slices.Contains(managedResultFields, key) {
 			return nil, nil, invalidWorkerResult()
 		}
 	}
-	if _, isText := frame.GetOr("final_response", nil).(string); !isText {
+	if _, isText := frame.ValueOr("final_response", nil).(string); !isText {
 		return nil, nil, invalidWorkerResult()
 	}
 	for _, key := range managedStructuredOrder {
-		if value := frame.GetOr(key, nil); value != nil && !managedStructured(key, value) {
+		if value := frame.ValueOr(key, nil); value != nil && !managedStructured(key, value) {
 			return nil, nil, invalidWorkerResult()
 		}
 	}
-	for _, key := range frame.Keys {
-		if key != "final_response" && managedStructuredFields[key] == nil && !managedScalar(frame.Vals[key]) {
+	for _, key := range frame.Keys() {
+		if key != "final_response" && managedStructuredFields[key] == nil && !managedScalar(frame.Value(key)) {
 			return nil, nil, invalidWorkerResult()
 		}
 	}
-	accepted := frame.Copy()
+	accepted := frame.Clone()
 	for _, key := range managedStructuredOrder {
-		if accepted.GetOr(key, nil) == nil {
-			accepted.Pop(key)
+		if accepted.ValueOr(key, nil) == nil {
+			accepted.Take(key)
 		}
 	}
-	turnIn, _ := accepted.Pop("_turn_input_tokens")
-	turnOut, _ := accepted.Pop("_turn_output_tokens")
+	turnIn, _ := accepted.Take("_turn_input_tokens")
+	turnOut, _ := accepted.Take("_turn_output_tokens")
 	for _, value := range []any{turnIn, turnOut} {
 		if value == nil {
 			continue
@@ -204,10 +206,10 @@ func AcceptResult(result any) (*pyjson.Object, *pyjson.Object, error) {
 			return nil, nil, invalidWorkerResult()
 		}
 	}
-	incoming, _ := accepted.Pop("prompt_tokens")
-	outgoing, _ := accepted.Pop("completion_tokens")
+	incoming, _ := accepted.Take("prompt_tokens")
+	outgoing, _ := accepted.Take("completion_tokens")
 	if incoming == nil && outgoing == nil {
-		return accepted, pyjson.NewObject(), nil
+		return accepted, jsonutil.NewObject(), nil
 	}
 	input, output := turnIn, turnOut
 	if turnIn == nil {
@@ -220,14 +222,14 @@ func AcceptResult(result any) (*pyjson.Object, *pyjson.Object, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	usage := pyjson.ObjectOf("input_tokens", input, "output_tokens", output, "total_tokens", total)
+	usage := jsonutil.ObjectOf("input_tokens", input, "output_tokens", output, "total_tokens", total)
 	accepted.Set("input_tokens", orZero(incoming))
 	accepted.Set("output_tokens", orZero(outgoing))
 	return accepted, usage, nil
 }
 
 // One framed line of the pipe, EOFError at end, ValueError for an oversized, unterminated or non dict frame
-func ReadFrame(stream *bufio.Reader) (*pyjson.Object, error) {
+func ReadFrame(stream *bufio.Reader) (*jsonutil.Object, error) {
 	var line []byte
 	for len(line) <= MaxManagedFrame {
 		chunk, err := stream.ReadSlice('\n')
@@ -249,11 +251,11 @@ func ReadFrame(stream *bufio.Reader) (*pyjson.Object, error) {
 	if len(line) > MaxManagedFrame || line[len(line)-1] != '\n' {
 		return nil, &PyError{Kind: "ValueError", Msg: "managed_worker_frame_too_large"}
 	}
-	decoded, err := pyjson.LoadsBytes(line)
+	decoded, err := jsonutil.Decode(line)
 	if err != nil {
 		return nil, &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
-	frame, isDict := decoded.(*pyjson.Object)
+	frame, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid_managed_worker_frame"}
 	}
@@ -262,7 +264,7 @@ func ReadFrame(stream *bufio.Reader) (*pyjson.Object, error) {
 
 // Compact ASCII JSON line of a frame, ValueError past the frame ceiling or for a non finite float
 func EncodeFrame(frame any) ([]byte, error) {
-	text, err := pyjson.Dumps(frame, pyjson.EnsureASCII(true), pyjson.AllowNaN(false), pyjson.Separators(",", ":"))
+	text, err := jsonutil.Encode(frame, jsonutil.ASCII())
 	if err != nil {
 		var typeErr *pyjson.TypeError
 		if errors.As(err, &typeErr) {

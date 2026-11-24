@@ -15,9 +15,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var isWindows = runtime.GOOS == "windows"
@@ -387,7 +387,7 @@ func resolveChildCwd(env *tools.Env, mode, stagingDir, taskID string) (string, e
 	raw = strings.TrimSpace(raw)
 	candidates := []string{""}
 	if raw != "" {
-		candidates[0] = pypath.Expanduser(raw)
+		candidates[0] = pathutil.ExpandUser(raw)
 	}
 	wd, err := os.Getwd()
 	if err != nil {

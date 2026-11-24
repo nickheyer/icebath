@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session store adapted to the provider usage row so the state DB records auxiliary usage
@@ -36,7 +36,7 @@ func TestStateDBRecordsAuxiliaryUsageThroughTheRecorder(t *testing.T) {
 		t.Fatalf("by task %v %v", byTask, err)
 	}
 	row, _ := byTask.Get("vision")
-	text, _ := pyjson.Dumps(row)
+	text, _ := jsonutil.Encode(row)
 	if !strings.Contains(text, "7") || !strings.Contains(text, "3") {
 		t.Fatalf("vision row %s", text)
 	}

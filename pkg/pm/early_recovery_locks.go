@@ -13,11 +13,11 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -74,7 +74,7 @@ var neverLocks = gitNameSet("credential-cache--daemon", "fsmonitor--daemon")
 // Executable lookup, subprocess runner and holder rule of the probes, swapped by tests
 var (
 	lockWhichFn      = func(name string) (string, bool) { return pyshutil.Which(name, nil) }
-	lockRunFn        = pysubprocess.RunWith
+	lockRunFn        = executil.Run
 	countsAsHolderFn = countsAsHolder
 )
 
@@ -155,16 +155,16 @@ func checkoutPlaces(paths ...string) []string {
 		if p == "" {
 			continue
 		}
-		abs, err := pypath.Abspath(p)
+		abs, err := filepath.Abs(p)
 		if err != nil {
-			abs = pypath.Normpath(p)
+			abs = filepath.Clean(p)
 		}
-		set[pypath.Normcase(pypath.Normpath(abs))] = true
-		real, err := pypath.Realpath(p, pypath.Lax)
+		set[pathutil.FoldCase(filepath.Clean(abs))] = true
+		real, err := pathutil.Resolve(p)
 		if err != nil {
 			real = abs
 		}
-		set[pypath.Normcase(real)] = true
+		set[pathutil.FoldCase(real)] = true
 	}
 	out := make([]string, 0, len(set))
 	for p := range set {
@@ -180,7 +180,7 @@ func CheckoutPlaces(paths ...string) []string { return checkoutPlaces(paths...) 
 // Splits a normalized path into drive, root and tail like os.path.splitroot
 func lockSplitRoot(p string) (drive, root, tail string) {
 	if runtime.GOOS == "windows" {
-		return pypath.NtSplitRoot(p)
+		return pathutil.WindowsSplitRoot(p)
 	}
 	if strings.HasPrefix(p, "/") {
 		return "", "/", p[1:]
@@ -217,10 +217,10 @@ func commonPath(a, b string) (string, bool) {
 
 // Reports whether path is one of places or under it by path components, lexically
 func pathWithin(path string, places []string) bool {
-	if !pypath.IsAbs(path) {
+	if !filepath.IsAbs(path) {
 		return false
 	}
-	lexical := pypath.Normcase(pypath.Normpath(path))
+	lexical := pathutil.FoldCase(filepath.Clean(path))
 	for _, place := range places {
 		if common, ok := commonPath(lexical, place); ok && common == place {
 			return true
@@ -235,11 +235,11 @@ func GitWorksIn(args []string, cwd string, env map[string]string, places []strin
 		if value == "" {
 			return false
 		}
-		if !pypath.IsAbs(value) {
+		if !filepath.IsAbs(value) {
 			if cwd == "" {
 				return false
 			}
-			value = pypath.Join(cwd, value)
+			value = pathutil.Join(cwd, value)
 		}
 		return pathWithin(value, places)
 	}
@@ -304,7 +304,7 @@ func SwapLockWhich(fn func(name string) (string, bool)) func(name string) (strin
 }
 
 // Replaces the subprocess runner of the lsof and ps probes and returns the previous one
-func SwapLockRunner(fn func(context.Context, []string, pysubprocess.Options) (*pysubprocess.Completed, error)) func(context.Context, []string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+func SwapLockRunner(fn func(context.Context, []string, executil.Options) (*executil.Completed, error)) func(context.Context, []string, executil.Options) (*executil.Completed, error) {
 	prev := lockRunFn
 	lockRunFn = fn
 	return prev
@@ -334,7 +334,7 @@ func procComm(pidDir string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(pystr.DecodeASCIIReplace(raw)), nil
+	return strings.TrimSpace(strings.ToValidUTF8(string(raw), string(utf8.RuneError))), nil
 }
 
 // Environment of a /proc directory, later entries winning
@@ -368,18 +368,18 @@ func holderName(args []string, pidDir string) string {
 
 // Program basename with up to two arguments
 func argvLabel(args []string) string {
-	return strings.Join(append([]string{pypath.Basename(args[0])}, args[1:min(3, len(args))]...), " ")
+	return strings.Join(append([]string{pathutil.Name(args[0])}, args[1:min(3, len(args))]...), " ")
 }
 
 // Scans /proc for a process holding path open or a lock keeping git working in root
 func heldOpenProc(path, root string, anyGit bool) LockHold {
-	target, err := pypath.Realpath(path, pypath.Lax)
+	target, err := pathutil.Resolve(path)
 	if err != nil {
 		target = path
 	}
 	var places []string
 	if root != "" {
-		places = checkoutPlaces(root, pypath.Dirname(path))
+		places = checkoutPlaces(root, filepath.Dir(path))
 	}
 	unknowable := false
 	entries, _ := os.ReadDir("/proc")
@@ -411,7 +411,7 @@ func heldOpenProc(path, root string, anyGit bool) LockHold {
 		args, cmdErr := procCmdline(pidDir)
 		comm, commErr := procComm(pidDir)
 		if cmdErr != nil || commErr != nil {
-			if pathExists(pidDir) && couldWrite(uid, true, pypath.Dirname(path)) {
+			if pathExists(pidDir) && couldWrite(uid, true, filepath.Dir(path)) {
 				unknowable = true
 			}
 			continue
@@ -434,7 +434,7 @@ func heldOpenProc(path, root string, anyGit bool) LockHold {
 			if GitWorksIn(args, "", nil, places) {
 				return lockHolder(pid, holderName(args, pidDir))
 			}
-			if pathExists(pidDir) && couldWrite(uid, true, pypath.Dirname(path)) {
+			if pathExists(pidDir) && couldWrite(uid, true, filepath.Dir(path)) {
 				unknowable = true
 			}
 			continue
@@ -480,8 +480,8 @@ func firstRegularFile(paths ...string) (string, bool) {
 }
 
 // Runs a probe command with the 20 second budget of the lsof and ps calls
-func lockProbe(argv []string) (*pysubprocess.Completed, error) {
-	return lockRunFn(context.Background(), argv, pysubprocess.Options{Timeout: 20 * time.Second})
+func lockProbe(argv []string) (*executil.Completed, error) {
+	return lockRunFn(context.Background(), argv, executil.Options{Timeout: 20 * time.Second})
 }
 
 // Asks lsof who holds path open, then ps for a lock keeping git in root when nothing does
@@ -511,7 +511,7 @@ func heldOpenLsof(path, root string, anyGit bool) LockHold {
 	if root == "" {
 		return lockFree
 	}
-	return psGitHolder(lsof, pypath.Dirname(path), root, anyGit)
+	return psGitHolder(lsof, filepath.Dir(path), root, anyGit)
 }
 
 // Exported heldOpenLsof for the injected process metadata tests of other packages

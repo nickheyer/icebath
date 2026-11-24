@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/state"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 func recoveryCount(t *testing.T, conn state.SQLiteConn, query string) int {
@@ -23,7 +23,7 @@ func recoveryCount(t *testing.T, conn state.SQLiteConn, query string) int {
 func TestRecoveryLedgerPrunesExpiredRows(t *testing.T) {
 	ctx := context.Background()
 	store := NewDiscordRecoveryStore(ctx, t.TempDir())
-	old := pydatetime.ISOFormatUTC(time.Now().UTC().Add(-31 * 24 * time.Hour))
+	old := time.Now().UTC().Add(-31 * 24 * time.Hour).UTC().Format(timeutil.RFC3339Micro)
 	inserted := store.Call(ctx, func(conn state.SQLiteConn) (any, error) {
 		if _, err := conn.ExecContext(ctx, "INSERT INTO discord_messages "+
 			"(message_id, status, updated_at) VALUES ('old-message', 'responded', ?)", old); err != nil {
@@ -54,7 +54,7 @@ func TestRecoveryLedgerKeepsFreshRowsAndRollsBackAFailedCall(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	store := NewDiscordRecoveryStore(ctx, root)
-	fresh := pydatetime.ISOFormatUTC(time.Now().UTC().Add(-29 * 24 * time.Hour))
+	fresh := time.Now().UTC().Add(-29 * 24 * time.Hour).UTC().Format(timeutil.RFC3339Micro)
 	store.Call(ctx, func(conn state.SQLiteConn) (any, error) {
 		_, err := conn.ExecContext(ctx, "INSERT INTO discord_recovery_cursors VALUES ('123', '99', ?)", fresh)
 		return nil, err

@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One deterministic member turn compatible with the driver schema
@@ -73,9 +73,9 @@ func discussionRotate(members []DiscussionMember, round int64) []DiscussionMembe
 // One prompt line of a thread message, member control frame openers relabelled
 func discussionFormatMessage(event discussionEvent, room DiscussionRoom) (string, error) {
 	if event.kind == "message.user" {
-		return "User (user): " + pyrepr.Str(event.payload["text"]), nil
+		return "User (user): " + anyutil.String(event.payload["text"]), nil
 	}
-	text := memberControlFrameRE.ReplaceAllStringFunc(pyrepr.Str(event.payload["text"]), func(opener string) string { return memberControlRelabel + opener[1:] })
+	text := memberControlFrameRE.ReplaceAllStringFunc(anyutil.String(event.payload["text"]), func(opener string) string { return memberControlRelabel + opener[1:] })
 	member, err := discussionMemberByID(room, event.payload["member_id"])
 	if err != nil {
 		return "", err
@@ -163,7 +163,7 @@ func discussionRequiresDirectReply(room DiscussionRoom, source *discussionEvent,
 	if round != 0 || source == nil || source.kind != "message.user" {
 		return false
 	}
-	for _, mentioned := range ResolveMentions([]string{pyrepr.Str(source.payload["text"])}, room.Members, false) {
+	for _, mentioned := range ResolveMentions([]string{anyutil.String(source.payload["text"])}, room.Members, false) {
 		if mentioned.Equal(member) {
 			return true
 		}
@@ -197,7 +197,7 @@ func discussionMakeTaskPlan(room DiscussionRoom, discussion discussionEvent, mem
 		return DiscussionTaskPlan{}, err
 	}
 	seedSum := sha256.Sum256([]byte(seed))
-	identity, err := NewTaskIdentity(room.RoomID, "dtask:"+hex.EncodeToString(seedSum[:])[:48], pyrepr.Str(discussion.payload["thread_id"]), turnID)
+	identity, err := NewTaskIdentity(room.RoomID, "dtask:"+hex.EncodeToString(seedSum[:])[:48], anyutil.String(discussion.payload["thread_id"]), turnID)
 	if err != nil {
 		return DiscussionTaskPlan{}, err
 	}
@@ -206,7 +206,7 @@ func discussionMakeTaskPlan(room DiscussionRoom, discussion discussionEvent, mem
 		payload["attachments"] = attachments
 	}
 	if inputContext != nil {
-		payload["input_context"] = pyjson.Plain(inputContext)
+		payload["input_context"] = jsonutil.Plain(inputContext)
 	}
 	return DiscussionTaskPlan{identity, payload, discussion.eventID, member, memberIndex, round, seenThrough}, nil
 }
@@ -222,12 +222,12 @@ func discussionPending(validated []discussionEvent) *discussionEvent {
 		case "room.stop_requested":
 			stopped = max(stopped, event.seq)
 		case "room.activity":
-			discussionID := pyrepr.Str(event.payload["discussion_event_id"])
+			discussionID := anyutil.String(event.payload["discussion_event_id"])
 			if status := event.payload["status"]; (status == "settled" || status == "bounded") && event.seq > continuedAt[discussionID] {
 				completed[discussionID] = true
 			}
 		case "message.user":
-			latest[pyrepr.Str(event.payload["thread_id"])] = event
+			latest[anyutil.String(event.payload["thread_id"])] = event
 		}
 	}
 	candidates := make([]discussionEvent, 0, len(latest))
@@ -249,12 +249,12 @@ func discussionThreadMessages(validated []discussionEvent, discussion discussion
 	committed := map[string]bool{}
 	for _, event := range validated {
 		if event.kind == "turn.settled" && event.payload["message_event_id"] != nil {
-			committed[pyrepr.Str(event.payload["message_event_id"])] = true
+			committed[anyutil.String(event.payload["message_event_id"])] = true
 		}
 	}
 	var thread, since, members []discussionEvent
 	for _, event := range validated {
-		if !pyjson.Equal(event.payload["thread_id"], threadID) || !(event.kind == "message.user" || (event.kind == "message.member" && committed[event.eventID])) {
+		if !anyutil.Equal(event.payload["thread_id"], threadID) || !(event.kind == "message.user" || (event.kind == "message.member" && committed[event.eventID])) {
 			continue
 		}
 		thread = append(thread, event)
@@ -305,7 +305,7 @@ func discussionEventAttachments(event discussionEvent, member DiscussionMember) 
 	list, _ := event.payload["attachments"].([]any)
 	out := make([]any, 0, len(list))
 	for _, item := range list {
-		entry := pyjson.Plain(item).(map[string]any)
+		entry := jsonutil.Plain(item).(map[string]any)
 		entry["event_id"] = event.eventID
 		out = append(out, entry)
 	}
@@ -351,7 +351,7 @@ func PlanNextTask(roomValue any, events []any, localProfiles []string, initialWa
 	if discussion == nil {
 		return DiscussionDecision{Status: "idle", Reason: "no_pending_user_event"}, nil
 	}
-	threadID := pyrepr.Str(discussion.payload["thread_id"])
+	threadID := anyutil.String(discussion.payload["thread_id"])
 	continues := discussionContinueCount(validated, discussion.eventID)
 	maxRounds, maxMessages := limits.MaxRounds*(continues+1), limits.MaxMessages*(continues+1)
 	decide := func(status, reason string, task *DiscussionTaskPlan) DiscussionDecision {
@@ -366,7 +366,7 @@ func PlanNextTask(roomValue any, events []any, localProfiles []string, initialWa
 	for _, event := range validated {
 		if discussionTerminalExtras[event.kind] != nil && event.payload["discussion_event_id"] == discussion.eventID {
 			round, _ := hostedStrictInt(event.payload["round_index"])
-			terminals[fmt.Sprint(round)+"\x00"+pyrepr.Str(event.payload["member_id"])] = true
+			terminals[fmt.Sprint(round)+"\x00"+anyutil.String(event.payload["member_id"])] = true
 		}
 	}
 	watermarks, err := discussionEffectiveWatermarks(validated, initialWatermarks)
@@ -377,7 +377,7 @@ func PlanNextTask(roomValue any, events []any, localProfiles []string, initialWa
 	for round := int64(0); round < maxRounds; round++ {
 		responders := discussionUnaddressedMentions(discussionMessages, room)
 		if round == 0 {
-			responders = ResolveMentions([]string{pyrepr.Str(discussion.payload["text"])}, room.Members, true)
+			responders = ResolveMentions([]string{anyutil.String(discussion.payload["text"])}, room.Members, true)
 		}
 		if len(responders) == 0 && resumed && round == resumeRound {
 			responders = room.Members
@@ -440,7 +440,7 @@ func ReconstructTaskPlan(roomValue any, events []any, task map[string]any, local
 	if !identityOK || !payloadOK {
 		return DiscussionTaskPlan{}, discussionUnreconstructable("driver task has no valid identity or payload")
 	}
-	payload = pyjson.Plain(payload).(map[string]any)
+	payload = jsonutil.Plain(payload).(map[string]any)
 	for _, key := range driverPayloadRequired {
 		if _, has := payload[key]; !has {
 			return DiscussionTaskPlan{}, discussionUnreconstructable("driver task payload shape changed")
@@ -534,7 +534,7 @@ func ReconstructTaskPlan(roomValue any, events []any, task map[string]any, local
 	if err != nil {
 		return DiscussionTaskPlan{}, err
 	}
-	if reconstructed.Identity != identity || !pyjson.Equal(reconstructed.Payload, payload) {
+	if reconstructed.Identity != identity || !anyutil.Equal(reconstructed.Payload, payload) {
 		return DiscussionTaskPlan{}, discussionUnreconstructable("driver task failed deterministic reconstruction")
 	}
 	return reconstructed, nil
@@ -646,7 +646,7 @@ func PlanPublication(roomValue any, events []any, task DiscussionTaskPlan, statu
 		supplied := ""
 		if mapping, ok := hostedMapping(result); ok {
 			value := mapping["reason_code"]
-			if !pyrepr.Truthy(value) {
+			if !anyutil.IsTrue(value) {
 				value = mapping["reason"]
 			}
 			supplied = strings.TrimSpace(roomLinkText(value))

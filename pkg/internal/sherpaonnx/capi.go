@@ -5,8 +5,8 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Release of the sherpa_onnx package this binding ports
@@ -102,7 +102,7 @@ type Module struct {
 	GPU bool
 	api *capi
 	env Environment
-	lib *pyctypes.CDLL
+	lib *dlutil.Library
 
 	speechOnce sync.Once
 	speech     *speechAPI
@@ -111,8 +111,8 @@ type Module struct {
 
 // Imports the package installed at dir, an ImportError when its native library cannot be loaded or lacks a function
 func Import(dir string, env Environment) (*Module, error) {
-	path := pypath.Join(dir, "lib", libraryName(runtime.GOOS))
-	cdll, err := pyctypes.LoadLibrary(path, false)
+	path := pathutil.Join(dir, "lib", libraryName(runtime.GOOS))
+	cdll, err := dlutil.Open(path, false)
 	if err != nil {
 		return nil, &PyError{Class: "ImportError", Msg: err.Error()}
 	}
@@ -134,7 +134,7 @@ func Import(dir string, env Environment) (*Module, error) {
 		if err != nil {
 			return nil, &PyError{Class: "ImportError", Msg: err.Error()}
 		}
-		pyctypes.RegisterFunc(entry.fptr, addr)
+		dlutil.RegisterFunc(entry.fptr, addr)
 	}
 	return &Module{Dir: dir, api: api, env: env, lib: cdll}, nil
 }
@@ -142,11 +142,11 @@ func Import(dir string, env Environment) (*Module, error) {
 // Copies of the fields of a keyword result the Python result object exposes
 func readKeywordResult(r uintptr) (keyword string, tokens []string, timestamps []float32) {
 	res := (*cKeywordResult)(*(*unsafe.Pointer)(unsafe.Pointer(&r)))
-	keyword = pyctypes.GoString(res.keyword)
+	keyword = dlutil.GoString(res.keyword)
 	tokens = make([]string, 0, res.count)
 	timestamps = []float32{}
 	for i := 0; i < int(res.count); i++ {
-		tokens = append(tokens, pyctypes.GoString(pyctypes.PointerAt(res.tokensArr, i)))
+		tokens = append(tokens, dlutil.GoString(dlutil.PointerAt(res.tokensArr, i)))
 	}
 	if res.timestamps != 0 {
 		stamps := res.timestamps

@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // An old prefix request header reaches handlers under the icebath name, the icebath value winning a clash
@@ -27,11 +27,11 @@ func TestLegacyRequestHeadersReachIcebathNames(t *testing.T) {
 
 // A replay record an older icebath stored answers under the icebath header names
 func TestStoredReplayHeadersUseIcebathNames(t *testing.T) {
-	old := storedHeaders(pyjson.ObjectOf("X-Hermes-Session-Id", "s", "X-Hermes-Session-Key", "k"))
+	old := storedHeaders(jsonutil.ObjectOf("X-Hermes-Session-Id", "s", "X-Hermes-Session-Key", "k"))
 	if old["X-Icebath-Session-Id"] != "s" || old["X-Icebath-Session-Key"] != "k" || len(old) != 2 {
 		t.Fatalf("%v", old)
 	}
-	current := storedHeaders(pyjson.ObjectOf("X-Icebath-Session-Id", "s"))
+	current := storedHeaders(jsonutil.ObjectOf("X-Icebath-Session-Id", "s"))
 	if current["X-Icebath-Session-Id"] != "s" || len(current) != 1 || len(storedHeaders(nil)) != 0 {
 		t.Fatalf("%v", current)
 	}

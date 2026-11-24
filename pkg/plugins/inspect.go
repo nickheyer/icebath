@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"gopkg.in/yaml.v3"
 )
 
@@ -49,7 +49,7 @@ func readInspectedManifest(path string, loads func(string) (any, error)) map[str
 	if err != nil {
 		return map[string]any{}
 	}
-	text, err := pyjson.DecodeBytes(stripBOM(raw))
+	text, err := jsonutil.Text(stripBOM(raw))
 	if err != nil {
 		return map[string]any{}
 	}
@@ -58,8 +58,8 @@ func readInspectedManifest(path string, loads func(string) (any, error)) map[str
 		return map[string]any{}
 	}
 	switch m := data.(type) {
-	case *pyjson.Object:
-		return m.Vals
+	case *jsonutil.Object:
+		return m.Map()
 	default:
 		if out := asMap(data); out != nil {
 			return out
@@ -116,7 +116,7 @@ func detectComponents(root, fallbackName string) map[string]any {
 	if agent {
 		name := inspectManifestName(yamlManifest)
 		if name == "" {
-			name = inspectManifestName(readInspectedManifest(portable, pyjson.Loads))
+			name = inspectManifestName(readInspectedManifest(portable, jsonutil.Decode))
 		}
 		if name == "" {
 			name = fallbackName

@@ -9,8 +9,8 @@ import (
 	"github.com/go-telegram/bot/models"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Base platform state the auth, pairing, config and topic binding helpers read
@@ -195,19 +195,19 @@ func (g *adapterCore) pruneStaleDMTopicBinding(ctx context.Context, chatID, thre
 	}
 	profileName := "default"
 	if p := metadata["profile"]; pyTruthy(p) {
-		profileName = pyrepr.Str(p)
+		profileName = anyutil.String(p)
 	} else if name := g.base.ProfileName(); name != "" {
 		profileName = name
 	}
-	removed, err := bindings.DeleteTelegramTopicBinding(ctx, pyrepr.Str(chatID), pyrepr.Str(threadID), profileName)
+	removed, err := bindings.DeleteTelegramTopicBinding(ctx, anyutil.String(chatID), anyutil.String(threadID), profileName)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("[%s] delete_telegram_topic_binding failed for chat=%s thread=%s — skipping prune",
-			g.base.Name(), pyrepr.Str(chatID), pyrepr.Str(threadID)), "error", err)
+			g.base.Name(), anyutil.String(chatID), anyutil.String(threadID)), "error", err)
 		return
 	}
 	if removed != 0 {
 		pkgLog().Info(fmt.Sprintf("[%s] Pruned stale Telegram DM topic binding chat=%s thread=%s (Bot API: thread not found)",
-			g.base.Name(), pyrepr.Str(chatID), pyrepr.Str(threadID)))
+			g.base.Name(), anyutil.String(chatID), anyutil.String(threadID)))
 	}
 }
 

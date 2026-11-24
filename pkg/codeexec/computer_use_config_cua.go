@@ -19,13 +19,13 @@ import (
 	"golang.org/x/text/transform"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -43,7 +43,7 @@ var (
 	cuaSchtasksQuery         = schtasksQueryBytes
 	cuaResolvedDriverCmd     = func() (string, error) { return resolveCuaDriverCmd(nil) }
 	cuaValidateAppSignature  = validateCuaDriverAppSignature
-	cuaSetupWhich            = func(cmd string) (string, bool) { return pyshutil.Which(cmd, nil) }
+	cuaSetupWhich            = func(cmd string) (string, bool) { p, err := exec.LookPath(cmd); return p, err == nil }
 	cuaSetupStdoutTTY        = func() bool { return xterm.IsTerminal(os.Stdout.Fd()) }
 	cuaSetupMonotonic        = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 	cuaDriverContractCacheMu sync.Mutex
@@ -104,18 +104,8 @@ func cuaVersionSummary(raw string, limit int) string {
 	return ""
 }
 
-// Shallow dict copy of a contract state
-func copyPyObject(o *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range o.Keys {
-		v, _ := o.Get(k)
-		out.Set(k, v)
-	}
-	return out
-}
-
 // Runtime manifest check cached for thirty seconds by binary path, mtime and size
-var cuaDriverContractStatus = func(ctx context.Context, env *tools.Env, binary string) (*pyjson.Object, error) {
+var cuaDriverContractStatus = func(ctx context.Context, env *tools.Env, binary string) (*jsonutil.Object, error) {
 	resolved := binary
 	if resolved == "" {
 		var err error
@@ -133,10 +123,10 @@ var cuaDriverContractStatus = func(ctx context.Context, env *tools.Env, binary s
 	fingerprint := fmt.Sprintf("%s\x00%d\x00%d", resolved, st.ModTime().UnixNano(), st.Size())
 	now := cuaSetupMonotonic()
 	cuaDriverContractCacheMu.Lock()
-	cached, hit := cuaDriverContractCache["state"].(*pyjson.Object)
+	cached, hit := cuaDriverContractCache["state"].(*jsonutil.Object)
 	checkedAt, _ := cuaDriverContractCache["checked_at"].(float64)
 	if hit && cuaDriverContractCache["fingerprint"] == fingerprint && now-checkedAt < 30.0 {
-		out := copyPyObject(cached)
+		out := cached.Clone()
 		cuaDriverContractCacheMu.Unlock()
 		return out, nil
 	}
@@ -148,7 +138,7 @@ var cuaDriverContractStatus = func(ctx context.Context, env *tools.Env, binary s
 	cuaDriverContractCacheMu.Lock()
 	cuaDriverContractCache["fingerprint"] = fingerprint
 	cuaDriverContractCache["checked_at"] = now
-	cuaDriverContractCache["state"] = copyPyObject(state)
+	cuaDriverContractCache["state"] = state.Clone()
 	cuaDriverContractCacheMu.Unlock()
 	return state, nil
 }
@@ -166,12 +156,12 @@ var cuaDriverInstallReady = func(ctx context.Context, env *tools.Env) (bool, err
 	if err != nil {
 		return false, err
 	}
-	if v, _ := state.Get("ready"); !pyrepr.Truthy(v) {
+	if v, _ := state.Get("ready"); !anyutil.IsTrue(v) {
 		return false, nil
 	}
 	if cuPlatform == "darwin" {
 		b, _ := state.Get("binary")
-		return resolveCuaDriverAppPath(pyrepr.Str(b)) != "", nil
+		return resolveCuaDriverAppPath(anyutil.String(b)) != "", nil
 	}
 	return cuPlatform != "win32" || cuaDriverAutostartRegisteredWindows(env, "") || !cuaAutostartOptIn(env), nil
 }
@@ -208,14 +198,14 @@ var installCuaDriver = func(ctx context.Context, env *tools.Env, con *cliui.Cons
 	if err != nil {
 		return false, err
 	}
-	if v, _ := contract.Get("ready"); !pyrepr.Truthy(v) {
+	if v, _ := contract.Get("ready"); !anyutil.IsTrue(v) {
 		hint := "    Run: icebath computer-use doctor"
 		if override != "" {
 			hint = "    Update the binary selected by ICEBATH_CUA_DRIVER_CMD, or unset the override."
 		}
 		reason := "unknown error"
-		if r, _ := contract.Get("reason"); pyrepr.Truthy(r) {
-			reason = pyrepr.Str(r)
+		if r, _ := contract.Get("reason"); anyutil.IsTrue(r) {
+			reason = anyutil.String(r)
 		}
 		return cuaFail(con, "    cua-driver runtime contract is unusable: "+reason+".", hint), nil
 	}
@@ -242,8 +232,8 @@ var installCuaDriver = func(ctx context.Context, env *tools.Env, con *cliui.Cons
 	}
 	if showInstallerProgress {
 		version := "unknown version"
-		if v, _ := contract.Get("version"); pyrepr.Truthy(v) {
-			version = pyrepr.Str(v)
+		if v, _ := contract.Get("version"); anyutil.IsTrue(v) {
+			version = anyutil.String(v)
 		}
 		con.PrintSuccess("    cua-driver ready: " + version + ".")
 		printCuaPlatformNotes(con, cuPlatform == "win32", cuPlatform == "linux", freshInstall)
@@ -258,7 +248,8 @@ func psSingleQuote(value string) string {
 
 // Runs a schtasks query capturing raw stdout bytes, the task XML carrying its own encoding
 func schtasksQueryBytes(argv []string, timeout float64, hide bool) (int, []byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout*float64(time.Second)))
+	limit := time.Duration(timeout * float64(time.Second))
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.WaitDelay = time.Second
@@ -272,7 +263,7 @@ func schtasksQueryBytes(argv []string, timeout float64, hide bool) (int, []byte,
 	}
 	err := cmd.Wait()
 	if ctx.Err() == context.DeadlineExceeded {
-		return 0, nil, &subprocessTimeout{Cmd: argv, Timeout: timeout}
+		return 0, nil, &executil.TimeoutError{Args: argv, Timeout: limit, Stdout: stdout.Bytes()}
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -373,9 +364,9 @@ var cuaDriverAutostartRegisteredWindows = func(env *tools.Env, binary string) bo
 	if !ok {
 		return false
 	}
-	want := pypath.Normcase(binary)
+	want := pathutil.FoldCase(binary)
 	for _, c := range commands {
-		if pypath.Normcase(strings.Trim(strings.TrimSpace(c), `"`)) == want {
+		if pathutil.FoldCase(strings.Trim(strings.TrimSpace(c), `"`)) == want {
 			return true
 		}
 	}
@@ -421,7 +412,7 @@ var repairCuaDriverAutostartWindows = func(ctx context.Context, env *tools.Env, 
 	result, err := cuaSetupRunText([]string{ps, "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
 		"-Command", cuaAutostartRegistrationPSCommand(binary)}, 300, sanitizedCuaDriverEnv(ctx, env), cuaPostSetupNoWindow(false))
 	if err != nil {
-		var timeout *subprocessTimeout
+		var timeout *executil.TimeoutError
 		if errors.As(err, &timeout) {
 			return cuaFail(con, "    cua-driver autostart registration timed out.")
 		}

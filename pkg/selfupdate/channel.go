@@ -17,12 +17,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -114,7 +113,7 @@ func ChannelRecord(cfg any, projectRoot string) map[string]any {
 	return map[string]any{}
 }
 
-func stampGet(stamp *pyjson.Object, key string) any {
+func stampGet(stamp *jsonutil.Object, key string) any {
 	value, _ := stamp.Get(key)
 	return value
 }
@@ -164,7 +163,7 @@ func checkoutTracksOfficialOrigin(root string) (bool, error) {
 	if err != nil {
 		return false, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(data)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 	if err != nil {
 		return false, err
 	}
@@ -223,13 +222,13 @@ func channelWriteLock(ctx context.Context, configPath string) (context.Context, 
 			return ctx, nil, err
 		}
 	}
-	if err := pyfs.LockFile(file); err != nil {
+	if err := fsutil.LockFile(file); err != nil {
 		file.Close()
 		unlockConfig()
 		return ctx, nil, err
 	}
 	return locked, func() {
-		_ = pyfs.UnlockFile(file)
+		_ = fsutil.UnlockFile(file)
 		file.Close()
 		unlockConfig()
 	}, nil
@@ -324,7 +323,7 @@ func writeChannelRecordLocked(ctx context.Context, sha16, path, channel string, 
 	record, _ := raw.(map[string]any)
 	if compare && expected != nil {
 		current := raw
-		if !pyrepr.Truthy(current) {
+		if !anyutil.IsTrue(current) {
 			current = map[string]any{}
 		}
 		if !reflect.DeepEqual(current, expected) {

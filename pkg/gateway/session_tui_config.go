@@ -9,13 +9,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var sessionControlKeys = map[string]bool{"busy": true, "yolo": true, "show_reasoning": true, "service_tier": true, "model": true}
@@ -52,7 +52,7 @@ func settingWord(value any) string {
 	if value == nil {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 }
 
 // Refusal of a settings write: a bad value invalid_params, a pinned setting permission_denied, else storage_unavailable
@@ -90,7 +90,7 @@ func settingAnswerWord(key string, value any) any {
 	if _, isBool := value.(bool); isBool {
 		return value
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Writes the setting a config.set key or alias names in the owning profile, returning the answer fields
@@ -145,7 +145,7 @@ func setDisplayLanguage(ctx context.Context, c *AuthorityConnection, value any) 
 }
 
 // Profile level settings authorization plus the control capability
-func authorizeSettingsWrite(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (*LocalSessionPolicy, error) {
+func authorizeSettingsWrite(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (*LocalSessionPolicy, error) {
 	policy, err := authorizeSettingsRead(ctx, c, ref, params)
 	if err != nil {
 		return nil, err
@@ -254,11 +254,11 @@ func setFast(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy
 					model = *picked
 				}
 			}
-			if prov == "" && pyrepr.Truthy(policy.Provider()) {
-				prov = pyrepr.Str(policy.Provider())
+			if prov == "" && anyutil.IsTrue(policy.Provider()) {
+				prov = anyutil.String(policy.Provider())
 			}
-			if baseURL == "" && pyrepr.Truthy(policy.BaseURL()) {
-				baseURL = pyrepr.Str(policy.BaseURL())
+			if baseURL == "" && anyutil.IsTrue(policy.BaseURL()) {
+				baseURL = anyutil.String(policy.BaseURL())
 			}
 		}
 		offered, err := forwardOffThread(ctx, func() (bool, error) {
@@ -304,8 +304,8 @@ func setFast(ctx context.Context, c *AuthorityConnection, ref SessionRef, policy
 func setPersonality(ctx context.Context, c *AuthorityConnection, value any) (map[string]any, error) {
 	sctx := profileRuntimeScope(ctx, c.authority.ProfileID, true)
 	text := ""
-	if pyrepr.Truthy(value) {
-		text = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		text = anyutil.String(value)
 	}
 	cfg, err := config.LoadContext(sctx, home.Dir(sctx), nil)
 	if err != nil {
@@ -319,8 +319,8 @@ func setPersonality(ctx context.Context, c *AuthorityConnection, value any) (map
 		return nil, err
 	}
 	reported := "none"
-	if pyrepr.Truthy(value) {
-		reported = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		reported = anyutil.String(value)
 	}
 	return map[string]any{"key": "personality", "value": reported, "history_reset": false}, nil
 }
@@ -338,8 +338,8 @@ func setApprovalMode(ctx context.Context, c *AuthorityConnection, value any) (ma
 }
 
 // Settings a slash command owns, reasoning and the global yolo zap, through that command's own code
-func setCommandSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (map[string]any, error) {
-	scope := params.GetOr("scope", "session")
+func setCommandSetting(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (map[string]any, error) {
+	scope := params.ValueOr("scope", "session")
 	if paramsOutside(params, "session_id", "profile", "key", "value", "scope") || ref.SessionID == "" ||
 		(scope != "session" && scope != "global") {
 		return nil, runtimeRefusal("invalid_params")
@@ -436,22 +436,22 @@ func setCommandSetting(ctx context.Context, c *AuthorityConnection, ref SessionR
 // Profile preference verbs of a connection keyed by method name
 func tuiConfigHandlers(c *AuthorityConnection) map[string]controlHandler {
 	return map[string]controlHandler{
-		"config.set": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"config.set": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return configSet(ctx, c, ref, params)
 		},
-		"settings.groups": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"settings.groups": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			if _, err := authorizeSettingsRead(ctx, c, ref, params); err != nil {
 				return nil, err
 			}
 			return tuigateway.Plain(map[string]any{"groups": settings.Groups()}), nil
 		},
-		"settings.list": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"settings.list": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return settingsList(ctx, c, ref, params)
 		},
-		"settings.set": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"settings.set": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return settingsWrite(ctx, c, ref, params, false)
 		},
-		"settings.reset": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"settings.reset": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return settingsWrite(ctx, c, ref, params, true)
 		},
 	}
@@ -476,7 +476,7 @@ func clearSessionTier(a *SessionAuthority, sessionID string) error {
 }
 
 // Rows of the settings a query selects in the owning profile, session values included when a session is named
-func settingsList(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func settingsList(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if paramsOutside(params, "session_id", "profile", "group", "prefix", "search", "keys", "advanced") {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -487,7 +487,7 @@ func settingsList(ctx context.Context, c *AuthorityConnection, ref SessionRef, p
 	group, _ := params.Get("group")
 	prefix, _ := params.Get("prefix")
 	search, _ := params.Get("search")
-	q.Group, q.Prefix, q.Search = settings.GroupID(pyrepr.Str(pyrepr.Or(group, ""))), pyrepr.Str(pyrepr.Or(prefix, "")), pyrepr.Str(pyrepr.Or(search, ""))
+	q.Group, q.Prefix, q.Search = settings.GroupID(anyutil.String(anyutil.Or(group, ""))), anyutil.String(anyutil.Or(prefix, "")), anyutil.String(anyutil.Or(search, ""))
 	if advanced, _ := params.Get("advanced"); advanced == true {
 		q.Advanced = true
 	}
@@ -505,7 +505,7 @@ func settingsList(ctx context.Context, c *AuthorityConnection, ref SessionRef, p
 }
 
 // Sets or resets one setting of the owning profile or session, session controls going through their own handler
-func settingsWrite(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, reset bool) (any, error) {
+func settingsWrite(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object, reset bool) (any, error) {
 	if paramsOutside(params, "session_id", "profile", "key", "value", "scope") {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -513,7 +513,7 @@ func settingsWrite(ctx context.Context, c *AuthorityConnection, ref SessionRef, 
 		return nil, err
 	}
 	rawKey, _ := params.Get("key")
-	e := settings.Find(pyrepr.Str(pyrepr.Or(rawKey, "")))
+	e := settings.Find(anyutil.String(anyutil.Or(rawKey, "")))
 	if e == nil {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -526,7 +526,7 @@ func settingsWrite(ctx context.Context, c *AuthorityConnection, ref SessionRef, 
 	}
 	raw, _ := params.Get("value")
 	// A list or mapping arrives as wire objects; the registry checks plain values
-	value := pyjson.Plain(raw)
+	value := jsonutil.Plain(raw)
 	if control, ok := sessionControlOf[key]; ok && scope == settings.Session && !reset {
 		if ref.SessionID == "" {
 			return nil, runtimeRefusal("invalid_params")
@@ -535,7 +535,7 @@ func settingsWrite(ctx context.Context, c *AuthorityConnection, ref SessionRef, 
 		if on, isBool := value.(bool); isBool {
 			word = map[bool]string{true: "1", false: "0"}[on]
 		}
-		if _, err := busyConfig(ctx, c.authority, c.actor, ref, pyjson.ObjectOf("session_id", ref.SessionID, "key", control, "value", word), true); err != nil {
+		if _, err := busyConfig(ctx, c.authority, c.actor, ref, jsonutil.ObjectOf("session_id", ref.SessionID, "key", control, "value", word), true); err != nil {
 			return nil, err
 		}
 	} else {
@@ -574,7 +574,7 @@ func settingsWrite(ctx context.Context, c *AuthorityConnection, ref SessionRef, 
 }
 
 // Owner config.set, the session controls for their keys and the owning profile's config.yaml for the rest
-func configSet(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func configSet(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	rawKey, _ := params.Get("key")
 	_, scoped := params.Get("scope")
 	if rawKey == "reasoning" || (rawKey == "yolo" && scoped) {
@@ -608,7 +608,7 @@ func configSet(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	}
 	switch {
 	case key == "fast":
-		return setFast(ctx, c, ref, policy, value, settingWord(params.GetOr("scope", "session")))
+		return setFast(ctx, c, ref, policy, value, settingWord(params.ValueOr("scope", "session")))
 	case key == "personality":
 		return forwardOffThread(ctx, func() (map[string]any, error) { return setPersonality(ctx, c, value) })
 	case key == "approvals.mode":

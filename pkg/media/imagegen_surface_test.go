@@ -18,9 +18,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Captured endpoint and arguments of the patched FAL submit, answering one generated image
@@ -229,7 +229,7 @@ func TestImageGenerateDynamicSchemaWiredIntoRegistry(t *testing.T) {
 		t.Fatal("image_generate registered without dynamic schema overrides")
 	}
 	usePluginProviders(t)
-	if _, ok := def.DynamicSchema(imageEnv(t, config.Tree{})).Vals["description"]; !ok {
+	if _, ok := def.DynamicSchema(imageEnv(t, config.Tree{})).Get("description"); !ok {
 		t.Fatal("dynamic schema without description")
 	}
 }
@@ -264,13 +264,13 @@ func falSchemaModels(t *testing.T) (string, string) {
 }
 
 func schemaProps(schema any) map[string]any {
-	plain, _ := pyjson.Plain(schema).(map[string]any)
+	plain, _ := jsonutil.Plain(schema).(map[string]any)
 	return plain["parameters"].(map[string]any)["properties"].(map[string]any)
 }
 
 func falSchemaFor(t *testing.T, model string) map[string]any {
 	usePluginProviders(t)
-	schema, _ := pyjson.Plain(buildDynamicImageSchema(imageEnv(t, config.Tree{"image_gen": map[string]any{"model": model}}))).(map[string]any)
+	schema, _ := jsonutil.Plain(buildDynamicImageSchema(imageEnv(t, config.Tree{"image_gen": map[string]any{"model": model}}))).(map[string]any)
 	return schema
 }
 
@@ -305,7 +305,7 @@ func TestImageSchemaParamGatingFollowsFalCatalog(t *testing.T) {
 	}
 	fal := falSchemaFor(t, multi)
 	fp := schemaProps(fal)
-	if !jsonEqual(fp["image_url"], pyjson.Plain(imageURLParam())) {
+	if !jsonEqual(fp["image_url"], jsonutil.Plain(imageURLParam())) {
 		t.Fatalf("fal image_url %v", fp["image_url"])
 	}
 	for _, k := range []string{"reference_image_urls", "prompt"} {

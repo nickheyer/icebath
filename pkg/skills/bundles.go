@@ -1,31 +1,41 @@
 package skills
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
-	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
-// Python exception class and message a bundle CRUD call raises
+// Refusal of a bundle CRUD call: Class is ValueError for unusable input, FileExistsError for a bundle file already present and FileNotFoundError for one that is missing
 type BundleError struct{ Class, Msg string }
 
 func (e *BundleError) Error() string { return e.Msg }
+
+// Matches fs.ErrExist for the existing bundle refusal and fs.ErrNotExist for the missing one
+func (e *BundleError) Is(target error) bool {
+	switch e.Class {
+	case "FileExistsError":
+		return target == fs.ErrExist
+	case "FileNotFoundError":
+		return target == fs.ErrNotExist
+	}
+	return false
+}
 
 // One bundle file path and its content digest
 type bundleSigEntry struct{ path, digest string }
@@ -146,15 +156,15 @@ func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 		return skip("is not a mapping")
 	}
 	nameVal := any(pathStem(path))
-	if pyrepr.Truthy(m["name"]) {
+	if anyutil.IsTrue(m["name"]) {
 		nameVal = m["name"]
 	}
-	name := strings.TrimSpace(pyrepr.Str(nameVal))
+	name := strings.TrimSpace(anyutil.String(nameVal))
 	if name == "" {
 		return skip("has no name")
 	}
 	rawSkills, isList := m["skills"].([]any)
-	if pyrepr.Truthy(m["skills"]) && !isList {
+	if anyutil.IsTrue(m["skills"]) && !isList {
 		return skip("has no skills list")
 	}
 	if len(rawSkills) == 0 {
@@ -162,7 +172,7 @@ func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 	}
 	var members []any
 	for _, item := range rawSkills {
-		if v := strings.TrimSpace(pyrepr.Str(item)); v != "" {
+		if v := strings.TrimSpace(anyutil.String(item)); v != "" {
 			members = append(members, v)
 		}
 	}
@@ -173,33 +183,25 @@ func (s *Scope) loadBundleFile(path string) (map[string]any, error) {
 	if slug == "" {
 		return skip("yielded empty slug")
 	}
-	desc := strings.TrimSpace(pyrepr.Str(orEmpty(m["description"])))
+	desc := strings.TrimSpace(anyutil.String(orEmpty(m["description"])))
 	if desc == "" {
 		desc = fmt.Sprintf("Load %d skills as a bundle", len(members))
 	}
 	return map[string]any{"name": name, "slug": slug, "skills": members, "path": path, "description": desc,
-		"instruction": strings.TrimSpace(pyrepr.Str(orEmpty(m["instruction"])))}, nil
+		"instruction": strings.TrimSpace(anyutil.String(orEmpty(m["instruction"])))}, nil
 }
 
 // Value when truthy, the empty string otherwise
 func orEmpty(v any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return ""
 }
 
-// Text of utf-8-sig bytes, a decode failure naming the byte when they are not strict UTF-8
+// Text of UTF-8 bytes with one leading byte order mark dropped, a *textutil.InvalidUTF8Error naming the first bad byte otherwise
 func decodeUTF8Sig(raw []byte) (string, error) {
-	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
-	for i := 0; i < len(raw); {
-		r, n := utf8.DecodeRune(raw[i:])
-		if r == utf8.RuneError && n <= 1 {
-			return "", errchain.Reword(pystr.UTF8DecodeError(raw, i), "not valid UTF-8 at byte %d", i)
-		}
-		i += n
-	}
-	return string(raw), nil
+	return textutil.DecodeUTF8(textutil.TrimBOM(raw))
 }
 
 // Rebuilds the slash key to bundle cache, a duplicate slug keeping the alphabetically first file
@@ -290,7 +292,7 @@ func (s *Scope) BuildBundleInvocationMessage(ctx context.Context, cmdKey, userIn
 	members := info["skills"].([]any)
 	ids := make([]string, len(members))
 	for i, m := range members {
-		ids[i] = strings.TrimSpace(pyrepr.Str(orEmpty(m)))
+		ids[i] = strings.TrimSpace(anyutil.String(orEmpty(m)))
 	}
 	loadedNames, missing, disabled, blocks := s.loadSkillBlocks(ctx, ids,
 		func(id string) (loadedSkill, bool) {
@@ -356,7 +358,7 @@ func (s *Scope) SaveBundle(ctx context.Context, name string, skills []string, de
 	if err != nil {
 		return "", err
 	}
-	err = pyfs.AtomicWriteTextWith(home.WithOverride(ctx, s.Home), path, string(text), pyfs.TextWrite{PreserveMode: true})
+	err = fsutil.WriteFile(home.WithOverride(ctx, s.Home), path, text, fsutil.WriteOptions{KeepOwner: true, NativeLineEnds: true})
 	if err != nil {
 		return "", err
 	}

@@ -3,8 +3,9 @@ package agent
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestWorkerAutomationCodecsRewriteStatusThroughTheRealStateTypes(t *testing.T) {
@@ -22,9 +23,9 @@ func TestWorkerAutomationCodecsRewriteStatusThroughTheRealStateTypes(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		decoded, _ := pyjson.Loads(raw)
-		want, _ := decoded.(*pyjson.Object).Get("status")
-		if !pyjson.Equal(st.Status(), want) {
+		decoded, _ := jsonutil.Decode(raw)
+		want, _ := decoded.(*jsonutil.Object).Get("status")
+		if !anyutil.Equal(st.Status(), want) {
 			t.Fatalf("%s status %v != %v", family, st.Status(), want)
 		}
 		st.SetStatus("cleared")
@@ -32,8 +33,8 @@ func TestWorkerAutomationCodecsRewriteStatusThroughTheRealStateTypes(t *testing.
 		if err != nil {
 			t.Fatal(err)
 		}
-		again, _ := pyjson.Loads(text)
-		if status, _ := again.(*pyjson.Object).Get("status"); status != "cleared" {
+		again, _ := jsonutil.Decode(text)
+		if status, _ := again.(*jsonutil.Object).Get("status"); status != "cleared" {
 			t.Fatalf("%s re encoded status %v", family, status)
 		}
 		if _, err := codec("not json"); err == nil {

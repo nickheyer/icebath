@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Seams over the lock probes and the unscoped runtime fallback that tests patch
@@ -113,12 +114,12 @@ func WritePidFile(ctx context.Context) error {
 }
 
 // Creates path exclusively and dumps record with the json.dump defaults, unlinking on a failed write
-func writeJSONExcl(path string, record *pyjson.Object) error {
+func writeJSONExcl(path string, record *jsonutil.Object) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o777)
 	if err != nil {
 		return err
 	}
-	text, err := pyjson.Dumps(record)
+	text, err := jsonutil.Encode(record)
 	if err == nil {
 		_, err = f.WriteString(text)
 	}
@@ -133,7 +134,7 @@ func writeJSONExcl(path string, record *pyjson.Object) error {
 }
 
 // Live gateway pid of a runtime status record proven against the process and its home, false otherwise
-func GetRuntimeStatusRunningPid(runtime *pyjson.Object, expectedHome string) (int, bool, error) {
+func GetRuntimeStatusRunningPid(runtime *jsonutil.Object, expectedHome string) (int, bool, error) {
 	payload := runtime
 	if payload == nil {
 		payload = ReadRuntimeStatus("")
@@ -169,11 +170,11 @@ func GetRuntimeStatusRunningPid(runtime *pyjson.Object, expectedHome string) (in
 
 // Verified pid of the gateway owning home from its pid file and lock, then its runtime record
 func LiveGatewayPidForHome(h string) (int, bool, error) {
-	pid, ok, err := GetRunningPidCached(pypath.PathJoin(h, "gateway.pid"), false, gatewayRunningPidCacheTTL)
+	pid, ok, err := GetRunningPidCached(pathutil.Join(h, "gateway.pid"), false, gatewayRunningPidCacheTTL)
 	if err != nil || ok {
 		return pid, ok, err
 	}
-	return GetRuntimeStatusRunningPid(ReadRuntimeStatus(pypath.PathJoin(h, runtimeStatusFile)), h)
+	return GetRuntimeStatusRunningPid(ReadRuntimeStatus(pathutil.Join(h, runtimeStatusFile)), h)
 }
 
 // Removes the pid file only when it names this process
@@ -204,7 +205,7 @@ func processIsStopped(pid int) bool {
 }
 
 // Machine local lock keyed by scope and identity, false plus the holder record when another owner has it
-func AcquireScopedLock(ctx context.Context, scope, identity string, metadata *pyjson.Object) (bool, *pyjson.Object, error) {
+func AcquireScopedLock(ctx context.Context, scope, identity string, metadata *jsonutil.Object) (bool, *jsonutil.Object, error) {
 	lockPath := scopeLockPath(scope, identity)
 	acquired, existing, err := acquireScopedLockAt(ctx, lockPath, scope, identity, metadata)
 	if err != nil {
@@ -217,7 +218,7 @@ func AcquireScopedLock(ctx context.Context, scope, identity string, metadata *py
 	return acquired, existing, nil
 }
 
-func acquireScopedLockAt(ctx context.Context, lockPath, scope, identity string, metadata *pyjson.Object) (bool, *pyjson.Object, error) {
+func acquireScopedLockAt(ctx context.Context, lockPath, scope, identity string, metadata *jsonutil.Object) (bool, *jsonutil.Object, error) {
 	if _, err := home.MakeUserDir(ctx, filepath.Dir(lockPath), 0o777, true, true); err != nil {
 		return false, nil, err
 	}
@@ -226,15 +227,15 @@ func acquireScopedLockAt(ctx context.Context, lockPath, scope, identity string, 
 	} else if !errors.Is(err, fs.ErrNotExist) {
 		return false, nil, err
 	}
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	base := statusBuildPidRecord()
-	for _, k := range base.Keys {
+	for _, k := range base.Keys() {
 		record.Set(k, recGet(base, k))
 	}
 	record.Set("scope", scope)
 	record.Set("identity_hash", scopeHash(identity))
 	if metadata == nil || metadata.Len() == 0 {
-		metadata = pyjson.NewObject()
+		metadata = jsonutil.NewObject()
 	}
 	record.Set("metadata", metadata)
 	record.Set("updated_at", utcNowISO())
@@ -273,7 +274,7 @@ func acquireScopedLockAt(ctx context.Context, lockPath, scope, identity string, 
 }
 
 // Whether a scoped lock owner is dead, reused or stopped, gateway owners also proven by their command line
-func scopedLockRecordIsStale(existing *pyjson.Object, existingPid int, hasPid bool) bool {
+func scopedLockRecordIsStale(existing *jsonutil.Object, existingPid int, hasPid bool) bool {
 	if !hasPid || !statusPidExists(existingPid) {
 		return true
 	}
@@ -282,7 +283,7 @@ func scopedLockRecordIsStale(existing *pyjson.Object, existingPid int, hasPid bo
 	if startTimesConflict(recordedStart, currentStart) {
 		return true
 	}
-	meta, _ := recGet(existing, "metadata").(*pyjson.Object)
+	meta, _ := recGet(existing, "metadata").(*jsonutil.Object)
 	processOwner := meta != nil && pyEq(recGet(meta, "owner_kind"), "process")
 	if !processOwner && !statusLooksLikeGatewayProcess(existingPid) {
 		if _, ok := statusReadProcessCmdline(existingPid); ok {
@@ -309,7 +310,7 @@ func ReleaseAllScopedLocks(ownerPid *int, ownerStartTime any) int {
 	if _, err := os.Stat(lockDir); err != nil {
 		return 0
 	}
-	matches, err := pypath.Glob(lockDir, "*.lock")
+	matches, err := pathutil.Glob(lockDir, "*.lock")
 	if err != nil {
 		return 0
 	}
@@ -343,10 +344,10 @@ func GetRunningPid(pidPathArg string, cleanupStale bool) (int, bool, error) {
 	if active {
 		expectedHome := ""
 		if pidPathArg != "" {
-			expectedHome = pypath.PathParent(pidPathArg)
+			expectedHome = filepath.Dir(filepath.Clean(pidPathArg))
 		}
 		sawLive := false
-		for _, record := range []*pyjson.Object{readPidRecord(resolvedPid), readGatewayLockRecord(resolvedLock)} {
+		for _, record := range []*jsonutil.Object{readPidRecord(resolvedPid), readGatewayLockRecord(resolvedLock)} {
 			pid, ok := liveFromRecord(record)
 			if !ok {
 				continue
@@ -440,7 +441,7 @@ func GetRunningPidIdentityStrict(pidPathArg string) (int, float64, bool, error) 
 			return 0, 0, false, errors.New("runtime metadata does not identify a live gateway")
 		}
 	}
-	current, _ := pyFloat(currentStart)
+	current, _ := anyutil.ToFloat(currentStart)
 	if !statusIsWindows {
 		return pid, current, true, nil
 	}
@@ -455,19 +456,19 @@ func GetRunningPidIdentityStrict(pidPathArg string) (int, float64, bool, error) 
 }
 
 // Records the strict identity check must agree on, a previous gateway's pid file dropping out
-func strictIdentityRecords(pidPathArg string, lockRecord *pyjson.Object, pidExists bool) []*pyjson.Object {
+func strictIdentityRecords(pidPathArg string, lockRecord *jsonutil.Object, pidExists bool) []*jsonutil.Object {
 	if !pidExists {
-		return []*pyjson.Object{lockRecord}
+		return []*jsonutil.Object{lockRecord}
 	}
 	pidRecord := readPidRecord(pidPathArg)
 	if pidRecord != nil && pidRecord.Len() > 0 && lockRecord != nil && lockRecord.Len() > 0 && namesAPreviousGateway(pidRecord, lockRecord) {
-		return []*pyjson.Object{lockRecord}
+		return []*jsonutil.Object{lockRecord}
 	}
-	return []*pyjson.Object{pidRecord, lockRecord}
+	return []*jsonutil.Object{pidRecord, lockRecord}
 }
 
 // Whether a pid record is another instance than the lock holder and that instance is gone
-func namesAPreviousGateway(pidRecord, lockRecord *pyjson.Object) bool {
+func namesAPreviousGateway(pidRecord, lockRecord *jsonutil.Object) bool {
 	pid, ok := pidFromRecord(pidRecord, "pid")
 	recorded, held := recGet(pidRecord, "start_time"), recGet(lockRecord, "start_time")
 	if !ok || pid <= 0 || recorded == nil || held == nil {

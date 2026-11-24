@@ -11,9 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Discord's cap on global application commands
@@ -97,7 +97,7 @@ func (a *DiscordAdapter) slashProxy(template string, followup string, strip bool
 	return func(ctx context.Context, i *discordgo.Interaction, opts map[string]any) {
 		text := template
 		for k, v := range opts {
-			text = strings.ReplaceAll(text, "{"+k+"}", pyrepr.Str(v))
+			text = strings.ReplaceAll(text, "{"+k+"}", anyutil.String(v))
 		}
 		if strip {
 			text = strings.TrimSpace(text)
@@ -158,7 +158,7 @@ func (a *DiscordAdapter) registerThreadSlash(ctx context.Context, name, descript
 	a.addCommand(&appCommand{name: name, payload: commandPayload(name, description, options), params: params,
 		callback: func(ctx context.Context, i *discordgo.Interaction, opts map[string]any) {
 			archive, _ := opts["auto_archive_duration"].(int)
-			a.handleThreadCreateSlash(ctx, i, pyrepr.Str(opts["name"]), pyrepr.Str(opts["message"]), archive)
+			a.handleThreadCreateSlash(ctx, i, anyutil.String(opts["name"]), anyutil.String(opts["message"]), archive)
 		}})
 }
 
@@ -330,7 +330,7 @@ func (a *DiscordAdapter) registerSkillGroup(ctx context.Context) {
 			if !a.checkSlashAuthorization(ctx, i, "/skill") {
 				return
 			}
-			name := pyrepr.Str(opts["name"])
+			name := anyutil.String(opts["name"])
 			a.mu.Lock()
 			entry, ok := a.skillLookup[name]
 			a.mu.Unlock()
@@ -338,7 +338,7 @@ func (a *DiscordAdapter) registerSkillGroup(ctx context.Context) {
 				a.respondEphemeral(ctx, i, i18n.T(ctx, "platform.discord.command.skill.unknown", "", map[string]any{"name": name}))
 				return
 			}
-			a.runSimpleSlash(ctx, i, strings.TrimSpace(entry[1]+" "+pyrepr.Str(opts["args"])), "")
+			a.runSimpleSlash(ctx, i, strings.TrimSpace(entry[1]+" "+anyutil.String(opts["args"])), "")
 		}})
 	pkgLog().Info(fmt.Sprintf("[%s] Registered /skill command with %d skill(s) via autocomplete", a.Name(), count))
 	if hidden > 0 {
@@ -614,7 +614,7 @@ func (a *DiscordAdapter) rejectSlash(ctx context.Context, i *discordgo.Interacti
 	chanID := i.ChannelID
 	guildID := i.GuildID
 	pkgLog().Warn(fmt.Sprintf("[Discord] Unauthorized slash attempt: user=%s id=%s channel=%s guild=%s cmd=%s reason=%s",
-		userName, userID, pyNone(chanID), pyNone(guildID), pyrepr.Repr(commandText), pyrepr.Repr(reason)))
+		userName, userID, pyNone(chanID), pyNone(guildID), anyutil.Quote(commandText), anyutil.Quote(reason)))
 	if err := a.respondEphemeral(ctx, i, unauthorized(ctx)); err != nil {
 		pkgLog().Debug(fmt.Sprintf("[Discord] Could not send unauthorized ephemeral: %s", err))
 	}
@@ -648,7 +648,7 @@ func (a *DiscordAdapter) notifyUnauthorizedSlash(ctx context.Context, userName, 
 	if profile != "" {
 		dir, err := profiles.GetProfileDir(profile)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify: profile %s scope failed: %s", pyrepr.Repr(profile), err))
+			pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify: profile %s scope failed: %s", anyutil.Quote(profile), err))
 			return
 		}
 		ctx = gateway.ProfileRuntimeScope(ctx, dir, true)
@@ -660,7 +660,7 @@ func (a *DiscordAdapter) notifyUnauthorizedSlash(ctx context.Context, userName, 
 func (a *DiscordAdapter) deliverUnauthorizedSlashAlert(ctx context.Context, runner any, profile, userName, userID, chanID, guildID, commandText, reason string) {
 	adapters, cfg, err := alertAdaptersAndConfig(ctx, runner, profile)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify: profile %s resolution failed: %s", pyrepr.Repr(profile), err))
+		pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify: profile %s resolution failed: %s", anyutil.Quote(profile), err))
 		return
 	}
 	for _, target := range []gateway.Platform{gateway.PlatformTelegram, gateway.PlatformSlack} {
@@ -688,7 +688,7 @@ func (a *DiscordAdapter) deliverUnauthorizedSlashAlert(ctx context.Context, runn
 			return
 		}
 		if !result.Success {
-			pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify via %s returned success=False (error=%s); falling through", target, pyrepr.Repr(result.Error)))
+			pkgLog().Debug(fmt.Sprintf("[Discord] Admin notify via %s returned success=False (error=%s); falling through", target, anyutil.Quote(result.Error)))
 			continue
 		}
 		return
@@ -709,7 +709,7 @@ func (a *DiscordAdapter) onInteraction(ctx context.Context, i *discordgo.Interac
 		}
 		a.mu.Unlock()
 		if cmd == nil {
-			pkgLog().Error(fmt.Sprintf("Ignoring exception in command tree: CommandNotFound: Application command %s not found", pyrepr.Repr(data.Name)))
+			pkgLog().Error(fmt.Sprintf("Ignoring exception in command tree: CommandNotFound: Application command %s not found", anyutil.Quote(data.Name)))
 			return
 		}
 		if i.Type == discordgo.InteractionApplicationCommandAutocomplete {
@@ -753,7 +753,7 @@ func (a *DiscordAdapter) runAutocomplete(ctx context.Context, i *discordgo.Inter
 		}
 		if err := client.InteractionRespond(i, &discordgo.InteractionResponse{Type: discordgo.InteractionApplicationCommandAutocompleteResult,
 			Data: &discordgo.InteractionResponseData{Choices: choices}}, discordgo.WithContext(ctx)); err != nil {
-			pkgLog().Error(fmt.Sprintf("Ignoring exception in autocomplete for %s: %s", pyrepr.Repr(cmd.name), dpyError(err)))
+			pkgLog().Error(fmt.Sprintf("Ignoring exception in autocomplete for %s: %s", anyutil.Quote(cmd.name), dpyError(err)))
 		}
 		return
 	}

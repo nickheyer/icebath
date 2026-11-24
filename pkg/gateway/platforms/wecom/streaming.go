@@ -11,9 +11,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -43,14 +42,14 @@ func (e *WeComStreamExpiredError) Error() string {
 	if msg == "" {
 		msg = "no detail"
 	}
-	return fmt.Sprintf("WeCom stream expired (errcode=%s): %s", pyrepr.Str(e.Errcode), msg)
+	return fmt.Sprintf("WeCom stream expired (errcode=%s): %s", anyutil.String(e.Errcode), msg)
 }
 
 // Asyncio future of one reply frame ack
 type replyFuture struct {
 	done      chan struct{}
 	once      sync.Once
-	payload   *pyjson.Object
+	payload   *jsonutil.Object
 	err       error
 	cancelled bool
 }
@@ -66,7 +65,7 @@ func (f *replyFuture) isDone() bool {
 	}
 }
 
-func (f *replyFuture) finish(payload *pyjson.Object, err error, cancelled bool) {
+func (f *replyFuture) finish(payload *jsonutil.Object, err error, cancelled bool) {
 	f.once.Do(func() {
 		f.payload, f.err, f.cancelled = payload, err, cancelled
 		close(f.done)
@@ -75,7 +74,7 @@ func (f *replyFuture) finish(payload *pyjson.Object, err error, cancelled bool) 
 
 // ReplyFrame is a frame awaiting its aibot_respond_msg ack
 type ReplyFrame struct {
-	Body    *pyjson.Object
+	Body    *jsonutil.Object
 	future  *replyFuture
 	IsFinal bool
 	SentAt  time.Time
@@ -109,10 +108,10 @@ type StreamHost interface {
 	Name() string
 	RequireWS() error
 	RequireReplyReqID(reqID string) (string, error)
-	SendJSON(ctx context.Context, payload *pyjson.Object) error
+	SendJSON(ctx context.Context, payload *jsonutil.Object) error
 	ReplyReqIDForMessage(messageID string) string
 	LastChatReqID(chatID string) string
-	RaiseForWeComError(response *pyjson.Object, action string) error
+	RaiseForWeComError(response *jsonutil.Object, action string) error
 	EnqueueChatSend(ctx context.Context, chatID string, send func(ctx context.Context) (any, error), isControl bool) (any, error)
 }
 
@@ -136,33 +135,33 @@ func (s *Streamer) init() {
 	}
 }
 
-func obj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func obj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
 	return o
 }
 
-func streamOf(body *pyjson.Object) *pyjson.Object {
+func streamOf(body *jsonutil.Object) *jsonutil.Object {
 	if v, _ := body.Get("stream"); v != nil {
-		if o, ok := v.(*pyjson.Object); ok {
+		if o, ok := v.(*jsonutil.Object); ok {
 			return o
 		}
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
-func getOr(o *pyjson.Object, key string, def any) any {
+func getOr(o *jsonutil.Object, key string, def any) any {
 	if v, ok := o.Get(key); ok {
 		return v
 	}
 	return def
 }
 
-func streamDesc(body *pyjson.Object) (string, string) {
+func streamDesc(body *jsonutil.Object) (string, string) {
 	st := streamOf(body)
-	return pyrepr.Str(getOr(st, "id", "N/A")), pyrepr.Str(getOr(st, "finish", "N/A"))
+	return anyutil.String(getOr(st, "id", "N/A")), anyutil.String(getOr(st, "finish", "N/A"))
 }
 
 func elapsed(since time.Time) float64 {
@@ -183,7 +182,7 @@ func (s *Streamer) releasePending(queue *ReplyQueue, reqID string, frame *ReplyF
 }
 
 // Sends aibot_respond_msg with per req_id ack tracking, finals drain the pending ack then await their own
-func (s *Streamer) sendReplyQueued(ctx context.Context, reqID string, body *pyjson.Object, isFinal, skipIfPending bool) (*pyjson.Object, error) {
+func (s *Streamer) sendReplyQueued(ctx context.Context, reqID string, body *jsonutil.Object, isFinal, skipIfPending bool) (*jsonutil.Object, error) {
 	if err := s.Host.RequireWS(); err != nil {
 		return nil, err
 	}
@@ -212,8 +211,8 @@ func (s *Streamer) sendReplyQueued(ctx context.Context, reqID string, body *pyjs
 	queue.PendingAck = frame
 	s.mu.Unlock()
 	id, finish := streamDesc(body)
-	pkgLog().Debug(fmt.Sprintf("[%s] _send_reply_queued: req_id=%s is_final=%s skip_if_pending=%s stream_id=%s finish=%s content_len=%d",
-		s.Host.Name(), normalized, pyrepr.Str(isFinal), pyrepr.Str(skipIfPending), id, finish, utf8.RuneCountInString(pyrepr.Str(getOr(streamOf(body), "content", "")))))
+	pkgLog().Debug(fmt.Sprintf("[%s] _send_reply_queued: req_id=%s is_final=%t skip_if_pending=%t stream_id=%s finish=%s content_len=%d",
+		s.Host.Name(), normalized, isFinal, skipIfPending, id, finish, utf8.RuneCountInString(anyutil.String(getOr(streamOf(body), "content", "")))))
 	if err := s.Host.SendJSON(ctx, obj("cmd", AppCmdResponse, "headers", obj("req_id", normalized), "body", body)); err != nil {
 		s.mu.Lock()
 		s.releasePending(queue, normalized, frame)
@@ -273,7 +272,7 @@ func (s *Streamer) drainPendingAck(ctx context.Context, queue *ReplyQueue, reqID
 }
 
 // ResolveReplyAck completes the pending ack of a req_id and reports whether one was pending
-func (s *Streamer) ResolveReplyAck(reqID string, payload *pyjson.Object) bool {
+func (s *Streamer) ResolveReplyAck(reqID string, payload *jsonutil.Object) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.init()
@@ -283,12 +282,12 @@ func (s *Streamer) ResolveReplyAck(reqID string, payload *pyjson.Object) bool {
 	}
 	frame := queue.PendingAck
 	if !frame.future.isDone() {
-		body, _ := getOr(payload, "body", nil).(*pyjson.Object)
+		body, _ := getOr(payload, "body", nil).(*jsonutil.Object)
 		if body == nil {
-			body = pyjson.NewObject()
+			body = jsonutil.NewObject()
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] _resolve_reply_ack: resolved req_id=%s is_final=%s elapsed=%.2fs errcode=%s",
-			s.Host.Name(), reqID, pyrepr.Str(frame.IsFinal), elapsed(frame.SentAt), pyrepr.Str(getOr(body, "errcode", "N/A"))))
+		pkgLog().Debug(fmt.Sprintf("[%s] _resolve_reply_ack: resolved req_id=%s is_final=%t elapsed=%.2fs errcode=%s",
+			s.Host.Name(), reqID, frame.IsFinal, elapsed(frame.SentAt), anyutil.String(getOr(body, "errcode", "N/A"))))
 		frame.future.finish(payload, nil, false)
 	}
 	s.releasePending(queue, reqID, frame)
@@ -419,22 +418,16 @@ func (s *Streamer) keepaliveSend(ctx context.Context, turn *StreamTurn, turnID s
 }
 
 // Truncates to the UTF-8 byte limit dropping a split trailing character
-func truncateStreamContent(content string, limit int) (string, error) {
-	if err := pystr.StrictUTF8EncodeError(content); err != nil {
-		return "", err
-	}
+func truncateStreamContent(content string, limit int) string {
 	if len(content) <= limit {
-		return content, nil
+		return content
 	}
-	return strings.ToValidUTF8(content[:limit], ""), nil
+	return strings.ToValidUTF8(content[:limit], "")
 }
 
 // Sends one stream frame, intermediates non blocking and the final awaiting its ack to detect expiry
-func (s *Streamer) sendStreamReply(ctx context.Context, reqID, streamID, content string, finish bool) (*pyjson.Object, error) {
-	truncated, err := truncateStreamContent(content, MaxStreamContentLength)
-	if err != nil {
-		return nil, err
-	}
+func (s *Streamer) sendStreamReply(ctx context.Context, reqID, streamID, content string, finish bool) (*jsonutil.Object, error) {
+	truncated := truncateStreamContent(content, MaxStreamContentLength)
 	if utf8.RuneCountInString(content) != utf8.RuneCountInString(truncated) {
 		pkgLog().Warn(fmt.Sprintf("[%s] Stream content truncated for stream_id=%s", s.Host.Name(), streamID))
 	}
@@ -447,15 +440,15 @@ func (s *Streamer) sendStreamReply(ctx context.Context, reqID, streamID, content
 		return nil, err
 	}
 	errcode := getOr(response, "errcode", int64(0))
-	if pyjson.Equal(errcode, int64(StreamExpiredErrcode)) || pyjson.Equal(errcode, int64(StreamRequestExpiredErrcode)) {
+	if anyutil.Equal(errcode, int64(StreamExpiredErrcode)) || anyutil.Equal(errcode, int64(StreamRequestExpiredErrcode)) {
 		errmsg := getOr(response, "errmsg", nil)
 		msg := ""
-		if pyrepr.Truthy(errmsg) {
-			msg = pyrepr.Str(errmsg)
+		if anyutil.IsTrue(errmsg) {
+			msg = anyutil.String(errmsg)
 		}
 		return nil, &WeComStreamExpiredError{Errcode: errcode, Errmsg: msg}
 	}
-	if pyjson.Equal(errcode, int64(StreamVersionConflictErrcode)) {
+	if anyutil.Equal(errcode, int64(StreamVersionConflictErrcode)) {
 		pkgLog().Info(fmt.Sprintf("[%s] finalize hit errcode 6000 (version conflict) — bubble already replaced by a newer frame; treating as delivered.", s.Host.Name()))
 		return response, nil
 	}
@@ -488,7 +481,7 @@ func (s *Streamer) SendStreamFrame(ctx context.Context, text string, finalize bo
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(result), nil
+	return anyutil.IsTrue(result), nil
 }
 
 // Finds or creates the turn, nil when unavailable, caller holds the lock

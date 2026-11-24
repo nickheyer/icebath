@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Mutable state of one due scan, the raw store records plus what to persist
@@ -223,7 +223,7 @@ func (d *dueJob) reanchorStaleCron() (bool, error) {
 	case StaleCronExprEdit:
 		if quotaHoldIsRecoveryFire(s, d.job, d.nextRun) || unreachableRetryIsRetryFire(s, d.job, d.nextRun) {
 			s.log.Info(fmt.Sprintf("cron.off_lattice_fire job='%s' id=%s expr=%s at=%s",
-				d.label(), d.job.ID, pyrepr.Repr(d.schedule().Expr), d.nextRun))
+				d.label(), d.job.ID, anyutil.Quote(d.schedule().Expr), d.nextRun))
 			return false, nil
 		}
 		next, err := d.recomputeNext()
@@ -232,7 +232,7 @@ func (d *dueJob) reanchorStaleCron() (bool, error) {
 		}
 		s.log.Info(fmt.Sprintf("Job '%s' next_run_at %s does not match its current cron expression %s (direct "+
 			"jobs.json edit?); re-anchoring to %s without firing.", d.label(), d.nextRun,
-			pyrepr.Repr(d.schedule().Expr), pyrepr.Str(skillAny(next))))
+			anyutil.Quote(d.schedule().Expr), anyutil.String(skillAny(next))))
 		if deref(next) != "" {
 			d.scan.persist(d.job.ID, func(rj *Job) { rj.NextRunAt = strPtr(*next) })
 		}
@@ -243,7 +243,7 @@ func (d *dueJob) reanchorStaleCron() (bool, error) {
 		s.log.Warn(fmt.Sprintf("cron.timezone_migration.catch_up job='%s' id=%s expr=%s stored=%s normalized=%s — "+
 			"stored next_run_at carries a pre-migration UTC offset (%s, now %s) and is a legal occurrence at its "+
 			"own wall clock; firing the due run instead of re-anchoring past it.", d.label(), d.job.ID,
-			pyrepr.Repr(d.schedule().Expr), d.nextRun, FormatISO(d.nextDT), offsetRepr(rawOff), offsetRepr(nowOff)))
+			anyutil.Quote(d.schedule().Expr), d.nextRun, FormatISO(d.nextDT), offsetRepr(rawOff), offsetRepr(nowOff)))
 		s.recordTimezoneMigrationCatchup(d.job, d.rawNext.Time, d.nextDT)
 	}
 	return false, nil
@@ -283,7 +283,7 @@ func (sc *dueScan) restoreUnclaimedSlot(job *Job) string {
 	}
 	sc.s.log.Warn(fmt.Sprintf("Job '%s' (%s): occurrence %s was taken off the schedule but never claimed "+
 		"(scheduler stopped before dispatch); restoring it as the due instant (was %s).",
-		nameOrID(job), job.ID, *slot, pyrepr.Str(skillAny(job.NextRunAt))))
+		nameOrID(job), job.ID, *slot, anyutil.String(skillAny(job.NextRunAt))))
 	job.NextRunAt = strPtr(*slot)
 	job.PendingSlot = nil
 	if rj := sc.find(job.ID); rj != nil {
@@ -493,7 +493,7 @@ func (s *Store) getDueJobsLocked(ctx context.Context, tx *jobsTx) ([]*Job, error
 			if label == "" {
 				label = "?"
 			}
-			s.log.Error(fmt.Sprintf("Skipping malformed cron job %s during due scan", pyrepr.Repr(label)), "error", err)
+			s.log.Error(fmt.Sprintf("Skipping malformed cron job %s during due scan", anyutil.Quote(label)), "error", err)
 			continue
 		}
 		if fires {

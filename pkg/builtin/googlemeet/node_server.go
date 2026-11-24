@@ -11,7 +11,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -23,9 +22,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var startBotKeys = []string{"url", "guest_name", "duration", "headed", "auth_state", "session_id", "out_dir"}
@@ -61,8 +59,8 @@ func (s *nodeServer) ensureToken(ctx context.Context) (string, error) {
 		return s.token, nil
 	}
 	tok := ""
-	if data, ok := readJSON(s.tokenPath).(*pyjson.Object); ok {
-		tok, _ = data.Vals["token"].(string)
+	if data, ok := readJSON(s.tokenPath).(*jsonutil.Object); ok {
+		tok, _ = data.Value("token").(string)
 	}
 	if tok == "" {
 		b := make([]byte, 16)
@@ -70,7 +68,7 @@ func (s *nodeServer) ensureToken(ctx context.Context) (string, error) {
 			return "", err
 		}
 		tok = hex.EncodeToString(b)
-		if err := config.AtomicJSONWriteMode(ctx, s.tokenPath, pyjson.ObjectOf("token", tok, "generated_at", nowSeconds()), 0o600, pyjson.Indent(2), pyjson.EnsureASCII(false)); err != nil {
+		if err := config.AtomicJSONWriteMode(ctx, s.tokenPath, jsonutil.ObjectOf("token", tok, "generated_at", nowSeconds()), 0o600, jsonutil.Indent(2)); err != nil {
 			return "", err
 		}
 	}
@@ -90,7 +88,7 @@ func payloadStr(v any) (string, error) {
 }
 
 // Starts the bot from the whitelisted payload keys
-func rpcStartBot(ctx context.Context, payload *pyjson.Object) (*pyjson.Object, error) {
+func rpcStartBot(ctx context.Context, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	kw := map[string]any{}
 	for _, k := range startBotKeys {
 		if v, ok := payload.Get(k); ok {
@@ -103,7 +101,7 @@ func rpcStartBot(ctx context.Context, payload *pyjson.Object) (*pyjson.Object, e
 	}
 	url, isStr := rawURL.(string)
 	if !isStr {
-		return pyjson.ObjectOf("ok", false, "error", "refusing: only https://meet.google.com/ URLs are allowed. got: "+pyrepr.Repr(rawURL)), nil
+		return jsonutil.ObjectOf("ok", false, "error", "refusing: only https://meet.google.com/ URLs are allowed. got: "+anyutil.Quote(rawURL)), nil
 	}
 	o := newStartOptions()
 	var err error
@@ -121,13 +119,13 @@ func rpcStartBot(ctx context.Context, payload *pyjson.Object) (*pyjson.Object, e
 	if o.OutDir, err = payloadStr(kw["out_dir"]); err != nil {
 		return nil, err
 	}
-	o.Headed = truthyJSON(kw["headed"])
+	o.Headed = anyutil.IsTrue(kw["headed"])
 	o.SessionID = kw["session_id"]
 	return pmStart(ctx, url, o)
 }
 
 // Appends text to the active meeting's say queue, ok meaning enqueued rather than spoken
-func rpcSay(ctx context.Context, payload *pyjson.Object) (*pyjson.Object, error) {
+func rpcSay(ctx context.Context, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	text, ok := payload.Get("text")
 	if !ok {
 		text = ""
@@ -137,10 +135,10 @@ func rpcSay(ctx context.Context, payload *pyjson.Object) (*pyjson.Object, error)
 		return nil, err
 	}
 	enqueued := false
-	if outDir := getOr(active, "out_dir", nil); active != nil && truthyJSON(outDir) {
-		enqueued = appendSay(filepath.Join(pyrepr.Str(outDir), "say_queue.jsonl"), text) == nil
+	if outDir := getOr(active, "out_dir", nil); active != nil && anyutil.IsTrue(outDir) {
+		enqueued = appendSay(filepath.Join(anyutil.String(outDir), "say_queue.jsonl"), text) == nil
 	}
-	return pyjson.ObjectOf("ok", true, "enqueued", enqueued, "text", text), nil
+	return jsonutil.ObjectOf("ok", true, "enqueued", enqueued, "text", text), nil
 }
 
 // Writes one say entry under the queue lock
@@ -148,7 +146,7 @@ func appendSay(queue string, text any) error {
 	if err := os.MkdirAll(filepath.Dir(queue), 0o777); err != nil {
 		return err
 	}
-	line, err := pyjson.Dumps(pyjson.ObjectOf("text", text, "ts", nowSeconds()))
+	line, err := jsonutil.Encode(jsonutil.ObjectOf("text", text, "ts", nowSeconds()))
 	if err != nil {
 		return err
 	}
@@ -184,70 +182,53 @@ func lastArg(v any) (int, error) {
 		}
 		return 0, &rpcError{"the transcript last argument must be a whole number"}
 	}
-	n, err := pyIntOf(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return 0, &rpcError{"the transcript last argument must be a whole number"}
 	}
-	return n, nil
-}
-
-// Python exception class name of an error crossing the RPC boundary
-func pyExcName(err error) string {
-	var pathErr *fs.PathError
-	var lockErr *provider.LockTimeoutError
-	switch {
-	case errors.As(err, &lockErr):
-		return "TimeoutError"
-	case errors.Is(err, fs.ErrNotExist):
-		return "FileNotFoundError"
-	case errors.Is(err, fs.ErrPermission):
-		return "PermissionError"
-	case errors.As(err, &pathErr):
-		return "OSError"
-	}
-	return "RuntimeError"
+	return int(n), nil
 }
 
 // Validates and dispatches one decoded request, always answering with an envelope
-func (s *nodeServer) handleRequest(ctx context.Context, msg *pyjson.Object) *pyjson.Object {
+func (s *nodeServer) handleRequest(ctx context.Context, msg *jsonutil.Object) *jsonutil.Object {
 	tok, err := s.ensureToken(ctx)
 	if err != nil {
-		return makeError("", fmt.Sprintf("%s: %v", pyExcName(err), err))
+		return makeError("", err.Error())
 	}
 	if ok, reason := validateRequest(msg, tok); !ok {
 		id, _ := msg.Get("id")
-		if !truthyJSON(id) {
+		if !anyutil.IsTrue(id) {
 			id = ""
 		}
-		return makeError(pyrepr.Str(id), reason)
+		return makeError(anyutil.String(id), reason)
 	}
 	reqID, _ := msg.Get("id")
 	t, _ := msg.Get("type")
-	payload := msg.Vals["payload"].(*pyjson.Object)
+	payload := msg.Value("payload").(*jsonutil.Object)
 	if t == "ping" {
-		return pyjson.ObjectOf("type", "pong", "id", reqID, "payload", pyjson.ObjectOf("display_name", s.displayName, "ts", nowSeconds()))
+		return jsonutil.ObjectOf("type", "pong", "id", reqID, "payload", jsonutil.ObjectOf("display_name", s.displayName, "ts", nowSeconds()))
 	}
-	var res *pyjson.Object
+	var res *jsonutil.Object
 	switch t {
 	case "start_bot":
 		res, err = rpcStartBot(ctx, payload)
 	case "stop":
 		reason := "requested"
 		if v, ok := payload.Get("reason"); ok {
-			reason = pyrepr.Str(v)
+			reason = anyutil.String(v)
 		}
 		res, err = pmStop(ctx, reason)
 	case "status":
 		res, err = pmStatus(ctx)
 	case "transcript":
 		var last int
-		if last, err = lastArg(payload.Vals["last"]); err == nil {
+		if last, err = lastArg(payload.Value("last")); err == nil {
 			res, err = pmTranscript(ctx, last)
 		}
 	case "say":
 		res, err = rpcSay(ctx, payload)
 	default:
-		return makeError(reqID, "unhandled type: "+pyrepr.Repr(t))
+		return makeError(reqID, "unhandled type: "+anyutil.Quote(t))
 	}
 	var rpcErr *rpcError
 	switch {
@@ -255,7 +236,7 @@ func (s *nodeServer) handleRequest(ctx context.Context, msg *pyjson.Object) *pyj
 		return makeError(reqID, rpcErr.msg)
 
 	case err != nil:
-		return makeError(reqID, fmt.Sprintf("%s: %v", pyExcName(err), err))
+		return makeError(reqID, err.Error())
 	}
 	resp, _ := makeResponse(reqID, res)
 	return resp
@@ -269,7 +250,7 @@ func (s *nodeServer) handleConn(ctx context.Context, ws *serverWS) {
 		if err != nil {
 			return
 		}
-		var reply *pyjson.Object
+		var reply *jsonutil.Object
 		if msg, err := decodeEnvelope(raw); err != nil {
 			reply = makeError("", "decode: "+err.Error())
 		} else {

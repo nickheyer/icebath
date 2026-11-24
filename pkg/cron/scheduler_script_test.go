@@ -13,9 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 type alwaysCancelled struct{}
@@ -120,7 +119,7 @@ func TestRunJobScriptScriptSubprocessEnvSanitized(t *testing.T) {
 	}
 	blocked := slices.Min(names)
 	t.Setenv(blocked, "must_not_leak")
-	writeScript(t, s, "env_probe.py", "import os\nkey = "+pyrepr.StrRepr(blocked)+"\nprint(\"PRESENT\" if os.environ.get(key) else \"ABSENT\")\n")
+	writeScript(t, s, "env_probe.py", "import os\nkey = "+strconv.Quote(blocked)+"\nprint(\"PRESENT\" if os.environ.get(key) else \"ABSENT\")\n")
 	ok, out := runScript(t, s, "env_probe.py", nil)
 	if !ok || out != "ABSENT" {
 		t.Fatalf("got %v %q", ok, out)
@@ -146,7 +145,7 @@ func TestScriptPathContainmentAbsolutePathOutsideScriptsDirBlocked(t *testing.T)
 	if ok || !blockedOrOutside(out) {
 		t.Fatalf("got %v %q", ok, out)
 	}
-	want := "Blocked: script path resolves outside the scripts directory (" + filepath.Join(s.Home(), "scripts") + "): " + pyrepr.StrRepr(outside)
+	want := "Blocked: script path resolves outside the scripts directory (" + filepath.Join(s.Home(), "scripts") + "): " + strconv.Quote(outside)
 	if out != want {
 		t.Fatalf("got %q want %q", out, want)
 	}
@@ -321,7 +320,7 @@ func TestScriptTimeoutTreeKillTimeoutLeavesNoSetsidGrandchild(t *testing.T) {
 		"    stdout=subprocess.DEVNULL,\n"+
 		"    stderr=subprocess.DEVNULL,\n"+
 		")\n"+
-		"open("+pyrepr.StrRepr(pidFile)+", 'w').write(str(p.pid))\n"+
+		"open("+strconv.Quote(pidFile)+", 'w').write(str(p.pid))\n"+
 		"time.sleep(30)\n")
 	t.Setenv("ICEBATH_CRON_SCRIPT_TIMEOUT", "2")
 	prev := scriptTimeoutOverride
@@ -439,7 +438,7 @@ func TestScriptRunReportsAKilledScriptThatIsNeverReaped(t *testing.T) {
 	cronTerminateScriptProcess = func(_ *Store, p *cronScriptProcess) error {
 		started = p
 		seconds := 1.0
-		return &pysubprocess.TimeoutExpired{Cmd: p.cmd.Args, TimeoutFloat: &seconds}
+		return &executil.TimeoutError{Args: p.cmd.Args, Timeout: time.Duration(*&seconds * float64(time.Second))}
 	}
 	script := writeScript(t, s, "long.py", "import time; time.sleep(30)\n")
 	python := hostPython(t)
@@ -448,7 +447,7 @@ func TestScriptRunReportsAKilledScriptThatIsNeverReaped(t *testing.T) {
 		started.cmd.Process.Kill()
 		started.wait(5 * time.Second)
 	}
-	want := "Script execution failed: Command '[" + pyrepr.StrRepr(python) + ", " + pyrepr.StrRepr(script) + "]' timed out after 1.0 seconds"
+	want := "Script execution failed: Command '[" + strconv.Quote(python) + ", " + strconv.Quote(script) + "]' timed out after 1.0 seconds"
 	if err != nil || ok || out != want {
 		t.Fatalf("got %v %q %v want %q", ok, out, err, want)
 	}

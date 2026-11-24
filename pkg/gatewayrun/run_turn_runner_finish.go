@@ -7,8 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Consumes a one shot per session note into the next user message, prepended to the turn message
@@ -85,7 +85,7 @@ func (t *TurnRunner) finishStreamConsumer(ctx context.Context, result map[string
 		return
 	}
 	var finalForStream *string
-	if result != nil && !pyrepr.Truthy(result["failed"]) && !pyrepr.Truthy(result["interrupted"]) && result["completed"] != false {
+	if result != nil && !anyutil.IsTrue(result["failed"]) && !anyutil.IsTrue(result["interrupted"]) && result["completed"] != false {
 		if final, ok := result["final_response"].(string); ok && strings.TrimSpace(final) != "" && final != "(empty)" {
 			finalForStream = &final
 		}
@@ -114,10 +114,10 @@ func (t *TurnRunner) restoreTelegramThreadIDAfterSplit(ctx context.Context, agen
 		return
 	}
 	threadID, _ := binding.Get("thread_id")
-	if !pyrepr.Truthy(threadID) {
+	if !anyutil.IsTrue(threadID) {
 		return
 	}
-	restored := pyrepr.Str(threadID)
+	restored := anyutil.String(threadID)
 	tc.source.ThreadID = &restored
 	pkgLog().Debug(fmt.Sprintf("Restored source.thread_id=%s from binding after session split %s → %s", restored, tc.sessionID, agentSessionID))
 }
@@ -134,8 +134,8 @@ func (t *TurnRunner) combinedEphemeralPrompt(ctx context.Context) string {
 		case interface{ Get(string) (any, bool) }:
 			prompt, _ = s.Get("ephemeral_system_prompt")
 		}
-		if pyrepr.Truthy(prompt) {
-			return pyrepr.Str(prompt)
+		if anyutil.IsTrue(prompt) {
+			return anyutil.String(prompt)
 		}
 		return ""
 	}

@@ -7,8 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestOrderedArgsObjectKeepsTheModelIntsAndFloats(t *testing.T) {
@@ -32,7 +30,7 @@ func TestGuardrailCanonicalArgsAndResultHashKeepIntsAndFloats(t *testing.T) {
 	if parseErr != "" {
 		t.Fatal(parseErr)
 	}
-	if got := CanonicalToolArgs(orderedArgsObject(raw, args).Vals); got != `{"limit":20,"nested":{"a":2.0,"b":2},"ratio":1.0}` {
+	if got := CanonicalToolArgs(orderedArgsObject(raw, args).Map()); got != `{"limit":20,"nested":{"a":2.0,"b":2},"ratio":1.0}` {
 		t.Fatalf("canonical args %s", got)
 	}
 	result := `{"duration_seconds": 1.5, "kernel": {"execution_count": 3, "x": 1}, "out": 1.0}`
@@ -48,7 +46,7 @@ func TestGuardrailCanonicalArgsAndResultHashKeepIntsAndFloats(t *testing.T) {
 func TestPromotedNoteKeepsTheSpawnResultNumbers(t *testing.T) {
 	spawn := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false}`
 	note := strings.ReplaceAll(strings.ReplaceAll(promotedNotePollOnly, "{requested}", "900"), "{cap}", strconv.Itoa(foregroundMaxTimeout()))
-	want := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false, "promoted_from_foreground": ` + pyDumps(note, pyjson.EnsureASCII(false)) + `}`
+	want := `{"output": "", "session_id": "proc_1", "pid": 1234, "ratio": 1.0, "notify_on_complete": false, "promoted_from_foreground": ` + pyDumps(note) + `}`
 	if got := withPromotedNote(spawn, 900); got != want {
 		t.Fatalf("promoted %s", got)
 	}

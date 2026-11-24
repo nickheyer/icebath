@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Argv starting this binary's isolated PM worker, swapped by tests for a re-executed test binary
@@ -65,7 +65,7 @@ func callbackHandlers(hooks workerHooks) (map[string]func(args []any) error, []a
 			}
 			done, _ := jsonNumber(args[1])
 			total, _ := jsonNumber(args[2])
-			return hooks.progress(pyrepr.Str(args[0]), int64(done), int64(total), pyrepr.Str(args[3]))
+			return hooks.progress(anyutil.String(args[0]), int64(done), int64(total), anyutil.String(args[3]))
 		}
 	}
 	if hooks.downloadProgress != nil {
@@ -84,8 +84,8 @@ func callbackHandlers(hooks workerHooks) (map[string]func(args []any) error, []a
 
 // Policy fields of a wire request's arguments
 func policyFromArguments(arguments map[string]any) (policyArgs, error) {
-	args := policyArgs{Name: pyrepr.Str(arguments["name"]), Explicit: pyrepr.Truthy(arguments["explicit"]), Repair: pyrepr.Truthy(arguments["repair"])}
-	if raw, ok := arguments["extras"]; ok && pyrepr.Truthy(raw) {
+	args := policyArgs{Name: anyutil.String(arguments["name"]), Explicit: anyutil.IsTrue(arguments["explicit"]), Repair: anyutil.IsTrue(arguments["repair"])}
+	if raw, ok := arguments["extras"]; ok && anyutil.IsTrue(raw) {
 		extras, err := pyIterStrings(raw)
 		if err != nil {
 			return policyArgs{}, err
@@ -110,7 +110,7 @@ func request(ctx context.Context, operation string, arguments map[string]any, ho
 				return nil, err
 			}
 		} else {
-			names = []string{pyrepr.Str(arguments["name"])}
+			names = []string{anyutil.String(arguments["name"])}
 		}
 	}
 	definitions, err := PackageDefinitions(names)
@@ -305,14 +305,14 @@ func (s *workerSession) exchange(ctx context.Context, message map[string]any, ca
 		if !ok {
 			return nil, wireKeyError("callback")
 		}
-		handler, known := callbacks[pyrepr.Str(name)]
+		handler, known := callbacks[anyutil.String(name)]
 		if _, isText := name.(string); !isText {
 			known = false
 		}
 		var runErr error
 		if !known {
 			runErr = &PyError{Class: "KeyError", Message: "unknown callback " + errchain.Show(name)}
-		} else if args, err := wireCallbackArgs(pyrepr.Str(name), parsed, line); err != nil {
+		} else if args, err := wireCallbackArgs(anyutil.String(name), parsed, line); err != nil {
 			runErr = err
 		} else {
 			if jsonEquals(name, "download_progress") {
@@ -643,7 +643,7 @@ func managedVenvIsCurrent(ctx context.Context, opts VenvIsCurrentOptions) (bool,
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(result), nil
+	return anyutil.IsTrue(result), nil
 }
 
 // Checks a project lock is current

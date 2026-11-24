@@ -4,17 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
-	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Options of one hub install, the zero value matching the Python defaults except DeferCache
@@ -26,7 +25,7 @@ type HubInstallOptions struct {
 	NameOverride string
 	// Adapter the identifier is pinned to, empty for none
 	SourceID string
-	Console  *pyrich.Console
+	Console  *consoleutil.Console
 }
 
 type rateLimitReporter interface{ IsRateLimited() bool }
@@ -38,17 +37,8 @@ func (s *SkillsShSource) githubAuth() *GitHubAuth     { return s.Auth }
 func (g *GitHubSource) githubAuth() *GitHubAuth       { return g.Auth }
 func (x *IndexSource) githubAuth() *GitHubAuth        { return x.Auth }
 
-// Errors Python raises as OSError rather than ValueError
-func isOSError(err error) bool {
-	var pe *fs.PathError
-	var le *os.LinkError
-	var se *os.SyscallError
-	var errno syscall.Errno
-	return errors.As(err, &pe) || errors.As(err, &le) || errors.As(err, &se) || errors.As(err, &errno)
-}
-
 // Prints the blocked line, drops the quarantine copy and appends the audit row
-func (x *HubCLI) installBlocked(c *pyrich.Console, b *SkillBundle, message, verdict, detail, qPath, lead, label string) error {
+func (x *HubCLI) installBlocked(c *consoleutil.Console, b *SkillBundle, message, verdict, detail, qPath, lead, label string) error {
 	c.Print(fmt.Sprintf("%s[bold red]%s[/] %s", lead, label, message))
 	if qPath != "" {
 		os.RemoveAll(qPath)
@@ -72,25 +62,25 @@ func scanBlockMessage(result ScanResult, identifier string) string {
 		"to read the skill without installing, run `icebath skills inspect %s`.", findings, identifier, policy, identifier)
 }
 
-func (x *HubCLI) invalidPath(c *pyrich.Console, b *SkillBundle, err error, qPath string) error {
+func (x *HubCLI) invalidPath(c *consoleutil.Console, b *SkillBundle, err error, qPath string) error {
 	return x.installBlocked(c, b, err.Error()+"\n", "invalid_path", err.Error(), qPath, "", "Installation blocked:")
 }
 
 // Names a URL bundle whose SKILL.md has none from the override, a prompt or a refusal, false aborting
-func (x *HubCLI) resolveURLBundleName(c *pyrich.Console, b *SkillBundle, meta *SkillMeta, identifier, nameOverride string, skipConfirm bool) bool {
+func (x *HubCLI) resolveURLBundleName(c *consoleutil.Console, b *SkillBundle, meta *SkillMeta, identifier, nameOverride string, skipConfirm bool) bool {
 	if x.seams.resolveURLBundleName != nil {
 		return x.seams.resolveURLBundleName(c, b, meta, identifier, nameOverride, skipConfirm)
 	}
 	if b.Metadata == nil {
-		b.Metadata = pyjson.NewObject()
+		b.Metadata = jsonutil.NewObject()
 	}
 	awaiting, _ := b.Metadata.Get("awaiting_name")
-	if b.Source != "url" || (b.Name != "" && !pyrepr.Truthy(awaiting)) {
+	if b.Source != "url" || (b.Name != "" && !anyutil.IsTrue(awaiting)) {
 		return true
 	}
 	url := identifier
-	if v, ok := b.Metadata.Get("url"); ok && pyrepr.Truthy(v) {
-		url = pyrepr.Str(v)
+	if v, ok := b.Metadata.Get("url"); ok && anyutil.IsTrue(v) {
+		url = anyutil.String(v)
 	}
 	switch {
 	case nameOverride != "" && isValidInstalledSkillName(nameOverride):
@@ -123,7 +113,7 @@ func (x *HubCLI) resolveURLBundleName(c *pyrich.Console, b *SkillBundle, meta *S
 }
 
 // Offers an installed skill blueprint through the suggestions list, never scheduling it
-func (x *HubCLI) announceBlueprint(ctx context.Context, c *pyrich.Console, skillName string) {
+func (x *HubCLI) announceBlueprint(ctx context.Context, c *consoleutil.Console, skillName string) {
 	spec, err := x.S.BlueprintSpecForInstalled(skillName)
 	var be *BlueprintError
 	if errors.As(err, &be) {
@@ -148,7 +138,7 @@ func (x *HubCLI) announceBlueprint(ctx context.Context, c *pyrich.Console, skill
 }
 
 // Sources restricted to the pinned adapter, nil with an error line when none matches
-func pinnedSources(c *pyrich.Console, sources []SkillSource, sourceID, identifier string) []SkillSource {
+func pinnedSources(c *consoleutil.Console, sources []SkillSource, sourceID, identifier string) []SkillSource {
 	if sourceID == "" {
 		if len(sources) > 0 {
 			return sources
@@ -164,7 +154,7 @@ func pinnedSources(c *pyrich.Console, sources []SkillSource, sourceID, identifie
 			return pinned
 		}
 	}
-	printHubError(c, fmt.Sprintf("no source adapter for '%s'. Refusing to resolve '%s' against other registries (that would change the skill's provenance).", pyrepr.Str(sourceIDOrNone(sourceID)), identifier))
+	printHubError(c, fmt.Sprintf("no source adapter for '%s'. Refusing to resolve '%s' against other registries (that would change the skill's provenance).", anyutil.String(sourceIDOrNone(sourceID)), identifier))
 	return nil
 }
 
@@ -201,7 +191,7 @@ func hubRejectedCredentials(sources []SkillSource) []string {
 }
 
 // Explains a resolved identifier no adapter served
-func (x *HubCLI) printFetchFailure(c *pyrich.Console, sources []SkillSource, identifier string, metaHit bool, source SkillSource) {
+func (x *HubCLI) printFetchFailure(c *consoleutil.Console, sources []SkillSource, identifier string, metaHit bool, source SkillSource) {
 	rateLimited := hubRateLimited(sources)
 	rejected := hubRejectedCredentials(sources)
 	if metaHit && !rateLimited && len(rejected) == 0 {
@@ -228,7 +218,7 @@ func (x *HubCLI) printFetchFailure(c *pyrich.Console, sources []SkillSource, ide
 }
 
 // Runs the cached security scan of the quarantined bundle and prints its report and provenance
-func (x *HubCLI) scanQuarantined(c *pyrich.Console, qPath string, b *SkillBundle, meta *SkillMeta, identifier string) (ScanResult, error) {
+func (x *HubCLI) scanQuarantined(c *consoleutil.Console, qPath string, b *SkillBundle, meta *SkillMeta, identifier string) (ScanResult, error) {
 	c.Print("[bold]Running security scan...[/]")
 	scanSource := b.Identifier
 	if b.Source == "official" {
@@ -245,24 +235,24 @@ func (x *HubCLI) scanQuarantined(c *pyrich.Console, qPath string, b *SkillBundle
 	}
 	c.Print(FormatScanReport(result))
 	fresh := "cached"
-	if pyrepr.Truthy(prov["fresh"]) {
+	if anyutil.IsTrue(prov["fresh"]) {
 		fresh = "fresh"
 	}
-	c.Print(fmt.Sprintf("[dim]Scan provenance: %s; scanner %s; hash %s[/]", fresh, pyrepr.Str(prov["scanner_version"]), pyrepr.Str(prov["bundle_hash"])))
+	c.Print(fmt.Sprintf("[dim]Scan provenance: %s; scanner %s; hash %s[/]", fresh, anyutil.String(prov["scanner_version"]), anyutil.String(prov["bundle_hash"])))
 	var rules []string
 	switch r := prov["rules"].(type) {
 	case []string:
 		rules = r
 	case []any:
 		for _, v := range r {
-			rules = append(rules, pyrepr.Str(v))
+			rules = append(rules, anyutil.String(v))
 		}
 	}
 	joined := strings.Join(rules, ", ")
 	if joined == "" {
 		joined = "none"
 	}
-	c.Print(fmt.Sprintf("[dim]Source: %s; scanned %s; rules: %s[/]", pyrepr.Str(prov["source_url"]), pyrepr.Str(prov["scanned_at"]), joined))
+	c.Print(fmt.Sprintf("[dim]Source: %s; scanned %s; rules: %s[/]", anyutil.String(prov["source_url"]), anyutil.String(prov["scanned_at"]), joined))
 	return result, nil
 }
 
@@ -277,7 +267,7 @@ var installPanels = map[string][3]string{
 }
 
 // Source appropriate disclaimer panel and the install prompt
-func (x *HubCLI) confirmInstall(c *pyrich.Console, b *SkillBundle, category string) bool {
+func (x *HubCLI) confirmInstall(c *consoleutil.Console, b *SkillBundle, category string) bool {
 	cat := ""
 	if category != "" {
 		cat = category + "/"
@@ -289,43 +279,43 @@ func (x *HubCLI) confirmInstall(c *pyrich.Console, b *SkillBundle, category stri
 	}
 	p := installPanels[kind]
 	c.Print()
-	c.PrintPanel(pyrich.Panel{Body: p[0] + filesAt, Title: p[1], BorderStyle: p[2]})
+	c.PrintPanel(consoleutil.Panel{Body: p[0] + filesAt, Title: p[1], BorderStyle: p[2]})
 	return x.confirmOrCancel(c, "[dim]Installation cancelled.[/]\n", fmt.Sprintf("[bold]Install '%s'?[/]", b.Name))
 }
 
 // Install of a name icebath ships, pointing at the active copy or restoring it from the bundled source
-func (x *HubCLI) installBundled(ctx context.Context, c *pyrich.Console, name string, invalidate bool) (HubOutcome, error) {
+func (x *HubCLI) installBundled(ctx context.Context, c *consoleutil.Console, name string, invalidate bool) (HubOutcome, error) {
 	result, err := x.S.EnsureBundledSkill(ctx, name)
 	if err != nil {
 		return HubNoop, err
 	}
-	if !pyrepr.Truthy(result["ok"]) {
-		printHubError(c, pyrepr.Str(result["message"]))
+	if !anyutil.IsTrue(result["ok"]) {
+		printHubError(c, anyutil.String(result["message"]))
 		return HubFailed, nil
 	}
 	switch result["action"] {
 	case "hub_shadowed":
-		printHubError(c, pyrepr.Str(result["message"]))
+		printHubError(c, anyutil.String(result["message"]))
 		return HubFailed, nil
 	case "present":
 		where := ""
-		if pyrepr.Truthy(result["path"]) {
-			where = " at " + pyrepr.Str(result["path"])
+		if anyutil.IsTrue(result["path"]) {
+			where = " at " + anyutil.String(result["path"])
 		}
 		c.Print(fmt.Sprintf("[green]'%s' is a built-in skill and is already available%s.[/]\n", name, where))
 		return HubNoop, nil
 	}
-	c.Print(fmt.Sprintf("[bold green]Restored built-in skill:[/] %s [dim](%s)[/]\n", name, pyrepr.Str(result["path"])))
+	c.Print(fmt.Sprintf("[bold green]Restored built-in skill:[/] %s [dim](%s)[/]\n", name, anyutil.String(result["path"])))
 	x.finishChange(c, invalidate, "Skill will be available", "activate", true)
 	return HubOK, nil
 }
 
-func (x *HubCLI) lockInstalled(name string) (*pyjson.Object, error) {
+func (x *HubCLI) lockInstalled(name string) (*jsonutil.Object, error) {
 	raw, err := x.Hub.LockFile("").GetInstalled(name)
 	if err != nil {
 		return nil, err
 	}
-	obj, _ := raw.(*pyjson.Object)
+	obj, _ := raw.(*jsonutil.Object)
 	return obj, nil
 }
 
@@ -342,7 +332,7 @@ func (x *HubCLI) DoInstall(ctx context.Context, identifier string, o HubInstallO
 }
 
 // Body of an install returning the command outcome
-func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInstallOptions, c *pyrich.Console) (HubOutcome, error) {
+func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInstallOptions, c *consoleutil.Console) (HubOutcome, error) {
 	invalidate := !o.DeferCache
 	category := o.Category
 	if err := x.Hub.EnsureHubDirs(); err != nil {
@@ -392,25 +382,25 @@ func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInsta
 	}
 	if existing != nil {
 		path, _ := existing.Get("install_path")
-		c.Print(fmt.Sprintf("[yellow]Warning:[/] '%s' is already installed at %s", b.Name, pyrepr.Str(path)))
+		c.Print(fmt.Sprintf("[yellow]Warning:[/] '%s' is already installed at %s", b.Name, anyutil.String(path)))
 		if !o.Force {
 			c.Print("Use --force to reinstall.\n")
 			return HubNoop, nil
 		}
 	}
-	extra := pyjson.NewObject()
-	for _, src := range []*pyjson.Object{metaExtra(meta), b.Metadata} {
+	extra := jsonutil.NewObject()
+	for _, src := range []*jsonutil.Object{metaExtra(meta), b.Metadata} {
 		if src == nil {
 			continue
 		}
-		for _, k := range src.Keys {
+		for _, k := range src.Keys() {
 			v, _ := src.Get(k)
 			extra.Set(k, v)
 		}
 	}
 	qPath, err := x.Hub.QuarantineBundle(b)
 	if err != nil {
-		if isOSError(err) {
+		if errorutil.IsSystem(err) {
 			return HubNoop, err
 		}
 		if aerr := x.invalidPath(c, b, err, ""); aerr != nil {
@@ -434,7 +424,7 @@ func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInsta
 	}
 	x.printTier1Advisory(ctx, qPath, c)
 	if lines := formatExtraMetadataLines(extra); len(lines) > 0 {
-		c.PrintPanel(pyrich.Panel{Body: strings.Join(lines, "\n"), Title: "Upstream Metadata", BorderStyle: "blue"})
+		c.PrintPanel(consoleutil.Panel{Body: strings.Join(lines, "\n"), Title: "Upstream Metadata", BorderStyle: "blue"})
 	}
 	if !o.Force && !o.SkipConfirm && !x.confirmInstall(c, b, category) {
 		os.RemoveAll(qPath)
@@ -442,7 +432,7 @@ func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInsta
 	}
 	installDir, err := x.Hub.InstallFromQuarantine(ctx, qPath, b.Name, category, b, result, nil)
 	if err != nil {
-		if isOSError(err) {
+		if errorutil.IsSystem(err) {
 			return HubNoop, err
 		}
 		if aerr := x.invalidPath(c, b, err, qPath); aerr != nil {
@@ -465,7 +455,7 @@ func (x *HubCLI) installSkill(ctx context.Context, identifier string, o HubInsta
 	return HubOK, nil
 }
 
-func metaExtra(m *SkillMeta) *pyjson.Object {
+func metaExtra(m *SkillMeta) *jsonutil.Object {
 	if m == nil {
 		return nil
 	}
@@ -473,7 +463,7 @@ func metaExtra(m *SkillMeta) *pyjson.Object {
 }
 
 // Advisory SkillEvaluator Tier 1 report that never blocks, secrets rendered red
-func (x *HubCLI) printTier1Advisory(ctx context.Context, skillDir string, c *pyrich.Console) {
+func (x *HubCLI) printTier1Advisory(ctx context.Context, skillDir string, c *consoleutil.Console) {
 	enabled, scan := x.S.Tier1AdvisoryEnabled, RunTier1Scan
 	if x.seams.tier1Enabled != nil {
 		enabled = x.seams.tier1Enabled
@@ -501,7 +491,7 @@ func (x *HubCLI) printTier1Advisory(ctx context.Context, skillDir string, c *pyr
 	if len(report.SecretsFindings()) > 0 {
 		border = "red"
 	}
-	c.PrintPanel(pyrich.Panel{Body: text, Title: "SkillEvaluator Tier 1 (advisory)", BorderStyle: border})
+	c.PrintPanel(consoleutil.Panel{Body: text, Title: "SkillEvaluator Tier 1 (advisory)", BorderStyle: border})
 	if len(report.SecretsFindings()) > 0 {
 		c.Print("[bold red]Possible credentials detected above.[/] Review the flagged lines before using this skill.\n")
 	}

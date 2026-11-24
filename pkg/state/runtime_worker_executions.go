@@ -5,7 +5,8 @@ import (
 	"crypto/subtle"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keyword arguments of register_worker_execution
@@ -20,9 +21,9 @@ type WorkerRegistration struct {
 }
 
 // Worker row without its adoption digest
-func workerPublic(row *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range row.Keys {
+func workerPublic(row *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, k := range row.Keys() {
 		if k == "adoption_digest" {
 			continue
 		}
@@ -33,7 +34,7 @@ func workerPublic(row *pyjson.Object) *pyjson.Object {
 }
 
 // Worker row assigned to the session at its current generation, refusing a missing, foreign or stale one
-func workerAssignment(ctx context.Context, conn SQLiteConn, executionID, sessionID string, generation int64) (*pyjson.Object, error) {
+func workerAssignment(ctx context.Context, conn SQLiteConn, executionID, sessionID string, generation int64) (*jsonutil.Object, error) {
 	rows, err := queryObjects(ctx, conn, "SELECT * FROM worker_executions WHERE execution_id=?", executionID)
 	if err != nil {
 		return nil, err
@@ -42,24 +43,24 @@ func workerAssignment(ctx context.Context, conn SQLiteConn, executionID, session
 		return nil, runtimeRefusal("not_found")
 	}
 	row := rows[0]
-	if !pyjson.Equal(rowValue(row, "session_id"), sessionID) {
+	if !anyutil.Equal(rowValue(row, "session_id"), sessionID) {
 		return nil, runtimeRefusal("permission_denied")
 	}
-	if !pyjson.Equal(rowValue(row, "generation"), generation) {
+	if !anyutil.Equal(rowValue(row, "generation"), generation) {
 		return nil, runtimeRefusal("stale_generation")
 	}
 	session, err := runtimeSession(ctx, conn, sessionID)
 	if err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(session["runtime_generation"], generation) {
+	if !anyutil.Equal(session["runtime_generation"], generation) {
 		return nil, runtimeRefusal("stale_generation")
 	}
 	return row, nil
 }
 
 // The single admission of this generation and owner epoch targeting or descending through the session, nil when none
-func linkedWorkerAdmission(ctx context.Context, conn SQLiteConn, sessionID string, generation int64, ownerEpoch any, statuses []string) (*pyjson.Object, error) {
+func linkedWorkerAdmission(ctx context.Context, conn SQLiteConn, sessionID string, generation int64, ownerEpoch any, statuses []string) (*jsonutil.Object, error) {
 	args := []any{generation, ownerEpoch}
 	for _, s := range statuses {
 		args = append(args, s)
@@ -97,7 +98,7 @@ func anyAdmissionIn(ctx context.Context, conn SQLiteConn, sessionIDs map[string]
 }
 
 // Registers a worker for the session generation once, replaying an identical registration and refusing a busy lineage
-func (d *SessionDB) RegisterWorkerExecution(ctx context.Context, in WorkerRegistration) (*pyjson.Object, error) {
+func (d *SessionDB) RegisterWorkerExecution(ctx context.Context, in WorkerRegistration) (*jsonutil.Object, error) {
 	for _, v := range []string{in.ExecutionID, in.SessionID} {
 		if err := runtimeText(v); err != nil {
 			return nil, err
@@ -112,7 +113,7 @@ func (d *SessionDB) RegisterWorkerExecution(ctx context.Context, in WorkerRegist
 	if err != nil {
 		return nil, err
 	}
-	var out *pyjson.Object
+	var out *jsonutil.Object
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, in.Epoch); err != nil {
 			return err
@@ -121,7 +122,7 @@ func (d *SessionDB) RegisterWorkerExecution(ctx context.Context, in WorkerRegist
 		if err != nil {
 			return err
 		}
-		if !pyjson.Equal(session["runtime_generation"], in.Generation) {
+		if !anyutil.Equal(session["runtime_generation"], in.Generation) {
 			return runtimeRefusal("stale_generation")
 		}
 		olds, err := queryObjects(ctx, conn, "SELECT * FROM worker_executions WHERE execution_id=?", in.ExecutionID)
@@ -130,9 +131,9 @@ func (d *SessionDB) RegisterWorkerExecution(ctx context.Context, in WorkerRegist
 		}
 		if len(olds) > 0 {
 			old := olds[0]
-			if !pyjson.Equal(rowValue(old, "session_id"), in.SessionID) || !pyjson.Equal(rowValue(old, "generation"), in.Generation) ||
-				!pyjson.Equal(rowValue(old, "kind"), in.Kind) || !pyjson.Equal(rowValue(old, "owner_epoch"), in.Epoch) ||
-				!pyjson.Equal(rowValue(old, "adoption_digest"), digest) {
+			if !anyutil.Equal(rowValue(old, "session_id"), in.SessionID) || !anyutil.Equal(rowValue(old, "generation"), in.Generation) ||
+				!anyutil.Equal(rowValue(old, "kind"), in.Kind) || !anyutil.Equal(rowValue(old, "owner_epoch"), in.Epoch) ||
+				!anyutil.Equal(rowValue(old, "adoption_digest"), digest) {
 				return runtimeRefusal("admission_conflict")
 			}
 			out = workerPublic(old)
@@ -183,12 +184,12 @@ func (d *SessionDB) RegisterWorkerExecution(ctx context.Context, in WorkerRegist
 }
 
 // Moves a proven worker and its linked admission under this epoch, refusing a terminal, foreign secret or late handshake
-func (d *SessionDB) AdoptWorkerExecution(ctx context.Context, epoch int64, executionID, sessionID string, generation int64, adoptionSecret string) (*pyjson.Object, error) {
+func (d *SessionDB) AdoptWorkerExecution(ctx context.Context, epoch int64, executionID, sessionID string, generation int64, adoptionSecret string) (*jsonutil.Object, error) {
 	digest, err := secretDigest(adoptionSecret)
 	if err != nil {
 		return nil, err
 	}
-	var out *pyjson.Object
+	var out *jsonutil.Object
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
 			return err
@@ -197,7 +198,7 @@ func (d *SessionDB) AdoptWorkerExecution(ctx context.Context, epoch int64, execu
 		if err != nil {
 			return err
 		}
-		if pyjson.Equal(rowValue(row, "status"), "terminal") {
+		if anyutil.Equal(rowValue(row, "status"), "terminal") {
 			return runtimeRefusal("stale_generation")
 		}
 		stored, ok := rowValue(row, "adoption_digest").(string)
@@ -208,7 +209,7 @@ func (d *SessionDB) AdoptWorkerExecution(ctx context.Context, epoch int64, execu
 			return runtimeRefusal("permission_denied")
 		}
 		ownerEpoch := rowValue(row, "owner_epoch")
-		if strings.HasPrefix(executionID, "admission-worker:") && !pyjson.Equal(ownerEpoch, epoch) {
+		if strings.HasPrefix(executionID, "admission-worker:") && !anyutil.Equal(ownerEpoch, epoch) {
 			return runtimeRefusal("stale_epoch")
 		}
 		linked, err := linkedWorkerAdmission(ctx, conn, sessionID, generation, ownerEpoch, []string{"started", "unknown"})

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var contentNonTextPartTypes = map[string]bool{"image": true, "image_url": true, "input_image": true, "audio": true, "input_audio": true}
@@ -122,7 +123,7 @@ func textFromPart(part any) string {
 	}
 	typ := ""
 	if t := partField(part, "type"); pyTruthy(t) {
-		typ = pyrepr.Str(t)
+		typ = anyutil.String(t)
 	}
 	if contentNonTextPartTypes[strings.ToLower(strings.TrimSpace(typ))] {
 		return ""
@@ -155,5 +156,5 @@ func FlattenMessageText(content any, sep string) string {
 	if text := textFromPart(content); text != "" {
 		return text
 	}
-	return pyrepr.Str(content)
+	return anyutil.String(content)
 }

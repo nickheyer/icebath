@@ -10,10 +10,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -69,7 +70,7 @@ func sqliteBind(value any, position int) (*string, error) {
 // Whether a Python value can be a set element, false for the list and dict shapes JSON decodes to
 func pyHashable(value any) bool {
 	switch value.(type) {
-	case []any, []string, *pyjson.Object, map[string]any:
+	case []any, []string, *jsonutil.Object, map[string]any:
 		return false
 	}
 	return true
@@ -84,7 +85,7 @@ func unhashableSetError(value any) error {
 func handleShow(k *kanbanCall) (string, error) {
 	tid, ok := defaultTaskID(k, k.get("task_id"))
 	if !ok {
-		return pyjson.Dumps(pyjson.ObjectOf("current_task", nil,
+		return jsonutil.Encode(jsonutil.ObjectOf("current_task", nil,
 			"hint", "No dispatcher-assigned task in this session, so there is no "+
 				"task to show by default. Call kanban_list to see task ids on "+
 				"the board, then kanban_show(task_id=<id>) for full state."))
@@ -104,7 +105,7 @@ func handleShow(k *kanbanCall) (string, error) {
 		}
 		unsatisfied := make([]any, 0, len(open))
 		for _, p := range open {
-			unsatisfied = append(unsatisfied, pyjson.ObjectOf("id", p.ID, "status", p.Status))
+			unsatisfied = append(unsatisfied, jsonutil.ObjectOf("id", p.ID, "status", p.Status))
 		}
 		children, err := ChildIDs(k.ctx, conn, tid)
 		if err != nil {
@@ -141,7 +142,7 @@ func handleShow(k *kanbanCall) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return pyjson.Dumps(pyjson.ObjectOf("task", fieldsOf(task, taskFields), "parents", idList(parents),
+		return jsonutil.Encode(jsonutil.ObjectOf("task", fieldsOf(task, taskFields), "parents", idList(parents),
 			"unsatisfied_parents", unsatisfied, "children", idList(children), "comments", comments,
 			"events", events, "runs", runs, "worker_context", workerContext))
 	})
@@ -226,7 +227,7 @@ func handleList(k *kanbanCall) (string, error) {
 		if truncated && limit < KanbanListMaxLimit {
 			nextLimit = min(limit*2, int64(KanbanListMaxLimit))
 		}
-		return pyjson.Dumps(pyjson.ObjectOf("tasks", tasks, "count", int64(len(tasks)), "limit", limit,
+		return jsonutil.Encode(jsonutil.ObjectOf("tasks", tasks, "count", int64(len(tasks)), "limit", limit,
 			"truncated", truncated, "next_limit", nextLimit, "promoted", int64(promoted)))
 	})
 }
@@ -264,13 +265,13 @@ func handleComplete(k *kanbanCall) (string, error) {
 		}
 		metadata = merged
 	}
-	if !pyrepr.Truthy(summary) && !pyrepr.Truthy(result) {
+	if !anyutil.IsTrue(summary) && !anyutil.IsTrue(result) {
 		return "", reject("provide at least one of: summary (preferred), result")
 	}
 	if err := requireDictMetadata(metadata); err != nil {
 		return "", err
 	}
-	meta, _ := metadata.(*pyjson.Object)
+	meta, _ := metadata.(*jsonutil.Object)
 	meta = stampWorkerSessionMetadata(tid, meta)
 	return withBoard(k.ctx, k.get("board"), false, func(conn state.SQLiteConn) (string, error) {
 		task, err := GetTask(k.ctx, conn, tid)
@@ -278,10 +279,10 @@ func handleComplete(k *kanbanCall) (string, error) {
 			return "", err
 		}
 		evidence := summary
-		if !pyrepr.Truthy(evidence) {
+		if !anyutil.IsTrue(evidence) {
 			evidence = result
 		}
-		if err := goalGate(k, "kanban_complete", task, tid, strings.TrimSpace(pyrepr.Str(evidence))); err != nil {
+		if err := goalGate(k, "kanban_complete", task, tid, strings.TrimSpace(anyutil.String(evidence))); err != nil {
 			return "", err
 		}
 		o := CompleteTaskOptions{Metadata: meta, ExpectedRunID: expectedRunID(tid)}
@@ -479,7 +480,7 @@ func handleRequestReview(k *kanbanCall) (string, error) {
 	if err := requireDictMetadata(rawMetadata); err != nil {
 		return "", err
 	}
-	var metadata *pyjson.Object
+	var metadata *jsonutil.Object
 	if rawMetadata != nil {
 		dict, _ := dictObject(rawMetadata)
 		if metadata, err = redactMetadata(k.env, dict); err != nil {
@@ -504,7 +505,7 @@ func handleRequestReview(k *kanbanCall) (string, error) {
 	}
 	metadata = stampWorkerSessionMetadata(tid, metadata)
 	var reviewer *string
-	if raw := k.get("reviewer"); pyrepr.Truthy(raw) {
+	if raw := k.get("reviewer"); anyutil.IsTrue(raw) {
 		name := redactText(k.env, raw)
 		if name != "" {
 			if !profileExistsFn(name) {
@@ -605,7 +606,7 @@ func handleComment(k *kanbanCall) (string, error) {
 		return "", err
 	}
 	tid := k.get("task_id")
-	if !pyrepr.Truthy(tid) {
+	if !anyutil.IsTrue(tid) {
 		return "", reject("task_id is required: comments are per-task and this session has no " +
 			"dispatcher-assigned task to default to. Discover task ids with " +
 			"kanban_list, or pass the task id you mean.")

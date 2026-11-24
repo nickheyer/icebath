@@ -14,27 +14,27 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/install"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fields explaining why this install cannot self update from git, nil when it can
-func unsupportedReason(ctx context.Context, stamp *pyjson.Object, root, h string, explicitRoot bool, embedded string) *pyjson.Object {
+func unsupportedReason(ctx context.Context, stamp *jsonutil.Object, root, h string, explicitRoot bool, embedded string) *jsonutil.Object {
 	if stampGet(stamp, "source") == "commit-build" {
-		return pyjson.ObjectOf("reason", "commit-build", "message", CommitBuildUpdateMessage)
+		return jsonutil.ObjectOf("reason", "commit-build", "message", CommitBuildUpdateMessage)
 	}
 	if !explicitRoot {
 		if method, err := config.DetectInstallMethod(ctx, h, root); err == nil && (method == "docker" || config.IsPackageManagerInstallMethod(method)) {
-			return pyjson.ObjectOf("reason", "not-a-git-checkout")
+			return jsonutil.ObjectOf("reason", "not-a-git-checkout")
 		}
 	}
 	if _, err := os.Stat(filepath.Join(root, ".git")); embedded == "" && err != nil {
-		return pyjson.ObjectOf("reason", "not-a-git-checkout", "message", "This install has no git checkout to update.")
+		return jsonutil.ObjectOf("reason", "not-a-git-checkout", "message", "This install has no git checkout to update.")
 	}
 	if mechanism := stampGet(stamp, "updateMechanism"); mechanism != nil && mechanism != "self" && embedded == "" {
-		return pyjson.ObjectOf("reason", "update-root-steward-owned-git-tree",
+		return jsonutil.ObjectOf("reason", "update-root-steward-owned-git-tree",
 			"message", "This installation is managed by its install method; use its updater.", "advice", "git pull")
 	}
 	return nil
@@ -81,14 +81,14 @@ func readRuntimeVerdict(ctx context.Context, repository, sha string) *bool {
 	if !ok || reply == nil {
 		return nil
 	}
-	listing, err := pyjson.Loads(*reply)
+	listing, err := jsonutil.Decode(*reply)
 	entries, isList := listing.([]any)
 	if err != nil || !isList {
 		return nil
 	}
 	var paths []string
 	for _, item := range entries {
-		entry, ok := item.(*pyjson.Object)
+		entry, ok := item.(*jsonutil.Object)
 		if !ok || stampGet(entry, "type") != "file" {
 			continue
 		}
@@ -127,16 +127,16 @@ func readRuntimeVerdict(ctx context.Context, repository, sha string) *bool {
 
 // Whether an unfetched release predates the runtime, definite verdicts cached per ref and unknown ones retried after an hour
 func githubPredatesRuntime(ctx context.Context, repository, sha, cacheFile string) *bool {
-	known, ok := readJSONFile(cacheFile).(*pyjson.Object)
+	known, ok := readJSONFile(cacheFile).(*jsonutil.Object)
 	if !ok {
-		known = pyjson.NewObject()
+		known = jsonutil.NewObject()
 	}
 	cached, _ := known.Get(sha)
 	if verdict, ok := cached.(bool); ok {
 		return &verdict
 	}
 	now := sourceCheckClock()
-	if entry, ok := cached.(*pyjson.Object); ok {
+	if entry, ok := cached.(*jsonutil.Object); ok {
 		switch retryAt := stampGet(entry, "retryAt").(type) {
 		case float64:
 			if now < retryAt {
@@ -149,11 +149,11 @@ func githubPredatesRuntime(ctx context.Context, repository, sha, cacheFile strin
 		}
 	}
 	verdict := readRuntimeVerdict(ctx, repository, sha)
-	updated := known.Copy()
+	updated := known.Clone()
 	if verdict != nil {
 		updated.Set(sha, *verdict)
 	} else {
-		updated.Set(sha, pyjson.ObjectOf("retryAt", sourceCheckClock()+updateCheckFailureCacheSeconds))
+		updated.Set(sha, jsonutil.ObjectOf("retryAt", sourceCheckClock()+updateCheckFailureCacheSeconds))
 	}
 	err := os.MkdirAll(filepath.Dir(cacheFile), 0o755)
 	if err == nil {
@@ -191,7 +191,7 @@ func releaseRefuses(ctx context.Context, root, tag, h string) bool {
 }
 
 // Holds an offered release the updater refuses because it predates the runtime these stores use, a release install's by its tag
-func holdRefusedRelease(ctx context.Context, result *pyjson.Object, co sourceCheckout, h string) {
+func holdRefusedRelease(ctx context.Context, result *jsonutil.Object, co sourceCheckout, h string) {
 	if !pyTruthy(stampGet(result, "updateAvailable")) {
 		return
 	}
@@ -206,7 +206,7 @@ func holdRefusedRelease(ctx context.Context, result *pyjson.Object, co sourceChe
 }
 
 // Resolves a release channel's target into result, nil on error
-func resolveCheckChannel(ctx context.Context, result *pyjson.Object, channel string, co sourceCheckout, forwardOnly bool) *SourceTarget {
+func resolveCheckChannel(ctx context.Context, result *jsonutil.Object, channel string, co sourceCheckout, forwardOnly bool) *SourceTarget {
 	var gitCmd []string
 	if co.embedded == "" {
 		gitCmd = []string{co.git}
@@ -233,26 +233,26 @@ func resolveCheckChannel(ctx context.Context, result *pyjson.Object, channel str
 		result.Set("rollback", co.head != "" && co.head != target.Commit && co.embedded == "" &&
 			checkGitOK(ctx, []string{"merge-base", "--is-ancestor", target.Commit, co.head}, co.root, co.git))
 		if target.Retired() {
-			result.Set("retirement", pyjson.ObjectOf("destination", target.Channel, "sourceOnly", true))
+			result.Set("retirement", jsonutil.ObjectOf("destination", target.Channel, "sourceOnly", true))
 		}
 	}
 	return &target
 }
 
 // Passive source update status of an install for the version output
-func PassiveCheckForUpdates(ctx context.Context, installRoot, home string) (*pyjson.Object, error) {
+func PassiveCheckForUpdates(ctx context.Context, installRoot, home string) (*jsonutil.Object, error) {
 	return CheckForUpdates(ctx, SourceCheckOptions{InstallRoot: installRoot, Home: home, Passive: true})
 }
 
 // Binds the banner's passive update check
 func init() {
-	BannerUpdateCheck = func(ctx context.Context) (*pyjson.Object, error) {
+	BannerUpdateCheck = func(ctx context.Context) (*jsonutil.Object, error) {
 		return CheckForUpdates(ctx, SourceCheckOptions{Passive: true})
 	}
 }
 
 // Presentation ready source update status of one install and profile, never fetching or writing git state
-func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Object, error) {
+func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*jsonutil.Object, error) {
 	git := opts.Git
 	if git == "" {
 		git = "git"
@@ -272,10 +272,10 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 	if embedded == "" && opts.InstallRoot == "" {
 		embedded = releaseRevision(ctx, root)
 	}
-	result := pyjson.ObjectOf("supported", false, "icebathRoot", root, "behind", nil, "commits", []any{})
+	result := jsonutil.ObjectOf("supported", false, "icebathRoot", root, "behind", nil, "commits", []any{})
 	if unsupported := unsupportedReason(ctx, pm.ReadInstallStamp(root), root, h, opts.InstallRoot != "", embedded); unsupported != nil {
-		merged := result.Copy()
-		merged.Update(unsupported)
+		merged := result.Clone()
+		merged.Merge(unsupported)
 		return merged, nil
 	}
 	cfg, err := config.RequireReadableConfigBeforeWrite(ctx, filepath.Join(h, "config.yaml"))
@@ -283,7 +283,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 		return nil, err
 	}
 	if opts.Passive && !settings.UpdatesCheck.Get(home.WithOverride(ctx, h)) {
-		disabled := result.Copy()
+		disabled := result.Clone()
 		disabled.Set("reason", "disabled")
 		return disabled, nil
 	}
@@ -313,7 +313,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 	} else {
 		result.Set("branch", selected)
 	}
-	identity := pyjson.ObjectOf("root", root, "home", h, "head", nullable(co.head), "origin", co.origin, "branch", selected,
+	identity := jsonutil.ObjectOf("root", root, "home", h, "head", nullable(co.head), "origin", co.origin, "branch", selected,
 		"channel", channel, "embedded", nullable(embedded), "branchOverride", opts.Branch != nil, "channelProtocol", int64(3),
 		"forwardOnly", forwardOnly)
 	cacheFile := opts.CachePath
@@ -323,7 +323,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 	now := sourceCheckClock()
 	if !opts.Force {
 		if cached := cachedStatus(cacheFile, identity, now); cached != nil {
-			cached = cached.Copy()
+			cached = cached.Clone()
 			cached.Set("dirty", co.dirty)
 			cached.Set("currentBranch", nullable(co.currentBranch))
 			if pyTruthy(stampGet(cached, "channel")) {
@@ -367,7 +367,7 @@ func CheckForUpdates(ctx context.Context, opts SourceCheckOptions) (*pyjson.Obje
 }
 
 // Fills a release install's status from the release plan its update applies
-func releaseCheckResult(ctx context.Context, result *pyjson.Object, root, channel string, branch *string) {
+func releaseCheckResult(ctx context.Context, result *jsonutil.Object, root, channel string, branch *string) {
 	explicit := branch != nil && *branch != ""
 	selected := ""
 	if explicit {

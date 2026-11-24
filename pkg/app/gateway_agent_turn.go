@@ -10,8 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -47,13 +47,13 @@ func (a *GatewayAgent) submitParams(userMessage, persistUserMessage any, turnAut
 	if len(attachments) > 0 {
 		params["attachments"] = attachments
 	}
-	if s, isStr := userMessage.(string); isStr && !pyjson.Equal(s, text) {
+	if s, isStr := userMessage.(string); isStr && !anyutil.Equal(s, text) {
 		params["api_text"] = s
 	}
 	if len(turnAuthor) > 0 {
 		params["turn_author"] = turnAuthor
 	}
-	if staged := a.pendingCLIUserMessage; staged != nil && pyrepr.Truthy(staged["display_kind"]) {
+	if staged := a.pendingCLIUserMessage; staged != nil && anyutil.IsTrue(staged["display_kind"]) {
 		params["display_kind"] = staged["display_kind"]
 	}
 	params["finite"] = true
@@ -63,7 +63,7 @@ func (a *GatewayAgent) submitParams(userMessage, persistUserMessage any, turnAut
 		params["clarify_batch"] = true
 	}
 	info := a.stateInfo()
-	if moaPreset != "" && !(pyjson.Equal(info["provider"], "moa") && pyjson.Equal(info["model"], moaPreset)) {
+	if moaPreset != "" && !(anyutil.Equal(info["provider"], "moa") && anyutil.Equal(info["model"], moaPreset)) {
 		params["model_override"] = map[string]any{"model": moaPreset, "provider": "moa"}
 	}
 	return params, nil
@@ -74,7 +74,7 @@ func (a *GatewayAgent) stageContentParts(parts []any) (string, []any, error) {
 	var texts []string
 	var attachments []any
 	for _, raw := range parts {
-		part, isDict := pyjson.Plain(raw).(map[string]any)
+		part, isDict := jsonutil.Plain(raw).(map[string]any)
 		if !isDict {
 			continue
 		}
@@ -82,8 +82,8 @@ func (a *GatewayAgent) stageContentParts(parts []any) (string, []any, error) {
 		case "text":
 			var kept []string
 			text := ""
-			if pyrepr.Truthy(part["text"]) {
-				text = pyrepr.Str(part["text"])
+			if anyutil.IsTrue(part["text"]) {
+				text = anyutil.String(part["text"])
 			}
 			for _, line := range textutil.Lines(text) {
 				if !strings.HasPrefix(line, "[Image attached") {
@@ -99,7 +99,7 @@ func (a *GatewayAgent) stageContentParts(parts []any) (string, []any, error) {
 				if err != nil {
 					return "", nil, err
 				}
-				staged, _ := pyjson.Plain(raw).(map[string]any)
+				staged, _ := jsonutil.Plain(raw).(map[string]any)
 				attachments = append(attachments, map[string]any{"path": requireKey(staged, "path"), "mime": requireKey(staged, "mime")})
 			}
 		}
@@ -136,7 +136,7 @@ func (a *GatewayAgent) RunConversation(ctx context.Context, userMessage any, o a
 	var receipt map[string]any
 	if adopted != nil {
 		receipt = adopted
-		turn.gapped = pyrepr.Truthy(adopted["recovered"])
+		turn.gapped = anyutil.IsTrue(adopted["recovered"])
 	} else {
 		a.drainStale()
 		raw, failure, err := a.submit(ctx, turn, userMessage, o)
@@ -146,7 +146,7 @@ func (a *GatewayAgent) RunConversation(ctx context.Context, userMessage any, o a
 		if failure != nil {
 			return failure(history), nil
 		}
-		receipt, _ = pyjson.Plain(raw).(map[string]any)
+		receipt, _ = jsonutil.Plain(raw).(map[string]any)
 		if receipt["voice_stopped"] == true {
 			return a.voiceStopped(history), nil
 		}
@@ -167,7 +167,7 @@ func (a *GatewayAgent) RunConversation(ctx context.Context, userMessage any, o a
 				a.generationDone()
 			}
 		}()
-		if adopted != nil && adopted["receipt"] != nil && pyrepr.Truthy(adopted["receipt"]) {
+		if adopted != nil && adopted["receipt"] != nil && anyutil.IsTrue(adopted["receipt"]) {
 			outcome = map[string]any{"_receipt": adopted["receipt"]}
 		} else {
 			outcome = a.pump(ctx, o.StreamCallback, starts, turn)
@@ -273,11 +273,11 @@ func (a *GatewayAgent) drainStale() {
 
 // Params dict of a frame, nil when the frame carries none
 func frameParams(frame any) map[string]any {
-	obj, ok := pyjson.AsObject(frame)
+	obj, ok := jsonutil.AsObject(frame)
 	if !ok {
 		return nil
 	}
-	params, _ := pyjson.Plain(obj.Vals["params"]).(map[string]any)
+	params, _ := jsonutil.Plain(obj.Value("params")).(map[string]any)
 	return params
 }
 
@@ -380,8 +380,8 @@ func (a *GatewayAgent) pump(ctx context.Context, streamCallback func(string), st
 		if params == nil || params["session_id"] != a.SessionID() {
 			continue
 		}
-		obj, _ := pyjson.AsObject(frame)
-		method, _ := obj.Vals["method"].(string)
+		obj, _ := jsonutil.AsObject(frame)
+		method, _ := obj.Value("method").(string)
 		if _, isRequest := gatewayServerRequests[method]; isRequest {
 			if _, hasID := obj.Get("id"); hasID {
 				a.answerRequest(obj, method, params)
@@ -394,13 +394,13 @@ func (a *GatewayAgent) pump(ctx context.Context, streamCallback func(string), st
 			payload = map[string]any{}
 		}
 		admission := params["admission_id"]
-		if !pyrepr.Truthy(admission) {
+		if !anyutil.IsTrue(admission) {
 			admission = payload["admission_id"]
 		}
 		a.mu.Lock()
 		current := a.admission
 		a.mu.Unlock()
-		if pyrepr.Truthy(current) && pyrepr.Truthy(admission) && !pyjson.Equal(admission, current) {
+		if anyutil.IsTrue(current) && anyutil.IsTrue(admission) && !anyutil.Equal(admission, current) {
 			missedStart(a.state(), params)
 			continue
 		}
@@ -444,11 +444,11 @@ func (a *GatewayAgent) recover(ctx context.Context, turn *gatewayTurn) any {
 	raw, err := a.connection.Reattach(ctx, turn.sessionID, stop)
 	var receipt map[string]any
 	if err == nil {
-		snapshot, _ := pyjson.Plain(raw).(map[string]any)
+		snapshot, _ := jsonutil.Plain(raw).(map[string]any)
 		row := map[string]any{}
 		pending, _ := snapshot["pending"].([]any)
 		for _, candidate := range pending {
-			if r, _ := candidate.(map[string]any); r != nil && pyjson.Equal(r["admission_id"], turn.admission) {
+			if r, _ := candidate.(map[string]any); r != nil && anyutil.Equal(r["admission_id"], turn.admission) {
 				row = r
 				break
 			}
@@ -460,19 +460,19 @@ func (a *GatewayAgent) recover(ctx context.Context, turn *gatewayTurn) any {
 		prompts, _ := snapshot["prompts"].([]any)
 		for _, rawPrompt := range prompts {
 			prompt, _ := rawPrompt.(map[string]any)
-			if row["status"] == "started" && pyjson.Equal(prompt["execution_generation"], row["execution_generation"]) &&
+			if row["status"] == "started" && anyutil.Equal(prompt["execution_generation"], row["execution_generation"]) &&
 				!turn.answered[prompt["prompt_id"]] && !stop() {
 				turn.answered[prompt["prompt_id"]] = true
-				a.dispatchSafely(pyrepr.Str(prompt["kind"])+".request", prompt, nil, map[string]time.Time{})
+				a.dispatchSafely(anyutil.String(prompt["kind"])+".request", prompt, nil, map[string]time.Time{})
 			}
 		}
-		if len(row) > 0 || !pyrepr.Truthy(turn.admission) || stop() {
+		if len(row) > 0 || !anyutil.IsTrue(turn.admission) || stop() {
 			return nil
 		}
 		var got any
 		got, err = a.connection.CallWith(ctx, "prompt.receipt", map[string]any{"session_id": turn.sessionID, "admission_id": turn.admission,
 			"include_result": true}, gatewaycli.CallOptions{Abandon: stop})
-		receipt, _ = pyjson.Plain(got).(map[string]any)
+		receipt, _ = jsonutil.Plain(got).(map[string]any)
 	}
 	var stopped *gatewaycli.CallStopped
 	if errors.As(err, &stopped) {

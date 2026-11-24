@@ -6,10 +6,10 @@ import (
 	"math"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Live image-gen tagged models of the DeepInfra catalog, nil when the fetch fails
@@ -50,7 +50,7 @@ func formatDeepInfraCatalogRow(item map[string]any) map[string]any {
 	}
 	row := map[string]any{"id": mid, "display": display, "strengths": strengths}
 	if pricing, ok := metadata["pricing"].(map[string]any); ok && pricing["per_image_unit"] != nil {
-		if f, err := pyint.Float(pricing["per_image_unit"]); err == nil {
+		if f, err := anyutil.ToFloat(pricing["per_image_unit"]); err == nil {
 			row["price"] = "$" + pyFixed4(f) + "/image"
 		}
 	}

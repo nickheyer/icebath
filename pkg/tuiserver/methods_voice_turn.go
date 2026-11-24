@@ -12,10 +12,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 var (
@@ -34,10 +35,10 @@ var (
 )
 
 // Stop and done events of one fallback whole reply speak
-type speakPipeline struct{ stop, done *pythread.Event }
+type speakPipeline struct{ stop, done *syncutil.Event }
 
 // Stop and done events of the live streaming TTS consumer
-type ttsStream struct{ stop, done *pythread.Event }
+type ttsStream struct{ stop, done *syncutil.Event }
 
 func init() {
 	gateway.RegisterSessionVoiceCaptureStop(func(sessionID string) { stopSessionVoiceCapture(context.Background(), sessionID) })
@@ -54,7 +55,7 @@ func (q *ttsTurnQueue) Get(timeout time.Duration) (any, bool) {
 }
 
 // Threading event over pythread for the speaker pipeline
-type ttsEvent struct{ *pythread.Event }
+type ttsEvent struct{ *syncutil.Event }
 
 func (e ttsEvent) Wait(timeout time.Duration) bool { return e.Event.Wait(timeout.Seconds()) }
 
@@ -188,7 +189,7 @@ func voiceTTSStreamBegin(ctx context.Context) *ttsTurnQueue {
 	}
 	ttsStreamStop(true)
 	queue := newTTSTurnQueue()
-	stop, done := &pythread.Event{}, &pythread.Event{}
+	stop, done := &syncutil.Event{}, &syncutil.Event{}
 	go media.StreamTTSToSpeaker(context.WithoutCancel(ctx), queue, ttsEvent{stop}, ttsEvent{done}, nil, "")
 	ttsStreamMu.Lock()
 	ttsStreamState = &ttsStream{stop: stop, done: done}
@@ -265,7 +266,7 @@ func fullDuplexListener(ctx context.Context) {
 		direct := voiceModeEnabled() && (fdTTSPending() || media.IsAudioOutputActive())
 		return !direct && !sessionVoiceLive()
 	}
-	tripped := &pythread.Event{}
+	tripped := &syncutil.Event{}
 	var trippedDuring atomic.Value
 	mult, graceMS := settings.VoiceBargeInThresholdMultiplier.Get(ctx), max(0, int(settings.VoiceBargeInGraceSeconds.Get(ctx).Milliseconds()))
 	opts := media.DefaultDuplexOptions()
@@ -284,7 +285,7 @@ func fullDuplexListener(ctx context.Context) {
 	if err != nil {
 		panic(err)
 	}
-	if truthy(result["success"]) {
+	if anyutil.IsTrue(result["success"]) {
 		if text := strings.TrimSpace(strOr(result["transcript"])); text != "" {
 			if phase, _ := trippedDuring.Load().(string); phase == "playback" && media.IsTTSEcho(text, spokenText()) {
 				pkgLog().Debug("full-duplex listener: capture during playback repeats the spoken reply, dropped as speaker bleed")
@@ -333,7 +334,7 @@ func deliverFDTranscript(ctx context.Context, text string) {
 // Speaks a whole reply on a pipeline the full duplex listener can cut and waits on
 func voiceSpeakWithBarge(ctx context.Context, text string) {
 	noteSpoken(text)
-	pipeline := &speakPipeline{stop: &pythread.Event{}, done: &pythread.Event{}}
+	pipeline := &speakPipeline{stop: &syncutil.Event{}, done: &syncutil.Event{}}
 	fdListenerMu.Lock()
 	fdSpeakPipelines[pipeline] = true
 	fdListenerMu.Unlock()

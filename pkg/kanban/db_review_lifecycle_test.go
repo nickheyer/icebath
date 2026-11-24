@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Status, block kind, recurrences and current run of a task row
@@ -335,7 +335,7 @@ func TestReviewHandoffWithoutLiveRunAttributesRunToImplementer(t *testing.T) {
 		t.Fatal("assignee")
 	}
 	run := lastRunRow(t, conn, tid)
-	if run.Get("outcome") != "review_requested" || run.Get("profile") != "worker" || !pyjson.Equal(run.Get("step_key"), optStrValue(task.CurrentStepKey)) {
+	if run.Get("outcome") != "review_requested" || run.Get("profile") != "worker" || !anyutil.Equal(run.Get("step_key"), optStrValue(task.CurrentStepKey)) {
 		t.Fatal(run.Vals)
 	}
 	if impl, _ := payloadOf(eventsOfKind(t, conn, tid, "review_requested")[0]).Get("implementer"); impl != "worker" {

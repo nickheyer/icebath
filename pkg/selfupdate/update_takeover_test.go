@@ -14,8 +14,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hidden first argument that routes a re-executed test binary to a takeover child stand-in
@@ -62,7 +62,7 @@ func tkExpectedSHA(t *testing.T) (string, bool) {
 	if record == nil {
 		return "", false
 	}
-	sha, _ := record.GetOr("expected_sha", nil).(string)
+	sha, _ := record.ValueOr("expected_sha", nil).(string)
 	return sha, true
 }
 
@@ -254,8 +254,8 @@ func tkQuietReceipt(t *testing.T) {
 	takeoverStderr = &bytes.Buffer{}
 }
 
-func tkGatewayRequest() *pyjson.Object {
-	request := pyjson.NewObject()
+func tkGatewayRequest() *jsonutil.Object {
+	request := jsonutil.NewObject()
 	request.Set("gateway_mode", true)
 	return request
 }

@@ -8,9 +8,9 @@ import (
 	"sort"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -38,10 +38,10 @@ const (
 
 var delegatePollInterval = 500 * time.Millisecond
 
-func goalOf(task map[string]any) string { return pyrepr.Str(task["goal"]) }
+func goalOf(task map[string]any) string { return anyutil.String(task["goal"]) }
 
 // Runs one child of the batch under the originating session's steer and stop authority
-func (b *delegateBatch) runChild(ctx context.Context, c delegateChild) *pyjson.Object {
+func (b *delegateBatch) runChild(ctx context.Context, c delegateChild) *jsonutil.Object {
 	ownerSessionID, ownerTransport, ownerSessionRecord := b.ownerKwargs()
 	return runSingleChildFn(ctx, c.Index, goalOf(c.Task), c.Child, b.Parent, ownerSessionID, ownerTransport, ownerSessionRecord)
 }
@@ -66,13 +66,13 @@ func captureOrigin(ctx context.Context) delegationOrigin {
 	return o
 }
 
-func entryValue(e *pyjson.Object, key string) any {
+func entryValue(e *jsonutil.Object, key string) any {
 	v, _ := e.Get(key)
 	return v
 }
 
 // One completion line for a finished child plus the spinner's remaining count
-func reportChildDone(parent *AIAgent, spinner any, entry *pyjson.Object, tag string, labels []string, nTasks, remaining int) {
+func reportChildDone(parent *AIAgent, spinner any, entry *jsonutil.Object, tag string, labels []string, nTasks, remaining int) {
 	idx := childNumInt(entryValue(entry, "task_index"))
 	label := fmt.Sprintf("Task %d", idx)
 	if idx < len(labels) {
@@ -80,7 +80,7 @@ func reportChildDone(parent *AIAgent, spinner any, entry *pyjson.Object, tag str
 	}
 	status := "?"
 	if s, ok := entry.Get("status"); ok {
-		status = pyrepr.Str(s)
+		status = anyutil.String(s)
 	}
 	slot := fmt.Sprintf("%d/%d", idx+1, nTasks)
 	if tag != "" {
@@ -98,7 +98,7 @@ func reportChildDone(parent *AIAgent, spinner any, entry *pyjson.Object, tag str
 	if !ok {
 		duration = 0
 	}
-	line := fmt.Sprintf("%s [%s] %s  (%ss)", icon, slot, label, pyrepr.Str(duration))
+	line := fmt.Sprintf("%s [%s] %s  (%ss)", icon, slot, label, anyutil.String(duration))
 	errLine := ""
 	if subagentFailureStatuses[status] {
 		errLine = describeSubagentFailure(entryValue(entry, "failure_reason"), entryValue(entry, "error"), 120)
@@ -130,16 +130,16 @@ func reportChildDone(parent *AIAgent, spinner any, entry *pyjson.Object, tag str
 	}
 }
 
-func objectMap(o *pyjson.Object) map[string]any {
-	out := make(map[string]any, len(o.Keys))
-	for _, k := range o.Keys {
-		out[k] = o.Vals[k]
+func objectMap(o *jsonutil.Object) map[string]any {
+	out := make(map[string]any, o.Len())
+	for _, k := range o.Keys() {
+		out[k] = o.Value(k)
 	}
 	return out
 }
 
 // Durably records a finished child on a detached unit's row before the unit joins
-func recordFinishedChild(batch *delegateBatch, entry *pyjson.Object, honorParentInterrupt bool) {
+func recordFinishedChild(batch *delegateBatch, entry *jsonutil.Object, honorParentInterrupt bool) {
 	if !honorParentInterrupt && batch.UnitID != "" && entry != nil {
 		if err := tools.RecordUnitChild(batch.Parent.env, batch.UnitID, entry); err != nil {
 			pkgLog().Debug("record_unit_child failed", "error", err)
@@ -147,7 +147,7 @@ func recordFinishedChild(batch *delegateBatch, entry *pyjson.Object, honorParent
 	}
 }
 
-func sortByTaskIndex(results []*pyjson.Object) {
+func sortByTaskIndex(results []*jsonutil.Object) {
 	sort.SliceStable(results, func(i, j int) bool {
 		return childNumInt(entryValue(results[i], "task_index")) < childNumInt(entryValue(results[j], "task_index"))
 	})
@@ -156,12 +156,12 @@ func sortByTaskIndex(results []*pyjson.Object) {
 type childFuture struct {
 	index int
 	done  chan struct{}
-	entry *pyjson.Object
+	entry *jsonutil.Object
 	err   error
 }
 
 // Runs the batch's children in parallel, polling so a parent interrupt abandons wedged children
-func runChildrenParallel(ctx context.Context, batch *delegateBatch, results *[]*pyjson.Object, honorParentInterrupt bool) {
+func runChildrenParallel(ctx context.Context, batch *delegateBatch, results *[]*jsonutil.Object, honorParentInterrupt bool) {
 	parent, nTasks := batch.Parent, len(batch.TaskList)
 	labels := make([]string, len(batch.TaskList))
 	for i, t := range batch.TaskList {
@@ -197,7 +197,7 @@ func runChildrenParallel(ctx context.Context, batch *delegateBatch, results *[]*
 			f.entry = batch.runChild(ctx, c)
 		}(c)
 	}
-	entryOf := func(f *childFuture) *pyjson.Object {
+	entryOf := func(f *childFuture) *jsonutil.Object {
 		select {
 		case <-f.done:
 		default:
@@ -241,7 +241,7 @@ func runChildrenParallel(ctx context.Context, batch *delegateBatch, results *[]*
 			*results = append(*results, entry)
 			recordFinishedChild(batch, entry, honorParentInterrupt)
 			reportChildDone(parent, spinner, entry, tag, labels, nTasks, nHere-len(*results))
-			status := pyrepr.Str(entryValue(entry, "status"))
+			status := anyutil.String(entryValue(entry, "status"))
 			if !honorParentInterrupt && batch.UnitID != "" && subagentFailureStatuses[status] && len(*results) < nHere {
 				delegateQuiet("task failure notice failed", func() {
 					notice := objectMap(entry)
@@ -258,8 +258,8 @@ func runChildrenParallel(ctx context.Context, batch *delegateBatch, results *[]*
 }
 
 // Runs, joins and finalizes the batch's children and returns the combined result
-func executeAndAggregate(ctx context.Context, batch *delegateBatch, honorParentInterrupt bool) *pyjson.Object {
-	var results []*pyjson.Object
+func executeAndAggregate(ctx context.Context, batch *delegateBatch, honorParentInterrupt bool) *jsonutil.Object {
+	var results []*jsonutil.Object
 	if len(batch.Children) == 1 {
 		results = append(results, batch.runChild(ctx, batch.Children[0]))
 		recordFinishedChild(batch, results[0], honorParentInterrupt)
@@ -290,7 +290,7 @@ func executeAndAggregate(ctx context.Context, batch *delegateBatch, honorParentI
 	for i, r := range results {
 		anyResults[i] = r
 	}
-	combined := pyjson.NewObject()
+	combined := jsonutil.NewObject()
 	combined.Set("results", anyResults)
 	combined.Set("total_duration_seconds", totalDuration)
 	var notes []any
@@ -401,7 +401,7 @@ func batchProgressToken(children []*AIAgent) (any, bool, error) {
 				apiCalls = 0
 			}
 			parts = append(parts, []any{apiCalls, s["current_tool"], s["last_activity_ts"]})
-			inTool = inTool || pyrepr.Truthy(s["current_tool"])
+			inTool = inTool || anyutil.IsTrue(s["current_tool"])
 		}()
 	}
 	return parts, inTool, nil
@@ -413,7 +413,7 @@ type dispatchedUnit struct {
 }
 
 // Model facing handle of an accepted background call, one entry per async unit
-func dispatchedPayload(batch *delegateBatch, units []dispatchedUnit) *pyjson.Object {
+func dispatchedPayload(batch *delegateBatch, units []dispatchedUnit) *jsonutil.Object {
 	goals := make([]any, len(batch.TaskList))
 	for i, t := range batch.TaskList {
 		goals[i] = t["goal"]
@@ -427,7 +427,7 @@ func dispatchedPayload(batch *delegateBatch, units []dispatchedUnit) *pyjson.Obj
 	if n != 1 {
 		note = fmt.Sprintf(backgroundNoteMany, n, len(units))
 	}
-	p := pyjson.NewObject()
+	p := jsonutil.NewObject()
 	p.Set("status", "dispatched")
 	p.Set("mode", "background")
 	p.Set("count", n)
@@ -437,7 +437,7 @@ func dispatchedPayload(batch *delegateBatch, units []dispatchedUnit) *pyjson.Obj
 	if len(units) > 1 {
 		var list []any
 		for _, u := range units {
-			o := pyjson.NewObject()
+			o := jsonutil.NewObject()
 			o.Set("delegation_id", u.id)
 			if u.unit.Group != nil {
 				o.Set("group", *u.unit.Group)
@@ -497,7 +497,7 @@ func unitsOf(ctx context.Context, batch *delegateBatch) []*delegateBatch {
 		g := c.Task["group"]
 		k := key{index: c.Index}
 		if g != nil && g != "" {
-			k = key{grouped: true, name: pyrepr.Str(g)}
+			k = key{grouped: true, name: anyutil.String(g)}
 		}
 		if _, seen := members[k]; !seen {
 			order = append(order, k)
@@ -634,7 +634,7 @@ func dispatchBackground(ctx context.Context, batch *delegateBatch) string {
 		}
 		dispatch, err := dispatchUnit(ctx, unit, unitID, slotKey, sessionKey, originUI, wakeSID)
 		if err == nil && dispatch["status"] == "dispatched" {
-			id := pyrepr.Str(dispatch["delegation_id"])
+			id := anyutil.String(dispatch["delegation_id"])
 			if slotKey == "" {
 				slotKey = id
 			}
@@ -645,7 +645,7 @@ func dispatchBackground(ctx context.Context, batch *delegateBatch) string {
 		if err != nil {
 			reason = err.Error()
 		} else if e, ok := dispatch["error"]; ok {
-			reason = pyrepr.Str(e)
+			reason = anyutil.String(e)
 		}
 		restoreParentCancellation(unit)
 		if len(dispatched) == 0 {
@@ -656,7 +656,7 @@ func dispatchBackground(ctx context.Context, batch *delegateBatch) string {
 		if err != nil {
 			shown = err.Error()
 		} else if e, ok := dispatch["error"]; ok {
-			shown = pyrepr.Str(e)
+			shown = anyutil.String(e)
 		}
 		pkgLog().Warn(fmt.Sprintf("delegate_task: unit %d/%d not accepted (%s); running it inline.", k+1, len(units), shown))
 		results, _ := entryValue(executeAndAggregate(ctx, unit, true), "results").([]any)

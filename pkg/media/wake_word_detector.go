@@ -5,14 +5,15 @@ package media
 import (
 	"fmt"
 	"math"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Anything the reader can wait on for the halt signal
@@ -20,9 +21,9 @@ type wakeWaiter interface {
 	Wait(timeout float64) bool
 }
 
-// Halt event of one detector, its wait replaceable like the instance attribute a test patches
+// Halt event of one detector, its wait replaceable by a test
 type wakeStop struct {
-	ev   pythread.Event
+	ev   syncutil.Event
 	wait func(timeout float64) bool
 }
 
@@ -35,7 +36,7 @@ func (s *wakeStop) Wait(timeout float64) bool {
 	if s.wait != nil {
 		return s.wait(timeout)
 	}
-	return s.ev.Wait(timeout)
+	return s.ev.WaitTimeout(time.Duration(timeout * float64(time.Second)))
 }
 
 // One armed audio source, the reader takes blocks from it until it fails or the halt is signalled
@@ -47,7 +48,7 @@ type wakeCapture interface {
 
 // A PortAudio input stream on the backend microphone
 type wakeAudioCapture struct {
-	stream            pysounddevice.InputStream
+	stream            portaudioutil.InputStream
 	rate              int
 	frameLength       int
 	skipAvailablePoll bool
@@ -93,11 +94,11 @@ func (c *wakeAudioCapture) Close() {
 	if c.stream == nil {
 		return
 	}
-	_ = c.stream.Abort(true)
-	_ = c.stream.Close(true)
+	_ = c.stream.Abort()
+	_ = c.stream.Close()
 }
 
-// Goroutine standing in for the Python reader thread
+// Reader goroutine of one arm, known by its goroutine id
 type wakeThread struct {
 	done chan struct{}
 	gid  atomic.Uint64
@@ -121,7 +122,7 @@ func (t *wakeThread) join(timeout float64) {
 	}
 }
 
-func (t *wakeThread) isCurrent() bool { return t.gid.Load() == pythread.GoroutineID() }
+func (t *wakeThread) isCurrent() bool { return t.gid.Load() == syncutil.GoroutineID() }
 
 // WakeDetectorOptions are the optional keywords of the detector constructor
 type WakeDetectorOptions struct {
@@ -145,7 +146,7 @@ type WakeWordDetector struct {
 	lock             sync.Mutex
 	thread           *wakeThread
 	stop             *wakeStop
-	callbackInflight pythread.Event
+	callbackInflight syncutil.Event
 	lastFire         float64
 	audioSilent      atomic.Bool
 	silentFrames     int
@@ -208,23 +209,23 @@ func (d *WakeWordDetector) Start() error {
 		return nil
 	}
 	d.stop.Clear()
-	ready := &pythread.Event{}
+	ready := &syncutil.Event{}
 	startupErrors := &[]error{}
 	t := &wakeThread{done: make(chan struct{})}
 	d.thread = t
 	go func() {
-		t.gid.Store(pythread.GoroutineID())
+		t.gid.Store(syncutil.GoroutineID())
 		defer close(t.done)
 		d.run(ready, startupErrors)
 	}()
 	d.lock.Unlock()
-	if !ready.Wait(wakeStartTimeoutSeconds) {
+	if !ready.WaitTimeout(time.Duration(wakeStartTimeoutSeconds * float64(time.Second))) {
 		d.haltThread()
-		return &WakeWordError{Class: "TimeoutError", Msg: "Timed out while opening the wake-word microphone."}
+		return &WakeWordError{Kind: errWakeTimeout, Msg: "Timed out while opening the wake-word microphone."}
 	}
 	if len(*startupErrors) > 0 {
 		d.haltThread()
-		return &WakeWordError{Class: "RuntimeError", Msg: "Failed to open the wake-word microphone.", Cause: (*startupErrors)[0]}
+		return &WakeWordError{Kind: errWakeFailed, Msg: "Failed to open the wake-word microphone.", Cause: (*startupErrors)[0]}
 	}
 	return nil
 }
@@ -277,7 +278,7 @@ func (d *WakeWordDetector) dispatchWake() {
 func (d *WakeWordDetector) openAudioCapture(frameLength int) (wakeCapture, error) {
 	sd, err := importAudio()
 	if err != nil {
-		if isAudioImportError(err) || isAudioOSError(err) {
+		if isAudioImportError(err) || isAudioLibraryError(err) {
 			pkgLog().Error(fmt.Sprintf("wake word: audio libraries unavailable: %s", err))
 		}
 		return nil, err
@@ -301,11 +302,11 @@ func (d *WakeWordDetector) openAudioCapture(frameLength int) (wakeCapture, error
 		hostapi = *details.HostAPI
 	}
 	if details.DefaultSamplerate != nil && *details.DefaultSamplerate != 0 {
-		defaultRate = pyrepr.Str(*details.DefaultSamplerate)
+		defaultRate = strconv.FormatFloat(*details.DefaultSamplerate, 'f', -1, 64)
 	}
 	pkgLog().Info(fmt.Sprintf("wake word: opening microphone device=%s selector=%s hostapi=%s default_rate=%s capture_rate=%d engine_rate=%d",
 		name, errchain.Show(d.inputDevice), hostapi, defaultRate, c.rate, WakeSampleRate))
-	stream, err := sd.InputStream(pysounddevice.StreamParams{Device: d.inputDevice, Samplerate: float64(c.rate), Blocksize: c.frameLength, Channels: 1}, nil)
+	stream, err := sd.OpenInput(portaudioutil.StreamParams{Device: d.inputDevice, SampleRate: float64(c.rate), BlockSize: c.frameLength, Channels: 1}, nil)
 	if err == nil {
 		c.stream = stream
 		err = stream.Start()
@@ -352,7 +353,7 @@ func (d *WakeWordDetector) noteSilence(frame []int16, present bool, silentAlertF
 
 // Honors the cooldown then runs the wake callback on its own goroutine once
 func (d *WakeWordDetector) fire() {
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	if now-d.lastFire < d.cooldown {
 		pkgLog().Debug("wake word: detection within cooldown — ignored")
 		return
@@ -405,7 +406,7 @@ func (d *WakeWordDetector) recoverCapture(frameLength int, retries *wakeRetries)
 }
 
 // Reader loop that scores frames, recovers a failing stream and reports an unexpected death
-func (d *WakeWordDetector) run(ready *pythread.Event, startupErrors *[]error) {
+func (d *WakeWordDetector) run(ready *syncutil.Event, startupErrors *[]error) {
 	frameLength := d.Engine.FrameLength()
 	c, err := d.openCapture(frameLength)
 	if err != nil {

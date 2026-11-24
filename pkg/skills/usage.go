@@ -3,7 +3,6 @@ package skills
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"sort"
@@ -15,13 +14,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -98,12 +96,12 @@ func (s *Scope) readMetaLines(path, failLog string) ([]string, error) {
 		s.logger().Debug(fmt.Sprintf(failLog, osErrorText(err)))
 		return nil, nil
 	}
-	text, err := pyjson.DecodeBytes(data)
+	text, err := jsonutil.Text(data)
 	if err != nil {
 		return nil, err
 	}
 	var out []string
-	for _, line := range textutil.Lines(strings.TrimPrefix(text, "\xEF\xBB\xBF")) {
+	for _, line := range textutil.Lines(text) {
 		if line = strings.TrimSpace(line); line != "" {
 			out = append(out, line)
 		}
@@ -111,70 +109,67 @@ func (s *Scope) readMetaLines(path, failLog string) ([]string, error) {
 	return out, nil
 }
 
-func nowISO() string { return pydatetime.ISOFormatUTC(time.Now()) }
+func nowISO() string { return time.Now().UTC().Format(timeutil.RFC3339Micro) }
 
 // Parsed timestamp of a record value, naive values read as UTC, false when absent or invalid
 func parseISOTimestamp(v any) (time.Time, bool) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return time.Time{}, false
 	}
-	t, err := pydatetime.FromISOFormat(pyrepr.Str(v))
-	return t, err == nil
+	t, err := timeutil.ParseISO(anyutil.String(v), time.UTC)
+	return t.UTC(), err == nil
 }
 
 // Newest use, view or patch timestamp text of a record, nil when none parses
-func LatestActivityAt(rec *pyjson.Object) any {
+func LatestActivityAt(rec *jsonutil.Object) any {
 	var best time.Time
 	var raw any
 	for _, k := range []string{"last_used_at", "last_viewed_at", "last_patched_at"} {
 		v, _ := rec.Get(k)
 		if t, ok := parseISOTimestamp(v); ok && (raw == nil || t.After(best)) {
-			best, raw = t, pyrepr.Str(v)
+			best, raw = t, anyutil.String(v)
 		}
 	}
 	return raw
 }
 
-// Python int of a counter value with falsy and unconvertible values as zero, overflow as an error
-func intOrZero(v any) (*big.Int, error) {
-	if !pyrepr.Truthy(v) {
-		return big.NewInt(0), nil
+// Integer of a counter value with falsy and unconvertible values as zero, a value past the int64 range as an error
+func intOrZero(v any) (int64, error) {
+	if !anyutil.IsTrue(v) {
+		return 0, nil
 	}
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
-		if e, ok := err.(*pyint.Error); ok && e.Kind == "OverflowError" {
-			return nil, err
+		if errors.Is(err, anyutil.ErrRange) {
+			return 0, err
 		}
-		return big.NewInt(0), nil
+		return 0, nil
 	}
 	return n, nil
 }
 
 // Counter value clamped at zero, booleans reading as zero
-func nonNegativeInt(v any) (*big.Int, error) {
+func nonNegativeInt(v any) (int64, error) {
 	if _, ok := v.(bool); ok {
-		return big.NewInt(0), nil
+		return 0, nil
 	}
 	n, err := intOrZero(v)
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
-	if n.Sign() < 0 {
-		return big.NewInt(0), nil
-	}
-	return n, nil
+	return max(n, 0), nil
 }
 
 // Total use, view and patch events of a record
-func ActivityCount(rec *pyjson.Object) (*big.Int, error) {
-	total := big.NewInt(0)
+func ActivityCount(rec *jsonutil.Object) (int64, error) {
+	var total int64
 	for _, k := range []string{"use_count", "view_count", "patch_count"} {
 		v, _ := rec.Get(k)
 		n, err := intOrZero(v)
 		if err != nil {
-			return nil, err
+			return 0, err
 		}
-		total.Add(total, n)
+		total += n
 	}
 	return total, nil
 }
@@ -210,29 +205,29 @@ func (s *Scope) readHubInstalledNames() map[string]bool {
 		s.logger().Debug("Failed to read hub lock file: " + osErrorText(err))
 		return names
 	}
-	data, err := pyjson.Loads(decodeText(raw))
+	data, err := jsonutil.Decode(decodeText(raw))
 	if err != nil {
 		s.logger().Debug("Failed to read hub lock file: " + err.Error())
 		return names
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return names
 	}
 	instRaw, _ := obj.Get("installed")
-	if !pyrepr.Truthy(instRaw) {
+	if !anyutil.IsTrue(instRaw) {
 		return names
 	}
-	installed, ok := instRaw.(*pyjson.Object)
+	installed, ok := instRaw.(*jsonutil.Object)
 	if !ok {
 		return map[string]bool{}
 	}
-	for _, k := range installed.Keys {
+	for _, k := range installed.Keys() {
 		names[k] = true
 	}
 	root := resolvePath(skillsDir)
-	for _, k := range installed.Keys {
-		entry, ok := installed.Vals[k].(*pyjson.Object)
+	for _, k := range installed.Keys() {
+		entry, ok := installed.Value(k).(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -262,7 +257,7 @@ func (s *Scope) pruneBuiltinsEnabled() bool {
 	if cur == nil {
 		return false
 	}
-	return pyrepr.Truthy(cur["prune_builtins"])
+	return anyutil.IsTrue(cur["prune_builtins"])
 }
 
 // Built-ins the curator pruned, which the re-seeder leaves archived
@@ -302,7 +297,7 @@ func (s *Scope) toggleSuppressedName(ctx context.Context, name string, add bool)
 	if len(sorted) > 0 {
 		content += "\n"
 	}
-	if err := pyfs.AtomicWriteText(home.WithOverride(ctx, s.Home), filepath.Join(s.SkillsDir(), ".curator_suppressed"), content, ".curator_suppressed_"); err != nil {
+	if err := fsutil.WriteFile(home.WithOverride(ctx, s.Home), filepath.Join(s.SkillsDir(), ".curator_suppressed"), []byte(content), fsutil.WriteOptions{Prefix: ".curator_suppressed_", NativeLineEnds: true}); err != nil {
 		s.logger().Debug("Failed to write curator suppression list: " + err.Error())
 	}
 	return nil
@@ -331,7 +326,7 @@ func (s *Scope) iterSkillMDs(base string, localOnly bool) []namedSkillMD {
 	return out
 }
 
-type skillKeepFunc func(name, skillMD string, bundled map[string]bool, usage *pyjson.Object) (bool, error)
+type skillKeepFunc func(name, skillMD string, bundled map[string]bool, usage *jsonutil.Object) (bool, error)
 
 // Sorted local skill names passing keep, hub and protected names excluded
 func (s *Scope) scanLocalSkills(keep skillKeepFunc) ([]string, error) {
@@ -364,7 +359,7 @@ func (s *Scope) scanLocalSkills(keep skillKeepFunc) ([]string, error) {
 	return sortedKeys(found), nil
 }
 
-func usageRecord(usage *pyjson.Object, name string) any {
+func usageRecord(usage *jsonutil.Object, name string) any {
 	v, _ := usage.Get(name)
 	return v
 }
@@ -372,7 +367,7 @@ func usageRecord(usage *pyjson.Object, name string) any {
 // Curator manageable skills, agent records plus bundled built-ins when pruning is enabled, never hub
 func (s *Scope) ListAgentCreatedSkillNames() ([]string, error) {
 	prune := s.pruneBuiltinsEnabled()
-	return s.scanLocalSkills(func(name, _ string, bundled map[string]bool, usage *pyjson.Object) (bool, error) {
+	return s.scanLocalSkills(func(name, _ string, bundled map[string]bool, usage *jsonutil.Object) (bool, error) {
 		if bundled[name] {
 			return prune, nil
 		}
@@ -440,7 +435,7 @@ func (s *Scope) IsCurationEligible(name, skillPath string) (bool, error) {
 
 // Reports whether a usage record opted into curator management
 func isCuratorManagedRecord(rec any) bool {
-	obj, ok := rec.(*pyjson.Object)
+	obj, ok := rec.(*jsonutil.Object)
 	if !ok {
 		return false
 	}
@@ -460,7 +455,7 @@ func (s *Scope) IsCuratorManaged(name string) (bool, error) {
 
 // Curation eligible skills without the curator management marker
 func (s *Scope) ListUnmanagedSkillNames() ([]string, error) {
-	return s.scanLocalSkills(func(name, md string, bundled map[string]bool, usage *pyjson.Object) (bool, error) {
+	return s.scanLocalSkills(func(name, md string, bundled map[string]bool, usage *jsonutil.Object) (bool, error) {
 		if bundled[name] || isCuratorManagedRecord(usageRecord(usage, name)) {
 			return false, nil
 		}
@@ -469,7 +464,7 @@ func (s *Scope) ListUnmanagedSkillNames() ([]string, error) {
 }
 
 // Report rows for unmanaged skills with has_provenance_key and has_record
-func (s *Scope) UnmanagedReport() ([]*pyjson.Object, error) {
+func (s *Scope) UnmanagedReport() ([]*jsonutil.Object, error) {
 	usage, err := s.LoadUsage()
 	if err != nil {
 		return nil, err
@@ -478,11 +473,11 @@ func (s *Scope) UnmanagedReport() ([]*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows := []*pyjson.Object{}
+	rows := []*jsonutil.Object{}
 	for _, n := range names {
 		raw, has := usage.Get(n)
 		hasKey := false
-		if obj, ok := raw.(*pyjson.Object); ok {
+		if obj, ok := raw.(*jsonutil.Object); ok {
 			_, hasKey = obj.Get("created_by")
 		}
 		row, err := reportRow(n, raw, "has_provenance_key", hasKey, "has_record", has)
@@ -529,8 +524,8 @@ func (s *Scope) AdoptSkill(ctx context.Context, name string) (bool, string, erro
 }
 
 // Fresh usage record with every default key in upstream order
-func emptyRecord() *pyjson.Object {
-	o := pyjson.NewObject()
+func emptyRecord() *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for _, kv := range []struct {
 		k string
 		v any
@@ -543,31 +538,31 @@ func emptyRecord() *pyjson.Object {
 }
 
 // Record copy with every missing default key appended, a fresh record when not an object
-func backfilled(rec any) *pyjson.Object {
-	obj, ok := rec.(*pyjson.Object)
+func backfilled(rec any) *jsonutil.Object {
+	obj, ok := rec.(*jsonutil.Object)
 	if !ok {
 		return emptyRecord()
 	}
-	out := pyjson.NewObject()
-	for _, k := range obj.Keys {
-		out.Set(k, obj.Vals[k])
+	out := jsonutil.NewObject()
+	for _, k := range obj.Keys() {
+		out.Set(k, obj.Value(k))
 	}
 	def := emptyRecord()
-	for _, k := range def.Keys {
+	for _, k := range def.Keys() {
 		if _, has := obj.Get(k); !has {
-			out.Set(k, def.Vals[k])
+			out.Set(k, def.Value(k))
 		}
 	}
 	return out
 }
 
 // Report row of name, backfilled record, extra pairs, then last_activity_at and activity_count
-func reportRow(name string, raw any, extra ...any) (*pyjson.Object, error) {
-	row := pyjson.NewObject()
+func reportRow(name string, raw any, extra ...any) (*jsonutil.Object, error) {
+	row := jsonutil.NewObject()
 	row.Set("name", name)
 	rec := backfilled(raw)
-	for _, k := range rec.Keys {
-		row.Set(k, rec.Vals[k])
+	for _, k := range rec.Keys() {
+		row.Set(k, rec.Value(k))
 	}
 	for i := 0; i+1 < len(extra); i += 2 {
 		row.Set(extra[i].(string), extra[i+1])
@@ -577,14 +572,14 @@ func reportRow(name string, raw any, extra ...any) (*pyjson.Object, error) {
 		return nil, err
 	}
 	row.Set("last_activity_at", LatestActivityAt(row))
-	row.Set("activity_count", pyint.Value(count))
+	row.Set("activity_count", count)
 	return row, nil
 }
 
 // Whole usage map with non object values dropped, empty on a missing or corrupt file
-func (s *Scope) LoadUsage() (*pyjson.Object, error) {
+func (s *Scope) LoadUsage() (*jsonutil.Object, error) {
 	path := s.usageFile()
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	if !lexistsFollow(path) {
 		return out, nil
 	}
@@ -593,33 +588,33 @@ func (s *Scope) LoadUsage() (*pyjson.Object, error) {
 		s.logger().Debug(fmt.Sprintf("Failed to read %s: %s", path, osErrorText(err)))
 		return out, nil
 	}
-	text, err := pyjson.DecodeBytes(raw)
+	text, err := jsonutil.Text(raw)
 	if err != nil {
 		return nil, err
 	}
-	data, err := pyjson.Loads(strings.TrimPrefix(text, "\xEF\xBB\xBF"))
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		s.logger().Debug(fmt.Sprintf("Failed to read %s: %s", path, err.Error()))
 		return out, nil
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return out, nil
 	}
-	for _, k := range obj.Keys {
-		if _, isObj := obj.Vals[k].(*pyjson.Object); isObj {
-			out.Set(k, obj.Vals[k])
+	for _, k := range obj.Keys() {
+		if _, isObj := obj.Value(k).(*jsonutil.Object); isObj {
+			out.Set(k, obj.Value(k))
 		}
 	}
 	return out, nil
 }
 
 // Writes the usage map atomically with sorted keys, true when it committed
-func (s *Scope) SaveUsage(ctx context.Context, data *pyjson.Object) bool {
+func (s *Scope) SaveUsage(ctx context.Context, data *jsonutil.Object) bool {
 	path := s.usageFile()
-	text, err := pyjson.Dumps(data, pyjson.Indent(2), pyjson.SortKeys(true), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(data, jsonutil.Indent(2), jsonutil.SortKeys())
 	if err == nil {
-		err = pyfs.AtomicWriteText(home.WithOverride(ctx, s.Home), path, text, ".usage_")
+		err = fsutil.WriteFile(home.WithOverride(ctx, s.Home), path, []byte(text), fsutil.WriteOptions{Prefix: ".usage_", NativeLineEnds: true})
 	}
 	if err != nil {
 		s.logger().Debug(fmt.Sprintf("Failed to write %s: %s", path, err.Error()))
@@ -629,7 +624,7 @@ func (s *Scope) SaveUsage(ctx context.Context, data *pyjson.Object) bool {
 }
 
 // Backfilled record for a skill, fresh defaults when missing
-func (s *Scope) GetRecord(name string) (*pyjson.Object, error) {
+func (s *Scope) GetRecord(name string) (*jsonutil.Object, error) {
 	usage, err := s.LoadUsage()
 	if err != nil {
 		return nil, err
@@ -637,7 +632,7 @@ func (s *Scope) GetRecord(name string) (*pyjson.Object, error) {
 	return backfilled(usageRecord(usage, name)), nil
 }
 
-type usageOp func(data *pyjson.Object) (any, bool, error)
+type usageOp func(data *jsonutil.Object) (any, bool, error)
 
 // Runs op under the usage lock saving when dirty, false when the guard failed, the save missed or anything erred
 func (s *Scope) lockedUpdate(ctx context.Context, name string, op usageOp, failLog string, guard func() (bool, error)) (any, bool) {
@@ -682,7 +677,7 @@ func (s *Scope) SeedRecordIfMissing(ctx context.Context, name string) error {
 	if err != nil || !eligible {
 		return err
 	}
-	s.lockedUpdate(ctx, name, func(data *pyjson.Object) (any, bool, error) {
+	s.lockedUpdate(ctx, name, func(data *jsonutil.Object) (any, bool, error) {
 		if _, has := data.Get(name); has {
 			return nil, false, nil
 		}
@@ -696,7 +691,7 @@ func (s *Scope) SeedRecordIfMissing(ctx context.Context, name string) error {
 
 // Starts the inactivity clock now once and reactivates a record wrongly marked stale
 func (s *Scope) ReanchorClock(ctx context.Context, name string) {
-	s.mutate(ctx, name, func(rec *pyjson.Object) (any, error) {
+	s.mutate(ctx, name, func(rec *jsonutil.Object) (any, error) {
 		now := nowISO()
 		rec.Set("created_at", now)
 		rec.Set("first_seen_at", now)
@@ -708,7 +703,7 @@ func (s *Scope) ReanchorClock(ctx context.Context, name string) {
 }
 
 // Applies a mutator to the record under the lock and saves, false when nothing landed
-func (s *Scope) mutate(ctx context.Context, name string, mutator func(rec *pyjson.Object) (any, error), requireEligible bool) (any, bool) {
+func (s *Scope) mutate(ctx context.Context, name string, mutator func(rec *jsonutil.Object) (any, error), requireEligible bool) (any, bool) {
 	if name == "" {
 		return nil, false
 	}
@@ -716,9 +711,9 @@ func (s *Scope) mutate(ctx context.Context, name string, mutator func(rec *pyjso
 	if requireEligible {
 		guard = func() (bool, error) { return s.IsCurationEligible(name, "") }
 	}
-	return s.lockedUpdate(ctx, name, func(data *pyjson.Object) (any, bool, error) {
+	return s.lockedUpdate(ctx, name, func(data *jsonutil.Object) (any, bool, error) {
 		raw, has := data.Get(name)
-		rec, ok := raw.(*pyjson.Object)
+		rec, ok := raw.(*jsonutil.Object)
 		if !has || !ok {
 			rec = emptyRecord()
 			data.Set(name, rec)
@@ -730,7 +725,7 @@ func (s *Scope) mutate(ctx context.Context, name string, mutator func(rec *pyjso
 
 // Curation gated single field write, true only when it landed
 func (s *Scope) setField(ctx context.Context, name, key string, value any) bool {
-	_, ok := s.mutate(ctx, name, func(rec *pyjson.Object) (any, error) {
+	_, ok := s.mutate(ctx, name, func(rec *jsonutil.Object) (any, error) {
 		rec.Set(key, value)
 		return true, nil
 	}, true)
@@ -738,13 +733,13 @@ func (s *Scope) setField(ctx context.Context, name, key string, value any) bool 
 }
 
 // Increments a counter and stamps its timestamp
-func bumpCounter(rec *pyjson.Object, countKey, tsKey string) error {
+func bumpCounter(rec *jsonutil.Object, countKey, tsKey string) error {
 	v, _ := rec.Get(countKey)
 	n, err := nonNegativeInt(v)
 	if err != nil {
 		return err
 	}
-	rec.Set(countKey, pyint.Value(n.Add(n, big.NewInt(1))))
+	rec.Set(countKey, n+1)
 	rec.Set(tsKey, nowISO())
 	return nil
 }
@@ -809,7 +804,7 @@ func (s *Scope) emitSkillLifecycle(ctx context.Context, name, action string, rec
 }
 
 // Mutates then emits the action with the mutator facts, only when the write landed
-func (s *Scope) mutateAndEmit(ctx context.Context, name, action string, mutator func(rec *pyjson.Object) (any, error), taskID, sessionID string) {
+func (s *Scope) mutateAndEmit(ctx context.Context, name, action string, mutator func(rec *jsonutil.Object) (any, error), taskID, sessionID string) {
 	if facts, ok := s.mutate(ctx, name, mutator, false); ok {
 		if m, isMap := facts.(map[string]any); isMap {
 			s.emitSkillLifecycle(ctx, name, action, m, taskID, sessionID)
@@ -819,15 +814,15 @@ func (s *Scope) mutateAndEmit(ctx context.Context, name, action string, mutator 
 
 // Counts a skill view
 func (s *Scope) BumpView(ctx context.Context, name string) {
-	s.mutate(ctx, name, func(rec *pyjson.Object) (any, error) {
+	s.mutate(ctx, name, func(rec *jsonutil.Object) (any, error) {
 		return nil, bumpCounter(rec, "view_count", "last_viewed_at")
 	}, false)
 }
 
 // Counts a skill use and derives reuse and post patch reuse facts atomically
 func (s *Scope) BumpUse(ctx context.Context, name, taskID, sessionID string) {
-	s.mutateAndEmit(ctx, name, "loaded", func(rec *pyjson.Object) (any, error) {
-		get := func(k string) (*big.Int, error) {
+	s.mutateAndEmit(ctx, name, "loaded", func(rec *jsonutil.Object) (any, error) {
+		get := func(k string) (int64, error) {
 			v, _ := rec.Get(k)
 			return nonNegativeInt(v)
 		}
@@ -843,21 +838,19 @@ func (s *Scope) BumpUse(ctx context.Context, name, taskID, sessionID string) {
 		if err != nil {
 			return nil, err
 		}
-		if lastReused.Cmp(gen) > 0 {
-			lastReused = gen
-		}
-		reuseAfterPatch := uses.Sign() > 0 && gen.Cmp(lastReused) > 0
-		newUses := new(big.Int).Add(uses, big.NewInt(1))
-		rec.Set("use_count", pyint.Value(newUses))
+		lastReused = min(lastReused, gen)
+		reuseAfterPatch := uses > 0 && gen > lastReused
+		newUses := uses + 1
+		rec.Set("use_count", newUses)
 		rec.Set("last_used_at", nowISO())
-		rec.Set("patch_generation", pyint.Value(gen))
+		rec.Set("patch_generation", gen)
 		if reuseAfterPatch {
-			rec.Set("last_reused_patch_generation", pyint.Value(gen))
+			rec.Set("last_reused_patch_generation", gen)
 		} else {
-			rec.Set("last_reused_patch_generation", pyint.Value(lastReused))
+			rec.Set("last_reused_patch_generation", lastReused)
 		}
 		createdBy, _ := rec.Get("created_by")
-		return map[string]any{"created_by": createdBy, "use_count": pyint.Value(newUses), "reused": uses.Sign() > 0,
+		return map[string]any{"created_by": createdBy, "use_count": newUses, "reused": uses > 0,
 			"reuse_after_patch": reuseAfterPatch}, nil
 	}, taskID, sessionID)
 }
@@ -868,7 +861,7 @@ func (s *Scope) BumpPatch(ctx context.Context, name, action, taskID, sessionID s
 	if action == "patch" {
 		event = "patched"
 	}
-	s.mutateAndEmit(ctx, name, event, func(rec *pyjson.Object) (any, error) {
+	s.mutateAndEmit(ctx, name, event, func(rec *jsonutil.Object) (any, error) {
 		if err := bumpCounter(rec, "patch_count", "last_patched_at"); err != nil {
 			return nil, err
 		}
@@ -877,7 +870,7 @@ func (s *Scope) BumpPatch(ctx context.Context, name, action, taskID, sessionID s
 		if err != nil {
 			return nil, err
 		}
-		rec.Set("patch_generation", pyint.Value(gen.Add(gen, big.NewInt(1))))
+		rec.Set("patch_generation", gen+1)
 		createdBy, _ := rec.Get("created_by")
 		return map[string]any{"created_by": createdBy}, nil
 	}, taskID, sessionID)
@@ -885,13 +878,12 @@ func (s *Scope) BumpPatch(ctx context.Context, name, action, taskID, sessionID s
 
 // Resets the record for a new logical skill stamped agent or learn and emits created
 func (s *Scope) RecordCreated(ctx context.Context, name string, agentCreated bool, taskID, sessionID string) {
-	s.mutateAndEmit(ctx, name, "created", func(rec *pyjson.Object) (any, error) {
+	s.mutateAndEmit(ctx, name, "created", func(rec *jsonutil.Object) (any, error) {
 		createdBy := "learn"
 		if agentCreated {
 			createdBy = "agent"
 		}
-		fresh := emptyRecord()
-		rec.Keys, rec.Vals = fresh.Keys, fresh.Vals
+		*rec = *emptyRecord()
 		rec.Set("created_by", createdBy)
 		return map[string]any{"created_by": createdBy}, nil
 	}, taskID, sessionID)
@@ -899,7 +891,7 @@ func (s *Scope) RecordCreated(ctx context.Context, name string, agentCreated boo
 
 // Records a successful hub install as an active installed skill
 func (s *Scope) RecordInstalled(ctx context.Context, name string) {
-	s.mutateAndEmit(ctx, name, "installed", func(rec *pyjson.Object) (any, error) {
+	s.mutateAndEmit(ctx, name, "installed", func(rec *jsonutil.Object) (any, error) {
 		rec.Set("created_by", "installed")
 		rec.Set("state", StateActive)
 		rec.Set("archived_at", nil)
@@ -918,7 +910,7 @@ func (s *Scope) SetState(ctx context.Context, name, state string) {
 		s.logger().Debug(fmt.Sprintf("set_state: invalid state %s for %s", errchain.Show(state), name))
 		return
 	}
-	facts, ok := s.mutate(ctx, name, func(rec *pyjson.Object) (any, error) {
+	facts, ok := s.mutate(ctx, name, func(rec *jsonutil.Object) (any, error) {
 		previous, _ := rec.Get("state")
 		if previous != state {
 			rec.Set("state", state)
@@ -953,7 +945,7 @@ func (s *Scope) SetPinned(ctx context.Context, name string, pinned bool) bool {
 
 // Records the user content lock on any skill, true when the write landed
 func (s *Scope) SetLocked(ctx context.Context, name string, locked bool) bool {
-	_, ok := s.mutate(ctx, name, func(rec *pyjson.Object) (any, error) {
+	_, ok := s.mutate(ctx, name, func(rec *jsonutil.Object) (any, error) {
 		rec.Set("locked", locked)
 		return true, nil
 	}, false)
@@ -970,24 +962,24 @@ func (s *Scope) IsLocked(name string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	text, err := pyjson.DecodeBytes(raw)
+	text, err := jsonutil.Text(raw)
 	if err != nil {
 		return false, err
 	}
-	data, err := pyjson.Loads(strings.TrimPrefix(text, "\xEF\xBB\xBF"))
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return false, err
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return false, nil
 	}
-	rec, ok := usageRecord(obj, name).(*pyjson.Object)
+	rec, ok := usageRecord(obj, name).(*jsonutil.Object)
 	if !ok {
 		return false, nil
 	}
 	v, _ := rec.Get("locked")
-	return pyrepr.Truthy(v), nil
+	return anyutil.IsTrue(v), nil
 }
 
 // Names carrying a truthy locked flag, empty on a corrupt sidecar
@@ -997,9 +989,9 @@ func (s *Scope) LockedSkillNames() ([]string, error) {
 		return nil, err
 	}
 	out := []string{}
-	for _, k := range usage.Keys {
-		v, _ := usage.Vals[k].(*pyjson.Object).Get("locked")
-		if pyrepr.Truthy(v) {
+	for _, k := range usage.Keys() {
+		v, _ := usage.Value(k).(*jsonutil.Object).Get("locked")
+		if anyutil.IsTrue(v) {
 			out = append(out, k)
 		}
 	}
@@ -1012,7 +1004,7 @@ func (s *Scope) Forget(ctx context.Context, name string) {
 	if name == "" {
 		return
 	}
-	s.lockedUpdate(ctx, name, func(data *pyjson.Object) (any, bool, error) {
+	s.lockedUpdate(ctx, name, func(data *jsonutil.Object) (any, bool, error) {
 		return nil, data.Delete(name), nil
 	}, "skill_usage.forget(%s) failed: %s", nil)
 }
@@ -1021,7 +1013,7 @@ func (s *Scope) Forget(ctx context.Context, name string) {
 func (s *Scope) relocate(ctx context.Context, src, dest, name, action string, completePackage bool, skill string) (bool, string, error) {
 	before := s.LedgerCaptureBefore(ctx, src, completePackage, skill)
 	if err := os.Rename(src, dest); err != nil {
-		if _, err := pyfs.Move(src, dest); err != nil {
+		if _, err := fsutil.Move(src, dest); err != nil {
 			return false, fmt.Sprintf("failed to %s: %s", action, osErrorText(err)), nil
 		}
 	}
@@ -1121,7 +1113,7 @@ func (s *Scope) RestoreSkill(ctx context.Context, name string) (bool, string, er
 		prefix := name + "-"
 		for _, p := range dirs {
 			b := filepath.Base(p)
-			if rest, ok := strings.CutPrefix(b, prefix); ok && len(b)-len(prefix) == 14 && pystr.All(rest, unicode.IsDigit) {
+			if rest, ok := strings.CutPrefix(b, prefix); ok && len(b)-len(prefix) == 14 && textutil.IsDigits(rest) {
 				cands = append(cands, p)
 			}
 		}
@@ -1191,7 +1183,7 @@ func (s *Scope) findExternalSkillDir(name string) string {
 }
 
 // Rows for every curator managed skill plus pinned eligible local skills, with provenance and _persisted
-func (s *Scope) CuratedReport() ([]*pyjson.Object, error) {
+func (s *Scope) CuratedReport() ([]*jsonutil.Object, error) {
 	data, err := s.LoadUsage()
 	if err != nil {
 		return nil, err
@@ -1204,9 +1196,9 @@ func (s *Scope) CuratedReport() ([]*pyjson.Object, error) {
 	for _, n := range list {
 		names[n] = true
 	}
-	for _, n := range data.Keys {
-		pinned, _ := data.Vals[n].(*pyjson.Object).Get("pinned")
-		if !pyrepr.Truthy(pinned) {
+	for _, n := range data.Keys() {
+		pinned, _ := data.Value(n).(*jsonutil.Object).Get("pinned")
+		if !anyutil.IsTrue(pinned) {
 			continue
 		}
 		eligible, err := s.IsCurationEligible(n, "")
@@ -1221,8 +1213,8 @@ func (s *Scope) CuratedReport() ([]*pyjson.Object, error) {
 }
 
 // Report rows with _persisted and provenance in the requested order
-func (s *Scope) reportRows(data *pyjson.Object, names []string, persistedFirst bool) ([]*pyjson.Object, error) {
-	rows := []*pyjson.Object{}
+func (s *Scope) reportRows(data *jsonutil.Object, names []string, persistedFirst bool) ([]*jsonutil.Object, error) {
+	rows := []*jsonutil.Object{}
 	for _, n := range names {
 		prov, err := s.Provenance(n)
 		if err != nil {
@@ -1283,10 +1275,10 @@ func (s *Scope) Provenance(name string) (string, error) {
 }
 
 // Usage rows for every skill on disk, built-ins and hub included
-func (s *Scope) UsageReport() ([]*pyjson.Object, error) {
+func (s *Scope) UsageReport() ([]*jsonutil.Object, error) {
 	base := s.SkillsDir()
 	if !lexistsFollow(base) {
-		return []*pyjson.Object{}, nil
+		return []*jsonutil.Object{}, nil
 	}
 	data, err := s.LoadUsage()
 	if err != nil {

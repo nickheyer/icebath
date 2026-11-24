@@ -11,12 +11,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -82,10 +82,10 @@ func prependCorruptionMarker(toolMsg *state.Message, marker string) {
 		}
 		existing = c
 	default:
-		if s, err := pyjson.Dumps(c); err == nil {
+		if s, err := jsonutil.Encode(c); err == nil {
 			existing = s
 		} else {
-			existing = pyrepr.Str(c)
+			existing = anyutil.String(c)
 		}
 	}
 	if existing != "" {
@@ -118,7 +118,7 @@ func sanitizeToolCallArguments(messages *[]*state.Message, logger *slog.Logger, 
 				msg.Persisted = false
 				continue
 			}
-			if _, err := pyjson.Loads(arguments); err == nil {
+			if _, err := jsonutil.Decode(arguments); err == nil {
 				continue
 			}
 			toolCallID := getToolCallID(*tc)
@@ -449,8 +449,8 @@ func repairInvalidToolCallNames(messages []map[string]any) {
 		for idx, tc := range original {
 			var name any
 			var fn map[string]any
-			if d, ok := pyjson.Dict(tc); ok {
-				fn, _ = pyjson.Dict(d["function"])
+			if d, ok := jsonutil.AsMap(tc); ok {
+				fn, _ = jsonutil.AsMap(d["function"])
 				if fn != nil {
 					name = fn["name"]
 				}
@@ -469,13 +469,13 @@ func repairInvalidToolCallNames(messages []map[string]any) {
 				msg["tool_calls"] = tcs
 				copied = true
 			}
-			if d, ok := pyjson.AsObject(tc); ok {
-				newFn := pyjson.ObjectOf("name", coerced, "arguments", "{}")
-				if f, isDict := pyjson.AsObject(d.Vals["function"]); isDict {
-					newFn = f.Copy()
+			if d, ok := jsonutil.AsObject(tc); ok {
+				newFn := jsonutil.ObjectOf("name", coerced, "arguments", "{}")
+				if f, isDict := jsonutil.AsObject(d.Value("function")); isDict {
+					newFn = f.Clone()
 					newFn.Set("name", coerced)
 				}
-				cp := d.Copy()
+				cp := d.Clone()
 				cp.Set("function", newFn)
 				tcs[idx] = cp
 				continue
@@ -484,7 +484,7 @@ func repairInvalidToolCallNames(messages []map[string]any) {
 			if s, ok := toolCallArguments(tc).(string); ok {
 				args = s
 			}
-			tcs[idx] = pyjson.ObjectOf("id", getToolCallID(tc), "type", "function", "function", pyjson.ObjectOf("name", coerced, "arguments", args))
+			tcs[idx] = jsonutil.ObjectOf("id", getToolCallID(tc), "type", "function", "function", jsonutil.ObjectOf("name", coerced, "arguments", args))
 		}
 	}
 }

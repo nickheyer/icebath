@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Writes a profile config file holding body
@@ -230,7 +230,7 @@ func TestCheckFnVerdictOfOneServerDoesNotShadowAnotherInTheSameProfile(t *testin
 	both := map[string]bool{"mcp__gone__t": true, "mcp__live__t": true}
 	var got []string
 	for _, d := range tools.Default.Definitions(ctx, env, both, true) {
-		fn, _ := pyjson.Dict(d["function"])
+		fn, _ := jsonutil.AsMap(d["function"])
 		got = append(got, fn["name"].(string))
 	}
 	if !slices.Equal(got, []string{"mcp__live__t"}) {

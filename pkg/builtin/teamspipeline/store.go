@@ -13,11 +13,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const defaultStoreFilename = "teams_pipeline_store.json"
@@ -27,7 +27,7 @@ var storeBuckets = []string{"subscriptions", "notification_receipts", "event_tim
 var nowUTC = func() time.Time { return time.Now().UTC() }
 
 // Current UTC time as Python datetime isoformat
-func utcNowISO() string { return pydatetime.ISOFormatUTC(nowUTC()) }
+func utcNowISO() string { return nowUTC().UTC().Format(timeutil.RFC3339Micro) }
 
 // Store path from the explicit value, MSGRAPH_WEBHOOK_STORE_PATH or the home default
 func resolveTeamsPipelineStorePath(ctx context.Context, path string) string {
@@ -37,7 +37,7 @@ func resolveTeamsPipelineStorePath(ctx context.Context, path string) string {
 		explicit = env
 	}
 	if explicit != "" {
-		return pypath.PurePathStr(explicit)
+		return filepath.Clean(explicit)
 	}
 	return filepath.Join(home.Dir(ctx), defaultStoreFilename)
 }
@@ -46,12 +46,12 @@ func resolveTeamsPipelineStorePath(ctx context.Context, path string) string {
 type TeamsPipelineStore struct {
 	Path  string
 	mu    sync.Mutex
-	state map[string]*pyjson.Object
+	state map[string]*jsonutil.Object
 }
 
 // Store at path loaded from disk when the file exists
 func NewTeamsPipelineStore(path string) (*TeamsPipelineStore, error) {
-	s := &TeamsPipelineStore{Path: pypath.PurePathStr(path), state: emptyBuckets()}
+	s := &TeamsPipelineStore{Path: filepath.Clean(path), state: emptyBuckets()}
 	if err := s.load(); err != nil {
 		return nil, err
 	}
@@ -59,10 +59,10 @@ func NewTeamsPipelineStore(path string) (*TeamsPipelineStore, error) {
 }
 
 // Fresh empty bucket map
-func emptyBuckets() map[string]*pyjson.Object {
-	out := map[string]*pyjson.Object{}
+func emptyBuckets() map[string]*jsonutil.Object {
+	out := map[string]*jsonutil.Object{}
 	for _, b := range storeBuckets {
-		out[b] = pyjson.NewObject()
+		out[b] = jsonutil.NewObject()
 	}
 	return out
 }
@@ -75,7 +75,7 @@ func (s *TeamsPipelineStore) load() error {
 		return nil
 	}
 	if _, err := os.Stat(s.Path); err != nil {
-		if pypath.PathlibIgnoredError(err) {
+		if pathutil.IsMissing(err) {
 			return nil
 		}
 		return err
@@ -84,22 +84,22 @@ func (s *TeamsPipelineStore) load() error {
 	if err != nil {
 		return err
 	}
-	text, err := pycodecs.Decode(b, "utf-8-sig")
+	text, err := charsetutil.Decode(b, "utf-8-sig")
 	if err != nil {
 		return err
 	}
 	if text == "" {
 		text = "{}"
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return err
 	}
-	doc, ok := data.(*pyjson.Object)
+	doc, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
-	loaded := map[string]*pyjson.Object{}
+	loaded := map[string]*jsonutil.Object{}
 	for _, bucket := range storeBuckets {
 		v, _ := doc.Get(bucket)
 		d, err := dictField(v)
@@ -118,11 +118,11 @@ func (s *TeamsPipelineStore) persist() error {
 	if err := os.MkdirAll(dir, 0o777); err != nil {
 		return err
 	}
-	doc := pyjson.NewObject()
+	doc := jsonutil.NewObject()
 	for _, b := range storeBuckets {
 		doc.Set(b, s.state[b])
 	}
-	text, err := pyjson.Dumps(doc, pyjson.Indent(2), pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(doc, jsonutil.Indent(2), jsonutil.SortKeys())
 	if err != nil {
 		return err
 	}
@@ -143,10 +143,10 @@ func (s *TeamsPipelineStore) persist() error {
 // Deep copy of JSON values
 func deepCopy(v any) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
-		out := pyjson.NewObject()
-		for _, k := range t.Keys {
-			out.Set(k, deepCopy(t.Vals[k]))
+	case *jsonutil.Object:
+		out := jsonutil.NewObject()
+		for _, k := range t.Keys() {
+			out.Set(k, deepCopy(t.Value(k)))
 		}
 		return out
 	case []any:
@@ -160,30 +160,30 @@ func deepCopy(v any) any {
 }
 
 // Deep copy of a bucket
-func (s *TeamsPipelineStore) list(bucket string) *pyjson.Object {
+func (s *TeamsPipelineStore) list(bucket string) *jsonutil.Object {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return deepCopy(s.state[bucket]).(*pyjson.Object)
+	return deepCopy(s.state[bucket]).(*jsonutil.Object)
 }
 
 // Deep copy of one dict record, nil when absent or not a dict
-func (s *TeamsPipelineStore) get(bucket, key string) *pyjson.Object {
+func (s *TeamsPipelineStore) get(bucket, key string) *jsonutil.Object {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if rec, ok := get(s.state[bucket], key).(*pyjson.Object); ok {
-		return deepCopy(rec).(*pyjson.Object)
+	if rec, ok := get(s.state[bucket], key).(*jsonutil.Object); ok {
+		return deepCopy(rec).(*jsonutil.Object)
 	}
 	return nil
 }
 
 // Merges payload over the existing record, stamping the id field and created and updated timestamps
-func (s *TeamsPipelineStore) upsert(bucket, idField, key string, payload *pyjson.Object) (*pyjson.Object, error) {
+func (s *TeamsPipelineStore) upsert(bucket, idField, key string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	existingAny, present := s.state[bucket].Get(key)
-	existing := pyjson.NewObject()
+	existing := jsonutil.NewObject()
 	if present {
-		e, ok := existingAny.(*pyjson.Object)
+		e, ok := existingAny.(*jsonutil.Object)
 		if !ok {
 			return nil, fmt.Errorf("stored %s record %s is %s where a mapping was expected", bucket, key, errchain.Kind(existingAny))
 		}
@@ -192,13 +192,13 @@ func (s *TeamsPipelineStore) upsert(bucket, idField, key string, payload *pyjson
 	if payload == nil {
 		return nil, pyError("TypeError", "the "+bucket+" record to store is empty")
 	}
-	merged := existing.Copy()
-	for _, k := range payload.Keys {
-		merged.Set(k, deepCopy(payload.Vals[k]))
+	merged := existing.Clone()
+	for _, k := range payload.Keys() {
+		merged.Set(k, deepCopy(payload.Value(k)))
 	}
 	merged.Set(idField, key)
 	if _, ok := merged.Get("created_at"); !ok {
-		if c := get(existing, "created_at"); pyrepr.Truthy(c) {
+		if c := get(existing, "created_at"); anyutil.IsTrue(c) {
 			merged.Set("created_at", c)
 		} else {
 			merged.Set("created_at", utcNowISO())
@@ -209,40 +209,40 @@ func (s *TeamsPipelineStore) upsert(bucket, idField, key string, payload *pyjson
 	if err := s.persist(); err != nil {
 		return nil, err
 	}
-	return deepCopy(merged).(*pyjson.Object), nil
+	return deepCopy(merged).(*jsonutil.Object), nil
 }
 
 // Every subscription record keyed by id
-func (s *TeamsPipelineStore) ListSubscriptions() *pyjson.Object { return s.list("subscriptions") }
+func (s *TeamsPipelineStore) ListSubscriptions() *jsonutil.Object { return s.list("subscriptions") }
 
 // One subscription record
-func (s *TeamsPipelineStore) GetSubscription(id string) *pyjson.Object {
+func (s *TeamsPipelineStore) GetSubscription(id string) *jsonutil.Object {
 	return s.get("subscriptions", id)
 }
 
 // Merges a subscription record
-func (s *TeamsPipelineStore) UpsertSubscription(id string, payload *pyjson.Object) (*pyjson.Object, error) {
+func (s *TeamsPipelineStore) UpsertSubscription(id string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	return s.upsert("subscriptions", "subscription_id", id, payload)
 }
 
 // Every job record keyed by id
-func (s *TeamsPipelineStore) ListJobs() *pyjson.Object { return s.list("jobs") }
+func (s *TeamsPipelineStore) ListJobs() *jsonutil.Object { return s.list("jobs") }
 
 // One job record
-func (s *TeamsPipelineStore) GetJob(id string) *pyjson.Object { return s.get("jobs", id) }
+func (s *TeamsPipelineStore) GetJob(id string) *jsonutil.Object { return s.get("jobs", id) }
 
 // Merges a job record
-func (s *TeamsPipelineStore) UpsertJob(id string, payload *pyjson.Object) (*pyjson.Object, error) {
+func (s *TeamsPipelineStore) UpsertJob(id string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	return s.upsert("jobs", "job_id", id, payload)
 }
 
 // One sink record
-func (s *TeamsPipelineStore) GetSinkRecord(key string) *pyjson.Object {
+func (s *TeamsPipelineStore) GetSinkRecord(key string) *jsonutil.Object {
 	return s.get("sink_records", key)
 }
 
 // Merges a sink record
-func (s *TeamsPipelineStore) UpsertSinkRecord(key string, payload *pyjson.Object) (*pyjson.Object, error) {
+func (s *TeamsPipelineStore) UpsertSinkRecord(key string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	return s.upsert("sink_records", "sink_key", key, payload)
 }
 
@@ -262,11 +262,11 @@ func (s *TeamsPipelineStore) DeleteSubscription(id string) (bool, error) {
 }
 
 // Receipt key from the notification id, else the sha256 of its canonical JSON
-func BuildNotificationReceiptKey(notification *pyjson.Object) (string, error) {
-	if id := get(notification, "id"); pyrepr.Truthy(id) {
-		return "id:" + pyrepr.Str(id), nil
+func BuildNotificationReceiptKey(notification *jsonutil.Object) (string, error) {
+	if id := get(notification, "id"); anyutil.IsTrue(id) {
+		return "id:" + anyutil.String(id), nil
 	}
-	canonical, err := pyjson.Dumps(notification, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	canonical, err := jsonutil.Encode(notification, jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}
@@ -284,7 +284,7 @@ func (s *TeamsPipelineStore) RecordNotificationReceipt(key string, payload any, 
 	if receivedAt == "" {
 		receivedAt = utcNowISO()
 	}
-	if p, ok := payload.(*pyjson.Object); ok {
+	if p, ok := payload.(*jsonutil.Object); ok {
 		payload = deepCopy(p)
 	}
 	s.state["notification_receipts"].Set(key, obj("received_at", receivedAt, "payload", payload))
@@ -292,10 +292,10 @@ func (s *TeamsPipelineStore) RecordNotificationReceipt(key string, payload any, 
 }
 
 // Record count of every bucket
-func (s *TeamsPipelineStore) Stats() *pyjson.Object {
+func (s *TeamsPipelineStore) Stats() *jsonutil.Object {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, b := range storeBuckets {
 		out.Set(b, int64(s.state[b].Len()))
 	}
@@ -303,8 +303,8 @@ func (s *TeamsPipelineStore) Stats() *pyjson.Object {
 }
 
 // Ordered dict built from alternating keys and values
-func obj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func obj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -312,7 +312,7 @@ func obj(kv ...any) *pyjson.Object {
 }
 
 // Value under key or nil
-func get(o *pyjson.Object, key string) any {
+func get(o *jsonutil.Object, key string) any {
 	if o == nil {
 		return nil
 	}

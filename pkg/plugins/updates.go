@@ -15,8 +15,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyversion"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	versionutil "github.com/nickheyer/icebath/pkg/utils/version"
 )
 
 const (
@@ -26,15 +26,15 @@ const (
 
 // Newer verdict of two version labels, nil when either is not a valid version
 func versionIsNewer(latest, current string) *bool {
-	l, err := pyversion.Parse(latest)
+	l, err := versionutil.Parse(latest)
 	if err != nil {
 		return nil
 	}
-	c, err := pyversion.Parse(current)
+	c, err := versionutil.Parse(current)
 	if err != nil {
 		return nil
 	}
-	newer := pyversion.Compare(l, c) > 0
+	newer := versionutil.Compare(l, c) > 0
 	return &newer
 }
 
@@ -108,7 +108,7 @@ func checkLocalProvenance(prov Provenance) *CheckResult {
 	}
 	row := prov.Row
 	if jsonTruthy(row["revision"]) {
-		result.Current = pyrepr.Str(row["revision"])
+		result.Current = anyutil.String(row["revision"])
 	}
 	if pinned, ok := row["pinned"].(bool); ok && pinned {
 		no := false
@@ -190,7 +190,7 @@ func parseFeedYml(text string) (map[string]any, error) {
 func httpsUpdateURL(url any) (string, error) {
 	text := ""
 	if jsonTruthy(url) {
-		text = pyrepr.Str(url)
+		text = anyutil.String(url)
 	}
 	text = strings.TrimSpace(text)
 	if !strings.HasPrefix(strings.ToLower(text), "https://") {

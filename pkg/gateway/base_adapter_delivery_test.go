@@ -111,7 +111,7 @@ func TestDiagnosticWakeExecutesWithoutFinalOrErrorEcho(t *testing.T) {
 			t.Fatalf("suppressed=%v handler calls %d finals %v", suppressed, calls, sent)
 		}
 		a.SetMessageHandler(func(context.Context, *MessageEvent) (any, error) {
-			return nil, errors.New("RuntimeError: provider detail")
+			return nil, errors.New("provider detail")
 		})
 		if err := a.ProcessMessageBackground(context.Background(), ev, "session"); err != nil {
 			t.Fatal(err)

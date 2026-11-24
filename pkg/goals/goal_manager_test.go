@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Manager with a fresh goal in an isolated home
@@ -295,7 +295,7 @@ func TestJudgeDrivenWaitJudgeWaitOnPidDyingBetweenCheckAndParkContinues(t *testi
 	t.Cleanup(func() { goalPidExists, goalManagerWaitOn = savedExists, savedWait })
 	goalPidExists = func(int) bool { return true }
 	goalManagerWaitOn = func(*GoalManager, int64, string) (*GoalState, error) {
-		return nil, &pyint.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
+		return nil, &errorutil.Error{Kind: "ValueError", Msg: "pid is not alive on this host"}
 	}
 	pinGoalJudge(t, JudgeResult{Verdict: "wait", Reason: "job still running", Wait: map[string]any{"pid": int64(4242)}})
 	decision := evaluate(t, mgr, "Started the job (pid 4242).")
@@ -799,7 +799,7 @@ func TestKanbanGoalLoopNudgesFinalizesBlocksAndBindsThePerTaskAffinityScope(t *t
 	if result != (GoalLoopResult{"stopped", 1, "status check failed"}) || logs[0] != "kanban goal loop: status check failed (board locked); stopping" {
 		t.Fatalf("status error %+v %q", result, logs)
 	}
-	result = run(nil, GoalLoopOptions{RunTurn: func(string) (any, error) { return nil, &pyint.Error{Kind: "RuntimeError", Msg: "turn crashed"} }})
+	result = run(nil, GoalLoopOptions{RunTurn: func(string) (any, error) { return nil, &errorutil.Error{Kind: "RuntimeError", Msg: "turn crashed"} }})
 	if result.Outcome != "stopped" || !strings.HasPrefix(result.Reason, "run_turn error: ") {
 		t.Fatalf("turn error %+v", result)
 	}
@@ -821,11 +821,11 @@ func TestKanbanGoalLoopNudgesFinalizesBlocksAndBindsThePerTaskAffinityScope(t *t
 func TestGoalDecisionDictKeepsThePythonKeyOrder(t *testing.T) {
 	prompt := "next"
 	dict := GoalDecision{Status: "active", ShouldContinue: true, ContinuationPrompt: &prompt, Verdict: "continue", Reason: "r", Message: "m"}.ToDict()
-	if !reflect.DeepEqual(dict.Keys, []string{"status", "should_continue", "continuation_prompt", "verdict", "reason", "message"}) || dict.Vals["continuation_prompt"] != "next" {
-		t.Fatalf("dict %v %v", dict.Keys, dict.Vals)
+	if !reflect.DeepEqual(dict.Keys(), []string{"status", "should_continue", "continuation_prompt", "verdict", "reason", "message"}) || dict.Value("continuation_prompt") != "next" {
+		t.Fatalf("dict %v %v", dict.Keys(), dict)
 	}
-	if none := (GoalDecision{}).ToDict(); none.Vals["status"] != nil || none.Vals["continuation_prompt"] != nil {
-		t.Fatalf("empty decision %v", none.Vals)
+	if none := (GoalDecision{}).ToDict(); none.Value("status") != nil || none.Value("continuation_prompt") != nil {
+		t.Fatalf("empty decision %v", none)
 	}
 }
 

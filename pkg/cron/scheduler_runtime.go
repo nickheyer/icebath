@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Usage audit jsonl under the profile's cron folder
@@ -27,13 +27,13 @@ func utcnowISOms() string {
 }
 
 // Appends one usage audit record, logging rather than failing the run on a write error
-func (s *Store) writeUsageAudit(record *pyjson.Object) {
+func (s *Store) writeUsageAudit(record *jsonutil.Object) {
 	err := func() error {
 		path := s.usageAuditPath()
 		if err := s.ensureStoreDir(filepath.Dir(path)); err != nil {
 			return err
 		}
-		line, err := pyjson.Dumps(record, pyjson.EnsureASCII(false))
+		line, err := jsonutil.Encode(record)
 		if err != nil {
 			return err
 		}

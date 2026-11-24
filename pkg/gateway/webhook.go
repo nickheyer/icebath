@@ -26,17 +26,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const (
@@ -103,7 +103,7 @@ func webhookIdentityFromParts(profile *string, route, deliveryID string) webhook
 
 // Versioned chat id carrying the canonical JSON tuple of profile, route and delivery id
 func (i webhookDeliveryIdentity) SessionChatID() string {
-	payload, _ := pyjson.Dumps([]any{i.Profile, i.Route, i.DeliveryID}, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	payload, _ := jsonutil.Encode([]any{i.Profile, i.Route, i.DeliveryID})
 	token := strings.TrimRight(base64.URLEncoding.EncodeToString([]byte(payload)), "=")
 	return "webhook:v2:" + token
 }
@@ -150,7 +150,7 @@ func CheckWebhookRequirements() bool { return true }
 
 // JSON error body with the status
 func webhookJSONError(message string, status int) (*WebResponse, error) {
-	return WebJSONResponse(pyjson.ObjectOf("error", message), status, nil)
+	return WebJSONResponse(jsonutil.ObjectOf("error", message), status, nil)
 }
 
 // Verifies a Svix style base64 HMAC of id, timestamp and body against any v1 entry of the header
@@ -163,7 +163,7 @@ func webhookValidateSvixSignature(body []byte, secret, msgID, timestamp, signatu
 	}
 	var key []byte
 	if strings.HasPrefix(secret, "whsec_") {
-		decoded, err := pybase64.B64DecodeValidate(strings.TrimPrefix(secret, "whsec_"))
+		decoded, err := base64.StdEncoding.DecodeString(strings.TrimPrefix(secret, "whsec_"))
 		if err != nil {
 			pkgLog().Debug("[webhook] Invalid whsec_ Svix signing secret")
 			return false
@@ -193,19 +193,19 @@ func webhookValidateSvixSignature(body []byte, secret, msgID, timestamp, signatu
 func webhookNormalize(value any) any {
 	switch v := value.(type) {
 	case map[string]any:
-		obj, _ := pyjson.AsObject(v)
-		out := pyjson.NewObject()
-		for _, key := range obj.Keys {
+		obj, _ := jsonutil.AsObject(v)
+		out := jsonutil.NewObject()
+		for _, key := range obj.Keys() {
 			item, _ := obj.Get(key)
 			out.Set(key, webhookNormalize(item))
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return v
 		}
-		out := pyjson.NewObject()
-		for _, key := range v.Keys {
+		out := jsonutil.NewObject()
+		for _, key := range v.Keys() {
 			item, _ := v.Get(key)
 			out.Set(key, webhookNormalize(item))
 		}
@@ -227,8 +227,8 @@ func webhookNormalize(value any) any {
 }
 
 // Route config as a dict, the AttributeError a get call on any other value raises
-func webhookRouteObject(route any) (*pyjson.Object, error) {
-	if obj, ok := route.(*pyjson.Object); ok && obj != nil {
+func webhookRouteObject(route any) (*jsonutil.Object, error) {
+	if obj, ok := route.(*jsonutil.Object); ok && obj != nil {
 		return obj, nil
 	}
 	return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("a webhook route is %s, expected a mapping", errchain.Kind(route))}
@@ -246,13 +246,13 @@ type WebhookAdapter struct {
 	host                      *string
 	port                      int
 	globalSecret              any
-	staticRoutes              *pydict.Dict[string, any]
-	dynamicRoutes             *pydict.Dict[string, any]
+	staticRoutes              *orderedutil.Map[string, any]
+	dynamicRoutes             *orderedutil.Map[string, any]
 	dynamicRoutesStat         []any
-	routes                    *pydict.Dict[string, any]
+	routes                    *orderedutil.Map[string, any]
 	runner                    *HTTPAppRunner
 	v1SignatureWarned         map[string]bool
-	deliveryInfo              map[string]*pyjson.Object
+	deliveryInfo              map[string]*jsonutil.Object
 	deliveryInfoCreated       map[string]float64
 	deliveryInfoOrder         []webhookDeliveryStamp
 	seenDeliveries            map[webhookDeliveryIdentity]float64
@@ -277,14 +277,14 @@ func webhookAdapterTraits() AdapterTraits {
 
 // Adapter for a webhook platform config, the error of a malformed port, limit or route table
 func NewWebhookAdapter(config *PlatformConfig) (*WebhookAdapter, error) {
-	a := &WebhookAdapter{v1SignatureWarned: map[string]bool{}, deliveryInfo: map[string]*pyjson.Object{},
+	a := &WebhookAdapter{v1SignatureWarned: map[string]bool{}, deliveryInfo: map[string]*jsonutil.Object{},
 		deliveryInfoCreated: map[string]float64{}, seenDeliveries: map[webhookDeliveryIdentity]float64{},
-		idempotencyTTL: 3600, rateCounts: map[string][]float64{}, dynamicRoutes: pydict.New[string, any]()}
+		idempotencyTTL: 3600, rateCounts: map[string][]float64{}, dynamicRoutes: orderedutil.NewMap[string, any]()}
 	a.BasePlatformAdapter = NewBasePlatformAdapter(config, PlatformWebhook, a)
 	a.Traits = webhookAdapterTraits()
 	extra := config.Extra
-	if rawHost := extra["host"]; pyrepr.Truthy(rawHost) {
-		host := pyrepr.Str(rawHost)
+	if rawHost := extra["host"]; anyutil.IsTrue(rawHost) {
+		host := anyutil.String(rawHost)
 		a.host = &host
 	}
 	port, err := msgraphIntExtra(extra, "port", webhookDefaultPort)
@@ -304,7 +304,7 @@ func NewWebhookAdapter(config *PlatformConfig) (*WebhookAdapter, error) {
 	if a.staticRoutes, err = webhookRouteTable(routes); err != nil {
 		return nil, err
 	}
-	a.routes = pydict.Merge(a.staticRoutes)
+	a.routes = orderedutil.Merge(a.staticRoutes)
 	if a.rateLimit, err = msgraphIntExtra(extra, "rate_limit", 30); err != nil {
 		return nil, err
 	}
@@ -324,13 +324,13 @@ func NewWebhookAdapter(config *PlatformConfig) (*WebhookAdapter, error) {
 }
 
 // Ordered route table of a routes config value, the TypeError dict raises for a non mapping
-func webhookRouteTable(routes any) (*pydict.Dict[string, any], error) {
-	obj, ok := webhookNormalize(routes).(*pyjson.Object)
+func webhookRouteTable(routes any) (*orderedutil.Map[string, any], error) {
+	obj, ok := webhookNormalize(routes).(*jsonutil.Object)
 	if !ok || obj == nil {
 		return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook routes are %s, expected a mapping", errchain.Kind(routes))}
 	}
-	table := pydict.New[string, any]()
-	for _, name := range obj.Keys {
+	table := orderedutil.NewMap[string, any]()
+	for _, name := range obj.Keys() {
 		route, _ := obj.Get(name)
 		table.Set(name, route)
 	}
@@ -339,7 +339,7 @@ func webhookRouteTable(routes any) (*pydict.Dict[string, any], error) {
 
 // Signing credentials of the static routes as canonical JSON, the native replay binding of the connector
 func (a *WebhookAdapter) Token() (string, error) {
-	perRoute := pyjson.NewObject()
+	perRoute := jsonutil.NewObject()
 	a.stateMu.Lock()
 	for name, route := range a.staticRoutes.All() {
 		obj, err := webhookRouteObject(route)
@@ -347,10 +347,10 @@ func (a *WebhookAdapter) Token() (string, error) {
 			a.stateMu.Unlock()
 			return "", err
 		}
-		perRoute.Set(name, obj.GetOr("secret", a.globalSecret))
+		perRoute.Set(name, obj.ValueOr("secret", a.globalSecret))
 	}
 	a.stateMu.Unlock()
-	return pyjson.Dumps([]any{a.globalSecret, perRoute}, pyjson.SortKeys(true))
+	return jsonutil.Encode([]any{a.globalSecret, perRoute}, jsonutil.SortKeys())
 }
 
 // Python attribute of the adapter by name, the signing credentials as its token
@@ -386,7 +386,7 @@ func (a *WebhookAdapter) validateRoute(name string, route any) error {
 	if err != nil {
 		return err
 	}
-	secret := obj.GetOr("secret", a.globalSecret)
+	secret := obj.ValueOr("secret", a.globalSecret)
 	if !WebhookIsUsableSecret(secret) {
 		return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' HMAC secret is missing, blank, or not a string. Set 'secret' "+
 			"on the route or globally. For testing without auth, set secret to '%s'.", name, webhookInsecureNoAuth)}
@@ -395,13 +395,13 @@ func (a *WebhookAdapter) validateRoute(name string, route any) error {
 		return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' uses INSECURE_NO_AUTH secret but is bound to non-loopback "+
 			"host '%s'. INSECURE_NO_AUTH is for local testing only. Refusing to start to prevent accidental exposure.", name, pyHostText(a.host))}
 	}
-	if pyrepr.Truthy(obj.GetOr("deliver_only", nil)) {
-		deliver := obj.GetOr("deliver", "log")
-		if !pyrepr.Truthy(deliver) || pyrepr.Equal(deliver, "log") {
+	if anyutil.IsTrue(obj.ValueOr("deliver_only", nil)) {
+		deliver := obj.ValueOr("deliver", "log")
+		if !anyutil.IsTrue(deliver) || anyutil.Equal(deliver, "log") {
 			return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' has deliver_only=true but deliver is '%s'. Direct "+
-				"delivery requires a real target (telegram, discord, slack, github_comment, etc.).", name, pyrepr.Str(deliver))}
+				"delivery requires a real target (telegram, discord, slack, github_comment, etc.).", name, anyutil.String(deliver))}
 		}
-		if pyrepr.Truthy(obj.GetOr("cron_job", nil)) {
+		if anyutil.IsTrue(obj.ValueOr("cron_job", nil)) {
 			return &PyError{Kind: "ValueError", Msg: fmt.Sprintf("[webhook] Route '%s' sets both deliver_only and cron_job. They are mutually "+
 				"exclusive: deliver_only pushes the rendered template as a message, cron_job fires "+
 				"an existing cron job (which handles its own delivery).", name)}
@@ -414,7 +414,7 @@ func (a *WebhookAdapter) validateRoute(name string, route any) error {
 func (a *WebhookAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
 	a.ReloadDynamicRoutes(ctx)
 	a.stateMu.Lock()
-	routes := pydict.Merge(a.routes)
+	routes := orderedutil.Merge(a.routes)
 	a.stateMu.Unlock()
 	for name, route := range routes.All() {
 		if err := a.validateRoute(name, route); err != nil {
@@ -491,17 +491,17 @@ func (a *WebhookAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 }
 
 // Sends content to a validated destination by its deliver type
-func (a *WebhookAdapter) deliverTo(ctx context.Context, delivery *pyjson.Object, chatID, content string) (SendResult, error) {
+func (a *WebhookAdapter) deliverTo(ctx context.Context, delivery *jsonutil.Object, chatID, content string) (SendResult, error) {
 	raw, found := delivery.Get("deliver")
 	if !found {
 		return SendResult{}, &pyKeyError{"deliver"}
 	}
-	deliverType := pyrepr.Str(raw)
+	deliverType := anyutil.String(raw)
 	switch {
-	case pyrepr.Equal(raw, "log"):
+	case anyutil.Equal(raw, "log"):
 		pkgLog().Info(fmt.Sprintf("[webhook] Response for %s: %s", chatID, pySliceRunes(content, 200)))
 		return SendResult{Success: true}, nil
-	case pyrepr.Equal(raw, "github_comment"):
+	case anyutil.Equal(raw, "github_comment"):
 		return a.deliverGitHubComment(ctx, content, delivery)
 	case a.GatewayRunner != nil && webhookKnownPlatform(ctx, deliverType):
 		return a.deliverCrossPlatform(ctx, raw, content, delivery)
@@ -596,17 +596,17 @@ func (a *WebhookAdapter) ToolsetsForSource(source *SessionSource) ([]string, boo
 	a.stateMu.Lock()
 	route, _ := a.routes.Get(userID[len("webhook:"):])
 	a.stateMu.Unlock()
-	obj, ok := route.(*pyjson.Object)
+	obj, ok := route.(*jsonutil.Object)
 	if !ok || obj == nil {
 		return nil, false
 	}
-	toolsets, ok := obj.GetOr("toolsets", nil).([]any)
+	toolsets, ok := obj.ValueOr("toolsets", nil).([]any)
 	if !ok {
 		return nil, false
 	}
 	var out []string
 	for _, item := range toolsets {
-		if text := strings.TrimSpace(pyrepr.Str(item)); text != "" {
+		if text := strings.TrimSpace(anyutil.String(item)); text != "" {
 			out = append(out, text)
 		}
 	}
@@ -615,12 +615,12 @@ func (a *WebhookAdapter) ToolsetsForSource(source *SessionSource) ([]string, boo
 
 // Health check of the listener
 func (a *WebhookAdapter) handleHealth(ctx context.Context, request *WebRequest) (*WebResponse, error) {
-	return WebJSONResponse(pyjson.ObjectOf("status", "ok", "platform", "webhook"), http.StatusOK, nil)
+	return WebJSONResponse(jsonutil.ObjectOf("status", "ok", "platform", "webhook"), http.StatusOK, nil)
 }
 
 // Whether a dynamic route has a usable secret, loopback for INSECURE_NO_AUTH and a valid coalesce block
-func (a *WebhookAdapter) dynamicRouteAllowed(name string, route *pyjson.Object) bool {
-	secret := route.GetOr("secret", a.globalSecret)
+func (a *WebhookAdapter) dynamicRouteAllowed(name string, route *jsonutil.Object) bool {
+	secret := route.ValueOr("secret", a.globalSecret)
 	if !WebhookIsUsableSecret(secret) {
 		pkgLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: 'secret' is missing, blank, or not a string. "+
 			"Set a valid HMAC secret, or use '%s' to explicitly disable auth (testing only).", name, webhookInsecureNoAuth))
@@ -632,7 +632,7 @@ func (a *WebhookAdapter) dynamicRouteAllowed(name string, route *pyjson.Object) 
 		return false
 	}
 	if err := ValidateCoalesceConfig(name, route); err != nil {
-		pkgLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: %s", name, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[webhook] Dynamic route '%s' skipped: %s", name, err.Error()))
 		return false
 	}
 	return true
@@ -648,50 +648,50 @@ func (a *WebhookAdapter) ReloadDynamicRoutes(ctx context.Context) {
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			if a.dynamicRoutes.Len() > 0 {
-				a.dynamicRoutes, a.routes = pydict.New[string, any](), pydict.Merge(a.staticRoutes)
+				a.dynamicRoutes, a.routes = orderedutil.NewMap[string, any](), orderedutil.Merge(a.staticRoutes)
 				log.Debug("[webhook] Dynamic subscriptions file removed, cleared dynamic routes")
 			}
 			a.dynamicRoutesStat = nil
 			return
 		}
-		log.Error("[webhook] Failed to read dynamic routes: " + pyrepr.ExceptionMessage(err))
+		log.Error("[webhook] Failed to read dynamic routes: " + err.Error())
 		return
 	}
-	if a.dynamicRoutesStat != nil && pyrepr.Equal(statKey, a.dynamicRoutesStat) {
+	if a.dynamicRoutesStat != nil && anyutil.Equal(statKey, a.dynamicRoutesStat) {
 		return
 	}
 	raw, err := os.ReadFile(subsPath)
 	if err != nil {
-		log.Error("[webhook] Failed to read dynamic routes: " + pyrepr.ExceptionMessage(err))
+		log.Error("[webhook] Failed to read dynamic routes: " + err.Error())
 		return
 	}
 	var data any
 	if utf8.Valid(raw) {
-		data, err = pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+		data, err = jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 	} else {
 		err = &PyError{Kind: "UnicodeDecodeError", Msg: "the dynamic webhook routes file is not valid UTF-8"}
 	}
 	if err != nil {
 		a.dynamicRoutesStat = statKey
-		log.Error("[webhook] Failed to parse dynamic routes: " + pyrepr.ExceptionMessage(err))
+		log.Error("[webhook] Failed to parse dynamic routes: " + err.Error())
 		return
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		a.dynamicRoutesStat = statKey
 		return
 	}
-	dynamic := pydict.New[string, any]()
-	for _, name := range obj.Keys {
+	dynamic := orderedutil.NewMap[string, any]()
+	for _, name := range obj.Keys() {
 		value, _ := obj.Get(name)
-		route, isDict := value.(*pyjson.Object)
+		route, isDict := value.(*jsonutil.Object)
 		if !isDict || a.staticRoutes.Has(name) || !a.dynamicRouteAllowed(name, route) {
 			continue
 		}
 		dynamic.Set(name, route)
 	}
 	a.dynamicRoutes = dynamic
-	a.routes = pydict.Merge(dynamic, a.staticRoutes)
+	a.routes = orderedutil.Merge(dynamic, a.staticRoutes)
 	a.dynamicRoutesStat = statKey
 	names := strings.Join(dynamic.Keys(), ", ")
 	if names == "" {
@@ -774,7 +774,7 @@ func webhookProfileMatchesHome(ctx context.Context, profile string) (matches boo
 }
 
 // Whether a route is bound to the request profile, an omitted binding meaning default
-func webhookRouteAllowsProfile(routeConfig *pyjson.Object, requestProfile *string) bool {
+func webhookRouteAllowsProfile(routeConfig *jsonutil.Object, requestProfile *string) bool {
 	configured, found := routeConfig.Get("profile")
 	if !found {
 		configured = "default"
@@ -803,7 +803,7 @@ func (a *WebhookAdapter) WebhookProfileScope(ctx context.Context, profile *strin
 }
 
 // Body of an authenticated request, or the size, read, secret or signature error response
-func (a *WebhookAdapter) readAuthenticatedBody(request *WebRequest, routeName string, routeConfig *pyjson.Object) ([]byte, *WebResponse, error) {
+func (a *WebhookAdapter) readAuthenticatedBody(request *WebRequest, routeName string, routeConfig *jsonutil.Object) ([]byte, *WebResponse, error) {
 	if request.ContentLength != nil && *request.ContentLength > a.maxBodyBytes {
 		resp, err := webhookJSONError("Payload too large", http.StatusRequestEntityTooLarge)
 		return nil, resp, err
@@ -815,7 +815,7 @@ func (a *WebhookAdapter) readAuthenticatedBody(request *WebRequest, routeName st
 			resp, err := webhookJSONError("Payload too large", http.StatusRequestEntityTooLarge)
 			return nil, resp, err
 		}
-		pkgLog().Error("[webhook] Failed to read body: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("[webhook] Failed to read body: " + err.Error())
 		resp, err := webhookJSONError("Bad request", http.StatusBadRequest)
 		return nil, resp, err
 	}
@@ -823,7 +823,7 @@ func (a *WebhookAdapter) readAuthenticatedBody(request *WebRequest, routeName st
 		resp, err := webhookJSONError("Payload too large", http.StatusRequestEntityTooLarge)
 		return nil, resp, err
 	}
-	secret := routeConfig.GetOr("secret", a.globalSecret)
+	secret := routeConfig.ValueOr("secret", a.globalSecret)
 	if !WebhookIsUsableSecret(secret) {
 		pkgLog().Error(fmt.Sprintf("[webhook] Route %s HMAC secret is missing, blank, or not a string; refusing request", routeName))
 		resp, err := webhookJSONError("Webhook route is missing an HMAC secret", http.StatusForbidden)
@@ -839,18 +839,18 @@ func (a *WebhookAdapter) readAuthenticatedBody(request *WebRequest, routeName st
 
 // Body parsed as JSON, else form encoded, false when neither parses
 func webhookParseBody(rawBody []byte) (any, bool, error) {
-	decoded, err := pyjson.LoadsBytes(rawBody)
+	decoded, err := jsonutil.Decode(rawBody)
 	if err == nil {
 		return decoded, true, nil
 	}
-	var decodeErr *pyjson.DecodeError
+	var decodeErr *jsonutil.SyntaxError
 	if !errors.As(err, &decodeErr) {
 		return nil, false, err
 	}
 	if !utf8.Valid(rawBody) {
 		return nil, false, nil
 	}
-	form := pyjson.NewObject()
+	form := jsonutil.NewObject()
 	for _, pair := range pyurl.ParseQSL(string(rawBody), false) {
 		form.Set(pair[0], pair[1])
 	}
@@ -858,9 +858,9 @@ func webhookParseBody(rawBody []byte) (any, bool, error) {
 }
 
 // Pushes the rendered prompt straight to the route target, skipping the agent
-func (a *WebhookAdapter) handleDeliverOnly(ctx context.Context, prompt string, payload any, routeConfig *pyjson.Object, routeName string,
+func (a *WebhookAdapter) handleDeliverOnly(ctx context.Context, prompt string, payload any, routeConfig *jsonutil.Object, routeName string,
 	eventType any, deliveryID string, profile *string) (*WebResponse, error) {
-	extra, err := a.renderDeliveryExtra(routeConfig.GetOr("deliver_extra", pyjson.NewObject()), payload)
+	extra, err := a.renderDeliveryExtra(routeConfig.ValueOr("deliver_extra", jsonutil.NewObject()), payload)
 	if err != nil {
 		return nil, err
 	}
@@ -868,43 +868,43 @@ func (a *WebhookAdapter) handleDeliverOnly(ctx context.Context, prompt string, p
 	if profile != nil {
 		profileValue = *profile
 	}
-	delivery := pyjson.ObjectOf("deliver", routeConfig.GetOr("deliver", "log"), "payload", payload, "profile", profileValue,
-		"deliver_extra", extra, "route", routeName, "mirror", routeConfig.GetOr("mirror_to_session", nil) == true)
-	target := delivery.GetOr("deliver", nil)
-	pkgLog().Info(fmt.Sprintf("[webhook] direct-deliver event=%s route=%s target=%s msg_len=%d delivery=%s", pyrepr.Str(eventType),
-		routeName, pyrepr.Str(target), runeLen(prompt), deliveryID))
-	failed := pyjson.ObjectOf("status", "error", "error", "Delivery failed", "delivery_id", deliveryID)
+	delivery := jsonutil.ObjectOf("deliver", routeConfig.ValueOr("deliver", "log"), "payload", payload, "profile", profileValue,
+		"deliver_extra", extra, "route", routeName, "mirror", routeConfig.ValueOr("mirror_to_session", nil) == true)
+	target := delivery.ValueOr("deliver", nil)
+	pkgLog().Info(fmt.Sprintf("[webhook] direct-deliver event=%s route=%s target=%s msg_len=%d delivery=%s", anyutil.String(eventType),
+		routeName, anyutil.String(target), runeLen(prompt), deliveryID))
+	failed := jsonutil.ObjectOf("status", "error", "error", "Delivery failed", "delivery_id", deliveryID)
 	result, err := a.directDeliver(ctx, prompt, delivery)
 	if err != nil {
 		pkgLog().Error(fmt.Sprintf("[webhook] direct-deliver failed route=%s delivery=%s", routeName, deliveryID), "error", err)
 		return WebJSONResponse(failed, http.StatusBadGateway, nil)
 	}
 	if result.Success {
-		return WebJSONResponse(pyjson.ObjectOf("status", "delivered", "route", routeName, "target", target,
+		return WebJSONResponse(jsonutil.ObjectOf("status", "delivered", "route", routeName, "target", target,
 			"delivery_id", deliveryID), http.StatusOK, nil)
 	}
 	pkgLog().Warn(fmt.Sprintf("[webhook] direct-deliver target rejected route=%s target=%s error=%s", routeName,
-		pyrepr.Str(target), pyrepr.Str(result.Error)))
+		anyutil.String(target), anyutil.String(result.Error)))
 	return WebJSONResponse(failed, http.StatusBadGateway, nil)
 }
 
 // Fires an existing cron job for the event with the rendered prompt as per run context, answering 202 at once
-func (a *WebhookAdapter) handleCronTrigger(ctx context.Context, prompt string, routeConfig *pyjson.Object, routeName string, eventType any,
+func (a *WebhookAdapter) handleCronTrigger(ctx context.Context, prompt string, routeConfig *jsonutil.Object, routeName string, eventType any,
 	deliveryID string, profile *string) (*WebResponse, error) {
 	rawJob, found := routeConfig.Get("cron_job")
 	if !found {
 		return nil, &pyKeyError{"cron_job"}
 	}
-	jobRef := pyrepr.Str(rawJob)
+	jobRef := anyutil.String(rawJob)
 	eventContext := fmt.Sprintf("This run was triggered by webhook event '%s' on route '%s' (not the schedule).\n\n%s",
-		pyrepr.Str(eventType), routeName, prompt)
-	pkgLog().Info(fmt.Sprintf("[webhook] cron-trigger event=%s route=%s job=%s delivery=%s", pyrepr.Str(eventType), routeName, jobRef, deliveryID))
+		anyutil.String(eventType), routeName, prompt)
+	pkgLog().Info(fmt.Sprintf("[webhook] cron-trigger event=%s route=%s job=%s delivery=%s", anyutil.String(eventType), routeName, jobRef, deliveryID))
 	task := spawnAdapterTask(context.WithoutCancel(ctx), func(taskCtx context.Context) error {
 		a.fireCronJob(taskCtx, jobRef, eventContext, routeName, profile)
 		return nil
 	})
 	a.trackBackgroundTask(task)
-	return WebJSONResponse(pyjson.ObjectOf("status", "accepted", "route", routeName, "cron_job", jobRef, "event", eventType,
+	return WebJSONResponse(jsonutil.ObjectOf("status", "accepted", "route", routeName, "cron_job", jobRef, "event", eventType,
 		"delivery_id", deliveryID), http.StatusAccepted, nil)
 }
 
@@ -932,14 +932,14 @@ func (a *WebhookAdapter) fireCronJob(ctx context.Context, jobRef, eventContext, 
 		failed(err)
 		return
 	}
-	if !pyrepr.Truthy(result["success"]) {
+	if !anyutil.IsTrue(result["success"]) {
 		pkgLog().Warn(fmt.Sprintf("[webhook] cron-trigger job=%s route=%s did not complete cleanly: %s", jobRef, routeName,
-			pyrepr.Str(result["error"])))
+			anyutil.String(result["error"])))
 	}
 }
 
 // Route, profile and error response of a POST, the route nil whenever the response is set
-func (a *WebhookAdapter) resolveRoute(ctx context.Context, request *WebRequest) (string, *pyjson.Object, *string, *WebResponse, error) {
+func (a *WebhookAdapter) resolveRoute(ctx context.Context, request *WebRequest) (string, *jsonutil.Object, *string, *WebResponse, error) {
 	a.ReloadDynamicRoutes(ctx)
 	routeName := request.MatchInfo["route_name"]
 	a.stateMu.Lock()
@@ -950,7 +950,7 @@ func (a *WebhookAdapter) resolveRoute(ctx context.Context, request *WebRequest) 
 		resp, err := webhookJSONError("Unknown or unconfigured profile", http.StatusNotFound)
 		return routeName, nil, nil, resp, err
 	}
-	if !pyrepr.Truthy(route) {
+	if !anyutil.IsTrue(route) {
 		resp, err := webhookJSONError("Unknown route: "+routeName, http.StatusNotFound)
 		return routeName, nil, profile, resp, err
 	}
@@ -963,11 +963,11 @@ func (a *WebhookAdapter) resolveRoute(ctx context.Context, request *WebRequest) 
 		if profile != nil {
 			label = *profile
 		}
-		pkgLog().Warn(fmt.Sprintf("[webhook] Route %s is not authorized for profile %s", routeName, pyrepr.Repr(label)))
+		pkgLog().Warn(fmt.Sprintf("[webhook] Route %s is not authorized for profile %s", routeName, anyutil.Quote(label)))
 		resp, err := webhookJSONError("Unknown route: "+routeName, http.StatusNotFound)
 		return routeName, nil, profile, resp, err
 	}
-	if routeConfig.GetOr("enabled", true) == false {
+	if routeConfig.ValueOr("enabled", true) == false {
 		resp, err := webhookJSONError("Route disabled: "+routeName, http.StatusForbidden)
 		return routeName, nil, profile, resp, err
 	}
@@ -979,20 +979,20 @@ func webhookApplySkills(ctx context.Context, prompt string, skillList any) strin
 	log := pkgLog()
 	names, err := msgraphIterate(skillList)
 	if err != nil {
-		log.Warn("[webhook] Skill loading failed: " + pyrepr.ExceptionMessage(err))
+		log.Warn("[webhook] Skill loading failed: " + err.Error())
 		return prompt
 	}
 	scope := skills.NewScope(home.Dir(ctx), nil)
 	commands := scope.GetSkillCommands()
 	for _, name := range names {
-		cmdKey := "/" + pyrepr.Str(name)
+		cmdKey := "/" + anyutil.String(name)
 		if _, ok := commands[cmdKey]; !ok {
-			log.Warn(fmt.Sprintf("[webhook] Skill '%s' not found", pyrepr.Str(name)))
+			log.Warn(fmt.Sprintf("[webhook] Skill '%s' not found", anyutil.String(name)))
 			continue
 		}
 		content, ok, err := scope.BuildSkillInvocationMessage(ctx, cmdKey, prompt, "", "")
 		if err != nil {
-			log.Warn("[webhook] Skill loading failed: " + pyrepr.ExceptionMessage(err))
+			log.Warn("[webhook] Skill loading failed: " + err.Error())
 			return prompt
 		}
 		if ok && content != "" {
@@ -1015,7 +1015,7 @@ func webhookEventType(header http.Header, payload any) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if pyrepr.Truthy(value) {
+		if anyutil.IsTrue(value) {
 			return value, nil
 		}
 	}
@@ -1023,13 +1023,13 @@ func webhookEventType(header http.Header, payload any) (any, error) {
 }
 
 // Request headers as a dict of their last values in sorted name order
-func webhookHeaderDict(header http.Header) *pyjson.Object {
+func webhookHeaderDict(header http.Header) *jsonutil.Object {
 	names := make([]string, 0, len(header))
 	for name := range header {
 		names = append(names, name)
 	}
 	sort.Strings(names)
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, name := range names {
 		if values := header[name]; len(values) > 0 {
 			out.Set(name, values[len(values)-1])
@@ -1054,7 +1054,7 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 	if profile != nil {
 		profileName = *profile
 	}
-	errResp, err = ParkedProfileRefusalResponse(ctx, a.GatewayRunner, profileName, routeConfig.Vals, func() (*SessionSource, error) {
+	errResp, err = ParkedProfileRefusalResponse(ctx, a.GatewayRunner, profileName, routeConfig.Map(), func() (*SessionSource, error) {
 		return a.admissionSource(ctx, routeName, profile, deliveryID), nil
 	})
 	if err != nil || errResp != nil {
@@ -1080,14 +1080,14 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 	if err != nil {
 		return nil, err
 	}
-	if allowed := routeConfig.GetOr("events", []any{}); pyrepr.Truthy(allowed) {
+	if allowed := routeConfig.ValueOr("events", []any{}); anyutil.IsTrue(allowed) {
 		member, err := webhookPyIn(eventType, allowed)
 		if err != nil {
 			return nil, err
 		}
 		if !member {
-			pkgLog().Debug(fmt.Sprintf("[webhook] Ignoring event %s for route %s (allowed: %s)", pyrepr.Str(eventType), routeName, pyrepr.Str(allowed)))
-			return WebJSONResponse(pyjson.ObjectOf("status", "ignored", "event", eventType), http.StatusOK, nil)
+			pkgLog().Debug(fmt.Sprintf("[webhook] Ignoring event %s for route %s (allowed: %s)", anyutil.String(eventType), routeName, anyutil.String(allowed)))
+			return WebJSONResponse(jsonutil.ObjectOf("status", "ignored", "event", eventType), http.StatusOK, nil)
 		}
 	}
 	matched, err := a.routeProcessor.RouteFiltersMatch(ctx, routeConfig, payload, eventType, webhookHeaderDict(header))
@@ -1095,21 +1095,21 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 		return nil, err
 	}
 	if !matched {
-		pkgLog().Info(fmt.Sprintf("[webhook] filtered event=%s route=%s", pyrepr.Str(eventType), routeName))
-		return WebJSONResponse(pyjson.ObjectOf("status", "ignored", "reason", "filter", "route", routeName), http.StatusOK, nil)
+		pkgLog().Info(fmt.Sprintf("[webhook] filtered event=%s route=%s", anyutil.String(eventType), routeName))
+		return WebJSONResponse(jsonutil.ObjectOf("status", "ignored", "reason", "filter", "route", routeName), http.StatusOK, nil)
 	}
 	scoped, err := a.WebhookProfileScope(ctx, profile)
 	if err != nil {
 		return nil, err
 	}
-	if script := routeConfig.GetOr("script", nil); pyrepr.Truthy(script) {
+	if script := routeConfig.ValueOr("script", nil); anyutil.IsTrue(script) {
 		keep, transformed, err := a.routeProcessor.RunRouteScript(scoped, script, payload)
 		if err != nil {
 			return nil, err
 		}
 		if !keep {
-			pkgLog().Info(fmt.Sprintf("[webhook] script ignored event=%s route=%s", pyrepr.Str(eventType), routeName))
-			return WebJSONResponse(pyjson.ObjectOf("status", "ignored", "reason", "script", "route", routeName), http.StatusOK, nil)
+			pkgLog().Info(fmt.Sprintf("[webhook] script ignored event=%s route=%s", anyutil.String(eventType), routeName))
+			return WebJSONResponse(jsonutil.ObjectOf("status", "ignored", "reason", "script", "route", routeName), http.StatusOK, nil)
 		}
 		if transformed != nil && transformed.Len() > 0 {
 			payload = transformed
@@ -1120,25 +1120,25 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 		return nil, err
 	}
 	if !rendered || prompt == "" {
-		if prompt, err = a.RenderPrompt(routeConfig.GetOr("prompt", ""), payload, eventType, routeName); err != nil {
+		if prompt, err = a.RenderPrompt(routeConfig.ValueOr("prompt", ""), payload, eventType, routeName); err != nil {
 			return nil, err
 		}
 	}
-	if skillList := routeConfig.GetOr("skills", []any{}); pyrepr.Truthy(skillList) && !pyrepr.Truthy(routeConfig.GetOr("cron_job", nil)) {
+	if skillList := routeConfig.ValueOr("skills", []any{}); anyutil.IsTrue(skillList) && !anyutil.IsTrue(routeConfig.ValueOr("cron_job", nil)) {
 		prompt = webhookApplySkills(scoped, prompt, skillList)
 	}
 	now := webhookNow()
 	identity := webhookIdentityFromParts(profile, routeName, deliveryID)
-	coalesce, coalesceIsDict := routeConfig.GetOr("coalesce", nil).(*pyjson.Object)
-	nonDurable := pyrepr.Truthy(routeConfig.GetOr("deliver_only", nil)) || pyrepr.Truthy(routeConfig.GetOr("cron_job", nil)) || coalesceIsDict
+	coalesce, coalesceIsDict := routeConfig.ValueOr("coalesce", nil).(*jsonutil.Object)
+	nonDurable := anyutil.IsTrue(routeConfig.ValueOr("deliver_only", nil)) || anyutil.IsTrue(routeConfig.ValueOr("cron_job", nil)) || coalesceIsDict
 	if nonDurable && !a.recordDeliveryID(identity, now) {
 		pkgLog().Info(fmt.Sprintf("[webhook] Skipping duplicate delivery %s on route %s", deliveryID, routeName))
-		return WebJSONResponse(pyjson.ObjectOf("status", "duplicate", "delivery_id", deliveryID), http.StatusOK, nil)
+		return WebJSONResponse(jsonutil.ObjectOf("status", "duplicate", "delivery_id", deliveryID), http.StatusOK, nil)
 	}
-	if pyrepr.Truthy(routeConfig.GetOr("cron_job", nil)) {
+	if anyutil.IsTrue(routeConfig.ValueOr("cron_job", nil)) {
 		return a.handleCronTrigger(ctx, prompt, routeConfig, routeName, eventType, deliveryID, profile)
 	}
-	if pyrepr.Truthy(routeConfig.GetOr("deliver_only", nil)) {
+	if anyutil.IsTrue(routeConfig.ValueOr("deliver_only", nil)) {
 		return a.handleDeliverOnly(ctx, prompt, payload, routeConfig, routeName, eventType, deliveryID, profile)
 	}
 	if coalesceIsDict {
@@ -1148,7 +1148,7 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 			return nil, err
 		}
 		if buffered {
-			return WebJSONResponse(pyjson.ObjectOf("status", "coalesced", "route", routeName, "event", eventType,
+			return WebJSONResponse(jsonutil.ObjectOf("status", "coalesced", "route", routeName, "event", eventType,
 				"delivery_id", deliveryID), http.StatusAccepted, nil)
 		}
 	}
@@ -1156,9 +1156,9 @@ func (a *WebhookAdapter) handleWebhook(ctx context.Context, request *WebRequest)
 }
 
 // Admits the run and acknowledges only once the authority committed the delivery
-func (a *WebhookAdapter) dispatchAgentRun(ctx context.Context, request *WebRequest, routeConfig *pyjson.Object, routeName string, profile *string,
+func (a *WebhookAdapter) dispatchAgentRun(ctx context.Context, request *WebRequest, routeConfig *jsonutil.Object, routeName string, profile *string,
 	payload any, prompt string, eventType any, deliveryID string, now float64) (*WebResponse, error) {
-	pkgLog().Info(fmt.Sprintf("[webhook] %s event=%s route=%s prompt_len=%d delivery=%s", request.Method, pyrepr.Str(eventType),
+	pkgLog().Info(fmt.Sprintf("[webhook] %s event=%s route=%s prompt_len=%d delivery=%s", request.Method, anyutil.String(eventType),
 		routeName, runeLen(prompt), deliveryID))
 	outcome, err := a.admitAgentRun(ctx, payload, prompt, deliveryID, now, WebhookDispatchArgs{RouteConfig: routeConfig,
 		RouteName: routeName, Profile: profile, EventType: eventType})
@@ -1169,9 +1169,9 @@ func (a *WebhookAdapter) dispatchAgentRun(ctx context.Context, request *WebReque
 	case "":
 		return webhookJSONError("Admission unavailable; retry this delivery", http.StatusServiceUnavailable)
 	case "duplicate":
-		return WebJSONResponse(pyjson.ObjectOf("status", "duplicate", "delivery_id", deliveryID), http.StatusOK, nil)
+		return WebJSONResponse(jsonutil.ObjectOf("status", "duplicate", "delivery_id", deliveryID), http.StatusOK, nil)
 	}
-	return WebJSONResponse(pyjson.ObjectOf("status", "accepted", "route", routeName, "event", eventType,
+	return WebJSONResponse(jsonutil.ObjectOf("status", "accepted", "route", routeName, "event", eventType,
 		"delivery_id", deliveryID), http.StatusAccepted, nil)
 }
 
@@ -1215,7 +1215,7 @@ func (a *WebhookAdapter) admissionSource(ctx context.Context, routeName string, 
 func (a *WebhookAdapter) admitAgentRun(ctx context.Context, payload any, prompt, deliveryID string, now float64, args WebhookDispatchArgs) (string, error) {
 	identity := webhookIdentityFromParts(args.Profile, args.RouteName, deliveryID)
 	sessionChatID := identity.SessionChatID()
-	extra, err := a.renderDeliveryExtra(args.RouteConfig.GetOr("deliver_extra", pyjson.NewObject()), payload)
+	extra, err := a.renderDeliveryExtra(args.RouteConfig.ValueOr("deliver_extra", jsonutil.NewObject()), payload)
 	if err != nil {
 		return "", err
 	}
@@ -1223,8 +1223,8 @@ func (a *WebhookAdapter) admitAgentRun(ctx context.Context, payload any, prompt,
 	if args.Profile != nil {
 		profileValue = *args.Profile
 	}
-	info := pyjson.ObjectOf("deliver", args.RouteConfig.GetOr("deliver", "log"), "profile", profileValue, "deliver_extra", extra,
-		"route", args.RouteName, "mirror", args.RouteConfig.GetOr("mirror_to_session", nil) == true)
+	info := jsonutil.ObjectOf("deliver", args.RouteConfig.ValueOr("deliver", "log"), "profile", profileValue, "deliver_extra", extra,
+		"route", args.RouteName, "mirror", args.RouteConfig.ValueOr("mirror_to_session", nil) == true)
 	a.stateMu.Lock()
 	a.deliveryInfo[sessionChatID] = info
 	a.deliveryInfoCreated[sessionChatID] = now
@@ -1291,7 +1291,7 @@ func (a *WebhookAdapter) finalizeDelivery(ctx context.Context, event *MessageEve
 		if row == nil {
 			return &PyError{Kind: "TypeError", Msg: "the webhook delivery record is missing"}
 		}
-		if status := row.GetOr("status", nil); status == "queued" || status == "started" {
+		if status := row.ValueOr("status", nil); status == "queued" || status == "started" {
 			authority.mu.Lock()
 			waiter := authority.waiters[receipt.AdmissionID]
 			if waiter == nil {
@@ -1393,12 +1393,12 @@ func (a *WebhookAdapter) ValidateSignature(request *WebRequest, body []byte, sec
 
 // Renders a prompt template with dotted payload fields, the raw payload JSON for an empty template
 func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, routeName string) (string, error) {
-	if !pyrepr.Truthy(template) {
-		dumped, err := pyjson.Dumps(payload, pyjson.Indent(2))
+	if !anyutil.IsTrue(template) {
+		dumped, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 		if err != nil {
 			return "", err
 		}
-		return fmt.Sprintf("Webhook event '%s' on route '%s':\n\n```json\n%s\n```", pyrepr.Str(eventType), routeName, pySliceRunes(dumped, 4000)), nil
+		return fmt.Sprintf("Webhook event '%s' on route '%s':\n\n```json\n%s\n```", anyutil.String(eventType), routeName, pySliceRunes(dumped, 4000)), nil
 	}
 	text, ok := template.(string)
 	if !ok {
@@ -1413,7 +1413,7 @@ func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, 
 		literal := "{" + key + "}"
 		switch key {
 		case "__raw__":
-			dumped, err := pyjson.Dumps(payload, pyjson.Indent(2))
+			dumped, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 			if err != nil {
 				failure = err
 				return match
@@ -1429,34 +1429,34 @@ func (a *WebhookAdapter) RenderPrompt(template any, payload any, eventType any, 
 		}
 		value := payload
 		for _, part := range strings.Split(key, ".") {
-			obj, ok := value.(*pyjson.Object)
+			obj, ok := value.(*jsonutil.Object)
 			if !ok {
 				return literal
 			}
-			value = obj.GetOr(part, literal)
+			value = obj.ValueOr(part, literal)
 		}
 		switch value.(type) {
-		case *pyjson.Object, []any:
-			dumped, err := pyjson.Dumps(value, pyjson.Indent(2))
+		case *jsonutil.Object, []any:
+			dumped, err := jsonutil.Encode(value, jsonutil.Indent(2))
 			if err != nil {
 				failure = err
 				return match
 			}
 			return pySliceRunes(dumped, 2000)
 		}
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	})
 	return out, failure
 }
 
 // Delivery extra with every string value rendered against the payload
-func (a *WebhookAdapter) renderDeliveryExtra(extra any, payload any) (*pyjson.Object, error) {
-	obj, ok := pyjson.AsObject(extra)
+func (a *WebhookAdapter) renderDeliveryExtra(extra any, payload any) (*jsonutil.Object, error) {
+	obj, ok := jsonutil.AsObject(extra)
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook delivery extra settings are %s, expected a mapping", errchain.Kind(extra))}
 	}
-	out := pyjson.NewObject()
-	for _, key := range obj.Keys {
+	out := jsonutil.NewObject()
+	for _, key := range obj.Keys() {
 		value, _ := obj.Get(key)
 		if text, isText := value.(string); isText {
 			rendered, err := a.RenderPrompt(text, payload, "", "")
@@ -1472,22 +1472,22 @@ func (a *WebhookAdapter) renderDeliveryExtra(extra any, payload any) (*pyjson.Ob
 }
 
 // Sends deliver only content through the same helpers the agent reply leg uses
-func (a *WebhookAdapter) directDeliver(ctx context.Context, content string, delivery *pyjson.Object) (SendResult, error) {
-	deliverType := delivery.GetOr("deliver", "log")
+func (a *WebhookAdapter) directDeliver(ctx context.Context, content string, delivery *jsonutil.Object) (SendResult, error) {
+	deliverType := delivery.ValueOr("deliver", "log")
 	switch {
-	case pyrepr.Equal(deliverType, "log"):
+	case anyutil.Equal(deliverType, "log"):
 		pkgLog().Info("[webhook] direct-deliver log-only: " + pySliceRunes(content, 200))
 		return SendResult{Success: true}, nil
-	case pyrepr.Equal(deliverType, "github_comment"):
+	case anyutil.Equal(deliverType, "github_comment"):
 		return a.deliverGitHubComment(ctx, content, delivery)
 	}
 	return a.deliverCrossPlatform(ctx, deliverType, content, delivery)
 }
 
 // Delivery extra of a destination as a dict, the AttributeError of any other value
-func webhookDeliveryExtra(delivery *pyjson.Object) (*pyjson.Object, error) {
-	extra := delivery.GetOr("deliver_extra", pyjson.NewObject())
-	obj, ok := pyjson.AsObject(extra)
+func webhookDeliveryExtra(delivery *jsonutil.Object) (*jsonutil.Object, error) {
+	extra := delivery.ValueOr("deliver_extra", jsonutil.NewObject())
+	obj, ok := jsonutil.AsObject(extra)
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook delivery extra settings are %s, expected a mapping", errchain.Kind(extra))}
 	}
@@ -1495,13 +1495,13 @@ func webhookDeliveryExtra(delivery *pyjson.Object) (*pyjson.Object, error) {
 }
 
 // Posts the response as a pull request comment through the gh CLI with the routed profile's credentials
-func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content string, delivery *pyjson.Object) (SendResult, error) {
+func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content string, delivery *jsonutil.Object) (SendResult, error) {
 	extra, err := webhookDeliveryExtra(delivery)
 	if err != nil {
 		return SendResult{}, err
 	}
-	repo, prNumber := extra.GetOr("repo", ""), extra.GetOr("pr_number", "")
-	if !pyrepr.Truthy(repo) || !pyrepr.Truthy(prNumber) {
+	repo, prNumber := extra.ValueOr("repo", ""), extra.ValueOr("pr_number", "")
+	if !anyutil.IsTrue(repo) || !anyutil.IsTrue(prNumber) {
 		pkgLog().Error("[webhook] github_comment delivery missing repo or pr_number")
 		return SendResult{Success: false, Error: "Missing repo or pr_number"}, nil
 	}
@@ -1510,10 +1510,10 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		err = &PyError{Kind: "ValueError", Msg: "non-positive"}
 	}
 	if err != nil {
-		var pyErr *pyint.Error
+		var pyErr *errorutil.Error
 		var gwErr *PyError
 		if errors.As(err, &pyErr) && (pyErr.Kind == "ValueError" || pyErr.Kind == "TypeError") || errors.As(err, &gwErr) {
-			pkgLog().Error("[webhook] invalid pr_number: " + pyrepr.Repr(prNumber))
+			pkgLog().Error("[webhook] invalid pr_number: " + anyutil.Quote(prNumber))
 			return SendResult{Success: false, Error: "Invalid pr_number"}, nil
 		}
 		return SendResult{}, err
@@ -1523,23 +1523,23 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		return SendResult{}, &PyError{Kind: "TypeError", Msg: "the GitHub repository is " + errchain.Kind(repo) + ", expected text"}
 	}
 	if !webhookRepoRE.MatchString(repoText) {
-		pkgLog().Error("[webhook] invalid repo format: " + pyrepr.Repr(repo))
+		pkgLog().Error("[webhook] invalid repo format: " + anyutil.Quote(repo))
 		return SendResult{Success: false, Error: "Invalid repo format"}, nil
 	}
-	env, err := a.githubEnv(ctx, delivery.GetOr("profile", nil))
+	env, err := a.githubEnv(ctx, delivery.ValueOr("profile", nil))
 	if err != nil {
-		pkgLog().Error("[webhook] github_comment delivery error: " + pyrepr.ExceptionMessage(err))
-		return SendResult{Success: false, Error: pyrepr.ExceptionMessage(err)}, nil
+		pkgLog().Error("[webhook] github_comment delivery error: " + err.Error())
+		return SendResult{Success: false, Error: err.Error()}, nil
 	}
 	argv := []string{"gh", "pr", "comment", prInt.String(), "--repo", repoText, "--body", content}
-	result, err := pysubprocess.RunWith(ctx, argv, pysubprocess.Options{Env: env, Timeout: 30 * time.Second})
+	result, err := executil.Run(ctx, argv, executil.Options{Env: env, Timeout: 30 * time.Second})
 	if err != nil {
 		if errors.Is(err, exec.ErrNotFound) {
 			pkgLog().Error("[webhook] 'gh' CLI not found — install GitHub CLI for github_comment delivery")
 			return SendResult{Success: false, Error: "gh CLI not installed"}, nil
 		}
 		text := webhookExecErrorText(err)
-		var timeout *pysubprocess.TimeoutExpired
+		var timeout *executil.TimeoutError
 		if errors.As(err, &timeout) {
 			text = timeout.Error()
 		}
@@ -1547,7 +1547,7 @@ func (a *WebhookAdapter) deliverGitHubComment(ctx context.Context, content strin
 		return SendResult{Success: false, Error: text}, nil
 	}
 	if result.Returncode == 0 {
-		pkgLog().Info(fmt.Sprintf("[webhook] Posted comment on %s#%s", repoText, pyrepr.Str(prNumber)))
+		pkgLog().Info(fmt.Sprintf("[webhook] Posted comment on %s#%s", repoText, anyutil.String(prNumber)))
 		return SendResult{Success: true}, nil
 	}
 	stderr := strings.ToValidUTF8(string(result.Stderr), "�")
@@ -1614,17 +1614,17 @@ func (a *WebhookAdapter) findAdapter(targetPlatform Platform, profile *string) P
 }
 
 // Routes the response to another platform through the routed profile's own adapter and home channel
-func (a *WebhookAdapter) deliverCrossPlatform(ctx context.Context, platformName any, content string, delivery *pyjson.Object) (SendResult, error) {
+func (a *WebhookAdapter) deliverCrossPlatform(ctx context.Context, platformName any, content string, delivery *jsonutil.Object) (SendResult, error) {
 	if a.GatewayRunner == nil {
 		return SendResult{Success: false, Error: "No gateway runner for cross-platform delivery"}, nil
 	}
-	nameText := pyrepr.Str(platformName)
+	nameText := anyutil.String(platformName)
 	targetPlatform, err := ParsePlatform(ctx, platformName)
 	if err != nil {
 		return SendResult{Success: false, Error: "Unknown platform: " + nameText}, nil
 	}
 	var profile *string
-	if raw := delivery.GetOr("profile", nil); raw != nil {
+	if raw := delivery.ValueOr("profile", nil); raw != nil {
 		text, isText := raw.(string)
 		if !isText {
 			return SendResult{}, &PyError{Kind: "TypeError", Msg: "profile must be a string"}
@@ -1639,12 +1639,12 @@ func (a *WebhookAdapter) deliverCrossPlatform(ctx context.Context, platformName 
 	if err != nil {
 		return SendResult{}, err
 	}
-	chatID := extra.GetOr("chat_id", "")
+	chatID := extra.ValueOr("chat_id", "")
 	scoped, err := a.WebhookProfileScope(ctx, profile)
 	if err != nil {
 		return SendResult{}, err
 	}
-	if !pyrepr.Truthy(chatID) {
+	if !anyutil.IsTrue(chatID) {
 		cfg, err := a.WebhookDeliveryConfig(scoped, profile)
 		if err != nil {
 			return SendResult{}, err
@@ -1655,15 +1655,15 @@ func (a *WebhookAdapter) deliverCrossPlatform(ctx context.Context, platformName 
 		}
 		chatID = homeChannel.ChatID
 	}
-	threadID := extra.GetOr("message_thread_id", nil)
-	if !pyrepr.Truthy(threadID) {
-		threadID = extra.GetOr("thread_id", nil)
+	threadID := extra.ValueOr("message_thread_id", nil)
+	if !anyutil.IsTrue(threadID) {
+		threadID = extra.ValueOr("thread_id", nil)
 	}
 	var metadata map[string]any
-	if pyrepr.Truthy(threadID) {
+	if anyutil.IsTrue(threadID) {
 		metadata = map[string]any{"thread_id": threadID}
 	}
-	chatText := pyrepr.Str(chatID)
+	chatText := anyutil.String(chatID)
 	result, err := adapter.Send(scoped, chatText, content, "", metadata)
 	if err != nil {
 		return SendResult{}, err
@@ -1687,13 +1687,13 @@ func (a *WebhookAdapter) WebhookDeliveryConfig(ctx context.Context, profile *str
 }
 
 // Mirrors a delivered response into the target chat transcript as a labelled user turn when the route opts in
-func (a *WebhookAdapter) mirrorDelivery(ctx context.Context, platformName, chatID, content string, delivery *pyjson.Object, threadID any) {
-	if delivery.GetOr("mirror", nil) != true {
+func (a *WebhookAdapter) mirrorDelivery(ctx context.Context, platformName, chatID, content string, delivery *jsonutil.Object, threadID any) {
+	if delivery.ValueOr("mirror", nil) != true {
 		return
 	}
 	route := "webhook"
-	if raw := delivery.GetOr("route", nil); pyrepr.Truthy(raw) {
-		route = pyrepr.Str(raw)
+	if raw := delivery.ValueOr("route", nil); anyutil.IsTrue(raw) {
+		route = anyutil.String(raw)
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -1702,7 +1702,7 @@ func (a *WebhookAdapter) mirrorDelivery(ctx context.Context, platformName, chatI
 	}()
 	var thread *string
 	if threadID != nil {
-		text := pyrepr.Str(threadID)
+		text := anyutil.String(threadID)
 		thread = &text
 	}
 	ok := MirrorToSession(ctx, platformName, chatID, fmt.Sprintf("[Webhook delivery: %s]\n%s", route, content),

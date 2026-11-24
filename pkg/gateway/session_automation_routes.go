@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Producers whose queued route wakes follow the route to a fresh session
@@ -82,12 +82,12 @@ func moveRouteWakes(ctx context.Context, runner AuthorityRunner, sessionKey, old
 	actor := Principal{Subject: "messaging-control", ProfileID: a.ProfileID,
 		Capabilities: map[string]bool{"session:submit": true, "session:control": true}, TransportID: "reset"}
 	for _, row := range rows {
-		native, _ := rowPayload(row).GetOr("native_text_v1", pyjson.NewObject()).(*pyjson.Object)
-		automation := native.GetOr("automation", pyjson.NewObject())
+		native, _ := rowPayload(row).ValueOr("native_text_v1", jsonutil.NewObject()).(*jsonutil.Object)
+		automation := native.ValueOr("automation", jsonutil.NewObject())
 		requestID := rowString(row, "request_id")
 		var identity []any
 		if pyTruthy(automation) && strings.HasPrefix(requestID, "[") {
-			decoded, err := pyjson.Loads(requestID)
+			decoded, err := jsonutil.Decode(requestID)
 			if err != nil {
 				return err
 			}
@@ -106,9 +106,9 @@ func moveRouteWakes(ctx context.Context, runner AuthorityRunner, sessionKey, old
 			}
 			return err
 		}
-		payload := pyjson.Clone(rowPayload(row)).(*pyjson.Object)
-		movedNative := payload.Vals["native_text_v1"].(*pyjson.Object)
-		movedNative.Vals["automation"].(*pyjson.Object).Set("owner", fresh.SessionID)
+		payload := jsonutil.Clone(rowPayload(row)).(*jsonutil.Object)
+		movedNative := payload.Value("native_text_v1").(*jsonutil.Object)
+		movedNative.Value("automation").(*jsonutil.Object).Set("owner", fresh.SessionID)
 		oldLive, _ := a.live(old.SessionID)
 		setdefaultLive(a, fresh.SessionID, laneSource(oldLive.Source), sessionKey)
 		principal, request := rowString(row, "principal_id"), requestID
@@ -116,7 +116,7 @@ func moveRouteWakes(ctx context.Context, runner AuthorityRunner, sessionKey, old
 			return a.DB.AdmitSessionInput(taskCtx, state.SessionInput{Epoch: a.Epoch, PrincipalID: principal, SessionID: fresh.SessionID,
 				RequestID: request, Payload: payload, AuthorizeWrite: a.admissionGate(nil, false)})
 		}, func(taskCtx context.Context, result any) (any, error) {
-			return a.admitted(taskCtx, fresh, nil, result.(*pyjson.Object))
+			return a.admitted(taskCtx, fresh, nil, result.(*jsonutil.Object))
 		}, true, func(any) { _ = a.scheduleAdmitted(context.WithoutCancel(ctx), fresh) })
 		if err != nil {
 			return err

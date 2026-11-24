@@ -11,10 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Runs one teardown step, a failure debug logged as label and the error
@@ -102,7 +103,7 @@ func (r *GatewayRunner) stopBeginTeardown(ctx context.Context, sc *stopContext) 
 		suffix = " for restart"
 	}
 	pkgLog().Info(fmt.Sprintf("Stopping gateway%s...", suffix))
-	started := pythread.Monotonic()
+	started := timeutil.Monotonic()
 	sc.startedAt = &started
 	r.running.Store(false)
 	r.clearPluginMessageInjector()
@@ -142,13 +143,13 @@ func (r *GatewayRunner) stopDrainActiveWork(ctx context.Context, timeout float64
 			"%.0fs for them (cron_drain_timeout=%.0fs, restart_drain_timeout=%.0fs)",
 			cronAtStart, apiAtStart, cronTimeout, cronDrainCfg, timeout))
 	}
-	drainStartedAt := pythread.Monotonic()
+	drainStartedAt := timeutil.Monotonic()
 	active, timedOut, err := r.drainActiveAgents(ctx, timeout, &cronTimeout)
 	if err != nil {
 		return err
 	}
 	sc.activeAgents, sc.timedOut = active, timedOut
-	sc.drainElapsed = pythread.Monotonic() - drainStartedAt
+	sc.drainElapsed = timeutil.Monotonic() - drainStartedAt
 	pkgLog().Info(fmt.Sprintf("Shutdown phase: drain done at +%.2fs (drain took %.2fs, timed_out=%s, active_at_start=%d, "+
 		"active_now=%d, cron_at_start=%d, cron_now=%d, api_at_start=%d, api_now=%d, "+
 		"deferred_at_start=%d, deferred_now=%d)", sc.elapsed(), sc.drainElapsed, pyBool(sc.timedOut), len(sc.activeAgents),
@@ -196,12 +197,12 @@ func (r *GatewayRunner) stopInterruptRemainingWork(ctx context.Context, sc *stop
 	reason := r.shutdownInterruptReason()
 	r.interruptRunningAgents(reason)
 	grace := r.postInterruptGraceTimeout()
-	deadline := pythread.Monotonic() + grace
+	deadline := timeutil.Monotonic() + grace
 	pkgLog().Info(fmt.Sprintf("Shutdown phase: allowing %.1fs for interrupted agents to unwind", grace))
 	workLive := func() bool {
 		return r.runningAgentCount() != 0 || gateway.ManagedTurnCount(r) != 0 || r.activeAPIRunCount() != 0 || sc.deferredCount() != 0
 	}
-	for workLive() && pythread.Monotonic() < deadline {
+	for workLive() && timeutil.Monotonic() < deadline {
 		r.updateRuntimeStatus(ctx, optStr("draining"), nil)
 		if err := sleepCtx(ctx, 0.1); err != nil {
 			return err
@@ -501,7 +502,7 @@ func (r *GatewayRunner) shutdownWatchdogSnapshot(sc *stopContext) map[string]any
 
 // Runs every stop phase under the thread based shutdown watchdog
 func (r *GatewayRunner) stopImpl(ctx context.Context) error {
-	watchdogDone := &pythread.Event{}
+	watchdogDone := &syncutil.Event{}
 	r.shutdownWatchdogDone = watchdogDone
 	sc := &stopContext{deferredCount: r.activeDeferredAgentWorkerCount}
 	defer watchdogDone.Set()

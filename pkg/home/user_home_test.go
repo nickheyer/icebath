@@ -9,12 +9,12 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func TestUserHomeServesPathlibHomeUntilPatched(t *testing.T) {
 	t.Setenv(EnvSuffix, "")
-	real, realErr := pypath.PathHome()
+	real, realErr := pathutil.Home()
 	if got, err := UserHome(); got != real || (err == nil) != (realErr == nil) {
 		t.Fatalf("UserHome() = %q, %v want %q, %v", got, err, real, realErr)
 	}
@@ -58,7 +58,7 @@ func TestAccountDefaultComparesTheResolvedUserHome(t *testing.T) {
 	account := fallback
 	if runtime.GOOS != "windows" {
 		if u, err := homeguard.LookupID(strconv.Itoa(os.Getuid())); err == nil {
-			account = pypath.PathStr(u.HomeDir)
+			account = filepath.Clean(u.HomeDir)
 		}
 	}
 	accountDefault, err := platformDefault(os.Getenv, func() (string, error) { return account, nil })
@@ -83,7 +83,7 @@ func TestAccountDefaultComparesTheResolvedUserHome(t *testing.T) {
 // Platform default directory derived from a user home with no suffix and no LOCALAPPDATA
 func platformBase(h string) string {
 	if runtime.GOOS == "windows" {
-		return pypath.PathJoin(h, "AppData", "Local", "icebath")
+		return pathutil.Join(h, "AppData", "Local", "icebath")
 	}
-	return pypath.PathJoin(h, ".icebath")
+	return pathutil.Join(h, ".icebath")
 }

@@ -7,9 +7,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Voice channel of a fixed name
@@ -28,13 +28,13 @@ type fakeVoiceAdapter struct {
 	leaves        []int64
 	callback      func(ctx context.Context, guildID, userID int64, transcript string) error
 	textChannels  map[int64]int64
-	voiceSources  map[int64]*pyjson.Object
+	voiceSources  map[int64]*jsonutil.Object
 	callbackWired bool
 }
 
 // Discord voice adapter on the platform
 func newFakeVoiceAdapter(platform gateway.Platform) *fakeVoiceAdapter {
-	a := &fakeVoiceAdapter{textChannels: map[int64]int64{}, voiceSources: map[int64]*pyjson.Object{}}
+	a := &fakeVoiceAdapter{textChannels: map[int64]int64{}, voiceSources: map[int64]*jsonutil.Object{}}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(gateway.NewPlatformConfig(), platform, a)
 	return a
 }
@@ -66,7 +66,7 @@ func (a *fakeVoiceAdapter) GetUserVoiceChannel(context.Context, int64, *string) 
 func (a *fakeVoiceAdapter) JoinVoiceChannel(context.Context, voiceChannelRef) (bool, error) {
 	return a.joinOK, a.joinErr
 }
-func (a *fakeVoiceAdapter) SetVoiceSource(guildID int64, source *pyjson.Object) {
+func (a *fakeVoiceAdapter) SetVoiceSource(guildID int64, source *jsonutil.Object) {
 	a.voiceSources[guildID] = source
 }
 func (a *fakeVoiceAdapter) LeaveVoiceChannel(_ context.Context, guildID int64) error {
@@ -80,7 +80,7 @@ func voiceCommandRunner(t *testing.T) *GatewayRunner {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	r := allocGatewayRunner()
-	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	r.adapters = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	return r
 }
 
@@ -171,7 +171,7 @@ func TestVoiceChannelCommandsJoinSuccess(t *testing.T) {
 		t.Fatalf("mode %q", storedVoiceMode(r, "discord:123"))
 	}
 	source := adapter.voiceSources[111]
-	if source == nil || source.GetOr("chat_id", nil) != "123" || source.GetOr("chat_type", nil) != "group" {
+	if source == nil || source.ValueOr("chat_id", nil) != "123" || source.ValueOr("chat_type", nil) != "group" {
 		t.Fatalf("voice source %v", source)
 	}
 }

@@ -5,15 +5,15 @@ import (
 	"encoding/hex"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Value under key of a decoded JSON object, nil for a missing key or a non object
 func cxGet(v any, key string) any {
 	switch o := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if o == nil {
 			return nil
 		}
@@ -27,7 +27,7 @@ func cxGet(v any, key string) any {
 
 func cxHas(v any, key string) bool {
 	switch o := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if o == nil {
 			return false
 		}
@@ -42,7 +42,7 @@ func cxHas(v any, key string) bool {
 
 func cxIsObject(v any) bool {
 	switch o := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return o != nil
 	case map[string]any:
 		return o != nil
@@ -53,7 +53,7 @@ func cxIsObject(v any) bool {
 // Python truth value of a decoded JSON value
 func cxTruthy(v any) bool {
 	switch o := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return o != nil && o.Len() > 0
 	case map[string]any:
 		return len(o) > 0
@@ -62,7 +62,7 @@ func cxTruthy(v any) bool {
 	case []map[string]any:
 		return len(o) > 0
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // The value when truthy, else the fallback, the Python x or fallback idiom
@@ -82,7 +82,7 @@ func cxStr(v any, key, fallback string) string {
 	if s, ok := val.(string); ok {
 		return s
 	}
-	return pyrepr.Str(val)
+	return anyutil.String(val)
 }
 
 func cxList(v any) []any {
@@ -101,7 +101,7 @@ func cxList(v any) []any {
 
 // json.dumps with ensure_ascii False, the text form the codex projections record
 func cxDumps(v any) (string, error) {
-	return pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	return jsonutil.Encode(v)
 }
 
 // Stable tool call id from the codex item id, else a hash of the item type
@@ -115,7 +115,7 @@ func codexDeterministicCallID(itemType, itemID string) string {
 
 // Tool arguments as sorted key JSON so replays keep prefix caches valid
 func codexFormatToolArgs(d any) string {
-	out, err := pyjson.Dumps(d, pyjson.EnsureASCII(false), pyjson.SortKeys(true))
+	out, err := jsonutil.Encode(d, jsonutil.SortKeys())
 	if err != nil {
 		panic(err)
 	}
@@ -170,7 +170,7 @@ func (p *CodexEventProjector) Project(notification any) CodexProjectionResult {
 	case "reasoning":
 		for _, key := range []string{"summary", "content"} {
 			for _, part := range cxList(cxOr(cxGet(item, key), []any{})) {
-				p.pendingReasoning = append(p.pendingReasoning, pyrepr.Str(part))
+				p.pendingReasoning = append(p.pendingReasoning, anyutil.String(part))
 			}
 		}
 		return CodexProjectionResult{}
@@ -210,7 +210,7 @@ func codexProjectUserMessage(item any) CodexProjectionResult {
 		if isText {
 			parts = append(parts, cxStr(fragment, "text", ""))
 		} else {
-			parts = append(parts, pyrepr.Str(cxGet(fragment, "text")))
+			parts = append(parts, anyutil.String(cxGet(fragment, "text")))
 		}
 	}
 	return CodexProjectionResult{Messages: []map[string]any{{"role": "user", "content": strings.Join(parts, "\n")}}}
@@ -231,7 +231,7 @@ func codexCommandSpec(item any) (string, string, any, string) {
 	args := map[string]any{"command": cxStr(item, "command", ""), "cwd": cxStr(item, "cwd", "")}
 	output := cxStr(item, "aggregatedOutput", "")
 	if exitCode := cxGet(item, "exitCode"); exitCode != nil {
-		env := pyjson.NewObject()
+		env := jsonutil.NewObject()
 		env.Set("exit_code", exitCode)
 		env.Set("output", output)
 		output = cxMustDumps(env)
@@ -256,7 +256,7 @@ func codexFileChangeSummary(item any) []any {
 func codexFileChangeSpec(item any) (string, string, any, string) {
 	changes := codexFileChangeSummary(item)
 	status := cxStr(item, "status", "unknown")
-	content := "apply_patch status=" + status + ", " + pyrepr.Str(len(changes)) + " change(s)"
+	content := "apply_patch status=" + status + ", " + anyutil.String(len(changes)) + " change(s)"
 	return "apply_patch", "apply_patch", map[string]any{"changes": changes}, content
 }
 
@@ -292,13 +292,13 @@ func codexDynamicToolCallSpec(item any) (string, string, any, string) {
 	if list, ok := contentItems.([]any); ok && len(list) > 0 {
 		content = cxDumpsCut(list, 4000)
 	} else {
-		content = "success=" + pyrepr.Str(cxGet(item, "success"))
+		content = "success=" + anyutil.String(cxGet(item, "success"))
 	}
 	return "dyn_" + tool, tool, codexDictArgs(cxGet(item, "arguments")), content
 }
 
 func codexWebSearchSpec(item any) (string, string, any, string) {
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("provider", "codex")
 	if status := cxGet(item, "status"); cxTruthy(status) {
 		result.Set("status", status)
@@ -311,7 +311,7 @@ func codexWebSearchSpec(item any) (string, string, any, string) {
 func codexProjectOpaque(item any, itemType string) CodexProjectionResult {
 	payload, err := cxDumps(item)
 	if err != nil {
-		payload = pyrepr.Repr(item)
+		payload = anyutil.Quote(item)
 	}
 	payload = textutil.First(payload, 1500)
 	return CodexProjectionResult{Messages: []map[string]any{{"role": "assistant", "content": "[codex " + itemType + "] " + payload}}}

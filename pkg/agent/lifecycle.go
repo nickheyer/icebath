@@ -6,11 +6,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type lifecycleEnvKey struct{}
@@ -87,8 +87,8 @@ func lifecycleSessionEndMessages(results []any) []string {
 // Hard closes the session Relay conversation, then returns the plugin finalize results
 func lifecycleFinalizeSession(ctx context.Context, kwargs map[string]any) []any {
 	sessionID := ""
-	if v := kwargs["session_id"]; pyrepr.Truthy(v) {
-		sessionID = pyrepr.Str(v)
+	if v := kwargs["session_id"]; anyutil.IsTrue(v) {
+		sessionID = anyutil.String(v)
 	}
 	if sessionID != "" {
 		func() {

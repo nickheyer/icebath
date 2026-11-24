@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestVideoInputFromPublicURLUsesURLField(t *testing.T) {
@@ -55,12 +55,12 @@ func (c *fakeXAIVideoClient) RoundTrip(r *http.Request) (*http.Response, error) 
 	}
 	if r.Method == http.MethodPost {
 		raw, _ := io.ReadAll(r.Body)
-		parsed, _ := pyjson.Loads(string(raw))
-		m, _ := pyjson.Plain(parsed).(map[string]any)
+		parsed, _ := jsonutil.Decode(string(raw))
+		m, _ := jsonutil.Plain(parsed).(map[string]any)
 		c.posts = append(c.posts, orCall{url: r.URL.String(), headers: r.Header.Clone(), json: m})
 		return reply(`{"request_id": "req-123"}`), nil
 	}
-	model, _ := pyjson.Dumps(c.posts[len(c.posts)-1].json["model"])
+	model, _ := jsonutil.Encode(c.posts[len(c.posts)-1].json["model"])
 	return reply(`{"status": "done", "video": {"url": "https://xai-cdn/out.mp4", "duration": 8}, "model": ` + model + `}`), nil
 }
 
@@ -147,7 +147,7 @@ func TestXAIValidationTooManyReferencesRejects(t *testing.T) {
 func TestXAIClampingDurationClampedTo15(t *testing.T) {
 	p, fake := xaiVideoProvider(t)
 	p.Generate(context.Background(), nil, VideoGenRequest{Prompt: "x", Duration: iptr(30)})
-	if !pyrepr.Equal(fake.last(t).json["duration"], 15) {
+	if !anyutil.Equal(fake.last(t).json["duration"], 15) {
 		t.Fatal(fake.last(t).json)
 	}
 }

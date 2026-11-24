@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func anchorMsg(role, content string) *state.Message {
@@ -205,8 +205,8 @@ func TestAnchorFingerprintsMatchTheReferenceDigests(t *testing.T) {
 	}
 	store := &anchorStore{rows: map[string]map[string]any{}}
 	(&UsageAnchorState{SessionID: "s1", Store: store}).Set(anchor, true)
-	text, err := pyjson.Dumps(store.rows["s1"][UsageAnchorModelConfigKey])
-	if err != nil || text != `{"prompt_tokens": 1200, "completion_tokens": 80, "base_count": 3, "base_last_role": "tool", "base_last_fp": "7443da779ab0f3c84d3c59d67de556efc233da5bea6944797af0a9ca8b19c32f", "base_prefix_fp": "beeb87e2a90759f2974a00d6681e056a254a147eefda5e98b624dbb5975457ca"}` {
+	text, err := jsonutil.Encode(store.rows["s1"][UsageAnchorModelConfigKey])
+	if err != nil || text != `{"prompt_tokens":1200,"completion_tokens":80,"base_count":3,"base_last_role":"tool","base_last_fp":"7443da779ab0f3c84d3c59d67de556efc233da5bea6944797af0a9ca8b19c32f","base_prefix_fp":"beeb87e2a90759f2974a00d6681e056a254a147eefda5e98b624dbb5975457ca"}` {
 		t.Fatalf("persisted blob %s %v", text, err)
 	}
 }
@@ -214,11 +214,11 @@ func TestAnchorFingerprintsMatchTheReferenceDigests(t *testing.T) {
 func TestAnchorRestoresFromTheBlobTheSessionRowLoads(t *testing.T) {
 	messages := anchorPlainHistory()
 	anchor := CaptureUsageAnchor(30_000, 50, messages)
-	text, err := pyjson.Dumps(anchor.toObject())
+	text, err := jsonutil.Encode(anchor.toObject())
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := pyjson.Loads(text)
+	loaded, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}

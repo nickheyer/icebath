@@ -3,10 +3,11 @@ package pvporcupine
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // An error the engine reports, Class naming the subclass raised
@@ -86,7 +87,7 @@ func NewPorcupine(accessKey, libraryPath, modelPath, device string, keywordPaths
 	if !pathExists(libraryPath) {
 		return nil, &PyError{Class: "OSError", Msg: fmt.Sprintf("Couldn't find Porcupine's dynamic library at '%s'.", libraryPath)}
 	}
-	library, err := pyctypes.LoadLibrary(libraryPath, false)
+	library, err := dlutil.Open(libraryPath, false)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +101,7 @@ func NewPorcupine(accessKey, libraryPath, modelPath, device string, keywordPaths
 		return nil, &PyError{Class: "ValueError", Msg: "Number of keywords does not match the number of sensitivities."}
 	}
 	for _, x := range keywordPaths {
-		if !pathExists(pypath.Expanduser(x)) {
+		if !pathExists(pathutil.ExpandUser(x)) {
 			return nil, &PyError{Class: "OSError", Msg: fmt.Sprintf("Couldn't find keyword file at '%s'.", x)}
 		}
 	}
@@ -122,13 +123,13 @@ func NewPorcupine(accessKey, libraryPath, modelPath, device string, keywordPaths
 		if err != nil {
 			return err
 		}
-		pyctypes.RegisterFunc(fptr, addr)
+		dlutil.RegisterFunc(fptr, addr)
 		return nil
 	}
 	if err := bind(&setSDK, "pv_set_sdk"); err != nil {
 		return nil, err
 	}
-	setSDK(&pyctypes.CString("python")[0])
+	setSDK(&dlutil.CString("python")[0])
 	if err := bind(&p.getErrorStack, "pv_get_error_stack"); err != nil {
 		return nil, err
 	}
@@ -142,11 +143,11 @@ func NewPorcupine(accessKey, libraryPath, modelPath, device string, keywordPaths
 	cPathPtrs := make([]uintptr, len(keywordPaths)+1)
 	cSensitivities := make([]float32, len(keywordPaths)+1)
 	for i, x := range keywordPaths {
-		cPaths[i] = pyctypes.CString(pypath.Expanduser(x))
+		cPaths[i] = dlutil.CString(pathutil.ExpandUser(x))
 		cPathPtrs[i] = uintptr(unsafe.Pointer(&cPaths[i][0]))
 		cSensitivities[i] = float32(sensitivities[i])
 	}
-	cAccessKey, cModelPath, cDevice := pyctypes.CString(accessKey), pyctypes.CString(modelPath), pyctypes.CString(device)
+	cAccessKey, cModelPath, cDevice := dlutil.CString(accessKey), dlutil.CString(modelPath), dlutil.CString(device)
 	status := initFunc(&cAccessKey[0], &cModelPath[0], &cDevice[0], int32(len(keywordPaths)), &cPathPtrs[0], &cSensitivities[0], &p.handle)
 	keepAlive(cPaths)
 	if status != StatusSuccess {
@@ -165,7 +166,7 @@ func NewPorcupine(accessKey, libraryPath, modelPath, device string, keywordPaths
 	if err := bind(&versionFunc, "pv_porcupine_version"); err != nil {
 		return nil, err
 	}
-	p.version = pyctypes.GoString(versionFunc())
+	p.version = dlutil.GoString(versionFunc())
 	if err := bind(&frameLength, "pv_porcupine_frame_length"); err != nil {
 		return nil, err
 	}
@@ -216,7 +217,7 @@ func (p *Porcupine) errorStack() ([]string, error) {
 	}
 	stack := []string{}
 	for i := 0; i < int(depth); i++ {
-		stack = append(stack, pyctypes.GoString(pyctypes.PointerAt(stackRef, i)))
+		stack = append(stack, dlutil.GoString(dlutil.PointerAt(stackRef, i)))
 	}
 	p.freeStack(stackRef)
 	return stack, nil
@@ -224,11 +225,11 @@ func (p *Porcupine) errorStack() ([]string, error) {
 
 // Names of the devices the native library can run inference on
 func ListHardwareDevices(libraryPath string) ([]string, error) {
-	closeDLLDir, err := pyctypes.AddDLLDirectory(pypath.Dirname(libraryPath))
+	closeDLLDir, err := dlutil.AddDLLDirectory(filepath.Dir(libraryPath))
 	if err != nil {
 		return nil, err
 	}
-	library, err := pyctypes.LoadLibrary(libraryPath, false)
+	library, err := dlutil.Open(libraryPath, false)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +239,7 @@ func ListHardwareDevices(libraryPath string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	pyctypes.RegisterFunc(&listFunc, addr)
+	dlutil.RegisterFunc(&listFunc, addr)
 	var cDevices uintptr
 	var cNum int32
 	if status := listFunc(&cDevices, &cNum); status != StatusSuccess {
@@ -246,13 +247,13 @@ func ListHardwareDevices(libraryPath string) ([]string, error) {
 	}
 	res := []string{}
 	for i := 0; i < int(cNum); i++ {
-		res = append(res, pyctypes.GoString(pyctypes.PointerAt(cDevices, i)))
+		res = append(res, dlutil.GoString(dlutil.PointerAt(cDevices, i)))
 	}
 	var freeFunc func(devices uintptr, num int32)
 	if addr, err = library.Symbol("pv_porcupine_free_hardware_devices"); err != nil {
 		return nil, err
 	}
-	pyctypes.RegisterFunc(&freeFunc, addr)
+	dlutil.RegisterFunc(&freeFunc, addr)
 	freeFunc(cDevices, cNum)
 	return res, nil
 }
@@ -271,7 +272,7 @@ func (m *Module) LoadLibrary() error {
 	if !pathExists(libraryPath) {
 		return &PyError{Class: "OSError", Msg: fmt.Sprintf("Couldn't find Porcupine's dynamic library at '%s'.", libraryPath)}
 	}
-	library, err := pyctypes.LoadLibrary(libraryPath, false)
+	library, err := dlutil.Open(libraryPath, false)
 	if err != nil {
 		return err
 	}

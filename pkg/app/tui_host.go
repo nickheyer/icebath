@@ -17,13 +17,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tui"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuiserver"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Launch variables that must not leak into a gateway owner the bootstrap starts
@@ -73,7 +73,7 @@ func tuiReplaceOwner(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if refusal := gateway.ReplaceIncompatibleOwner(ctx, h, pythread.Monotonic()+20); refusal != "" {
+	if refusal := gateway.ReplaceIncompatibleOwner(ctx, h, timeutil.Monotonic()+20); refusal != "" {
 		return errors.New(cmp.Or(replaceOwnerRefusals[refusal], refusal))
 	}
 	return nil
@@ -227,7 +227,7 @@ func replaceOtherBuildOwner(ctx context.Context, h string, receipt gateway.Obser
 	if _, reproduced := reproducedBuilds.Load(other.BuildID); reproduced || !ownerIdle(h, other) {
 		return receipt, "", nil
 	}
-	refusal := gateway.ReplaceIncompatibleOwner(ctx, h, pythread.Monotonic()+20)
+	refusal := gateway.ReplaceIncompatibleOwner(ctx, h, timeutil.Monotonic()+20)
 	fresh, err := gateway.EnsureGatewayRuntime(ctx, h, 30, true)
 	if err != nil || !gateway.Attachable(fresh) {
 		return fresh, "", err

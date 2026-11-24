@@ -38,7 +38,7 @@ func windowsExistingService(ctx context.Context, h string, deadline float64) (*E
 		if err != nil {
 			return "", err
 		}
-		if res.Returncode != 0 {
+		if res.ExitCode != 0 {
 			return "", runtimeStartError(refusal)
 		}
 		return tools.DecodeSchtasksBytes(res.Stdout)

@@ -23,9 +23,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -128,7 +128,7 @@ func runText(ctx context.Context, spec runSpec) (runResult, error) {
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
 	if ctx.Err() != nil {
-		return runResult{}, fmt.Errorf("Command '%s' timed out: %w", pyrepr.Repr(anyList(spec.argv)), ctx.Err())
+		return runResult{}, fmt.Errorf("Command '%s' timed out: %w", anyutil.Quote(anyList(spec.argv)), ctx.Err())
 	}
 	res := runResult{
 		stdout: translateNewlines(strings.ToValidUTF8(string(stdout.Bytes()), "\uFFFD")),
@@ -357,7 +357,7 @@ func WithGitAuth(ctx context.Context, env map[string]string, url string, auth *B
 	}
 	idx, valid := pyint.Parse(countText)
 	if !valid {
-		return nil, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(countText))
+		return nil, fmt.Errorf("invalid literal for int() with base 10: %s", strconv.Quote(countText))
 	}
 	n := idx.String()
 	out["GIT_CONFIG_KEY_"+n] = "http." + origin + "/.extraheader"

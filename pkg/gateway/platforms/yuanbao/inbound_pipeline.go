@@ -3,11 +3,10 @@ package yuanbao
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // One inbound image, file or video reference with the file name a file carries
@@ -17,7 +16,7 @@ type InboundMediaRef struct{ Kind, URL, Name string }
 type InboundContext struct {
 	Adapter          *YuanbaoAdapter
 	RawFrames        [][]byte
-	Push             *pyjson.Object
+	Push             *jsonutil.Object
 	DecodedVia       string
 	FromAccount      any
 	GroupCode        any
@@ -31,7 +30,7 @@ type InboundContext struct {
 	ChatName         any
 	RawText          string
 	MediaRefs        []InboundMediaRef
-	ForwardedRecords *pyjson.Object
+	ForwardedRecords *jsonutil.Object
 	OwnerCommand     *string
 	Source           *gateway.SessionSource
 	MsgType          any
@@ -65,7 +64,7 @@ func (m middlewareBase) Name() string { return m.name }
 
 // Class and name the way the Python repr shows a middleware
 func (m middlewareBase) String() string {
-	return fmt.Sprintf("<%s name=%s>", m.class, pyrepr.StrRepr(m.name))
+	return fmt.Sprintf("<%s name=%s>", m.class, strconv.Quote(m.name))
 }
 
 type pipelineEntry struct {
@@ -87,7 +86,7 @@ func normalizeMiddleware(nameOrMW any, handler MiddlewareFunc) (string, Middlewa
 	if mw, ok := nameOrMW.(InboundMiddleware); ok {
 		return mw.Name(), mw.Handle
 	}
-	return pyrepr.Str(nameOrMW), handler
+	return anyutil.String(nameOrMW), handler
 }
 
 // Appends a middleware instance, or a plain handler under a name

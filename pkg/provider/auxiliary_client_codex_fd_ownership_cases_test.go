@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Action and goroutine of one socket or client release step
@@ -27,7 +27,7 @@ type auxFdEvents struct {
 
 func (e *auxFdEvents) add(action string) {
 	e.mu.Lock()
-	e.events = append(e.events, auxFdEvent{action, pythread.GoroutineID()})
+	e.events = append(e.events, auxFdEvent{action, syncutil.GoroutineID()})
 	e.mu.Unlock()
 }
 
@@ -185,7 +185,7 @@ func TestCodexAuxiliaryTimeoutFdOwnershipStalledStreamTimeoutShutsDownFromTimerA
 	adapter, events, sock := auxFdAdapter(stream)
 	var once sync.Once
 	sock.shutdown = func() { once.Do(func() { close(interrupted) }) }
-	owner := pythread.GoroutineID()
+	owner := syncutil.GoroutineID()
 	auxFdCreate(t, adapter)
 	time.Sleep(200 * time.Millisecond)
 	all := events.snapshot()
@@ -216,7 +216,7 @@ func TestCodexAuxiliaryTimeoutFdOwnershipTimerThreadNeverClosesARealSdkStream(t 
 		return auxKeepaliveEvent()
 	}}}
 	adapter, clientEvents, _ := auxFdAdapter(stream)
-	owner := pythread.GoroutineID()
+	owner := syncutil.GoroutineID()
 	auxFdCreate(t, adapter)
 	time.Sleep(200 * time.Millisecond)
 	strangers := auxFdStrangers(streamEvents.snapshot(), owner)
@@ -253,7 +253,7 @@ func TestCodexAuxiliaryTimeoutFdOwnershipOwnerThreadDeadlineHitClosesDirectly(t 
 		return auxKeepaliveEvent()
 	}}}
 	adapter, events, _ := auxFdAdapter(stream)
-	owner := pythread.GoroutineID()
+	owner := syncutil.GoroutineID()
 	auxFdCreate(t, adapter)
 	if strangers := auxFdStrangers(events.snapshot(), owner); len(strangers) != 0 {
 		t.Fatalf("non-owner activity: %v", strangers)

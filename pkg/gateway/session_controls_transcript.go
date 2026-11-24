@@ -3,10 +3,10 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // TUI display rows of a snapshot's stored rows through the sidecar's own history projection, row ids carried as _row_id
@@ -32,15 +32,15 @@ func displayProjection(ctx context.Context, history []map[string]any, profileHom
 func modelOnly(row map[string]any) bool {
 	switch metadata := row["display_metadata"].(type) {
 	case map[string]any:
-		return pyrepr.Truthy(metadata[state.ModelOnlyDisplayMetadataKey])
-	case *pyjson.Object:
-		return metadata != nil && pyrepr.Truthy(metadata.GetOr(state.ModelOnlyDisplayMetadataKey, nil))
+		return anyutil.IsTrue(metadata[state.ModelOnlyDisplayMetadataKey])
+	case *jsonutil.Object:
+		return metadata != nil && anyutil.IsTrue(metadata.ValueOr(state.ModelOnlyDisplayMetadataKey, nil))
 	}
 	return false
 }
 
 // Transcript fields of a resume reply, its rows and task plan or the omitted count and plan of the target
-func resumeTranscript(ctx context.Context, a *SessionAuthority, ref SessionRef, snapshot SubscriptionSnapshot, history []map[string]any, omit bool) (*pyjson.Object, error) {
+func resumeTranscript(ctx context.Context, a *SessionAuthority, ref SessionRef, snapshot SubscriptionSnapshot, history []map[string]any, omit bool) (*jsonutil.Object, error) {
 	if !omit {
 		var todo any
 		if plan := tuihost.TodoStateFromHistory(history); plan != nil {
@@ -50,7 +50,7 @@ func resumeTranscript(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 		for i, row := range history {
 			messages[i] = row
 		}
-		return pyjson.ObjectOf("messages", messages, "message_count", int64(len(history)), "todo_state", todo), nil
+		return jsonutil.ObjectOf("messages", messages, "message_count", int64(len(history)), "todo_state", todo), nil
 	}
 	type omitted struct {
 		todo  any
@@ -67,7 +67,7 @@ func resumeTranscript(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("messages", []any{}, "messages_omitted", true, "message_count", int64(read.count), "todo_state", read.todo), nil
+	return jsonutil.ObjectOf("messages", []any{}, "messages_omitted", true, "message_count", int64(read.count), "todo_state", read.todo), nil
 }
 
 // Display rows with the reasoning of every reply left out, for a session that does not show it

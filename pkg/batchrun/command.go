@@ -10,10 +10,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // Reasoning effort levels the reasoning_effort flag accepts
@@ -72,17 +72,13 @@ func printDistributions(out io.Writer) {
 func loadPrefillMessages(path string) ([]any, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, errors.New(pypath.OSErrorText(err))
+		return nil, err
 	}
-	text, err := pyjson.DecodeBytes(data)
+	decoded, err := jsonutil.Decode(data)
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(text)
-	if err != nil {
-		return nil, err
-	}
-	messages, ok := pyjson.Plain(decoded).([]any)
+	messages, ok := jsonutil.Plain(decoded).([]any)
 	if !ok {
 		return nil, errNotMessageList
 	}
@@ -96,9 +92,9 @@ var errNotMessageList = errors.New("prefill_messages_file must contain a JSON ar
 func Command(ctx context.Context, ns map[string]any, stdout io.Writer) (int, error) {
 	out := stdout
 	if out == nil || out == io.Writer(os.Stdout) {
-		out = processStdout{}
+		out = termutil.Stdout
 	}
-	if pyrepr.Truthy(ns["list_distributions"]) {
+	if anyutil.IsTrue(ns["list_distributions"]) {
 		printDistributions(out)
 		return 0, nil
 	}
@@ -106,7 +102,7 @@ func Command(ctx context.Context, ns map[string]any, stdout io.Writer) (int, err
 		DatasetFile: flagText(ns, "dataset_file"), BatchSize: flagInt(ns, "batch_size"), RunName: flagText(ns, "run_name"),
 		Distribution: flagText(ns, "distribution"), MaxIterations: flagInt(ns, "max_turns"), BaseURL: flagText(ns, "base_url"),
 		APIKey: flagText(ns, "api_key"), Model: flagText(ns, "model"), NumWorkers: flagInt(ns, "num_workers"),
-		Verbose: pyrepr.Truthy(ns["verbose"]), EphemeralSystemPrompt: flagText(ns, "ephemeral_system_prompt"),
+		Verbose: anyutil.IsTrue(ns["verbose"]), EphemeralSystemPrompt: flagText(ns, "ephemeral_system_prompt"),
 		LogPrefixChars: flagInt(ns, "log_prefix_chars"), ProvidersAllowed: splitCSV(flagText(ns, "providers_allowed")),
 		ProvidersIgnored: splitCSV(flagText(ns, "providers_ignored")), ProvidersOrder: splitCSV(flagText(ns, "providers_order")),
 		ProviderSort: flagText(ns, "provider_sort"), MaxSamples: flagInt(ns, "max_samples"),
@@ -126,7 +122,7 @@ func Command(ctx context.Context, ns map[string]any, stdout io.Writer) (int, err
 	}
 	effort := flagText(ns, "reasoning_effort")
 	switch {
-	case pyrepr.Truthy(ns["reasoning_disabled"]):
+	case anyutil.IsTrue(ns["reasoning_disabled"]):
 		o.ReasoningConfig = map[string]any{"effort": "none"}
 		fmt.Fprintln(out, "🧠 Reasoning: DISABLED (effort=none)")
 	case effort != "":
@@ -152,7 +148,7 @@ func Command(ctx context.Context, ns map[string]any, stdout io.Writer) (int, err
 	}
 	runner, err := New(ctx, o, out)
 	if err == nil {
-		err = runner.Run(ctx, pyrepr.Truthy(ns["resume"]))
+		err = runner.Run(ctx, anyutil.IsTrue(ns["resume"]))
 	}
 	var interrupted *InterruptedError
 	switch {

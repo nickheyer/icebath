@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"math"
-	"math/big"
 	"net"
 	"net/http"
 	"strings"
@@ -15,14 +14,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	qrutil "github.com/nickheyer/icebath/pkg/utils/qr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Accounts and open platform hosts of the scan to create onboarding per domain
@@ -85,13 +86,9 @@ func (e *URLError) Error() string { return "<urlopen error " + e.Reason + ">" }
 
 // Opens a request like urlopen, the 2xx body, HTTPError for 400 and up and URLError otherwise
 var urlopenFn = func(ctx context.Context, req *http.Request, timeout time.Duration) ([]byte, error) {
-	resp, err := (&http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}}).Do(req.WithContext(ctx))
+	resp, err := (&http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: httputil.Proxy}}).Do(req.WithContext(ctx))
 	if err != nil {
-		reason := err.Error()
-		if pypath.OSErrorClass(err) != "OSError" {
-			reason = pypath.OSErrorText(err)
-		}
-		return nil, &URLError{reason}
+		return nil, &URLError{err.Error()}
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
@@ -106,24 +103,24 @@ var urlopenFn = func(ctx context.Context, req *http.Request, timeout time.Durati
 
 // JSON of a UTF-8 response body, the UnicodeDecodeError or JSONDecodeError of a bad one
 func decodeJSONBody(body []byte) (any, error) {
-	text, err := pystr.DecodeUTF8(body)
+	text, err := textutil.DecodeUTF8(body)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 // Whether an error is the URLError, OSError or JSONDecodeError class onboarding treats as an expected failure
 func expectedOnboardError(err error) bool {
 	var httpErr *HTTPError
 	var urlErr *URLError
-	var decode *pyjson.DecodeError
+	var decode *jsonutil.SyntaxError
 	return errors.As(err, &httpErr) || errors.As(err, &urlErr) || errors.As(err, &decode)
 }
 
 // POSTs form data to the registration endpoint, parsing JSON even from a 4xx answer since poll pending is a 400
-func postRegistration(ctx context.Context, baseURL string, body [][2]string) (*pyjson.Object, error) {
-	req, err := http.NewRequest(http.MethodPost, baseURL+registrationPath, strings.NewReader(pyurl.URLEncode(body)))
+func postRegistration(ctx context.Context, baseURL string, body [][2]string) (*jsonutil.Object, error) {
+	req, err := http.NewRequest(http.MethodPost, baseURL+registrationPath, strings.NewReader(urlutil.EncodeQuery(body)))
 	if err != nil {
 		return nil, err
 	}
@@ -148,8 +145,8 @@ func postRegistration(ctx context.Context, baseURL string, body [][2]string) (*p
 }
 
 // The dict of a decoded body, the AttributeError a get on anything else raises
-func asObject(v any) (*pyjson.Object, error) {
-	o, ok := v.(*pyjson.Object)
+func asObject(v any) (*jsonutil.Object, error) {
+	o, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(v))
 	}
@@ -167,8 +164,8 @@ func initRegistration(ctx context.Context, domain string) error {
 	if err != nil {
 		return err
 	}
-	methods := res.Vals["supported_auth_methods"]
-	if !pyrepr.Truthy(methods) {
+	methods := res.Value("supported_auth_methods")
+	if !anyutil.IsTrue(methods) {
 		methods = []any{}
 	}
 	supported := false
@@ -179,14 +176,14 @@ func initRegistration(ctx context.Context, domain string) error {
 		}
 	case string:
 		supported = strings.Contains(m, "client_secret")
-	case *pyjson.Object:
-		_, supported = m.Vals["client_secret"]
+	case *jsonutil.Object:
+		_, supported = m.Get("client_secret")
 	default:
 		return fmt.Errorf("the Feishu registration methods are %s, expected a list", errchain.Kind(methods))
 	}
 	if !supported {
 		return &RuntimeError{"Feishu / Lark registration environment does not support client_secret auth. " +
-			"Supported: " + pyrepr.Str(methods)}
+			"Supported: " + anyutil.String(methods)}
 	}
 	return nil
 }
@@ -202,7 +199,7 @@ type beginResult struct {
 
 // Value or the default when the value is falsy, like value or default
 func orDefault(v, def any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return def
@@ -215,11 +212,11 @@ func beginRegistration(ctx context.Context, domain string) (*beginResult, error)
 	if err != nil {
 		return nil, err
 	}
-	deviceCode := res.Vals["device_code"]
-	if !pyrepr.Truthy(deviceCode) {
+	deviceCode := res.Value("device_code")
+	if !anyutil.IsTrue(deviceCode) {
 		return nil, &RuntimeError{"Feishu / Lark registration did not return a device_code"}
 	}
-	rawURL, ok := res.Vals["verification_uri_complete"]
+	rawURL, ok := res.Get("verification_uri_complete")
 	if !ok {
 		rawURL = ""
 	}
@@ -233,12 +230,12 @@ func beginRegistration(ctx context.Context, domain string) (*beginResult, error)
 		qrURL += "?"
 	}
 	qrURL += "from=icebath&tp=icebath"
-	userCode, ok := res.Vals["user_code"]
+	userCode, ok := res.Get("user_code")
 	if !ok {
 		userCode = ""
 	}
 	return &beginResult{DeviceCode: deviceCode, QRURL: qrURL, UserCode: userCode,
-		Interval: orDefault(res.Vals["interval"], int64(5)), ExpireIn: orDefault(res.Vals["expire_in"], int64(600))}, nil
+		Interval: orDefault(res.Value("interval"), int64(5)), ExpireIn: orDefault(res.Value("expire_in"), int64(600))}, nil
 }
 
 // Credentials a scan returned, the bot fields filled by the probe after registration
@@ -263,10 +260,6 @@ func seconds(v any) (float64, error) {
 		}
 		return 0, nil
 	}
-	if n, ok := v.(*big.Int); ok {
-		f, _ := new(big.Float).SetInt(n).Float64()
-		return f, nil
-	}
 	return 0, fmt.Errorf("expected a whole number of seconds, got %s", errchain.Kind(v))
 }
 
@@ -283,7 +276,7 @@ func pollRegistration(ctx context.Context, w *gateway.InterruptWatch, deviceCode
 	deadline := pollMonotonic() + expireIn
 	current, switched, polls := domain, false, 0
 	for pollMonotonic() < deadline {
-		res, err := postRegistration(ctx, accountsBaseURL(current), [][2]string{{"action", "poll"}, {"device_code", pyrepr.Str(deviceCode)}, {"tp", "ob_app"}})
+		res, err := postRegistration(ctx, accountsBaseURL(current), [][2]string{{"action", "poll"}, {"device_code", anyutil.String(deviceCode)}, {"tp", "ob_app"}})
 		if err != nil {
 			if !expectedOnboardError(err) {
 				return nil, err
@@ -299,19 +292,19 @@ func pollRegistration(ctx context.Context, w *gateway.InterruptWatch, deviceCode
 		} else if polls%6 == 0 {
 			fmt.Fprint(out, ".")
 		}
-		userInfo, err := asObject(orDefault(res.Vals["user_info"], pyjson.NewObject()))
+		userInfo, err := asObject(orDefault(res.Value("user_info"), jsonutil.NewObject()))
 		if err != nil {
 			return nil, err
 		}
-		if userInfo.Vals["tenant_brand"] == "lark" && !switched {
+		if userInfo.Value("tenant_brand") == "lark" && !switched {
 			current, switched = "lark", true
 		}
-		if pyrepr.Truthy(res.Vals["client_id"]) && pyrepr.Truthy(res.Vals["client_secret"]) {
+		if anyutil.IsTrue(res.Value("client_id")) && anyutil.IsTrue(res.Value("client_secret")) {
 			fmt.Fprintln(out)
-			return &Registration{AppID: res.Vals["client_id"], AppSecret: res.Vals["client_secret"], Domain: current,
-				OpenID: userInfo.Vals["open_id"]}, nil
+			return &Registration{AppID: res.Value("client_id"), AppSecret: res.Value("client_secret"), Domain: current,
+				OpenID: userInfo.Value("open_id")}, nil
 		}
-		if e, _ := res.Vals["error"].(string); e == "access_denied" || e == "expired_token" {
+		if e, _ := res.Value("error").(string); e == "access_denied" || e == "expired_token" {
 			fmt.Fprintln(out)
 			pkgLog().Warn("[Feishu onboard] Registration " + e)
 			return nil, nil
@@ -329,36 +322,36 @@ func pollRegistration(ctx context.Context, w *gateway.InterruptWatch, deviceCode
 
 // Prints the QR code of the URL inverted, false when it cannot render
 func renderQR(url string) bool {
-	code, err := pyqrcode.Make(url, pyqrcode.ErrorCorrectM, 4)
+	code, err := qrutil.Encode(url, qrutil.Medium)
 	if err != nil {
 		return false
 	}
-	fmt.Fprint(provider.SetupOutput(), code.PrintASCII(true))
+	fmt.Fprint(provider.SetupOutput(), code.HalfBlocks(4, true))
 	return true
 }
 
 // Bot name and app scoped open id of /open-apis/bot/v3/info, nil when the answer carries an error code
-func parseBotResponse(data *pyjson.Object) (map[string]any, error) {
-	if !numberIs(data.Vals["code"], 0) {
+func parseBotResponse(data *jsonutil.Object) (map[string]any, error) {
+	if !numberIs(data.Value("code"), 0) {
 		return nil, nil
 	}
-	bot := data.Vals["bot"]
-	if !pyrepr.Truthy(bot) {
-		nested, ok := data.Vals["data"]
+	bot := data.Value("bot")
+	if !anyutil.IsTrue(bot) {
+		nested, ok := data.Get("data")
 		if !ok {
-			nested = pyjson.NewObject()
+			nested = jsonutil.NewObject()
 		}
 		nestedObj, err := asObject(nested)
 		if err != nil {
 			return nil, err
 		}
-		bot = nestedObj.Vals["bot"]
+		bot = nestedObj.Value("bot")
 	}
-	botObj, err := asObject(orDefault(bot, pyjson.NewObject()))
+	botObj, err := asObject(orDefault(bot, jsonutil.NewObject()))
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"bot_name": orDefault(botObj.Vals["app_name"], botObj.Vals["bot_name"]), "bot_open_id": botObj.Vals["open_id"]}, nil
+	return map[string]any{"bot_name": orDefault(botObj.Value("app_name"), botObj.Value("bot_name")), "bot_open_id": botObj.Value("open_id")}, nil
 }
 
 // Whether a decoded JSON number equals n the way Python compares int and float
@@ -376,7 +369,7 @@ func numberIs(v any, n int64) bool {
 
 // Bot name and open id behind the credentials from the bot info API through the lark SDK, nil on failure
 func probeBot(ctx context.Context, appID, appSecret any, domain string) (map[string]any, error) {
-	return probeBotSDK(ctx, pyrepr.Str(appID), pyrepr.Str(appSecret), domain), nil
+	return probeBotSDK(ctx, anyutil.String(appID), anyutil.String(appSecret), domain), nil
 }
 
 // Lark client for onboarding credentials and a feishu or lark domain name
@@ -397,7 +390,7 @@ func probeBotSDK(ctx context.Context, appID, appSecret, domain string) map[strin
 	if resp == nil || resp.RawBody == nil {
 		return nil
 	}
-	decoded, err := pyjson.Loads(string(resp.RawBody))
+	decoded, err := jsonutil.Decode(string(resp.RawBody))
 	if err != nil {
 		return fail(err)
 	}
@@ -530,14 +523,14 @@ func InteractiveSetup(ctx context.Context) error {
 			cli.PrintWarning("Credential verification skipped: " + err.Error())
 		case info != nil:
 			botName = info["bot_name"]
-			cli.PrintSuccess("Credentials verified — bot: " + pyrepr.Str(orDefault(botName, "unnamed")))
+			cli.PrintSuccess("Credentials verified — bot: " + anyutil.String(orDefault(botName, "unnamed")))
 		default:
 			cli.PrintWarning("Could not verify bot connection. Credentials saved anyway.")
 		}
 		creds = &Registration{AppID: appID, AppSecret: appSecret, Domain: domain, BotName: botName}
 	}
 	domain := creds.Domain
-	for _, kv := range [][2]string{{"FEISHU_APP_ID", pyrepr.Str(creds.AppID)}, {"FEISHU_APP_SECRET", pyrepr.Str(creds.AppSecret)}} {
+	for _, kv := range [][2]string{{"FEISHU_APP_ID", anyutil.String(creds.AppID)}, {"FEISHU_APP_SECRET", anyutil.String(creds.AppSecret)}} {
 		if err := cfg.SaveEnvValue(ctx, kv[0], kv[1]); err != nil {
 			return err
 		}
@@ -557,8 +550,8 @@ func InteractiveSetup(ctx context.Context) error {
 	if _, err := settings.Set(gateway.SettingsContext(ctx), settings.FeishuConnectionMode.Key, mode, settings.Global); err != nil {
 		return err
 	}
-	if pyrepr.Truthy(creds.BotName) {
-		cli.PrintSuccess("Bot created: " + pyrepr.Str(creds.BotName))
+	if anyutil.IsTrue(creds.BotName) {
+		cli.PrintSuccess("Bot created: " + anyutil.String(creds.BotName))
 	}
 	access := choice("How should direct messages be authorized?",
 		[]string{"Use DM pairing approval (recommended)", "Allow all direct messages", "Only allow listed user IDs"}, 0)
@@ -571,8 +564,8 @@ func InteractiveSetup(ctx context.Context) error {
 	}
 	if access == 2 {
 		def := ""
-		if pyrepr.Truthy(creds.OpenID) {
-			def = pyrepr.Str(creds.OpenID)
+		if anyutil.IsTrue(creds.OpenID) {
+			def = anyutil.String(creds.OpenID)
 		}
 		allowlist := strings.ReplaceAll(cli.Prompt("Allowed user IDs (comma-separated)", def, false), " ", "")
 		if err := cfg.SaveEnvValue(ctx, "FEISHU_ALLOWED_USERS", allowlist); err != nil {
@@ -612,10 +605,10 @@ func InteractiveSetup(ctx context.Context) error {
 		cli.PrintInfo("Home channel cleared.")
 	}
 	cli.PrintSuccess("🪽 Feishu / Lark configured!")
-	cli.PrintInfo("App ID: " + pyrepr.Str(creds.AppID))
+	cli.PrintInfo("App ID: " + anyutil.String(creds.AppID))
 	cli.PrintInfo("Domain: " + domain)
-	if pyrepr.Truthy(creds.BotName) {
-		cli.PrintInfo("Bot: " + pyrepr.Str(creds.BotName))
+	if anyutil.IsTrue(creds.BotName) {
+		cli.PrintInfo("Bot: " + anyutil.String(creds.BotName))
 	}
 	return nil
 }

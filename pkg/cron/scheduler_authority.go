@@ -12,9 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // The owner may have accepted this fire, so it is never booked as failed or refired
@@ -27,7 +27,7 @@ func (e *CronExecutionUnknown) PyTypeName() string { return "CronExecutionUnknow
 
 // Admission journal of one fire keyed by the sha256 of the JSON pair of job and request ids
 func (s *Store) journalPath(jobID, requestID string) string {
-	key, err := pyjson.Dumps([]any{jobID, requestID})
+	key, err := jsonutil.Encode([]any{jobID, requestID})
 	if err != nil {
 		panic(err)
 	}
@@ -40,7 +40,7 @@ func pauseIdentity(paused *Job) any {
 	if paused == nil {
 		return true
 	}
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("paused_at", strOrNull(paused.PausedAt))
 	o.Set("reason", strOrNull(paused.PausedReason))
 	return o
@@ -59,7 +59,7 @@ func replayableCompletions(s *Store, jobID string, completions []string) []strin
 
 // Writes a journal record as two space indented JSON in a private atomic file whose rename is synced
 func (s *Store) writeAdmissionJournal(ctx context.Context, path string, record any) error {
-	return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), path, record, 0o600, pyjson.Indent(2))
+	return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), path, record, 0o600, jsonutil.Indent(2))
 }
 
 // Pauses the job for an unverified admission and records that exact pause on the fire journal
@@ -78,15 +78,15 @@ func (s *Store) pauseForUnknown(ctx context.Context, jobID, executionID, reason 
 	} else if err != nil {
 		return err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return err
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return err
 	}
-	record, ok := decoded.(*pyjson.Object)
+	record, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return &pyTypeError{msg: "the execution record is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
@@ -102,7 +102,7 @@ func (e *pyTypeError) PyTypeName() string { return "TypeError" }
 
 // Resumes the job only while it is still held by exactly the recorded pause
 func (s *Store) liftPause(ctx context.Context, jobID string, pause any) error {
-	identity, ok := pause.(*pyjson.Object)
+	identity, ok := pause.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -112,7 +112,7 @@ func (s *Store) liftPause(ctx context.Context, jobID string, pause any) error {
 	}
 	at, _ := identity.Get("paused_at")
 	reason, _ := identity.Get("reason")
-	if !pyrepr.Equal(strOrNull(job.PausedAt), at) || !pyrepr.Equal(strOrNull(job.PausedReason), reason) {
+	if !anyutil.Equal(strOrNull(job.PausedAt), at) || !anyutil.Equal(strOrNull(job.PausedReason), reason) {
 		return nil
 	}
 	var oneShotPast *ValueError

@@ -3,14 +3,14 @@ package home
 import (
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Config file of a home
-func ConfigPath(h string) string { return pypath.PathJoin(h, "config.yaml") }
+func ConfigPath(h string) string { return pathutil.Join(h, "config.yaml") }
 
 // Secrets file of a home
-func EnvPath(h string) string { return pypath.PathJoin(h, ".env") }
+func EnvPath(h string) string { return pathutil.Join(h, ".env") }
 
 // OAuth credential store of a home
 func AuthPath(h string) string { return filepath.Join(h, "auth.json") }
@@ -25,7 +25,7 @@ func StatePath(h string) string { return filepath.Join(h, "state.db") }
 func MemoriesDir(h string) string { return filepath.Join(h, "memories") }
 
 // Skills directory of a home
-func SkillsDir(h string) string { return pypath.PathJoin(h, "skills") }
+func SkillsDir(h string) string { return pathutil.Join(h, "skills") }
 
 // Skill bundles directory of a home
 func BundlesDir(h string) string { return filepath.Join(h, "skill-bundles") }
@@ -46,7 +46,7 @@ func LogsDir(h string) string { return filepath.Join(h, "logs") }
 func CacheDir(h string) string { return filepath.Join(h, "cache") }
 
 // Scratch directory a home hands to child processes as their temp dir
-func ScratchDir(h string) string { return pypath.PathJoin(h, "cache", "scratch") }
+func ScratchDir(h string) string { return pathutil.Join(h, "cache", "scratch") }
 
 // Pending approval directory of a home
 func PendingDir(h string) string { return filepath.Join(h, "pending") }

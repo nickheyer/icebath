@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Provider with its endpoint and key of the route a session runs, read when the account limits are fetched
@@ -54,7 +54,7 @@ func sessionRouteOf(ctx context.Context, a *SessionAuthority, ref SessionRef) (s
 }
 
 // Account limit lines of the provider a session runs on, fetched off the caller's goroutine in the owning profile's scope
-func accountUsage(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func accountUsage(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if paramsOutside(params, "session_id", "profile") {
 		return nil, runtimeRefusal("invalid_params")
 	}

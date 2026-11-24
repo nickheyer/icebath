@@ -5,20 +5,19 @@ import (
 	"encoding/base64"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -62,13 +61,10 @@ func (s *scope) fetchSnapshot(ss *session) (string, any, error) {
 		return "", nil, err
 	}
 	redacted := s.redactAny(raw)
-	threshold, err := s.snapshotThreshold()
-	if err != nil {
-		return "", nil, err
-	}
+	threshold := s.snapshotThreshold()
 	snapshot, ok := redacted.(string)
 	if !ok {
-		return "", nil, &pyError{"TypeError", "object of type 'NoneType' has no len()"}
+		return "", nil, &pyError{"TypeError", "the snapshot reply carries no snapshot text"}
 	}
 	if int64(utf8.RuneCountInString(snapshot)) > threshold {
 		snapshot = s.truncateSnapshot(snapshot, threshold)
@@ -84,7 +80,7 @@ func (s *scope) fetchSnapshot(ss *session) (string, any, error) {
 func (s *scope) navigateTab(taskID, browserURL string) (*session, any, error) {
 	ss := s.getSession(taskID)
 	if ss.hasTab() {
-		data, err := s.post(tabPath(ss, "navigate"), pyjson.ObjectOf("userId", ss.userID, "url", browserURL), 60)
+		data, err := s.post(tabPath(ss, "navigate"), jsonutil.ObjectOf("userId", ss.userID, "url", browserURL), 60)
 		if err == nil {
 			return ss, data, nil
 		}
@@ -92,14 +88,14 @@ func (s *scope) navigateTab(taskID, browserURL string) (*session, any, error) {
 		if !ok || (he.status != 404 && he.status != 410) {
 			return nil, nil, err
 		}
-		pkgLog().Warn(fmt.Sprintf("Camofox tab %s returned %d — tab is gone. Creating a fresh tab.", pyrepr.Str(ss.tab()), he.status))
+		pkgLog().Warn(fmt.Sprintf("Camofox tab %s returned %d — tab is gone. Creating a fresh tab.", anyutil.String(ss.tab()), he.status))
 		ss.setTab(nil)
 	}
 	ss, err := s.ensureTab(taskID, browserURL)
 	if err != nil {
 		return nil, nil, err
 	}
-	return ss, pyjson.ObjectOf("ok", true, "url", browserURL), nil
+	return ss, jsonutil.ObjectOf("ok", true, "url", browserURL), nil
 }
 
 // Whether an error says the cached tab is gone
@@ -118,15 +114,15 @@ func (s *scope) runOnTab(ss *session, body tabBody, readOnly bool) (string, erro
 	if !s.resyncTab(ss) {
 		return fail(tabGoneError), nil
 	}
-	if pyjson.Equal(ss.tab(), tracked) {
+	if anyutil.Equal(ss.tab(), tracked) {
 		return "", err
 	}
-	pkgLog().Info(fmt.Sprintf("Camofox tab %s was gone; continuing in live tab %s", pyrepr.Str(tracked), pyrepr.Str(ss.tab())))
+	pkgLog().Info(fmt.Sprintf("Camofox tab %s was gone; continuing in live tab %s", anyutil.String(tracked), anyutil.String(ss.tab())))
 	if !readOnly {
 		url := s.tabURL(ss)
 		place := "another page"
-		if pyrepr.Truthy(url) {
-			place = pyrepr.Str(url)
+		if anyutil.IsTrue(url) {
+			place = anyutil.String(url)
 		}
 		return fail(fmt.Sprintf(tabChangedError, place)), nil
 	}
@@ -146,7 +142,7 @@ func (s *scope) tabURL(ss *session) any {
 			if !isDict(tab) {
 				continue
 			}
-			if id, _ := get(tab, "tabId", nil); pyjson.Equal(id, ss.tab()) {
+			if id, _ := get(tab, "tabId", nil); anyutil.Equal(id, ss.tab()) {
 				out, _ = get(tab, "url", "")
 				return nil
 			}
@@ -179,11 +175,11 @@ func (s *scope) withTab(taskID string, body tabBody, readOnly bool) string {
 }
 
 // POSTs the body to the tab action and builds the tool result from the reply
-func (s *scope) tabAction(taskID, suffix string, body *pyjson.Object, result func(data any) (*pyjson.Object, error)) string {
+func (s *scope) tabAction(taskID, suffix string, body *jsonutil.Object, result func(data any) (*jsonutil.Object, error)) string {
 	return s.withTab(taskID, func(ss *session) (string, error) {
-		payload := pyjson.ObjectOf("userId", ss.userID)
-		for _, k := range body.Keys {
-			payload.Set(k, body.Vals[k])
+		payload := jsonutil.ObjectOf("userId", ss.userID)
+		for _, k := range body.Keys() {
+			payload.Set(k, body.Value(k))
 		}
 		data, err := s.post(tabPath(ss, suffix), payload, commandTimeoutDefault)
 		if err != nil {
@@ -221,7 +217,7 @@ func (s *scope) navigateTitle(ss *session, data any) (string, error) {
 			if !isDict(tab) {
 				continue
 			}
-			if id, _ := get(tab, "tabId", nil); pyjson.Equal(id, ss.tab()) {
+			if id, _ := get(tab, "tabId", nil); anyutil.Equal(id, ss.tab()) {
 				t, _ := get(tab, "title", nil)
 				title, _ = t.(string)
 				return nil
@@ -229,7 +225,7 @@ func (s *scope) navigateTitle(ss *session, data any) (string, error) {
 		}
 		return nil
 	}); err != nil {
-		pkgLog().Debug(fmt.Sprintf("Camofox title lookup failed for tab %s: %s", pyrepr.Str(ss.tab()), err.Error()))
+		pkgLog().Debug(fmt.Sprintf("Camofox title lookup failed for tab %s: %s", anyutil.String(ss.tab()), err.Error()))
 	}
 	return title, nil
 }
@@ -258,13 +254,13 @@ func (s *scope) browserNavigate(rawURL, taskID string) string {
 		if err != nil {
 			return err
 		}
-		result := pyjson.ObjectOf("success", true, "url", landed, "title", title)
+		result := jsonutil.ObjectOf("success", true, "url", landed, "title", title)
 		if rewrite != nil {
 			from, _ := rewrite.Get("from")
 			to, _ := rewrite.Get("to")
 			result.Set("requested_url", target)
 			result.Set("url_rewrite", rewrite)
-			result.Set("warning", "Rewrote loopback URL for Docker-hosted Camofox: "+pyrepr.Str(from)+" -> "+pyrepr.Str(to))
+			result.Set("warning", "Rewrote loopback URL for Docker-hosted Camofox: "+anyutil.String(from)+" -> "+anyutil.String(to))
 		}
 		if vnc := s.vncURL(); vnc != "" {
 			result.Set("vnc_url", vnc)
@@ -289,12 +285,12 @@ func (s *scope) browserNavigate(rawURL, taskID string) string {
 	case isHTTPError(err):
 		return fail("Navigation failed: " + err.Error())
 	case isConnectionError(err):
-		return dumps(pyjson.ObjectOf("success", false, "error", s.connectionErrorMessage()))
+		return dumps(jsonutil.ObjectOf("success", false, "error", s.connectionErrorMessage()))
 	}
 	return fail(err.Error())
 }
 
-// Whether an error is a requests HTTPError
+// Whether an error is a Camofox status failure
 func isHTTPError(err error) bool {
 	_, ok := err.(*httpError)
 	return ok
@@ -307,19 +303,19 @@ func (s *scope) browserSnapshot(taskID string) string {
 		if err != nil {
 			return "", err
 		}
-		return dumps(pyjson.ObjectOf("success", true, "snapshot", snapshot, "element_count", refs)), nil
+		return dumps(jsonutil.ObjectOf("success", true, "snapshot", snapshot, "element_count", refs)), nil
 	}, true)
 }
 
 // Clicks the ref, the tool convention @ prefix stripped for Camofox
 func (s *scope) browserClick(ref, taskID string) string {
 	cleanRef := strings.TrimLeft(ref, "@")
-	return s.tabAction(taskID, "click", pyjson.ObjectOf("ref", cleanRef), func(data any) (*pyjson.Object, error) {
+	return s.tabAction(taskID, "click", jsonutil.ObjectOf("ref", cleanRef), func(data any) (*jsonutil.Object, error) {
 		landed, err := get(data, "url", "")
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("success", true, "clicked", cleanRef, "url", landed), nil
+		return jsonutil.ObjectOf("success", true, "clicked", cleanRef, "url", landed), nil
 	})
 }
 
@@ -334,10 +330,10 @@ func (s *scope) browserType(ref, text, taskID string) string {
 		}
 		cleanRef := strings.TrimLeft(ref, "@")
 		body := func(sess *session) (string, error) {
-			if _, err := s.post(tabPath(sess, "type"), pyjson.ObjectOf("userId", sess.userID, "ref", cleanRef, "text", text), commandTimeoutDefault); err != nil {
+			if _, err := s.post(tabPath(sess, "type"), jsonutil.ObjectOf("userId", sess.userID, "ref", cleanRef, "text", text), commandTimeoutDefault); err != nil {
 				return "", err
 			}
-			return dumps(s.redactTypedText(pyjson.ObjectOf("success", true, "typed", s.redactText(text), "element", cleanRef), text)), nil
+			return dumps(s.redactTypedText(jsonutil.ObjectOf("success", true, "typed", s.redactText(text), "element", cleanRef), text)), nil
 		}
 		res, err := s.runOnTab(ss, body, false)
 		if err != nil {
@@ -355,15 +351,15 @@ func (s *scope) browserType(ref, text, taskID string) string {
 // Scrolls five fixed REST steps, a failed step being the answer
 func (s *scope) browserScroll(direction, taskID string) string {
 	if direction != "up" && direction != "down" {
-		return dumps(pyjson.ObjectOf("success", false, "error", fmt.Sprintf("Invalid direction '%s'. Use 'up' or 'down'.", direction)))
+		return dumps(jsonutil.ObjectOf("success", false, "error", fmt.Sprintf("Invalid direction '%s'. Use 'up' or 'down'.", direction)))
 	}
 	result := ""
 	for range scrollRepeat {
-		result = s.tabAction(taskID, "scroll", pyjson.ObjectOf("direction", direction), func(any) (*pyjson.Object, error) {
-			return pyjson.ObjectOf("success", true, "scrolled", direction), nil
+		result = s.tabAction(taskID, "scroll", jsonutil.ObjectOf("direction", direction), func(any) (*jsonutil.Object, error) {
+			return jsonutil.ObjectOf("success", true, "scrolled", direction), nil
 		})
-		parsed, _ := pyjson.Loads(result)
-		if ok, _ := get(parsed, "success", nil); !pyrepr.Truthy(ok) {
+		parsed, _ := jsonutil.Decode(result)
+		if ok, _ := get(parsed, "success", nil); !anyutil.IsTrue(ok) {
 			break
 		}
 	}
@@ -372,19 +368,19 @@ func (s *scope) browserScroll(direction, taskID string) string {
 
 // Goes back in the tab's history
 func (s *scope) browserBack(taskID string) string {
-	return s.tabAction(taskID, "back", pyjson.NewObject(), func(data any) (*pyjson.Object, error) {
+	return s.tabAction(taskID, "back", jsonutil.NewObject(), func(data any) (*jsonutil.Object, error) {
 		landed, err := get(data, "url", "")
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("success", true, "url", landed), nil
+		return jsonutil.ObjectOf("success", true, "url", landed), nil
 	})
 }
 
 // Presses a key on the tab
 func (s *scope) browserPress(key, taskID string) string {
-	return s.tabAction(taskID, "press", pyjson.ObjectOf("key", key), func(any) (*pyjson.Object, error) {
-		return pyjson.ObjectOf("success", true, "pressed", key), nil
+	return s.tabAction(taskID, "press", jsonutil.ObjectOf("key", key), func(any) (*jsonutil.Object, error) {
+		return jsonutil.ObjectOf("success", true, "pressed", key), nil
 	})
 }
 
@@ -392,7 +388,7 @@ func (s *scope) browserPress(key, taskID string) string {
 func parseSnapshotImages(snapshot any) ([]any, error) {
 	text, ok := snapshot.(string)
 	if !ok {
-		return nil, &pyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'split'", pyrepr.TypeName(snapshot))}
+		return nil, &pyError{"AttributeError", "expected snapshot text, got " + anyutil.Kind(snapshot)}
 	}
 	images := []any{}
 	lines := strings.Split(text, "\n")
@@ -411,7 +407,7 @@ func parseSnapshotImages(snapshot any) ([]any, error) {
 			}
 		}
 		if alt != "" || src != "" {
-			images = append(images, pyjson.ObjectOf("src", src, "alt", alt))
+			images = append(images, jsonutil.ObjectOf("src", src, "alt", alt))
 		}
 	}
 	return images, nil
@@ -433,14 +429,14 @@ func (s *scope) browserGetImages(taskID string) string {
 			return "", err
 		}
 		images := s.redactOutput(parsed, 0).([]any)
-		return dumps(pyjson.ObjectOf("success", true, "images", images, "count", len(images))), nil
+		return dumps(jsonutil.ObjectOf("success", true, "images", images, "count", len(images))), nil
 	}, true)
 }
 
 // JS value Camofox returned, a JSON string parsed into structured data
 func parseEvalValue(raw any) any {
 	if text, ok := raw.(string); ok {
-		if parsed, err := pyjson.Loads(text); err == nil {
+		if parsed, err := jsonutil.Decode(text); err == nil {
 			return parsed
 		}
 	}
@@ -457,7 +453,7 @@ func (s *scope) evaluate(expression, taskID string) string {
 			return nil
 		}
 		body := func(sess *session) (string, error) {
-			resp, err := s.post(tabPath(sess, "evaluate"), pyjson.ObjectOf("expression", expression, "userId", sess.userID), commandTimeoutDefault)
+			resp, err := s.post(tabPath(sess, "evaluate"), jsonutil.ObjectOf("expression", expression, "userId", sess.userID), commandTimeoutDefault)
 			if err != nil {
 				return "", err
 			}
@@ -466,7 +462,7 @@ func (s *scope) evaluate(expression, taskID string) string {
 				raw, _ = get(resp, "result", nil)
 			}
 			parsed := parseEvalValue(raw)
-			return dumps(pyjson.ObjectOf("success", true, "result", s.redactOutput(parsed, 0), "result_type", pyrepr.TypeName(parsed))), nil
+			return dumps(jsonutil.ObjectOf("success", true, "result", s.redactOutput(parsed, 0), "result_type", anyutil.Kind(parsed))), nil
 		}
 		var err error
 		out, err = s.runOnTab(ss, body, false)
@@ -476,7 +472,7 @@ func (s *scope) evaluate(expression, taskID string) string {
 	case err == nil:
 		return out
 	case httpStatusIn(err, 404, 405, 501):
-		return dumps(pyjson.ObjectOf("success", false, "error", evalUnsupported))
+		return dumps(jsonutil.ObjectOf("success", false, "error", evalUnsupported))
 	}
 	return fail(err.Error())
 }
@@ -485,11 +481,11 @@ func (s *scope) evaluate(expression, taskID string) string {
 func (s *scope) browserConsole(expression *string, taskID string) string {
 	if expression != nil {
 		if refusal := s.evalPolicyError(*expression); refusal != "" {
-			return dumps(pyjson.ObjectOf("success", false, "error", refusal))
+			return dumps(jsonutil.ObjectOf("success", false, "error", refusal))
 		}
 		return s.evaluate(*expression, taskID)
 	}
-	return dumps(pyjson.ObjectOf("success", true, "console_messages", []any{}, "js_errors", []any{}, "total_messages", 0,
+	return dumps(jsonutil.ObjectOf("success", true, "console_messages", []any{}, "js_errors", []any{}, "total_messages", 0,
 		"total_errors", 0, "note", "Console log capture is not available with the Camofox backend. "+
 			"Use browser_snapshot or browser_vision to inspect page state."))
 }
@@ -501,7 +497,7 @@ func (s *scope) visionSettings() (float64, float64) {
 		return 120, 0.1
 	}
 	block := cfgGet(raw, map[string]any{}, "auxiliary", "vision")
-	if !pyrepr.Truthy(block) {
+	if !anyutil.IsTrue(block) {
 		block = map[string]any{}
 	}
 	cfg := config.AsMap(block)
@@ -512,7 +508,7 @@ func (s *scope) visionSettings() (float64, float64) {
 	if !ok {
 		timeoutVal = 120
 	}
-	timeout, err := pyint.Float(timeoutVal)
+	timeout, err := anyutil.ToFloat(timeoutVal)
 	if err != nil {
 		return 120, 0.1
 	}
@@ -520,27 +516,22 @@ func (s *scope) visionSettings() (float64, float64) {
 	if !ok {
 		temperatureVal = 0.1
 	}
-	temperature, err := pyint.Float(temperatureVal)
+	temperature, err := anyutil.ToFloat(temperatureVal)
 	if err != nil {
 		return 120, 0.1
 	}
 	return timeout, temperature
 }
 
-// OSError text and class of a failed filesystem call
-func osError(err error) error {
-	return &pyError{pypath.OSErrorClass(err), pypath.OSErrorText(err)}
-}
-
 // PNG bytes written under the profile browser_screenshots directory, the path returned
 func (s *scope) saveScreenshot(content []byte) (string, error) {
-	dir := pypath.PathJoin(s.home, "browser_screenshots")
+	dir := filepath.Join(s.home, "browser_screenshots")
 	if err := os.MkdirAll(dir, 0o777); err != nil {
-		return "", osError(err)
+		return "", err
 	}
-	path := pypath.PathJoin(dir, "browser_screenshot_"+strings.ReplaceAll(uuid.NewString(), "-", "")[:8]+".png")
+	path := filepath.Join(dir, "browser_screenshot_"+strings.ReplaceAll(uuid.NewString(), "-", "")[:8]+".png")
 	if err := os.WriteFile(path, content, 0o666); err != nil {
-		return "", osError(err)
+		return "", err
 	}
 	return path, nil
 }
@@ -552,11 +543,11 @@ func (s *scope) browserVision(question, taskID string, llm *plugins.PluginLlm) s
 		if err != nil {
 			return "", err
 		}
-		screenshotPath, err := s.saveScreenshot(resp.Body)
+		screenshotPath, err := s.saveScreenshot(resp.Content)
 		if err != nil {
 			return "", err
 		}
-		imgB64 := base64.StdEncoding.EncodeToString(resp.Body)
+		imgB64 := base64.StdEncoding.EncodeToString(resp.Content)
 		timeout, temperature := s.visionSettings()
 		messages := []any{map[string]any{"role": "user", "content": []any{
 			map[string]any{"type": "text", "text": "Analyze this browser screenshot and answer: " + question},
@@ -566,7 +557,7 @@ func (s *scope) browserVision(question, taskID string, llm *plugins.PluginLlm) s
 		var result *plugins.PluginLlmCompleteResult
 		if err := try(func() error {
 			if llm == nil {
-				return &pyError{"AttributeError", "'NoneType' object has no attribute 'complete'"}
+				return &pyError{"AttributeError", "no plugin LLM is available to analyze the screenshot"}
 			}
 			var err error
 			result, err = llm.Complete(s.ctx, messages, plugins.PluginLlmOptions{Task: &task, Purpose: &purpose,
@@ -574,7 +565,7 @@ func (s *scope) browserVision(question, taskID string, llm *plugins.PluginLlm) s
 			return err
 		}); err != nil {
 			pkgLog().Warn(fmt.Sprintf("browser_vision analysis failed: %v", err))
-			return dumps(pyjson.ObjectOf("success", false, "error", "Error during vision analysis: "+err.Error(),
+			return dumps(jsonutil.ObjectOf("success", false, "error", "Error during vision analysis: "+err.Error(),
 				"screenshot_path", screenshotPath,
 				"note", "Screenshot was captured but vision analysis failed. You can still share it via MEDIA:<path>.")), nil
 		}
@@ -582,13 +573,13 @@ func (s *scope) browserVision(question, taskID string, llm *plugins.PluginLlm) s
 		if analysis == "" {
 			analysis = "Vision analysis returned no content."
 		}
-		return dumps(pyjson.ObjectOf("success", true, "analysis", s.redactText(analysis), "screenshot_path", screenshotPath)), nil
+		return dumps(jsonutil.ObjectOf("success", true, "analysis", s.redactText(analysis), "screenshot_path", screenshotPath)), nil
 	}, true)
 }
 
 // Netscape cookie file text as Playwright cookie objects, BOM, HttpOnly prefix and tab bearing values handled
-func netscapeParse(text string) []*pyjson.Object {
-	var cookies []*pyjson.Object
+func netscapeParse(text string) []*jsonutil.Object {
+	var cookies []*jsonutil.Object
 	for _, rawLine := range textutil.Lines(strings.TrimLeft(text, "\uFEFF")) {
 		line := strings.TrimSpace(rawLine)
 		if line == "" || (strings.HasPrefix(line, "#") && !strings.HasPrefix(line, "#HttpOnly_")) {
@@ -602,54 +593,51 @@ func netscapeParse(text string) []*pyjson.Object {
 		if len(parts) < 7 {
 			continue
 		}
-		expires, err := pyint.Of(parts[4])
+		expires, err := anyutil.ToInt(parts[4])
 		if err != nil {
 			continue
 		}
-		cookies = append(cookies, pyjson.ObjectOf("name", parts[5], "value", strings.Join(parts[6:], "\t"), "domain", parts[0],
-			"path", parts[2], "expires", pyint.Value(expires), "httpOnly", httpOnly, "secure", strings.ToUpper(parts[3]) == "TRUE"))
+		cookies = append(cookies, jsonutil.ObjectOf("name", parts[5], "value", strings.Join(parts[6:], "\t"), "domain", parts[0],
+			"path", parts[2], "expires", expires, "httpOnly", httpOnly, "secure", strings.ToUpper(parts[3]) == "TRUE"))
 	}
 	return cookies
 }
 
 // browser.camofox.cookies_dir with the tilde expanded, ~/.camofox/cookies by default
 func (s *scope) cookiesDir() string {
-	raw := strings.TrimSpace(pyOrStr(s.camofoxConfig()["cookies_dir"]))
+	raw := strings.TrimSpace(anyutil.String(anyutil.Or(s.camofoxConfig()["cookies_dir"], "")))
 	if raw == "" {
 		raw = "~/.camofox/cookies"
 	}
-	return pypath.Normpath(pypath.Expanduser(raw))
+	return filepath.Clean(pathutil.ExpandUser(raw))
 }
 
-// Text of a file decoded as strict UTF-8 with universal newlines
+// Text of a file that must be valid UTF-8, CRLF and lone CR line ends turned into LF
 func readUTF8Text(path string) (string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return "", osError(err)
+		return "", err
 	}
-	for i := 0; i < len(data); {
-		r, size := utf8.DecodeRune(data[i:])
-		if r == utf8.RuneError && size <= 1 {
-			return "", &pyError{"UnicodeDecodeError", pystr.UTF8DecodeError(data, i).Error()}
-		}
-		i += size
+	text, err := textutil.DecodeUTF8(data)
+	if err != nil {
+		return "", &pyError{"UnicodeDecodeError", err.Error()}
 	}
-	return strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n"), nil
+	return textutil.NormalizeNewlines(text), nil
 }
 
 // Cookies of a file that must resolve inside the cookies dir, capped at 5 MB, filtered by the domain suffix
-func (s *scope) readCookieFile(cookiesPath string, domainSuffix *string) ([]*pyjson.Object, error) {
-	base, err := pypath.Realpath(s.cookiesDir(), pypath.Lax)
+func (s *scope) readCookieFile(cookiesPath string, domainSuffix *string) ([]*jsonutil.Object, error) {
+	base, err := pathutil.Resolve(s.cookiesDir())
 	if err != nil {
-		return nil, osError(err)
+		return nil, err
 	}
 	outside := &pyError{"ValueError", "cookies_path must be a relative path within the cookies directory"}
-	if pypath.IsAbs(cookiesPath) {
+	if filepath.IsAbs(cookiesPath) {
 		return nil, outside
 	}
-	resolved, err := pypath.Realpath(pypath.Join(base, cookiesPath), pypath.Lax)
+	resolved, err := pathutil.Resolve(pathutil.Join(base, cookiesPath))
 	if err != nil {
-		return nil, osError(err)
+		return nil, err
 	}
 	if resolved != base && !strings.HasPrefix(resolved, base+string(os.PathSeparator)) {
 		return nil, outside
@@ -667,17 +655,17 @@ func (s *scope) readCookieFile(cookiesPath string, domainSuffix *string) ([]*pyj
 	}
 	cookies := netscapeParse(text)
 	if domainSuffix != nil && *domainSuffix != "" {
-		var kept []*pyjson.Object
+		var kept []*jsonutil.Object
 		for _, c := range cookies {
-			if domain, _ := c.Get("domain"); strings.HasSuffix(pyrepr.Str(domain), *domainSuffix) {
+			if domain, _ := c.Get("domain"); strings.HasSuffix(anyutil.String(domain), *domainSuffix) {
 				kept = append(kept, c)
 			}
 		}
 		cookies = kept
 	}
-	out := make([]*pyjson.Object, 0, len(cookies))
+	out := make([]*jsonutil.Object, 0, len(cookies))
 	for _, c := range cookies {
-		sanitized := pyjson.NewObject()
+		sanitized := jsonutil.NewObject()
 		for _, k := range cookieAllowedFields {
 			if v, ok := c.Get(k); ok {
 				sanitized.Set(k, v)
@@ -709,13 +697,13 @@ func (s *scope) browserImportCookies(cookiesPath string, domainSuffix *string, t
 	for i, c := range cookies {
 		list[i] = c
 	}
-	data, err := s.post("/sessions/"+ss.userID+"/cookies", pyjson.ObjectOf("cookies", list), commandTimeoutDefault)
+	data, err := s.post("/sessions/"+ss.userID+"/cookies", jsonutil.ObjectOf("cookies", list), commandTimeoutDefault)
 	if err != nil {
 		if he, ok := err.(*httpError); ok {
 			var detail any = ""
-			if body, jerr := decodeJSON(he.resp.Body); jerr == nil {
-				if !pyrepr.Truthy(body) {
-					body = pyjson.NewObject()
+			if body, jerr := decodeJSON(he.resp.Content); jerr == nil {
+				if !anyutil.IsTrue(body) {
+					body = jsonutil.NewObject()
 				}
 				d, gerr := get(body, "error", "")
 				if gerr != nil {
@@ -723,7 +711,7 @@ func (s *scope) browserImportCookies(cookiesPath string, domainSuffix *string, t
 				}
 				detail = d
 			}
-			shown := pyOrStr(detail)
+			shown := anyutil.String(anyutil.Or(detail, ""))
 			if shown == "" {
 				shown = he.Error()
 			}
@@ -738,8 +726,8 @@ func (s *scope) browserImportCookies(cookiesPath string, domainSuffix *string, t
 	if isDict(data) {
 		count, _ = get(data, "count", len(cookies))
 	}
-	pkgLog().Info(fmt.Sprintf("camofox cookies imported task=%s user=%s count=%s", logTask(taskID), ss.userID, pyrepr.Str(count)))
-	return dumps(pyjson.ObjectOf("success", true, "imported", count, "user_id", ss.userID))
+	pkgLog().Info(fmt.Sprintf("camofox cookies imported task=%s user=%s count=%s", logTask(taskID), ss.userID, anyutil.String(count)))
+	return dumps(jsonutil.ObjectOf("success", true, "imported", count, "user_id", ss.userID))
 }
 
 // Cookie import needs the server URL and the bearer token the server's cookie route checks
@@ -772,7 +760,7 @@ func argStr(args map[string]any, key, def string) string {
 	if !ok {
 		return def
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // str of an optional argument, nil when absent or null
@@ -781,7 +769,7 @@ func argOptStr(args map[string]any, key string) *string {
 	if !ok || v == nil {
 		return nil
 	}
-	text := pyrepr.Str(v)
+	text := anyutil.String(v)
 	return &text
 }
 

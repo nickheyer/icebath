@@ -3,9 +3,10 @@ package tools
 import (
 	"errors"
 	"fmt"
+	"strconv"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ErrRegistrationRejected marks a registration the registry refused and already logged at error level
@@ -16,7 +17,7 @@ type overrideDeniedError struct{ owner, name string }
 // Renders the operator opt in refusal with the owner and tool name quoted like Python repr
 func (e *overrideDeniedError) Error() string {
 	return fmt.Sprintf("Plugin module %s cannot override built-in tool %s without operator opt-in (allow_tool_override).",
-		pyrepr.StrRepr(e.owner), pyrepr.StrRepr(e.name))
+		strconv.Quote(e.owner), strconv.Quote(e.name))
 }
 
 // Matches ErrOverrideDenied so callers keep telling denials from rejections
@@ -32,11 +33,11 @@ func (e *deregisterDeniedError) Is(target error) bool { return target == ErrOver
 // Refuses a missing schema or a non object parameters value before anything is stored
 func validateRegistrationSchema(d Def) error {
 	if d.Schema == nil {
-		return fmt.Errorf("Tool %s: schema must be a mapping, got nothing", pyrepr.StrRepr(d.Name))
+		return fmt.Errorf("Tool %s: schema must be a mapping, got nothing", strconv.Quote(d.Name))
 	}
 	if p, ok := d.Schema.Get("parameters"); ok && p != nil {
-		if _, isMap := pyjson.Dict(p); !isMap {
-			return fmt.Errorf("Tool %s: schema['parameters'] must be an object (JSON Schema dict), got %s", pyrepr.StrRepr(d.Name), pyrepr.TypeName(p))
+		if _, isMap := jsonutil.AsMap(p); !isMap {
+			return fmt.Errorf("Tool %s: schema['parameters'] must be an object (JSON Schema dict), got %s", strconv.Quote(d.Name), anyutil.Kind(p))
 		}
 	}
 	return nil
@@ -45,8 +46,8 @@ func validateRegistrationSchema(d Def) error {
 // Logs and returns the refusal of a plugin shadowing a global tool without override
 func rejectGlobalShadow(owner, name string) error {
 	pkgLog().Error(fmt.Sprintf("Tool registration REJECTED: plugin %s attempted to shadow global tool %s without override=True",
-		pyrepr.StrRepr(owner), pyrepr.StrRepr(name)))
-	return fmt.Errorf("%w: plugin %s would shadow global tool %s", ErrRegistrationRejected, pyrepr.StrRepr(owner), pyrepr.StrRepr(name))
+		strconv.Quote(owner), strconv.Quote(name)))
+	return fmt.Errorf("%w: plugin %s would shadow global tool %s", ErrRegistrationRejected, strconv.Quote(owner), strconv.Quote(name))
 }
 
 // Decides a cross toolset replacement, logging the refusal, the denial or the audited override
@@ -55,7 +56,7 @@ func crossToolsetVerdict(d Def, owner, existingToolset string, denied bool) erro
 		if denied {
 			pkgLog().Error(fmt.Sprintf("Tool registration REJECTED: plugin %s attempted to override built-in tool %s (existing toolset %s) without operator opt-in. "+
 				"Set plugins.entries.<plugin_id>.allow_tool_override: true in config.yaml to allow it.",
-				pyrepr.StrRepr(owner), pyrepr.StrRepr(d.Name), pyrepr.StrRepr(existingToolset)))
+				strconv.Quote(owner), strconv.Quote(d.Name), strconv.Quote(existingToolset)))
 			return &overrideDeniedError{owner: owner, name: d.Name}
 		}
 		pkgLog().Info(fmt.Sprintf("Tool '%s': toolset '%s' overriding existing toolset '%s' (override=True opt-in)", d.Name, d.Toolset, existingToolset))
@@ -64,16 +65,16 @@ func crossToolsetVerdict(d Def, owner, existingToolset string, denied bool) erro
 	pkgLog().Error(fmt.Sprintf("Tool registration REJECTED: '%s' (toolset '%s') would shadow existing tool from toolset '%s'. "+
 		"Pass override=True to register() if the replacement is intentional, or deregister the existing tool first.", d.Name, d.Toolset, existingToolset))
 	return fmt.Errorf("%w: %s (toolset %s) would shadow existing tool from toolset %s", ErrRegistrationRejected,
-		pyrepr.StrRepr(d.Name), pyrepr.StrRepr(d.Toolset), pyrepr.StrRepr(existingToolset))
+		strconv.Quote(d.Name), strconv.Quote(d.Toolset), strconv.Quote(existingToolset))
 }
 
 // Logs and returns the refusal of a plugin removing a tool it neither owns nor may override
 func rejectForeignDeregister(caller, name, toolset string) error {
 	pkgLog().Error(fmt.Sprintf("Tool deregistration REJECTED: plugin %s attempted to remove tool %s (toolset %s) it does not own, without operator opt-in. "+
 		"Set plugins.entries.%s.allow_tool_override: true in config.yaml to allow it.",
-		pyrepr.StrRepr(caller), pyrepr.StrRepr(name), pyrepr.StrRepr(toolset), caller))
+		strconv.Quote(caller), strconv.Quote(name), strconv.Quote(toolset), caller))
 	return &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s cannot deregister tool %s (toolset %s) without operator opt-in (allow_tool_override).",
-		pyrepr.StrRepr(caller), pyrepr.StrRepr(name), pyrepr.StrRepr(toolset))}
+		strconv.Quote(caller), strconv.Quote(name), strconv.Quote(toolset))}
 }
 
 // Resolves the scope a plugin caller acts in, refusing a scope outside the profiles it is bound to
@@ -84,7 +85,7 @@ func (e *registryExt) callerScopeLocked(callerOwner, scope string) (string, erro
 	}
 	if scope != "" {
 		if !scopes[scope] {
-			return "", &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s cannot deregister tools outside its own profile scope.", pyrepr.StrRepr(callerOwner))}
+			return "", &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s cannot deregister tools outside its own profile scope.", strconv.Quote(callerOwner))}
 		}
 		return scope, nil
 	}
@@ -93,5 +94,5 @@ func (e *registryExt) callerScopeLocked(callerOwner, scope string) (string, erro
 			return s, nil
 		}
 	}
-	return "", &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s is active in multiple profiles and cannot register outside one of those scopes.", pyrepr.StrRepr(callerOwner))}
+	return "", &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s is active in multiple profiles and cannot register outside one of those scopes.", strconv.Quote(callerOwner))}
 }

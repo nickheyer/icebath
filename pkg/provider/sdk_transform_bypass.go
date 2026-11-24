@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -29,9 +29,9 @@ func sdkIsPlainJSONData(value any) bool {
 		if rv.IsNil() {
 			return true
 		}
-		if obj, ok := value.(*pyjson.Object); ok {
-			for _, k := range obj.Keys {
-				if !sdkIsPlainJSONData(obj.Vals[k]) {
+		if obj, ok := value.(*jsonutil.Object); ok {
+			for _, k := range obj.Keys() {
+				if !sdkIsPlainJSONData(obj.Value(k)) {
 					return false
 				}
 			}
@@ -67,7 +67,7 @@ func sdkIsContainer(value any) bool {
 	if value == nil {
 		return false
 	}
-	if _, ok := value.(*pyjson.Object); ok {
+	if _, ok := value.(*jsonutil.Object); ok {
 		return true
 	}
 	switch reflect.TypeOf(value).Kind() {
@@ -111,9 +111,9 @@ func BypassSDKRequestTransform(requestKwargs map[string]any, fields []string, ke
 		}
 		bypassed[key] = value
 	}
-	merged := pyjson.NewObject()
-	if extra, ok := pyjson.AsObject(bypassed["extra_body"]); ok {
-		merged = extra.Copy()
+	merged := jsonutil.NewObject()
+	if extra, ok := jsonutil.AsObject(bypassed["extra_body"]); ok {
+		merged = extra.Clone()
 	}
 	for _, f := range order {
 		if _, exists := merged.Get(f); !exists {

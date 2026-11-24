@@ -11,10 +11,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var verificationContinuationFlags = []string{"_verification_stop_synthetic", "_pre_verify_synthetic"}
@@ -127,7 +127,7 @@ func resolveBudgetFallback(ctx context.Context, a *AIAgent, s *LoopState, final 
 	apiCalls := s.APICallCount
 	exhausted := apiCalls >= a.maxIterations || a.iterationBudget.Load().Remaining() <= 0
 	out := budgetFallback{finalResponse: final, exitReason: exitReason, interrupted: interrupted}
-	if reason := pyrepr.Str(exitReason); final == nil && exhausted && !interrupted && !failed && (reason == "unknown" || reason == "budget_exhausted") {
+	if reason := anyutil.String(exitReason); final == nil && exhausted && !interrupted && !failed && (reason == "unknown" || reason == "budget_exhausted") {
 		out.exitReason = fmt.Sprintf("max_iterations_reached(%d/%d)", apiCalls, a.maxIterations)
 		if pyTruthy(s.PendingVerificationResponse) {
 			out.finalResponse = s.PendingVerificationResponse
@@ -345,7 +345,7 @@ func logTurnExit(a *AIAgent, messages []*state.Message, final any, apiCallCount 
 		session = "none"
 	}
 	diag := fmt.Sprintf("Turn ended: reason=%s model=%s api_calls=%d/%d budget=%d/%d tool_turns=%d last_msg_role=%s response_len=%d session=%s",
-		pyrepr.Str(exitReason), a.model, apiCallCount, a.maxIterations, used, maxTotal, toolTurns, lastRole, pyLen(final), session)
+		anyutil.String(exitReason), a.model, apiCallCount, a.maxIterations, used, maxTotal, toolTurns, lastRole, pyLen(final), session)
 	if a.turnOrigin != "" {
 		diag += " origin=" + a.turnOrigin
 	}
@@ -399,7 +399,7 @@ func explainAbnormalExit(ctx context.Context, a *AIAgent, final, exitReason any,
 		}
 		stripped = strings.TrimSpace(text)
 	}
-	reason := pyrepr.Str(exitReason)
+	reason := anyutil.String(exitReason)
 	emptyTerminal := stripped == "" || stripped == "(empty)"
 	lastChar := ""
 	if r, size := utf8.DecodeLastRuneInString(stripped); size > 0 {
@@ -547,7 +547,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 		failed = true
 	}
 	completed := final != nil && !failed && !interrupted &&
-		(apiCalls < a.maxIterations || strings.HasPrefix(pyrepr.Str(exitReason), "text_response("))
+		(apiCalls < a.maxIterations || strings.HasPrefix(anyutil.String(exitReason), "text_response("))
 
 	rollbackInterruptedPreflightDisplay(a, interrupted)
 
@@ -623,7 +623,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 	if a.toolGuardrailHaltDecision != nil {
 		result["guardrail"] = a.toolGuardrailHaltDecision.ToMetadata()
 	}
-	if failed && pyrepr.Str(exitReason) == "session_persistence_failed" {
+	if failed && anyutil.String(exitReason) == "session_persistence_failed" {
 		if pyTruthy(final) {
 			result["error"] = final
 		} else {
@@ -640,7 +640,7 @@ func finalizeTurn(ctx context.Context, a *AIAgent, s *LoopState) (map[string]any
 			if pyTruthy(final) {
 				result["error"] = final
 			} else {
-				result["error"] = pyrepr.Str(exitReason)
+				result["error"] = anyutil.String(exitReason)
 			}
 		}
 		StampFailure(result, exitFailure.Reason, exitFailure.Retryable)

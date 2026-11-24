@@ -9,12 +9,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -173,7 +172,7 @@ func mutateMemory(ctx context.Context, env *tools.Env, nodeID string, replacemen
 			}
 		}
 		if idx < 0 {
-			r := Result{Data: pyjson.ObjectOf("success", false, "error", staleMemoryNode)}
+			r := Result{Data: jsonutil.ObjectOf("success", false, "error", staleMemoryNode)}
 			return Mutation{Result: &r}
 		}
 		next := append([]string{}, entries[:idx]...)
@@ -219,7 +218,7 @@ func dispatchNode(nodeID string, memoryFn, skillFn func(string) (map[string]any,
 	}
 	out, err := fn(nodeID)
 	if err != nil {
-		var ue *pystr.UnicodeDecodeError
+		var ue *textutil.InvalidUTF8Error
 		if errors.As(err, &ue) {
 			return map[string]any{"ok": false, "message": ue.Error()}, nil
 		}

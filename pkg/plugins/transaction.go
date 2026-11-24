@@ -11,10 +11,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Whether a plugin tree is part of the effective enabled selection, counting the tree being installed
@@ -242,7 +242,7 @@ func updatePlugin(ctx context.Context, target string, opts updatePluginOptions) 
 	if entry != nil {
 		source = entry.InstallIdentifier()
 	} else if jsonTruthy(record["source"]) {
-		source = pyrepr.Str(record["source"])
+		source = anyutil.String(record["source"])
 	}
 	if source == "" || (entry == nil && !isDirPath(filepath.Join(target, ".git"))) {
 		return "", &PluginOperationError{Msg: fmt.Sprintf("Plugin '%s' has no owned Git checkout; reinstall from its source.", name)}
@@ -254,7 +254,7 @@ func updatePlugin(ctx context.Context, target string, opts updatePluginOptions) 
 			return "", &PluginOperationError{Msg: checked.NeedsFixing}
 		}
 		if jsonTruthy(record["update_url"]) {
-			text, err := defaultFetch(ctx, pyrepr.Str(record["update_url"]))
+			text, err := defaultFetch(ctx, anyutil.String(record["update_url"]))
 			if err != nil {
 				return "", err
 			}
@@ -326,7 +326,7 @@ func stageAndPublishUpdate(ctx context.Context, h, target, staged, source, feedR
 		delete(record, "catalog_tier")
 		writeCatalogSidecarRecord(staged, catalogRecord, revision)
 	} else {
-		if err := pyfs.CopyTree(target, staged, true, false, ignorePycache); err != nil {
+		if err := fsutil.CopyTree(target, staged, fsutil.CopyTreeOptions{Symlinks: true, Ignore: ignorePycache}); err != nil {
 			return "", err
 		}
 		if feedRevision != "" {
@@ -370,7 +370,7 @@ func stageAndPublishUpdate(ctx context.Context, h, target, staged, source, feedR
 	}
 	installedName := filepath.Base(target)
 	if jsonTruthy(manifest["name"]) {
-		installedName = pyrepr.Str(manifest["name"])
+		installedName = anyutil.String(manifest["name"])
 	}
 	if entry == nil && installedName != filepath.Base(target) {
 		return "", &PluginOperationError{Msg: "The updated plugin changed its installed name; reinstall it explicitly."}

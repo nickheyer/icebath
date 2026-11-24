@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Worker child of the re-executed test binary, optionally with a probe replacing an operation
@@ -174,7 +174,7 @@ func TestWorkerArtifactLifecycleKeepsIdentityAndRelaysProgress(t *testing.T) {
 			}
 			facts, _ := NewFacts(factsPath, false)
 			fact, _ := facts.Get("node")
-			entry := filepath.Join(storeRoot, pyrepr.Str(fact["entry"]))
+			entry := filepath.Join(storeRoot, anyutil.String(fact["entry"]))
 			last := downloads[len(downloads)-1]
 			if len(downloads) == 0 || last.done != last.total || len(last.ranges) == 0 {
 				t.Fatalf("download progress %v", downloads)
@@ -352,7 +352,7 @@ func TestWorkerUnknownOperationIsNotDispatched(t *testing.T) {
 					response := ieRawWorker(t, map[string]any{"id": "unsupported", "operation": operation, "arguments": arguments,
 						"callbacks": []any{}, "packages": []any{}, "context": map[string]any{"repo": RepoRoot(), "lockfile": LockfilePath()}}, false)
 					payload, _ := response["error"].(map[string]any)
-					if payload["type"] != "KeyError" || !strings.Contains(pyrepr.Str(payload["message"]), operation) {
+					if payload["type"] != "KeyError" || !strings.Contains(anyutil.String(payload["message"]), operation) {
 						t.Fatalf("response %v", response)
 					}
 				}
@@ -632,7 +632,7 @@ func TestWorkerDefinitionTheBinaryDoesNotCarryIsAPackageError(t *testing.T) {
 				"context": map[string]any{"repo": RepoRoot(), "lockfile": LockfilePath()}}, false)
 			payload, _ := response["error"].(map[string]any)
 			if payload["type"] != "InstallError" || payload["package"] != definition.Name ||
-				!strings.Contains(pyrepr.Str(payload["cause"]), "cannot load package definition") || !strings.Contains(pyrepr.Str(payload["remedy"]), "keep the package definition") {
+				!strings.Contains(anyutil.String(payload["cause"]), "cannot load package definition") || !strings.Contains(anyutil.String(payload["remedy"]), "keep the package definition") {
 				t.Fatalf("response %v", response)
 			}
 		})

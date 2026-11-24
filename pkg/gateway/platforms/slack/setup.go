@@ -11,7 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // First n code points of s, Python slicing
@@ -24,7 +23,7 @@ func truncateRunes(s string, n int) string {
 }
 
 // Full Slack app manifest, display info, the registry slash list and the default scopes, events and settings
-func BuildFullManifest(ctx context.Context, botName, botDescription string, includeAssistant bool, messagingExperience, longDescription *string) (*pyjson.Object, error) {
+func BuildFullManifest(ctx context.Context, botName, botDescription string, includeAssistant bool, messagingExperience, longDescription *string) (*jsonutil.Object, error) {
 	experience := "none"
 	if includeAssistant {
 		experience = "assistant"
@@ -40,9 +39,9 @@ func BuildFullManifest(ctx context.Context, botName, botDescription string, incl
 	if err != nil {
 		return nil, err
 	}
-	features := pyjson.ObjectOf(
-		"app_home", pyjson.ObjectOf("home_tab_enabled", false, "messages_tab_enabled", true, "messages_tab_read_only_enabled", false),
-		"bot_user", pyjson.ObjectOf("display_name", truncateRunes(botName, 80), "always_online", true),
+	features := jsonutil.ObjectOf(
+		"app_home", jsonutil.ObjectOf("home_tab_enabled", false, "messages_tab_enabled", true, "messages_tab_read_only_enabled", false),
+		"bot_user", jsonutil.ObjectOf("display_name", truncateRunes(botName, 80), "always_online", true),
 		"slash_commands", slashes)
 	botScopes := []string{"app_mentions:read", "channels:history", "channels:read", "chat:write", "commands",
 		"files:read", "files:write", "groups:history", "groups:read", "im:history", "im:read",
@@ -51,11 +50,11 @@ func BuildFullManifest(ctx context.Context, botName, botDescription string, incl
 		"reaction_added", "reaction_removed"}
 	switch experience {
 	case "assistant":
-		features.Set("assistant_view", pyjson.ObjectOf("assistant_description", "Chat with Icebath in threads and DMs."))
+		features.Set("assistant_view", jsonutil.ObjectOf("assistant_description", "Chat with Icebath in threads and DMs."))
 		botScopes = append(botScopes, "assistant:write")
 		botEvents = append(botEvents, "assistant_thread_context_changed", "assistant_thread_started")
 	case "agent":
-		features.Set("agent_view", pyjson.ObjectOf("agent_description", "Chat with Icebath in Slack Messages."))
+		features.Set("agent_view", jsonutil.ObjectOf("agent_description", "Chat with Icebath in Slack Messages."))
 		botScopes = append(botScopes, "assistant:write")
 		botEvents = append(botEvents, "app_context_changed", "app_home_opened")
 	}
@@ -64,19 +63,19 @@ func BuildFullManifest(ctx context.Context, botName, botDescription string, incl
 	if botDescription == "" {
 		botDescription = "Your Icebath agent on Slack"
 	}
-	display := pyjson.ObjectOf("name", truncateRunes(botName, 35), "description", truncateRunes(botDescription, 140),
+	display := jsonutil.ObjectOf("name", truncateRunes(botName, 35), "description", truncateRunes(botDescription, 140),
 		"background_color", "#1a1a2e")
 	if longDescription != nil {
 		display.Set("long_description", *longDescription)
 	}
-	return pyjson.ObjectOf(
-		"_metadata", pyjson.ObjectOf("major_version", 1, "minor_version", 1),
+	return jsonutil.ObjectOf(
+		"_metadata", jsonutil.ObjectOf("major_version", 1, "minor_version", 1),
 		"display_information", display,
 		"features", features,
-		"oauth_config", pyjson.ObjectOf("scopes", pyjson.ObjectOf("bot", toAny(botScopes))),
-		"settings", pyjson.ObjectOf(
-			"event_subscriptions", pyjson.ObjectOf("bot_events", toAny(botEvents)),
-			"interactivity", pyjson.ObjectOf("is_enabled", true),
+		"oauth_config", jsonutil.ObjectOf("scopes", jsonutil.ObjectOf("bot", toAny(botScopes))),
+		"settings", jsonutil.ObjectOf(
+			"event_subscriptions", jsonutil.ObjectOf("bot_events", toAny(botEvents)),
+			"interactivity", jsonutil.ObjectOf("is_enabled", true),
 			"org_deploy_enabled", false,
 			"socket_mode_enabled", true,
 			"token_rotation_enabled", false)), nil
@@ -98,7 +97,7 @@ func slashCommandEntries(ctx context.Context) ([]any, error) {
 	raw, _ := AppManifest(ctx, cfg)["features"].(map[string]any)["slash_commands"].([]map[string]any)
 	slashes := make([]any, 0, len(raw))
 	for _, e := range raw {
-		entry := pyjson.ObjectOf("command", e["command"], "description", e["description"], "should_escape", e["should_escape"], "url", e["url"])
+		entry := jsonutil.ObjectOf("command", e["command"], "description", e["description"], "should_escape", e["should_escape"], "url", e["url"])
 		if hint, ok := e["usage_hint"]; ok {
 			entry.Set("usage_hint", hint)
 		}
@@ -150,7 +149,7 @@ func writeSlackManifestAndInstruct(ctx context.Context) {
 		if err := os.MkdirAll(filepath.Dir(target), 0o777); err != nil {
 			return err
 		}
-		text, err := pyjson.Dumps(manifest, pyjson.Indent(2), pyjson.EnsureASCII(false))
+		text, err := jsonutil.Encode(manifest, jsonutil.Indent(2))
 		if err != nil {
 			return err
 		}

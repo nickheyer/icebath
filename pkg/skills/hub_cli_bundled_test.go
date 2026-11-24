@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDoListPassesNoPlatformToDisabledSkillNames(t *testing.T) {
@@ -60,7 +60,7 @@ func TestInstallByNameRestoresTheBundledSkillItNames(t *testing.T) {
 			if err := x.S.toggleSuppressedName(ctx, name, true); err != nil {
 				t.Fatal(err)
 			}
-			usage, entry := pyjson.NewObject(), pyjson.NewObject()
+			usage, entry := jsonutil.NewObject(), jsonutil.NewObject()
 			entry.Set("state", StateArchived)
 			usage.Set(name, entry)
 			if !x.S.SaveUsage(ctx, usage) {
@@ -74,7 +74,7 @@ func TestInstallByNameRestoresTheBundledSkillItNames(t *testing.T) {
 				t.Fatal(err)
 			}
 			sink := &bytes.Buffer{}
-			o := HubInstallOptions{SkipConfirm: true, Console: &pyrich.Console{Out: sink, Width: 80}}
+			o := HubInstallOptions{SkipConfirm: true, Console: &consoleutil.Console{Out: sink, Width: 80}}
 			if got, err := x.DoInstall(ctx, identifier, o); err != nil || got != HubFailed {
 				t.Fatalf("restore through a symlinked category = %v %v", got, err)
 			}
@@ -102,7 +102,7 @@ func TestInstallByNameRestoresTheBundledSkillItNames(t *testing.T) {
 			}
 			loaded, _ := x.S.LoadUsage()
 			rec, _ := loaded.Get(name)
-			state, _ := rec.(*pyjson.Object).Get("state")
+			state, _ := rec.(*jsonutil.Object).Get("state")
 			if state != StateActive {
 				t.Fatalf("usage state %v", state)
 			}
@@ -140,7 +140,7 @@ func TestBuiltInRestoreSurvivesLeftoversAndSymlinkedCategories(t *testing.T) {
 	x, tmp := bundledInstallCLI(t)
 	ctx := context.Background()
 	dest := filepath.Join(x.S.SkillsDir(), path.Base(path.Dir(bundledSkillDir(t, "obsidian"))), "obsidian")
-	o := HubInstallOptions{SkipConfirm: true, Console: &pyrich.Console{Out: &bytes.Buffer{}, Width: 80}}
+	o := HubInstallOptions{SkipConfirm: true, Console: &consoleutil.Console{Out: &bytes.Buffer{}, Width: 80}}
 	writeTestFile(t, filepath.Join(dest, "wiki", "index.md"), "mine\n")
 	if got, err := x.DoInstall(ctx, "obsidian", o); err != nil || got != HubOK {
 		t.Fatalf("restore over a leftover dir = %v %v", got, err)

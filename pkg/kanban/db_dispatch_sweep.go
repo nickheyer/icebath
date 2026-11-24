@@ -13,9 +13,9 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -169,7 +169,7 @@ func workerLogExitCode(ctx context.Context, taskID string, board *string) *int {
 	}
 	var last *int
 	for m, err := exitTrailerRE.FindStringMatch(text); m != nil && err == nil; m, err = exitTrailerRE.FindNextMatch(m) {
-		n, perr := pyIntOf(m.GroupByNumber(1).String())
+		n, perr := cellIntOf(m.GroupByNumber(1).String())
 		if perr != nil {
 			return nil
 		}
@@ -243,7 +243,7 @@ func ReapTerminalWorkers(ctx context.Context, conn state.SQLiteConn, signalFn Si
 
 // Clears or terminates the retained worker of one closed run row
 func reapTerminalWorkerRow(ctx context.Context, conn state.SQLiteConn, row *Row, prefix string, signalFn SignalFunc, reaped *[]string) error {
-	pid64, err := pyIntOf(row.Get("worker_pid"))
+	pid64, err := cellIntOf(row.Get("worker_pid"))
 	if err != nil {
 		return err
 	}
@@ -256,7 +256,7 @@ func reapTerminalWorkerRow(ctx context.Context, conn state.SQLiteConn, row *Row,
 		return nil
 	}
 	alive := workerAlive(pid, fingerprint)
-	var termination *pyjson.Object
+	var termination *jsonutil.Object
 	if alive {
 		termination = terminateReclaimedWorker(pid, cellOptStr(row.Get("claim_lock")), signalFn, fingerprint)
 		if terminated, _ := termination.Get("terminated"); !truthy(terminated) {
@@ -274,7 +274,7 @@ func reapTerminalWorkerRow(ctx context.Context, conn state.SQLiteConn, row *Row,
 			return nil
 		}
 		body := payload("pid", pid, "worker_started_at", fingerprint)
-		body.Update(termination)
+		body.Merge(termination)
 		return appendEvent(ctx, conn, taskID, "terminal_worker_reaped", body, cellOptInt(runID))
 	})
 	if err != nil {
@@ -324,7 +324,7 @@ func HeartbeatWorkerNote(ctx context.Context, conn state.SQLiteConn, taskID stri
 			}
 		}
 		var body any
-		if pyrepr.Truthy(note) {
+		if anyutil.IsTrue(note) {
 			body = payload("note", note)
 		}
 		beat = true
@@ -376,7 +376,7 @@ func ReconcileOrphanedRunning(ctx context.Context, conn state.SQLiteConn) ([]str
 			}
 			var workerPid any
 			if truthy(pid) {
-				n, err := pyIntOf(pid)
+				n, err := cellIntOf(pid)
 				if err != nil {
 					return err
 				}
@@ -599,7 +599,7 @@ func reclaimDeadWorkers(ctx context.Context, conn state.SQLiteConn, board *strin
 			if blocked {
 				continue
 			}
-			pid64, err := pyIntOf(row.Get("worker_pid"))
+			pid64, err := cellIntOf(row.Get("worker_pid"))
 			if err != nil {
 				return err
 			}
@@ -611,7 +611,7 @@ func reclaimDeadWorkers(ctx context.Context, conn state.SQLiteConn, board *strin
 			}
 			var exitCode *int64
 			if exitRaw != nil {
-				n, err := pyIntOf(exitRaw)
+				n, err := cellIntOf(exitRaw)
 				if err != nil {
 					return err
 				}
@@ -637,7 +637,7 @@ func reclaimDeadWorkers(ctx context.Context, conn state.SQLiteConn, board *strin
 				continue
 			}
 			outcome := dead.runOutcome()
-			runID, err := endRun(ctx, conn, tid, outcome, nil, &dead.ErrorText, dead.EventPayload.Copy(), outcome)
+			runID, err := endRun(ctx, conn, tid, outcome, nil, &dead.ErrorText, dead.EventPayload.Clone(), outcome)
 			if err != nil {
 				return err
 			}
@@ -702,7 +702,7 @@ func accountCrashes(ctx context.Context, conn state.SQLiteConn, details []crashD
 			}
 			violationLimit := int64(protocolViolationFailureLimit)
 			if override := rowGet(trow, "max_retries", nil); override != nil {
-				if violationLimit, err = pyIntOf(override); err != nil {
+				if violationLimit, err = cellIntOf(override); err != nil {
 					return nil, err
 				}
 			}

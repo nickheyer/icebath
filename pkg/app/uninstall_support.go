@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Python sys.platform of the running OS
@@ -27,7 +26,7 @@ func uninstallLine(w io.Writer, mark, col, msg string) {
 
 // User home the way Path.home answers
 func uninstallUserHome() string {
-	h, err := pypath.PathHome()
+	h, err := pathutil.Home()
 	if err != nil {
 		panic(err)
 	}

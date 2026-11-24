@@ -9,10 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Plugin load re-arms allowed per queued platform before a broken plugin stops re-importing
@@ -37,7 +36,7 @@ func claimValue(claim *claimKey) any {
 
 // Reconnect queue entry shared by startup failures and runtime fatals
 func (r *GatewayRunner) reconnectQueueEntry(platform gateway.Platform, adapter gateway.PlatformAdapter, platformConfig *gateway.PlatformConfig, attempts int, delay float64, queued bool) map[string]any {
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	claims := r.adapterClaims(platform, adapter)
 	entry := map[string]any{"config": platformConfig, "attempts": attempts, "next_retry": now + delay}
 	if queued {
@@ -71,7 +70,7 @@ func (r *GatewayRunner) flagReconnectNeedsAttention(ctx context.Context, platfor
 		key, queuedFor/3600.0, attempts))
 	since := time.Now().UTC().Add(-time.Duration(queuedFor * float64(time.Second)))
 	r.updatePlatformRuntimeStatus(ctx, key, platformStatus{state: optStr("retrying"), needsAttention: optBool(true),
-		retryingSince: optSince(pydatetime.ISOFormat(since))})
+		retryingSince: optSince(since.Format(timeutil.RFC3339Micro))})
 	return true
 }
 
@@ -93,7 +92,7 @@ func (r *GatewayRunner) bumpReconnectBackoff(ctx context.Context, platform gatew
 		backoff = 0
 	}
 	info["attempts"] = attempt
-	info["next_retry"] = pythread.Monotonic() + backoff
+	info["next_retry"] = timeutil.Monotonic() + backoff
 	return backoff
 }
 
@@ -164,7 +163,7 @@ func (r *GatewayRunner) cancelSecondaryProfileReconnectTasks(ctx context.Context
 func (r *GatewayRunner) noteUnservedSecondaryPlatform(ctx context.Context, profileName string, platform gateway.Platform) {
 	r.adapterClaimsMu.Lock()
 	if r.unservedSecondaryPlatforms == nil {
-		r.unservedSecondaryPlatforms = pydict.New[secondaryKey, struct{}]()
+		r.unservedSecondaryPlatforms = orderedutil.NewMap[secondaryKey, struct{}]()
 	}
 	key := secondaryKey{profileName, platform}
 	if r.unservedSecondaryPlatforms.Has(key) {

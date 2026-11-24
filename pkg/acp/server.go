@@ -6,15 +6,16 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Client side calls the agent makes over its connection
 type Client interface {
 	SessionUpdater
-	RequestPermission(ctx context.Context, options []pyacp.PermissionOption, sessionID string, toolCall *pyacp.ToolCallUpdate, meta *pyjson.Object) (*pyacp.RequestPermissionResponse, error)
+	RequestPermission(ctx context.Context, options []acputil.PermissionOption, sessionID string, toolCall *acputil.ToolCallUpdate, meta *jsonutil.Object) (*acputil.RequestPermissionResponse, error)
 }
 
 // Agent seam that takes the callback fed with reasoning text during a prompt
@@ -23,12 +24,12 @@ type ReasoningCallbackSetter interface {
 }
 
 // Python dict like value of a history message, keys in order
-func historyDict(v any) (*pyjson.Object, bool) {
+func historyDict(v any) (*jsonutil.Object, bool) {
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x, x != nil
 	case map[string]any:
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		keys := make([]string, 0, len(x))
 		for k := range x {
 			keys = append(keys, k)
@@ -39,9 +40,9 @@ func historyDict(v any) (*pyjson.Object, bool) {
 		}
 		return o, true
 	case interface{ PyItems() iter.Seq2[any, any] }:
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		for k, val := range x.PyItems() {
-			o.Set(pyStr(k), historyValue(val))
+			o.Set(anyutil.String(k), historyValue(val))
 		}
 		return o, true
 	}
@@ -90,9 +91,9 @@ func flattenHistoryText(value any) string {
 	var parts []string
 	for _, item := range items {
 		if d, ok := historyDict(item); ok {
-			if text, ok := d.GetOr("text", nil).(string); ok {
+			if text, ok := d.ValueOr("text", nil).(string); ok {
 				parts = append(parts, text)
-			} else if content, ok := d.GetOr("content", nil).(string); ok && d.GetOr("type", nil) == "text" {
+			} else if content, ok := d.ValueOr("content", nil).(string); ok && d.ValueOr("type", nil) == "text" {
 				parts = append(parts, content)
 			}
 		} else if s, ok := item.(string); ok {
@@ -119,38 +120,38 @@ func historyReasoningText(message map[string]any) string {
 }
 
 // Meta of a replayed compaction summary, nil for ordinary content
-func historySummaryMeta(message map[string]any, text string) *pyjson.Object {
+func historySummaryMeta(message map[string]any, text string) *jsonutil.Object {
 	kind := state.ClassifySummaryContent(text)
-	if kind == "" && truthy(message[state.CompressedSummaryMetadataKey]) {
+	if kind == "" && anyutil.IsTrue(message[state.CompressedSummaryMetadataKey]) {
 		kind = "standalone"
 	}
 	key := map[string]string{"standalone": "compactionSummary", "merged": "containsCompactionSummary"}[kind]
 	if key == "" {
 		return nil
 	}
-	inner := pyjson.NewObject()
+	inner := jsonutil.NewObject()
 	inner.Set(key, true)
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("icebath", inner)
 	return meta
 }
 
 // Function name and arguments of an OpenAI style tool call
-func historyToolCallNameArgs(toolCall *pyjson.Object) (string, *pyjson.Object) {
-	function, ok := historyDict(toolCall.GetOr("function", nil))
+func historyToolCallNameArgs(toolCall *jsonutil.Object) (string, *jsonutil.Object) {
+	function, ok := historyDict(toolCall.ValueOr("function", nil))
 	if !ok {
-		function = pyjson.NewObject()
+		function = jsonutil.NewObject()
 	}
 	name := "unknown_tool"
-	for _, candidate := range []any{function.GetOr("name", nil), toolCall.GetOr("name", nil)} {
-		if truthy(candidate) {
-			name = pyStr(candidate)
+	for _, candidate := range []any{function.ValueOr("name", nil), toolCall.ValueOr("name", nil)} {
+		if anyutil.IsTrue(candidate) {
+			name = anyutil.String(candidate)
 			break
 		}
 	}
-	var raw any = pyjson.NewObject()
-	for _, candidate := range []any{function.GetOr("arguments", nil), toolCall.GetOr("arguments", nil), toolCall.GetOr("args", nil)} {
-		if truthy(candidate) {
+	var raw any = jsonutil.NewObject()
+	for _, candidate := range []any{function.ValueOr("arguments", nil), toolCall.ValueOr("arguments", nil), toolCall.ValueOr("args", nil)} {
+		if anyutil.IsTrue(candidate) {
 			raw = candidate
 			break
 		}
@@ -159,31 +160,31 @@ func historyToolCallNameArgs(toolCall *pyjson.Object) (string, *pyjson.Object) {
 }
 
 // User or assistant chunk of a history message, nil when it has no text
-func historyMessageChunk(role string, message map[string]any) pyacp.SessionUpdate {
+func historyMessageChunk(role string, message map[string]any) acputil.SessionUpdate {
 	text := flattenHistoryText(message["content"])
 	if text == "" {
 		return nil
 	}
 	meta := historySummaryMeta(message, text)
 	if role == "user" {
-		return &pyacp.UserMessageChunk{Content: pyacp.TextBlock(text), Meta: meta}
+		return &acputil.UserMessageChunk{Content: acputil.TextBlock(text), Meta: meta}
 	}
-	return &pyacp.AgentMessageChunk{Content: pyacp.TextBlock(text), Meta: meta}
+	return &acputil.AgentMessageChunk{Content: acputil.TextBlock(text), Meta: meta}
 }
 
 type replayedCall struct {
 	name string
-	args *pyjson.Object
+	args *jsonutil.Object
 }
 
 // Session updates that reconstruct a persisted transcript in order, text, thoughts and tool call pairs
-func historyReplayUpdates(history []map[string]any) []pyacp.SessionUpdate {
-	var updates []pyacp.SessionUpdate
+func historyReplayUpdates(history []map[string]any) []acputil.SessionUpdate {
+	var updates []acputil.SessionUpdate
 	active := map[string]replayedCall{}
 	for _, message := range history {
 		role := ""
-		if truthy(message["role"]) {
-			role = pyStr(message["role"])
+		if anyutil.IsTrue(message["role"]) {
+			role = anyutil.String(message["role"])
 		}
 		switch role {
 		case "user":
@@ -192,7 +193,7 @@ func historyReplayUpdates(history []map[string]any) []pyacp.SessionUpdate {
 			}
 		case "assistant":
 			if thought := historyReasoningText(message); thought != "" {
-				updates = append(updates, pyacp.UpdateAgentThoughtText(thought))
+				updates = append(updates, acputil.UpdateAgentThoughtText(thought))
 			}
 			if chunk := historyMessageChunk(role, message); chunk != nil {
 				updates = append(updates, chunk)
@@ -205,8 +206,8 @@ func historyReplayUpdates(history []map[string]any) []pyacp.SessionUpdate {
 				}
 				id := ""
 				for _, key := range []string{"id", "call_id", "tool_call_id"} {
-					if v := toolCall.GetOr(key, nil); truthy(v) {
-						id = strings.TrimSpace(pyStr(v))
+					if v := toolCall.ValueOr(key, nil); anyutil.IsTrue(v) {
+						id = strings.TrimSpace(anyutil.String(v))
 						break
 					}
 				}
@@ -219,13 +220,13 @@ func historyReplayUpdates(history []map[string]any) []pyacp.SessionUpdate {
 			}
 		case "tool":
 			id, name := "", ""
-			if truthy(message["tool_call_id"]) {
-				id = strings.TrimSpace(pyStr(message["tool_call_id"]))
+			if anyutil.IsTrue(message["tool_call_id"]) {
+				id = strings.TrimSpace(anyutil.String(message["tool_call_id"]))
 			}
-			if truthy(message["tool_name"]) {
-				name = strings.TrimSpace(pyStr(message["tool_name"]))
+			if anyutil.IsTrue(message["tool_name"]) {
+				name = strings.TrimSpace(anyutil.String(message["tool_name"]))
 			}
-			var args *pyjson.Object
+			var args *jsonutil.Object
 			if call, ok := active[id]; ok {
 				delete(active, id)
 				name, args = call.name, call.args
@@ -249,25 +250,25 @@ func historyReplayUpdates(history []map[string]any) []pyacp.SessionUpdate {
 }
 
 // Acknowledges only an auth method initialize advertised, nil otherwise
-func authenticate(ctx context.Context, methodID string) *pyacp.AuthenticateResponse {
+func authenticate(ctx context.Context, methodID string) *acputil.AuthenticateResponse {
 	normalized := strings.ToLower(strings.TrimSpace(methodID))
 	providerName := DetectProvider(ctx)
 	if normalized == TerminalSetupAuthMethodID {
 		if providerName != "" {
-			return &pyacp.AuthenticateResponse{}
+			return &acputil.AuthenticateResponse{}
 		}
 		return nil
 	}
 	if providerName == "" || normalized != providerName {
 		return nil
 	}
-	return &pyacp.AuthenticateResponse{}
+	return &acputil.AuthenticateResponse{}
 }
 
 // Permission request of a connection in the form the approval bridges call
 func requestPermissionVia(conn Client) RequestPermissionFunc {
-	return func(ctx context.Context, sessionID string, toolCall *pyacp.ToolCallProgress, options []pyacp.PermissionOption) (*pyacp.RequestPermissionResponse, error) {
-		update := &pyacp.ToolCallUpdate{Meta: toolCall.Meta, Content: toolCall.Content, Kind: toolCall.Kind, Locations: toolCall.Locations,
+	return func(ctx context.Context, sessionID string, toolCall *acputil.ToolCallProgress, options []acputil.PermissionOption) (*acputil.RequestPermissionResponse, error) {
+		update := &acputil.ToolCallUpdate{Meta: toolCall.Meta, Content: toolCall.Content, Kind: toolCall.Kind, Locations: toolCall.Locations,
 			RawInput: toolCall.RawInput, RawOutput: toolCall.RawOutput, Status: toolCall.Status, Title: toolCall.Title, ToolCallID: toolCall.ToolCallID}
 		return conn.RequestPermission(ctx, options, sessionID, update, nil)
 	}

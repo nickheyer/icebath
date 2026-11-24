@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Writes doc as the config.yaml of home h, nil sections dropped
@@ -47,7 +47,7 @@ func curTestHome(t *testing.T, cfg map[string]any) (context.Context, string) {
 	t.Setenv("ICEBATH_HOME", h)
 	curWriteConfigDoc(t, h, map[string]any{"curator": cfg})
 	prevLLM := curatorLLMReview
-	curatorLLMReview = func(context.Context, string) *pyjson.Object { return curatorLLMMeta("llm-stub", nil) }
+	curatorLLMReview = func(context.Context, string) *jsonutil.Object { return curatorLLMMeta("llm-stub", nil) }
 	t.Cleanup(func() { curatorLLMReview = prevLLM })
 	t.Cleanup(curatorReviewThreads.Wait)
 	return context.Background(), h
@@ -81,7 +81,7 @@ func curBackdate(t *testing.T, ctx context.Context, name string, days, useCount 
 	if err != nil {
 		t.Fatal(err)
 	}
-	ts := pydatetime.ISOFormatUTC(time.Now().Add(-time.Duration(days) * 24 * time.Hour))
+	ts := time.Now().Add(-time.Duration(days) * 24 * time.Hour).UTC().Format(timeutil.RFC3339Micro)
 	rec.Set("created_by", "agent")
 	rec.Set("created_at", ts)
 	if useCount > 0 {
@@ -101,7 +101,7 @@ func curBackdate(t *testing.T, ctx context.Context, name string, days, useCount 
 	}
 }
 
-func curRecord(t *testing.T, ctx context.Context, name string) *pyjson.Object {
+func curRecord(t *testing.T, ctx context.Context, name string) *jsonutil.Object {
 	t.Helper()
 	scope, _, _ := curatorScope(ctx)
 	rec, err := scope.GetRecord(name)
@@ -146,7 +146,7 @@ func TestCuratorNonPositiveBoundsFallBackToDefaults(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if curatorCount(counts, "archived") != 0 || curRecord(t, ctx, "just-used").Vals["state"] != skills.StateActive {
+		if curatorCount(counts, "archived") != 0 || curRecord(t, ctx, "just-used").Value("state") != skills.StateActive {
 			t.Fatalf("bad value %d archived a fresh skill", bad)
 		}
 		if CuratorArchiveAfterDays(ctx) != int(settings.CuratorArchiveAfterDays.Default/(24*time.Hour)) || CuratorStaleAfterDays(ctx) != int(settings.CuratorStaleAfterDays.Default/(24*time.Hour)) {
@@ -156,7 +156,7 @@ func TestCuratorNonPositiveBoundsFallBackToDefaults(t *testing.T) {
 	for _, bad := range []int{0, -3} {
 		ctx, _ := curTestHome(t, map[string]any{"interval_hours": bad})
 		now := time.Now().UTC()
-		SaveCuratorState(ctx, curatorEntry("last_run_at", pydatetime.ISOFormatUTC(now.Add(-time.Minute))))
+		SaveCuratorState(ctx, curatorEntry("last_run_at", now.Add(-time.Minute).UTC().Format(timeutil.RFC3339Micro)))
 		if CuratorIntervalHours(ctx) != int(settings.CuratorIntervalHours.Default/time.Hour) {
 			t.Fatal("interval must fall back to the default")
 		}
@@ -200,8 +200,8 @@ func TestCuratorPinnedSkillIsNeverTouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	rec := curRecord(t, ctx, "precious")
-	if curatorCount(counts, "archived") != 0 || curatorCount(counts, "marked_stale") != 0 || rec.Vals["state"] != "active" || rec.Vals["pinned"] != true {
-		t.Fatalf("pinned skill touched: %v %v", counts.Vals, rec.Vals)
+	if curatorCount(counts, "archived") != 0 || curatorCount(counts, "marked_stale") != 0 || rec.Value("state") != "active" || rec.Value("pinned") != true {
+		t.Fatalf("pinned skill touched: %v %v", counts, rec)
 	}
 }
 
@@ -214,7 +214,7 @@ func TestCuratorStaleSkillArchivedAndFreshKept(t *testing.T) {
 	if _, err := ApplyCuratorTransitions(ctx, time.Time{}); err != nil {
 		t.Fatal(err)
 	}
-	if curRecord(t, ctx, "orphan").Vals["state"] != skills.StateArchived || curRecord(t, ctx, "recent").Vals["state"] != skills.StateActive {
+	if curRecord(t, ctx, "orphan").Value("state") != skills.StateArchived || curRecord(t, ctx, "recent").Value("state") != skills.StateActive {
 		t.Fatal("inactivity transitions wrong")
 	}
 }
@@ -232,10 +232,10 @@ func TestCuratorRunReviewRecordsState(t *testing.T) {
 		t.Fatal("result lacks started_at")
 	}
 	st, _ := LoadCuratorState(ctx)
-	if st.Vals["last_run_at"] == nil || curatorCount(st, "run_count") < 1 || st.Vals["last_run_summary"] == nil {
-		t.Fatalf("state %v", st.Vals)
+	if st.Value("last_run_at") == nil || curatorCount(st, "run_count") < 1 || st.Value("last_run_summary") == nil {
+		t.Fatalf("state %v", st)
 	}
-	report := pyStr(st.Vals["last_report_path"])
+	report := pyStr(st.Value("last_report_path"))
 	for _, f := range []string{"run.json", "REPORT.md"} {
 		if !curatorExists(filepath.Join(report, f)) {
 			t.Fatalf("missing %s in %s", f, report)
@@ -249,7 +249,7 @@ func TestCuratorDryRunInjectsReportOnlyBanner(t *testing.T) {
 	scope, _, _ := curatorScope(ctx)
 	scope.MarkAgentCreated(ctx, "a")
 	var captured string
-	curatorLLMReview = func(_ context.Context, prompt string) *pyjson.Object {
+	curatorLLMReview = func(_ context.Context, prompt string) *jsonutil.Object {
 		captured = prompt
 		return curatorLLMMeta("s", nil)
 	}
@@ -268,7 +268,7 @@ func TestCuratorSynchronousRunInvokesLLMStub(t *testing.T) {
 	scope, _, _ := curatorScope(ctx)
 	scope.MarkAgentCreated(ctx, "a")
 	calls := 0
-	curatorLLMReview = func(context.Context, string) *pyjson.Object {
+	curatorLLMReview = func(context.Context, string) *jsonutil.Object {
 		calls++
 		m := curatorLLMMeta("stubbed-summary", nil)
 		m.Set("final", "stubbed-summary")
@@ -292,11 +292,11 @@ func TestCuratorParseStructuredSummary(t *testing.T) {
 		"  - from: openai-api\n    into: llm-providers\n    reason: same — merged with sibling\nprunings:\n" +
 		"  - name: random-old-notes\n    reason: pre-curator garbage, no overlap\n```\n"
 	cons, prunes := curatorParseStructuredSummary(text)
-	got, _ := pyjson.Dumps(cons[0])
+	got, _ := jsonutil.Encode(cons[0])
 	if len(cons) != 2 || got != `{"from": "anthropic-api", "into": "llm-providers", "reason": "duplicate of the generic llm-providers skill"}` {
 		t.Fatalf("consolidations %v %s", len(cons), got)
 	}
-	if len(prunes) != 1 || prunes[0].Vals["reason"] != "pre-curator garbage, no overlap" {
+	if len(prunes) != 1 || prunes[0].Value("reason") != "pre-curator garbage, no overlap" {
 		t.Fatalf("prunings %v", prunes)
 	}
 	if c, p := curatorParseStructuredSummary("No block in this text."); len(c) != 0 || len(p) != 0 {
@@ -318,29 +318,29 @@ func TestCuratorAbsorbedIntoDeclarations(t *testing.T) {
 func TestCuratorReconcileClassification(t *testing.T) {
 	cons, pruned := curatorReconcile([]string{"pr-review-format"}, nil, nil, nil, map[string]bool{"icebath-agent-dev": true},
 		map[string]string{"pr-review-format": "icebath-agent-dev"})
-	if len(cons) != 1 || len(pruned) != 0 || cons[0].Vals["into"] != "icebath-agent-dev" || !strings.Contains(pyStr(cons[0].Vals["source"]), "absorbed_into") {
+	if len(cons) != 1 || len(pruned) != 0 || cons[0].Value("into") != "icebath-agent-dev" || !strings.Contains(pyStr(cons[0].Value("source")), "absorbed_into") {
 		t.Fatalf("declared absorption lost: %v %v", cons, pruned)
 	}
-	heur := []*pyjson.Object{curatorEntry("name", "legacy-cons", "into", "umbrella-a", "evidence", "...")}
+	heur := []*jsonutil.Object{curatorEntry("name", "legacy-cons", "into", "umbrella-a", "evidence", "...")}
 	cons, pruned = curatorReconcile([]string{"declared-cons", "declared-prune", "legacy-cons", "legacy-prune"}, heur, nil, nil,
 		map[string]bool{"umbrella-a": true, "umbrella-b": true}, map[string]string{"declared-cons": "umbrella-b", "declared-prune": ""})
-	byName := func(list []*pyjson.Object) map[string]*pyjson.Object {
-		out := map[string]*pyjson.Object{}
+	byName := func(list []*jsonutil.Object) map[string]*jsonutil.Object {
+		out := map[string]*jsonutil.Object{}
 		for _, e := range list {
-			out[pyStr(e.Vals["name"])] = e
+			out[pyStr(e.Value("name"))] = e
 		}
 		return out
 	}
 	cb, pb := byName(cons), byName(pruned)
-	if cb["declared-cons"] == nil || cb["declared-cons"].Vals["into"] != "umbrella-b" || cb["legacy-cons"] == nil || cb["legacy-cons"].Vals["into"] != "umbrella-a" ||
+	if cb["declared-cons"] == nil || cb["declared-cons"].Value("into") != "umbrella-b" || cb["legacy-cons"] == nil || cb["legacy-cons"].Value("into") != "umbrella-a" ||
 		pb["declared-prune"] == nil || pb["legacy-prune"] == nil {
 		t.Fatalf("mixed reconcile %v %v", cons, pruned)
 	}
 }
 
 func TestCuratorRenameSummary(t *testing.T) {
-	report := func(names ...string) []*pyjson.Object {
-		var out []*pyjson.Object
+	report := func(names ...string) []*jsonutil.Object {
+		var out []*jsonutil.Object
 		for _, n := range names {
 			out = append(out, curatorEntry("name", n, "state", "active"))
 		}
@@ -417,7 +417,7 @@ func TestCuratorRollbackIsItselfUndoable(t *testing.T) {
 	rows, _ := ListCuratorBackups(ctx)
 	found := false
 	for _, r := range rows {
-		found = found || strings.Contains(pyStr(r.Vals["reason"]), "pre-rollback")
+		found = found || strings.Contains(pyStr(r.Value("reason")), "pre-rollback")
 	}
 	entries, _ := os.ReadDir(filepath.Join(sk, ".curator_backups"))
 	for _, e := range entries {

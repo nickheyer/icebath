@@ -10,12 +10,12 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One FAL video model family with its endpoints and the capability flags that gate payload keys
@@ -284,7 +284,7 @@ type falPayloadInput struct {
 }
 
 // Family specific payload, keys the family does not declare dropped so the endpoint default applies
-func falBuildVideoPayload(family falFamily, in falPayloadInput) *pyjson.Object {
+func falBuildVideoPayload(family falFamily, in falPayloadInput) *jsonutil.Object {
 	resolved := in.Resolution
 	if alias, ok := family.ResolutionAliases[strings.ToLower(in.Resolution)]; ok {
 		resolved = alias
@@ -293,7 +293,7 @@ func falBuildVideoPayload(family falFamily, in falPayloadInput) *pyjson.Object {
 	if len(family.Durations) > 0 {
 		clamped = falClampDuration(family, in.Duration, resolved)
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	if in.Prompt != "" {
 		payload.Set("prompt", in.Prompt)
 	}
@@ -361,7 +361,7 @@ func falVideoURLFromResult(result any) (any, string) {
 	if !pyTruthy(u) {
 		return video, ""
 	}
-	return video, pyrepr.Str(u)
+	return video, anyutil.String(u)
 }
 
 var (
@@ -555,7 +555,7 @@ func (p *falVideoGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	aspect := req.aspect()
 	payload := falBuildVideoPayload(*family, falPayloadInput{Prompt: prompt, ImageURL: imageURL, Duration: req.Duration, AspectRatio: aspect,
 		Resolution: req.resolution(), NegativePrompt: req.NegativePrompt, Audio: req.Audio, Seed: req.Seed})
-	arguments, _ := pyjson.Plain(payload).(map[string]any)
+	arguments, _ := jsonutil.Plain(payload).(map[string]any)
 	video, videoURL, err := func() (any, string, error) {
 		h, err := submitFalVideoRequest(ctx, env, endpoint, arguments)
 		if err != nil {
@@ -609,7 +609,7 @@ func (p *falVideoGenProvider) Generate(ctx context.Context, env *tools.Env, req 
 	duration := 0
 	if d, ok := payload.Get("duration"); ok {
 		var digits strings.Builder
-		for _, r := range pyrepr.Str(d) {
+		for _, r := range anyutil.String(d) {
 			if unicode.IsDigit(r) {
 				digits.WriteRune(r)
 			}

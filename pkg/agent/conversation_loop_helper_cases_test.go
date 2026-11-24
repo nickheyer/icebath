@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func billingMessage(prov, baseURL, model string, unverified bool) string {
@@ -172,7 +172,7 @@ func canonicalizePassOld(apiMessages []any) {
 			tc := raw.(map[string]any)
 			fn := tc["function"].(map[string]any)
 			text, isStr := fn["arguments"].(string)
-			parsed, err := pyjson.Loads(text)
+			parsed, err := jsonutil.Decode(text)
 			if !isStr || err != nil {
 				if !isStr {
 					text = ""
@@ -181,7 +181,7 @@ func canonicalizePassOld(apiMessages []any) {
 				newTCs = append(newTCs, tc)
 				continue
 			}
-			canonical, _ := pyjson.Dumps(parsed, pyjson.Separators(",", ":"), pyjson.SortKeys(true))
+			canonical, _ := jsonutil.Encode(parsed, jsonutil.SortKeys())
 			newFn := map[string]any{}
 			for k, v := range fn {
 				newFn[k] = v
@@ -211,9 +211,9 @@ func allValidHistory(t *testing.T, n int, withName bool) []any {
 		tc := tcs[0].(map[string]any)
 		fn := tc["function"].(map[string]any)
 		if withName {
-			fn["arguments"] = mustDumps(t, pyjson.ObjectOf("name", fn["name"], "id", tc["id"], "u", canonUNI))
+			fn["arguments"] = mustDumps(t, jsonutil.ObjectOf("name", fn["name"], "id", tc["id"], "u", canonUNI))
 		} else {
-			fn["arguments"] = mustDumps(t, pyjson.ObjectOf("id", tc["id"], "u", canonUNI))
+			fn["arguments"] = mustDumps(t, jsonutil.ObjectOf("id", tc["id"], "u", canonUNI))
 		}
 	}
 	return history
@@ -222,7 +222,7 @@ func allValidHistory(t *testing.T, n int, withName bool) []any {
 func TestCacheBoundedByBytes(t *testing.T) {
 	caseHome(t)
 	resetCanonCache(t)
-	big := mustDumps(t, pyjson.ObjectOf("path", "/tmp/big.py", "content", strings.Repeat("y", 200_000)))
+	big := mustDumps(t, jsonutil.ObjectOf("path", "/tmp/big.py", "content", strings.Repeat("y", 200_000)))
 	for i := range 300 {
 		if _, err := canonicalizeToolCallArguments(big[:len(big)-1] + fmt.Sprintf(`,"n":%d}`, i)); err != nil {
 			t.Fatal(err)
@@ -278,15 +278,15 @@ func TestMemoSemantics(t *testing.T) {
 	caseHome(t)
 	t.Run("test_deterministic_and_idempotent", func(t *testing.T) {
 		resetCanonCache(t)
-		raw := mustDumps(t, pyjson.ObjectOf("b", 2, "a", canonUNI, "nested", pyjson.ObjectOf("z", []any{3, 2, 1})))
+		raw := mustDumps(t, jsonutil.ObjectOf("b", 2, "a", canonUNI, "nested", jsonutil.ObjectOf("z", []any{3, 2, 1})))
 		canon, err := canonicalizeToolCallArguments(raw)
 		if err != nil {
 			t.Fatal(err)
 		}
 		again, _ := canonicalizeToolCallArguments(raw)
 		twice, _ := canonicalizeToolCallArguments(canon)
-		parsed, _ := pyjson.Loads(raw)
-		want, _ := pyjson.Dumps(parsed, pyjson.Separators(",", ":"), pyjson.SortKeys(true))
+		parsed, _ := jsonutil.Decode(raw)
+		want, _ := jsonutil.Encode(parsed, jsonutil.SortKeys())
 		if canon != again || twice != canon || canon != want {
 			t.Fatalf("canonical form unstable %q %q %q %q", canon, again, twice, want)
 		}
@@ -305,7 +305,7 @@ func TestMemoSemantics(t *testing.T) {
 	t.Run("test_cache_bounded", func(t *testing.T) {
 		resetCanonCache(t)
 		for i := range canonArgsCacheMax + 100 {
-			_, _ = canonicalizeToolCallArguments(mustDumps(t, pyjson.ObjectOf("i", i)))
+			_, _ = canonicalizeToolCallArguments(mustDumps(t, jsonutil.ObjectOf("i", i)))
 		}
 		if canonCacheLen() > canonArgsCacheMax {
 			t.Fatalf("cache length %d over the count bound", canonCacheLen())
@@ -371,13 +371,13 @@ func TestUnrepairableArgsAreNotWrittenBackToHistory(t *testing.T) {
 		if sent != "{}" {
 			t.Fatalf("send copy %q", sent)
 		}
-		if _, err := pyjson.Loads(sent.(string)); err != nil {
+		if _, err := jsonutil.Decode(sent.(string)); err != nil {
 			t.Fatal(err)
 		}
 	})
 	t.Run("test_valid_calls_alongside_a_broken_one_are_untouched", func(t *testing.T) {
 		resetCanonCache(t)
-		good := mustDumps(t, pyjson.ObjectOf("path", "a.txt", "u", canonUNI))
+		good := mustDumps(t, jsonutil.ObjectOf("path", "a.txt", "u", canonUNI))
 		history := []any{map[string]any{"role": "assistant", "content": "", "tool_calls": []any{
 			map[string]any{"id": "c1", "type": "function", "function": map[string]any{"name": "read_file", "arguments": good}},
 			map[string]any{"id": "c2", "type": "function", "function": map[string]any{"name": "write_file", "arguments": `{"content": "cut`}},
@@ -389,8 +389,8 @@ func TestUnrepairableArgsAreNotWrittenBackToHistory(t *testing.T) {
 			t.Fatal("a broken call disturbed the history")
 		}
 		sent := api[0].(map[string]any)["tool_calls"].([]any)
-		got, err := pyjson.Loads(sent[0].(map[string]any)["function"].(map[string]any)["arguments"].(string))
-		want, _ := pyjson.Loads(good)
+		got, err := jsonutil.Decode(sent[0].(map[string]any)["function"].(map[string]any)["arguments"].(string))
+		want, _ := jsonutil.Decode(good)
 		if err != nil || !reflect.DeepEqual(got, want) || sent[1].(map[string]any)["function"].(map[string]any)["arguments"] != "{}" {
 			t.Fatalf("sent %v", sent)
 		}

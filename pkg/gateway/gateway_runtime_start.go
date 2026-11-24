@@ -15,14 +15,15 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Launch policy and pins of one client that never become the shared daemon's environment
@@ -92,7 +93,7 @@ func (c *unmanagedChild) reap() {
 		status := 0
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			status = pysubprocess.Returncode(exitErr)
+			status = executil.ExitCode(exitErr.ProcessState)
 		}
 		c.mu.Lock()
 		c.status, c.done = status, true
@@ -133,7 +134,7 @@ func UnmanagedGatewayCommand(h string, idleExit, force bool) ([]string, error) {
 
 // Requests a detached daemon for profile home with its own env, never readiness, persistence or a replace
 func SpawnUnmanagedGateway(ctx context.Context, profileHome string, deadline float64, idleExit, force bool) (SpawnedGateway, error) {
-	h, err := pypath.Resolve(profileHome)
+	h, err := pathutil.Resolve(profileHome)
 	if err != nil {
 		return nil, err
 	}
@@ -218,7 +219,7 @@ var gatewayPopen = func(cmd *exec.Cmd) (SpawnedGateway, error) {
 
 // Start error of a failed spawn, the Windows breakaway refusal there
 func spawnFailure(err error) error {
-	if !pypath.IsOSError(err) {
+	if !errorutil.IsSystem(err) {
 		return err
 	}
 	if runtime.GOOS == "windows" {
@@ -229,7 +230,7 @@ func spawnFailure(err error) error {
 
 // Starts a stopped owner's replacement in the background, exit 1 with the reason when it cannot
 func StartDetachedReplacement(ctx context.Context, profileHome string, force bool, stdout, stderr io.Writer) int {
-	if _, err := SpawnUnmanagedGateway(ctx, profileHome, pythread.Monotonic()+30, false, force); err != nil {
+	if _, err := SpawnUnmanagedGateway(ctx, profileHome, timeutil.Monotonic()+30, false, force); err != nil {
 		var start *RuntimeStartError
 		if errors.As(err, &start) {
 			fmt.Fprintf(stderr, "✗ Could not start the gateway in the background: %s\n", start.Reason)
@@ -270,7 +271,7 @@ func StartupFailureReport(ctx context.Context, profileHome string, offset int64,
 		if info, err := os.Stat(path); err == nil {
 			if _, err := f.Seek(max(offset, info.Size()-startupTailBytes), io.SeekStart); err == nil {
 				if raw, err := io.ReadAll(f); err == nil {
-					text, _ = pycodecs.DecodeReplace(raw, "utf-8")
+					text, _ = charsetutil.DecodeReplace(raw, "utf-8")
 				}
 			}
 		}
@@ -296,7 +297,7 @@ func StartupFailureReport(ctx context.Context, profileHome string, offset int64,
 	if len(lines) == 0 {
 		record := ReadRuntimeStatus(filepath.Join(profileHome, "gateway_state.json"))
 		if reason := recGet(record, "exit_reason"); pyTruthy(reason) && pid != nil && pyEq(recGet(record, "pid"), int64(*pid)) {
-			lines = []string{textutil.First(pyrepr.Str(reason), 2000)}
+			lines = []string{textutil.First(anyutil.String(reason), 2000)}
 			path = filepath.Join(profileHome, "logs", "gateway.log")
 		}
 	}

@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Help and description of the icebath lsp command
@@ -133,7 +134,7 @@ func isBuiltin(s *ServerDef) bool {
 func statusFor(cc CommandContext, serverID string) (string, error) {
 	for _, s := range allServers(cc) {
 		if s.ServerID == serverID && !isBuiltin(s) {
-			cwd, err := pypath.Getcwd()
+			cwd, err := os.Getwd()
 			if err != nil {
 				return "", pyOSError(err, "")
 			}
@@ -152,7 +153,7 @@ func statusFor(cc CommandContext, serverID string) (string, error) {
 
 // Python str of a two element tuple of strings
 func tupleRepr(t [2]string) string {
-	return "(" + pyrepr.StrRepr(t[0]) + ", " + pyrepr.StrRepr(t[1]) + ")"
+	return "(" + strconv.Quote(t[0]) + ", " + strconv.Quote(t[1]) + ")"
 }
 
 // Left justified to a width in code points, as a str format spec pads
@@ -199,10 +200,10 @@ func cmdStatus(cc CommandContext, emitJSON bool, stdout io.Writer) (int, error) 
 		fmt.Fprint(stdout, pyJSONDumps(jsonObj{{"service", info}, {"registry", registry}}, 2)+"\n")
 		return 0, nil
 	}
-	out := []string{"LSP Service", "===========", "  enabled:         " + pyrepr.Str(svc != nil && st.Enabled)}
+	out := []string{"LSP Service", "===========", "  enabled:         " + anyutil.String(svc != nil && st.Enabled)}
 	if svc != nil {
 		out = append(out, "  wait_mode:       "+st.WaitMode,
-			"  wait_timeout:    "+pyrepr.Float(st.WaitTimeout)+"s",
+			"  wait_timeout:    "+strconv.FormatFloat(st.WaitTimeout, 'f', -1, 64)+"s",
 			"  install_strategy:"+st.InstallStrategy)
 		if len(st.Clients) > 0 {
 			out = append(out, fmt.Sprintf("  active clients:  %d", len(st.Clients)))
@@ -442,7 +443,7 @@ func writeJSON(b *strings.Builder, v any, indent, level int) {
 	case int64:
 		fmt.Fprint(b, t)
 	case float64:
-		switch s := pyrepr.Float(t); s {
+		switch s := strconv.FormatFloat(t, 'f', -1, 64); s {
 		case "inf":
 			b.WriteString("Infinity")
 		case "-inf":
@@ -485,7 +486,7 @@ func writeJSON(b *strings.Builder, v any, indent, level int) {
 		}
 		b.WriteString(pad(level) + "}")
 	default:
-		writeJSONString(b, pyrepr.Str(t))
+		writeJSONString(b, anyutil.String(t))
 	}
 }
 

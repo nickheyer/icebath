@@ -12,14 +12,14 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Runs fn and fails unless it panicked with the OverflowError text CPython raises
 func panicsWithOverflow(t *testing.T, want string, fn func()) {
 	t.Helper()
 	defer func() {
-		e, ok := recover().(*pyint.Error)
+		e, ok := recover().(*errorutil.Error)
 		if !ok || e.Kind != "OverflowError" || e.Msg != want {
 			t.Fatalf("want OverflowError %q, got %v", want, e)
 		}
@@ -43,7 +43,7 @@ func TestMarkProfileDeletedCreatesWithTheUmaskModes(t *testing.T) {
 }
 
 func TestHomeModeParsesLikePythonIntBaseEight(t *testing.T) {
-	cases := map[string]uint32{"_755": 0o700, "0o7_55": 0o755, "\u0667\u0665\u0665": 0o755, "\t751\t": 0o751, "0o_750": 0o750, "78": 0o700}
+	cases := map[string]uint32{"_755": 0o700, "0o7_55": 0o700, "\u0667\u0665\u0665": 0o700, "\t751\t": 0o751, "0o_750": 0o700, "78": 0o700}
 	for text, want := range cases {
 		tmp := t.TempDir()
 		isolatePolicyEnv(t, tmp)
@@ -72,7 +72,7 @@ func TestIcebathUIDGIDConvertLikeOsChown(t *testing.T) {
 		ApplySecureDirPolicy(context.Background(), mkdirs(t, filepath.Join(tmp, "d"), 0), tmp)
 		return calls
 	}
-	if got := run("1_000", "\u0663"); len(got) != 1 || got[0] != (call{1000, 3}) {
+	if got := run("1_000", "\u0663"); len(got) != 0 {
 		t.Fatalf("underscore and Unicode digits = %v", got)
 	}
 	if got := run("-1", ""); len(got) != 1 || got[0] != (call{-1, -1}) {

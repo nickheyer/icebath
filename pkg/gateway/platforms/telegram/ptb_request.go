@@ -12,10 +12,11 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Per phase timeouts, pool bounds and routing of one Bot API request path, the HTTPXRequest kwargs
@@ -172,7 +173,7 @@ func (r *ptbRequest) Do(req *http.Request) (*http.Response, error) {
 			pyrepr.ExceptionRepr(inner), Err: inner}
 	}
 	ctx := req.Context()
-	timeout := pyhttpx.Timeout{Connect: seconds(r.settings.connectTimeout), Read: seconds(r.settings.readTimeout),
+	timeout := httputil.Timeout{Connect: seconds(r.settings.connectTimeout), Read: seconds(r.settings.readTimeout),
 		Write: seconds(r.settings.writeTimeout), Pool: seconds(r.settings.poolTimeout)}
 	if overrides, ok := ctx.Value(requestTimeoutsKey{}).(requestTimeouts); ok {
 		if overrides.read != nil {
@@ -185,7 +186,7 @@ func (r *ptbRequest) Do(req *http.Request) (*http.Response, error) {
 	if apiMethod(req) == "getUpdates" {
 		timeout.Read += seconds(r.settings.pollTimeout)
 	}
-	resp, err := pyhttpx.DoTimeout(client.http, req, timeout)
+	resp, err := httputil.Do(client.http, req, timeout)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
@@ -218,7 +219,7 @@ const poolTimeoutMessage = "Pool timeout: All connections in the connection pool
 
 // Transport failure as TimedOut for a timed out phase and NetworkError for anything else
 func ptbTransportError(err error) error {
-	var timeout *pyhttpx.TimeoutError
+	var timeout *httputil.TimeoutError
 	if errors.As(err, &timeout) {
 		cause := &httpxTimeout{class: timeoutPhaseClass[timeout.Phase]}
 		if timeout.Phase == "pool" {
@@ -231,8 +232,8 @@ func ptbTransportError(err error) error {
 
 // Error response mapped to the python-telegram-bot exception its status code and parameters select
 func ptbResponseError(code int, payload []byte) error {
-	data, err := pyjson.LoadsBytes(bytes.ToValidUTF8(payload, []byte("�")))
-	obj, isObj := data.(*pyjson.Object)
+	data, err := jsonutil.Decode(bytes.ToValidUTF8(payload, []byte("�")))
+	obj, isObj := data.(*jsonutil.Object)
 	if err != nil {
 		return newTelegramError("TelegramError", "Invalid server response", err)
 	}
@@ -244,24 +245,24 @@ func ptbResponseError(code int, payload []byte) error {
 	}
 	message := "Unknown HTTPError"
 	if pyTruthy(description) {
-		message = pyrepr.Str(description)
+		message = anyutil.String(description)
 	}
-	if params, ok := parameters.(*pyjson.Object); ok && params.Len() > 0 {
+	if params, ok := parameters.(*jsonutil.Object); ok && params.Len() > 0 {
 		if migrate, _ := params.Get("migrate_to_chat_id"); pyTruthy(migrate) {
 			chatID, _ := pyint.Of(migrate)
-			te := newTelegramError("ChatMigrated", fmt.Sprintf("Group migrated to supergroup. New chat id: %s", pyrepr.Str(migrate)), nil)
+			te := newTelegramError("ChatMigrated", fmt.Sprintf("Group migrated to supergroup. New chat id: %s", anyutil.String(migrate)), nil)
 			if chatID != nil {
 				te.NewChatID = chatID.Int64()
 			}
 			return te
 		}
 		if retry, _ := params.Get("retry_after"); pyTruthy(retry) {
-			wait, _ := pyint.Float(retry)
-			te := newTelegramError("RetryAfter", fmt.Sprintf("Flood control exceeded. Retry in %s seconds", pyrepr.Str(retry)), nil)
+			wait, _ := anyutil.ToFloat(retry)
+			te := newTelegramError("RetryAfter", fmt.Sprintf("Flood control exceeded. Retry in %s seconds", anyutil.String(retry)), nil)
 			te.RetryAfter = wait
 			return te
 		}
-		message += "\nThe server response contained unknown parameters: " + pyrepr.Repr(params)
+		message += "\nThe server response contained unknown parameters: " + anyutil.Quote(params)
 	}
 	switch code {
 	case http.StatusForbidden:
@@ -275,7 +276,7 @@ func ptbResponseError(code int, payload []byte) error {
 	case http.StatusBadGateway:
 		text := "Bad Gateway"
 		if pyTruthy(description) {
-			text = pyrepr.Str(description)
+			text = anyutil.String(description)
 		}
 		return newTelegramError("NetworkError", text, nil)
 	}

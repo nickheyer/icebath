@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Short directory under /tmp so unix socket paths fit sun_path
@@ -132,7 +132,7 @@ func TestQueryGatewayControlAnswers(t *testing.T) {
 	answer := `{"ok": true, "result": {"pid": 7, "kind": "gw"}}` + "\n"
 	serveControl(t, h, func(req string) string { got = req; return answer })
 	r := MigrateGatewayProfileIdentity(h, "old", "new", time.Second)
-	if r == nil || strings.Join(r.Keys, ",") != "pid,kind" {
+	if r == nil || strings.Join(r.Keys(), ",") != "pid,kind" {
 		t.Fatalf("answer %#v", r)
 	}
 	if want := `{"verb": "migrate-profile-identity", "id": 1, "protocol": 1, "params": {"old": "old", "new": "new"}}` + "\n"; got != want {
@@ -166,7 +166,7 @@ func TestReloadPluginsDefaultsProfileHomeToHome(t *testing.T) {
 	if r := ReloadGatewayPlugins(h, "", time.Second); r == nil || r.Len() != 0 {
 		t.Fatalf("answer %#v", r)
 	}
-	want, _ := pyjson.Dumps(h)
+	want, _ := jsonutil.Encode(h)
 	if !strings.Contains(got, `"params": {"home": `+want+`}`) {
 		t.Fatalf("request %q", got)
 	}

@@ -4,10 +4,10 @@ import (
 	"context"
 	"math"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // Records the output token count at the start of a viewer turn for its last turn tokens figure
@@ -21,17 +21,17 @@ func usageFinite(value float64) any {
 	if math.IsNaN(value) || value <= 0 || value >= 1e6 {
 		return nil
 	}
-	return pyint.Round(value, 2)
+	return mathutil.Round(value, 2)
 }
 
 // Status bar context figures of the compressor, zeros without one
-func usageContext(ctx context.Context, a *AIAgent) *pyjson.Object {
+func usageContext(ctx context.Context, a *AIAgent) *jsonutil.Object {
 	var engine ContextEngine
 	if a != nil {
 		engine = a.contextCompressor
 	}
 	if engine == nil {
-		return pyjson.ObjectOf("last_prompt_tokens", 0, "context_tokens", 0, "context_length", nil,
+		return jsonutil.ObjectOf("last_prompt_tokens", 0, "context_tokens", 0, "context_length", nil,
 			"config_context_length", nil, "context_source", nil, "compression_count", 0)
 	}
 	base := engine.Base()
@@ -55,18 +55,18 @@ func usageContext(ctx context.Context, a *AIAgent) *pyjson.Object {
 	if compressor, builtin := engine.(*ContextCompressor); builtin && compressor.configContextLength != nil {
 		configContextLength = *compressor.configContextLength
 	}
-	return pyjson.ObjectOf("last_prompt_tokens", last, "context_tokens", contextTokens, "context_length", contextLength,
+	return jsonutil.ObjectOf("last_prompt_tokens", last, "context_tokens", contextTokens, "context_length", contextLength,
 		"config_context_length", configContextLength, "context_source", contextDisplaySource(engine),
 		"compression_count", base.CompressionCount)
 }
 
 // Field dict of a rate limit bucket, the dataclass asdict shape
-func rateLimitBucketDict(b provider.RateLimitBucket) *pyjson.Object {
+func rateLimitBucketDict(b provider.RateLimitBucket) *jsonutil.Object {
 	var captured float64
 	if !b.CapturedAt.IsZero() {
 		captured = float64(b.CapturedAt.UnixNano()) / 1e9
 	}
-	return pyjson.ObjectOf("limit", b.Limit, "remaining", b.Remaining, "reset_seconds", b.ResetSeconds, "captured_at", captured)
+	return jsonutil.ObjectOf("limit", b.Limit, "remaining", b.Remaining, "reset_seconds", b.ResetSeconds, "captured_at", captured)
 }
 
 // Last captured rate limit state as its dataclass dict, nil before any headers were captured
@@ -83,20 +83,20 @@ func UsageRateLimit(a *AIAgent) any {
 	if !state.CapturedAt.IsZero() {
 		captured = float64(state.CapturedAt.UnixNano()) / 1e9
 	}
-	return pyjson.ObjectOf("requests_min", rateLimitBucketDict(state.RequestsMin), "requests_hour", rateLimitBucketDict(state.RequestsHour),
+	return jsonutil.ObjectOf("requests_min", rateLimitBucketDict(state.RequestsMin), "requests_hour", rateLimitBucketDict(state.RequestsHour),
 		"tokens_min", rateLimitBucketDict(state.TokensMin), "tokens_hour", rateLimitBucketDict(state.TokensHour),
 		"captured_at", captured, "provider", state.Provider)
 }
 
 // Frozen session usage and stats dict of an agent, zeros before the first turn built one
-func UsageStats(ctx context.Context, a *AIAgent) *pyjson.Object {
+func UsageStats(ctx context.Context, a *AIAgent) *jsonutil.Object {
 	counter := func(get func(*AIAgent) int) int {
 		if a == nil {
 			return 0
 		}
 		return get(a)
 	}
-	stats := pyjson.ObjectOf(
+	stats := jsonutil.ObjectOf(
 		"input_tokens", counter(func(a *AIAgent) int { return a.sessionInputTokens }),
 		"output_tokens", counter(func(a *AIAgent) int { return a.sessionOutputTokens }),
 		"cache_read_tokens", counter(func(a *AIAgent) int { return a.sessionCacheReadTokens }),
@@ -107,8 +107,8 @@ func UsageStats(ctx context.Context, a *AIAgent) *pyjson.Object {
 		"reasoning_tokens", counter(func(a *AIAgent) int { return a.sessionReasoningTokens }),
 		"api_calls", counter(func(a *AIAgent) int { return a.sessionAPICalls }))
 	contextFields := usageContext(ctx, a)
-	for _, key := range contextFields.Keys {
-		stats.Set(key, contextFields.Vals[key])
+	for _, key := range contextFields.Keys() {
+		stats.Set(key, contextFields.Value(key))
 	}
 	var avgLatency, tps any
 	if a != nil {

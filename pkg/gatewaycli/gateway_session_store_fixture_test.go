@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 type fakeCall struct {
@@ -169,7 +168,7 @@ func mustOpen(t *testing.T, db *GatewaySessionStore, cli OpenSessionCLI, launch 
 
 func wantEqual(t *testing.T, got, want any) {
 	t.Helper()
-	if !pyjson.Equal(got, want) && !reflect.DeepEqual(got, want) {
+	if !anyutil.Equal(got, want) && !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %#v, want %#v", got, want)
 	}
 }

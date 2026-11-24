@@ -1,6 +1,8 @@
 package state
 
-import "github.com/nickheyer/icebath/pkg/internal/pyrepr"
+import (
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+)
 
 // Filter keyword names the prune store call accepts beside older_than_days
 var PruneFilterNames = map[string]bool{
@@ -35,8 +37,8 @@ func PruneKwargs(filters map[string]any) (*float64, string, PruneFilters) {
 		return s
 	}
 	f := PruneFilters{
-		IncludePinned: pyrepr.Truthy(filters["include_pinned"]), LineageTipsOnly: pyrepr.Truthy(filters["lineage_tips_only"]),
-		IncludeOpen:      pyrepr.Truthy(filters["include_open"]),
+		IncludePinned: anyutil.IsTrue(filters["include_pinned"]), LineageTipsOnly: anyutil.IsTrue(filters["lineage_tips_only"]),
+		IncludeOpen:      anyutil.IsTrue(filters["include_open"]),
 		LastActiveBefore: FilterNumber(filters["last_active_before"]), LastActiveAfter: FilterNumber(filters["last_active_after"]),
 		StartedBefore: FilterNumber(filters["started_before"]), StartedAfter: FilterNumber(filters["started_after"]),
 		TitleLike: text("title_like"), EndReason: text("end_reason"), CwdPrefix: text("cwd_prefix"),

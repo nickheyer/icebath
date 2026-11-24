@@ -6,11 +6,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Host side of agent/plugin_llm.py, call_llm and async_call_llm over the auxiliary client with the main route readers
@@ -161,7 +161,7 @@ func (subagentDelegation) RunChild(ctx context.Context, goal string, child plugi
 	if raw == nil {
 		return nil, nil
 	}
-	return pyjson.Plain(raw), nil
+	return jsonutil.Plain(raw), nil
 }
 
 func (subagentDelegation) HardInterrupt(child plugins.SubagentChild, reason, toolReason string) (bool, error) {
@@ -208,7 +208,7 @@ func (f delegationBackendsFacade) HostCall(ctx context.Context, method string, a
 		if err != nil {
 			return nil, err
 		}
-		return nil, f.backends.SetGlobalBackend(ctx, pyrepr.Str(a["name"]), pyrepr.Str(a["session_key"]), pyrepr.Truthy(a["apply_now"]))
+		return nil, f.backends.SetGlobalBackend(ctx, anyutil.String(a["name"]), anyutil.String(a["session_key"]), anyutil.IsTrue(a["apply_now"]))
 	}
 	return nil, &plugins.HostBuiltinError{Type: "AttributeError", Message: fmt.Sprintf("delegation backends have no %s", method)}
 }

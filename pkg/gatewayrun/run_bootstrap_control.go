@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Descriptor keys the identify verb copies from the session runtime descriptor
@@ -15,7 +13,7 @@ var identifyDescriptorKeys = []string{"instance_id", "runtime_protocol", "author
 	"served_profiles", "parked_profiles"}
 
 // Identify payload of this runtime, its descriptor facts over the process identity
-func identifyRuntime(r *GatewayRunner) *pyjson.Object {
+func identifyRuntime(r *GatewayRunner) *jsonutil.Object {
 	payload := gateway.BuildIdentifyPayload()
 	descriptor := r.sessionRuntimeDescriptor.load()
 	for _, key := range identifyDescriptorKeys {
@@ -27,7 +25,7 @@ func identifyRuntime(r *GatewayRunner) *pyjson.Object {
 		payload.Set("state", "draining")
 	}
 	if state, _ := payload.Get("state"); state == "draining" {
-		if reason := descriptor["drain_reason"]; pyrepr.Truthy(reason) {
+		if reason := descriptor["drain_reason"]; anyutil.IsTrue(reason) {
 			payload.Set("drain_reason", reason)
 		}
 	}
@@ -73,7 +71,7 @@ func startGatewayStartControlSocket(ctx context.Context, r *GatewayRunner, loop 
 				ok = len(accepted) > 0 && accepted[0]
 			default:
 			}
-			return pyjson.ObjectOf("pausing", ok, "already_stopping", !ok, "pid", int64(os.Getpid()), "drain_timeout", drain), nil
+			return jsonutil.ObjectOf("pausing", ok, "already_stopping", !ok, "pid", int64(os.Getpid()), "drain_timeout", drain), nil
 		}
 		rescanProfiles := func(map[string]any) (any, error) {
 			result, timedOut, err := runOnLoopWithin(ctx, loop, "control-socket-rescan", 5*time.Second,
@@ -82,14 +80,14 @@ func startGatewayStartControlSocket(ctx context.Context, r *GatewayRunner, loop 
 				return nil, err
 			}
 			multiplex := r.config != nil && r.config.MultiplexProfiles != nil && *r.config.MultiplexProfiles
-			answer := pyjson.ObjectOf("multiplex", multiplex)
+			answer := jsonutil.ObjectOf("multiplex", multiplex)
 			if timedOut {
 				answer.Set("pending", true)
 				answer.Set("served_profiles", namesList(r.servedProfileNames()))
 				return answer, nil
 			}
-			reconciled := result.(*pyjson.Object)
-			for _, key := range reconciled.Keys {
+			reconciled := result.(*jsonutil.Object)
+			for _, key := range reconciled.Keys() {
 				v, _ := reconciled.Get(key)
 				answer.Set(key, v)
 			}

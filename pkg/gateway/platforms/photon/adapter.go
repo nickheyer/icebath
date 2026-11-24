@@ -29,10 +29,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -118,7 +117,7 @@ func readRuntimeRecord(ctx context.Context) map[string]any {
 	if err != nil {
 		return nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil
 	}
@@ -167,7 +166,7 @@ type sidecarError struct {
 
 func (e *sidecarError) Error() string {
 	return fmt.Sprintf("Photon sidecar %s returned %d (%s, retryable=%s): %s", e.path, e.statusCode, e.errorClass,
-		pyrepr.Repr(e.retryable), e.errText)
+		anyutil.Quote(e.retryable), e.errText)
 }
 
 // Structured sidecar error of a non success answer, target_not_allowed carrying the canonical explanation
@@ -175,18 +174,18 @@ func sidecarErrorFromResponse(path string, status int, text string, data map[str
 	if data == nil {
 		_ = json.Unmarshal([]byte(text), &data)
 	}
-	errText := pyrepr.Str(data["error"])
-	if !pyrepr.Truthy(data["error"]) {
+	errText := anyutil.String(data["error"])
+	if !anyutil.IsTrue(data["error"]) {
 		errText = textutil.First(text, 200)
 		if errText == "" {
 			errText = "sidecar error"
 		}
 	}
 	errorClass := "sidecar_error"
-	if pyrepr.Truthy(data["error_class"]) {
-		errorClass = pyrepr.Str(data["error_class"])
+	if anyutil.IsTrue(data["error_class"]) {
+		errorClass = anyutil.String(data["error_class"])
 	}
-	retryable := pyrepr.Truthy(data["retryable"])
+	retryable := anyutil.IsTrue(data["retryable"])
 	if errorClass == "target_not_allowed" {
 		errText, retryable = targetNotAllowedMessage, false
 	}
@@ -349,7 +348,7 @@ func richlinkCandidate(ctx context.Context, text string) string {
 
 // Title, summary and URL lines of a rich link payload
 func formatRichlinkContent(content map[string]any) string {
-	get := func(k string) string { return strings.TrimSpace(pyrepr.Str(orEmpty(content[k]))) }
+	get := func(k string) string { return strings.TrimSpace(anyutil.String(content[k])) }
 	urlText, title, summary := get("url"), get("title"), get("summary")
 	if summary == title {
 		summary = ""
@@ -364,14 +363,6 @@ func formatRichlinkContent(content map[string]any) string {
 		return "[Photon rich link received with no URL]"
 	}
 	return strings.Join(parts, "\n")
-}
-
-// Nil as empty text
-func orEmpty(v any) any {
-	if v == nil {
-		return ""
-	}
-	return v
 }
 
 // Content map of every well formed item of a group payload
@@ -391,9 +382,9 @@ func groupItemContents(content map[string]any) []map[string]any {
 func richlinkURLFromContent(content map[string]any) string {
 	switch content["type"] {
 	case "text":
-		return urlOnlyCandidate(pyrepr.Str(orEmpty(content["text"])))
+		return urlOnlyCandidate(anyutil.String(content["text"]))
 	case "richlink":
-		return urlOnlyCandidate(pyrepr.Str(orEmpty(content["url"])))
+		return urlOnlyCandidate(anyutil.String(content["url"]))
 	case "group":
 		for _, c := range groupItemContents(content) {
 			if u := richlinkURLFromContent(c); u != "" {
@@ -410,7 +401,7 @@ func isRichlinkPreviewAttachment(payload map[string]any) bool {
 		return false
 	}
 	for _, k := range []string{"name", "id"} {
-		if strings.Contains(strings.ToLower(pyrepr.Str(orEmpty(payload[k]))), richlinkPreviewSuffix) {
+		if strings.Contains(strings.ToLower(anyutil.String(payload[k])), richlinkPreviewSuffix) {
 			return true
 		}
 	}
@@ -421,8 +412,8 @@ func isRichlinkPreviewAttachment(payload map[string]any) bool {
 func richlinkPreviewLabel(content map[string]any) string {
 	label := func(c map[string]any) string {
 		for _, k := range []string{"name", "id"} {
-			if pyrepr.Truthy(c[k]) {
-				return pyrepr.Str(c[k])
+			if anyutil.IsTrue(c[k]) {
+				return anyutil.String(c[k])
 			}
 		}
 		return "(unnamed)"
@@ -551,14 +542,14 @@ type normalized struct {
 // Cached inline attachment or voice payload, a text marker when it carried no bytes
 func normalizeBinaryPayload(ctx context.Context, payload map[string]any) normalized {
 	isVoice := payload["type"] == "voice"
-	name := pyrepr.Str(orEmpty(payload["name"]))
+	name := anyutil.String(payload["name"])
 	if name == "" {
 		name = "(unnamed)"
 		if isVoice {
 			name = "voice"
 		}
 	}
-	mime := pyrepr.Str(orEmpty(payload["mimeType"]))
+	mime := anyutil.String(payload["mimeType"])
 	isVoice = isVoice || strings.HasSuffix(strings.ToLower(name), ".caf") || mime == "audio/x-caf"
 	mtype := attachmentMessageType(mime)
 	label := "attachment"
@@ -603,11 +594,11 @@ func normalizeGroupContent(ctx context.Context, content map[string]any) normaliz
 				textParts = append(textParts, n.text)
 			}
 		case "text":
-			textParts = append(textParts, pyrepr.Str(orEmpty(item["text"])))
+			textParts = append(textParts, anyutil.String(item["text"]))
 		case "richlink":
 			textParts = append(textParts, formatRichlinkContent(item))
 		default:
-			if pyrepr.Truthy(t) {
+			if anyutil.IsTrue(t) {
 				textParts = append(textParts, fmt.Sprintf("[Photon content type not handled: %v]", t))
 			}
 		}
@@ -635,7 +626,7 @@ func normalizeGroupContent(ctx context.Context, content map[string]any) normaliz
 func mentionGateText(content map[string]any) string {
 	switch content["type"] {
 	case "text":
-		return pyrepr.Str(orEmpty(content["text"]))
+		return anyutil.String(content["text"])
 	case "richlink":
 		return formatRichlinkContent(content)
 	case "group":
@@ -654,7 +645,7 @@ func mentionGateText(content map[string]any) string {
 func normalizeContent(ctx context.Context, content map[string]any) normalized {
 	switch content["type"] {
 	case "text":
-		return normalized{text: pyrepr.Str(orEmpty(content["text"])), mtype: gateway.MessageTypeText}
+		return normalized{text: anyutil.String(content["text"]), mtype: gateway.MessageTypeText}
 	case "attachment", "voice":
 		return normalizeBinaryPayload(ctx, content)
 	case "richlink":
@@ -662,7 +653,7 @@ func normalizeContent(ctx context.Context, content map[string]any) normalized {
 	case "group":
 		return normalizeGroupContent(ctx, content)
 	}
-	return normalized{text: fmt.Sprintf("[Photon content type not handled: %s]", pyrepr.Repr(content["type"])), mtype: gateway.MessageTypeText}
+	return normalized{text: fmt.Sprintf("[Photon content type not handled: %s]", anyutil.Quote(content["type"])), mtype: gateway.MessageTypeText}
 }
 
 // Bare phone of a DM chat GUID, any other id unchanged
@@ -816,10 +807,10 @@ func NewPhotonAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Pho
 		return nil, err
 	}
 	secret := func(name string) string { v, _ := gateway.GetScopedSecret(ctx, name, "", false); return v }
-	a.projectID = firstNonEmpty(secret("PHOTON_PROJECT_ID"), pyrepr.Str(orEmpty(extra["project_id"])), storedID)
-	a.projectSecret = firstNonEmpty(secret("PHOTON_PROJECT_SECRET"), pyrepr.Str(orEmpty(extra["project_secret"])), storedSecret)
+	a.projectID = firstNonEmpty(secret("PHOTON_PROJECT_ID"), anyutil.String(extra["project_id"]), storedID)
+	a.projectSecret = firstNonEmpty(secret("PHOTON_PROJECT_SECRET"), anyutil.String(extra["project_secret"]), storedSecret)
 	var portRaw any = extra["sidecar_port"]
-	if !pyrepr.Truthy(portRaw) {
+	if !anyutil.IsTrue(portRaw) {
 		portRaw = secret("PHOTON_SIDECAR_PORT")
 	}
 	a.sidecarPort = gateway.CoercePort(portRaw, defaultSidecarPort)
@@ -845,7 +836,7 @@ func NewPhotonAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Pho
 	if requireMention == nil {
 		requireMention = secret("PHOTON_REQUIRE_MENTION")
 	}
-	switch strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(requireMention)))) {
+	switch strings.ToLower(strings.TrimSpace(anyutil.String(requireMention))) {
 	case "true", "1", "yes", "on":
 		a.requireMention = true
 	}
@@ -1081,11 +1072,11 @@ func (a *PhotonAdapter) monitorSidecarHealth(ctx context.Context) error {
 		if stream["ok"] != false {
 			continue
 		}
-		state := pyrepr.Str(orEmpty(stream["state"]))
+		state := anyutil.String(stream["state"])
 		if state == "" {
 			state = "unknown"
 		}
-		issue := pyrepr.Str(orEmpty(stream["lastIssue"]))
+		issue := anyutil.String(stream["lastIssue"])
 		if issue == "" {
 			issue = "unknown stream issue"
 		}
@@ -1106,7 +1097,7 @@ func (a *PhotonAdapter) onInboundLine(ctx context.Context, line string) {
 		pkgLog().Debug("[photon] skipping non-JSON inbound line")
 		return
 	}
-	if id := pyrepr.Str(orEmpty(event["messageId"])); id != "" && a.dedup.IsDuplicate(id) {
+	if id := anyutil.String(event["messageId"]); id != "" && a.dedup.IsDuplicate(id) {
 		return
 	}
 	if err := a.dispatchInbound(ctx, event); err != nil {
@@ -1134,7 +1125,7 @@ func (a *PhotonAdapter) dispatchInbound(ctx context.Context, event map[string]an
 	if content == nil {
 		content = map[string]any{}
 	}
-	spaceID := pyrepr.Str(orEmpty(space["id"]))
+	spaceID := anyutil.String(space["id"])
 	if spaceID == "" {
 		pkgLog().Warn("[photon] inbound missing space.id")
 		return nil
@@ -1143,14 +1134,14 @@ func (a *PhotonAdapter) dispatchInbound(ctx context.Context, event map[string]an
 	if space["type"] == "group" {
 		chatType = "group"
 	}
-	senderID := firstNonEmpty(pyrepr.Str(orEmpty(sender["id"])), pyrepr.Str(orEmpty(space["phone"])), spaceID)
-	timestamp := parseTimestamp(pyrepr.Str(orEmpty(event["timestamp"])))
-	messageID := pyrepr.Str(orEmpty(event["messageId"]))
+	senderID := firstNonEmpty(anyutil.String(sender["id"]), anyutil.String(space["phone"]), spaceID)
+	timestamp := parseTimestamp(anyutil.String(event["timestamp"]))
+	messageID := anyutil.String(event["messageId"])
 	var replyTo, replyText *string
 	replyOwn := false
 	if inner, ok := content["content"].(map[string]any); ok && content["type"] == "reply" && inner["type"] != nil && inner["type"] != "unknown" {
-		targetID := pyrepr.Str(orEmpty(content["targetMessageId"]))
-		targetText := pyrepr.Str(orEmpty(content["targetText"]))
+		targetID := anyutil.String(content["targetMessageId"])
+		targetText := anyutil.String(content["targetText"])
 		stored := ""
 		storedOK := false
 		if targetID != "" && targetText == "" {
@@ -1190,7 +1181,7 @@ func (a *PhotonAdapter) dispatchInbound(ctx context.Context, event map[string]an
 		pkgLog().Debug(fmt.Sprintf("[photon] outbound message read: %v", orDefault(content["targetMessageId"], "unknown")))
 		return nil
 	case "reaction":
-		targetID := pyrepr.Str(orEmpty(content["targetMessageId"]))
+		targetID := anyutil.String(content["targetMessageId"])
 		a.mu.Lock()
 		_, sent := a.sentMessageIDs.vals[targetID]
 		a.mu.Unlock()
@@ -1198,18 +1189,18 @@ func (a *PhotonAdapter) dispatchInbound(ctx context.Context, event map[string]an
 			pkgLog().Debug("[photon] ignoring reaction on a message we didn't send")
 			return nil
 		}
-		ev := newEvent("reaction:added:"+pyrepr.Str(orEmpty(content["emoji"])), gateway.MessageTypeText)
+		ev := newEvent("reaction:added:"+anyutil.String(content["emoji"]), gateway.MessageTypeText)
 		ev.ReplyToMessageID, ev.ReplyToIsOwnMessage = nil, true
 		if targetID != "" {
 			ev.ReplyToMessageID = &targetID
 		}
 		ev.ReplyToText = nil
-		if t := pyrepr.Str(orEmpty(content["targetText"])); t != "" {
+		if t := anyutil.String(content["targetText"]); t != "" {
 			ev.ReplyToText = &t
 		}
 		return a.HandleMessage(ctx, ev)
 	}
-	if ctype == "text" && strings.TrimSpace(pyrepr.Str(orEmpty(content["text"]))) == "￼" {
+	if ctype == "text" && strings.TrimSpace(anyutil.String(content["text"])) == "￼" {
 		a.cancelPendingFFFC(spaceID)
 		waitCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 		a.mu.Lock()
@@ -1245,7 +1236,7 @@ func (a *PhotonAdapter) dispatchInbound(ctx context.Context, event map[string]an
 			pkgLog().Debug("[photon] ignoring poll deselection")
 			return nil
 		}
-		choice := strings.TrimSpace(pyrepr.Str(orEmpty(content["title"])))
+		choice := strings.TrimSpace(anyutil.String(content["title"]))
 		if choice == "" {
 			pkgLog().Debug("[photon] ignoring poll vote with empty title")
 			return nil
@@ -1495,7 +1486,7 @@ func (a *PhotonAdapter) startSidecar(ctx context.Context) error {
 		pw.Close()
 		var execErr *exec.Error
 		if errors.As(err, &execErr) || errors.Is(err, os.ErrNotExist) {
-			return &sidecarStartupError{msg: fmt.Sprintf("node binary not found (%s) — install Node.js 18+ or run `icebath pm install`: %v", pyrepr.Repr(nodeBin), err),
+			return &sidecarStartupError{msg: fmt.Sprintf("node binary not found (%s) — install Node.js 18+ or run `icebath pm install`: %v", anyutil.Quote(nodeBin), err),
 				code: "SIDECAR_NODE_MISSING", retryable: false}
 		}
 		return err

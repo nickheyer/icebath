@@ -5,13 +5,13 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Decodes JSON text the way json.loads does, failing the test on bad input
 func cuLoads(t *testing.T, text string) any {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +133,7 @@ func TestXpropKeyComboAndTreeSplit(t *testing.T) {
 
 func TestExtractToolResultAndActionVerdict(t *testing.T) {
 	res := cuLoads(t, `{"content": [{"type": "text", "text": "{\"windows\": [{\"pid\": 9, \"window_id\": 4}]}"}, {"type": "text", "text": ""},
-	 {"type": "image", "data": "iVBOR", "mimeType": "image/png"}, {"type": "image", "data": "/9j/"}], "structuredContent": {}, "isError": true}`).(*pyjson.Object)
+	 {"type": "image", "data": "iVBOR", "mimeType": "image/png"}, {"type": "image", "data": "/9j/"}], "structuredContent": {}, "isError": true}`).(*jsonutil.Object)
 	env := extractToolResult(res)
 	if b, _ := json.Marshal(env); string(b) != `{"data":{"windows":[{"pid":9,"window_id":4}]},"images":["iVBOR","/9j/"],"image_mime_types":["image/png",""],"structuredContent":null,"isError":true}` {
 		t.Fatalf("envelope %s", b)
@@ -144,14 +144,14 @@ func TestExtractToolResultAndActionVerdict(t *testing.T) {
 	if len(windowsFromToolResult(env)) != 1 {
 		t.Fatal("windows from text payload")
 	}
-	plain := extractToolResult(cuLoads(t, `{"content": [{"type": "text", "text": "[not json"}], "structuredContent": {"screenshot_png_b64": "AAA", "mime_type": "image/jpeg"}}`).(*pyjson.Object))
+	plain := extractToolResult(cuLoads(t, `{"content": [{"type": "text", "text": "[not json"}], "structuredContent": {"screenshot_png_b64": "AAA", "mime_type": "image/jpeg"}}`).(*jsonutil.Object))
 	if cuGet(plain, "data") != "[not json" || cuGet(plain, "isError") != false {
 		t.Fatalf("plain %v", plain)
 	}
 	if b64, mime := imageFromToolResult(plain); *b64 != "AAA" || *mime != "image/jpeg" {
 		t.Fatal("structured screenshot")
 	}
-	meta := cuLoads(t, `{"verified": true, "effect": "confirmed", "reason_code": "background_unavailable", "path": 5}`).(*pyjson.Object)
+	meta := cuLoads(t, `{"verified": true, "effect": "confirmed", "reason_code": "background_unavailable", "path": 5}`).(*jsonutil.Object)
 	sc := cuLoads(t, `{"effect": "suspected_noop", "escalation": {"next": "pixel"}, "degraded": false}`)
 	delivery := "foreground"
 	r := actionResultFrom("click", true, "ok", meta, sc, &delivery)

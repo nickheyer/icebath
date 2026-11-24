@@ -3,7 +3,7 @@ package gateway
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
 )
 
 // Agreed mime to extension union of the adapters, the extension common in the wild winning over the registered one
@@ -34,7 +34,7 @@ func ExtForMime(mime string, overrides map[string]string, useDefaults, useMimety
 		stages[1] = func(key string) string { return DefaultMimeToExt[key] }
 	}
 	if useMimetypes {
-		stages[2] = func(key string) string { return pymimetypes.GuessExtension(key, true) }
+		stages[2] = func(key string) string { return mimeutil.ExtensionByType(key) }
 	}
 	for _, lookup := range stages {
 		if lookup == nil {

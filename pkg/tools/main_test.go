@@ -9,8 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/state"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 // Credential fragments of codeexec SecretSubstrings, the list the process wiring installs into pkg/state
@@ -47,7 +47,7 @@ func TestMain(m *testing.M) {
 }
 
 // Puts the main thread context back to its values before the test, as a fresh test process starts clean
-func mainContextState(*testing.T) func() { return pyctx.SnapshotMainForTests() }
+func mainContextState(*testing.T) func() { return ctxutil.StoreOf(context.Background()).Checkpoint() }
 
 // Platform default home of each case inside its own temp dir, never the developer's real one
 func isolatedPlatformDefault(t *testing.T) func() { return home.PatchPlatformDefault(t.TempDir()) }

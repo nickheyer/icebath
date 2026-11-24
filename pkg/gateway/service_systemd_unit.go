@@ -14,9 +14,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/pm"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -76,7 +76,7 @@ func getServicePythonPath() string {
 func buildUserLocalPaths(userHome string, entries []string) []string {
 	var out []string
 	for _, rel := range [][]string{{".local", "bin"}, {".cargo", "bin"}, {"go", "bin"}, {".npm-global", "bin"}} {
-		p := pypath.PathJoin(pypath.PathJoin(userHome, rel[0]), rel[1])
+		p := pathutil.Join(pathutil.Join(userHome, rel[0]), rel[1])
 		if !slices.Contains(entries, p) && pathExistsSafe(p) {
 			out = append(out, p)
 		}
@@ -92,7 +92,7 @@ func buildWSLInteropPaths(entries []string) []string {
 	var candidates []string
 	for _, name := range []string{"powershell.exe", "cmd.exe", "explorer.exe", "wsl.exe"} {
 		if resolved, err := systemdUnitLookPath(name); err == nil && resolved != "" {
-			candidates = append(candidates, pypath.PathStr(filepath.Dir(resolved)))
+			candidates = append(candidates, filepath.Clean(filepath.Dir(resolved)))
 		}
 	}
 	for _, entry := range systemdWSLInteropCandidates {
@@ -200,16 +200,16 @@ func GenerateSystemdUnit(ctx context.Context, system bool, runAsUser string) (st
 		if icebathHome, err = systemdTargetHome(ctx, homeDir); err != nil {
 			return "", err
 		}
-		targetRoot := pypath.PathJoin(homeDir, ".icebath")
-		resolvedHome, errHome := pypath.Resolve(icebathHome)
-		resolvedRoot, errRoot := pypath.Resolve(targetRoot)
+		targetRoot := pathutil.Join(homeDir, ".icebath")
+		resolvedHome, errHome := pathutil.Resolve(icebathHome)
+		resolvedRoot, errRoot := pathutil.Resolve(targetRoot)
 		if errHome != nil {
 			return "", errHome
 		}
 		if errRoot != nil {
 			return "", errRoot
 		}
-		if _, ok := pypath.PathRelativeTo(resolvedHome, resolvedRoot); ok {
+		if _, ok := pathutil.RelativeTo(resolvedHome, resolvedRoot); ok {
 			profile, err = profileArg(ctx, icebathHome, targetRoot)
 		} else {
 			profile, err = profileArg(ctx, icebathHome, "")
@@ -252,7 +252,7 @@ func GenerateSystemdUnit(ctx context.Context, system bool, runAsUser string) (st
 		envLines = `Environment="HOME=` + homeDir + "\"\n" + `Environment="USER=` + username + "\"\n" + `Environment="LOGNAME=` + username + "\"\n" + ld
 		wantedBy = "multi-user.target"
 	} else {
-		if icebathHome, err = pypath.Resolve(home.Dir(ctx)); err != nil {
+		if icebathHome, err = pathutil.Resolve(home.Dir(ctx)); err != nil {
 			return "", err
 		}
 		if profile, err = profileArg(ctx, icebathHome, ""); err != nil {
@@ -273,7 +273,7 @@ func GenerateSystemdUnit(ctx context.Context, system bool, runAsUser string) (st
 	pathEntries = append(pathEntries, systemdUserLocalPaths(userHome, pathEntries)...)
 	pathEntries = append(pathEntries, buildWSLInteropPaths(pathEntries)...)
 	pathEntries = append(pathEntries, "/usr/local/sbin", "/usr/local/bin", "/usr/sbin", "/usr/bin", "/sbin", "/bin")
-	selector, err := pyshlex.SplitPOSIX(profile, false)
+	selector, err := shellutil.Split(profile)
 	if err != nil {
 		return "", err
 	}
@@ -397,7 +397,7 @@ func serviceHomeForUnit(ctx context.Context, unitPath string, system bool) (stri
 			}
 		}
 		if pinned != "" {
-			return pypath.PathExpanduser(pinned)
+			return pathutil.ExpandUserPath(pinned)
 		}
 		return home.Dir(ctx), nil
 	}

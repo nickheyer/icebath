@@ -17,6 +17,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 const quickTree = `echo $$ > shell.pid; sleep 120 & echo $! > child.pid; wait`
@@ -184,8 +185,8 @@ func TestQuickSpawnFailures(t *testing.T) {
 		cwd  string
 		want string
 	}{
-		{"echo hi", missing, "Quick command error: [Errno 2] No such file or directory: '" + missing + "'"},
-		{"echo hi", file, "Quick command error: [Errno 20] Not a directory: '" + file + "'"},
+		{"echo hi", missing, "Quick command error: chdir " + missing + ": no such file or directory"},
+		{"echo hi", file, "Quick command error: chdir " + file + ": not a directory"},
 		{"echo\x00hi", "", "Quick command error: embedded null byte"},
 		{"echo hi", dir + "\x00x", "Quick command error: embedded null byte"},
 		{5, "", "Quick command error: cmd must be a string"},
@@ -200,7 +201,7 @@ func TestQuickSpawnFailures(t *testing.T) {
 			cmd  any
 			cwd  string
 			want string
-		}{"echo hi", locked, "Quick command error: [Errno 13] Permission denied: '" + locked + "'"})
+		}{"echo hi", locked, "Quick command error: chdir " + locked + ": permission denied"})
 	}
 	for _, c := range gateway {
 		if got, err := RunGatewayExecQuickCommand(ctx, env, c.cmd, c.cwd); err != nil || got != c.want {
@@ -233,7 +234,7 @@ func TestQuickReplyKeysPerLocale(t *testing.T) {
 			if lang == "en" && catalog[key] != english[key] {
 				t.Fatalf("en %s is %q", key, catalog[key])
 			}
-			out, err := i18n.PyFormat(catalog[key], kwargs)
+			out, err := templateutil.Format(catalog[key], kwargs)
 			if err != nil {
 				t.Fatal(err)
 			}

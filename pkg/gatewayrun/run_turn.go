@@ -6,7 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var contextOverflowErrorPhrases = []string{
@@ -24,15 +23,15 @@ func unexpectedSilenceReply(ctx context.Context) string {
 
 // True when a failed turn is a context overflow, the one verdict transcript persistence and the reply share
 func isContextOverflowFailureResult(agentResult map[string]any, historyLen int) bool {
-	if !pyrepr.Truthy(agentResult["failed"]) {
+	if !anyutil.IsTrue(agentResult["failed"]) {
 		return false
 	}
-	if pyrepr.Truthy(agentResult["compression_exhausted"]) {
+	if anyutil.IsTrue(agentResult["compression_exhausted"]) {
 		return true
 	}
 	errText := ""
-	if v := agentResult["error"]; pyrepr.Truthy(v) {
-		errText = strings.ToLower(pyrepr.Str(v))
+	if v := agentResult["error"]; anyutil.IsTrue(v) {
+		errText = strings.ToLower(anyutil.String(v))
 	}
 	for _, phrase := range contextOverflowErrorPhrases {
 		if strings.Contains(errText, phrase) {
@@ -81,8 +80,8 @@ func hygieneNoCommitReason(a *agent.AIAgent) string {
 	if _, ok := lockSkip.(string); ok {
 		return "attempt skipped: compression lease held by another process"
 	}
-	if blocked := a.CompressionBlockedTransient(); pyrepr.Truthy(blocked) {
-		return "attempt blocked: " + pyrepr.Str(blocked)
+	if blocked := a.CompressionBlockedTransient(); anyutil.IsTrue(blocked) {
+		return "attempt blocked: " + anyutil.String(blocked)
 	}
 	if a.LastCompressionAttemptInPlace() == nil {
 		detail := "aborted before commit"

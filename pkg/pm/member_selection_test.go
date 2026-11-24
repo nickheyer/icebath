@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Generated member of a plugin under a fresh generation root
@@ -58,7 +58,7 @@ func TestMemberSelectionManifestOnlyMemberIsNamedAfterItsPluginDirAndStaysUnique
 		peWrite(t, filepath.Join(plugin, "plugin.yaml"), "name: my-plugin\npip_dependencies: [left-pad-py]\n")
 		member := msMember(t, plugin, filepath.Join(tmp, "gen-"+home))
 		members = append(members, member)
-		names = append(names, pyrepr.Str(wsAt(wsTOML(t, filepath.Join(member, "pyproject.toml")), "project", "name")))
+		names = append(names, anyutil.String(wsAt(wsTOML(t, filepath.Join(member, "pyproject.toml")), "project", "name")))
 	}
 	for _, name := range names {
 		if !strings.HasPrefix(name, "icebath-plugin-my-plugin-") {
@@ -79,7 +79,7 @@ func TestMemberSelectionPyprojectMemberIsRenamedByItsKeyAndStaysUnique(t *testin
 			"[project]\nname = \"icebath-plugin-hindsight\"\nversion = \"1.0.0\"\ndependencies = [\"hindsight-client>=0.10.1\"]\n")
 		member := msMember(t, plugin, filepath.Join(tmp, "gen-"+home))
 		members = append(members, member)
-		names = append(names, pyrepr.Str(wsAt(wsTOML(t, filepath.Join(member, "pyproject.toml")), "project", "name")))
+		names = append(names, anyutil.String(wsAt(wsTOML(t, filepath.Join(member, "pyproject.toml")), "project", "name")))
 	}
 	for _, name := range names {
 		if !strings.HasPrefix(name, "icebath-plugin-hindsight-") {

@@ -10,18 +10,17 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const currentRunEventSQL = "SELECT e.payload FROM task_events e JOIN tasks t ON t.current_run_id=e.run_id " +
 	"WHERE t.id=? AND e.task_id=t.id AND e.kind=? ORDER BY e.id DESC LIMIT 1"
 
 // Parsed owner_admitted receipt of the current run, nil without one and empty when unreadable
-func ownerReceipt(ctx context.Context, conn state.SQLiteConn, taskID string) (*pyjson.Object, error) {
+func ownerReceipt(ctx context.Context, conn state.SQLiteConn, taskID string) (*jsonutil.Object, error) {
 	row, err := QueryOne(ctx, conn, currentRunEventSQL, taskID, "owner_admitted")
 	if err != nil || row == nil {
 		return nil, err
@@ -30,7 +29,7 @@ func ownerReceipt(ctx context.Context, conn state.SQLiteConn, taskID string) (*p
 }
 
 // Status and outcome of the owner ledger admission a receipt names, ok false when nothing readable
-func ownerAdmissionRow(ctx context.Context, receipt *pyjson.Object) (status, outcome any, ok bool) {
+func ownerAdmissionRow(ctx context.Context, receipt *jsonutil.Object) (status, outcome any, ok bool) {
 	if receipt == nil || receipt.Len() == 0 {
 		return nil, nil, false
 	}
@@ -41,7 +40,7 @@ func ownerAdmissionRow(ctx context.Context, receipt *pyjson.Object) (status, out
 	if !hasDB || !isStr || !hasSession || !hasRequest {
 		return nil, nil, false
 	}
-	uri, err := pypath.AsURI(dbPath)
+	uri, err := pathutil.FileURL(dbPath)
 	if err != nil {
 		return nil, nil, false
 	}
@@ -72,33 +71,33 @@ func ownerReclaimPaused(ctx context.Context, conn state.SQLiteConn, taskID strin
 		return true, nil
 	}
 	pidValue, hasPid := receipt.Get("pid")
-	pid, isInt := pyint.Instance(pidValue)
-	if !hasPid || !isInt || pid.Sign() < 0 || !pid.IsInt64() {
+	pid, isInt := anyutil.Int(pidValue)
+	if !hasPid || !isInt || pid < 0 {
 		return true, nil
 	}
-	birth, err := proc.WorkerBirth(int(pid.Int64()))
+	birth, err := proc.WorkerBirth(int(pid))
 	if err != nil {
 		return true, nil
 	}
 	recorded, hasBirth := receipt.Get("birth")
-	return !hasBirth || !pyrepr.Equal(birth, recorded), nil
+	return !hasBirth || !anyutil.Equal(birth, recorded), nil
 }
 
 // Newest payload of a kind on the current run, empty when absent or unreadable
-func latestRunEvent(ctx context.Context, conn state.SQLiteConn, taskID, kind string) (*pyjson.Object, error) {
+func latestRunEvent(ctx context.Context, conn state.SQLiteConn, taskID, kind string) (*jsonutil.Object, error) {
 	row, err := QueryOne(ctx, conn, currentRunEventSQL, taskID, kind)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	return jsonDict(row.Get("payload")), nil
 }
 
 // True when this host issued the lock, the only pids judged here
 func hostLocalLock(lock any) bool {
-	return truthy(lock) && strings.HasPrefix(pyrepr.Str(lock), hostPrefix())
+	return truthy(lock) && strings.HasPrefix(anyutil.String(lock), hostPrefix())
 }
 
 // True when the owner bound an interpreter to the current run and that interpreter is dead
@@ -111,19 +110,22 @@ func boundInterpreterGone(ctx context.Context, conn state.SQLiteConn, taskID str
 }
 
 // True when the receipt pid is gone, a zombie, or now names a process of another birth
-func ownerProcessGone(receipt *pyjson.Object) bool {
+func ownerProcessGone(receipt *jsonutil.Object) bool {
 	pidValue, hasPid := receipt.Get("pid")
 	if !hasPid {
 		return false
 	}
-	n, err := pyint.Of(pidValue)
+	n, err := anyutil.ToInt(pidValue)
+	if errors.Is(err, anyutil.ErrRange) {
+		return true
+	}
 	if err != nil {
 		return false
 	}
-	if !n.IsInt64() || !pidAlive(int(n.Int64())) {
+	if !pidAlive(int(n)) {
 		return true
 	}
-	current, err := proc.WorkerBirth(int(n.Int64()))
+	current, err := proc.WorkerBirth(int(n))
 	if errors.Is(err, proc.ErrNoSuchProcess) {
 		return true
 	}
@@ -131,7 +133,7 @@ func ownerProcessGone(receipt *pyjson.Object) bool {
 		return false
 	}
 	birth := objGet(receipt, "birth")
-	return birth != nil && !pyrepr.Equal(current, birth)
+	return birth != nil && !anyutil.Equal(current, birth)
 }
 
 type runWorkerPid struct {
@@ -154,11 +156,11 @@ func runWorkerPids(ctx context.Context, conn state.SQLiteConn, taskRow *Row, tas
 		if !truthy(r[0]) {
 			continue
 		}
-		n, err := pyint.Of(r[0])
+		n, err := anyutil.ToInt(r[0])
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, runWorkerPid{int(n.Int64()), r[1]})
+		out = append(out, runWorkerPid{int(n), r[1]})
 	}
 	return out, nil
 }
@@ -203,7 +205,7 @@ func ownerAttemptProvablyOver(ctx context.Context, conn state.SQLiteConn, taskID
 }
 
 // One clause naming why the owner says the attempt ended, empty when it recorded nothing
-func ownerAttemptNote(ctx context.Context, conn state.SQLiteConn, taskID string, lost *pyjson.Object) (string, error) {
+func ownerAttemptNote(ctx context.Context, conn state.SQLiteConn, taskID string, lost *jsonutil.Object) (string, error) {
 	var err error
 	if lost == nil {
 		if lost, err = latestRunEvent(ctx, conn, taskID, "worker_lost"); err != nil {
@@ -211,7 +213,7 @@ func ownerAttemptNote(ctx context.Context, conn state.SQLiteConn, taskID string,
 		}
 	}
 	if reason := objGet(lost, "reason"); truthy(reason) {
-		r := []rune(pyrepr.Str(reason))
+		r := []rune(anyutil.String(reason))
 		if len(r) > 80 {
 			r = r[:80]
 		}
@@ -224,7 +226,7 @@ func ownerAttemptNote(ctx context.Context, conn state.SQLiteConn, taskID string,
 	if status, outcome, ok := ownerAdmissionRow(ctx, receipt); ok && status == "terminal" {
 		settledAs := "terminal"
 		if truthy(outcome) {
-			settledAs = pyrepr.Str(outcome)
+			settledAs = anyutil.String(outcome)
 		}
 		return "owner admission settled " + settledAs, nil
 	}
@@ -301,13 +303,13 @@ func ownerReclaimBlockedAfterKill(ctx context.Context, conn state.SQLiteConn, ta
 
 // Exit code the managed run authority recorded for the current run under the same claim and pid
 func managedRunExitCode(ctx context.Context, conn state.SQLiteConn, taskID string, workerPid, claimLock any) (any, error) {
-	latest := func(kind string) (*pyjson.Object, error) {
+	latest := func(kind string) (*jsonutil.Object, error) {
 		row, err := QueryOne(ctx, conn, currentRunEventSQL, taskID, kind)
 		if err != nil {
 			return nil, err
 		}
 		if row == nil {
-			return pyjson.NewObject(), nil
+			return jsonutil.NewObject(), nil
 		}
 		var text string
 		switch raw := row.Get("payload").(type) {
@@ -318,11 +320,11 @@ func managedRunExitCode(ctx context.Context, conn state.SQLiteConn, taskID strin
 		default:
 			return nil, fmt.Errorf("the managed run exit record is %s, expected JSON text", errchain.Kind(raw))
 		}
-		v, err := pyjson.Loads(text)
-		if o, ok := v.(*pyjson.Object); ok && err == nil {
+		v, err := jsonutil.Decode(text)
+		if o, ok := v.(*jsonutil.Object); ok && err == nil {
 			return o, nil
 		}
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	result, err := latest("worker_result")
 	if err != nil {
@@ -333,14 +335,14 @@ func managedRunExitCode(ctx context.Context, conn state.SQLiteConn, taskID strin
 		return nil, err
 	}
 	pids := []any{workerPid}
-	if pyrepr.Equal(objGet(bound, "claim_lock"), claimLock) {
+	if anyutil.Equal(objGet(bound, "claim_lock"), claimLock) {
 		pids = append(pids, objGet(bound, "pid"))
 	}
-	if !pyrepr.Equal(objGet(result, "claim_lock"), claimLock) {
+	if !anyutil.Equal(objGet(result, "claim_lock"), claimLock) {
 		return nil, nil
 	}
 	for _, p := range pids {
-		if pyrepr.Equal(objGet(result, "pid"), p) {
+		if anyutil.Equal(objGet(result, "pid"), p) {
 			return objGet(result, "exit_code"), nil
 		}
 	}

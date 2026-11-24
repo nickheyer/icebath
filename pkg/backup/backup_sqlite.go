@@ -9,14 +9,15 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"time"
 
 	sqlite3 "modernc.org/sqlite/lib"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 	"github.com/nickheyer/icebath/pkg/state"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 )
 
 const (
@@ -49,8 +50,17 @@ func (e *Interrupted) Unwrap() error { return e.Cause }
 
 var errBackupRestarted = errors.New("a foreign write restarted the stepped snapshot from page one")
 
-// Online backup of one connection into another, a seam tests wrap to act between steps
-var connBackup = pysqlite.Backup
+// Online backup of one connection into another that stops with its context, a seam tests wrap to act between steps
+var connBackup = sqliteutil.BackupContext
+
+// Online backup through the seam, a stop of ctx before a step or during a busy pause reported as Interrupted
+func backupUnder(ctx context.Context, src, dst sqliteutil.RawConn, pages int, progress func(status, remaining, total int) error, sleep time.Duration) error {
+	err := connBackup(ctx, src, dst, pages, progress, sleep)
+	if err != nil && ctx.Err() != nil && errors.Is(err, ctx.Err()) {
+		return &Interrupted{context.Cause(ctx)}
+	}
+	return err
+}
 
 // Clock of the copy deadlines and step timings, a seam tests drive
 var monotonic = time.Now
@@ -88,7 +98,7 @@ func connectPath(ctx context.Context, path string) (*sqliteConn, error) {
 	if err != nil {
 		return nil, err
 	}
-	uri, err := pypath.AsURI(abs)
+	uri, err := pathutil.FileURL(abs)
 	if err != nil {
 		return nil, err
 	}
@@ -103,14 +113,14 @@ func closeQuietly(c *sqliteConn) {
 	}
 }
 
-// str of an exception value as Python prints it
+// Text of a backup failure: the message of an operating system or backup error, the SQLite rendering of anything else
 func excText(err error) string {
 	var re *runtimeError
 	if errors.As(err, &re) {
 		return re.msg
 	}
-	if pypath.IsOSError(err) {
-		return pypath.OSErrorText(err)
+	if errorutil.IsSystem(err) {
+		return err.Error()
 	}
 	return state.ErrText(err)
 }
@@ -143,7 +153,7 @@ func (r *copyRate) pagesPerSecond() float64 {
 }
 
 // One stepped backup, false when a foreign write restarted it from page one
-func steppedAttempt(src, dst pysqlite.RawConn, pages int, checkBusy func(status, remaining, total int) error, rate *copyRate) (bool, error) {
+func steppedAttempt(ctx context.Context, src, dst sqliteutil.RawConn, pages int, checkBusy func(status, remaining, total int) error, rate *copyRate) (bool, error) {
 	lastRemaining := -1
 	lastTick, lastBusy := monotonic(), false
 	progress := func(status, remaining, total int) error {
@@ -174,7 +184,7 @@ func steppedAttempt(src, dst pysqlite.RawConn, pages int, checkBusy func(status,
 		lastRemaining = remaining
 		return nil
 	}
-	if err := connBackup(src, dst, pages, progress, rollbackBusySleep); err != nil {
+	if err := backupUnder(ctx, src, dst, pages, progress, rollbackBusySleep); err != nil {
 		if errors.Is(err, errBackupRestarted) {
 			return false, nil
 		}
@@ -184,11 +194,11 @@ func steppedAttempt(src, dst pysqlite.RawConn, pages int, checkBusy func(status,
 }
 
 // Stepped copy of a rollback journal database, releasing the read lock between steps and refusing a long hold
-func steppedRollbackJournalCopy(src, dst pysqlite.RawConn, checkBusy func(status, remaining, total int) error) error {
+func steppedRollbackJournalCopy(ctx context.Context, src, dst sqliteutil.RawConn, checkBusy func(status, remaining, total int) error) error {
 	rate := &copyRate{}
 	pages := rollbackFirstStepPages
 	for range rollbackMaxRestarts + 1 {
-		done, err := steppedAttempt(src, dst, pages, checkBusy, rate)
+		done, err := steppedAttempt(ctx, src, dst, pages, checkBusy, rate)
 		if err != nil {
 			return err
 		}
@@ -203,7 +213,7 @@ func steppedRollbackJournalCopy(src, dst pysqlite.RawConn, checkBusy func(status
 			fmt.Sprintf("would block those writes for about %.1fs, so it was not taken. ", expectedHold) +
 			"Retry when no agent turn is running."}
 	}
-	return connBackup(src, dst, -1, checkBusy, rollbackBusySleep)
+	return backupUnder(ctx, src, dst, -1, checkBusy, rollbackBusySleep)
 }
 
 // One long backup call on its own goroutine so a stop request ends the wait without waiting for the copy
@@ -275,11 +285,11 @@ func safeCopyDB(ctx context.Context, src, dst string, timeoutSeconds float64) (b
 		if err := secureCreate(dst); err != nil {
 			return err
 		}
-		resolved, err := pypath.Resolve(src)
+		resolved, err := pathutil.Resolve(src)
 		if err != nil {
 			return err
 		}
-		uri, err := pypath.AsURI(resolved)
+		uri, err := pathutil.FileURL(resolved)
 		if err != nil {
 			return err
 		}
@@ -298,8 +308,7 @@ func safeCopyDB(ctx context.Context, src, dst string, timeoutSeconds float64) (b
 			now := monotonic()
 			if status == sqlite3.SQLITE_BUSY || status == sqlite3.SQLITE_LOCKED {
 				if !now.Before(busyDeadline) {
-					text, _ := pyrepr.Format(timeoutSeconds, "g")
-					return &sqliteBackupTimeout{"database remained locked for " + text + " seconds"}
+					return &sqliteBackupTimeout{"database remained locked for " + strconv.FormatFloat(timeoutSeconds, 'g', 6, 64) + " seconds"}
 				}
 			} else {
 				busyDeadline = now.Add(window)
@@ -311,10 +320,10 @@ func safeCopyDB(ctx context.Context, src, dst string, timeoutSeconds float64) (b
 			return err
 		}
 		if !wal {
-			return steppedRollbackJournalCopy(conn, backupConn, checkProgress)
+			return steppedRollbackJournalCopy(ctx, conn, backupConn, checkProgress)
 		}
 		src, dst := conn, backupConn
-		copier = newOffThreadCopy(func() error { return connBackup(src, dst, -1, checkProgress, 100*time.Millisecond) })
+		copier = newOffThreadCopy(func() error { return backupUnder(ctx, src, dst, -1, checkProgress, 100*time.Millisecond) })
 		return copier.run(ctx)
 	}()
 	if err == nil {
@@ -324,7 +333,7 @@ func safeCopyDB(ctx context.Context, src, dst string, timeoutSeconds float64) (b
 	if errors.As(err, &stop) {
 		return false, stop
 	}
-	pkgLog().Warn(fmt.Sprintf("SQLite safe copy failed for %s: %s", pypath.PathStr(src), excText(err)))
+	pkgLog().Warn(fmt.Sprintf("SQLite safe copy failed for %s: %s", filepath.Clean(src), excText(err)))
 	closeQuietly(backupConn)
 	backupConn = nil
 	removeFile(dst)

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func reactEmoji(s string) *string { return &s }
@@ -36,7 +36,7 @@ func TestCompactedReactionsAreDeliveredOnceWithoutRevivingRewoundRows(t *testing
 		}
 		archiveCompact(t, db, sid, []map[string]any{{"role": "user", "content": "summary"}, tail}, ArchiveCompactOptions{TailCount: 1})
 		visible, _ := db.GetMessages(ctx, sid, GetMessagesOptions{IncludeCompacted: true})
-		if !slices.ContainsFunc(visible, func(r *pyjson.Object) bool { return r.Vals["id"] == target }) {
+		if !slices.ContainsFunc(visible, func(r *jsonutil.Object) bool { return r.Value("id") == target }) {
 			t.Fatal("archived target not visible")
 		}
 		if !reactBefore {
@@ -65,10 +65,10 @@ func TestCompactedReactionsAreDeliveredOnceWithoutRevivingRewoundRows(t *testing
 		}
 		archived, _ := db.GetMessages(ctx, sid, GetMessagesOptions{IncludeCompacted: true})
 		for _, r := range archived {
-			if r.Vals["id"] == discarded {
+			if r.Value("id") == discarded {
 				t.Fatal("rewound row revived")
 			}
-			if r.Vals["id"] == target && r.Vals["content"] != "the original answer" {
+			if r.Value("id") == target && r.Value("content") != "the original answer" {
 				t.Fatal("archived content changed")
 			}
 		}
@@ -114,9 +114,9 @@ func archivedCount(t *testing.T, db *SessionDB, sid string) (n int, compacted in
 		t.Fatal(err)
 	}
 	for _, r := range rows {
-		if !pyTruthy(r.Vals["active"]) {
+		if !pyTruthy(r.Value("active")) {
 			n++
-			if pyTruthy(r.Vals["compacted"]) {
+			if pyTruthy(r.Value("compacted")) {
 				compacted++
 			}
 		}
@@ -182,8 +182,8 @@ func TestReplaceMessagesArchiveSiblings(t *testing.T) {
 		rows, _ := db.GetMessages(ctx, "drop", GetMessagesOptions{IncludeInactive: true})
 		var recovered []any
 		for _, r := range rows {
-			if !pyTruthy(r.Vals["active"]) {
-				recovered = append(recovered, r.Vals["content"])
+			if !pyTruthy(r.Value("active")) {
+				recovered = append(recovered, r.Value("content"))
 			}
 		}
 		if !slices.Equal(dialogContents(t, db, "drop"), []any{"first", "first reply"}) || !slices.Contains(recovered, any("second")) || !slices.Contains(recovered, any("second reply")) {
@@ -239,7 +239,7 @@ func TestPurgeStaleToolCallMarkers(t *testing.T) {
 	t.Run("dry_run_reports_without_writing", func(t *testing.T) {
 		db, path := markerDB(t)
 		report, err := db.PurgeStaleToolCallMarkers(ctx, true, true)
-		if err != nil || report.Vals["dry_run"] != true || report.Vals["rows_affected"] != 1 || report.Vals["backup_path"] != nil {
+		if err != nil || report.Value("dry_run") != true || report.Value("rows_affected") != 1 || report.Value("backup_path") != nil {
 			t.Fatalf("report %v %v", report, err)
 		}
 		if raw := repairScalar(t, db, "SELECT content FROM messages WHERE role = 'assistant' AND tool_calls IS NOT NULL"); raw != "[memory]" || len(backupSiblings(t, path)) != 0 {
@@ -249,10 +249,10 @@ func TestPurgeStaleToolCallMarkers(t *testing.T) {
 	t.Run("purge_clears_content_keeps_tool_calls", func(t *testing.T) {
 		db, _ := markerDB(t)
 		report, err := db.PurgeStaleToolCallMarkers(ctx, false, true)
-		if err != nil || report.Vals["dry_run"] != false || report.Vals["rows_affected"] != 1 {
+		if err != nil || report.Value("dry_run") != false || report.Value("rows_affected") != 1 {
 			t.Fatalf("report %v %v", report, err)
 		}
-		backup, _ := report.Vals["backup_path"].(string)
+		backup, _ := report.Value("backup_path").(string)
 		if _, statErr := os.Stat(backup); backup == "" || statErr != nil {
 			t.Fatalf("backup %q %v", backup, statErr)
 		}
@@ -263,14 +263,14 @@ func TestPurgeStaleToolCallMarkers(t *testing.T) {
 			t.Fatal("tool calls lost")
 		}
 		second, _ := db.PurgeStaleToolCallMarkers(ctx, false, true)
-		if second.Vals["rows_affected"] != 0 || second.Vals["backup_path"] != nil {
+		if second.Value("rows_affected") != 0 || second.Value("backup_path") != nil {
 			t.Fatalf("second %v", second)
 		}
 	})
 	t.Run("no_backup_when_flag_false", func(t *testing.T) {
 		db, path := markerDB(t)
 		report, err := db.PurgeStaleToolCallMarkers(ctx, false, false)
-		if err != nil || report.Vals["rows_affected"] != 1 || report.Vals["backup_path"] != nil || len(backupSiblings(t, path)) != 0 {
+		if err != nil || report.Value("rows_affected") != 1 || report.Value("backup_path") != nil || len(backupSiblings(t, path)) != 0 {
 			t.Fatalf("report %v %v", report, err)
 		}
 	})
@@ -280,7 +280,7 @@ func TestPurgeStaleToolCallMarkers(t *testing.T) {
 		readAppend(t, db, "s1", map[string]any{"role": "user", "content": "What's the weather?"})
 		readAppend(t, db, "s1", map[string]any{"role": "assistant", "content": "It's sunny."})
 		report, err := db.PurgeStaleToolCallMarkers(ctx, false, true)
-		if err != nil || report.Vals["rows_affected"] != 0 || len(report.Vals["row_ids"].([]any)) != 0 {
+		if err != nil || report.Value("rows_affected") != 0 || len(report.Value("row_ids").([]any)) != 0 {
 			t.Fatalf("report %v %v", report, err)
 		}
 		if got := archiveContents(archiveConversation(t, db, "s1", false)); !slices.Equal(got, []any{"What's the weather?", "It's sunny."}) {
@@ -317,11 +317,11 @@ func TestRewindToMessage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(out.Keys, []string{"rewound_count", "target_message", "new_head_id"}) || out.Vals["rewound_count"] != 2 || out.Vals["new_head_id"] != a1 {
-		t.Fatalf("result %v", out.Vals)
+	if !slices.Equal(out.Keys(), []string{"rewound_count", "target_message", "new_head_id"}) || out.Value("rewound_count") != 2 || out.Value("new_head_id") != a1 {
+		t.Fatalf("result %v", out)
 	}
-	if target := out.Vals["target_message"].(*pyjson.Object); target.Vals["content"] != "second" || target.Vals["id"] != u2 {
-		t.Fatalf("target %v", target.Vals)
+	if target := out.Value("target_message").(*jsonutil.Object); target.Value("content") != "second" || target.Value("id") != u2 {
+		t.Fatalf("target %v", target)
 	}
 	if got := dialogContents(t, db, "rw"); !slices.Equal(got, []any{"first", "first reply"}) {
 		t.Fatalf("live %v", got)

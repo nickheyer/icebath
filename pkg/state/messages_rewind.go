@@ -8,8 +8,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keyword arguments of a rewind, nil standing for an omitted Python argument
@@ -20,13 +20,13 @@ type RewindOptions struct {
 }
 
 // Validates an active user originated rewind target and returns its handoff scaffold when asked to keep it
-func (d *SessionDB) splitRewindTarget(targetRow *pyjson.Object, expectedTargetContent any, preserveCompactionHandoff bool) (map[string]any, error) {
-	if !pyTruthy(targetRow.Vals["active"]) {
+func (d *SessionDB) splitRewindTarget(targetRow *jsonutil.Object, expectedTargetContent any, preserveCompactionHandoff bool) (map[string]any, error) {
+	if !pyTruthy(targetRow.Value("active")) {
 		return nil, pyValueError("rewind target is not active")
 	}
 	view := objMap(targetRow)
-	view["content"] = decodeMessageContent(targetRow.Vals["content"])
-	view["display_metadata"] = decodeDisplayMetadata(targetRow.Vals["display_metadata"])
+	view["content"] = decodeMessageContent(targetRow.Value("content"))
+	view["display_metadata"] = decodeDisplayMetadata(targetRow.Value("display_metadata"))
 	handoff, liveView := SplitUserOriginatedTurn(view)
 	if liveView == nil {
 		return nil, pyValueError("rewind target is not a user-originated turn")
@@ -35,7 +35,7 @@ func (d *SessionDB) splitRewindTarget(targetRow *pyjson.Object, expectedTargetCo
 	if text, ok := liveContent.(string); ok {
 		liveContent = pyStrip(SanitizeContext(text))
 	}
-	if expectedTargetContent != nil && !pyrepr.Equal(liveContent, expectedTargetContent) {
+	if expectedTargetContent != nil && !anyutil.Equal(liveContent, expectedTargetContent) {
 		return nil, errors.New("rewind target changed before it could be persisted")
 	}
 	if preserveCompactionHandoff && handoff == nil {
@@ -48,7 +48,7 @@ func (d *SessionDB) splitRewindTarget(targetRow *pyjson.Object, expectedTargetCo
 }
 
 // Transaction scoped rewind returning the target row, the rewound ids, the new head id and the scaffold row id
-func (d *SessionDB) rewindInTransaction(ctx context.Context, conn SQLiteConn, sessionID string, targetMessageID int64, o RewindOptions) (*pyjson.Object, []int64, any, *int64, error) {
+func (d *SessionDB) rewindInTransaction(ctx context.Context, conn SQLiteConn, sessionID string, targetMessageID int64, o RewindOptions) (*jsonutil.Object, []int64, any, *int64, error) {
 	if err := d.checkTranscriptWriteGuards(ctx, conn, sessionID, transcriptGuards{rejectActiveTurnLease: true, rejectActiveCompressionLock: true}); err != nil {
 		return nil, nil, nil, nil, err
 	}
@@ -69,8 +69,8 @@ func (d *SessionDB) rewindInTransaction(ctx context.Context, conn SQLiteConn, se
 		return nil, nil, nil, nil, pyValueError(fmt.Sprintf("message %d not found in session %s", targetMessageID, sessionID))
 	}
 	targetRow := rows[0]
-	if role := targetRow.Vals["role"]; role != "user" {
-		return nil, nil, nil, nil, pyValueError(fmt.Sprintf("rewind target must be a 'user' message (got role=%s, id=%d)", pyrepr.Repr(role), targetMessageID))
+	if role := targetRow.Value("role"); role != "user" {
+		return nil, nil, nil, nil, pyValueError(fmt.Sprintf("rewind target must be a 'user' message (got role=%s, id=%d)", anyutil.Quote(role), targetMessageID))
 	}
 	var replacement map[string]any
 	if o.PreserveCompactionHandoff || o.ExpectedTargetContent != nil {
@@ -118,9 +118,9 @@ func (d *SessionDB) rewindInTransaction(ctx context.Context, conn SQLiteConn, se
 }
 
 // Soft deletes every active message from the target user row on and reports the rewound count, target and new head
-func (d *SessionDB) RewindToMessage(ctx context.Context, sessionID string, targetMessageID int64, o RewindOptions) (*pyjson.Object, error) {
+func (d *SessionDB) RewindToMessage(ctx context.Context, sessionID string, targetMessageID int64, o RewindOptions) (*jsonutil.Object, error) {
 	var (
-		targetRow      *pyjson.Object
+		targetRow      *jsonutil.Object
 		rewound        []int64
 		newHeadID      any
 		replacementID  *int64
@@ -145,8 +145,8 @@ func (d *SessionDB) RewindToMessage(ctx context.Context, sessionID string, targe
 	if err != nil {
 		return nil, err
 	}
-	targetRow.Set("content", decodeMessageContent(targetRow.Vals["content"]))
-	out := pyjson.NewObject()
+	targetRow.Set("content", decodeMessageContent(targetRow.Value("content")))
+	out := jsonutil.NewObject()
 	out.Set("rewound_count", len(rewound))
 	out.Set("target_message", targetRow)
 	out.Set("new_head_id", newHeadID)
@@ -162,7 +162,7 @@ func (d *SessionDB) RewindToMessage(ctx context.Context, sessionID string, targe
 }
 
 // Clears bare tool call marker content left by older sessions, with an optional VACUUM INTO snapshot first
-func (d *SessionDB) PurgeStaleToolCallMarkers(ctx context.Context, dryRun, backup bool) (*pyjson.Object, error) {
+func (d *SessionDB) PurgeStaleToolCallMarkers(ctx context.Context, dryRun, backup bool) (*jsonutil.Object, error) {
 	findAffected := func(conn SQLiteConn) ([]int64, error) {
 		rows, err := connRows(ctx, conn, "SELECT id, content FROM messages WHERE role = 'assistant' AND tool_calls IS NOT NULL AND tool_calls != ''")
 		if err != nil {
@@ -177,8 +177,8 @@ func (d *SessionDB) PurgeStaleToolCallMarkers(ctx context.Context, dryRun, backu
 		}
 		return ids, nil
 	}
-	result := func(affected []int64, backupPath any) *pyjson.Object {
-		out := pyjson.NewObject()
+	result := func(affected []int64, backupPath any) *jsonutil.Object {
+		out := jsonutil.NewObject()
 		out.Set("dry_run", dryRun)
 		out.Set("rows_affected", len(affected))
 		out.Set("row_ids", int64sToAny(affected))

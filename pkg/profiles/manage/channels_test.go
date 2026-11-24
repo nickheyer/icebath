@@ -12,8 +12,8 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const channelSourceEnv = "OPENAI_API_KEY=sk-model-key\n" +
@@ -190,7 +190,7 @@ func TestStripEnvFileKeepsCommentsAndUnknownKeysVerbatim(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := pyjson.NewObject()
+	want := jsonutil.NewObject()
 	want.Set("telegram", []any{"TELEGRAM_BOT_TOKEN"})
 	if !reflect.DeepEqual(removed, want) {
 		t.Fatalf("removed = %#v", removed)
@@ -241,7 +241,7 @@ func TestCloneIsPublishedAtomicallyAfterStripping(t *testing.T) {
 	}
 	var seen seenState
 	real := stripChannelSettingsFn
-	stripChannelSettingsFn = func(ctx context.Context, profileDir string, includeState bool, sourceDir string) (*pyjson.Object, error) {
+	stripChannelSettingsFn = func(ctx context.Context, profileDir string, includeState bool, sourceDir string) (*jsonutil.Object, error) {
 		seen = seenState{pathExists(filepath.Join(root, "profiles", "bot2")), strings.HasPrefix(filepath.Base(profileDir), "."), servedNames(t)}
 		return real(ctx, profileDir, includeState, sourceDir)
 	}

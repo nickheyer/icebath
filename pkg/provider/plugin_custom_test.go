@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestCustomPluginProfileMatchesUpstreamRegistration(t *testing.T) {
@@ -77,7 +77,7 @@ func TestCustomReasoningWireShape(t *testing.T) {
 	}
 	for _, c := range cases {
 		eb, tl := p.BuildAPIKwargsExtras(c.r, c.kw)
-		assertExtras(t, c.label, pyjson.Plain(eb).(map[string]any), tl, c.eb, c.tl)
+		assertExtras(t, c.label, jsonutil.Plain(eb).(map[string]any), tl, c.eb, c.tl)
 	}
 }
 

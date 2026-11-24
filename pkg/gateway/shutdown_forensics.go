@@ -13,11 +13,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -53,8 +52,8 @@ func readProcField(pid int, key string) (string, bool) {
 }
 
 // Compact proc identity of pid, never its command line
-func procSummary(pid int) *pyjson.Object {
-	summary := pyjson.NewObject()
+func procSummary(pid int) *jsonutil.Object {
+	summary := jsonutil.NewObject()
 	summary.Set("pid", int64(pid))
 	if pid <= 0 {
 		return summary
@@ -88,9 +87,9 @@ func readForensicsMarker(path string) (string, bool) {
 }
 
 // Fast snapshot of who asks this process to shut down, never blocking and never failing
-func SnapshotShutdownContext(receivedSignal *int) *pyjson.Object {
+func SnapshotShutdownContext(receivedSignal *int) *jsonutil.Object {
 	pid, ppid := os.Getpid(), os.Getppid()
-	ctx := pyjson.NewObject()
+	ctx := jsonutil.NewObject()
 	ctx.Set("ts", float64(time.Now().UnixNano())/1e9)
 	ctx.Set("ts_monotonic", monotonicSeconds())
 	ctx.Set("signal", forensicsSignalName(receivedSignal))
@@ -113,7 +112,7 @@ func SnapshotShutdownContext(receivedSignal *int) *pyjson.Object {
 		ctx.Set("loadavg_1m", load)
 	}
 	if tracer, ok := readProcField(pid, "TracerPid"); ok && tracer != "0" {
-		if n, err := strconv.Atoi(tracer); err == nil && pystr.StrIsDigit(tracer) {
+		if n, err := strconv.Atoi(tracer); err == nil && textutil.IsDigits(tracer) {
 			ctx.Set("tracer_pid", int64(n))
 			ctx.Set("tracer", procSummary(n))
 		} else {
@@ -123,7 +122,7 @@ func SnapshotShutdownContext(receivedSignal *int) *pyjson.Object {
 	}
 	func() {
 		defer func() { _ = recover() }()
-		homeText, err := pypath.PathExpanduser(os.Getenv("ICEBATH_HOME"))
+		homeText, err := pathutil.ExpandUserPath(os.Getenv("ICEBATH_HOME"))
 		if err != nil || homeText == "" {
 			return
 		}
@@ -187,8 +186,8 @@ func diagnosticTimeoutPrefix(timeoutSeconds float64) []string {
 }
 
 // One scannable log line of a shutdown context, parent identity but never argv
-func FormatContextForLog(ctx *pyjson.Object) string {
-	parent, _ := recGet(ctx, "parent").(*pyjson.Object)
+func FormatContextForLog(ctx *jsonutil.Object) string {
+	parent, _ := recGet(ctx, "parent").(*jsonutil.Object)
 	loadStr := "?"
 	switch load := recGet(ctx, "loadavg_1m").(type) {
 	case float64:
@@ -199,7 +198,7 @@ func FormatContextForLog(ctx *pyjson.Object) string {
 	var extras []string
 	if recGet(ctx, "takeover_marker") != nil {
 		who := "other"
-		if pyrepr.Truthy(recGet(ctx, "takeover_marker_for_self")) {
+		if anyutil.IsTrue(recGet(ctx, "takeover_marker_for_self")) {
 			who = "self"
 		}
 		extras = append(extras, "takeover_marker_present="+who)
@@ -207,25 +206,25 @@ func FormatContextForLog(ctx *pyjson.Object) string {
 	if recGet(ctx, "planned_stop_marker") != nil {
 		extras = append(extras, "planned_stop_marker_present=yes")
 	}
-	if tracer := recGet(ctx, "tracer_pid"); pyrepr.Truthy(tracer) {
-		extras = append(extras, "tracer_pid="+pyrepr.Str(tracer))
+	if tracer := recGet(ctx, "tracer_pid"); anyutil.IsTrue(tracer) {
+		extras = append(extras, "tracer_pid="+anyutil.String(tracer))
 	}
 	extrasStr := ""
 	if len(extras) > 0 {
 		extrasStr = " " + strings.Join(extras, " ")
 	}
 	orUnknown := func(v any) string {
-		if pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 		return "?"
 	}
 	signal := "?"
 	if v, ok := ctx.Get("signal"); ok {
-		signal = pyrepr.Str(v)
+		signal = anyutil.String(v)
 	}
 	underSystemd := "no"
-	if pyrepr.Truthy(recGet(ctx, "under_systemd")) {
+	if anyutil.IsTrue(recGet(ctx, "under_systemd")) {
 		underSystemd = "yes"
 	}
 	return fmt.Sprintf("signal=%s under_systemd=%s parent_pid=%s parent_name=%s loadavg_1m=%s%s",
@@ -233,7 +232,7 @@ func FormatContextForLog(ctx *pyjson.Object) string {
 }
 
 // Whether systemd's TimeoutStopSec covers the stop budget, nil when aligned facts cannot be read
-func CheckSystemdTimingAlignment(ctx context.Context, drainTimeout, cronDrainTimeout float64) (*pyjson.Object, error) {
+func CheckSystemdTimingAlignment(ctx context.Context, drainTimeout, cronDrainTimeout float64) (*jsonutil.Object, error) {
 	if os.Getenv("INVOCATION_ID") == "" {
 		return nil, nil
 	}
@@ -265,7 +264,7 @@ func CheckSystemdTimingAlignment(ctx context.Context, drainTimeout, cronDrainTim
 		return nil, err
 	}
 	expected, _ := new(big.Float).SetInt(expectedInt).Float64()
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("unit", unitName)
 	out.Set("timeout_stop_sec", timeoutStopSec)
 	out.Set("drain_timeout", drainTimeout)
@@ -279,7 +278,7 @@ func CheckSystemdTimingAlignment(ctx context.Context, drainTimeout, cronDrainTim
 func systemdTimeoutStopUS(ctx context.Context, unitName string) *big.Int {
 	for _, flag := range [][]string{{"--user"}, {}} {
 		argv := append(append([]string{"systemctl"}, flag...), "show", unitName, "--property=TimeoutStopUSec")
-		result, err := pysubprocess.RunWith(ctx, argv, pysubprocess.Options{Timeout: 2 * time.Second})
+		result, err := executil.Run(ctx, argv, executil.Options{Timeout: 2 * time.Second})
 		if err != nil || result.Returncode != 0 {
 			continue
 		}
@@ -289,7 +288,7 @@ func systemdTimeoutStopUS(ctx context.Context, unitName string) *big.Int {
 			}
 			value := strings.TrimSpace(line[len("TimeoutStopUSec="):])
 			var timeoutUS *big.Int
-			if pystr.StrIsDigit(value) {
+			if textutil.IsDigits(value) {
 				timeoutUS, _ = new(big.Int).SetString(value, 10)
 			} else {
 				timeoutUS = ParseSystemdDurationToUS(value)

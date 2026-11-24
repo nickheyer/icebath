@@ -7,7 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -92,16 +92,16 @@ func LocalOrigin() string {
 }
 
 // Normalizes a dict or JSON string into id, name and is_bot, nil for anything else or without id and name
-func ParseTurnAuthor(raw any) *pyjson.Object {
+func ParseTurnAuthor(raw any) *jsonutil.Object {
 	switch r := raw.(type) {
 	case string:
-		parsed, err := pyjson.Loads(r)
+		parsed, err := jsonutil.Decode(r)
 		if err != nil {
 			return nil
 		}
 		raw = parsed
 	case []byte:
-		parsed, err := pyjson.LoadsBytes(r)
+		parsed, err := jsonutil.Decode(r)
 		if err != nil {
 			return nil
 		}
@@ -109,7 +109,7 @@ func ParseTurnAuthor(raw any) *pyjson.Object {
 	}
 	var get func(string) any
 	switch m := raw.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		get = func(k string) any { v, _ := m.Get(k); return v }
 	case map[string]any:
 		get = func(k string) any { return m[k] }
@@ -124,7 +124,7 @@ func ParseTurnAuthor(raw any) *pyjson.Object {
 	if origin, ok := turnAuthorCleanText(get("origin")); ok && hasID && strings.HasPrefix(id, "bot:") && !strings.Contains(id, "/") {
 		id, hasID = turnAuthorCleanText(BotAuthorID(id[len("bot:"):], origin))
 	}
-	author := pyjson.NewObject()
+	author := jsonutil.NewObject()
 	author.Set("id", nil)
 	if hasID {
 		author.Set("id", id)
@@ -138,7 +138,7 @@ func ParseTurnAuthor(raw any) *pyjson.Object {
 }
 
 // Author the dispatcher placed in the turn author variable of environ, nil environ reading the process environment
-func TurnAuthorFromEnv(environ map[string]string) *pyjson.Object {
+func TurnAuthorFromEnv(environ map[string]string) *jsonutil.Object {
 	if environ == nil {
 		v, ok := os.LookupEnv(TurnAuthorEnvName)
 		if !ok {
@@ -154,7 +154,7 @@ func TurnAuthorFromEnv(environ map[string]string) *pyjson.Object {
 }
 
 // Reads and removes the turn author variable so subprocesses started during the turn do not inherit it
-func TakeTurnAuthorFromEnv(environ map[string]string) *pyjson.Object {
+func TakeTurnAuthorFromEnv(environ map[string]string) *jsonutil.Object {
 	author := TurnAuthorFromEnv(environ)
 	if environ == nil {
 		_ = os.Unsetenv(TurnAuthorEnvName)
@@ -165,8 +165,8 @@ func TakeTurnAuthorFromEnv(environ map[string]string) *pyjson.Object {
 }
 
 // Environment entry a dispatcher merges into a child env with the compact JSON author
-func TurnAuthorEnv(author *pyjson.Object) (map[string]string, error) {
-	text, err := pyjson.Dumps(author, pyjson.Separators(",", ":"))
+func TurnAuthorEnv(author *jsonutil.Object) (map[string]string, error) {
+	text, err := jsonutil.Encode(author)
 	if err != nil {
 		return nil, err
 	}

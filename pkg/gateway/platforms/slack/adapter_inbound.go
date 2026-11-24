@@ -16,11 +16,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -75,7 +74,7 @@ func newActionMatcher(actionID any) (actionMatcher, error) {
 			switch key {
 			case "action_id", "block_id", "type", "callback_id":
 			default:
-				return actionMatcher{}, fmt.Errorf("unexpected keys %s for action listener", pyrepr.Repr(key))
+				return actionMatcher{}, fmt.Errorf("unexpected keys %s for action listener", anyutil.Quote(key))
 			}
 			m, err := newActionMatcher(value)
 			if err != nil {
@@ -85,7 +84,7 @@ func newActionMatcher(actionID any) (actionMatcher, error) {
 		}
 		return actionMatcher{constraints: constraints}, nil
 	}
-	return actionMatcher{}, fmt.Errorf("action ($constraints) must be any of str, Pattern, and dict but %s was given", pyrepr.TypeName(actionID))
+	return actionMatcher{}, fmt.Errorf("action ($constraints) must be any of str, Pattern, and dict but %s was given", anyutil.Kind(actionID))
 }
 
 // AsyncApp event registration for plugin factories, an event type string or a pattern
@@ -96,7 +95,7 @@ func (app *slackApp) Event(matcher any, listener func(ctx context.Context, event
 	case *regexp.Regexp:
 		app.eventPattern(v, listener)
 	default:
-		return fmt.Errorf("event type must be str or Pattern but %s was given", pyrepr.TypeName(matcher))
+		return fmt.Errorf("event type must be str or Pattern but %s was given", anyutil.Kind(matcher))
 	}
 	return nil
 }
@@ -120,7 +119,7 @@ func (app *slackApp) Command(matcher any, listener func(ctx context.Context, ack
 	case *regexp.Regexp:
 		pattern = v
 	default:
-		return fmt.Errorf("command must be str or Pattern but %s was given", pyrepr.TypeName(matcher))
+		return fmt.Errorf("command must be str or Pattern but %s was given", anyutil.Kind(matcher))
 	}
 	app.command(pattern, func(ctx context.Context, ack ackFunc, command map[string]any) { listener(ctx, ack, command) })
 	return nil
@@ -167,7 +166,7 @@ func (a *SlackAdapter) registerBoltHandlers(ctx context.Context) error {
 		eventType := getOr(orEmptyMap(event), "type", getOr(asMap(getOr(orEmptyMap(body), "event", map[string]any{})), "type", "unknown"))
 		pkgLog().Debug(fmt.Sprintf("[Slack] Ignoring unhandled event type=%s (no listener registered; subscribed "+
 			"events not handled by Icebath can be removed from the Slack app manifest via "+
-			"`icebath slack manifest`)", pyrepr.Str(eventType)))
+			"`icebath slack manifest`)", anyutil.String(eventType)))
 	})
 	var slashNames []string
 	if NativeSlashNames != nil {
@@ -215,7 +214,7 @@ func (a *SlackAdapter) registerPluginActionHandlers(ctx context.Context) error {
 	}
 	var pending []*plugins.SlackActionHandler
 	for _, h := range handlers {
-		if !a.pluginActionsWired[[2]string{pyrepr.Repr(h.ActionID), h.Plugin}] {
+		if !a.pluginActionsWired[[2]string{anyutil.Quote(h.ActionID), h.Plugin}] {
 			pending = append(pending, h)
 		}
 	}
@@ -227,9 +226,9 @@ func (a *SlackAdapter) registerPluginActionHandlers(ctx context.Context) error {
 		}
 		app.action(matcher, wrapPluginAction(h.Callback, h.Plugin))
 		a.mu.Lock()
-		a.pluginActionsWired[[2]string{pyrepr.Repr(h.ActionID), h.Plugin}] = true
+		a.pluginActionsWired[[2]string{anyutil.Quote(h.ActionID), h.Plugin}] = true
 		a.mu.Unlock()
-		pkgLog().Debug(fmt.Sprintf("[Slack] Registered plugin action handler %s (from %s)", pyrepr.Str(h.ActionID), h.Plugin))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Registered plugin action handler %s (from %s)", anyutil.String(h.ActionID), h.Plugin))
 	}
 	if len(pending) > 0 {
 		pkgLog().Info(fmt.Sprintf("[Slack] Wired %d plugin action handler(s)", len(pending)))
@@ -377,7 +376,7 @@ func (a *SlackAdapter) assistantThreadTitleEnabled() bool {
 		}
 		return true
 	}
-	return pyrepr.Truthy(raw)
+	return anyutil.IsTrue(raw)
 }
 
 var whitespaceRunRe = mustPyRe(`\s+`)
@@ -490,8 +489,8 @@ func (a *SlackAdapter) handleAppHomeOpened(ctx context.Context, event, body map[
 	}
 	channelID := firstTruthyValue(event["channel"], event["channel_id"])
 	fields := agentViewEventFields(event, body)
-	if fields["team_id"] != "" && pyrepr.Truthy(channelID) {
-		a.rememberChannelTeam(pyrepr.Str(channelID), fields["team_id"])
+	if fields["team_id"] != "" && anyutil.IsTrue(channelID) {
+		a.rememberChannelTeam(anyutil.String(channelID), fields["team_id"])
 	}
 	metadata := map[string]string{
 		"channel_id": strOrEmpty(channelID), "user_id": fields["user_id"],
@@ -572,8 +571,8 @@ func (a *SlackAdapter) syntheticReactionEvent(ctx context.Context, event map[str
 		emojiText = reactionName
 	}
 	ts := event["event_ts"]
-	if !pyrepr.Truthy(ts) {
-		ts = fmt.Sprintf("reaction-%s-%s-%s", pyrepr.Str(msgTS), reactionName, pyrepr.Str(userID))
+	if !anyutil.IsTrue(ts) {
+		ts = fmt.Sprintf("reaction-%s-%s-%s", anyutil.String(msgTS), reactionName, anyutil.String(userID))
 	}
 	synthetic := map[string]any{
 		"type":                   "message",
@@ -623,7 +622,7 @@ func (a *SlackAdapter) reactionThreadTS(ctx context.Context, client *webClient, 
 		}
 		first := asMap(messages[0])
 		if v := firstTruthyValue(first["thread_ts"], first["ts"]); v != nil {
-			threadTS = pyrepr.Str(v)
+			threadTS = anyutil.String(v)
 		}
 		if itemUser == "" {
 			itemUser = strOrEmpty(first["user"])
@@ -733,7 +732,7 @@ func (a *SlackAdapter) handleSlackFileShared(ctx context.Context, event, body ma
 		return nil
 	}
 	fileObj := asMap(info.get("file"))
-	if !strings.HasPrefix(pyrepr.Str(getOr(fileObj, "mimetype", "")), "video/") {
+	if !strings.HasPrefix(anyutil.String(getOr(fileObj, "mimetype", "")), "video/") {
 		return nil
 	}
 	share := firstFileShare(fileObj, channelID)
@@ -750,7 +749,7 @@ func (a *SlackAdapter) handleSlackFileShared(ctx context.Context, event, body ma
 		channelType = "im"
 	}
 	user := event["user_id"]
-	if !pyrepr.Truthy(user) {
+	if !anyutil.IsTrue(user) {
 		user = getOr(fileObj, "user", "")
 	}
 	fallback := map[string]any{
@@ -968,7 +967,7 @@ func (a *SlackAdapter) normalizeChangedMessage(event map[string]any) map[string]
 		normalized[k] = v
 	}
 	for _, key := range []string{"channel", "channel_type", "team", "team_id"} {
-		if !pyrepr.Truthy(normalized[key]) && pyrepr.Truthy(event[key]) {
+		if !anyutil.IsTrue(normalized[key]) && anyutil.IsTrue(event[key]) {
 			normalized[key] = event[key]
 		}
 	}
@@ -993,7 +992,7 @@ func (a *SlackAdapter) sessionThreadTS(event map[string]any, ts string, isDM boo
 		}
 		return &threadTS
 	}
-	if pyrepr.Truthy(event["_icebath_no_thread_response"]) {
+	if anyutil.IsTrue(event["_icebath_no_thread_response"]) {
 		if t := strOrEmpty(event["thread_ts"]); t != "" {
 			return &t
 		}
@@ -1002,7 +1001,7 @@ func (a *SlackAdapter) sessionThreadTS(event map[string]any, ts string, isDM boo
 	if raw := strOrEmpty(event["thread_ts"]); raw != "" && raw != ts {
 		return &raw
 	}
-	if pyrepr.Truthy(getOr(a.extra(), "reply_in_thread", true)) {
+	if anyutil.IsTrue(getOr(a.extra(), "reply_in_thread", true)) {
 		return &ts
 	}
 	return nil
@@ -1127,7 +1126,7 @@ func (a *SlackAdapter) handleSlackMessage(ctx context.Context, event, payload ma
 func (a *SlackAdapter) dropBotSender(ctx context.Context, event map[string]any) bool {
 	msgUser := strOrEmpty(event["user"])
 	senderIsBot := a.eventDeclaresBotSender(ctx, event)
-	if !senderIsBot && msgUser != "" && !pyrepr.Truthy(event["client_msg_id"]) {
+	if !senderIsBot && msgUser != "" && !anyutil.IsTrue(event["client_msg_id"]) {
 		senderIsBot = a.resolveUserIsBot(ctx, msgUser, strOrEmpty(event["channel"]), strOrEmpty(firstTruthyValue(event["team"], event["team_id"])))
 	}
 	if !senderIsBot {
@@ -1160,8 +1159,8 @@ func (a *SlackAdapter) prefilterInbound(ctx context.Context, event, payload map[
 			botName = strOrEmpty(profile["name"])
 		}
 		pkgLog().Debug(fmt.Sprintf("[Slack] event received type=%s subtype=%s user=%s bot_id=%s bot_name=%s channel=%s ts=%s thread_ts=%s",
-			pyrepr.Str(event["type"]), pyrepr.Str(event["subtype"]), strOrEmpty(event["user"]), strOrEmpty(event["bot_id"]), botName,
-			pyrepr.Str(getOr(event, "channel", "")), pyrepr.Str(getOr(event, "ts", "")), pyrepr.Str(getOr(event, "thread_ts", ""))))
+			anyutil.String(event["type"]), anyutil.String(event["subtype"]), strOrEmpty(event["user"]), strOrEmpty(event["bot_id"]), botName,
+			anyutil.String(getOr(event, "channel", "")), anyutil.String(getOr(event, "ts", "")), anyutil.String(getOr(event, "thread_ts", ""))))
 	}
 	if event["subtype"] == "message_changed" {
 		event = a.normalizeChangedMessage(event)
@@ -1184,7 +1183,7 @@ func (a *SlackAdapter) prefilterInbound(ctx context.Context, event, payload map[
 	}
 	subtype, isStr := event["subtype"].(string)
 	if (event["subtype"] != nil && !isStr) || !conversationalSubtypes[subtype] {
-		pkgLog().Debug(fmt.Sprintf("[Slack] Dropping non-conversational message subtype=%s in channel %s", pyrepr.Str(event["subtype"]), channelID))
+		pkgLog().Debug(fmt.Sprintf("[Slack] Dropping non-conversational message subtype=%s in channel %s", anyutil.String(event["subtype"]), channelID))
 		return nil, "", "", false
 	}
 	return event, dedupTeamID, channelID, true
@@ -1287,7 +1286,7 @@ func (a *SlackAdapter) handleSlackMessageImpl(ctx context.Context, event, payloa
 	isMentioned := (botUID != "" && strings.Contains(routingText, "<@"+botUID+">")) || a.slackMessageMatchesMentionPatterns(ctx, routingText)
 	eventThreadTS := strOrEmpty(event["thread_ts"])
 	isThreadReply := eventThreadTS != "" && eventThreadTS != ts
-	forceProcess := pyrepr.Truthy(event["_icebath_force_process"])
+	forceProcess := anyutil.IsTrue(event["_icebath_force_process"])
 	if a.peerBotDrop(ctx, event, userID, botUID, channelID, teamID, isMentioned) {
 		return nil
 	}
@@ -1461,7 +1460,7 @@ func (a *SlackAdapter) cacheSlackFile(ctx context.Context, kind string, f map[st
 		}
 		return &cachedFile{path, mediaType, ""}, nil
 	case "video":
-		ext := strings.ToLower(filepath.Ext(pyrepr.Str(getOr(f, "name", ""))))
+		ext := strings.ToLower(filepath.Ext(anyutil.String(getOr(f, "name", ""))))
 		if _, ok := mediacache.SupportedVideoTypes[ext]; !ok {
 			byMime := gateway.VideoMimeToExt()
 			if e, ok := byMime[strings.ToLower(strings.SplitN(mimetype, ";", 2)[0])]; ok {
@@ -1495,7 +1494,7 @@ var displayNameUnsafeRe = mustPyRe(`[^\w.\- ]`)
 
 // Document branch caching any extension under the 20 MB cap and inlining small text files
 func (a *SlackAdapter) cacheSlackDocument(ctx context.Context, f map[string]any, url, mimetype, teamID string) (*cachedFile, error) {
-	originalFilename := pyrepr.Str(getOr(f, "name", ""))
+	originalFilename := anyutil.String(getOr(f, "name", ""))
 	ext := ""
 	if originalFilename != "" {
 		ext = strings.ToLower(filepath.Ext(originalFilename))
@@ -1505,7 +1504,7 @@ func (a *SlackAdapter) cacheSlackDocument(ctx context.Context, f map[string]any,
 	}
 	fileSize := intValue(getOr(f, "size", int64(0)))
 	if fileSize == 0 || fileSize > 20*1024*1024 {
-		pkgLog().Warn(fmt.Sprintf("[Slack] Document too large or unknown size: %s", pyrepr.Str(getOr(f, "size", int64(0)))))
+		pkgLog().Warn(fmt.Sprintf("[Slack] Document too large or unknown size: %s", anyutil.String(getOr(f, "size", int64(0)))))
 		return nil, nil
 	}
 	raw, err := a.downloadSlackFileBytes(ctx, url, teamID, "file bytes")
@@ -1528,7 +1527,7 @@ func (a *SlackAdapter) cacheSlackDocument(ctx context.Context, f map[string]any,
 	injection := ""
 	isText := gateway.TextInjectExtensions[ext] || strings.HasPrefix(mimetype, "text/")
 	if isText && len(raw) <= 100*1024 {
-		if content, err := pystr.DecodeUTF8(raw); err == nil {
+		if content, err := textutil.DecodeUTF8(raw); err == nil {
 			display := originalFilename
 			if display == "" {
 				display = "document" + orDefault(ext, ".txt")
@@ -1583,10 +1582,10 @@ func (a *SlackAdapter) collectInboundMedia(ctx context.Context, event map[string
 				continue
 			}
 		}
-		mimetype := pyrepr.Str(getOr(f, "mimetype", "unknown"))
+		mimetype := anyutil.String(getOr(f, "mimetype", "unknown"))
 		url := strOrEmpty(f["url_private_download"])
 		if url == "" {
-			url = pyrepr.Str(getOr(f, "url_private", ""))
+			url = anyutil.String(getOr(f, "url_private", ""))
 		}
 		if url == "" {
 			continue

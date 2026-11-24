@@ -9,12 +9,9 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -66,7 +63,7 @@ func reviewUsageStr(v any) *string {
 	if v == nil {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	if s == "" {
 		return nil
 	}
@@ -186,7 +183,7 @@ func sameModelParityKwargs(a *AIAgent, o *AIAgentOptions) {
 		o.ProviderDataCollection = a.providerDataCollection
 	}
 	if len(a.prefillMessages) > 0 {
-		o.PrefillMessages = pycopy.Of(a.prefillMessages)
+		o.PrefillMessages = anyutil.Clone(a.prefillMessages)
 	}
 }
 
@@ -278,14 +275,14 @@ func forkInitKwargs(ctx context.Context, a *AIAgent, rt reviewRuntime, routed bo
 
 // Advertises the parent's exact tools on the fork and freezes its snapshot generation
 func inheritParentToolSurface(reviewAgent, a *AIAgent) error {
-	tools := pycopy.Of(a.tools)
+	tools := anyutil.Clone(a.tools)
 	if tools == nil {
 		tools = []any{}
 	}
 	names := map[string]bool{}
 	for _, tool := range tools {
 		entry, _ := tool.(map[string]any)
-		fn, ok := pyjson.Dict(entry["function"])
+		fn, ok := jsonutil.AsMap(entry["function"])
 		if !ok {
 			return errors.New("a parent tool schema has no function")
 		}
@@ -293,7 +290,7 @@ func inheritParentToolSurface(reviewAgent, a *AIAgent) error {
 		if !ok {
 			return errors.New("a parent tool schema has no name")
 		}
-		names[pyrepr.Str(name)] = true
+		names[anyutil.String(name)] = true
 	}
 	reviewAgent.tools, reviewAgent.validToolNames = tools, names
 	generation := frozenToolSnapshotGeneration

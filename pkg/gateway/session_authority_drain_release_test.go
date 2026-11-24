@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestRetainedBytesAreReleasedAfterCancelAndSettlement(t *testing.T) {
@@ -36,7 +36,7 @@ func TestRetainedBytesAreReleasedAfterCancelAndSettlement(t *testing.T) {
 		t.Fatal("cancelling one referent dropped the bytes the other still needs")
 	}
 	survived := false
-	replaceExecution(t, func(context.Context, *SessionAuthority, SessionRef, *pyjson.Object) (any, error) {
+	replaceExecution(t, func(context.Context, *SessionAuthority, SessionRef, *jsonutil.Object) (any, error) {
 		survived = onDisk(retained)
 		return "done", nil
 	})

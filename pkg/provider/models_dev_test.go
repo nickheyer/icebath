@@ -949,8 +949,8 @@ func TestParseModelsDevEntryCapabilities(t *testing.T) {
 }
 
 func TestModelsDevFetchHonorsTheEnvironmentProxies(t *testing.T) {
-	if tr := modelsDevTransport(); tr.Proxy == nil || tr.DialTLSContext == nil {
-		t.Fatal("the models.dev fetch must go through HTTPS_PROXY and HTTP_PROXY like the reference requests.get")
+	if tr := modelsDevTransport(); tr.Proxy == nil {
+		t.Fatal("the models.dev fetch must go through HTTPS_PROXY and HTTP_PROXY")
 	}
 }
 

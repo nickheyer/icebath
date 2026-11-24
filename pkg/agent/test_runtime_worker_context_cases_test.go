@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestWorkerConstructorRestoresPersistedCompressorGuards(t *testing.T) {
@@ -30,7 +30,7 @@ func TestWorkerConstructorRestoresPersistedCompressorGuards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	scope := pyjson.ObjectOf("epoch", epoch, "execution_id", "worker", "session_id", "owned", "generation", int64(0))
+	scope := jsonutil.ObjectOf("epoch", epoch, "execution_id", "worker", "session_id", "owned", "generation", int64(0))
 	if _, err := db.RegisterWorkerExecution(ctx, state.WorkerRegistration{Epoch: epoch, ExecutionID: "worker", SessionID: "owned", Kind: "compute", AdoptionSecret: "test-secret"}); err != nil {
 		t.Fatal(err)
 	}

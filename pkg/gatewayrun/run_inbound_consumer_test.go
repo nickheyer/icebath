@@ -11,9 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Registers a hook callback on the active home's plugin manager the way a loaded plugin does, discovery skipped
@@ -41,7 +41,7 @@ func admissionRunner(t *testing.T, server *fakellm.Server) *GatewayRunner {
 	t.Cleanup(r.sessionStore.CloseAllDBHandles)
 	r.asyncSessionStore = gateway.NewAsyncSessionStore(r.sessionStore)
 	r.sessions = map[string]*SessionState{}
-	r.agentCache, r.agentCacheLock = pydict.New[string, agentCacheEntry](), &sync.Mutex{}
+	r.agentCache, r.agentCacheLock = orderedutil.NewMap[string, agentCacheEntry](), &sync.Mutex{}
 	return r
 }
 
@@ -90,7 +90,7 @@ func TestHandledConsumesTheTurnAndItsReplyIsDelivered(t *testing.T) {
 	if first["text"] != "queue my report" || first["message_id"] != "m1" || first["platform"] != "whatsapp" {
 		t.Fatalf("payload = %#v", first)
 	}
-	source, _ := first["source"].(*pyjson.Object)
+	source, _ := first["source"].(*jsonutil.Object)
 	var chatID any
 	if source != nil {
 		chatID, _ = source.Get("chat_id")

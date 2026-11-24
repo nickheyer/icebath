@@ -7,10 +7,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Auxiliary task the rewrite runs under, its model and timeout set in auxiliary.memory_query_rewrite
@@ -154,7 +154,7 @@ func RewriteMemoryQuery(ctx context.Context, userMessage string) (rewritten stri
 			rewritten = ""
 		}
 	}()
-	quoted, err := pyjson.Dumps(bounded, pyjson.EnsureASCII(false))
+	quoted, err := jsonutil.Encode(bounded)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Memory query rewrite failed: %v", err))
 		return ""

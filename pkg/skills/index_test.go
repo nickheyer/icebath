@@ -15,7 +15,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Scope over a fresh home with an empty prompt cache and snapshot before and after the test
@@ -391,7 +391,7 @@ func TestApplicationGateRechecksSnapshotWithoutLosingDescription(t *testing.T) {
 		t.Fatal("no snapshot")
 	}
 	list, _ := snap.Get("skills")
-	apps, _ := list.([]any)[0].(*pyjson.Object).Get("requires_apps")
+	apps, _ := list.([]any)[0].(*jsonutil.Object).Get("requires_apps")
 	if l, ok := apps.([]any); !ok || len(l) != 1 || l[0] != "thing" {
 		t.Fatal(apps)
 	}

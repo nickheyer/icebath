@@ -10,8 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // Ceiling on live trace state, the least recently updated turns evicted past it
@@ -97,11 +98,11 @@ type traceState struct {
 	subagents        *omap[*observation]
 	moaEmitted       map[string]bool
 	lastUpdated      time.Time
-	propagated       *pyjson.Object
+	propagated       *jsonutil.Object
 }
 
 // Fresh state around an opened root
-func newTraceState(traceID string, root *observation, propagated *pyjson.Object) *traceState {
+func newTraceState(traceID string, root *observation, propagated *jsonutil.Object) *traceState {
 	return &traceState{traceID: traceID, root: root, generations: newOmap[*observation](), generationModels: newOmap[string](),
 		tools: newOmap[*observation](), pendingTools: newOmap[[]*observation](), subagents: newOmap[*observation](),
 		moaEmitted: map[string]bool{}, lastUpdated: time.Now(), propagated: propagated}
@@ -219,8 +220,8 @@ func traceTags(ctx context.Context, platform string) []any {
 	} else {
 		tags = append(tags, "trigger:interactive")
 	}
-	if truthy(cron) {
-		tags = append(tags, "cron-job:"+pyStr(getattr(cron, "JobID")))
+	if anyutil.IsTrue(cron) {
+		tags = append(tags, "cron-job:"+anyutil.String(getattr(cron, "JobID")))
 	}
 	return tags
 }
@@ -249,37 +250,37 @@ func startRootTrace(ctx context.Context, c *lfClient, key string, a rootArgs) *t
 	}
 	var traceInput any
 	if lastUser != nil {
-		traceInput = obj("role", "user", "content", captureContent(dget(lastUser, "content"), false, nil))
+		traceInput = jsonutil.ObjectOf("role", "user", "content", captureContent(dget(lastUser, "content"), false, nil))
 	}
 	profile := ""
 	if pc := pluginContext(); pc != nil {
 		profile = pc.ProfileName(ctx)
 	}
-	kanban := pyjson.NewObject()
+	kanban := jsonutil.NewObject()
 	if v := envStr("ICEBATH_KANBAN_TASK", ""); v != "" {
 		kanban.Set("kanban_task_id", v)
 	}
 	if v := envStr("ICEBATH_KANBAN_RUN_ID", ""); v != "" {
 		kanban.Set("kanban_run_id", v)
 	}
-	metadata := obj("source", "icebath", "task_id", a.taskID, "turn_id", a.turnID, "api_request_id", a.apiRequestID,
+	metadata := jsonutil.ObjectOf("source", "icebath", "task_id", a.taskID, "turn_id", a.turnID, "api_request_id", a.apiRequestID,
 		"platform", a.platform, "provider", a.provider, "model", a.model, "api_mode", a.apiMode,
 		"capture_mode", captureMode(), "profile", profile)
-	metadata.Update(kanban)
+	metadata.Merge(kanban)
 	sessionAttr := a.sessionID
 	if sessionAttr == "" {
 		sessionAttr = key
 	}
-	propagated := obj("session_id", sessionAttr, "trace_name", "Icebath turn", "tags", traceTags(ctx, a.platform))
+	propagated := jsonutil.ObjectOf("session_id", sessionAttr, "trace_name", "Icebath turn", "tags", traceTags(ctx, a.platform))
 	if a.userID != "" {
 		propagated.Set("user_id", a.userID)
 	}
 	if profile != "" || kanban.Len() > 0 {
-		md := pyjson.NewObject()
+		md := jsonutil.NewObject()
 		if profile != "" {
 			md.Set("profile", profile)
 		}
-		md.Update(kanban)
+		md.Merge(kanban)
 		propagated.Set("metadata", md)
 	}
 	var root *observation
@@ -301,12 +302,12 @@ func startRootTrace(ctx context.Context, c *lfClient, key string, a rootArgs) *t
 
 // Child observation opened under the root's propagated trace attributes
 func startChildObservation(state *traceState, name, asType string, input, metadata, model, modelParameters any) *observation {
-	var propagated *pyjson.Object
+	var propagated *jsonutil.Object
 	if state.propagated != nil && state.propagated.Len() > 0 {
 		propagated = state.propagated
 	}
-	if !truthy(metadata) {
-		metadata = pyjson.NewObject()
+	if !anyutil.IsTrue(metadata) {
+		metadata = jsonutil.NewObject()
 	}
 	return state.root.startChild(name, asType, obsFields{input: input, metadata: metadata, model: model, modelParameters: modelParameters}, propagated)
 }
@@ -329,13 +330,13 @@ func endObservation(o *observation, a endArgs) {
 		if a.output != nil {
 			f.output, given = a.output, true
 		}
-		if truthy(a.metadata) {
+		if anyutil.IsTrue(a.metadata) {
 			f.metadata, given = a.metadata, true
 		}
-		if truthy(a.usage) {
+		if anyutil.IsTrue(a.usage) {
 			f.usageDetails, given = a.usage, true
 		}
-		if truthy(a.cost) {
+		if anyutil.IsTrue(a.cost) {
 			f.costDetails, given = a.cost, true
 		}
 		if a.level != "" {
@@ -344,7 +345,7 @@ func endObservation(o *observation, a endArgs) {
 		if a.statusMessage != "" {
 			f.statusMessage, given = a.statusMessage, true
 		}
-		if truthy(a.model) {
+		if anyutil.IsTrue(a.model) {
 			f.model, given = a.model, true
 		}
 		if given {
@@ -439,14 +440,14 @@ func finishTrace(ctx context.Context, key string, output any) {
 		var calls []any
 		withState(func() { calls = append([]any(nil), state.turnToolCalls...) })
 		if len(calls) > 0 {
-			var out *pyjson.Object
+			var out *jsonutil.Object
 			if items, ok := dictItems(output); ok {
-				out = pyjson.NewObject()
+				out = jsonutil.NewObject()
 				for _, it := range items {
 					out.Set(it.key, it.val)
 				}
 			} else {
-				out = obj("content", output)
+				out = jsonutil.ObjectOf("content", output)
 			}
 			out.Set("tool_calls", calls)
 			finalOutput = out
@@ -461,10 +462,10 @@ func finishTrace(ctx context.Context, key string, output any) {
 
 // Request scoped generation key of an API call count
 func requestKey(apiCallCount any) string {
-	if !truthy(apiCallCount) {
+	if !anyutil.IsTrue(apiCallCount) {
 		return "0"
 	}
-	return pyStr(apiCallCount)
+	return anyutil.String(apiCallCount)
 }
 
 // Client and trace key of a hook, a nil client when tracing is unavailable
@@ -477,18 +478,18 @@ func clientAndKey(ctx context.Context, taskID, sessionID, turnID, apiRequestID s
 }
 
 // API duration metadata rounded to milliseconds, empty without a positive duration
-func durationMeta(apiDuration any) *pyjson.Object {
+func durationMeta(apiDuration any) *jsonutil.Object {
 	f, ok := toFloat(apiDuration)
-	if !truthy(apiDuration) || !ok || f <= 0 {
-		return pyjson.NewObject()
+	if !anyutil.IsTrue(apiDuration) || !ok || f <= 0 {
+		return jsonutil.NewObject()
 	}
 	if b, isBool := apiDuration.(bool); isBool && b {
-		return obj("api_duration_s", 1)
+		return jsonutil.ObjectOf("api_duration_s", 1)
 	}
 	if isStrictInt(apiDuration) {
-		return obj("api_duration_s", apiDuration)
+		return jsonutil.ObjectOf("api_duration_s", apiDuration)
 	}
-	return obj("api_duration_s", pyint.Round(f, 3))
+	return jsonutil.ObjectOf("api_duration_s", mathutil.Round(f, 3))
 }
 
 // Detaches the open generation of one API call with the model it started with

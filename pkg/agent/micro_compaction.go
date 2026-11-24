@@ -9,11 +9,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // Single exchange summarizer and marker reader the passes call, swapped by tests
@@ -24,12 +24,12 @@ var (
 
 // Whether the row is a compaction summary marker
 func isSummaryMarkerEntry(entry map[string]any) bool {
-	return entry != nil && pyrepr.Truthy(entry[state.CompressedSummaryMetadataKey])
+	return entry != nil && anyutil.IsTrue(entry[state.CompressedSummaryMetadataKey])
 }
 
 // Whether the row is a summary marker provably absorbed into the rolling summary
 func isMicroMarkerEntry(entry map[string]any) bool {
-	return isSummaryMarkerEntry(entry) && pyrepr.Truthy(entry[state.MicroCompactMarkerKey])
+	return isSummaryMarkerEntry(entry) && anyutil.IsTrue(entry[state.MicroCompactMarkerKey])
 }
 
 // First index not yet absorbed, rehydrating the rolling summary from a surviving marker on resume
@@ -129,8 +129,8 @@ func microResponseContent(response any) (string, error) {
 	if s, ok := content.(string); ok {
 		return s, nil
 	}
-	if pyrepr.Truthy(content) {
-		return pyrepr.Str(content), nil
+	if anyutil.IsTrue(content) {
+		return anyutil.String(content), nil
 	}
 	return "", nil
 }
@@ -391,9 +391,9 @@ func (c *ContextCompressor) emitMicroCompactionTelemetry(t microTelemetry) {
 	threshold := c.thresholdTokens
 	var occupancy any
 	if threshold != nil && *threshold > 0 && t.tokensAfter != nil {
-		occupancy = pyint.Round(float64(*t.tokensAfter)/float64(*threshold)*100, 1)
+		occupancy = mathutil.Round(float64(*t.tokensAfter)/float64(*threshold)*100, 1)
 	}
-	payload := pyjson.ObjectOf(
+	payload := jsonutil.ObjectOf(
 		"event", "micro_compaction", "session_id", c.sessionID, "outcome", t.outcome,
 		"messages_before", t.messagesBefore, "messages_after", t.messagesAfter,
 		"tokens_before", optInt(t.tokensBefore), "tokens_after", optInt(t.tokensAfter),
@@ -404,14 +404,14 @@ func (c *ContextCompressor) emitMicroCompactionTelemetry(t microTelemetry) {
 		"threshold_tokens", optInt(threshold), "context_limit", optInt(c.resolvedContextLength),
 		"occupancy_pct", occupancy, "main_model", c.model, "aux_model", c.summaryModel,
 	)
-	line, err := pyjson.Dumps(payload, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	line, err := jsonutil.Encode(payload, jsonutil.SortKeys())
 	if err != nil {
 		pkgLog().Debug("failed to emit micro-compaction telemetry: " + err.Error())
 		return
 	}
 	pkgLog().Info("micro compaction telemetry: " + line)
 	record := map[string]any{}
-	for _, k := range payload.Keys {
+	for _, k := range payload.Keys() {
 		record[k], _ = payload.Get(k)
 	}
 	PublishMicroCompaction(c.ctx, record, t.turnSessionID)
@@ -461,7 +461,7 @@ func (c *ContextCompressor) syncMicroCompactToDB(compacted, held []map[string]an
 func (c *ContextCompressor) archiveMicroCompaction(compacted, held []map[string]any, startWatermark *int64) error {
 	var carried []map[string]any
 	for _, m := range compacted {
-		if m != nil && pyrepr.Truthy(m[dbPersistedMarker]) {
+		if m != nil && anyutil.IsTrue(m[dbPersistedMarker]) {
 			carried = append(carried, m)
 		}
 	}

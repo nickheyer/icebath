@@ -16,8 +16,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const holdersLockName = ".holders.lock"
@@ -61,13 +59,13 @@ func jsonInt(v any) (int64, bool) {
 	return 0, false
 }
 
-func objGet(data *pyjson.Object, key string) any {
+func objGet(data *jsonutil.Object, key string) any {
 	v, _ := data.Get(key)
 	return v
 }
 
 // A record or lease written in this PID namespace and boot
-func sameNamespace(data *pyjson.Object) bool {
+func sameNamespace(data *jsonutil.Object) bool {
 	identity, ok := nsIdentity()
 	if !ok {
 		return objGet(data, "ns") == nil
@@ -75,8 +73,8 @@ func sameNamespace(data *pyjson.Object) bool {
 	return objGet(data, "ns") == identity
 }
 
-func heldHere(data *pyjson.Object, pidField string) bool {
-	return pyrepr.Equal(objGet(data, pidField), int64(os.Getpid())) && sameNamespace(data)
+func heldHere(data *jsonutil.Object, pidField string) bool {
+	return anyutil.Equal(objGet(data, pidField), int64(os.Getpid())) && sameNamespace(data)
 }
 
 // Windows lock error numbers that mean another process holds the lock
@@ -133,10 +131,10 @@ func leasePath(record string, holderPID int) string {
 }
 
 // The JSON object a record or lease holds, removing a file that is unreadable or not an object
-func loadStateFile(path string) *pyjson.Object {
+func loadStateFile(path string) *jsonutil.Object {
 	if raw, err := os.ReadFile(path); err == nil {
-		if v, err := pyjson.LoadsBytes(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))); err == nil {
-			if obj, ok := v.(*pyjson.Object); ok {
+		if v, err := jsonutil.Decode(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))); err == nil {
+			if obj, ok := v.(*jsonutil.Object); ok {
 				return obj
 			}
 		}
@@ -151,7 +149,7 @@ func processAlive(pid, startTime any) bool {
 	if !ok || !launcherPidAlive(int(n)) {
 		return false
 	}
-	return startTime == nil || pyrepr.Equal(optStartTime(launcherStartTime(int(n))), startTime)
+	return startTime == nil || anyutil.Equal(optStartTime(launcherStartTime(int(n))), startTime)
 }
 
 func optStartTime(v int64, ok bool) any {
@@ -178,7 +176,7 @@ func nsValue() any {
 // Records that this process holds the browser, caller holds the records lock
 func writeLease(ctx context.Context, record string, b *LaunchedBrowser) error {
 	me := os.Getpid()
-	lease := pyjson.NewObject()
+	lease := jsonutil.NewObject()
 	lease.Set("holder_pid", int64(me))
 	lease.Set("holder_start_time", optStartTime(launcherStartTime(me)))
 	lease.Set("pid", optInt(b.PID))
@@ -191,12 +189,12 @@ func writeLease(ctx context.Context, record string, b *LaunchedBrowser) error {
 func dropLease(record string) { os.Remove(leasePath(record, os.Getpid())) }
 
 // Proven gone, written in this namespace and boot with a pid and start time that no longer match
-func holderGone(lease *pyjson.Object) bool {
+func holderGone(lease *jsonutil.Object) bool {
 	return sameNamespace(lease) && !processAlive(objGet(lease, "holder_pid"), objGet(lease, "holder_start_time"))
 }
 
 // Leases of other live processes on the browser a record names, removing dead or stale ones
-func otherLiveHolders(record string, browserStartTime any) []*pyjson.Object {
+func otherLiveHolders(record string, browserStartTime any) []*jsonutil.Object {
 	prefix := stem(record) + "@"
 	entries, _ := os.ReadDir(filepath.Dir(record))
 	var names []string
@@ -206,14 +204,14 @@ func otherLiveHolders(record string, browserStartTime any) []*pyjson.Object {
 		}
 	}
 	sort.Strings(names)
-	var holders []*pyjson.Object
+	var holders []*jsonutil.Object
 	for _, path := range names {
 		lease := loadStateFile(path)
 		if lease == nil || heldHere(lease, "holder_pid") {
 			continue
 		}
 		recorded := objGet(lease, "start_time")
-		otherLaunch := !pyrepr.Equal(recorded, browserStartTime) && (sameNamespace(lease) || recorded != nil)
+		otherLaunch := !anyutil.Equal(recorded, browserStartTime) && (sameNamespace(lease) || recorded != nil)
 		if otherLaunch || holderGone(lease) {
 			os.Remove(path)
 			continue
@@ -238,7 +236,7 @@ func dropDeadLeases(records string) {
 }
 
 // The live holder in this namespace a record can be handed to
-func successor(holders []*pyjson.Object) *pyjson.Object {
+func successor(holders []*jsonutil.Object) *jsonutil.Object {
 	for _, h := range holders {
 		if sameNamespace(h) {
 			return h
@@ -248,9 +246,9 @@ func successor(holders []*pyjson.Object) *pyjson.Object {
 }
 
 // Makes the holder the record's owner so the last holder out stops the browser
-func handOver(ctx context.Context, record string, data, holder *pyjson.Object) error {
-	out := pyjson.NewObject()
-	for _, k := range data.Keys {
+func handOver(ctx context.Context, record string, data, holder *jsonutil.Object) error {
+	out := jsonutil.NewObject()
+	for _, k := range data.Keys() {
 		out.Set(k, objGet(data, k))
 	}
 	out.Set("owner_pid", objGet(holder, "holder_pid"))
@@ -259,6 +257,6 @@ func handOver(ctx context.Context, record string, data, holder *pyjson.Object) e
 		return err
 	}
 	pkgLog().Info(fmt.Sprintf("browser: Chromium pid %v is still used by Icebath pid %v; handed it over instead of stopping it",
-		pyrepr.Str(objGet(data, "pid")), pyrepr.Str(objGet(holder, "holder_pid"))))
+		anyutil.String(objGet(data, "pid")), anyutil.String(objGet(holder, "holder_pid"))))
 	return nil
 }

@@ -2,13 +2,15 @@
 
 package gatewaycli
 
-import "github.com/nickheyer/icebath/pkg/internal/pyrepr"
+import (
+	"strconv"
+)
 
 // AttributeError Python raises for an os function Windows does not provide
 type osAttributeError struct{ name string }
 
 func (e *osAttributeError) Error() string {
-	return "module 'os' has no attribute " + pyrepr.StrRepr(e.name)
+	return "module 'os' has no attribute " + strconv.Quote(e.name)
 }
 
 // Fails as os.mkfifo does on Windows where named pipes have no filesystem entry

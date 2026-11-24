@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One tool round trip then the final answer of the turn
@@ -29,7 +29,7 @@ func rowField(row any, key string) any {
 	switch r := row.(type) {
 	case map[string]any:
 		return r[key]
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		v, _ := r.Get(key)
 		return v
 	}

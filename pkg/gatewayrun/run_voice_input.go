@@ -9,9 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Discord adapter surface that hands captured voice channel speech back to the runner
@@ -98,7 +95,7 @@ func normalizeVoiceTranscript(transcript string) string {
 	lowered := strings.ToLower(strings.Join(strings.Fields(transcript), " "))
 	var b strings.Builder
 	for _, r := range lowered {
-		if pystr.IsAlnum(r) || r == '_' || unicode.IsSpace(r) {
+		if (unicode.IsLetter(r) || unicode.IsNumber(r)) || r == '_' || unicode.IsSpace(r) {
 			b.WriteRune(r)
 		}
 	}
@@ -111,7 +108,7 @@ func (r *GatewayRunner) isDuplicateVoiceTranscript(binding [3]any, userID int64,
 	if normalized == "" {
 		return false
 	}
-	now, key := pythread.Monotonic(), [4]any{binding[0], binding[1], binding[2], userID}
+	now, key := timeutil.Monotonic(), [4]any{binding[0], binding[1], binding[2], userID}
 	if r.recentVoiceTranscripts == nil {
 		r.recentVoiceTranscripts = map[[4]any][]voiceTranscriptSeen{}
 	}
@@ -128,7 +125,7 @@ func (r *GatewayRunner) isDuplicateVoiceTranscript(binding [3]any, userID int64,
 			return true
 		}
 		a, b := []rune(prior), []rune(normalized)
-		if min(len(a), len(b)) >= 16 && pydifflib.NewSequenceMatcher(a, b, true).Ratio() >= 0.95 {
+		if min(len(a), len(b)) >= 16 && diffutil.Ratio(a, b) >= 0.95 {
 			r.recentVoiceTranscripts[key] = recent
 			return true
 		}

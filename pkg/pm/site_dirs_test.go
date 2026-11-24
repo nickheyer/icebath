@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 )
 
 // Relative forms of import path entries under base
@@ -71,7 +71,7 @@ func TestSiteDirDecodesNonUTF8LinesThroughTheLocale(t *testing.T) {
 	got, err = addSiteDir(nil, filepath.Join(base, "site"), nil)
 	want := "'ascii' codec can't decode byte 0xff in position 0: ordinal not in range(128)"
 	if runtime.GOOS == "windows" {
-		_, decodeErr := pycodecs.Decode([]byte("\xff\n"), pycodecs.GetEncoding())
+		_, decodeErr := charsetutil.Decode([]byte("\xff\n"), charsetutil.Locale())
 		if decodeErr == nil {
 			if err != nil || !reflect.DeepEqual(sdRelative(base, got), []string{sep + "site", sep + "café"}) {
 				t.Fatalf("code page line %v err %v", sdRelative(base, got), err)

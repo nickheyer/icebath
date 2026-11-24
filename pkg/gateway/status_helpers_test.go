@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Replaces a seam for the duration of the test
@@ -17,8 +17,8 @@ func patch[T any](t *testing.T, p *T, v T) {
 }
 
 // Ordered record of alternating keys and values
-func rec(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func rec(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -33,9 +33,9 @@ func strs(items ...string) []any {
 	return out
 }
 
-func writeRecord(t *testing.T, path string, r *pyjson.Object) {
+func writeRecord(t *testing.T, path string, r *jsonutil.Object) {
 	t.Helper()
-	text, err := pyjson.Dumps(r)
+	text, err := jsonutil.Encode(r)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,17 +47,17 @@ func writeRecord(t *testing.T, path string, r *pyjson.Object) {
 	}
 }
 
-func readRecord(t *testing.T, path string) *pyjson.Object {
+func readRecord(t *testing.T, path string) *jsonutil.Object {
 	t.Helper()
 	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := pyjson.Loads(string(data))
+	v, err := jsonutil.Decode(string(data))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 // Temp process home for the status tests, the runtime snapshot reloaded for it

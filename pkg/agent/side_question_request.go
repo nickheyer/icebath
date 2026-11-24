@@ -12,11 +12,11 @@ import (
 	"weak"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -75,7 +75,7 @@ func agentProviderRefusal(ctx context.Context, a *AIAgent) string {
 
 // True when the final request asks the provider to execute a tool, web search or plugin itself
 func hasServerSideTools(apiKwargs map[string]any) bool {
-	extraBody, ok := pyjson.Dict(apiKwargs["extra_body"])
+	extraBody, ok := jsonutil.AsMap(apiKwargs["extra_body"])
 	if !ok {
 		extraBody = map[string]any{}
 	}
@@ -132,7 +132,7 @@ func sideQuestionBuildFork(ctx context.Context, parent *AIAgent, capture *sideQu
 	names := map[string]bool{}
 	for _, tool := range capture.tools {
 		entry, _ := tool.(map[string]any)
-		fn, _ := pyjson.Dict(entry["function"])
+		fn, _ := jsonutil.AsMap(entry["function"])
 		name, ok := fn["name"].(string)
 		if !ok {
 			return nil, errors.New("a parent tool schema has no name")
@@ -245,12 +245,12 @@ func sideQuestionLogAudit(audit *sideQuestionAudit) {
 		counts = append(counts, pyIntOf(audit.usage[key]))
 	}
 	pkgLog().Info(fmt.Sprintf("side_question plugin=%s outcome=%s calls=%d in=%d cache_read=%d cache_write=%d out=%d latency=%.1fs",
-		append(append([]any{pluginID, audit.outcome}, counts...), pythread.Monotonic()-audit.started)...))
+		append(append([]any{pluginID, audit.outcome}, counts...), timeutil.Monotonic()-audit.started)...))
 }
 
 // Asks the session's own agent the prompt after the captured turn, its text answer or nil
 func askTextOnly(ctx context.Context, capture *sideQuestionCapture, prompt, pluginID string, timeout float64) (answer *string) {
-	audit := &sideQuestionAudit{pluginID: pluginID, started: pythread.Monotonic(), outcome: "error", usage: map[string]any{}}
+	audit := &sideQuestionAudit{pluginID: pluginID, started: timeutil.Monotonic(), outcome: "error", usage: map[string]any{}}
 	parent := capture.parent.Value()
 	refusal := "parent_gone"
 	if parent != nil {
@@ -337,5 +337,5 @@ func askTextOnly(ctx context.Context, capture *sideQuestionCapture, prompt, plug
 
 // Context the redeeming goroutine runs the side question under, a fresh copy of the captured one
 func sideQuestionRunContext(capture *sideQuestionCapture) context.Context {
-	return pyctx.With(capture.ctx, pyctx.CopyContext(capture.ctx))
+	return ctxutil.Fork(capture.ctx)
 }

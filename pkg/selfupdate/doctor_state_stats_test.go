@@ -11,9 +11,10 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // A real state.db built through the session store API, then closed
@@ -42,7 +43,7 @@ func populatedDB(t *testing.T) string {
 }
 
 // Stats of a database, failing the test when collection errors
-func collectStats(t *testing.T, dbPath string) *pyjson.Object {
+func collectStats(t *testing.T, dbPath string) *jsonutil.Object {
 	t.Helper()
 	stats, err := state.CollectStateDBStats(dbPath)
 	if err != nil || stats == nil {
@@ -52,7 +53,7 @@ func collectStats(t *testing.T, dbPath string) *pyjson.Object {
 }
 
 // Integer value of a stats field, failing the test for a missing or non integer value
-func statInt(t *testing.T, stats *pyjson.Object, key string) int64 {
+func statInt(t *testing.T, stats *jsonutil.Object, key string) int64 {
 	t.Helper()
 	v, _ := stats.Get(key)
 	switch n := v.(type) {
@@ -96,15 +97,15 @@ func TestCollectStatsSaneValues(t *testing.T) {
 		t.Fatal("row counts below what was written")
 	}
 	raw, _ := stats.Get("fts_tables")
-	fts, ok := raw.(*pyjson.Object)
+	fts, ok := raw.(*jsonutil.Object)
 	if !ok {
 		t.Fatalf("fts_tables = %#v", raw)
 	}
 	names := map[string]bool{}
-	for _, name := range fts.Keys {
+	for _, name := range fts.Keys() {
 		names[name] = true
-		if _, isBool := fts.Vals[name].(bool); !isBool {
-			t.Fatalf("fts_tables[%s] = %#v", name, fts.Vals[name])
+		if _, isBool := fts.Value(name).(bool); !isBool {
+			t.Fatalf("fts_tables[%s] = %#v", name, fts.Value(name))
 		}
 	}
 	if !reflect.DeepEqual(names, map[string]bool{"messages_fts": true, "messages_fts_trigram": true, "messages_fts_cjk": true}) {
@@ -144,11 +145,11 @@ func TestCollectAndRenderStaleFtsHolderDeferral(t *testing.T) {
 		`{"attempts": 4, "holder_pids": [4242], "first_seen": 1.0}`})
 	stats := collectStats(t, dbPath)
 	deferral, _ := stats.Get("fts_rebuild_deferral")
-	if attempts, _ := doctorDictGet(deferral, "attempts"); !pyjson.Equal(attempts, int64(4)) && !pyjson.Equal(attempts, 4) {
+	if attempts, _ := doctorDictGet(deferral, "attempts"); !anyutil.Equal(attempts, int64(4)) && !anyutil.Equal(attempts, 4) {
 		t.Fatalf("attempts = %#v", attempts)
 	}
 	pids, _ := doctorDictGet(deferral, "holder_pids")
-	if list, ok := pids.([]any); !ok || len(list) != 1 || (!pyjson.Equal(list[0], int64(4242)) && !pyjson.Equal(list[0], 4242)) {
+	if list, ok := pids.([]any); !ok || len(list) != 1 || (!anyutil.Equal(list[0], int64(4242)) && !anyutil.Equal(list[0], 4242)) {
 		t.Fatalf("holder_pids = %#v", pids)
 	}
 	found := false
@@ -218,12 +219,12 @@ func TestCountDbHoldersMissingPathNoRaise(t *testing.T) {
 }
 
 // Healthy stats mapping the render cases override field by field
-func baseStats(overrides map[string]any) *pyjson.Object {
-	fts := pyjson.NewObject()
+func baseStats(overrides map[string]any) *jsonutil.Object {
+	fts := jsonutil.NewObject()
 	fts.Set("messages_fts", true)
 	fts.Set("messages_fts_trigram", true)
 	fts.Set("messages_fts_cjk", false)
-	stats := pyjson.NewObject()
+	stats := jsonutil.NewObject()
 	for _, field := range []struct {
 		key   string
 		value any
@@ -300,8 +301,8 @@ func TestRenderLargeDbLegacyTrigramSuggestsOptimize(t *testing.T) {
 }
 
 func TestRenderHandlesAllNoneStats(t *testing.T) {
-	empty := pyjson.NewObject()
-	for _, key := range baseStats(nil).Keys {
+	empty := jsonutil.NewObject()
+	for _, key := range baseStats(nil).Keys() {
 		empty.Set(key, nil)
 	}
 	if lines := doctorRenderStateDBStats(empty, nil, ""); lines == nil {

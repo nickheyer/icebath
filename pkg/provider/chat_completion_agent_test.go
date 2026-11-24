@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 type fakeChatClient struct {
@@ -210,7 +210,7 @@ func TestCronTurnIsBoundedThroughTheInterruptibleRouting(t *testing.T) {
 	c.create = func(ctx context.Context, kw map[string]any) (any, error) { sent = kw; return inner(ctx, kw) }
 	_, err := InterruptibleAPICall(t.Context(), a, map[string]any{"model": "m", "messages": []any{}})
 	var te *TimeoutPhaseError
-	if timeout, ok := sent["timeout"].(pyhttpx.Timeout); !errors.As(err, &te) || c.calls.Load() != 1 || len(a.closes) != 1 || !ok ||
+	if timeout, ok := sent["timeout"].(httputil.Timeout); !errors.As(err, &te) || c.calls.Load() != 1 || len(a.closes) != 1 || !ok ||
 		timeout.Read != 300*time.Millisecond {
 		t.Fatalf("err %v calls %d closes %+v timeout %v", err, c.calls.Load(), a.closes, sent["timeout"])
 	}

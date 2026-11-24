@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 type admissionAdapter struct{ name string }
@@ -78,12 +77,12 @@ func receiptIDs(t *testing.T, path string) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	ids, _ := v.(*pyjson.Object).Get("update_ids")
-	return append([]string(nil), ids.(*pyjson.Object).Keys...)
+	ids, _ := v.(*jsonutil.Object).Get("update_ids")
+	return append([]string(nil), ids.(*jsonutil.Object).Keys()...)
 }
 
 func TestReplayIsAdmittedOnceBeforeDispatch(t *testing.T) {

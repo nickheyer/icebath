@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/pm"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Files that define the sidecar, node_modules stays out so npm installs inside the mirror
@@ -119,7 +119,7 @@ func refreshMirror(source, mirror string) error {
 			copyIt = !same
 		}
 		if copyIt {
-			if err := pyfs.Copy2(src, dst); err != nil {
+			if err := fsutil.CopyFile(src, dst); err != nil {
 				return err
 			}
 		}

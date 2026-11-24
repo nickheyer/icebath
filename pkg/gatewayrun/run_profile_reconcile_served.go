@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -32,7 +31,7 @@ func forEachServedProfile(ctx context.Context, r *GatewayRunner, body func(ctx c
 			}
 			defer leave()
 			if err := body(gateway.ProfileRuntimeScope(ctx, p.Home, true), p.Name); err != nil {
-				pkgLog().Debug(fmt.Sprintf("Housekeeping for profile %s skipped: %s", p.Name, pyrepr.ExceptionMessage(err)))
+				pkgLog().Debug(fmt.Sprintf("Housekeeping for profile %s skipped: %s", p.Name, err.Error()))
 			}
 		}()
 	}

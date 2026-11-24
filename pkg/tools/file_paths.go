@@ -10,11 +10,8 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 )
 
@@ -119,122 +116,6 @@ func expandTildeFor(env *Env, p string) string {
 
 // Expands a leading tilde with the process level subprocess home
 func expandTilde(p string) string { return expandTildeFor(nil, p) }
-
-// UnicodeEncodeError posixpath.expanduser raises looking up the account named after a leading tilde
-func expanduserEncodeError(p string) error {
-	if !strings.HasPrefix(p, "~") {
-		return nil
-	}
-	name := p[1:]
-	if i := strings.IndexByte(name, '/'); i >= 0 {
-		name = name[:i]
-	}
-	if name == "" {
-		return nil
-	}
-	return fsEncodeError(name)
-}
-
-// Tilde expansion that raises the account lookup encode error the Python expansion raises
-func expandTildeErr(env *Env, p string) (string, error) {
-	if err := expanduserEncodeError(p); err != nil {
-		return "", err
-	}
-	return expandTildeFor(env, p), nil
-}
-
-// Process cwd as getcwd reports it, symlink free like Python os.getcwd
-func pyGetcwd() (string, error) {
-	if runtime.GOOS == "windows" {
-		return os.Getwd()
-	}
-	return syscall.Getwd()
-}
-
-// UnicodeEncodeError the CPython realpath walk raises at the lstat of the first component path it cannot encode
-func realpathEncodeError(p string) error {
-	if runtime.GOOS == "windows" || fsEncodeError(p) == nil {
-		return nil
-	}
-	type part struct {
-		name   string
-		marker bool
-	}
-	var rest []part
-	pushParts := func(s string) int {
-		segs := strings.Split(s, "/")
-		for i := len(segs) - 1; i >= 0; i-- {
-			rest = append(rest, part{name: segs[i]})
-		}
-		return len(segs)
-	}
-	count := pushParts(p)
-	resolved := "/"
-	if !strings.HasPrefix(p, "/") {
-		wd, err := pyGetcwd()
-		if err != nil {
-			return nil
-		}
-		resolved = wd
-	}
-	seen := map[string]*string{}
-	for count > 0 {
-		it := rest[len(rest)-1]
-		rest = rest[:len(rest)-1]
-		if it.marker {
-			link := rest[len(rest)-1].name
-			rest = rest[:len(rest)-1]
-			done := resolved
-			seen[link] = &done
-			continue
-		}
-		count--
-		name := it.name
-		if name == "" || name == "." {
-			continue
-		}
-		if name == ".." {
-			if i := strings.LastIndexByte(resolved, '/'); i > 0 {
-				resolved = resolved[:i]
-			} else {
-				resolved = "/"
-			}
-			continue
-		}
-		next := resolved + "/" + name
-		if resolved == "/" {
-			next = "/" + name
-		}
-		if err := fsEncodeError(next); err != nil {
-			return err
-		}
-		fi, err := os.Lstat(next)
-		if err != nil || fi.Mode()&os.ModeSymlink == 0 {
-			resolved = next
-			continue
-		}
-		if cached, ok := seen[next]; ok {
-			if cached != nil {
-				resolved = *cached
-			} else {
-				resolved = next
-			}
-			continue
-		}
-		target, err := os.Readlink(next)
-		if err != nil {
-			resolved = next
-			continue
-		}
-		if strings.HasPrefix(target, "/") {
-			resolved = "/"
-		}
-		seen[next] = nil
-		rest = append(rest, part{name: next}, part{marker: true})
-		count += pushParts(target)
-	}
-	return nil
-}
 
 // Absolute path with symlinks resolved along the longest existing prefix
 func resolveNonStrict(p string) string {
@@ -407,12 +288,12 @@ func processCwd(env *Env) (string, error) {
 	return os.Getwd()
 }
 
-// Host text with the tilde account lookup encode error raised the way Python raises it
-func hostTextErr(env *Env, text string, containerPaths bool) (string, error) {
+// Host text of a path, a Git Bash drive path made native unless container paths apply, a leading tilde expanded
+func hostText(env *Env, text string, containerPaths bool) string {
 	if !containerPaths {
 		text = msysToWindowsPath(text)
 	}
-	return expandTildeErr(env, text)
+	return expandTildeFor(env, text)
 }
 
 // Absolute normalized path joined onto the base when relative, host paths resolved, container paths kept pure
@@ -443,9 +324,6 @@ func anchorPath(text string, base func() (string, error), containerPaths bool) (
 			return "", err
 		}
 		text = pyOSPathJoin(b, text)
-	}
-	if err := realpathEncodeError(text); err != nil {
-		return "", err
 	}
 	return resolveNonStrict(text), nil
 }
@@ -623,11 +501,7 @@ func resolveBaseDirFor(env *Env, taskID string, containerPaths *bool) (string, e
 			return "", err
 		}
 	}
-	text, err := hostTextErr(env, root, cp)
-	if err != nil {
-		return "", err
-	}
-	return anchorPath(text, func() (string, error) { return processCwd(env) }, cp)
+	return anchorPath(hostText(env, root, cp), func() (string, error) { return processCwd(env) }, cp)
 }
 
 // Resolves a model supplied path against the task base directory
@@ -636,11 +510,7 @@ func resolvePathForTaskID(env *Env, taskID, filePath string) (string, error) {
 		return resolveSSHPath(env, taskID, filePath)
 	}
 	cp := usesContainerPaths(env, taskID)
-	text, err := hostTextErr(env, filePath, cp)
-	if err != nil {
-		return "", err
-	}
-	return anchorPath(text, func() (string, error) { return resolveBaseDirFor(env, taskID, &cp) }, cp)
+	return anchorPath(hostText(env, filePath, cp), func() (string, error) { return resolveBaseDirFor(env, taskID, &cp) }, cp)
 }
 
 // Resolves a model supplied path for the default task
@@ -650,8 +520,8 @@ func resolvePathForTask(env *Env, filePath string) (string, error) {
 
 // Splits a directory entry keeping the last component after dropping trailing separators and dots
 func splitEntry(p string) (string, string) {
-	drive, root, rest := pypath.SplitRoot(p)
-	tail := root + rest
+	drive := filepath.VolumeName(p)
+	tail := p[len(drive):]
 	seps := "/"
 	if runtime.GOOS == "windows" {
 		seps = `\/`
@@ -660,7 +530,7 @@ func splitEntry(p string) (string, string) {
 	if trimmed == "" && tail != "" {
 		trimmed = tail[:1]
 	}
-	parent, leaf := pypath.Split(drive + trimmed)
+	parent, leaf := filepath.Split(drive + trimmed)
 	if leaf == "." && parent != "" {
 		return splitEntry(parent)
 	}
@@ -758,6 +628,5 @@ func isPathResolutionFailure(err error) bool {
 	var pe *os.PathError
 	var le *os.LinkError
 	var se *os.SyscallError
-	var ue *pystr.UnicodeEncodeError
-	return errors.As(err, &pe) || errors.As(err, &le) || errors.As(err, &se) || errors.As(err, &ue)
+	return errors.As(err, &pe) || errors.As(err, &le) || errors.As(err, &se)
 }

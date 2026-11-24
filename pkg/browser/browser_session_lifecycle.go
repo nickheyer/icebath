@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Janitor goroutine state, running cleared to stop it within one tick
@@ -60,7 +60,7 @@ func sessionExpiryTimestamp(log *slog.Logger, info map[string]any) (float64, boo
 		if strings.HasSuffix(normalized, "Z") || strings.HasSuffix(normalized, "z") {
 			normalized = normalized[:len(normalized)-1] + "+00:00"
 		}
-		t, aware, err := pydatetime.ParseISOFormat(normalized)
+		t, aware, err := timeutil.ParseISOZone(normalized, time.UTC)
 		if err != nil {
 			log.Warn("Ignoring invalid cloud browser session expiry timestamp")
 			return 0, false
@@ -138,7 +138,7 @@ func launcherKeyInUse(launcherKey string, info map[string]any) bool {
 	sessionsMu.Lock()
 	defer sessionsMu.Unlock()
 	for _, other := range activeSessions.All() {
-		if !sameSession(other, info) && pyrepr.Equal(other["launcher_key"], launcherKey) {
+		if !sameSession(other, info) && anyutil.Equal(other["launcher_key"], launcherKey) {
 			return true
 		}
 	}
@@ -147,7 +147,7 @@ func launcherKeyInUse(launcherKey string, info map[string]any) bool {
 
 // Closes the session's cloud browser through the profile's provider, a provider error only logged
 func closeCloudSession(env *tools.Env, info map[string]any) error {
-	if !pyrepr.Truthy(info["bb_session_id"]) {
+	if !anyutil.IsTrue(info["bb_session_id"]) {
 		return nil
 	}
 	p, err := sessionCloudProvider(env)
@@ -160,7 +160,7 @@ func closeCloudSession(env *tools.Env, info map[string]any) error {
 				cfgOf(env).logger().Warn(fmt.Sprintf("Could not close cloud browser session: %v", r))
 			}
 		}()
-		p.CloseSession(env, pyrepr.Str(info["bb_session_id"]))
+		p.CloseSession(env, anyutil.String(info["bb_session_id"]))
 	}()
 	return nil
 }
@@ -171,17 +171,17 @@ func releaseSessionBackend(ctx context.Context, env *tools.Env, key string, info
 		return err
 	}
 	features := featuresOf(info)
-	if pyrepr.Truthy(features["lightpanda"]) {
+	if anyutil.IsTrue(features["lightpanda"]) {
 		name, _ := info["session_name"].(string)
 		stopLightpanda(env, name)
 	}
 	launcherKey, _ := info["launcher_key"].(string)
-	if !pyrepr.Truthy(info["launcher_key"]) || launcherKeyInUse(launcherKey, info) {
+	if !anyutil.IsTrue(info["launcher_key"]) || launcherKeyInUse(launcherKey, info) {
 		return nil
 	}
-	if pyrepr.Truthy(features["sandbox"]) {
+	if anyutil.IsTrue(features["sandbox"]) {
 		stopSandboxBrowser(env, info)
-	} else if !pyrepr.Truthy(features["real_profile"]) {
+	} else if !anyutil.IsTrue(features["real_profile"]) {
 		sessionStopBrowser(tools.WithEnvHome(ctx, env), env, launcherKey)
 	}
 	return nil
@@ -246,7 +246,7 @@ func cleanupProfileBrowsers(ctx context.Context, env *tools.Env, homeKey string)
 	var keys []string
 	sessionsMu.Lock()
 	for key, info := range activeSessions.All() {
-		if pyrepr.Equal(info["home_key"], homeKey) {
+		if anyutil.Equal(info["home_key"], homeKey) {
 			keys = append(keys, key)
 		}
 	}

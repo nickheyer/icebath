@@ -519,7 +519,7 @@ func TestCollectStateDBStatsReadsEveryField(t *testing.T) {
 	dir := t.TempDir()
 	db := filepath.Join(dir, "state.db")
 	missing, err := CollectStateDBStats(db)
-	if err != nil || len(missing.Keys) != 16 || missing.Keys[0] != "page_count" || missing.Vals["wal_size_bytes"] != int64(0) || missing.Vals["page_count"] != nil {
+	if err != nil || missing.Len() != 16 || missing.Keys()[0] != "page_count" || missing.Value("wal_size_bytes") != int64(0) || missing.Value("page_count") != nil {
 		t.Fatalf("missing db stats = %v %v", missing, err)
 	}
 	conn, err := ConnectSQLite(db, SQLiteConfig{Timeout: 5})
@@ -540,7 +540,7 @@ func TestCollectStateDBStatsReadsEveryField(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v := stats.Vals
+	v := stats.Map()
 	if v["page_count"].(int64)*v["page_size"].(int64) != v["logical_size_bytes"] || v["journal_mode"] != "delete" ||
 		v["messages"] != int64(0) || v["sessions"] != int64(0) || v["fts_storage_version"] != int64(3) ||
 		v["fts_storage_upgrade_needed"] != false || v["fts_teardown_pending"] != false || v["fts_rebuild_pending"] != true ||

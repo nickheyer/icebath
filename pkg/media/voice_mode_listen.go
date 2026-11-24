@@ -9,9 +9,9 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/settings"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
 )
 
 var voiceWriteWAV = writeRecordingWAV
@@ -22,7 +22,7 @@ const (
 	defaultBargeMultiplier = 3.0
 )
 
-// Fixed length FIFO dropping its oldest entry when full, the collections.deque maxlen behaviour
+// Fixed length FIFO dropping its oldest entry when full
 type boundedDeque[T any] struct {
 	items  []T
 	maxlen int
@@ -35,21 +35,23 @@ func (d *boundedDeque[T]) append(v T) {
 	}
 }
 
-func pyFloorDivMS(ms int) int { return pyFloorDiv(ms, 30) }
+// Whole 30 ms blocks in a duration given in milliseconds
+func msBlocks(ms int) int { return ms / 30 }
 
-// Opens a 30 ms block input stream, stopping and closing it on the way out once it started
-func withListenStream(sd pysounddevice.Module, body func(pysounddevice.InputStream) error) error {
+// Opens a 30 ms block input stream, closing it on the way out and stopping it first once it started
+func withListenStream(sd portaudioutil.Audio, body func(portaudioutil.InputStream) error) error {
 	block := int(float64(voiceSampleRate) * 0.03)
-	stream, err := sd.InputStream(pysounddevice.StreamParams{Samplerate: voiceSampleRate, Channels: 1, Blocksize: block}, nil)
+	stream, err := sd.OpenInput(portaudioutil.StreamParams{SampleRate: voiceSampleRate, Channels: 1, BlockSize: block}, nil)
 	if err != nil {
 		return err
 	}
 	if err := stream.Start(); err != nil {
+		_ = stream.Close()
 		return err
 	}
 	defer func() {
-		_ = stream.Stop(true)
-		_ = stream.Close(true)
+		_ = stream.Stop()
+		_ = stream.Close()
 	}()
 	return callQuietlyErr(func() error { return body(stream) })
 }
@@ -84,7 +86,7 @@ func vadLog(msg string) {
 }
 
 // Reads blocks after the pre roll until the endpoint silence or the block cap, then writes the WAV
-func captureUntilQuiet(stream pysounddevice.InputStream, block int, preRoll [][]int16, endpointBlocks, maxBlocks int) (string, error) {
+func captureUntilQuiet(stream portaudioutil.InputStream, block int, preRoll [][]int16, endpointBlocks, maxBlocks int) (string, error) {
 	frames := append([][]int16(nil), preRoll...)
 	quiet := 0
 	for range maxBlocks {
@@ -93,7 +95,7 @@ func captureUntilQuiet(stream pysounddevice.InputStream, block int, preRoll [][]
 			return "", err
 		}
 		frames = append(frames, data)
-		if pynumpy.RMSInt16(data) < silenceRMSThreshold {
+		if mathutil.RMS(data) < silenceRMSThreshold {
 			quiet++
 		} else {
 			quiet = 0
@@ -136,7 +138,7 @@ func newBargeDetector(mult float64, calibBlocks, tripBlocks, graceBlocks int) *b
 func (d *bargeDetector) floor() (float64, float64) {
 	pct90 := float64(silenceRMSThreshold)
 	if len(d.ambient.items) > 0 {
-		pct90 = pynumpy.Percentile(d.ambient.items, 90)
+		pct90 = mathutil.Percentile(d.ambient.items, 90)
 	}
 	return pct90, max(pct90, float64(silenceRMSThreshold))
 }
@@ -214,8 +216,8 @@ func (d *bargeDetector) feed(rms float64, playing bool) string {
 	}
 	window := countTrue(d.recentAbove.items)
 	if rms >= trigger*0.5 {
-		vadLog(fmt.Sprintf("block=%d rms=%.0f floor=%.0f trigger=%.0f above=%s window=%d/%d phase=%s",
-			d.blockIdx, rms, d.quietFloor, trigger, pyBool(above), window, d.tripNeeded, phase))
+		vadLog(fmt.Sprintf("block=%d rms=%.0f floor=%.0f trigger=%.0f above=%t window=%d/%d phase=%s",
+			d.blockIdx, rms, d.quietFloor, trigger, above, window, d.tripNeeded, phase))
 	}
 	if !(above && window >= d.tripNeeded) {
 		return ""
@@ -223,13 +225,6 @@ func (d *bargeDetector) feed(rms float64, playing bool) string {
 	vadLog(fmt.Sprintf("TRIPPED (%s): block=%d rms=%.0f floor=%.0f trigger=%.0f window=%d/%d",
 		phase, d.blockIdx, rms, d.quietFloor, trigger, window, len(d.recentAbove.items)))
 	return phase
-}
-
-func pyBool(b bool) string {
-	if b {
-		return "True"
-	}
-	return "False"
 }
 
 // DuplexOptions are the full_duplex_listen keywords, a zero Multiplier meaning the default
@@ -257,15 +252,15 @@ func FullDuplexListen(shouldStop func() bool, o DuplexOptions) string {
 		return ""
 	}
 	block := int(float64(voiceSampleRate) * 0.03)
-	endpointBlocks := max(1, pyFloorDivMS(o.EndpointSilenceMS))
+	endpointBlocks := max(1, msBlocks(o.EndpointSilenceMS))
 	mult := defaultBargeMultiplier
 	if o.Multiplier != 0 {
 		mult = o.Multiplier
 	}
-	detector := newBargeDetector(mult, max(1, pyFloorDivMS(o.CalibrationMS)), max(1, pyFloorDivMS(o.SustainedMS)), max(0, pyFloorDivMS(o.GraceMS)))
-	preRoll := &boundedDeque[[]int16]{maxlen: max(1, pyFloorDivMS(o.PreRollMS))}
+	detector := newBargeDetector(mult, max(1, msBlocks(o.CalibrationMS)), max(1, msBlocks(o.SustainedMS)), max(0, msBlocks(o.GraceMS)))
+	preRoll := &boundedDeque[[]int16]{maxlen: max(1, msBlocks(o.PreRollMS))}
 	path := ""
-	err = withListenStream(sd, func(stream pysounddevice.InputStream) error {
+	err = withListenStream(sd, func(stream portaudioutil.InputStream) error {
 		for !shouldStop() {
 			data, _, err := stream.Read(block)
 			if err != nil {
@@ -273,7 +268,7 @@ func FullDuplexListen(shouldStop func() bool, o DuplexOptions) string {
 			}
 			preRoll.append(data)
 			playing := o.IsPlaying != nil && o.IsPlaying()
-			phase := detector.feed(pynumpy.RMSInt16(data), playing)
+			phase := detector.feed(mathutil.RMS(data), playing)
 			if phase == "" {
 				continue
 			}
@@ -282,7 +277,7 @@ func FullDuplexListen(shouldStop func() bool, o DuplexOptions) string {
 					pkgLog().Debug(fmt.Sprintf("full-duplex trigger callback failed: %s", err))
 				}
 			}
-			path, err = captureUntilQuiet(stream, block, preRoll.items, endpointBlocks, max(1, pyFloorDivMS(o.MaxUtteranceMS)))
+			path, err = captureUntilQuiet(stream, block, preRoll.items, endpointBlocks, max(1, msBlocks(o.MaxUtteranceMS)))
 			return err
 		}
 		return nil

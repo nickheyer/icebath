@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 // Checkpoint contract version a provider advertises when every successful pre compress hook is durable
@@ -246,7 +246,7 @@ func CtxBound(ctx context.Context) context.Context {
 	if ctx == nil {
 		return context.Background()
 	}
-	return pyctx.With(context.WithoutCancel(ctx), pyctx.CopyContext(ctx))
+	return ctxutil.WithStore(context.WithoutCancel(ctx), ctxutil.CopyStore(ctx))
 }
 
 // Background job that runs under its spawner context values

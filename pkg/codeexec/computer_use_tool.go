@@ -10,9 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Approval prompt handed to the shared gate, the gate resolving the per thread callback when nil
@@ -90,20 +90,20 @@ func rejectUnsafe(action string, args map[string]any) string {
 			}
 		}
 	}
-	if pyrepr.Truthy(args["bring_to_front"]) && args["delivery_mode"] != "foreground" {
+	if anyutil.IsTrue(args["bring_to_front"]) && args["delivery_mode"] != "foreground" {
 		return cuDumps(map[string]any{"error": "bring_to_front requires delivery_mode='foreground'",
 			"code": "bring_to_front_requires_foreground"}, "error", "code")
 	}
 	return ""
 }
 
-// json.dumps of a dict built in the given key order
+// JSON text of the named entries of m in the given key order
 func cuDumps(m map[string]any, keys ...string) string {
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	for _, k := range keys {
 		o.Set(k, m[k])
 	}
-	out, err := pyjson.Dumps(o)
+	out, err := jsonutil.Encode(o)
 	if err != nil {
 		panic(err)
 	}
@@ -471,15 +471,15 @@ func summarizeAction(action string, args map[string]any) string {
 		return summarizeClick(action, args, fg)
 	case "drag":
 		from, to := args["from_element"], args["to_element"]
-		if !pyrepr.Truthy(from) {
+		if !anyutil.IsTrue(from) {
 			from = args["from_coordinate"]
 		}
-		if !pyrepr.Truthy(to) {
+		if !anyutil.IsTrue(to) {
 			to = args["to_coordinate"]
 		}
-		return "drag " + pyrepr.Str(from) + " → " + pyrepr.Str(to) + fg
+		return "drag " + anyutil.String(from) + " → " + anyutil.String(to) + fg
 	case "scroll":
-		return "scroll " + pyrepr.Str(cuArgOr(args, "direction", "?")) + " x" + pyrepr.Str(cuArgOr(args, "amount", 3)) + fg
+		return "scroll " + anyutil.String(cuArgOr(args, "direction", "?")) + " x" + anyutil.String(cuArgOr(args, "amount", 3)) + fg
 	case "type":
 		text := []rune(cuArgStr(args, "text"))
 		head, more := text, ""
@@ -491,7 +491,7 @@ func summarizeAction(action string, args map[string]any) string {
 		return "key " + errchain.Show(cuArgOr(args, "keys", "")) + fg
 	case "focus_app":
 		raise := ""
-		if pyrepr.Truthy(args["raise_window"]) {
+		if anyutil.IsTrue(args["raise_window"]) {
 			raise = " (raise)"
 		}
 		return "focus " + errchain.Show(cuArgOr(args, "app", "")) + raise
@@ -503,10 +503,10 @@ func summarizeAction(action string, args map[string]any) string {
 func summarizeClick(action string, args map[string]any, fg string) string {
 	where := ""
 	if el, ok := args["element"]; ok && el != nil {
-		where = " element #" + pyrepr.Str(el)
-	} else if coord := args["coordinate"]; pyrepr.Truthy(coord) {
+		where = " element #" + anyutil.String(el)
+	} else if coord := args["coordinate"]; anyutil.IsTrue(coord) {
 		items, _ := coord.([]any)
-		where = " at " + errchain.Show(pyrepr.Tuple(items))
+		where = " at " + errchain.Show(items)
 	}
 	return action + where + fg
 }
@@ -556,8 +556,8 @@ func cuIsInt(v any) (int64, bool) {
 }
 
 // Next ladder step from the semantic evidence of an action in precedence order
-func classifyActionResult(res *ActionResult) *pyjson.Object {
-	out := pyjson.NewObject()
+func classifyActionResult(res *ActionResult) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	effect := ""
 	if res.Effect != nil {
 		effect = *res.Effect
@@ -605,8 +605,8 @@ func classifyActionResult(res *ActionResult) *pyjson.Object {
 }
 
 // Transport success, the driver verdict fields it returned, truthy message and meta, and the ladder verdict
-func actionPayload(res *ActionResult) *pyjson.Object {
-	out := pyjson.NewObject()
+func actionPayload(res *ActionResult) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("ok", res.OK)
 	out.Set("action", res.Action)
 	if res.Message != "" {
@@ -638,7 +638,7 @@ func actionPayload(res *ActionResult) *pyjson.Object {
 	if res.Code != nil {
 		out.Set("code", *res.Code)
 	}
-	if res.Meta != nil && len(res.Meta.Keys) > 0 {
+	if res.Meta != nil && res.Meta.Len() > 0 {
 		out.Set("meta", res.Meta)
 	}
 	out.Set("verdict", classifyActionResult(res))
@@ -647,7 +647,7 @@ func actionPayload(res *ActionResult) *pyjson.Object {
 
 // JSON text of the action payload
 func textResponse(res *ActionResult) string {
-	out, err := pyjson.Dumps(actionPayload(res))
+	out, err := jsonutil.Encode(actionPayload(res))
 	if err != nil {
 		panic(err)
 	}

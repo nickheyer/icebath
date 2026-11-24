@@ -11,9 +11,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -51,12 +51,12 @@ func loadCronJobsDocFile(path string) (any, error) {
 	if !utf8.Valid(raw) {
 		return nil, fmt.Errorf("jobs document %s is not valid UTF-8", path)
 	}
-	data, err := pyjson.LoadsBytes(raw)
+	data, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, nil
 	}
 	switch d := data.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if _, ok := field(d, "jobs", []any{}).([]any); ok {
 			return d, nil
 		}
@@ -71,7 +71,7 @@ func cronJobsList(doc any) []any {
 	switch d := doc.(type) {
 	case []any:
 		return d
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		jobs, _ := field(d, "jobs", []any{}).([]any)
 		return jobs
 	}
@@ -79,27 +79,27 @@ func cronJobsList(doc any) []any {
 }
 
 // Agent job whose prompt is empty or replaced by its name
-func promptDegraded(job *pyjson.Object) bool {
-	if pyrepr.Truthy(field(job, "no_agent", nil)) {
+func promptDegraded(job *jsonutil.Object) bool {
+	if anyutil.IsTrue(field(job, "no_agent", nil)) {
 		return false
 	}
 	prompt, ok := field(job, "prompt", nil).(string)
 	if !ok || strings.TrimSpace(prompt) == "" {
 		return true
 	}
-	return strings.TrimSpace(prompt) == strings.TrimSpace(pyrepr.Str(field(job, "name", "")))
+	return strings.TrimSpace(prompt) == strings.TrimSpace(anyutil.String(field(job, "name", "")))
 }
 
 // Non blank snapshot prompts keyed by job id
 func snapshotPromptsByID(snapDoc any) map[string]string {
 	prompts := map[string]string{}
 	for _, item := range cronJobsList(snapDoc) {
-		job, ok := item.(*pyjson.Object)
+		job, ok := item.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
 		if prompt, ok := field(job, "prompt", nil).(string); ok && strings.TrimSpace(prompt) != "" {
-			prompts[pyrepr.Str(field(job, "id", ""))] = prompt
+			prompts[anyutil.String(field(job, "id", ""))] = prompt
 		}
 	}
 	return prompts
@@ -109,11 +109,11 @@ func snapshotPromptsByID(snapDoc any) map[string]string {
 func restoreDegradedPrompts(jobs []any, snapPrompts map[string]string, apply bool) []string {
 	var restored []string
 	for _, item := range jobs {
-		job, ok := item.(*pyjson.Object)
+		job, ok := item.(*jsonutil.Object)
 		if !ok || !promptDegraded(job) {
 			continue
 		}
-		jobID := pyrepr.Str(field(job, "id", ""))
+		jobID := anyutil.String(field(job, "id", ""))
 		snapPrompt, ok := snapPrompts[jobID]
 		if !ok {
 			continue

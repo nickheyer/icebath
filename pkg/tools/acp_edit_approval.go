@@ -8,12 +8,9 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // One proposed file edit an ACP client can be shown, with every file it actually touches
@@ -59,7 +56,7 @@ var (
 
 // Text mode read as utf-8-sig with replacement and universal newlines, nil when absent, an error for a non file
 func readEditTextIfExists(path string) (*string, error) {
-	expanded, err := pypath.PathExpanduser(path)
+	expanded, err := pathutil.ExpandUserPath(path)
 	if err != nil {
 		return nil, err
 	}
@@ -74,15 +71,15 @@ func readEditTextIfExists(path string) (*string, error) {
 	if err != nil {
 		return nil, errors.New(errchain.OSText(err))
 	}
-	text := pystr.TranslateNewlines(pystr.DecodeUTF8SigReplace(data))
+	text := textutil.NormalizeNewlines(strings.ToValidUTF8(string(textutil.TrimBOM(data)), string(utf8.RuneError)))
 	return &text, nil
 }
 
 // Task resolved path argument of an edit, refused when missing
 func requiredEditPath(env *Env, arguments map[string]any) (string, error) {
 	path := ""
-	if raw := arguments["path"]; pyrepr.Truthy(raw) {
-		path = pyrepr.Str(raw)
+	if raw := arguments["path"]; anyutil.IsTrue(raw) {
+		path = anyutil.String(raw)
 	}
 	if path == "" {
 		return "", errors.New("path required")
@@ -113,7 +110,7 @@ func proposalForWriteFile(env *Env, arguments map[string]any) (*EditProposal, er
 	if err != nil {
 		return nil, err
 	}
-	return &EditProposal{ToolName: "write_file", Path: path, OldText: old, NewText: pyrepr.Str(content), Arguments: copiedArguments(arguments)}, nil
+	return &EditProposal{ToolName: "write_file", Path: path, OldText: old, NewText: anyutil.String(content), Arguments: copiedArguments(arguments)}, nil
 }
 
 // Proposal of a replace mode patch call, refused when the old text has no match
@@ -133,7 +130,7 @@ func proposalForPatchReplace(env *Env, arguments map[string]any) (*EditProposal,
 	if old == nil {
 		return nil, fmt.Errorf("Failed to read file: %s", path)
 	}
-	newText, matches, _, problem := FuzzyFindAndReplace(*old, pyrepr.Str(oldString), pyrepr.Str(newString), pyrepr.Truthy(arguments["replace_all"]), nil)
+	newText, matches, _, problem := FuzzyFindAndReplace(*old, anyutil.String(oldString), anyutil.String(newString), anyutil.IsTrue(arguments["replace_all"]), nil)
 	if problem != "" || matches == 0 {
 		if problem == "" {
 			problem = noMatchIn(path)
@@ -284,7 +281,7 @@ func ShouldAutoApproveEdit(proposal *EditProposal, policy, cwd string) bool {
 
 // Tool error JSON of a refused edit
 func editDenied(message string) string {
-	text, _ := pyjson.Dumps(map[string]any{"error": message}, pyjson.EnsureASCII(false))
+	text, _ := jsonutil.Encode(map[string]any{"error": message})
 	return text
 }
 

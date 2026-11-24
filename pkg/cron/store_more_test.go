@@ -8,15 +8,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func TestLateEnvRepointScopesStoreLateEnvRepointScopesStore(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ICEBATH_HOME", root)
 	s := cronStoreFrom(context.Background())
-	resolved, _ := pypath.Realpath(root, pypath.Lax)
+	resolved, _ := pathutil.Resolve(root)
 	want := filepath.Join(resolved, "cron")
 	if s.CronDir() != want || s.JobsFile() != filepath.Join(want, "jobs.json") || s.OutputDir() != filepath.Join(want, "output") {
 		t.Fatalf("paths %s %s %s", s.CronDir(), s.JobsFile(), s.OutputDir())
@@ -27,7 +27,7 @@ func TestLateEnvRepointScopesStoreUseCronStoreOverrideStillWins(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ICEBATH_HOME", filepath.Join(root, "env-home"))
 	ctx := withCronStore(context.Background(), openCronStore(filepath.Join(root, "override-home"), nil))
-	resolved, _ := pypath.Realpath(filepath.Join(root, "override-home"), pypath.Lax)
+	resolved, _ := pathutil.Resolve(filepath.Join(root, "override-home"))
 	if got := cronStoreFrom(ctx).JobsFile(); got != filepath.Join(resolved, "cron", "jobs.json") {
 		t.Fatalf("override %s", got)
 	}
@@ -70,7 +70,7 @@ func TestLateEnvRepointScopesStorePublicIoAfterLateEnvRepointLeavesOldFileUntouc
 	if ids := jobIDs(loaded); len(ids) != 1 || ids[0] != "lateenvjob01" {
 		t.Fatalf("loaded %v", ids)
 	}
-	resolved, _ := pypath.Realpath(filepath.Join(root, "late-home"), pypath.Lax)
+	resolved, _ := pathutil.Resolve(filepath.Join(root, "late-home"))
 	if st, err := os.Stat(filepath.Join(resolved, "cron", "jobs.json")); err != nil || !st.Mode().IsRegular() {
 		t.Fatal("late home store not written")
 	}
@@ -81,7 +81,7 @@ func TestLateEnvRepointScopesStorePublicIoAfterLateEnvRepointLeavesOldFileUntouc
 
 func jobFromMap(m map[string]any) (*Job, error) {
 	var j Job
-	text, err := pyjson.Dumps(m)
+	text, err := jsonutil.Encode(m)
 	if err != nil {
 		return nil, err
 	}

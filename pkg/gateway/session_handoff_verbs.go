@@ -6,22 +6,22 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Handoff verbs of a local session, queueing it for a messaging platform's home channel and polling the row
 func handoffHandlers(c *AuthorityConnection) map[string]controlHandler {
 	return map[string]controlHandler{
-		"handoff.request": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"handoff.request": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return requestHandoff(ctx, c, ref, params)
 		},
-		"handoff.state": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"handoff.state": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return handoffState(ctx, c, ref, params)
 		},
-		"handoff.fail": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"handoff.fail": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return failHandoff(ctx, c, ref, params)
 		},
 	}
@@ -67,7 +67,7 @@ func handoffDestination(ctx context.Context, platformName string) (*HomeChannel,
 }
 
 // Live local session the caller controls, refused when it is unknown or the caller lacks the capability
-func handoffSession(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, capability string, extra ...string) error {
+func handoffSession(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object, capability string, extra ...string) error {
 	if paramsOutside(params, append([]string{"session_id", "profile"}, extra...)...) || ref.SessionID == "" {
 		return runtimeRefusal("invalid_params")
 	}
@@ -78,8 +78,8 @@ func handoffSession(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 }
 
 // Queues the idle session for the platform's home channel, the gateway handoff watcher claiming it next
-func requestHandoff(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
-	raw, isStr := params.GetOr("platform", nil).(string)
+func requestHandoff(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
+	raw, isStr := params.ValueOr("platform", nil).(string)
 	if !isStr {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -121,38 +121,38 @@ func requestHandoff(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	if !queued {
 		return nil, handoffRefusal(ctx, "session_busy", "already_in_flight", nil)
 	}
-	return pyjson.ObjectOf("queued", true, "session_key", ref.SessionID, "platform", platformName, "home_name", home.Name), nil
+	return jsonutil.ObjectOf("queued", true, "session_key", ref.SessionID, "platform", platformName, "home_name", home.Name), nil
 }
 
 // Field of a handoff record as text, empty when unset
-func handoffText(record *pyjson.Object, key string) string {
+func handoffText(record *jsonutil.Object, key string) string {
 	if record == nil {
 		return ""
 	}
 	value, _ := record.Get(key)
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // State, platform and error of the session's handoff row, empty fields when none was requested
-func handoffState(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func handoffState(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if err := handoffSession(ctx, c, ref, params, "session:read"); err != nil {
 		return nil, err
 	}
 	record := c.authority.DB.GetHandoffState(ctx, ref.SessionID)
-	return pyjson.ObjectOf("state", handoffText(record, "state"), "platform", handoffText(record, "platform"), "error", handoffText(record, "error")), nil
+	return jsonutil.ObjectOf("state", handoffText(record, "state"), "platform", handoffText(record, "platform"), "error", handoffText(record, "error")), nil
 }
 
 // Fails a handoff the watcher has not claimed yet, reporting the state it holds otherwise
-func failHandoff(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func failHandoff(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if err := handoffSession(ctx, c, ref, params, "session:control", "error"); err != nil {
 		return nil, err
 	}
 	reason := "handoff failed"
-	if raw := params.GetOr("error", nil); pyrepr.Truthy(raw) {
-		reason = strings.TrimSpace(pyrepr.Str(raw))
+	if raw := params.ValueOr("error", nil); anyutil.IsTrue(raw) {
+		reason = strings.TrimSpace(anyutil.String(raw))
 	}
 	if utf8.RuneCountInString(reason) > 500 {
 		reason = string([]rune(reason)[:500])
@@ -166,5 +166,5 @@ func failHandoff(ctx context.Context, c *AuthorityConnection, ref SessionRef, pa
 	if !failed {
 		current = handoffText(db.GetHandoffState(ctx, ref.SessionID), "state")
 	}
-	return pyjson.ObjectOf("failed", failed, "state", current), nil
+	return jsonutil.ObjectOf("failed", failed, "state", current), nil
 }

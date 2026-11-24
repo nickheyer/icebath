@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Index file of a session's spawn tree snapshots
@@ -40,7 +40,7 @@ func spawnTreeSessionDir(sessionID string) string {
 
 // Appends one entry line to the session index, a failed write never blocking the save
 func appendSpawnTreeIndex(sessionDir string, entry map[string]any) {
-	line, err := pyjson.Dumps(entry, pyjson.EnsureASCII(false))
+	line, err := jsonutil.Encode(entry)
 	if err == nil {
 		var f *os.File
 		if f, err = os.OpenFile(filepath.Join(sessionDir, spawnTreeIndex), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644); err == nil {
@@ -66,8 +66,8 @@ func readSpawnTreeIndex(sessionDir string) []any {
 		if line = strings.TrimSpace(line); line == "" {
 			continue
 		}
-		if entry, err := pyjson.Loads(line); err == nil {
-			out = append(out, pyjson.Plain(entry))
+		if entry, err := jsonutil.Decode(line); err == nil {
+			out = append(out, jsonutil.Plain(entry))
 		}
 	}
 	return out

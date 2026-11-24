@@ -18,9 +18,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Developer cache directory the pm suite keeps its pinned downloads in
@@ -142,13 +142,13 @@ func vsFact(t *testing.T, root string) map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pyrepr.Str(fact["environment"]) != selected {
+	if anyutil.String(fact["environment"]) != selected {
 		t.Fatalf("fact environment %v selected %s", fact["environment"], selected)
 	}
 	if rel, err := filepath.Rel(filepath.Join(pm.InstallStateDir(ctx, root), "environments"), selected); err != nil || strings.HasPrefix(rel, "..") {
 		t.Fatalf("selection %s outside the install state", selected)
 	}
-	if !isRegular(filepath.Join(selected, "pyvenv.cfg")) || !isRegular(pyrepr.Str(fact["resolved_lock"])) {
+	if !isRegular(filepath.Join(selected, "pyvenv.cfg")) || !isRegular(anyutil.String(fact["resolved_lock"])) {
 		t.Fatalf("incomplete generation %s", selected)
 	}
 	out, err := exec.Command(filepath.Join(selected, "bin", "python"), "-I", "-c", "import json,sys; print(json.dumps(sys.prefix))").Output()
@@ -188,8 +188,8 @@ func vsReceiptOutcome(t *testing.T, path string) any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err := pyjson.Loads(string(data))
-	obj, ok := doc.(*pyjson.Object)
+	doc, err := jsonutil.Decode(string(data))
+	obj, ok := doc.(*jsonutil.Object)
 	if err != nil || !ok {
 		t.Fatalf("receipt %s", data)
 	}
@@ -264,7 +264,7 @@ func vsStrings(v any) []string {
 	switch list := v.(type) {
 	case []any:
 		for _, item := range list {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 	case []string:
 		out = list

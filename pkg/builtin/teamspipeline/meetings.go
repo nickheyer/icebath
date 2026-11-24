@@ -2,6 +2,7 @@ package teamspipeline
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"os"
@@ -13,14 +14,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Graph resource patterns with a quoted key group and a slash key group per segment
@@ -101,10 +102,10 @@ func looksLikeTranscriptID(value, odataType any) bool {
 
 // str(value or "") of a loosely typed value
 func textOrEmpty(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Lowercase base64 decoded text of a Graph id, empty when too short or undecodable
@@ -115,7 +116,7 @@ func decodedIDHint(value string) string {
 		return ""
 	}
 	padded := stripped + strings.Repeat("=", (4-n%4)%4)
-	for _, decode := range []func(string) ([]byte, error){pybase64.URLSafeB64Decode, pybase64.B64Decode} {
+	for _, decode := range []func(string) ([]byte, error){base64.URLEncoding.DecodeString, pybase64.B64Decode} {
 		if raw, err := decode(padded); err == nil {
 			return strings.ToLower(strings.ToValidUTF8(string(raw), ""))
 		}
@@ -125,8 +126,8 @@ func decodedIDHint(value string) string {
 
 // Organizer scoped meetings collection when the organizer is known, required for app only access
 func meetingsCollection(organizerUserID any) string {
-	if pyrepr.Truthy(organizerUserID) {
-		return "/users/" + pyurl.Quote(pyrepr.Str(organizerUserID), "") + "/onlineMeetings"
+	if anyutil.IsTrue(organizerUserID) {
+		return "/users/" + pyurl.Quote(anyutil.String(organizerUserID), "") + "/onlineMeetings"
 	}
 	return "/communications/onlineMeetings"
 }
@@ -157,18 +158,18 @@ func graph(err error, missingMessage string) error {
 }
 
 // Dict valued key of a payload, nil for anything else
-func dictGet(payload any, key string) *pyjson.Object {
-	o, ok := payload.(*pyjson.Object)
+func dictGet(payload any, key string) *jsonutil.Object {
+	o, ok := payload.(*jsonutil.Object)
 	if !ok || o == nil {
 		return nil
 	}
 	v, _ := o.Get(key)
-	d, _ := v.(*pyjson.Object)
+	d, _ := v.(*jsonutil.Object)
 	return d
 }
 
 // Organizer user id nested under organizer identity user
-func parseOrganizerUserID(payload *pyjson.Object) any {
+func parseOrganizerUserID(payload *jsonutil.Object) any {
 	if user := dictGet(dictGet(payload, "organizer"), "identity"); user != nil {
 		if u := dictGet(user, "user"); u != nil {
 			return get(u, "id")
@@ -178,7 +179,7 @@ func parseOrganizerUserID(payload *pyjson.Object) any {
 }
 
 // Meeting reference built like the dataclass constructor, the meeting id required
-func newMeetingRef(meetingID string, organizerUserID, joinWebURL, calendarEventID, threadID, tenantID any, metadata *pyjson.Object) (*TeamsMeetingRef, error) {
+func newMeetingRef(meetingID string, organizerUserID, joinWebURL, calendarEventID, threadID, tenantID any, metadata *jsonutil.Object) (*TeamsMeetingRef, error) {
 	if strings.TrimSpace(meetingID) == "" {
 		return nil, requiredError("TeamsMeetingRef", "meeting_id")
 	}
@@ -187,23 +188,23 @@ func newMeetingRef(meetingID string, organizerUserID, joinWebURL, calendarEventI
 }
 
 // Meeting reference of a Graph onlineMeeting payload
-func normalizeMeetingRef(payload *pyjson.Object, tenantID, organizerUserID string) (*TeamsMeetingRef, error) {
-	metadata := pyjson.NewObject()
+func normalizeMeetingRef(payload *jsonutil.Object, tenantID, organizerUserID string) (*TeamsMeetingRef, error) {
+	metadata := jsonutil.NewObject()
 	for _, key := range []string{"subject", "startDateTime", "endDateTime", "createdDateTime", "participants"} {
 		if v := get(payload, key); v != nil {
 			metadata.Set(key, v)
 		}
 	}
 	threadID := get(payload, "threadId")
-	if chat := dictGet(payload, "chatInfo"); chat != nil && pyrepr.Truthy(get(chat, "threadId")) {
-		threadID = pyrepr.Str(get(chat, "threadId"))
+	if chat := dictGet(payload, "chatInfo"); chat != nil && anyutil.IsTrue(get(chat, "threadId")) {
+		threadID = anyutil.String(get(chat, "threadId"))
 	}
 	return newMeetingRef(strField(get(payload, "id")), or(organizerUserID, parseOrganizerUserID(payload)), get(payload, "joinWebUrl"),
 		get(payload, "calendarEventId"), threadID, or(tenantID, get(payload, "tenantId")), metadata)
 }
 
 // Artifact built like the dataclass constructor with the type, id, datetimes and size validated
-func newMeetingArtifact(kind, id string, displayName, contentType, sourceURL, downloadURL, createdAt, availableAt, size any, metadata *pyjson.Object) (*MeetingArtifact, error) {
+func newMeetingArtifact(kind, id string, displayName, contentType, sourceURL, downloadURL, createdAt, availableAt, size any, metadata *jsonutil.Object) (*MeetingArtifact, error) {
 	if kind != "transcript" && kind != "recording" && kind != "call_record" {
 		return nil, errors.New("MeetingArtifact.artifact_type must be transcript, recording, or call_record.")
 	}
@@ -231,11 +232,11 @@ func newMeetingArtifact(kind, id string, displayName, contentType, sourceURL, do
 }
 
 // Artifact of a Graph transcript or recording payload
-func normalizeArtifact(kind string, payload *pyjson.Object) (*MeetingArtifact, error) {
+func normalizeArtifact(kind string, payload *jsonutil.Object) (*MeetingArtifact, error) {
 	return newMeetingArtifact(kind, strField(get(payload, "id")), or(get(payload, "displayName"), get(payload, "name")),
 		or(get(payload, "contentType"), get(payload, "fileMimeType")), or(get(payload, "webUrl"), get(payload, "contentUrl")),
 		or(get(payload, "@microsoft.graph.downloadUrl"), get(payload, "downloadUrl"), get(payload, "recordingContentUrl"), get(payload, "transcriptContentUrl")),
-		get(payload, "createdDateTime"), or(get(payload, "lastModifiedDateTime"), get(payload, "meetingEndDateTime")), get(payload, "size"), payload.Copy())
+		get(payload, "createdDateTime"), or(get(payload, "lastModifiedDateTime"), get(payload, "meetingEndDateTime")), get(payload, "size"), payload.Clone())
 }
 
 // Completed, downloadable and stamp ranks of a transcript in priority order
@@ -248,16 +249,16 @@ type transcriptRank struct {
 func transcriptSortKey(a *MeetingArtifact) transcriptRank {
 	status := strings.ToLower(textOrEmpty(get(a.Metadata, "status")))
 	r := transcriptRank{}
-	if pyrepr.Truthy(or(a.DownloadURL, a.SourceURL)) {
+	if anyutil.IsTrue(or(a.DownloadURL, a.SourceURL)) {
 		r.download = 1
 	}
 	if status == "available" || status == "completed" || status == "succeeded" {
 		r.completed = 1
 	}
 	if stamp := a.AvailableAt; stamp != nil {
-		r.stamp = pydatetime.ISOFormat(*stamp)
+		r.stamp = (*stamp).Format(timeutil.RFC3339Micro)
 	} else if a.CreatedAt != nil {
-		r.stamp = pydatetime.ISOFormat(*a.CreatedAt)
+		r.stamp = (*a.CreatedAt).Format(timeutil.RFC3339Micro)
 	}
 	return r
 }
@@ -284,7 +285,7 @@ func resolveMeetingReference(ctx context.Context, client graphClient, meetingID,
 		meetingID = ""
 	}
 	collection := meetingsCollection(organizerUserID)
-	var payload *pyjson.Object
+	var payload *jsonutil.Object
 	switch {
 	case meetingID != "":
 		missing := "Teams meeting not found: " + meetingID
@@ -292,8 +293,8 @@ func resolveMeetingReference(ctx context.Context, client graphClient, meetingID,
 		if err != nil {
 			return nil, graph(err, missing)
 		}
-		o, ok := got.(*pyjson.Object)
-		if !ok || !pyrepr.Truthy(get(o, "id")) {
+		o, ok := got.(*jsonutil.Object)
+		if !ok || !anyutil.IsTrue(get(o, "id")) {
 			return nil, &TeamsMeetingNotFoundError{TeamsMeetingError{missing}}
 		}
 		payload = o
@@ -305,7 +306,7 @@ func resolveMeetingReference(ctx context.Context, client graphClient, meetingID,
 			return nil, graph(err, missing)
 		}
 		var candidates []any
-		if o, ok := listing.(*pyjson.Object); ok {
+		if o, ok := listing.(*jsonutil.Object); ok {
 			candidates, _ = get(o, "value").([]any)
 		}
 		if len(candidates) == 0 {
@@ -331,7 +332,7 @@ func listArtifacts(ctx context.Context, client graphClient, ref *TeamsMeetingRef
 	}
 	out := []*MeetingArtifact{}
 	for _, p := range payloads {
-		if o, ok := p.(*pyjson.Object); ok {
+		if o, ok := p.(*jsonutil.Object); ok {
 			a, err := normalizeArtifact(kind, o)
 			if err != nil {
 				return nil, err
@@ -355,12 +356,12 @@ func listRecordingArtifacts(ctx context.Context, client graphClient, ref *TeamsM
 // Downloads an artifact from its download URL or its content endpoint into destination
 func downloadArtifact(ctx context.Context, client graphClient, ref *TeamsMeetingRef, a *MeetingArtifact, destination, kind string, headers map[string]string) (map[string]any, error) {
 	path := meetingPath(ref) + "/" + kind + "s/" + pyurl.Quote(a.ArtifactID, "") + "/content"
-	if pyrepr.Truthy(a.DownloadURL) {
-		path = pyrepr.Str(a.DownloadURL)
+	if anyutil.IsTrue(a.DownloadURL) {
+		path = anyutil.String(a.DownloadURL)
 	}
 	res, err := client.DownloadToFile(ctx, path, destination, headers)
 	if err != nil {
-		return nil, graph(err, fmt.Sprintf("%s %s not found for meeting %s", pystr.Capitalize(kind), a.ArtifactID, ref.MeetingID))
+		return nil, graph(err, fmt.Sprintf("%s %s not found for meeting %s", textutil.UpperFirst(strings.ToLower(kind)), a.ArtifactID, ref.MeetingID))
 	}
 	return res, nil
 }
@@ -383,10 +384,10 @@ func selectPreferredTranscript(candidates []*MeetingArtifact) *MeetingArtifact {
 // Stripped text of a transcript downloaded as VTT into a scratch directory, an artifact error when empty
 func downloadTranscriptText(ctx context.Context, client graphClient, ref *TeamsMeetingRef, transcript *MeetingArtifact, encoding string) (string, error) {
 	name := "transcript.vtt"
-	if pyrepr.Truthy(transcript.DisplayName) {
-		name = pyrepr.Str(transcript.DisplayName)
+	if anyutil.IsTrue(transcript.DisplayName) {
+		name = anyutil.String(transcript.DisplayName)
 	}
-	suffix := pypath.PathSuffix(name)
+	suffix := pathutil.Suffix(name)
 	if suffix == "" {
 		suffix = ".txt"
 	}
@@ -403,11 +404,11 @@ func downloadTranscriptText(ctx context.Context, client graphClient, ref *TeamsM
 	if err != nil {
 		return "", err
 	}
-	decoded, err := pycodecs.Decode(raw, encoding)
+	decoded, err := charsetutil.Decode(raw, encoding)
 	if err != nil {
 		return "", err
 	}
-	text := strings.TrimSpace(pystr.TranslateNewlines(decoded))
+	text := strings.TrimSpace(textutil.NormalizeNewlines(decoded))
 	if text == "" {
 		return "", &TeamsMeetingArtifactNotFoundError{TeamsMeetingError{fmt.Sprintf("Transcript %s for meeting %s was empty.", transcript.ArtifactID, ref.MeetingID)}}
 	}
@@ -436,8 +437,8 @@ func fetchPreferredTranscriptText(ctx context.Context, client graphClient, ref *
 }
 
 // Downloads a recording to destination and reports its path, size and content type
-func downloadRecordingArtifact(ctx context.Context, client graphClient, ref *TeamsMeetingRef, recording *MeetingArtifact, destination string) (*pyjson.Object, error) {
-	path := pypath.PurePathStr(destination)
+func downloadRecordingArtifact(ctx context.Context, client graphClient, ref *TeamsMeetingRef, recording *MeetingArtifact, destination string) (*jsonutil.Object, error) {
+	path := filepath.Clean(destination)
 	res, err := downloadArtifact(ctx, client, ref, recording, path, "recording", nil)
 	if err != nil {
 		return nil, err
@@ -446,7 +447,7 @@ func downloadRecordingArtifact(ctx context.Context, client graphClient, ref *Tea
 	if recording.SizeBytes != nil {
 		size = *recording.SizeBytes
 	}
-	return pyjson.ObjectOf("artifact", recording.ToDict(), "path", path,
+	return jsonutil.ObjectOf("artifact", recording.ToDict(), "path", path,
 		"size_bytes", or(res["size_bytes"], size), "content_type", or(res["content_type"], recording.ContentType)), nil
 }
 
@@ -455,7 +456,7 @@ func jsonLen(v any) (int, error) {
 	switch t := v.(type) {
 	case []any:
 		return len(t), nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t.Len(), nil
 	case string:
 		return utf8.RuneCountInString(t), nil
@@ -480,23 +481,23 @@ func enrichMeetingWithCallRecord(ctx context.Context, client graphClient, ref *T
 		}
 		return nil, wrapGraphError(api, "Call record not found: "+id)
 	}
-	payload, ok := got.(*pyjson.Object)
-	if !ok || !pyrepr.Truthy(get(payload, "id")) {
+	payload, ok := got.(*jsonutil.Object)
+	if !ok || !anyutil.IsTrue(get(payload, "id")) {
 		return nil, nil
 	}
 	participants, err := jsonLen(or(get(payload, "participants"), []any{}))
 	if err != nil {
 		return nil, err
 	}
-	metrics := pyjson.ObjectOf("version", get(payload, "version"), "modalities", get(payload, "modalities"),
+	metrics := jsonutil.ObjectOf("version", get(payload, "version"), "modalities", get(payload, "modalities"),
 		"participant_count", participants, "organizer", parseOrganizerUserID(payload))
-	if sessions := get(payload, "sessions"); pyrepr.Truthy(sessions) {
+	if sessions := get(payload, "sessions"); anyutil.IsTrue(sessions) {
 		n, err := jsonLen(sessions)
 		if err != nil {
 			return nil, err
 		}
 		metrics.Set("session_count", n)
 	}
-	return newMeetingArtifact("call_record", pyrepr.Str(get(payload, "id")), or(get(payload, "type"), "call_record"), nil, get(payload, "webUrl"), nil,
-		get(payload, "startDateTime"), get(payload, "endDateTime"), nil, pyjson.ObjectOf("call_record", payload, "metrics", metrics))
+	return newMeetingArtifact("call_record", anyutil.String(get(payload, "id")), or(get(payload, "type"), "call_record"), nil, get(payload, "webUrl"), nil,
+		get(payload, "startDateTime"), get(payload, "endDateTime"), nil, jsonutil.ObjectOf("call_record", payload, "metrics", metrics))
 }

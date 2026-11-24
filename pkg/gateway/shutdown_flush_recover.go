@@ -16,9 +16,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -55,10 +55,10 @@ func replayedUnremovableHas(path string) bool {
 func SpoolDroppedTranscriptMessage(ctx context.Context, sessionID string, message map[string]any) string {
 	flushDir, err := shutdownFlushDir(ctx)
 	if err == nil {
-		data := pyjson.NewObject()
+		data := jsonutil.NewObject()
 		data.Set("session_id", sessionID)
 		data.Set("message", message)
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("session_key", sessionID)
 		payload.Set("reason", TranscriptCapDropReason)
 		payload.Set("ts", int64(math.Floor(shutdownFlushNow())))
@@ -79,7 +79,7 @@ func readSpoolPayload(path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
+	return jsonutil.Decode(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
 }
 
 type spoolEntry struct {
@@ -109,7 +109,7 @@ func DrainTranscriptSpool(ctx context.Context, sessionID string, replay func(mes
 		if err != nil {
 			continue
 		}
-		payload, ok := parsed.(*pyjson.Object)
+		payload, ok := parsed.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -122,13 +122,13 @@ func DrainTranscriptSpool(ctx context.Context, sessionID string, replay func(mes
 		data, _ := payload.Get("data")
 		var message any
 		if pyTruthy(data) {
-			obj, ok := data.(*pyjson.Object)
+			obj, ok := data.(*jsonutil.Object)
 			if !ok {
 				return 0, 0, &PyError{Kind: "AttributeError", Msg: "the transcript spool is " + errchain.Kind(data) + ", expected a mapping"}
 			}
 			message, _ = obj.Get("message")
 		}
-		msg, ok := message.(*pyjson.Object)
+		msg, ok := message.(*jsonutil.Object)
 		if !ok {
 			pkgLog().Warn(fmt.Sprintf("Removing structurally invalid transcript spool file %s", path))
 			_ = os.Remove(path)
@@ -136,7 +136,7 @@ func DrainTranscriptSpool(ctx context.Context, sessionID string, replay func(mes
 		}
 		ts, seq := spoolSortKey(payload)
 		entries = append(entries, spoolEntry{ts: ts, seq: seq, name: filepath.Base(path), path: path,
-			message: pyjson.Plain(msg).(map[string]any)})
+			message: jsonutil.Plain(msg).(map[string]any)})
 	}
 	sort.SliceStable(entries, func(i, j int) bool { return spoolEntryLess(entries[i], entries[j]) })
 	replayed, remaining := 0, 0
@@ -210,7 +210,7 @@ func spoolSortNumber(value any) float64 {
 }
 
 // Drop order timestamp and sequence of a payload, a missing sequence sorting as minus one
-func spoolSortKey(payload *pyjson.Object) (float64, float64) {
+func spoolSortKey(payload *jsonutil.Object) (float64, float64) {
 	ts, _ := payload.Get("ts")
 	seq, ok := payload.Get("seq")
 	if !ok {
@@ -256,7 +256,7 @@ func orderFlushFiles(paths []string) []string {
 	entries := make([]keyed, 0, len(paths))
 	for _, path := range paths {
 		parsed, err := readSpoolPayload(path)
-		if payload, ok := parsed.(*pyjson.Object); err == nil && ok {
+		if payload, ok := parsed.(*jsonutil.Object); err == nil && ok {
 			ts, seq := spoolSortKey(payload)
 			entries = append(entries, keyed{0, ts, seq, filepath.Base(path), path})
 		} else {
@@ -356,7 +356,7 @@ func recoverFlushFile(ctx context.Context, sessionDB TranscriptAppender, path st
 	if err != nil {
 		return false, "", err
 	}
-	payload, isObject := parsed.(*pyjson.Object)
+	payload, isObject := parsed.(*jsonutil.Object)
 	if !isObject {
 		return false, "", &PyError{Kind: "AttributeError", Msg: "the flush file is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
@@ -375,17 +375,17 @@ func recoverFlushFile(ctx context.Context, sessionDB TranscriptAppender, path st
 }
 
 // Dict view of a payload field, an AttributeError for a present non object value
-func payloadDict(value any) (*pyjson.Object, error) {
-	if obj, ok := value.(*pyjson.Object); ok {
+func payloadDict(value any) (*jsonutil.Object, error) {
+	if obj, ok := value.(*jsonutil.Object); ok {
 		return obj, nil
 	}
 	return nil, &PyError{Kind: "AttributeError", Msg: "a flush payload is " + errchain.Kind(value) + ", expected a mapping"}
 }
 
 // Appends one flush payload, false when it was kept or quarantined instead of replayed
-func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path string, payload *pyjson.Object, resolver SpoolSessionResolver, blocked map[string]int) (bool, error) {
+func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path string, payload *jsonutil.Object, resolver SpoolSessionResolver, blocked map[string]int) (bool, error) {
 	if reason, _ := payload.Get("reason"); reason == TranscriptCapDropReason {
-		data := pyjson.NewObject()
+		data := jsonutil.NewObject()
 		if raw, ok := payload.Get("data"); ok && pyTruthy(raw) {
 			obj, err := payloadDict(raw)
 			if err != nil {
@@ -398,7 +398,7 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 			rawSID = ""
 		}
 		rawMessage, _ := data.Get("message")
-		message, isDict := rawMessage.(*pyjson.Object)
+		message, isDict := rawMessage.(*jsonutil.Object)
 		if !pyTruthy(rawSID) || !isDict {
 			pkgLog().Warn(fmt.Sprintf("Cannot recover structurally invalid transcript spool file %s; preserved for manual inspection", path))
 			return false, nil
@@ -409,7 +409,7 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 			return false, nil
 		}
 		ts, _ := payload.Get("ts")
-		kwargs := transcriptAppendKwargs(spooledSID, pyjson.Plain(message).(map[string]any), ts)
+		kwargs := transcriptAppendKwargs(spooledSID, jsonutil.Plain(message).(map[string]any), ts)
 		if err := appendKwargs(ctx, sessionDB, kwargs); err != nil {
 			if IsRowRejection(err) {
 				quarantineSpoolFile(path, spooledSID, err)
@@ -426,7 +426,7 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 	}
 	rawData, ok := payload.Get("data")
 	if !ok {
-		rawData = pyjson.NewObject()
+		rawData = jsonutil.NewObject()
 	}
 	data, err := payloadDict(rawData)
 	if err != nil {
@@ -473,13 +473,13 @@ func recoverOnePayload(ctx context.Context, sessionDB TranscriptAppender, path s
 }
 
 // Whether the store already holds the admission a store outage copy names, so replaying it would show the message twice
-func admissionKept(ctx context.Context, target TranscriptAppender, payload *pyjson.Object) (bool, error) {
+func admissionKept(ctx context.Context, target TranscriptAppender, payload *jsonutil.Object) (bool, error) {
 	admissionID, ok := payload.Get("admission_id")
 	if !ok || !pyTruthy(admissionID) {
 		return false, nil
 	}
 	lookup, ok := target.(interface {
-		GetSessionAdmission(ctx context.Context, admissionID string) (*pyjson.Object, error)
+		GetSessionAdmission(ctx context.Context, admissionID string) (*jsonutil.Object, error)
 	})
 	if !ok {
 		return false, &PyError{Kind: "AttributeError", Msg: "session store has no attribute 'get_session_admission'"}
@@ -573,22 +573,22 @@ func FlushAgentHistoryToFile(ctx context.Context, sessionID *string, history []a
 		snapshot := make([]any, 0, len(history))
 		for _, m := range history {
 			switch m.(type) {
-			case nil, bool, string, int, int64, float64, *big.Int, []any, map[string]any, *pyjson.Object:
+			case nil, bool, string, int, int64, float64, *big.Int, []any, map[string]any, *jsonutil.Object:
 				snapshot = append(snapshot, m)
 			default:
-				snapshot = append(snapshot, pyrepr.Str(m))
+				snapshot = append(snapshot, anyutil.String(m))
 			}
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("reason", AgentHistoryReason)
 		payload.Set("issue", "#72680")
 		payload.Set("session_id", sid)
 		payload.Set("count", len(snapshot))
 		payload.Set("messages", snapshot)
 		if _, err = writeFlushPayload(ctx, flushDir, payload); err == nil {
-			pkgLog().Warn(fmt.Sprintf("Preserved %d in-memory message(s) for session %s (possible FTS corruption — recover after repairing state.db)", len(snapshot), pyrepr.Str(sid)))
+			pkgLog().Warn(fmt.Sprintf("Preserved %d in-memory message(s) for session %s (possible FTS corruption — recover after repairing state.db)", len(snapshot), anyutil.String(sid)))
 			return
 		}
 	}
-	pkgLog().Warn(fmt.Sprintf("Agent-history shutdown preservation failed for session %s: %v", pyrepr.Str(sid), err))
+	pkgLog().Warn(fmt.Sprintf("Agent-history shutdown preservation failed for session %s: %v", anyutil.String(sid), err))
 }

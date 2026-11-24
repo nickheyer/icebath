@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Subscriber of a fanout backed by a kernel buffer the test can fill
@@ -102,7 +102,7 @@ func newPipeClient(t *testing.T, reading bool) *pipeClient {
 	return c
 }
 
-func (c *pipeClient) Write(obj *pyjson.Object) bool {
+func (c *pipeClient) Write(obj *jsonutil.Object) bool {
 	c.writes.Add(1)
 	return c.transport.Write(obj)
 }
@@ -208,7 +208,7 @@ func TestBackpressureNeverBlocksLaterFramesOrOtherSubscribers(t *testing.T) {
 						}
 					}
 					for n := range FanoutMaxPendingFrames + 64 {
-						frame := pyjson.ObjectOf("params", pyjson.ObjectOf("type", "message.delta", "n", n))
+						frame := jsonutil.ObjectOf("params", jsonutil.ObjectOf("type", "message.delta", "n", n))
 						if !fan.Write(frame) {
 							t.Fatal("a fanout write failed")
 						}
@@ -222,7 +222,7 @@ func TestBackpressureNeverBlocksLaterFramesOrOtherSubscribers(t *testing.T) {
 					if fan.Contains(slow.peer()) {
 						t.Fatal("slow backlog grew without bound")
 					}
-					reattach := pyjson.ObjectOf("reattach", true)
+					reattach := jsonutil.ObjectOf("reattach", true)
 					for range 16 {
 						if !fan.Attach(slow.peer()) || !fan.Write(reattach) {
 							t.Fatal("reattach failed")
@@ -244,7 +244,7 @@ func TestBackpressureNeverBlocksLaterFramesOrOtherSubscribers(t *testing.T) {
 					slow.closeReader()
 					fan.Close()
 					closed = true
-					if fan.Write(pyjson.ObjectOf("after", "close")) {
+					if fan.Write(jsonutil.ObjectOf("after", "close")) {
 						t.Fatal("a closed fanout accepted a frame")
 					}
 				})

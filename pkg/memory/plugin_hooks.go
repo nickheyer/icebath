@@ -5,9 +5,9 @@ import (
 	"os"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Tool environment of a home with its read only config, for plugin facing provider lookups
@@ -39,7 +39,7 @@ func HostedProviderName(obj any) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	return pyrepr.Str(name), true
+	return anyutil.String(name), true
 }
 
 // Prepares a provider's dependency union for the plugin installer, the readiness status dropped

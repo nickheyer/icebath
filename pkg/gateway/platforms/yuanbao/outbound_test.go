@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestChunkMarkdownTextSplitsAtParagraphsAndKeepsFencesWhole(t *testing.T) {
@@ -103,7 +102,7 @@ func heartbeatValues(t *testing.T, server *fakeServer, cmd string, field int64) 
 	t.Helper()
 	var values []any
 	for _, frame := range server.sent(cmd) {
-		fields, err := parseDict(frame.Vals["data"].([]byte))
+		fields, err := parseDict(frame.Value("data").([]byte))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,13 +149,13 @@ func TestTypingHeartbeatRunsUntilStoppedAndTheSendFinishesIt(t *testing.T) {
 func TestStickerSendsBuildFaceElems(t *testing.T) {
 	adapter, server := connectAdapter(t, nil)
 	ctx := context.Background()
-	name := StickerMap.Keys[0]
+	name := StickerMap.Keys()[0]
 	if result, err := adapter.SendSticker(ctx, "direct:alice", &name, nil, "", nil); err != nil || !result.Success {
 		t.Fatalf("named sticker %+v %v", result, err)
 	}
 	named := bodyElems(t, server.sent("send_c2c_message")[0], 5)
-	data, _ := named[0].Vals["msg_content"].(*pyjson.Object).GetOr("data", "").(string)
-	if len(named) != 1 || named[0].Vals["msg_type"] != "TIMFaceElem" || !strings.Contains(data, `"name":"`+name+`"`) {
+	data, _ := named[0].Value("msg_content").(*jsonutil.Object).ValueOr("data", "").(string)
+	if len(named) != 1 || named[0].Value("msg_type") != "TIMFaceElem" || !strings.Contains(data, `"name":"`+name+`"`) {
 		t.Fatalf("named sticker body %v", named)
 	}
 	faceIndex := 7
@@ -164,12 +163,12 @@ func TestStickerSendsBuildFaceElems(t *testing.T) {
 		t.Fatalf("face sticker %+v %v", result, err)
 	}
 	frame := server.sent("send_group_message")[0]
-	fields, err := parseDict(frame.Vals["data"].([]byte))
+	fields, err := parseDict(frame.Value("data").([]byte))
 	if err != nil {
 		t.Fatal(err)
 	}
 	face := bodyElems(t, frame, 6)
-	if len(face) != 1 || !pyjson.Equal(face[0].Vals["msg_content"].(*pyjson.Object).GetOr("index", nil), int64(7)) || fields.GetString(7) != "ref-1" {
+	if len(face) != 1 || !anyutil.Equal(face[0].Value("msg_content").(*jsonutil.Object).ValueOr("index", nil), int64(7)) || fields.GetString(7) != "ref-1" {
 		t.Fatalf("face sticker body %v", face)
 	}
 	if result, err := adapter.SendSticker(ctx, "direct:alice", nil, nil, "", nil); err != nil || !result.Success {
@@ -193,11 +192,11 @@ func (r rerouteTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 // Upload backend answering genUploadInfo with the current credentials and recording every uploaded body by its path
 type cosBackend struct {
 	mu          sync.Mutex
-	credentials *pyjson.Object
+	credentials *jsonutil.Object
 	uploads     map[string]string
 }
 
-func (b *cosBackend) setCredentials(credentials *pyjson.Object) {
+func (b *cosBackend) setCredentials(credentials *jsonutil.Object) {
 	b.mu.Lock()
 	b.credentials = credentials
 	b.mu.Unlock()
@@ -221,12 +220,12 @@ func (b *cosBackend) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unexpected request", http.StatusBadRequest)
 		return
 	}
-	reply, _ := pyjson.Dumps(pyjson.ObjectOf("code", int64(0), "data", b.credentials))
+	reply, _ := jsonutil.Encode(jsonutil.ObjectOf("code", int64(0), "data", b.credentials))
 	fmt.Fprint(w, reply)
 }
 
 // Starts the upload backend and routes every media request of the package to it
-func startCOSBackend(t *testing.T, credentials *pyjson.Object) *cosBackend {
+func startCOSBackend(t *testing.T, credentials *jsonutil.Object) *cosBackend {
 	t.Helper()
 	backend := &cosBackend{credentials: credentials, uploads: map[string]string{}}
 	server := httptest.NewServer(backend)
@@ -240,8 +239,8 @@ func startCOSBackend(t *testing.T, credentials *pyjson.Object) *cosBackend {
 }
 
 func TestFileSendsUploadToCOSAndDispatchTheMediaBody(t *testing.T) {
-	credentials := func(region any) *pyjson.Object {
-		out := pyjson.ObjectOf("bucketName", "bucket-1", "location", "media/upload key.bin", "encryptTmpSecretId", "sid",
+	credentials := func(region any) *jsonutil.Object {
+		out := jsonutil.ObjectOf("bucketName", "bucket-1", "location", "media/upload key.bin", "encryptTmpSecretId", "sid",
 			"encryptTmpSecretKey", "skey", "encryptToken", "session", "resourceUrl", "https://cdn.example.com/res/1")
 		if region != nil {
 			out.Set("region", region)
@@ -264,15 +263,15 @@ func TestFileSendsUploadToCOSAndDispatchTheMediaBody(t *testing.T) {
 		t.Fatalf("document send %+v %v", result, err)
 	}
 	frame := server.sent("send_c2c_message")[0]
-	fields, err := parseDict(frame.Vals["data"].([]byte))
+	fields, err := parseDict(frame.Value("data").([]byte))
 	if err != nil {
 		t.Fatal(err)
 	}
 	body := bodyElems(t, frame, 5)
-	file := body[0].Vals["msg_content"].(*pyjson.Object)
-	if len(body) != 2 || body[0].Vals["msg_type"] != "TIMFileElem" || file.GetOr("url", nil) != "https://cdn.example.com/res/1" ||
-		file.GetOr("file_name", nil) != "renamed.txt" || !pyjson.Equal(file.GetOr("file_size", nil), int64(5)) || file.GetOr("uuid", nil) != MD5Hex([]byte("hello")) ||
-		body[1].Vals["msg_content"].(*pyjson.Object).GetOr("text", nil) != "see attached" || fields.GetString(6) != "grp-7" {
+	file := body[0].Value("msg_content").(*jsonutil.Object)
+	if len(body) != 2 || body[0].Value("msg_type") != "TIMFileElem" || file.ValueOr("url", nil) != "https://cdn.example.com/res/1" ||
+		file.ValueOr("file_name", nil) != "renamed.txt" || !anyutil.Equal(file.ValueOr("file_size", nil), int64(5)) || file.ValueOr("uuid", nil) != MD5Hex([]byte("hello")) ||
+		body[1].Value("msg_content").(*jsonutil.Object).ValueOr("text", nil) != "see attached" || fields.GetString(6) != "grp-7" {
 		t.Fatalf("document body %v", body)
 	}
 	if got := backend.uploaded("/media/upload key.bin"); got != "hello" {
@@ -282,10 +281,10 @@ func TestFileSendsUploadToCOSAndDispatchTheMediaBody(t *testing.T) {
 		t.Fatalf("image send %+v %v", result, err)
 	}
 	picture := bodyElems(t, server.sent("send_group_message")[0], 6)[0]
-	content := picture.Vals["msg_content"].(*pyjson.Object)
-	info := content.GetOr("image_info_array", []any{}).([]any)
-	if picture.Vals["msg_type"] != "TIMImageElem" || !pyjson.Equal(content.GetOr("image_format", nil), int64(3)) || len(info) != 1 ||
-		!pyjson.Equal(info[0].(*pyjson.Object).GetOr("width", nil), int64(256)) || !pyjson.Equal(info[0].(*pyjson.Object).GetOr("height", nil), int64(128)) {
+	content := picture.Value("msg_content").(*jsonutil.Object)
+	info := content.ValueOr("image_info_array", []any{}).([]any)
+	if picture.Value("msg_type") != "TIMImageElem" || !anyutil.Equal(content.ValueOr("image_format", nil), int64(3)) || len(info) != 1 ||
+		!anyutil.Equal(info[0].(*jsonutil.Object).ValueOr("width", nil), int64(256)) || !anyutil.Equal(info[0].(*jsonutil.Object).ValueOr("height", nil), int64(128)) {
 		t.Fatalf("image body %v", picture)
 	}
 	for path, want := range map[string]string{filepath.Join(dir, "missing.txt"): "File not found: " + filepath.Join(dir, "missing.txt"),

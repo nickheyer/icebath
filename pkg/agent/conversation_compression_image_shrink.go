@@ -7,8 +7,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -145,7 +145,7 @@ func sourceToDataURL(source any) string {
 	}
 	mediaType := "image/jpeg"
 	if pyTruthy(src["media_type"]) {
-		mediaType = strings.TrimSpace(pyrepr.Str(src["media_type"]))
+		mediaType = strings.TrimSpace(anyutil.String(src["media_type"]))
 	}
 	if !strings.HasPrefix(mediaType, "image/") {
 		mediaType = "image/jpeg"

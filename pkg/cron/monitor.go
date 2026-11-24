@@ -15,9 +15,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -40,7 +39,7 @@ type MonitorOutcome struct {
 
 // Hex sha256 of the exact UTF-8 bytes of a monitor output
 func hashMonitorOutput(output string) string {
-	sum := sha256.Sum256(pystr.EncodeUTF8Replace(output))
+	sum := sha256.Sum256([]byte(output))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -73,14 +72,14 @@ func (s *Store) readLastMonitorOutput(jobID string) string {
 		var raw []byte
 		if raw, err = os.ReadFile(path); err == nil {
 			var text string
-			if text, err = pystr.DecodeUTF8Sig(raw); err == nil {
+			if text, err = textutil.DecodeUTF8(textutil.TrimBOM(raw)); err == nil {
 				return text
 			}
 		} else if errors.Is(err, fs.ErrNotExist) {
 			return ""
 		}
 	}
-	s.log.Warn(fmt.Sprintf("Monitor: failed to read last output for %s: %v", pyrepr.Repr(jobID), err))
+	s.log.Warn(fmt.Sprintf("Monitor: failed to read last output for %s: %v", anyutil.Quote(jobID), err))
 	return ""
 }
 
@@ -93,7 +92,7 @@ func (s *Store) writeLastMonitorOutput(jobID, output string) {
 		}
 	}
 	if err != nil {
-		s.log.Warn(fmt.Sprintf("Monitor: failed to persist last output for %s: %v", pyrepr.Repr(jobID), err))
+		s.log.Warn(fmt.Sprintf("Monitor: failed to persist last output for %s: %v", anyutil.Quote(jobID), err))
 	}
 }
 
@@ -104,7 +103,7 @@ var monitorHTTPClient = &http.Client{Timeout: monitorURLTimeout}
 func fetchMonitorURL(ctx context.Context, url string) (bool, string) {
 	lower := strings.ToLower(url)
 	if !strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://") {
-		return false, "monitor_url must be http(s): " + pyrepr.Repr(url)
+		return false, "monitor_url must be http(s): " + anyutil.Quote(url)
 	}
 	ctx, cancel := context.WithTimeout(ctx, monitorURLTimeout)
 	defer cancel()
@@ -202,6 +201,6 @@ func (s *Store) persistMonitorState(ctx context.Context, jobID, newHash, output 
 	s.writeLastMonitorOutput(jobID, output)
 	state := map[string]any{"last_output_hash": newHash, "last_changed_at": FormatISO(s.clk.now())}
 	if _, err := s.updateJob(home.WithOverride(ctx, s.home), jobID, map[string]any{"monitor_state": state}); err != nil {
-		s.log.Warn(fmt.Sprintf("Monitor: failed to persist state for %s: %v", pyrepr.Repr(jobID), err))
+		s.log.Warn(fmt.Sprintf("Monitor: failed to persist state for %s: %v", anyutil.Quote(jobID), err))
 	}
 }

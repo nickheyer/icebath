@@ -15,15 +15,17 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/logging"
@@ -76,7 +78,7 @@ func parseLogSince(since string) (time.Time, bool, error) {
 	unit := map[string]int64{"s": 1, "m": 60, "h": 3600, "d": 86400}[m[2]]
 	total := new(big.Int).Mul(n, big.NewInt(unit))
 	days := new(big.Int).Div(total, big.NewInt(86400))
-	tooFar := &pyint.Error{Kind: "OverflowError", Msg: "the --since window " + since + " reaches back before the year 1"}
+	tooFar := &errorutil.Error{Kind: "OverflowError", Msg: "the --since window " + since + " reaches back before the year 1"}
 	if days.Cmp(big.NewInt(math.MaxInt32)) > 0 || days.Int64() > 999999999 {
 		return time.Time{}, false, tooFar
 	}
@@ -194,7 +196,7 @@ func readAllLogLines(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	return readlinesKeep(pystr.DecodeUTF8SigReplace(raw)), nil
+	return readlinesKeep(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError))), nil
 }
 
 // Last n entries of a slice, the Python negative slice
@@ -494,7 +496,7 @@ func ListLogs(ctx context.Context, w io.Writer) error {
 	found := false
 	for _, entry := range append(entries, rootLogs...) {
 		st, err := os.Stat(entry)
-		if err != nil || !st.Mode().IsRegular() || pypath.PathSuffix(entry) != ".log" {
+		if err != nil || !st.Mode().IsRegular() || pathutil.Suffix(entry) != ".log" {
 			continue
 		}
 		label := filepath.Base(entry)

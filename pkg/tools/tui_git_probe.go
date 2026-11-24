@@ -2,11 +2,12 @@ package tools
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -149,9 +150,9 @@ func GitProbeCommonRepoRoot(cwd string) string {
 	}
 	return tuiGitRoots.resolve("common:"+cwd, func() string {
 		if gitdir := tuiRunGit(cwd, "rev-parse", "--path-format=absolute", "--git-common-dir"); gitdir != "" {
-			gitdir, _ = pypath.Realpath(gitdir, pypath.Lax)
-			if pypath.Basename(gitdir) == ".git" {
-				return strings.ReplaceAll(pypath.Dirname(gitdir), string(os.PathSeparator), "/")
+			gitdir, _ = pathutil.Resolve(gitdir)
+			if pathutil.Name(gitdir) == ".git" {
+				return strings.ReplaceAll(filepath.Dir(gitdir), string(os.PathSeparator), "/")
 			}
 		}
 		return GitProbeRepoRoot(cwd)

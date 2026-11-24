@@ -10,9 +10,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/pm"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Followup a failed configured feature dependency install is owed under
@@ -58,7 +59,7 @@ func failureText(err error) string {
 	if errors.As(err, &called) {
 		return fmt.Sprintf("%s exited %d", strings.Join(called.Cmd, " "), called.ReturnCode)
 	}
-	var subCalled *pysubprocess.CalledProcessError
+	var subCalled *executil.StatusError
 	if errors.As(err, &subCalled) {
 		return fmt.Sprintf("%s exited %d", strings.Join(subCalled.Cmd, " "), subCalled.Returncode)
 	}
@@ -79,7 +80,7 @@ func exceptionName(err error) string {
 	if errors.As(err, &pyErr) && pyErr.Class != "" {
 		return pyErr.Class
 	}
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return pypath.OSErrorClass(err)
 	}
 	return "RuntimeError"

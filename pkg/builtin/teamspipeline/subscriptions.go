@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type graphClient interface {
@@ -45,7 +45,7 @@ func utcTimestamp(hoursFromNow int, base *time.Time) string {
 }
 
 // Normalizes a Graph subscription into the store with an expiry derived status and renewal stamp
-func syncGraphSubscriptionRecord(store *TeamsPipelineStore, payload *pyjson.Object, status string, renewed bool) (*pyjson.Object, error) {
+func syncGraphSubscriptionRecord(store *TeamsPipelineStore, payload *jsonutil.Object, status string, renewed bool) (*jsonutil.Object, error) {
 	sub, err := GraphSubscriptionFromDict(payload)
 	if err != nil {
 		return nil, err
@@ -65,7 +65,7 @@ func syncGraphSubscriptionRecord(store *TeamsPipelineStore, payload *pyjson.Obje
 	if renewed {
 		normalized.Set("latest_renewal_at", utcTimestamp(0, nil))
 	}
-	return store.UpsertSubscription(pyrepr.Str(get(normalized, "subscription_id")), normalized)
+	return store.UpsertSubscription(anyutil.String(get(normalized, "subscription_id")), normalized)
 }
 
 // Configured clientState from raw or MSGRAPH_WEBHOOK_CLIENT_STATE, nil when blank
@@ -83,7 +83,7 @@ func expectedClientState(raw *string) any {
 }
 
 // Whether the store knows the subscription or its clientState matches the configured one
-func isManagedSubscription(store *TeamsPipelineStore, payload *pyjson.Object, expected any) bool {
+func isManagedSubscription(store *TeamsPipelineStore, payload *jsonutil.Object, expected any) bool {
 	id := strField(or(get(payload, "subscription_id"), get(payload, "id")))
 	if id != "" && store.GetSubscription(id) != nil {
 		return true
@@ -96,7 +96,7 @@ func isManagedSubscription(store *TeamsPipelineStore, payload *pyjson.Object, ex
 // First truthy value or the last one
 func or(vals ...any) any {
 	for _, v := range vals[:len(vals)-1] {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -104,7 +104,7 @@ func or(vals ...any) any {
 }
 
 // Syncs managed Graph subscriptions, renews those expiring within the threshold and flags locally known ones Graph dropped
-func maintainGraphSubscriptions(ctx context.Context, client graphClient, store *TeamsPipelineStore, renewWithinHours, extendHours int, dryRun bool, clientState *string) (*pyjson.Object, error) {
+func maintainGraphSubscriptions(ctx context.Context, client graphClient, store *TeamsPipelineStore, renewWithinHours, extendHours int, dryRun bool, clientState *string) (*jsonutil.Object, error) {
 	threshold := max(1, renewWithinHours)
 	extendHours = max(1, extendHours)
 	managed := expectedClientState(clientState)
@@ -117,7 +117,7 @@ func maintainGraphSubscriptions(ctx context.Context, client graphClient, store *
 	synced := 0
 	renewed, candidates, skipped := []any{}, []any{}, []any{}
 	for _, item := range remote {
-		raw, ok := item.(*pyjson.Object)
+		raw, ok := item.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -172,10 +172,10 @@ func maintainGraphSubscriptions(ctx context.Context, client graphClient, store *
 		if err != nil {
 			return nil, err
 		}
-		merged := raw.Copy()
-		if p, ok := patched.(*pyjson.Object); ok {
-			for _, k := range p.Keys {
-				merged.Set(k, p.Vals[k])
+		merged := raw.Clone()
+		if p, ok := patched.(*jsonutil.Object); ok {
+			for _, k := range p.Keys() {
+				merged.Set(k, p.Value(k))
 			}
 		}
 		merged.Set("id", id)
@@ -183,11 +183,11 @@ func maintainGraphSubscriptions(ctx context.Context, client graphClient, store *
 		if _, err := syncGraphSubscriptionRecord(store, merged, "active", true); err != nil {
 			return nil, err
 		}
-		rec := candidate.Copy()
+		rec := candidate.Clone()
 		rec.Set("result", patched)
 		renewed = append(renewed, rec)
 	}
-	for _, id := range store.ListSubscriptions().Keys {
+	for _, id := range store.ListSubscriptions().Keys() {
 		if !remoteIDs[id] {
 			if _, err := store.UpsertSubscription(id, obj("status", "missing_remote", "last_seen_missing_remote_at", utcTimestamp(0, nil))); err != nil {
 				return nil, err

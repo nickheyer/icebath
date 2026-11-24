@@ -11,12 +11,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Resolved inputs of one update run, the flags, config and pre update version
@@ -38,12 +38,12 @@ type updateOptions struct {
 func resolveUpdateOptions(ctx context.Context, w io.Writer, args map[string]any, gatewayMode bool) (*updateOptions, error) {
 	opts := &updateOptions{
 		PreUpdateVersion: checkoutVersion(ctx),
-		AssumeYes:        pyrepr.Truthy(args["yes"]),
-		KeepStash:        pyrepr.Truthy(args["keep_stash"]),
-		SwitchBranch:     pyrepr.Truthy(args["switch_branch"]),
-		NoGatewayRestart: pyrepr.Truthy(args["no_gateway_restart"]),
-		Force:            pyrepr.Truthy(args["force"]),
-		ForceVenv:        pyrepr.Truthy(args["force_venv"]),
+		AssumeYes:        anyutil.IsTrue(args["yes"]),
+		KeepStash:        anyutil.IsTrue(args["keep_stash"]),
+		SwitchBranch:     anyutil.IsTrue(args["switch_branch"]),
+		NoGatewayRestart: anyutil.IsTrue(args["no_gateway_restart"]),
+		Force:            anyutil.IsTrue(args["force"]),
+		ForceVenv:        anyutil.IsTrue(args["force_venv"]),
 	}
 	if gatewayMode {
 		opts.GwInputFn = func(prompt, def string) (string, error) { return updateGatewayPrompt(ctx, w, prompt, def, 300.0) }
@@ -228,7 +228,7 @@ func applyPulledUpdate(ctx context.Context, w io.Writer, gitCmd []string, branch
 			observed = postPullSHA
 		}
 		pinned := completionRequest["expected_sha"]
-		if pinned != nil && !pyrepr.Equal(pinned, observed) {
+		if pinned != nil && !anyutil.Equal(pinned, observed) {
 			fmt.Fprintln(w, "✗ Checkout no longer matches the selected channel commit. No completion was applied.")
 			if err := resumeWindowsGatewaysAfterUpdate(ctx, w, token); err != nil {
 				return err
@@ -236,7 +236,7 @@ func applyPulledUpdate(ctx context.Context, w io.Writer, gitCmd []string, branch
 			recordStop(ctx, "head_moved")
 			return updateExit(1)
 		}
-		if pyrepr.Truthy(pinned) {
+		if anyutil.IsTrue(pinned) {
 			completionRequest["expected_sha"] = pinned
 		} else {
 			completionRequest["expected_sha"] = observed
@@ -269,8 +269,8 @@ func updateRunChannel(ctx context.Context, args map[string]any) (string, error) 
 // Target branch of the update, main when the flag is absent or blank
 func resolveUpdateBranch(args map[string]any) string {
 	branch := "main"
-	if pyrepr.Truthy(args["branch"]) {
-		branch = pyrepr.Str(args["branch"])
+	if anyutil.IsTrue(args["branch"]) {
+		branch = anyutil.String(args["branch"])
 	}
 	if branch = strings.TrimSpace(branch); branch == "" {
 		return "main"
@@ -358,7 +358,7 @@ func cmdUpdateImpl(ctx context.Context, w io.Writer, args map[string]any, gatewa
 	if err != nil {
 		return err
 	}
-	branch = pyrepr.Str(completionRequest["branch"])
+	branch = anyutil.String(completionRequest["branch"])
 	if useZipUpdate {
 		_, zipErr := updateViaZip(ctx, w, args, target.ReleaseSHA, target.Repository, completionRequest)
 		if err := resumePausedGatewaysAtExit(ctx, w, token, completionRequest); err != nil {
@@ -415,7 +415,7 @@ func applyGitUpdate(ctx context.Context, w io.Writer, args map[string]any, gatew
 	fetchResult := &CompletedProcess{Args: []string{}}
 	if fetchArgs != nil {
 		fmt.Fprintln(w, "→ Fetching updates...")
-		runner := func(gc, a []string) (*pysubprocess.Completed, error) {
+		runner := func(gc, a []string) (*executil.Completed, error) {
 			done, err := updateGitRun(ctx, gc, a, "", false, true)
 			return plainCompleted(done), err
 		}
@@ -492,7 +492,7 @@ func applyGitUpdate(ctx context.Context, w io.Writer, args map[string]any, gatew
 	fmt.Fprintln(w, "→ Pulling updates...")
 	expectedSHA := ""
 	if pinned := completionRequest["expected_sha"]; pinned != nil {
-		expectedSHA = pyrepr.Str(pinned)
+		expectedSHA = anyutil.String(pinned)
 	}
 	movementBaseline, err := pullUpdates(ctx, w, gitCmd, branch, plan.AutoStashRef, pullOptions{PromptForRestore: plan.PromptForRestore,
 		GwInputFn: opts.GwInputFn, DiscardLocalChanges: opts.DiscardLocalChanges, KeepStash: opts.KeepStash, TargetRef: targetRef,

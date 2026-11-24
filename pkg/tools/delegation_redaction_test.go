@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Structured summaries keep valid JSON, plain ones get the text pass and parent copies yield their projection
@@ -15,11 +15,11 @@ func TestRedactSummaryProjectsStructuredPlainAndParentCopySummaries(t *testing.T
 	if !ok || strings.Contains(structured, strings.Repeat("a", 40)) {
 		t.Fatalf("structured %v", structured)
 	}
-	parsed, err := pyjson.Loads(ExtractJSONCandidate(structured))
+	parsed, err := jsonutil.Decode(ExtractJSONCandidate(structured))
 	if err != nil {
 		t.Fatalf("structured summary no longer parses %v", err)
 	}
-	if n, _ := parsed.(*pyjson.Object).Get("n"); !pyrepr.Equal(n, 2) {
+	if n, _ := parsed.(*jsonutil.Object).Get("n"); !anyutil.Equal(n, 2) {
 		t.Fatalf("n = %v", n)
 	}
 	if plain := RedactSummary(nil, delegationSecret, false, true); plain == delegationSecret {

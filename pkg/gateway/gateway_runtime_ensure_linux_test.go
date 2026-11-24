@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 func TestEnsureWaitsForRealControlOwnerWithoutClaimingPendingIsReady(t *testing.T) {
@@ -24,7 +24,7 @@ func TestEnsureWaitsForRealControlOwnerWithoutClaimingPendingIsReady(t *testing.
 	state, served, stalled := "starting", true, false
 	set := func(apply func()) { mu.Lock(); apply(); mu.Unlock() }
 	unstall := make(chan struct{})
-	serveIdentify(t, h, func() *pyjson.Object {
+	serveIdentify(t, h, func() *jsonutil.Object {
 		mu.Lock()
 		st, sv, sl := state, served, stalled
 		mu.Unlock()
@@ -38,8 +38,8 @@ func TestEnsureWaitsForRealControlOwnerWithoutClaimingPendingIsReady(t *testing.
 		if sv {
 			profiles = fmt.Sprintf(`[{"profile_id": %q, "home": %q}]`, h, h)
 		}
-		v, _ := pyjson.Loads(fmt.Sprintf(`{"runtime_protocol": 1, "state": %q, "instance_id": "peer", "served_profiles": %s}`, st, profiles))
-		return v.(*pyjson.Object)
+		v, _ := jsonutil.Decode(fmt.Sprintf(`{"runtime_protocol": 1, "state": %q, "instance_id": "peer", "served_profiles": %s}`, st, profiles))
+		return v.(*jsonutil.Object)
 	})
 	t.Cleanup(func() { close(unstall) })
 	ensure := func() ObservedEndpoint {
@@ -250,7 +250,7 @@ func TestUnmanagedRuntimeDoesNotInheritClientLaunchFlags(t *testing.T) {
 	t.Setenv("ICEBATH_YOLO_MODE", "1")
 	t.Setenv("ICEBATH_IGNORE_RULES", "1")
 	t.Setenv("RUNTIME_TEST_SENTINEL", "retained")
-	child, err := SpawnUnmanagedGateway(context.Background(), h, pythread.Monotonic()+5, false, false)
+	child, err := SpawnUnmanagedGateway(context.Background(), h, timeutil.Monotonic()+5, false, false)
 	if err != nil {
 		t.Fatal(err)
 	}

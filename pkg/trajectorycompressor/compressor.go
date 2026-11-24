@@ -9,13 +9,13 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Ordered hostname to provider table, codex matched separately
@@ -42,7 +42,7 @@ type Compressor struct {
 }
 
 func runtimeError(format string, args ...any) error {
-	return &pyint.Error{Kind: "RuntimeError", Msg: fmt.Sprintf(format, args...)}
+	return &errorutil.Error{Kind: "RuntimeError", Msg: fmt.Sprintf(format, args...)}
 }
 
 // Compressor with its tokenizer loaded and summarizer route resolved
@@ -100,7 +100,7 @@ func (c *Compressor) initSummarizer(ctx context.Context) error {
 // Provider name for the configured base_url, empty when the host is unknown
 func (c *Compressor) detectProvider() (string, error) {
 	url := c.Config.BaseURL
-	host, err := pyurl.BaseURLHostname(url)
+	host, err := urlutil.BaseHost(url)
 	if err != nil {
 		return "", err
 	}
@@ -108,7 +108,7 @@ func (c *Compressor) detectProvider() (string, error) {
 		return "codex", nil
 	}
 	for _, ph := range providerHosts {
-		ok, err := pyurl.BaseURLHostMatches(url, ph[0])
+		ok, err := urlutil.BaseHostMatches(url, ph[0])
 		if err != nil {
 			return "", err
 		}
@@ -126,15 +126,15 @@ func pyLen(v any) (int, error) {
 		return utf8.RuneCountInString(x), nil
 	case []any:
 		return len(x), nil
-	case *pyjson.Object:
-		return len(x.Keys), nil
+	case *jsonutil.Object:
+		return x.Len(), nil
 	}
-	return 0, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("object of type '%s' has no len()", pyrepr.TypeName(v))}
+	return 0, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("object of type '%s' has no len()", anyutil.Kind(v))}
 }
 
 // Token count of a turn value, zero when empty, a quarter of its length when it is not encodable text
 func (c *Compressor) CountTokens(text any) (int, error) {
-	if !pyrepr.Truthy(text) {
+	if !anyutil.IsTrue(text) {
 		return 0, nil
 	}
 	if s, ok := text.(string); ok {
@@ -147,11 +147,11 @@ func (c *Compressor) CountTokens(text any) (int, error) {
 }
 
 // A turn as the dict it must be, the AttributeError of turn.get otherwise
-func turnDict(turn any) (*pyjson.Object, error) {
-	if o, ok := turn.(*pyjson.Object); ok {
+func turnDict(turn any) (*jsonutil.Object, error) {
+	if o, ok := turn.(*jsonutil.Object); ok {
 		return o, nil
 	}
-	return nil, &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(turn))}
+	return nil, &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(turn))}
 }
 
 // Token counts of every turn value in order
@@ -162,7 +162,7 @@ func (c *Compressor) CountTurnTokens(traj []any) ([]int, error) {
 		if err != nil {
 			return nil, err
 		}
-		if out[i], err = c.CountTokens(d.GetOr("value", "")); err != nil {
+		if out[i], err = c.CountTokens(d.ValueOr("value", "")); err != nil {
 			return nil, err
 		}
 	}
@@ -188,10 +188,10 @@ func (c *Compressor) findProtectedIndices(traj []any) (map[int]bool, int, int, e
 		if err != nil {
 			return nil, 0, 0, err
 		}
-		role := d.GetOr("from", "")
+		role := d.ValueOr("from", "")
 		switch role.(type) {
-		case []any, *pyjson.Object:
-			return nil, 0, 0, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(role))}
+		case []any, *jsonutil.Object:
+			return nil, 0, 0, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(role))}
 		}
 		if s, ok := role.(string); ok {
 			if _, seen := firstSeen[s]; !seen {
@@ -227,7 +227,7 @@ func cleanBoundary(traj []any, i int) bool {
 	if i >= len(traj) {
 		return true
 	}
-	d, _ := traj[i].(*pyjson.Object)
+	d, _ := traj[i].(*jsonutil.Object)
 	if d == nil {
 		return true
 	}
@@ -259,23 +259,23 @@ func (c *Compressor) extractTurnContentForSummary(traj []any, start, end int) (s
 		if err != nil {
 			return "", err
 		}
-		value := d.GetOr("value", "")
+		value := d.ValueOr("value", "")
 		n, err := pyLen(value)
 		if err != nil {
 			return "", err
 		}
-		text := pyrepr.Str(value)
+		text := anyutil.String(value)
 		if n > 3000 {
 			s, ok := value.(string)
 			if !ok {
-				return "", &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("can only concatenate %s (not \"str\") to %s", pyrepr.TypeName(value), pyrepr.TypeName(value))}
+				return "", &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("can only concatenate %s (not \"str\") to %s", anyutil.Kind(value), anyutil.Kind(value))}
 			}
 			text = tools.ElideMiddle(s, 1500, 500)
 		}
-		from := d.GetOr("from", "unknown")
+		from := d.ValueOr("from", "unknown")
 		fs, ok := from.(string)
 		if !ok {
-			return "", &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'upper'", pyrepr.TypeName(from))}
+			return "", &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'upper'", anyutil.Kind(from))}
 		}
 		parts = append(parts, fmt.Sprintf("[Turn %d - %s]:\n%s", i, strings.ToUpper(fs), text))
 	}
@@ -340,10 +340,10 @@ func responseFinishReason(response any) string {
 		return ""
 	}
 	reason := provider.MessageField(choices.Index(0).Interface(), "finish_reason")
-	if !pyrepr.Truthy(reason) {
+	if !anyutil.IsTrue(reason) {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(reason)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(reason)))
 }
 
 // Summary text carrying the CONTEXT SUMMARY prefix exactly once, a length stop failing the attempt
@@ -359,8 +359,8 @@ func finishSummary(response any) (string, error) {
 	text := ""
 	if s, ok := content.(string); ok {
 		text = s
-	} else if pyrepr.Truthy(content) {
-		text = pyrepr.Str(content)
+	} else if anyutil.IsTrue(content) {
+		text = anyutil.String(content)
 	}
 	text = strings.TrimSpace(text)
 	if strings.HasPrefix(text, summaryPrefix) {
@@ -489,10 +489,10 @@ func (c *Compressor) planCompression(traj []any, m *TrajectoryMetrics) (int, int
 }
 
 // Shallow copy of an ordered dict keeping its key order
-func copyObject(o *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range o.Keys {
-		out.Set(k, o.Vals[k])
+func copyObject(o *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, k := range o.Keys() {
+		out.Set(k, o.Value(k))
 	}
 	return out
 }
@@ -501,26 +501,26 @@ func copyObject(o *pyjson.Object) *pyjson.Object {
 func (c *Compressor) assembleCompressed(traj []any, start, until int, summary any, m *TrajectoryMetrics) ([]any, error) {
 	compressed := make([]any, 0, start+1+len(traj)-until)
 	for _, turn := range traj[:start] {
-		t := copyObject(turn.(*pyjson.Object))
+		t := copyObject(turn.(*jsonutil.Object))
 		if from, _ := t.Get("from"); from == "system" && c.Config.AddSummaryNotice {
 			value, ok := t.Get("value")
 			if !ok {
-				return nil, &pyint.Error{Kind: "KeyError", Msg: "'value'"}
+				return nil, &errorutil.Error{Kind: "KeyError", Msg: "'value'"}
 			}
 			s, isStr := value.(string)
 			if !isStr {
-				return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("unsupported operand type(s) for +: '%s' and 'str'", pyrepr.TypeName(value))}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("unsupported operand type(s) for +: '%s' and 'str'", anyutil.Kind(value))}
 			}
 			t.Set("value", s+c.Config.SummaryNoticeText)
 		}
 		compressed = append(compressed, t)
 	}
-	head := pyjson.NewObject()
+	head := jsonutil.NewObject()
 	head.Set("from", "human")
 	head.Set("value", summary)
 	compressed = append(compressed, head)
 	for _, turn := range traj[until:] {
-		compressed = append(compressed, copyObject(turn.(*pyjson.Object)))
+		compressed = append(compressed, copyObject(turn.(*jsonutil.Object)))
 	}
 	tokens, err := c.CountTrajectoryTokens(compressed)
 	if err != nil {
@@ -547,14 +547,14 @@ func iterTurns(v any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
-		out := make([]any, len(x.Keys))
-		for i, k := range x.Keys {
+	case *jsonutil.Object:
+		out := make([]any, x.Len())
+		for i, k := range x.Keys() {
 			out[i] = k
 		}
 		return out, nil
 	}
-	return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
 }
 
 func (c *Compressor) compress(ctx context.Context, trajectory any, async bool) (any, *TrajectoryMetrics, error) {
@@ -592,7 +592,7 @@ func (c *Compressor) CompressTrajectoryAsync(ctx context.Context, trajectory any
 
 // Compresses the conversations of one JSONL entry, attaching per trajectory metrics when it was compressed
 func (c *Compressor) ProcessEntry(ctx context.Context, entry any) (any, *TrajectoryMetrics, error) {
-	obj, ok := entry.(*pyjson.Object)
+	obj, ok := entry.(*jsonutil.Object)
 	if !ok {
 		return entry, NewTrajectoryMetrics(), nil
 	}

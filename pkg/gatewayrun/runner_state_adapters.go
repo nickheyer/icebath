@@ -4,7 +4,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Attributes only the adapter lifecycle, shutdown, watcher, topic and voice modules set
@@ -16,8 +15,8 @@ type runnerAdapterState struct {
 	warnedTelegramGroupUsersLegacy bool
 
 	adapterClaimsMu            sync.Mutex
-	secondaryHeldClaims        *pydict.Dict[secondaryKey, heldClaims]
-	unservedSecondaryPlatforms *pydict.Dict[secondaryKey, struct{}]
+	secondaryHeldClaims        *orderedutil.Map[secondaryKey, heldClaims]
+	unservedSecondaryPlatforms *orderedutil.Map[secondaryKey, struct{}]
 
 	taskSetsMu         sync.Mutex
 	supervisedWatchers map[*gatewayTask]struct{}

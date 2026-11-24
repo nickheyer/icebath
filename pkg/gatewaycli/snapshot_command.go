@@ -14,11 +14,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Home and catalog lookup of one /snapshot run, T taking the snapshot keys of cli.commands
@@ -32,7 +33,7 @@ type SnapshotRestore struct {
 	Restored bool
 	Detached bool
 	Profile  string
-	Ack      *pyjson.Object
+	Ack      *jsonutil.Object
 }
 
 // Stop advice per supervisor that would relaunch a gateway right after a drain
@@ -47,7 +48,7 @@ func snapshotRow(v any) map[string]any {
 	if m, ok := v.(map[string]any); ok {
 		return m
 	}
-	if m, ok := pyjson.Plain(v).(map[string]any); ok {
+	if m, ok := jsonutil.Plain(v).(map[string]any); ok {
 		return m
 	}
 	return map[string]any{}
@@ -124,13 +125,13 @@ func (s SnapshotCommand) List() ([]string, error) {
 		}
 		files := "0"
 		if count, present := row["file_count"]; present {
-			files = pyrepr.Str(count)
+			files = anyutil.String(count)
 		}
 		label := ""
 		if text, isStr := row["label"].(string); isStr {
 			label = text
 		}
-		lines = append(lines, fmt.Sprintf("%3d  %-35s %5s %10s %s", i+1, pyrepr.Str(row["id"]), files, sizeText, label))
+		lines = append(lines, fmt.Sprintf("%3d  %-35s %5s %10s %s", i+1, anyutil.String(row["id"]), files, sizeText, label))
 	}
 	return lines, nil
 }
@@ -191,7 +192,7 @@ func (s SnapshotCommand) RestoreTarget(parts []string) (string, []string, error)
 		if idx < 1 || idx > len(snaps) {
 			return "", []string{s.T("snapshot.invalid_number", map[string]any{"max": len(snaps)})}, nil
 		}
-		snapID = pyrepr.Str(snapshotRow(snaps[idx-1])["id"])
+		snapID = anyutil.String(snapshotRow(snaps[idx-1])["id"])
 	}
 	return snapID, nil, nil
 }
@@ -213,7 +214,7 @@ func (s SnapshotCommand) RestoreReport(snapID string, restored bool, restoreErr 
 		return nil, err
 	}
 	for _, row := range all {
-		if pyrepr.Str(snapshotRow(row)["id"]) == snapID {
+		if anyutil.String(snapshotRow(row)["id"]) == snapID {
 			return []string{s.T("snapshot.restore_incomplete", map[string]any{"snapshot_id": snapID})}, nil
 		}
 	}
@@ -229,7 +230,7 @@ func (r SnapshotRestore) ReserveLine() string {
 }
 
 // Identify answer of the manually launched gateway owning the home, nil when none runs, an error for a supervised one
-func ManualGatewayIdentity(h string, identify func(string) *pyjson.Object, fail func(string, ...any) error) (*pyjson.Object, error) {
+func ManualGatewayIdentity(h string, identify func(string) *jsonutil.Object, fail func(string, ...any) error) (*jsonutil.Object, error) {
 	identity := identify(h)
 	if identity == nil {
 		_, _, running, err := gateway.GetRunningPidIdentityStrict(filepath.Join(h, "gateway.pid"))
@@ -242,14 +243,14 @@ func ManualGatewayIdentity(h string, identify func(string) *pyjson.Object, fail 
 		return nil, nil
 	}
 	claimed, _ := home.RecordValue(identity.Get, home.RecordKey)
-	if !pyrepr.Truthy(claimed) {
+	if !anyutil.IsTrue(claimed) {
 		return nil, fail("gateway control identity does not match %s", h)
 	}
-	resolved, err := pypath.Resolve(pyrepr.Str(claimed))
+	resolved, err := pathutil.Resolve(anyutil.String(claimed))
 	if err != nil {
 		return nil, err
 	}
-	if rel, ok := pypath.PathRelativeTo(resolved, h); !ok || rel != "." {
+	if rel, ok := pathutil.RelativeTo(resolved, h); !ok || rel != "." {
 		return nil, fail("gateway control identity does not match %s", h)
 	}
 	owner := gateway.LaunchSupervisor(identity)
@@ -268,22 +269,22 @@ func ManualGatewayIdentity(h string, identify func(string) *pyjson.Object, fail 
 }
 
 // Whether the identified gateway itself accepted the drain or is already stopping
-func PauseAcked(response, identity *pyjson.Object) bool {
+func PauseAcked(response, identity *jsonutil.Object) bool {
 	if response == nil || response.Len() == 0 || identity == nil {
 		return false
 	}
 	respPid, _ := response.Get("pid")
 	idPid, _ := identity.Get("pid")
-	if !pyrepr.Equal(respPid, idPid) {
+	if !anyutil.Equal(respPid, idPid) {
 		return false
 	}
 	pausing, _ := response.Get("pausing")
 	stopping, _ := response.Get("already_stopping")
-	return pyrepr.Truthy(pausing) || pyrepr.Truthy(stopping)
+	return anyutil.IsTrue(pausing) || anyutil.IsTrue(stopping)
 }
 
 // Hands the profile off to maintenance, true when this restore parked a satellite and must serve it again
-func PauseSnapshotOwner(h, controlHome string, identity *pyjson.Object) (bool, error) {
+func PauseSnapshotOwner(h, controlHome string, identity *jsonutil.Object) (bool, error) {
 	satellite := controlHome != h
 	ours, accepted := false, false
 	name := filepath.Base(h)
@@ -297,7 +298,7 @@ func PauseSnapshotOwner(h, controlHome string, identity *pyjson.Object) (bool, e
 		}
 		ack := gateway.RequestUnserveProfile(controlHome, name)
 		accepted = AckConfirmed(ack, "unserved", name) ||
-			(ack != nil && pyrepr.Truthy(ack.GetOr("pending", nil)) && !pyrepr.Truthy(ack.GetOr("error", nil)))
+			(ack != nil && anyutil.IsTrue(ack.ValueOr("pending", nil)) && !anyutil.IsTrue(ack.ValueOr("error", nil)))
 		if ours && !accepted {
 			_ = os.Remove(marker)
 		}
@@ -315,7 +316,7 @@ func PauseSnapshotOwner(h, controlHome string, identity *pyjson.Object) (bool, e
 }
 
 // Restores a quick snapshot with the profile handed off the gateway, detach closing the caller's hold first
-func RestoreSnapshotOffGateway(ctx context.Context, h, snapID string, identity func(string) (*pyjson.Object, error), detach func(home string) error) (res SnapshotRestore, err error) {
+func RestoreSnapshotOffGateway(ctx context.Context, h, snapID string, identity func(string) (*jsonutil.Object, error), detach func(home string) error) (res SnapshotRestore, err error) {
 	h, err = filepath.Abs(h)
 	if err != nil {
 		return res, err
@@ -334,7 +335,7 @@ func RestoreSnapshotOffGateway(ctx context.Context, h, snapID string, identity f
 	if resolved, rerr := filepath.EvalSymlinks(controlHome); rerr == nil {
 		controlHome = resolved
 	}
-	var owner *pyjson.Object
+	var owner *jsonutil.Object
 	if controlHome == h {
 		owner, err = identity(h)
 		if err != nil {

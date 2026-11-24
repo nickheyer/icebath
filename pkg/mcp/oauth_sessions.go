@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Completed or abandoned sessions linger this long, and in flight flows are capped
@@ -72,7 +72,7 @@ func FinishOAuthFlow(sessionID string) {
 
 // Begins an RPC MCP OAuth flow and returns its session id and authorization URL once published
 func StartOAuthFlow(ctx context.Context, env *tools.Env, homeDir, serverName string, cfg map[string]any, reconnectLive bool,
-	urlTimeout time.Duration, clientRedirectURI *string) (*pyjson.Object, error) {
+	urlTimeout time.Duration, clientRedirectURI *string) (*jsonutil.Object, error) {
 	if clientRedirectURI != nil {
 		uri, err := ValidateClientRedirectURI(*clientRedirectURI)
 		if err != nil {
@@ -143,7 +143,7 @@ func StartOAuthFlow(ctx context.Context, env *tools.Env, homeDir, serverName str
 		rec.shutdownListener()
 		return nil, err
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("session_id", sessionID)
 	out.Set("auth_url", authURL)
 	out.Set("flow", "pkce")
@@ -171,8 +171,8 @@ func oauthLookup(ctx context.Context, sessionID, serverName, homeDir string) (*o
 }
 
 // Polls a session for pending, approved or error with its link and tools
-func PollOAuthFlow(ctx context.Context, sessionID, serverName string) *pyjson.Object {
-	out := pyjson.NewObject()
+func PollOAuthFlow(ctx context.Context, sessionID, serverName string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	rec, msg := oauthLookup(ctx, sessionID, serverName, "")
 	if rec == nil {
 		out.Set("status", "error")
@@ -199,8 +199,8 @@ func PollOAuthFlow(ctx context.Context, sessionID, serverName string) *pyjson.Ob
 }
 
 // Cancels only the owning profile's flow and releases its callback waiter
-func CancelOAuthFlow(ctx context.Context, sessionID, serverName, homeDir string) *pyjson.Object {
-	out := pyjson.NewObject()
+func CancelOAuthFlow(ctx context.Context, sessionID, serverName, homeDir string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	rec, msg := oauthLookup(ctx, sessionID, serverName, homeDir)
 	if rec == nil {
 		out.Set("ok", false)

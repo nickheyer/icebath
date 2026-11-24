@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Platform stamp of a detached hygiene agent, a surface no live turn runs on
@@ -47,7 +47,7 @@ func hygieneCooldownForFailure(ctx context.Context, gw hygieneGateway, sessionKe
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				pkgLog().Debug(fmt.Sprintf("hygiene failure streak update failed: %s", pyrepr.Str(rec)))
+				pkgLog().Debug(fmt.Sprintf("hygiene failure streak update failed: %s", anyutil.String(rec)))
 			}
 		}()
 		st = gw.sessionState(sessionKey)
@@ -87,7 +87,7 @@ func resetHygieneFailureStreak(ctx context.Context, gw hygieneGateway, sessionKe
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				pkgLog().Debug(fmt.Sprintf("hygiene failure streak reset failed: %s", pyrepr.Str(rec)))
+				pkgLog().Debug(fmt.Sprintf("hygiene failure streak reset failed: %s", anyutil.String(rec)))
 			}
 		}()
 		if st := gw.peekSessionState(sessionKey); st != nil {
@@ -179,8 +179,8 @@ func runCodexHygieneCompaction(ctx context.Context, r *GatewayRunner, sessionKey
 		return "failed:timeout", nil
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Session hygiene: codex app-server thread compaction for session %s failed: %s", sessionID, pyrepr.ExceptionMessage(err)))
-		return "failed:" + pyrepr.ExceptionMessage(err), nil
+		pkgLog().Warn(fmt.Sprintf("Session hygiene: codex app-server thread compaction for session %s failed: %s", sessionID, err.Error()))
+		return "failed:" + err.Error(), nil
 	}
 	if compressionCount() > countBefore {
 		resetHygieneFailureStreak(ctx, r, sessionKey)
@@ -203,7 +203,7 @@ func recordHygieneCooldown(ctx context.Context, gw hygieneGateway, sessionID str
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				pkgLog().Debug(fmt.Sprintf("session hygiene cooldown persist failed: %s", pyrepr.Str(rec)))
+				pkgLog().Debug(fmt.Sprintf("session hygiene cooldown persist failed: %s", anyutil.String(rec)))
 			}
 		}()
 		db.RecordCompressionFailureCooldown(sessionID, float64(time.Now().UnixNano())/1e9+cooldownSeconds, errValue)
@@ -214,17 +214,17 @@ func recordHygieneCooldown(ctx context.Context, gw hygieneGateway, sessionID str
 func stampHygieneCompressionProvenance(a *agent.AIAgent, desc, provenance, debugLabel string) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Debug(debugLabel, "error", pyrepr.Str(rec))
+			pkgLog().Debug(debugLabel, "error", anyutil.String(rec))
 		}
 	}()
 	a.TouchActivityWithProvenance(desc, provenance)
 }
 
 // Seeds the persisted system prompt of the session so hygiene never rebuilds it, true when one was stored
-func seedHygieneSystemPrompt(a *agent.AIAgent, sessionRow *pyjson.Object) bool {
+func seedHygieneSystemPrompt(a *agent.AIAgent, sessionRow *jsonutil.Object) bool {
 	stored := ""
 	if sessionRow != nil {
-		if raw, ok := sessionRow.GetOr("system_prompt", nil).(string); ok && strings.TrimSpace(raw) != "" {
+		if raw, ok := sessionRow.ValueOr("system_prompt", nil).(string); ok && strings.TrimSpace(raw) != "" {
 			stored = raw
 		}
 	}
@@ -242,7 +242,7 @@ func runInDefaultExecutor(ctx context.Context, fn func(ctx context.Context) (any
 		var err error
 		defer func() {
 			if rec := recover(); rec != nil {
-				err = fmt.Errorf("%s", pyrepr.Str(rec))
+				err = fmt.Errorf("%s", anyutil.String(rec))
 			}
 			future.settle(result, err)
 		}()

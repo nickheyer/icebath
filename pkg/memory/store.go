@@ -19,8 +19,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
@@ -51,7 +52,7 @@ const maxConsolidationFailuresPerTurn = 3
 
 // Result is one store response plus the closed failure class the shared metric reads
 type Result struct {
-	Data         *pyjson.Object
+	Data         *jsonutil.Object
 	FailureClass string
 }
 
@@ -60,7 +61,7 @@ func (r Result) Get(key string) any {
 	if r.Data == nil {
 		return nil
 	}
-	return r.Data.Vals[key]
+	return r.Data.Value(key)
 }
 
 // Reports whether the response carries a truthy success flag
@@ -69,9 +70,9 @@ func (r Result) Success() bool {
 }
 
 // Error response carrying a failure class and extra fields
-func failure(message, class string, extra *pyjson.Object) Result {
-	data := pyjson.ObjectOf("success", false, "error", message)
-	data.Update(extra)
+func failure(message, class string, extra *jsonutil.Object) Result {
+	data := jsonutil.ObjectOf("success", false, "error", message)
+	data.Merge(extra)
 	return Result{Data: data, FailureClass: class}
 }
 
@@ -96,7 +97,7 @@ func driftError(path, bakPath string) Result {
 		"edit). Rewriting it would lose that text. A snapshot was saved to %s. Resolve the drift first — "+
 		"either rewrite the file as a clean §-delimited list of entries, or move the extra "+
 		"content out — then retry. This guard exists to prevent silent data loss (issue #26045).", name, bakPath),
-		"drift", pyjson.ObjectOf(
+		"drift", jsonutil.ObjectOf(
 			"drift_backup", bakPath,
 			"remediation", "Open the .bak file, integrate the missing entries into the memory tool with one add op per entry via "+
 				fmt.Sprintf("memory(target='%s', operations=[{action: 'add', content: ...}]), then remove or ", storeTarget(name))+
@@ -189,7 +190,7 @@ func wordSet(text string) map[string]bool {
 }
 
 // Zero match error naming the closest entries by shared words and a hint for multi entry spans
-func noMatchError(entries []string, oldText, verb string, extra *pyjson.Object) Result {
+func noMatchError(entries []string, oldText, verb string, extra *jsonutil.Object) Result {
 	words := wordSet(oldText)
 	type scored struct {
 		score float64
@@ -224,12 +225,12 @@ func noMatchError(entries []string, oldText, verb string, extra *pyjson.Object) 
 		hint = " old_text must come from ONE entry ('§' separates entries); use one op per entry."
 	}
 	tail := "."
-	fields := pyjson.NewObject()
+	fields := jsonutil.NewObject()
 	if len(closest) > 0 {
 		tail = " (closest_entries below)."
 		fields.Set("closest_entries", closest)
 	}
-	fields.Update(extra)
+	fields.Merge(extra)
 	return failure(fmt.Sprintf("No entry matched '%s'.%s Retry the %s with old_text copied verbatim from the intended entry%s", oldText, hint, verb, tail), "no_match", fields)
 }
 
@@ -346,7 +347,7 @@ func (s *Store) consolidationFailure(response Result) Result {
 	if s.consolidationFailures <= maxConsolidationFailuresPerTurn {
 		return response
 	}
-	return Result{FailureClass: "retry_cap", Data: pyjson.ObjectOf("success", false, "done", true, "error", fmt.Sprintf(
+	return Result{FailureClass: "retry_cap", Data: jsonutil.ObjectOf("success", false, "done", true, "error", fmt.Sprintf(
 		"Memory consolidation failed %d times this turn. Stop retrying "+
 			"memory calls — leave memory unchanged for now and continue with your reply to the user. "+
 			"The fact can be saved in a later turn.", s.consolidationFailures))}
@@ -463,7 +464,7 @@ func (s *Store) CharLimit(target string) int {
 
 // Over budget consolidation failure carrying the live entries so the model can consolidate
 func (s *Store) failureWithEntries(target, message string) Result {
-	return s.consolidationFailure(failure(message, "over_budget", pyjson.ObjectOf(
+	return s.consolidationFailure(failure(message, "over_budget", jsonutil.ObjectOf(
 		"current_entries", append([]string(nil), s.entriesFor(target)...), "usage", s.usage(target))))
 }
 
@@ -480,7 +481,7 @@ func (s *Store) addOverflow(target, content string, limit int) Result {
 
 // Batch abort without current entries, a zero match op carrying only its closest entries
 func (s *Store) batchFailure(target, message, class string, closest []string) Result {
-	extra := pyjson.ObjectOf("usage", s.usage(target))
+	extra := jsonutil.ObjectOf("usage", s.usage(target))
 	if len(closest) > 0 {
 		extra.Set("closest_entries", closest)
 	}
@@ -492,7 +493,7 @@ type Mutation struct {
 	Result  *Result
 	Entries []string
 	Message string
-	Extra   *pyjson.Object
+	Extra   *jsonutil.Object
 }
 
 // MutateFunc computes a mutation from the entries reread under the lock and the target limit
@@ -532,8 +533,8 @@ func (s *Store) mutate(ctx context.Context, target string, fn MutateFunc, skipDr
 		}
 		return res, nil
 	}
-	extra := pyjson.NewObject()
-	extra.Update(result.Extra)
+	extra := jsonutil.NewObject()
+	extra.Merge(result.Extra)
 	if oversized {
 		beforeSet := map[string]bool{}
 		for _, e := range before {
@@ -630,7 +631,7 @@ func (s *Store) Patch(ctx context.Context, target, oldText, newText string, matc
 					"text, or 'remove' other stale or less important entries to make room "+
 					"(see current_entries below), then retry — all in this turn.", thousands(newTotal), thousands(limit))))
 		}
-		return Mutation{Entries: patched, Message: "Entry patched.", Extra: pyjson.ObjectOf(
+		return Mutation{Entries: patched, Message: "Entry patched.", Extra: jsonutil.ObjectOf(
 			"patched_entry_before", before, "patched_entry_after", after)}
 	}, false)
 }
@@ -662,11 +663,11 @@ func (s *Store) locate(entries []string, oldText, verb string, matchedEntry any)
 			}
 			previews = append(previews, p)
 		}
-		r := failure(fmt.Sprintf("Multiple entries matched '%s'. Be more specific.", oldText), "ambiguous", pyjson.ObjectOf("matches", previews))
+		r := failure(fmt.Sprintf("Multiple entries matched '%s'. Be more specific.", oldText), "ambiguous", jsonutil.ObjectOf("matches", previews))
 		return -1, &r
 	}
 	if idx < 0 {
-		r := s.consolidationFailure(noMatchError(entries, oldText, verb, pyjson.ObjectOf("current_entries", append([]string(nil), entries...))))
+		r := s.consolidationFailure(noMatchError(entries, oldText, verb, jsonutil.ObjectOf("current_entries", append([]string(nil), entries...))))
 		return -1, &r
 	}
 	return idx, nil
@@ -679,7 +680,7 @@ func (s *Store) ResolveEntry(ctx context.Context, target, oldText, verb string) 
 		if errRes != nil {
 			return passthrough(*errRes)
 		}
-		return passthrough(Result{Data: pyjson.ObjectOf("success", true, "matched_entry", entries[idx]), FailureClass: "other"})
+		return passthrough(Result{Data: jsonutil.ObjectOf("success", true, "matched_entry", entries[idx]), FailureClass: "other"})
 	}, true)
 }
 
@@ -700,7 +701,7 @@ func (s *Store) edit(ctx context.Context, target, oldText string, newContent *st
 		}
 		replaced = append(replaced, entries[idx+1:]...)
 		if newContent == nil {
-			return Mutation{Entries: replaced, Message: "Entry removed.", Extra: pyjson.ObjectOf("removed_entry", entries[idx])}
+			return Mutation{Entries: replaced, Message: "Entry removed.", Extra: jsonutil.ObjectOf("removed_entry", entries[idx])}
 		}
 		if newTotal := runeLen(strings.Join(replaced, EntryDelimiter)); newTotal > limit {
 			return passthrough(s.failureWithEntries(target, fmt.Sprintf(
@@ -708,7 +709,7 @@ func (s *Store) edit(ctx context.Context, target, oldText string, newContent *st
 					"'operations' batch with this replace plus removes/shortenings of other stale entries "+
 					"(see current_entries below) — the limit is checked only on the batch result.", overLimit(newTotal, limit))))
 		}
-		return Mutation{Entries: replaced, Message: "Entry replaced.", Extra: pyjson.ObjectOf("replaced_entry", entries[idx])}
+		return Mutation{Entries: replaced, Message: "Entry replaced.", Extra: jsonutil.ObjectOf("replaced_entry", entries[idx])}
 	}, false)
 }
 
@@ -835,7 +836,7 @@ func (s *Store) batch(ctx context.Context, target string, operations []map[strin
 	res, err := s.Mutate(ctx, target, func(entries []string, limit int) Mutation {
 		working := append([]string(nil), entries...)
 		matched := make([]any, 0, len(ops))
-		produced := pyjson.NewObject()
+		produced := jsonutil.NewObject()
 		for i, op := range ops {
 			act := op["action"]
 			content, oldText, contentErr, err := batchOpText(op, act != "patch")
@@ -886,9 +887,9 @@ func (s *Store) batch(ctx context.Context, target string, operations []map[strin
 				len(operations), overLimit(newTotal, limit)), "over_budget", nil))
 		}
 		if !commit {
-			return passthrough(Result{Data: pyjson.ObjectOf("success", true, "matched_entries", matched), FailureClass: "other"})
+			return passthrough(Result{Data: jsonutil.ObjectOf("success", true, "matched_entries", matched), FailureClass: "other"})
 		}
-		replaced, removed, patchedPrev := pyjson.NewObject(), pyjson.NewObject(), pyjson.NewObject()
+		replaced, removed, patchedPrev := jsonutil.NewObject(), jsonutil.NewObject(), jsonutil.NewObject()
 		for i, op := range ops {
 			if matched[i] == nil {
 				continue
@@ -903,7 +904,7 @@ func (s *Store) batch(ctx context.Context, target string, operations []map[strin
 				removed.Set(key, matched[i])
 			}
 		}
-		extra := pyjson.NewObject()
+		extra := jsonutil.NewObject()
 		if replaced.Len() > 0 {
 			extra.Set("replaced_entries", replaced)
 		}
@@ -953,9 +954,9 @@ func (s *Store) FormatForSystemPrompt(target string) string {
 }
 
 // Terminal success without the entries list, resetting the per turn failure budget
-func (s *Store) successResponse(target, message string, extra *pyjson.Object) Result {
+func (s *Store) successResponse(target, message string, extra *jsonutil.Object) Result {
 	s.consolidationFailures = 0
-	data := pyjson.ObjectOf(
+	data := jsonutil.ObjectOf(
 		"success", true,
 		"done", true,
 		"target", target,
@@ -965,7 +966,7 @@ func (s *Store) successResponse(target, message string, extra *pyjson.Object) Re
 	if message != "" {
 		data.Set("message", message)
 	}
-	data.Update(extra)
+	data.Merge(extra)
 	data.Set("note", "Write saved. This update is complete — do not repeat it.")
 	return Result{Data: data, FailureClass: "other"}
 }
@@ -1028,7 +1029,7 @@ func ReadEntriesFile(path string) []string {
 
 // Atomic temp file and rename of the joined entries, a write failure wrapped as the runtime error
 func writeEntriesFile(ctx context.Context, path string, entries []string) error {
-	err := pyfs.AtomicWriteText(ctx, path, strings.Join(entries, EntryDelimiter), ".mem_")
+	err := fsutil.WriteFile(ctx, path, []byte(strings.Join(entries, EntryDelimiter)), fsutil.WriteOptions{Prefix: ".mem_", Mode: new(os.FileMode(0o600)), NativeLineEnds: true})
 	if err == nil {
 		return nil
 	}

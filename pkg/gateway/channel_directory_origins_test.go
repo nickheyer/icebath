@@ -7,16 +7,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func mustJSONObject(t *testing.T, text string) *pyjson.Object {
+func mustJSONObject(t *testing.T, text string) *jsonutil.Object {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 func TestBuildFromSessionsBuildsFromSessionsJson(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -184,7 +184,7 @@ func IsAutonomousSilenceResponse(response any) bool {
 
 // Silence markers suppress delivery only for a successful agent turn
 func IsIntentionalSilenceAgentResult(agentResult map[string]any, response any) bool {
-	return agentResult != nil && !pyrepr.Truthy(agentResult["failed"]) && IsIntentionalSilenceResponse(response)
+	return agentResult != nil && !anyutil.IsTrue(agentResult["failed"]) && IsIntentionalSilenceResponse(response)
 }
 
 // DisplayEvent is the inbound gateway event view the display kind helpers read
@@ -197,7 +197,7 @@ type DisplayEvent interface {
 
 // Persisted user row kind of a turn, machinery only for self injected events
 func DisplayKindForEvent(ctx context.Context, event DisplayEvent) any {
-	if kind := admissionDisplay(ctx, event)["kind"]; pyrepr.Truthy(kind) {
+	if kind := admissionDisplay(ctx, event)["kind"]; anyutil.IsTrue(kind) {
 		return kind
 	}
 	if event == nil {
@@ -206,7 +206,7 @@ func DisplayKindForEvent(ctx context.Context, event DisplayEvent) any {
 	if event.IsInternal() && len(producerCard(event)) > 0 {
 		return event.EventMetadata()["display_kind"]
 	}
-	if event.IsInternal() || pyrepr.Truthy(event.HeartbeatSessionID()) {
+	if event.IsInternal() || anyutil.IsTrue(event.HeartbeatSessionID()) {
 		return InternalNotificationDisplayKind
 	}
 	return nil
@@ -229,7 +229,7 @@ func producerCard(event DisplayEvent) map[string]any {
 // Producer card text plus the title preview the canonical admission committed for the event
 func DisplayMetadataForEvent(ctx context.Context, event DisplayEvent) map[string]any {
 	out := producerCard(event)
-	if preview := admissionDisplay(ctx, event)["title_preview"]; pyrepr.Truthy(preview) {
+	if preview := admissionDisplay(ctx, event)["title_preview"]; anyutil.IsTrue(preview) {
 		out["title_preview"] = preview
 	}
 	return out
@@ -259,7 +259,7 @@ func SilenceAllowed(displayKind any, replyExpected, allowSilence *bool, agentRes
 		return false
 	}
 	for _, k := range []string{"failed", "partial", "interrupted", "error"} {
-		if pyrepr.Truthy(agentResult[k]) {
+		if anyutil.IsTrue(agentResult[k]) {
 			return false
 		}
 	}

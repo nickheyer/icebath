@@ -377,7 +377,7 @@ func (m *Manager) RegisterApprovalTransport(ctx context.Context, name string, pr
 // Approval transport registered under a name, only inside the profile that registered it
 func (m *Manager) GetApprovalTransport(ctx context.Context, name string) *tools.RegisteredApprovalTransport {
 	m.mu.RLock()
-	registered := m.approvalTransports[strings.ToLower(pyStrip(name))]
+	registered := m.approvalTransports[strings.ToLower(strings.TrimSpace(name))]
 	m.mu.RUnlock()
 	if registered == nil || registered.ProfileHome != resolvedHome(ctx) {
 		return nil
@@ -463,7 +463,7 @@ func (m *Manager) GetSlackActionHandlers() []*SlackActionHandler {
 func (m *Manager) GetPlatformHandlerFactories(platform string) []*PlatformHandlerFactory {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	return append([]*PlatformHandlerFactory(nil), m.platformHandlerFactories[strings.ToLower(pyStrip(platform))]...)
+	return append([]*PlatformHandlerFactory(nil), m.platformHandlerFactories[strings.ToLower(strings.TrimSpace(platform))]...)
 }
 
 // Handler factories registered for telegram

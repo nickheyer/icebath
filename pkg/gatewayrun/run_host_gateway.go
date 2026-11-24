@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Result of fn, the zero value with a debug record of the error when it fails or panics
@@ -30,7 +30,7 @@ func bestEffort[T any](fn func() (T, error), debugMsg string) (out T, ok bool) {
 	value, err := fn()
 	if err != nil {
 		if debugMsg != "" {
-			pkgLog().Debug(fmt.Sprintf(debugMsg, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf(debugMsg, err.Error()))
 		}
 		return out, false
 	}
@@ -141,10 +141,10 @@ func replaceTargetBelongsToOtherProfile(ctx context.Context, existingPid int) (r
 // Whether a target argv token exactly names a profile or home that contradicts ourHome
 func looksLikeProfileConflictFromCmdline(command, ourHome string) bool {
 	profileName := ""
-	if pypath.PathName(pypath.PathParent(ourHome)) == "profiles" {
-		profileName = pypath.PathName(ourHome)
+	if pathutil.Name(filepath.Dir(filepath.Clean(ourHome))) == "profiles" {
+		profileName = pathutil.Name(ourHome)
 	}
-	tokens, err := pyshlex.SplitPOSIX(command, false)
+	tokens, err := shellutil.Split(command)
 	if err != nil {
 		tokens = strings.Fields(command)
 	}
@@ -176,7 +176,7 @@ func looksLikeProfileConflictFromCmdline(command, ourHome string) bool {
 		}
 		return "", false
 	}
-	norm := func(path string) string { return pypath.Normcase(pypath.Normpath(path)) }
+	norm := func(path string) string { return pathutil.FoldCase(filepath.Clean(path)) }
 	for _, flag := range []string{"--profile", "-p"} {
 		value, ok := flagValue(flag)
 		if !ok {
@@ -258,7 +258,7 @@ func claimHostGatewayRole(ctx context.Context, force bool) error {
 			return true
 		case gateway.HostLockCouldNotOpen:
 			pkgLog().Warn(fmt.Sprintf("Host gateway lock could not be opened (%s); this gateway is not discoverable. "+
-				"No second gateway is implied — the lock directory itself is unusable.", pyrepr.ExceptionMessage(openErr)))
+				"No second gateway is implied — the lock directory itself is unusable.", openErr.Error()))
 			return true
 		}
 		return false

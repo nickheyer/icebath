@@ -5,11 +5,10 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Route, origin and routing entry of a local branch child, assigned by the gateway wiring
-var BranchLocalRoute func(childID, principalID string, originProfile, routeProfile any) (route string, origin, entry *pyjson.Object, updatedAt float64, err error)
+var BranchLocalRoute func(childID, principalID string, originProfile, routeProfile any) (route string, origin, entry *jsonutil.Object, updatedAt float64, err error)
 
 // Highest row id the branch copies, a tool run directly after an assistant boundary belonging to it
 func branchBoundary(ctx context.Context, conn SQLiteConn, target string, through any) (any, error) {
@@ -39,8 +38,8 @@ func branchBoundary(ctx context.Context, conn SQLiteConn, target string, through
 }
 
 // The parent's frozen policy for the child, editor servers coming only from the gateway's prepared selection
-func childPolicy(policy *pyjson.Object, child string, prepared *pyjson.Object) (*pyjson.Object, error) {
-	out := policy.Copy()
+func childPolicy(policy *jsonutil.Object, child string, prepared *jsonutil.Object) (*jsonutil.Object, error) {
+	out := policy.Clone()
 	if _, has := out.Get("edit_approval_policy"); has {
 		out.Set("edit_approval_policy", "ask")
 	}
@@ -59,7 +58,7 @@ func childPolicy(policy *pyjson.Object, child string, prepared *pyjson.Object) (
 	if err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(child, preparedChild) || !pyjson.Equal(editorJSON, parentEditor) {
+	if !anyutil.Equal(child, preparedChild) || !anyutil.Equal(editorJSON, parentEditor) {
 		return nil, runtimeRefusal("revision_conflict")
 	}
 	for _, key := range []string{"editor_mcp_json", "toolsets", "config_secret_ref"} {
@@ -73,7 +72,7 @@ func childPolicy(policy *pyjson.Object, child string, prepared *pyjson.Object) (
 }
 
 // Copies the transcript through the boundary into an independent local route, policy and receipt
-func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *pyjson.Object) ([]string, *pyjson.Object, error) {
+func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload, prepared *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	saved, target, err := savedLocalPolicyTarget(ctx, conn, sessionID)
 	if err != nil {
 		return nil, nil, err
@@ -103,7 +102,7 @@ func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 	if err != nil {
 		return nil, nil, err
 	}
-	policyObj, ok := savedPolicy.(*pyjson.Object)
+	policyObj, ok := savedPolicy.(*jsonutil.Object)
 	if !ok {
 		return nil, nil, &stateTypedError{"TypeError", "policy must be a dict"}
 	}
@@ -115,7 +114,7 @@ func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 	if err != nil {
 		return nil, nil, err
 	}
-	originObj, ok := origin.(*pyjson.Object)
+	originObj, ok := origin.(*jsonutil.Object)
 	if !ok {
 		return nil, nil, &stateTypedError{"TypeError", "the branch origin is " + errchain.Kind(origin) + ", expected a mapping"}
 	}
@@ -159,7 +158,7 @@ func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 	}
 	sourceText, _ := policySource.(string)
 	if err := d.publishChildSessionRow(ctx, conn, parent, CompressionChildPublish{ParentSessionID: target, ChildSessionID: child,
-		Source: sourceText, Model: optStringOf(policyModel), ModelConfig: pyjson.ObjectOf("_branched_from", target), Cwd: optStringOf(policyCwd),
+		Source: sourceText, Model: optStringOf(policyModel), ModelConfig: jsonutil.ObjectOf("_branched_from", target), Cwd: optStringOf(policyCwd),
 		ProfileName: optStringOf(parent["profile_name"])}); err != nil {
 		return nil, nil, err
 	}
@@ -203,7 +202,7 @@ func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 			return nil, nil, err
 		}
 	}
-	receipt := pyjson.ObjectOf("profile_id", profileID, "principal_id", principalID, "request_id", requestID,
+	receipt := jsonutil.ObjectOf("profile_id", profileID, "principal_id", principalID, "request_id", requestID,
 		"session_id", child, "route", route, "entry", entry, "policy", policy)
 	picks, err := picksOn(ctx, conn, sessionID, nil)
 	if err != nil {
@@ -229,5 +228,5 @@ func branchInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 	if _, err := conn.ExecContext(ctx, "INSERT INTO state_meta(key,value) VALUES(?,?)", LocalPolicyPrefix+child, receiptJSON); err != nil {
 		return nil, nil, err
 	}
-	return []string{sessionID}, pyjson.ObjectOf("branched_session_id", child, "copied_messages", int64(len(ids))), nil
+	return []string{sessionID}, jsonutil.ObjectOf("branched_session_id", child, "copied_messages", int64(len(ids))), nil
 }

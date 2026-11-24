@@ -8,9 +8,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Authority and canonical session that last ran a turn under a process session key
@@ -22,7 +22,7 @@ type connectionRoute struct {
 var localConnections = struct {
 	mu     sync.Mutex
 	routes map[string]connectionRoute
-	hook   func(op *tools.ConnectionOperation, change, snapshot *pyjson.Object)
+	hook   func(op *tools.ConnectionOperation, change, snapshot *jsonutil.Object)
 }{routes: map[string]connectionRoute{}}
 
 func funcIdentity(fn any) uintptr {
@@ -41,8 +41,8 @@ func installConnectionUpdateHook() {
 	if ours != nil && previous != nil && funcIdentity(previous) == funcIdentity(ours) {
 		return
 	}
-	var hook func(op *tools.ConnectionOperation, change, snapshot *pyjson.Object)
-	hook = func(op *tools.ConnectionOperation, change, snapshot *pyjson.Object) {
+	var hook func(op *tools.ConnectionOperation, change, snapshot *jsonutil.Object)
+	hook = func(op *tools.ConnectionOperation, change, snapshot *jsonutil.Object) {
 		localConnections.mu.Lock()
 		route, ok := localConnections.routes[op.SessionKey]
 		localConnections.mu.Unlock()
@@ -56,23 +56,23 @@ func installConnectionUpdateHook() {
 			}
 			return
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		if snapshot != nil {
-			for _, key := range snapshot.Keys {
-				payload.Set(key, snapshot.Vals[key])
+			for _, key := range snapshot.Keys() {
+				payload.Set(key, snapshot.Value(key))
 			}
 		}
 		settled := false
 		if snapshot != nil {
-			settled = snapshot.GetOr("settled_at", nil) != nil
+			settled = snapshot.ValueOr("settled_at", nil) != nil
 		}
 		payload.Set("settled", settled)
 		if change != nil {
-			for _, key := range change.Keys {
-				payload.Set(key, change.Vals[key])
+			for _, key := range change.Keys() {
+				payload.Set(key, change.Value(key))
 			}
 		}
-		payload.Set("owner", pyjson.ObjectOf("type", "session", "session_id", route.sessionID))
+		payload.Set("owner", jsonutil.ObjectOf("type", "session", "session_id", route.sessionID))
 		live.EventStream.Publish(route.sessionID, tuihost.ConnectorUIPayload(payload), "connection.update", nil)
 	}
 	localConnections.mu.Lock()

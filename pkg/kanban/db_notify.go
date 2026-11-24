@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var notifyDeliveryModes = map[string]bool{"notify": true, "notify+wake": true, "wake": true}
@@ -32,15 +32,15 @@ func strOrEmpty(s *string) string {
 // Keys and values of a dict value in iteration order, false for anything else
 func dictItems(d any) ([]string, []any, bool) {
 	switch m := d.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil, nil, false
 		}
-		vals := make([]any, len(m.Keys))
-		for i, k := range m.Keys {
+		vals := make([]any, m.Len())
+		for i, k := range m.Keys() {
 			vals[i], _ = m.Get(k)
 		}
-		return m.Keys, vals, true
+		return m.Keys(), vals, true
 	case map[string]any:
 		keys := make([]string, 0, len(m))
 		for k := range m {
@@ -71,7 +71,7 @@ func encodeNotifyDeliveryMetadata(metadata any) *string {
 	if !ok {
 		return nil
 	}
-	clean := pyjson.NewObject()
+	clean := jsonutil.NewObject()
 	for i, k := range keys {
 		if vals[i] != nil && isScalar(vals[i]) {
 			clean.Set(k, vals[i])
@@ -80,7 +80,7 @@ func encodeNotifyDeliveryMetadata(metadata any) *string {
 	if clean.Len() == 0 {
 		return nil
 	}
-	text, err := pyjson.Dumps(clean, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	text, err := jsonutil.Encode(clean, jsonutil.SortKeys())
 	if err != nil {
 		return nil
 	}
@@ -88,19 +88,19 @@ func encodeNotifyDeliveryMetadata(metadata any) *string {
 }
 
 // Decoded delivery metadata with only scalar values kept, empty for anything unreadable
-func decodeNotifyDeliveryMetadata(raw any) *pyjson.Object {
+func decodeNotifyDeliveryMetadata(raw any) *jsonutil.Object {
 	if keys, vals, ok := dictItems(raw); ok {
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for i, k := range keys {
 			out.Set(k, vals[i])
 		}
 		return out
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	if !truthy(raw) {
 		return out
 	}
-	data, err := pyjson.Loads(cellStr(raw))
+	data, err := jsonutil.Decode(cellStr(raw))
 	if err != nil {
 		return out
 	}
@@ -149,7 +149,7 @@ func AddNotifySub(ctx context.Context, conn state.SQLiteConn, o NotifySubOptions
 		if err != nil {
 			return err
 		}
-		merged := pyjson.NewObject()
+		merged := jsonutil.NewObject()
 		if existing != nil {
 			merged = decodeNotifyDeliveryMetadata(existing.Get("delivery_metadata"))
 		}
@@ -244,7 +244,7 @@ func notifyProfileFilter(scope NotifyOwnerScope) (string, []any) {
 }
 
 // Subscriptions as ordered row objects, optionally of one task and restricted to owner profiles
-func ListNotifySubs(ctx context.Context, conn state.SQLiteConn, taskID *string, scope NotifyOwnerScope) ([]*pyjson.Object, error) {
+func ListNotifySubs(ctx context.Context, conn state.SQLiteConn, taskID *string, scope NotifyOwnerScope) ([]*jsonutil.Object, error) {
 	ownerWhere, ownerParams := notifyProfileFilter(scope)
 	var where []string
 	var params []any
@@ -268,9 +268,9 @@ func ListNotifySubs(ctx context.Context, conn state.SQLiteConn, taskID *string, 
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*pyjson.Object, 0, len(rows))
+	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, row := range rows {
-		item := pyjson.NewObject()
+		item := jsonutil.NewObject()
 		for i, col := range row.Cols {
 			item.Set(col, row.Vals[i])
 		}
@@ -315,11 +315,11 @@ func CountNotifySubs(ctx context.Context, dbPath string, board *string, scope No
 	if len(clauses) > 0 {
 		q += " WHERE " + strings.Join(clauses, " AND ")
 	}
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return 0, err
 	}
-	uri, err := pypath.AsURI(resolved)
+	uri, err := pathutil.FileURL(resolved)
 	if err != nil {
 		return 0, err
 	}
@@ -338,7 +338,7 @@ func CountNotifySubs(ctx context.Context, dbPath string, board *string, scope No
 	if row == nil {
 		return 0, nil
 	}
-	return pyIntOf(row.Vals[0])
+	return cellIntOf(row.Vals[0])
 }
 
 // Deletes one subscription row, true when a row existed
@@ -386,7 +386,7 @@ func notifyCursor(ctx context.Context, conn state.SQLiteConn, taskID, platform, 
 	if err != nil || row == nil {
 		return nil, err
 	}
-	n, err := pyIntOf(row.Get("last_event_id"))
+	n, err := cellIntOf(row.Get("last_event_id"))
 	if err != nil {
 		return nil, err
 	}

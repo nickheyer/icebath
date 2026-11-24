@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Marker of a request option the body did not carry
@@ -30,7 +30,11 @@ func apiSSEFrame(data any, event string, ensureASCII bool, id *int) ([]byte, err
 	if event != "" {
 		prefix += "event: " + event + "\n"
 	}
-	encoded, err := pyjson.Dumps(data, pyjson.EnsureASCII(ensureASCII))
+	var opts []jsonutil.Option
+	if ensureASCII {
+		opts = append(opts, jsonutil.ASCII())
+	}
+	encoded, err := jsonutil.Encode(data, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -56,8 +60,8 @@ func apiCoerceRequestBool(value any, def bool) bool {
 	case float64:
 		return v != 0
 	}
-	if n, ok := pyrepr.Int(value); ok {
-		return n.Sign() != 0
+	if n, ok := anyutil.Int(value); ok {
+		return n != 0
 	}
 	return def
 }
@@ -77,12 +81,12 @@ func apiCleanRequestString(value any) *string {
 
 // Merges the resolved provider runtime fields into the agent keyword arguments in place
 func apiApplyRuntimeAgentOverrides(runtimeKwargs map[string]any, overrides any) map[string]any {
-	obj, ok := pyjson.AsObject(overrides)
+	obj, ok := jsonutil.AsObject(overrides)
 	if !ok {
 		return runtimeKwargs
 	}
 	for _, key := range apiRuntimeAgentOverrideKeys {
-		value := obj.GetOr(key, nil)
+		value := obj.ValueOr(key, nil)
 		if value == nil {
 			continue
 		}

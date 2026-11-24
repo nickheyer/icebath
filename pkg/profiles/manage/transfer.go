@@ -11,9 +11,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	tarutil "github.com/nickheyer/icebath/pkg/utils/tar"
 )
 
 // Reports whether a path lies inside a Git checkout by its own resolved ancestry, true when resolution fails
@@ -90,7 +91,7 @@ func GetProfileExportPath(name, timestamp string) (string, error) {
 }
 
 // Copytree ignore of the default profile export, a root allow list plus universal and credential exclusions
-func defaultExportIgnore(rootDir string) pyfs.IgnoreFunc {
+func defaultExportIgnore(rootDir string) fsutil.IgnoreFunc {
 	return func(dir string, names []string) map[string]bool {
 		ignored := nonExportableEntries(dir, names)
 		for _, n := range names {
@@ -296,7 +297,7 @@ func ExportProfile(name, outputPath string, extraFiles []ExportExtraFile) (_ str
 		}
 		return ignored
 	}
-	ignore := pyfs.IgnoreFunc(ignoreCredentials)
+	ignore := fsutil.IgnoreFunc(ignoreCredentials)
 	if canon == "default" {
 		ignore = defaultExportIgnore(profileDir)
 	}
@@ -304,13 +305,13 @@ func ExportProfile(name, outputPath string, extraFiles []ExportExtraFile) (_ str
 	if err != nil {
 		return "", err
 	}
-	defer pyfs.CloseTempDir(tmp, &err)
+	defer fsutil.CleanupTempDir(tmp, &err)
 	staged := filepath.Join(tmp, canon)
-	if err := pyfs.CopyTree(profileDir, staged, true, false, ignore); err != nil {
+	if err := fsutil.CopyTree(profileDir, staged, fsutil.CopyTreeOptions{Symlinks: true, Ignore: ignore}); err != nil {
 		return "", err
 	}
 	for _, extra := range extraFiles {
-		parts, err := pyfs.NormalizeArchiveParts(extra.Rel)
+		parts, err := tarutil.MemberParts(extra.Rel)
 		if err != nil {
 			return "", err
 		}
@@ -325,18 +326,18 @@ func ExportProfile(name, outputPath string, extraFiles []ExportExtraFile) (_ str
 	if err := scrubExportSecrets(staged); err != nil {
 		return "", err
 	}
-	return pyfs.MakeTargz(base, tmp, canon)
+	return tarutil.CreateTarGz(base, tmp, canon)
 }
 
 // Removes a staged runtime tree of an imported archive, swapped by tests
-var rmtreeStagedRuntime = func(p string) error { return pyfs.RmTree(p, nil) }
+var rmtreeStagedRuntime = func(p string) error { return os.RemoveAll(p) }
 
 // Imports a profile archive with exactly one root directory, dropping foreign package manager runtime trees
 func ImportProfile(archivePath, name string) (_ string, err error) {
 	if !pathExists(archivePath) {
 		return "", &profiles.NotFoundError{Msg: "Archive not found: " + archivePath}
 	}
-	topDirs, err := pyfs.ArchiveRootDirs(archivePath)
+	topDirs, err := tarutil.RootDirs(archivePath)
 	if err != nil {
 		return "", err
 	}
@@ -379,8 +380,8 @@ func ImportProfile(archivePath, name string) (_ string, err error) {
 	if err != nil {
 		return "", err
 	}
-	defer pyfs.CloseTempDir(staging, &err)
-	if err := pyfs.SafeExtractTargz(archivePath, staging); err != nil {
+	defer fsutil.CleanupTempDir(staging, &err)
+	if err := tarutil.ExtractTarGz(archivePath, staging); err != nil {
 		return "", err
 	}
 	extracted := filepath.Join(staging, archiveRoot)
@@ -418,7 +419,7 @@ func ImportProfile(archivePath, name string) (_ string, err error) {
 			return "", err
 		}
 	}
-	if _, err := pyfs.Move(finalSource, profileDir); err != nil {
+	if _, err := fsutil.Move(finalSource, profileDir); err != nil {
 		return "", err
 	}
 	if err := home.ClearProfileDeleted(profileDir); err != nil {

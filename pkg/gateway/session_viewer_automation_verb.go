@@ -4,11 +4,11 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Manager call a viewer runs on the owner against the target's persisted state, assigned in cmd/icebath/wiring.go
-var ViewerAutomationInvoke func(ctx context.Context, runner any, kind, target, call string, args []any, kwargs *pyjson.Object) (*pyjson.Object, error)
+var ViewerAutomationInvoke func(ctx context.Context, runner any, kind, target, call string, args []any, kwargs *jsonutil.Object) (*jsonutil.Object, error)
 
 var viewerAutomationCalls = map[string]map[string]bool{
 	"goal": nameSet("state", "set", "pause", "resume", "clear", "mark_done", "add_subgoal", "remove_subgoal",
@@ -25,13 +25,13 @@ var (
 )
 
 // Kind, call, positional and keyword arguments of an automation request
-func parseViewerAutomation(params *pyjson.Object) (string, string, []any, *pyjson.Object, error) {
+func parseViewerAutomation(params *jsonutil.Object) (string, string, []any, *jsonutil.Object, error) {
 	if paramsOutside(params, "session_id", "profile", "kind", "call", "args", "kwargs") {
 		return "", "", nil, nil, runtimeRefusal("invalid_params")
 	}
-	kind, _ := params.GetOr("kind", nil).(string)
-	call, _ := params.GetOr("call", nil).(string)
-	rawArgs, rawKwargs := params.GetOr("args", nil), params.GetOr("kwargs", nil)
+	kind, _ := params.ValueOr("kind", nil).(string)
+	call, _ := params.ValueOr("call", nil).(string)
+	rawArgs, rawKwargs := params.ValueOr("args", nil), params.ValueOr("kwargs", nil)
 	var args []any
 	if pyTruthy(rawArgs) {
 		list, isList := rawArgs.([]any)
@@ -40,9 +40,9 @@ func parseViewerAutomation(params *pyjson.Object) (string, string, []any, *pyjso
 		}
 		args = list
 	}
-	kwargs := pyjson.NewObject()
+	kwargs := jsonutil.NewObject()
 	if pyTruthy(rawKwargs) {
-		dict, isDict := rawKwargs.(*pyjson.Object)
+		dict, isDict := rawKwargs.(*jsonutil.Object)
 		if !isDict {
 			return "", "", nil, nil, runtimeRefusal("invalid_params")
 		}
@@ -52,7 +52,7 @@ func parseViewerAutomation(params *pyjson.Object) (string, string, []any, *pyjso
 	if !known || !calls[call] {
 		return "", "", nil, nil, runtimeRefusal("invalid_params")
 	}
-	for _, key := range kwargs.Keys {
+	for _, key := range kwargs.Keys() {
 		if strings.HasPrefix(key, "_") {
 			return "", "", nil, nil, runtimeRefusal("invalid_params")
 		}
@@ -76,7 +76,7 @@ func automationRows(ctx context.Context, a *SessionAuthority, target string) ([3
 }
 
 // Session automation verb, the reference CLI's goal, loop and heartbeat manager calls run on the owner
-func automation(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func automation(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	kind, call, args, kwargs, err := parseViewerAutomation(params)
 	if err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func automation(ctx context.Context, c *AuthorityConnection, ref SessionRef, par
 	if err != nil {
 		return nil, err
 	}
-	if kind == "heartbeat" && viewerAutomationWatchdog[call] && (call == "due_prompt" || result.GetOr("value", nil) != nil) {
+	if kind == "heartbeat" && viewerAutomationWatchdog[call] && (call == "due_prompt" || result.ValueOr("value", nil) != nil) {
 		a.mu.Lock()
 		if a.viewerHeartbeat == nil {
 			a.viewerHeartbeat = map[string]*AuthorityConnection{}

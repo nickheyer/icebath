@@ -1,6 +1,8 @@
 package pet
 
 import (
+	"archive/zip"
+	"compress/flate"
 	"context"
 	"net/url"
 	"os"
@@ -11,9 +13,9 @@ import (
 
 	_ "golang.org/x/image/webp"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
 // Cached thumbnail of a slug under pets/.thumbs, outside the pet directory
@@ -95,7 +97,7 @@ func InstallPet(ctx context.Context, env *tools.Env, h, slug string, force bool)
 	if err := download(ctx, env, entry.SpritesheetURL, spritePath, downloadTimeout); err != nil {
 		return nil, err
 	}
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	if entry.PetJSONURL != "" && isPetdexHost(entry.PetJSONURL) {
 		resp, err := httpGet(ctx, env, entry.PetJSONURL, downloadTimeout)
 		var data any
@@ -104,12 +106,12 @@ func InstallPet(ctx context.Context, env *tools.Env, h, slug string, force bool)
 		}
 		if err != nil {
 			pkgLog().Debug("pet.json fetch failed for " + slug + ": " + fetchErrText(err))
-		} else if d, ok := data.(*pyjson.Object); ok {
+		} else if d, ok := data.(*jsonutil.Object); ok {
 			meta = d
 		}
 	}
 	if meta.Len() == 0 {
-		meta = pyjson.ObjectOf("id", slug, "displayName", entry.DisplayName, "description", "")
+		meta = jsonutil.ObjectOf("id", slug, "displayName", entry.DisplayName, "description", "")
 	}
 	meta.Set("spritesheetPath", filepath.Base(spritePath))
 	if _, ok := meta.Get("id"); !ok {
@@ -158,7 +160,7 @@ func ExportPet(h, slug string) (string, []byte, error) {
 	zipPath := scratch.Name()
 	scratch.Close()
 	defer os.Remove(zipPath)
-	archive, err := pyzip.Create(zipPath, pyzip.Deflated, nil)
+	archive, err := ziputil.Create(zipPath, zip.Deflate, flate.DefaultCompression)
 	if err != nil {
 		return "", nil, err
 	}

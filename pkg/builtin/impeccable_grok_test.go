@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestImpeccableGrokManifestRendersFromClaudeManifest(t *testing.T) {
@@ -12,8 +12,8 @@ func TestImpeccableGrokManifestRendersFromClaudeManifest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := pyjson.Loads(string(must(os.ReadFile(tree.Payload("impeccable/plugin/.claude-plugin/plugin.json")))))
-	claude, ok := parsed.(*pyjson.Object)
+	parsed, err := jsonutil.Decode(string(must(os.ReadFile(tree.Payload("impeccable/plugin/.claude-plugin/plugin.json")))))
+	claude, ok := parsed.(*jsonutil.Object)
 	if err != nil || !ok {
 		t.Fatal(err, parsed)
 	}
@@ -22,10 +22,10 @@ func TestImpeccableGrokManifestRendersFromClaudeManifest(t *testing.T) {
 	if s, _ := license.(string); s == "" {
 		license = "MIT"
 	}
-	grok := pyjson.ObjectOf("name", get("name"), "version", get("version"), "description", get("description"),
+	grok := jsonutil.ObjectOf("name", get("name"), "version", get("version"), "description", get("description"),
 		"author", get("author"), "homepage", get("homepage"), "repository", get("repository"), "license", license,
 		"keywords", []any{"design", "frontend", "ui", "ux", "skills", "hooks"})
-	want, err := pyjson.Dumps(grok, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	want, err := jsonutil.Encode(grok, jsonutil.Indent(2))
 	if err != nil {
 		t.Fatal(err)
 	}

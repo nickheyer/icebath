@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 func repairHome(t *testing.T) string {
@@ -73,7 +73,7 @@ func TestPreflightRepairsReadonlyDBInsideHome(t *testing.T) {
 	if err := PreflightDBWritability(context.Background(), db, "state.db", false); err != nil {
 		t.Fatal(err)
 	}
-	if !pyfs.Access(db, 2) {
+	if !fsutil.Access(db, 2) {
 		t.Fatal("db still read only")
 	}
 }
@@ -87,7 +87,7 @@ func TestPreflightRepairsReadonlySidecars(t *testing.T) {
 	if err := PreflightDBWritability(context.Background(), db, "state.db", false); err != nil {
 		t.Fatal(err)
 	}
-	if !pyfs.Access(db, 2) || !pyfs.Access(db+"-wal", 2) {
+	if !fsutil.Access(db, 2) || !fsutil.Access(db+"-wal", 2) {
 		t.Fatal("db or wal still read only")
 	}
 }
@@ -103,7 +103,7 @@ func TestPreflightRepairsReadonlyParentDirectory(t *testing.T) {
 	if err := PreflightDBWritability(context.Background(), db, "kanban.db", false); err != nil {
 		t.Fatal(err)
 	}
-	if !pyfs.Access(sub, 2) {
+	if !fsutil.Access(sub, 2) {
 		t.Fatal("directory still read only")
 	}
 }
@@ -120,7 +120,7 @@ func TestPreflightRefusesOutsideHomeWithActionableError(t *testing.T) {
 	if !isOperationalError(err) || !strings.Contains(err.Error(), db) {
 		t.Fatalf("want OperationalError naming %s, got %v", db, err)
 	}
-	if pyfs.Access(db, 2) {
+	if fsutil.Access(db, 2) {
 		t.Fatal("file outside the home tree was chmodded")
 	}
 	makeWALRepairDB(t, filepath.Join(outside, "wal.db"))
@@ -149,11 +149,11 @@ func TestPreflightSidecarsUnlinkedBySiblingCloseAreNotReadonly(t *testing.T) {
 		var nextOpener []SQLiteConn
 		osAccess = func(path string, mode uint32) bool {
 			if path != wal || len(openSibling) == 0 {
-				return pyfs.Access(path, mode)
+				return fsutil.Access(path, mode)
 			}
 			openSibling[0].Close()
 			openSibling = nil
-			verdict := pyfs.Access(path, mode)
+			verdict := fsutil.Access(path, mode)
 			if recreates {
 				conn := openRaw(t, db)
 				nextOpener = append(nextOpener, conn)
@@ -162,7 +162,7 @@ func TestPreflightSidecarsUnlinkedBySiblingCloseAreNotReadonly(t *testing.T) {
 			return verdict
 		}
 		err := PreflightDBWritability(context.Background(), db, "state.db", false)
-		osAccess = pyfs.Access
+		osAccess = fsutil.Access
 		for _, c := range nextOpener {
 			c.Close()
 		}

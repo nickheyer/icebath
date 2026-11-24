@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Notepad over a temp database the way the fixture points NOTEPAD_FILE at tmp_path
@@ -57,7 +57,7 @@ func TestNotepadSetThenGetRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := strings.Join(entry.Keys, ","); got != "job_id,key,value,updated_at" {
+	if got := strings.Join(entry.Keys(), ","); got != "job_id,key,value,updated_at" {
 		t.Fatalf("entry keys %s", got)
 	}
 	if v := noteValue(t, n, "job-1", "cursor"); v == nil || *v != "page=7" {
@@ -99,7 +99,7 @@ func TestNotepadListSortedAndJobsIsolated(t *testing.T) {
 		t.Fatalf("sorted keys %s", got)
 	}
 	notes, _ := n.List("job-1")
-	if text, _ := pyjson.Dumps(notes[0]); !strings.HasPrefix(text, `{"job_id": "job-1", "key": "alpha", "value": "2", "updated_at": `) {
+	if text, _ := jsonutil.Encode(notes[0]); !strings.HasPrefix(text, `{"job_id": "job-1", "key": "alpha", "value": "2", "updated_at": `) {
 		t.Fatalf("row shape %s", text)
 	}
 	if v := noteValue(t, n, "job-2", "alpha"); *v != "other" {
@@ -223,8 +223,8 @@ func TestNotepadCaps(t *testing.T) {
 
 func TestNotepadRefusesLoneSurrogates(t *testing.T) {
 	_, n := testNotepad(t)
-	lone := pystr.SurrogateEscapeDecode([]byte{'a', 0xff})
-	var encodeErr *pystr.UnicodeEncodeError
+	lone := string([]byte{'a', 0xff})
+	var encodeErr *textutil.InvalidUTF8Error
 	if _, err := n.Set("job-1", "k", lone); !errors.As(err, &encodeErr) {
 		t.Fatalf("surrogate value %v", err)
 	}
@@ -270,7 +270,7 @@ func TestNotepadRenderSection(t *testing.T) {
 		t.Fatalf("section\n%q\nwant\n%q", got, want)
 	}
 	prev := notepadLister
-	notepadLister = func(*Notepad, string) ([]*pyjson.Object, error) { panic("db unavailable") }
+	notepadLister = func(*Notepad, string) ([]*jsonutil.Object, error) { panic("db unavailable") }
 	t.Cleanup(func() { notepadLister = prev })
 	if got := n.RenderSection("job-1"); got != "" {
 		t.Fatalf("failed read rendered %q", got)

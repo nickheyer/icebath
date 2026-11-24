@@ -3,30 +3,27 @@ package cron
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 var (
-	blueprintKeyRe       = mustPyRe(`^[a-z0-9][a-z0-9_-]{0,63}$`)
-	blueprintNamespaceRe = mustPyRe(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
-	blueprintSlotNameRe  = mustPyRe(`^[A-Za-z_]\w{0,63}$`)
+	blueprintKeyRe       = regexutil.Lazy(regexp.MustCompile, `^[a-z0-9][a-z0-9_-]{0,63}$`)
+	blueprintNamespaceRe = regexutil.Lazy(regexp.MustCompile, `^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
+	blueprintSlotNameRe  = regexutil.Lazy(regexp.MustCompile, `^[A-Za-z_]\w{0,63}$`)
 	blueprintSlotFields  = []string{"name", "type", "label", "default", "options", "optional", "help", "strict"}
 	derivedScheduleSlot  = map[string]string{"minute": "time", "hour": "time", "dow": ""}
 )
-
-func pyReMatches(re interface {
-	MatchString(string) (bool, error)
-}, s string) bool {
-	ok, err := re.MatchString(s)
-	return err == nil && ok
-}
 
 func blueprintText(name string, value any) (string, error) {
 	s, ok := value.(string)
@@ -60,8 +57,8 @@ func blueprintIterable(value any) ([]any, bool) {
 		return t, true
 	case []string:
 		return stringsToAny(t), true
-	case *pyjson.Object:
-		return stringsToAny(t.Keys), true
+	case *jsonutil.Object:
+		return stringsToAny(t.Keys()), true
 	case map[string]any:
 		keys := make([]string, 0, len(t))
 		for k := range t {
@@ -75,7 +72,7 @@ func blueprintIterable(value any) ([]any, bool) {
 
 // Tuple of a wire options value, an empty one for a falsy value
 func blueprintOptions(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	switch t := v.(type) {
@@ -89,8 +86,8 @@ func blueprintOptions(v any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
-		return stringsToAny(t.Keys), nil
+	case *jsonutil.Object:
+		return stringsToAny(t.Keys()), nil
 	case map[string]any:
 		keys := make([]string, 0, len(t))
 		for k := range t {
@@ -119,11 +116,11 @@ func blueprintSlotFrom(raw any) (BlueprintSlot, error) {
 			return s, err
 		}
 		slot, name, labelVal = s, s.Name, s.Label
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		data := map[string]any{}
-		if o, ok := t.(*pyjson.Object); ok {
-			for _, k := range o.Keys {
-				data[k] = o.Vals[k]
+		if o, ok := t.(*jsonutil.Object); ok {
+			for _, k := range o.Keys() {
+				data[k] = o.Value(k)
 			}
 		} else {
 			data = t.(map[string]any)
@@ -158,26 +155,26 @@ func blueprintSlotFrom(raw any) (BlueprintSlot, error) {
 			return slot, fmt.Errorf("a slot is missing %s", missingArgsText(missing))
 		}
 		if typ, ok := data["type"].(string); !ok || !blueprintSlotTypes[typ] {
-			return slot, fmt.Errorf("unknown slot type %s (slot %s)", pyrepr.Repr(data["type"]), pyrepr.Str(data["name"]))
+			return slot, fmt.Errorf("unknown slot type %s (slot %s)", anyutil.Quote(data["type"]), anyutil.String(data["name"]))
 		}
 		name, labelVal = data["name"], data["label"]
 		slot.Name, _ = data["name"].(string)
 		slot.Label, _ = data["label"].(string)
 		slot.Type = data["type"].(string)
 		slot.Default = data["default"]
-		slot.Optional = pyrepr.Truthy(data["optional"])
+		slot.Optional = anyutil.IsTrue(data["optional"])
 		slot.Strict = true
 		if v, ok := data["strict"]; ok {
-			slot.Strict = pyrepr.Truthy(v)
+			slot.Strict = anyutil.IsTrue(v)
 		}
 		if v, ok := data["help"]; ok {
-			slot.Help = pyrepr.Str(v)
+			slot.Help = anyutil.String(v)
 		}
 	default:
 		return slot, fmt.Errorf("slot must be a mapping, got %s", errchain.Kind(raw))
 	}
-	if s, ok := name.(string); !ok || !pyReMatches(blueprintSlotNameRe, s) {
-		return slot, fmt.Errorf("invalid slot name %s", pyrepr.Repr(name))
+	if s, ok := name.(string); !ok || !blueprintSlotNameRe().MatchString(s) {
+		return slot, fmt.Errorf("invalid slot name %s", anyutil.Quote(name))
 	}
 	if _, err := blueprintText("slot "+slot.Name+" label", labelVal); err != nil {
 		return slot, err
@@ -198,12 +195,12 @@ func missingArgsText(names []string) string {
 
 // Placeholder names of a template, each required to be a plain slot name
 func blueprintPlaceholders(template, what string) ([]string, error) {
-	names, err := pyrepr.FormatFieldNames(template)
+	names, err := templateutil.Fields(template)
 	if err != nil {
 		return nil, err
 	}
 	for _, n := range names {
-		if !pyReMatches(blueprintSlotNameRe, n) {
+		if !blueprintSlotNameRe().MatchString(n) {
 			return nil, fmt.Errorf("%s placeholder {%s} must be a plain slot name", what, n)
 		}
 	}
@@ -226,10 +223,10 @@ func validatePluginBlueprint(b *AutomationBlueprint) error {
 	for _, n := range names {
 		slot := byName[n]
 		if slot == nil {
-			return fmt.Errorf("prompt_template uses {%s} but there is no slot named %s", n, pyrepr.StrRepr(n))
+			return fmt.Errorf("prompt_template uses {%s} but there is no slot named %s", n, strconv.Quote(n))
 		}
 		if slot.Optional && blueprintValueBlank(slot.Default) {
-			return fmt.Errorf("prompt_template uses optional slot %s that has no default", pyrepr.StrRepr(n))
+			return fmt.Errorf("prompt_template uses optional slot %s that has no default", strconv.Quote(n))
 		}
 	}
 	if names, err = blueprintPlaceholders(b.ScheduleTemplate, "schedule_template"); err != nil {
@@ -238,10 +235,10 @@ func validatePluginBlueprint(b *AutomationBlueprint) error {
 	for _, n := range names {
 		if needed, derived := derivedScheduleSlot[n]; derived {
 			if needed != "" && byName[needed] == nil {
-				return fmt.Errorf("schedule_template uses {%s}, which needs a slot named %s", n, pyrepr.StrRepr(needed))
+				return fmt.Errorf("schedule_template uses {%s}, which needs a slot named %s", n, strconv.Quote(needed))
 			}
 		} else if byName[n] == nil {
-			return fmt.Errorf("schedule_template uses {%s} but there is no slot named %s", n, pyrepr.StrRepr(n))
+			return fmt.Errorf("schedule_template uses {%s} but there is no slot named %s", n, strconv.Quote(n))
 		}
 	}
 	for _, s := range b.Slots {
@@ -260,16 +257,16 @@ func validatePluginBlueprint(b *AutomationBlueprint) error {
 
 // Validated plugin blueprint keyed plugin colon key, the BuildPluginBlueprint service of the plugin host
 func BuildPluginBlueprint(plugin string, key any, spec plugins.BlueprintSpec) (string, any, error) {
-	if !pyReMatches(blueprintNamespaceRe, plugin) {
-		return "", nil, fmt.Errorf("plugin name %s cannot namespace a blueprint key", pyrepr.StrRepr(plugin))
+	if !blueprintNamespaceRe().MatchString(plugin) {
+		return "", nil, fmt.Errorf("plugin name %s cannot namespace a blueprint key", strconv.Quote(plugin))
 	}
 	keyText, isStr := key.(string)
-	if !isStr || !pyReMatches(blueprintKeyRe, keyText) {
-		return "", nil, fmt.Errorf("invalid key %s: use lowercase letters, digits, '-' or '_' (the '%s:' namespace is added automatically)", pyrepr.Repr(key), plugin)
+	if !isStr || !blueprintKeyRe().MatchString(keyText) {
+		return "", nil, fmt.Errorf("invalid key %s: use lowercase letters, digits, '-' or '_' (the '%s:' namespace is added automatically)", anyutil.Quote(key), plugin)
 	}
 	slots, iterable := blueprintIterable(spec.Slots)
 	_, isStr = spec.Slots.(string)
-	_, isObject := spec.Slots.(*pyjson.Object)
+	_, isObject := spec.Slots.(*jsonutil.Object)
 	_, isMap := spec.Slots.(map[string]any)
 	if isStr || isObject || isMap || !iterable {
 		return "", nil, fmt.Errorf("slots must be a list")

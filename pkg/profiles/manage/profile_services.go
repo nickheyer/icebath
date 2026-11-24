@@ -4,9 +4,9 @@ import (
 	"context"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -16,7 +16,7 @@ func vaultOwnCopiedKey(vaultDir, publishedDir string) (map[string]any, error) {
 	if err != nil || ref == nil {
 		return nil, err
 	}
-	m, _ := pyjson.Plain(ref).(map[string]any)
+	m, _ := jsonutil.Plain(ref).(map[string]any)
 	return m, nil
 }
 

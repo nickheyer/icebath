@@ -3,8 +3,8 @@ package tools
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/linktier"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Toolsets, platform bundles and configurator categories outside the core and the tier that carries each
@@ -100,7 +100,7 @@ func DropUnlinkedToolsets() {
 		}
 	}
 	ConfigurableToolsets = rows
-	for _, key := range append([]string{}, ToolCategories.Keys...) {
+	for _, key := range append([]string{}, ToolCategories.Keys()...) {
 		if unlinked(key) {
 			ToolCategories.Delete(key)
 		}
@@ -125,7 +125,7 @@ func DropUnlinkedToolsets() {
 // Removes the web category rows that select a bundled web backend, the plugins tier carrying every one of them
 func dropBundledWebBackendRows() {
 	v, _ := ToolCategories.Get("web")
-	category, _ := v.(*pyjson.Object)
+	category, _ := v.(*jsonutil.Object)
 	if category == nil {
 		return
 	}
@@ -133,7 +133,7 @@ func dropBundledWebBackendRows() {
 	list, _ := providers.([]any)
 	kept := []any{}
 	for _, r := range list {
-		if row, ok := r.(*pyjson.Object); ok {
+		if row, ok := r.(*jsonutil.Object); ok {
 			if _, bundled := row.Get("web_backend"); bundled {
 				continue
 			}

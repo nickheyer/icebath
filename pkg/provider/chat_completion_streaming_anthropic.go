@@ -12,8 +12,8 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Opened Anthropic SDK MessageStream yielding events, its HTTP response, socket and message snapshot
@@ -107,11 +107,11 @@ func (s *anthSDKMessageStream) Next(ctx context.Context) (any, error) {
 		default:
 			continue
 		}
-		decoded, err := pyjson.Loads(f.Data)
+		decoded, err := jsonutil.Decode(f.Data)
 		if err != nil {
 			return nil, &AuxTransportError{Class: "JSONDecodeError", Message: err.Error(), Err: err, Doc: f.Data}
 		}
-		event, ok := pyjson.Plain(decoded).(map[string]any)
+		event, ok := jsonutil.Plain(decoded).(map[string]any)
 		if !ok {
 			return nil, fmt.Errorf("an Anthropic stream event is still %s after decoding it twice, expected a mapping", errchain.Kind(decoded))
 		}
@@ -133,8 +133,8 @@ func (s *anthSDKMessageStream) Next(ctx context.Context) (any, error) {
 func (s *anthSDKMessageStream) errorEvent(data string) error {
 	var body any = data
 	message := data
-	if parsed, err := pyjson.Loads(data); err == nil {
-		body, message = pyjson.Plain(parsed), pyrepr.Str(parsed)
+	if parsed, err := jsonutil.Decode(data); err == nil {
+		body, message = jsonutil.Plain(parsed), anyutil.String(parsed)
 	} else if data == "" {
 		message = fmt.Sprintf("Error code: %d", s.resp.StatusCode)
 	}
@@ -172,13 +172,13 @@ func newOSConnectionError(err error, text string) *osConnectionError {
 	return out
 }
 
-// Python OSError subclass of each dropped socket errno
+// Kind label of the socket error behind each dropped socket errno
 var osConnectionErrorClasses = map[syscall.Errno]string{
 	syscall.ECONNRESET: "ConnectionResetError", syscall.EPIPE: "BrokenPipeError", syscall.ECONNABORTED: "ConnectionAbortedError",
 }
 
 func (e *osConnectionError) Error() string        { return e.text }
-func (e *osConnectionError) PyTypeName() string   { return e.class }
+func (e *osConnectionError) ErrorKind() string    { return e.class }
 func (e *osConnectionError) Is(target error) bool { return e.errno != 0 && target == e.errno }
 func (e *osConnectionError) Timeout() bool        { return false }
 func (e *osConnectionError) Temporary() bool      { return false }
@@ -203,7 +203,7 @@ func (s *anthSDKMessageStream) normalizeUsage(event map[string]any) {
 			message["usage"] = map[string]any{"input_tokens": 0, "output_tokens": 0}
 		} else if u, ok := usage.(map[string]any); ok {
 			s.outputTokens = u["output_tokens"]
-			if !pyrepr.Truthy(s.outputTokens) {
+			if !anyutil.IsTrue(s.outputTokens) {
 				s.outputTokens = 0
 			}
 		}
@@ -259,11 +259,11 @@ func (s *anthSDKMessageStream) accumulate(event map[string]any) error {
 				index, _ := anyInt(event["index"])
 				buf := s.jsonBufs[index] + asStr(delta["partial_json"])
 				if buf != "" {
-					input, err := pyjson.LoadsPartial(buf)
+					input, err := jsonutil.DecodePartial(buf)
 					if err != nil {
 						return err
 					}
-					block["input"] = input
+					block["input"] = jsonutil.Plain(input)
 				}
 				s.jsonBufs[index] = buf
 			}
@@ -437,7 +437,7 @@ func streamingCallAnthropicWire(c *streamingCall, client any) (any, error) {
 				c.markFinishSeen(diag, reason)
 			case "content_block_start":
 				block, _ := event["content_block"].(map[string]any)
-				if pyrepr.Truthy(block) && asStr(block["type"]) == "tool_use" {
+				if anyutil.IsTrue(block) && asStr(block["type"]) == "tool_use" {
 					hasToolUse = true
 					if name := asStr(block["name"]); name != "" {
 						c.emitToolStarted(name)

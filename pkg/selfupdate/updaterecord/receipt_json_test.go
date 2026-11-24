@@ -6,15 +6,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestReceiptArchiveBytesFollowDumpsIndentTwoInsertionOrder(t *testing.T) {
 	ctx, _ := rcHome(t)
 	BeginUpdateReceipt(ctx, nil, "")
 	RecordStep(ctx, "fetch", true, "café ✓")
-	RecordStage(ctx, "apply", "success", pyjson.ObjectOf("mode", "binary", "attempt", 2))
+	RecordStage(ctx, "apply", "success", jsonutil.ObjectOf("mode", "binary", "attempt", 2))
 	path := FinalizeUpdateReceipt(ctx, "success", nil, "done")
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -24,24 +24,24 @@ func TestReceiptArchiveBytesFollowDumpsIndentTwoInsertionOrder(t *testing.T) {
 	if !strings.Contains(text, `"detail": "caf\u00e9 \u2713"`) || !strings.HasSuffix(text, "}\n") {
 		t.Fatalf("not ensure_ascii indent 2 dumps:\n%s", text)
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := v.(*pyjson.Object)
+	doc := v.(*jsonutil.Object)
 	want := []string{"schema", "started_at", "finished_at", "argv", "pid", "outcome", "pre_update", "post_update",
 		"steps", "skips", "gateway_restart", "fleet", "update_id", "pid_create_time",
 		"stages", "stop_reason"}
-	if !reflect.DeepEqual(doc.Keys, want) {
-		t.Fatalf("keys %v", doc.Keys)
+	if !reflect.DeepEqual(doc.Keys(), want) {
+		t.Fatalf("keys %v", doc.Keys())
 	}
-	step := doc.Vals["steps"].([]any)[0].(*pyjson.Object)
-	stage := doc.Vals["stages"].([]any)[0].(*pyjson.Object)
-	if !reflect.DeepEqual(step.Keys, []string{"name", "ok", "detail", "at"}) ||
-		!reflect.DeepEqual(stage.Keys, []string{"name", "outcome", "at", "mode", "attempt"}) {
-		t.Fatalf("step %v stage %v", step.Keys, stage.Keys)
+	step := doc.Value("steps").([]any)[0].(*jsonutil.Object)
+	stage := doc.Value("stages").([]any)[0].(*jsonutil.Object)
+	if !reflect.DeepEqual(step.Keys(), []string{"name", "ok", "detail", "at"}) ||
+		!reflect.DeepEqual(stage.Keys(), []string{"name", "outcome", "at", "mode", "attempt"}) {
+		t.Fatalf("step %v stage %v", step.Keys(), stage.Keys())
 	}
-	again, err := pyjson.Dumps(doc, pyjson.Indent(2))
+	again, err := jsonutil.Encode(doc, jsonutil.Indent(2))
 	if err != nil || again+"\n" != text {
 		t.Fatalf("bytes differ from json.dumps(record, indent=2) + newline: %v", err)
 	}
@@ -73,13 +73,13 @@ func TestReceiptEmbeddedPMSectionsKeepPMInsertionOrder(t *testing.T) {
 			t.Fatalf("missing %q in\n%s", want, text)
 		}
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc := v.(*pyjson.Object)
+	doc := v.(*jsonutil.Object)
 	var pmKeys []string
-	for _, k := range doc.Keys {
+	for _, k := range doc.Keys() {
 		if strings.HasPrefix(k, "pm_") {
 			pmKeys = append(pmKeys, k)
 		}
@@ -87,7 +87,7 @@ func TestReceiptEmbeddedPMSectionsKeepPMInsertionOrder(t *testing.T) {
 	if !reflect.DeepEqual(pmKeys, []string{"pm_venv_rebuild", "pm_steps", "pm_exit_code", "pm_sync_outcome", "pm_warnings", "pm_refusal"}) {
 		t.Fatalf("pm keys %v", pmKeys)
 	}
-	again, err := pyjson.Dumps(doc, pyjson.Indent(2))
+	again, err := jsonutil.Encode(doc, jsonutil.Indent(2))
 	if err != nil || again+"\n" != text {
 		t.Fatalf("bytes differ from json.dumps(record, indent=2) + newline: %v", err)
 	}
@@ -97,8 +97,8 @@ func TestReceiptWorkerHandOffKeepsPMInsertionOrder(t *testing.T) {
 	ctx, _ := rcHome(t)
 	BeginUpdateReceipt(ctx, nil, "")
 	id := *CurrentCorrelationID(ctx)
-	worker := pyjson.ObjectOf("schema", 1, "kind", "sync", "update_id", id, "venv_rebuild",
-		pyjson.ObjectOf("reason", "kept", "ok", false), "outcome", "ok", "exit_code", 0)
+	worker := jsonutil.ObjectOf("schema", 1, "kind", "sync", "update_id", id, "venv_rebuild",
+		jsonutil.ObjectOf("reason", "kept", "ok", false), "outcome", "ok", "exit_code", 0)
 	if err := pm.AcceptWorkerReceipt(ctx, worker, &id); err != nil {
 		t.Fatal(err)
 	}

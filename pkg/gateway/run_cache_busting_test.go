@@ -7,13 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Shipped default of a section key
@@ -55,7 +54,7 @@ func TestExplicitCapDiffersFromAbsent(t *testing.T) {
 func TestCheckpointOptionsFromConfig(t *testing.T) {
 	options := func(cfg map[string]any) (tools.CheckpointManagerOptions, error) {
 		kwargs := CheckpointAgentKwargs(cfg)
-		return tools.CheckpointManagerOptionsFromKwargs(pyrepr.Truthy(kwargs["checkpoints_enabled"]), kwargs)
+		return tools.CheckpointManagerOptionsFromKwargs(anyutil.IsTrue(kwargs["checkpoints_enabled"]), kwargs)
 	}
 	o, err := options(map[string]any{"checkpoints": map[string]any{"enabled": true}})
 	if err != nil || !o.Enabled || o.MaxSnapshots != 20 || o.MaxTotalSizeMB != 500 || o.MaxFileSizeMB != 10 {
@@ -104,7 +103,7 @@ func TestExtractIncludesLiveToolRegistryGeneration(t *testing.T) {
 		t.Fatalf("generation %#v, registry %d", before, tools.Default.Generation())
 	}
 	name := "gatewayrun_generation_probe"
-	tools.Default.Register(tools.Def{Name: name, Toolset: "gatewayrun_probe", Schema: pyjson.ObjectOf("name", name),
+	tools.Default.Register(tools.Def{Name: name, Toolset: "gatewayrun_probe", Schema: jsonutil.ObjectOf("name", name),
 		Handler: func(context.Context, *tools.Call) string { return "" }})
 	t.Cleanup(func() { _ = tools.Default.Deregister(name, "", "") })
 	after := ExtractCacheBustingConfig(context.Background(), map[string]any{})["tools.registry_generation"]

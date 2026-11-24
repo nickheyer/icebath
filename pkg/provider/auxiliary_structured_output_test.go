@@ -6,8 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const auxDeepseek400 = "Error code: 400 - {'error': {'message': 'This response_format type is unavailable now', " +
@@ -33,12 +33,12 @@ func auxFreshStructuredMemo(t *testing.T) context.Context {
 
 func auxStrippedFormat(t *testing.T, ctx context.Context, provider, model, baseURL string, format map[string]any) bool {
 	t.Helper()
-	extra := pyjson.ObjectOf("response_format", format)
+	extra := jsonutil.ObjectOf("response_format", format)
 	got, err := WithoutUnsupportedResponseFormat(ctx, extra, provider, baseURL, model, "title_generation")
 	if err != nil {
 		t.Fatal(err)
 	}
-	rf, kept := got.Vals["response_format"]
+	rf, kept := got.Get("response_format")
 	if kept && !reflect.DeepEqual(rf, format) {
 		t.Fatalf("response_format rewritten to %v", rf)
 	}
@@ -104,7 +104,7 @@ func TestRejectionMemoIsPerModelAndIgnoresSchemaValidationErrors(t *testing.T) {
 func TestWithoutStructuredOutputFormatRemovesExtraBodyEntryAndKeepsSiblings(t *testing.T) {
 	kwargs := map[string]any{"model": "m", "extra_body": map[string]any{"response_format": auxTitleResponseFormat(), "metadata": map[string]any{"user_id": "u1"}}}
 	result := auxWithoutStructuredOutputFormat(kwargs)
-	if result == nil || !reflect.DeepEqual(pyjson.Plain(result["extra_body"]), map[string]any{"metadata": map[string]any{"user_id": "u1"}}) {
+	if result == nil || !reflect.DeepEqual(jsonutil.Plain(result["extra_body"]), map[string]any{"metadata": map[string]any{"user_id": "u1"}}) {
 		t.Fatalf("result = %v", result)
 	}
 	if _, ok := kwargs["extra_body"].(map[string]any)["response_format"]; !ok {

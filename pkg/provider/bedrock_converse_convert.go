@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ---- tool use and prompt cache support ----
@@ -289,7 +289,7 @@ func convertToolsToConverse(tools []map[string]any) []any {
 		if !has {
 			fn = map[string]any{}
 		}
-		f, _ := pyjson.Dict(fn)
+		f, _ := jsonutil.AsMap(fn)
 		name, has := f["name"]
 		if !has {
 			name = ""
@@ -300,7 +300,7 @@ func convertToolsToConverse(tools []map[string]any) []any {
 		}
 		params, has := f["parameters"]
 		if !has {
-			params = pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
+			params = jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject())
 		}
 		out = append(out, map[string]any{"toolSpec": map[string]any{"name": name, "description": description,
 			"inputSchema": map[string]any{"json": params}}})
@@ -506,9 +506,9 @@ func bedrockParseToolArgs(args any) any {
 	if !ok {
 		return args
 	}
-	out, err := pyjson.Loads(s)
+	out, err := jsonutil.Decode(s)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return out
 }
@@ -535,11 +535,11 @@ func bedrockToolCallArgs(msg map[string]any) map[string]any {
 	args := map[string]any{}
 	calls, _ := asList(msg["tool_calls"])
 	for _, c := range calls {
-		tc, ok := pyjson.Dict(c)
+		tc, ok := jsonutil.AsMap(c)
 		if !ok {
 			continue
 		}
-		fn, _ := pyjson.Dict(tc["function"])
+		fn, _ := jsonutil.AsMap(tc["function"])
 		raw, has := fn["arguments"]
 		if !has {
 			raw = "{}"
@@ -588,7 +588,7 @@ func bedrockReasoningDetailsBlocks(msg map[string]any, claude, own bool) []any {
 	var blocks []any
 	details, _ := asList(msg["reasoning_details"])
 	for _, item := range details {
-		d, ok := pyjson.Dict(item)
+		d, ok := jsonutil.AsMap(item)
 		if !ok {
 			continue
 		}
@@ -641,7 +641,7 @@ func bedrockAssistantBlocks(msg map[string]any, content any, claude, own bool) [
 	}
 	calls, _ := asList(msg["tool_calls"])
 	for _, c := range calls {
-		tc, ok := pyjson.Dict(c)
+		tc, ok := jsonutil.AsMap(c)
 		if !ok {
 			continue
 		}
@@ -649,7 +649,7 @@ func bedrockAssistantBlocks(msg map[string]any, content any, claude, own bool) [
 		if !has {
 			fn = map[string]any{}
 		}
-		f, _ := pyjson.Dict(fn)
+		f, _ := jsonutil.AsMap(fn)
 		args, has := f["arguments"]
 		if !has {
 			args = "{}"
@@ -799,7 +799,7 @@ func convertMessagesToConverse(messages []map[string]any, resolve func(string) s
 
 // Python json.dumps text with default separators and ASCII escapes, dicts in their own order
 func bedrockPyDumps(v any) string {
-	text, err := pyjson.Dumps(v)
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		return pyStr(v)
 	}

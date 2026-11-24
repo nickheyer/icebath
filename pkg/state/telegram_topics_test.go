@@ -89,7 +89,7 @@ func topicBinding(t *testing.T, db *SessionDB, chat, thread, profile string) map
 		return nil
 	}
 	out := map[string]any{}
-	for _, k := range row.Keys {
+	for _, k := range row.Keys() {
 		out[k], _ = row.Get(k)
 	}
 	return out

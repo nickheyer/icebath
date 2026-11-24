@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func newCLIFlagsAgent(t *testing.T) (*AIAgent, *state.SessionDB) {
@@ -29,7 +29,7 @@ func sessionReasoningConfig(t *testing.T, db *state.SessionDB, sessionID string)
 	if err != nil {
 		t.Fatal(err)
 	}
-	text, err := pyjson.Dumps(v, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(v, jsonutil.SortKeys())
 	if err != nil {
 		t.Fatal(err)
 	}

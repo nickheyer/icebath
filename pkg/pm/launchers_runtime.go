@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hidden root flag pinning ICEBATH_HOME when unset, to its value or else to the install's default root
@@ -115,7 +115,7 @@ func printRuntimeCommand(repoRoot string, argv []string, stdout, stderr io.Write
 	for i, part := range command {
 		values[i] = part
 	}
-	text, err := pyjson.Dumps(values)
+	text, err := jsonutil.Encode(values)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

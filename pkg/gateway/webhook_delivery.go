@@ -3,6 +3,7 @@ package gateway
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"fmt"
 	"regexp"
@@ -10,11 +11,9 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Built in platform names a webhook route may deliver to
@@ -62,11 +61,11 @@ func webhookRouteFromChatID(chatID string) (string, error) {
 	if strings.HasPrefix(chatID, prefix) {
 		token := chatID[len(prefix):]
 		padding := (4 - len(token)%4) % 4
-		raw, err := pybase64.URLSafeB64Decode(token + strings.Repeat("=", padding))
+		raw, err := base64.URLEncoding.DecodeString(token + strings.Repeat("=", padding))
 		if err != nil {
 			return "", &PyError{Kind: "ValueError", Msg: err.Error()}
 		}
-		decoded, err := pyjson.LoadsBytes(raw)
+		decoded, err := jsonutil.Decode(raw)
 		if err != nil {
 			return "", &PyError{Kind: "ValueError", Msg: err.Error()}
 		}
@@ -74,7 +73,7 @@ func webhookRouteFromChatID(chatID string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return pyrepr.Str(parts[1]), nil
+		return anyutil.String(parts[1]), nil
 	}
 	pieces := strings.SplitN(chatID, ":", 3)
 	if len(pieces) < 2 {
@@ -89,8 +88,8 @@ func webhookUnpackThree(decoded any) ([]any, error) {
 	switch v := decoded.(type) {
 	case []any:
 		items = v
-	case *pyjson.Object:
-		for _, key := range v.Keys {
+	case *jsonutil.Object:
+		for _, key := range v.Keys() {
 			items = append(items, key)
 		}
 	case string:
@@ -124,7 +123,7 @@ func webhookRouteDigest(ctx context.Context, adapter PlatformAdapter, chatID str
 	if !found || route == nil {
 		return "", runtimeRefusal("not_found")
 	}
-	encoded, err := pyjson.Dumps(route, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	encoded, err := jsonutil.Encode(route, jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}
@@ -133,12 +132,12 @@ func webhookRouteDigest(ctx context.Context, adapter PlatformAdapter, chatID str
 }
 
 // Mapping view of a delivery value, false for anything that is no dict
-func webhookMapping(value any) (*pyjson.Object, bool) {
+func webhookMapping(value any) (*jsonutil.Object, bool) {
 	switch v := value.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return v, v != nil
 	case map[string]any:
-		obj := pyjson.NewObject()
+		obj := jsonutil.NewObject()
 		for key, item := range v {
 			obj.Set(key, item)
 		}
@@ -149,7 +148,7 @@ func webhookMapping(value any) (*pyjson.Object, bool) {
 
 // True when a github comment pull request number is all digits and positive
 func webhookPositiveNumber(number any) (bool, error) {
-	text := pyrepr.Str(number)
+	text := anyutil.String(number)
 	if text == "" {
 		return false, nil
 	}
@@ -166,7 +165,7 @@ func webhookPositiveNumber(number any) (bool, error) {
 }
 
 // Delivery destination reduced to the fields its sender consumes, invalid params for any malformed one
-func webhookValidateDestination(ctx context.Context, delivery any) (*pyjson.Object, error) {
+func webhookValidateDestination(ctx context.Context, delivery any) (*jsonutil.Object, error) {
 	obj, ok := webhookMapping(delivery)
 	if !ok {
 		return nil, runtimeRefusal("invalid_params")
@@ -177,7 +176,7 @@ func webhookValidateDestination(ctx context.Context, delivery any) (*pyjson.Obje
 	if !hasDeliver || !hasExtra {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	for _, key := range obj.Keys {
+	for _, key := range obj.Keys() {
 		if !allowed[key] {
 			return nil, runtimeRefusal("invalid_params")
 		}
@@ -223,13 +222,13 @@ func webhookValidateDestination(ctx context.Context, delivery any) (*pyjson.Obje
 	case "github_comment":
 		fields = []string{"repo", "pr_number"}
 	}
-	kept := pyjson.NewObject()
+	kept := jsonutil.NewObject()
 	for _, key := range fields {
 		if value, found := extra.Get(key); found {
-			kept.Set(key, pycopy.DeepCopy(value))
+			kept.Set(key, any(anyutil.Clone(value)))
 		}
 	}
-	result := pyjson.ObjectOf("deliver", target, "deliver_extra", kept)
+	result := jsonutil.ObjectOf("deliver", target, "deliver_extra", kept)
 	if pyTruthy(profile) {
 		result.Set("profile", profile)
 	}
@@ -243,7 +242,7 @@ func webhookValidateDestination(ctx context.Context, delivery any) (*pyjson.Obje
 }
 
 // Validated destination of a delivery chat id with the profile's home channel filled in where it names no chat
-func webhookSnapshotDestination(ctx context.Context, adapter PlatformAdapter, chatID string) (*pyjson.Object, error) {
+func webhookSnapshotDestination(ctx context.Context, adapter PlatformAdapter, chatID string) (*jsonutil.Object, error) {
 	hook, err := webhookAdapterOf(adapter, "_delivery_info")
 	if err != nil {
 		return nil, err
@@ -253,7 +252,7 @@ func webhookSnapshotDestination(ctx context.Context, adapter PlatformAdapter, ch
 		return nil, err
 	}
 	target := anyText(mustGet(result, "deliver"))
-	extra := mustGet(result, "deliver_extra").(*pyjson.Object)
+	extra := mustGet(result, "deliver_extra").(*jsonutil.Object)
 	chat, _ := extra.Get("chat_id")
 	if target == "log" || target == "github_comment" || pyTruthy(chat) {
 		return result, nil
@@ -280,7 +279,7 @@ func webhookSnapshotDestination(ctx context.Context, adapter PlatformAdapter, ch
 }
 
 // Value of a key the caller built, absent keys reading nil
-func mustGet(obj *pyjson.Object, key string) any {
+func mustGet(obj *jsonutil.Object, key string) any {
 	value, _ := obj.Get(key)
 	return value
 }

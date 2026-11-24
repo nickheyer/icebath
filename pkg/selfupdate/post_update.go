@@ -12,11 +12,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/backup"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/plugins/defaults"
 	"github.com/nickheyer/icebath/pkg/pm"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // One named home or machine maintenance step
@@ -95,8 +95,8 @@ func pyISONowUTC() string {
 }
 
 // Writes a JSON document to a mkstemp sibling in dir and renames it over target
-func writeJSONViaTemp(dir, prefix, target string, payload *pyjson.Object) error {
-	text, err := pyjson.Dumps(payload, pyjson.Indent(2))
+func writeJSONViaTemp(dir, prefix, target string, payload *jsonutil.Object) error {
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -130,13 +130,13 @@ func StepAdoptBlessedCheckout(ctx context.Context, projectRoot string) (map[stri
 	if pathPresent(stampPath) {
 		return map[string]any{"ok": true, "skipped": "already-stamped"}, nil
 	}
-	resolvedRoot, err := pypath.Resolve(root)
+	resolvedRoot, err := pathutil.Resolve(root)
 	if err != nil {
 		return map[string]any{"ok": true, "skipped": "unresolvable-root"}, nil
 	}
 	isBlessed := false
 	for _, candidate := range blessed {
-		resolved, err := pypath.Resolve(candidate)
+		resolved, err := pathutil.Resolve(candidate)
 		if err != nil {
 			continue
 		}
@@ -154,7 +154,7 @@ func StepAdoptBlessedCheckout(ctx context.Context, projectRoot string) (map[stri
 		return map[string]any{"ok": true, "skipped": "unwritable: " + errchain.OSText(err)}, nil
 	}
 	if identified == nil {
-		stamp := pyjson.ObjectOf("schemaVersion", 2, "updateMechanism", "self", "source", "adoption", "adoptedAt", pyISONowUTC())
+		stamp := jsonutil.ObjectOf("schemaVersion", 2, "updateMechanism", "self", "source", "adoption", "adoptedAt", pyISONowUTC())
 		if err := writeJSONViaTemp(root, ".install-stamp.", stampPath, stamp); err != nil {
 			pkgLog().Debug(fmt.Sprintf("blessed-checkout adoption skipped (unwritable): %s", errchain.OSText(err)))
 			return map[string]any{"ok": true, "skipped": "unwritable: " + errchain.OSText(err)}, nil

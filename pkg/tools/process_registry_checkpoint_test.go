@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Child half of the readopt tests, a process that only sleeps
@@ -295,7 +295,7 @@ func TestProcessCheckpointOwnerWriteKeepsALiveWorkerHandoff(t *testing.T) {
 	}
 	ids := map[string]bool{}
 	for _, e := range value.([]any) {
-		ids[asStr(e.(*pyjson.Object).Vals["session_id"])] = true
+		ids[asStr(e.(*jsonutil.Object).Value("session_id"))] = true
 	}
 	if len(ids) != 2 || !ids["proc_owner"] || !ids["proc_worker"] {
 		t.Fatalf("handoff dropped or dead entry kept: %v", ids)
@@ -331,7 +331,7 @@ func TestCheckpointRewriteKeepsForeignEntryOrderAndNumberTypes(t *testing.T) {
 	log := filepath.Join(logs, "proc_w.log")
 	os.WriteFile(log, []byte("done\n"), 0o644)
 	os.WriteFile(exitPathOf(log), []byte("0"), 0o644)
-	quoted, err := pyjson.Dumps(log, pyjson.EnsureASCII(false))
+	quoted, err := jsonutil.Encode(log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -375,7 +375,7 @@ func TestMalformedCheckpointFails(t *testing.T) {
 		if err == nil {
 			return ""
 		}
-		return pyrepr.TypeName(err) + ": " + err.Error()
+		return anyutil.Kind(err) + ": " + err.Error()
 	}
 	for _, c := range cases {
 		env, checkpoint := cpProcEnv(t)

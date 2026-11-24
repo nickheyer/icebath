@@ -14,9 +14,6 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 var errPayloadTooLarge = errors.New("payload too large")
@@ -63,7 +60,7 @@ func (a *FeishuAdapter) clearWebhookAnomaly(remoteIP string) {
 func (a *FeishuAdapter) webhookReject(remoteIP, anomaly string, status int, text, jsonMsg string) (*gateway.WebResponse, error) {
 	a.recordWebhookAnomaly(remoteIP, anomaly)
 	if jsonMsg != "" {
-		body := pyjson.NewObject()
+		body := jsonutil.NewObject()
 		body.Set("code", int64(status))
 		body.Set("msg", jsonMsg)
 		return gateway.WebJSONResponse(body, status, nil)
@@ -83,7 +80,7 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 	}
 	contentType := strings.ToLower(strings.TrimSpace(strings.Split(request.Header.Get("Content-Type"), ";")[0]))
 	if contentType != "" && contentType != "application/json" {
-		pkgLog().Warn(fmt.Sprintf("[Feishu] Webhook rejected: unexpected Content-Type %s from %s", pyrepr.Repr(contentType), remoteIP))
+		pkgLog().Warn(fmt.Sprintf("[Feishu] Webhook rejected: unexpected Content-Type %s from %s", anyutil.Quote(contentType), remoteIP))
 		return a.webhookReject(remoteIP, "415", 415, "Unsupported Media Type", "")
 	}
 	if request.ContentLength != nil && *request.ContentLength > feishuWebhookMaxBodyBytes {
@@ -104,29 +101,29 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 	case err != nil:
 		return a.webhookReject(remoteIP, "400", 400, "", "failed to read body")
 	}
-	text, err := pystr.DecodeUTF8(body)
+	text, err := textutil.DecodeUTF8(body)
 	if err != nil {
 		return a.webhookReject(remoteIP, "400", 400, "", "invalid json")
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return a.webhookReject(remoteIP, "400", 400, "", "invalid json")
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))
+		return nil, fmt.Errorf("webhook payload must be a JSON object, got %s", anyutil.Kind(decoded))
 	}
 	header := dget(payload, "header")
-	if !pyrepr.Truthy(header) {
-		header = pyjson.NewObject()
+	if !anyutil.IsTrue(header) {
+		header = jsonutil.NewObject()
 	}
-	headerObj, ok := header.(*pyjson.Object)
+	headerObj, ok := header.(*jsonutil.Object)
 	if !ok {
-		return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(header))
+		return nil, fmt.Errorf("webhook header must be a JSON object, got %s", anyutil.Kind(header))
 	}
 	if token := a.settings.VerificationToken; token != "" {
 		incoming := dget(headerObj, "token")
-		if !pyrepr.Truthy(incoming) {
+		if !anyutil.IsTrue(incoming) {
 			incoming = dget(payload, "token")
 		}
 		incomingToken := strOr(incoming)
@@ -135,8 +132,8 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 			return a.webhookReject(remoteIP, "401-token", 401, "Invalid verification token", "")
 		}
 	}
-	if pyrepr.Equal(dget(payload, "type"), "url_verification") {
-		out := pyjson.NewObject()
+	if anyutil.Equal(dget(payload, "type"), "url_verification") {
+		out := jsonutil.NewObject()
 		out.Set("challenge", dgetDef(payload, "challenge", ""))
 		return gateway.WebJSONResponse(out, 200, nil)
 	}
@@ -144,21 +141,21 @@ func (a *FeishuAdapter) handleWebhookRequest(ctx context.Context, request *gatew
 		pkgLog().Warn("[Feishu] Webhook rejected: invalid signature from " + remoteIP)
 		return a.webhookReject(remoteIP, "401-sig", 401, "Invalid signature", "")
 	}
-	if pyrepr.Truthy(dget(payload, "encrypt")) {
+	if anyutil.IsTrue(dget(payload, "encrypt")) {
 		pkgLog().Error("[Feishu] Encrypted webhook payloads are not supported by Icebath webhook mode")
 		return a.webhookReject(remoteIP, "400-encrypted", 400, "", "encrypted webhook payloads are not supported")
 	}
 	a.clearWebhookAnomaly(remoteIP)
 	eventType := strOr(dget(headerObj, "event_type"))
 	a.dispatchWebhookEvent(eventType, body, payload)
-	ok200 := pyjson.NewObject()
+	ok200 := jsonutil.NewObject()
 	ok200.Set("code", int64(0))
 	ok200.Set("msg", "ok")
 	return gateway.WebJSONResponse(ok200, 200, nil)
 }
 
 // Routes a verified webhook event to the handler the websocket dispatcher uses for its type
-func (a *FeishuAdapter) dispatchWebhookEvent(eventType string, body []byte, payload *pyjson.Object) {
+func (a *FeishuAdapter) dispatchWebhookEvent(eventType string, body []byte, payload *jsonutil.Object) {
 	decode := func(v any) {
 		if err := json.Unmarshal(body, v); err != nil {
 			pkgLog().Debug("[Feishu] Webhook event payload did not decode fully: " + err.Error())

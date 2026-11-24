@@ -4,18 +4,17 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Text of a truthy progress value, nil for an absent or falsy one
 func subagentText(v any) *string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil
 	}
-	text := pyrepr.Str(v)
+	text := anyutil.String(v)
 	return &text
 }
 
@@ -24,7 +23,7 @@ func subagentInt(v any) (*int64, error) {
 	if v == nil {
 		return nil, nil
 	}
-	n, err := pyint.Int64(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +35,7 @@ func subagentCount(v any) *int64 {
 	if v == nil {
 		return nil
 	}
-	n, err := pyint.Int64(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return nil
 	}
@@ -48,7 +47,7 @@ func subagentFloat(v any) (*float64, error) {
 	if v == nil {
 		return nil, nil
 	}
-	f, err := pyint.Float(v)
+	f, err := anyutil.ToFloat(v)
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +83,7 @@ func subagentItems(v any) ([]any, error) {
 
 // Texts of a truthy progress list value, nil for a falsy one
 func subagentTexts(v any) ([]string, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	items, err := subagentItems(v)
@@ -93,17 +92,17 @@ func subagentTexts(v any) ([]string, error) {
 	}
 	out := make([]string, len(items))
 	for i, item := range items {
-		out[i] = pyrepr.Str(item)
+		out[i] = anyutil.String(item)
 	}
 	return out, nil
 }
 
 // Output tail rows of a finished child, nil for a falsy value
 func subagentOutputTail(v any) ([]tuigateway.SubagentOutputTailEntry, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
-	items, err := subagentItems(pyjson.Plain(v))
+	items, err := subagentItems(jsonutil.Plain(v))
 	if err != nil {
 		return nil, err
 	}
@@ -119,14 +118,14 @@ func subagentOutputTail(v any) ([]tuigateway.SubagentOutputTailEntry, error) {
 // Subagent event payload of an agent progress callback, the chain of thought dropped while reasoning is hidden
 func SubagentEvent(eventType string, name, preview any, kw map[string]any, showReasoning bool) (tuigateway.SubagentEventPayload, error) {
 	var p tuigateway.SubagentEventPayload
-	if pyrepr.Truthy(kw["goal"]) {
-		p.Goal = pyrepr.Str(kw["goal"])
+	if anyutil.IsTrue(kw["goal"]) {
+		p.Goal = anyutil.String(kw["goal"])
 	}
-	taskCount, err := pyint.Int64(orDefault(kw["task_count"], 1))
+	taskCount, err := anyutil.ToInt(orDefault(kw["task_count"], 1))
 	if err != nil {
 		return p, err
 	}
-	taskIndex, err := pyint.Int64(orDefault(kw["task_index"], 0))
+	taskIndex, err := anyutil.ToInt(orDefault(kw["task_index"], 0))
 	if err != nil {
 		return p, err
 	}
@@ -167,24 +166,24 @@ func SubagentEvent(eventType string, name, preview any, kw map[string]any, showR
 	if eventType == "subagent.thinking" && !showReasoning {
 		p.Text = nil
 	}
-	if pyrepr.Truthy(preview) && eventType == "subagent.tool" {
+	if anyutil.IsTrue(preview) && eventType == "subagent.tool" {
 		p.ToolPreview = subagentText(preview)
 	}
 	return p, nil
 }
 
 // Subagent event payload as the ordered object the session event stream publishes
-func SubagentPayload(eventType string, name, preview any, kw map[string]any, showReasoning bool) (*pyjson.Object, error) {
+func SubagentPayload(eventType string, name, preview any, kw map[string]any, showReasoning bool) (*jsonutil.Object, error) {
 	payload, err := SubagentEvent(eventType, name, preview, kw, showReasoning)
 	if err != nil {
 		return nil, err
 	}
-	object, _ := pyjson.Ordered(tuigateway.Plain(payload)).(*pyjson.Object)
+	object, _ := jsonutil.Ordered(tuigateway.Plain(payload)).(*jsonutil.Object)
 	return object, nil
 }
 
 func orDefault(v any, fallback any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return fallback

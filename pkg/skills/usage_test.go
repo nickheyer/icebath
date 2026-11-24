@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Scope over a temp home with an empty skills dir and prune_builtins off
@@ -64,7 +64,7 @@ func recGet(t *testing.T, s *Scope, name, key string) any {
 	return v
 }
 
-func usageMap(t *testing.T, s *Scope) *pyjson.Object {
+func usageMap(t *testing.T, s *Scope) *jsonutil.Object {
 	t.Helper()
 	u, err := s.LoadUsage()
 	if err != nil {
@@ -75,8 +75,8 @@ func usageMap(t *testing.T, s *Scope) *pyjson.Object {
 
 func TestUsageSaveLoadRoundTripAndCorruptFile(t *testing.T) {
 	s, dir := usageHome(t)
-	data := pyjson.NewObject()
-	rec := pyjson.NewObject()
+	data := jsonutil.NewObject()
+	rec := jsonutil.NewObject()
 	rec.Set("use_count", int64(3))
 	data.Set("a", rec)
 	if !s.SaveUsage(context.Background(), data) {
@@ -195,12 +195,12 @@ func TestCreatedSkillDoesNotInheritStaleIdentity(t *testing.T) {
 	s, _ := usageHome(t)
 	ctx := context.Background()
 	events := captureLifecycle(t)
-	rec := pyjson.NewObject()
+	rec := jsonutil.NewObject()
 	for _, kv := range [][2]any{{"created_by", "agent"}, {"use_count", int64(11)}, {"patch_count", int64(4)}, {"patch_generation", int64(4)},
 		{"last_reused_patch_generation", int64(3)}, {"pinned", true}, {"state", StateArchived}} {
 		rec.Set(kv[0].(string), kv[1])
 	}
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	data.Set("recreated", rec)
 	s.SaveUsage(ctx, data)
 	s.RecordCreated(ctx, "recreated", false, "", "")
@@ -226,12 +226,12 @@ func TestMalformedUsageCountersRecoverWithoutLosingPatchReuse(t *testing.T) {
 	s, _ := usageHome(t)
 	ctx := context.Background()
 	events := captureLifecycle(t)
-	rec := pyjson.NewObject()
+	rec := jsonutil.NewObject()
 	rec.Set("view_count", "not-a-number")
 	rec.Set("use_count", "not-a-number")
 	rec.Set("patch_generation", int64(1))
 	rec.Set("last_reused_patch_generation", int64(999))
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	data.Set("damaged", rec)
 	s.SaveUsage(ctx, data)
 	s.BumpView(ctx, "damaged")
@@ -337,7 +337,7 @@ func TestEndToEndTelemetryTrackedButLifecycleRefused(t *testing.T) {
 		if !has {
 			t.Fatalf("%s telemetry missing", n)
 		}
-		rec := raw.(*pyjson.Object)
+		rec := raw.(*jsonutil.Object)
 		for k, v := range map[string]any{"view_count": int64(1), "use_count": int64(1), "patch_count": int64(1), "state": StateActive, "archived_at": nil, "pinned": false} {
 			if got, _ := rec.Get(k); got != v {
 				t.Fatalf("%s %s = %v", n, k, got)

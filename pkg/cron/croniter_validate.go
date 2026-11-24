@@ -1,18 +1,17 @@
 package cron
 
 import (
+	"errors"
 	"fmt"
-	"math/big"
 	"math/rand/v2"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/dlclark/regexp2/v2"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -34,20 +33,16 @@ var (
 		"@weekly": "0 0 * * 0", "@monthly": "0 0 1 * *", "@yearly": "0 0 1 1 *", "@annually": "0 0 1 1 *"}
 	monthNames = map[string]int{"jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
 		"jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12}
-	dowNames           = map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
-	croniterStepRe     = pyre.MustCompile(`^([^-]+)-([^-/]+)(/(\d+))?$`)
-	croniterOnlyInt    = pyre.MustCompile(`^\d+$`)
-	croniterStarInt    = pyre.MustCompile(`^(\d+|\*)$`)
-	croniterNearestW   = pyre.MustCompile(`^(?:(\d+)w|w(\d+))$`)
-	croniterHashPat    = `^(?P<hash_type>h|r)(\((?P<range_begin>\d+)-(?P<range_end>\d+)\))?(\/(?P<divisor>\d+))?$`
-	croniterHashRe     = pyre.MustCompile(croniterHashPat)
-	croniterHashIdx    = mustGroupIndex(croniterHashPat)
-	croniterStarStep   = pyre.MustCompile(`^\*(\/.+)$`)
-	croniterSlash      = pyre.MustCompile(`^(.+)\/(.+)$`)
-	croniterSpecialPat = `^(?P<pre>((?P<he>((sun|mon|tue|wed|thu|fri|sat)(-(sun|mon|tue|wed|thu|fri|sat))?)` +
-		`|((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(-(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))?)|\w+)#)|l)(?P<last>\d+)$`
-	croniterSpecial    = pyre.MustCompile(croniterSpecialPat)
-	croniterSpecialIdx = mustGroupIndex(croniterSpecialPat)
+	dowNames         = map[string]int{"sun": 0, "mon": 1, "tue": 2, "wed": 3, "thu": 4, "fri": 5, "sat": 6}
+	croniterStepRe   = regexutil.Lazy(regexp.MustCompile, `^([^-]+)-([^-/]+)(/(\d+))?$`)
+	croniterOnlyInt  = regexutil.Lazy(regexp.MustCompile, `^\d+$`)
+	croniterStarInt  = regexutil.Lazy(regexp.MustCompile, `^(\d+|\*)$`)
+	croniterNearestW = regexutil.Lazy(regexp.MustCompile, `^(?:(\d+)w|w(\d+))$`)
+	croniterHashRe   = regexutil.Lazy(regexp.MustCompile, `^(?P<hash_type>h|r)(\((?P<range_begin>\d+)-(?P<range_end>\d+)\))?(\/(?P<divisor>\d+))?$`)
+	croniterStarStep = regexutil.Lazy(regexp.MustCompile, `^\*(\/.+)$`)
+	croniterSlash    = regexutil.Lazy(regexp.MustCompile, `^(.+)\/(.+)$`)
+	croniterSpecial  = regexutil.Lazy(regexp.MustCompile, `^(?P<pre>((?P<he>((sun|mon|tue|wed|thu|fri|sat)(-(sun|mon|tue|wed|thu|fri|sat))?)`+
+		`|((jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)(-(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec))?)|\w+)#)|l)(?P<last>\d+)$`)
 	// Process wide stand in for the randomized str hash of the last weekday marker
 	pyLastMarkerHash = sync.OnceValue(rand.Uint64)
 )
@@ -134,95 +129,53 @@ func croniterValueAlias(val, field, length int) int {
 	return mapped
 }
 
-func reFind(re *regexp2.Regexp, s string) *regexp2.Match {
-	m, err := re.FindStringMatch(s)
-	if err != nil {
-		return nil
+// Value of a run of ASCII digits, capped at cronStepCap, which lies past every field range
+func cronDigits(s string) int64 {
+	n, err := textutil.ParseInt(s)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0
 	}
-	return m
-}
-
-// Python group name to translated group number table of a pattern
-func mustGroupIndex(pattern string) map[string]int {
-	idx, err := pyre.GroupIndex(pattern)
-	if err != nil {
-		panic(err)
-	}
-	return idx
-}
-
-func reGroup(m *regexp2.Match, index map[string]int, name string) string {
-	return reNum(m, index[name])
-}
-
-func reNum(m *regexp2.Match, n int) string {
-	g := m.GroupByNumber(n)
-	if g == nil || len(g.Captures) == 0 {
-		return ""
-	}
-	return g.String()
-}
-
-// Python int of a digit run, Unicode decimal digits included
-func pyDigits(s string) *big.Int {
-	n, _ := pystr.IntText(s)
-	if n == nil {
-		return new(big.Int)
-	}
-	return n
-}
-
-// Small int of a value already known to be in a field range, or a bound past every range
-func clampInt(n *big.Int) int {
-	if !n.IsInt64() || n.Int64() > cronStepCap {
-		return cronStepCap
-	}
-	return int(n.Int64())
+	return min(n, cronStepCap)
 }
 
 // Hashed or random field form expanded to plain syntax the way the hash expander does without a hash id
 func croniterHashExpand(field int, expr string) (string, error) {
-	m := reFind(croniterHashRe, expr)
+	hashRe := croniterHashRe()
+	m := hashRe.FindStringSubmatch(expr)
 	if m == nil {
 		return expr, nil
 	}
-	if reGroup(m, croniterHashIdx, "hash_type") == "h" {
+	if m[hashRe.SubexpIndex("hash_type")] == "h" {
 		return "", croniterFail("Hashed definitions must include hash_id")
 	}
-	beginText, endText, divText := reGroup(m, croniterHashIdx, "range_begin"), reGroup(m, croniterHashIdx, "range_end"), reGroup(m, croniterHashIdx, "divisor")
-	if beginText != "" && endText != "" && pyDigits(beginText).Cmp(pyDigits(endText)) >= 0 {
+	beginText, endText, divText := m[hashRe.SubexpIndex("range_begin")], m[hashRe.SubexpIndex("range_end")], m[hashRe.SubexpIndex("divisor")]
+	if beginText != "" && endText != "" && cronDigits(beginText) >= cronDigits(endText) {
 		return "", croniterFail("Range end must be greater than range begin")
 	}
-	random := func(begin, end *big.Int) *big.Int {
-		crc := new(big.Int).SetUint64(uint64(rand.Uint32()) >> uint(field))
-		span := new(big.Int).Sub(end, begin)
-		span.Add(span, big.NewInt(1))
-		crc.Mod(crc, span)
-		return crc.Add(crc, begin)
+	random := func(begin, end int64) int64 {
+		return begin + int64(uint64(rand.Uint32()>>uint(field))%uint64(end-begin+1))
 	}
 	switch {
 	case beginText != "" && endText != "" && divText != "":
-		div := pyDigits(divText)
-		if div.Sign() == 0 {
+		div := cronDigits(divText)
+		if div == 0 {
 			return "", croniterFail("Bad expression: %s", expr)
 		}
-		begin := pyDigits(beginText)
-		end := new(big.Int).Add(div, begin)
-		x := random(begin, end.Sub(end, big.NewInt(1)))
-		return x.String() + "-" + pyDigits(endText).String() + "/" + div.String(), nil
+		begin := cronDigits(beginText)
+		x := random(begin, begin+div-1)
+		return strconv.FormatInt(x, 10) + "-" + strconv.FormatInt(cronDigits(endText), 10) + "/" + strconv.FormatInt(div, 10), nil
 	case beginText != "" && endText != "":
-		return random(pyDigits(beginText), pyDigits(endText)).String(), nil
+		return strconv.FormatInt(random(cronDigits(beginText), cronDigits(endText)), 10), nil
 	case divText != "":
-		div := pyDigits(divText)
-		if div.Sign() == 0 {
+		div := cronDigits(divText)
+		if div == 0 {
 			return "", croniterFail("Bad expression: %s", expr)
 		}
-		lo := big.NewInt(int64(croniterRanges[field][0]))
-		end := new(big.Int).Add(div, lo)
-		x := random(lo, end.Sub(end, big.NewInt(1)))
-		return x.String() + "-" + strconv.Itoa(croniterRanges[field][1]) + "/" + div.String(), nil
+		lo := int64(croniterRanges[field][0])
+		x := random(lo, lo+div-1)
+		return strconv.FormatInt(x, 10) + "-" + strconv.Itoa(croniterRanges[field][1]) + "/" + strconv.FormatInt(div, 10), nil
 	}
-	return random(big.NewInt(int64(croniterRanges[field][0])), big.NewInt(int64(croniterRanges[field][1]))).String(), nil
+	return strconv.FormatInt(random(int64(croniterRanges[field][0]), int64(croniterRanges[field][1])), 10), nil
 }
 
 // Expands an expression the way croniter does constructing an iterator, raising its exact messages
@@ -294,15 +247,15 @@ func croniterExpandField(spec *croniterSpec, exprFormat string, field int, expr 
 		pending = pending[:len(pending)-1]
 		var nth *cronNth
 		if field == cronDowField {
-			if g := reFind(croniterSpecial, e); g != nil {
-				he, last := reGroup(g, croniterSpecialIdx, "he"), reGroup(g, croniterSpecialIdx, "last")
+			if g := croniterSpecial().FindStringSubmatch(e); g != nil {
+				he, last := g[croniterSpecial().SubexpIndex("he")], g[croniterSpecial().SubexpIndex("last")]
 				if he != "" {
 					e = he
-					k := pyDigits(last)
-					if k.Cmp(big.NewInt(1)) < 0 || k.Cmp(big.NewInt(5)) > 0 {
-						return nil, croniterFail("[%s] is not acceptable. Invalid day_of_week value: '%s'", exprFormat, k.String())
+					k := cronDigits(last)
+					if k < 1 || k > 5 {
+						return nil, croniterFail("[%s] is not acceptable. Invalid day_of_week value: '%s'", exprFormat, strconv.FormatInt(k, 10))
 					}
-					nth = &cronNth{n: int(k.Int64())}
+					nth = &cronNth{n: int(k)}
 				} else if last != "" {
 					e = last
 					nth = &cronNth{}
@@ -310,37 +263,37 @@ func croniterExpandField(spec *croniterSpec, exprFormat string, field int, expr 
 			}
 		}
 		if field == cronDayField {
-			if w := reFind(croniterNearestW, e); w != nil {
-				text := reNum(w, 1)
+			if w := croniterNearestW().FindStringSubmatch(e); w != nil {
+				text := w[1]
 				if text == "" {
-					text = reNum(w, 2)
+					text = w[2]
 				}
-				day := pyDigits(text)
-				if day.Cmp(big.NewInt(1)) < 0 || day.Cmp(big.NewInt(31)) > 0 {
-					return nil, croniterFail("[%s] is not acceptable, nearest weekday day value '%s' out of range", exprFormat, day.String())
+				day := cronDigits(text)
+				if day < 1 || day > 31 {
+					return nil, croniterFail("[%s] is not acceptable, nearest weekday day value '%s' out of range", exprFormat, strconv.FormatInt(day, 10))
 				}
 				if len(pending) > 0 || len(res) > 0 {
 					return nil, croniterFail("[%s] is not acceptable. 'W' can only be used with a single day value, not in a list or range", exprFormat)
 				}
-				spec.nearest = append(spec.nearest, int(day.Int64()))
-				res = append(res, cronVal{kind: 'n', n: int(day.Int64())})
+				spec.nearest = append(spec.nearest, int(day))
+				res = append(res, cronVal{kind: 'n', n: int(day)})
 				continue
 			}
 		}
 		t := e
-		if m := reFind(croniterStarStep, e); m != nil {
-			t = fmt.Sprintf("%d-%d%s", lo, hi, reNum(m, 1))
+		if m := croniterStarStep().FindStringSubmatch(e); m != nil {
+			t = fmt.Sprintf("%d-%d%s", lo, hi, m[1])
 		}
-		m := reFind(croniterStepRe, t)
+		m := croniterStepRe().FindStringSubmatch(t)
 		if m == nil {
 			t = e
-			if s := reFind(croniterSlash, e); s != nil {
-				t = fmt.Sprintf("%s-%d/%s", reNum(s, 1), hi, reNum(s, 2))
+			if s := croniterSlash().FindStringSubmatch(e); s != nil {
+				t = fmt.Sprintf("%s-%d/%s", s[1], hi, s[2])
 			}
-			m = reFind(croniterStepRe, t)
+			m = croniterStepRe().FindStringSubmatch(t)
 		}
 		if m != nil {
-			rng, err := croniterRange(spec, exprFormat, field, length, reNum(m, 1), reNum(m, 2), reNum(m, 4))
+			rng, err := croniterRange(spec, exprFormat, field, length, m[1], m[2], m[4])
 			if err != nil {
 				return nil, err
 			}
@@ -364,7 +317,7 @@ func croniterExpandField(spec *croniterSpec, exprFormat string, field int, expr 
 		if strings.HasPrefix(t, "-") {
 			return nil, croniterFail("[%s] is not acceptable, negative numbers not allowed", exprFormat)
 		}
-		if reFind(croniterStarInt, t) == nil {
+		if !croniterStarInt().MatchString(t) {
 			conv, err := croniterAlpha(field, t, spec.expressions)
 			if err != nil {
 				return nil, err
@@ -378,11 +331,7 @@ func croniterExpandField(spec *croniterSpec, exprFormat string, field int, expr 
 		case "l":
 			v = cronVal{kind: 'l'}
 		default:
-			num := pyDigits(t)
-			if !num.IsInt64() {
-				return nil, croniterFail("[%s] is not acceptable, out of range", exprFormat)
-			}
-			x := croniterValueAlias(int(min(num.Int64(), cronStepCap)), field, length)
+			x := croniterValueAlias(int(cronDigits(t)), field, length)
 			if x < lo || x > hi {
 				return nil, croniterFail("[%s] is not acceptable, out of range", exprFormat)
 			}
@@ -403,29 +352,29 @@ func croniterRange(spec *croniterSpec, exprFormat string, field, length int, low
 		high = "31"
 	}
 	var err error
-	if reFind(croniterOnlyInt, low) == nil {
+	if !croniterOnlyInt().MatchString(low) {
 		if low, err = croniterAlpha(field, low, spec.expressions); err != nil {
 			return nil, err
 		}
 	}
-	if reFind(croniterOnlyInt, high) == nil {
+	if !croniterOnlyInt().MatchString(high) {
 		if high, err = croniterAlpha(field, high, spec.expressions); err != nil {
 			return nil, err
 		}
 	}
 	step := 1
 	if stepText != "" {
-		s := pyDigits(stepText)
-		if s.Sign() == 0 {
+		s := cronDigits(stepText)
+		if s == 0 {
 			return nil, croniterFail("[%s] step '0' in field %d is not acceptable", exprFormat, field)
 		}
-		step = clampInt(s)
+		step = int(s)
 	}
-	if reFind(croniterOnlyInt, low) == nil || reFind(croniterOnlyInt, high) == nil {
+	if !croniterOnlyInt().MatchString(low) || !croniterOnlyInt().MatchString(high) {
 		return nil, croniterFail("[%s] bands '%s-%s' in field %d are not acceptable", exprFormat, low, high, field)
 	}
-	l := croniterValueAlias(clampInt(pyDigits(low)), field, length)
-	h := croniterValueAlias(clampInt(pyDigits(high)), field, length)
+	l := croniterValueAlias(int(cronDigits(low)), field, length)
+	h := croniterValueAlias(int(cronDigits(high)), field, length)
 	if max(l, h) > max(lo, hi) {
 		return nil, croniterFail("%s is out of bands", exprFormat)
 	}

@@ -16,13 +16,8 @@ import (
 	"github.com/yuin/goldmark/util"
 	"golang.org/x/net/html"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
-
-// HTML escape of the text with quotes escaped when asked, like html.escape
-func htmlEscape(s string, quote bool) string { return pyhtml.Escape(s, quote) }
 
 var sanitizerAllowedTags = map[string]bool{
 	"a": true, "b": true, "blockquote": true, "br": true, "code": true, "del": true, "em": true, "h1": true, "h2": true,
@@ -66,11 +61,11 @@ func (s *matrixHTMLSanitizer) safeAttrs(tag string, attrs []html.Attribute) stri
 		switch {
 		case tag == "a" && attr == "href":
 			if href := sanitizerSafeURL(a.Val); href != "" {
-				safe.WriteString(` href="` + htmlEscape(href, true) + `"`)
+				safe.WriteString(` href="` + html.EscapeString(href) + `"`)
 			}
 		case tag == "code" && attr == "class":
 			if _, ok := reMatch(codeLanguageRE, a.Val); ok {
-				safe.WriteString(` class="` + htmlEscape(a.Val, true) + `"`)
+				safe.WriteString(` class="` + html.EscapeString(a.Val) + `"`)
 			}
 		}
 	}
@@ -117,18 +112,18 @@ func (s *matrixHTMLSanitizer) handleRawText(raw string, atEnd bool) {
 	for raw != "" {
 		m, err := sanitizerEntityRE.FindStringMatch(raw)
 		if err != nil || m == nil {
-			s.emit(htmlEscape(raw, true))
+			s.emit(html.EscapeString(raw))
 			return
 		}
 		start, _ := m.ByteRange()
 		ref := m.String()
 		rest := raw[start+len(ref):]
 		if rest == "" && atEnd {
-			s.emit(htmlEscape(raw, true))
+			s.emit(html.EscapeString(raw))
 			return
 		}
 		if start > 0 {
-			s.emit(htmlEscape(raw[:start], true))
+			s.emit(html.EscapeString(raw[:start]))
 		}
 		if strings.HasPrefix(ref, "&#") {
 			s.emit("&#" + ref[2:] + ";")
@@ -154,7 +149,7 @@ func sanitizeMatrixHTML(input string) string {
 		tt := z.Next()
 		if tt == html.ErrorToken {
 			if z.Err() != io.EOF {
-				return htmlEscape(input, true)
+				return html.EscapeString(input)
 			}
 			break
 		}
@@ -219,7 +214,7 @@ var standaloneMarkdown = goldmark.New(
 func renderMarkdown(md goldmark.Markdown, text string) string {
 	var buf bytes.Buffer
 	if err := md.Convert([]byte(text), &buf); err != nil {
-		return htmlEscape(text, true)
+		return html.EscapeString(text)
 	}
 	return strings.TrimSpace(buf.String())
 }
@@ -273,7 +268,7 @@ func (a *MatrixAdapter) buildTextMessageContent(text, msgtype string) map[string
 // Reply and thread relation metadata applied to an outbound payload
 func applyRelationMetadata(content map[string]any, replyTo string, metadata map[string]any) {
 	threadID := ""
-	if v := metadata["thread_id"]; pyTruthy(v) {
+	if v := metadata["thread_id"]; anyutil.IsTrue(v) {
 		threadID = strOf(v)
 	}
 	if replyTo != "" {
@@ -444,5 +439,5 @@ func strOf(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }

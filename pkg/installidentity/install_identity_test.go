@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 func TestConcurrentFirstUseReturnsOnePersistedIdentity(t *testing.T) {
@@ -70,7 +70,7 @@ func TestExistingIdentitySurvivesReadOnlyRootOrRacingPublication(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := pyfs.LockFile(lockFile); err != nil {
+		if err := fsutil.LockFile(lockFile); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.Chmod(path, 0); err != nil {
@@ -91,7 +91,7 @@ func TestExistingIdentitySurvivesReadOnlyRootOrRacingPublication(t *testing.T) {
 		if err := os.Chmod(path, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		if err := pyfs.UnlockFile(lockFile); err != nil {
+		if err := fsutil.UnlockFile(lockFile); err != nil {
 			t.Fatal(err)
 		}
 		if got := <-done; got != value {

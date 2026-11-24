@@ -12,12 +12,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var slackUserIDRE = func() interface {
@@ -39,7 +39,7 @@ var (
 
 // JSON text of a tool result with ASCII escapes as json.dumps writes it
 func dumpsResult(v any) string {
-	text, err := pyjson.Dumps(v)
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		return tools.ErrorResult(err)
 	}
@@ -109,7 +109,7 @@ func relayGuardFailed(platformName, detail string) string {
 // String argument stripped, empty for a missing or falsy value, an AttributeError for other types
 func strippedArg(args map[string]any, key string) (string, error) {
 	v := args[key]
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	s, ok := v.(string)
@@ -155,7 +155,7 @@ func handleReact(ctx context.Context, args map[string]any, remove bool) (string,
 		return "", err
 	}
 	targetStr, _ := target.(string)
-	if !pyrepr.Truthy(target) || (!remove && emoji == "") {
+	if !anyutil.IsTrue(target) || (!remove && emoji == "") {
 		if remove {
 			return toolError("'target' is required when action='unreact'"), nil
 		}
@@ -219,7 +219,7 @@ func handleReact(ctx context.Context, args map[string]any, remove bool) (string,
 	if d, ok := dictGet(result); ok {
 		return dumpsResult(d), nil
 	}
-	return dumpsResult(map[string]any{"success": pyrepr.Truthy(result)}), nil
+	return dumpsResult(map[string]any{"success": anyutil.IsTrue(result)}), nil
 }
 
 // Python dict form of a result held as a Go map or a decoded JSON object
@@ -227,7 +227,7 @@ func dictGet(v any) (any, bool) {
 	switch d := v.(type) {
 	case map[string]any:
 		return d, d != nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return d, d != nil
 	}
 	return nil, false
@@ -250,7 +250,7 @@ func guardedCall(call func() (any, error)) (out any, err error) {
 // Sends a message with MEDIA tags to the target, the home channel when the target names only a platform
 func handleSend(ctx context.Context, args map[string]any) (string, error) {
 	targetV, messageV := argOr(args, "target", ""), argOr(args, "message", "")
-	if !pyrepr.Truthy(targetV) || !pyrepr.Truthy(messageV) {
+	if !anyutil.IsTrue(targetV) || !anyutil.IsTrue(messageV) {
 		return toolError("Both 'target' and 'message' are required when action='send'"), nil
 	}
 	target, _ := targetV.(string)
@@ -316,7 +316,7 @@ func handleSend(ctx context.Context, args map[string]any) (string, error) {
 	if entry != nil && entry.SendMessageHandler != nil {
 		opts.Args = args
 	}
-	if mentions := args["mentions"]; pyrepr.Truthy(mentions) && entry != nil && entry.StandaloneSend != nil && entry.StandaloneSend.Mentions {
+	if mentions := args["mentions"]; anyutil.IsTrue(mentions) && entry != nil && entry.StandaloneSend != nil && entry.StandaloneSend.Mentions {
 		opts.Mentions = mentionList(mentions)
 	}
 	result, err := guardedSend(func() (map[string]any, error) {
@@ -331,7 +331,7 @@ func handleSend(ctx context.Context, args map[string]any) (string, error) {
 	if result == nil {
 		return "null", nil
 	}
-	if pyrepr.Truthy(result["success"]) {
+	if anyutil.IsTrue(result["success"]) {
 		if usedHome {
 			result["note"] = fmt.Sprintf("Sent to %s home channel (chat_id: %s)", platformName, chatID)
 		}
@@ -363,11 +363,11 @@ func mentionList(v any) []string {
 	case []any:
 		out := make([]string, 0, len(m))
 		for _, x := range m {
-			out = append(out, pyrepr.Str(x))
+			out = append(out, anyutil.String(x))
 		}
 		return out
 	}
-	return []string{pyrepr.Str(v)}
+	return []string{anyutil.String(v)}
 }
 
 // Runs the send with a panic returned as its error
@@ -499,7 +499,7 @@ func liveGatewayHint(platformName, h, names, envPath, dotenvState string) (hint 
 	}()
 	type gw struct {
 		home   string
-		record *pyjson.Object
+		record *jsonutil.Object
 		own    bool
 	}
 	root := home.Root()
@@ -517,7 +517,7 @@ func liveGatewayHint(platformName, h, names, envPath, dotenvState string) (hint 
 			continue
 		}
 		pid, _ := g.record.Get("pid")
-		fmt.Fprintf(&b, " A gateway (pid %s) running from %s has %s connected", pyrepr.Str(pid), g.home, platformName)
+		fmt.Fprintf(&b, " A gateway (pid %s) running from %s has %s connected", anyutil.String(pid), g.home, platformName)
 		if g.own {
 			fmt.Fprintf(&b, ", so its credentials live only in that process's environment; add %s to %s.", names, envPath)
 		} else {
@@ -528,15 +528,15 @@ func liveGatewayHint(platformName, h, names, envPath, dotenvState string) (hint 
 }
 
 // State field of the platform in a runtime record, an error where the Python lookups raise
-func recordPlatformState(record *pyjson.Object, platformName string) (any, error) {
+func recordPlatformState(record *jsonutil.Object, platformName string) (any, error) {
 	if record == nil {
 		return nil, nil
 	}
 	platforms, _ := record.Get("platforms")
-	if !pyrepr.Truthy(platforms) {
+	if !anyutil.IsTrue(platforms) {
 		return nil, nil
 	}
-	pobj, ok := platforms.(*pyjson.Object)
+	pobj, ok := platforms.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("platforms in the runtime record must be a mapping, got %s", errchain.Kind(platforms))
 	}
@@ -544,7 +544,7 @@ func recordPlatformState(record *pyjson.Object, platformName string) (any, error
 	if !has {
 		return nil, nil
 	}
-	eobj, ok := entry.(*pyjson.Object)
+	eobj, ok := entry.(*jsonutil.Object)
 	if !ok || eobj == nil {
 		return nil, fmt.Errorf("the %s entry of the runtime record must be a mapping, got %s", platformName, errchain.Kind(entry))
 	}

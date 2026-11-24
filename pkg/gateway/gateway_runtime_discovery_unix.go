@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -15,17 +16,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 // Swappable account database lookups of the home privacy check
 var (
-	discoveryGetpwuid = pypwd.Getpwuid
-	discoveryGetgrgid = pypwd.Getgrgid
-	discoveryGetpwall = pypwd.Getpwall
+	discoveryGetpwuid = userutil.LookupID
+	discoveryGetgrgid = userutil.LookupGroupID
+	discoveryGetpwall = userutil.All
 )
 
 // Whether a home mode lets another user write it, group write private only for the owner's own group
@@ -93,7 +93,7 @@ func privateNode(path, kind string, isHome bool) (*syscall.Stat_t, error) {
 	mode := raw & 0o7777
 	if isHome && HomeModeUnsafe(st, path) {
 		return nil, newDiscoveryError("unsafe_control_permissions", fmt.Sprintf("%s has mode %04o, writable by another user", path, mode),
-			"chmod go-w "+pyshlex.Quote(path))
+			"chmod go-w "+shellutil.Quote(path))
 	}
 	if !isHome && mode&0o077 != 0 {
 		want := uint32(0o600)
@@ -107,7 +107,7 @@ func privateNode(path, kind string, isHome bool) (*syscall.Stat_t, error) {
 
 func openModeError(path string, mode, expected uint32) *DiscoveryError {
 	return newDiscoveryError("unsafe_control_permissions", fmt.Sprintf("%s has mode %04o, expected %04o", path, mode, expected),
-		fmt.Sprintf("chmod %o %s", expected, pyshlex.Quote(path)))
+		fmt.Sprintf("chmod %o %s", expected, shellutil.Quote(path)))
 }
 
 // Socket path resolution of the private clients, replaced by tests
@@ -172,7 +172,7 @@ func controlSocketPath(home string) (string, error) {
 	if !utf8.Valid(data) {
 		return "", errors.New("the control pointer is not valid UTF-8")
 	}
-	target := pypath.PosixPurePathStr(strings.TrimSpace(string(data)))
+	target := path.Clean(strings.TrimSpace(string(data)))
 	if !filepath.IsAbs(target) {
 		return "", newDiscoveryError("invalid_control_pointer", "", "")
 	}
@@ -194,7 +194,7 @@ func controlSocketPath(home string) (string, error) {
 }
 
 // identify result of home's control socket, keeping timeout, access and protocol failures as errors
-func QueryIdentify(home string, timeout time.Duration) (*pyjson.Object, error) {
+func QueryIdentify(home string, timeout time.Duration) (*jsonutil.Object, error) {
 	deadline := time.Now().Add(timeout)
 	conn, err := connectPrivate(home, timeout)
 	if err != nil {

@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Writes config.yaml for the skills scope and drops the cached tree
@@ -111,7 +111,7 @@ func TestCuratorLLMPromptDoesNotInviteBundledWritesWhenPruneBuiltinsOn(t *testin
 	dir := curWriteBundledAndAgent(t, ctx, h)
 	curPruneBuiltins(t, h)
 	var prompts []string
-	curatorLLMReview = func(_ context.Context, prompt string) *pyjson.Object {
+	curatorLLMReview = func(_ context.Context, prompt string) *jsonutil.Object {
 		prompts = append(prompts, prompt)
 		return curatorLLMMeta("s", nil)
 	}
@@ -138,7 +138,7 @@ func TestCuratorPruneBuiltinsStillArchivesBundledViaDeterministicPass(t *testing
 	ctx, h := curTestHome(t, nil)
 	dir := curWriteBundledAndAgent(t, ctx, h)
 	curPruneBuiltins(t, h)
-	old := pydatetime.ISOFormatUTC(time.Now().Add(-200 * 24 * time.Hour))
+	old := time.Now().Add(-200 * 24 * time.Hour).UTC().Format(timeutil.RFC3339Micro)
 	curSetRecord(t, ctx, "bundled-fixture", map[string]any{"last_used_at": old, "created_at": old, "use_count": 1})
 	listing, err := curatorRenderCandidateList(ctx)
 	if err != nil || strings.Contains(listing, "bundled-fixture") {
@@ -172,7 +172,7 @@ func TestCuratorProtectedBuiltinNeverArchivedEvenWhenStale(t *testing.T) {
 		t.Fatal(err)
 	}
 	curPruneBuiltins(t, h)
-	curSetRecord(t, ctx, name, map[string]any{"last_used_at": pydatetime.ISOFormatUTC(time.Now().Add(-500 * 24 * time.Hour))})
+	curSetRecord(t, ctx, name, map[string]any{"last_used_at": time.Now().Add(-500 * 24 * time.Hour).UTC().Format(timeutil.RFC3339Micro)})
 	counts, err := ApplyCuratorTransitions(ctx, time.Now())
 	if err != nil {
 		t.Fatal(err)
@@ -197,7 +197,7 @@ func TestCuratorPreseededNeverUsedBuiltinIsReanchoredNotStaled(t *testing.T) {
 	}
 	curPruneBuiltins(t, h)
 	old := time.Now().Add(-365 * 24 * time.Hour)
-	curSetRecord(t, ctx, "bundled-helper", map[string]any{"created_at": pydatetime.ISOFormatUTC(old), "state": "stale"})
+	curSetRecord(t, ctx, "bundled-helper", map[string]any{"created_at": old.UTC().Format(timeutil.RFC3339Micro), "state": "stale"})
 	t0 := time.Now().UTC()
 	counts, err := ApplyCuratorTransitions(ctx, t0)
 	if err != nil {
@@ -207,7 +207,7 @@ func TestCuratorPreseededNeverUsedBuiltinIsReanchoredNotStaled(t *testing.T) {
 		t.Fatalf("counts %v", counts)
 	}
 	rec := curRecord(t, ctx, "bundled-helper")
-	created, _, err := pydatetime.ParseISOFormat(curGet(rec, "created_at").(string))
+	created, _, err := timeutil.ParseISOZone(curGet(rec, "created_at").(string), time.UTC)
 	if curGet(rec, "state") != "active" || curGet(rec, "first_seen_at") == nil || err != nil || !created.After(old) {
 		t.Fatalf("record %v", rec)
 	}
@@ -245,7 +245,7 @@ func TestCuratorPruneBuiltinsNeverTouchesHubSkills(t *testing.T) {
 
 func TestCuratorStateAtomicWriteNoTmpLeftovers(t *testing.T) {
 	ctx, _ := curTestHome(t, nil)
-	st := pyjson.NewObject()
+	st := jsonutil.NewObject()
 	st.Set("paused", true)
 	SaveCuratorState(ctx, st)
 	entries, err := os.ReadDir(filepath.Dir(curatorStateFile(ctx)))

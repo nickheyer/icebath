@@ -19,12 +19,11 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/x/ansi/kitty"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"golang.org/x/image/bmp"
 	"golang.org/x/image/draw"
 	"golang.org/x/image/tiff"
 	"golang.org/x/image/webp"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -60,7 +59,7 @@ func resolveInlineMode(configured any, graphics bool, detected string) string {
 	}
 	mode := "auto"
 	if _, isBool := configured.(bool); configured != nil && !isBool {
-		mode = strings.ToLower(strings.TrimSpace(pyrepr.Str(configured)))
+		mode = strings.ToLower(strings.TrimSpace(anyutil.String(configured)))
 	}
 	switch mode {
 	case "off":

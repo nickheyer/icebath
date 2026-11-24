@@ -6,8 +6,6 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // One home channel with a live transport, profile nil for the launch profile
@@ -20,14 +18,14 @@ type homeChannelTarget struct {
 }
 
 // Delivery transport of one target, nil and logged when resolving it fails
-func safeDeliveryTransport(ctx context.Context, platform gateway.Platform, config *gateway.GatewayConfig, adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter], profile *string) (transport *gateway.DeliveryTransport) {
+func safeDeliveryTransport(ctx context.Context, platform gateway.Platform, config *gateway.GatewayConfig, adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter], profile *string) (transport *gateway.DeliveryTransport) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			prefix := ""
 			if profile != nil && *profile != "" {
 				prefix = *profile + ":"
 			}
-			pkgLog().Debug(fmt.Sprintf("Home-channel transport unavailable for %s%s: %s", prefix, platform, pyrepr.Str(rec)))
+			pkgLog().Debug(fmt.Sprintf("Home-channel transport unavailable for %s%s: %s", prefix, platform, anyutil.String(rec)))
 			transport = nil
 		}
 	}()
@@ -61,7 +59,7 @@ func (r *GatewayRunner) servedHomeChannelTransports(ctx context.Context) []homeC
 	for name, profileCfg := range r.profileConfigs.All() {
 		adapters, _ := r.profileAdapters.Get(name)
 		if adapters == nil {
-			adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+			adapters = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 		}
 		for _, platform := range profileCfg.PlatformKeys() {
 			cfg := profileCfg.Platforms[platform]

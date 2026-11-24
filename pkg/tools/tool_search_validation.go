@@ -12,8 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyjsonschema"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -31,23 +32,23 @@ func validationSchemaForLocal(node any) any {
 			out[i] = validationSchemaForLocal(item)
 		}
 		return out
-	case *pyjson.Object:
-		normalized := pyjson.NewObject()
-		for _, key := range t.Keys {
+	case *jsonutil.Object:
+		normalized := jsonutil.NewObject()
+		for _, key := range t.Keys() {
 			if key == "nullable" {
 				continue
 			}
 			if validationSchemaLiteralKeys[key] {
-				normalized.Set(key, pyjson.Clone(t.Vals[key]))
+				normalized.Set(key, jsonutil.Clone(t.Value(key)))
 			} else {
-				normalized.Set(key, validationSchemaForLocal(t.Vals[key]))
+				normalized.Set(key, validationSchemaForLocal(t.Value(key)))
 			}
 		}
-		if nullable, ok := t.Vals["nullable"].(bool); !ok || !nullable {
+		if nullable, ok := t.Value("nullable").(bool); !ok || !nullable {
 			return normalized
 		}
 		var types []any
-		switch st := normalized.Vals["type"].(type) {
+		switch st := normalized.Value("type").(type) {
 		case string:
 			types = []any{st}
 		case []any:
@@ -56,7 +57,7 @@ func validationSchemaForLocal(node any) any {
 		if types != nil {
 			hasNull := false
 			for _, v := range types {
-				if pyrepr.Equal(v, "null") {
+				if anyutil.Equal(v, "null") {
 					hasNull = true
 				}
 			}
@@ -65,7 +66,7 @@ func validationSchemaForLocal(node any) any {
 			}
 			return normalized
 		}
-		return pyjson.ObjectOf("anyOf", []any{normalized, pyjson.ObjectOf("type", "null")})
+		return jsonutil.ObjectOf("anyOf", []any{normalized, jsonutil.ObjectOf("type", "null")})
 	default:
 		return node
 	}
@@ -81,15 +82,15 @@ func validationSchemaHasExternalRef(node any) bool {
 			}
 		}
 		return false
-	case *pyjson.Object:
-		if ref, ok := t.Vals["$ref"].(string); ok && !strings.HasPrefix(ref, "#") {
+	case *jsonutil.Object:
+		if ref, ok := t.Value("$ref").(string); ok && !strings.HasPrefix(ref, "#") {
 			return true
 		}
-		for _, key := range t.Keys {
+		for _, key := range t.Keys() {
 			if validationSchemaLiteralKeys[key] {
 				continue
 			}
-			if validationSchemaHasExternalRef(t.Vals[key]) {
+			if validationSchemaHasExternalRef(t.Value(key)) {
 				return true
 			}
 		}
@@ -114,7 +115,7 @@ func validationPath(absolutePath []any) string {
 			if validationIdentifierRe.MatchString(p) {
 				path += "." + p
 			} else {
-				path += "[" + pyDumps(p, pyjson.EnsureASCII(false)) + "]"
+				path += "[" + pyDumps(p) + "]"
 			}
 		case int:
 			path += "[" + strconv.Itoa(p) + "]"
@@ -147,9 +148,9 @@ func validationCollapseSpace(s string) string {
 }
 
 // Arguments a dict holds as an ordered Python object, false for anything that is not a dict
-func validationArgsObject(args any) (*pyjson.Object, bool) {
+func validationArgsObject(args any) (*jsonutil.Object, bool) {
 	switch a := args.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return a, a != nil
 	case map[string]any:
 		keys := make([]string, 0, len(a))
@@ -157,7 +158,7 @@ func validationArgsObject(args any) (*pyjson.Object, bool) {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		for _, k := range keys {
 			o.Set(k, a[k])
 		}
@@ -167,20 +168,20 @@ func validationArgsObject(args any) (*pyjson.Object, bool) {
 }
 
 // Copy of the arguments after the schema guided coercion dispatch applies, in the key order coerce_tool_args leaves
-func deferredCandidateArgs(ctx context.Context, env *Env, name string, args *pyjson.Object, parametersRaw any) *pyjson.Object {
-	vals := make(map[string]any, len(args.Keys))
-	for _, k := range args.Keys {
-		vals[k] = args.Vals[k]
+func deferredCandidateArgs(ctx context.Context, env *Env, name string, args *jsonutil.Object, parametersRaw any) *jsonutil.Object {
+	vals := make(map[string]any, args.Len())
+	for _, k := range args.Keys() {
+		vals[k] = args.Value(k)
 	}
 	coerced := coercePythonToolArgs(ctx, Default, env, name, vals)
-	order := args.Keys
-	parameters, _ := pyjson.Dict(parametersRaw)
-	if properties, _ := pyjson.Dict(parameters["properties"]); len(properties) > 0 {
-		if unrenamed, ok := UnrenameToolArgs(parametersRaw, args, nil).(*pyjson.Object); ok {
-			order = unrenamed.Keys
+	order := args.Keys()
+	parameters, _ := jsonutil.AsMap(parametersRaw)
+	if properties, _ := jsonutil.AsMap(parameters["properties"]); len(properties) > 0 {
+		if unrenamed, ok := UnrenameToolArgs(parametersRaw, args, nil).(*jsonutil.Object); ok {
+			order = unrenamed.Keys()
 		}
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, k := range order {
 		if v, ok := coerced[k]; ok {
 			out.Set(k, v)
@@ -190,7 +191,7 @@ func deferredCandidateArgs(ctx context.Context, env *Env, name string, args *pyj
 }
 
 // Python valued arguments of the entry a tool_call resolves to, nil when the call holds no entry
-func DeferredCallArguments(toolCallArgs map[string]any) *pyjson.Object {
+func DeferredCallArguments(toolCallArgs map[string]any) *jsonutil.Object {
 	entries, errMsg := NormalizeToolCallEntries(toolCallArgs)
 	if errMsg != "" {
 		return nil
@@ -213,23 +214,23 @@ func validateDeferredCallArgsAt(ctx context.Context, env *Env, name string, args
 	if def == nil || def.Schema == nil {
 		return ""
 	}
-	schema, _ := pyjson.Ordered(def.Schema).(*pyjson.Object)
+	schema, _ := jsonutil.Ordered(def.Schema).(*jsonutil.Object)
 	fn := schema
-	if t, _ := schema.Vals["type"].(string); t == "function" {
-		fn, _ = schema.Vals["function"].(*pyjson.Object)
+	if t, _ := schema.Value("type").(string); t == "function" {
+		fn, _ = schema.Value("function").(*jsonutil.Object)
 	}
 	if fn == nil {
 		return ""
 	}
-	params, _ := fn.Vals["parameters"].(*pyjson.Object)
+	params, _ := fn.Value("parameters").(*jsonutil.Object)
 	if params == nil {
 		return ""
 	}
 	var missing []string
-	if required, ok := params.Vals["required"].([]any); ok {
+	if required, ok := params.Value("required").([]any); ok {
 		for _, r := range required {
 			if s, ok := r.(string); ok {
-				if _, has := argsObj.Vals[s]; !has {
+				if _, has := argsObj.Get(s); !has {
 					missing = append(missing, s)
 				}
 			}
@@ -245,7 +246,7 @@ func validateDeferredCallArgsAt(ctx context.Context, env *Env, name string, args
 		pkgLog().Debug("Skipping local deferred-argument validation: external $ref", "tool", name)
 		return ""
 	}
-	candidate := deferredCandidateArgs(ctx, env, name, argsObj, def.Schema.Vals["parameters"])
+	candidate := deferredCandidateArgs(ctx, env, name, argsObj, def.Schema.Value("parameters"))
 	best, err := pyjsonschema.BestMatch(candidate, validationSchema, callerDepth)
 	if err != nil {
 		pkgLog().Debug("validate_deferred_call_args failed", "tool", name, "error", err)
@@ -271,7 +272,7 @@ func validateDeferredCallArgsAt(ctx context.Context, env *Env, name string, args
 // ToolCallEntry is one normalized tool_call batch entry, its arguments the dict Python holds
 type ToolCallEntry struct {
 	Name      string
-	Arguments *pyjson.Object
+	Arguments *jsonutil.Object
 }
 
 // Arguments of an entry in the DecodeWTF8 shapes tool handlers read
@@ -281,10 +282,10 @@ func (e ToolCallEntry) HandlerArgs() map[string]any {
 
 // Python str of a value with its falsy forms read as empty and surrounding whitespace stripped
 func toolCallEntryName(v any) string {
-	if v == nil || !pyrepr.Truthy(v) {
+	if v == nil || !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // NormalizeToolCallEntries turns tool_call arguments holding Python values into entries, accepting the legacy single shape
@@ -294,16 +295,16 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 		if toolCallEntryName(args["name"]) == "" {
 			return nil, "tool_call requires 'calls' (an array of {name, arguments})"
 		}
-		rawCalls = []any{pyjson.ObjectOf("name", args["name"], "arguments", args["arguments"])}
+		rawCalls = []any{jsonutil.ObjectOf("name", args["name"], "arguments", args["arguments"])}
 	}
 	if s, ok := rawCalls.(string); ok {
-		parsed, err := pyjson.Loads(s)
+		parsed, err := jsonutil.Decode(s)
 		if err != nil {
 			return nil, fmt.Sprintf("tool_call 'calls' is not valid JSON: %s", err.Error())
 		}
 		rawCalls = parsed
 	}
-	if _, isDict := pyjson.AsObject(rawCalls); isDict {
+	if _, isDict := jsonutil.AsObject(rawCalls); isDict {
 		rawCalls = []any{rawCalls}
 	}
 	list, ok := rawCalls.([]any)
@@ -312,29 +313,29 @@ func NormalizeToolCallEntries(args map[string]any) ([]ToolCallEntry, string) {
 	}
 	entries := make([]ToolCallEntry, 0, len(list))
 	for position, raw := range list {
-		m, ok := pyjson.AsObject(raw)
+		m, ok := jsonutil.AsObject(raw)
 		if !ok {
 			return nil, fmt.Sprintf("tool_call calls[%d] must be an object with 'name' and 'arguments'", position)
 		}
-		name := toolCallEntryName(m.Vals["name"])
+		name := toolCallEntryName(m.Value("name"))
 		if name == "" {
 			return nil, fmt.Sprintf("tool_call calls[%d] requires a 'name'", position)
 		}
 		if BridgeToolNames[name] {
 			return nil, fmt.Sprintf("tool_call cannot invoke '%s' (it is itself a bridge tool)", name)
 		}
-		rawArgs := m.Vals["arguments"]
+		rawArgs := m.Value("arguments")
 		if s, isStr := rawArgs.(string); rawArgs == nil || (isStr && strings.TrimSpace(s) == "") {
-			rawArgs = pyjson.NewObject()
+			rawArgs = jsonutil.NewObject()
 		}
 		if s, isStr := rawArgs.(string); isStr {
-			parsed, err := pyjson.Loads(s)
+			parsed, err := jsonutil.Decode(s)
 			if err != nil {
 				return nil, fmt.Sprintf("tool_call calls[%d].arguments is not valid JSON: %s", position, err.Error())
 			}
 			rawArgs = parsed
 		}
-		argObj, ok := pyjson.AsObject(rawArgs)
+		argObj, ok := jsonutil.AsObject(rawArgs)
 		if !ok {
 			return nil, fmt.Sprintf("tool_call calls[%d].arguments must be an object", position)
 		}
@@ -352,11 +353,11 @@ func LocalBatchError(entries []ToolCallEntry) string {
 
 // Batch rejection restating the retry shape with the first entry's own name and arguments in json.dumps form
 func localBatchError(name, arguments any, count int) string {
-	args := pyDumps(arguments, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	args := pyDumps(arguments)
 	if utf8.RuneCountInString(args) > toolSearchEchoArgsMaxChars {
 		args = "{...}"
 	}
-	retry := fmt.Sprintf(`{"calls":[{"name":%s,"arguments":%s}]}`, pyDumps(name, pyjson.EnsureASCII(false)), args)
+	retry := fmt.Sprintf(`{"calls":[{"name":%s,"arguments":%s}]}`, pyDumps(name), args)
 	remaining := ""
 	if count > 1 {
 		remaining = fmt.Sprintf(" then issue the remaining %d call(s) as separate tool_call invocations", count-1)

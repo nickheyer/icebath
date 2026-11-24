@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func newTestCLI(t *testing.T) (*HubCLI, *bytes.Buffer, *bytes.Buffer) {
@@ -22,7 +22,7 @@ func newTestCLI(t *testing.T) (*HubCLI, *bytes.Buffer, *bytes.Buffer) {
 	out, stdout := &bytes.Buffer{}, &bytes.Buffer{}
 	x := NewHubCLI(h.S)
 	x.Hub = h
-	x.C, x.Stdout = &pyrich.Console{Out: out, Width: 80}, stdout
+	x.C, x.Stdout = &consoleutil.Console{Out: out, Width: 80}, stdout
 	x.Input = func(string) (string, error) { t.Fatal("unexpected prompt"); return "", nil }
 	x.LineInput = x.Input
 	return x, out, stdout
@@ -126,7 +126,7 @@ func TestInspectAndInstallShareOneHubSession(t *testing.T) {
 		t.Fatal("inspect used separate sessions")
 	}
 	src.ctxs = nil
-	x.seams.resolveURLBundleName = func(*pyrich.Console, *SkillBundle, *SkillMeta, string, string, bool) bool { return false }
+	x.seams.resolveURLBundleName = func(*consoleutil.Console, *SkillBundle, *SkillMeta, string, string, bool) bool { return false }
 	if out, err := x.DoInstall(context.Background(), "example/id", HubInstallOptions{}); err != nil || out != HubFailed || !sameSession() {
 		t.Fatalf("%v %v", out, err)
 	}
@@ -204,7 +204,7 @@ func TestInstallFetchFailureMessages(t *testing.T) {
 	auth.cachedToken, auth.cachedMethod = "tok", "pat"
 	auth.Reject("tok")
 	src := &metaSource{SourceBase: SourceBase{ID: "skills-index"}, auth: auth}
-	wide := &pyrich.Console{Out: &bytes.Buffer{}, Width: 200}
+	wide := &consoleutil.Console{Out: &bytes.Buffer{}, Width: 200}
 	x.printFetchFailure(wide, []SkillSource{src}, "o/r/s", true, src)
 	if s := wide.Out.(*bytes.Buffer).String(); !strings.Contains(s, "rejected GITHUB_TOKEN/GH_TOKEN") || strings.Contains(s, "Stale index entry") {
 		t.Fatal(s)
@@ -316,7 +316,7 @@ func providerCatalog(t *testing.T, x *HubCLI, param string) (SkillSource, []Skil
 		for _, m := range append(append([]SkillMeta{}, others...), wanted...) {
 			skills = append(skills, skillMetaToDict(m))
 		}
-		text, _ := pyjson.Dumps(objOf("skills", skills))
+		text, _ := jsonutil.Encode(objOf("skills", skills))
 		writeTestFile(t, x.Hub.indexCacheFile(), text)
 		src = NewIndexSource(x.Hub, auth)
 	} else {

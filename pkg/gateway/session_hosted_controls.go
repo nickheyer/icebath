@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Current task and binding of an exact local attempt an operator control fences on
@@ -44,10 +44,10 @@ func (c *CanonicalHostedRoomService) controlTask(roomID string, memberID, taskID
 	}
 	payload, _ := hostedMapping(current["payload"])
 	seated := false
-	members, _ := pyjson.Plain(room["members"]).([]any)
+	members, _ := jsonutil.Plain(room["members"]).([]any)
 	for _, raw := range members {
 		m, _ := hostedMapping(raw)
-		if pyrepr.Equal(m["member_id"], member) && pyrepr.Equal(m["profile"], payload["target_profile"]) {
+		if anyutil.Equal(m["member_id"], member) && anyutil.Equal(m["profile"], payload["target_profile"]) {
 			seated = true
 			break
 		}
@@ -106,7 +106,7 @@ func (c *CanonicalHostedRoomService) DiscardRoomTask(roomID string, memberID, ta
 		}
 	}
 	if waiting != nil {
-		cancelled, err := c.runtime.Cancel(hrTaskIdentity(waiting), "discard:"+pyrepr.Str(executionGeneration))
+		cancelled, err := c.runtime.Cancel(hrTaskIdentity(waiting), "discard:"+anyutil.String(executionGeneration))
 		if err != nil {
 			return nil, err
 		}
@@ -120,11 +120,11 @@ func (c *CanonicalHostedRoomService) DiscardRoomTask(roomID string, memberID, ta
 		return nil, err
 	}
 	generation, _ := hostedStrictInt(executionGeneration)
-	cancelID := "discard:" + pyrepr.Str(generation)
-	if pyrepr.Equal(task["status"], "cancelled") && pyrepr.Equal(task["cancel_id"], cancelID) {
+	cancelID := "discard:" + anyutil.String(generation)
+	if anyutil.Equal(task["status"], "cancelled") && anyutil.Equal(task["cancel_id"], cancelID) {
 		return task, nil
 	}
-	if !pyrepr.Equal(task["status"], "indeterminate") {
+	if !anyutil.Equal(task["status"], "indeterminate") {
 		return nil, runtimeRefusal("stale_generation")
 	}
 	transport, err := c.self.ResolveMemberTransport(binding, task)
@@ -132,7 +132,7 @@ func (c *CanonicalHostedRoomService) DiscardRoomTask(roomID string, memberID, ta
 		return nil, err
 	}
 	payload, _ := hostedMapping(task["payload"])
-	if err := hostedDiscard(c.ctx, transport, pyrepr.Str(payload["target_profile"]), taskID.(string), generation); err != nil {
+	if err := hostedDiscard(c.ctx, transport, anyutil.String(payload["target_profile"]), taskID.(string), generation); err != nil {
 		return nil, err
 	}
 	lease, err := c.runtime.ensureLease(binding)
@@ -184,10 +184,10 @@ func (c *CanonicalHostedRoomService) RetryRoomTask(roomID string, memberID, task
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Equal(task["status"], "indeterminate") {
+	if anyutil.Equal(task["status"], "indeterminate") {
 		return nil, runtimeRefusal("unknown_execution")
 	}
-	if !pyrepr.Equal(task["status"], "deferred") {
+	if !anyutil.Equal(task["status"], "deferred") {
 		return nil, runtimeRefusal("stale_generation")
 	}
 	transport, err := c.self.ResolveMemberTransport(binding, task)
@@ -199,14 +199,14 @@ func (c *CanonicalHostedRoomService) RetryRoomTask(roomID string, memberID, task
 	if err != nil {
 		return nil, err
 	}
-	info, err := transport.Info(c.ctx, pyrepr.Str(payload["target_profile"]), ref.SessionID, RoomSessionSource)
+	info, err := transport.Info(c.ctx, anyutil.String(payload["target_profile"]), ref.SessionID, RoomSessionSource)
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Equal(info["status"], "unknown") {
+	if anyutil.Equal(info["status"], "unknown") {
 		return nil, runtimeRefusal("unknown_execution")
 	}
-	if pyrepr.Truthy(info["active"]) {
+	if anyutil.IsTrue(info["active"]) {
 		return nil, runtimeRefusal("session_busy")
 	}
 	lease, err := c.runtime.ensureLease(binding)
@@ -230,7 +230,7 @@ func (c *CanonicalHostedRoomService) Status(roomID *string) (map[string]any, err
 		if !has {
 			taskID = ""
 		}
-		if !pyrepr.Equal(action["kind"], "retry") || strings.HasPrefix(pyrepr.Str(taskID), PrepareRetryTaskPrefix) {
+		if !anyutil.Equal(action["kind"], "retry") || strings.HasPrefix(anyutil.String(taskID), PrepareRetryTaskPrefix) {
 			actions = append(actions, raw)
 		}
 	}
@@ -239,7 +239,7 @@ func (c *CanonicalHostedRoomService) Status(roomID *string) (map[string]any, err
 		return nil, err
 	}
 	for _, task := range tasks {
-		status := pyrepr.Str(task["status"])
+		status := anyutil.String(task["status"])
 		if status != "indeterminate" && status != "deferred" {
 			continue
 		}

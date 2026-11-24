@@ -7,8 +7,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 // The AIAgent of the reuse race cases, a chat completions agent on the test model
@@ -79,7 +79,7 @@ func (c *reuseRaceClient) CreateChatCompletion(context.Context, map[string]any) 
 func reuseRaceManagedTurn(t *testing.T, sessionID string) *relayLLMFake {
 	t.Helper()
 	f := relayLLMInstallFake(t, "profile")
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	lease := tools.RelayCoordinator.AcquireConversation(ctx, tools.RelayConversation{ProfileKey: tools.CurrentRelayProfileKey(ctx), SessionID: sessionID, Platform: "cli"})
 	turn, err := tools.RelayCoordinator.BeginTurn(ctx, lease, "request-client-reuse-turn", "request-client-reuse-task", nil)
 	if err != nil {

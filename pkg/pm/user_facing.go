@@ -10,8 +10,8 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Packages whose packaged dirs a sealed Windows payload swaps for writable copies
@@ -90,7 +90,7 @@ func WritableCopy(ctx context.Context, name string, opts WritableCopyOptions) (*
 // PATH dirs a store's install of a package contributes, natively spelled
 func locationDirs(facts *Facts, store *Store, name string) []string {
 	value, present := facts.EnvFor(name, store.Root)["PATH"]
-	if !present || !pyrepr.Truthy(value) {
+	if !present || !anyutil.IsTrue(value) {
 		return nil
 	}
 	var out []string
@@ -221,7 +221,7 @@ func pythonStoreAliasDir(directory string) bool {
 // Components of a path the way pathlib parts lists them, the anchor first
 func pathParts(path string) []string {
 	if runtime.GOOS == "windows" {
-		drive, root, tail := pypath.NtSplitRoot(strings.ReplaceAll(path, "/", `\`))
+		drive, root, tail := pathutil.WindowsSplitRoot(strings.ReplaceAll(path, "/", `\`))
 		var parts []string
 		if drive+root != "" {
 			parts = append(parts, drive+root)

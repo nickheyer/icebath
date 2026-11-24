@@ -13,9 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -85,36 +85,36 @@ func Lock(h string) (func(), error) {
 }
 
 // One complete store snapshot in file order, unreadable or malformed files reading as empty
-func LoadUnlocked(h string) *pyjson.Object {
+func LoadUnlocked(h string) *jsonutil.Object {
 	raw, err := os.ReadFile(Path(h))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
 	if !utf8.Valid(raw) {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	data, err := pyjson.Loads(string(raw))
+	data, err := jsonutil.Decode(string(raw))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	if obj, ok := data.(*pyjson.Object); ok {
+	if obj, ok := data.(*jsonutil.Object); ok {
 		return obj
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Lock free read, writers publish by atomic rename so a reader always sees one whole snapshot
-func Load(h string) *pyjson.Object { return LoadUnlocked(h) }
+func Load(h string) *jsonutil.Object { return LoadUnlocked(h) }
 
 // Publishes the snapshot atomically as two space indented JSON with owner only mode
-func SaveUnlocked(h string, subs *pyjson.Object) error {
-	text, err := pyjson.Dumps(subs, pyjson.Indent(2), pyjson.EnsureASCII(false))
+func SaveUnlocked(h string, subs *jsonutil.Object) error {
+	text, err := jsonutil.Encode(subs, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
 	if !utf8.ValidString(text) {
-		if text, err = pyjson.Dumps(subs, pyjson.Indent(2), pyjson.EnsureASCII(true)); err != nil {
+		if text, err = jsonutil.Encode(subs, jsonutil.Indent(2), jsonutil.ASCII()); err != nil {
 			return err
 		}
 	}
@@ -126,7 +126,7 @@ func SaveUnlocked(h string, subs *pyjson.Object) error {
 }
 
 // Locks, rereads, mutates and atomically publishes one snapshot, an error from mutate publishing nothing
-func Mutate(h string, mutate func(subs *pyjson.Object) error) error {
+func Mutate(h string, mutate func(subs *jsonutil.Object) error) error {
 	release, err := Lock(h)
 	if err != nil {
 		return err
@@ -141,20 +141,20 @@ func Mutate(h string, mutate func(subs *pyjson.Object) error) error {
 
 // Compares one route to a snapshot value with Python equality over decoded JSON
 func sameRoute(a, b any) bool {
-	return pyrepr.Equal(pyjson.Plain(a), pyjson.Plain(b))
+	return anyutil.Equal(jsonutil.Plain(a), jsonutil.Plain(b))
 }
 
 // Swaps one route only when it still equals expected, keeping an explicit enabled false, and returns it as published
-func Replace(h, name string, route *pyjson.Object, expected any) (*pyjson.Object, error) {
-	var published *pyjson.Object
-	err := Mutate(h, func(subs *pyjson.Object) error {
+func Replace(h, name string, route *jsonutil.Object, expected any) (*jsonutil.Object, error) {
+	var published *jsonutil.Object
+	err := Mutate(h, func(subs *jsonutil.Object) error {
 		current, present := subs.Get(name)
 		expectedMissing := expected == Missing
 		if present == expectedMissing || (!expectedMissing && !sameRoute(current, expected)) {
 			return &SubscriptionMutationConflict{Msg: fmt.Sprintf("Webhook subscription '%s' changed concurrently; retry the operation.", name)}
 		}
 		published = route
-		if cur, ok := current.(*pyjson.Object); ok {
+		if cur, ok := current.(*jsonutil.Object); ok {
 			if enabled, ok := cur.Get("enabled"); ok && enabled == false {
 				published = copyObject(route)
 				published.Set("enabled", false)
@@ -170,17 +170,17 @@ func Replace(h, name string, route *pyjson.Object, expected any) (*pyjson.Object
 }
 
 // Shallow copy of an ordered object like {**route}
-func copyObject(o *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range o.Keys {
-		out.Set(k, o.Vals[k])
+func copyObject(o *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, k := range o.Keys() {
+		out.Set(k, o.Value(k))
 	}
 	return out
 }
 
 // Writes a plain map mutation back into the ordered snapshot, surviving keys in file order and new keys sorted after
-func ApplyPlain(dst *pyjson.Object, plain map[string]any) {
-	for _, k := range slices.Clone(dst.Keys) {
+func ApplyPlain(dst *jsonutil.Object, plain map[string]any) {
+	for _, k := range slices.Clone(dst.Keys()) {
 		if _, ok := plain[k]; !ok {
 			dst.Delete(k)
 		}
@@ -192,7 +192,7 @@ func ApplyPlain(dst *pyjson.Object, plain map[string]any) {
 		}
 	}
 	slices.Sort(added)
-	for _, k := range slices.Clone(dst.Keys) {
+	for _, k := range slices.Clone(dst.Keys()) {
 		old, _ := dst.Get(k)
 		dst.Set(k, orderLike(old, plain[k]))
 	}
@@ -205,11 +205,11 @@ func ApplyPlain(dst *pyjson.Object, plain map[string]any) {
 func orderLike(template, v any) any {
 	switch t := v.(type) {
 	case map[string]any:
-		out := pyjson.NewObject()
-		if tmpl, ok := template.(*pyjson.Object); ok {
-			for _, k := range tmpl.Keys {
+		out := jsonutil.NewObject()
+		if tmpl, ok := template.(*jsonutil.Object); ok {
+			for _, k := range tmpl.Keys() {
 				if val, ok := t[k]; ok {
-					out.Set(k, orderLike(tmpl.Vals[k], val))
+					out.Set(k, orderLike(tmpl.Value(k), val))
 				}
 			}
 		}
@@ -249,7 +249,7 @@ func WebhookConfig(ctx context.Context, h string) map[string]any {
 	platforms, _ := map[string]any(tree)["platforms"].(map[string]any)
 	wh, configured := platforms["webhook"].(map[string]any)
 	raw, _ := lookup("WEBHOOK_ENABLED")
-	enabled, _ := pystr.BoolToken(raw)
+	enabled, _ := textutil.ParseBool(raw)
 	if !configured && !enabled {
 		return map[string]any{}
 	}
@@ -286,7 +286,7 @@ func BaseURL(ctx context.Context, h string) string {
 	host, _ := extra["host"].(string)
 	displayHost := host
 	if extra["host"] != nil && host == "" {
-		displayHost = pyrepr.Str(extra["host"])
+		displayHost = anyutil.String(extra["host"])
 	}
 	if !pyTruthy(extra["host"]) || host == "0.0.0.0" || host == "::" {
 		displayHost = "localhost"
@@ -298,18 +298,18 @@ func BaseURL(ctx context.Context, h string) string {
 	if !ok {
 		port = 8644
 	}
-	return fmt.Sprintf("http://%s:%s", displayHost, pyrepr.Str(port))
+	return fmt.Sprintf("http://%s:%s", displayHost, anyutil.String(port))
 }
 
 // Delivery URL of one route, prefixed with /p/<profile> for a non default profile
-func RouteURL(ctx context.Context, h, name string, route *pyjson.Object) string {
+func RouteURL(ctx context.Context, h, name string, route *jsonutil.Object) string {
 	profile := any("default")
 	if v, ok := route.Get("profile"); ok {
 		profile = v
 	}
 	prefix := ""
 	if p, ok := profile.(string); !ok || p != "default" {
-		prefix = "/p/" + pyrepr.Str(profile)
+		prefix = "/p/" + anyutil.String(profile)
 	}
 	return BaseURL(ctx, h) + prefix + "/webhooks/" + name
 }

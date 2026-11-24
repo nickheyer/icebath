@@ -5,8 +5,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Most characters of an API side text one CLI turn may commit
@@ -27,8 +27,8 @@ func submitCLITurnFields(params map[string]any) map[string]any {
 }
 
 // Committed CLI turn fields of a submission, empty when it carries none, malformed values refused
-func admitCLITurn(params map[string]any) (*pyjson.Object, error) {
-	committed := pyjson.NewObject()
+func admitCLITurn(params map[string]any) (*jsonutil.Object, error) {
+	committed := jsonutil.NewObject()
 	if raw := params["turn_author"]; raw != nil {
 		author := provider.ParseTurnAuthor(raw)
 		if author == nil {
@@ -64,7 +64,7 @@ func admitCLITurn(params map[string]any) (*pyjson.Object, error) {
 			(hasReasoning && (!isEffort || config.ParseReasoningEffort(effort) == nil)) {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		kept := pyjson.ObjectOf("model", strings.TrimSpace(model))
+		kept := jsonutil.ObjectOf("model", strings.TrimSpace(model))
 		if providerName != "" {
 			kept.Set("provider", providerName)
 		}
@@ -81,7 +81,7 @@ func admitCLITurn(params map[string]any) (*pyjson.Object, error) {
 		committed.Set("clarify_batch", true)
 	}
 	if committed.Len() == 0 {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	return pyjson.ObjectOf("cli_turn_v1", committed), nil
+	return jsonutil.ObjectOf("cli_turn_v1", committed), nil
 }

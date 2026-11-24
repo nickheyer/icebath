@@ -6,8 +6,8 @@ import (
 	"math/big"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Acquires an empty or expired room lease under a monotonic generation
@@ -57,7 +57,7 @@ func DriverAcquireLease(ctx context.Context, dbPath string, roomIDValue, gateway
 			return nil
 		}
 		sameAuthority := hrStr(row, "gateway_id") == gatewayID && hrInt(row, "authority_epoch") == epoch
-		live := row.Vals["released_at"] == nil && hrFloat(row, "expires_at") > now
+		live := row.Value("released_at") == nil && hrFloat(row, "expires_at") > now
 		if sameAuthority && hrStr(row, "process_generation") == processGeneration && live {
 			renewed := max(hrFloat(row, "expires_at"), expiresAt)
 			if _, err := conn.ExecContext(ctx, "UPDATE hosted_room_driver_leases SET expires_at=?, updated_at=? WHERE room_id=? AND lease_generation=?",
@@ -134,7 +134,7 @@ func DriverReleaseLease(ctx context.Context, dbPath string, lease DriverLease, c
 		if !driverLeaseRowMatches(row, lease) {
 			return staleLease("driver lease is stale")
 		}
-		if row.Vals["released_at"] != nil {
+		if row.Value("released_at") != nil {
 			out = map[string]any{"lease": driverLeaseFromRow(row, false), "idempotent": true}
 			return nil
 		}
@@ -369,8 +369,8 @@ func DriverDeferIndeterminateTask(ctx context.Context, dbPath string, identity T
 	if err != nil {
 		return nil, err
 	}
-	replay := func(row *pyjson.Object) (map[string]any, error) {
-		if driverGenerationsMatch(row, "deferred", expectedExecutionGeneration, expectedCancelGeneration) && row.Vals["result_json"] != nil && hrStr(row, "result_json") == resultJSON {
+	replay := func(row *jsonutil.Object) (map[string]any, error) {
+		if driverGenerationsMatch(row, "deferred", expectedExecutionGeneration, expectedCancelGeneration) && row.Value("result_json") != nil && hrStr(row, "result_json") == resultJSON {
 			return driverTaskFromRow(row, true)
 		}
 		return nil, nil
@@ -399,9 +399,9 @@ func DriverRequeueNotAdmittedTask(ctx context.Context, dbPath string, attempt Ta
 	if err := driverCheckSameRoom(attempt.Lease, attempt.Identity); err != nil {
 		return nil, err
 	}
-	replay := func(row *pyjson.Object) (map[string]any, error) {
+	replay := func(row *jsonutil.Object) (map[string]any, error) {
 		if driverGenerationsMatch(row, "queued", attempt.ExecutionGeneration, attempt.CancelGeneration) &&
-			row.Vals["run_gateway_id"] == nil && row.Vals["run_process_generation"] == nil && row.Vals["run_lease_generation"] == nil {
+			row.Value("run_gateway_id") == nil && row.Value("run_process_generation") == nil && row.Value("run_lease_generation") == nil {
 			return driverTaskFromRow(row, true)
 		}
 		return nil, nil
@@ -431,8 +431,8 @@ func DriverDeferNotAdmittedTask(ctx context.Context, dbPath string, attempt Task
 	if err := driverCheckSameRoom(attempt.Lease, attempt.Identity); err != nil {
 		return nil, err
 	}
-	replay := func(row *pyjson.Object) (map[string]any, error) {
-		if driverGenerationsMatch(row, "deferred", attempt.ExecutionGeneration, attempt.CancelGeneration) && row.Vals["result_json"] != nil &&
+	replay := func(row *jsonutil.Object) (map[string]any, error) {
+		if driverGenerationsMatch(row, "deferred", attempt.ExecutionGeneration, attempt.CancelGeneration) && row.Value("result_json") != nil &&
 			hrStr(row, "result_json") == resultJSON {
 			return driverTaskFromRow(row, true)
 		}
@@ -455,7 +455,7 @@ func DriverCancelTask(ctx context.Context, dbPath string, identity TaskIdentity,
 	if err != nil {
 		return nil, err
 	}
-	guard := func(row *pyjson.Object) error {
+	guard := func(row *jsonutil.Object) error {
 		status := hrStr(row, "status")
 		if DriverTerminalStatuses[status] {
 			return invalidTransition(fmt.Sprintf("cannot cancel task in state '%s'", status))
@@ -482,7 +482,7 @@ func DriverBeginTaskCancel(ctx context.Context, dbPath string, identity TaskIden
 	if err != nil {
 		return nil, err
 	}
-	guard := func(row *pyjson.Object) error {
+	guard := func(row *jsonutil.Object) error {
 		status := hrStr(row, "status")
 		if DriverTerminalStatuses[status] || status == "queued" {
 			return invalidTransition(fmt.Sprintf("cannot request remote stop in state '%s'", status))
@@ -503,8 +503,8 @@ func DriverCompleteTaskCancel(ctx context.Context, dbPath string, identity TaskI
 	if err != nil {
 		return nil, err
 	}
-	guard := func(row *pyjson.Object) error {
-		if hrStr(row, "status") != "stopping" || row.Vals["cancel_id"] == nil || hrStr(row, "cancel_id") != cancelID || hrInt(row, "cancel_generation") != expectedCancelGeneration {
+	guard := func(row *jsonutil.Object) error {
+		if hrStr(row, "status") != "stopping" || row.Value("cancel_id") == nil || hrStr(row, "cancel_id") != cancelID || hrInt(row, "cancel_generation") != expectedCancelGeneration {
 			return staleTask("task stop acknowledgement is stale")
 		}
 		return nil
@@ -636,8 +636,8 @@ func DriverPrunePublishedTerminalTasks(ctx context.Context, dbPath string, roomI
 		cutoff := now - retentionSeconds
 		var candidates []any
 		for index, row := range rows {
-			if big.NewInt(int64(index)).Cmp(retainCount) >= 0 || (row.Vals["terminal_at"] != nil && hrFloat(row, "terminal_at") <= cutoff) {
-				candidates = append(candidates, fmt.Sprint(row.Vals["task_id"]))
+			if big.NewInt(int64(index)).Cmp(retainCount) >= 0 || (row.Value("terminal_at") != nil && hrFloat(row, "terminal_at") <= cutoff) {
+				candidates = append(candidates, fmt.Sprint(row.Value("task_id")))
 			}
 			if len(candidates) == driverMaxTaskPruneBatch {
 				break

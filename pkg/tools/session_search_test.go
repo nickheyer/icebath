@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Installs the profile store doubles the session_search tests swap, a custom home and no known profiles
@@ -170,23 +170,23 @@ func (f *sessionSearchFakeStore) unexpected(name string) {
 	f.t.Fatalf("unexpected %s call on the fake store", name)
 }
 
-func (f *sessionSearchFakeStore) GetSession(context.Context, string) (*pyjson.Object, error) {
+func (f *sessionSearchFakeStore) GetSession(context.Context, string) (*jsonutil.Object, error) {
 	f.unexpected("GetSession")
 	return nil, nil
 }
-func (f *sessionSearchFakeStore) GetMessages(context.Context, string, state.GetMessagesOptions) ([]*pyjson.Object, error) {
+func (f *sessionSearchFakeStore) GetMessages(context.Context, string, state.GetMessagesOptions) ([]*jsonutil.Object, error) {
 	f.unexpected("GetMessages")
 	return nil, nil
 }
-func (f *sessionSearchFakeStore) SearchMessages(context.Context, string, state.SearchMessagesOptions) ([]*pyjson.Object, error) {
+func (f *sessionSearchFakeStore) SearchMessages(context.Context, string, state.SearchMessagesOptions) ([]*jsonutil.Object, error) {
 	f.unexpected("SearchMessages")
 	return nil, nil
 }
-func (f *sessionSearchFakeStore) GetAnchoredView(context.Context, string, int64, state.AnchoredViewOptions) (*pyjson.Object, error) {
+func (f *sessionSearchFakeStore) GetAnchoredView(context.Context, string, int64, state.AnchoredViewOptions) (*jsonutil.Object, error) {
 	f.unexpected("GetAnchoredView")
 	return nil, nil
 }
-func (f *sessionSearchFakeStore) GetMessagesAround(context.Context, string, int64, int) (*pyjson.Object, error) {
+func (f *sessionSearchFakeStore) GetMessagesAround(context.Context, string, int64, int) (*jsonutil.Object, error) {
 	f.unexpected("GetMessagesAround")
 	return nil, nil
 }
@@ -194,7 +194,7 @@ func (f *sessionSearchFakeStore) ResolveSessionByTitle(context.Context, string) 
 	f.unexpected("ResolveSessionByTitle")
 	return "", false, nil
 }
-func (f *sessionSearchFakeStore) FTSRebuildStatus(context.Context) (*pyjson.Object, error) {
+func (f *sessionSearchFakeStore) FTSRebuildStatus(context.Context) (*jsonutil.Object, error) {
 	f.unexpected("FTSRebuildStatus")
 	return nil, nil
 }
@@ -213,7 +213,7 @@ type boundedFakeStore struct {
 	boundedOpts *state.RecentSessionsBoundedOptions
 }
 
-func (f *boundedFakeStore) ListRecentSessionsBounded(_ context.Context, o state.RecentSessionsBoundedOptions) ([]*pyjson.Object, error) {
+func (f *boundedFakeStore) ListRecentSessionsBounded(_ context.Context, o state.RecentSessionsBoundedOptions) ([]*jsonutil.Object, error) {
 	f.boundedOpts = &o
 	return nil, nil
 }

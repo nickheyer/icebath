@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -293,10 +293,10 @@ func TestBackendArgvMatching(t *testing.T) {
 }
 
 func TestControlAnswerFailureText(t *testing.T) {
-	obj := pyjson.NewObject()
+	obj := jsonutil.NewObject()
 	obj.Set("ok", false)
 	obj.Set("error", "boom")
-	empty := pyjson.NewObject()
+	empty := jsonutil.NewObject()
 	empty.Set("ok", false)
 	for answer, want := range map[any]string{obj: "boom", empty: "{'ok': False}", "odd": "'odd'"} {
 		if got := controlAnswerFailure(answer); got != want {

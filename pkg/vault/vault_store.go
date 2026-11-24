@@ -27,13 +27,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyfernet"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fernetutil "github.com/nickheyer/icebath/pkg/utils/fernet"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var VaultKinds = []string{"login", "payment", "address"}
@@ -41,11 +41,11 @@ var VaultKinds = []string{"login", "payment", "address"}
 var LoginIdentifierTypes = []string{"email", "phone", "username"}
 
 // Payment payload names mapped to the WHATWG autocomplete token the fill targets
-var PaymentFields = pyjson.ObjectOf("card_number", "cc-number", "cardholder_name", "cc-name", "exp_month", "cc-exp-month",
+var PaymentFields = jsonutil.ObjectOf("card_number", "cc-number", "cardholder_name", "cc-name", "exp_month", "cc-exp-month",
 	"exp_year", "cc-exp-year", "cvc", "cc-csc", "billing_postal_code", "postal-code")
 
 // Address payload names mapped to the WHATWG autocomplete token the fill targets
-var AddressFields = pyjson.ObjectOf("address_line1", "address-line1", "address_line2", "address-line2", "city", "address-level2",
+var AddressFields = jsonutil.ObjectOf("address_line1", "address-line1", "address_line2", "address-line2", "city", "address-level2",
 	"state", "address-level1", "postal_code", "postal-code", "country", "country-name")
 
 var vaultRequiredFields = map[string][]string{"payment": {"card_number", "exp_month", "exp_year", "cvc"},
@@ -70,10 +70,10 @@ func configuredKeyStorage(ctx context.Context, h string) string {
 	case config.Tree:
 		value = section["key_storage"]
 	}
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		value = "file"
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 }
 
 var otpAlgos = map[string]func() hash.Hash{"SHA1": sha1.New, "SHA256": sha256.New, "SHA512": sha512.New}
@@ -98,14 +98,14 @@ func NormalizeOTPSecret(value string) (string, error) {
 		if strings.ToLower(parsed.Netloc) != "totp" {
 			return "", &VaultError{"only otpauth://totp links are supported (counter-based HOTP is not)"}
 		}
-		first := pyjson.NewObject()
+		first := jsonutil.NewObject()
 		for _, kv := range pyurl.ParseQSL(parsed.Query, false) {
 			if _, seen := first.Get(kv[0]); !seen {
 				first.Set(kv[0], kv[1])
 			}
 		}
 		qs := map[string]string{}
-		for _, k := range first.Keys {
+		for _, k := range first.Keys() {
 			v, _ := first.Get(k)
 			qs[strings.ToLower(k)] = v.(string)
 		}
@@ -194,20 +194,20 @@ func NormalizeOrigin(urlOrOrigin string) (string, error) {
 		return "", &VaultError{"origin is required"}
 	}
 	if !strings.Contains(value, "://") {
-		return "", &VaultError{fmt.Sprintf("origin must include a scheme (got %s)", pyrepr.Repr(value))}
+		return "", &VaultError{fmt.Sprintf("origin must include a scheme (got %s)", anyutil.Quote(value))}
 	}
 	parts, err := pyurl.Split(value)
 	if err != nil {
-		return "", &VaultError{fmt.Sprintf("could not parse origin from %s", pyrepr.Repr(value))}
+		return "", &VaultError{fmt.Sprintf("could not parse origin from %s", anyutil.Quote(value))}
 	}
 	scheme := strings.ToLower(parts.Scheme)
 	host := strings.ToLower(parts.Hostname())
 	if scheme == "" || host == "" {
-		return "", &VaultError{fmt.Sprintf("could not parse origin from %s", pyrepr.Repr(value))}
+		return "", &VaultError{fmt.Sprintf("could not parse origin from %s", anyutil.Quote(value))}
 	}
 	port, hasPort, err := parts.Port()
 	if err != nil {
-		return "", &VaultError{fmt.Sprintf("invalid port in origin %s", pyrepr.Repr(value))}
+		return "", &VaultError{fmt.Sprintf("invalid port in origin %s", anyutil.Quote(value))}
 	}
 	if def, ok := vaultDefaultPorts[scheme]; !hasPort || (ok && port == def) {
 		return scheme + "://" + host, nil
@@ -228,8 +228,8 @@ type VaultItemMeta struct {
 	AllowedOrigins []string
 }
 
-func (m VaultItemMeta) ToDict() *pyjson.Object {
-	out := pyjson.ObjectOf("id", m.ID, "kind", m.Kind, "label", m.Label, "origin", m.Origin, "created_at", m.CreatedAt)
+func (m VaultItemMeta) ToDict() *jsonutil.Object {
+	out := jsonutil.ObjectOf("id", m.ID, "kind", m.Kind, "label", m.Label, "origin", m.Origin, "created_at", m.CreatedAt)
 	if m.Identifier != nil {
 		out.Set("identifier", m.Identifier)
 		out.Set("identifier_type", m.IdentifierType)
@@ -293,19 +293,19 @@ func (s *VaultStore) locked(fn func() error) error {
 		return err
 	}
 	defer fd.Close()
-	if err := pyfs.LockFile(fd); err != nil {
+	if err := fsutil.LockFile(fd); err != nil {
 		return err
 	}
-	defer pyfs.UnlockFile(fd)
+	defer fsutil.UnlockFile(fd)
 	return fn()
 }
 
-func (s *VaultStore) fernet() (*pyfernet.Fernet, error) {
+func (s *VaultStore) fernet() (*fernetutil.Fernet, error) {
 	key, err := s.key()
 	if err != nil {
 		return nil, err
 	}
-	return pyfernet.New(key)
+	return fernetutil.New(key)
 }
 
 func (s *VaultStore) hasCiphertext() bool {
@@ -350,7 +350,7 @@ func (s *VaultStore) key() ([]byte, error) {
 		} else if aerr != nil {
 			return nil, aerr
 		} else {
-			why = fmt.Sprintf("the keychain entry %s / %s is gone", pyrepr.Repr(refString(ref, "service")), pyrepr.Repr(refString(ref, "account")))
+			why = fmt.Sprintf("the keychain entry %s / %s is gone", anyutil.Quote(refString(ref, "service")), anyutil.Quote(refString(ref, "account")))
 		}
 		if len(key) > 0 {
 			return key, nil
@@ -380,7 +380,7 @@ func (s *VaultStore) conflictingKeyMessage() string {
 
 // New key in the keychain when configured and reachable, else in the 0600 key file
 func (s *VaultStore) createKey() ([]byte, error) {
-	key := pyfernet.GenerateKey()
+	key := fernetutil.GenerateKey()
 	if configuredKeyStorage(s.ctx, s.home) == "keychain" {
 		ref := vaultNewRef(s.base)
 		if err := vaultStoreKey(ref, key); err != nil {
@@ -403,11 +403,11 @@ func (s *VaultStore) createKey() ([]byte, error) {
 
 func (s *VaultStore) writeKeyFile(key []byte) error {
 	mode := os.FileMode(0o600)
-	return pyfs.AtomicWriteBytes(s.ctx, s.keyPath, key, "", &mode, true)
+	return fsutil.WriteFile(s.ctx, s.keyPath, key, fsutil.WriteOptions{Mode: &mode, SyncDir: true})
 }
 
 // Gives a cloned vault its own keychain entry before publication at publishedBase, nil when nothing is shared
-func (s *VaultStore) OwnCopiedKey(publishedBase string) (*pyjson.Object, error) {
+func (s *VaultStore) OwnCopiedKey(publishedBase string) (*jsonutil.Object, error) {
 	ref, err := vaultReadRef(s.keyrefPath)
 	if err != nil {
 		return nil, err
@@ -416,7 +416,7 @@ func (s *VaultStore) OwnCopiedKey(publishedBase string) (*pyjson.Object, error) 
 		return nil, nil
 	}
 	key, err := vaultLoadKey(ref)
-	var mine *pyjson.Object
+	var mine *jsonutil.Object
 	if err == nil {
 		if !s.decrypts(key) {
 			return nil, nil
@@ -440,7 +440,7 @@ func (s *VaultStore) OwnCopiedKey(publishedBase string) (*pyjson.Object, error) 
 }
 
 // Own entry for a moved vault, never deleting the entry it came from, the shared one serving on failure
-func (s *VaultStore) adopt(ref *pyjson.Object) (*pyjson.Object, error) {
+func (s *VaultStore) adopt(ref *jsonutil.Object) (*jsonutil.Object, error) {
 	if vaultOwnsRef(ref, s.base) {
 		return ref, nil
 	}
@@ -474,7 +474,7 @@ func (s *VaultStore) decrypts(key []byte) bool {
 	if !s.hasCiphertext() {
 		return true
 	}
-	f, err := pyfernet.New(key)
+	f, err := fernetutil.New(key)
 	if err != nil {
 		return false
 	}
@@ -487,13 +487,13 @@ func (s *VaultStore) decrypts(key []byte) bool {
 }
 
 // Where this vault's key lives, never the key itself
-func (s *VaultStore) KeyLocation() (*pyjson.Object, error) {
+func (s *VaultStore) KeyLocation() (*jsonutil.Object, error) {
 	ref, err := vaultReadRef(s.keyrefPath)
 	if err != nil {
 		return nil, err
 	}
 	if pathExists(s.keyPath) {
-		where := pyjson.ObjectOf("storage", "file", "path", s.keyPath)
+		where := jsonutil.ObjectOf("storage", "file", "path", s.keyPath)
 		if ref != nil {
 			acct, _ := ref.Get("account")
 			where.Set("keychain_entry_left", acct)
@@ -501,9 +501,9 @@ func (s *VaultStore) KeyLocation() (*pyjson.Object, error) {
 		return where, nil
 	}
 	if ref != nil {
-		return pyjson.Clone(ref).(*pyjson.Object), nil
+		return jsonutil.Clone(ref).(*jsonutil.Object), nil
 	}
-	return pyjson.ObjectOf("storage", "none", "path", s.keyPath), nil
+	return jsonutil.ObjectOf("storage", "none", "path", s.keyPath), nil
 }
 
 // Moves the key between the file and the OS keychain, proving the destination before removing the source
@@ -546,7 +546,7 @@ func (s *VaultStore) migrateToKeychain() (string, error) {
 				return "", err
 			}
 			if !s.decrypts(key) {
-				return "", &VaultError{s.missingKeyMessage(fmt.Sprintf("the keychain entry %s does not open the vault", pyrepr.Repr(refString(existing, "account"))))}
+				return "", &VaultError{s.missingKeyMessage(fmt.Sprintf("the keychain entry %s does not open the vault", anyutil.Quote(refString(existing, "account"))))}
 			}
 			return "keychain", nil
 		}
@@ -639,7 +639,7 @@ func (s *VaultStore) migrateToFile() (string, error) {
 		return "", &VaultError{"cannot read the vault key from the OS keychain: " + err.Error()}
 	}
 	if len(key) == 0 || !s.decrypts(key) {
-		return "", &VaultError{s.missingKeyMessage(fmt.Sprintf("the keychain entry %s does not hold this vault's key", pyrepr.Repr(refString(ref, "account"))))}
+		return "", &VaultError{s.missingKeyMessage(fmt.Sprintf("the keychain entry %s does not hold this vault's key", anyutil.Quote(refString(ref, "account"))))}
 	}
 	if err := s.writeKeyFile(key); err != nil {
 		return "", err
@@ -655,7 +655,7 @@ func (s *VaultStore) migrateToFile() (string, error) {
 }
 
 // Drops the keychain copy once the file holds the key, keeping the pointer when our delete fails
-func (s *VaultStore) releaseRef(ref *pyjson.Object) error {
+func (s *VaultStore) releaseRef(ref *jsonutil.Object) error {
 	if vaultOwnsRef(ref, s.base) && !vaultDeleteKey(ref) {
 		return nil
 	}
@@ -681,15 +681,15 @@ func (s *VaultStore) readAll() ([]any, error) {
 	if err != nil {
 		return nil, &VaultError{"vault file could not be decrypted (key mismatch or corruption)"}
 	}
-	text, err := pyjson.DecodeBytes(raw)
+	text, err := jsonutil.Text(raw)
 	var data any
 	if err == nil {
-		data, err = pyjson.Loads(text)
+		data, err = jsonutil.Decode(text)
 	}
 	if err != nil {
 		return nil, &VaultError{"vault file is corrupted (invalid JSON)"}
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil, &VaultError{"vault file is corrupted (unexpected shape)"}
 	}
@@ -708,7 +708,7 @@ func (s *VaultStore) writeAll(items []any) error {
 	if items == nil {
 		items = []any{}
 	}
-	payload, err := pyjson.Dumps(pyjson.ObjectOf("version", 1, "items", items))
+	payload, err := jsonutil.Encode(jsonutil.ObjectOf("version", 1, "items", items))
 	if err != nil {
 		return err
 	}
@@ -717,7 +717,7 @@ func (s *VaultStore) writeAll(items []any) error {
 		return err
 	}
 	mode := os.FileMode(0o600)
-	return pyfs.AtomicWriteBytes(s.ctx, s.vaultPath, f.Encrypt([]byte(payload)), "", &mode, true)
+	return fsutil.WriteFile(s.ctx, s.vaultPath, f.Encrypt([]byte(payload)), fsutil.WriteOptions{Mode: &mode, SyncDir: true})
 }
 
 func contains(list []string, v any) bool {
@@ -736,22 +736,22 @@ func contains(list []string, v any) bool {
 func pyTuple(list []string) string {
 	parts := make([]string, len(list))
 	for i, s := range list {
-		parts[i] = pyrepr.Repr(s)
+		parts[i] = anyutil.Quote(s)
 	}
 	return "(" + strings.Join(parts, ", ") + ")"
 }
 
 // Adds an item, a login keeping its identifier in metadata and only the password and seed secret
-func (s *VaultStore) AddItem(kind, label string, secret *pyjson.Object, origin string) (VaultItemMeta, error) {
+func (s *VaultStore) AddItem(kind, label string, secret *jsonutil.Object, origin string) (VaultItemMeta, error) {
 	if !contains(VaultKinds, kind) {
-		return VaultItemMeta{}, &VaultError{fmt.Sprintf("unknown vault kind %s (expected one of %s)", pyrepr.Repr(kind), pyTuple(VaultKinds))}
+		return VaultItemMeta{}, &VaultError{fmt.Sprintf("unknown vault kind %s (expected one of %s)", anyutil.Quote(kind), pyTuple(VaultKinds))}
 	}
 	label = strings.TrimSpace(label)
 	if label == "" {
 		return VaultItemMeta{}, &VaultError{"label is required"}
 	}
 	var normOrigin, identifier, identifierType any
-	secret = pyjson.Clone(secret).(*pyjson.Object)
+	secret = jsonutil.Clone(secret).(*jsonutil.Object)
 	if kind == "login" {
 		if origin == "" {
 			return VaultItemMeta{}, &VaultError{"origin is required for login items"}
@@ -768,24 +768,24 @@ func (s *VaultStore) AddItem(kind, label string, secret *pyjson.Object, origin s
 		}
 		rawID, _ := secret.Get("identifier")
 		secret.Delete("identifier")
-		if !pyrepr.Truthy(rawID) {
+		if !anyutil.IsTrue(rawID) {
 			rawID = ""
 		}
-		ident := strings.TrimSpace(pyrepr.Str(rawID))
+		ident := strings.TrimSpace(anyutil.String(rawID))
 		password, _ := secret.Get("password")
-		if ident == "" || !pyrepr.Truthy(password) {
+		if ident == "" || !anyutil.IsTrue(password) {
 			return VaultItemMeta{}, &VaultError{"login items require identifier and password"}
 		}
 		identifier, identifierType = ident, idType.(string)
 		rawOTP, _ := secret.Get("otp_secret")
-		if !pyrepr.Truthy(rawOTP) {
+		if !anyutil.IsTrue(rawOTP) {
 			rawOTP = ""
 		}
-		otp, err := NormalizeOTPSecret(pyrepr.Str(rawOTP))
+		otp, err := NormalizeOTPSecret(anyutil.String(rawOTP))
 		if err != nil {
 			return VaultItemMeta{}, err
 		}
-		secret = pyjson.ObjectOf("password", password)
+		secret = jsonutil.ObjectOf("password", password)
 		if otp != "" {
 			secret.Set("otp_secret", otp)
 		}
@@ -794,18 +794,18 @@ func (s *VaultStore) AddItem(kind, label string, secret *pyjson.Object, origin s
 		if kind == "address" {
 			allowed = AddressFields
 		}
-		kept := pyjson.NewObject()
-		for _, k := range secret.Keys {
+		kept := jsonutil.NewObject()
+		for _, k := range secret.Keys() {
 			v, _ := secret.Get(k)
 			if _, ok := allowed.Get(k); !ok {
 				continue
 			}
 			probe := v
-			if !pyrepr.Truthy(probe) {
+			if !anyutil.IsTrue(probe) {
 				probe = ""
 			}
-			if strings.TrimSpace(pyrepr.Str(probe)) != "" {
-				kept.Set(k, pyrepr.Str(v))
+			if strings.TrimSpace(anyutil.String(probe)) != "" {
+				kept.Set(k, anyutil.String(v))
 			}
 		}
 		secret = kept
@@ -827,8 +827,8 @@ func (s *VaultStore) AddItem(kind, label string, secret *pyjson.Object, origin s
 		}
 	}
 	itemID := "vault_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:12]
-	record := pyjson.ObjectOf("id", itemID, "kind", kind, "label", label, "origin", normOrigin,
-		"created_at", pydatetime.ISOFormatUTC(time.Now()), "identifier_type", identifierType, "identifier", identifier,
+	record := jsonutil.ObjectOf("id", itemID, "kind", kind, "label", label, "origin", normOrigin,
+		"created_at", time.Now().UTC().Format(timeutil.RFC3339Micro), "identifier_type", identifierType, "identifier", identifier,
 		"secret", secret)
 	err := s.locked(func() error {
 		items, err := s.readAll()
@@ -861,8 +861,8 @@ func (s *VaultStore) ListItems() ([]VaultItemMeta, error) {
 }
 
 // Record as a mapping, an error for anything else
-func recObject(rec any) (*pyjson.Object, error) {
-	if o, ok := rec.(*pyjson.Object); ok {
+func recObject(rec any) (*jsonutil.Object, error) {
+	if o, ok := rec.(*jsonutil.Object); ok {
 		return o, nil
 	}
 	return nil, fmt.Errorf("a vault record is %s, expected a mapping", errchain.Kind(rec))
@@ -913,7 +913,7 @@ func (s *VaultStore) GetMeta(itemID string) (*VaultItemMeta, error) {
 				return rerr
 			}
 			if id == itemID {
-				m := vaultMeta(rec.(*pyjson.Object))
+				m := vaultMeta(rec.(*jsonutil.Object))
 				found = &m
 				break
 			}
@@ -924,8 +924,8 @@ func (s *VaultStore) GetMeta(itemID string) (*VaultItemMeta, error) {
 }
 
 // Decrypted secret payload for server side use only, never for results, logs or errors
-func (s *VaultStore) ResolveSecret(itemID string) (*pyjson.Object, error) {
-	var found *pyjson.Object
+func (s *VaultStore) ResolveSecret(itemID string) (*jsonutil.Object, error) {
+	var found *jsonutil.Object
 	err := s.locked(func() error {
 		items, err := s.readAll()
 		for _, rec := range items {
@@ -934,11 +934,11 @@ func (s *VaultStore) ResolveSecret(itemID string) (*pyjson.Object, error) {
 				return rerr
 			}
 			if id == itemID {
-				sec, _ := rec.(*pyjson.Object).Get("secret")
-				if o, ok := sec.(*pyjson.Object); ok {
-					found = pyjson.Clone(o).(*pyjson.Object)
+				sec, _ := rec.(*jsonutil.Object).Get("secret")
+				if o, ok := sec.(*jsonutil.Object); ok {
+					found = jsonutil.Clone(o).(*jsonutil.Object)
 				} else {
-					found = pyjson.NewObject()
+					found = jsonutil.NewObject()
 				}
 				break
 			}
@@ -949,26 +949,26 @@ func (s *VaultStore) ResolveSecret(itemID string) (*pyjson.Object, error) {
 		return nil, err
 	}
 	if found == nil {
-		return nil, &VaultError{fmt.Sprintf("no vault item with id %s", pyrepr.Repr(itemID))}
+		return nil, &VaultError{fmt.Sprintf("no vault item with id %s", anyutil.Quote(itemID))}
 	}
 	return found, nil
 }
 
-func vaultMeta(rec *pyjson.Object) VaultItemMeta {
+func vaultMeta(rec *jsonutil.Object) VaultItemMeta {
 	get := func(k string) any { v, _ := rec.Get(k); return v }
 	str := func(k string) string {
 		if v, ok := rec.Get(k); ok {
-			return pyrepr.Str(v)
+			return anyutil.String(v)
 		}
 		return ""
 	}
 	m := VaultItemMeta{ID: str("id"), Kind: str("kind"), Label: str("label"), Origin: get("origin"), CreatedAt: str("created_at")}
-	if ident := get("identifier"); pyrepr.Truthy(ident) {
+	if ident := get("identifier"); anyutil.IsTrue(ident) {
 		m.Identifier, m.IdentifierType = ident, get("identifier_type")
 	}
-	if sec, ok := get("secret").(*pyjson.Object); ok {
+	if sec, ok := get("secret").(*jsonutil.Object); ok {
 		otp, _ := sec.Get("otp_secret")
-		m.HasOTP = pyrepr.Truthy(otp)
+		m.HasOTP = anyutil.IsTrue(otp)
 	}
 	return m
 }
@@ -979,9 +979,9 @@ func GetVaultStore(ctx context.Context) *VaultStore { return NewVaultStore(ctx, 
 var passwordEchoRE = regexp.MustCompile(`(password['"]?\s*[:=]\s*)\S+`)
 
 // Strips every secret value of at least three characters and password echoes from text
-func ScrubSecretFromText(text string, secret *pyjson.Object) string {
+func ScrubSecretFromText(text string, secret *jsonutil.Object) string {
 	scrubbed := text
-	for _, k := range secret.Keys {
+	for _, k := range secret.Keys() {
 		v, _ := secret.Get(k)
 		if s, ok := v.(string); ok && len([]rune(s)) >= 3 && strings.Contains(scrubbed, s) {
 			scrubbed = strings.ReplaceAll(scrubbed, s, "[REDACTED]")

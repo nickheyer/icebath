@@ -14,10 +14,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const maxControlRequestBytes = 64 * 1024
@@ -49,7 +49,7 @@ func NewGatewayControlServer(home string, verbHandlers map[string]ControlVerbHan
 	if home == "" {
 		home = processIcebathHome()
 	}
-	resolved, err := pypath.Resolve(home)
+	resolved, err := pathutil.Resolve(home)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (s *GatewayControlServer) privateHandler(verb string) (ControlPrivateHandle
 func (s *GatewayControlServer) Start() bool {
 	if err := s.startPlatform(); err != nil {
 		s.Stop()
-		pkgLog().Warn(fmt.Sprintf("Gateway control socket failed to start: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Gateway control socket failed to start: %s", err.Error()))
 		return false
 	}
 	return true
@@ -156,52 +156,48 @@ func (s *GatewayControlServer) HandleRequestLine(raw []byte, peerSubject string)
 	var requestID any
 	response, err := s.answer(raw, peerSubject, &requestID)
 	if err != nil {
-		response = pyjson.ObjectOf("ok", false, "error", controlErrorText(err), "protocol", int64(ControlProtocolVersion))
+		response = jsonutil.ObjectOf("ok", false, "error", err.Error(), "protocol", int64(ControlProtocolVersion))
 	}
 	if requestID != nil {
 		response.Set("id", requestID)
 	}
-	encoded, err := pyjson.Dumps(response, pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	encoded, err := jsonutil.Encode(response, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
-		encoded = `{"ok": false, "error": "response serialization failed"}`
+		encoded = `{"ok":false,"error":"response serialization failed"}`
 	}
 	if len(encoded) > maxControlResponseBytes {
-		tooLarge := pyjson.ObjectOf("ok", false, "error", "response_too_large", "code", "response_too_large",
+		tooLarge := jsonutil.ObjectOf("ok", false, "error", "response_too_large", "code", "response_too_large",
 			"limit", int64(maxControlResponseBytes), "protocol", int64(ControlProtocolVersion))
 		if controlIDEchoable(requestID) {
 			tooLarge.Set("id", requestID)
 		}
-		encoded, _ = pyjson.Dumps(tooLarge)
+		encoded, _ = jsonutil.Encode(tooLarge)
 	}
 	return append([]byte(encoded), '\n')
 }
 
-// Whether a request id may ride on the oversized answer, an int or str of at most 128 characters
+// Whether a request id may ride on the oversized answer, an integer, boolean or text of at most 128 characters
 func controlIDEchoable(id any) bool {
 	switch id.(type) {
-	case string, bool, int64:
-		return len([]rune(pyrepr.Str(id))) <= 128
+	case string, bool:
+	default:
+		if _, isInt := anyutil.Int(id); !isInt {
+			return false
+		}
 	}
-	_, isInt := pyNumber(id)
-	_, isFloat := id.(float64)
-	return isInt && !isFloat && len([]rune(pyrepr.Str(id))) <= 128
-}
-
-// Python type name and message of a handler failure
-func controlErrorText(err error) string {
-	return pyrepr.ExceptionMessage(err)
+	return utf8.RuneCountInString(anyutil.String(id)) <= 128
 }
 
 // Dispatches one decoded request to its verb, the request id stored for the response
-func (s *GatewayControlServer) answer(raw []byte, peerSubject string, requestID *any) (*pyjson.Object, error) {
+func (s *GatewayControlServer) answer(raw []byte, peerSubject string, requestID *any) (*jsonutil.Object, error) {
 	if !utf8.Valid(raw) {
 		return nil, &PyError{Kind: "UnicodeDecodeError", Msg: "the control request is not valid UTF-8"}
 	}
-	decoded, err := pyjson.Loads(string(raw))
+	decoded, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil, &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
-	request, ok := decoded.(*pyjson.Object)
+	request, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, &PyError{Kind: "ValueError", Msg: "request must be a JSON object"}
 	}
@@ -215,22 +211,22 @@ func (s *GatewayControlServer) answer(raw []byte, peerSubject string, requestID 
 	if private, ok := s.privateHandler(verb); verbIsStr && ok {
 		protocol, _ := request.Get("protocol")
 		paramsValue, _ := request.Get("params")
-		params, paramsIsDict := paramsValue.(*pyjson.Object)
-		if peerSubject == "" || !pyEq(protocol, int64(1)) || controlExtraKeys(request, "protocol", "verb", "id", "params") || !paramsIsDict {
+		params, paramsIsDict := paramsValue.(*jsonutil.Object)
+		if peerSubject == "" || !anyutil.Equal(protocol, int64(1)) || controlExtraKeys(request, "protocol", "verb", "id", "params") || !paramsIsDict {
 			return nil, &PyError{Kind: "PermissionError", Msg: "authenticated private request required"}
 		}
 		result, err := private(controlPlainParams(params), peerSubject)
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("ok", true, "protocol", int64(ControlProtocolVersion), "result", result), nil
+		return jsonutil.ObjectOf("ok", true, "protocol", int64(ControlProtocolVersion), "result", result), nil
 	}
 	if verbIsStr && verb == "session-ticket" {
 		result, err := s.sessionTicket(request, peerSubject)
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("ok", true, "protocol", int64(ControlProtocolVersion), "result", result), nil
+		return jsonutil.ObjectOf("ok", true, "protocol", int64(ControlProtocolVersion), "result", result), nil
 	}
 	if handler == nil {
 		supported := slices.Sorted(maps.Keys(s.handlers))
@@ -238,12 +234,12 @@ func (s *GatewayControlServer) answer(raw []byte, peerSubject string, requestID 
 		for i, name := range supported {
 			names[i] = name
 		}
-		return pyjson.ObjectOf("ok", false, "error", "unknown verb: "+pyrepr.Repr(verbValue),
+		return jsonutil.ObjectOf("ok", false, "error", "unknown verb: "+anyutil.Quote(verbValue),
 			"protocol", int64(ControlProtocolVersion), "supported_verbs", names), nil
 	}
 	params := map[string]any{}
 	if value, _ := request.Get("params"); value != nil {
-		if dict, isDict := value.(*pyjson.Object); isDict {
+		if dict, isDict := value.(*jsonutil.Object); isDict {
 			params = controlPlainParams(dict)
 		}
 	}
@@ -251,12 +247,12 @@ func (s *GatewayControlServer) answer(raw []byte, peerSubject string, requestID 
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("ok", true, "protocol", int64(ControlProtocolVersion), "result", result), nil
+	return jsonutil.ObjectOf("ok", true, "protocol", int64(ControlProtocolVersion), "result", result), nil
 }
 
 // Plain map form of decoded request params
-func controlPlainParams(params *pyjson.Object) map[string]any {
-	plain, _ := pyjson.Plain(params).(map[string]any)
+func controlPlainParams(params *jsonutil.Object) map[string]any {
+	plain, _ := jsonutil.Plain(params).(map[string]any)
 	if plain == nil {
 		plain = map[string]any{}
 	}
@@ -264,8 +260,8 @@ func controlPlainParams(params *pyjson.Object) map[string]any {
 }
 
 // Whether the object carries a key outside the allowed set
-func controlExtraKeys(obj *pyjson.Object, allowed ...string) bool {
-	for _, key := range obj.Keys {
+func controlExtraKeys(obj *jsonutil.Object, allowed ...string) bool {
+	for _, key := range obj.Keys() {
 		if !slices.Contains(allowed, key) {
 			return true
 		}
@@ -274,7 +270,7 @@ func controlExtraKeys(obj *pyjson.Object, allowed ...string) bool {
 }
 
 // Whether the object carries every key
-func controlHasKeys(obj *pyjson.Object, keys ...string) bool {
+func controlHasKeys(obj *jsonutil.Object, keys ...string) bool {
 	for _, key := range keys {
 		if _, ok := obj.Get(key); !ok {
 			return false
@@ -284,27 +280,27 @@ func controlHasKeys(obj *pyjson.Object, keys ...string) bool {
 }
 
 // Mints a profile bound attach ticket for an authenticated same user peer
-func (s *GatewayControlServer) sessionTicket(request *pyjson.Object, peerSubject string) (map[string]any, error) {
+func (s *GatewayControlServer) sessionTicket(request *jsonutil.Object, peerSubject string) (map[string]any, error) {
 	store := s.TicketStore
 	if peerSubject == "" || store == nil {
 		return nil, &PyError{Kind: "PermissionError", Msg: "authenticated runtime bootstrap unavailable"}
 	}
 	protocol, _ := request.Get("protocol")
-	if controlExtraKeys(request, "protocol", "verb", "id", "params") || !pyEq(protocol, int64(1)) {
+	if controlExtraKeys(request, "protocol", "verb", "id", "params") || !anyutil.Equal(protocol, int64(1)) {
 		return nil, &PyError{Kind: "PermissionError", Msg: "invalid bootstrap envelope"}
 	}
 	paramsValue, _ := request.Get("params")
-	params, isDict := paramsValue.(*pyjson.Object)
+	params, isDict := paramsValue.(*jsonutil.Object)
 	invalidParams := &PyError{Kind: "PermissionError", Msg: "invalid bootstrap parameters"}
 	if !isDict || !controlHasKeys(params, "profile_id", "instance_id", "purpose") ||
 		controlExtraKeys(params, "profile_id", "instance_id", "purpose", "scope", "restart_wait") {
 		return nil, invalidParams
 	}
-	if restartWait, present := params.Get("restart_wait"); present && !pyEq(restartWait, "refuse") {
+	if restartWait, present := params.Get("restart_wait"); present && restartWait != "refuse" {
 		return nil, invalidParams
 	}
 	instanceID, _ := params.Get("instance_id")
-	if !pyEq(instanceID, store.InstanceID) {
+	if instanceID != store.InstanceID {
 		return nil, &PyError{Kind: "PermissionError", Msg: "stale runtime instance"}
 	}
 	subject := peerSubject
@@ -342,7 +338,7 @@ func controlBindingText(value any) (*string, error) {
 	switch v := value.(type) {
 	case string:
 		return &v, nil
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return nil, &PyError{Kind: "TypeError", Msg: "a control binding is a mapping, expected text"}
 	case []any:
 		return nil, &PyError{Kind: "TypeError", Msg: "a control binding is a list, expected text"}
@@ -376,18 +372,18 @@ func detectSupervisor() string {
 func DetectSupervisor() string { return detectSupervisor() }
 
 // Default identify answer built from the pid record, code identity and served profiles
-func BuildIdentifyPayload() *pyjson.Object {
+func BuildIdentifyPayload() *jsonutil.Object {
 	record := statusBuildPidRecord()
 	supervisor := detectSupervisor()
-	payload := pyjson.ObjectOf("protocol", int64(ControlProtocolVersion))
+	payload := jsonutil.ObjectOf("protocol", int64(ControlProtocolVersion))
 	for _, key := range []string{"kind", "pid", "start_time"} {
 		payload.Set(key, recGet(record, key))
 	}
 	homeValue := recHome(record, home.RecordKey)
 	payload.Set(home.RecordKey, homeValue)
 	label := ""
-	if pyrepr.Truthy(homeValue) {
-		label = pyrepr.Str(homeValue)
+	if anyutil.IsTrue(homeValue) {
+		label = anyutil.String(homeValue)
 	}
 	payload.Set("profile", statusProfileLabelForHome(label))
 	payload.Set("supervisor", supervisor)
@@ -408,10 +404,10 @@ func BuildIdentifyPayload() *pyjson.Object {
 }
 
 // Default status answer, the live runtime status stamped with the answering process
-func BuildStatusPayload() *pyjson.Object {
-	payload := pyjson.NewObject()
+func BuildStatusPayload() *jsonutil.Object {
+	payload := jsonutil.NewObject()
 	if status := ReadRuntimeStatus(""); status != nil {
-		for _, key := range status.Keys {
+		for _, key := range status.Keys() {
 			value, _ := status.Get(key)
 			payload.Set(key, value)
 		}

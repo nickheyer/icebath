@@ -13,13 +13,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -34,7 +34,7 @@ var AncillaryAgent struct {
 	SubagentRecords func(ctx context.Context, parent any, sessionID string, sessionDB any, route any, includeFallbackEvicted bool) ([]map[string]any, error)
 	SteerSubagent   func(subagentID string, child any, text string) bool
 	TranscriptPath  func(agent any) string
-	ControlSnapshot func(ctx context.Context, getMeta func(ctx context.Context, key string) (string, bool, error), target string) (*pyjson.Object, error)
+	ControlSnapshot func(ctx context.Context, getMeta func(ctx context.Context, key string) (string, bool, error), target string) (*jsonutil.Object, error)
 	SetSpawnPaused  func(paused bool) bool
 }
 
@@ -48,7 +48,7 @@ type toolsetCarrier interface {
 type agentSessionIdentified interface{ SessionID() string }
 
 // Per child steer or stop, only for a child of this session's live agent
-func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, steer bool) (any, error) {
+func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object, steer bool) (any, error) {
 	fields := []string{"session_id", "profile", "subagent_id"}
 	required := []string{"session_id", "subagent_id"}
 	if steer {
@@ -57,7 +57,7 @@ func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef
 	}
 	invalid := paramsOutside(params, fields...) || ref.SessionID == ""
 	for _, key := range required {
-		if text, isStr := params.GetOr(key, nil).(string); !isStr || text == "" {
+		if text, isStr := params.ValueOr(key, nil).(string); !isStr || text == "" {
 			invalid = true
 		}
 	}
@@ -72,7 +72,7 @@ func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef
 	if err := authorizeBusy(ctx, a, c.actor, ref, params, "session:control"); err != nil {
 		return nil, err
 	}
-	sub := params.GetOr("subagent_id", "").(string)
+	sub := params.ValueOr("subagent_id", "").(string)
 	var child any
 	err := func() error {
 		live.EventStream.Lock.Lock()
@@ -85,7 +85,7 @@ func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef
 			return err
 		}
 		for _, record := range records {
-			if pyjson.Equal(record["subagent_id"], sub) {
+			if anyutil.Equal(record["subagent_id"], sub) {
 				held, present := record["agent"]
 				if !present {
 					return &pyKeyError{"agent"}
@@ -103,7 +103,7 @@ func subagentControl(ctx context.Context, c *AuthorityConnection, ref SessionRef
 		found := !nilAgent(child) && hardInterruptWith(child, "Interrupted via TUI ("+sub+")")
 		return tuigateway.Plain(tuigateway.SubagentInterruptResult{Found: found, SubagentID: sub}), nil
 	}
-	text := params.GetOr("text", "").(string)
+	text := params.ValueOr("text", "").(string)
 	status := tuigateway.SteerStatus("rejected")
 	if AncillaryAgent.SteerSubagent(sub, child, text) {
 		status = "queued"
@@ -150,7 +150,7 @@ func hardInterruptWith(agent any, message string) bool {
 }
 
 // Params outside the session read pair or a missing session id refuse the call
-func sessionOnlyParams(params *pyjson.Object, ref SessionRef) error {
+func sessionOnlyParams(params *jsonutil.Object, ref SessionRef) error {
 	if paramsOutside(params, "session_id", "profile") || ref.SessionID == "" {
 		return runtimeRefusal("invalid_params")
 	}
@@ -158,7 +158,7 @@ func sessionOnlyParams(params *pyjson.Object, ref SessionRef) error {
 }
 
 // Tool catalog of the session as the reference CLI listed it, grouped by toolset with each first sentence
-func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if err := sessionOnlyParams(params, ref); err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	if err != nil {
 		return nil, err
 	}
-	return forwardOffThread(ctx, func() (*pyjson.Object, error) {
+	return forwardOffThread(ctx, func() (*jsonutil.Object, error) {
 		scoped := ownerScope(ctx, a, false)
 		var enabled, disabled []string
 		if !nilAgent(agent) {
@@ -196,7 +196,7 @@ func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 				}
 			}
 			agentSection := cfg["agent"]
-			if !pyrepr.Truthy(agentSection) {
+			if !anyutil.IsTrue(agentSection) {
 				agentSection = map[string]any{}
 			}
 			raw, err := pyGet(agentSection, "disabled_toolsets", nil)
@@ -210,7 +210,7 @@ func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 		names := make([]string, 0, len(defs))
 		byName := map[string]map[string]any{}
 		for _, def := range defs {
-			function, _ := pyjson.Dict(def["function"])
+			function, _ := jsonutil.AsMap(def["function"])
 			name, _ := function["name"].(string)
 			names = append(names, name)
 			byName[name] = function
@@ -220,8 +220,8 @@ func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 		for _, name := range names {
 			description := byName[name]["description"]
 			desc := ""
-			if pyrepr.Truthy(description) {
-				desc = pyrepr.Str(description)
+			if anyutil.IsTrue(description) {
+				desc = anyutil.String(description)
 			}
 			desc = strings.SplitN(desc, "\n", 2)[0]
 			if i := strings.Index(desc, ". "); i >= 0 {
@@ -231,7 +231,7 @@ func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 			if toolset == "" {
 				toolset = "unknown"
 			}
-			sections[toolset] = append(sections[toolset], pyjson.ObjectOf("name", name, "description", desc))
+			sections[toolset] = append(sections[toolset], jsonutil.ObjectOf("name", name, "description", desc))
 		}
 		order := make([]string, 0, len(sections))
 		for name := range sections {
@@ -240,14 +240,14 @@ func showTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 		sort.Strings(order)
 		rows := make([]any, 0, len(order))
 		for _, name := range order {
-			rows = append(rows, pyjson.ObjectOf("name", name, "tools", sections[name]))
+			rows = append(rows, jsonutil.ObjectOf("name", name, "tools", sections[name]))
 		}
-		return pyjson.ObjectOf("sections", rows, "total", len(defs)), nil
+		return jsonutil.ObjectOf("sections", rows, "total", len(defs)), nil
 	})
 }
 
 // Rescans the skill dirs in the owner and renders the classic reload lines
-func reloadSkills(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func reloadSkills(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if err := sessionOnlyParams(params, ref); err != nil {
 		return nil, err
 	}
@@ -293,15 +293,15 @@ func reloadSkills(ctx context.Context, c *AuthorityConnection, ref SessionRef, p
 			if !present {
 				name = ""
 			}
-			lines = append(lines, "  - "+pyrepr.Str(name))
+			lines = append(lines, "  - "+anyutil.String(name))
 		}
 	}
 	total := 0
-	if pyrepr.Truthy(result["total"]) {
+	if anyutil.IsTrue(result["total"]) {
 		total = int(anyInt64(result["total"]))
 	}
 	lines = append(lines, fmt.Sprintf("%d skill(s) available", total))
-	return pyjson.ObjectOf("output", strings.Join(lines, "\n"), "result", result), nil
+	return jsonutil.ObjectOf("output", strings.Join(lines, "\n"), "result", result), nil
 }
 
 // Rows of a reload diff list, empty for a missing one
@@ -322,12 +322,12 @@ func skillRows(value any) []map[string]any {
 }
 
 // Control, process, subagent or tail projection read off the owner loop, a tail restoring a stored session
-func ancillaryRead(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, kind string) (any, error) {
+func ancillaryRead(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object, kind string) (any, error) {
 	fields := []string{"session_id", "profile"}
 	if kind == "tail" {
 		fields = append(fields, "subagent_id")
 	}
-	subagentID, isStr := params.GetOr("subagent_id", nil).(string)
+	subagentID, isStr := params.ValueOr("subagent_id", nil).(string)
 	if paramsOutside(params, fields...) || ref.SessionID == "" || (kind == "tail" && (!isStr || subagentID == "")) {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -350,7 +350,7 @@ func ancillaryRead(ctx context.Context, c *AuthorityConnection, ref SessionRef, 
 }
 
 // Projection under the session's event lock, a session popped meanwhile reading as not found
-func readProjection(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, params *pyjson.Object, kind string) (any, error) {
+func readProjection(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, params *jsonutil.Object, kind string) (any, error) {
 	live.EventStream.Lock.Lock()
 	defer live.EventStream.Lock.Unlock()
 	projected, err := project(ctx, a, ref, params, kind)
@@ -364,13 +364,13 @@ func readProjection(ctx context.Context, a *SessionAuthority, live *LiveSession,
 }
 
 // Control, subagent, tail or process projection of a session
-func project(ctx context.Context, a *SessionAuthority, ref SessionRef, params *pyjson.Object, kind string) (any, error) {
+func project(ctx context.Context, a *SessionAuthority, ref SessionRef, params *jsonutil.Object, kind string) (any, error) {
 	if kind == "control" {
 		snapshot, err := controlSnapshot(ctx, a, ref)
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("control", snapshot), nil
+		return jsonutil.ObjectOf("control", snapshot), nil
 	}
 	if err := requireCurrentRoute(ctx, a, ref); err != nil {
 		return nil, err
@@ -397,10 +397,10 @@ func project(ctx context.Context, a *SessionAuthority, ref SessionRef, params *p
 		}
 		return tuigateway.Plain(result), nil
 	case "tail":
-		subagentID := params.GetOr("subagent_id", "").(string)
+		subagentID := params.ValueOr("subagent_id", "").(string)
 		path := ""
 		for _, record := range records {
-			if pyjson.Equal(record["subagent_id"], subagentID) {
+			if anyutil.Equal(record["subagent_id"], subagentID) {
 				path = AncillaryAgent.TranscriptPath(record["agent"])
 				break
 			}
@@ -424,7 +424,7 @@ func project(ctx context.Context, a *SessionAuthority, ref SessionRef, params *p
 }
 
 // Session's own processes a selector keeps, read under the event lock against the current route
-func ownedTargets(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, keep func(view tools.ProcessView) bool) ([]string, error) {
+func ownedTargets(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object, keep func(view tools.ProcessView) bool) ([]string, error) {
 	a := c.authority
 	live, ok := a.live(ref.SessionID)
 	if !ok {
@@ -461,8 +461,8 @@ func scopedToolEnv(ctx context.Context) *tools.Env {
 }
 
 // Per process stop of one process this session owns, any other id refused as process_not_found
-func killProcess(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
-	processID, isStr := params.GetOr("process_id", nil).(string)
+func killProcess(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
+	processID, isStr := params.ValueOr("process_id", nil).(string)
 	if paramsOutside(params, "session_id", "process_id", "profile") || ref.SessionID == "" || !isStr || processID == "" {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -485,15 +485,15 @@ type mcpReloadRefresher interface {
 }
 
 // Brings this profile's live MCP servers in step with its config and commits the calling session's selection
-func reloadMCP(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func reloadMCP(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if paramsOutside(params, "session_id", "confirm", "rev", "profile") {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	if !c.actor.Capabilities["session:control"] {
 		return nil, runtimeRefusal("permission_denied")
 	}
-	if params.GetOr("confirm", nil) != true {
-		return pyjson.ObjectOf("status", "confirm_required", "message", "Reloading MCP refreshes every chat of this profile."), nil
+	if params.ValueOr("confirm", nil) != true {
+		return jsonutil.ObjectOf("status", "confirm_required", "message", "Reloading MCP refreshes every chat of this profile."), nil
 	}
 	type reconciled struct {
 		result mcp.ReconcileResult
@@ -532,13 +532,13 @@ func reloadMCP(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 		return nil, err
 	}
 	heldRev := ""
-	if pyrepr.Truthy(params.GetOr("rev", nil)) {
+	if anyutil.IsTrue(params.ValueOr("rev", nil)) {
 		if heldRev, err = heldMCPRev(ctx, c, ref); err != nil {
 			return nil, err
 		}
 	}
 	if len(outcome.failed) > 0 && session != "applied" && len(outcome.result.Removed) == 0 && len(added) == 0 &&
-		!pyjson.Equal(params.GetOr("rev", nil), heldRev) {
+		!anyutil.Equal(params.ValueOr("rev", nil), heldRev) {
 		field, detail := "mcp_servers", "did not connect: "+strings.Join(outcome.failed, ", ")
 		return nil, state.NewRuntimeStoreError("mcp_servers_unavailable", &field, &detail)
 	}
@@ -561,7 +561,7 @@ func reloadMCP(ctx context.Context, c *AuthorityConnection, ref SessionRef, para
 	if len(outcome.failed) > 0 {
 		unavailable = "; did not connect: " + strings.Join(outcome.failed, ", ")
 	}
-	reply := pyjson.ObjectOf("status", "reloaded", "message", "MCP servers reconciled ("+changed+")"+note+unavailable)
+	reply := jsonutil.ObjectOf("status", "reloaded", "message", "MCP servers reconciled ("+changed+")"+note+unavailable)
 	if heldRev != "" {
 		reply.Set("loaded_rev", heldRev)
 	}
@@ -640,7 +640,7 @@ func sessionServers(ctx context.Context, a *SessionAuthority, sessionID string, 
 }
 
 // The calling local session's MCP servers committed as a new policy generation, applied unchanged or busy
-func commitSessionMCP(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (string, error) {
+func commitSessionMCP(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (string, error) {
 	if ref.SessionID == "" {
 		return "", nil
 	}
@@ -667,7 +667,7 @@ func commitSessionMCP(ctx context.Context, c *AuthorityConnection, ref SessionRe
 }
 
 // Kills the background processes this session owns and interrupts the delegations it dispatched
-func stopProcesses(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func stopProcesses(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if err := sessionOnlyParams(params, ref); err != nil {
 		return nil, err
 	}
@@ -781,7 +781,7 @@ func ownerObjects(ctx context.Context, a *SessionAuthority, ref SessionRef, incl
 }
 
 // Goal, loop and heartbeat cards of the conversation's current compression segment
-func controlSnapshot(ctx context.Context, a *SessionAuthority, ref SessionRef) (*pyjson.Object, error) {
+func controlSnapshot(ctx context.Context, a *SessionAuthority, ref SessionRef) (*jsonutil.Object, error) {
 	target, err := physicalTarget(ctx, a, ref)
 	if err != nil {
 		return nil, err

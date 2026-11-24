@@ -6,9 +6,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds each vault prompt waits for a viewer, the main sidecar deadlines
@@ -24,7 +24,7 @@ func vaultPromptScope(ctx context.Context, t *TurnRunner, a *agent.AIAgent) func
 		return func() {}
 	}
 	authority, sessionID := t.approvalOwner.authority, t.approvalOwner.sessionID
-	ask := func(method string, params *pyjson.Object, timeout float64) string {
+	ask := func(method string, params *jsonutil.Object, timeout float64) string {
 		live, ok := authority.Live(sessionID)
 		if !ok || live == nil {
 			return ""
@@ -32,10 +32,10 @@ func vaultPromptScope(ctx context.Context, t *TurnRunner, a *agent.AIAgent) func
 		return gateway.AskViewer(live.EventStream, sessionID, method, params, a.InterruptRequested, &timeout)
 	}
 	unlockPrompt := func(backend, displayName string) string {
-		return ask("vault.unlock_prompt", pyjson.ObjectOf("backend", backend, "display_name", displayName), vaultUnlockTimeoutS)
+		return ask("vault.unlock_prompt", jsonutil.ObjectOf("backend", backend, "display_name", displayName), vaultUnlockTimeoutS)
 	}
 	saveLogin := func(origin, site string) map[string]string {
-		raw := ask("vault.save_login", pyjson.ObjectOf("origin", origin, "site", site), vaultSaveLoginTimeoutS)
+		raw := ask("vault.save_login", jsonutil.ObjectOf("origin", origin, "site", site), vaultSaveLoginTimeoutS)
 		if raw == "" {
 			return nil
 		}
@@ -46,7 +46,7 @@ func vaultPromptScope(ctx context.Context, t *TurnRunner, a *agent.AIAgent) func
 		return vaultLoginAnswer(data)
 	}
 	codePrompt := func(site, hint string) string {
-		return ask("vault.code", pyjson.ObjectOf("site", site, "hint", hint), vaultCodeTimeoutS)
+		return ask("vault.code", jsonutil.ObjectOf("site", site, "hint", hint), vaultCodeTimeoutS)
 	}
 	prevUnlock, prevSave, prevCode := tools.GetUnlockPromptCallback(ctx), tools.GetSaveLoginPromptCallback(ctx), tools.GetCodePromptCallback(ctx)
 	prevSession := tools.VaultSessionID(ctx)
@@ -65,7 +65,7 @@ func vaultPromptScope(ctx context.Context, t *TurnRunner, a *agent.AIAgent) func
 // Login a save login card answered, nil unless it is an object with a truthy password
 func vaultLoginAnswer(data any) map[string]string {
 	obj, ok := data.(map[string]any)
-	if !ok || !pyrepr.Truthy(obj["password"]) {
+	if !ok || !anyutil.IsTrue(obj["password"]) {
 		return nil
 	}
 	out := make(map[string]string, len(obj))
@@ -73,7 +73,7 @@ func vaultLoginAnswer(data any) map[string]string {
 		if s, isStr := value.(string); isStr {
 			out[key] = s
 		} else if value != nil {
-			out[key] = pyrepr.Str(value)
+			out[key] = anyutil.String(value)
 		}
 	}
 	return out

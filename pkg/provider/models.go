@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // CatalogRows is one provider catalog answer, Fallback marks a curated outage placeholder, Native a local server listing
@@ -1536,15 +1536,14 @@ func fetchAnthropicModels(ctx context.Context, timeout time.Duration, baseURL, a
 	if token == "" {
 		return nil, false
 	}
-	lines := []pyhttpx.HeaderLine{{Name: "anthropic-version", Value: "2023-06-01"}}
+	headers := map[string]string{"anthropic-version": "2023-06-01"}
 	oauth := isOAuthToken(token)
 	if oauth {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + token},
-			pyhttpx.HeaderLine{Name: "anthropic-beta", Value: strings.Join(append(cloneStrings(anthropicCommonBetas), anthropicOAuthOnlyBetas...), ",")})
+		headers["Authorization"] = "Bearer " + token
+		headers["anthropic-beta"] = strings.Join(append(cloneStrings(anthropicCommonBetas), anthropicOAuthOnlyBetas...), ",")
 	} else {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "x-api-key", Value: token})
+		headers["x-api-key"] = token
 	}
-	headers := pyhttpx.OrderedHeaderMap(lines...)
 	target := anthropicModelsURL(resolvedBaseURL, "")
 	idsOf := func(page any) []string {
 		doc, _ := asMap(page)
@@ -1683,18 +1682,18 @@ func ProbeAPIModels(ctx context.Context, apiKey, baseURL string, timeout time.Du
 			return ProbeResult{ProbedURL: normalized + "/models", ResolvedBaseURL: normalized, SuggestedBaseURL: suggested}
 		}
 	}
-	lines := []pyhttpx.HeaderLine{{Name: "User-Agent", Value: userAgent("icebath-cli")}}
+	headers := map[string]string{"User-Agent": userAgent("icebath-cli")}
 	if parsed, err := url.Parse(normalized); err == nil && strings.EqualFold(parsed.Hostname(), "generativelanguage.googleapis.com") {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "X-Goog-Api-Client", Value: userAgent("icebath-agent")})
+		headers["X-Goog-Api-Client"] = userAgent("icebath-agent")
 	}
 	if apiKey != "" && apiMode == string(ModeAnthropicMessages) {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "x-api-key", Value: apiKey}, pyhttpx.HeaderLine{Name: "anthropic-version", Value: "2023-06-01"})
+		headers["x-api-key"] = apiKey
+		headers["anthropic-version"] = "2023-06-01"
 	} else if apiKey != "" {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey})
+		headers["Authorization"] = "Bearer " + apiKey
 	}
-	headers := pyhttpx.OrderedHeaderMap(lines...)
 	if requestHeaders != nil {
-		headers = pyhttpx.MergeHeaderMaps(headers, NormalizeExtraHeaders(requestHeaders))
+		maps.Copy(headers, NormalizeExtraHeaders(requestHeaders))
 	}
 	tlsCfg, tlsErr := metadataTLSConfig(ctx, normalized)
 	var tried []string

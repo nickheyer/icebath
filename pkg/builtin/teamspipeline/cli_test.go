@@ -18,7 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Namespace with every argparse default the CLI tests start from
@@ -84,13 +84,13 @@ func useCLIGraph(t *testing.T, g *cliGraph) {
 	t.Cleanup(func() { cliGraphClient = prev })
 }
 
-func decodeCLIJSON(t *testing.T, out string) *pyjson.Object {
+func decodeCLIJSON(t *testing.T, out string) *jsonutil.Object {
 	t.Helper()
-	v, err := pyjson.Loads(out)
+	v, err := jsonutil.Decode(out)
 	if err != nil {
 		t.Fatalf("%v in %q", err, out)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 func exitCode(err error) int {
@@ -119,7 +119,7 @@ func TestShowPrintsJobJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 	payload := decodeCLIJSON(t, out.String())
-	if get(payload, "job_id") != "job-1" || get(get(payload, "meeting_ref").(*pyjson.Object), "meeting_id") != "meeting-1" {
+	if get(payload, "job_id") != "job-1" || get(get(payload, "meeting_ref").(*jsonutil.Object), "meeting_id") != "meeting-1" {
 		t.Fatal(out.String())
 	}
 	if !strings.HasPrefix(out.String(), "{\n  \"created_at\"") {
@@ -225,7 +225,7 @@ func TestTeamsPipelineListSortsFiltersAndCaps(t *testing.T) {
 	prev := nowUTC
 	t.Cleanup(func() { nowUTC = prev })
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	for i, j := range []*pyjson.Object{
+	for i, j := range []*jsonutil.Object{
 		obj("status", "completed", "meeting_ref", obj("meeting_id", "m-1")),
 		obj("status", "FAILED", "error_info", obj("code", "x")),
 		obj("status", "completed", "selected_artifact_strategy", "transcript"),
@@ -281,7 +281,7 @@ func TestTeamsPipelineShowCompactsTranscriptAndReportsUnknownJob(t *testing.T) {
 	if err := teamsPipelineCommand(makeCLIArgs("teams_pipeline_action", "show", "job_id", "job-1", "store_path", path)); err != nil {
 		t.Fatal(err)
 	}
-	summary := get(decodeCLIJSON(t, out.String()), "summary_payload").(*pyjson.Object)
+	summary := get(decodeCLIJSON(t, out.String()), "summary_payload").(*jsonutil.Object)
 	if get(summary, "transcript_preview") != strings.Repeat("é", 240) || get(summary, "transcript_text") != nil || get(summary, "title") != "T" {
 		t.Fatal(out.String())
 	}
@@ -312,7 +312,7 @@ func TestTeamsPipelineSubscriptionCommands(t *testing.T) {
 		"client_state", "secret")); err != nil {
 		t.Fatal(err)
 	}
-	body, _ := pyjson.Dumps(g.bodies[0])
+	body, _ := jsonutil.Encode(g.bodies[0])
 	if body != `{"changeType": "created", "notificationUrl": "https://hook", "resource": "Communications/CallRecords", "expirationDateTime": "2030-01-01T00:00:00Z", "latestSupportedTlsVersion": "v1_2", "clientState": "secret"}` {
 		t.Fatal(body)
 	}

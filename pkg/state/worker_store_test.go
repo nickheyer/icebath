@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Installs the wiring doubles and a private home before any test runs, the guard child keeping the home it was given
@@ -40,7 +39,7 @@ func (e *workerPersistenceError) Error() string { return e.msg }
 type workerJournalEntry struct {
 	sequence  int64
 	operation string
-	payload   *pyjson.Object
+	payload   *jsonutil.Object
 }
 
 // Test double of RuntimeSessionStore keeping its journal in memory and sending receipts through rpc
@@ -51,14 +50,14 @@ type workerStore struct {
 	nextSequence int64
 	pending      []workerJournalEntry
 	failure      string
-	rpc          func(in WorkerReceipt) (*pyjson.Object, error)
+	rpc          func(in WorkerReceipt) (*jsonutil.Object, error)
 }
 
 // Store over db for the registered worker scope, its rpc applying receipts directly
 func newWorkerStore(t *testing.T, db *SessionDB, scope WorkerReceipt) *workerStore {
 	t.Helper()
 	s := &workerStore{t: t, db: db, scope: scope, nextSequence: 1}
-	s.rpc = func(in WorkerReceipt) (*pyjson.Object, error) {
+	s.rpc = func(in WorkerReceipt) (*jsonutil.Object, error) {
 		return db.MutateWorkerExecution(context.Background(), in)
 	}
 	return s
@@ -91,7 +90,7 @@ func jsonRoundTrip(value any) any {
 	if err != nil {
 		panic(err)
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		panic(err)
 	}
@@ -99,8 +98,8 @@ func jsonRoundTrip(value any) any {
 }
 
 // Payload as the facade journals it, a JSON round trip of the caller's value
-func journalPayload(payload any) *pyjson.Object {
-	return jsonRoundTrip(payload).(*pyjson.Object)
+func journalPayload(payload any) *jsonutil.Object {
+	return jsonRoundTrip(payload).(*jsonutil.Object)
 }
 
 // Refuses any session other than the assignment
@@ -112,7 +111,7 @@ func (s *workerStore) session(sessionID string) error {
 }
 
 // Journals one operation and sends it, the result of this entry
-func (s *workerStore) apply(operation string, payload any) (*pyjson.Object, error) {
+func (s *workerStore) apply(operation string, payload any) (*jsonutil.Object, error) {
 	if s.failure != "" {
 		return nil, &workerPersistenceError{s.failure}
 	}
@@ -129,8 +128,8 @@ func (s *workerStore) apply(operation string, payload any) (*pyjson.Object, erro
 }
 
 // Sends every pending entry in order, a failure staying sticky until the next retry
-func (s *workerStore) retryPending() ([]*pyjson.Object, error) {
-	var results []*pyjson.Object
+func (s *workerStore) retryPending() ([]*jsonutil.Object, error) {
+	var results []*jsonutil.Object
 	for len(s.pending) > 0 {
 		entry := s.pending[0]
 		in := s.scope
@@ -141,12 +140,12 @@ func (s *workerStore) retryPending() ([]*pyjson.Object, error) {
 			return results, err
 		}
 		if assignment, has := result.Get("worker_assignment"); has && pyTruthy(assignment) {
-			parent, _ := assignment.(*pyjson.Object).Get("parent")
-			if !pyjson.Equal(parent, s.scope.SessionID) {
+			parent, _ := assignment.(*jsonutil.Object).Get("parent")
+			if !anyutil.Equal(parent, s.scope.SessionID) {
 				s.failure = "outbox_scope_mismatch"
 				return results, &workerPersistenceError{"outbox_scope_mismatch"}
 			}
-			child, _ := assignment.(*pyjson.Object).Get("session_id")
+			child, _ := assignment.(*jsonutil.Object).Get("session_id")
 			s.scope.SessionID = child.(string)
 		}
 		s.pending = s.pending[1:]
@@ -159,9 +158,9 @@ func (s *workerStore) retryPending() ([]*pyjson.Object, error) {
 // Applies the owner's row stamps onto the caller's message maps, nil popping the key
 func applyRowAnnotations(messages []map[string]any, annotations any) {
 	for i, raw := range annotations.([]any) {
-		annotation := raw.(*pyjson.Object)
-		for _, key := range annotation.Keys {
-			if value := annotation.Vals[key]; value == nil {
+		annotation := raw.(*jsonutil.Object)
+		for _, key := range annotation.Keys() {
+			if value := annotation.Value(key); value == nil {
 				delete(messages[i], key)
 			} else {
 				messages[i][key] = value
@@ -186,7 +185,7 @@ func handoffRows(messages []map[string]any) []any {
 }
 
 // Value of a result key the test expects to exist
-func resultValue(result *pyjson.Object, key string) any {
+func resultValue(result *jsonutil.Object, key string) any {
 	v, _ := result.Get(key)
 	return v
 }
@@ -209,7 +208,7 @@ func (s *workerStore) appendMessagesBatchWith(sessionID string, messages []map[s
 	for _, m := range messages {
 		rows = append(rows, m)
 	}
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	var err error
 	if o.compressionLockHolder != nil || o.turnLeaseTTLSeconds != 300 {
 		result, err = s.apply("compression.append", map[string]any{"messages": rows, "compression_lock_holder": optAny(o.compressionLockHolder),
@@ -252,7 +251,7 @@ func (s *workerStore) queueTokenCounts(sessionID string, usage map[string]any) e
 	return err
 }
 
-func (s *workerStore) getSession(sessionID string) (*pyjson.Object, error) {
+func (s *workerStore) getSession(sessionID string) (*jsonutil.Object, error) {
 	if sessionID != s.scope.SessionID {
 		lineage, err := s.apply("compression.lineage", map[string]any{"target": s.scope.SessionID})
 		if err != nil {
@@ -272,7 +271,7 @@ func (s *workerStore) getSession(sessionID string) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	return resultValue(result, "session").(*pyjson.Object), nil
+	return resultValue(result, "session").(*jsonutil.Object), nil
 }
 
 func (s *workerStore) lineageField(sessionID, field string) (any, error) {
@@ -460,16 +459,16 @@ func (s *workerStore) setCompressionCounter(name, sessionID string, value any) e
 }
 
 // Cooldown row read through the session row as the facade reads it
-func (s *workerStore) getCompressionFailureCooldownRow(sessionID string) (*pyjson.Object, error) {
+func (s *workerStore) getCompressionFailureCooldownRow(sessionID string) (*jsonutil.Object, error) {
 	row, err := s.getSession(sessionID)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("session_exists", true, "cooldown_until", rowValue(row, "compression_failure_cooldown_until"),
+	return jsonutil.ObjectOf("session_exists", true, "cooldown_until", rowValue(row, "compression_failure_cooldown_until"),
 		"error", rowValue(row, "compression_failure_error")), nil
 }
 
-func (s *workerStore) getCompressionFailureCooldown(sessionID string) (*pyjson.Object, error) {
+func (s *workerStore) getCompressionFailureCooldown(sessionID string) (*jsonutil.Object, error) {
 	row, err := s.getCompressionFailureCooldownRow(sessionID)
 	if err != nil {
 		return nil, err
@@ -486,7 +485,7 @@ func (s *workerStore) getCompressionFailureCooldown(sessionID string) (*pyjson.O
 	if f <= t {
 		return nil, nil
 	}
-	return pyjson.ObjectOf("cooldown_until", f, "remaining_seconds", f-t, "error", rowValue(row, "error")), nil
+	return jsonutil.ObjectOf("cooldown_until", f, "remaining_seconds", f-t, "error", rowValue(row, "error")), nil
 }
 
 func (s *workerStore) getSessionModelConfigValue(sessionID, key string) (any, error) {
@@ -514,7 +513,7 @@ func (s *workerStore) patchSessionModelConfig(sessionID string, patch map[string
 	return err
 }
 
-func (s *workerStore) finish() (*pyjson.Object, error) {
+func (s *workerStore) finish() (*jsonutil.Object, error) {
 	return s.apply("execution.finish", map[string]any{})
 }
 
@@ -535,7 +534,7 @@ func (s *workerStore) createSession(sessionID, source string, fields map[string]
 }
 
 // Title result of the facade, an error entry raised as the ValueError the consumer catches
-func titleResult(result *pyjson.Object) (bool, error) {
+func titleResult(result *jsonutil.Object) (bool, error) {
 	if errValue := resultValue(result, "error"); pyTruthy(errValue) {
 		return false, pyValueError(pyStr(errValue))
 	}
@@ -651,8 +650,8 @@ func (s *workerStore) sessionLifecycleStatuses(sessionIDs []string) (map[string]
 }
 
 // Rpc that performs the receipt and then reports a lost acknowledgement
-func lostAckRPC(original func(WorkerReceipt) (*pyjson.Object, error), message string) func(WorkerReceipt) (*pyjson.Object, error) {
-	return func(in WorkerReceipt) (*pyjson.Object, error) {
+func lostAckRPC(original func(WorkerReceipt) (*jsonutil.Object, error), message string) func(WorkerReceipt) (*jsonutil.Object, error) {
+	return func(in WorkerReceipt) (*jsonutil.Object, error) {
 		if _, err := original(in); err != nil {
 			return nil, err
 		}
@@ -696,7 +695,7 @@ func conversationContents(t *testing.T, db *SessionDB, sessionID string) []strin
 }
 
 // Session row of the direct store, fatal when missing
-func mustSession(t *testing.T, db *SessionDB, sessionID string) *pyjson.Object {
+func mustSession(t *testing.T, db *SessionDB, sessionID string) *jsonutil.Object {
 	t.Helper()
 	row, err := db.GetSession(context.Background(), sessionID)
 	if err != nil || row == nil {

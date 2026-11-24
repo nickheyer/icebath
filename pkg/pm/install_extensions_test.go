@@ -17,7 +17,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Sorted relative paths under a tree
@@ -64,7 +64,7 @@ func ieMissingBundleTool(t *testing.T, sealedInstall bool) {
 	writable, _ := WritableStoreRoot(ctx)
 	facts, _ := NewFacts(filepath.Join(writable, "facts.json"), false)
 	fact, ok := facts.Get("faketool")
-	if !ok || !isRegularFile(filepath.Join(writable, pyrepr.Str(fact["entry"]), "bin", "faketool")) || !strings.Contains(runner.Env["PATH"], writable) {
+	if !ok || !isRegularFile(filepath.Join(writable, anyutil.String(fact["entry"]), "bin", "faketool")) || !strings.Contains(runner.Env["PATH"], writable) {
 		t.Fatalf("writable store fact %v", fact)
 	}
 	if env := EnvFor([]string{"faketool"}, map[string]string{}); env["PATH"] != runner.Env["PATH"] {
@@ -95,7 +95,7 @@ func TestInstallRegisteredBionicStagePreservesHostFacts(t *testing.T) {
 			main := c.main
 			if main == "" {
 				row := embedded["packages"].(map[string]any)["python"].(map[string]any)["artifacts"].(map[string]any)[target].(map[string]any)
-				url := pyrepr.Str(row["url"])
+				url := anyutil.String(row["url"])
 				version := strings.Split(url[strings.LastIndex(url, "/")+1:], "_")[1]
 				parts := strings.Split(version, ".")
 				main = "bin/python" + parts[0] + "." + parts[1]
@@ -226,7 +226,7 @@ func TestInstallRecoversFromTransientHTTPFailure(t *testing.T) {
 					t.Fatal(err)
 				}
 				fact, _ := facts.Get("retry-tool")
-				entry = store.Entry(pyrepr.Str(fact["entry"]))
+				entry = store.Entry(anyutil.String(fact["entry"]))
 			} else {
 				lock.Save()
 				previous := lockfilePath
@@ -284,7 +284,7 @@ func TestInstallColdConsumersRecoverAfterUpstreamRemoval(t *testing.T) {
 					t.Fatal(err)
 				}
 				fact, _ := facts.Get("mirror-tool")
-				result = store.Entry(pyrepr.Str(fact["entry"]))
+				result = store.Entry(anyutil.String(fact["entry"]))
 			} else {
 				lock.Save()
 				previous := lockfilePath

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registered profile for name, failing the test when absent
@@ -27,7 +27,7 @@ func TestDeepSeekRegisteredProfileThinkingWireShape(t *testing.T) {
 	p := registeredProfile(t, "deepseek")
 	pro := map[string]any{"model": "deepseek-v4-pro"}
 	eb, tl := p.BuildAPIKwargsExtras(nil, pro)
-	assertExtras(t, "v4 pro default", pyjson.Plain(eb).(map[string]any), tl, thinkingBody("enabled"), map[string]any{})
+	assertExtras(t, "v4 pro default", jsonutil.Plain(eb).(map[string]any), tl, thinkingBody("enabled"), map[string]any{})
 	for _, effort := range []string{"low", "medium", "high"} {
 		_, tl = p.BuildAPIKwargsExtras(effortCfg(effort), pro)
 		assertExtras(t, effort, map[string]any{}, tl, map[string]any{}, map[string]any{"reasoning_effort": effort})
@@ -37,11 +37,11 @@ func TestDeepSeekRegisteredProfileThinkingWireShape(t *testing.T) {
 		assertExtras(t, effort, map[string]any{}, tl, map[string]any{}, map[string]any{"reasoning_effort": "max"})
 	}
 	eb, tl = p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, pro)
-	assertExtras(t, "disabled", pyjson.Plain(eb).(map[string]any), tl, thinkingBody("disabled"), map[string]any{})
+	assertExtras(t, "disabled", jsonutil.Plain(eb).(map[string]any), tl, thinkingBody("disabled"), map[string]any{})
 	flash := map[string]any{"model": "deepseek-v4.1-flash-expires-on-0910"}
 	for _, cfg := range []*Reasoning{{Effort: "none"}, {Effort: "false"}, {Effort: "disabled"}, {Effort: "NONE"}, {Enabled: bptr(true), Effort: "none"}} {
 		eb, tl = p.BuildAPIKwargsExtras(cfg, flash)
-		assertExtras(t, "effort "+cfg.Effort, pyjson.Plain(eb).(map[string]any), tl, thinkingBody("disabled"), map[string]any{})
+		assertExtras(t, "effort "+cfg.Effort, jsonutil.Plain(eb).(map[string]any), tl, thinkingBody("disabled"), map[string]any{})
 	}
 	_, tl = p.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false), Effort: "high"}, pro)
 	assertExtras(t, "disabled with effort", map[string]any{}, tl, map[string]any{}, map[string]any{})
@@ -55,11 +55,11 @@ func TestDeepSeekRegisteredProfileModelGating(t *testing.T) {
 	p := registeredProfile(t, "deepseek")
 	for _, model := range []string{"deepseek-v4-pro", "deepseek-v4-flash", "deepseek-v4-future-variant", "DEEPSEEK-V4-PRO", "deepseek-flash", "DEEPSEEK-FLASH"} {
 		eb, _ := p.BuildAPIKwargsExtras(nil, map[string]any{"model": model})
-		assertExtras(t, model, pyjson.Plain(eb).(map[string]any), map[string]any{}, thinkingBody("enabled"), map[string]any{})
+		assertExtras(t, model, jsonutil.Plain(eb).(map[string]any), map[string]any{}, thinkingBody("enabled"), map[string]any{})
 	}
 	for _, model := range []any{"deepseek-v3-0324", "deepseek-v3.1", "", nil, "deepseek-unknown"} {
 		eb, tl := p.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": model})
-		assertExtras(t, "non thinking", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
+		assertExtras(t, "non thinking", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	}
 }
 
@@ -72,14 +72,14 @@ func deepseekKwargs(t *testing.T, model string, reasoning any) map[string]any {
 
 func TestDeepSeekFullKwargsIntegration(t *testing.T) {
 	kw := deepseekKwargs(t, "deepseek-v4-pro", map[string]any{"enabled": true, "effort": "high"})
-	if kw["model"] != "deepseek-v4-pro" || kw["reasoning_effort"] != "high" || !reflect.DeepEqual(pyjson.Plain(kw["extra_body"]), thinkingBody("enabled")) {
+	if kw["model"] != "deepseek-v4-pro" || kw["reasoning_effort"] != "high" || !reflect.DeepEqual(jsonutil.Plain(kw["extra_body"]), thinkingBody("enabled")) {
 		t.Fatalf("v4 kwargs %v", kw)
 	}
 	kw = deepseekKwargs(t, "deepseek-v3-0324", map[string]any{"enabled": true, "effort": "high"})
 	if _, ok := kw["reasoning_effort"]; ok {
 		t.Fatalf("v3 kwargs %v", kw)
 	}
-	if eb, ok := pyjson.Plain(kw["extra_body"]).(map[string]any); ok {
+	if eb, ok := jsonutil.Plain(kw["extra_body"]).(map[string]any); ok {
 		if _, has := eb["thinking"]; has {
 			t.Fatalf("v3 thinking %v", kw)
 		}
@@ -94,7 +94,7 @@ func TestDeepSeekFullKwargsIntegration(t *testing.T) {
 		{"deepseek-v4-pro", ParseReasoningEffort("none"), "disabled"},
 	} {
 		kw = deepseekKwargs(t, tc.model, tc.reasoning)
-		if _, ok := kw["reasoning_effort"]; ok || !reflect.DeepEqual(pyjson.Plain(kw["extra_body"]), thinkingBody(tc.want)) {
+		if _, ok := kw["reasoning_effort"]; ok || !reflect.DeepEqual(jsonutil.Plain(kw["extra_body"]), thinkingBody(tc.want)) {
 			t.Fatalf("%s %v kwargs %v", tc.model, tc.reasoning, kw)
 		}
 	}
@@ -161,15 +161,15 @@ func TestMinimaxAuxModelM3ConsumerAPIMatchesEveryProfile(t *testing.T) {
 func TestMinimaxM3OpenAIReasoningWireShape(t *testing.T) {
 	p := registeredProfile(t, "minimax")
 	eb, tl := p.BuildAPIKwargsExtras(nil, map[string]any{"model": "MiniMax-M3", "base_url": "https://api.minimax.io/v1"})
-	assertExtras(t, "m3 global", pyjson.Plain(eb).(map[string]any), tl, map[string]any{"reasoning_split": true}, map[string]any{})
+	assertExtras(t, "m3 global", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{"reasoning_split": true}, map[string]any{})
 	for _, tc := range [][2]string{{"MiniMax-M2.7", "https://api.minimax.io/v1"}, {"MiniMax-M3", "https://api.minimax.io/anthropic"},
 		{"MiniMax-M3", "https://api.minimaxi.com/v1"}} {
 		eb, tl = p.BuildAPIKwargsExtras(effortCfg("high"), map[string]any{"model": tc[0], "base_url": tc[1]})
-		assertExtras(t, tc[0]+" "+tc[1], pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
+		assertExtras(t, tc[0]+" "+tc[1], jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	}
 	kw := ccTransportKwargs(t, "MiniMax-M3", nil, map[string]any{"provider_profile": p,
 		"reasoning_config": map[string]any{"enabled": true, "effort": "medium"}, "base_url": "https://api.minimax.io/v1"})
-	if want := map[string]any{"reasoning_split": true, "thinking": map[string]any{"type": "adaptive"}}; !reflect.DeepEqual(pyjson.Plain(kw["extra_body"]), want) {
+	if want := map[string]any{"reasoning_split": true, "thinking": map[string]any{"type": "adaptive"}}; !reflect.DeepEqual(jsonutil.Plain(kw["extra_body"]), want) {
 		t.Fatalf("transport extra body %v", kw["extra_body"])
 	}
 }

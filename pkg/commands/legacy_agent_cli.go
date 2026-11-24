@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"errors"
 	"io"
 	"math"
 	"regexp"
@@ -8,9 +9,6 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // LegacyAgentProg is the program name the legacy single query runner parses and reports errors under
@@ -210,17 +208,11 @@ func (p *LegacyAgentParser) take(t legacyTaken) error {
 	case 't':
 		return fs.Set(t.action.flag, "true")
 	case 'i':
-		n, ok := pyint.Parse(t.args[0])
-		if !ok {
-			return p.Error("argument " + name + ": invalid int value: " + pyrepr.Repr(t.args[0]))
+		n, err := strconv.ParseInt(strings.TrimSpace(t.args[0]), 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
+			return p.Error("argument " + name + ": invalid int value: " + strconv.Quote(t.args[0]))
 		}
-		value := int64(math.MaxInt)
-		switch {
-		case n.IsInt64() && n.Int64() <= math.MaxInt && n.Int64() >= math.MinInt:
-			value = n.Int64()
-		case n.Sign() < 0:
-			value = math.MinInt
-		}
+		value := min(max(n, math.MinInt), math.MaxInt)
 		return fs.Set(t.action.flag, strconv.FormatInt(value, 10))
 	}
 	return fs.Set(t.action.flag, t.args[0])
@@ -248,7 +240,7 @@ func (p *LegacyAgentParser) consumeOptional(argv []string, pattern string, index
 		if t.hasExplicit {
 			if !takesValue && t.option[1] != '-' && t.explicit != "" {
 				if t.sep != "" || t.explicit[0] == '-' {
-					return 0, p.Error("argument " + name + ": ignored explicit argument " + pyrepr.Repr(t.explicit))
+					return 0, p.Error("argument " + name + ": ignored explicit argument " + strconv.Quote(t.explicit))
 				}
 				taken = append(taken, legacyTaken{action: t.action})
 				r := []rune(t.explicit)
@@ -275,7 +267,7 @@ func (p *LegacyAgentParser) consumeOptional(argv []string, pattern string, index
 				stop = index + 1
 				break
 			}
-			return 0, p.Error("argument " + name + ": ignored explicit argument " + pyrepr.Repr(t.explicit))
+			return 0, p.Error("argument " + name + ": ignored explicit argument " + strconv.Quote(t.explicit))
 		}
 		start := index + 1
 		if !takesValue {

@@ -8,10 +8,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var (
@@ -130,7 +129,7 @@ func rptServed(served map[string]string) func(string) (string, error) {
 		if sha, ok := served[u]; ok {
 			return sha, nil
 		}
-		return "", fmt.Errorf("KeyError: %s", pyrepr.StrRepr(u))
+		return "", fmt.Errorf("KeyError: %s", strconv.Quote(u))
 	}
 }
 

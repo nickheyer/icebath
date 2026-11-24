@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func reactionSession(t *testing.T) (*SessionDB, string, []int64) {
@@ -205,7 +205,7 @@ func TestDetachedResultsRecordOnceAcrossLineage(t *testing.T) {
 	d := usageDB(t)
 	ctx := context.Background()
 	_ = d.CreateSession(NewSession{ID: "parent", Source: "cli"})
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("delegation_id", "del-1")
 	meta.Set("delivery_notice", "done")
 	first, err := d.AppendDelegationDelivery(ctx, "parent", "result text", meta)
@@ -218,14 +218,14 @@ func TestDetachedResultsRecordOnceAcrossLineage(t *testing.T) {
 	if err != nil || again != first {
 		t.Fatalf("replay after rotation %d %d %v", first, again, err)
 	}
-	if _, err := d.AppendDelegationDelivery(ctx, "child", "x", pyjson.NewObject()); err == nil || err.Error() != "Delegation delivery requires a stable delegation_id" {
+	if _, err := d.AppendDelegationDelivery(ctx, "child", "x", jsonutil.NewObject()); err == nil || err.Error() != "Delegation delivery requires a stable delegation_id" {
 		t.Fatalf("missing id %v", err)
 	}
-	note, err := d.AppendCompletionNote(ctx, "child", "adm-1", "note", "local_completion", pyjson.NewObject())
+	note, err := d.AppendCompletionNote(ctx, "child", "adm-1", "note", "local_completion", jsonutil.NewObject())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if repeat, _ := d.AppendCompletionNote(ctx, "child", "adm-1", "note", "local_completion", pyjson.NewObject()); repeat != note {
+	if repeat, _ := d.AppendCompletionNote(ctx, "child", "adm-1", "note", "local_completion", jsonutil.NewObject()); repeat != note {
 		t.Fatalf("note twice %d %d", note, repeat)
 	}
 	row, _ := d.readOne(ctx, "SELECT display_kind, display_metadata FROM messages WHERE id = ?", note)
@@ -283,15 +283,15 @@ func TestSplitUserOriginatedTurnSeparatesHandoff(t *testing.T) {
 }
 
 func TestLaterToolCopyIDsSkipsStubAfterArchivedOriginal(t *testing.T) {
-	mk := func(id, active, compacted, order int64) *pyjson.Object {
-		o := pyjson.NewObject()
+	mk := func(id, active, compacted, order int64) *jsonutil.Object {
+		o := jsonutil.NewObject()
 		for _, kv := range [][2]any{{"id", id}, {"role", "tool"}, {"session_id", "s"}, {"message_uid", "u"}, {"timestamp", 1.0},
 			{"active", active}, {"compacted", compacted}, {"display_order", order}, {"display_metadata", nil}} {
 			o.Set(kv[0].(string), kv[1])
 		}
 		return o
 	}
-	got := laterToolCopyIDs([]*pyjson.Object{mk(1, 0, 1, 5), mk(2, 1, 0, 9), mk(3, 1, 0, 5)})
+	got := laterToolCopyIDs([]*jsonutil.Object{mk(1, 0, 1, 5), mk(2, 1, 0, 9), mk(3, 1, 0, 5)})
 	if !got[2] || got[3] || got[1] || len(got) != 1 {
 		t.Fatalf("later copies %v", got)
 	}
@@ -304,7 +304,7 @@ func TestMessageProbesAndBoundaries(t *testing.T) {
 	d := usageDB(t)
 	ctx := context.Background()
 	_ = d.CreateSession(NewSession{ID: "g", Source: "telegram", SessionKey: "peer"})
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("gateway_input_owner", "own-1")
 	first, _ := d.AppendMessage(ctx, "g", map[string]any{"role": "user", "content": "hi", "platform_message_id": "pm-1", "display_metadata": meta}, AppendGuards{})
 	if ok, _ := d.HasGatewayInputOwner(ctx, "g", "own-1"); !ok {
@@ -371,8 +371,8 @@ func activeCounts(t *testing.T, d *SessionDB, sid string) (int, int, error) {
 }
 
 func TestDedupeDisplayGenerationsPrefersLiveCopyAndHidesRemoved(t *testing.T) {
-	mk := func(id int64, active, compacted int64, content string, ts float64) *pyjson.Object {
-		o := pyjson.NewObject()
+	mk := func(id int64, active, compacted int64, content string, ts float64) *jsonutil.Object {
+		o := jsonutil.NewObject()
 		for _, kv := range [][2]any{{"id", id}, {"role", "user"}, {"content", content}, {"timestamp", ts}, {"tool_call_id", nil},
 			{"tool_calls", nil}, {"tool_name", nil}, {"display_kind", nil}, {"display_metadata", nil}, {"message_uid", nil},
 			{"absorbed_message_uids", nil}, {"_compressed_summary", 0}, {"active", active}, {"compacted", compacted}, {"display_identity", nil}} {
@@ -380,7 +380,7 @@ func TestDedupeDisplayGenerationsPrefersLiveCopyAndHidesRemoved(t *testing.T) {
 		}
 		return o
 	}
-	rows := []*pyjson.Object{mk(1, 0, 1, "hello", 1), mk(2, 0, 1, "next", 2), mk(3, 1, 0, "hello", 1)}
+	rows := []*jsonutil.Object{mk(1, 0, 1, "hello", 1), mk(2, 0, 1, "next", 2), mk(3, 1, 0, "hello", 1)}
 	got, err := dedupeDisplayGenerations(rows, false)
 	if err != nil || len(got) != 2 || rowValue(got[0], "id") != int64(3) || rowValue(got[1], "id") != int64(2) {
 		t.Fatalf("dedupe %v %v", dumpRows(got), err)

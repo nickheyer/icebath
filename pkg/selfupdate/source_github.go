@@ -18,10 +18,10 @@ import (
 	"golang.org/x/net/http/httpproxy"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const githubJSONAccept = "application/vnd.github+json"
@@ -178,7 +178,7 @@ func sourceRequestWith(ctx context.Context, target, accept, token string) (strin
 	if err != nil {
 		return "", err
 	}
-	text, err := pystr.DecodeUTF8Sig(body)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(body))
 	if err != nil {
 		return "", err
 	}
@@ -191,7 +191,7 @@ func sourceJSON(ctx context.Context, target string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 // Reports whether value is a 40 digit hex commit id in either case
@@ -208,7 +208,7 @@ func isFullSHA(value string) bool {
 }
 
 // GitHub comparison of two full commits, nil when either is not a full sha or GitHub did not answer
-func githubCompare(ctx context.Context, currentRev, targetRev, repository string) *pyjson.Object {
+func githubCompare(ctx context.Context, currentRev, targetRev, repository string) *jsonutil.Object {
 	if !isFullSHA(currentRev) || !isFullSHA(targetRev) {
 		return nil
 	}
@@ -216,7 +216,7 @@ func githubCompare(ctx context.Context, currentRev, targetRev, repository string
 	if err != nil {
 		return nil
 	}
-	obj, _ := payload.(*pyjson.Object)
+	obj, _ := payload.(*jsonutil.Object)
 	return obj
 }
 

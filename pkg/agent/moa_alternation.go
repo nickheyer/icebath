@@ -3,8 +3,8 @@ package agent
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Route and model identity of an aggregator destination, base_url preferred over the provider slug
@@ -15,12 +15,12 @@ func destinationKey(runtime map[string]any) [2]string {
 	}
 	route := ""
 	if pyTruthy(raw) {
-		route = pyrepr.Str(raw)
+		route = anyutil.String(raw)
 	}
 	route = strings.TrimRight(strings.TrimSpace(route), "/")
 	model := ""
 	if pyTruthy(runtime["model"]) {
-		model = pyrepr.Str(runtime["model"])
+		model = anyutil.String(runtime["model"])
 	}
 	return [2]string{route, strings.TrimSpace(model)}
 }
@@ -72,7 +72,7 @@ func isRoleAlternationRejection(err error, runtime map[string]any) (out bool) {
 		if !pyTruthy(runtime[k]) {
 			return ""
 		}
-		return pyrepr.Str(runtime[k])
+		return anyutil.String(runtime[k])
 	}
 	classified := provider.ClassifyError(provider.ClassifyInput{Err: err, Provider: str("provider"), Model: str("model"), BaseURL: str("base_url")})
 	return classified != nil && classified.Reason == provider.ReasonRoleAlternation

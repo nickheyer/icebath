@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Marker printed before a whole reply whose painted segment is not its prefix
@@ -14,7 +14,7 @@ const replayGapResumed = "[output resumed]"
 func replayGapPendingStatus(pending []any, admission any) any {
 	for _, raw := range pending {
 		row, _ := raw.(map[string]any)
-		if pyrepr.Equal(row["admission_id"], admission) {
+		if anyutil.Equal(row["admission_id"], admission) {
 			return row["status"]
 		}
 	}
@@ -24,7 +24,7 @@ func replayGapPendingStatus(pending []any, admission any) any {
 // True when terminal with its reply, false while running, nil when the receipt is unreadable
 func replayGapSettled(receipt map[string]any) *bool {
 	yes, no := true, false
-	if !pyrepr.Equal(receipt["status"], "terminal") {
+	if !anyutil.Equal(receipt["status"], "terminal") {
 		return &no
 	}
 	switch receipt["outcome"] {

@@ -13,12 +13,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
@@ -40,9 +40,9 @@ type TitleInUseError struct {
 	Cause error
 }
 
-func (e *TitleInUseError) Error() string      { return e.Msg }
-func (e *TitleInUseError) Unwrap() error      { return e.Cause }
-func (e *TitleInUseError) PyTypeName() string { return "ValueError" }
+func (e *TitleInUseError) Error() string     { return e.Msg }
+func (e *TitleInUseError) Unwrap() error     { return e.Cause }
+func (e *TitleInUseError) ErrorKind() string { return "ValueError" }
 
 // What a session open reads off the one shot chat
 type OpenSessionCLI struct {
@@ -59,8 +59,8 @@ type GatewaySessionStore struct {
 	// Destination of the config warning a create prints
 	Stderr    io.Writer
 	mu        sync.Mutex
-	snapshots map[string]*pyjson.Object
-	current   *pyjson.Object
+	snapshots map[string]*jsonutil.Object
+	current   *jsonutil.Object
 	reader    *SurfaceLabelReader
 }
 
@@ -69,14 +69,14 @@ func NewGatewaySessionStore(connection *GatewayConnection) *GatewaySessionStore 
 	if connection == nil {
 		connection = SharedGatewayConnection()
 	}
-	return &GatewaySessionStore{Connection: connection, Stderr: os.Stderr, snapshots: map[string]*pyjson.Object{}}
+	return &GatewaySessionStore{Connection: connection, Stderr: os.Stderr, snapshots: map[string]*jsonutil.Object{}}
 }
 
 // Store over the process wide connection
 func SessionStore() *GatewaySessionStore { return NewGatewaySessionStore(nil) }
 
 // Snapshot of the opened session, nil until one is open
-func (s *GatewaySessionStore) Current() *pyjson.Object {
+func (s *GatewaySessionStore) Current() *jsonutil.Object {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.current
@@ -119,22 +119,22 @@ func (s *GatewaySessionStore) Call(ctx context.Context, method string, params ma
 }
 
 // One gateway request answered as an ordered object, empty for any other answer
-func (s *GatewaySessionStore) callObject(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+func (s *GatewaySessionStore) callObject(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 	result, err := s.Call(ctx, method, params)
 	if err != nil {
 		return nil, err
 	}
-	if obj, ok := pyjson.AsObject(result); ok {
+	if obj, ok := jsonutil.AsObject(result); ok {
 		return obj, nil
 	}
-	return pyjson.NewObject(), nil
+	return jsonutil.NewObject(), nil
 }
 
 // Records a snapshot as the current session and returns its stored id
-func (s *GatewaySessionStore) adopt(snapshot *pyjson.Object) (string, error) {
-	sid, ok := snapshot.Vals["stored_session_id"].(string)
+func (s *GatewaySessionStore) adopt(snapshot *jsonutil.Object) (string, error) {
+	sid, ok := snapshot.Value("stored_session_id").(string)
 	if !ok {
-		return "", &pyrepr.FormatError{Class: "KeyError", Msg: "'stored_session_id'"}
+		return "", &errorutil.Error{Kind: "KeyError", Msg: "snapshot is missing stored_session_id"}
 	}
 	s.mu.Lock()
 	s.snapshots[sid] = snapshot
@@ -145,7 +145,7 @@ func (s *GatewaySessionStore) adopt(snapshot *pyjson.Object) (string, error) {
 }
 
 // Resumes a session once per id this viewer uses, carrying the launch key the way the thin client does
-func (s *GatewaySessionStore) Attach(ctx context.Context, sessionID string, typed bool) (*pyjson.Object, error) {
+func (s *GatewaySessionStore) Attach(ctx context.Context, sessionID string, typed bool) (*jsonutil.Object, error) {
 	s.mu.Lock()
 	known := s.snapshots[sessionID]
 	s.mu.Unlock()
@@ -156,9 +156,9 @@ func (s *GatewaySessionStore) Attach(ctx context.Context, sessionID string, type
 	if err != nil {
 		return nil, err
 	}
-	snapshot, ok := pyjson.AsObject(result)
+	snapshot, ok := jsonutil.AsObject(result)
 	if !ok {
-		snapshot = pyjson.NewObject()
+		snapshot = jsonutil.NewObject()
 	}
 	if _, err := s.adopt(snapshot); err != nil {
 		return nil, err
@@ -169,10 +169,10 @@ func (s *GatewaySessionStore) Attach(ctx context.Context, sessionID string, type
 // Creates or resumes the gateway session of a CLI and adopts its id, empty when the gateway refuses the target
 func (s *GatewaySessionStore) OpenSession(ctx context.Context, cli OpenSessionCLI, launch map[string]any) (string, error) {
 	key := ""
-	if pyrepr.Truthy(launch["api_key"]) {
-		key = pyrepr.Str(launch["api_key"])
+	if anyutil.IsTrue(launch["api_key"]) {
+		key = anyutil.String(launch["api_key"])
 	}
-	typed := key != "" && pyjson.Equal(launch["api_key"], cli.TypedAPIKey)
+	typed := key != "" && anyutil.Equal(launch["api_key"], cli.TypedAPIKey)
 	s.Connection.SetLaunchKey(key, typed)
 	if !cli.Resumed {
 		return s.Create(ctx, launch, "", true)
@@ -190,7 +190,7 @@ func (s *GatewaySessionStore) OpenSession(ctx context.Context, cli OpenSessionCL
 	}
 	checked["toolsets"] = cli.TypedToolsets
 	checked["ignore_rules"] = nil
-	if pyrepr.Truthy(cli.ExplicitIgnoreRules) {
+	if anyutil.IsTrue(cli.ExplicitIgnoreRules) {
 		checked["ignore_rules"] = cli.ExplicitIgnoreRules
 	}
 	relaunched, err := s.relaunch(ctx, cli.SessionID, checked, snapshot)
@@ -233,8 +233,8 @@ func (s *GatewaySessionStore) Create(ctx context.Context, launch map[string]any,
 	if err != nil {
 		return "", err
 	}
-	if info, ok := pyjson.AsObject(snapshot.Vals["info"]); ok && pyrepr.Truthy(info.Vals["config_warning"]) {
-		fmt.Fprintf(s.Stderr, "Warning: %s\n", pyrepr.Str(info.Vals["config_warning"]))
+	if info, ok := jsonutil.AsObject(snapshot.Value("info")); ok && anyutil.IsTrue(info.Value("config_warning")) {
+		fmt.Fprintf(s.Stderr, "Warning: %s\n", anyutil.String(info.Value("config_warning")))
 	}
 	return s.adopt(snapshot)
 }
@@ -251,16 +251,16 @@ func (s *GatewaySessionStore) ClientEnv(ctx context.Context) (map[string]any, er
 }
 
 // Required snapshot member, a KeyError when the owner left it out
-func snapshotField(snapshot *pyjson.Object, key string) (any, error) {
+func snapshotField(snapshot *jsonutil.Object, key string) (any, error) {
 	value, ok := snapshot.Get(key)
 	if !ok {
-		return nil, &pyrepr.FormatError{Class: "KeyError", Msg: pyrepr.Repr(key)}
+		return nil, &errorutil.Error{Kind: "KeyError", Msg: "snapshot is missing " + key}
 	}
 	return value, nil
 }
 
 // One session.mutate at the revision of a fresh read, fenced by generation for the operations that need it
-func (s *GatewaySessionStore) Mutate(ctx context.Context, sessionID, operation string, payload map[string]any, snapshot *pyjson.Object) (any, error) {
+func (s *GatewaySessionStore) Mutate(ctx context.Context, sessionID, operation string, payload map[string]any, snapshot *jsonutil.Object) (any, error) {
 	if snapshot == nil || snapshot.Len() == 0 {
 		read, err := s.callObject(ctx, "session.resume", map[string]any{"session_id": sessionID})
 		if err != nil {
@@ -336,13 +336,13 @@ func (s *GatewaySessionStore) RewindUserTurn(ctx context.Context, sessionID stri
 		return nil, err
 	}
 	var durable []map[string]any
-	rows, _ := snapshot.Vals["messages"].([]any)
+	rows, _ := snapshot.Value("messages").([]any)
 	for _, row := range rows {
 		message, ok := plainDict(row)
 		if !ok {
-			return nil, &pyrepr.FormatError{Class: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(row))}
+			return nil, &errorutil.Error{Kind: "AttributeError", Msg: "snapshot message must be an object, got " + anyutil.Kind(row)}
 		}
-		if !pyrepr.Truthy(message["archived"]) {
+		if !anyutil.IsTrue(message["archived"]) {
 			durable = append(durable, message)
 		}
 	}
@@ -384,7 +384,7 @@ func (s *GatewaySessionStore) RewindUserTurn(ctx context.Context, sessionID stri
 			return nil, err
 		}
 		prefix = warmPrefix
-		if !pyjson.Equal(state.RewindComparisonContent(liveView), state.RewindComparisonContent(warmLive)) {
+		if !anyutil.Equal(state.RewindComparisonContent(liveView), state.RewindComparisonContent(warmLive)) {
 			return nil, &state.RewindRuntimeError{Msg: state.RewindHistoryChanged()}
 		}
 	}
@@ -415,7 +415,7 @@ func (s *GatewaySessionStore) RewindUserTurn(ctx context.Context, sessionID stri
 		return nil, err
 	}
 	return &state.RewindOutcome{Prefix: prefix, LiveView: liveView, LiveText: liveText,
-		RewoundCount: pyIntOf(receipt.Vals["rewound_count"]), TurnsUndone: len(durableUser) - userOrdinal}, nil
+		RewoundCount: pyIntOf(receipt.Value("rewound_count")), TurnsUndone: len(durableUser) - userOrdinal}, nil
 }
 
 // Id of another session holding a title, empty without a reader, a title or a holder
@@ -428,7 +428,7 @@ func (s *GatewaySessionStore) titleHolder(ctx context.Context, sessionID, title 
 	if err != nil || len(rows) == 0 {
 		return "", err
 	}
-	return pyrepr.Str(rows[0].Vals["id"]), nil
+	return anyutil.String(rows[0].Value("id")), nil
 }
 
 // Drops this viewer's subscription record and returns its id, so no later reconnect resumes it
@@ -477,7 +477,7 @@ func (s *GatewaySessionStore) EndSession(ctx context.Context, sessionID, reason 
 		}
 	}
 	subscription := s.leave(sessionID)
-	if pyrepr.Truthy(subscription) && reachable {
+	if anyutil.IsTrue(subscription) && reachable {
 		params := map[string]any{"session_id": sessionID, "subscription_id": subscription}
 		if reason != "" {
 			params["end_reason"] = reason
@@ -506,13 +506,13 @@ func creationPolicy(launch map[string]any) map[string]any {
 	fields["toolsets"] = joinedToolsets(fields["toolsets"])
 	requested := RequestedPolicy(fields)
 	requested.Delete("source")
-	policy, _ := pyjson.Plain(requested).(map[string]any)
+	policy, _ := jsonutil.Plain(requested).(map[string]any)
 	for k, v := range launchOnlyPolicy(launch) {
 		policy[k] = v
 	}
 	env := EnvLaunchFlags()
-	for _, k := range env.Keys {
-		policy[k] = env.Vals[k]
+	for _, k := range env.Keys() {
+		policy[k] = env.Value(k)
 	}
 	return policy
 }
@@ -523,7 +523,7 @@ func joinedToolsets(v any) any {
 	switch list := v.(type) {
 	case []any:
 		for _, item := range list {
-			items = append(items, pyrepr.Str(item))
+			items = append(items, anyutil.String(item))
 		}
 	case []string:
 		items = list
@@ -538,14 +538,14 @@ func launchCwd(ctx context.Context) (string, error) {
 	terminalCwd := LaunchFolder()
 	recorded := map[string]bool{}
 	if tree := RecordedWorktree(); tree["path"] != "" {
-		real, err := pypath.Realpath(tree["path"], pypath.Lax)
+		real, err := pathutil.Resolve(tree["path"])
 		if err != nil {
 			return "", err
 		}
 		recorded[real] = true
 	}
 	if terminalCwd != "" {
-		real, err := pypath.Realpath(terminalCwd, pypath.Lax)
+		real, err := pathutil.Resolve(terminalCwd)
 		if err != nil {
 			return "", err
 		}
@@ -566,7 +566,7 @@ func launchCwd(ctx context.Context) (string, error) {
 		}
 		chosen = cwd
 	}
-	return pypath.Realpath(chosen, pypath.Lax)
+	return pathutil.Resolve(chosen)
 }
 
 // Run budget and verbose flags of the one shot chat as session policy
@@ -575,7 +575,7 @@ func launchOnlyPolicy(launch map[string]any) map[string]any {
 	if launch["run_budget"] != nil {
 		policy["run_budget"] = pyFloatOf(launch["run_budget"])
 	}
-	if pyrepr.Truthy(launch["verbose"]) {
+	if anyutil.IsTrue(launch["verbose"]) {
 		policy["verbose"] = true
 	}
 	return policy
@@ -599,7 +599,7 @@ func pyFloatOf(v any) float64 {
 }
 
 // Lays the launch flags that differ from the resumed session's frozen launch over it, the fresh snapshot after
-func (s *GatewaySessionStore) relaunch(ctx context.Context, sessionID string, launch map[string]any, snapshot *pyjson.Object) (*pyjson.Object, error) {
+func (s *GatewaySessionStore) relaunch(ctx context.Context, sessionID string, launch map[string]any, snapshot *jsonutil.Object) (*jsonutil.Object, error) {
 	fields := map[string]any{}
 	for _, key := range launchPolicyFields {
 		fields[key] = launch[key]
@@ -610,11 +610,11 @@ func (s *GatewaySessionStore) relaunch(ctx context.Context, sessionID string, la
 		return nil, err
 	}
 	var frozen map[string]any
-	if info, ok := pyjson.AsObject(snapshot.Vals["info"]); ok {
-		frozen, _ = plainDict(info.Vals["launch_request"])
+	if info, ok := jsonutil.AsObject(snapshot.Value("info")); ok {
+		frozen, _ = plainDict(info.Value("launch_request"))
 	}
 	for key, value := range launchOnlyPolicy(launch) {
-		if !pyjson.Equal(frozen[key], value) {
+		if !anyutil.Equal(frozen[key], value) {
 			overrides[key] = value
 		}
 	}
@@ -666,9 +666,9 @@ func createTitledSession(ctx context.Context, store *GatewaySessionStore, title 
 	if err != nil {
 		return "", err
 	}
-	sid, ok := snapshot.Vals["stored_session_id"].(string)
+	sid, ok := snapshot.Value("stored_session_id").(string)
 	if !ok {
-		return "", &pyrepr.FormatError{Class: "KeyError", Msg: "'stored_session_id'"}
+		return "", &errorutil.Error{Kind: "KeyError", Msg: "snapshot is missing stored_session_id"}
 	}
 	return sid, nil
 }

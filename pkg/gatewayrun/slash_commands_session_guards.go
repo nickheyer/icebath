@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Chat types whose session key is per user, the unknown blank type included
@@ -30,15 +30,15 @@ func sourceParticipant(source *gateway.SessionSource) string {
 }
 
 // Row field as str of its value, empty when the value is falsy
-func rowStr(row *pyjson.Object, key string) string {
+func rowStr(row *jsonutil.Object, key string) string {
 	if row == nil {
 		return ""
 	}
 	v, _ := row.Get(key)
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Origin of the live gateway entry routing to the session id, nil when none resolves
@@ -94,7 +94,7 @@ func (r *GatewayRunner) isSharedSessionSource(source *gateway.SessionSource) boo
 }
 
 // Whether a persisted session row provably belongs to the source session key, legacy rows failing closed
-func (r *GatewayRunner) persistedRowProvesOwner(source *gateway.SessionSource, row *pyjson.Object) bool {
+func (r *GatewayRunner) persistedRowProvesOwner(source *gateway.SessionSource, row *jsonutil.Object) bool {
 	callerSrc := string(source.Platform)
 	var rowSrc any
 	if row != nil {
@@ -105,7 +105,7 @@ func (r *GatewayRunner) persistedRowProvesOwner(source *gateway.SessionSource, r
 		return false
 	}
 	rowThread := rowStr(row, "thread_id")
-	if !(pyrepr.Truthy(rowSrc) && callerSrc != "" && pyrepr.Str(rowSrc) == callerSrc && rowThread == sattr(source.ThreadID)) {
+	if !(anyutil.IsTrue(rowSrc) && callerSrc != "" && anyutil.String(rowSrc) == callerSrc && rowThread == sattr(source.ThreadID)) {
 		return false
 	}
 	rowUID := rowStr(row, "user_id")
@@ -142,18 +142,18 @@ func (r *GatewayRunner) resumeTargetAllowed(ctx context.Context, source *gateway
 	if db == nil {
 		return false
 	}
-	row, err := state.AsyncCall(ctx, db, func(d *state.SessionDB) (*pyjson.Object, error) { return d.GetSession(ctx, targetID) })
+	row, err := state.AsyncCall(ctx, db, func(d *state.SessionDB) (*jsonutil.Object, error) { return d.GetSession(ctx, targetID) })
 	if err != nil {
 		return false
 	}
 	if row == nil {
-		row = pyjson.NewObject()
+		row = jsonutil.NewObject()
 	}
 	return r.persistedRowProvesOwner(source, row)
 }
 
 // Whether a listing row belongs to the caller origin, Matrix room scoped and admin all bypassing
-func (r *GatewayRunner) resumeRowVisible(ctx context.Context, source *gateway.SessionSource, row *pyjson.Object, allowAll bool) bool {
+func (r *GatewayRunner) resumeRowVisible(ctx context.Context, source *gateway.SessionSource, row *jsonutil.Object, allowAll bool) bool {
 	if allowAll && r.resumeCallerIsAdmin(source) {
 		return true
 	}

@@ -5,8 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
 	"github.com/nickheyer/icebath/pkg/tools"
+	diffutil "github.com/nickheyer/icebath/pkg/utils/diff"
 )
 
 // Offered tool a mismatched name repairs to, never one other than a registered tool the name means
@@ -86,7 +86,7 @@ func (a *AIAgent) resolveToolName(toolName string) (string, bool) {
 		}
 	}
 	slices.Sort(names)
-	if matches := pydifflib.GetCloseMatches(lowered, names, 1, 0.7); len(matches) > 0 {
+	if matches := diffutil.CloseMatches(lowered, names, 1, 0.7); len(matches) > 0 {
 		return matches[0], valid[matches[0]]
 	}
 	return "", false

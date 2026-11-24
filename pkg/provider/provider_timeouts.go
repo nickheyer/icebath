@@ -7,13 +7,13 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Positive Python float of a timeout value, false for anything float rejects or that is not above zero
 func coerceProviderTimeout(raw any) (float64, bool) {
-	f, err := pyint.Float(raw)
+	f, err := anyutil.ToFloat(raw)
 	if err != nil || !(f > 0) {
 		return 0, false
 	}

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -56,15 +56,15 @@ type ClassifyArgs struct {
 // Candidate item kept for delivery with its position in the input and the score object the model returned for it
 type classifiedItem struct {
 	index int
-	item  *pyjson.Object
-	score *pyjson.Object
+	item  *jsonutil.Object
+	score *jsonutil.Object
 }
 
 // Objects of a decoded JSON list, entries of any other type left out
-func classifyObjects(list []any) []*pyjson.Object {
-	items := make([]*pyjson.Object, 0, len(list))
+func classifyObjects(list []any) []*jsonutil.Object {
+	items := make([]*jsonutil.Object, 0, len(list))
 	for _, entry := range list {
-		if obj, ok := entry.(*pyjson.Object); ok {
+		if obj, ok := entry.(*jsonutil.Object); ok {
 			items = append(items, obj)
 		}
 	}
@@ -72,7 +72,7 @@ func classifyObjects(list []any) []*pyjson.Object {
 }
 
 // Candidate items of the input file or stdin and the exit status that ends the run when they cannot be read
-func loadClassifyItems(inputFile string, stdin io.Reader, stderr io.Writer) ([]*pyjson.Object, int) {
+func loadClassifyItems(inputFile string, stdin io.Reader, stderr io.Writer) ([]*jsonutil.Object, int) {
 	var data []byte
 	var err error
 	if inputFile != "" {
@@ -89,21 +89,21 @@ func loadClassifyItems(inputFile string, stdin io.Reader, stderr io.Writer) ([]*
 		fmt.Fprintf(stderr, "%sinput is not valid UTF-8\n", classifyErrPrefix)
 		return nil, classifyExitUnreadable
 	}
-	raw := strings.TrimSpace(pystr.TranslateNewlines(string(data)))
+	raw := strings.TrimSpace(textutil.NormalizeNewlines(string(data)))
 	if raw == "" {
 		return nil, classifyExitOK
 	}
-	parsed, err := pyjson.Loads(raw)
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		fmt.Fprintf(stderr, "%sinput is not valid JSON: %v\n", classifyErrPrefix, err)
 		return nil, classifyExitBadInput
 	}
 	switch value := parsed.(type) {
-	case *pyjson.Object:
-		if list, ok := value.GetOr("items", nil).([]any); ok {
+	case *jsonutil.Object:
+		if list, ok := value.ValueOr("items", nil).([]any); ok {
 			return classifyObjects(list), classifyExitOK
 		}
-		return []*pyjson.Object{value}, classifyExitOK
+		return []*jsonutil.Object{value}, classifyExitOK
 	case []any:
 		return classifyObjects(value), classifyExitOK
 	}
@@ -112,20 +112,20 @@ func loadClassifyItems(inputFile string, stdin io.Reader, stderr io.Writer) ([]*
 }
 
 // Id a surfaced item is reported under for upstream dedup, its position when it carries none
-func classifyItemID(item *pyjson.Object, index int) string {
+func classifyItemID(item *jsonutil.Object, index int) string {
 	for _, key := range classifyIDKeys {
-		if value, ok := item.Get(key); ok && pyrepr.Truthy(value) {
-			return pyrepr.Str(value)
+		if value, ok := item.Get(key); ok && anyutil.IsTrue(value) {
+			return anyutil.String(value)
 		}
 	}
 	return fmt.Sprintf("item-%d", index)
 }
 
 // Scoring request for the whole batch, each item as a bounded JSON view of its salient fields
-func classifyPrompt(items []*pyjson.Object, criteria string) (string, error) {
+func classifyPrompt(items []*jsonutil.Object, criteria string) (string, error) {
 	lines := []string{"USER IMPORTANCE CRITERIA:\n" + criteria + "\n", "ITEMS:"}
 	for i, item := range items {
-		view := pyjson.NewObject()
+		view := jsonutil.NewObject()
 		for _, key := range classifyViewKeys {
 			if value, ok := item.Get(key); ok {
 				view.Set(key, value)
@@ -134,7 +134,7 @@ func classifyPrompt(items []*pyjson.Object, criteria string) (string, error) {
 		if view.Len() == 0 {
 			view = item
 		}
-		text, err := pyjson.Dumps(view, pyjson.EnsureASCII(false))
+		text, err := jsonutil.Encode(view)
 		if err != nil {
 			return "", err
 		}
@@ -156,7 +156,7 @@ func classifyInt(v any) (*big.Int, bool) {
 }
 
 // Score objects of the model reply by item position, tolerating a markdown fence and prose around the array
-func parseClassifyScores(content string, itemCount int, stderr io.Writer) map[int]*pyjson.Object {
+func parseClassifyScores(content string, itemCount int, stderr io.Writer) map[int]*jsonutil.Object {
 	text := strings.TrimSpace(content)
 	if strings.HasPrefix(text, "```") {
 		text = strings.Trim(text, "`")
@@ -164,14 +164,14 @@ func parseClassifyScores(content string, itemCount int, stderr io.Writer) map[in
 			text = rest
 		}
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		start, end := strings.Index(text, "["), strings.LastIndex(text, "]")
 		if start < 0 || end <= start {
 			fmt.Fprintf(stderr, "%sclassifier returned no JSON array\n", classifyErrPrefix)
 			return nil
 		}
-		if parsed, err = pyjson.Loads(text[start : end+1]); err != nil {
+		if parsed, err = jsonutil.Decode(text[start : end+1]); err != nil {
 			fmt.Fprintf(stderr, "%scould not parse classifier output\n", classifyErrPrefix)
 			return nil
 		}
@@ -181,13 +181,13 @@ func parseClassifyScores(content string, itemCount int, stderr io.Writer) map[in
 		return nil
 	}
 	limit := big.NewInt(int64(itemCount))
-	scores := map[int]*pyjson.Object{}
+	scores := map[int]*jsonutil.Object{}
 	for _, entry := range list {
-		obj, isObject := entry.(*pyjson.Object)
+		obj, isObject := entry.(*jsonutil.Object)
 		if !isObject {
 			continue
 		}
-		index, isInt := classifyInt(obj.GetOr("index", nil))
+		index, isInt := classifyInt(obj.ValueOr("index", nil))
 		if !isInt || index.Sign() < 0 || index.Cmp(limit) >= 0 {
 			continue
 		}
@@ -197,9 +197,9 @@ func parseClassifyScores(content string, itemCount int, stderr io.Writer) map[in
 }
 
 // First truthy value among the named fields of an item, nil when none is set
-func classifyFirstField(item *pyjson.Object, keys ...string) any {
+func classifyFirstField(item *jsonutil.Object, keys ...string) any {
 	for _, key := range keys {
-		if value := item.GetOr(key, nil); pyrepr.Truthy(value) {
+		if value := item.ValueOr(key, nil); anyutil.IsTrue(value) {
 			return value
 		}
 	}
@@ -214,12 +214,12 @@ func renderClassifiedText(surfaced []classifiedItem) string {
 		if title == nil {
 			title = classifyItemID(entry.item, entry.index)
 		}
-		block := fmt.Sprintf("## [%s/10] %s", pyrepr.Str(entry.score.GetOr("score", nil)), pyrepr.Str(title))
+		block := fmt.Sprintf("## [%s/10] %s", anyutil.String(entry.score.ValueOr("score", nil)), anyutil.String(title))
 		if link := classifyFirstField(entry.item, "url", "link"); link != nil {
-			block += "\n" + pyrepr.Str(link)
+			block += "\n" + anyutil.String(link)
 		}
-		if reason := entry.score.GetOr("reason", ""); pyrepr.Truthy(reason) {
-			block += "\n_" + pyrepr.Str(reason) + "_"
+		if reason := entry.score.ValueOr("reason", ""); anyutil.IsTrue(reason) {
+			block += "\n_" + anyutil.String(reason) + "_"
 		}
 		blocks = append(blocks, block)
 	}
@@ -230,14 +230,14 @@ func renderClassifiedText(surfaced []classifiedItem) string {
 func renderClassifiedJSON(surfaced []classifiedItem) (string, error) {
 	out := make([]any, 0, len(surfaced))
 	for _, entry := range surfaced {
-		out = append(out, pyjson.ObjectOf(
+		out = append(out, jsonutil.ObjectOf(
 			"id", classifyItemID(entry.item, entry.index),
-			"score", entry.score.GetOr("score", nil),
-			"reason", entry.score.GetOr("reason", ""),
+			"score", entry.score.ValueOr("score", nil),
+			"reason", entry.score.ValueOr("reason", ""),
 			"item", entry.item,
 		))
 	}
-	return pyjson.Dumps(out, pyjson.EnsureASCII(false), pyjson.Indent(2))
+	return jsonutil.Encode(out, jsonutil.Indent(2))
 }
 
 // Reply text of one scoring call to the auxiliary monitor model, a panic of the call reported as its error
@@ -267,8 +267,8 @@ func classifyCall(ctx context.Context, prompt string) (content string, err error
 	case string:
 		return reply, nil
 	default:
-		if pyrepr.Truthy(reply) {
-			return pyrepr.Str(reply), nil
+		if anyutil.IsTrue(reply) {
+			return anyutil.String(reply), nil
 		}
 		return "", nil
 	}
@@ -287,7 +287,7 @@ func ClassifyItemsCommand(ctx context.Context, a ClassifyArgs, stdin io.Reader, 
 	}
 	content, err := classifyCall(ctx, prompt)
 	if err != nil {
-		fmt.Fprintf(stderr, "%sclassifier call failed: %s\n", classifyErrPrefix, pyrepr.ExceptionMessage(err))
+		fmt.Fprintf(stderr, "%sclassifier call failed: %s\n", classifyErrPrefix, err.Error())
 		return classifyExitClassifierErr
 	}
 	scores := parseClassifyScores(content, len(items), stderr)
@@ -298,7 +298,7 @@ func ClassifyItemsCommand(ctx context.Context, a ClassifyArgs, stdin io.Reader, 
 		if !scored {
 			continue
 		}
-		if value, isInt := classifyInt(score.GetOr("score", nil)); isInt && value.Cmp(threshold) >= 0 {
+		if value, isInt := classifyInt(score.ValueOr("score", nil)); isInt && value.Cmp(threshold) >= 0 {
 			surfaced = append(surfaced, classifiedItem{index: i, item: item, score: score})
 		}
 	}

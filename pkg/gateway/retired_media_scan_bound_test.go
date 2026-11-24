@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestCandidatesShareOneMessagesPass(t *testing.T) {
@@ -41,7 +41,7 @@ func TestCandidatesShareOneMessagesPass(t *testing.T) {
 		t.Fatal(err)
 	}
 	var paths []string
-	var references []*pyjson.Object
+	var references []*jsonutil.Object
 	for index := range 6 {
 		sha := fmt.Sprintf("%064x", index)
 		path := filepath.Join(root, sha, "api_"+sha[:32]+".png")
@@ -52,7 +52,7 @@ func TestCandidatesShareOneMessagesPass(t *testing.T) {
 			t.Fatal(err)
 		}
 		paths = append(paths, path)
-		references = append(references, pyjson.ObjectOf("path", path, "sha256", sha, "size", int64(1)))
+		references = append(references, jsonutil.ObjectOf("path", path, "sha256", sha, "size", int64(1)))
 	}
 	for _, path := range paths[:3] {
 		if _, err := db.AppendMessage(ctx, "keep", map[string]any{"role": "user", "content": "[Image attached at: " + path + "]"}, state.AppendGuards{}); err != nil {
@@ -64,7 +64,7 @@ func TestCandidatesShareOneMessagesPass(t *testing.T) {
 	}
 	err = db.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
 		for index, reference := range references {
-			text, err := pyjson.Dumps(reference)
+			text, err := jsonutil.Encode(reference)
 			if err != nil {
 				return err
 			}

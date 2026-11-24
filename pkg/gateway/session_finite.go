@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type finiteTurnKey struct{}
@@ -27,8 +27,8 @@ func finiteTurnRequired(ctx context.Context) any {
 }
 
 // Headless answer of the clarify tool on a finite turn
-func finiteClarifyReply() *pyjson.Object {
-	return pyjson.ObjectOf("answers", pyjson.NewObject(), "outcome", "undelivered", "notice", finiteClarifyNotice)
+func finiteClarifyReply() *jsonutil.Object {
+	return jsonutil.ObjectOf("answers", jsonutil.NewObject(), "outcome", "undelivered", "notice", finiteClarifyNotice)
 }
 
 // True while the bound turn is a finite one that auto approves because nobody can answer a prompt
@@ -56,7 +56,7 @@ type unattendedConnection interface {
 }
 
 // Committed finite flags of a submission, an unattended turn refused unless it is finite and allowed
-func admitFiniteFor(ctx context.Context, params map[string]any, submitter *finiteSubmitter) (*pyjson.Object, error) {
+func admitFiniteFor(ctx context.Context, params map[string]any, submitter *finiteSubmitter) (*jsonutil.Object, error) {
 	unattended, hasUnattended := params["unattended"]
 	flag, isFlag := unattended.(bool)
 	if hasUnattended && (!isFlag || (flag && params["finite"] != true)) {
@@ -73,13 +73,13 @@ func admitFiniteFor(ctx context.Context, params map[string]any, submitter *finit
 	}
 	finite, hasFinite := params["finite"]
 	if !hasFinite {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	bounded, isBool := finite.(bool)
 	if !isBool {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	out := pyjson.ObjectOf("finite", bounded)
+	out := jsonutil.ObjectOf("finite", bounded)
 	if pyTruthy(unattended) {
 		out.Set("unattended", true)
 	}
@@ -87,7 +87,7 @@ func admitFiniteFor(ctx context.Context, params map[string]any, submitter *finit
 }
 
 // Committed finite flags of an owner side submission no wire client sent
-func admitFinite(params map[string]any) (*pyjson.Object, error) {
+func admitFinite(params map[string]any) (*jsonutil.Object, error) {
 	return admitFiniteFor(context.Background(), params, nil)
 }
 
@@ -114,12 +114,12 @@ func mayRunUnattended(ctx context.Context, connection any, ref SessionRef) (bool
 }
 
 // Execution of a claimed admission, replaced by tests that settle a turn without a runner
-var executeFiniteAdmission func(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object) (any, error)
+var executeFiniteAdmission func(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object) (any, error)
 
 func init() { executeFiniteAdmission = runFiniteAdmission }
 
 // Runs a claimed admission with its finite, surface, display, submission and CLI turn fields bound
-func runFiniteAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object) (any, error) {
+func runFiniteAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object) (any, error) {
 	payload := rowPayload(row)
 	field := func(key string) any {
 		value, _ := payload.Get(key)
@@ -132,7 +132,7 @@ func runFiniteAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef
 	admissionID := rowString(row, "admission_id")
 	ctx = finiteTurnScope(ctx, finite, field("unattended") == true)
 	ctx = surfaceTurnScope(ctx, field("surface_v1"))
-	display, _ := pyjson.Plain(field("display_v1")).(map[string]any)
+	display, _ := jsonutil.Plain(field("display_v1")).(map[string]any)
 	ctx = DisplayTurnScope(ctx, admissionID, display)
 	ctx = SubmissionTurnScope(ctx, admissionID, rowString(row, "request_id"))
 	ctx = cliTurnScope(ctx, admissionID, field("cli_turn_v1"))

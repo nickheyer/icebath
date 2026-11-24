@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/relayhost/relaytest"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 const (
@@ -97,7 +97,7 @@ func atofRunTurnWithCompaction(t *testing.T, summary atofSummary) ([]map[string]
 	a.contextCompressor, a.sessionID, a.platform, a.model, a.provider = compressor, atofSession, "cli", "test/main-model", "test-provider"
 	a.compressionFeasibilityChecked, a.compressionInPlace = true, true
 	transcript := atofTranscript()
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	profileKey := tools.CurrentRelayProfileKey(ctx)
 	var lastRequest []map[string]any
 	func() {

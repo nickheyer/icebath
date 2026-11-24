@@ -4,8 +4,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Platform side and agent side bot turn failure reason codes
@@ -79,7 +79,7 @@ var failureRules = []struct {
 func TurnFailureText(stdout, stderr any) (string, error) {
 	var parts []string
 	for _, value := range []any{stdout, stderr} {
-		if !pyrepr.Truthy(value) {
+		if !anyutil.IsTrue(value) {
 			continue
 		}
 		text, ok := value.(string)
@@ -96,7 +96,7 @@ func TurnFailureText(stdout, stderr any) (string, error) {
 // Retry action of a finished in process turn result, none for anything that did not fail
 func ResultRetryAction(result any) (string, error) {
 	fields, ok := turnResultFields(result)
-	if !ok || !pyrepr.Truthy(fields["failed"]) {
+	if !ok || !anyutil.IsTrue(fields["failed"]) {
 		return RetryNone, nil
 	}
 	text, err := TurnFailureText(fields["error"], fields["failure_reason"])
@@ -132,8 +132,8 @@ func turnResultFields(result any) (map[string]any, bool) {
 // Closed reason code of raw agent or provider error text, unknown when unmatched or empty
 func ClassifyAgentError(text any) string {
 	raw := ""
-	if pyrepr.Truthy(text) {
-		raw = pyrepr.Str(text)
+	if anyutil.IsTrue(text) {
+		raw = anyutil.String(text)
 	}
 	if strings.TrimSpace(raw) != "" {
 		for _, rule := range failureRules {

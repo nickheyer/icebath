@@ -16,6 +16,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const emfileBackoffMaxSeconds = 15 * 60
@@ -619,11 +620,11 @@ func (s *Store) tickAdaptersFor(ctx context.Context, o StartOptions, name *strin
 		return o.Adapters
 	}
 	var tickAdapters any = map[string]any{}
-	if v, ok := o.ProfileAdapters[*name]; ok && pyTruthy(v) {
+	if v, ok := o.ProfileAdapters[*name]; ok && anyutil.IsTrue(v) {
 		tickAdapters = v
 	}
 	owned := o.ProfileBotPlatforms[*name]
-	if !hasCredentialPlatform(tickAdapters, owned) && pyTruthy(o.Adapters) {
+	if !hasCredentialPlatform(tickAdapters, owned) && anyutil.IsTrue(o.Adapters) {
 		return newSharedRouteAdapters(o.Adapters, primaryProfileRoutesForCurrentHome(ctx))
 	}
 	return tickAdapters
@@ -647,7 +648,7 @@ func (p *InProcessCronScheduler) startMultiplex(ctx context.Context, s *Store, s
 	if o.ProfileHomesFn != nil {
 		suffix = " (re-enumerated every cycle)"
 	}
-	s.log.Info(fmt.Sprintf("Multiplex cron scheduler started for %d profile(s): %s%s", len(initial), pyrepr.Repr(labels), suffix))
+	s.log.Info(fmt.Sprintf("Multiplex cron scheduler started for %d profile(s): %s%s", len(initial), anyutil.Quote(labels), suffix))
 	for _, e := range initial {
 		func() {
 			defer func() {

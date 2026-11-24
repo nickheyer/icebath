@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -17,7 +17,7 @@ const (
 )
 
 // Records a detached API delegation result once, keyed by its delegation id
-func (d *SessionDB) AppendDelegationDelivery(ctx context.Context, sessionID, content string, metadata *pyjson.Object) (int64, error) {
+func (d *SessionDB) AppendDelegationDelivery(ctx context.Context, sessionID, content string, metadata *jsonutil.Object) (int64, error) {
 	meta := toPyObject(metadata)
 	delegationID, _ := meta.get("delegation_id")
 	if !pyTruthy(delegationID) {
@@ -35,7 +35,7 @@ func (d *SessionDB) AppendDelegationDelivery(ctx context.Context, sessionID, con
 }
 
 // Records an unviewed completion note once, keyed by its admission stored as completion_admission
-func (d *SessionDB) AppendCompletionNote(ctx context.Context, sessionID, admissionID, content, displayKind string, metadata *pyjson.Object) (int64, error) {
+func (d *SessionDB) AppendCompletionNote(ctx context.Context, sessionID, admissionID, content, displayKind string, metadata *jsonutil.Object) (int64, error) {
 	meta := pyObjectSet(toPyObject(metadata), "completion_admission", admissionID)
 	return d.appendDetachedResult(ctx, sessionID, content, displayKind, meta,
 		"json_extract(m.display_metadata, '$.completion_admission') = ?", admissionID)

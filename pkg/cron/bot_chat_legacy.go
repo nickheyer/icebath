@@ -18,10 +18,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var botChatLegacyWarned = struct {
@@ -39,7 +39,7 @@ func botChatLegacyNoteWarned(path string) bool {
 }
 
 func (s *Store) botChatPendingRoot() (string, error) {
-	resolved, err := pypath.Resolve(s.home)
+	resolved, err := pathutil.Resolve(s.home)
 	if err != nil {
 		return "", err
 	}
@@ -59,14 +59,14 @@ func (s *Store) botChatLegacyDefer(ctx context.Context, key string, job *Job, co
 	if _, err := os.Stat(path); err == nil {
 		return nil
 	}
-	jobPart := pyjson.NewObject()
+	jobPart := jsonutil.NewObject()
 	if job.ID != "" || jobHasKey(job, "id") {
 		jobPart.Set("id", job.ID)
 	}
 	if job.Name != "" || jobHasKey(job, "name") {
 		jobPart.Set("name", job.Name)
 	}
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("id", key)
 	record.Set("status", "queued")
 	record.Set("job", jobPart)
@@ -74,12 +74,12 @@ func (s *Store) botChatLegacyDefer(ctx context.Context, key string, job *Job, co
 	record.Set("home", target)
 	record.Set("for_failure", forFailure)
 	record.Set("sequence", time.Now().UnixNano())
-	return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), path, record, 0o600, pyjson.Indent(2))
+	return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), path, record, 0o600, jsonutil.Indent(2))
 }
 
 type legacyRecord struct {
 	path   string
-	record *pyjson.Object
+	record *jsonutil.Object
 }
 
 // Still queued pending records ordered by sequence then file name, unreadable ones logged once
@@ -107,20 +107,20 @@ func (s *Store) botChatLegacyQueued(root string) []legacyRecord {
 	return found
 }
 
-func readLegacyRecord(path string) (*pyjson.Object, error) {
+func readLegacyRecord(path string) (*jsonutil.Object, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("expected a JSON object, got %s", errchain.Kind(v))
 	}
@@ -128,7 +128,7 @@ func readLegacyRecord(path string) (*pyjson.Object, error) {
 }
 
 // Exact sort key of a record's sequence, zero when absent the way the drain orders records
-func recordSequence(r *pyjson.Object) *big.Rat {
+func recordSequence(r *jsonutil.Object) *big.Rat {
 	v, ok := r.Get("sequence")
 	if !ok {
 		return new(big.Rat)
@@ -170,7 +170,7 @@ func infiniteSequence(n float64) *big.Rat {
 }
 
 // Reason a record cannot be delivered, empty when well formed
-func legacyRecordMalformed(r *pyjson.Object) string {
+func legacyRecordMalformed(r *jsonutil.Object) string {
 	var missing []string
 	for _, key := range []string{"id", "home", "content"} {
 		v, _ := r.Get(key)
@@ -181,8 +181,8 @@ func legacyRecordMalformed(r *pyjson.Object) string {
 	if len(missing) > 0 {
 		return fmt.Sprintf("malformed legacy bot-chat record (missing %s); not delivered", strings.Join(missing, ", "))
 	}
-	if jobVal, _ := r.Get("job"); pyTruthy(jobVal) {
-		if _, ok := jobVal.(*pyjson.Object); !ok {
+	if jobVal, _ := r.Get("job"); anyutil.IsTrue(jobVal) {
+		if _, ok := jobVal.(*jsonutil.Object); !ok {
 			return "malformed legacy bot-chat record (job is not an object); not delivered"
 		}
 	}
@@ -190,19 +190,19 @@ func legacyRecordMalformed(r *pyjson.Object) string {
 }
 
 // Hands one record to the target live owner, false when it stays queued for a later drain
-func (s *Store) botChatLegacyDispose(ctx context.Context, path string, r *pyjson.Object) (bool, error) {
+func (s *Store) botChatLegacyDispose(ctx context.Context, path string, r *jsonutil.Object) (bool, error) {
 	if reason := legacyRecordMalformed(r); reason != "" {
 		r.Set("status", "ambiguous")
 		r.Set("error", reason)
 		return true, nil
 	}
 	homeVal, _ := r.Get("home")
-	target, err := pypath.Resolve(homeVal.(string))
+	target, err := pathutil.Resolve(homeVal.(string))
 	if err != nil {
 		return false, err
 	}
 	forFailureVal, _ := r.Get("for_failure")
-	forFailure := pyTruthy(forFailureVal)
+	forFailure := anyutil.IsTrue(forFailureVal)
 	if st, err := os.Stat(filepath.Join(target, "state.db")); err != nil || !st.Mode().IsRegular() {
 		r.Set("status", "ambiguous")
 		r.Set("error", "bot-chat delivery target no longer exists: "+target)
@@ -228,12 +228,12 @@ func (s *Store) botChatLegacyDispose(ctx context.Context, path string, r *pyjson
 	}
 	name := "?"
 	if jobVal, _ := r.Get("job"); jobVal != nil {
-		if jobObj, ok := jobVal.(*pyjson.Object); ok {
+		if jobObj, ok := jobVal.(*jsonutil.Object); ok {
 			if v, ok := jobObj.Get("id"); ok {
-				name = pyrepr.Str(v)
+				name = anyutil.String(v)
 			}
 			if v, ok := jobObj.Get("name"); ok {
-				name = pyrepr.Str(v)
+				name = anyutil.String(v)
 			}
 		}
 	}
@@ -286,7 +286,7 @@ func (s *Store) drainLegacyPendingRecords(ctx context.Context) error {
 				}
 				return err
 			}
-			return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), item.path, item.record, 0o600, pyjson.Indent(2))
+			return config.AtomicJSONWriteModeSyncDir(home.WithOverride(ctx, s.home), item.path, item.record, 0o600, jsonutil.Indent(2))
 		}()
 		if errors.Is(err, errNotQueued) {
 			continue
@@ -301,7 +301,7 @@ func (s *Store) drainLegacyPendingRecords(ctx context.Context) error {
 			continue
 		}
 		st, _ := item.record.Get("status")
-		s.log.Info(fmt.Sprintf("Legacy Bot Chat pending record %s -> %s", filepath.Base(item.path), pyrepr.Str(st)))
+		s.log.Info(fmt.Sprintf("Legacy Bot Chat pending record %s -> %s", filepath.Base(item.path), anyutil.String(st)))
 	}
 	return nil
 }

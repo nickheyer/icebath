@@ -32,8 +32,8 @@ func cancelOutcome(t *testing.T, s *Store, jobID, reason string) map[string]any 
 		t.Fatal(err)
 	}
 	out := map[string]any{}
-	for _, k := range res.Keys {
-		out[k] = res.Vals[k]
+	for _, k := range res.Keys() {
+		out[k] = res.Value(k)
 	}
 	return out
 }

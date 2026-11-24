@@ -11,13 +11,14 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestSourcePythonPinUpdateSurvivesRealGC(t *testing.T) {
@@ -190,7 +191,7 @@ func TestLaunchWithoutMarkerPublishesThenSkipsAndRebuildsOnLockChange(t *testing
 		!reflect.DeepEqual(vsStrings(rebuilt["extras"]), vsStrings(first["extras"])) {
 		t.Fatalf("rebuilt %v first %v", rebuilt, first)
 	}
-	if !isDirectoryPath(pyrepr.Str(first["environment"])) || !vsCurrent(t, root) || existsFollow(filepath.Join(root, ".update-incomplete")) {
+	if !isDirectoryPath(anyutil.String(first["environment"])) || !vsCurrent(t, root) || existsFollow(filepath.Join(root, ".update-incomplete")) {
 		t.Fatal("the rebuild lost the previous generation or left a marker")
 	}
 }
@@ -205,7 +206,7 @@ func TestProcessSpawnedByTheUpdateCommitsDependenciesButNotTheTail(t *testing.T)
 	if target := vsPrepare(t, root); target != binary {
 		t.Fatalf("target %q", target)
 	}
-	if committed, _ := pm.CommittedVenv(ctx, root); committed != pyrepr.Str(vsFact(t, root)["environment"]) {
+	if committed, _ := pm.CommittedVenv(ctx, root); committed != anyutil.String(vsFact(t, root)["environment"]) {
 		t.Fatalf("committed %q", committed)
 	}
 	if existsFollow(filepath.Join(tmp, "completion-calls")) {
@@ -320,7 +321,7 @@ func TestRealBootstrapReexecsBeforeAppImports(t *testing.T) {
 			activatedOld := filepath.Join(tmp, "activated-old-dependencies")
 			if mode == "script" {
 				vsSync(t, root, []string{"all"})
-				vsWrite(t, filepath.Join(vsSelectedSite(t, root), "old_dependency.pth"), "import pathlib; pathlib.Path("+pyrepr.StrRepr(activatedOld)+").touch()\n")
+				vsWrite(t, filepath.Join(vsSelectedSite(t, root), "old_dependency.pth"), "import pathlib; pathlib.Path("+strconv.Quote(activatedOld)+").touch()\n")
 				if code, _, stderr := vsRunProbe(t, root, "activate", nil); code != 0 {
 					t.Fatalf("activation probe %d %s", code, stderr)
 				}
@@ -347,7 +348,7 @@ func TestRealBootstrapReexecsBeforeAppImports(t *testing.T) {
 			if output["executable"] != binary || !reflect.DeepEqual(vsStrings(output["args"]), args) || output["launch_current"] != true {
 				t.Fatalf("probe %v", output)
 			}
-			site := pyrepr.Str(output["site"])
+			site := anyutil.String(output["site"])
 			selected, _ := pm.SelectedVenv(ctx, root)
 			if !strings.HasPrefix(site, selected+string(filepath.Separator)) || !strings.Contains(strings.Join(vsStrings(output["path"]), "\x00"), site) {
 				t.Fatalf("site %s outside %s or off the import path", site, selected)

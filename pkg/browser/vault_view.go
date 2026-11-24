@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -103,8 +103,8 @@ func VaultKindFields(kind string) []VaultFieldView {
 		return nil
 	}
 	required := vault.RequiredFields(kind)
-	out := make([]VaultFieldView, 0, len(fields.Keys))
-	for _, key := range fields.Keys {
+	out := make([]VaultFieldView, 0, fields.Len())
+	for _, key := range fields.Keys() {
 		out = append(out, VaultFieldView{Key: key, Required: slices.Contains(required, key), Secret: kind == "payment"})
 	}
 	return out
@@ -112,7 +112,7 @@ func VaultKindFields(kind string) []VaultFieldView {
 
 // Stores an item of a kind in the local vault from its values by field, fields left empty staying out
 func addVaultItem(ctx context.Context, kind, label, origin string, values map[string]string) (vault.VaultItemMeta, error) {
-	secret := pyjson.NewObject()
+	secret := jsonutil.NewObject()
 	for _, field := range VaultKindFields(kind) {
 		if value := values[field.Key]; strings.TrimSpace(value) != "" {
 			secret.Set(field.Key, value)
@@ -194,11 +194,11 @@ func SetVaultSource(ctx context.Context, h, name string, on bool) error {
 }
 
 // Where the key lives, read from the location the store reports
-func vaultKeyView(ctx context.Context, h string, where *pyjson.Object) VaultKeyView {
+func vaultKeyView(ctx context.Context, h string, where *jsonutil.Object) VaultKeyView {
 	view := VaultKeyView{Storage: keyLocationText(where, "storage"), Configured: vault.ConfiguredKeyStorage(ctx, h), Keychain: vault.KeychainBackendLabel()}
 	for key, into := range map[string]*string{"path": &view.Path, "service": &view.Service, "account": &view.Account, "keychain_entry_left": &view.KeychainLeft} {
-		if v, has := where.Get(key); has && pyrepr.Truthy(v) {
-			*into = pyrepr.Str(v)
+		if v, has := where.Get(key); has && anyutil.IsTrue(v) {
+			*into = anyutil.String(v)
 		}
 	}
 	return view
@@ -214,7 +214,7 @@ func VaultKey(ctx context.Context, h string) (VaultKeyView, error) {
 }
 
 // Moves the vault key to the keychain or back to its file, records the choice for new vaults and answers where the key lives after it
-func moveVaultKey(ctx context.Context, h, target string) (*pyjson.Object, error) {
+func moveVaultKey(ctx context.Context, h, target string) (*jsonutil.Object, error) {
 	store := vault.GetVaultStore(ctx)
 	if _, err := store.MigrateKey(target); err != nil {
 		return nil, err

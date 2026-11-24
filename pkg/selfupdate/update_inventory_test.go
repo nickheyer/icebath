@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Isolates the inventory from this host so only the seams a test sets report runtimes
@@ -22,7 +22,7 @@ func pinInventory(t *testing.T) {
 		procs    func(context.Context) ([]gatewaycli.ProfileGatewayProcess, error)
 		image    func() *ImageProvenance
 		homes    func() []profileHome
-		identity func(bool) (*pyjson.Object, error)
+		identity func(bool) (*jsonutil.Object, error)
 	}{inventoryServicePIDs, inventoryWindowsServices, inventoryProfileGatewayProcs, inventoryReadImageProvenance, fleetHomes, fleetCodeIdentity}
 	t.Cleanup(func() {
 		inventoryServicePIDs, inventoryWindowsServices, inventoryProfileGatewayProcs = saved.pids, saved.windows, saved.procs
@@ -33,8 +33,8 @@ func pinInventory(t *testing.T) {
 	inventoryProfileGatewayProcs = func(context.Context) ([]gatewaycli.ProfileGatewayProcess, error) { return nil, nil }
 	inventoryReadImageProvenance = func() *ImageProvenance { return nil }
 	fleetHomes = func() []profileHome { return nil }
-	fleetCodeIdentity = func(bool) (*pyjson.Object, error) {
-		identity := pyjson.NewObject()
+	fleetCodeIdentity = func(bool) (*jsonutil.Object, error) {
+		identity := jsonutil.NewObject()
 		identity.Set("sha", "feedc0de")
 		identity.Set("version", "1.2.3")
 		return identity, nil
@@ -45,8 +45,8 @@ func TestInventoryGatewayRowsComeFromSocketsThenStatusThenPidFilesOncePerProcess
 	pinInventory(t)
 	savedSock, savedLive, savedStatus := fleetSocketIdentity, fleetLiveGatewayPID, fleetReadStatus
 	t.Cleanup(func() { fleetSocketIdentity, fleetLiveGatewayPID, fleetReadStatus = savedSock, savedLive, savedStatus })
-	identity := func(pairs ...any) *pyjson.Object {
-		obj := pyjson.NewObject()
+	identity := func(pairs ...any) *jsonutil.Object {
+		obj := jsonutil.NewObject()
 		for i := 0; i+1 < len(pairs); i += 2 {
 			obj.Set(pairs[i].(string), pairs[i+1])
 		}
@@ -55,7 +55,7 @@ func TestInventoryGatewayRowsComeFromSocketsThenStatusThenPidFilesOncePerProcess
 	fleetHomes = func() []profileHome {
 		return []profileHome{{"default", "/h/default"}, {"work", "/h/work"}, {"side", "/h/side"}, {"down", "/h/down"}, {"odd", "/h/odd"}}
 	}
-	fleetSocketIdentity = func(h string) (int, *pyjson.Object, bool) {
+	fleetSocketIdentity = func(h string) (int, *jsonutil.Object, bool) {
 		switch h {
 		case "/h/default", "/h/work":
 			return 100, identity("launch_supervisor", "systemd", "supervisor", "none", "code_sha", "aaa", "code_version", "9.9"), true
@@ -70,7 +70,7 @@ func TestInventoryGatewayRowsComeFromSocketsThenStatusThenPidFilesOncePerProcess
 		}
 		return 0, false, nil
 	}
-	fleetReadStatus = func(path string) *pyjson.Object { return identity("code_sha", "bbb") }
+	fleetReadStatus = func(path string) *jsonutil.Object { return identity("code_sha", "bbb") }
 	inventoryServicePIDs = func(context.Context, bool) ([]int, error) { return []int{200, 300}, nil }
 	inventoryWindowsServices = func(context.Context) ([]gatewaycli.WindowsGatewayService, error) {
 		return []gatewaycli.WindowsGatewayService{{GatewayPID: 300}}, errors.New("SCM service enumeration failed")
@@ -116,13 +116,13 @@ func TestUpdatePlanRoundTripsThroughItsDict(t *testing.T) {
 		t.Fatalf("plan %+v", plan)
 	}
 	dict := plan.ToDict()
-	if want := []string{"install_method", "updatable_in_place", "update_mechanism", "expected_sha", "expected_version", "profiles", "runtimes"}; !reflect.DeepEqual(dict.Keys, want) {
-		t.Fatalf("plan keys %v", dict.Keys)
+	if want := []string{"install_method", "updatable_in_place", "update_mechanism", "expected_sha", "expected_version", "profiles", "runtimes"}; !reflect.DeepEqual(dict.Keys(), want) {
+		t.Fatalf("plan keys %v", dict.Keys())
 	}
 	runtimes, _ := dict.Get("runtimes")
-	first := runtimes.([]any)[0].(*pyjson.Object)
-	if want := []string{"kind", "profile", "pid", "supervisor", "code_sha", "code_version", "restart_via", "detail"}; !reflect.DeepEqual(first.Keys, want) {
-		t.Fatalf("runtime keys %v", first.Keys)
+	first := runtimes.([]any)[0].(*jsonutil.Object)
+	if want := []string{"kind", "profile", "pid", "supervisor", "code_sha", "code_version", "restart_via", "detail"}; !reflect.DeepEqual(first.Keys(), want) {
+		t.Fatalf("runtime keys %v", first.Keys())
 	}
 	dict.Set("unknown_field", "dropped")
 	dict.Set("runtimes", append(runtimes.([]any), "junk"))
@@ -130,7 +130,7 @@ func TestUpdatePlanRoundTripsThroughItsDict(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(back.ToDict().Vals["runtimes"].([]any)[0].(*pyjson.Object).Vals, first.Vals) || back.InstallMethod != plan.InstallMethod ||
+	if !reflect.DeepEqual(back.ToDict().Value("runtimes").([]any)[0].(*jsonutil.Object).Map(), first.Map()) || back.InstallMethod != plan.InstallMethod ||
 		back.UpdateMechanism != plan.UpdateMechanism || len(back.Runtimes) != 1 {
 		t.Fatalf("round trip %+v", back)
 	}

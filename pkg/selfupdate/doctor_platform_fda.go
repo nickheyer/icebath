@@ -8,13 +8,13 @@ import (
 	"path/filepath"
 	"runtime"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Seams over the host platform, the home directory and the TCC probe, the names the FDA tests patch
 var (
 	doctorSysPlatform = runtime.GOOS
-	doctorUserHomeDir = pypath.PathHome
+	doctorUserHomeDir = pathutil.Home
 	doctorListDir     = func(path string) error { _, err := os.ReadDir(path); return err }
 )
 

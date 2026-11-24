@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // FallbackAPIModeAgent is the agent half of fallback wire detection, its Azure, direct OpenAI and Responses predicates
@@ -48,7 +48,7 @@ func FallbackAPIModeResolved(ctx context.Context, agent FallbackAPIModeAgent, fb
 		return string(OpenCodeModelMode(family, fbModel)), nil
 	}
 	if fbBaseURL != "" {
-		if _, err := pyurl.BaseURLHostname(fbBaseURL); err != nil {
+		if _, err := urlutil.BaseHost(fbBaseURL); err != nil {
 			return "", err
 		}
 	}
@@ -61,7 +61,7 @@ func FallbackAPIModeResolved(ctx context.Context, agent FallbackAPIModeAgent, fb
 	if agent.IsDirectOpenAIURL(fbBaseURL) || agent.ProviderModelRequiresResponsesAPI(fbModel, fbProvider) {
 		return string(ModeCodexResponses), nil
 	}
-	host, _ := pyurl.BaseURLHostname(fbBaseURL)
+	host, _ := urlutil.BaseHost(fbBaseURL)
 	if fbProvider == "bedrock" || (strings.HasPrefix(host, "bedrock-runtime.") && baseURLHostMatches(fbBaseURL, "amazonaws.com")) {
 		return string(modeBedrockConverse), nil
 	}

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func TestPmGenerationVenvIsOwnedByTheCheckoutItsInstallKeyNames(t *testing.T) {
@@ -39,7 +39,7 @@ func TestPmGenerationVenvIsOwnedByTheCheckoutItsInstallKeyNames(t *testing.T) {
 	t.Setenv("PYTHONPATH", "")
 	os.Unsetenv("PYTHONPATH")
 
-	resolved, err := pypath.Resolve(checkout)
+	resolved, err := pathutil.Resolve(checkout)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -7,8 +7,7 @@ import (
 	"time"
 
 	"github.com/go-telegram/bot/models"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -66,7 +65,7 @@ func creatorKey(message *TopicMessage) string {
 	if message.FromUser == nil || message.FromUser.ID == nil {
 		return ""
 	}
-	return pyrepr.Str(message.FromUser.ID)
+	return anyutil.String(message.FromUser.ID)
 }
 
 // Telegram send stamp in seconds, ok false when the message carries no date
@@ -130,8 +129,8 @@ func (r *TopicRouting) HandleForumTopicCreated(host TopicRoutingHost, message *T
 		r.del(oldest)
 	}
 	chatID := host.ChatIDStr(message)
-	r.set(topicKey{chatID, creatorKey(message)}, topicRecord{pyrepr.Str(message.MessageThreadID), stamp, now})
-	pkgLog().Debug(fmt.Sprintf("[%s] Recorded new Telegram topic %s (chat=%s)", host.Name(), pyrepr.Str(message.MessageThreadID), chatID))
+	r.set(topicKey{chatID, creatorKey(message)}, topicRecord{anyutil.String(message.MessageThreadID), stamp, now})
+	pkgLog().Debug(fmt.Sprintf("[%s] Recorded new Telegram topic %s (chat=%s)", host.Name(), anyutil.String(message.MessageThreadID), chatID))
 }
 
 // AdoptCreatedTopicThread returns the topic this sender just created for its thread less follow ups, else the given thread
@@ -159,7 +158,7 @@ func (r *TopicRouting) AdoptCreatedTopicThread(host TopicRoutingHost, message *T
 	if message.MessageID != nil {
 		messageID = message.MessageID
 	}
-	pkgLog().Info(fmt.Sprintf("[%s] Thread-less message %s adopted by new Telegram topic %s (chat=%s)", host.Name(), pyrepr.Str(messageID), record.threadID, key.chatID))
+	pkgLog().Info(fmt.Sprintf("[%s] Thread-less message %s adopted by new Telegram topic %s (chat=%s)", host.Name(), anyutil.String(messageID), record.threadID, key.chatID))
 	created := record.threadID
 	return &created
 }

@@ -8,13 +8,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Rewrites the profile config.yaml as the JSON of the mapping
 func writeJSONConfig(t *testing.T, h string, cfg map[string]any) {
 	t.Helper()
-	text, err := pyjson.Dumps(cfg)
+	text, err := jsonutil.Encode(cfg)
 	if err != nil {
 		t.Fatal(err)
 	}

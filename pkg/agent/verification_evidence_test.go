@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Temp workspace with verify on stop on and the home under it
@@ -96,7 +96,7 @@ func recordVerify(t *testing.T, root, sessionID string, ok bool, scope, output s
 // Ad hoc script path under the temp dir named for this test workspace, removed after the test
 func adHocTempScript(t *testing.T, prefix, workspace, body string) string {
 	t.Helper()
-	tempDir, err := pypath.Gettempdir()
+	tempDir, err := pathutil.TempDir()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,12 +394,12 @@ func TestFileToolStalesEvidenceBySessionIdForAbsoluteEdit(t *testing.T) {
 	h := os.Getenv("ICEBATH_HOME")
 	env := &tools.Env{Home: h, Config: config.Defaults(), Secrets: config.NewSecrets(h), Values: &sync.Map{}, Cwd: root}
 	raw := tools.WriteFileTool(context.Background(), env, target, "export const ok = true\n", "turn", false, "conversation")
-	decoded, err := pyjson.DecodeWTF8([]byte(raw))
+	decoded, err := jsonutil.DecodePlain([]byte(raw))
 	result, _ := decoded.(map[string]any)
 	if err != nil || result == nil {
 		t.Fatalf("write result %q: %v", raw, err)
 	}
-	resolved, err := pypath.Resolve(target)
+	resolved, err := pathutil.Resolve(target)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestRecordingExpiresOldEditOnlyState(t *testing.T) {
 	root := verifyLedgerWorkspace(t)
 	verifyNodeProject(t, root)
 	markEdited(t, "old-session", root, filepath.Join(root, "src", "app.ts"))
-	cutoff := pydatetime.ISOFormatUTC(time.Now().UTC().Add(-31 * 24 * time.Hour))
+	cutoff := time.Now().UTC().Add(-31 * 24 * time.Hour).UTC().Format(timeutil.RFC3339Micro)
 	conn, err := state.ConnectSQLite(filepath.Join(os.Getenv("ICEBATH_HOME"), "verification_evidence.db"), state.SQLiteConfig{})
 	if err != nil {
 		t.Fatal(err)

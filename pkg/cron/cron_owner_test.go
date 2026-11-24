@@ -7,8 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Replaces only the canonical transport with the production owner execution, as the conftest cron_owner fixture does
@@ -42,17 +42,17 @@ func installCronOwner(t *testing.T) {
 		if extra != nil {
 			text, extraValue = *extra, *extra
 		}
-		row := pyjson.ObjectOf("admission_id", identity, "request_id", requestID, "principal_id", owner,
-			"payload", pyjson.ObjectOf("text", text))
+		row := jsonutil.ObjectOf("admission_id", identity, "request_id", requestID, "principal_id", owner,
+			"payload", jsonutil.ObjectOf("text", text))
 		raw, err := json.Marshal(job)
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
-		cronJob, err := pyjson.Loads(string(raw))
+		cronJob, err := jsonutil.Decode(string(raw))
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
-		request, err := pyjson.Dumps(pyjson.ObjectOf("cron_job", cronJob, "extra_prompt", extraValue, "request_id", requestID))
+		request, err := jsonutil.Encode(jsonutil.ObjectOf("cron_job", cronJob, "extra_prompt", extraValue, "request_id", requestID))
 		if err != nil {
 			return jobRunOutcome{}, err
 		}
@@ -69,7 +69,7 @@ func installCronOwner(t *testing.T) {
 			t.Errorf("owner execution left %d cron cancellations", n)
 		}
 		resultValue, _ := saved.Get("result")
-		result, _ := resultValue.(*pyjson.Object)
+		result, _ := resultValue.(*jsonutil.Object)
 		flags, _ := result.Get("cron_job_flags")
 		if err := applyJobFlags(job, flags); err != nil {
 			return jobRunOutcome{}, err

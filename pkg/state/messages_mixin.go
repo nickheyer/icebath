@@ -7,9 +7,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -46,7 +46,7 @@ var appendMessageFields = []string{"role", "content", "tool_name", "tool_calls",
 
 // Explicit message timestamp inside the sane epoch window, the default otherwise, negative zero stored as zero
 func coerceMessageTimestamp(value any, def float64) float64 {
-	result, ok := pydatetime.CoerceEpoch(value, "", "message timestamp")
+	result, ok := timeutil.StoredEpoch(value, "", "message timestamp")
 	if !ok {
 		return def
 	}
@@ -117,13 +117,13 @@ func connRow(ctx context.Context, conn SQLiteConn, query string, args ...any) (m
 }
 
 // Plain map view of a row object
-func objMap(row *pyjson.Object) map[string]any {
+func objMap(row *jsonutil.Object) map[string]any {
 	if row == nil {
 		return nil
 	}
-	out := make(map[string]any, len(row.Keys))
-	for _, k := range row.Keys {
-		out[k] = row.Vals[k]
+	out := make(map[string]any, row.Len())
+	for _, k := range row.Keys() {
+		out[k] = row.Value(k)
 	}
 	return out
 }
@@ -200,7 +200,7 @@ func encodeDisplayMetadata(displayMetadata any) (any, error) {
 		}
 		displayMetadata = v
 	} else if !isMapping(displayMetadata) {
-		pkgLog().Warn(fmt.Sprintf("Ignoring unexpected display metadata type on write: %s", pyrepr.TypeName(displayMetadata)))
+		pkgLog().Warn(fmt.Sprintf("Ignoring unexpected display metadata type on write: %s", anyutil.Kind(displayMetadata)))
 		return nil, nil
 	}
 	text, err := pyDumps(displayMetadata, pyJSONDefault)
@@ -271,8 +271,8 @@ func foldSummaryCarrier(row map[string]any, key string, firstByUID map[string]st
 }
 
 // Rows collapsed so each logical message appears once, live then newest copy preferred, ordered by first row id
-func dedupeDisplayGenerations(rows []*pyjson.Object, dropRemoved bool) ([]*pyjson.Object, error) {
-	seen := map[string]*pyjson.Object{}
+func dedupeDisplayGenerations(rows []*jsonutil.Object, dropRemoved bool) ([]*jsonutil.Object, error) {
+	seen := map[string]*jsonutil.Object{}
 	firstID := map[string]int64{}
 	uidKey := map[string]string{}
 	removed := map[string]bool{}
@@ -352,7 +352,7 @@ func dedupeDisplayGenerations(rows []*pyjson.Object, dropRemoved bool) ([]*pyjso
 		}
 	}
 	sortStableBy(order, func(a, b string) bool { return firstID[a] < firstID[b] })
-	out := make([]*pyjson.Object, 0, len(order))
+	out := make([]*jsonutil.Object, 0, len(order))
 	for _, key := range order {
 		if dropRemoved {
 			hidden := false
@@ -372,7 +372,7 @@ func dedupeDisplayGenerations(rows []*pyjson.Object, dropRemoved bool) ([]*pyjso
 }
 
 // Whether a row beats the current representative on the active flag then the id
-func rowNewer(row, cur *pyjson.Object) bool {
+func rowNewer(row, cur *jsonutil.Object) bool {
 	ra, _ := rowInt(row, "active")
 	ca, _ := rowInt(cur, "active")
 	if ra != ca {
@@ -499,7 +499,7 @@ func (d *SessionDB) walkTurnLeaseKeyOnConn(ctx context.Context, conn SQLiteConn,
 	if sessionID == "" {
 		return sessionID, nil
 	}
-	load := func(sid string) (*pyjson.Object, error) {
+	load := func(sid string) (*jsonutil.Object, error) {
 		rows, err := queryObjects(ctx, conn, "SELECT id, parent_session_id, source, model_config, end_reason FROM sessions WHERE id = ?", sid)
 		if err != nil || len(rows) == 0 {
 			return nil, err
@@ -623,10 +623,10 @@ func toPyObject(v any) pyObject {
 	switch m := v.(type) {
 	case pyObject:
 		return append(pyObject{}, m...)
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := pyObject{}
-		for _, k := range m.Keys {
-			out = append(out, pyKeyValue{k, m.Vals[k]})
+		for _, k := range m.Keys() {
+			out = append(out, pyKeyValue{k, m.Value(k)})
 		}
 		return out
 	case map[string]any:

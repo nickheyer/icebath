@@ -10,13 +10,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Marks the test binary a minted launcher runs as the install binary of the fixture tree
@@ -37,7 +37,7 @@ func importProbeValue(module string) (string, error) {
 		}
 		return string(m[1]), nil
 	}
-	return "", fmt.Errorf("ModuleNotFoundError: No module named %s", pyrepr.StrRepr(module))
+	return "", fmt.Errorf("ModuleNotFoundError: No module named %s", strconv.Quote(module))
 }
 
 // Fixture install binary running the launcher steps, the bootstrap activation, then printing what its entry imports
@@ -144,7 +144,7 @@ func TestMintedLauncherReadsCurrentSelectionAndEditableMembers(t *testing.T) {
 	editable := filepath.Join(tmp, "editable")
 	writeFile(t, filepath.Join(editable, "editable_probe.py"), []byte("VALUE = 'editable'\n"), 0o666)
 	writeFile(t, filepath.Join(site, "member.pth"), []byte(editable+"\n"), 0o666)
-	facts, err := pyjson.Dumps(map[string]any{"packages": map[string]any{"venv": map[string]any{"environment": selected}}})
+	facts, err := jsonutil.Encode(map[string]any{"packages": map[string]any{"venv": map[string]any{"environment": selected}}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -14,12 +14,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-// Stdout and stderr a run of peer commands accumulates until read, the capsys analogue
+// Stdout and stderr a run of peer commands accumulates until read
 type peerCapture struct {
 	t   *testing.T
 	out bytes.Buffer
@@ -60,13 +60,13 @@ func onePeer(name, url string) func() map[string]any {
 }
 
 // Decoded JSON document a peer command printed
-func peerJSON(t *testing.T, text string) *pyjson.Object {
+func peerJSON(t *testing.T, text string) *jsonutil.Object {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatalf("not JSON %q: %v", text, err)
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		t.Fatalf("not an object %q", text)
 	}
@@ -75,7 +75,7 @@ func peerJSON(t *testing.T, text string) *pyjson.Object {
 
 // Writes payload as a JSON response with its length like the test handlers
 func writePeerJSON(w http.ResponseWriter, status int, payload any) {
-	text, err := pyjson.Dumps(payload)
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		panic(err)
 	}
@@ -128,7 +128,7 @@ type profilePeer struct {
 	mu          sync.Mutex
 	served      map[string]bool
 	probeStatus int
-	refusal     *pyjson.Object
+	refusal     *jsonutil.Object
 	hits        []string
 }
 
@@ -142,15 +142,15 @@ func (p *profilePeer) answer(path string) (int, any) {
 		return 404, p.refusal
 	}
 	if rest == "health" {
-		return p.probeStatus, pyjson.ObjectOf("status", "ok")
+		return p.probeStatus, jsonutil.ObjectOf("status", "ok")
 	}
 	if strings.HasPrefix(rest, "api/sessions?") {
-		return 200, pyjson.ObjectOf("data", []any{pyjson.ObjectOf("id", "bc_"+profile, "title", "Bot Chat")})
+		return 200, jsonutil.ObjectOf("data", []any{jsonutil.ObjectOf("id", "bc_"+profile, "title", "Bot Chat")})
 	}
 	if strings.HasSuffix(rest, "/chat") {
-		return 200, pyjson.ObjectOf("session_id", "bc_"+profile, "message", pyjson.ObjectOf("content", "from "+profile))
+		return 200, jsonutil.ObjectOf("session_id", "bc_"+profile, "message", jsonutil.ObjectOf("content", "from "+profile))
 	}
-	return 200, pyjson.ObjectOf("run_id", "run_1", "status", "run in "+profile)
+	return 200, jsonutil.ObjectOf("run_id", "run_1", "status", "run in "+profile)
 }
 
 func (p *profilePeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -182,12 +182,12 @@ func peerSet(names ...string) map[string]bool {
 }
 
 func TestIcebathHandleReachesTheProfileThePeerServes(t *testing.T) {
-	notServed := pyjson.ObjectOf("error", pyjson.ObjectOf("message", "Profile 'icebath' exists on this host but this gateway does not serve it"))
+	notServed := jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", "Profile 'icebath' exists on this host but this gateway does not serve it"))
 	cases := []struct {
 		name        string
 		served      map[string]bool
 		probeStatus int
-		refusal     *pyjson.Object
+		refusal     *jsonutil.Object
 		expected    string
 	}{
 		{"legacy profile keeps precedence", peerSet("default", "icebath"), 200, nil, "icebath"},
@@ -199,7 +199,7 @@ func TestIcebathHandleReachesTheProfileThePeerServes(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			peer := &profilePeer{served: tc.served, probeStatus: tc.probeStatus, refusal: tc.refusal}
 			if peer.refusal == nil {
-				peer.refusal = pyjson.ObjectOf("error", "Unknown or unconfigured profile")
+				peer.refusal = jsonutil.ObjectOf("error", "Unknown or unconfigured profile")
 			}
 			server := httptest.NewServer(peer)
 			defer server.Close()
@@ -211,7 +211,7 @@ func TestIcebathHandleReachesTheProfileThePeerServes(t *testing.T) {
 				capture.cmd(map[string]any{"peer_action": "stop", "target": "box/icebath", "run_id": "run_1", "json": true}),
 			}
 			stdout, stderr := capture.readouterr()
-			var out []*pyjson.Object
+			var out []*jsonutil.Object
 			for _, line := range strings.Split(strings.TrimRight(stdout, "\n"), "\n") {
 				if line != "" {
 					out = append(out, peerJSON(t, line))
@@ -236,9 +236,9 @@ func TestIcebathHandleReachesTheProfileThePeerServes(t *testing.T) {
 			if !slices.Equal(replies, []int{0, 0, 0}) || len(out) != 3 {
 				t.Fatalf("replies %v out %q err %q", replies, stdout, stderr)
 			}
-			got := []any{out[0].GetOr("reply", nil), out[1].GetOr("status", nil), out[2].GetOr("status", nil)}
+			got := []any{out[0].ValueOr("reply", nil), out[1].ValueOr("status", nil), out[2].ValueOr("status", nil)}
 			want := []any{"from " + tc.expected, "run in " + tc.expected, "run in " + tc.expected}
-			if !pyjson.Equal(got, want) {
+			if !anyutil.Equal(got, want) {
 				t.Fatalf("got %v want %v", got, want)
 			}
 			if seen := peer.profiles(true); len(seen) != 1 || !seen[tc.expected] {
@@ -252,14 +252,14 @@ func TestMixedCaseIcebathTargetReachesThePeersRealIcebathProfile(t *testing.T) {
 	for _, target := range []string{"box/Icebath", "box/ICEBATH"} {
 		t.Run(target, func(t *testing.T) {
 			peer := &profilePeer{served: peerSet("default", "icebath"), probeStatus: 200,
-				refusal: pyjson.ObjectOf("error", "Unknown or unconfigured profile")}
+				refusal: jsonutil.ObjectOf("error", "Unknown or unconfigured profile")}
 			server := httptest.NewServer(peer)
 			defer server.Close()
 			peerRegistry(t, onePeer("box", server.URL), "secret-key-123456")
 			capture := newPeerCapture(t)
 			rc := capture.cmd(map[string]any{"peer_action": "dm", "target": target, "message": "hi", "json": true})
 			stdout, _ := capture.readouterr()
-			if reply := peerJSON(t, stdout).GetOr("reply", nil); rc != 0 || reply != "from icebath" {
+			if reply := peerJSON(t, stdout).ValueOr("reply", nil); rc != 0 || reply != "from icebath" {
 				t.Fatalf("rc %d reply %v", rc, reply)
 			}
 		})
@@ -384,19 +384,19 @@ func (p *fakePeer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (p *fakePeer) baseGET(w http.ResponseWriter, path string) {
 	switch {
 	case path == "/v1/capabilities":
-		writePeerJSON(w, 200, pyjson.ObjectOf("features", pyjson.ObjectOf("runs_idempotency",
-			pyjson.ObjectOf("supported", true, "durable", true, "retention_seconds", 86400))))
+		writePeerJSON(w, 200, jsonutil.ObjectOf("features", jsonutil.ObjectOf("runs_idempotency",
+			jsonutil.ObjectOf("supported", true, "durable", true, "retention_seconds", 86400))))
 	case path == "/v1/runs/run_1":
-		writePeerJSON(w, 200, pyjson.ObjectOf("object", "icebath.run", "run_id", "run_1", "status", "completed",
+		writePeerJSON(w, 200, jsonutil.ObjectOf("object", "icebath.run", "run_id", "run_1", "status", "completed",
 			"session_id", "bc_existing", "output", "async reply from the other machine"))
 	case strings.HasPrefix(path, "/api/sessions"):
 		data := []any{}
 		for _, s := range p.sessions {
-			data = append(data, pyjson.ObjectOf("id", s, "title", "Bot Chat"))
+			data = append(data, jsonutil.ObjectOf("id", s, "title", "Bot Chat"))
 		}
-		writePeerJSON(w, 200, pyjson.ObjectOf("object", "list", "data", data))
+		writePeerJSON(w, 200, jsonutil.ObjectOf("object", "list", "data", data))
 	default:
-		writePeerJSON(w, 404, pyjson.ObjectOf("error", pyjson.ObjectOf("message", "not found")))
+		writePeerJSON(w, 404, jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", "not found")))
 	}
 }
 
@@ -405,42 +405,42 @@ func (p *fakePeer) basePOST(w http.ResponseWriter, r *http.Request, path string)
 	if len(raw) == 0 {
 		raw = []byte("{}")
 	}
-	decoded, err := pyjson.LoadsBytes(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		panic(err)
 	}
-	body := decoded.(*pyjson.Object)
+	body := decoded.(*jsonutil.Object)
 	switch {
 	case path == "/api/sessions":
 		p.sessions = append(p.sessions, "bc_1")
-		writePeerJSON(w, 201, pyjson.ObjectOf("object", "icebath.session", "session", pyjson.ObjectOf("id", "bc_1", "title", body.GetOr("title", nil))))
+		writePeerJSON(w, 201, jsonutil.ObjectOf("object", "icebath.session", "session", jsonutil.ObjectOf("id", "bc_1", "title", body.ValueOr("title", nil))))
 	case strings.HasPrefix(path, "/api/sessions/") && strings.HasSuffix(path, "/chat"):
-		p.chats = append(p.chats, body.GetOr("message", nil))
+		p.chats = append(p.chats, body.ValueOr("message", nil))
 		p.chatBodies = append(p.chatBodies, body)
-		writePeerJSON(w, 200, pyjson.ObjectOf("object", "icebath.session.chat.completion", "session_id", "bc_1",
-			"message", pyjson.ObjectOf("role", "assistant", "content", p.chatReplyContent)))
+		writePeerJSON(w, 200, jsonutil.ObjectOf("object", "icebath.session.chat.completion", "session_id", "bc_1",
+			"message", jsonutil.ObjectOf("role", "assistant", "content", p.chatReplyContent)))
 	case path == "/v1/runs":
 		p.runs = append(p.runs, body)
 		p.runIdempotencyKeys = append(p.runIdempotencyKeys, r.Header.Get("Idempotency-Key"))
-		writePeerJSON(w, 202, pyjson.ObjectOf("run_id", "run_1", "status", "started", "replayed", false))
+		writePeerJSON(w, 202, jsonutil.ObjectOf("run_id", "run_1", "status", "started", "replayed", false))
 	case path == "/v1/runs/run_1/stop":
-		writePeerJSON(w, 200, pyjson.ObjectOf("run_id", "run_1", "status", "stopping"))
+		writePeerJSON(w, 200, jsonutil.ObjectOf("run_id", "run_1", "status", "stopping"))
 	default:
-		writePeerJSON(w, 404, pyjson.ObjectOf("error", pyjson.ObjectOf("message", "not found")))
+		writePeerJSON(w, 404, jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", "not found")))
 	}
 }
 
 // New style peer whose hidden Bot Chat appears only for the exact title and include_hidden lookup
 func (p *fakePeer) hiddenGET(w http.ResponseWriter, r *http.Request, path string) {
 	if !strings.HasPrefix(path, "/api/sessions") {
-		writePeerJSON(w, 404, pyjson.ObjectOf("error", pyjson.ObjectOf("message", "not found")))
+		writePeerJSON(w, 404, jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", "not found")))
 		return
 	}
-	query := pyurl.ParseQS(r.URL.RawQuery, false)
+	query := r.URL.Query()
 	p.getQueries = append(p.getQueries, query)
 	data := []any{}
 	for _, s := range p.sessions {
-		data = append(data, pyjson.ObjectOf("id", s, "title", "Bot Chat", "hidden", false))
+		data = append(data, jsonutil.ObjectOf("id", s, "title", "Bot Chat", "hidden", false))
 	}
 	first := func(key, def string) string {
 		if v := query[key]; len(v) > 0 {
@@ -450,27 +450,27 @@ func (p *fakePeer) hiddenGET(w http.ResponseWriter, r *http.Request, path string
 	}
 	if first("title", "") == "Bot Chat" && (first("include_hidden", "0") == "1" || first("include_hidden", "0") == "true") {
 		for _, s := range p.hiddenSessions {
-			data = append(data, pyjson.ObjectOf("id", s, "title", "Bot Chat", "hidden", true))
+			data = append(data, jsonutil.ObjectOf("id", s, "title", "Bot Chat", "hidden", true))
 		}
 	}
-	writePeerJSON(w, 200, pyjson.ObjectOf("object", "list", "data", data))
+	writePeerJSON(w, 200, jsonutil.ObjectOf("object", "list", "data", data))
 }
 
 // Old peer that ignores the hidden lookup and refuses the duplicate create with the UNIQUE title 400
 func (p *fakePeer) oldGET(w http.ResponseWriter, path string) {
 	if strings.HasPrefix(path, "/api/sessions") {
-		writePeerJSON(w, 200, pyjson.ObjectOf("object", "list", "data", []any{}))
+		writePeerJSON(w, 200, jsonutil.ObjectOf("object", "list", "data", []any{}))
 		return
 	}
-	writePeerJSON(w, 404, pyjson.ObjectOf("error", pyjson.ObjectOf("message", "not found")))
+	writePeerJSON(w, 404, jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", "not found")))
 }
 
 func (p *fakePeer) oldPOST(w http.ResponseWriter, path string) {
 	if path == "/api/sessions" {
-		writePeerJSON(w, 400, pyjson.ObjectOf("error", pyjson.ObjectOf("message", "Title already in use by session hidden_bc_1", "code", "invalid_title")))
+		writePeerJSON(w, 400, jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", "Title already in use by session hidden_bc_1", "code", "invalid_title")))
 		return
 	}
-	writePeerJSON(w, 404, pyjson.ObjectOf("error", pyjson.ObjectOf("message", "not found")))
+	writePeerJSON(w, 404, jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", "not found")))
 }
 
 // Copy of the recorded state under the server lock
@@ -504,7 +504,7 @@ func TestDMCreatesBotChatThenChats(t *testing.T) {
 		t.Fatalf("rc %d out %q", rc, out)
 	}
 	got := fake.snapshot()
-	if !slices.Equal(got.sessions, []string{"bc_1"}) || !pyjson.Equal(got.chats, []any{"Message from 🤖 dixie (@dixie): disk status?"}) {
+	if !slices.Equal(got.sessions, []string{"bc_1"}) || !anyutil.Equal(got.chats, []any{"Message from 🤖 dixie (@dixie): disk status?"}) {
 		t.Fatalf("sessions %v chats %v", got.sessions, got.chats)
 	}
 	for _, a := range got.authSeen {
@@ -533,7 +533,7 @@ func TestDMJSONOutputHidesABareSilenceMarkerToo(t *testing.T) {
 	capture := newPeerCapture(t)
 	rc := capture.cmd(map[string]any{"peer_action": "dm", "target": "spark", "message": "ping", "json": true})
 	out, _ := capture.readouterr()
-	if reply := peerJSON(t, out).GetOr("reply", nil); rc != 0 || reply != "" {
+	if reply := peerJSON(t, out).ValueOr("reply", nil); rc != 0 || reply != "" {
 		t.Fatalf("rc %d reply %v", rc, reply)
 	}
 }
@@ -557,7 +557,7 @@ func TestDMReusesExistingBotChat(t *testing.T) {
 	capture := newPeerCapture(t)
 	rc := capture.cmd(map[string]any{"peer_action": "dm", "target": "spark", "message": "ping", "json": true})
 	out, _ := capture.readouterr()
-	if reply := peerJSON(t, out).GetOr("reply", nil); rc != 0 || reply != "reply from the other machine" {
+	if reply := peerJSON(t, out).ValueOr("reply", nil); rc != 0 || reply != "reply from the other machine" {
 		t.Fatalf("rc %d reply %v", rc, reply)
 	}
 	if got := fake.snapshot().sessions; !slices.Equal(got, []string{"bc_existing"}) {
@@ -566,12 +566,12 @@ func TestDMReusesExistingBotChat(t *testing.T) {
 }
 
 // Turn author the message_agent runner sets, as the AUTHOR constant
-func peerAuthor() *pyjson.Object {
-	return pyjson.ObjectOf("id", "bot:dixie", "name", "dixie", "is_bot", true)
+func peerAuthor() *jsonutil.Object {
+	return jsonutil.ObjectOf("id", "bot:dixie", "name", "dixie", "is_bot", true)
 }
 
 // Registers spark at url with the canonical chat existing and the turn author variable set or unset
-func peerSpark(t *testing.T, fake *fakePeer, authorEnv *pyjson.Object) {
+func peerSpark(t *testing.T, fake *fakePeer, authorEnv *jsonutil.Object) {
 	fake.setSessions("bc_existing")
 	peerRegistry(t, onePeer("spark", fake.url), "secret-key-123456")
 	t.Setenv(provider.TurnAuthorEnvName, "")
@@ -579,7 +579,7 @@ func peerSpark(t *testing.T, fake *fakePeer, authorEnv *pyjson.Object) {
 		os.Unsetenv(provider.TurnAuthorEnvName)
 		return
 	}
-	text, err := pyjson.Dumps(authorEnv)
+	text, err := jsonutil.Encode(authorEnv)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,11 +591,11 @@ func TestDMBodyCarriesAuthorOnlyFromEnv(t *testing.T) {
 	withExtra.Set("x", 1)
 	cases := []struct {
 		id       string
-		env      *pyjson.Object
-		expected *pyjson.Object
+		env      *jsonutil.Object
+		expected *jsonutil.Object
 	}{
-		{"author from env", withExtra, pyjson.ObjectOf("message", "ping", "author", peerAuthor())},
-		{"no env", nil, pyjson.ObjectOf("message", "ping")},
+		{"author from env", withExtra, jsonutil.ObjectOf("message", "ping", "author", peerAuthor())},
+		{"no env", nil, jsonutil.ObjectOf("message", "ping")},
 	}
 	for _, tc := range cases {
 		t.Run(tc.id, func(t *testing.T) {
@@ -603,7 +603,7 @@ func TestDMBodyCarriesAuthorOnlyFromEnv(t *testing.T) {
 			peerSpark(t, fake, tc.env)
 			capture := newPeerCapture(t)
 			rc := capture.cmd(map[string]any{"peer_action": "dm", "target": "spark", "message": "ping", "json": true})
-			if got := fake.snapshot().chatBodies; rc != 0 || !pyjson.Equal(got, []any{tc.expected}) {
+			if got := fake.snapshot().chatBodies; rc != 0 || !anyutil.Equal(got, []any{tc.expected}) {
 				t.Fatalf("rc %d bodies %v", rc, got)
 			}
 		})
@@ -615,8 +615,8 @@ func TestRunBodyCarriesAuthorFromEnv(t *testing.T) {
 	peerSpark(t, fake, peerAuthor())
 	capture := newPeerCapture(t)
 	rc := capture.cmd(map[string]any{"peer_action": "run", "target": "spark", "message": "long task", "idempotency_key": "ticket-1", "json": true})
-	want := []any{pyjson.ObjectOf("input", "long task", "session_id", "bc_existing", "author", peerAuthor())}
-	if got := fake.snapshot().runs; rc != 0 || !pyjson.Equal(got, want) {
+	want := []any{jsonutil.ObjectOf("input", "long task", "session_id", "bc_existing", "author", peerAuthor())}
+	if got := fake.snapshot().runs; rc != 0 || !anyutil.Equal(got, want) {
 		t.Fatalf("rc %d runs %v", rc, got)
 	}
 }
@@ -640,11 +640,11 @@ func TestDMResolvesHiddenBotChatWithoutDuplicateCreate(t *testing.T) {
 	capture := newPeerCapture(t)
 	rc := capture.cmd(map[string]any{"peer_action": "dm", "target": "spark", "message": "ping", "json": true})
 	out, _ := capture.readouterr()
-	if reply := peerJSON(t, out).GetOr("reply", nil); rc != 0 || reply != "reply from the other machine" {
+	if reply := peerJSON(t, out).ValueOr("reply", nil); rc != 0 || reply != "reply from the other machine" {
 		t.Fatalf("rc %d reply %v", rc, reply)
 	}
 	got := fake.snapshot()
-	if len(got.sessions) != 0 || !pyjson.Equal(got.chats, []any{"ping"}) {
+	if len(got.sessions) != 0 || !anyutil.Equal(got.chats, []any{"ping"}) {
 		t.Fatalf("sessions %v chats %v", got.sessions, got.chats)
 	}
 }
@@ -667,13 +667,13 @@ func TestRunStartsAsyncTurnWithCanonicalSessionAndIdempotency(t *testing.T) {
 	capture := newPeerCapture(t)
 	rc := capture.cmd(map[string]any{"peer_action": "run", "target": "spark", "message": "long task", "idempotency_key": "ticket-123", "json": true})
 	out, _ := capture.readouterr()
-	want := pyjson.ObjectOf("peer", "spark", "profile", nil, "session_id", "bc_existing", "run_id", "run_1",
+	want := jsonutil.ObjectOf("peer", "spark", "profile", nil, "session_id", "bc_existing", "run_id", "run_1",
 		"status", "started", "idempotency_key", "ticket-123", "replayed", false)
-	if payload := peerJSON(t, out); rc != 0 || !pyjson.Equal(payload, want) {
+	if payload := peerJSON(t, out); rc != 0 || !anyutil.Equal(payload, want) {
 		t.Fatalf("rc %d payload %q", rc, out)
 	}
 	got := fake.snapshot()
-	if !pyjson.Equal(got.runs, []any{pyjson.ObjectOf("input", "long task", "session_id", "bc_existing")}) ||
+	if !anyutil.Equal(got.runs, []any{jsonutil.ObjectOf("input", "long task", "session_id", "bc_existing")}) ||
 		!slices.Equal(got.runIdempotencyKeys, []string{"ticket-123"}) {
 		t.Fatalf("runs %v keys %v", got.runs, got.runIdempotencyKeys)
 	}
@@ -686,7 +686,7 @@ func TestStatusReadsAsyncRunOutput(t *testing.T) {
 	rc := capture.cmd(map[string]any{"peer_action": "status", "target": "spark", "run_id": "run_1", "json": true})
 	out, _ := capture.readouterr()
 	payload := peerJSON(t, out)
-	if rc != 0 || payload.GetOr("status", nil) != "completed" || payload.GetOr("output", nil) != "async reply from the other machine" {
+	if rc != 0 || payload.ValueOr("status", nil) != "completed" || payload.ValueOr("output", nil) != "async reply from the other machine" {
 		t.Fatalf("rc %d payload %q", rc, out)
 	}
 }
@@ -698,7 +698,7 @@ func TestStopRequestsExactAsyncRun(t *testing.T) {
 	rc := capture.cmd(map[string]any{"peer_action": "stop", "target": "spark", "run_id": "run_1", "json": true})
 	out, _ := capture.readouterr()
 	payload := peerJSON(t, out)
-	if rc != 0 || payload.GetOr("run_id", nil) != "run_1" || payload.GetOr("status", nil) != "stopping" {
+	if rc != 0 || payload.ValueOr("run_id", nil) != "run_1" || payload.ValueOr("status", nil) != "stopping" {
 		t.Fatalf("rc %d payload %q", rc, out)
 	}
 }
@@ -710,7 +710,7 @@ func TestRequestStripsBearerKeyAcrossRedirectOrigin(t *testing.T) {
 		mu.Lock()
 		attackerAuth = append(attackerAuth, r.Header.Values("Authorization"))
 		mu.Unlock()
-		writePeerJSON(w, 200, pyjson.ObjectOf("object", "list", "data", []any{}))
+		writePeerJSON(w, 200, jsonutil.ObjectOf("object", "list", "data", []any{}))
 	}))
 	defer attacker.Close()
 	peer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -723,7 +723,7 @@ func TestRequestStripsBearerKeyAcrossRedirectOrigin(t *testing.T) {
 	}))
 	defer peer.Close()
 	result, err := peerRequest(context.Background(), peer.URL+"/api/sessions", "top-secret-peer-key", peerRequestOptions{})
-	if err != nil || !pyjson.Equal(result, pyjson.ObjectOf("object", "list", "data", []any{})) {
+	if err != nil || !anyutil.Equal(result, jsonutil.ObjectOf("object", "list", "data", []any{})) {
 		t.Fatalf("result %v %v", result, err)
 	}
 	mu.Lock()

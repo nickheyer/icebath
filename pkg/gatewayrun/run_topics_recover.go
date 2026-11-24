@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Thread ids of the Telegram General topic, the lobby of a topic mode DM
@@ -117,10 +117,10 @@ func (r *GatewayRunner) recoverTelegramLobbyThreadID(ctx context.Context, source
 
 // Text of a binding column, empty for a null or falsy value
 func bindingText(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Source with the Telegram DM topic recovery applied, the key every session scoped override derives from

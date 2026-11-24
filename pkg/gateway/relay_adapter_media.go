@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"maps"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var relayLevelWarning, relayLevelInfo = slog.LevelWarn, slog.LevelInfo
@@ -79,11 +79,11 @@ func (a *RelayAdapter) sendMedia(ctx context.Context, chatID, mediaKind, source 
 		}
 		return nil, nil, nil
 	}
-	if pyrepr.Truthy(result["ambiguous"]) {
-		pkgLog().Warn(fmt.Sprintf("relay send_media to %s unconfirmed (ack lost): %s", chatID, pyrepr.Str(result["error"])))
+	if anyutil.IsTrue(result["ambiguous"]) {
+		pkgLog().Warn(fmt.Sprintf("relay send_media to %s unconfirmed (ack lost): %s", chatID, anyutil.String(result["error"])))
 		return &SendResult{Success: true, RawResponse: map[string]any{"ambiguous": true, "error": result["error"]}}, nil, nil
 	}
-	if !pyrepr.Truthy(result["success"]) {
+	if !anyutil.IsTrue(result["success"]) {
 		return &SendResult{Success: false, Error: DeclineError(result), RawResponse: result}, nil, nil
 	}
 	return &SendResult{Success: true, MessageID: result["message_id"], RawResponse: result}, nil, nil

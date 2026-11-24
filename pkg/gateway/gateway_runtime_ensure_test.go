@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 type emptyProfileSecrets struct{}
@@ -86,7 +86,7 @@ func TestUnmanagedRuntimeDropsSessionConfigBypassFlags(t *testing.T) {
 		captured = cmd.Env
 		return &unmanagedChild{cmd: &exec.Cmd{Process: &os.Process{Pid: 123}}, done: false}, nil
 	})
-	child, err := SpawnUnmanagedGateway(context.Background(), t.TempDir(), pythread.Monotonic()+5, false, false)
+	child, err := SpawnUnmanagedGateway(context.Background(), t.TempDir(), timeutil.Monotonic()+5, false, false)
 	if err != nil || child.Pid() != 123 {
 		t.Fatal(child, err)
 	}

@@ -8,11 +8,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Operator wording of the out of loop watchdog exit reasons
@@ -28,18 +28,18 @@ func runtimeHealthLines(ctx context.Context) ([]string, error) {
 	if state == nil || state.Len() == 0 {
 		return nil, nil
 	}
-	gatewayState := state.GetOr("gateway_state", nil)
-	exitReason := state.GetOr("exit_reason", nil)
+	gatewayState := state.ValueOr("gateway_state", nil)
+	exitReason := state.ValueOr("exit_reason", nil)
 	lines := []string{}
-	if platforms, ok := state.GetOr("platforms", nil).(*pyjson.Object); ok {
-		for _, name := range platforms.Keys {
-			pdata, _ := platforms.Vals[name].(*pyjson.Object)
-			if pdata == nil || pdata.GetOr("state", nil) != "fatal" {
+	if platforms, ok := state.ValueOr("platforms", nil).(*jsonutil.Object); ok {
+		for _, name := range platforms.Keys() {
+			pdata, _ := platforms.Value(name).(*jsonutil.Object)
+			if pdata == nil || pdata.ValueOr("state", nil) != "fatal" {
 				continue
 			}
 			message := "unknown error"
-			if v := pdata.GetOr("error_message", nil); pyrepr.Truthy(v) {
-				message = pyrepr.Str(v)
+			if v := pdata.ValueOr("error_message", nil); anyutil.IsTrue(v) {
+				message = anyutil.String(v)
 			}
 			lines = append(lines, fmt.Sprintf("⚠ %s: %s", name, message))
 		}
@@ -59,13 +59,13 @@ func runtimeHealthLines(ctx context.Context) ([]string, error) {
 			}
 			if stateText != "draining" && ok {
 				lines = append(lines, fmt.Sprintf("⚠ Gateway heartbeat stale: housekeeping has not refreshed gateway_state.json for %d s "+
-					"(event loop or housekeeping wedged; pid %s alive) — restart the gateway", age, pyrepr.Str(state.GetOr("pid", nil))))
+					"(event loop or housekeeping wedged; pid %s alive) — restart the gateway", age, anyutil.String(state.ValueOr("pid", nil))))
 			}
 		}
 	}
 	reasonText := ""
-	if pyrepr.Truthy(exitReason) {
-		reasonText = pyrepr.Str(exitReason)
+	if anyutil.IsTrue(exitReason) {
+		reasonText = anyutil.String(exitReason)
 	}
 	switch {
 	case stateText == "startup_failed" && reasonText != "":
@@ -80,17 +80,17 @@ func runtimeHealthLines(ctx context.Context) ([]string, error) {
 		lines = append(lines, "⚠ Gateway exited degraded: "+described)
 	case stateText == "draining":
 		action := "shutdown"
-		if pyrepr.Truthy(state.GetOr("restart_requested", nil)) {
+		if anyutil.IsTrue(state.ValueOr("restart_requested", nil)) {
 			action = "restart"
 		}
-		count, err := gateway.ParseActiveAgents(state.GetOr("active_agents", nil))
+		count, err := gateway.ParseActiveAgents(state.ValueOr("active_agents", nil))
 		if err != nil {
 			return nil, err
 		}
-		lines = append(lines, fmt.Sprintf("⏳ Gateway draining for %s (%s active agent(s))", action, pyrepr.Str(count)))
-		if work, ok := state.GetOr("active_work", nil).([]any); ok && len(work) > 0 {
+		lines = append(lines, fmt.Sprintf("⏳ Gateway draining for %s (%s active agent(s))", action, anyutil.String(count)))
+		if work, ok := state.ValueOr("active_work", nil).([]any); ok && len(work) > 0 {
 			for _, u := range work {
-				if _, isDict := u.(*pyjson.Object); !isDict {
+				if _, isDict := u.(*jsonutil.Object); !isDict {
 					continue
 				}
 				text, err := DescribeActiveWorkUnit(ctx, u, "")
@@ -150,13 +150,13 @@ func printServedIngressURLs(w io.Writer, profile string) {
 	}
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Inbound callback URLs on the shared listener:")
-	names := append([]string{}, urls.Keys...)
+	names := append([]string{}, urls.Keys()...)
 	sort.Strings(names)
 	for _, name := range names {
 		perPlatform := map[string]string{}
-		if obj, ok := urls.Vals[name].(*pyjson.Object); ok {
-			for _, k := range obj.Keys {
-				perPlatform[k] = pyrepr.Str(obj.Vals[k])
+		if obj, ok := urls.Value(name).(*jsonutil.Object); ok {
+			for _, k := range obj.Keys() {
+				perPlatform[k] = anyutil.String(obj.Value(k))
 			}
 		}
 		indent := "  "
@@ -174,10 +174,10 @@ func printUnservedSharedIngress(w io.Writer, profile string) {
 		return
 	}
 	fmt.Fprintln(w)
-	names := append([]string{}, unserved.Keys...)
+	names := append([]string{}, unserved.Keys()...)
 	sort.Strings(names)
 	for _, name := range names {
-		fmt.Fprintf(w, "  ⚠ %s: %s\n", name, pyrepr.Str(unserved.Vals[name]))
+		fmt.Fprintf(w, "  ⚠ %s: %s\n", name, anyutil.String(unserved.Value(name)))
 	}
 	fmt.Fprintln(w, "  Enable it on the default profile (shared ingress serves every profile), or disable it here.")
 }
@@ -240,7 +240,7 @@ func gatewayList(ctx context.Context, w io.Writer) error {
 		}
 		line := fmt.Sprintf("  %s %-24s", marker, label)
 		if prof.GatewayRunning {
-			pid, ok, err := gateway.GetRunningPid(pypath.PathJoin(prof.Path, "gateway.pid"), false)
+			pid, ok, err := gateway.GetRunningPid(pathutil.Join(prof.Path, "gateway.pid"), false)
 			switch {
 			case err == nil && ok && pid != 0:
 				line += fmt.Sprintf(" — PID %d", pid)

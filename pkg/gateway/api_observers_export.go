@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Refuses with a runtime store error when generation is no longer the session's running claim
@@ -42,7 +42,7 @@ func CollectHistoryMediaPaths(ctx context.Context, history []any) (map[string]st
 }
 
 // Integer column of a session row, nil for NULL or a non numeric value
-func RowInt(row *pyjson.Object, key string) *int64 { return rowInt(row, key) }
+func RowInt(row *jsonutil.Object, key string) *int64 { return rowInt(row, key) }
 
 // Live session the authority holds for the id and whether it holds one
 func (a *SessionAuthority) Live(sessionID string) (*LiveSession, bool) { return a.live(sessionID) }

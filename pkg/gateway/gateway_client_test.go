@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Socket whose frames are all buffered already, staying open after them until closed
@@ -93,11 +93,11 @@ func backlogFrame(kind, text string) string {
 
 func frameText(t *testing.T, item any) string {
 	t.Helper()
-	obj, ok := item.(*pyjson.Object)
+	obj, ok := item.(*jsonutil.Object)
 	if !ok {
 		t.Fatalf("not a frame: %#v", item)
 	}
-	return obj.Vals["params"].(*pyjson.Object).Vals["payload"].(*pyjson.Object).Vals["text"].(string)
+	return obj.Value("params").(*jsonutil.Object).Value("payload").(*jsonutil.Object).Value("text").(string)
 }
 
 func TestBacklogLargerThanTheClientQueueReachesTheConsumerIntact(t *testing.T) {
@@ -253,7 +253,7 @@ func TestRPCRefusalsAndTransportFailures(t *testing.T) {
 	if _, err := client.RPC(context.Background(), "x", nil); err == nil || err.Error() != GatewayNotSent {
 		t.Fatal(err)
 	}
-	if got := RPCError(pyjson.ObjectOf("message", "bad reason!", "code", true)); got.Msg != "request_failed" || got.Code != nil {
+	if got := RPCError(jsonutil.ObjectOf("message", "bad reason!", "code", true)); got.Msg != "request_failed" || got.Code != nil {
 		t.Fatal(got)
 	}
 	if got := RPCError("nope"); got.Msg != "request_failed" || len(got.Data) != 0 {

@@ -1,13 +1,13 @@
 package app
 
 import (
+	"errors"
 	"fmt"
-	"math/big"
 	"regexp"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // One add_argument call of a console parser, a positional when flags is empty
@@ -218,14 +218,14 @@ func (p *consoleParser) matchPartial(actions []*consoleArg, pattern string) []in
 	return nil
 }
 
-// Converted value of one argument string, an int action parsing it the way int() does
+// Converted value of one argument string, an int action reading a base ten whole number as an int64 clamped to its range
 func (p *consoleParser) value(action *consoleArg, raw string) (any, error) {
 	if !action.isInt {
 		return raw, nil
 	}
-	n, ok := pyint.ParseBase(raw, 10)
-	if !ok {
-		return nil, consoleArgError(action, "invalid int value: "+pyrepr.StrRepr(raw))
+	n, err := textutil.ParseInt(raw)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return nil, consoleArgError(action, "invalid int value: "+strconv.Quote(raw))
 	}
 	return n, nil
 }
@@ -318,7 +318,7 @@ func (p *consoleParser) parseKnown(args []string) (map[string]any, []string, err
 				}
 				if count == 0 && optionString[1] != '-' && explicit != "" {
 					if sep != "" || explicit[0] == '-' {
-						return 0, consoleArgError(action, "ignored explicit argument "+pyrepr.StrRepr(explicit))
+						return 0, consoleArgError(action, "ignored explicit argument "+strconv.Quote(explicit))
 					}
 					taken = append(taken, pending{action: action})
 					optionString = "-" + explicit[:1]
@@ -344,7 +344,7 @@ func (p *consoleParser) parseKnown(args []string) (map[string]any, []string, err
 					taken = append(taken, pending{action: action, args: []string{explicit}})
 					break
 				}
-				return 0, consoleArgError(action, "ignored explicit argument "+pyrepr.StrRepr(explicit))
+				return 0, consoleArgError(action, "ignored explicit argument "+strconv.Quote(explicit))
 			}
 			begin := start + 1
 			count, err := p.matchArgument(action, pattern[begin:])
@@ -441,18 +441,16 @@ func (p *consoleParser) parseKnown(args []string) (map[string]any, []string, err
 	return ns, extras, nil
 }
 
-// Int value of a parsed int argument, its default when unset
-func consoleInt(ns map[string]any, dest string) *big.Int {
+// Int value of a parsed int argument, its default when unset, zero when neither is an integer
+func consoleInt(ns map[string]any, dest string) int64 {
 	switch v := ns[dest].(type) {
-	case *big.Int:
+	case int64:
 		return v
 	case int:
-		return big.NewInt(int64(v))
+		return int64(v)
 	}
-	return nil
+	return 0
 }
 
 // Whether a parsed int lies outside the inclusive bounds
-func consoleIntOutside(n *big.Int, lo, hi int64) bool {
-	return n.Cmp(big.NewInt(lo)) < 0 || n.Cmp(big.NewInt(hi)) > 0
-}
+func consoleIntOutside(n, lo, hi int64) bool { return n < lo || n > hi }

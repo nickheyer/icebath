@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Runs git with a fixed identity in dir and fails the test on a non zero exit
@@ -90,7 +90,7 @@ func TestWorktreeRecordRepoHookRecordsIntoTheProcessHome(t *testing.T) {
 		t.Fatal(err)
 	}
 	tools.WorktreeRecordRepo(context.Background(), repo)
-	want, err := pypath.Realpath(repo, pypath.Lax)
+	want, err := pathutil.Resolve(repo)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -113,7 +113,7 @@ func TestWorktreeCronStoreHooksReadTheActiveHomesJobs(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		t.Fatalf("decoded %T", data)
 	}
@@ -145,11 +145,11 @@ func TestWorktreeCronStoreHooksReadTheActiveHomesJobs(t *testing.T) {
 		{`{"state": null}`, true},
 	}
 	for _, c := range cases {
-		v, err := pyjson.Loads(c.body)
+		v, err := jsonutil.Decode(c.body)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if got := tools.WorktreeCronStore.JobActive(v.(*pyjson.Object)); got != c.active {
+		if got := tools.WorktreeCronStore.JobActive(v.(*jsonutil.Object)); got != c.active {
 			t.Errorf("%s active %v, want %v", c.body, got, c.active)
 		}
 	}

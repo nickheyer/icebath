@@ -3,8 +3,8 @@ package provider
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // BillingBlock is the structured billing wall descriptor every surface renders
@@ -58,7 +58,7 @@ func resolveProviderLinkErr(slug, baseURL string) (string, string, error) {
 	}
 	for _, p := range billingProviders {
 		for _, host := range p.hosts {
-			matches, err := pyurl.BaseURLHostMatches(baseURL, host)
+			matches, err := urlutil.BaseHostMatches(baseURL, host)
 			if err != nil {
 				return "", "", err
 			}
@@ -67,7 +67,7 @@ func resolveProviderLinkErr(slug, baseURL string) (string, string, error) {
 			}
 		}
 	}
-	label := pystr.Title(strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(slug, "_", " "), "-", " ")))
+	label := textutil.Title(strings.TrimSpace(strings.ReplaceAll(strings.ReplaceAll(slug, "_", " "), "-", " ")))
 	if label == "" {
 		label = "your provider"
 	}

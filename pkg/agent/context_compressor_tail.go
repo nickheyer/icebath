@@ -9,6 +9,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -95,8 +96,8 @@ func skillViewNamesByCallID(messages []map[string]any) map[string]string {
 			if s, ok := skill.(string); ok && s != "" {
 				id := tcGet(tc, "id", "")
 				key := ""
-				if pyrepr.Truthy(id) {
-					key = pyrepr.Str(id)
+				if anyutil.IsTrue(id) {
+					key = anyutil.String(id)
 				}
 				names[key] = s
 			}
@@ -141,8 +142,8 @@ func DemoteStaleTailTools(messages []map[string]any, tailStart int, sessionID st
 			skills = skillViewNamesByCallID(messages)
 		}
 		callID := ""
-		if pyrepr.Truthy(msg["tool_call_id"]) {
-			callID = pyrepr.Str(msg["tool_call_id"])
+		if anyutil.IsTrue(msg["tool_call_id"]) {
+			callID = anyutil.String(msg["tool_call_id"])
 		}
 		if skill := skills[callID]; skill != "" && resultFailureSuffix(content) == "" {
 			line += " " + skillPrunedMarker(skill)

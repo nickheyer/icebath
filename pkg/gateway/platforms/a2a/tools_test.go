@@ -12,12 +12,12 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Writes cfg as config.yaml of a fresh home and swaps both HTTP seams for one test, restoring them afterwards
-func swapToolSeams(t *testing.T, cfg map[string]any, get func(string) (any, error), post func(string, *pyjson.Object) (any, error)) {
+func swapToolSeams(t *testing.T, cfg map[string]any, get func(string) (any, error), post func(string, *jsonutil.Object) (any, error)) {
 	t.Helper()
 	h := t.TempDir()
 	t.Setenv("ICEBATH_HOME", h)
@@ -32,7 +32,7 @@ func swapToolSeams(t *testing.T, cfg map[string]any, get func(string) (any, erro
 		httpGetJSON = func(_ context.Context, url string, _ map[string]string, _ int) (any, error) { return get(url) }
 	}
 	if post != nil {
-		httpPostJSON = func(_ context.Context, url string, body *pyjson.Object, _ map[string]string, _ int) (any, error) {
+		httpPostJSON = func(_ context.Context, url string, body *jsonutil.Object, _ map[string]string, _ int) (any, error) {
 			return post(url, body)
 		}
 	}
@@ -68,7 +68,7 @@ func TestA2AHistoryToolRecallsConversation(t *testing.T) {
 
 func TestDiscoverSummarizesV1Card(t *testing.T) {
 	card := BuildAgentCard(context.Background(), AgentCardOptions{Name: "researcher", URL: "http://localhost:9999/", Description: "finds things",
-		Skills: []any{pyjson.ObjectOf("id", "s", "name", "search", "description", "web search")}})
+		Skills: []any{jsonutil.ObjectOf("id", "s", "name", "search", "description", "web search")}})
 	swapToolSeams(t, nil, func(string) (any, error) { return card, nil }, nil)
 	out := A2ADiscover(context.Background(), map[string]any{"url": "http://localhost:9999"})
 	if !strings.Contains(out, "researcher") || !strings.Contains(out, "search") || !strings.Contains(out, "Protocol: JSONRPC v1.0") {
@@ -77,26 +77,26 @@ func TestDiscoverSummarizesV1Card(t *testing.T) {
 }
 
 func TestCallSendsV1Message(t *testing.T) {
-	var captured *pyjson.Object
+	var captured *jsonutil.Object
 	swapToolSeams(t, map[string]any{"a2a_agents": map[string]any{"r": map[string]any{"url": "http://localhost:9999"}}}, nilCard,
-		func(_ string, body *pyjson.Object) (any, error) {
+		func(_ string, body *jsonutil.Object) (any, error) {
 			captured = body
 			id, _ := body.Get("id")
-			ctxID, _ := path(t, body, "params", "message").(*pyjson.Object).Get("contextId")
+			ctxID, _ := path(t, body, "params", "message").(*jsonutil.Object).Get("contextId")
 			return JsonrpcResult(id, BuildTask("t", ctxID.(string), StateCompleted, "here is the answer")), nil
 		})
 	out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "my key sk-abcdefghij1234567890ABCD please"})
 	if !strings.Contains(out, "here is the answer") {
 		t.Fatalf("out %q", out)
 	}
-	params := path(t, captured, "params").(*pyjson.Object)
+	params := path(t, captured, "params").(*jsonutil.Object)
 	if _, ok := params.Get("contextId"); ok {
 		t.Fatal("contextId must not be top level")
 	}
 	if path(t, params, "message", "contextId") == "" || path(t, params, "message", "role") != "ROLE_USER" {
 		t.Fatalf("message %v", path(t, params, "message"))
 	}
-	part := path(t, params, "message", "parts", 0).(*pyjson.Object)
+	part := path(t, params, "message", "parts", 0).(*jsonutil.Object)
 	if _, ok := part.Get("kind"); ok || path(t, part, "mediaType") != "text/plain" {
 		t.Fatalf("part %v", part)
 	}
@@ -106,7 +106,7 @@ func TestCallSendsV1Message(t *testing.T) {
 }
 
 func TestCallReportsInputRequired(t *testing.T) {
-	swapToolSeams(t, peers("r"), nilCard, func(_ string, body *pyjson.Object) (any, error) {
+	swapToolSeams(t, peers("r"), nilCard, func(_ string, body *jsonutil.Object) (any, error) {
 		id, _ := body.Get("id")
 		return JsonrpcResult(id, BuildTask("t", "ctx-q", StateInputRequired, "Which repo?")), nil
 	})
@@ -151,7 +151,7 @@ func TestRegisterThenDispatchViaRegistry(t *testing.T) {
 
 func TestA2ACallAcceptsAgentNameAlias(t *testing.T) {
 	sent := false
-	swapToolSeams(t, peers("peer"), nilCard, func(_ string, body *pyjson.Object) (any, error) {
+	swapToolSeams(t, peers("peer"), nilCard, func(_ string, body *jsonutil.Object) (any, error) {
 		sent = true
 		id, _ := body.Get("id")
 		return JsonrpcResult(id, BuildTask("t", "c1", StateCompleted, "PONG")), nil
@@ -173,11 +173,11 @@ func devCard(t *testing.T) func(string) (any, error) {
 
 func TestRPCBodyEchoesTenantFromAgentCard(t *testing.T) {
 	var postedURL string
-	var posted *pyjson.Object
-	swapToolSeams(t, nil, devCard(t), func(url string, body *pyjson.Object) (any, error) {
+	var posted *jsonutil.Object
+	swapToolSeams(t, nil, devCard(t), func(url string, body *jsonutil.Object) (any, error) {
 		postedURL, posted = url, body
 		id, _ := body.Get("id")
-		return pyjson.ObjectOf("jsonrpc", "2.0", "id", id, "result", BuildTask("task-1", "ctx-1", StateCompleted, "ok")), nil
+		return jsonutil.ObjectOf("jsonrpc", "2.0", "id", id, "result", BuildTask("task-1", "ctx-1", StateCompleted, "ok")), nil
 	})
 	reply, _, _, err := sendTask(context.Background(), "dev", peerSpec{URL: "http://peer.example", Auth: map[string]any{}, Timeout: 5}, "hello", "ctx-1")
 	if err != nil || reply != "ok" || postedURL != "http://peer.example/dev/" || path(t, posted, "params", "tenant") != "dev-team" {
@@ -202,12 +202,12 @@ func TestDiscoveryFallsBackToLegacyAgentJSON(t *testing.T) {
 }
 
 func TestClientSendsV1MethodAndUnwrapsResponse(t *testing.T) {
-	var posted *pyjson.Object
-	swapToolSeams(t, nil, devCard(t), func(_ string, body *pyjson.Object) (any, error) {
+	var posted *jsonutil.Object
+	swapToolSeams(t, nil, devCard(t), func(_ string, body *jsonutil.Object) (any, error) {
 		posted = body
 		id, _ := body.Get("id")
-		return pyjson.ObjectOf("jsonrpc", "2.0", "id", id, "result",
-			pyjson.ObjectOf("task", BuildTask("task-1", "ctx-1", StateCompleted, "ok"))), nil
+		return jsonutil.ObjectOf("jsonrpc", "2.0", "id", id, "result",
+			jsonutil.ObjectOf("task", BuildTask("task-1", "ctx-1", StateCompleted, "ok"))), nil
 	})
 	reply, _, state, err := sendTask(context.Background(), "dev", peerSpec{URL: "http://peer.example", Auth: map[string]any{}, Timeout: 5}, "hello", "ctx-1")
 	if err != nil || reply != "ok" || state != StateCompleted || path(t, posted, "method") != "SendMessage" || path(t, posted, "params", "tenant") != "dev-team" {
@@ -218,18 +218,18 @@ func TestClientSendsV1MethodAndUnwrapsResponse(t *testing.T) {
 func TestCallMapsHTTPAndPeerErrors(t *testing.T) {
 	for code, want := range map[int]string{401: "Error: peer 'r' rejected auth (HTTP 401). Check the configured token.",
 		429: "Error: peer 'r' rate limited us (HTTP 429). Retry later.", 500: "Error: call to 'r' failed — HTTP 500."} {
-		swapToolSeams(t, peers("r"), nilCard, func(string, *pyjson.Object) (any, error) { return nil, &HTTPError{Code: code, Reason: "x"} })
+		swapToolSeams(t, peers("r"), nilCard, func(string, *jsonutil.Object) (any, error) { return nil, &HTTPError{Code: code, Reason: "x"} })
 		if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); out != want {
 			t.Fatalf("code %d out %q", code, out)
 		}
 	}
-	swapToolSeams(t, peers("r"), nilCard, func(string, *pyjson.Object) (any, error) {
+	swapToolSeams(t, peers("r"), nilCard, func(string, *jsonutil.Object) (any, error) {
 		return mustLoads(t, `{"error": {"code": -1, "message": "nope"}}`), nil
 	})
 	if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); out != "Peer 'r' returned an error: nope" {
 		t.Fatalf("out %q", out)
 	}
-	swapToolSeams(t, peers("r"), nilCard, func(string, *pyjson.Object) (any, error) { return nil, errors.New("boom") })
+	swapToolSeams(t, peers("r"), nilCard, func(string, *jsonutil.Object) (any, error) { return nil, errors.New("boom") })
 	if out := A2ACall(context.Background(), map[string]any{"agent": "r", "message": "m"}); out != "Error: call to 'r' failed — boom." {
 		t.Fatalf("out %q", out)
 	}

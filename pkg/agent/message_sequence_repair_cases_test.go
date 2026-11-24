@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Repairs the dict rows in place like AIAgent._repair_message_sequence and returns the repair count
@@ -887,7 +887,7 @@ func TestRepairDecodeOfDurableSentinelRowDoesNotReappend(t *testing.T) {
 	t.Setenv("OPENROUTER_API_KEY", "test-key")
 	parts := []any{map[string]any{"type": "text", "text": "look"},
 		map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64," + strings.Repeat("A", 2000)}}}
-	body, err := pyjson.Dumps(parts)
+	body, err := jsonutil.Encode(parts)
 	if err != nil {
 		t.Fatal(err)
 	}

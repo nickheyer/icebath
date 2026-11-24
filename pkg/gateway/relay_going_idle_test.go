@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var relayIdleDescriptor = map[string]any{"contract_version": 1, "platform": "discord", "label": "Discord", "max_message_length": 2000,
@@ -79,7 +80,7 @@ func newRelayIdleServer(t *testing.T, configure func(s *relayIdleServer)) *relay
 					}
 				case "inbound_ack":
 					s.mu.Lock()
-					s.inboundAcks = append(s.inboundAcks, relayWireStr(frame["bufferId"]))
+					s.inboundAcks = append(s.inboundAcks, anyutil.String(frame["bufferId"]))
 					s.mu.Unlock()
 				}
 			}

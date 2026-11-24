@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // MCPActions are the manage_connections actions, each over MCP servers of the bundled catalog or the config
@@ -64,7 +64,7 @@ func connStrOr(v any) string {
 	if !connTruthy(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Python truthiness of a decoded JSON value

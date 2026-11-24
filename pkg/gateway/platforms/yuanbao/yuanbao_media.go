@@ -20,13 +20,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -56,7 +56,7 @@ var extToMIME = map[string]string{
 var imageExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".gif": true, ".webp": true, ".bmp": true, ".heic": true, ".tiff": true, ".ico": true}
 
 func ext(filename string) string {
-	_, e := pypath.Splitext(filename)
+	_, e := pathutil.SplitExt(filename)
 	return strings.ToLower(e)
 }
 
@@ -169,7 +169,7 @@ func requestError(err error) error {
 	if errors.As(err, &uerr) && strings.HasPrefix(uerr.Err.Error(), "Blocked redirect to private/internal address: ") {
 		return valueError(uerr.Err.Error())
 	}
-	return fmt.Errorf("%s", pyhttpx.ErrorText(err))
+	return fmt.Errorf("%s", err.Error())
 }
 
 // DownloadURL fetches a public URL behind the SSRF guard within the size cap and returns the bytes and content type
@@ -183,12 +183,12 @@ func DownloadURL(ctx context.Context, env *tools.Env, rawURL string, maxSizeMB i
 	if err != nil {
 		return nil, "", err
 	}
-	head, err := pyhttpx.Do(client, headReq, 30*time.Second)
+	head, err := httputil.Do(client, headReq, httputil.EachPhase(30*time.Second))
 	if err != nil {
 		return nil, "", requestError(err)
 	}
-	lengthValue := any(pyhttpx.HeaderGet(head.Header, "content-length", ""))
-	if !pyrepr.Truthy(lengthValue) {
+	lengthValue := any(head.Header.Get("content-length"))
+	if !anyutil.IsTrue(lengthValue) {
 		lengthValue = int64(0)
 	}
 	contentLength, err := pyint.Of(lengthValue)
@@ -203,15 +203,15 @@ func DownloadURL(ctx context.Context, env *tools.Env, rawURL string, maxSizeMB i
 	if err != nil {
 		return nil, "", err
 	}
-	resp, err := pyhttpx.Stream(client, getReq, 30*time.Second)
+	resp, err := httputil.Stream(client, getReq, httputil.EachPhase(30*time.Second))
 	if err != nil {
 		return nil, "", requestError(err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, "", fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
+		return nil, "", &httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.URL, Location: resp.Header.Get("Location")}
 	}
-	contentType := strings.TrimSpace(strings.SplitN(pyhttpx.HeaderGet(resp.Header, "content-type", ""), ";", 2)[0])
+	contentType := strings.TrimSpace(strings.SplitN(resp.Header.Get("content-type"), ";", 2)[0])
 	var out []byte
 	buf := make([]byte, 65536)
 	for {
@@ -282,11 +282,11 @@ func CosSign(method, signPath string, params, headers [][2]string, secretID, sec
 // Swappable clock and HTTP client for the COS calls
 var (
 	unixNow     = func() int64 { return time.Now().Unix() }
-	mediaClient = func() *http.Client { return pyhttpx.PlainClient(false) }
+	mediaClient = func() *http.Client { return httputil.Client(false) }
 )
 
 // GetCOSCredentials calls genUploadInfo for the temporary COS keys and upload target
-func GetCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename string, fileID *string, botID, routeEnv string) (*pyjson.Object, error) {
+func GetCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename string, fileID *string, botID, routeEnv string) (*jsonutil.Object, error) {
 	xid := botID
 	if xid == "" {
 		xid = appKey
@@ -301,12 +301,12 @@ func GetCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename s
 		}
 		id = generated
 	}
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("fileName", filename)
 	body.Set("fileId", id)
 	body.Set("docFrom", "localDoc")
 	body.Set("docOpenId", "")
-	payload, err := pyjson.Dumps(body, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+	payload, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
@@ -322,39 +322,39 @@ func GetCOSCredentials(ctx context.Context, appKey, apiDomain, token, filename s
 	if routeEnv != "" {
 		req.Header.Set("X-Route-Env", routeEnv)
 	}
-	resp, err := pyhttpx.Do(mediaClient(), req, 15*time.Second)
+	resp, err := httputil.Do(mediaClient(), req, httputil.EachPhase(15*time.Second))
 	if err != nil {
 		return nil, requestError(err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
+		return nil, &httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.URL, Location: resp.Header.Get("Location")}
 	}
-	decoded, err := pyjson.LoadsBytes(resp.Content)
+	decoded, err := jsonutil.Decode(resp.Content)
 	if err != nil {
 		return nil, err
 	}
-	result, ok := decoded.(*pyjson.Object)
+	result, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("the upload info response must be a JSON object, got %s", errchain.Kind(decoded))
 	}
-	if code, present := result.Get("code"); present && code != nil && !pyjson.Equal(code, int64(0)) {
+	if code, present := result.Get("code"); present && code != nil && !anyutil.Equal(code, int64(0)) {
 		msg, ok := result.Get("msg")
 		if !ok {
 			msg = ""
 		}
-		return nil, &RuntimeError{fmt.Sprintf("genUploadInfo 失败: code=%s, msg=%s", pyrepr.Str(code), pyrepr.Str(msg))}
+		return nil, &RuntimeError{fmt.Sprintf("genUploadInfo 失败: code=%s, msg=%s", anyutil.String(code), anyutil.String(msg))}
 	}
 	dataValue, _ := result.Get("data")
-	if !pyrepr.Truthy(dataValue) {
+	if !anyutil.IsTrue(dataValue) {
 		dataValue = result
 	}
-	data, ok := dataValue.(*pyjson.Object)
+	data, ok := dataValue.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("the upload info data must be a mapping, got %s", errchain.Kind(dataValue))
 	}
 	var missing []any
 	for _, f := range []string{"bucketName", "location"} {
-		if v, _ := data.Get(f); !pyrepr.Truthy(v) {
+		if v, _ := data.Get(f); !anyutil.IsTrue(v) {
 			missing = append(missing, f)
 		}
 	}
@@ -369,26 +369,26 @@ type RuntimeError struct{ Msg string }
 
 func (e *RuntimeError) Error() string { return e.Msg }
 
-func credGet(c *pyjson.Object, key string) any {
+func credGet(c *jsonutil.Object, key string) any {
 	if v, ok := c.Get(key); ok {
 		return v
 	}
 	return ""
 }
 
-func credStr(c *pyjson.Object, key string) string {
+func credStr(c *jsonutil.Object, key string) string {
 	v := credGet(c, key)
 	if s, ok := v.(string); ok {
 		return s
 	}
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // UploadToCOS PUTs the bytes to COS signed with the temporary credentials and returns url, uuid, size and image size
-func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType string, credentials *pyjson.Object, bucket, region string) (*pyjson.Object, error) {
+func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType string, credentials *jsonutil.Object, bucket, region string) (*jsonutil.Object, error) {
 	secretID := credStr(credentials, "encryptTmpSecretId")
 	secretKey := credStr(credentials, "encryptTmpSecretKey")
 	sessionToken := credStr(credentials, "encryptToken")
@@ -397,7 +397,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 	expiredTime, _ := credentials.Get("expiredTime")
 	if secretID == "" || secretKey == "" || cosKey == "" {
 		return nil, &RuntimeError{fmt.Sprintf("COS credentials 不完整: secretId=%s, secretKey=%s, location=%s",
-			pyrepr.Str(secretID != ""), pyrepr.Str(secretKey != ""), pyrepr.Str(cosKey != ""))}
+			anyutil.String(secretID != ""), anyutil.String(secretKey != ""), anyutil.String(cosKey != ""))}
 	}
 	cosHost := bucket + ".cos.accelerate.myqcloud.com"
 	encodedKey := strings.TrimLeft(pyurl.Quote(cosKey, "/"), "/")
@@ -410,7 +410,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 	}
 	now := big.NewInt(unixNow())
 	start := now
-	if pyrepr.Truthy(startTime) {
+	if anyutil.IsTrue(startTime) {
 		n, ok := pyint.Instance(startTime)
 		if !ok {
 			return nil, fmt.Errorf("the upload start_time must be a whole number, got %s", errchain.Kind(startTime))
@@ -418,7 +418,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 		start = n
 	}
 	expire := big.NewInt(3600)
-	if pyrepr.Truthy(expiredTime) {
+	if anyutil.IsTrue(expiredTime) {
 		n, ok := pyint.Instance(expiredTime)
 		if !ok {
 			return nil, fmt.Errorf("the upload expired_time must be a whole number, got %s", errchain.Kind(expiredTime))
@@ -438,18 +438,18 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("x-cos-security-token", sessionToken)
-	resp, err := pyhttpx.Do(mediaClient(), req, 120*time.Second)
+	resp, err := httputil.Do(mediaClient(), req, httputil.EachPhase(120*time.Second))
 	if err != nil {
 		return nil, requestError(err)
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
+		return nil, &httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.URL, Location: resp.Header.Get("Location")}
 	}
 	resultURL := credGet(credentials, "resourceUrl")
-	if !pyrepr.Truthy(resultURL) {
+	if !anyutil.IsTrue(resultURL) {
 		resultURL = cosURL
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("url", resultURL)
 	result.Set("uuid", MD5Hex(fileBytes))
 	result.Set("size", int64(len(fileBytes)))
@@ -459,7 +459,7 @@ func UploadToCOS(ctx context.Context, fileBytes []byte, filename, contentType st
 			result.Set("height", size.Height)
 		}
 	}
-	pkgLog().Info(fmt.Sprintf("COS 上传成功: url=%s size=%d", pyrepr.Str(resultURL), len(fileBytes)))
+	pkgLog().Info(fmt.Sprintf("COS 上传成功: url=%s size=%d", anyutil.String(resultURL), len(fileBytes)))
 	return result, nil
 }
 
@@ -468,7 +468,7 @@ func basenameFromURL(rawURL string) string {
 	if err != nil {
 		return ""
 	}
-	return pypath.Basename(u.Path)
+	return pathutil.Name(u.Path)
 }
 
 // BuildImageMsgBody builds a TIMImageElem body, uuid falling back to the filename, the URL basename, then image
@@ -484,17 +484,17 @@ func BuildImageMsgBody(rawURL, uuid, filename string, size, width, height int64,
 	if mimeType != "" {
 		format = GetImageFormat(mimeType)
 	}
-	info := pyjson.NewObject()
+	info := jsonutil.NewObject()
 	info.Set("type", int64(1))
 	info.Set("size", size)
 	info.Set("width", width)
 	info.Set("height", height)
 	info.Set("url", rawURL)
-	content := pyjson.NewObject()
+	content := jsonutil.NewObject()
 	content.Set("uuid", id)
 	content.Set("image_format", format)
 	content.Set("image_info_array", []any{info})
-	el := pyjson.NewObject()
+	el := jsonutil.NewObject()
 	el.Set("msg_type", "TIMImageElem")
 	el.Set("msg_content", content)
 	return []any{el}
@@ -505,12 +505,12 @@ func BuildFileMsgBody(rawURL, filename, uuid string, size int64) []any {
 	if uuid == "" {
 		uuid = filename
 	}
-	content := pyjson.NewObject()
+	content := jsonutil.NewObject()
 	content.Set("uuid", uuid)
 	content.Set("file_name", filename)
 	content.Set("file_size", size)
 	content.Set("url", rawURL)
-	el := pyjson.NewObject()
+	el := jsonutil.NewObject()
 	el.Set("msg_type", "TIMFileElem")
 	el.Set("msg_content", content)
 	return []any{el}

@@ -8,7 +8,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Writes a config.yaml body under dir
@@ -27,8 +28,8 @@ func TestRoomLinkEndpointReadsSupportedConfig(t *testing.T) {
 	writeRoomConfig(t, dir, "gateway:\n  room_link_url: https://configured.example.test/icebath\n")
 	t.Setenv("ICEBATH_HOME", dir)
 	endpoint, err := localRoomLinkEndpoint(context.Background(), nil)
-	want := pyjson.ObjectOf("available", true, "url", "https://configured.example.test/icebath", "transport_security", "tls")
-	if err != nil || !pyjson.Equal(endpoint, want) {
+	want := jsonutil.ObjectOf("available", true, "url", "https://configured.example.test/icebath", "transport_security", "tls")
+	if err != nil || !anyutil.Equal(endpoint, want) {
 		t.Fatalf("endpoint %v %v", endpoint, err)
 	}
 }
@@ -40,8 +41,8 @@ func TestNamedProfileInheritsGatewayRoomLinkEndpoint(t *testing.T) {
 	writeRoomConfig(t, profile, "gateway: {}\n")
 	t.Setenv("ICEBATH_HOME", root)
 	endpoint, err := localRoomLinkEndpoint(home.WithOverride(context.Background(), profile), nil)
-	want := pyjson.ObjectOf("available", true, "url", "https://gateway.example.test/icebath", "transport_security", "tls")
-	if err != nil || !pyjson.Equal(endpoint, want) {
+	want := jsonutil.ObjectOf("available", true, "url", "https://gateway.example.test/icebath", "transport_security", "tls")
+	if err != nil || !anyutil.Equal(endpoint, want) {
 		t.Fatalf("endpoint %v %v", endpoint, err)
 	}
 }
@@ -82,7 +83,7 @@ func TestLocalCatalogAdvertisesAPersistentProcess(t *testing.T) {
 	}
 	persistent, _ := catalog.Get("persistent_process")
 	links, _ := catalog.Get("link_modes")
-	if persistent != true || !pyjson.Equal(links, []any{"direct"}) {
+	if persistent != true || !anyutil.Equal(links, []any{"direct"}) {
 		t.Fatalf("persistent %v links %v", persistent, links)
 	}
 }
@@ -110,12 +111,12 @@ func TestSelfAdvertisedEndpointIsExplicitAndValidated(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw, _ := catalog.Get("endpoint")
-		endpoint := raw.(*pyjson.Object)
+		endpoint := raw.(*jsonutil.Object)
 		if available, _ := endpoint.Get("available"); available != tc.available {
 			t.Fatalf("%v available %v", tc.configured, available)
 		}
 		if tc.reason != "" {
-			if !pyjson.Equal(endpoint, pyjson.ObjectOf("available", false, "reason", tc.reason)) {
+			if !anyutil.Equal(endpoint, jsonutil.ObjectOf("available", false, "reason", tc.reason)) {
 				t.Fatalf("%v endpoint %v", tc.configured, endpoint)
 			}
 		} else if security, _ := endpoint.Get("transport_security"); security != tc.security {

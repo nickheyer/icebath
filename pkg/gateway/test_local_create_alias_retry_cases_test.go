@@ -9,9 +9,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const aliasRetryConfig = "platform_toolsets: {cli: []}\n" +
@@ -168,11 +168,11 @@ func TestExactAliasRetryAfterAnEndpointRotationReturnsTheOriginal(t *testing.T) 
 						if err != nil {
 							t.Fatal(err)
 						}
-						decoded, err := pyjson.Loads(text.(string))
+						decoded, err := jsonutil.Decode(text.(string))
 						if err != nil {
 							t.Fatal(err)
 						}
-						configs[i] = pyjson.Plain(decoded)
+						configs[i] = jsonutil.Plain(decoded)
 					}
 					if reflect.DeepEqual(configs[0], configs[1]) {
 						t.Fatalf("both attempts froze %v", configs[0])

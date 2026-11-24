@@ -4,23 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pytoml"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	tomlutil "github.com/nickheyer/icebath/pkg/utils/toml"
 )
 
 // Marker comments wrapping the managed section of codex config.toml so a rerun replaces only its own text
@@ -86,7 +87,7 @@ func (r *CodexMigrationReport) Summary() string {
 		lines = append(lines, "Codex plugin discovery skipped: "+r.PluginQueryError)
 	}
 	if r.WrotePermissionsDefault != "" {
-		lines = append(lines, "Wrote default_permissions = "+pyrepr.Repr(r.WrotePermissionsDefault))
+		lines = append(lines, "Wrote default_permissions = "+anyutil.Quote(r.WrotePermissionsDefault))
 	}
 	if len(r.PreservedUserServers) > 0 {
 		lines = append(lines, fmt.Sprintf("Kept %d user-owned MCP server(s) already in config.toml (Icebath projection skipped): %s",
@@ -114,11 +115,11 @@ var (
 // Keys of a config dict in iteration order, sorted for an unordered map, false for a non dict
 func codexDictKeys(v any) ([]string, bool) {
 	switch o := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if o == nil {
 			return nil, false
 		}
-		return slices.Clone(o.Keys), true
+		return slices.Clone(o.Keys()), true
 	case map[string]any:
 		keys := make([]string, 0, len(o))
 		for k := range o {
@@ -131,14 +132,14 @@ func codexDictKeys(v any) ([]string, bool) {
 }
 
 // String keys and values of an env or header table, the AttributeError of a non dict escapes
-func codexMigrationStrMap(d any) (*pyjson.Object, error) {
+func codexMigrationStrMap(d any) (*jsonutil.Object, error) {
 	keys, ok := codexDictKeys(d)
 	if !ok {
 		return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(d))
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, k := range keys {
-		out.Set(k, pyrepr.Str(cxGet(d, k)))
+		out.Set(k, anyutil.String(cxGet(d, k)))
 	}
 	return out, nil
 }
@@ -149,7 +150,7 @@ func codexMigrationStrList(v any) ([]any, error) {
 	switch t := v.(type) {
 	case []any:
 		for _, a := range t {
-			out = append(out, pyrepr.Str(a))
+			out = append(out, anyutil.String(a))
 		}
 	case []string:
 		for _, a := range t {
@@ -172,19 +173,19 @@ func codexMigrationStrList(v any) ([]any, error) {
 }
 
 // Codex inline table entry and skipped key notes for one Icebath MCP server, nil entry when unusable
-func codexTranslateOneServer(name string, cfg any) (*pyjson.Object, []string, error) {
+func codexTranslateOneServer(name string, cfg any) (*jsonutil.Object, []string, error) {
 	keys, ok := codexDictKeys(cfg)
 	if !ok {
 		return nil, []string{}, nil
 	}
 	skipped := []string{}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	get := func(k string) any { return cxGet(cfg, k) }
 	if cxTruthy(get("command")) {
 		if cxTruthy(get("url")) {
 			skipped = append(skipped, "url (both command and url set; preferring stdio)")
 		}
-		out.Set("command", pyrepr.Str(get("command")))
+		out.Set("command", anyutil.String(get("command")))
 		if cxTruthy(get("args")) {
 			args, err := codexMigrationStrList(get("args"))
 			if err != nil {
@@ -200,10 +201,10 @@ func codexTranslateOneServer(name string, cfg any) (*pyjson.Object, []string, er
 			out.Set("env", env)
 		}
 		if cxTruthy(get("cwd")) {
-			out.Set("cwd", pyrepr.Str(get("cwd")))
+			out.Set("cwd", anyutil.String(get("cwd")))
 		}
 	} else if cxTruthy(get("url")) {
-		out.Set("url", pyrepr.Str(get("url")))
+		out.Set("url", anyutil.String(get("url")))
 		if cxTruthy(get("headers")) {
 			headers, err := codexMigrationStrMap(get("headers"))
 			if err != nil {
@@ -221,10 +222,9 @@ func codexTranslateOneServer(name string, cfg any) (*pyjson.Object, []string, er
 		if !cxHas(cfg, spec[0]) {
 			continue
 		}
-		f, err := pyint.Float(get(spec[0]))
+		f, err := anyutil.ToFloat(get(spec[0]))
 		if err != nil {
-			var pyErr *pyint.Error
-			if errors.As(err, &pyErr) && (pyErr.Kind == "TypeError" || pyErr.Kind == "ValueError") {
+			if errors.Is(err, anyutil.ErrNotNumber) || errors.Is(err, anyutil.ErrRange) {
 				skipped = append(skipped, spec[2])
 				continue
 			}
@@ -257,7 +257,20 @@ func codexEscapeTOMLString(value string) string {
 	return "\"" + value + "\""
 }
 
-// TOML text of a string, number, bool or flat list or table of those, other types are a ValueError
+// TOML text of a float, the inf and nan spellings TOML defines for the special values
+func codexTOMLFloat(f float64) string {
+	switch {
+	case math.IsNaN(f):
+		return "nan"
+	case math.IsInf(f, 1):
+		return "inf"
+	case math.IsInf(f, -1):
+		return "-inf"
+	}
+	return strconv.FormatFloat(f, 'f', -1, 64)
+}
+
+// TOML text of a string, number, bool or flat list or table of those, other types are a value error
 func codexFormatTOMLValue(value any) (string, error) {
 	if b, ok := value.(bool); ok {
 		if b {
@@ -267,9 +280,9 @@ func codexFormatTOMLValue(value any) (string, error) {
 	}
 	switch v := value.(type) {
 	case float64:
-		return pyrepr.Float(v), nil
+		return codexTOMLFloat(v), nil
 	case float32:
-		return pyrepr.Float(float64(v)), nil
+		return codexTOMLFloat(float64(v)), nil
 	case string:
 		return codexEscapeTOMLString(v), nil
 	case []any, []string:
@@ -283,8 +296,8 @@ func codexFormatTOMLValue(value any) (string, error) {
 		}
 		return "[" + strings.Join(parts, ", ") + "]", nil
 	}
-	if n, ok := pyrepr.Int(value); ok {
-		return n.String(), nil
+	if n, ok := anyutil.Int(value); ok {
+		return strconv.FormatInt(n, 10), nil
 	}
 	if keys, ok := codexDictKeys(value); ok {
 		var items []string
@@ -319,7 +332,7 @@ func cxStringsAsAny(v any) []any {
 func codexQuoteTOMLKey(key string) string {
 	bare := key != ""
 	for _, c := range key {
-		if !pystr.IsAlnum(c) && c != '-' && c != '_' {
+		if !(unicode.IsLetter(c) || unicode.IsNumber(c)) && c != '-' && c != '_' {
 			bare = false
 			break
 		}
@@ -331,7 +344,7 @@ func codexQuoteTOMLKey(key string) string {
 }
 
 // Managed block of default permissions, mcp_servers tables and plugins tables between the two markers
-func RenderCodexTOMLSection(servers map[string]*pyjson.Object, plugins []map[string]any, defaultPermissionProfile string) (string, error) {
+func RenderCodexTOMLSection(servers map[string]*jsonutil.Object, plugins []map[string]any, defaultPermissionProfile string) (string, error) {
 	out := []string{CodexMigrationMarker}
 	if len(servers) == 0 && len(plugins) == 0 && defaultPermissionProfile == "" {
 		out = append(out, "# (no MCP servers, plugins, or permissions configured by Icebath)", CodexMigrationEndMarker)
@@ -353,7 +366,7 @@ func RenderCodexTOMLSection(servers map[string]*pyjson.Object, plugins []map[str
 	for _, name := range names {
 		out = append(out, "", "[mcp_servers."+codexQuoteTOMLKey(name)+"]")
 		entry := servers[name]
-		for _, k := range entry.Keys {
+		for _, k := range entry.Keys() {
 			v, _ := entry.Get(k)
 			text, err := codexFormatTOMLValue(v)
 			if err != nil {
@@ -364,7 +377,7 @@ func RenderCodexTOMLSection(servers map[string]*pyjson.Object, plugins []map[str
 	}
 	getOr := func(p map[string]any, k string) string {
 		if v, ok := p[k]; ok {
-			return pyrepr.Str(v)
+			return anyutil.String(v)
 		}
 		return ""
 	}
@@ -373,7 +386,7 @@ func RenderCodexTOMLSection(servers map[string]*pyjson.Object, plugins []map[str
 		return getOr(sorted[i], "name")+"@"+getOr(sorted[i], "marketplace") < getOr(sorted[j], "name")+"@"+getOr(sorted[j], "marketplace")
 	})
 	for _, plugin := range sorted {
-		qualified := pyrepr.Str(cxOr(plugin["name"], "")) + "@" + pyrepr.Str(cxOr(plugin["marketplace"], "openai-curated"))
+		qualified := anyutil.String(cxOr(plugin["name"], "")) + "@" + anyutil.String(cxOr(plugin["marketplace"], "openai-curated"))
 		enabled := true
 		if v, ok := plugin["enabled"]; ok {
 			enabled = cxTruthy(v)
@@ -432,7 +445,7 @@ func codexStripUnmanagedPluginTables(tomlText string) string {
 // Names of the mcp_servers the user declares outside the managed block, the parsed document first then header lines
 func codexUnmanagedMCPServerNames(tomlText string) (map[string]bool, error) {
 	names := map[string]bool{}
-	if doc, err := pytoml.Loads(tomlText); err == nil {
+	if doc, err := tomlutil.Decode(tomlText); err == nil {
 		if parsed, ok := doc["mcp_servers"].(map[string]any); ok {
 			for name := range parsed {
 				names[name] = true
@@ -533,7 +546,7 @@ var codexQueryCodexPlugins = func(codexHome string, timeout float64, codexBin st
 			}
 			availability := strings.ToUpper(cxStr(plugin, "availability", ""))
 			if availability != "" && availability != "AVAILABLE" {
-				pkgLog().Debug(fmt.Sprintf("skipping plugin %s: availability=%s", pyrepr.Str(cxGet(plugin, "name")), availability))
+				pkgLog().Debug(fmt.Sprintf("skipping plugin %s: availability=%s", anyutil.String(cxGet(plugin, "name")), availability))
 				continue
 			}
 			name := cxStr(plugin, "name", "")
@@ -558,7 +571,7 @@ func codexPluginListResponse(codexHome string, timeout float64, codexBin string)
 	if _, err := client.Initialize("icebath-migration", "Icebath Agent", "0.1", nil, 10*time.Second); err != nil {
 		return nil, err
 	}
-	return client.Request("plugin/list", pyjson.NewObject(), time.Duration(timeout*float64(time.Second)))
+	return client.Request("plugin/list", jsonutil.NewObject(), time.Duration(timeout*float64(time.Second)))
 }
 
 // Path fragments of pytest and macOS transient temp homes
@@ -574,8 +587,8 @@ func codexLooksLikeTestTempdir(path string) bool {
 }
 
 // Stdio entry launching this binary as the Icebath tools MCP server, the home passed only when set and not transient
-func codexBuildToolsMCPEntry() *pyjson.Object {
-	env := pyjson.NewObject()
+func codexBuildToolsMCPEntry() *jsonutil.Object {
+	env := jsonutil.NewObject()
 	if home := os.Getenv("ICEBATH_HOME"); home != "" && !codexLooksLikeTestTempdir(home) {
 		env.Set("ICEBATH_HOME", home)
 	}
@@ -585,7 +598,7 @@ func codexBuildToolsMCPEntry() *pyjson.Object {
 	env.Set("ICEBATH_QUIET", "1")
 	env.Set("ICEBATH_REDACT_SECRETS", "true")
 	exe, _ := os.Executable()
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("command", exe)
 	entry.Set("args", []any{CodexToolsMCPServerEntry})
 	entry.Set("env", env)
@@ -596,23 +609,23 @@ func codexBuildToolsMCPEntry() *pyjson.Object {
 
 // Atomic rewrite of config.toml carrying an existing file's permission bits and owner across
 func codexWriteAtomic(ctx context.Context, target, text string) error {
-	return pyfs.AtomicWriteTextWith(ctx, target, text, pyfs.TextWrite{Prefix: ".config.toml.", PreserveMode: true})
+	return fsutil.WriteFile(ctx, target, []byte(text), fsutil.WriteOptions{Prefix: ".config.toml.", KeepOwner: true, NativeLineEnds: true})
 }
 
 // Codex home of the options, else CODEX_HOME, else the user's .codex directory
 func codexMigrationHome(opts CodexMigrateOptions) (string, error) {
 	if opts.CodexHome != "" {
-		return pypath.PathStr(opts.CodexHome), nil
+		return filepath.Clean(opts.CodexHome), nil
 	}
 	raw := strings.TrimSpace(os.Getenv("CODEX_HOME"))
 	if raw == "" {
-		userHome, err := pypath.PathHome()
+		userHome, err := pathutil.Home()
 		if err != nil {
 			return "", err
 		}
-		raw = pypath.PathJoin(userHome, ".codex")
+		raw = pathutil.Join(userHome, ".codex")
 	}
-	return pypath.PathExpanduser(pypath.PathStr(raw))
+	return pathutil.ExpandUserPath(filepath.Clean(raw))
 }
 
 // Projects the Icebath mcp_servers, installed codex plugins and the tools server into the managed block of codex config.toml
@@ -622,7 +635,7 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 	if err != nil {
 		return nil, err
 	}
-	target := pypath.PathJoin(codexHome, "config.toml")
+	target := pathutil.Join(codexHome, "config.toml")
 	report.TargetPath = target
 	var rawServers any
 	if len(cfg) > 0 {
@@ -634,7 +647,7 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 		report.Errors = append(report.Errors, "mcp_servers in Icebath config is not a mapping; cannot migrate.")
 		return report, nil
 	}
-	translated := map[string]*pyjson.Object{}
+	translated := map[string]*jsonutil.Object{}
 	for _, name := range serverNames {
 		out, skipped, err := codexTranslateOneServer(name, cxOr(cxGet(icebathServers, name), map[string]any{}))
 		if err != nil {
@@ -645,7 +658,7 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 			if reason == "" {
 				reason = "no transport configured"
 			}
-			report.Errors = append(report.Errors, fmt.Sprintf("server %s skipped: %s", pyrepr.Repr(name), reason))
+			report.Errors = append(report.Errors, fmt.Sprintf("server %s skipped: %s", anyutil.Quote(name), reason))
 			continue
 		}
 		translated[name] = out
@@ -675,7 +688,7 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 			if !hasMarket {
 				return nil, errors.New("'marketplace'")
 			}
-			report.MigratedPlugins = append(report.MigratedPlugins, pyrepr.Str(name)+"@"+pyrepr.Str(marketplace))
+			report.MigratedPlugins = append(report.MigratedPlugins, anyutil.String(name)+"@"+anyutil.String(marketplace))
 		}
 	}
 	profile := ""
@@ -700,7 +713,7 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 			return report, nil
 		}
 		if report.PluginQueryError != "" {
-			if _, err := pytoml.Loads(existing); err != nil {
+			if _, err := tomlutil.Decode(existing); err != nil {
 				report.PluginQueryError += "; existing config.toml was unloadable — re-run `icebath codex-runtime migrate` to migrate plugins"
 			}
 		}
@@ -732,7 +745,7 @@ func MigrateCodexRuntimePlugins(ctx context.Context, cfg map[string]any, opts Co
 		return nil, err
 	}
 	newText := codexInsertManagedBlockAtTopLevel(withoutManaged, managedBlock)
-	if _, err := pytoml.Loads(newText); err != nil {
+	if _, err := tomlutil.Decode(newText); err != nil {
 		report.Errors = append(report.Errors, fmt.Sprintf("refusing to write %s: rendered config is not valid TOML (%s)", target, err))
 		return report, nil
 	}
@@ -757,9 +770,9 @@ func codexReadConfigText(target string) (string, error) {
 	if err != nil {
 		return "", errors.New(errchain.OSText(err))
 	}
-	text, err := pycodecs.Decode(data, "utf-8-sig")
+	text, err := charsetutil.Decode(data, "utf-8-sig")
 	if err != nil {
 		return "", err
 	}
-	return pystr.TranslateNewlines(text), nil
+	return textutil.NormalizeNewlines(text), nil
 }

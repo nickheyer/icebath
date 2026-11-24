@@ -9,9 +9,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // State of an admitted run's background task, the request scope captured because the task outlives it
@@ -27,7 +27,7 @@ type runLaunch struct {
 	sessionHistoryDelivery bool
 	agentOptions           agentOptions
 	requestProfile         string
-	turnAuthor             *pyjson.Object
+	turnAuthor             *jsonutil.Object
 	admission              any
 	walkedFrom             string
 }
@@ -36,7 +36,7 @@ type runLaunch struct {
 func (r *runLaunch) approvalSessionKey() string { return r.runID }
 
 // Queues an event only while this run still owns its live transport
-func (r *runLaunch) putEvent(event *pyjson.Object) {
+func (r *runLaunch) putEvent(event *jsonutil.Object) {
 	r.owner.mu.Lock()
 	current := r.owner.runStreams[r.runID]
 	r.owner.mu.Unlock()
@@ -88,12 +88,12 @@ func (a *APIServerAdapter) handleRuns(ctx context.Context, request *gateway.WebR
 	if roomErr != nil {
 		return roomErr, nil
 	}
-	body, _ := normalized.(*pyjson.Object)
+	body, _ := normalized.(*jsonutil.Object)
 	if body == nil {
-		body = pyjson.NewObject()
+		body = jsonutil.NewObject()
 	}
-	roomDispatch, _ := body.GetOr("hosted_room_dispatch", nil).(*pyjson.Object)
-	roomPolicy, _ := body.GetOr("_room_execution_policy", nil).(*pyjson.Object)
+	roomDispatch, _ := body.ValueOr("hosted_room_dispatch", nil).(*jsonutil.Object)
+	roomPolicy, _ := body.ValueOr("_room_execution_policy", nil).(*jsonutil.Object)
 	idempotencyKey := strings.TrimSpace(request.Header.Get("Idempotency-Key"))
 	if !validIdempotencyKey(idempotencyKey) {
 		return jsonError("Idempotency-Key must be 1-255 visible ASCII characters", "invalid_idempotency_key", http.StatusBadRequest), nil
@@ -102,7 +102,7 @@ func (a *APIServerAdapter) handleRuns(ctx context.Context, request *gateway.WebR
 	if err != nil {
 		return nil, err
 	}
-	rawInput := body.GetOr("input", nil)
+	rawInput := body.ValueOr("input", nil)
 	userMessage, inputErr := runUserMessage(rawInput)
 	if inputErr != nil {
 		return inputErr, nil
@@ -118,9 +118,9 @@ func (a *APIServerAdapter) handleRuns(ctx context.Context, request *gateway.WebR
 	if historyErr != nil {
 		return historyErr, nil
 	}
-	previousResponseID := body.GetOr("previous_response_id", nil)
-	sessionID := textOf(firstTruthy(body.GetOr("session_id", nil), storedSessionID))
-	route := a.resolveRoute(body.GetOr("model", nil))
+	previousResponseID := body.ValueOr("previous_response_id", nil)
+	sessionID := textOf(firstTruthy(body.ValueOr("session_id", nil), storedSessionID))
+	route := a.resolveRoute(body.ValueOr("model", nil))
 	overrides := requestAgentOverrides(body, a.modelName, true)
 	requestedModel, _ := overrides["requested_model"].(string)
 	requestedProvider, _ := overrides["requested_provider"].(string)
@@ -156,10 +156,10 @@ func (a *APIServerAdapter) handleRuns(ctx context.Context, request *gateway.WebR
 	if sessionID == "" {
 		sessionID = runID
 	}
-	sessionHistoryDelivery := !pyrepr.Truthy(previousResponseID) && len(history) == 0
-	if len(history) == 0 && selected != "" && !pyrepr.Truthy(previousResponseID) {
+	sessionHistoryDelivery := !anyutil.IsTrue(previousResponseID) && len(history) == 0
+	if len(history) == 0 && selected != "" && !anyutil.IsTrue(previousResponseID) {
 		for _, m := range a.conversationHistoryForSession(ctx, selected) {
-			obj, _ := pyjson.AsObject(m)
+			obj, _ := jsonutil.AsObject(m)
 			history = append(history, obj)
 		}
 	}
@@ -170,9 +170,9 @@ func (a *APIServerAdapter) handleRuns(ctx context.Context, request *gateway.WebR
 	a.runStreamsCreated[runID] = createdAt
 	a.runApprovalSessions[runID] = runID
 	a.mu.Unlock()
-	initial := a.setRunStatus(ctx, runID, "queued", "created_at", createdAt, "session_id", sessionID, "model", body.GetOr("model", a.modelName))
+	initial := a.setRunStatus(ctx, runID, "queued", "created_at", createdAt, "session_id", sessionID, "model", body.ValueOr("model", a.modelName))
 	if idempotencyKey != "" {
-		outcome, record, err := a.runIdempotencyStore.Reserve(ctx, scope, idempotencyKey, fingerprint, runID, initial.Copy(),
+		outcome, record, err := a.runIdempotencyStore.Reserve(ctx, scope, idempotencyKey, fingerprint, runID, initial.Clone(),
 			int64(a.runOwnerPID), a.runOwnerStarted, roomRetentionUntil(ctx))
 		if err != nil {
 			return nil, err
@@ -239,11 +239,11 @@ func (a *APIServerAdapter) retargetToDeliveredChat(ctx context.Context, launch *
 }
 
 // Terminal usage payload from the agent's session counters
-func runUsage(ag *agent.AIAgent) *pyjson.Object {
+func runUsage(ag *agent.AIAgent) *jsonutil.Object {
 	values := map[string]int{"session_prompt_tokens": ag.SessionPromptTokens(), "session_completion_tokens": ag.SessionCompletionTokens(),
 		"session_total_tokens": ag.SessionTotalTokens(), "session_cache_read_tokens": ag.SessionCacheReadTokens(),
 		"session_cache_write_tokens": ag.SessionCacheWriteTokens()}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, f := range usageFields {
 		out.Set(f[0], int64(values[f[1]]))
 	}
@@ -251,12 +251,12 @@ func runUsage(ag *agent.AIAgent) *pyjson.Object {
 }
 
 // Provider and model that actually served the turn
-func servedRuntime(ag *agent.AIAgent) *pyjson.Object {
-	return pyjson.ObjectOf("provider", ag.Provider(), "model", ag.Model())
+func servedRuntime(ag *agent.AIAgent) *jsonutil.Object {
+	return jsonutil.ObjectOf("provider", ag.Provider(), "model", ag.Model())
 }
 
 // Worker body of one run, the result, usage and served runtime
-func (a *APIServerAdapter) runAgentSync(ctx context.Context, run *runLaunch, ag *agent.AIAgent, env *tools.Env, approvalNotify tools.GatewayNotifyFunc) (map[string]any, *pyjson.Object, *pyjson.Object, error) {
+func (a *APIServerAdapter) runAgentSync(ctx context.Context, run *runLaunch, ag *agent.AIAgent, env *tools.Env, approvalNotify tools.GatewayNotifyFunc) (map[string]any, *jsonutil.Object, *jsonutil.Object, error) {
 	sessionID := run.sessionID
 	taskID := sessionID
 	if taskID == "" {
@@ -304,7 +304,7 @@ func (a *APIServerAdapter) runAgentSync(ctx context.Context, run *runLaunch, ag 
 	publishTurnProcessOwnership(ag, taskID)
 	opts := agent.RunConversationOptions{ConversationHistory: historyMaps(run.conversationHistory), TaskID: taskID}
 	if run.turnAuthor != nil {
-		opts.TurnAuthor = pyjson.Plain(run.turnAuthor).(map[string]any)
+		opts.TurnAuthor = jsonutil.Plain(run.turnAuthor).(map[string]any)
 	}
 	result, err := ag.RunConversationContent(ctx, run.userMessage, opts)
 	if err != nil {

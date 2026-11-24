@@ -15,9 +15,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
-
 	"github.com/charmbracelet/x/term"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // TailLines is how many output lines a failure prints
@@ -57,7 +56,7 @@ func VerboseOutput(env map[string]string) bool {
 }
 
 // Reports whether a stream is an interactive terminal
-func isTerminalStream(stream io.Writer) bool { return pysys.Isatty(stream) }
+func isTerminalStream(stream io.Writer) bool { return termutil.IsTerminal(stream) }
 
 // Terminal width the way shutil get_terminal_size reports it, COLUMNS first then stdout, else 80
 func terminalColumns() int {

@@ -9,16 +9,17 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
-// Python class name and str of an unhandled failure, a runtime panic naming its Go error
+// Kind label and text of an unhandled failure, a runtime panic naming its Go error
 func crashFailure(failure any) (string, string) {
 	err, isErr := failure.(error)
 	if !isErr {
-		err = errors.New(pyrepr.Str(failure))
+		err = errors.New(anyutil.String(failure))
 	}
-	return pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)
+	return errorutil.Kind(err), err.Error()
 }
 
 // Appends an unhandled failure with its stack to the crash log and prints its first line on stderr

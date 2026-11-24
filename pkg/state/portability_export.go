@@ -6,8 +6,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Rounds half to even like the Python round builtin
@@ -16,16 +17,16 @@ func pyRound(f float64) int64 {
 }
 
 // Text free timing evidence of a session export built from message timestamps only
-func exportTimings(messages []*pyjson.Object, sessionID string) *pyjson.Object {
+func exportTimings(messages []*jsonutil.Object, sessionID string) *jsonutil.Object {
 	type stamped struct {
-		msg *pyjson.Object
+		msg *jsonutil.Object
 		ts  float64
 	}
 	timestamped := []stamped{}
-	roleCounts := pyjson.NewObject()
+	roleCounts := jsonutil.NewObject()
 	toolCallsEmitted := int64(0)
 	for _, msg := range messages {
-		if ts, ok := pydatetime.CoerceEpoch(rowValue(msg, "timestamp"), sessionID, ""); ok {
+		if ts, ok := timeutil.StoredEpoch(rowValue(msg, "timestamp"), sessionID, ""); ok {
 			timestamped = append(timestamped, stamped{msg, ts})
 		}
 		role := "unknown"
@@ -48,7 +49,7 @@ func exportTimings(messages []*pyjson.Object, sessionID string) *pyjson.Object {
 	for i := 1; i < len(timestamped); i++ {
 		prev, next := timestamped[i-1], timestamped[i]
 		gap := max(int64(0), pyRound((next.ts-prev.ts)*1000))
-		intervals = append(intervals, pyjson.ObjectOf("from_message_id", rowValue(prev.msg, "id"), "to_message_id", rowValue(next.msg, "id"),
+		intervals = append(intervals, jsonutil.ObjectOf("from_message_id", rowValue(prev.msg, "id"), "to_message_id", rowValue(next.msg, "id"),
 			"from_role", rowValue(prev.msg, "role"), "to_role", rowValue(next.msg, "role"), "gap_ms", gap))
 		if largest == nil || gap > largest.(int64) {
 			largest = gap
@@ -56,7 +57,7 @@ func exportTimings(messages []*pyjson.Object, sessionID string) *pyjson.Object {
 	}
 	iso := func(ts float64) any {
 		sec, frac := math.Modf(ts)
-		return pydatetime.ISOFormatUTC(time.Unix(int64(sec), int64(frac*1e9)).UTC())
+		return time.Unix(int64(sec), int64(frac*1e9)).UTC().UTC().Format(timeutil.RFC3339Micro)
 	}
 	var first, last, wall, reason any
 	available := len(timestamped) > 0
@@ -70,12 +71,12 @@ func exportTimings(messages []*pyjson.Object, sessionID string) *pyjson.Object {
 	if toolResults == nil {
 		toolResults = int64(0)
 	}
-	return pyjson.ObjectOf(
+	return jsonutil.ObjectOf(
 		"source", "message_timestamps",
 		"available", available,
 		"complete", false,
 		"unavailable_reason", reason,
-		"message_timestamps", pyjson.ObjectOf("available", int64(len(timestamped)), "missing", int64(len(messages)-len(timestamped))),
+		"message_timestamps", jsonutil.ObjectOf("available", int64(len(timestamped)), "missing", int64(len(messages)-len(timestamped))),
 		"first_message_at", first,
 		"last_message_at", last,
 		"wall_clock_ms", wall,
@@ -88,7 +89,7 @@ func exportTimings(messages []*pyjson.Object, sessionID string) *pyjson.Object {
 }
 
 // Session id of an earlier import of the same foreign snapshot on the caller connection, empty when none
-func findForeignImportOnConn(ctx context.Context, conn SQLiteConn, origin *pyjson.Object) (string, error) {
+func findForeignImportOnConn(ctx context.Context, conn SQLiteConn, origin *jsonutil.Object) (string, error) {
 	tool, err := receiptItem(origin, "tool")
 	if err != nil {
 		return "", err
@@ -103,21 +104,21 @@ func findForeignImportOnConn(ctx context.Context, conn SQLiteConn, origin *pyjso
 	}
 	for _, row := range rows {
 		decoded := jsonValueOrText(rowValue(row, "origin_json"))
-		stored, _ := decoded.(*pyjson.Object)
+		stored, _ := decoded.(*jsonutil.Object)
 		if stored == nil {
-			stored = pyjson.NewObject()
+			stored = jsonutil.NewObject()
 		}
 		importedRaw, _ := stored.Get("imported_from")
-		imported, _ := importedRaw.(*pyjson.Object)
+		imported, _ := importedRaw.(*jsonutil.Object)
 		if imported == nil {
-			imported = pyjson.NewObject()
+			imported = jsonutil.NewObject()
 		}
-		if !pyjson.Equal(rowValue(imported, "tool"), tool) {
+		if !anyutil.Equal(rowValue(imported, "tool"), tool) {
 			continue
 		}
 		foreignID, _ := origin.Get("foreign_session_id")
 		if pyTruthy(foreignID) {
-			if pyjson.Equal(foreignID, rowValue(imported, "foreign_session_id")) {
+			if anyutil.Equal(foreignID, rowValue(imported, "foreign_session_id")) {
 				return pyStr(rowValue(row, "id")), nil
 			}
 			continue
@@ -125,7 +126,7 @@ func findForeignImportOnConn(ctx context.Context, conn SQLiteConn, origin *pyjso
 		if err != nil {
 			return "", err
 		}
-		if pyjson.Equal(rowValue(imported, "path"), path) {
+		if anyutil.Equal(rowValue(imported, "path"), path) {
 			return pyStr(rowValue(row, "id")), nil
 		}
 	}
@@ -133,7 +134,7 @@ func findForeignImportOnConn(ctx context.Context, conn SQLiteConn, origin *pyjso
 }
 
 // Session id of an earlier import of the foreign snapshot, empty when none
-func (d *SessionDB) FindForeignImport(ctx context.Context, origin *pyjson.Object) (string, error) {
+func (d *SessionDB) FindForeignImport(ctx context.Context, origin *jsonutil.Object) (string, error) {
 	var found string
 	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		var err error
@@ -144,31 +145,31 @@ func (d *SessionDB) FindForeignImport(ctx context.Context, origin *pyjson.Object
 }
 
 // Adopts or mints a foreign snapshot in one transaction with its provenance, a duplicate click returning the first
-func (d *SessionDB) ImportForeignHistory(ctx context.Context, origin *pyjson.Object, messages []any, title string, cwd, profile any) (*pyjson.Object, error) {
+func (d *SessionDB) ImportForeignHistory(ctx context.Context, origin *jsonutil.Object, messages []any, title string, cwd, profile any) (*jsonutil.Object, error) {
 	sessionID := NewSessionIDAt(time.Now(), 12)
 	tool, err := receiptItem(origin, "tool")
 	if err != nil {
 		return nil, err
 	}
-	normalized, errs, err := d.validateImportPayload([]any{pyjson.ObjectOf("id", sessionID, "source", tool, "title", title, "cwd", cwd, "messages", messages)})
+	normalized, errs, err := d.validateImportPayload([]any{jsonutil.ObjectOf("id", sessionID, "source", tool, "title", title, "cwd", cwd, "messages", messages)})
 	if err != nil {
 		return nil, err
 	}
 	if len(errs) > 0 {
-		return nil, pyValueError(pyStr(rowValue(errs[0].(*pyjson.Object), "error")))
+		return nil, pyValueError(pyStr(rowValue(errs[0].(*jsonutil.Object), "error")))
 	}
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
 		existing, err := findForeignImportOnConn(ctx, conn, origin)
 		if err != nil {
 			return err
 		}
 		if existing != "" {
-			result = pyjson.ObjectOf("session_id", existing, "already_imported", true)
+			result = jsonutil.ObjectOf("session_id", existing, "already_imported", true)
 			return nil
 		}
 		item := normalized[0]
-		session := rowGet(item, "session").(*pyjson.Object)
+		session := rowGet(item, "session").(*jsonutil.Object)
 		taken, err := connRow(ctx, conn, "SELECT 1 FROM sessions WHERE title = ?", title)
 		if err != nil {
 			return err
@@ -180,14 +181,14 @@ func (d *SessionDB) ImportForeignHistory(ctx context.Context, origin *pyjson.Obj
 		if err := d.importSessionRow(ctx, conn, session, rowGet(item, "messages"), sessionID); err != nil {
 			return err
 		}
-		provenance, err := pyDumps(pyjson.ObjectOf("imported_from", origin), pyJSONDefault)
+		provenance, err := pyDumps(jsonutil.ObjectOf("imported_from", origin), pyJSONDefault)
 		if err != nil {
 			return err
 		}
 		if _, err := conn.ExecContext(ctx, "UPDATE sessions SET origin_json = ?, profile_name = ? WHERE id = ?", provenance, profile, sessionID); err != nil {
 			return err
 		}
-		result = pyjson.ObjectOf("session_id", sessionID, "already_imported", false)
+		result = jsonutil.ObjectOf("session_id", sessionID, "already_imported", false)
 		return nil
 	}, nil)
 	if err != nil {
@@ -197,7 +198,7 @@ func (d *SessionDB) ImportForeignHistory(ctx context.Context, origin *pyjson.Obj
 }
 
 // Distinct non empty session cwds with usage counts and last activity for repo discovery
-func (d *SessionDB) DistinctSessionCwds(ctx context.Context, includeArchived bool) ([]*pyjson.Object, error) {
+func (d *SessionDB) DistinctSessionCwds(ctx context.Context, includeArchived bool) ([]*jsonutil.Object, error) {
 	where := "cwd IS NOT NULL AND TRIM(cwd) != ''"
 	if !includeArchived {
 		where += " AND archived = 0"
@@ -207,22 +208,22 @@ func (d *SessionDB) DistinctSessionCwds(ctx context.Context, includeArchived boo
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*pyjson.Object, 0, len(rows))
+	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, r := range rows {
-		sessions, _ := exactInt(pyOr(rowValue(r, "sessions"), int64(0)))
-		lastActive, err := pyFloatOf(pyOr(rowValue(r, "last_active"), int64(0)))
+		sessions, _ := exactInt(anyutil.Or(rowValue(r, "sessions"), int64(0)))
+		lastActive, err := pyFloatOf(anyutil.Or(rowValue(r, "last_active"), int64(0)))
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, pyjson.ObjectOf("cwd", rowValue(r, "cwd"), "sessions", sessions, "last_active", lastActive))
+		out = append(out, jsonutil.ObjectOf("cwd", rowValue(r, "cwd"), "sessions", sessions, "last_active", lastActive))
 	}
 	return out, nil
 }
 
 // Cron job and execution ids of a cron run session, nil for any other session
-func (d *SessionDB) CronRunIdentity(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) CronRunIdentity(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	if job, ok := LegacyCronRunJob(sessionID); ok {
-		return pyjson.ObjectOf("cron_job_id", job, "cron_execution_id", nil), nil
+		return jsonutil.ObjectOf("cron_job_id", job, "cron_execution_id", nil), nil
 	}
 	rows, err := d.readRows(ctx, "SELECT request_id, "+cronPolicyJobSQL+" AS policy_job FROM session_admissions"+
 		" WHERE principal_id = ? AND target_session_id = ? ORDER BY seq LIMIT 1", CronPrincipalID, sessionID)
@@ -242,11 +243,11 @@ func (d *SessionDB) CronRunIdentity(ctx context.Context, sessionID string) (*pyj
 	if !ok {
 		return nil, nil
 	}
-	return pyjson.ObjectOf("cron_job_id", job, "cron_execution_id", execution), nil
+	return jsonutil.ObjectOf("cron_job_id", job, "cron_execution_id", execution), nil
 }
 
 // Titled sessions whose first user turn was a skill invocation or an auto load scaffold, newest first
-func (d *SessionDB) ListSkillScaffoldedSessions(ctx context.Context, limit int) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListSkillScaffoldedSessions(ctx context.Context, limit int) ([]*jsonutil.Object, error) {
 	return d.readRows(ctx, `
                 SELECT s.id, s.title, m.content
                 FROM sessions s
@@ -263,13 +264,13 @@ func (d *SessionDB) ListSkillScaffoldedSessions(ctx context.Context, limit int) 
 }
 
 // Session dict with its messages and timings attached
-func (d *SessionDB) withMessages(ctx context.Context, session *pyjson.Object, includeCompacted, includeInactive bool) (*pyjson.Object, error) {
+func (d *SessionDB) withMessages(ctx context.Context, session *jsonutil.Object, includeCompacted, includeInactive bool) (*jsonutil.Object, error) {
 	sessionID := pyStr(rowValue(session, "id"))
 	messages, err := d.GetMessages(ctx, sessionID, GetMessagesOptions{IncludeInactive: includeInactive, IncludeCompacted: includeCompacted})
 	if err != nil {
 		return nil, err
 	}
-	out := session.Copy()
+	out := session.Clone()
 	out.Set("messages", anyObjectList(messages))
 	out.Set("timings", exportTimings(messages, sessionID))
 	if err := d.attachShellLines(ctx, session, out); err != nil {
@@ -279,7 +280,7 @@ func (d *SessionDB) withMessages(ctx context.Context, session *pyjson.Object, in
 }
 
 // One session with every message as a dict, compacted turns and archived rows on request, nil when unknown
-func (d *SessionDB) ExportSession(ctx context.Context, sessionID string, includeCompacted, includeInactive bool) (*pyjson.Object, error) {
+func (d *SessionDB) ExportSession(ctx context.Context, sessionID string, includeCompacted, includeInactive bool) (*jsonutil.Object, error) {
 	session, err := d.GetSession(ctx, sessionID)
 	if err != nil || session == nil {
 		return nil, err
@@ -288,7 +289,7 @@ func (d *SessionDB) ExportSession(ctx context.Context, sessionID string, include
 }
 
 // A compression lineage exported as one logical session dict with its segments, nil when unknown
-func (d *SessionDB) ExportSessionLineage(ctx context.Context, sessionID string, includeCompacted, includeInactive bool) (*pyjson.Object, error) {
+func (d *SessionDB) ExportSessionLineage(ctx context.Context, sessionID string, includeCompacted, includeInactive bool) (*jsonutil.Object, error) {
 	lineage, err := d.GetCompressionLineage(ctx, sessionID)
 	if err != nil || len(lineage) == 0 {
 		return nil, err
@@ -296,7 +297,7 @@ func (d *SessionDB) ExportSessionLineage(ctx context.Context, sessionID string, 
 	segments := []any{}
 	messages := []any{}
 	shell := []any{}
-	var last *pyjson.Object
+	var last *jsonutil.Object
 	ids := []any{}
 	for _, sid := range lineage {
 		segment, err := d.ExportSession(ctx, sid, includeCompacted, includeInactive)
@@ -319,7 +320,7 @@ func (d *SessionDB) ExportSessionLineage(ctx context.Context, sessionID string, 
 	if last == nil {
 		return nil, nil
 	}
-	out := last.Copy()
+	out := last.Clone()
 	out.Set("segments", segments)
 	out.Set("lineage_session_ids", ids)
 	out.Set("message_count", int64(len(messages)))
@@ -333,10 +334,10 @@ func (d *SessionDB) ExportSessionLineage(ctx context.Context, sessionID string, 
 }
 
 // Row objects among a JSON list value
-func objectsOf(values []any) []*pyjson.Object {
-	out := make([]*pyjson.Object, 0, len(values))
+func objectsOf(values []any) []*jsonutil.Object {
+	out := make([]*jsonutil.Object, 0, len(values))
 	for _, v := range values {
-		if obj, ok := v.(*pyjson.Object); ok {
+		if obj, ok := v.(*jsonutil.Object); ok {
 			out = append(out, obj)
 		}
 	}
@@ -344,7 +345,7 @@ func objectsOf(values []any) []*pyjson.Object {
 }
 
 // Every session with its messages, one batched read per 900 sessions outside the display projection
-func (d *SessionDB) ExportAll(ctx context.Context, source string, includeCompacted, includeInactive bool) ([]*pyjson.Object, error) {
+func (d *SessionDB) ExportAll(ctx context.Context, source string, includeCompacted, includeInactive bool) ([]*jsonutil.Object, error) {
 	var sources []string
 	if source != "" {
 		sources = []string{source}
@@ -354,7 +355,7 @@ func (d *SessionDB) ExportAll(ctx context.Context, source string, includeCompact
 		return nil, err
 	}
 	if includeCompacted {
-		out := make([]*pyjson.Object, 0, len(sessions))
+		out := make([]*jsonutil.Object, 0, len(sessions))
 		for _, session := range sessions {
 			exported, err := d.withMessages(ctx, session, true, includeInactive)
 			if err != nil {
@@ -387,10 +388,10 @@ func (d *SessionDB) ExportAll(ctx context.Context, source string, includeCompact
 			bySession[sid] = append(bySession[sid], msg)
 		}
 	}
-	out := make([]*pyjson.Object, 0, len(sessions))
+	out := make([]*jsonutil.Object, 0, len(sessions))
 	for _, session := range sessions {
 		sid := pyStr(rowValue(session, "id"))
-		exported := session.Copy()
+		exported := session.Clone()
 		exported.Set("messages", bySession[sid])
 		exported.Set("timings", exportTimings(objectsOf(bySession[sid]), sid))
 		if err := d.attachShellLines(ctx, session, exported); err != nil {
@@ -402,13 +403,13 @@ func (d *SessionDB) ExportAll(ctx context.Context, source string, includeCompact
 }
 
 // Adopts a session's whole compression lineage from a donor store, archiving the donor rows after a complete adoption
-func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionDB, sessionID string, retireDonor bool) (*pyjson.Object, error) {
+func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionDB, sessionID string, retireDonor bool) (*jsonutil.Object, error) {
 	payload, err := donor.ExportSessionLineage(ctx, sessionID, false, true)
 	if err != nil {
 		return nil, err
 	}
 	if payload == nil {
-		return pyjson.ObjectOf("ok", false, "adopted", false, "donor_retired", false,
+		return jsonutil.ObjectOf("ok", false, "adopted", false, "donor_retired", false,
 			"error", fmt.Sprintf("session %s not found in donor store", pyRepr(sessionID))), nil
 	}
 	segments, ok := rowValue(payload, "segments").([]any)
@@ -417,7 +418,7 @@ func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionD
 	}
 	donorAhead := false
 	for _, raw := range segments {
-		seg := raw.(*pyjson.Object)
+		seg := raw.(*jsonutil.Object)
 		segID, _ := rowValue(seg, "id").(string)
 		if segID == "" {
 			continue
@@ -442,14 +443,14 @@ func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionD
 	}
 	copies := make([]any, 0, len(segments))
 	for _, raw := range segments {
-		copies = append(copies, raw.(*pyjson.Object).Copy())
+		copies = append(copies, raw.(*jsonutil.Object).Clone())
 	}
 	result, err := d.ImportSessions(ctx, copies)
 	if err != nil {
 		return nil, err
 	}
-	imported, _ := exactInt(pyOr(rowValue(result, "imported"), int64(0)))
-	skipped, _ := exactInt(pyOr(rowValue(result, "skipped"), int64(0)))
+	imported, _ := exactInt(anyutil.Or(rowValue(result, "imported"), int64(0)))
+	skipped, _ := exactInt(anyutil.Or(rowValue(result, "skipped"), int64(0)))
 	adopted := pyTruthy(rowValue(result, "ok")) && int(imported+skipped) == len(segments)
 	if !adopted {
 		pkgLog().Warn(fmt.Sprintf("adoption of %s did not complete: imported=%d skipped=%d of %d segment(s); errors=%s",
@@ -459,7 +460,7 @@ func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionD
 	if adopted && retireDonor && !donorAhead {
 		donorRetired = true
 		for _, raw := range segments {
-			segID, _ := rowValue(raw.(*pyjson.Object), "id").(string)
+			segID, _ := rowValue(raw.(*jsonutil.Object), "id").(string)
 			if segID == "" {
 				continue
 			}
@@ -468,7 +469,7 @@ func (d *SessionDB) AdoptSessionLineageFrom(ctx context.Context, donor *SessionD
 			}
 		}
 	}
-	out := result.Copy()
+	out := result.Clone()
 	out.Set("adopted", adopted)
 	out.Set("donor_retired", donorRetired)
 	return out, nil

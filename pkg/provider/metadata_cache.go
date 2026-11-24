@@ -14,8 +14,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // In memory TTL of the OpenRouter catalog
@@ -191,11 +191,11 @@ func ttlMemoGet(path, key string, ttl time.Duration, tsKey, valueKey string) any
 // Writes a key into a TTL memo file in file order, dropping expired siblings, as json.dump indent 0 with compact separators
 func ttlMemoPut(ctx context.Context, path, key string, value any, ttl time.Duration, tsKey, valueKey, what string, tsFirst bool) {
 	now := float64(wallNow().UnixNano()) / 1e9
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	if raw, err := os.ReadFile(path); err == nil {
-		if existing, err := pyjson.LoadsDict(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))); err == nil {
-			for _, k := range existing.Keys {
-				entry, ok := existing.Vals[k].(*pyjson.Object)
+		if existing, err := jsonutil.DecodeObject(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))); err == nil {
+			for _, k := range existing.Keys() {
+				entry, ok := existing.Value(k).(*jsonutil.Object)
 				if !ok {
 					continue
 				}
@@ -212,7 +212,7 @@ func ttlMemoPut(ctx context.Context, path, key string, value any, ttl time.Durat
 			}
 		}
 	}
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	if tsFirst {
 		entry.Set(tsKey, now)
 		entry.Set(valueKey, value)
@@ -221,7 +221,7 @@ func ttlMemoPut(ctx context.Context, path, key string, value any, ttl time.Durat
 		entry.Set(tsKey, now)
 	}
 	data.Set(key, entry)
-	if err := config.AtomicJSONWriteWith(ctx, path, data, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, path, data, jsonutil.Indent(0)); err != nil {
 		pkgLog().Debug("failed to save "+what, "error", err)
 	}
 }
@@ -378,7 +378,7 @@ func loadContextCacheDocument(ctx context.Context) (map[string]int, map[string]a
 	if err != nil {
 		return cache, confirmed
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to load context length cache: %s", err))
 		return cache, confirmed

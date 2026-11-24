@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type hookLog struct {
@@ -28,7 +28,7 @@ func modelToolsDispatcher(t *testing.T, handler Handler, names ...string) (*Disp
 	t.Helper()
 	r := NewRegistry()
 	for _, n := range names {
-		r.Register(Def{Name: n, Toolset: "test", Schema: pyjson.ObjectOf("name", n, "description", n, "parameters", pyjson.ObjectOf("type", "object")), Handler: handler})
+		r.Register(Def{Name: n, Toolset: "test", Schema: jsonutil.ObjectOf("name", n, "description", n, "parameters", jsonutil.ObjectOf("type", "object")), Handler: handler})
 	}
 	d := NewDispatcher(r)
 	log := &hookLog{}
@@ -413,8 +413,8 @@ func TestToolCallRejectsOutOfScopeAndUnwrapsInScope(t *testing.T) {
 	env := searchEnv(t)
 	var mu sync.Mutex
 	var calls []*Call
-	Default.Register(Def{Name: "mcp_x", Toolset: "mcp-x", Schema: pyjson.ObjectOf("name", "mcp_x", "description", "x",
-		"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf("a", pyjson.ObjectOf("type", "integer")))),
+	Default.Register(Def{Name: "mcp_x", Toolset: "mcp-x", Schema: jsonutil.ObjectOf("name", "mcp_x", "description", "x",
+		"parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf("a", jsonutil.ObjectOf("type", "integer")))),
 		Handler: func(ctx context.Context, call *Call) string {
 			mu.Lock()
 			calls = append(calls, call)

@@ -11,10 +11,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Configured goal turn budget of the profile in ctx
@@ -108,8 +108,8 @@ func (r *GatewayRunner) sendGoalStatusNotice(ctx context.Context, source *gatewa
 	}
 	if !result.Success {
 		reason := "unknown error"
-		if pyrepr.Truthy(result.Error) {
-			reason = pyrepr.Str(result.Error)
+		if anyutil.IsTrue(result.Error) {
+			reason = anyutil.String(result.Error)
 		}
 		pkgLog().Warn(fmt.Sprintf("goal continuation: status send failed: %s", reason))
 	}
@@ -266,10 +266,10 @@ func turnFailed(ctx context.Context) bool {
 		result, _ = captured.Get("result")
 	}
 	switch typed := result.(type) {
-	case *pyjson.Object:
-		return pyrepr.Truthy(typed.GetOr("failed", nil))
+	case *jsonutil.Object:
+		return anyutil.IsTrue(typed.ValueOr("failed", nil))
 	case map[string]any:
-		return pyrepr.Truthy(typed["failed"])
+		return anyutil.IsTrue(typed["failed"])
 	}
 	return false
 }
@@ -279,8 +279,8 @@ func finalTextForPostTurnHooks(agentResult any, event *gateway.MessageEvent) str
 	text := ""
 	switch typed := agentResult.(type) {
 	case map[string]any:
-		if pyrepr.Truthy(typed["final_response"]) {
-			text = pyrepr.Str(typed["final_response"])
+		if anyutil.IsTrue(typed["final_response"]) {
+			text = anyutil.String(typed["final_response"])
 		}
 	case string:
 		text = typed
@@ -319,7 +319,7 @@ func (r *GatewayRunner) postTurnLoopCompletion(ctx context.Context, entry *gatew
 }
 
 // Text of a route field, empty when absent or None
-func routeText(route *pyjson.Object, key string) string {
+func routeText(route *jsonutil.Object, key string) string {
 	if route == nil {
 		return ""
 	}
@@ -327,7 +327,7 @@ func routeText(route *pyjson.Object, key string) string {
 	if !ok || value == nil {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Injects one due loop wakeup into its session, applying every deferral rule

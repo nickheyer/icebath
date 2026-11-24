@@ -4,8 +4,8 @@ import (
 	"context"
 	"os"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Model config keys of a child's session row naming its subagent id, live log and spawning session
@@ -20,7 +20,7 @@ const transcriptOwnerHops = 8
 
 // Session store reads the finished child logs need
 type transcriptStore interface {
-	ReadAll(ctx context.Context, query string, args ...any) ([]*pyjson.Object, error)
+	ReadAll(ctx context.Context, query string, args ...any) ([]*jsonutil.Object, error)
 	GetCompressionLineage(ctx context.Context, sessionID string) ([]string, error)
 }
 
@@ -30,7 +30,7 @@ func modelConfigField(key string) string {
 }
 
 // Model config of a stored session row
-func rowModelConfig(row *pyjson.Object) map[string]any {
+func rowModelConfig(row *jsonutil.Object) map[string]any {
 	raw, _ := row.Get("model_config")
 	return state.ParseModelConfig(raw)
 }

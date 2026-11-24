@@ -11,7 +11,6 @@ import (
 	"unsafe"
 
 	"github.com/nickheyer/icebath/pkg/fetch"
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
 )
 
 const releaseBase = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v" + Version + "/sherpa-onnx-v" + Version + "-"
@@ -86,13 +85,13 @@ func libraryArchive(goos, goarch string, gpu bool) (fetch.Asset, bool) {
 // Whether the engine publishes a library for this platform
 func Supported() bool {
 	_, ok := libraryArchive(runtime.GOOS, runtime.GOARCH, false)
-	return ok && pyctypes.Supported
+	return ok && dlutil.Supported
 }
 
 // Directory of the pinned native library package for this platform, fetched into the icebath cache on first use
 func LibraryDir(ctx context.Context, gpu bool) (string, error) {
 	asset, ok := libraryArchive(runtime.GOOS, runtime.GOARCH, gpu)
-	if !ok || !pyctypes.Supported {
+	if !ok || !dlutil.Supported {
 		return "", &PlatformError{GPU: gpu}
 	}
 	tree, err := fetch.Tree(ctx, asset)
@@ -184,7 +183,7 @@ func (m *Module) speechAPI() (*speechAPI, error) {
 				m.speechErr = fmt.Errorf("the local speech engine library lacks %s: %w", entry.name, err)
 				return
 			}
-			pyctypes.RegisterFunc(entry.fptr, addr)
+			dlutil.RegisterFunc(entry.fptr, addr)
 		}
 		m.speech = api
 	})
@@ -206,7 +205,7 @@ func (c *cStrings) ptr(s string) *byte {
 	if s == "" {
 		return nil
 	}
-	buf := pyctypes.CString(s)
+	buf := dlutil.CString(s)
 	c.held = append(c.held, buf)
 	return &buf[0]
 }
@@ -315,7 +314,7 @@ func goString(p *byte) string {
 	if p == nil {
 		return ""
 	}
-	return pyctypes.GoString(uintptr(unsafe.Pointer(p)))
+	return dlutil.GoString(uintptr(unsafe.Pointer(p)))
 }
 
 // Silero voice activity model and the pauses that end a stretch of speech

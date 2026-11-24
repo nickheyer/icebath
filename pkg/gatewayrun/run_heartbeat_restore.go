@@ -3,11 +3,11 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Every home a heartbeat origin can resolve to, the gateway home then the whole served set under multiplexing
@@ -25,7 +25,7 @@ func watchedHeartbeatHomes(ctx context.Context, r *GatewayRunner, defaultHome st
 	seen := map[string]bool{}
 	var out []string
 	for _, h := range homes {
-		key := pypath.PurePathStr(h)
+		key := filepath.Clean(h)
 		if !seen[key] {
 			seen[key] = true
 			out = append(out, key)

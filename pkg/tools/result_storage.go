@@ -21,10 +21,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	_ "modernc.org/sqlite"
 )
@@ -332,31 +332,31 @@ func GeneratePreview(content string, maxChars int) (string, bool) {
 
 // Rewrites an MCP handler result envelope into the text it wraps with metadata appended
 func pageableText(content string) string {
-	decoded, err := pyjson.Loads(content)
+	decoded, err := jsonutil.Decode(content)
 	if err != nil {
 		return content
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok || payload.Len() == 0 {
 		return content
 	}
-	extras := pyjson.NewObject()
-	for _, k := range payload.Keys {
+	extras := jsonutil.NewObject()
+	for _, k := range payload.Keys() {
 		if !mcpEnvelopeKeys[k] {
 			return content
 		}
 		if k != "result" {
-			extras.Set(k, payload.Vals[k])
+			extras.Set(k, payload.Value(k))
 		}
 	}
-	text, ok := payload.Vals["result"].(string)
+	text, ok := payload.Value("result").(string)
 	if !ok || text == "" {
 		return content
 	}
 	if extras.Len() == 0 {
 		return text
 	}
-	metadata, err := pyjson.Dumps(extras, pyjson.EnsureASCII(false), pyjson.Indent(1), pyjson.SortKeys(true), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	metadata, err := jsonutil.Encode(extras, jsonutil.Indent(1), jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
 		return text
 	}

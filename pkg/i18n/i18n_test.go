@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const approvalKey = "approval.denied"
@@ -37,7 +37,7 @@ func rawCatalog(t *testing.T, name string) map[string]any {
 			return
 		}
 		for _, p := range m {
-			key := pyrepr.Str(p.Key)
+			key := anyutil.String(p.Key)
 			if prefix != "" {
 				key = prefix + "." + key
 			}

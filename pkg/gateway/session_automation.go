@@ -10,10 +10,10 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Longest card text a producer may attach to its admission
@@ -35,27 +35,27 @@ type sourceAuthorizer interface {
 }
 
 // Automation descriptor of a payload, empty for every other input
-func automationDescriptor(payload *pyjson.Object) *pyjson.Object {
+func automationDescriptor(payload *jsonutil.Object) *jsonutil.Object {
 	if local, _ := payload.Get("local_automation_v1"); pyTruthy(local) {
-		if obj, ok := local.(*pyjson.Object); ok {
+		if obj, ok := local.(*jsonutil.Object); ok {
 			return obj
 		}
 	}
 	if native, _ := payload.Get("native_text_v1"); pyTruthy(native) {
-		if envelope, ok := native.(*pyjson.Object); ok {
+		if envelope, ok := native.(*jsonutil.Object); ok {
 			if automation, _ := envelope.Get("automation"); pyTruthy(automation) {
-				if obj, ok := automation.(*pyjson.Object); ok {
+				if obj, ok := automation.(*jsonutil.Object); ok {
 					return obj
 				}
 			}
 		}
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Stored output of a liveness tick a later tick folds in, refused unless it is exactly output and omitted
-func tickMetadata(metadata map[string]any) (*pyjson.Object, error) {
-	out := pyjson.NewObject()
+func tickMetadata(metadata map[string]any) (*jsonutil.Object, error) {
+	out := jsonutil.NewObject()
 	tick, ok := metadata["heartbeat_tick"]
 	if !ok || tick == nil {
 		return out, nil
@@ -71,7 +71,7 @@ func tickMetadata(metadata map[string]any) (*pyjson.Object, error) {
 		if _, has := t["omitted"]; !has {
 			count = -1
 		}
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		var hasOutput, hasOmitted bool
 		output, hasOutput = t.Get("output")
 		omitted, hasOmitted = t.Get("omitted")
@@ -95,11 +95,11 @@ func tickMetadata(metadata map[string]any) (*pyjson.Object, error) {
 	if count != 2 || !isText || n < 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	if ordered, ok := tick.(*pyjson.Object); ok {
-		out.Set("tick", ordered.Copy())
+	if ordered, ok := tick.(*jsonutil.Object); ok {
+		out.Set("tick", ordered.Clone())
 		return out, nil
 	}
-	out.Set("tick", pyjson.ObjectOf("output", text, "omitted", omitted))
+	out.Set("tick", jsonutil.ObjectOf("output", text, "omitted", omitted))
 	return out, nil
 }
 
@@ -172,17 +172,17 @@ func foldQueuedGuard(admissionID, sessionID string, replaced *[]string, skip []s
 		if err := replace(ctx, conn); err != nil {
 			return err
 		}
-		decoded, err := pyjson.Loads(encoded)
+		decoded, err := jsonutil.Decode(encoded)
 		if err != nil {
 			return err
 		}
-		payload, ok := decoded.(*pyjson.Object)
+		payload, ok := decoded.(*jsonutil.Object)
 		if !ok {
 			return fmt.Errorf("the queued automation guard is %s, expected a mapping", errchain.Kind(decoded))
 		}
 		payload.Set("text", automationFoldedText)
 		automationDescriptor(payload).Delete("identities")
-		text, err := pyjson.Dumps(payload, pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
+		text, err := jsonutil.Encode(payload)
 		if err != nil {
 			return err
 		}
@@ -268,7 +268,7 @@ func automationOwner(ctx context.Context, runner AuthorityRunner, event *Message
 }
 
 // Trusted producer category of a notification, the default left out of old fingerprints
-func automationNotificationMetadata(get func(key string) (any, bool)) (*pyjson.Object, error) {
+func automationNotificationMetadata(get func(key string) (any, bool)) (*jsonutil.Object, error) {
 	category, ok := get("notification_category")
 	if !ok {
 		category = "result"
@@ -276,7 +276,7 @@ func automationNotificationMetadata(get func(key string) (any, bool)) (*pyjson.O
 	if category != "result" && category != "diagnostic" {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	if category == "diagnostic" {
 		out.Set("notification_category", category)
 	}
@@ -284,10 +284,10 @@ func automationNotificationMetadata(get func(key string) (any, bool)) (*pyjson.O
 }
 
 // Card a producer named for its admission, both keys or neither with a kind from the closed producer set
-func AutomationDisplayMetadata(get func(key string) (any, bool)) (*pyjson.Object, error) {
+func AutomationDisplayMetadata(get func(key string) (any, bool)) (*jsonutil.Object, error) {
 	kind, hasKind := get("display_kind")
 	text, hasText := get("display_text")
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	if !hasKind && !hasText {
 		return out, nil
 	}
@@ -310,7 +310,7 @@ func metadataGetter(metadata map[string]any) func(key string) (any, bool) {
 }
 
 // Route's last committed native envelope carrying connector provenance, nil while no human message was admitted
-func committedRouteEnvelope(ctx context.Context, a *SessionAuthority, entry *SessionEntry) (*pyjson.Object, error) {
+func committedRouteEnvelope(ctx context.Context, a *SessionAuthority, entry *SessionEntry) (*jsonutil.Object, error) {
 	owner, err := a.LogicalOwner(ctx, entry.SessionID)
 	if err != nil {
 		return nil, err
@@ -321,7 +321,7 @@ func committedRouteEnvelope(ctx context.Context, a *SessionAuthority, entry *Ses
 	}
 	for i := len(prior) - 1; i >= 0; i-- {
 		payloadValue, _ := prior[i].Get("payload")
-		payload, _ := payloadValue.(*pyjson.Object)
+		payload, _ := payloadValue.(*jsonutil.Object)
 		if payload == nil {
 			continue
 		}
@@ -329,7 +329,7 @@ func committedRouteEnvelope(ctx context.Context, a *SessionAuthority, entry *Ses
 		if !ok {
 			continue
 		}
-		envelope, _ := native.(*pyjson.Object)
+		envelope, _ := native.(*jsonutil.Object)
 		if envelope == nil {
 			return nil, nil
 		}
@@ -347,7 +347,7 @@ func automationIdentities(metadata map[string]any) []any {
 	switch list := metadata["automation_identities"].(type) {
 	case []any:
 		for _, item := range list {
-			names = append(names, pyrepr.Str(item))
+			names = append(names, anyutil.String(item))
 		}
 	case []string:
 		names = append(names, list...)
@@ -365,22 +365,22 @@ func automationIdentities(metadata map[string]any) []any {
 }
 
 // Envelope without its retained media, what a producer wake borrows from the committed human turn
-func envelopeWithoutMedia(text string, envelope *pyjson.Object) *pyjson.Object {
-	borrowed := pyjson.NewObject()
-	for _, key := range envelope.Keys {
+func envelopeWithoutMedia(text string, envelope *jsonutil.Object) *jsonutil.Object {
+	borrowed := jsonutil.NewObject()
+	for _, key := range envelope.Keys() {
 		if key != "media" {
 			value, _ := envelope.Get(key)
 			borrowed.Set(key, value)
 		}
 	}
-	return pyjson.ObjectOf("text", text, "native_text_v1", borrowed)
+	return jsonutil.ObjectOf("text", text, "native_text_v1", borrowed)
 }
 
 // Automation snapshot of every producer admission, replaced by a case as the tests patch snapshot_automation
 var snapshotAutomation = automationSnapshot
 
 // Payload and routing entry of a producer's automation input, bound to the route's committed provenance
-func automationSnapshot(ctx context.Context, a *SessionAuthority, adapter PlatformAdapter, event *MessageEvent, identity string) (*pyjson.Object, *SessionEntry, error) {
+func automationSnapshot(ctx context.Context, a *SessionAuthority, adapter PlatformAdapter, event *MessageEvent, identity string) (*jsonutil.Object, *SessionEntry, error) {
 	runner := a.Runner
 	if !event.Internal || event.MessageType != MessageTypeText || event.IsCommand() || identity == "" ||
 		len(event.MediaURLs) > 0 || len(event.PromptResponse) > 0 || event.Source.Platform == PlatformAPIServer {
@@ -391,17 +391,19 @@ func automationSnapshot(ctx context.Context, a *SessionAuthority, adapter Platfo
 			return nil, nil, runtimeRefusal("invalid_params")
 		}
 	}
-	notification := pyjson.NewObject()
-	for _, build := range []func() (*pyjson.Object, error){
-		func() (*pyjson.Object, error) { return automationNotificationMetadata(metadataGetter(event.Metadata)) },
-		func() (*pyjson.Object, error) { return AutomationDisplayMetadata(metadataGetter(event.Metadata)) },
-		func() (*pyjson.Object, error) { return tickMetadata(event.Metadata) },
+	notification := jsonutil.NewObject()
+	for _, build := range []func() (*jsonutil.Object, error){
+		func() (*jsonutil.Object, error) {
+			return automationNotificationMetadata(metadataGetter(event.Metadata))
+		},
+		func() (*jsonutil.Object, error) { return AutomationDisplayMetadata(metadataGetter(event.Metadata)) },
+		func() (*jsonutil.Object, error) { return tickMetadata(event.Metadata) },
 	} {
 		part, err := build()
 		if err != nil {
 			return nil, nil, err
 		}
-		notification.Update(part)
+		notification.Merge(part)
 	}
 	entry, err := automationOwner(ctx, runner, event, a)
 	if err != nil {
@@ -438,9 +440,9 @@ func automationSnapshot(ctx context.Context, a *SessionAuthority, adapter Platfo
 		return nil, nil, runtimeRefusal("admission_conflict")
 	}
 	provenanceValue, _ := envelope.Get("provenance")
-	provenance, _ := pyjson.Clone(provenanceValue).(*pyjson.Object)
+	provenance, _ := jsonutil.Clone(provenanceValue).(*jsonutil.Object)
 	sourceValue, _ := envelope.Get("source")
-	source, _ := pyjson.Clone(sourceValue).(*pyjson.Object)
+	source, _ := jsonutil.Clone(sourceValue).(*jsonutil.Object)
 	if source == nil {
 		return nil, nil, &pyKeyError{"source"}
 	}
@@ -453,17 +455,17 @@ func automationSnapshot(ctx context.Context, a *SessionAuthority, adapter Platfo
 			return nil, nil, err
 		}
 	}
-	automation := pyjson.ObjectOf("identity", identity, "owner", owner)
-	automation.Update(notification)
+	automation := jsonutil.ObjectOf("identity", identity, "owner", owner)
+	automation.Merge(notification)
 	if heartbeat := event.HeartbeatSessionID(); heartbeat != nil && *heartbeat != "" {
 		automation.Set("heartbeat", *heartbeat)
 	}
 	if identities := automationIdentities(event.Metadata); identities != nil {
 		automation.Set("identities", identities)
 	}
-	committed := pyjson.ObjectOf("source", source, "route", entry.SessionKey, "timestamp", "1970-01-01T00:00:00+00:00",
-		"event", pyjson.ObjectOf("message_id", identity), "provenance", provenance, "automation", automation)
-	return pyjson.ObjectOf("text", event.Text, "native_text_v1", committed), entry, nil
+	committed := jsonutil.ObjectOf("source", source, "route", entry.SessionKey, "timestamp", "1970-01-01T00:00:00+00:00",
+		"event", jsonutil.ObjectOf("message_id", identity), "provenance", provenance, "automation", automation)
+	return jsonutil.ObjectOf("text", event.Text, "native_text_v1", committed), entry, nil
 }
 
 // Session and live entry a local automation lands on, refused unless its adapter vouches for the live source
@@ -504,22 +506,24 @@ func localAutomationOwner(ctx context.Context, a *SessionAuthority, adapter Plat
 }
 
 // Payload and routing entry of an automation input a local session or a detached conversation takes
-func snapshotLocalAutomation(ctx context.Context, a *SessionAuthority, adapter PlatformAdapter, event *MessageEvent, identity string, entry *SessionEntry) (*pyjson.Object, *SessionEntry, error) {
+func snapshotLocalAutomation(ctx context.Context, a *SessionAuthority, adapter PlatformAdapter, event *MessageEvent, identity string, entry *SessionEntry) (*jsonutil.Object, *SessionEntry, error) {
 	ref, _, err := localAutomationOwner(ctx, a, adapter, event, entry)
 	if err != nil {
 		return nil, nil, err
 	}
-	descriptor := pyjson.ObjectOf("identity", identity, "owner", ref.SessionID, "route", entry.SessionKey, "target", entry.SessionID)
-	for _, build := range []func() (*pyjson.Object, error){
-		func() (*pyjson.Object, error) { return automationNotificationMetadata(metadataGetter(event.Metadata)) },
-		func() (*pyjson.Object, error) { return AutomationDisplayMetadata(metadataGetter(event.Metadata)) },
-		func() (*pyjson.Object, error) { return tickMetadata(event.Metadata) },
+	descriptor := jsonutil.ObjectOf("identity", identity, "owner", ref.SessionID, "route", entry.SessionKey, "target", entry.SessionID)
+	for _, build := range []func() (*jsonutil.Object, error){
+		func() (*jsonutil.Object, error) {
+			return automationNotificationMetadata(metadataGetter(event.Metadata))
+		},
+		func() (*jsonutil.Object, error) { return AutomationDisplayMetadata(metadataGetter(event.Metadata)) },
+		func() (*jsonutil.Object, error) { return tickMetadata(event.Metadata) },
 	} {
 		part, err := build()
 		if err != nil {
 			return nil, nil, err
 		}
-		descriptor.Update(part)
+		descriptor.Merge(part)
 	}
 	if author := event.Metadata["turn_author"]; author != nil {
 		parsed := provider.ParseTurnAuthor(author)
@@ -534,17 +538,17 @@ func snapshotLocalAutomation(ctx context.Context, a *SessionAuthority, adapter P
 	if heartbeat := event.HeartbeatSessionID(); heartbeat != nil && *heartbeat != "" {
 		descriptor.Set("heartbeat", *heartbeat)
 	}
-	return pyjson.ObjectOf("text", event.Text, "local_automation_v1", descriptor), entry, nil
+	return jsonutil.ObjectOf("text", event.Text, "local_automation_v1", descriptor), entry, nil
 }
 
 // Refuses a queued local automation row whose owner, route, identity or target no longer match its session
-func checkLocalAutomation(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object, route string) error {
+func checkLocalAutomation(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object, route string) error {
 	live, _ := a.live(ref.SessionID)
 	if route == "" && live != nil {
 		route = live.Route
 	}
 	payloadValue, _ := row.Get("payload")
-	payload, _ := payloadValue.(*pyjson.Object)
+	payload, _ := payloadValue.(*jsonutil.Object)
 	if payload == nil {
 		return &pyKeyError{"local_automation_v1"}
 	}
@@ -552,7 +556,7 @@ func checkLocalAutomation(ctx context.Context, a *SessionAuthority, ref SessionR
 	if !ok {
 		return &pyKeyError{"local_automation_v1"}
 	}
-	descriptor, _ := descriptorValue.(*pyjson.Object)
+	descriptor, _ := descriptorValue.(*jsonutil.Object)
 	if descriptor == nil {
 		return fmt.Errorf("the automation descriptor is %s, expected a mapping", errchain.Kind(descriptorValue))
 	}
@@ -586,7 +590,7 @@ func checkLocalAutomation(ctx context.Context, a *SessionAuthority, ref SessionR
 		return &pyKeyError{"target"}
 	}
 	if entry.SessionID != target {
-		tip, err := a.DB.GetCompressionTip(ctx, pyrepr.Str(target))
+		tip, err := a.DB.GetCompressionTip(ctx, anyutil.String(target))
 		if err != nil {
 			return err
 		}
@@ -610,8 +614,8 @@ func admitAutomation(ctx context.Context, a *SessionAuthority, adapter PlatformA
 	ref := SessionRef{a.ProfileID, sid}
 	source := event.Source
 	if native, ok := payload.Get("native_text_v1"); ok && native != nil {
-		provenance, _ := native.(*pyjson.Object).Get("provenance")
-		if obj, isObj := provenance.(*pyjson.Object); isObj {
+		provenance, _ := native.(*jsonutil.Object).Get("provenance")
+		if obj, isObj := provenance.(*jsonutil.Object); isObj {
 			if _, relayed := obj.Get("relay"); relayed {
 				if source, err = restoreNativeSource(ctx, payload, a.Runner); err != nil {
 					return AdmissionReceipt{}, err
@@ -633,7 +637,7 @@ func admitAutomation(ctx context.Context, a *SessionAuthority, adapter PlatformA
 			authorize = foldQueuedGuard(*replaces, ref.SessionID, &replaced, fold)
 		}
 	}
-	committed, _ := pyjson.Clone(payload).(*pyjson.Object)
+	committed, _ := jsonutil.Clone(payload).(*jsonutil.Object)
 	var scheduleErr error
 	result, err := trackedWrite(ctx, a, func(taskCtx context.Context) (any, error) {
 		return a.DB.AdmitSessionInput(taskCtx, state.SessionInput{Epoch: a.Epoch, PrincipalID: "automation:" + entry.SessionKey,
@@ -644,7 +648,7 @@ func admitAutomation(ctx context.Context, a *SessionAuthority, adapter PlatformA
 				return nil, err
 			}
 		}
-		return a.admitted(taskCtx, ref, event, written.(*pyjson.Object))
+		return a.admitted(taskCtx, ref, event, written.(*jsonutil.Object))
 	}, true, func(any) { scheduleErr = a.scheduleAdmitted(ctx, ref) })
 	if err == nil {
 		err = scheduleErr
@@ -678,7 +682,7 @@ func admitRouteWake(ctx context.Context, runner AuthorityRunner, adapter Platfor
 	if entry == nil {
 		return false, nil
 	}
-	encoded, err := pyjson.Dumps([]any{kind, key, uuid4HexString()}, pyjson.Separators(",", ":"))
+	encoded, err := jsonutil.Encode([]any{kind, key, uuid4HexString()})
 	if err != nil {
 		return false, err
 	}
@@ -723,19 +727,19 @@ func admitRouteWake(ctx context.Context, runner AuthorityRunner, adapter Platfor
 }
 
 // Async result card of an automation admission for its claim's start frame, empty for every other input
-func AutomationAdmissionDisplay(payload *pyjson.Object) *pyjson.Object {
+func AutomationAdmissionDisplay(payload *jsonutil.Object) *jsonutil.Object {
 	descriptor := automationDescriptor(payload)
 	kind, _ := descriptor.Get("display_kind")
 	text, _ := descriptor.Get("display_text")
 	body, isText := text.(string)
 	if !pyTruthy(kind) || !isText || strings.TrimSpace(body) == "" {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	said := ""
 	if value, _ := payload.Get("text"); pyTruthy(value) {
-		said = pyrepr.Str(value)
+		said = anyutil.String(value)
 	}
-	card := pyjson.ObjectOf("display_kind", kind, "display_text", body, "text", said)
+	card := jsonutil.ObjectOf("display_kind", kind, "display_text", body, "text", said)
 	if category, _ := descriptor.Get("notification_category"); category == "diagnostic" {
 		card.Set("notification_category", "diagnostic")
 	}

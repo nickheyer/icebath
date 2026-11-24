@@ -11,10 +11,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python ValueError of a delivery the config cannot route
@@ -101,25 +101,25 @@ func NewTeamsSummaryWriter(platformConfig *gateway.PlatformConfig, graphClient G
 }
 
 // Sends the summary by the configured delivery mode and returns the delivery record, an existing record short circuiting it
-func (w *TeamsSummaryWriter) WriteSummary(ctx context.Context, payload SummaryPayload, config, existingRecord *pyjson.Object) (*pyjson.Object, error) {
+func (w *TeamsSummaryWriter) WriteSummary(ctx context.Context, payload SummaryPayload, config, existingRecord *jsonutil.Object) (*jsonutil.Object, error) {
 	merged, err := w.resolveDeliveryConfig(ctx, config)
 	if err != nil {
 		return nil, err
 	}
 	if existingRecord != nil && existingRecord.Len() > 0 && !parseBool(merged["force_resend"], false) {
-		return existingRecord.Copy(), nil
+		return existingRecord.Clone(), nil
 	}
 	mode := ""
 	for _, key := range []string{"delivery_mode", "mode"} {
-		if value := merged[key]; pyrepr.Truthy(value) {
-			mode = pyrepr.Str(value)
+		if value := merged[key]; anyutil.IsTrue(value) {
+			mode = anyutil.String(value)
 			break
 		}
 	}
 	mode = strings.ToLower(strings.TrimSpace(mode))
-	if mode == "" && pyrepr.Truthy(merged["incoming_webhook_url"]) {
+	if mode == "" && anyutil.IsTrue(merged["incoming_webhook_url"]) {
 		mode = "incoming_webhook"
-	} else if mode == "" && (pyrepr.Truthy(merged["chat_id"]) || (pyrepr.Truthy(merged["team_id"]) && pyrepr.Truthy(merged["channel_id"]))) {
+	} else if mode == "" && (anyutil.IsTrue(merged["chat_id"]) || (anyutil.IsTrue(merged["team_id"]) && anyutil.IsTrue(merged["channel_id"]))) {
 		mode = "graph"
 	}
 	switch mode {
@@ -132,7 +132,7 @@ func (w *TeamsSummaryWriter) WriteSummary(ctx context.Context, payload SummaryPa
 }
 
 // Delivery config merged from the platform extras, token and home channel, the call config, then the env fallbacks
-func (w *TeamsSummaryWriter) resolveDeliveryConfig(ctx context.Context, config *pyjson.Object) (map[string]any, error) {
+func (w *TeamsSummaryWriter) resolveDeliveryConfig(ctx context.Context, config *jsonutil.Object) (map[string]any, error) {
 	merged := map[string]any{}
 	if cfg := w.platformConfig; cfg != nil {
 		for key, value := range cfg.Extra {
@@ -148,8 +148,8 @@ func (w *TeamsSummaryWriter) resolveDeliveryConfig(ctx context.Context, config *
 		}
 	}
 	if config != nil {
-		for _, key := range config.Keys {
-			merged[key] = config.Vals[key]
+		for _, key := range config.Keys() {
+			merged[key] = config.Value(key)
 		}
 	}
 	for _, pair := range summaryEnvKeys {
@@ -162,7 +162,7 @@ func (w *TeamsSummaryWriter) resolveDeliveryConfig(ctx context.Context, config *
 			}
 			value = scoped
 		}
-		if value != "" && !pyrepr.Truthy(merged[key]) {
+		if value != "" && !anyutil.IsTrue(merged[key]) {
 			merged[key] = value
 		}
 	}
@@ -171,20 +171,20 @@ func (w *TeamsSummaryWriter) resolveDeliveryConfig(ctx context.Context, config *
 
 // Stripped text of a config value, empty for a falsy one
 func configText(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(value))
+	return strings.TrimSpace(anyutil.String(value))
 }
 
 // Posts the markdown summary to the incoming webhook URL on a fresh client with a twenty second timeout
-func (w *TeamsSummaryWriter) writeSummaryViaIncomingWebhook(ctx context.Context, payload SummaryPayload, config map[string]any) (*pyjson.Object, error) {
+func (w *TeamsSummaryWriter) writeSummaryViaIncomingWebhook(ctx context.Context, payload SummaryPayload, config map[string]any) (*jsonutil.Object, error) {
 	webhookURL := configText(config["incoming_webhook_url"])
 	if webhookURL == "" {
 		return nil, &summaryValueError{"TEAMS_INCOMING_WEBHOOK_URL is required for incoming_webhook mode."}
 	}
-	text, err := pyjson.Dumps(pyjson.ObjectOf("text", w.renderSummaryMarkdown(ctx, payload)),
-		pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("text", w.renderSummaryMarkdown(ctx, payload)))
+
 	if err != nil {
 		return nil, err
 	}
@@ -193,12 +193,12 @@ func (w *TeamsSummaryWriter) writeSummaryViaIncomingWebhook(ctx context.Context,
 		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	client, closeClient := &http.Client{Transport: w.transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}, func() {}
+	client, closeClient := &http.Client{Transport: w.transport, CheckRedirect: httputil.RedirectPolicy(false)}, func() {}
 	if w.transport == nil {
 		t := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 		client.Transport, closeClient = t, t.CloseIdleConnections
 	}
-	resp, err := pyhttpx.Do(client, req, 20*time.Second)
+	resp, err := httputil.Do(client, req, httputil.EachPhase(20*time.Second))
 	closeClient()
 	if err != nil {
 		return nil, err
@@ -206,16 +206,16 @@ func (w *TeamsSummaryWriter) writeSummaryViaIncomingWebhook(ctx context.Context,
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return nil, &summaryHTTPStatusError{resp.StatusErrorText(webhookURL)}
 	}
-	return pyjson.ObjectOf("delivery_mode", "incoming_webhook", "webhook_url", webhookURL, "status_code", resp.StatusCode, "delivered", true), nil
+	return jsonutil.ObjectOf("delivery_mode", "incoming_webhook", "webhook_url", webhookURL, "status_code", resp.StatusCode, "delivered", true), nil
 }
 
 // Posts the HTML summary as a chat message, or as a channel message of a team, through Microsoft Graph
-func (w *TeamsSummaryWriter) writeSummaryViaGraph(ctx context.Context, payload SummaryPayload, config map[string]any) (*pyjson.Object, error) {
+func (w *TeamsSummaryWriter) writeSummaryViaGraph(ctx context.Context, payload SummaryPayload, config map[string]any) (*jsonutil.Object, error) {
 	graphClient, err := w.buildGraphClient(config)
 	if err != nil {
 		return nil, err
 	}
-	record := pyjson.ObjectOf("delivery_mode", "graph")
+	record := jsonutil.ObjectOf("delivery_mode", "graph")
 	path := ""
 	if chatID := configText(config["chat_id"]); chatID != "" {
 		path = "/chats/" + pyurl.Quote(chatID, "") + "/messages"
@@ -231,17 +231,17 @@ func (w *TeamsSummaryWriter) writeSummaryViaGraph(ctx context.Context, payload S
 		record.Set("team_id", teamID)
 		record.Set("channel_id", channelID)
 	}
-	body := pyjson.ObjectOf("body", pyjson.ObjectOf("contentType", "html", "content", w.renderSummaryHTML(ctx, payload)))
+	body := jsonutil.ObjectOf("body", jsonutil.ObjectOf("contentType", "html", "content", w.renderSummaryHTML(ctx, payload)))
 	response, err := graphClient.PostJSON(ctx, path, body, nil)
 	if err != nil {
 		return nil, err
 	}
-	answer, _ := response.(*pyjson.Object)
+	answer, _ := response.(*jsonutil.Object)
 	if answer == nil || answer.Len() == 0 {
-		answer = pyjson.NewObject()
+		answer = jsonutil.NewObject()
 	}
-	record.Set("message_id", answer.GetOr("id", nil))
-	record.Set("web_url", answer.GetOr("webUrl", nil))
+	record.Set("message_id", answer.ValueOr("id", nil))
+	record.Set("web_url", answer.ValueOr("webUrl", nil))
 	return record, nil
 }
 
@@ -291,7 +291,7 @@ func (w *TeamsSummaryWriter) renderSummaryHTML(ctx context.Context, payload Summ
 	for _, section := range summaryListSections {
 		var rendered strings.Builder
 		for _, item := range section.items(payload) {
-			if text := pyrepr.Str(item); strings.TrimSpace(text) != "" {
+			if text := anyutil.String(item); strings.TrimSpace(text) != "" {
 				rendered.WriteString("<li>" + htmlEscape(text) + "</li>")
 			}
 		}
@@ -307,11 +307,11 @@ func (w *TeamsSummaryWriter) renderSummaryHTML(ctx context.Context, payload Summ
 
 // Title of the payload, else the meeting summary title naming its meeting id
 func summaryTitle(ctx context.Context, payload SummaryPayload) string {
-	if pyrepr.Truthy(payload.Title) {
-		return pyrepr.Str(payload.Title)
+	if anyutil.IsTrue(payload.Title) {
+		return anyutil.String(payload.Title)
 	}
 	meetingID := payload.MeetingID
-	if !pyrepr.Truthy(meetingID) {
+	if !anyutil.IsTrue(meetingID) {
 		meetingID = summaryT(ctx, "platform.teams.summary.title_fallback", nil)
 	}
 	return summaryT(ctx, "platform.teams.summary.title", map[string]any{"meeting_id": meetingID})
@@ -329,7 +329,7 @@ func summaryText(value any, def string) string {
 func summaryBulletLines(values []any) []string {
 	lines := []string{}
 	for _, item := range values {
-		if text := strings.TrimSpace(pyrepr.Str(item)); text != "" {
+		if text := strings.TrimSpace(anyutil.String(item)); text != "" {
 			lines = append(lines, "- "+text)
 		}
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -30,14 +30,14 @@ var (
 func NormalizePath(path string) string {
 	p, err := normalizePath(path)
 	if err != nil {
-		return pypath.Normpath(pypath.Expanduser(path))
+		return filepath.Clean(pathutil.ExpandUser(path))
 	}
 	return p
 }
 
 // Absolute clean form of a path, the getcwd failure when a relative path has no cwd to anchor on
 func normalizePath(path string) (string, error) {
-	return pypath.Abspath(pypath.Expanduser(path))
+	return filepath.Abs(pathutil.ExpandUser(path))
 }
 
 // Normalized start directory, the parent when the start is a regular file
@@ -265,7 +265,7 @@ func PathList(v any) ([]string, bool) {
 			return nil, false
 		}
 		if s != "" {
-			out = append(out, pypath.Expanduser(s))
+			out = append(out, pathutil.ExpandUser(s))
 		}
 	}
 	return out, true

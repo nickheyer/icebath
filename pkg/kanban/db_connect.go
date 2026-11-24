@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -14,15 +15,15 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var (
@@ -75,19 +76,19 @@ func sqliteConnect(path string) (state.SQLiteConn, error) {
 
 // One non blocking exclusive lock attempt, false when held elsewhere, a one byte range at offset zero on Windows
 func tryLockNB(handle *os.File) (bool, error) {
-	return pyfs.TryLockFile(handle)
+	return fsutil.TryLockFile(handle)
 }
 
 // Releases the lock tryLockNB took on the same byte range or flock, the OS error surfacing
 func unlock(handle *os.File) error {
-	return pyfs.UnlockFile(handle)
+	return fsutil.UnlockFile(handle)
 }
 
 var crossProcessInitLockFn = crossProcessInitLock
 
 // Takes the cross process init lock within the bounded wait, proceeding unlocked with a warning after the deadline
 func crossProcessInitLock(path string) (func() error, error) {
-	if err := os.MkdirAll(pypath.PathParent(path), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(path)), 0o777); err != nil {
 		return nil, err
 	}
 	lockPath := path + ".init.lock"
@@ -118,7 +119,7 @@ func crossProcessInitLock(path string) (func() error, error) {
 // Non blocking single writer guard around one dispatcher tick, acquired true also when the lock file cannot be opened
 func dispatchTickLock(dbPath string) (bool, func()) {
 	lockPath := dbPath + ".dispatch.lock"
-	if err := os.MkdirAll(pypath.PathParent(lockPath), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(lockPath)), 0o777); err != nil {
 		return true, func() {}
 	}
 	handle, err := os.OpenFile(lockPath, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0o666)
@@ -143,7 +144,7 @@ var (
 
 // Passive WAL checkpoint at most once per interval per board, never failing the tick
 func maybeCheckpointWAL(ctx context.Context, conn state.SQLiteConn, dbPath string) {
-	key, err := pypath.Resolve(dbPath)
+	key, err := pathutil.Resolve(dbPath)
 	if err != nil {
 		key = dbPath
 	}
@@ -224,7 +225,7 @@ func backupLabel(backupPath string) string {
 
 // Keeps the newest corrupt backups by mtime plus their sidecars, never pruning keep
 func pruneCorruptBackups(parent, baseName, keep string) {
-	matches, err := pypath.Glob(parent, baseName+".corrupt.*.bak")
+	matches, err := pathutil.Glob(parent, baseName+".corrupt.*.bak")
 	if err != nil {
 		return
 	}
@@ -267,11 +268,11 @@ func pruneCorruptBackups(parent, baseName, keep string) {
 
 // Content addressed copy of a corrupt database and its sidecars, empty when the copy failed
 func backupCorruptDB(path string) string {
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		resolved = path
 	}
-	parent, baseName := pypath.PathParent(resolved), pypath.PathName(resolved)
+	parent, baseName := filepath.Dir(filepath.Clean(resolved)), pathutil.Name(resolved)
 	if state.HasLiveConnection(resolved) {
 		pkgLog().Error(fmt.Sprintf("refusing to quarantine %s: a connection to it is still open in "+
 			"this process, and fingerprinting the file would cancel that "+
@@ -288,20 +289,20 @@ func backupCorruptDB(path string) string {
 	if err != nil {
 		return ""
 	}
-	candidate := pypath.PathJoin(parent, baseName+".corrupt."+hex.EncodeToString(digest.Sum(nil))[:16]+".bak")
+	candidate := pathutil.Join(parent, baseName+".corrupt."+hex.EncodeToString(digest.Sum(nil))[:16]+".bak")
 	if !pathExists(candidate) {
-		if err := pyfs.Copy2(resolved, candidate); err != nil {
+		if err := fsutil.CopyFile(resolved, candidate); err != nil {
 			return ""
 		}
 		pruneCorruptBackups(parent, baseName, candidate)
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
-		sidecar := pypath.PathJoin(parent, baseName+suffix)
-		sidecarBackup := pypath.PathJoin(parent, pypath.PathName(candidate)+suffix)
+		sidecar := pathutil.Join(parent, baseName+suffix)
+		sidecarBackup := pathutil.Join(parent, pathutil.Name(candidate)+suffix)
 		if !pathExists(sidecar) || pathExists(sidecarBackup) {
 			continue
 		}
-		pyfs.Copy2(sidecar, sidecarBackup)
+		fsutil.CopyFile(sidecar, sidecarBackup)
 	}
 	return candidate
 }
@@ -325,7 +326,7 @@ func runIntegrityCheck(ctx context.Context, conn state.SQLiteConn) ([]string, er
 	var out []string
 	for _, r := range rows {
 		if len(r.Vals) > 0 && r.Vals[0] != nil {
-			out = append(out, pyrepr.Str(r.Vals[0]))
+			out = append(out, anyutil.String(r.Vals[0]))
 		}
 	}
 	return out, nil
@@ -423,7 +424,7 @@ func firstMessageRepr(messages []string) string {
 
 // Fails closed on a corrupt existing database after backing it up, auto repairing index only damage through REINDEX
 func guardExistingDBIsHealthy(ctx context.Context, path string) error {
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return nil
 	}
@@ -473,7 +474,7 @@ func RepairDB(ctx context.Context, dbPath string, board *string) (result *Repair
 		}
 		path = p
 	}
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		resolved = path
 	}
@@ -536,7 +537,7 @@ func openConfigured(ctx context.Context, path string, underLock func(state.SQLit
 	err = func() error {
 		initLock.Lock()
 		defer initLock.Unlock()
-		if _, err := state.ApplyWALWithFallback(ctx, conn, fmt.Sprintf("kanban.db (%s)", pypath.PathName(path)), false); err != nil {
+		if _, err := state.ApplyWALWithFallback(ctx, conn, fmt.Sprintf("kanban.db (%s)", pathutil.Name(path)), false); err != nil {
 			return err
 		}
 		for _, pragma := range []string{
@@ -562,7 +563,7 @@ func refuseDeadBoardResurrection(path string, board *string) error {
 		return nil
 	}
 	if board == nil {
-		tombstone := pypath.PathJoin(pypath.PathParent(path), "board.json")
+		tombstone := pathutil.Join(filepath.Dir(filepath.Clean(path)), "board.json")
 		if !pathExists(tombstone) {
 			return nil
 		}
@@ -570,17 +571,17 @@ func refuseDeadBoardResurrection(path string, board *string) error {
 		if err != nil {
 			return nil
 		}
-		text, err := pystr.DecodeUTF8Sig(data)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 		if err != nil {
 			return nil
 		}
-		raw, err := pyjson.Loads(text)
+		raw, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil
 		}
-		if obj, ok := raw.(*pyjson.Object); ok && pyrepr.Truthy(objGet(obj, "archived")) {
+		if obj, ok := raw.(*jsonutil.Object); ok && anyutil.IsTrue(objGet(obj, "archived")) {
 			return &ValueError{fmt.Sprintf("kanban board %s is archived; refusing to recreate its database",
-				errchain.Show(pypath.PathName(pypath.PathParent(path))))}
+				errchain.Show(pathutil.Name(filepath.Dir(filepath.Clean(path)))))}
 		}
 		return nil
 	}
@@ -592,7 +593,7 @@ func refuseDeadBoardResurrection(path string, board *string) error {
 	if err != nil {
 		return err
 	}
-	if pyrepr.Truthy(objGet(meta, "archived")) {
+	if anyutil.IsTrue(objGet(meta, "archived")) {
 		return &ValueError{fmt.Sprintf("kanban board %s is archived; refusing to recreate its database", errchain.Show(slug))}
 	}
 	metaPath, err := BoardMetadataPath(&slug)
@@ -628,10 +629,10 @@ func connectImpl(ctx context.Context, dbPath string, board *string) (conn state.
 	if err := refuseDeadBoardResurrection(path, board); err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(pypath.PathParent(path), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(path)), 0o777); err != nil {
 		return nil, err
 	}
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return nil, err
 	}
@@ -667,7 +668,7 @@ func connectImpl(ctx context.Context, dbPath string, board *string) (conn state.
 			conn, err = nil, uerr
 		}
 	}()
-	if err := state.PreflightDBWritability(ctx, path, fmt.Sprintf("kanban.db (%s)", pypath.PathName(path)), false); err != nil {
+	if err := state.PreflightDBWritability(ctx, path, fmt.Sprintf("kanban.db (%s)", pathutil.Name(path)), false); err != nil {
 		return nil, err
 	}
 	if err := validateSQLiteHeader(path); err != nil {
@@ -676,7 +677,7 @@ func connectImpl(ctx context.Context, dbPath string, board *string) (conn state.
 	if err := guardExistingDBIsHealthy(ctx, path); err != nil {
 		return nil, err
 	}
-	if resolved, err = pypath.Resolve(path); err != nil {
+	if resolved, err = pathutil.Resolve(path); err != nil {
 		return nil, err
 	}
 	return openConfigured(ctx, path, func(c state.SQLiteConn) error {
@@ -698,11 +699,11 @@ func connectImpl(ctx context.Context, dbPath string, board *string) (conn state.
 
 // Read only open of a fenced board that refuses a board without its schema
 func connectFencedReadOnly(ctx context.Context, path string) (state.SQLiteConn, error) {
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return nil, err
 	}
-	uri, err := pypath.AsURI(resolved)
+	uri, err := pathutil.FileURL(resolved)
 	if err != nil {
 		return nil, err
 	}
@@ -744,10 +745,10 @@ func InitDB(ctx context.Context, dbPath string, board *string) (string, error) {
 	if err := refuseDeadBoardResurrection(path, board); err != nil {
 		return "", err
 	}
-	if err := os.MkdirAll(pypath.PathParent(path), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(path)), 0o777); err != nil {
 		return "", err
 	}
-	if resolved, err := pypath.Resolve(path); err == nil {
+	if resolved, err := pathutil.Resolve(path); err == nil {
 		initLock.Lock()
 		forgetInitialized(resolved)
 		initLock.Unlock()

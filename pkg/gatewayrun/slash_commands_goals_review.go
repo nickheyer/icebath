@@ -10,9 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session key and idle cached agent for refine and review, or the reply refusing a missing or running agent
@@ -93,7 +92,7 @@ func (r *GatewayRunner) handleRefineCommand(ctx context.Context, event *gateway.
 		return nil
 	})
 	if startErr != nil {
-		return i18n.T(ctx, "gateway.refine.start_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(startErr)}), nil
+		return i18n.T(ctx, "gateway.refine.start_failed", "", map[string]any{"error": startErr.Error()}), nil
 	}
 	tail := ""
 	if args != "" {
@@ -132,7 +131,7 @@ func (r *GatewayRunner) handleReviewCommand(ctx context.Context, event *gateway.
 	if errorText != "" {
 		return errorText, nil
 	}
-	startReview := func(reviewCtx context.Context, env *tools.Env, parent *agent.AIAgent) (*pyjson.Object, error) {
+	startReview := func(reviewCtx context.Context, env *tools.Env, parent *agent.AIAgent) (*jsonutil.Object, error) {
 		result, err := tools.StartReview(reviewCtx, env, parent, snapshot, args)
 		if err != nil {
 			return nil, &reviewRefusal{err}
@@ -140,7 +139,7 @@ func (r *GatewayRunner) handleReviewCommand(ctx context.Context, event *gateway.
 		return result, nil
 	}
 	dispatch := func(workerCtx context.Context) (any, error) {
-		var result *pyjson.Object
+		var result *jsonutil.Object
 		err := catchColdReview(func() error {
 			base := tools.ToolEnvFrom(workerCtx)
 			if base == nil {
@@ -169,8 +168,8 @@ func (r *GatewayRunner) handleReviewCommand(ctx context.Context, event *gateway.
 		if errors.As(err, &refusal) {
 			return refusal.Error(), nil
 		}
-		return i18n.T(ctx, "gateway.review.start_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.review.start_failed", "", map[string]any{"error": err.Error()}), nil
 	}
-	result, _ := raw.(*pyjson.Object)
+	result, _ := raw.(*jsonutil.Object)
 	return tools.FormatDispatchNote(result, args), nil
 }

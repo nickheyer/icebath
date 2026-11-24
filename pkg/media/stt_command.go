@@ -7,15 +7,14 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 )
 
 const (
@@ -46,7 +45,7 @@ func (e *sttRuntimeError) Error() string { return e.msg }
 func readCommandSTTOutput(outputPath, stdout string) (string, error) {
 	content := ""
 	if raw, err := os.ReadFile(outputPath); err == nil {
-		s, _ := pycodecs.DecodeReplace(raw, "utf-8-sig")
+		s, _ := charsetutil.DecodeReplace(raw, "utf-8-sig")
 		content = strings.TrimSpace(s)
 	}
 	if content != "" {
@@ -147,14 +146,13 @@ func transcribeCommandSTT(ctx context.Context, filePath string, p *commandProvid
 	case errors.As(err, &ne):
 		return fail(ne.msg)
 	case errors.As(err, &te):
-		g, _ := pyrepr.Format(timeout, "g")
-		return fail(fmt.Sprintf("STT command provider '%s' timed out after %ss", providerName, g))
+		return fail(fmt.Sprintf("STT command provider '%s' timed out after %ss", providerName, strconv.FormatFloat(timeout, 'g', 6, 64)))
 	case errors.As(err, &ee):
 		return fail(fmt.Sprintf("STT command provider '%s' exited with code %d: %s", providerName, ee.Returncode, commandFailureDetail(ee)))
 	case errors.As(err, &re):
 		return fail(re.msg)
 	default:
-		return fail(fmt.Sprintf("STT command provider '%s' failed: %s", providerName, sttOSErrorText(err)))
+		return fail(fmt.Sprintf("STT command provider '%s' failed: %s", providerName, errchain.OSText(err)))
 	}
 	pkgLog().Info(fmt.Sprintf("Transcribed %s via command STT provider '%s' (%d chars)", filepath.Base(audio), providerName, utf8.RuneCountInString(transcript)))
 	return sttOK(transcript, providerName)
@@ -164,14 +162,6 @@ func transcribeCommandSTT(ctx context.Context, filePath string, p *commandProvid
 type sttNormalizeError struct{ msg string }
 
 func (e *sttNormalizeError) Error() string { return e.msg }
-
-// Python OSError text of a filesystem failure, the error text otherwise
-func sttOSErrorText(err error) string {
-	if pypath.IsOSError(err) {
-		return errchain.OSText(err)
-	}
-	return err.Error()
-}
 
 // Envelope naming a configured provider no backend registered
 func unregisteredSTTProviderError(providerName string) map[string]any {

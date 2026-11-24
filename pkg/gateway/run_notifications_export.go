@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Loaded index entry of a routing key, nil when the key has none
@@ -61,12 +61,12 @@ func DetachedLiveSource(runner AuthorityRunner, store *SessionStore, key string)
 func ParseSessionKey(sessionKey string) map[string]any { return parseSessionKey(sessionKey) }
 
 // Envelope of the route's last committed admission, nil when none is recorded
-func CommittedRouteEnvelope(ctx context.Context, a *SessionAuthority, entry *SessionEntry) (*pyjson.Object, error) {
+func CommittedRouteEnvelope(ctx context.Context, a *SessionAuthority, entry *SessionEntry) (*jsonutil.Object, error) {
 	return committedRouteEnvelope(ctx, a, entry)
 }
 
 // Event rebuilt from a native envelope payload with its seal checked against the live connector
-func RestoreNative(ctx context.Context, payload *pyjson.Object, runner AuthorityRunner) (*MessageEvent, error) {
+func RestoreNative(ctx context.Context, payload *jsonutil.Object, runner AuthorityRunner) (*MessageEvent, error) {
 	return restoreNative(ctx, payload, runner)
 }
 

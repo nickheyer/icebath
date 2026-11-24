@@ -23,11 +23,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools/anydoc"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	_ "modernc.org/sqlite"
 )
 
@@ -441,26 +441,26 @@ func parseHostedPDF(ctx context.Context, env *Env, data []byte, filename, apiKey
 	if err != nil {
 		return "", errors.New("Firecrawl Parse: " + err.Error())
 	}
-	reply := &pyjson.Object{Vals: map[string]any{}}
+	reply := jsonutil.NewObject()
 	if utf8.Valid(body) {
-		if v, err := pyjson.Loads(strings.TrimPrefix(string(body), "\ufeff")); err == nil {
-			if obj, ok := v.(*pyjson.Object); ok {
+		if v, err := jsonutil.Decode(strings.TrimPrefix(string(body), "\ufeff")); err == nil {
+			if obj, ok := v.(*jsonutil.Object); ok {
 				reply = obj
 			}
 		}
 	}
 	success, _ := reply.Get("success")
-	if resp.StatusCode != 200 || !pyTruthy(success) {
+	if resp.StatusCode != 200 || !anyutil.IsTrue(success) {
 		detail := fmt.Sprintf("HTTP %d", resp.StatusCode)
-		if e, _ := reply.Get("error"); pyTruthy(e) {
+		if e, _ := reply.Get("error"); anyutil.IsTrue(e) {
 			detail = pyJSONStr(e)
 		}
 		return "", errors.New(describeHostedFailure(resp.StatusCode, detail, apiKey != ""))
 	}
 	dataField, _ := reply.Get("data")
 	markdown := ""
-	if obj, ok := dataField.(*pyjson.Object); ok {
-		if m, ok := obj.Vals["markdown"].(string); ok {
+	if obj, ok := dataField.(*jsonutil.Object); ok {
+		if m, ok := obj.Value("markdown").(string); ok {
 			markdown = m
 		}
 	}
@@ -472,9 +472,6 @@ func parseHostedPDF(ctx context.Context, env *Env, data []byte, filename, apiKey
 	}
 	return markdown, nil
 }
-
-// Python truthiness of a decoded value, empty containers and zero numbers false like bool()
-func pyTruthy(v any) bool { return pyrepr.Truthy(v) }
 
 const (
 	pdfEmptyPageChars        = 20
@@ -702,7 +699,7 @@ var v3MimeKeys = [][2]string{{"png", "image/png"}, {"jpeg", "image/jpeg"}, {"svg
 
 // One notebook output as compact text with heavy payloads replaced by sized placeholders
 func notebookOutputText(output any) (string, error) {
-	out, ok := output.(*pyjson.Object)
+	out, ok := output.(*jsonutil.Object)
 	if !ok {
 		return "", nil
 	}
@@ -720,7 +717,7 @@ func notebookOutputText(output any) (string, error) {
 	}
 	if otype == "error" || otype == "pyerr" {
 		tbText := ""
-		if tb, ok := out.Vals["traceback"].([]any); ok {
+		if tb, ok := out.Value("traceback").([]any); ok {
 			var parts []string
 			for _, l := range tb {
 				if s, ok := l.(string); ok {
@@ -743,10 +740,10 @@ func notebookOutputText(output any) (string, error) {
 	if otype != "execute_result" && otype != "display_data" && otype != "pyout" {
 		return "", nil
 	}
-	data, ok := out.Vals["data"].(*pyjson.Object)
+	data, ok := out.Value("data").(*jsonutil.Object)
 	if !ok {
-		data = &pyjson.Object{Vals: map[string]any{}}
-		switch t := out.Vals["text"].(type) {
+		data = jsonutil.NewObject()
+		switch t := out.Value("text").(type) {
 		case string, []any:
 			data.Set("text/plain", t)
 		}
@@ -766,15 +763,15 @@ func notebookOutputText(output any) (string, error) {
 			}
 		}
 	}
-	for _, mime := range data.Keys {
+	for _, mime := range data.Keys() {
 		if strings.HasPrefix(mime, "image/") {
-			return fmt.Sprintf("[%s output — %s, omitted]", mime, humanSize(base64Bytes(notebookSourceText(data.Vals[mime])))), nil
+			return fmt.Sprintf("[%s output — %s, omitted]", mime, humanSize(base64Bytes(notebookSourceText(data.Value(mime))))), nil
 		}
 	}
 	if v, ok := data.Get("text/html"); ok {
 		return fmt.Sprintf("[text/html output — %s chars, omitted]", commaInt(utf8.RuneCountInString(notebookSourceText(v)))), nil
 	}
-	names := strings.Join(data.Keys, ", ")
+	names := strings.Join(data.Keys(), ", ")
 	if names == "" {
 		names = "unknown"
 	}
@@ -782,8 +779,8 @@ func notebookOutputText(output any) (string, error) {
 }
 
 // Rendered outputs of a code cell capped at the per cell character budget
-func notebookOutputs(cell *pyjson.Object, jqPointer, filename string) (string, error) {
-	outputs, ok := cell.Vals["outputs"].([]any)
+func notebookOutputs(cell *jsonutil.Object, jqPointer, filename string) (string, error) {
+	outputs, ok := cell.Value("outputs").([]any)
 	if !ok {
 		return "", nil
 	}
@@ -817,11 +814,11 @@ func extractNotebook(p, displayPath string) (string, error) {
 	if err != nil {
 		return "", extractionErr("Not a valid notebook: %s", err.Error())
 	}
-	parsed, err := pyjson.Loads(decodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
+	parsed, err := jsonutil.Decode(decodeUTF8Replace(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
 	if err != nil {
 		return "", extractionErr("Not a valid notebook: %s", err.Error())
 	}
-	nb, ok := parsed.(*pyjson.Object)
+	nb, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return "", extractionErr("Notebook root is not an object")
 	}
@@ -830,7 +827,7 @@ func extractNotebook(p, displayPath string) (string, error) {
 		cell    any
 	}
 	var cells []pointedCell
-	if rawCells, ok := nb.Vals["cells"].([]any); ok {
+	if rawCells, ok := nb.Value("cells").([]any); ok {
 		for i, c := range rawCells {
 			cells = append(cells, pointedCell{fmt.Sprintf(".cells[%d].outputs", i), c})
 		}
@@ -844,7 +841,7 @@ func extractNotebook(p, displayPath string) (string, error) {
 			return "", err
 		}
 		for wi, ws := range wsList {
-			wsObj, ok := ws.(*pyjson.Object)
+			wsObj, ok := ws.(*jsonutil.Object)
 			if !ok {
 				continue
 			}
@@ -867,7 +864,7 @@ func extractNotebook(p, displayPath string) (string, error) {
 	counts := map[string]int{}
 	var out []string
 	for _, pc := range cells {
-		cell, isObj := pc.cell.(*pyjson.Object)
+		cell, isObj := pc.cell.(*jsonutil.Object)
 		var typ any
 		if isObj {
 			typ, _ = cell.Get("cell_type")

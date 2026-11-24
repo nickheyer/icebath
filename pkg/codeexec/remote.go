@@ -5,16 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Environment lookup and remote kernel entry, swapped by tests
@@ -75,12 +75,12 @@ func shipEnvFileAndLaunch(ctx context.Context, envr tools.Environment, remoteDir
 	}
 	var lines strings.Builder
 	for _, kv := range pairs {
-		lines.WriteString(kv[0] + "=" + pyshlex.Quote(kv[1]) + "\n")
+		lines.WriteString(kv[0] + "=" + shellutil.Quote(kv[1]) + "\n")
 	}
 	if err := shipFileToRemote(ctx, envr, remoteDir+"/"+envName, lines.String(), false); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("cd %s && ( set -a && . ./%s && set +a && %s )", pyshlex.Quote(remoteDir), envName, launch), nil
+	return fmt.Sprintf("cd %s && ( set -a && . ./%s && set +a && %s )", shellutil.Quote(remoteDir), envName, launch), nil
 }
 
 // Absolute writable temp dir of the backend, else the host temp root
@@ -104,8 +104,8 @@ func envTempDir(envr tools.Environment) (string, error) {
 // Error result of a remote run that raised, logged with its duration and call count
 func remoteFailure(env *tools.Env, err error, execStart time.Time, toolCallsMade int) string {
 	duration := elapsedSeconds(execStart)
-	pkgLog(env).Error(fmt.Sprintf("execute_code remote failed after %ss with %d tool calls: %s: %s",
-		pyrepr.Str(duration), toolCallsMade, errorTypeName(err), err.Error()))
+	pkgLog(env).Error(fmt.Sprintf("execute_code remote failed after %ss with %d tool calls: %v",
+		strconv.FormatFloat(duration, 'f', -1, 64), toolCallsMade, err))
 	return errorResult(err.Error(), toolCallsMade, duration, "")
 }
 
@@ -113,37 +113,29 @@ func remoteFailure(env *tools.Env, err error, execStart time.Time, toolCallsMade
 var remoteExitStatus = map[int]string{124: "timeout", 130: "interrupted"}
 
 // Remote reply with status, cleaned output, fields, duration, optional kernel info and truncation metadata in order
-func remoteResult(env *tools.Env, status any, rawStdout string, execStart time.Time, fields *pyjson.Object, kernel any) *pyjson.Object {
+func remoteResult(env *tools.Env, status any, rawStdout string, execStart time.Time, fields *jsonutil.Object, kernel any) *jsonutil.Object {
 	text, meta := cleanOutput(env, rawStdout)
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("status", status)
 	result.Set("output", text)
-	result.Update(fields)
+	result.Merge(fields)
 	result.Set("duration_seconds", elapsedSeconds(execStart))
 	if kernel != nil {
 		result.Set("kernel", kernel)
 	}
-	result.Update(meta)
+	result.Merge(meta)
 	return result
 }
 
 // Records the timeout message as the error and appends it to the output
-func applyTimeout(result *pyjson.Object, timeoutMsg string) {
+func applyTimeout(result *jsonutil.Object, timeoutMsg string) {
 	result.Set("error", timeoutMsg)
 	out, _ := result.Get("output")
 	text, _ := out.(string)
 	result.Set("output", withTimeoutNotice(text, timeoutMsg))
 }
 
-// Python x or "" over a decoded value, falsy values becoming the empty string
-func orEmpty(v any) any {
-	if !pyrepr.Truthy(v) {
-		return ""
-	}
-	return v
-}
-
-// Python left + right where right is a str, the TypeError text when left is not one
+// Text left with right appended, an error when left is not text
 func concatStr(left any, right string) (string, error) {
 	switch l := left.(type) {
 	case string:
@@ -154,7 +146,7 @@ func concatStr(left any, right string) (string, error) {
 	return "", fmt.Errorf("remote kernel output is %s where text was expected", errchain.Kind(left))
 }
 
-// Python left + right where left is a str, the TypeError text when right is not one
+// Text left with right appended, an error when right is not text
 func concatOnto(left string, right any) (string, error) {
 	r, ok := right.(string)
 	if !ok {
@@ -164,11 +156,11 @@ func concatOnto(left string, right any) (string, error) {
 }
 
 // Remote kernel cell result as the tool reply, timeout messaging matching the local kernel contract
-func finishRemoteKernelResult(env *tools.Env, kernelResult *pyjson.Object, timeoutText string, execStart time.Time) (string, error) {
-	stdoutText := orEmpty(objGet(kernelResult, "stdout", ""))
-	stderrText := orEmpty(objGet(kernelResult, "stderr", ""))
-	tracebackText := orEmpty(objGet(kernelResult, "traceback", ""))
-	if pyrepr.Truthy(stderrText) || pyrepr.Truthy(tracebackText) {
+func finishRemoteKernelResult(env *tools.Env, kernelResult *jsonutil.Object, timeoutText string, execStart time.Time) (string, error) {
+	stdoutText := anyutil.Or(objGet(kernelResult, "stdout", ""), "")
+	stderrText := anyutil.Or(objGet(kernelResult, "stderr", ""), "")
+	tracebackText := anyutil.Or(objGet(kernelResult, "traceback", ""), "")
+	if anyutil.IsTrue(stderrText) || anyutil.IsTrue(tracebackText) {
 		joined, err := concatStr(stdoutText, "\n--- stderr ---\n")
 		if err == nil {
 			joined, err = concatOnto(joined, stderrText)
@@ -185,22 +177,22 @@ func finishRemoteKernelResult(env *tools.Env, kernelResult *pyjson.Object, timeo
 	if !ok {
 		return "", fmt.Errorf("remote kernel stdout is %s where text was expected", errchain.Kind(stdoutText))
 	}
-	fields := pyjson.NewObject()
+	fields := jsonutil.NewObject()
 	fields.Set("tool_calls_made", objGet(kernelResult, "tool_calls_made", 0))
-	defaultKernel := pyjson.NewObject()
+	defaultKernel := jsonutil.NewObject()
 	defaultKernel.Set("remote", true)
 	result := remoteResult(env, objGet(kernelResult, "status", "error"), text, execStart, fields, objGet(kernelResult, "kernel", defaultKernel))
-	if toolErrors := objGet(kernelResult, "tool_errors", nil); pyrepr.Truthy(toolErrors) {
+	if toolErrors := objGet(kernelResult, "tool_errors", nil); anyutil.IsTrue(toolErrors) {
 		result.Set("tool_errors", toolErrors)
 	}
 	status, _ := result.Get("status")
 	if isStatus(status, "timeout") {
 		applyTimeout(result, fmt.Sprintf("Cell timed out after %ss; the remote session kernel was "+
 			"killed and its state was lost. The next call starts fresh.", timeoutText))
-	} else if cellErr := objGet(kernelResult, "error", nil); isStatus(status, "error") && pyrepr.Truthy(cellErr) {
+	} else if cellErr := objGet(kernelResult, "error", nil); isStatus(status, "error") && anyutil.IsTrue(cellErr) {
 		result.Set("error", cellErr)
 	}
-	return pyjson.Dumps(result, pyjson.EnsureASCII(false))
+	return jsonutil.Encode(result)
 }
 
 // Backend timeout in whole seconds, a fractional limit rounded up so it never reads as no limit
@@ -243,7 +235,7 @@ func runRemotePerCall(ctx context.Context, env *tools.Env, envr tools.Environmen
 				case <-time.After(5 * time.Second):
 				}
 			}
-			if _, err := envr.Execute(context.Background(), "rm -rf "+pyshlex.Quote(sandboxDir), tools.ExecOptions{Cwd: "/", Timeout: 15}); err != nil {
+			if _, err := envr.Execute(context.Background(), "rm -rf "+shellutil.Quote(sandboxDir), tools.ExecOptions{Cwd: "/", Timeout: 15}); err != nil {
 				pkgLog(env).Debug("Failed to clean up remote sandbox " + sandboxDir)
 			}
 		}()
@@ -282,7 +274,7 @@ func runRemotePerCall(ctx context.Context, env *tools.Env, envr tools.Environmen
 	if err != nil {
 		return remoteFailure(env, err, r.execStart, budget.callCount())
 	}
-	fields := pyjson.NewObject()
+	fields := jsonutil.NewObject()
 	fields.Set("exit_code", exitCode)
 	fields.Set("tool_calls_made", budget.callCount())
 	result := remoteResult(env, status, stdoutText, r.execStart, fields, nil)
@@ -294,7 +286,7 @@ func runRemotePerCall(ctx context.Context, env *tools.Env, envr tools.Environmen
 		applyTimeout(result, fmt.Sprintf("Script timed out after %ss and was killed.", r.timeoutText))
 		duration, _ := result.Get("duration_seconds")
 		pkgLog(env).Warn(fmt.Sprintf("execute_code (remote) timed out after %ss (limit %ss) with %d tool calls",
-			pyrepr.Str(duration), r.timeoutText, budget.callCount()))
+			anyutil.String(duration), r.timeoutText, budget.callCount()))
 	case status == "interrupted":
 		out, _ := result.Get("output")
 		text, _ := out.(string)
@@ -303,7 +295,7 @@ func runRemotePerCall(ctx context.Context, env *tools.Env, envr tools.Environmen
 		result.Set("status", "error")
 		result.Set("error", fmt.Sprintf("Script exited with code %d", exitCode))
 	}
-	out, err := pyjson.Dumps(result, pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(result)
 	if err != nil {
 		return toolError(err.Error())
 	}
@@ -337,8 +329,8 @@ func executeRemote(ctx context.Context, env *tools.Env, code, taskID string, ena
 		return errorResult(fmt.Sprintf("Python 3 is not available in the %s terminal ", envType)+
 			"environment. Install Python to use execute_code with remote backends.", 0, 0, "")
 	}
-	kernelResult, err := func() (*pyjson.Object, error) {
-		idle := big.NewInt(int64(max(1, int(settings.CodeExecutionKernelIdleTimeout.Get(settingsCtx(env))/time.Second))))
+	kernelResult, err := func() (*jsonutil.Object, error) {
+		idle := max(1, int64(settings.CodeExecutionKernelIdleTimeout.Get(settingsCtx(env))/time.Second))
 		return executeInRemoteKernelFn(ctx, env, envr, code, remoteCell{envType: envType, taskEnvID: effectiveTaskID,
 			sandboxTools: sandboxTools, timeout: timeout, maxToolCalls: maxToolCalls, reset: reset, idleExit: idle})
 	}()

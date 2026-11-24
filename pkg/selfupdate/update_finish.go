@@ -13,11 +13,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hidden entry finishing an update a historical takeover prepared in the selected checkout
@@ -59,7 +59,7 @@ func optionalText(value any) *string {
 	if value == nil {
 		return nil
 	}
-	text := pyrepr.Str(value)
+	text := anyutil.String(value)
 	return &text
 }
 
@@ -101,7 +101,7 @@ func finishUpdate(ctx context.Context, w, errw io.Writer, o finishUpdateOptions)
 	updaterecord.RecordBuildStage(ctx, *owed)
 	if !tailOwed {
 		if _, err := finishWriteSourceStamp(o.Root, false); err != nil {
-			if class := launchErrorClass(err); !pypath.IsOSError(err) && !osErrorClasses[class] && class != "ValueError" {
+			if class := launchErrorClass(err); !errorutil.IsSystem(err) && !osErrorClasses[class] && class != "ValueError" {
 				return err
 			}
 			fmt.Fprintf(errw, "⚠ Source update completed, but the install stamp could not be written: %s\n", launchErrorText(err))
@@ -115,7 +115,7 @@ func finishUpdate(ctx context.Context, w, errw io.Writer, o finishUpdateOptions)
 	}
 	var updateID *string
 	if run := updaterecord.CurrentReceipt(ctx); run != nil {
-		if id, ok := run.Data.GetOr("update_id", nil).(string); ok {
+		if id, ok := run.Data.ValueOr("update_id", nil).(string); ok {
 			updateID = &id
 		}
 	}
@@ -142,7 +142,7 @@ func finishUpdate(ctx context.Context, w, errw io.Writer, o finishUpdateOptions)
 
 // Update plan of a finish request, nil when the request carries none
 func restorePlan(data any) (*UpdatePlan, error) {
-	if !pyrepr.Truthy(data) {
+	if !anyutil.IsTrue(data) {
 		return nil, nil
 	}
 	return UpdatePlanFromDict(data)
@@ -153,8 +153,8 @@ func requestResumeToken(value any) (map[string]any, error) {
 	if value == nil {
 		return nil, nil
 	}
-	if obj, ok := value.(*pyjson.Object); ok {
-		return pyjson.Plain(obj).(map[string]any), nil
+	if obj, ok := value.(*jsonutil.Object); ok {
+		return jsonutil.Plain(obj).(map[string]any), nil
 	}
 	if m, ok := value.(map[string]any); ok {
 		return m, nil
@@ -198,16 +198,16 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 	if err != nil {
 		return 0, err
 	}
-	request := decoded.(*pyjson.Object)
-	root := pyrepr.Str(rootValue)
-	token, err := requestResumeToken(request.GetOr("windows_resume", nil))
+	request := decoded.(*jsonutil.Object)
+	root := anyutil.String(rootValue)
+	token, err := requestResumeToken(request.ValueOr("windows_resume", nil))
 	if err != nil {
 		return 0, err
 	}
 	savedProjectRoot := fleetProjectRoot
 	defer func() { fleetProjectRoot = savedProjectRoot }()
 	resumeArmed := false
-	restarting := pyrepr.Truthy(request.GetOr("restart_update", false))
+	restarting := anyutil.IsTrue(request.ValueOr("restart_update", false))
 	cliStarted, begun := false, false
 	code := 1
 	beginFromRequest := func() error {
@@ -215,8 +215,8 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 		if err != nil {
 			return err
 		}
-		previous, _ := request.GetOr("receipt", nil).(*pyjson.Object)
-		updaterecord.BeginUpdateReceipt(ctx, previous, pyrepr.Str(id))
+		previous, _ := request.ValueOr("receipt", nil).(*jsonutil.Object)
+		updaterecord.BeginUpdateReceipt(ctx, previous, anyutil.String(id))
 		begun = updaterecord.CurrentReceipt(ctx) != nil
 		return nil
 	}
@@ -228,21 +228,21 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			if !begun {
 				return runtimeErr("cannot create takeover receipt")
 			}
-			id := pyrepr.Str(request.GetOr("update_id", nil))
-			if err := pm.AcceptWorkerReceipt(ctx, request.GetOr("pm_receipt", nil), &id); err != nil {
+			id := anyutil.String(request.ValueOr("update_id", nil))
+			if err := pm.AcceptWorkerReceipt(ctx, request.ValueOr("pm_receipt", nil), &id); err != nil {
 				return err
 			}
 			updaterecord.RecordStep(ctx, "historical_takeover", true, "continuing in the selected interpreter")
 		}
 		fleetProjectRoot = func() string { return root }
 		if restarting {
-			argv, err := pyIterable(request.GetOr("argv", nil))
+			argv, err := pyIterable(request.ValueOr("argv", nil))
 			if err != nil {
 				return err
 			}
 			args := make([]string, 0, len(argv))
 			for _, arg := range argv {
-				args = append(args, pyrepr.Str(arg))
+				args = append(args, anyutil.String(arg))
 			}
 			if len(args) > 0 {
 				args = args[1:]
@@ -253,7 +253,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			}
 			return nil
 		}
-		plan, err := restorePlan(request.GetOr("plan", nil))
+		plan, err := restorePlan(request.ValueOr("plan", nil))
 		if err != nil {
 			return err
 		}
@@ -269,7 +269,7 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 		}
 		resumeArmed = true
 		if _, err := ArmCompletion(ctx, root); err != nil {
-			if !pypath.IsOSError(err) {
+			if !errorutil.IsSystem(err) {
 				return err
 			}
 			fmt.Fprintf(stdout, "  ⚠ Could not record the owed source-update tail: %s\n", launchErrorText(err))
@@ -292,9 +292,9 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 			return err
 		}
 		return finishUpdate(ctx, stdout, stderr, finishUpdateOptions{
-			Root: root, AssumeYes: pyrepr.Truthy(assumeYes), GatewayMode: pyrepr.Truthy(gatewayMode),
-			PreUpdateSnapshotID: optionalText(request.GetOr("pre_update_snapshot_id", nil)),
-			PreUpdateVersion:    optionalText(request.GetOr("pre_update_version", nil)),
+			Root: root, AssumeYes: anyutil.IsTrue(assumeYes), GatewayMode: anyutil.IsTrue(gatewayMode),
+			PreUpdateSnapshotID: optionalText(request.ValueOr("pre_update_snapshot_id", nil)),
+			PreUpdateVersion:    optionalText(request.ValueOr("pre_update_version", nil)),
 			Plan:                plan, WindowsResume: token, Followups: &owed})
 	}
 	interrupted := error(nil)
@@ -316,11 +316,11 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 	if err != nil {
 		return 0, err
 	}
-	updateID := pyrepr.Str(idValue)
+	updateID := anyutil.String(idValue)
 	terminal := updaterecord.FinalizedReceipt(updateID)
-	if code != 0 && pyrepr.Truthy(request.GetOr("gateway_mode", nil)) {
+	if code != 0 && anyutil.IsTrue(request.ValueOr("gateway_mode", nil)) {
 		body := []byte("1")
-		if terminal != nil && terminal.GetOr("outcome", nil) == "success" {
+		if terminal != nil && terminal.ValueOr("outcome", nil) == "success" {
 			body = []byte("0")
 		}
 		if err := pm.DurableWriteBytes(filepath.Join(home.Dir(ctx), ".update_exit_code"), body); err != nil {
@@ -346,10 +346,10 @@ func updateFinish(ctx context.Context, contextPath, resultPath string, stdout, s
 	}
 	handled := cliStarted || (begun && updaterecord.CurrentReceipt(ctx) == nil)
 	written := updaterecord.FinalizePendingUpdateReceipt(ctx, &code, "historical takeover completion")
-	result := pyjson.ObjectOf(
-		"resume_handled", attempted || len(token) == 0 || !pyrepr.Truthy(token["resume_needed"]),
+	result := jsonutil.ObjectOf(
+		"resume_handled", attempted || len(token) == 0 || !anyutil.IsTrue(token["resume_needed"]),
 		"receipt_handled", handled || written != "")
-	text, err := pyjson.Dumps(result)
+	text, err := jsonutil.Encode(result)
 	if err != nil {
 		return 0, err
 	}

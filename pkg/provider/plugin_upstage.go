@@ -4,7 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Upstage models with no reasoning control at all
@@ -20,23 +20,23 @@ func upstagePluginProfiles() []Profile {
 }
 
 // Top level Solar effort, an unset config turning reasoning on at medium and explicit settings always winning
-func upstageBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
+func upstageBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
 	if upstageNonReasoningModelRE.MatchString(strings.ToLower(strings.TrimSpace(hookString(kw, "model")))) {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
 	rc := reasoningConfigMap(reasoning)
 	if len(rc) == 0 {
-		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": "medium"}
+		return jsonutil.ObjectOf(), map[string]any{"reasoning_effort": "medium"}
 	}
 	if enabled, ok := rc["enabled"].(bool); ok && !enabled {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
 	effort := strings.ToLower(strings.TrimSpace(reasoning.Effort))
 	if effort == "" {
-		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": "medium"}
+		return jsonutil.ObjectOf(), map[string]any{"reasoning_effort": "medium"}
 	}
 	if effort == "minimal" {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
 	mapped := clampEffort(effort, solarEfforts, nil)
 	if !containsStr(solarEfforts, mapped) {
@@ -46,7 +46,7 @@ func upstageBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjs
 		}
 	}
 	if mapped == "" {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
-	return pyjson.ObjectOf(), map[string]any{"reasoning_effort": mapped}
+	return jsonutil.ObjectOf(), map[string]any{"reasoning_effort": mapped}
 }

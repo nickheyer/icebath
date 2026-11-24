@@ -10,10 +10,10 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Keychain service every vault key entry is filed under
@@ -63,7 +63,7 @@ func KeychainBackendLabel() string {
 }
 
 func resolvedDir(dir string) string {
-	if r, err := pypath.Resolve(dir); err == nil {
+	if r, err := pathutil.Resolve(dir); err == nil {
 		return r
 	}
 	abs, _ := filepath.Abs(dir)
@@ -71,66 +71,66 @@ func resolvedDir(dir string) string {
 }
 
 // Coordinates for a new entry with a random account, recording which directory owns it
-func vaultNewRef(vaultDir string) *pyjson.Object {
-	return pyjson.ObjectOf("storage", "keychain", "service", VaultKeychainService,
+func vaultNewRef(vaultDir string) *jsonutil.Object {
+	return jsonutil.ObjectOf("storage", "keychain", "service", VaultKeychainService,
 		"account", "vault-"+strings.ReplaceAll(uuid.NewString(), "-", ""), "vault_dir", resolvedDir(vaultDir))
 }
 
-func refString(ref *pyjson.Object, key string) string {
+func refString(ref *jsonutil.Object, key string) string {
 	v, _ := ref.Get(key)
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // False for a pointer copied or moved from another directory, whose entry may be another vault's only key
-func vaultOwnsRef(ref *pyjson.Object, vaultDir string) bool {
+func vaultOwnsRef(ref *jsonutil.Object, vaultDir string) bool {
 	v, _ := ref.Get("vault_dir")
 	s, ok := v.(string)
 	return ok && s == resolvedDir(vaultDir)
 }
 
 // Keychain pointer saved at path, nil when absent and a VaultError when unreadable or not a pointer
-func vaultReadRef(path string) (*pyjson.Object, error) {
+func vaultReadRef(path string) (*jsonutil.Object, error) {
 	raw, err := os.ReadFile(path)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil
 	}
 	var data any
 	if err == nil {
-		text, derr := pyjson.DecodeBytes([]byte(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")))
+		text, derr := jsonutil.Text([]byte(strings.TrimPrefix(string(raw), "\xef\xbb\xbf")))
 		if derr != nil {
 			err = &keyringError{"UnicodeDecodeError", derr.Error()}
-		} else if data, derr = pyjson.Loads(text); derr != nil {
+		} else if data, derr = jsonutil.Decode(text); derr != nil {
 			err = &keyringError{"JSONDecodeError", derr.Error()}
 		}
 	}
 	if err != nil {
 		return nil, &VaultError{fmt.Sprintf("%s is unreadable (%s); see `icebath vault key`", filepath.Base(path), pyErrorClass(err))}
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok || refString(obj, "storage") != "keychain" {
 		return nil, &VaultError{filepath.Base(path) + " does not describe a keychain entry; see `icebath vault key`"}
 	}
-	if acct, _ := obj.Get("account"); !pyrepr.Truthy(acct) {
+	if acct, _ := obj.Get("account"); !anyutil.IsTrue(acct) {
 		return nil, &VaultError{filepath.Base(path) + " does not describe a keychain entry; see `icebath vault key`"}
 	}
 	return obj, nil
 }
 
 // Saves a pointer atomically with a durable directory entry, swapped by tests for a failing writer
-var vaultWriteRef = func(ctx context.Context, path string, ref *pyjson.Object) error {
-	text, err := pyjson.Dumps(ref, pyjson.Indent(2))
+var vaultWriteRef = func(ctx context.Context, path string, ref *jsonutil.Object) error {
+	text, err := jsonutil.Encode(ref, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
 	mode := os.FileMode(0o600)
-	return pyfs.AtomicWriteBytes(ctx, path, []byte(text), "", &mode, true)
+	return fsutil.WriteFile(ctx, path, []byte(text), fsutil.WriteOptions{Mode: &mode, SyncDir: true})
 }
 
 // Saves the pointer to a fresh entry, deleting the entry unless the pointer landed before the failure
-func vaultSaveNewRef(ctx context.Context, path string, ref *pyjson.Object) error {
+func vaultSaveNewRef(ctx context.Context, path string, ref *jsonutil.Object) error {
 	err := vaultWriteRef(ctx, path, ref)
 	if err == nil {
 		return nil
@@ -142,7 +142,7 @@ func vaultSaveNewRef(ctx context.Context, path string, ref *pyjson.Object) error
 	return err
 }
 
-func refCoords(ref *pyjson.Object) (string, string) {
+func refCoords(ref *jsonutil.Object) (string, string) {
 	service := refString(ref, "service")
 	if service == "" {
 		service = VaultKeychainService
@@ -151,7 +151,7 @@ func refCoords(ref *pyjson.Object) (string, string) {
 }
 
 // Stored key or nil when the entry is gone, KeychainUnavailable when the keychain cannot answer
-func vaultLoadKey(ref *pyjson.Object) ([]byte, error) {
+func vaultLoadKey(ref *jsonutil.Object) ([]byte, error) {
 	b, err := osKeyring()
 	if err != nil {
 		return nil, err
@@ -168,7 +168,7 @@ func vaultLoadKey(ref *pyjson.Object) ([]byte, error) {
 }
 
 // Writes the key and reads it back, a store returning something else being unusable
-func vaultStoreKey(ref *pyjson.Object, key []byte) error {
+func vaultStoreKey(ref *jsonutil.Object, key []byte) error {
 	b, err := osKeyring()
 	if err != nil {
 		return err
@@ -189,15 +189,15 @@ func vaultStoreKey(ref *pyjson.Object, key []byte) error {
 
 // Deletes the entry a plain map pointer names, true once it is gone
 func VaultDeleteKeyRef(ref map[string]any) bool {
-	obj, ok := pyjson.AsObject(ref)
+	obj, ok := jsonutil.AsObject(ref)
 	if !ok {
-		obj = pyjson.NewObject()
+		obj = jsonutil.NewObject()
 	}
 	return vaultDeleteKey(obj)
 }
 
 // True once the entry is gone, including after an interrupted cleanup already removed it
-func vaultDeleteKey(ref *pyjson.Object) bool {
+func vaultDeleteKey(ref *jsonutil.Object) bool {
 	service, account := refCoords(ref)
 	b, err := osKeyring()
 	if err != nil {

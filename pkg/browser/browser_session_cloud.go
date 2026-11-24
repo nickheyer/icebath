@@ -6,10 +6,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Cache slot of one profile at one registry generation
@@ -67,7 +67,7 @@ func instantiateExplicitProvider(env *tools.Env, providerKey string) (resolved B
 		defer func() {
 			if r := recover(); r != nil {
 				raised = true
-				s.logger().Warn(fmt.Sprintf("Failed to instantiate cloud_provider %s; will retry on next call", pyrepr.Repr(providerKey)), "error", fmt.Sprint(r))
+				s.logger().Warn(fmt.Sprintf("Failed to instantiate cloud_provider %s; will retry on next call", anyutil.Quote(providerKey)), "error", fmt.Sprint(r))
 			}
 		}()
 		ensureBrowserPluginsLoaded(env)

@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -104,17 +104,17 @@ func hostRecordHome(r *HostRecord) string {
 }
 
 // Identify answer of the gateway serving home, nil when it does not answer
-func identifyHost(h string) *pyjson.Object { return hostIdentifyGateway(h, 2*time.Second) }
+func identifyHost(h string) *jsonutil.Object { return hostIdentifyGateway(h, 2*time.Second) }
 
 // Served set from a live identify answer, a standalone gateway serving only its own profile
-func servedFromIdentity(identity *pyjson.Object) []string {
+func servedFromIdentity(identity *jsonutil.Object) []string {
 	if served, _ := identity.Get("served_profiles"); served != nil {
 		if list, ok := served.([]any); ok && len(list) > 0 {
 			names := make([]string, 0, len(list))
 			for _, entry := range list {
-				obj, isDict := entry.(*pyjson.Object)
+				obj, isDict := entry.(*jsonutil.Object)
 				if !isDict {
-					names = append(names, pyrepr.Str(entry))
+					names = append(names, anyutil.String(entry))
 					continue
 				}
 				h, _ := obj.Get("home")
@@ -122,7 +122,7 @@ func servedFromIdentity(identity *pyjson.Object) []string {
 					h, _ = obj.Get("profile_id")
 				}
 				if pyTruthy(h) {
-					names = append(names, hostProfileNameForHome(pyrepr.Str(h)))
+					names = append(names, hostProfileNameForHome(anyutil.String(h)))
 				} else {
 					names = append(names, "default")
 				}
@@ -134,11 +134,11 @@ func servedFromIdentity(identity *pyjson.Object) []string {
 	if !pyTruthy(profile) {
 		return []string{"default"}
 	}
-	return []string{pyrepr.Str(profile)}
+	return []string{anyutil.String(profile)}
 }
 
 // Whether the identify answer is the owner with this pid, launched from the home it was dialled at
-func identityMatches(identity *pyjson.Object, pid int, h string) bool {
+func identityMatches(identity *jsonutil.Object, pid int, h string) bool {
 	if identity == nil {
 		return false
 	}
@@ -149,9 +149,9 @@ func identityMatches(identity *pyjson.Object, pid int, h string) bool {
 	if !pyTruthy(reported) {
 		return true
 	}
-	same, err := sameIcebathHome(pyrepr.Str(reported), h)
+	same, err := sameIcebathHome(anyutil.String(reported), h)
 	if err != nil {
-		return pyrepr.Str(reported) == h
+		return anyutil.String(reported) == h
 	}
 	return same
 }
@@ -183,13 +183,16 @@ func probeHostGateway(wait time.Duration) *HostGateway {
 		return nil
 	}
 	h := hostRecordHome(record)
-	identity := pydeadline.PollUntil(func() (*pyjson.Object, bool) {
-		id := identifyHost(h)
-		if identityMatches(id, record.PID, h) {
-			return id, true
-		}
-		return nil, false
-	}, max(0, wait), channelPollInterval)
+	identity := syncutil.PollUntil(context.Background(),
+
+		max(0, wait), channelPollInterval, func() (*jsonutil.Object, bool) {
+			id := identifyHost(h)
+			if identityMatches(id, record.PID, h) {
+				return id, true
+			}
+			return nil, false
+		})
+
 	if identity != nil {
 		return &HostGateway{PID: record.PID, Home: h, Profiles: servedFromIdentity(identity), ServedKnown: true}
 	}
@@ -244,7 +247,7 @@ func RequestServeProfile(profile string, timeout time.Duration, owner *HostGatew
 	if raw, _ := answer.Get("served_profiles"); raw != nil {
 		if list, ok := raw.([]any); ok {
 			for _, p := range list {
-				served = append(served, pyrepr.Str(p))
+				served = append(served, anyutil.String(p))
 			}
 		}
 	}

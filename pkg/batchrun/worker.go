@@ -11,8 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // What one batch reports back to the run
@@ -27,13 +27,13 @@ type batchResult struct {
 }
 
 // One row as a JSON line, raw UTF-8 unless the row holds text that is not valid UTF-8
-func jsonLine(row *pyjson.Object) (string, error) {
-	text, err := pyjson.Dumps(row, pyjson.EnsureASCII(false))
+func jsonLine(row *jsonutil.Object) (string, error) {
+	text, err := jsonutil.Encode(row)
 	if err != nil {
 		return "", err
 	}
 	if !utf8.ValidString(text) {
-		if text, err = pyjson.Dumps(row, pyjson.EnsureASCII(true)); err != nil {
+		if text, err = jsonutil.Encode(row, jsonutil.ASCII()); err != nil {
 			return "", err
 		}
 	}
@@ -41,7 +41,7 @@ func jsonLine(row *pyjson.Object) (string, error) {
 }
 
 // Appends one JSON row and syncs it to disk so a crash never loses an acknowledged prompt
-func appendJSONL(path string, row *pyjson.Object) (err error) {
+func appendJSONL(path string, row *jsonutil.Object) (err error) {
 	line, err := jsonLine(row)
 	if err != nil {
 		return err
@@ -63,15 +63,15 @@ func appendJSONL(path string, row *pyjson.Object) (err error) {
 
 // Text of a dataset or trajectory value the way str renders it, stripped
 func strippedText(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Human prompt text of a dataset or trajectory entry, from a flat prompt, from/value or role/content turns, or a discard tombstone
 func entryPromptText(entry any) string {
-	fields, ok := pyjson.Dict(entry)
+	fields, ok := jsonutil.AsMap(entry)
 	if !ok {
 		return ""
 	}
@@ -80,19 +80,19 @@ func entryPromptText(entry any) string {
 	}
 	for _, key := range []string{"conversations", "messages"} {
 		for _, item := range listItems(fields[key]) {
-			msg, ok := pyjson.Dict(item)
+			msg, ok := jsonutil.AsMap(item)
 			if !ok {
 				continue
 			}
 			role := msg["role"]
-			if !pyrepr.Truthy(role) {
+			if !anyutil.IsTrue(role) {
 				role = msg["from"]
 			}
 			if role != "user" && role != "human" {
 				continue
 			}
 			content := msg["content"]
-			if !pyrepr.Truthy(content) {
+			if !anyutil.IsTrue(content) {
 				content = msg["value"]
 			}
 			if text := strippedText(content); text != "" {
@@ -104,8 +104,8 @@ func entryPromptText(entry any) string {
 }
 
 // Trajectory row of a finished prompt, tool statistics normalized to one schema across every row
-func (r *Runner) trajectoryRow(result promptResult) *pyjson.Object {
-	row := pyjson.NewObject()
+func (r *Runner) trajectoryRow(result promptResult) *jsonutil.Object {
+	row := jsonutil.NewObject()
 	row.Set("prompt_index", result.promptIndex)
 	row.Set("conversations", agent.RedactTrajectoryValue(result.trajectory))
 	row.Set("metadata", result.metadata)
@@ -148,7 +148,7 @@ func (r *Runner) processBatch(ctx context.Context, w *workerState, batchNum int,
 				r.printf("   🚫 Prompt %d discarded (no reasoning in any turn)\n", item.index)
 				result.discarded++
 				result.completedPrompts = append(result.completedPrompts, item.index)
-				tombstone := pyjson.ObjectOf("prompt_index", item.index, "discarded", "no_reasoning", "prompt", entryPromptText(item.entry))
+				tombstone := jsonutil.ObjectOf("prompt_index", item.index, "discarded", "no_reasoning", "prompt", entryPromptText(item.entry))
 				if err := appendJSONL(outputFile, tombstone); err != nil {
 					return result, err
 				}
@@ -166,7 +166,7 @@ func (r *Runner) processBatch(ctx context.Context, w *workerState, batchNum int,
 		}
 		result.completedPrompts = append(result.completedPrompts, item.index)
 		status := "✅"
-		if pyrepr.Truthy(prompt.partial) {
+		if anyutil.IsTrue(prompt.partial) {
 			status = "⚠️  partial"
 		}
 		r.printf("   %s Prompt %d completed\n", status, item.index)

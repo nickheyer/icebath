@@ -3,7 +3,7 @@ package provider
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestPreflightKwargsRunsOnlyOnTheResponsesTransport(t *testing.T) {
@@ -23,7 +23,7 @@ func TestPreflightKwargsRunsOnlyOnTheResponsesTransport(t *testing.T) {
 func TestChatTransportReversesOnlyRecordedWireAliases(t *testing.T) {
 	tr := GetTransport(string(ModeChatCompletions))
 	tools, aliases := RenameToolSearchBridgeForXAI([]map[string]any{{"type": "function", "function": map[string]any{"name": "tool_search"}}})
-	if fn, _ := pyjson.Dict(tools[0]["function"]); fn["name"] != "icebath_tool_search" || aliases["icebath_tool_search"] != "tool_search" {
+	if fn, _ := jsonutil.AsMap(tools[0]["function"]); fn["name"] != "icebath_tool_search" || aliases["icebath_tool_search"] != "tool_search" {
 		t.Fatal("rename")
 	}
 	tr.(WireAliasTransport).SetLastWireAliases(map[string]string{})

@@ -10,8 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Text of the first n runes with newlines flattened, the log preview of a message
@@ -61,7 +59,7 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 		if source.ThreadID != nil && *source.ThreadID != "" {
 			threadID = *source.ThreadID
 		}
-		messageRunes := []rune(pyrepr.Str(prepared.messageText))
+		messageRunes := []rune(anyutil.String(prepared.messageText))
 		hookCtx = map[string]any{
 			"platform": string(source.Platform), "user_id": optAny(source.UserID), "chat_id": source.ChatID,
 			"thread_id": threadID, "chat_type": source.ChatType, "session_id": entry.SessionID,
@@ -74,7 +72,7 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 			return nil, nil
 		}
 		runStartSessionID := entry.SessionID
-		turnStarted := pythread.Monotonic()
+		turnStarted := timeutil.Monotonic()
 		event.SetHeartbeatExecutionStarted(true)
 		turnChannelPrompt, turnSource := r.pinnedChannelInputs(sessionKey, event.ChannelPrompt, source, event.Internal || event.InheritChannelPin)
 		if !event.Internal {
@@ -109,10 +107,10 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 		if err != nil {
 			return nil, err
 		}
-		turnSeconds := pythread.Monotonic() - turnStarted
+		turnSeconds := timeutil.Monotonic() - turnStarted
 		if agentResult != nil {
-			if terminal := agentResult["queued_terminal_inbound_id"]; pyrepr.Truthy(terminal) {
-				id := pyrepr.Str(terminal)
+			if terminal := agentResult["queued_terminal_inbound_id"]; anyutil.IsTrue(terminal) {
+				id := anyutil.String(terminal)
 				event.SetLedgerMessageID(&id)
 			}
 			if category, ok := agentResult["queued_terminal_notification_category"]; ok {
@@ -142,7 +140,7 @@ func (r *GatewayRunner) handleMessageWithAgent(ctx context.Context, event *gatew
 		}
 		response = withReasoning
 		footerLine := r.hmwaRuntimeFooterLine(ctx, agentResult, source, turnSeconds)
-		if footerLine != "" && response != "" && !pyrepr.Truthy(agentResult["already_sent"]) && !silent {
+		if footerLine != "" && response != "" && !anyutil.IsTrue(agentResult["already_sent"]) && !silent {
 			response = response + "\n\n" + footerLine
 		}
 		if err := r.hmwaPostTurnHooks(ctx, hookCtx, agentResult, response); err != nil {

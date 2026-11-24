@@ -10,18 +10,17 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // BotChatTitle is the only session title that receives the teammate protocol section
@@ -49,24 +48,24 @@ func defaultHome() string {
 // Given home, else the ambient process home
 func resolveHome(h string) string {
 	if h != "" {
-		return pypath.PathStr(h)
+		return filepath.Clean(h)
 	}
-	return pypath.PathStr(defaultHome())
+	return filepath.Clean(defaultHome())
 }
 
 // InstallRoot is the install root shared by the default profile and every named profile
 func InstallRoot(h string) string {
-	parent := pypath.PathParent(h)
-	if pypath.PathName(parent) == "profiles" {
-		return pypath.PathParent(parent)
+	parent := filepath.Dir(filepath.Clean(h))
+	if pathutil.Name(parent) == "profiles" {
+		return filepath.Dir(filepath.Clean(parent))
 	}
-	return pypath.PathStr(h)
+	return filepath.Clean(h)
 }
 
 // Profile folder id of a home, default for the install root
 func profileName(h string) string {
-	if pypath.PathName(pypath.PathParent(h)) == "profiles" {
-		return pypath.PathName(h)
+	if pathutil.Name(filepath.Dir(filepath.Clean(h))) == "profiles" {
+		return pathutil.Name(h)
 	}
 	return "default"
 }
@@ -117,7 +116,7 @@ func swallow[T any](fn func() (T, error), def T) (out T) {
 // Roster lists the default profile and every live named profile, sorted by folder id
 func Roster(root string) []config.BotProfile {
 	named := swallow(func() ([]config.BotProfile, error) {
-		profiles := pypath.PathJoin(root, "profiles")
+		profiles := pathutil.Join(root, "profiles")
 		if st, err := os.Stat(profiles); err != nil || !st.IsDir() {
 			return nil, nil
 		}
@@ -128,8 +127,8 @@ func Roster(root string) []config.BotProfile {
 		var found []config.BotProfile
 		for _, e := range entries {
 			name := e.Name()
-			dir := pypath.PathJoin(profiles, name)
-			if name != "default" && home.ProfileIDRe.MatchString(strings.TrimSuffix(name, "\n")) && home.ProfileLive(dir) {
+			dir := pathutil.Join(profiles, name)
+			if name != "default" && home.ProfileIDRe.MatchString(name) && home.ProfileLive(dir) {
 				found = append(found, config.BotProfile{Name: name, Dir: dir})
 			}
 		}
@@ -190,7 +189,7 @@ func botsMeta(data map[string]any) (map[string]any, bool) {
 
 // Reports whether a profile carries the Bot Mode block
 func isBotManaged(profileDir string) bool {
-	_, ok := botsMeta(readYAMLDict(pypath.PathJoin(profileDir, "profile.yaml"), botsMetaKey))
+	_, ok := botsMeta(readYAMLDict(pathutil.Join(profileDir, "profile.yaml"), botsMetaKey))
 	return ok
 }
 
@@ -238,10 +237,10 @@ func friendlyFields(data map[string]any) (string, string) {
 // One line teammate role of a profile, display name, title and description, at most 160 characters
 func profileRole(profileDir string) string {
 	return swallow(func() (string, error) {
-		data := readYAMLDict(pypath.PathJoin(profileDir, "profile.yaml"), "")
+		data := readYAMLDict(pathutil.Join(profileDir, "profile.yaml"), "")
 		title, display := friendlyFields(data)
 		lowered := strings.ToLower(display)
-		if lowered == strings.ToLower(pypath.PathName(profileDir)) || lowered == strings.ToLower(title) {
+		if lowered == strings.ToLower(pathutil.Name(profileDir)) || lowered == strings.ToLower(title) {
 			display = ""
 		}
 		line := roleLine(display, title, strings.TrimSpace(strOr(data["description"])))
@@ -251,7 +250,7 @@ func profileRole(profileDir string) string {
 
 // Bot Mode title and profile display name of a profile, empty when unset
 func friendlyNames(profileDir string) (string, string) {
-	return friendlyFields(readYAMLDict(pypath.PathJoin(profileDir, "profile.yaml"), ""))
+	return friendlyFields(readYAMLDict(pathutil.Join(profileDir, "profile.yaml"), ""))
 }
 
 // DisplayName is the sender name, Bot Mode title, then display name, else the handle
@@ -321,7 +320,7 @@ func Peers(root string) []string { return peers(root) }
 
 // Registered peer gateway names from the install config, sorted, empty on any failure
 func peers(root string) []string {
-	doc, err := config.ReadConfigDocReadonly(context.Background(), pypath.PathJoin(root, "config.yaml"))
+	doc, err := config.ReadConfigDocReadonly(context.Background(), pathutil.Join(root, "config.yaml"))
 	if err != nil {
 		return nil
 	}
@@ -438,17 +437,17 @@ func modelPromptCapabilitySurface(modelCfg any) (map[string]any, error) {
 	case bool:
 	case string:
 		stripped := strings.TrimSpace(raw)
-		if stripped != "" && allDigits(stripped) {
-			n, ok := pyint.Parse(stripped)
-			if !ok {
-				return nil, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.StrRepr(stripped))
+		if stripped != "" && strings.Trim(stripped, "0123456789") == "" {
+			n, err := strconv.ParseInt(stripped, 10, 64)
+			if err != nil {
+				return nil, err
 			}
-			if n.Sign() > 0 {
+			if n > 0 {
 				ctx = n
 			}
 		}
 	default:
-		if n, ok := pyrepr.Int(raw); ok && n.Sign() > 0 {
+		if n, ok := anyutil.Int(raw); ok && n > 0 {
 			ctx = n
 		}
 	}
@@ -459,19 +458,9 @@ func modelPromptCapabilitySurface(modelCfg any) (map[string]any, error) {
 	return map[string]any{"supports_vision": vision, "context_length": ctx}, nil
 }
 
-// Reports whether every character of a non empty string is a Python digit
-func allDigits(s string) bool {
-	for _, r := range s {
-		if !unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return s != ""
-}
-
 // Items Python iteration yields for a config value, falsy values empty, a non iterable an error
 func pyIterate(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	switch x := v.(type) {
@@ -491,12 +480,12 @@ func pyIterate(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, fmt.Errorf("'%s' object is not iterable", anyutil.Kind(v))
 }
 
 // json.dumps with sorted keys and str for values JSON cannot hold
 func dumpsSorted(v any) (string, error) {
-	return pyjson.Dumps(v, pyjson.SortKeys(true), pyjson.Default(func(x any) (any, error) { return pyrepr.Str(x), nil }))
+	return jsonutil.Encode(v, jsonutil.SortKeys(), jsonutil.Convert(func(x any) (any, error) { return anyutil.String(x), nil }))
 }
 
 // Config axes of the capability surface, stopping at the first failure as the Python try block does
@@ -519,13 +508,13 @@ func configSurface(resolved string, surface map[string]any) error {
 	}
 	disabled := make([]string, 0, len(disabledRaw))
 	for _, s := range disabledRaw {
-		disabled = append(disabled, strings.ToLower(pyrepr.Str(s)))
+		disabled = append(disabled, strings.ToLower(anyutil.String(s)))
 	}
 	sort.Strings(disabled)
 	surface["disabled_skills"] = disabled
 	agentCfg, _ := asDict(cfg["agent"])
 	var platformToolsets any = map[string]any{}
-	if pyrepr.Truthy(cfg["platform_toolsets"]) {
+	if anyutil.IsTrue(cfg["platform_toolsets"]) {
 		platformToolsets = cfg["platform_toolsets"]
 	}
 	dumped, err := dumpsSorted(platformToolsets)
@@ -549,7 +538,7 @@ func configSurface(resolved string, surface map[string]any) error {
 
 // Digest of SOUL.md, empty when it is not a file or unreadable
 func soulDigest(resolved string) string {
-	soul := pypath.PathJoin(resolved, "SOUL.md")
+	soul := pathutil.Join(resolved, "SOUL.md")
 	if st, err := os.Stat(soul); err != nil || !st.Mode().IsRegular() {
 		return ""
 	}
@@ -563,13 +552,13 @@ func soulDigest(resolved string) string {
 
 // Sorted skill dirs relative to the skills root through the shared skill index walk
 func skillNames(resolved string) []string {
-	root := pypath.PathJoin(resolved, "skills")
+	root := pathutil.Join(resolved, "skills")
 	if st, err := os.Stat(root); err != nil || !st.IsDir() {
 		return []string{}
 	}
 	out := []string{}
 	for _, p := range skills.IterSkillIndexFiles(root, "SKILL.md") {
-		rel, ok := pypath.PathRelativeTo(pypath.PathParent(p), root)
+		rel, ok := pathutil.RelativeTo(filepath.Dir(filepath.Clean(p)), root)
 		if !ok {
 			return []string{}
 		}
@@ -609,7 +598,7 @@ func CapabilityFingerprint(h string) string {
 		peerNames = []string{}
 	}
 	surface["peers"] = peerNames
-	text, err := pyjson.Dumps(surface, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(surface, jsonutil.SortKeys())
 	if err != nil {
 		return "unavailable"
 	}
@@ -642,10 +631,10 @@ func StoredBotChatPromptNeedsUpgrade(storedPrompt, h string) bool {
 
 // Text of a truthy value, empty for a falsy one
 func strOr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // First n code points of text

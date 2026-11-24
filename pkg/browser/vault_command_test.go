@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -47,7 +47,7 @@ func keyStorageSetting(t *testing.T, h string) string {
 func TestVaultKeyMigrateMovesTheKeyAndRecordsTheChoice(t *testing.T) {
 	h, keyring := vaultCLIHome(t)
 	store := vault.GetVaultStore(context.Background())
-	item, err := store.AddItem("login", "Example", pyjson.ObjectOf("identifier_type", "email", "identifier", "jane@example.com", "password", "dummy-pw-cli-9"), "https://example.com")
+	item, err := store.AddItem("login", "Example", jsonutil.ObjectOf("identifier_type", "email", "identifier", "jane@example.com", "password", "dummy-pw-cli-9"), "https://example.com")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestSourcesDisableToleratesScalarVaultSection(t *testing.T) {
 func TestVaultCommandSurfacesCorruptStoreAsCleanError(t *testing.T) {
 	h, _ := vaultCLIHome(t)
 	store := vault.NewVaultStore(context.Background(), filepath.Join(h, "vault"))
-	if _, err := store.AddItem("login", "site", pyjson.ObjectOf("identifier_type", "email", "identifier", "u", "password", "p"), "https://x.example"); err != nil {
+	if _, err := store.AddItem("login", "site", jsonutil.ObjectOf("identifier_type", "email", "identifier", "u", "password", "p"), "https://x.example"); err != nil {
 		t.Fatal(err)
 	}
 	if err := store.EncryptVaultBody([]byte("{not json")); err != nil {
@@ -128,7 +128,7 @@ func TestVaultListShowsItemsAndRmRemovesThem(t *testing.T) {
 	if out := runVault(t, h, map[string]any{"vault_action": "list"}); !strings.Contains(out, "Vault is empty. Add an item with `icebath vault add`.") {
 		t.Fatalf("output %q", out)
 	}
-	meta, err := vault.GetVaultStore(context.Background()).AddItem("login", "GitHub", pyjson.ObjectOf("identifier_type", "email", "identifier", "me@example.com", "password", "pw"), "https://github.com")
+	meta, err := vault.GetVaultStore(context.Background()).AddItem("login", "GitHub", jsonutil.ObjectOf("identifier_type", "email", "identifier", "me@example.com", "password", "pw"), "https://github.com")
 	if err != nil {
 		t.Fatal(err)
 	}

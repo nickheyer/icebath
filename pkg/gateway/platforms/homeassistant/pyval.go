@@ -3,22 +3,21 @@ package homeassistant
 import (
 	"fmt"
 	"math"
-	"math/big"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-// Python exception carrying its class name and its str
+// Error carrying a kind label beside its message
 type pyErr struct{ kind, msg string }
 
-func (e *pyErr) Error() string      { return e.msg }
-func (e *pyErr) PyTypeName() string { return e.kind }
+func (e *pyErr) Error() string     { return e.msg }
+func (e *pyErr) ErrorKind() string { return e.kind }
 
 // AttributeError of a value of the wrong kind, naming the field and the kind it needs
 func attrErr(v any, field, want string) error {
@@ -28,7 +27,7 @@ func attrErr(v any, field, want string) error {
 // Whether a decoded value is a Python dict
 func isDict(v any) bool {
 	switch v.(type) {
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return true
 	}
 	return false
@@ -37,7 +36,7 @@ func isDict(v any) bool {
 // dict get of a decoded value, the AttributeError a non dict raises
 func pyGet(v any, key string, def any) (any, error) {
 	switch m := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m != nil {
 			if val, ok := m.Get(key); ok {
 				return val, nil
@@ -56,7 +55,7 @@ func pyGet(v any, key string, def any) (any, error) {
 // Subscript of a decoded value by a str key with the KeyError or TypeError Python raises
 func pyIndex(v any, key string) (any, error) {
 	switch m := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m != nil {
 			if val, ok := m.Get(key); ok {
 				return val, nil
@@ -75,8 +74,8 @@ func pyIndex(v any, key string) (any, error) {
 // Keys of a dict in iteration order, a plain map's keys sorted
 func dictKeys(v any) []string {
 	switch m := v.(type) {
-	case *pyjson.Object:
-		return append([]string(nil), m.Keys...)
+	case *jsonutil.Object:
+		return append([]string(nil), m.Keys()...)
 	case map[string]any:
 		keys := make([]string, 0, len(m))
 		for k := range m {
@@ -93,7 +92,7 @@ func pyIter(v any) ([]any, error) {
 	switch t := v.(type) {
 	case []any:
 		return t, nil
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		keys := dictKeys(t)
 		out := make([]any, len(keys))
 		for i, k := range keys {
@@ -117,16 +116,10 @@ func pyIter(v any) ([]any, error) {
 	return nil, &pyErr{"TypeError", fmt.Sprintf("expected a list, got %s", errchain.Kind(v))}
 }
 
-// Distinct key type of an int past the int64 range
-type bigKey string
-
-// Python int of a base ten str, false past the 4300 digit conversion limit like int()
-func parseIntStr(s string) (*big.Int, bool) {
-	n, ok := pyint.Parse(s)
-	if !ok || len(strings.TrimPrefix(n.String(), "-")) > 4300 {
-		return nil, false
-	}
-	return n, true
+// Integer of a base ten text with surrounding space ignored, false when it is not one or lies outside the int64 range
+func parseIntStr(s string) (int64, bool) {
+	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
+	return n, err == nil
 }
 
 // Hash identity of a dict key or set element, the TypeError naming that use for an unhashable value
@@ -155,14 +148,11 @@ func hashKey(v any) (any, error) {
 			return int64(t), nil
 		}
 		return t, nil
-	case []any, *pyjson.Object, map[string]any:
+	case []any, *jsonutil.Object, map[string]any:
 		return nil, &pyErr{"TypeError", fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		if n.IsInt64() {
-			return n.Int64(), nil
-		}
-		return bigKey(n.String()), nil
+	if n, ok := anyutil.Int(v); ok {
+		return n, nil
 	}
 	if !reflect.TypeOf(v).Comparable() {
 		return nil, &pyErr{"TypeError", fmt.Sprintf("expected a single value, got %s", errchain.Kind(v))}
@@ -193,15 +183,7 @@ func (m keyedMap) set(k, v any) error {
 	return nil
 }
 
-// Python int of an isinstance int value excluding bool, false for anything else
-func strictInt(v any) (*big.Int, bool) {
-	if _, isBool := v.(bool); isBool {
-		return nil, false
-	}
-	return pyrepr.Int(v)
-}
-
-// JSON object key text json.dumps writes for a dict key
+// JSON object key text of a mapping key
 func jsonKey(k any) (string, error) {
 	switch t := k.(type) {
 	case string:
@@ -222,10 +204,10 @@ func jsonKey(k any) (string, error) {
 		case math.IsInf(t, -1):
 			return "-Infinity", nil
 		}
-		return pyrepr.Float(t), nil
+		return strconv.FormatFloat(t, 'f', -1, 64), nil
 	}
-	if n, ok := pyrepr.Int(k); ok {
-		return n.String(), nil
+	if n, ok := anyutil.Int(k); ok {
+		return strconv.FormatInt(n, 10), nil
 	}
 	return "", &pyErr{"TypeError", fmt.Sprintf("a mapping key must be text, a number, true or false or nothing, got %s", errchain.Kind(k))}
 }
@@ -234,7 +216,7 @@ func jsonKey(k any) (string, error) {
 func updatePair(index int, elem any) (any, any, error) {
 	var parts []any
 	switch t := elem.(type) {
-	case string, []any, *pyjson.Object, map[string]any:
+	case string, []any, *jsonutil.Object, map[string]any:
 		parts, _ = pyIter(t)
 	default:
 		return nil, nil, &pyErr{"TypeError", fmt.Sprintf("item %d must be a pair of key and value, got %s", index, errchain.Kind(elem))}
@@ -245,10 +227,10 @@ func updatePair(index int, elem any) (any, any, error) {
 	return parts[0], parts[1], nil
 }
 
-// dict(data) as an ordered JSON object, equal keys merged and non str keys written as json.dumps writes them
-func pyDict(data any) (*pyjson.Object, error) {
-	out := pyjson.NewObject()
-	if !pyrepr.Truthy(data) {
+// dict(data) as an ordered JSON object, equal keys merged and keys that are not text written as JSON object keys
+func pyDict(data any) (*jsonutil.Object, error) {
+	out := jsonutil.NewObject()
+	if !anyutil.IsTrue(data) {
 		return out, nil
 	}
 	if isDict(data) {

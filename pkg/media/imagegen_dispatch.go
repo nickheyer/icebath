@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var containerHomeEnvTypes = map[string]bool{"docker": true, "modal": true}
@@ -83,11 +83,11 @@ func agentCacheBaseForEnv(env *tools.Env, e tools.Environment) (string, error) {
 
 // Adds host_image and agent_visible_image to a local success result under a non local backend
 func postprocessImageGenerateResult(env *tools.Env, raw, taskID string) (string, error) {
-	decoded, err := pyjson.DecodeWTF8Ordered([]byte(raw))
+	decoded, err := jsonutil.Decode([]byte(raw))
 	if err != nil {
 		return raw, nil
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return raw, nil
 	}
@@ -129,7 +129,7 @@ func postprocessImageGenerateResult(env *tools.Env, raw, taskID string) (string,
 	if _, has := payload.Get("agent_visible_image"); !has {
 		payload.Set("agent_visible_image", agentPath)
 	}
-	out, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(payload)
 	if err != nil {
 		return raw, nil
 	}
@@ -155,7 +155,7 @@ func pyTruthy(v any) bool {
 		return len(x) > 0
 	case map[string]any:
 		return len(x) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len() > 0
 	}
 	return true
@@ -190,15 +190,15 @@ func checkImageGenerationRequirements(env *tools.Env) bool {
 }
 
 // Static image_generate schema the dynamic overrides rebuild at definition time
-func imageGenerateSchema() *pyjson.Object {
-	return pyjson.ObjectOf(
+func imageGenerateSchema() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"name", "image_generate",
 		"description", "Generate or edit images with the configured model. Edit/reference capabilities are rendered at serving time.",
-		"parameters", pyjson.ObjectOf(
+		"parameters", jsonutil.ObjectOf(
 			"type", "object",
-			"properties", pyjson.ObjectOf(
+			"properties", jsonutil.ObjectOf(
 				"prompt", imagePromptParam(),
-				"aspect_ratio", pyjson.ObjectOf(
+				"aspect_ratio", jsonutil.ObjectOf(
 					"type", "string", "enum", []any{"landscape", "square", "portrait"},
 					"description", "The aspect ratio of the generated image. 'landscape' is 16:9 wide, 'portrait' is 16:9 tall, 'square' is 1:1.",
 					"default", defaultImageAspectRatio,
@@ -209,8 +209,8 @@ func imageGenerateSchema() *pyjson.Object {
 	)
 }
 
-func imagePromptParam() *pyjson.Object {
-	return pyjson.ObjectOf(
+func imagePromptParam() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"type", "string",
 		"description", "The text prompt describing the desired image (text-to-image) or the edit to apply (image-to-image). Be detailed and descriptive.",
 	)
@@ -227,7 +227,7 @@ func providerResult(result map[string]any, contractError string) string {
 	if result == nil {
 		return providerError(contractError, "provider_contract")
 	}
-	out, err := pyjson.Dumps(result)
+	out, err := jsonutil.Encode(result)
 	if err != nil {
 		return providerError(contractError, "provider_contract")
 	}
@@ -627,8 +627,8 @@ func capInt(v any) int {
 	return 0
 }
 
-func imageURLParam() *pyjson.Object {
-	return pyjson.ObjectOf(
+func imageURLParam() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"type", "string",
 		"description", "Source image to edit/transform (image-to-image). A public URL or "+
 			"an absolute local file path from the conversation. Omit for "+
@@ -639,16 +639,16 @@ func imageURLParam() *pyjson.Object {
 var creativeControlOrder = []string{"creativity", "thinking", "resolution", "intensity", "complexity", "movement"}
 
 // Creative control vocabulary a provider opts into through creative_controls
-func creativeControlParams() map[string]*pyjson.Object {
-	axis := func(desc string) *pyjson.Object {
-		return pyjson.ObjectOf("type", "integer", "minimum", -100, "maximum", 100, "description", desc)
+func creativeControlParams() map[string]*jsonutil.Object {
+	axis := func(desc string) *jsonutil.Object {
+		return jsonutil.ObjectOf("type", "integer", "minimum", -100, "maximum", 100, "description", desc)
 	}
-	return map[string]*pyjson.Object{
-		"creativity": pyjson.ObjectOf("type", "string", "enum", []any{"raw", "low", "medium", "high"},
+	return map[string]*jsonutil.Object{
+		"creativity": jsonutil.ObjectOf("type", "string", "enum", []any{"raw", "low", "medium", "high"},
 			"description", "Prompt expansion: raw (none), low, medium or high."),
-		"thinking": pyjson.ObjectOf("type", "string", "enum", []any{"fast", "high"},
+		"thinking": jsonutil.ObjectOf("type", "string", "enum", []any{"fast", "high"},
 			"description", "How much the model plans before generating: fast (default) or high for complex multi-step edits."),
-		"resolution": pyjson.ObjectOf("type", "string", "enum", []any{"1K", "2K"},
+		"resolution": jsonutil.ObjectOf("type", "string", "enum", []any{"1K", "2K"},
 			"description", "Output size: 1K (default) or 2K when small text or fine detail matters."),
 		"intensity":  axis("Style intensity, -100 muted to 100 highly stylized. 0 neutral."),
 		"complexity": axis("Composition density, -100 minimal to 100 dense. 0 neutral."),
@@ -656,16 +656,16 @@ func creativeControlParams() map[string]*pyjson.Object {
 	}
 }
 
-func stylePromptParam() *pyjson.Object {
-	return pyjson.ObjectOf(
+func stylePromptParam() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"type", "string",
 		"description", "The subject and scene to generate. Be detailed and descriptive; "+
 			"reference images supply only the look.",
 	)
 }
 
-func styleImageURLParam() *pyjson.Object {
-	return pyjson.ObjectOf(
+func styleImageURLParam() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"type", "string",
 		"description", "Style reference: its look is copied, the image itself is not edited. "+
 			"A public URL or an absolute local file path. Describe the subject in "+
@@ -673,8 +673,8 @@ func styleImageURLParam() *pyjson.Object {
 	)
 }
 
-func upscaleParam() *pyjson.Object {
-	return pyjson.ObjectOf(
+func upscaleParam() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"type", "boolean",
 		"description", "Post-generation high-resolution pass (~2x, extra cost/latency), "+
 			"off by default. A creative enhancer that can alter fine detail "+
@@ -684,7 +684,7 @@ func upscaleParam() *pyjson.Object {
 }
 
 // Description and parameters rendered from the active model capabilities, unsupported args omitted
-func buildDynamicImageSchema(env *tools.Env) *pyjson.Object {
+func buildDynamicImageSchema(env *tools.Env) *jsonutil.Object {
 	info := activeImageCapabilities(env)
 	maxRefs := capInt(info["max_reference_images"])
 	modalities := stringList(info["modalities"])
@@ -692,8 +692,8 @@ func buildDynamicImageSchema(env *tools.Env) *pyjson.Object {
 		modalities = []string{"text"}
 	}
 	canEdit := containsString(modalities, "image")
-	static := imageGenerateSchema().Vals["parameters"].(*pyjson.Object).Vals["properties"].(*pyjson.Object)
-	properties := pyjson.ObjectOf("prompt", static.Vals["prompt"], "aspect_ratio", static.Vals["aspect_ratio"])
+	static := imageGenerateSchema().Value("parameters").(*jsonutil.Object).Value("properties").(*jsonutil.Object)
+	properties := jsonutil.ObjectOf("prompt", static.Value("prompt"), "aspect_ratio", static.Value("aspect_ratio"))
 	styleRefs := info["source_image_role"] == "style"
 	var lead, editClause string
 	if canEdit {
@@ -716,8 +716,8 @@ func buildDynamicImageSchema(env *tools.Env) *pyjson.Object {
 				"absolute local paths.", maxRefs)
 		}
 		if maxRefs > 1 {
-			properties.Set("reference_image_urls", pyjson.ObjectOf(
-				"type", "array", "items", pyjson.ObjectOf("type", "string"), "maxItems", maxRefs, "description", refsDesc,
+			properties.Set("reference_image_urls", jsonutil.ObjectOf(
+				"type", "array", "items", jsonutil.ObjectOf("type", "string"), "maxItems", maxRefs, "description", refsDesc,
 			))
 		}
 	} else {
@@ -736,9 +736,9 @@ func buildDynamicImageSchema(env *tools.Env) *pyjson.Object {
 		"Returns the result in the `image` field — a URL or an absolute " +
 		"file path; reference it in your response using the current " +
 		"platform's file-delivery convention."
-	return pyjson.ObjectOf(
+	return jsonutil.ObjectOf(
 		"description", desc,
-		"parameters", pyjson.ObjectOf("type", "object", "properties", properties, "required", []any{"prompt"}),
+		"parameters", jsonutil.ObjectOf("type", "object", "properties", properties, "required", []any{"prompt"}),
 	)
 }
 

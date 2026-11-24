@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var (
@@ -109,9 +109,9 @@ func importNonFinitePath(value any, path string) (string, bool) {
 			if math.IsNaN(v) || math.IsInf(v, 0) {
 				return current.path, true
 			}
-		case *pyjson.Object:
-			for _, key := range v.Keys {
-				stack = append(stack, pending{v.Vals[key], current.path + "." + key})
+		case *jsonutil.Object:
+			for _, key := range v.Keys() {
+				stack = append(stack, pending{v.Value(key), current.path + "." + key})
 			}
 		case map[string]any:
 			keys := make([]string, 0, len(v))
@@ -133,7 +133,7 @@ func importNonFinitePath(value any, path string) (string, bool) {
 
 // json.loads refusing NaN and Infinity anywhere in the decoded value
 func importLoadJSON(value, path string) (any, error) {
-	parsed, err := pyjson.Loads(value)
+	parsed, err := jsonutil.Decode(value)
 	if err != nil {
 		return nil, err
 	}
@@ -145,7 +145,7 @@ func importLoadJSON(value, path string) (any, error) {
 
 // True for a JSON syntax error as opposed to a non finite refusal
 func isJSONDecodeError(err error) bool {
-	var decodeErr *pyjson.DecodeError
+	var decodeErr *jsonutil.SyntaxError
 	return errors.As(err, &decodeErr)
 }
 
@@ -163,15 +163,15 @@ func importJSONObjectOrNone(value any, field string) (any, error) {
 			}
 			return nil, err
 		}
-		if _, isObj := parsed.(*pyjson.Object); !isObj {
+		if _, isObj := parsed.(*jsonutil.Object); !isObj {
 			return nil, pyValueError(field + " must be a JSON object")
 		}
 		return value, nil
 	}
-	obj, ok := value.(*pyjson.Object)
+	obj, ok := value.(*jsonutil.Object)
 	if !ok {
 		if plain, isMap := value.(map[string]any); isMap {
-			obj = pyjson.NewObject()
+			obj = jsonutil.NewObject()
 			keys := make([]string, 0, len(plain))
 			for key := range plain {
 				keys = append(keys, key)
@@ -251,8 +251,8 @@ func importFloatOrFinite(value any) any {
 }
 
 // Type checks one payload message, ValueError naming the offending field
-func normalizeImportMessage(message *pyjson.Object, index int) (*pyjson.Object, error) {
-	clean := message.Copy()
+func normalizeImportMessage(message *jsonutil.Object, index int) (*jsonutil.Object, error) {
+	clean := message.Clone()
 	role, _ := clean.Get("role")
 	if text, ok := role.(string); !ok || text == "" {
 		return nil, pyValueError(fmt.Sprintf("messages[%d].role must be a non-empty string", index))
@@ -280,7 +280,7 @@ func normalizeImportMessage(message *pyjson.Object, index int) (*pyjson.Object, 
 	}
 	messagePath := fmt.Sprintf("session.messages[%d]", index)
 	if timestamp, _ := clean.Get("timestamp"); timestamp != nil {
-		if _, ok := pydatetime.CoerceEpoch(timestamp, "", "messages[].timestamp"); !ok {
+		if _, ok := timeutil.StoredEpoch(timestamp, "", "messages[].timestamp"); !ok {
 			return nil, pyValueError(messagePath + ".timestamp must be a supported Unix timestamp")
 		}
 	}
@@ -304,8 +304,8 @@ func normalizeImportMessage(message *pyjson.Object, index int) (*pyjson.Object, 
 }
 
 // Type checks one payload session and its messages, ValueError naming the offending field
-func normalizeImportSession(raw *pyjson.Object, sessionID string, messages []any) (*pyjson.Object, error) {
-	clean := raw.Copy()
+func normalizeImportSession(raw *jsonutil.Object, sessionID string, messages []any) (*jsonutil.Object, error) {
+	clean := raw.Clone()
 	clean.Set("id", sessionID)
 	modelConfig, _ := clean.Get("model_config")
 	normalizedConfig, err := importJSONObjectOrNone(modelConfig, "model_config")
@@ -322,7 +322,7 @@ func normalizeImportSession(raw *pyjson.Object, sessionID string, messages []any
 		clean.Set(field, text)
 	}
 	if startedAt, _ := clean.Get("started_at"); startedAt != nil {
-		if _, ok := pydatetime.CoerceEpoch(startedAt, "", "started_at"); !ok {
+		if _, ok := timeutil.StoredEpoch(startedAt, "", "started_at"); !ok {
 			return nil, pyValueError("session.started_at must be a supported Unix timestamp")
 		}
 	}
@@ -342,26 +342,26 @@ func normalizeImportSession(raw *pyjson.Object, sessionID string, messages []any
 	}
 	cleanMessages := make([]any, 0, len(messages))
 	for index, message := range messages {
-		cleanMessage, err := normalizeImportMessage(message.(*pyjson.Object), index)
+		cleanMessage, err := normalizeImportMessage(message.(*jsonutil.Object), index)
 		if err != nil {
 			return nil, err
 		}
 		cleanMessages = append(cleanMessages, cleanMessage)
 	}
-	return pyjson.ObjectOf("session", clean, "messages", cleanMessages), nil
+	return jsonutil.ObjectOf("session", clean, "messages", cleanMessages), nil
 }
 
 type importTotals struct{ messages, bytes int }
 
 // Size, shape and type validation of the whole payload, every rejected entry reported
-func (d *SessionDB) validateImportPayload(sessions []any) ([]*pyjson.Object, []any, error) {
-	normalized := []*pyjson.Object{}
+func (d *SessionDB) validateImportPayload(sessions []any) ([]*jsonutil.Object, []any, error) {
+	normalized := []*jsonutil.Object{}
 	errs := []any{}
 	seen := map[string]bool{}
 	totals := &importTotals{}
 	for index, raw := range sessions {
 		sessionID := ""
-		if obj, ok := raw.(*pyjson.Object); ok {
+		if obj, ok := raw.(*jsonutil.Object); ok {
 			id, _ := obj.Get("id")
 			if pyTruthy(id) {
 				sessionID = strings.TrimSpace(pyStr(id))
@@ -372,7 +372,7 @@ func (d *SessionDB) validateImportPayload(sessions []any) ([]*pyjson.Object, []a
 			if !isPyValueError(err) {
 				return nil, nil, err
 			}
-			entry := pyjson.ObjectOf("index", int64(index), "error", err.Error())
+			entry := jsonutil.ObjectOf("index", int64(index), "error", err.Error())
 			if sessionID != "" {
 				entry.Set("session_id", sessionID)
 			}
@@ -380,16 +380,16 @@ func (d *SessionDB) validateImportPayload(sessions []any) ([]*pyjson.Object, []a
 			continue
 		}
 		seen[sessionID] = true
-		withIndex := pyjson.ObjectOf("index", int64(index))
-		withIndex.Update(item)
+		withIndex := jsonutil.ObjectOf("index", int64(index))
+		withIndex.Merge(item)
 		normalized = append(normalized, withIndex)
 	}
 	return normalized, errs, nil
 }
 
 // One payload session normalized, ValueError on rejection, totals counted before their limit check
-func (d *SessionDB) validateImportSession(raw any, sessionID string, seen map[string]bool, totals *importTotals) (*pyjson.Object, error) {
-	obj, ok := raw.(*pyjson.Object)
+func (d *SessionDB) validateImportSession(raw any, sessionID string, seen map[string]bool, totals *importTotals) (*jsonutil.Object, error) {
+	obj, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return nil, pyValueError("session must be an object")
 	}
@@ -414,14 +414,14 @@ func (d *SessionDB) validateImportSession(raw any, sessionID string, seen map[st
 		return nil, pyValueError("messages exceeds the per-session import limit")
 	}
 	for _, msg := range messages {
-		if _, ok := msg.(*pyjson.Object); !ok {
+		if _, ok := msg.(*jsonutil.Object); !ok {
 			return nil, pyValueError("messages must contain only objects")
 		}
 	}
-	measured := pyjson.NewObject()
-	for _, key := range obj.Keys {
+	measured := jsonutil.NewObject()
+	for _, key := range obj.Keys() {
 		if key != "timings" {
-			measured.Set(key, obj.Vals[key])
+			measured.Set(key, obj.Value(key))
 		}
 	}
 	text, err := pyDumps(measured, pyJSON{allowNaN: true, itemSep: ",", keySep: ":"})
@@ -468,7 +468,7 @@ func jsonValueOrText(value any) any {
 	if !ok {
 		return value
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return value
 	}
@@ -476,10 +476,10 @@ func jsonValueOrText(value any) any {
 }
 
 // Inserts one normalized session with its messages, archived rows restored archived and counters fixed after
-func (d *SessionDB) importSessionRow(ctx context.Context, conn SQLiteConn, raw *pyjson.Object, messages any, sessionID string) error {
+func (d *SessionDB) importSessionRow(ctx context.Context, conn SQLiteConn, raw *jsonutil.Object, messages any, sessionID string) error {
 	startedRaw, _ := raw.Get("started_at")
 	var startedAt any = now()
-	if ts, ok := pydatetime.CoerceEpoch(startedRaw, sessionID, "started_at"); ok {
+	if ts, ok := timeutil.StoredEpoch(startedRaw, sessionID, "started_at"); ok {
 		startedAt = ts
 	}
 	source := "import"
@@ -531,13 +531,13 @@ func (d *SessionDB) importSessionRow(ctx context.Context, conn SQLiteConn, raw *
 	list, _ := messages.([]any)
 	sanitized := make([]map[string]any, 0, len(list))
 	for _, item := range list {
-		obj, ok := item.(*pyjson.Object)
+		obj, ok := item.(*jsonutil.Object)
 		if !ok {
 			return &stateTypedError{"TypeError", "message must be a dict"}
 		}
-		row := pyjson.Plain(obj).(map[string]any)
+		row := jsonutil.Plain(obj).(map[string]any)
 		for _, key := range importMessageJSONFields {
-			row[key] = pyjson.Plain(jsonValueOrText(row[key]))
+			row[key] = jsonutil.Plain(jsonValueOrText(row[key]))
 		}
 		sanitized = append(sanitized, row)
 	}
@@ -639,7 +639,7 @@ func attachImportParents(ctx context.Context, conn SQLiteConn, parentUpdates [][
 }
 
 // Imports exported sessions, skipping existing ids, refusing deleted ids by name and detaching foreign parents
-func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*pyjson.Object, error) {
+func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*jsonutil.Object, error) {
 	if sessions == nil {
 		return nil, pyValueError("sessions must be a list")
 	}
@@ -651,14 +651,14 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*pyjson
 		return nil, err
 	}
 	if len(errs) > 0 {
-		return pyjson.ObjectOf("ok", false, "imported", int64(0), "skipped", int64(0), "detached", int64(0), "errors", errs), nil
+		return jsonutil.ObjectOf("ok", false, "imported", int64(0), "skipped", int64(0), "detached", int64(0), "errors", errs), nil
 	}
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
 		ids := make([]string, 0, len(normalized))
 		for _, item := range normalized {
-			id, _ := rowGet(item, "session").(*pyjson.Object).Get("id")
-			ids = append(ids, strings.TrimSpace(pyStr(pyOr(id, ""))))
+			id, _ := rowGet(item, "session").(*jsonutil.Object).Get("id")
+			ids = append(ids, strings.TrimSpace(pyStr(anyutil.Or(id, ""))))
 		}
 		deleted := []any{}
 		for _, sid := range ids {
@@ -671,15 +671,15 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*pyjson
 			}
 		}
 		if len(deleted) > 0 {
-			result = pyjson.ObjectOf("ok", false, "imported", int64(0), "skipped", int64(0), "detached", int64(0), "errors", deleted)
+			result = jsonutil.ObjectOf("ok", false, "imported", int64(0), "skipped", int64(0), "detached", int64(0), "errors", deleted)
 			return nil
 		}
 		imported, skipped := []string{}, []string{}
 		var parentUpdates [][2]string
 		for _, item := range normalized {
-			raw := rowGet(item, "session").(*pyjson.Object)
+			raw := rowGet(item, "session").(*jsonutil.Object)
 			id, _ := raw.Get("id")
-			sessionID := strings.TrimSpace(pyStr(pyOr(id, "")))
+			sessionID := strings.TrimSpace(pyStr(anyutil.Or(id, "")))
 			exists, err := connRow(ctx, conn, "SELECT 1 FROM sessions WHERE id = ? LIMIT 1", sessionID)
 			if err != nil {
 				return err
@@ -692,7 +692,7 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*pyjson
 				return err
 			}
 			parentRaw, _ := raw.Get("parent_session_id")
-			if parentID := strings.TrimSpace(pyStr(pyOr(parentRaw, ""))); parentID != "" {
+			if parentID := strings.TrimSpace(pyStr(anyutil.Or(parentRaw, ""))); parentID != "" {
 				parentUpdates = append(parentUpdates, [2]string{sessionID, parentID})
 			}
 			imported = append(imported, sessionID)
@@ -701,7 +701,7 @@ func (d *SessionDB) ImportSessions(ctx context.Context, sessions []any) (*pyjson
 		if err != nil {
 			return err
 		}
-		result = pyjson.ObjectOf("ok", true, "imported", int64(len(imported)), "skipped", int64(len(skipped)),
+		result = jsonutil.ObjectOf("ok", true, "imported", int64(len(imported)), "skipped", int64(len(skipped)),
 			"detached", int64(detached), "imported_ids", anyStrings(imported), "skipped_ids", anyStrings(skipped), "errors", []any{})
 		return nil
 	}, nil)

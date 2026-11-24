@@ -13,14 +13,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/tools"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
-func advisoryCLI(t *testing.T) (*HubCLI, *bytes.Buffer, *pyrich.Console) {
+func advisoryCLI(t *testing.T) (*HubCLI, *bytes.Buffer, *consoleutil.Console) {
 	x, _, _ := newTestCLI(t)
 	sink := &bytes.Buffer{}
-	return x, sink, &pyrich.Console{Out: sink, Width: 80}
+	return x, sink, &consoleutil.Console{Out: sink, Width: 80}
 }
 
 func TestTier1AdvisoryNeverRaisesOnScannerError(t *testing.T) {
@@ -77,7 +77,7 @@ func urlInstallCLI(t *testing.T, home string) (*HubCLI, *bytes.Buffer) {
 	x := NewHubCLI(s)
 	x.Hub = h
 	sink := &bytes.Buffer{}
-	x.C, x.Stdout = &pyrich.Console{Out: sink, Width: 80}, &bytes.Buffer{}
+	x.C, x.Stdout = &consoleutil.Console{Out: sink, Width: 80}, &bytes.Buffer{}
 	x.Input = func(string) (string, error) { t.Fatal("unexpected prompt"); return "", nil }
 	x.LineInput = x.Input
 	x.Sources = func() []SkillSource { return []SkillSource{NewUrlSource(h)} }

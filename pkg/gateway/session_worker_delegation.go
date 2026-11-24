@@ -7,10 +7,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Task keys a delegation dispatch may carry
@@ -39,7 +39,7 @@ var delegationEventKeys = func() map[string]bool {
 }()
 
 // Refuses a payload that is not exactly the keys
-func delegationShape(payload *pyjson.Object, keys ...string) error {
+func delegationShape(payload *jsonutil.Object, keys ...string) error {
 	if !frameKeysAre(payload, keys...) {
 		return runtimeRefusal("invalid_params")
 	}
@@ -76,14 +76,14 @@ func delegationOwned(ctx context.Context, conn state.SQLiteConn, sessionID, exec
 	if row == nil {
 		return nil, runtimeRefusal("not_found")
 	}
-	if !pyrepr.Equal(row["parent_session_id"], sessionID) || !pyrepr.Equal(row["owner_execution_id"], executionID) {
+	if !anyutil.Equal(row["parent_session_id"], sessionID) || !anyutil.Equal(row["owner_execution_id"], executionID) {
 		return nil, runtimeRefusal("permission_denied")
 	}
 	return row, nil
 }
 
 // Value receipt of a delegation handler
-func delegationValue(value any) *pyjson.Object { return pyjson.ObjectOf("value", value) }
+func delegationValue(value any) *jsonutil.Object { return jsonutil.ObjectOf("value", value) }
 
 // Text of a nullable column with NULL as empty
 func nullColumnText(value any) any {
@@ -94,7 +94,7 @@ func nullColumnText(value any) any {
 }
 
 // Records a dispatched delegation owned by the verified worker execution and process
-func delegationDispatch(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object, executionID string, workerPID int, workerBirth float64) (*pyjson.Object, error) {
+func delegationDispatch(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object, executionID string, workerPID int, workerBirth float64) (*jsonutil.Object, error) {
 	keys := []string{"delegation_id", "task", "dispatched_at"}
 	for _, route := range delegationRoute {
 		keys = append(keys, route[0])
@@ -102,17 +102,17 @@ func delegationDispatch(ctx context.Context, conn state.SQLiteConn, sessionID st
 	if err := delegationShape(payload, keys...); err != nil {
 		return nil, err
 	}
-	if err := delegationText(payload.Vals["delegation_id"]); err != nil {
+	if err := delegationText(payload.Value("delegation_id")); err != nil {
 		return nil, err
 	}
-	if err := delegationNumber(payload.Vals["dispatched_at"]); err != nil {
+	if err := delegationNumber(payload.Value("dispatched_at")); err != nil {
 		return nil, err
 	}
-	task, isDict := payload.Vals["task"].(*pyjson.Object)
+	task, isDict := payload.Value("task").(*jsonutil.Object)
 	if !isDict {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	for _, key := range task.Keys {
+	for _, key := range task.Keys() {
 		if !delegationTaskKeys[key] {
 			return nil, runtimeRefusal("invalid_params")
 		}
@@ -124,17 +124,17 @@ func delegationDispatch(ctx context.Context, conn state.SQLiteConn, sessionID st
 	if session == nil || !map[any]bool{"cli": true, "tui": true, "gui": true, "tool": true, "oneshot": true}[session["source"]] {
 		return nil, runtimeRefusal("unsupported_producer")
 	}
-	if !pyrepr.Equal(payload.Vals["parent_session_id"], sessionID) || !pyrepr.Equal(payload.Vals["session_key"], nullColumnText(session["session_key"])) ||
-		!(payload.Vals["origin_ui_session_id"] == "" || pyrepr.Equal(payload.Vals["origin_ui_session_id"], sessionID)) ||
-		!(payload.Vals["origin_session_id"] == "" || pyrepr.Equal(payload.Vals["origin_session_id"], sessionID)) {
+	if !anyutil.Equal(payload.Value("parent_session_id"), sessionID) || !anyutil.Equal(payload.Value("session_key"), nullColumnText(session["session_key"])) ||
+		!(payload.Value("origin_ui_session_id") == "" || anyutil.Equal(payload.Value("origin_ui_session_id"), sessionID)) ||
+		!(payload.Value("origin_session_id") == "" || anyutil.Equal(payload.Value("origin_session_id"), sessionID)) {
 		return nil, runtimeRefusal("permission_denied")
 	}
-	old, err := state.ConnRow(ctx, conn, "SELECT 1 FROM async_delegations WHERE delegation_id=?", payload.Vals["delegation_id"])
+	old, err := state.ConnRow(ctx, conn, "SELECT 1 FROM async_delegations WHERE delegation_id=?", payload.Value("delegation_id"))
 	if err != nil {
 		return nil, err
 	}
 	if old != nil {
-		if _, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Vals["delegation_id"]); err != nil {
+		if _, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Value("delegation_id")); err != nil {
 			return nil, err
 		}
 		return nil, runtimeRefusal("admission_conflict")
@@ -147,16 +147,16 @@ func delegationDispatch(ctx context.Context, conn state.SQLiteConn, sessionID st
 		return nil, runtimeRefusal("permission_denied")
 	}
 	ownerStarted := GetProcessStartTime(workerPID)
-	taskJSON, err := pyjson.Dumps(task)
+	taskJSON, err := jsonutil.Encode(task)
 	if err != nil {
 		return nil, err
 	}
 	_, err = conn.ExecContext(ctx, `INSERT INTO async_delegations
         (delegation_id,origin_session,origin_ui_session_id,parent_session_id,state,dispatched_at,
          updated_at,owner_pid,owner_started_at,task_json,origin_session_id,owner_execution_id)
-        VALUES(?,?,?,?,'running',?,?,?,?,?,?,?)`, payload.Vals["delegation_id"], payload.Vals["session_key"],
-		payload.Vals["origin_ui_session_id"], sessionID, payload.Vals["dispatched_at"], nowSeconds(), workerPID, ownerStarted,
-		taskJSON, payload.Vals["origin_session_id"], executionID)
+        VALUES(?,?,?,?,'running',?,?,?,?,?,?,?)`, payload.Value("delegation_id"), payload.Value("session_key"),
+		payload.Value("origin_ui_session_id"), sessionID, payload.Value("dispatched_at"), nowSeconds(), workerPID, ownerStarted,
+		taskJSON, payload.Value("origin_session_id"), executionID)
 	if err != nil {
 		return nil, err
 	}
@@ -167,50 +167,50 @@ func delegationDispatch(ctx context.Context, conn state.SQLiteConn, sessionID st
 func nowSeconds() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Finishes a running delegation with its completion event and result
-func delegationComplete(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object, executionID string) (*pyjson.Object, error) {
+func delegationComplete(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object, executionID string) (*jsonutil.Object, error) {
 	if err := delegationShape(payload, "event", "result"); err != nil {
 		return nil, err
 	}
-	event, eventDict := payload.Vals["event"].(*pyjson.Object)
-	_, resultDict := payload.Vals["result"].(*pyjson.Object)
-	if !eventDict || !resultDict || event.GetOr("type", nil) != "async_delegation" {
+	event, eventDict := payload.Value("event").(*jsonutil.Object)
+	_, resultDict := payload.Value("result").(*jsonutil.Object)
+	if !eventDict || !resultDict || event.ValueOr("type", nil) != "async_delegation" {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	for _, key := range event.Keys {
+	for _, key := range event.Keys() {
 		if !delegationEventKeys[key] {
 			return nil, runtimeRefusal("invalid_params")
 		}
 	}
-	switch event.GetOr("status", nil) {
+	switch event.ValueOr("status", nil) {
 	case "completed", "success", "error", "interrupted", "stalled", "unknown":
 	default:
 		return nil, runtimeRefusal("invalid_params")
 	}
-	row, err := delegationOwned(ctx, conn, sessionID, executionID, event.GetOr("delegation_id", nil))
+	row, err := delegationOwned(ctx, conn, sessionID, executionID, event.ValueOr("delegation_id", nil))
 	if err != nil {
 		return nil, err
 	}
 	for _, route := range delegationRoute {
-		if !pyrepr.Equal(event.GetOr(route[0], ""), nullColumnText(row[route[1]])) {
+		if !anyutil.Equal(event.ValueOr(route[0], ""), nullColumnText(row[route[1]])) {
 			return nil, runtimeRefusal("permission_denied")
 		}
 	}
-	if err := delegationNumber(event.GetOr("completed_at", nil)); err != nil {
+	if err := delegationNumber(event.ValueOr("completed_at", nil)); err != nil {
 		return nil, err
 	}
 	if row["state"] != "running" {
 		return nil, runtimeRefusal("admission_conflict")
 	}
-	eventJSON, err := pyjson.Dumps(event)
+	eventJSON, err := jsonutil.Encode(event)
 	if err != nil {
 		return nil, err
 	}
-	resultJSON, err := pyjson.Dumps(payload.Vals["result"])
+	resultJSON, err := jsonutil.Encode(payload.Value("result"))
 	if err != nil {
 		return nil, err
 	}
 	_, err = conn.ExecContext(ctx, `UPDATE async_delegations SET state=?,completed_at=?,updated_at=?,event_json=?,result_json=?
-        WHERE delegation_id=?`, event.Vals["status"], event.Vals["completed_at"], nowSeconds(), eventJSON, resultJSON, event.Vals["delegation_id"])
+        WHERE delegation_id=?`, event.Value("status"), event.Value("completed_at"), nowSeconds(), eventJSON, resultJSON, event.Value("delegation_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -218,19 +218,19 @@ func delegationComplete(ctx context.Context, conn state.SQLiteConn, sessionID st
 }
 
 // Records one child's partial result entry on a running delegation
-func delegationChild(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object, executionID string) (*pyjson.Object, error) {
+func delegationChild(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object, executionID string) (*jsonutil.Object, error) {
 	if err := delegationShape(payload, "delegation_id", "entry"); err != nil {
 		return nil, err
 	}
-	row, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Vals["delegation_id"])
+	row, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Value("delegation_id"))
 	if err != nil {
 		return nil, err
 	}
-	entry, isDict := payload.Vals["entry"].(*pyjson.Object)
+	entry, isDict := payload.Value("entry").(*jsonutil.Object)
 	if !isDict {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	index, isInt := strictInt(entry.GetOr("task_index", nil))
+	index, isInt := strictInt(entry.ValueOr("task_index", nil))
 	if !isInt || index.Sign() < 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -241,50 +241,50 @@ func delegationChild(ctx context.Context, conn state.SQLiteConn, sessionID strin
 	if stored, ok := row["result_json"].(string); ok && stored != "" {
 		text = stored
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	previous, _ := decoded.(*pyjson.Object)
+	previous, _ := decoded.(*jsonutil.Object)
 	var results []any
 	if previous != nil {
-		items, _ := previous.GetOr("results", []any{}).([]any)
+		items, _ := previous.ValueOr("results", []any{}).([]any)
 		for _, item := range items {
-			kept, _ := item.(*pyjson.Object)
-			if kept == nil || !pyrepr.Equal(kept.GetOr("task_index", nil), entry.Vals["task_index"]) {
+			kept, _ := item.(*jsonutil.Object)
+			if kept == nil || !anyutil.Equal(kept.ValueOr("task_index", nil), entry.Value("task_index")) {
 				results = append(results, item)
 			}
 		}
 	}
 	results = append(results, entry)
-	encoded, err := pyjson.Dumps(pyjson.ObjectOf("results", results, "partial", true))
+	encoded, err := jsonutil.Encode(jsonutil.ObjectOf("results", results, "partial", true))
 	if err != nil {
 		return nil, err
 	}
 	if _, err := conn.ExecContext(ctx, "UPDATE async_delegations SET result_json=?,updated_at=? WHERE delegation_id=?",
-		encoded, nowSeconds(), payload.Vals["delegation_id"]); err != nil {
+		encoded, nowSeconds(), payload.Value("delegation_id")); err != nil {
 		return nil, err
 	}
 	return delegationValue(nil), nil
 }
 
 // Delegation state and result the owning execution may read
-func delegationRead(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object, executionID string) (*pyjson.Object, error) {
+func delegationRead(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object, executionID string) (*jsonutil.Object, error) {
 	if err := delegationShape(payload, "delegation_id"); err != nil {
 		return nil, err
 	}
-	row, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Vals["delegation_id"])
+	row, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Value("delegation_id"))
 	if err != nil {
 		return nil, err
 	}
-	value := pyjson.NewObject()
+	value := jsonutil.NewObject()
 	for _, key := range []string{"delegation_id", "origin_session", "state", "dispatched_at", "completed_at", "delivery_state",
 		"delivery_attempts", "origin_session_id"} {
 		value.Set(key, row[key])
 	}
 	var result any
 	if text, ok := row["result_json"].(string); ok && text != "" {
-		if result, err = pyjson.Loads(text); err != nil {
+		if result, err = jsonutil.Decode(text); err != nil {
 			return nil, err
 		}
 	}
@@ -293,15 +293,15 @@ func delegationRead(ctx context.Context, conn state.SQLiteConn, sessionID string
 }
 
 // Claims a finished delegation's pending delivery for one claimant, a stale claim older than five minutes taken over
-func delegationClaim(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object, executionID string) (*pyjson.Object, error) {
+func delegationClaim(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object, executionID string) (*jsonutil.Object, error) {
 	if err := delegationShape(payload, "delegation_id", "claim_id"); err != nil {
 		return nil, err
 	}
-	row, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Vals["delegation_id"])
+	row, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Value("delegation_id"))
 	if err != nil {
 		return nil, err
 	}
-	if err := delegationText(payload.Vals["claim_id"]); err != nil {
+	if err := delegationText(payload.Value("claim_id")); err != nil {
 		return nil, err
 	}
 	now := nowSeconds()
@@ -310,7 +310,7 @@ func delegationClaim(ctx context.Context, conn state.SQLiteConn, sessionID strin
 	}
 	result, err := conn.ExecContext(ctx, `UPDATE async_delegations SET delivery_claim=?,delivery_claimed_at=?,
         delivery_attempts=delivery_attempts+1,updated_at=? WHERE delegation_id=? AND delivery_state='pending'
-        AND (delivery_claim IS NULL OR delivery_claimed_at < ?)`, payload.Vals["claim_id"], now, now, payload.Vals["delegation_id"], now-300)
+        AND (delivery_claim IS NULL OR delivery_claimed_at < ?)`, payload.Value("claim_id"), now, now, payload.Value("delegation_id"), now-300)
 	if err != nil {
 		return nil, err
 	}
@@ -332,19 +332,19 @@ var delegationDeliveryUpdates = map[string]func(now float64) (string, []any){
 }
 
 // Applies one delivery transition to the claim holder's pending delegation
-func delegationDelivery(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object, executionID, action string) (*pyjson.Object, error) {
+func delegationDelivery(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object, executionID, action string) (*jsonutil.Object, error) {
 	if err := delegationShape(payload, "delegation_id", "claim_id"); err != nil {
 		return nil, err
 	}
-	if _, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Vals["delegation_id"]); err != nil {
+	if _, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Value("delegation_id")); err != nil {
 		return nil, err
 	}
-	if err := delegationText(payload.Vals["claim_id"]); err != nil {
+	if err := delegationText(payload.Value("claim_id")); err != nil {
 		return nil, err
 	}
 	now := nowSeconds()
 	fragment, args := delegationDeliveryUpdates[action](now)
-	args = append(args, now, payload.Vals["delegation_id"], payload.Vals["claim_id"])
+	args = append(args, now, payload.Value("delegation_id"), payload.Value("claim_id"))
 	result, err := conn.ExecContext(ctx, "UPDATE async_delegations SET "+fragment+
 		",updated_at=?,delivery_claim=NULL,delivery_claimed_at=NULL WHERE delegation_id=? AND delivery_state='pending' AND delivery_claim=?", args...)
 	if err != nil {
@@ -358,18 +358,18 @@ func delegationDelivery(ctx context.Context, conn state.SQLiteConn, sessionID st
 }
 
 // Withdraws a running delegation that never got scheduled and holds no result
-func delegationUnscheduled(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object, executionID string) (*pyjson.Object, error) {
+func delegationUnscheduled(ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object, executionID string) (*jsonutil.Object, error) {
 	if err := delegationShape(payload, "delegation_id"); err != nil {
 		return nil, err
 	}
-	row, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Vals["delegation_id"])
+	row, err := delegationOwned(ctx, conn, sessionID, executionID, payload.Value("delegation_id"))
 	if err != nil {
 		return nil, err
 	}
 	if row["state"] != "running" || row["result_json"] != nil {
 		return nil, runtimeRefusal("admission_conflict")
 	}
-	if _, err := conn.ExecContext(ctx, "DELETE FROM async_delegations WHERE delegation_id=?", payload.Vals["delegation_id"]); err != nil {
+	if _, err := conn.ExecContext(ctx, "DELETE FROM async_delegations WHERE delegation_id=?", payload.Value("delegation_id")); err != nil {
 		return nil, err
 	}
 	return delegationValue(nil), nil
@@ -389,20 +389,20 @@ func workerDelegationHandlers(executionID any, workerPID any, workerBirth any) (
 	}
 	execution := executionID.(string)
 	birth, _ := strictNumber(workerBirth)
-	bind := func(fn func(context.Context, state.SQLiteConn, string, *pyjson.Object, string) (*pyjson.Object, error)) state.WorkerHandler {
-		return func(_ *state.SessionDB, ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+	bind := func(fn func(context.Context, state.SQLiteConn, string, *jsonutil.Object, string) (*jsonutil.Object, error)) state.WorkerHandler {
+		return func(_ *state.SessionDB, ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 			return fn(ctx, conn, sessionID, payload, execution)
 		}
 	}
 	handlers := map[string]state.WorkerHandler{
 		"delegation.complete": bind(delegationComplete), "delegation.child": bind(delegationChild), "delegation.read": bind(delegationRead),
 		"delegation.claim": bind(delegationClaim), "delegation.unscheduled": bind(delegationUnscheduled),
-		"delegation.dispatch": func(_ *state.SessionDB, ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+		"delegation.dispatch": func(_ *state.SessionDB, ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 			return delegationDispatch(ctx, conn, sessionID, payload, execution, int(pid.Int64()), birth)
 		},
 	}
 	for action := range delegationDeliveryUpdates {
-		handlers["delegation."+action] = func(_ *state.SessionDB, ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+		handlers["delegation."+action] = func(_ *state.SessionDB, ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 			return delegationDelivery(ctx, conn, sessionID, payload, execution, action)
 		}
 	}
@@ -410,7 +410,7 @@ func workerDelegationHandlers(executionID any, workerPID any, workerBirth any) (
 }
 
 // Delegation ledger sibling of the worker mutation sharing its receipt stream, called after the claim verification
-func persistWorkerDelegation(ctx context.Context, db *state.SessionDB, in state.WorkerReceipt, workerPID, workerBirth any) (*pyjson.Object, error) {
+func persistWorkerDelegation(ctx context.Context, db *state.SessionDB, in state.WorkerReceipt, workerPID, workerBirth any) (*jsonutil.Object, error) {
 	handlers, err := workerDelegationHandlers(in.ExecutionID, workerPID, workerBirth)
 	if err != nil {
 		return nil, err
@@ -419,7 +419,7 @@ func persistWorkerDelegation(ctx context.Context, db *state.SessionDB, in state.
 }
 
 // Worker persist delegation family with every authentication step mandatory, a completion queued for delivery
-func workerDelegationRequest(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (*pyjson.Object, error) {
+func workerDelegationRequest(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (*jsonutil.Object, error) {
 	if !workerParamsAre(params, "epoch", "sequence", "operation", "payload") {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -434,38 +434,38 @@ func workerDelegationRequest(ctx context.Context, c *AuthorityConnection, ref Se
 	if err := verifyWorkerClaim(ctx, c, params, claim); err != nil {
 		return nil, err
 	}
-	executionID, err := ledgerText(params.Vals["execution_id"])
+	executionID, err := ledgerText(params.Value("execution_id"))
 	if err != nil {
 		return nil, err
 	}
-	sessionID, err := ledgerText(params.Vals["session_id"])
+	sessionID, err := ledgerText(params.Value("session_id"))
 	if err != nil {
 		return nil, err
 	}
-	named, _ := params.Vals["operation"].(string)
-	result, err := persistWorkerDelegation(ctx, a.DB, state.WorkerReceipt{Epoch: workerLedgerInt(params.Vals["epoch"]), ExecutionID: executionID,
-		SessionID: sessionID, Generation: workerLedgerInt(params.Vals["generation"]), Sequence: max(workerLedgerInt(params.Vals["sequence"]), 0),
-		Operation: named, Payload: params.Vals["payload"]}, params.Vals["pid"], params.Vals["birth"])
+	named, _ := params.Value("operation").(string)
+	result, err := persistWorkerDelegation(ctx, a.DB, state.WorkerReceipt{Epoch: workerLedgerInt(params.Value("epoch")), ExecutionID: executionID,
+		SessionID: sessionID, Generation: workerLedgerInt(params.Value("generation")), Sequence: max(workerLedgerInt(params.Value("sequence")), 0),
+		Operation: named, Payload: params.Value("payload")}, params.Value("pid"), params.Value("birth"))
 	if err != nil {
 		return nil, err
 	}
 	if named != "delegation.complete" {
 		return result, nil
 	}
-	var event *pyjson.Object
+	var event *jsonutil.Object
 	err = a.DB.ReadCtx(ctx, func(conn state.SQLiteConn) error {
-		payload, _ := params.Vals["payload"].(*pyjson.Object)
-		completion, _ := payload.GetOr("event", nil).(*pyjson.Object)
-		row, err := delegationOwned(ctx, conn, ref.SessionID, executionID, completion.GetOr("delegation_id", nil))
+		payload, _ := params.Value("payload").(*jsonutil.Object)
+		completion, _ := payload.ValueOr("event", nil).(*jsonutil.Object)
+		row, err := delegationOwned(ctx, conn, ref.SessionID, executionID, completion.ValueOr("delegation_id", nil))
 		if err != nil {
 			return err
 		}
 		if row["delivery_state"] == "pending" {
-			decoded, err := pyjson.Loads(pyStrOf(row["event_json"]))
+			decoded, err := jsonutil.Decode(pyStrOf(row["event_json"]))
 			if err != nil {
 				return err
 			}
-			event, _ = decoded.(*pyjson.Object)
+			event, _ = decoded.(*jsonutil.Object)
 		}
 		return nil
 	})
@@ -473,7 +473,7 @@ func workerDelegationRequest(ctx context.Context, c *AuthorityConnection, ref Se
 		return nil, err
 	}
 	if event != nil {
-		queued, _ := pyjson.Plain(event).(map[string]any)
+		queued, _ := jsonutil.Plain(event).(map[string]any)
 		queued["restored"] = true
 		tools.DefaultProcessRegistry().CompletionQueue.Put(queued)
 	}

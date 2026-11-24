@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Sets a store bound for one test, restoring it after
@@ -18,7 +19,7 @@ func hrSetBound(t *testing.T, bound *int64, value int64) {
 
 func hrPageLen(t *testing.T, page map[string]any) int64 {
 	t.Helper()
-	encoded := hrOK(pyjson.Dumps(page, pyjson.EnsureASCII(false), pyjson.Separators(",", ":")))
+	encoded := hrOK(jsonutil.Encode(page))
 	return int64(len(encoded))
 }
 
@@ -41,7 +42,7 @@ func hrAssertRetiredIdentityStaysReserved(t *testing.T, db, roomID, freshID stri
 		t.Fatal(expired.Reason())
 	}
 	repeated := hrOK(hrDisband(db, roomID, nil, nil, hrFloatPtr(999)))
-	if !pyjson.Equal(repeated, map[string]any{"room_id": roomID, "disbanded_at": 20.0, "idempotent": true, "history_expired": true}) {
+	if !anyutil.Equal(repeated, map[string]any{"room_id": roomID, "disbanded_at": 20.0, "idempotent": true, "history_expired": true}) {
 		t.Fatalf("repeated %v", repeated)
 	}
 	if created := hrOK(hrCreate(db, freshID)); created["room_id"] != freshID {
@@ -113,7 +114,7 @@ func TestActiveRoomsAndEventStorageAreBounded(t *testing.T) {
 	hrSetBound(t, &maxRoomEventBytes, hrInt(current, "event_bytes"))
 	_, err = hrAppend(db, AppendEventInput{RoomID: "room-2", EventID: "message-2", Kind: "message.user", Actor: hrUser, Payload: map[string]any{"text": "second"}})
 	hrRequireErr[HostedRoomError](t, err, "storage limit")
-	if events := hrOK(hrRead(db, "room-2", 0, 100, false))["events"]; !pyjson.Equal(events, []any{first}) {
+	if events := hrOK(hrRead(db, "room-2", 0, 100, false))["events"]; !anyutil.Equal(events, []any{first}) {
 		t.Fatalf("events %v", events)
 	}
 	if kind := hrOK(hrDisband(db, "room-2", nil, nil, nil))["event"].(map[string]any)["kind"]; kind != "room.disbanded" {
@@ -163,8 +164,8 @@ func TestBytePressurePruningKeepsRetiredRoomIdReserved(t *testing.T) {
 func TestPeerReservationRejectsStaleOrConflictingAuthority(t *testing.T) {
 	db := hrDB(t)
 	ctx := context.Background()
-	claims := func(gateway string, epoch int64) *pyjson.Object {
-		return pyjson.ObjectOf("room_id", "room-peer", "member_id", "member-peer", "target_profile", "reviewer", "authority_gateway_id", gateway, "authority_epoch", epoch)
+	claims := func(gateway string, epoch int64) *jsonutil.Object {
+		return jsonutil.ObjectOf("room_id", "room-peer", "member_id", "member-peer", "target_profile", "reviewer", "authority_gateway_id", gateway, "authority_epoch", epoch)
 	}
 	if err := ReservePeerRoom(ctx, db, claims("gateway-current", 2), 300, hrFloatPtr(100)); err != nil {
 		t.Fatal(err)

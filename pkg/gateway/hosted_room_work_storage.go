@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Creates or migrates the evidence schema and guards, joining an open transaction through a savepoint
@@ -71,7 +72,7 @@ func workStorageInitializeLocked(ctx context.Context, conn state.SQLiteConn) err
 			return err
 		}
 		legacy := len(columns) > 0 && !columns["producer_gateway_id"]
-		var rows, triggers []*pyjson.Object
+		var rows, triggers []*jsonutil.Object
 		if legacy {
 			if rows, err = state.QueryObjects(ctx, conn, "SELECT * FROM "+table); err != nil {
 				return err
@@ -96,16 +97,16 @@ func workStorageInitializeLocked(ctx context.Context, conn state.SQLiteConn) err
 			return err
 		}
 		for _, row := range rows {
-			parentRow, err := state.QueryRowObject(ctx, conn, "SELECT 1 FROM "+parent+" WHERE room_id=?", row.Vals["room_id"])
+			parentRow, err := state.QueryRowObject(ctx, conn, "SELECT 1 FROM "+parent+" WHERE room_id=?", row.Value("room_id"))
 			if err != nil {
 				return err
 			}
 			if parentRow == nil {
 				fields := []string{"source_table", "room_id", "revision", "digest", "record_json", "disposition"}
-				values := []any{table, row.Vals["room_id"], row.Vals["revision"], row.Vals["digest"], row.Vals["record_json"], "invalid"}
+				values := []any{table, row.Value("room_id"), row.Value("revision"), row.Value("digest"), row.Value("record_json"), "invalid"}
 				if pending {
 					fields = append(fields, "target_install_id", "route_generation", "status")
-					values = append(values, row.Vals["target_install_id"], row.Vals["route_generation"], row.Vals["status"])
+					values = append(values, row.Value("target_install_id"), row.Value("route_generation"), row.Value("status"))
 				}
 				if _, err := conn.ExecContext(ctx, workInsertSQL(workInvalidTable, fields), values...); err != nil {
 					return err
@@ -117,10 +118,10 @@ func workStorageInitializeLocked(ctx context.Context, conn state.SQLiteConn) err
 				producer, epoch, disposition = record["home_install_id"].(string), 1, "current"
 			}
 			fields := []string{"room_id", "revision", "digest", "record_json", "producer_gateway_id", "producer_epoch", "disposition"}
-			values := []any{row.Vals["room_id"], row.Vals["revision"], row.Vals["digest"], row.Vals["record_json"], producer, epoch, disposition}
+			values := []any{row.Value("room_id"), row.Value("revision"), row.Value("digest"), row.Value("record_json"), producer, epoch, disposition}
 			if pending {
 				fields = append(fields, "target_install_id", "route_generation", "status")
-				values = append(values, row.Vals["target_install_id"], row.Vals["route_generation"], row.Vals["status"])
+				values = append(values, row.Value("target_install_id"), row.Value("route_generation"), row.Value("status"))
 			}
 			projected := map[string]any{}
 			for i, field := range fields {
@@ -146,7 +147,7 @@ func workStorageInitializeLocked(ctx context.Context, conn state.SQLiteConn) err
 }
 
 // Version one record a pre producer scoped row holds, an error when it is not exactly its own scope
-func workLegacyRecord(row *pyjson.Object) (map[string]any, error) {
+func workLegacyRecord(row *jsonutil.Object) (map[string]any, error) {
 	decoded, err := roomLoads(hrStr(row, "record_json"))
 	if err != nil {
 		return nil, err
@@ -156,7 +157,7 @@ func workLegacyRecord(row *pyjson.Object) (map[string]any, error) {
 		return nil, err
 	}
 	version, _ := hostedStrictInt(record["version"])
-	if version != 1 || record["room_id"] != row.Vals["room_id"] || !pyjson.Equal(record["revision"], row.Vals["revision"]) || record["digest"] != row.Vals["digest"] {
+	if version != 1 || record["room_id"] != row.Value("room_id") || !anyutil.Equal(record["revision"], row.Value("revision")) || record["digest"] != row.Value("digest") {
 		return nil, workRecordError("legacy work scope conflicts")
 	}
 	if _, ok := record["home_install_id"].(string); !ok {
@@ -175,7 +176,7 @@ func workScopeDisposition(ctx context.Context, conn state.SQLiteConn, table stri
 	if err != nil {
 		return "", err
 	}
-	if current == nil || (current.Vals["authority_gateway_id"] == row["producer_gateway_id"] && pyjson.Equal(current.Vals["authority_epoch"], row["producer_epoch"])) {
+	if current == nil || (current.Value("authority_gateway_id") == row["producer_gateway_id"] && anyutil.Equal(current.Value("authority_epoch"), row["producer_epoch"])) {
 		return "current", nil
 	}
 	if table == WorkPendingTable && row["status"] != "acked" {
@@ -290,7 +291,7 @@ func workUsageSQL(tables []string) (string, string) {
 }
 
 // Validated record of a stored row whose metadata matches its scope, otherwise InvalidStoredWorkRecord
-func workValidateStored(row *pyjson.Object) (map[string]any, error) {
+func workValidateStored(row *jsonutil.Object) (map[string]any, error) {
 	fail := func() (map[string]any, error) { return nil, invalidStoredWorkRecord("stored work evidence is invalid") }
 	decoded, err := roomLoads(hrStr(row, "record_json"))
 	if err != nil {
@@ -301,25 +302,25 @@ func workValidateStored(row *pyjson.Object) (map[string]any, error) {
 		return fail()
 	}
 	scope := workScope(record)
-	if row.Vals["disposition"] == "invalid" || scope[0] != row.Vals["room_id"] || scope[1] != row.Vals["producer_gateway_id"] ||
-		!pyjson.Equal(scope[2], row.Vals["producer_epoch"]) || !pyjson.Equal(record["revision"], row.Vals["revision"]) || record["digest"] != row.Vals["digest"] {
+	if row.Value("disposition") == "invalid" || scope[0] != row.Value("room_id") || scope[1] != row.Value("producer_gateway_id") ||
+		!anyutil.Equal(scope[2], row.Value("producer_epoch")) || !anyutil.Equal(record["revision"], row.Value("revision")) || record["digest"] != row.Value("digest") {
 		return fail()
 	}
 	return record, nil
 }
 
 // Validates the consumed row, invalidating only its unchanged current version
-func workValidateStoredLocked(ctx context.Context, conn state.SQLiteConn, table string, row *pyjson.Object) (map[string]any, error) {
+func workValidateStoredLocked(ctx context.Context, conn state.SQLiteConn, table string, row *jsonutil.Object) (map[string]any, error) {
 	record, err := workValidateStored(row)
 	var invalid *InvalidStoredWorkRecord
 	if err == nil || !errors.As(err, &invalid) {
 		return record, err
 	}
-	if row.Vals["disposition"] == "current" {
-		where := strings.Join(mapStrings(row.Keys, func(k string) string { return `"` + k + `" IS ?` }), " AND ")
-		args := make([]any, len(row.Keys))
-		for i, key := range row.Keys {
-			args[i] = row.Vals[key]
+	if row.Value("disposition") == "current" {
+		where := strings.Join(mapStrings(row.Keys(), func(k string) string { return `"` + k + `" IS ?` }), " AND ")
+		args := make([]any, row.Len())
+		for i, key := range row.Keys() {
+			args[i] = row.Value(key)
 		}
 		if _, execErr := conn.ExecContext(ctx, "SAVEPOINT work_record_invalidate"); execErr != nil {
 			return nil, execErr

@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -48,13 +47,13 @@ func rulesValidator(label string, rules ...cloudRule) cloudValidator {
 // Validator of a numeric Meta id whose digit count falls within lo and hi
 func numericIDValidator(label string, lo, hi int, expected string) cloudValidator {
 	return rulesValidator(label,
-		cloudRule{func(s string) bool { return !pystr.StrIsDigit(s) }, fixed(label + " must be numeric")},
+		cloudRule{func(s string) bool { return !textutil.IsDigits(s) }, fixed(label + " must be numeric")},
 		cloudRule{func(s string) bool { return utf8.RuneCountInString(s) < lo || utf8.RuneCountInString(s) > hi }, fixed(fmt.Sprintf("%s looks wrong (expected %s)", label, expected))})
 }
 
 var (
 	validatePhoneNumberID = rulesValidator("Phone Number ID",
-		cloudRule{func(s string) bool { return !pystr.StrIsDigit(s) }, fixed("Phone Number ID must be numeric (no '+', spaces, or dashes)")},
+		cloudRule{func(s string) bool { return !textutil.IsDigits(s) }, fixed("Phone Number ID must be numeric (no '+', spaces, or dashes)")},
 		cloudRule{func(s string) bool { return 10 <= utf8.RuneCountInString(s) && utf8.RuneCountInString(s) <= 12 }, fixed("That looks like a phone number — but this field needs the " +
 			"Phone Number ID (Meta's internal ID, 15-17 digits, e.g. " +
 			"'7794189252778687'). Look just BELOW the 'From' dropdown in " +

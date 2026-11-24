@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
 )
 
 // Detector engine stand in firing on demand and counting resets
@@ -71,27 +71,17 @@ func (s *fakeWakeStream) snapshot() (closed bool, readCalls int, calls []string)
 	return s.closed, s.readCalls, append([]string(nil), s.calls...)
 }
 
-func (s *fakeWakeStream) Active() (bool, error)  { return true, nil }
-func (s *fakeWakeStream) Stopped() (bool, error) { return false, nil }
-func (s *fakeWakeStream) Closed() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.closed
-}
-func (s *fakeWakeStream) Start() error        { return nil }
-func (s *fakeWakeStream) Stop(bool) error     { s.record("stop"); return nil }
-func (s *fakeWakeStream) Samplerate() float64 { return WakeSampleRate }
-func (s *fakeWakeStream) Blocksize() int      { return 0 }
-func (s *fakeWakeStream) Channels() int       { return 1 }
-func (s *fakeWakeStream) Latency() float64    { return 0 }
-func (s *fakeWakeStream) Abort(bool) error {
+func (s *fakeWakeStream) Active() (bool, error) { return true, nil }
+func (s *fakeWakeStream) Start() error          { return nil }
+func (s *fakeWakeStream) Stop() error           { s.record("stop"); return nil }
+func (s *fakeWakeStream) Abort() error {
 	s.record("abort")
 	if s.onAbort != nil {
 		s.onAbort()
 	}
 	return nil
 }
-func (s *fakeWakeStream) Close(bool) error {
+func (s *fakeWakeStream) Close() error {
 	s.mu.Lock()
 	s.calls = append(s.calls, "close")
 	s.closed = true
@@ -112,44 +102,44 @@ func (s *fakeWakeStream) Read(n int) ([]int16, bool, error) {
 	return data, false, err
 }
 
-// sounddevice stand in, a nil query function behaving like the attribute missing from a SimpleNamespace
+// PortAudio stand in, a nil query function failing the query it serves
 type fakeWakeSD struct {
-	inputStream  func(p pysounddevice.StreamParams) (pysounddevice.InputStream, error)
-	queryDevice  func(device any, kind string) (pysounddevice.Device, error)
-	queryHostAPI func(index int) (pysounddevice.HostAPI, error)
+	inputStream  func(p portaudioutil.StreamParams) (portaudioutil.InputStream, error)
+	queryDevice  func(device any, dir portaudioutil.Direction) (portaudioutil.Device, error)
+	queryHostAPI func(index int) (portaudioutil.HostAPI, error)
 }
 
-var errNoQueryDevices = errors.New("'types.SimpleNamespace' object has no attribute 'query_devices'")
+var errNoDeviceQuery = errors.New("fake PortAudio has no device query")
 
-func (f *fakeWakeSD) QueryDevices() (pysounddevice.DeviceList, error) { return nil, errNoQueryDevices }
-func (f *fakeWakeSD) QueryDevice(device any, kind string) (pysounddevice.Device, error) {
+func (f *fakeWakeSD) Devices() ([]portaudioutil.Device, error) { return nil, errNoDeviceQuery }
+func (f *fakeWakeSD) Device(device any, dir portaudioutil.Direction) (portaudioutil.Device, error) {
 	if f.queryDevice == nil {
-		return pysounddevice.Device{}, errNoQueryDevices
+		return portaudioutil.Device{}, errNoDeviceQuery
 	}
-	return f.queryDevice(device, kind)
+	return f.queryDevice(device, dir)
 }
-func (f *fakeWakeSD) QueryHostAPI(index int) (pysounddevice.HostAPI, error) {
+func (f *fakeWakeSD) HostAPI(index int) (portaudioutil.HostAPI, error) {
 	if f.queryHostAPI == nil {
-		return pysounddevice.HostAPI{}, errors.New("'types.SimpleNamespace' object has no attribute 'query_hostapis'")
+		return portaudioutil.HostAPI{}, errors.New("fake PortAudio has no host API query")
 	}
 	return f.queryHostAPI(index)
 }
-func (f *fakeWakeSD) Play([]int16, float64, int) error         { return errors.New("no play") }
-func (f *fakeWakeSD) Stop()                                    {}
-func (f *fakeWakeSD) GetStream() (pysounddevice.Stream, error) { return nil, errors.New("no stream") }
-func (f *fakeWakeSD) OutputStream(pysounddevice.StreamParams) (pysounddevice.OutputStream, error) {
+func (f *fakeWakeSD) Play([]int16, float64, int) error        { return errors.New("no play") }
+func (f *fakeWakeSD) Stop()                                   {}
+func (f *fakeWakeSD) Playback() (portaudioutil.Stream, error) { return nil, errors.New("no stream") }
+func (f *fakeWakeSD) OpenOutput(portaudioutil.StreamParams) (portaudioutil.OutputStream, error) {
 	return nil, errors.New("no output")
 }
-func (f *fakeWakeSD) InputStream(p pysounddevice.StreamParams, _ pysounddevice.InputCallback) (pysounddevice.InputStream, error) {
+func (f *fakeWakeSD) OpenInput(p portaudioutil.StreamParams, _ portaudioutil.InputCallback) (portaudioutil.InputStream, error) {
 	return f.inputStream(p)
 }
 
-func useWakeAudio(t *testing.T, sd pysounddevice.Module) {
+func useWakeAudio(t *testing.T, sd portaudioutil.Audio) {
 	t.Helper()
-	swap(t, &importAudio, func() (pysounddevice.Module, error) { return sd, nil })
+	swap(t, &importAudio, func() (portaudioutil.Audio, error) { return sd, nil })
 }
 
-// Frames of one value after a short sleep, the Python fake streams
+// Frames of one value after a short sleep
 func steadyRead(value int16, pause time.Duration) func(n int) ([]int16, error) {
 	return func(n int) ([]int16, error) {
 		time.Sleep(pause)
@@ -161,14 +151,14 @@ func steadyRead(value int16, pause time.Duration) func(n int) ([]int16, error) {
 	}
 }
 
-// Streams handed out by a fake sounddevice, in creation order
+// Streams handed out by a fake PortAudio, in creation order
 type wakeStreamLog struct {
 	mu      sync.Mutex
 	streams []*fakeWakeStream
-	params  []pysounddevice.StreamParams
+	params  []portaudioutil.StreamParams
 }
 
-func (l *wakeStreamLog) add(p pysounddevice.StreamParams, s *fakeWakeStream) pysounddevice.InputStream {
+func (l *wakeStreamLog) add(p portaudioutil.StreamParams, s *fakeWakeStream) portaudioutil.InputStream {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	l.streams = append(l.streams, s)
@@ -213,7 +203,7 @@ func TestDetectorOpensConfiguredInputDeviceAndReportsBackend(t *testing.T) {
 	var processed [][]int16
 	log := &wakeStreamLog{}
 	useWakeAudio(t, &fakeWakeSD{
-		inputStream: func(p pysounddevice.StreamParams) (pysounddevice.InputStream, error) {
+		inputStream: func(p portaudioutil.StreamParams) (portaudioutil.InputStream, error) {
 			loud := steadyRead(500, 5*time.Millisecond)
 			return log.add(p, newFakeWakeStream(func(n int) ([]int16, error) {
 				mu.Lock()
@@ -222,10 +212,10 @@ func TestDetectorOpensConfiguredInputDeviceAndReportsBackend(t *testing.T) {
 				return loud(n)
 			})), nil
 		},
-		queryDevice: func(any, string) (pysounddevice.Device, error) {
-			return pysounddevice.Device{Name: "Microphone Array", HostAPI: 2, MaxInputChannels: 2, DefaultSamplerate: 48000.0}, nil
+		queryDevice: func(any, portaudioutil.Direction) (portaudioutil.Device, error) {
+			return portaudioutil.Device{Name: "Microphone Array", HostAPI: 2, MaxInputChannels: 2, DefaultSampleRate: 48000.0}, nil
 		},
-		queryHostAPI: func(int) (pysounddevice.HostAPI, error) { return pysounddevice.HostAPI{Name: "Windows WASAPI"}, nil },
+		queryHostAPI: func(int) (portaudioutil.HostAPI, error) { return portaudioutil.HostAPI{Name: "Windows WASAPI"}, nil },
 	})
 	engine := newFakeWakeEngine(false)
 	engine.process = func(frame []int16) (bool, error) {
@@ -240,7 +230,7 @@ func TestDetectorOpensConfiguredInputDeviceAndReportsBackend(t *testing.T) {
 	}
 	defer det.Stop()
 	p := log.params[0]
-	if p.Device != "Microphone Array" || p.Samplerate != 48000 || p.Blocksize != 12 {
+	if p.Device != "Microphone Array" || p.SampleRate != 48000 || p.BlockSize != 12 {
 		t.Fatalf("opened %+v", p)
 	}
 	waitFor(2*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return len(processed) > 0 })
@@ -257,7 +247,7 @@ func TestDetectorOpensConfiguredInputDeviceAndReportsBackend(t *testing.T) {
 	}
 }
 
-// The details as the dict Python compares
+// The details as a map of the fields that are set
 func detailsMap(d WakeInputDeviceDetails) map[string]any {
 	out := map[string]any{"selector": d.Selector}
 	if d.Error != nil {
@@ -314,7 +304,7 @@ func setWakeSingleton(det *WakeWordDetector) {
 func TestDetectorFlagsSilentStreamAndRecovers(t *testing.T) {
 	swap(t, &wakeSilenceAlertSeconds, 0.001)
 	var loud atomic.Bool
-	useWakeAudio(t, &fakeWakeSD{inputStream: func(pysounddevice.StreamParams) (pysounddevice.InputStream, error) {
+	useWakeAudio(t, &fakeWakeSD{inputStream: func(portaudioutil.StreamParams) (portaudioutil.InputStream, error) {
 		if loud.Load() {
 			return newFakeWakeStream(steadyRead(500, 5*time.Millisecond)), nil
 		}
@@ -348,7 +338,7 @@ func TestDetectorFlagsSilentStreamAndRecovers(t *testing.T) {
 
 func TestDetectionCallbackCanPauseAndCloseStream(t *testing.T) {
 	log := &wakeStreamLog{}
-	useWakeAudio(t, &fakeWakeSD{inputStream: func(p pysounddevice.StreamParams) (pysounddevice.InputStream, error) {
+	useWakeAudio(t, &fakeWakeSD{inputStream: func(p portaudioutil.StreamParams) (portaudioutil.InputStream, error) {
 		return log.add(p, newFakeWakeStream(steadyRead(0, 10*time.Millisecond))), nil
 	}})
 	buildWith(t, newFakeWakeEngine(true))
@@ -385,7 +375,7 @@ func TestWedgedStreamHaltsWithoutBlockingReadAndAbortsBeforeClose(t *testing.T) 
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) })
 	log := &wakeStreamLog{}
-	useWakeAudio(t, &fakeWakeSD{inputStream: func(p pysounddevice.StreamParams) (pysounddevice.InputStream, error) {
+	useWakeAudio(t, &fakeWakeSD{inputStream: func(p portaudioutil.StreamParams) (portaudioutil.InputStream, error) {
 		s := newFakeWakeStream(func(n int) ([]int16, error) {
 			select {
 			case <-time.After(30 * time.Second):
@@ -500,7 +490,7 @@ func (c *wakeLogCapture) matching(fragment string) int {
 
 func TestStarvedReadAvailableFallsBackToBlockingRead(t *testing.T) {
 	log := &wakeStreamLog{}
-	useWakeAudio(t, &fakeWakeSD{inputStream: func(p pysounddevice.StreamParams) (pysounddevice.InputStream, error) {
+	useWakeAudio(t, &fakeWakeSD{inputStream: func(p portaudioutil.StreamParams) (portaudioutil.InputStream, error) {
 		s := newFakeWakeStream(steadyRead(0, 10*time.Millisecond))
 		s.available = 0
 		return log.add(p, s), nil
@@ -537,7 +527,7 @@ func TestStarvedReadAvailableFallsBackToBlockingRead(t *testing.T) {
 
 func TestStarvedAndWedgedReadIsReleasedByHaltAbort(t *testing.T) {
 	log := &wakeStreamLog{}
-	useWakeAudio(t, &fakeWakeSD{inputStream: func(p pysounddevice.StreamParams) (pysounddevice.InputStream, error) {
+	useWakeAudio(t, &fakeWakeSD{inputStream: func(p portaudioutil.StreamParams) (portaudioutil.InputStream, error) {
 		unblock := make(chan struct{})
 		var once sync.Once
 		s := newFakeWakeStream(func(n int) ([]int16, error) {
@@ -592,7 +582,7 @@ func TestStarvedAndWedgedReadIsReleasedByHaltAbort(t *testing.T) {
 }
 
 func TestStartupFailureReleasesOwnerAndMachineLock(t *testing.T) {
-	useWakeAudio(t, &fakeWakeSD{inputStream: func(pysounddevice.StreamParams) (pysounddevice.InputStream, error) {
+	useWakeAudio(t, &fakeWakeSD{inputStream: func(portaudioutil.StreamParams) (portaudioutil.InputStream, error) {
 		return nil, &os.PathError{Op: "open", Path: "mic", Err: errors.New("no microphone")}
 	}})
 	buildWith(t, newFakeWakeEngine(false))
@@ -600,7 +590,7 @@ func TestStartupFailureReleasesOwnerAndMachineLock(t *testing.T) {
 	owner := new(int)
 	_, err := StartListening(context.Background(), noWake, owner, &WakeConfig{})
 	var we *WakeWordError
-	if !errors.As(err, &we) || we.Class != "RuntimeError" || !strings.Contains(we.Msg, "Failed to open") {
+	if !errors.As(err, &we) || !errors.Is(err, errWakeFailed) || !strings.Contains(we.Msg, "Failed to open") {
 		t.Fatalf("start error %v", err)
 	}
 	if OwnsListener(owner) {
@@ -614,7 +604,7 @@ func TestStartupFailureReleasesOwnerAndMachineLock(t *testing.T) {
 }
 
 func TestStreamFailureReleasesOwnerAndMachineLock(t *testing.T) {
-	useWakeAudio(t, &fakeWakeSD{inputStream: func(pysounddevice.StreamParams) (pysounddevice.InputStream, error) {
+	useWakeAudio(t, &fakeWakeSD{inputStream: func(portaudioutil.StreamParams) (portaudioutil.InputStream, error) {
 		return newFakeWakeStream(func(int) ([]int16, error) { return nil, errors.New("device disconnected") }), nil
 	}})
 	engine := newFakeWakeEngine(false)

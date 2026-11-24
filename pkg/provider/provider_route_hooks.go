@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var routePureHooks = map[string]bool{"request_headers": true, "max_tokens_param": true, "reasoning_payload": true,
@@ -250,8 +250,8 @@ func copyHookAnswer(v any) any {
 			out[i] = copyHookAnswer(e)
 		}
 		return out
-	case *pyjson.Object:
-		return pyjson.Clone(x)
+	case *jsonutil.Object:
+		return jsonutil.Clone(x)
 	}
 	return v
 }

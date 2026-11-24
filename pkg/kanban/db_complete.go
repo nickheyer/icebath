@@ -5,15 +5,16 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const reviewApprovedNote = "Review approved without additional evidence."
@@ -22,7 +23,7 @@ const reviewApprovedNote = "Review approved without additional evidence."
 type CompleteTaskOptions struct {
 	Result            *string
 	Summary           *string
-	Metadata          *pyjson.Object
+	Metadata          *jsonutil.Object
 	CreatedCards      []string
 	ExpectedRunID     *int64
 	SkipLifecycleHook bool
@@ -44,7 +45,7 @@ func completionStr(text *string, raw any) *string {
 	if raw == nil {
 		return text
 	}
-	s := pyrepr.Str(raw)
+	s := anyutil.String(raw)
 	return &s
 }
 
@@ -52,10 +53,10 @@ func completionStr(text *string, raw any) *string {
 func TaskGoalMaxTurns(task *Task) *int64 { return task.GoalMaxTurns }
 
 // Python truthiness of an optional metadata dict
-func truthyMeta(o *pyjson.Object) bool { return o != nil && o.Len() > 0 }
+func truthyMeta(o *jsonutil.Object) bool { return o != nil && o.Len() > 0 }
 
 // Interface value of an optional metadata dict with nil for None
-func metaAny(o *pyjson.Object) any {
+func metaAny(o *jsonutil.Object) any {
 	if o == nil {
 		return nil
 	}
@@ -284,14 +285,14 @@ func gateEmptyCompletion(ctx context.Context, conn state.SQLiteConn, taskID stri
 }
 
 // Copies scratch artifacts into the attachments dir and records each as an attachment row, returning the copies
-func stageCompletionArtifacts(ctx context.Context, conn state.SQLiteConn, taskID string, metadata *pyjson.Object, now int64, uploadedBy string) ([]string, error) {
+func stageCompletionArtifacts(ctx context.Context, conn state.SQLiteConn, taskID string, metadata *jsonutil.Object, now int64, uploadedBy string) ([]string, error) {
 	if err := persistScratchCompletionArtifacts(ctx, conn, taskID, metadata); err != nil {
 		return nil, err
 	}
 	var staged []string
-	if raw, ok := metadata.Pop("_staged_artifacts"); ok {
+	if raw, ok := metadata.Take("_staged_artifacts"); ok {
 		for _, item := range jiter(raw) {
-			staged = append(staged, pypath.PathStr(cellStr(item)))
+			staged = append(staged, filepath.Clean(cellStr(item)))
 		}
 	}
 	for _, p := range staged {
@@ -299,7 +300,7 @@ func stageCompletionArtifacts(ctx context.Context, conn state.SQLiteConn, taskID
 		if err != nil {
 			return nil, err
 		}
-		if err := insertCompletionAttachment(ctx, conn, taskID, pypath.PathName(p), p, st.Size(), now, uploadedBy); err != nil {
+		if err := insertCompletionAttachment(ctx, conn, taskID, pathutil.Name(p), p, st.Size(), now, uploadedBy); err != nil {
 			return nil, err
 		}
 	}
@@ -329,7 +330,7 @@ func cleanedArtifactPaths(metadata any) []string {
 }
 
 // Completed event payload with the first summary line, verified cards and promoted artifact paths
-func completedEventPayload(result, eventSummary *string, verifiedCards []string, metadata any) *pyjson.Object {
+func completedEventPayload(result, eventSummary *string, verifiedCards []string, metadata any) *jsonutil.Object {
 	resultLen := 0
 	if truthyStr(result) {
 		resultLen = utf8.RuneCountInString(*result)
@@ -382,7 +383,7 @@ func flagPhantomProseRefs(ctx context.Context, conn state.SQLiteConn, taskID str
 }
 
 // Adds absolute scratch workspace paths named in prose to the artifacts of the metadata before cleanup can erase them
-func mergeCompletionProseArtifacts(ctx context.Context, conn state.SQLiteConn, taskID string, metadata *pyjson.Object, summary, result *string) (*pyjson.Object, error) {
+func mergeCompletionProseArtifacts(ctx context.Context, conn state.SQLiteConn, taskID string, metadata *jsonutil.Object, summary, result *string) (*jsonutil.Object, error) {
 	workspace, err := scratchWorkspace(ctx, conn, taskID)
 	if err != nil || workspace == nil {
 		return metadata, err
@@ -409,15 +410,15 @@ func mergeCompletionProseArtifacts(ctx context.Context, conn state.SQLiteConn, t
 	for m, err := re.FindStringMatch(text); m != nil && err == nil; m, err = re.FindNextMatch(m) {
 		raw := strings.TrimRight(m.String(), ".,;:!?)]}")
 		if isFile(raw) {
-			discovered = append(discovered, pypath.PathStr(raw))
+			discovered = append(discovered, filepath.Clean(raw))
 		}
 	}
 	if len(discovered) == 0 {
 		return metadata, nil
 	}
-	updated := pyjson.NewObject()
+	updated := jsonutil.NewObject()
 	if metadata != nil {
-		updated = metadata.Copy()
+		updated = metadata.Clone()
 	}
 	var merged []any
 	if existing, _ := updated.Get("artifacts"); existing != nil {
@@ -427,7 +428,7 @@ func mergeCompletionProseArtifacts(ctx context.Context, conn state.SQLiteConn, t
 	}
 	seen := map[string]bool{}
 	for _, p := range merged {
-		seen[pyrepr.Str(p)] = true
+		seen[anyutil.String(p)] = true
 	}
 	for _, p := range discovered {
 		if !seen[p] {
@@ -443,7 +444,7 @@ func mergeCompletionProseArtifacts(ctx context.Context, conn state.SQLiteConn, t
 }
 
 // Copies declared scratch workspace artifacts into the task attachments dir before cleanup removes them
-func persistScratchCompletionArtifacts(ctx context.Context, conn state.SQLiteConn, taskID string, metadata *pyjson.Object) error {
+func persistScratchCompletionArtifacts(ctx context.Context, conn state.SQLiteConn, taskID string, metadata *jsonutil.Object) error {
 	rawArtifacts, _ := metadata.Get("artifacts")
 	items, isList := rawArtifacts.([]any)
 	if !isList {
@@ -457,7 +458,7 @@ func persistScratchCompletionArtifacts(ctx context.Context, conn state.SQLiteCon
 	if err != nil || !managed {
 		return err
 	}
-	workspaceRoot, err := pypath.Resolve(*workspace)
+	workspaceRoot, err := pathutil.Resolve(*workspace)
 	if err != nil {
 		return nil
 	}
@@ -477,16 +478,16 @@ func persistScratchCompletionArtifacts(ctx context.Context, conn state.SQLiteCon
 		if artifact == "" {
 			continue
 		}
-		src, err := pypath.PathExpanduser(artifact)
+		src, err := pathutil.ExpandUserPath(artifact)
 		if err != nil {
 			return err
 		}
-		resolvedSrc, err := pypath.Resolve(src)
+		resolvedSrc, err := pathutil.Resolve(src)
 		if err != nil {
 			persisted = append(persisted, artifact)
 			continue
 		}
-		if _, ok := pypath.PathRelativeTo(resolvedSrc, workspaceRoot); !ok {
+		if _, ok := pathutil.RelativeTo(resolvedSrc, workspaceRoot); !ok {
 			persisted = append(persisted, artifact)
 			continue
 		}
@@ -509,7 +510,7 @@ func persistScratchCompletionArtifacts(ctx context.Context, conn state.SQLiteCon
 		dest := ""
 		err = os.MkdirAll(attachmentDir, 0o777)
 		if err == nil {
-			dest = uniqueAttachmentPath(attachmentDir, pypath.PathName(resolvedSrc), used)
+			dest = uniqueAttachmentPath(attachmentDir, pathutil.Name(resolvedSrc), used)
 			err = copyCapped(resolvedSrc, dest, artifact)
 		}
 		if err != nil {
@@ -523,7 +524,7 @@ func persistScratchCompletionArtifacts(ctx context.Context, conn state.SQLiteCon
 			return &ArtifactPreservationError{fmt.Sprintf("could not preserve declared scratch artifact %s: %s", artifact, excText(err))}
 		}
 		used[dest] = true
-		resolvedDest, err := pypath.Resolve(dest)
+		resolvedDest, err := pathutil.Resolve(dest)
 		if err != nil {
 			return err
 		}
@@ -533,7 +534,7 @@ func persistScratchCompletionArtifacts(ctx context.Context, conn state.SQLiteCon
 	if !changed {
 		return nil
 	}
-	dirResolved, err := pypath.Resolve(attachmentDir)
+	dirResolved, err := pathutil.Resolve(attachmentDir)
 	if err != nil {
 		return err
 	}
@@ -613,17 +614,17 @@ func insertCompletionAttachment(ctx context.Context, conn state.SQLiteConn, task
 
 // Non conflicting path under the directory for a filename, numbering the stem past used or existing names
 func uniqueAttachmentPath(directory, filename string, used map[string]bool) string {
-	safeName := pypath.PathName(filename)
+	safeName := pathutil.Name(filename)
 	if safeName == "" {
 		safeName = "artifact"
 	}
-	stem, suffix := pypath.PathStem(safeName), pypath.PathSuffix(safeName)
+	stem, suffix := pathutil.Stem(safeName), pathutil.Suffix(safeName)
 	if stem == "" {
 		stem = "artifact"
 	}
-	candidate := pypath.PathJoin(directory, safeName)
+	candidate := pathutil.Join(directory, safeName)
 	for idx := 1; used[candidate] || pathExists(candidate); idx++ {
-		candidate = pypath.PathJoin(directory, fmt.Sprintf("%s_%d%s", stem, idx, suffix))
+		candidate = pathutil.Join(directory, fmt.Sprintf("%s_%d%s", stem, idx, suffix))
 	}
 	return candidate
 }

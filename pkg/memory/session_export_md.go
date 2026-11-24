@@ -12,14 +12,13 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -42,7 +41,7 @@ func (e *ExportExistsError) Error() string { return e.Path }
 func (e *ExportExistsError) Is(target error) bool { return target == fs.ErrExist }
 
 // Value of a session or message key, nil when the row or the key is missing
-func exportGet(row *pyjson.Object, key string) any {
+func exportGet(row *jsonutil.Object, key string) any {
 	if row == nil {
 		return nil
 	}
@@ -51,11 +50,11 @@ func exportGet(row *pyjson.Object, key string) any {
 }
 
 // First truthy value among the keys of a row, nil when none is
-func exportFirst(row *pyjson.Object, keys ...string) any {
+func exportFirst(row *jsonutil.Object, keys ...string) any {
 	var last any
 	for _, key := range keys {
 		last = exportGet(row, key)
-		if pyrepr.Truthy(last) {
+		if anyutil.IsTrue(last) {
 			return last
 		}
 	}
@@ -67,11 +66,11 @@ func isoTimestamp(value any) string {
 	if value == nil || value == "" {
 		return ""
 	}
-	ts, ok := pydatetime.CoerceEpoch(value, "", "timestamp")
+	ts, ok := timeutil.StoredEpoch(value, "", "timestamp")
 	if !ok {
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	}
-	t := pydatetime.FromTimestamp(ts).UTC()
+	t := timeutil.FromEpoch(ts).UTC()
 	if t.Nanosecond()/1000 == 0 {
 		return t.Format("2006-01-02T15:04:05") + "Z"
 	}
@@ -94,9 +93,9 @@ func frontmatterLine(key string, value any) (string, error) {
 		switch dumped.(type) {
 		case int, int64, float64, []any, []string:
 		default:
-			dumped = pyrepr.Str(value)
+			dumped = anyutil.String(value)
 		}
-		text, err := pyjson.Dumps(dumped, pyjson.EnsureASCII(false))
+		text, err := jsonutil.Encode(dumped)
 		if err != nil {
 			return "", err
 		}
@@ -107,7 +106,7 @@ func frontmatterLine(key string, value any) (string, error) {
 
 // Fenced JSON block of a value indented by two spaces
 func jsonBlock(value any) (string, error) {
-	text, err := pyjson.Dumps(state.ExportJSONValue(value), pyjson.EnsureASCII(false), pyjson.Indent(2))
+	text, err := jsonutil.Encode(state.ExportJSONValue(value), jsonutil.Indent(2))
 	if err != nil {
 		return "", err
 	}
@@ -115,14 +114,14 @@ func jsonBlock(value any) (string, error) {
 }
 
 // Level three heading of a message, its role or tool name followed by its timestamp
-func messageHeading(message *pyjson.Object) string {
+func messageHeading(message *jsonutil.Object) string {
 	role := "message"
-	if v := exportGet(message, "role"); pyrepr.Truthy(v) {
-		role = pyrepr.Str(v)
+	if v := exportGet(message, "role"); anyutil.IsTrue(v) {
+		role = anyutil.String(v)
 	}
-	label := pystr.Capitalize(role)
-	if name := exportFirst(message, "name", "tool_name"); role == "tool" && pyrepr.Truthy(name) {
-		label = "Tool — " + pyrepr.Str(name)
+	label := textutil.UpperFirst(strings.ToLower(role))
+	if name := exportFirst(message, "name", "tool_name"); role == "tool" && anyutil.IsTrue(name) {
+		label = "Tool — " + anyutil.String(name)
 	}
 	if timestamp := isoTimestamp(exportFirst(message, "created_at", "timestamp")); timestamp != "" {
 		return "### " + label + " — " + timestamp
@@ -131,22 +130,22 @@ func messageHeading(message *pyjson.Object) string {
 }
 
 // Id of an exported session, unknown-session when it carries none
-func exportedSessionID(session *pyjson.Object) string {
-	if v := exportFirst(session, "id", "session_id"); pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+func exportedSessionID(session *jsonutil.Object) string {
+	if v := exportFirst(session, "id", "session_id"); anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return "unknown-session"
 }
 
 // Rows of a list value, entries that are not objects dropped
-func exportRows(value any) []*pyjson.Object {
+func exportRows(value any) []*jsonutil.Object {
 	switch list := value.(type) {
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		return list
 	case []any:
-		out := make([]*pyjson.Object, 0, len(list))
+		out := make([]*jsonutil.Object, 0, len(list))
 		for _, item := range list {
-			if row, ok := state.ExportJSONValue(item).(*pyjson.Object); ok {
+			if row, ok := state.ExportJSONValue(item).(*jsonutil.Object); ok {
 				out = append(out, row)
 			}
 		}
@@ -156,20 +155,20 @@ func exportRows(value any) []*pyjson.Object {
 }
 
 // Compression segments of a lineage export, the session itself when it has none
-func exportSegments(session *pyjson.Object) []*pyjson.Object {
+func exportSegments(session *jsonutil.Object) []*jsonutil.Object {
 	raw := exportGet(session, "segments")
 	_, isList := raw.([]any)
-	_, isRows := raw.([]*pyjson.Object)
-	if (isList || isRows) && pyrepr.Truthy(raw) {
+	_, isRows := raw.([]*jsonutil.Object)
+	if (isList || isRows) && anyutil.IsTrue(raw) {
 		return exportRows(raw)
 	}
-	return []*pyjson.Object{session}
+	return []*jsonutil.Object{session}
 }
 
 // Number of entries of a messages list
 func exportListLen(value any) int {
 	switch list := value.(type) {
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		return len(list)
 	case []any:
 		return len(list)
@@ -178,7 +177,7 @@ func exportListLen(value any) int {
 }
 
 // Messages over every segment of an exported session
-func exportedMessageCount(session *pyjson.Object) int {
+func exportedMessageCount(session *jsonutil.Object) int {
 	n := 0
 	for _, segment := range exportSegments(session) {
 		n += exportListLen(exportGet(segment, "messages"))
@@ -187,7 +186,7 @@ func exportedMessageCount(session *pyjson.Object) int {
 }
 
 // Messages section of an export, each message under its heading with its tool calls as JSON
-func renderMessages(session *pyjson.Object) (string, error) {
+func renderMessages(session *jsonutil.Object) (string, error) {
 	segments := exportSegments(session)
 	if exportedMessageCount(session) == 0 {
 		return "## Messages\n\n_No messages in this session._\n", nil
@@ -214,7 +213,7 @@ func renderMessages(session *pyjson.Object) (string, error) {
 			if rendered != "" {
 				parts = append(parts, rendered+"\n")
 			}
-			if toolCalls := exportGet(message, "tool_calls"); pyrepr.Truthy(toolCalls) {
+			if toolCalls := exportGet(message, "tool_calls"); anyutil.IsTrue(toolCalls) {
 				block, err := jsonBlock(toolCalls)
 				if err != nil {
 					return "", err
@@ -228,12 +227,12 @@ func renderMessages(session *pyjson.Object) (string, error) {
 }
 
 // Export text with the frontmatter, the messages and a verification section whose digest is a marker
-func exportBodyWithoutHash(session *pyjson.Object, format string, exportedAt float64) (string, error) {
+func exportBodyWithoutHash(session *jsonutil.Object, format string, exportedAt float64) (string, error) {
 	sessionID := exportedSessionID(session)
 	exportedISO := isoTimestamp(exportedAt)
 	messageCount := exportedMessageCount(session)
 	toolCallCount := exportGet(session, "tool_call_count")
-	if !pyrepr.Truthy(toolCallCount) {
+	if !anyutil.IsTrue(toolCallCount) {
 		toolCallCount = 0
 	}
 	type field struct {
@@ -246,9 +245,9 @@ func exportBodyWithoutHash(session *pyjson.Object, format string, exportedAt flo
 		{"updated_at", isoTimestamp(exportFirst(session, "last_active", "updated_at"))},
 		{"ended_at", isoTimestamp(exportGet(session, "ended_at"))}, {"model", exportGet(session, "model")},
 		{"provider", exportFirst(session, "billing_provider", "provider")}, {"cwd", exportGet(session, "cwd")},
-		{"archived", pyrepr.Truthy(exportGet(session, "archived"))}, {"message_count", messageCount}, {"tool_call_count", toolCallCount},
+		{"archived", anyutil.IsTrue(exportGet(session, "archived"))}, {"message_count", messageCount}, {"tool_call_count", toolCallCount},
 	}
-	if lineage := exportGet(session, "lineage_session_ids"); pyrepr.Truthy(lineage) {
+	if lineage := exportGet(session, "lineage_session_ids"); anyutil.IsTrue(lineage) {
 		fields = append(fields, field{"lineage_session_ids", lineage})
 	}
 	fields = append(fields, field{"format", format}, field{"exported_at", exportedISO}, field{"exporter", ExporterVersion})
@@ -262,26 +261,26 @@ func exportBodyWithoutHash(session *pyjson.Object, format string, exportedAt flo
 	}
 	front = append(front, "---", "")
 	title := sessionID
-	if v := exportGet(session, "title"); pyrepr.Truthy(v) {
-		title = pyrepr.Str(v)
+	if v := exportGet(session, "title"); anyutil.IsTrue(v) {
+		title = anyutil.String(v)
 	}
 	parts := []string{strings.Join(front, "\n"), "# " + title + "\n", "Session ID: `" + sessionID + "`\n"}
-	if source := exportGet(session, "source"); pyrepr.Truthy(source) {
-		parts = append(parts, "Source: `"+pyrepr.Str(source)+"`\n")
+	if source := exportGet(session, "source"); anyutil.IsTrue(source) {
+		parts = append(parts, "Source: `"+anyutil.String(source)+"`\n")
 	}
-	if cwd := exportGet(session, "cwd"); pyrepr.Truthy(cwd) {
-		parts = append(parts, "Working directory: `"+pyrepr.Str(cwd)+"`\n")
+	if cwd := exportGet(session, "cwd"); anyutil.IsTrue(cwd) {
+		parts = append(parts, "Working directory: `"+anyutil.String(cwd)+"`\n")
 	}
 	messages, err := renderMessages(session)
 	if err != nil {
 		return "", err
 	}
-	sourceCount := pyrepr.Str(messageCount)
+	sourceCount := anyutil.String(messageCount)
 	if v, ok := session.Get("message_count"); ok {
-		sourceCount = pyrepr.Str(v)
+		sourceCount = anyutil.String(v)
 	}
 	parts = append(parts, messages, exportVerificationHeader+"\n", "- Session id: `"+sessionID+"`",
-		"- Exported messages: `"+pyrepr.Str(messageCount)+"`", "- Source DB message count at export: `"+sourceCount+"`",
+		"- Exported messages: `"+anyutil.String(messageCount)+"`", "- Source DB message count at export: `"+sourceCount+"`",
 		"- Exported at: `"+exportedISO+"`", "- SHA256 of exported body: `"+exportSHAMarker+"`")
 	return strings.TrimRightFunc(strings.Join(parts, "\n"), unicode.IsSpace) + "\n", nil
 }
@@ -289,7 +288,7 @@ func exportBodyWithoutHash(session *pyjson.Object, format string, exportedAt flo
 // ValueError for an export format other than md or qmd
 func checkExportFormat(format string) error {
 	if format != "md" && format != "qmd" {
-		return &pyint.Error{Kind: "ValueError", Msg: "fmt must be 'md' or 'qmd'"}
+		return &errorutil.Error{Kind: "ValueError", Msg: "fmt must be 'md' or 'qmd'"}
 	}
 	return nil
 }
@@ -301,7 +300,7 @@ func textSHA256(text string) string {
 }
 
 // Renders an exported session as Markdown or QMD text, with a body digest unless verification is left out
-func RenderSessionMarkdown(session *pyjson.Object, format string, includeVerification bool) (string, error) {
+func RenderSessionMarkdown(session *jsonutil.Object, format string, includeVerification bool) (string, error) {
 	if err := checkExportFormat(format); err != nil {
 		return "", err
 	}
@@ -318,13 +317,13 @@ func RenderSessionMarkdown(session *pyjson.Object, format string, includeVerific
 }
 
 // Deterministic path safe file name of a session export, the id followed by a slug of the title
-func SafeSessionFilename(session *pyjson.Object, format string) (string, error) {
+func SafeSessionFilename(session *jsonutil.Object, format string) (string, error) {
 	if err := checkExportFormat(format); err != nil {
 		return "", err
 	}
 	title := "session"
-	if v := exportGet(session, "title"); pyrepr.Truthy(v) {
-		title = pyrepr.Str(v)
+	if v := exportGet(session, "title"); anyutil.IsTrue(v) {
+		title = anyutil.String(v)
 	}
 	slug := strings.ToLower(strings.Trim(exportSlugRE.ReplaceAllString(title, "-"), ".-_"))
 	if slug == "" {
@@ -344,7 +343,7 @@ func FileSHA256(path string) (string, error) {
 }
 
 // Whether an export file still matches its digest and names the session and message count, with the reason
-func VerifyExportFile(path string, session *pyjson.Object) (bool, string, error) {
+func VerifyExportFile(path string, session *jsonutil.Object) (bool, string, error) {
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
 		return false, "file missing", nil
@@ -353,7 +352,7 @@ func VerifyExportFile(path string, session *pyjson.Object) (bool, string, error)
 		return false, "", err
 	}
 	if !utf8.Valid(data) {
-		return false, "", &pyint.Error{Kind: "UnicodeDecodeError", Msg: "export file " + path + " is not valid UTF-8"}
+		return false, "", &errorutil.Error{Kind: "UnicodeDecodeError", Msg: "export file " + path + " is not valid UTF-8"}
 	}
 	text := strings.TrimPrefix(string(data), "\ufeff")
 	match := exportSHALineRE.FindStringSubmatch(text)
@@ -364,7 +363,7 @@ func VerifyExportFile(path string, session *pyjson.Object) (bool, string, error)
 	if textSHA256(digestBody) != match[1] {
 		return false, "sha256 mismatch", nil
 	}
-	if !strings.Contains(text, "- Exported messages: `"+pyrepr.Str(exportedMessageCount(session))+"`") {
+	if !strings.Contains(text, "- Exported messages: `"+anyutil.String(exportedMessageCount(session))+"`") {
 		return false, "message count mismatch", nil
 	}
 	if !strings.Contains(text, "- Session id: `"+exportedSessionID(session)+"`") {
@@ -384,10 +383,10 @@ func redactExportValue(value any) any {
 			out[i] = redactExportValue(item)
 		}
 		return out
-	case *pyjson.Object:
-		out := pyjson.NewObject()
-		for _, k := range v.Keys {
-			out.Set(k, redactExportValue(v.Vals[k]))
+	case *jsonutil.Object:
+		out := jsonutil.NewObject()
+		for _, k := range v.Keys() {
+			out.Set(k, redactExportValue(v.Value(k)))
 		}
 		return out
 	case map[string]any:
@@ -402,10 +401,10 @@ func redactExportValue(value any) any {
 }
 
 // Copy of a session export with secrets redacted from its messages and segments
-func RedactSessionData(session *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range session.Keys {
-		out.Set(k, session.Vals[k])
+func RedactSessionData(session *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, k := range session.Keys() {
+		out.Set(k, session.Value(k))
 	}
 	for _, k := range []string{"messages", "segments"} {
 		if v := exportGet(session, k); v != nil {
@@ -417,7 +416,7 @@ func RedactSessionData(session *pyjson.Object) *pyjson.Object {
 
 // Export directory with the user home expanded, created when missing
 func exportDirectory(outputDir string) (string, error) {
-	outDir, err := pypath.PathExpanduser(pypath.PathStr(outputDir))
+	outDir, err := pathutil.ExpandUserPath(filepath.Clean(outputDir))
 	if err != nil {
 		return "", err
 	}
@@ -425,7 +424,7 @@ func exportDirectory(outputDir string) (string, error) {
 }
 
 // Writes the Markdown or QMD export of a session into the directory and returns its path
-func WriteSessionMarkdown(session *pyjson.Object, outputDir, format string, force bool) (string, error) {
+func WriteSessionMarkdown(session *jsonutil.Object, outputDir, format string, force bool) (string, error) {
 	outDir, err := exportDirectory(outputDir)
 	if err != nil {
 		return "", err
@@ -446,19 +445,19 @@ func WriteSessionMarkdown(session *pyjson.Object, outputDir, format string, forc
 }
 
 // Appends the record of one written export to manifest.jsonl in the directory and returns the manifest path
-func AppendManifestEntry(outputDir string, session *pyjson.Object, path, format string) (string, error) {
+func AppendManifestEntry(outputDir string, session *jsonutil.Object, path, format string) (string, error) {
 	sessionID := exportedSessionID(session)
 	lineage := exportGet(session, "lineage_session_ids")
-	if !pyrepr.Truthy(lineage) {
+	if !anyutil.IsTrue(lineage) {
 		lineage = []any{sessionID}
 	}
 	digest, err := FileSHA256(path)
 	if err != nil {
 		return "", err
 	}
-	entry := map[string]any{"session_id": sessionID, "lineage_session_ids": state.ExportJSONValue(lineage), "path": pypath.PathStr(path),
+	entry := map[string]any{"session_id": sessionID, "lineage_session_ids": state.ExportJSONValue(lineage), "path": filepath.Clean(path),
 		"format": format, "message_count": exportedMessageCount(session), "sha256": digest, "exported_at": float64(time.Now().UnixNano()) / 1e9}
-	line, err := pyjson.Dumps(entry, pyjson.EnsureASCII(false), pyjson.SortKeys(true))
+	line, err := jsonutil.Encode(entry, jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}

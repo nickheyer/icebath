@@ -13,8 +13,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Isolated home with the project root pointed at a directory that has no git and no .env
@@ -96,8 +96,8 @@ func dumpSwapVersion(t *testing.T, info updaterecord.VersionInfo) {
 	t.Helper()
 	prevInfo, prevIdentity := dumpVersionInfo, dumpCodeIdentity
 	dumpVersionInfo = func() (updaterecord.VersionInfo, error) { return info, nil }
-	dumpCodeIdentity = func(bool) (*pyjson.Object, error) {
-		identity := pyjson.NewObject()
+	dumpCodeIdentity = func(bool) (*jsonutil.Object, error) {
+		identity := jsonutil.NewObject()
 		if info.Commit != nil {
 			identity.Set("short_sha", (*info.Commit)[:8])
 		}
@@ -274,14 +274,14 @@ func TestDumpFallbackProjectionKeepsRouteMetadataOnly(t *testing.T) {
 	if len(projected) != 1 {
 		t.Fatalf("%v", projected)
 	}
-	item, _ := pyjson.AsObject(projected[0])
-	if item.Vals["provider"] != "openrouter" || item.Vals["max_tokens"] != 7 || item.Vals["credential_source"] != "inline" {
-		t.Fatalf("%v", item.Vals)
+	item, _ := jsonutil.AsObject(projected[0])
+	if item.Value("provider") != "openrouter" || item.Value("max_tokens") != 7 || item.Value("credential_source") != "inline" {
+		t.Fatalf("%v", item)
 	}
-	if _, has := item.Vals["headers"]; has {
+	if _, has := item.Get("headers"); has {
 		t.Fatal("headers projected")
 	}
-	if _, has := item.Vals["base_url"]; has {
+	if _, has := item.Get("base_url"); has {
 		t.Fatal("a non string base_url projected")
 	}
 }

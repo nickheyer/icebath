@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Sticky active profile name of root, the process root when empty, default when unset or unreadable
@@ -27,7 +27,7 @@ func GetActiveProfile(root string) string {
 	if !utf8.Valid(data) {
 		return "default"
 	}
-	name := strings.TrimSpace(pystr.TranslateNewlines(string(data)))
+	name := strings.TrimSpace(textutil.NormalizeNewlines(string(data)))
 	if name == "" {
 		return "default"
 	}

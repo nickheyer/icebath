@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // SkillRefRewrite is one job whose skill references a curator pass rewrote
@@ -16,7 +16,7 @@ type SkillRefRewrite struct {
 	JobName string
 	Before  []string
 	After   []string
-	Mapped  *pyjson.Object
+	Mapped  *jsonutil.Object
 	Dropped []string
 }
 
@@ -58,9 +58,9 @@ func (s *Store) referencedSkillNames(ctx context.Context) map[string]bool {
 }
 
 // Maps consolidated skill names onto their umbrella and drops pruned ones in every job, keeping order
-func (s *Store) rewriteSkillRefs(ctx context.Context, consolidated *pyjson.Object, pruned []string) (SkillRefRewriteReport, error) {
+func (s *Store) rewriteSkillRefs(ctx context.Context, consolidated *jsonutil.Object, pruned []string) (SkillRefRewriteReport, error) {
 	if consolidated == nil {
-		consolidated = pyjson.NewObject()
+		consolidated = jsonutil.NewObject()
 	}
 	prunedSet := map[string]bool{}
 	for _, p := range pruned {
@@ -69,7 +69,7 @@ func (s *Store) rewriteSkillRefs(ctx context.Context, consolidated *pyjson.Objec
 		}
 	}
 	report := SkillRefRewriteReport{Rewrites: []SkillRefRewrite{}}
-	if len(consolidated.Keys) == 0 && len(prunedSet) == 0 {
+	if consolidated.Len() == 0 && len(prunedSet) == 0 {
 		return report, nil
 	}
 	err := s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
@@ -82,7 +82,7 @@ func (s *Store) rewriteSkillRefs(ctx context.Context, consolidated *pyjson.Objec
 			if len(before) == 0 {
 				continue
 			}
-			mapped := pyjson.NewObject()
+			mapped := jsonutil.NewObject()
 			dropped := []string{}
 			after := []string{}
 			for _, name := range before {
@@ -98,7 +98,7 @@ func (s *Store) rewriteSkillRefs(ctx context.Context, consolidated *pyjson.Objec
 					after = append(after, name)
 				}
 			}
-			if len(mapped.Keys) == 0 && len(dropped) == 0 {
+			if mapped.Len() == 0 && len(dropped) == 0 {
 				continue
 			}
 			job.Skills = after

@@ -12,10 +12,10 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Python exception of a named class the fakes raise
@@ -84,7 +84,7 @@ func pinGoalConfig(t *testing.T, cfg config.Tree) {
 }
 
 func pyKind(err error) string {
-	var pyErr *pyint.Error
+	var pyErr *errorutil.Error
 	if errors.As(err, &pyErr) {
 		return pyErr.Kind
 	}
@@ -140,7 +140,7 @@ func TestParseJudgeResponseCoversEveryReplyShape(t *testing.T) {
 		}
 	}
 	verdict, _, _, wait := parseReply(t, `{"verdict": "wait", "wait_on_pid": 99999999999999999999, "reason": "r"}`)
-	if verdict != "wait" || pyrepr.Str(wait["pid"]) != "99999999999999999999" {
+	if verdict != "wait" || anyutil.String(wait["pid"]) != "99999999999999999999" {
 		t.Fatalf("huge pid %q %v", verdict, wait)
 	}
 	if _, _, _, _, err := parseJudgeResponse([]any{"x"}); pyKind(err) != "AttributeError" || err.Error() != "'list' object has no attribute 'strip'" {
@@ -262,12 +262,12 @@ func TestJudgePromptStatesActiveDelegationsAndAWaitBranchForThem(t *testing.T) {
 	pinGoalConfig(t, config.Tree{})
 	captured := pinGoalCallLLM(t, `{"verdict": "wait", "wait_for_seconds": 900, "reason": "waiting on workers"}`, nil)
 	result := JudgeGoal(context.Background(), "refactor everything", "Waiting on 4 workers; nothing to dispatch.", JudgeOptions{ActiveDelegations: 4})
-	text := pyrepr.Str((*captured)["messages"])
+	text := anyutil.String((*captured)["messages"])
 	if !strings.Contains(text, "Active delegations") || result.Verdict != "wait" || result.ParseFailed || result.Wait["seconds"] != int64(900) {
 		t.Fatalf("result %+v prompt %q", result, text)
 	}
 	JudgeGoal(context.Background(), "g", "r", JudgeOptions{ActiveDelegations: 0})
-	if strings.Contains(pyrepr.Str((*captured)["messages"]), "Active delegations") {
+	if strings.Contains(anyutil.String((*captured)["messages"]), "Active delegations") {
 		t.Fatal("delegations block rendered with none active")
 	}
 }

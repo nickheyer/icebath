@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 func TestWritePidFileRecordsGatewayMetadataAndIsExclusive(t *testing.T) {
@@ -24,7 +24,7 @@ func TestWritePidFileRecordsGatewayMetadataAndIsExclusive(t *testing.T) {
 	}
 	payload := readRecord(t, filepath.Join(dir, "gateway.pid"))
 	if !pyEq(recGet(payload, "pid"), int64(os.Getpid())) || recGet(payload, "kind") != "icebath-gateway" {
-		t.Fatalf("payload %v", payload.Keys)
+		t.Fatalf("payload %v", payload.Keys())
 	}
 	if argv, ok := recGet(payload, "argv").([]any); !ok || len(argv) == 0 {
 		t.Fatalf("argv %v", recGet(payload, "argv"))
@@ -104,7 +104,7 @@ func TestGetRunningPidFallsBackToLiveLockRecord(t *testing.T) {
 		"argv", strs("python", "-m", "icebath_cli.main", "gateway"), "start_time", int64(123)))
 	patch(t, &statusProcessStartTime, fixedInt(int64(123)))
 	patch(t, &statusReadProcessCmdline, noCmdline)
-	patch(t, &statusBuildPidRecord, func() *pyjson.Object {
+	patch(t, &statusBuildPidRecord, func() *jsonutil.Object {
 		return rec("pid", int64(os.Getpid()), "kind", "icebath-gateway", "argv", strs("python", "-m", "icebath_cli.main", "gateway"), "start_time", int64(123))
 	})
 	patch(t, &statusPidExists, func(pid int) bool { return pid != 99999 })
@@ -210,16 +210,16 @@ func mustWrite(t *testing.T, u RuntimeStatusUpdate) {
 	}
 }
 
-func platformsOf(t *testing.T) *pyjson.Object {
+func platformsOf(t *testing.T) *jsonutil.Object {
 	t.Helper()
-	return recGet(ReadRuntimeStatus(""), "platforms").(*pyjson.Object)
+	return recGet(ReadRuntimeStatus(""), "platforms").(*jsonutil.Object)
 }
 
 func TestClearProfilePlatformsPreservesPrimaryEntries(t *testing.T) {
 	dir := statusHome(t)
 	os.WriteFile(filepath.Join(dir, "gateway_state.json"), []byte(`{"platforms": {"telegram": {"state": "connected"}, "reviewer:discord": {"state": "fatal", "error_code": "duplicate_credential"}}}`), 0o644)
 	mustWrite(t, RuntimeStatusUpdate{ClearProfilePlatforms: true})
-	if got, _ := pyjson.Dumps(platformsOf(t)); got != `{"telegram": {"state": "connected"}}` {
+	if got, _ := jsonutil.Encode(platformsOf(t)); got != `{"telegram": {"state": "connected"}}` {
 		t.Fatalf("platforms %s", got)
 	}
 }
@@ -229,13 +229,13 @@ func TestClearProfilePlatformsAndWriteAreOneAtomicUpdate(t *testing.T) {
 	os.WriteFile(filepath.Join(dir, "gateway_state.json"), []byte(`{"platforms": {"old:discord": {"state": "fatal"}, "telegram": {"state": "connected"}}}`), 0o644)
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"platform": "reviewer:slack", "platform_state": "connected"}, ClearProfilePlatforms: true})
 	p := platformsOf(t)
-	if strings.Join(p.Keys, ",") != "telegram,reviewer:slack" {
-		t.Fatalf("keys %v", p.Keys)
+	if strings.Join(p.Keys(), ",") != "telegram,reviewer:slack" {
+		t.Fatalf("keys %v", p.Keys())
 	}
-	if got, _ := pyjson.Dumps(recGet(p, "telegram")); got != `{"state": "connected"}` {
+	if got, _ := jsonutil.Encode(recGet(p, "telegram")); got != `{"state": "connected"}` {
 		t.Fatal(got)
 	}
-	if recGet(recGet(p, "reviewer:slack").(*pyjson.Object), "state") != "connected" {
+	if recGet(recGet(p, "reviewer:slack").(*jsonutil.Object), "state") != "connected" {
 		t.Fatal("slack state")
 	}
 }
@@ -243,7 +243,7 @@ func TestClearProfilePlatformsAndWriteAreOneAtomicUpdate(t *testing.T) {
 func TestPlatformWritesAreStampedWithWriterIdentity(t *testing.T) {
 	statusHome(t)
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"platform": "telegram", "platform_state": "connected"}})
-	entry := recGet(platformsOf(t), "telegram").(*pyjson.Object)
+	entry := recGet(platformsOf(t), "telegram").(*jsonutil.Object)
 	if !pyEq(recGet(entry, "writer_pid"), int64(os.Getpid())) || !pyEq(recGet(entry, "writer_start_time"), GetProcessStartTime(os.Getpid())) {
 		t.Fatalf("writer %v %v", recGet(entry, "writer_pid"), recGet(entry, "writer_start_time"))
 	}
@@ -275,10 +275,10 @@ func TestWriteRuntimeStatusAdoptsTheHomeKeyOfAnOlderRecord(t *testing.T) {
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running"}})
 	payload := ReadRuntimeStatus("")
 	if _, stale := payload.Get(retired); stale {
-		t.Fatalf("the rewritten record still carries %s: %v", retired, payload.Keys)
+		t.Fatalf("the rewritten record still carries %s: %v", retired, payload.Keys())
 	}
-	if v, ok := payload.Get(home.RecordKey); !ok || v != "/old/home" || payload.Keys[2] != home.RecordKey {
-		t.Fatalf("home key %v %v in %v", v, ok, payload.Keys)
+	if v, ok := payload.Get(home.RecordKey); !ok || v != "/old/home" || payload.Keys()[2] != home.RecordKey {
+		t.Fatalf("home key %v %v in %v", v, ok, payload.Keys())
 	}
 }
 
@@ -342,7 +342,7 @@ func TestWriteRuntimeStatusExplicitNoneClearsStaleFields(t *testing.T) {
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running", "exit_reason": nil,
 		"platform": "discord", "platform_state": "connected", "error_code": nil, "error_message": nil}})
 	payload := ReadRuntimeStatus("")
-	discord := recGet(recGet(payload, "platforms").(*pyjson.Object), "discord").(*pyjson.Object)
+	discord := recGet(recGet(payload, "platforms").(*jsonutil.Object), "discord").(*jsonutil.Object)
 	if recGet(payload, "gateway_state") != "running" || recGet(payload, "exit_reason") != nil || recGet(discord, "state") != "connected" ||
 		recGet(discord, "error_code") != nil || recGet(discord, "error_message") != nil {
 		t.Fatal("stale fields kept")
@@ -357,7 +357,7 @@ func TestConnectedClearsNeedsAttentionFromStartupStamp(t *testing.T) {
 	if !FlushRuntimeStatus(2 * time.Second) {
 		t.Fatal("flush")
 	}
-	entry := recGet(platformsOf(t), "telegram").(*pyjson.Object)
+	entry := recGet(platformsOf(t), "telegram").(*jsonutil.Object)
 	if recGet(entry, "state") != "connected" || recGet(entry, "needs_attention") != false || recGet(entry, "retrying_since") != nil {
 		t.Fatal("needs_attention sticky")
 	}
@@ -366,9 +366,9 @@ func TestConnectedClearsNeedsAttentionFromStartupStamp(t *testing.T) {
 func TestBlockedWriteDoesNotBlockPublishAndBurstCoalesces(t *testing.T) {
 	statusHome(t)
 	writeStarted, releaseWrite, publishReturned := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	var writes []*pyjson.Object
+	var writes []*jsonutil.Object
 	var count atomic.Int32
-	writer := NewRuntimeStatusWriter(func(_ string, payload *pyjson.Object) error {
+	writer := NewRuntimeStatusWriter(func(_ string, payload *jsonutil.Object) error {
 		writes = append(writes, payload)
 		if count.Add(1) == 1 {
 			close(writeStarted)
@@ -402,9 +402,9 @@ func TestBlockedWriteDoesNotBlockPublishAndBurstCoalesces(t *testing.T) {
 		t.Fatalf("writes %d", len(writes))
 	}
 	final := writes[1]
-	plats := recGet(final, "platforms").(*pyjson.Object)
-	telegram := recGet(plats, "telegram").(*pyjson.Object)
-	work, _ := pyjson.Dumps(recGet(final, "active_work"))
+	plats := recGet(final, "platforms").(*jsonutil.Object)
+	telegram := recGet(plats, "telegram").(*jsonutil.Object)
+	work, _ := jsonutil.Encode(recGet(final, "active_work"))
 	if recGet(final, "gateway_state") != "running" || !pyEq(recGet(final, "active_agents"), 49) || work != `["telegram:dm:1"]` ||
 		recGet(final, "multiplex_standalone_reason") != "single-profile" || recGet(plats, "reviewer:slack") != nil ||
 		!strings.HasSuffix(recGet(telegram, "ingress_url").(string), "/telegram") || recGet(telegram, "listener_base") != "http://127.0.0.1:8080" {
@@ -416,7 +416,7 @@ func TestSyncWriteCanBoundABlockedPersistenceWait(t *testing.T) {
 	statusHome(t)
 	started, release := make(chan struct{}), make(chan struct{})
 	var once atomic.Bool
-	writer := NewRuntimeStatusWriter(func(string, *pyjson.Object) error {
+	writer := NewRuntimeStatusWriter(func(string, *jsonutil.Object) error {
 		if once.CompareAndSwap(false, true) {
 			close(started)
 		}
@@ -444,8 +444,8 @@ func TestWriteRuntimeStatusRecordsPlatformMetricsAndActiveAgents(t *testing.T) {
 	statusHome(t)
 	metrics := rec("last_heartbeat", "2026-06-25T00:00:00+00:00", "metrics_today", rec("requests", int64(3), "tokens", int64(42)))
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"platform": "api_server", "platform_state": "connected", "platform_metrics": metrics}})
-	api := recGet(platformsOf(t), "api_server").(*pyjson.Object)
-	if got, _ := pyjson.Dumps(recGet(api, "metrics")); got != `{"last_heartbeat": "2026-06-25T00:00:00+00:00", "metrics_today": {"requests": 3, "tokens": 42}}` {
+	api := recGet(platformsOf(t), "api_server").(*jsonutil.Object)
+	if got, _ := jsonutil.Encode(recGet(api, "metrics")); got != `{"last_heartbeat": "2026-06-25T00:00:00+00:00", "metrics_today": {"requests": 3, "tokens": 42}}` {
 		t.Fatal(got)
 	}
 	mustWrite(t, RuntimeStatusUpdate{Fields: map[string]any{"gateway_state": "running", "active_agents": 0}})
@@ -455,7 +455,7 @@ func TestWriteRuntimeStatusRecordsPlatformMetricsAndActiveAgents(t *testing.T) {
 		t.Fatal("active agents write clobbered state")
 	}
 	stamp := recGet(r, "updated_at").(string)
-	if _, aware, err := pydatetime.ParseISOFormat(stamp); err != nil || !aware {
+	if _, aware, err := timeutil.ParseISOZone(stamp, time.UTC); err != nil || !aware {
 		t.Fatalf("updated_at %q", stamp)
 	}
 	if norm, ok, _ := NormalizeUpdatedAt(stamp); !ok || norm != stamp {

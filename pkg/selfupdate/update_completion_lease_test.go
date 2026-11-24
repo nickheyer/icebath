@@ -12,9 +12,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runs the bootstrap prepare as on Windows with the checkout join, PM, venv sync and prepared child recording events
@@ -54,7 +54,7 @@ func clFakeWindowsPrepare(t *testing.T, join func(events *[]string, root string)
 	if err := os.MkdirAll(root, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	request := map[string]any{"source": root, "receipt": pyjson.ObjectOf("update_id", "u-l3"), "bytecode_cache": filepath.Join(dir, "bc")}
+	request := map[string]any{"source": root, "receipt": jsonutil.ObjectOf("update_id", "u-l3"), "bytecode_cache": filepath.Join(dir, "bc")}
 	if _, err := prepareCompletion(context.Background(), io.Discard, request, filepath.Join(dir, "request.json"), resultPath); err != nil {
 		events = append(events, "raised: "+launchErrorText(err))
 	}

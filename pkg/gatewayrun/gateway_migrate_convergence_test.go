@@ -15,8 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestPreflightNeverImportsAParkedProfilesPlugins(t *testing.T) {
@@ -64,9 +64,9 @@ func TestEveryInstalledUnitOfASecondaryIsRemovedAndRecorded(t *testing.T) {
 		t.Fatalf("ok %v services %v", ok, f.services)
 	}
 	secondaries, _ := manifestSecondaries(manifest)
-	var coderRec *pyjson.Object
+	var coderRec *jsonutil.Object
 	for _, r := range secondaries {
-		if r.GetOr("profile", nil) == "coder" {
+		if r.ValueOr("profile", nil) == "coder" {
 			coderRec = r
 		}
 	}
@@ -348,9 +348,9 @@ func TestMigrateLeavesExactlyOneHostUnitServingEveryProfileAndIsIdempotent(t *te
 		t.Fatalf("services %v pids %v", f.services, f.pids)
 	}
 	raw, _ := os.ReadFile(filepath.Join(f.root, "gateway_state.json"))
-	v, _ := pyjson.Loads(string(raw))
+	v, _ := jsonutil.Decode(string(raw))
 	served := []string{}
-	for _, s := range v.(*pyjson.Object).GetOr("served_profiles", nil).([]any) {
+	for _, s := range v.(*jsonutil.Object).ValueOr("served_profiles", nil).([]any) {
 		served = append(served, s.(string))
 	}
 	sort.Strings(served)

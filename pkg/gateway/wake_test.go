@@ -15,8 +15,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Stateless adapter answering on a self post endpoint like the API server
@@ -165,7 +165,7 @@ func TestPersistDelegationDeliveryAppendsDeliveryRow(t *testing.T) {
 	for k, v := range items.PyItems() {
 		meta[k.(string)] = v
 	}
-	if meta["delegation_id"] != "deleg_x" || pyrepr.Str(meta["task_count"]) != "2" || pyrepr.Str(meta["failed_count"]) != "1" || pyrepr.Str(meta["duration_seconds"]) != "12.5" {
+	if meta["delegation_id"] != "deleg_x" || anyutil.String(meta["task_count"]) != "2" || anyutil.String(meta["failed_count"]) != "1" || anyutil.String(meta["duration_seconds"]) != "12.5" {
 		t.Fatalf("metadata %v", meta)
 	}
 }

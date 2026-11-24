@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Identity fields a registered local source must keep to stay authorized
@@ -260,7 +260,7 @@ func (l *LocalSessionAdapter) unanswerableClarify(ctx context.Context, chatID st
 // Python membership of a key in an admission payload, a mapping key or a substring of stored text
 func payloadNames(payload any, key string) bool {
 	switch p := payload.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, ok := p.Get(key)
 		return ok
 	case map[string]any:
@@ -293,7 +293,7 @@ func forgetLiveSession(ctx context.Context, a *SessionAuthority, sessionID strin
 
 // Runner resolving the adapter map of the profile a source names
 type profileAdaptersRunner interface {
-	AdaptersForProfile(profile *string) *pydict.Dict[Platform, PlatformAdapter]
+	AdaptersForProfile(profile *string) *orderedutil.Map[Platform, PlatformAdapter]
 }
 
 // Authorization of a local source, nil for legacy and nonlocal routes while registered local adapters fail closed

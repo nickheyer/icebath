@@ -13,11 +13,11 @@ import (
 
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var hubKanbanRegistry = &handlerRegistry{}
@@ -54,9 +54,9 @@ func kanbanBoardOf(ctx context.Context, board string) string {
 }
 
 // Text of a metadata field, empty when absent
-func kanbanMetaText(meta *pyjson.Object, key string) string {
-	if v, ok := meta.Get(key); ok && pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+func kanbanMetaText(meta *jsonutil.Object, key string) string {
+	if v, ok := meta.Get(key); ok && anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -87,7 +87,7 @@ func kanbanCounts(ctx context.Context, slug string) (map[string]int64, error) {
 	err = kanban.ConnectClosing(ctx, "", &slug, func(conn state.SQLiteConn) error {
 		rows, err := kanban.QueryRows(ctx, conn, "SELECT status, COUNT(*) AS n FROM tasks GROUP BY status")
 		for _, r := range rows {
-			counts[pyrepr.Str(r.Get("status"))] = kanbanInt(r.Get("n"))
+			counts[anyutil.String(r.Get("status"))] = kanbanInt(r.Get("n"))
 		}
 		return err
 	})
@@ -224,7 +224,7 @@ func kanbanCellText(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Events of a board or one task after a cursor, oldest first, narrowed by assignee, tenant and kinds; the first read answers the newest ones.
@@ -345,7 +345,7 @@ func kanbanCommandRPC(verbs map[string]bool, boards bool) rpcBody {
 		errw.WriteString(parsed.Err)
 		rc, kerr := kanban.KanbanCommand(ctx, parsed.Namespace, &out, &errw)
 		if kerr != nil {
-			fmt.Fprintln(&errw, pyrepr.ExceptionMessage(kerr))
+			fmt.Fprintln(&errw, kerr.Error())
 		}
 		text := strings.TrimSpace(ansi.Strip(strings.TrimSpace(out.String()) + "\n" + strings.TrimSpace(errw.String())))
 		failed := rc != 0 || kerr != nil

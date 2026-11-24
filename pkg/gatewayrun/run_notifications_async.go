@@ -10,26 +10,26 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Fills the route fields of an async delegation event from its session key, a CLI origin event left as is
 func enrichAsyncDelegationRouting(evt map[string]any) {
-	if pyrepr.Truthy(evt["platform"]) {
+	if anyutil.IsTrue(evt["platform"]) {
 		return
 	}
-	sessionKey, _ := pyrepr.Or(evt["session_key"], "").(string)
+	sessionKey, _ := anyutil.Or(evt["session_key"], "").(string)
 	parsed := gateway.ParseSessionKey(sessionKey)
 	if len(parsed) == 0 {
 		return
 	}
-	evt["platform"] = pyrepr.Or(parsed["platform"], "")
-	evt["chat_type"] = pyrepr.Or(parsed["chat_type"], "")
-	evt["chat_id"] = pyrepr.Or(parsed["chat_id"], "")
-	if pyrepr.Truthy(parsed["thread_id"]) {
+	evt["platform"] = anyutil.Or(parsed["platform"], "")
+	evt["chat_type"] = anyutil.Or(parsed["chat_type"], "")
+	evt["chat_id"] = anyutil.Or(parsed["chat_id"], "")
+	if anyutil.IsTrue(parsed["thread_id"]) {
 		evt["thread_id"] = parsed["thread_id"]
 	}
 }
@@ -46,10 +46,10 @@ func (r *GatewayRunner) deliverAsyncDelegationGroup(ctx context.Context, group [
 // One consolidated completion turn of every sibling this runner claimed, nil when nothing is deliverable here
 func (r *GatewayRunner) deliverAsyncDelegationGroupScoped(ctx context.Context, group []map[string]any) (*bool, error) {
 	yes, no := true, false
-	if err := gateway.RestoreCompletionRoute(ctx, r, pyrepr.Str(pyrepr.Or(group[0]["session_key"], ""))); err != nil {
+	if err := gateway.RestoreCompletionRoute(ctx, r, anyutil.String(anyutil.Or(group[0]["session_key"], ""))); err != nil {
 		return nil, err
 	}
-	if len(group) > 0 && pyrepr.Truthy(group[0]["origin_session_id"]) {
+	if len(group) > 0 && anyutil.IsTrue(group[0]["origin_session_id"]) {
 		refused := false
 		for _, evt := range group {
 			if text := gateway.FormatGatewayProcessNotification(evt); text != "" {
@@ -92,9 +92,9 @@ func (r *GatewayRunner) deliverAsyncDelegationGroupScoped(ctx context.Context, g
 				continue
 			}
 		}
-		parent := pyrepr.Str(pyrepr.Or(evt["parent_session_id"], ""))
+		parent := anyutil.String(anyutil.Or(evt["parent_session_id"], ""))
 		if parent != "" {
-			target, err := r.classifyCompletionTarget(ctx, parent, pyrepr.Str(pyrepr.Or(evt["session_key"], "")))
+			target, err := r.classifyCompletionTarget(ctx, parent, anyutil.String(anyutil.Or(evt["session_key"], "")))
 			if err != nil {
 				return nil, err
 			}
@@ -234,7 +234,7 @@ func (r *GatewayRunner) sweepOrphanedCompletionLedgers(ctx context.Context) {
 func backOffRefusedCompletions(group []map[string]any) {
 	for _, evt := range group {
 		step := 1
-		if raw := evt["_watch_retry_step"]; pyrepr.Truthy(raw) {
+		if raw := evt["_watch_retry_step"]; anyutil.IsTrue(raw) {
 			if n, err := pyint.Of(raw); err == nil && n.IsInt64() {
 				step = int(n.Int64()) + 1
 			}
@@ -263,8 +263,8 @@ func (r *GatewayRunner) asyncDelegationWatcher(ctx context.Context, interval flo
 	queue := tools.DefaultProcessRegistry().CompletionQueue
 	lastOrphanSweep := -1.0
 	pass := func() error {
-		if lastOrphanSweep < 0 || pythread.Monotonic()-lastOrphanSweep >= tools.OrphanSweepIntervalS {
-			lastOrphanSweep = pythread.Monotonic()
+		if lastOrphanSweep < 0 || timeutil.Monotonic()-lastOrphanSweep >= tools.OrphanSweepIntervalS {
+			lastOrphanSweep = timeutil.Monotonic()
 			r.sweepOrphanedCompletionLedgers(ctx)
 		}
 		if err := r.drainWatchNotifications(ctx, queue); err != nil {
@@ -299,7 +299,7 @@ func (r *GatewayRunner) asyncDelegationWatcher(ctx context.Context, interval flo
 			group := groups[key]
 			deferred := false
 			for _, evt := range group {
-				if watchNextRetryAt(evt) > pythread.Monotonic() {
+				if watchNextRetryAt(evt) > timeutil.Monotonic() {
 					deferred = true
 					break
 				}

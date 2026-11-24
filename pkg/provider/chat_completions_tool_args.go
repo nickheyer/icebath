@@ -1,7 +1,7 @@
 package provider
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Non string tool call arguments become their compact JSON text, keys in wire order
@@ -20,11 +20,11 @@ func spliceNonStringToolArguments(data []byte, payload map[string]any) {
 				continue
 			}
 			if ordered == nil {
-				if ordered, _ = pyjson.LoadsBytes(data); ordered == nil {
+				if ordered, _ = jsonutil.Decode(data); ordered == nil {
 					return
 				}
 			}
-			text, err := pyjson.EncodeWTF8(orderedAt(ordered, "choices", ci, "message", "tool_calls", ti, "function", "arguments"))
+			text, err := jsonutil.Append(nil, orderedAt(ordered, "choices", ci, "message", "tool_calls", ti, "function", "arguments"))
 			if err == nil {
 				fn["arguments"] = string(text)
 			}
@@ -37,7 +37,7 @@ func orderedAt(v any, path ...any) any {
 	for _, step := range path {
 		switch key := step.(type) {
 		case string:
-			obj, ok := v.(*pyjson.Object)
+			obj, ok := v.(*jsonutil.Object)
 			if !ok {
 				return nil
 			}

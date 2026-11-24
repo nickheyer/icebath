@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -159,39 +159,39 @@ func resolveNamedChannel(ctx context.Context, channel string, gitCmd []string, c
 		return SourceTarget{}, err
 	}
 	terminal := resolved.Terminal
-	if !strings.EqualFold(terminal.Vals["repository"].(string), repository) {
+	if !strings.EqualFold(terminal.Value("repository").(string), repository) {
 		return SourceTarget{}, &ValueError{Msg: "Channel repository does not match this source installation"}
 	}
-	destination, err := ValidateChannelName(terminal.Vals["name"])
+	destination, err := ValidateChannelName(terminal.Value("name"))
 	if err != nil {
 		return SourceTarget{}, err
 	}
-	if terminal.Vals["policy"] == "source-branch" {
-		if resolved.Requested.Vals["state"] == "retired" {
+	if terminal.Value("policy") == "source-branch" {
+		if resolved.Requested.Value("state") == "retired" {
 			return SourceTarget{}, &ValueError{Msg: "Source retirement requires a published destination commit"}
 		}
-		delivery := terminal.Vals["delivery"].(*pyjson.Object)
-		if delivery.Vals["kind"] != "source-branch" {
+		delivery := terminal.Value("delivery").(*jsonutil.Object)
+		if delivery.Value("kind") != "source-branch" {
 			return SourceTarget{}, &ValueError{Msg: "Channel has no source-branch delivery"}
 		}
 		return SourceTarget{RequestedChannel: channel, Channel: destination, Repository: repository,
-			Branch: delivery.Vals["branch"].(string)}, nil
+			Branch: delivery.Value("branch").(string)}, nil
 	}
 	if resolved.Manifest == nil {
 		return SourceTarget{}, &ValueError{Msg: "No build published for channel " + destination}
 	}
-	request := resolved.Manifest.Vals["request"].(*pyjson.Object)
-	commit, _ := request.Vals["commit"].(string)
+	request := resolved.Manifest.Value("request").(*jsonutil.Object)
+	commit, _ := request.Value("commit").(string)
 	if !sourceSHARE.MatchString(commit) {
 		return SourceTarget{}, &ValueError{Msg: "Channel build has no exact source commit"}
 	}
-	if resolved.Requested.Vals["state"] == "retired" {
+	if resolved.Requested.Value("state") == "retired" {
 		if err := refuseRetirementDowngrade(ctx, request, terminal, gitCmd, cwd); err != nil {
 			return SourceTarget{}, err
 		}
 	}
 	return SourceTarget{RequestedChannel: channel, Channel: destination, Repository: repository, Commit: commit,
-		Version: request.Vals["sourceVersion"].(string), BuildID: request.Vals["buildId"].(string)}, nil
+		Version: request.Value("sourceVersion").(string), BuildID: request.Value("buildId").(string)}, nil
 }
 
 // Validated channel records and manifest read from the published tree, never a GitHub listing fallback
@@ -206,11 +206,11 @@ var resolveChannel = func(ctx context.Context, name, repository string) (*Channe
 var installedSourceVersionRE = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // Refuses a retirement build older than the running build, a newer local commit or the newer destination head
-func refuseRetirementDowngrade(ctx context.Context, request, terminal *pyjson.Object, gitCmd []string, cwd string) error {
+func refuseRetirementDowngrade(ctx context.Context, request, terminal *jsonutil.Object, gitCmd []string, cwd string) error {
 	if cwd == "" {
 		return nil
 	}
-	sourceVersion := request.Vals["sourceVersion"].(string)
+	sourceVersion := request.Value("sourceVersion").(string)
 	if installed := updaterecord.BuildVersion(); installed != "" {
 		installed = strings.TrimPrefix(installed, "v")
 		if !installedSourceVersionRE.MatchString(installed) {
@@ -223,7 +223,7 @@ func refuseRetirementDowngrade(ctx context.Context, request, terminal *pyjson.Ob
 	if gitCmd == nil {
 		return nil
 	}
-	commit := request.Vals["commit"].(string)
+	commit := request.Value("commit").(string)
 	result, err := runSourceGit(ctx, gitArgs(gitCmd, "rev-list", "--ancestry-path", commit+"..HEAD"), cwd, 10*time.Second)
 	if err != nil {
 		return err
@@ -231,10 +231,10 @@ func refuseRetirementDowngrade(ctx context.Context, request, terminal *pyjson.Ob
 	if result.ReturnCode == 0 && strings.TrimSpace(result.Stdout) != "" {
 		return &ValueError{Msg: "Source retirement would downgrade a newer source commit; select the destination channel explicitly"}
 	}
-	if headSequence(terminal.Vals["head"].(*pyjson.Object)) <= requestSequence(request) {
+	if headSequence(terminal.Value("head").(*jsonutil.Object)) <= requestSequence(request) {
 		return nil
 	}
-	current, err := resolveChannel(ctx, terminal.Vals["name"].(string), request.Vals["repository"].(string))
+	current, err := resolveChannel(ctx, terminal.Value("name").(string), request.Value("repository").(string))
 	if err != nil {
 		return err
 	}
@@ -250,14 +250,14 @@ func refuseRetirementDowngrade(ctx context.Context, request, terminal *pyjson.Ob
 		return &sourceCalledProcessError{Argv: argv, ReturnCode: head.ReturnCode}
 	}
 	installed := strings.TrimSpace(head.Stdout)
-	if installed == current.Manifest.Vals["request"].(*pyjson.Object).Vals["commit"] && installed != commit {
+	if installed == current.Manifest.Value("request").(*jsonutil.Object).Value("commit") && installed != commit {
 		return &ValueError{Msg: "Source retirement would downgrade the newer destination build; select the destination channel explicitly"}
 	}
 	return nil
 }
 
-func requestSequence(request *pyjson.Object) int64 {
-	n, _ := channelInteger(request.Vals["sequence"], "sequence", 1, channelMaxSequence)
+func requestSequence(request *jsonutil.Object) int64 {
+	n, _ := channelInteger(request.Value("sequence"), "sequence", 1, channelMaxSequence)
 	return n
 }
 
@@ -292,7 +292,7 @@ func validReleaseTag(tag any) bool {
 
 // Reports whether a release document is a published stable release, never a draft or a prerelease
 func publishedRelease(release any) bool {
-	obj, ok := release.(*pyjson.Object)
+	obj, ok := release.(*jsonutil.Object)
 	if !ok {
 		return false
 	}
@@ -302,13 +302,13 @@ func publishedRelease(release any) bool {
 }
 
 // Latest published stable release of a repository from GitHub
-func publishedFallback(ctx context.Context, base string) (*pyjson.Object, error) {
+func publishedFallback(ctx context.Context, base string) (*jsonutil.Object, error) {
 	release, err := sourceJSON(ctx, base+"/releases/latest")
 	if err != nil {
 		return nil, err
 	}
 	if publishedRelease(release) {
-		return release.(*pyjson.Object), nil
+		return release.(*jsonutil.Object), nil
 	}
 	return nil, &ValueError{Msg: "No published stable release"}
 }
@@ -326,7 +326,7 @@ func resolveRelease(ctx context.Context, gitCmd []string, cwd, repository string
 		return "", "", err
 	}
 	sha := ""
-	if obj, ok := commit.(*pyjson.Object); ok {
+	if obj, ok := commit.(*jsonutil.Object); ok {
 		sha, _ = stampGet(obj, "sha").(string)
 	}
 	if !sourceSHARE.MatchString(sha) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const RestartWaitReason = "restart_wait"
@@ -20,7 +20,7 @@ type DrainRunner interface {
 // Publishes the restart after turn wait as the drain reason unless a drain already named its own
 func OpenRestartWait(runner DrainRunner) {
 	descriptor := runner.SessionRuntimeDescriptor()
-	if descriptor == nil || pyrepr.Truthy(descriptor["drain_reason"]) {
+	if descriptor == nil || anyutil.IsTrue(descriptor["drain_reason"]) {
 		return
 	}
 	if publisher, republishes := runner.(runtimeDescriptorPublisher); republishes {

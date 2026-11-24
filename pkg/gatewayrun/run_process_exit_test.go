@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Loop double recording every callback the watcher schedules instead of running it
@@ -44,7 +42,7 @@ func writePlannedStopMarker(t *testing.T, dir string, targetPid int, startTime a
 	marker := filepath.Join(dir, ".gateway-planned-stop.json")
 	data, err := json.Marshal(map[string]any{
 		"target_pid": targetPid, "target_start_time": startTime, "stopper_pid": targetPid,
-		"written_at": pydatetime.ISOFormat(time.Now().UTC()),
+		"written_at": time.Now().UTC().Format(timeutil.RFC3339Micro),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +69,7 @@ func TestWatcherFiresShutdownWhenMarkerAppears(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		runPlannedStopWatcher(&pythread.Event{}, watcherRunner(), loop, func(sig *int) { handled = append(handled, sig) }, 0.05)
+		runPlannedStopWatcher(&syncutil.Event{}, watcherRunner(), loop, func(sig *int) { handled = append(handled, sig) }, 0.05)
 	}()
 	select {
 	case <-done:
@@ -91,7 +89,7 @@ func TestWatcherFiresShutdownWhenMarkerAppears(t *testing.T) {
 func TestWatcherToleratesMarkerPathResolutionErrors(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", filepath.Join(t.TempDir(), "nonexistent"))
 	loop := &capturingLoop{}
-	stop := &pythread.Event{}
+	stop := &syncutil.Event{}
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
@@ -114,7 +112,7 @@ func TestWatcherDoesNotFireForForeignPidMarker(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", dir)
 	marker := writePlannedStopMarker(t, dir, os.Getpid()+1, -1)
 	loop := &capturingLoop{}
-	stop := &pythread.Event{}
+	stop := &syncutil.Event{}
 	handled := 0
 	done := make(chan struct{})
 	go func() {

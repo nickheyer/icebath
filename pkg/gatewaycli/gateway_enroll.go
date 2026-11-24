@@ -13,10 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Failure of the connector enroll call carrying its user facing message
@@ -54,11 +50,11 @@ func resolveConnectorURL(ctx context.Context, override string) string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		section := config.EffectiveUserConfig(ctx)["gateway"]
-		if !pyrepr.Truthy(section) {
+		if !anyutil.IsTrue(section) {
 			section = map[string]any{}
 		}
-		if block, ok := section.(map[string]any); ok && pyrepr.Truthy(block["relay_url"]) {
-			raw = strings.TrimSpace(pyrepr.Str(block["relay_url"]))
+		if block, ok := section.(map[string]any); ok && anyutil.IsTrue(block["relay_url"]) {
+			raw = strings.TrimSpace(anyutil.String(block["relay_url"]))
 		}
 	}
 	if raw == "" {
@@ -74,12 +70,12 @@ func resolveConnectorURL(ctx context.Context, override string) string {
 }
 
 // POSTs the enrollment token to the connector relay enroll route and returns its secret bearing payload
-func postEnroll(ctx context.Context, connectorBaseURL, accessToken, enrollmentToken, gatewayID string, timeout time.Duration) (*pyjson.Object, error) {
+func postEnroll(ctx context.Context, connectorBaseURL, accessToken, enrollmentToken, gatewayID string, timeout time.Duration) (*jsonutil.Object, error) {
 	url := strings.TrimRight(connectorBaseURL, "/") + "/relay/enroll"
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("enrollmentToken", enrollmentToken)
 	body.Set("gatewayId", gatewayID)
-	data, err := pyjson.Dumps(body)
+	data, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
@@ -96,14 +92,14 @@ func postEnroll(ctx context.Context, connectorBaseURL, accessToken, enrollmentTo
 	switch {
 	case errors.As(err, &httpErr):
 		detail := ""
-		if text, decErr := pystr.DecodeUTF8(httpErr.Body); decErr == nil {
-			if parsed, loadErr := pyjson.Loads(text); loadErr == nil {
-				if !pyrepr.Truthy(parsed) {
-					parsed = pyjson.NewObject()
+		if text, decErr := textutil.DecodeUTF8(httpErr.Body); decErr == nil {
+			if parsed, loadErr := jsonutil.Decode(text); loadErr == nil {
+				if !anyutil.IsTrue(parsed) {
+					parsed = jsonutil.NewObject()
 				}
-				if obj, ok := parsed.(*pyjson.Object); ok {
-					if v := obj.GetOr("error", ""); pyrepr.Truthy(v) {
-						detail = pyrepr.Str(v)
+				if obj, ok := parsed.(*jsonutil.Object); ok {
+					if v := obj.ValueOr("error", ""); anyutil.IsTrue(v) {
+						detail = anyutil.String(v)
 					}
 				}
 			}
@@ -131,16 +127,16 @@ func postEnroll(ctx context.Context, connectorBaseURL, accessToken, enrollmentTo
 	case err != nil:
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8(raw)
+	text, err := textutil.DecodeUTF8(raw)
 	if err != nil {
 		return nil, err
 	}
-	payload, err := pyjson.Loads(text)
+	payload, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := payload.(*pyjson.Object)
-	if !ok || !pyrepr.Truthy(obj.GetOr("secret", nil)) {
+	obj, ok := payload.(*jsonutil.Object)
+	if !ok || !anyutil.IsTrue(obj.ValueOr("secret", nil)) {
 		return nil, &enrollError{"Connector returned an unexpected response (no secret)."}
 	}
 	return obj, nil
@@ -195,8 +191,8 @@ func CmdGatewayEnroll(ctx context.Context, ns map[string]any, w io.Writer) (int,
 		return enrollFail(w, fmt.Sprintf("✗ Enrollment failed: %s", enrollErr.message))
 	}
 	text := func(key, fallback string) string {
-		if v := result.GetOr(key, nil); pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v := result.ValueOr(key, nil); anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 		return fallback
 	}
@@ -252,15 +248,15 @@ func warnIfSecondaryMultiplexProfile(ctx context.Context, w io.Writer) (fired bo
 			fired = false
 		}
 	}()
-	defaultRoot, err := pypath.Resolve(home.Root())
+	defaultRoot, err := pathutil.Resolve(home.Root())
 	if err != nil {
 		return false
 	}
-	h, err := pypath.Resolve(home.Dir(ctx))
+	h, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return false
 	}
-	if _, under := pypath.PathRelativeTo(h, pypath.PathJoin(defaultRoot, "profiles")); !under {
+	if _, under := pathutil.RelativeTo(h, pathutil.Join(defaultRoot, "profiles")); !under {
 		return false
 	}
 	multiplexes, err := gateway.DefaultGatewayMultiplexes(ctx, defaultRoot)

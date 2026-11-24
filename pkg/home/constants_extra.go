@@ -11,14 +11,14 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // Where connector tool results save the files they return, under each profile home
@@ -76,12 +76,12 @@ func RootForEnvironment(environ map[string]string) string {
 		if profile == "" {
 			return ""
 		}
-		expanded = pypath.PathStr(profile) + expanded[1:]
+		expanded = filepath.Clean(profile) + expanded[1:]
 	}
-	if !pypath.IsAbs(expanded) {
+	if !filepath.IsAbs(expanded) {
 		return ""
 	}
-	return rootOf(native, pypath.PathStr(expanded))
+	return rootOf(native, filepath.Clean(expanded))
 }
 
 // Every match replaced by fn over the last group that took part
@@ -121,12 +121,12 @@ func SudoInvokerDefaultHome() string {
 	if err != nil {
 		return ""
 	}
-	return pypath.PathJoin(u.HomeDir, dirName)
+	return pathutil.Join(u.HomeDir, dirName)
 }
 
 var (
 	profileFallbackWarned atomic.Bool
-	fallbackWarnOut       io.Writer = pysys.Stderr
+	fallbackWarnOut       io.Writer = termutil.Stderr
 )
 
 // Routes the profile fallback warning to w with its once latch rearmed, returning the function that restores both
@@ -147,7 +147,7 @@ func warnProfileFallbackOnce() {
 	}
 	fallback := PlatformDefault()
 	active := ""
-	if data, err := os.ReadFile(pypath.PathJoin(fallback, "active_profile")); err == nil && utf8.Valid(data) {
+	if data, err := os.ReadFile(pathutil.Join(fallback, "active_profile")); err == nil && utf8.Valid(data) {
 		text := strings.ReplaceAll(strings.ReplaceAll(string(data), "\r\n", "\n"), "\r", "\n")
 		active = strings.TrimSpace(text)
 	}
@@ -157,7 +157,7 @@ func warnProfileFallbackOnce() {
 	fmt.Fprintf(fallbackWarnOut, "[ICEBATH_HOME fallback] ICEBATH_HOME is unset but active profile is %s. "+
 		"Falling back to %s, which is the DEFAULT profile — not %s. Any data this process writes will land "+
 		"in the wrong profile. The subprocess spawner should pass ICEBATH_HOME explicitly (see issue #18594).\n",
-		pyrepr.StrRepr(active), fallback, pyrepr.StrRepr(active))
+		strconv.Quote(active), fallback, strconv.Quote(active))
 }
 
 var (
@@ -194,12 +194,12 @@ func RoutingProcess() string {
 // Package manager relocatable directory from envVar, then def, then the subdir of the active home
 func PackagedDir(ctx context.Context, envVar, def, subdir string) string {
 	if override := strings.TrimSpace(os.Getenv(envVar)); override != "" {
-		return pypath.PathStr(override)
+		return filepath.Clean(override)
 	}
 	if def != "" {
-		return pypath.PathStr(def)
+		return filepath.Clean(def)
 	}
-	return pypath.PathJoin(Dir(ctx), subdir)
+	return pathutil.Join(Dir(ctx), subdir)
 }
 
 // Optional skills directory honoring package manager wrappers
@@ -212,11 +212,11 @@ func NodeDirs(ctx context.Context, h string) []string {
 	if h == "" {
 		h = Dir(ctx)
 	}
-	nodeDir := pypath.PathJoin(h, "node")
+	nodeDir := pathutil.Join(h, "node")
 	if runtime.GOOS == "windows" {
-		return []string{nodeDir, pypath.PathJoin(nodeDir, "bin")}
+		return []string{nodeDir, pathutil.Join(nodeDir, "bin")}
 	}
-	return []string{pypath.PathJoin(nodeDir, "bin"), nodeDir}
+	return []string{pathutil.Join(nodeDir, "bin"), nodeDir}
 }
 
 var windowsNodeShims = map[string][]string{
@@ -225,7 +225,7 @@ var windowsNodeShims = map[string][]string{
 
 // File names a Node tool command may carry on this platform, the cmd shim first on Windows
 func CandidateNodeCommandNames(command string) []string {
-	base := pypath.PathName(command)
+	base := pathutil.Name(command)
 	if runtime.GOOS != "windows" || strings.Contains(base, ".") {
 		return []string{base}
 	}
@@ -240,7 +240,7 @@ func ManagedNodeTreePresent(ctx context.Context, h string) bool {
 	for _, dir := range NodeDirs(ctx, h) {
 		for _, c := range []string{"node", "npm", "npx"} {
 			for _, name := range CandidateNodeCommandNames(c) {
-				if st, err := os.Stat(pypath.PathJoin(dir, name)); err == nil && st.Mode().IsRegular() {
+				if st, err := os.Stat(pathutil.Join(dir, name)); err == nil && st.Mode().IsRegular() {
 					return true
 				}
 			}
@@ -259,5 +259,5 @@ func InstallRoot() string {
 	if err != nil {
 		return ""
 	}
-	return pypath.PathParent(r)
+	return filepath.Dir(filepath.Clean(r))
 }

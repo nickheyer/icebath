@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -36,7 +36,7 @@ func declaredStickyKey(t *testing.T, ctx context.Context, sessionID string) stri
 	if p == nil {
 		t.Fatal("openrouter profile missing")
 	}
-	return stringOf(p.BuildExtraBody(sessionID, map[string]any{hookCtxKey: ctx}).Vals["session_id"])
+	return stringOf(p.BuildExtraBody(sessionID, map[string]any{hookCtxKey: ctx}).Value("session_id"))
 }
 
 // Grok conversation header the OpenRouter profile pins for the session under the context
@@ -198,7 +198,7 @@ func (c countingScopeStore) DeclaredScopeIdentity(sessionID string) (bool, strin
 	return c.CacheScopeSessionStore.DeclaredScopeIdentity(sessionID)
 }
 
-func (c countingScopeStore) GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (c countingScopeStore) GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	*c.reads = append(*c.reads, sessionID)
 	return c.CacheScopeSessionStore.GetSession(ctx, sessionID)
 }
@@ -222,9 +222,9 @@ func (d legacyScopeDB) IsExplicitForkChild(sid string) (bool, error) {
 	return false, nil
 }
 
-func (d legacyScopeDB) GetSession(_ context.Context, sid string) (*pyjson.Object, error) {
+func (d legacyScopeDB) GetSession(_ context.Context, sid string) (*jsonutil.Object, error) {
 	*d.calls = append(*d.calls, "row:"+sid)
-	return pyjson.ObjectOf("source", "telegram"), nil
+	return jsonutil.ObjectOf("source", "telegram"), nil
 }
 
 func (legacyScopeDB) LatestConversationBoundary(string, string) (int64, bool, error) {

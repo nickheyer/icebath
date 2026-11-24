@@ -5,15 +5,15 @@ import (
 	"math"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One projected prompt with the approval route or clarify entry its native waiter blocks on
 type pendingPrompt struct {
 	route  any
-	prompt *pyjson.Object
+	prompt *jsonutil.Object
 }
 
 // Generation bound projection and control of the blocking approval and clarify prompts of one session
@@ -39,13 +39,13 @@ func (l *LiveSession) pendingControls() *PendingControls {
 func redactApprovalCommand(ctx context.Context, text any) string {
 	command := ""
 	if text != nil {
-		command = pyrepr.Str(text)
+		command = anyutil.String(text)
 	}
 	return tools.RedactApprovalDisplay(urlSafetyEnv(ctx), command, true)
 }
 
 // Records a prompt in registration order
-func (c *PendingControls) hold(promptID string, route any, prompt *pyjson.Object) {
+func (c *PendingControls) hold(promptID string, route any, prompt *jsonutil.Object) {
 	if _, held := c.pending[promptID]; !held {
 		c.order = append(c.order, promptID)
 	}
@@ -80,7 +80,7 @@ func (c *PendingControls) register(ctx context.Context, sessionID, route string,
 	if !ok {
 		return &pyKeyError{"request_id"}
 	}
-	promptID := pyrepr.Str(requestID)
+	promptID := anyutil.String(requestID)
 	choices := []any{"once", "deny"}
 	if approvalOption(data, "allow_session", true) && !approvalOption(data, "smart_denied", false) {
 		choices = append(choices, "session")
@@ -96,10 +96,10 @@ func (c *PendingControls) register(ctx context.Context, sessionID, route string,
 	if !hasDescription {
 		description = ""
 	}
-	prompt := pyjson.ObjectOf("kind", "approval", "prompt_id", promptID, "execution_generation", generation,
+	prompt := jsonutil.ObjectOf("kind", "approval", "prompt_id", promptID, "execution_generation", generation,
 		"command", redactApprovalCommand(ctx, command), "description", redactApprovalCommand(ctx, description), "choices", choices)
 	if edit, ok := data["edit"]; ok {
-		prompt.Set("edit", pyjson.Clone(edit))
+		prompt.Set("edit", jsonutil.Clone(edit))
 		prompt.Set("choices", []any{"once", "deny"})
 	}
 	if link, ok := data["open_url"].(string); ok && link != "" {
@@ -125,7 +125,7 @@ func (c *PendingControls) registerClarify(ctx context.Context, sessionID string,
 	for _, choice := range entry.Choices {
 		choices = append(choices, redactApprovalCommand(ctx, choice))
 	}
-	prompt := pyjson.ObjectOf("kind", "clarify", "prompt_id", entry.ClarifyID, "execution_generation", generation,
+	prompt := jsonutil.ObjectOf("kind", "clarify", "prompt_id", entry.ClarifyID, "execution_generation", generation,
 		"question", redactApprovalCommand(ctx, entry.Question), "choices", choices, "multi_select", entry.MultiSelect)
 	if timeoutS != nil {
 		prompt.Set("timeout_s", wholeSeconds(*timeoutS))
@@ -163,12 +163,12 @@ func (c *PendingControls) snapshot(sessionID string, generation *int64) []map[st
 		if generation == nil || stamped != *generation || !c.active(promptID, held) {
 			kind, _ := held.prompt.Get("kind")
 			c.drop(promptID)
-			c.events.Publish(sessionID, pyjson.ObjectOf("prompt_id", promptID, "execution_generation", stamped), pyrepr.Str(kind)+".settled", nil)
+			c.events.Publish(sessionID, jsonutil.ObjectOf("prompt_id", promptID, "execution_generation", stamped), anyutil.String(kind)+".settled", nil)
 		}
 	}
 	out := make([]map[string]any, 0, len(c.order))
 	for _, promptID := range c.order {
-		out = append(out, pyjson.Plain(pyjson.Clone(c.pending[promptID].prompt)).(map[string]any))
+		out = append(out, jsonutil.Plain(jsonutil.Clone(c.pending[promptID].prompt)).(map[string]any))
 	}
 	return out
 }
@@ -184,13 +184,13 @@ func responseField(response any, field string) (string, bool) {
 }
 
 // Answers a prompt of the generation, already resolved when its waiter stopped blocking first
-func (c *PendingControls) respond(sessionID string, generation int64, promptID string, response any, kind string) (*pyjson.Object, error) {
+func (c *PendingControls) respond(sessionID string, generation int64, promptID string, response any, kind string) (*jsonutil.Object, error) {
 	c.events.Lock.Lock()
 	defer c.events.Lock.Unlock()
 	c.snapshot(sessionID, &generation)
 	held, ok := c.pending[promptID]
 	if !ok {
-		return pyjson.ObjectOf("status", "already_resolved", "prompt_id", promptID), nil
+		return jsonutil.ObjectOf("status", "already_resolved", "prompt_id", promptID), nil
 	}
 	if promptKind, _ := held.prompt.Get("kind"); promptKind != kind {
 		return nil, runtimeRefusal("invalid_params")
@@ -205,11 +205,11 @@ func (c *PendingControls) respond(sessionID string, generation int64, promptID s
 		}
 		return false
 	}
-	status := func(resolved bool) *pyjson.Object {
+	status := func(resolved bool) *jsonutil.Object {
 		if resolved {
-			return pyjson.ObjectOf("status", "resolved", "prompt_id", promptID)
+			return jsonutil.ObjectOf("status", "resolved", "prompt_id", promptID)
 		}
-		return pyjson.ObjectOf("status", "already_resolved", "prompt_id", promptID)
+		return jsonutil.ObjectOf("status", "already_resolved", "prompt_id", promptID)
 	}
 	if responder, remote := c.RemoteResponders[promptID]; remote {
 		field := "choice"
@@ -224,7 +224,7 @@ func (c *PendingControls) respond(sessionID string, generation int64, promptID s
 			return nil, err
 		}
 		c.drop(promptID)
-		c.events.Publish(sessionID, pyjson.ObjectOf("prompt_id", promptID, "execution_generation", generation), kind+".settled", nil)
+		c.events.Publish(sessionID, jsonutil.ObjectOf("prompt_id", promptID, "execution_generation", generation), kind+".settled", nil)
 		return status(true), nil
 	}
 	if kind == "clarify" {
@@ -262,6 +262,6 @@ func pendingControlsRegisterClarify(ctx context.Context, live *LiveSession, sess
 }
 
 // Answers a prompt through a live session's controls
-func pendingControlsRespond(live *LiveSession, sessionID string, generation int64, promptID string, response any, kind string) (*pyjson.Object, error) {
+func pendingControlsRespond(live *LiveSession, sessionID string, generation int64, promptID string, response any, kind string) (*jsonutil.Object, error) {
 	return live.pendingControls().respond(sessionID, generation, promptID, response, kind)
 }

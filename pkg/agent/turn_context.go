@@ -11,15 +11,15 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Index of this turn's user row after compaction, the last exact match else the last user originated row
@@ -634,7 +634,7 @@ func withholdBlockedPrompt(ctx context.Context, a *AIAgent, turnUserMsg *state.M
 	for k, v := range turnUserMsg.DisplayMetadata {
 		metadata[k] = v
 	}
-	metadata[state.WithheldPrompt] = pyrepr.Str(pyOr(durableContent(typed), ""))
+	metadata[state.WithheldPrompt] = anyutil.String(pyOr(durableContent(typed), ""))
 	a.persistUserMessageOverride = state.PreLLMBlockWithheldText
 	defer persistLock(a)()
 	turnUserMsg.Content = withheld
@@ -684,7 +684,7 @@ func collectPreLLMCallContext(ctx context.Context, a *AIAgent, effectiveTaskID, 
 			continue
 		}
 		if d, ok := r.(map[string]any); ok && pyTruthy(d["context"]) {
-			piece = pyrepr.Str(d["context"])
+			piece = anyutil.String(d["context"])
 		} else if s, ok := r.(string); ok && strings.TrimSpace(s) != "" {
 			piece = s
 		} else {
@@ -729,7 +729,7 @@ func bindInterruptScope(ctx context.Context, a *AIAgent) context.Context {
 		ctx = tools.WithWorker(ctx, id)
 	}
 	a.executionThreadID = int64(id)
-	a.executionGoroutineID.Store(pythread.GoroutineID())
+	a.executionGoroutineID.Store(syncutil.GoroutineID())
 	tools.SetInterrupt(id, false, "")
 	if a.interruptRequested.Load() {
 		tools.SetInterrupt(id, true, a.toolInterruptReason)
@@ -1162,12 +1162,12 @@ func toolDefsOf(list []any) []map[string]any {
 }
 
 // Plain dict of the parsed turn author, empty when there is none
-func turnAuthorMap(author *pyjson.Object) map[string]any {
+func turnAuthorMap(author *jsonutil.Object) map[string]any {
 	if author == nil {
 		return map[string]any{}
 	}
-	out := make(map[string]any, len(author.Vals))
-	for k, v := range author.Vals {
+	out := make(map[string]any, author.Len())
+	for k, v := range author.All() {
 		out[k] = v
 	}
 	return out

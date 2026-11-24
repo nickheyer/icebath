@@ -21,9 +21,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Default per adapter bound of concurrently dispatched updates
@@ -80,7 +77,7 @@ type claimKey struct{ state *UpdateAdmission }
 type UpdateAdmission struct {
 	ReceiptDir             string
 	mu                     sync.Mutex
-	seen                   *pydict.Dict[string, float64]
+	seen                   *orderedutil.Map[string, float64]
 	inflight               map[string]*Claim
 	receiptsLoaded         map[int64]struct{}
 	receiptsDirty          []string
@@ -92,7 +89,7 @@ type UpdateAdmission struct {
 func NewUpdateAdmission(receiptDir string) *UpdateAdmission {
 	return &UpdateAdmission{
 		ReceiptDir:     receiptDir,
-		seen:           pydict.New[string, float64](),
+		seen:           orderedutil.NewMap[string, float64](),
 		inflight:       map[string]*Claim{},
 		receiptsLoaded: map[int64]struct{}{},
 	}
@@ -116,10 +113,10 @@ func (s *UpdateAdmission) UpdatesDispatchedTotal() int {
 }
 
 // Completed update keys with their receipt timestamps in insertion order
-func (s *UpdateAdmission) SeenUpdateIDs() *pydict.Dict[string, float64] {
+func (s *UpdateAdmission) SeenUpdateIDs() *orderedutil.Map[string, float64] {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := pydict.New[string, float64]()
+	out := orderedutil.NewMap[string, float64]()
 	for k, v := range s.seen.All() {
 		out.Set(k, v)
 	}
@@ -201,19 +198,19 @@ func (s *UpdateAdmission) loadReceipts(botID int64) error {
 		if !utf8.Valid(raw) {
 			err = errors.New("UnicodeDecodeError: 'utf-8' codec can't decode the receipt bytes")
 		} else {
-			payload, err = pyjson.Loads(string(raw))
+			payload, err = jsonutil.Decode(string(raw))
 		}
 	}
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("[Telegram] Ignoring unreadable update receipts at %s", path), "error", err)
 		return nil
 	}
-	obj, ok := payload.(*pyjson.Object)
+	obj, ok := payload.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
 	idsVal, _ := obj.Get("update_ids")
-	ids, ok := idsVal.(*pyjson.Object)
+	ids, ok := idsVal.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -223,7 +220,7 @@ func (s *UpdateAdmission) loadReceipts(botID int64) error {
 	}
 	cutoff := nowSeconds() - ReceiptTTLSeconds
 	var fresh []stamped
-	for _, uid := range ids.Keys {
+	for _, uid := range ids.Keys() {
 		v, _ := ids.Get(uid)
 		ts, isNumber, overflow := receiptStamp(v)
 		if !isNumber || !(ts > cutoff) || !isDigitString(strings.TrimLeft(uid, "-")) {
@@ -286,7 +283,7 @@ func (s *UpdateAdmission) flushReceipts(ctx context.Context) {
 		bot := s.receiptsDirty[len(s.receiptsDirty)-1]
 		s.receiptsDirty = s.receiptsDirty[:len(s.receiptsDirty)-1]
 		prefix, cutoff := bot+":", nowSeconds()-ReceiptTTLSeconds
-		ids := pyjson.NewObject()
+		ids := jsonutil.NewObject()
 		for key, ts := range s.seen.All() {
 			if strings.HasPrefix(key, prefix) && ts > cutoff {
 				ids.Set(key[len(prefix):], ts)
@@ -294,7 +291,7 @@ func (s *UpdateAdmission) flushReceipts(ctx context.Context) {
 		}
 		s.mu.Unlock()
 		path := filepath.Join(s.ReceiptDir, "telegram_update_receipts_"+bot+".json")
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("update_ids", ids)
 		_, err := home.Mkdir(ctx, filepath.Dir(path))
 		if err == nil {
@@ -403,7 +400,7 @@ func BuildUpdateProcessor(extra map[string]any, name string) *PerChatUpdateProce
 	}
 	limit := gateway.CoercePort(raw, 0)
 	if limit < 1 {
-		pkgLog().Warn(fmt.Sprintf("[%s] Invalid max_concurrent_updates=%s; using %d", name, pyrepr.Repr(raw), DefaultMaxConcurrentUpdates))
+		pkgLog().Warn(fmt.Sprintf("[%s] Invalid max_concurrent_updates=%s; using %d", name, anyutil.Quote(raw), DefaultMaxConcurrentUpdates))
 		limit = DefaultMaxConcurrentUpdates
 	}
 	p, _ := NewPerChatUpdateProcessor(limit)

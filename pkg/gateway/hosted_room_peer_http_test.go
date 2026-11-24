@@ -15,8 +15,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Peer Runs endpoint that admits one run per dispatch and records keys, stops and approvals
@@ -33,7 +33,7 @@ func hphPeerServer(t *testing.T) (*hphFakePeer, string) {
 	reply := func(w http.ResponseWriter, value any, status int) {
 		body, _ := json.Marshal(value)
 		w.Header().Set("Content-Type", "application/json")
-		w.Header().Set("Content-Length", pyrepr.Str(len(body)))
+		w.Header().Set("Content-Length", anyutil.String(len(body)))
 		w.WriteHeader(status)
 		_, _ = w.Write(body)
 	}
@@ -57,7 +57,7 @@ func hphPeerServer(t *testing.T) (*hphFakePeer, string) {
 		switch r.URL.Path {
 		case "/v1/runs":
 			dispatch, _ := body["hosted_room_dispatch"].(map[string]any)
-			digest := sha256.Sum256([]byte(pyrepr.Str(dispatch["room_id"]) + "\x00" + pyrepr.Str(dispatch["target_profile"])))
+			digest := sha256.Sum256([]byte(anyutil.String(dispatch["room_id"]) + "\x00" + anyutil.String(dispatch["target_profile"])))
 			peer.idempotency = append(peer.idempotency, r.Header.Get("Idempotency-Key"))
 			peer.runs["run-1"] = map[string]any{"run_id": "run-1", "session_id": "roomlink_" + hex.EncodeToString(digest[:])[:32], "status": "running"}
 			reply(w, map[string]any{"run_id": "run-1", "status": "started", "replayed": false}, 202)
@@ -75,10 +75,10 @@ func hphPeerServer(t *testing.T) (*hphFakePeer, string) {
 	return peer, server.URL
 }
 
-func hphDispatch(overrides ...any) *pyjson.Object {
+func hphDispatch(overrides ...any) *jsonutil.Object {
 	prompt := "Review this room message."
 	digest := sha256.Sum256([]byte(prompt))
-	dispatch := pyjson.ObjectOf("protocol_version", 2, "room_id", "room-1", "home_install_id", "install-home",
+	dispatch := jsonutil.ObjectOf("protocol_version", 2, "room_id", "room-1", "home_install_id", "install-home",
 		"authority_gateway_id", "gateway-home", "authority_epoch", 1, "member_id", "member-reviewer",
 		"target_install_id", "install-peer", "target_profile", "reviewer", "task_id", "task-1", "execution_generation", 1,
 		"source_event_seq", 1, "cancellation_scope_id", "cancel-1", "prompt", prompt, "prompt_digest", hex.EncodeToString(digest[:]),
@@ -131,13 +131,13 @@ func TestScopedPeerRunsClientUsesLogicalSessionAndDurableRun(t *testing.T) {
 	now := 0.0
 	client := hphClient(t, url, "", "", func() float64 { return now })
 	accepted, err := client.Dispatch(ctx, hphDispatch(), "signed.room.grant")
-	if err != nil || accepted["status"] != "accepted" || !strings.HasPrefix(pyrepr.Str(accepted["session_id"]), "roomlink_") {
+	if err != nil || accepted["status"] != "accepted" || !strings.HasPrefix(anyutil.String(accepted["session_id"]), "roomlink_") {
 		t.Fatalf("dispatch = %v, %v", accepted, err)
 	}
 	if len(peer.idempotency) != 1 || peer.idempotency[0] != "room:task-1:1" {
 		t.Fatalf("idempotency = %v", peer.idempotency)
 	}
-	sessionID := pyrepr.Str(accepted["session_id"])
+	sessionID := anyutil.String(accepted["session_id"])
 	status, err := client.Status(ctx, "room-1", "reviewer", sessionID, "signed.room.grant")
 	if err != nil || status["active"] != true {
 		t.Fatalf("status = %v, %v", status, err)
@@ -156,7 +156,7 @@ func TestScopedPeerRunsClientUsesLogicalSessionAndDurableRun(t *testing.T) {
 		t.Fatalf("history = %v", history)
 	}
 	for key, value := range want {
-		if !pyrepr.Equal(history[0][key], value) {
+		if !anyutil.Equal(history[0][key], value) {
 			t.Fatalf("history %s = %v", key, history[0][key])
 		}
 	}
@@ -199,8 +199,8 @@ func TestRemoteRunReceiptSurvivesHomeRestart(t *testing.T) {
 	if err := restarted.BindObservation("task-1", 1); err != nil {
 		t.Fatal(err)
 	}
-	status, err := restarted.Status(ctx, "room-1", "reviewer", pyrepr.Str(accepted["session_id"]), "signed.room.grant")
-	if err != nil || !pyrepr.Equal(status["run_id"], accepted["run_id"]) {
+	status, err := restarted.Status(ctx, "room-1", "reviewer", anyutil.String(accepted["session_id"]), "signed.room.grant")
+	if err != nil || !anyutil.Equal(status["run_id"], accepted["run_id"]) {
 		t.Fatalf("status after restart = %v, %v", status, err)
 	}
 	stopped, err := restarted.Stop(ctx, dispatch, "signed.room.grant")
@@ -217,7 +217,7 @@ func TestPeerApprovalSendsTheExactRequestId(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := client.ApproveReceipt("task-1", 1, "approval-exact-1", "once", "signed.room.grant")
-	if err != nil || !pyrepr.Equal(result["resolved"], 1) {
+	if err != nil || !anyutil.Equal(result["resolved"], 1) {
 		t.Fatalf("approve = %v, %v", result, err)
 	}
 	if len(peer.approvals) != 1 || len(peer.approvals[0]) != 2 || peer.approvals[0]["choice"] != "once" || peer.approvals[0]["request_id"] != "approval-exact-1" {
@@ -422,7 +422,7 @@ func TestInvitationSendsSeparateDispatchAndStatusHorizons(t *testing.T) {
 	if err := json.Unmarshal([]byte((*bodies)[0][strings.Index((*bodies)[0], "\n")+1:]), &body); err != nil {
 		t.Fatal(err)
 	}
-	if !pyrepr.Equal(body["ttl_seconds"], 600) || !pyrepr.Equal(body["status_ttl_seconds"], 3600) {
+	if !anyutil.Equal(body["ttl_seconds"], 600) || !anyutil.Equal(body["status_ttl_seconds"], 3600) {
 		t.Fatalf("body = %v", body)
 	}
 }

@@ -12,9 +12,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -167,9 +167,9 @@ func (s *ResponseStore) Get(ctx context.Context, responseID string) (any, error)
 	if _, err := s.conn.ExecContext(ctx, "UPDATE responses SET accessed_at = ? WHERE response_id = ?", apiNow(), responseID); err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(data)
+	decoded, err := jsonutil.Decode(data)
 	if err != nil {
-		var decodeErr *pyjson.DecodeError
+		var decodeErr *jsonutil.SyntaxError
 		if !errors.As(err, &decodeErr) {
 			return nil, err
 		}
@@ -183,7 +183,7 @@ func (s *ResponseStore) Get(ctx context.Context, responseID string) (any, error)
 // Stores a response, an idem record never overwritten, evicting past capacity
 func (s *ResponseStore) Put(ctx context.Context, responseID string, data any) error {
 	defer s.lock(ctx)()
-	encoded, err := pyjson.Dumps(data, pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	encoded, err := jsonutil.Encode(data, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
 		return err
 	}
@@ -392,7 +392,7 @@ func (s *ResponseStore) evict(ctx context.Context) error {
 // Reserves one immutable request digest, false when the key is bound to another fingerprint
 func (s *ResponseStore) BindRequestKey(ctx context.Context, key, fingerprint string, model any) (bool, error) {
 	defer s.lock(ctx)()
-	modelJSON, err := pyjson.Dumps(model)
+	modelJSON, err := jsonutil.Encode(model)
 	if err != nil {
 		return false, err
 	}
@@ -410,7 +410,7 @@ func (s *ResponseStore) BindRequestKey(ctx context.Context, key, fingerprint str
 // Accepted wire model label of a request key, upgrading an older binding to the fallback
 func (s *ResponseStore) RequestModel(ctx context.Context, key string, fallback any) (any, error) {
 	defer s.lock(ctx)()
-	encoded, err := pyjson.Dumps(fallback)
+	encoded, err := jsonutil.Encode(fallback)
 	if err != nil {
 		return nil, err
 	}
@@ -433,7 +433,7 @@ func (s *ResponseStore) RequestModel(ctx context.Context, key string, fallback a
 	if !modelJSON.Valid {
 		return nil, &PyError{Kind: "TypeError", Msg: "the stored response has no request model"}
 	}
-	return pyjson.Loads(modelJSON.String)
+	return jsonutil.Decode(modelJSON.String)
 }
 
 // Output index allocated to an item of a request, shared by retries and parallel observers
@@ -458,7 +458,7 @@ func (s *ResponseStore) outputIndexLocked(ctx context.Context, key, itemID strin
 }
 
 // Items sorted by their allocated output index
-func (s *ResponseStore) OrderOutput(ctx context.Context, key string, items []*pyjson.Object) ([]*pyjson.Object, error) {
+func (s *ResponseStore) OrderOutput(ctx context.Context, key string, items []*jsonutil.Object) ([]*jsonutil.Object, error) {
 	defer s.lock(ctx)()
 	indexes := make([]int64, len(items))
 	for i, item := range items {
@@ -466,7 +466,7 @@ func (s *ResponseStore) OrderOutput(ctx context.Context, key string, items []*py
 		if !found {
 			return nil, &pyKeyError{"id"}
 		}
-		index, err := s.outputIndexLocked(ctx, key, pyrepr.Str(id))
+		index, err := s.outputIndexLocked(ctx, key, anyutil.String(id))
 		if err != nil {
 			return nil, err
 		}
@@ -477,7 +477,7 @@ func (s *ResponseStore) OrderOutput(ctx context.Context, key string, items []*py
 		order[i] = i
 	}
 	sort.SliceStable(order, func(a, b int) bool { return indexes[order[a]] < indexes[order[b]] })
-	out := make([]*pyjson.Object, len(items))
+	out := make([]*jsonutil.Object, len(items))
 	for i, at := range order {
 		out[i] = items[at]
 	}

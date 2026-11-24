@@ -14,9 +14,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Venv prefix holding pyvenv.cfg above or beside the resolved running binary, ok false outside any venv
@@ -25,7 +25,7 @@ var owningVenvPrefix = func() (string, bool, error) {
 	if err != nil {
 		return "", false, err
 	}
-	resolved, err := pypath.Resolve(exe)
+	resolved, err := pathutil.Resolve(exe)
 	if err != nil {
 		return "", false, err
 	}
@@ -48,7 +48,7 @@ func owningInstallBinary() string {
 
 // pathlib equality of two paths, the str form on POSIX and its lowercase on Windows
 func owningSamePath(a, b string) bool {
-	a, b = pypath.PathStr(a), pypath.PathStr(b)
+	a, b = filepath.Clean(a), filepath.Clean(b)
 	if runtime.GOOS == "windows" {
 		return strings.ToLower(a) == strings.ToLower(b)
 	}
@@ -61,19 +61,19 @@ func owningInstallRoot(projectRoot string) (string, error) {
 	if err != nil || !inVenv {
 		return "", err
 	}
-	venv, err := pypath.Resolve(prefix)
+	venv, err := pathutil.Resolve(prefix)
 	if err != nil {
 		return "", err
 	}
-	root, err := pypath.Resolve(projectRoot)
+	root, err := pathutil.Resolve(projectRoot)
 	if err != nil {
 		return "", err
 	}
-	if name := pypath.PathName(venv); name != "venv" && name != ".venv" {
+	if name := pathutil.Name(venv); name != "venv" && name != ".venv" {
 		return "", nil
 	}
-	owner := pypath.PathParent(venv)
-	if !isRegular(pypath.PathJoin(owner, owningInstallBinary())) {
+	owner := filepath.Dir(filepath.Clean(venv))
+	if !isRegular(pathutil.Join(owner, owningInstallBinary())) {
 		if owner, err = pmEnvironmentOwner(venv); err != nil {
 			return "", err
 		}
@@ -85,7 +85,7 @@ func owningInstallRoot(projectRoot string) (string, error) {
 		if entry == "" {
 			continue
 		}
-		chosen, err := pypath.Resolve(entry)
+		chosen, err := pathutil.Resolve(entry)
 		if err != nil {
 			return "", err
 		}
@@ -98,12 +98,12 @@ func owningInstallRoot(projectRoot string) (string, error) {
 
 // Checkout a PM generation venv belongs to, proven by the install key hashing its recorded path, else empty
 func pmEnvironmentOwner(venv string) (string, error) {
-	generations := pypath.PathParent(pypath.PathParent(venv))
-	state := pypath.PathParent(generations)
-	if pypath.PathName(generations) != "environments" {
+	generations := filepath.Dir(filepath.Clean(filepath.Dir(filepath.Clean(venv))))
+	state := filepath.Dir(filepath.Clean(generations))
+	if pathutil.Name(generations) != "environments" {
 		return "", nil
 	}
-	data, err := os.ReadFile(pypath.PathJoin(state, "inputs", ".project-root"))
+	data, err := os.ReadFile(pathutil.Join(state, "inputs", ".project-root"))
 	if err != nil {
 		return "", nil
 	}
@@ -111,8 +111,8 @@ func pmEnvironmentOwner(venv string) (string, error) {
 	if !utf8.Valid(data) {
 		return "", errors.New("the recorded project root is not valid UTF-8")
 	}
-	owner := pypath.PathStr(strings.TrimSpace(string(data)))
-	if pm.InstallKey(owner) != pypath.PathName(state) || !isRegular(pypath.PathJoin(owner, owningInstallBinary())) {
+	owner := filepath.Clean(strings.TrimSpace(string(data)))
+	if pm.InstallKey(owner) != pathutil.Name(state) || !isRegular(pathutil.Join(owner, owningInstallBinary())) {
 		return "", nil
 	}
 	return owner, nil
@@ -128,15 +128,15 @@ func retargetToOwningInstall(ctx context.Context, projectRoot string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(os.Stdout, "⚠ %s is running the checkout at %s, not its own code.\n", pypath.PathJoin(owner, pypath.PathName(prefix)), projectRoot)
+	fmt.Fprintf(os.Stdout, "⚠ %s is running the checkout at %s, not its own code.\n", pathutil.Join(owner, pathutil.Name(prefix)), projectRoot)
 	fmt.Fprintf(os.Stdout, "→ Updating %s with its own updater; this also points its venv back at it.\n", owner)
-	cmd := exec.CommandContext(ctx, pypath.PathJoin(owner, owningInstallBinary()), os.Args[1:]...)
+	cmd := exec.CommandContext(ctx, pathutil.Join(owner, owningInstallBinary()), os.Args[1:]...)
 	cmd.Dir = owner
 	cmd.Env = append(os.Environ(), "PYTHONPATH="+owner)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
 	var exit *exec.ExitError
 	if err := cmd.Run(); errors.As(err, &exit) {
-		return updateExit(pysubprocess.Returncode(exit))
+		return updateExit(executil.ExitCode(exit.ProcessState))
 	} else if err != nil {
 		return err
 	}

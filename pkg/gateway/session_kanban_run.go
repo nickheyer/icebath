@@ -16,17 +16,17 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Whether the request names exactly the claim fields, the db path optional
-func kanbanClaimKeys(params *pyjson.Object) bool {
-	keys := slices.Clone(params.Keys)
+func kanbanClaimKeys(params *jsonutil.Object) bool {
+	keys := slices.Clone(params.Keys())
 	sort.Strings(keys)
 	return slices.Equal(keys, []string{"board", "claim_lock", "run_id", "task_id"}) ||
 		slices.Equal(keys, []string{"board", "claim_lock", "db", "run_id", "task_id"})
@@ -34,7 +34,7 @@ func kanbanClaimKeys(params *pyjson.Object) bool {
 
 // Durable request identity of one dispatcher attempt
 func kanbanRequestID(board, taskID, runID any) (string, error) {
-	text, err := pyjson.Dumps([]any{board, taskID, runID}, pyjson.Separators(",", ":"))
+	text, err := jsonutil.Encode([]any{board, taskID, runID})
 	if err != nil {
 		return "", err
 	}
@@ -64,9 +64,9 @@ type kanbanClaimFacts struct {
 }
 
 // Checks the dispatcher claim against the board read only and collects what the worker policy needs
-func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *pyjson.Object, runID int64) (*kanbanClaimFacts, error) {
+func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *jsonutil.Object, runID int64) (*kanbanClaimFacts, error) {
 	claim := &kanbanClaimFacts{}
-	board, err := kanban.RequireSlug(params.GetOr("board", "").(string))
+	board, err := kanban.RequireSlug(params.ValueOr("board", "").(string))
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +76,7 @@ func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *pyjson.Ob
 		if err != nil {
 			return nil, err
 		}
-		if claim.path, err = pypath.Realpath(absolute, pypath.StrictAll); err != nil {
+		if claim.path, err = pathutil.ResolveExisting(absolute); err != nil {
 			return nil, err
 		}
 	} else {
@@ -84,7 +84,7 @@ func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *pyjson.Ob
 		if err != nil {
 			return nil, err
 		}
-		if claim.path, err = pypath.Resolve(dbPath); err != nil {
+		if claim.path, err = pathutil.Resolve(dbPath); err != nil {
 			return nil, err
 		}
 	}
@@ -93,8 +93,8 @@ func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *pyjson.Ob
 		return nil, err
 	}
 	defer conn.Close()
-	taskID := params.GetOr("task_id", "").(string)
-	claimLock := params.GetOr("claim_lock", "").(string)
+	taskID := params.ValueOr("task_id", "").(string)
+	claimLock := params.ValueOr("claim_lock", "").(string)
 	task, err := kanban.GetTask(ctx, conn, taskID)
 	if err != nil {
 		return nil, err
@@ -120,11 +120,11 @@ func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *pyjson.Ob
 	if err != nil {
 		return nil, err
 	}
-	assigneeHome, err := pypath.Resolve(env)
+	assigneeHome, err := pathutil.Resolve(env)
 	if err != nil {
 		return nil, err
 	}
-	ownerHome, err := pypath.Resolve(a.ProfileID)
+	ownerHome, err := pathutil.Resolve(a.ProfileID)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +139,7 @@ func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *pyjson.Ob
 	case err != nil:
 		return nil, err
 	default:
-		marker, err := pyjson.LoadsDict(bound)
+		marker, err := jsonutil.DecodeObject(bound)
 		if err != nil {
 			return nil, err
 		}
@@ -151,7 +151,7 @@ func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *pyjson.Ob
 		if err != nil {
 			return nil, err
 		}
-		if !pyrepr.Equal(requestID, expected) {
+		if !anyutil.Equal(requestID, expected) {
 			return nil, runtimeRefusal("stale_kanban_claim")
 		}
 	}
@@ -171,7 +171,7 @@ func readKanbanClaim(ctx context.Context, a *SessionAuthority, params *pyjson.Ob
 }
 
 // Trusted worker policy of a current dispatcher claim, the card's model, provider and reasoning overrides applied
-func buildKanbanPolicy(ctx context.Context, c *AuthorityConnection, params *pyjson.Object, cfg map[string]any) (*LocalSessionPolicy, *RecoveredSecrets, error) {
+func buildKanbanPolicy(ctx context.Context, c *AuthorityConnection, params *jsonutil.Object, cfg map[string]any) (*LocalSessionPolicy, *RecoveredSecrets, error) {
 	a, actor := c.authority, c.actor
 	if !c.nativeOwner || !actor.Capabilities["session:create"] {
 		return nil, nil, runtimeRefusal("permission_denied")
@@ -183,12 +183,12 @@ func buildKanbanPolicy(ctx context.Context, c *AuthorityConnection, params *pyjs
 		return nil, nil, runtimeRefusal("invalid_params")
 	}
 	for _, key := range []string{"board", "task_id", "claim_lock"} {
-		if text, isStr := params.GetOr(key, nil).(string); !isStr || text == "" {
+		if text, isStr := params.ValueOr(key, nil).(string); !isStr || text == "" {
 			return nil, nil, runtimeRefusal("invalid_params")
 		}
 	}
 	var runID int64
-	switch value := params.GetOr("run_id", nil).(type) {
+	switch value := params.ValueOr("run_id", nil).(type) {
 	case int64:
 		runID = value
 	case *big.Int:
@@ -230,7 +230,7 @@ func buildKanbanPolicy(ctx context.Context, c *AuthorityConnection, params *pyjs
 	if err != nil {
 		return nil, nil, err
 	}
-	if root, err = pypath.Resolve(root); err != nil {
+	if root, err = pathutil.Resolve(root); err != nil {
 		return nil, nil, err
 	}
 	var goalParts []string
@@ -243,7 +243,7 @@ func buildKanbanPolicy(ctx context.Context, c *AuthorityConnection, params *pyjs
 	for i, skill := range claim.skills {
 		skills[i] = skill
 	}
-	worker := params.Copy()
+	worker := params.Clone()
 	worker.Set("workspace", cwd)
 	worker.Set("branch", optionalText(task.BranchName))
 	worker.Set("tenant", optionalText(task.Tenant))
@@ -257,7 +257,7 @@ func buildKanbanPolicy(ctx context.Context, c *AuthorityConnection, params *pyjs
 	worker.Set("max_runtime_seconds", optionalInt(task.MaxRuntimeSeconds))
 	worker.Set("accept_hooks", true)
 	worker.Set("db", claim.path)
-	request, err := pyjson.LoadsDict(policy.RequestJSON)
+	request, err := jsonutil.DecodeObject(policy.RequestJSON)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -265,11 +265,11 @@ func buildKanbanPolicy(ctx context.Context, c *AuthorityConnection, params *pyjs
 	request.Set("board", claim.board)
 	request.Set("task_id", task.ID)
 	request.Set("run_id", *task.CurrentRunID)
-	requestJSON, err := pyjson.Dumps(request, pyjson.SortKeys(true))
+	requestJSON, err := jsonutil.Encode(request, jsonutil.SortKeys())
 	if err != nil {
 		return nil, nil, err
 	}
-	kanbanJSON, err := pyjson.Dumps(worker)
+	kanbanJSON, err := jsonutil.Encode(worker)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -302,16 +302,16 @@ func optionalInt(value *int64) any {
 }
 
 // Kanban run verb, the dispatcher's attempt admitted once as a finite card session turn
-func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.Object) (any, error) {
+func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *jsonutil.Object) (any, error) {
 	a, actor := c.authority, c.actor
 	if !c.nativeOwner || !actor.Capabilities["session:create"] {
 		return nil, runtimeRefusal("permission_denied")
 	}
-	ownerDB, err := pypath.Resolve(a.DB.Path())
+	ownerDB, err := pathutil.Resolve(a.DB.Path())
 	if err != nil {
 		return nil, err
 	}
-	requestID, err := kanbanRequestID(params.GetOr("board", nil), params.GetOr("task_id", nil), params.GetOr("run_id", nil))
+	requestID, err := kanbanRequestID(params.ValueOr("board", nil), params.ValueOr("task_id", nil), params.ValueOr("run_id", nil))
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +319,7 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.O
 	if err != nil {
 		return nil, err
 	}
-	var saved *pyjson.Object
+	var saved *jsonutil.Object
 	if row, err := a.DB.GetSession(ctx, sid); err != nil {
 		return nil, err
 	} else if row != nil {
@@ -330,22 +330,22 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.O
 	var policy *LocalSessionPolicy
 	var ref SessionRef
 	if saved != nil && saved.Len() > 0 {
-		if policy, err = restorePolicy(saved.GetOr("policy", nil)); err != nil {
+		if policy, err = restorePolicy(saved.ValueOr("policy", nil)); err != nil {
 			return nil, err
 		}
 		stored := "{}"
 		if policy.KanbanJSON != nil && *policy.KanbanJSON != "" {
 			stored = *policy.KanbanJSON
 		}
-		savedContext, err := pyjson.LoadsDict(stored)
+		savedContext, err := jsonutil.DecodeObject(stored)
 		if err != nil {
 			return nil, err
 		}
 		if !c.nativeOwner || !kanbanClaimKeys(params) {
 			return nil, runtimeRefusal("permission_denied")
 		}
-		for _, key := range params.Keys {
-			if !pyrepr.Equal(params.GetOr(key, nil), savedContext.GetOr(key, nil)) {
+		for _, key := range params.Keys() {
+			if !anyutil.Equal(params.ValueOr(key, nil), savedContext.ValueOr(key, nil)) {
 				return nil, runtimeRefusal("permission_denied")
 			}
 		}
@@ -363,19 +363,19 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.O
 			return nil, err
 		}
 	}
-	claimContext, err := pyjson.LoadsDict(*policy.KanbanJSON)
+	claimContext, err := jsonutil.DecodeObject(*policy.KanbanJSON)
 	if err != nil {
 		return nil, err
 	}
-	taskID, runID, claimLock := params.GetOr("task_id", nil), params.GetOr("run_id", nil), params.GetOr("claim_lock", nil)
+	taskID, runID, claimLock := params.ValueOr("task_id", nil), params.ValueOr("run_id", nil), params.ValueOr("claim_lock", nil)
 	admitClaim := func(ctx context.Context) (any, error) {
-		return nil, kanban.ConnectClosing(ctx, pyrepr.Str(claimContext.GetOr("db", nil)), nil, func(conn state.SQLiteConn) error {
+		return nil, kanban.ConnectClosing(ctx, anyutil.String(claimContext.ValueOr("db", nil)), nil, func(conn state.SQLiteConn) error {
 			return kanban.WriteTxn(ctx, conn, false, func() error {
 				var marker string
 				err := conn.QueryRowContext(ctx, "SELECT payload FROM task_events WHERE task_id=? AND run_id=? AND kind='owner_admitted' ORDER BY id DESC LIMIT 1",
 					taskID, runID).Scan(&marker)
 				if err == nil {
-					payload, err := pyjson.LoadsDict(marker)
+					payload, err := jsonutil.DecodeObject(marker)
 					if err != nil {
 						return err
 					}
@@ -383,7 +383,7 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.O
 					if !ok {
 						return &pyKeyError{"session_id"}
 					}
-					if !pyrepr.Equal(sessionID, ref.SessionID) {
+					if !anyutil.Equal(sessionID, ref.SessionID) {
 						return runtimeRefusal("stale_kanban_claim")
 					}
 					return nil
@@ -391,12 +391,12 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.O
 				if !errors.Is(err, sql.ErrNoRows) {
 					return err
 				}
-				task, err := kanban.GetTask(ctx, conn, pyrepr.Str(taskID))
+				task, err := kanban.GetTask(ctx, conn, anyutil.String(taskID))
 				if err != nil {
 					return err
 				}
-				if task == nil || task.Status != "running" || task.CurrentRunID == nil || !pyrepr.Equal(*task.CurrentRunID, runID) ||
-					task.ClaimLock == nil || !pyrepr.Equal(*task.ClaimLock, claimLock) {
+				if task == nil || task.Status != "running" || task.CurrentRunID == nil || !anyutil.Equal(*task.CurrentRunID, runID) ||
+					task.ClaimLock == nil || !anyutil.Equal(*task.ClaimLock, claimLock) {
 					return runtimeRefusal("stale_kanban_claim")
 				}
 				pid := os.Getpid()
@@ -404,7 +404,7 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.O
 				if err != nil {
 					return err
 				}
-				return kanban.AppendEvent(ctx, conn, task.ID, "owner_admitted", pyjson.ObjectOf("db", ownerDB,
+				return kanban.AppendEvent(ctx, conn, task.ID, "owner_admitted", jsonutil.ObjectOf("db", ownerDB,
 					"session_id", ref.SessionID, "request_id", requestID, "pid", int64(pid), "birth", birth), task.CurrentRunID)
 			})
 		})
@@ -412,36 +412,36 @@ func runKanbanTask(ctx context.Context, c *AuthorityConnection, params *pyjson.O
 	if _, err := trackedWrite(ctx, a, admitClaim, nil, false, nil); err != nil {
 		return nil, err
 	}
-	if _, err := c.resume(ctx, ref, pyjson.NewObject()); err != nil {
+	if _, err := c.resume(ctx, ref, jsonutil.NewObject()); err != nil {
 		return nil, err
 	}
-	var committed *pyjson.Object
+	var committed *jsonutil.Object
 	if saved != nil && saved.Len() > 0 {
 		if committed, err = a.DB.FindSessionAdmission(ctx, actor.Subject, ref.SessionID, requestID); err != nil {
 			return nil, err
 		}
 	}
 	committedHas := func(key string) bool {
-		payload, _ := committed.GetOr("payload", nil).(*pyjson.Object)
+		payload, _ := committed.ValueOr("payload", nil).(*jsonutil.Object)
 		if payload == nil {
 			return false
 		}
 		_, ok := payload.Get(key)
 		return ok
 	}
-	payload := map[string]any{"text": fmt.Sprintf("work kanban task %s", pyrepr.Str(taskID))}
+	payload := map[string]any{"text": fmt.Sprintf("work kanban task %s", anyutil.String(taskID))}
 	if committed == nil || committedHas("finite") {
 		payload["finite"] = true
 	}
 	var card any
 	if committed == nil || committedHas("kanban_card_v1") {
-		card = pyjson.ObjectOf("board", claimContext.GetOr("board", nil), "task_id", taskID, "run_id", runID)
+		card = jsonutil.ObjectOf("board", claimContext.ValueOr("board", nil), "task_id", taskID, "run_id", runID)
 	}
 	receipt, err := a.submit(ctx, actor, Submission{RequestID: requestID, Ref: ref, Payload: payload, Intent: "queue"}, SubmitOptions{KanbanCard: card})
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("session_id", ref.SessionID, "receipt", admissionReceiptDict(receipt)), nil
+	return jsonutil.ObjectOf("session_id", ref.SessionID, "receipt", admissionReceiptDict(receipt)), nil
 }
 
 // Binds the kanban card operations of the session host

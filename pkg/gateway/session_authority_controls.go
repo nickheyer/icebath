@@ -5,10 +5,10 @@ import (
 	"reflect"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Stop a restart or shutdown latched before the generation's managed worker existed, with its cause
@@ -287,7 +287,7 @@ func (a *SessionAuthority) ResolveUnknownAsOwner(ctx context.Context, ref Sessio
 	}
 	result, err := trackedWrite(ctx, a, func(taskCtx context.Context) (any, error) {
 		return a.DB.ResolveUnknownSessionInput(taskCtx, a.Epoch, admissionID, generation,
-			func(writeCtx context.Context, conn state.SQLiteConn, lost *pyjson.Object) error {
+			func(writeCtx context.Context, conn state.SQLiteConn, lost *jsonutil.Object) error {
 				closing := notice
 				if owner := rowInt(lost, "owner_epoch"); prepared != nil && owner != nil && *owner == a.Epoch {
 					closing = nil
@@ -296,7 +296,7 @@ func (a *SessionAuthority) ResolveUnknownAsOwner(ctx context.Context, ref Sessio
 				return err
 			}, prepared)
 	}, func(taskCtx context.Context, written any) (any, error) {
-		return a.resolvedUnknown(taskCtx, ref, admissionID, prepared, captured, written.(*pyjson.Object))
+		return a.resolvedUnknown(taskCtx, ref, admissionID, prepared, captured, written.(*jsonutil.Object))
 	}, false, nil)
 	if err != nil {
 		return AdmissionReceipt{}, err
@@ -305,9 +305,9 @@ func (a *SessionAuthority) ResolveUnknownAsOwner(ctx context.Context, ref Sessio
 }
 
 // Final response a captured execution result carries, empty when it carries none
-func capturedResponse(captured *pyjson.Object) string {
+func capturedResponse(captured *jsonutil.Object) string {
 	result, _ := captured.Get("result")
-	obj, _ := result.(*pyjson.Object)
+	obj, _ := result.(*jsonutil.Object)
 	if obj == nil {
 		return ""
 	}
@@ -320,7 +320,7 @@ func capturedResponse(captured *pyjson.Object) string {
 }
 
 // Publishes and delivers a resolved unknown turn's committed answer, then lets its successor run
-func (a *SessionAuthority) resolvedUnknown(ctx context.Context, ref SessionRef, admissionID string, prepared *state.CapturedResult, captured, row *pyjson.Object) (AdmissionReceipt, error) {
+func (a *SessionAuthority) resolvedUnknown(ctx context.Context, ref SessionRef, admissionID string, prepared *state.CapturedResult, captured, row *jsonutil.Object) (AdmissionReceipt, error) {
 	a.mu.Lock()
 	delete(a.PendingResults, admissionID)
 	a.mu.Unlock()
@@ -396,7 +396,7 @@ func (a *SessionAuthority) stopTarget(ref SessionRef, live *LiveSession, generat
 	agent := adopted.agent
 	if !hasAdopted || adopted.generation != generation {
 		stamped, _ := live.EventStream.Execution.Get("execution_generation")
-		stampedGeneration := rowInt(pyjson.ObjectOf("g", stamped), "g")
+		stampedGeneration := rowInt(jsonutil.ObjectOf("g", stamped), "g")
 		returned := stampedGeneration != nil && *stampedGeneration == generation && !(isExecuting && executing == generation)
 		agent = nil
 		if !returned {

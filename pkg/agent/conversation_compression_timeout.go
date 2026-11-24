@@ -10,9 +10,9 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -105,7 +105,7 @@ func compressionAttemptStalled(ctx context.Context, fence *CompressionCommitFenc
 	if fence != nil {
 		return fence.SecondsSinceProgress() >= idle
 	}
-	return pythread.Monotonic()-startedAt >= idle
+	return timeutil.Monotonic()-startedAt >= idle
 }
 
 // Identity of the stalled source context and summary strategy
@@ -290,7 +290,7 @@ func retryCompressionOnFallbackChain(ctx context.Context, o compressionTimeoutRu
 func runPinnedCompressionRetry(ctx context.Context, route map[string]any, o compressionTimeoutRun, precommitDeadline float64) ([]map[string]any, string, bool) {
 	deterministic := route["deterministic"] == true
 	label := pyStr(route["label"])
-	if !deterministic && pythread.Monotonic() >= precommitDeadline {
+	if !deterministic && timeutil.Monotonic() >= precommitDeadline {
 		pkgLog().Info(fmt.Sprintf("Skipping compression stall fallback on %s: the shared pre-commit ceiling is spent", label))
 		return nil, "", false
 	}
@@ -315,7 +315,7 @@ func runPinnedCompressionRetry(ctx context.Context, route map[string]any, o comp
 	if deterministic {
 		ceiling = math.Max(o.TotalCeilingSeconds, idle)
 	} else {
-		ceiling = precommitDeadline - pythread.Monotonic()
+		ceiling = precommitDeadline - timeutil.Monotonic()
 		d := precommitDeadline
 		deadline = &d
 		if ceiling <= 0 {
@@ -415,7 +415,7 @@ func awaitWorkerWithinBudget(future *tools.PoolFuture, fence *CompressionCommitF
 		if !armed || deadline == 0 {
 			deadline = waitStarted + ceiling
 		}
-		remainingCeiling := deadline - pythread.Monotonic()
+		remainingCeiling := deadline - timeutil.Monotonic()
 		if remainingCeiling <= 0 {
 			return false, workerOutcome{}, nil
 		}
@@ -440,7 +440,7 @@ func awaitWorkerWithinBudget(future *tools.PoolFuture, fence *CompressionCommitF
 			pkgLog().Info(fmt.Sprintf("Context compression worker exited with %v — taking the stall path", err))
 			return false, workerOutcome{}, nil
 		}
-		waited := pythread.Monotonic() - waitStarted
+		waited := timeutil.Monotonic() - waitStarted
 		sinceProgress := fence.SecondsSinceProgress()
 		if !fence.DeadlineExceeded() && sinceProgress < idle {
 			pkgLog().Info(fmt.Sprintf("Context compression still streaming after %.0fs (last progress %.1fs ago) — extending wait (ceiling %.0fs)", waited, sinceProgress, ceiling))
@@ -455,7 +455,7 @@ func awaitInFlightCommit(future *tools.PoolFuture, ceiling, waitStarted float64,
 	overrunSurfaced := false
 	overrunReports := 0
 	for {
-		waited := pythread.Monotonic() - waitStarted
+		waited := timeutil.Monotonic() - waitStarted
 		remaining := ceiling - waited
 		if remaining <= 0 {
 			remaining = math.Min(commitOverrunWaitSliceSeconds, math.Max(ceiling, 0.05))
@@ -517,7 +517,7 @@ func runCompressContextWithProgressTimeout(ctx context.Context, o compressionTim
 	if o.RequestExceedsWindow {
 		ceiling = idle
 	}
-	waitStarted := pythread.Monotonic()
+	waitStarted := timeutil.Monotonic()
 	var precommitDeadline float64
 	if o.PrecommitDeadlineMonotonic == nil {
 		precommitDeadline = waitStarted + ceiling
@@ -579,7 +579,7 @@ func runCompressContextWithProgressTimeout(ctx context.Context, o compressionTim
 		}
 	}()
 	recoverFromStall := func() ([]map[string]any, string, error) {
-		waited := pythread.Monotonic() - waitStarted
+		waited := timeutil.Monotonic() - waitStarted
 		sinceProgress := fence.SecondsSinceProgress()
 		if stallFallback {
 			retry := o

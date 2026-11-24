@@ -9,7 +9,7 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 )
 
 // libdave media type, codec and result constants of dave.h
@@ -112,17 +112,17 @@ func loadDave() (*daveAPI, error) {
 	if daveLoaded != nil {
 		return daveLoaded, nil
 	}
-	if !pyctypes.Supported {
+	if !dlutil.Supported {
 		return nil, &daveMissingError{detail: "shared library loading is unavailable on this platform"}
 	}
-	path := pyctypes.FindLibrary("dave")
+	path := dlutil.FindLibrary("dave")
 	if path == "" && runtime.GOOS == "windows" {
-		path = pyctypes.FindLibrary("libdave")
+		path = dlutil.FindLibrary("libdave")
 	}
 	if path == "" {
 		return nil, &daveMissingError{detail: "not found"}
 	}
-	lib, err := pyctypes.LoadLibrary(path, false)
+	lib, err := dlutil.Open(path, false)
 	if err != nil {
 		return nil, &daveMissingError{detail: err.Error()}
 	}
@@ -148,7 +148,7 @@ func loadDave() (*daveAPI, error) {
 		if err != nil {
 			return nil, &daveMissingError{detail: err.Error()}
 		}
-		pyctypes.RegisterFunc(fn, addr)
+		dlutil.RegisterFunc(fn, addr)
 	}
 	daveLoaded = d
 	return d, nil
@@ -227,7 +227,7 @@ func (s *daveSession) reinit(protocolVersion int, selfUserID, channelID int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.selfUserID, s.groupID = strconv.FormatInt(selfUserID, 10), uint64(channelID)
-	self := pyctypes.CString(s.selfUserID)
+	self := dlutil.CString(s.selfUserID)
 	s.api.sessionInit(s.handle, uint16(protocolVersion), s.groupID, unsafe.Pointer(&self[0]))
 	runtime.KeepAlive(self)
 	s.ready = false
@@ -301,10 +301,10 @@ func (s *daveSession) removeRecognizedUser(userID string) {
 
 // Recognised user ids plus the bot itself as NUL terminated strings and their pointer array
 func (s *daveSession) recognizedCStrings() ([][]byte, []uintptr) {
-	ids := [][]byte{pyctypes.CString(s.selfUserID)}
+	ids := [][]byte{dlutil.CString(s.selfUserID)}
 	for id := range s.recognized {
 		if id != s.selfUserID {
-			ids = append(ids, pyctypes.CString(id))
+			ids = append(ids, dlutil.CString(id))
 		}
 	}
 	ptrs := make([]uintptr, len(ids))
@@ -405,7 +405,7 @@ func (s *daveSession) setupUserRatchetLocked(userID string, protocolVersion int)
 		s.api.decryptorPassthrough(d, true)
 		return
 	}
-	uid := pyctypes.CString(userID)
+	uid := dlutil.CString(userID)
 	k := s.api.sessionKeyRatchet(s.handle, unsafe.Pointer(&uid[0]))
 	runtime.KeepAlive(uid)
 	if k == 0 {
@@ -422,7 +422,7 @@ func (s *daveSession) setupSelfRatchetLocked(protocolVersion int) {
 		s.api.encryptorPassthrough(s.encryptor, true)
 		return
 	}
-	self := pyctypes.CString(s.selfUserID)
+	self := dlutil.CString(s.selfUserID)
 	k := s.api.sessionKeyRatchet(s.handle, unsafe.Pointer(&self[0]))
 	runtime.KeepAlive(self)
 	if k == 0 {

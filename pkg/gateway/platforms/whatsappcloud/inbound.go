@@ -8,20 +8,20 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var errPayloadTooLarge = errors.New("payload too large")
@@ -32,7 +32,7 @@ func interactiveInner(raw map[string]any) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return dictOr(pyrepr.Or(inter["button_reply"], inter["list_reply"]))
+	return dictOr(anyutil.Or(inter["button_reply"], inter["list_reply"]))
 }
 
 // Body text of an inbound message by kind, the caption for media kinds, nil for kinds without one
@@ -78,7 +78,7 @@ func (a *WhatsAppCloudAdapter) handleHealth(ctx context.Context, request *gatewa
 	a.mu.Lock()
 	accepted, duplicates, rejected := a.acceptedCount, a.duplicateCount, a.rejectedSignatureCount
 	a.mu.Unlock()
-	return gateway.WebJSONResponse(pyjson.ObjectOf("status", "ok", "platform", string(a.Platform), "phone_number_id", a.phoneNumberID,
+	return gateway.WebJSONResponse(jsonutil.ObjectOf("status", "ok", "platform", string(a.Platform), "phone_number_id", a.phoneNumberID,
 		"webhook_path", a.webhookPath, "verify_token_configured", a.verifyToken != "", "app_secret_configured", a.appSecret != "",
 		"ffmpeg_present", ffmpegPath != "", "accepted", accepted, "duplicates", duplicates, "rejected_signature", rejected), http.StatusOK, nil)
 }
@@ -123,15 +123,15 @@ func (a *WhatsAppCloudAdapter) handleWebhook(ctx context.Context, request *gatew
 		a.mu.Lock()
 		a.rejectedSignatureCount++
 		a.mu.Unlock()
-		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] rejected webhook: invalid X-Hub-Signature-256 (header=%s, body_len=%d)", pyrepr.Repr(signatureHeader), len(raw)))
+		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] rejected webhook: invalid X-Hub-Signature-256 (header=%s, body_len=%d)", strconv.Quote(signatureHeader), len(raw)))
 		return gateway.NewWebResponse(http.StatusUnauthorized, nil), nil
 	}
-	payload, err := pyjson.LoadsBytes(raw)
+	payload, err := jsonutil.Decode(raw)
 	if err != nil {
 		pkgLog().Warn("[whatsapp_cloud] webhook body is not valid JSON")
 		payload = nil
 	}
-	pm, ok := pyjson.Dict(payload)
+	pm, ok := jsonutil.AsMap(payload)
 	if !ok {
 		return gateway.NewWebResponse(http.StatusBadRequest, nil), nil
 	}
@@ -173,24 +173,24 @@ func (a *WhatsAppCloudAdapter) dedupWamid(wamid string) bool {
 // Walks entry changes for message ingress, dispatching each message and logging status receipts
 func (a *WhatsAppCloudAdapter) dispatchPayload(ctx context.Context, payload map[string]any) error {
 	if s, _ := payload["object"].(string); s != "whatsapp_business_account" {
-		pkgLog().Debug("[whatsapp_cloud] ignoring non-WABA payload (object=" + pyrepr.Repr(payload["object"]) + ")")
+		pkgLog().Debug("[whatsapp_cloud] ignoring non-WABA payload (object=" + anyutil.Quote(payload["object"]) + ")")
 		return nil
 	}
-	entries, err := pyIter(payload["entry"])
+	entries, err := iterItems(payload["entry"])
 	if err != nil {
 		return err
 	}
 	for _, rawEntry := range entries {
-		entry, isDict := pyjson.Dict(rawEntry)
+		entry, isDict := jsonutil.AsMap(rawEntry)
 		if !isDict {
 			continue
 		}
-		changes, err := pyIter(entry["changes"])
+		changes, err := iterItems(entry["changes"])
 		if err != nil {
 			return err
 		}
 		for _, rawChange := range changes {
-			change, isDict := pyjson.Dict(rawChange)
+			change, isDict := jsonutil.AsMap(rawChange)
 			if !isDict {
 				continue
 			}
@@ -198,10 +198,10 @@ func (a *WhatsAppCloudAdapter) dispatchPayload(ctx context.Context, payload map[
 				continue
 			}
 			value := change["value"]
-			if !pyrepr.Truthy(value) {
+			if !anyutil.IsTrue(value) {
 				value = map[string]any{}
 			}
-			vm, isDict := pyjson.Dict(value)
+			vm, isDict := jsonutil.AsMap(value)
 			if !isDict {
 				continue
 			}
@@ -216,12 +216,12 @@ func (a *WhatsAppCloudAdapter) dispatchPayload(ctx context.Context, payload map[
 // One messages change of a signed callback, refused when it names a foreign phone number or WABA
 func (a *WhatsAppCloudAdapter) dispatchChange(ctx context.Context, entry, value map[string]any) error {
 	metadata := value["metadata"]
-	if !pyrepr.Truthy(metadata) {
+	if !anyutil.IsTrue(metadata) {
 		metadata = map[string]any{}
 	}
 	if !a.webhookIdentityMatches(entry["id"], metadata) {
 		var phone any
-		if m, ok := pyjson.Dict(metadata); ok {
+		if m, ok := jsonutil.AsMap(metadata); ok {
 			phone = m["phone_number_id"]
 		}
 		waba := a.wabaID
@@ -229,21 +229,21 @@ func (a *WhatsAppCloudAdapter) dispatchChange(ctx context.Context, entry, value 
 			waba = "<any>"
 		}
 		msg := fmt.Sprintf("[whatsapp_cloud] ignoring signed webhook for waba=%s phone_number_id=%s (configured waba=%s phone_number_id=%s)",
-			pyrepr.Repr(entry["id"]), pyrepr.Repr(phone), waba, pyrepr.Repr(a.phoneNumberID))
-		if pyrepr.Truthy(value["messages"]) {
+			anyutil.Quote(entry["id"]), anyutil.Quote(phone), waba, strconv.Quote(a.phoneNumberID))
+		if anyutil.IsTrue(value["messages"]) {
 			pkgLog().Warn(msg)
 		} else {
 			pkgLog().Debug(msg)
 		}
 		return nil
 	}
-	contacts, err := pyIter(value["contacts"])
+	contacts, err := iterItems(value["contacts"])
 	if err != nil {
 		return err
 	}
 	contactsByWaid := map[string]string{}
 	for _, rawContact := range contacts {
-		contact, ok := pyjson.Dict(rawContact)
+		contact, ok := jsonutil.AsMap(rawContact)
 		if !ok {
 			continue
 		}
@@ -257,25 +257,25 @@ func (a *WhatsAppCloudAdapter) dispatchChange(ctx context.Context, entry, value 
 		}
 		contactsByWaid[waID] = strField(profile["name"])
 	}
-	meta, _ := pyjson.Dict(metadata)
-	messages, err := pyIter(value["messages"])
+	meta, _ := jsonutil.AsMap(metadata)
+	messages, err := iterItems(value["messages"])
 	if err != nil {
 		return err
 	}
 	for _, rawMessage := range messages {
-		if m, ok := pyjson.Dict(rawMessage); ok {
+		if m, ok := jsonutil.AsMap(rawMessage); ok {
 			if err := a.ingestMessage(ctx, m, contactsByWaid, meta); err != nil {
 				return err
 			}
 		}
 	}
-	statuses, err := pyIter(value["statuses"])
+	statuses, err := iterItems(value["statuses"])
 	if err != nil {
 		return err
 	}
 	for _, rawStatus := range statuses {
-		if status, ok := pyjson.Dict(rawStatus); ok {
-			pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] status %s for %s", pyrepr.Str(status["status"]), pyrepr.Str(status["id"])))
+		if status, ok := jsonutil.AsMap(rawStatus); ok {
+			pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] status %s for %s", anyutil.String(status["status"]), anyutil.String(status["id"])))
 		}
 	}
 	return nil
@@ -333,7 +333,7 @@ func (a *WhatsAppCloudAdapter) dispatchInteractiveReply(ctx context.Context, raw
 		if who == "" {
 			who = "<unknown>"
 		}
-		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] Rejected unauthorized interactive tap from %s (button_id=%s)", who, pyrepr.Repr(buttonID)))
+		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] Rejected unauthorized interactive tap from %s (button_id=%s)", who, strconv.Quote(buttonID)))
 		return true, nil
 	}
 	parts := strings.SplitN(buttonID, ":", 3)
@@ -350,8 +350,8 @@ func (a *WhatsAppCloudAdapter) dispatchInteractiveReply(ctx context.Context, raw
 		return false, nil
 	}
 	to := ""
-	if pyrepr.Truthy(raw["from"]) {
-		to = pyrepr.Str(raw["from"])
+	if anyutil.IsTrue(raw["from"]) {
+		to = anyutil.String(raw["from"])
 	}
 	return handler(ctx, to, inner, parts)
 }
@@ -364,7 +364,7 @@ func (a *WhatsAppCloudAdapter) replyBestEffort(ctx context.Context, to, text, fa
 }
 
 // Pops the session key of a tapped prompt, empty for a stale tap or an unknown choice that keeps it live
-func (a *WhatsAppCloudAdapter) popTapState(state *pydict.Dict[string, string], key, staleLog, choice string, valid ...string) string {
+func (a *WhatsAppCloudAdapter) popTapState(state *orderedutil.Map[string, string], key, staleLog, choice string, valid ...string) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	sessionKey, _ := state.Get(key)
@@ -386,7 +386,7 @@ func (a *WhatsAppCloudAdapter) popTapState(state *pydict.Dict[string, string], k
 }
 
 // Restores a session key under its prompt id so later taps or text still resolve it
-func (a *WhatsAppCloudAdapter) keepTapState(state *pydict.Dict[string, string], key, sessionKey string) {
+func (a *WhatsAppCloudAdapter) keepTapState(state *orderedutil.Map[string, string], key, sessionKey string) {
 	a.mu.Lock()
 	state.Set(key, sessionKey)
 	a.mu.Unlock()
@@ -409,15 +409,15 @@ func (a *WhatsAppCloudAdapter) handleClarifyTap(ctx context.Context, to string, 
 		a.replyBestEffort(ctx, to, t(ctx, "platform.whatsapp.clarify_type_answer"), "[whatsapp_cloud] clarify other-prompt failed")
 		return true, nil
 	}
-	idx, ok := pyint.Parse(choice)
-	if !ok {
-		pkgLog().Warn("[whatsapp_cloud] clarify tap had non-int choice: " + pyrepr.Repr(choice))
+	idx, err := strconv.ParseInt(strings.TrimSpace(choice), 10, 64)
+	if err != nil {
+		pkgLog().Warn("[whatsapp_cloud] clarify tap had non-int choice: " + strconv.Quote(choice))
 		a.keepTapState(a.clarifyState, clarifyID, sessionKey)
 		return false, nil
 	}
-	title := new(big.Int).Add(idx, big.NewInt(1)).String()
-	if pyrepr.Truthy(inner["title"]) {
-		title = pyrepr.Str(inner["title"])
+	title := strconv.FormatInt(idx+1, 10)
+	if anyutil.IsTrue(inner["title"]) {
+		title = anyutil.String(inner["title"])
 	}
 	if !tools.ResolveGatewayClarify(clarifyID, title) {
 		pkgLog().Info(fmt.Sprintf("[whatsapp_cloud] clarify resolver reported no waiter (clarify_id=%s) — falling back to text", clarifyID))
@@ -510,12 +510,12 @@ func (a *WhatsAppCloudAdapter) collectInboundMedia(ctx context.Context, kind str
 func injectDocumentText(mediaURLs []string, body string) (string, []bool) {
 	inlined := make([]bool, len(mediaURLs))
 	for i, doc := range mediaURLs {
-		if _, suffix := pypath.Splitext(filepath.Base(doc)); !textInjectExts[strings.ToLower(suffix)] {
+		if _, suffix := pathutil.SplitExt(filepath.Base(doc)); !textInjectExts[strings.ToLower(suffix)] {
 			continue
 		}
 		info, err := os.Stat(doc)
 		if err != nil {
-			pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to read document text: %s: %s", doc, pypath.OSErrorText(err)))
+			pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to read document text: %s: %s", doc, err.Error()))
 			continue
 		}
 		if size := info.Size(); size > maxTextInjectBytes {
@@ -524,10 +524,10 @@ func injectDocumentText(mediaURLs []string, body string) (string, []bool) {
 		}
 		data, err := os.ReadFile(doc)
 		if err != nil {
-			pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to read document text: %s: %s", doc, pypath.OSErrorText(err)))
+			pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to read document text: %s: %s", doc, err.Error()))
 			continue
 		}
-		injection := "[Content of " + filepath.Base(doc) + "]:\n" + pystr.TranslateNewlines(pystr.DecodeUTF8SigReplace(data))
+		injection := "[Content of " + filepath.Base(doc) + "]:\n" + textutil.NormalizeNewlines(strings.ToValidUTF8(string(textutil.TrimBOM(data)), string(utf8.RuneError)))
 		if body != "" {
 			body = injection + "\n\n" + body
 		} else {
@@ -541,11 +541,11 @@ func injectDocumentText(mediaURLs []string, body string) (string, []bool) {
 // Cloud API message converted to a gateway event, nil when contentless, a claimed tap or gated out
 func (a *WhatsAppCloudAdapter) buildMessageEventFromCloud(ctx context.Context, raw map[string]any, contactsByWaid map[string]string, metadata map[string]any) (*gateway.MessageEvent, error) {
 	kind := "text"
-	if pyrepr.Truthy(raw["type"]) {
-		kind = strings.ToLower(pyrepr.Str(raw["type"]))
+	if anyutil.IsTrue(raw["type"]) {
+		kind = strings.ToLower(anyutil.String(raw["type"]))
 	}
 	if contentlessKinds[kind] {
-		pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] skipping contentless %s envelope (wamid=%s)", kind, pyrepr.Str(raw["id"])))
+		pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] skipping contentless %s envelope (wamid=%s)", kind, anyutil.String(raw["id"])))
 		return nil, nil
 	}
 	if kind == "interactive" {
@@ -557,15 +557,15 @@ func (a *WhatsAppCloudAdapter) buildMessageEventFromCloud(ctx context.Context, r
 	body := ""
 	if extracted, known, err := bodyByKind(kind, raw); err != nil {
 		return nil, err
-	} else if known && pyrepr.Truthy(extracted) {
-		body = pyrepr.Str(extracted)
+	} else if known && anyutil.IsTrue(extracted) {
+		body = anyutil.String(extracted)
 	}
 	chatID := strField(raw["from"])
 	senderID := chatID
 	senderName := contactsByWaid[senderID]
-	if pyrepr.Truthy(raw["chat"]) {
+	if anyutil.IsTrue(raw["chat"]) {
 		pkgLog().Warn(fmt.Sprintf("[whatsapp_cloud] received group-shaped message (chat=%s, wamid=%s) — group support is not yet "+
-			"implemented; dropping. Use the Baileys whatsapp adapter for group chats.", pyrepr.Str(raw["chat"]), pyrepr.Str(raw["id"])))
+			"implemented; dropping. Use the Baileys whatsapp adapter for group chats.", anyutil.String(raw["chat"]), anyutil.String(raw["id"])))
 		return nil, nil
 	}
 	process, err := a.ShouldProcessMessage(ctx, map[string]any{"chatId": chatID, "senderId": senderID, "isGroup": false, "body": body})
@@ -596,8 +596,8 @@ func (a *WhatsAppCloudAdapter) buildMessageEventFromCloud(ctx context.Context, r
 	ourNumber := strField(metadata["display_phone_number"])
 	replyToIsOwn := replyToID != "" && quotedFrom != "" && ourNumber != "" && quotedFrom == ourNumber
 	wamid := ""
-	if pyrepr.Truthy(raw["id"]) {
-		wamid = pyrepr.Str(raw["id"])
+	if anyutil.IsTrue(raw["id"]) {
+		wamid = anyutil.String(raw["id"])
 	}
 	if wamid != "" && chatID != "" {
 		a.mu.Lock()

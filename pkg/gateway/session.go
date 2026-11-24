@@ -10,7 +10,8 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // True when the value could traverse outside the sessions dir, strict for ids and lenient for keys
@@ -31,21 +32,21 @@ func isPathUnsafe(value string, strict bool) bool {
 var PersistableModelOverrideKeys = []string{"model", "provider", "base_url"}
 
 // Copy of a dict override with only persistable non empty keys as strings, nil when nothing is left
-func SanitizeModelOverride(override any) *pyjson.Object {
+func SanitizeModelOverride(override any) *jsonutil.Object {
 	var keys []string
 	var value func(key string) any
 	switch obj := override.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if obj == nil {
 			return nil
 		}
-		keys, value = obj.Keys, func(key string) any { return obj.Vals[key] }
+		keys, value = obj.Keys(), func(key string) any { return obj.Value(key) }
 	case map[string]any:
 		keys, value = PersistableModelOverrideKeys, func(key string) any { return obj[key] }
 	default:
 		return nil
 	}
-	cleaned := pyjson.NewObject()
+	cleaned := jsonutil.NewObject()
 	for _, k := range keys {
 		v := value(k)
 		if !slices.Contains(PersistableModelOverrideKeys, k) || v == nil || v == "" {
@@ -73,8 +74,8 @@ func pyStrOf(v any) string {
 	if f, ok := v.(float64); ok {
 		return pyFloatStr(f)
 	}
-	if _, ok := v.(*pyjson.Object); ok {
-		text, _ := pyjson.Dumps(v)
+	if _, ok := v.(*jsonutil.Object); ok {
+		text, _ := jsonutil.Encode(v)
 		return text
 	}
 	return fmt.Sprint(v)
@@ -90,7 +91,7 @@ type SessionEntry struct {
 	DisplayName         *string
 	Platform            Platform
 	ChatType            string
-	Metadata            *pyjson.Object
+	Metadata            *jsonutil.Object
 	InputTokens         int64
 	OutputTokens        int64
 	CacheReadTokens     int64
@@ -111,16 +112,16 @@ type SessionEntry struct {
 	LastResumeMarkedAt  *pyDatetime
 	ActiveTurnToken     *string
 	ActiveTurnStartedAt *pyDatetime
-	ModelOverride       *pyjson.Object
+	ModelOverride       *jsonutil.Object
 	TransportProfile    *string
-	PromptPin           *pyjson.Object
+	PromptPin           *jsonutil.Object
 	Yolo                *bool
 }
 
 // Entry with the dataclass defaults for the given key, id and timestamps
 func NewSessionEntry(sessionKey, sessionID string, createdAt, updatedAt pyDatetime) *SessionEntry {
 	return &SessionEntry{SessionKey: sessionKey, SessionID: sessionID, CreatedAt: createdAt, UpdatedAt: updatedAt,
-		ChatType: "dm", Metadata: pyjson.NewObject(), CostStatus: "unknown"}
+		ChatType: "dm", Metadata: jsonutil.NewObject(), CostStatus: "unknown"}
 }
 
 // Nil for an empty optional string, else a pointer to it
@@ -132,8 +133,8 @@ func optStr(v *string) any {
 }
 
 // Wire form of the entry in its fixed key order
-func (e *SessionEntry) ToDict() *pyjson.Object {
-	out := pyjson.NewObject()
+func (e *SessionEntry) ToDict() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("session_key", e.SessionKey)
 	out.Set("session_id", e.SessionID)
 	out.Set("created_at", e.CreatedAt.isoformat())
@@ -147,7 +148,7 @@ func (e *SessionEntry) ToDict() *pyjson.Object {
 	out.Set("chat_type", e.ChatType)
 	meta := e.Metadata
 	if meta == nil {
-		meta = pyjson.NewObject()
+		meta = jsonutil.NewObject()
 	}
 	out.Set("metadata", meta)
 	out.Set("input_tokens", e.InputTokens)
@@ -199,7 +200,7 @@ type SessionEntryError struct{ Kind, Msg string }
 func (e *SessionEntryError) Error() string { return e.Msg }
 
 // Integer field of a decoded entry, the default when absent
-func entryInt(data *pyjson.Object, key string) (int64, error) {
+func entryInt(data *jsonutil.Object, key string) (int64, error) {
 	v, ok := data.Get(key)
 	if !ok {
 		return 0, nil
@@ -219,7 +220,7 @@ func entryInt(data *pyjson.Object, key string) (int64, error) {
 }
 
 // Truthiness of a decoded entry field, false when absent
-func entryBool(data *pyjson.Object, key string, def bool) bool {
+func entryBool(data *jsonutil.Object, key string, def bool) bool {
 	v, ok := data.Get(key)
 	if !ok {
 		return def
@@ -228,7 +229,7 @@ func entryBool(data *pyjson.Object, key string, def bool) bool {
 }
 
 // Optional string field of a decoded entry, nil when absent or null
-func entryOptStr(data *pyjson.Object, key string) *string {
+func entryOptStr(data *jsonutil.Object, key string) *string {
 	v, ok := data.Get(key)
 	if !ok || v == nil {
 		return nil
@@ -238,11 +239,11 @@ func entryOptStr(data *pyjson.Object, key string) *string {
 }
 
 // Entry rebuilt from its wire form, rejecting traversal ids and keys
-func SessionEntryFromDict(ctx context.Context, data *pyjson.Object) (*SessionEntry, error) {
+func SessionEntryFromDict(ctx context.Context, data *jsonutil.Object) (*SessionEntry, error) {
 	var origin *SessionSource
 	if raw, _ := data.Get("origin"); raw != nil {
-		if obj, ok := raw.(*pyjson.Object); ok {
-			src, err := SessionSourceFromDict(ctx, pyjson.Plain(obj).(map[string]any))
+		if obj, ok := raw.(*jsonutil.Object); ok {
+			src, err := SessionSourceFromDict(ctx, jsonutil.Plain(obj).(map[string]any))
 			if err != nil {
 				return nil, err
 			}
@@ -296,11 +297,11 @@ func SessionEntryFromDict(ctx context.Context, data *pyjson.Object) (*SessionEnt
 		e.ChatType = pyStrOf(v)
 	}
 	if v, _ := data.Get("metadata"); pyTruthy(v) {
-		obj, ok := v.(*pyjson.Object)
+		obj, ok := v.(*jsonutil.Object)
 		if !ok {
 			return nil, &SessionEntryError{Kind: "TypeError", Msg: "metadata is not a mapping"}
 		}
-		e.Metadata = obj.Copy()
+		e.Metadata = obj.Clone()
 	}
 	for _, f := range []struct {
 		key string
@@ -362,7 +363,7 @@ func SessionEntryFromDict(ctx context.Context, data *pyjson.Object) (*SessionEnt
 }
 
 // Required isoformat timestamp field of a decoded entry
-func entryTime(data *pyjson.Object, key string) (pyDatetime, error) {
+func entryTime(data *jsonutil.Object, key string) (pyDatetime, error) {
 	raw, ok := data.Get(key)
 	if !ok {
 		return pyDatetime{}, &SessionEntryError{Kind: "KeyError", Msg: "'" + key + "'"}
@@ -533,7 +534,7 @@ type SessionStore struct {
 	entries                    *sessionEntries
 	loaded                     bool
 	routingDBLoaded            bool
-	routingFallbackBaseline    *pyjson.Object
+	routingFallbackBaseline    *jsonutil.Object
 	routingGeneration          int
 	persistedRoutingGeneration int
 	fastPersistedEntries       map[string]fastPersistedEntry
@@ -907,7 +908,7 @@ func (s *SessionStore) GetSessionMetadata(ctx context.Context, sessionKey, key s
 func (s *SessionStore) SetSessionMetadata(ctx context.Context, sessionKey, key string, value any) (bool, error) {
 	return s.updateEntry(ctx, sessionKey, func(e *SessionEntry) bool {
 		if e.Metadata == nil {
-			e.Metadata = pyjson.NewObject()
+			e.Metadata = jsonutil.NewObject()
 		}
 		e.Metadata.Set(key, value)
 		return true
@@ -936,11 +937,11 @@ func (s *SessionStore) SetModelOverride(ctx context.Context, sessionKey string, 
 }
 
 // Python equality of two optional overrides
-func modelOverrideEqual(a, b *pyjson.Object) bool {
+func modelOverrideEqual(a, b *jsonutil.Object) bool {
 	if a == nil || b == nil {
 		return a == nil && b == nil
 	}
-	return pyjson.Equal(a, b)
+	return anyutil.Equal(a, b)
 }
 
 // Persists the lane yolo toggle, false when the key has no entry or it is unchanged
@@ -960,14 +961,14 @@ func (s *SessionStore) SetSessionYolo(ctx context.Context, sessionKey string, en
 }
 
 // Copy of the persisted model override, nil when none
-func (s *SessionStore) GetModelOverride(ctx context.Context, sessionKey string) *pyjson.Object {
+func (s *SessionStore) GetModelOverride(ctx context.Context, sessionKey string) *jsonutil.Object {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	entry := s.entryLocked(ctx, sessionKey)
 	if entry == nil || entry.ModelOverride == nil || entry.ModelOverride.Len() == 0 {
 		return nil
 	}
-	return entry.ModelOverride.Copy()
+	return entry.ModelOverride.Clone()
 }
 
 // Forces a reset onto a fresh session id, local routes through the authority reset
@@ -1040,7 +1041,7 @@ func (s *SessionStore) RekeyProfileRouting(ctx context.Context, oldName, newName
 	for _, key := range moving {
 		if target := newNS + key[len(oldNS):]; s.entries.has(target) {
 			return 0, &SessionEntryError{Kind: "ValueError", Msg: fmt.Sprintf("profile routing collision while renaming %s to %s: %s already exists",
-				pyReprString(old), pyReprString(fresh), pyReprString(target))}
+				anyutil.Quote(old), anyutil.Quote(fresh), anyutil.Quote(target))}
 		}
 	}
 	for _, key := range moving {
@@ -1139,7 +1140,7 @@ func (s *SessionStore) SwitchSession(ctx context.Context, sessionKey, targetSess
 	fresh, err := s.replaceRouteLocked(ctx, sessionKey, old, targetSessionID, sessionNow(), func(e *SessionEntry) {
 		e.DisplayName, e.ModelOverride, e.Yolo = old.DisplayName, old.ModelOverride, old.Yolo
 		if preservePromptPin && old.PromptPin != nil {
-			e.PromptPin = old.PromptPin.Copy()
+			e.PromptPin = old.PromptPin.Clone()
 		}
 	})
 	s.mu.Unlock()

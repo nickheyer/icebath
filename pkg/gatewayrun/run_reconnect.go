@@ -10,8 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Max seconds between platform reconnect retries, shared by the primary watcher and secondary profiles
@@ -46,7 +46,7 @@ func platformHasBotCredential(ctx context.Context, platform gateway.Platform, pl
 	if platform == gateway.PlatformWhatsApp {
 		session := home.IcebathDir(home.Dir(ctx), "platforms/whatsapp/session", "whatsapp/session")
 		if raw, ok := platformConfig.Extra["session_path"]; ok {
-			session = pyrepr.Str(raw)
+			session = anyutil.String(raw)
 		}
 		_, err := os.Stat(filepath.Join(session, "creds.json"))
 		return err == nil
@@ -64,7 +64,7 @@ func platformHasBotCredential(ctx context.Context, platform gateway.Platform, pl
 	}
 	for _, key := range []string{"homeserver", "user_id", "password"} {
 		value := platformConfig.Extra[key]
-		if !pyrepr.Truthy(value) || strings.TrimSpace(pyrepr.Str(value)) == "" {
+		if !anyutil.IsTrue(value) || strings.TrimSpace(anyutil.String(value)) == "" {
 			return false
 		}
 	}

@@ -3,7 +3,7 @@ package media
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 func TestTakeSpeechInterruptedPopsTheLatchWithinItsTTL(t *testing.T) {
@@ -17,7 +17,7 @@ func TestTakeSpeechInterruptedPopsTheLatchWithinItsTTL(t *testing.T) {
 	if TakeSpeechInterrupted() {
 		t.Fatal("the latch must pop on the first take")
 	}
-	stale := pythread.Monotonic() - speechInterruptTTLSeconds - 1
+	stale := timeutil.Monotonic() - speechInterruptTTLSeconds - 1
 	speechInterruptedMu.Lock()
 	speechInterruptedAt = &stale
 	speechInterruptedMu.Unlock()

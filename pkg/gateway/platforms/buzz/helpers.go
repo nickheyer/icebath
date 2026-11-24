@@ -22,9 +22,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -452,16 +452,16 @@ func ttlGet[T any](cache map[string]ttlEntry[T], key string, ttl time.Duration) 
 // buzz binary from the configured path, then PATH, then the home bin dir, empty when none exists
 func resolveCLIPath(configured string) string {
 	if configured != "" {
-		p := pypath.Expanduser(configured)
+		p := pathutil.ExpandUser(configured)
 		if st, err := os.Stat(p); err == nil && st.Mode().IsRegular() {
 			return p
 		}
 		return ""
 	}
-	if found, ok := pyshutil.Which("buzz", nil); ok {
+	if found, err := exec.LookPath("buzz"); err == nil {
 		return found
 	}
-	fallback := filepath.Join(pypath.Expanduser("~"), "bin", "buzz")
+	fallback := filepath.Join(pathutil.ExpandUser("~"), "bin", "buzz")
 	if st, err := os.Stat(fallback); err == nil && st.Mode().IsRegular() {
 		return fallback
 	}

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type fakeCodexRequest struct {
@@ -36,7 +36,7 @@ func (f *fakeCodexClient) Initialize(string, string, string, any, time.Duration)
 
 func (f *fakeCodexClient) Request(method string, params any, _ time.Duration) (any, error) {
 	f.mu.Lock()
-	f.requests = append(f.requests, fakeCodexRequest{method, pyjson.Plain(params)})
+	f.requests = append(f.requests, fakeCodexRequest{method, jsonutil.Plain(params)})
 	f.mu.Unlock()
 	if f.handler != nil {
 		return f.handler(method, params)
@@ -56,7 +56,7 @@ func (f *fakeCodexClient) Respond(id any, result any) error {
 	if f.respondErr != nil {
 		return f.respondErr
 	}
-	f.responses = append(f.responses, [2]any{id, pyjson.Plain(result)})
+	f.responses = append(f.responses, [2]any{id, jsonutil.Plain(result)})
 	if f.onRespond != nil {
 		f.onRespond()
 	}
@@ -205,7 +205,7 @@ func TestCodexLifecycle(t *testing.T) {
 		t.Fatal("close did not release the client")
 	}
 	f5 := &fakeCodexClient{handler: func(string, any) (any, error) { return map[string]any{"thread": map[string]any{}, "b": 1}, nil }}
-	if _, err := newFakeSession(f5, CodexAppServerSessionOptions{}).EnsureStarted(); err == nil || err.Error() != "codex app-server error -32603: codex thread/start returned no thread id (payload keys: ['b', 'thread'])" {
+	if _, err := newFakeSession(f5, CodexAppServerSessionOptions{}).EnsureStarted(); err == nil || err.Error() != `codex app-server error -32603: codex thread/start returned no thread id (payload keys: ["b","thread"])` {
 		t.Fatalf("missing thread id %v", err)
 	}
 }
@@ -268,7 +268,7 @@ func TestCodexTurnStartFailureAttachesRedactedStderrTail(t *testing.T) {
 		return nil, &CodexRequestTimeoutError{Method: method, Timeout: 10 * time.Second}
 	}
 	r2, _ := newFakeSession(f, CodexAppServerSessionOptions{}).RunTurn("hi", CodexTurnOptions{})
-	if !strings.HasPrefix(r2.Error, "codex app-server startup failed: codex app-server method 'thread/start' timed out after 10.0s") || !r2.ShouldRetire {
+	if !strings.HasPrefix(r2.Error, `codex app-server startup failed: codex app-server method "thread/start" timed out after 10s`) || !r2.ShouldRetire {
 		t.Fatalf("timeout %q", r2.Error)
 	}
 	f.stderr = []string{"error: refresh token expired"}

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // File store carrying SCHEMA_SQL and optionally DEFERRED_INDEX_SQL
@@ -53,9 +53,9 @@ func TestProbesCoverEveryDeclaredColumn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, table := range expected.Keys {
+	for _, table := range expected.Keys() {
 		probe := probeFor(t, table)
-		for _, col := range expected.Vals[table].(*pyjson.Object).Keys {
+		for _, col := range expected.Value(table).(*jsonutil.Object).Keys() {
 			if !strings.Contains(probe, fmt.Sprintf(`"%s"."%s"`, table, col)) {
 				t.Fatalf("column %s.%s declared in SCHEMA_SQL but not probed", table, col)
 			}

@@ -9,23 +9,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Session store double answering get_session from a fixed row and recording prompt writes over a real database
 type restoreStore struct {
 	SessionStore
-	row       *pyjson.Object
+	row       *jsonutil.Object
 	getCalls  int
 	updates   [][2]string
 	updateErr error
 }
 
-func (s *restoreStore) GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (s *restoreStore) GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	s.getCalls++
 	return s.row, nil
 }
@@ -53,7 +53,7 @@ func restoreRealDB(t *testing.T, sessionID, source string) *state.SessionDB {
 	return db
 }
 
-func restoreRowStore(t *testing.T, row *pyjson.Object) *restoreStore {
+func restoreRowStore(t *testing.T, row *jsonutil.Object) *restoreStore {
 	return &restoreStore{SessionStore: restoreRealDB(t, "test-session-id", "cli"), row: row}
 }
 
@@ -71,7 +71,7 @@ func restoreAgent(t *testing.T, store SessionStore, prebuilt string) (*AIAgent, 
 	}
 	t.Cleanup(func() { loopBuildSystemPrompt = prev })
 	a := &AIAgent{sessionID: "test-session-id", model: "test-model", provider: "openrouter", platform: "cli", sessionDB: store,
-		env: &tools.Env{Home: h, Cwd: h}, botModeProtocol: true, passSessionID: true, quietMode: true, sessionPersistLock: &pythread.RLock{}}
+		env: &tools.Env{Home: h, Cwd: h}, botModeProtocol: true, passSessionID: true, quietMode: true, sessionPersistLock: &syncutil.ReentrantMutex{}}
 	return a, builds
 }
 
@@ -108,7 +108,7 @@ type surfaceRestore struct {
 
 func (r surfaceRestore) run(t *testing.T) (*AIAgent, *restoreBuilds) {
 	t.Helper()
-	row := pyjson.ObjectOf("system_prompt", storedSurfacePrompt(r.stored))
+	row := jsonutil.ObjectOf("system_prompt", storedSurfacePrompt(r.stored))
 	if r.toolNames != nil {
 		row.Set("tool_names", r.toolNames)
 	}
@@ -159,7 +159,7 @@ func TestSurfaceSwitch(t *testing.T) {
 		if got := IdentityLineValue(stored, "Platform"); got != "cli" {
 			t.Fatalf("identity platform %q", got)
 		}
-		a, _ := restoreAgent(t, restoreRowStore(t, pyjson.ObjectOf("system_prompt", stored)), "BUILT_PROMPT")
+		a, _ := restoreAgent(t, restoreRowStore(t, jsonutil.ObjectOf("system_prompt", stored)), "BUILT_PROMPT")
 		a.platform = "tui"
 		restoreNow(t, a, hiHistory())
 		if !strings.HasPrefix(a.surfaceSwitchNote, tuiNote) {
@@ -178,7 +178,7 @@ func TestSurfaceSwitch(t *testing.T) {
 		}
 	})
 	t.Run("test_rebuild_also_retires_a_stale_note", func(t *testing.T) {
-		a, builds := restoreAgent(t, restoreRowStore(t, pyjson.ObjectOf("system_prompt", storedSurfacePrompt("cli"))), storedSurfacePrompt("cli"))
+		a, builds := restoreAgent(t, restoreRowStore(t, jsonutil.ObjectOf("system_prompt", storedSurfacePrompt("cli"))), storedSurfacePrompt("cli"))
 		a.model, a.platform = "other-model", "cli"
 		restoreNow(t, a, announcedSurface("tui"))
 		if len(builds.calls) != 1 || !strings.HasPrefix(a.surfaceSwitchNote, cliNote) {
@@ -221,7 +221,7 @@ func TestStoredPromptReuse(t *testing.T) {
 	t.Run("test_present_row_is_reused_verbatim", func(t *testing.T) {
 		warnings := captureLogger(t, "agent", slog.LevelWarn)
 		stored := "Stored prompt from turn 1 — byte-identical reuse"
-		store := restoreRowStore(t, pyjson.ObjectOf("system_prompt", stored))
+		store := restoreRowStore(t, jsonutil.ObjectOf("system_prompt", stored))
 		a, builds := restoreAgent(t, store, "BUILT_PROMPT")
 		restoreNow(t, a, hiHistory())
 		if a.cachedSystemPrompt != stored || len(builds.calls) != 0 || len(store.updates) != 0 || len(warnings()) != 0 {
@@ -231,7 +231,7 @@ func TestStoredPromptReuse(t *testing.T) {
 	t.Run("test_present_row_with_stale_runtime_identity_rebuilds", func(t *testing.T) {
 		infos := captureLogger(t, "agent", slog.LevelInfo)
 		head := "You are Icebath Agent.\n\nConversation started: Tuesday, June 16, 2026\nSession ID: test-session-id\n"
-		store := restoreRowStore(t, pyjson.ObjectOf("system_prompt", head+"Model: anthropic/claude-opus-4.8-fast\nProvider: openrouter"))
+		store := restoreRowStore(t, jsonutil.ObjectOf("system_prompt", head+"Model: anthropic/claude-opus-4.8-fast\nProvider: openrouter"))
 		a, builds := restoreAgent(t, store, head+"Model: openai/gpt-5.5\nProvider: openrouter")
 		a.model = "openai/gpt-5.5"
 		restoreNow(t, a, hiHistory())
@@ -266,7 +266,7 @@ func TestStoredPromptReuse(t *testing.T) {
 		a.botModeProtocol = false
 		a.tools = []any{toolDef("read_file"), toolDef("terminal")}
 		restoreNow(t, a, hiHistory())
-		if len(builds.calls) != 1 || !reflect.DeepEqual(pyjson.Plain(a.tools), pinned) || !a.validToolNames["skill_manage"] {
+		if len(builds.calls) != 1 || !reflect.DeepEqual(jsonutil.Plain(a.tools), pinned) || !a.validToolNames["skill_manage"] {
 			t.Fatalf("builds %d tools %v valid %v", len(builds.calls), mcp.AgentToolNames(a), a.validToolNames)
 		}
 		if got := restoreStoredPin(t, db); !reflect.DeepEqual(got, pinned) {
@@ -310,11 +310,11 @@ func restoreStoredPin(t *testing.T, db *state.SessionDB) []any {
 	}
 	raw, _ := row.Get("tool_names")
 	text, _ := raw.(string)
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatalf("tool_names %q: %v", text, err)
 	}
-	pin, _ := pyjson.Plain(decoded).(map[string]any)
+	pin, _ := jsonutil.Plain(decoded).(map[string]any)
 	list, _ := pin["tools"].([]any)
 	return list
 }
@@ -374,7 +374,7 @@ func patchPartsBuilder(t *testing.T, fn func() (SystemPromptParts, error)) *int 
 
 func TestStaticPrefixReconstructionOnRestore(t *testing.T) {
 	restoreCaching := func(t *testing.T, stored string, parts func() (SystemPromptParts, error)) *AIAgent {
-		a, _ := restoreAgent(t, restoreRowStore(t, pyjson.ObjectOf("system_prompt", stored)), "BUILT_PROMPT")
+		a, _ := restoreAgent(t, restoreRowStore(t, jsonutil.ObjectOf("system_prompt", stored)), "BUILT_PROMPT")
 		a.usePromptCaching = true
 		patchPartsBuilder(t, parts)
 		restoreNow(t, a, hiHistory())

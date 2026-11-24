@@ -9,10 +9,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
 )
 
 var coreOverrideSkipDirs = map[string]bool{"tests": true, "test": true, "node_modules": true, ".git": true,
@@ -21,7 +19,7 @@ var coreOverrideSkipDirs = map[string]bool{"tests": true, "test": true, "node_mo
 // One parsed plugin module, its slash path relative to the plugin root
 type parsedSource struct {
 	rel  string
-	tree *pyast.Node
+	tree *pythonutil.Node
 }
 
 // Lexicographic order of slash separated paths compared component by component
@@ -41,7 +39,7 @@ func coreIsTestFile(name string) bool {
 
 // Relative slash paths of every plugin .py in pathlib order, skipped dirs and test files left out
 func coreOverridePythonFiles(pluginDir string) ([]string, error) {
-	paths, err := pypath.Glob(pluginDir, "**/*.py")
+	paths, err := pathutil.Glob(pluginDir, "**/*.py")
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +59,7 @@ func coreOverridePythonFiles(pluginDir string) ([]string, error) {
 		}
 	}
 	sort.SliceStable(rels, func(i, j int) bool {
-		return lessByParts(pystr.SurrogateEscapeDecode([]byte(rels[i])), pystr.SurrogateEscapeDecode([]byte(rels[j])))
+		return lessByParts(rels[i], rels[j])
 	})
 	return rels, nil
 }
@@ -93,15 +91,15 @@ func parsePluginSources(pluginDir string, keep func(rel string) bool) ([]parsedS
 		if err != nil {
 			return nil, err
 		}
-		tree, err := pyast.Parse(text)
+		tree, err := pythonutil.Parse(text)
 		if err != nil {
-			var syn *pyast.SyntaxError
+			var syn *pythonutil.SyntaxError
 			if errors.As(err, &syn) {
 				continue
 			}
 			return nil, err
 		}
-		out = append(out, parsedSource{rel: pystr.SurrogateEscapeDecode([]byte(rel)), tree: tree})
+		out = append(out, parsedSource{rel: rel, tree: tree})
 	}
 	return out, nil
 }
@@ -110,7 +108,7 @@ func parsePluginSources(pluginDir string, keep func(rel string) bool) ([]parsedS
 func modulePartsOf(rel string) []string {
 	parts := strings.Split(rel, "/")
 	name := parts[len(parts)-1]
-	parts[len(parts)-1] = name[:len(name)-len(pypath.PathSuffix(name))]
+	parts[len(parts)-1] = name[:len(name)-len(pathutil.Suffix(name))]
 	if parts[len(parts)-1] == "__init__" {
 		parts = parts[:len(parts)-1]
 	}
@@ -120,7 +118,7 @@ func modulePartsOf(rel string) []string {
 // Import closure of __init__.py, the files that run inside Icebath
 func coreRuntimeFiles(files []parsedSource, local map[string]bool) map[string]bool {
 	byModule := map[string]map[string]bool{}
-	trees := map[string]*pyast.Node{}
+	trees := map[string]*pythonutil.Node{}
 	for _, f := range files {
 		trees[f.rel] = f.tree
 		parts := modulePartsOf(f.rel)
@@ -132,7 +130,7 @@ func coreRuntimeFiles(files []parsedSource, local map[string]bool) map[string]bo
 			byModule[key][f.rel] = true
 		}
 	}
-	resolve := func(rel string, node *pyast.Node) []string {
+	resolve := func(rel string, node *pythonutil.Node) []string {
 		var names []string
 		level, _ := node.Int("level")
 		if node.Is("Import") {
@@ -191,7 +189,7 @@ func coreRuntimeFiles(files []parsedSource, local map[string]bool) map[string]bo
 			continue
 		}
 		seen[rel] = true
-		for _, node := range pyast.Walk(trees[rel]) {
+		for node := range pythonutil.Walk(trees[rel]) {
 			if node.Is("Import", "ImportFrom") {
 				for _, r := range resolve(rel, node) {
 					if !seen[r] {
@@ -206,7 +204,7 @@ func coreRuntimeFiles(files []parsedSource, local map[string]bool) map[string]bo
 
 // Module and package names the plugin ships itself, so importing them is local rather than core
 func coreLocalNames(pluginDir string) (map[string]bool, error) {
-	paths, err := pypath.Glob(pluginDir, "**/*")
+	paths, err := pathutil.Glob(pluginDir, "**/*")
 	if err != nil {
 		return nil, err
 	}
@@ -223,9 +221,9 @@ func coreLocalNames(pluginDir string) (map[string]bool, error) {
 		if skip {
 			continue
 		}
-		name := pystr.SurrogateEscapeDecode([]byte(filepath.Base(p)))
-		if pypath.PathSuffix(name) == ".py" {
-			names[pypath.PathStem(name)] = true
+		name := filepath.Base(p)
+		if pathutil.Suffix(name) == ".py" {
+			names[pathutil.Stem(name)] = true
 		} else if fi, err := os.Stat(p); err == nil && fi.IsDir() {
 			names[name] = true
 		}
@@ -234,7 +232,7 @@ func coreLocalNames(pluginDir string) (map[string]bool, error) {
 }
 
 // Attribute chain text ending in the base Name, the parts that are not attributes or names dropped
-func astDotted(n *pyast.Node) string {
+func astDotted(n *pythonutil.Node) string {
 	parts := []string{}
 	for n.Is("Attribute") {
 		attr, _ := n.Str("attr")
@@ -249,9 +247,9 @@ func astDotted(n *pyast.Node) string {
 	return strings.Join(parts, ".")
 }
 
-func astCallName(call *pyast.Node) string { return astDotted(call.Child("func")) }
+func astCallName(call *pythonutil.Node) string { return astDotted(call.Child("func")) }
 
-func astStrConstant(n *pyast.Node) (string, bool) {
+func astStrConstant(n *pythonutil.Node) (string, bool) {
 	if !n.Is("Constant") {
 		return "", false
 	}
@@ -283,7 +281,7 @@ func newCoreAnalysis(roots, local map[string]bool) *coreAnalysis {
 	return a
 }
 
-func (a *coreAnalysis) funcKey(call *pyast.Node) string {
+func (a *coreAnalysis) funcKey(call *pythonutil.Node) string {
 	name := astCallName(call)
 	name = name[strings.LastIndex(name, ".")+1:]
 	if alias, ok := a.aliases[name]; ok {
@@ -298,7 +296,7 @@ func (a *coreAnalysis) coreModuleName(name any) bool {
 }
 
 // Whether an expression evaluates to an Icebath module or a value reached through one
-func (a *coreAnalysis) isCore(n *pyast.Node, tainted map[string]bool) bool {
+func (a *coreAnalysis) isCore(n *pythonutil.Node, tainted map[string]bool) bool {
 	switch {
 	case n.Is("Name"):
 		id, _ := n.Str("id")
@@ -334,7 +332,7 @@ func (a *coreAnalysis) isCore(n *pyast.Node, tainted map[string]bool) bool {
 }
 
 // Whether a module name expression names Icebath, through a literal, a module constant or an f-string head
-func (a *coreAnalysis) lookupIsCore(arg *pyast.Node) bool {
+func (a *coreAnalysis) lookupIsCore(arg *pythonutil.Node) bool {
 	if arg.Is("Name") {
 		id, _ := arg.Str("id")
 		if v, ok := a.constants[id]; ok {
@@ -344,7 +342,7 @@ func (a *coreAnalysis) lookupIsCore(arg *pyast.Node) bool {
 	}
 	if arg.Is("JoinedStr") {
 		if values := arg.Children("values"); len(values) > 0 && values[0].Is("Constant") {
-			head := pyrepr.Str(values[0].Get("value"))
+			head, _ := values[0].Get("value").(string)
 			return strings.Contains(head, ".") && a.coreModuleName(head)
 		}
 	}
@@ -352,12 +350,12 @@ func (a *coreAnalysis) lookupIsCore(arg *pyast.Node) bool {
 }
 
 // Names bound to core values in one scope, iterated to a fixpoint of at most four rounds
-func (a *coreAnalysis) scopeTaint(body []*pyast.Node, inherited map[string]bool) map[string]bool {
+func (a *coreAnalysis) scopeTaint(body []*pythonutil.Node, inherited map[string]bool) map[string]bool {
 	tainted := map[string]bool{}
 	for k := range inherited {
 		tainted[k] = true
 	}
-	var nodes []*pyast.Node
+	var nodes []*pythonutil.Node
 	for _, stmt := range body {
 		nodes = append(nodes, walkScope(stmt)...)
 	}
@@ -391,7 +389,7 @@ func (a *coreAnalysis) scopeTaint(body []*pyast.Node, inherited map[string]bool)
 				if value := node.Child("value"); value != nil && a.isCore(value, tainted) {
 					targets := node.Children("targets")
 					if node.Is("AnnAssign") {
-						targets = []*pyast.Node{node.Child("target")}
+						targets = []*pythonutil.Node{node.Child("target")}
 					}
 					for name := range boundNames(targets) {
 						tainted[name] = true
@@ -399,7 +397,7 @@ func (a *coreAnalysis) scopeTaint(body []*pyast.Node, inherited map[string]bool)
 				}
 			case node.Is("For", "AsyncFor", "comprehension"):
 				if a.isCore(node.Child("iter"), tainted) {
-					for name := range boundNames([]*pyast.Node{node.Child("target")}) {
+					for name := range boundNames([]*pythonutil.Node{node.Child("target")}) {
 						tainted[name] = true
 					}
 				}
@@ -413,17 +411,17 @@ func (a *coreAnalysis) scopeTaint(body []*pyast.Node, inherited map[string]bool)
 }
 
 // Rebind targets one node performs on core values, as the text the finding reports
-func (a *coreAnalysis) rebinds(node *pyast.Node, tainted map[string]bool) []string {
+func (a *coreAnalysis) rebinds(node *pythonutil.Node, tainted map[string]bool) []string {
 	var hits []string
-	var targets []*pyast.Node
+	var targets []*pythonutil.Node
 	switch {
 	case node.Is("Assign", "Delete"):
 		targets = node.Children("targets")
 	case node.Is("AugAssign", "AnnAssign"):
-		targets = []*pyast.Node{node.Child("target")}
+		targets = []*pythonutil.Node{node.Child("target")}
 	}
 	for _, target := range targets {
-		items := []*pyast.Node{target}
+		items := []*pythonutil.Node{target}
 		if target.Is("Tuple", "List") {
 			items = target.Children("elts")
 		}
@@ -436,8 +434,8 @@ func (a *coreAnalysis) rebinds(node *pyast.Node, tainted map[string]bool) []stri
 				}
 				hits = append(hits, hit)
 			case t.Is("Subscript") && astDotted(t.Child("value")) == "sys.modules":
-				if s := t.Child("slice"); s.Is("Constant") && a.coreModuleName(s.Get("value")) {
-					hits = append(hits, "sys.modules["+pyrepr.Repr(s.Get("value"))+"]")
+				if s, ok := astStrConstant(t.Child("slice")); ok && a.coreModuleName(s) {
+					hits = append(hits, "sys.modules["+pythonutil.Quote(s)+"]")
 				}
 			case t.Is("Subscript") && t.Child("value").Is("Attribute") && a.isCore(t.Child("value").Child("value"), tainted):
 				hit := astDotted(t.Child("value"))
@@ -451,7 +449,7 @@ func (a *coreAnalysis) rebinds(node *pyast.Node, tainted map[string]bool) []stri
 	if node.Is("Call") {
 		name := astCallName(node)
 		args := node.Children("args")
-		dottedOr := func(n *pyast.Node) string {
+		dottedOr := func(n *pythonutil.Node) string {
 			if d := astDotted(n); d != "" {
 				return d
 			}
@@ -463,7 +461,7 @@ func (a *coreAnalysis) rebinds(node *pyast.Node, tainted map[string]bool) []stri
 		case strings.HasSuffix(name, "patch.object") && len(args) > 0 && a.isCore(args[0], tainted):
 			hits = append(hits, "patch.object("+astDotted(args[0])+", ...)")
 		case name[strings.LastIndex(name, ".")+1:] == "patch" && len(args) > 0 && args[0].Is("Constant") && a.coreModuleName(args[0].Get("value")):
-			hits = append(hits, "patch("+pyrepr.Repr(args[0].Get("value"))+")")
+			hits = append(hits, "patch("+pythonutil.Quote(args[0].Get("value").(string))+")")
 		default:
 			indexes := []int{}
 			for i := range a.paramPatchers[a.funcKey(node)] {
@@ -481,14 +479,14 @@ func (a *coreAnalysis) rebinds(node *pyast.Node, tainted map[string]bool) []stri
 }
 
 // Nodes of one scope in stack order, never entering nested function, class or lambda nodes
-func walkScope(stmt *pyast.Node) []*pyast.Node {
-	var out []*pyast.Node
-	stack := []*pyast.Node{stmt}
+func walkScope(stmt *pythonutil.Node) []*pythonutil.Node {
+	var out []*pythonutil.Node
+	stack := []*pythonutil.Node{stmt}
 	for len(stack) > 0 {
 		node := stack[len(stack)-1]
 		stack = stack[:len(stack)-1]
 		out = append(out, node)
-		for _, child := range pyast.IterChildNodes(node) {
+		for child := range pythonutil.ChildNodes(node) {
 			if !child.Is("FunctionDef", "AsyncFunctionDef", "ClassDef", "Lambda") {
 				stack = append(stack, child)
 			}
@@ -498,7 +496,7 @@ func walkScope(stmt *pyast.Node) []*pyast.Node {
 }
 
 // Plain names an assignment target list binds, tuples and lists unpacked
-func boundNames(targets []*pyast.Node) map[string]bool {
+func boundNames(targets []*pythonutil.Node) map[string]bool {
 	names := map[string]bool{}
 	for _, t := range targets {
 		if t.Is("Name") {
@@ -514,16 +512,16 @@ func boundNames(targets []*pyast.Node) map[string]bool {
 }
 
 type coreFunction struct {
-	node     *pyast.Node
+	node     *pythonutil.Node
 	isMethod bool
 }
 
 // Every function of a module with whether it is called as a bound method, nested ones included
-func coreFunctions(tree *pyast.Node) []coreFunction {
+func coreFunctions(tree *pythonutil.Node) []coreFunction {
 	var out []coreFunction
-	var visit func(n *pyast.Node, inClass bool)
-	visit = func(n *pyast.Node, inClass bool) {
-		for _, child := range pyast.IterChildNodes(n) {
+	var visit func(n *pythonutil.Node, inClass bool)
+	visit = func(n *pythonutil.Node, inClass bool) {
+		for child := range pythonutil.ChildNodes(n) {
 			switch {
 			case child.Is("FunctionDef", "AsyncFunctionDef"):
 				static := false
@@ -543,7 +541,7 @@ func coreFunctions(tree *pyast.Node) []coreFunction {
 	return out
 }
 
-func coreFunctionName(f *pyast.Node) string {
+func coreFunctionName(f *pythonutil.Node) string {
 	name, _ := f.Str("name")
 	return name
 }
@@ -567,7 +565,7 @@ func coreOverrideFindings(pluginDir string) ([]string, error) {
 	}
 	a := newCoreAnalysis(coreTables().topLevel, local)
 	for _, f := range trees {
-		for _, node := range pyast.Walk(f.tree) {
+		for node := range pythonutil.Walk(f.tree) {
 			if !node.Is("ImportFrom") {
 				continue
 			}
@@ -610,7 +608,7 @@ func coreOverrideFindings(pluginDir string) ([]string, error) {
 					}
 				}
 				args := fn.node.Child("args")
-				params := append(append([]*pyast.Node{}, args.Children("posonlyargs")...), args.Children("args")...)
+				params := append(append([]*pythonutil.Node{}, args.Children("posonlyargs")...), args.Children("args")...)
 				offset := 0
 				if fn.isMethod {
 					offset = 1
@@ -642,7 +640,7 @@ func coreOverrideFindings(pluginDir string) ([]string, error) {
 	found := map[finding]bool{}
 	for _, f := range trees {
 		moduleTaint := a.scopeTaint(f.tree.Children("body"), map[string]bool{})
-		bodies := [][]*pyast.Node{f.tree.Children("body")}
+		bodies := [][]*pythonutil.Node{f.tree.Children("body")}
 		taints := []map[string]bool{moduleTaint}
 		for _, fn := range coreFunctions(f.tree) {
 			bodies = append(bodies, fn.node.Children("body"))
@@ -651,7 +649,7 @@ func coreOverrideFindings(pluginDir string) ([]string, error) {
 		for i, body := range bodies {
 			for _, node := range walkBody(body) {
 				for _, target := range a.rebinds(node, taints[i]) {
-					found[finding{f.rel, node.Lineno, target}] = true
+					found[finding{f.rel, node.Line, target}] = true
 				}
 			}
 		}
@@ -676,8 +674,8 @@ func coreOverrideFindings(pluginDir string) ([]string, error) {
 	return out, nil
 }
 
-func walkBody(body []*pyast.Node) []*pyast.Node {
-	var out []*pyast.Node
+func walkBody(body []*pythonutil.Node) []*pythonutil.Node {
+	var out []*pythonutil.Node
 	for _, stmt := range body {
 		out = append(out, walkScope(stmt)...)
 	}

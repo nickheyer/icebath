@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -50,11 +50,11 @@ func ReadSidecarRows(pluginsDir string) map[string]any {
 	if !utf8.Valid(raw) {
 		return map[string]any{}
 	}
-	data, err := pyjson.Loads(string(raw))
+	data, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return map[string]any{}
 	}
-	if rows, ok := pyjson.Plain(data).(map[string]any); ok {
+	if rows, ok := jsonutil.Plain(data).(map[string]any); ok {
 		return rows
 	}
 	return map[string]any{}

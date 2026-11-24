@@ -12,9 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 type testClock struct {
@@ -308,7 +308,7 @@ func TestRecoveredDBRowsSurviveFallbackStructuralSave(t *testing.T) {
 	ctx := context.Background()
 	dbPath := filepath.Join(dir, "state.db")
 	sessionsDir := filepath.Join(dir, "sessions")
-	scope, _ := pypath.Resolve(sessionsDir)
+	scope, _ := pathutil.Resolve(sessionsDir)
 	now := sessionNow()
 	mk := func(name, sid string) *SessionEntry {
 		e := NewSessionEntry("agent:main:telegram:dm:"+name, sid, now, now)
@@ -322,7 +322,7 @@ func TestRecoveredDBRowsSurviveFallbackStructuralSave(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, e := range []*SessionEntry{durable, deleted, changed} {
-		raw, _ := pyjson.Dumps(e.ToDict())
+		raw, _ := jsonutil.Encode(e.ToDict())
 		if err := seed.SaveGatewayRoutingEntry(ctx, e.SessionKey, raw, scope); err != nil {
 			t.Fatal(err)
 		}
@@ -331,10 +331,10 @@ func TestRecoveredDBRowsSurviveFallbackStructuralSave(t *testing.T) {
 	if err := os.MkdirAll(sessionsDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	legacy := pyjson.NewObject()
+	legacy := jsonutil.NewObject()
 	legacy.Set(deleted.SessionKey, deleted.ToDict())
 	legacy.Set(changed.SessionKey, changed.ToDict())
-	raw, _ := pyjson.Dumps(legacy)
+	raw, _ := jsonutil.Encode(legacy)
 	if err := os.WriteFile(filepath.Join(sessionsDir, "sessions.json"), []byte(raw), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestRecoveredDBRowsSurviveFallbackStructuralSave(t *testing.T) {
 	t.Cleanup(store.CloseAllDBHandles)
 	store.ensureLoaded(ctx)
 	store.dbHandleCache.Lock.Lock()
-	store.dbHandleCache.unavailable[pypath.PathStr(dbPath)].nextRetryAt = 0
+	store.dbHandleCache.unavailable[filepath.Clean(dbPath)].nextRetryAt = 0
 	store.dbHandleCache.Lock.Unlock()
 	current := mk("current", "current-session")
 	store.mu.Lock()
@@ -374,8 +374,8 @@ func TestRecoveredDBRowsSurviveFallbackStructuralSave(t *testing.T) {
 	if got := store.entries.get(durable.SessionKey); got == nil || got.SessionID != durable.SessionID {
 		t.Fatalf("durable entry %v", got)
 	}
-	changedRow, _ := pyjson.Loads(rows[changed.SessionKey])
-	if sid, _ := changedRow.(*pyjson.Object).Get("session_id"); sid != "changed-during-fallback" {
+	changedRow, _ := jsonutil.Decode(rows[changed.SessionKey])
+	if sid, _ := changedRow.(*jsonutil.Object).Get("session_id"); sid != "changed-during-fallback" {
 		t.Fatalf("changed row session %v", sid)
 	}
 	if got := store.entries.get(current.SessionKey); got.SessionID != current.SessionID {

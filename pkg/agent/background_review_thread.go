@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -89,7 +89,7 @@ func reviewToolWhitelist(ctx context.Context, reviewAgent *AIAgent, taskCfg map[
 	}
 	whitelist := map[string]bool{"read_file": true, "search_files": true}
 	for _, def := range tools.Default.ToolDefinitions(ctx, reviewAgent.env, tools.DefinitionOptions{Enabled: toolsets, Quiet: true}) {
-		if fn, ok := pyjson.Dict(def["function"]); ok {
+		if fn, ok := jsonutil.AsMap(def["function"]); ok {
 			if name, ok := fn["name"].(string); ok {
 				whitelist[name] = true
 			}

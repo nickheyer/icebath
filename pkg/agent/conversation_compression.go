@@ -3,8 +3,8 @@ package agent
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var syntheticUserPrefixes = []string{
@@ -29,7 +29,7 @@ func isRealUserMessage(message map[string]any) bool {
 		return false
 	}
 	for _, flag := range syntheticUserFlags {
-		if pyrepr.Truthy(message[flag]) {
+		if anyutil.IsTrue(message[flag]) {
 			return false
 		}
 	}

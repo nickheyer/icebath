@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Pushes one live session's control snapshot to every viewer as session.control.update
@@ -67,7 +67,7 @@ func takeControlTicket(live *LiveSession) int {
 }
 
 // Control snapshot of one session, read under the owner profile scope when scoped
-func readControlSnapshot(ctx context.Context, a *SessionAuthority, sessionID string, scoped bool) (*pyjson.Object, error) {
+func readControlSnapshot(ctx context.Context, a *SessionAuthority, sessionID string, scoped bool) (*jsonutil.Object, error) {
 	ref := SessionRef{ProfileID: a.ProfileID, SessionID: sessionID}
 	if scoped {
 		ctx = ownerScope(ctx, a, false)
@@ -76,20 +76,20 @@ func readControlSnapshot(ctx context.Context, a *SessionAuthority, sessionID str
 }
 
 // Paints the snapshot unless a newer ticket published or the revision gate holds it back
-func publishControlSnapshot(live *LiveSession, sessionID string, snapshot *pyjson.Object, ticket int, onlyIfPresent, onlyIfChanged bool) {
+func publishControlSnapshot(live *LiveSession, sessionID string, snapshot *jsonutil.Object, ticket int, onlyIfPresent, onlyIfChanged bool) {
 	live.ControlMu.Lock()
 	if live.ControlPublishedSeq > ticket {
 		live.ControlMu.Unlock()
 		return
 	}
-	revision := snapshot.GetOr("revision", nil)
-	text := pyrepr.Str(revision)
-	if (onlyIfPresent && !pyrepr.Truthy(revision)) || (onlyIfChanged && text == live.ControlRevision) {
+	revision := snapshot.ValueOr("revision", nil)
+	text := anyutil.String(revision)
+	if (onlyIfPresent && !anyutil.IsTrue(revision)) || (onlyIfChanged && text == live.ControlRevision) {
 		live.ControlMu.Unlock()
 		return
 	}
 	live.ControlPublishedSeq = ticket
 	live.ControlRevision = text
 	live.ControlMu.Unlock()
-	live.EventStream.Publish(sessionID, pyjson.ObjectOf("control", snapshot), "session.control.update", nil)
+	live.EventStream.Publish(sessionID, jsonutil.ObjectOf("control", snapshot), "session.control.update", nil)
 }

@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Mixer PCM geometry, 48 kHz stereo signed 16 bit little endian in 20 millisecond frames
@@ -261,8 +260,8 @@ func decodeToPCM(ctx context.Context, path string, timeout time.Duration) []byte
 		for _, a := range append([]string{exe}, args...) {
 			argv = append(argv, a)
 		}
-		pkgLog().Warn(fmt.Sprintf("decode_to_pcm failed for %s: Command '%s' timed out after %s seconds", path, pyrepr.Repr(argv),
-			pyrepr.Repr(timeout.Seconds())))
+		pkgLog().Warn(fmt.Sprintf("decode_to_pcm failed for %s: Command '%s' timed out after %s seconds", path, anyutil.Quote(argv),
+			anyutil.Quote(timeout.Seconds())))
 		return nil
 	}
 	var exitErr *exec.ExitError
@@ -287,11 +286,11 @@ func synthAmbientPCM(seconds float64) ([]byte, error) {
 		return nil, err
 	}
 	if !count.IsInt64() {
-		return nil, &pynumpy.ValueError{Msg: "Maximum allowed size exceeded"}
+		return nil, errors.New("Maximum allowed size exceeded")
 	}
 	n := int(count.Int64())
 	if seconds == 0 {
-		return nil, &pyint.Error{Kind: "ZeroDivisionError", Msg: "division by zero"}
+		return nil, &errorutil.Error{Kind: "ZeroDivisionError", Msg: "division by zero"}
 	}
 	wholeCycle := func(target float64) float64 {
 		cycles := max(1, math.RoundToEven(target*seconds))
@@ -307,7 +306,7 @@ func synthAmbientPCM(seconds float64) ([]byte, error) {
 		return nil, err
 	}
 	if n != len(noise) && n != 1 {
-		return nil, &pynumpy.ValueError{Msg: fmt.Sprintf("operands could not be broadcast together with shapes (%d,) (%d,) ", n, len(noise))}
+		return nil, fmt.Errorf("operands could not be broadcast together with shapes (%d,) (%d,) ", n, len(noise))
 	}
 	signal := make([]float64, len(noise))
 	peak := 0.0

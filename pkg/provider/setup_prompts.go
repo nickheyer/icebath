@@ -6,12 +6,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math/big"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Portal models offered when the live Qwen catalog is unavailable
@@ -62,20 +62,20 @@ func askIndex(out io.Writer, prompt string, count int, echoCancel bool) (int, bo
 			fmt.Fprintln(out, "Please enter a number")
 			continue
 		}
-		if idx.Sign() >= 0 && idx.Cmp(big.NewInt(int64(count))) < 0 {
-			return int(idx.Int64()), false, false
+		if idx >= 0 && idx < int64(count) {
+			return int(idx), false, false
 		}
 		fmt.Fprintf(out, "Please enter 1-%d\n", count)
 	}
 }
 
-// Numbered answer as int(val) minus one, false for a ValueError
-func numberedIndex(val string) (*big.Int, bool) {
-	n, ok := pystr.IntText(val)
-	if !ok {
-		return nil, false
+// Numbered answer minus one, false when the text is not a whole number, a number out of range clamped
+func numberedIndex(val string) (int64, bool) {
+	n, err := textutil.ParseInt(val)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, false
 	}
-	return new(big.Int).Sub(n, big.NewInt(1)), true
+	return n - 1, true
 }
 
 // Provider menu index with arrow keys, a numbered fallback without curses, false when the user cancels

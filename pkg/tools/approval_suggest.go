@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	_ "modernc.org/sqlite"
 )
 
@@ -78,7 +78,7 @@ type ApprovalRecord struct {
 
 // Decodes JSON text, ok false on malformed input
 func jsonOrNone(raw string) (any, bool) {
-	v, err := pyjson.DecodeWTF8([]byte(raw))
+	v, err := jsonutil.DecodePlain([]byte(raw))
 	if err != nil {
 		return nil, false
 	}
@@ -111,7 +111,7 @@ func iterTerminalCalls(db *sql.DB, sinceTS float64) ([]terminalCall, error) {
 		}
 		for _, item := range list {
 			call, _ := item.(map[string]any)
-			fn, _ := pyjson.Dict(call["function"])
+			fn, _ := jsonutil.AsMap(call["function"])
 			if fn["name"] != "terminal" {
 				continue
 			}

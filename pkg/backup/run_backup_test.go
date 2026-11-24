@@ -19,9 +19,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyzip"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
 // Temp root holding a .icebath home bound as the process home, the user home at the temp root
@@ -374,7 +374,8 @@ func TestBackupUnwritableParentErrorsCleanly(t *testing.T) {
 	if ok || !errors.As(err, &exit) || exit.Code != 1 {
 		t.Fatalf("result %v %v", ok, err)
 	}
-	if strings.Contains(out, "Traceback") || !strings.HasPrefix(out, "Error: cannot write backup to "+filepath.Join(blocker, "sub", "backup.zip")+": [Errno 20] Not a directory") {
+	prefix := "Error: cannot write backup to " + filepath.Join(blocker, "sub", "backup.zip") + ": mkdir "
+	if strings.Contains(out, "Traceback") || !strings.HasPrefix(out, prefix) || !strings.HasSuffix(out, "sub: not a directory\n") {
 		t.Fatalf("output %q", out)
 	}
 }
@@ -484,7 +485,7 @@ func TestZipCapturesLiveWalAndCleansFailedStaging(t *testing.T) {
 				t.Fatalf("rows %v", rows)
 			}
 			previous := zipCRCs(t, archive)
-			swap(t, &zipWrite, func(*pyzip.ZipFile, string, string) error {
+			swap(t, &zipWrite, func(*ziputil.Writer, string, string) error {
 				return &os.PathError{Op: "write", Path: archive, Err: syscall.ENOSPC}
 			})
 			run()
@@ -584,20 +585,19 @@ func TestAtomicOutputDiscardsWhenThePublishPathDeclines(t *testing.T) {
 	}
 }
 
-func TestDiscardFailedZipMembersRestoresAShadowedDuplicate(t *testing.T) {
+func TestTruncateDropsAFailedDuplicateMember(t *testing.T) {
 	dir := t.TempDir()
 	src := filepath.Join(dir, "a")
 	os.WriteFile(src, []byte("first"), 0o644)
-	zf, err := pyzip.Create(filepath.Join(dir, "d.zip"), pyzip.Deflated, ptr(6))
+	zf, err := ziputil.Create(filepath.Join(dir, "d.zip"), zip.Deflate, 6)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := writeZipFile(zf, src, "a"); err != nil {
 		t.Fatal(err)
 	}
-	first := zf.NameToInfo["a"]
-	swap(t, &zipWrite, func(zf *pyzip.ZipFile, path, arcname string) error {
-		w, err := zf.Open(arcname)
+	swap(t, &zipWrite, func(zf *ziputil.Writer, path, arcname string) error {
+		w, err := zf.Create(arcname)
 		if err != nil {
 			return err
 		}
@@ -608,8 +608,8 @@ func TestDiscardFailedZipMembersRestoresAShadowedDuplicate(t *testing.T) {
 	if err := writeZipFile(zf, src, "a"); !errors.Is(err, syscall.EIO) {
 		t.Fatalf("%v", err)
 	}
-	if len(zf.Filelist) != 1 || zf.NameToInfo["a"] != first {
-		t.Fatalf("filelist %d", len(zf.Filelist))
+	if zf.Len() != 1 {
+		t.Fatalf("members %d", zf.Len())
 	}
 	if err := zf.Close(); err != nil {
 		t.Fatal(err)

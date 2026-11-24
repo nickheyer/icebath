@@ -24,8 +24,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Every chunk of a streamer reply and the error that ended it
@@ -376,7 +376,7 @@ func TestXaiStreamPreservesProfileAndDeliversBeforeCompletion(t *testing.T) {
 			}
 			t.Setenv("ICEBATH_HOME", home)
 			t.Setenv("XAI_API_KEY", "test-process-key")
-			firstDelivered := &pythread.Event{}
+			firstDelivered := &syncutil.Event{}
 			defer firstDelivered.Set()
 			var mu sync.Mutex
 			var seenPath, seenAuth string
@@ -462,7 +462,7 @@ func TestXaiStreamReportsErrorsAndBoundsReceivedAudio(t *testing.T) {
 		t.Run(outcome, func(t *testing.T) {
 			swap(t, &ttsResolveXAICredentials, func(*tools.Env) (string, string, string) { return "xai", "test-key", "" })
 			swap(t, &streamSentenceByteCap, 100)
-			closed := &pythread.Event{}
+			closed := &syncutil.Event{}
 			wsURL := fakeXAIServer(t, func(ws *websocket.Conn, _ *http.Request) {
 				for range 2 {
 					if _, _, err := ws.ReadMessage(); err != nil {

@@ -10,10 +10,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Persisted history that cannot be read safely for the session
@@ -159,9 +159,9 @@ func bindableText(value any) any {
 			return v
 		}
 	}
-	text, err := pyjson.Dumps(value, pyjson.Default(func(o any) (any, error) { return pyrepr.Str(o), nil }))
+	text, err := jsonutil.Encode(value, jsonutil.Convert(func(o any) (any, error) { return anyutil.String(o), nil }))
 	if err != nil {
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	}
 	return text
 }
@@ -178,7 +178,7 @@ func transcriptAppendKwargs(sessionID string, message map[string]any, fallbackTS
 		timestamp = fallbackTS
 	}
 	platformMessageID := message["platform_message_id"]
-	if !pyrepr.Truthy(platformMessageID) {
+	if !anyutil.IsTrue(platformMessageID) {
 		platformMessageID = message["message_id"]
 	}
 	var apiContent any
@@ -187,7 +187,7 @@ func transcriptAppendKwargs(sessionID string, message map[string]any, fallbackTS
 	}
 	kwargs := map[string]any{"session_id": sessionID, "role": role, "content": message["content"],
 		"tool_name": message["tool_name"], "tool_calls": message["tool_calls"], "tool_call_id": message["tool_call_id"],
-		"platform_message_id": platformMessageID, "observed": pyrepr.Truthy(message["observed"]),
+		"platform_message_id": platformMessageID, "observed": anyutil.IsTrue(message["observed"]),
 		"timestamp": timestamp, "api_content": apiContent, "display_kind": message["display_kind"],
 		"display_metadata": message["display_metadata"]}
 	for _, key := range transcriptAssistantOnlyKeys {
@@ -226,7 +226,7 @@ var transcriptFTSRebuildCooldownSeconds = 300.0
 var transcriptAppendFailureEscalationThreshold = 3
 
 // Monotonic seconds the FTS rebuild cooldown measures, a var tests freeze
-var transcriptMonotonic = pythread.Monotonic
+var transcriptMonotonic = timeutil.Monotonic
 
 // One queued transcript message whose pointer is its identity in the retry queue
 type queuedTranscript struct{ message map[string]any }
@@ -259,7 +259,7 @@ type transcriptProbeDB interface {
 // Store replacing a transcript and proving published compression children
 type transcriptRewriteDB interface {
 	ReplaceMessages(ctx context.Context, sessionID string, messages []map[string]any, opts state.ReplaceOptions) error
-	IsCompressionChildRow(ctx context.Context, child *pyjson.Object) (bool, error)
+	IsCompressionChildRow(ctx context.Context, child *jsonutil.Object) (bool, error)
 	GetActiveMessageWatermark(ctx context.Context, sessionID string) (int64, error)
 }
 
@@ -835,7 +835,7 @@ func (s *SessionStore) IsPublishedCompressionChild(ctx context.Context, parentSe
 		if err != nil || child == nil {
 			return false, err
 		}
-		if parent, _ := child.Get("parent_session_id"); !pyrepr.Equal(parent, parentSessionID) {
+		if parent, _ := child.Get("parent_session_id"); !anyutil.Equal(parent, parentSessionID) {
 			return false, nil
 		}
 		rewriter, ok := db.(transcriptRewriteDB)
@@ -928,8 +928,8 @@ type rewindOutcome struct {
 
 // Whether an error is a ValueError that propagates out of the retry guard
 func isPyValueError(err error) bool {
-	var typed interface{ PyTypeName() string }
-	return errors.As(err, &typed) && typed.PyTypeName() == "ValueError"
+	var typed interface{ ErrorKind() string }
+	return errors.As(err, &typed) && typed.ErrorKind() == "ValueError"
 }
 
 // Store rewind of a user turn, an AttributeError for a store without one

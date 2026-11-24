@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Notice for one user, a plain send unless the platform has a private channel
@@ -57,7 +57,7 @@ func (b *BasePlatformAdapter) SendMultipleImages(ctx context.Context, chatID str
 		switch {
 		case strings.HasPrefix(image.URL, "file://"):
 			var path string
-			if path, err = pyurl.URL2Pathname(image.URL[7:], false, false); err == nil {
+			if path, err = urlutil.FilePath("file:" + image.URL[7:]); err == nil {
 				result, err = self.SendImageFile(ctx, chatID, path, image.Alt, "", metadata, nil)
 			}
 		case isAnimationURL(image.URL):

@@ -13,9 +13,9 @@ import (
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/settings"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Advice a clone timeout ends with
@@ -35,7 +35,7 @@ func (c *Console) width() int {
 	if c.Width > 0 {
 		return c.Width
 	}
-	return pyrich.DetectWidth()
+	return consoleutil.DetectWidth()
 }
 
 // Console over a writer, styled only when the writer is a terminal file
@@ -46,7 +46,7 @@ func NewConsole(w io.Writer) *Console {
 
 // Prints one markup message with repr highlighting on unwrapped lines so every command in it stays copyable
 func (c *Console) Print(markup string) {
-	(&pyrich.Console{Out: c.Out, Color: c.Color, Width: c.width(), NoColor: os.Getenv("NO_COLOR") != ""}).PrintSoft(markup)
+	(&consoleutil.Console{Out: c.Out, Color: c.Color, Width: c.width(), NoColor: os.Getenv("NO_COLOR") != ""}).PrintSoft(markup)
 }
 
 // Process exit a plugin command asks for after printing its message
@@ -118,7 +118,7 @@ func cloneFailureMessage(gitURL, gitError string) string {
 	return fmt.Sprintf("Could not download the plugin from %s. Check the address (browse the catalog "+
 		"with `icebath plugins search`), check your internet connection, or, if the repository "+
 		"is private, sign in first with `gh auth login` (or set GITHUB_TOKEN in your .env).\n"+
-		"Details: %s", gitURL, pyrich.Escape(strings.TrimSpace(gitError)))
+		"Details: %s", gitURL, consoleutil.Escape(strings.TrimSpace(gitError)))
 }
 
 // Safe target path of a plugin name inside the plugins dir, refusing traversal and the dir itself
@@ -154,7 +154,7 @@ func sanitizePluginName(name, dir string, allowSubdir bool) (string, error) {
 
 // Absolute path with symlinks resolved and missing components kept, as Path.resolve does
 func resolvePath(p string) string {
-	resolved, err := pypath.Realpath(p, pypath.Lax)
+	resolved, err := pathutil.Resolve(p)
 	if err != nil {
 		abs, _ := filepath.Abs(p)
 		return abs

@@ -2,9 +2,9 @@ package raft
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"sort"
 	"strings"
 	"sync"
@@ -15,12 +15,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -89,7 +88,7 @@ func contentString(value any) (string, bool, bool) {
 	}
 	text, isStr := value.(string)
 	if !isStr {
-		encoded, err := pyjson.Dumps(value, pyjson.EnsureASCII(false), pyjson.SortKeys(true))
+		encoded, err := jsonutil.Encode(value, jsonutil.SortKeys())
 		if err != nil {
 			return "", false, false
 		}
@@ -105,7 +104,7 @@ func contentString(value any) (string, bool, bool) {
 	return text, false, true
 }
 
-// Truncated integer of a non negative int or float, nil for anything else, the error int raises for a non finite float
+// Truncated integer of a non negative int or float, a float past the int64 range clamped to its bound, nil for anything else, an error for a float that is not finite
 func durationMs(value any) (any, error) {
 	switch v := value.(type) {
 	case int:
@@ -118,27 +117,16 @@ func durationMs(value any) (any, error) {
 			return nil, nil
 		}
 		return v, nil
-	case *big.Int:
-		if v.Sign() < 0 {
-			return nil, nil
-		}
-		return v, nil
 	case float64:
-		if math.IsNaN(v) {
-			return nil, &gateway.PyError{Kind: "ValueError", Msg: "cannot convert float NaN to integer"}
+		if math.IsNaN(v) || math.IsInf(v, 0) {
+			return nil, activityError(fmt.Sprintf("activity event durationMs %v is not a finite number", v))
 		}
-		if math.IsInf(v, 0) {
-			return nil, &gateway.PyError{Kind: "OverflowError", Msg: "cannot convert float infinity to integer"}
-		}
-		n, err := pyint.Of(v)
-		if err != nil {
+		n, err := anyutil.ToInt(v)
+		if err != nil && !errors.Is(err, anyutil.ErrRange) {
 			return nil, err
 		}
-		if n.Sign() < 0 {
+		if n < 0 {
 			return nil, nil
-		}
-		if n.IsInt64() {
-			return n.Int64(), nil
 		}
 		return n, nil
 	}
@@ -156,7 +144,7 @@ type activityFields struct {
 }
 
 // Builds a validated shape activity event for a hook, content capped and unsafe scalars dropped
-func makeActivityEvent(hookEventName string, sessionID any, f activityFields) (*pyjson.Object, error) {
+func makeActivityEvent(hookEventName string, sessionID any, f activityFields) (*jsonutil.Object, error) {
 	session, ok := safeScalar(sessionID)
 	if !ok {
 		session = "unknown"
@@ -165,8 +153,8 @@ func makeActivityEvent(hookEventName string, sessionID any, f activityFields) (*
 	if f.status == "error" {
 		status = "error"
 	}
-	occurredAt := strings.Replace(pydatetime.ISOFormatUTC(time.Now()), "+00:00", "Z", -1)
-	event := pyjson.ObjectOf("schema", activityEventSchema, "eventId", "icebath-"+uuid.NewString(), "sessionId", session,
+	occurredAt := time.Now().UTC().Format(timeutil.RFC3339Micro)
+	event := jsonutil.ObjectOf("schema", activityEventSchema, "eventId", "icebath-"+uuid.NewString(), "sessionId", session,
 		"hookEventName", hookEventName, "status", status, "occurredAt", occurredAt)
 	for _, row := range []struct {
 		key string
@@ -198,7 +186,7 @@ func makeActivityEvent(hookEventName string, sessionID any, f activityFields) (*
 	return event, nil
 }
 
-// ValueError of an activity event that fails validation
+// Error of an activity event that fails validation, labelled ValueError for the hook error records
 func activityError(msg string) error { return &gateway.PyError{Kind: "ValueError", Msg: msg} }
 
 // Optional field groups in check order with the description of what each must be
@@ -213,17 +201,17 @@ var optionalFieldRules = []struct {
 		"a boolean"},
 }
 
-// Copy of a well formed activity event with its duration truncated and its content capped, ValueError otherwise
-func validateActivityEvent(value any) (*pyjson.Object, error) {
-	source, ok := value.(*pyjson.Object)
+// Copy of a well formed activity event with its duration truncated and its content capped, the validation error otherwise
+func validateActivityEvent(value any) (*jsonutil.Object, error) {
+	source, ok := value.(*jsonutil.Object)
 	if !ok {
 		return nil, activityError("activity event must be an object")
 	}
-	if schema, _ := source.Get("schema"); !pyrepr.Equal(schema, activityEventSchema) {
+	if schema, _ := source.Get("schema"); schema != activityEventSchema {
 		return nil, activityError("unsupported activity event schema")
 	}
 	var unknown []string
-	for _, k := range source.Keys {
+	for _, k := range source.Keys() {
 		if !activityAllowedFields[k] {
 			unknown = append(unknown, k)
 		}
@@ -238,12 +226,7 @@ func validateActivityEvent(value any) (*pyjson.Object, error) {
 			return nil, activityError(fmt.Sprintf("activity event %s must be a safe non-empty string", key))
 		}
 	}
-	status, _ := source.Get("status")
-	switch status.(type) {
-	case []any, *pyjson.Object:
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(status))}
-	}
-	if !pyrepr.Equal(status, "ok") && !pyrepr.Equal(status, "error") {
+	if status, _ := source.Get("status"); status != "ok" && status != "error" {
 		return nil, activityError("activity event status must be ok|error")
 	}
 	for _, rule := range optionalFieldRules {
@@ -261,7 +244,7 @@ func validateActivityEvent(value any) (*pyjson.Object, error) {
 			}
 		}
 	}
-	event := source.Copy()
+	event := source.Clone()
 	if raw, _ := event.Get("durationMs"); raw != nil {
 		duration, err := durationMs(raw)
 		if err != nil {
@@ -291,7 +274,7 @@ func validateActivityEvent(value any) (*pyjson.Object, error) {
 type ActivityQueue struct {
 	mu                sync.Mutex
 	limit             int
-	events            []*pyjson.Object
+	events            []*jsonutil.Object
 	droppedSinceDrain int
 }
 
@@ -320,7 +303,7 @@ func (q *ActivityQueue) Push(event any) error {
 }
 
 // Removes and returns up to maxEvents oldest events with the count dropped since the last drain
-func (q *ActivityQueue) Drain(maxEvents int) *pyjson.Object {
+func (q *ActivityQueue) Drain(maxEvents int) *jsonutil.Object {
 	if maxEvents == 0 {
 		maxEvents = 200
 	}
@@ -335,7 +318,7 @@ func (q *ActivityQueue) Drain(maxEvents int) *pyjson.Object {
 	dropped := q.droppedSinceDrain
 	q.droppedSinceDrain = 0
 	q.mu.Unlock()
-	return pyjson.ObjectOf("schema", activityDrainSchema, "events", events, "dropped", dropped)
+	return jsonutil.ObjectOf("schema", activityDrainSchema, "events", events, "dropped", dropped)
 }
 
 // Number of queued events
@@ -372,10 +355,10 @@ func platformText(platform any) string {
 	case fmt.Stringer:
 		return p.String()
 	}
-	if !pyrepr.Truthy(platform) {
+	if !anyutil.IsTrue(platform) {
 		return ""
 	}
-	return pyrepr.Str(platform)
+	return anyutil.String(platform)
 }
 
 // Whether a hook payload belongs to Raft, an explicit raft platform also learning its session and turn ids
@@ -463,7 +446,7 @@ var onPreToolCall = raftHook(func(ctx context.Context, kwargs map[string]any) er
 // Reports a finished tool call, a failed or blocked one as a failure with its error class
 var onPostToolCall = raftHook(func(ctx context.Context, kwargs map[string]any) error {
 	status := "ok"
-	if pyrepr.Equal(kwargs["status"], "error") || pyrepr.Equal(kwargs["status"], "blocked") || pyrepr.Truthy(kwargs["error_type"]) {
+	if anyutil.Equal(kwargs["status"], "error") || anyutil.Equal(kwargs["status"], "blocked") || anyutil.IsTrue(kwargs["error_type"]) {
 		status = "error"
 	}
 	name := "PostToolUse"
@@ -471,11 +454,11 @@ var onPostToolCall = raftHook(func(ctx context.Context, kwargs map[string]any) e
 		name = "PostToolUseFailure"
 	}
 	output := kwargs["error_message"]
-	if !pyrepr.Truthy(output) {
+	if !anyutil.IsTrue(output) {
 		output = kwargs["result"]
 	}
 	errorClass := kwargs["error_type"]
-	if !pyrepr.Truthy(errorClass) {
+	if !anyutil.IsTrue(errorClass) {
 		errorClass = nil
 		if status == "error" {
 			errorClass = "tool_failure"
@@ -492,7 +475,7 @@ var onPostLLMCall = raftHook(func(ctx context.Context, kwargs map[string]any) er
 
 // Reports an interrupted or incomplete session end and forgets the turn
 var onSessionEnd = raftHook(func(ctx context.Context, kwargs map[string]any) error {
-	interrupted := pyrepr.Truthy(kwargs["interrupted"])
+	interrupted := anyutil.IsTrue(kwargs["interrupted"])
 	if completed, isBool := kwargs["completed"].(bool); interrupted || (isBool && !completed) {
 		errorClass := "incomplete"
 		if interrupted {

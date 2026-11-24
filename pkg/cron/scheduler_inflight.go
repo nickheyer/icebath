@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // Floor in minutes of the stale in flight allowance
@@ -132,7 +133,7 @@ func getRunningJobDetails() []RunningJobDetail {
 	for _, k := range keys {
 		d := RunningJobDetail{JobID: k.JobID, RestartSafe: inflight.scopeIsolated[k]}
 		if started, ok := inflight.since[k]; ok {
-			v := pyint.Round(now-started, 1)
+			v := mathutil.Round(now-started, 1)
 			d.ElapsedS = &v
 		}
 		if pid, ok := inflight.workerPIDs[k]; ok {

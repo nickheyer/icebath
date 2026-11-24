@@ -9,8 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -189,7 +189,7 @@ func TestFailureReasonForwardedReasonIsForwardedWhenSupplied(t *testing.T) {
 	if err != nil || cooldown == nil {
 		t.Fatalf("cooldown %v %v", cooldown, err)
 	}
-	if got := cooldown.GetOr("error", nil); got != reason {
+	if got := cooldown.ValueOr("error", nil); got != reason {
 		t.Fatalf("error %v", got)
 	}
 }
@@ -291,7 +291,7 @@ func TestRecordedCooldownEscalatesPersistedDeadlinesGrow(t *testing.T) {
 		if err != nil || cooldown == nil {
 			t.Fatalf("cooldown %v %v", cooldown, err)
 		}
-		until, _ := pyint.Float(cooldown.GetOr("cooldown_until", 0))
+		until, _ := anyutil.ToFloat(cooldown.ValueOr("cooldown_until", 0))
 		waits = append(waits, until-now)
 	}
 	if !(waits[0] < waits[1] && waits[1] < waits[2]) {

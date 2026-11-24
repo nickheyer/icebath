@@ -6,29 +6,30 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Decoded JSON object of a status payload literal
-func statusObject(t *testing.T, text string) *pyjson.Object {
+func statusObject(t *testing.T, text string) *jsonutil.Object {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 // Event dicts one transition emits through a fresh enabled process emitter
-func captureTransition(t *testing.T, previous, current *pyjson.Object) []*pyjson.Object {
+func captureTransition(t *testing.T, previous, current *jsonutil.Object) []*jsonutil.Object {
 	t.Helper()
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	em := NewMonitoringEmitter(true)
 	ResetEmitterForTests(em)
 	defer ResetEmitterForTests(nil)
 	var mu sync.Mutex
-	var seen []*pyjson.Object
-	em.Subscribe(NewSubscriber(func(batch []*pyjson.Object) {
+	var seen []*jsonutil.Object
+	em.Subscribe(NewSubscriber(func(batch []*jsonutil.Object) {
 		mu.Lock()
 		defer mu.Unlock()
 		seen = append(seen, batch...)
@@ -37,11 +38,11 @@ func captureTransition(t *testing.T, previous, current *pyjson.Object) []*pyjson
 	em.Flush(2.0)
 	mu.Lock()
 	defer mu.Unlock()
-	return append([]*pyjson.Object(nil), seen...)
+	return append([]*jsonutil.Object(nil), seen...)
 }
 
 // Field of an event dict
-func field(ev *pyjson.Object, key string) any {
+func field(ev *jsonutil.Object, key string) any {
 	v, _ := ev.Get(key)
 	return v
 }
@@ -132,7 +133,7 @@ func TestCoercePID(t *testing.T) {
 	}
 	for _, c := range cases {
 		got, err := coercePID(c.raw)
-		if err != nil || !pyjson.Equal(got, c.want) {
+		if err != nil || !anyutil.Equal(got, c.want) {
 			t.Fatalf("%v: got %v %v want %v", c.raw, got, err, c.want)
 		}
 	}
@@ -142,16 +143,16 @@ func TestParseActiveAgentsUsesGatewayContractThenFallback(t *testing.T) {
 	prev := GatewayParseActiveAgents
 	defer func() { GatewayParseActiveAgents = prev }()
 	GatewayParseActiveAgents = func(raw any) (any, error) { return int64(7), nil }
-	if got, err := parseActiveAgents("3"); err != nil || !pyjson.Equal(got, 7) {
+	if got, err := parseActiveAgents("3"); err != nil || !anyutil.Equal(got, 7) {
 		t.Fatalf("contract result ignored: %v %v", got, err)
 	}
 	GatewayParseActiveAgents = func(raw any) (any, error) { panic("boom") }
-	if got, err := parseActiveAgents("3"); err != nil || !pyjson.Equal(got, 3) {
+	if got, err := parseActiveAgents("3"); err != nil || !anyutil.Equal(got, 3) {
 		t.Fatalf("panicking contract did not fall back: %v %v", got, err)
 	}
 	GatewayParseActiveAgents = nil
 	for raw, want := range map[any]any{"-2": 0, "x": 0, int64(5): 5} {
-		if got, err := parseActiveAgents(raw); err != nil || !pyjson.Equal(got, want) {
+		if got, err := parseActiveAgents(raw); err != nil || !anyutil.Equal(got, want) {
 			t.Fatalf("%v: got %v %v want %v", raw, got, err, want)
 		}
 	}
@@ -175,7 +176,7 @@ func TestEmitRuntimeStatusTransitionLifecycleAndExit(t *testing.T) {
 		if field(ev, "exit_reason") != "planned_stop" || field(ev, "restart_requested") != false {
 			t.Fatalf("exit %v", ev)
 		}
-		if !pyjson.Equal(field(ev, "active_agents"), 2) || !pyjson.Equal(field(ev, "pid"), 4321) {
+		if !anyutil.Equal(field(ev, "active_agents"), 2) || !anyutil.Equal(field(ev, "pid"), 4321) {
 			t.Fatalf("agents or pid %v", ev)
 		}
 		if p, _ := field(ev, "profile").(string); p == "" {
@@ -196,7 +197,7 @@ func TestEmitRuntimeStatusTransitionStartupFailedDiagnostic(t *testing.T) {
 	if field(events[0], "name") != "gateway.lifecycle" || field(events[0], "old_state") != nil || field(events[0], "exit_reason") != "auth_failed" {
 		t.Fatalf("lifecycle %v", events[0])
 	}
-	if !pyjson.Equal(field(events[0], "active_agents"), 0) || field(events[0], "pid") != nil {
+	if !anyutil.Equal(field(events[0], "active_agents"), 0) || field(events[0], "pid") != nil {
 		t.Fatalf("defaults %v", events[0])
 	}
 	diag := events[1]
@@ -246,7 +247,7 @@ func TestEmitRuntimeStatusTransitionOverflowFailsOpen(t *testing.T) {
 	prev := GatewayParseActiveAgents
 	defer func() { GatewayParseActiveAgents = prev }()
 	GatewayParseActiveAgents = nil
-	current := pyjson.NewObject()
+	current := jsonutil.NewObject()
 	current.Set("gateway_state", "running")
 	current.Set("active_agents", math.Inf(1))
 	if events := captureTransition(t, nil, current); len(events) != 0 {

@@ -6,9 +6,9 @@ import (
 	"errors"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Sessions whose store facts one worker read fetches
@@ -25,7 +25,7 @@ type liveEntry struct {
 	live      *LiveSession
 	handle    SessionHandle
 	row       map[string]any
-	pending   []*pyjson.Object
+	pending   []*jsonutil.Object
 	closed    bool
 }
 
@@ -59,12 +59,12 @@ func scanListingRows(rows *sql.Rows) ([]map[string]any, error) {
 }
 
 // Picker rows and pending admissions of a batch of sessions in one read
-func listingStoreFacts(ctx context.Context, db *state.SessionDB, sessionIDs []string) (map[string]map[string]any, map[string][]*pyjson.Object, error) {
+func listingStoreFacts(ctx context.Context, db *state.SessionDB, sessionIDs []string) (map[string]map[string]any, map[string][]*jsonutil.Object, error) {
 	idList := make([]any, len(sessionIDs))
 	for i, id := range sessionIDs {
 		idList[i] = id
 	}
-	ids, err := pyjson.Dumps(idList)
+	ids, err := jsonutil.Encode(idList)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -97,49 +97,51 @@ func listingStoreFacts(ctx context.Context, db *state.SessionDB, sessionIDs []st
 	}
 	byID := make(map[string]map[string]any, len(rows))
 	for _, row := range rows {
-		byID[pyrepr.Str(row["id"])] = row
+		byID[anyutil.String(row["id"])] = row
 	}
-	bySession := map[string][]*pyjson.Object{}
+	bySession := map[string][]*jsonutil.Object{}
 	for _, row := range pending {
-		target := pyrepr.Str(row["target_session_id"])
-		bySession[target] = append(bySession[target], pyjson.ObjectOf(
+		target := anyutil.String(row["target_session_id"])
+		bySession[target] = append(bySession[target], jsonutil.ObjectOf(
 			"target_session_id", row["target_session_id"], "admission_id", row["admission_id"], "seq", row["seq"], "status", row["status"]))
 	}
 	return byID, bySession, nil
 }
 
 // Pending rows with an unpublished settlement still reading as its started claim
-func maskedPending(live *LiveSession, rows []*pyjson.Object) []*pyjson.Object {
+func maskedPending(live *LiveSession, rows []*jsonutil.Object) []*jsonutil.Object {
 	if len(live.Settling) == 0 {
 		return rows
 	}
-	merged := map[string]*pyjson.Object{}
+	merged := map[string]*jsonutil.Object{}
 	var order []string
-	put := func(id string, row *pyjson.Object) {
+	put := func(id string, row *jsonutil.Object) {
 		if _, seen := merged[id]; !seen {
 			order = append(order, id)
 		}
 		merged[id] = row
 	}
 	for _, row := range rows {
-		put(pyrepr.Str(row.GetOr("admission_id", nil)), row)
+		put(anyutil.String(row.ValueOr("admission_id", nil)), row)
 	}
 	for id, row := range live.Settling {
 		put(id, row)
 	}
-	out := make([]*pyjson.Object, 0, len(order))
+	out := make([]*jsonutil.Object, 0, len(order))
 	for _, id := range order {
 		out = append(out, merged[id])
 	}
-	sort.SliceStable(out, func(i, j int) bool { return anyInt64(out[i].GetOr("seq", nil)) < anyInt64(out[j].GetOr("seq", nil)) })
+	sort.SliceStable(out, func(i, j int) bool {
+		return anyInt64(out[i].ValueOr("seq", nil)) < anyInt64(out[j].ValueOr("seq", nil))
+	})
 	return out
 }
 
 // Execution state the pending rows imply, unknown over running over idle
-func listingExecutionState(pending []*pyjson.Object) string {
+func listingExecutionState(pending []*jsonutil.Object) string {
 	statuses := map[any]bool{}
 	for _, row := range pending {
-		statuses[row.GetOr("status", nil)] = true
+		statuses[row.ValueOr("status", nil)] = true
 	}
 	switch {
 	case statuses["unknown"]:
@@ -169,7 +171,7 @@ func listingReadable(ctx context.Context, a *SessionAuthority, actor Principal, 
 // Store facts of one listing batch
 type listingFacts struct {
 	rows    map[string]map[string]any
-	pending map[string][]*pyjson.Object
+	pending map[string][]*jsonutil.Object
 }
 
 // Closed idle and unviewed verdict on facts already read

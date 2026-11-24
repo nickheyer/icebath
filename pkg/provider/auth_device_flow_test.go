@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
@@ -17,7 +18,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pywebbrowser"
 )
 
 // Pins the browser heuristics to a scripted environment and PATH for one test
@@ -25,11 +25,17 @@ func scriptBrowserEnv(t *testing.T, env map[string]string, onPath ...string) {
 	t.Helper()
 	prevGetenv := oauthGetenv
 	oauthGetenv = func(key string) string { return env[key] }
-	restoreRegistry := pywebbrowser.ScriptForTests(env, onPath...)
-	t.Cleanup(func() {
-		oauthGetenv = prevGetenv
-		restoreRegistry()
-	})
+	t.Cleanup(func() { oauthGetenv = prevGetenv })
+	for _, key := range []string{"BROWSER", "DISPLAY", "WAYLAND_DISPLAY", "TERM", "WSL_DISTRO_NAME", "WSL_INTEROP", "TERMUX_VERSION", "PREFIX"} {
+		t.Setenv(key, env[key])
+	}
+	bin := t.TempDir()
+	for _, name := range onPath {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", bin)
 }
 
 func TestHeadlessLinuxNoDisplayRefuses(t *testing.T) {

@@ -9,8 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Shallow copy of a mapping value, TypeError naming the type for anything that is not a mapping
@@ -297,7 +297,7 @@ func authoredWins(extra, block map[string]any, platName string, toplevel bool, w
 			if !ok {
 				continue
 			}
-			if !pyrepr.Equal(sv, value) && !warned[[2]string{platName, k}] {
+			if !anyutil.Equal(sv, value) && !warned[[2]string{platName, k}] {
 				warned[[2]string{platName, k}] = true
 				pkgLog().Warn(fmt.Sprintf("%s set in both %s and platforms.%s.extra; platforms.%s.extra took precedence", k, where, platName, platName))
 			}
@@ -415,7 +415,7 @@ func ReadYAMLLayers(ctx context.Context, h string) (map[string]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if pyrepr.Truthy(read) {
+		if anyutil.IsTrue(read) {
 			doc = read
 		}
 	}
@@ -482,7 +482,7 @@ func LoadGatewayConfigFile(ctx context.Context, path string) (*GatewayConfig, er
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(doc) {
+	if !anyutil.IsTrue(doc) {
 		doc = map[string]any{}
 	}
 	return GatewayConfigFromDict(ctx, doc)

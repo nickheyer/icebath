@@ -9,8 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // The websocket client is compiled into this build
@@ -26,7 +24,7 @@ func unhashable(v any) error {
 	switch v.(type) {
 	case []any:
 		return &pyErr{"TypeError", "expected a single value, got a list"}
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return &pyErr{"TypeError", "expected a single value, got a mapping"}
 	}
 	return nil
@@ -60,7 +58,7 @@ func iterOf(v any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		keys := dictKeys(t)
 		out := make([]any, len(keys))
 		for i, k := range keys {
@@ -88,9 +86,9 @@ func joinParts(sep string, parts []any) (string, error) {
 func jsonLoads(v any) (any, error) {
 	switch t := v.(type) {
 	case string:
-		return pyjson.Loads(t)
+		return jsonutil.Decode(t)
 	case []byte:
-		return pyjson.LoadsBytes(t)
+		return jsonutil.Decode(t)
 	}
 	return nil, &pyErr{"TypeError", fmt.Sprintf("expected JSON text, got %s", errchain.Kind(v))}
 }
@@ -100,7 +98,7 @@ func protoText(v any, field string) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	return "", notText(v, field)

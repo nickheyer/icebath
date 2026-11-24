@@ -8,9 +8,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Principal and level of a reasoning command that arrived while a turn ran, a nil effort resetting the level
@@ -23,8 +23,8 @@ type pendingReasoning struct {
 func uuidHex() string { return strings.ReplaceAll(uuid.NewString(), "-", "") }
 
 // Owner's fenced reasoning mutation of a reasoning command on the row's current fences
-func reasoningMutation(ref SessionRef, row *pyjson.Object, effort any) (mutationParams, error) {
-	return fencedMutation(row, ref.SessionID, "reasoning-command:"+uuidHex(), "reasoning", pyjson.ObjectOf("effort", effort))
+func reasoningMutation(ref SessionRef, row *jsonutil.Object, effort any) (mutationParams, error) {
+	return fencedMutation(row, ref.SessionID, "reasoning-command:"+uuidHex(), "reasoning", jsonutil.ObjectOf("effort", effort))
 }
 
 // Commits a reasoning command that arrived while a turn ran, kept for the next boundary while a worker runs
@@ -75,7 +75,7 @@ func applyPendingReasoning(ctx context.Context, a *SessionAuthority, ref Session
 // Model route a one turn switch replaced, with the principal that switched and whether its turn already ran
 type onceRestore struct {
 	principal string
-	payload   *pyjson.Object
+	payload   *jsonutil.Object
 	ran       bool
 }
 
@@ -173,7 +173,7 @@ func localLiveForRoute(runner any, sessionKey string) *LiveSession {
 }
 
 // Defers a typed model command's resolved target as the session's canonical model mutation for the next boundary
-func deferLocalModelPick(ctx context.Context, a *SessionAuthority, live *LiveSession, result provider.ModelSwitchResult, effort string) (*pyjson.Object, error) {
+func deferLocalModelPick(ctx context.Context, a *SessionAuthority, live *LiveSession, result provider.ModelSwitchResult, effort string) (*jsonutil.Object, error) {
 	sid := live.Source.ChatID
 	receipt, err := a.DB.LocalReceipt(ctx, sid)
 	if err != nil {
@@ -187,7 +187,7 @@ func deferLocalModelPick(ctx context.Context, a *SessionAuthority, live *LiveSes
 	if model == "" {
 		model = result.NewModel
 	}
-	payload := pyjson.ObjectOf("model", model)
+	payload := jsonutil.ObjectOf("model", model)
 	if result.TargetProvider != "" {
 		payload.Set("provider", result.TargetProvider)
 	}
@@ -229,7 +229,7 @@ func commitReasoningCommand(ctx context.Context, a *SessionAuthority, actor Prin
 		if err != nil {
 			return err
 		}
-		request := pyjson.ObjectOf("session_id", params.SessionID, "request_id", params.RequestID, "expected_revision", params.ExpectedRevision,
+		request := jsonutil.ObjectOf("session_id", params.SessionID, "request_id", params.RequestID, "expected_revision", params.ExpectedRevision,
 			"expected_generation", rowValue(row, "runtime_generation"), "operation", params.Operation, "payload", params.Payload)
 		_, err = mutateSession(ctx, a, actor, ref, request)
 		if err == nil {

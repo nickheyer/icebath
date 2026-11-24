@@ -6,9 +6,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestBetweenTurnsRefreshAddsLateToolWhenServersRegistered(t *testing.T) {
@@ -25,7 +25,7 @@ func TestBetweenTurnsRefreshAddsLateToolWhenServersRegistered(t *testing.T) {
 		t.Fatal("the late tool was already in the build time snapshot")
 	}
 	tools.Default.Register(tools.Def{Name: "mcp_x_tool", Toolset: "mcp-x",
-		Schema:  pyjson.ObjectOf("name", "mcp_x_tool", "description", "", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())),
+		Schema:  jsonutil.ObjectOf("name", "mcp_x_tool", "description", "", "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf())),
 		Handler: func(context.Context, *tools.Call) string { return "{}" }})
 	mcp.TrackMCPToolServer("mcp_x_tool", "x")
 	t.Cleanup(func() {

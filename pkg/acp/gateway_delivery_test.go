@@ -11,16 +11,18 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const toolResult = `{"content": "owned line", "total_lines": 1}`
 
-func dumpUpdates(t *testing.T, updates []pyacp.SessionUpdate) []string {
+func dumpUpdates(t *testing.T, updates []acputil.SessionUpdate) []string {
 	t.Helper()
 	var out []string
 	for _, u := range updates {
-		text, err := pyjson.Dumps(pyacp.Dump(u, pyacp.DumpOptions{ByAlias: true, ExcludeNone: true}))
+		text, err := jsonutil.Encode(pyacp.Dump(u, pyacp.DumpOptions{ByAlias: true, ExcludeNone: true}))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -32,14 +34,14 @@ func dumpUpdates(t *testing.T, updates []pyacp.SessionUpdate) []string {
 func TestLiveToolEventsProjectExactlyLikeReplay(t *testing.T) {
 	a, _, editor := mappingAgent(t, `{}`)
 	projectEvent(t, a, "tool.start", `{"tool_call_id": "call_1", "tool_name": "read_file", "args": {"path": "/tmp/owned/notes.txt"}}`, "a")
-	result, _ := pyjson.Dumps(toolResult)
+	result, _ := jsonutil.Encode(toolResult)
 	projectEvent(t, a, "tool.complete", `{"tool_call_id": "call_1", "tool_name": "read_file", "is_error": false, "args": {"path": "/tmp/owned/notes.txt"}, "result": `+result+`}`, "a")
 	live := updatesOf(editor)
 	if len(live) != 2 {
 		t.Fatalf("live = %v", live)
 	}
-	start, okStart := live[0].(*pyacp.ToolCallStart)
-	complete, okComplete := live[1].(*pyacp.ToolCallProgress)
+	start, okStart := live[0].(*acputil.ToolCallStart)
+	complete, okComplete := live[1].(*acputil.ToolCallProgress)
 	if !okStart || !okComplete {
 		t.Fatalf("live types %T %T", live[0], live[1])
 	}
@@ -98,7 +100,7 @@ func TestEachDeliveryShapeReachesTheEditorOnceAndThePumpSurvives(t *testing.T) {
 				link.set(fixedReply(t, `{"admission_id": "`+round.admission+`"}`))
 				for _, f := range round.frames {
 					seq++
-					link.put(pyjson.ObjectOf("params", pyjson.ObjectOf("session_id", "s", "type", f[0], "admission_id", round.admission,
+					link.put(jsonutil.ObjectOf("params", jsonutil.ObjectOf("session_id", "s", "type", f[0], "admission_id", round.admission,
 						"replay_epoch", "e", "seq", int64(seq), "payload", jsonObj(t, f[1]))))
 				}
 				resp, err := promptOn(a, context.Background(), "s", round.prompt).wait(t, 5*time.Second)
@@ -131,7 +133,7 @@ const (
 )
 
 type cardStep struct {
-	outcome pyacp.PermissionOutcome
+	outcome acputil.PermissionOutcome
 	err     error
 }
 
@@ -172,19 +174,19 @@ func TestUnacceptedCardIsReofferedOnReattachWithoutReplayingItsAnswer(t *testing
 		option, method   string
 		value            string
 	}{
-		{"approval-editor-cancel", approvalPrompt, cardStep{outcome: &pyacp.DeniedOutcome{}}, false, "allow_once", "approval.respond", "once"},
+		{"approval-editor-cancel", approvalPrompt, cardStep{outcome: &acputil.DeniedOutcome{}}, false, "allow_once", "approval.respond", "once"},
 		{"approval-transport-loss", approvalPrompt, cardStep{err: errors.New("editor transport lost")}, false, "allow_once", "approval.respond", "once"},
-		{"approval-lost-respond", approvalPrompt, cardStep{outcome: &pyacp.AllowedOutcome{OptionID: "allow_once"}}, true, "deny", "approval.respond", "deny"},
+		{"approval-lost-respond", approvalPrompt, cardStep{outcome: &acputil.AllowedOutcome{OptionID: "allow_once"}}, true, "deny", "approval.respond", "deny"},
 		{"clarify-transport-loss", clarifyPrompt, cardStep{err: errors.New("editor transport lost")}, false, "choice-1", "clarify.respond", "green"},
-		{"clarify-lost-respond", clarifyPrompt, cardStep{outcome: &pyacp.AllowedOutcome{OptionID: "choice-0"}}, true, "choice-1", "clarify.respond", "green"},
+		{"clarify-lost-respond", clarifyPrompt, cardStep{outcome: &acputil.AllowedOutcome{OptionID: "choice-0"}}, true, "choice-1", "clarify.respond", "green"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			script := []cardStep{tc.first, {outcome: &pyacp.AllowedOutcome{OptionID: tc.option}}}
+			script := []cardStep{tc.first, {outcome: &acputil.AllowedOutcome{OptionID: tc.option}}}
 			var mu sync.Mutex
 			cards := 0
 			editor := &editorFake{}
-			editor.permission = func(options []pyacp.PermissionOption, sessionID string, toolCall *pyacp.ToolCallUpdate) (*pyacp.RequestPermissionResponse, error) {
+			editor.permission = func(options []acputil.PermissionOption, sessionID string, toolCall *acputil.ToolCallUpdate) (*acputil.RequestPermissionResponse, error) {
 				mu.Lock()
 				cards++
 				step := script[0]
@@ -193,11 +195,11 @@ func TestUnacceptedCardIsReofferedOnReattachWithoutReplayingItsAnswer(t *testing
 				if step.err != nil {
 					return nil, step.err
 				}
-				return &pyacp.RequestPermissionResponse{Outcome: step.outcome}, nil
+				return &acputil.RequestPermissionResponse{Outcome: step.outcome}, nil
 			}
 			owner := &respondOwner{prompt: tc.prompt, lose: tc.loseFirstRespond}
 			a, link := bareGatewayAgent(t, map[string]string{"s": `{}`})
-			link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				switch method {
 				case "session.resume":
 					return jsonObj(t, `{"session_id": "s", "prompts": [`+owner.prompt+`], "pending": []}`), nil
@@ -210,7 +212,7 @@ func TestUnacceptedCardIsReofferedOnReattachWithoutReplayingItsAnswer(t *testing
 				if answer == nil {
 					answer = params["answer"]
 				}
-				owner.responses = append(owner.responses, [2]string{method, pyStr(answer)})
+				owner.responses = append(owner.responses, [2]string{method, anyutil.String(answer)})
 				if owner.lose {
 					owner.lose = false
 					return nil, &gateway.GatewayClientError{Msg: "Gateway disconnected"}

@@ -9,11 +9,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var videoAspectRatios = []string{"16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9"}
@@ -284,7 +284,7 @@ func (p *openAICompatibleVideoGenProvider) createAndPoll(ctx context.Context, cl
 		if !time.Now().Before(deadline) {
 			id := "?"
 			if raw, ok := video.attr("id"); ok {
-				id = pyrepr.Str(raw)
+				id = anyutil.String(raw)
 			}
 			return nil, fmt.Errorf("video job %s did not reach a terminal status within %ds (last status=%s)",
 				id, int(p.pollDeadline.Seconds()), errchain.Show(video.get("status")))
@@ -367,7 +367,7 @@ func (p *openAICompatibleVideoGenProvider) Generate(ctx context.Context, env *to
 	if items, ok := video.get("data").([]any); ok {
 		for _, item := range items {
 			if m, ok := item.(map[string]any); ok && pyTruthy(m["url"]) {
-				deliveryURL = pyrepr.Str(m["url"])
+				deliveryURL = anyutil.String(m["url"])
 				break
 			}
 		}
@@ -483,7 +483,7 @@ func (h hostedVideoGenProvider) DisplayName() string {
 	if s, ok := h.get("display_name").(string); ok {
 		return s
 	}
-	return pystr.Title(h.Name())
+	return textutil.Title(h.Name())
 }
 
 func (h hostedVideoGenProvider) GetSetupSchema() map[string]any {

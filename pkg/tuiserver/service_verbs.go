@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Context key of the non launch profile home a service verb's ticket is bound to
@@ -28,7 +28,7 @@ func serviceVerb(method string) gateway.ServiceVerb {
 }
 
 // Runs a service table verb with the ticket profile home bound, refusing a ticket whose home stopped resolving
-func answerServiceVerb(ctx context.Context, actor gateway.Principal, transport tuihost.Transport, req map[string]any) *pyjson.Object {
+func answerServiceVerb(ctx context.Context, actor gateway.Principal, transport tuihost.Transport, req map[string]any) *jsonutil.Object {
 	ticketHome, err := foreignProfileHome(actor.ProfileID)
 	if err != nil {
 		return frameObject(profileUnavailable(req))

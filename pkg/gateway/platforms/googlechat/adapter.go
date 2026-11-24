@@ -16,10 +16,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -132,8 +131,8 @@ func NewGoogleChatAdapter(ctx context.Context, config *gateway.PlatformConfig) (
 
 // Service account credential from the extra or the env key path, application default credentials otherwise
 func (a *GoogleChatAdapter) loadSACredentials(ctx context.Context) (*restClient, error) {
-	saPath := pyrepr.Str(a.Config.Extra["service_account_json"])
-	if !pyrepr.Truthy(a.Config.Extra["service_account_json"]) {
+	saPath := anyutil.String(a.Config.Extra["service_account_json"])
+	if !anyutil.IsTrue(a.Config.Extra["service_account_json"]) {
 		saPath, _ = gateway.GetScopedSecret(ctx, "GOOGLE_APPLICATION_CREDENTIALS", "", false)
 	}
 	creds, err := loadSACredentialsFrom(ctx, saPath)
@@ -153,9 +152,9 @@ func (a *GoogleChatAdapter) loadSACredentials(ctx context.Context) (*restClient,
 // Project id and subscription path, the latter empty for HTTP inbound
 func (a *GoogleChatAdapter) validateConfig() (string, string, error) {
 	extra := a.Config.Extra
-	projectID := strings.TrimSpace(pyrepr.Str(orEmpty(extra["project_id"])))
-	subscription := strings.TrimSpace(pyrepr.Str(orEmpty(extra["subscription_name"])))
-	httpEventsURL := strings.TrimSpace(pyrepr.Str(orEmpty(extra["http_events_url"])))
+	projectID := strings.TrimSpace(anyutil.String(extra["project_id"]))
+	subscription := strings.TrimSpace(anyutil.String(extra["subscription_name"]))
+	httpEventsURL := strings.TrimSpace(anyutil.String(extra["http_events_url"]))
 	if subscription != "" {
 		m := subscriptionPathRE.FindStringSubmatch(subscription)
 		if m == nil {
@@ -178,14 +177,6 @@ func (a *GoogleChatAdapter) validateConfig() (string, string, error) {
 	return "", "", errors.New("GOOGLE_CHAT_SUBSCRIPTION_NAME (or GOOGLE_CHAT_SUBSCRIPTION) is not set. Set GOOGLE_CHAT_HTTP_EVENTS_URL for HTTP callback mode.")
 }
 
-// Empty text for nil
-func orEmpty(v any) any {
-	if v == nil {
-		return ""
-	}
-	return v
-}
-
 // Bot id cache file of the profile
 func botIDCachePath(ctx context.Context) string {
 	return filepath.Join(home.Dir(ctx), "google_chat_bot_id.json")
@@ -197,7 +188,7 @@ func loadCachedBotID(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return ""
 	}
@@ -239,8 +230,8 @@ func (a *GoogleChatAdapter) resolveBotUserID(ctx context.Context) string {
 		for _, raw := range list {
 			m, _ := raw.(map[string]any)
 			member, _ := m["member"].(map[string]any)
-			if member["type"] == "BOT" && pyrepr.Truthy(member["name"]) {
-				return pyrepr.Str(member["name"])
+			if member["type"] == "BOT" && anyutil.IsTrue(member["name"]) {
+				return anyutil.String(member["name"])
 			}
 		}
 	}
@@ -474,16 +465,16 @@ func (a *GoogleChatAdapter) handlePubSubMessage(ctx context.Context, path string
 		chat, _ := envelope["chat"].(map[string]any)
 		mpl, _ := chat["membershipPayload"].(map[string]any)
 		space, _ := mpl["space"].(map[string]any)
-		spaceName := pyrepr.Str(orDefault(space["name"], "?"))
+		spaceName := anyutil.String(orDefault(space["name"], "?"))
 		if strings.Contains(ceType, "created") {
 			membership, _ := mpl["membership"].(map[string]any)
 			member, _ := membership["member"].(map[string]any)
 			a.mu.Lock()
 			unresolved := a.botUserID == ""
-			if member["type"] == "BOT" && unresolved && pyrepr.Truthy(member["name"]) {
-				a.botUserID = pyrepr.Str(member["name"])
+			if member["type"] == "BOT" && unresolved && anyutil.IsTrue(member["name"]) {
+				a.botUserID = anyutil.String(member["name"])
 				a.mu.Unlock()
-				saveCachedBotID(ctx, pyrepr.Str(member["name"]))
+				saveCachedBotID(ctx, anyutil.String(member["name"]))
 			} else {
 				a.mu.Unlock()
 			}
@@ -550,7 +541,7 @@ func extractMessagePayload(envelope map[string]any) (map[string]any, map[string]
 		}
 	}
 	if msg, ok := envelope["message"].(map[string]any); ok {
-		if pyrepr.Str(orDefault(envelope["type"], "")) != "MESSAGE" {
+		if anyutil.String(orDefault(envelope["type"], "")) != "MESSAGE" {
 			return nil, nil, "", false
 		}
 		space, _ := envelope["space"].(map[string]any)
@@ -564,12 +555,12 @@ func extractMessagePayload(envelope map[string]any) (map[string]any, map[string]
 	if !hasEventType && !hasSender {
 		return nil, nil, "", false
 	}
-	if pyrepr.Str(orDefault(envelope["event_type"], "MESSAGE")) != "MESSAGE" {
+	if anyutil.String(orDefault(envelope["event_type"], "MESSAGE")) != "MESSAGE" {
 		return nil, nil, "", false
 	}
-	senderEmail := strings.TrimSpace(pyrepr.Str(orEmpty(envelope["sender_email"])))
-	text := pyrepr.Str(orEmpty(envelope["text"]))
-	senderType := strings.ToUpper(strings.TrimSpace(pyrepr.Str(orDefault(nonEmpty(envelope["sender_type"]), "HUMAN"))))
+	senderEmail := strings.TrimSpace(anyutil.String(envelope["sender_email"]))
+	text := anyutil.String(envelope["text"])
+	senderType := strings.ToUpper(strings.TrimSpace(anyutil.String(orDefault(nonEmpty(envelope["sender_type"]), "HUMAN"))))
 	if senderType != "HUMAN" && senderType != "BOT" {
 		senderType = "HUMAN"
 	}
@@ -578,26 +569,26 @@ func extractMessagePayload(envelope map[string]any) (map[string]any, map[string]
 		surrogate = "unknown"
 	}
 	surrogate = strings.ReplaceAll(strings.ReplaceAll(surrogate, "@", "_at_"), ".", "_")
-	display := pyrepr.Str(orDefault(nonEmpty(envelope["sender_display_name"]), nil))
-	if !pyrepr.Truthy(envelope["sender_display_name"]) {
+	display := anyutil.String(orDefault(nonEmpty(envelope["sender_display_name"]), nil))
+	if !anyutil.IsTrue(envelope["sender_display_name"]) {
 		display = senderEmail
 		if display == "" {
 			display = "Unknown"
 		}
 	}
-	msg := map[string]any{"name": pyrepr.Str(orEmpty(envelope["message_name"])),
+	msg := map[string]any{"name": anyutil.String(envelope["message_name"]),
 		"sender": map[string]any{"name": "users/relay-" + surrogate, "email": senderEmail, "displayName": display, "type": senderType},
 		"text":   text, "argumentText": text}
-	if pyrepr.Truthy(envelope["thread_name"]) {
+	if anyutil.IsTrue(envelope["thread_name"]) {
 		msg["thread"] = map[string]any{"name": envelope["thread_name"]}
 	}
-	space := map[string]any{"name": pyrepr.Str(orEmpty(envelope["space_name"])), "spaceType": orDefault(envelope["space_type"], "SPACE")}
+	space := map[string]any{"name": anyutil.String(envelope["space_name"]), "spaceType": orDefault(envelope["space_type"], "SPACE")}
 	return msg, space, "relay_flat", true
 }
 
 // Nil for falsy values so defaults apply
 func nonEmpty(v any) any {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil
 	}
 	return v
@@ -615,7 +606,7 @@ func (a *GoogleChatAdapter) prepareInbound(envelope map[string]any, ceType strin
 	if sender, _ := msg["sender"].(map[string]any); sender["type"] == "BOT" {
 		return nil, nil, false
 	}
-	if name := pyrepr.Str(orEmpty(msg["name"])); name != "" && a.dedup.IsDuplicate(name) {
+	if name := anyutil.String(msg["name"]); name != "" && a.dedup.IsDuplicate(name) {
 		if logDebug {
 			pkgLog().Debug("[GoogleChat] Dedup drop for " + name)
 		}

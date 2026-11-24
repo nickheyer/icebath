@@ -20,8 +20,8 @@ import (
 	"golang.org/x/sys/windows/svc"
 
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // SCM service that starts the one child its child.txt names, like a service wrapper
@@ -212,7 +212,7 @@ func TestALaunchRecoveringAnUnreadyServiceKeepsTheDebtWithoutStalling(t *testing
 	for _, l := range launches {
 		owed = append(owed, l.Owed)
 	}
-	if want := []any{[]any{[]any{name}}, []any{[]any{name}}}; !pyrepr.Equal(owed, want) {
+	if want := []any{[]any{[]any{name}}, []any{[]any{name}}}; !anyutil.Equal(owed, want) {
 		t.Fatalf("the unready service's debt was lost: %v", launches)
 	}
 	if first := launches[0].Seconds; first >= 40 {

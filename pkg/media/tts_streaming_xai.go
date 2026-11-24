@@ -18,10 +18,11 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -39,7 +40,7 @@ const (
 type xaiPumpDone struct{}
 
 // Puts an item on a bounded queue, giving up once stop is set, false when dropped
-func putUnlessStopped(q chan any, item any, stop *pythread.Event, pollS float64) bool {
+func putUnlessStopped(q chan any, item any, stop *syncutil.Event, pollS float64) bool {
 	for !stop.IsSet() {
 		timer := time.NewTimer(time.Duration(pollS * float64(time.Second)))
 		select {
@@ -85,7 +86,7 @@ func (s *xaiStreamer) Stream(ctx context.Context, text string) (iter.Seq2[[]byte
 func (s *xaiStreamer) queuedFrames(ctx context.Context, text string) iter.Seq2[[]byte, error] {
 	return func(yield func([]byte, error) bool) {
 		q := make(chan any, xaiQueueMax)
-		stop := &pythread.Event{}
+		stop := &syncutil.Event{}
 		defer stop.Set()
 		go func() {
 			if err := pluginCall(func() error { return s.pump(ctx, text, q, stop) }); err != nil {
@@ -300,7 +301,7 @@ func wsCloseGracefully(conn *websocket.Conn, peerClosed bool) {
 }
 
 // Sends the sentence and queues every decoded audio.delta until audio.done, an error frame or the byte ceiling
-func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *pythread.Event) error {
+func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *syncutil.Event) error {
 	apiKey, err := xaiStreamAPIKey(s.env)
 	if err != nil {
 		return err
@@ -335,8 +336,8 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *p
 		close(done)
 		wsCloseGracefully(conn, peerClosed)
 	}()
-	for _, frame := range []*pyjson.Object{jsonObject("type", "text.delta", "delta", text), jsonObject("type", "text.done")} {
-		raw, err := pyjson.Dumps(frame)
+	for _, frame := range []*jsonutil.Object{jsonObject("type", "text.delta", "delta", text), jsonObject("type", "text.done")} {
+		raw, err := jsonutil.Encode(frame)
 		if err != nil {
 			return err
 		}
@@ -379,7 +380,7 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *p
 		}
 		if kind == websocket.TextMessage {
 			var bad *pycodecs.UnicodeDecodeError
-			if _, derr := pycodecs.Decode(data, "utf-8"); errors.As(derr, &bad) {
+			if _, derr := charsetutil.Decode(data, "utf-8"); errors.As(derr, &bad) {
 				peerClosed = true
 				reason := fmt.Sprintf("%s at position %d", bad.Reason, bad.Pos)
 				_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseInvalidFramePayloadData, reason), time.Now().Add(time.Second))
@@ -389,7 +390,7 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *p
 		if kind != websocket.TextMessage {
 			continue
 		}
-		decoded, err := pyjson.Loads(string(data))
+		decoded, err := jsonutil.Decode(string(data))
 		if err != nil {
 			continue
 		}
@@ -397,7 +398,7 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *p
 		if err != nil {
 			return err
 		}
-		envelope := decoded.(*pyjson.Object)
+		envelope := decoded.(*jsonutil.Object)
 		switch msgType {
 		case "audio.delta":
 			b64, _ := envelope.Get("delta")
@@ -426,7 +427,7 @@ func (s *xaiStreamer) pump(ctx context.Context, text string, q chan any, stop *p
 			if !pyTruthy(detail) {
 				detail = envelope
 			}
-			return &ttsRuntimeError{msg: "xAI streaming TTS error: " + pyrepr.Str(detail)}
+			return &ttsRuntimeError{msg: "xAI streaming TTS error: " + anyutil.String(detail)}
 		}
 	}
 }

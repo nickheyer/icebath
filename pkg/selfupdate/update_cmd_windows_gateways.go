@@ -21,12 +21,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -87,7 +87,7 @@ func tokenStrings(v any) []string {
 	case []any:
 		out := make([]string, len(list))
 		for i, item := range list {
-			out[i] = pyrepr.Str(item)
+			out[i] = anyutil.String(item)
 		}
 		return out
 	}
@@ -121,7 +121,7 @@ func winService(name string) (gatewaycli.WinService, error) { return winServiceG
 
 // Runs sc.exe with a verb, a failed exit an error unless the SCM already reports the settled status
 func scExe(ctx context.Context, verb, name string, service gatewaycli.WinService, settledStatus string) error {
-	result, err := pysubprocess.RunWith(ctx, []string{"sc.exe", verb, name}, pysubprocess.Options{Timeout: 10 * time.Second})
+	result, err := executil.Run(ctx, []string{"sc.exe", verb, name}, executil.Options{Timeout: 10 * time.Second})
 	if err != nil {
 		return err
 	}
@@ -218,14 +218,17 @@ func verifyServiceIdentities(name string, service gatewaycli.WinService, expecte
 // Polls an SCM condition every fifth of a second, the first probe failure ending the wait
 func winPoll(timeout float64, settled func() (bool, error)) (bool, error) {
 	var probeErr error
-	done := pydeadline.PollUntil(func() (bool, bool) {
-		ok, err := settled()
-		if err != nil {
-			probeErr = err
-			return false, true
-		}
-		return ok, ok
-	}, time.Duration(timeout*float64(time.Second)), 200*time.Millisecond)
+	done := syncutil.PollUntil(context.Background(),
+
+		time.Duration(timeout*float64(time.Second)), 200*time.Millisecond, func() (bool, bool) {
+			ok, err := settled()
+			if err != nil {
+				probeErr = err
+				return false, true
+			}
+			return ok, ok
+		})
+
 	return done && probeErr == nil, probeErr
 }
 
@@ -489,12 +492,12 @@ func requestSocketPauses(ctx context.Context, runningPids []int, processes map[i
 			}
 		}
 		ack := gateway.PauseGatewayForUpdate(process.Path, 2*time.Second)
-		if ack == nil || ack.Len() == 0 || !(pyrepr.Truthy(ack.GetOr("pausing", nil)) || pyrepr.Truthy(ack.GetOr("already_stopping", nil))) {
+		if ack == nil || ack.Len() == 0 || !(anyutil.IsTrue(ack.ValueOr("pausing", nil)) || anyutil.IsTrue(ack.ValueOr("already_stopping", nil))) {
 			continue
 		}
 		plain := map[string]any{}
-		for _, key := range ack.Keys {
-			plain[key] = ack.GetOr(key, nil)
+		for _, key := range ack.Keys() {
+			plain[key] = ack.ValueOr(key, nil)
 		}
 		acks = append(acks, plain)
 		if !requested && onRequest != nil {
@@ -518,7 +521,7 @@ func gatewayDrainTimeout(ctx context.Context, w io.Writer, acks []map[string]any
 	declared, known := 0.0, true
 	for i, ack := range acks {
 		value := 0.0
-		if pyrepr.Truthy(ack["drain_timeout"]) {
+		if anyutil.IsTrue(ack["drain_timeout"]) {
 			number, ok := winFloat(ack["drain_timeout"])
 			if !ok {
 				known = false
@@ -722,7 +725,7 @@ func stopWindowsGateways(ctx context.Context, w io.Writer, runningPids []int, pr
 	if len(unmappedPids) > 0 {
 		fmt.Fprintf(w, "  → Stopped %d gateway process(es) without profile mapping\n", len(unmappedPids))
 		for _, entry := range tokenEntries(unmapped) {
-			if !pyrepr.Truthy(entry["argv"]) {
+			if !anyutil.IsTrue(entry["argv"]) {
 				fmt.Fprintln(w, "    Restart manually after update: icebath gateway run")
 				break
 			}
@@ -942,7 +945,7 @@ func resumeWindowsServices(ctx context.Context, w io.Writer, token map[string]an
 			retry[name] = state
 		}
 	}
-	recovering := pyrepr.Truthy(token["recovery"])
+	recovering := anyutil.IsTrue(token["recovery"])
 	owners := tokenMap(token["service_profiles"])
 	var restarted, failed []string
 	for _, name := range services {
@@ -963,8 +966,8 @@ func resumeWindowsServices(ctx context.Context, w io.Writer, token map[string]an
 				probe = &short
 			}
 			profile := ""
-			if owner := owners[name]; pyrepr.Truthy(owner) {
-				profile = pyrepr.Str(owner)
+			if owner := owners[name]; anyutil.IsTrue(owner) {
+				profile = anyutil.String(owner)
 			}
 			ready, err := winServiceGatewayReady(ctx, name, profile, probe)
 			if err != nil {
@@ -1052,7 +1055,7 @@ func pendingRelaunchPids(paused map[string]any, unmapped []any, pidExists func(i
 		}
 	}
 	for _, entry := range tokenEntries(unmapped) {
-		if pyrepr.Truthy(entry["argv"]) && pyrepr.Truthy(entry["pid"]) {
+		if anyutil.IsTrue(entry["argv"]) && anyutil.IsTrue(entry["pid"]) {
 			set[entryPid(entry)] = true
 		}
 	}
@@ -1088,14 +1091,14 @@ func unmappedReadyFilter(ctx context.Context, entry map[string]any, taken map[in
 		if !haveHome {
 			return true, nil
 		}
-		if !pyrepr.Truthy(servedHome) {
+		if !anyutil.IsTrue(servedHome) {
 			return false, nil
 		}
 		liveHome, ct := winGatewayPidHome(ctx, pid), winProcessStartTime(pid)
 		if liveHome == "" {
 			return false, nil
 		}
-		same, err := gateway.SameIcebathHome(liveHome, pyrepr.Str(servedHome))
+		same, err := gateway.SameIcebathHome(liveHome, anyutil.String(servedHome))
 		if err != nil || !same {
 			return false, err
 		}
@@ -1312,7 +1315,7 @@ func verifyRelaunchedGatewaysAlive(ctx context.Context, w io.Writer, token, paus
 	for _, owed := range tokenEntries(token["unmapped"]) {
 		retired := false
 		for i, entry := range entries {
-			retired = retired || (readyEntries[i] && pyrepr.Equal(owed, entry))
+			retired = retired || (readyEntries[i] && anyutil.Equal(owed, entry))
 		}
 		if !retired {
 			keptUnmapped = append(keptUnmapped, owed)
@@ -1341,7 +1344,7 @@ func verifyRelaunchedGatewaysAlive(ctx context.Context, w io.Writer, token, paus
 	}
 	for i, entry := range entries {
 		if !readyEntries[i] {
-			unready = append(unready, "pid "+pyrepr.Str(entry["pid"]))
+			unready = append(unready, "pid "+anyutil.String(entry["pid"]))
 		}
 	}
 	if len(unready) > 0 {
@@ -1355,7 +1358,7 @@ func verifyRelaunchedGatewaysAlive(ctx context.Context, w io.Writer, token, paus
 
 // Restarts the gateways a token paused for the update, taking the exit hook's place once it runs
 func resumeWindowsGatewaysAfterUpdate(ctx context.Context, w io.Writer, token map[string]any) error {
-	if len(token) == 0 || !pyrepr.Truthy(token["resume_needed"]) {
+	if len(token) == 0 || !anyutil.IsTrue(token["resume_needed"]) {
 		return nil
 	}
 	winUnregisterExitHook(resumeWindowsGatewaysHook)
@@ -1368,7 +1371,7 @@ func resumeWindowsGatewaysAfterUpdate(ctx context.Context, w io.Writer, token ma
 
 // Resumes the paused set, or leaves it owed when the checkout is not whole
 func resumeUnlessTorn(ctx context.Context, w io.Writer, token map[string]any) error {
-	if pyrepr.Truthy(token["pause_id"]) {
+	if anyutil.IsTrue(token["pause_id"]) {
 		whole, why, err := updaterecord.TreeIsWhole(ctx, token, "")
 		if err != nil {
 			return err
@@ -1407,7 +1410,7 @@ func resumePausedSetOf(ctx context.Context, w io.Writer, token map[string]any) e
 	unmapped := entriesAsAny(tokenEntries(token["unmapped"]))
 	replayable := false
 	for _, entry := range tokenEntries(unmapped) {
-		replayable = replayable || pyrepr.Truthy(entry["argv"])
+		replayable = replayable || anyutil.IsTrue(entry["argv"])
 	}
 	switch {
 	case len(paused) > 0 || replayable:
@@ -1426,16 +1429,16 @@ func resumePausedSetOf(ctx context.Context, w io.Writer, token map[string]any) e
 		for _, entry := range tokenEntries(unmapped) {
 			started := false
 			for _, done := range tokenEntries(launchedUnmapped) {
-				started = started || pyrepr.Equal(done, entry)
+				started = started || anyutil.Equal(done, entry)
 			}
 			if !started {
-				notLaunched = append(notLaunched, "pid "+pyrepr.Str(entry["pid"]))
+				notLaunched = append(notLaunched, "pid "+anyutil.String(entry["pid"]))
 			}
 		}
 		if len(notLaunched) > 0 {
 			failures = append(failures, "Could not restart every paused Windows gateway: "+strings.Join(notLaunched, ", "))
 		}
-	case pyrepr.Truthy(token["cold_start_if_installed"]):
+	case anyutil.IsTrue(token["cold_start_if_installed"]):
 		attempt(func() error {
 			started, err := winColdStartGateway(ctx, w)
 			if err != nil {
@@ -1485,14 +1488,14 @@ func resumeWindowsGatewaysAndMergeOutcome(ctx context.Context, w io.Writer, outc
 	outcome.RestartedServices = extendUnique(outcome.RestartedServices, restarted)
 	var supervised, stale []string
 	for _, name := range restarted {
-		if owner := owners[name]; pyrepr.Truthy(owner) {
-			supervised = append(supervised, pyrepr.Str(owner))
+		if owner := owners[name]; anyutil.IsTrue(owner) {
+			supervised = append(supervised, anyutil.String(owner))
 		}
 	}
 	outcome.RelaunchedProfiles = extendUnique(outcome.RelaunchedProfiles, supervised)
 	for _, name := range tokenStrings(token["services"]) {
-		if owner := owners[name]; pyrepr.Truthy(owner) {
-			name = pyrepr.Str(owner)
+		if owner := owners[name]; anyutil.IsTrue(owner) {
+			name = anyutil.String(owner)
 		}
 		stale = append(stale, name)
 	}

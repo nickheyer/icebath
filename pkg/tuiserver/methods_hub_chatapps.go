@@ -12,10 +12,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/webhooksubs"
 )
 
@@ -72,7 +72,7 @@ func chatAppsText(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Platforms of the profile with their state, pairing, webhooks and peers, and whether the background service starts with the computer
@@ -89,9 +89,9 @@ func chatAppsList(ctx context.Context, rid any, raw map[string]any) (map[string]
 	}
 	targets := chatAppsTargets(ctx)
 	status := gateway.ReadRuntimeStatus("")
-	var states *pyjson.Object
+	var states *jsonutil.Object
 	if status != nil {
-		states, _ = pyjson.AsObject(status.GetOr("platforms", nil))
+		states, _ = jsonutil.AsObject(status.ValueOr("platforms", nil))
 	}
 	profile := home.ProfileNameFor(h)
 	for name, pc := range cfg.Platforms {
@@ -107,12 +107,12 @@ func chatAppsList(ctx context.Context, rid any, raw map[string]any) (map[string]
 			}
 		}
 		if states != nil {
-			entry, found := pyjson.AsObject(states.GetOr(platform, nil))
+			entry, found := jsonutil.AsObject(states.ValueOr(platform, nil))
 			if !found && profile != "" {
-				entry, found = pyjson.AsObject(states.GetOr(profile+":"+platform, nil))
+				entry, found = jsonutil.AsObject(states.ValueOr(profile+":"+platform, nil))
 			}
 			if found {
-				row.State, row.Error = chatAppsText(entry.GetOr("state", nil)), chatAppsText(entry.GetOr("error_message", nil))
+				row.State, row.Error = chatAppsText(entry.ValueOr("state", nil)), chatAppsText(entry.ValueOr("error_message", nil))
 			}
 		}
 		out.Platforms = append(out.Platforms, row)
@@ -135,8 +135,8 @@ func chatAppsList(ctx context.Context, rid any, raw map[string]any) (map[string]
 		return nil, err
 	}
 	for _, a := range approved {
-		out.Approved = append(out.Approved, tuigateway.ChatAppUser{Platform: chatAppsText(a.GetOr("platform", nil)), UserID: chatAppsText(a.GetOr("user_id", nil)),
-			UserName: chatAppsText(a.GetOr("user_name", nil))})
+		out.Approved = append(out.Approved, tuigateway.ChatAppUser{Platform: chatAppsText(a.ValueOr("platform", nil)), UserID: chatAppsText(a.ValueOr("user_id", nil)),
+			UserName: chatAppsText(a.ValueOr("user_name", nil))})
 	}
 	seen := map[string]bool{}
 	for _, p := range append(append([]string{}, chatAppsPlatformNames(out.Platforms)...), chatAppsPendingPlatforms(out.Pending)...) {
@@ -152,8 +152,8 @@ func chatAppsList(ctx context.Context, rid any, raw map[string]any) (map[string]
 	}
 	out.WebhooksEnabled = webhooksubs.WebhookEnabled(ctx, h)
 	subs := webhooksubs.Load(h)
-	for _, name := range subs.Keys {
-		route, isObject := pyjson.AsObject(subs.Vals[name])
+	for _, name := range subs.Keys() {
+		route, isObject := jsonutil.AsObject(subs.Value(name))
 		if !isObject {
 			continue
 		}
@@ -195,19 +195,19 @@ func chatAppsTargets(ctx context.Context) map[string][]tuigateway.ChatAppTarget 
 	if directory == nil {
 		return out
 	}
-	platforms, ok := pyjson.AsObject(directory.GetOr("platforms", nil))
+	platforms, ok := jsonutil.AsObject(directory.ValueOr("platforms", nil))
 	if !ok {
 		return out
 	}
-	for _, name := range platforms.Keys {
-		channels, _ := platforms.Vals[name].([]any)
+	for _, name := range platforms.Keys() {
+		channels, _ := platforms.Value(name).([]any)
 		for _, raw := range channels {
-			channel, ok := pyjson.AsObject(raw)
+			channel, ok := jsonutil.AsObject(raw)
 			if !ok {
 				continue
 			}
-			label := chatAppsText(channel.GetOr("name", nil))
-			id := chatAppsText(channel.GetOr("id", nil))
+			label := chatAppsText(channel.ValueOr("name", nil))
+			id := chatAppsText(channel.ValueOr("id", nil))
 			if id == "" {
 				id = label
 			}
@@ -223,7 +223,7 @@ func chatAppsTargets(ctx context.Context) map[string][]tuigateway.ChatAppTarget 
 }
 
 // One webhook route as the screen shows it
-func chatAppsWebhookRow(ctx context.Context, h, name string, route *pyjson.Object) tuigateway.ChatAppWebhook {
+func chatAppsWebhookRow(ctx context.Context, h, name string, route *jsonutil.Object) tuigateway.ChatAppWebhook {
 	join := func(v any) string {
 		items, ok := v.([]any)
 		if !ok {
@@ -235,10 +235,10 @@ func chatAppsWebhookRow(ctx context.Context, h, name string, route *pyjson.Objec
 		}
 		return strings.Join(parts, ", ")
 	}
-	return tuigateway.ChatAppWebhook{Name: name, Description: chatAppsText(route.GetOr("description", nil)), Events: join(route.GetOr("events", nil)),
-		Prompt: chatAppsText(route.GetOr("prompt", nil)), Skills: join(route.GetOr("skills", nil)), Deliver: chatAppsText(route.GetOr("deliver", "log")),
-		DeliverChat: chatAppsText(route.GetOr("deliver_chat_id", nil)), DeliverOnly: pyrepr.Truthy(route.GetOr("deliver_only", nil)),
-		URL: webhooksubs.RouteURL(ctx, h, name, route), Created: chatAppsText(route.GetOr("created_at", nil))}
+	return tuigateway.ChatAppWebhook{Name: name, Description: chatAppsText(route.ValueOr("description", nil)), Events: join(route.ValueOr("events", nil)),
+		Prompt: chatAppsText(route.ValueOr("prompt", nil)), Skills: join(route.ValueOr("skills", nil)), Deliver: chatAppsText(route.ValueOr("deliver", "log")),
+		DeliverChat: chatAppsText(route.ValueOr("deliver_chat_id", nil)), DeliverOnly: anyutil.IsTrue(route.ValueOr("deliver_only", nil)),
+		URL: webhooksubs.RouteURL(ctx, h, name, route), Created: chatAppsText(route.ValueOr("created_at", nil))}
 }
 
 // Variable of the home's .env that holds a peer's key, as the peer command names it

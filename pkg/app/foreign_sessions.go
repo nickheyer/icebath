@@ -6,10 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/google/uuid"
@@ -17,12 +20,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const foreignTitleMax = 60
@@ -55,7 +58,7 @@ func (s *ForeignSession) Label() string {
 		title = strings.TrimSpace(*s.TitleGuess)
 	}
 	if title == "" {
-		title = pypath.PathStem(s.Path)
+		title = pathutil.Stem(s.Path)
 	}
 	return "[" + foreignSourceLabel(s.Source) + "] " + runePrefix(title, foreignTitleMax)
 }
@@ -78,22 +81,22 @@ type foreignParsed struct {
 }
 
 // Parsed JSON objects of a log file, unparseable lines and non object values skipped
-func readForeignJSONLines(path string) []*pyjson.Object {
+func readForeignJSONLines(path string) []*jsonutil.Object {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	var out []*pyjson.Object
-	for _, line := range strings.SplitAfter(pystr.TranslateNewlines(pystr.DecodeUTF8SigReplace(raw)), "\n") {
+	var out []*jsonutil.Object
+	for _, line := range strings.SplitAfter(textutil.NormalizeNewlines(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError))), "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		obj, err := pyjson.Loads(line)
+		obj, err := jsonutil.Decode(line)
 		if err != nil {
 			continue
 		}
-		if o, ok := obj.(*pyjson.Object); ok {
+		if o, ok := obj.(*jsonutil.Object); ok {
 			out = append(out, o)
 		}
 	}
@@ -105,21 +108,21 @@ func foreignBlockText(block any) string {
 	if s, ok := block.(string); ok {
 		return s
 	}
-	obj, ok := block.(*pyjson.Object)
+	obj, ok := block.(*jsonutil.Object)
 	if !ok {
 		return ""
 	}
-	btype, _ := obj.GetOr("type", nil).(string)
+	btype, _ := obj.Value("type").(string)
 	switch btype {
 	case "text", "input_text", "output_text":
-		text, _ := obj.GetOr("text", nil).(string)
+		text, _ := obj.Value("text").(string)
 		return text
 	case "tool_use":
-		name := obj.GetOr("name", nil)
-		if !pyrepr.Truthy(name) {
+		name := obj.Value("name")
+		if !anyutil.IsTrue(name) {
 			name = "tool"
 		}
-		return "[ran tool: " + pyrepr.Str(name) + "]"
+		return "[ran tool: " + anyutil.String(name) + "]"
 	case "image":
 		return "[image]"
 	}
@@ -166,15 +169,15 @@ func foreignMergeTurns(raw []foreignTurn) []foreignTurn {
 
 // Role and text turn of one message, false when it is not importable
 func foreignMessageTurn(message any) (foreignTurn, bool) {
-	obj, ok := message.(*pyjson.Object)
+	obj, ok := message.(*jsonutil.Object)
 	if !ok {
 		return foreignTurn{}, false
 	}
-	role, _ := obj.GetOr("role", nil).(string)
+	role, _ := obj.Value("role").(string)
 	if role != "user" && role != "assistant" {
 		return foreignTurn{}, false
 	}
-	text := foreignFlattenBlocks(obj.GetOr("content", nil))
+	text := foreignFlattenBlocks(obj.Value("content"))
 	if text == "" {
 		return foreignTurn{}, false
 	}
@@ -214,21 +217,21 @@ func parseClaudeSession(path string) foreignParsed {
 	var turns []foreignTurn
 	var cwd, summary, sessionID *string
 	for _, obj := range readForeignJSONLines(path) {
-		otype, _ := obj.GetOr("type", nil).(string)
+		otype, _ := obj.Value("type").(string)
 		if otype == "summary" {
-			if s, ok := obj.GetOr("summary", nil).(string); ok && strings.TrimSpace(s) != "" {
+			if s, ok := obj.Value("summary").(string); ok && strings.TrimSpace(s) != "" {
 				stripped := strings.TrimSpace(s)
 				summary = &stripped
 			}
 		} else if (otype == "user" || otype == "assistant") &&
-			!(pyrepr.Truthy(obj.GetOr("isSidechain", nil)) || pyrepr.Truthy(obj.GetOr("isMeta", nil))) {
-			if s, ok := obj.GetOr("cwd", nil).(string); cwd == nil && ok {
+			!(anyutil.IsTrue(obj.Value("isSidechain")) || anyutil.IsTrue(obj.Value("isMeta"))) {
+			if s, ok := obj.Value("cwd").(string); cwd == nil && ok {
 				cwd = &s
 			}
-			if s, ok := obj.GetOr("sessionId", nil).(string); sessionID == nil && ok {
+			if s, ok := obj.Value("sessionId").(string); sessionID == nil && ok {
 				sessionID = &s
 			}
-			if turn, ok := foreignMessageTurn(obj.GetOr("message", nil)); ok {
+			if turn, ok := foreignMessageTurn(obj.Value("message")); ok {
 				turns = append(turns, turn)
 			}
 		}
@@ -241,37 +244,37 @@ func parseCodexSession(path string) foreignParsed {
 	var turns []foreignTurn
 	var cwd, sessionID *string
 	for _, obj := range readForeignJSONLines(path) {
-		payload, ok := obj.GetOr("payload", nil).(*pyjson.Object)
+		payload, ok := obj.Value("payload").(*jsonutil.Object)
 		if !ok {
 			continue
 		}
-		switch otype, _ := obj.GetOr("type", nil).(string); otype {
+		switch otype, _ := obj.Value("type").(string); otype {
 		case "session_meta":
-			if s, ok := payload.GetOr("cwd", nil).(string); ok {
+			if s, ok := payload.Value("cwd").(string); ok {
 				cwd = &s
 			}
-			sid := payload.GetOr("session_id", nil)
-			if !pyrepr.Truthy(sid) {
-				sid = payload.GetOr("id", nil)
+			sid := payload.Value("session_id")
+			if !anyutil.IsTrue(sid) {
+				sid = payload.Value("id")
 			}
 			if s, ok := sid.(string); ok {
 				sessionID = &s
 			}
 		case "response_item":
-			ptype, _ := payload.GetOr("type", nil).(string)
+			ptype, _ := payload.Value("type").(string)
 			if ptype == "message" {
 				if turn, ok := foreignMessageTurn(payload); ok {
 					turns = append(turns, turn)
 				}
 			} else if ptype == "custom_tool_call" || ptype == "function_call" || ptype == "local_shell_call" {
-				name := payload.GetOr("name", nil)
-				if !pyrepr.Truthy(name) {
-					name = payload.GetOr("tool", nil)
+				name := payload.Value("name")
+				if !anyutil.IsTrue(name) {
+					name = payload.Value("tool")
 				}
-				if !pyrepr.Truthy(name) {
+				if !anyutil.IsTrue(name) {
 					name = "tool"
 				}
-				turns = append(turns, foreignTurn{"assistant", "[ran tool: " + pyrepr.Str(name) + "]"})
+				turns = append(turns, foreignTurn{"assistant", "[ran tool: " + anyutil.String(name) + "]"})
 			}
 		}
 	}
@@ -299,17 +302,17 @@ func foreignParser(source string) func(string) foreignParsed { return foreignSou
 func foreignDefaultRoot(source string) (string, error) {
 	spec := foreignSources[source]
 	if override := strings.TrimSpace(os.Getenv(spec.envVar)); override != "" {
-		expanded, err := pypath.PathExpanduser(override)
+		expanded, err := pathutil.ExpandUserPath(override)
 		if err != nil {
 			return "", err
 		}
-		return pypath.PathJoin(expanded, spec.envSubdir), nil
+		return pathutil.Join(expanded, spec.envSubdir), nil
 	}
-	home, err := pypath.PathHome()
+	home, err := pathutil.Home()
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathJoin(home, spec.defaultParts...), nil
+	return pathutil.Join(home, spec.defaultParts...), nil
 }
 
 // Path, modification time and size of one regular foreign log file
@@ -328,7 +331,7 @@ func foreignWalk(source, root string) ([]foreignFile, error) {
 			return nil, err
 		}
 	}
-	root, err := pypath.Resolve(root)
+	root, err := pathutil.Resolve(root)
 	if err != nil {
 		return nil, err
 	}
@@ -340,12 +343,12 @@ func foreignWalk(source, root string) ([]foreignFile, error) {
 	if spec.recursive {
 		pattern = "**/" + pattern
 	}
-	matches, err := pypath.Glob(root, pattern)
+	matches, err := pathutil.Glob(root, pattern)
 	if err != nil {
 		return nil, err
 	}
 	for _, path := range matches {
-		resolved, err := pypath.Resolve(path)
+		resolved, err := pathutil.Resolve(path)
 		if err != nil {
 			continue
 		}
@@ -353,7 +356,7 @@ func foreignWalk(source, root string) ([]foreignFile, error) {
 		if err != nil {
 			continue
 		}
-		if _, under := pypath.PathRelativeTo(resolved, root); under && st.Mode().IsRegular() {
+		if _, under := pathutil.RelativeTo(resolved, root); under && st.Mode().IsRegular() {
 			mt := st.ModTime()
 			found = append(found, foreignFile{resolved, float64(mt.Unix()) + float64(mt.Nanosecond())*1e-9, st.Size()})
 		}
@@ -444,19 +447,19 @@ func PickForeignSession(ctx context.Context, source string, w io.Writer) (*Forei
 	if raw == "" {
 		return nil, nil
 	}
-	idx, ok := pystr.IntText(raw)
-	if !ok {
+	idx, err := textutil.ParseInt(raw)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		fmt.Fprintf(w, "Not a number: %s\n", raw)
 		return nil, nil
 	}
-	if idx.IsInt64() && idx.Int64() >= 1 && idx.Int64() <= int64(len(sessions)) {
-		return sessions[idx.Int64()-1], nil
+	if idx >= 1 && idx <= int64(len(sessions)) {
+		return sessions[idx-1], nil
 	}
-	fmt.Fprintf(w, "Out of range: %s\n", idx.String())
+	fmt.Fprintf(w, "Out of range: %s\n", raw)
 	return nil, nil
 }
 
-// Local wall clock time of a float timestamp, the datetime fromtimestamp reading
+// Local wall clock time of a float timestamp, the seconds floored
 func foreignLocalTime(ts float64) time.Time {
 	sec := int64(ts)
 	if float64(sec) > ts {
@@ -481,11 +484,11 @@ func importForeignSession(ctx context.Context, store foreignSessionCaller, sourc
 	if _, ok := foreignSourceLabels[source]; !ok {
 		return "", &appValueError{"Unknown foreign session source: " + errchain.Show(source)}
 	}
-	expanded, err := pypath.PathExpanduser(path)
+	expanded, err := pathutil.ExpandUserPath(path)
 	if err != nil {
 		return "", err
 	}
-	expanded = pypath.PathStr(expanded)
+	expanded = filepath.Clean(expanded)
 	if st, err := os.Stat(expanded); err != nil || !st.Mode().IsRegular() {
 		return "", &appValueError{"Session file not found: " + expanded}
 	}
@@ -493,7 +496,7 @@ func importForeignSession(ctx context.Context, store foreignSessionCaller, sourc
 	if len(parsed.turns) == 0 {
 		return "", &appValueError{"No user/assistant conversation turns found in " + expanded}
 	}
-	firstUser := pypath.PathStem(expanded)
+	firstUser := pathutil.Stem(expanded)
 	if line := foreignFirstUserLine(parsed.turns); line != nil {
 		firstUser = *line
 	}
@@ -509,12 +512,12 @@ func importForeignSession(ctx context.Context, store foreignSessionCaller, sourc
 	}
 	messages := make([]any, 0, len(parsed.turns))
 	for _, t := range parsed.turns {
-		msg := pyjson.NewObject()
+		msg := jsonutil.NewObject()
 		msg.Set("role", t.role)
 		msg.Set("content", t.content)
 		messages = append(messages, msg)
 	}
-	row := pyjson.NewObject()
+	row := jsonutil.NewObject()
 	row.Set("id", sessionID)
 	row.Set("source", "cli")
 	row.Set("cwd", cwd)
@@ -524,7 +527,7 @@ func importForeignSession(ctx context.Context, store foreignSessionCaller, sourc
 	if err != nil {
 		return "", err
 	}
-	receipt, ok := pyjson.AsObject(result)
+	receipt, ok := jsonutil.AsObject(result)
 	if !ok {
 		return "", &appClassedError{class: "TypeError", msg: "session import receipt is " + errchain.Kind(result) + " where a mapping was expected"}
 	}
@@ -542,17 +545,16 @@ func importForeignSession(ctx context.Context, store foreignSessionCaller, sourc
 	return sessionID, nil
 }
 
-// Python ValueError whose str is its message
+// Value the user or a reply gave that a command rejects, its text the message alone
 type appValueError struct{ msg string }
 
-func (e *appValueError) Error() string      { return e.msg }
-func (e *appValueError) PyTypeName() string { return "ValueError" }
+func (e *appValueError) Error() string { return e.msg }
 
-// Failure carrying the class name its callers decide on, its text the message alone
+// Failure carrying the kind its callers decide on, its text the message alone
 type appClassedError struct{ class, msg string }
 
-func (e *appClassedError) Error() string      { return e.msg }
-func (e *appClassedError) PyTypeName() string { return e.class }
+func (e *appClassedError) Error() string     { return e.msg }
+func (e *appClassedError) ErrorKind() string { return e.class }
 
 // Random version four UUID as 32 hex digits
 func uuid4HexText() string { return strings.ReplaceAll(uuid.NewString(), "-", "") }

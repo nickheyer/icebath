@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Adapter whose handoff thread creation answers a fixed thread id
@@ -57,7 +56,7 @@ func runHandoffDestination(t *testing.T, platform gateway.Platform, channelID, t
 	adapter.BasePlatformAdapter = gateway.NewBasePlatformAdapter(pc, platform, adapter)
 	r := allocGatewayRunner()
 	r.config = cfg
-	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	r.adapters = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	r.adapters.Set(platform, adapter)
 	dest, err := r.handoffResolveDestination(ctx, map[string]any{"id": "cli-session", "title": "work", "handoff_platform": string(platform)}, nil)
 	if err != nil {

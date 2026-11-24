@@ -15,7 +15,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Captures warnings written by the platform toolset resolver
@@ -446,7 +445,7 @@ func TestChecklistDiffAndProviderEnvReady(t *testing.T) {
 	}
 	t.Setenv("TAVILY_API_KEY", "k")
 	t.Setenv("MISSING_KEY_X", "")
-	row := pyjson.NewObject()
+	row := jsonutil.NewObject()
 	row.Set("env_vars", []any{toolKey("TAVILY_API_KEY", "p", "")})
 	if ok, err := providerEnvReady(context.Background(), t.TempDir(), row); !ok || err != nil {
 		t.Fatalf("ready %v %v", ok, err)
@@ -455,7 +454,7 @@ func TestChecklistDiffAndProviderEnvReady(t *testing.T) {
 	if ok, _ := providerEnvReady(context.Background(), t.TempDir(), row); ok {
 		t.Fatal("missing key must not be ready")
 	}
-	if ok, _ := providerEnvReady(context.Background(), t.TempDir(), pyjson.NewObject()); !ok {
+	if ok, _ := providerEnvReady(context.Background(), t.TempDir(), jsonutil.NewObject()); !ok {
 		t.Fatal("row without keys is ready")
 	}
 }

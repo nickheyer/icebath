@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 // Root home whose logs directory holds update.log, swapped by tests
@@ -47,13 +47,13 @@ func (s *UpdateOutputStream) Write(data []byte) (int, error) {
 func (s *UpdateOutputStream) Flush() error {
 	if f, ok := s.log.(interface{ Sync() error }); ok {
 		_ = f.Sync()
-	} else if f, ok := pysys.Attr[interface{ Flush() error }](s.log); ok {
+	} else if f, ok := termutil.As[interface{ Flush() error }](s.log); ok {
 		_ = f.Flush()
 	}
 	if s.originalBroken {
 		return nil
 	}
-	if f, ok := pysys.Attr[interface{ Flush() error }](s.original); ok {
+	if f, ok := termutil.As[interface{ Flush() error }](s.original); ok {
 		if err := f.Flush(); err != nil {
 			s.originalBroken = true
 		}
@@ -66,12 +66,12 @@ func (s *UpdateOutputStream) IsATTY() bool {
 	if s.originalBroken {
 		return false
 	}
-	return pysys.Isatty(s.original)
+	return termutil.IsTerminal(s.original)
 }
 
 // Descriptor of the original stream, the invalid descriptor when the original has none
 func (s *UpdateOutputStream) Fd() uintptr {
-	if fd, ok := pysys.Fileno(s.original); ok {
+	if fd, ok := termutil.Fd(s.original); ok {
 		return fd
 	}
 	return ^uintptr(0)

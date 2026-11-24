@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -14,14 +15,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func extSet(exts ...string) map[string]bool {
@@ -102,7 +102,7 @@ func pySub(re *regexp2.Regexp, text string, repl func(m regexp2.Match) string) s
 
 // Lowercased extension of a path
 func lowerExt(path string) string {
-	_, ext := pypath.Splitext(path)
+	_, ext := pathutil.SplitExt(path)
 	return strings.ToLower(ext)
 }
 
@@ -123,7 +123,7 @@ func mediaCaptionSplit(text string, media []gateway.MediaRef, maxCaptionLen int)
 
 // Error text with secrets, token query values and secret assignments redacted
 func sanitizeErrorText(text any) string {
-	redacted := pySub(urlSecretQueryRE, tools.RedactSensitiveText(pyrepr.Str(text)), func(m regexp2.Match) string {
+	redacted := pySub(urlSecretQueryRE, tools.RedactSensitiveText(anyutil.String(text)), func(m regexp2.Match) string {
 		return m.GroupByNumber(1).String() + "***"
 	})
 	return pySub(genericSecretAssignRE, redacted, func(m regexp2.Match) string { return m.GroupByNumber(1).String() + "=***" })
@@ -219,11 +219,11 @@ func telegramThreadKwargs(threadID *string) (map[string]any, error) {
 	if threadID == nil || *threadID == "" || *threadID == "1" {
 		return out, nil
 	}
-	n, ok := pyint.Parse(*threadID)
-	if !ok {
+	n, err := strconv.ParseInt(strings.TrimSpace(*threadID), 10, 64)
+	if err != nil {
 		return nil, fmt.Errorf("the Telegram thread id %s is not a whole number", *threadID)
 	}
-	out["message_thread_id"] = pyint.Native(n)
+	out["message_thread_id"] = int(n)
 	return out, nil
 }
 
@@ -288,13 +288,13 @@ func telegramSendTextChunk(ctx context.Context, bot telegramBotAPI, chatID any, 
 	if isTelegramThreadNotFound(err) && textKwargs["message_thread_id"] != nil {
 		tid := textKwargs["message_thread_id"]
 		delete(textKwargs, "message_thread_id")
-		pkgLog().Warn(fmt.Sprintf("Thread %s not found in _send_telegram, retrying without message_thread_id", pyrepr.Str(tid)))
+		pkgLog().Warn(fmt.Sprintf("Thread %s not found in _send_telegram, retrying without message_thread_id", anyutil.String(tid)))
 		return send(chunk, parseMode)
 	}
 	errText := strings.ToLower(err.Error())
 	if strings.Contains(errText, "parse") || strings.Contains(errText, "markdown") || strings.Contains(errText, "html") {
 		pkgLog().Warn(fmt.Sprintf("Parse mode %s failed in _send_telegram, falling back to plain text: %s",
-			pyrepr.Str(parseMode), sanitizeErrorText(err)))
+			anyutil.String(parseMode), sanitizeErrorText(err)))
 		if hasHTML {
 			return send(chunk, nil)
 		}
@@ -347,11 +347,11 @@ func telegramSendOneMedia(ctx context.Context, bot telegramBotAPI, chatID any, m
 	}
 	errText := strings.ToLower(err.Error())
 	switch {
-	case isTelegramThreadNotFound(err) && pyrepr.Truthy(mediaKwargs["message_thread_id"]):
+	case isTelegramThreadNotFound(err) && anyutil.IsTrue(mediaKwargs["message_thread_id"]):
 		tid := mediaKwargs["message_thread_id"]
 		delete(mediaKwargs, "message_thread_id")
-		pkgLog().Warn(fmt.Sprintf("Thread %s not found for media send, retrying without message_thread_id", pyrepr.Str(tid)))
-	case pyrepr.Truthy(mediaKwargs["parse_mode"]) && (strings.Contains(errText, "parse") || strings.Contains(errText, "caption")):
+		pkgLog().Warn(fmt.Sprintf("Thread %s not found for media send, retrying without message_thread_id", anyutil.String(tid)))
+	case anyutil.IsTrue(mediaKwargs["parse_mode"]) && (strings.Contains(errText, "parse") || strings.Contains(errText, "caption")):
 		pkgLog().Warn(fmt.Sprintf("Caption parse failed for media send, retrying plain: %s", sanitizeErrorText(err)))
 		delete(mediaKwargs, "parse_mode")
 		if c, _ := mediaKwargs["caption"].(string); !hasHTML && c != "" {
@@ -443,7 +443,7 @@ func sendTelegram(ctx context.Context, token any, chatID, message string, mediaF
 			}
 			return out, nil
 		}
-		return sendSuccess("telegram", chatID, warnings, map[string]any{"message_id": pyrepr.Str(lastMsg.MessageID)}), nil
+		return sendSuccess("telegram", chatID, warnings, map[string]any{"message_id": anyutil.String(lastMsg.MessageID)}), nil
 	}()
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
@@ -456,7 +456,7 @@ func sendTelegram(ctx context.Context, token any, chatID, message string, mediaF
 
 // Default profile adapter registry of a bare runner
 type adapterMapRunner interface {
-	Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	Adapters() *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 }
 
 // Runner and the active profile's adapter of the in process gateway, nil adapter when none or the lookup fails
@@ -516,7 +516,7 @@ func standaloneKwargs(pconfig *gateway.PlatformConfig, chatID, message string, k
 	return out
 }
 
-// Python None for a nil thread id, else its text
+// nil for a nil thread id, else its text
 func optString(s *string) any {
 	if s == nil {
 		return nil
@@ -524,7 +524,7 @@ func optString(s *string) any {
 	return *s
 }
 
-// Python None for a nil media list, else the list
+// nil for a nil media list, else the list
 func mediaArg(media []gateway.MediaRef) any {
 	if media == nil {
 		return nil
@@ -605,7 +605,7 @@ func matrixSendCore(ctx context.Context, live any, chatID, message string, media
 			return nil, err
 		}
 		if last = &r; !r.Success {
-			return sendError("Matrix send failed: " + pyrepr.Str(r.Error)), nil
+			return sendError("Matrix send failed: " + anyutil.String(r.Error)), nil
 		}
 	}
 	for _, m := range mediaFiles {
@@ -619,7 +619,7 @@ func matrixSendCore(ctx context.Context, live any, chatID, message string, media
 			return nil, err
 		}
 		if last = &r; !r.Success {
-			return sendError("Matrix media send failed: " + pyrepr.Str(r.Error)), nil
+			return sendError("Matrix media send failed: " + anyutil.String(r.Error)), nil
 		}
 	}
 	if last == nil {

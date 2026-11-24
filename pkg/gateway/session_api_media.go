@@ -4,14 +4,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // File extension of each image mime an API turn may commit
@@ -43,7 +43,7 @@ func apiDataURLBytes(url string) (string, []byte, bool) {
 	if !strings.HasPrefix(strings.ToLower(url), "data:") || !known || !strings.Contains(strings.ToLower(header), ";base64") {
 		return "", nil, false
 	}
-	decoded, err := pybase64.B64DecodeValidate(encoded)
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return "", nil, false
 	}
@@ -52,7 +52,7 @@ func apiDataURLBytes(url string) (string, []byte, bool) {
 
 // Image URL of an image_url content part, empty for any other part
 func apiPartImageURL(part any) (string, error) {
-	obj, ok := part.(*pyjson.Object)
+	obj, ok := part.(*jsonutil.Object)
 	if !ok {
 		return "", nil
 	}
@@ -63,7 +63,7 @@ func apiPartImageURL(part any) (string, error) {
 	if !pyTruthy(raw) {
 		return "", nil
 	}
-	image, ok := raw.(*pyjson.Object)
+	image, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return "", &PyError{Kind: "AttributeError", Msg: "an API image part is " + errchain.Kind(raw) + ", expected a mapping"}
 	}
@@ -100,7 +100,7 @@ func apiCompacted(content, media any) ([]any, error) {
 		}
 		var digest any
 		if ok && next < len(references) {
-			reference, isObj := references[next].(*pyjson.Object)
+			reference, isObj := references[next].(*jsonutil.Object)
 			next++
 			if !isObj {
 				return nil, &PyError{Kind: "TypeError", Msg: "an API media reference is " + errchain.Kind(references[next-1]) + ", expected a mapping"}
@@ -113,9 +113,9 @@ func apiCompacted(content, media any) ([]any, error) {
 		}
 		sum := sha256.Sum256(decoded)
 		if text, isText := digest.(string); ok && isText && hex.EncodeToString(sum[:]) == text {
-			obj := part.(*pyjson.Object).Copy()
+			obj := part.(*jsonutil.Object).Clone()
 			rawImage, _ := obj.Get("image_url")
-			image := rawImage.(*pyjson.Object).Copy()
+			image := rawImage.(*jsonutil.Object).Clone()
 			image.Set("url", apiRetainedPrefix+text)
 			obj.Set("image_url", image)
 			part = obj
@@ -192,12 +192,12 @@ func compactSettledAPIPayloads(ctx context.Context, db *state.SessionDB, admissi
 }
 
 // Payload with its committed images compacted and its caller history dropped, false when neither applies
-func compactAPIPayload(payloadJSON, requestID string) (bool, *pyjson.Object, error) {
-	decoded, err := pyjson.Loads(payloadJSON)
+func compactAPIPayload(payloadJSON, requestID string) (bool, *jsonutil.Object, error) {
+	decoded, err := jsonutil.Decode(payloadJSON)
 	if err != nil {
 		return false, nil, err
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return false, nil, &PyError{Kind: "TypeError", Msg: "the API payload is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
@@ -205,7 +205,7 @@ func compactAPIPayload(payloadJSON, requestID string) (bool, *pyjson.Object, err
 	if !found {
 		return false, nil, &pyKeyError{"api_turn_v1"}
 	}
-	data, ok := rawData.(*pyjson.Object)
+	data, ok := rawData.(*jsonutil.Object)
 	if !ok {
 		return false, nil, &PyError{Kind: "AttributeError", Msg: "the API payload data is " + errchain.Kind(rawData) + ", expected a mapping"}
 	}
@@ -221,14 +221,14 @@ func compactAPIPayload(payloadJSON, requestID string) (bool, *pyjson.Object, err
 	if text == nil && !drop {
 		return false, payload, nil
 	}
-	rebuilt := payload.Copy()
+	rebuilt := payload.Clone()
 	if text != nil {
 		rebuilt.Set("text", text)
 	} else {
 		rebuilt.Set("text", content)
 	}
 	if drop {
-		trimmed := data.Copy()
+		trimmed := data.Clone()
 		trimmed.Set("history", nil)
 		rebuilt.Set("api_turn_v1", trimmed)
 	}

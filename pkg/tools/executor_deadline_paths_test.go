@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestRegisteredDeadlineSurvivesSequentialExecutionAndBridge(t *testing.T) {
@@ -39,8 +39,8 @@ func TestRegisteredDeadlineSurvivesSequentialExecutionAndBridge(t *testing.T) {
 		return "released"
 	}
 	for i, name := range names {
-		d := Def{Name: name, Toolset: "deadline-probe", Schema: pyjson.ObjectOf("name", name, "description", "Wait for the test-owned event.",
-			"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())), Handler: blocked}
+		d := Def{Name: name, Toolset: "deadline-probe", Schema: jsonutil.ObjectOf("name", name, "description", "Wait for the test-owned event.",
+			"parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf())), Handler: blocked}
 		if i == 0 {
 			d.Timeout = 20 * time.Second
 		}
@@ -104,7 +104,7 @@ func TestExtendedDeadlineIsABarrierForDirectAndBridgedBatches(t *testing.T) {
 	ctx := context.Background()
 	name := ToolDescribeName
 	old := Default.Entry(ctx, env, name)
-	Default.Register(Def{Name: name, Toolset: "deadline-probe", Schema: pyjson.ObjectOf("name", name), Override: true, Timeout: 1000 * time.Second,
+	Default.Register(Def{Name: name, Toolset: "deadline-probe", Schema: jsonutil.ObjectOf("name", name), Override: true, Timeout: 1000 * time.Second,
 		Handler: func(context.Context, *Call) string { return "ok" }})
 	defer func() {
 		current := Default.Entry(ctx, env, name)

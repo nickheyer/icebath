@@ -7,8 +7,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Encoding the interpreter would give the process stderr stream
@@ -23,9 +21,9 @@ func (w safeStderrWriter) Write(p []byte) (int, error) {
 	}
 	var data []byte
 	if w.replace {
-		data = pystr.EncodeUTF8Replace(string(p))
+		data = []byte(string(p))
 	} else {
-		data = []byte(pystr.EncodeUTF8BackslashReplace(string(p)))
+		data = []byte(string(p))
 	}
 	if _, err := os.Stderr.Write(data); err != nil {
 		return 0, err

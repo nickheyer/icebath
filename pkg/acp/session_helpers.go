@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var mntDrive = regexp.MustCompile(`^/mnt/[A-Za-z]/`)
@@ -26,13 +26,13 @@ func normalizeCwdForCompare(cwd string) string {
 	if raw == "" {
 		raw = "."
 	}
-	expanded := pypath.Expanduser(raw)
+	expanded := pathutil.ExpandUser(raw)
 	if translated, ok := home.WindowsPathToWSL(expanded); ok {
 		expanded = translated
 	} else if mntDrive.MatchString(expanded) {
 		expanded = "/mnt/" + strings.ToLower(expanded[5:6]) + "/" + expanded[7:]
 	}
-	if real, err := pypath.Realpath(expanded, pypath.Lax); err == nil {
+	if real, err := pathutil.Resolve(expanded); err == nil {
 		return real
 	}
 	return filepath.Clean(expanded)
@@ -44,7 +44,7 @@ func buildSessionTitle(title, preview any, cwd string) string {
 	if strings.TrimRight(cwd, `/\`) == "" {
 		leaf = ""
 	}
-	for _, s := range []string{strings.TrimSpace(pyStr(pyrepr.Or(title, ""))), strings.TrimSpace(pyStr(pyrepr.Or(preview, ""))), leaf} {
+	for _, s := range []string{strings.TrimSpace(anyutil.String(anyutil.Or(title, ""))), strings.TrimSpace(anyutil.String(anyutil.Or(preview, ""))), leaf} {
 		if s != "" {
 			return s
 		}
@@ -64,7 +64,7 @@ func formatUpdatedAt(value any) any {
 	if !ok || math.IsNaN(f) || math.IsInf(f, 0) {
 		return nil
 	}
-	return pydatetime.ISOFormatUTC(pydatetime.FromTimestamp(f))
+	return timeutil.FromEpoch(f).UTC().Format(timeutil.RFC3339Micro)
 }
 
 func pyFloat(value any) (float64, bool) {
@@ -96,16 +96,16 @@ func updatedAtSortKey(value any) float64 {
 	}
 	raw := ""
 	if value != nil {
-		raw = strings.TrimSpace(pyStr(value))
+		raw = strings.TrimSpace(anyutil.String(value))
 	}
 	if raw == "" {
 		return math.Inf(-1)
 	}
-	if t, aware, err := pydatetime.ParseISOFormat(raw); err == nil {
+	if t, aware, err := timeutil.ParseISOZone(raw, time.UTC); err == nil {
 		if !aware {
 			t = time.Date(t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), t.Nanosecond(), time.Local)
 		}
-		return pydatetime.Timestamp(t)
+		return timeutil.Epoch(t)
 	}
 	if f, err := strconv.ParseFloat(raw, 64); err == nil {
 		return f
@@ -114,21 +114,21 @@ func updatedAtSortKey(value any) float64 {
 }
 
 // Decoded model_config JSON blob, empty when absent, invalid or not a dict
-func parseModelConfig(mc any) *pyjson.Object {
+func parseModelConfig(mc any) *jsonutil.Object {
 	s, ok := mc.(string)
 	if !ok || s == "" {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	v, err := pyjson.Loads(s)
-	if obj, isObj := v.(*pyjson.Object); err == nil && isObj {
+	v, err := jsonutil.Decode(s)
+	if obj, isObj := v.(*jsonutil.Object); err == nil && isObj {
 		return obj
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Session listing row of id, cwd, model, history length, title and updated at
-func sessionInfo(sid, cwd string, model any, historyLen int, title, preview, updatedAt any) *pyjson.Object {
-	o := pyjson.NewObject()
+func sessionInfo(sid, cwd string, model any, historyLen int, title, preview, updatedAt any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("session_id", sid)
 	o.Set("cwd", cwd)
 	o.Set("model", model)

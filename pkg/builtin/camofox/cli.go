@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 )
 
@@ -37,7 +36,7 @@ func exitErr(code int) error {
 func setupCLI(parser any) {
 	root, ok := parser.(*cobra.Command)
 	if !ok {
-		panic(&pyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'add_subparsers'", pyrepr.TypeName(parser))})
+		panic(&pyError{"AttributeError", fmt.Sprintf("camofox CLI setup needs a *cobra.Command, got %T", parser)})
 	}
 	if root.Annotations == nil {
 		root.Annotations = map[string]string{}

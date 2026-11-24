@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Codex continuation for an output cap stop, content_filter for a filtered stop, stop otherwise
@@ -20,7 +20,7 @@ func codexFinishReason(response any) string {
 	}
 	var reason *string
 	if raw := state.ToolCallField(state.ToolCallField(response, "incomplete_details"), "reason"); raw != nil {
-		r := strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
+		r := strings.ToLower(strings.TrimSpace(anyutil.String(raw)))
 		reason = &r
 	}
 	if status == "incomplete" && reason != nil && (*reason == "max_output_tokens" || *reason == "length") {
@@ -85,11 +85,11 @@ func checkAPIResponse(ctx context.Context, a *AIAgent, s *LoopState) (PhaseVerdi
 	}
 	if a.verboseLogging {
 		respModel, usage := "N/A", "N/A"
-		if pyrepr.Truthy(s.Response) && responseHasField(s.Response, "model") {
-			respModel = pyrepr.Str(state.ToolCallField(s.Response, "model"))
+		if anyutil.IsTrue(s.Response) && responseHasField(s.Response, "model") {
+			respModel = anyutil.String(state.ToolCallField(s.Response, "model"))
 		}
 		if s.Response != nil && responseHasField(s.Response, "usage") {
-			usage = pyrepr.Str(state.ToolCallField(s.Response, "usage"))
+			usage = anyutil.String(state.ToolCallField(s.Response, "usage"))
 		}
 		pkgLog().Debug(fmt.Sprintf("API Response received - Model: %s, Usage: %s", respModel, usage))
 	}

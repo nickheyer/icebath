@@ -12,13 +12,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Resolved fresh temp dir so tracker paths compare equal to test paths
 func hintTempDir(t *testing.T) string {
 	t.Helper()
-	dir, err := pypath.Resolve(t.TempDir())
+	dir, err := pathutil.Resolve(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -501,7 +501,7 @@ func TestSubdirectoryHintTrackerTildeRobustnessTildeApproximatelyInCommandDoesNo
 	if got, ok := hintCall(tr, "terminal", map[string]any{"command": cmd}); ok {
 		t.Fatalf("approximate tilde injected %q", got)
 	}
-	if _, err := pypath.PathExpanduser("~500-700"); err == nil {
+	if _, err := pathutil.ExpandUserPath("~500-700"); err == nil {
 		t.Fatal("unknown user tilde expanded")
 	}
 }

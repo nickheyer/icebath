@@ -6,9 +6,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -115,10 +114,10 @@ func PrepareRetryAction(roomID string, room map[string]any) map[string]any {
 	for _, raw := range members {
 		member, _ := hostedMapping(raw)
 		name := ""
-		if v := member["handle"]; pyrepr.Truthy(v) {
-			name = pyrepr.Str(v)
-		} else if v := member["member_id"]; pyrepr.Truthy(v) {
-			name = pyrepr.Str(v)
+		if v := member["handle"]; anyutil.IsTrue(v) {
+			name = anyutil.String(v)
+		} else if v := member["member_id"]; anyutil.IsTrue(v) {
+			name = anyutil.String(v)
 		}
 		if name != "" {
 			names = append(names, name)
@@ -143,7 +142,7 @@ func reportPrepareStall(ctx context.Context, dbPath, roomID string, cause error)
 	if err != nil {
 		return err
 	}
-	latestSeq, err := pyint.Int64(room["latest_seq"])
+	latestSeq, err := anyutil.ToInt(room["latest_seq"])
 	if err != nil {
 		return err
 	}
@@ -153,12 +152,12 @@ func reportPrepareStall(ctx context.Context, dbPath, roomID string, cause error)
 	}
 	if tail, _ := page["events"].([]any); len(tail) > 0 {
 		last, _ := hostedMapping(tail[len(tail)-1])
-		if strings.HasPrefix(pyrepr.Str(last["event_id"]), prepareStallEventPrefix) {
+		if strings.HasPrefix(anyutil.String(last["event_id"]), prepareStallEventPrefix) {
 			return nil
 		}
 	}
-	gatewayID := pyrepr.Str(room["authority_gateway_id"])
-	epoch, err := pyint.Int64(room["authority_epoch"])
+	gatewayID := anyutil.String(room["authority_gateway_id"])
+	epoch, err := anyutil.ToInt(room["authority_epoch"])
 	if err != nil {
 		return err
 	}

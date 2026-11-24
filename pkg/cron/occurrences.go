@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // executionStamp is one completed executions ledger row for a scheduled instant
@@ -25,11 +25,11 @@ func scheduledInstant(value *string) *string {
 	if value == nil {
 		return nil
 	}
-	t, aware, err := pydatetime.ParseISOFormat(*value)
+	t, aware, err := timeutil.ParseISOZone(*value, time.UTC)
 	if err != nil || !aware {
 		return nil
 	}
-	out := pydatetime.ISOFormat(t.UTC())
+	out := t.UTC().Format(timeutil.RFC3339Micro)
 	return &out
 }
 
@@ -39,7 +39,7 @@ func completedOccurrence(s *Store, job *Job, instant string) bool {
 	if canonical == nil {
 		return false
 	}
-	slot, _, _ := pydatetime.ParseISOFormat(*canonical)
+	slot, _, _ := timeutil.ParseISOZone(*canonical, time.UTC)
 	earliestReal := slot.Add(-FireClaimSkewSeconds * time.Second)
 	rows, err := completedExecutions(s, job.ID, *canonical)
 	if err != nil {
@@ -53,7 +53,7 @@ func completedOccurrence(s *Store, job *Job, instant string) bool {
 		}
 		completedAt := scheduledInstant(stamp)
 		if completedAt != nil {
-			at, _, _ := pydatetime.ParseISOFormat(*completedAt)
+			at, _, _ := timeutil.ParseISOZone(*completedAt, time.UTC)
 			if at.Before(earliestReal) {
 				continue
 			}
@@ -87,7 +87,7 @@ func unclaimedPendingSlot(s *Store, job *Job, now time.Time) *string {
 	if kind := job.Kind(); kind != "cron" && kind != "interval" {
 		return nil
 	}
-	if _, _, err := pydatetime.ParseISOFormat(pending.ScheduledAt); err != nil {
+	if _, _, err := timeutil.ParseISOZone(pending.ScheduledAt, time.UTC); err != nil {
 		return nil
 	}
 	if s.jobRunningInThisProcess(job.ID) {

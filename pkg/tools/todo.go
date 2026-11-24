@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -48,7 +48,7 @@ func (t TodoItem) asMap() map[string]any {
 }
 
 // Item dict in its build key order, parent last when set
-func (t TodoItem) asDict() *pyjson.Object {
+func (t TodoItem) asDict() *jsonutil.Object {
 	d := Dict("id", t.ID, "content", t.Content, "status", t.Status)
 	if t.Parent != "" {
 		d.Set("parent", t.Parent)
@@ -507,7 +507,7 @@ func IsTodoToolCall(name string, rawArgs any) bool {
 	var args map[string]any
 	switch v := rawArgs.(type) {
 	case string:
-		decoded, err := pyjson.DecodeWTF8([]byte(v))
+		decoded, err := jsonutil.DecodePlain([]byte(v))
 		if err != nil {
 			return false
 		}

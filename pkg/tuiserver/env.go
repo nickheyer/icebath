@@ -3,6 +3,8 @@ package tuiserver
 import (
 	"math"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
@@ -13,7 +15,7 @@ func envFloat(name string, def float64) float64 {
 	if raw == "" {
 		return def
 	}
-	value, err := pyint.ParseFloat(raw)
+	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
 		return def
 	}

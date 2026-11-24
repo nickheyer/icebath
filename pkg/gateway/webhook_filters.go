@@ -9,6 +9,7 @@ import (
 	"math/big"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -18,12 +19,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -41,10 +42,10 @@ func webhookStringifyFilterValue(value any) (string, error) {
 		return "", nil
 	}
 	switch value.(type) {
-	case *pyjson.Object, map[string]any, []any:
-		return pyjson.Dumps(value, pyjson.SortKeys(true))
+	case *jsonutil.Object, map[string]any, []any:
+		return jsonutil.Encode(value, jsonutil.SortKeys())
 	}
-	return pyrepr.Str(value), nil
+	return anyutil.String(value), nil
 }
 
 // Profile home path of a user path with the ~/.icebath prefix mapped onto the active home
@@ -53,7 +54,7 @@ func webhookResolveProfilePath(ctx context.Context, pathValue any) (string, bool
 	if !ok {
 		return "", false, nil
 	}
-	raw := pypath.Expandvars(strings.TrimSpace(text))
+	raw := pathutil.ExpandEnv(strings.TrimSpace(text))
 	if raw == "" {
 		return "", false, nil
 	}
@@ -63,16 +64,16 @@ func webhookResolveProfilePath(ctx context.Context, pathValue any) (string, bool
 		if len(raw) > len("~/.icebath/") {
 			rest = raw[len("~/.icebath/"):]
 		}
-		return pypath.PathJoin(h, rest), true, nil
+		return pathutil.Join(h, rest), true, nil
 	}
-	expanded, err := pypath.PathExpanduser(raw)
+	expanded, err := pathutil.ExpandUserPath(raw)
 	if err != nil {
 		return "", false, err
 	}
-	if pypath.IsAbs(expanded) {
+	if filepath.IsAbs(expanded) {
 		return expanded, true, nil
 	}
-	return pypath.PathJoin(h, expanded), true, nil
+	return pathutil.Join(h, expanded), true, nil
 }
 
 // Script path under the home scripts directory, or the reason the route script is refused
@@ -81,11 +82,11 @@ func webhookResolveScriptPath(ctx context.Context, scriptValue any) (string, str
 	if !ok || strings.TrimSpace(text) == "" {
 		return "", "script path is empty", nil
 	}
-	scriptsRoot, err := pypath.Resolve(pypath.PathJoin(home.Dir(ctx), "scripts"))
+	scriptsRoot, err := pathutil.Resolve(pathutil.Join(home.Dir(ctx), "scripts"))
 	if err != nil {
 		return "", "", err
 	}
-	rawText := pypath.Expandvars(strings.TrimSpace(text))
+	rawText := pathutil.ExpandEnv(strings.TrimSpace(text))
 	candidate := scriptsRoot
 	if rawText == "~/.icebath" || strings.HasPrefix(rawText, "~/.icebath/") {
 		mapped, found, err := webhookResolveProfilePath(ctx, rawText)
@@ -93,23 +94,23 @@ func webhookResolveScriptPath(ctx context.Context, scriptValue any) (string, str
 			return "", "", err
 		}
 		if found {
-			if candidate, err = pypath.Resolve(mapped); err != nil {
+			if candidate, err = pathutil.Resolve(mapped); err != nil {
 				return "", "", err
 			}
 		}
 	} else {
-		raw, err := pypath.PathExpanduser(rawText)
+		raw, err := pathutil.ExpandUserPath(rawText)
 		if err != nil {
 			return "", "", err
 		}
-		if !pypath.IsAbs(raw) {
-			raw = pypath.PathJoin(scriptsRoot, raw)
+		if !filepath.IsAbs(raw) {
+			raw = pathutil.Join(scriptsRoot, raw)
 		}
-		if candidate, err = pypath.Resolve(raw); err != nil {
+		if candidate, err = pathutil.Resolve(raw); err != nil {
 			return "", "", err
 		}
 	}
-	if _, inside := pypath.PathRelativeTo(candidate, scriptsRoot); !inside {
+	if _, inside := pathutil.RelativeTo(candidate, scriptsRoot); !inside {
 		return "", "script path resolves outside " + scriptsRoot, nil
 	}
 	info, err := os.Stat(candidate)
@@ -130,7 +131,7 @@ func webhookLoadFilterFileValues(ctx context.Context, pathValue any) ([]any, err
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[webhook] filter in_file read failed for %s: %s", path, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[webhook] filter in_file read failed for %s: %s", path, err.Error()))
 		return nil, nil
 	}
 	data = []byte(strings.TrimPrefix(string(data), "\ufeff"))
@@ -138,9 +139,9 @@ func webhookLoadFilterFileValues(ctx context.Context, pathValue any) ([]any, err
 		return nil, &PyError{Kind: "UnicodeDecodeError", Msg: "the webhook filter file is not valid UTF-8"}
 	}
 	raw := string(data)
-	decoded, err := pyjson.Loads(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
-		var decodeErr *pyjson.DecodeError
+		var decodeErr *jsonutil.SyntaxError
 		if !errors.As(err, &decodeErr) {
 			return nil, err
 		}
@@ -155,9 +156,9 @@ func webhookLoadFilterFileValues(ctx context.Context, pathValue any) ([]any, err
 	switch v := decoded.(type) {
 	case []any:
 		return v, nil
-	case *pyjson.Object:
-		keys := make([]any, 0, len(v.Keys))
-		for _, k := range v.Keys {
+	case *jsonutil.Object:
+		keys := make([]any, 0, v.Len())
+		for _, k := range v.Keys() {
 			keys = append(keys, k)
 		}
 		return keys, nil
@@ -170,18 +171,18 @@ func webhookPyIn(item, container any) (bool, error) {
 	switch c := container.(type) {
 	case []any:
 		for _, element := range c {
-			if pyrepr.Equal(element, item) {
+			if anyutil.Equal(element, item) {
 				return true, nil
 			}
 		}
 		return false, nil
-	case *pyjson.Object, map[string]any:
-		obj, _ := pyjson.AsObject(c)
+	case *jsonutil.Object, map[string]any:
+		obj, _ := jsonutil.AsObject(c)
 		switch key := item.(type) {
 		case string:
 			_, found := obj.Get(key)
 			return found, nil
-		case *pyjson.Object, map[string]any, []any:
+		case *jsonutil.Object, map[string]any, []any:
 			return false, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a webhook filter value is %s, expected text or a number", errchain.Kind(item))}
 		}
 		return false, nil
@@ -204,14 +205,14 @@ func webhookOpContains(value, needle any) (bool, error) {
 		return false, nil
 	}
 	switch value.(type) {
-	case []any, *pyjson.Object, map[string]any:
+	case []any, *jsonutil.Object, map[string]any:
 		return webhookPyIn(needle, value)
 	}
 	text, err := webhookStringifyFilterValue(value)
 	if err != nil {
 		return false, err
 	}
-	return strings.Contains(text, pyrepr.Str(needle)), nil
+	return strings.Contains(text, anyutil.String(needle)), nil
 }
 
 // Whether the pattern searches the value text, an invalid pattern logging and matching nothing
@@ -219,7 +220,7 @@ func webhookOpRegex(value, pattern any) (bool, error) {
 	if value == webhookMissing {
 		return false, nil
 	}
-	re, err := pyre.Compile(pyrepr.Str(pattern))
+	re, err := pyre.Compile(anyutil.String(pattern))
 	if err != nil {
 		pkgLog().Warn("[webhook] Invalid webhook filter regex: " + err.Error())
 		return false, nil
@@ -241,13 +242,13 @@ var webhookFieldOperators = []struct {
 	match func(ctx context.Context, value, arg any) (bool, error)
 }{
 	{"exists", func(_ context.Context, value, arg any) (bool, error) {
-		return (value != webhookMissing) == pyrepr.Truthy(arg), nil
+		return (value != webhookMissing) == anyutil.IsTrue(arg), nil
 	}},
 	{"equals", func(_ context.Context, value, arg any) (bool, error) {
-		return value != webhookMissing && pyrepr.Equal(value, arg), nil
+		return value != webhookMissing && anyutil.Equal(value, arg), nil
 	}},
 	{"not_equals", func(_ context.Context, value, arg any) (bool, error) {
-		return value == webhookMissing || !pyrepr.Equal(value, arg), nil
+		return value == webhookMissing || !anyutil.Equal(value, arg), nil
 	}},
 	{"contains", func(_ context.Context, value, arg any) (bool, error) { return webhookOpContains(value, arg) }},
 	{"in", func(_ context.Context, value, arg any) (bool, error) {
@@ -279,15 +280,15 @@ func NewWebhookRouteProcessor(scriptTimeoutSeconds int) *WebhookRouteProcessor {
 
 // Mapping value of a payload, the AttributeError a get call on any other value raises
 func webhookPayloadGet(payload any, key string, def any) (any, error) {
-	obj, ok := pyjson.AsObject(payload)
+	obj, ok := jsonutil.AsObject(payload)
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the webhook payload is %s, expected a mapping", errchain.Kind(payload))}
 	}
-	return obj.GetOr(key, def), nil
+	return obj.ValueOr(key, def), nil
 }
 
 // Dotted field resolved against the payload, event and headers context, missing when absent
-func (p *WebhookRouteProcessor) ResolveFilterField(field, payload, eventType any, headers *pyjson.Object) (any, error) {
+func (p *WebhookRouteProcessor) ResolveFilterField(field, payload, eventType any, headers *jsonutil.Object) (any, error) {
 	text, ok := field.(string)
 	if !ok || strings.TrimSpace(text) == "" {
 		return webhookMissing, nil
@@ -306,18 +307,18 @@ func (p *WebhookRouteProcessor) ResolveFilterField(field, payload, eventType any
 		return nil, err
 	}
 	if headers == nil {
-		headers = pyjson.NewObject()
+		headers = jsonutil.NewObject()
 	}
-	context := pyjson.ObjectOf("payload", inner, "event", eventType, "event_type", eventType, "headers", headers.Copy())
+	context := jsonutil.ObjectOf("payload", inner, "event", eventType, "event_type", eventType, "headers", headers.Clone())
 	value := payload
 	if head, found := context.Get(parts[0]); found {
 		value, parts = head, parts[1:]
 	}
 	for _, part := range parts {
 		switch v := value.(type) {
-		case *pyjson.Object, map[string]any:
-			obj, _ := pyjson.AsObject(v)
-			value = obj.GetOr(part, webhookMissing)
+		case *jsonutil.Object, map[string]any:
+			obj, _ := jsonutil.AsObject(v)
+			value = obj.ValueOr(part, webhookMissing)
 		case []any:
 			if !webhookIsDigits(part) {
 				return webhookMissing, nil
@@ -355,10 +356,10 @@ func webhookIsDigits(text string) bool {
 }
 
 // Evaluates one filter spec, the all any and not combinators first and then the field operators
-func (p *WebhookRouteProcessor) FilterMatches(ctx context.Context, spec, payload, eventType any, headers *pyjson.Object) (bool, error) {
-	obj, ok := pyjson.AsObject(spec)
+func (p *WebhookRouteProcessor) FilterMatches(ctx context.Context, spec, payload, eventType any, headers *jsonutil.Object) (bool, error) {
+	obj, ok := jsonutil.AsObject(spec)
 	if !ok {
-		pkgLog().Warn("[webhook] Ignoring invalid filter spec: " + pyrepr.Repr(spec))
+		pkgLog().Warn("[webhook] Ignoring invalid filter spec: " + anyutil.Quote(spec))
 		return false, nil
 	}
 	for _, key := range []string{"all", "any"} {
@@ -388,11 +389,11 @@ func (p *WebhookRouteProcessor) FilterMatches(ctx context.Context, spec, payload
 		matched, err := p.FilterMatches(ctx, inner, payload, eventType, headers)
 		return !matched, err
 	}
-	value, err := p.ResolveFilterField(obj.GetOr("field", nil), payload, eventType, headers)
+	value, err := p.ResolveFilterField(obj.ValueOr("field", nil), payload, eventType, headers)
 	if err != nil {
 		return false, err
 	}
-	if _, hasExists := obj.Get("exists"); !hasExists && obj.GetOr("missing", nil) == true {
+	if _, hasExists := obj.Get("exists"); !hasExists && obj.ValueOr("missing", nil) == true {
 		return value == webhookMissing, nil
 	}
 	for _, op := range webhookFieldOperators {
@@ -400,18 +401,18 @@ func (p *WebhookRouteProcessor) FilterMatches(ctx context.Context, spec, payload
 			return op.match(ctx, value, arg)
 		}
 	}
-	pkgLog().Warn("[webhook] Filter spec has no supported operator: " + pyrepr.Repr(spec))
+	pkgLog().Warn("[webhook] Filter spec has no supported operator: " + anyutil.Quote(spec))
 	return false, nil
 }
 
 // Whether the route filters admit the event, a list requiring every spec and an object a single spec
-func (p *WebhookRouteProcessor) RouteFiltersMatch(ctx context.Context, routeConfig *pyjson.Object, payload, eventType any, headers *pyjson.Object) (bool, error) {
-	filters := routeConfig.GetOr("filters", nil)
-	if !pyrepr.Truthy(filters) {
+func (p *WebhookRouteProcessor) RouteFiltersMatch(ctx context.Context, routeConfig *jsonutil.Object, payload, eventType any, headers *jsonutil.Object) (bool, error) {
+	filters := routeConfig.ValueOr("filters", nil)
+	if !anyutil.IsTrue(filters) {
 		return true, nil
 	}
 	switch v := filters.(type) {
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return p.FilterMatches(ctx, v, payload, eventType, headers)
 	case []any:
 		for _, spec := range v {
@@ -439,7 +440,7 @@ func webhookSysExecutable() (string, error) {
 }
 
 // Runs a route script on the payload, false drops the webhook and a JSON object replaces the payload
-func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue any, payload any) (bool, *pyjson.Object, error) {
+func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue any, payload any) (bool, *jsonutil.Object, error) {
 	log := pkgLog()
 	path, reason, err := webhookResolveScriptPath(ctx, scriptValue)
 	if err != nil {
@@ -449,7 +450,7 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 		log.Warn("[webhook] script ignored webhook: " + reason)
 		return false, nil, nil
 	}
-	suffix := strings.ToLower(pypath.Suffix(path))
+	suffix := strings.ToLower(pathutil.Suffix(path))
 	var interpreter string
 	if suffix == ".sh" || suffix == ".bash" {
 		bash, err := tools.FindBash(ctx)
@@ -459,23 +460,23 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 		}
 		interpreter = bash
 	} else if interpreter, err = webhookSysExecutable(); err != nil {
-		log.Warn("[webhook] script execution failed: " + pyrepr.ExceptionMessage(err))
+		log.Warn("[webhook] script execution failed: " + err.Error())
 		return false, nil, nil
 	}
-	input, err := pyjson.Dumps(payload)
+	input, err := jsonutil.Encode(payload)
 	if err != nil {
-		log.Warn("[webhook] script execution failed: " + pyrepr.ExceptionMessage(err))
+		log.Warn("[webhook] script execution failed: " + err.Error())
 		return false, nil, nil
 	}
 	child, err := tools.BuildSubprocessEnvOrdered(ctx, tools.EnvForProfileHome(ctx, nil, home.Dir(ctx)), tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true})
 	if err != nil {
-		log.Warn("[webhook] script execution failed: " + pyrepr.ExceptionMessage(err))
+		log.Warn("[webhook] script execution failed: " + err.Error())
 		return false, nil, nil
 	}
-	result, err := pysubprocess.RunWith(ctx, []string{interpreter, path}, pysubprocess.Options{Dir: pypath.PathParent(path),
+	result, err := executil.Run(ctx, []string{interpreter, path}, executil.Options{Dir: filepath.Dir(filepath.Clean(path)),
 		Env: child.Environ(), Input: []byte(input), Timeout: time.Duration(p.ScriptTimeoutSeconds) * time.Second,
 		Attr: webhookScriptProcAttr()})
-	var timeout *pysubprocess.TimeoutExpired
+	var timeout *executil.TimeoutError
 	if errors.As(err, &timeout) {
 		log.Warn("[webhook] script timed out: " + path)
 		return false, nil, nil
@@ -496,21 +497,21 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 			level = slog.LevelWarn
 		}
 		log.Log(ctx, level, fmt.Sprintf("[webhook] script ignored webhook path=%s code=%d stderr=%s",
-			pypath.PathName(path), result.Returncode, pySliceRunes(stderr, 200)))
+			pathutil.Name(path), result.Returncode, pySliceRunes(stderr, 200)))
 	}
 	if result.Returncode != 0 || stdout == "" || stdout == "[SILENT]" {
 		return false, nil, nil
 	}
 	var transformed any
-	decoded, err := pyjson.Loads(stdout)
-	var decodeErr *pyjson.DecodeError
+	decoded, err := jsonutil.Decode(stdout)
+	var decodeErr *jsonutil.SyntaxError
 	switch {
 	case err == nil:
 		transformed = decoded
 	case errors.As(err, &decodeErr):
-		merged := pyjson.NewObject()
-		if obj, ok := pyjson.AsObject(payload); ok {
-			merged = obj.Copy()
+		merged := jsonutil.NewObject()
+		if obj, ok := jsonutil.AsObject(payload); ok {
+			merged = obj.Clone()
 		} else {
 			return false, nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the webhook payload is %s, expected a mapping", errchain.Kind(payload))}
 		}
@@ -519,12 +520,12 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 	default:
 		return false, nil, err
 	}
-	obj, ok := transformed.(*pyjson.Object)
+	obj, ok := transformed.(*jsonutil.Object)
 	if !ok {
 		log.Warn("[webhook] script stdout must be a JSON object or text")
 		return false, nil, nil
 	}
-	if obj.GetOr("[SILENT]", nil) == true || obj.GetOr("__icebath_ignore__", nil) == true {
+	if obj.ValueOr("[SILENT]", nil) == true || obj.ValueOr("__icebath_ignore__", nil) == true {
 		return false, nil, nil
 	}
 	return true, obj, nil
@@ -534,7 +535,7 @@ func (p *WebhookRouteProcessor) RunRouteScript(ctx context.Context, scriptValue 
 func webhookExecErrorText(err error) string {
 	var pathErr *fs.PathError
 	if errors.As(err, &pathErr) {
-		return fmt.Sprintf("%s: '%s'", pyrepr.ExceptionMessage(pathErr.Err), pathErr.Path)
+		return fmt.Sprintf("%s: '%s'", pathErr.Err.Error(), pathErr.Path)
 	}
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }

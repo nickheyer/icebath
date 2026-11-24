@@ -17,9 +17,10 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyjwt"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	jwtutil "github.com/nickheyer/icebath/pkg/utils/jwt"
 )
 
 // Bot Framework and Entra endpoints of the public cloud the connector and token checks use
@@ -44,17 +45,17 @@ const (
 // Inbound activity token check, Bot Framework connector tokens and Agent 365 Entra tokens
 type inboundTokenValidator struct {
 	appID   string
-	service *pyjwt.JWKClient
+	service *jwtutil.JWKClient
 
 	mu         sync.Mutex
-	entra      map[string]*pyjwt.JWKClient
+	entra      map[string]*jwtutil.JWKClient
 	entraOrder []string
 }
 
 // Validator for the bot's app id against the public cloud key sets
 func newInboundTokenValidator(appID string) *inboundTokenValidator {
-	return &inboundTokenValidator{appID: appID, service: pyjwt.NewJWKClient(botFrameworkJWKSURL, nil),
-		entra: map[string]*pyjwt.JWKClient{}}
+	return &inboundTokenValidator{appID: appID, service: jwtutil.NewJWKClient(botFrameworkJWKSURL),
+		entra: map[string]*jwtutil.JWKClient{}}
 }
 
 // Audiences a token for this app may carry
@@ -99,13 +100,13 @@ func (v *inboundTokenValidator) validate(raw, serviceURL string) (string, error)
 }
 
 // Key set of an Entra tenant, the oldest tenant evicted past one hundred
-func (v *inboundTokenValidator) entraKeys(tenantID string) *pyjwt.JWKClient {
+func (v *inboundTokenValidator) entraKeys(tenantID string) *jwtutil.JWKClient {
 	v.mu.Lock()
 	defer v.mu.Unlock()
 	if c := v.entra[tenantID]; c != nil {
 		return c
 	}
-	c := pyjwt.NewJWKClient(entraLoginEndpoint+"/"+tenantID+"/discovery/v2.0/keys", nil)
+	c := jwtutil.NewJWKClient(entraLoginEndpoint + "/" + tenantID + "/discovery/v2.0/keys")
 	v.entra[tenantID] = c
 	v.entraOrder = append(v.entraOrder, tenantID)
 	if len(v.entraOrder) > maxEntraValidators {
@@ -116,7 +117,7 @@ func (v *inboundTokenValidator) entraKeys(tenantID string) *pyjwt.JWKClient {
 }
 
 // RS256 signature, audience, issuer, expiry and issued at checks with the service URL claim when given
-func (v *inboundTokenValidator) verify(raw string, keys *pyjwt.JWKClient, issuers []string, serviceURL string) (jwt.MapClaims, error) {
+func (v *inboundTokenValidator) verify(raw string, keys *jwtutil.JWKClient, issuers []string, serviceURL string) (jwt.MapClaims, error) {
 	key, err := keys.SigningKeyFromJWT(raw)
 	if err != nil {
 		return nil, err
@@ -194,7 +195,7 @@ func (a *TeamsAdapter) createActivity(ctx context.Context, ref conversationRef, 
 	defer resp.Body.Close()
 	raw, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, errors.New(pyhttpx.RaiseForStatusMessage(resp.StatusCode, target, resp.Header.Get("Location")))
+		return nil, &httputil.StatusError{StatusCode: resp.StatusCode, URL: target, Location: resp.Header.Get("Location")}
 	}
 	var payload map[string]any
 	_ = json.Unmarshal(raw, &payload)
@@ -233,14 +234,14 @@ func toThreadedConversationID(conversationID, messageID string) (string, error) 
 func textActivity(text string) map[string]any { return map[string]any{"type": "message", "text": text} }
 
 // Message activity carrying one adaptive card attachment
-func cardActivity(card *pyjson.Object) map[string]any {
+func cardActivity(card *jsonutil.Object) map[string]any {
 	return map[string]any{"type": "message", "attachments": []any{
-		pyjson.ObjectOf("contentType", invokeCardType, "content", card)}}
+		jsonutil.ObjectOf("contentType", invokeCardType, "content", card)}}
 }
 
 // Adaptive card of version 1.4 with its body blocks and optional actions
-func adaptiveCard(body []any, actions []any) *pyjson.Object {
-	card := pyjson.ObjectOf("type", "AdaptiveCard", "version", "1.4", "body", body)
+func adaptiveCard(body []any, actions []any) *jsonutil.Object {
+	card := jsonutil.ObjectOf("type", "AdaptiveCard", "version", "1.4", "body", body)
 	if actions != nil {
 		card.Set("actions", actions)
 	}
@@ -248,8 +249,8 @@ func adaptiveCard(body []any, actions []any) *pyjson.Object {
 }
 
 // TextBlock element with wrap on and the optional weight and subtle flags
-func textBlock(text, weight string, subtle bool) *pyjson.Object {
-	block := pyjson.ObjectOf("type", "TextBlock", "text", text, "wrap", true)
+func textBlock(text, weight string, subtle bool) *jsonutil.Object {
+	block := jsonutil.ObjectOf("type", "TextBlock", "text", text, "wrap", true)
 	if weight != "" {
 		block.Set("weight", weight)
 	}
@@ -261,12 +262,12 @@ func textBlock(text, weight string, subtle bool) *pyjson.Object {
 
 // Invoke response of a card action that shows a message
 func invokeMessage(text string) (int, any) {
-	return 200, pyjson.ObjectOf("statusCode", 200, "type", invokeMessageType, "value", text)
+	return 200, jsonutil.ObjectOf("statusCode", 200, "type", invokeMessageType, "value", text)
 }
 
 // Invoke response of a card action that replaces the card
 func invokeCard(body []any) (int, any) {
-	return 200, pyjson.ObjectOf("statusCode", 200, "type", invokeCardType, "value", adaptiveCard(body, nil))
+	return 200, jsonutil.ObjectOf("statusCode", 200, "type", invokeCardType, "value", adaptiveCard(body, nil))
 }
 
 // Bot Framework token URL and client credentials form

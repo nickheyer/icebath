@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"mime/multipart"
 	"net"
 	"net/http"
@@ -16,14 +15,15 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Sent Telegram message as the Bot API result carries it
@@ -52,7 +52,7 @@ func newTelegramError(kind, message string) *telegramError {
 		msg = strings.TrimPrefix(msg, prefix)
 	}
 	if msg != message {
-		msg = pystr.Capitalize(msg)
+		msg = textutil.UpperFirst(strings.ToLower(msg))
 	}
 	return &telegramError{Kind: kind, Message: msg}
 }
@@ -67,7 +67,7 @@ var (
 
 // Constructor of the Bot API client, replaced by tests
 var newTelegramBot = func(token any, proxy string) (telegramBotAPI, error) {
-	if !pyrepr.Truthy(token) {
+	if !anyutil.IsTrue(token) {
 		return nil, newTelegramError("InvalidToken", "You must pass the token you received from https://t.me/Botfather!")
 	}
 	transport := &http.Transport{
@@ -87,7 +87,7 @@ var newTelegramBot = func(token any, proxy string) (telegramBotAPI, error) {
 		}
 		transport.Proxy = http.ProxyURL(u)
 	}
-	return &telegramHTTPBot{token: pyrepr.Str(token), client: &http.Client{Transport: transport}}, nil
+	return &telegramHTTPBot{token: anyutil.String(token), client: &http.Client{Transport: transport}}, nil
 }
 
 type telegramHTTPBot struct {
@@ -142,7 +142,7 @@ func (b *telegramHTTPBot) Send(ctx context.Context, method string, kwargs map[st
 			}
 			fields[k] = map[bool]string{true: "true", false: "false"}[x]
 		default:
-			fields[k] = pyrepr.Str(x)
+			fields[k] = anyutil.String(x)
 		}
 	}
 	var body bytes.Buffer
@@ -161,7 +161,7 @@ func (b *telegramHTTPBot) Send(ctx context.Context, method string, kwargs map[st
 			}
 			h := textproto.MIMEHeader{}
 			h.Set("Content-Disposition", fmt.Sprintf(`form-data; name=%q; filename=%q`, u.field, u.name))
-			mt, _, _ := pymimetypes.GuessType(u.name, true)
+			mt := mimeutil.TypeByName(u.name)
 			if mt == "" {
 				mt = "application/octet-stream"
 			}
@@ -239,13 +239,12 @@ func parseTelegramResponse(code int, payload []byte) (*telegramMessage, error) {
 		message = description
 	}
 	if params, ok := data["parameters"].(map[string]any); ok && len(params) > 0 {
-		if migrate := jsonNumberValue(params["migrate_to_chat_id"]); pyrepr.Truthy(migrate) {
-			return nil, &telegramError{Kind: "ChatMigrated", Message: fmt.Sprintf("Group migrated to supergroup. New chat id: %s", pyrepr.Str(migrate))}
+		if migrate := jsonNumberValue(params["migrate_to_chat_id"]); anyutil.IsTrue(migrate) {
+			return nil, &telegramError{Kind: "ChatMigrated", Message: fmt.Sprintf("Group migrated to supergroup. New chat id: %s", anyutil.String(migrate))}
 		}
-		if retry := jsonNumberValue(params["retry_after"]); pyrepr.Truthy(retry) {
-			secs, _ := pyrepr.Int(retry)
-			after, _ := new(big.Float).SetInt(secs).Float64()
-			return nil, &telegramError{Kind: "RetryAfter", Message: fmt.Sprintf("Flood control exceeded. Retry in %s seconds", secs), RetryAfter: &after}
+		if retry := jsonNumberValue(params["retry_after"]); anyutil.IsTrue(retry) {
+			after, _ := anyutil.ToFloat(retry)
+			return nil, &telegramError{Kind: "RetryAfter", Message: "Flood control exceeded. Retry in " + strconv.FormatFloat(after, 'f', -1, 64) + " seconds", RetryAfter: &after}
 		}
 		message += fmt.Sprintf("\nThe server response contained unknown parameters: %s", errchain.Show(params))
 	}
@@ -267,7 +266,7 @@ func parseTelegramResponse(code int, payload []byte) (*telegramMessage, error) {
 	return nil, newTelegramError("NetworkError", fmt.Sprintf("%s (%d)", message, code))
 }
 
-// Python int of a decoded JSON number, the value unchanged otherwise
+// int64 of an integral decoded JSON number, the text of another number, any other value unchanged
 func jsonNumberValue(v any) any {
 	if n, ok := v.(json.Number); ok {
 		if i, err := n.Int64(); err == nil {

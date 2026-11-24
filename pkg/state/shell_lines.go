@@ -12,8 +12,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Role of the export rows that show a shell line, never a role of a stored message
@@ -28,7 +26,7 @@ func ShellLinesPath(sessionsDir, sessionID string) string {
 func (d *SessionDB) sessionsDir() string { return home.SessionsDir(filepath.Dir(d.Path())) }
 
 // Time a shell line ran, false when it carries none
-func shellLineAt(line *pyjson.Object) (float64, bool) {
+func shellLineAt(line *jsonutil.Object) (float64, bool) {
 	switch at := rowValue(line, "at").(type) {
 	case float64:
 		return at, true
@@ -39,7 +37,7 @@ func shellLineAt(line *pyjson.Object) (float64, bool) {
 }
 
 // Shell lines kept for a session in the order they ran, each with its time, command and result, none without a file
-func ReadShellLines(sessionsDir, sessionID string) ([]*pyjson.Object, error) {
+func ReadShellLines(sessionsDir, sessionID string) ([]*jsonutil.Object, error) {
 	data, err := os.ReadFile(ShellLinesPath(sessionsDir, sessionID))
 	if errors.Is(err, os.ErrNotExist) {
 		return nil, nil
@@ -47,16 +45,16 @@ func ReadShellLines(sessionsDir, sessionID string) ([]*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	var lines []*pyjson.Object
+	var lines []*jsonutil.Object
 	for _, raw := range bytes.Split(data, []byte("\n")) {
 		if len(bytes.TrimSpace(raw)) == 0 {
 			continue
 		}
-		decoded, err := pyjson.Loads(string(raw))
+		decoded, err := jsonutil.Decode(string(raw))
 		if err != nil {
 			return nil, err
 		}
-		line, isObject := decoded.(*pyjson.Object)
+		line, isObject := decoded.(*jsonutil.Object)
 		if !isObject {
 			return nil, pyValueError("a shell line of session " + sessionID + " is not an object")
 		}
@@ -80,11 +78,11 @@ func CopyShellLines(sessionsDir, fromID, toID string, before *float64) error {
 			continue
 		}
 		if before != nil {
-			decoded, err := pyjson.Loads(string(raw))
+			decoded, err := jsonutil.Decode(string(raw))
 			if err != nil {
 				return err
 			}
-			line, _ := decoded.(*pyjson.Object)
+			line, _ := decoded.(*jsonutil.Object)
 			if at, timed := shellLineAt(line); !timed || at >= *before {
 				continue
 			}
@@ -102,7 +100,7 @@ func CopyShellLines(sessionsDir, fromID, toID string, before *float64) error {
 }
 
 // Time of the first message a branch leaves behind in its parent, nil when the branch copies every message
-func branchLeftBehindAt(ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*float64, error) {
+func branchLeftBehindAt(ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*float64, error) {
 	_, target, err := savedLocalPolicyTarget(ctx, conn, sessionID)
 	if err != nil {
 		return nil, err
@@ -127,7 +125,7 @@ func branchLeftBehindAt(ctx context.Context, conn SQLiteConn, sessionID string, 
 }
 
 // Whether a sessions folder keeps shell lines under the id of a session row or of the conversation it belongs to
-func shellLinesKept(sessionsDir string, session *pyjson.Object) (bool, error) {
+func shellLinesKept(sessionsDir string, session *jsonutil.Object) (bool, error) {
 	ids := []string{pyStr(rowValue(session, "id"))}
 	if owner, isText := rowValue(session, "chat_id").(string); isText && owner != "" && owner != ids[0] {
 		ids = append(ids, owner)
@@ -145,7 +143,7 @@ func shellLinesKept(sessionsDir string, session *pyjson.Object) (bool, error) {
 }
 
 // Shell lines an export of one session row carries: those of its conversation that ran while the row was the conversation's current one
-func (d *SessionDB) exportShellLines(ctx context.Context, session *pyjson.Object) ([]any, error) {
+func (d *SessionDB) exportShellLines(ctx context.Context, session *jsonutil.Object) ([]any, error) {
 	if kept, err := shellLinesKept(d.sessionsDir(), session); err != nil || !kept {
 		return nil, err
 	}
@@ -205,7 +203,7 @@ func (d *SessionDB) exportShellLines(ctx context.Context, session *pyjson.Object
 }
 
 // Puts the shell lines an export of a session row carries on the exported session
-func (d *SessionDB) attachShellLines(ctx context.Context, session, exported *pyjson.Object) error {
+func (d *SessionDB) attachShellLines(ctx context.Context, session, exported *jsonutil.Object) error {
 	shell, err := d.exportShellLines(ctx, session)
 	if err != nil {
 		return err
@@ -217,17 +215,17 @@ func (d *SessionDB) attachShellLines(ctx context.Context, session, exported *pyj
 }
 
 // Shell lines of an exported session as rows
-func exportShellLineRows(session *pyjson.Object) []*pyjson.Object {
+func exportShellLineRows(session *jsonutil.Object) []*jsonutil.Object {
 	list, _ := rowValue(session, "shell_lines").([]any)
 	return objectsOf(list)
 }
 
 // Text an export shows for a shell line: the command, what it printed and its exit code when it failed
-func shellLineText(line *pyjson.Object) string {
-	result, _ := rowValue(line, "result").(*pyjson.Object)
-	parts := []string{"$ " + pyrepr.Str(pyrepr.Or(rowValue(line, "command"), ""))}
+func shellLineText(line *jsonutil.Object) string {
+	result, _ := rowValue(line, "result").(*jsonutil.Object)
+	parts := []string{"$ " + anyutil.String(anyutil.Or(rowValue(line, "command"), ""))}
 	for _, key := range []string{"stdout", "stderr"} {
-		if text := strings.TrimRight(pyrepr.Str(pyrepr.Or(rowValue(result, key), "")), "\n"); text != "" {
+		if text := strings.TrimRight(anyutil.String(anyutil.Or(rowValue(result, key), "")), "\n"); text != "" {
 			parts = append(parts, text)
 		}
 	}
@@ -238,13 +236,13 @@ func shellLineText(line *pyjson.Object) string {
 }
 
 // Rows an export renders, the messages of the session with its shell lines placed among them by time
-func exportDisplayRows(session *pyjson.Object) []*pyjson.Object {
+func exportDisplayRows(session *jsonutil.Object) []*jsonutil.Object {
 	messages := exportMessageRows(session)
 	lines := exportShellLineRows(session)
 	if len(lines) == 0 {
 		return messages
 	}
-	slices.SortStableFunc(lines, func(a, b *pyjson.Object) int {
+	slices.SortStableFunc(lines, func(a, b *jsonutil.Object) int {
 		x, _ := shellLineAt(a)
 		y, _ := shellLineAt(b)
 		switch {
@@ -255,7 +253,7 @@ func exportDisplayRows(session *pyjson.Object) []*pyjson.Object {
 		}
 		return 0
 	})
-	out := make([]*pyjson.Object, 0, len(messages)+len(lines))
+	out := make([]*jsonutil.Object, 0, len(messages)+len(lines))
 	next := 0
 	place := func(before float64) {
 		for ; next < len(lines); next++ {
@@ -263,7 +261,7 @@ func exportDisplayRows(session *pyjson.Object) []*pyjson.Object {
 			if at >= before {
 				return
 			}
-			out = append(out, pyjson.ObjectOf("role", shellLineRole, "content", shellLineText(lines[next]), "timestamp", at))
+			out = append(out, jsonutil.ObjectOf("role", shellLineRole, "content", shellLineText(lines[next]), "timestamp", at))
 		}
 	}
 	for _, message := range messages {

@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Seconds between two settled media sweeps of one store
@@ -43,12 +43,12 @@ func releaseAdmissionMediaCount(ctx context.Context, db *state.SessionDB, admiss
 		return 0, nil
 	}
 	payloadValue, _ := row.Get("payload")
-	payload, _ := payloadValue.(*pyjson.Object)
+	payload, _ := payloadValue.(*jsonutil.Object)
 	if payload == nil {
-		payload = pyjson.NewObject()
+		payload = jsonutil.NewObject()
 	}
 	if apiValue, ok := payload.Get("api_turn_v1"); ok {
-		if apiTurn, ok := apiValue.(*pyjson.Object); ok {
+		if apiTurn, ok := apiValue.(*jsonutil.Object); ok {
 			media, _ := apiTurn.Get("media")
 			history, _ := apiTurn.Get("history")
 			if _, isList := history.([]any); pyTruthy(media) || isList {
@@ -82,7 +82,7 @@ func releaseAdmissionMediaCount(ctx context.Context, db *state.SessionDB, admiss
 }
 
 // References as the release pass takes them
-func referenceList(references []*pyjson.Object) []any {
+func referenceList(references []*jsonutil.Object) []any {
 	out := make([]any, len(references))
 	for i, reference := range references {
 		out[i] = reference
@@ -129,7 +129,7 @@ func sweepSettledMedia(ctx context.Context, db *state.SessionDB, now *float64) (
 	stale := map[string]any{}
 	var order []string
 	for _, text := range encoded {
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return 0, err
 		}
@@ -151,7 +151,7 @@ func sweepSettledMedia(ctx context.Context, db *state.SessionDB, now *float64) (
 				if !ok {
 					return 0, pathArgError(raw)
 				}
-				info, err := os.Lstat(pypath.PathStr(path))
+				info, err := os.Lstat(filepath.Clean(path))
 				if err != nil {
 					continue
 				}
@@ -176,15 +176,15 @@ func sweepSettledMedia(ctx context.Context, db *state.SessionDB, now *float64) (
 
 // Collects retained API images of the active profile store that no admission holds any more
 func collectUnheldAPIImages(ctx context.Context, db *state.SessionDB) (int, error) {
-	store, err := pypath.Resolve(db.Path())
+	store, err := pathutil.Resolve(db.Path())
 	if err != nil {
 		return 0, err
 	}
-	active, err := pypath.Resolve(home.Dir(ctx))
+	active, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return 0, err
 	}
-	if !samePath(pypath.PathParent(store), active) {
+	if !samePath(filepath.Dir(filepath.Clean(store)), active) {
 		pkgLog().Warn("Skipped retained API image collection: " + db.Path() + " is not the active profile store")
 		return 0, nil
 	}
@@ -198,7 +198,7 @@ func collectUnheldAPIImages(ctx context.Context, db *state.SessionDB) (int, erro
 		for _, path := range matches {
 			name, parent := filepath.Base(path), filepath.Base(filepath.Dir(path))
 			if ingressAPIImageName.MatchString(name) && len(parent) >= 32 && name[4:36] == parent[:32] {
-				references = append(references, pyjson.ObjectOf("path", path, "sha256", parent))
+				references = append(references, jsonutil.ObjectOf("path", path, "sha256", parent))
 			}
 		}
 	}

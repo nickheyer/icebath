@@ -4,15 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"reflect"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const emptyContentText = "(The user sent a message with no text content)"
@@ -25,7 +25,7 @@ type (
 
 // Absolute form of a path, the path itself when the working directory is unknown
 func inboundAbspath(path string) string {
-	abs, err := pypath.Abspath(path)
+	abs, err := filepath.Abs(path)
 	if err != nil {
 		return path
 	}
@@ -170,7 +170,7 @@ func (r *GatewayRunner) transcribeAndEchoPendingVoice(ctx context.Context, event
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Warn(fmt.Sprintf("%s transcription failed: %s", logContext, pyrepr.Str(rec)))
+			pkgLog().Warn(fmt.Sprintf("%s transcription failed: %s", logContext, anyutil.String(rec)))
 			result, transcripts = text, []string{}
 		}
 	}()
@@ -211,22 +211,22 @@ func (r *GatewayRunner) transcribeOneClip(ctx context.Context, path string, tran
 	if err != nil {
 		return gateway.STTClip{}, err
 	}
-	if !pyrepr.Truthy(result["success"]) {
+	if !anyutil.IsTrue(result["success"]) {
 		recovered, err := fallback(ctx, path, "")
 		if err != nil {
 			return gateway.STTClip{}, err
 		}
-		if pyrepr.Truthy(recovered["success"]) {
+		if anyutil.IsTrue(recovered["success"]) {
 			pkgLog().Info(fmt.Sprintf("Configured STT failed for %s; recovered with local STT", path))
 			result = recovered
 		}
 	}
-	if !pyrepr.Truthy(result["success"]) {
+	if !anyutil.IsTrue(result["success"]) {
 		reason, ok := result["error"]
 		if !ok {
 			reason = "unknown error"
 		}
-		pkgLog().Info(fmt.Sprintf("Voice transcription failed for %s: %s", path, pyrepr.Str(reason)))
+		pkgLog().Info(fmt.Sprintf("Voice transcription failed for %s: %s", path, anyutil.String(reason)))
 		return gateway.STTClip{Note: untranscribedAudioNote(ctx, path)}, nil
 	}
 	transcript, _ := result["transcript"].(string)

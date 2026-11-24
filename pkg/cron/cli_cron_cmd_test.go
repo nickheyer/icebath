@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func cliCreate(t *testing.T, s *Store, o CreateJobOptions) *Job {
@@ -24,20 +24,20 @@ func cliCreate(t *testing.T, s *Store, o CreateJobOptions) *Job {
 }
 
 // Applies edit to the first stored job record of jobs.json like load_jobs, mutate, save_jobs
-func editFirstStoredJob(t *testing.T, s *Store, edit func(*pyjson.Object)) {
+func editFirstStoredJob(t *testing.T, s *Store, edit func(*jsonutil.Object)) {
 	t.Helper()
 	path := filepath.Join(s.cronDir, "jobs.json")
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	doc, err := pyjson.Loads(string(raw))
+	doc, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	jobs, _ := doc.(*pyjson.Object).Get("jobs")
-	edit(jobs.([]any)[0].(*pyjson.Object))
-	out, err := pyjson.Dumps(doc)
+	jobs, _ := doc.(*jsonutil.Object).Get("jobs")
+	edit(jobs.([]any)[0].(*jsonutil.Object))
+	out, err := jsonutil.Encode(doc)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestCronRunsCLIPrintsExecutionHistory(t *testing.T) {
 
 func seedUnverified(t *testing.T, s *Store) *Job {
 	job := cliCreate(t, s, CreateJobOptions{Prompt: strPtr("Nightly brief"), Schedule: "every 1h", Deliver: strPtr("slack:C0123456")})
-	editFirstStoredJob(t, s, func(o *pyjson.Object) {
+	editFirstStoredJob(t, s, func(o *jsonutil.Object) {
 		o.Set("last_status", "ok")
 		o.Set("last_delivery_unverified", []any{"slack:C0123456"})
 	})
@@ -119,7 +119,7 @@ func TestCronDoctorReportsUnverifiedDelivery(t *testing.T) {
 func TestCronDoctorReportsCronHealthIssues(t *testing.T) {
 	s, _ := newTestStore(t)
 	job := cliCreate(t, s, CreateJobOptions{Prompt: strPtr("Daily digest"), Schedule: "every 1h", Script: "missing.py"})
-	editFirstStoredJob(t, s, func(o *pyjson.Object) {
+	editFirstStoredJob(t, s, func(o *jsonutil.Object) {
 		o.Set("last_status", "error")
 		o.Set("last_error", "Provider returned error")
 		o.Set("last_delivery_error", "telegram timeout")
@@ -151,7 +151,7 @@ func TestCronDoctorReportsHealthyJobs(t *testing.T) {
 func TestCronDoctorReportsDeliveryFailureOnce(t *testing.T) {
 	s, _ := newTestStore(t)
 	cliCreate(t, s, CreateJobOptions{Prompt: strPtr("Daily digest"), Schedule: "every 1h"})
-	editFirstStoredJob(t, s, func(o *pyjson.Object) {
+	editFirstStoredJob(t, s, func(o *jsonutil.Object) {
 		o.Set("last_status", "delivery_failed")
 		o.Set("last_error", nil)
 		o.Set("last_delivery_error", "telegram timeout")
@@ -171,7 +171,7 @@ func TestCronDoctorOverdueNextRun(t *testing.T) {
 	}{{3 * time.Hour, 1, []string{"overdue", "not firing"}}, {5 * time.Minute, 0, []string{"✓ Cron doctor found no issues"}}} {
 		s, _ := newTestStore(t)
 		cliCreate(t, s, CreateJobOptions{Prompt: strPtr("Hourly ping"), Schedule: "every 1h"})
-		editFirstStoredJob(t, s, func(o *pyjson.Object) { o.Set("next_run_at", FormatISO(time.Now().UTC().Add(-c.ago))) })
+		editFirstStoredJob(t, s, func(o *jsonutil.Object) { o.Set("next_run_at", FormatISO(time.Now().UTC().Add(-c.ago))) })
 		rc, out := runCron(t, s, &CronArgs{Command: "doctor"})
 		if rc != c.rc {
 			t.Fatalf("ago %v rc %d %s", c.ago, rc, out)

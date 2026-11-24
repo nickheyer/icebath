@@ -10,8 +10,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Live direct child of the test process that reads stdin until it closes, wrapped as a worker handle
@@ -54,8 +54,8 @@ func birthOf(t *testing.T, pid int) float64 {
 }
 
 // Worker scope params of a pid with the register kind
-func registerScope(t *testing.T, pid int) *pyjson.Object {
-	return pyjson.ObjectOf("profile_id", "p", "session_id", "owned", "execution_id", "compute-"+itoa(pid), "generation", int64(0),
+func registerScope(t *testing.T, pid int) *jsonutil.Object {
+	return jsonutil.ObjectOf("profile_id", "p", "session_id", "owned", "execution_id", "compute-"+itoa(pid), "generation", int64(0),
 		"pid", int64(pid), "birth", birthOf(t, pid), "secret", strings.Repeat("w", 32), "kind", "compute")
 }
 
@@ -116,7 +116,7 @@ func workerExecutionCount(t *testing.T, ctx context.Context, db *state.SessionDB
 const automationPrincipal = "automation:agent:main:local:dm:owned"
 
 // Started automation admission and the owner's live direct child over a fresh store
-func reservedAutomation(t *testing.T) (context.Context, *SessionAuthority, *pyjson.Object, *workerProcess) {
+func reservedAutomation(t *testing.T) (context.Context, *SessionAuthority, *jsonutil.Object, *workerProcess) {
 	t.Helper()
 	ctx, db := newTestStateDB(t)
 	process := stdinReaderChild(t)
@@ -129,7 +129,7 @@ func reservedAutomation(t *testing.T) (context.Context, *SessionAuthority, *pyjs
 	}
 	a := NewSessionAuthority(&authorityRunnerDouble{}, t.TempDir(), "owner", db, epoch)
 	admitted, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: automationPrincipal, SessionID: "owned",
-		RequestID: "bot:dm", Payload: pyjson.NewObject()})
+		RequestID: "bot:dm", Payload: jsonutil.NewObject()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,13 +140,13 @@ func reservedAutomation(t *testing.T) (context.Context, *SessionAuthority, *pyjs
 }
 
 // Hello frame of a direct child as the worker introduces itself
-func childHello(t *testing.T, process *workerProcess) *pyjson.Object {
-	return pyjson.ObjectOf("type", "hello", "pid", int64(process.Pid), "birth", birthOf(t, process.Pid), "ancestors", []any{int64(os.Getpid())})
+func childHello(t *testing.T, process *workerProcess) *jsonutil.Object {
+	return jsonutil.ObjectOf("type", "hello", "pid", int64(process.Pid), "birth", birthOf(t, process.Pid), "ancestors", []any{int64(os.Getpid())})
 }
 
 // Worker identity of a reservation scope, its epoch dropped
-func scopeIdentity(scope *pyjson.Object) *pyjson.Object {
-	identity := scope.Copy()
+func scopeIdentity(scope *jsonutil.Object) *jsonutil.Object {
+	identity := scope.Clone()
 	identity.Delete("epoch")
 	return identity
 }
@@ -164,8 +164,8 @@ func TestWorkerAdoptsAnAutomationAdmissionAsTheOwnerUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := receipt.Get("execution_id"); got != scope.Vals["execution_id"] {
-		t.Fatalf("execution_id %v want %v", got, scope.Vals["execution_id"])
+	if got, _ := receipt.Get("execution_id"); got != scope.Value("execution_id") {
+		t.Fatalf("execution_id %v want %v", got, scope.Value("execution_id"))
 	}
 }
 

@@ -5,12 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"sync"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Running gateway methods plugin message delivery resolves a session through, gateway/run.py GatewayRunner
@@ -193,7 +194,7 @@ func ResolvePluginMessageTarget(ctx context.Context, runner any, sessionKey stri
 		}
 	}
 	if source == nil {
-		return nil, pluginMessageErr("no_conversation", fmt.Sprintf("session %s is not known to this gateway", pyrepr.StrRepr(sessionKey))), nil
+		return nil, pluginMessageErr("no_conversation", fmt.Sprintf("session %s is not known to this gateway", strconv.Quote(sessionKey))), nil
 	}
 	if source.Platform == PlatformLocal {
 		live, err := r.PluginLocalSession(ctx, source, sessionKey, pluginHome, pluginID)
@@ -227,7 +228,7 @@ func uuidHex12() string {
 
 // Keyed sticky notice to a local session's viewers
 func publishLocal(target *PostTarget, text string) map[string]any {
-	delivered := target.Live.EventStream.Publish(target.ChatID, pyjson.ObjectOf(
+	delivered := target.Live.EventStream.Publish(target.ChatID, jsonutil.ObjectOf(
 		"text", text, "level", "info", "kind", "sticky", "key", target.NoticeKey, "id", target.NoticeKey,
 	), "notification.show", nil)
 	return map[string]any{"ok": true, "message_id": target.NoticeKey, "delivered": delivered}
@@ -246,14 +247,14 @@ func sendPluginMessage(ctx context.Context, target *PostTarget, text string) (ma
 	}
 	if !result.Success {
 		detail := ""
-		if pyrepr.Truthy(result.Error) {
-			detail = pyrepr.Str(result.Error)
+		if anyutil.IsTrue(result.Error) {
+			detail = anyutil.String(result.Error)
 		}
 		return pluginMessageErr("send_failed", runePrefix(detail, 512)), nil
 	}
 	var id any
 	if result.MessageID != nil {
-		id = pyrepr.Str(result.MessageID)
+		id = anyutil.String(result.MessageID)
 	}
 	return map[string]any{"ok": true, "message_id": id}, nil
 }
@@ -269,7 +270,7 @@ func resultField(result map[string]any, key string) string {
 		}
 		return "False"
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func errorSuffix(result map[string]any) string {
@@ -310,7 +311,7 @@ func EditPluginMessage(ctx context.Context, target, messageID any, text, pluginI
 	t := target.(*PostTarget)
 	id := ""
 	if messageID != nil {
-		id = pyrepr.Str(messageID)
+		id = anyutil.String(messageID)
 	}
 	result, err := editPluginMessage(ctx, t, id, text, pluginID)
 	if err != nil {
@@ -340,14 +341,14 @@ func editPluginMessage(ctx context.Context, t *PostTarget, messageID, text, plug
 			editError = errText(err)
 		} else {
 			edited = sent.Success
-			if pyrepr.Truthy(sent.Error) {
-				editError = pyrepr.Str(sent.Error)
+			if anyutil.IsTrue(sent.Error) {
+				editError = anyutil.String(sent.Error)
 			}
 		}
 		if edited {
 			out := messageID
-			if pyrepr.Truthy(sent.MessageID) {
-				out = pyrepr.Str(sent.MessageID)
+			if anyutil.IsTrue(sent.MessageID) {
+				out = anyutil.String(sent.MessageID)
 			}
 			return map[string]any{"ok": true, "message_id": out, "edited": true}, nil
 		}

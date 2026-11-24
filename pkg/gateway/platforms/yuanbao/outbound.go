@@ -4,16 +4,14 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const textChunkRetries = 3
@@ -34,10 +32,10 @@ func readLocalFile(adapter *YuanbaoAdapter, label, path, defaultName, filename s
 	pkgLog().Info(fmt.Sprintf("[%s] %s: reading %s", adapter.Name(), label, path))
 	fileBytes, err := os.ReadFile(path)
 	if err != nil {
-		return nil, "", "", &pyErr{pypath.OSErrorClass(err), errchain.OSText(err)}
+		return nil, "", "", err
 	}
 	if filename == "" {
-		filename = pypath.Basename(path)
+		filename = pathutil.Name(path)
 	}
 	if filename == "" {
 		filename = defaultName
@@ -50,7 +48,7 @@ type mediaSendHandler interface {
 	className() string
 	needsCOSUpload() bool
 	acquireFile(ctx context.Context, adapter *YuanbaoAdapter, kwargs map[string]any) ([]byte, string, string, error)
-	buildMsgBody(upload *pyjson.Object, kwargs map[string]any) ([]any, error)
+	buildMsgBody(upload *jsonutil.Object, kwargs map[string]any) ([]any, error)
 }
 
 // Text keyword argument of a media send, empty when it is absent or not text
@@ -60,7 +58,7 @@ func kwargText(kwargs map[string]any, key string) string {
 }
 
 // Value of a key the upload credential reply must carry, the KeyError naming it when missing
-func requiredKey(obj *pyjson.Object, key string) (any, error) {
+func requiredKey(obj *jsonutil.Object, key string) (any, error) {
 	value, ok := obj.Get(key)
 	if !ok {
 		return nil, &KeyError{Of: "upload credential reply", Key: key}
@@ -69,14 +67,14 @@ func requiredKey(obj *pyjson.Object, key string) (any, error) {
 }
 
 // Integer field of the upload result, zero when it is absent
-func uploadInt(upload *pyjson.Object, key string) int64 {
-	n, _ := upload.GetOr(key, int64(0)).(int64)
+func uploadInt(upload *jsonutil.Object, key string) int64 {
+	n, _ := upload.ValueOr(key, int64(0)).(int64)
 	return n
 }
 
 // TIMImageElem body of an uploaded image
-func imageMsgBody(upload *pyjson.Object, kwargs map[string]any) ([]any, error) {
-	urlText, err := protoText(upload.GetOr("url", ""), "the uploaded image URL")
+func imageMsgBody(upload *jsonutil.Object, kwargs map[string]any) ([]any, error) {
+	urlText, err := protoText(upload.ValueOr("url", ""), "the uploaded image URL")
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +87,7 @@ type imageURLHandler struct{}
 
 func (imageURLHandler) className() string    { return "ImageUrlHandler" }
 func (imageURLHandler) needsCOSUpload() bool { return true }
-func (imageURLHandler) buildMsgBody(upload *pyjson.Object, kwargs map[string]any) ([]any, error) {
+func (imageURLHandler) buildMsgBody(upload *jsonutil.Object, kwargs map[string]any) ([]any, error) {
 	return imageMsgBody(upload, kwargs)
 }
 
@@ -100,11 +98,11 @@ func (imageURLHandler) acquireFile(ctx context.Context, adapter *YuanbaoAdapter,
 	if err != nil {
 		return nil, "", "", err
 	}
-	pathPart, _ := pystrPartition(imageURL, "?")
+	pathPart, _, _ := strings.Cut(imageURL, "?")
 	if contentType == "" || contentType == "application/octet-stream" {
 		contentType = GuessMIMEType(pathPart)
 	}
-	filename := pypath.Basename(pathPart)
+	filename := pathutil.Name(pathPart)
 	if filename == "" {
 		filename = "image.jpg"
 	}
@@ -116,7 +114,7 @@ type imageFileHandler struct{}
 
 func (imageFileHandler) className() string    { return "ImageFileHandler" }
 func (imageFileHandler) needsCOSUpload() bool { return true }
-func (imageFileHandler) buildMsgBody(upload *pyjson.Object, kwargs map[string]any) ([]any, error) {
+func (imageFileHandler) buildMsgBody(upload *jsonutil.Object, kwargs map[string]any) ([]any, error) {
 	return imageMsgBody(upload, kwargs)
 }
 
@@ -134,8 +132,8 @@ func (documentHandler) acquireFile(ctx context.Context, adapter *YuanbaoAdapter,
 	return readLocalFile(adapter, "DocumentHandler", kwargText(kwargs, "file_path"), "document", kwargText(kwargs, "filename"))
 }
 
-func (documentHandler) buildMsgBody(upload *pyjson.Object, kwargs map[string]any) ([]any, error) {
-	urlText, err := protoText(upload.GetOr("url", ""), "the uploaded file URL")
+func (documentHandler) buildMsgBody(upload *jsonutil.Object, kwargs map[string]any) ([]any, error) {
+	urlText, err := protoText(upload.ValueOr("url", ""), "the uploaded file URL")
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +151,7 @@ func (stickerHandler) acquireFile(ctx context.Context, adapter *YuanbaoAdapter, 
 }
 
 // Body of the named sticker, else of the face index, else of a random sticker
-func (stickerHandler) buildMsgBody(upload *pyjson.Object, kwargs map[string]any) ([]any, error) {
+func (stickerHandler) buildMsgBody(upload *jsonutil.Object, kwargs map[string]any) ([]any, error) {
 	if name, named := kwargs["sticker_name"].(string); named {
 		sticker := GetStickerByName(name)
 		if sticker == nil {
@@ -185,7 +183,7 @@ func mediaMsgBody(ctx context.Context, handler mediaSendHandler, adapter *Yuanba
 		return nil, "", err
 	}
 	if !handler.needsCOSUpload() {
-		body, err := handler.buildMsgBody(pyjson.NewObject(), kwargs)
+		body, err := handler.buildMsgBody(jsonutil.NewObject(), kwargs)
 		return body, "", err
 	}
 	if refusal := validateMedia(fileBytes, filename); refusal != "" {
@@ -195,7 +193,7 @@ func mediaMsgBody(ctx context.Context, handler mediaSendHandler, adapter *Yuanba
 	if err != nil {
 		return nil, "", err
 	}
-	botID := textValue(pyrepr.Or(pyrepr.Or(dictGetOr(tokenData, "bot_id", ""), adapter.botIDValue()), ""))
+	botID := textValue(anyutil.Or(anyutil.Or(dictGetOr(tokenData, "bot_id", ""), adapter.botIDValue()), ""))
 	credentials, err := GetCOSCredentials(ctx, adapter.appKey, adapter.apiDomain, textValue(dictGetOr(tokenData, "token", "")), filename,
 		nil, botID, adapter.routeEnv)
 	if err != nil {
@@ -209,7 +207,7 @@ func mediaMsgBody(ctx context.Context, handler mediaSendHandler, adapter *Yuanba
 	if err != nil {
 		return nil, "", err
 	}
-	upload, err := UploadToCOS(ctx, fileBytes, filename, contentType, credentials, pyrepr.Str(bucket), pyrepr.Str(region))
+	upload, err := UploadToCOS(ctx, fileBytes, filename, contentType, credentials, anyutil.String(bucket), anyutil.String(region))
 	if err != nil {
 		return nil, "", err
 	}
@@ -247,10 +245,10 @@ func handleMediaSend(ctx context.Context, handler mediaSendHandler, adapter *Yua
 	case ctx.Err() != nil:
 		return gateway.SendResult{}, ctx.Err()
 	case isValueError(err):
-		return gateway.SendResult{Success: false, Error: errText(err)}, nil
+		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
-	pkgLog().Error(fmt.Sprintf("[%s] %s.handle() failed: %s", adapter.Name(), handler.className(), errText(err)), "error", err)
-	return gateway.SendResult{Success: false, Error: errTextOrName(err)}, nil
+	pkgLog().Error(fmt.Sprintf("[%s] %s.handle() failed: %s", adapter.Name(), handler.className(), err.Error()), "error", err)
+	return gateway.SendResult{Success: false, Error: errTextOrKind(err)}, nil
 }
 
 // heartbeatManager keeps the reply heartbeat of each chat running every two seconds until thirty idle seconds pass
@@ -268,7 +266,7 @@ func newHeartbeatManager(adapter *YuanbaoAdapter) *heartbeatManager {
 
 // Whether a socket is held and the bot id is known
 func (h *heartbeatManager) ready() bool {
-	return h.adapter.connection.socket() != nil && pyrepr.Truthy(h.adapter.botIDValue())
+	return h.adapter.connection.socket() != nil && anyutil.IsTrue(h.adapter.botIDValue())
 }
 
 // Sends one running or finish heartbeat to the chat, a failure only logged and a cancelled caller sending nothing
@@ -295,10 +293,10 @@ func (h *heartbeatManager) sendHeartbeatOnce(ctx context.Context, chatID string,
 		if ws == nil {
 			return &pyErr{"AttributeError", "the Yuanbao connection has no open socket"}
 		}
-		return ws.SendBytes(encoded)
+		return ws.SendBinary(encoded)
 	}()
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("[%s] send_heartbeat_once failed: %s", adapter.Name(), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] send_heartbeat_once failed: %s", adapter.Name(), err.Error()))
 		return
 	}
 	state := "FINISH"
@@ -438,11 +436,11 @@ type messageSender struct {
 	adapter *YuanbaoAdapter
 
 	mu        sync.Mutex
-	chatLocks *pydict.Dict[string, *chatLock]
+	chatLocks *orderedutil.Map[string, *chatLock]
 }
 
 func newMessageSender(adapter *YuanbaoAdapter) *messageSender {
-	return &messageSender{adapter: adapter, chatLocks: pydict.New[string, *chatLock]()}
+	return &messageSender{adapter: adapter, chatLocks: orderedutil.NewMap[string, *chatLock]()}
 }
 
 // Lock of a chat, the least recently used unlocked entry evicted at capacity
@@ -490,7 +488,7 @@ func (s *messageSender) sendText(ctx context.Context, chatID, content, replyTo s
 			sizes[i] = int64(utf8.RuneCountInString(chunk))
 		}
 		pkgLog().Info(fmt.Sprintf("[%s] truncate_message: input=%d chars, max=%d, output=%d chunk(s) sizes=%s", adapter.Name(),
-			utf8.RuneCountInString(contentToSend), maxTextChunk, len(chunks), pyrepr.Repr(sizes)))
+			utf8.RuneCountInString(contentToSend), maxTextChunk, len(chunks), anyutil.Quote(sizes)))
 		for i, chunk := range chunks {
 			chunkReplyTo := ""
 			if i == 0 {
@@ -526,14 +524,14 @@ func (s *messageSender) sendDirect(ctx context.Context, chatID, message string, 
 			return nil, err
 		}
 		if !result.Success {
-			return map[string]any{"error": "Yuanbao send failed: " + pyrepr.Str(result.Error)}, nil
+			return map[string]any{"error": "Yuanbao send failed: " + anyutil.String(result.Error)}, nil
 		}
 		last = &result
 	}
 	for _, media := range mediaFiles {
 		var result gateway.SendResult
 		var err error
-		if senderImageExts[strings.ToLower(pypath.PathSuffix(media.Path))] {
+		if senderImageExts[strings.ToLower(pathutil.Suffix(media.Path))] {
 			result, err = adapter.SendImageFile(ctx, chatID, media.Path, "", "", nil, nil)
 		} else {
 			result, err = adapter.SendDocument(ctx, chatID, media.Path, "", "", "", nil, nil)
@@ -542,7 +540,7 @@ func (s *messageSender) sendDirect(ctx context.Context, chatID, message string, 
 			return nil, err
 		}
 		if !result.Success {
-			return map[string]any{"error": "Yuanbao media send failed: " + pyrepr.Str(result.Error)}, nil
+			return map[string]any{"error": "Yuanbao media send failed: " + anyutil.String(result.Error)}, nil
 		}
 		last = &result
 	}
@@ -586,7 +584,7 @@ func (s *messageSender) sendTextChunk(ctx context.Context, chatID, text, replyTo
 		case err != nil && ctx.Err() != nil:
 			return gateway.SendResult{}, ctx.Err()
 		case err != nil:
-			lastError = errText(err)
+			lastError = err.Error()
 			pkgLog().Warn(fmt.Sprintf("[%s] send_text_chunk attempt %d/%d exception: %s", name, attempt+1, textChunkRetries, lastError))
 		case outcome.success:
 			return outcome.sendResult(), nil
@@ -628,9 +626,9 @@ func (s *messageSender) buildMsgBodyWithMentions(text, groupCode string) ([]any,
 		if err != nil {
 			return nil, err
 		}
-		nick := pyrepr.Or(pyrepr.Or(fields["nickname"], fields["nick_name"]), "")
-		uid := pyrepr.Or(fields["user_id"], "")
-		if !pyrepr.Truthy(nick) || !pyrepr.Truthy(uid) {
+		nick := anyutil.Or(anyutil.Or(fields["nickname"], fields["nick_name"]), "")
+		uid := anyutil.Or(fields["user_id"], "")
+		if !anyutil.IsTrue(nick) || !anyutil.IsTrue(uid) {
 			continue
 		}
 		nickText, err := strMethod(nick, "a member nickname")
@@ -641,18 +639,18 @@ func (s *messageSender) buildMsgBodyWithMentions(text, groupCode string) ([]any,
 	}
 	var msgBody []any
 	last := 0
-	for _, match := range findAll(atUserRE, text) {
+	for match := range regexutil.All(atUserRE(), text) {
 		start, length := match.ByteRange()
 		if segment := strings.TrimSpace(text[last:start]); segment != "" {
 			msgBody = append(msgBody, textElem(segment))
 		}
 		nickname := match.GroupByNumber(1).String()
 		if member, known := byNick[strings.ToLower(nickname)]; known {
-			data, err := pyjson.Dumps(pyjson.ObjectOf("elem_type", int64(1002), "text", "@"+member.nick, "user_id", member.uid))
+			data, err := jsonutil.Encode(jsonutil.ObjectOf("elem_type", int64(1002), "text", "@"+member.nick, "user_id", member.uid))
 			if err != nil {
 				return nil, err
 			}
-			msgBody = append(msgBody, pyjson.ObjectOf("msg_type", "TIMCustomElem", "msg_content", pyjson.ObjectOf("data", data)))
+			msgBody = append(msgBody, jsonutil.ObjectOf("msg_type", "TIMCustomElem", "msg_content", jsonutil.ObjectOf("data", data)))
 		} else {
 			msgBody = append(msgBody, textElem("@"+nickname))
 		}
@@ -706,13 +704,13 @@ func dispatchEncoded(ctx context.Context, adapter *YuanbaoAdapter, encoded []byt
 	case err != nil && ctx.Err() != nil:
 		return sendOutcome{}, ctx.Err()
 	case err != nil && isTimeout(err):
-		return sendOutcome{errText: "Request timeout after " + pyrepr.Float(defaultSendTimeout) + "s"}, nil
+		return sendOutcome{errText: "Request timeout after " + strconv.FormatFloat(defaultSendTimeout, 'f', -1, 64) + "s"}, nil
 	case err != nil:
-		return sendOutcome{errText: errText(err)}, nil
+		return sendOutcome{errText: err.Error()}, nil
 	}
 	fields, err := dictOf(response)
 	if err != nil {
-		return sendOutcome{errText: errText(err)}, nil
+		return sendOutcome{errText: err.Error()}, nil
 	}
 	return sendOutcome{success: true, msgKey: dictGetOr(fields, "msg_id", "")}, nil
 }
@@ -724,9 +722,7 @@ func truncateMessage(content string, maxLength int) []string {
 	}
 	chunks := chunkMarkdownText(content, maxLength)
 	for i, chunk := range chunks {
-		if stripped, err := indicatorRE.Replace(chunk, "", -1, -1); err == nil {
-			chunks[i] = stripped
-		}
+		chunks[i] = indicatorRE().ReplaceAllString(chunk, "${1}")
 	}
 	if len(chunks) == 0 {
 		return []string{content}

@@ -11,8 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 )
 
 const (
@@ -246,7 +244,7 @@ func ImportAgent(ctx context.Context, args Args) (int, error) {
 	}
 	explicitSource, overwrite, fromSetup := args.Source, args.Overwrite, args.FromSetup
 	icebathHome := home.Dir(ctx)
-	target, err := pypath.Resolve(icebathHome)
+	target, err := pathutil.Resolve(icebathHome)
 	if err != nil {
 		target = icebathHome
 	}
@@ -313,7 +311,7 @@ func ImportAgent(ctx context.Context, args Args) (int, error) {
 			return 1, nil
 		}
 		sourceLabel = sourceDir
-		resolvedSource, err := pypath.Resolve(sourceDir)
+		resolvedSource, err := pathutil.Resolve(sourceDir)
 		if err != nil {
 			resolvedSource = sourceDir
 		}
@@ -384,7 +382,7 @@ func ImportAgent(ctx context.Context, args Args) (int, error) {
 			c.PrintInfo("Non-interactive session — preview only.")
 			again := ""
 			if explicitSource != "" {
-				again = " --source " + pyshlex.Quote(explicitSource)
+				again = " --source " + shellutil.Quote(explicitSource)
 			}
 			piped := ""
 			if explicitSource == "-" {

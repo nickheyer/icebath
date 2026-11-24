@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 )
 
 // Byte cap that holds any real provider error envelope while rejecting pathological bodies
@@ -68,6 +68,6 @@ func ReadStreamingErrorBody(response *http.Response, maxBytes int, timeout time.
 	if truncated {
 		pkgLog().Debug(fmt.Sprintf("bounded error-body read: capped at %d bytes (max=%d)", len(chunks), maxBytes))
 	}
-	text, _ := pycodecs.DecodeReplace(chunks, "utf-8")
+	text, _ := charsetutil.DecodeReplace(chunks, "utf-8")
 	return text
 }

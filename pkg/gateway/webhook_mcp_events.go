@@ -9,9 +9,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/webhooksubs"
 )
 
@@ -23,13 +23,13 @@ const (
 )
 
 // JSON response of an MCP event control envelope
-func mcpEventJSON(body *pyjson.Object, status int) (*WebResponse, error) {
+func mcpEventJSON(body *jsonutil.Object, status int) (*WebResponse, error) {
 	return WebJSONResponse(body, status, nil)
 }
 
 // The mcp_event block of a route created by the MCP events tool, nil for any other route
-func mcpEventBlock(routeConfig *pyjson.Object) *pyjson.Object {
-	event, ok := routeConfig.GetOr("mcp_event", nil).(*pyjson.Object)
+func mcpEventBlock(routeConfig *jsonutil.Object) *jsonutil.Object {
+	event, ok := routeConfig.ValueOr("mcp_event", nil).(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -50,16 +50,16 @@ func mcpEventGrouped(n int) string {
 }
 
 // Prompt of an MCP event occurrence whose template names the data field, false for any other route
-func RenderMCPEventPrompt(adapter *WebhookAdapter, routeConfig *pyjson.Object, payload, eventType any, routeName string) (string, bool, error) {
-	obj, isDict := payload.(*pyjson.Object)
+func RenderMCPEventPrompt(adapter *WebhookAdapter, routeConfig *jsonutil.Object, payload, eventType any, routeName string) (string, bool, error) {
+	obj, isDict := payload.(*jsonutil.Object)
 	if mcpEventBlock(routeConfig) == nil || !isDict {
 		return "", false, nil
 	}
-	template, ok := routeConfig.GetOr("prompt", nil).(string)
+	template, ok := routeConfig.ValueOr("prompt", nil).(string)
 	if !ok || !strings.Contains(template, "{data}") {
 		return "", false, nil
 	}
-	data, err := pyjson.Dumps(obj.GetOr("data", nil), pyjson.Indent(2), pyjson.EnsureASCII(false))
+	data, err := jsonutil.Encode(obj.ValueOr("data", nil), jsonutil.Indent(2))
 	if err != nil {
 		return "", false, err
 	}
@@ -83,12 +83,12 @@ func RenderMCPEventPrompt(adapter *WebhookAdapter, routeConfig *pyjson.Object, p
 }
 
 // Delivery id of an MCP event occurrence keyed by its event id, false when the payload names none
-func MCPEventDeliveryID(routeConfig *pyjson.Object, payload any) (string, bool) {
-	obj, isDict := payload.(*pyjson.Object)
+func MCPEventDeliveryID(routeConfig *jsonutil.Object, payload any) (string, bool) {
+	obj, isDict := payload.(*jsonutil.Object)
 	if mcpEventBlock(routeConfig) == nil || !isDict {
 		return "", false
 	}
-	eventID, ok := obj.GetOr("eventId", nil).(string)
+	eventID, ok := obj.ValueOr("eventId", nil).(string)
 	if !ok || eventID == "" {
 		return "", false
 	}
@@ -103,8 +103,8 @@ func mcpEventStoreCursor(ctx context.Context, routeName, cursor string) error {
 // Removes an ended subscription route and its stored state
 func mcpEventRemoveRoute(ctx context.Context, routeName string) error {
 	h := home.Dir(ctx)
-	if err := webhooksubs.Mutate(h, func(subs *pyjson.Object) error {
-		subs.Pop(routeName)
+	if err := webhooksubs.Mutate(h, func(subs *jsonutil.Object) error {
+		subs.Take(routeName)
 		return nil
 	}); err != nil {
 		return err
@@ -113,66 +113,66 @@ func mcpEventRemoveRoute(ctx context.Context, routeName string) error {
 }
 
 // Echoes the server verification challenge, 400 for a missing or oversized one
-func mcpEventVerification(ctx context.Context, adapter *WebhookAdapter, routeName string, routeConfig, payload *pyjson.Object, profile *string) (*WebResponse, error) {
-	challenge, ok := payload.GetOr("challenge", nil).(string)
+func mcpEventVerification(ctx context.Context, adapter *WebhookAdapter, routeName string, routeConfig, payload *jsonutil.Object, profile *string) (*WebResponse, error) {
+	challenge, ok := payload.ValueOr("challenge", nil).(string)
 	if !ok || challenge == "" || utf8.RuneCountInString(challenge) > mcpEventMaxChallengeChars {
-		return mcpEventJSON(pyjson.ObjectOf("error", "Invalid verification challenge"), http.StatusBadRequest)
+		return mcpEventJSON(jsonutil.ObjectOf("error", "Invalid verification challenge"), http.StatusBadRequest)
 	}
 	pkgLog().Info(fmt.Sprintf("[webhook] MCP event route %s answered the server's verification challenge", routeName))
-	return mcpEventJSON(pyjson.ObjectOf("challenge", challenge), http.StatusOK)
+	return mcpEventJSON(jsonutil.ObjectOf("challenge", challenge), http.StatusOK)
 }
 
 // Drops a route the server ended and notifies its delivery target when it has one
-func mcpEventTerminated(ctx context.Context, adapter *WebhookAdapter, routeName string, routeConfig, payload *pyjson.Object, profile *string) (*WebResponse, error) {
+func mcpEventTerminated(ctx context.Context, adapter *WebhookAdapter, routeName string, routeConfig, payload *jsonutil.Object, profile *string) (*WebResponse, error) {
 	event := mcpEventBlock(routeConfig)
 	if event == nil {
-		event = pyjson.NewObject()
+		event = jsonutil.NewObject()
 	}
-	errorInfo, ok := payload.GetOr("error", nil).(*pyjson.Object)
+	errorInfo, ok := payload.ValueOr("error", nil).(*jsonutil.Object)
 	if !ok {
-		errorInfo = pyjson.NewObject()
+		errorInfo = jsonutil.NewObject()
 	}
 	if err := mcpEventRemoveRoute(ctx, routeName); err != nil {
 		return nil, err
 	}
 	pkgLog().Warn(fmt.Sprintf("[webhook] MCP server '%s' ended event subscription %s (%s): %s",
-		pyrepr.Str(event.GetOr("server", nil)), routeName, pyrepr.Str(event.GetOr("name", nil)), pyrepr.Str(errorInfo)))
-	if deliver := routeConfig.GetOr("deliver", "log"); !pyrepr.Equal(deliver, "log") {
-		reason := errorInfo.GetOr("message", nil)
-		if !pyrepr.Truthy(reason) {
+		anyutil.String(event.ValueOr("server", nil)), routeName, anyutil.String(event.ValueOr("name", nil)), anyutil.String(errorInfo)))
+	if deliver := routeConfig.ValueOr("deliver", "log"); !anyutil.Equal(deliver, "log") {
+		reason := errorInfo.ValueOr("message", nil)
+		if !anyutil.IsTrue(reason) {
 			reason = "no reason given"
 		}
-		detail := pySliceRunes(pyrepr.Str(reason), mcpEventMaxNoticeDetailChars)
+		detail := pySliceRunes(anyutil.String(reason), mcpEventMaxNoticeDetailChars)
 		notice := fmt.Sprintf("MCP server '%s' ended the subscription to '%s': %s (code %s). Subscribe again to keep receiving these events.",
-			pyrepr.Str(event.GetOr("server", nil)), pyrepr.Str(event.GetOr("name", nil)), detail, pyrepr.Str(errorInfo.GetOr("code", nil)))
+			anyutil.String(event.ValueOr("server", nil)), anyutil.String(event.ValueOr("name", nil)), detail, anyutil.String(errorInfo.ValueOr("code", nil)))
 		if _, err := adapter.handleDeliverOnly(ctx, notice, payload, routeConfig, routeName, "terminated", "mcp-terminated:"+routeName, profile); err != nil {
 			return nil, err
 		}
 	}
-	return mcpEventJSON(pyjson.ObjectOf("status", "terminated"), http.StatusOK)
+	return mcpEventJSON(jsonutil.ObjectOf("status", "terminated"), http.StatusOK)
 }
 
 // Records the fresh cursor a gap envelope carries and acknowledges the skipped events
-func mcpEventGap(ctx context.Context, adapter *WebhookAdapter, routeName string, routeConfig, payload *pyjson.Object, profile *string) (*WebResponse, error) {
-	if cursor, ok := payload.GetOr("cursor", nil).(string); ok && cursor != "" {
+func mcpEventGap(ctx context.Context, adapter *WebhookAdapter, routeName string, routeConfig, payload *jsonutil.Object, profile *string) (*WebResponse, error) {
+	if cursor, ok := payload.ValueOr("cursor", nil).(string); ok && cursor != "" {
 		if err := mcpEventStoreCursor(ctx, routeName, cursor); err != nil {
 			return nil, err
 		}
 	}
 	pkgLog().Warn(fmt.Sprintf("[webhook] MCP event route %s: the server skipped events (gap); resuming from a fresh cursor", routeName))
-	return mcpEventJSON(pyjson.ObjectOf("status", "gap"), http.StatusOK)
+	return mcpEventJSON(jsonutil.ObjectOf("status", "gap"), http.StatusOK)
 }
 
 // Handlers of the control envelopes by their type
-var mcpEventControlHandlers = map[string]func(context.Context, *WebhookAdapter, string, *pyjson.Object, *pyjson.Object, *string) (*WebResponse, error){
+var mcpEventControlHandlers = map[string]func(context.Context, *WebhookAdapter, string, *jsonutil.Object, *jsonutil.Object, *string) (*WebResponse, error){
 	"verification": mcpEventVerification,
 	"terminated":   mcpEventTerminated,
 	"gap":          mcpEventGap,
 }
 
 // Response of a control envelope on an MCP event route, nil letting the delivery continue as an occurrence
-func HandleMCPEventControl(ctx context.Context, adapter *WebhookAdapter, routeName string, routeConfig *pyjson.Object, payload any, profile *string) (*WebResponse, error) {
-	obj, isDict := payload.(*pyjson.Object)
+func HandleMCPEventControl(ctx context.Context, adapter *WebhookAdapter, routeName string, routeConfig *jsonutil.Object, payload any, profile *string) (*WebResponse, error) {
+	obj, isDict := payload.(*jsonutil.Object)
 	if mcpEventBlock(routeConfig) == nil || !isDict {
 		return nil, nil
 	}
@@ -184,14 +184,14 @@ func HandleMCPEventControl(ctx context.Context, adapter *WebhookAdapter, routeNa
 		}
 	}
 	if found {
-		pkgLog().Info(fmt.Sprintf("[webhook] MCP event route %s: ignoring a control envelope of unknown type %s", routeName, pyrepr.Repr(kind)))
+		pkgLog().Info(fmt.Sprintf("[webhook] MCP event route %s: ignoring a control envelope of unknown type %s", routeName, anyutil.Quote(kind)))
 		var reported any
 		if isText {
 			reported = kindText
 		}
-		return mcpEventJSON(pyjson.ObjectOf("status", "ignored", "type", reported), http.StatusOK)
+		return mcpEventJSON(jsonutil.ObjectOf("status", "ignored", "type", reported), http.StatusOK)
 	}
-	if cursor, ok := obj.GetOr("cursor", nil).(string); ok && cursor != "" {
+	if cursor, ok := obj.ValueOr("cursor", nil).(string); ok && cursor != "" {
 		if err := mcpEventStoreCursor(ctx, routeName, cursor); err != nil {
 			return nil, err
 		}

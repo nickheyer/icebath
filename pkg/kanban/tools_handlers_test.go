@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Raw JSON result of a registered kanban tool run on arguments the way a model call carries them
@@ -58,7 +58,7 @@ func errText(d map[string]any) string {
 // JSON text of a value for comparison with a Python literal
 func jsonText(t *testing.T, v any) string {
 	t.Helper()
-	s, err := pyjson.Dumps(v)
+	s, err := jsonutil.Encode(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,7 +167,7 @@ func TestKanbanToolsHiddenWithoutEnvVar(t *testing.T) {
 	}
 	var kanban []string
 	for _, s := range tools.Default.Definitions(ctx, nil, names, true) {
-		fn, isFn := pyjson.Dict(s["function"])
+		fn, isFn := jsonutil.AsMap(s["function"])
 		if !isFn {
 			continue
 		}
@@ -235,7 +235,7 @@ func TestWorkerToolBareCallOutsideWorkerErrorIsActionable(t *testing.T) {
 func TestKanbanTaskIDDescriptionsStateTheNonWorkerCase(t *testing.T) {
 	var seen []string
 	for _, tool := range kanbanTools {
-		params := pyjson.Plain(tool.schema.Vals["parameters"]).(map[string]any)
+		params := jsonutil.Plain(tool.schema.Value("parameters")).(map[string]any)
 		props := params["properties"].(map[string]any)
 		prop, _ := props["task_id"].(map[string]any)
 		desc, _ := prop["description"].(string)
@@ -243,12 +243,12 @@ func TestKanbanTaskIDDescriptionsStateTheNonWorkerCase(t *testing.T) {
 			continue
 		}
 		if !strings.Contains(desc, "worker") {
-			t.Fatal(tool.schema.Vals["name"], "env default promised without the non-worker case (#91431)")
+			t.Fatal(tool.schema.Value("name"), "env default promised without the non-worker case (#91431)")
 		}
 		if !strings.Contains(desc, "no default") && !strings.Contains(desc, "orientation") {
-			t.Fatal(tool.schema.Vals["name"], "must state what a non-worker bare call does (#91431)")
+			t.Fatal(tool.schema.Value("name"), "must state what a non-worker bare call does (#91431)")
 		}
-		seen = append(seen, tool.schema.Vals["name"].(string))
+		seen = append(seen, tool.schema.Value("name").(string))
 	}
 	if !slices.Contains(seen, "kanban_show") {
 		t.Fatal(seen)
@@ -528,7 +528,7 @@ func TestScheduleParksCurrentWorkerWithReason(t *testing.T) {
 	}
 	found := false
 	for _, e := range boardEvents(t, tid) {
-		if e.Kind == "scheduled" && jsonText(t, e.Payload) == jsonText(t, pyjson.ObjectOf("reason", reason)) {
+		if e.Kind == "scheduled" && jsonText(t, e.Payload) == jsonText(t, jsonutil.ObjectOf("reason", reason)) {
 			found = true
 		}
 	}
@@ -831,7 +831,7 @@ func TestWorkerLifecycleThroughTools(t *testing.T) {
 		t.Fatalf("parent %q %v", parent.Status, parent.CurrentRunID)
 	}
 	run := boardLatestRun(t, tid)
-	if run.Outcome == nil || *run.Outcome != "completed" || jsonText(t, run.Metadata) != jsonText(t, pyjson.ObjectOf("child_task", childID)) {
+	if run.Outcome == nil || *run.Outcome != "completed" || jsonText(t, run.Metadata) != jsonText(t, jsonutil.ObjectOf("child_task", childID)) {
 		t.Fatalf("run %v %v", run.Outcome, run.Metadata)
 	}
 	if status := boardTask(t, childID).Status; status != "ready" {

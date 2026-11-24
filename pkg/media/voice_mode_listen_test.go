@@ -7,7 +7,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
 )
 
 // Input stream returning blocks at scripted levels, the last level repeating
@@ -36,7 +36,7 @@ func levels(parts ...any) []int16 {
 func withLevelStream(t *testing.T, lv []int16) *levelStream {
 	sd := withFakeSD(t)
 	stream := &levelStream{levels: lv}
-	sd.inputFactory = func(pysounddevice.StreamParams, pysounddevice.InputCallback) (pysounddevice.InputStream, error) {
+	sd.inputFactory = func(portaudioutil.StreamParams, portaudioutil.InputCallback) (portaudioutil.InputStream, error) {
 		return stream, nil
 	}
 	return stream
@@ -118,7 +118,7 @@ func TestFullDuplexListenGraceWindowSuppressesPlaybackOnset(t *testing.T) {
 
 func TestFullDuplexListenStreamFailureReturnsNothing(t *testing.T) {
 	sd := withFakeSD(t)
-	sd.inputFactory = func(pysounddevice.StreamParams, pysounddevice.InputCallback) (pysounddevice.InputStream, error) {
+	sd.inputFactory = func(portaudioutil.StreamParams, portaudioutil.InputCallback) (portaudioutil.InputStream, error) {
 		return nil, errors.New("device unavailable")
 	}
 	if path := FullDuplexListen(func() bool { return false }, DefaultDuplexOptions()); path != "" {

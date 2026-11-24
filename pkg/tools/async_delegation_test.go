@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type asyncTestAsker struct{}
@@ -406,8 +406,8 @@ func TestAsyncDelegationExports(t *testing.T) {
 		t.Fatal("async delivery flag ignored")
 	}
 	res := DispatchAsyncDelegation(env, AsyncDelegationRequest{Goal: "cron run", Context: "ctx", Role: "cron_run", SessionKey: "sess-key",
-		Runner: func() *pyjson.Object {
-			o := pyjson.NewObject()
+		Runner: func() *jsonutil.Object {
+			o := jsonutil.NewObject()
 			o.Set("status", "completed")
 			o.Set("summary", "ran")
 			return o
@@ -419,8 +419,8 @@ func TestAsyncDelegationExports(t *testing.T) {
 }
 
 func TestPropagateContextToThreadCarriesVarsAndCallbacks(t *testing.T) {
-	v := pyctx.NewVar("probe", "unset")
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	v := ctxutil.NewVar[any]("probe", "unset")
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	v.Set(ctx, "parent")
 	var slot any = "parent-callback"
 	var installed, cleared any = nil, "never"
@@ -547,8 +547,8 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 		event[k] = v
 	}
 	event["type"], event["status"], event["summary"], event["error"] = "async_delegation", "failed", delegationSecret, delegationSecret
-	eventJSON, _ := pyjson.Dumps(event)
-	resultJSON, _ := pyjson.Dumps(map[string]any{"status": "failed", "summary": delegationSecret, "error": delegationSecret})
+	eventJSON, _ := jsonutil.Encode(event)
+	resultJSON, _ := jsonutil.Encode(map[string]any{"status": "failed", "summary": delegationSecret, "error": delegationSecret})
 	err := AsyncTransaction(env, func(ctx context.Context, conn state.SQLiteConn) error {
 		_, err := asyncExec(ctx, conn, "UPDATE async_delegations SET state='failed',completed_at=?,event_json=?,result_json=?", asyncTimeNow(), eventJSON, resultJSON)
 		return err
@@ -560,7 +560,7 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 	if err != nil || stored == nil {
 		t.Fatalf("stored %v %v", stored, err)
 	}
-	if text, _ := pyjson.Dumps(stored["result"]); strings.Contains(text, delegationSecret) {
+	if text, _ := jsonutil.Encode(stored["result"]); strings.Contains(text, delegationSecret) {
 		t.Fatalf("stored result %s", text)
 	}
 	target := newEventQueue()
@@ -571,14 +571,14 @@ func TestOldDurableResultsAreRedactedOnReadReplayAndFailureRoster(t *testing.T) 
 	if replay["restored"] != true || replay["session_key"] != record["session_key"] {
 		t.Fatalf("replay %v", replay)
 	}
-	if text, _ := pyjson.Dumps(replay); strings.Contains(text, delegationSecret) {
+	if text, _ := jsonutil.Encode(replay); strings.Contains(text, delegationSecret) {
 		t.Fatalf("replay %s", text)
 	}
 	failures, err := FailedDelegationsForSession(env, "", "parent-session", 20, nil)
 	if err != nil || len(failures) != 1 || failures[0]["goal"] != record["goal"] {
 		t.Fatalf("failures %v %v", failures, err)
 	}
-	if text, _ := pyjson.Dumps(failures); strings.Contains(text, delegationSecret) {
+	if text, _ := jsonutil.Encode(failures); strings.Contains(text, delegationSecret) {
 		t.Fatalf("failures %s", text)
 	}
 }

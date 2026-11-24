@@ -9,10 +9,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Delegation caps a frozen policy falls back to, the registry defaults
@@ -25,7 +25,7 @@ func delegationLimit(section map[string]any, key string) int64 {
 	if !ok {
 		value = delegationDefaults[key]
 	}
-	n, err := pyint.Int64(value)
+	n, err := anyutil.ToInt(value)
 	if err != nil {
 		return delegationDefaults[key]
 	}
@@ -89,9 +89,9 @@ func tokenHex(n int) string {
 }
 
 // Reserves a delegated child session and execution bound to the parent's verified identity, a refusal receipt past a cap
-func reserveChildExecution(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, sessionID string, payload *pyjson.Object,
-	epoch int64, executionID string, identity map[string]any, principal string, limits [2]int64, refused *string) (*pyjson.Object, error) {
-	secret, isText := payload.GetOr("secret", nil).(string)
+func reserveChildExecution(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object,
+	epoch int64, executionID string, identity map[string]any, principal string, limits [2]int64, refused *string) (*jsonutil.Object, error) {
+	secret, isText := payload.ValueOr("secret", nil).(string)
 	if !frameKeysAre(payload, "secret") || !isText || utf8.RuneCountInString(secret) < 16 || utf8.RuneCountInString(secret) > 256 {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -102,7 +102,7 @@ func reserveChildExecution(ctx context.Context, db *state.SessionDB, conn state.
 	if err != nil {
 		return nil, err
 	}
-	live, _ := pyint.Int64(row["n"])
+	live, _ := anyutil.ToInt(row["n"])
 	if refused == nil && int64(strings.Count(prefix, state.ChildSeparator)) > limits[1] {
 		reason := "delegation_depth_exceeded"
 		refused = &reason
@@ -112,7 +112,7 @@ func reserveChildExecution(ctx context.Context, db *state.SessionDB, conn state.
 		refused = &reason
 	}
 	if refused != nil {
-		return pyjson.ObjectOf("refused", *refused), nil
+		return jsonutil.ObjectOf("refused", *refused), nil
 	}
 	parent, err := state.ConnRow(ctx, conn, "SELECT profile_name FROM sessions WHERE id=?", sessionID)
 	if err != nil {
@@ -143,7 +143,7 @@ func reserveChildExecution(ctx context.Context, db *state.SessionDB, conn state.
 		"VALUES(?,?,'child',?,0,'running',?)", childEID, childSID, epoch, digest); err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("child", pyjson.ObjectOf("session_id", childSID, "execution_id", childEID, "generation", 0)), nil
+	return jsonutil.ObjectOf("child", jsonutil.ObjectOf("session_id", childSID, "execution_id", childEID, "generation", 0)), nil
 }
 
 // Text of a nullable column, empty for NULL
@@ -155,7 +155,7 @@ func pyStrOrEmpty(value any) string {
 }
 
 // Worker persist child.reserve, the parent's full claim and assignment verified first and caps answered as receipts
-func workerChildRequest(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (*pyjson.Object, error) {
+func workerChildRequest(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (*jsonutil.Object, error) {
 	if !workerParamsAre(params, "epoch", "sequence", "operation", "payload") {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -170,11 +170,11 @@ func workerChildRequest(ctx context.Context, c *AuthorityConnection, ref Session
 		return nil, err
 	}
 	a := c.authority
-	executionID, err := ledgerText(params.Vals["execution_id"])
+	executionID, err := ledgerText(params.Value("execution_id"))
 	if err != nil {
 		return nil, err
 	}
-	sessionID, err := ledgerText(params.Vals["session_id"])
+	sessionID, err := ledgerText(params.Value("session_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -195,13 +195,13 @@ func workerChildRequest(ctx context.Context, c *AuthorityConnection, ref Session
 	} else {
 		limits = [2]int64{children, depth}
 	}
-	epoch := workerLedgerInt(params.Vals["epoch"])
-	identity := map[string]any{"profile_id": params.Vals["profile_id"], "pid": params.Vals["pid"], "birth": params.Vals["birth"]}
-	handler := func(db *state.SessionDB, ctx context.Context, conn state.SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+	epoch := workerLedgerInt(params.Value("epoch"))
+	identity := map[string]any{"profile_id": params.Value("profile_id"), "pid": params.Value("pid"), "birth": params.Value("birth")}
+	handler := func(db *state.SessionDB, ctx context.Context, conn state.SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 		return reserveChildExecution(ctx, db, conn, sessionID, payload, epoch, executionID, identity, c.actor.Subject, limits, refused)
 	}
-	named, _ := params.Vals["operation"].(string)
+	named, _ := params.Value("operation").(string)
 	return a.DB.ApplyWorkerReceipt(ctx, state.WorkerReceipt{Epoch: epoch, ExecutionID: executionID, SessionID: sessionID,
-		Generation: workerLedgerInt(params.Vals["generation"]), Sequence: max(workerLedgerInt(params.Vals["sequence"]), 0), Operation: named,
-		Payload: params.Vals["payload"]}, map[string]state.WorkerHandler{"child.reserve": handler})
+		Generation: workerLedgerInt(params.Value("generation")), Sequence: max(workerLedgerInt(params.Value("sequence")), 0), Operation: named,
+		Payload: params.Value("payload")}, map[string]state.WorkerHandler{"child.reserve": handler})
 }

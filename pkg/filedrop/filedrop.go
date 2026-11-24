@@ -9,7 +9,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Suffixes treated as image attachments
@@ -46,7 +46,7 @@ func ResolveAttachmentPath(rawPath, base string) string {
 			}
 		}
 	}
-	expanded = os.ExpandEnv(pypath.Expanduser(expanded))
+	expanded = os.ExpandEnv(pathutil.ExpandUser(expanded))
 	if runtime.GOOS != "windows" {
 		normalized := strings.ReplaceAll(expanded, "\\", "/")
 		if len(normalized) >= 3 && normalized[1] == ':' && normalized[2] == '/' && unicode.IsLetter(rune(normalized[0])) {

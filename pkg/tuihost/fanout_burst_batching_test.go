@@ -8,14 +8,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Batch capable socket that only records frames and holds every send until released
 type loopSocket struct {
 	t                *testing.T
 	mu               sync.Mutex
-	frames           []*pyjson.Object
+	frames           []*jsonutil.Object
 	sends            int
 	firstSendStarted chan struct{}
 	startOnce        sync.Once
@@ -27,7 +27,7 @@ func newLoopSocket(t *testing.T) *loopSocket {
 	return &loopSocket{t: t, firstSendStarted: make(chan struct{}), release: make(chan struct{})}
 }
 
-func (s *loopSocket) WriteManyIfCurrentAsync(frames []*pyjson.Object, isCurrent func() bool) bool {
+func (s *loopSocket) WriteManyIfCurrentAsync(frames []*jsonutil.Object, isCurrent func() bool) bool {
 	if !isCurrent() {
 		return true
 	}
@@ -42,7 +42,7 @@ func (s *loopSocket) WriteManyIfCurrentAsync(frames []*pyjson.Object, isCurrent 
 	return true
 }
 
-func (s *loopSocket) Write(frame *pyjson.Object) bool {
+func (s *loopSocket) Write(frame *jsonutil.Object) bool {
 	s.t.Error("a batch capable socket is written through its batch send, not frame by frame")
 	return false
 }
@@ -60,15 +60,15 @@ func (s *loopSocket) texts() []string {
 	defer s.mu.Unlock()
 	out := []string{}
 	for _, frame := range s.frames {
-		payload := frame.GetOr("params", nil).(*pyjson.Object).GetOr("payload", nil).(*pyjson.Object)
-		out = append(out, payload.GetOr("text", nil).(string))
+		payload := frame.ValueOr("params", nil).(*jsonutil.Object).ValueOr("payload", nil).(*jsonutil.Object)
+		out = append(out, payload.ValueOr("text", nil).(string))
 	}
 	return out
 }
 
-func burstDelta(text string) *pyjson.Object {
-	return pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params",
-		pyjson.ObjectOf("type", "message.delta", "session_id", "s", "payload", pyjson.ObjectOf("text", text)))
+func burstDelta(text string) *jsonutil.Object {
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event", "params",
+		jsonutil.ObjectOf("type", "message.delta", "session_id", "s", "payload", jsonutil.ObjectOf("text", text)))
 }
 
 func awaitFirstSend(t *testing.T, socket *loopSocket) {
@@ -85,7 +85,7 @@ func TestTheDrainSendsAQueuedBacklogAsOneBatch(t *testing.T) {
 	fanout := NewFanoutTransport(socket)
 	var gapMu sync.Mutex
 	gaps := 0
-	overflow := func(Transport) *pyjson.Object {
+	overflow := func(Transport) *jsonutil.Object {
 		gapMu.Lock()
 		defer gapMu.Unlock()
 		gaps++
@@ -126,7 +126,7 @@ func TestAViewerATurnOfStreamedTextBehindKeepsItsSubscription(t *testing.T) {
 	fanout := NewFanoutTransport(socket)
 	var gapMu sync.Mutex
 	gaps := 0
-	overflow := func(Transport) *pyjson.Object {
+	overflow := func(Transport) *jsonutil.Object {
 		gapMu.Lock()
 		defer gapMu.Unlock()
 		gaps++

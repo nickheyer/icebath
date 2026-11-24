@@ -10,12 +10,12 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Kanban tool names of the quiet raw schema build for a selection, a nil selection naming every toolset
@@ -23,7 +23,7 @@ func optInKanbanNames(ctx context.Context, env *tools.Env, selection, disabled [
 	out := map[string]bool{}
 	opts := tools.DefinitionOptions{Enabled: selection, Disabled: disabled, Quiet: true, SkipToolSearchAssembly: true}
 	for _, row := range tools.Default.ToolDefinitions(ctx, env, opts) {
-		fn, _ := pyjson.Dict(row["function"])
+		fn, _ := jsonutil.AsMap(row["function"])
 		if name, _ := fn["name"].(string); strings.HasPrefix(name, "kanban_") {
 			out[name] = true
 		}
@@ -152,11 +152,11 @@ func TestSavedOptInRoundtripReachesSchemaAndBoard(t *testing.T) {
 			}
 			out := tools.NewDispatcher(tools.Default).RegistryDispatch(ctx, &tools.Call{Name: "kanban_create",
 				Args: map[string]any{"title": "opt-in roundtrip", "assignee": "default"}, RawArgs: `{"title": "opt-in roundtrip", "assignee": "default"}`})
-			result, err := pyjson.Loads(out)
+			result, err := jsonutil.Decode(out)
 			if err != nil {
 				t.Fatal(out)
 			}
-			obj, _ := result.(*pyjson.Object)
+			obj, _ := result.(*jsonutil.Object)
 			if ok, _ := obj.Get("ok"); ok != true {
 				t.Fatal(out)
 			}

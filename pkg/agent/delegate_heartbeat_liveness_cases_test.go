@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Parent of the liveness tests holding the child in its active list
@@ -97,7 +97,7 @@ func releaseAfter(t *testing.T, release chan struct{}, delay time.Duration) {
 	})
 }
 
-func runLiveness(t *testing.T, env *tools.Env, child *AIAgent, goal string) *pyjson.Object {
+func runLiveness(t *testing.T, env *tools.Env, child *AIAgent, goal string) *jsonutil.Object {
 	t.Helper()
 	return runSingleChild(tools.WithToolEnv(context.Background(), env), 0, goal, child, livenessParent(env, child), "", nil, nil)
 }
@@ -253,9 +253,9 @@ func TestAsyncBatchReportsWhenTheLastChildSettlesAfterItsVerdict(t *testing.T) {
 	batch := &delegateBatch{TaskList: tasks, Children: []delegateChild{{Index: 0, Task: tasks[0], Child: late}, {Index: 1, Task: tasks[1], Child: done}},
 		Parent: parent, Creds: map[string]any{"model": "test"}, TopRole: "leaf", MaxChildren: 2, LiveWriters: []delegationLiveWriter{nil, nil}, OverallStart: time.Now()}
 	combined := executeAndAggregate(tools.WithToolEnv(context.Background(), env), batch, false)
-	byIndex := map[any]*pyjson.Object{}
+	byIndex := map[any]*jsonutil.Object{}
 	for _, raw := range batchResults(t, combined) {
-		entry := raw.(*pyjson.Object)
+		entry := raw.(*jsonutil.Object)
 		idx, _ := entry.Get("task_index")
 		byIndex[idx] = entry
 	}

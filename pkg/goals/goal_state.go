@@ -8,11 +8,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -53,8 +53,8 @@ func (c GoalContract) IsEmpty() bool {
 }
 
 // Ordered dict of every field keyed by its name
-func (c GoalContract) ToDict() *pyjson.Object {
-	o := pyjson.NewObject()
+func (c GoalContract) ToDict() *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i, v := range c.values() {
 		o.Set(goalContractFields[i], v)
 	}
@@ -63,14 +63,14 @@ func (c GoalContract) ToDict() *pyjson.Object {
 
 // Contract of a stored dict with each field stringified and stripped, empty for a non dict
 func GoalContractFromDict(data any) GoalContract {
-	d, ok := data.(*pyjson.Object)
+	d, ok := data.(*jsonutil.Object)
 	if !ok {
 		return GoalContract{}
 	}
 	var v [5]string
 	for i, f := range goalContractFields {
 		raw, _ := d.Get(f)
-		v[i] = strings.TrimSpace(pyrepr.Str(pyrepr.Or(raw, "")))
+		v[i] = strings.TrimSpace(anyutil.String(anyutil.Or(raw, "")))
 	}
 	return GoalContract{Outcome: v[0], Verification: v[1], Constraints: v[2], Boundaries: v[3], StopWhen: v[4]}
 }
@@ -102,41 +102,41 @@ func NewGoalGate(command string) GoalGate {
 }
 
 // Ordered dict of every gate field
-func (g GoalGate) ToDict() *pyjson.Object {
+func (g GoalGate) ToDict() *jsonutil.Object {
 	var exit any
 	if g.LastExitCode != nil {
 		exit = *g.LastExitCode
 	}
-	return pyjson.ObjectOf("command", g.Command, "timeout_seconds", g.TimeoutSeconds, "max_retries", g.MaxRetries,
+	return jsonutil.ObjectOf("command", g.Command, "timeout_seconds", g.TimeoutSeconds, "max_retries", g.MaxRetries,
 		"attempts", g.Attempts, "last_exit_code", exit, "last_output_tail", g.LastOutputTail)
 }
 
 // Gate of a stored dict with Python int and str coercion, a blank gate for a non dict
 func GoalGateFromDict(data any) (GoalGate, error) {
-	d, ok := data.(*pyjson.Object)
+	d, ok := data.(*jsonutil.Object)
 	if !ok {
 		return NewGoalGate(""), nil
 	}
 	get := func(k string) any { v, _ := d.Get(k); return v }
-	g := GoalGate{Command: pyrepr.Str(pyrepr.Or(get("command"), ""))}
+	g := GoalGate{Command: anyutil.String(anyutil.Or(get("command"), ""))}
 	var err error
-	if g.TimeoutSeconds, err = pyint.Int64(pyrepr.Or(get("timeout_seconds"), int64(DefaultGateTimeoutSeconds))); err != nil {
+	if g.TimeoutSeconds, err = anyutil.ToInt(anyutil.Or(get("timeout_seconds"), int64(DefaultGateTimeoutSeconds))); err != nil {
 		return GoalGate{}, err
 	}
-	if g.MaxRetries, err = pyint.Int64(pyrepr.Or(get("max_retries"), int64(DefaultGateMaxRetries))); err != nil {
+	if g.MaxRetries, err = anyutil.ToInt(anyutil.Or(get("max_retries"), int64(DefaultGateMaxRetries))); err != nil {
 		return GoalGate{}, err
 	}
-	if g.Attempts, err = pyint.Int64(pyrepr.Or(get("attempts"), int64(0))); err != nil {
+	if g.Attempts, err = anyutil.ToInt(anyutil.Or(get("attempts"), int64(0))); err != nil {
 		return GoalGate{}, err
 	}
 	if raw := get("last_exit_code"); raw != nil {
-		n, err := pyint.Int64(raw)
+		n, err := anyutil.ToInt(raw)
 		if err != nil {
 			return GoalGate{}, err
 		}
 		g.LastExitCode = &n
 	}
-	g.LastOutputTail = pyrepr.Str(pyrepr.Or(get("last_output_tail"), ""))
+	g.LastOutputTail = anyutil.String(anyutil.Or(get("last_output_tail"), ""))
 	return g, nil
 }
 
@@ -186,7 +186,7 @@ func (s *GoalState) ToJSON() (string, error) {
 	if s.WaitingOnSession != nil {
 		waitSession = *s.WaitingOnSession
 	}
-	o := pyjson.ObjectOf(
+	o := jsonutil.ObjectOf(
 		"goal", s.Goal, "status", s.Status, "turns_used", s.TurnsUsed, "max_turns", s.MaxTurns,
 		"created_at", s.CreatedAt, "last_turn_at", s.LastTurnAt, "last_verdict", s.LastVerdict,
 		"last_reason", s.LastReason, "paused_reason", s.PausedReason,
@@ -196,24 +196,24 @@ func (s *GoalState) ToJSON() (string, error) {
 		"waiting_on_delegations", s.WaitingOnDelegations, "waiting_reason", s.WaitingReason,
 		"waiting_since", s.WaitingSince, "contract", s.Contract.ToDict(), "gates", gates,
 	)
-	return pyjson.Dumps(o, pyjson.EnsureASCII(false))
+	return jsonutil.Encode(o)
 }
 
 // Goal state of a stored row with the Python coercions, legacy rows filling defaults
 func GoalStateFromJSON(raw string) (*GoalState, error) {
-	d, err := pyjson.LoadsDict(raw)
+	d, err := jsonutil.DecodeObject(raw)
 	if err != nil {
 		return nil, err
 	}
-	get := func(k string) any { return d.GetOr(k, nil) }
-	rawSubgoals := pyrepr.Or(get("subgoals"), []any{})
+	get := func(k string) any { return d.ValueOr(k, nil) }
+	rawSubgoals := anyutil.Or(get("subgoals"), []any{})
 	s := &GoalState{}
 	for _, f := range []struct {
 		key string
 		dst *int64
 	}{{"turns_used", &s.TurnsUsed}, {"consecutive_parse_failures", &s.ConsecutiveParseFailures},
 		{"consecutive_transport_failures", &s.ConsecutiveTransportFailures}, {"waiting_on_delegations", &s.WaitingOnDelegations}} {
-		if *f.dst, err = pyint.Int64(pyrepr.Or(get(f.key), int64(0))); err != nil {
+		if *f.dst, err = anyutil.ToInt(anyutil.Or(get(f.key), int64(0))); err != nil {
 			return nil, err
 		}
 	}
@@ -221,49 +221,49 @@ func GoalStateFromJSON(raw string) (*GoalState, error) {
 		key string
 		dst *float64
 	}{{"created_at", &s.CreatedAt}, {"last_turn_at", &s.LastTurnAt}, {"waiting_until", &s.WaitingUntil}, {"waiting_since", &s.WaitingSince}} {
-		if *f.dst, err = pyint.Float(pyrepr.Or(get(f.key), 0.0)); err != nil {
+		if *f.dst, err = anyutil.ToFloat(anyutil.Or(get(f.key), 0.0)); err != nil {
 			return nil, err
 		}
 	}
-	s.Goal = d.GetOr("goal", "")
-	s.Status = d.GetOr("status", "active")
-	if s.MaxTurns, err = pyint.Int64(pyrepr.Or(get("max_turns"), int64(DefaultGoalMaxTurns))); err != nil {
+	s.Goal = d.ValueOr("goal", "")
+	s.Status = d.ValueOr("status", "active")
+	if s.MaxTurns, err = anyutil.ToInt(anyutil.Or(get("max_turns"), int64(DefaultGoalMaxTurns))); err != nil {
 		return nil, err
 	}
 	s.LastVerdict, s.LastReason, s.PausedReason = get("last_verdict"), get("last_reason"), get("paused_reason")
 	s.Subgoals = []string{}
 	if list, ok := rawSubgoals.([]any); ok {
 		for _, item := range list {
-			if t := strings.TrimSpace(pyrepr.Str(item)); t != "" {
+			if t := strings.TrimSpace(anyutil.String(item)); t != "" {
 				s.Subgoals = append(s.Subgoals, t)
 			}
 		}
 	}
-	if pid := get("waiting_on_pid"); pyrepr.Truthy(pid) {
-		n, err := pyint.Int64(pid)
+	if pid := get("waiting_on_pid"); anyutil.IsTrue(pid) {
+		n, err := anyutil.ToInt(pid)
 		if err != nil {
 			return nil, err
 		}
 		s.WaitingOnPID = &n
 	}
-	if ws := get("waiting_on_session"); pyrepr.Truthy(ws) {
-		v := pyrepr.Str(ws)
+	if ws := get("waiting_on_session"); anyutil.IsTrue(ws) {
+		v := anyutil.String(ws)
 		s.WaitingOnSession = &v
 	}
 	s.WaitingReason = get("waiting_reason")
 	s.Contract = GoalContractFromDict(get("contract"))
-	items, err := pyIterate(pyrepr.Or(get("gates"), []any{}))
+	items, err := pyIterate(anyutil.Or(get("gates"), []any{}))
 	if err != nil {
 		return nil, err
 	}
 	s.Gates = []GoalGate{}
 	for _, item := range items {
-		g, ok := item.(*pyjson.Object)
+		g, ok := item.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
 		cmd, _ := g.Get("command")
-		if strings.TrimSpace(pyrepr.Str(pyrepr.Or(cmd, ""))) == "" {
+		if strings.TrimSpace(anyutil.String(anyutil.Or(cmd, ""))) == "" {
 			continue
 		}
 		gate, err := GoalGateFromDict(g)
@@ -304,14 +304,14 @@ func pyIterate(v any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := make([]any, 0, t.Len())
-		for _, k := range t.Keys {
+		for _, k := range t.Keys() {
 			out = append(out, k)
 		}
 		return out, nil
 	}
-	return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
 }
 
 func GoalMetaKey(sessionID string) string { return "goal:" + sessionID }
@@ -371,7 +371,7 @@ func SessionDB(ctx context.Context) *state.DB {
 	if cached != nil {
 		return cached
 	}
-	if pyctx.RunningLoop(ctx) {
+	if ctxutil.NonBlocking(ctx) {
 		goalsDBMu.Lock()
 		if c := goalsDBCache[h]; c != nil {
 			goalsDBMu.Unlock()

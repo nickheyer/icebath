@@ -6,11 +6,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestSingleSessionUntitledCoalescesNoneTitleAndModel(t *testing.T) {
-	html, err := GenerateHTMLExport(pyjson.ObjectOf("id", "abc", "title", nil, "model", nil, "messages", []any{}))
+	html, err := GenerateHTMLExport(jsonutil.ObjectOf("id", "abc", "title", nil, "model", nil, "messages", []any{}))
 	if err != nil || strings.Contains(html, "<title>None</title>") || strings.Contains(html, "<strong>Model:</strong> None") {
 		t.Fatalf("export %v", err)
 	}
@@ -24,7 +24,7 @@ func TestSingleSessionUntitledCoalescesNoneTitleAndModel(t *testing.T) {
 }
 
 func TestRoleIsEscapedInHTMLExport(t *testing.T) {
-	html, err := generateMessagesHTML([]*pyjson.Object{pyjson.ObjectOf("role", "<img src=x onerror=alert(document.domain)>",
+	html, err := generateMessagesHTML([]*jsonutil.Object{jsonutil.ObjectOf("role", "<img src=x onerror=alert(document.domain)>",
 		"content", "hello", "timestamp", 1700000000)})
 	if err != nil {
 		t.Fatal(err)
@@ -43,8 +43,8 @@ func TestRoleIsEscapedInHTMLExport(t *testing.T) {
 
 func TestHTMLExportEscapesToolCallNames(t *testing.T) {
 	payload := `<img src=x onerror="alert(document.domain)">`
-	rendered, err := generateMessagesHTML([]*pyjson.Object{pyjson.ObjectOf("role", "assistant", "content", "", "tool_calls", []any{
-		pyjson.ObjectOf("id", "call_1", "type", "function", "function", pyjson.ObjectOf("name", payload, "arguments", "<b>x</b>"))})})
+	rendered, err := generateMessagesHTML([]*jsonutil.Object{jsonutil.ObjectOf("role", "assistant", "content", "", "tool_calls", []any{
+		jsonutil.ObjectOf("id", "call_1", "type", "function", "function", jsonutil.ObjectOf("name", payload, "arguments", "<b>x</b>"))})})
 	if err != nil {
 		t.Fatal(err)
 	}

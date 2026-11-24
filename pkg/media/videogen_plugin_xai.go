@@ -12,15 +12,15 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -55,7 +55,7 @@ var xaiVideoModels = map[string]map[string]any{
 }
 
 // HTTP client the xAI video requests use, tests swap it for a recording transport
-var xaiVideoHTTPClient = func() *http.Client { return pyhttpx.PlainClient(false) }
+var xaiVideoHTTPClient = func() *http.Client { return httputil.Client(false) }
 
 // Sleep between xAI job polls, tests replace it to skip the wait
 var xaiVideoSleep = videoPollSleep
@@ -114,7 +114,7 @@ func isRegularFile(path string) bool {
 // Remote URL or matching data URI as is, a readable local file of the kind inlined as base64 after the read guard
 func mediaRefToXAIURL(env *tools.Env, value, kind, fallbackMime string) (string, error) {
 	ref := strings.TrimSpace(value)
-	path := pypath.Expanduser(ref)
+	path := pathutil.ExpandUser(ref)
 	if ref == "" || hasLowerPrefix(ref, "http://", "https://", "data:"+kind+"/") || !isRegularFile(path) {
 		return ref, nil
 	}
@@ -150,7 +150,7 @@ func imageRefToXAIInput(env *tools.Env, value string) (map[string]any, error) {
 // xAI video input carrying a public URL in the url field, a local file inlined, nil otherwise
 func videoInputFromPublicURL(env *tools.Env, value string) (map[string]any, error) {
 	ref := strings.TrimSpace(value)
-	if ref != "" && isRegularFile(pypath.Expanduser(ref)) {
+	if ref != "" && isRegularFile(pathutil.ExpandUser(ref)) {
 		u, err := mediaRefToXAIURL(env, ref, "video", "video/mp4")
 		if err != nil {
 			return nil, err
@@ -346,7 +346,7 @@ func generateXAIVideo(ctx context.Context, env *tools.Env, apiKey, baseURL, prom
 		resolved = xaiVideoDefaultTextModel
 	}
 	clamped := xaiClampDuration(duration, len(refs) > 0, 15, xaiVideoDefaultDuration)
-	payload := pyjson.ObjectOf("model", resolved, "prompt", prompt, "duration", clamped, "aspect_ratio", aspect, "resolution", resolution)
+	payload := jsonutil.ObjectOf("model", resolved, "prompt", prompt, "duration", clamped, "aspect_ratio", aspect, "resolution", resolution)
 	if imageInput != nil {
 		payload.Set("image", imageInput)
 	}
@@ -373,7 +373,7 @@ func mutateXAIVideo(ctx context.Context, env *tools.Env, apiKey, baseURL, prompt
 	if videoInput == nil {
 		return videoXAIError("video_url must be a public HTTPS MP4 URL (the `video`/`public_url` from a prior Imagine result)", "missing_video", prompt, "", ""), nil
 	}
-	payload := pyjson.ObjectOf("model", xaiResolveModelForModality(model, "text", model != ""), "prompt", prompt, "video", videoInput)
+	payload := jsonutil.ObjectOf("model", xaiResolveModelForModality(model, "text", model != ""), "prompt", prompt, "video", videoInput)
 	if endpoint == "extensions" {
 		payload.Set("duration", duration)
 	}
@@ -381,7 +381,7 @@ func mutateXAIVideo(ctx context.Context, env *tools.Env, apiKey, baseURL, prompt
 }
 
 // One xAI request with httpx timeouts, the decoded JSON object and a raise_for_status style error
-func xaiVideoRequest(ctx context.Context, client *http.Client, method, rawURL string, headers map[string]string, body []byte, timeout time.Duration) (*pyhttpx.Response, error) {
+func xaiVideoRequest(ctx context.Context, client *http.Client, method, rawURL string, headers map[string]string, body []byte, timeout time.Duration) (*httputil.Response, error) {
 	var reader *bytes.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -399,7 +399,7 @@ func xaiVideoRequest(ctx context.Context, client *http.Client, method, rawURL st
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	return pyhttpx.Do(client, req, timeout)
+	return httputil.Do(client, req, httputil.EachPhase(timeout))
 }
 
 // HTTPStatusError of a non 2xx httpx response
@@ -408,20 +408,20 @@ type xaiHTTPStatusError struct{ msg string }
 func (e *xaiHTTPStatusError) Error() string { return e.msg }
 
 // raise_for_status of an httpx response
-func xaiRaiseForStatus(resp *pyhttpx.Response) error {
+func xaiRaiseForStatus(resp *httputil.Response) error {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
-	return &xaiHTTPStatusError{pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location"))}
+	return &xaiHTTPStatusError{(&httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.URL, Location: resp.Header.Get("Location")}).Error()}
 }
 
 // JSON object of a response body, the AttributeError text get raises for any other JSON value
-func xaiJSONObject(resp *pyhttpx.Response) (*pyjson.Object, error) {
+func xaiJSONObject(resp *httputil.Response) (*jsonutil.Object, error) {
 	parsed, err := resp.JSON()
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := pyjson.AsObject(parsed)
+	obj, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		return nil, fmt.Errorf("xAI video reply is %s where a mapping was expected", errchain.Kind(parsed))
 	}
@@ -429,7 +429,7 @@ func xaiJSONObject(resp *pyhttpx.Response) (*pyjson.Object, error) {
 }
 
 // Posts the payload, polls the request to a terminal status and shapes the success or failure envelope
-func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL, endpoint string, payload *pyjson.Object,
+func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL, endpoint string, payload *jsonutil.Object,
 	modality, operation, aspect string, duration int, resolution string) (map[string]any, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -451,7 +451,7 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 	headers := videoXAIHeaders(apiKey)
 	client := xaiVideoHTTPClient()
 	defer client.CloseIdleConnections()
-	body, err := pyjson.Dumps(payload)
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -481,8 +481,8 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 	if !pyTruthy(requestID) {
 		return nil, fmt.Errorf("xAI video response did not include request_id")
 	}
-	reqID := pyrepr.Str(requestID)
-	status, job := "queued", pyjson.NewObject()
+	reqID := anyutil.String(requestID)
+	status, job := "queued", jsonutil.NewObject()
 	finished := false
 	for elapsed := 0; elapsed < xaiVideoTimeoutSeconds; elapsed += xaiVideoPollIntervalSeconds {
 		resp, err := xaiVideoRequest(ctx, client, http.MethodGet, baseURL+"/videos/"+reqID, headers, nil, 30*time.Second)
@@ -514,10 +514,10 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 	if !finished {
 		return videoXAIError(fmt.Sprintf("Timed out waiting for xAI video request after %ds", xaiVideoTimeoutSeconds), "timeout", prompt, resolvedModel, ""), nil
 	}
-	plain, _ := pyjson.Plain(job).(map[string]any)
+	plain, _ := jsonutil.Plain(job).(map[string]any)
 	modelOut := resolvedModel
 	if pyTruthy(plain["model"]) {
-		modelOut = pyrepr.Str(plain["model"])
+		modelOut = anyutil.String(plain["model"])
 	}
 	if status != "done" {
 		var message any
@@ -535,7 +535,7 @@ func submitXAIVideoPayload(ctx context.Context, env *tools.Env, apiKey, baseURL,
 		}
 		text := fmt.Sprintf("xAI video request ended with status '%s'", status)
 		if pyTruthy(message) {
-			text = pyrepr.Str(message)
+			text = anyutil.String(message)
 		}
 		return videoXAIError(text, "xai_"+status, prompt, resolvedModel, ""), nil
 	}

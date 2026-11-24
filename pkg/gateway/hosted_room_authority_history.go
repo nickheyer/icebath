@@ -4,8 +4,9 @@ import (
 	"context"
 	"math"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -21,9 +22,6 @@ var authorityTransferKinds = map[string]bool{"authority.claimed": true, "authori
 type AuthorityHistoryError struct{ Msg string }
 
 func (e *AuthorityHistoryError) Error() string { return e.Msg }
-
-// Python class name of the error
-func (e *AuthorityHistoryError) PyTypeName() string { return "AuthorityHistoryError" }
 
 func authorityHistoryError(msg string) error { return &AuthorityHistoryError{msg} }
 
@@ -56,7 +54,7 @@ func ValidateAuthorityHistory(value any, gatewayID string, epoch int64) ([]Autho
 	if value == nil {
 		return []AuthoritySpan{{gatewayID, epoch, 0}}, nil
 	}
-	list, ok := pyjson.Plain(value).([]any)
+	list, ok := jsonutil.Plain(value).([]any)
 	if !ok || len(list) < 1 || len(list) > maxAuthoritySpans {
 		return nil, authorityHistoryError("authority history exceeds its bound or is absent")
 	}
@@ -147,13 +145,13 @@ func ReadAuthorityHistoryLocked(ctx context.Context, conn state.SQLiteConn, room
 			return nil, err
 		}
 		payload, isMap := decodedPayload.(map[string]any)
-		if !pyjson.Equal(actor, map[string]any{"kind": "system", "id": "authority-control"}) || !isMap {
+		if !anyutil.Equal(actor, map[string]any{"kind": "system", "id": "authority-control"}) || !isMap {
 			return nil, authorityHistoryError("authority claim provenance is invalid")
 		}
 		last := history[len(history)-1]
 		expected := last.Epoch + 1
 		claimed, isInt := hostedStrictInt(payload["authority_epoch"])
-		rowEpoch, rowIsInt := row.Vals["authority_epoch"].(int64)
+		rowEpoch, rowIsInt := row.Value("authority_epoch").(int64)
 		if payload["previous_gateway_id"] != last.GatewayID || !isInt || claimed != expected || !rowIsInt || rowEpoch != expected {
 			return nil, authorityHistoryError("authority claim does not extend its predecessor")
 		}
@@ -188,7 +186,7 @@ func ValidateTaskInput(value any) (map[string]any, error) {
 	if !isInt || watermark < 0 {
 		return nil, roomPlainValueError("invalid task input watermark")
 	}
-	seqs, ok := pyjson.Plain(seqsValue).([]any)
+	seqs, ok := jsonutil.Plain(seqsValue).([]any)
 	if !ok || len(seqs) < 1 || len(seqs) > maxTaskInputEvents {
 		return nil, roomPlainValueError("task input context exceeded its bound")
 	}
@@ -208,8 +206,8 @@ type RoomValueError struct{ Msg string }
 
 func (e *RoomValueError) Error() string { return e.Msg }
 
-// Python class name of the error
-func (e *RoomValueError) PyTypeName() string { return "ValueError" }
+// Kind label of the error
+func (e *RoomValueError) ErrorKind() string { return "ValueError" }
 
 func roomPlainValueError(msg string) error { return &RoomValueError{msg} }
 
@@ -245,7 +243,7 @@ func workSourcePrefixLocked(ctx context.Context, conn state.SQLiteConn, roomID s
 		}
 		actor, _ := decoded.(map[string]any)
 		boundary := span.Epoch > 1 && count == span.FromSeq
-		eventEpoch, isInt := event.Vals["authority_epoch"].(int64)
+		eventEpoch, isInt := event.Value("authority_epoch").(int64)
 		if hrInt(event, "seq") != count || !isInt || eventEpoch != span.Epoch ||
 			(actor["kind"] == "gateway" && actor["id"] != span.GatewayID) || authorityTransferKinds[hrStr(event, "kind")] != boundary {
 			return nil, "", workRecordPrefixError("work record history prefix is not verified")

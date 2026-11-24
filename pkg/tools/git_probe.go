@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 )
 
 // NoDriverDiffFlags disable attribute scoped diff drivers on rendered diffs
@@ -217,7 +216,7 @@ func boundedProbeRun(argv []string, timeout time.Duration, env map[string]string
 		if !isExit {
 			return nil
 		}
-		code = pysubprocess.Returncode(ee)
+		code = executil.ExitCode(ee.ProcessState)
 	}
 	return &ProbeResult{Code: code, Stdout: string(stdout), Stderr: string(stderr)}
 }

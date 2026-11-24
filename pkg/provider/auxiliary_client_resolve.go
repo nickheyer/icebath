@@ -13,8 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Effective provider an auto routed client carries across cache reuse
@@ -403,7 +403,7 @@ func auxResolveAutoBranch(ctx context.Context, req auxResolveRequest) (auxResolv
 	}
 	model := req.Model
 	if model != "" && strings.Contains(model, "/") && resolved != "" && !strings.Contains(resolved, "/") {
-		pkgLog().Debug(fmt.Sprintf("Dropping OpenRouter-format model %s for non-OpenRouter auxiliary provider (using %s instead)", pyrepr.Repr(model), pyrepr.Repr(resolved)))
+		pkgLog().Debug(fmt.Sprintf("Dropping OpenRouter-format model %s for non-OpenRouter auxiliary provider (using %s instead)", anyutil.Quote(model), anyutil.Quote(resolved)))
 		model = ""
 	}
 	routed := auxRouteClient(ctx, req, client, auxFirstNonEmpty(model, resolved))
@@ -620,7 +620,7 @@ func auxResolveNamedCustomBranch(ctx context.Context, req auxResolveRequest) (au
 	}
 	if customKey == "no-key-required" {
 		pkgLog().Warn(fmt.Sprintf("resolve_provider_client: named custom provider %s has no resolvable api_key — request will be sent with placeholder no-key-required and will 401 on auth-required endpoints",
-			pyrepr.Repr(auxFirstNonEmpty(cfgString(entry["name"]), provider))))
+			anyutil.Quote(auxFirstNonEmpty(cfgString(entry["name"]), provider))))
 	}
 	entryAPIMode := strings.TrimSpace(auxFirstNonEmpty(req.APIMode, cfgString(entry["api_mode"])))
 	if auxIsActualAuxiliaryRoute(ctx, req, customBase) {
@@ -628,7 +628,7 @@ func auxResolveNamedCustomBranch(ctx context.Context, req auxResolveRequest) (au
 		entryAPIMode = "chat_completions"
 	}
 	if customBase == "" {
-		pkgLog().Warn(fmt.Sprintf("resolve_provider_client: named custom provider %s has no base_url", pyrepr.Repr(provider)))
+		pkgLog().Warn(fmt.Sprintf("resolve_provider_client: named custom provider %s has no base_url", anyutil.Quote(provider)))
 		return auxResolveResult{}, true, nil
 	}
 	entryHeaders := NormalizeExtraHeaders(entry["extra_headers"])
@@ -644,7 +644,7 @@ func auxResolveNamedCustomBranch(ctx context.Context, req auxResolveRequest) (au
 	if mode, base := OpencodeTransport(ctx, provider, finalModel, customBase); mode != "" {
 		entryAPIMode, customBase = string(mode), base
 	}
-	pkgLog().Debug(fmt.Sprintf("resolve_provider_client: named custom provider %s (%s, api_mode=%s)", pyrepr.Repr(provider), finalModel, auxFirstNonEmpty(entryAPIMode, "chat_completions")))
+	pkgLog().Debug(fmt.Sprintf("resolve_provider_client: named custom provider %s (%s, api_mode=%s)", anyutil.Quote(provider), finalModel, auxFirstNonEmpty(entryAPIMode, "chat_completions")))
 	if entryAPIMode == "anthropic_messages" {
 		realClient, err := buildAnthropicClient(ctx, customKey, customBase, 0, false)
 		if err != nil {
@@ -694,7 +694,7 @@ func auxAPIKeyProfileSuppliedClient(ctx context.Context, provider string, apiKey
 		}
 	})
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("resolve_provider_client: provider profile %s failed to create an auxiliary client; falling back to the standard client path", pyrepr.Repr(provider)), "err", err)
+		pkgLog().Warn(fmt.Sprintf("resolve_provider_client: provider profile %s failed to create an auxiliary client; falling back to the standard client path", anyutil.Quote(provider)), "err", err)
 		return nil
 	}
 	if client == nil {
@@ -817,7 +817,7 @@ func auxResolveExternalProcessBranch(ctx context.Context, req auxResolveRequest,
 			}
 		})
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("resolve_provider_client: profile %s failed to create an external-process client", pyrepr.Repr(provider)), "err", err)
+			pkgLog().Warn(fmt.Sprintf("resolve_provider_client: profile %s failed to create an external-process client", anyutil.Quote(provider)), "err", err)
 			client = nil
 		}
 		if client != nil {
@@ -838,7 +838,7 @@ func auxResolveRegistryBranch(ctx context.Context, req auxResolveRequest) (auxRe
 	provider := req.Provider
 	pconfig := authRegistryGet(ctx, provider)
 	if pconfig == nil {
-		auxLogOnceDebug(auxLoggedUnknownProviderKeys, provider, "resolve_provider_client: unknown provider %s", pyrepr.Repr(provider))
+		auxLogOnceDebug(auxLoggedUnknownProviderKeys, provider, "resolve_provider_client: unknown provider %s", anyutil.Quote(provider))
 		return auxResolveResult{}, nil
 	}
 	authType := pconfig.AuthType

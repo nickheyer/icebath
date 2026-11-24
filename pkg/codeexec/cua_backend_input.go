@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const (
@@ -19,13 +18,13 @@ const (
 // pointerVariant is one addressing form, extra nil when the caller did not supply it, lazy when computing it probes
 type pointerVariant struct {
 	what  string
-	extra *pyjson.Object
-	lazy  func() *pyjson.Object
+	extra *jsonutil.Object
+	lazy  func() *jsonutil.Object
 }
 
 // Refused action result
 func refuseAction(action, message string) *ActionResult {
-	return &ActionResult{OK: false, Action: action, Message: message, Meta: pyjson.NewObject()}
+	return &ActionResult{OK: false, Action: action, Message: message, Meta: jsonutil.NewObject()}
 }
 
 // Refused action result carrying a code and an optional delivery mode
@@ -39,11 +38,11 @@ func refuseCoded(action, message, code, delivery string) *ActionResult {
 }
 
 // Base args of an input action against the sticky target, or the refusal when there is none
-func (b *CuaDriverBackend) targetArgs(action string, needWindow bool) (*ActionResult, *pyjson.Object) {
+func (b *CuaDriverBackend) targetArgs(action string, needWindow bool) (*ActionResult, *jsonutil.Object) {
 	if b.activePID == nil || (needWindow && b.activeWindowID == nil) {
-		return refuseAction(action, noTargetMsg), pyjson.NewObject()
+		return refuseAction(action, noTargetMsg), jsonutil.NewObject()
 	}
-	args := pyjson.NewObject()
+	args := jsonutil.NewObject()
 	args.Set("pid", *b.activePID)
 	if needWindow {
 		args.Set("window_id", *b.activeWindowID)
@@ -52,7 +51,7 @@ func (b *CuaDriverBackend) targetArgs(action string, needWindow bool) (*ActionRe
 }
 
 // Fills args from the first supplied addressing variant plus window_id, refusing without one when missing is set
-func (b *CuaDriverBackend) pointerArgs(tool string, args *pyjson.Object, variants []pointerVariant, missing string) *ActionResult {
+func (b *CuaDriverBackend) pointerArgs(tool string, args *jsonutil.Object, variants []pointerVariant, missing string) *ActionResult {
 	for _, v := range variants {
 		if v.extra == nil && v.lazy == nil {
 			continue
@@ -64,8 +63,8 @@ func (b *CuaDriverBackend) pointerArgs(tool string, args *pyjson.Object, variant
 		if v.lazy != nil {
 			extra = v.lazy()
 		}
-		for _, k := range extra.Keys {
-			args.Set(k, extra.Vals[k])
+		for _, k := range extra.Keys() {
+			args.Set(k, extra.Value(k))
 		}
 		args.Set("window_id", *b.activeWindowID)
 		return nil
@@ -77,7 +76,7 @@ func (b *CuaDriverBackend) pointerArgs(tool string, args *pyjson.Object, variant
 }
 
 // Attaches foreground delivery when the live schema accepts it, refusing unknown or unsupported modes
-func (b *CuaDriverBackend) applyDelivery(action string, args *pyjson.Object, mode *string) *ActionResult {
+func (b *CuaDriverBackend) applyDelivery(action string, args *jsonutil.Object, mode *string) *ActionResult {
 	if mode == nil || *mode == "" || *mode == "background" {
 		return nil
 	}
@@ -92,7 +91,7 @@ func (b *CuaDriverBackend) applyDelivery(action string, args *pyjson.Object, mod
 }
 
 // Applies one delivery rung, running the separately approved bring_to_front first when requested
-func (b *CuaDriverBackend) runInputAction(action string, args *pyjson.Object, mode *string, bringToFront bool) *ActionResult {
+func (b *CuaDriverBackend) runInputAction(action string, args *jsonutil.Object, mode *string, bringToFront bool) *ActionResult {
 	if refusal := b.applyDelivery(action, args, mode); refusal != nil {
 		return refusal
 	}
@@ -113,7 +112,7 @@ func (b *CuaDriverBackend) runInputAction(action string, args *pyjson.Object, mo
 	}
 	result := b.action(action, args, true)
 	if bringToFront {
-		focus := pyjson.NewObject()
+		focus := jsonutil.NewObject()
 		focus.Set("invoked", true)
 		focus.Set("tool", "bring_to_front")
 		result.Meta.Set("foreground_focus", focus)
@@ -140,13 +139,13 @@ func (b *CuaDriverBackend) Click(a ClickArgs) (*ActionResult, error) {
 		tool = "double_click"
 	}
 	args.Set("button", norm)
-	var element, coords *pyjson.Object
+	var element, coords *jsonutil.Object
 	if a.Element != nil {
-		element = pyjson.NewObject()
+		element = jsonutil.NewObject()
 		element.Set("element_index", *a.Element)
 	}
 	if a.X != nil && a.Y != nil {
-		coords = pyjson.NewObject()
+		coords = jsonutil.NewObject()
 		coords.Set("x", *a.X)
 		coords.Set("y", *a.Y)
 	}
@@ -165,14 +164,14 @@ func (b *CuaDriverBackend) Click(a ClickArgs) (*ActionResult, error) {
 func (b *CuaDriverBackend) Drag(a DragArgs) (*ActionResult, error) {
 	refusal, args := b.targetArgs("drag", false)
 	if refusal == nil {
-		var elems, coords *pyjson.Object
+		var elems, coords *jsonutil.Object
 		if a.FromElement != nil && a.ToElement != nil {
-			elems = pyjson.NewObject()
+			elems = jsonutil.NewObject()
 			elems.Set("from_element", *a.FromElement)
 			elems.Set("to_element", *a.ToElement)
 		}
 		if a.FromXY != nil && a.ToXY != nil {
-			coords = pyjson.NewObject()
+			coords = jsonutil.NewObject()
 			coords.Set("from_x", a.FromXY[0])
 			coords.Set("from_y", a.FromXY[1])
 			coords.Set("to_x", a.ToXY[0])
@@ -195,16 +194,16 @@ func (b *CuaDriverBackend) Scroll(a ScrollArgs) (*ActionResult, error) {
 	}
 	args.Set("direction", a.Direction)
 	args.Set("amount", max(1, min(50, a.Amount)))
-	var element *pyjson.Object
+	var element *jsonutil.Object
 	if a.Element != nil && b.activeWindowID != nil {
-		element = pyjson.NewObject()
+		element = jsonutil.NewObject()
 		element.Set("element_index", *a.Element)
 	}
-	var lazy func() *pyjson.Object
+	var lazy func() *jsonutil.Object
 	if a.X != nil && a.Y != nil {
 		x, y := *a.X, *a.Y
-		lazy = func() *pyjson.Object {
-			out := pyjson.NewObject()
+		lazy = func() *jsonutil.Object {
+			out := jsonutil.NewObject()
 			if b.session.supportsCapability("input.scroll.coordinates", "scroll") {
 				out.Set("x", x)
 				out.Set("y", y)

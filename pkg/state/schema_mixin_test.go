@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func schemaFixture(t *testing.T, rows [][3]string) (*sessionSchema, *fakeSearchHost) {
@@ -60,10 +60,10 @@ func TestSchemaColumnsCacheAndReadProbes(t *testing.T) {
 		t.Fatal(err)
 	}
 	sessions, _ := tables.Get("sessions")
-	if decl, _ := sessions.(*pyjson.Object).Get("archived"); decl != "INTEGER NOT NULL DEFAULT 0" {
+	if decl, _ := sessions.(*jsonutil.Object).Get("archived"); decl != "INTEGER NOT NULL DEFAULT 0" {
 		t.Fatalf("archived declaration %v", decl)
 	}
-	if decl, _ := sessions.(*pyjson.Object).Get("id"); decl != "TEXT" {
+	if decl, _ := sessions.(*jsonutil.Object).Get("id"); decl != "TEXT" {
 		t.Fatalf("primary key drops NOT NULL %v", decl)
 	}
 	body, err := os.ReadFile(cachePath)
@@ -83,12 +83,12 @@ func TestSchemaColumnsCacheAndReadProbes(t *testing.T) {
 			t.Fatal(err)
 		}
 		again, err := parseSchemaColumns(ctx, SchemaSQL)
-		if err != nil || !slices.Contains(again.Keys, "sessions") {
+		if err != nil || !slices.Contains(again.Keys(), "sessions") {
 			t.Fatalf("cache %s recomputes: %v", bad, err)
 		}
 	}
 	statements, err := SchemaReadProbeStatements(ctx)
-	if err != nil || len(statements) != len(tables.Keys) {
+	if err != nil || len(statements) != tables.Len() {
 		t.Fatalf("one probe per table %d %v", len(statements), err)
 	}
 	if !slices.IsSortedFunc(statements, func(a, b string) int {
@@ -134,7 +134,7 @@ func TestStoreSystemPromptAndLegacyDedupe(t *testing.T) {
 	if err != nil || hash != want || len(want) != 64 {
 		t.Fatalf("hash %v %v", hash, err)
 	}
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	if _, err := storeSystemPrompt(ctx, conn, []byte("x")); !errors.As(err, &pe) || pe.Msg != "the system prompt is bytes, expected text" {
 		t.Fatalf("bytes prompt %v", err)
 	}

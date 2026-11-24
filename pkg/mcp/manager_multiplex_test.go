@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Multiplex on with clean ledgers, returning a context switcher for profile homes a and b
@@ -64,7 +64,7 @@ func twoProfiles(t *testing.T) (func(which string) context.Context, *tools.Env, 
 
 // Live server task with one tool whose identity digest resolves in ctx
 func multiplexServer(ctx context.Context, env *tools.Env, name string, cfg map[string]any) *serverTask {
-	s := regServer(env, name, capsOf(false, false), &Tool{Name: "t", Description: "d", InputSchema: pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())})
+	s := regServer(env, name, capsOf(false, false), &Tool{Name: "t", Description: "d", InputSchema: jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf())})
 	s.config = cfg
 	s.toolTimeout = 30
 	if digest, ok := adopterIdentityDigest(ctx, env, name, &Rendered{Config: cfg}); ok {

@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Per session pending follow up cap for busy queue mode and the paths sharing its entry point
@@ -110,7 +109,7 @@ func resultPendingSteer(result map[string]any) string {
 	if result == nil {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(pyrepr.Or(result["pending_steer"], "")))
+	return strings.TrimSpace(anyutil.String(anyutil.Or(result["pending_steer"], "")))
 }
 
 // Parks the queued event in the head slot so the fresh session after a compression exhausted reset runs it
@@ -210,7 +209,7 @@ func isGoalContinuationEvent(eventOrText any) bool {
 	case nil:
 		return false
 	default:
-		text = pyrepr.Str(v)
+		text = anyutil.String(v)
 	}
 	return strings.HasPrefix(text, goalContinuationPrefix)
 }
@@ -244,7 +243,7 @@ func sameSecurityContext(existing, event *gateway.MessageEvent) bool {
 		return false
 	}
 	for _, key := range securityMetadataKeys {
-		if !pyrepr.Equal(existing.Metadata[key], event.Metadata[key]) {
+		if !anyutil.Equal(existing.Metadata[key], event.Metadata[key]) {
 			return false
 		}
 	}

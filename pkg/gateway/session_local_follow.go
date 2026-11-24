@@ -5,8 +5,8 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Policy following its profile when the session is a Bot Chat an earlier build froze, else the policy itself
@@ -19,7 +19,7 @@ func followBotChat(ctx context.Context, a *SessionAuthority, sessionID string, p
 		return nil, err
 	}
 	if owner == nil {
-		owner = pyjson.NewObject()
+		owner = jsonutil.NewObject()
 	}
 	if !botChatRow(owner) {
 		titled, err := a.DB.GetSessionByTitle(ctx, "Bot Chat")
@@ -50,43 +50,43 @@ func followBotChat(ctx context.Context, a *SessionAuthority, sessionID string, p
 		}
 	}
 	live = presentSections(live)
-	parsed, err := pyjson.Loads(policy.ConfigJSON)
+	parsed, err := jsonutil.Decode(policy.ConfigJSON)
 	if err != nil {
 		return nil, err
 	}
-	config, ok := parsed.(*pyjson.Object)
+	config, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return nil, &PyError{Kind: "TypeError", Msg: "policy config is not a mapping"}
 	}
-	model, _ := config.GetOr("model", nil).(*pyjson.Object)
+	model, _ := config.ValueOr("model", nil).(*jsonutil.Object)
 	if model == nil {
-		model = pyjson.NewObject()
+		model = jsonutil.NewObject()
 	}
-	if composerPickHolds(owner, live) || (slices.Contains(picked, "model") && model.GetOr("selection_profile", nil) == nil) {
+	if composerPickHolds(owner, live) || (slices.Contains(picked, "model") && model.ValueOr("selection_profile", nil) == nil) {
 		held, present := config.Get("model")
 		if !present {
-			held = pyjson.NewObject()
+			held = jsonutil.NewObject()
 			config.Set("model", held)
 		}
-		target, isDict := held.(*pyjson.Object)
+		target, isDict := held.(*jsonutil.Object)
 		if !isDict {
 			return nil, &PyError{Kind: "TypeError", Msg: "the held bot chat record is " + errchain.Kind(held) + ", expected a mapping"}
 		}
 		name, providerName := profileTarget(live)
 		target.Set("selection_profile", []any{name, providerName})
 	}
-	pins, _ := config.GetOr(SessionPins, nil).(*pyjson.Object)
+	pins, _ := config.ValueOr(SessionPins, nil).(*jsonutil.Object)
 	if pins == nil {
-		pins = pyjson.NewObject()
+		pins = jsonutil.NewObject()
 	}
-	if _, isBool := pins.GetOr("reasoning", nil).(bool); slices.Contains(picked, "reasoning") && !isBool {
-		pinned := pins.Copy()
+	if _, isBool := pins.ValueOr("reasoning", nil).(bool); slices.Contains(picked, "reasoning") && !isBool {
+		pinned := pins.Clone()
 		pinned.Set("reasoning", true)
 		config.Set(SessionPins, pinned)
 	}
-	adopted := config.Copy()
+	adopted := config.Clone()
 	adopted.Set(FollowAdopted, true)
-	text, err := pyjson.Dumps(adopted)
+	text, err := jsonutil.Encode(adopted)
 	if err != nil {
 		return nil, err
 	}

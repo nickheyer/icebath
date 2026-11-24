@@ -3,8 +3,8 @@ package tuiserver
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var toolsLearningRegistry = &handlerRegistry{}
@@ -32,7 +32,7 @@ func learningMutation(name string, argKeys []string, fn func(ctx context.Context
 				if !present {
 					raw = ""
 				}
-				args[i] = pyrepr.Str(raw)
+				args[i] = anyutil.String(raw)
 			}
 			out, err := fn(ctx, args)
 			if err != nil {

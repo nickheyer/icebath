@@ -2,12 +2,11 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Configuration document as nested maps the way YAML decodes it
@@ -77,14 +76,13 @@ func phantomSibling(container map[string]any, part string) string {
 
 // Position a Python list subscript of the segment addresses, negative counting from the end
 func listIndex(segment string, length int) (int, *PathError) {
-	n, ok := pyint.Parse(segment)
-	if !ok {
-		return 0, &PathError{"ValueError", segment + " is not a list index"}
-	}
-	if !n.IsInt64() {
+	idx, err := strconv.ParseInt(strings.TrimSpace(segment), 10, 64)
+	if errors.Is(err, strconv.ErrRange) {
 		return 0, &PathError{"IndexError", segment + " is too large for a list index"}
 	}
-	idx := n.Int64()
+	if err != nil {
+		return 0, &PathError{"ValueError", segment + " is not a list index"}
+	}
 	if idx < 0 {
 		idx += int64(length)
 	}

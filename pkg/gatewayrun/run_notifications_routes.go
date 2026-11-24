@@ -8,10 +8,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Canonical source of a synthetic background process event, the persisted origin preferred
@@ -58,7 +58,7 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 			evtType = "?"
 		}
 		pkgLog().Warn(fmt.Sprintf("Synthetic event source unresolvable: session_key=%s platform=%s chat_type=%s chat_id=%s evt_type=%s",
-			errchain.Show(sessionKey), errchain.Show(platformName), errchain.Show(chatType), errchain.Show(chatID), pyrepr.Str(evtType)))
+			errchain.Show(sessionKey), errchain.Show(platformName), errchain.Show(chatType), errchain.Show(chatID), anyutil.String(evtType)))
 		return nil, nil
 	}
 	platform, err := gateway.ParsePlatform(ctx, platformName)
@@ -92,7 +92,7 @@ func (r *GatewayRunner) buildProcessEventSource(ctx context.Context, evt map[str
 func requeueRefusedWatchEvent(queue *tools.EventQueue, evt map[string]any) {
 	step := pyIntOf(evt["_watch_retry_step"]) + 1
 	evt["_watch_retry_step"] = step
-	permanent := pyrepr.Truthy(evt["_refusal_permanent"])
+	permanent := anyutil.IsTrue(evt["_refusal_permanent"])
 	delete(evt, "_refusal_permanent")
 	if permanent {
 		refusals := pyIntOf(evt["_watch_injection_attempts"]) + 1
@@ -103,7 +103,7 @@ func requeueRefusedWatchEvent(queue *tools.EventQueue, evt map[string]any) {
 				sessionID = "unknown"
 			}
 			pkgLog().Warn(fmt.Sprintf("Watch notification for %s chat=%s (type=%s session_id=%s) was refused %d times; dropping the queued event (output remains available via process(action='log'))",
-				orUnknown(evt["platform"]), orUnknown(evt["chat_id"]), orUnknown(evt["type"]), pyrepr.Str(sessionID), refusals))
+				orUnknown(evt["platform"]), orUnknown(evt["chat_id"]), orUnknown(evt["type"]), anyutil.String(sessionID), refusals))
 			return
 		}
 	}
@@ -274,14 +274,14 @@ func (r *GatewayRunner) committedRelayAdapter(ctx context.Context, source *gatew
 	if !pyContains(provenance, "relay") {
 		return nil, nil
 	}
-	native := pyjson.NewObject()
-	for _, k := range envelope.Keys {
+	native := jsonutil.NewObject()
+	for _, k := range envelope.Keys() {
 		if k != "media" {
 			v, _ := envelope.Get(k)
 			native.Set(k, v)
 		}
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("text", "")
 	payload.Set("native_text_v1", native)
 	restored, err := gateway.RestoreNative(ctx, payload, r)
@@ -312,7 +312,7 @@ func pyContains(container any, item string) bool {
 				return true
 			}
 		}
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, ok := c.Get(item)
 		return ok
 	case map[string]any:

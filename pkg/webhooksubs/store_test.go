@@ -10,7 +10,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func storeHome(t *testing.T) string {
@@ -20,8 +20,8 @@ func storeHome(t *testing.T) string {
 	return h
 }
 
-func route(pairs ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func route(pairs ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i < len(pairs); i += 2 {
 		o.Set(pairs[i].(string), pairs[i+1])
 	}
@@ -33,12 +33,12 @@ func TestLoadCorruptedOrNonObjectFileReadsEmpty(t *testing.T) {
 	for _, body := range []string{"broken{{{", "[1, 2]", "\xff\xfe{}", ""} {
 		os.WriteFile(Path(h), []byte(body), 0o600)
 		if got := Load(h); got.Len() != 0 {
-			t.Fatalf("%q read as %v", body, got.Keys)
+			t.Fatalf("%q read as %v", body, got.Keys())
 		}
 	}
 	os.WriteFile(Path(h), []byte("\xef\xbb\xbf{\"b\": {}, \"a\": {}}"), 0o600)
-	if got := Load(h); strings.Join(got.Keys, ",") != "b,a" {
-		t.Fatalf("BOM file or key order lost: %v", got.Keys)
+	if got := Load(h); strings.Join(got.Keys(), ",") != "b,a" {
+		t.Fatalf("BOM file or key order lost: %v", got.Keys())
 	}
 	os.Remove(Path(h))
 	if got := LoadUnlocked(h); got.Len() != 0 {
@@ -50,7 +50,7 @@ func TestSaveNarrowsExistingBroadSecretFileMode(t *testing.T) {
 	h := storeHome(t)
 	os.WriteFile(Path(h), []byte(`{"old": {"secret": "stale", "prompt": "x"}}`), 0o644)
 	os.Chmod(Path(h), 0o644)
-	if err := Mutate(h, func(s *pyjson.Object) error {
+	if err := Mutate(h, func(s *jsonutil.Object) error {
 		s.Set("demo", route("secret", "FRESH", "prompt", "x"))
 		return nil
 	}); err != nil {
@@ -73,7 +73,7 @@ func TestSaveNarrowsExistingBroadSecretFileMode(t *testing.T) {
 func TestMutateErrorPublishesNothing(t *testing.T) {
 	h := storeHome(t)
 	boom := errors.New("no such route")
-	if err := Mutate(h, func(s *pyjson.Object) error { s.Set("x", 1); return boom }); err != boom {
+	if err := Mutate(h, func(s *jsonutil.Object) error { s.Set("x", 1); return boom }); err != boom {
 		t.Fatalf("got %v", err)
 	}
 	if _, err := os.Stat(Path(h)); !os.IsNotExist(err) {
@@ -88,7 +88,7 @@ func TestMutateSerializesConcurrentWriters(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			if err := Mutate(h, func(s *pyjson.Object) error {
+			if err := Mutate(h, func(s *jsonutil.Object) error {
 				s.Set(fmt.Sprintf("r%02d", i), route("n", int64(i)))
 				return nil
 			}); err != nil {
@@ -108,7 +108,7 @@ func TestStaleReplaceCannotRestoreRemovedOrDisabledRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	snapshot, _ := Load(h).Get("notifier")
-	if err := Mutate(h, func(s *pyjson.Object) error { s.Delete("notifier"); return nil }); err != nil {
+	if err := Mutate(h, func(s *jsonutil.Object) error { s.Delete("notifier"); return nil }); err != nil {
 		t.Fatal(err)
 	}
 	_, err := Replace(h, "notifier", route("description", "stale update"), snapshot)
@@ -126,16 +126,16 @@ func TestStaleReplaceCannotRestoreRemovedOrDisabledRoute(t *testing.T) {
 		t.Fatal("create over an existing route must conflict")
 	}
 	snapshot, _ = Load(h).Get("notifier")
-	Mutate(h, func(s *pyjson.Object) error {
+	Mutate(h, func(s *jsonutil.Object) error {
 		r, _ := s.Get("notifier")
-		r.(*pyjson.Object).Set("enabled", false)
+		r.(*jsonutil.Object).Set("enabled", false)
 		return nil
 	})
 	if _, err := Replace(h, "notifier", route("description", "stale update"), snapshot); !errors.As(err, &conflict) {
 		t.Fatalf("stale replace after disable: %v", err)
 	}
 	r, _ := Load(h).Get("notifier")
-	if v, _ := r.(*pyjson.Object).Get("enabled"); v != false {
+	if v, _ := r.(*jsonutil.Object).Get("enabled"); v != false {
 		t.Fatal("disabled route re-enabled")
 	}
 	current, _ := Load(h).Get("notifier")
@@ -159,18 +159,18 @@ func TestReplaceComparesWithPythonEquality(t *testing.T) {
 
 func TestApplyPlainKeepsFileOrderAndAppendsNewKeysSorted(t *testing.T) {
 	dst := route("zeta", route("y", int64(1), "x", int64(2)), "alpha", route("k", "v"), "gone", int64(1))
-	plain := pyjson.Plain(dst).(map[string]any)
+	plain := jsonutil.Plain(dst).(map[string]any)
 	delete(plain, "gone")
 	plain["new2"] = map[string]any{"b": 1, "a": 2}
 	plain["new1"] = "v"
 	plain["zeta"].(map[string]any)["w"] = int64(3)
 	ApplyPlain(dst, plain)
-	if strings.Join(dst.Keys, ",") != "zeta,alpha,new1,new2" {
-		t.Fatalf("top order %v", dst.Keys)
+	if strings.Join(dst.Keys(), ",") != "zeta,alpha,new1,new2" {
+		t.Fatalf("top order %v", dst.Keys())
 	}
 	z, _ := dst.Get("zeta")
-	if strings.Join(z.(*pyjson.Object).Keys, ",") != "y,x,w" {
-		t.Fatalf("nested order %v", z.(*pyjson.Object).Keys)
+	if strings.Join(z.(*jsonutil.Object).Keys(), ",") != "y,x,w" {
+		t.Fatalf("nested order %v", z.(*jsonutil.Object).Keys())
 	}
 }
 

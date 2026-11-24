@@ -13,8 +13,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDryRunAndBlockedPreflightChangeNothing(t *testing.T) {
@@ -83,8 +84,8 @@ func TestMigrationRemovesParkedFootprintWithoutWaitingForItToServe(t *testing.T)
 		if migrateProfileName(home) == "default" && (verb == "start" || verb == "restart") {
 			path := filepath.Join(f.root, "gateway_state.json")
 			raw, _ := os.ReadFile(path)
-			v, _ := pyjson.Loads(string(raw))
-			runtime := v.(*pyjson.Object)
+			v, _ := jsonutil.Decode(string(raw))
+			runtime := v.(*jsonutil.Object)
 			served, err := profiles.ProfilesToServe(ctx, true, false, false)
 			if err != nil {
 				return err
@@ -118,7 +119,7 @@ func TestMigrationRemovesParkedFootprintWithoutWaitingForItToServe(t *testing.T)
 	secondaries, _ := manifestSecondaries(manifest)
 	names := map[string]bool{}
 	for _, rec := range secondaries {
-		names[rec.GetOr("profile", "").(string)] = true
+		names[rec.ValueOr("profile", "").(string)] = true
 	}
 	if !reflect.DeepEqual(names, map[string]bool{"coder": true, "ops": true}) {
 		t.Fatalf("manifest secondaries %v", names)
@@ -140,8 +141,8 @@ func TestApplyClearsTheManifestOnSuccessAndTheCompensatorRestores(t *testing.T) 
 		t.Fatalf("secondaries %v", secondaries)
 	}
 	for _, rec := range secondaries {
-		if !pyjson.Equal(rec.GetOr("service", nil), pyjson.ObjectOf("kind", "systemd", "system", false)) {
-			t.Fatalf("service %v", rec.GetOr("service", nil))
+		if !anyutil.Equal(rec.ValueOr("service", nil), jsonutil.ObjectOf("kind", "systemd", "system", false)) {
+			t.Fatalf("service %v", rec.ValueOr("service", nil))
 		}
 	}
 	if flag := f.configFlag(); flag == nil || !*flag {
@@ -162,10 +163,10 @@ func TestApplyClearsTheManifestOnSuccessAndTheCompensatorRestores(t *testing.T) 
 	}
 	runtimePath := filepath.Join(f.root, "gateway_state.json")
 	raw, _ := os.ReadFile(runtimePath)
-	v, _ := pyjson.Loads(string(raw))
-	runtime := v.(*pyjson.Object)
-	runtime.Set("platforms", pyjson.ObjectOf("telegram", pyjson.ObjectOf("state", "connected"),
-		"coder:telegram", pyjson.ObjectOf("state", "connected"), "ops:discord", pyjson.ObjectOf("state", "connected")))
+	v, _ := jsonutil.Decode(string(raw))
+	runtime := v.(*jsonutil.Object)
+	runtime.Set("platforms", jsonutil.ObjectOf("telegram", jsonutil.ObjectOf("state", "connected"),
+		"coder:telegram", jsonutil.ObjectOf("state", "connected"), "ops:discord", jsonutil.ObjectOf("state", "connected")))
 	f.writeJSON(runtimePath, runtime)
 	f.ops = nil
 	f.writeManifest(manifest)
@@ -185,10 +186,10 @@ func TestApplyClearsTheManifestOnSuccessAndTheCompensatorRestores(t *testing.T) 
 		t.Fatal("removed secondaries not named")
 	}
 	raw, _ = os.ReadFile(runtimePath)
-	v, _ = pyjson.Loads(string(raw))
-	runtime = v.(*pyjson.Object)
-	if !pyjson.Equal(runtime.GetOr("served_profiles", nil), []any{}) ||
-		!pyjson.Equal(runtime.GetOr("platforms", nil), pyjson.ObjectOf("telegram", pyjson.ObjectOf("state", "connected"))) {
+	v, _ = jsonutil.Decode(string(raw))
+	runtime = v.(*jsonutil.Object)
+	if !anyutil.Equal(runtime.ValueOr("served_profiles", nil), []any{}) ||
+		!anyutil.Equal(runtime.ValueOr("platforms", nil), jsonutil.ObjectOf("telegram", jsonutil.ObjectOf("state", "connected"))) {
 		t.Fatalf("runtime %v", runtime)
 	}
 	coder := "coder"
@@ -283,9 +284,9 @@ func TestRollbackNeverRespawnsADetachedSecondary(t *testing.T) {
 	f := newMigrateFleet(t)
 	secondaries := []any{}
 	for _, n := range []string{"coder", "ops"} {
-		secondaries = append(secondaries, pyjson.ObjectOf("profile", n, "home", filepath.Join(f.root, "profiles", n), "pid", int64(4100), "service", nil))
+		secondaries = append(secondaries, jsonutil.ObjectOf("profile", n, "home", filepath.Join(f.root, "profiles", n), "pid", int64(4100), "service", nil))
 	}
-	f.writeManifest(pyjson.ObjectOf("version", int64(1), "flag_was", false, "default", pyjson.ObjectOf("service", nil), "secondaries", secondaries))
+	f.writeManifest(jsonutil.ObjectOf("version", int64(1), "flag_was", false, "default", jsonutil.ObjectOf("service", nil), "secondaries", secondaries))
 	f.services = map[string][]ServiceUnit{}
 	f.pids = map[string]int{}
 	spawned := []string{}
@@ -569,14 +570,14 @@ func TestExplicitMigrateWithNoStandaloneSecondariesStillFlipsFlagAndRestartsDefa
 	swapMigrateSeam(t, &migrateSpawnDetachedGateway, func(context.Context, string) (bool, error) {
 		detached = true
 		f.writePidRecord()
-		f.writeJSON(filepath.Join(f.root, "gateway_state.json"), pyjson.ObjectOf("pid", int64(f.gatewayPid), "icebath_home", f.root,
+		f.writeJSON(filepath.Join(f.root, "gateway_state.json"), jsonutil.ObjectOf("pid", int64(f.gatewayPid), "icebath_home", f.root,
 			"gateway_state", "running", "served_profiles", []any{"default", "coder", "ops"}))
 		return true, nil
 	})
 	if len(f.plan().StandaloneSecondaries()) != 0 {
 		t.Fatal("standalone secondaries present")
 	}
-	var manifest *pyjson.Object
+	var manifest *jsonutil.Object
 	realWait := migrateWaitForServed
 	swapMigrateSeam(t, &migrateWaitForServed, func(ctx context.Context, h string, expected map[string]bool, timeout time.Duration) ([]string, bool, error) {
 		if manifest == nil {
@@ -593,7 +594,7 @@ func TestExplicitMigrateWithNoStandaloneSecondariesStillFlipsFlagAndRestartsDefa
 	if flag := f.configFlag(); flag == nil || !*flag || f.manifestExists() {
 		t.Fatal("flag or manifest wrong")
 	}
-	if !pyjson.Equal(manifest.GetOr("secondaries", nil), []any{}) || manifest.GetOr("flag_was", nil) != false || hasOp(f.ops, "default", "install") {
+	if !anyutil.Equal(manifest.ValueOr("secondaries", nil), []any{}) || manifest.ValueOr("flag_was", nil) != false || hasOp(f.ops, "default", "install") {
 		t.Fatalf("manifest %v ops %v", manifest, f.ops)
 	}
 	if !strings.Contains(f.readOut(), "serves 3 profiles") {

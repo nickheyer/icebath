@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Authority over a real store whose profile id is the state database's home, as the local source label cases build it
@@ -17,8 +17,8 @@ func newDescribeAuthority(t *testing.T) (context.Context, *SessionAuthority) {
 	ctx, db := newTestStateDB(t)
 	store := NewSessionStore(ctx, filepath.Join(t.TempDir(), "sessions"), DefaultGatewayConfig(ctx), nil)
 	store.PinDB(db)
-	runner := &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](),
-		profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}
+	runner := &recoverTestRunner{store: store, adapters: orderedutil.NewMap[Platform, PlatformAdapter](),
+		profiles: orderedutil.NewMap[string, *orderedutil.Map[Platform, PlatformAdapter]]()}
 	a, err := InitializeSessionAuthority(ctx, runner, filepath.Dir(db.Path()), "test", db, false)
 	if err != nil {
 		t.Fatal(err)
@@ -36,7 +36,7 @@ func describeReply(t *testing.T, ctx context.Context, a *SessionAuthority) map[s
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = conn.Close(ctx) })
-	described, err := conn.Dispatch(ctx, pyjson.ObjectOf("id", int64(0), "method", "runtime.describe", "params", pyjson.NewObject()))
+	described, err := conn.Dispatch(ctx, jsonutil.ObjectOf("id", int64(0), "method", "runtime.describe", "params", jsonutil.NewObject()))
 	if err != nil {
 		t.Fatal(err)
 	}

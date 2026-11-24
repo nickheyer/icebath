@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Saved terminal result of an admission, nil while it is not terminal or nothing was saved
@@ -26,7 +26,7 @@ func (a *SessionAuthority) HasLiveSession(sessionID string) bool {
 }
 
 // Pending prompts of a live session's generation after stale ones settle, false when the session is not live
-func (a *SessionAuthority) PendingPrompts(sessionID string, generation *int64) ([]*pyjson.Object, bool) {
+func (a *SessionAuthority) PendingPrompts(sessionID string, generation *int64) ([]*jsonutil.Object, bool) {
 	live, ok := a.live(sessionID)
 	if !ok {
 		return nil, false
@@ -101,7 +101,7 @@ func CreatePeerBotChat(ctx context.Context, a *SessionAuthority, actor Principal
 }
 
 // Id holding the canonical title when the Bot Chat is a conversation no delivery can adopt, else empty
-func DisplaceableBotChat(ctx context.Context, a *SessionAuthority, row *pyjson.Object) (string, error) {
+func DisplaceableBotChat(ctx context.Context, a *SessionAuthority, row *jsonutil.Object) (string, error) {
 	return displaceableBotChat(ctx, a, row, nil)
 }
 
@@ -111,7 +111,7 @@ func BotResult(ctx context.Context, a *SessionAuthority, record map[string]any) 
 }
 
 // Dataclass dict of an admission receipt
-func AdmissionReceiptDict(r AdmissionReceipt) *pyjson.Object { return admissionReceiptDict(r) }
+func AdmissionReceiptDict(r AdmissionReceipt) *jsonutil.Object { return admissionReceiptDict(r) }
 
 // Whether the error is the KeyError Python raises for a missing mapping key
 func IsKeyError(err error) bool {
@@ -154,7 +154,7 @@ func RestoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 }
 
 // Refuses an admitted API turn its session can no longer run
-func CheckAPITurn(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *pyjson.Object) error {
+func CheckAPITurn(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *jsonutil.Object) error {
 	_, err := checkAPITurn(ctx, a, ref, payload)
 	return err
 }
@@ -165,6 +165,6 @@ func RehydrateAPIImages(ctx context.Context, content any, media any) (any, error
 }
 
 // Execution state of one admitted API turn, its adapter, settings, history and content
-func PrepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *pyjson.Object) (*pyjson.Object, error) {
+func PrepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	return prepareAPIExecution(ctx, a, ref, payload)
 }

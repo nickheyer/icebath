@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Task card frame result, a SendResult when the op is unadvertised, transportless or failed in transport
@@ -76,14 +76,14 @@ func (a *RelayAdapter) SendNativeTaskCardProgress(ctx context.Context, chatID st
 	if err != nil || sr != nil {
 		return relayDeref(sr), err
 	}
-	if pyrepr.Truthy(result["success"]) {
+	if anyutil.IsTrue(result["success"]) {
 		return SendResult{Success: true}, nil
 	}
 	if IsEgressDecline(result) {
 		LogDecline("task_card", chatID, result)
 	}
-	errText := pyrepr.Or(result["error"], DeclineError(result))
-	return SendResult{Success: false, Error: pyrepr.Str(pyrepr.Or(errText, "task_card failed")), RawResponse: result}, nil
+	errText := anyutil.Or(result["error"], DeclineError(result))
+	return SendResult{Success: false, Error: anyutil.String(anyutil.Or(errText, "task_card failed")), RawResponse: result}, nil
 }
 
 // Closes the card stream of the turn, the connector result carried back
@@ -96,7 +96,7 @@ func (a *RelayAdapter) StopNativeTaskCardProgress(ctx context.Context, chatID st
 	if err != nil || sr != nil {
 		return relayDeref(sr), err
 	}
-	return SendResult{Success: pyrepr.Truthy(result["success"]), Error: result["error"], RawResponse: result}, nil
+	return SendResult{Success: anyutil.IsTrue(result["success"]), Error: result["error"], RawResponse: result}, nil
 }
 
 // Seals an orphaned open stream with the text, a no op when nothing is armed

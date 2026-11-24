@@ -7,10 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Inbound media kinds and the extension their bytes are cached under
@@ -21,7 +17,7 @@ var lifecycleEvents = map[string]bool{"follow": true, "unfollow": true, "join": 
 
 // Health probe answer for tunnels and proxies
 func (a *LineAdapter) handleHealth(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
-	return gateway.WebJSONResponse(pyjson.ObjectOf("status", "ok", "platform", "line"), 200, nil)
+	return gateway.WebJSONResponse(jsonutil.ObjectOf("status", "ok", "platform", "line"), 200, nil)
 }
 
 // Verifies the signature of a capped body and dispatches each event, answering 200 ok
@@ -37,17 +33,17 @@ func (a *LineAdapter) handleWebhook(ctx context.Context, request *gateway.WebReq
 	if !verifyLineSignature(body, request.Header.Get("X-Line-Signature"), a.channelSecret) {
 		return gateway.WebTextResponse(401, "invalid signature", "", nil), nil
 	}
-	text, err := pystr.DecodeUTF8(body)
+	text, err := textutil.DecodeUTF8(body)
 	if err != nil {
 		return gateway.WebTextResponse(400, "bad json", "", nil), nil
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return gateway.WebTextResponse(400, "bad json", "", nil), nil
 	}
-	payload, ok := pyjson.Plain(decoded).(map[string]any)
+	payload, ok := jsonutil.Plain(decoded).(map[string]any)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(pyjson.Plain(decoded)))}
+		return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("webhook body must be a JSON object, got %s", anyutil.Kind(decoded))}
 	}
 	events, err := iterEvents(payload["events"])
 	if err != nil {
@@ -69,7 +65,7 @@ func (a *LineAdapter) handleWebhook(ctx context.Context, request *gateway.WebReq
 
 // Items the events value iterates over, a falsy value as none and the TypeError for a non iterable
 func iterEvents(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	switch t := v.(type) {
@@ -88,7 +84,7 @@ func iterEvents(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a list, got %s", anyutil.Kind(v))}
 }
 
 // Drops redeliveries, self echoes and unauthorized sources then routes message and postback events
@@ -96,8 +92,8 @@ func (a *LineAdapter) dispatchEvent(ctx context.Context, event map[string]any) e
 	eventType := event["type"]
 	source := objField(event, "source")
 	webhookEventID := ""
-	if v := event["webhookEventId"]; pyrepr.Truthy(v) {
-		webhookEventID = pyrepr.Str(v)
+	if v := event["webhookEventId"]; anyutil.IsTrue(v) {
+		webhookEventID = anyutil.String(v)
 	}
 	if webhookEventID != "" && a.dedup.IsDuplicate(webhookEventID) {
 		pkgLog().Debug(fmt.Sprintf("LINE: ignoring duplicate webhook event %s", webhookEventID))
@@ -110,7 +106,7 @@ func (a *LineAdapter) dispatchEvent(ctx context.Context, event map[string]any) e
 		return nil
 	}
 	if !allowedForSource(source, a.allowAll, a.allowedUsers, a.allowedGroups, a.allowedRooms) {
-		pkgLog().Info(fmt.Sprintf("LINE: rejecting unauthorized source %s", pyrepr.Repr(source)))
+		pkgLog().Info(fmt.Sprintf("LINE: rejecting unauthorized source %s", anyutil.Quote(source)))
 		return nil
 	}
 	typ, _ := eventType.(string)
@@ -120,9 +116,9 @@ func (a *LineAdapter) dispatchEvent(ctx context.Context, event map[string]any) e
 	case typ == "postback":
 		return a.handlePostbackEvent(ctx, event)
 	case lifecycleEvents[typ]:
-		pkgLog().Info(fmt.Sprintf("LINE: lifecycle event %s from %s", typ, pyrepr.Repr(source)))
+		pkgLog().Info(fmt.Sprintf("LINE: lifecycle event %s from %s", typ, anyutil.Quote(source)))
 	default:
-		pkgLog().Debug(fmt.Sprintf("LINE: ignoring event type %s", pyrepr.Repr(eventType)))
+		pkgLog().Debug(fmt.Sprintf("LINE: ignoring event type %s", anyutil.Quote(eventType)))
 	}
 	return nil
 }
@@ -133,7 +129,7 @@ func getStr(m map[string]any, key, def string) string {
 	if !ok {
 		return def
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Stashes the reply token, normalizes text, media, sticker and location messages and hands them to the gateway
@@ -156,15 +152,15 @@ func (a *LineAdapter) handleMessageEvent(ctx context.Context, event map[string]a
 	var text string
 	switch {
 	case msgType == "text":
-		if v := msg["text"]; pyrepr.Truthy(v) {
-			text = pyrepr.Str(v)
+		if v := msg["text"]; anyutil.IsTrue(v) {
+			text = anyutil.String(v)
 		}
 	case inboundMediaExt[msgType] != "":
 		filename := ""
-		if v := msg["fileName"]; pyrepr.Truthy(v) {
-			filename = pyrepr.Str(v)
-		} else if v := msg["file_name"]; pyrepr.Truthy(v) {
-			filename = pyrepr.Str(v)
+		if v := msg["fileName"]; anyutil.IsTrue(v) {
+			filename = anyutil.String(v)
+		} else if v := msg["file_name"]; anyutil.IsTrue(v) {
+			filename = anyutil.String(v)
 		}
 		localPath, mediaType := a.downloadMedia(ctx, messageID, msgType, filename)
 		if localPath != "" {
@@ -173,7 +169,7 @@ func (a *LineAdapter) handleMessageEvent(ctx context.Context, event map[string]a
 		text = "[" + msgType + "]"
 	case msgType == "sticker":
 		text = "[sticker]"
-		if keywords := msg["keywords"]; pyrepr.Truthy(keywords) {
+		if keywords := msg["keywords"]; anyutil.IsTrue(keywords) {
 			words, err := joinStrings(keywords)
 			if err != nil {
 				return err
@@ -203,7 +199,7 @@ func (a *LineAdapter) handleMessageEvent(ctx context.Context, event map[string]a
 	return a.HandleMessage(ctx, ev)
 }
 
-// Comma joined string list, the TypeError str.join raises for a non string item
+// Comma joined string list, a TypeError for an item that is not text
 func joinStrings(v any) (string, error) {
 	items, ok := v.([]any)
 	if !ok {
@@ -216,7 +212,7 @@ func joinStrings(v any) (string, error) {
 	for i, item := range items {
 		s, isStr := item.(string)
 		if !isStr {
-			return "", &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(item))}
+			return "", &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("item %d must be text, got %s", i, anyutil.Kind(item))}
 		}
 		parts = append(parts, s)
 	}
@@ -228,20 +224,20 @@ func (a *LineAdapter) handlePostbackEvent(ctx context.Context, event map[string]
 	replyTok := strField(event, "replyToken")
 	chatID, _ := resolveChat(objField(event, "source"))
 	var data any = ""
-	if v := objField(event, "postback")["data"]; pyrepr.Truthy(v) {
+	if v := objField(event, "postback")["data"]; anyutil.IsTrue(v) {
 		data = v
 	}
 	raw, isStr := data.(string)
 	if !isStr {
 		return nil
 	}
-	decoded, err := pyjson.Loads(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil
 	}
-	parsed, ok := pyjson.Plain(decoded).(map[string]any)
+	parsed, ok := jsonutil.Plain(decoded).(map[string]any)
 	if !ok {
-		return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(pyjson.Plain(decoded)))}
+		return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("postback data must be a JSON object, got %s", anyutil.Kind(decoded))}
 	}
 	requestID := ""
 	if action, _ := parsed["action"].(string); action == "show_response" {
@@ -304,10 +300,10 @@ func (a *LineAdapter) handlePostbackEvent(ctx context.Context, event map[string]
 
 // Python str of a cached payload, the fallback when it is falsy
 func payloadText(payload any, fallback string) string {
-	if !pyrepr.Truthy(payload) {
+	if !anyutil.IsTrue(payload) {
 		return fallback
 	}
-	return pyrepr.Str(payload)
+	return anyutil.String(payload)
 }
 
 // Fetches inbound message content and caches it, returning the local path and its MIME type
@@ -336,7 +332,7 @@ func (a *LineAdapter) downloadMedia(ctx context.Context, messageID, msgType, fil
 		} else {
 			path, err = gateway.CacheVideoFromBytesAsync(ctx, data, ext)
 		}
-		mime, _, _ = pymimetypes.GuessType(msgType+ext, true)
+		mime = mimeutil.TypeByExtension(ext)
 		if mime == "" {
 			mime = msgType + "/mp4"
 		}
@@ -345,7 +341,7 @@ func (a *LineAdapter) downloadMedia(ctx context.Context, messageID, msgType, fil
 		if documentName == "" {
 			documentName = "line_file" + ext
 		}
-		mime, _, _ = pymimetypes.GuessType(documentName, true)
+		mime = mimeutil.TypeByName(documentName)
 		if mime == "" {
 			mime = "application/octet-stream"
 		}

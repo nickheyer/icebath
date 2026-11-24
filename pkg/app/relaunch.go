@@ -13,8 +13,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"github.com/spf13/pflag"
 )
@@ -131,7 +130,7 @@ func shebangEscapesRunningEnv(shebang string) bool {
 		return true
 	}
 	interp := tokens[0]
-	if name := pypath.PathName(interp); name == "env" || name == "env.exe" {
+	if name := pathutil.Name(interp); name == "env" || name == "env.exe" {
 		var rest []string
 		for _, t := range tokens[1:] {
 			if !strings.HasPrefix(t, "-") {
@@ -147,7 +146,7 @@ func shebangEscapesRunningEnv(shebang string) bool {
 	if running == "" {
 		return true
 	}
-	return strings.ToLower(pypath.PathParent(interp)) != strings.ToLower(filepath.Dir(running))
+	return strings.ToLower(filepath.Dir(filepath.Clean(interp))) != strings.ToLower(filepath.Dir(running))
 }
 
 // Whether a file is a Python script whose shebang escapes the running environment
@@ -196,7 +195,7 @@ func resolveIcebathBin() (string, bool) {
 			return absPath, true
 		}
 	}
-	if pathBin, ok := pyshutil.Which("icebath", nil); ok && pathBin != "" && !isUnsafePythonLauncher(pathBin) {
+	if pathBin, err := exec.LookPath("icebath"); err == nil && !isUnsafePythonLauncher(pathBin) {
 		return pathBin, true
 	}
 	return "", false

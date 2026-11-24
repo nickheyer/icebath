@@ -14,14 +14,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -51,7 +50,7 @@ func BootstrapAtExit() {
 }
 
 // Runs the state.db scan an unclean exit report deferred on a detached goroutine under the caller's scope
-func startDeferredStateDBIntegrityCheck(ctx context.Context, evidence *pyjson.Object) {
+func startDeferredStateDBIntegrityCheck(ctx context.Context, evidence *jsonutil.Object) {
 	memory.SpawnContextThread(ctx, "state-db-integrity-check", func(ctx context.Context) {
 		gateway.RunDeferredIntegrityCheck(ctx, evidence, "", gateway.StateDBIntegrityDeadlineS)
 	}).Start()
@@ -250,12 +249,12 @@ func startGatewayReserveProfiles(ctx context.Context, profileHomes []profiles.Se
 			return false, &gateway.SystemExitError{Code: gateway.GatewayFatalConfigExitCode}
 		}
 		return false, nil
-	case pypath.IsOSError(err):
+	case errorutil.IsSystem(err):
 		var pathErr *os.PathError
 		if errors.As(err, &pathErr) && pathErr.Op == "mkdir" {
 			return false, homeDirStoreError(ctx, homes, pathErr, err)
 		}
-		pkgLog().Error(fmt.Sprintf("Cannot reserve gateway profiles: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("Cannot reserve gateway profiles: %s", err.Error()))
 		return false, nil
 	}
 	return false, err

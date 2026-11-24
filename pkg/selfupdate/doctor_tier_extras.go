@@ -9,14 +9,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/codeexec"
 	"github.com/nickheyer/icebath/pkg/cron"
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/tools"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
 )
 
 // Binds the doctor rows of voice, wake word, execute_code, the browser tools and the cron store, and the live browser probe
 func init() {
-	setDoctorPackageProbe("PortAudio (voice mode audio)", func(context.Context) bool { return pysounddevice.Load() == nil })
+	setDoctorPackageProbe("PortAudio (voice mode audio)", func(context.Context) bool { return portaudioutil.Load() == nil })
 	setDoctorPackageProbe("Porcupine (wake word)", func(ctx context.Context) bool { return media.LoadPorcupineLibrary(ctx) == nil })
 	setDoctorPackageProbe("openWakeWord (wake word)", func(ctx context.Context) bool { return media.LoadOpenWakeWordLibrary(ctx) == nil })
 	setDoctorPackageProbe("sherpa-onnx (wake word)", func(context.Context) bool { return media.SherpaOnnxAvailable() })

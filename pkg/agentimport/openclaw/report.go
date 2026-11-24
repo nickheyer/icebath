@@ -6,9 +6,9 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // One reported migration item, None source or destination held as nil
@@ -18,7 +18,7 @@ type ItemResult struct {
 	Destination *string
 	Status      string
 	Reason      string
-	Details     *pyjson.Object
+	Details     *jsonutil.Object
 	Sensitive   bool
 }
 
@@ -26,8 +26,8 @@ type ItemResult struct {
 func (i ItemResult) DestinationText() string { return derefOr(i.Destination, "") }
 
 // JSON object of the item in dataclass field order
-func (i ItemResult) JSON() *pyjson.Object {
-	o := pyjson.NewObject()
+func (i ItemResult) JSON() *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("kind", i.Kind)
 	o.Set("source", optStr(i.Source))
 	o.Set("destination", optStr(i.Destination))
@@ -35,7 +35,7 @@ func (i ItemResult) JSON() *pyjson.Object {
 	o.Set("reason", i.Reason)
 	details := i.Details
 	if details == nil {
-		details = pyjson.NewObject()
+		details = jsonutil.NewObject()
 	}
 	o.Set("details", details)
 	o.Set("sensitive", i.Sensitive)
@@ -98,8 +98,8 @@ func (s *Summary) Get(key string) int {
 }
 
 // JSON object of the counts
-func (s *Summary) JSON() *pyjson.Object {
-	o := pyjson.NewObject()
+func (s *Summary) JSON() *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for _, k := range s.keys {
 		o.Set(k, int64(s.counts[k]))
 	}
@@ -128,8 +128,8 @@ type Report struct {
 func (r *Report) OutputDirText() string { return derefOr(r.OutputDir, "") }
 
 // JSON object of the report in the key order report.json carries
-func (r *Report) JSON() *pyjson.Object {
-	o := pyjson.NewObject()
+func (r *Report) JSON() *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("timestamp", r.Timestamp)
 	o.Set("mode", r.Mode)
 	o.Set("source_root", r.SourceRoot)
@@ -139,20 +139,20 @@ func (r *Report) JSON() *pyjson.Object {
 	o.Set("migrate_secrets", r.MigrateSecrets)
 	o.Set("preset", optStr(r.Preset))
 	o.Set("skill_conflict_mode", r.SkillConflictMode)
-	selection := pyjson.NewObject()
+	selection := jsonutil.NewObject()
 	selection.Set("selected", stringsToAny(r.Selected))
 	selection.Set("preset", optStr(r.Preset))
 	selection.Set("skill_conflict_mode", r.SkillConflictMode)
 	available := make([]any, 0, len(MigrationOptions))
 	for _, opt := range MigrationOptions {
-		available = append(available, pyjson.ObjectOf("id", opt.ID, "label", opt.Label, "description", opt.Description))
+		available = append(available, jsonutil.ObjectOf("id", opt.ID, "label", opt.Label, "description", opt.Description))
 	}
 	selection.Set("available", available)
 	presets := make([]any, 0, len(MigrationPresets))
 	for _, p := range MigrationPresets {
 		ids := append([]string(nil), p.Options...)
 		sortStrings(ids)
-		presets = append(presets, pyjson.ObjectOf("id", p.ID, "selected", stringsToAny(ids)))
+		presets = append(presets, jsonutil.ObjectOf("id", p.ID, "selected", stringsToAny(ids)))
 	}
 	selection.Set("presets", presets)
 	o.Set("selection", selection)
@@ -180,7 +180,7 @@ func stringsToAny(values []string) []any {
 func toJSON(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		for _, k := range config.MappingKeys(x) {
 			o.Set(k, toJSON(x[k]))
 		}
@@ -262,7 +262,7 @@ func redactInternal(value any, seen map[any]bool) any {
 			out[i] = redactInternal(e, seen)
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return nil
 		}
@@ -270,12 +270,12 @@ func redactInternal(value any, seen map[any]bool) any {
 			return RedactedMigrationValue
 		}
 		seen[v] = true
-		out := pyjson.NewObject()
-		for _, k := range v.Keys {
+		out := jsonutil.NewObject()
+		for _, k := range v.Keys() {
 			if isSecretKey(k) {
 				out.Set(k, RedactedMigrationValue)
 			} else {
-				out.Set(k, redactInternal(v.Vals[k], seen))
+				out.Set(k, redactInternal(v.Value(k), seen))
 			}
 		}
 		return out
@@ -286,19 +286,19 @@ func redactInternal(value any, seen map[any]bool) any {
 }
 
 // Writes the redacted report.json and summary.md into outputDir
-func WriteReport(outputDir string, report *pyjson.Object) (err error) {
+func WriteReport(outputDir string, report *jsonutil.Object) (err error) {
 	defer catch(&err)
 	mkdirAll(outputDir)
 	redactedValue, rerr := RedactMigrationValue(report)
 	if rerr != nil {
 		return rerr
 	}
-	redacted := redactedValue.(*pyjson.Object)
-	text, derr := pyjson.Dumps(redacted, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	redacted := redactedValue.(*jsonutil.Object)
+	text, derr := jsonutil.Encode(redacted, jsonutil.Indent(2))
 	if derr != nil {
 		return derr
 	}
-	writeText(pypath.PathJoin(outputDir, "report.json"), text+"\n")
+	writeText(pathutil.Join(outputDir, "report.json"), text+"\n")
 	grouped := map[string][]any{}
 	items, _ := dindex(redacted, "items").([]any)
 	for _, item := range items {
@@ -345,13 +345,13 @@ func WriteReport(outputDir string, report *pyjson.Object) (err error) {
 			lines = append(lines, "- "+pyStr(s))
 		}
 	}
-	writeText(pypath.PathJoin(outputDir, "summary.md"), strings.Join(lines, "\n")+"\n")
+	writeText(pathutil.Join(outputDir, "summary.md"), strings.Join(lines, "\n")+"\n")
 	return nil
 }
 
 // Writes a JSON value with two space indentation and raw non-ASCII text plus a trailing newline
 func writeJSONFile(path string, value any) {
-	text, err := pyjson.Dumps(value, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(value, jsonutil.Indent(2))
 	if err != nil {
 		raise(err)
 	}

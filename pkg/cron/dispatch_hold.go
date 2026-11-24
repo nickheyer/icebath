@@ -12,8 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -59,7 +60,7 @@ func (s *Store) noteHeld(ctx context.Context, now *float64) error {
 		holdSince[s.cronDir] = since
 	}
 	holdSinceMu.Unlock()
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("since", since)
 	record.Set("last", at)
 	if err := config.AtomicJSONWrite(home.WithOverride(ctx, s.home), filepath.Join(s.cronDir, dispatchHeldFile), record); err != nil && !isOSError(err) {
@@ -92,11 +93,11 @@ func readDispatchHeld(cronDir string) (*dispatchHeld, error) {
 		return nil, nil
 	}
 	text := strings.TrimPrefix(string(data), "\ufeff")
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil
 	}
-	obj, ok := parsed.(*pyjson.Object)
+	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return nil, nil
 	}
@@ -121,9 +122,9 @@ func readDispatchHeld(cronDir string) (*dispatchHeld, error) {
 
 // Python float of a stamp value, nil when float rejects it and an error when it overflows
 func heldFloat(v any) (*float64, error) {
-	f, err := pyint.Float(v)
+	f, err := anyutil.ToFloat(v)
 	if err != nil {
-		var pe *pyint.Error
+		var pe *errorutil.Error
 		if errors.As(err, &pe) && pe.Kind == "OverflowError" {
 			return nil, err
 		}

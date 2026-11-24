@@ -13,10 +13,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Most inline images one API admission may commit
@@ -26,7 +26,7 @@ const apiImageLimit = 10
 func apiImageURLs(content []any) ([]string, error) {
 	var urls []string
 	for _, part := range content {
-		obj, ok := part.(*pyjson.Object)
+		obj, ok := part.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -71,7 +71,7 @@ func CommitAPIImages(ctx context.Context, content []any) ([]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	root, err := pypath.Resolve(cache)
+	root, err := pathutil.Resolve(cache)
 	if err != nil {
 		return nil, err
 	}
@@ -120,20 +120,20 @@ func RestoreAPIImages(ctx context.Context, content []any, media []any) ([]any, e
 		return content, nil
 	}
 	parts := make([]any, len(content))
-	var text *pyjson.Object
+	var text *jsonutil.Object
 	for i, part := range content {
-		obj, ok := part.(*pyjson.Object)
+		obj, ok := part.(*jsonutil.Object)
 		if !ok {
 			return nil, &PyError{Kind: "TypeError", Msg: "cannot convert dictionary update sequence element #0 to a sequence"}
 		}
-		copied := obj.Copy()
+		copied := obj.Clone()
 		parts[i] = copied
 		if kind, _ := copied.Get("type"); kind == "text" && text == nil {
 			text = copied
 		}
 	}
 	if text == nil {
-		text = pyjson.ObjectOf("type", "text", "text", "What do you see in this image?")
+		text = jsonutil.ObjectOf("type", "text", "text", "What do you see in this image?")
 		parts = append([]any{text}, parts...)
 	}
 	current, _ := text.Get("text")
@@ -154,7 +154,7 @@ func rehydrateAPIImages(ctx context.Context, content any, media any) (any, error
 	references, _ := media.([]any)
 	byDigest := map[string]any{}
 	for _, reference := range references {
-		obj, isObj := reference.(*pyjson.Object)
+		obj, isObj := reference.(*jsonutil.Object)
 		if !isObj {
 			return nil, &PyError{Kind: "TypeError", Msg: "an API image reference is " + errchain.Kind(reference) + ", expected a mapping"}
 		}
@@ -197,7 +197,7 @@ func rehydrateAPIImages(ctx context.Context, content any, media any) (any, error
 			}
 		}
 		if path == "" {
-			out = append(out, pyjson.ObjectOf("type", "text", "text", "[Image no longer retained]"))
+			out = append(out, jsonutil.ObjectOf("type", "text", "text", "[Image no longer retained]"))
 			continue
 		}
 		data, err := os.ReadFile(path)
@@ -208,9 +208,9 @@ func rehydrateAPIImages(ctx context.Context, content any, media any) (any, error
 		if !known {
 			mime = "image/png"
 		}
-		obj := part.(*pyjson.Object).Copy()
+		obj := part.(*jsonutil.Object).Clone()
 		rawImage, _ := obj.Get("image_url")
-		image := rawImage.(*pyjson.Object).Copy()
+		image := rawImage.(*jsonutil.Object).Clone()
 		image.Set("url", "data:"+mime+";base64,"+base64.StdEncoding.EncodeToString(data))
 		obj.Set("image_url", image)
 		out = append(out, obj)

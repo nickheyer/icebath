@@ -10,7 +10,6 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // TelegramError is a Bot API failure standing for the python-telegram-bot exception class it names
@@ -40,7 +39,7 @@ func newTelegramError(class, message string, cause error) *TelegramError {
 		msg = strings.TrimPrefix(msg, prefix)
 	}
 	if msg != message {
-		msg = pystr.Capitalize(msg)
+		msg = textutil.UpperFirst(strings.ToLower(msg))
 	}
 	return &TelegramError{Class: class, Message: msg, Err: cause}
 }

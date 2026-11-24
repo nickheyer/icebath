@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Event kind a running tool's progress reaches the agent's progress callback as
@@ -102,8 +102,8 @@ func ToolProgressPayload(name, message string, kwargs map[string]any) map[string
 		msg = message
 	}
 	toolID := ""
-	if v := kwargs["tool_call_id"]; pyTruthy(v) {
-		toolID = pyrepr.Str(v)
+	if v := kwargs["tool_call_id"]; anyutil.IsTrue(v) {
+		toolID = anyutil.String(v)
 	}
 	return map[string]any{"tool_id": toolID, "name": name, "progress": progress, "total": kwargs["total"],
 		"percent": kwargs["percent"], "message": msg}

@@ -1,6 +1,8 @@
 package gateway
 
-import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+import (
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 // Whether the reader finished, every pending answer already failed and no further frame arriving
 func (c *GatewayClient) ReaderDone() bool {
@@ -14,7 +16,7 @@ func (c *GatewayClient) ReaderDone() bool {
 
 // Callbacks of a reader that reads on past frames it cannot decode, the terminal UI link
 type FrameHooks struct {
-	Inbound   func(raw string, frame *pyjson.Object)
+	Inbound   func(raw string, frame *jsonutil.Object)
 	Malformed func(raw string)
 }
 

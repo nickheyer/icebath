@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 type modernInterruptAgent struct{ calls [][3]string }
@@ -98,7 +98,7 @@ func (l *legacySubclassAgent) Interrupt(message string) {
 
 func TestInheritedHardInterruptBypassesLegacySubclassOverride(t *testing.T) {
 	agent := &legacySubclassAgent{AIAgent: &AIAgent{
-		hardInterruptRequested: &pythread.Event{}, pendingRedirectLock: &sync.Mutex{},
+		hardInterruptRequested: &syncutil.Event{}, pendingRedirectLock: &sync.Mutex{},
 		toolWorkerThreads: map[int64]bool{}, toolWorkerThreadsLock: &sync.Mutex{},
 		activeChildrenLock: &sync.Mutex{}, quietMode: true, apiMode: "test",
 	}}

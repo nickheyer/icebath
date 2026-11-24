@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var workspaceKeyRE = regexp.MustCompile(`^[0-9a-f]{16}$`)
@@ -85,7 +85,7 @@ func dockerPersistentSandboxRoots(ctx context.Context, sessionKey, leaf, workspa
 	}
 	var roots []string
 	for _, name := range names {
-		cand, err := pypath.Resolve(filepath.Join(sandbox, "docker", name, leaf))
+		cand, err := pathutil.Resolve(filepath.Join(sandbox, "docker", name, leaf))
 		if err != nil {
 			return nil, nil
 		}
@@ -125,7 +125,7 @@ func mountedWorkspaceCwd(ctx context.Context, workspaceCwd string) ([]string, er
 		}
 		cwd = wd
 	}
-	host, err := pypath.Resolve(pypath.Expanduser(cwd))
+	host, err := pathutil.Resolve(pathutil.ExpandUser(cwd))
 	if err != nil {
 		return nil, nil
 	}
@@ -138,7 +138,7 @@ func mountedWorkspaceCwd(ctx context.Context, workspaceCwd string) ([]string, er
 // Host directory a workspace bound session mounts, empty when its cwd digest names another container
 func sessionMountedWorkspace(ctx context.Context, workspaceKey, workspaceCwd string) ([]string, error) {
 	cwd := strings.TrimSpace(workspaceCwd)
-	if cwd == "" || strings.ContainsRune(cwd, 0) || !pypath.IsAbs(pypath.Expanduser(cwd)) {
+	if cwd == "" || strings.ContainsRune(cwd, 0) || !filepath.IsAbs(pathutil.ExpandUser(cwd)) {
 		return nil, nil
 	}
 	if tools.WorkspaceKeyFor(cwd) != workspaceKey {
@@ -218,12 +218,12 @@ func containsPath(list []string, p string) bool {
 
 // Whether two paths compare equal as pathlib paths
 func samePath(a, b string) bool {
-	rel, ok := pypath.PathRelativeTo(a, b)
+	rel, ok := pathutil.RelativeTo(a, b)
 	return ok && rel == "."
 }
 
 // Whether path sits at or under root component wise
 func pathIsWithin(path, root string) bool {
-	_, ok := pypath.PathRelativeTo(path, root)
+	_, ok := pathutil.RelativeTo(path, root)
 	return ok
 }

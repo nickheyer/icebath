@@ -4,7 +4,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Insertion ordered string set evicting its oldest entries first
@@ -124,7 +124,7 @@ func relayCoerceFlag(raw any, def bool) bool {
 	if b, ok := raw.(bool); ok {
 		return b
 	}
-	return relayTruthyFlags[strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))]
+	return relayTruthyFlags[strings.ToLower(strings.TrimSpace(anyutil.String(raw)))]
 }
 
 // Slack sub block of the relay extras, the whole extras when absent

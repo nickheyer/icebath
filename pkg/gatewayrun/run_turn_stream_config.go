@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Enabled toolsets of a run on source, an adapter override validated through the platform tools resolver
@@ -89,7 +89,7 @@ func (r *GatewayRunner) buildStreamConsumerConfig(source *gateway.SessionSource,
 	}
 	cursor := ""
 	if supportsEdit {
-		cursor = pyrepr.Str(pyrepr.Or(scfg.Cursor, ""))
+		cursor = anyutil.String(anyutil.Or(scfg.Cursor, ""))
 	}
 	if source.Platform == gateway.PlatformMatrix {
 		cursor = ""
@@ -139,7 +139,7 @@ func (r *GatewayRunner) proxyStreamConsumer(ctx context.Context, source *gateway
 	}
 	adapter, err := r.deliveryAdapterFor(ctx, source)
 	if err != nil {
-		pkgLog().Debug("Proxy: could not set up stream consumer: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("Proxy: could not set up stream consumer: " + err.Error())
 		return nil
 	}
 	if adapter == nil {
@@ -147,7 +147,7 @@ func (r *GatewayRunner) proxyStreamConsumer(ctx context.Context, source *gateway
 	}
 	consumerCfg, pauseTyping, err := r.buildStreamConsumerConfig(source, scfg, adapter, "fallback")
 	if err != nil {
-		pkgLog().Debug("Proxy: could not set up stream consumer: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("Proxy: could not set up stream consumer: " + err.Error())
 		return nil
 	}
 	return gateway.NewGatewayStreamConsumer(adapter, source.ChatID, gateway.StreamConsumerOptions{Config: consumerCfg,

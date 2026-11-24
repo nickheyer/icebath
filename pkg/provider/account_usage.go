@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -104,7 +104,7 @@ func titleCaseSlug(value any) string {
 	if cleaned == "" {
 		return ""
 	}
-	return pystr.Title(strings.NewReplacer("_", " ", "-", " ").Replace(cleaned))
+	return textutil.Title(strings.NewReplacer("_", " ", "-", " ").Replace(cleaned))
 }
 
 // Reset time of epoch seconds or ISO text, nil for empty or unparseable text, an error for an out of range epoch

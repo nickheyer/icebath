@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Stdout stand in that counts writes in flight and keeps every line written
@@ -54,7 +53,7 @@ func TestWriteJsonSerializesConcurrentWrites(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			WriteJSON(context.Background(), pyjson.ObjectOf("seq", seq, "text", marker))
+			WriteJSON(context.Background(), jsonutil.ObjectOf("seq", seq, "text", marker))
 		}()
 	}
 	close(start)
@@ -67,11 +66,11 @@ func TestWriteJsonSerializesConcurrentWrites(t *testing.T) {
 		if !strings.HasSuffix(frame, "\n") {
 			t.Fatalf("frame %q has no line end", frame)
 		}
-		obj, err := pyjson.LoadsDict(frame)
+		obj, err := jsonutil.DecodeObject(frame)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if seq, has := obj.Get("seq"); has && obj.GetOr("text", nil) == marker {
+		if seq, has := obj.Get("seq"); has && obj.ValueOr("text", nil) == marker {
 			seqs = append(seqs, int(seq.(int64)))
 		}
 	}
@@ -87,7 +86,7 @@ func (brokenStdout) Write([]byte) (int, error) { return 0, syscall.EPIPE }
 
 func TestWriteJsonReturnsFalseOnBrokenPipe(t *testing.T) {
 	swapRealStdout(t, brokenStdout{})
-	if WriteJSON(context.Background(), pyjson.ObjectOf("ok", true)) {
+	if WriteJSON(context.Background(), jsonutil.ObjectOf("ok", true)) {
 		t.Fatal("a write to a broken pipe reported success")
 	}
 }
@@ -99,18 +98,18 @@ func TestWriteJsonUnserializablePayloadBecomesErrorFrame(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelError})))
 	t.Cleanup(func() { slog.SetDefault(saved) })
 	created := pydatetime.DateTime{Year: 2026, Month: 8, Day: 22}
-	if !WriteJSON(context.Background(), pyjson.ObjectOf("jsonrpc", "2.0", "id", "profiles", "result", pyjson.ObjectOf("created", created))) {
+	if !WriteJSON(context.Background(), jsonutil.ObjectOf("jsonrpc", "2.0", "id", "profiles", "result", jsonutil.ObjectOf("created", created))) {
 		t.Fatal("the error frame was not written")
 	}
-	frame, err := pyjson.LoadsDict(out.String())
+	frame, err := jsonutil.DecodeObject(out.String())
 	if err != nil {
 		t.Fatalf("stdout %q: %v", out.String(), err)
 	}
-	errObj, _ := frame.GetOr("error", nil).(*pyjson.Object)
-	if frame.GetOr("id", nil) != "profiles" || errObj == nil || !jsonIsInt(errObj.GetOr("code", nil), -32603) {
+	errObj, _ := frame.ValueOr("error", nil).(*jsonutil.Object)
+	if frame.ValueOr("id", nil) != "profiles" || errObj == nil || !jsonIsInt(errObj.ValueOr("code", nil), -32603) {
 		t.Fatalf("frame = %q", out.String())
 	}
-	if message, _ := errObj.GetOr("message", nil).(string); !strings.HasPrefix(message, "response serialization error") || !strings.Contains(message, "datetime") {
+	if message, _ := errObj.ValueOr("message", nil).(string); !strings.HasPrefix(message, "response serialization error") || !strings.Contains(message, "datetime") {
 		t.Fatalf("message = %q", message)
 	}
 	if !strings.Contains(logs.String(), "level=ERROR") {

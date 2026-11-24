@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Reports the given code identity for the test
@@ -20,8 +20,8 @@ func pinFleetIdentity(t *testing.T, sha, source string) {
 	t.Helper()
 	saved := fleetCodeIdentity
 	t.Cleanup(func() { fleetCodeIdentity = saved })
-	fleetCodeIdentity = func(bool) (*pyjson.Object, error) {
-		identity := pyjson.NewObject()
+	fleetCodeIdentity = func(bool) (*jsonutil.Object, error) {
+		identity := jsonutil.NewObject()
 		identity.Set("sha", sha)
 		identity.Set("short_sha", sha[:8])
 		identity.Set("source", source)

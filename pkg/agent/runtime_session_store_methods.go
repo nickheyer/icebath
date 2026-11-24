@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // None for a nil pointer, the pointed value otherwise
@@ -31,7 +31,7 @@ func receiptMessages(raw any) ([]map[string]any, error) {
 	}
 	out := make([]map[string]any, 0, len(list))
 	for _, item := range list {
-		m, ok := pyjson.Plain(item).(map[string]any)
+		m, ok := jsonutil.Plain(item).(map[string]any)
 		if !ok {
 			return nil, &workerStoreError{"TypeError", fmt.Sprintf("receipt message is %s where a mapping was expected", errchain.Kind(item))}
 		}
@@ -90,7 +90,7 @@ func (s *RuntimeSessionStore) AppendMessagesBatch(ctx context.Context, sessionID
 		}
 		return s.appendCompressionMessages(ctx, sessionID, messages, guards.CompressionLockHolder, guards.TurnLeaseHolder, ttl)
 	}
-	result, err := s.apply(ctx, "transcript.append", pyjson.ObjectOf("messages", messagesPayload(messages), "turn_lease_holder", noneIfNil(guards.TurnLeaseHolder)))
+	result, err := s.apply(ctx, "transcript.append", jsonutil.ObjectOf("messages", messagesPayload(messages), "turn_lease_holder", noneIfNil(guards.TurnLeaseHolder)))
 	if err != nil {
 		return 0, err
 	}
@@ -114,8 +114,8 @@ func (s *RuntimeSessionStore) TryAcquireSessionTurnLease(sessionID, holder strin
 	if err := s.session(sessionID); err != nil {
 		return false, err
 	}
-	value, err := s.applyValue(context.Background(), "turn.acquire", pyjson.ObjectOf("holder", holder, "ttl_seconds", ttlSeconds))
-	return pyrepr.Truthy(value), err
+	value, err := s.applyValue(context.Background(), "turn.acquire", jsonutil.ObjectOf("holder", holder, "ttl_seconds", ttlSeconds))
+	return anyutil.IsTrue(value), err
 }
 
 // Polls the owner for the turn lease with the canonical waiting policy
@@ -128,19 +128,19 @@ func (s *RuntimeSessionStore) RefreshSessionTurnLease(sessionID, holder string, 
 	if err := s.session(sessionID); err != nil {
 		return false, err
 	}
-	value, err := s.applyValue(context.Background(), "turn.renew", pyjson.ObjectOf("holder", holder, "ttl_seconds", ttlSeconds))
-	return pyrepr.Truthy(value), err
+	value, err := s.applyValue(context.Background(), "turn.renew", jsonutil.ObjectOf("holder", holder, "ttl_seconds", ttlSeconds))
+	return anyutil.IsTrue(value), err
 }
 
 // Releases the turn lease under the admission target even after physical rotation
 func (s *RuntimeSessionStore) ReleaseSessionTurnLease(sessionID, holder string) error {
-	_, err := s.apply(context.Background(), "turn.cleanup", pyjson.ObjectOf("target", sessionID, "holder", holder))
+	_, err := s.apply(context.Background(), "turn.cleanup", jsonutil.ObjectOf("target", sessionID, "holder", holder))
 	return err
 }
 
 // Main loop usage delta as the update_token_counts keyword arguments
-func tokenDeltaPayload(d state.TokenCountDelta) *pyjson.Object {
-	return pyjson.ObjectOf("input_tokens", d.InputTokens, "output_tokens", d.OutputTokens, "model", noneIfNil(d.Model),
+func tokenDeltaPayload(d state.TokenCountDelta) *jsonutil.Object {
+	return jsonutil.ObjectOf("input_tokens", d.InputTokens, "output_tokens", d.OutputTokens, "model", noneIfNil(d.Model),
 		"cache_read_tokens", d.CacheReadTokens, "cache_write_tokens", d.CacheWriteTokens, "reasoning_tokens", d.ReasoningTokens,
 		"estimated_cost_usd", noneIfNil(d.EstimatedCostUSD), "actual_cost_usd", noneIfNil(d.ActualCostUSD),
 		"cost_status", noneIfNil(d.CostStatus), "cost_source", noneIfNil(d.CostSource), "pricing_version", noneIfNil(d.PricingVersion),
@@ -162,7 +162,7 @@ func (s *RuntimeSessionStore) RecordAuxiliaryUsage(ctx context.Context, sessionI
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	payload := pyjson.ObjectOf("model", noneIfNil(usage.Model), "billing_provider", noneIfNil(usage.BillingProvider),
+	payload := jsonutil.ObjectOf("model", noneIfNil(usage.Model), "billing_provider", noneIfNil(usage.BillingProvider),
 		"billing_base_url", noneIfNil(usage.BillingBaseURL), "input_tokens", usage.InputTokens, "output_tokens", usage.OutputTokens,
 		"cache_read_tokens", usage.CacheReadTokens, "cache_write_tokens", usage.CacheWriteTokens, "reasoning_tokens", usage.ReasoningTokens,
 		"estimated_cost_usd", noneIfNil(usage.EstimatedCostUSD))
@@ -175,7 +175,7 @@ func (s *RuntimeSessionStore) RecordAuxiliaryUsage(ctx context.Context, sessionI
 }
 
 // Session row as the receipt reads it, AttributeError when the owner answered None
-func (s *RuntimeSessionStore) sessionRow(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (s *RuntimeSessionStore) sessionRow(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	row, err := s.GetSession(ctx, sessionID)
 	if err != nil {
 		return nil, err
@@ -192,7 +192,7 @@ func (s *RuntimeSessionStore) GetSessionTitle(ctx context.Context, sessionID str
 	if err != nil {
 		return "", false, err
 	}
-	title := row.GetOr("title", nil)
+	title := row.ValueOr("title", nil)
 	if title == nil {
 		return "", false, nil
 	}
@@ -205,7 +205,7 @@ func (s *RuntimeSessionStore) LatestConversationRole(ctx context.Context, sessio
 	if err := s.session(sessionID); err != nil {
 		return "", err
 	}
-	value, err := s.applyValue(ctx, "session.tail_role", pyjson.NewObject())
+	value, err := s.applyValue(ctx, "session.tail_role", jsonutil.NewObject())
 	if err != nil {
 		return "", err
 	}
@@ -217,7 +217,7 @@ func (s *RuntimeSessionStore) GetMessageRole(ctx context.Context, sessionID stri
 	if err := s.session(sessionID); err != nil {
 		return "", false, err
 	}
-	value, err := s.applyValue(ctx, "session.row_role", pyjson.ObjectOf("row_id", rowID))
+	value, err := s.applyValue(ctx, "session.row_role", jsonutil.ObjectOf("row_id", rowID))
 	if err != nil || value == nil {
 		return "", false, err
 	}
@@ -231,8 +231,8 @@ func (s *RuntimeSessionStore) GetCompressionFailureCooldownRow(sessionID string)
 	if err != nil {
 		return state.CompressionCooldownRow{}, err
 	}
-	out := state.CompressionCooldownRow{SessionExists: true, Error: row.GetOr("compression_failure_error", nil)}
-	if v := row.GetOr("compression_failure_cooldown_until", nil); v != nil {
+	out := state.CompressionCooldownRow{SessionExists: true, Error: row.ValueOr("compression_failure_error", nil)}
+	if v := row.ValueOr("compression_failure_cooldown_until", nil); v != nil {
 		f, err := pyFloatValue(v)
 		if err != nil {
 			return state.CompressionCooldownRow{}, err
@@ -265,7 +265,7 @@ func pyFloatValue(v any) (float64, error) {
 }
 
 // Unexpired cooldown with its remaining seconds, nil when none is live
-func (s *RuntimeSessionStore) GetCompressionFailureCooldown(sessionID string) (*pyjson.Object, error) {
+func (s *RuntimeSessionStore) GetCompressionFailureCooldown(sessionID string) (*jsonutil.Object, error) {
 	now := float64(time.Now().UnixNano()) / 1e9
 	row, err := s.GetCompressionFailureCooldownRow(sessionID)
 	if err != nil {
@@ -274,7 +274,7 @@ func (s *RuntimeSessionStore) GetCompressionFailureCooldown(sessionID string) (*
 	if row.CooldownUntil == nil || *row.CooldownUntil <= now {
 		return nil, nil
 	}
-	return pyjson.ObjectOf("cooldown_until", *row.CooldownUntil, "remaining_seconds", *row.CooldownUntil-now, "error", row.Error), nil
+	return jsonutil.ObjectOf("cooldown_until", *row.CooldownUntil, "remaining_seconds", *row.CooldownUntil-now, "error", row.Error), nil
 }
 
 // Live cooldown in the compressor's typed shape
@@ -283,9 +283,9 @@ func (s *RuntimeSessionStore) CompressionCooldown(sessionID string) (state.Compr
 	if err != nil || row == nil {
 		return state.CompressionCooldown{}, err
 	}
-	out := state.CompressionCooldown{Until: row.GetOr("cooldown_until", 0.0).(float64), RemainingSeconds: row.GetOr("remaining_seconds", 0.0).(float64)}
-	if v := row.GetOr("error", nil); v != nil {
-		out.Error = pyrepr.Str(v)
+	out := state.CompressionCooldown{Until: row.ValueOr("cooldown_until", 0.0).(float64), RemainingSeconds: row.ValueOr("remaining_seconds", 0.0).(float64)}
+	if v := row.ValueOr("error", nil); v != nil {
+		out.Error = anyutil.String(v)
 	}
 	return out, nil
 }
@@ -296,8 +296,8 @@ func (s *RuntimeSessionStore) sessionNumber(sessionID, column string, integral b
 	if err != nil {
 		return 0, err
 	}
-	raw := row.GetOr(column, nil)
-	if !pyrepr.Truthy(raw) {
+	raw := row.ValueOr(column, nil)
+	if !anyutil.IsTrue(raw) {
 		return 0, nil
 	}
 	var f float64
@@ -357,7 +357,7 @@ func (s *RuntimeSessionStore) GetSessionModelConfigValue(ctx context.Context, se
 	if err != nil {
 		return nil, err
 	}
-	config := state.ParseModelConfig(row.GetOr("model_config", nil))
+	config := state.ParseModelConfig(row.ValueOr("model_config", nil))
 	if v, ok := config[key]; ok {
 		return v, nil
 	}
@@ -370,7 +370,7 @@ func (s *RuntimeSessionStore) GetModelConfigValue(sessionID, key string) (any, b
 	if err != nil {
 		return nil, false, err
 	}
-	v, ok := state.ParseModelConfig(row.GetOr("model_config", nil))[key]
+	v, ok := state.ParseModelConfig(row.ValueOr("model_config", nil))[key]
 	return v, ok, nil
 }
 
@@ -416,7 +416,7 @@ func (s *RuntimeSessionStore) UpdateSystemPrompt(ctx context.Context, sessionID 
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(ctx, "session.prompt", pyjson.ObjectOf("system_prompt", noneIfNil(systemPrompt)))
+	_, err := s.apply(ctx, "session.prompt", jsonutil.ObjectOf("system_prompt", noneIfNil(systemPrompt)))
 	return err
 }
 
@@ -425,8 +425,8 @@ func (s *RuntimeSessionStore) PatchSessionModelConfig(ctx context.Context, sessi
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	obj, _ := pyjson.AsObject(patch)
-	_, err := s.apply(ctx, "session.sidecars", pyjson.ObjectOf("patch", obj))
+	obj, _ := jsonutil.AsObject(patch)
+	_, err := s.apply(ctx, "session.sidecars", jsonutil.ObjectOf("patch", obj))
 	return err
 }
 
@@ -440,6 +440,6 @@ func (s *RuntimeSessionStore) UpdateSessionToolNames(sessionID string, pin any) 
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(context.Background(), "session.tools", pyjson.ObjectOf("tool_names", pin))
+	_, err := s.apply(context.Background(), "session.tools", jsonutil.ObjectOf("tool_names", pin))
 	return err
 }

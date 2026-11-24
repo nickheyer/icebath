@@ -6,9 +6,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One pet operation with its profile home, output writer and tool environment
@@ -45,7 +45,7 @@ func truthy(v any, def bool) bool {
 		}
 		return false
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Whether display.pet.enabled is truthy
@@ -53,8 +53,8 @@ func Enabled(cfg map[string]any) bool { return truthy(cfg["enabled"], false) }
 
 // str of a config value or empty when falsy
 func CfgText(cfg map[string]any, key string) string {
-	if v := cfg[key]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := cfg[key]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -71,7 +71,7 @@ func (r *Run) UpdatePetConfig(whenSlug *string, values ...any) (bool, error) {
 		cfg["display"] = display
 	}
 	if !ok {
-		return false, &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + pyrepr.TypeName(cfg["display"]) + "' object has no attribute 'setdefault'"}
+		return false, &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + anyutil.Kind(cfg["display"]) + "' object has no attribute 'setdefault'"}
 	}
 	petVal, present := display["pet"]
 	if !present {
@@ -83,7 +83,7 @@ func (r *Run) UpdatePetConfig(whenSlug *string, values ...any) (bool, error) {
 		return false, nil
 	}
 	if !isDict {
-		return false, &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + pyrepr.TypeName(petVal) + "' object has no attribute 'update'"}
+		return false, &pyrepr.FormatError{Class: "AttributeError", Msg: "'" + anyutil.Kind(petVal) + "' object has no attribute 'update'"}
 	}
 	for i := 0; i+1 < len(values); i += 2 {
 		petCfg[values[i].(string)] = values[i+1]
@@ -105,14 +105,14 @@ func (r *Run) HasActivePet() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return Enabled(cfg) && pyrepr.Truthy(cfg["slug"]), nil
+	return Enabled(cfg) && anyutil.IsTrue(cfg["slug"]), nil
 }
 
 // Persists the clamped display.pet.scale, a message and nothing written when the value is not a number
 func (r *Run) SetPetScale(value any) (float64, string, error) {
-	f, err := pyint.Float(value)
+	f, err := anyutil.ToFloat(value)
 	if err != nil {
-		return 0, "not a number: " + pyrepr.Repr(value) + " — try a value like 0.5", nil
+		return 0, "not a number: " + anyutil.Quote(value) + " — try a value like 0.5", nil
 	}
 	scale := ClampScale(f)
 	if _, err := r.UpdatePetConfig(nil, "scale", scale); err != nil {

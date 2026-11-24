@@ -26,13 +26,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -45,7 +45,7 @@ const (
 var (
 	debugPasteRSURL             = "https://paste.rs/"
 	debugDpasteComURL           = "https://dpaste.com/api/"
-	debugStderr       io.Writer = pysys.Stderr
+	debugStderr       io.Writer = termutil.Stderr
 	debugConsole                = func(w io.Writer) *cliui.Console { return &cliui.Console{In: os.Stdin, Out: w} }
 	debugNow                    = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 )
@@ -98,16 +98,16 @@ func debugPendingFile(ctx context.Context) string {
 }
 
 // Pending paste entries holding a url and an expire_at, empty when the file is unreadable
-func debugLoadPending(ctx context.Context) []*pyjson.Object {
+func debugLoadPending(ctx context.Context) []*jsonutil.Object {
 	raw, err := os.ReadFile(debugPendingFile(ctx))
 	if err != nil {
 		return nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
@@ -115,11 +115,11 @@ func debugLoadPending(ctx context.Context) []*pyjson.Object {
 	if !ok {
 		return nil
 	}
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	for _, item := range list {
-		if e, ok := pyjson.AsObject(item); ok {
-			_, hasURL := e.Vals["url"]
-			_, hasExpire := e.Vals["expire_at"]
+		if e, ok := jsonutil.AsObject(item); ok {
+			_, hasURL := e.Get("url")
+			_, hasExpire := e.Get("expire_at")
 			if hasURL && hasExpire {
 				out = append(out, e)
 			}
@@ -129,7 +129,7 @@ func debugLoadPending(ctx context.Context) []*pyjson.Object {
 }
 
 // Writes the pending list, a failed write left for a manual debug delete
-func debugSavePending(ctx context.Context, entries []*pyjson.Object) {
+func debugSavePending(ctx context.Context, entries []*jsonutil.Object) {
 	list := make([]any, len(entries))
 	for i, e := range entries {
 		list[i] = e
@@ -144,18 +144,18 @@ func debugPendingLock(ctx context.Context) (func(), error) {
 }
 
 // Float expire_at of a pending entry, false when it is malformed
-func debugExpireAt(e *pyjson.Object) (float64, bool) {
-	raw, has := e.Vals["expire_at"]
+func debugExpireAt(e *jsonutil.Object) (float64, bool) {
+	raw, has := e.Get("expire_at")
 	if !has {
 		raw = 0
 	}
-	v, err := pyint.Float(raw)
+	v, err := anyutil.ToFloat(raw)
 	return v, err == nil
 }
 
-func debugEntryURL(e *pyjson.Object) string {
-	if raw, has := e.Vals["url"]; has {
-		return pyrepr.Str(raw)
+func debugEntryURL(e *jsonutil.Object) string {
+	if raw, has := e.Get("url"); has {
+		return anyutil.String(raw)
 	}
 	return ""
 }
@@ -190,7 +190,7 @@ func debugSweepExpiredPastes(ctx context.Context, now *float64) (int, int, error
 	}
 	defer release()
 	latest := debugLoadPending(ctx)
-	remaining := []*pyjson.Object{}
+	remaining := []*jsonutil.Object{}
 	for _, e := range latest {
 		if debugKeepAfterSweep(e, reaped, current) {
 			remaining = append(remaining, e)
@@ -203,7 +203,7 @@ func debugSweepExpiredPastes(ctx context.Context, now *float64) (int, int, error
 }
 
 // Whether an entry survives a sweep, a url rescheduled during the sweep staying
-func debugKeepAfterSweep(e *pyjson.Object, reaped map[string]bool, current float64) bool {
+func debugKeepAfterSweep(e *jsonutil.Object, reaped map[string]bool, current float64) bool {
 	expireAt, ok := debugExpireAt(e)
 	if !ok {
 		return false
@@ -306,7 +306,7 @@ var debugScheduleAutoDelete = func(ctx context.Context, urls []string, delaySeco
 	byURL := map[string]float64{}
 	for _, e := range debugLoadPending(ctx) {
 		u := debugEntryURL(e)
-		v, err := pyint.Float(e.Vals["expire_at"])
+		v, err := anyutil.ToFloat(e.Value("expire_at"))
 		if err != nil {
 			return err
 		}
@@ -323,9 +323,9 @@ var debugScheduleAutoDelete = func(ctx context.Context, urls []string, delaySeco
 		}
 		byURL[u] = max(expireAt, prev)
 	}
-	entries := make([]*pyjson.Object, len(order))
+	entries := make([]*jsonutil.Object, len(order))
 	for i, u := range order {
-		entries[i] = pyjson.ObjectOf("url", u, "expire_at", byURL[u])
+		entries[i] = jsonutil.ObjectOf("url", u, "expire_at", byURL[u])
 	}
 	debugSavePending(ctx, entries)
 	return nil
@@ -338,7 +338,7 @@ func debugPostPaste(ctx context.Context, service, endpoint string, body []byte, 
 	if err != nil {
 		return "", err
 	}
-	text, err := pystr.DecodeUTF8(data)
+	text, err := textutil.DecodeUTF8(data)
 	if err != nil {
 		return "", &pm.PyError{Class: "UnicodeDecodeError", Message: err.Error()}
 	}
@@ -614,8 +614,8 @@ var debugCollectDebugReport = func(ctx context.Context, logLines int, dumpText s
 		buf.WriteString("\n\n--- transcript sanitiser heal counters ---\n")
 		for _, s := range sessions {
 			st := stats[s]
-			fmt.Fprintf(&buf, "session %s: %s heal events, %s messages healed, escalated=%s\n", s, pyrepr.Str(st["heal_events"]),
-				pyrepr.Str(st["messages_healed"]), pyrepr.Str(st["escalated"]))
+			fmt.Fprintf(&buf, "session %s: %s heal events, %s messages healed, escalated=%s\n", s, anyutil.String(st["heal_events"]),
+				anyutil.String(st["messages_healed"]), anyutil.String(st["escalated"]))
 		}
 	}()
 	buf.WriteString("\n")
@@ -726,7 +726,7 @@ func BuildDebugShare(ctx context.Context, logLines, expiry int, redact bool) (*D
 
 // Upload gate, the yes flag proceeding unprompted and otherwise an interactive confirmation, exit 1 without a terminal
 func debugConfirmUpload(ns map[string]any, w io.Writer) (bool, int) {
-	if pyrepr.Truthy(ns["yes"]) {
+	if anyutil.IsTrue(ns["yes"]) {
 		return true, 0
 	}
 	c := debugConsole(w)
@@ -771,8 +771,8 @@ func runDebugShare(ctx context.Context, ns map[string]any, w io.Writer) (int, er
 	if err != nil {
 		return 1, err
 	}
-	redact := !pyrepr.Truthy(ns["no_redact"])
-	if pyrepr.Truthy(ns["local"]) {
+	redact := !anyutil.IsTrue(ns["no_redact"])
+	if anyutil.IsTrue(ns["local"]) {
 		debugBestEffortSweep(ctx)
 		fmt.Fprintln(w, "Collecting debug report...")
 		bundle, err := debugCollectShareBundle(ctx, logLines, redact)
@@ -839,7 +839,7 @@ func runDebugDelete(ctx context.Context, ns map[string]any, w io.Writer) (int, e
 		urls = v
 	case []any:
 		for _, u := range v {
-			urls = append(urls, pyrepr.Str(u))
+			urls = append(urls, anyutil.String(u))
 		}
 	}
 	if len(urls) == 0 {

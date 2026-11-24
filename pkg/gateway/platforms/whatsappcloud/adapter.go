@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os/exec"
 	"strings"
 	"sync"
 	"time"
@@ -16,13 +17,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/whatsapp"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const (
@@ -82,7 +81,10 @@ var (
 
 // ffmpeg found on PATH at load, empty when voice notes fall back to MP3 attachments
 var ffmpegPath = func() string {
-	path, _ := pyshutil.Which("ffmpeg", nil)
+	path, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		return ""
+	}
 	return path
 }()
 
@@ -95,26 +97,26 @@ func mustFullmatch(pattern string) *regexp2.Regexp {
 	return re
 }
 
-// Python exception carried as a Go error with its class name
+// Error carrying a kind label beside its message
 type pyErr struct{ kind, msg string }
 
-func (e *pyErr) Error() string      { return e.msg }
-func (e *pyErr) PyTypeName() string { return e.kind }
+func (e *pyErr) Error() string     { return e.msg }
+func (e *pyErr) ErrorKind() string { return e.kind }
 
-// AttributeError of calling a dict method on a value that is not a dict
-func noAttr(v any, attr string) error {
-	return &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+// Error for a decoded value that is not the object the payload shape requires
+func notObject(v any) error {
+	return fmt.Errorf("expected an object, got %s", anyutil.Kind(v))
 }
 
-// Dict view of a value or an empty dict for a falsy one, the AttributeError get raises on anything else
+// Map view of a value or an empty map for an empty or missing one, an error for anything else
 func dictOr(v any) (map[string]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return map[string]any{}, nil
 	}
-	if m, ok := pyjson.Dict(v); ok {
+	if m, ok := jsonutil.AsMap(v); ok {
 		return m, nil
 	}
-	return nil, noAttr(v, "get")
+	return nil, notObject(v)
 }
 
 // Value under key or the default when the key is absent
@@ -125,17 +127,17 @@ func getOr(m map[string]any, key string, def any) any {
 	return def
 }
 
-// str of a value with falsy values reading as empty, stripped
+// Trimmed text of a value, empty for an empty or missing one
 func strField(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
-// Items Python iteration of a decoded value yields, the TypeError iterating a scalar raises
-func pyIter(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+// Items of a decoded value: the elements of an array, the characters of a text, the keys of an object, nothing for an empty or missing value and an error for a scalar
+func iterItems(v any) ([]any, error) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	switch t := v.(type) {
@@ -148,9 +150,9 @@ func pyIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	if m, ok := pyjson.AsObject(v); ok {
+	if m, ok := jsonutil.AsObject(v); ok {
 		out := []any{}
-		for _, k := range m.Keys {
+		for _, k := range m.Keys() {
 			out = append(out, k)
 		}
 		return out, nil
@@ -162,15 +164,7 @@ func pyIter(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyErr{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
-}
-
-// str of an exception, the class name when its message is empty
-func errText(err error) string {
-	if msg := pyrepr.ExceptionMessage(err); msg != "" {
-		return msg
-	}
-	return pyrepr.ExceptionName(err)
+	return nil, fmt.Errorf("expected an array, got %s", anyutil.Kind(v))
 }
 
 // On disk extension of a mime from the WhatsApp overrides then mimetypes, empty when neither knows it
@@ -264,15 +258,15 @@ type WhatsAppCloudAdapter struct {
 	mu                     sync.Mutex
 	httpClient             *http.Client
 	runner                 *gateway.HTTPAppRunner
-	seenWamids             *pydict.Dict[string, bool]
+	seenWamids             *orderedutil.Map[string, bool]
 	duplicateCount         int
 	acceptedCount          int
 	rejectedSignatureCount int
 	warnedNoFFmpeg         bool
-	lastInboundWamidByChat *pydict.Dict[string, string]
-	clarifyState           *pydict.Dict[string, string]
-	execApprovalState      *pydict.Dict[string, string]
-	slashConfirmState      *pydict.Dict[string, string]
+	lastInboundWamidByChat *orderedutil.Map[string, string]
+	clarifyState           *orderedutil.Map[string, string]
+	execApprovalState      *orderedutil.Map[string, string]
+	slashConfirmState      *orderedutil.Map[string, string]
 
 	handleMessage func(ctx context.Context, event *gateway.MessageEvent) error
 }
@@ -280,9 +274,9 @@ type WhatsAppCloudAdapter struct {
 // Adapter configured from extra and the scoped WhatsApp env, the int error for a malformed port
 func NewWhatsAppCloudAdapter(ctx context.Context, config *gateway.PlatformConfig) (*WhatsAppCloudAdapter, error) {
 	a := &WhatsAppCloudAdapter{
-		seenWamids: pydict.New[string, bool](), lastInboundWamidByChat: pydict.New[string, string](),
-		clarifyState: pydict.New[string, string](), execApprovalState: pydict.New[string, string](),
-		slashConfirmState: pydict.New[string, string](),
+		seenWamids: orderedutil.NewMap[string, bool](), lastInboundWamidByChat: orderedutil.NewMap[string, string](),
+		clarifyState: orderedutil.NewMap[string, string](), execApprovalState: orderedutil.NewMap[string, string](),
+		slashConfirmState: orderedutil.NewMap[string, string](),
 	}
 	a.BasePlatformAdapter = gateway.NewBasePlatformAdapter(config, gateway.PlatformWhatsAppCloud, a)
 	a.Traits = adapterTraits()
@@ -298,20 +292,20 @@ func NewWhatsAppCloudAdapter(ctx context.Context, config *gateway.PlatformConfig
 		"app_id": &a.appID, "app_secret": &a.appSecret, "waba_id": &a.wabaID, "verify_token": &a.verifyToken} {
 		*field = strField(extra[key])
 	}
-	if host := extra["webhook_host"]; pyrepr.Truthy(host) {
-		h := pyrepr.Str(host)
+	if host := extra["webhook_host"]; anyutil.IsTrue(host) {
+		h := anyutil.String(host)
 		a.webhookHost = &h
 	}
-	port, err := pyint.Int64(getOr(extra, "webhook_port", int64(defaultWebhookPort)))
+	port, err := anyutil.ToInt(getOr(extra, "webhook_port", int64(defaultWebhookPort)))
 	if err != nil {
 		return nil, err
 	}
 	a.webhookPort = int(port)
 	a.webhookPath = normalizePath(getOr(extra, "webhook_path", defaultWebhookPath))
 	a.healthPath = normalizePath(getOr(extra, "health_path", "/health"))
-	a.apiVersion = pyrepr.Str(getOr(extra, "api_version", defaultAPIVersion))
+	a.apiVersion = anyutil.String(getOr(extra, "api_version", defaultAPIVersion))
 	if rp, ok := extra["reply_prefix"]; ok && rp != nil {
-		s := pyrepr.Str(rp)
+		s := anyutil.String(rp)
 		a.ReplyPrefix = &s
 	}
 	readEnv := func(name string) (string, error) {
@@ -349,8 +343,8 @@ func NewWhatsAppCloudAdapter(ctx context.Context, config *gateway.PlatformConfig
 
 // Policy from the config value, then each scoped env carrier in order, then the default, lowercased
 func firstPolicy(ctx context.Context, configured any, envs []string, def string) (string, error) {
-	if pyrepr.Truthy(configured) {
-		return strings.ToLower(strings.TrimSpace(pyrepr.Str(configured))), nil
+	if anyutil.IsTrue(configured) {
+		return strings.ToLower(strings.TrimSpace(anyutil.String(configured))), nil
 	}
 	for _, env := range envs {
 		v, _, err := wsecret(ctx, env)
@@ -414,7 +408,7 @@ func (a *WhatsAppCloudAdapter) entryMatches(ctx context.Context, entries map[str
 
 // Whether a signed callback names the configured phone number id and, when set, the WABA id
 func (a *WhatsAppCloudAdapter) webhookIdentityMatches(entryID, metadata any) bool {
-	m, ok := pyjson.Dict(metadata)
+	m, ok := jsonutil.AsMap(metadata)
 	if !ok {
 		m = map[string]any{}
 	}
@@ -498,8 +492,8 @@ func (a *WhatsAppCloudAdapter) Disconnect(ctx context.Context) error {
 	return nil
 }
 
-// One request with httpx phase timeouts, transport failures carrying the httpx error text
-func doRequest(ctx context.Context, client *http.Client, method, rawURL string, headers map[string]string, body []byte) (*pyhttpx.Response, error) {
+// One request with a timeout on each phase, the caller's cancellation reported before a transport failure
+func doRequest(ctx context.Context, client *http.Client, method, rawURL string, headers map[string]string, body []byte) (*httputil.Response, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -511,23 +505,19 @@ func doRequest(ctx context.Context, client *http.Client, method, rawURL string, 
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := pyhttpx.Do(client, req, requestTimeout)
+	resp, err := httputil.Do(client, req, httputil.EachPhase(requestTimeout))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		var te *pyhttpx.TimeoutError
-		if errors.As(err, &te) {
-			return nil, &pyErr{"ReadTimeout", te.Error()}
-		}
-		return nil, &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+		return nil, err
 	}
 	return resp, nil
 }
 
 // JSON POST to a Graph URL with the bearer headers
-func (a *WhatsAppCloudAdapter) postJSON(ctx context.Context, client *http.Client, rawURL string, payload any) (*pyhttpx.Response, error) {
-	text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+func (a *WhatsAppCloudAdapter) postJSON(ctx context.Context, client *http.Client, rawURL string, payload any) (*httputil.Response, error) {
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -535,14 +525,14 @@ func (a *WhatsAppCloudAdapter) postJSON(ctx context.Context, client *http.Client
 }
 
 // Actionable error text of a non 200 Graph response, graph error code first when present
-func responseError(resp *pyhttpx.Response) (string, error) {
+func responseError(resp *httputil.Response) (string, error) {
 	body, err := resp.JSON()
 	if err != nil {
 		text := []rune(resp.Text())
 		if len(text) > 500 {
 			text = text[:500]
 		}
-		body = pyjson.ObjectOf("raw", string(text))
+		body = jsonutil.ObjectOf("raw", string(text))
 	}
 	bm, err := dictOr(body)
 	if err != nil {
@@ -553,25 +543,25 @@ func responseError(resp *pyhttpx.Response) (string, error) {
 		return "", err
 	}
 	message := errBlock["message"]
-	if !pyrepr.Truthy(message) {
+	if !anyutil.IsTrue(message) {
 		raw, err := dictOf(body)
 		if err != nil {
 			return "", err
 		}
-		message = pyrepr.Or(raw["raw"], "unknown error")
+		message = anyutil.Or(raw["raw"], "unknown error")
 	}
 	if code, ok := errBlock["code"]; ok && code != nil {
-		return fmt.Sprintf("graph error %s (HTTP %d): %s", pyrepr.Str(code), resp.StatusCode, pyrepr.Str(message)), nil
+		return fmt.Sprintf("graph error %s (HTTP %d): %s", anyutil.String(code), resp.StatusCode, anyutil.String(message)), nil
 	}
-	return fmt.Sprintf("HTTP %d: %s", resp.StatusCode, pyrepr.Str(message)), nil
+	return fmt.Sprintf("HTTP %d: %s", resp.StatusCode, anyutil.String(message)), nil
 }
 
-// Dict view of a decoded value, the AttributeError get raises otherwise
+// Map view of a decoded value, an error for anything that is not an object
 func dictOf(v any) (map[string]any, error) {
-	if m, ok := pyjson.Dict(v); ok {
+	if m, ok := jsonutil.AsMap(v); ok {
 		return m, nil
 	}
-	return nil, noAttr(v, "get")
+	return nil, notObject(v)
 }
 
 // Log lines of one messages POST, the reject line taking the status, its extra args and the error
@@ -588,7 +578,7 @@ func (a *WhatsAppCloudAdapter) postMessages(ctx context.Context, client *http.Cl
 			return nil, nil, ctx.Err()
 		}
 		pkgLog().Error(logs.fail + ": " + err.Error())
-		msg := errText(err)
+		msg := err.Error()
 		return nil, &msg, nil
 	}
 	if resp.StatusCode != http.StatusOK {
@@ -604,14 +594,14 @@ func (a *WhatsAppCloudAdapter) postMessages(ctx context.Context, client *http.Cl
 	if err != nil {
 		return []any{}, nil, nil
 	}
-	m, ok := pyjson.Dict(decoded)
+	m, ok := jsonutil.AsMap(decoded)
 	if !ok {
 		return []any{}, nil, nil
 	}
-	if !pyrepr.Truthy(m["messages"]) {
+	if !anyutil.IsTrue(m["messages"]) {
 		return []any{}, nil, nil
 	}
-	items, err := pyIter(m["messages"])
+	items, err := iterItems(m["messages"])
 	return items, nil, err
 }
 
@@ -649,22 +639,22 @@ func (a *WhatsAppCloudAdapter) postMessageResult(ctx context.Context, payload an
 
 // Adds an emoji reaction to a message as a Cloud API reaction message
 func (a *WhatsAppCloudAdapter) AddReaction(ctx context.Context, chatID, messageID, emoji string) error {
-	result, err := a.postMessageResult(ctx, outboundPayload(chatID, "reaction", pyjson.ObjectOf("message_id", messageID, "emoji", emoji), nil),
+	result, err := a.postMessageResult(ctx, outboundPayload(chatID, "reaction", jsonutil.ObjectOf("message_id", messageID, "emoji", emoji), nil),
 		postLogs{fail: "[whatsapp_cloud] reaction send failed", reject: "[whatsapp_cloud] reaction rejected (status=%d): %s"})
 	if err != nil {
 		return err
 	}
 	if !result.Success {
-		return errors.New(pyrepr.Str(result.Error))
+		return errors.New(anyutil.String(result.Error))
 	}
 	return nil
 }
 
 // Common messages envelope quoting replyTo when one is given
-func outboundPayload(chatID, kind string, block, replyTo any) *pyjson.Object {
-	payload := pyjson.ObjectOf("messaging_product", "whatsapp", "recipient_type", "individual", "to", chatID, "type", kind, kind, block)
-	if pyrepr.Truthy(replyTo) {
-		payload.Set("context", pyjson.ObjectOf("message_id", replyTo))
+func outboundPayload(chatID, kind string, block, replyTo any) *jsonutil.Object {
+	payload := jsonutil.ObjectOf("messaging_product", "whatsapp", "recipient_type", "individual", "to", chatID, "type", kind, kind, block)
+	if anyutil.IsTrue(replyTo) {
+		payload.Set("context", jsonutil.ObjectOf("message_id", replyTo))
 	}
 	return payload
 }
@@ -685,7 +675,7 @@ func (a *WhatsAppCloudAdapter) Send(ctx context.Context, chatID, content, replyT
 		if idx == 0 && replyTo != "" {
 			quote = replyTo
 		}
-		payload := outboundPayload(chatID, "text", pyjson.ObjectOf("body", chunk, "preview_url", true), quote)
+		payload := outboundPayload(chatID, "text", jsonutil.ObjectOf("body", chunk, "preview_url", true), quote)
 		ids, errMsg, err := a.postMessages(ctx, client, payload, postLogs{fail: "[whatsapp_cloud] send failed",
 			reject: "[whatsapp_cloud] send rejected (status=%d): %s"})
 		if err != nil {
@@ -700,7 +690,7 @@ func (a *WhatsAppCloudAdapter) Send(ctx context.Context, chatID, content, replyT
 			}
 		}
 	}
-	if pyrepr.Truthy(lastMessageID) {
+	if anyutil.IsTrue(lastMessageID) {
 		gateway.RichSentRecord(ctx, chatID, lastMessageID, formatted)
 	}
 	return gateway.SendResult{Success: true, MessageID: lastMessageID}, nil
@@ -715,8 +705,8 @@ func (a *WhatsAppCloudAdapter) SendTyping(ctx context.Context, chatID string, me
 	if client == nil || wamid == "" {
 		return nil
 	}
-	payload := pyjson.ObjectOf("messaging_product", "whatsapp", "status", "read", "message_id", wamid,
-		"typing_indicator", pyjson.ObjectOf("type", "text"))
+	payload := jsonutil.ObjectOf("messaging_product", "whatsapp", "status", "read", "message_id", wamid,
+		"typing_indicator", jsonutil.ObjectOf("type", "text"))
 	resp, err := a.postJSON(ctx, client, a.graphURL("messages"), payload)
 	if err != nil || resp.StatusCode == http.StatusOK {
 		return nil
@@ -729,10 +719,10 @@ func (a *WhatsAppCloudAdapter) SendTyping(ctx context.Context, chatID string, me
 			}
 		}
 	}
-	if pyrepr.Equal(code, int64(131009)) {
+	if anyutil.Equal(code, int64(131009)) {
 		pkgLog().Info(fmt.Sprintf("[whatsapp_cloud] typing/read indicator rejected: wamid %s likely older than 30 days", wamid))
 	} else {
-		pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] typing/read indicator returned %d (%s)", resp.StatusCode, pyrepr.Str(code)))
+		pkgLog().Debug(fmt.Sprintf("[whatsapp_cloud] typing/read indicator returned %d (%s)", resp.StatusCode, anyutil.String(code)))
 	}
 	return nil
 }

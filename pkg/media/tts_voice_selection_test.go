@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ElevenLabs voice config with a configured voice
@@ -51,12 +51,12 @@ func TestVoiceSelectionSurfaceFollowsProvider(t *testing.T) {
 				t.Fatal(err)
 			}
 			searched := decodeEnvelope(t, raw)
-			params := pyjson.Plain(schema.Vals["parameters"]).(map[string]any)
+			params := jsonutil.Plain(schema.Value("parameters")).(map[string]any)
 			props := params["properties"].(map[string]any)
 			_, hasVoice := props["voice_id"]
 			_, hasFind := props["find_voices"]
 			required := params["required"].([]any)
-			desc, _ := schema.Vals["description"].(string)
+			desc, _ := schema.Value("description").(string)
 			if hasVoice != c.exposed || hasFind != c.exposed || (len(required) == 0) != c.exposed || strings.Contains(desc, "find_voices") != c.exposed {
 				t.Fatalf("schema = %v", schema)
 			}
@@ -185,7 +185,7 @@ func TestProviderSwitchReshapesTheSchemaAtOnce(t *testing.T) {
 		if err := os.Chtimes(configPath, at, at); err != nil {
 			t.Fatal(err)
 		}
-		return pyjson.Plain(def.DynamicSchema(&tools.Env{Home: h}).Vals["parameters"]).(map[string]any)["properties"].(map[string]any)
+		return jsonutil.Plain(def.DynamicSchema(&tools.Env{Home: h}).Value("parameters")).(map[string]any)["properties"].(map[string]any)
 	}
 	if _, ok := props("openai", 1_700_000_000)["find_voices"]; ok {
 		t.Fatal("openai listing exposed find_voices")

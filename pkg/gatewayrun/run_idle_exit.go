@@ -9,8 +9,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -30,7 +31,7 @@ func idleExitSeconds(ctx context.Context) float64 {
 
 // Stamps client activity on the idle clock
 func noteClientActivity(r *GatewayRunner) {
-	r.idleExitLastActivity.Store(math.Float64bits(pythread.Monotonic()))
+	r.idleExitLastActivity.Store(math.Float64bits(timeutil.Monotonic()))
 }
 
 // Counts one live client connection for the idle check until the returned release runs, stamping activity on both ends
@@ -140,7 +141,7 @@ func ledgerBusy(ctx context.Context, r *GatewayRunner) (string, error) {
 			if err != nil {
 				return "", err
 			}
-			if pyrepr.Truthy(status["current_tasks"]) || pyrepr.Truthy(status["leased_rooms"]) {
+			if anyutil.IsTrue(status["current_tasks"]) || anyutil.IsTrue(status["leased_rooms"]) {
 				return "hosted-room work in " + a.ProfileID, nil
 			}
 		}
@@ -187,7 +188,7 @@ func clientBusy(r *GatewayRunner, window float64) string {
 	if idleAttaching(r) {
 		return "client attaching"
 	}
-	quiet := pythread.Monotonic() - math.Float64frombits(r.idleExitLastActivity.Load())
+	quiet := timeutil.Monotonic() - math.Float64frombits(r.idleExitLastActivity.Load())
 	if quiet < window {
 		return fmt.Sprintf("client activity %.0fs ago", quiet)
 	}
@@ -303,9 +304,9 @@ func unmanagedIdleExitWatcher(ctx context.Context, r *GatewayRunner) error {
 			continue
 		}
 		if idleSince == 0 {
-			idleSince = pythread.Monotonic()
+			idleSince = timeutil.Monotonic()
 		}
-		if pythread.Monotonic()-idleSince < interval && window > interval {
+		if timeutil.Monotonic()-idleSince < interval && window > interval {
 			continue
 		}
 		if busyReason(ctx, r, window) == "" {

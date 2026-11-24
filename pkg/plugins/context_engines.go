@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -79,12 +79,12 @@ func DiscoverContextEngines(ctx context.Context) ([]ContextEngineInfo, error) {
 // Engine dir of a name, bundled first then a user plugin dir that holds a context engine
 func FindEngineDir(ctx context.Context, name string) (string, bool) {
 	if dir := contextEnginePluginsDir(); dir != "" {
-		if bundled := pypath.Join(dir, name); guestManifestOfDir(bundled) != nil {
+		if bundled := pathutil.Join(dir, name); guestManifestOfDir(bundled) != nil {
 			return bundled, true
 		}
 	}
 	if userDir, ok := UserPluginsDir(ctx); ok {
-		if user := pypath.Join(userDir, name); isDir(user) && isContextEngineDir(user) {
+		if user := pathutil.Join(userDir, name); isDir(user) && isContextEngineDir(user) {
 			return user, true
 		}
 	}
@@ -171,7 +171,7 @@ func (e *engineCollector) registerCommand(m *Manager, rawName any, handler Plugi
 	if config.PyTruthy(rawName) {
 		nameText = config.PyStr(rawName)
 	}
-	clean := strings.ReplaceAll(strings.TrimLeft(pyStrip(strings.ToLower(nameText)), "/"), " ", "-")
+	clean := strings.ReplaceAll(strings.TrimLeft(strings.TrimSpace(strings.ToLower(nameText)), "/"), " ", "-")
 	if clean == "" {
 		pkgLog().Warn(fmt.Sprintf("Context engine '%s' tried to register a command with an empty name.", e.name))
 		return
@@ -190,7 +190,7 @@ func (e *engineCollector) registerCommand(m *Manager, rawName any, handler Plugi
 	}
 	hint := ""
 	if config.PyTruthy(argsHint) {
-		hint = pyStrip(config.PyStr(argsHint))
+		hint = strings.TrimSpace(config.PyStr(argsHint))
 	}
 	m.mu.Lock()
 	if _, taken := m.pluginCommands[clean]; taken {

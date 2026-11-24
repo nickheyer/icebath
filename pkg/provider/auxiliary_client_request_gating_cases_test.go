@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Records the level of every log record while installed as the default handler
@@ -204,9 +204,9 @@ func TestAutoRoutedProviderProfileHooksCachedAutoRouteProjectsSelectedProviderOn
 	t.Setenv("ICEBATH_HOME", h)
 	ctx := context.Background()
 	var hookCalls []map[string]any
-	profile := Profile{Name: "agentgateway", BuildAPIKwargsExtrasHook: func(_ *Reasoning, hookCtx map[string]any) (*pyjson.Object, map[string]any) {
+	profile := Profile{Name: "agentgateway", BuildAPIKwargsExtrasHook: func(_ *Reasoning, hookCtx map[string]any) (*jsonutil.Object, map[string]any) {
 		hookCalls = append(hookCalls, hookCtx)
-		return pyjson.NewObject(), map[string]any{"extra_headers": map[string]any{"Authorization": fmt.Sprintf("Bearer token-%d", len(hookCalls))}}
+		return jsonutil.NewObject(), map[string]any{"extra_headers": map[string]any{"Authorization": fmt.Sprintf("Bearer token-%d", len(hookCalls))}}
 	}}
 	client := &auxCallFakeClient{base: "https://gateway.example.com/v1", key: "k",
 		create: func(context.Context, map[string]any) (any, error) { return auxCallOK("ok"), nil }}

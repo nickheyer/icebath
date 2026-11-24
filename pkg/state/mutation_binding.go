@@ -4,7 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const BindingPrefix = "gateway.history_control.v1."
@@ -45,12 +46,12 @@ type HistoryActor struct {
 }
 
 // Whether resume or import controls the row as owner history
-func historyRow(row *pyjson.Object) bool {
+func historyRow(row *jsonutil.Object) bool {
 	return rowGet(row, "source") == "import" || LegacyHistoryRow(row)
 }
 
 // Owner identity of the row, None for a retired hosted account label
-func ownerUser(row *pyjson.Object) (any, error) {
+func ownerUser(row *jsonutil.Object) (any, error) {
 	label, err := LegacyAccountLabel(row)
 	if err != nil || label {
 		return nil, err
@@ -82,9 +83,9 @@ func unpackPair(v any) (any, any, bool) {
 		if len(x) == 2 {
 			return x[0], x[1], true
 		}
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if x.Len() == 2 {
-			return x.Keys[0], x.Keys[1], true
+			return x.Keys()[0], x.Keys()[1], true
 		}
 	case string:
 		if runes := []rune(x); len(runes) == 2 {
@@ -100,7 +101,7 @@ func bindingPair(saved any) (any, any, bool) {
 	if !ok {
 		return nil, nil, false
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil, false
 	}
@@ -113,13 +114,13 @@ func BindingNames(saved, profileID, subject any) bool {
 	if !ok {
 		return false
 	}
-	return pyjson.Equal(savedProfile, profileID) && sameOwner(savedSubject, subject)
+	return anyutil.Equal(savedProfile, profileID) && sameOwner(savedSubject, subject)
 }
 
 // Whether two stored bindings name the same owner, both absent agreeing and one absent not
 func bindingsAgree(first, second any) bool {
-	if pyjson.Equal(first, second) || first == nil || second == nil {
-		return pyjson.Equal(first, second)
+	if anyutil.Equal(first, second) || first == nil || second == nil {
+		return anyutil.Equal(first, second)
 	}
 	firstProfile, firstSubject, ok := bindingPair(first)
 	if !ok {
@@ -129,11 +130,11 @@ func bindingsAgree(first, second any) bool {
 	if !ok {
 		return false
 	}
-	return pyjson.Equal(firstProfile, profileID) && ownersAgree(firstSubject, subject)
+	return anyutil.Equal(firstProfile, profileID) && ownersAgree(firstSubject, subject)
 }
 
 func actorBinding(actor HistoryActor) (string, error) {
-	return pyjson.Dumps([]any{actor.ProfileID, actor.Subject}, pyjson.Separators(",", ":"))
+	return jsonutil.Encode([]any{actor.ProfileID, actor.Subject})
 }
 
 // Binds each session id the import is about to create to the importing actor
@@ -225,7 +226,7 @@ func SameHistoryOwner(ctx context.Context, conn SQLiteConn, anchorID, sessionID 
 	}
 	if pyTruthy(row[2]) || pyTruthy(row[3]) || pyTruthy(row[4]) {
 		for i := 1; i < 4; i++ {
-			if !pyjson.Equal(row[i], anchor[i]) {
+			if !anyutil.Equal(row[i], anchor[i]) {
 				return false, nil
 			}
 		}
@@ -245,8 +246,8 @@ func SameHistoryOwner(ctx context.Context, conn SQLiteConn, anchorID, sessionID 
 	if binding != nil {
 		return true, nil
 	}
-	routelessPeer := pyjson.Equal(row[0], anchor[0]) && !pyTruthy(anchor[2]) && !pyTruthy(anchor[3]) && !pyTruthy(anchor[4])
-	member := pyjson.ObjectOf("source", row[0], "user_id", row[1], "session_key", row[2], "chat_id", row[3], "origin_json", row[4])
+	routelessPeer := anyutil.Equal(row[0], anchor[0]) && !pyTruthy(anchor[2]) && !pyTruthy(anchor[3]) && !pyTruthy(anchor[4])
+	member := jsonutil.ObjectOf("source", row[0], "user_id", row[1], "session_key", row[2], "chat_id", row[3], "origin_json", row[4])
 	if !historyRow(member) && !routelessPeer {
 		return false, nil
 	}

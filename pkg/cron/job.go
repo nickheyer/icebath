@@ -9,9 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Schedule is the parsed schedule a job fires on
@@ -327,8 +327,8 @@ func strOrNull(p *string) any {
 var originKeyOrder = []string{"platform", "chat_id", "chat_name", "thread_id", "user_id", "scope_id"}
 
 // Origin as an ordered object, keys read from disk first, then the creation order, then any others sorted
-func orderedOrigin(origin map[string]any, keys []string) *pyjson.Object {
-	out := pyjson.NewObject()
+func orderedOrigin(origin map[string]any, keys []string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, group := range [][]string{keys, originKeyOrder} {
 		for _, k := range group {
 			if v, ok := origin[k]; ok {
@@ -619,9 +619,9 @@ func (j *Job) UnmarshalJSON(data []byte) error {
 	if len(j.Extra) == 0 {
 		j.Extra = nil
 	}
-	if v, err := pyjson.LoadsBytes(data); err == nil {
-		if o, ok := v.(*pyjson.Object); ok {
-			j.keyOrder = o.Keys
+	if v, err := jsonutil.Decode(data); err == nil {
+		if o, ok := v.(*jsonutil.Object); ok {
+			j.keyOrder = o.Keys()
 		}
 	}
 	return nil
@@ -799,9 +799,9 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 			var o map[string]any
 			if json.Unmarshal(raw, &o) == nil {
 				j.Origin = o
-				if ordered, err := pyjson.LoadsOrdered(raw); err == nil {
-					if obj, ok := ordered.(*pyjson.Object); ok {
-						j.originKeys = append([]string(nil), obj.Keys...)
+				if ordered, err := jsonutil.Decode(raw); err == nil {
+					if obj, ok := ordered.(*jsonutil.Object); ok {
+						j.originKeys = append([]string(nil), obj.Keys()...)
 					}
 				}
 			} else {
@@ -920,7 +920,7 @@ func (j *Job) setField(k string, raw json.RawMessage) error {
 	case "_model_unreachable":
 		var v any
 		_ = json.Unmarshal(raw, &v)
-		j.run.modelUnreachable = pyTruthy(v)
+		j.run.modelUnreachable = anyutil.IsTrue(v)
 	case "_quota_hold_seconds":
 		j.run.quotaHoldSeconds = 0
 		if n, ok := decodeNumber(raw); ok {
@@ -1077,5 +1077,5 @@ func pyFloatJSON(f float64) string {
 	case math.IsInf(f, -1):
 		return "-Infinity"
 	}
-	return pyrepr.Float(f)
+	return strconv.FormatFloat(f, 'f', -1, 64)
 }

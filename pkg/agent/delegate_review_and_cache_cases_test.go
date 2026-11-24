@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // test_review_engine.py test_delegate_task_credentials_cfg_overrides_delegation_config
@@ -23,8 +23,8 @@ func TestDelegateTaskCredentialsCfgOverridesDelegationConfig(t *testing.T) {
 		return map[string]any{"model": cfg["model"], "provider": nil, "base_url": nil, "api_key": nil, "api_mode": nil, "command": nil, "args": nil}, nil
 	}
 	buildChildPreservingParentToolsFn = func(context.Context, childBuildSpec) (*AIAgent, error) { return &AIAgent{delegateRole: "leaf"}, nil }
-	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
-		return pyjson.ObjectOf("task_index", i, "status", "completed", "summary", "ok", "api_calls", 1, "duration_seconds", 0.1, "model", "m", "exit_reason", "completed")
+	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
+		return jsonutil.ObjectOf("task_index", i, "status", "completed", "summary", "ok", "api_calls", 1, "duration_seconds", 0.1, "model", "m", "exit_reason", "completed")
 	}
 	t.Cleanup(func() {
 		resolveDelegationCredentialsFn, buildChildPreservingParentToolsFn, runSingleChildFn = prevCreds, prevBuild, prevRun

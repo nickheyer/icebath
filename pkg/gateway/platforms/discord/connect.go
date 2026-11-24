@@ -14,8 +14,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Health reasons that confirm the transport is dead, escalated on the first strike
@@ -61,12 +61,12 @@ func (a *DiscordAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 	if !opus.isLoaded() {
 		loadOpusCodec()
 	}
-	if !pyrepr.Truthy(a.Config.Token) {
+	if !anyutil.IsTrue(a.Config.Token) {
 		pkgLog().Error(fmt.Sprintf("[%s] No bot token configured", a.Name()))
 		a.SetFatalError(ctx, "missing_credentials", "No bot token configured", false)
 		return false, nil
 	}
-	ok, err := a.connect(ctx, pyrepr.Str(a.Config.Token))
+	ok, err := a.connect(ctx, anyutil.String(a.Config.Token))
 	if err == nil {
 		return ok, nil
 	}
@@ -359,7 +359,7 @@ func (a *DiscordAdapter) livenessLoop(ctx context.Context) {
 		a.mu.Unlock()
 		if !a.IsConnected() || link == nil || disconnecting {
 			pkgLog().Info(fmt.Sprintf("[%s] Discord liveness probe exiting (running=%s, client=%s, disconnecting=%s)", a.Name(),
-				pyrepr.Repr(a.IsConnected()), pyrepr.Repr(link != nil), pyrepr.Repr(disconnecting)))
+				anyutil.Quote(a.IsConnected()), anyutil.Quote(link != nil), anyutil.Quote(disconnecting)))
 			return
 		}
 		healthy, reason := a.readWebsocketHealth(link)

@@ -14,12 +14,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Source no longer at the commit the install dialog reviewed
@@ -284,7 +284,7 @@ func copyExampleFiles(pluginDir string, console *Console) {
 		if _, err := os.Lstat(realPath); err == nil {
 			continue
 		}
-		if err := pyfs.Copy2(example, realPath); err != nil {
+		if err := fsutil.CopyFile(example, realPath); err != nil {
 			console.Print(fmt.Sprintf("[yellow]Warning:[/yellow] Failed to copy %s: %s", base, errchain.OSText(err)))
 			continue
 		}
@@ -308,7 +308,7 @@ func missingEnvSpecs(ctx context.Context, h string, manifest map[string]any) ([]
 	}
 	missing := []map[string]any{}
 	for _, spec := range specs {
-		value, _, err := config.GetEnvValue(ctx, h, pyrepr.Str(spec["name"]))
+		value, _, err := config.GetEnvValue(ctx, h, anyutil.String(spec["name"]))
 		if err != nil {
 			return nil, err
 		}
@@ -366,10 +366,10 @@ func admitAndSavePluginSets(ctx context.Context, h string, enabled, disabled map
 	switch {
 	case err == nil || opts.Console == nil:
 	case errors.As(err, &conflict):
-		opts.Console.Print("[red]✗[/red] " + pyrich.Escape(conflict.Error()))
+		opts.Console.Print("[red]✗[/red] " + consoleutil.Escape(conflict.Error()))
 		opts.Console.Print("[dim]config.yaml and the active environment are unchanged.[/dim]")
 	case errors.As(err, &refused):
-		opts.Console.Print(fmt.Sprintf("[red]✗[/red] %s refused: %s", action, pyrich.Escape(refused.Error())))
+		opts.Console.Print(fmt.Sprintf("[red]✗[/red] %s refused: %s", action, consoleutil.Escape(refused.Error())))
 		if pm.BinaryInstall() {
 			opts.Console.Print("[dim]config.yaml and the active environment are unchanged.[/dim]")
 		} else {

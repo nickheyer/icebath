@@ -22,9 +22,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Age in hours after which transient media caches are swept
@@ -117,7 +117,7 @@ func jsonObjectGet(node any, key string) (any, bool, bool) {
 	case map[string]any:
 		v, has := o[key]
 		return v, has, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		v, has := o.Get(key)
 		return v, has, true
 	}
@@ -127,7 +127,7 @@ func jsonObjectGet(node any, key string) (any, bool, bool) {
 // Message of the error object in a JSON body, else the first 300 characters of the body
 func defaultErrorMessage(_ int, body []byte) string {
 	text := clipRunes(strings.ToValidUTF8(string(body), "\uFFFD"), 300)
-	parsed, err := pyjson.LoadsBytes(body)
+	parsed, err := jsonutil.Decode(body)
 	if err != nil {
 		return text
 	}
@@ -139,7 +139,7 @@ func defaultErrorMessage(_ int, body []byte) string {
 	if !isObj || !has {
 		return text
 	}
-	return pyrepr.Str(message)
+	return anyutil.String(message)
 }
 
 // First n bytes of a string
@@ -186,7 +186,7 @@ func postJSON(ctx context.Context, rawURL string, headers map[string]string, pay
 		}
 		return nil, &httpFailure{Kind: "request", Error: fmt.Sprintf("%s request failed: %v", label, err), ErrorType: "api_error"}, nil
 	}
-	body, err := pyjson.Dumps(payload, pyjson.AllowNaN(false))
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -225,7 +225,7 @@ func postJSON(ctx context.Context, rawURL string, headers map[string]string, pay
 		return nil, &httpFailure{Kind: "http", Error: fmt.Sprintf("%s image generation failed (%d): %s", label, resp.StatusCode, message),
 			ErrorType: "api_error", Status: resp.StatusCode, Message: message, Body: raw, Header: resp.Header}, nil
 	}
-	parsed, err := pyjson.LoadsBytes(raw)
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, &httpFailure{Kind: "invalid_json", Error: fmt.Sprintf("%s returned invalid JSON: %v", label, err), ErrorType: "invalid_response", Message: err.Error()}, nil
 	}

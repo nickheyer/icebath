@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tokenizers/tiktoken"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // A configurator run over a temp home with captured output and no input
@@ -356,10 +356,10 @@ func TestEstimateToolTokensCountsTheWireSchemaOncePerGeneration(t *testing.T) {
 		t.Fatalf("counts %d loads %d %v", len(counts), loads, err)
 	}
 	name := Default.AllToolNames(s.ctx(), "")[0]
-	wire := pyjson.NewObject()
+	wire := jsonutil.NewObject()
 	wire.Set("type", "function")
 	wire.Set("function", Default.Schema(s.ctx(), "", name))
-	text, _ := pyjson.Dumps(wire)
+	text, _ := jsonutil.Encode(wire)
 	if counts[name] != len(text) {
 		t.Fatalf("%s %d want %d", name, counts[name], len(text))
 	}

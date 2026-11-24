@@ -22,6 +22,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Lifecycle hook probe the platform event observer consults
@@ -52,7 +53,7 @@ func (a *TelegramAdapter) buildApp(token string, general, polling *ptbRequest, p
 	if baseURL := extraString(extra, "base_url"); baseURL != "" {
 		fileURL := baseURL
 		if v, ok := extra["base_file_url"]; ok {
-			fileURL = pyrepr.Str(v)
+			fileURL = anyutil.String(v)
 		}
 		app.useBaseURLs(token, baseURL, fileURL, pyTruthy(extra["local_mode"]))
 	} else if pyTruthy(extra["local_mode"]) {
@@ -137,7 +138,7 @@ func (a *TelegramAdapter) connectBody(ctx context.Context, token string, isRecon
 	}
 	extra := a.Config.Extra
 	if baseURL := extraString(extra, "base_url"); baseURL != "" {
-		pkgLog().Info(fmt.Sprintf("[%s] Using custom Telegram base_url: %s", a.Name(), pyrepr.Str(extra["base_url"])))
+		pkgLog().Info(fmt.Sprintf("[%s] Using custom Telegram base_url: %s", a.Name(), anyutil.String(extra["base_url"])))
 	}
 	if pyTruthy(extra["local_mode"]) {
 		pkgLog().Info(fmt.Sprintf("[%s] Using Telegram local_mode (read files from disk)", a.Name()))
@@ -264,7 +265,7 @@ func (a *TelegramAdapter) initializeAppWithRetries(ctx context.Context, rebuild 
 				return err
 			}
 			pkgLog().Warn(fmt.Sprintf("[%s] Connect attempt %d/%d failed: %s — retrying in %ds", a.Name(), attempt+1, maxConnect,
-				pyrepr.ExceptionMessage(err), int(wait)))
+				err.Error(), int(wait)))
 		}
 		if attempt < maxConnect-1 {
 			newApp, newTgApp, buildErr := rebuild()
@@ -489,7 +490,7 @@ func (a *TelegramAdapter) runPostConnectHousekeeping(ctx context.Context) error 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] DM topics setup failed (non-fatal): %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] DM topics setup failed (non-fatal): %s", a.Name(), err.Error()))
 	}
 	return ctx.Err()
 }
@@ -509,7 +510,7 @@ func menuFingerprint(ctx context.Context, menu []CatalogItem) string {
 	for _, item := range menu {
 		rows = append(rows, pyrepr.Tuple{item.Name, item.Description})
 	}
-	payload := pyrepr.Repr([]any{i18n.GetLanguage(ctx), rows})
+	payload := anyutil.Quote([]any{i18n.GetLanguage(ctx), rows})
 	sum := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(sum[:])
 }
@@ -540,7 +541,7 @@ func (a *TelegramAdapter) registerCommandMenu(ctx context.Context) error {
 		{"BotCommandScopeAllGroupChats", &models.BotCommandScopeAllGroupChats{}}}
 	for _, s := range scopes {
 		if _, err := b.SetMyCommands(ctx, &bot.SetMyCommandsParams{Commands: commands, Scope: s.scope}); err != nil {
-			pkgLog().Warn(fmt.Sprintf("[%s] set_my_commands FAILED for scope %s: %s", a.Name(), s.name, pyrepr.ExceptionMessage(ptbError(err))))
+			pkgLog().Warn(fmt.Sprintf("[%s] set_my_commands FAILED for scope %s: %s", a.Name(), s.name, ptbError(err).Error()))
 			continue
 		}
 		pkgLog().Info(fmt.Sprintf("[%s] set_my_commands OK for scope %s (%d cmds)", a.Name(), s.name, len(commands)))
@@ -567,10 +568,10 @@ func (a *TelegramAdapter) setStatusIndicator(ctx context.Context, online bool) {
 	}
 	text = clipRunes(text, 120)
 	if _, err := b.SetMyShortDescription(ctx, &bot.SetMyShortDescriptionParams{ShortDescription: text}); err != nil {
-		pkgLog().Debug(fmt.Sprintf("[%s] Failed to set bot status indicator to %s: %s", a.Name(), pyrepr.Repr(text), redactTelegramErrorText(ptbError(err))))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to set bot status indicator to %s: %s", a.Name(), anyutil.Quote(text), redactTelegramErrorText(ptbError(err))))
 		return
 	}
-	pkgLog().Info(fmt.Sprintf("[%s] Set bot status indicator to %s", a.Name(), pyrepr.Repr(text)))
+	pkgLog().Info(fmt.Sprintf("[%s] Set bot status indicator to %s", a.Name(), anyutil.Quote(text)))
 }
 
 // Unique unfinished tasks of the candidates other than the current one

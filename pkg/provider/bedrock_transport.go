@@ -8,13 +8,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // InvokeModel body version the AnthropicBedrock client stamps on every Messages body
@@ -65,12 +64,12 @@ func bedrockHeaderValue(headers map[string]string, name string) (string, bool) {
 }
 
 // InvokeModel form of a Messages body as AnthropicBedrock prepares it, version and betas set by default, model and stream lifted out, extra_body merged last
-func bedrockInvokeBody(body map[string]any, op anthOperation, headers map[string]string) (*pyjson.Object, string, bool, error) {
+func bedrockInvokeBody(body map[string]any, op anthOperation, headers map[string]string) (*jsonutil.Object, string, bool, error) {
 	params, extra, err := anthWireParams(body, op)
 	if err != nil {
 		return nil, "", false, err
 	}
-	inner := params.Copy()
+	inner := params.Clone()
 	if _, has := inner.Get("anthropic_version"); !has {
 		inner.Set("anthropic_version", bedrockAnthropicVersion)
 	}
@@ -83,8 +82,8 @@ func bedrockInvokeBody(body map[string]any, op anthOperation, headers map[string
 			inner.Set("anthropic_beta", list)
 		}
 	}
-	modelValue, _ := inner.Pop("model")
-	streamValue, _ := inner.Pop("stream")
+	modelValue, _ := inner.Take("model")
+	streamValue, _ := inner.Take("stream")
 	stream, _ := streamValue.(bool)
 	return anthMergedWireBody(inner, extra), stringOf(modelValue), stream, nil
 }
@@ -115,15 +114,15 @@ func (t *anthBedrockTransport) Request(ctx context.Context, op anthOperation, bo
 		if _, has := inner.Get("max_tokens"); !has {
 			inner.Set("max_tokens", 1)
 		}
-		encoded, err := pyhttpx.JSONBody(inner)
+		encoded, err := httputil.JSONBody(inner)
 		if err != nil {
 			return nil, fmt.Errorf("provider: encode bedrock count tokens body: %w", err)
 		}
-		payload = pyjson.ObjectOf("input", pyjson.ObjectOf("invokeModel", pyjson.ObjectOf("body", base64.StdEncoding.EncodeToString(encoded))))
+		payload = jsonutil.ObjectOf("input", jsonutil.ObjectOf("invokeModel", jsonutil.ObjectOf("body", base64.StdEncoding.EncodeToString(encoded))))
 	case stream:
 		operation = "invoke-with-response-stream"
 	}
-	data, err := pyhttpx.JSONBody(payload)
+	data, err := httputil.JSONBody(payload)
 	if err != nil {
 		return nil, fmt.Errorf("provider: encode bedrock invoke body: %w", err)
 	}
@@ -276,7 +275,7 @@ func (s *bedrockSSEFrames) Next() (*sseFrame, error) {
 func awsResponseDictRepr(m *awsEventStreamMessage, status int) string {
 	var headers []string
 	for _, h := range m.Headers {
-		headers = append(headers, pyrepr.StrRepr(h.Name)+": "+pyrepr.Repr(h.Value))
+		headers = append(headers, strconv.Quote(h.Name)+": "+anyutil.Quote(h.Value))
 	}
-	return fmt.Sprintf("{'status_code': %d, 'headers': {%s}, 'body': %s}", status, strings.Join(headers, ", "), pyrepr.BytesRepr(m.Payload))
+	return fmt.Sprintf("{'status_code': %d, 'headers': {%s}, 'body': %s}", status, strings.Join(headers, ", "), strconv.Quote(string(m.Payload)))
 }

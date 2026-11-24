@@ -16,8 +16,8 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func init() {
@@ -219,18 +219,18 @@ func TestUnlockUsesVendorPasswordenvContractThenFillRoutesByPrefix(t *testing.T)
 	})
 	defer tools.SetUnlockPromptCallback(ctx, nil)
 	pin(t, &vaultCurrentPageOrigin, func(context.Context, *tools.Env, string) string { return "https://example.com" })
-	pin(t, &vaultEvalJS, func(context.Context, *tools.Env, string, string) *pyjson.Object {
-		return pyjson.ObjectOf("success", true, "result", `[{"tag": "input", "type": "password", "name": "password", "id": "pw", `+
+	pin(t, &vaultEvalJS, func(context.Context, *tools.Env, string, string) *jsonutil.Object {
+		return jsonutil.ObjectOf("success", true, "result", `[{"tag": "input", "type": "password", "name": "password", "id": "pw", `+
 			`"autocomplete": "current-password", "visible": true}]`)
 	})
 	secretScripts := []string{}
-	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *pyjson.Object {
+	pin(t, &vaultEvalJSSecret, func(_ context.Context, _ *tools.Env, _ string, expression string) *jsonutil.Object {
 		secretScripts = append(secretScripts, expression)
-		return pyjson.ObjectOf("success", true, "result", `{"filled": 1}`)
+		return jsonutil.ObjectOf("success", true, "result", `{"filled": 1}`)
 	})
 	fillText, err := browserVaultFill(ctx, env, "bw:abc", "t")
 	out := loadResult(t, fillText, err)
-	out.Pop("next")
+	out.Take("next")
 	if got := jsonText(out); got != `{"success": true, "filled_fields": 1, "backend": "bitwarden", "kind": "login", "origin": "https://example.com"}` {
 		t.Fatalf("fill %s", got)
 	}

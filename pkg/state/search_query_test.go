@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestSanitizeFTS5QueryStripsDangerousChars(t *testing.T) {
@@ -177,7 +177,7 @@ func TestMatchRowsLikeFallbackAndFinalize(t *testing.T) {
 	last, _ := final[2].Get("context")
 	found := false
 	for _, e := range last.([]any) {
-		if text, _ := e.(*pyjson.Object).Get("content"); text == "structured walrus" {
+		if text, _ := e.(*jsonutil.Object).Get("content"); text == "structured walrus" {
 			found = true
 		}
 	}
@@ -186,7 +186,7 @@ func TestMatchRowsLikeFallbackAndFinalize(t *testing.T) {
 	}
 	projected := s.finalizeSearchMatches(ctx, rows, []string{"id", "role"})
 	if projected[0].Len() != 2 {
-		t.Fatalf("projection keeps only requested fields: %v", projected[0].Keys)
+		t.Fatalf("projection keeps only requested fields: %v", projected[0].Keys())
 	}
 	if err := s.refreshFTSStaleState(ctx); err != nil || s.fts.ftsStale.Load() {
 		t.Fatal("no breadcrumb keeps FTS live")

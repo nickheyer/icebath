@@ -5,8 +5,6 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Configured route of a model alias with its credentials, nil when the alias is unknown
@@ -54,7 +52,7 @@ func callbackText(args []any, index int) string {
 	if text, ok := args[index].(string); ok {
 		return text
 	}
-	return pyrepr.Str(args[index])
+	return anyutil.String(args[index])
 }
 
 // Plain mapping of a positional callback argument, nil when absent or None
@@ -63,8 +61,8 @@ func callbackMap(args []any, index int) map[string]any {
 		return nil
 	}
 	switch value := args[index].(type) {
-	case *pyjson.Object:
-		plain, _ := pyjson.Plain(value).(map[string]any)
+	case *jsonutil.Object:
+		plain, _ := jsonutil.Plain(value).(map[string]any)
 		return plain
 	case map[string]any:
 		return value
@@ -90,7 +88,7 @@ func observerCallback(callback any) gateway.APIObserverCallback {
 		}
 	case func(string, bool):
 		invoke = func(args []any, kwargs map[string]any) {
-			fn(callbackText(args, 0), pyrepr.Truthy(kwargs["already_streamed"]))
+			fn(callbackText(args, 0), anyutil.IsTrue(kwargs["already_streamed"]))
 		}
 	case func(string, string, map[string]any):
 		invoke = func(args []any, _ map[string]any) {

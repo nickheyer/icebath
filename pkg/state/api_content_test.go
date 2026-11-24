@@ -71,7 +71,7 @@ func TestReconciliationAddsAPIContentColumn(t *testing.T) {
 	}
 	found := false
 	for _, c := range cols {
-		if c.Vals["name"] == "api_content" {
+		if c.Value("name") == "api_content" {
 			found = true
 		}
 	}
@@ -120,7 +120,7 @@ func TestAppendMessageSurvivesLoneSurrogateContent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 2 || rows[1].Vals["content"] != "scraped � price" {
+	if len(rows) != 2 || rows[1].Value("content") != "scraped � price" {
 		t.Fatalf("rows = %v", rows)
 	}
 }

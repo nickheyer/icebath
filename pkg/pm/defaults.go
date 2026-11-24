@@ -12,7 +12,7 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // DeclinedFilename records the default packages a user opted out of
@@ -67,7 +67,7 @@ func Declined(ctx context.Context, projectRoot string) (map[string]bool, error) 
 
 // Items Python iteration yields over a falsy-or-iterable JSON value, characters of a string and keys of an object
 func pyIterate(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	switch t := v.(type) {

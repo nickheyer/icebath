@@ -101,11 +101,11 @@ func TestFirstCallRegistersRowInDB(t *testing.T) {
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("rows %v %v", rows, err)
 	}
-	if rows[0].GetOr("backend_id", nil) != "test-backend-A" {
-		t.Fatalf("backend id %v", rows[0].GetOr("backend_id", nil))
+	if rows[0].ValueOr("backend_id", nil) != "test-backend-A" {
+		t.Fatalf("backend id %v", rows[0].ValueOr("backend_id", nil))
 	}
-	if beat, _ := rows[0].GetOr("last_heartbeat", nil).(float64); beat <= 0 {
-		t.Fatalf("last heartbeat %v", rows[0].GetOr("last_heartbeat", nil))
+	if beat, _ := rows[0].ValueOr("last_heartbeat", nil).(float64); beat <= 0 {
+		t.Fatalf("last heartbeat %v", rows[0].ValueOr("last_heartbeat", nil))
 	}
 }
 

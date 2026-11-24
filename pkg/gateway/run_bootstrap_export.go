@@ -5,8 +5,8 @@ import (
 	"slices"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Process children of a gateway pid snapshotted before it is signalled
@@ -25,13 +25,13 @@ func ReadProcessCmdline(pid int) (string, bool) { return statusReadProcessCmdlin
 func PidPath() string { return pidPath() }
 
 // Parsed pid record at p, nil when missing or unreadable
-func ReadPidRecord(p string) *pyjson.Object { return readPidRecord(p) }
+func ReadPidRecord(p string) *jsonutil.Object { return readPidRecord(p) }
 
 // Whether a pid record carries the gateway argv shape
-func RecordLooksLikeGateway(record *pyjson.Object) bool { return recordLooksLikeGateway(record) }
+func RecordLooksLikeGateway(record *jsonutil.Object) bool { return recordLooksLikeGateway(record) }
 
 // Pid the record names under its pid key
-func PidFromRecord(record *pyjson.Object) (int, bool) { return pidFromRecord(record, "pid") }
+func PidFromRecord(record *jsonutil.Object) (int, bool) { return pidFromRecord(record, "pid") }
 
 // Home this process resolves as its own
 func ProcessHome() string { return processIcebathHome() }

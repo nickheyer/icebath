@@ -12,11 +12,12 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyplist"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	plistutil "github.com/nickheyer/icebath/pkg/utils/plist"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 var (
@@ -40,7 +41,7 @@ func systemdUnitIcebathHome(ctx context.Context, scopeCmd []string, svcName stri
 		return "", false
 	}
 	envLine := strings.TrimSpace(completedStdout(shown))
-	tokens, err := pyshlex.SplitPOSIX(envLine, false)
+	tokens, err := shellutil.Split(envLine)
 	if err != nil {
 		tokens = strings.Fields(envLine)
 	}
@@ -51,11 +52,11 @@ func systemdUnitIcebathHome(ctx context.Context, scopeCmd []string, svcName stri
 		}
 	}
 	if slices.Contains(scopeCmd, "--user") {
-		userHome, err := pypath.PathHome()
+		userHome, err := pathutil.Home()
 		if err != nil {
 			return "", false
 		}
-		return pypath.PathJoin(userHome, ".icebath"), true
+		return pathutil.Join(userHome, ".icebath"), true
 	}
 	return "", false
 }
@@ -75,7 +76,7 @@ func launchdLabelForeignHomeIn(ctx context.Context, label string, scope map[stri
 	if err != nil {
 		return "", false
 	}
-	loaded, err := pyplist.Load(data)
+	loaded, err := plistutil.Decode(data)
 	if err != nil {
 		return "", false
 	}
@@ -92,7 +93,7 @@ func launchdLabelForeignHomeIn(ctx context.Context, label string, scope map[stri
 	if !ok {
 		return "", false
 	}
-	pinned := pyplist.Str(value)
+	pinned := anyutil.String(value)
 	if gateway.HomeInUpdateScope(ctx, pinned, scope) {
 		return "", false
 	}
@@ -122,7 +123,7 @@ func announceSkippedRuntime(ctx context.Context, w io.Writer, kind, name, runtim
 		}
 	}
 	for _, row := range announced {
-		if pyrepr.Equal(row, entry) {
+		if anyutil.Equal(row, entry) {
 			return
 		}
 	}

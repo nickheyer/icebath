@@ -24,9 +24,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python str of a config value
@@ -45,7 +45,7 @@ func pyStr(v any) string {
 		return pyFloatRepr(x)
 	case float32:
 		return pyFloatRepr(float64(x))
-	case []any, map[string]any, []string, *pyjson.Object:
+	case []any, map[string]any, []string, *jsonutil.Object:
 		return pyRepr(v)
 	}
 	return fmt.Sprint(v)
@@ -75,13 +75,13 @@ func pyRepr(v any) string {
 			parts[i] = pyReprStr(k) + ": " + pyRepr(x[k])
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if x == nil {
 			return "None"
 		}
-		parts := make([]string, len(x.Keys))
-		for i, k := range x.Keys {
-			parts[i] = pyReprStr(k) + ": " + pyRepr(x.Vals[k])
+		parts := make([]string, x.Len())
+		for i, k := range x.Keys() {
+			parts[i] = pyReprStr(k) + ": " + pyRepr(x.Value(k))
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	}

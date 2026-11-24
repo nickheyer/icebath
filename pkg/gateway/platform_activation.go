@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keys of every mapping a platform block may live in: the root and platforms
@@ -71,13 +71,13 @@ func jsonSectionKeys(path, section, what string) map[string]bool {
 		pkgLog().Debug("platform activation: " + what + " unreadable")
 		return out
 	}
-	doc, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
+	doc, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
 	if err != nil {
 		pkgLog().Debug("platform activation: " + what + " unreadable")
 		return out
 	}
 	doc = plainJSON(doc)
-	if !pyrepr.Truthy(doc) {
+	if !anyutil.IsTrue(doc) {
 		doc = map[string]any{}
 	}
 	m, ok := doc.(map[string]any)
@@ -86,7 +86,7 @@ func jsonSectionKeys(path, section, what string) map[string]bool {
 		return out
 	}
 	rows := m[section]
-	if !pyrepr.Truthy(rows) {
+	if !anyutil.IsTrue(rows) {
 		return out
 	}
 	if rm, ok := rows.(map[string]any); ok {

@@ -7,18 +7,17 @@ import (
 	"encoding/hex"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Turn result keeping replay, accounting and this turn's API suffix, never the cumulative history
-func CompactResult(result *pyjson.Object, userMessage any) (*pyjson.Object, error) {
-	result = result.Copy()
+func CompactResult(result *jsonutil.Object, userMessage any) (*jsonutil.Object, error) {
+	result = result.Clone()
 	raw, _ := result.Get("result")
-	inner, ok := raw.(*pyjson.Object)
+	inner, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return result, nil
 	}
-	value := inner.Copy()
+	value := inner.Clone()
 	value.Delete("tools")
 	rawMessages, _ := value.Get("messages")
 	if messages, isList := rawMessages.([]any); isList {
@@ -32,10 +31,10 @@ func CompactResult(result *pyjson.Object, userMessage any) (*pyjson.Object, erro
 			}
 			value.Set("messages", append([]any{}, messages[anchor+1:]...))
 			if anchor >= 0 {
-				if row, isObj := messages[anchor].(*pyjson.Object); isObj {
+				if row, isObj := messages[anchor].(*jsonutil.Object); isObj {
 					apiContent, _ := row.Get("api_content")
 					if pyTruthy(apiContent) {
-						turnRow := pyjson.NewObject()
+						turnRow := jsonutil.NewObject()
 						for _, k := range []string{"role", "content", "api_content"} {
 							v, has := row.Get(k)
 							if !has {
@@ -57,12 +56,12 @@ func CompactResult(result *pyjson.Object, userMessage any) (*pyjson.Object, erro
 
 // True for a dict message whose role is user
 func userRow(message any) bool {
-	row, ok := pyjson.AsObject(message)
+	row, ok := jsonutil.AsObject(message)
 	if !ok {
 		return false
 	}
 	role, _ := row.Get("role")
-	return pyjson.Equal(role, "user")
+	return anyutil.Equal(role, "user")
 }
 
 // Index of this turn's user message after compaction rebuilt the list, minus one when no user turn remains
@@ -72,16 +71,16 @@ func reanchorCurrentTurnUserIdx(messages []any, userMessage any) int {
 		if !userRow(messages[i]) {
 			continue
 		}
-		row, _ := pyjson.AsObject(messages[i])
+		row, _ := jsonutil.AsObject(messages[i])
 		content, _ := row.Get("content")
-		if pyjson.Equal(content, userMessage) {
+		if anyutil.Equal(content, userMessage) {
 			return i
 		}
 		_, live := SplitUserOriginatedTurn(objMap(row))
 		if live == nil {
 			continue
 		}
-		if pyjson.Equal(live["content"], userMessage) {
+		if anyutil.Equal(live["content"], userMessage) {
 			return i
 		}
 		if fallback < 0 {
@@ -101,7 +100,7 @@ func TerminalAPIAdmissions(ctx context.Context, conn SQLiteConn, requestID strin
 	}
 	out := make([]any, 0, len(values))
 	for _, text := range values {
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil, pyValueError(err.Error())
 		}
@@ -111,7 +110,7 @@ func TerminalAPIAdmissions(ctx context.Context, conn SQLiteConn, requestID strin
 }
 
 // Stored tombstone of one retired admission, nil when none was kept
-func terminalAdmission(ctx context.Context, conn SQLiteConn, admissionID any) (*pyjson.Object, error) {
+func terminalAdmission(ctx context.Context, conn SQLiteConn, admissionID any) (*jsonutil.Object, error) {
 	id, ok := admissionID.(string)
 	if !ok {
 		return nil, &stateTypedError{"TypeError", "the admission id is " + errchain.Kind(admissionID) + ", expected text"}
@@ -121,11 +120,11 @@ func terminalAdmission(ctx context.Context, conn SQLiteConn, admissionID any) (*
 		return nil, err
 	}
 	text, _ := saved["value"].(string)
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
-	row, isObj := decoded.(*pyjson.Object)
+	row, isObj := decoded.(*jsonutil.Object)
 	if !isObj {
 		return nil, &stateTypedError{"TypeError", "terminal admission is not a dict"}
 	}
@@ -133,7 +132,7 @@ func terminalAdmission(ctx context.Context, conn SQLiteConn, admissionID any) (*
 }
 
 // Exact retry of an admission on a retired target, nil for a live target and a refusal for a retired miss or conflict
-func (d *SessionDB) retryTerminalAdmission(ctx context.Context, in SessionInput) (*pyjson.Object, error) {
+func (d *SessionDB) retryTerminalAdmission(ctx context.Context, in SessionInput) (*jsonutil.Object, error) {
 	for _, v := range []string{in.PrincipalID, in.SessionID, in.RequestID} {
 		if err := runtimeText(v); err != nil {
 			return nil, err
@@ -143,7 +142,7 @@ func (d *SessionDB) retryTerminalAdmission(ctx context.Context, in SessionInput)
 	if err != nil {
 		return nil, err
 	}
-	var out *pyjson.Object
+	var out *jsonutil.Object
 	err = d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, in.Epoch); err != nil {
 			return err
@@ -164,7 +163,7 @@ func (d *SessionDB) retryTerminalAdmission(ctx context.Context, in SessionInput)
 			return runtimeRefusal("not_found")
 		}
 		text, _ := saved["value"].(string)
-		admissionID, err := pyjson.Loads(text)
+		admissionID, err := jsonutil.Decode(text)
 		if err != nil {
 			return pyValueError(err.Error())
 		}
@@ -176,7 +175,7 @@ func (d *SessionDB) retryTerminalAdmission(ctx context.Context, in SessionInput)
 			return &stateTypedError{"TypeError", "the terminal admission row is missing"}
 		}
 		stored, _ := row.Get("payload_digest")
-		if !pyjson.Equal(stored, digest) {
+		if !anyutil.Equal(stored, digest) {
 			return admittedRequestConflict()
 		}
 		out, err = admissionRow(row)
@@ -210,18 +209,18 @@ func (d *SessionDB) TerminalWorkerReceipt(ctx context.Context, executionID, sess
 			return runtimeRefusal("not_found")
 		}
 		text, _ := saved["value"].(string)
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return pyValueError(err.Error())
 		}
-		worker, ok := decoded.(*pyjson.Object)
+		worker, ok := decoded.(*jsonutil.Object)
 		if !ok {
 			return &stateTypedError{"TypeError", "terminal worker is not a dict"}
 		}
 		owner, _ := worker.Get("session_id")
 		adoption, _ := worker.Get("adoption_digest")
 		adoptionText, _ := adoption.(string)
-		if !pyjson.Equal(owner, sessionID) || subtle.ConstantTimeCompare([]byte(adoptionText), []byte(proof)) != 1 {
+		if !anyutil.Equal(owner, sessionID) || subtle.ConstantTimeCompare([]byte(adoptionText), []byte(proof)) != 1 {
 			return runtimeRefusal("permission_denied")
 		}
 		stored, _ := worker.Get("generation")
@@ -230,9 +229,9 @@ func (d *SessionDB) TerminalWorkerReceipt(ctx context.Context, executionID, sess
 		}
 		receipts, _ := worker.Get("receipts")
 		list, _ := receipts.([]any)
-		var receipt *pyjson.Object
+		var receipt *jsonutil.Object
 		for _, item := range list {
-			r, isObj := item.(*pyjson.Object)
+			r, isObj := item.(*jsonutil.Object)
 			if !isObj {
 				continue
 			}
@@ -246,7 +245,7 @@ func (d *SessionDB) TerminalWorkerReceipt(ctx context.Context, executionID, sess
 			return runtimeRefusal("stale_generation")
 		}
 		digest, _ := receipt.Get("payload_digest")
-		if !pyjson.Equal(digest, payloadDigest) {
+		if !anyutil.Equal(digest, payloadDigest) {
 			return runtimeRefusal("admission_conflict")
 		}
 		resultJSON, _ := receipt.Get("result_json")
@@ -257,7 +256,7 @@ func (d *SessionDB) TerminalWorkerReceipt(ctx context.Context, executionID, sess
 		if !isStr {
 			return &stateTypedError{"TypeError", "the JSON object must be str"}
 		}
-		out, err = pyjson.Loads(resultText)
+		out, err = jsonutil.Decode(resultText)
 		if err != nil {
 			return pyValueError(err.Error())
 		}

@@ -1,25 +1,23 @@
 package app
 
 import (
-	"unicode"
-	"unicode/utf8"
-
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -90,22 +88,22 @@ func consoleStripStatusFooter(text string) string {
 }
 
 // Session rows as the fixed width id source count and title table
-func consoleFormatSessions(sessions []*pyjson.Object) string {
+func consoleFormatSessions(sessions []*jsonutil.Object) string {
 	if len(sessions) == 0 {
 		return "No sessions found."
 	}
 	lines := []string{fmt.Sprintf("%-32s %-12s %5s  Title / Preview", "ID", "Source", "Msgs"),
 		strings.Repeat("-", 82)}
-	field := func(row *pyjson.Object, key string) any {
+	field := func(row *jsonutil.Object, key string) any {
 		v, _ := row.Get(key)
 		return v
 	}
 	for _, s := range sessions {
-		sid := textutil.First(pyrepr.Str(pyrepr.Or(field(s, "id"), "")), 32)
-		source := textutil.First(pyrepr.Str(pyrepr.Or(field(s, "source"), "-")), 12)
-		messages, _ := pyrepr.Format(pyrepr.Or(field(s, "message_count"), 0), ">5")
-		title := pyrepr.Or(field(s, "title"), pyrepr.Or(field(s, "preview"), ""))
-		titleText := textutil.First(strings.ReplaceAll(pyrepr.Str(title), "\n", " "), 60)
+		sid := textutil.First(anyutil.String(field(s, "id")), 32)
+		source := textutil.First(anyutil.String(anyutil.Or(field(s, "source"), "-")), 12)
+		messages := fmt.Sprintf("%5s", anyutil.String(anyutil.Or(field(s, "message_count"), 0)))
+		title := anyutil.Or(field(s, "title"), anyutil.Or(field(s, "preview"), ""))
+		titleText := textutil.First(strings.ReplaceAll(anyutil.String(title), "\n", " "), 60)
 		lines = append(lines, fmt.Sprintf("%-32s %-12s %s  %s", sid, source, messages, titleText))
 	}
 	return strings.Join(lines, "\n")
@@ -165,7 +163,7 @@ func consoleLogs(e *ConsoleEngine, args []string) (string, error) {
 		}
 	}
 	ns, err := consoleParse("logs", args, consolePositional("log_name", "?", "agent"),
-		consoleOption(big.NewInt(50), true, "-n", "--lines"), consoleOption(nil, false, "--level"),
+		consoleOption(int64(50), true, "-n", "--lines"), consoleOption(nil, false, "--level"),
 		consoleOption(nil, false, "--session"), consoleOption(nil, false, "--since"), consoleOption(nil, false, "--component"))
 	if err != nil {
 		return "", err
@@ -178,7 +176,7 @@ func consoleLogs(e *ConsoleEngine, args []string) (string, error) {
 		return consoleCaptureOutput(func() (int, error) { return 0, ListLogs(e.ctx, os.Stdout) })
 	}
 	return consoleCaptureOutput(func() (int, error) {
-		return TailLog(e.ctx, os.Stdout, TailLogOptions{Name: consoleText(ns, "log_name"), Lines: int(lines.Int64()),
+		return TailLog(e.ctx, os.Stdout, TailLogOptions{Name: consoleText(ns, "log_name"), Lines: int(lines),
 			Level: consoleText(ns, "level"), Session: consoleText(ns, "session"), Since: consoleText(ns, "since"),
 			Component: consoleText(ns, "component")})
 	})
@@ -186,7 +184,7 @@ func consoleLogs(e *ConsoleEngine, args []string) (string, error) {
 
 // Recent listable sessions most recently active first
 func consoleSessionsList(e *ConsoleEngine, args []string) (string, error) {
-	ns, err := consoleParse("sessions list", args, consoleOption(big.NewInt(20), true, "--limit"))
+	ns, err := consoleParse("sessions list", args, consoleOption(int64(20), true, "--limit"))
 	if err != nil {
 		return "", err
 	}
@@ -199,7 +197,7 @@ func consoleSessionsList(e *ConsoleEngine, args []string) (string, error) {
 		return "", err
 	}
 	defer db.Close()
-	n := int(limit.Int64())
+	n := int(limit)
 	sessions, err := db.ListSessionsRich(e.ctx, state.ListSessionsRichOptions{ExcludeSources: internalListingSources, Limit: &n,
 		OrderByLastActive: true})
 	if err != nil {
@@ -291,7 +289,7 @@ func consoleSessionsExport(e *ConsoleEngine, args []string) (int, error) {
 	}
 	defer db.Close()
 	includeCompacted, includeInactive := state.ExportProjection(false)
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	if sessionID := consoleText(ns, "session_id"); sessionID != "" {
 		resolved, err := db.ResolveSessionID(sessionID)
 		if err != nil {
@@ -310,7 +308,7 @@ func consoleSessionsExport(e *ConsoleEngine, args []string) (int, error) {
 		if row == nil || row.Len() == 0 {
 			return 0, &ConsoleCommandError{Msg: fmt.Sprintf("Session '%s' not found.", sessionID)}
 		}
-		rows = []*pyjson.Object{row}
+		rows = []*jsonutil.Object{row}
 	} else {
 		source := consoleText(ns, "source")
 		var sources []string
@@ -324,7 +322,7 @@ func consoleSessionsExport(e *ConsoleEngine, args []string) (int, error) {
 		ids := make([]string, 0, len(found))
 		for _, s := range found {
 			v, _ := s.Get("id")
-			ids = append(ids, pyrepr.Str(v))
+			ids = append(ids, anyutil.String(v))
 		}
 		if err := consoleGuardExports(e.ctx, db, ids); err != nil {
 			return 0, err
@@ -350,7 +348,7 @@ func consoleSessionsExport(e *ConsoleEngine, args []string) (int, error) {
 		_, err := os.Stdout.WriteString(text)
 		return 0, err
 	}
-	if err := os.WriteFile(pypath.Expanduser(output), []byte(text), 0o666); err != nil {
+	if err := os.WriteFile(pathutil.ExpandUser(output), []byte(text), 0o666); err != nil {
 		return 0, err
 	}
 	fmt.Fprintf(os.Stdout, "Exported %d session(s) to %s\n", len(rows), output)
@@ -376,7 +374,7 @@ func consoleSessionsRename(e *ConsoleEngine, args []string) (int, error) {
 	words, _ := ns["title"].([]any)
 	parts := make([]string, 0, len(words))
 	for _, w := range words {
-		parts = append(parts, pyrepr.Str(w))
+		parts = append(parts, anyutil.String(w))
 	}
 	title := strings.Join(parts, " ")
 	if resolved == "" {

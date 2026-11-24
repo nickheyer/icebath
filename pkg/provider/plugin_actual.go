@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var actualGOOS = runtime.GOOS
@@ -70,13 +70,13 @@ func pyScalarStrOr(v any, fallback string) string {
 }
 
 // Relay thinking toggle with effort none as a real level that also turns thinking off
-func actualBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
+func actualBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
 	if reasoning == nil {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
 	c := hookReasoningCfg(reasoning)
 	if !c.disabled && c.effort == "none" {
-		return pyjson.ObjectOf("thinking", pyjson.ObjectOf("type", "disabled")), map[string]any{"reasoning_effort": "none"}
+		return jsonutil.ObjectOf("thinking", jsonutil.ObjectOf("type", "disabled")), map[string]any{"reasoning_effort": "none"}
 	}
 	return thinkingToggleExtras(c, actualRelayEfforts, nil, true)
 }

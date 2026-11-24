@@ -23,19 +23,16 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pynumpy"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -63,17 +60,16 @@ func (e *audioImportError) Error() string { return e.msg }
 
 var (
 	voiceTempDir = sync.OnceValue(func() string {
-		dir, err := pypath.Gettempdir()
+		dir, err := pathutil.TempDir()
 		if err != nil {
 			panic(err)
 		}
-		return pypath.Join(dir, "icebath_voice")
+		return pathutil.Join(dir, "icebath_voice")
 	})
-	importAudio = func() (pysounddevice.Module, error) {
-		sd, err := pysounddevice.Import()
-		var gate *pysounddevice.UnsupportedError
-		if errors.As(err, &gate) {
-			return nil, &audioImportError{msg: gate.Msg}
+	importAudio = func() (portaudioutil.Audio, error) {
+		sd, err := portaudioutil.Open()
+		if errors.Is(err, portaudioutil.ErrUnsupported) {
+			return nil, &audioImportError{msg: err.Error()}
 		}
 		return sd, err
 	}
@@ -85,13 +81,13 @@ var (
 	isTermuxEnvironment      = hostinfo.IsTermux
 	voiceIsWSL               = hostinfo.IsWSL
 	voiceIsContainer         = hostinfo.IsContainer
-	voicePlatformSystem      = pyplatform.System
-	voiceWhich               = func(cmd string) (string, bool) { return pyshutil.Which(cmd, nil) }
+	voicePlatformSystem      = func() string { return runtime.GOOS }
+	voiceWhich               = func(cmd string) (string, bool) { p, err := exec.LookPath(cmd); return p, err == nil }
 	voiceCheckOutput         = checkOutputQuiet
 	runQuiet                 = runQuietCaptured
 	startPlayerProcess       = startPlayer
 	playInt16ViaTempfile     = playInt16ThroughFile
-	soundDeviceOutputAllowed = func() bool { return voicePlatformSystem() != "Darwin" }
+	soundDeviceOutputAllowed = func() bool { return voicePlatformSystem() != "darwin" }
 )
 
 func isAudioImportError(err error) bool {
@@ -99,12 +95,12 @@ func isAudioImportError(err error) bool {
 	return errors.As(err, &e)
 }
 
-func isAudioOSError(err error) bool {
-	var e *pysounddevice.LibraryError
+func isAudioLibraryError(err error) bool {
+	var e *portaudioutil.LibraryError
 	return errors.As(err, &e)
 }
 
-// Little endian bytes of int16 samples, the numpy tobytes layout
+// Little endian bytes of int16 samples
 func int16Bytes(samples []int16) []byte {
 	out := make([]byte, 2*len(samples))
 	for i, v := range samples {
@@ -117,7 +113,7 @@ func int16Bytes(samples []int16) []byte {
 func playInt16ThroughFile(audio []int16, sampleRate int) {
 	tmpPath := ""
 	defer func() { unlinkQuietly(tmpPath) }()
-	dir, err := pypath.Gettempdir()
+	dir, err := pathutil.TempDir()
 	var f *os.File
 	if err == nil {
 		f, err = os.CreateTemp(dir, "tmp*.wav")
@@ -157,7 +153,7 @@ func audioUnavailableReason() (string, error) {
 		return "", nil
 	case isAudioImportError(err):
 		return voiceCaptureInstallHint(err), nil
-	case isAudioOSError(err):
+	case isAudioLibraryError(err):
 		return strings.SplitN(portaudioMissingMessage(), "\n", 2)[0], nil
 	}
 	return "", err
@@ -169,17 +165,17 @@ func audioImportable() (bool, error) {
 	if err == nil {
 		return true, nil
 	}
-	if isAudioImportError(err) || isAudioOSError(err) {
+	if isAudioImportError(err) || isAudioLibraryError(err) {
 		return false, nil
 	}
 	return false, err
 }
 
 // Default input device rate rounded half to even, else the Whisper friendly 16 kHz
-func defaultInputSamplerate(sd pysounddevice.Module) int {
-	info, err := sd.QueryDevice(nil, "input")
-	if err == nil && info.DefaultSamplerate > 0 && !math.IsInf(info.DefaultSamplerate, 1) {
-		return int(math.RoundToEven(info.DefaultSamplerate))
+func defaultInputSamplerate(sd portaudioutil.Audio) int {
+	info, err := sd.Device(nil, portaudioutil.Input)
+	if err == nil && info.DefaultSampleRate > 0 && !math.IsInf(info.DefaultSampleRate, 1) {
+		return int(math.RoundToEven(info.DefaultSampleRate))
 	}
 	return voiceSampleRate
 }
@@ -212,12 +208,11 @@ func termuxMicrophoneCommand() string {
 }
 
 // Runs a command with captured UTF-8 output decoded with replacement and no stdin
-func runQuietCaptured(cmd []string, timeout float64, check bool) (*pysubprocess.Completed, error) {
-	result, err := pysubprocess.RunWith(context.Background(), cmd, pysubprocess.Options{
-		Timeout: time.Duration(timeout * float64(time.Second)), Check: check})
+func runQuietCaptured(cmd []string, timeout float64, check bool) (*executil.Completed, error) {
+	result, err := executil.Run(context.Background(), cmd, executil.Options{Timeout: time.Duration(timeout * float64(time.Second)), RequireSuccess: check})
 	if result != nil {
-		out, _ := pycodecs.DecodeReplace(result.Stdout, "utf-8")
-		errOut, _ := pycodecs.DecodeReplace(result.Stderr, "utf-8")
+		out, _ := charsetutil.DecodeReplace(result.Stdout, "utf-8")
+		errOut, _ := charsetutil.DecodeReplace(result.Stderr, "utf-8")
 		result.Stdout, result.Stderr = []byte(out), []byte(errOut)
 	}
 	return result, err
@@ -259,10 +254,10 @@ func pulseSocketCandidates() []string {
 		}
 	}
 	if runtimePath := os.Getenv("PULSE_RUNTIME_PATH"); runtimePath != "" {
-		candidates = append(candidates, pypath.Join(runtimePath, "native"))
+		candidates = append(candidates, pathutil.Join(runtimePath, "native"))
 	}
 	if xdg := os.Getenv("XDG_RUNTIME_DIR"); xdg != "" {
-		candidates = append(candidates, pypath.Join(xdg, "pulse", "native"), pypath.Join(xdg, "pipewire-0"))
+		candidates = append(candidates, pathutil.Join(xdg, "pulse", "native"), pathutil.Join(xdg, "pipewire-0"))
 	}
 	out := []string{}
 	for _, c := range candidates {
@@ -312,13 +307,13 @@ func probeAudioLibraries(warnings, notices *[]string, hasForwardedAudio bool, te
 			outcome("Termux:API microphone recording available (PortAudio not required)",
 				"PortAudio cannot be loaded ("+voiceCaptureInstallHint(err)+")", "", true)
 			return nil
-		case isAudioOSError(err):
+		case isAudioLibraryError(err):
 			outcome("Termux:API microphone recording available (PortAudio not required)", portaudioMissingMessage(), "", true)
 			return nil
 		}
 		return err
 	}
-	devices, err := sd.QueryDevices()
+	devices, err := sd.Devices()
 	if err != nil {
 		outcome("PortAudio device query failed, but Termux:API microphone capture is available",
 			"Audio subsystem error (PortAudio cannot query devices)",
@@ -400,14 +395,14 @@ func getBeepVolume(ctx context.Context) float64 {
 	return settings.VoiceBeepVolume.Get(ctx)
 }
 
-// Plays through sounddevice and polls until the stream goes idle or the timeout passes, then stops it
-func sdPlayBlocking(sd pysounddevice.Module, audio []int16, sampleRate int, timeout float64, blocksize int) error {
+// Plays through PortAudio and polls until the stream goes idle or the timeout passes, then stops it
+func playAndWait(sd portaudioutil.Audio, audio []int16, sampleRate int, timeout time.Duration, blocksize int) error {
 	if err := sd.Play(audio, float64(sampleRate), blocksize); err != nil {
 		return err
 	}
 	var pollErr error
-	pydeadline.PollUntil(func() (bool, bool) {
-		stream, err := sd.GetStream()
+	syncutil.PollUntil(context.Background(), timeout, 10*time.Millisecond, func() (bool, bool) {
+		stream, err := sd.Playback()
 		if err != nil {
 			pollErr = err
 			return true, true
@@ -418,7 +413,7 @@ func sdPlayBlocking(sd pysounddevice.Module, audio []int16, sampleRate int, time
 			return true, true
 		}
 		return !active, !active
-	}, time.Duration(timeout*float64(time.Second)), 10*time.Millisecond)
+	})
 	if pollErr != nil {
 		return pollErr
 	}
@@ -428,12 +423,15 @@ func sdPlayBlocking(sd pysounddevice.Module, audio []int16, sampleRate int, time
 
 // Beep tones with a short fade at both ends and 60 ms gaps, at the configured beep volume
 func beepSamples(frequency int, duration float64, count int, beepVolume float64) ([]int16, error) {
+	if count <= 0 {
+		return nil, errors.New("no beeps requested")
+	}
 	rate := float64(voiceSampleRate)
 	samplesPerBeep := int(rate * duration)
 	gap := make([]int16, int(rate*0.06))
 	var audio []int16
 	for i := 0; i < count; i++ {
-		t, err := pynumpy.Linspace(0, duration, samplesPerBeep, false)
+		t, err := mathutil.Linspace(0, duration, samplesPerBeep, false)
 		if err != nil {
 			return nil, err
 		}
@@ -442,22 +440,14 @@ func beepSamples(frequency int, duration float64, count int, beepVolume float64)
 		for j, v := range t {
 			tone[j] = math.Sin(float64(omega * v))
 		}
-		fadeLen := min(int(rate*0.01), pyFloorDiv(samplesPerBeep, 4))
-		up, err := pynumpy.Linspace(0, 1, fadeLen, true)
+		fadeLen := min(int(rate*0.01), samplesPerBeep/4)
+		up, err := mathutil.Linspace(0, 1, fadeLen, true)
 		if err != nil {
 			return nil, err
 		}
-		down, _ := pynumpy.Linspace(1, 0, fadeLen, true)
-		if err := mulInPlace(tone[:min(fadeLen, len(tone))], up); err != nil {
-			return nil, err
-		}
-		tail := tone[max(0, len(tone)-fadeLen):]
-		if fadeLen == 0 {
-			tail = tone
-		}
-		if err := mulInPlace(tail, down); err != nil {
-			return nil, err
-		}
+		down, _ := mathutil.Linspace(1, 0, fadeLen, true)
+		applyGain(tone, up)
+		applyGain(tone[len(tone)-fadeLen:], down)
 		for _, v := range tone {
 			audio = append(audio, int16(float64(float64(v*beepVolume)*32767)))
 		}
@@ -465,38 +455,14 @@ func beepSamples(frequency int, duration float64, count int, beepVolume float64)
 			audio = append(audio, gap...)
 		}
 	}
-	if audio == nil && count <= 0 {
-		return nil, &pynumpy.ValueError{Msg: "need at least one array to concatenate"}
-	}
 	return audio, nil
 }
 
-// Python floor division of two ints
-func pyFloorDiv(a, b int) int {
-	q := a / b
-	if (a%b != 0) && ((a < 0) != (b < 0)) {
-		q--
+// Multiplies the leading samples by the gain curve, as many as both hold
+func applyGain(samples, gains []float64) {
+	for i := range min(len(samples), len(gains)) {
+		samples[i] *= gains[i]
 	}
-	return q
-}
-
-// In place numpy multiply of a slice window by factors, a shape mismatch failing like broadcasting
-func mulInPlace(window, factors []float64) error {
-	switch {
-	case len(window) == len(factors):
-		for i := range factors {
-			window[i] *= factors[i]
-		}
-	case len(factors) == 1:
-		for i := range window {
-			window[i] *= factors[0]
-		}
-	case len(window) == 1:
-		return &pynumpy.ValueError{Msg: fmt.Sprintf("non-broadcastable output operand with shape (1,) doesn't match the broadcast shape (%d,)", len(factors))}
-	default:
-		return &pynumpy.ValueError{Msg: fmt.Sprintf("operands could not be broadcast together with shapes (%d,) (%d,) (%d,) ", len(window), len(factors), len(window))}
-	}
-	return nil
 }
 
 // PlayBeep plays count sine beeps at the configured volume, through a temp file on macOS
@@ -512,12 +478,12 @@ func PlayBeep(ctx context.Context, frequency int, duration float64, count int) {
 	}
 	sd, err := importAudio()
 	if err != nil {
-		if !isAudioImportError(err) && !isAudioOSError(err) {
+		if !isAudioImportError(err) && !isAudioLibraryError(err) {
 			pkgLog().Debug(fmt.Sprintf("Beep playback failed: %s", err))
 		}
 		return
 	}
-	if err := sdPlayBlocking(sd, audio, voiceSampleRate, 2.0, 0); err != nil {
+	if err := playAndWait(sd, audio, voiceSampleRate, 2*time.Second, 0); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Beep playback failed: %s", err))
 	}
 }
@@ -526,7 +492,7 @@ var (
 	audioOutputMu     sync.Mutex
 	audioOutputActive int
 	thinkingMu        sync.Mutex
-	thinkingStop      *pythread.Event
+	thinkingStop      *syncutil.Event
 )
 
 // MarkAudioOutputActive counts one real speaker playback in or out, never below zero
@@ -557,8 +523,8 @@ func synthThinkingBlip(ctx context.Context, frequency float64) []int16 {
 	rate := float64(voiceSampleRate)
 	duration := 0.16
 	n := int(rate * duration)
-	t, _ := pynumpy.Linspace(0, duration, n, false)
-	glide, _ := pynumpy.Linspace(1.0, 0.72, n, true)
+	t, _ := mathutil.Linspace(0, duration, n, false)
+	glide, _ := mathutil.Linspace(1.0, 0.72, n, true)
 	tau := float64(2 * math.Pi)
 	cumulative := 0.0
 	tone := make([]float64, n)
@@ -572,7 +538,7 @@ func synthThinkingBlip(ctx context.Context, frequency float64) []int16 {
 	for i := range env {
 		env[i] = 1
 	}
-	ramp, _ := pynumpy.Linspace(0.0, 1.0, attack, true)
+	ramp, _ := mathutil.Linspace(0.0, 1.0, attack, true)
 	copy(env, ramp)
 	for i := range env {
 		env[i] *= math.Exp(float64(-t[i] * 14.0))
@@ -586,14 +552,14 @@ func synthThinkingBlip(ctx context.Context, frequency float64) []int16 {
 }
 
 // Alternates the two blips until stopped, each blip gated by shouldPlay, silent on macOS
-func thinkingSoundLoop(ctx context.Context, stop *pythread.Event, shouldPlay func() bool) {
+func thinkingSoundLoop(ctx context.Context, stop *syncutil.Event, shouldPlay func() bool) {
 	if !soundDeviceOutputAllowed() {
 		return
 	}
 	sd, err := importAudio()
 	if err != nil {
-		if !isAudioImportError(err) && !isAudioOSError(err) {
-			pkgLog().Error(fmt.Sprintf("Exception in thread voice-thinking-sound: %s", err))
+		if !isAudioImportError(err) && !isAudioLibraryError(err) {
+			pkgLog().Error(fmt.Sprintf("Thinking sound could not open audio output: %s", err))
 		}
 		return
 	}
@@ -604,12 +570,12 @@ func thinkingSoundLoop(ctx context.Context, stop *pythread.Event, shouldPlay fun
 			pkgLog().Debug(fmt.Sprintf("Thinking sound blip failed: %s", err))
 			return
 		}
-		stop.Wait(0.8 + mrand.Float64()*0.4)
+		stop.WaitTimeout(800*time.Millisecond + mrand.N(400*time.Millisecond))
 	}
 }
 
 // Plays the next blip when shouldPlay allows, a panic in the gate or player returned as the error
-func playThinkingBlip(sd pysounddevice.Module, stop *pythread.Event, shouldPlay func() bool, blips [][]int16, i *int) (err error) {
+func playThinkingBlip(sd portaudioutil.Audio, stop *syncutil.Event, shouldPlay func() bool, blips [][]int16, i *int) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = fmt.Errorf("%v", r)
@@ -623,7 +589,7 @@ func playThinkingBlip(sd pysounddevice.Module, stop *pythread.Event, shouldPlay 
 	if err := sd.Play(blip, voiceSampleRate, 0); err != nil {
 		return err
 	}
-	stop.Wait(float64(len(blip))/voiceSampleRate + 0.02)
+	stop.WaitTimeout(time.Duration(len(blip))*time.Second/voiceSampleRate + 20*time.Millisecond)
 	sd.Stop()
 	return nil
 }
@@ -638,7 +604,7 @@ func StartThinkingSound(ctx context.Context, shouldPlay func() bool) bool {
 		thinkingMu.Unlock()
 		return true
 	}
-	stop := &pythread.Event{}
+	stop := &syncutil.Event{}
 	thinkingStop = stop
 	thinkingMu.Unlock()
 	go thinkingSoundLoop(ctx, stop, shouldPlay)
@@ -686,7 +652,7 @@ func startPlayer(argv []string, env map[string]string) (playbackProcess, error) 
 		err := cmd.Wait()
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			p.code = pysubprocess.Returncode(exitErr)
+			p.code = executil.ExitCode(exitErr.ProcessState)
 		} else if err != nil {
 			p.code = -1
 		}
@@ -714,7 +680,7 @@ func (p *playerProc) Terminate() error {
 
 func (p *playerProc) Kill() error { return p.cmd.Process.Kill() }
 
-// Exit code once the player ends, a TimeoutExpired error when a positive timeout passes first
+// Exit code once the player ends, an *executil.TimeoutError when a positive timeout passes first
 func (p *playerProc) Wait(timeout time.Duration) (int, error) {
 	if timeout <= 0 {
 		<-p.done
@@ -726,8 +692,7 @@ func (p *playerProc) Wait(timeout time.Duration) (int, error) {
 	case <-p.done:
 		return p.code, nil
 	case <-timer.C:
-		secs := timeout.Seconds()
-		return 0, &pysubprocess.TimeoutExpired{Cmd: p.argv, Timeout: int(secs), TimeoutFloat: &secs}
+		return 0, &executil.TimeoutError{Args: p.argv, Timeout: timeout}
 	}
 }
 
@@ -742,7 +707,7 @@ func setActivePlayback(proc playbackProcess) {
 	playbackMu.Unlock()
 }
 
-// StopPlayback terminates the running player process and stops sounddevice playback
+// StopPlayback terminates the running player process and stops PortAudio playback
 func StopPlayback() {
 	playbackMu.Lock()
 	proc := activePlayback
@@ -768,14 +733,14 @@ func wslPowershellTTSAvailable() bool {
 	return ps && ff
 }
 
-// PlayAudioFile plays a file through sounddevice or the system players, counted as speaker output throughout
+// PlayAudioFile plays a file through PortAudio or the system players, counted as speaker output throughout
 func PlayAudioFile(filePath string) bool {
 	MarkAudioOutputActive(true)
 	defer MarkAudioOutputActive(false)
 	return playAudioFileImpl(filePath)
 }
 
-// WAV frames and frame rate read the way the wave module reads a PCM file
+// PCM frames and frame rate of a WAV file
 func readWAVFrames(path string) ([]byte, int, error) {
 	w, err := ReadWave(path)
 	if err != nil {
@@ -784,8 +749,8 @@ func readWAVFrames(path string) ([]byte, int, error) {
 	return w.Frames, w.FrameRate, nil
 }
 
-// Plays a WAV through sounddevice, faded in with silence padding and 4096 frame blocks under WSL
-func playWAVViaSoundDevice(filePath string) bool {
+// Plays a WAV through PortAudio, faded in with silence padding and 4096 frame blocks under WSL
+func playWAVViaPortAudio(filePath string) bool {
 	sd, err := importAudio()
 	if err == nil {
 		var frames []byte
@@ -799,16 +764,19 @@ func playWAVViaSoundDevice(filePath string) bool {
 		return true
 	}
 	var pathErr *fs.PathError
-	if !isAudioImportError(err) && !isAudioOSError(err) && !errors.As(err, &pathErr) {
-		pkgLog().Debug(fmt.Sprintf("sounddevice playback failed: %s", err))
+	if !isAudioImportError(err) && !isAudioLibraryError(err) && !errors.As(err, &pathErr) {
+		pkgLog().Debug(fmt.Sprintf("PortAudio playback failed: %s", err))
 	}
 	return false
 }
 
 // Plays decoded int16 frames, padded and faded in under WSL
-func playWAVFrames(sd pysounddevice.Module, frames []byte, sampleRate int) error {
+func playWAVFrames(sd portaudioutil.Audio, frames []byte, sampleRate int) error {
 	if len(frames)%2 != 0 {
-		return errors.New("buffer size must be a multiple of element size")
+		return errors.New("PCM data ends in a partial 16-bit sample")
+	}
+	if sampleRate <= 0 {
+		return fmt.Errorf("WAV sample rate %d is not positive", sampleRate)
 	}
 	audio := make([]int16, len(frames)/2)
 	for i := range audio {
@@ -818,7 +786,7 @@ func playWAVFrames(sd pysounddevice.Module, frames []byte, sampleRate int) error
 	blocksize := 0
 	if voiceIsWSL() {
 		fadeSamples := int(0.1 * rate)
-		fade, err := pynumpy.Linspace(0.0, 1.0, fadeSamples, true)
+		fade, err := mathutil.Linspace(0.0, 1.0, fadeSamples, true)
 		if err != nil {
 			return err
 		}
@@ -826,9 +794,7 @@ func playWAVFrames(sd pysounddevice.Module, frames []byte, sampleRate int) error
 		for i, v := range audio {
 			audioFloat[i] = float64(v)
 		}
-		if err := mulInPlace(audioFloat[:min(fadeSamples, len(audioFloat))], fade); err != nil {
-			return err
-		}
+		applyGain(audioFloat, fade)
 		padded := make([]int16, int(0.1*rate), int(0.1*rate)+len(audio)+int(0.05*rate))
 		for _, v := range audioFloat {
 			padded = append(padded, int16(v))
@@ -836,16 +802,12 @@ func playWAVFrames(sd pysounddevice.Module, frames []byte, sampleRate int) error
 		audio = append(padded, make([]int16, int(0.05*rate))...)
 		blocksize = 4096
 	}
-	if sampleRate == 0 {
-		return errors.New("division by zero")
-	}
-	return sdPlayBlocking(sd, audio, sampleRate, float64(len(audio))/rate+2.0, blocksize)
+	return playAndWait(sd, audio, sampleRate, time.Duration(len(audio))*time.Second/time.Duration(sampleRate)+2*time.Second, blocksize)
 }
 
 // Captured stdout of a helper command, an error for a failure, a nonzero exit or a timeout
 func checkOutputQuiet(cmd []string, timeout float64) ([]byte, error) {
-	result, err := pysubprocess.RunWith(context.Background(), cmd, pysubprocess.Options{
-		Timeout: time.Duration(timeout * float64(time.Second)), Check: true})
+	result, err := executil.Run(context.Background(), cmd, executil.Options{Timeout: time.Duration(timeout * float64(time.Second)), RequireSuccess: true})
 	if err != nil {
 		return nil, err
 	}
@@ -864,7 +826,7 @@ func wslPowershellPlayerCmd(filePath string) []string {
 		if err != nil {
 			return "", err
 		}
-		text, _ := pycodecs.DecodeReplace(raw, "utf-8")
+		text, _ := charsetutil.DecodeReplace(raw, "utf-8")
 		return strings.TrimSpace(text), nil
 	}
 	winTemp, err := out([]string{"cmd.exe", "/c", "echo %TEMP%"})
@@ -879,32 +841,32 @@ func wslPowershellPlayerCmd(filePath string) []string {
 	if _, err := rand.Read(id[:]); err != nil {
 		return nil
 	}
-	wslWAV := pypath.Join(winTmpWSL, "icebath-tts-"+hex.EncodeToString(id[:])+".wav")
+	wslWAV := pathutil.Join(winTmpWSL, "icebath-tts-"+hex.EncodeToString(id[:])+".wav")
 	winWAV, err := out([]string{"wslpath", "-w", wslWAV})
 	if err != nil || winWAV == "" {
 		return nil
 	}
 	psScript := fmt.Sprintf("(New-Object Media.SoundPlayer '%s').PlaySync()", strings.ReplaceAll(winWAV, "'", "''"))
 	psCmd := strings.Join([]string{
-		pyshlex.Join([]string{"ffmpeg", "-i", filePath, "-f", "wav", wslWAV, "-loglevel", "quiet", "-y"}),
-		pyshlex.Join([]string{"powershell.exe", "-NoProfile", "-Command", psScript})}, " && ")
-	return []string{"/bin/sh", "-c", fmt.Sprintf("( %s ); rc=$?; %s; exit $rc", psCmd, pyshlex.Join([]string{"rm", "-f", wslWAV}))}
+		shellutil.Join([]string{"ffmpeg", "-i", filePath, "-f", "wav", wslWAV, "-loglevel", "quiet", "-y"}),
+		shellutil.Join([]string{"powershell.exe", "-NoProfile", "-Command", psScript})}, " && ")
+	return []string{"/bin/sh", "-c", fmt.Sprintf("( %s ); rc=$?; %s; exit $rc", psCmd, shellutil.Join([]string{"rm", "-f", wslWAV}))}
 }
 
 // Player commands in preference order for this platform
 func systemPlayerCandidates(filePath string) [][]string {
 	system := voicePlatformSystem()
 	var players [][]string
-	if system == "Darwin" {
+	if system == "darwin" {
 		players = append(players, []string{"afplay", filePath})
 	}
-	if system == "Linux" {
+	if system == "linux" {
 		if ps := wslPowershellPlayerCmd(filePath); ps != nil {
 			players = append(players, ps)
 		}
 	}
 	players = append(players, []string{"ffplay", "-nodisp", "-autoexit", "-loglevel", "quiet", filePath})
-	if system == "Linux" {
+	if system == "linux" {
 		players = append(players, []string{"aplay", "-q", filePath})
 	}
 	return players
@@ -934,7 +896,7 @@ func runSystemPlayer(cmd []string) bool {
 	}
 	setActivePlayback(proc)
 	rc, err := proc.Wait(300 * time.Second)
-	var timeout *pysubprocess.TimeoutExpired
+	var timeout *executil.TimeoutError
 	switch {
 	case errors.As(err, &timeout):
 		pkgLog().Warn(fmt.Sprintf("System player %s timed out, killing process", cmd[0]))
@@ -951,13 +913,13 @@ func runSystemPlayer(cmd []string) bool {
 	return false
 }
 
-// Plays an existing file through sounddevice for WAV, then each available system player in turn
+// Plays an existing file through PortAudio for WAV, then each available system player in turn
 func playAudioFileFromDisk(filePath string) bool {
 	if info, err := os.Stat(filePath); err != nil || !info.Mode().IsRegular() {
 		pkgLog().Warn(fmt.Sprintf("Audio file not found: %s", filePath))
 		return false
 	}
-	if strings.HasSuffix(filePath, ".wav") && soundDeviceOutputAllowed() && playWAVViaSoundDevice(filePath) {
+	if strings.HasSuffix(filePath, ".wav") && soundDeviceOutputAllowed() && playWAVViaPortAudio(filePath) {
 		return true
 	}
 	for _, cmd := range systemPlayerCandidates(filePath) {
@@ -1068,7 +1030,7 @@ func CheckVoiceRequirements(ctx context.Context) (VoiceRequirements, error) {
 
 // CleanupTempRecordings deletes voice recordings older than maxAgeSeconds and returns how many went
 func CleanupTempRecordings(maxAgeSeconds int) int {
-	deleted := pyfs.UnlinkFilesOlderThan(voiceTempDir(), "recording_*.wav", float64(maxAgeSeconds), nil)
+	deleted := fsutil.RemoveOlderThan(voiceTempDir(), "recording_*.wav", time.Now().Add(-time.Duration(maxAgeSeconds)*time.Second))
 	if deleted > 0 {
 		pkgLog().Debug(fmt.Sprintf("Cleaned up %d old voice recordings", deleted))
 	}

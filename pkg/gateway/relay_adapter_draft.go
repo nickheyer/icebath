@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Format hinted and scope stamped metadata of a text frame
@@ -59,11 +59,11 @@ func (a *RelayAdapter) SendDraft(ctx context.Context, chatID string, draftID int
 		}
 		return SendResult{Success: false, Error: "draft transport error: " + relayExcStr(err)}, nil
 	}
-	if pyrepr.Truthy(result["success"]) {
+	if anyutil.IsTrue(result["success"]) {
 		return SendResult{Success: true}, nil
 	}
-	if pyrepr.Truthy(result["ambiguous"]) {
-		return SendResult{Success: false, Error: pyrepr.Str(pyrepr.Or(result["error"], "draft ack lost")), RawResponse: result}, nil
+	if anyutil.IsTrue(result["ambiguous"]) {
+		return SendResult{Success: false, Error: anyutil.String(anyutil.Or(result["error"], "draft ack lost")), RawResponse: result}, nil
 	}
 	a.mu.Lock()
 	if open, ok := a.openDraftByChat.get(chatKey); ok && open == draftID {
@@ -73,8 +73,8 @@ func (a *RelayAdapter) SendDraft(ctx context.Context, chatID string, draftID int
 	if IsEgressDecline(result) {
 		LogDecline("draft", chatID, result)
 	}
-	errText := pyrepr.Or(result["error"], DeclineError(result))
-	return SendResult{Success: false, Error: pyrepr.Str(pyrepr.Or(errText, "draft failed")), RawResponse: result}, nil
+	errText := anyutil.Or(result["error"], DeclineError(result))
+	return SendResult{Success: false, Error: anyutil.String(anyutil.Or(errText, "draft failed")), RawResponse: result}, nil
 }
 
 // Seals the open stream with its final content, retrying once when the ack is lost and restoring it on cancellation
@@ -86,7 +86,7 @@ func (a *RelayAdapter) sealOpenDraft(ctx context.Context, chatID, content string
 	draftID, ok := a.openDraftByChat.pop(draftKey)
 	if !ok {
 		a.mu.Unlock()
-		return SendResult{}, &PyError{"KeyError", pyrepr.Repr(draftKey)}
+		return SendResult{}, &PyError{"KeyError", anyutil.Quote(draftKey)}
 	}
 	a.sealedDraftByChat.set(draftKey, draftID)
 	a.sealedDraftByChat.evict(relayDraftStateCap)
@@ -102,8 +102,8 @@ func (a *RelayAdapter) sealOpenDraft(ctx context.Context, chatID, content string
 			pkgLog().Warn(fmt.Sprintf("relay seal transport error (ambiguous): %s", relayExcStr(err)))
 			return nil
 		}
-		if pyrepr.Truthy(r["ambiguous"]) {
-			pkgLog().Warn(fmt.Sprintf("relay seal ack lost (ambiguous): %s", pyrepr.Str(r["error"])))
+		if anyutil.IsTrue(r["ambiguous"]) {
+			pkgLog().Warn(fmt.Sprintf("relay seal ack lost (ambiguous): %s", anyutil.String(r["error"])))
 			return nil
 		}
 		return r
@@ -125,9 +125,9 @@ func (a *RelayAdapter) sealOpenDraft(ctx context.Context, chatID, content string
 		return SendResult{Success: false, Error: "draft seal ambiguous after retry (transport ack lost)",
 			RawResponse: map[string]any{"success": false, "ambiguous": true}}, nil
 	}
-	if pyrepr.Truthy(result["success"]) {
+	if anyutil.IsTrue(result["success"]) {
 		var messageID any
-		if id := pyrepr.Str(pyrepr.Or(result["message_id"], "")); id != "" {
+		if id := anyutil.String(anyutil.Or(result["message_id"], "")); id != "" {
 			messageID = id
 		}
 		return SendResult{Success: true, MessageID: messageID}, nil
@@ -135,8 +135,8 @@ func (a *RelayAdapter) sealOpenDraft(ctx context.Context, chatID, content string
 	if IsEgressDecline(result) {
 		LogDecline("draft_seal", chatID, result)
 	}
-	errText := pyrepr.Or(result["error"], DeclineError(result))
-	return SendResult{Success: false, Error: pyrepr.Str(pyrepr.Or(errText, "draft seal failed")), RawResponse: result}, nil
+	errText := anyutil.Or(result["error"], DeclineError(result))
+	return SendResult{Success: false, Error: anyutil.String(anyutil.Or(errText, "draft seal failed")), RawResponse: result}, nil
 }
 
 // Final content sealed into the chat's open stream, nil when there is none or the seal failed without a decline
@@ -159,6 +159,6 @@ func (a *RelayAdapter) absorbIntoOpenDraft(ctx context.Context, chatID, content 
 		pkgLog().Warn(fmt.Sprintf("relay draft seal DECLINED for %s — not falling back to a plain send (the destination is not approved for this connection)", chatID))
 		return &seal, nil
 	}
-	pkgLog().Warn(fmt.Sprintf("relay seal failed (%s); delivering turn-final as plain send", pyrepr.Str(seal.Error)))
+	pkgLog().Warn(fmt.Sprintf("relay seal failed (%s); delivering turn-final as plain send", anyutil.String(seal.Error)))
 	return nil, nil
 }

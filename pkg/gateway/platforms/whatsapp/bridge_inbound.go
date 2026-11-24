@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	"go.mau.fi/whatsmeow/proto/waMmsRetry"
@@ -15,8 +16,6 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/reflect/protoreflect"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Set sub message of a proto message by its JSON field name, nil when unset
@@ -229,11 +228,11 @@ func textFromQuotedMessage(quoted protoreflect.Message) string {
 func protoObject(m protoreflect.Message) any {
 	raw, err := protojson.MarshalOptions{EmitUnpopulated: false}.Marshal(m.Interface())
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	v, err := pyjson.LoadsBytes(raw)
+	v, err := jsonutil.Decode(raw)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return v
 }
@@ -277,7 +276,7 @@ func (b *bridgeHost) download(ctx context.Context, client *whatsmeow.Client, inf
 
 // Bridge event fields of one inbound message the extraction produced
 type bridgeEvent struct {
-	obj             *pyjson.Object
+	obj             *jsonutil.Object
 	body            string
 	hasMedia        bool
 	mediaType       string
@@ -318,9 +317,9 @@ func (b *bridgeHost) extractBridgeEvent(ctx context.Context, client *whatsmeow.C
 			lookupChat = chatID
 		}
 		if original, ok := b.quotedMedia.get(lookupChat+":"+quotedMessageID, false); ok {
-			urls, _ := original.GetOr("mediaUrls", nil).([]any)
-			kind, _ := original.GetOr("mediaType", "").(string)
-			if hasMedia, _ := original.GetOr("hasMedia", false).(bool); hasMedia && len(urls) > 0 {
+			urls, _ := original.ValueOr("mediaUrls", nil).([]any)
+			kind, _ := original.ValueOr("mediaType", "").(string)
+			if hasMedia, _ := original.ValueOr("hasMedia", false).(bool); hasMedia && len(urls) > 0 {
 				quotedMediaURLs = urls
 				quotedMediaType = kind
 				if quotedText == "" {
@@ -331,7 +330,7 @@ func (b *bridgeHost) extractBridgeEvent(ctx context.Context, client *whatsmeow.C
 						quotedText = "sent media"
 					}
 				}
-			} else if body, _ := original.GetOr("body", "").(string); body != "" && quotedText == "" {
+			} else if body, _ := original.ValueOr("body", "").(string); body != "" && quotedText == "" {
 				quotedText = body
 			}
 		}
@@ -339,7 +338,7 @@ func (b *bridgeHost) extractBridgeEvent(ctx context.Context, client *whatsmeow.C
 	body, mediaType, mime, fileName, nativeType := "", "", "", "", ""
 	hasMedia := false
 	mediaURLs := []any{}
-	native := pyjson.NewObject()
+	native := jsonutil.NewObject()
 	failures := []string{}
 	saveMedia := func(item protoreflect.Message, dir, prefix, fallbackExt, name, kind string) {
 		media, ok := item.Interface().(whatsmeow.DownloadableMessage)
@@ -700,9 +699,9 @@ func (b *bridgeHost) handlePollUpsert(client *whatsmeow.Client, evt *events.Mess
 	}
 	summary := []any{}
 	for _, a := range aggregation {
-		o := a.(*pyjson.Object)
-		voters, _ := o.GetOr("voters", nil).([]any)
-		summary = append(summary, jsonObj("name", o.GetOr("name", ""), "voterCount", len(voters)))
+		o := a.(*jsonutil.Object)
+		voters, _ := o.ValueOr("voters", nil).([]any)
+		summary = append(summary, jsonObj("name", o.ValueOr("name", ""), "voterCount", len(voters)))
 	}
 	b.console.jsonLine(jsonObj("event", "poll_update_decode", "sourcePath", "messages.upsert", "pollId", pollID,
 		"pollCreationFound", found, "updateKeys", updateKeys, "hasVote", hasVote, "selectedOptionsLength", len(selected), "aggregation", summary))

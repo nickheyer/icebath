@@ -6,10 +6,10 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ToolPinStore persists a session tools pin, nil pin clearing it
@@ -84,7 +84,7 @@ var (
 
 // Name of a tool definition, empty when the function block or its name is missing
 func snapshotDefName(def map[string]any) string {
-	fn, _ := pyjson.Dict(def["function"])
+	fn, _ := jsonutil.AsMap(def["function"])
 	name, _ := fn["name"].(string)
 	return name
 }
@@ -158,8 +158,9 @@ func resolveRefreshToolsets(agent AgentToolSnapshot, enabledOverride, disabledOv
 }
 
 func dumpToolDefs(defs []map[string]any) (string, error) {
-	return pyjson.Dumps(defsAsAny(defs), pyjson.SortKeys(true), pyjson.Separators(",", ":"),
-		pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	return jsonutil.Encode(defsAsAny(defs), jsonutil.SortKeys(),
+		jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
+
 }
 
 // Reports a serialized byte difference between the live and fresh arrays, false when either fails to serialize
@@ -320,8 +321,8 @@ func ToolPinVersion() string { return toolPinVersion() }
 func defaultToolPinVersion() string {
 	identity := buildInfoCodeIdentity()
 	for _, key := range []string{"sha", "version"} {
-		if v := identity[key]; pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v := identity[key]; anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	return cliDunderVersion()
@@ -335,10 +336,10 @@ func buildInfoCodeIdentity() map[string]any {
 // Install stamp base version of the repo checkout, 0.0.0 when the stamp has none
 func cliDunderVersion() string {
 	v, _ := pm.ReadInstallStamp(pm.RepoRoot()).Get("baseVersion")
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "0.0.0"
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // PersistAgentToolNames writes the agent tools pin to its session row and remembers what it was built against
@@ -352,7 +353,7 @@ func persistAgentToolNames(ctx context.Context, agent AgentToolSnapshot) {
 	if db == nil || sessionID == "" {
 		return
 	}
-	pin := pyjson.NewObject()
+	pin := jsonutil.NewObject()
 	pin.Set("version", toolPinVersion())
 	pin.Set("tools", defsAsOrdered(agentToolDefs(agent)))
 	if backend := agent.DelegationBackend(); backend != "" {
@@ -472,36 +473,36 @@ func pinValue(v any) any {
 		return out
 	case []any:
 		return pinDefsValue(t)
-	case *pyjson.Object, map[string]any:
-		obj, _ := pyjson.AsObject(t)
+	case *jsonutil.Object, map[string]any:
+		obj, _ := jsonutil.AsObject(t)
 		out := make(map[string]any, obj.Len())
-		for _, k := range obj.Keys {
-			if items, ok := obj.Vals[k].([]any); ok && k == "tools" {
+		for _, k := range obj.Keys() {
+			if items, ok := obj.Value(k).([]any); ok && k == "tools" {
 				out[k] = pinDefsValue(items)
 			} else {
-				out[k] = pyjson.Plain(obj.Vals[k])
+				out[k] = jsonutil.Plain(obj.Value(k))
 			}
 		}
 		return out
 	}
-	return pyjson.Plain(v)
+	return jsonutil.Plain(v)
 }
 
 // Pinned definitions as envelope maps whose function schemas keep their pinned key order
 func pinDefsValue(items []any) []any {
 	out := make([]any, len(items))
 	for i, item := range items {
-		def, ok := pyjson.AsObject(item)
+		def, ok := jsonutil.AsObject(item)
 		if !ok {
-			out[i] = pyjson.Plain(item)
+			out[i] = jsonutil.Plain(item)
 			continue
 		}
 		envelope := make(map[string]any, def.Len())
-		for _, k := range def.Keys {
-			if fn, isDict := pyjson.AsObject(def.Vals[k]); isDict && k == "function" {
-				envelope[k] = pyjson.Clone(fn)
+		for _, k := range def.Keys() {
+			if fn, isDict := jsonutil.AsObject(def.Value(k)); isDict && k == "function" {
+				envelope[k] = jsonutil.Clone(fn)
 			} else {
-				envelope[k] = pyjson.Plain(def.Vals[k])
+				envelope[k] = jsonutil.Plain(def.Value(k))
 			}
 		}
 		out[i] = envelope
@@ -529,7 +530,7 @@ func pinnedToolDefsOf(ctx context.Context, env *tools.Env, saved any, fresh map[
 	var raw, version any
 	if obj, ok := saved.(map[string]any); ok {
 		raw, version = obj["tools"], obj["version"]
-		if !pyrepr.Truthy(raw) {
+		if !anyutil.IsTrue(raw) {
 			raw = []any{}
 		}
 	} else {
@@ -539,7 +540,7 @@ func pinnedToolDefsOf(ctx context.Context, env *tools.Env, saved any, fresh map[
 	if !ok {
 		return []any{}, false, []map[string]any{}
 	}
-	sameCode := version != nil && pyrepr.Equal(version, toolPinVersion())
+	sameCode := version != nil && anyutil.Equal(version, toolPinVersion())
 	reg := agentToolRegistry()
 	defs := []map[string]any{}
 	for _, item := range pinned {
@@ -560,7 +561,7 @@ func pinnedToolDefsOf(ctx context.Context, env *tools.Env, saved any, fresh map[
 			def = fresh[name]
 		case hasName && name != "":
 			if entry := reg.Entry(ctx, env, name); entry != nil {
-				fn := entry.Schema.Copy()
+				fn := entry.Schema.Clone()
 				fn.Set("name", entry.Name)
 				def = map[string]any{"type": "function", "function": fn}
 			}
@@ -640,7 +641,7 @@ func RestoreAgentToolPrefix(ctx context.Context, agent AgentToolSnapshot, saved 
 		agent.SetToolSnapshot(merged, mergedNames)
 		agentToolsLock.Unlock()
 	}
-	if obj, ok := pinValue(saved).(map[string]any); ok && pyrepr.Truthy(obj["delegation_backend"]) {
+	if obj, ok := pinValue(saved).(map[string]any); ok && anyutil.IsTrue(obj["delegation_backend"]) {
 		agent.AdoptBuiltBackend(pinned, obj["delegation_backend"])
 	}
 	agent.AdoptSessionDelegationMode()
@@ -656,7 +657,7 @@ func pyListsEqual(a, b []any) bool {
 		return false
 	}
 	for i := range a {
-		if !pyrepr.Equal(pyJSONValue(a[i]), pyJSONValue(b[i])) {
+		if !anyutil.Equal(pyJSONValue(a[i]), pyJSONValue(b[i])) {
 			return false
 		}
 	}
@@ -665,15 +666,15 @@ func pyListsEqual(a, b []any) bool {
 
 // Value in the decoded JSON model so typed Go slices and maps compare like their Python counterparts
 func pyJSONValue(v any) any {
-	text, err := pyjson.Dumps(v)
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		return v
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return v
 	}
-	return pyjson.Plain(decoded)
+	return jsonutil.Plain(decoded)
 }
 
 // Folds a fresh snapshot into the live one keeping existing slots and bytes, appending new names unless held
@@ -726,7 +727,7 @@ func reinjectAuthorizedDynamicTools(agent AgentToolSnapshot, toolsList *[]map[st
 // Appends memory provider and context engine tools onto the staged pair, returning the routing names it claimed
 func reinjectPostBuildTools(agent AgentToolSnapshot, toolsList *[]map[string]any, nameSet map[string]bool) map[string]bool {
 	add := func(schema any) (string, bool) {
-		s, ok := pyjson.Plain(schema).(map[string]any)
+		s, ok := jsonutil.Plain(schema).(map[string]any)
 		if !ok {
 			return "", false
 		}

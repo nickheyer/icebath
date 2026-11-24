@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	"golang.org/x/sys/windows"
 )
 
@@ -22,7 +22,7 @@ func TestCloneKeepsRealNtfsJunction(t *testing.T) {
 		t.Fatal(err)
 	}
 	foo := filepath.Join(clone, "skills", "foo")
-	if pyfs.ReparseTag(foo) != windows.IO_REPARSE_TAG_MOUNT_POINT {
+	if fsutil.ReparseTag(foo) != windows.IO_REPARSE_TAG_MOUNT_POINT {
 		t.Fatal("foo is not a junction")
 	}
 	got, _ := filepath.EvalSymlinks(foo)

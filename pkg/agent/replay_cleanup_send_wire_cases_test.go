@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Chat completions wire bytes of messages through the real transport, keys sorted
@@ -21,7 +21,7 @@ func sendWire(t *testing.T, messages []map[string]any) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := pyjson.Dumps(converted, pyjson.SortKeys(true))
+	raw, err := jsonutil.Encode(converted, jsonutil.SortKeys())
 	if err != nil {
 		t.Fatal(err)
 	}

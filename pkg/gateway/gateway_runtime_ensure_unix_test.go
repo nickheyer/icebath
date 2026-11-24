@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 	"golang.org/x/sys/unix"
 )
 
@@ -89,7 +89,7 @@ func dispatchUnmanagedSpawnTestModes() (int, bool) {
 		cmd.ExtraFiles = append(cmd.ExtraFiles, owner)
 		return real(cmd)
 	}
-	child, err := SpawnUnmanagedGateway(context.Background(), h, pythread.Monotonic()+5, false, false)
+	child, err := SpawnUnmanagedGateway(context.Background(), h, timeutil.Monotonic()+5, false, false)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1, true

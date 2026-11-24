@@ -19,14 +19,14 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // One autocomplete row of a context reference provider, display defaulting to the text
@@ -80,7 +80,7 @@ func (h hostedContextReferenceProvider) Autocomplete(ctx context.Context, query 
 	out := make([]ContextCompletionItem, 0, len(items))
 	for _, item := range items {
 		m := plugins.FieldsOf(item)
-		out = append(out, NewContextCompletionItem(pyrepr.Str(m["text"]), pyrepr.Str(m["display"]), pyrepr.Str(m["meta"])))
+		out = append(out, NewContextCompletionItem(anyutil.String(m["text"]), anyutil.String(m["display"]), anyutil.String(m["meta"])))
 	}
 	return out, nil
 }
@@ -90,7 +90,7 @@ func (h hostedContextReferenceProvider) Expand(ctx context.Context, target strin
 	if err != nil || raw == nil {
 		return nil, err
 	}
-	s := pyrepr.Str(raw)
+	s := anyutil.String(raw)
 	return &s, nil
 }
 
@@ -107,7 +107,7 @@ func adaptHostedContextReferenceProvider(p any) any {
 	}
 	prefix, _ := obj.Get(context.Background(), "prefix")
 	description, _ := obj.Get(context.Background(), "description")
-	return hostedContextReferenceProvider{obj: obj, prefix: pyrepr.Str(prefix), description: pyrepr.Str(description)}
+	return hostedContextReferenceProvider{obj: obj, prefix: anyutil.String(prefix), description: anyutil.String(description)}
 }
 
 // HostedContextObjectName names a context engine, false when obj is none
@@ -123,7 +123,7 @@ func HostedContextObjectName(kind string, obj any) (string, bool) {
 		if err != nil {
 			return "", false
 		}
-		return pyrepr.Str(name), true
+		return anyutil.String(name), true
 	}
 	return "", false
 }
@@ -204,7 +204,7 @@ func (contextReferenceScopedRegistry) ProviderName(provider any) string {
 			return ""
 		}
 		prefix, _ := p.Get(context.Background(), "prefix")
-		return pyrepr.Str(prefix)
+		return anyutil.String(prefix)
 	case ContextReferenceProvider:
 		return p.Prefix()
 	}
@@ -478,13 +478,13 @@ func PreprocessContextReferences(ctx context.Context, message string, o ContextR
 	if len(refs) == 0 {
 		return &ContextReferenceResult{Message: message, OriginalMessage: message}, nil
 	}
-	cwdPath, err := pypath.Resolve(pypath.Expanduser(o.Cwd))
+	cwdPath, err := pathutil.Resolve(pathutil.ExpandUser(o.Cwd))
 	if err != nil {
 		return nil, err
 	}
 	allowedRoot := cwdPath
 	if o.AllowedRoot != nil {
-		allowedRoot, err = pypath.Resolve(pypath.Expanduser(*o.AllowedRoot))
+		allowedRoot, err = pathutil.Resolve(pathutil.ExpandUser(*o.AllowedRoot))
 		if err != nil {
 			return nil, err
 		}
@@ -973,13 +973,13 @@ func defaultURLFetcher(ctx context.Context, url string) (string, error) {
 	}
 	first, _ := docs[0].(map[string]any)
 	content := first["content"]
-	if !pyrepr.Truthy(content) {
+	if !anyutil.IsTrue(content) {
 		content = first["raw_content"]
 	}
-	if !pyrepr.Truthy(content) {
+	if !anyutil.IsTrue(content) {
 		content = ""
 	}
-	return strings.TrimSpace(pyrepr.Str(content)), nil
+	return strings.TrimSpace(anyutil.String(content)), nil
 }
 
 // Tool environment of the active home for the path guards and the web extract tool
@@ -1013,7 +1013,7 @@ func agentStagedPath(ctx context.Context, path string) (staged bool) {
 		}
 	}()
 	for _, m := range tools.GetCacheDirectoryMounts(referenceToolsEnv(ctx), "") {
-		root, err := pypath.Resolve(pypath.Expanduser(m.HostPath))
+		root, err := pathutil.Resolve(pathutil.ExpandUser(m.HostPath))
 		if err != nil {
 			continue
 		}
@@ -1029,11 +1029,11 @@ func resolveReferencePath(ctx context.Context, cwd, target, allowedRoot string) 
 	if tools.IsNTNamespacePath(target) {
 		return "", &plugins.HostBuiltinError{Type: "ValueError", Message: "path uses a Windows NT/device namespace prefix and cannot be attached"}
 	}
-	joined := pypath.Expanduser(target)
+	joined := pathutil.ExpandUser(target)
 	if !filepath.IsAbs(joined) {
 		joined = filepath.Join(cwd, joined)
 	}
-	resolved, err := pypath.Resolve(joined)
+	resolved, err := pathutil.Resolve(joined)
 	if err != nil {
 		return "", err
 	}
@@ -1053,11 +1053,11 @@ func resolveReferencePath(ctx context.Context, cwd, target, allowedRoot string) 
 
 // Refuses credential and internal paths, failing closed when the canonical deny list cannot be consulted
 func ensureReferencePathAllowed(ctx context.Context, path string) error {
-	userHome, err := pypath.Resolve(pypath.Expanduser("~"))
+	userHome, err := pathutil.Resolve(pathutil.ExpandUser("~"))
 	if err != nil {
 		return err
 	}
-	icebathHome, err := pypath.Resolve(home.Dir(ctx))
+	icebathHome, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return err
 	}

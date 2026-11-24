@@ -1,21 +1,23 @@
 package dingtalk
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyqrcode"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	qrutil "github.com/nickheyer/icebath/pkg/utils/qr"
 )
 
 // Registration API base of the device flow from dingtalk.registration_base_url
@@ -40,17 +42,18 @@ func (e *RegistrationError) Error() string { return e.Msg }
 
 // HTTP, clock, sleep and QR importability seams of the device flow, the module names its tests patch
 var (
-	registrationPost = func(ctx context.Context, url string, payload any) (*pyrequests.Response, error) {
-		body, err := pyjson.EncodeWTF8PythonASCII(payload)
+	registrationPost = func(ctx context.Context, endpoint string, payload any) (*httputil.Response, error) {
+		body, err := jsonutil.Append(nil, payload, jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(body)))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 		if err != nil {
 			return nil, err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		return pyrequests.Send(ctx, http.DefaultTransport.(*http.Transport), pyrequests.Seconds(15), req)
+		client := &http.Client{Transport: httputil.TrustEnvCA(nil), CheckRedirect: httputil.RedirectPolicy(true)}
+		return httputil.Do(client, req, httputil.EachPhase(15*time.Second))
 	}
 	authSleep     = func(seconds float64) { time.Sleep(time.Duration(seconds * float64(time.Second))) }
 	authClockBase = time.Now()
@@ -60,44 +63,45 @@ var (
 )
 
 // POSTs to the registration API, the RegistrationError of a network failure or a non zero errcode
-func apiPost(ctx context.Context, path string, payload *pyjson.Object) (*pyjson.Object, error) {
-	url := registrationBaseURL(ctx) + path
+func apiPost(ctx context.Context, path string, payload *jsonutil.Object) (*jsonutil.Object, error) {
+	endpoint := registrationBaseURL(ctx) + path
 	network := func(err error) error {
-		return &RegistrationError{fmt.Sprintf("Network error calling %s: %s", url, err.Error())}
+		return &RegistrationError{fmt.Sprintf("Network error calling %s: %s", endpoint, err.Error())}
 	}
-	resp, err := registrationPost(ctx, url, payload)
+	resp, err := registrationPost(ctx, endpoint, payload)
 	if err != nil {
-		if _, ok := err.(*pyrequests.Error); ok {
+		var ue *url.Error
+		if errors.As(err, &ue) {
 			return nil, network(err)
 		}
 		return nil, err
 	}
-	if err := resp.RaiseForStatus(url); err != nil {
-		return nil, network(err)
+	if resp.StatusCode >= 400 {
+		return nil, network(resp.CheckStatus())
 	}
-	decoded, err := pyjson.LoadsBytes(resp.Body)
+	decoded, err := jsonutil.Decode(resp.Content)
 	if err != nil {
 		return nil, network(err)
 	}
-	data, ok := decoded.(*pyjson.Object)
+	data, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("the DingTalk reply is %s, expected a mapping", errchain.Kind(decoded))
 	}
-	errcode, present := data.Vals["errcode"]
+	errcode, present := data.Get("errcode")
 	if !present {
 		errcode = int64(-1)
 	}
 	if !numberEquals(errcode, 0) {
-		msg, ok := data.Vals["errmsg"]
+		msg, ok := data.Get("errmsg")
 		if !ok {
 			msg = "unknown error"
 		}
-		return nil, &RegistrationError{fmt.Sprintf("API error [%s]: %s (errcode=%s)", path, pyrepr.Str(msg), pyrepr.Str(errcode))}
+		return nil, &RegistrationError{fmt.Sprintf("API error [%s]: %s (errcode=%s)", path, anyutil.String(msg), anyutil.String(errcode))}
 	}
 	return data, nil
 }
 
-// Whether a decoded JSON value equals the integer n the way Python compares numbers
+// Whether a decoded JSON value equals the integer n, a boolean counting as 1 or 0
 func numberEquals(v any, n int64) bool {
 	switch x := v.(type) {
 	case int64:
@@ -111,25 +115,21 @@ func numberEquals(v any, n int64) bool {
 }
 
 // Stripped str of an object field, the default when it is missing
-func fieldText(o *pyjson.Object, key string, def any) string {
-	v, ok := o.Vals[key]
+func fieldText(o *jsonutil.Object, key string, def any) string {
+	v, ok := o.Get(key)
 	if !ok {
 		v = def
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
-// Python int of an object field, the default when missing
-func fieldInt(o *pyjson.Object, key string, def int64) (int64, error) {
-	v, ok := o.Vals[key]
+// Integer of an object field converted from a number, numeric text or a boolean, the default when missing
+func fieldInt(o *jsonutil.Object, key string, def int64) (int64, error) {
+	v, ok := o.Get(key)
 	if !ok {
 		return def, nil
 	}
-	n, err := pyint.Of(v)
-	if err != nil {
-		return 0, err
-	}
-	return n.Int64(), nil
+	return anyutil.ToInt(v)
 }
 
 // Device flow registration parameters, the nonce exchanged for the device code and verification URL
@@ -140,7 +140,7 @@ type registration struct {
 
 // Starts a device flow registration, init for the nonce then begin for the device code and URL
 func beginRegistration(ctx context.Context) (*registration, error) {
-	initData, err := apiPostFn(ctx, "/app/registration/init", pyjson.ObjectOf("source", registrationSource(ctx)))
+	initData, err := apiPostFn(ctx, "/app/registration/init", jsonutil.ObjectOf("source", registrationSource(ctx)))
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func beginRegistration(ctx context.Context) (*registration, error) {
 	if nonce == "" {
 		return nil, &RegistrationError{"init response missing nonce"}
 	}
-	begin, err := apiPostFn(ctx, "/app/registration/begin", pyjson.ObjectOf("nonce", nonce))
+	begin, err := apiPostFn(ctx, "/app/registration/begin", jsonutil.ObjectOf("nonce", nonce))
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ type pollResult struct {
 
 // Polls the registration status once
 func pollRegistration(ctx context.Context, deviceCode string) (*pollResult, error) {
-	data, err := apiPostFn(ctx, "/app/registration/poll", pyjson.ObjectOf("device_code", deviceCode))
+	data, err := apiPostFn(ctx, "/app/registration/poll", jsonutil.ObjectOf("device_code", deviceCode))
 	if err != nil {
 		return nil, err
 	}
@@ -235,26 +235,12 @@ func waitForRegistrationSuccess(ctx context.Context, deviceCode string, interval
 
 // Prints the URL as a compact half block QR code, two matrix rows per character
 func renderQRToTerminal(url string) error {
-	code, err := pyqrcode.Make(url, pyqrcode.ErrorCorrectL, 1)
+	code, err := qrutil.Encode(url, qrutil.Low)
 	if err != nil {
 		return err
 	}
-	matrix := code.Matrix()
-	glyph := map[[2]bool]string{{true, true}: "█", {true, false}: "▀", {false, true}: "▄", {false, false}: " "}
-	var lines []string
-	for r := 0; r < len(matrix); r += 2 {
-		bottom := make([]bool, len(matrix[r]))
-		if r+1 < len(matrix) {
-			bottom = matrix[r+1]
-		}
-		var b strings.Builder
-		b.WriteString("    ")
-		for i, top := range matrix[r] {
-			b.WriteString(glyph[[2]bool{top, bottom[i]}])
-		}
-		lines = append(lines, b.String())
-	}
-	gateway.WizardPrintln(strings.Join(lines, "\n"))
+	art := strings.TrimSuffix(code.HalfBlocks(1, false), "\n")
+	gateway.WizardPrintln("    " + strings.ReplaceAll(art, "\n", "\n    "))
 	return nil
 }
 

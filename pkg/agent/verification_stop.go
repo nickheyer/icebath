@@ -4,14 +4,15 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -34,8 +35,8 @@ var (
 
 // True when a changed path is documentation or prose with nothing to verify
 func isNonCodeVerifyPath(raw string) bool {
-	suffix := strings.ToLower(pypath.PathSuffix(raw))
-	return nonCodeVerifyExtensions[suffix] || (suffix == "" && nonCodeVerifyFilenames[strings.ToLower(pypath.PathName(raw))])
+	suffix := strings.ToLower(pathutil.Suffix(raw))
+	return nonCodeVerifyExtensions[suffix] || (suffix == "" && nonCodeVerifyFilenames[strings.ToLower(pathutil.Name(raw))])
 }
 
 // Edit then verify before finish switch from agent.verify_on_stop, auto meaning on outside chat apps
@@ -57,14 +58,14 @@ func verifyCandidateCwds(paths []string) []string {
 		if raw == "" {
 			continue
 		}
-		p, err := pypath.PathExpanduser(raw)
+		p, err := pathutil.ExpandUserPath(raw)
 		if err != nil {
 			continue
 		}
 		if info, err := os.Stat(p); err != nil || !info.IsDir() {
-			p = pypath.PathParent(p)
+			p = filepath.Dir(filepath.Clean(p))
 		}
-		resolved, err := pypath.Resolve(p)
+		resolved, err := pathutil.Resolve(p)
 		if err != nil {
 			continue
 		}
@@ -79,7 +80,7 @@ func verifyCandidateCwds(paths []string) []string {
 // Status of a verification record, unverified when absent
 func verifyStatusName(status map[string]any) string {
 	if v := status["status"]; pyTruthy(v) {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return "unverified"
 }
@@ -126,7 +127,7 @@ func workspaceHasRunnableRecipe(root any) bool {
 	if !pyTruthy(root) {
 		return false
 	}
-	rootPath := pyrepr.Str(root)
+	rootPath := anyutil.String(root)
 	if info, err := os.Stat(verify.ManifestPath(rootPath)); err == nil && info.Mode().IsRegular() {
 		return true
 	}
@@ -147,11 +148,11 @@ func verifyStatusDetail(status map[string]any) string {
 	}
 	summary := ""
 	if v := evidence["output_summary"]; pyTruthy(v) {
-		summary = strings.TrimSpace(pyrepr.Str(v))
+		summary = strings.TrimSpace(anyutil.String(v))
 	}
 	parts := []string{name}
 	if pyTruthy(command) {
-		parts = append(parts, "last command `"+pyrepr.Str(command)+"`")
+		parts = append(parts, "last command `"+anyutil.String(command)+"`")
 	}
 	if summary != "" {
 		parts = append(parts, "last output:\n"+tools.Elide(summary, maxStatusSummaryChars))
@@ -226,11 +227,11 @@ func buildVerifyOnStopNudge(ctx context.Context, env *tools.Env, sessionID strin
 			"passing run records verification evidence for this workspace. " +
 			"Read any failure, repair the code, and summarize what passed."
 	default:
-		tempDir, err := pypath.Gettempdir()
+		tempDir, err := pathutil.TempDir()
 		if err != nil {
 			return "", err
 		}
-		if tempDir, err = pypath.Realpath(tempDir, pypath.Lax); err != nil {
+		if tempDir, err = pathutil.Resolve(tempDir); err != nil {
 			return "", err
 		}
 		instruction = "No canonical test/lint/build command was detected. Create a focused " +

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Default Entra scope for Azure AI Foundry
@@ -21,8 +21,8 @@ const ScopeAIAzureDefault = "https://ai.azure.com/.default"
 // Callable api key minting a fresh Entra JWT per request, its credential built for the context profile
 func azureEntraCredentialsIn(ctx context.Context, cfgEntra map[string]any) (func(context.Context) (string, error), error) {
 	scope := ""
-	if raw := cfgEntra["scope"]; pyrepr.Truthy(raw) {
-		scope = strings.TrimSpace(pyrepr.Str(raw))
+	if raw := cfgEntra["scope"]; anyutil.IsTrue(raw) {
+		scope = strings.TrimSpace(anyutil.String(raw))
 	}
 	if scope == "" {
 		scope = ScopeAIAzureDefault

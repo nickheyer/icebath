@@ -11,10 +11,11 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Runner that keeps a registry of served profile authorities
@@ -27,8 +28,8 @@ type launchAuthorityRunner = SessionAuthorityHolder
 
 // Runner holding the launch adapters and the live adapter map of each served secondary profile
 type adapterMapRunner interface {
-	Adapters() *pydict.Dict[Platform, PlatformAdapter]
-	ProfileAdapterMap(name string) *pydict.Dict[Platform, PlatformAdapter]
+	Adapters() *orderedutil.Map[Platform, PlatformAdapter]
+	ProfileAdapterMap(name string) *orderedutil.Map[Platform, PlatformAdapter]
 }
 
 var localAdapterMu sync.Mutex
@@ -50,7 +51,7 @@ func servedProfile(a *SessionAuthority) (string, bool) {
 }
 
 // Adapter map local sessions of the authority live in, the launch adapters or its served profile's own map
-func localAdapterMap(ctx context.Context, a *SessionAuthority) (*pydict.Dict[Platform, PlatformAdapter], error) {
+func localAdapterMap(ctx context.Context, a *SessionAuthority) (*orderedutil.Map[Platform, PlatformAdapter], error) {
 	runner, ok := a.Runner.(adapterMapRunner)
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) keeps no platform adapters", a.Runner)}
@@ -144,7 +145,7 @@ func checkErrorClass(err error) string {
 	if errors.As(err, &typed) {
 		return typed.Kind
 	}
-	var undecodable *pyjson.DecodeError
+	var undecodable *jsonutil.SyntaxError
 	if errors.As(err, &undecodable) {
 		return "JSONDecodeError"
 	}
@@ -174,7 +175,7 @@ func refusedCheck(err error) string {
 	if refusal := refusalOf(inner); refusal != nil {
 		cause = refusal.Reason
 	} else {
-		cause = checkErrorClass(inner) + ": " + pyrepr.ExceptionMessage(inner)
+		cause = checkErrorClass(inner) + ": " + inner.Error()
 	}
 	chained := ""
 	if next := checkCause(inner); next != nil {
@@ -223,7 +224,7 @@ type catchUpPending struct {
 func (e *catchUpPending) Unwrap() error { return e.RuntimeStoreError }
 
 // Value of a receipt key, the KeyError of an absent one
-func receiptField(receipt *pyjson.Object, key string) (any, error) {
+func receiptField(receipt *jsonutil.Object, key string) (any, error) {
 	value, ok := receipt.Get(key)
 	if !ok {
 		return nil, &pyKeyError{key: key}
@@ -233,11 +234,11 @@ func receiptField(receipt *pyjson.Object, key string) (any, error) {
 
 // True when two sources serialise to the same dict
 func sameSourceDict(a, b *SessionSource) bool {
-	return reflect.DeepEqual(pyjson.Plain(a.ToDict()), pyjson.Plain(b.ToDict()))
+	return reflect.DeepEqual(jsonutil.Plain(a.ToDict()), jsonutil.Plain(b.ToDict()))
 }
 
 // Receipt after recording compression steps an older build published past its tip, handed to a worker on the owner loop
-func withUntrackedCompression(ctx context.Context, a *SessionAuthority, sid string, receipt *pyjson.Object) (*pyjson.Object, error) {
+func withUntrackedCompression(ctx context.Context, a *SessionAuthority, sid string, receipt *jsonutil.Object) (*jsonutil.Object, error) {
 	adoptable := false
 	err := a.DB.ReadCtx(ctx, func(conn state.SQLiteConn) error {
 		children, routed, err := state.AdoptableCompression(ctx, conn, receipt)
@@ -262,7 +263,7 @@ func withUntrackedCompression(ctx context.Context, a *SessionAuthority, sid stri
 }
 
 // Entry of a receipt once its route, origin and stored identity are this authority's
-func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *pyjson.Object, source *SessionSource, route string) (*SessionEntry, error) {
+func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *jsonutil.Object, source *SessionSource, route string) (*SessionEntry, error) {
 	stored, err := receiptField(receipt, "route")
 	if err != nil {
 		return nil, failedAt(err)
@@ -274,7 +275,7 @@ func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *pyjson.Obje
 	if err != nil {
 		return nil, failedAt(err)
 	}
-	entryDict, ok := rawEntry.(*pyjson.Object)
+	entryDict, ok := rawEntry.(*jsonutil.Object)
 	if !ok {
 		return nil, failedAt(&PyError{Kind: "TypeError", Msg: "a local session receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"})
 	}
@@ -286,7 +287,7 @@ func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *pyjson.Obje
 	if err != nil {
 		return nil, failedAt(err)
 	}
-	origin, ok := rawOrigin.(*pyjson.Object)
+	origin, ok := rawOrigin.(*jsonutil.Object)
 	if !ok {
 		return nil, failedAt(&PyError{Kind: "TypeError", Msg: "a local session origin is " + errchain.Kind(rawOrigin) + ", expected a mapping"})
 	}
@@ -316,8 +317,8 @@ func checkedEntry(ctx context.Context, a *SessionAuthority, receipt *pyjson.Obje
 }
 
 // Stored receipt of a session with its local source, route and entry, once all are this owner's
-func ownedReceipt(ctx context.Context, a *SessionAuthority, sid string) (*pyjson.Object, *SessionSource, string, *SessionEntry, error) {
-	fail := func(err error) (*pyjson.Object, *SessionSource, string, *SessionEntry, error) {
+func ownedReceipt(ctx context.Context, a *SessionAuthority, sid string) (*jsonutil.Object, *SessionSource, string, *SessionEntry, error) {
+	fail := func(err error) (*jsonutil.Object, *SessionSource, string, *SessionEntry, error) {
 		return nil, nil, "", nil, err
 	}
 	receipt, err := a.DB.LocalReceipt(ctx, sid)
@@ -390,7 +391,7 @@ func unusedSession(ctx context.Context, conn state.SQLiteConn, sessionID string)
 }
 
 // True for an empty replacement the stale route heal minted on a local route outside the receipt lineage
-func strayRouteTarget(ctx context.Context, a *SessionAuthority, receipt *pyjson.Object, sessionID string) (bool, error) {
+func strayRouteTarget(ctx context.Context, a *SessionAuthority, receipt *jsonutil.Object, sessionID string) (bool, error) {
 	lineage, err := receiptLineage(receipt)
 	if err != nil {
 		return false, err
@@ -409,14 +410,14 @@ func strayRouteTarget(ctx context.Context, a *SessionAuthority, receipt *pyjson.
 	}
 	owner, _ := receipt.Get("session_id")
 	pkgLog().Warn(fmt.Sprintf("Local route for %s named an empty replacement %s outside its lineage; restoring the receipt target",
-		pyrepr.Str(owner), sessionID))
+		anyutil.String(owner), sessionID))
 	return true, nil
 }
 
 // Restores a local session from its private receipt into the authority, its route, policy and admission source
 func restoreLocalSession(ctx context.Context, a *SessionAuthority, sid string) (SessionRef, error) {
 	var (
-		receipt *pyjson.Object
+		receipt *jsonutil.Object
 		source  *SessionSource
 		route   string
 		entry   *SessionEntry
@@ -575,7 +576,7 @@ func receiptEntryTarget(ctx context.Context, db *state.SessionDB, sid string) (s
 	if err != nil {
 		return "", err
 	}
-	entry, ok := rawEntry.(*pyjson.Object)
+	entry, ok := rawEntry.(*jsonutil.Object)
 	if !ok {
 		return "", &PyError{Kind: "TypeError", Msg: "a local session receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
 	}

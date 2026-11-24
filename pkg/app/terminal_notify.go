@@ -1,13 +1,16 @@
 package app
 
 import (
+	"errors"
 	"io"
+	"math"
 	"os"
 	"regexp"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var c0AndDelRe = regexp.MustCompile("[\x00-\x1f\x7f]")
@@ -54,27 +57,27 @@ func warpSupported(getenv func(string) string) bool {
 func warpOSC777(event, detail, sessionID string) (string, error) {
 	advertised := 1
 	if raw, ok := os.LookupEnv("WARP_CLI_AGENT_PROTOCOL_VERSION"); ok {
-		if n, parsed := pyIntOf(raw); parsed {
-			advertised = n
+		if n, err := textutil.ParseInt(raw); err == nil || errors.Is(err, strconv.ErrRange) {
+			advertised = int(max(min(n, math.MaxInt), math.MinInt))
 		}
 	}
 	cwd, err := os.Getwd()
 	if err != nil {
 		return "", err
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("v", min(advertised, warpProtocolVersion))
 	payload.Set("agent", "icebath")
 	payload.Set("event", event)
 	payload.Set("session_id", sessionID)
 	payload.Set("cwd", cwd)
-	payload.Set("project", pypath.Basename(cwd))
+	payload.Set("project", pathutil.Name(cwd))
 	key := "response"
 	if event == "permission_request" {
 		key = "summary"
 	}
 	payload.Set(key, runesHead(detail, 200))
-	body, err := pyjson.Dumps(payload, pyjson.Separators(",", ":"))
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		return "", err
 	}

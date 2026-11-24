@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func probeUnit(configuredModel any) *delegateBatch {
@@ -49,8 +49,8 @@ func parallelBatch(parent *AIAgent, n int) *delegateBatch {
 		MaxChildren: n, OverallStart: time.Now()}
 }
 
-func completedEntry(i int, summary string) *pyjson.Object {
-	return pyjson.ObjectOf("task_index", i, "status", "completed", "summary", summary, "error", nil, "api_calls", 1, "duration_seconds", 0)
+func completedEntry(i int, summary string) *jsonutil.Object {
+	return jsonutil.ObjectOf("task_index", i, "status", "completed", "summary", summary, "error", nil, "api_calls", 1, "duration_seconds", 0)
 }
 
 func TestInterruptDoesNotJoinWedgedChild(t *testing.T) {
@@ -59,17 +59,17 @@ func TestInterruptDoesNotJoinWedgedChild(t *testing.T) {
 	var startOnce sync.Once
 	parent := &AIAgent{quietMode: true}
 	saved := runSingleChildFn
-	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
+	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
 		if i == 0 {
 			startOnce.Do(func() { close(wedgedStarted) })
 			<-wedgedRelease
-			return pyjson.ObjectOf("task_index", i, "status", "completed")
+			return jsonutil.ObjectOf("task_index", i, "status", "completed")
 		}
 		return completedEntry(i, "done")
 	}
 	t.Cleanup(func() { runSingleChildFn = saved })
 	batch := parallelBatch(parent, 2)
-	var results []*pyjson.Object
+	var results []*jsonutil.Object
 	returned := make(chan struct{})
 	go func() {
 		runChildrenParallel(context.Background(), batch, &results, true)
@@ -99,7 +99,7 @@ func TestInterruptDoesNotJoinWedgedChild(t *testing.T) {
 	if len(results) != 2 {
 		t.Fatalf("results %v", results)
 	}
-	byIndex := map[int]*pyjson.Object{}
+	byIndex := map[int]*jsonutil.Object{}
 	for _, e := range results {
 		byIndex[entryValue(e, "task_index").(int)] = e
 	}
@@ -114,11 +114,11 @@ func TestInterruptDoesNotJoinWedgedChild(t *testing.T) {
 func TestNormalCompletionStillJoinsCleanly(t *testing.T) {
 	parent := &AIAgent{quietMode: true}
 	saved := runSingleChildFn
-	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
+	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
 		return completedEntry(i, fmt.Sprintf("s%d", i))
 	}
 	t.Cleanup(func() { runSingleChildFn = saved })
-	var results []*pyjson.Object
+	var results []*jsonutil.Object
 	runChildrenParallel(context.Background(), parallelBatch(parent, 3), &results, true)
 	var order []int
 	for _, e := range results {

@@ -15,11 +15,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // How long a card start waits for the authorization URL
@@ -204,7 +204,7 @@ var (
 type OAuthWorkerOptions struct {
 	Flow       *ClientOAuthFlow
 	OnDone     func()
-	Env        *pyjson.Object
+	Env        *jsonutil.Object
 	OnCommit   func(context.Context) error
 	ReuseSaved bool
 }
@@ -229,8 +229,8 @@ func RunOAuthWorker(ctx context.Context, env *tools.Env, homeDir, serverName str
 		wctx := home.WithOverride(ctx, homeDir)
 		scope := provider.BuildProfileSecretScope(homeDir)
 		if o.Env != nil {
-			for _, k := range o.Env.Keys {
-				scope[k], _ = o.Env.Vals[k].(string)
+			for _, k := range o.Env.Keys() {
+				scope[k], _ = o.Env.Value(k).(string)
 			}
 		}
 		wctx = provider.WithSecretScope(wctx, scope, homeDir)
@@ -297,7 +297,7 @@ func startLoopbackReceiver(flow *ClientOAuthFlow) (*http.Server, int, error) {
 	}
 	srv := &http.Server{ReadHeaderTimeout: 10 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet {
-			http.Error(w, fmt.Sprintf("Unsupported method (%s)", pyrepr.StrRepr(r.Method)), http.StatusNotImplemented)
+			http.Error(w, fmt.Sprintf("Unsupported method (%s)", strconv.Quote(r.Method)), http.StatusNotImplemented)
 			return
 		}
 		if p := strings.TrimRight(r.URL.Path, "/"); p != "/callback" && p != "" {
@@ -333,9 +333,9 @@ func pinnedRedirectURI(cfg map[string]any) string {
 	o := cfgOAuth(cfg)
 	host := "127.0.0.1"
 	if connTruthy(o["redirect_host"]) {
-		host = pyrepr.Str(o["redirect_host"])
+		host = anyutil.String(o["redirect_host"])
 	}
-	return fmt.Sprintf("http://%s:%s/callback", host, pyrepr.Str(o["redirect_port"]))
+	return fmt.Sprintf("http://%s:%s/callback", host, anyutil.String(o["redirect_port"]))
 }
 
 // Sets the redirect the SDK consumes and returns the backend receiver when one is bound
@@ -412,7 +412,7 @@ type CardOAuthOptions struct {
 	URLTimeout        time.Duration
 	ClientRedirectURI *string
 	Cfg               map[string]any
-	Env               *pyjson.Object
+	Env               *jsonutil.Object
 	OnCommit          func(context.Context) error
 }
 
@@ -433,7 +433,7 @@ func StartCardOAuth(ctx context.Context, env *tools.Env, serverName string, o Ca
 		return nil, fmt.Errorf("'%s' is a stdio server: it takes env keys, not OAuth", serverName)
 	}
 	cfg["auth"] = "oauth"
-	homeDir, err := pypath.Resolve(pypath.Expanduser(home.Dir(ctx)))
+	homeDir, err := pathutil.Resolve(pathutil.ExpandUser(home.Dir(ctx)))
 	if err != nil {
 		return nil, err
 	}

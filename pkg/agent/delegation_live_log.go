@@ -5,9 +5,9 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,12 +15,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -55,15 +53,12 @@ func liveBestEffort(what string, fn func() error) {
 	}
 }
 
-// Python str of a value with falsy values reading as empty
+// Text of a value with falsy values reading as empty
 func liveText(v any) string {
 	if !pyTruthy(v) {
 		return ""
 	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Single line of the text truncated to the limit with an elided character count
@@ -93,11 +88,8 @@ func liveJoined(parts ...string) string {
 	return strings.Join(kept, " ")
 }
 
-// Writes or appends UTF-8 text, refusing lone surrogates the way the Python codec does
+// Writes or appends text to the file
 func writeLiveText(path, text string, flag int) error {
-	if err := pystr.StrictUTF8EncodeError(text); err != nil {
-		return err
-	}
 	f, err := os.OpenFile(path, flag, 0o666)
 	if err != nil {
 		return err
@@ -111,7 +103,7 @@ func writeLiveText(path, text string, flag int) error {
 }
 
 func dumpLiveJSON(path string, payload any) error {
-	text, err := pyjson.Dumps(payload, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -216,18 +208,11 @@ func liveDuration(duration any) string {
 	if duration == nil {
 		return ""
 	}
-	f, err := pyint.Float(duration)
+	f, err := anyutil.ToFloat(duration)
 	if err != nil {
 		return ""
 	}
-	if math.IsInf(f, 0) || math.IsNaN(f) {
-		return " " + pyrepr.Float(f) + "s"
-	}
-	text, err := pyrepr.Format(f, ".1f")
-	if err != nil {
-		return ""
-	}
-	return " " + text + "s"
+	return " " + strconv.FormatFloat(f, 'f', 1, 64) + "s"
 }
 
 // Logs a tool result with its status and duration
@@ -290,12 +275,12 @@ func (w *liveTranscriptWriter) onComplete(preview any, kwargs map[string]any) {
 	}
 	durPart, summaryPart := "", ""
 	if dur != nil {
-		durPart = "duration=" + pyrepr.Str(dur) + "s"
+		durPart = "duration=" + anyutil.String(dur) + "s"
 	}
 	if pyTruthy(summary) {
 		summaryPart = "summary: " + oneLine(summary, liveResultMax)
 	}
-	w.marker(liveJoined("status="+pyrepr.Str(status), durPart, summaryPart))
+	w.marker(liveJoined("status="+anyutil.String(status), durPart, summaryPart))
 }
 
 // Maps one child progress event onto transcript lines, ignoring unknown events
@@ -327,7 +312,7 @@ func (w *liveTranscriptWriter) observe(eventType any, toolName, preview, args an
 }
 
 // Terminal marker carrying the exit reason detail the completion event lacks
-func (w *liveTranscriptWriter) Finalize(entry *pyjson.Object) error {
+func (w *liveTranscriptWriter) Finalize(entry *jsonutil.Object) error {
 	get := func(key string) any {
 		v, _ := entry.Get(key)
 		return v
@@ -339,7 +324,7 @@ func (w *liveTranscriptWriter) Finalize(entry *pyjson.Object) error {
 	exitReason := get("exit_reason")
 	exitPart, budgetPart, errorPart := "", "", ""
 	if pyTruthy(exitReason) {
-		exitPart = "exit_reason=" + pyrepr.Str(exitReason)
+		exitPart = "exit_reason=" + anyutil.String(exitReason)
 	}
 	if exitReason == "max_iterations" {
 		budgetPart = "(iteration budget exhausted)"
@@ -347,7 +332,7 @@ func (w *liveTranscriptWriter) Finalize(entry *pyjson.Object) error {
 	if errVal := get("error"); pyTruthy(errVal) {
 		errorPart = "error: " + oneLine(errVal, liveResultMax)
 	}
-	w.marker(liveJoined("end status="+pyrepr.Str(status), exitPart, budgetPart, errorPart))
+	w.marker(liveJoined("end status="+anyutil.String(status), exitPart, budgetPart, errorPart))
 	return nil
 }
 
@@ -436,7 +421,7 @@ func createLiveTranscripts(ctx context.Context, taskList []map[string]any, taskC
 	for i, t := range taskList {
 		goal := ""
 		if g, ok := t["goal"]; ok {
-			goal = pyrepr.Str(g)
+			goal = anyutil.String(g)
 		}
 		ctxVal := t["context"]
 		if !pyTruthy(ctxVal) {
@@ -466,9 +451,9 @@ func writeLiveManifest(ctx context.Context, delegationID string, taskList []map[
 		for i, t := range taskList {
 			goal := ""
 			if g, ok := t["goal"]; ok {
-				goal = pyrepr.Str(g)
+				goal = anyutil.String(g)
 			}
-			task := pyjson.NewObject()
+			task := jsonutil.NewObject()
 			task.Set("index", i)
 			task.Set("goal", liveRedact(textutil.First(goal, 500)))
 			if i < len(paths) {
@@ -479,7 +464,7 @@ func writeLiveManifest(ctx context.Context, delegationID string, taskList []map[
 			task.Set("status", "running")
 			tasks = append(tasks, task)
 		}
-		manifest := pyjson.NewObject()
+		manifest := jsonutil.NewObject()
 		manifest.Set("delegation_id", delegationID)
 		manifest.Set("started", time.Now().Format(liveTimeFormat))
 		manifest.Set("task_count", len(taskList))
@@ -490,9 +475,9 @@ func writeLiveManifest(ctx context.Context, delegationID string, taskList []map[
 	})
 }
 
-// Python dict get on a decoded JSON object, the default when absent or not an object
+// Value of a key of a decoded JSON object, the default when absent or not an object
 func liveObjectGet(v any, key string, def any) any {
-	if o, ok := v.(*pyjson.Object); ok {
+	if o, ok := v.(*jsonutil.Object); ok {
 		if got, ok := o.Get(key); ok {
 			return got
 		}
@@ -501,7 +486,7 @@ func liveObjectGet(v any, key string, def any) any {
 }
 
 // Updates each task's manifest status from the aggregated results, stamping completion unless settling early
-func updateManifestStatuses(delegationID string, results []*pyjson.Object, liveHome string, completed bool) {
+func updateManifestStatuses(delegationID string, results []*jsonutil.Object, liveHome string, completed bool) {
 	if delegationID == "" {
 		return
 	}
@@ -511,21 +496,21 @@ func updateManifestStatuses(delegationID string, results []*pyjson.Object, liveH
 		if err != nil {
 			return err
 		}
-		text, err := pystr.DecodeUTF8Sig(raw)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if err != nil {
 			return err
 		}
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return err
 		}
-		manifest, ok := decoded.(*pyjson.Object)
+		manifest, ok := decoded.(*jsonutil.Object)
 		if !ok {
 			return fmt.Errorf("delegation manifest is %s where a mapping was expected", errchain.Kind(decoded))
 		}
 		type indexed struct {
 			key any
-			r   *pyjson.Object
+			r   *jsonutil.Object
 		}
 		var byIndex []indexed
 		for _, r := range results {
@@ -535,7 +520,7 @@ func updateManifestStatuses(delegationID string, results []*pyjson.Object, liveH
 			key, _ := r.Get("task_index")
 			replaced := false
 			for i := range byIndex {
-				if pyrepr.Equal(byIndex[i].key, key) {
+				if anyutil.Equal(byIndex[i].key, key) {
 					byIndex[i].r, replaced = r, true
 				}
 			}
@@ -545,14 +530,14 @@ func updateManifestStatuses(delegationID string, results []*pyjson.Object, liveH
 		}
 		taskList, _ := liveObjectGet(manifest, "tasks", []any{}).([]any)
 		for _, rawTask := range taskList {
-			task, ok := rawTask.(*pyjson.Object)
+			task, ok := rawTask.(*jsonutil.Object)
 			if !ok {
 				return fmt.Errorf("delegation manifest task is %s where a mapping was expected", errchain.Kind(rawTask))
 			}
 			idx, _ := task.Get("index")
-			var r *pyjson.Object
+			var r *jsonutil.Object
 			for _, e := range byIndex {
-				if pyrepr.Equal(e.key, idx) {
+				if anyutil.Equal(e.key, idx) {
 					r = e.r
 				}
 			}

@@ -3,11 +3,12 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Receipt key and digest of a messaging chat pick on the mount the fences name
-func ChatPickKey(principalID, sessionID string, params *pyjson.Object) (string, string, error) {
+func ChatPickKey(principalID, sessionID string, params *jsonutil.Object) (string, string, error) {
 	requestID, err := receiptItem(params, "request_id")
 	if err != nil {
 		return "", "", err
@@ -39,7 +40,7 @@ func ChatPickKey(principalID, sessionID string, params *pyjson.Object) (string, 
 	if err != nil {
 		return "", "", err
 	}
-	payload, err := pyjson.Loads(text)
+	payload, err := jsonutil.Decode(text)
 	if err != nil {
 		return "", "", pyValueError(err.Error())
 	}
@@ -55,7 +56,7 @@ func ChatPickKey(principalID, sessionID string, params *pyjson.Object) (string, 
 }
 
 // Mount row whose revision and generation still match the fences the pick was made against
-func chatPickFencedRow(ctx context.Context, conn SQLiteConn, sessionID string, params *pyjson.Object) (*pyjson.Object, error) {
+func chatPickFencedRow(ctx context.Context, conn SQLiteConn, sessionID string, params *jsonutil.Object) (*jsonutil.Object, error) {
 	rows, err := queryObjects(ctx, conn, "SELECT * FROM sessions WHERE id=?", sessionID)
 	if err != nil {
 		return nil, err
@@ -68,22 +69,22 @@ func chatPickFencedRow(ctx context.Context, conn SQLiteConn, sessionID string, p
 	if err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(rowValue(row, "runtime_revision"), revision) {
+	if !anyutil.Equal(rowValue(row, "runtime_revision"), revision) {
 		return nil, runtimeRefusal("revision_conflict")
 	}
 	generation, err := receiptItem(params, "expected_generation")
 	if err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(rowValue(row, "runtime_generation"), generation) {
+	if !anyutil.Equal(rowValue(row, "runtime_generation"), generation) {
 		return nil, runtimeRefusal("stale_generation")
 	}
 	return row, nil
 }
 
 // Stored receipt of an exact retry under the receipt key, else the fenced mount row under the row key
-func (d *SessionDB) PrepareChatPick(ctx context.Context, epoch int64, key, digest, sessionID string, params *pyjson.Object) (*pyjson.Object, error) {
-	out := pyjson.NewObject()
+func (d *SessionDB) PrepareChatPick(ctx context.Context, epoch int64, key, digest, sessionID string, params *jsonutil.Object) (*jsonutil.Object, error) {
+	out := jsonutil.NewObject()
 	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
 			return err
@@ -110,7 +111,7 @@ func (d *SessionDB) PrepareChatPick(ctx context.Context, epoch int64, key, diges
 }
 
 // Bumps the mount revision and stores the result with that revision as the receipt in one fenced write
-func (d *SessionDB) CommitChatPick(ctx context.Context, epoch int64, key, digest, sessionID string, params, result *pyjson.Object) (any, error) {
+func (d *SessionDB) CommitChatPick(ctx context.Context, epoch int64, key, digest, sessionID string, params, result *jsonutil.Object) (any, error) {
 	var committed any
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
@@ -134,9 +135,9 @@ func (d *SessionDB) CommitChatPick(ctx context.Context, epoch int64, key, digest
 		if err != nil {
 			return err
 		}
-		stored := result.Copy()
+		stored := result.Clone()
 		stored.Set("revision", revision)
-		receipt := pyjson.NewObject()
+		receipt := jsonutil.NewObject()
 		receipt.Set("digest", digest)
 		receipt.Set("result", stored)
 		text, err := runtimeJSON(receipt)

@@ -13,13 +13,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Environment variable naming a gateway to attach to instead of this home's own
@@ -113,7 +113,7 @@ func terminalProfile(ctx context.Context) string {
 
 // Ready gateway serving this home, nil when none is, discovery never starting one
 func liveOwner(ctx context.Context) *gateway.GatewayEndpoint {
-	resolved, err := pypath.Resolve(home.Dir(ctx))
+	resolved, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		resolved = home.Dir(ctx)
 	}
@@ -260,7 +260,7 @@ func CreateThroughGateway(ctx context.Context, req manage.ProfileCreateRequest) 
 		return nil, &GatewayCreateError{fmt.Sprintf("lost %s during the create (%s); %s", named, kindName(err), unknown)}
 	}
 	var wireReceipt any
-	if answer, isObject := pyjson.Plain(sent.answer).(map[string]any); isObject {
+	if answer, isObject := jsonutil.Plain(sent.answer).(map[string]any); isObject {
 		wireReceipt = answer["receipt"]
 	}
 	made := tuigateway.ProfileCreateReceiptFromWire(wireReceipt)

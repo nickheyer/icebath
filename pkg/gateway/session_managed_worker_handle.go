@@ -8,8 +8,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Verified interpreter behind a worker handle, its pid and kernel birth
@@ -24,8 +25,8 @@ type managedWorker struct {
 	mu            sync.Mutex
 	identity      *workerIdentity
 	writeLock     sync.Mutex
-	commands      chan *pyjson.Object
-	closed        pythread.Event
+	commands      chan *jsonutil.Object
+	closed        syncutil.Event
 	stopCh        chan struct{}
 	stopOnce      sync.Once
 	stoppedAt     *float64
@@ -46,7 +47,7 @@ type managedWorker struct {
 
 // Worker handle around a spawned child, nothing started yet
 func newManagedWorker(process *workerProcess) *managedWorker {
-	return &managedWorker{process: process, commands: make(chan *pyjson.Object, 16), stopCh: make(chan struct{}),
+	return &managedWorker{process: process, commands: make(chan *jsonutil.Object, 16), stopCh: make(chan struct{}),
 		writerDone: make(chan struct{}), demand: make(chan struct{}, 8), arrived: make(chan struct{}),
 		stdout: bufio.NewReaderSize(process.stdout, 64*1024)}
 }
@@ -79,8 +80,8 @@ func (w *managedWorker) setCause(reason *string) {
 }
 
 // Whether a frame is exactly the type key with that value
-func isTypeFrame(frame *pyjson.Object, kind string) bool {
-	return frameKeysAre(frame, "type") && frame.Vals["type"] == kind
+func isTypeFrame(frame *jsonutil.Object, kind string) bool {
+	return frameKeysAre(frame, "type") && frame.Value("type") == kind
 }
 
 // Error kind of a pipe failure, OSError unless it carries a Python class
@@ -162,13 +163,13 @@ func (w *managedWorker) arrival() chan struct{} {
 }
 
 // Oldest queued frame, a queued failure staying queued so every later read fails the same way
-func (w *managedWorker) take() (*pyjson.Object, error) {
+func (w *managedWorker) take() (*jsonutil.Object, error) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	if err, failed := w.frames[0].(error); failed {
 		return nil, err
 	}
-	frame := w.frames[0].(*pyjson.Object)
+	frame := w.frames[0].(*jsonutil.Object)
 	w.frames = w.frames[1:]
 	w.requested = false
 	if len(w.frames) == 0 && w.arrivedSet {
@@ -195,14 +196,14 @@ func (w *managedWorker) knownSecrets() []string {
 }
 
 // Queues a control frame, a stop latching first, refused once closed or when the queue is full
-func (w *managedWorker) control(frame *pyjson.Object) error {
+func (w *managedWorker) control(frame *jsonutil.Object) error {
 	if w.closed.IsSet() {
 		return runtimeRefusal("managed_worker_lost")
 	}
 	if isTypeFrame(frame, "stop") {
 		w.mu.Lock()
 		if w.stoppedAt == nil {
-			now := pythread.Monotonic()
+			now := timeutil.Monotonic()
 			w.stoppedAt = &now
 		}
 		w.mu.Unlock()
@@ -220,11 +221,11 @@ func (w *managedWorker) control(frame *pyjson.Object) error {
 func (w *managedWorker) stopBudget(ack float64) float64 {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	return *w.stoppedAt + ack - pythread.Monotonic()
+	return *w.stoppedAt + ack - timeutil.Monotonic()
 }
 
 // One frame, a latched stop bounding supervision to ack seconds in total from the first stop
-func (w *managedWorker) nextFrame(ctx context.Context, timeout *float64, ack float64) (*pyjson.Object, error) {
+func (w *managedWorker) nextFrame(ctx context.Context, timeout *float64, ack float64) (*jsonutil.Object, error) {
 	w.mu.Lock()
 	if !w.readerStarted {
 		w.readerStarted = true
@@ -274,12 +275,12 @@ func (w *managedWorker) nextFrame(ctx context.Context, timeout *float64, ack flo
 
 // Cooperative stop of the worker's turn, the legacy interrupt a hard stop falls back to
 func (w *managedWorker) Interrupt() error {
-	return w.control(pyjson.ObjectOf("type", "stop"))
+	return w.control(jsonutil.ObjectOf("type", "stop"))
 }
 
 // Forwards a viewer's answer to the worker's approval or clarify prompt
 func (w *managedWorker) respond(kind, promptID, value string) error {
-	return w.control(pyjson.ObjectOf("type", kind, "prompt_id", promptID, "value", value))
+	return w.control(jsonutil.ObjectOf("type", kind, "prompt_id", promptID, "value", value))
 }
 
 // Writes one frame to the child's control pipe

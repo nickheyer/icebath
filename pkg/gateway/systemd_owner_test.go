@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Points the proc tree at a temp dir and answers systemctl show with the given main pids per scope
@@ -19,7 +19,7 @@ func pinUnitProbes(t *testing.T, mainPIDs map[string]string) *[][]string {
 	t.Cleanup(func() { systemdProcRoot, systemdRunProbe = savedRoot, savedProbe })
 	systemdProcRoot = t.TempDir()
 	var calls [][]string
-	systemdRunProbe = func(ctx context.Context, argv []string, timeout time.Duration) (*pysubprocess.Completed, error) {
+	systemdRunProbe = func(ctx context.Context, argv []string, timeout time.Duration) (*executil.Completed, error) {
 		calls = append(calls, argv)
 		scope := "system"
 		if argv[1] == "--user" {
@@ -29,7 +29,7 @@ func pinUnitProbes(t *testing.T, mainPIDs map[string]string) *[][]string {
 		if !known {
 			return nil, errors.New("systemctl not found")
 		}
-		return &pysubprocess.Completed{Returncode: 0, Stdout: []byte(out + "\n")}, nil
+		return &executil.Completed{ExitCode: 0, Stdout: []byte(out + "\n")}, nil
 	}
 	return &calls
 }
@@ -63,12 +63,12 @@ func TestSystemdOwnerForPidRequiresTheUnitMainPid(t *testing.T) {
 	}
 	writeCgroup(t, "88", "12:pids:/legacy\n0::/custom/odd.service\n")
 	*calls = nil
-	systemdRunProbe = func(ctx context.Context, argv []string, timeout time.Duration) (*pysubprocess.Completed, error) {
+	systemdRunProbe = func(ctx context.Context, argv []string, timeout time.Duration) (*executil.Completed, error) {
 		*calls = append(*calls, argv)
 		if argv[1] == "--user" {
-			return &pysubprocess.Completed{Returncode: 0, Stdout: []byte("88")}, nil
+			return &executil.Completed{ExitCode: 0, Stdout: []byte("88")}, nil
 		}
-		return &pysubprocess.Completed{Returncode: 1}, nil
+		return &executil.Completed{ExitCode: 1}, nil
 	}
 	unit, scope, ok = SystemdOwnerForPid(ctx, 88)
 	if !ok || unit != "odd.service" || scope != "" || len(*calls) != 2 || (*calls)[0][1] != "show" {

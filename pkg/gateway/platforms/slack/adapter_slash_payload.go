@@ -6,7 +6,7 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Raised like Python AttributeError when the slash command field is a truthy value other than a string
@@ -32,16 +32,16 @@ func subcommandMapLive(ctx context.Context) map[string]string {
 // Gateway text of a slash payload, native slashes verbatim and /icebath subcommands mapped through the registry
 func SlashCommandText(ctx context.Context, command map[string]any) (string, error) {
 	slashName := ""
-	if v := command["command"]; pyrepr.Truthy(v) {
+	if v := command["command"]; anyutil.IsTrue(v) {
 		s, ok := v.(string)
 		if !ok {
-			return "", &SlashPayloadError{TypeName: pyrepr.TypeName(v)}
+			return "", &SlashPayloadError{TypeName: anyutil.Kind(v)}
 		}
 		slashName = strings.TrimSpace(strings.TrimLeft(s, "/"))
 	}
 	rawText := ""
-	if v := command["text"]; pyrepr.Truthy(v) {
-		rawText = pyrepr.Str(v)
+	if v := command["text"]; anyutil.IsTrue(v) {
+		rawText = anyutil.String(v)
 	}
 	if slashName != "icebath" && slashName != "" {
 		if rawText == "" {
@@ -78,8 +78,8 @@ func SlashThreadID(command map[string]any) *string {
 	}
 	for _, tsKey := range []string{"thread_ts", "message_ts"} {
 		for _, payload := range candidates {
-			if value := payload[tsKey]; pyrepr.Truthy(value) {
-				s := pyrepr.Str(value)
+			if value := payload[tsKey]; anyutil.IsTrue(value) {
+				s := anyutil.String(value)
 				return &s
 			}
 		}

@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One required param with the test its value must pass
@@ -32,7 +32,7 @@ type rpcShape struct {
 func strippedPresent(v any) bool { return strings.TrimSpace(strOr(v)) != "" }
 
 // Whether a value is neither None nor the empty string
-func nonemptyPresent(v any) bool { return v != nil && pyrepr.Str(v) != "" }
+func nonemptyPresent(v any) bool { return v != nil && anyutil.String(v) != "" }
 
 // Required name param of the mcp server RPCs
 var nameParam = []requiredParam{{"name", strippedPresent}}

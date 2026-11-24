@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -156,10 +156,10 @@ func isoMillis(when string) (int64, bool) {
 }
 
 // Passive update check the banner runs, set by the updater and nil in a build without it
-var BannerUpdateCheck func(ctx context.Context) (*pyjson.Object, error)
+var BannerUpdateCheck func(ctx context.Context) (*jsonutil.Object, error)
 
 // Commit rows of a GitHub comparison, oldest last, false when a commit entry is malformed
-func compareCommits(payload *pyjson.Object) ([]any, bool) {
+func compareCommits(payload *jsonutil.Object) ([]any, bool) {
 	var entries []any
 	if payload != nil {
 		if value, ok := payload.Get("commits"); ok {
@@ -168,7 +168,7 @@ func compareCommits(payload *pyjson.Object) ([]any, bool) {
 	}
 	rows := []any{}
 	for _, item := range entries {
-		entry, ok := item.(*pyjson.Object)
+		entry, ok := item.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -176,15 +176,15 @@ func compareCommits(payload *pyjson.Object) ([]any, bool) {
 		if !ok {
 			continue
 		}
-		commit := pyjson.NewObject()
+		commit := jsonutil.NewObject()
 		if value := stampGet(entry, "commit"); pyTruthy(value) {
-			if commit, ok = value.(*pyjson.Object); !ok {
+			if commit, ok = value.(*jsonutil.Object); !ok {
 				return nil, false
 			}
 		}
-		committer := pyjson.NewObject()
+		committer := jsonutil.NewObject()
 		if value := stampGet(commit, "committer"); pyTruthy(value) {
-			if committer, ok = value.(*pyjson.Object); !ok {
+			if committer, ok = value.(*jsonutil.Object); !ok {
 				return nil, false
 			}
 		}
@@ -200,10 +200,10 @@ func compareCommits(payload *pyjson.Object) ([]any, bool) {
 		if !ok {
 			message = ""
 		}
-		summary, _, _ := strings.Cut(pyrepr.Str(message), "\n")
-		author := pyjson.NewObject()
+		summary, _, _ := strings.Cut(anyutil.String(message), "\n")
+		author := jsonutil.NewObject()
 		if value := stampGet(commit, "author"); pyTruthy(value) {
-			if author, ok = value.(*pyjson.Object); !ok {
+			if author, ok = value.(*jsonutil.Object); !ok {
 				return nil, false
 			}
 		}
@@ -211,7 +211,7 @@ func compareCommits(payload *pyjson.Object) ([]any, bool) {
 		if !ok {
 			name = ""
 		}
-		rows = append(rows, pyjson.ObjectOf("sha", sha, "summary", summary, "author", pyrepr.Str(name), "at", at))
+		rows = append(rows, jsonutil.ObjectOf("sha", sha, "summary", summary, "author", anyutil.String(name), "at", at))
 	}
 	for i, j := 0, len(rows)-1; i < j; i, j = i+1, j-1 {
 		rows[i], rows[j] = rows[j], rows[i]
@@ -227,7 +227,7 @@ func pyTruthy(value any) bool {
 		return v
 	case string:
 		return v != ""
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return v != nil && v.Len() > 0
 	case []any:
 		return len(v) > 0
@@ -252,11 +252,11 @@ func readJSONFile(path string) any {
 	if err != nil {
 		return nil
 	}
-	text, err := pystr.DecodeUTF8Sig(data)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 	if err != nil {
 		return nil
 	}
-	value, err := pyjson.Loads(text)
+	value, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
@@ -307,12 +307,12 @@ func nullable(value string) any {
 }
 
 // Still fresh supported status cached for exactly this identity, failures expiring after an hour
-func cachedStatus(cacheFile string, identity *pyjson.Object, now float64) *pyjson.Object {
-	cached, ok := readJSONFile(cacheFile).(*pyjson.Object)
-	if !ok || !pyjson.Equal(stampGet(cached, "identity"), identity) {
+func cachedStatus(cacheFile string, identity *jsonutil.Object, now float64) *jsonutil.Object {
+	cached, ok := readJSONFile(cacheFile).(*jsonutil.Object)
+	if !ok || !anyutil.Equal(stampGet(cached, "identity"), identity) {
 		return nil
 	}
-	status, ok := stampGet(cached, "status").(*pyjson.Object)
+	status, ok := stampGet(cached, "status").(*jsonutil.Object)
 	if !ok || stampGet(status, "supported") != true {
 		return nil
 	}
@@ -339,10 +339,10 @@ func cachedStatus(cacheFile string, identity *pyjson.Object, now float64) *pyjso
 	return nil
 }
 
-func writeCheckCache(ctx context.Context, cacheFile string, identity *pyjson.Object, now float64, result *pyjson.Object) {
+func writeCheckCache(ctx context.Context, cacheFile string, identity *jsonutil.Object, now float64, result *jsonutil.Object) {
 	err := os.MkdirAll(filepath.Dir(cacheFile), 0o755)
 	if err == nil {
-		err = config.AtomicJSONWrite(ctx, cacheFile, pyjson.ObjectOf("identity", identity, "ts", now, "status", result))
+		err = config.AtomicJSONWrite(ctx, cacheFile, jsonutil.ObjectOf("identity", identity, "ts", now, "status", result))
 	}
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Could not cache source check: %v", err))
@@ -412,7 +412,7 @@ func behindCount(ctx context.Context, co sourceCheckout, target string) (int64, 
 }
 
 // Compares the checkout with the selected branch's remote tip, falling back to main when it was deleted
-func checkBranch(ctx context.Context, result *pyjson.Object, co sourceCheckout, selectedBranch string) error {
+func checkBranch(ctx context.Context, result *jsonutil.Object, co sourceCheckout, selectedBranch string) error {
 	result.Set("branch", selectedBranch)
 	remote := branchRemote(co, selectedBranch)
 	target, missing, failure := branchTip(ctx, co.repository, selectedBranch, co.root, co.git, remote)

@@ -14,7 +14,7 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Seams over the listener and the stat calls, replaced by tests
@@ -249,7 +249,7 @@ func (s *GatewayControlServer) posixPeerSubject(conn net.Conn) string {
 	if err != nil {
 		return ""
 	}
-	resolved, err := pypath.Resolve(s.home)
+	resolved, err := pathutil.Resolve(s.home)
 	if err != nil {
 		return ""
 	}

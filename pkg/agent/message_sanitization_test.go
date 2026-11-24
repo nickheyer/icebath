@@ -127,10 +127,6 @@ func TestSerializedMessagesBytes(t *testing.T) {
 	if got := serializedMessagesBytes(msgs); got != len(`[{"role":"user","content":"héllo"}]`) && got != len(`[{"content":"héllo","role":"user"}]`) {
 		t.Fatalf("size %d", got)
 	}
-	bad := []any{map[string]any{"content": "a\xed\xa0\x80"}}
-	if got := serializedMessagesBytes(bad); got != len("{'content': 'a\\ud800'}") {
-		t.Fatalf("surrogate fallback size %d", got)
-	}
 }
 
 func TestImageRejectionPhrases(t *testing.T) {

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestManifest(t *testing.T) {
@@ -24,12 +24,12 @@ func TestManifest(t *testing.T) {
 			t.Fatalf("path %q err %v", path, err)
 		}
 		raw, _ := os.ReadFile(path)
-		payload, err := pyjson.Loads(string(raw))
+		payload, err := jsonutil.Decode(string(raw))
 		if err != nil {
 			t.Fatal(err)
 		}
-		obj := payload.(*pyjson.Object)
-		eq(t, "version", obj.Vals["version"], int64(1))
+		obj := payload.(*jsonutil.Object)
+		eq(t, "version", obj.Value("version"), int64(1))
 		if _, ok := obj.Get("updatedAt"); !ok {
 			t.Fatal("updatedAt missing")
 		}
@@ -227,10 +227,10 @@ func TestComposeGuard(t *testing.T) {
 	})
 	t.Run("result_to_dict", func(t *testing.T) {
 		payload := run(t, t.TempDir(), &Recipe{Name: "x", Test: []string{"true"}}, skipStart).ToDict()
-		eq(t, "ok", payload.Vals["ok"], true)
-		eq(t, "recipe", payload.Vals["recipe"], "x")
-		eq(t, "command", payload.Vals["phases"].([]any)[0].(*pyjson.Object).Vals["command"], "true")
-		eq(t, "readiness", payload.Vals["readiness"], nil)
+		eq(t, "ok", payload.Value("ok"), true)
+		eq(t, "recipe", payload.Value("recipe"), "x")
+		eq(t, "command", payload.Value("phases").([]any)[0].(*jsonutil.Object).Value("command"), "true")
+		eq(t, "readiness", payload.Value("readiness"), nil)
 	})
 }
 
@@ -336,11 +336,11 @@ func TestBuildVerifyParser(t *testing.T) {
 }
 
 func TestRunnableRecipeInputsOfTheVerifyNudge(t *testing.T) {
-	workspace := func(scripts *pyjson.Object, manifest string) string {
+	workspace := func(scripts *jsonutil.Object, manifest string) string {
 		root := t.TempDir()
-		pkg := pyjson.NewObject()
+		pkg := jsonutil.NewObject()
 		if scripts != nil {
-			pkg = pyjson.ObjectOf("scripts", scripts)
+			pkg = jsonutil.ObjectOf("scripts", scripts)
 		}
 		writePkg(t, root, pkg)
 		if manifest != "" {
@@ -348,11 +348,11 @@ func TestRunnableRecipeInputsOfTheVerifyNudge(t *testing.T) {
 		}
 		return root
 	}
-	withStart := detect(t, workspace(pyjson.ObjectOf("test", "vitest", "dev", "vite"), ""))
+	withStart := detect(t, workspace(jsonutil.ObjectOf("test", "vitest", "dev", "vite"), ""))
 	eq(t, "start", ptrStr(withStart.Start), "npm run dev")
 	eq(t, "test", withStart.Test, []string{"npm run test"})
-	eq(t, "no start", ptrStr(detect(t, workspace(pyjson.ObjectOf("test", "vitest"), "")).Start), nil)
-	info, err := os.Stat(ManifestPath(workspace(pyjson.ObjectOf("test", "vitest"), `{"version": 1, "recipe": {"name": "Fake", "test": ["echo ok"]}}`)))
+	eq(t, "no start", ptrStr(detect(t, workspace(jsonutil.ObjectOf("test", "vitest"), "")).Start), nil)
+	info, err := os.Stat(ManifestPath(workspace(jsonutil.ObjectOf("test", "vitest"), `{"version": 1, "recipe": {"name": "Fake", "test": ["echo ok"]}}`)))
 	if err != nil || !info.Mode().IsRegular() {
 		t.Fatalf("manifest stat %v %v", info, err)
 	}

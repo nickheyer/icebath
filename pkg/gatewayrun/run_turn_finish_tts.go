@@ -5,13 +5,12 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Evicts the cached agent when a fallback model served a successful run, failed runs left cached
 func (r *GatewayRunner) runAgentEvictOnFallback(ctx context.Context, tc *TurnContext) error {
 	sessionKey, a, resultForFallback := tc.sessionKey, tc.currentAgent(), tc.result()
-	if a == nil || (len(resultForFallback) > 0 && pyrepr.Truthy(resultForFallback["failed"])) {
+	if a == nil || (len(resultForFallback) > 0 && anyutil.IsTrue(resultForFallback["failed"])) {
 		return nil
 	}
 	if !a.ProviderFallbackActive() {

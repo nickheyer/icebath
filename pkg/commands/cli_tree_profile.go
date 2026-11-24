@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -15,14 +16,16 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/gatewaycreate"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"github.com/spf13/cobra"
 )
 
@@ -200,7 +203,7 @@ func (p *profileIO) confirm(prompt string) bool {
 func pyErrText(err error) string {
 	switch err.(type) {
 	case *fs.PathError, *os.LinkError, *os.SyscallError, syscall.Errno, *exec.Error:
-		return pypath.OSErrorText(err)
+		return err.Error()
 	}
 	return err.Error()
 }
@@ -242,41 +245,15 @@ func pathExists(path string) bool {
 
 // Path shown relative to the user home with a tilde, the plain path outside it
 func tildePosix(path string) string {
-	if rel, ok := pypath.PathRelativeTo(path, pypath.Expanduser("~")); ok {
+	if rel, ok := pathutil.RelativeTo(path, pathutil.ExpandUser("~")); ok {
 		return "~/" + rel
 	}
-	return pypath.PathStr(path)
+	return filepath.Clean(path)
 }
 
-// Value padded to width code points on the right like a Python format spec
+// Text padded with spaces on the right to width code points
 func ljust(s string, width int) string {
-	padded, _ := pyrepr.Format(s, fmt.Sprintf("<%d", width))
-	return padded
-}
-
-// First n code points of a value Python slices, with the error Python raises for an unsliceable value
-func pySliceText(v any, n int) (string, error) {
-	switch x := v.(type) {
-	case string:
-		r := []rune(x)
-		if len(r) > n {
-			r = r[:n]
-		}
-		return string(r), nil
-	case []any:
-		return "", fmt.Errorf("unsupported format string passed to list.__format__")
-	case map[string]any:
-		return "", fmt.Errorf("slice(None, %d, None)", n)
-	}
-	return "", fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(v))
-}
-
-// Python value or a fallback when the value is falsy
-func pyOr(v any, fallback any) any {
-	if pyrepr.Truthy(v) {
-		return v
-	}
-	return fallback
+	return fmt.Sprintf("%-*s", width, s)
 }
 
 func isActive(p manage.ProfileInfo, active string) bool {
@@ -365,17 +342,17 @@ func profileStatus(p *profileIO, _ ProfileArgs) error {
 	p.println("\nActive profile: %s", profiles.FormatProfileLabel(profileName, display))
 	p.println("Path:           %s", dhh)
 	if current != nil {
-		if pyrepr.Truthy(current.Model) {
-			line := "Model:          " + pyrepr.Str(current.Model)
-			if pyrepr.Truthy(current.Provider) {
-				line += " (" + pyrepr.Str(current.Provider) + ")"
+		if anyutil.IsTrue(current.Model) {
+			line := "Model:          " + anyutil.String(current.Model)
+			if anyutil.IsTrue(current.Provider) {
+				line += " (" + anyutil.String(current.Provider) + ")"
 			}
 			p.println("%s", line)
 		}
 		p.println("Gateway:        %s", runningText(current.GatewayRunning))
 		p.println("Skills:         %d installed", current.SkillCount)
 		if current.AliasPath != "" {
-			p.println("Alias:          %s → icebath -p %s", pyOr(current.AliasName, current.Name), current.Name)
+			p.println("Alias:          %s → icebath -p %s", cmp.Or(current.AliasName, current.Name), current.Name)
 		}
 	}
 	p.println("")
@@ -409,17 +386,14 @@ func profileList(p *profileIO, _ ProfileArgs) error {
 			marker = " ◆"
 		}
 		name := profiles.FormatProfileLabel(info.Name, info.DisplayName)
-		model, err := pySliceText(pyOr(info.Model, "—"), 26)
-		if err != nil {
-			return err
-		}
+		model := textutil.First(anyutil.String(anyutil.Or(info.Model, "—")), 26)
 		alias := "—"
 		if info.AliasPath != "" && !info.IsDefault {
-			alias = pyrepr.Str(pyOr(info.AliasName, info.Name))
+			alias = cmp.Or(info.AliasName, info.Name)
 		}
 		dist := "—"
-		if pyrepr.Truthy(info.DistributionName) {
-			dist, _ = pySliceText(pyrepr.Str(info.DistributionName)+"@"+pyrepr.Str(pyOr(info.DistributionVersion, "?")), 30)
+		if anyutil.IsTrue(info.DistributionName) {
+			dist = textutil.First(anyutil.String(info.DistributionName)+"@"+anyutil.String(anyutil.Or(info.DistributionVersion, "?")), 30)
 		}
 		p.println("%s%s %s %s %s %s", marker, ljust(name, 15), ljust(model, 28), ljust(runningText(info.GatewayRunning), 12),
 			ljust(alias, 12), dist)
@@ -785,10 +759,10 @@ func profileShow(p *profileIO, a ProfileArgs) error {
 	display := profiles.ReadProfileMeta(profileDir).DisplayName
 	p.println("\nProfile: %s", profiles.FormatProfileLabel(name, display))
 	p.println("Path:    %s", profileDir)
-	if pyrepr.Truthy(model) {
-		line := "Model:   " + pyrepr.Str(model)
-		if pyrepr.Truthy(provider) {
-			line += " (" + pyrepr.Str(provider) + ")"
+	if anyutil.IsTrue(model) {
+		line := "Model:   " + anyutil.String(model)
+		if anyutil.IsTrue(provider) {
+			line += " (" + anyutil.String(provider) + ")"
 		}
 		p.println("%s", line)
 	}
@@ -796,10 +770,10 @@ func profileShow(p *profileIO, a ProfileArgs) error {
 	p.println("Skills:  %d", manage.CountSkills(profileDir))
 	p.println(".env:    %s", existsText(pathExists(filepath.Join(profileDir, ".env"))))
 	p.println("SOUL.md: %s", existsText(pathExists(filepath.Join(profileDir, "SOUL.md"))))
-	if pyrepr.Truthy(distName) {
-		p.println("Distribution: %s@%s", pyrepr.Str(distName), pyrepr.Str(pyOr(distVersion, "?")))
-		if pyrepr.Truthy(distSource) {
-			p.println("Installed from: %s", pyrepr.Str(distSource))
+	if anyutil.IsTrue(distName) {
+		p.println("Distribution: %s@%s", anyutil.String(distName), anyutil.String(anyutil.Or(distVersion, "?")))
+		if anyutil.IsTrue(distSource) {
+			p.println("Installed from: %s", anyutil.String(distSource))
 		}
 		p.println("  (run `icebath profile info %s` for full manifest)", name)
 	}
@@ -948,7 +922,7 @@ func profileExport(p *profileIO, a ProfileArgs) error {
 		result, err = manage.ExportProfile(a.ProfileName, output, nil)
 	}
 	if err != nil {
-		if isValueError(err) || pypath.IsOSError(err) {
+		if isValueError(err) || errorutil.IsSystem(err) {
 			return p.dieErr(err)
 		}
 		return err
@@ -1023,7 +997,7 @@ func previewInstall(p *profileIO, a ProfileArgs) (proceed bool, err error) {
 	if err != nil {
 		return false, err
 	}
-	defer pyfs.CloseTempDir(tmp, &err)
+	defer fsutil.CleanupTempDir(tmp, &err)
 	plan, err := manage.PlanInstall(p.ctx, a.Source, tmp, a.InstallName)
 	if err != nil {
 		return false, err
@@ -1116,32 +1090,32 @@ func profileInfo(p *profileIO, a ProfileArgs) error {
 	if !ok {
 		version = "?"
 	}
-	p.println("\nDistribution: %s", pyrepr.Str(data["name"]))
-	p.println("Version:      %s", pyrepr.Str(version))
+	p.println("\nDistribution: %s", anyutil.String(data["name"]))
+	p.println("Version:      %s", anyutil.String(version))
 	if _, has := data["icebath_requires"]; !has {
 		data["icebath_requires"] = data[profiles.RetiredRequiresKey]
 	}
 	for _, field := range profileInfoFields {
-		if v := data[field[0]]; pyrepr.Truthy(v) {
-			p.println("%s%s", field[1], pyrepr.Str(v))
+		if v := data[field[0]]; anyutil.IsTrue(v) {
+			p.println("%s%s", field[1], anyutil.String(v))
 		}
 	}
-	envReqs, _ := pyOr(data["env_requires"], []any{}).([]any)
+	envReqs, _ := data["env_requires"].([]any)
 	if len(envReqs) > 0 {
 		p.println("\nEnvironment variables:")
 		for _, raw := range envReqs {
 			er, _ := raw.(map[string]any)
 			tag := "optional"
-			if req, ok := er["required"]; !ok || pyrepr.Truthy(req) {
+			if req, ok := er["required"]; !ok || anyutil.IsTrue(req) {
 				tag = "required"
 			}
-			line := fmt.Sprintf("  %s (%s)", pyrepr.Str(er["name"]), tag)
-			if pyrepr.Truthy(er["description"]) {
-				line += " — " + pyrepr.Str(er["description"])
+			line := fmt.Sprintf("  %s (%s)", anyutil.String(er["name"]), tag)
+			if anyutil.IsTrue(er["description"]) {
+				line += " — " + anyutil.String(er["description"])
 			}
 			p.println("%s", line)
 			if def, ok := er["default"]; ok && def != nil {
-				p.println("      default: %s", pyrepr.Str(def))
+				p.println("      default: %s", anyutil.String(def))
 			}
 		}
 	}

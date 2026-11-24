@@ -9,10 +9,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Advertised description and input hint of one command the gateway path serves
@@ -41,16 +42,16 @@ var gatewayCommandSpecs = []gatewayCommandSpec{
 }
 
 // Advertisement of the commands the gateway path serves
-func gatewayAvailableCommandsUpdate() *pyacp.AvailableCommandsUpdate {
-	commands := make([]pyacp.AvailableCommand, 0, len(gatewayCommandSpecs))
+func gatewayAvailableCommandsUpdate() *acputil.AvailableCommandsUpdate {
+	commands := make([]acputil.AvailableCommand, 0, len(gatewayCommandSpecs))
 	for _, c := range gatewayCommandSpecs {
-		cmd := pyacp.AvailableCommand{Name: c.Name, Description: c.Description}
+		cmd := acputil.AvailableCommand{Name: c.Name, Description: c.Description}
 		if c.Hint != "" {
-			cmd.Input = &pyacp.UnstructuredCommandInput{Hint: c.Hint}
+			cmd.Input = &acputil.UnstructuredCommandInput{Hint: c.Hint}
 		}
 		commands = append(commands, cmd)
 	}
-	return &pyacp.AvailableCommandsUpdate{AvailableCommands: commands}
+	return &acputil.AvailableCommandsUpdate{AvailableCommands: commands}
 }
 
 // Reply of /help on the gateway path
@@ -65,10 +66,10 @@ func gatewayHelpText() string {
 }
 
 // Mode of the session's edit approval policy, ask for an owner that reports none
-func gatewayCurrentMode(info *pyjson.Object) string {
+func gatewayCurrentMode(info *jsonutil.Object) string {
 	policy := DefaultEditApprovalPolicy
-	if v := dget(info, "edit_approval_policy"); truthy(v) {
-		policy = pyStr(v)
+	if v := dget(info, "edit_approval_policy"); anyutil.IsTrue(v) {
+		policy = anyutil.String(v)
 	}
 	if mode, ok := EditApprovalPolicyToMode[policy]; ok {
 		return mode
@@ -77,13 +78,13 @@ func gatewayCurrentMode(info *pyjson.Object) string {
 }
 
 // Mode state of a session from its info
-func gatewaySessionModes(info *pyjson.Object) *pyacp.SessionModeState {
-	modes := make([]pyacp.SessionMode, 0, len(ModeOrder))
+func gatewaySessionModes(info *jsonutil.Object) *acputil.SessionModeState {
+	modes := make([]acputil.SessionMode, 0, len(ModeOrder))
 	for _, id := range ModeOrder {
 		spec := Modes[id]
-		modes = append(modes, pyacp.SessionMode{ID: id, Name: spec.Name, Description: pyacp.Ptr(spec.Description)})
+		modes = append(modes, acputil.SessionMode{ID: id, Name: spec.Name, Description: new(spec.Description)})
 	}
-	return &pyacp.SessionModeState{CurrentModeID: gatewayCurrentMode(info), AvailableModes: modes}
+	return &acputil.SessionModeState{CurrentModeID: gatewayCurrentMode(info), AvailableModes: modes}
 }
 
 // Config option id of the reasoning effort picker
@@ -95,19 +96,19 @@ func reasoningChoices() []string {
 }
 
 // Composer pickers of the editor, the edit mode, the model and the reasoning effort
-func gatewayConfigOptions(models *pyacp.SessionModelState, info *pyjson.Object, modeID string) []pyacp.SessionConfigOption {
-	selectOption := func(configID, name, category, current string, choices [][2]string) *pyacp.SessionConfigOptionSelect {
-		options := make([]pyacp.SessionConfigSelectOption, 0, len(choices))
+func gatewayConfigOptions(models *acputil.SessionModelState, info *jsonutil.Object, modeID string) []acputil.SessionConfigOption {
+	selectOption := func(configID, name, category, current string, choices [][2]string) *acputil.SessionConfigOptionSelect {
+		options := make([]acputil.SessionConfigSelectOption, 0, len(choices))
 		for _, choice := range choices {
-			options = append(options, pyacp.SessionConfigSelectOption{Value: choice[0], Name: choice[1]})
+			options = append(options, acputil.SessionConfigSelectOption{Value: choice[0], Name: choice[1]})
 		}
-		return &pyacp.SessionConfigOptionSelect{ID: configID, Name: name, Category: &category, CurrentValue: current, Options: options}
+		return &acputil.SessionConfigOptionSelect{ID: configID, Name: name, Category: &category, CurrentValue: current, Options: options}
 	}
 	var policies [][2]string
 	for _, id := range ModeOrder {
 		policies = append(policies, [2]string{Modes[id].Policy, Modes[id].Name})
 	}
-	options := []pyacp.SessionConfigOption{selectOption(EditApprovalPolicyConfigID, "Edits", "mode", Modes[modeID].Policy, policies)}
+	options := []acputil.SessionConfigOption{selectOption(EditApprovalPolicyConfigID, "Edits", "mode", Modes[modeID].Policy, policies)}
 	if models != nil {
 		var choices [][2]string
 		for _, m := range models.AvailableModels {
@@ -133,14 +134,14 @@ func gatewayConfigOptions(models *pyacp.SessionModelState, info *pyjson.Object, 
 }
 
 // Picker for the session's model from the shared inventory, a single current model row when nothing is listable
-var gatewayModelState = func(ctx context.Context, info *pyjson.Object) *pyacp.SessionModelState {
+var gatewayModelState = func(ctx context.Context, info *jsonutil.Object) *acputil.SessionModelState {
 	model := ""
-	if v := dget(info, "model"); truthy(v) {
-		model = strings.TrimSpace(pyStr(v))
+	if v := dget(info, "model"); anyutil.IsTrue(v) {
+		model = strings.TrimSpace(anyutil.String(v))
 	}
 	providerName := ""
-	if v := dget(info, "provider"); truthy(v) {
-		providerName = pyStr(v)
+	if v := dget(info, "provider"); anyutil.IsTrue(v) {
+		providerName = anyutil.String(v)
 	}
 	if providerName == "" {
 		providerName = DetectProvider(ctx)
@@ -148,7 +149,7 @@ var gatewayModelState = func(ctx context.Context, info *pyjson.Object) *pyacp.Se
 	if providerName == "" {
 		providerName = "openrouter"
 	}
-	picker, err := func() (picker *pyacp.SessionModelState, err error) {
+	picker, err := func() (picker *acputil.SessionModelState, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				err = fmt.Errorf("%v", r)
@@ -165,11 +166,11 @@ var gatewayModelState = func(ctx context.Context, info *pyjson.Object) *pyacp.Se
 		return nil
 	}
 	choice := EncodeModelChoice(providerName, model)
-	return &pyacp.SessionModelState{AvailableModels: []pyacp.ModelInfo{{ModelID: choice, Name: model}}, CurrentModelID: choice}
+	return &acputil.SessionModelState{AvailableModels: []acputil.ModelInfo{{ModelID: choice, Name: model}}, CurrentModelID: choice}
 }
 
 // Session provenance meta for the editor's id over the logical session's current compression tip
-var gatewayProvenanceMeta = func(ctx context.Context, dbPath, acpSessionID, sessionID string) (*pyjson.Object, error) {
+var gatewayProvenanceMeta = func(ctx context.Context, dbPath, acpSessionID, sessionID string) (*jsonutil.Object, error) {
 	if !pathExists(dbPath) {
 		return nil, nil
 	}
@@ -199,17 +200,17 @@ var gatewayProvenanceMeta = func(ctx context.Context, dbPath, acpSessionID, sess
 }
 
 // Context indicator update of a usage dict, nil without a positive integer window
-func gatewayUsageUpdate(stats *pyjson.Object) *pyacp.UsageUpdate {
+func gatewayUsageUpdate(stats *jsonutil.Object) *acputil.UsageUpdate {
 	size, ok := pyIntStrict(dget(stats, "context_length"))
 	if !ok || size <= 0 {
 		return nil
 	}
 	used := 0
-	if v := dget(stats, "context_tokens"); truthy(v) {
+	if v := dget(stats, "context_tokens"); anyutil.IsTrue(v) {
 		f, _ := pyFloat(v)
 		used = int(f)
 	}
-	return &pyacp.UsageUpdate{Size: size, Used: max(used, 0)}
+	return &acputil.UsageUpdate{Size: size, Used: max(used, 0)}
 }
 
 // Integer value of a decoded JSON int, bools and floats refused
@@ -224,29 +225,29 @@ func pyIntStrict(v any) (int, bool) {
 }
 
 // Prompt response usage of the agent's session counters, nil when stats is not a dict
-func gatewayTurnUsage(stats any) *pyacp.Usage {
-	d, ok := stats.(*pyjson.Object)
+func gatewayTurnUsage(stats any) *acputil.Usage {
+	d, ok := stats.(*jsonutil.Object)
 	if !ok || d == nil {
 		return nil
 	}
 	count := func(key string) int {
-		if v := dget(d, key); truthy(v) {
+		if v := dget(d, key); anyutil.IsTrue(v) {
 			f, _ := pyFloat(v)
 			return int(f)
 		}
 		return 0
 	}
-	usage := &pyacp.Usage{InputTokens: count("input_tokens"), OutputTokens: count("output_tokens"), TotalTokens: count("total_tokens")}
-	if v := dget(d, "reasoning_tokens"); truthy(v) {
-		usage.ThoughtTokens = pyacp.Ptr(count("reasoning_tokens"))
+	usage := &acputil.Usage{InputTokens: count("input_tokens"), OutputTokens: count("output_tokens"), TotalTokens: count("total_tokens")}
+	if v := dget(d, "reasoning_tokens"); anyutil.IsTrue(v) {
+		usage.ThoughtTokens = new(count("reasoning_tokens"))
 	}
-	if v := dget(d, "cache_read_tokens"); truthy(v) {
-		usage.CachedReadTokens = pyacp.Ptr(count("cache_read_tokens"))
+	if v := dget(d, "cache_read_tokens"); anyutil.IsTrue(v) {
+		usage.CachedReadTokens = new(count("cache_read_tokens"))
 	}
 	return usage
 }
 
 // Session info update carrying a new title stamped now
-func gatewayTitleUpdate(title string) *pyacp.SessionInfoUpdate {
-	return &pyacp.SessionInfoUpdate{Title: &title, UpdatedAt: pyacp.Ptr(pydatetime.ISOFormatUTC(time.Now()))}
+func gatewayTitleUpdate(title string) *acputil.SessionInfoUpdate {
+	return &acputil.SessionInfoUpdate{Title: &title, UpdatedAt: new(time.Now().UTC().Format(timeutil.RFC3339Micro))}
 }

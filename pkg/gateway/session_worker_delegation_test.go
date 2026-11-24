@@ -6,8 +6,8 @@ import (
 	"os"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestReceiptFencesWrongSessionGenerationAndOwnerEpoch(t *testing.T) {
@@ -36,7 +36,7 @@ func TestReceiptFencesWrongSessionGenerationAndOwnerEpoch(t *testing.T) {
 		{func(r *state.WorkerReceipt) { r.Operation = "execute_sql" }, "invalid_params"},
 	} {
 		receipt := state.WorkerReceipt{Epoch: epoch, ExecutionID: "worker", SessionID: "parent", Sequence: 1,
-			Operation: "delegation.read", Payload: pyjson.ObjectOf("delegation_id", "none")}
+			Operation: "delegation.read", Payload: jsonutil.ObjectOf("delegation_id", "none")}
 		tc.override(&receipt)
 		if _, err := persistWorkerDelegation(ctx, db, receipt, int64(os.Getpid()), birth); !isRuntimeRefusal(err, tc.reason) {
 			t.Fatalf("want %s, got %v", tc.reason, err)

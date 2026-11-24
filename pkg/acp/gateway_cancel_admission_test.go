@@ -9,17 +9,15 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 type scriptedGateway struct {
 	*fakeGateway
 	mu  sync.Mutex
-	rpc func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error)
+	rpc func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error)
 }
 
-func (s *scriptedGateway) set(rpc func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error)) {
+func (s *scriptedGateway) set(rpc func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error)) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.rpc = rpc
@@ -45,15 +43,15 @@ func (s *scriptedGateway) methods() []string {
 	return out
 }
 
-func fixedReply(t *testing.T, text string) func(context.Context, string, map[string]any) (*pyjson.Object, error) {
-	return func(context.Context, string, map[string]any) (*pyjson.Object, error) { return jsonObj(t, text), nil }
+func fixedReply(t *testing.T, text string) func(context.Context, string, map[string]any) (*jsonutil.Object, error) {
+	return func(context.Context, string, map[string]any) (*jsonutil.Object, error) { return jsonObj(t, text), nil }
 }
 
 func agentWithQueuedPrompt(t *testing.T) (*GatewayACPAgent, *scriptedGateway) {
 	t.Helper()
 	a := newGatewayAgent(t)
 	link := &scriptedGateway{}
-	link.fakeGateway = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.fakeGateway = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		link.mu.Lock()
 		rpc := link.rpc
 		link.mu.Unlock()
@@ -89,9 +87,9 @@ func queuedPrompt(t *testing.T, a *GatewayACPAgent, link *scriptedGateway) *aske
 	return task
 }
 
-func settlePrompt(t *testing.T, a *GatewayACPAgent, task *asked, outcome string) *pyacp.PromptResponse {
+func settlePrompt(t *testing.T, a *GatewayACPAgent, task *asked, outcome string) *acputil.PromptResponse {
 	t.Helper()
-	event := pyjson.ObjectOf("session_id", "s", "type", "message.complete", "admission_id", "ours", "payload", pyjson.ObjectOf("outcome", outcome, "text", ""))
+	event := jsonutil.ObjectOf("session_id", "s", "type", "message.complete", "admission_id", "ours", "payload", jsonutil.ObjectOf("outcome", outcome, "text", ""))
 	if err := onLoop(a, func() error { return a.project(context.Background(), event) }); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +102,7 @@ func settlePrompt(t *testing.T, a *GatewayACPAgent, task *asked, outcome string)
 
 func cancelSession(t *testing.T, a *GatewayACPAgent) {
 	t.Helper()
-	if err := a.Cancel(context.Background(), &pyacp.CancelNotification{SessionID: "s"}); err != nil {
+	if err := a.Cancel(context.Background(), &acputil.CancelNotification{SessionID: "s"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -126,14 +124,14 @@ func TestCancelTargetsQueuedAcpAdmissionNotTheRunningGeneration(t *testing.T) {
 func TestCancelInterruptsOnlyWhenOurAdmissionIsTheOneRunning(t *testing.T) {
 	a, link := agentWithQueuedPrompt(t)
 	task := queuedPrompt(t, a, link)
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch method {
 		case "prompt.cancel":
 			return nil, &gateway.GatewayClientError{Msg: "stale_generation"}
 		case "prompt.receipt":
 			return jsonObj(t, `{"admission_id": "ours", "status": "started", "execution_generation": 8}`), nil
 		}
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	})
 	cancelSession(t, a)
 	var interrupt map[string]any
@@ -162,7 +160,7 @@ func hasCancelOf(link *scriptedGateway, admission string) bool {
 func TestCancelDuringSubmitIsAppliedWhenAdmissionIdArrives(t *testing.T) {
 	a, link := agentWithQueuedPrompt(t)
 	submitStarted, releaseSubmit := make(chan struct{}), make(chan struct{})
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch method {
 		case "prompt.submit":
 			close(submitStarted)
@@ -171,7 +169,7 @@ func TestCancelDuringSubmitIsAppliedWhenAdmissionIdArrives(t *testing.T) {
 		case "prompt.cancel":
 			return jsonObj(t, `{"admission_id": "ours", "status": "terminal", "outcome": "cancelled"}`), nil
 		}
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	})
 	task := startPrompt(a, context.Background(), "hello")
 	select {
@@ -209,7 +207,7 @@ func TestDeferredCancelFailureCleansMappingBeforeNextSubmit(t *testing.T) {
 	secondStarted, secondRelease := make(chan struct{}), make(chan struct{})
 	var mu sync.Mutex
 	submits := 0
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch method {
 		case "prompt.submit":
 			mu.Lock()
@@ -230,7 +228,7 @@ func TestDeferredCancelFailureCleansMappingBeforeNextSubmit(t *testing.T) {
 			}
 			return jsonObj(t, `{"admission_id": "second", "status": "terminal", "outcome": "cancelled"}`), nil
 		}
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	})
 	first := startPrompt(a, context.Background(), "first")
 	<-firstStarted
@@ -273,7 +271,7 @@ func TestInterruptCompletionRaceRechecksExactAdmission(t *testing.T) {
 		`{"admission_id": "ours", "status": "terminal", "outcome": "completed", "execution_generation": 8}`,
 	}
 	var mu sync.Mutex
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch method {
 		case "prompt.cancel", "session.interrupt":
 			return nil, &gateway.GatewayClientError{Msg: "stale_generation"}
@@ -284,7 +282,7 @@ func TestInterruptCompletionRaceRechecksExactAdmission(t *testing.T) {
 			receipts = receipts[1:]
 			return jsonObj(t, next), nil
 		}
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	})
 	if err := onLoop(a, func() error { return a.cancelAdmission(context.Background(), "s", "ours") }); err != nil {
 		t.Fatal(err)

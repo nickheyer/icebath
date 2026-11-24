@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func sendHome(t *testing.T) string {
@@ -73,11 +73,11 @@ func TestListJsonIncludesConfiguredPlatform(t *testing.T) {
 	if err != nil || code != 0 {
 		t.Fatalf("exit %d %v %s", code, err, errOut.String())
 	}
-	decoded, err := pyjson.Loads(out.String())
+	decoded, err := jsonutil.Decode(out.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	platforms, _ := pyjson.AsObject(decoded.(*pyjson.Object).Vals["platforms"])
+	platforms, _ := jsonutil.AsObject(decoded.(*jsonutil.Object).Value("platforms"))
 	discord, has := platforms.Get("discord")
 	if list, ok := discord.([]any); !has || !ok || len(list) != 0 {
 		t.Fatalf("discord %v in %s", discord, out.String())
@@ -87,7 +87,7 @@ func TestListJsonIncludesConfiguredPlatform(t *testing.T) {
 			t.Fatalf("%s listed in %s", infra, out.String())
 		}
 	}
-	if telegram, _ := platforms.Vals["telegram"].([]any); len(telegram) == 0 {
+	if telegram, _ := platforms.Value("telegram").([]any); len(telegram) == 0 {
 		t.Fatalf("discovered entries dropped in %s", out.String())
 	}
 }

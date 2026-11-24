@@ -4,7 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // State meta key prefixes of the queued replacement bindings and the mutation exact retry receipts
@@ -29,7 +30,7 @@ func RetireReplacedInput(ctx context.Context, conn SQLiteConn, admissionID, bind
 	if err != nil {
 		return err
 	}
-	if !pyjson.Equal(rowValue(row, "status"), "queued") {
+	if !anyutil.Equal(rowValue(row, "status"), "queued") {
 		return runtimeRefusal("admission_started")
 	}
 	if _, err := conn.ExecContext(ctx, cancelQueuedAdmissionQ, admissionID); err != nil {
@@ -53,18 +54,18 @@ func CheckReplacedInput(ctx context.Context, conn SQLiteConn, admissionID, bindi
 		return runtimeRefusal("admission_conflict")
 	}
 	text, _ := saved["value"].(string)
-	value, err := pyjson.Loads(text)
+	value, err := jsonutil.Decode(text)
 	if err != nil {
 		return pyValueError(err.Error())
 	}
-	if !pyjson.Equal(value, admissionID) {
+	if !anyutil.Equal(value, admissionID) {
 		return runtimeRefusal("admission_conflict")
 	}
 	return nil
 }
 
 // Admissions still queued behind no unknown head, in FIFO order
-func queuedAdmissionsBehindKnownHead(ctx context.Context, conn SQLiteConn, ownerSessionID, query string, args ...any) ([]*pyjson.Object, error) {
+func queuedAdmissionsBehindKnownHead(ctx context.Context, conn SQLiteConn, ownerSessionID, query string, args ...any) ([]*jsonutil.Object, error) {
 	unknown, err := connRow(ctx, conn, "SELECT 1 FROM session_admissions WHERE target_session_id=? AND status='unknown'", ownerSessionID)
 	if err != nil || unknown != nil {
 		return nil, err
@@ -100,7 +101,7 @@ func (d *SessionDB) RehomeQueuedInputs(ctx context.Context, epoch int64, oldSess
 		}
 		for _, row := range rows {
 			text, _ := rowValue(row, "payload_json").(string)
-			input, err := pyjson.Loads(text)
+			input, err := jsonutil.Decode(text)
 			if err != nil {
 				return pyValueError(err.Error())
 			}
@@ -158,15 +159,15 @@ func (d *SessionDB) RetargetLocalAutomation(ctx context.Context, epoch int64, se
 		}
 		for _, row := range rows {
 			text, _ := rowValue(row, "payload_json").(string)
-			decoded, err := pyjson.Loads(text)
+			decoded, err := jsonutil.Decode(text)
 			if err != nil {
 				return pyValueError(err.Error())
 			}
-			payload, _ := decoded.(*pyjson.Object)
-			var descriptor *pyjson.Object
+			payload, _ := decoded.(*jsonutil.Object)
+			var descriptor *jsonutil.Object
 			if payload != nil {
 				raw, _ := payload.Get("local_automation_v1")
-				descriptor, _ = raw.(*pyjson.Object)
+				descriptor, _ = raw.(*jsonutil.Object)
 			}
 			if descriptor == nil {
 				continue
@@ -175,7 +176,7 @@ func (d *SessionDB) RetargetLocalAutomation(ctx context.Context, epoch int64, se
 			switch target.(type) {
 			case []any:
 				return &pyConvError{"TypeError", "the automation target is a list, expected text"}
-			case *pyjson.Object:
+			case *jsonutil.Object:
 				return &pyConvError{"TypeError", "the automation target is a mapping, expected text"}
 			}
 			if name, ok := target.(string); !ok || !old[name] {
@@ -234,7 +235,7 @@ func ReplayMutationReceipt(ctx context.Context, conn SQLiteConn, key, digest str
 		return nil, err
 	}
 	text, _ := old["value"].(string)
-	receipt, err := pyjson.Loads(text)
+	receipt, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
@@ -242,7 +243,7 @@ func ReplayMutationReceipt(ctx context.Context, conn SQLiteConn, key, digest str
 	if err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(stored, digest) {
+	if !anyutil.Equal(stored, digest) {
 		return nil, runtimeRefusal("admission_conflict")
 	}
 	return receiptItem(receipt, "result")

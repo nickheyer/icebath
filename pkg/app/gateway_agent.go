@@ -13,10 +13,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -217,7 +217,7 @@ var errSnapshotFence = errors.New("snapshot carries no revision or execution_gen
 
 // Revision and execution generation of a resume snapshot
 func snapshotFence(snapshot any) (any, any, error) {
-	obj, ok := pyjson.AsObject(snapshot)
+	obj, ok := jsonutil.AsObject(snapshot)
 	if !ok {
 		return nil, nil, fmt.Errorf("%w: the snapshot is %s", errSnapshotFence, errchain.Kind(snapshot))
 	}
@@ -233,7 +233,7 @@ func snapshotFence(snapshot any) (any, any, error) {
 func (a *GatewayAgent) routeOffSession(model, provider string) bool {
 	state := a.state()
 	state.Lock()
-	sessionModel := pyrepr.Truthy(state.Info["model"])
+	sessionModel := anyutil.IsTrue(state.Info["model"])
 	state.Unlock()
 	return model != "" && sessionModel && !state.RunsRoute(model, provider)
 }
@@ -262,7 +262,7 @@ func (a *GatewayAgent) SwitchModel(newModel, newProvider string) (bool, error) {
 		if err != nil {
 			return nil, err
 		}
-		result, _ := pyjson.Plain(raw).(map[string]any)
+		result, _ := jsonutil.Plain(raw).(map[string]any)
 		if result == nil {
 			result = map[string]any{}
 		}

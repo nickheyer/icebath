@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Cron operations of one store a loaded scheduler plugin runs, the claim, the fire and the attempt recovery every provider shares
@@ -95,7 +95,7 @@ func facadeClaimFire(ctx context.Context, _ string, args []any, kwargs map[strin
 	if !ok {
 		return nil, &plugins.HostBuiltinError{Type: "TypeError", Message: "claim_fire() missing 1 required keyword-only argument: 'source'"}
 	}
-	claimed, err := claimFireForSource(ctx, pyrepr.Str(source), pyrepr.Str(raw), pyrepr.Truthy(kw["force"]), pyrepr.Truthy(kw["manual"]))
+	claimed, err := claimFireForSource(ctx, anyutil.String(source), anyutil.String(raw), anyutil.IsTrue(kw["force"]), anyutil.IsTrue(kw["manual"]))
 	if err != nil || claimed == nil {
 		return nil, err
 	}
@@ -144,7 +144,7 @@ func claimedJobToWire(job *Job) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	out, _ := pyjson.Plain(o).(map[string]any)
+	out, _ := jsonutil.Plain(o).(map[string]any)
 	if out == nil {
 		return nil, fmt.Errorf("claimed job %s did not encode as an object", job.ID)
 	}

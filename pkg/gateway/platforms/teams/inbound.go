@@ -8,12 +8,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Attachment kinds in message type precedence, documents winning over images, video and audio
@@ -48,7 +48,7 @@ func str(m map[string]any, key string) string {
 
 // Pyjson object of a JSON answer body
 func jsonBody(status int, body any) (*gateway.WebResponse, error) {
-	text, err := pyjson.Dumps(body)
+	text, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
@@ -61,15 +61,15 @@ func (a *TeamsAdapter) handleActivityRequest(ctx context.Context, request *gatew
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8(raw)
+	text, err := textutil.DecodeUTF8(raw)
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	status, body := a.handleActivity(context.WithoutCancel(ctx), pyjson.Plain(decoded), request.Header.Get("Authorization"))
+	status, body := a.handleActivity(context.WithoutCancel(ctx), jsonutil.Plain(decoded), request.Header.Get("Authorization"))
 	if body == nil {
 		return gateway.NewWebResponse(status, nil), nil
 	}
@@ -80,35 +80,35 @@ func (a *TeamsAdapter) handleActivityRequest(ctx context.Context, request *gatew
 func (a *TeamsAdapter) handleActivity(ctx context.Context, decoded any, authorization string) (status int, body any) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Error(pyrepr.Str(rec))
-			status, body = 500, pyjson.ObjectOf("error", "Internal server error")
+			pkgLog().Error(anyutil.String(rec))
+			status, body = 500, jsonutil.ObjectOf("error", "Internal server error")
 		}
 	}()
 	activity, ok := decoded.(map[string]any)
 	if !ok {
-		pkgLog().Error(fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded)))
-		return 500, pyjson.ObjectOf("error", "Internal server error")
+		pkgLog().Error(fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(decoded)))
+		return 500, jsonutil.ObjectOf("error", "Internal server error")
 	}
 	a.mu.Lock()
 	app := a.app
 	a.mu.Unlock()
 	if app == nil {
-		return 401, pyjson.ObjectOf("error", "Authentication not configured")
+		return 401, jsonutil.ObjectOf("error", "Authentication not configured")
 	}
 	if !strings.HasPrefix(authorization, "Bearer ") {
 		pkgLog().Warn(fmt.Sprintf("inbound activity rejected (type=%s, id=%s): missing or malformed Authorization header (responding 401)",
-			pyrepr.Str(activity["type"]), pyrepr.Str(activity["id"])))
-		return 401, pyjson.ObjectOf("error", "Unauthorized")
+			anyutil.String(activity["type"]), anyutil.String(activity["id"])))
+		return 401, jsonutil.ObjectOf("error", "Unauthorized")
 	}
 	serviceURL, _ := activity["serviceUrl"].(string)
 	tokenServiceURL, err := app.validator.validate(strings.TrimPrefix(authorization, "Bearer "), serviceURL)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("JWT token validation failed: %v", err))
-		return 401, pyjson.ObjectOf("error", "Unauthorized")
+		return 401, jsonutil.ObjectOf("error", "Unauthorized")
 	}
 	if obj(activity, "from") == nil || obj(activity, "conversation") == nil || obj(activity, "recipient") == nil {
 		pkgLog().Error("activity requires from, conversation and recipient accounts")
-		return 500, pyjson.ObjectOf("error", "Internal server error")
+		return 500, jsonutil.ObjectOf("error", "Internal server error")
 	}
 	if serviceURL == "" {
 		activity["serviceUrl"] = tokenServiceURL
@@ -116,7 +116,7 @@ func (a *TeamsAdapter) handleActivity(ctx context.Context, decoded any, authoriz
 	status, body, err = a.routeActivity(ctx, activity)
 	if err != nil {
 		pkgLog().Error(err.Error())
-		return 500, pyjson.ObjectOf("error", "Internal server error")
+		return 500, jsonutil.ObjectOf("error", "Internal server error")
 	}
 	return status, body
 }
@@ -258,7 +258,7 @@ func activityMentionsBot(activity map[string]any, botIDs map[string]bool, text s
 	for _, e := range mentions {
 		id := ""
 		if m := obj(e, "mentioned"); m != nil {
-			id = pyrepr.Str(m["id"])
+			id = anyutil.String(m["id"])
 			if _, has := m["id"]; !has {
 				id = ""
 			}

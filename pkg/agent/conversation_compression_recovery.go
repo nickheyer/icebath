@@ -10,11 +10,11 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Split failures arm the first timeout ladder rung instead of the summary provider cooldown
@@ -29,7 +29,7 @@ var terminalCompressionProvenances = map[state.ActivityProvenance]bool{
 // Session store surface the rotated parent recovery walks
 type compressionChildDB interface {
 	GetCompressionTip(ctx context.Context, sessionID string) (string, error)
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 	GetMessagesAsConversation(ctx context.Context, sessionID string, o state.ConversationOptions) ([]map[string]any, error)
 }
 
@@ -209,7 +209,7 @@ func pyErrorClass(err error) string {
 func compressionLockHolder(a *AIAgent) string {
 	nonce := make([]byte, 4)
 	_, _ = rand.Read(nonce)
-	return fmt.Sprintf("pid=%d%s:tid=%d:agent=%x:nonce=%s", os.Getpid(), state.HolderNamespaceToken(), pythread.GoroutineID(),
+	return fmt.Sprintf("pid=%d%s:tid=%d:agent=%x:nonce=%s", os.Getpid(), state.HolderNamespaceToken(), syncutil.GoroutineID(),
 		uintptr(unsafe.Pointer(a)), hex.EncodeToString(nonce))
 }
 

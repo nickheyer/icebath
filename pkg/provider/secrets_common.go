@@ -2,20 +2,21 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Config, env file and terminal seams the secrets CLIs share, the module attributes tests patch
@@ -34,7 +35,7 @@ var (
 type secretsCLI struct {
 	ctx     context.Context
 	home    string
-	console *pyrich.Console
+	console *consoleutil.Console
 }
 
 // Handler of one secrets subcommand over the parsed namespace, returning the exit code
@@ -127,7 +128,7 @@ func (p *secretsParser) handler(ns map[string]any) secretsHandler {
 }
 
 // Prints the integration is disabled hint, true only when the section is enabled
-func requireEnabled(console *pyrich.Console, cfg map[string]any, product, command string) bool {
+func requireEnabled(console *consoleutil.Console, cfg map[string]any, product, command string) bool {
 	if pyTruthy(cfg["enabled"]) {
 		return true
 	}
@@ -136,17 +137,17 @@ func requireEnabled(console *pyrich.Console, cfg map[string]any, product, comman
 }
 
 // Two column key and value table inside a cyan panel, the status layout
-func printStatusPanel(console *pyrich.Console, title string, rows [][2]string) {
-	table := &pyrich.Table{HideHeader: true, NoBox: true, PadX: 2, Columns: []pyrich.Column{{Style: "bold"}, {}}}
+func printStatusPanel(console *consoleutil.Console, title string, rows [][2]string) {
+	table := &consoleutil.Table{HideHeader: true, NoBox: true, PadX: 2, Columns: []consoleutil.Column{{Style: "bold"}, {}}}
 	for _, row := range rows {
 		table.AddRow(row[0], row[1])
 	}
-	console.PrintPanel(pyrich.Panel{Title: title, BorderStyle: "cyan", Content: table})
+	console.PrintPanel(consoleutil.Panel{Title: title, BorderStyle: "cyan", Content: table})
 }
 
 // Headed table followed by one warning line per warning
-func printTable(console *pyrich.Console, columns []pyrich.Column, rows [][]string, warnings []string, indent string) {
-	table := &pyrich.Table{Columns: columns}
+func printTable(console *consoleutil.Console, columns []consoleutil.Column, rows [][]string, warnings []string, indent string) {
+	table := &consoleutil.Table{Columns: columns}
 	for _, row := range rows {
 		table.AddRow(row...)
 	}
@@ -158,7 +159,7 @@ func printTable(console *pyrich.Console, columns []pyrich.Column, rows [][]strin
 
 // Decodes helper output as utf-8 with undecodable bytes replaced
 func decodeCLIOutput(raw []byte) string {
-	text, err := pycodecs.DecodeReplace(raw, "utf-8")
+	text, err := charsetutil.DecodeReplace(raw, "utf-8")
 	if err != nil {
 		return string(raw)
 	}
@@ -167,8 +168,8 @@ func decodeCLIOutput(raw []byte) string {
 
 // First line of the binary's --version output, version unknown on failure or silence
 func cliVersion(binary string) string {
-	res, err := pysubprocess.RunWith(context.Background(), []string{binary, "--version"}, pysubprocess.Options{Timeout: 5 * time.Second})
-	if err != nil || res.Returncode != 0 {
+	res, err := executil.Run(context.Background(), []string{binary, "--version"}, executil.Options{Timeout: 5 * time.Second})
+	if err != nil || res.ExitCode != 0 {
 		return "version unknown"
 	}
 	out := res.Stdout
@@ -206,7 +207,7 @@ type rotateTokenOptions struct {
 }
 
 // Shared token subcommand, prompt, verify when asked, then persist and clear caches
-func rotateToken(console *pyrich.Console, given, tokenEnv string, o rotateTokenOptions) (int, error) {
+func rotateToken(console *consoleutil.Console, given, tokenEnv string, o rotateTokenOptions) (int, error) {
 	token := strings.TrimSpace(given)
 	if token == "" {
 		if !stdinIsATTY() {
@@ -240,7 +241,7 @@ func rotateToken(console *pyrich.Console, given, tokenEnv string, o rotateTokenO
 }
 
 // Loops until the user enters an integer in 1..count, blank returning 0 when allowed
-func promptIndex(console *pyrich.Console, prompt string, count int, allowEmpty bool, emptyMessage string) (int, error) {
+func promptIndex(console *consoleutil.Console, prompt string, count int, allowEmpty bool, emptyMessage string) (int, error) {
 	for {
 		choice, err := console.Input(prompt)
 		if err != nil {
@@ -256,13 +257,13 @@ func promptIndex(console *pyrich.Console, prompt string, count int, allowEmpty b
 			}
 			continue
 		}
-		parsed, ok := pyint.Parse(choice)
-		if !ok {
+		parsed, err := strconv.ParseInt(choice, 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			console.Print("  [red]Enter a number.[/red]")
 			continue
 		}
-		if parsed.IsInt64() && parsed.Int64() >= 1 && parsed.Int64() <= int64(count) {
-			return int(parsed.Int64()), nil
+		if parsed >= 1 && parsed <= int64(count) {
+			return int(parsed), nil
 		}
 		console.Print(fmt.Sprintf("  [red]Out of range — pick 1-%d.[/red]", count))
 	}

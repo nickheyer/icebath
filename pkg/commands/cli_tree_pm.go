@@ -2,9 +2,9 @@ package commands
 
 import (
 	"slices"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/spf13/cobra"
 )
@@ -151,5 +151,5 @@ func (c *CLI) pmVerbArgs(cmd *cobra.Command, args []string) error {
 	case slices.Contains(verbs, token):
 		return nil
 	}
-	return &ArgparseError{Cmd: cmd, Msg: "argument cmd: invalid choice: " + pyrepr.StrRepr(token) + " (choose from " + reprList(verbs, pyrepr.StrRepr) + ")"}
+	return &ArgparseError{Cmd: cmd, Msg: "argument cmd: invalid choice: " + strconv.Quote(token) + " (choose from " + reprList(verbs, strconv.Quote) + ")"}
 }

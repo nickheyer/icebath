@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Agent side summary state the fake records, the calls the assertions read
@@ -351,7 +351,7 @@ func TestIterationSummaryPathHandsTheSDKOnlyEmptyBulkSlots(t *testing.T) {
 	if tl, _ := seen[0]["tools"].([]any); tl == nil || len(tl) != 0 {
 		t.Fatalf("sdk tools slot %v", seen[0]["tools"])
 	}
-	if extra, _ := pyjson.Plain(seen[0]["extra_body"]).(map[string]any); !reflect.DeepEqual(extra["messages"], messages) {
+	if extra, _ := jsonutil.Plain(seen[0]["extra_body"]).(map[string]any); !reflect.DeepEqual(extra["messages"], messages) {
 		t.Fatalf("extra body messages %v", seen[0]["extra_body"])
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"net/url"
 	"os/exec"
 	"path/filepath"
 	"regexp"
@@ -16,12 +17,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -60,7 +60,7 @@ func gateRaise(class, format string, args ...any) {
 // Subscript of a decoded JSON value with the KeyError, IndexError and TypeError dict and list subscripts raise
 func jget(v any, key any) any {
 	switch c := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		k, ok := key.(string)
 		if !ok {
 			gateRaise("KeyError", "GitHub evidence has no %v field", key)
@@ -89,7 +89,7 @@ func jget(v any, key any) any {
 
 // dict.get of a decoded JSON value, AttributeError for a non dict
 func jgetd(v any, key string, def any) any {
-	o, ok := v.(*pyjson.Object)
+	o, ok := v.(*jsonutil.Object)
 	if !ok {
 		gateRaise("AttributeError", "GitHub evidence is %s where a mapping was expected", errchain.Kind(v))
 	}
@@ -104,9 +104,9 @@ func jiter(v any) []any {
 	switch c := v.(type) {
 	case []any:
 		return c
-	case *pyjson.Object:
-		out := make([]any, len(c.Keys))
-		for i, k := range c.Keys {
+	case *jsonutil.Object:
+		out := make([]any, c.Len())
+		for i, k := range c.Keys() {
 			out[i] = k
 		}
 		return out
@@ -184,14 +184,14 @@ func jeq(a, b any) bool {
 			}
 		}
 		return true
-	case *pyjson.Object:
-		y, ok := b.(*pyjson.Object)
-		if !ok || len(x.Keys) != len(y.Keys) {
+	case *jsonutil.Object:
+		y, ok := b.(*jsonutil.Object)
+		if !ok || x.Len() != y.Len() {
 			return false
 		}
-		for _, k := range x.Keys {
+		for _, k := range x.Keys() {
 			yv, found := y.Get(k)
-			if !found || !jeq(x.Vals[k], yv) {
+			if !found || !jeq(x.Value(k), yv) {
 				return false
 			}
 		}
@@ -219,13 +219,13 @@ func jless(a, b any) bool {
 // Hash key of a value, TypeError for the unhashable list and dict
 func jhash(v any) string {
 	switch v.(type) {
-	case []any, *pyjson.Object:
+	case []any, *jsonutil.Object:
 		gateRaise("TypeError", "GitHub evidence holds %s where a single value was expected", errchain.Kind(v))
 	}
 	if n, ok := jnum(v); ok {
 		return "n:" + n.Text('g', 64)
 	}
-	return pyrepr.Repr(v)
+	return anyutil.Quote(v)
 }
 
 // One gh api call under the card identity, decoded, refusing an incomplete GraphQL answer
@@ -274,11 +274,11 @@ func ghAPI(ctx context.Context, endpoint string, query *string, paginate bool, p
 	if err != nil {
 		gateRaise("OSError", "%v", err)
 	}
-	value, err := pyjson.Loads(strings.ToValidUTF8(string(stdout.Bytes()), "\uFFFD"))
+	value, err := jsonutil.Decode(strings.ToValidUTF8(string(stdout.Bytes()), "\uFFFD"))
 	if err != nil {
 		gateRaise("ValueError", "%v", err)
 	}
-	if o, ok := value.(*pyjson.Object); ok {
+	if o, ok := value.(*jsonutil.Object); ok {
 		if e, _ := o.Get("errors"); truthy(e) {
 			gateRaise("ValueError", "GitHub returned incomplete GraphQL evidence")
 		}
@@ -335,11 +335,11 @@ type requiredCheck struct{ Context, AppID any }
 
 // Python str of the check tuple, the sort key of the required set
 func (r requiredCheck) sortKey() string {
-	return "(" + pyrepr.Repr(r.Context) + ", " + pyrepr.Repr(r.AppID) + ")"
+	return "(" + anyutil.Quote(r.Context) + ", " + anyutil.Quote(r.AppID) + ")"
 }
 
 // Acceptance receipt of a PR completion contract from the required checks on its current head
-func collectAcceptance(ctx context.Context, contract string, publishedPR any, assignee *string) (receipt *pyjson.Object, err error) {
+func collectAcceptance(ctx context.Context, contract string, publishedPR any, assignee *string) (receipt *jsonutil.Object, err error) {
 	receipt = payload("ok", false, "classification", "missing", "head_sha", nil, "pr_url", publishedPR, "checks", []any{},
 		"recovery", "Fix required failures, rerun infrastructure checks or wait, then retry completion. "+
 			"Use kanban_block if human input is needed; receipts remain on the task event log.")
@@ -370,13 +370,13 @@ func collectAcceptance(ctx context.Context, contract string, publishedPR any, as
 	}()
 	profileHome := assigneeProfileHome(assignee)
 	declared := prURLRE.MatchString(contract)
-	var url any = publishedPR
+	var prRef any = publishedPR
 	if declared {
-		url = contract
+		prRef = contract
 	}
 	urlText := ""
-	if truthy(url) {
-		urlText = jstr(url)
+	if truthy(prRef) {
+		urlText = jstr(prRef)
 	}
 	match := prURLRE.FindStringSubmatch(urlText)
 	if match == nil || (!declared && match[1] != contract) || (declared && truthy(publishedPR) && !jeq(publishedPR, contract)) {
@@ -384,10 +384,10 @@ func collectAcceptance(ctx context.Context, contract string, publishedPR any, as
 		return receipt, nil
 	}
 	repo, number := match[1], match[2]
-	receipt.Set("pr_url", url)
+	receipt.Set("pr_url", prRef)
 	owner, name, _ := cutString(repo, "/")
-	ownerJSON, _ := pyjson.Dumps(owner)
-	nameJSON, _ := pyjson.Dumps(name)
+	ownerJSON, _ := jsonutil.Encode(owner)
+	nameJSON, _ := jsonutil.Encode(name)
 	query := "{repository(owner:" + ownerJSON + ",name:" + nameJSON + "){pullRequest(number:" + number + "){headRefOid baseRefName state\n" +
 		"            baseRef{branchProtectionRule{requiredStatusChecks{context app{databaseId}}}}}}}"
 	repository := jget(jget(ghAPI(ctx, "graphql", &query, false, profileHome), "data"), "repository")
@@ -401,7 +401,7 @@ func collectAcceptance(ctx context.Context, contract string, publishedPR any, as
 	if !shaRE.MatchString(jstr(sha)) || !(jeq(state, "OPEN") || jeq(state, "MERGED")) {
 		gateRaise("ValueError", "PR is closed or current head is unavailable")
 	}
-	protection := jor(jgetd(jor(jgetd(pr, "baseRef", nil), pyjson.NewObject()), "branchProtectionRule", nil), pyjson.NewObject())
+	protection := jor(jgetd(jor(jgetd(pr, "baseRef", nil), jsonutil.NewObject()), "branchProtectionRule", nil), jsonutil.NewObject())
 	required := map[string]requiredCheck{}
 	add := func(c, a any) {
 		key := "(" + jhash(c) + ", " + jhash(a) + ")"
@@ -410,9 +410,9 @@ func collectAcceptance(ctx context.Context, contract string, publishedPR any, as
 		}
 	}
 	for _, r := range jiter(jgetd(protection, "requiredStatusChecks", []any{})) {
-		add(jget(r, "context"), jgetd(jor(jgetd(r, "app", nil), pyjson.NewObject()), "databaseId", nil))
+		add(jget(r, "context"), jgetd(jor(jgetd(r, "app", nil), jsonutil.NewObject()), "databaseId", nil))
 	}
-	rules := ghAPI(ctx, fmt.Sprintf("repos/%s/rules/branches/%s?per_page=100", repo, pyurl.Quote(jstr(branch), "")), nil, true, profileHome)
+	rules := ghAPI(ctx, fmt.Sprintf("repos/%s/rules/branches/%s?per_page=100", repo, url.PathEscape(jstr(branch))), nil, true, profileHome)
 	for _, page := range jiter(rules) {
 		for _, rule := range jiter(page) {
 			if jeq(jget(rule, "type"), "required_status_checks") {
@@ -449,16 +449,16 @@ func collectAcceptance(ctx context.Context, contract string, publishedPR any, as
 	if !jeq(int64(len(ids)), jget(jget(pages, 0), "total_count")) {
 		gateRaise("ValueError", "Incomplete check-run pagination")
 	}
-	var statuses []*pyjson.Object
+	var statuses []*jsonutil.Object
 	for _, page := range jiter(ghAPI(ctx, fmt.Sprintf("repos/%s/commits/%s/statuses?per_page=100", repo, shaText), nil, true, profileHome)) {
 		for _, s := range jiter(page) {
-			src, ok := s.(*pyjson.Object)
+			src, ok := s.(*jsonutil.Object)
 			if !ok {
 				gateRaise("TypeError", "a GitHub status context is %s, expected a mapping", errchain.Kind(s))
 			}
-			cp := pyjson.NewObject()
-			for _, k := range src.Keys {
-				cp.Set(k, src.Vals[k])
+			cp := jsonutil.NewObject()
+			for _, k := range src.Keys() {
+				cp.Set(k, src.Value(k))
 			}
 			cp.Set("sha", sha)
 			statuses = append(statuses, cp)
@@ -490,7 +490,7 @@ func collectAcceptance(ctx context.Context, contract string, publishedPR any, as
 			checks = append(checks, payload("name", req.Context, "classification", "missing", "head_sha", sha))
 		}
 		for _, check := range selected {
-			_, isRun := check.(*pyjson.Object).Get("conclusion")
+			_, isRun := check.(*jsonutil.Object).Get("conclusion")
 			var outcome any
 			if isRun {
 				outcome = jgetd(check, "conclusion", nil)
@@ -563,7 +563,7 @@ type acceptanceSnapshot struct{ RunID, Status, Contract any }
 // Snapshot paired with the receipt collected for it
 type PreparedAcceptance struct {
 	Snapshot *acceptanceSnapshot
-	Receipt  *pyjson.Object
+	Receipt  *jsonutil.Object
 }
 
 // Current run, status and completion contract of a task, nil when no row matches
@@ -655,9 +655,9 @@ func recordAcceptance(ctx context.Context, conn state.SQLiteConn, taskID string,
 	if !ok {
 		detail := ""
 		if d, found := receipt.Get("detail"); found {
-			detail = pyrepr.Str(d)
+			detail = anyutil.String(d)
 		}
-		text := fmt.Sprintf("PR acceptance %s: %s %s", pyrepr.Str(objGet(receipt, "classification")), detail, pyrepr.Str(objGet(receipt, "recovery")))
+		text := fmt.Sprintf("PR acceptance %s: %s %s", anyutil.String(objGet(receipt, "classification")), detail, anyutil.String(objGet(receipt, "recovery")))
 		if _, err := conn.ExecContext(ctx, "UPDATE tasks SET last_failure_error=? WHERE id=?", text, taskID); err != nil {
 			return false, err
 		}

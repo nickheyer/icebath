@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store over a temp sessions dir pinned to db and marked loaded without reading the routing index
@@ -62,25 +62,25 @@ func pendingSpoolFiles(t *testing.T, home string) []string {
 }
 
 // Decoded spool payload
-func spoolPayloadObject(t *testing.T, path string) *pyjson.Object {
+func spoolPayloadObject(t *testing.T, path string) *jsonutil.Object {
 	t.Helper()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 // Message content carried by a spool payload
 func spoolPayloadContent(t *testing.T, path string) any {
 	t.Helper()
 	data, _ := spoolPayloadObject(t, path).Get("data")
-	msg, _ := data.(*pyjson.Object).Get("message")
-	content, _ := msg.(*pyjson.Object).Get("content")
+	msg, _ := data.(*jsonutil.Object).Get("message")
+	content, _ := msg.(*jsonutil.Object).Get("content")
 	return content
 }
 
@@ -108,7 +108,7 @@ type fakeTranscriptDB struct {
 	SessionStoreDB
 	appendFn func(sessionID string, fields map[string]any) error
 	tipFn    func(sessionID string) (string, error)
-	getFn    func(sessionID string) (*pyjson.Object, error)
+	getFn    func(sessionID string) (*jsonutil.Object, error)
 }
 
 func (f *fakeTranscriptDB) AppendMessage(ctx context.Context, sessionID string, fields map[string]any, guards state.AppendGuards) (int64, error) {
@@ -119,7 +119,7 @@ func (f *fakeTranscriptDB) GetCompressionTip(ctx context.Context, sessionID stri
 	return f.tipFn(sessionID)
 }
 
-func (f *fakeTranscriptDB) GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (f *fakeTranscriptDB) GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	return f.getFn(sessionID)
 }
 
@@ -273,8 +273,8 @@ func TestTranscriptRerouteMigratesRemainingBacklogToChild(t *testing.T) {
 			}
 			return "child", nil
 		},
-		getFn: func(sessionID string) (*pyjson.Object, error) {
-			row := pyjson.NewObject()
+		getFn: func(sessionID string) (*jsonutil.Object, error) {
+			row := jsonutil.NewObject()
 			row.Set("id", sessionID)
 			row.Set("ended_at", nil)
 			return row, nil

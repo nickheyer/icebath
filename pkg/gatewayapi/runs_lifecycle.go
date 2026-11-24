@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds between internal wake retries while the concurrent run cap is saturated
@@ -62,7 +62,7 @@ func (a *APIServerAdapter) requestOwnsRun(ctx context.Context, request *gateway.
 }
 
 // Pollable status of a scoped run, hydrated from the durable store with a dead owner failed closed
-func (a *APIServerAdapter) durableRunStatus(ctx context.Context, request *gateway.WebRequest, runID string) (*pyjson.Object, error) {
+func (a *APIServerAdapter) durableRunStatus(ctx context.Context, request *gateway.WebRequest, runID string) (*jsonutil.Object, error) {
 	canonical, err := runProjection(ctx, a, runID)
 	if err != nil {
 		return nil, err
@@ -71,7 +71,7 @@ func (a *APIServerAdapter) durableRunStatus(ctx context.Context, request *gatewa
 		a.mu.Lock()
 		retained := a.runStatuses[runID]
 		a.mu.Unlock()
-		out := pyjson.ObjectOf("object", "icebath.run")
+		out := jsonutil.ObjectOf("object", "icebath.run")
 		if retained != nil {
 			for _, k := range []string{"model", "runtime", "created_at"} {
 				if v, ok := retained.Get(k); ok {
@@ -79,7 +79,7 @@ func (a *APIServerAdapter) durableRunStatus(ctx context.Context, request *gatewa
 				}
 			}
 		}
-		out.Update(canonical)
+		out.Merge(canonical)
 		return out, nil
 	}
 	a.mu.Lock()
@@ -99,12 +99,12 @@ func (a *APIServerAdapter) durableRunStatus(ctx context.Context, request *gatewa
 	if err != nil || record == nil {
 		return nil, err
 	}
-	stored, _ := record.Status.(*pyjson.Object)
+	stored, _ := record.Status.(*jsonutil.Object)
 	if stored == nil {
-		stored = pyjson.NewObject()
+		stored = jsonutil.NewObject()
 	}
-	status = stored.Copy()
-	if !gateway.APIRunTerminalStatus(pyrepr.Str(status.GetOr("status", ""))) && !ownerAlive(record.OwnerPID, record.OwnerStarted) {
+	status = stored.Clone()
+	if !gateway.APIRunTerminalStatus(anyutil.String(status.ValueOr("status", ""))) && !ownerAlive(record.OwnerPID, record.OwnerStarted) {
 		status.Set("status", "interrupted")
 		status.Set("error", "The gateway restarted before this run settled.")
 		status.Set("last_event", "run.interrupted")
@@ -122,17 +122,17 @@ func (a *APIServerAdapter) durableRunStatus(ctx context.Context, request *gatewa
 }
 
 // History, instructions and stored session of a runs body, explicit history before a response chain before prior inputs
-func (a *APIServerAdapter) resolveConversationHistory(ctx context.Context, body *pyjson.Object, rawInput any) ([]any, any, string, *gateway.WebResponse, error) {
-	instructions := body.GetOr("instructions", nil)
-	previousResponseID := body.GetOr("previous_response_id", nil)
+func (a *APIServerAdapter) resolveConversationHistory(ctx context.Context, body *jsonutil.Object, rawInput any) ([]any, any, string, *gateway.WebResponse, error) {
+	instructions := body.ValueOr("instructions", nil)
+	previousResponseID := body.ValueOr("previous_response_id", nil)
 	history := []any{}
-	if rawHistory := body.GetOr("conversation_history", nil); pyrepr.Truthy(rawHistory) {
+	if rawHistory := body.ValueOr("conversation_history", nil); anyutil.IsTrue(rawHistory) {
 		list, ok := rawHistory.([]any)
 		if !ok {
 			return nil, instructions, "", jsonError("'conversation_history' must be an array of message objects", "", http.StatusBadRequest), nil
 		}
 		for i, raw := range list {
-			entry, isObj := raw.(*pyjson.Object)
+			entry, isObj := raw.(*jsonutil.Object)
 			hasBoth := false
 			if isObj {
 				_, r := entry.Get("role")
@@ -144,59 +144,59 @@ func (a *APIServerAdapter) resolveConversationHistory(ctx context.Context, body 
 			}
 			role, _ := entry.Get("role")
 			content, _ := entry.Get("content")
-			history = append(history, pyjson.ObjectOf("role", pyrepr.Str(role), "content", pyrepr.Str(content)))
+			history = append(history, jsonutil.ObjectOf("role", anyutil.String(role), "content", anyutil.String(content)))
 		}
-		if pyrepr.Truthy(previousResponseID) {
+		if anyutil.IsTrue(previousResponseID) {
 			pkgLog().Debug("Both conversation_history and previous_response_id provided; using conversation_history")
 		}
 	}
 	storedSessionID := ""
-	if len(history) == 0 && pyrepr.Truthy(previousResponseID) {
+	if len(history) == 0 && anyutil.IsTrue(previousResponseID) {
 		store, err := a.currentResponseStore(ctx)
 		if err != nil {
 			return nil, instructions, "", nil, err
 		}
-		raw, err := store.Get(ctx, pyrepr.Str(previousResponseID))
+		raw, err := store.Get(ctx, anyutil.String(previousResponseID))
 		if err != nil {
 			return nil, instructions, "", nil, err
 		}
-		if stored, ok := raw.(*pyjson.Object); ok && stored.Len() > 0 {
-			if prior, ok := stored.GetOr("conversation_history", nil).([]any); ok {
+		if stored, ok := raw.(*jsonutil.Object); ok && stored.Len() > 0 {
+			if prior, ok := stored.ValueOr("conversation_history", nil).([]any); ok {
 				history = append(history, prior...)
 			}
-			storedSessionID = textOf(stored.GetOr("session_id", nil))
+			storedSessionID = textOf(stored.ValueOr("session_id", nil))
 			if instructions == nil {
-				instructions = stored.GetOr("instructions", nil)
+				instructions = stored.ValueOr("instructions", nil)
 			}
 		}
 	}
 	if list, ok := rawInput.([]any); ok && len(history) == 0 && len(list) > 1 {
 		for _, raw := range list[:len(list)-1] {
-			msg, isObj := raw.(*pyjson.Object)
-			if !isObj || !pyrepr.Truthy(msg.GetOr("role", nil)) || !pyrepr.Truthy(msg.GetOr("content", nil)) {
+			msg, isObj := raw.(*jsonutil.Object)
+			if !isObj || !anyutil.IsTrue(msg.ValueOr("role", nil)) || !anyutil.IsTrue(msg.ValueOr("content", nil)) {
 				continue
 			}
 			content, _ := msg.Get("content")
 			if parts, isList := content.([]any); isList {
 				var texts []string
 				for _, p := range parts {
-					if part, isPart := p.(*pyjson.Object); isPart {
+					if part, isPart := p.(*jsonutil.Object); isPart {
 						if t, _ := part.Get("type"); t == "text" {
-							texts = append(texts, pyrepr.Str(part.GetOr("text", "")))
+							texts = append(texts, anyutil.String(part.ValueOr("text", "")))
 						}
 					}
 				}
 				content = strings.Join(texts, " ")
 			}
 			role, _ := msg.Get("role")
-			history = append(history, pyjson.ObjectOf("role", role, "content", pyrepr.Str(content)))
+			history = append(history, jsonutil.ObjectOf("role", role, "content", anyutil.String(content)))
 		}
 	}
 	return history, instructions, storedSessionID, nil, nil
 }
 
 // Chained history with the chain's live session, the walked past stored session when it moved
-func (a *APIServerAdapter) resolveChainedHistory(ctx context.Context, body *pyjson.Object, rawInput any) ([]any, any, string, *gateway.WebResponse, string, error) {
+func (a *APIServerAdapter) resolveChainedHistory(ctx context.Context, body *jsonutil.Object, rawInput any) ([]any, any, string, *gateway.WebResponse, string, error) {
 	history, instructions, chainRoot, errResp, err := a.resolveConversationHistory(ctx, body, rawInput)
 	if err != nil {
 		return nil, nil, "", nil, "", err
@@ -223,7 +223,7 @@ func acceptedResponse(runID, status, gatewaySessionKey string, replayed bool) *g
 	if gatewaySessionKey != "" {
 		headers["X-Icebath-Session-Key"] = gatewaySessionKey
 	}
-	return jsonResponse(pyjson.ObjectOf("run_id", runID, "status", status, "replayed", replayed), http.StatusAccepted, headers)
+	return jsonResponse(jsonutil.ObjectOf("run_id", runID, "status", status, "replayed", replayed), http.StatusAccepted, headers)
 }
 
 // 409 for a fingerprint conflict, else a replay of the admitted run
@@ -240,12 +240,12 @@ func (a *APIServerAdapter) replayOrConflict(ctx context.Context, request *gatewa
 		return nil, err
 	}
 	if status == nil {
-		status, _ = record.Status.(*pyjson.Object)
+		status, _ = record.Status.(*jsonutil.Object)
 	}
 	value := "queued"
 	if status != nil {
 		if s, ok := status.Get("status"); ok {
-			value = pyrepr.Str(s)
+			value = anyutil.String(s)
 		}
 	}
 	return acceptedResponse(originalID, value, gatewaySessionKey, true), nil
@@ -322,15 +322,15 @@ func (a *APIServerAdapter) runInternalSessionTurn(ctx context.Context, sessionID
 			return err
 		}
 		if errResp != nil || session == nil {
-			return fmt.Errorf("internal wake target session %s is not in the active profile store", pyrepr.Repr(resolved))
+			return fmt.Errorf("internal wake target session %s is not in the active profile store", anyutil.Quote(resolved))
 		}
 		history := a.conversationHistoryForSession(ctx, resolved)
-		route, overrides, routeErr := a.selectRequestRoute(ctx, pyjson.ObjectOf("model", a.modelName), resolved, "", a.modelName)
+		route, overrides, routeErr := a.selectRequestRoute(ctx, jsonutil.ObjectOf("model", a.modelName), resolved, "", a.modelName)
 		if routeErr != nil {
-			return fmt.Errorf("internal wake route conflict for session %s", pyrepr.Repr(resolved))
+			return fmt.Errorf("internal wake route conflict for session %s", anyutil.Quote(resolved))
 		}
 		run := runAgentOptions{userMessage: text, conversationHistory: history, sessionID: resolved, route: route,
-			requestedRuntime: pyjson.NewObject(), routeSource: "global", sessionHistoryDelivery: "1", notificationCategory: notificationCategory}
+			requestedRuntime: jsonutil.NewObject(), routeSource: "global", sessionHistoryDelivery: "1", notificationCategory: notificationCategory}
 		run.requestedModel, _ = overrides["requested_model"].(string)
 		run.requestedProvider, _ = overrides["requested_provider"].(string)
 		if options, ok := overrides["model_options"]; ok {
@@ -343,12 +343,13 @@ func (a *APIServerAdapter) runInternalSessionTurn(ctx context.Context, sessionID
 }
 
 // Principal scope and request fingerprint of a keyed runs request, empty when unkeyed
-func (a *APIServerAdapter) runIdempotencyIdentity(ctx context.Context, request *gateway.WebRequest, body *pyjson.Object, gatewaySessionKey, idempotencyKey string) (string, string, error) {
+func (a *APIServerAdapter) runIdempotencyIdentity(ctx context.Context, request *gateway.WebRequest, body *jsonutil.Object, gatewaySessionKey, idempotencyKey string) (string, string, error) {
 	if idempotencyKey == "" {
 		return "", "", nil
 	}
-	encoded, err := pyjson.Dumps(pyjson.ObjectOf("body", body, "gateway_session_key", gatewaySessionKey),
-		pyjson.SortKeys(true), pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
+	encoded, err := jsonutil.Encode(jsonutil.ObjectOf("body", body, "gateway_session_key", gatewaySessionKey),
+		jsonutil.SortKeys())
+
 	if err != nil {
 		return "", "", err
 	}
@@ -358,7 +359,7 @@ func (a *APIServerAdapter) runIdempotencyIdentity(ctx context.Context, request *
 
 // User message of a runs input, a 400 when missing or empty
 func runUserMessage(rawInput any) (any, *gateway.WebResponse) {
-	if !pyrepr.Truthy(rawInput) {
+	if !anyutil.IsTrue(rawInput) {
 		return nil, jsonError("Missing 'input' field", "", http.StatusBadRequest)
 	}
 	var userMessage any = ""
@@ -366,13 +367,13 @@ func runUserMessage(rawInput any) (any, *gateway.WebResponse) {
 	case string:
 		userMessage = v
 	case []any:
-		last, _ := v[len(v)-1].(*pyjson.Object)
+		last, _ := v[len(v)-1].(*jsonutil.Object)
 		if last == nil {
-			panic(&gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v[len(v)-1]))})
+			panic(&gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(v[len(v)-1])})
 		}
-		userMessage = last.GetOr("content", "")
+		userMessage = last.ValueOr("content", "")
 	}
-	if !pyrepr.Truthy(userMessage) {
+	if !anyutil.IsTrue(userMessage) {
 		return nil, jsonError("No user message found in input", "", http.StatusBadRequest)
 	}
 	return userMessage, nil
@@ -408,9 +409,9 @@ func (a *APIServerAdapter) sweepOrphanedRunsOnce(now float64) {
 		}
 	}
 	for runID, status := range a.runStatuses {
-		switch pyrepr.Str(status.GetOr("status", "")) {
+		switch anyutil.String(status.ValueOr("status", "")) {
 		case "completed", "failed", "cancelled":
-			if now-toFloat(firstTruthy(status.GetOr("updated_at", nil), int64(0))) > runStatusTTL {
+			if now-toFloat(firstTruthy(status.ValueOr("updated_at", nil), int64(0))) > runStatusTTL {
 				a.forgetRunLocked(runID, func(id string) { delete(a.runStatuses, id) }, func(id string) { delete(a.runIdempotencyIDs, id) })
 			}
 		}

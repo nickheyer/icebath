@@ -6,11 +6,10 @@ import (
 	"unicode/utf8"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -73,23 +72,19 @@ func closeInterruptedToolSequence(messages *[]map[string]any, finalResponse any,
 	return true
 }
 
-// Exact UTF-8 size of the compact JSON of the messages, the summed str lengths when serialization fails
+// Exact UTF-8 size of the compact JSON of the messages, the summed text lengths when serialization fails
 func serializedMessagesBytes(messages any) int {
 	list, ok := messages.([]any)
 	if !ok || len(list) == 0 {
 		return 0
 	}
-	text, err := pyjson.Dumps(list, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"),
-		pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
-	if err == nil {
-		err = pystr.StrictUTF8EncodeError(text)
-	}
+	text, err := jsonutil.Encode(list, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err == nil {
 		return len(text)
 	}
 	total := 0
 	for _, m := range list {
-		total += utf8.RuneCountInString(pyrepr.Str(m))
+		total += utf8.RuneCountInString(anyutil.String(m))
 	}
 	return total
 }
@@ -124,7 +119,7 @@ func stripImagesFromMessages(messages *[]any) bool {
 		case len(newParts) > 0:
 			msg["content"] = newParts
 			delete(msg, state.DBPersistedMarker)
-		case msg["role"] == "tool" || pyrepr.Truthy(msg["tool_calls"]):
+		case msg["role"] == "tool" || anyutil.IsTrue(msg["tool_calls"]):
 			msg["content"] = "[image content removed — server does not support images]"
 			delete(msg, state.DBPersistedMarker)
 		default:
@@ -219,7 +214,7 @@ func applyLegacyMustEchoPad(sourceMsg, apiMsg map[string]any) {
 		apiMsg[carrierRC] = existing
 		return
 	}
-	if reasoning, ok := sourceMsg[carrierR].(string); ok && reasoning != "" && !pyrepr.Truthy(sourceMsg["tool_calls"]) {
+	if reasoning, ok := sourceMsg[carrierR].(string); ok && reasoning != "" && !anyutil.IsTrue(sourceMsg["tool_calls"]) {
 		apiMsg[carrierRC] = reasoning
 		return
 	}
@@ -262,7 +257,7 @@ func applyReasoningContentPolicy(sourceMsg, apiMsg map[string]any, needsThinking
 		var private []any
 		items, _ := popped.([]any)
 		for _, d := range items {
-			if dict, ok := pyjson.Dict(d); ok && strings.HasSuffix(pyStrOr(dict["type"], ""), ".native_assistant") {
+			if dict, ok := jsonutil.AsMap(d); ok && strings.HasSuffix(pyStrOr(dict["type"], ""), ".native_assistant") {
 				private = append(private, d)
 			}
 		}
@@ -286,13 +281,13 @@ func reapplyReasoningEcho(apiMessages []any, needsThinkingPad bool, carriers map
 			continue
 		}
 		before := reasoningShape(apiMsg)
-		if carriers == nil && needsThinkingPad && pyrepr.Truthy(apiMsg[carrierRC]) {
+		if carriers == nil && needsThinkingPad && anyutil.IsTrue(apiMsg[carrierRC]) {
 			continue
 		}
 		applyReasoningContentPolicy(apiMsg, apiMsg, needsThinkingPad, carriers)
 		after := reasoningShape(apiMsg)
 		for i := range before {
-			if !pyrepr.Equal(before[i], after[i]) {
+			if !anyutil.Equal(before[i], after[i]) {
 				changed++
 				break
 			}

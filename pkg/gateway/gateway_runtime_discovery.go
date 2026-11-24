@@ -8,7 +8,7 @@ import (
 	"syscall"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // DiscoveryError is a bounded local control refusal, Reason the stable code and Detail what the user reads
@@ -59,7 +59,7 @@ var (
 )
 
 // Result object of the first response line, the invalid_control_response refusal for any other shape
-func identifyResponse(data []byte) (*pyjson.Object, error) {
+func identifyResponse(data []byte) (*jsonutil.Object, error) {
 	line := data
 	for i, c := range data {
 		if c == '\n' {
@@ -67,11 +67,11 @@ func identifyResponse(data []byte) (*pyjson.Object, error) {
 			break
 		}
 	}
-	decoded, err := pyjson.LoadsBytes(line)
+	decoded, err := jsonutil.Decode(line)
 	if err != nil {
 		return nil, err
 	}
-	response, ok := decoded.(*pyjson.Object)
+	response, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, newDiscoveryError("invalid_control_response", "", "")
 	}
@@ -79,7 +79,7 @@ func identifyResponse(data []byte) (*pyjson.Object, error) {
 	protocol, _ := response.Get("protocol")
 	id, _ := response.Get("id")
 	result, _ := response.Get("result")
-	resultObj, isObj := result.(*pyjson.Object)
+	resultObj, isObj := result.(*jsonutil.Object)
 	if okValue != true || !pyEq(protocol, 1) || !pyEq(id, 1) || !isObj {
 		return nil, newDiscoveryError("invalid_control_response", "", "")
 	}

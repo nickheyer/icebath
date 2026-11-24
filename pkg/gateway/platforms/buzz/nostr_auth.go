@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -122,7 +121,7 @@ func decodePrivateKey(value string) (*big.Int, error) {
 		}
 		keyBytes = b
 	} else {
-		b, err := pystr.BytesFromHex(raw)
+		b, err := hex.DecodeString(raw)
 		if err != nil {
 			return nil, errors.New("private key must be 64 hex characters or nsec")
 		}
@@ -262,7 +261,7 @@ func SchnorrSign(message []byte, privateKey string, aux []byte) ([]byte, error) 
 // Four string NIP-OA owner attestation tag from JSON text or a decoded list
 func ParseAuthTag(raw any, label string) ([]string, error) {
 	if text, ok := raw.(string); ok {
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil, fmt.Errorf("%s is not valid JSON", label)
 		}
@@ -339,7 +338,7 @@ func BuildAuthEvent(p AuthEventParams) (AuthEvent, error) {
 		}
 		tagList[i] = row
 	}
-	serialized, err := pyjson.Dumps([]any{0, pubkey, timestamp, 22242, tagList, ""}, pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
+	serialized, err := jsonutil.Encode([]any{0, pubkey, timestamp, 22242, tagList, ""})
 	if err != nil {
 		return AuthEvent{}, err
 	}

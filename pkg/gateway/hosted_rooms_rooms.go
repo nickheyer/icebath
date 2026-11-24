@@ -12,8 +12,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -85,16 +86,10 @@ type RoomNotFoundError struct{ *HostedRoomError }
 
 func (e *RoomNotFoundError) Unwrap() error { return e.HostedRoomError }
 
-// Python class name of the error
-func (e *RoomNotFoundError) PyTypeName() string { return "RoomNotFoundError" }
-
 // A retired room id whose history compaction removed its log
 type RoomHistoryExpiredError struct{ *RoomNotFoundError }
 
 func (e *RoomHistoryExpiredError) Unwrap() error { return e.RoomNotFoundError }
-
-// Python class name of the error
-func (e *RoomHistoryExpiredError) PyTypeName() string { return "RoomHistoryExpiredError" }
 
 // Stable wire reason of the error
 func (e *RoomHistoryExpiredError) Reason() string { return "room_history_expired" }
@@ -104,40 +99,25 @@ type RoomConflictError struct{ *HostedRoomError }
 
 func (e *RoomConflictError) Unwrap() error { return e.HostedRoomError }
 
-// Python class name of the error
-func (e *RoomConflictError) PyTypeName() string { return "RoomConflictError" }
-
 // A non blocking ownership probe that cannot read the room store
 type RoomProbeUnavailableError struct{ *HostedRoomError }
 
 func (e *RoomProbeUnavailableError) Unwrap() error { return e.HostedRoomError }
-
-// Python class name of the error
-func (e *RoomProbeUnavailableError) PyTypeName() string { return "RoomProbeUnavailableError" }
 
 // An event id reused with different immutable content
 type EventConflictError struct{ *HostedRoomError }
 
 func (e *EventConflictError) Unwrap() error { return e.HostedRoomError }
 
-// Python class name of the error
-func (e *EventConflictError) PyTypeName() string { return "EventConflictError" }
-
 // New room events that invalidate an uncommitted publication plan
 type EventCursorConflictError struct{ *HostedRoomError }
 
 func (e *EventCursorConflictError) Unwrap() error { return e.HostedRoomError }
 
-// Python class name of the error
-func (e *EventCursorConflictError) PyTypeName() string { return "EventCursorConflictError" }
-
 // A publication that lost its file commitments, retried with a fresh plan
 type EventAttachmentConflictError struct{ *EventCursorConflictError }
 
 func (e *EventAttachmentConflictError) Unwrap() error { return e.EventCursorConflictError }
-
-// Python class name of the error
-func (e *EventAttachmentConflictError) PyTypeName() string { return "EventAttachmentConflictError" }
 
 // Stable wire reason of a stale authority
 func (e *AuthorityConflictError) Reason() string { return "authority_conflict" }
@@ -236,7 +216,7 @@ func UserEventID(clientEventID any) (string, error) {
 
 // Copied member objects and their canonical JSON
 func hostedValidateMembers(value any) ([]map[string]any, string, error) {
-	list, ok := pyjson.Plain(value).([]any)
+	list, ok := jsonutil.Plain(value).([]any)
 	if !ok {
 		return nil, "", hostedRoomError("members must be a list")
 	}
@@ -273,13 +253,13 @@ func hostedLegacyMembersMatch(existingJSON string, proposed []map[string]any) bo
 		if !ok {
 			return false
 		}
-		previous = pyjson.Plain(previous).(map[string]any)
-		current := pyjson.Plain(proposed[i]).(map[string]any)
+		previous = jsonutil.Plain(previous).(map[string]any)
+		current := jsonutil.Plain(proposed[i]).(map[string]any)
 		previousTarget, currentTarget := previous["target"], current["target"]
 		delete(previous, "target")
 		delete(current, "target")
-		emptyTarget := previousTarget == nil || pyjson.Equal(previousTarget, map[string]any{})
-		if !pyjson.Equal(previous, current) || (!emptyTarget && !pyjson.Equal(previousTarget, currentTarget)) {
+		emptyTarget := previousTarget == nil || anyutil.Equal(previousTarget, map[string]any{})
+		if !anyutil.Equal(previous, current) || (!emptyTarget && !anyutil.Equal(previousTarget, currentTarget)) {
 			return false
 		}
 	}
@@ -375,7 +355,7 @@ func hostedIsRetired(ctx context.Context, conn state.SQLiteConn, roomID string) 
 }
 
 // One hosted_rooms row, or the precise not found or history expired error
-func hostedRoomRow(ctx context.Context, conn state.SQLiteConn, query string, args []any, roomID string) (*pyjson.Object, error) {
+func hostedRoomRow(ctx context.Context, conn state.SQLiteConn, query string, args []any, roomID string) (*jsonutil.Object, error) {
 	row, err := state.QueryRowObject(ctx, conn, query, args...)
 	if err != nil || row != nil {
 		return row, err
@@ -397,15 +377,15 @@ func hostedRoomRow(ctx context.Context, conn state.SQLiteConn, query string, arg
 }
 
 // Refuses a room row whose authority is not gatewayID at epoch
-func hostedRequireAuthority(room *pyjson.Object, gatewayID string, epoch int64, message string) error {
-	if fmt.Sprint(room.Vals["authority_gateway_id"]) != gatewayID || hrInt(room, "authority_epoch") != epoch {
+func hostedRequireAuthority(room *jsonutil.Object, gatewayID string, epoch int64, message string) error {
+	if fmt.Sprint(room.Value("authority_gateway_id")) != gatewayID || hrInt(room, "authority_epoch") != epoch {
 		return authorityConflict(message)
 	}
 	return nil
 }
 
 // Row this transaction just wrote, a miss being an invariant violation
-func hostedReload(ctx context.Context, conn state.SQLiteConn, query string, args []any, missing string) (*pyjson.Object, error) {
+func hostedReload(ctx context.Context, conn state.SQLiteConn, query string, args []any, missing string) (*jsonutil.Object, error) {
 	row, err := state.QueryRowObject(ctx, conn, query, args...)
 	if err != nil {
 		return nil, err
@@ -417,26 +397,26 @@ func hostedReload(ctx context.Context, conn state.SQLiteConn, query string, args
 }
 
 // Public room view of a stored row
-func hostedRoomFromRow(row *pyjson.Object, idempotent bool) (map[string]any, error) {
+func hostedRoomFromRow(row *jsonutil.Object, idempotent bool) (map[string]any, error) {
 	members, err := roomLoads(hrStr(row, "members_json"))
 	if err != nil {
 		return nil, err
 	}
-	room := map[string]any{"room_id": row.Vals["room_id"], "name": row.Vals["name"], "members": members,
-		"authority_gateway_id": row.Vals["authority_gateway_id"], "authority_epoch": hrInt(row, "authority_epoch"),
+	room := map[string]any{"room_id": row.Value("room_id"), "name": row.Value("name"), "members": members,
+		"authority_gateway_id": row.Value("authority_gateway_id"), "authority_epoch": hrInt(row, "authority_epoch"),
 		"revision": hrInt(row, "revision"), "created_at": hrFloat(row, "created_at"), "updated_at": hrFloat(row, "updated_at"),
 		"idempotent": idempotent}
-	if value, has := row.Vals["disbanded_at"]; has && value != nil {
+	if value, has := row.Get("disbanded_at"); has && value != nil {
 		room["disbanded_at"] = hrFloat(row, "disbanded_at")
 	}
-	if _, has := row.Vals["next_seq"]; has {
+	if _, has := row.Get("next_seq"); has {
 		room["latest_seq"] = hrInt(row, "next_seq") - 1
 	}
 	return room, nil
 }
 
 // Public event view of a stored row
-func hostedEventFromRow(row *pyjson.Object, idempotent bool) (map[string]any, error) {
+func hostedEventFromRow(row *jsonutil.Object, idempotent bool) (map[string]any, error) {
 	actor, err := roomLoads(hrStr(row, "actor_json"))
 	if err != nil {
 		return nil, err
@@ -446,22 +426,22 @@ func hostedEventFromRow(row *pyjson.Object, idempotent bool) (map[string]any, er
 		return nil, err
 	}
 	var epoch any
-	if row.Vals["authority_epoch"] != nil {
+	if row.Value("authority_epoch") != nil {
 		epoch = hrInt(row, "authority_epoch")
 	}
-	return map[string]any{"room_id": row.Vals["room_id"], "seq": hrInt(row, "seq"), "event_id": row.Vals["event_id"],
-		"kind": row.Vals["kind"], "actor": actor, "authority_epoch": epoch, "payload": payload,
+	return map[string]any{"room_id": row.Value("room_id"), "seq": hrInt(row, "seq"), "event_id": row.Value("event_id"),
+		"kind": row.Value("kind"), "actor": actor, "authority_epoch": epoch, "payload": payload,
 		"created_at": hrFloat(row, "created_at"), "idempotent": idempotent}, nil
 }
 
 // Stored event of one id, nil when absent
-func hostedLoadEvent(ctx context.Context, conn state.SQLiteConn, roomID, eventID string) (*pyjson.Object, error) {
+func hostedLoadEvent(ctx context.Context, conn state.SQLiteConn, roomID, eventID string) (*jsonutil.Object, error) {
 	return state.QueryRowObject(ctx, conn, hostedSelectEvent, roomID, eventID)
 }
 
 // Whether a stored event carries exactly this immutable kind, actor, epoch and payload
-func hostedEventContentEquals(row *pyjson.Object, kind, actorJSON string, epoch int64, payloadJSON string) bool {
-	storedEpoch, isInt := row.Vals["authority_epoch"].(int64)
+func hostedEventContentEquals(row *jsonutil.Object, kind, actorJSON string, epoch int64, payloadJSON string) bool {
+	storedEpoch, isInt := row.Value("authority_epoch").(int64)
 	return hrStr(row, "kind") == kind && hrStr(row, "actor_json") == actorJSON && isInt && storedEpoch == epoch &&
 		hrStr(row, "payload_json") == payloadJSON
 }
@@ -474,7 +454,7 @@ func hostedGatewayEventBytes(ctx context.Context, conn state.SQLiteConn) (int64,
 }
 
 // Capacity checked insert of one event at seq, returning its accounted bytes
-func hostedInsertEventRow(ctx context.Context, conn state.SQLiteConn, room *pyjson.Object, roomID string, seq int64, eventID, kind, actorJSON string,
+func hostedInsertEventRow(ctx context.Context, conn state.SQLiteConn, room *jsonutil.Object, roomID string, seq int64, eventID, kind, actorJSON string,
 	epoch int64, payloadJSON string, now float64, allowControl bool) (int64, error) {
 	eventBytes, err := hostedPrepareEvent(ctx, conn, room, eventID, kind, actorJSON, payloadJSON, allowControl)
 	if err != nil {
@@ -485,7 +465,7 @@ func hostedInsertEventRow(ctx context.Context, conn state.SQLiteConn, room *pyjs
 }
 
 // Sizes one pending event and enforces room and gateway capacity, returning its bytes
-func hostedPrepareEvent(ctx context.Context, conn state.SQLiteConn, room *pyjson.Object, eventID, kind, actorJSON, payloadJSON string, allowControl bool) (int64, error) {
+func hostedPrepareEvent(ctx context.Context, conn state.SQLiteConn, room *jsonutil.Object, eventID, kind, actorJSON, payloadJSON string, allowControl bool) (int64, error) {
 	additional := int64(roomUTF8Len(eventID, kind, actorJSON, payloadJSON))
 	var countReserve, byteReserve int64
 	if allowControl {
@@ -525,7 +505,7 @@ func hostedRoomIDs(ctx context.Context, conn state.SQLiteConn, query string, arg
 	}
 	out := make([]string, len(rows))
 	for i, row := range rows {
-		out[i] = fmt.Sprint(row.Vals["room_id"])
+		out[i] = fmt.Sprint(row.Value("room_id"))
 	}
 	return out, nil
 }
@@ -563,7 +543,7 @@ func hostedPruneDisbandedRoomsLocked(ctx context.Context, conn state.SQLiteConn,
 				return 0, err
 			}
 			for _, row := range rows {
-				candidates[fmt.Sprint(row.Vals["room_id"])] = true
+				candidates[fmt.Sprint(row.Value("room_id"))] = true
 				retained -= hrInt(row, "event_bytes")
 				if retained <= *maxGatewayBytes {
 					break
@@ -726,7 +706,7 @@ func UpsertRemoteRunReceipt(ctx context.Context, dbPath string, record map[strin
 		}
 		if existing != nil {
 			stored, _ := recordValues(hrDict(existing), append(append([]string{}, hostedRemoteRunIdentityColumns...), "run_id", "session_id"))
-			if !pyjson.Equal(stored, immutable) {
+			if !anyutil.Equal(stored, immutable) {
 				return hostedRoomError("remote run receipt conflicts with its logical task")
 			}
 			_, err := conn.ExecContext(ctx, "UPDATE hosted_room_remote_runs SET updated_at=? WHERE "+hostedRemoteRunWhere, append([]any{timestamp}, identity...)...)

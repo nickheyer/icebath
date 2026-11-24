@@ -9,11 +9,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Scoped secret reader the shared platform helpers go through, replaced by tests at this seam
@@ -134,7 +133,7 @@ func DecodeJSONListLiteral(raw any) any {
 	if !ok || !strings.HasPrefix(strings.TrimLeftFunc(s, unicode.IsSpace), "[") {
 		return raw
 	}
-	loaded, err := pyjson.Loads(s)
+	loaded, err := jsonutil.Decode(s)
 	if err != nil {
 		return raw
 	}
@@ -170,7 +169,7 @@ func SendError(message any) map[string]any {
 	if SendMessageSendersError == nil {
 		return map[string]any{"error": "the sender failure envelope is unset, pkg/gateway/messagetools binds it in every build that links the platform senders"}
 	}
-	return SendMessageSendersError(pyrepr.Str(message))
+	return SendMessageSendersError(anyutil.String(message))
 }
 
 // Active profile's adapter of the in process gateway for a platform, wired by the message tools package
@@ -245,11 +244,11 @@ func EnvIsConnected(names ...string) func(ctx context.Context, cfg *PlatformConf
 // Config connected check true for a token, an api key or every named extra key
 func ConfigConnectedExtra(keys ...string) func(cfg *PlatformConfig) bool {
 	return func(cfg *PlatformConfig) bool {
-		if pyrepr.Truthy(cfg.Token) || pyrepr.Truthy(cfg.APIKey) {
+		if anyutil.IsTrue(cfg.Token) || anyutil.IsTrue(cfg.APIKey) {
 			return true
 		}
 		for _, k := range keys {
-			if !pyrepr.Truthy(cfg.Extra[k]) {
+			if !anyutil.IsTrue(cfg.Extra[k]) {
 				return false
 			}
 		}
@@ -257,13 +256,13 @@ func ConfigConnectedExtra(keys ...string) func(cfg *PlatformConfig) bool {
 	}
 }
 
-// Python int of the value or the default when it does not convert or fit
+// Integer of the value or the default when it does not convert or fit
 func CoercePort(value any, def int) int {
-	n, err := pyint.Of(value)
-	if err != nil || !n.IsInt64() {
+	n, err := anyutil.ToInt(value)
+	if err != nil {
 		return def
 	}
-	return int(n.Int64())
+	return int(n)
 }
 
 // Host and port the api_server platform binds, platform extra winning over API_SERVER_HOST and API_SERVER_PORT of the profile ctx serves

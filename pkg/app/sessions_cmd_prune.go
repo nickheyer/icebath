@@ -5,20 +5,20 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Deletes one session by id after a confirmation that names a pin
@@ -36,7 +36,7 @@ func cmdDelete(r *sessionsRun, db *state.SessionDB) (int, error) {
 		return 1, err
 	}
 	pinnedNote := ""
-	if pyrepr.Truthy(rowGet(row, "pinned")) {
+	if anyutil.IsTrue(rowGet(row, "pinned")) {
 		pinnedNote = " (this session is PINNED)"
 	}
 	if !nsTruthy(r.ns, "yes") {
@@ -81,13 +81,13 @@ const neverActiveDefaultDays = 30.0
 // Whether a gateway owner call failed the way the client, the socket or its deadline fails
 func ownerCallFailed(err error) bool {
 	var clientErr *gateway.GatewayClientError
-	return errors.As(err, &clientErr) || pypath.IsOSError(err) || errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err)
+	return errors.As(err, &clientErr) || errorutil.IsSystem(err) || errors.Is(err, context.DeadlineExceeded) || os.IsTimeout(err)
 }
 
-// Text of a row value, the fallback when it is missing, None or empty
-func rowTextOr(row *pyjson.Object, key, fallback string) string {
-	if v := rowGet(row, key); pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+// Text of a row value, the fallback when it is missing, null or empty
+func rowTextOr(row *jsonutil.Object, key, fallback string) string {
+	if v := rowGet(row, key); anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return fallback
 }
@@ -96,10 +96,10 @@ func rowTextOr(row *pyjson.Object, key, fallback string) string {
 func pruneNeverActiveKeyed(r *sessionsRun, db *state.SessionDB) (int, error) {
 	days := neverActiveDefaultDays
 	if olderThan := r.ns["older_than"]; olderThan != nil {
-		seconds, ok := parseDurationSeconds(pyrepr.Str(olderThan))
+		seconds, ok := parseDurationSeconds(anyutil.String(olderThan))
 		if !ok {
 			r.printf("Error: --older-than '%s' is not a duration. "+
-				"Use a bare number of days or a form like '2d' / '1w'.", pyrepr.Str(olderThan))
+				"Use a bare number of days or a form like '2d' / '1w'.", anyutil.String(olderThan))
 			return 1, nil
 		}
 		days = seconds / 86400.0
@@ -108,7 +108,7 @@ func pruneNeverActiveKeyed(r *sessionsRun, db *state.SessionDB) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	daysText, _ := pyrepr.Format(days, "g")
+	daysText := strconv.FormatFloat(days, 'g', 6, 64)
 	if len(candidates) == 0 {
 		r.printf("No never-active keyed sessions older than %s day(s).", daysText)
 		return 0, nil
@@ -121,7 +121,7 @@ func pruneNeverActiveKeyed(r *sessionsRun, db *state.SessionDB) (int, error) {
 	r.printf("%d never-active keyed session(s) older than %s day(s) "+
 		"— no messages, tokens, tool calls or title:", len(candidates), daysText)
 	for _, s := range shown {
-		r.printf("  %s  %s %s %s", pyrepr.Str(rowGet(s, "id")), padRight(formatEpoch(rowGet(s, "started_at")), 17),
+		r.printf("  %s  %s %s %s", anyutil.String(rowGet(s, "id")), padRight(formatEpoch(rowGet(s, "started_at")), 17),
 			padRight(rowTextOr(s, "source", "-"), 10), rowTextOr(s, "session_key", "-"))
 	}
 	if len(candidates) > len(shown) {
@@ -155,9 +155,9 @@ func pruneNeverActiveKeyed(r *sessionsRun, db *state.SessionDB) (int, error) {
 		}
 		deleted, routingDeleted, skipped = d, routed, skip
 	}
-	r.printf("Deleted %s never-active session(s) and %s stale routing entr(ies).", pyrepr.Str(deleted), pyrepr.Str(routingDeleted))
-	if pyrepr.Truthy(skipped) {
-		r.printf("Skipped %s session(s) with a live turn or compression lock.", pyrepr.Str(skipped))
+	r.printf("Deleted %s never-active session(s) and %s stale routing entr(ies).", anyutil.String(deleted), anyutil.String(routingDeleted))
+	if anyutil.IsTrue(skipped) {
+		r.printf("Skipped %s session(s) with a live turn or compression lock.", anyutil.String(skipped))
 	}
 	return 0, nil
 }
@@ -196,7 +196,7 @@ func cmdPruneOrArchive(r *sessionsRun, db *state.SessionDB, action string) (int,
 	if !prune {
 		anyFilter := false
 		for k, v := range filters {
-			anyFilter = anyFilter || (k != "older_than_days" && pyrepr.Truthy(v))
+			anyFilter = anyFilter || (k != "older_than_days" && anyutil.IsTrue(v))
 		}
 		if !anyFilter {
 			r.print("Refusing to archive every ended session: pass at least one " +
@@ -256,8 +256,8 @@ func cmdPruneOrArchive(r *sessionsRun, db *state.SessionDB, action string) (int,
 		for _, s := range shown {
 			parts := strings.Split(rowTextOr(s, "model", "-"), "/")
 			model := runePrefix(parts[len(parts)-1], 24)
-			r.printf("  %s  %s %s %s %s msgs  %s", pyrepr.Str(rowGet(s, "id")), padRight(formatEpoch(rowGet(s, "last_active")), 17),
-				padRight(pyrepr.Str(rowGet(s, "source")), 10), padRight(model, 24), padLeft(pyrepr.Str(rowGet(s, "message_count")), 4),
+			r.printf("  %s  %s %s %s %s msgs  %s", anyutil.String(rowGet(s, "id")), padRight(formatEpoch(rowGet(s, "last_active")), 17),
+				padRight(anyutil.String(rowGet(s, "source")), 10), padRight(model, 24), padLeft(anyutil.String(rowGet(s, "message_count")), 4),
 				runePrefix(rowTextOr(s, "title", ""), 36))
 		}
 		if len(candidates) > len(shown) {
@@ -292,7 +292,7 @@ func cmdPruneOrArchive(r *sessionsRun, db *state.SessionDB, action string) (int,
 			}
 			return 1, err
 		}
-		r.printf("Pruned %s session(s).", pyrepr.Str(result["deleted"]))
+		r.printf("Pruned %s session(s).", anyutil.String(result["deleted"]))
 	case prune:
 		n, err := db.PruneSessions(r.ctx, state.PruneSessionsOptions{OlderThanDays: days, Source: source, SessionsDir: r.sessionsDir(),
 			ExcludeActiveWriteGuards: true, Filters: f})
@@ -311,13 +311,14 @@ func cmdPruneOrArchive(r *sessionsRun, db *state.SessionDB, action string) (int,
 	return 0, nil
 }
 
-// Whether an error stands for a Python ValueError
+// Whether an error rejects a value the user gave (a title, a filter, an import file, a session too large to export or resume), shown as an error message instead of failing the command
 func isValueError(err error) bool {
-	var typed *pyint.Error
-	if errors.As(err, &typed) {
-		return typed.Kind == "ValueError"
-	}
-	return err != nil && pyrepr.ExceptionName(err) == "ValueError"
+	var ge *errorutil.Error
+	var ce *appClassedError
+	return errors.As(err, &ge) && ge.Kind == "ValueError" || errors.As(err, new(*appValueError)) ||
+		errors.As(err, &ce) && ce.class == "ValueError" || errors.Is(err, state.ErrInvalid) ||
+		errors.As(err, new(*state.SessionExportTooLargeError)) || errors.As(err, new(*state.SessionResumeTooLargeError)) ||
+		errors.As(err, new(*state.TopicAlreadyLinkedError))
 }
 
 // Sets the title of one session, refusing an empty or multi line title
@@ -400,22 +401,22 @@ func cmdPinned(r *sessionsRun, db *state.SessionDB) (int, error) {
 	if err != nil {
 		return 1, err
 	}
-	var pinnedRows []*pyjson.Object
+	var pinnedRows []*jsonutil.Object
 	for _, s := range rows {
-		if pyrepr.Truthy(rowGet(s, "pinned")) {
+		if anyutil.IsTrue(rowGet(s, "pinned")) {
 			pinnedRows = append(pinnedRows, s)
 		}
 	}
 	if nsTruthy(r.ns, "json") {
 		out := make([]any, 0, len(pinnedRows))
 		for _, s := range pinnedRows {
-			entry := pyjson.NewObject()
+			entry := jsonutil.NewObject()
 			for _, k := range []string{"id", "title", "source", "last_active", "message_count"} {
 				entry.Set(k, rowGet(s, k))
 			}
 			out = append(out, entry)
 		}
-		text, err := pyjson.Dumps(out, pyjson.Indent(2))
+		text, err := jsonutil.Encode(out, jsonutil.Indent(2))
 		if err != nil {
 			return 1, err
 		}
@@ -436,8 +437,8 @@ func cmdPinned(r *sessionsRun, db *state.SessionDB) (int, error) {
 		if title == "" {
 			title = "—"
 		}
-		id := pyrepr.Str(rowGet(s, "id"))
-		r.print(padRight(runePrefix(title, 30), 32) + " " + padRight(pydatetime.RelativeTime(rowGet(s, "last_active"), id, now), 13) + " " +
+		id := anyutil.String(rowGet(s, "id"))
+		r.print(padRight(runePrefix(title, 30), 32) + " " + padRight(timeutil.RelativeAge(rowGet(s, "last_active"), id, now), 13) + " " +
 			padRight(rowTextOr(s, "source", "-"), 9) + " " + id)
 	}
 	return 0, nil
@@ -470,10 +471,10 @@ func cmdRetitleSkills(r *sessionsRun, db *state.SessionDB) (int, error) {
 		typed, _ := skills.DescribeSkillInvocation(rowText(row, "content"), " — ")
 		newTitle := agent.GenerateTitle(r.ctx, typed)
 		oldTitle := rowGet(row, "title")
-		if newTitle == "" || pyrepr.Equal(newTitle, oldTitle) {
+		if newTitle == "" || anyutil.Equal(newTitle, oldTitle) {
 			continue
 		}
-		if first := []rune(newTitle)[0]; !pystr.IsAlnum(first) {
+		if first := []rune(newTitle)[0]; !(unicode.IsLetter(first) || unicode.IsNumber(first)) {
 			r.printf("  %s\n    kept %s — got %s", sessionID, errchain.Show(oldTitle), errchain.Show(newTitle))
 			continue
 		}

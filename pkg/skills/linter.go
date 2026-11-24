@@ -7,12 +7,12 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Lint severities attached to findings
@@ -47,28 +47,30 @@ const (
 	lintIncidentRefPerKChar = 0.5
 	lintMaxReferenceFiles   = 60
 	lintBodySoftBudgetChars = 24_000
-	pyWordClass             = `\p{L}\p{N}_`
-	pySpaceClass            = `\t\n\v\f\r \x1c-\x1f\x85\p{Z}`
+	// Characters of a Unicode word class: letters, numbers and the underscore
+	wordClass = `\p{L}\p{N}_`
+	// Characters of a Unicode whitespace class: ASCII whitespace, the information separators, NEL and every separator
+	spaceClass = `\t\n\v\f\r \x1c-\x1f\x85\p{Z}`
 )
 
 var (
 	lintCodeBlockRe = regexp.MustCompile("(?s)```.*?```")
 	lintNameRe      = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
-	lintIncidentRe  = regexp2.MustCompile(`(?<![`+pyWordClass+`/])#\p{Nd}{3,6}(?![`+pyWordClass+`])|(?<![`+pyWordClass+`])(?:PR|issue)[`+pySpaceClass+`]*#?\p{Nd}{3,6}(?![`+pyWordClass+`])`, regexp2.None)
-	lintLinkRe      = regexp.MustCompile(`(references|templates|assets)/[` + pyWordClass + `./-]+`)
+	lintIncidentRe  = regexp2.MustCompile(`(?<![`+wordClass+`/])#\p{Nd}{3,6}(?![`+wordClass+`])|(?<![`+wordClass+`])(?:PR|issue)[`+spaceClass+`]*#?\p{Nd}{3,6}(?![`+wordClass+`])`, regexp2.None)
+	lintLinkRe      = regexp.MustCompile(`(references|templates|assets)/[` + wordClass + `./-]+`)
 	lintSectionRes  = func() []*regexp.Regexp {
 		out := make([]*regexp.Regexp, 0, len(lintExpectedSections))
 		for _, s := range lintExpectedSections {
-			out = append(out, regexp.MustCompile(`(?m)^#+[`+pySpaceClass+`]+`+regexp.QuoteMeta(s)))
+			out = append(out, regexp.MustCompile(`(?m)^#+[`+spaceClass+`]+`+regexp.QuoteMeta(s)))
 		}
 		return out
 	}()
 )
 
-// Reports a Python regex word character
-func isPyWordRune(r rune) bool { return r == '_' || pystr.IsAlnum(r) }
+// Reports a letter, a number or an underscore, the characters of a Unicode word class
+func isWordRune(r rune) bool { return r == '_' || (unicode.IsLetter(r) || unicode.IsNumber(r)) }
 
-// Reports word occurring in text with Python word boundaries on both sides
+// Reports word occurring in text with word boundaries on both sides
 func containsWholeWord(text, word string) bool {
 	for start := 0; start <= len(text); {
 		i := strings.Index(text[start:], word)
@@ -81,8 +83,8 @@ func containsWholeWord(text, word string) bool {
 		next, _ := utf8.DecodeRuneInString(text[end:])
 		first, _ := utf8.DecodeRuneInString(word)
 		last, _ := utf8.DecodeLastRuneInString(word)
-		leftOK := at == 0 || isPyWordRune(prev) != isPyWordRune(first)
-		rightOK := end == len(text) || isPyWordRune(next) != isPyWordRune(last)
+		leftOK := at == 0 || isWordRune(prev) != isWordRune(first)
+		rightOK := end == len(text) || isWordRune(next) != isWordRune(last)
 		if leftOK && rightOK {
 			return true
 		}
@@ -90,15 +92,6 @@ func containsWholeWord(text, word string) bool {
 		start = at + size
 	}
 	return false
-}
-
-// Thousands separated integer text
-func commaInt(n int) string {
-	s, err := pyrepr.Format(n, ",")
-	if err != nil {
-		return fmt.Sprint(n)
-	}
-	return s
 }
 
 // Frontmatter rule findings, the directory checks only when a skill dir is known
@@ -185,7 +178,7 @@ func lintFrontmatter(fm map[string]any, skillDir string) []LintFinding {
 func lintBody(body, skillDir string) []LintFinding {
 	var out []LintFinding
 	if n := utf8.RuneCountInString(body); n > lintBodySoftBudgetChars {
-		out = append(out, LintFinding{LintWarning, "oversized-body", fmt.Sprintf("SKILL.md body is %s chars (~%s tokens); skill_view loads all of it and it stays in context for every later call of the session. Keep the always-on rules here (~200 lines) and move topic depth into references/<topic>.md, linked from the body.", commaInt(n), commaInt(n/4))})
+		out = append(out, LintFinding{LintWarning, "oversized-body", fmt.Sprintf("SKILL.md body is %s chars (~%s tokens); skill_view loads all of it and it stays in context for every later call of the session. Keep the always-on rules here (~200 lines) and move topic depth into references/<topic>.md, linked from the body.", textutil.Thousands(int64(n)), textutil.Thousands(int64(n/4)))})
 	}
 	prose := lintCodeBlockRe.ReplaceAllString(body, "")
 	for _, pair := range lintShellUtilToTool {

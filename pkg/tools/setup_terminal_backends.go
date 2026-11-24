@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Adds the wizard steps of the plugins tier backends
@@ -35,19 +34,19 @@ func (s *terminalSetup) promptVercelSandboxSettings(cfg map[string]any) error {
 	s.info(nil, "Vercel Sandbox settings:", "  Filesystem persistence uses Vercel snapshots.",
 		"  Snapshots restore files only; live processes do not continue after sandbox recreation.")
 	currentImage := config.DefaultVercelImage
-	if v := terminal["vercel_image"]; pyrepr.Truthy(v) {
-		currentImage = pyrepr.Str(v)
+	if v := terminal["vercel_image"]; anyutil.IsTrue(v) {
+		currentImage = anyutil.String(v)
 	}
 	image := strings.TrimSpace(s.ui.Prompt("  Image (Vercel managed image or VCR repository[:tag])", currentImage, false))
 	if image == "" {
 		image = currentImage
 	}
 	terminal["vercel_image"] = image
-	if runtimeValue := terminal["vercel_runtime"]; pyrepr.Truthy(runtimeValue) {
-		s.ui.PrintWarning(fmt.Sprintf("terminal.vercel_runtime=%s is deprecated by Vercel and overrides the image; unset it to use the image above.", pyrepr.Repr(runtimeValue)))
+	if runtimeValue := terminal["vercel_runtime"]; anyutil.IsTrue(runtimeValue) {
+		s.ui.PrintWarning(fmt.Sprintf("terminal.vercel_runtime=%s is deprecated by Vercel and overrides the image; unset it to use the image above.", anyutil.Quote(runtimeValue)))
 	}
 	persistLabel := "no"
-	if v, ok := terminal["container_persistent"]; !ok || pyrepr.Truthy(v) {
+	if v, ok := terminal["container_persistent"]; !ok || anyutil.IsTrue(v) {
 		persistLabel = "yes"
 	}
 	persist := strings.ToLower(s.ui.Prompt("  Persist filesystem with snapshots? (yes/no)", persistLabel, false))
@@ -58,7 +57,7 @@ func (s *terminalSetup) promptVercelSandboxSettings(cfg map[string]any) error {
 		parse      func(string) (any, bool)
 	}{
 		{"container_cpu", "  CPU cores", 1, func(text string) (any, bool) {
-			f, err := pyint.ParseFloat(text)
+			f, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
 			return f, err == nil
 		}},
 		{"container_memory", "  Memory in MB (5120 = 5GB)", 5120, func(text string) (any, bool) {
@@ -74,7 +73,7 @@ func (s *terminalSetup) promptVercelSandboxSettings(cfg map[string]any) error {
 		if !ok {
 			current = r.def
 		}
-		if parsed, ok := r.parse(s.ui.Prompt(r.label, pyrepr.Str(current), false)); ok {
+		if parsed, ok := r.parse(s.ui.Prompt(r.label, anyutil.String(current), false)); ok {
 			terminal[r.key] = parsed
 		}
 	}
@@ -82,7 +81,7 @@ func (s *terminalSetup) promptVercelSandboxSettings(cfg map[string]any) error {
 	if !ok {
 		disk = 51200
 	}
-	if !pyrepr.Equal(disk, 0) && !pyrepr.Equal(disk, 51200) {
+	if !anyutil.Equal(disk, 0) && !anyutil.Equal(disk, 51200) {
 		s.ui.PrintWarning("Vercel Sandbox does not support custom disk sizing; resetting container_disk to 51200.")
 	}
 	terminal["container_disk"] = 51200
@@ -279,8 +278,8 @@ func (s *terminalSetup) backendSSH(cfg map[string]any) error {
 	values := make([]string, 0, len(fields))
 	for _, f := range fields {
 		def := f.def
-		if v := terminal[f.key]; pyrepr.Truthy(v) {
-			def = pyrepr.Str(v)
+		if v := terminal[f.key]; anyutil.IsTrue(v) {
+			def = anyutil.String(v)
 		}
 		value := strings.TrimSpace(s.ui.Prompt(f.label, def, false))
 		values = append(values, value)

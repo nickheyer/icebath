@@ -13,13 +13,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const maxAttachURLRedirects = 5
@@ -29,7 +28,7 @@ const attachHopTimeout = 30 * time.Second
 
 // Plain reason a download hop failed, from the timeout, the name lookup or the connection
 func fetchFailureText(err error) string {
-	var timeout *pyhttpx.TimeoutError
+	var timeout *httputil.TimeoutError
 	if errors.As(err, &timeout) {
 		return fmt.Sprintf("the server sent nothing for %d seconds", int(attachHopTimeout.Seconds()))
 	}
@@ -49,7 +48,7 @@ func fetchFailureText(err error) string {
 }
 
 // Client the attachment download sends each hop with, redirects returned to the caller
-var attachHTTPClient = func() *http.Client { return pyhttpx.PlainClient(false) }
+var attachHTTPClient = func() *http.Client { return httputil.Client(false) }
 
 // Capped download the attach_url handler runs, swapped by tests like the Python module attribute
 var downloadURLWithCapFn = downloadURLWithCap
@@ -60,7 +59,7 @@ func storeAttachment(k *kanbanCall, tid string, filename any, data []byte, conte
 	return withBoard(k.ctx, k.get("board"), false, func(conn state.SQLiteConn) (string, error) {
 		mime, bindErr := sqliteBind(contentType, 4)
 		uploader := "agent"
-		id, err := StoreAttachmentBytes(k.ctx, conn, tid, pyrepr.Str(filename), data,
+		id, err := StoreAttachmentBytes(k.ctx, conn, tid, anyutil.String(filename), data,
 			StoreAttachmentOptions{ContentType: mime, UploadedBy: &uploader, Board: board, contentTypeBindErr: bindErr})
 		if err != nil {
 			return "", err
@@ -83,7 +82,7 @@ func handleAttach(k *kanbanCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	data, err := pybase64.B64DecodeValidate(pyrepr.Str(content))
+	data, err := base64util.Decode(anyutil.String(content))
 	if err != nil {
 		pkgLog().Debug("kanban_attach content refused: " + errchain.Text(err))
 		return "", reject("content_base64 is not valid base64")
@@ -95,7 +94,7 @@ func handleAttach(k *kanbanCall) (string, error) {
 func downloadURLWithCap(ctx context.Context, env *tools.Env, rawURL string, maxBytes int64) ([]byte, *string, error) {
 	currentURL := rawURL
 	for range maxAttachURLRedirects + 1 {
-		parsed, err := pyurl.Parse(currentURL)
+		parsed, err := url.Parse(currentURL)
 		if err != nil {
 			return nil, nil, &ValueError{err.Error()}
 		}
@@ -129,7 +128,7 @@ func fetchAttachmentHop(ctx context.Context, currentURL string, maxBytes int64) 
 	}
 	req.Header.Set("User-Agent", "icebath-kanban/attach")
 	req.Header.Set("Accept", "*/*")
-	resp, err := pyhttpx.Stream(attachHTTPClient(), req, attachHopTimeout)
+	resp, err := httputil.Stream(attachHTTPClient(), req, httputil.EachPhase(attachHopTimeout))
 	if err != nil {
 		return nil, nil, "", &RuntimeError{fetchFailureText(err)}
 	}
@@ -141,11 +140,15 @@ func fetchAttachmentHop(ctx context.Context, currentURL string, maxBytes int64) 
 			if location == "" {
 				return nil, nil, "", &ValueError{fmt.Sprintf("redirect without Location header from %s", currentURL)}
 			}
-			next, err := pyurl.Join(currentURL, location)
+			base, err := url.Parse(currentURL)
 			if err != nil {
 				return nil, nil, "", &ValueError{err.Error()}
 			}
-			return nil, nil, next, nil
+			next, err := base.Parse(location)
+			if err != nil {
+				return nil, nil, "", &ValueError{err.Error()}
+			}
+			return nil, nil, next.String(), nil
 		}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
@@ -197,13 +200,13 @@ func handleAttachURL(k *kanbanCall) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	url := strings.TrimSpace(pyrepr.Str(rawURL))
+	target := strings.TrimSpace(anyutil.String(rawURL))
 	filename := k.get("filename")
-	if !pyrepr.Truthy(filename) {
+	if !anyutil.IsTrue(filename) {
 		filename = k.get("title")
 	}
-	if !pyrepr.Truthy(filename) || strings.TrimSpace(pyrepr.Str(filename)) == "" {
-		parsed, err := pyurl.Parse(url)
+	if !anyutil.IsTrue(filename) || strings.TrimSpace(anyutil.String(filename)) == "" {
+		parsed, err := url.Parse(target)
 		if err != nil {
 			return "", &ValueError{err.Error()}
 		}
@@ -211,22 +214,22 @@ func handleAttachURL(k *kanbanCall) (string, error) {
 		if i := strings.LastIndex(leaf, "/"); i >= 0 {
 			leaf = leaf[i+1:]
 		}
-		name := strings.TrimSpace(pyurl.Unquote(leaf))
+		name := strings.TrimSpace(leaf)
 		if name == "" {
 			name = "download"
 		}
 		filename = name
 	}
-	data, fetchedType, err := downloadURLWithCapFn(k.ctx, k.env, url, KanbanAttachmentMaxBytes)
+	data, fetchedType, err := downloadURLWithCapFn(k.ctx, k.env, target, KanbanAttachmentMaxBytes)
 	if err != nil {
 		if isValueError(err) {
 			return kanbanToolError(fmt.Sprintf("kanban_attach_url: %s", excText(err))), nil
 		}
 		pkgLog().Error("kanban_attach_url download failed", "exc_info", excText(err))
-		return kanbanToolError(fmt.Sprintf("kanban_attach_url: failed to fetch %s: %s", url, excText(err))), nil
+		return kanbanToolError(fmt.Sprintf("kanban_attach_url: failed to fetch %s: %s", target, excText(err))), nil
 	}
 	contentType := k.get("content_type")
-	if !pyrepr.Truthy(contentType) {
+	if !anyutil.IsTrue(contentType) {
 		contentType = optStrValue(fetchedType)
 	}
 	return storeAttachment(k, tid, filename, data, contentType)
@@ -250,6 +253,6 @@ func handleAttachments(k *kanbanCall) (string, error) {
 		for _, a := range stored {
 			attachments = append(attachments, fieldsOf(a, attachmentFields))
 		}
-		return pyjson.Dumps(pyjson.ObjectOf("ok", true, "task_id", tid, "attachments", attachments))
+		return jsonutil.Encode(jsonutil.ObjectOf("ok", true, "task_id", tid, "attachments", attachments))
 	})
 }

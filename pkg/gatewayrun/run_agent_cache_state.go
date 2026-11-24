@@ -7,8 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Current in memory model override of a session read under its state lock, nil when absent
@@ -50,7 +48,7 @@ func (r *GatewayRunner) restoreSessionModelOverride(ctx context.Context, session
 	if sessionKey == "" {
 		return
 	}
-	if pyrepr.Truthy(snapshot["had_override"]) {
+	if anyutil.IsTrue(snapshot["had_override"]) {
 		override, _ := snapshot["override"].(map[string]any)
 		restored := maps.Clone(override)
 		if restored == nil {
@@ -66,7 +64,7 @@ func (r *GatewayRunner) restoreSessionModelOverride(ctx context.Context, session
 // True when the agent runs another model than the config on purpose through a session override
 func (r *GatewayRunner) isIntentionalModelSwitch(sessionKey string, a *agent.AIAgent) bool {
 	override := r.sessionModelOverride(sessionKey)
-	return override != nil && pyrepr.Equal(override["model"], a.Model())
+	return override != nil && anyutil.Equal(override["model"], a.Model())
 }
 
 // Fresh monotonically increasing run generation for a session, never reset
@@ -258,7 +256,7 @@ func (r *GatewayRunner) rehydratePromptPins(ctx context.Context, sessionKey stri
 	if pinned {
 		return
 	}
-	var raw *pyjson.Object
+	var raw *jsonutil.Object
 	failed := func() (failed bool) {
 		defer func() {
 			if rec := recover(); rec != nil {
@@ -313,7 +311,7 @@ func (r *GatewayRunner) persistPromptPins(ctx context.Context, sessionKey string
 	if pin == nil || channel == nil {
 		return
 	}
-	snapshot := pyjson.ObjectOf(
+	snapshot := jsonutil.ObjectOf(
 		"version", gateway.PromptPinVersion, "context_key", pin.changeKey,
 		"context_prompt", pin.text, "redact_pii", pin.redactPII,
 		"channel_prompt", textOrNil(channel.channelPrompt), "parent_chat_id", textOrNil(channel.parentChatID),

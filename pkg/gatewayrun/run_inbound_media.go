@@ -9,16 +9,16 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Regular file check of pathlib, ignored stat errors read as false and others returned
 func inboundIsFile(path string) (bool, error) {
 	info, err := os.Stat(path)
 	if err != nil {
-		if pypath.PathlibIgnoredError(err) {
+		if pathutil.IsMissing(err) {
 			return false, nil
 		}
 		return false, err
@@ -37,7 +37,7 @@ func rehomeInboundMedia(ctx context.Context, event *gateway.MessageEvent) {
 	}
 	rewritten := append([]string(nil), event.MediaURLs...)
 	for i, raw := range event.MediaURLs {
-		rel, ok := pypath.PathRelativeTo(raw, filepath.Join(launch, "cache"))
+		rel, ok := pathutil.RelativeTo(raw, filepath.Join(launch, "cache"))
 		if !ok {
 			continue
 		}
@@ -50,7 +50,7 @@ func rehomeInboundMedia(ctx context.Context, event *gateway.MessageEvent) {
 			err = os.MkdirAll(filepath.Dir(dest), 0o777)
 		}
 		if err == nil {
-			_, err = pyfs.Move(raw, dest)
+			_, err = fsutil.Move(raw, dest)
 		}
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("Could not move inbound attachment %s into the routed profile's cache", raw), "exc_info", err)

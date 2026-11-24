@@ -12,9 +12,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"gopkg.in/yaml.v3"
 )
 
@@ -63,12 +62,12 @@ func (r *ValidationReport) add(name string, ok bool, detail string) {
 func (r *ValidationReport) warn(message string) { r.Warnings = append(r.Warnings, message) }
 
 // JSON document of the report in the upstream key order
-func (r *ValidationReport) ToDict() *pyjson.Object {
-	out := pyjson.NewObject()
+func (r *ValidationReport) ToDict() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("ok", r.OK())
 	checks := make([]any, 0, len(r.Checks))
 	for _, c := range r.Checks {
-		item := pyjson.NewObject()
+		item := jsonutil.NewObject()
 		item.Set("name", c.Name)
 		item.Set("ok", c.OK)
 		item.Set("detail", c.Detail)
@@ -533,12 +532,12 @@ func jsonObjectKeyOrder(file string, path ...string) []string {
 	if err != nil {
 		return nil
 	}
-	v, err := pyjson.LoadsBytes(stripBOM(raw))
+	v, err := jsonutil.Decode(stripBOM(raw))
 	if err != nil {
 		return nil
 	}
 	for _, key := range path {
-		obj, ok := v.(*pyjson.Object)
+		obj, ok := v.(*jsonutil.Object)
 		if !ok {
 			return nil
 		}
@@ -546,8 +545,8 @@ func jsonObjectKeyOrder(file string, path ...string) []string {
 			return nil
 		}
 	}
-	if obj, ok := v.(*pyjson.Object); ok {
-		return append([]string{}, obj.Keys...)
+	if obj, ok := v.(*jsonutil.Object); ok {
+		return append([]string{}, obj.Keys()...)
 	}
 	return nil
 }
@@ -572,7 +571,7 @@ func validatePluginDir(ctx context.Context, path string, probe *capabilityProbe)
 func validateManifestAndProbe(ctx context.Context, path string, probe *capabilityProbe) (*ValidationReport, map[string]any, error) {
 	report := &ValidationReport{}
 	if !isDir(path) {
-		report.add("plugin directory", false, fmt.Sprintf("%s is not a directory", pypath.PurePathStr(path)))
+		report.add("plugin directory", false, fmt.Sprintf("%s is not a directory", filepath.Clean(path)))
 		return report, nil, nil
 	}
 	manifestFile := filepath.Join(path, "plugin.yaml")

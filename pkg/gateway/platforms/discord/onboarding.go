@@ -12,12 +12,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Permission bits of every capability the adapter exercises, named so the invite integer can be re derived
@@ -48,7 +49,7 @@ type DiscordBotCheck struct {
 
 // Server install invite link with the permissions the adapter uses
 func (c *DiscordBotCheck) InviteURL() string {
-	return "https://discord.com/oauth2/authorize?" + pyurl.URLEncode([][2]string{{"client_id", c.AppID},
+	return "https://discord.com/oauth2/authorize?" + urlutil.EncodeQuery([][2]string{{"client_id", c.AppID},
 		{"scope", "bot applications.commands"}, {"permissions", strconv.FormatInt(InvitePermissions, 10)}, {"integration_type", "0"}})
 }
 
@@ -58,17 +59,17 @@ func (c *DiscordBotCheck) BotSettingsURL() string {
 }
 
 // Python dict of a decoded JSON value, nil for anything else
-func object(v any) *pyjson.Object {
-	o, _ := v.(*pyjson.Object)
+func object(v any) *jsonutil.Object {
+	o, _ := v.(*jsonutil.Object)
 	return o
 }
 
 // Value of a key of a JSON object, the KeyError of a missing one
-func mustKey(o *pyjson.Object, key string) (any, error) {
+func mustKey(o *jsonutil.Object, key string) (any, error) {
 	if o == nil {
 		return nil, fmt.Errorf("the Discord reply has no %s", key)
 	}
-	v, ok := o.Vals[key]
+	v, ok := o.Get(key)
 	if !ok {
 		return nil, fmt.Errorf("the Discord reply has no %s", key)
 	}
@@ -89,36 +90,36 @@ func numberIs(v any, n int64) bool {
 }
 
 // Owner ids and names of an application, the accepted team members or the single owner
-func owners(app *pyjson.Object) [][2]string {
-	if team := object(app.Vals["team"]); team != nil {
+func owners(app *jsonutil.Object) [][2]string {
+	if team := object(app.Value("team")); team != nil {
 		var out [][2]string
-		members, _ := team.Vals["members"].([]any)
+		members, _ := team.Value("members").([]any)
 		for _, raw := range members {
 			m := object(raw)
-			if m == nil || !numberIs(m.Vals["membership_state"], teamMemberAccepted) {
+			if m == nil || !numberIs(m.Value("membership_state"), teamMemberAccepted) {
 				continue
 			}
-			user := object(m.Vals["user"])
-			if user == nil || !pyrepr.Truthy(user.Vals["id"]) {
+			user := object(m.Value("user"))
+			if user == nil || !anyutil.IsTrue(user.Value("id")) {
 				continue
 			}
-			id := pyrepr.Str(user.Vals["id"])
+			id := anyutil.String(user.Value("id"))
 			name := id
-			if pyrepr.Truthy(user.Vals["username"]) {
-				name = pyrepr.Str(user.Vals["username"])
+			if anyutil.IsTrue(user.Value("username")) {
+				name = anyutil.String(user.Value("username"))
 			}
 			out = append(out, [2]string{id, name})
 		}
 		return out
 	}
-	owner := object(app.Vals["owner"])
-	if owner == nil || !pyrepr.Truthy(owner.Vals["id"]) {
+	owner := object(app.Value("owner"))
+	if owner == nil || !anyutil.IsTrue(owner.Value("id")) {
 		return nil
 	}
-	id := pyrepr.Str(owner.Vals["id"])
+	id := anyutil.String(owner.Value("id"))
 	name := id
-	if pyrepr.Truthy(owner.Vals["username"]) {
-		name = pyrepr.Str(owner.Vals["username"])
+	if anyutil.IsTrue(owner.Value("username")) {
+		name = anyutil.String(owner.Value("username"))
 	}
 	return [][2]string{{id, name}}
 }
@@ -134,9 +135,9 @@ func CheckBotToken(ctx context.Context, token string) (*DiscordBotCheck, error) 
 		return nil, fmt.Errorf("the Discord application reply is %s, expected a mapping", errchain.Kind(decoded))
 	}
 	var flags int64
-	if raw := app.Vals["flags"]; pyrepr.Truthy(raw) {
+	if raw := app.Value("flags"); anyutil.IsTrue(raw) {
 		n, err := pyint.Of(raw)
-		var intErr *pyint.Error
+		var intErr *errorutil.Error
 		if errors.As(err, &intErr) && intErr.Kind == "ValueError" {
 			return nil, &tools.DiscordValueError{Msg: intErr.Error()}
 		}
@@ -150,14 +151,14 @@ func CheckBotToken(ctx context.Context, token string) (*DiscordBotCheck, error) 
 		return nil, err
 	}
 	name := id
-	if bot := object(app.Vals["bot"]); bot != nil && pyrepr.Truthy(bot.Vals["username"]) {
-		name = bot.Vals["username"]
-	} else if pyrepr.Truthy(app.Vals["name"]) {
-		name = app.Vals["name"]
+	if bot := object(app.Value("bot")); bot != nil && anyutil.IsTrue(bot.Value("username")) {
+		name = bot.Value("username")
+	} else if anyutil.IsTrue(app.Value("name")) {
+		name = app.Value("name")
 	}
-	check := &DiscordBotCheck{AppID: pyrepr.Str(id), BotName: pyrepr.Str(name), Owners: owners(app),
+	check := &DiscordBotCheck{AppID: anyutil.String(id), BotName: anyutil.String(name), Owners: owners(app),
 		MessageContent: flags&tools.DiscordFlagsMessageContent != 0, ServerMembers: flags&tools.DiscordFlagsGuildMembers != 0}
-	switch count := app.Vals["approximate_guild_count"].(type) {
+	switch count := app.Value("approximate_guild_count").(type) {
 	case int64:
 		check.ServerCount = &count
 	case bool:
@@ -193,7 +194,7 @@ func cleanDiscordUserIDs(raw string) []string {
 
 // Guidance when a pasted bot token is really the numeric application id, empty otherwise
 func discordTokenShapeError(token string) string {
-	if token != "" && pystr.StrIsDigit(strings.TrimSpace(token)) {
+	if token != "" && textutil.IsDigits(strings.TrimSpace(token)) {
 		return "That looks like a numeric application ID, not a bot token. " +
 			"Paste the bot token from the Discord Developer Portal (Bot page), " +
 			"not the application ID (General Information page)."
@@ -363,7 +364,7 @@ func promptAllowlist(ctx context.Context, check *DiscordBotCheck) error {
 	}
 	if check != nil && !check.ServerMembers {
 		for _, uid := range extra {
-			if !pystr.StrIsDigit(uid) {
+			if !textutil.IsDigits(uid) {
 				cli.PrintInfo("   Usernames are resolved when the background service connects, which needs Server Members Intent: " + check.BotSettingsURL())
 				break
 			}

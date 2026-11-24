@@ -2,10 +2,10 @@ package irc
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // IRC wizard of icebath gateway setup writing the server, identity, auth and access settings to the home .env
@@ -53,8 +53,8 @@ func InteractiveSetup(ctx context.Context) error {
 		return err
 	}
 	if port := s.Prompt("Port (default "+defaultPort+")", currentPort, false); port != "" {
-		if n, ok := pyint.Parse(port); ok {
-			if err := s.SaveEnvValue(ctx, "IRC_PORT", n.String()); err != nil {
+		if n, err := strconv.ParseInt(strings.TrimSpace(port), 10, 64); err == nil {
+			if err := s.SaveEnvValue(ctx, "IRC_PORT", strconv.FormatInt(n, 10)); err != nil {
 				return err
 			}
 		} else {

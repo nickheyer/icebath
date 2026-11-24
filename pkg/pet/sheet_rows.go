@@ -4,7 +4,7 @@ import (
 	"image"
 	"os"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
+	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 )
 
 // Decoded RGBA spritesheet of a path
@@ -18,7 +18,7 @@ func loadSheet(path string) (*image.NRGBA, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pypil.ToNRGBA(decoded), nil
+	return imageutil.ToNRGBA(decoded), nil
 }
 
 // Real frame count of every concrete row of a sheet, the frames before its first blank cell

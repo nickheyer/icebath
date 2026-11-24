@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Telegram adapter on the base pipeline recording sends, refusing any send sealed as the turn's answer
@@ -195,8 +195,8 @@ func TestPluginMessageRouteLocalSessionAndRefusals(t *testing.T) {
 		t.Fatal(err)
 	}
 	live := NewLiveSession(route, localKey)
-	var frames []*pyjson.Object
-	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *pyjson.Object) { frames = append(frames, frame) }}] = true
+	var frames []*jsonutil.Object
+	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *jsonutil.Object) { frames = append(frames, frame) }}] = true
 	runner := &msgRunner{store: store, live: live}
 	bound := WithLiveSource(ctx, route)
 	if BoundRoute(bound) != any(route) || BoundRoute(ctx) != nil {
@@ -215,9 +215,9 @@ func TestPluginMessageRouteLocalSessionAndRefusals(t *testing.T) {
 		t.Fatalf("%v %v", edited, frames)
 	}
 	params, _ := frames[0].Get("params")
-	eventType, _ := params.(*pyjson.Object).Get("type")
-	payload, _ := params.(*pyjson.Object).Get("payload")
-	if eventType != "notification.show" || !reflect.DeepEqual(payload.(*pyjson.Object).Keys, []string{"text", "level", "kind", "key", "id"}) {
+	eventType, _ := params.(*jsonutil.Object).Get("type")
+	payload, _ := params.(*jsonutil.Object).Get("payload")
+	if eventType != "notification.show" || !reflect.DeepEqual(payload.(*jsonutil.Object).Keys(), []string{"text", "level", "kind", "key", "id"}) {
 		t.Fatalf("%v %v", eventType, payload)
 	}
 	runner.live = nil

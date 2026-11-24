@@ -14,8 +14,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type pipeSocket struct {
@@ -95,17 +96,17 @@ func (o *restartOwner) serve(sock *pipeSocket) {
 		case <-sock.closed:
 			return
 		}
-		decoded, err := pyjson.Loads(raw)
+		decoded, err := jsonutil.Decode(raw)
 		if err != nil {
 			return
 		}
-		frame := decoded.(*pyjson.Object)
-		method := pyStr(frame.GetOr("method", nil))
-		params, _ := frame.GetOr("params", nil).(*pyjson.Object)
+		frame := decoded.(*jsonutil.Object)
+		method := anyutil.String(frame.ValueOr("method", nil))
+		params, _ := frame.ValueOr("params", nil).(*jsonutil.Object)
 		o.mu.Lock()
 		o.calls = append(o.calls, method)
 		if method == "config.set" {
-			plain, _ := pyjson.Plain(params).(map[string]any)
+			plain, _ := jsonutil.Plain(params).(map[string]any)
 			o.configs = append(o.configs, plain)
 		}
 		o.mu.Unlock()
@@ -113,19 +114,19 @@ func (o *restartOwner) serve(sock *pipeSocket) {
 			sock.Close()
 			return
 		}
-		result := pyjson.NewObject()
+		result := jsonutil.NewObject()
 		admission := ""
 		switch method {
 		case "runtime.describe":
 			result.Set("profile_id", o.profileID)
 		case "session.resume":
-			result = pyjson.ObjectOf("session_id", params.GetOr("session_id", nil), "messages", []any{}, "pending", []any{}, "prompts", []any{},
+			result = jsonutil.ObjectOf("session_id", params.ValueOr("session_id", nil), "messages", []any{}, "pending", []any{}, "prompts", []any{},
 				"replay_epoch", o.epoch, "last_sequence", int64(0))
 		case "prompt.submit":
-			admission = fmt.Sprintf("%s-%s", o.epoch, pyStr(params.GetOr("input_id", nil)))
+			admission = fmt.Sprintf("%s-%s", o.epoch, anyutil.String(params.ValueOr("input_id", nil)))
 			result.Set("admission_id", admission)
 		}
-		reply, _ := pyjson.Dumps(pyjson.ObjectOf("jsonrpc", "2.0", "id", frame.GetOr("id", nil), "result", result))
+		reply, _ := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", frame.ValueOr("id", nil), "result", result))
 		sock.toClient <- reply
 		if method == "prompt.submit" && o.dieOnSubmit == "after_ack" {
 			time.Sleep(20 * time.Millisecond)
@@ -133,10 +134,10 @@ func (o *restartOwner) serve(sock *pipeSocket) {
 			return
 		}
 		if method == "prompt.submit" {
-			event := pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params", pyjson.ObjectOf(
-				"session_id", params.GetOr("session_id", nil), "type", "message.complete", "replay_epoch", o.epoch, "seq", int64(1),
-				"admission_id", admission, "payload", pyjson.ObjectOf("outcome", "completed", "text", "AFTER-RESTART")))
-			text, _ := pyjson.Dumps(event)
+			event := jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event", "params", jsonutil.ObjectOf(
+				"session_id", params.ValueOr("session_id", nil), "type", "message.complete", "replay_epoch", o.epoch, "seq", int64(1),
+				"admission_id", admission, "payload", jsonutil.ObjectOf("outcome", "completed", "text", "AFTER-RESTART")))
+			text, _ := jsonutil.Encode(event)
 			sock.toClient <- text
 		}
 	}
@@ -161,8 +162,8 @@ func TestEditorReconnectsToARestartedGatewayWithoutResending(t *testing.T) {
 				return &clientLink{client: gateway.NewGatewayClient(sock).Start()}, nil
 			})
 			defer a.Close()
-			held, _ := pyacp.WithResponseScope(context.Background())
-			if _, err := a.LoadSession(held, &pyacp.LoadSessionRequest{Cwd: "/", SessionID: "s"}); err != nil {
+			held, _ := acputil.WithResponseScope(context.Background())
+			if _, err := a.LoadSession(held, &acputil.LoadSessionRequest{Cwd: "/", SessionID: "s"}); err != nil {
 				t.Fatal(err)
 			}
 			_, err := promptOn(a, context.Background(), "s", "in flight").wait(t, 5*time.Second)
@@ -211,14 +212,14 @@ func TestARecoveredSnapshotRepaintsTheSessionsEditMode(t *testing.T) {
 			a, link := bareGatewayAgent(t, map[string]string{"s": `{"pending": [], "replay_epoch": "old", "last_sequence": 0}`})
 			editor := &editorFake{}
 			onLoop(a, func() bool { a.conn = editor; a.modes["s"] = "default"; return true })
-			link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				if method != "session.resume" && method != "config.set" {
 					t.Errorf("unexpected %s", method)
 				}
 				if method == "session.resume" {
 					return jsonObj(t, `{"session_id": "s", "pending": [], "prompts": [], "replay_epoch": "new", "last_sequence": 99, "info": {"edit_approval_policy": "session"}}`), nil
 				}
-				return pyjson.NewObject(), nil
+				return jsonutil.NewObject(), nil
 			})
 			defer a.Close()
 			err := onLoop(a, func() error {
@@ -233,7 +234,7 @@ func TestARecoveredSnapshotRepaintsTheSessionsEditMode(t *testing.T) {
 			}
 			var modes []string
 			for _, u := range updatesOf(editor) {
-				if update, ok := u.(*pyacp.CurrentModeUpdate); ok {
+				if update, ok := u.(*acputil.CurrentModeUpdate); ok {
 					modes = append(modes, update.CurrentModeID)
 				}
 			}
@@ -248,7 +249,7 @@ func TestPathAndUnknownSlashTextIsSubmittedAsThePrompt(t *testing.T) {
 	for _, text := range []string{"/etc/hosts is wrong", "/tmp/build.log shows the failure", "/notacommand please"} {
 		t.Run(text, func(t *testing.T) {
 			a, link := bareGatewayAgent(t, map[string]string{"s": `{}`})
-			link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				if method != "prompt.submit" {
 					t.Errorf("unexpected %s", method)
 				}
@@ -271,7 +272,7 @@ func TestRegisteredCommandTheOwnerRefusesIsANamedReplyNotAFailedPrompt(t *testin
 	a, link := bareGatewayAgent(t, map[string]string{"s": `{}`})
 	editor := &editorFake{}
 	onLoop(a, func() bool { a.conn = editor; return true })
-	link.set(func(context.Context, string, map[string]any) (*pyjson.Object, error) {
+	link.set(func(context.Context, string, map[string]any) (*jsonutil.Object, error) {
 		return nil, &gateway.GatewayRPCError{Msg: "unsupported_command"}
 	})
 	resp, err := promptOn(a, context.Background(), "s", "/rollback").wait(t, 5*time.Second)
@@ -316,7 +317,7 @@ func TestPickerIdentityReachesPreparedMutation(t *testing.T) {
 			}
 			a := NewGatewayACPAgent()
 			link := &scriptedGateway{}
-			link.fakeGateway = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			link.fakeGateway = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				if method == "session.resume" {
 					return jsonObj(t, `{"execution_generation": 3, "revision": 7}`), nil
 				}
@@ -326,7 +327,7 @@ func TestPickerIdentityReachesPreparedMutation(t *testing.T) {
 				return jsonObj(t, `{"status": "applied"}`), nil
 			})
 			onLoop(a, func() bool { a.gateway = link; a.aliases.Set("editor-tip", "logical-session"); return true })
-			if _, err := a.SetSessionModel(context.Background(), &pyacp.SetSessionModelRequest{ModelID: tc.modelID, SessionID: "editor-tip"}); err != nil {
+			if _, err := a.SetSessionModel(context.Background(), &acputil.SetSessionModelRequest{ModelID: tc.modelID, SessionID: "editor-tip"}); err != nil {
 				t.Fatal(err)
 			}
 			var mutation map[string]any
@@ -336,7 +337,7 @@ func TestPickerIdentityReachesPreparedMutation(t *testing.T) {
 					break
 				}
 			}
-			if got := pyjson.Plain(mutation["payload"]); !reflect.DeepEqual(got, tc.expected) {
+			if got := jsonutil.Plain(mutation["payload"]); !reflect.DeepEqual(got, tc.expected) {
 				t.Fatalf("payload = %v", got)
 			}
 			if mutation["session_id"] != "logical-session" || mutation["expected_generation"] != int64(3) || mutation["expected_revision"] != int64(7) {
@@ -355,7 +356,7 @@ func TestPrefixedPickPreservesMutationFailureContract(t *testing.T) {
 			a := newGatewayAgent(t)
 			var mu sync.Mutex
 			var calls []map[string]any
-			link := newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			link := newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				if method == "session.resume" {
 					return jsonObj(t, `{"execution_generation": 3, "revision": 7}`), nil
 				}
@@ -369,7 +370,7 @@ func TestPrefixedPickPreservesMutationFailureContract(t *testing.T) {
 				return jsonObj(t, `{"status": "applied"}`), nil
 			})
 			onLoop(a, func() bool { a.gateway = link; return true })
-			req := &pyacp.SetSessionModelRequest{ModelID: "deepseek:example", SessionID: "session"}
+			req := &acputil.SetSessionModelRequest{ModelID: "deepseek:example", SessionID: "session"}
 			if _, err := a.SetSessionModel(context.Background(), req); !refusedWith(err, reason) {
 				t.Fatalf("err = %v", err)
 			}
@@ -380,7 +381,7 @@ func TestPrefixedPickPreservesMutationFailureContract(t *testing.T) {
 				t.Fatal(err)
 			}
 			want := map[string]any{"provider": "deepseek", "model": "example"}
-			if !reflect.DeepEqual(pyjson.Plain(calls[0]["payload"]), want) || !reflect.DeepEqual(pyjson.Plain(calls[1]["payload"]), want) {
+			if !reflect.DeepEqual(jsonutil.Plain(calls[0]["payload"]), want) || !reflect.DeepEqual(jsonutil.Plain(calls[1]["payload"]), want) {
 				t.Fatalf("payloads = %v %v", calls[0]["payload"], calls[1]["payload"])
 			}
 			if same := calls[0]["request_id"] == calls[1]["request_id"]; same != (reason == "connection_lost") {

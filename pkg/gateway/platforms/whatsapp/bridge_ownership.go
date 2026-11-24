@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Default profile keeps 3000 while secondary profiles allocate from this range
@@ -33,7 +33,7 @@ func readPortRecord(record string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err == nil {
 		if port, convErr := strconv.Atoi(strings.TrimSpace(text)); convErr == nil {
 			return port, nil

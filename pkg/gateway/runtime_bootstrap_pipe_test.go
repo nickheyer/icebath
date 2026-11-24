@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -174,7 +174,7 @@ func TestDiscoveryReportsTheNamedRefusalWithoutAnyOwnerRecord(t *testing.T) {
 	if err := os.Mkdir(h, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	patch(t, &queryIdentifySeam, func(string, time.Duration) (*pyjson.Object, error) {
+	patch(t, &queryIdentifySeam, func(string, time.Duration) (*jsonutil.Object, error) {
 		_, err := peerSubject(f, pipeTestHandle, true)
 		return nil, err
 	})
@@ -193,7 +193,7 @@ func servedSecondary(t *testing.T, refusal func() error) string {
 		t.Fatal(err)
 	}
 	t.Setenv("ICEBATH_HOME", root)
-	patch(t, &queryIdentifySeam, func(target string, _ time.Duration) (*pyjson.Object, error) {
+	patch(t, &queryIdentifySeam, func(target string, _ time.Duration) (*jsonutil.Object, error) {
 		if target != root {
 			return nil, &nativePipeError{target, fs.ErrNotExist}
 		}

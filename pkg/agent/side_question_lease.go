@@ -10,10 +10,10 @@ import (
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -35,7 +35,7 @@ type sideQuestionLease struct {
 var (
 	sideQuestionLeases  = map[string]*sideQuestionLease{}
 	sideQuestionLeaseMu sync.Mutex
-	sideQuestionNow     = pythread.Monotonic
+	sideQuestionNow     = timeutil.Monotonic
 	askSideQuestion     = askTextOnly
 )
 
@@ -73,15 +73,15 @@ func issueSideQuestionToken(ctx context.Context, a *AIAgent, messages []map[stri
 	if isUnattendedTurn(a) || !consentedPluginLoaded(ctx) {
 		return nil, nil
 	}
-	toolsCopy := pycopy.Of(a.tools)
+	toolsCopy := anyutil.Clone(a.tools)
 	if toolsCopy == nil {
 		toolsCopy = []any{}
 	}
 	captured := context.WithoutCancel(ctx)
 	capture := &sideQuestionCapture{
-		parent: weak.Make(a), messages: pycopy.Of(messages), systemPrompt: a.cachedSystemPrompt,
+		parent: weak.Make(a), messages: anyutil.Clone(messages), systemPrompt: a.cachedSystemPrompt,
 		systemPromptStatic: a.cachedSystemPromptStatic, tools: toolsCopy, sessionID: a.sessionID, turnID: turnID,
-		runtime: sideQuestionRuntimeKey(a), ctx: pyctx.With(captured, pyctx.CopyContext(ctx)),
+		runtime: sideQuestionRuntimeKey(a), ctx: ctxutil.WithStore(captured, ctxutil.CopyStore(ctx)),
 	}
 	raw := make([]byte, sideQuestionTokenEntropySize)
 	if _, err := rand.Read(raw); err != nil {

@@ -4,16 +4,19 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
+	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Test seam for the keyed Keenable API root
 var keenableAPIURL = "https://api.keenable.ai"
 
-var keenableTimeouts = pyrequests.Seconds(30)
+// Keenable client limit for each phase of a request
+var keenableTimeouts = httputil.EachPhase(30 * time.Second)
 
 // App identifier the keyless tier requires plus Bearer auth when a key is set
 func keenableHeaders(apiKey string) http.Header {
@@ -25,14 +28,14 @@ func keenableHeaders(apiKey string) http.Header {
 	return h
 }
 
-// requests call with its default headers, the JSON body written like requests json=
-func keenableSend(ctx context.Context, method, target string, payload *pyjson.Object, apiKey string) (*sdkResponse, error) {
+// One Keenable call with the default headers, a payload sent as a JSON body
+func keenableSend(ctx context.Context, method, target string, payload *jsonutil.Object, apiKey string) (*sdkResponse, error) {
 	h := keenableHeaders(apiKey)
 	h.Set("User-Agent", icebathUserAgent())
 	h.Set("Accept", "*/*")
 	var body []byte
 	if payload != nil {
-		text, err := pyjson.Dumps(payload, pyjson.AllowNaN(false))
+		text, err := jsonutil.Encode(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -56,7 +59,7 @@ func (p *keenableProvider) Search(ctx context.Context, env *Env, query string, l
 			return keylessSearchWithFailover(ctx, env, "keenable", query, limit)
 		}
 		envLog(env).Info("Keenable search", "query", query, "limit", limit)
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("query", query)
 		payload.Set("max_results", min(max(1, limit), searchLimitCap))
 		resp, err := keenableSend(ctx, http.MethodPost, keenableAPIURL+"/v1/search", payload, apiKey)
@@ -66,7 +69,7 @@ func (p *keenableProvider) Search(ctx context.Context, env *Env, query string, l
 		if resp.status >= 400 {
 			return searchFail("Keenable search failed: " + httpStatusDetail(resp.status, resp.text())), nil
 		}
-		data, err := pyjson.LoadsBytes(resp.body)
+		data, err := jsonutil.Decode(resp.body)
 		if err != nil {
 			return nil, err
 		}
@@ -74,7 +77,7 @@ func (p *keenableProvider) Search(ctx context.Context, env *Env, query string, l
 		if err != nil {
 			return nil, err
 		}
-		rows, err := pyIter(pyOr(results, []any{}))
+		rows, err := pyIter(anyutil.Or(results, []any{}))
 		if err != nil {
 			return nil, err
 		}
@@ -86,10 +89,10 @@ func (p *keenableProvider) Search(ctx context.Context, env *Env, query string, l
 			}
 			title, _ := pyDictGet(r, "title")
 			snippet, _ := pyDictGet(r, "snippet")
-			if !pyTruthy(snippet) {
+			if !anyutil.IsTrue(snippet) {
 				snippet, _ = pyDictGet(r, "description")
 			}
-			hits = append(hits, webHit(pyStrField(pyOr(u, "")), pyStrField(pyOr(title, "")), pyStrField(pyOr(snippet, "")), i+1))
+			hits = append(hits, webHit(anyutil.String(anyutil.Or(u, "")), anyutil.String(anyutil.Or(title, "")), anyutil.String(anyutil.Or(snippet, "")), i+1))
 		}
 		return searchOK(hits), nil
 	}, false), nil
@@ -97,7 +100,7 @@ func (p *keenableProvider) Search(ctx context.Context, env *Env, query string, l
 
 // One keyed fetch, the origin's own refusal named as such and every other failure raised
 func keenableFetch(ctx context.Context, apiKey, u string) (*WebPage, error) {
-	target := pyhttpx.MergeParams(keenableAPIURL+"/v1/fetch", pyhttpx.Params{{"url", u}})
+	target := httputil.MergeQuery(keenableAPIURL+"/v1/fetch", url.Values{"url": {u}})
 	resp, err := keenableSend(ctx, http.MethodGet, target, nil, apiKey)
 	if err != nil {
 		return nil, err
@@ -112,7 +115,7 @@ func keenableFetch(ctx context.Context, apiKey, u string) (*WebPage, error) {
 		}
 		return nil, fmt.Errorf("%s", httpStatusDetail(resp.status, resp.text()))
 	}
-	data, err := pyjson.LoadsBytes(resp.body)
+	data, err := jsonutil.Decode(resp.body)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +125,7 @@ func keenableFetch(ctx context.Context, apiKey, u string) (*WebPage, error) {
 	}
 	title, _ := pyDictGet(data, "title")
 	content, _ := pyDictGet(data, "content")
-	return webDocument(pyStrField(pyOr(final, u)), pyStrField(pyOr(title, "")), pyStrField(pyOr(content, "")), u), nil
+	return webDocument(anyutil.String(anyutil.Or(final, u)), anyutil.String(anyutil.Or(title, "")), anyutil.String(anyutil.Or(content, "")), u), nil
 }
 
 // Extract keyed one url at a time or through the keyless ring, each failure its own entry
@@ -160,6 +163,3 @@ func (p *keenableProvider) SetupSchema() map[string]any {
 func NewKeenableWebProvider() WebProvider {
 	return &keenableProvider{baseWebProvider{name: "keenable", display: "Keenable", keyEnv: "KEENABLE_API_KEY", extract: true, keyless: true}}
 }
-
-// Class name the registry log and type errors print, the plugin provider class
-func (*keenableProvider) PyTypeName() string { return "KeenableWebSearchProvider" }

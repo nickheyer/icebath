@@ -22,11 +22,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Sends the formatted content in UTF-8 byte bounded chunks, retrying once after a key share in E2EE rooms
@@ -66,7 +64,7 @@ func (a *MatrixAdapter) Send(ctx context.Context, chatID, content, replyTo strin
 func (a *MatrixAdapter) sendRoomMessage(ctx context.Context, chatID string, content map[string]any) (string, error) {
 	client := a.currentClient()
 	if client == nil {
-		return "", errors.New("'NoneType' object has no attribute 'send_message_event'")
+		return "", errors.New("matrix client is not connected")
 	}
 	sctx, cancel := context.WithTimeout(ctx, 45*time.Second)
 	defer cancel()
@@ -180,11 +178,15 @@ func (a *MatrixAdapter) downloadExternalMediaWithCap(ctx context.Context, rawURL
 		if *location == "" {
 			return nil, "", "", errors.New("redirect missing Location")
 		}
-		next, err := pyurl.Join(fetchURL, *location)
+		base, err := url.Parse(fetchURL)
 		if err != nil {
 			return nil, "", "", err
 		}
-		fetchURL = next
+		ref, err := base.Parse(*location)
+		if err != nil {
+			return nil, "", "", err
+		}
+		fetchURL = ref.String()
 		if !tools.IsSafeURL(env, fetchURL) {
 			return nil, "", "", errors.New("blocked unsafe redirect URL")
 		}
@@ -277,11 +279,11 @@ func (a *MatrixAdapter) SendMultipleImages(ctx context.Context, chatID string, i
 		var result gateway.SendResult
 		var err error
 		if strings.HasPrefix(img.URL, "file://") {
-			path, uerr := url.PathUnescape(img.URL[7:])
-			if uerr != nil {
-				path = pyurl.UnquoteLatin1(img.URL[7:])
+			if path, uerr := urlutil.FilePath(img.URL); uerr != nil {
+				result, err = a.missingMedia(ctx, chatID, img.URL, caption, "", metadata)
+			} else {
+				result, err = a.SendImageFile(ctx, chatID, path, caption, "", metadata, nil)
 			}
-			result, err = a.SendImageFile(ctx, chatID, path, caption, "", metadata, nil)
 		} else {
 			result, err = a.SendImage(ctx, chatID, img.URL, caption, "", metadata)
 		}
@@ -318,11 +320,11 @@ func (a *MatrixAdapter) SendVoice(ctx context.Context, chatID, audioPath, captio
 	}
 	if convertedPath != "" {
 		defer os.Remove(convertedPath)
-		withOgg, err := pypath.WithSuffix(audioPath, ".ogg")
+		withOgg, err := pathutil.WithSuffix(audioPath, ".ogg")
 		if err != nil {
 			return gateway.SendResult{}, err
 		}
-		return a.sendLocalFile(ctx, chatID, convertedPath, "m.audio", caption, replyTo, pypath.PathName(withOgg), metadata, true)
+		return a.sendLocalFile(ctx, chatID, convertedPath, "m.audio", caption, replyTo, pathutil.Name(withOgg), metadata, true)
 	}
 	return a.sendLocalFile(ctx, chatID, audioPath, "m.audio", caption, replyTo, "", metadata, true)
 }
@@ -340,7 +342,7 @@ func (a *MatrixAdapter) uploadAndSend(ctx context.Context, roomID string, data [
 	}
 	client := a.currentClient()
 	if client == nil {
-		return gateway.SendResult{Success: false, Error: "'NoneType' object has no attribute 'upload_media'"}
+		return gateway.SendResult{Success: false, Error: "matrix client is not connected"}
 	}
 	uploadData := data
 	var encryptedFile *attachment.EncryptedFile
@@ -429,7 +431,7 @@ func (a *MatrixAdapter) mediaTooLarge(size int64) gateway.SendResult {
 func (a *MatrixAdapter) sendContentEvent(ctx context.Context, roomID string, content map[string]any) gateway.SendResult {
 	client := a.currentClient()
 	if client == nil {
-		return gateway.SendResult{Success: false, Error: "'NoneType' object has no attribute 'send_message_event'"}
+		return gateway.SendResult{Success: false, Error: "matrix client is not connected"}
 	}
 	resp, err := client.SendMessageEvent(ctx, id.RoomID(roomID), event.EventMessage, content)
 	if err != nil {
@@ -438,15 +440,20 @@ func (a *MatrixAdapter) sendContentEvent(ctx context.Context, roomID string, con
 	return gateway.SendResult{Success: true, MessageID: string(resp.EventID)}
 }
 
+// Logs a media file that cannot be read and tells the room the attachment failed
+func (a *MatrixAdapter) missingMedia(ctx context.Context, roomID, shown, caption, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
+	pkgLog().Warn(fmt.Sprintf("[%s] upload fallback: media file not found for %s", a.Name(), shown))
+	text := i18n.T(ctx, "platform.shared.media.attachment_failed", "", nil)
+	return a.EmitMediaWarning(ctx, roomID, text, caption, replyTo, metadata, nil)
+}
+
 // Uploads a host file, warning in chat without the path when it is missing
 func (a *MatrixAdapter) sendLocalFile(ctx context.Context, roomID, filePath, msgtype, caption, replyTo, fileName string,
 	metadata map[string]any, isVoice bool) (gateway.SendResult, error) {
-	p := pypath.Expanduser(filePath)
+	p := pathutil.ExpandUser(filePath)
 	st, err := os.Stat(p)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[%s] upload fallback: media file not found for %s", a.Name(), filePath))
-		text := i18n.T(ctx, "platform.shared.media.attachment_failed", "", nil)
-		return a.EmitMediaWarning(ctx, roomID, text, caption, replyTo, metadata, nil)
+		return a.missingMedia(ctx, roomID, filePath, caption, replyTo, metadata)
 	}
 	fileSize := st.Size()
 	if fileSize > a.maxMediaBytes {
@@ -454,7 +461,7 @@ func (a *MatrixAdapter) sendLocalFile(ctx context.Context, roomID, filePath, msg
 	}
 	fname := fileName
 	if fname == "" {
-		fname = pypath.PathName(p)
+		fname = pathutil.Name(p)
 	}
 	var voiceMetadata map[string]any
 	if isVoice {
@@ -464,7 +471,7 @@ func (a *MatrixAdapter) sendLocalFile(ctx context.Context, roomID, filePath, msg
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	contentType, _, _ := pymimetypes.GuessType(fname, true)
+	contentType := mimeutil.TypeByName(fname)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -480,12 +487,12 @@ func (a *MatrixAdapter) EAHeader(ctx context.Context) string {
 func (a *MatrixAdapter) sendReactionPrompt(ctx context.Context, chatID, text string, metadata map[string]any,
 	register func(messageID string, requester *string, expiresAt float64) *orderedStrings, emojis []string, label string) (gateway.SendResult, error) {
 	result, err := a.Send(ctx, chatID, text, "", metadata)
-	if err != nil || !result.Success || !pyTruthy(result.MessageID) {
+	if err != nil || !result.Success || !anyutil.IsTrue(result.MessageID) {
 		return result, err
 	}
 	messageID := strOf(result.MessageID)
 	var requester *string
-	if v := metadata["requester_user_id"]; pyTruthy(v) {
+	if v := metadata["requester_user_id"]; anyutil.IsTrue(v) {
 		if s := strOf(v); s != "" {
 			requester = &s
 		}
@@ -567,11 +574,11 @@ func (a *MatrixAdapter) SendModelPicker(ctx context.Context, chatID string, prov
 	var flat []flatChoice
 	for _, p := range providers {
 		slug := ""
-		if pyTruthy(p["slug"]) {
+		if anyutil.IsTrue(p["slug"]) {
 			slug = strOf(p["slug"])
 		}
 		name := slug
-		if pyTruthy(p["name"]) {
+		if anyutil.IsTrue(p["name"]) {
 			name = strOf(p["name"])
 		}
 		models, _ := p["models"].([]any)
@@ -639,14 +646,14 @@ func (a *MatrixAdapter) SendChoicePicker(ctx context.Context, chatID, title stri
 		}
 		emoji := matrixChoicePickerReactions[i]
 		value := ""
-		if pyTruthy(choice["value"]) {
+		if anyutil.IsTrue(choice["value"]) {
 			value = strOf(choice["value"])
 		}
 		label := value
-		if pyTruthy(choice["label"]) {
+		if anyutil.IsTrue(choice["label"]) {
 			label = strOf(choice["label"])
 		}
-		if pyTruthy(choice["is_current"]) {
+		if anyutil.IsTrue(choice["is_current"]) {
 			label = i18n.T(ctx, "platform.matrix.picker.current_suffix", "", map[string]any{"label": label})
 		}
 		emojiChoices[emoji] = []string{value}

@@ -2,16 +2,17 @@ package home
 
 import (
 	"context"
+	"errors"
 	"math"
-	"math/big"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Uncached container probe, cached container fact and chown call, swapped by tests that simulate a container or record ownership
@@ -28,11 +29,11 @@ func ManagedSystem(ctx context.Context, h string) string {
 	if h == "" {
 		h = Dir(ctx)
 	}
-	if path := pypath.PathJoin(h, ".managed"); !set {
+	if path := pathutil.Join(h, ".managed"); !set {
 		if pathExists(path) {
 			set = true
 			if b, err := os.ReadFile(path); err == nil {
-				marker = strings.ToLower(strings.TrimSpace(pystr.TranslateNewlines(strings.ToValidUTF8(string(b), "\uFFFD"))))
+				marker = strings.ToLower(strings.TrimSpace(textutil.NormalizeNewlines(strings.ToValidUTF8(string(b), "\uFFFD"))))
 			}
 		}
 	}
@@ -56,44 +57,36 @@ func ContainerOrChmodSkipped() bool {
 	return detectContainer()
 }
 
-// ICEBATH_UID and ICEBATH_GID as Python ints, nil when unset, invalid or on Windows
-func resolveIcebathUIDGID() (*big.Int, *big.Int) {
+// ICEBATH_UID and ICEBATH_GID as integers, nil when unset, not a whole number or on Windows, a number beyond int64 kept as the bound of its sign
+func resolveIcebathUIDGID() (*int64, *int64) {
 	if runtime.GOOS == "windows" {
 		return nil, nil
 	}
-	envInt := func(name string) *big.Int {
+	envInt := func(name string) *int64 {
 		text := strings.TrimSpace(os.Getenv(name))
 		if text == "" {
 			return nil
 		}
-		n, ok := pyint.Parse(text)
-		if !ok {
+		n, err := strconv.ParseInt(text, 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return nil
 		}
-		return n
+		return &n
 	}
 	return envInt("ICEBATH_UID"), envInt("ICEBATH_GID")
 }
 
-// The uid_t os.chown accepts for v, panicking with the OverflowError CPython raises for anything else but minus one
-func chownID(v *big.Int, kind string) int {
-	if v == nil {
+// The uid_t chown accepts for v, minus one leaving the id alone, panicking with an OverflowError for anything else outside uid_t
+func chownID(v *int64, kind string) int {
+	switch {
+	case v == nil || *v == -1:
 		return -1
+	case *v == math.MaxInt64:
+		panic(&errorutil.Error{Kind: "OverflowError", Msg: kind + " is greater than maximum"})
+	case *v < 0 || *v > math.MaxUint32:
+		panic(&errorutil.Error{Kind: "OverflowError", Msg: kind + " is less than minimum"})
 	}
-	if !v.IsInt64() {
-		if v.Sign() < 0 {
-			panic(&pyint.Error{Kind: "OverflowError", Msg: kind + " is less than minimum"})
-		}
-		panic(&pyint.Error{Kind: "OverflowError", Msg: kind + " is greater than maximum"})
-	}
-	n := v.Int64()
-	if n == -1 {
-		return -1
-	}
-	if n < 0 || n > math.MaxUint32 {
-		panic(&pyint.Error{Kind: "OverflowError", Msg: kind + " is less than minimum"})
-	}
-	return int(n)
+	return int(*v)
 }
 
 // Chowns path to ICEBATH_UID and ICEBATH_GID when either is set, failures ignored
@@ -122,11 +115,12 @@ func ApplySecureDirPolicy(ctx context.Context, path, h string) {
 		text = "700"
 	}
 	mode := int64(0o700)
-	if n, ok := pyint.ParseBase(text, 8); ok {
-		if !n.IsInt64() || n.Int64() > math.MaxInt32 || n.Int64() < math.MinInt32 {
-			panic(&pyint.Error{Kind: "OverflowError", Msg: "Python int too large to convert to C int"})
+	n, err := strconv.ParseInt(strings.TrimPrefix(strings.ToLower(text), "0o"), 8, 64)
+	if err == nil || errors.Is(err, strconv.ErrRange) {
+		if n > math.MaxInt32 || n < math.MinInt32 {
+			panic(&errorutil.Error{Kind: "OverflowError", Msg: "Python int too large to convert to C int"})
 		}
-		mode = n.Int64()
+		mode = n
 	}
 	fm := os.FileMode(mode & 0o777)
 	if mode&0o4000 != 0 {

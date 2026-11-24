@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Runs a type exec quick command as a host shell of the gateway with a sanitized env and redacted output
@@ -22,7 +22,7 @@ func (r *GatewayRunner) hmCommandHooks(ctx context.Context, event *gateway.Messa
 	func() {
 		defer func() {
 			if rec := recover(); rec != nil {
-				pkgLog().Debug(fmt.Sprintf("pre_command hook dispatch failed (non-fatal): %s", pyrepr.Str(rec)))
+				pkgLog().Debug(fmt.Sprintf("pre_command hook dispatch failed (non-fatal): %s", anyutil.String(rec)))
 			}
 		}()
 		plugins.FirePreCommandHook(ctx, "gateway", canonical, command, rawArgs, &quickKey, &platform)
@@ -75,7 +75,7 @@ func hookPyStr(hookResult map[string]any, key string) string {
 	if !ok {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Drain gate, operator quick commands and plugin slash commands, an alias quick command rewriting the command
@@ -92,8 +92,8 @@ func (r *GatewayRunner) hmDispatchQuickAndPluginCommands(ctx context.Context, ev
 			qcmd, _ := raw.(map[string]any)
 			qtype := qcmd["type"]
 			if qtype == "exec" {
-				execCmd := pyrepr.Or(qcmd["command"], "")
-				if !pyrepr.Truthy(execCmd) {
+				execCmd := anyutil.Or(qcmd["command"], "")
+				if !anyutil.IsTrue(execCmd) {
 					reply := i18n.T(ctx, "gateway.quick_command.no_command", "", map[string]any{"command": command})
 					return true, &reply, command, nil
 				}
@@ -171,9 +171,9 @@ func (r *GatewayRunner) hmRunPluginHandler(ctx context.Context, handler plugins.
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(result) {
+	if !anyutil.IsTrue(result) {
 		return nil, nil
 	}
-	text := pyrepr.Str(result)
+	text := anyutil.String(result)
 	return &text, nil
 }

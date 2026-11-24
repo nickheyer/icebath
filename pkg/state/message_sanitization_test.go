@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestSanitizeSurrogatesAndNonASCII(t *testing.T) {
@@ -63,9 +63,9 @@ func TestToolCallSetAndExtraRead(t *testing.T) {
 func TestMessageDictRoundTrip(t *testing.T) {
 	d := map[string]any{
 		"role": "assistant", "content": "hi", "tool_call_id": "",
-		"tool_calls": []any{pyjson.ObjectOf("call_id", "c1", "id", "c1", "function", pyjson.ObjectOf("arguments", "{}", "name", "f")),
-			pyjson.ObjectOf("id", "c2", "type", "function", "function", pyjson.ObjectOf("name", "g", "arguments", "{}"))},
-		"reasoning_details": []any{pyjson.ObjectOf("type", "t")},
+		"tool_calls": []any{jsonutil.ObjectOf("call_id", "c1", "id", "c1", "function", jsonutil.ObjectOf("arguments", "{}", "name", "f")),
+			jsonutil.ObjectOf("id", "c2", "type", "function", "function", jsonutil.ObjectOf("name", "g", "arguments", "{}"))},
+		"reasoning_details": []any{jsonutil.ObjectOf("type", "t")},
 		"_withheld_prompt":  "w", "data_use": []any{"x"}, "timestamp": 1.5, "id": int64(7), DBPersistedMarker: true,
 	}
 	m := MessageFromDict(d)

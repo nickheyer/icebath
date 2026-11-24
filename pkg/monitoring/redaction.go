@@ -6,8 +6,8 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // RedactionUnavailable is what egress carries when the secret redactor itself fails
@@ -45,7 +45,7 @@ func RedactForExport(text any) (string, bool) {
 	if text == nil {
 		return "", false
 	}
-	out := redactForEgress(pyrepr.Str(text))
+	out := redactForEgress(anyutil.String(text))
 	out = exportEmailRE.ReplaceAllLiteralString(out, "[email]")
 	out, _ = exportUUIDRE.Replace(out, "[id]", -1, -1)
 	out, _ = exportPhoneRE.Replace(out, "[phone]", -1, -1)
@@ -64,10 +64,10 @@ func RedactBoundedWith(raw any, limit int, empty, unavailable string) (out strin
 			out = unavailable
 		}
 	}()
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = ""
 	}
-	text, _ := RedactForExport(pyrepr.Str(raw))
+	text, _ := RedactForExport(anyutil.String(raw))
 	if text == "" {
 		text = empty
 	}

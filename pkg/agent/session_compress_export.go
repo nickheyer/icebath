@@ -6,10 +6,10 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Agent side of the gateway's canonical session compress
@@ -20,8 +20,8 @@ var refusedWouldGrow sync.Map
 
 // String field of a runtime mapping, empty when absent or falsy
 func runtimeText(runtime map[string]any, key string) string {
-	if v := runtime[key]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := runtime[key]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -88,7 +88,7 @@ func sessionPluginEngine(ctx context.Context, job gateway.SessionCompressJob, re
 func cloneRows(rows []map[string]any) []map[string]any {
 	out := make([]map[string]any, len(rows))
 	for i, row := range rows {
-		out[i], _ = pyjson.Clone(row).(map[string]any)
+		out[i], _ = jsonutil.Clone(row).(map[string]any)
 	}
 	return out
 }
@@ -104,7 +104,7 @@ func sessionEngineCompress(ctx context.Context, engine ContextEngine, job gatewa
 	if err != nil {
 		return nil, err
 	}
-	if pyjson.Equal(pyjson.Plain(rowsAsList(compressed)), pyjson.Plain(rowsAsList(job.Head))) {
+	if anyutil.Equal(jsonutil.Plain(rowsAsList(compressed)), jsonutil.Plain(rowsAsList(job.Head))) {
 		return nil, nil
 	}
 	compressed = provider.RejoinCompressedHeadAndTail(compressed, job.Tail)
@@ -168,7 +168,7 @@ func (SessionCompressAgent) Summarize(ctx context.Context, job gateway.SessionCo
 		return nil, compressor, err
 	}
 	for _, m := range compressed {
-		if pyrepr.Truthy(m["_compressed_summary"]) {
+		if anyutil.IsTrue(m["_compressed_summary"]) {
 			return provider.RejoinCompressedHeadAndTail(compressed, job.Tail), compressor, nil
 		}
 	}

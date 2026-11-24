@@ -15,12 +15,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -53,7 +53,7 @@ func ReadGitHead(ctx context.Context, root string) string {
 	if git == "" {
 		return ""
 	}
-	out, err := pysubprocess.RunWith(ctx, []string{git, "-C", root, "rev-parse", "HEAD"}, pysubprocess.Options{Timeout: 10 * time.Second})
+	out, err := executil.Run(ctx, []string{git, "-C", root, "rev-parse", "HEAD"}, executil.Options{Timeout: 10 * time.Second})
 	if err != nil || out.Returncode != 0 {
 		return ""
 	}
@@ -73,10 +73,10 @@ func CurrentInstallIdentity(ctx context.Context, projectRoot string) string {
 	if stamp == nil {
 		return ""
 	}
-	if commit, ok := stamp.Vals["commit"].(string); ok && len(commit) >= 7 {
+	if commit, ok := stamp.Value("commit").(string); ok && len(commit) >= 7 {
 		return commit
 	}
-	if tag, ok := stamp.Vals["tag"].(string); ok && tag != "" {
+	if tag, ok := stamp.Value("tag").(string); ok && tag != "" {
 		return tag
 	}
 	return ""
@@ -97,7 +97,7 @@ func ReadLastKnown(path string) map[string]any {
 	if err != nil {
 		return map[string]any{}
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return map[string]any{}
 	}
@@ -113,16 +113,16 @@ func ReadLastKnown(path string) map[string]any {
 
 // Writes the bootstrap record atomically beside its path
 func writeBootRecord(path, identity string, results map[string]map[string]any) error {
-	resultsObj := pyjson.NewObject()
+	resultsObj := jsonutil.NewObject()
 	for name, result := range results {
 		resultsObj.Set(name, result)
 	}
-	payload := pyjson.ObjectOf("schemaVersion", bootRecordSchemaVersion, "identity", identity,
+	payload := jsonutil.ObjectOf("schemaVersion", bootRecordSchemaVersion, "identity", identity,
 		"bootstrappedAt", time.Now().Format("2006-01-02T15:04:05-0700"), "results", resultsObj)
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
 	}
-	text, err := pyjson.Dumps(payload, pyjson.Indent(2))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -163,7 +163,7 @@ func (l *RecordLock) tryCreate() bool {
 		return false
 	}
 	defer f.Close()
-	body, _ := pyjson.Dumps(pyjson.ObjectOf("pid", os.Getpid(), "startedAt", float64(time.Now().UnixNano())/1e9))
+	body, _ := jsonutil.Encode(jsonutil.ObjectOf("pid", os.Getpid(), "startedAt", float64(time.Now().UnixNano())/1e9))
 	f.WriteString(body)
 	return true
 }
@@ -174,7 +174,7 @@ func (l *RecordLock) isStale() bool {
 	raw, err := os.ReadFile(l.Path)
 	parsed := false
 	if err == nil {
-		if text, derr := pystr.DecodeUTF8Sig(raw); derr == nil {
+		if text, derr := textutil.DecodeUTF8(textutil.TrimBOM(raw)); derr == nil {
 			var body map[string]any
 			if json.Unmarshal([]byte(text), &body) == nil {
 				switch v := body["startedAt"].(type) {
@@ -255,7 +255,7 @@ func owedBootSteps(known map[string]any) []string {
 	results, _ := known["results"].(map[string]any)
 	var owed []string
 	for name, raw := range results {
-		if result, ok := raw.(map[string]any); ok && pyrepr.Truthy(result["owed"]) {
+		if result, ok := raw.(map[string]any); ok && anyutil.IsTrue(result["owed"]) {
 			owed = append(owed, name)
 		}
 	}
@@ -296,7 +296,7 @@ func retryOwedBootSteps(ctx context.Context, projectRoot string) (any, error) {
 		}
 	}
 	for name, result := range retried {
-		if !pyrepr.Truthy(result["ok"]) {
+		if !anyutil.IsTrue(result["ok"]) {
 			result["owed"] = true
 		}
 		merged[name] = result

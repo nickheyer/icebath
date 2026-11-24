@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net"
 	"slices"
 	"strconv"
@@ -21,11 +20,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Lowercased env values that read as true
@@ -239,12 +236,12 @@ func stripMarkdown(text string) string {
 	return text
 }
 
-// String value of an attribute read, the AttributeError a str method raises on any other type
-func strAttr(v any, method string) (string, error) {
+// Text a value holds, an AttributeError for any other type
+func textValue(v any) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), method)}
+	return "", &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("expected text, got %s", anyutil.Kind(v))}
 }
 
 // str of the exception asyncio open_connection raises for a failed dial, empty for the wait_for timeout
@@ -259,7 +256,7 @@ func connectErrorText(err error) string {
 	}
 	var dnsErr *net.DNSError
 	if errors.As(err, &dnsErr) {
-		return pyhttpx.OSErrorText(err)
+		return err.Error()
 	}
 	var opErr *net.OpError
 	var errno syscall.Errno
@@ -268,7 +265,7 @@ func connectErrorText(err error) string {
 			return fmt.Sprintf("could not connect to %s port %d: %s", addr.IP.String(), addr.Port, errno.Error())
 		}
 	}
-	return pyhttpx.OSErrorText(err)
+	return err.Error()
 }
 
 // TCP stream to the server, TLS verified against the system roots when asked, bounded by the timeout
@@ -404,11 +401,11 @@ func (a *IRCAdapter) liveConn() net.Conn {
 
 // Connects to the server, registers, identifies with NickServ when configured and joins the channel
 func (a *IRCAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
-	if !pyrepr.Truthy(a.server) || !pyrepr.Truthy(a.channel) {
+	if !anyutil.IsTrue(a.server) || !anyutil.IsTrue(a.channel) {
 		pkgLog().Error("IRC: server and channel must be configured")
 		return a.fail(ctx, "config_missing", "IRC_SERVER and IRC_CHANNEL must be set", false), nil
 	}
-	server, nickname := pyrepr.Str(a.server), pyrepr.Str(a.nickname)
+	server, nickname := anyutil.String(a.server), anyutil.String(a.nickname)
 	acquired, err := a.AcquirePlatformLock(ctx, "irc", server+":"+nickname, "IRC identity "+nickname+"@"+server)
 	if err != nil || !acquired {
 		return false, err
@@ -425,8 +422,8 @@ func (a *IRCAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 	a.mu.Lock()
 	a.conn, a.closing = conn, false
 	a.mu.Unlock()
-	if pyrepr.Truthy(a.serverPassword) {
-		if err := a.sendRaw("PASS " + pyrepr.Str(a.serverPassword)); err != nil {
+	if anyutil.IsTrue(a.serverPassword) {
+		if err := a.sendRaw("PASS " + anyutil.String(a.serverPassword)); err != nil {
 			return false, err
 		}
 	}
@@ -456,21 +453,21 @@ func (a *IRCAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error
 	case <-ctx.Done():
 		return false, ctx.Err()
 	}
-	if pyrepr.Truthy(a.nickservPassword) {
-		if err := a.sendRaw("PRIVMSG NickServ :IDENTIFY " + pyrepr.Str(a.nickservPassword)); err != nil {
+	if anyutil.IsTrue(a.nickservPassword) {
+		if err := a.sendRaw("PRIVMSG NickServ :IDENTIFY " + anyutil.String(a.nickservPassword)); err != nil {
 			return false, err
 		}
 		if err := sleepFor(ctx, 2*time.Second); err != nil {
 			return false, err
 		}
 	}
-	channel := pyrepr.Str(a.channel)
+	channel := anyutil.String(a.channel)
 	if err := a.sendRaw("JOIN " + channel); err != nil {
 		return false, err
 	}
 	a.MarkConnected(ctx, "")
 	a.mu.Lock()
-	currentNick := pyrepr.Str(a.currentNick)
+	currentNick := anyutil.String(a.currentNick)
 	a.mu.Unlock()
 	pkgLog().Info(fmt.Sprintf("IRC: connected to %s:%d as %s, joined %s", server, a.port, currentNick, channel))
 	a.WirePluginHandlers(ctx, nil)
@@ -523,7 +520,7 @@ func (a *IRCAdapter) Send(ctx context.Context, chatID, content, replyTo string, 
 	}
 	for _, line := range a.splitMessage(content, chatID) {
 		if err := a.sendRaw("PRIVMSG " + chatID + " :" + line); err != nil {
-			return gateway.SendResult{Success: false, Error: pyhttpx.OSErrorText(err)}, nil
+			return gateway.SendResult{Success: false, Error: err.Error()}, nil
 		}
 		if err := sleepFor(ctx, 300*time.Millisecond); err != nil {
 			return gateway.SendResult{}, err
@@ -593,7 +590,7 @@ func (a *IRCAdapter) receiveLoop(ctx context.Context, conn net.Conn) (err error)
 		}
 		if n == 0 {
 			if rerr != nil && !isStreamEOF(rerr) {
-				pkgLog().Error(fmt.Sprintf("IRC: receive loop error: %s", pyhttpx.OSErrorText(rerr)))
+				pkgLog().Error(fmt.Sprintf("IRC: receive loop error: %s", rerr.Error()))
 			}
 			return nil
 		}
@@ -609,12 +606,12 @@ func (a *IRCAdapter) receiveLoop(ctx context.Context, conn net.Conn) (err error)
 				if ctx.Err() != nil {
 					return ctx.Err()
 				}
-				pkgLog().Warn(fmt.Sprintf("IRC: error handling line: %s", pyrepr.ExceptionMessage(herr)))
+				pkgLog().Warn(fmt.Sprintf("IRC: error handling line: %s", herr.Error()))
 			}
 		}
 		if rerr != nil {
 			if !isStreamEOF(rerr) {
-				pkgLog().Error(fmt.Sprintf("IRC: receive loop error: %s", pyhttpx.OSErrorText(rerr)))
+				pkgLog().Error(fmt.Sprintf("IRC: receive loop error: %s", rerr.Error()))
 			}
 			return nil
 		}
@@ -653,7 +650,7 @@ func (a *IRCAdapter) handleLine(ctx context.Context, raw string) error {
 		a.mu.Unlock()
 		currentText, isStr := current.(string)
 		if !isStr {
-			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected string or bytes-like object, got '%s'", pyrepr.TypeName(current))}
+			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("the current nick must be text, got %s", anyutil.Kind(current))}
 		}
 		m, err := nickSuffixRE.FindStringMatch(currentText)
 		if err != nil {
@@ -661,19 +658,19 @@ func (a *IRCAdapter) handleLine(ctx context.Context, raw string) error {
 		}
 		var next string
 		if m != nil {
-			base, err := strAttr(a.nickname, "rstrip")
+			base, err := textValue(a.nickname)
 			if err != nil {
 				return err
 			}
-			n, err := pyint.Of(m.GroupByNumber(1).String())
+			n, err := strconv.ParseInt(m.GroupByNumber(1).String(), 10, 64)
 			if err != nil {
 				return err
 			}
-			next = strings.TrimRight(base, "_0123456789") + "_" + n.Add(n, big.NewInt(1)).String()
-		} else if pyrepr.Equal(current, a.nickname) {
-			next = pyrepr.Str(a.nickname) + "_"
+			next = strings.TrimRight(base, "_0123456789") + "_" + strconv.FormatInt(n+1, 10)
+		} else if anyutil.Equal(current, a.nickname) {
+			next = anyutil.String(a.nickname) + "_"
 		} else {
-			next = pyrepr.Str(a.nickname) + "_1"
+			next = anyutil.String(a.nickname) + "_1"
 		}
 		a.mu.Lock()
 		a.currentNick = next
@@ -695,7 +692,7 @@ func (a *IRCAdapter) handleLine(ctx context.Context, raw string) error {
 		a.mu.Lock()
 		current := a.currentNick
 		a.mu.Unlock()
-		currentText, err := strAttr(current, "lower")
+		currentText, err := textValue(current)
 		if err != nil {
 			return err
 		}
@@ -713,7 +710,7 @@ func (a *IRCAdapter) handlePrivmsg(ctx context.Context, senderNick, target, text
 	a.mu.Lock()
 	current := a.currentNick
 	a.mu.Unlock()
-	currentNick, err := strAttr(current, "lower")
+	currentNick, err := textValue(current)
 	if err != nil {
 		return err
 	}

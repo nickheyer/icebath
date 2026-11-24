@@ -5,7 +5,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestToolCallsColumnKeepsBuildOrder(t *testing.T) {
@@ -15,8 +15,8 @@ func TestToolCallsColumnKeepsBuildOrder(t *testing.T) {
 	if err := d.CreateSession(NewSession{ID: "order", Source: "test"}); err != nil {
 		t.Fatal(err)
 	}
-	call := pyjson.ObjectOf("id", "call_1", "call_id", "call_1", "response_item_id", "fc_1", "type", "function",
-		"function", pyjson.ObjectOf("name", "terminal", "arguments", `{"command":"echo hello"}`))
+	call := jsonutil.ObjectOf("id", "call_1", "call_id", "call_1", "response_item_id", "fc_1", "type", "function",
+		"function", jsonutil.ObjectOf("name", "terminal", "arguments", `{"command":"echo hello"}`))
 	row := MessageToDict(MessageFromDict(map[string]any{"role": "assistant", "content": "", "tool_calls": []any{call}}))
 	if _, err := d.AppendMessage(ctx, "order", row, AppendGuards{}); err != nil {
 		t.Fatal(err)
@@ -34,12 +34,12 @@ func TestToolCallsColumnKeepsBuildOrder(t *testing.T) {
 		t.Fatalf("history %v %v", history, err)
 	}
 	calls, _ := history[0]["tool_calls"].([]any)
-	replayed, ok := calls[0].(*pyjson.Object)
-	if !ok || !slices.Equal(replayed.Keys, call.Keys) {
+	replayed, ok := calls[0].(*jsonutil.Object)
+	if !ok || !slices.Equal(replayed.Keys(), call.Keys()) {
 		t.Fatalf("replayed %#v", calls)
 	}
-	again := MessageToDict(MessageFromDict(history[0]))["tool_calls"].([]any)[0].(*pyjson.Object)
-	if text, _ := pyjson.Dumps(again); text != want[1:len(want)-1] {
+	again := MessageToDict(MessageFromDict(history[0]))["tool_calls"].([]any)[0].(*jsonutil.Object)
+	if text, _ := jsonutil.Encode(again); text != want[1:len(want)-1] {
 		t.Fatalf("round trip %s", text)
 	}
 }

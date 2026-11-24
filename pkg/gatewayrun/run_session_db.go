@@ -9,7 +9,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -182,7 +181,7 @@ func housekeepingChore(label string, fn func() error) {
 		}
 	}()
 	if err := fn(); err != nil {
-		pkgLog().Debug(fmt.Sprintf("%s error: %s", label, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("%s error: %s", label, err.Error()))
 	}
 }
 

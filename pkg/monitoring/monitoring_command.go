@@ -8,8 +8,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Word of a switch in the status lines
@@ -23,7 +23,7 @@ func onOff(on bool) string {
 // Prints the gateway monitoring status
 func CmdMonitoring(ctx context.Context, h string, ns map[string]any, w, errw io.Writer) (int, error) {
 	action := "status"
-	if v := pyrepr.Str(ns["monitoring_action"]); pyrepr.Truthy(ns["monitoring_action"]) {
+	if v := anyutil.String(ns["monitoring_action"]); anyutil.IsTrue(ns["monitoring_action"]) {
 		action = v
 	}
 	sctx := home.WithOverride(ctx, h)

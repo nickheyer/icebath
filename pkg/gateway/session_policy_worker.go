@@ -4,10 +4,10 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Stored private policy of a bootstrap frame, the storage_unavailable refusal of an incomplete one
@@ -19,7 +19,7 @@ func WorkerPolicyScope(ctx context.Context, policy *LocalSessionPolicy, body fun
 }
 
 // Committed attachment media urls and types of a bootstrap frame, nil for a text only frame
-func RestoreAttachments(ctx context.Context, frame *pyjson.Object) ([]string, []string, error) {
+func RestoreAttachments(ctx context.Context, frame *jsonutil.Object) ([]string, []string, error) {
 	return restoreAttachments(ctx, frame)
 }
 
@@ -32,27 +32,27 @@ func RegisterWorkerHooks(ctx context.Context, policy *LocalSessionPolicy) error 
 	if policy.KanbanJSON != nil && *policy.KanbanJSON != "" {
 		kanbanText = *policy.KanbanJSON
 	}
-	kanbanValue, err := pyjson.Loads(kanbanText)
+	kanbanValue, err := jsonutil.Decode(kanbanText)
 	if err != nil {
 		return err
 	}
-	kanban := pyjson.NewObject()
-	if pyrepr.Truthy(kanbanValue) {
-		obj, isDict := kanbanValue.(*pyjson.Object)
+	kanban := jsonutil.NewObject()
+	if anyutil.IsTrue(kanbanValue) {
+		obj, isDict := kanbanValue.(*jsonutil.Object)
 		if !isDict {
 			return &PyError{Kind: "AttributeError", Msg: "the worker kanban settings are " + errchain.Kind(kanbanValue) + ", expected a mapping"}
 		}
 		kanban = obj
 	}
-	requestValue, err := pyjson.Loads(policy.RequestJSON)
+	requestValue, err := jsonutil.Decode(policy.RequestJSON)
 	if err != nil {
 		return err
 	}
-	request, isDict := requestValue.(*pyjson.Object)
+	request, isDict := requestValue.(*jsonutil.Object)
 	if !isDict {
 		return &PyError{Kind: "AttributeError", Msg: "the worker request is " + errchain.Kind(requestValue) + ", expected a mapping"}
 	}
-	accept := request.GetOr("accept_hooks", nil) == true || kanban.GetOr("accept_hooks", nil) == true
+	accept := request.ValueOr("accept_hooks", nil) == true || kanban.ValueOr("accept_hooks", nil) == true
 	cfg, err := policy.config(ctx, nil, true)
 	if err != nil {
 		return err

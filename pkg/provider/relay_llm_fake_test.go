@@ -13,8 +13,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 type relayLLMFakeHandle struct {
@@ -461,7 +461,7 @@ func relayLLMInstallFake(t *testing.T, home string) *relayLLMFake {
 // Conversation and turn over the fake binding, retaining managed execution when managed is set
 func relayLLMOpenTurn(t *testing.T, f *relayLLMFake, sessionID, turnID, taskID string, managed bool) (context.Context, *tools.RelayTurnContext) {
 	t.Helper()
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	lease := tools.RelayCoordinator.AcquireConversation(ctx, tools.RelayConversation{ProfileKey: tools.CurrentRelayProfileKey(ctx), SessionID: sessionID, Platform: "cli"})
 	turn, err := tools.RelayCoordinator.BeginTurn(ctx, lease, turnID, taskID, nil)
 	if err != nil {

@@ -3,8 +3,8 @@ package gateway
 import (
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -13,9 +13,9 @@ const maxToolEventChars = 64 * 1024
 
 // ASCII JSON text of a value with unknown objects rendered by their str text
 func toolEventJSON(value any) string {
-	text, err := pyjson.Dumps(value, pyjson.EnsureASCII(true), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	text, err := jsonutil.Encode(value, jsonutil.ASCII(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	}
 	return text
 }
@@ -25,17 +25,17 @@ func boundedArgs(args any) any {
 	if len(toolEventJSON(args)) <= maxToolEventChars {
 		return args
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	remaining := maxToolEventChars / 2
-	object, _ := pyjson.AsObject(args)
+	object, _ := jsonutil.AsObject(args)
 	if object == nil {
 		return result
 	}
-	for _, key := range object.Keys {
+	for _, key := range object.Keys() {
 		if remaining <= 0 || result.Len() >= 64 {
 			break
 		}
-		value := object.Vals[key]
+		value := object.Value(key)
 		name := textutil.First(key, 256)
 		text, isText := value.(string)
 		if !isText {
@@ -61,7 +61,7 @@ func boundedResult(result any, isError bool) string {
 	if isError {
 		key = "error"
 	}
-	return toolEventJSON(pyjson.ObjectOf(key, textutil.First(text, maxToolEventChars/2), "truncated", true))
+	return toolEventJSON(jsonutil.ObjectOf(key, textutil.First(text, maxToolEventChars/2), "truncated", true))
 }
 
 // Tool arguments within the viewer ceiling, for the managed worker child

@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -27,9 +28,9 @@ func batchNumberOf(file string) string {
 func (r *Runner) unknownTool(row map[string]any) string {
 	var names []string
 	switch stats := row["tool_stats"].(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if stats != nil {
-			names = stats.Keys
+			names = stats.Keys()
 		}
 	case map[string]any:
 		for name := range stats {
@@ -68,18 +69,18 @@ func (r *Runner) combineBatchFiles() (kept, found int, err error) {
 		}
 		for _, line := range splitLines(text) {
 			total++
-			decoded, err := pyjson.Loads(line)
+			decoded, err := jsonutil.Decode(line)
 			if err != nil {
 				filtered++
 				r.printf("   ⚠️  Filtering invalid JSON entry (batch %s)\n", batchNum)
 				continue
 			}
-			row, ok := pyjson.Dict(decoded)
+			row, ok := jsonutil.AsMap(decoded)
 			if !ok {
 				filtered++
 				continue
 			}
-			if pyrepr.Truthy(row["discarded"]) {
+			if anyutil.IsTrue(row["discarded"]) {
 				tombstones++
 				continue
 			}
@@ -117,7 +118,7 @@ func padRight(text string, width int) string {
 
 // Share of part in total as a percentage rounded to one decimal place
 func percentOf(part, total int) string {
-	return pyrepr.Float(roundTo(float64(part)/float64(total)*100, 1))
+	return strconv.FormatFloat(roundTo(float64(part)/float64(total)*100, 1), 'f', -1, 64)
 }
 
 // Prints what the run processed, the tool usage table, the reasoning coverage and where the results are
@@ -127,7 +128,7 @@ func (r *Runner) printSummary(processed, kept, files, discarded int, usage *tool
 	r.printf("✅ Prompts processed this run: %d\n", processed)
 	r.printf("✅ Total trajectories in merged file: %d\n", kept)
 	r.printf("✅ Total batch files merged: %d\n", files)
-	r.printf("⏱️  Total duration: %ss\n", pyrepr.Float(roundTo(time.Since(started).Seconds(), 2)))
+	r.printf("⏱️  Total duration: %ss\n", strconv.FormatFloat(roundTo(time.Since(started).Seconds(), 2), 'f', -1, 64))
 	r.printf("\n📈 Tool Usage Statistics:\n%s\n", rule)
 	if len(usage.names) > 0 {
 		r.printf("%s %s %s %s %s\n", padRight("Tool Name", 25), padRight("Count", 10), padRight("Success", 10), padRight("Failure", 10), padRight("Success Rate", 12))

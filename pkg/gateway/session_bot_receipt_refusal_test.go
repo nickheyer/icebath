@@ -7,8 +7,8 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Refuses at the snapshot check, before any FIFO write, until the returned switch is cleared
@@ -17,7 +17,7 @@ func refuseAutomationSnapshot(t *testing.T, reason string) *atomic.Bool {
 	refusing := &atomic.Bool{}
 	refusing.Store(true)
 	real := snapshotAutomation
-	snapshotAutomation = func(ctx context.Context, a *SessionAuthority, adapter PlatformAdapter, event *MessageEvent, identity string) (*pyjson.Object, *SessionEntry, error) {
+	snapshotAutomation = func(ctx context.Context, a *SessionAuthority, adapter PlatformAdapter, event *MessageEvent, identity string) (*jsonutil.Object, *SessionEntry, error) {
 		if refusing.Load() {
 			return nil, nil, &state.RuntimeStoreError{Reason: reason}
 		}
@@ -45,8 +45,8 @@ func TestARefusedDeliveryAnswersThroughTheDeliverContract(t *testing.T) {
 	}
 	t.Cleanup(func() { connectionSiblingFor = realSibling })
 	key := strings.Repeat("e", 32)
-	request := func() *pyjson.Object {
-		return pyjson.ObjectOf("id", int64(1), "method", "bot_relay.deliver", "params", pyjson.ObjectOf("id", key, "profile", "default", "message", "ping"))
+	request := func() *jsonutil.Object {
+		return jsonutil.ObjectOf("id", int64(1), "method", "bot_relay.deliver", "params", jsonutil.ObjectOf("id", key, "profile", "default", "message", "ping"))
 	}
 	refusing := refuseAutomationSnapshot(t, "permission_denied")
 	reply, err := connection.Dispatch(f.ctx, request())

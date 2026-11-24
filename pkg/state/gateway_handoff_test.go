@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestHeartbeatPruneDropsOnlyStaleRows(t *testing.T) {
@@ -125,15 +125,15 @@ func TestRoutingReplaceSkipsFencedRoutes(t *testing.T) {
 }
 
 func TestSessionGatewayRuntimePrecedence(t *testing.T) {
-	meta := func(pairs ...any) *pyjson.Object {
-		o := pyjson.NewObject()
+	meta := func(pairs ...any) *jsonutil.Object {
+		o := jsonutil.NewObject()
 		for i := 0; i < len(pairs); i += 2 {
 			o.Set(pairs[i].(string), pairs[i+1])
 		}
 		return o
 	}
 	cases := []struct {
-		row  *pyjson.Object
+		row  *jsonutil.Object
 		want string
 	}{
 		{meta("model_config", `{"gateway_runtime": {"provider": "openrouter", "api_mode": null}, "provider": "x"}`), `{"provider": "openrouter"}`},
@@ -145,7 +145,7 @@ func TestSessionGatewayRuntimePrecedence(t *testing.T) {
 		{nil, `{}`},
 	}
 	for i, c := range cases {
-		got, err := pyjson.Dumps(SessionGatewayRuntime(c.row))
+		got, err := jsonutil.Encode(SessionGatewayRuntime(c.row))
 		if err != nil || got != c.want {
 			t.Fatalf("case %d got %s %v want %s", i, got, err, c.want)
 		}

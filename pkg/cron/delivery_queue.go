@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
@@ -53,7 +53,7 @@ func QueuePath(home string) string {
 	if deliveryDBOverride != "" {
 		return deliveryDBOverride
 	}
-	resolved, err := pypath.Realpath(home, pypath.Lax)
+	resolved, err := pathutil.Resolve(home)
 	if err != nil {
 		resolved = filepath.Clean(home)
 	}
@@ -174,11 +174,11 @@ func deliveryJobJSON(job *Job) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	decoded, err := pyjson.LoadsBytes(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return "", err
 	}
-	return pyjson.Dumps(decoded, pyjson.SortKeys(true), pyjson.EnsureASCII(false))
+	return jsonutil.Encode(decoded, jsonutil.SortKeys())
 }
 
 // Tombstone of a pruned terminal row as a status record
@@ -338,13 +338,13 @@ func (q *DeliveryQueue) RecoverAbandoned(ctx context.Context) (int, error) {
 				if jobJSON == "" {
 					jobJSON = "{}"
 				}
-				decoded, err := pyjson.Loads(jobJSON)
+				decoded, err := jsonutil.Decode(jobJSON)
 				if err != nil {
 					return err
 				}
 				jobID := ""
-				if obj, ok := decoded.(*pyjson.Object); ok {
-					jobID, _ = obj.Vals["id"].(string)
+				if obj, ok := decoded.(*jsonutil.Object); ok {
+					jobID, _ = obj.Value("id").(string)
 				}
 				fenced = append(fenced, fencedRow{jobID, id})
 			}

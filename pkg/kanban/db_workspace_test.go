@@ -10,9 +10,10 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -127,7 +128,7 @@ func TestCompleteTaskPersistsScratchArtifactsBeforeCleanup(t *testing.T) {
 	if err := os.WriteFile(artifact, []byte("png-bytes"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	meta := pyjson.ObjectOf("artifacts", []any{artifact})
+	meta := jsonutil.ObjectOf("artifacts", []any{artifact})
 	if ok, err := CompleteTask(ctx, conn, tid, CompleteTaskOptions{Result: sp("ok"), Metadata: meta}); err != nil || !ok {
 		t.Fatal(ok, err)
 	}
@@ -140,14 +141,14 @@ func TestCompleteTaskPersistsScratchArtifactsBeforeCleanup(t *testing.T) {
 	}
 	attDir, _ := TaskAttachmentsDir(ctx, tid, nil)
 	data, readErr := os.ReadFile(persisted)
-	if pathExists(ws) || readErr != nil || pypath.PathParent(persisted) != attDir || pypath.PathName(persisted) != "chart.png" || string(data) != "png-bytes" || persisted == artifact {
+	if pathExists(ws) || readErr != nil || filepath.Dir(filepath.Clean(persisted)) != attDir || pathutil.Name(persisted) != "chart.png" || string(data) != "png-bytes" || persisted == artifact {
 		t.Fatal(ws, persisted, readErr)
 	}
-	runArts, _ := run.Metadata.(*pyjson.Object).Get("artifacts")
+	runArts, _ := run.Metadata.(*jsonutil.Object).Get("artifacts")
 	if got := stringList(runArts); len(got) != 1 || got[0] != persisted {
 		t.Fatal(got)
 	}
-	resolved, _ := pypath.Resolve(persisted)
+	resolved, _ := pathutil.Resolve(persisted)
 	if pairs := attachmentPairs(t, conn, tid); len(pairs) != 1 || pairs[0] != [2]string{"chart.png", resolved} {
 		t.Fatal(pairs)
 	}
@@ -169,7 +170,7 @@ func TestReviewBoundHandoffPreservesDeclaredArtifacts(t *testing.T) {
 	if runID == nil {
 		t.Fatal("no run")
 	}
-	ok, _, err := RequestReview(ctx, conn, tid, RequestReviewOptions{Summary: sp("ready for review"), Metadata: pyjson.ObjectOf("artifacts", []any{artifact}), ExpectedRunID: runID})
+	ok, _, err := RequestReview(ctx, conn, tid, RequestReviewOptions{Summary: sp("ready for review"), Metadata: jsonutil.ObjectOf("artifacts", []any{artifact}), ExpectedRunID: runID})
 	if err != nil || !ok {
 		t.Fatal(ok, err)
 	}
@@ -181,10 +182,10 @@ func TestReviewBoundHandoffPreservesDeclaredArtifacts(t *testing.T) {
 	persisted := stringList(arts)[0]
 	attDir, _ := TaskAttachmentsDir(ctx, tid, nil)
 	data, readErr := os.ReadFile(persisted)
-	if pathExists(ws) || readErr != nil || pypath.PathParent(persisted) != attDir || string(data) != `{"ok": true}` {
+	if pathExists(ws) || readErr != nil || filepath.Dir(filepath.Clean(persisted)) != attDir || string(data) != `{"ok": true}` {
 		t.Fatal(ws, persisted, readErr)
 	}
-	resolved, _ := pypath.Resolve(persisted)
+	resolved, _ := pathutil.Resolve(persisted)
 	if pairs := attachmentPairs(t, conn, tid); len(pairs) != 1 || pairs[0] != [2]string{"evidence.json", resolved} {
 		t.Fatal(pairs)
 	}
@@ -204,7 +205,7 @@ func TestRequestReviewRollbackDiscardsStagedCopies(t *testing.T) {
 	}
 	runID := mustTask(t, conn, tid).CurrentRunID
 	opts := func() RequestReviewOptions {
-		return RequestReviewOptions{Summary: sp("ready"), Metadata: pyjson.ObjectOf("artifacts", []any{artifact}), ExpectedRunID: runID}
+		return RequestReviewOptions{Summary: sp("ready"), Metadata: jsonutil.ObjectOf("artifacts", []any{artifact}), ExpectedRunID: runID}
 	}
 	prev := endOrSynthesizeRunFn
 	endOrSynthesizeRunFn = func(context.Context, state.SQLiteConn, string, string, string, *string, any, bool, runProfile) (*int64, error) {
@@ -360,7 +361,7 @@ func TestScheduleTaskParksTimeDelayWithoutDispatching(t *testing.T) {
 	}
 	found := false
 	for _, e := range eventsOfKind(t, conn, tid, "scheduled") {
-		if pyjson.Equal(e.Payload, pyjson.ObjectOf("reason", "run next week")) {
+		if anyutil.Equal(e.Payload, jsonutil.ObjectOf("reason", "run next week")) {
 			found = true
 		}
 	}
@@ -523,7 +524,7 @@ func TestArchiveRunningTaskTerminatesWorker(t *testing.T) {
 	hostLocal, _ := p.Get("host_local")
 	attempted, _ := p.Get("termination_attempted")
 	terminated, _ := p.Get("terminated")
-	if !pyjson.Equal(prevPid, int64(54321)) || hostLocal != true || attempted != true || terminated != true {
+	if !anyutil.Equal(prevPid, int64(54321)) || hostLocal != true || attempted != true || terminated != true {
 		t.Fatal(prevPid, hostLocal, attempted, terminated)
 	}
 	if mustTask(t, conn, tid).Status != "archived" {

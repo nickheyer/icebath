@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registers a declaration for the server until the test ends
@@ -233,7 +233,7 @@ func TestLivenessDescribePrefersThePluginTitleOverTheServerSlug(t *testing.T) {
 func registerHiddenTool(t *testing.T, name, toolset string) {
 	t.Helper()
 	def := testToolDef(name, toolset)
-	def.Schema = pyjson.ObjectOf("name", name, "description", "fixture", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject()))
+	def.Schema = jsonutil.ObjectOf("name", name, "description", "fixture", "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject()))
 	def.Check = func(*tools.Env) bool { return false }
 	tools.Default.Register(def)
 	t.Cleanup(func() { _ = tools.Default.Deregister(name, "", "") })

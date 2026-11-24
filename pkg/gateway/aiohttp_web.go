@@ -17,7 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Reason phrases of Python http.HTTPStatus where the Go status text differs
@@ -65,7 +65,7 @@ func WebTextResponse(status int, text, contentType string, headers map[string]st
 
 // JSON response of json.dumps with its default separators under application/json
 func WebJSONResponse(data any, status int, headers map[string]string) (*WebResponse, error) {
-	text, err := pyjson.Dumps(data)
+	text, err := jsonutil.Encode(data)
 	if err != nil {
 		return nil, err
 	}

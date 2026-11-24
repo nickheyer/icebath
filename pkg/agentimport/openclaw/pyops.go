@@ -12,9 +12,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python exception raised by the engine, str giving the message the script would print
@@ -60,7 +61,7 @@ func try(fn func()) (err error) {
 // Reports whether v is a dict of either the JSON or the YAML value model
 func isDict(v any) bool {
 	switch v.(type) {
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return v != nil && !isNilObject(v)
 	}
 	return false
@@ -68,14 +69,14 @@ func isDict(v any) bool {
 
 // Reports whether v is a typed nil JSON object
 func isNilObject(v any) bool {
-	o, ok := v.(*pyjson.Object)
+	o, ok := v.(*jsonutil.Object)
 	return ok && o == nil
 }
 
 // Python dict.get on v, AttributeError when v is not a dict
 func dget(v any, key string, def any) any {
 	switch d := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if d != nil {
 			if x, ok := d.Get(key); ok {
 				return x
@@ -95,7 +96,7 @@ func dget(v any, key string, def any) any {
 // Python d[key] on a dict known to hold the key
 func dindex(v any, key string) any {
 	switch d := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if x, ok := d.Get(key); ok {
 			return x
 		}
@@ -115,7 +116,7 @@ func pyIter(v any) []any {
 	switch x := v.(type) {
 	case []any:
 		return x
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		items := ditems(x)
 		out := make([]any, len(items))
 		for i, e := range items {
@@ -145,7 +146,7 @@ func lowerAttr(v any) string {
 // Raises the TypeError Python gives when an unhashable value is looked up in a set or dict
 func requireHashable(v any) {
 	switch v.(type) {
-	case []any, *pyjson.Object, map[string]any:
+	case []any, *jsonutil.Object, map[string]any:
 		raisef("TypeError", "expected a single value, got %s", errchain.Kind(v))
 	}
 }
@@ -153,7 +154,7 @@ func requireHashable(v any) {
 // Python d[key] = value, a new key appended to the insertion order
 func dset(v any, key string, value any) {
 	switch d := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		d.Set(key, value)
 		return
 	case map[string]any:
@@ -183,7 +184,7 @@ func dsetdefaultDict(v any, key string) any {
 // Value under key and whether the dict holds it
 func dlookup(v any, key string) (any, bool) {
 	switch d := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if d != nil {
 			return d.Get(key)
 		}
@@ -197,7 +198,7 @@ func dlookup(v any, key string) (any, bool) {
 // Python key in container over dicts, lists and strings
 func contains(container any, key any) bool {
 	switch c := container.(type) {
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		k, ok := key.(string)
 		if !ok {
 			return false
@@ -206,7 +207,7 @@ func contains(container any, key any) bool {
 		return has
 	case []any:
 		for _, e := range c {
-			if pyrepr.Equal(e, key) {
+			if anyutil.Equal(e, key) {
 				return true
 			}
 		}
@@ -231,11 +232,11 @@ type kv struct {
 // Python d.items() in insertion order, AttributeError when v is not a dict
 func ditems(v any) []kv {
 	switch d := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if d != nil {
-			out := make([]kv, 0, len(d.Keys))
-			for _, k := range d.Keys {
-				out = append(out, kv{k, d.Vals[k]})
+			out := make([]kv, 0, d.Len())
+			for _, k := range d.Keys() {
+				out = append(out, kv{k, d.Value(k)})
 			}
 			return out
 		}
@@ -254,7 +255,7 @@ func ditems(v any) []kv {
 // Python len of a sized value
 func pyLen(v any) int {
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len()
 	case map[string]any:
 		return len(x)
@@ -267,12 +268,9 @@ func pyLen(v any) int {
 	return 0
 }
 
-// Python truth value
-func truthy(v any) bool { return pyrepr.Truthy(v) }
-
 // Python a or b
 func or(a, b any) any {
-	if truthy(a) {
+	if anyutil.IsTrue(a) {
 		return a
 	}
 	return b
@@ -280,10 +278,10 @@ func or(a, b any) any {
 
 // Python str() of a value
 func pyStr(v any) string {
-	if o, ok := v.(*pyjson.Object); ok {
-		return pyrepr.Repr(o)
+	if o, ok := v.(*jsonutil.Object); ok {
+		return anyutil.Quote(o)
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Python str.strip
@@ -327,15 +325,15 @@ func newYAMLMap() map[string]any { return map[string]any{} }
 // Deep copy of a JSON value into the YAML value model, insertion order kept on every mapping
 func toYAML(v any) any {
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if x == nil {
 			return nil
 		}
-		m := make(map[string]any, len(x.Keys))
-		for _, k := range x.Keys {
-			m[k] = toYAML(x.Vals[k])
+		m := make(map[string]any, x.Len())
+		for _, k := range x.Keys() {
+			m[k] = toYAML(x.Value(k))
 		}
-		config.SetMappingKeys(m, x.Keys)
+		config.SetMappingKeys(m, x.Keys())
 		return m
 	case []any:
 		out := make([]any, len(x))
@@ -431,12 +429,12 @@ func uniqueInOrder(values []any) []any {
 	out := make([]any, 0, len(values))
 	for _, v := range values {
 		switch v.(type) {
-		case []any, *pyjson.Object, map[string]any:
+		case []any, *jsonutil.Object, map[string]any:
 			raisef("TypeError", "expected a single value, got %s", errchain.Kind(v))
 		}
 		dup := false
 		for _, seen := range out {
-			if pyrepr.Equal(seen, v) {
+			if anyutil.Equal(seen, v) {
 				dup = true
 				break
 			}
@@ -464,7 +462,7 @@ func pySorted(values []any) []any {
 	for i := range out {
 		if _, _, _, ok := pyNumber(out[i]); !ok {
 			for j := range out {
-				if pyrepr.TypeName(out[j]) != pyrepr.TypeName(out[i]) {
+				if anyutil.Kind(out[j]) != anyutil.Kind(out[i]) {
 					raisef("TypeError", "cannot sort %s together with %s", errchain.Kind(out[j]), errchain.Kind(out[i]))
 				}
 			}

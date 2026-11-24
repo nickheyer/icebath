@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Polls a condition for up to ten seconds
@@ -58,14 +58,14 @@ func (w *recordingWS) lines() []string {
 }
 
 // Event frame of one type with no session
-func wsEvent(kind string) *pyjson.Object {
-	return pyjson.ObjectOf("method", "event", "params", pyjson.ObjectOf("type", kind))
+func wsEvent(kind string) *jsonutil.Object {
+	return jsonutil.ObjectOf("method", "event", "params", jsonutil.ObjectOf("type", kind))
 }
 
 // Text of a frame as every transport serializes it
-func frameText(t *testing.T, frame *pyjson.Object) string {
+func frameText(t *testing.T, frame *jsonutil.Object) string {
 	t.Helper()
-	text, err := pyjson.Dumps(frame, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(frame)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func fanoutIdle(f *FanoutTransport) bool {
 // Transport recording frames, an optional delay holding each write until released or closed
 type gatedRecorder struct {
 	mu       sync.Mutex
-	frames   []*pyjson.Object
+	frames   []*jsonutil.Object
 	closed   bool
 	delay    time.Duration
 	released chan struct{}
@@ -98,7 +98,7 @@ func newGatedRecorder(delay time.Duration) *gatedRecorder {
 	return &gatedRecorder{delay: delay, released: make(chan struct{})}
 }
 
-func (r *gatedRecorder) Write(obj *pyjson.Object) bool {
+func (r *gatedRecorder) Write(obj *jsonutil.Object) bool {
 	if r.delay > 0 {
 		select {
 		case <-r.released:
@@ -130,7 +130,7 @@ func (r *gatedRecorder) count() int {
 	return len(r.frames)
 }
 
-func (r *gatedRecorder) last() *pyjson.Object {
+func (r *gatedRecorder) last() *jsonutil.Object {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.frames[len(r.frames)-1]

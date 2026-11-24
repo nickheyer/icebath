@@ -23,7 +23,7 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -38,7 +38,7 @@ var (
 )
 
 // Subprocess runner of the clipboard tools, replaced by tests
-var clipRun = pysubprocess.RunWith
+var clipRun = executil.Run
 
 const wlMissing = "wl-paste not installed — Wayland clipboard unavailable"
 
@@ -50,7 +50,7 @@ type clipResult struct {
 
 // Runs a clipboard tool in text mode with a timeout, stdin closed
 func runClipText(argv []string, timeoutSeconds int) (clipResult, error) {
-	res, err := clipRun(nil, argv, pysubprocess.Options{Timeout: time.Duration(timeoutSeconds) * time.Second})
+	res, err := clipRun(nil, argv, executil.Options{Timeout: time.Duration(timeoutSeconds) * time.Second})
 	if err != nil {
 		return clipResult{}, err
 	}
@@ -86,7 +86,7 @@ func pipeToFile(argv []string, dest string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	res, runErr := clipRun(nil, argv, pysubprocess.Options{Timeout: 5 * time.Second, Check: true})
+	res, runErr := clipRun(nil, argv, executil.Options{Timeout: 5 * time.Second, RequireSuccess: true})
 	if res != nil {
 		_, _ = f.Write(res.Stdout)
 	}
@@ -235,7 +235,7 @@ func macosSaveFileImage(dest string) bool {
 
 // Saves through pngpaste when it is installed
 func macosPngpaste(dest string) bool {
-	res, err := clipRun(nil, []string{"pngpaste", dest}, pysubprocess.Options{Timeout: 3 * time.Second})
+	res, err := clipRun(nil, []string{"pngpaste", dest}, executil.Options{Timeout: 3 * time.Second})
 	if err != nil {
 		if !isMissingExe(err) {
 			pkgLog().Debug(fmt.Sprintf("pngpaste failed: %v", err))
@@ -505,7 +505,7 @@ func convertToPNG(path string) bool {
 		if err := os.Rename(path, tmp); err != nil {
 			return err
 		}
-		res, err := clipRun(nil, []string{"convert", tmp, "png:" + path}, pysubprocess.Options{Timeout: 5 * time.Second})
+		res, err := clipRun(nil, []string{"convert", tmp, "png:" + path}, executil.Options{Timeout: 5 * time.Second})
 		if err != nil {
 			return err
 		}

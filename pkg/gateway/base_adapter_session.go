@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Guards the admission acceptance flag that admission writes and the turn owner reads across goroutines
@@ -152,7 +152,7 @@ func (b *BasePlatformAdapter) textDebounceDelayLocked(sessionKey string) float64
 		return 0
 	}
 	deadline := min(state.LastTS+b.busyTextDebounceSeconds, state.FirstTS+b.busyTextHardCapSeconds)
-	return max(0, deadline-pythread.Monotonic())
+	return max(0, deadline-timeutil.Monotonic())
 }
 
 // Buffers queue mode busy text and schedules a bounded flush, flushing first when the sender changed
@@ -177,7 +177,7 @@ func (b *BasePlatformAdapter) queueTextDebounce(ctx context.Context, sessionKey 
 			return
 		}
 	}
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	state = b.textDebounce[sessionKey]
@@ -451,7 +451,7 @@ func (b *BasePlatformAdapter) HandleMessage(ctx context.Context, event *MessageE
 	}
 	expected := ""
 	if event.Metadata != nil {
-		if v := event.Metadata["gateway_session_key"]; pyrepr.Truthy(v) {
+		if v := event.Metadata["gateway_session_key"]; anyutil.IsTrue(v) {
 			expected = strings.TrimSpace(fmt.Sprint(v))
 		}
 	}

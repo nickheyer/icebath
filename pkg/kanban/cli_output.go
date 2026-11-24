@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Status glyph of every default column plus the archived dash
@@ -50,7 +50,11 @@ func fmtTS(ts *int64) string {
 
 // Prints a value as two space indented JSON, escaping non ASCII when asked
 func printJSON(w io.Writer, obj any, ascii bool) error {
-	text, err := pyjson.Dumps(obj, pyjson.Indent(2), pyjson.EnsureASCII(ascii))
+	opts := []jsonutil.Option{jsonutil.Indent(2)}
+	if ascii {
+		opts = append(opts, jsonutil.ASCII())
+	}
+	text, err := jsonutil.Encode(obj, opts...)
 	if err != nil {
 		return err
 	}
@@ -258,8 +262,8 @@ func attachmentAttr(a *Attachment, name string) any {
 }
 
 // Ordered mapping of the named fields read through attr
-func objDict(fields []string, attr func(string) any) *pyjson.Object {
-	d := pyjson.NewObject()
+func objDict(fields []string, attr func(string) any) *jsonutil.Object {
+	d := jsonutil.NewObject()
 	for _, k := range fields {
 		d.Set(k, attr(k))
 	}
@@ -267,7 +271,7 @@ func objDict(fields []string, attr func(string) any) *pyjson.Object {
 }
 
 // JSON mapping of a task, skills always a list
-func taskToDict(t *Task) *pyjson.Object {
+func taskToDict(t *Task) *jsonutil.Object {
 	d := objDict(taskDictFields, func(k string) any { return taskAttr(t, k) })
 	d.Set("skills", stringsAny(t.Skills))
 	return d

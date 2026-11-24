@@ -10,8 +10,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Parent of test_delegate_capability_inheritance.py _parent on the trusted proxy route
@@ -162,7 +162,7 @@ func writeDelegationBlock(t *testing.T, h string, block string) {
 
 func sortedJSON(t *testing.T, v any) string {
 	t.Helper()
-	s, err := pyjson.Dumps(v, pyjson.SortKeys(true))
+	s, err := jsonutil.Encode(v, jsonutil.SortKeys())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestGroupSchemaTracksDeliveryPolicyWithoutMutatingPreviousDefinitions(t *te
 	}{{"", false}, {"  independent_completions: true\n", true}, {"  independent_completions: false\n", false}} {
 		writeDelegationBlock(t, env.Home, cfg.block)
 		definition := delegateDefinition(t, ctx, env)
-		function := pyjson.Plain(definition["function"]).(map[string]any)
+		function := jsonutil.Plain(definition["function"]).(map[string]any)
 		task := function["parameters"].(map[string]any)["properties"].(map[string]any)["tasks"].(map[string]any)["items"].(map[string]any)
 		_, hasGroup := task["properties"].(map[string]any)["group"]
 		if hasGroup != cfg.enabled {

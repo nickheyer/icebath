@@ -10,10 +10,10 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Controls that leave the transcript alone and authorize on the lineage owner
@@ -78,7 +78,7 @@ func requireHistoryClaim(ctx context.Context, a *SessionAuthority, conn state.SQ
 }
 
 // Import authorization, the imported session ids the write must claim
-func authorizeImport(a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object) ([]string, error) {
+func authorizeImport(a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object) ([]string, error) {
 	if actor.ProfileID != a.ProfileID || ref.ProfileID != a.ProfileID {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
@@ -93,7 +93,7 @@ func authorizeImport(a *SessionAuthority, actor Principal, ref SessionRef, param
 	if err != nil {
 		return nil, err
 	}
-	list, _ := pyjson.Plain(sessions).([]any)
+	list, _ := jsonutil.Plain(sessions).([]any)
 	normalized, problems, err := a.DB.ValidateImportPayload(list)
 	if err != nil {
 		return nil, err
@@ -107,13 +107,13 @@ func authorizeImport(a *SessionAuthority, actor Principal, ref SessionRef, param
 		if err != nil {
 			return nil, err
 		}
-		ids[i] = pyrepr.Str(id)
+		ids[i] = anyutil.String(id)
 	}
 	return ids, nil
 }
 
 // Control authorization, true when the session is cold history the write must claim
-func authorizeControl(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object, owner *SessionRef) (bool, error) {
+func authorizeControl(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object, owner *SessionRef) (bool, error) {
 	if actor.ProfileID != a.ProfileID || ref.ProfileID != a.ProfileID {
 		return false, runtimeRefusal("profile_mismatch")
 	}
@@ -171,7 +171,7 @@ func authorizeControl(ctx context.Context, a *SessionAuthority, actor Principal,
 }
 
 // Session a control authorizes on, the lineage owner for metadata or delete and the lane root for a chat pick
-func ownerRef(ctx context.Context, a *SessionAuthority, ref SessionRef, params *pyjson.Object) (SessionRef, error) {
+func ownerRef(ctx context.Context, a *SessionAuthority, ref SessionRef, params *jsonutil.Object) (SessionRef, error) {
 	operation := rowString(params, "operation")
 	if chatPicks[operation] {
 		return messagingOwnerRef(ctx, a, ref)
@@ -197,7 +197,7 @@ func ownerRef(ctx context.Context, a *SessionAuthority, ref SessionRef, params *
 }
 
 // Action specific session mutation shared by the socket and authenticated HTTP, owned by a tracked task
-func mutateSession(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object) (*pyjson.Object, error) {
+func mutateSession(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object) (*jsonutil.Object, error) {
 	if err := a.requireAdmissionOpen(false); err != nil {
 		return nil, err
 	}
@@ -208,7 +208,7 @@ func mutateSession(ctx context.Context, a *SessionAuthority, actor Principal, re
 	if err != nil {
 		return nil, err
 	}
-	out, _ := result.(*pyjson.Object)
+	out, _ := result.(*jsonutil.Object)
 	return out, nil
 }
 
@@ -229,7 +229,7 @@ func mutationRefusalReason(err error) (string, bool) {
 }
 
 // Mutation under the owner's gates, a model or reasoning pick refused only as busy deferred to the next turn
-func ownedMutation(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object) (*pyjson.Object, error) {
+func ownedMutation(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object) (*jsonutil.Object, error) {
 	operation := rowString(params, "operation")
 	_, isLive := a.live(ref.SessionID)
 	if _, hasRequest := params.Get("request_id"); (mutationPolicy[operation] || operation == "compress" || operation == "reset" || operation == "rewind") && !isLive && hasRequest {
@@ -245,7 +245,7 @@ func ownedMutation(ctx context.Context, a *SessionAuthority, actor Principal, re
 	if !ok {
 		return mutateSessionChecked(ctx, a, actor, ref, params, nil, &owner)
 	}
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	if operation == "compress" {
 		live.claimGate.Lock()
 		result, err = mutateSessionChecked(ctx, a, actor, ref, params, &live.mutationLock, &owner)
@@ -260,7 +260,7 @@ func ownedMutation(ctx context.Context, a *SessionAuthority, actor Principal, re
 				return nil, err
 			}
 			payload, _ := params.Get("payload")
-			picked, _ := pyjson.AsObject(payload)
+			picked, _ := jsonutil.AsObject(payload)
 			revision, _ := params.Get("expected_revision")
 			generation, _ := params.Get("expected_generation")
 			return deferPick(ctx, a, actor.Subject, ref, deferredPickRequest{Operation: operation, RequestID: rowString(params, "request_id"),
@@ -279,9 +279,9 @@ func ownedMutation(ctx context.Context, a *SessionAuthority, actor Principal, re
 }
 
 // Validated and authorized mutation handed to the writer, a messaging chat pick applied to its own override
-func mutateSessionChecked(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object, commitLock sync.Locker, owner *SessionRef) (*pyjson.Object, error) {
+func mutateSessionChecked(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object, commitLock sync.Locker, owner *SessionRef) (*jsonutil.Object, error) {
 	fields := map[string]bool{}
-	for _, key := range params.Keys {
+	for _, key := range params.Keys() {
 		if key != "expected_generation" {
 			fields[key] = true
 		}
@@ -386,12 +386,12 @@ func (c *ModelSwitchContext) readConfig(ctx context.Context) {
 		return
 	}
 	if model, ok := cfg["model"].(map[string]any); ok {
-		c.CurrentModel = pyrepr.Str(pyrepr.Or(model["default"], ""))
+		c.CurrentModel = anyutil.String(anyutil.Or(model["default"], ""))
 		if value, has := model["provider"]; has {
-			c.CurrentProvider = pyrepr.Str(value)
+			c.CurrentProvider = anyutil.String(value)
 		}
 		c.RouteProvider = model["provider"]
-		c.CurrentBaseURL = pyrepr.Str(pyrepr.Or(model["base_url"], ""))
+		c.CurrentBaseURL = anyutil.String(anyutil.Or(model["base_url"], ""))
 	}
 	c.UserProviders = cfg["providers"]
 	userProviders, _ := cfg["providers"].(map[string]any)
@@ -409,16 +409,16 @@ func (c *ModelSwitchContext) applyOverride(override map[string]any) {
 		return
 	}
 	if v, has := override["model"]; has {
-		c.CurrentModel = pyrepr.Str(v)
+		c.CurrentModel = anyutil.String(v)
 	}
 	if v, has := override["provider"]; has {
-		c.CurrentProvider, c.RouteProvider = pyrepr.Str(v), v
+		c.CurrentProvider, c.RouteProvider = anyutil.String(v), v
 	}
 	if v, has := override["base_url"]; has {
-		c.CurrentBaseURL = pyrepr.Str(v)
+		c.CurrentBaseURL = anyutil.String(v)
 	}
 	if v, has := override["api_key"]; has {
-		c.CurrentAPIKey = pyrepr.Str(v)
+		c.CurrentAPIKey = anyutil.String(v)
 	}
 }
 
@@ -458,13 +458,13 @@ func platformConfigKey(platform Platform) string {
 func applyChatReasoning(ctx context.Context, runner chatModelRunner, live *LiveSession, effort any) string {
 	value := "reset"
 	if effort != nil {
-		value = pyrepr.Str(effort)
+		value = anyutil.String(effort)
 	}
 	return runner.ApplyReasoningSelection(ctx, live.Route, platformConfigKey(live.Source.Platform), value, false)
 }
 
 // Chat's model command resolved and guarded like a local pick then committed as its session override
-func pickChatModel(ctx context.Context, a *SessionAuthority, runner chatModelRunner, owner SessionRef, live *LiveSession, payload *pyjson.Object, row *pyjson.Object) (*pyjson.Object, error) {
+func pickChatModel(ctx context.Context, a *SessionAuthority, runner chatModelRunner, owner SessionRef, live *LiveSession, payload *jsonutil.Object, row *jsonutil.Object) (*jsonutil.Object, error) {
 	sw := &ModelSwitchContext{SessionKey: live.Route, Source: live.Source, ConfigPath: filepath.Join(home.Dir(ctx), "config.yaml"), CurrentProvider: "openrouter"}
 	sw.readConfig(ctx)
 	reset, err := isModelReset(payload)
@@ -485,30 +485,30 @@ func pickChatModel(ctx context.Context, a *SessionAuthority, runner chatModelRun
 		if note != nil {
 			reply = *note
 		}
-		return pyjson.ObjectOf("model", model, "note", reply), nil
+		return jsonutil.ObjectOf("model", model, "note", reply), nil
 	}
 	runner.RehydrateSessionModelOverride(ctx, live.Route)
 	sw.applyOverride(runner.SessionModelOverride(live.Route))
 	raw, _ := payload.Get("model")
 	explicit := ""
 	if value, has := payload.Get("provider"); has {
-		explicit = pyrepr.Str(value)
+		explicit = anyutil.String(value)
 	}
-	result, problem, err := runner.PerformModelSwitch(ctx, sw, pyrepr.Str(raw), explicit, live.Source)
+	result, problem, err := runner.PerformModelSwitch(ctx, sw, anyutil.String(raw), explicit, live.Source)
 	if err != nil {
 		return nil, err
 	}
 	if result == nil {
 		return nil, state.NewRuntimeStoreError("model_resolution_failed", nil, &problem)
 	}
-	snapshot := pyjson.ObjectOf("target", owner.SessionID, "target_revision", rowValue(row, "runtime_revision"))
+	snapshot := jsonutil.ObjectOf("target", owner.SessionID, "target_revision", rowValue(row, "runtime_revision"))
 	current := switchRoute{Provider: sw.CurrentProvider, Model: sw.CurrentModel, BaseURL: sw.CurrentBaseURL, APIKey: sw.CurrentAPIKey}
 	refusal, err := selectionGuardRefusal(ctx, a, live, payload, snapshot, current, *result)
 	if err != nil || refusal != nil {
 		return refusal, err
 	}
 	runner.RecordModelSwitch(ctx, result, sw, live.Source, false, true)
-	fields := pyjson.ObjectOf("model", result.NewModel, "provider", result.TargetProvider)
+	fields := jsonutil.ObjectOf("model", result.NewModel, "provider", result.TargetProvider)
 	if effort, has := payload.Get("reasoning"); has {
 		applyChatReasoning(ctx, runner, live, effort)
 		fields.Set("effort", effort)
@@ -517,13 +517,13 @@ func pickChatModel(ctx context.Context, a *SessionAuthority, runner chatModelRun
 }
 
 // Applies a model or reasoning mutation to the messaging chat mounted on owner, fenced and receipted on that mount
-func applyChatPick(ctx context.Context, a *SessionAuthority, ref, owner SessionRef, live *LiveSession, params *pyjson.Object, principalID string) (*pyjson.Object, error) {
+func applyChatPick(ctx context.Context, a *SessionAuthority, ref, owner SessionRef, live *LiveSession, params *jsonutil.Object, principalID string) (*jsonutil.Object, error) {
 	operation := rowString(params, "operation")
 	rawPayload, _ := params.Get("payload")
 	if err := state.ValidateAction(operation, rawPayload); err != nil {
 		return nil, err
 	}
-	payload, _ := pyjson.AsObject(rawPayload)
+	payload, _ := jsonutil.AsObject(rawPayload)
 	key, digest, err := state.ChatPickKey(principalID, owner.SessionID, params)
 	if err != nil {
 		return nil, err
@@ -533,22 +533,22 @@ func applyChatPick(ctx context.Context, a *SessionAuthority, ref, owner SessionR
 		return nil, err
 	}
 	if receipt, has := prepared.Get("receipt"); has {
-		out, _ := receipt.(*pyjson.Object)
+		out, _ := receipt.(*jsonutil.Object)
 		return out, nil
 	}
 	rawRow, _ := prepared.Get("row")
-	row, _ := pyjson.AsObject(rawRow)
+	row, _ := jsonutil.AsObject(rawRow)
 	runner, err := chatRunner(a, operation)
 	if err != nil {
 		return nil, err
 	}
-	var fields *pyjson.Object
+	var fields *jsonutil.Object
 	if operation == "reasoning" {
 		effort, _ := payload.Get("effort")
 		applyChatReasoning(ctx, runner, live, effort)
-		fields = pyjson.ObjectOf("effort", effort)
+		fields = jsonutil.ObjectOf("effort", effort)
 	} else {
-		fields, err = func() (*pyjson.Object, error) {
+		fields, err = func() (*jsonutil.Object, error) {
 			lock := runner.ModelSwitchLock()
 			lock.Lock()
 			defer lock.Unlock()
@@ -559,9 +559,9 @@ func applyChatPick(ctx context.Context, a *SessionAuthority, ref, owner SessionR
 		}
 	}
 	if rowString(fields, "status") == "confirmation_required" {
-		return preparedWith(pyjson.ObjectOf("session_id", ref.SessionID, "operation", operation), flattenObject(fields)...), nil
+		return preparedWith(jsonutil.ObjectOf("session_id", ref.SessionID, "operation", operation), flattenObject(fields)...), nil
 	}
-	result := preparedWith(pyjson.ObjectOf("session_id", ref.SessionID, "operation", operation, "revision", rowValue(row, "runtime_revision"),
+	result := preparedWith(jsonutil.ObjectOf("session_id", ref.SessionID, "operation", operation, "revision", rowValue(row, "runtime_revision"),
 		"execution_generation", rowValue(row, "runtime_generation")), flattenObject(fields)...)
 	committed, err := a.DB.CommitChatPick(ctx, a.Epoch, key, digest, owner.SessionID, params, result)
 	if err != nil {
@@ -572,6 +572,6 @@ func applyChatPick(ctx context.Context, a *SessionAuthority, ref, owner SessionR
 		return nil, err
 	}
 	live.EventStream.Publish(owner.SessionID, info, "session.info", nil)
-	out, _ := committed.(*pyjson.Object)
+	out, _ := committed.(*jsonutil.Object)
 	return out, nil
 }

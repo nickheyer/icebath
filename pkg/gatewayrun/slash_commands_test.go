@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/kanban"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Source of a platform with optional thread and message ids
@@ -73,7 +73,7 @@ func TestSecondaryProfileSlashPolicyUsesItsOwnConfig(t *testing.T) {
 	betaDiscord.Enabled = true
 	betaDiscord.Extra = map[string]any{"allow_admin_from": []any{"admin"}, "user_allowed_commands": []any{"status"}}
 	beta.Platforms[gateway.PlatformDiscord] = betaDiscord
-	r.profileConfigs = pydict.New[string, *gateway.GatewayConfig]()
+	r.profileConfigs = orderedutil.NewMap[string, *gateway.GatewayConfig]()
 	r.profileConfigs.Set("beta", beta)
 
 	user := slashAccessSource("user", kstr("beta"))

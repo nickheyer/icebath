@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/relayhost/relaytest"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 const anthropicRelayStream = `event: message_start
@@ -46,7 +46,7 @@ func TestAnthropicSDKStreamRunsThroughRelayManagedExecution(t *testing.T) {
 	t.Cleanup(srv.Close)
 	tools.ResetRelayRuntimeForTests()
 	env := &tools.Env{Home: h, Cwd: h}
-	ctx := pyctx.With(tools.WithToolEnv(context.Background(), env), pyctx.New())
+	ctx := ctxutil.WithStore(tools.WithToolEnv(context.Background(), env), ctxutil.NewStore())
 	a, err := NewAIAgent(ctx, AIAgentOptions{APIKey: "test-key", BaseURL: srv.URL, Provider: "anthropic", Model: "claude-test",
 		QuietMode: true, SkipContextFiles: true, SkipMemory: true, Cwd: h, Env: env})
 	if err != nil {
@@ -92,6 +92,6 @@ func TestAnthropicSDKStreamRunsThroughRelayManagedExecution(t *testing.T) {
 		}
 	}
 	if text != "hello" || message["stop_reason"] != "end_turn" {
-		t.Fatalf("result %s", pyrepr.Repr(result))
+		t.Fatalf("result %s", anyutil.Quote(result))
 	}
 }

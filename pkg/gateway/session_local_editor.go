@@ -5,8 +5,8 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Refuses an editor policy outside an ACP launch or with an unknown key, a non ask policy or bad servers
@@ -14,7 +14,7 @@ func validateEditor(source string, editor any) error {
 	if editor == nil {
 		return nil
 	}
-	editor = pyjson.Plain(editor)
+	editor = jsonutil.Plain(editor)
 	if source != "acp" {
 		return invalidParams("editor", "an editor policy is only accepted from an ACP launch, not "+source)
 	}

@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Profile authority deliver door double, one admission per stable id and owner settled records
@@ -55,11 +55,11 @@ func (a *fakeBotAuthority) read(_ context.Context, _ string, deliveryID string) 
 // First entry of the queued receipt map the job records
 func firstQueuedEntry(t *testing.T, queued any) interface{ Get(string) (any, bool) } {
 	t.Helper()
-	obj, ok := queued.(*pyjson.Object)
+	obj, ok := queued.(*jsonutil.Object)
 	if !ok || obj.Len() == 0 {
 		t.Fatalf("queued %#v", queued)
 	}
-	first, _ := obj.Get(obj.Keys[0])
+	first, _ := obj.Get(obj.Keys()[0])
 	entry, ok := first.(interface{ Get(string) (any, bool) })
 	if !ok {
 		t.Fatalf("queued entry %#v", first)

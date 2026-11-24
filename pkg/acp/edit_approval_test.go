@@ -5,9 +5,10 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestAcpPermissionToolCallUsesEditKindAndDiffContent(t *testing.T) {
@@ -16,11 +17,11 @@ func TestAcpPermissionToolCallUsesEditKindAndDiffContent(t *testing.T) {
 	if *tc.Kind != "edit" || *tc.Status != "pending" || len(tc.Content) != 1 {
 		t.Fatalf("tool call %#v", tc)
 	}
-	raw := tc.RawInput.(*pyjson.Object)
-	if dget(raw, "tool") != "write_file" || !pyjson.Equal(pyjson.Plain(dget(raw, "arguments")), args) {
+	raw := tc.RawInput.(*jsonutil.Object)
+	if dget(raw, "tool") != "write_file" || !anyutil.Equal(jsonutil.Plain(dget(raw, "arguments")), args) {
 		t.Fatalf("raw %v", raw)
 	}
-	d := tc.Content[0].(*pyacp.FileEditToolCallContent)
+	d := tc.Content[0].(*acputil.FileEditToolCallContent)
 	if d.Path != "demo.txt" || *d.OldText != "old\n" || d.NewText != "new\n" {
 		t.Fatalf("diff %#v", d)
 	}

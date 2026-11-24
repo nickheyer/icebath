@@ -4,8 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Adds one admission row of a status for the session
@@ -33,8 +34,8 @@ func storedPickerIDs(t *testing.T, ctx context.Context, a *SessionAuthority) []a
 		t.Fatal(err)
 	}
 	var ids []any
-	for _, row := range listed.GetOr("sessions", []any{}).([]any) {
-		ids = append(ids, row.(*pyjson.Object).GetOr("id", nil))
+	for _, row := range listed.ValueOr("sessions", []any{}).([]any) {
+		ids = append(ids, row.(*jsonutil.Object).ValueOr("id", nil))
 	}
 	return ids
 }
@@ -51,7 +52,7 @@ func TestAClosedSessionWithAFinishedTurnStaysInTheStoredPickerAfterARestart(t *t
 		t.Fatal(err)
 	}
 	restarted := recoverSecondOwner(t, ctx, a.DB)
-	if ids := storedPickerIDs(t, ctx, restarted); !pyjson.Equal(ids, []any{ref.SessionID}) {
+	if ids := storedPickerIDs(t, ctx, restarted); !anyutil.Equal(ids, []any{ref.SessionID}) {
 		t.Fatalf("stored picker %v", ids)
 	}
 	if _, live := restarted.live(ref.SessionID); live {

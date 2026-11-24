@@ -11,12 +11,12 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Seams over the pm client, host facts and the dependency environment the post setup hooks read
@@ -63,7 +63,7 @@ func selectedEnvironmentPython(ctx context.Context) (string, error) {
 func pmRuntimeOrOSError(err error) bool {
 	var install *pm.InstallError
 	var download *pm.DownloadError
-	if errors.As(err, &install) || errors.As(err, &download) || pypath.IsOSError(err) {
+	if errors.As(err, &install) || errors.As(err, &download) || errorutil.IsSystem(err) {
 		return true
 	}
 	var py *pm.PyError
@@ -160,7 +160,7 @@ func (s *ToolsSetup) postSetupChromium() error {
 			if err != nil {
 				return err
 			}
-			s.infoLines("Install missing system libraries with: " + pyshlex.Join([]string{python, "-m", "playwright", "install-deps", "chromium"}))
+			s.infoLines("Install missing system libraries with: " + shellutil.Join([]string{python, "-m", "playwright", "install-deps", "chromium"}))
 		} else {
 			s.infoLines("System dependency installation guide:",
 				"  https://playwright.dev/python/docs/browsers#install-system-dependencies")
@@ -220,7 +220,7 @@ func (s *ToolsSetup) postSetupXAIGrok() error {
 	if status := ToolsConfigHooks.XAIOAuthStatus; status != nil {
 		func() {
 			defer func() { _ = recover() }()
-			oauthLoggedIn = pyTruthy(status(s.ctx(), s.home())["logged_in"])
+			oauthLoggedIn = anyutil.IsTrue(status(s.ctx(), s.home())["logged_in"])
 		}()
 	}
 	if oauthLoggedIn {
@@ -318,7 +318,7 @@ func (s *ToolsSetup) codexCredentialsPresent() (present bool) {
 			present = false
 		}
 	}()
-	return pyTruthy(status(s.ctx(), s.home())["logged_in"])
+	return anyutil.IsTrue(status(s.ctx(), s.home())["logged_in"])
 }
 
 // Codex device code login for keyless Codex rows, saving tokens without switching the chat provider
@@ -378,7 +378,7 @@ func (s *ToolsSetup) codexSignIn(login func(context.Context, string, io.Writer) 
 	tokens, _ := pyDictOf(raw)
 	lastRefresh := ""
 	if v, ok := creds["last_refresh"]; ok && v != nil {
-		lastRefresh = pyrepr.Str(v)
+		lastRefresh = anyutil.String(v)
 	}
 	return save(s.ctx(), s.home(), tokens, lastRefresh)
 }
@@ -419,25 +419,25 @@ func (s *ToolsSetup) runPostSetup(postSetupKey string) error {
 // Post setup keys declared by any visible provider, the allowlist the post-setup command validates against
 func (s *ToolsSetup) ValidPostSetupKeys() map[string]bool {
 	keys := map[string]bool{}
-	for _, catKey := range ToolCategories.Keys {
+	for _, catKey := range ToolCategories.Keys() {
 		cat := catalogCategory(catKey)
 		if cat == nil {
 			continue
 		}
 		for _, prov := range catProviders(cat) {
-			if ps := rowGet(prov, "post_setup"); pyTruthy(ps) {
-				keys[pyrepr.Str(ps)] = true
+			if ps := rowGet(prov, "post_setup"); anyutil.IsTrue(ps) {
+				keys[anyutil.String(ps)] = true
 			}
 		}
 	}
-	builders := []func(*ToolsSetup) []*pyjson.Object{(*ToolsSetup).pluginWebSearchProviders, (*ToolsSetup).pluginImageGenProviders,
+	builders := []func(*ToolsSetup) []*jsonutil.Object{(*ToolsSetup).pluginWebSearchProviders, (*ToolsSetup).pluginImageGenProviders,
 		(*ToolsSetup).pluginVideoGenProviders, (*ToolsSetup).pluginBrowserProviders}
 	for _, builder := range builders {
 		func() {
 			defer func() { _ = recover() }()
 			for _, prov := range builder(s) {
-				if ps := rowGet(prov, "post_setup"); pyTruthy(ps) {
-					keys[pyrepr.Str(ps)] = true
+				if ps := rowGet(prov, "post_setup"); anyutil.IsTrue(ps) {
+					keys[anyutil.String(ps)] = true
 				}
 			}
 		}()
@@ -458,7 +458,7 @@ func (s *ToolsSetup) runPostSetupCaught(key string) (err error) {
 // Non interactive post-setup runner, 0 ok, 1 hook failure, 2 missing or unknown key
 func (s *ToolsSetup) RunPostSetupCommand(ns map[string]any) int {
 	key := ns["post_setup_key"]
-	if !pyTruthy(key) {
+	if !anyutil.IsTrue(key) {
 		s.Con.PrintError("Usage: icebath tools post-setup <key>")
 		return 2
 	}
@@ -474,7 +474,7 @@ func (s *ToolsSetup) RunPostSetupCommand(ns map[string]any) int {
 		if joined == "" {
 			joined = "(none)"
 		}
-		s.Con.PrintError("Unknown post-setup key: " + pyrepr.Repr(key) + ". Valid keys: " + joined)
+		s.Con.PrintError("Unknown post-setup key: " + anyutil.Quote(key) + ". Valid keys: " + joined)
 		return 2
 	}
 	s.Con.PrintInfo("Running post-setup hook: " + keyText)

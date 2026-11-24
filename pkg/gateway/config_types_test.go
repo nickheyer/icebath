@@ -10,11 +10,10 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Context bound to a fresh temp home with the YAML text written as its config.yaml
@@ -84,7 +83,7 @@ func TestStreamingConfigNestedAndModeAlias(t *testing.T) {
 			t.Fatalf("%v -> %+v", c.in, s)
 		}
 	}
-	if s := StreamingConfigFromDict(map[string]any{"edit_interval": "x", "buffer_threshold": "7", "cursor": nil}); s.EditInterval != 0.8 || s.BufferThreshold.Int64() != 7 || s.Cursor != nil {
+	if s := StreamingConfigFromDict(map[string]any{"edit_interval": "x", "buffer_threshold": "7", "cursor": nil}); s.EditInterval != 0.8 || s.BufferThreshold != 7 || s.Cursor != nil {
 		t.Fatalf("coercion %+v", s)
 	}
 	on := StreamingConfig{Enabled: true, Transport: "auto"}
@@ -183,8 +182,8 @@ func TestGatewayConfigFromDictCoercion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gw.SystemdWatchdogSeconds != 30 || gw.MaxConcurrentSessions.Int64() != 4 || gw.LoopWatchdogMaxStrikes != 3 || *gw.MultiplexProfiles ||
-		gw.LoopWatchdogProbeIntervalS != 30 || gw.STTEnabled || gw.SessionStoreMaxAgeDays.Sign() != 0 || gw.UnauthorizedDMBehavior != "decline" ||
+	if gw.SystemdWatchdogSeconds != 30 || gw.MaxConcurrentSessions != 4 || gw.LoopWatchdogMaxStrikes != 3 || *gw.MultiplexProfiles ||
+		gw.LoopWatchdogProbeIntervalS != 30 || gw.STTEnabled || gw.SessionStoreMaxAgeDays != 0 || gw.UnauthorizedDMBehavior != "decline" ||
 		gw.UnauthorizedDMDeclineMessage != "bye" || gw.RoomLinkURL != nil || gw.SessionsDir != "/tmp/s" {
 		t.Fatalf("coerced %+v", gw)
 	}
@@ -197,7 +196,7 @@ func TestGatewayConfigFromDictCoercion(t *testing.T) {
 	if m, _ := gw.ProfileRoutes[1].Matches(ctx, RouteQuery{Platform: "discord", ChatID: ptr("12")}); m {
 		t.Fatal("route matching")
 	}
-	if _, err := GatewayConfigFromDict(ctx, map[string]any{"session_store_max_age_days": math.Inf(1)}); err == nil || err.(*pyint.Error).Kind != "OverflowError" {
+	if _, err := GatewayConfigFromDict(ctx, map[string]any{"session_store_max_age_days": math.Inf(1)}); !errors.Is(err, anyutil.ErrRange) {
 		t.Fatalf("int of infinity raises %v", err)
 	}
 	if _, err := GatewayConfigFromDict(ctx, map[string]any{"sessions_dir": 3}); err == nil {
@@ -217,8 +216,7 @@ func TestGatewayConfigFromDictCoercion(t *testing.T) {
 		}
 	}
 	for in, want := range map[any]int{"3": 3, 2.0: 2, 0: 0, 2.5: 0, true: 0, "x": 0} {
-		got := coerceOptionalPositiveInt(in, "k")
-		if (want == 0) != (got == nil) || (got != nil && got.Int64() != int64(want)) {
+		if got := coerceOptionalPositiveInt(in, "k"); got != want {
 			t.Fatalf("positive int %v = %v", in, got)
 		}
 	}
@@ -429,39 +427,37 @@ func TestToolsAndProviderHooksInstalled(t *testing.T) {
 	}
 }
 
-func TestCoerceIntKeepsPythonIntsPastTheGoIntRange(t *testing.T) {
+func TestCoerceIntRefusesIntsPastTheInt64Range(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	huge := "123456789012345678901234567890"
 	s := StreamingConfigFromDict(map[string]any{"buffer_threshold": huge})
-	if got := s.ToDict()["buffer_threshold"]; pyrepr.Repr(got) != huge {
+	if got := s.ToDict()["buffer_threshold"]; got != DefaultStreamingBufferThreshold {
 		t.Fatalf("buffer_threshold %v", got)
 	}
-	if got := StreamingConfigFromDict(map[string]any{"buffer_threshold": 1e30}).BufferThreshold.String(); got != "1000000000000000019884624838656" {
-		t.Fatalf("float buffer_threshold %s", got)
+	if got := StreamingConfigFromDict(map[string]any{"buffer_threshold": 1e30}).BufferThreshold; got != DefaultStreamingBufferThreshold {
+		t.Fatalf("float buffer_threshold %d", got)
 	}
-	if got := coerceInt(math.Inf(1), 5); got.Int64() != 5 {
+	if got := coerceInt(math.Inf(1), 5); got != 5 {
 		t.Fatalf("inf %v", got)
 	}
-	if got := coerceOptionalPositiveInt("-"+huge, "k"); got != nil {
+	if got := coerceOptionalPositiveInt("-"+huge, "k"); got != 0 {
 		t.Fatalf("negative huge %v", got)
 	}
-	if got := coerceOptionalPositiveInt(huge, "k"); got == nil || got.String() != huge {
+	if got := coerceOptionalPositiveInt(huge, "k"); got != 0 {
 		t.Fatalf("positive huge %v", got)
 	}
 	ctx := context.Background()
-	gw, err := GatewayConfigFromDict(ctx, map[string]any{"session_store_max_age_days": huge, "max_concurrent_sessions": huge,
-		"loop_watchdog_max_strikes": huge})
+	gw, err := GatewayConfigFromDict(ctx, map[string]any{"max_concurrent_sessions": huge, "loop_watchdog_max_strikes": huge})
 	if err != nil {
 		t.Fatal(err)
 	}
-	d := gw.ToDict()
-	if pyrepr.Repr(d["session_store_max_age_days"]) != huge || pyrepr.Repr(d["max_concurrent_sessions"]) != huge ||
-		gw.LoopWatchdogMaxStrikes != DefaultLoopWatchdogMaxStrikes {
-		t.Fatalf("gateway ints %v %v %d", d["session_store_max_age_days"], d["max_concurrent_sessions"], gw.LoopWatchdogMaxStrikes)
+	if d := gw.ToDict(); d["max_concurrent_sessions"] != nil || gw.LoopWatchdogMaxStrikes != DefaultLoopWatchdogMaxStrikes {
+		t.Fatalf("gateway ints %v %d", d["max_concurrent_sessions"], gw.LoopWatchdogMaxStrikes)
 	}
-	gw, _ = GatewayConfigFromDict(ctx, map[string]any{"session_store_max_age_days": "-" + huge})
-	if gw.SessionStoreMaxAgeDays.Sign() != 0 {
-		t.Fatalf("negative max age %v", gw.SessionStoreMaxAgeDays)
+	for _, age := range []string{huge, "-" + huge} {
+		if _, err := GatewayConfigFromDict(ctx, map[string]any{"session_store_max_age_days": age}); !errors.Is(err, anyutil.ErrRange) {
+			t.Fatalf("max age %s %v", age, err)
+		}
 	}
 }
 

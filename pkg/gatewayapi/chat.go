@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds a peer turn waits on a live Bot Chat owner's receipt
@@ -23,7 +23,7 @@ const liveWaitSeconds = 300
 type sessionChatContext struct {
 	gatewaySessionKey string
 	sessionID         string
-	body              *pyjson.Object
+	body              *jsonutil.Object
 	userMessage       any
 	runtimeRequest    *runtimeRequest
 	lockActive        bool
@@ -53,7 +53,7 @@ func (a *APIServerAdapter) prepareSessionChat(ctx context.Context, request *gate
 	if err != nil {
 		return nil, errorResponse(err.Error(), http.StatusBadRequest, errOpts{Code: "invalid_author"}), nil
 	}
-	systemPrompt := pyrepr.Or(body.GetOr("system_message", nil), body.GetOr("instructions", nil))
+	systemPrompt := anyutil.Or(body.ValueOr("system_message", nil), body.ValueOr("instructions", nil))
 	promptText := ""
 	if systemPrompt != nil {
 		s, ok := systemPrompt.(string)
@@ -91,7 +91,7 @@ func (a *APIServerAdapter) prepareSessionChat(ctx context.Context, request *gate
 		}
 		run.route = storedRoute
 		if run.route == nil {
-			run.route = a.resolveRoute(body.GetOr("model", nil))
+			run.route = a.resolveRoute(body.ValueOr("model", nil))
 		}
 		if storedModel != "" && storedRoute == nil {
 			run.sessionModel = storedModel
@@ -120,7 +120,7 @@ func sessionHeaders(sessionID, gatewaySessionKey string) map[string]string {
 }
 
 // Sanitized runtime metadata of a finished session chat turn
-func (a *APIServerAdapter) effectiveTurnRuntime(r *runtimeRequest, result, usage map[string]any) *pyjson.Object {
+func (a *APIServerAdapter) effectiveTurnRuntime(r *runtimeRequest, result, usage map[string]any) *jsonutil.Object {
 	runtime := resultRuntime(result, usage)
 	source := r.routeSource
 	if source == "" {
@@ -130,18 +130,18 @@ func (a *APIServerAdapter) effectiveTurnRuntime(r *runtimeRequest, result, usage
 }
 
 // Runtime metadata of the result, falling back to the usage
-func resultRuntime(result, usage map[string]any) *pyjson.Object {
-	if rt, ok := result["runtime"].(*pyjson.Object); ok && rt.Len() > 0 {
+func resultRuntime(result, usage map[string]any) *jsonutil.Object {
+	if rt, ok := result["runtime"].(*jsonutil.Object); ok && rt.Len() > 0 {
 		return rt
 	}
-	if rt, ok := usage["runtime"].(*pyjson.Object); ok && rt.Len() > 0 {
+	if rt, ok := usage["runtime"].(*jsonutil.Object); ok && rt.Len() > 0 {
 		return rt
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Confirmed once a runtime ran under a lock, accepted before, empty without a lock
-func modelLockState(r *runtimeRequest, runtime *pyjson.Object) string {
+func modelLockState(r *runtimeRequest, runtime *jsonutil.Object) string {
 	if !r.requireModelLock {
 		return ""
 	}
@@ -152,7 +152,7 @@ func modelLockState(r *runtimeRequest, runtime *pyjson.Object) string {
 }
 
 // Live Bot Chat admission of a peer turn, the profile home and mailbox record, nil when this process runs it
-func (a *APIServerAdapter) admitToLiveBotChat(ctx context.Context, sessionID string, message any, author *pyjson.Object) (string, map[string]any, error) {
+func (a *APIServerAdapter) admitToLiveBotChat(ctx context.Context, sessionID string, message any, author *jsonutil.Object) (string, map[string]any, error) {
 	text, ok := message.(string)
 	if !ok {
 		return "", nil, nil
@@ -167,8 +167,7 @@ func (a *APIServerAdapter) admitToLiveBotChat(ctx context.Context, sessionID str
 	profileHome := filepath.Dir(db.Path())
 	owner, err := gateway.FindCanonicalLiveOwner(ctx, profileHome)
 	if err != nil {
-		var typed interface{ PyTypeName() string }
-		if errors.As(err, &typed) && typed.PyTypeName() == "ValueError" {
+		if errorutil.Kind(err) == "ValueError" {
 			return "", nil, nil
 		}
 		return "", nil, err
@@ -180,12 +179,12 @@ func (a *APIServerAdapter) admitToLiveBotChat(ctx context.Context, sessionID str
 	if err != nil {
 		return "", nil, err
 	}
-	if tip != pyrepr.Str(owner["session_id"]) {
+	if tip != anyutil.String(owner["session_id"]) {
 		return "", nil, nil
 	}
 	var authorMap map[string]any
 	if author != nil {
-		authorMap = pyjson.Plain(author).(map[string]any)
+		authorMap = jsonutil.Plain(author).(map[string]any)
 	}
 	record, err := gateway.DeliverToLiveOwnerAuthored(ctx, profileHome, owner, text, "", "", authorMap)
 	if err != nil {
@@ -203,32 +202,32 @@ func (a *APIServerAdapter) answerThroughLiveBotChat(ctx context.Context, c *sess
 	if err != nil || record == nil {
 		return nil, err
 	}
-	sessionID := pyrepr.Str(pyrepr.Or(record["session_id"], c.sessionID))
+	sessionID := anyutil.String(anyutil.Or(record["session_id"], c.sessionID))
 	record, err = a.awaitLiveBotChatReceipt(ctx, profileHome, record, nil)
 	if err != nil {
 		return nil, err
 	}
 	deliveryID := record["delivery_id"]
 	headers := sessionHeaders(sessionID, c.gatewaySessionKey)
-	status := pyrepr.Str(record["status"])
+	status := anyutil.String(record["status"])
 	switch status {
 	case "settled":
-		return jsonResponse(pyjson.ObjectOf("object", "icebath.session.chat.completion", "session_id", sessionID,
-			"message", pyjson.ObjectOf("role", "assistant", "content", pyrepr.Or(record["reply"], "")),
-			"usage", pyjson.NewObject(), "runtime", pyjson.NewObject(), "delivery_id", deliveryID), http.StatusOK, headers), nil
+		return jsonResponse(jsonutil.ObjectOf("object", "icebath.session.chat.completion", "session_id", sessionID,
+			"message", jsonutil.ObjectOf("role", "assistant", "content", anyutil.Or(record["reply"], "")),
+			"usage", jsonutil.NewObject(), "runtime", jsonutil.NewObject(), "delivery_id", deliveryID), http.StatusOK, headers), nil
 	case "queued", "claimed":
-		return jsonResponse(pyjson.ObjectOf("object", "icebath.session.chat.queued", "session_id", sessionID,
+		return jsonResponse(jsonutil.ObjectOf("object", "icebath.session.chat.queued", "session_id", sessionID,
 			"status", status, "delivery_id", deliveryID), http.StatusAccepted, headers), nil
 	}
-	message := pyrepr.Str(pyrepr.Or(record["error"], "Bot Chat delivery "+status))
-	return errorResponse(message, http.StatusBadGateway, errOpts{Code: pyrepr.Or(record["reason"], status), Headers: headers}), nil
+	message := anyutil.String(anyutil.Or(record["error"], "Bot Chat delivery "+status))
+	return errorResponse(message, http.StatusBadGateway, errOpts{Code: anyutil.Or(record["reason"], status), Headers: headers}), nil
 }
 
 // Waits on the live Bot Chat receipt until it settles or the local DM budget runs out, pinging keepalive meanwhile
 func (a *APIServerAdapter) awaitLiveBotChatReceipt(ctx context.Context, profileHome string, record map[string]any, keepalive func() error) (map[string]any, error) {
 	deadline := time.Now().Add(liveWaitSeconds * time.Second)
 	for {
-		status := pyrepr.Str(record["status"])
+		status := anyutil.String(record["status"])
 		if status != "queued" && status != "claimed" {
 			return record, nil
 		}
@@ -245,7 +244,7 @@ func (a *APIServerAdapter) awaitLiveBotChatReceipt(ctx context.Context, profileH
 			return nil, err
 		}
 		record = next
-		status = pyrepr.Str(record["status"])
+		status = anyutil.String(record["status"])
 		if keepalive != nil && (status == "queued" || status == "claimed") {
 			if err := keepalive(); err != nil {
 				return nil, err
@@ -260,13 +259,13 @@ func (a *APIServerAdapter) streamThroughLiveBotChat(ctx context.Context, request
 	if err != nil || record == nil {
 		return nil, err
 	}
-	sessionID := pyrepr.Str(pyrepr.Or(record["session_id"], c.sessionID))
+	sessionID := anyutil.String(anyutil.Or(record["session_id"], c.sessionID))
 	events := newSessionEventQueue(sessionID, "run_"+hexUUID())
 	response, err := a.prepareSSEResponse(request, sessionID, c.gatewaySessionKey)
 	if err != nil {
 		return nil, err
 	}
-	write := func(name string, payload *pyjson.Object) error {
+	write := func(name string, payload *jsonutil.Object) error {
 		ev := events.payload(name, payload)
 		frame, err := gateway.APISSEFrame(ev.payload, ev.name, false, nil)
 		if err != nil {
@@ -276,8 +275,8 @@ func (a *APIServerAdapter) streamThroughLiveBotChat(ctx context.Context, request
 	}
 	keepalive := func() error { return response.Write([]byte(": keepalive\n\n")) }
 	err = func() error {
-		if err := write("run.started", pyjson.ObjectOf("user_message", pyjson.ObjectOf("role", "user", "content", c.userMessage),
-			"runtime", pyjson.NewObject())); err != nil {
+		if err := write("run.started", jsonutil.ObjectOf("user_message", jsonutil.ObjectOf("role", "user", "content", c.userMessage),
+			"runtime", jsonutil.NewObject())); err != nil {
 			return err
 		}
 		record, err := a.awaitLiveBotChatReceipt(ctx, profileHome, record, keepalive)
@@ -285,32 +284,32 @@ func (a *APIServerAdapter) streamThroughLiveBotChat(ctx context.Context, request
 			return err
 		}
 		deliveryID := record["delivery_id"]
-		status := pyrepr.Str(record["status"])
+		status := anyutil.String(record["status"])
 		switch status {
 		case "settled":
 			messageID := "msg_" + hexUUID()
-			if err := write("message.started", pyjson.ObjectOf("message", pyjson.ObjectOf("id", messageID, "role", "assistant"))); err != nil {
+			if err := write("message.started", jsonutil.ObjectOf("message", jsonutil.ObjectOf("id", messageID, "role", "assistant"))); err != nil {
 				return err
 			}
-			if err := write("assistant.completed", pyjson.ObjectOf("message_id", messageID, "content", pyrepr.Or(record["reply"], ""),
-				"delivery_id", deliveryID, "runtime", pyjson.NewObject())); err != nil {
+			if err := write("assistant.completed", jsonutil.ObjectOf("message_id", messageID, "content", anyutil.Or(record["reply"], ""),
+				"delivery_id", deliveryID, "runtime", jsonutil.NewObject())); err != nil {
 				return err
 			}
-			if err := write("run.completed", pyjson.ObjectOf("message_id", messageID, "delivery_id", deliveryID,
-				"usage", pyjson.NewObject(), "runtime", pyjson.NewObject())); err != nil {
+			if err := write("run.completed", jsonutil.ObjectOf("message_id", messageID, "delivery_id", deliveryID,
+				"usage", jsonutil.NewObject(), "runtime", jsonutil.NewObject())); err != nil {
 				return err
 			}
 		case "queued", "claimed":
-			if err := write("run.queued", pyjson.ObjectOf("status", status, "delivery_id", deliveryID)); err != nil {
+			if err := write("run.queued", jsonutil.ObjectOf("status", status, "delivery_id", deliveryID)); err != nil {
 				return err
 			}
 		default:
-			if err := write("error", pyjson.ObjectOf("message", pyrepr.Or(record["error"], "Bot Chat delivery "+status),
-				"code", pyrepr.Or(record["reason"], status), "delivery_id", deliveryID)); err != nil {
+			if err := write("error", jsonutil.ObjectOf("message", anyutil.Or(record["error"], "Bot Chat delivery "+status),
+				"code", anyutil.Or(record["reason"], status), "delivery_id", deliveryID)); err != nil {
 				return err
 			}
 		}
-		return write("done", pyjson.NewObject())
+		return write("done", jsonutil.NewObject())
 	}()
 	if err != nil {
 		if isClientGone(err) {
@@ -370,8 +369,8 @@ func (a *APIServerAdapter) handleSessionChat(ctx context.Context, request *gatew
 	}
 	final, _ := result["final_response"].(string)
 	finalResponse := gateway.APIResolveMediaToDataURLs(ctx, final)
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.session.chat.completion", "status", responseStatus(result),
-		"session_id", effective, "message", pyjson.ObjectOf("role", "assistant", "content", finalResponse), "usage", usage,
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.session.chat.completion", "status", responseStatus(result),
+		"session_id", effective, "message", jsonutil.ObjectOf("role", "assistant", "content", finalResponse), "usage", usage,
 		"runtime", a.effectiveTurnRuntime(c.runtimeRequest, result, usage)), http.StatusOK, sessionHeaders(effective, c.gatewaySessionKey)), nil
 }
 
@@ -403,10 +402,10 @@ func (a *APIServerAdapter) handleSessionChatStream(ctx context.Context, request 
 	a.mu.Lock()
 	a.runOwners[runID] = a.runIdempotencyScope(ctx, request)
 	a.mu.Unlock()
-	a.setRunStatus(ctx, runID, "queued", "session_id", sessionID, "model", c.body.GetOr("model", a.modelName))
+	a.setRunStatus(ctx, runID, "queued", "session_id", sessionID, "model", c.body.ValueOr("model", a.modelName))
 	delta := func(text string) {
 		if text != "" {
-			events.enqueue("assistant.delta", pyjson.ObjectOf("message_id", messageID, "delta", text))
+			events.enqueue("assistant.delta", jsonutil.ObjectOf("message_id", messageID, "delta", text))
 		}
 	}
 	toolProgress := func(eventType, toolName, preview string, args map[string]any, extra map[string]any) {
@@ -416,10 +415,10 @@ func (a *APIServerAdapter) handleSessionChatStream(ctx context.Context, request 
 			if name == "" {
 				name = "_thinking"
 			}
-			events.enqueue("tool.progress", pyjson.ObjectOf("message_id", messageID, "tool_name", name, "delta", preview))
+			events.enqueue("tool.progress", jsonutil.ObjectOf("message_id", messageID, "tool_name", name, "delta", preview))
 		case "tool.started", "tool.completed", "tool.failed":
 			name := eventType
-			if eventType == "tool.completed" && pyrepr.Truthy(extra["is_error"]) {
+			if eventType == "tool.completed" && anyutil.IsTrue(extra["is_error"]) {
 				name = "tool.failed"
 			}
 			var toolValue, previewValue, argsValue any
@@ -432,12 +431,12 @@ func (a *APIServerAdapter) handleSessionChatStream(ctx context.Context, request 
 			if args != nil {
 				argsValue = args
 			}
-			events.enqueue(name, pyjson.ObjectOf("message_id", messageID, "tool_name", toolValue, "preview", previewValue, "args", argsValue))
+			events.enqueue(name, jsonutil.ObjectOf("message_id", messageID, "tool_name", toolValue, "preview", previewValue, "args", argsValue))
 		}
 	}
 	commentary := func(text string, alreadyStreamed bool) {
 		if strings.TrimSpace(text) != "" {
-			events.enqueue("assistant.commentary", pyjson.ObjectOf("message_id", messageID, "text", text, "already_streamed", alreadyStreamed))
+			events.enqueue("assistant.commentary", jsonutil.ObjectOf("message_id", messageID, "text", text, "already_streamed", alreadyStreamed))
 		}
 	}
 	approvalNotify := a.registerSessionStreamApproval(ctx, runID, events, messageID)
@@ -450,13 +449,13 @@ func (a *APIServerAdapter) handleSessionChatStream(ctx context.Context, request 
 			a.mu.Unlock()
 			a.releaseRunOwnerIfForgotten(runID)
 			events.flush()
-			events.enqueue("done", pyjson.NewObject())
+			events.enqueue("done", jsonutil.NewObject())
 			events.close()
 		}()
-		events.enqueue("run.started", pyjson.ObjectOf("user_message", pyjson.ObjectOf("role", "user", "content", userMessage),
+		events.enqueue("run.started", jsonutil.ObjectOf("user_message", jsonutil.ObjectOf("role", "user", "content", userMessage),
 			"runtime", runtimeMeta))
 		a.setRunStatus(taskCtx, runID, "running", "last_event", "run.started")
-		events.enqueue("message.started", pyjson.ObjectOf("message", pyjson.ObjectOf("id", messageID, "role", "assistant")))
+		events.enqueue("message.started", jsonutil.ObjectOf("message", jsonutil.ObjectOf("id", messageID, "role", "assistant")))
 		history := a.conversationHistoryForSession(taskCtx, sessionID)
 		run := c.run
 		run.conversationHistory = history
@@ -474,7 +473,7 @@ func (a *APIServerAdapter) handleSessionChatStream(ctx context.Context, request 
 			}
 			pkgLog().Error("[api_server] session chat stream failed", "error", err)
 			a.setRunStatus(taskCtx, runID, "failed", "error", redactAPIErrorText(err.Error(), -1), "last_event", "run.failed")
-			events.enqueue("error", pyjson.ObjectOf("message", redactAPIErrorText(err.Error(), -1)))
+			events.enqueue("error", jsonutil.ObjectOf("message", redactAPIErrorText(err.Error(), -1)))
 			return
 		}
 		events.flush()
@@ -482,23 +481,23 @@ func (a *APIServerAdapter) handleSessionChatStream(ctx context.Context, request 
 		finalResponse := gateway.APIResolveMediaToDataURLs(taskCtx, final)
 		effective := sessionID
 		if sid, ok := result["session_id"]; ok {
-			effective = pyrepr.Str(sid)
+			effective = anyutil.String(sid)
 		}
 		turnMessages := a.turnTranscriptMessages(history, userMessage, result)
 		effectiveRuntime := a.effectiveTurnRuntime(runtimeRequest, result, usage)
 		status, fields := terminalRunStatus(result)
-		completed := pyjson.ObjectOf("session_id", effective, "message_id", messageID, "content", finalResponse)
-		completed.Update(fields)
+		completed := jsonutil.ObjectOf("session_id", effective, "message_id", messageID, "content", finalResponse)
+		completed.Merge(fields)
 		completed.Set("runtime", effectiveRuntime)
 		events.enqueue("assistant.completed", completed)
-		terminal := pyjson.ObjectOf("session_id", effective, "message_id", messageID)
-		terminal.Update(fields)
+		terminal := jsonutil.ObjectOf("session_id", effective, "message_id", messageID)
+		terminal.Merge(fields)
 		terminal.Set("messages", turnMessages)
 		terminal.Set("usage", usage)
 		terminal.Set("runtime", effectiveRuntime)
 		events.enqueue("run."+status, terminal)
 		statusFields := []any{"session_id", effective, "output", finalResponse, "usage", usage, "last_event", "run." + status}
-		for _, k := range fields.Keys {
+		for _, k := range fields.Keys() {
 			v, _ := fields.Get(k)
 			statusFields = append(statusFields, k, v)
 		}
@@ -555,7 +554,7 @@ func (a *APIServerAdapter) registerSessionStreamApproval(ctx context.Context, ru
 	a.runApprovalSessions[runID] = runID
 	a.mu.Unlock()
 	return func(approvalData map[string]any) error {
-		data, _ := pyjson.AsObject(approvalData)
+		data, _ := jsonutil.AsObject(approvalData)
 		event := approvalRequestEvent(ctx, runID, data, "message_id", messageID)
 		a.setRunStatus(ctx, runID, "waiting_for_approval", "last_event", "approval.request", "approval", event)
 		events.enqueue("approval.request", event)
@@ -620,7 +619,7 @@ func (a *APIServerAdapter) handleSessionModelLock(ctx context.Context, request *
 	if source == "" {
 		source = "raw_request"
 	}
-	runtime := sanitizeRuntimeMetadata(pyjson.ObjectOf("provider", providerName, "model", model, "route_source", source),
+	runtime := sanitizeRuntimeMetadata(jsonutil.ObjectOf("provider", providerName, "model", model, "route_source", source),
 		r.requested(), source, "accepted")
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.session.model_lock", "session_id", sessionID, "runtime", runtime), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.session.model_lock", "session_id", sessionID, "runtime", runtime), http.StatusOK, nil), nil
 }

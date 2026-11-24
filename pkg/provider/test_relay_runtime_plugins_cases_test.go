@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/relayhost/relaytest"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 func TestRealBindingKeepsTwoProfileTrajectoriesSeparateInSharedExporters(t *testing.T) {
@@ -70,7 +70,7 @@ agent_version = "test"
 		for _, profile := range []string{"profile-a", "profile-b"} {
 			sessionID := "native-export-" + profile
 			t.Setenv("ICEBATH_HOME", filepath.Join(tmp, profile))
-			ctx := pyctx.With(context.Background(), pyctx.New())
+			ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 			profileKey := tools.CurrentRelayProfileKey(ctx)
 			lease := tools.RelayCoordinator.AcquireConversation(ctx, tools.RelayConversation{ProfileKey: profileKey, SessionID: sessionID,
 				Platform: "cli", Model: "test-model"})

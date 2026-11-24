@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestAuxiliaryClientPoisonedCacheEvictionCallLlmEvictsOnConnectionErrorWithExplicitProvider(t *testing.T) {
@@ -47,7 +47,7 @@ func TestBuildCallKwargsToolDedupDuplicateToolNamesAreDeduplicated(t *testing.T)
 	var names []string
 	seen := map[string]bool{}
 	for _, item := range auxKwargMaps(kwargs["tools"]) {
-		fn, _ := pyjson.Dict(item["function"])
+		fn, _ := jsonutil.AsMap(item["function"])
 		name := pyStr(fn["name"])
 		if seen[name] {
 			t.Fatalf("Duplicate tool names found: %v", kwargs["tools"])

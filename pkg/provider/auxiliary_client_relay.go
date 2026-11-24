@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type auxRelayCallKey struct{}
@@ -95,10 +95,10 @@ func auxRelayAuxiliaryMetadata(ctx context.Context, provider, apiMode string) (s
 	if mode == "" {
 		mode = auxRelayField(record, "api_mode", "chat_completions")
 	}
-	task := pyrepr.Str(record["task"])
+	task := anyutil.String(record["task"])
 	return providerName, auxRelayField(record, "model", "unknown"), map[string]any{
 		"api_mode":       mode,
-		"api_request_id": pyrepr.Str(record["request_id"]),
+		"api_request_id": anyutil.String(record["request_id"]),
 		"call_role":      "auxiliary:" + task,
 		"retry_count":    attempt,
 		"auxiliary_task": task,
@@ -107,8 +107,8 @@ func auxRelayAuxiliaryMetadata(ctx context.Context, provider, apiMode string) (s
 
 // String of a truthy record field, the default when the field is falsy
 func auxRelayField(record map[string]any, key, fallback string) string {
-	if v := record[key]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := record[key]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return fallback
 }
@@ -123,8 +123,8 @@ func auxOrDefault(value, fallback string) string {
 
 // Model the request names, the relay record model when the request names none
 func auxRelayModelName(kwargs map[string]any, fallback string) string {
-	if v := kwargs["model"]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := kwargs["model"]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return fallback
 }
@@ -236,7 +236,7 @@ func auxCompleteRelayAuxiliaryCall(ctx context.Context, outcome, errorClass stri
 	}
 	responseModel := ""
 	if v := record["response_model"]; v != nil {
-		responseModel = pyrepr.Str(v)
+		responseModel = anyutil.String(v)
 	}
 	return relayCompleteLogicalCallFn(ctx, auxRelayField(record, "request_id", ""), outcome,
 		auxRelayField(record, "model", "unknown"), auxRelayField(record, "provider", "auxiliary"), responseModel, errorClass)

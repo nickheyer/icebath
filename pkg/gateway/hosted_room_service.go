@@ -6,18 +6,17 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -38,10 +37,10 @@ var (
 // Member id of a task, its target profile when no member id is set
 func TaskMemberID(task map[string]any) string {
 	payload, _ := hostedMapping(task["payload"])
-	if v := payload["target_member_id"]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := payload["target_member_id"]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
-	return pyrepr.Str(payload["target_profile"])
+	return anyutil.String(payload["target_profile"])
 }
 
 // Pending action naming the exact attempt retry and discard fence on, a deferred one with why it waits
@@ -80,8 +79,8 @@ func grantRevokeIsTerminal(err *PeerRunsHTTPError) bool {
 }
 
 func hostedRoomAuthority(room map[string]any) (string, int64, error) {
-	epoch, err := pyint.Int64(room["authority_epoch"])
-	return pyrepr.Str(room["authority_gateway_id"]), epoch, err
+	epoch, err := anyutil.ToInt(room["authority_epoch"])
+	return anyutil.String(room["authority_gateway_id"]), epoch, err
 }
 
 // Session operations the service resolves approvals through
@@ -112,7 +111,7 @@ type HostedRoomService struct {
 	self             hostedRoomServiceHooks
 	DBPath           string
 	DiscussionLimits DiscussionLimits
-	policyLock       pythread.RLock
+	policyLock       syncutil.ReentrantMutex
 	pendingActions   map[[2]string]map[string]any
 	pendingOrder     [][2]string
 	PolicyCheckpoint *HostedRoomPolicyCheckpoint
@@ -200,10 +199,7 @@ func (s *HostedRoomService) loadStoredLinks() error {
 	problems := append([]string{}, loadErrors...)
 	for _, link := range stored {
 		key := [2]string{link.RoomID, link.MemberID}
-		supported := false
-		for _, v := range link.Catalog.ProtocolVersions {
-			supported = supported || (v.IsInt64() && v.Int64() == HostedProtocolVersion)
-		}
+		supported := slices.Contains(link.Catalog.ProtocolVersions, HostedProtocolVersion)
 		if !supported {
 			problems = append(problems, link.RoomID+":"+link.MemberID+":protocol-upgrade-required")
 			continue
@@ -280,7 +276,7 @@ func (s *HostedRoomService) Bindings() ([]HostedRoomBinding, error) {
 			return nil, err
 		}
 		if gatewayID == local {
-			out = append(out, HostedRoomBinding{RoomID: pyrepr.Str(room["room_id"]), GatewayID: gatewayID, AuthorityEpoch: epoch})
+			out = append(out, HostedRoomBinding{RoomID: anyutil.String(room["room_id"]), GatewayID: gatewayID, AuthorityEpoch: epoch})
 		}
 	}
 	return out, nil
@@ -613,10 +609,7 @@ func (s *HostedRoomService) rotateRouteGrant(roomID, memberID, grant string, cat
 		return errors.New("peer room route cannot be renewed before persistence")
 	}
 	if catalog != nil {
-		supported, direct := false, false
-		for _, v := range catalog.ProtocolVersions {
-			supported = supported || (v.IsInt64() && v.Int64() == HostedProtocolVersion)
-		}
+		supported, direct := slices.Contains(catalog.ProtocolVersions, HostedProtocolVersion), false
 		for _, mode := range catalog.LinkModes {
 			direct = direct || mode == "direct"
 		}
@@ -688,12 +681,12 @@ func (s *HostedRoomService) events(roomID string) ([]map[string]any, error) {
 			}
 		}
 		next := cursor
-		if v := page["cursor"]; pyrepr.Truthy(v) {
-			if next, err = pyint.Int64(v); err != nil {
+		if v := page["cursor"]; anyutil.IsTrue(v) {
+			if next, err = anyutil.ToInt(v); err != nil {
 				return nil, err
 			}
 		}
-		if !pyrepr.Truthy(page["has_more"]) {
+		if !anyutil.IsTrue(page["has_more"]) {
 			return events, nil
 		}
 		if next <= cursor {
@@ -704,11 +697,11 @@ func (s *HostedRoomService) events(roomID string) ([]map[string]any, error) {
 }
 
 func (s *HostedRoomService) policySnapshot(room map[string]any) (PolicySnapshot, error) {
-	latest, err := pyint.Int64(room["latest_seq"])
+	latest, err := anyutil.ToInt(room["latest_seq"])
 	if err != nil {
 		return PolicySnapshot{}, err
 	}
-	return s.PolicyCheckpoint.Snapshot(s.ctx, pyrepr.Str(room["room_id"]), latest)
+	return s.PolicyCheckpoint.Snapshot(s.ctx, anyutil.String(room["room_id"]), latest)
 }
 
 func mapsToAny(rows []map[string]any) []any {
@@ -720,12 +713,12 @@ func mapsToAny(rows []map[string]any) []any {
 }
 
 func (s *HostedRoomService) publishTerminalTasks(room map[string]any) (bool, error) {
-	changed, roomID := false, pyrepr.Str(room["room_id"])
+	changed, roomID := false, anyutil.String(room["room_id"])
 	localProfiles, err := s.self.RoomProfiles(room)
 	if err != nil {
 		return false, err
 	}
-	cursor, err := pyint.Int64(room["latest_seq"])
+	cursor, err := anyutil.ToInt(room["latest_seq"])
 	if err != nil {
 		return false, err
 	}
@@ -745,7 +738,7 @@ func (s *HostedRoomService) publishTerminalTasks(room map[string]any) (bool, err
 			continue
 		}
 		payload, _ := hostedMapping(task["payload"])
-		sourceSeq, err := pyint.Int64(payload["source_event_seq"])
+		sourceSeq, err := anyutil.ToInt(payload["source_event_seq"])
 		if err != nil {
 			return false, err
 		}
@@ -760,12 +753,12 @@ func (s *HostedRoomService) publishTerminalTasks(room map[string]any) (bool, err
 		messageID := "dmessage:" + strings.TrimPrefix(identity.TaskID, "dtask:")
 		visible := false
 		for _, event := range taskEvents {
-			visible = visible || (pyrepr.Equal(event["event_id"], messageID) && event["kind"] == "message.member")
+			visible = visible || (anyutil.Equal(event["event_id"], messageID) && event["kind"] == "message.member")
 		}
 		if visible {
 			kept := []map[string]any{}
 			for _, event := range taskEvents {
-				seq, _ := pyint.Int64(event["seq"])
+				seq, _ := anyutil.ToInt(event["seq"])
 				if event["kind"] != "message.user" || seq <= sourceSeq {
 					kept = append(kept, event)
 				}
@@ -787,7 +780,7 @@ func (s *HostedRoomService) publishTerminalTasks(room map[string]any) (bool, err
 			if err != nil {
 				return false, err
 			}
-			seq, err := pyint.Int64(appended["seq"])
+			seq, err := anyutil.ToInt(appended["seq"])
 			if err != nil {
 				return false, err
 			}
@@ -815,7 +808,7 @@ func (s *HostedRoomService) appendRoomStatus(room map[string]any, decision Discu
 		suffix = fmt.Sprintf(":c%d", decision.Continues)
 	}
 	_, err = AppendEvent(s.ctx, s.DBPath, AppendEventInput{
-		RoomID: pyrepr.Str(room["room_id"]), EventID: fmt.Sprintf("dactivity:%s:%s%s", *decision.DiscussionEventID, decision.Reason, suffix),
+		RoomID: anyutil.String(room["room_id"]), EventID: fmt.Sprintf("dactivity:%s:%s%s", *decision.DiscussionEventID, decision.Reason, suffix),
 		Kind: "room.activity", Actor: map[string]any{"kind": "gateway", "id": gatewayID},
 		Payload: map[string]any{"status": decision.Status, "reason_code": decision.Reason, "thread_id": threadID,
 			"discussion_event_id": *decision.DiscussionEventID},
@@ -898,7 +891,7 @@ func (s *HostedRoomService) admitPlannedTask(binding HostedRoomBinding, room map
 	_, frozen := existingPayload["input_context"]
 	switch {
 	case existing != nil && frozen:
-		seq, err := pyint.Int64(existingPayload["source_event_seq"])
+		seq, err := anyutil.ToInt(existingPayload["source_event_seq"])
 		if err != nil {
 			return err
 		}
@@ -910,7 +903,7 @@ func (s *HostedRoomService) admitPlannedTask(binding HostedRoomBinding, room map
 			return err
 		}
 		admitted = existing
-	case existing != nil && pyjson.Equal(existingPayload, legacy):
+	case existing != nil && anyutil.Equal(existingPayload, legacy):
 		if _, err := ReconstructTaskPlan(room, mapsToAny(snapshot.Events), existing, profiles); err != nil {
 			return err
 		}
@@ -980,7 +973,7 @@ func (s *HostedRoomService) appendContinue(roomID, discussionEventID, gatewayID 
 		}
 		var latest int64
 		for _, event := range events {
-			seq, err := pyint.Int64(event["seq"])
+			seq, err := anyutil.ToInt(event["seq"])
 			if err != nil {
 				return nil, err
 			}
@@ -1221,7 +1214,7 @@ func (s *HostedRoomService) ApproveRoomTask(roomID, memberID, taskID string, exe
 			return false
 		}
 		generation, err := hostedIntOrZero(pending["execution_generation"])
-		return err == nil && hostedStrOrEmpty(pending["request_id"]) == requested && pyrepr.Equal(pending["task_id"], taskID) && generation == executionGeneration
+		return err == nil && hostedStrOrEmpty(pending["request_id"]) == requested && anyutil.Equal(pending["task_id"], taskID) && generation == executionGeneration
 	}
 	if requested == "" || !matches(action) {
 		return nil, errors.New("room approval is no longer pending")
@@ -1273,7 +1266,7 @@ func (s *HostedRoomService) Status(roomID *string) (map[string]any, error) {
 	counts := map[string]any{}
 	pendingActions := []any{}
 	for _, task := range tasks {
-		status := pyrepr.Str(task["status"])
+		status := anyutil.String(task["status"])
 		n, _ := counts[status].(int64)
 		counts[status] = n + 1
 		if status == "indeterminate" || status == "deferred" {
@@ -1300,7 +1293,7 @@ func (s *HostedRoomService) Status(roomID *string) (map[string]any, error) {
 	s.policyLock.Unlock()
 	activity := []any{}
 	for _, task := range tasks {
-		status := pyrepr.Str(task["status"])
+		status := anyutil.String(task["status"])
 		if status == "queued" || status == "running" || status == "stopping" {
 			activity = append(activity, map[string]any{"member_id": TaskMemberID(task), "status": status})
 		}
@@ -1315,7 +1308,7 @@ func (s *HostedRoomService) Status(roomID *string) (map[string]any, error) {
 	}
 	return map[string]any{
 		"running": runtime["running"], "working": len(activity) > 0,
-		"blocked": blocked || pyrepr.Truthy(counts["indeterminate"]) || pyrepr.Truthy(counts["stopping"]),
+		"blocked": blocked || anyutil.IsTrue(counts["indeterminate"]) || anyutil.IsTrue(counts["stopping"]),
 		"counts":  counts, "pending_actions": pendingActions, "member_activity": activity,
 		"last_error": lastError, "max_continues": int64(MaxDiscussionContinues), "peer_routes": s.routeStatuses(roomID),
 	}, nil

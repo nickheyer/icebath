@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Installs a fixed profile projection for one test
@@ -30,7 +30,7 @@ func auxExtraBodyKwargs(t *testing.T, ctx context.Context, provider, model strin
 	if err != nil {
 		t.Fatal(err)
 	}
-	body, _ := pyjson.Plain(kw["extra_body"]).(map[string]any)
+	body, _ := jsonutil.Plain(kw["extra_body"]).(map[string]any)
 	return kw, body
 }
 
@@ -59,7 +59,7 @@ func TestAuxiliaryTaskExtraBodyExplicitDeepseekThinkingDisableBeatsProfileDefaul
 
 func TestAuxiliaryTaskExtraBodyDisabledCallerReasoningSuppressesTaskReasoningForProfileWire(t *testing.T) {
 	ctx := auxMainTestHome(t, "auxiliary:\n  title_generation:\n    reasoning_effort: low\n    extra_body:\n      metadata:\n        task: title\n")
-	auxFixedProjection(t, auxProfileProjection{Body: pyjson.ObjectOf(), ReasoningExtra: pyjson.ObjectOf(), TopLevel: map[string]any{"reasoning_effort": "none"}, HandlesReasoning: true})
+	auxFixedProjection(t, auxProfileProjection{Body: jsonutil.ObjectOf(), ReasoningExtra: jsonutil.ObjectOf(), TopLevel: map[string]any{"reasoning_effort": "none"}, HandlesReasoning: true})
 	taskBody, err := auxGetTaskExtraBody(ctx, "title_generation")
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestAuxiliaryTaskExtraBodyDisabledCallerReasoningSuppressesTaskReasoningFor
 
 func TestAuxiliaryTaskExtraBodyDisabledCallerReasoningKeepsProfileOwnedDisableShape(t *testing.T) {
 	ctx := auxMainTestHome(t, "auxiliary:\n  title_generation:\n    reasoning_effort: low\n")
-	auxFixedProjection(t, auxProfileProjection{Body: pyjson.ObjectOf(), ReasoningExtra: pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", false)), TopLevel: map[string]any{}, HandlesReasoning: true})
+	auxFixedProjection(t, auxProfileProjection{Body: jsonutil.ObjectOf(), ReasoningExtra: jsonutil.ObjectOf("reasoning", jsonutil.ObjectOf("enabled", false)), TopLevel: map[string]any{}, HandlesReasoning: true})
 	taskBody, err := auxGetTaskExtraBody(ctx, "title_generation")
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +95,7 @@ func TestAuxiliaryTaskExtraBodyDisabledCallerReasoningKeepsProfileOwnedDisableSh
 func TestAuxiliaryTaskExtraBodyGenericReasoningFallbackClampsUltraForAuxiliaryAndMoaCalls(t *testing.T) {
 	for _, task := range []string{"session_search", "moa_reference", "moa_aggregator"} {
 		ctx := auxMainTestHome(t, "")
-		auxFixedProjection(t, auxProfileProjection{Body: pyjson.ObjectOf(), ReasoningExtra: pyjson.ObjectOf(), TopLevel: map[string]any{}})
+		auxFixedProjection(t, auxProfileProjection{Body: jsonutil.ObjectOf(), ReasoningExtra: jsonutil.ObjectOf(), TopLevel: map[string]any{}})
 		_, body := auxExtraBodyKwargs(t, ctx, "custom", "test-model", auxCallKwargsOptions{ReasoningConfig: map[string]any{"enabled": true, "effort": "ultra"}, Task: task})
 		if !reflect.DeepEqual(body["reasoning"], map[string]any{"enabled": true, "effort": "max"}) {
 			t.Fatalf("%s: ultra reached the wire %v", task, body)
@@ -105,7 +105,7 @@ func TestAuxiliaryTaskExtraBodyGenericReasoningFallbackClampsUltraForAuxiliaryAn
 
 func TestAuxiliaryTaskExtraBodyTaskExtraBodyReasoningEffortUltraIsClamped(t *testing.T) {
 	ctx := auxMainTestHome(t, "auxiliary:\n  session_search:\n    reasoning_effort: ultra\n")
-	auxFixedProjection(t, auxProfileProjection{Body: pyjson.ObjectOf(), ReasoningExtra: pyjson.ObjectOf(), TopLevel: map[string]any{}})
+	auxFixedProjection(t, auxProfileProjection{Body: jsonutil.ObjectOf(), ReasoningExtra: jsonutil.ObjectOf(), TopLevel: map[string]any{}})
 	taskBody, err := auxGetTaskExtraBody(ctx, "session_search")
 	if err != nil {
 		t.Fatal(err)
@@ -175,7 +175,7 @@ func TestAuxiliaryTaskExtraBodyAnthropicAuxClientForwardsExtraBodyReasoning(t *t
 func TestAuxiliaryTaskExtraBodyAnthropicAuxExtraBodyPassthrough(t *testing.T) {
 	extra := map[string]any{"thinking": map[string]any{"type": "disabled"}, "metadata": map[string]any{"user_id": "u1"}}
 	api := auxCaptureAnthropicKwargs(t, extra, false, nil)
-	if !reflect.DeepEqual(pyjson.Plain(api["extra_body"]), extra) {
+	if !reflect.DeepEqual(jsonutil.Plain(api["extra_body"]), extra) {
 		t.Fatalf("extra_body %v", api["extra_body"])
 	}
 }

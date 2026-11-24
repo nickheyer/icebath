@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func curCLI() (*CuratorCLI, *bytes.Buffer) {
@@ -247,7 +247,7 @@ func TestCuratorRunDefaultsToSynchronous(t *testing.T) {
 	scope, _, _ := curatorScope(ctx)
 	scope.MarkAgentCreated(ctx, "candidate")
 	calls := 0
-	curatorLLMReview = func(context.Context, string) *pyjson.Object {
+	curatorLLMReview = func(context.Context, string) *jsonutil.Object {
 		calls++
 		return curatorLLMMeta("llm-stub", nil)
 	}
@@ -304,7 +304,7 @@ func TestCuratorPurgeAgesArchiveFromWhenItWasArchived(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	rec, _ := curGet(usage, "old-helper").(*pyjson.Object)
+	rec, _ := curGet(usage, "old-helper").(*jsonutil.Object)
 	rec.Set("archived_at", "2000-01-01T00:00:00+00:00")
 	if !scope.SaveUsage(ctx, usage) {
 		t.Fatal("save usage failed")
@@ -340,8 +340,8 @@ func TestCuratorPurgePrefersRecordedArchivedAtOverStaleDirMtime(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	legacy, _ := curGet(usage, "legacy").(*pyjson.Object)
-	acc := pyjson.NewObject()
+	legacy, _ := curGet(usage, "legacy").(*jsonutil.Object)
+	acc := jsonutil.NewObject()
 	acc.Set("state", "archived")
 	acc.Set("archived_at", curGet(legacy, "archived_at"))
 	usage.Set("huggingface-accelerate", acc)
@@ -383,7 +383,7 @@ func TestCuratorListUnmanagedItemizesAndExplains(t *testing.T) {
 	curWant(t, out, "curator adopt")
 }
 
-func curGet(o *pyjson.Object, key string) any {
+func curGet(o *jsonutil.Object, key string) any {
 	v, _ := o.Get(key)
 	return v
 }

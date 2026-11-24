@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Socket whose send never completes, recording each close code
@@ -53,7 +53,7 @@ func awaitFrameCount(t *testing.T, transport *gatedRecorder, count int) {
 func overflowSlowPeer(t *testing.T, fan *FanoutTransport, healthy *gatedRecorder, slow Transport) int {
 	t.Helper()
 	for n := range FanoutMaxPendingFrames + 64 {
-		if !fan.Write(pyjson.ObjectOf("params", pyjson.ObjectOf("type", "tool.progress", "n", n))) {
+		if !fan.Write(jsonutil.ObjectOf("params", jsonutil.ObjectOf("type", "tool.progress", "n", n))) {
 			t.Fatal("fanout write failed")
 		}
 		awaitFrameCount(t, healthy, n+1)
@@ -92,7 +92,7 @@ func TestOverflowClosesOnlyTheSlowPeerAndHealthyKeepsStreaming(t *testing.T) {
 	if !slow.Closed() || healthy.isClosed() || !fan.Contains(healthy) {
 		t.Fatalf("slow closed = %v, healthy closed = %v, healthy attached = %v", slow.Closed(), healthy.isClosed(), fan.Contains(healthy))
 	}
-	after := pyjson.ObjectOf("params", pyjson.ObjectOf("type", "message.complete", "n", lastN+1))
+	after := jsonutil.ObjectOf("params", jsonutil.ObjectOf("type", "message.complete", "n", lastN+1))
 	if !fan.Write(after) {
 		t.Fatal("write after the overflow failed")
 	}

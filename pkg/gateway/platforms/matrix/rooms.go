@@ -17,7 +17,7 @@ func stateEventValue(evt map[string]any, key string) string {
 		return ""
 	}
 	for _, obj := range []map[string]any{evt, objectOf(evt["content"])} {
-		if v := obj[key]; pyTruthy(v) {
+		if v := obj[key]; anyutil.IsTrue(v) {
 			return strOf(v)
 		}
 	}

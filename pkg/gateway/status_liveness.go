@@ -9,15 +9,15 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -55,7 +55,7 @@ func recordStartAndCheckStorm(ctx context.Context, h string, maxStarts int, wind
 			if line == "" {
 				continue
 			}
-			if f, err := pyint.ParseFloat(line); err == nil {
+			if f, err := strconv.ParseFloat(strings.TrimSpace(line), 64); err == nil {
 				existing = append(existing, f)
 			}
 		}
@@ -76,7 +76,7 @@ func recordStartAndCheckStorm(ctx context.Context, h string, maxStarts int, wind
 	}
 	lines := make([]string, len(toWrite))
 	for i, ts := range toWrite {
-		lines[i] = pyrepr.Repr(ts)
+		lines[i] = anyutil.Quote(ts)
 	}
 	tmp := strings.TrimSuffix(path, filepath.Ext(path)) + ".tmp"
 	if err := os.WriteFile(tmp, []byte(strings.Join(lines, "\n")+"\n"), 0o666); err != nil {
@@ -97,9 +97,9 @@ type GatewayLiveness struct {
 	Running    bool
 	PID        any
 	Source     string
-	HealthBody *pyjson.Object
+	HealthBody *jsonutil.Object
 	ProbeError bool
-	Runtime    *pyjson.Object
+	Runtime    *jsonutil.Object
 }
 
 // Profile id of any home, the profiles child name, default for the default root, false otherwise
@@ -107,11 +107,11 @@ func ProfileNameForHome(profileHome string) (string, bool) {
 	if named, ok := profileNameForHomeDir(profileHome); ok && named != "" {
 		return named, true
 	}
-	resolved, err := pypath.Realpath(profileHome, pypath.Lax)
+	resolved, err := pathutil.Resolve(profileHome)
 	if err != nil {
 		return "", false
 	}
-	root, err := pypath.Realpath(home.Root(), pypath.Lax)
+	root, err := pathutil.Resolve(home.Root())
 	if err != nil {
 		return "", false
 	}
@@ -122,19 +122,19 @@ func ProfileNameForHome(profileHome string) (string, bool) {
 }
 
 // Multiplexer rung of the liveness ladder, swapped by tests that pin the roster answer
-var statusMultiplexerLivenessForProfile = func(profileDir string) (int, *pyjson.Object, bool, error) {
+var statusMultiplexerLivenessForProfile = func(profileDir string) (int, *jsonutil.Object, bool, error) {
 	return MultiplexerLivenessForProfile(profileDir)
 }
 
 // Pid and host gateway_state.json when the live host multiplexer serves the profile at profileDir
-func MultiplexerLivenessForProfile(profileDir string) (int, *pyjson.Object, bool, error) {
+func MultiplexerLivenessForProfile(profileDir string) (int, *jsonutil.Object, bool, error) {
 	name, ok := ProfileNameForHome(profileDir)
 	if !ok || name == "" {
 		return 0, nil, false, nil
 	}
 	defaultRoot := home.Root()
 	if name != "default" {
-		same, err := sameIcebathHome(profileDir, pypath.PathJoin(defaultRoot, "profiles", name))
+		same, err := sameIcebathHome(profileDir, pathutil.Join(defaultRoot, "profiles", name))
 		if err != nil {
 			return 0, nil, false, err
 		}
@@ -175,9 +175,9 @@ func MultiplexerLivenessForProfile(profileDir string) (int, *pyjson.Object, bool
 	if !havePid {
 		return 0, nil, false, nil
 	}
-	runtime := ReadRuntimeStatus(pypath.PathJoin(launchHome, runtimeStatusFile))
+	runtime := ReadRuntimeStatus(pathutil.Join(launchHome, runtimeStatusFile))
 	if runtime == nil || runtime.Len() == 0 {
-		runtime = pyjson.NewObject()
+		runtime = jsonutil.NewObject()
 	}
 	return pid, runtime, true, nil
 }
@@ -194,9 +194,9 @@ func namedProfileServed(name string) (bool, error) {
 }
 
 // The api_server and webhook mirrors a served profile gets from the default listener
-func SharedListenerMirrorPlatformsFor(runtime *pyjson.Object, profile string) *pyjson.Object {
-	out := pyjson.NewObject()
-	plats, ok := recGet(runtime, "platforms").(*pyjson.Object)
+func SharedListenerMirrorPlatformsFor(runtime *jsonutil.Object, profile string) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	plats, ok := recGet(runtime, "platforms").(*jsonutil.Object)
 	if profile == "" || profile == "default" || !ok {
 		return out
 	}
@@ -206,7 +206,7 @@ func SharedListenerMirrorPlatformsFor(runtime *pyjson.Object, profile string) *p
 	}
 	sort.Strings(names)
 	for _, name := range names {
-		entry, ok := recGet(plats, name).(*pyjson.Object)
+		entry, ok := recGet(plats, name).(*jsonutil.Object)
 		state := recGet(entry, "state")
 		if !ok || !(pyEq(state, "connected") || pyEq(state, "connecting") || pyEq(state, "retrying")) {
 			continue
@@ -215,8 +215,8 @@ func SharedListenerMirrorPlatformsFor(runtime *pyjson.Object, profile string) *p
 		if base, ok := recGet(entry, "listener_base").(string); ok && base != "" {
 			url = base + "/p/" + profile + SharedListenerMirrorPaths[name]
 		}
-		mirrored := pyjson.NewObject()
-		for _, k := range entry.Keys {
+		mirrored := jsonutil.NewObject()
+		for _, k := range entry.Keys() {
 			if k != "listener_base" {
 				mirrored.Set(k, recGet(entry, k))
 			}
@@ -229,27 +229,27 @@ func SharedListenerMirrorPlatformsFor(runtime *pyjson.Object, profile string) *p
 }
 
 // A multiplexer record's entries for profile re-keyed to bare platform names plus its listener mirrors
-func ProfilePlatformsFromMultiplexer(runtime *pyjson.Object, profile string) *pyjson.Object {
-	plats, ok := recGet(runtime, "platforms").(*pyjson.Object)
+func ProfilePlatformsFromMultiplexer(runtime *jsonutil.Object, profile string) *jsonutil.Object {
+	plats, ok := recGet(runtime, "platforms").(*jsonutil.Object)
 	if !ok {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	prefix := profile + ":"
-	own := pyjson.NewObject()
-	for _, k := range plats.Keys {
-		if v, isDict := recGet(plats, k).(*pyjson.Object); isDict && strings.HasPrefix(k, prefix) {
+	own := jsonutil.NewObject()
+	for _, k := range plats.Keys() {
+		if v, isDict := recGet(plats, k).(*jsonutil.Object); isDict && strings.HasPrefix(k, prefix) {
 			own.Set(k[len(prefix):], v)
 		}
 	}
 	if profile == "default" {
-		for _, k := range plats.Keys {
-			if v, isDict := recGet(plats, k).(*pyjson.Object); isDict && !strings.Contains(k, ":") {
+		for _, k := range plats.Keys() {
+			if v, isDict := recGet(plats, k).(*jsonutil.Object); isDict && !strings.Contains(k, ":") {
 				own.Set(k, v)
 			}
 		}
 	}
 	out := SharedListenerMirrorPlatformsFor(runtime, profile)
-	for _, k := range own.Keys {
+	for _, k := range own.Keys() {
 		out.Set(k, recGet(own, k))
 	}
 	return out
@@ -258,13 +258,13 @@ func ProfilePlatformsFromMultiplexer(runtime *pyjson.Object, profile string) *py
 // Ladder options, ProfileDir scoping every read and the probes replacing the default rungs
 type LivenessOptions struct {
 	ProfileDir      string
-	Runtime         *pyjson.Object
+	Runtime         *jsonutil.Object
 	RuntimeGiven    bool
-	HealthProbe     func() (bool, *pyjson.Object, error)
+	HealthProbe     func() (bool, *jsonutil.Object, error)
 	NoCache         bool
 	PidProbe        func(pidPath string) (int, bool, error)
-	RuntimeReader   func(path string) (*pyjson.Object, error)
-	RuntimePidProbe func(runtime *pyjson.Object, expectedHome string) (int, bool, error)
+	RuntimeReader   func(path string) (*jsonutil.Object, error)
+	RuntimePidProbe func(runtime *jsonutil.Object, expectedHome string) (int, bool, error)
 }
 
 // One answer to whether the gateway is up, a failing rung degrading to the next with ProbeError set
@@ -280,7 +280,7 @@ func ResolveGatewayLiveness(o LivenessOptions) GatewayLiveness {
 	}
 	reader := o.RuntimeReader
 	if reader == nil {
-		reader = func(p string) (*pyjson.Object, error) { return ReadRuntimeStatus(p), nil }
+		reader = func(p string) (*jsonutil.Object, error) { return ReadRuntimeStatus(p), nil }
 	}
 	runtimePidProbe := o.RuntimePidProbe
 	if runtimePidProbe == nil {
@@ -290,14 +290,14 @@ func ResolveGatewayLiveness(o LivenessOptions) GatewayLiveness {
 	scoped := o.ProfileDir != ""
 	pidArg := ""
 	if scoped {
-		pidArg = pypath.PathJoin(o.ProfileDir, "gateway.pid")
+		pidArg = pathutil.Join(o.ProfileDir, "gateway.pid")
 	}
 	if pid, ok, err := pidProbe(pidArg); err != nil {
 		probeError = true
 	} else if ok {
 		return GatewayLiveness{Running: true, PID: pid, Source: "pid"}
 	}
-	var healthBody *pyjson.Object
+	var healthBody *jsonutil.Object
 	if o.HealthProbe != nil {
 		alive, body, err := o.HealthProbe()
 		if err != nil {
@@ -313,7 +313,7 @@ func ResolveGatewayLiveness(o LivenessOptions) GatewayLiveness {
 	if !o.RuntimeGiven {
 		statusArg := ""
 		if scoped {
-			statusArg = pypath.PathJoin(o.ProfileDir, runtimeStatusFile)
+			statusArg = pathutil.Join(o.ProfileDir, runtimeStatusFile)
 		}
 		r, err := reader(statusArg)
 		if err != nil {
@@ -322,7 +322,7 @@ func ResolveGatewayLiveness(o LivenessOptions) GatewayLiveness {
 		runtime = r
 	}
 	if scoped && runtime == nil {
-		runtime = pyjson.NewObject()
+		runtime = jsonutil.NewObject()
 	}
 	if pid, ok, err := runtimePidProbe(runtime, o.ProfileDir); err != nil {
 		probeError = true

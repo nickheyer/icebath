@@ -15,11 +15,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Held editor connections and borrowed editor server lists of one authority, both keyed by session scope
@@ -50,7 +50,7 @@ func shortDigest(text string, n int) string {
 
 // Server specs of a validated editor server list
 func editorSpecs(servers any) []map[string]any {
-	list, _ := pyjson.Plain(servers).([]any)
+	list, _ := jsonutil.Plain(servers).([]any)
 	specs := make([]map[string]any, len(list))
 	for i, item := range list {
 		specs[i], _ = item.(map[string]any)
@@ -62,7 +62,7 @@ func editorSpecs(servers any) []map[string]any {
 func editorServerNames(scope string, specs []map[string]any) map[int]string {
 	names := make(map[int]string, len(specs))
 	for i, spec := range specs {
-		names[i] = fmt.Sprintf("editor_%s_%s", mcp.SanitizeNameComponent(pyrepr.Str(spec["name"])), shortDigest(fmt.Sprintf("%s:%d", scope, i), 8))
+		names[i] = fmt.Sprintf("editor_%s_%s", mcp.SanitizeNameComponent(anyutil.String(spec["name"])), shortDigest(fmt.Sprintf("%s:%d", scope, i), 8))
 	}
 	return names
 }
@@ -76,11 +76,11 @@ func frozenEditorNames(data map[string]any, specs []map[string]any) (map[int]str
 			if err != nil {
 				return nil, &PyError{Kind: "ValueError", Msg: "the editor MCP key " + key + " is not a whole number"}
 			}
-			names[i] = pyrepr.Str(name)
+			names[i] = anyutil.String(name)
 		}
 		return names, nil
 	}
-	prefix := shortDigest(pyrepr.Str(data["scope"]), 20)
+	prefix := shortDigest(anyutil.String(data["scope"]), 20)
 	names := make(map[int]string, len(specs))
 	for i := range specs {
 		names[i] = fmt.Sprintf("editor_%s_%d", prefix, i)
@@ -95,13 +95,13 @@ func frozenEditorToolset(data map[string]any, toolset string) bool {
 	}
 	if raw, ok := data["names"].(map[string]any); ok {
 		for _, name := range raw {
-			if toolset == "mcp-"+pyrepr.Str(name) {
+			if toolset == "mcp-"+anyutil.String(name) {
 				return true
 			}
 		}
 		return false
 	}
-	return strings.HasPrefix(toolset, "mcp-editor_"+shortDigest(pyrepr.Str(data["scope"]), 20)+"_")
+	return strings.HasPrefix(toolset, "mcp-editor_"+shortDigest(anyutil.String(data["scope"]), 20)+"_")
 }
 
 // Name and value pairs of an env or headers list as a mapping
@@ -110,7 +110,7 @@ func editorPairs(spec map[string]any, key string) map[string]any {
 	items, _ := spec[key].([]any)
 	for _, item := range items {
 		if pair, ok := item.(map[string]any); ok {
-			out[pyrepr.Str(pair["name"])] = pair["value"]
+			out[anyutil.String(pair["name"])] = pair["value"]
 		}
 	}
 	return out
@@ -279,11 +279,11 @@ func policyEditorManifest(policy *LocalSessionPolicy) (map[string]any, error) {
 	if policy.EditorMCPJSON == nil || *policy.EditorMCPJSON == "" {
 		return nil, nil
 	}
-	loaded, err := pyjson.Loads(*policy.EditorMCPJSON)
+	loaded, err := jsonutil.Decode(*policy.EditorMCPJSON)
 	if err != nil {
 		return nil, err
 	}
-	data, _ := pyjson.Plain(loaded).(map[string]any)
+	data, _ := jsonutil.Plain(loaded).(map[string]any)
 	return data, nil
 }
 
@@ -329,7 +329,7 @@ func rebindEditorMCP(ctx context.Context, a *SessionAuthority, sid string, polic
 			}
 			sort.Ints(order)
 			for _, i := range order {
-				pkgLog().Warn(fmt.Sprintf("Editor MCP server %s failed discovery; session %s continues without it", pyrepr.Repr(specs[i]["name"]), sid))
+				pkgLog().Warn(fmt.Sprintf("Editor MCP server %s failed discovery; session %s continues without it", anyutil.Quote(specs[i]["name"]), sid))
 			}
 			return nil
 		})
@@ -368,7 +368,7 @@ func rebindEditorMCP(ctx context.Context, a *SessionAuthority, sid string, polic
 	if s, ok := data["schemas"]; ok {
 		newSchemas = s
 	}
-	changed := !pyjson.Equal(pyjson.Plain(oldSchemas), pyjson.Plain(newSchemas)) || !slices.Equal(rebound.Toolsets, policy.Toolsets)
+	changed := !anyutil.Equal(jsonutil.Plain(oldSchemas), jsonutil.Plain(newSchemas)) || !slices.Equal(rebound.Toolsets, policy.Toolsets)
 	return &rebound, changed, nil
 }
 
@@ -385,14 +385,14 @@ func attachEditorMCP(ctx context.Context, a *SessionAuthority, policy *LocalSess
 	if err != nil {
 		return err
 	}
-	if len(data) == 0 || !hmac.Equal([]byte(pyrepr.Str(data["fingerprint"])), []byte(digest)) {
+	if len(data) == 0 || !hmac.Equal([]byte(anyutil.String(data["fingerprint"])), []byte(digest)) {
 		return runtimeRefusal("acp_mcp_policy_conflict")
 	}
 	copied, err := editorMCPRoundTrip(servers)
 	if err != nil {
 		return err
 	}
-	setBorrowedEditorMCP(a, pyrepr.Str(data["scope"]), copied, false)
+	setBorrowedEditorMCP(a, anyutil.String(data["scope"]), copied, false)
 	return nil
 }
 
@@ -402,7 +402,7 @@ func resumeEditorMCP(ctx context.Context, a *SessionAuthority, ref SessionRef, e
 		return nil
 	}
 	var servers any
-	if fields, ok := pyjson.Plain(editor).(map[string]any); ok {
+	if fields, ok := jsonutil.Plain(editor).(map[string]any); ok {
 		servers = fields["mcp_servers"]
 	}
 	if list, ok := servers.([]any); ok && len(list) == 0 {
@@ -463,18 +463,18 @@ func installEditorMCP(ctx context.Context, a *SessionAuthority, sid string, serv
 	if err != nil {
 		return err
 	}
-	if hmac.Equal([]byte(pyrepr.Str(data["fingerprint"])), []byte(digest)) {
+	if hmac.Equal([]byte(anyutil.String(data["fingerprint"])), []byte(digest)) {
 		copied, err := editorMCPRoundTrip(servers)
 		if err != nil {
 			return err
 		}
-		setBorrowedEditorMCP(a, pyrepr.Str(data["scope"]), copied, false)
+		setBorrowedEditorMCP(a, anyutil.String(data["scope"]), copied, false)
 	}
 	return nil
 }
 
 // Publishes one tools changed event with server names and generation when a change altered the manifest
-func announceToolsChanged(live *LiveSession, sessionID string, result *pyjson.Object) {
+func announceToolsChanged(live *LiveSession, sessionID string, result *jsonutil.Object) {
 	if live == nil || result == nil {
 		return
 	}
@@ -484,11 +484,11 @@ func announceToolsChanged(live *LiveSession, sessionID string, result *pyjson.Ob
 	}
 	servers, _ := result.Get("mcp_servers")
 	generation, _ := result.Get("execution_generation")
-	live.EventStream.Publish(sessionID, pyjson.ObjectOf("mcp_servers", servers, "execution_generation", generation), "session.tools_changed", nil)
+	live.EventStream.Publish(sessionID, jsonutil.ObjectOf("mcp_servers", servers, "execution_generation", generation), "session.tools_changed", nil)
 }
 
 // Discovers the new editor list and freezes it into the policy the next turn runs under
-func prepareEditorMCP(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object, servers any) (*pyjson.Object, error) {
+func prepareEditorMCP(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, prepared *jsonutil.Object, servers any) (*jsonutil.Object, error) {
 	old, err := preparedPolicy(prepared)
 	if err != nil {
 		return nil, err
@@ -535,7 +535,7 @@ func editorMCPScope(ctx context.Context, a *SessionAuthority, policy *LocalSessi
 	if policy.EditorMCPJSON == nil || *policy.EditorMCPJSON == "" {
 		return body(ctx)
 	}
-	scope := pyrepr.Str(data["scope"])
+	scope := anyutil.String(data["scope"])
 	if a == nil {
 		return runtimeRefusal("launch_credentials_unavailable")
 	}
@@ -549,7 +549,7 @@ func editorMCPScope(ctx context.Context, a *SessionAuthority, policy *LocalSessi
 		return err
 	}
 	return borrowEditorMCP(ctx, a, scope, specs, names, policy.Cwd, false, func(scoped context.Context, schemas map[string]any, _ []int) error {
-		if !pyjson.Equal(schemas, pyjson.Plain(data["schemas"])) {
+		if !anyutil.Equal(schemas, jsonutil.Plain(data["schemas"])) {
 			return runtimeRefusal("acp_mcp_schema_changed")
 		}
 		return body(scoped)
@@ -575,7 +575,7 @@ func childSecretRef(ctx context.Context, a *SessionAuthority, child string, pare
 }
 
 // Prepared branch fields and servers of an editor session fork under the child's own scope, nil without editor servers
-func prepareBranchEditor(ctx context.Context, a *SessionAuthority, ref SessionRef, servers any, gate func() (*pyjson.Object, error)) (*pyjson.Object, any, error) {
+func prepareBranchEditor(ctx context.Context, a *SessionAuthority, ref SessionRef, servers any, gate func() (*jsonutil.Object, error)) (*jsonutil.Object, any, error) {
 	saved, err := a.DB.LocalReceipt(ctx, ref.SessionID)
 	if err != nil {
 		var refusal *state.RuntimeStoreError
@@ -600,7 +600,7 @@ func prepareBranchEditor(ctx context.Context, a *SessionAuthority, ref SessionRe
 		if parent.EditorMCPJSON == nil || *parent.EditorMCPJSON == "" {
 			return nil, nil, nil
 		}
-		held, ok := borrowedEditorMCP(a, pyrepr.Str(data["scope"]))
+		held, ok := borrowedEditorMCP(a, anyutil.String(data["scope"]))
 		if !ok {
 			return nil, nil, runtimeRefusal("launch_credentials_unavailable")
 		}

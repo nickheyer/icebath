@@ -9,9 +9,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -38,10 +38,10 @@ func envTruthy(ctx context.Context, name string) bool {
 // Authorization field of a platform entry as text, empty when it is unset
 func authzFieldText(platform gateway.Platform, field string, entry *gateway.PlatformEntry) string {
 	value := gateway.AuthzField(string(platform), field, entry)
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Group chat allowlist environment name of a platform, empty when it declares none
@@ -245,7 +245,7 @@ func (r *GatewayRunner) adapterFlag(ctx context.Context, platform gateway.Platfo
 	case "enforces_own_access_policy":
 		return adapter.EnforcesOwnAccessPolicy()
 	}
-	return pyrepr.Truthy(adapterAttr(adapter, name))
+	return anyutil.IsTrue(adapterAttr(adapter, name))
 }
 
 // Platform config extra, empty when the platform has no config
@@ -278,10 +278,10 @@ func (r *GatewayRunner) adapterPolicy(ctx context.Context, platform gateway.Plat
 		return ""
 	}
 	value := r.adapterSetting(ctx, platform, "_"+kind+"_policy", kind+"_policy", profile)
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 }
 
 // Whether a per group sender allowlist already gated the message at the adapter
@@ -315,7 +315,7 @@ func (r *GatewayRunner) adapterGroupHasSenderAllowlist(ctx context.Context, plat
 		return strings.TrimSpace(v) != ""
 	case []any:
 		for _, item := range v {
-			if strings.TrimSpace(pyrepr.Str(item)) != "" {
+			if strings.TrimSpace(anyutil.String(item)) != "" {
 				return true
 			}
 		}
@@ -378,12 +378,12 @@ func (r *GatewayRunner) adapterExtraAllowlistAuthorizes(ctx context.Context, sou
 		key = groupKey
 	}
 	adapterAllow := extra[key]
-	if !pyrepr.Truthy(adapterAllow) {
+	if !anyutil.IsTrue(adapterAllow) {
 		if authzFieldText(source.Platform, "allowed_users_env", registryEntry(ctx, source.Platform)) != "" {
 			adapterAllow = extra["allowed_users"]
 		}
 	}
-	if !pyrepr.Truthy(adapterAllow) {
+	if !anyutil.IsTrue(adapterAllow) {
 		return false, nil
 	}
 	allowed := coerceAllowSet(adapterAllow)
@@ -439,7 +439,7 @@ func (r *GatewayRunner) adapterResolvedAllowlistIDs(ctx context.Context, source 
 	for _, item := range items {
 		switch item.(type) {
 		case string, int, int64:
-			if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
+			if s := strings.TrimSpace(anyutil.String(item)); s != "" {
 				out[s] = true
 			}
 		}
@@ -457,7 +457,7 @@ func (r *GatewayRunner) chatScopedGrant(ctx context.Context, source *gateway.Ses
 			return true
 		}
 		if extra, err := r.adapterExtraForSource(ctx, source); err == nil {
-			if groupAllowed := extra["group_allowed_chats"]; pyrepr.Truthy(groupAllowed) && allows(coerceAllowSet(groupAllowed), source.ChatID) {
+			if groupAllowed := extra["group_allowed_chats"]; anyutil.IsTrue(groupAllowed) && allows(coerceAllowSet(groupAllowed), source.ChatID) {
 				return true
 			}
 		}
@@ -475,7 +475,7 @@ func (r *GatewayRunner) chatScopedGrant(ctx context.Context, source *gateway.Ses
 			}
 			mode, err := gateway.ExtraOrSecret(ctx, extra, "allow_bots", allowBotsVar, "none", false)
 			if err == nil {
-				switch strings.TrimSpace(strings.ToLower(pyrepr.Str(mode))) {
+				switch strings.TrimSpace(strings.ToLower(anyutil.String(mode))) {
 				case "mentions", "all":
 					return true
 				}
@@ -671,8 +671,8 @@ func (r *GatewayRunner) getUnauthorizedDMBehavior(ctx context.Context, platform 
 	if platform != "" {
 		dmPolicy := r.adapterPolicy(ctx, platform, "dm", profile)
 		if dmPolicy == "" {
-			if raw := r.configExtra(platform)["dm_policy"]; pyrepr.Truthy(raw) {
-				dmPolicy = strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
+			if raw := r.configExtra(platform)["dm_policy"]; anyutil.IsTrue(raw) {
+				dmPolicy = strings.ToLower(strings.TrimSpace(anyutil.String(raw)))
 			}
 		}
 		if dmPolicy == "pairing" {
@@ -682,7 +682,7 @@ func (r *GatewayRunner) getUnauthorizedDMBehavior(ctx context.Context, platform 
 			return "ignore"
 		}
 		entry := registryEntry(ctx, platform)
-		if pyrepr.Truthy(gateway.AuthzField(string(platform), "allowlist_suppresses_pairing", entry)) {
+		if anyutil.IsTrue(gateway.AuthzField(string(platform), "allowlist_suppresses_pairing", entry)) {
 			allowlistKeys = append([]string{authzFieldText(platform, "allowed_users_env", entry), groupUserEnv[platform],
 				groupChatEnv(ctx, platform, entry)}, allowlistKeys...)
 		}

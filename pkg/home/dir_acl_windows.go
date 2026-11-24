@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"strconv"
 	"strings"
 	"unsafe"
 
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	"golang.org/x/sys/windows"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -48,7 +47,7 @@ type winAPIError struct {
 }
 
 func (e *winAPIError) Error() string {
-	return fmt.Sprintf("(%d, %s, %s)", uint32(e.errno), pyrepr.StrRepr(e.fn), pyrepr.StrRepr(e.errno.Error()))
+	return fmt.Sprintf("(%d, %s, %s)", uint32(e.errno), strconv.Quote(e.fn), strconv.Quote(e.errno.Error()))
 }
 
 func apiErr(fn string, err error) error {
@@ -188,7 +187,7 @@ func grantNativeACL(path string, isDir bool, expected string) (bool, error) {
 			return false, err
 		}
 		final = stripWin32Prefix(final)
-		if pypath.Normcase(strings.TrimRight(final, `\`)) != pypath.Normcase(strings.TrimRight(expected, `\`)) {
+		if pathutil.FoldCase(strings.TrimRight(final, `\`)) != pathutil.FoldCase(strings.TrimRight(expected, `\`)) {
 			return false, &ReparsePointRefused{fmt.Sprintf("%s resolves to %s, not %s", path, final, expected)}
 		}
 	}

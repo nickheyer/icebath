@@ -3,9 +3,8 @@ package gatewayrun
 import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Spreads resolved runtime keyword arguments onto agent constructor options, the AIAgent of a runtime splat
@@ -24,13 +23,13 @@ func applyRuntimeKwargs(o *agent.AIAgentOptions, runtime map[string]any) {
 		o.Args = append([]string(nil), args...)
 	} else if args, ok := runtime["args"].([]any); ok {
 		for _, a := range args {
-			o.Args = append(o.Args, pyrepr.Str(a))
+			o.Args = append(o.Args, anyutil.String(a))
 		}
 	}
 	o.CredentialPool, _ = runtime["credential_pool"].(*provider.Pool)
 	o.RequestOverrides, _ = runtime["request_overrides"].(map[string]any)
 	if raw, ok := runtime["max_tokens"]; ok && raw != nil {
-		if n, err := pyint.Int64(raw); err == nil {
+		if n, err := anyutil.ToInt(raw); err == nil {
 			v := int(n)
 			o.MaxTokens = &v
 		}
@@ -38,7 +37,7 @@ func applyRuntimeKwargs(o *agent.AIAgentOptions, runtime map[string]any) {
 	if raw, ok := runtime["capabilities"].(map[string]any); ok {
 		o.Capabilities = make(map[string]bool, len(raw))
 		for k, v := range raw {
-			o.Capabilities[k] = pyrepr.Truthy(v)
+			o.Capabilities[k] = anyutil.IsTrue(v)
 		}
 	}
 }

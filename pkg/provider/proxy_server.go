@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Stripped when forwarding upstream, host and content-length are recomputed, authorization is replaced with the bearer
@@ -179,7 +178,7 @@ func openUpstream(ctx context.Context, r *http.Request, relPath string, body []b
 	req, err := http.NewRequestWithContext(reqCtx, r.Method, upstreamURL, reader)
 	if err != nil {
 		cancel()
-		return nil, nil, &proxyError{500, pyrepr.ExceptionMessage(err), "proxy_error"}
+		return nil, nil, &proxyError{500, err.Error(), "proxy_error"}
 	}
 	req.Header = filterHeaders(r.Header, proxyRequestDropHeaders)
 	req.Header.Set("Authorization", cred.tokenType()+" "+cred.Bearer)
@@ -190,8 +189,8 @@ func openUpstream(ctx context.Context, r *http.Request, relPath string, body []b
 		if (errors.As(err, &netErr) && netErr.Timeout()) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, nil, &proxyError{504, "upstream request timed out", "upstream_timeout"}
 		}
-		log.Warn(fmt.Sprintf("proxy: upstream connection failed: %s", pyrepr.ExceptionMessage(err)))
-		return nil, nil, &proxyError{502, fmt.Sprintf("upstream connection failed: %s", pyrepr.ExceptionMessage(err)), "upstream_unreachable"}
+		log.Warn(fmt.Sprintf("proxy: upstream connection failed: %s", err.Error()))
+		return nil, nil, &proxyError{502, fmt.Sprintf("upstream connection failed: %s", err.Error()), "upstream_unreachable"}
 	}
 	return resp, cancel, nil
 }
@@ -250,7 +249,7 @@ func streamBack(w http.ResponseWriter, upstream *http.Response, cancel context.C
 				if tracker != nil {
 					tracker.MarkInterrupted()
 				}
-				log.Warn(fmt.Sprintf("proxy: streaming interrupted: %s", pyrepr.ExceptionMessage(err)))
+				log.Warn(fmt.Sprintf("proxy: streaming interrupted: %s", err.Error()))
 				return
 			}
 			flush()
@@ -265,12 +264,12 @@ func streamBack(w http.ResponseWriter, upstream *http.Response, cancel context.C
 		if tracker != nil {
 			tracker.MarkInterrupted()
 		}
-		log.Warn(fmt.Sprintf("proxy: streaming interrupted: %s", pyrepr.ExceptionMessage(chunk.err)))
+		log.Warn(fmt.Sprintf("proxy: streaming interrupted: %s", chunk.err.Error()))
 		return
 	}
 	if tracker != nil && tracker.ShouldAppendDone() {
 		if _, err := w.Write(DoneSSEFrame); err != nil {
-			log.Debug(fmt.Sprintf("proxy: DONE append skipped: %s", pyrepr.ExceptionMessage(err)))
+			log.Debug(fmt.Sprintf("proxy: DONE append skipped: %s", err.Error()))
 			return
 		}
 		flush()
@@ -335,8 +334,8 @@ func handleProxy(w http.ResponseWriter, r *http.Request, adapter UpstreamAdapter
 	}
 	cred, err := adapter.GetCredential()
 	if err != nil {
-		log.Warn(fmt.Sprintf("proxy: credential resolution failed: %s", pyrepr.ExceptionMessage(err)))
-		proxyJSONError(w, http.StatusUnauthorized, pyrepr.ExceptionMessage(err), "upstream_auth_failed")
+		log.Warn(fmt.Sprintf("proxy: credential resolution failed: %s", err.Error()))
+		proxyJSONError(w, http.StatusUnauthorized, err.Error(), "upstream_auth_failed")
 		return
 	}
 	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, proxyMaxRequestBytes))
@@ -346,7 +345,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request, adapter UpstreamAdapter
 			proxyJSONError(w, http.StatusRequestEntityTooLarge, fmt.Sprintf("Maximum request body size %d exceeded", proxyMaxRequestBytes), "request_entity_too_large")
 			return
 		}
-		proxyJSONError(w, http.StatusBadRequest, pyrepr.ExceptionMessage(err), "bad_request")
+		proxyJSONError(w, http.StatusBadRequest, err.Error(), "bad_request")
 		return
 	}
 	upstream, cancel, perr := openUpstream(r.Context(), r, relPath, body, cred, log)
@@ -357,7 +356,7 @@ func handleProxy(w http.ResponseWriter, r *http.Request, adapter UpstreamAdapter
 	if upstream.StatusCode == http.StatusUnauthorized || upstream.StatusCode == http.StatusTooManyRequests {
 		retry, err := adapter.GetRetryCredential(cred, upstream.StatusCode)
 		if err != nil {
-			log.Warn(fmt.Sprintf("proxy: retry credential resolution failed: %s", pyrepr.ExceptionMessage(err)))
+			log.Warn(fmt.Sprintf("proxy: retry credential resolution failed: %s", err.Error()))
 			retry = nil
 		}
 		if retry != nil {

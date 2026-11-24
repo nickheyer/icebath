@@ -8,7 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/webhooksubs"
 )
 
@@ -34,7 +34,7 @@ func TestWebhookCLIRoutedCronSubscribeExitsZero(t *testing.T) {
 		t.Fatalf("exit status %d", code)
 	}
 	route, _ := webhooksubs.Load(root).Get("route")
-	obj, ok := route.(*pyjson.Object)
+	obj, ok := route.(*jsonutil.Object)
 	if !ok {
 		t.Fatalf("route %v", route)
 	}

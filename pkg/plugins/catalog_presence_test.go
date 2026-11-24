@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const presenceSHA = "0000000000000000000000000000000000000000"
@@ -89,7 +89,7 @@ func presenceWorld(t *testing.T, entries []*PluginCatalogEntry, manifests map[st
 	presenceRawBase = srv.URL
 	presenceCatalog = func(context.Context) []*PluginCatalogEntry { return entries }
 	presenceCache.Lock()
-	presenceCache.manifests = map[[3]string]*pyjson.Object{}
+	presenceCache.manifests = map[[3]string]*jsonutil.Object{}
 	presenceCache.Unlock()
 	t.Cleanup(func() { presenceRawBase, presenceCatalog = prevBase, prevCatalog })
 	return &hits

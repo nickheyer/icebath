@@ -12,13 +12,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Registry defaults under the administrator's pins, the config document a run that ignores the user's config.yaml reads
@@ -31,7 +32,7 @@ func loadPrefillMessages(ctx context.Context, filePath, baseDir string) []any {
 	if filePath == "" {
 		return []any{}
 	}
-	path := pypath.Expanduser(filePath)
+	path := pathutil.ExpandUser(filePath)
 	if !filepath.IsAbs(path) {
 		if baseDir == "" {
 			baseDir = home.Dir(ctx)
@@ -47,12 +48,12 @@ func loadPrefillMessages(ctx context.Context, filePath, baseDir string) []any {
 		pkgLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %s", path, err))
 		return []any{}
 	}
-	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+	data, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %s", path, err))
 		return []any{}
 	}
-	list, ok := pyjson.Plain(data).([]any)
+	list, ok := jsonutil.Plain(data).([]any)
 	if !ok {
 		pkgLog().Warn(fmt.Sprintf("Prefill messages file must contain a JSON array: %s", path))
 		return []any{}
@@ -68,19 +69,19 @@ func resolvePrefillMessagesFile(ctx context.Context) string {
 	return strings.TrimSpace(settings.PrefillMessagesFile.Get(ctx))
 }
 
-// Python str of a value, empty for None and for the empty string
+// Text of a value, empty for nil and for false, zero and empty values
 func strOrEmpty(v any) string {
-	if v == nil || !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Parses a reasoning effort level, warning once when a non empty value is unknown
 func parseReasoningConfig(effort any) map[string]any {
 	result := config.ParseReasoningEffort(effort)
-	if pyrepr.Truthy(effort) && strings.TrimSpace(pyrepr.Str(effort)) != "" && result == nil {
-		pkgLog().Warn(fmt.Sprintf("Unknown reasoning_effort '%s', using default (medium)", pyrepr.Str(effort)))
+	if anyutil.IsTrue(effort) && strings.TrimSpace(anyutil.String(effort)) != "" && result == nil {
+		pkgLog().Warn(fmt.Sprintf("Unknown reasoning_effort '%s', using default (medium)", anyutil.String(effort)))
 	}
 	return result
 }
@@ -153,71 +154,4 @@ func sessionFolder(ctx context.Context) string {
 		return cwd
 	}
 	return ""
-}
-
-// Python int() of a bool, integer, float or numeric string, false when it does not parse
-func pyIntOf(v any) (int, bool) {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1, true
-		}
-		return 0, true
-	case float64:
-		if math.IsNaN(x) || math.IsInf(x, 0) {
-			return 0, false
-		}
-		return int(x), true
-	case float32:
-		return pyIntOf(float64(x))
-	case string:
-		return pyIntString(x)
-	}
-	if n, ok := pyrepr.Int(v); ok && n.IsInt64() {
-		return int(n.Int64()), true
-	}
-	return 0, false
-}
-
-// Python int of a base ten string with Unicode digits and single underscores between digits, clamped to int
-func pyIntString(s string) (int, bool) {
-	s = strings.TrimSpace(s)
-	neg := false
-	if s != "" && (s[0] == '+' || s[0] == '-') {
-		neg, s = s[0] == '-', s[1:]
-	}
-	if s == "" {
-		return 0, false
-	}
-	digits := make([]byte, 0, len(s))
-	afterUnderscore := true
-	for _, r := range s {
-		if r == '_' {
-			if afterUnderscore {
-				return 0, false
-			}
-			afterUnderscore = true
-			continue
-		}
-		d, ok := pystr.DecimalValue(r)
-		if !ok {
-			return 0, false
-		}
-		digits = append(digits, byte('0'+d))
-		afterUnderscore = false
-	}
-	if afterUnderscore {
-		return 0, false
-	}
-	n, _ := new(big.Int).SetString(string(digits), 10)
-	if neg {
-		n.Neg(n)
-	}
-	switch {
-	case n.IsInt64():
-		return int(n.Int64()), true
-	case neg:
-		return math.MinInt, true
-	}
-	return math.MaxInt, true
 }

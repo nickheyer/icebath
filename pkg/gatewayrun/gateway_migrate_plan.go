@@ -9,11 +9,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // File in the default home recording the pre migration footprint
@@ -70,7 +70,7 @@ func (p *ProfileGateway) ServiceLabel() string {
 }
 
 // Manifest record of the footprint with None for every unknown field
-func (p *ProfileGateway) ToDict() *pyjson.Object {
+func (p *ProfileGateway) ToDict() *jsonutil.Object {
 	var pid, service, runAs, uid, runtimeHome any
 	if p.PID != 0 {
 		pid = int64(p.PID)
@@ -91,7 +91,7 @@ func (p *ProfileGateway) ToDict() *pyjson.Object {
 	if p.RuntimeHome != "" {
 		runtimeHome = p.RuntimeHome
 	}
-	return pyjson.ObjectOf("profile", p.Name, "home", p.Home, "pid", pid, "service", service, "services", services,
+	return jsonutil.ObjectOf("profile", p.Name, "home", p.Home, "pid", pid, "service", service, "services", services,
 		"run_as_user", runAs, "uid", uid, "runtime_home", runtimeHome)
 }
 
@@ -119,8 +119,8 @@ func removeVerb(s ServiceUnit) string {
 	return "uninstall"
 }
 
-func serviceDict(s ServiceUnit) *pyjson.Object {
-	return pyjson.ObjectOf("kind", s.Kind, "system", s.System)
+func serviceDict(s ServiceUnit) *jsonutil.Object {
+	return jsonutil.ObjectOf("kind", s.Kind, "system", s.System)
 }
 
 // Profiles, their gateway footprints, the flag, the live served record and the preflight verdicts
@@ -130,7 +130,7 @@ type MigrationPlan struct {
 	MultiplexFlagOn    bool
 	LiveServed         []string
 	LiveServedRecorded bool
-	Manifest           *pyjson.Object
+	Manifest           *jsonutil.Object
 	Interrupted        bool
 	Blockers           []string
 	Notices            []string
@@ -399,17 +399,17 @@ func listenerURL(defaultCfg *gateway.GatewayConfig, platformValue, profile strin
 	case "webhook":
 		host, port = "0.0.0.0", int64(8644)
 	}
-	if v := extra["host"]; pyrepr.Truthy(v) {
+	if v := extra["host"]; anyutil.IsTrue(v) {
 		host = v
 	}
-	if v := extra["port"]; pyrepr.Truthy(v) {
+	if v := extra["port"]; anyutil.IsTrue(v) {
 		port = v
 	}
 	tail := map[string]string{"api_server": "/v1/...", "webhook": "/webhooks/<route>"}[platformValue]
 	if tail == "" {
 		tail = "/..."
 	}
-	return fmt.Sprintf("http://%s:%s/p/%s%s", pyurl.FormatURLHost(pyrepr.Str(host)), pyrepr.Str(port), profile, tail)
+	return fmt.Sprintf("http://%s:%s/p/%s%s", urlutil.FormatHost(anyutil.String(host)), anyutil.String(port), profile, tail)
 }
 
 // Blocker for a secondary port binder without profile prefix ingress, a URL change notice when it has one

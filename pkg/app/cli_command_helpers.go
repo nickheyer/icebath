@@ -3,12 +3,12 @@ package app
 import (
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Ordered JSON object of a plain map, nested maps converted with their keys sorted
-func objectFromPlain(m map[string]any) *pyjson.Object {
-	out := pyjson.NewObject()
+func objectFromPlain(m map[string]any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)

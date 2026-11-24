@@ -1,13 +1,13 @@
 package tuihost
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Transport stand in that records the frames written to it
-type recordingTransport struct{ frames []*pyjson.Object }
+type recordingTransport struct{ frames []*jsonutil.Object }
 
-func (r *recordingTransport) Write(obj *pyjson.Object) bool {
+func (r *recordingTransport) Write(obj *jsonutil.Object) bool {
 	r.frames = append(r.frames, obj)
 	return true
 }

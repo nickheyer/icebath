@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const MaxSafeInteger = 1<<53 - 1
@@ -85,7 +85,7 @@ func ToWire(value any, path Path) (any, error) {
 				return nil, err
 			}
 			if _, dup := out[key]; dup {
-				return nil, config.NewConfigValueError(fmt.Sprintf("%s: two keys become the same string key %s", Encode(extend(path, key)), pyrepr.StrRepr(key)), "")
+				return nil, config.NewConfigValueError(fmt.Sprintf("%s: two keys become the same string key %s", Encode(extend(path, key)), strconv.Quote(key)), "")
 			}
 			w, err := ToWire(e, extend(path, key))
 			if err != nil {
@@ -97,7 +97,7 @@ func ToWire(value any, path Path) (any, error) {
 		config.SetMappingKeys(out, order)
 		return out, nil
 	}
-	return nil, config.NewConfigValueError(fmt.Sprintf("%s: a %s value cannot be stored in Remote Config", rootName(path), pyrepr.TypeName(value)), "")
+	return nil, config.NewConfigValueError(fmt.Sprintf("%s: a %s value cannot be stored in Remote Config", rootName(path), anyutil.Kind(value)), "")
 }
 
 // Integer kept when JSON safe, a decimal string with a warning when it is outside the safe range
@@ -123,7 +123,7 @@ func wireKey(key any, path Path) (string, error) {
 		return k.String(), nil
 	}
 	return "", config.NewConfigValueError(fmt.Sprintf("%s: a %s mapping key (%s) cannot be stored in Remote Config; quote it in YAML",
-		rootName(path), pyrepr.TypeName(key), pyrepr.Repr(key)), "")
+		rootName(path), anyutil.Kind(key), anyutil.Quote(key)), "")
 }
 
 // Python isoformat of an aware datetime with microseconds when present

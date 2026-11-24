@@ -8,30 +8,30 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Serializes every load, mutate and save of the restart failure counters file
 var restartFailureCountsLock sync.Mutex
 
 // Parsed counters, empty when the file is missing, unreadable or not a JSON object
-func readRestartFailureCounts(path string) *pyjson.Object {
+func readRestartFailureCounts(path string) *jsonutil.Object {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	counts, ok := data.(*pyjson.Object)
+	counts, ok := data.(*jsonutil.Object)
 	if !ok {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return counts
 }
@@ -41,7 +41,7 @@ func IncrementRestartFailureCounts(ctx context.Context, path string, activeSessi
 	restartFailureCountsLock.Lock()
 	defer restartFailureCountsLock.Unlock()
 	counts := readRestartFailureCounts(path)
-	next := pyjson.NewObject()
+	next := jsonutil.NewObject()
 	for _, key := range activeSessionKeys {
 		prev, _ := counts.Get(key)
 		n, err := pyAddOne(prev)
@@ -86,7 +86,7 @@ func ClearRestartFailureCount(ctx context.Context, path, sessionKey string) {
 	}
 	counts.Delete(sessionKey)
 	var err error
-	if len(counts.Keys) > 0 {
+	if counts.Len() > 0 {
 		err = config.AtomicJSONWriteWith(ctx, path, counts)
 	} else if rmErr := os.Remove(path); rmErr != nil && !errors.Is(rmErr, os.ErrNotExist) {
 		err = rmErr

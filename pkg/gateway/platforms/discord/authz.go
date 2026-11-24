@@ -10,8 +10,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/settings"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Inbound message with its channel resolved from the client cache
@@ -21,7 +21,7 @@ type inboundMessage struct {
 }
 
 // Python isoformat of a timestamp
-func isoformat(t time.Time) string { return pydatetime.ISOFormat(t) }
+func isoformat(t time.Time) string { return t.Format(timeutil.RFC3339Micro) }
 
 // Cached channel of an id, nil when the client or the entry is absent
 func (a *DiscordAdapter) stateChannel(id string) *discordgo.Channel {

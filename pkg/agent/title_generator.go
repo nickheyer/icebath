@@ -17,15 +17,15 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -98,11 +98,11 @@ func buildTitlePromptTemplate() string {
 }
 
 // Response format constraining the reply to one title field
-func titleResponseFormat() *pyjson.Object {
-	return pyjson.ObjectOf(
+func titleResponseFormat() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"type", "json_schema",
-		"json_schema", pyjson.ObjectOf("name", "session_title", "strict", true, "schema", pyjson.ObjectOf(
-			"type", "object", "properties", pyjson.ObjectOf("title", pyjson.ObjectOf("type", "string")), "required", []any{"title"}, "additionalProperties", false)),
+		"json_schema", jsonutil.ObjectOf("name", "session_title", "strict", true, "schema", jsonutil.ObjectOf(
+			"type", "object", "properties", jsonutil.ObjectOf("title", jsonutil.ObjectOf("type", "string")), "required", []any{"title"}, "additionalProperties", false)),
 	)
 }
 
@@ -123,10 +123,10 @@ func modelTitleUpgradeEnabled(ctx context.Context) bool {
 
 // Python str of a value after an or empty string fallback
 func titleStrOr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // True when the title call would share the turn's own self hosted endpoint and must wait for the turn
@@ -348,8 +348,8 @@ func titleFirstLine(text string) string {
 
 // Title of a title payload by strict parse then a loose field scan, false when absent
 func extractJSONTitle(raw string) (string, bool) {
-	if parsed, err := pyjson.Loads(raw); err == nil {
-		if obj, ok := parsed.(*pyjson.Object); ok {
+	if parsed, err := jsonutil.Decode(raw); err == nil {
+		if obj, ok := parsed.(*jsonutil.Object); ok {
 			if v, ok := obj.Get("title"); ok {
 				if s, ok := v.(string); ok {
 					return strings.TrimSpace(s), true
@@ -362,7 +362,7 @@ func extractJSONTitle(raw string) (string, bool) {
 		return "", false
 	}
 	group := m.GroupByNumber(1).String()
-	if v, err := pyjson.Loads(`"` + group + `"`); err == nil {
+	if v, err := jsonutil.Decode(`"` + group + `"`); err == nil {
 		if s, ok := v.(string); ok {
 			return strings.TrimSpace(s), true
 		}
@@ -538,10 +538,10 @@ func requestTitle(ctx context.Context, prompt, snippet string, o generateTitleOp
 		return "", err
 	}
 	content := ""
-	if v := provider.MessageField(message, "content"); pyrepr.Truthy(v) {
+	if v := provider.MessageField(message, "content"); anyutil.IsTrue(v) {
 		s, ok := v.(string)
 		if !ok {
-			return "", &pyint.Error{Kind: "AttributeError", Msg: "title model reply content is " + errchain.Kind(v) + " where text was expected"}
+			return "", &errorutil.Error{Kind: "AttributeError", Msg: "title model reply content is " + errchain.Kind(v) + " where text was expected"}
 		}
 		content = s
 	}
@@ -669,7 +669,7 @@ func hasUpgradedTitle(ctx context.Context, db any, sessionID string) (upgraded b
 
 // True for a ValueError raised by the session store
 func isTitleValueError(err error) bool {
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	return errors.As(err, &pe) && pe.Kind == "ValueError"
 }
 
@@ -696,7 +696,7 @@ func persistSessionTitle(ctx context.Context, db any, sessionID, title, source s
 		}
 		w, ok := db.(sessionTitleSetter)
 		if !ok {
-			return "", &pyint.Error{Kind: "AttributeError", Msg: "the session store cannot set session titles"}
+			return "", &errorutil.Error{Kind: "AttributeError", Msg: "the session store cannot set session titles"}
 		}
 		done, err := w.SetSessionTitle(ctx, sessionID, candidate)
 		if err != nil {

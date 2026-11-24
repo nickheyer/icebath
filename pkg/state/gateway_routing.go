@@ -6,7 +6,7 @@ import (
 	"sort"
 	"strconv"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Recursive CTE naming a session plus the compression ancestors a resume keeps on one routing peer
@@ -292,7 +292,7 @@ func (d *SessionDB) LoadGatewayRoutingEntries(ctx context.Context, scope string)
 }
 
 // Keyed open rows older than the cutoff with no message, token, call, activity, title or keep intent
-func (d *SessionDB) ListNeverActiveKeyedSessions(ctx context.Context, olderThanDays float64) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListNeverActiveKeyedSessions(ctx context.Context, olderThanDays float64) ([]*jsonutil.Object, error) {
 	if olderThanDays < 0 {
 		repr, _ := pyReprFloat(olderThanDays)
 		return nil, pyValueError("older_than_days must be >= 0, got " + repr + ": a negative " +
@@ -324,15 +324,15 @@ func (d *SessionDB) ListNeverActiveKeyedSessions(ctx context.Context, olderThanD
 }
 
 // Decoded routing entry object, nil for a malformed, non text or non object entry
-func routingEntryObject(raw any) *pyjson.Object {
+func routingEntryObject(raw any) *jsonutil.Object {
 	if !pyTruthy(raw) {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return localReceiptObject(raw)
 }
 
 // Routing entry in any scope whose current owner is the session, nil when none names it
-func (d *SessionDB) GatewayRoutingEntryForSession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) GatewayRoutingEntryForSession(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	rows, err := d.readAll(ctx, "SELECT entry_json FROM gateway_routing")
 	if err != nil {
 		return nil, err
@@ -492,7 +492,7 @@ func (d *SessionDB) PruneNeverActiveKeyedSessions(ctx context.Context, o NeverAc
 }
 
 // Newest row per routing key, filtered by source platform and open rows unless every row is asked for
-func (d *SessionDB) ListGatewaySessions(ctx context.Context, platform string, activeOnly bool) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListGatewaySessions(ctx context.Context, platform string, activeOnly bool) ([]*jsonutil.Object, error) {
 	d.FlushForRead(ctx)
 	query := `
             SELECT sessions.*,
@@ -520,7 +520,7 @@ func (d *SessionDB) ListGatewaySessions(ctx context.Context, platform string, ac
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*pyjson.Object, len(rows))
+	out := make([]*jsonutil.Object, len(rows))
 	for i, r := range rows {
 		out[i] = d.sessionRowDict(r)
 	}
@@ -537,11 +537,11 @@ type GatewayPeerQuery struct {
 }
 
 // Latest recoverable gateway row for the peer by exact key, then by the profile fenced full peer tuple
-func (d *SessionDB) FindLatestGatewaySessionForPeer(ctx context.Context, q GatewayPeerQuery) (*pyjson.Object, error) {
+func (d *SessionDB) FindLatestGatewaySessionForPeer(ctx context.Context, q GatewayPeerQuery) (*jsonutil.Object, error) {
 	if q.SessionKey == nil || *q.SessionKey == "" {
 		return nil, nil
 	}
-	var found *pyjson.Object
+	var found *jsonutil.Object
 	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		rows, err := queryObjects(ctx, conn, peerByKeySQL, *q.SessionKey, q.Source)
 		if err != nil {
@@ -572,20 +572,20 @@ func (d *SessionDB) FindLatestGatewaySessionForPeer(ctx context.Context, q Gatew
 }
 
 // Message bearing rows that lost their routing identity, adoptable only when exactly one keyed predecessor is named
-func (d *SessionDB) FindOrphanedGatewaySessions(ctx context.Context, maxGapS *float64) ([]*pyjson.Object, error) {
+func (d *SessionDB) FindOrphanedGatewaySessions(ctx context.Context, maxGapS *float64) ([]*jsonutil.Object, error) {
 	gap := orphanAdoptionMaxGapS
 	if maxGapS != nil {
 		gap = *maxGapS
 	}
 	owner := nullStr(d.ownProfileName())
-	var records []*pyjson.Object
+	var records []*jsonutil.Object
 	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		orphans, err := queryObjects(ctx, conn, orphansSQL)
 		if err != nil {
 			return err
 		}
 		for _, orphan := range orphans {
-			var donor *pyjson.Object
+			var donor *jsonutil.Object
 			reason, evidence := "", ""
 			orphanOwner := rowValue(orphan, "profile_name")
 			if !pyTruthy(orphanOwner) {
@@ -625,7 +625,7 @@ func (d *SessionDB) FindOrphanedGatewaySessions(ctx context.Context, maxGapS *fl
 					donor = candidates[0]
 				}
 			}
-			record := pyjson.NewObject()
+			record := jsonutil.NewObject()
 			record.Set("orphan_id", rowValue(orphan, "id"))
 			record.Set("source", rowValue(orphan, "source"))
 			record.Set("message_count", rowValue(orphan, "message_count"))
@@ -755,9 +755,9 @@ func (d *SessionDB) ResetHygieneFailureStreak(ctx context.Context, sessionKey st
 }
 
 // Copy of a runtime object without its None valued keys
-func withoutNone(o *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range o.Keys {
+func withoutNone(o *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, k := range o.Keys() {
 		if v, _ := o.Get(k); v != nil {
 			out.Set(k, v)
 		}
@@ -766,31 +766,31 @@ func withoutNone(o *pyjson.Object) *pyjson.Object {
 }
 
 // Persisted runtime route of a session row, nested gateway runtime first, then the top level keys and billing provider
-func SessionGatewayRuntime(sessionMeta *pyjson.Object) *pyjson.Object {
+func SessionGatewayRuntime(sessionMeta *jsonutil.Object) *jsonutil.Object {
 	meta := sessionMeta
 	if meta == nil {
-		meta = pyjson.NewObject()
+		meta = jsonutil.NewObject()
 	}
 	rawValue, _ := meta.Get("model_config")
 	if text, ok := rawValue.(string); ok {
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
-			decoded = pyjson.NewObject()
+			decoded = jsonutil.NewObject()
 		}
 		rawValue = decoded
 	}
-	raw, ok := rawValue.(*pyjson.Object)
+	raw, ok := rawValue.(*jsonutil.Object)
 	if !ok {
-		raw = pyjson.NewObject()
+		raw = jsonutil.NewObject()
 	}
 	runtimeValue, _ := raw.Get("gateway_runtime")
-	runtime, isDict := runtimeValue.(*pyjson.Object)
+	runtime, isDict := runtimeValue.(*jsonutil.Object)
 	if isDict {
 		if provider, _ := runtime.Get("provider"); pyTruthy(provider) {
 			return withoutNone(runtime)
 		}
 	}
-	top := pyjson.NewObject()
+	top := jsonutil.NewObject()
 	for _, key := range []string{"provider", "base_url", "api_mode"} {
 		if v, _ := raw.Get(key); pyTruthy(v) {
 			top.Set(key, v)
@@ -816,7 +816,7 @@ func SessionGatewayRuntime(sessionMeta *pyjson.Object) *pyjson.Object {
 		return top
 	}
 	if !isDict {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return withoutNone(runtime)
 }
@@ -830,12 +830,12 @@ func (d *SessionDB) RequestHandoff(ctx context.Context, sessionID, platform stri
 }
 
 // State, platform and error of the session's handoff record, nil when it has none or the read fails
-func (d *SessionDB) GetHandoffState(ctx context.Context, sessionID string) *pyjson.Object {
+func (d *SessionDB) GetHandoffState(ctx context.Context, sessionID string) *jsonutil.Object {
 	row, err := d.readOne(ctx, "SELECT handoff_state, handoff_platform, handoff_error FROM sessions WHERE id = ?", sessionID)
 	if err != nil || row == nil {
 		return nil
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("state", rowValue(row, "handoff_state"))
 	out.Set("platform", rowValue(row, "handoff_platform"))
 	out.Set("error", rowValue(row, "handoff_error"))
@@ -843,15 +843,15 @@ func (d *SessionDB) GetHandoffState(ctx context.Context, sessionID string) *pyjs
 }
 
 // Every session pending handoff, oldest first, empty when the read fails
-func (d *SessionDB) ListPendingHandoffs(ctx context.Context) []*pyjson.Object {
+func (d *SessionDB) ListPendingHandoffs(ctx context.Context) []*jsonutil.Object {
 	rows, err := d.readAll(ctx, "SELECT s.*, COALESCE(sp.prompt, s.system_prompt) AS _system_prompt_resolved FROM sessions s "+
 		"LEFT JOIN system_prompts sp ON sp.hash = s.system_prompt_hash "+
 		"WHERE s.handoff_state = 'pending' "+
 		"ORDER BY s.started_at ASC")
 	if err != nil {
-		return []*pyjson.Object{}
+		return []*jsonutil.Object{}
 	}
-	out := make([]*pyjson.Object, len(rows))
+	out := make([]*jsonutil.Object, len(rows))
 	for i, r := range rows {
 		out[i] = d.sessionRowDict(r)
 	}

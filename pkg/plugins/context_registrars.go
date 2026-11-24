@@ -16,7 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
@@ -183,13 +183,10 @@ func (t *PluginTask) Err() error { return t.err }
 // Requests cancellation of the task context
 func (t *PluginTask) Cancel() { t.cancel() }
 
-// Starts a supervised task on the running loop, unload cancelling its context
+// Starts a supervised task on its own goroutine, unload cancelling its context
 func (c *Context) SpawnTask(ctx context.Context, fn func(context.Context) error, name string) (*PluginTask, error) {
 	if fn == nil {
 		return nil, errors.New("spawn_task expects a coroutine")
-	}
-	if !runningLoop(ctx) {
-		return nil, errors.New("no running event loop")
 	}
 	if name == "" {
 		name = "plugin:" + c.PluginID() + ":task"
@@ -284,7 +281,7 @@ func (c *Context) RegisterTool(ctx context.Context, spec ToolSpec) (*Registratio
 type ToolSpec struct {
 	Name        string
 	Toolset     string
-	Schema      *pyjson.Object
+	Schema      *jsonutil.Object
 	Handler     tools.Handler
 	Check       func(env *tools.Env) bool
 	RequiresEnv []string
@@ -633,7 +630,7 @@ func (c *Context) RegisterCommand(name string, handler PluginCommandHandler, des
 
 // Validation and lease body of RegisterCommand inside the replacement transaction
 func (c *Context) registerCommand(name string, handler PluginCommandHandler, description, argsHint, argumentMode string) *Registration {
-	clean := strings.ReplaceAll(strings.TrimLeft(pyStrip(strings.ToLower(name)), "/"), " ", "-")
+	clean := strings.ReplaceAll(strings.TrimLeft(strings.TrimSpace(strings.ToLower(name)), "/"), " ", "-")
 	if clean == "" {
 		pkgLog().Warn(fmt.Sprintf("Plugin '%s' tried to register a command with an empty name.", c.manifest.Name))
 		return nil
@@ -645,7 +642,7 @@ func (c *Context) registerCommand(name string, handler PluginCommandHandler, des
 			return nil
 		}
 	}
-	hint := pyStrip(argsHint)
+	hint := strings.TrimSpace(argsHint)
 	if description == "" {
 		description = "Plugin command"
 	}
@@ -663,9 +660,6 @@ func (c *Context) registerCommand(name string, handler PluginCommandHandler, des
 	return registerEntry(c, "command", clean, c.manager.pluginCommands, entry, nil,
 		fmt.Sprintf("Plugin %s registered command: /%s", c.manifest.Name, clean))
 }
-
-// Python str.strip over Unicode whitespace
-func pyStrip(s string) string { return strings.TrimFunc(s, unicode.IsSpace) }
 
 // In session slash command a plugin registered
 type PluginCommand struct {
@@ -868,7 +862,7 @@ func (c *Context) registerSlackActionHandler(actionID, callback any, text string
 	if !callable(callback) {
 		return nil, c.refuse("a Slack action handler with a non-callable callback")
 	}
-	if s, isStr := actionID.(string); actionID == nil || (isStr && pyStrip(s) == "") {
+	if s, isStr := actionID.(string); actionID == nil || (isStr && strings.TrimSpace(s) == "") {
 		return nil, c.refuse("a Slack action handler with an empty action_id")
 	}
 	entry := &SlackActionHandler{ActionID: actionID, Callback: callback, Plugin: c.manifest.Name}
@@ -904,7 +898,7 @@ func (c *Context) RegisterPlatformHandler(platform string, factory any) error {
 	if !callable(factory) {
 		return c.refuse("a platform handler factory with a non-callable factory")
 	}
-	key := strings.ToLower(pyStrip(platform))
+	key := strings.ToLower(strings.TrimSpace(platform))
 	if key == "" {
 		return c.refuse("a platform handler factory with an empty platform name")
 	}

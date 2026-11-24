@@ -17,14 +17,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var fireClaimHeartbeatGraceSecs = runClaimHeartbeatSeconds * 3
@@ -229,7 +229,7 @@ func (s *Store) runNoAgentJob(ctx context.Context, job *Job, jobID, jobName stri
 		s.log.Error(fmt.Sprintf("Job '%s': script execution raised unexpectedly", jobID), "error", err)
 		ok, output = false, fmt.Sprintf("Script execution failed: %s", err.Error())
 	}
-	nowISO := config.SafeStrftime(s.clk.now(), "%Y-%m-%d %H:%M:%S")
+	nowISO := s.clk.now().Format(time.DateTime)
 	header := jobDocHeader(jobName, jobID, nowISO, "no_agent (script)")
 	if !ok {
 		alert := fmt.Sprintf("⚠ Cron watchdog '%s' script failed\n\n%s\n\nTime: %s", jobName, output, nowISO)
@@ -255,7 +255,7 @@ func (s *Store) applyMonitorGate(ctx context.Context, job *Job, jobID, jobName s
 	if err != nil {
 		return nil, nil, err
 	}
-	now := config.SafeStrftime(s.clk.now(), "%Y-%m-%d %H:%M:%S")
+	now := s.clk.now().Format(time.DateTime)
 	header := jobDocHeader(jobName, jobID, now, "monitor")
 	if !mon.OK {
 		monErr := ""
@@ -323,7 +323,7 @@ func (s *Store) loadCronJobConfig(ctx context.Context, job *Job, jobID, jobName 
 	if model == "" {
 		jobModel := "None"
 		if job.Model != nil {
-			jobModel = pyrepr.Repr(*job.Model)
+			jobModel = anyutil.Quote(*job.Model)
 		}
 		return jc, fmt.Errorf("Cron job '%s' has no model configured (job.model=%s, cron.model and model.default empty, ICEBATH_MODEL unset). Set a per-job model via `icebath cron edit %s --model <name>` or set a default with `icebath model <name>`.",
 			jobName, jobModel, jobID)
@@ -341,7 +341,7 @@ func (s *Store) loadPrefillMessages(ctx context.Context, jobID string) []any {
 	if prefillFile == "" {
 		return nil
 	}
-	pfpath, _ := pypath.PathExpanduser(prefillFile)
+	pfpath, _ := pathutil.ExpandUserPath(prefillFile)
 	if !filepath.IsAbs(pfpath) {
 		pfpath = filepath.Join(s.home, pfpath)
 	}
@@ -410,7 +410,7 @@ func (s *Store) blockedConfigResult(ctx context.Context, jobID, jobName, reason 
 		"**Reason:** %s\n\n"+
 		"Icebath tries again at the next scheduled time and clears this state on the first healthy run; this alert is not repeated. "+
 		"Check with `icebath cron doctor`. Set `cron.preflight: false` in config.yaml to disable this check.",
-		jobName, jobID, config.SafeStrftime(s.clk.now(), "%Y-%m-%d %H:%M:%S"), reason)
+		jobName, jobID, s.clk.now().Format(time.DateTime), reason)
 	return jobRunOutcome{false, doc, "", strPtr(marker + " " + reason)}
 }
 
@@ -454,7 +454,7 @@ func (s *Store) resolveJobRuntime(ctx context.Context, job *Job, jobID string, j
 			continue
 		}
 		fbBase := ""
-		if pyTruthy(entry["base_url"]) {
+		if anyutil.IsTrue(entry["base_url"]) {
 			fbBase = pyStrOrEmpty(entry["base_url"])
 		}
 		fbKey := provider.ResolveFallbackEntryAPIKey(ctx, s.home, entry)
@@ -589,7 +589,7 @@ func (s *Store) raiseInactivityTimeout(a CronAgent, jobName string, limitS float
 	}
 	secsAgo, _, _ := anyFloat(activity["seconds_since_activity"])
 	tool := "none"
-	if pyTruthy(activity["current_tool"]) {
+	if anyutil.IsTrue(activity["current_tool"]) {
 		tool = pyStrOrEmpty(activity["current_tool"])
 	}
 	apiCalls := activity["api_call_count"]
@@ -872,7 +872,7 @@ func (s *Store) finalizeCronSession(ctx context.Context, db cronSessionDB, a Cro
 	if titleBase == "" {
 		titleBase = "cron " + jobID
 	}
-	cronTitle := fmt.Sprintf("%s · %s", titleBase, config.SafeStrftime(s.clk.now(), "%b %d %H:%M"))
+	cronTitle := fmt.Sprintf("%s · %s", titleBase, s.clk.now().Format("Jan 02 15:04"))
 	titled, err := setCronSessionTitle(ctx, b, finalID, cronTitle)
 	if err == nil && titled == "" {
 		_, err = setCronSessionTitle(ctx, b, finalID, "cron "+jobID)
@@ -938,7 +938,7 @@ func (s *Store) runDocHeader(job *Job, title, jobID, prompt, promptStamp string)
 		display = "N/A"
 	}
 	return fmt.Sprintf("# Cron Job: %s\n\n**Job ID:** %s\n**Run Time:** %s\n**Schedule:** %s\n\n%s%s%s%s",
-		title, jobID, config.SafeStrftime(s.clk.now(), "%Y-%m-%d %H:%M:%S"), display, promptStamp, promptHeading, prompt, promptSeparator)
+		title, jobID, s.clk.now().Format(time.DateTime), display, promptStamp, promptHeading, prompt, promptSeparator)
 }
 
 // Runs every pre agent gate and builds the prompt, an early outcome short circuits the run
@@ -982,7 +982,7 @@ func (s *Store) prepareJobPrompt(ctx context.Context, job *Job, jobID, jobName s
 		if ok && !parseWakeGate(output) {
 			s.log.Info(fmt.Sprintf("Job '%s' (ID: %s): wakeAgent=false, skipping agent run", jobName, jobID))
 			doc := fmt.Sprintf("# Cron Job: %s\n\n**Job ID:** %s\n**Run Time:** %s\n\nScript gate returned `wakeAgent=false` — agent skipped.\n",
-				jobName, jobID, config.SafeStrftime(s.clk.now(), "%Y-%m-%d %H:%M:%S"))
+				jobName, jobID, s.clk.now().Format(time.DateTime))
 			return &jobRunOutcome{true, doc, SilentMarker, nil}, "", nil
 		}
 	}
@@ -1006,7 +1006,7 @@ func (s *Store) prepareJobPrompt(ctx context.Context, job *Job, jobID, jobName s
 			"Audit the skill(s) attached to this job for prompt-injection payloads or invisible-unicode markers. "+
 			"If the skill is legitimate and the match is a false positive, rephrase the content to avoid the threat pattern "+
 			"(`tools/cronjob_tools.py::_CRON_THREAT_PATTERNS`).",
-			jobName, jobID, config.SafeStrftime(s.clk.now(), "%Y-%m-%d %H:%M:%S"), blocked.Error())
+			jobName, jobID, s.clk.now().Format(time.DateTime), blocked.Error())
 		return &jobRunOutcome{false, doc, "", strPtr(blocked.Error())}, "", nil
 	}
 	if prompt == nil {
@@ -1196,7 +1196,7 @@ func (s *Store) newFireAudit(job *Job, jobID, model string) *fireAudit {
 }
 
 func (f *fireAudit) write(result map[string]any, responseSilent bool, errText *string) {
-	rec := pyjson.NewObject()
+	rec := jsonutil.NewObject()
 	rec.Set("ts", utcnowISOms())
 	rec.Set("job_id", f.jobID)
 	rec.Set("fire_id", f.fireID)
@@ -1265,7 +1265,7 @@ func (s *Store) runJob(ctx context.Context, job *Job, o runJobOptions) (jobRunOu
 	if early != nil {
 		return *early, nil
 	}
-	cronSessionID := fmt.Sprintf("cron_%s_%s", jobID, config.SafeStrftime(s.clk.now(), "%Y%m%d_%H%M%S"))
+	cronSessionID := fmt.Sprintf("cron_%s_%s", jobID, s.clk.now().Format("20060102_150405"))
 	if isOwner {
 		cronSessionID = owner.SessionID
 	}

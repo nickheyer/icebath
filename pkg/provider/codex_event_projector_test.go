@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func codexNote(t *testing.T, text string) any {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatalf("fixture %s: %v", text, err)
 	}
@@ -145,7 +145,7 @@ func TestCodexProjectorHelpers(t *testing.T) {
 	if a := codexDeterministicCallID("exec", ""); a != codexDeterministicCallID("exec", "") || !strings.HasPrefix(a, "codex_exec_") || len(a) != len("codex_exec_")+16 {
 		t.Fatalf("missing id %q", a)
 	}
-	ordered := pyjson.NewObject()
+	ordered := jsonutil.NewObject()
 	ordered.Set("b", 1)
 	ordered.Set("a", 2)
 	if codexFormatToolArgs(ordered) != codexFormatToolArgs(map[string]any{"a": 2, "b": 1}) || codexFormatToolArgs(ordered) != `{"a": 2, "b": 1}` {

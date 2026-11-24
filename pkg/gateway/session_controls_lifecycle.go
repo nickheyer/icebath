@@ -7,8 +7,8 @@ import (
 	"errors"
 	"regexp"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Canonical local id abbreviation the TUI exit hint prints
@@ -41,7 +41,7 @@ func newRequestID() string {
 }
 
 // Session create verb, a titled create resolved, created and titled as one step per authority
-func (c *AuthorityConnection) create(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) create(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	raw, titled := params.Get("title")
 	if !titled {
 		return c.createSession(ctx, params, "")
@@ -60,7 +60,7 @@ func (c *AuthorityConnection) create(ctx context.Context, ref SessionRef, params
 }
 
 // Resolves a titled session or stages, commits, titles and hides a new one, then resumes it
-func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.Object, title string) (any, error) {
+func (c *AuthorityConnection) createSession(ctx context.Context, params *jsonutil.Object, title string) (any, error) {
 	a := c.authority
 	hidden, _ := params.Get("hidden")
 	params.Delete("hidden")
@@ -85,12 +85,12 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 	if ref == nil && title == "Bot Chat" {
 		bypass := false
 		for _, name := range bypassFields {
-			if params.GetOr(name, nil) == true {
+			if params.ValueOr(name, nil) == true {
 				bypass = true
 			}
 		}
 		if !bypass {
-			follows, err := stagedCreationFollows(ctx, a, c.actor, params.GetOr("request_id", nil))
+			follows, err := stagedCreationFollows(ctx, a, c.actor, params.ValueOr("request_id", nil))
 			if err != nil {
 				return nil, err
 			}
@@ -108,7 +108,7 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 			if _, set := params.Get("request_id"); !set {
 				params.Set("request_id", newRequestID())
 			}
-			sid, err := state.LocalIdentity(a.ProfileID, c.actor.Subject, params.GetOr("request_id", nil))
+			sid, err := state.LocalIdentity(a.ProfileID, c.actor.Subject, params.ValueOr("request_id", nil))
 			if err != nil {
 				return nil, err
 			}
@@ -117,13 +117,13 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 				return nil, err
 			}
 			if row == nil {
-				plain, _ := pyjson.Plain(params).(map[string]any)
+				plain, _ := jsonutil.Plain(params).(map[string]any)
 				if skillsPrompt, err = renderLaunchSkills(ctx, plain, sid); err != nil {
 					return nil, err
 				}
 			}
 		}
-		plain, _ := pyjson.Plain(params).(map[string]any)
+		plain, _ := jsonutil.Plain(params).(map[string]any)
 		existing, staged, err := stageLocalSession(ctx, a, c.actor, plain, localCreateOptions{SkillsPrompt: skillsPrompt,
 			ClientLocal: c.nativeOwner})
 		if err != nil {
@@ -147,7 +147,7 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 			existing = &restored
 		}
 		ref = existing
-		if params.GetOr("accept_hooks", nil) == true {
+		if params.ValueOr("accept_hooks", nil) == true {
 			receipt, err := a.DB.LocalReceipt(ctx, ref.SessionID)
 			if err != nil {
 				return nil, err
@@ -188,12 +188,12 @@ func (c *AuthorityConnection) createSession(ctx context.Context, params *pyjson.
 			}
 		}
 	}
-	return c.resume(ctx, *ref, pyjson.NewObject())
+	return c.resume(ctx, *ref, jsonutil.NewObject())
 }
 
 // Session info verb, the local session info plus its banner inventory
-func (c *AuthorityConnection) info(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	if len(params.Keys) != 1 || params.Keys[0] != "session_id" {
+func (c *AuthorityConnection) info(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
+	if params.Len() != 1 || params.Keys()[0] != "session_id" {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	if _, err := c.authority.Resolve(ctx, c.actor, ref); err != nil {
@@ -203,7 +203,7 @@ func (c *AuthorityConnection) info(ctx context.Context, ref SessionRef, params *
 }
 
 // Session revision verb, the revision, generation and execution state read without attaching, refreshing or subscribing
-func (c *AuthorityConnection) revision(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) revision(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if paramsOutside(params, "session_id") || ref.SessionID == "" {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -211,23 +211,23 @@ func (c *AuthorityConnection) revision(ctx context.Context, ref SessionRef, para
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("session_id", ref.SessionID, "revision", handle.Revision, "execution_generation", handle.ExecutionGeneration,
+	return jsonutil.ObjectOf("session_id", ref.SessionID, "revision", handle.Revision, "execution_generation", handle.ExecutionGeneration,
 		"running", handle.ExecutionState == "running", "authority_epoch", handle.AuthorityEpoch), nil
 }
 
 // Replay cursor a resume names, nil when it names none and a refusal when the cursor is malformed
-func replayCursorParam(params *pyjson.Object) (*ReplayCursor, error) {
+func replayCursorParam(params *jsonutil.Object) (*ReplayCursor, error) {
 	raw, named := params.Get("replay_from")
 	if !named || raw == nil {
 		return nil, nil
 	}
 	field := "replay_from"
-	cursor, isObj := raw.(*pyjson.Object)
+	cursor, isObj := raw.(*jsonutil.Object)
 	if !isObj {
 		return nil, state.NewRuntimeStoreError("invalid_params", &field, nil)
 	}
-	epoch, epochText := cursor.GetOr("epoch", nil).(string)
-	sequence, sequenced := pathIndex(cursor.GetOr("sequence", nil))
+	epoch, epochText := cursor.ValueOr("epoch", nil).(string)
+	sequence, sequenced := pathIndex(cursor.ValueOr("sequence", nil))
 	if !epochText || !sequenced {
 		return nil, state.NewRuntimeStoreError("invalid_params", &field, nil)
 	}
@@ -235,10 +235,10 @@ func replayCursorParam(params *pyjson.Object) (*ReplayCursor, error) {
 }
 
 // Session a resume names, latest or titled, a local id hint expanded and a lineage resolved to its owner
-func (c *AuthorityConnection) resumeTarget(ctx context.Context, ref SessionRef, params *pyjson.Object) (SessionRef, error) {
+func (c *AuthorityConnection) resumeTarget(ctx context.Context, ref SessionRef, params *jsonutil.Object) (SessionRef, error) {
 	a := c.authority
 	if latest, ok := params.Get("latest"); ok {
-		return resolveLatestSession(ctx, a, c.actor, latest, params.GetOr("workspace", nil))
+		return resolveLatestSession(ctx, a, c.actor, latest, params.ValueOr("workspace", nil))
 	}
 	if title, ok := params.Get("title"); ok {
 		found, err := resolveTitledSession(ctx, a, c.actor, title, false)
@@ -260,10 +260,10 @@ func (c *AuthorityConnection) resumeTarget(ctx context.Context, ref SessionRef, 
 		return SessionRef{}, err
 	}
 	row, err := a.DB.GetSession(ctx, ref.SessionID)
-	if err != nil || row == nil || len(row.Keys) == 0 {
+	if err != nil || row == nil || row.Len() == 0 {
 		return ref, err
 	}
-	source, _ := row.GetOr("source", nil).(string)
+	source, _ := row.ValueOr("source", nil).(string)
 	local := source == string(PlatformLocal)
 	for _, legacy := range state.LegacyLocalSources() {
 		if source == legacy {
@@ -289,7 +289,7 @@ func (c *AuthorityConnection) resumeTarget(ctx context.Context, ref SessionRef, 
 }
 
 // Session resume verb, the attach snapshot with transcript, pending rows, open prompts and local info
-func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	a := c.authority
 	cursor, err := replayCursorParam(params)
 	if err != nil {
@@ -303,7 +303,7 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 	if err := sessionLimitRefusal(ctx, c, ref.SessionID); err != nil {
 		return nil, err
 	}
-	if editor := params.GetOr("editor", nil); editor != nil {
+	if editor := params.ValueOr("editor", nil); editor != nil {
 		if err := a.Authorize(ctx, c.actor, ref, "session:control"); err != nil {
 			return nil, err
 		}
@@ -332,7 +332,7 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 		c.mu.Unlock()
 		refreshResumedPolicy(ctx, a, ref, attached)
 	}
-	omit := params.GetOr("omit_messages", nil) == true
+	omit := params.ValueOr("omit_messages", nil) == true
 	var replayFrom *ReplayCursor
 	replayed := false
 	if cursor != nil && ref.SessionID == requested {
@@ -353,7 +353,7 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 	delete(c.handedBack, ref.SessionID)
 	c.mu.Unlock()
 	c.spawnNotice(ctx, ref)
-	info := pyjson.ObjectOf("gateway_protocol", CanonicalGatewayProtocol)
+	info := jsonutil.ObjectOf("gateway_protocol", CanonicalGatewayProtocol)
 	attachedLive, ok := a.live(snapshot.Handle.Ref.SessionID)
 	if !ok {
 		return nil, &pyKeyError{key: snapshot.Handle.Ref.SessionID}
@@ -369,8 +369,8 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 		}
 	}
 	history := append([]map[string]any(nil), snapshot.History...)
-	display := pyjson.NewObject()
-	if pyTruthy(params.GetOr("display_projection", nil)) {
+	display := jsonutil.NewObject()
+	if pyTruthy(params.ValueOr("display_projection", nil)) {
 		shown := []map[string]any{}
 		for _, row := range history {
 			if !modelOnly(row) {
@@ -413,10 +413,10 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 	for _, request := range OpenServerRequests(attachedLive.EventStream, snapshot.Handle.Ref.SessionID) {
 		open = append(open, request)
 	}
-	result := pyjson.ObjectOf("session_id", ref.SessionID, "stored_session_id", ref.SessionID)
-	for _, part := range []*pyjson.Object{transcript, display} {
-		for _, key := range part.Keys {
-			result.Set(key, part.Vals[key])
+	result := jsonutil.ObjectOf("session_id", ref.SessionID, "stored_session_id", ref.SessionID)
+	for _, part := range []*jsonutil.Object{transcript, display} {
+		for _, key := range part.Keys() {
+			result.Set(key, part.Value(key))
 		}
 	}
 	var connectionValue any
@@ -438,7 +438,7 @@ func (c *AuthorityConnection) resume(ctx context.Context, ref SessionRef, params
 }
 
 // Prompt submit verb, a typed voice stop or its retry answered without admission, else the queued admission
-func (c *AuthorityConnection) submit(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) submit(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	stopped, err := c.voiceStopReplay(ctx, ref, params)
 	if err != nil {
 		return nil, err
@@ -450,7 +450,7 @@ func (c *AuthorityConnection) submit(ctx context.Context, ref SessionRef, params
 	}
 	if stopped {
 		c.recordVoiceStop(ref, params)
-		return pyjson.ObjectOf("voice_stopped", true), nil
+		return jsonutil.ObjectOf("voice_stopped", true), nil
 	}
 	request, err := c.submission(ctx, ref, params)
 	if err != nil {
@@ -464,7 +464,7 @@ func (c *AuthorityConnection) submit(ctx context.Context, ref SessionRef, params
 }
 
 // Session mutate verb, guard refusals answered as busy and fence conflicts carrying the fresh fences
-func (c *AuthorityConnection) mutate(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) mutate(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	a := c.authority
 	result, err := mutateSession(ctx, a, c.actor, ref, params)
 	if err != nil {
@@ -491,12 +491,12 @@ func (c *AuthorityConnection) mutate(ctx context.Context, ref SessionRef, params
 	if result == nil {
 		return nil, nil
 	}
-	if child, ok := result.GetOr("branched_session_id", nil).(string); ok && child != "" {
+	if child, ok := result.ValueOr("branched_session_id", nil).(string); ok && child != "" {
 		c.mu.Lock()
 		_, attached := c.subscriptions[child]
 		c.mu.Unlock()
 		if !attached {
-			if _, err := c.resume(ctx, SessionRef{ProfileID: ref.ProfileID, SessionID: child}, pyjson.NewObject()); err != nil {
+			if _, err := c.resume(ctx, SessionRef{ProfileID: ref.ProfileID, SessionID: child}, jsonutil.NewObject()); err != nil {
 				return nil, err
 			}
 		}

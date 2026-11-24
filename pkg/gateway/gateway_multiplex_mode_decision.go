@@ -8,8 +8,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Guard reason of a profile that opted out of the host multiplexer
@@ -96,7 +96,7 @@ func PersistResolvedDefault(ctx context.Context, decision MultiplexDecision, def
 	}
 	was := "unset"
 	if inFile != nil {
-		was = pyrepr.Repr(inFile)
+		was = anyutil.Quote(inFile)
 	}
 	pkgLog().Info(fmt.Sprintf("Wrote gateway.multiplex_profiles: true to %s (was %s).", cfgPath, was))
 	return true

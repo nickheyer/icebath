@@ -3,11 +3,11 @@ package agent
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // PreludeStep is one scripted assistant row, its text and the single tool call it carries
@@ -25,7 +25,7 @@ type Prelude interface {
 
 // Call id seeded by the session, the call and its place in history, byte stable on replay
 func preludeCallID(sessionID, name string, args any, index int) (string, error) {
-	encoded, err := pyjson.Dumps(args, pyjson.SortKeys(true))
+	encoded, err := jsonutil.Encode(args, jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}
@@ -36,13 +36,13 @@ func preludeCallID(sessionID, name string, args any, index int) (string, error) 
 func buildPreludeToolCall(id, name string, args any) (state.ToolCall, error) {
 	var argsText string
 	switch v := args.(type) {
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		var err error
-		if argsText, err = pyjson.Dumps(v); err != nil {
+		if argsText, err = jsonutil.Encode(v); err != nil {
 			return state.ToolCall{}, err
 		}
 	default:
-		argsText = pyrepr.Str(v)
+		argsText = anyutil.String(v)
 	}
 	return state.ToolCall{ID: id, Type: "function", Function: state.ToolCallFunction{Name: name, Arguments: argsText}}, nil
 }
@@ -78,7 +78,7 @@ func runScriptedPrelude(ctx context.Context, a *AIAgent, s *LoopState, prelude P
 		}
 		result = nil
 		if n := len(s.Messages); n > 0 && s.Messages[n-1] != nil && s.Messages[n-1].Role == "tool" {
-			text := pyrepr.Str(s.Messages[n-1].Content)
+			text := anyutil.String(s.Messages[n-1].Content)
 			result = &text
 		}
 	}

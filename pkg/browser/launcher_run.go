@@ -20,11 +20,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // What a launch starts or attaches, a zero Executable resolving the packaged Chromium
@@ -149,8 +149,6 @@ var (
 
 const isWindowsHost = runtime.GOOS == "windows"
 
-func realpathLax(path string) (string, error) { return pypath.Realpath(path, pypath.Lax) }
-
 func int64p(v int) *int64 { n := int64(v); return &n }
 
 func startTimeOf(pid int) *int64 {
@@ -162,7 +160,7 @@ func startTimeOf(pid int) *int64 {
 
 func samePtr(a, b *int64) bool { return (a == nil) == (b == nil) && (a == nil || *a == *b) }
 
-func pidText(pid *int64) string { return pyrepr.Str(optInt(pid)) }
+func pidText(pid *int64) string { return anyutil.String(optInt(pid)) }
 
 func jsonIntPtr(v any) *int64 {
 	if n, ok := jsonInt(v); ok {
@@ -315,12 +313,12 @@ func foreignRecordNames(userDataDir string, pid int) bool {
 	_, path, found, _ := readDevtoolsFile(userDataDir)
 	for _, name := range recordNames(state, userDataDir, int64(pid)) {
 		record := loadStateFile(filepath.Join(state, name))
-		if record == nil || !pyrepr.Equal(objGet(record, "pid"), int64(pid)) || sameNamespace(record) ||
+		if record == nil || !anyutil.Equal(objGet(record, "pid"), int64(pid)) || sameNamespace(record) ||
 			!sameProfile(objGet(record, "user_data_dir"), userDataDir) {
 			continue
 		}
 		devtools := objGet(record, "devtools")
-		if devtools == nil || (found && pyrepr.Equal(devtools, path)) {
+		if devtools == nil || (found && anyutil.Equal(devtools, path)) {
 			return true
 		}
 	}
@@ -815,7 +813,7 @@ func lastHolderOut(ctx context.Context, record string, b *LaunchedBrowser) bool 
 		return false
 	}
 	others := otherLiveHolders(record, optInt(b.StartTime))
-	var data *pyjson.Object
+	var data *jsonutil.Object
 	if lexists(record) {
 		data = loadStateFile(record)
 	}
@@ -861,15 +859,15 @@ func devtoolsIDValue(b *LaunchedBrowser) any {
 }
 
 // The record describes this launch, by start time here or by another namespace's DevTools id for a foreign one
-func recordIs(record *pyjson.Object, b *LaunchedBrowser) bool {
-	if !pyrepr.Equal(objGet(record, "pid"), optInt(b.PID)) || !sameProfile(objGet(record, "user_data_dir"), b.UserDataDir) {
+func recordIs(record *jsonutil.Object, b *LaunchedBrowser) bool {
+	if !anyutil.Equal(objGet(record, "pid"), optInt(b.PID)) || !sameProfile(objGet(record, "user_data_dir"), b.UserDataDir) {
 		return false
 	}
 	if b.Foreign {
 		devtools := objGet(record, "devtools")
-		return !sameNamespace(record) && devtools != nil && pyrepr.Equal(devtools, devtoolsIDValue(b))
+		return !sameNamespace(record) && devtools != nil && anyutil.Equal(devtools, devtoolsIDValue(b))
 	}
-	return pyrepr.Equal(objGet(record, "start_time"), optInt(b.StartTime))
+	return anyutil.Equal(objGet(record, "start_time"), optInt(b.StartTime))
 }
 
 // A shared profile's own private dir of launch record, leases and lock
@@ -906,7 +904,7 @@ func recordName(b *LaunchedBrowser) string {
 
 func writeRecord(ctx context.Context, b *LaunchedBrowser) {
 	me := os.Getpid()
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("owner_pid", int64(me))
 	record.Set("owner_start_time", optStartTime(launcherStartTime(me)))
 	record.Set("pid", optInt(b.PID))
@@ -932,7 +930,7 @@ func removeRecord(b *LaunchedBrowser) {
 }
 
 // The record's owner is alive or cannot be proven gone because another PID namespace wrote it
-func ownerAlive(record *pyjson.Object) bool {
+func ownerAlive(record *jsonutil.Object) bool {
 	if !sameNamespace(record) {
 		return true
 	}
@@ -941,7 +939,7 @@ func ownerAlive(record *pyjson.Object) bool {
 		return false
 	}
 	expected := objGet(record, "owner_start_time")
-	return expected == nil || pyrepr.Equal(optStartTime(launcherStartTime(int(owner))), expected)
+	return expected == nil || anyutil.Equal(optStartTime(launcherStartTime(int(owner))), expected)
 }
 
 // The pid's argv carries a --user-data-dir naming the dir however either is spelled
@@ -963,11 +961,11 @@ func insideEphemeralRoot(userDataDir, homeDir string) bool {
 	if homeDir == "" {
 		return false
 	}
-	dir, err := realpathLax(userDataDir)
+	dir, err := pathutil.Resolve(userDataDir)
 	if err != nil {
 		return false
 	}
-	root, err := realpathLax(ephemeralRoot(homeDir))
+	root, err := pathutil.Resolve(ephemeralRoot(homeDir))
 	if err != nil {
 		return false
 	}
@@ -976,18 +974,18 @@ func insideEphemeralRoot(userDataDir, homeDir string) bool {
 }
 
 // A live pid proven to be the recorded browser by start time and argv, never by argv alone
-func isRecordedBrowser(record *pyjson.Object, homeDir string) bool {
+func isRecordedBrowser(record *jsonutil.Object, homeDir string) bool {
 	pid, ok := jsonInt(objGet(record, "pid"))
 	udd, isStr := objGet(record, "user_data_dir").(string)
 	if !ok || !isStr || !launcherPidAlive(int(pid)) {
 		return false
 	}
-	if pyrepr.Truthy(objGet(record, "ephemeral")) && !insideEphemeralRoot(udd, homeDir) {
+	if anyutil.IsTrue(objGet(record, "ephemeral")) && !insideEphemeralRoot(udd, homeDir) {
 		pkgLog().Debug(fmt.Sprintf("browser: ignoring launch record for pid %d: %s is not a launcher profile dir", pid, udd))
 		return false
 	}
 	expected := objGet(record, "start_time")
-	if expected == nil || !pyrepr.Equal(optStartTime(launcherStartTime(int(pid))), expected) {
+	if expected == nil || !anyutil.Equal(optStartTime(launcherStartTime(int(pid))), expected) {
 		return false
 	}
 	if !launcherNamesDir(int(pid), udd) {
@@ -998,7 +996,7 @@ func isRecordedBrowser(record *pyjson.Object, homeDir string) bool {
 }
 
 // A browser of this namespace in use here, launched or still starting, that the record describes
-func trackedBrowser(record *pyjson.Object) *LaunchedBrowser {
+func trackedBrowser(record *jsonutil.Object) *LaunchedBrowser {
 	launcherMu.Lock()
 	defer launcherMu.Unlock()
 	for _, b := range append(browsers.values(), launching.values()...) {
@@ -1020,7 +1018,7 @@ func adoptRecord(ctx context.Context, b *LaunchedBrowser) error {
 		return nil
 	}
 	me := os.Getpid()
-	adopted := record.Copy()
+	adopted := record.Clone()
 	adopted.Set("owner_pid", int64(me))
 	adopted.Set("owner_start_time", optStartTime(launcherStartTime(me)))
 	return config.AtomicJSONWriteWith(ctx, path, adopted)
@@ -1038,7 +1036,7 @@ func reapRecord(ctx context.Context, path, homeDir string) bool {
 		}
 		return false
 	}
-	if !pyrepr.Equal(objGet(record, "owner_pid"), int64(os.Getpid())) && ownerAlive(record) {
+	if !anyutil.Equal(objGet(record, "owner_pid"), int64(os.Getpid())) && ownerAlive(record) {
 		return false
 	}
 	if others := otherLiveHolders(path, objGet(record, "start_time")); len(others) > 0 {
@@ -1052,11 +1050,11 @@ func reapRecord(ctx context.Context, path, homeDir string) bool {
 	reaped := isRecordedBrowser(record, homeDir)
 	if reaped {
 		launcherTerminate(jsonIntPtr(objGet(record, "pid")), jsonIntPtr(objGet(record, "start_time")), nil)
-		pkgLog().Info(fmt.Sprintf("browser: reaped orphaned Chromium pid %s (%s)", pyrepr.Str(objGet(record, "pid")),
-			pyrepr.Str(objGet(record, "user_data_dir"))))
+		pkgLog().Info(fmt.Sprintf("browser: reaped orphaned Chromium pid %s (%s)", anyutil.String(objGet(record, "pid")),
+			anyutil.String(objGet(record, "user_data_dir"))))
 	}
 	udd, isStr := objGet(record, "user_data_dir").(string)
-	if pyrepr.Truthy(objGet(record, "ephemeral")) && isStr && insideEphemeralRoot(udd, homeDir) && (reaped || !browserRunningOn(udd)) {
+	if anyutil.IsTrue(objGet(record, "ephemeral")) && isStr && insideEphemeralRoot(udd, homeDir) && (reaped || !browserRunningOn(udd)) {
 		launcherRemoveAll(udd)
 	}
 	os.Remove(path)

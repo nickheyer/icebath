@@ -3,20 +3,20 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Plain mapping of tool arguments, empty for anything that is not a dict
 func toolArgsMap(args any) map[string]any {
 	switch typed := args.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if typed == nil {
 			return map[string]any{}
 		}
-		plain, _ := pyjson.Plain(typed).(map[string]any)
+		plain, _ := jsonutil.Plain(typed).(map[string]any)
 		return plain
 	case map[string]any:
 		return typed
@@ -26,25 +26,25 @@ func toolArgsMap(args any) map[string]any {
 
 // Text of a call id or tool name, the fallback when it is falsy
 func toolText(value any, fallback string) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return fallback
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Tool start contract every client reads plus the call id, name and bounded args the gateway consumers use
-func toolLifecyclePayload(ctx context.Context, callID, toolName, args any) *pyjson.Object {
+func toolLifecyclePayload(ctx context.Context, callID, toolName, args any) *jsonutil.Object {
 	name := toolText(toolName, "tool")
-	if _, isObject := pyjson.AsObject(args); !isObject {
-		args = pyjson.NewObject()
+	if _, isObject := jsonutil.AsObject(args); !isObject {
+		args = jsonutil.NewObject()
 	}
 	plain := toolArgsMap(args)
-	payload := pyjson.ObjectOf("tool_id", toolText(callID, ""), "name", name,
+	payload := jsonutil.ObjectOf("tool_id", toolText(callID, ""), "name", name,
 		"context", tuihost.ToolCtx(name, plain),
 		"tool_call_id", toolText(callID, ""), "tool_name", name, "args", boundedArgs(args))
 	var labels []any
 	for _, label := range tools.ToolLabelsForCall(ctx, nil, name, plain) {
-		entry := pyjson.NewObject()
+		entry := jsonutil.NewObject()
 		for key, value := range label.AsPayload() {
 			entry.Set(key, value)
 		}
@@ -57,8 +57,8 @@ func toolLifecyclePayload(ctx context.Context, callID, toolName, args any) *pyjs
 }
 
 // Tool complete event as every viewer reads it, the start contract plus the verdict and its reason, the result and the text it printed
-func toolCompletePayload(ctx context.Context, callID, toolName, args, result any, isError *bool) *pyjson.Object {
-	failed, refused, reason := tools.ToolOutcome(ctx, pyrepr.Str(toolName), result)
+func toolCompletePayload(ctx context.Context, callID, toolName, args, result any, isError *bool) *jsonutil.Object {
+	failed, refused, reason := tools.ToolOutcome(ctx, anyutil.String(toolName), result)
 	if isError != nil {
 		failed = *isError || refused
 	}
@@ -76,7 +76,7 @@ func toolCompletePayload(ctx context.Context, callID, toolName, args, result any
 }
 
 // Exact key set of a frame
-func frameKeysAre(frame *pyjson.Object, keys ...string) bool {
+func frameKeysAre(frame *jsonutil.Object, keys ...string) bool {
 	if frame == nil || frame.Len() != len(keys) {
 		return false
 	}
@@ -89,7 +89,7 @@ func frameKeysAre(frame *pyjson.Object, keys ...string) bool {
 }
 
 // Publishes a managed worker's tool frame as an in process turn publishes its own, false for any other frame
-func publishWorkerToolEvent(ctx context.Context, a *SessionAuthority, sessionID string, generation int64, frame *pyjson.Object) (bool, error) {
+func publishWorkerToolEvent(ctx context.Context, a *SessionAuthority, sessionID string, generation int64, frame *jsonutil.Object) (bool, error) {
 	kind, _ := frame.Get("type")
 	callID, _ := frame.Get("tool_call_id")
 	name, _ := frame.Get("name")
@@ -98,7 +98,7 @@ func publishWorkerToolEvent(ctx context.Context, a *SessionAuthority, sessionID 
 	flag, _ := frame.Get("is_error")
 	_, callText := callID.(string)
 	_, nameText := name.(string)
-	_, argsDict := args.(*pyjson.Object)
+	_, argsDict := args.(*jsonutil.Object)
 	switch kind {
 	case "tool.start":
 		if !frameKeysAre(frame, "type", "tool_call_id", "name", "args") || !callText || !nameText || !argsDict {
@@ -113,7 +113,7 @@ func publishWorkerToolEvent(ctx context.Context, a *SessionAuthority, sessionID 
 	default:
 		return false, nil
 	}
-	var payload *pyjson.Object
+	var payload *jsonutil.Object
 	if kind == "tool.start" {
 		payload = toolLifecyclePayload(ctx, callID, name, args)
 	} else {

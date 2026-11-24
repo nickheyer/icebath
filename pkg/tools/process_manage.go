@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // The process_manage tool, poll, wait, log, kill, stdin and handoff of terminal background processes
@@ -108,9 +108,9 @@ func redactProcessResult(env *Env, result map[string]any) map[string]any {
 }
 
 // Lists the task's processes plus the session scoped ones sharing the gateway session key
-func listProcesses(ctx context.Context, env *Env, taskID string) *pyjson.Object {
+func listProcesses(ctx context.Context, env *Env, taskID string) *jsonutil.Object {
 	sessionKey := getCurrentSessionKey(env, "")
-	processes := []*pyjson.Object{}
+	processes := []*jsonutil.Object{}
 	for _, p := range processRegistry.listSessionDicts(WithEnvHome(ctx, env), env, taskID, sessionKey, true) {
 		redactProcessResult(env, p.Vals)
 		processes = append(processes, p)
@@ -120,15 +120,15 @@ func listProcesses(ctx context.Context, env *Env, taskID string) *pyjson.Object 
 
 // Session actions with their handler and whether the result carries output to redact
 type processAction struct {
-	run    func(ctx context.Context, env *Env, sid string, args map[string]any) *pyjson.Object
+	run    func(ctx context.Context, env *Env, sid string, args map[string]any) *jsonutil.Object
 	redact bool
 }
 
 var sessionActions = map[string]processAction{
-	"poll": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+	"poll": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
 		return processRegistry.pollDict(WithEnvHome(ctx, env), env, sid)
 	}, true},
-	"log": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+	"log": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
 		var offset *int
 		if n, ok := asIntValue(a["offset"]); ok && a["offset"] != nil {
 			offset = &n
@@ -139,23 +139,23 @@ var sessionActions = map[string]processAction{
 		}
 		return processRegistry.readLogDict(env, sid, offset, limit)
 	}, true},
-	"wait": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+	"wait": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
 		var timeout *int
 		if n, ok := asIntValue(a["timeout"]); ok && a["timeout"] != nil {
 			timeout = &n
 		}
 		return processRegistry.waitDict(ctx, env, sid, timeout)
 	}, true},
-	"kill": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+	"kill": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
 		return processRegistry.killDict(WithEnvHome(ctx, env), env, sid, "process.kill", true)
 	}, true},
-	"write": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+	"write": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
 		return processRegistry.writeStdinDict(env, sid, pyStrOrEmpty(a["data"]))
 	}, false},
-	"submit": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+	"submit": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
 		return processRegistry.submitStdinDict(env, sid, pyStrOrEmpty(a["data"]))
 	}, false},
-	"close": {func(ctx context.Context, env *Env, sid string, a map[string]any) *pyjson.Object {
+	"close": {func(ctx context.Context, env *Env, sid string, a map[string]any) *jsonutil.Object {
 		return processRegistry.closeStdinDict(env, sid)
 	}, false},
 }
@@ -164,7 +164,7 @@ var sessionActions = map[string]processAction{
 const maxHandoffsPerChild = 3
 
 // Transfers a running background process from a subagent to its parent agent
-func handoffProcess(env *Env, sessionID string, args map[string]any, taskID string) *pyjson.Object {
+func handoffProcess(env *Env, sessionID string, args map[string]any, taskID string) *jsonutil.Object {
 	var child SubagentHandoff
 	if SubagentHandoffResolver != nil {
 		child = SubagentHandoffResolver(taskID)

@@ -14,13 +14,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
@@ -45,7 +45,7 @@ func nativeInputsStore(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathStr(docs + string(filepath.Separator) + "native-inputs"), nil
+	return filepath.Clean(docs + string(filepath.Separator) + "native-inputs"), nil
 }
 
 // Resolved content addressed store of retained native inputs the identity checks compare against
@@ -54,17 +54,17 @@ func nativeInputsRoot(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pypath.Resolve(store)
+	return pathutil.Resolve(store)
 }
 
 // Retained document references a hosted admission prompt names, empty for every other row
-func HostedDocumentReferences(requestID string, payload *pyjson.Object) ([]*pyjson.Object, error) {
+func HostedDocumentReferences(requestID string, payload *jsonutil.Object) ([]*jsonutil.Object, error) {
 	return hostedDocumentReferences(context.Background(), requestID, payload)
 }
 
 // Content addressed documents under this profile root a hosted prompt names, never an API image name
-func hostedDocumentReferences(ctx context.Context, requestID string, payload *pyjson.Object) ([]*pyjson.Object, error) {
-	references := []*pyjson.Object{}
+func hostedDocumentReferences(ctx context.Context, requestID string, payload *jsonutil.Object) ([]*jsonutil.Object, error) {
+	references := []*jsonutil.Object{}
 	if !strings.HasPrefix(requestID, "hosted:") {
 		return references, nil
 	}
@@ -82,12 +82,12 @@ func hostedDocumentReferences(ctx context.Context, requestID string, payload *py
 	}
 	for _, m := range hostedDocumentRe.FindAllStringSubmatch(text, -1) {
 		value := m[1]
-		path := pypath.PathStr(value)
-		parent := pypath.PathParent(path)
-		digest := pypath.PathName(parent)
-		if filepath.IsAbs(path) && samePath(pypath.PathParent(parent), root) && ingressSHA256Name.MatchString(digest) &&
-			!ingressAPIImageName.MatchString(pypath.PathName(path)) {
-			ref := pyjson.NewObject()
+		path := filepath.Clean(value)
+		parent := filepath.Dir(filepath.Clean(path))
+		digest := pathutil.Name(parent)
+		if filepath.IsAbs(path) && samePath(filepath.Dir(filepath.Clean(parent)), root) && ingressSHA256Name.MatchString(digest) &&
+			!ingressAPIImageName.MatchString(pathutil.Name(path)) {
+			ref := jsonutil.NewObject()
 			ref.Set("path", value)
 			ref.Set("sha256", digest)
 			references = append(references, ref)
@@ -97,7 +97,7 @@ func hostedDocumentReferences(ctx context.Context, requestID string, payload *py
 }
 
 // Native attachment and text media references eligible as deletion candidates after terminal settlement
-func AdmissionMediaReferences(payload *pyjson.Object) ([]*pyjson.Object, error) {
+func AdmissionMediaReferences(payload *jsonutil.Object) ([]*jsonutil.Object, error) {
 	if payload == nil {
 		return nil, errors.New("the admission has no media section")
 	}
@@ -107,7 +107,7 @@ func AdmissionMediaReferences(payload *pyjson.Object) ([]*pyjson.Object, error) 
 		if !has {
 			continue
 		}
-		obj, ok := section.(*pyjson.Object)
+		obj, ok := section.(*jsonutil.Object)
 		if !ok {
 			return nil, fmt.Errorf("the admission media section is %s, expected a mapping", errchain.Kind(section))
 		}
@@ -121,9 +121,9 @@ func AdmissionMediaReferences(payload *pyjson.Object) ([]*pyjson.Object, error) 
 		}
 		items = append(items, listed...)
 	}
-	out := make([]*pyjson.Object, 0, len(items))
+	out := make([]*jsonutil.Object, 0, len(items))
 	for _, item := range items {
-		ref, ok := item.(*pyjson.Object)
+		ref, ok := item.(*jsonutil.Object)
 		if !ok {
 			return nil, strSubscriptError(item)
 		}
@@ -137,9 +137,9 @@ func jsonList(v any) ([]any, error) {
 	switch x := v.(type) {
 	case []any:
 		return x, nil
-	case *pyjson.Object:
-		out := make([]any, 0, len(x.Keys))
-		for _, k := range x.Keys {
+	case *jsonutil.Object:
+		out := make([]any, 0, x.Len())
+		for _, k := range x.Keys() {
 			out = append(out, k)
 		}
 		return out, nil
@@ -166,7 +166,7 @@ func strSubscriptError(v any) error {
 
 // Value under key of a reference dict, the Python TypeError or KeyError otherwise
 func referenceItem(reference any, key string) (any, error) {
-	obj, ok := reference.(*pyjson.Object)
+	obj, ok := reference.(*jsonutil.Object)
 	if !ok {
 		return nil, strSubscriptError(reference)
 	}
@@ -199,24 +199,24 @@ func collectableMedia(references []any, root string) ([]mediaCandidate, error) {
 		if !ok {
 			return nil, pathArgError(raw)
 		}
-		path := pypath.PathStr(value)
-		parent := pypath.PathParent(path)
-		if !samePath(pypath.PathParent(parent), root) {
+		path := filepath.Clean(value)
+		parent := filepath.Dir(filepath.Clean(path))
+		if !samePath(filepath.Dir(filepath.Clean(parent)), root) {
 			continue
 		}
 		digest, err := referenceItem(reference, "sha256")
 		if err != nil {
 			return nil, err
 		}
-		if s, ok := digest.(string); !ok || pypath.PathName(parent) != s {
+		if s, ok := digest.(string); !ok || pathutil.Name(parent) != s {
 			continue
 		}
-		info, err := pypath.PathlibStat(path)
+		info, err := pathutil.StatIfExists(path)
 		if err != nil {
 			return nil, err
 		}
 		if info != nil {
-			out = append(out, mediaCandidate{path: value, sha256: pypath.PathName(parent)})
+			out = append(out, mediaCandidate{path: value, sha256: pathutil.Name(parent)})
 		}
 	}
 	return out, nil
@@ -246,7 +246,7 @@ func heldMediaPaths(ctx context.Context, conn state.SQLiteConn) (map[string]bool
 		if b, ok := encoded.([]byte); ok {
 			encodedText = string(b)
 		}
-		decoded, err := pyjson.Loads(encodedText)
+		decoded, err := jsonutil.Decode(encodedText)
 		if err != nil {
 			return nil, err
 		}
@@ -259,7 +259,7 @@ func heldMediaPaths(ctx context.Context, conn state.SQLiteConn) (map[string]bool
 			if i > 0 && status == "terminal" {
 				break
 			}
-			if !pyrepr.Truthy(part) {
+			if !anyutil.IsTrue(part) {
 				continue
 			}
 			listed, err := jsonList(part)
@@ -269,9 +269,9 @@ func heldMediaPaths(ctx context.Context, conn state.SQLiteConn) (map[string]bool
 			references = append(references, listed...)
 		}
 		if status != "terminal" {
-			payload := pyjson.NewObject()
+			payload := jsonutil.NewObject()
 			payload.Set("text", text)
-			hosted, err := hostedDocumentReferences(ctx, pyrepr.Str(requestID), payload)
+			hosted, err := hostedDocumentReferences(ctx, anyutil.String(requestID), payload)
 			if err != nil {
 				return nil, err
 			}
@@ -289,7 +289,7 @@ func heldMediaPaths(ctx context.Context, conn state.SQLiteConn) (map[string]bool
 				held[p] = true
 			case []any:
 				return nil, errors.New("a held media path is a list, expected text")
-			case *pyjson.Object:
+			case *jsonutil.Object:
 				return nil, errors.New("a held media path is a mapping, expected text")
 			default:
 				return nil, pathArgError(p)
@@ -305,7 +305,7 @@ func fileIdentity(path string) ([2]uint64, error) {
 	if err != nil {
 		return [2]uint64{}, err
 	}
-	dev, ino, err := pyfs.LstatIdentity(path)
+	dev, ino, err := fsutil.Identity(path)
 	if err != nil {
 		return [2]uint64{}, err
 	}
@@ -319,12 +319,12 @@ func fileIdentity(path string) ([2]uint64, error) {
 func heldFileIdentities(paths map[string]bool, root string) (map[[2]uint64]bool, bool) {
 	identities := map[[2]uint64]bool{}
 	for value := range paths {
-		path := pypath.PathStr(value)
-		parent := pypath.PathParent(path)
-		if !samePath(pypath.PathParent(parent), root) {
+		path := filepath.Clean(value)
+		parent := filepath.Dir(filepath.Clean(path))
+		if !samePath(filepath.Dir(filepath.Clean(parent)), root) {
 			return nil, false
 		}
-		resolved, err := pypath.Resolve(parent)
+		resolved, err := pathutil.Resolve(parent)
 		if err != nil || !samePath(resolved, parent) {
 			return nil, false
 		}
@@ -345,10 +345,10 @@ func historyMentions(ctx context.Context, conn state.SQLiteConn, references []me
 	needles := map[string]string{}
 	digests := map[string]bool{}
 	for _, reference := range references {
-		name := pypath.PathName(pypath.PathStr(reference.path))
+		name := pathutil.Name(filepath.Clean(reference.path))
 		for _, sep := range []string{"/", `\`} {
 			tail := reference.sha256 + sep + name
-			escaped, err := pyjson.Dumps(tail)
+			escaped, err := jsonutil.Encode(tail)
 			if err != nil {
 				return nil, err
 			}
@@ -361,7 +361,7 @@ func historyMentions(ctx context.Context, conn state.SQLiteConn, references []me
 	for _, d := range slices.Sorted(maps.Keys(digests)) {
 		prefixes = append(prefixes, d)
 	}
-	bound, err := pyjson.Dumps(prefixes)
+	bound, err := jsonutil.Encode(prefixes)
 	if err != nil {
 		return nil, err
 	}
@@ -383,11 +383,11 @@ func historyMentions(ctx context.Context, conn state.SQLiteConn, references []me
 		}
 		var text string
 		if b, ok := content.([]byte); ok {
-			if text, err = pycodecs.DecodeReplace(b, "utf-8"); err != nil {
+			if text, err = charsetutil.DecodeReplace(b, "utf-8"); err != nil {
 				return nil, err
 			}
 		} else {
-			text = pyrepr.Str(content)
+			text = anyutil.String(content)
 		}
 		for needle, raw := range needles {
 			if strings.Contains(text, needle) {
@@ -461,12 +461,12 @@ func releaseUnheldMedia(ctx context.Context, db *state.SessionDB, references []a
 			if held[c.path] {
 				continue
 			}
-			path := pypath.PathStr(c.path)
+			path := filepath.Clean(c.path)
 			if !unlinkUnleased(c.path, path, identities) {
 				continue
 			}
 			released++
-			_ = os.Remove(pypath.PathParent(path))
+			_ = os.Remove(filepath.Dir(filepath.Clean(path)))
 		}
 		return nil
 	})
@@ -480,8 +480,8 @@ func unlinkUnleased(raw, path string, identities map[[2]uint64]bool) bool {
 	if mediaLeases[raw] > 0 {
 		return false
 	}
-	parent := pypath.PathParent(path)
-	resolved, err := pypath.Resolve(parent)
+	parent := filepath.Dir(filepath.Clean(path))
+	resolved, err := pathutil.Resolve(parent)
 	if err != nil || !samePath(resolved, parent) {
 		return false
 	}

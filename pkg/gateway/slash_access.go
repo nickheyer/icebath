@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var alwaysAllowedForUsers = map[string]struct{}{"help": {}, "whoami": {}}
@@ -29,10 +30,10 @@ func slashUserText(userID any) (string, bool) {
 		}
 		userID = *p
 	}
-	if !pyrepr.Truthy(userID) {
+	if !anyutil.IsTrue(userID) {
 		return "", false
 	}
-	return pyrepr.Str(userID), true
+	return anyutil.String(userID), true
 }
 
 // True for everyone while gating is off, otherwise only for listed admin ids
@@ -92,7 +93,7 @@ func coerceSlashList(raw any, normalize func(string) string) map[string]struct{}
 		items = []any{raw}
 	}
 	for _, it := range items {
-		if s := normalize(strings.TrimSpace(pyrepr.Str(it))); s != "" {
+		if s := normalize(strings.TrimSpace(anyutil.String(it))); s != "" {
 			out[s] = struct{}{}
 		}
 	}

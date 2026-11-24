@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,9 +18,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Request metadata keys the agent sets to steer a Codex Responses call
@@ -273,7 +275,7 @@ func (c *codexResponsesClient) prepare(ctx context.Context, req *Request) (*code
 		}
 		wire[k] = v
 	}
-	if extraBody, ok := pyjson.Dict(kwargs["extra_body"]); ok {
+	if extraBody, ok := jsonutil.AsMap(kwargs["extra_body"]); ok {
 		for k, v := range extraBody {
 			wire[k] = v
 		}
@@ -313,12 +315,12 @@ func (c *codexResponsesClient) sanitizeConsumerRequest(kwargs map[string]any) ma
 		droppedFrom = append(droppedFrom, "top-level")
 		delete(sanitized, "prompt_cache_retention")
 	}
-	if extraBody, ok := pyjson.Dict(sanitized["extra_body"]); ok {
+	if extraBody, ok := jsonutil.AsMap(sanitized["extra_body"]); ok {
 		if _, has := extraBody["prompt_cache_retention"]; has {
 			var cp any
 			remaining := len(extraBody) - 1
-			if ordered, isObject := sanitized["extra_body"].(*pyjson.Object); isObject {
-				kept := ordered.Copy()
+			if ordered, isObject := sanitized["extra_body"].(*jsonutil.Object); isObject {
+				kept := ordered.Clone()
 				kept.Delete("prompt_cache_retention")
 				cp = kept
 			} else {
@@ -396,7 +398,7 @@ func (c *codexResponsesClient) newRequest(ctx context.Context, p *codexPrepared,
 	}
 	key := ""
 	var custom []pyhttpx.HeaderLine
-	for _, k := range pyhttpx.HeaderOrder(p.headers) {
+	for _, k := range slices.Sorted(maps.Keys(p.headers)) {
 		if v := p.headers[k]; key == "" && strings.EqualFold(k, "Authorization") && strings.HasPrefix(v, "Bearer ") {
 			key = strings.TrimPrefix(v, "Bearer ")
 			continue
@@ -406,7 +408,7 @@ func (c *codexResponsesClient) newRequest(ctx context.Context, p *codexPrepared,
 	sdk := newAuxOpenAIClient(key, p.url, auxOpenAIOptions{DefaultHeaders: pyhttpx.OrderedHeaderMap(custom...), Timeout: p.timeout.Seconds()})
 	r := &auxSDKRequest{headers: map[string]any{}, timeout: auxUniformTimeouts(sdk.timeout, sdk.hasTimeout), readTimeoutText: sdk.timeoutText}
 	extra := providerRequestHeaders(ctx)
-	for _, k := range pyhttpx.HeaderOrder(extra) {
+	for _, k := range slices.Sorted(maps.Keys(extra)) {
 		r.headers[k] = extra[k]
 		r.headerOrder = append(r.headerOrder, k)
 	}
@@ -522,7 +524,7 @@ func (c *codexResponsesClient) wireOf(kwargs map[string]any) map[string]any {
 		}
 		wire[k] = v
 	}
-	if extraBody, ok := pyjson.Dict(kwargs["extra_body"]); ok {
+	if extraBody, ok := jsonutil.AsMap(kwargs["extra_body"]); ok {
 		for k, v := range extraBody {
 			wire[k] = v
 		}

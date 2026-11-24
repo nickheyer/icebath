@@ -15,7 +15,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Exception classes a worker failure keeps on the caller side, every other class arriving as RuntimeError
@@ -58,7 +58,7 @@ func workerError(payload map[string]any) error {
 			values[i] = v
 		}
 		failure := &InstallError{Package: wireText(values[1]), Cause: wireText(values[2]), Remedy: wireText(values[3])}
-		if !pyrepr.Truthy(values[3]) {
+		if !anyutil.IsTrue(values[3]) {
 			failure = NewInstallError(failure.Package, failure.Cause, "")
 		}
 		if jsonEquals(values[0], "ResolutionConflict") {
@@ -179,7 +179,7 @@ func readControls(controls io.ReadCloser, messages *controlQueue, pause *PauseEv
 			messages.put(&PyError{Class: "ValueError", Message: "unexpected PM control request id"})
 			return
 		}
-		if pyrepr.Truthy(message["cancel"]) {
+		if anyutil.IsTrue(message["cancel"]) {
 			pause.Set()
 		}
 		if !jsonEquals(message["type"], "cancel") {
@@ -212,7 +212,7 @@ func requestDefinitions(value any) ([]PackageDefinition, error) {
 		if !ok {
 			return nil, &PyError{Class: "TypeError", Message: "package definition is not an object"}
 		}
-		out = append(out, PackageDefinition{Name: pyrepr.Str(m["name"]), Module: pyrepr.Str(m["module"]), Qualname: pyrepr.Str(m["qualname"])})
+		out = append(out, PackageDefinition{Name: anyutil.String(m["name"]), Module: anyutil.String(m["module"]), Qualname: anyutil.String(m["qualname"])})
 	}
 	return out, nil
 }
@@ -259,8 +259,8 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 		return err
 	}
 	previousRepo, previousLock := repoRoot, lockfilePath
-	repoRoot = func() string { return pyrepr.Str(repo) }
-	lockfilePath = func() string { return pyrepr.Str(lockfile) }
+	repoRoot = func() string { return anyutil.String(repo) }
+	lockfilePath = func() string { return anyutil.String(lockfile) }
 	defer func() { repoRoot, lockfilePath = previousRepo, previousLock }()
 
 	var wireMu sync.Mutex
@@ -319,7 +319,7 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 		if err != nil {
 			return nil, err
 		}
-		operation := pyrepr.Str(rawOperation)
+		operation := anyutil.String(rawOperation)
 		spec, err := lookupOperation(operation)
 		if err != nil {
 			return nil, err
@@ -338,7 +338,7 @@ func ServeWorker(ctx context.Context, controls io.ReadCloser, wire io.Writer) er
 		}
 		names, _ := request["callbacks"].([]any)
 		for _, rawName := range names {
-			switch pyrepr.Str(rawName) {
+			switch anyutil.String(rawName) {
 			case "progress":
 				hooks.progress = func(stage string, done, total int64, label string) error {
 					_, err := callback("progress", stage, jsonInt64(done), jsonInt64(total), label)

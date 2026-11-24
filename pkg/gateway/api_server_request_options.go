@@ -3,25 +3,25 @@ package gateway
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Agent reasoning config of model options, structured reasoning or the legacy effort, nil when neither applies
 func apiRequestReasoningConfig(modelOptions any) map[string]any {
-	options, ok := modelOptions.(*pyjson.Object)
+	options, ok := modelOptions.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
 	var enabled, effort any
-	if reasoning, isDict := options.GetOr("reasoning", nil).(*pyjson.Object); isDict {
-		enabled = reasoning.GetOr("enabled", nil)
-		effort = reasoning.GetOr("effort", nil)
+	if reasoning, isDict := options.ValueOr("reasoning", nil).(*jsonutil.Object); isDict {
+		enabled = reasoning.ValueOr("enabled", nil)
+		effort = reasoning.ValueOr("effort", nil)
 	}
-	effort = options.GetOr("reasoning_effort", effort)
+	effort = options.ValueOr("reasoning_effort", effort)
 	effortNorm := ""
 	if effort != nil {
-		effortNorm = strings.ToLower(strings.TrimSpace(pyrepr.Str(effort)))
+		effortNorm = strings.ToLower(strings.TrimSpace(anyutil.String(effort)))
 	}
 	if enabled == false || effortNorm == "none" {
 		return map[string]any{"enabled": false}
@@ -37,7 +37,7 @@ func apiRequestReasoningConfig(modelOptions any) map[string]any {
 
 // Per request service tier override, the missing marker when the options name none
 func apiRequestServiceTier(modelOptions any) any {
-	options, ok := modelOptions.(*pyjson.Object)
+	options, ok := modelOptions.(*jsonutil.Object)
 	if !ok {
 		return apiRequestOptionMissing
 	}

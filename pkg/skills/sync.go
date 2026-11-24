@@ -20,13 +20,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -134,7 +133,7 @@ func isRuntimeCacheFS(fsys fs.FS, p, skillDir string) bool {
 	if runtimeCacheDirs[name] && fsIsDir(fsys, p) {
 		return true
 	}
-	suffix := pypath.PathSuffix(name)
+	suffix := pathutil.Suffix(name)
 	return (suffix == ".pyc" || suffix == ".pyo") && fsIsFile(fsys, strings.TrimSuffix(p, suffix)+".py")
 }
 
@@ -328,7 +327,7 @@ func readUTF8Sig(p string) (string, error) {
 	for pos := 0; pos < len(data); {
 		r, n := utf8.DecodeRune(data[pos:])
 		if r == utf8.RuneError && n <= 1 {
-			return "", errchain.Reword(pystr.UTF8DecodeError(data, pos), "%s is not valid UTF-8 at byte %d", p, pos)
+			return "", errchain.Reword(&textutil.InvalidUTF8Error{Offset: pos}, "%s is not valid UTF-8 at byte %d", p, pos)
 		}
 		pos += n
 	}
@@ -342,7 +341,7 @@ func (s *Scope) manifestFile() string { return filepath.Join(s.SkillsDir(), ".bu
 func (s *Scope) readManifest() (map[string]string, error) {
 	text, err := readUTF8Sig(s.manifestFile())
 	if err != nil {
-		var dec *pystr.UnicodeDecodeError
+		var dec *textutil.InvalidUTF8Error
 		if errors.As(err, &dec) {
 			return nil, err
 		}
@@ -379,7 +378,7 @@ func (s *Scope) writeManifest(ctx context.Context, entries map[string]string) {
 	for _, n := range names {
 		b.WriteString(n + ":" + entries[n] + "\n")
 	}
-	if err := pyfs.AtomicWriteTextWith(home.WithOverride(ctx, s.Home), mf, b.String(), pyfs.TextWrite{Prefix: ".bundled_manifest_", PreserveMode: true}); err != nil {
+	if err := fsutil.WriteFile(home.WithOverride(ctx, s.Home), mf, []byte(b.String()), fsutil.WriteOptions{Prefix: ".bundled_manifest_", KeepOwner: true, NativeLineEnds: true}); err != nil {
 		pkgLog().Debug("Failed to write skills manifest", "path", mf, "err", err)
 	}
 }
@@ -536,14 +535,14 @@ func moveDir(src, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o777); err != nil {
 		return err
 	}
-	_, err := pyfs.Move(src, dest)
+	_, err := fsutil.Move(src, dest)
 	return err
 }
 
 // Path with its final suffix replaced by .bak like Path.with_suffix
 func bakPath(dest string) string {
 	name := filepath.Base(dest)
-	return filepath.Join(filepath.Dir(dest), strings.TrimSuffix(name, pypath.PathSuffix(name))+".bak")
+	return filepath.Join(filepath.Dir(dest), strings.TrimSuffix(name, pathutil.Suffix(name))+".bak")
 }
 
 // Moves an orphaned .bak copy back when an interrupted update left dest missing
@@ -607,7 +606,7 @@ func (s *Scope) replaceSkillDir(t skillTree, src, dest string) error {
 			return err
 		}
 	}
-	if _, err := pyfs.Move(dest, backup); err != nil {
+	if _, err := fsutil.Move(dest, backup); err != nil {
 		return err
 	}
 	if err := syncSteps.copyTree(t, src, dest, false, false); err != nil {
@@ -621,7 +620,7 @@ func (s *Scope) replaceSkillDir(t skillTree, src, dest string) error {
 				}
 			}
 			if !pathExists(dest) {
-				if _, merr := pyfs.Move(backup, dest); merr != nil {
+				if _, merr := fsutil.Move(backup, dest); merr != nil {
 					return merr
 				}
 			}
@@ -824,7 +823,7 @@ func (s *Scope) rmtreeWritable(p string) error {
 	if target == root || !isRelativeTo(target, root) {
 		return fmt.Errorf("refusing to rmtree %s: not strictly under %s (scope guard — see #48200)", target, root)
 	}
-	return pyfs.RmTree(p, func(op pyfs.RmTreeOp, fpath string, _ error) error {
+	return fsutil.RemoveTree(p, func(op fsutil.RemoveOp, fpath string, _ error) error {
 		os.Chmod(filepath.Dir(fpath), 0o700)
 		os.Chmod(fpath, 0o700)
 		return op(fpath)
@@ -854,13 +853,13 @@ func safeRelInstallPath(p, base string) (string, error) {
 func (s *Scope) loadHubLock() (any, error) {
 	text, err := readUTF8Sig(filepath.Join(s.SkillsDir(), ".hub", "lock.json"))
 	if err != nil {
-		var dec *pystr.UnicodeDecodeError
+		var dec *textutil.InvalidUTF8Error
 		if errors.As(err, &dec) {
 			return nil, err
 		}
 		return nil, nil
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil
 	}
@@ -868,11 +867,11 @@ func (s *Scope) loadHubLock() (any, error) {
 }
 
 // Dict entries of a hub lock installed table
-func hubLockInstalledEntries(data any) ([]*pyjson.Object, error) {
+func hubLockInstalledEntries(data any) ([]*jsonutil.Object, error) {
 	if data == nil {
 		return nil, nil
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		if pyTruthyJSON(data) {
 			return nil, fmt.Errorf("skills hub lock is %s where a mapping was expected", errchain.Kind(data))
@@ -883,13 +882,13 @@ func hubLockInstalledEntries(data any) ([]*pyjson.Object, error) {
 	if installed == nil || !pyTruthyJSON(installed) {
 		return nil, nil
 	}
-	table, ok := installed.(*pyjson.Object)
+	table, ok := installed.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("skills hub lock installed table is %s where a mapping was expected", errchain.Kind(installed))
 	}
-	var out []*pyjson.Object
-	for _, k := range table.Keys {
-		if e, ok := table.Vals[k].(*pyjson.Object); ok {
+	var out []*jsonutil.Object
+	for _, k := range table.Keys() {
+		if e, ok := table.Value(k).(*jsonutil.Object); ok {
 			out = append(out, e)
 		}
 	}
@@ -907,12 +906,12 @@ func pyTruthyJSON(v any) bool {
 		return x != ""
 	case []any:
 		return len(x) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len() > 0
 	case float64:
 		return x != 0
 	}
-	return pyrepr.Str(v) != "0"
+	return anyutil.String(v) != "0"
 }
 
 // Hub lock install paths as slash strings stripped of surrounding slashes
@@ -928,7 +927,7 @@ func (s *Scope) readHubInstallPaths() (map[string]bool, error) {
 	out := map[string]bool{}
 	for _, e := range entries {
 		if v, ok := e.Get("install_path"); ok && pyTruthyJSON(v) {
-			out[strings.Trim(pyrepr.Str(v), "/")] = true
+			out[strings.Trim(anyutil.String(v), "/")] = true
 		}
 	}
 	return out, nil
@@ -1108,20 +1107,20 @@ func (s *Scope) backfillOptionalProvenance(ctx context.Context, quiet bool) ([]s
 		return nil, err
 	}
 	if raw == nil {
-		obj := pyjson.NewObject()
+		obj := jsonutil.NewObject()
 		obj.Set("version", 1)
-		obj.Set("installed", pyjson.NewObject())
+		obj.Set("installed", jsonutil.NewObject())
 		raw = obj
 	}
-	data, ok := raw.(*pyjson.Object)
+	data, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("skills hub lock is %s where a mapping was expected", errchain.Kind(raw))
 	}
 	if _, present := data.Get("installed"); !present {
-		data.Set("installed", pyjson.NewObject())
+		data.Set("installed", jsonutil.NewObject())
 	}
 	instAny, _ := data.Get("installed")
-	installed, ok := instAny.(*pyjson.Object)
+	installed, ok := instAny.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("skills hub lock installed table is %s where a mapping was expected", errchain.Kind(instAny))
 	}
@@ -1164,9 +1163,9 @@ func (s *Scope) backfillOptionalProvenance(ctx context.Context, quiet bool) ([]s
 		for _, f := range skillFileListFS(os.DirFS(dest), ".") {
 			files = append(files, f)
 		}
-		meta := pyjson.NewObject()
+		meta := jsonutil.NewObject()
 		meta.Set("backfilled_from", "optional-skills")
-		entry := pyjson.NewObject()
+		entry := jsonutil.NewObject()
 		for _, kv := range [][2]any{{"source", "official"}, {"identifier", "official/" + install}, {"trust_level", "builtin"},
 			{"scan_verdict", "backfilled"}, {"content_hash", ContentHash(dest)}, {"install_path", install}, {"files", files},
 			{"metadata", meta}, {"installed_at", ts}, {"updated_at", ts}} {
@@ -1180,7 +1179,7 @@ func (s *Scope) backfillOptionalProvenance(ctx context.Context, quiet bool) ([]s
 		}
 	}
 	if len(backfilled) > 0 {
-		text, err := pyjson.Dumps(data, pyjson.Indent(2), pyjson.EnsureASCII(false))
+		text, err := jsonutil.Encode(data, jsonutil.Indent(2))
 		if err != nil {
 			return nil, err
 		}
@@ -1188,7 +1187,7 @@ func (s *Scope) backfillOptionalProvenance(ctx context.Context, quiet bool) ([]s
 		if err := os.MkdirAll(filepath.Dir(lock), 0o777); err != nil {
 			return nil, err
 		}
-		if err := pyfs.AtomicWriteText(home.WithOverride(ctx, s.Home), lock, text+"\n", ".lock_"); err != nil {
+		if err := fsutil.WriteFile(home.WithOverride(ctx, s.Home), lock, []byte(text+"\n"), fsutil.WriteOptions{Prefix: ".lock_", NativeLineEnds: true}); err != nil {
 			return nil, err
 		}
 	}

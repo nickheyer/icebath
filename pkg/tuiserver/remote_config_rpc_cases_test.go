@@ -7,9 +7,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/testfakes/configplane"
 	"github.com/nickheyer/icebath/pkg/testfakes/configplane/remoteplane"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Remote plane fixture with the raw config cache of the server cleared
@@ -58,12 +58,12 @@ func TestRpcRefusedByTheConfigBackendStillGetsItsOneAnswer(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	transport.mu.Lock()
-	frames := append([]*pyjson.Object(nil), transport.frames...)
+	frames := append([]*jsonutil.Object(nil), transport.frames...)
 	transport.mu.Unlock()
 	if len(frames) != 1 {
 		t.Fatalf("frames %v", frames)
 	}
-	frame := pyjson.Plain(frames[0]).(map[string]any)
+	frame := jsonutil.Plain(frames[0]).(map[string]any)
 	rpcError, _ := frame["error"].(map[string]any)
 	if frame["id"] != "pooled-1" || rpcError == nil || !strings.Contains(rpcError["message"].(string), "cannot load the config") {
 		t.Fatalf("frame %v", frame)

@@ -7,23 +7,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestOptimizeProgressLineFormatsEachPhase(t *testing.T) {
 	cases := []struct {
-		info *pyjson.Object
+		info *jsonutil.Object
 		want string
 	}{
-		{pyjson.ObjectOf("phase", "backfill", "percent", 5, "indexed", 1234, "total", 56789), "  Rebuilding index:   5% (1,234/56,789 messages)"},
-		{pyjson.ObjectOf("phase", "backfill_cjk"), "  Building CJK index:   0% (0/0 messages)"},
-		{pyjson.ObjectOf("phase", "teardown", "table", "fts_v22_trash_messages_fts", "table_index", 1, "table_count", 2, "percent", 100,
+		{jsonutil.ObjectOf("phase", "backfill", "percent", 5, "indexed", 1234, "total", 56789), "  Rebuilding index:   5% (1,234/56,789 messages)"},
+		{jsonutil.ObjectOf("phase", "backfill_cjk"), "  Building CJK index:   0% (0/0 messages)"},
+		{jsonutil.ObjectOf("phase", "teardown", "table", "fts_v22_trash_messages_fts", "table_index", 1, "table_count", 2, "percent", 100,
 			"indexed", 10, "total", 10, "paced", true),
 			"  Reclaiming old index: table 1/2 (messages_fts) 100% (10/10 rows) — paced: another process is using the database"},
-		{pyjson.ObjectOf("phase", "vacuum", "elapsed", 125.7, "size_bytes", 3*(1<<20), "estimated_bytes", 1572864),
+		{jsonutil.ObjectOf("phase", "vacuum", "elapsed", 125.7, "size_bytes", 3*(1<<20), "estimated_bytes", 1572864),
 			"  Compacting database (VACUUM): 2m 05s elapsed, 3.0 MB → ~1.5 MB"},
-		{pyjson.ObjectOf("phase", "vacuum", "elapsed", 5, "size_bytes", 2147483648), "  Compacting database (VACUUM): 0m 05s elapsed, 2,048.0 MB → ~0.0 MB"},
+		{jsonutil.ObjectOf("phase", "vacuum", "elapsed", 5, "size_bytes", 2147483648), "  Compacting database (VACUUM): 0m 05s elapsed, 2,048.0 MB → ~0.0 MB"},
 	}
 	for _, c := range cases {
 		if got := optimizeProgressLine(c.info); got != c.want {
@@ -35,12 +35,12 @@ func TestOptimizeProgressLineFormatsEachPhase(t *testing.T) {
 func TestOptimizeProgressOverwritesOneLinePerPhase(t *testing.T) {
 	var out strings.Builder
 	p := &optimizeProgress{w: &out}
-	p.call(pyjson.ObjectOf("phase", "backfill", "percent", 0, "indexed", 0, "total", 0))
-	p.call(pyjson.ObjectOf("phase", "backfill", "percent", 50, "indexed", 5000, "total", 10000))
-	p.call(pyjson.ObjectOf("phase", "backfill", "percent", 50, "indexed", 5000, "total", 10000))
-	p.call(pyjson.ObjectOf("phase", "backfill", "percent", 99, "indexed", 9, "total", 10000))
-	p.call(pyjson.ObjectOf("phase", "vacuum", "elapsed", 1, "size_bytes", 1048576, "estimated_bytes", 524288))
-	p.call(pyjson.ObjectOf("phase", "done"))
+	p.call(jsonutil.ObjectOf("phase", "backfill", "percent", 0, "indexed", 0, "total", 0))
+	p.call(jsonutil.ObjectOf("phase", "backfill", "percent", 50, "indexed", 5000, "total", 10000))
+	p.call(jsonutil.ObjectOf("phase", "backfill", "percent", 50, "indexed", 5000, "total", 10000))
+	p.call(jsonutil.ObjectOf("phase", "backfill", "percent", 99, "indexed", 9, "total", 10000))
+	p.call(jsonutil.ObjectOf("phase", "vacuum", "elapsed", 1, "size_bytes", 1048576, "estimated_bytes", 524288))
+	p.call(jsonutil.ObjectOf("phase", "done"))
 	p.close(false)
 	want := "\r  Rebuilding index:  50% (5,000/10,000 messages)" +
 		"\r  Rebuilding index:  99% (9/10,000 messages)    " +
@@ -54,9 +54,9 @@ func TestOptimizeProgressOverwritesOneLinePerPhase(t *testing.T) {
 func TestRecoveryProgressDrawsOneLinePerTable(t *testing.T) {
 	r, out := sessionsTestRun(t, sessionsTestHome(t), map[string]any{}, "")
 	p := &recoveryProgress{r: r}
-	p.call(pyjson.ObjectOf("table", "sessions", "copied_rows", 1500, "source_rows", 2500))
-	p.call(pyjson.ObjectOf("table", "sessions", "copied_rows", 2500, "source_rows", 2500))
-	p.call(pyjson.ObjectOf("table", "messages", "copied_rows", nil))
+	p.call(jsonutil.ObjectOf("table", "sessions", "copied_rows", 1500, "source_rows", 2500))
+	p.call(jsonutil.ObjectOf("table", "sessions", "copied_rows", 2500, "source_rows", 2500))
+	p.call(jsonutil.ObjectOf("table", "messages", "copied_rows", nil))
 	p.finish()
 	want := "  sessions: \r  sessions: 1,500/2,500\r  sessions: 2,500/2,500\n  messages: \r  messages: 0\n"
 	if out.String() != want {
@@ -65,16 +65,16 @@ func TestRecoveryProgressDrawsOneLinePerTable(t *testing.T) {
 }
 
 func TestPrintRecoveryVerdictReadsTheReport(t *testing.T) {
-	counts := pyjson.ObjectOf("verification", pyjson.ObjectOf("table_counts", pyjson.ObjectOf("sessions", 1234, "messages", 56789)))
-	partial := pyjson.ObjectOf("verified", true, "verification", rowGet(counts, "verification"))
-	bestEffort := pyjson.ObjectOf("verified", true, "best_effort", true)
+	counts := jsonutil.ObjectOf("verification", jsonutil.ObjectOf("table_counts", jsonutil.ObjectOf("sessions", 1234, "messages", 56789)))
+	partial := jsonutil.ObjectOf("verified", true, "verification", rowGet(counts, "verification"))
+	bestEffort := jsonutil.ObjectOf("verified", true, "best_effort", true)
 	cases := []struct {
-		report       *pyjson.Object
+		report       *jsonutil.Object
 		allowPartial bool
 		code         int
 		want         string
 	}{
-		{pyjson.ObjectOf("complete", true), false, 0, "✓ Recovered database verified at: out.db\n  The active session database was not changed.\n" +
+		{jsonutil.ObjectOf("complete", true), false, 0, "✓ Recovered database verified at: out.db\n  The active session database was not changed.\n" +
 			"  Review the JSON report before installing this database.\n"},
 		{partial, true, 0, "✓ Partial recovery output verified at: out.db\n  Recovered 1,234 sessions and 56,789 messages.\n" +
 			"  The active session database was not changed.\n" +

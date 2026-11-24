@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Witness outcome of a tick probe, absent when no witness node exists
@@ -145,11 +145,11 @@ func ProbeGatewayLoopLiveness(ctx context.Context, pid int, o LoopLivenessOption
 	if err != nil {
 		return GatewayLoopUnknown
 	}
-	decoded, err := pyjson.LoadsBytes(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return GatewayLoopUnknown
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return GatewayLoopUnknown
 	}

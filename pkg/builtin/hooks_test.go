@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const fakeLauncher = `#!/bin/sh
@@ -270,7 +270,7 @@ func TestHallmarkLintHookAddsFloorFailures(t *testing.T) {
 	if out, _ := h.transformToolResult(context.Background(), map[string]any{"tool_name": "patch", "args": map[string]any{"path": "a.css"}, "result": "{}"}); out != nil {
 		t.Fatalf("clean lint %v", out)
 	}
-	if obj, _ := pyjson.Loads(`{"hookSpecificOutput": {"additionalContext": 3}}`); additionalContext(obj.(*pyjson.Object)) != "" {
+	if obj, _ := jsonutil.Decode(`{"hookSpecificOutput": {"additionalContext": 3}}`); additionalContext(obj.(*jsonutil.Object)) != "" {
 		t.Fatal("non string additionalContext")
 	}
 }

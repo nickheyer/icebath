@@ -8,8 +8,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Prints what the update will touch and how, the install, its profiles and each running service's restart
@@ -17,14 +17,14 @@ func printUpdatePlan(w io.Writer, plan *UpdatePlan) {
 	fmt.Fprintln(w, "Update plan:")
 	install := "  Install: " + plan.InstallMethod
 	switch {
-	case pyrepr.Truthy(plan.ExpectedVersion) && pyrepr.Str(plan.ExpectedVersion) != "unknown":
-		install += " (v" + pyrepr.Str(plan.ExpectedVersion)
-		if pyrepr.Truthy(plan.ExpectedSHA) {
-			install += " @ " + clip(pyrepr.Str(plan.ExpectedSHA), 8)
+	case anyutil.IsTrue(plan.ExpectedVersion) && anyutil.String(plan.ExpectedVersion) != "unknown":
+		install += " (v" + anyutil.String(plan.ExpectedVersion)
+		if anyutil.IsTrue(plan.ExpectedSHA) {
+			install += " @ " + clip(anyutil.String(plan.ExpectedSHA), 8)
 		}
 		install += ")"
-	case pyrepr.Truthy(plan.ExpectedSHA):
-		install += " (commit " + clip(pyrepr.Str(plan.ExpectedSHA), 8) + ")"
+	case anyutil.IsTrue(plan.ExpectedSHA):
+		install += " (commit " + clip(anyutil.String(plan.ExpectedSHA), 8) + ")"
 	}
 	fmt.Fprintln(w, install)
 	if !plan.UpdatableInPlace {
@@ -35,7 +35,7 @@ func printUpdatePlan(w io.Writer, plan *UpdatePlan) {
 	if len(plan.Profiles) > 0 {
 		names := make([]string, len(plan.Profiles))
 		for i, profile := range plan.Profiles {
-			names[i] = pyrepr.Str(profile)
+			names[i] = anyutil.String(profile)
 		}
 		profiles = strings.Join(names, ", ")
 	}

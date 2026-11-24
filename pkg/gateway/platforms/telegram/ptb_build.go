@@ -8,16 +8,16 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Hosts of a custom Bot API server named by base_url and base_file_url, none for the public Telegram API
 func customAPIHosts(extra map[string]any) []string {
 	var hosts []string
 	for _, key := range []string{"base_url", "base_file_url"} {
-		raw := strings.TrimSpace(pyrepr.Str(extra[key]))
+		raw := strings.TrimSpace(anyutil.String(extra[key]))
 		if extra[key] == nil || raw == "" {
 			continue
 		}
@@ -74,7 +74,7 @@ func buildPTBRequests(ctx context.Context, name string, extra map[string]any, li
 	}
 	configured := ""
 	if raw := extra["proxy_url"]; raw != nil {
-		configured = pyrepr.Str(raw)
+		configured = anyutil.String(raw)
 	}
 	targets := append([]string{"api.telegram.org"}, fallbackIPs...)
 	if len(customHosts) > 0 {

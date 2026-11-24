@@ -18,9 +18,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var openAITestPNG, _ = hex.DecodeString("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4" +
@@ -67,8 +68,8 @@ func newFakeOpenAIImages(t *testing.T) *fakeOpenAIImages {
 			}
 		} else {
 			data, _ := io.ReadAll(r.Body)
-			parsed, _ := pyjson.Loads(string(data))
-			c.JSON, _ = pyjson.Plain(parsed).(map[string]any)
+			parsed, _ := jsonutil.Decode(string(data))
+			c.JSON, _ = jsonutil.Plain(parsed).(map[string]any)
 		}
 		f.mu.Lock()
 		f.requests = append(f.requests, c)
@@ -307,7 +308,7 @@ func TestOpenAIB64SavesToCache(t *testing.T) {
 		t.Fatal("cached bytes differ")
 	}
 	body := f.last(t).JSON
-	if body["model"] != "gpt-image-2" || body["quality"] != "medium" || body["size"] != "1536x1024" || !pyjson.Equal(body["n"], 1) {
+	if body["model"] != "gpt-image-2" || body["quality"] != "medium" || body["size"] != "1536x1024" || !anyutil.Equal(body["n"], 1) {
 		t.Fatal(body)
 	}
 	if _, has := body["response_format"]; has {

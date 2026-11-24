@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Journal in the install root naming every entry a ZIP swap stages or renames
@@ -68,7 +68,7 @@ func zipSwapOwnerLock(root string, wait time.Duration) (ZipSwapLock, func()) {
 
 // Publishes the swap journal with its phase, entries, generation tag and backup temps
 func WriteZipSwapJournal(root, phase string, entries []any, gen string, temps map[string]string) error {
-	tempObj := pyjson.NewObject()
+	tempObj := jsonutil.NewObject()
 	keys := make([]string, 0, len(temps))
 	for k := range temps {
 		keys = append(keys, k)
@@ -77,7 +77,7 @@ func WriteZipSwapJournal(root, phase string, entries []any, gen string, temps ma
 	for _, k := range keys {
 		tempObj.Set(k, temps[k])
 	}
-	text, err := pyjson.Dumps(pyjson.ObjectOf("pid", os.Getpid(), "gen", gen, "phase", phase, "entries", entries, "temps", tempObj))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("pid", os.Getpid(), "gen", gen, "phase", phase, "entries", entries, "temps", tempObj))
 	if err != nil {
 		return err
 	}
@@ -314,7 +314,7 @@ func RestoreInterruptedZipSwap(root string, stream io.Writer) bool {
 		fmt.Fprintf(stream, "⚠ Could not read the interrupted ZIP update's journal (%s); the next launch retries.\n", errchain.OSText(err))
 		return false
 	}
-	raw, _ := pystr.DecodeUTF8Sig(rawBytes)
+	raw, _ := textutil.DecodeUTF8(textutil.TrimBOM(rawBytes))
 	phase, gen, entries, temps, ok := parseZipSwapJournal(raw)
 	if !ok {
 		fmt.Fprintf(stream, "⚠ The interrupted ZIP update's journal %s is unreadable or from another version; "+

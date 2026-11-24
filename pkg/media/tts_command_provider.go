@@ -17,12 +17,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Python ValueError raised for a bad provider configuration
@@ -48,7 +48,7 @@ type commandTimeoutError struct {
 }
 
 func (e *commandTimeoutError) Error() string {
-	return fmt.Sprintf("Command '%s' timed out after %s seconds", e.Command, pyrepr.Str(e.Timeout))
+	return fmt.Sprintf("Command '%s' timed out after %s seconds", e.Command, anyutil.String(e.Timeout))
 }
 
 // The timeout the outer one is raised from, as Python chains TimeoutExpired from TimeoutExpired
@@ -122,9 +122,9 @@ func quoteCommandPlaceholder(value, quoteContext string) string {
 		return strings.NewReplacer(`\`, `\\`, `"`, `\"`, "$", `\$`, "`", "\\`").Replace(value)
 	}
 	if hostOSName() == "nt" {
-		return pysubprocess.List2cmdline([]string{value})
+		return executil.WindowsCommandLine([]string{value})
 	}
-	return pyshlex.Quote(value)
+	return shellutil.Quote(value)
 }
 
 // Template with every single or doubled braced name substituted and quoted for its context, literal doubled braces kept
@@ -211,7 +211,7 @@ func (p *commandProcess) wait(d time.Duration) bool {
 func (p *commandProcess) returncode() int {
 	var ee *exec.ExitError
 	if errors.As(p.err, &ee) {
-		return pysubprocess.Returncode(ee)
+		return executil.ExitCode(ee.ProcessState)
 	}
 	if p.err != nil {
 		return -1
@@ -350,7 +350,7 @@ func runCommandProvider(ctx context.Context, env *tools.Env, command string, tim
 		}
 	}
 	childEnv := tools.DelegatedChildSubprocessEnv(env, scrubbed)
-	cmd, err := pysubprocess.ShellCommand(command)
+	cmd, err := executil.ShellCommand(command)
 	if err != nil {
 		return nil, err
 	}
@@ -495,7 +495,7 @@ var commandTTSOutputFormats = map[string]bool{"mp3": true, "wav": true, "ogg": t
 func commandTTSOutputFormat(p *commandProvider, outputPath string) string {
 	suffix := ""
 	if outputPath != "" {
-		suffix = strings.TrimLeft(strings.TrimSpace(strings.ToLower(pypath.Suffix(outputPath))), ".")
+		suffix = strings.TrimLeft(strings.TrimSpace(strings.ToLower(pathutil.Suffix(outputPath))), ".")
 	}
 	if commandTTSOutputFormats[suffix] {
 		return suffix
@@ -508,7 +508,7 @@ func commandSpeedText(speed float64, set bool) string {
 	if !set {
 		return ""
 	}
-	return pyrepr.Str(speed)
+	return anyutil.String(speed)
 }
 
 // Speed a program gets: the call's own, then its own setting, then the general one
@@ -522,7 +522,7 @@ func (r *ttsRequest) commandSpeed(p *commandProvider) string {
 
 // Speech written by a program of your own, the audio path it produced
 func generateCommandTTS(ctx context.Context, env *tools.Env, text, outputPath string, p *commandProvider, req *ttsRequest) (string, error) {
-	output := pypath.Expanduser(outputPath)
+	output := pathutil.ExpandUser(outputPath)
 	if err := os.MkdirAll(filepath.Dir(output), 0o777); err != nil {
 		return "", err
 	}

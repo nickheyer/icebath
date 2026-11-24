@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Child modes of the test binary standing in for the shells and launchers the scratch tests spawn
@@ -58,7 +58,7 @@ func runTestMode(mode string, args []string) int {
 		if mode == "export" {
 			ExportScratchTmpEnv(context.Background())
 		}
-		dir, err := pypath.Gettempdir()
+		dir, err := pathutil.TempDir()
 		if err != nil {
 			return 1
 		}

@@ -10,9 +10,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -58,11 +59,11 @@ func GetToolKind(toolName string) string {
 	return "other"
 }
 
-func textContent(content string) pyacp.ToolCallContent {
-	return pyacp.ToolContent(pyacp.TextBlock(content))
+func textContent(content string) acputil.ToolCallContent {
+	return acputil.ToolContent(acputil.TextBlock(content))
 }
 
-func dget(d *pyjson.Object, key string) any {
+func dget(d *jsonutil.Object, key string) any {
 	if d == nil {
 		return nil
 	}
@@ -70,7 +71,7 @@ func dget(d *pyjson.Object, key string) any {
 	return v
 }
 
-func dhas(d *pyjson.Object, key string) bool {
+func dhas(d *jsonutil.Object, key string) bool {
 	if d == nil {
 		return false
 	}
@@ -79,7 +80,7 @@ func dhas(d *pyjson.Object, key string) bool {
 }
 
 // Value of key or def when the key is absent, the dict.get default form
-func dgetOr(d *pyjson.Object, key string, def any) any {
+func dgetOr(d *jsonutil.Object, key string, def any) any {
 	if dhas(d, key) {
 		return dget(d, key)
 	}
@@ -87,9 +88,9 @@ func dgetOr(d *pyjson.Object, key string, def any) any {
 }
 
 // First truthy value among keys, else def
-func dfirst(d *pyjson.Object, def any, keys ...string) any {
+func dfirst(d *jsonutil.Object, def any, keys ...string) any {
 	for _, k := range keys {
-		if v := dget(d, k); truthy(v) {
+		if v := dget(d, k); anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -97,8 +98,8 @@ func dfirst(d *pyjson.Object, def any, keys ...string) any {
 }
 
 // First truthy argument as a stripped string, else def
-func argText(args *pyjson.Object, def string, keys ...string) string {
-	if s := strip(pyStr(dfirst(args, def, keys...))); s != "" {
+func argText(args *jsonutil.Object, def string, keys ...string) string {
+	if s := strip(anyutil.String(dfirst(args, def, keys...))); s != "" {
 		return s
 	}
 	return def
@@ -108,10 +109,10 @@ func strip(s string) string { return strings.TrimSpace(s) }
 
 // Template with its braces replaced by str(value) when value is truthy, else fallback
 func fmtValue(value any, template, fallback string) string {
-	if !truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return fallback
 	}
-	return strings.Replace(template, "{}", pyStr(value), 1)
+	return strings.Replace(template, "{}", anyutil.String(value), 1)
 }
 
 func nonempty(result *string) (string, bool) {
@@ -123,15 +124,15 @@ func nonempty(result *string) (string, bool) {
 
 func plural(count any, word, suffix string) string {
 	s := ""
-	if !pyrepr.Equal(count, int64(1)) {
+	if !anyutil.Equal(count, int64(1)) {
 		s = suffix
 	}
-	return pyStr(count) + " " + word + s
+	return anyutil.String(count) + " " + word + s
 }
 
-func failure(data *pyjson.Object, prefix string) (string, bool) {
-	if dget(data, "success") == false || truthy(dget(data, "error")) {
-		return prefix + ": " + pyStr(dgetOr(data, "error", "unknown error")), true
+func failure(data *jsonutil.Object, prefix string) (string, bool) {
+	if dget(data, "success") == false || anyutil.IsTrue(dget(data, "error")) {
+		return prefix + ": " + anyutil.String(dgetOr(data, "error", "unknown error")), true
 	}
 	return "", false
 }
@@ -141,8 +142,8 @@ func isList(v any) ([]any, bool) {
 	return l, ok
 }
 
-func isDict(v any) (*pyjson.Object, bool) {
-	o, ok := v.(*pyjson.Object)
+func isDict(v any) (*jsonutil.Object, bool) {
+	o, ok := v.(*jsonutil.Object)
 	return o, ok
 }
 
@@ -175,14 +176,14 @@ func runeLen(s string) int { return utf8.RuneCountInString(s) }
 
 func runePrefix(s string, n int) string { return textutil.First(s, n) }
 
-type formatter func(toolName string, result *string, args *pyjson.Object) (string, bool)
+type formatter func(toolName string, result *string, args *jsonutil.Object) (string, bool)
 
 // Completion formatter over the parsed dict result, text fallback returning the raw text for non dict payloads
-func structured(textFallback bool, fn func(toolName string, data, args *pyjson.Object) (string, bool)) formatter {
-	return func(toolName string, result *string, args *pyjson.Object) (string, bool) {
+func structured(textFallback bool, fn func(toolName string, data, args *jsonutil.Object) (string, bool)) formatter {
+	return func(toolName string, result *string, args *jsonutil.Object) (string, bool) {
 		if data, ok := isDict(jsonLoadsMaybe(result)); ok {
 			if args == nil {
-				args = pyjson.NewObject()
+				args = jsonutil.NewObject()
 			}
 			return fn(toolName, data, args)
 		}
@@ -194,21 +195,21 @@ func structured(textFallback bool, fn func(toolName string, data, args *pyjson.O
 }
 
 // Tool call arguments as a dict, JSON text decoded or wrapped under raw, other values empty
-func CoerceToolArgs(raw any) *pyjson.Object {
+func CoerceToolArgs(raw any) *jsonutil.Object {
 	if s, ok := raw.(string); ok {
-		v, err := pyjson.Loads(s)
+		v, err := jsonutil.Decode(s)
 		if err != nil {
-			o := pyjson.NewObject()
+			o := jsonutil.NewObject()
 			o.Set("raw", s)
 			return o
 		}
 		raw = v
 	}
 	switch x := raw.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x
 	case map[string]any:
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		keys := make([]string, 0, len(x))
 		for k := range x {
 			keys = append(keys, k)
@@ -219,15 +220,15 @@ func CoerceToolArgs(raw any) *pyjson.Object {
 		}
 		return o
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
-func strDefault(v any) (any, error) { return pyStr(v), nil }
+func strDefault(v any) (any, error) { return anyutil.String(v), nil }
 
 func argsJSON(arguments any) string {
-	s, err := pyjson.Dumps(arguments, pyjson.Indent(2), pyjson.Default(strDefault))
+	s, err := jsonutil.Encode(arguments, jsonutil.Indent(2), jsonutil.Convert(strDefault))
 	if err != nil {
-		return pyStr(arguments)
+		return anyutil.String(arguments)
 	}
 	return s
 }
@@ -237,7 +238,7 @@ func jsonLoadsMaybe(value *string) any {
 	if value == nil {
 		return nil
 	}
-	if v, err := pyjson.Loads(*value); err == nil {
+	if v, err := jsonutil.Decode(*value); err == nil {
 		return v
 	}
 	dec := json.NewDecoder(strings.NewReader(strings.TrimLeftFunc(*value, unicode.IsSpace)))
@@ -245,7 +246,7 @@ func jsonLoadsMaybe(value *string) any {
 	if err := dec.Decode(&raw); err != nil {
 		return nil
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil
 	}
@@ -284,12 +285,12 @@ func toolResultFailed(result *string, toolName string) bool {
 	if dget(data, "success") == false || dget(data, "ok") == false || (isPyInt(exitCode) && pyIntValue(exitCode) != 0) {
 		return true
 	}
-	return polishedTools[toolName] && truthy(dget(data, "error")) && !truthy(dget(data, "content"))
+	return polishedTools[toolName] && anyutil.IsTrue(dget(data, "error")) && !anyutil.IsTrue(dget(data, "content"))
 }
 
 // Tool name and its shared preview, the bare name when the arguments give none
-func BuildToolTitle(toolName string, args *pyjson.Object) string {
-	plain, _ := pyjson.Plain(args).(map[string]any)
+func BuildToolTitle(toolName string, args *jsonutil.Object) string {
+	plain, _ := jsonutil.Plain(args).(map[string]any)
 	limit := 80
 	preview := tools.BuildToolPreview(nil, toolName, plain, &limit)
 	if preview != "" {
@@ -300,25 +301,25 @@ func BuildToolTitle(toolName string, args *pyjson.Object) string {
 
 var todoIcons = map[string]string{"completed": "✅", "in_progress": "\U0001f504", "pending": "⏳", "cancelled": "✗"}
 
-var formatTodoResult = structured(false, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatTodoResult = structured(false, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	items, ok := isList(dget(data, "todos"))
 	if !ok {
 		return "", false
 	}
-	var todos []*pyjson.Object
+	var todos []*jsonutil.Object
 	for _, t := range items {
 		if o, ok := isDict(t); ok {
 			todos = append(todos, o)
 		}
 	}
-	byID := map[string]*pyjson.Object{}
+	byID := map[string]*jsonutil.Object{}
 	for _, t := range todos {
-		byID[pyStr(pyrepr.Or(dget(t, "id"), ""))] = t
+		byID[anyutil.String(anyutil.Or(dget(t, "id"), ""))] = t
 	}
-	depth := func(item *pyjson.Object) int {
+	depth := func(item *jsonutil.Object) int {
 		d, seen := 0, map[string]bool{}
 		for {
-			parent := pyStr(pyrepr.Or(dget(item, "parent"), ""))
+			parent := anyutil.String(anyutil.Or(dget(item, "parent"), ""))
 			if parent == "" || byID[parent] == nil || seen[parent] {
 				break
 			}
@@ -330,11 +331,11 @@ var formatTodoResult = structured(false, func(toolName string, data, args *pyjso
 	}
 	lines := []string{"**Todo list**", ""}
 	for _, item := range todos {
-		content := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(item, "content"), dget(item, "id")), "")))
+		content := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(item, "content"), dget(item, "id")), "")))
 		if content == "" {
 			continue
 		}
-		icon, ok := todoIcons[pyStr(pyrepr.Or(dget(item, "status"), "pending"))]
+		icon, ok := todoIcons[anyutil.String(anyutil.Or(dget(item, "status"), "pending"))]
 		if !ok {
 			icon = "•"
 		}
@@ -342,19 +343,19 @@ var formatTodoResult = structured(false, func(toolName string, data, args *pyjso
 	}
 	if summary, ok := isDict(dget(data, "summary")); ok && summary.Len() > 0 {
 		cancelled := dgetOr(summary, "cancelled", int64(0))
-		progress := fmt.Sprintf("%s completed, %s in progress, ", pyStr(dgetOr(summary, "completed", int64(0))), pyStr(dgetOr(summary, "in_progress", int64(0))))
-		progress += pyStr(dgetOr(summary, "pending", int64(0))) + " pending"
-		if truthy(cancelled) {
-			progress += ", " + pyStr(cancelled) + " cancelled"
+		progress := fmt.Sprintf("%s completed, %s in progress, ", anyutil.String(dgetOr(summary, "completed", int64(0))), anyutil.String(dgetOr(summary, "in_progress", int64(0))))
+		progress += anyutil.String(dgetOr(summary, "pending", int64(0))) + " pending"
+		if anyutil.IsTrue(cancelled) {
+			progress += ", " + anyutil.String(cancelled) + " cancelled"
 		}
 		lines = append(lines, "", "**Progress:** "+progress)
 	}
 	return strings.Join(lines, "\n"), true
 })
 
-var formatReadFileResult = structured(false, func(toolName string, data, a *pyjson.Object) (string, bool) {
-	if truthy(dget(data, "error")) && !truthy(dget(data, "content")) {
-		return "Read failed: " + pyStr(dget(data, "error")), true
+var formatReadFileResult = structured(false, func(toolName string, data, a *jsonutil.Object) (string, bool) {
+	if anyutil.IsTrue(dget(data, "error")) && !anyutil.IsTrue(dget(data, "content")) {
+		return "Read failed: " + anyutil.String(dget(data, "error")), true
 	}
 	content, ok := dget(data, "content").(string)
 	if !ok {
@@ -362,28 +363,28 @@ var formatReadFileResult = structured(false, func(toolName string, data, a *pyjs
 	}
 	var bits []string
 	for _, kl := range [][2]string{{"offset", "from line"}, {"limit", "limit"}} {
-		if truthy(dget(a, kl[0])) {
-			bits = append(bits, kl[1]+" "+pyStr(dget(a, kl[0])))
+		if anyutil.IsTrue(dget(a, kl[0])) {
+			bits = append(bits, kl[1]+" "+anyutil.String(dget(a, kl[0])))
 		}
 	}
-	header := "Read " + strip(pyStr(pyrepr.Or(pyrepr.Or(dget(a, "path"), dget(data, "path")), "file")))
+	header := "Read " + strip(anyutil.String(anyutil.Or(anyutil.Or(dget(a, "path"), dget(data, "path")), "file")))
 	if len(bits) > 0 {
 		header += " (" + strings.Join(bits, ", ") + ")"
 	}
 	if dget(data, "total_lines") != nil {
-		header += " — " + pyStr(dget(data, "total_lines")) + " total lines"
+		header += " — " + anyutil.String(dget(data, "total_lines")) + " total lines"
 	}
 	return truncateText(header+"\n\n"+fencedText(content, ""), 5000), true
 })
 
-var formatSearchFilesResult = structured(false, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatSearchFilesResult = structured(false, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	if files, ok := isList(dget(data, "files")); ok {
 		shown := min(len(files), 20)
 		lines := []string{"File search results", fmt.Sprintf("Found %s; showing %d.", plural(dgetOr(data, "total_count", int64(len(files))), "file", "s"), shown), ""}
 		for _, p := range files[:shown] {
-			lines = append(lines, "- "+pyStr(p))
+			lines = append(lines, "- "+anyutil.String(p))
 		}
-		if truthy(dget(data, "truncated")) || len(files) > shown {
+		if anyutil.IsTrue(dget(data, "truncated")) || len(files) > shown {
 			lines = append(lines, "", "Results truncated. Narrow the search, add path/file_glob, or use offset to page.")
 		}
 		return truncateText(strings.Join(lines, "\n"), 7000), true
@@ -397,32 +398,32 @@ var formatSearchFilesResult = structured(false, func(toolName string, data, args
 	for _, m := range matches[:shown] {
 		match, ok := isDict(m)
 		if !ok {
-			lines = append(lines, "- "+pyStr(m))
+			lines = append(lines, "- "+anyutil.String(m))
 			continue
 		}
-		path := pyStr(dfirst(match, "?", "path", "file", "filename"))
-		line := pyrepr.Or(dget(match, "line"), dget(match, "line_number"))
-		if truthy(line) {
-			lines = append(lines, "- "+path+":"+pyStr(line))
+		path := anyutil.String(dfirst(match, "?", "path", "file", "filename"))
+		line := anyutil.Or(dget(match, "line"), dget(match, "line_number"))
+		if anyutil.IsTrue(line) {
+			lines = append(lines, "- "+path+":"+anyutil.String(line))
 		} else {
 			lines = append(lines, "- "+path)
 		}
-		if content := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(match, "content"), dget(match, "text")), ""))); content != "" {
+		if content := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(match, "content"), dget(match, "text")), ""))); content != "" {
 			lines = append(lines, "  "+truncateText(strings.Join(strings.Fields(content), " "), 300))
 		}
 	}
-	if truthy(dget(data, "truncated")) || len(matches) > shown {
+	if anyutil.IsTrue(dget(data, "truncated")) || len(matches) > shown {
 		lines = append(lines, "", "Results truncated. Narrow the search, add file_glob, or use offset to page.")
 	}
 	return truncateText(strings.Join(lines, "\n"), 7000), true
 })
 
-var formatExecuteCodeResult = structured(true, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatExecuteCodeResult = structured(true, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	parts := []string{"Execution complete"}
 	if ec := dget(data, "exit_code"); ec != nil {
-		parts[0] = "Exit code: " + pyStr(ec)
+		parts[0] = "Exit code: " + anyutil.String(ec)
 	}
-	if truthy(dget(data, "stdout_truncated")) {
+	if anyutil.IsTrue(dget(data, "stdout_truncated")) {
 		total, captured, omitted := dget(data, "stdout_bytes_total"), dget(data, "stdout_bytes_captured"), dget(data, "stdout_bytes_omitted")
 		if isPyInt(captured) && isPyInt(total) && isPyInt(omitted) {
 			parts = append(parts, "", fmt.Sprintf("Output truncated: captured %s of %s bytes (%s omitted).",
@@ -432,9 +433,9 @@ var formatExecuteCodeResult = structured(true, func(toolName string, data, args 
 		}
 	}
 	for _, e := range []struct{ label, value string }{
-		{"Warning:", strip(pyStr(pyrepr.Or(dget(data, "warning"), "")))},
-		{"Output:", pyStr(pyrepr.Or(dget(data, "output"), ""))},
-		{"Error:", pyStr(pyrepr.Or(dget(data, "error"), ""))},
+		{"Warning:", strip(anyutil.String(anyutil.Or(dget(data, "warning"), "")))},
+		{"Output:", anyutil.String(anyutil.Or(dget(data, "output"), ""))},
+		{"Error:", anyutil.String(anyutil.Or(dget(data, "error"), ""))},
 	} {
 		if e.value != "" {
 			parts = append(parts, "", e.label, e.value)
@@ -443,14 +444,14 @@ var formatExecuteCodeResult = structured(true, func(toolName string, data, args 
 	return truncateText(strings.Join(parts, "\n"), 5000), true
 })
 
-var formatSkillViewResult = structured(false, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatSkillViewResult = structured(false, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	if dget(data, "success") == false {
-		return "Skill view failed: " + pyStr(dgetOr(data, "error", "unknown error")), true
+		return "Skill view failed: " + anyutil.String(dgetOr(data, "error", "unknown error")), true
 	}
-	content := pyStr(pyrepr.Or(dget(data, "content"), ""))
-	lines := []string{"**Skill loaded**", "", "- **Name:** `" + pyStr(pyrepr.Or(dget(data, "name"), "skill")) + "`",
-		"- **File:** `" + pyStr(pyrepr.Or(pyrepr.Or(dget(data, "file"), dget(data, "path")), "SKILL.md")) + "`"}
-	if d := strip(pyStr(pyrepr.Or(dget(data, "description"), ""))); d != "" {
+	content := anyutil.String(anyutil.Or(dget(data, "content"), ""))
+	lines := []string{"**Skill loaded**", "", "- **Name:** `" + anyutil.String(anyutil.Or(dget(data, "name"), "skill")) + "`",
+		"- **File:** `" + anyutil.String(anyutil.Or(anyutil.Or(dget(data, "file"), dget(data, "path")), "SKILL.md")) + "`"}
+	if d := strip(anyutil.String(anyutil.Or(dget(data, "description"), ""))); d != "" {
 		lines = append(lines, "- **Description:** "+d)
 	}
 	if content != "" {
@@ -458,8 +459,8 @@ var formatSkillViewResult = structured(false, func(toolName string, data, args *
 	}
 	if linked, ok := isDict(dget(data, "linked_files")); ok && linked.Len() > 0 {
 		n := 0
-		for _, k := range linked.Keys {
-			if l, ok := isList(linked.Vals[k]); ok {
+		for _, k := range linked.Keys() {
+			if l, ok := isList(linked.Value(k)); ok {
 				n += len(l)
 			}
 		}
@@ -488,13 +489,13 @@ var formatSkillViewResult = structured(false, func(toolName string, data, args *
 	return strings.Join(lines, "\n"), true
 })
 
-var formatSkillManageResult = structured(false, func(toolName string, data, a *pyjson.Object) (string, bool) {
+var formatSkillManageResult = structured(false, func(toolName string, data, a *jsonutil.Object) (string, bool) {
 	action := argText(a, "manage", "action")
-	name := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(a, "name"), dget(data, "name")), "skill")))
+	name := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(a, "name"), dget(data, "name")), "skill")))
 	if name == "" {
 		name = "skill"
 	}
-	filePath := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(a, "file_path"), dget(data, "file_path")), "SKILL.md")))
+	filePath := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(a, "file_path"), dget(data, "file_path")), "SKILL.md")))
 	if filePath == "" {
 		filePath = "SKILL.md"
 	}
@@ -506,19 +507,19 @@ var formatSkillManageResult = structured(false, func(toolName string, data, a *p
 	if action != "delete" {
 		lines = append(lines, "- **File:** `"+filePath+"`")
 	}
-	if msg := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(data, "message"), dget(data, "error")), ""))); msg != "" {
+	if msg := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(data, "message"), dget(data, "error")), ""))); msg != "" {
 		lines = append(lines, "- **Result:** "+msg)
 	}
-	if r := pyrepr.Or(dget(data, "replacements"), dget(data, "replacement_count")); r != nil {
-		lines = append(lines, "- **Replacements:** "+pyStr(r))
+	if r := anyutil.Or(dget(data, "replacements"), dget(data, "replacement_count")); r != nil {
+		lines = append(lines, "- **Replacements:** "+anyutil.String(r))
 	}
-	if p := strip(pyStr(pyrepr.Or(dget(data, "path"), ""))); p != "" {
+	if p := strip(anyutil.String(anyutil.Or(dget(data, "path"), ""))); p != "" {
 		lines = append(lines, "- **Path:** `"+p+"`")
 	}
 	return strings.Join(lines, "\n"), true
 })
 
-var formatWebSearchResult = structured(false, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatWebSearchResult = structured(false, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	var web any
 	if inner, ok := isDict(dget(data, "data")); ok {
 		web = dget(inner, "web")
@@ -535,22 +536,22 @@ var formatWebSearchResult = structured(false, func(toolName string, data, args *
 		if !ok {
 			continue
 		}
-		url := strip(pyStr(pyrepr.Or(dget(item, "url"), "")))
-		line := "• " + strip(pyStr(pyrepr.Or(pyrepr.Or(dget(item, "title"), dget(item, "url")), "result")))
+		url := strip(anyutil.String(anyutil.Or(dget(item, "url"), "")))
+		line := "• " + strip(anyutil.String(anyutil.Or(anyutil.Or(dget(item, "title"), dget(item, "url")), "result")))
 		if url != "" {
 			line += " — " + url
 		}
 		lines = append(lines, line)
-		if d := strip(pyStr(pyrepr.Or(dget(item, "description"), ""))); d != "" {
+		if d := strip(anyutil.String(anyutil.Or(dget(item, "description"), ""))); d != "" {
 			lines = append(lines, "  "+d)
 		}
 	}
 	return truncateText(strings.Join(lines, "\n"), 5000), true
 })
 
-var formatWebExtractResult = structured(false, func(toolName string, data, args *pyjson.Object) (string, bool) {
-	if dget(data, "success") == false && truthy(dget(data, "error")) {
-		return "Web extract failed: " + pyStr(dget(data, "error")), true
+var formatWebExtractResult = structured(false, func(toolName string, data, args *jsonutil.Object) (string, bool) {
+	if dget(data, "success") == false && anyutil.IsTrue(dget(data, "error")) {
+		return "Web extract failed: " + anyutil.String(dget(data, "error")), true
 	}
 	results, ok := isList(dget(data, "results"))
 	if !ok {
@@ -561,13 +562,13 @@ var formatWebExtractResult = structured(false, func(toolName string, data, args 
 		item, isD := isDict(it)
 		errText := ""
 		if isD {
-			errText = strip(pyStr(pyrepr.Or(dget(item, "error"), "")))
+			errText = strip(anyutil.String(anyutil.Or(dget(item, "error"), "")))
 		}
 		if errText == "" || errText == "None" || errText == "null" {
 			continue
 		}
-		url := strip(pyStr(pyrepr.Or(dget(item, "url"), "")))
-		title := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(item, "title"), url), "Untitled")))
+		url := strip(anyutil.String(anyutil.Or(dget(item, "url"), "")))
+		title := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(item, "title"), url), "Untitled")))
 		where := ""
 		if url != "" && url != title {
 			where = " — " + url
@@ -587,9 +588,9 @@ func more(n, shown int, unit string) []string {
 	return nil
 }
 
-var formatProcessResult = structured(true, func(toolName string, data, args *pyjson.Object) (string, bool) {
-	if dget(data, "success") == false && truthy(dget(data, "error")) {
-		return "Process error: " + pyStr(dget(data, "error")), true
+var formatProcessResult = structured(true, func(toolName string, data, args *jsonutil.Object) (string, bool) {
+	if dget(data, "success") == false && anyutil.IsTrue(dget(data, "error")) {
+		return "Process error: " + anyutil.String(dget(data, "error")), true
 	}
 	action := argText(args, "process", "action")
 	if procs, ok := isList(dget(data, "processes")); ok {
@@ -597,24 +598,24 @@ var formatProcessResult = structured(true, func(toolName string, data, args *pyj
 		for _, p := range procs[:min(len(procs), 20)] {
 			proc, ok := isDict(p)
 			if !ok {
-				lines = append(lines, "- "+pyStr(p))
+				lines = append(lines, "- "+anyutil.String(p))
 				continue
 			}
 			st := dget(proc, "status")
-			if !truthy(st) {
+			if !anyutil.IsTrue(st) {
 				st = "running"
-				if truthy(dget(proc, "exited")) {
+				if anyutil.IsTrue(dget(proc, "exited")) {
 					st = "exited"
 				}
 			}
-			bits := []string{pyStr(st)}
+			bits := []string{anyutil.String(st)}
 			for _, kl := range [][2]string{{"pid", "pid"}, {"exit_code", "exit"}} {
 				if dget(proc, kl[0]) != nil {
-					bits = append(bits, kl[1]+" "+pyStr(dget(proc, kl[0])))
+					bits = append(bits, kl[1]+" "+anyutil.String(dget(proc, kl[0])))
 				}
 			}
-			cmd := strip(pyStr(pyrepr.Or(dget(proc, "command"), "")))
-			line := "- `" + pyStr(dfirst(proc, "?", "session_id", "id")) + "` — " + strings.Join(bits, ", ")
+			cmd := strip(anyutil.String(anyutil.Or(dget(proc, "command"), "")))
+			line := "- `" + anyutil.String(dfirst(proc, "?", "session_id", "id")) + "` — " + strings.Join(bits, ", ")
 			if cmd != "" {
 				line += " — " + runePrefix(cmd, 120)
 			}
@@ -622,8 +623,8 @@ var formatProcessResult = structured(true, func(toolName string, data, args *pyj
 		}
 		return strings.Join(append(lines, more(len(procs), 20, " process(es)")...), "\n"), true
 	}
-	status := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(data, "status"), dget(data, "state")), action)))
-	sid := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(data, "session_id"), dget(args, "session_id")), "")))
+	status := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(data, "status"), dget(data, "state")), action)))
+	sid := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(data, "session_id"), dget(args, "session_id")), "")))
 	head := "Process " + action + ": " + status
 	if sid != "" {
 		head += " (`" + sid + "`)"
@@ -631,7 +632,7 @@ var formatProcessResult = structured(true, func(toolName string, data, args *pyj
 	lines := []string{head}
 	for _, kl := range [][2]string{{"command", "Command"}, {"pid", "PID"}, {"exit_code", "Exit code"}, {"returncode", "Exit code"}, {"lines", "Lines"}} {
 		if dget(data, kl[0]) != nil {
-			lines = append(lines, "- **"+kl[1]+":** "+pyStr(dget(data, kl[0])))
+			lines = append(lines, "- **"+kl[1]+":** "+anyutil.String(dget(data, kl[0])))
 		}
 	}
 	output := dfirst(data, nil, "output", "new_output", "log", "stdout")
@@ -641,38 +642,38 @@ var formatProcessResult = structured(true, func(toolName string, data, args *pyj
 		value any
 		limit int
 	}{{"Output:", output, 5000}, {"Error:", errV, 2000}} {
-		if truthy(e.value) {
-			lines = append(lines, "", e.label, truncateText(pyStr(e.value), e.limit))
+		if anyutil.IsTrue(e.value) {
+			lines = append(lines, "", e.label, truncateText(anyutil.String(e.value), e.limit))
 		}
 	}
-	if truthy(dget(data, "message")) && !truthy(output) && !truthy(errV) {
-		lines = append(lines, pyStr(dget(data, "message")))
+	if anyutil.IsTrue(dget(data, "message")) && !anyutil.IsTrue(output) && !anyutil.IsTrue(errV) {
+		lines = append(lines, anyutil.String(dget(data, "message")))
 	}
 	return truncateText(strings.Join(lines, "\n"), 7000), true
 })
 
 var delegateIcons = map[string]string{"completed": "✅", "failed": "✗", "error": "✗", "timeout": "⏱", "interrupted": "⚠"}
 
-var formatDelegateResult = structured(false, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatDelegateResult = structured(false, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	results, ok := isList(dget(data, "results"))
 	if !ok {
-		if truthy(dget(data, "error")) {
-			return "Delegation failed: " + pyStr(dget(data, "error")), true
+		if anyutil.IsTrue(dget(data, "error")) {
+			return "Delegation failed: " + anyutil.String(dget(data, "error")), true
 		}
 		return "", false
 	}
 	head := "Delegation results: " + plural(int64(len(results)), "task", "s")
 	if total := dget(data, "total_duration_seconds"); total != nil {
-		head += " in " + pyStr(total) + "s"
+		head += " in " + anyutil.String(total) + "s"
 	}
 	lines := []string{head}
 	for _, it := range results {
 		item, ok := isDict(it)
 		if !ok {
-			lines = append(lines, "- "+pyStr(it))
+			lines = append(lines, "- "+anyutil.String(it))
 			continue
 		}
-		idx, status := dget(item, "task_index"), pyStr(pyrepr.Or(dget(item, "status"), "unknown"))
+		idx, status := dget(item, "task_index"), anyutil.String(anyutil.Or(dget(item, "status"), "unknown"))
 		icon, ok := delegateIcons[status]
 		if !ok {
 			icon = "•"
@@ -683,14 +684,14 @@ var formatDelegateResult = structured(false, func(toolName string, data, args *p
 		}
 		header := icon + " Task " + num + ": " + status
 		var bits []string
-		if truthy(dget(item, "model")) {
-			bits = append(bits, pyStr(dget(item, "model")))
+		if anyutil.IsTrue(dget(item, "model")) {
+			bits = append(bits, anyutil.String(dget(item, "model")))
 		}
-		if truthy(dget(item, "_child_role")) {
-			bits = append(bits, "role="+pyStr(dget(item, "_child_role")))
+		if anyutil.IsTrue(dget(item, "_child_role")) {
+			bits = append(bits, "role="+anyutil.String(dget(item, "_child_role")))
 		}
 		if dget(item, "duration_seconds") != nil {
-			bits = append(bits, pyStr(dget(item, "duration_seconds"))+"s")
+			bits = append(bits, anyutil.String(dget(item, "duration_seconds"))+"s")
 		}
 		if len(bits) > 0 {
 			header += " (" + strings.Join(bits, ", ") + ")"
@@ -700,7 +701,7 @@ var formatDelegateResult = structured(false, func(toolName string, data, args *p
 			key, prefix string
 			limit       int
 		}{{"summary", "", 1200}, {"error", "Error: ", 800}} {
-			if v := strip(pyStr(pyrepr.Or(dget(item, e.key), ""))); v != "" {
+			if v := strip(anyutil.String(anyutil.Or(dget(item, e.key), ""))); v != "" {
 				lines = append(lines, e.prefix+truncateText(v, e.limit))
 			}
 		}
@@ -708,7 +709,7 @@ var formatDelegateResult = structured(false, func(toolName string, data, args *p
 		var names []string
 		for _, t := range trace {
 			if to, ok := isDict(t); ok {
-				names = append(names, pyStr(pyrepr.Or(dget(to, "tool"), "?")))
+				names = append(names, anyutil.String(anyutil.Or(dget(to, "tool"), "?")))
 			}
 		}
 		if len(names) > 0 {
@@ -722,22 +723,22 @@ var formatDelegateResult = structured(false, func(toolName string, data, args *p
 	return truncateText(strings.Join(lines, "\n"), 8000), true
 })
 
-var formatSessionSearchResult = structured(false, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatSessionSearchResult = structured(false, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	if dget(data, "success") == false {
-		return "Session search failed: " + pyStr(dgetOr(data, "error", "unknown error")), true
+		return "Session search failed: " + anyutil.String(dgetOr(data, "error", "unknown error")), true
 	}
 	results, ok := isList(dget(data, "results"))
 	if !ok {
 		return "", false
 	}
-	recent := pyrepr.Equal(pyrepr.Or(dget(data, "mode"), "search"), "recent")
+	recent := anyutil.Equal(anyutil.Or(dget(data, "mode"), "search"), "recent")
 	head := "Session search results" + fmtValue(dget(data, "query"), " for `{}`", "")
 	if recent {
 		head = "Recent sessions"
 	}
 	lines := []string{head}
 	if len(results) == 0 {
-		lines = append(lines, pyStr(pyrepr.Or(dget(data, "message"), "No matching sessions found.")))
+		lines = append(lines, anyutil.String(anyutil.Or(dget(data, "message"), "No matching sessions found.")))
 		return strings.Join(lines, "\n"), true
 	}
 	for _, it := range results {
@@ -745,53 +746,53 @@ var formatSessionSearchResult = structured(false, func(toolName string, data, ar
 		if !ok {
 			continue
 		}
-		title := strip(pyStr(dfirst(item, "Untitled session", "title", "when")))
-		when := strip(pyStr(dfirst(item, "", "last_active", "started_at", "when")))
+		title := strip(anyutil.String(dfirst(item, "Untitled session", "title", "when")))
+		when := strip(anyutil.String(dfirst(item, "", "last_active", "started_at", "when")))
 		count := dget(item, "message_count")
 		countText := ""
 		if count != nil {
-			countText = pyStr(count) + " msgs"
+			countText = anyutil.String(count) + " msgs"
 		}
 		var metaBits []string
-		for _, x := range []string{when, strip(pyStr(pyrepr.Or(dget(item, "source"), ""))), countText} {
+		for _, x := range []string{when, strip(anyutil.String(anyutil.Or(dget(item, "source"), ""))), countText} {
 			if x != "" {
 				metaBits = append(metaBits, x)
 			}
 		}
-		line := "- **" + title + "** (`" + pyStr(pyrepr.Or(dget(item, "session_id"), "?")) + "`)"
+		line := "- **" + title + "** (`" + anyutil.String(anyutil.Or(dget(item, "session_id"), "?")) + "`)"
 		if len(metaBits) > 0 {
 			line += " — " + strings.Join(metaBits, ", ")
 		}
 		lines = append(lines, line)
-		if summary := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(item, "summary"), dget(item, "preview")), ""))); summary != "" {
+		if summary := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(item, "summary"), dget(item, "preview")), ""))); summary != "" {
 			lines = append(lines, "  "+truncateText(strings.Join(strings.Fields(summary), " "), 500))
 		}
 	}
 	return truncateText(strings.Join(lines, "\n"), 7000), true
 })
 
-var formatMemoryResult = structured(false, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatMemoryResult = structured(false, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	action := argText(args, "memory", "action")
-	target := pyStr(pyrepr.Or(pyrepr.Or(dget(data, "target"), dget(args, "target")), "memory"))
+	target := anyutil.String(anyutil.Or(anyutil.Or(dget(data, "target"), dget(args, "target")), "memory"))
 	if dget(data, "success") == false {
-		lines := []string{"✗ Memory " + action + " failed (" + target + ")", pyStr(pyrepr.Or(dget(data, "error"), "unknown error"))}
+		lines := []string{"✗ Memory " + action + " failed (" + target + ")", anyutil.String(anyutil.Or(dget(data, "error"), "unknown error"))}
 		if matches, ok := isList(dget(data, "matches")); ok && len(matches) > 0 {
 			lines = append(lines, "Matches:")
 			for _, m := range matches[:min(len(matches), 5)] {
-				lines = append(lines, "- "+truncateText(pyStr(m), 160))
+				lines = append(lines, "- "+truncateText(anyutil.String(m), 160))
 			}
 		}
 		return strings.Join(lines, "\n"), true
 	}
 	lines := []string{"✅ Memory " + action + " saved (" + target + ")"}
-	if truthy(dget(data, "message")) {
-		lines = append(lines, pyStr(dget(data, "message")))
+	if anyutil.IsTrue(dget(data, "message")) {
+		lines = append(lines, anyutil.String(dget(data, "message")))
 	}
 	if dget(data, "entry_count") != nil {
-		lines = append(lines, "Entries: "+pyStr(dget(data, "entry_count")))
+		lines = append(lines, "Entries: "+anyutil.String(dget(data, "entry_count")))
 	}
-	if truthy(dget(data, "usage")) {
-		lines = append(lines, "Usage: "+pyStr(dget(data, "usage")))
+	if anyutil.IsTrue(dget(data, "usage")) {
+		lines = append(lines, "Usage: "+anyutil.String(dget(data, "usage")))
 	}
 	if preview := argText(args, "", "content", "old_text"); preview != "" {
 		lines = append(lines, "Preview: "+truncateText(preview, 300))
@@ -799,8 +800,8 @@ var formatMemoryResult = structured(false, func(toolName string, data, args *pyj
 	return strings.Join(lines, "\n"), true
 })
 
-func formatEditResult(toolName string, result *string, args *pyjson.Object) (string, bool) {
-	path := strip(pyStr(pyrepr.Or(dget(args, "path"), "file")))
+func formatEditResult(toolName string, result *string, args *jsonutil.Object) (string, bool) {
+	path := strip(anyutil.String(anyutil.Or(dget(args, "path"), "file")))
 	done := "✅ " + toolName + " completed"
 	if path != "" {
 		done += " for `" + path + "`"
@@ -816,36 +817,36 @@ func formatEditResult(toolName string, result *string, args *pyjson.Object) (str
 		return failed, true
 	}
 	lines := []string{done}
-	if msg := strip(pyStr(pyrepr.Or(dget(data, "message"), ""))); msg != "" {
+	if msg := strip(anyutil.String(anyutil.Or(dget(data, "message"), ""))); msg != "" {
 		lines = append(lines, msg)
 	}
-	if r := pyrepr.Or(dget(data, "replacements"), dget(data, "replacement_count")); r != nil {
-		lines = append(lines, "Replacements: "+pyStr(r))
+	if r := anyutil.Or(dget(data, "replacements"), dget(data, "replacement_count")); r != nil {
+		lines = append(lines, "Replacements: "+anyutil.String(r))
 	}
 	if files, ok := isList(dget(data, "files_modified")); ok && len(files) > 0 {
 		var names []string
 		for _, f := range files[:min(len(files), 8)] {
-			names = append(names, "`"+pyStr(f)+"`")
+			names = append(names, "`"+anyutil.String(f)+"`")
 		}
 		lines = append(lines, "Files: "+strings.Join(names, ", "))
 	}
 	return strings.Join(lines, "\n"), true
 }
 
-var formatBrowserResult = structured(true, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatBrowserResult = structured(true, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	if failed, ok := failure(data, toolName+" failed"); ok {
 		return failed, true
 	}
 	if toolName == "browser_get_images" {
-		if images, ok := isList(pyrepr.Or(dget(data, "images"), dget(data, "data"))); ok {
+		if images, ok := isList(anyutil.Or(dget(data, "images"), dget(data, "data"))); ok {
 			lines := []string{fmt.Sprintf("Images found: %d", len(images))}
 			for _, it := range images[:min(len(images), 12)] {
 				img, ok := isDict(it)
 				if !ok {
 					continue
 				}
-				url := strip(pyStr(pyrepr.Or(pyrepr.Or(dget(img, "url"), dget(img, "src")), "")))
-				alt := strip(pyStr(pyrepr.Or(dget(img, "alt"), "")))
+				url := strip(anyutil.String(anyutil.Or(anyutil.Or(dget(img, "url"), dget(img, "src")), "")))
+				alt := strip(anyutil.String(anyutil.Or(dget(img, "alt"), "")))
 				if alt == "" {
 					alt = "image"
 				}
@@ -858,25 +859,25 @@ var formatBrowserResult = structured(true, func(toolName string, data, args *pyj
 			return truncateText(strings.Join(lines, "\n"), 5000), true
 		}
 	}
-	title := pyStr(dfirst(data, toolName, "title", "url", "status"))
+	title := anyutil.String(dfirst(data, toolName, "title", "url", "status"))
 	lines := []string{title}
-	if u := dget(data, "url"); truthy(u) && !pyrepr.Equal(u, title) {
-		lines = append(lines, pyStr(u))
+	if u := dget(data, "url"); anyutil.IsTrue(u) && !anyutil.Equal(u, title) {
+		lines = append(lines, anyutil.String(u))
 	}
-	if text := strip(pyStr(dfirst(data, "", "text", "content", "snapshot", "analysis", "message"))); text != "" {
+	if text := strip(anyutil.String(dfirst(data, "", "text", "content", "snapshot", "analysis", "message"))); text != "" {
 		lines = append(lines, "", truncateText(text, 5000))
 	}
 	return truncateText(strings.Join(lines, "\n"), 7000), true
 })
 
-var formatMediaOrCronResult = structured(true, func(toolName string, data, args *pyjson.Object) (string, bool) {
+var formatMediaOrCronResult = structured(true, func(toolName string, data, args *jsonutil.Object) (string, bool) {
 	if failed, ok := failure(data, toolName+" failed"); ok {
 		return failed, true
 	}
 	lines := []string{"✅ " + toolName + " completed"}
 	for _, k := range []string{"file_path", "path", "url", "image_url", "job_id", "id", "status", "message", "next_run"} {
-		if truthy(dget(data, k)) {
-			lines = append(lines, "- **"+k+":** "+pyStr(dget(data, k)))
+		if anyutil.IsTrue(dget(data, k)) {
+			lines = append(lines, "- **"+k+":** "+anyutil.String(dget(data, k)))
 		}
 	}
 	return strings.Join(lines, "\n"), true
@@ -891,16 +892,16 @@ func emptyish(v any) bool {
 		return x == ""
 	case []any:
 		return len(x) == 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len() == 0
 	}
 	return false
 }
 
 func dumpsLoose(v any) string {
-	s, err := pyjson.Dumps(v, pyjson.EnsureASCII(false), pyjson.Default(strDefault))
+	s, err := jsonutil.Encode(v, jsonutil.Convert(strDefault))
 	if err != nil {
-		return pyStr(v)
+		return anyutil.String(v)
 	}
 	return s
 }
@@ -926,9 +927,9 @@ func formatStructuredValue(key string, value any, indent, maxDepth, maxItems int
 		return nil
 	}
 	if maxDepth <= 0 {
-		preview := pyStr(value)
+		preview := anyutil.String(value)
 		switch value.(type) {
-		case *pyjson.Object, []any:
+		case *jsonutil.Object, []any:
 			preview = dumpsLoose(value)
 		}
 		return []string{line(truncateText(preview, 240))}
@@ -940,8 +941,8 @@ func formatStructuredValue(key string, value any, indent, maxDepth, maxItems int
 		}
 		lines := []string{head}
 		shown := 0
-		for _, ck := range obj.Keys {
-			cv := obj.Vals[ck]
+		for _, ck := range obj.Keys() {
+			cv := obj.Value(ck)
 			if emptyish(cv) {
 				continue
 			}
@@ -961,19 +962,19 @@ func formatStructuredValue(key string, value any, indent, maxDepth, maxItems int
 		for i, it := range list[:min(len(list), maxItems)] {
 			idx := i + 1
 			switch item := it.(type) {
-			case *pyjson.Object:
-				headline := strip(pyStr(dfirst(item, "", "content", "message", "title", "name", "id")))
+			case *jsonutil.Object:
+				headline := strip(anyutil.String(dfirst(item, "", "content", "message", "title", "name", "id")))
 				if headline != "" {
 					lines = append(lines, fmt.Sprintf("%s  %d. %s", pad, idx, truncateText(headline, 220)))
 					for _, ck := range []string{"id", "status", "type", "scope", "quality_score", "score", "path", "url"} {
 						if !emptyish(dget(item, ck)) {
-							lines = append(lines, fmt.Sprintf("%s    - **%s:** %s", pad, ck, truncateText(pyStr(dget(item, ck)), 180)))
+							lines = append(lines, fmt.Sprintf("%s    - **%s:** %s", pad, ck, truncateText(anyutil.String(dget(item, ck)), 180)))
 						}
 					}
 				} else {
 					lines = append(lines, fmt.Sprintf("%s  %d.", pad, idx))
-					for _, ck := range item.Keys[:min(len(item.Keys), maxItems)] {
-						lines = append(lines, child(ck, item.Vals[ck], 2)...)
+					for _, ck := range item.Keys()[:min(item.Len(), maxItems)] {
+						lines = append(lines, child(ck, item.Value(ck), 2)...)
 					}
 				}
 			case []any:
@@ -982,7 +983,7 @@ func formatStructuredValue(key string, value any, indent, maxDepth, maxItems int
 					lines = append(lines, child("", nested, 2)...)
 				}
 			default:
-				lines = append(lines, fmt.Sprintf("%s  %d. %s", pad, idx, truncateText(pyStr(it), 240)))
+				lines = append(lines, fmt.Sprintf("%s  %d. %s", pad, idx, truncateText(anyutil.String(it), 240)))
 			}
 		}
 		if len(list) > maxItems {
@@ -990,7 +991,7 @@ func formatStructuredValue(key string, value any, indent, maxDepth, maxItems int
 		}
 		return lines
 	}
-	return []string{line(truncateText(pyStr(value), 500))}
+	return []string{line(truncateText(anyutil.String(value), 500))}
 }
 
 var priorityKeys = []string{"message", "status", "id", "task_id", "issue_id", "title", "name", "entity_id",
@@ -1003,10 +1004,10 @@ func formatGenericStructuredResult(toolName string, result *string, fallbackToTe
 		lines := []string{toolName + ": " + plural(int64(len(list)), "item", "s")}
 		for _, it := range list[:min(len(list), 12)] {
 			switch it.(type) {
-			case *pyjson.Object, []any:
+			case *jsonutil.Object, []any:
 				lines = append(lines, formatStructuredValue("", it, 0, 2, 6)...)
 			default:
-				lines = append(lines, "- "+truncateText(pyStr(it), 240))
+				lines = append(lines, "- "+truncateText(anyutil.String(it), 240))
 			}
 		}
 		return truncateText(strings.Join(append(lines, more(len(list), 12, " items")...), "\n"), 5000), true
@@ -1029,11 +1030,11 @@ func formatGenericStructuredResult(toolName string, result *string, fallbackToTe
 	for _, k := range priorityKeys {
 		if !emptyish(dget(data, k)) {
 			seen[k] = true
-			lines = append(lines, "- **"+k+":** "+truncateText(pyStr(dget(data, k)), 500))
+			lines = append(lines, "- **"+k+":** "+truncateText(anyutil.String(dget(data, k)), 500))
 		}
 	}
-	for _, k := range data.Keys {
-		v := data.Vals[k]
+	for _, k := range data.Keys() {
+		v := data.Value(k)
 		if seen[k] || k == "success" || k == "raw" || k == "content" || k == "entries" || emptyish(v) {
 			continue
 		}
@@ -1060,8 +1061,8 @@ var completionFormatters = map[string]formatter{
 }
 
 // ACP diff blocks of a unified diff, one per old and new file header pair
-func parseUnifiedDiffContent(diffText string) []pyacp.ToolCallContent {
-	var content []pyacp.ToolCallContent
+func parseUnifiedDiffContent(diffText string) []acputil.ToolCallContent {
+	var content []acputil.ToolCallContent
 	var oldPath, newPath *string
 	var oldLines, newLines []string
 	flush := func() {
@@ -1078,9 +1079,9 @@ func parseUnifiedDiffContent(diffText string) []pyacp.ToolCallContent {
 			}
 			var oldText *string
 			if len(oldLines) > 0 {
-				oldText = pyacp.Ptr(strings.Join(oldLines, "\n"))
+				oldText = new(strings.Join(oldLines, "\n"))
 			}
-			content = append(content, pyacp.ToolDiffContent(p, strings.Join(newLines, "\n"), oldText))
+			content = append(content, acputil.ToolDiffContent(p, strings.Join(newLines, "\n"), oldText))
 		}
 		oldPath, newPath, oldLines, newLines = nil, nil, nil, nil
 	}
@@ -1088,9 +1089,9 @@ func parseUnifiedDiffContent(diffText string) []pyacp.ToolCallContent {
 		switch {
 		case strings.HasPrefix(line, "--- "):
 			flush()
-			oldPath = pyacp.Ptr(strip(line[4:]))
+			oldPath = new(strip(line[4:]))
 		case strings.HasPrefix(line, "+++ "):
-			newPath = pyacp.Ptr(strip(line[4:]))
+			newPath = new(strip(line[4:]))
 		case strings.HasPrefix(line, "@@") || (oldPath == nil && newPath == nil):
 		case strings.HasPrefix(line, "+"):
 			newLines = append(newLines, line[1:])
@@ -1106,9 +1107,9 @@ func parseUnifiedDiffContent(diffText string) []pyacp.ToolCallContent {
 }
 
 // Structured completion content, skill_manage diffs first, falling back to plain text
-func buildToolCompleteContent(toolName string, result *string, functionArgs *pyjson.Object, snapshot *tools.LocalEditSnapshot) []pyacp.ToolCallContent {
+func buildToolCompleteContent(toolName string, result *string, functionArgs *jsonutil.Object, snapshot *tools.LocalEditSnapshot) []acputil.ToolCallContent {
 	if toolName == "skill_manage" {
-		plain, _ := pyjson.Plain(functionArgs).(map[string]any)
+		plain, _ := jsonutil.Plain(functionArgs).(map[string]any)
 		res := ""
 		if result != nil {
 			res = *result
@@ -1127,13 +1128,13 @@ func buildToolCompleteContent(toolName string, result *string, functionArgs *pyj
 		text, ok = formatGenericStructuredResult(toolName, result, polishedTools[toolName])
 	}
 	if ok && text != "" {
-		return []pyacp.ToolCallContent{textContent(text)}
+		return []acputil.ToolCallContent{textContent(text)}
 	}
 	r := ""
 	if result != nil {
 		r = *result
 	}
-	return []pyacp.ToolCallContent{textContent(truncateText(r, 5000))}
+	return []acputil.ToolCallContent{textContent(truncateText(r, 5000))}
 }
 
 // Edit diff of a tool result, empty when the extraction panics
@@ -1146,7 +1147,7 @@ func safeExtractEditDiff(toolName, result string, args map[string]any, snapshot 
 	return tools.ExtractEditDiff(toolName, result, args, snapshot)
 }
 
-func startTodo(args *pyjson.Object) any {
+func startTodo(args *jsonutil.Object) any {
 	items, ok := isList(dget(args, "todos"))
 	if !ok {
 		return "Reading todo list"
@@ -1154,37 +1155,37 @@ func startTodo(args *pyjson.Object) any {
 	lines := []string{"Updating todo list", ""}
 	for _, it := range items[:min(len(items), 8)] {
 		if i, ok := isDict(it); ok {
-			lines = append(lines, "- "+pyStr(dgetOr(i, "status", "pending"))+": "+pyStr(dgetOr(i, "content", dgetOr(i, "id", ""))))
+			lines = append(lines, "- "+anyutil.String(dgetOr(i, "status", "pending"))+": "+anyutil.String(dgetOr(i, "content", dgetOr(i, "id", ""))))
 		}
 	}
 	return strings.Join(append(lines, more(len(items), 8, "")...), "\n")
 }
 
-func startSkillManage(args *pyjson.Object) any {
+func startSkillManage(args *jsonutil.Object) any {
 	action := argText(args, "manage", "action")
 	name := argText(args, "?", "name")
 	filePath := argText(args, "SKILL.md", "file_path")
 	path := "skills/" + name + "/" + filePath
 	switch action {
 	case "patch":
-		old := pyStr(pyrepr.Or(dget(args, "old_string"), ""))
+		old := anyutil.String(anyutil.Or(dget(args, "old_string"), ""))
 		var oldText *string
 		if old != "" {
 			oldText = &old
 		}
-		return pyacp.ToolDiffContent(path, pyStr(pyrepr.Or(dget(args, "new_string"), "")), oldText)
+		return acputil.ToolDiffContent(path, anyutil.String(anyutil.Or(dget(args, "new_string"), "")), oldText)
 	case "edit", "create":
-		return pyacp.ToolDiffContent(path, pyStr(pyrepr.Or(dget(args, "content"), "")), nil)
+		return acputil.ToolDiffContent(path, anyutil.String(anyutil.Or(dget(args, "content"), "")), nil)
 	case "write_file":
-		target := pyStr(pyrepr.Or(dget(args, "file_path"), "file"))
-		return pyacp.ToolDiffContent("skills/"+name+"/"+target, pyStr(pyrepr.Or(dget(args, "file_content"), "")), nil)
+		target := anyutil.String(anyutil.Or(dget(args, "file_path"), "file"))
+		return acputil.ToolDiffContent("skills/"+name+"/"+target, anyutil.String(anyutil.Or(dget(args, "file_content"), "")), nil)
 	case "delete", "remove_file":
-		return "Removing " + pyStr(pyrepr.Or(dget(args, "file_path"), filePath)) + " from skill '" + name + "'"
+		return "Removing " + anyutil.String(anyutil.Or(dget(args, "file_path"), filePath)) + " from skill '" + name + "'"
 	}
 	return "Running skill_manage action '" + action + "' on skill '" + name + "' (" + filePath + ")"
 }
 
-func startExecuteCode(args *pyjson.Object) any {
+func startExecuteCode(args *jsonutil.Object) any {
 	code := argText(args, "", "code")
 	preview := runePrefix(code, 1200)
 	if n := runeLen(code); n > 1200 {
@@ -1193,7 +1194,7 @@ func startExecuteCode(args *pyjson.Object) any {
 	return fmtValue(preview, "Running Python helper script:\n\n```python\n{}\n```", "Running Python helper script")
 }
 
-func startDelegate(args *pyjson.Object) any {
+func startDelegate(args *jsonutil.Object) any {
 	tasks, ok := isList(dget(args, "tasks"))
 	if !ok || len(tasks) == 0 {
 		return "Delegating task" + fmtValue(truncateText(argText(args, "", "goal"), 800), ":\n{}", "")
@@ -1214,102 +1215,102 @@ func previewLine(label, value string, limit int) string {
 	return "\n" + label + ": " + truncateText(value, limit)
 }
 
-var startContentBuilders = map[string]func(*pyjson.Object) any{
-	"patch": func(a *pyjson.Object) any {
-		return "Preparing " + pyStr(dgetOr(a, "mode", "replace")) + " edit for " + pyStr(pyrepr.Or(dget(a, "path"), "patch input")) + ". Approval prompt shows the diff."
+var startContentBuilders = map[string]func(*jsonutil.Object) any{
+	"patch": func(a *jsonutil.Object) any {
+		return "Preparing " + anyutil.String(dgetOr(a, "mode", "replace")) + " edit for " + anyutil.String(anyutil.Or(dget(a, "path"), "patch input")) + ". Approval prompt shows the diff."
 	},
-	"write_file": func(a *pyjson.Object) any {
+	"write_file": func(a *jsonutil.Object) any {
 		return fmtValue(dgetOr(a, "path", ""), "Preparing write to {}. Approval prompt shows the diff.", "Preparing file write. Approval prompt shows the diff.")
 	},
-	"terminal":  func(a *pyjson.Object) any { return "$ " + pyStr(dgetOr(a, "command", "")) },
+	"terminal":  func(a *jsonutil.Object) any { return "$ " + anyutil.String(dgetOr(a, "command", "")) },
 	"read_file": nil,
-	"search_files": func(a *pyjson.Object) any {
-		return "Searching for '" + pyStr(dgetOr(a, "pattern", "")) + "' (" + pyStr(dgetOr(a, "target", "content")) + ")" + fmtValue(dget(a, "path"), " in {}", "")
+	"search_files": func(a *jsonutil.Object) any {
+		return "Searching for '" + anyutil.String(dgetOr(a, "pattern", "")) + "' (" + anyutil.String(dgetOr(a, "target", "content")) + ")" + fmtValue(dget(a, "path"), " in {}", "")
 	},
 	"todo": startTodo,
-	"skill_view": func(a *pyjson.Object) any {
+	"skill_view": func(a *jsonutil.Object) any {
 		return "Loading skill '" + argText(a, "?", "name") + "' (" + argText(a, "SKILL.md", "file_path") + ")"
 	},
 	"skill_manage": startSkillManage,
 	"execute_code": startExecuteCode,
-	"web_search": func(a *pyjson.Object) any {
+	"web_search": func(a *jsonutil.Object) any {
 		return fmtValue(argText(a, "", "query"), "Searching the web for: {}", "Searching the web")
 	},
 	"web_extract": nil,
-	"process": func(a *pyjson.Object) any {
+	"process": func(a *jsonutil.Object) any {
 		return "Process action: " + argText(a, "manage", "action") + fmtValue(argText(a, "", "session_id"), "\nSession: {}", "") +
 			previewLine("Input", argText(a, "", "data"), 500)
 	},
 	"delegate_task": startDelegate,
-	"session_search": func(a *pyjson.Object) any {
+	"session_search": func(a *jsonutil.Object) any {
 		return fmtValue(argText(a, "", "query"), "Searching past sessions for: {}", "Loading recent sessions")
 	},
-	"memory": func(a *pyjson.Object) any {
+	"memory": func(a *jsonutil.Object) any {
 		return "Memory " + argText(a, "manage", "action") + " (" + argText(a, "memory", "target") + ")" +
 			previewLine("Preview", argText(a, "", "content", "old_text"), 500)
 	},
 }
 
 // Tool call start for a tool, a minimal start when rendering the arguments fails
-func BuildToolStart(toolCallID, toolName string, arguments *pyjson.Object, editDiff *tools.EditProposal) *pyacp.ToolCallStart {
+func BuildToolStart(toolCallID, toolName string, arguments *jsonutil.Object, editDiff *tools.EditProposal) *acputil.ToolCallStart {
 	start, err := buildToolStartGuarded(toolCallID, toolName, arguments, editDiff)
 	if err == nil {
 		return start
 	}
-	pkgLog().Debug(fmt.Sprintf("ACP tool-start render failed for %s: %s", pyrepr.Repr(toolName), err))
+	pkgLog().Debug(fmt.Sprintf("ACP tool-start render failed for %s: %s", anyutil.Quote(toolName), err))
 	safe := toolName
 	if safe == "" {
 		safe = "tool"
 	}
-	return pyacp.StartToolCall(toolCallID, safe, pyacp.ToolCallFields{Kind: pyacp.Ptr(GetToolKind(safe)), Locations: []pyacp.ToolCallLocation{}})
+	return acputil.StartToolCall(toolCallID, safe, acputil.ToolCallFields{Kind: new(GetToolKind(safe)), Locations: []acputil.ToolCallLocation{}})
 }
 
-func buildToolStartGuarded(toolCallID, toolName string, arguments *pyjson.Object, editDiff *tools.EditProposal) (start *pyacp.ToolCallStart, err error) {
+func buildToolStartGuarded(toolCallID, toolName string, arguments *jsonutil.Object, editDiff *tools.EditProposal) (start *acputil.ToolCallStart, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			start, err = nil, fmt.Errorf("%v", r)
 		}
 	}()
 	if arguments == nil {
-		arguments = pyjson.NewObject()
+		arguments = jsonutil.NewObject()
 	}
-	var content []pyacp.ToolCallContent
+	var content []acputil.ToolCallContent
 	var rawInput any
 	builder, hasBuilder := startContentBuilders[toolName]
 	switch {
 	case (toolName == "patch" || toolName == "write_file") && editDiff != nil:
-		content = []pyacp.ToolCallContent{pyacp.ToolDiffContent(editDiff.Path, editDiff.NewText, editDiff.OldText)}
+		content = []acputil.ToolCallContent{acputil.ToolDiffContent(editDiff.Path, editDiff.NewText, editDiff.OldText)}
 	case hasBuilder:
 		if builder != nil {
 			switch built := builder(arguments).(type) {
 			case string:
-				content = []pyacp.ToolCallContent{textContent(built)}
-			case pyacp.ToolCallContent:
-				content = []pyacp.ToolCallContent{built}
+				content = []acputil.ToolCallContent{textContent(built)}
+			case acputil.ToolCallContent:
+				content = []acputil.ToolCallContent{built}
 			}
 		}
 	case polishedTools[toolName]:
-		content = []pyacp.ToolCallContent{textContent(truncateText(argsJSON(arguments), 1200))}
+		content = []acputil.ToolCallContent{textContent(truncateText(argsJSON(arguments), 1200))}
 	case arguments.Len() == 0:
 	default:
-		content = []pyacp.ToolCallContent{textContent(argsJSON(arguments))}
+		content = []acputil.ToolCallContent{textContent(argsJSON(arguments))}
 		rawInput = arguments
 	}
 	locations, err := ExtractLocations(arguments)
 	if err != nil {
 		return nil, err
 	}
-	return pyacp.StartToolCall(toolCallID, BuildToolTitle(toolName, arguments), pyacp.ToolCallFields{
-		Kind: pyacp.Ptr(GetToolKind(toolName)), Content: content, Locations: locations, RawInput: rawInput,
+	return acputil.StartToolCall(toolCallID, BuildToolTitle(toolName, arguments), acputil.ToolCallFields{
+		Kind: new(GetToolKind(toolName)), Content: content, Locations: locations, RawInput: rawInput,
 	}), nil
 }
 
 // Tool call progress closing a completed call with its formatted result and status
-func BuildToolComplete(toolCallID, toolName string, result *string, functionArgs *pyjson.Object, snapshot *tools.LocalEditSnapshot, isError bool) *pyacp.ToolCallProgress {
-	var content []pyacp.ToolCallContent
+func BuildToolComplete(toolCallID, toolName string, result *string, functionArgs *jsonutil.Object, snapshot *tools.LocalEditSnapshot, isError bool) *acputil.ToolCallProgress {
+	var content []acputil.ToolCallContent
 	if toolName == "web_extract" {
 		if text, ok := formatWebExtractResult(toolName, result, functionArgs); ok && text != "" {
-			content = []pyacp.ToolCallContent{textContent(text)}
+			content = []acputil.ToolCallContent{textContent(text)}
 		}
 	} else {
 		content = buildToolCompleteContent(toolName, result, functionArgs, snapshot)
@@ -1320,37 +1321,37 @@ func BuildToolComplete(toolCallID, toolName string, result *string, functionArgs
 	}
 	var rawOutput any
 	switch jsonLoadsMaybe(result).(type) {
-	case *pyjson.Object, []any:
+	case *jsonutil.Object, []any:
 	default:
 		if !polishedTools[toolName] && result != nil {
 			rawOutput = *result
 		}
 	}
-	return pyacp.UpdateToolCall(toolCallID, pyacp.ToolCallFields{
-		Kind: pyacp.Ptr(GetToolKind(toolName)), Status: pyacp.Ptr(status), Content: content, RawOutput: rawOutput,
+	return acputil.UpdateToolCall(toolCallID, acputil.ToolCallFields{
+		Kind: new(GetToolKind(toolName)), Status: new(status), Content: content, RawOutput: rawOutput,
 	})
 }
 
 // Failed tool call progress for a call that ended without a result
-func BuildToolAbandoned(toolCallID, toolName string) *pyacp.ToolCallProgress {
-	return pyacp.UpdateToolCall(toolCallID, pyacp.ToolCallFields{
-		Kind: pyacp.Ptr(GetToolKind(toolName)), Status: pyacp.Ptr("failed"),
-		Content: []pyacp.ToolCallContent{textContent("This tool call ended without a result (blocked, denied, or interrupted).")},
+func BuildToolAbandoned(toolCallID, toolName string) *acputil.ToolCallProgress {
+	return acputil.UpdateToolCall(toolCallID, acputil.ToolCallFields{
+		Kind: new(GetToolKind(toolName)), Status: new("failed"),
+		Content: []acputil.ToolCallContent{textContent("This tool call ended without a result (blocked, denied, or interrupted).")},
 	})
 }
 
 // File system locations of tool arguments, a path with its offset or line
-func ExtractLocations(arguments *pyjson.Object) ([]pyacp.ToolCallLocation, error) {
+func ExtractLocations(arguments *jsonutil.Object) ([]acputil.ToolCallLocation, error) {
 	path := dget(arguments, "path")
-	if !truthy(path) {
-		return []pyacp.ToolCallLocation{}, nil
+	if !anyutil.IsTrue(path) {
+		return []acputil.ToolCallLocation{}, nil
 	}
-	in := pyjson.NewObject()
+	in := jsonutil.NewObject()
 	in.Set("path", path)
-	in.Set("line", pyrepr.Or(dget(arguments, "offset"), dget(arguments, "line")))
-	loc, err := pyacp.Validate[pyacp.ToolCallLocation](in)
+	in.Set("line", anyutil.Or(dget(arguments, "offset"), dget(arguments, "line")))
+	loc, err := pyacp.Validate[acputil.ToolCallLocation](in)
 	if err != nil {
 		return nil, err
 	}
-	return []pyacp.ToolCallLocation{*loc}, nil
+	return []acputil.ToolCallLocation{*loc}, nil
 }

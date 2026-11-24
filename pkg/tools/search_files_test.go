@@ -1098,7 +1098,7 @@ func TestSearchMacosScopedMultiRootTerminatesOptions(t *testing.T) {
 }
 
 func TestSearchSchemaMacosNoteFollowsTheHost(t *testing.T) {
-	description, _ := searchFilesSchema.Vals["description"].(string)
+	description, _ := searchFilesSchema.Value("description").(string)
 	if runtime.GOOS == "darwin" {
 		if !strings.Contains(description, "TCC-protected folders") {
 			t.Fatalf("description %q", description)

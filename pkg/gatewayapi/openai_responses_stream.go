@@ -8,14 +8,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Recorded SSE event of a keyed responses stream for idempotent replay
 type recordedEvent struct {
 	eventType string
-	data      *pyjson.Object
+	data      *jsonutil.Object
 }
 
 // Open function call of a responses stream
@@ -26,7 +24,7 @@ type pendingToolCall struct {
 
 // Open reasoning item of a responses stream
 type openReasoning struct {
-	item        *pyjson.Object
+	item        *jsonutil.Object
 	outputIndex int64
 	parts       []string
 }
@@ -52,7 +50,7 @@ type responsesStream struct {
 	responseStore             *gateway.ResponseStore
 	finalTextParts            []string
 	pendingToolCalls          []*pendingToolCall
-	emittedItems              []*pyjson.Object
+	emittedItems              []*jsonutil.Object
 	outputIndex               int64
 	callCounter               int
 	sequenceNumber            int64
@@ -93,7 +91,7 @@ func newResponsesStream(ctx context.Context, adapter *APIServerAdapter, response
 }
 
 // Writes one SSE event, a keyed stream keeping the published output prefix consistent
-func (s *responsesStream) writeEvent(eventType string, data *pyjson.Object) error {
+func (s *responsesStream) writeEvent(eventType string, data *jsonutil.Object) error {
 	if s.durableKey != "" {
 		if rawIndex, ok := data.Get("output_index"); ok {
 			if s.suppressIncremental {
@@ -104,14 +102,14 @@ func (s *responsesStream) writeEvent(eventType string, data *pyjson.Object) erro
 			if eventType == "response.output_item.added" {
 				valid = index == int64(len(s.publishedOutputIDs))
 				if valid {
-					item, _ := data.GetOr("item", nil).(*pyjson.Object)
-					s.publishedOutputIDs = append(s.publishedOutputIDs, item.GetOr("id", nil))
+					item, _ := data.ValueOr("item", nil).(*jsonutil.Object)
+					s.publishedOutputIDs = append(s.publishedOutputIDs, item.ValueOr("id", nil))
 				}
 			} else {
-				identity := data.GetOr("item_id", nil)
+				identity := data.ValueOr("item_id", nil)
 				if identity == nil {
-					if item, isObj := data.GetOr("item", nil).(*pyjson.Object); isObj {
-						identity = item.GetOr("id", nil)
+					if item, isObj := data.ValueOr("item", nil).(*jsonutil.Object); isObj {
+						identity = item.ValueOr("id", nil)
 					}
 				}
 				valid = index >= 0 && index < int64(len(s.publishedOutputIDs)) && (identity == nil || s.publishedOutputIDs[index] == identity)
@@ -127,7 +125,7 @@ func (s *responsesStream) writeEvent(eventType string, data *pyjson.Object) erro
 	}
 	s.sequenceNumber++
 	if s.durableKey != "" {
-		s.recordedEvents = append(s.recordedEvents, recordedEvent{eventType, pyjson.Clone(data).(*pyjson.Object)})
+		s.recordedEvents = append(s.recordedEvents, recordedEvent{eventType, jsonutil.Clone(data).(*jsonutil.Object)})
 	}
 	frame, err := gateway.APISSEFrame(data, eventType, true, nil)
 	if err != nil {
@@ -155,19 +153,19 @@ func (s *responsesStream) itemOutputIndex(itemID string) (int64, error) {
 }
 
 // Envelope of the response at a status
-func (s *responsesStream) envelope(status string) *pyjson.Object {
-	return pyjson.ObjectOf("id", s.responseID, "object", "response", "status", status, "created_at", s.createdAt, "model", s.model)
+func (s *responsesStream) envelope(status string) *jsonutil.Object {
+	return jsonutil.ObjectOf("id", s.responseID, "object", "response", "status", status, "created_at", s.createdAt, "model", s.model)
 }
 
 // Envelope plus output, error when given, and usage in wire key order
-func (s *responsesStream) terminalEnvelope(status string, output []*pyjson.Object, errText *string) *pyjson.Object {
+func (s *responsesStream) terminalEnvelope(status string, output []*jsonutil.Object, errText *string) *jsonutil.Object {
 	env := s.envelope(status)
 	env.Set("output", objectsToAny(output))
 	if errText != nil {
 		if s.durableKey != "" {
-			env.Set("error", pyjson.ObjectOf("code", "agent_error", "message", *errText))
+			env.Set("error", jsonutil.ObjectOf("code", "agent_error", "message", *errText))
 		} else {
-			env.Set("error", pyjson.ObjectOf("message", *errText, "type", "server_error"))
+			env.Set("error", jsonutil.ObjectOf("message", *errText, "type", "server_error"))
 		}
 	}
 	env.Set("usage", responsesUsagePayload(s.usage))
@@ -177,11 +175,11 @@ func (s *responsesStream) terminalEnvelope(status string, output []*pyjson.Objec
 // History of the request with this turn's user message appended
 func (s *responsesStream) historyWithUser() []any {
 	out := append([]any(nil), s.conversationHistory...)
-	return append(out, pyjson.ObjectOf("role", "user", "content", s.userMessage))
+	return append(out, jsonutil.ObjectOf("role", "user", "content", s.userMessage))
 }
 
 // Persists a snapshot of the response when storing is on
-func (s *responsesStream) persistSnapshot(env *pyjson.Object, history []any, sessionID string) error {
+func (s *responsesStream) persistSnapshot(env *jsonutil.Object, history []any, sessionID string) error {
 	if !s.store {
 		return nil
 	}
@@ -192,13 +190,13 @@ func (s *responsesStream) persistSnapshot(env *pyjson.Object, history []any, ses
 }
 
 // Settled check, body and conversation pointer as one store unit
-func (s *responsesStream) persistSnapshotLocked(ctx context.Context, env *pyjson.Object, history []any, sessionID string) error {
+func (s *responsesStream) persistSnapshotLocked(ctx context.Context, env *jsonutil.Object, history []any, sessionID string) error {
 	if s.durableKey != "" {
 		record, err := s.responseStore.Get(ctx, s.durableKey)
 		if err != nil {
 			return err
 		}
-		if obj, _ := record.(*pyjson.Object); settled(obj) {
+		if obj, _ := record.(*jsonutil.Object); settled(obj) {
 			return nil
 		}
 	}
@@ -220,7 +218,7 @@ func (s *responsesStream) persistSnapshotLocked(ctx context.Context, env *pyjson
 	if sessionID == "" {
 		sessionID = s.sessionID
 	}
-	if err := s.responseStore.Put(ctx, s.responseID, pyjson.ObjectOf("response", env, "conversation_history", history,
+	if err := s.responseStore.Put(ctx, s.responseID, jsonutil.ObjectOf("response", env, "conversation_history", history,
 		"instructions", s.instructions, "session_id", sessionID)); err != nil {
 		return err
 	}
@@ -244,11 +242,11 @@ func (s *responsesStream) persistIncompleteIfNeeded() error {
 	if text == "" {
 		text = s.finalResponseText
 	}
-	items := append([]*pyjson.Object(nil), s.emittedItems...)
+	items := append([]*jsonutil.Object(nil), s.emittedItems...)
 	history := s.historyWithUser()
 	if text != "" {
 		items = append(items, messageItem(text))
-		history = append(history, pyjson.ObjectOf("role", "assistant", "content", text))
+		history = append(history, jsonutil.ObjectOf("role", "assistant", "content", text))
 	}
 	return s.persistSnapshot(s.terminalEnvelope("incomplete", items, nil), history, "")
 }
@@ -262,7 +260,7 @@ func (s *responsesStream) emitCreated() error {
 			return err
 		}
 	}
-	return s.writeEvent("response.created", pyjson.ObjectOf("type", "response.created", "response", env))
+	return s.writeEvent("response.created", jsonutil.ObjectOf("type", "response.created", "response", env))
 }
 
 // Opens the assistant message item on the first text delta
@@ -276,8 +274,8 @@ func (s *responsesStream) openMessageItem() error {
 		return err
 	}
 	s.messageOutputIndex = &index
-	return s.writeEvent("response.output_item.added", pyjson.ObjectOf("type", "response.output_item.added", "output_index", index,
-		"item", pyjson.ObjectOf("id", s.messageItemID, "type", "message", "status", "in_progress", "role", "assistant", "content", []any{})))
+	return s.writeEvent("response.output_item.added", jsonutil.ObjectOf("type", "response.output_item.added", "output_index", index,
+		"item", jsonutil.ObjectOf("id", s.messageItemID, "type", "message", "status", "in_progress", "role", "assistant", "content", []any{})))
 }
 
 // Emits one output text delta
@@ -293,7 +291,7 @@ func (s *responsesStream) emitTextDelta(delta string) error {
 		return err
 	}
 	s.finalTextParts = append(s.finalTextParts, delta)
-	return s.writeEvent("response.output_text.delta", pyjson.ObjectOf("type", "response.output_text.delta", "item_id", s.messageItemID,
+	return s.writeEvent("response.output_text.delta", jsonutil.ObjectOf("type", "response.output_text.delta", "item_id", s.messageItemID,
 		"output_index", *s.messageOutputIndex, "content_index", int64(0), "delta", delta, "logprobs", []any{}))
 }
 
@@ -304,25 +302,25 @@ func (s *responsesStream) emitReasoningDelta(delta string) error {
 		if err != nil {
 			return err
 		}
-		item := pyjson.ObjectOf("id", id, "type", "reasoning", "status", "in_progress", "summary", []any{})
+		item := jsonutil.ObjectOf("id", id, "type", "reasoning", "status", "in_progress", "summary", []any{})
 		index, err := s.itemOutputIndex(id)
 		if err != nil {
 			return err
 		}
 		s.reasoning = &openReasoning{item: item, outputIndex: index}
-		if err := s.writeEvent("response.output_item.added", pyjson.ObjectOf("type", "response.output_item.added",
+		if err := s.writeEvent("response.output_item.added", jsonutil.ObjectOf("type", "response.output_item.added",
 			"output_index", index, "item", item)); err != nil {
 			return err
 		}
-		if err := s.writeEvent("response.reasoning_summary_part.added", pyjson.ObjectOf("type", "response.reasoning_summary_part.added",
-			"item_id", id, "output_index", index, "summary_index", int64(0), "part", pyjson.ObjectOf("type", "summary_text", "text", ""))); err != nil {
+		if err := s.writeEvent("response.reasoning_summary_part.added", jsonutil.ObjectOf("type", "response.reasoning_summary_part.added",
+			"item_id", id, "output_index", index, "summary_index", int64(0), "part", jsonutil.ObjectOf("type", "summary_text", "text", ""))); err != nil {
 			return err
 		}
 	}
 	rs := s.reasoning
 	rs.parts = append(rs.parts, delta)
 	id, _ := rs.item.Get("id")
-	return s.writeEvent("response.reasoning_summary_text.delta", pyjson.ObjectOf("type", "response.reasoning_summary_text.delta",
+	return s.writeEvent("response.reasoning_summary_text.delta", jsonutil.ObjectOf("type", "response.reasoning_summary_text.delta",
 		"item_id", id, "output_index", rs.outputIndex, "summary_index", int64(0), "delta", delta))
 }
 
@@ -334,12 +332,12 @@ func (s *responsesStream) closeReasoningItem() error {
 		return nil
 	}
 	text := strings.Join(rs.parts, "")
-	item := rs.item.Copy()
+	item := rs.item.Clone()
 	item.Set("status", "completed")
-	item.Set("summary", []any{pyjson.ObjectOf("type", "summary_text", "text", text)})
+	item.Set("summary", []any{jsonutil.ObjectOf("type", "summary_text", "text", text)})
 	id, _ := item.Get("id")
-	base := func(pairs ...any) *pyjson.Object {
-		o := pyjson.ObjectOf(pairs[:2]...)
+	base := func(pairs ...any) *jsonutil.Object {
+		o := jsonutil.ObjectOf(pairs[:2]...)
 		o.Set("item_id", id)
 		o.Set("output_index", rs.outputIndex)
 		o.Set("summary_index", int64(0))
@@ -352,11 +350,11 @@ func (s *responsesStream) closeReasoningItem() error {
 		return err
 	}
 	if err := s.writeEvent("response.reasoning_summary_part.done", base("type", "response.reasoning_summary_part.done",
-		"part", pyjson.ObjectOf("type", "summary_text", "text", text))); err != nil {
+		"part", jsonutil.ObjectOf("type", "summary_text", "text", text))); err != nil {
 		return err
 	}
 	s.emittedItems = append(s.emittedItems, item)
-	return s.writeEvent("response.output_item.done", pyjson.ObjectOf("type", "response.output_item.done", "output_index", rs.outputIndex, "item", item))
+	return s.writeEvent("response.output_item.done", jsonutil.ObjectOf("type", "response.output_item.done", "output_index", rs.outputIndex, "item", item))
 }
 
 // Mid turn commentary as its own completed message item, never part of the final text
@@ -368,17 +366,17 @@ func (s *responsesStream) emitCommentary(text string) error {
 	if err != nil {
 		return err
 	}
-	item := pyjson.ObjectOf("id", id, "status", "completed", "phase", "commentary")
-	item.Update(messageItem(text))
+	item := jsonutil.ObjectOf("id", id, "status", "completed", "phase", "commentary")
+	item.Merge(messageItem(text))
 	index, err := s.itemOutputIndex(id)
 	if err != nil {
 		return err
 	}
-	emitted := pyjson.ObjectOf("phase", "commentary")
-	emitted.Update(messageItem(text))
+	emitted := jsonutil.ObjectOf("phase", "commentary")
+	emitted.Merge(messageItem(text))
 	s.emittedItems = append(s.emittedItems, emitted)
 	for _, event := range []string{"response.output_item.added", "response.output_item.done"} {
-		if err := s.writeEvent(event, pyjson.ObjectOf("type", event, "output_index", index, "item", item)); err != nil {
+		if err := s.writeEvent(event, jsonutil.ObjectOf("type", event, "output_index", index, "item", item)); err != nil {
 			return err
 		}
 	}
@@ -386,82 +384,82 @@ func (s *responsesStream) emitCommentary(text string) error {
 }
 
 // Opens a function call item, the agent's tool call id winning over a generated one
-func (s *responsesStream) emitToolStarted(payload *pyjson.Object) error {
+func (s *responsesStream) emitToolStarted(payload *jsonutil.Object) error {
 	if err := s.closeReasoningItem(); err != nil {
 		return err
 	}
 	s.callCounter++
-	callID := pyrepr.Str(firstTruthy(payload.GetOr("tool_call_id", nil), fmt.Sprintf("call_%s_%d", s.responseID[5:], s.callCounter)))
-	args := payload.GetOr("arguments", pyjson.NewObject())
+	callID := anyutil.String(firstTruthy(payload.ValueOr("tool_call_id", nil), fmt.Sprintf("call_%s_%d", s.responseID[5:], s.callCounter)))
+	args := payload.ValueOr("arguments", jsonutil.NewObject())
 	argumentsStr := ""
-	if obj, isObj := args.(*pyjson.Object); isObj {
-		encoded, err := pyjson.Dumps(obj)
+	if obj, isObj := args.(*jsonutil.Object); isObj {
+		encoded, err := jsonutil.Encode(obj)
 		if err != nil {
 			return err
 		}
 		argumentsStr = encoded
 	} else {
-		argumentsStr = pyrepr.Str(args)
+		argumentsStr = anyutil.String(args)
 	}
-	name := payload.GetOr("name", "")
+	name := payload.ValueOr("name", "")
 	id, err := s.itemID("function_call", callID, false)
 	if err != nil {
 		return err
 	}
-	item := pyjson.ObjectOf("id", id, "type", "function_call", "status", "in_progress", "name", name, "call_id", callID, "arguments", argumentsStr)
+	item := jsonutil.ObjectOf("id", id, "type", "function_call", "status", "in_progress", "name", name, "call_id", callID, "arguments", argumentsStr)
 	index, err := s.itemOutputIndex(id)
 	if err != nil {
 		return err
 	}
-	s.pendingToolCalls = append(s.pendingToolCalls, &pendingToolCall{callID: callID, name: pyrepr.Str(name), arguments: argumentsStr,
+	s.pendingToolCalls = append(s.pendingToolCalls, &pendingToolCall{callID: callID, name: anyutil.String(name), arguments: argumentsStr,
 		itemID: id, outputIndex: index})
-	s.emittedItems = append(s.emittedItems, pyjson.ObjectOf("type", "function_call", "name", name, "arguments", argumentsStr, "call_id", callID))
-	return s.writeEvent("response.output_item.added", pyjson.ObjectOf("type", "response.output_item.added", "output_index", index, "item", item))
+	s.emittedItems = append(s.emittedItems, jsonutil.ObjectOf("type", "function_call", "name", name, "arguments", argumentsStr, "call_id", callID))
+	return s.writeEvent("response.output_item.added", jsonutil.ObjectOf("type", "response.output_item.added", "output_index", index, "item", item))
 }
 
 // Completes a function call and emits its output item, orphan completions skipped
-func (s *responsesStream) emitToolCompleted(payload *pyjson.Object) error {
-	callID := payload.GetOr("tool_call_id", nil)
+func (s *responsesStream) emitToolCompleted(payload *jsonutil.Object) error {
+	callID := payload.ValueOr("tool_call_id", nil)
 	var pending *pendingToolCall
 	pos := -1
 	for i, p := range s.pendingToolCalls {
-		if callID != nil && p.callID == pyrepr.Str(callID) {
+		if callID != nil && p.callID == anyutil.String(callID) {
 			pending, pos = p, i
 			break
 		}
 	}
-	if !pyrepr.Truthy(callID) || pending == nil {
+	if !anyutil.IsTrue(callID) || pending == nil {
 		return nil
 	}
 	s.pendingToolCalls = append(s.pendingToolCalls[:pos], s.pendingToolCalls[pos+1:]...)
-	done := pyjson.ObjectOf("id", pending.itemID, "type", "function_call", "status", "completed", "name", pending.name,
+	done := jsonutil.ObjectOf("id", pending.itemID, "type", "function_call", "status", "completed", "name", pending.name,
 		"call_id", pending.callID, "arguments", pending.arguments)
-	if err := s.writeEvent("response.output_item.done", pyjson.ObjectOf("type", "response.output_item.done",
+	if err := s.writeEvent("response.output_item.done", jsonutil.ObjectOf("type", "response.output_item.done",
 		"output_index", pending.outputIndex, "item", done)); err != nil {
 		return err
 	}
-	result := payload.GetOr("result", "")
+	result := payload.ValueOr("result", "")
 	resultStr, isStr := result.(string)
 	if !isStr {
-		encoded, err := pyjson.Dumps(result)
+		encoded, err := jsonutil.Encode(result)
 		if err != nil {
 			return err
 		}
 		resultStr = encoded
 	}
-	parts := []any{pyjson.ObjectOf("type", "input_text", "text", resultStr)}
+	parts := []any{jsonutil.ObjectOf("type", "input_text", "text", resultStr)}
 	id, err := s.itemID("function_call_output", callID, false)
 	if err != nil {
 		return err
 	}
-	outputItem := pyjson.ObjectOf("id", id, "type", "function_call_output", "call_id", pending.callID, "output", parts, "status", "completed")
+	outputItem := jsonutil.ObjectOf("id", id, "type", "function_call_output", "call_id", pending.callID, "output", parts, "status", "completed")
 	index, err := s.itemOutputIndex(id)
 	if err != nil {
 		return err
 	}
-	s.emittedItems = append(s.emittedItems, pyjson.ObjectOf("type", "function_call_output", "call_id", pending.callID, "output", parts))
+	s.emittedItems = append(s.emittedItems, jsonutil.ObjectOf("type", "function_call_output", "call_id", pending.callID, "output", parts))
 	for _, event := range []string{"response.output_item.added", "response.output_item.done"} {
-		if err := s.writeEvent(event, pyjson.ObjectOf("type", event, "output_index", index, "item", outputItem)); err != nil {
+		if err := s.writeEvent(event, jsonutil.ObjectOf("type", event, "output_index", index, "item", outputItem)); err != nil {
 			return err
 		}
 	}
@@ -469,7 +467,7 @@ func (s *responsesStream) emitToolCompleted(payload *pyjson.Object) error {
 }
 
 // Lifecycle status as a custom event outside the output items
-func (s *responsesStream) emitStatus(payload *pyjson.Object) error {
+func (s *responsesStream) emitStatus(payload *jsonutil.Object) error {
 	frame, err := gateway.APISSEFrame(payload, "icebath.status", true, nil)
 	if err != nil {
 		return err
@@ -480,7 +478,7 @@ func (s *responsesStream) emitStatus(payload *pyjson.Object) error {
 // Tagged queue item of the responses agent stream
 type streamTagged struct {
 	tag     string
-	payload *pyjson.Object
+	payload *jsonutil.Object
 }
 
 // Routes one queue item, tagged items emitted at once and text batched for fifty milliseconds
@@ -501,9 +499,9 @@ func (s *responsesStream) dispatch(item any) error {
 		case "__tool_completed__":
 			return s.emitToolCompleted(v.payload)
 		case "__commentary__":
-			return s.emitCommentary(pyrepr.Str(v.payload.GetOr("text", "")))
+			return s.emitCommentary(anyutil.String(v.payload.ValueOr("text", "")))
 		case "__reasoning__":
-			return s.emitReasoningDelta(pyrepr.Str(v.payload.GetOr("text", "")))
+			return s.emitReasoningDelta(anyutil.String(v.payload.ValueOr("text", "")))
 		case "__status__":
 			return s.emitStatus(v.payload)
 		}
@@ -587,7 +585,7 @@ func (s *responsesStream) collectResult(result, usage map[string]any, runErr err
 	if agentFinal != "" && s.finalResponseText == "" {
 		s.finalResponseText = agentFinal
 	}
-	if pyrepr.Truthy(result["error"]) && s.finalResponseText == "" {
+	if anyutil.IsTrue(result["error"]) && s.finalResponseText == "" {
 		s.agentError = redactAPIErrorText(result["error"], -1)
 	}
 	return nil
@@ -609,18 +607,18 @@ func (s *responsesStream) closeMessageItem() error {
 	if !s.messageOpened {
 		return nil
 	}
-	if err := s.writeEvent("response.output_text.done", pyjson.ObjectOf("type", "response.output_text.done", "item_id", s.messageItemID,
+	if err := s.writeEvent("response.output_text.done", jsonutil.ObjectOf("type", "response.output_text.done", "item_id", s.messageItemID,
 		"output_index", *s.messageOutputIndex, "content_index", int64(0), "text", s.finalResponseText, "logprobs", []any{})); err != nil {
 		return err
 	}
-	return s.writeEvent("response.output_item.done", pyjson.ObjectOf("type", "response.output_item.done", "output_index", *s.messageOutputIndex,
-		"item", pyjson.ObjectOf("id", s.messageItemID, "type", "message", "status", "completed", "role", "assistant",
-			"content", []any{pyjson.ObjectOf("type", "output_text", "text", s.finalResponseText)})))
+	return s.writeEvent("response.output_item.done", jsonutil.ObjectOf("type", "response.output_item.done", "output_index", *s.messageOutputIndex,
+		"item", jsonutil.ObjectOf("id", s.messageItemID, "type", "message", "status", "completed", "role", "assistant",
+			"content", []any{jsonutil.ObjectOf("type", "output_text", "text", s.finalResponseText)})))
 }
 
 // Emitted items trimmed plus a final message item carrying the assistant text
-func (s *responsesStream) finalItems() []*pyjson.Object {
-	items := trimToolItems(append([]*pyjson.Object(nil), s.emittedItems...))
+func (s *responsesStream) finalItems() []*jsonutil.Object {
+	items := trimToolItems(append([]*jsonutil.Object(nil), s.emittedItems...))
 	text := s.finalResponseText
 	if text == "" && s.agentError != "" {
 		text = redactAPIErrorText(s.agentError, -1)
@@ -639,15 +637,15 @@ func (s *responsesStream) emitFailed() error {
 	if content == "" {
 		content = errText
 	}
-	history = append(history, pyjson.ObjectOf("role", "assistant", "content", content))
+	history = append(history, jsonutil.ObjectOf("role", "assistant", "content", content))
 	if err := s.persistSnapshot(env, history, ""); err != nil {
 		return err
 	}
-	return s.writeEvent("response.failed", pyjson.ObjectOf("type", "response.failed", "response", env))
+	return s.writeEvent("response.failed", jsonutil.ObjectOf("type", "response.failed", "response", env))
 }
 
 // Commits and emits the terminal envelope, a keyed stream recording its replay and adopting a settled one
-func (s *responsesStream) emitCompleted() (*pyjson.Object, error) {
+func (s *responsesStream) emitCompleted() (*jsonutil.Object, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	result := s.result
@@ -672,21 +670,21 @@ func (s *responsesStream) emitCompleted() (*pyjson.Object, error) {
 	fullHistory := buildResponseConversationHistory(s.conversationHistory, s.userMessage, result, s.finalResponseText,
 		s.adapter.historyToolOutputMaxChars)
 	sid, _ := result["session_id"].(string)
-	var record *pyjson.Object
+	var record *jsonutil.Object
 	if s.durableKey != "" && !s.terminalReplay {
-		headers := pyjson.NewObject()
+		headers := jsonutil.NewObject()
 		for k, values := range s.response.Headers {
 			if strings.HasPrefix(k, headerPrefix) && len(values) > 0 {
 				headers.Set(k, values[0])
 			}
 		}
-		terminal := pyjson.ObjectOf("type", "response."+status, "response", env, "sequence_number", s.sequenceNumber)
+		terminal := jsonutil.ObjectOf("type", "response."+status, "response", env, "sequence_number", s.sequenceNumber)
 		events := make([]any, 0, len(s.recordedEvents)+1)
 		for _, ev := range s.recordedEvents {
 			events = append(events, []any{ev.eventType, ev.data})
 		}
 		events = append(events, []any{"response." + status, terminal})
-		record = pyjson.ObjectOf("fingerprint", s.durableFingerprint, "response", env, "headers", headers, "events", events)
+		record = jsonutil.ObjectOf("fingerprint", s.durableFingerprint, "response", env, "headers", headers, "events", events)
 	}
 	stored, err := s.responseStore.Atomically(s.ctx, func(ctx context.Context) (any, error) {
 		if s.store {
@@ -708,12 +706,12 @@ func (s *responsesStream) emitCompleted() (*pyjson.Object, error) {
 		return nil, err
 	}
 	if s.durableKey != "" {
-		if obj, _ := stored.(*pyjson.Object); settled(obj) {
-			env, _ = obj.GetOr("response", nil).(*pyjson.Object)
+		if obj, _ := stored.(*jsonutil.Object); settled(obj) {
+			env, _ = obj.ValueOr("response", nil).(*jsonutil.Object)
 		}
-		status = pyrepr.Str(env.GetOr("status", ""))
+		status = anyutil.String(env.ValueOr("status", ""))
 	}
-	if err := s.writeEvent("response."+status, pyjson.ObjectOf("type", "response."+status, "response", env)); err != nil {
+	if err := s.writeEvent("response."+status, jsonutil.ObjectOf("type", "response."+status, "response", env)); err != nil {
 		return nil, err
 	}
 	return env, nil
@@ -724,8 +722,8 @@ func (s *responsesStream) emitCrash(crash error) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	errText := redactAPIErrorText(crash.Error(), 500)
-	env := s.terminalEnvelope("failed", append([]*pyjson.Object(nil), s.emittedItems...), &errText)
-	return s.writeEvent("response.failed", pyjson.ObjectOf("type", "response.failed", "response", env))
+	env := s.terminalEnvelope("failed", append([]*jsonutil.Object(nil), s.emittedItems...), &errText)
+	return s.writeEvent("response.failed", jsonutil.ObjectOf("type", "response.failed", "response", env))
 }
 
 // Integer of a decoded JSON number
@@ -742,7 +740,7 @@ func toInt64(v any) int64 {
 }
 
 // Object list as a JSON list
-func objectsToAny(items []*pyjson.Object) []any {
+func objectsToAny(items []*jsonutil.Object) []any {
 	out := make([]any, len(items))
 	for i, it := range items {
 		out[i] = it

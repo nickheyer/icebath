@@ -9,9 +9,10 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const cuaDriverBundleID = "com.trycua.driver"
@@ -67,13 +68,13 @@ func permissionsJSONOut(ctx context.Context, env *tools.Env, binary string, time
 	if raw == "" {
 		return nil, nil
 	}
-	return pyjson.Loads(raw)
+	return jsonutil.Decode(raw)
 }
 
 // Doctor verdict and its label status message checks, nil on any failure
 func permissionsDoctor(ctx context.Context, env *tools.Env, binary string) (ok bool, checks []any, found bool) {
 	data, err := permissionsJSONOut(ctx, env, binary, 12, "doctor", "--json")
-	obj, isObj := data.(*pyjson.Object)
+	obj, isObj := data.(*jsonutil.Object)
 	if err != nil || !isObj {
 		return false, nil, false
 	}
@@ -87,51 +88,51 @@ func permissionsDoctor(ctx context.Context, env *tools.Env, binary string) (ok b
 	}
 	checks = []any{}
 	for _, p := range items {
-		probe, ok := p.(*pyjson.Object)
+		probe, ok := p.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		for _, k := range []string{"label", "status", "message"} {
 			v, has := probe.Get(k)
 			if !has {
 				v = ""
 			}
-			row.Set(k, pyrepr.Str(v))
+			row.Set(k, anyutil.String(v))
 		}
 		checks = append(checks, row)
 	}
 	okRaw, _ := obj.Get("ok")
-	return pyrepr.Truthy(okRaw), checks, true
+	return anyutil.IsTrue(okRaw), checks, true
 }
 
 // Folds the macOS permissions status booleans and source into out
-func macPermissions(ctx context.Context, env *tools.Env, binary string, out *pyjson.Object) {
+func macPermissions(ctx context.Context, env *tools.Env, binary string, out *jsonutil.Object) {
 	data, err := permissionsJSONOut(ctx, env, binary, 10, "permissions", "status", "--json")
-	var te *subprocessTimeout
+	var te *executil.TimeoutError
 	switch {
 	case errors.As(err, &te):
 		out.Set("error", "cua-driver permissions status timed out")
 	case err != nil:
 		out.Set("error", "cua-driver permissions status failed: "+err.Error())
 	default:
-		obj, ok := data.(*pyjson.Object)
+		obj, ok := data.(*jsonutil.Object)
 		if !ok {
 			return
 		}
 		for _, k := range cuPermissionBools {
-			if v, ok := obj.Vals[k].(bool); ok {
+			if v, ok := obj.Value(k).(bool); ok {
 				out.Set(k, v)
 			}
 		}
-		if src, ok := obj.Vals["source"].(*pyjson.Object); ok {
+		if src, ok := obj.Value("source").(*jsonutil.Object); ok {
 			out.Set("source", src)
 		}
 	}
 }
 
 // OS aware readiness payload for the desktop card, the permissions CLI and the status route in contract key order
-func computerUseStatus(ctx context.Context, env *tools.Env, driverCmd *string) (*pyjson.Object, error) {
+func computerUseStatus(ctx context.Context, env *tools.Env, driverCmd *string) (*jsonutil.Object, error) {
 	plat, name := cuPlatform, configuredBackendName(env)
 	binary := ""
 	if name == defaultComputerUseBackend {
@@ -140,7 +141,7 @@ func computerUseStatus(ctx context.Context, env *tools.Env, driverCmd *string) (
 			return nil, err
 		}
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("platform", plat)
 	out.Set("platform_supported", cuRuntimePlatforms[plat])
 	out.Set("installed", binary != "")

@@ -8,8 +8,7 @@ import (
 	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Python re pattern compiled on regexp2 with its group numbers, matched over rune slices
@@ -178,7 +177,7 @@ func normalizeMediaTagPath(raw string) string {
 
 // Whether the path has no extension or one outside the deliverable set
 func pathLacksDeliverableExtension(path string) bool {
-	ext := strings.ToLower(pypath.PathSuffix(path))
+	ext := strings.ToLower(pathutil.Suffix(path))
 	for _, e := range MediaDeliveryExts {
 		if e == ext {
 			return false
@@ -397,7 +396,7 @@ func ExtractMedia(ctx context.Context, content string) ([]MediaRef, string, erro
 			return
 		}
 		seen[path] = true
-		_, ext := pypath.Splitext(path)
+		_, ext := pathutil.SplitExt(path)
 		media = append(media, MediaRef{path, hasVoice && audioExts[strings.ToLower(ext)]})
 	}
 	for _, m := range mediaTagCleanupRE.finditer(scan) {
@@ -408,7 +407,7 @@ func ExtractMedia(ctx context.Context, content string) ([]MediaRef, string, erro
 		if expanduserRaises(path) != nil {
 			continue
 		}
-		add(pypath.Expanduser(path))
+		add(pathutil.ExpandUser(path))
 	}
 	hits, err := extensionlessMediaMatches(ctx, scan)
 	if err != nil {

@@ -13,12 +13,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
@@ -107,7 +107,7 @@ func credentialHomeRoots(ctx context.Context) []string {
 	var out []string
 	seen := map[string]bool{}
 	for _, p := range append([]string{home.Dir(ctx), home.Root()}, mediaProfileDirs()...) {
-		key := pypath.PathStr(p)
+		key := filepath.Clean(p)
 		if !seen[key] {
 			seen[key] = true
 			out = append(out, p)
@@ -135,7 +135,7 @@ func kanbanBoardDirs() ([]string, error) {
 // Durable kanban attachment roots, the override alone when set
 func kanbanAttachmentRoots() ([]string, error) {
 	if override := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_ATTACHMENTS_ROOT")); override != "" {
-		expanded, err := pypath.PathExpanduser(override)
+		expanded, err := pathutil.ExpandUserPath(override)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +171,7 @@ func mediaDeliveryAllowedRoots(ctx context.Context) ([]string, error) {
 			if err := expanduserRaises(raw); err != nil {
 				return nil, err
 			}
-			if root := pypath.Expanduser(raw); pypath.IsAbs(root) {
+			if root := pathutil.ExpandUser(raw); filepath.IsAbs(root) {
 				roots = append(roots, root)
 			}
 		}
@@ -179,13 +179,13 @@ func mediaDeliveryAllowedRoots(ctx context.Context) ([]string, error) {
 	return roots, nil
 }
 
-// ValueError os.path.expanduser raises for a NUL inside the user name of a tilde path on POSIX
+// Refusal of a tilde path whose user name holds a NUL byte on POSIX, a name no account can have
 func expanduserRaises(p string) error {
 	if runtime.GOOS == "windows" || !strings.HasPrefix(p, "~") {
 		return nil
 	}
 	if user, _, _ := strings.Cut(p, "/"); strings.ContainsRune(user, 0) {
-		return &pypath.ValueError{Msg: "embedded null byte"}
+		return fmt.Errorf("user name in %q holds a NUL byte", p)
 	}
 	return nil
 }
@@ -215,7 +215,7 @@ func kanbanBoardDBPaths() ([]string, error) {
 
 // Absolute denylist paths under which delivery is never allowed
 func mediaDeliveryDeniedPaths(ctx context.Context) ([]string, error) {
-	userHome := pypath.Expanduser("~")
+	userHome := pathutil.ExpandUser("~")
 	out := append([]string(nil), mediaDeliveryDeniedPrefixes...)
 	for _, sub := range mediaDeliveryDeniedHomeSubpaths {
 		out = append(out, filepath.Join(userHome, sub))
@@ -235,7 +235,7 @@ func mediaDeliveryDeniedPaths(ctx context.Context) ([]string, error) {
 // Resolved path, optionally home expanded, or false when resolution fails
 func resolveMediaPath(p string, strict, expand bool) (string, bool) {
 	if expand {
-		e, err := pypath.PathExpanduser(p)
+		e, err := pathutil.ExpandUserPath(p)
 		if err != nil {
 			return "", false
 		}
@@ -247,10 +247,10 @@ func resolveMediaPath(p string, strict, expand bool) (string, bool) {
 	var out string
 	var err error
 	if strict {
-		out, err = pypath.Realpath(pypath.PathStr(p), pypath.StrictAll)
-		out = pypath.PathStr(out)
+		out, err = pathutil.ResolveExisting(filepath.Clean(p))
+		out = filepath.Clean(out)
 	} else {
-		out, err = pypath.Resolve(p)
+		out, err = pathutil.Resolve(p)
 	}
 	if err != nil {
 		return "", false
@@ -260,7 +260,7 @@ func resolveMediaPath(p string, strict, expand bool) (string, bool) {
 
 // Whether the resolved path lives under a denied path other than the running user home
 func pathUnderDeniedPrefix(ctx context.Context, resolved string) (bool, error) {
-	userHome, homeOK := resolveMediaPath(pypath.Expanduser("~"), false, false)
+	userHome, homeOK := resolveMediaPath(pathutil.ExpandUser("~"), false, false)
 	denied, err := mediaDeliveryDeniedPaths(ctx)
 	if err != nil {
 		return false, err
@@ -300,7 +300,7 @@ func parseDockerVolumeMounts(ctx context.Context) ([][2]string, error) {
 	if raw == "" {
 		return nil, nil
 	}
-	parsed, err := pyjson.Loads(raw)
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, nil
 	}
@@ -325,7 +325,7 @@ func parseDockerVolumeMounts(ctx context.Context) ([][2]string, error) {
 			continue
 		}
 		containerRaw, _, _ := strings.Cut(spec[sep+1:], ":")
-		hostExpanded := pypath.Expanduser(spec[:sep])
+		hostExpanded := pathutil.ExpandUser(spec[:sep])
 		hr := []rune(hostExpanded)
 		if !(strings.HasPrefix(hostExpanded, "/") || (len(hr) > 1 && hr[1] == ':')) {
 			continue
@@ -389,7 +389,7 @@ func warnUnresolvedDockerMedia(ctx context.Context, candidate, sessionKey, reaso
 
 // Host path of a container absolute path by longest prefix over the volume, cache, workspace and home mounts
 func translateDockerContainerMediaPath(ctx context.Context, candidate, sessionKey, workspaceKey string, quiet bool, workspaceCwd string) (string, bool, error) {
-	candidatePosix := pypath.PathAsPosix(candidate)
+	candidatePosix := filepath.ToSlash(filepath.Clean(candidate))
 	if !strings.HasPrefix(candidatePosix, "/") {
 		return "", false, nil
 	}
@@ -404,7 +404,7 @@ func translateDockerContainerMediaPath(ctx context.Context, candidate, sessionKe
 	mounts = append(mounts, cacheMounts...)
 	mounted := map[string]bool{}
 	for _, m := range mounts {
-		mounted[pypath.PathAsPosix(m[1])] = true
+		mounted[filepath.ToSlash(filepath.Clean(m[1]))] = true
 	}
 	if !mounted["/workspace"] {
 		roots, err := defaultDockerWorkspaceHostRoots(ctx, sessionKey, workspaceKey, workspaceCwd)
@@ -433,7 +433,7 @@ func translateDockerContainerMediaPath(ctx context.Context, candidate, sessionKe
 	}
 	var matched []hit
 	for _, m := range mounts {
-		prefix := strings.TrimRight(pypath.PathAsPosix(m[1]), "/")
+		prefix := strings.TrimRight(filepath.ToSlash(filepath.Clean(m[1])), "/")
 		if prefix == "" {
 			prefix = "/"
 		}
@@ -446,7 +446,7 @@ func translateDockerContainerMediaPath(ctx context.Context, candidate, sessionKe
 	}
 	sort.SliceStable(matched, func(i, j int) bool { return matched[i].score > matched[j].score })
 	for _, m := range matched {
-		rel, ok := pypath.PathRelativeTo(candidate, m.container)
+		rel, ok := pathutil.RelativeTo(candidate, m.container)
 		if !ok {
 			continue
 		}
@@ -464,8 +464,8 @@ func ValidateMediaDeliveryPath(ctx context.Context, path, sessionKey string) (st
 	if candidate == "" || expanduserRaises(candidate) != nil {
 		return "", nil
 	}
-	expanded := pypath.Expanduser(candidate)
-	if !pypath.IsAbs(expanded) {
+	expanded := pathutil.ExpandUser(candidate)
+	if !filepath.IsAbs(expanded) {
 		return "", nil
 	}
 	resolved, ok, err := translateDockerContainerMediaPath(ctx, expanded, sessionKey, "", false, "")

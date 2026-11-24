@@ -10,12 +10,12 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
+	"golang.org/x/text/cases"
 )
 
 // Search result metadata of one registry skill
@@ -23,7 +23,7 @@ type SkillMeta struct {
 	Name, Description, Source, Identifier, TrustLevel string
 	Repo, Path                                        *string
 	Tags                                              []string
-	Extra                                             *pyjson.Object
+	Extra                                             *jsonutil.Object
 }
 
 // One bundle member, Binary set when the registry delivered bytes rather than text
@@ -38,7 +38,7 @@ type SkillBundle struct {
 	Name                           string
 	Files                          []BundleFile
 	Source, Identifier, TrustLevel string
-	Metadata                       *pyjson.Object
+	Metadata                       *jsonutil.Object
 }
 
 // Content of a bundle member by its exact path
@@ -52,8 +52,8 @@ func (b *SkillBundle) File(path string) ([]byte, bool) {
 }
 
 // Field mapping of a search result in declaration order
-func skillMetaToDict(m SkillMeta) *pyjson.Object {
-	o := pyjson.NewObject()
+func skillMetaToDict(m SkillMeta) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("name", m.Name)
 	o.Set("description", m.Description)
 	o.Set("source", m.Source)
@@ -75,7 +75,7 @@ func skillMetaToDict(m SkillMeta) *pyjson.Object {
 	}
 	o.Set("tags", tags)
 	if m.Extra == nil {
-		o.Set("extra", pyjson.NewObject())
+		o.Set("extra", jsonutil.NewObject())
 	} else {
 		o.Set("extra", m.Extra)
 	}
@@ -89,13 +89,13 @@ func matchesQuery(queryLower string, fields ...any) bool {
 		if list, ok := f.([]any); ok {
 			items := make([]string, len(list))
 			for j, t := range list {
-				items[j] = pyrepr.Str(t)
+				items[j] = anyutil.String(t)
 			}
 			parts[i] = strings.Join(items, " ")
 		} else if list, ok := f.([]string); ok {
 			parts[i] = strings.Join(list, " ")
 		} else {
-			parts[i] = pyrepr.Str(f)
+			parts[i] = anyutil.String(f)
 		}
 	}
 	return strings.Contains(strings.ToLower(strings.Join(parts, " ")), queryLower)
@@ -216,7 +216,7 @@ func sourceURLForBundle(b *SkillBundle) string {
 	if b.Metadata != nil {
 		for _, key := range []string{"source_url", "url"} {
 			if v, ok := b.Metadata.Get(key); ok && pyTruthyJSON(v) {
-				return pyrepr.Str(v)
+				return anyutil.String(v)
 			}
 		}
 	}
@@ -364,7 +364,7 @@ func queryIsConcrete(query string) bool {
 	return true
 }
 
-// Safe support and same directory paths a SKILL.md references, ok false on a traversal attempt, err the urlsplit ValueError
+// Safe support and same directory paths a SKILL.md references, ok false on a traversal attempt, err for a link whose host cannot be split
 func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err error) {
 	normalized := strings.ReplaceAll(skillMD, "\\", "/")
 	if reSearch(suspiciousLocalRefRe, normalized) {
@@ -373,11 +373,11 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 	paths = map[string]bool{}
 	for _, group := range reGroups(localLinkRe, normalized) {
 		candidate := strings.TrimRight(group, ".,;:")
-		parsed, err := pyurl.Split(candidate)
+		parsed, err := urlutil.Split(candidate)
 		if err != nil {
 			return nil, false, err
 		}
-		raw := pyurl.Unquote(parsed.Path)
+		raw := urlutil.Unescape(parsed.Path)
 		if strings.HasSuffix(candidate, "?") || strings.ContainsAny(raw, "*?[]") || (parsed.Query != "" && !queryIsConcrete(parsed.Query)) {
 			continue
 		}
@@ -395,11 +395,11 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 	}
 	for _, group := range reGroups(samedirLinkRe, normalized) {
 		raw := strings.TrimRight(group, ".,;:")
-		parsed, err := pyurl.Split(raw)
+		parsed, err := urlutil.Split(raw)
 		if err != nil {
 			return nil, false, err
 		}
-		name := strings.TrimPrefix(pyurl.Unquote(parsed.Path), "./")
+		name := strings.TrimPrefix(urlutil.Unescape(parsed.Path), "./")
 		if name == "" || strings.Contains(raw, "://") || strings.HasPrefix(raw, "mailto:") || strings.HasPrefix(raw, "#") || strings.HasPrefix(raw, "/") {
 			continue
 		}
@@ -407,7 +407,7 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 			pkgLog().Warn("SKILL.md links outside the skill directory; installing without it", "link", raw)
 			continue
 		}
-		if strings.Contains(name, "/") || pystr.Casefold(name) == "skill.md" || !strings.Contains(strings.TrimLeft(name, "."), ".") || !reSearch(samedirNameRe, name) {
+		if strings.Contains(name, "/") || cases.Fold().String(name) == "skill.md" || !strings.Contains(strings.TrimLeft(name, "."), ".") || !reSearch(samedirNameRe, name) {
 			continue
 		}
 		safe, err := validateBundleRelPath(name)
@@ -418,7 +418,7 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 	}
 	folded := map[string][]string{}
 	for _, p := range slices.Sorted(maps.Keys(paths)) {
-		folded[pystr.Casefold(p)] = append(folded[pystr.Casefold(p)], p)
+		folded[cases.Fold().String(p)] = append(folded[cases.Fold().String(p)], p)
 	}
 	for _, group := range folded {
 		if len(group) > 1 {
@@ -432,7 +432,7 @@ func referencedSupportPaths(skillMD string) (paths map[string]bool, ok bool, err
 
 // Search result rebuilt from its cached field mapping, the TypeError SkillMeta(**item) raises on a bad item
 func skillMetaFromDict(v any) (SkillMeta, error) {
-	o, ok := v.(*pyjson.Object)
+	o, ok := v.(*jsonutil.Object)
 	if !ok {
 		return SkillMeta{}, fmt.Errorf("skill metadata is %s where a mapping was expected", errchain.Kind(v))
 	}
@@ -445,8 +445,8 @@ func skillMetaFromDict(v any) (SkillMeta, error) {
 		}
 		return s, nil
 	}
-	for _, key := range o.Keys {
-		val := o.Vals[key]
+	for _, key := range o.Keys() {
+		val := o.Value(key)
 		seen[key] = true
 		var err error
 		switch key {
@@ -485,7 +485,7 @@ func skillMetaFromDict(v any) (SkillMeta, error) {
 				m.Tags = append(m.Tags, s)
 			}
 		case "extra":
-			ex, isObj := val.(*pyjson.Object)
+			ex, isObj := val.(*jsonutil.Object)
 			if !isObj {
 				return m, fmt.Errorf("skill metadata field extra is %s where a mapping was expected", errchain.Kind(val))
 			}
@@ -565,10 +565,6 @@ func hubPassThrough(err error) error {
 	if errors.As(err, &blocked) {
 		return err
 	}
-	var ude *pystr.UnicodeDecodeError
-	if errors.As(err, &ude) {
-		return err
-	}
 	var invalid *hubInvalidURLError
 	if errors.As(err, &invalid) {
 		return err
@@ -576,7 +572,7 @@ func hubPassThrough(err error) error {
 	return nil
 }
 
-// Plain GET decoded as JSON, nil on a non 200 status or a transport or decode failure
+// Plain GET decoded as JSON, nil on a non 200 status or a transport or syntax failure, an error for a body whose text encoding is broken
 func (h *Hub) getJSON(ctx context.Context, rawURL string, o hubGet) (any, error) {
 	if o.Timeout == 0 {
 		o.Timeout = defaultHubHTTPTimeout
@@ -588,9 +584,13 @@ func (h *Hub) getJSON(ctx context.Context, rawURL string, o hubGet) (any, error)
 	if resp.StatusCode != 200 {
 		return nil, nil
 	}
-	v, err := resp.JSON()
+	text, err := jsonutil.Text(resp.Content)
 	if err != nil {
-		return nil, hubPassThrough(err)
+		return nil, fmt.Errorf("%s: %w", rawURL, err)
+	}
+	v, err := jsonutil.Decode(text)
+	if err != nil {
+		return nil, nil
 	}
 	return v, nil
 }

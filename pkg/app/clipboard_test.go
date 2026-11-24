@@ -10,8 +10,9 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 var (
@@ -21,16 +22,16 @@ var (
 // clipCall is one recorded clipboard tool run
 type clipCall struct {
 	argv []string
-	opts pysubprocess.Options
+	opts executil.Options
 }
 
 // Routes every clipboard tool run to fake and records the calls
-func fakeClipRun(t *testing.T, fake func(argv []string, o pysubprocess.Options) (*pysubprocess.Completed, error)) *[]clipCall {
+func fakeClipRun(t *testing.T, fake func(argv []string, o executil.Options) (*executil.Completed, error)) *[]clipCall {
 	t.Helper()
 	saved := clipRun
 	t.Cleanup(func() { clipRun = saved })
 	calls := &[]clipCall{}
-	clipRun = func(_ context.Context, argv []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
+	clipRun = func(_ context.Context, argv []string, o executil.Options) (*executil.Completed, error) {
 		*calls = append(*calls, clipCall{argv, o})
 		return fake(argv, o)
 	}
@@ -38,12 +39,12 @@ func fakeClipRun(t *testing.T, fake func(argv []string, o pysubprocess.Options) 
 }
 
 // Completed run with a return code and stdout text
-func clipDone(code int, stdout string) (*pysubprocess.Completed, error) {
-	return &pysubprocess.Completed{Returncode: code, Stdout: []byte(stdout)}, nil
+func clipDone(code int, stdout string) (*executil.Completed, error) {
+	return &executil.Completed{ExitCode: code, Stdout: []byte(stdout)}, nil
 }
 
 func TestProbeUsesDevnullStdin(t *testing.T) {
-	calls := fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) { return clipDone(0, "") })
+	calls := fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) { return clipDone(0, "") })
 	if !clipProbe([]string{"clipboard-tool"}, 3, func(r clipResult) bool { return r.code == 0 }, "") {
 		t.Fatal("probe failed")
 	}
@@ -54,11 +55,11 @@ func TestProbeUsesDevnullStdin(t *testing.T) {
 
 func TestPipeToFileUsesDevnullStdin(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.png")
-	fakeClipRun(t, func(_ []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
+	fakeClipRun(t, func(_ []string, o executil.Options) (*executil.Completed, error) {
 		if o.Input != nil {
 			t.Fatal("pipe fed stdin")
 		}
-		return &pysubprocess.Completed{Stdout: fakePNG}, nil
+		return &executil.Completed{Stdout: fakePNG}, nil
 	})
 	if ok, err := pipeToFile([]string{"clipboard-tool"}, dest); !ok || err != nil {
 		t.Fatalf("pipe %v %v", ok, err)
@@ -70,7 +71,7 @@ func TestPipeToFileUsesDevnullStdin(t *testing.T) {
 
 func TestSuccessWritesFile(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.png")
-	fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+	fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) {
 		_ = os.WriteFile(dest, fakePNG, 0o644)
 		return clipDone(0, "")
 	})
@@ -84,7 +85,7 @@ func TestSuccessWritesFile(t *testing.T) {
 
 func TestEmptyFileRejected(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.png")
-	fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+	fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) {
 		_ = os.WriteFile(dest, nil, 0o644)
 		return clipDone(0, "")
 	})
@@ -95,7 +96,7 @@ func TestEmptyFileRejected(t *testing.T) {
 
 func TestImageClassDetection(t *testing.T) {
 	for stdout, want := range map[string]bool{"«class PNGf», «class ut16»": true, "«class ut16», «class utf8»": false} {
-		fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) { return clipDone(0, stdout) })
+		fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) { return clipDone(0, stdout) })
 		if got := macosHasImage(); got != want {
 			t.Fatalf("%q gave %v", stdout, got)
 		}
@@ -105,7 +106,7 @@ func TestImageClassDetection(t *testing.T) {
 func TestSuccessWithPng(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.png")
 	calls := 0
-	fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+	fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) {
 		calls++
 		if calls == 1 {
 			return clipDone(0, "«class PNGf», «class ut16»")
@@ -121,7 +122,7 @@ func TestSuccessWithPng(t *testing.T) {
 func TestExtractionReturnsFail(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.png")
 	calls := 0
-	fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+	fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) {
 		calls++
 		if calls == 1 {
 			return clipDone(0, "«class PNGf»")
@@ -134,8 +135,8 @@ func TestExtractionReturnsFail(t *testing.T) {
 }
 
 // Fake osascript serving a Finder file url of src
-func furlRun(src string) func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
-	return func(argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
+func furlRun(src string) func([]string, executil.Options) (*executil.Completed, error) {
+	return func(argv []string, _ executil.Options) (*executil.Completed, error) {
 		joined := strings.Join(argv, " ")
 		switch {
 		case strings.Contains(joined, "clipboard info"):
@@ -173,7 +174,7 @@ func TestCopiedImageFileSavesAsPng(t *testing.T) {
 
 func TestClipboardImageProbe(t *testing.T) {
 	for stdout, want := range map[string]bool{"True\n": true, "False\n": false} {
-		fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) { return clipDone(0, stdout) })
+		fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) { return clipDone(0, stdout) })
 		if got := wslHasImage(); got != want {
 			t.Fatalf("%q gave %v", stdout, got)
 		}
@@ -182,7 +183,7 @@ func TestClipboardImageProbe(t *testing.T) {
 
 func TestWslHasImageFallsBackToGetClipboardImage(t *testing.T) {
 	replies := []string{"False\n", "True\n"}
-	calls := fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+	calls := fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) {
 		reply := replies[0]
 		replies = replies[1:]
 		return clipDone(0, reply)
@@ -194,7 +195,7 @@ func TestWslHasImageFallsBackToGetClipboardImage(t *testing.T) {
 
 func TestWslSaveSuccessfulExtraction(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.png")
-	fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+	fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) {
 		return clipDone(0, base64.StdEncoding.EncodeToString(fakePNG)+"\n")
 	})
 	if !wslSave(dest) {
@@ -207,7 +208,7 @@ func TestWslSaveSuccessfulExtraction(t *testing.T) {
 
 func TestInvalidBase64(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.png")
-	fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+	fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) {
 		return clipDone(0, "not-valid-base64!!!")
 	})
 	if wslSave(dest) {
@@ -217,7 +218,7 @@ func TestInvalidBase64(t *testing.T) {
 
 func TestTypeListDetection(t *testing.T) {
 	for types, want := range map[string]bool{"image/png\ntext/plain\n": true, "text/html\nimage/bmp\n": true, "text/plain\ntext/html\n": false} {
-		fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) { return clipDone(0, types) })
+		fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) { return clipDone(0, types) })
 		if got := waylandHasImage(); got != want {
 			t.Fatalf("%q gave %v", types, got)
 		}
@@ -225,12 +226,12 @@ func TestTypeListDetection(t *testing.T) {
 }
 
 // Fake wl-paste listing types and serving the PNG on extraction
-func waylandRun(types string) func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
-	return func(argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
+func waylandRun(types string) func([]string, executil.Options) (*executil.Completed, error) {
+	return func(argv []string, _ executil.Options) (*executil.Completed, error) {
 		if slices.Contains(argv, "--list-types") {
 			return clipDone(0, types)
 		}
-		return &pysubprocess.Completed{Stdout: fakePNG}, nil
+		return &executil.Completed{Stdout: fakePNG}, nil
 	}
 }
 
@@ -257,7 +258,7 @@ func TestPrefersPngOverBmp(t *testing.T) {
 
 func TestTargetsDetection(t *testing.T) {
 	for targets, want := range map[string]bool{"image/png\ntext/plain\n": true, "text/plain\n": false} {
-		fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) { return clipDone(0, targets) })
+		fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) { return clipDone(0, targets) })
 		if got := xclipHasImage(); got != want {
 			t.Fatalf("%q gave %v", targets, got)
 		}
@@ -266,11 +267,11 @@ func TestTargetsDetection(t *testing.T) {
 
 func TestImageExtractionSuccess(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.png")
-	fakeClipRun(t, func(argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
+	fakeClipRun(t, func(argv []string, _ executil.Options) (*executil.Completed, error) {
 		if slices.Contains(argv, "TARGETS") {
 			return clipDone(0, "image/png\ntext/plain\n")
 		}
-		return &pysubprocess.Completed{Stdout: fakePNG}, nil
+		return &executil.Completed{Stdout: fakePNG}, nil
 	})
 	if !xclipSave(dest) || !nonEmptyFile(dest) {
 		t.Fatal("extraction failed")
@@ -279,7 +280,7 @@ func TestImageExtractionSuccess(t *testing.T) {
 
 func TestExtractionFailsCleansUp(t *testing.T) {
 	dest := filepath.Join(t.TempDir(), "out.png")
-	fakeClipRun(t, func(argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
+	fakeClipRun(t, func(argv []string, _ executil.Options) (*executil.Completed, error) {
 		if slices.Contains(argv, "TARGETS") {
 			return clipDone(0, "image/png\n")
 		}
@@ -310,7 +311,7 @@ func pinPSExe(t *testing.T, exe string) {
 // Fake runner answering successive runs with the given replies
 func clipReplies(t *testing.T, replies ...[2]any) *[]clipCall {
 	t.Helper()
-	return fakeClipRun(t, func([]string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+	return fakeClipRun(t, func([]string, executil.Options) (*executil.Completed, error) {
 		reply := replies[0]
 		if len(replies) > 1 {
 			replies = replies[1:]
@@ -366,9 +367,9 @@ func TestImagemagickFailurePreservesOriginal(t *testing.T) {
 		if err := os.WriteFile(dest, fakeBMP, 0o644); err != nil {
 			t.Fatal(err)
 		}
-		fakeClipRun(t, func(argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
+		fakeClipRun(t, func(argv []string, _ executil.Options) (*executil.Completed, error) {
 			if failure == "timeout" {
-				return nil, &pysubprocess.TimeoutExpired{Cmd: argv, Timeout: 5}
+				return nil, &executil.TimeoutError{Args: argv, Timeout: time.Duration(5) * time.Second}
 			}
 			return clipDone(1, "")
 		})

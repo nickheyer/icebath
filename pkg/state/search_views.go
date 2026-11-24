@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keyword arguments of get_anchored_view, a nil KeepRoles disabling the role filter
@@ -16,7 +16,7 @@ type AnchoredViewOptions struct {
 }
 
 // Anchored message window plus the first and last non empty messages outside it, empty when the anchor is foreign
-func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, aroundMessageID int64, o AnchoredViewOptions) (*pyjson.Object, error) {
+func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, aroundMessageID int64, o AnchoredViewOptions) (*jsonutil.Object, error) {
 	bookend := max(o.Bookend, 0)
 	primitive, err := s.host.GetMessagesAround(ctx, sessionID, aroundMessageID, o.Window)
 	if err != nil {
@@ -25,7 +25,7 @@ func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, a
 	rawWindow, _ := primitive.Get("window")
 	windowRows, _ := rawWindow.([]any)
 	if len(windowRows) == 0 {
-		empty := pyjson.NewObject()
+		empty := jsonutil.NewObject()
 		empty.Set("window", []any{})
 		empty.Set("messages_before", int64(0))
 		empty.Set("messages_after", int64(0))
@@ -38,15 +38,15 @@ func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, a
 		keep := setOf(o.KeepRoles...)
 		filtered = []any{}
 		for _, item := range windowRows {
-			m := item.(*pyjson.Object)
+			m := item.(*jsonutil.Object)
 			id, _ := m.Get("id")
 			role, _ := m.Get("role")
-			if name, ok := role.(string); pyrepr.Equal(id, aroundMessageID) || (ok && keep[name]) {
+			if name, ok := role.(string); anyutil.Equal(id, aroundMessageID) || (ok && keep[name]) {
 				filtered = append(filtered, item)
 			}
 		}
 	}
-	var startRows, endRows []*pyjson.Object
+	var startRows, endRows []*jsonutil.Object
 	if bookend > 0 {
 		roleClause := ""
 		var roleParams []any
@@ -57,19 +57,19 @@ func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, a
 			}
 		}
 		err := s.host.readCtx(ctx, true, func(conn SQLiteConn) error {
-			fetch := func(op string, boundaryID any, order string) ([]*pyjson.Object, error) {
+			fetch := func(op string, boundaryID any, order string) ([]*jsonutil.Object, error) {
 				args := append(append([]any{sessionID, boundaryID}, roleParams...), bookend)
 				return queryObjects(ctx, conn, "SELECT * FROM messages "+
 					"WHERE session_id = ? AND id "+op+" ?"+roleClause+" "+
 					"AND length(content) > 0 "+
 					"ORDER BY id "+order+" LIMIT ?", args...)
 			}
-			firstID, _ := windowRows[0].(*pyjson.Object).Get("id")
+			firstID, _ := windowRows[0].(*jsonutil.Object).Get("id")
 			var err error
 			if startRows, err = fetch("<", firstID, "ASC"); err != nil {
 				return err
 			}
-			lastID, _ := windowRows[len(windowRows)-1].(*pyjson.Object).Get("id")
+			lastID, _ := windowRows[len(windowRows)-1].(*jsonutil.Object).Get("id")
 			if endRows, err = fetch(">", lastID, "DESC"); err != nil {
 				return err
 			}
@@ -82,7 +82,7 @@ func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, a
 			return nil, err
 		}
 	}
-	hydrate := func(rows []*pyjson.Object) ([]any, error) {
+	hydrate := func(rows []*jsonutil.Object) ([]any, error) {
 		out := []any{}
 		for _, row := range rows {
 			msg, err := s.host.rowToMessageDict(row, "get_anchored_view", false)
@@ -93,7 +93,7 @@ func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, a
 		}
 		return out, nil
 	}
-	view := pyjson.NewObject()
+	view := jsonutil.NewObject()
 	view.Set("window", filtered)
 	before, _ := primitive.Get("messages_before")
 	after, _ := primitive.Get("messages_after")
@@ -113,13 +113,13 @@ func (s *sessionSearch) GetAnchoredView(ctx context.Context, sessionID string, a
 }
 
 // Most recent real user turns newest first as id, timestamp and an 80 character whitespace collapsed preview
-func (s *sessionSearch) ListRecentUserMessages(ctx context.Context, sessionID string, limit int, includeInactive bool) ([]*pyjson.Object, error) {
+func (s *sessionSearch) ListRecentUserMessages(ctx context.Context, sessionID string, limit int, includeInactive bool) ([]*jsonutil.Object, error) {
 	activeClause := ""
 	if !includeInactive {
 		activeClause = " AND active = 1"
 	}
 	displayClause := " AND (display_kind IS NULL OR display_kind = '' OR display_kind = 'steer')"
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := s.host.readCtx(ctx, true, func(conn SQLiteConn) error {
 		var err error
 		rows, err = queryObjects(ctx, conn,
@@ -131,7 +131,7 @@ func (s *sessionSearch) ListRecentUserMessages(ctx context.Context, sessionID st
 	if err != nil {
 		return nil, err
 	}
-	result := []*pyjson.Object{}
+	result := []*jsonutil.Object{}
 	for _, row := range rows {
 		if len(result) >= limit {
 			break
@@ -156,7 +156,7 @@ func (s *sessionSearch) ListRecentUserMessages(ctx context.Context, sessionID st
 		}
 		id, _ := row.Get("id")
 		timestamp, _ := row.Get("timestamp")
-		entry := pyjson.NewObject()
+		entry := jsonutil.NewObject()
 		entry.Set("id", id)
 		entry.Set("timestamp", timestamp)
 		entry.Set("preview", preview)

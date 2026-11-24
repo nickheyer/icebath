@@ -10,8 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Exclusive resource tuple an adapter claims, a credential pair or a four field listener bind
@@ -190,7 +190,7 @@ func (r *GatewayRunner) disownSecondaryPlatform(profileName string, platform gat
 func (r *GatewayRunner) holdSecondaryClaims(profileName string, platform gateway.Platform, owner any, claims [2]*claimKey) {
 	r.adapterClaimsMu.Lock()
 	if r.secondaryHeldClaims == nil {
-		r.secondaryHeldClaims = pydict.New[secondaryKey, heldClaims]()
+		r.secondaryHeldClaims = orderedutil.NewMap[secondaryKey, heldClaims]()
 	}
 	key := secondaryKey{profileName, platform}
 	previous, had := r.secondaryHeldClaims.Get(key)

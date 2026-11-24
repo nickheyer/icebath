@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -33,7 +33,7 @@ func codexSeedTextOf(content any) string {
 					continue
 				}
 				if cxHas(v, "text") {
-					text = pyrepr.Str(cxOr(cxGet(v, "text"), ""))
+					text = anyutil.String(cxOr(cxGet(v, "text"), ""))
 				}
 			}
 			if text != "" {
@@ -67,7 +67,7 @@ func codexSeedRenderRow(msg map[string]any) string {
 			}
 			hasCalls = true
 			if name := cxGet(cxOr(cxGet(c, "function"), map[string]any{}), "name"); cxTruthy(name) {
-				names = append(names, pyrepr.Str(name))
+				names = append(names, anyutil.String(name))
 			}
 		}
 		if hasCalls {

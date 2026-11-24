@@ -12,8 +12,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type interruptingAppender struct{}
@@ -30,7 +30,7 @@ func (f funcAppender) AppendMessage(_ context.Context, sessionID string, fields 
 
 func writeCapDropSpool(t *testing.T, dir, name, sessionID string, message map[string]any, tsJSON, seqJSON string) string {
 	t.Helper()
-	msg, err := pyjson.Dumps(message)
+	msg, err := jsonutil.Encode(message)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestLiveDrainAndRestartPassOrderMalformedFilesAlike(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		restart = append(restart, pyjson.Plain(raw).(map[string]any)["data"].(map[string]any)["message"].(map[string]any)["content"])
+		restart = append(restart, jsonutil.Plain(raw).(map[string]any)["data"].(map[string]any)["message"].(map[string]any)["content"])
 	}
 	var live []any
 	n, remaining, err := DrainTranscriptSpool(context.Background(), "sess-1", func(m map[string]any) error {
@@ -432,10 +432,10 @@ func TestAReplayedRowIsTheRowTheLiveWriterWrites(t *testing.T) {
 		for _, c := range calls {
 			fields := maps.Clone(c.fields)
 			fields["session_id"] = c.sessionID
-			stamp, _ := pyjson.Dumps(fields["timestamp"])
+			stamp, _ := jsonutil.Encode(fields["timestamp"])
 			stamps = append(stamps, stamp)
 			delete(fields, "timestamp")
-			row, err := pyjson.Dumps(fields, pyjson.SortKeys(true))
+			row, err := jsonutil.Encode(fields, jsonutil.SortKeys())
 			if err != nil {
 				t.Fatal(err)
 			}

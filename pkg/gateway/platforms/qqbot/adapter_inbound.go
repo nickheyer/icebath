@@ -5,16 +5,18 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var atMentionRE = pyre.MustCompile(`^@\S+\s*`)
@@ -34,8 +36,8 @@ var inboundHandlers = map[string]inboundHandler{
 	"DIRECT_MESSAGE_CREATE":   (*QQAdapter).handleDMMessage,
 }
 
-// str of a dict value with a default for an absent key
-func strAt(d map[string]any, key string) string { return pyrepr.Str(getOr(d, key, "")) }
+// Text of a map value, empty for an absent key
+func strAt(d map[string]any, key string) string { return anyutil.String(d[key]) }
 
 // Caches the last message id of the chat for typing and passive replies, then runs the base pipeline
 func (a *QQAdapter) HandleMessage(ctx context.Context, event *gateway.MessageEvent) error {
@@ -49,7 +51,7 @@ func (a *QQAdapter) HandleMessage(ctx context.Context, event *gateway.MessageEve
 
 // Dedups one inbound dispatch and hands it to the handler of its event type
 func (a *QQAdapter) onMessage(ctx context.Context, eventType string, raw any) error {
-	d, ok := asDict(raw)
+	d, ok := jsonutil.AsMap(raw)
 	if !ok {
 		return nil
 	}
@@ -62,7 +64,7 @@ func (a *QQAdapter) onMessage(ctx context.Context, eventType string, raw any) er
 	if handler == nil {
 		return nil
 	}
-	author, isDict := asDict(d["author"])
+	author, isDict := jsonutil.AsMap(d["author"])
 	if !isDict {
 		author = map[string]any{}
 	}
@@ -78,12 +80,12 @@ func (a *QQAdapter) SetInteractionCallback(callback func(ctx context.Context, ev
 
 // Parses a button interaction, acknowledges it at once and hands it to the registered callback
 func (a *QQAdapter) onInteraction(ctx context.Context, raw any) {
-	if _, ok := asDict(raw); !ok {
+	if _, ok := jsonutil.AsMap(raw); !ok {
 		return
 	}
 	event, err := ParseInteractionEvent(raw)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[%s] Failed to parse INTERACTION_CREATE: %s", a.logTag(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to parse INTERACTION_CREATE: %v", a.logTag(), err))
 		return
 	}
 	if event.ID == "" {
@@ -94,18 +96,18 @@ func (a *QQAdapter) onInteraction(ctx context.Context, raw any) {
 		if ctx.Err() != nil {
 			return
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] Failed to ACK interaction %s: %s", a.logTag(), event.ID, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to ACK interaction %s: %v", a.logTag(), event.ID, err))
 	}
-	pkgLog().Info(fmt.Sprintf("[%s] Interaction: scene=%s button_data=%s operator=%s", a.logTag(), event.Scene, pyrepr.Repr(event.ButtonData), event.OperatorOpenID()))
+	pkgLog().Info(fmt.Sprintf("[%s] Interaction: scene=%s button_data=%s operator=%s", a.logTag(), event.Scene, strconv.Quote(event.ButtonData), event.OperatorOpenID()))
 	a.mu.Lock()
 	callback := a.interactionCallback
 	a.mu.Unlock()
 	if callback == nil {
-		pkgLog().Debug(fmt.Sprintf("[%s] No interaction callback registered; dropping button click %s", a.logTag(), pyrepr.Repr(event.ButtonData)))
+		pkgLog().Debug(fmt.Sprintf("[%s] No interaction callback registered; dropping button click %s", a.logTag(), strconv.Quote(event.ButtonData)))
 		return
 	}
 	if err := callback(ctx, event); err != nil && ctx.Err() == nil {
-		pkgLog().Error(fmt.Sprintf("[%s] Interaction callback raised: %s", a.logTag(), errText(err)), "error", err)
+		pkgLog().Error(fmt.Sprintf("[%s] Interaction callback failed: %v", a.logTag(), err), "error", err)
 	}
 }
 
@@ -185,7 +187,7 @@ func (a *QQAdapter) defaultInteractionDispatch(ctx context.Context, event Intera
 	if sessionKey, decision, ok := ParseApprovalButtonData(buttonData); ok {
 		choice, known := approvalButtonToChoice[decision]
 		if !known {
-			pkgLog().Warn(fmt.Sprintf("[%s] Unknown approval decision %s (session=%s)", a.logTag(), pyrepr.Repr(decision), sessionKey))
+			pkgLog().Warn(fmt.Sprintf("[%s] Unknown approval decision %s (session=%s)", a.logTag(), strconv.Quote(decision), sessionKey))
 			return nil
 		}
 		if !isAuthorizedInteractionForSession(event, sessionKey) {
@@ -215,7 +217,7 @@ func (a *QQAdapter) defaultInteractionDispatch(ctx context.Context, event Intera
 		writeUpdateResponse(ctx, updateAnswer, event.OperatorOpenID())
 		return nil
 	}
-	pkgLog().Debug(fmt.Sprintf("[%s] Unrecognised button_data %s from interaction %s", a.logTag(), pyrepr.Repr(buttonData), event.ID))
+	pkgLog().Debug(fmt.Sprintf("[%s] Unrecognised button_data %s from interaction %s", a.logTag(), strconv.Quote(buttonData), event.ID))
 	return nil
 }
 
@@ -228,13 +230,13 @@ func writeUpdateResponse(ctx context.Context, answer, operator string) {
 		err = os.Rename(tmp, responsePath)
 	}
 	if err != nil {
-		pkgLog().Error(fmt.Sprintf("Failed to write update response: %s", errText(err)))
+		pkgLog().Error(fmt.Sprintf("Failed to write update response: %v", err))
 		return
 	}
 	if operator == "" {
 		operator = "(unknown)"
 	}
-	pkgLog().Info(fmt.Sprintf("QQ update prompt answered %s by %s", pyrepr.Repr(answer), operator))
+	pkgLog().Info(fmt.Sprintf("QQ update prompt answered %s by %s", strconv.Quote(answer), operator))
 }
 
 // Source fields of an inbound message beyond its chat id
@@ -254,15 +256,15 @@ func (a *QQAdapter) handleC2CMessage(ctx context.Context, d map[string]any, msgI
 		return err
 	}
 	attachmentsRaw := d["attachments"]
-	summary := "None"
+	summary := "none"
 	list, isList := attachmentsRaw.([]any)
-	if pyrepr.Truthy(attachmentsRaw) {
+	if anyutil.IsTrue(attachmentsRaw) {
 		summary = fmt.Sprintf("%d items", len(list))
 	}
-	pkgLog().Info(fmt.Sprintf("[%s] C2C message: id=%s content=%s attachments=%s", a.logTag(), msgID, pyrepr.Repr(textutil.First(content, 50)), summary))
+	pkgLog().Info(fmt.Sprintf("[%s] C2C message: id=%s content=%s attachments=%s", a.logTag(), msgID, strconv.Quote(textutil.First(content, 50)), summary))
 	if isList {
 		for i, raw := range list {
-			if att, ok := asDict(raw); ok {
+			if att, ok := jsonutil.AsMap(raw); ok {
 				pkgLog().Info(fmt.Sprintf("[%s] attachment[%d]: content_type=%s url=%s filename=%s", a.logTag(), i, strAt(att, "content_type"),
 					textutil.First(strAt(att, "url"), 80), strAt(att, "filename")))
 			}
@@ -304,7 +306,7 @@ func (a *QQAdapter) handleGuildMessage(ctx context.Context, d map[string]any, ms
 		pkgLog().Debug(fmt.Sprintf("[%s] Guild message blocked by ACL: channel=%s user=%s", a.logTag(), channelID, authorID))
 		return nil
 	}
-	member, isDict := asDict(d["member"])
+	member, isDict := jsonutil.AsMap(d["member"])
 	if !isDict {
 		member = map[string]any{}
 	}
@@ -397,10 +399,10 @@ type quotedContext struct {
 func (a *QQAdapter) processQuotedContext(ctx context.Context, d map[string]any) (quotedContext, error) {
 	isQuote := false
 	messageType := getOr(d, "message_type", int64(0))
-	if !pyrepr.Truthy(messageType) {
+	if !anyutil.IsTrue(messageType) {
 		messageType = int64(0)
 	}
-	if n, err := pyInt64(messageType); err == nil {
+	if n, err := anyutil.ToInt(messageType); err == nil {
 		isQuote = n == 103
 	}
 	elements, isList := d["msg_elements"].([]any)
@@ -410,7 +412,7 @@ func (a *QQAdapter) processQuotedContext(ctx context.Context, d map[string]any) 
 	var quotedTextParts []string
 	var allAttachments []any
 	for _, raw := range elements {
-		element, ok := asDict(raw)
+		element, ok := jsonutil.AsMap(raw)
 		if !ok {
 			continue
 		}
@@ -419,13 +421,13 @@ func (a *QQAdapter) processQuotedContext(ctx context.Context, d map[string]any) 
 		}
 	}
 	for _, raw := range elements {
-		element, ok := asDict(raw)
+		element, ok := jsonutil.AsMap(raw)
 		if !ok {
 			continue
 		}
 		if list, isList := element["attachments"].([]any); isList {
 			for _, att := range list {
-				if _, isDict := asDict(att); isDict {
+				if _, isDict := jsonutil.AsMap(att); isDict {
 					allAttachments = append(allAttachments, att)
 				}
 			}
@@ -513,7 +515,7 @@ func (a *QQAdapter) processAttachments(ctx context.Context, attachments any) (pr
 	var otherAttachments []string
 	list, _ := attachments.([]any)
 	for _, raw := range list {
-		att, ok := asDict(raw)
+		att, ok := jsonutil.AsMap(raw)
 		if !ok {
 			continue
 		}
@@ -551,7 +553,7 @@ func (a *QQAdapter) processAttachments(ctx context.Context, attachments any) (pr
 			if isImage {
 				kind = "image"
 			}
-			pkgLog().Debug(fmt.Sprintf("[%s] Failed to cache %s: %s", a.logTag(), kind, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Failed to cache %s: %v", a.logTag(), kind, err))
 			continue
 		}
 		if cachedPath == "" {
@@ -601,13 +603,13 @@ func stripAtMention(content string) string {
 // Time of a QQ timestamp given as ISO 8601 text or integer milliseconds, the current UTC time otherwise
 func parseQQTimestamp(raw string) time.Time {
 	if raw != "" {
-		if t, err := pydatetime.FromISOFormat(raw); err == nil {
-			return t
+		if t, err := timeutil.ParseISO(raw, time.UTC); err == nil {
+			return t.UTC()
 		}
-		if ms, err := pyInt64(raw); err == nil {
+		if ms, err := textutil.ParseInt(raw); err == nil {
 			seconds := float64(ms) / 1000
 			if seconds > -62135596800 && seconds < 253402300800 {
-				return pydatetime.FromTimestamp(seconds).UTC()
+				return timeutil.FromEpoch(seconds).UTC()
 			}
 		}
 	}

@@ -11,9 +11,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var basicToolsets = map[string]bool{"web": true, "terminal": true, "vision": true, "creative": true, "reasoning": true}
@@ -135,13 +135,13 @@ func saveSampleTrajectory(w io.Writer, a *AIAgent, result map[string]any, userQu
 	if err != nil {
 		panic(err)
 	}
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("conversations", conversations)
 	entry.Set("timestamp", naiveISOFormat(time.Now()))
 	entry.Set("model", model)
 	entry.Set("completed", result["completed"])
 	entry.Set("query", userQuery)
-	text, err := pyjson.Dumps(RedactTrajectoryValue(entry), pyjson.EnsureASCII(false), pyjson.Indent(2))
+	text, err := jsonutil.Encode(RedactTrajectoryValue(entry), jsonutil.Indent(2))
 	if err == nil {
 		err = os.WriteFile(filename, []byte(text), 0o644)
 	}

@@ -11,7 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const hrLegacyReadChildEnv = "ICEBATH_TEST_HOSTED_LEGACY_READ"
@@ -91,7 +92,7 @@ func TestPreActorDraftDatabaseMigratesWithExplicitLegacyIdentity(t *testing.T) {
 	db := hrDB(t)
 	hrCreatePreActorDatabase(t, db)
 	replay := hrOK(hrRead(db, "room-1", 0, 100, false))
-	if !pyjson.Equal(replay["events"].([]any)[0].(map[string]any)["actor"], map[string]any{"kind": "system", "id": "legacy"}) {
+	if !anyutil.Equal(replay["events"].([]any)[0].(map[string]any)["actor"], map[string]any{"kind": "system", "id": "legacy"}) {
 		t.Fatalf("replay %v", replay)
 	}
 	roomState := hrOK(RoomState(context.Background(), db, "room-1", false))
@@ -123,7 +124,7 @@ func TestLegacyAdoptionFillsMissingTargetsButRejectsTargetChanges(t *testing.T) 
 	targeted := map[string]any{"member_id": "ops", "profile": "ops", "handle": "ops", "target": map[string]any{"kind": "local", "profile": "ops"}}
 	hrOK(CreateRoom(ctx, db, CreateRoomInput{RoomID: "legacy-targets", Name: "Legacy targets", Members: []any{legacy}, AuthorityGatewayID: "legacy", Now: hrFloatPtr(1)}))
 	adopted := hrOK(CreateRoom(ctx, db, CreateRoomInput{RoomID: "legacy-targets", Name: "Legacy targets", Members: []any{targeted}, AuthorityGatewayID: "gateway-a", Now: hrFloatPtr(2)}))
-	if !pyjson.Equal(adopted["members"], []any{targeted}) {
+	if !anyutil.Equal(adopted["members"], []any{targeted}) {
 		t.Fatalf("adopted %v", adopted)
 	}
 	peer := map[string]any{"member_id": "ops", "profile": "ops", "handle": "ops", "target": map[string]any{"kind": "peer", "installation_id": "install-b", "profile": "ops"}}
@@ -155,7 +156,7 @@ func TestDraftSchemaMigrationIsSafeAcrossProcesses(t *testing.T) {
 		}
 	}
 	replay := hrOK(hrRead(db, "room-1", 0, 100, false))
-	if !pyjson.Equal(replay["events"].([]any)[0].(map[string]any)["actor"], map[string]any{"kind": "system", "id": "legacy"}) {
+	if !anyutil.Equal(replay["events"].([]any)[0].(map[string]any)["actor"], map[string]any{"kind": "system", "id": "legacy"}) {
 		t.Fatalf("replay %v", replay)
 	}
 }
@@ -208,7 +209,7 @@ func TestRoomLogPageBoundCountsBytesNotCharacters(t *testing.T) {
 		hrOK(hrAppend(db, AppendEventInput{RoomID: "room-1", EventID: fmt.Sprintf("bytes-%d", index), Kind: "message.user", Actor: hrUser, Payload: map[string]any{"text": text, "index": index}}))
 	}
 	pageJSON := func(page map[string]any) string {
-		return hrOK(pyjson.Dumps(page, pyjson.EnsureASCII(false), pyjson.Separators(",", ":")))
+		return hrOK(jsonutil.Encode(page))
 	}
 	oneEvent := hrOK(hrRead(db, "room-1", 0, 1, false))
 	unboundedTwo := hrOK(hrRead(db, "room-1", 0, 2, false))
@@ -218,7 +219,7 @@ func TestRoomLogPageBoundCountsBytesNotCharacters(t *testing.T) {
 	}
 	hrSetBound(t, &maxLogPageBytes, budget)
 	page := hrOK(hrRead(db, "room-1", 0, 2, false))
-	if !pyjson.Equal(hrSeqs(page), []any{1}) || int64(len(pageJSON(page))) > budget || page["has_more"] != true {
+	if !anyutil.Equal(hrSeqs(page), []any{1}) || int64(len(pageJSON(page))) > budget || page["has_more"] != true {
 		t.Fatalf("page %v", page)
 	}
 }
@@ -252,7 +253,7 @@ func TestUpgradeKeepsRoomsFromBeforeTheSharedStateDbSplit(t *testing.T) {
 	if latest := hrOK(RoomState(ctx, store, "room-1", false))["latest_seq"]; latest != int64(1) {
 		t.Fatal(latest)
 	}
-	if ids := hrEventIDs(hrOK(hrRead(store, "room-1", 0, 100, false))); !pyjson.Equal(ids, []any{"event-1"}) {
+	if ids := hrEventIDs(hrOK(hrRead(store, "room-1", 0, 100, false))); !anyutil.Equal(ids, []any{"event-1"}) {
 		t.Fatal(ids)
 	}
 }
@@ -306,7 +307,7 @@ func TestLegacyImportSkipsARoomThisStoreAlreadyOwnsAsAUnit(t *testing.T) {
 			}
 		}
 	}
-	if ids := hrEventIDs(hrOK(hrRead(store, "same", 0, 100, false))); !pyjson.Equal(ids, []any{"own-1"}) {
+	if ids := hrEventIDs(hrOK(hrRead(store, "same", 0, 100, false))); !anyutil.Equal(ids, []any{"own-1"}) {
 		t.Fatal(ids)
 	}
 	hrOK(hrAppend(store, AppendEventInput{RoomID: "same", EventID: "own-2", Kind: "message.user", Actor: hrUser, Payload: map[string]any{"text": "t"}, Now: hrFloatPtr(30)}))
@@ -324,7 +325,7 @@ func TestLegacyImportReadsLayoutsFromBeforeTheActorAndAuthorityColumns(t *testin
 	if err != nil || gatewayID != "legacy" || seq != int64(1) {
 		t.Fatalf("state %v %v %v", gatewayID, seq, err)
 	}
-	if ids := hrEventIDs(hrOK(hrRead(store, "room-1", 0, 100, false))); !pyjson.Equal(ids, []any{"legacy-event"}) {
+	if ids := hrEventIDs(hrOK(hrRead(store, "room-1", 0, 100, false))); !anyutil.Equal(ids, []any{"legacy-event"}) {
 		t.Fatal(ids)
 	}
 	if hrInt(hrRawRow(t, store, "SELECT rooms FROM hosted_room_legacy_imports"), "rooms") != 1 || hrInt(hrRawRow(t, store, "SELECT event_bytes FROM hosted_rooms"), "event_bytes") <= 0 {

@@ -12,10 +12,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // 404 for a run this principal cannot see
@@ -24,7 +24,7 @@ func runNotFound(runID string) *gateway.WebResponse {
 }
 
 // Owned run with its status, live agent and task, an error response when unauthenticated or not found
-func (a *APIServerAdapter) loadOwnedRun(ctx context.Context, request *gateway.WebRequest, permission string, activeFallback bool) (string, *pyjson.Object, *agent.AIAgent, *agentTask, *gateway.WebResponse, error) {
+func (a *APIServerAdapter) loadOwnedRun(ctx context.Context, request *gateway.WebRequest, permission string, activeFallback bool) (string, *jsonutil.Object, *agent.AIAgent, *agentTask, *gateway.WebResponse, error) {
 	var authErr *gateway.WebResponse
 	if permission != "" {
 		authErr = a.checkRunAuth(ctx, request, permission)
@@ -125,8 +125,8 @@ func (a *APIServerAdapter) handleRunEvents(ctx context.Context, request *gateway
 			return &gateway.PyError{Kind: "TimeoutError", Msg: "run event write timed out"}
 		}
 	}
-	writeEvent := func(seq int64, event *pyjson.Object) error {
-		payload := event.Copy()
+	writeEvent := func(seq int64, event *jsonutil.Object) error {
+		payload := event.Clone()
 		payload.Set("seq", seq)
 		id := int(seq)
 		frame, err := gateway.APISSEFrame(payload, "", true, &id)
@@ -223,17 +223,17 @@ func (a *APIServerAdapter) handleRunApproval(ctx context.Context, request *gatew
 	if err != nil {
 		return jsonError("Invalid JSON", "", http.StatusBadRequest), nil
 	}
-	body, _ := raw.(*pyjson.Object)
+	body, _ := raw.(*jsonutil.Object)
 	if body == nil {
-		return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))}
+		return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 	}
 	if _, ok := a.sessionAuthority(); ok {
-		if choice := body.GetOr("choice", nil); roomGrantToken(request) != "" && choice != "once" && choice != "deny" {
+		if choice := body.ValueOr("choice", nil); roomGrantToken(request) != "" && choice != "once" && choice != "deny" {
 			return jsonError("Room approvals require once or deny", "", http.StatusBadRequest), nil
 		}
 		return a.respondAuthorityRun(ctx, runID, body, "approval")
 	}
-	rawChoice := strings.ToLower(strings.TrimSpace(pyrepr.Str(body.GetOr("choice", ""))))
+	rawChoice := strings.ToLower(strings.TrimSpace(anyutil.String(body.ValueOr("choice", ""))))
 	choice := rawChoice
 	if alias, ok := approvalChoiceAliases[rawChoice]; ok {
 		choice = alias
@@ -249,7 +249,7 @@ func (a *APIServerAdapter) handleRunApproval(ctx context.Context, request *gatew
 	if roomScoped {
 		allowed = map[string]bool{"once": true, "deny": true}
 	}
-	resolveAll := gateway.APICoerceRequestBool(body.GetOr("all", nil), false) || gateway.APICoerceRequestBool(body.GetOr("resolve_all", nil), false)
+	resolveAll := gateway.APICoerceRequestBool(body.ValueOr("all", nil), false) || gateway.APICoerceRequestBool(body.ValueOr("resolve_all", nil), false)
 	a.mu.Lock()
 	approvalSessionKey := a.runApprovalSessions[runID]
 	a.mu.Unlock()
@@ -295,7 +295,7 @@ func (a *APIServerAdapter) handleRunApproval(ctx context.Context, request *gatew
 	}
 	fields = append(fields, "resolved", int64(resolved))
 	a.markRunEvent(ctx, runID, "approval.responded", fields...)
-	out := pyjson.ObjectOf("object", "icebath.run.approval_response", "run_id", runID)
+	out := jsonutil.ObjectOf("object", "icebath.run.approval_response", "run_id", runID)
 	for i := 0; i+1 < len(fields); i += 2 {
 		out.Set(fields[i].(string), fields[i+1])
 	}
@@ -303,7 +303,7 @@ func (a *APIServerAdapter) handleRunApproval(ctx context.Context, request *gatew
 }
 
 // Answers an authority owned run's prompt through the session authority
-func (a *APIServerAdapter) respondAuthorityRun(ctx context.Context, runID string, body *pyjson.Object, kind string) (*gateway.WebResponse, error) {
+func (a *APIServerAdapter) respondAuthorityRun(ctx context.Context, runID string, body *jsonutil.Object, kind string) (*gateway.WebResponse, error) {
 	result, err := respondRun(ctx, a, runID, body, kind)
 	if err != nil {
 		var runtimeErr *state.RuntimeStoreError
@@ -312,8 +312,8 @@ func (a *APIServerAdapter) respondAuthorityRun(ctx context.Context, runID string
 		}
 		return nil, err
 	}
-	out := pyjson.ObjectOf("run_id", runID)
-	out.Update(result)
+	out := jsonutil.ObjectOf("run_id", runID)
+	out.Merge(result)
 	return jsonResponse(out, http.StatusOK, nil), nil
 }
 
@@ -360,7 +360,7 @@ func (a *APIServerAdapter) handleSteerRun(ctx context.Context, request *gateway.
 	if errResp != nil {
 		return errResp, nil
 	}
-	rawText := firstTruthy(body.GetOr("input", nil), body.GetOr("message", nil), body.GetOr("text", nil), "")
+	rawText := firstTruthy(body.ValueOr("input", nil), body.ValueOr("message", nil), body.ValueOr("text", nil), "")
 	steerText := strings.TrimSpace(gateway.APINormalizeChatContent(rawText))
 	if steerText == "" {
 		return jsonError("Missing non-empty steer text; expected 'input', 'message', or 'text'.", "invalid_steer_input", http.StatusBadRequest), nil
@@ -375,7 +375,7 @@ func (a *APIServerAdapter) handleSteerRun(ctx context.Context, request *gateway.
 		}
 		if latched {
 			a.markRunEvent(ctx, runID, "run.steered", "accepted", true)
-			return jsonResponse(pyjson.ObjectOf("object", "icebath.run.steer", "run_id", runID, "accepted", true), http.StatusOK, nil), nil
+			return jsonResponse(jsonutil.ObjectOf("object", "icebath.run.steer", "run_id", runID, "accepted", true), http.StatusOK, nil), nil
 		}
 		ag = steered
 	}
@@ -395,7 +395,7 @@ func (a *APIServerAdapter) handleSteerRun(ctx context.Context, request *gateway.
 		return jsonError("Run did not accept steer text: "+runID, "steer_not_accepted", http.StatusConflict), nil
 	}
 	a.markRunEvent(ctx, runID, "run.steered", "accepted", true)
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.run.steer", "run_id", runID, "accepted", true), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.run.steer", "run_id", runID, "accepted", true), http.StatusOK, nil), nil
 }
 
 // Interrupts a running agent, an authority run stopped through the session authority
@@ -404,7 +404,7 @@ func (a *APIServerAdapter) handleStopRun(ctx context.Context, request *gateway.W
 	if err != nil || errResp != nil {
 		return errResp, err
 	}
-	if _, ok := a.sessionAuthority(); ok && !(task != nil && pyrepr.Truthy(status.GetOr("delivery_id", nil))) {
+	if _, ok := a.sessionAuthority(); ok && !(task != nil && anyutil.IsTrue(status.ValueOr("delivery_id", nil))) {
 		result, err := stopRun(ctx, a, runID)
 		if err != nil {
 			var runtimeErr *state.RuntimeStoreError
@@ -415,7 +415,7 @@ func (a *APIServerAdapter) handleStopRun(ctx context.Context, request *gateway.W
 		}
 		return jsonResponse(result, http.StatusOK, nil), nil
 	}
-	if gateway.APIRunTerminalStatus(pyrepr.Str(status.GetOr("status", ""))) {
+	if gateway.APIRunTerminalStatus(anyutil.String(status.ValueOr("status", ""))) {
 		return jsonResponse(status, http.StatusOK, nil), nil
 	}
 	if ag == nil && task == nil {
@@ -432,7 +432,7 @@ func (a *APIServerAdapter) handleStopRun(ctx context.Context, request *gateway.W
 		}()
 		reapDisconnectedAgentProcesses(ctx, ag, "api_server_run_stop")
 	}
-	return jsonResponse(pyjson.ObjectOf("run_id", runID, "status", "stopping"), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("run_id", runID, "status", "stopping"), http.StatusOK, nil), nil
 }
 
 // Acknowledges one lost owner epoch of an authority run
@@ -453,7 +453,7 @@ func (a *APIServerAdapter) handleResolveUnknownRun(ctx context.Context, request 
 		}
 		return nil, err
 	}
-	out := pyjson.ObjectOf("run_id", runID)
-	out.Update(result)
+	out := jsonutil.ObjectOf("run_id", runID)
+	out.Merge(result)
 	return jsonResponse(out, http.StatusOK, nil), nil
 }

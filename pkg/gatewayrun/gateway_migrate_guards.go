@@ -9,9 +9,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 // Owner uid of a live process, nil when unknown
@@ -32,7 +33,7 @@ func systemUnitUID(unitPath string) (*int, error) {
 		root := 0
 		return &root, nil
 	}
-	info, err := pypwd.Getpwnam(user)
+	info, err := userutil.Lookup(user)
 	var keyErr *pypwd.KeyError
 	if errors.As(err, &keyErr) {
 		return nil, nil
@@ -66,7 +67,7 @@ func gatewayIdentity(ctx context.Context, h string, pid int, services []ServiceU
 			return nil, "", err
 		}
 		if pinned != "" && runtimeHome == h {
-			if runtimeHome, err = pypath.PathExpanduser(pinned); err != nil {
+			if runtimeHome, err = pathutil.ExpandUserPath(pinned); err != nil {
 				return nil, "", err
 			}
 		}
@@ -167,13 +168,13 @@ func guardUnixUser(plan *MigrationPlan, profile *ProfileGateway) string {
 
 // Refusal for a secondary whose live home sits outside the default profiles tree
 func guardHomeTree(plan *MigrationPlan, profile *ProfileGateway) string {
-	profilesRoot, _ := pypath.Realpath(filepath.Join(plan.DefaultHome, "profiles"), pypath.Lax)
+	profilesRoot, _ := pathutil.Resolve(filepath.Join(plan.DefaultHome, "profiles"))
 	live := profile.RuntimeHome
 	if live == "" {
 		live = profile.Home
 	}
-	runtimeHome, _ := pypath.Realpath(live, pypath.Lax)
-	if _, ok := pypath.PathRelativeTo(runtimeHome, profilesRoot); ok {
+	runtimeHome, _ := pathutil.Resolve(live)
+	if _, ok := pathutil.RelativeTo(runtimeHome, profilesRoot); ok {
 		return ""
 	}
 	return fmt.Sprintf("Profile '%s' runs with ICEBATH_HOME=%s, outside %s: the multiplexer would serve %s instead of the live home.",
@@ -213,7 +214,7 @@ func MaskedDefaultUnit(ctx context.Context, defaultHome string) (string, error) 
 		if err != nil || info.Mode()&os.ModeSymlink == 0 {
 			continue
 		}
-		if resolved, err := pypath.Realpath(unit, pypath.Lax); err == nil && resolved == os.DevNull {
+		if resolved, err := pathutil.Resolve(unit); err == nil && resolved == os.DevNull {
 			return unit, nil
 		}
 	}

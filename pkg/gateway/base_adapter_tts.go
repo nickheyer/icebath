@@ -10,9 +10,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -106,18 +106,18 @@ func (b *BasePlatformAdapter) synthesizeAutoTTS(ctx context.Context, textContent
 	if err := json.Unmarshal([]byte(raw), &data); err != nil {
 		return fail(err)
 	}
-	if success, ok := data["success"]; ok && !pyrepr.Truthy(success) {
+	if success, ok := data["success"]; ok && !anyutil.IsTrue(success) {
 		return paths, requested
 	}
 	candidates, _ := data["file_paths"].([]any)
-	if !pyrepr.Truthy(data["file_paths"]) {
+	if !anyutil.IsTrue(data["file_paths"]) {
 		candidates = []any{data["file_path"]}
 	}
 	for _, p := range candidates {
-		if !pyrepr.Truthy(p) {
+		if !anyutil.IsTrue(p) {
 			continue
 		}
-		path := pyrepr.Str(p)
+		path := anyutil.String(p)
 		if _, err := os.Stat(path); err == nil {
 			paths = append(paths, path)
 		}

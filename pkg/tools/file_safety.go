@@ -14,8 +14,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Secret value caches and the sidecar token, as home relative POSIX paths
@@ -116,7 +116,7 @@ func ntNamespaceError(path, verb string) string {
 
 // Every home the write guards must cover, realpathed
 func guardHomes(env *Env, path string) []string {
-	homes := map[string]bool{pypath.Expanduser("~"): true}
+	homes := map[string]bool{pathutil.ExpandUser("~"): true}
 	for _, candidate := range []string{realHome(env, map[string]string{}), subprocessHome(env, map[string]string{})} {
 		if candidate != "" {
 			homes[candidate] = true
@@ -128,13 +128,13 @@ func guardHomes(env *Env, path string) []string {
 	if len(path) > 1 && path[0] == '~' && path[1] != '/' && path[1] != '\\' {
 		name, _, _ := strings.Cut(path[1:], "/")
 		name, _, _ = strings.Cut(name, `\`)
-		if expanded := pypath.Expanduser("~" + name); !strings.HasPrefix(expanded, "~") {
+		if expanded := pathutil.ExpandUser("~" + name); !strings.HasPrefix(expanded, "~") {
 			homes[expanded] = true
 		}
 	}
 	resolved := map[string]bool{}
 	for h := range homes {
-		if real, err := pypath.Realpath(h, pypath.Lax); err == nil {
+		if real, err := pathutil.Resolve(h); err == nil {
 			resolved[real] = true
 		} else {
 			resolved[resolveNonStrict(h)] = true
@@ -228,19 +228,19 @@ func runtimeNormalizePath(raw string) string {
 	if len(path) >= 2 && path[0] == path[len(path)-1] && (path[0] == '"' || path[0] == '\'') {
 		path = path[1 : len(path)-1]
 	}
-	path = pypath.Expandvars(pypath.Expanduser(path))
+	path = pathutil.ExpandEnv(pathutil.ExpandUser(path))
 	if runtime.GOOS == "windows" {
 		if m := runtimeWinDriveFromPosixRe.FindStringSubmatch(path); m != nil {
 			path = m[2] + `:\` + m[3]
 		}
 		path = strings.ReplaceAll(path, "/", `\`)
 	}
-	normed := pypath.Normpath(path)
-	real, err := pypath.Realpath(normed, pypath.Lax)
+	normed := filepath.Clean(path)
+	real, err := pathutil.Resolve(normed)
 	if err != nil {
-		return pypath.Normcase(normed)
+		return pathutil.FoldCase(normed)
 	}
-	return pypath.Normcase(real)
+	return pathutil.FoldCase(real)
 }
 
 // Normalized path of the running binary with its description
@@ -268,7 +268,7 @@ func isProtectedPath(path string, follow bool) string {
 			parent = "."
 		}
 		if resolved = runtimeNormalizePath(parent); resolved != "" {
-			resolved = pypath.Normcase(pypath.Join(resolved, leaf))
+			resolved = pathutil.FoldCase(pathutil.Join(resolved, leaf))
 		}
 	}
 	if resolved == "" {

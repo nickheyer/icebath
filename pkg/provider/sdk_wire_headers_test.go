@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Loopback server answering every chat completion and recording each raw request head
@@ -108,7 +108,7 @@ func TestOpenAISDKWireHeadMatchesThePinnedSDK(t *testing.T) {
 	}
 	custom := newAuxOpenAIClient("sk-k", base, auxOpenAIOptions{MaxRetries: &zero, Timeout: 1800.0,
 		DefaultHeaders: map[string]string{"HTTP-Referer": "https://r", "X-Title": "T", "User-Agent": "IcebathAgent/1"}})
-	extra := pyjson.ObjectOf("x-grok-conv-id", "c1", "X-Title", "T2")
+	extra := jsonutil.ObjectOf("x-grok-conv-id", "c1", "X-Title", "T2")
 	if got, want := call(custom, map[string]any{"extra_headers": extra, "timeout": 30.0}), sdkGoldenHead(addr, "Authorization: Bearer sk-k",
 		"Accept: application/json", "Content-Type: application/json", "User-Agent: IcebathAgent/1", "PLATFORM", "HTTP-Referer: https://r",
 		"X-Title: T2", "X-Stainless-Async: false", "x-grok-conv-id: c1", "x-stainless-retry-count: 0", "x-stainless-read-timeout: 30.0"); got != want {
@@ -117,7 +117,7 @@ func TestOpenAISDKWireHeadMatchesThePinnedSDK(t *testing.T) {
 	t.Setenv("OPENAI_ORG_ID", "org-1")
 	t.Setenv("OPENAI_PROJECT_ID", "proj-1")
 	omit := newAuxOpenAIClient("sk-k", base, auxOpenAIOptions{MaxRetries: &zero})
-	if got, want := call(omit, map[string]any{"extra_headers": pyjson.ObjectOf("X-Stainless-Retry-Count", "7", "OpenAI-Project", nil), "timeout": 30}),
+	if got, want := call(omit, map[string]any{"extra_headers": jsonutil.ObjectOf("X-Stainless-Retry-Count", "7", "OpenAI-Project", nil), "timeout": 30}),
 		sdkGoldenHead(addr, "Authorization: Bearer sk-k", "Accept: application/json", "Content-Type: application/json", "User-Agent: OpenAI/Python 2.54.0",
 			"PLATFORM", "X-Stainless-Async: false", "OpenAI-Organization: org-1", "X-Stainless-Retry-Count: 7", "x-stainless-read-timeout: 30"); got != want {
 		t.Fatalf("omit head\n%q\nwant\n%q", got, want)

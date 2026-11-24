@@ -2,11 +2,12 @@ package camofox
 
 import (
 	"context"
+	"net/url"
+	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hosts a credential may reach over plain HTTP
@@ -14,15 +15,16 @@ var loopbackHosts = map[string]bool{"localhost": true, "127.0.0.1": true, "::1":
 
 // Whether a credential may go to the Camofox URL, HTTPS or loopback HTTP with no userinfo, query or fragment
 func secretTransportOK(raw string) (bool, error) {
-	parts, err := pyurl.Split(raw)
+	u, err := url.Parse(raw)
 	if err != nil {
 		return false, &pyError{"ValueError", err.Error()}
 	}
-	user, _, pass, _ := netlocUserinfo(parts.Netloc)
-	if user != "" || pass != "" || parts.Query != "" || parts.Fragment != "" {
+	user := u.User.Username()
+	pass, _ := u.User.Password()
+	if user != "" || pass != "" || u.RawQuery != "" || u.Fragment != "" {
 		return false, nil
 	}
-	return parts.Scheme == "https" || (parts.Scheme == "http" && loopbackHosts[parts.Hostname()]), nil
+	return u.Scheme == "https" || (u.Scheme == "http" && loopbackHosts[strings.ToLower(u.Hostname())]), nil
 }
 
 // browser_vault page backend evaluating on the tab browser_navigate opened, bound to the plugin's profile
@@ -74,15 +76,15 @@ func (b *pageBackend) Evaluate(taskID, expression string, secret bool) (any, err
 		}
 	}
 	reply, err := s.request("POST", tabPath(ss, "evaluate"), commandTimeoutDefault, nil,
-		pyjson.ObjectOf("expression", expression, "userId", ss.userID), true)
+		jsonutil.ObjectOf("expression", expression, "userId", ss.userID), true)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := decodeJSON(reply.Body)
+	resp, err := decodeJSON(reply.Content)
 	if err != nil {
 		return nil, err
 	}
-	obj, isObj := resp.(*pyjson.Object)
+	obj, isObj := resp.(*jsonutil.Object)
 	var result any
 	var hasResult bool
 	var failure any
@@ -90,10 +92,10 @@ func (b *pageBackend) Evaluate(taskID, expression string, secret bool) (any, err
 		result, hasResult = obj.Get("result")
 		failure, _ = obj.Get("error")
 	}
-	if !isObj || obj == nil || !hasResult || pyrepr.Truthy(failure) {
+	if !isObj || obj == nil || !hasResult || anyutil.IsTrue(failure) {
 		text := ""
 		if isObj && obj != nil {
-			text = pyrepr.Str(failure)
+			text = anyutil.String(failure)
 		}
 		if text == "" {
 			text = "evaluate failed"

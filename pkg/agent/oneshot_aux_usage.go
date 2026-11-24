@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // OneshotAuxCounters are the counters summed per auxiliary task into a one shot usage ledger
@@ -16,39 +16,39 @@ var OneshotAuxCounters = []string{"api_calls", "input_tokens", "output_tokens", 
 	"reasoning_tokens", "estimated_cost_usd"}
 
 // OneshotAuxiliaryUsage is the per task auxiliary usage of the session lineage, empty without a store or session
-func OneshotAuxiliaryUsage(ctx context.Context, db *state.SessionDB, sessionID string) *pyjson.Object {
+func OneshotAuxiliaryUsage(ctx context.Context, db *state.SessionDB, sessionID string) *jsonutil.Object {
 	if db == nil || sessionID == "" {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	usage, err := db.AuxiliaryUsageByTask(ctx, sessionID)
 	if err != nil {
 		pkgLog().Debug("oneshot: auxiliary usage read failed", "error", err)
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return usage
 }
 
 // AttachAuxiliaryUsage stores the run's auxiliary usage on result as the delta against the pre turn snapshot
-func AttachAuxiliaryUsage(ctx context.Context, result map[string]any, db *state.SessionDB, before *pyjson.Object, fallbackSessionID string) {
+func AttachAuxiliaryUsage(ctx context.Context, result map[string]any, db *state.SessionDB, before *jsonutil.Object, fallbackSessionID string) {
 	waitForTitleUpgrades(10 * time.Second)
 	sessionID, _ := result["session_id"].(string)
-	if !pyrepr.Truthy(result["session_id"]) {
+	if !anyutil.IsTrue(result["session_id"]) {
 		sessionID = fallbackSessionID
 	}
 	after := OneshotAuxiliaryUsage(ctx, db, sessionID)
-	byTask := pyjson.NewObject()
-	for _, task := range after.Keys {
-		counters, _ := pyjson.AsObject(after.Vals[task])
-		var prior *pyjson.Object
+	byTask := jsonutil.NewObject()
+	for _, task := range after.Keys() {
+		counters, _ := jsonutil.AsObject(after.Value(task))
+		var prior *jsonutil.Object
 		if before != nil {
-			prior, _ = pyjson.AsObject(before.GetOr(task, nil))
+			prior, _ = jsonutil.AsObject(before.ValueOr(task, nil))
 		}
-		delta := pyjson.NewObject()
+		delta := jsonutil.NewObject()
 		changed := false
 		for _, key := range OneshotAuxCounters {
 			d := auxNumSub(auxCounter(counters, key), auxCounter(prior, key))
 			delta.Set(key, d)
-			changed = changed || pyrepr.Truthy(d)
+			changed = changed || anyutil.IsTrue(d)
 		}
 		if changed {
 			byTask.Set(task, delta)
@@ -58,12 +58,12 @@ func AttachAuxiliaryUsage(ctx context.Context, result map[string]any, db *state.
 }
 
 // Counter value when truthy, the integer zero otherwise
-func auxCounter(counters *pyjson.Object, key string) any {
+func auxCounter(counters *jsonutil.Object, key string) any {
 	if counters == nil {
 		return int64(0)
 	}
-	v := counters.GetOr(key, nil)
-	if !pyrepr.Truthy(v) {
+	v := counters.ValueOr(key, nil)
+	if !anyutil.IsTrue(v) {
 		return int64(0)
 	}
 	return v

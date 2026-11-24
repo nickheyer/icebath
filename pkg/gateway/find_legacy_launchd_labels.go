@@ -8,8 +8,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyplist"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	plistutil "github.com/nickheyer/icebath/pkg/utils/plist"
 )
 
 // Resolved root home that owns the profile tree, false when it cannot be derived
@@ -19,7 +20,7 @@ func resolvedDefaultRoot() (root string, ok bool) {
 			root, ok = "", false
 		}
 	}()
-	resolved, err := pypath.Resolve(home.Root())
+	resolved, err := pathutil.Resolve(home.Root())
 	return resolved, err == nil
 }
 
@@ -45,25 +46,24 @@ func LegacyLaunchdLabelsForInstall(ctx context.Context, exclude map[string]bool)
 		if err != nil {
 			continue
 		}
-		loaded, err := pyplist.Load(data)
+		loaded, err := plistutil.Decode(data)
 		if err != nil {
 			continue
 		}
-		doc, isDict := loaded.(*pyplist.Dict)
+		doc, isDict := loaded.(map[string]any)
 		if !isDict {
 			continue
 		}
-		rawLabel, hasLabel := doc.Get("Label")
-		environment, _ := doc.Get("EnvironmentVariables")
-		variables, isDict := environment.(*pyplist.Dict)
+		rawLabel, hasLabel := doc["Label"]
+		variables, isDict := doc["EnvironmentVariables"].(map[string]any)
 		if !hasLabel || !isDict {
 			continue
 		}
-		rawHome, pinsHome := variables.Get("ICEBATH_HOME")
+		rawHome, pinsHome := variables["ICEBATH_HOME"]
 		if !pinsHome {
 			continue
 		}
-		pinned, err := pypath.Resolve(pypath.Expanduser(pyplist.Str(rawHome)))
+		pinned, err := pathutil.Resolve(pathutil.ExpandUser(anyutil.String(rawHome)))
 		if err != nil {
 			continue
 		}

@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyplist"
+	plistutil "github.com/nickheyer/icebath/pkg/utils/plist"
 )
 
 func TestRequestedServiceNameDoesNotBorrowCallersHome(t *testing.T) {
@@ -34,12 +34,12 @@ func TestRequestedServiceNameDoesNotBorrowCallersHome(t *testing.T) {
 }
 
 func TestMalformedInstalledPlistHasABoundedRefusal(t *testing.T) {
-	_, perr := pyplist.Load([]byte(`<?xml version="1.0"?><plist><dict>`))
+	_, perr := plistutil.Decode([]byte(`<?xml version="1.0"?><plist><dict>`))
 	var refusal *RuntimeStartError
 	if err := verifyServiceBinding(perr); !errors.As(err, &refusal) || refusal.Reason != "service_identity_unverified" {
 		t.Fatal(err)
 	}
-	definition, err := pyplist.Load([]byte(`<?xml version="1.0" encoding="UTF-8"?>
+	definition, err := plistutil.Decode([]byte(`<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
@@ -51,11 +51,11 @@ func TestMalformedInstalledPlistHasABoundedRefusal(t *testing.T) {
 	if verr := verifyServiceBinding(err); verr != nil {
 		t.Fatal(verr)
 	}
-	d, ok := definition.(*pyplist.Dict)
-	if !ok || d.Len() != 1 {
+	d, ok := definition.(map[string]any)
+	if !ok || len(d) != 1 {
 		t.Fatalf("%#v", definition)
 	}
-	if label, _ := d.Get("Label"); label != "app.icebath.gateway" {
+	if label := d["Label"]; label != "app.icebath.gateway" {
 		t.Fatalf("%#v", definition)
 	}
 }

@@ -9,9 +9,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // User row the turn adds to history, the CLI's staged row when it staged one
@@ -58,7 +58,7 @@ func (a *GatewayAgent) result(ctx context.Context, history []map[string]any, use
 	receipt, _ := complete["_receipt"].(map[string]any)
 	if len(receipt) > 0 {
 		complete = map[string]any{"outcome": receipt["outcome"]}
-	} else if pyrepr.Truthy(turn.admission) {
+	} else if anyutil.IsTrue(turn.admission) {
 		raw, err := a.connection.CallWith(ctx, "prompt.receipt", map[string]any{"session_id": turn.sessionID, "admission_id": turn.admission,
 			"include_result": true}, gatewaycli.CallOptions{Abandon: a.lost(turn)})
 		if err != nil {
@@ -67,14 +67,14 @@ func (a *GatewayAgent) result(ctx context.Context, history []map[string]any, use
 			}
 			pkgLog().Debug(fmt.Sprintf("prompt.receipt failed: %s", err.Error()))
 		}
-		receipt, _ = pyjson.Plain(raw).(map[string]any)
+		receipt, _ = jsonutil.Plain(raw).(map[string]any)
 	}
 	stored, _ := receipt["result"].(map[string]any)
 	stored = copyMap(stored)
 	usage, _ := receipt["usage"].(map[string]any)
 	usage = copyMap(usage)
 	status := complete["status"]
-	if !pyrepr.Truthy(status) {
+	if !anyutil.IsTrue(status) {
 		status = complete["outcome"]
 	}
 	out := gatewayResultDefaults()
@@ -83,9 +83,9 @@ func (a *GatewayAgent) result(ctx context.Context, history []map[string]any, use
 	}
 	if _, has := stored["final_response"]; !has {
 		switch {
-		case pyrepr.Truthy(complete["text"]):
+		case anyutil.IsTrue(complete["text"]):
 			out["final_response"] = complete["text"]
-		case pyrepr.Truthy(complete["content"]):
+		case anyutil.IsTrue(complete["content"]):
 			out["final_response"] = complete["content"]
 		default:
 			out["final_response"] = ""
@@ -98,12 +98,12 @@ func (a *GatewayAgent) result(ctx context.Context, history []map[string]any, use
 	}
 	suffix, hasSuffix := stored["messages"].([]any)
 	var messages []map[string]any
-	if hasSuffix && pyrepr.Truthy(stored["_compressed"]) {
+	if hasSuffix && anyutil.IsTrue(stored["_compressed"]) {
 		messages = anyRows(suffix)
 	} else {
 		messages = append(append(append([]map[string]any{}, history...), a.userRow(userMessage)), anyRows(suffix)...)
 	}
-	if len(suffix) == 0 && pyrepr.Truthy(out["final_response"]) && !pyrepr.Truthy(out["failed"]) {
+	if len(suffix) == 0 && anyutil.IsTrue(out["final_response"]) && !anyutil.IsTrue(out["failed"]) {
 		messages = append(messages, map[string]any{"role": "assistant", "content": out["final_response"]})
 	}
 	out["messages"] = messages
@@ -132,16 +132,16 @@ func anyRows(list []any) []map[string]any {
 // Completes after a replay gap what each consumer did not get of the reply, never twice
 func (a *GatewayAgent) paintOwed(turn *gatewayTurn, out, complete map[string]any, streamCallback func(string)) {
 	var reply any = out["final_response"]
-	if pyrepr.Truthy(out["response_transformed"]) {
+	if anyutil.IsTrue(out["response_transformed"]) {
 		if pre, isStr := out["pre_transform_response"].(string); isStr {
 			reply = pre
 		}
 	}
 	text, isStr := reply.(string)
-	if pyrepr.Truthy(out["failed"]) || !isStr || strings.TrimSpace(text) == "" {
+	if anyutil.IsTrue(out["failed"]) || !isStr || strings.TrimSpace(text) == "" {
 		return
 	}
-	reused := pyrepr.Truthy(out["response_previewed"]) || pyrepr.Truthy(out["response_reused"]) || pyrepr.Truthy(complete["response_reused"])
+	reused := anyutil.IsTrue(out["response_previewed"]) || anyutil.IsTrue(out["response_reused"]) || anyutil.IsTrue(complete["response_reused"])
 	seen := map[string]bool{strings.TrimSpace(turn.shownText()): true, strings.TrimSpace(turn.spokenText()): true}
 	for k := range turn.seen {
 		seen[k] = true
@@ -177,7 +177,7 @@ func (a *GatewayAgent) refreshStats(turn *gatewayTurn) bool {
 		pkgLog().Debug(fmt.Sprintf("session.stats unavailable: %s", err.Error()))
 		return false
 	}
-	stats, _ := pyjson.Plain(raw).(map[string]any)
+	stats, _ := jsonutil.Plain(raw).(map[string]any)
 	if nested, isDict := stats["usage"].(map[string]any); isDict {
 		stats = nested
 	}
@@ -226,8 +226,8 @@ func (a *GatewayAgent) applyUsage(ctx context.Context, stored, receiptUsage map[
 		usage["api_calls"] = counters["session_api_calls"] + n
 	}
 	for _, key := range []string{"last_prompt_tokens", "context_length", "model"} {
-		if pyrepr.Truthy(receiptUsage[key]) || pyrepr.Truthy(stored[key]) {
-			if pyrepr.Truthy(receiptUsage[key]) {
+		if anyutil.IsTrue(receiptUsage[key]) || anyutil.IsTrue(stored[key]) {
+			if anyutil.IsTrue(receiptUsage[key]) {
 				usage[key] = receiptUsage[key]
 			} else {
 				usage[key] = stored[key]
@@ -336,11 +336,11 @@ func moaHandler(kind string) func(a *GatewayAgent, payload map[string]any, strea
 			extra["moa_count"] = payload["count"]
 		}
 		name := payload["label"]
-		if !pyrepr.Truthy(name) {
+		if !anyutil.IsTrue(name) {
 			name = payload["name"]
 		}
 		preview := payload["text"]
-		if !pyrepr.Truthy(preview) {
+		if !anyutil.IsTrue(preview) {
 			preview = payload["preview"]
 		}
 		cb(kind, noneOrStr(name), noneOrStr(preview), nil, extra)
@@ -353,12 +353,12 @@ func clarifyReply(callback func(questions []any) map[string]any, params map[stri
 	rawQuestions, _ := params["questions"].([]any)
 	for _, raw := range rawQuestions {
 		q, isDict := raw.(map[string]any)
-		if !isDict || !pyrepr.Truthy(q["qid"]) {
+		if !isDict || !anyutil.IsTrue(q["qid"]) {
 			continue
 		}
 		choices, _ := q["choices"].([]any)
 		questions = append(questions, map[string]any{"qid": q["qid"], "question": strOrEmpty(q["question"]),
-			"choices": append([]any{}, choices...), "multi_select": pyrepr.Truthy(q["multi_select"])})
+			"choices": append([]any{}, choices...), "multi_select": anyutil.IsTrue(q["multi_select"])})
 	}
 	if callback == nil || len(questions) == 0 {
 		return map[string]any{"outcome": "cancelled"}
@@ -374,7 +374,7 @@ func clarifyReply(callback func(questions []any) map[string]any, params map[stri
 		case string, nil:
 			answers[qid] = value
 		default:
-			dumped, err := pyjson.Dumps(value)
+			dumped, err := jsonutil.Encode(value)
 			if err != nil {
 				panic(err)
 			}

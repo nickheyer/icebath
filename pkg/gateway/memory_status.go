@@ -1,9 +1,7 @@
 package gateway
 
 import (
-	"math/big"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // MemAvailable floors of the critical and elevated tiers, critical doubling as the ledger OOM suspicion
@@ -23,34 +21,25 @@ var pressureTiers = []struct {
 	{"elevated", elevatedAvailableKiB, elevatedAvailableFraction},
 }
 
-// The value when it is a non negative int and not a bool, nil otherwise
-func nonnegInt(value any) *big.Int {
-	if _, isBool := value.(bool); isBool || value == nil {
-		return nil
-	}
-	if _, isFloat := value.(float64); isFloat {
-		return nil
-	}
-	n, ok := pyrepr.Int(value)
-	if !ok || n.Sign() < 0 {
-		return nil
-	}
-	return n
+// The value when it is a non negative integer, false for bools, floats and every other type
+func nonnegInt(value any) (int64, bool) {
+	n, ok := anyutil.Int(value)
+	return n, ok && n >= 0
 }
 
 // ok, elevated or critical from MemAvailable and MemTotal, unknown when the sample is missing or malformed
 func ClassifyPressure(availableKiB, totalKiB any) string {
-	available, total := nonnegInt(availableKiB), nonnegInt(totalKiB)
-	if available == nil {
+	available, ok := nonnegInt(availableKiB)
+	if !ok {
 		return "unknown"
 	}
 	var fraction *float64
-	if total != nil && total.Sign() != 0 {
-		f, _ := new(big.Rat).SetFrac(available, total).Float64()
+	if total, ok := nonnegInt(totalKiB); ok && total != 0 {
+		f := float64(available) / float64(total)
 		fraction = &f
 	}
 	for _, tier := range pressureTiers {
-		if available.Cmp(big.NewInt(tier.kibFloor)) < 0 || (fraction != nil && *fraction < tier.frac) {
+		if available < tier.kibFloor || (fraction != nil && *fraction < tier.frac) {
 			return tier.level
 		}
 	}

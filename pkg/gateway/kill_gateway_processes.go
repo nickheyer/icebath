@@ -11,7 +11,6 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 var (
@@ -76,13 +75,14 @@ func captureGatewayArgv(pid int) []string {
 	return argv
 }
 
-// Python str of the OSError a refused or failed kill raised
+// Text of a refused or failed kill, the bare errno reason when the kill failed in the system call
 func killErrorText(err error) string {
 	if errors.Is(err, ErrRefusedKill) {
 		return strings.TrimPrefix(err.Error(), ErrRefusedKill.Error()+": ")
 	}
-	if text, ok := pypath.ErrnoText(err); ok {
-		return text
+	var errno syscall.Errno
+	if errors.As(err, &errno) {
+		return errno.Error()
 	}
 	return err.Error()
 }

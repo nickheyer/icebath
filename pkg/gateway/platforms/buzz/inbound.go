@@ -26,8 +26,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -562,7 +562,7 @@ func (a *BuzzAdapter) seedChannel(ctx context.Context, channelID, chatType strin
 	}
 	for _, event := range parseJSONList(res.stdout) {
 		a.mu.Lock()
-		if id := strOf(event["id"]); pyrepr.Truthy(event["id"]) {
+		if id := strOf(event["id"]); anyutil.IsTrue(event["id"]) {
 			st.addSeen(id)
 		}
 		st.cursor.LastTS = max(st.cursor.LastTS, intOf(event["created_at"]))
@@ -1143,7 +1143,7 @@ func (a *BuzzAdapter) localizeInboundMedia(ctx context.Context, text, messageID,
 			if ctx.Err() != nil {
 				return "", nil, nil, "", ctx.Err()
 			}
-			pkgLog().Warn(fmt.Sprintf("Buzz: failed to localize inbound media %s (%s)", label, pyrepr.TypeName(err)))
+			pkgLog().Warn(fmt.Sprintf("Buzz: failed to localize inbound media %s (%s)", label, anyutil.Kind(err)))
 			continue
 		}
 		if cached == nil {
@@ -1198,7 +1198,7 @@ func (a *BuzzAdapter) fetchRelayMedia(ctx context.Context, rawURL, label string)
 	if err := mediacache.ValidateInboundMediaSize(ctx, home.Dir(ctx), st.Size(), "Buzz media", nil); err != nil {
 		return nil, err
 	}
-	mimeType, _, _ := pymimetypes.GuessType(filepath.Base(downloadPath), true)
+	mimeType := mimeutil.TypeByName(filepath.Base(downloadPath))
 	if mimeType == "" {
 		mimeType = "application/octet-stream"
 	}

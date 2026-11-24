@@ -10,8 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var wizardBanner = []string{
@@ -183,7 +183,7 @@ func wizardSetupInstallService(ctx context.Context, backend string) error {
 	startNow := gatewayFacade.promptYesNo("  Start the gateway now?", true)
 	label, ok := wizardBackendLabels[backend]
 	if !ok {
-		return &PyError{"KeyError", pyrepr.Repr(backend)}
+		return &PyError{"KeyError", anyutil.Quote(backend)}
 	}
 	startOnLogin := gatewayFacade.promptYesNo(
 		fmt.Sprintf("  Start the gateway automatically on login/boot as a %s service?%s", label, wslNote), true)

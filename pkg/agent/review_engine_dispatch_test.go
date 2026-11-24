@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Review dispatch fixture, the fake parent of the tests over a temp home with the child seams swapped
@@ -32,8 +32,8 @@ func reviewDispatchParent(t *testing.T, built *childBuildSpec, summary string) (
 		}
 		tools.ResetAsyncDelegationForTests()
 	})
-	runSingleChildFn = func(_ context.Context, taskIndex int, _ string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
-		return pyjson.ObjectOf("task_index", taskIndex, "status", "completed", "summary", summary, "api_calls", 2,
+	runSingleChildFn = func(_ context.Context, taskIndex int, _ string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
+		return jsonutil.ObjectOf("task_index", taskIndex, "status", "completed", "summary", summary, "api_calls", 2,
 			"duration_seconds", 0.1, "model", "m", "exit_reason", "completed")
 	}
 	buildChildAgentFn = func(_ context.Context, spec childBuildSpec) (*AIAgent, error) {
@@ -69,13 +69,13 @@ func firstResultSummary(t *testing.T, evt map[string]any) string {
 		if m, ok := results[0].(map[string]any); ok {
 			return pyjsonStr(m["summary"])
 		}
-		if o, ok := results[0].(*pyjson.Object); ok {
+		if o, ok := results[0].(*jsonutil.Object); ok {
 			v, _ := o.Get("summary")
 			return pyjsonStr(v)
 		}
 	case []map[string]any:
 		return pyjsonStr(results[0]["summary"])
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		v, _ := results[0].Get("summary")
 		return pyjsonStr(v)
 	}

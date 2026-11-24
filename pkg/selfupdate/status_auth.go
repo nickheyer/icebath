@@ -12,9 +12,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var (
@@ -39,7 +40,7 @@ func statusFormatISOTimestamp(value any) any {
 	if strings.HasSuffix(text, "Z") {
 		text = text[:len(text)-1] + "+00:00"
 	}
-	parsed, aware, err := pydatetime.ParseISOFormat(text)
+	parsed, aware, err := timeutil.ParseISOZone(text, time.UTC)
 	if err != nil {
 		return value
 	}
@@ -61,7 +62,7 @@ func statusQwenExpiry(expiresAtMs any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pydatetime.ISOFormatUTC(t), nil
+	return t.UTC().Format(timeutil.RFC3339Micro), nil
 }
 
 // Detail row of an OAuth block, printed when its raw value is truthy and the gate is nil or equals the login state
@@ -106,7 +107,7 @@ var (
 
 // OAuth provider row and the detail lines its gates allow
 func (s *statusRun) oauthBlock(b statusOAuthBlock, st map[string]any) error {
-	loggedIn := pyrepr.Truthy(st["logged_in"])
+	loggedIn := anyutil.IsTrue(st["logged_in"])
 	text := "not logged in (run: " + b.hint + ")"
 	if loggedIn {
 		text = "logged in"
@@ -114,7 +115,7 @@ func (s *statusRun) oauthBlock(b statusOAuthBlock, st map[string]any) error {
 	s.row(b.name, loggedIn, text, 12, "  ")
 	for _, r := range b.rows {
 		raw := st[r.key]
-		if !pyrepr.Truthy(raw) || r.gate != nil && *r.gate != loggedIn {
+		if !anyutil.IsTrue(raw) || r.gate != nil && *r.gate != loggedIn {
 			continue
 		}
 		value := raw
@@ -209,7 +210,7 @@ func (s *statusRun) renderAPIKeyProviders() error {
 		return nil
 	}
 	var base any = settings.ModelBaseURL.Get(home.WithOverride(s.ctx, s.h))
-	if !pyrepr.Truthy(base) {
+	if !anyutil.IsTrue(base) {
 		envBase, err := statusGetEnvValue(s.ctx, s.h, "LM_BASE_URL")
 		if err != nil {
 			return err

@@ -5,11 +5,11 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const defaultKanbanStopMaxAttempts = 2
@@ -37,13 +37,13 @@ func kanbanToolCallName(tc any) string {
 		return call.Function.Name
 	case map[string]any:
 		name := call["name"]
-		if fn, ok := pyjson.Dict(call["function"]); ok {
+		if fn, ok := jsonutil.AsMap(call["function"]); ok {
 			name = fn["name"]
 		}
 		if !pyTruthy(name) {
 			return ""
 		}
-		return pyrepr.Str(name)
+		return anyutil.String(name)
 	}
 	return ""
 }
@@ -83,7 +83,7 @@ func sessionCalledKanbanTerminal(messages []map[string]any) bool {
 				}
 			}
 		case "tool":
-			if name := msg["name"]; pyTruthy(name) && terminalKanbanTools[pyrepr.Str(name)] {
+			if name := msg["name"]; pyTruthy(name) && terminalKanbanTools[anyutil.String(name)] {
 				return true
 			}
 		}

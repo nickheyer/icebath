@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
 func TestDoUninstallSkipConfirmBypassesInput(t *testing.T) {
@@ -42,7 +42,7 @@ func TestBuiltInNameCollisionIsVisibleInTheSkillsTable(t *testing.T) {
 		writeTestFile(t, filepath.Join(x.S.SkillsDir(), n, "SKILL.md"), "---\nname: "+n+"\ndescription: "+n+" skill.\n---\n# "+n+"\n")
 	}
 	sink := &bytes.Buffer{}
-	if err := x.DoList(context.Background(), "all", false, &pyrich.Console{Out: sink, Width: 200}); err != nil {
+	if err := x.DoList(context.Background(), "all", false, &consoleutil.Console{Out: sink, Width: 200}); err != nil {
 		t.Fatal(err)
 	}
 	table := sink.String()

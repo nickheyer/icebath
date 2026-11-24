@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Caller abort verdicts that defer to the more precise compressor failure class of the same attempt
@@ -33,7 +33,7 @@ func snapshotCompressionEffectInput(messages, verbatimTail []map[string]any) (ou
 	}
 	tail := make([]map[string]any, len(verbatimTail))
 	for i, m := range verbatimTail {
-		tail[i], _ = pyjson.Clone(m).(map[string]any)
+		tail[i], _ = jsonutil.Clone(m).(map[string]any)
 	}
 	return provider.RejoinCompressedHeadAndTail(messages, tail)
 }
@@ -59,9 +59,9 @@ func recordCommittedAttemptEffect(ctx context.Context, a *AIAgent, messagesBefor
 }
 
 // Attempt id, starting session and trigger, the attempt's own seed winning over the agent fields
-func attemptSeed(a *AIAgent, attemptBegan bool, seed *pyjson.Object) *pyjson.Object {
+func attemptSeed(a *AIAgent, attemptBegan bool, seed *jsonutil.Object) *jsonutil.Object {
 	if seed != nil && seed.Len() > 0 {
-		return seed.Copy()
+		return seed.Clone()
 	}
 	attemptID := ""
 	if attemptBegan {
@@ -70,7 +70,7 @@ func attemptSeed(a *AIAgent, attemptBegan bool, seed *pyjson.Object) *pyjson.Obj
 	if attemptID == "" {
 		attemptID = compactionNewAttemptID()
 	}
-	return pyjson.ObjectOf("attempt_id", attemptID, "session_id", a.sessionID, "trigger_source", "unknown")
+	return jsonutil.ObjectOf("attempt_id", attemptID, "session_id", a.sessionID, "trigger_source", "unknown")
 }
 
 // Reports whether both values are the same attempt id string
@@ -81,8 +81,8 @@ func sameAttemptID(a, b any) bool {
 }
 
 // Writes the one attempt log line the micro compaction report parses
-func logAttemptRecord(payload *pyjson.Object) {
-	text, err := pyjson.Dumps(payload, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+func logAttemptRecord(payload *jsonutil.Object) {
+	text, err := jsonutil.Encode(payload, jsonutil.SortKeys())
 	if err != nil {
 		panic(err)
 	}
@@ -97,7 +97,7 @@ type attemptTelemetryEmit struct {
 	FailureClass         string
 	CommitStartedAt      *time.Time
 	ExcludeLastTelemetry bool
-	AttemptSeed          *pyjson.Object
+	AttemptSeed          *jsonutil.Object
 	HistoryRewritten     *bool
 }
 
@@ -112,7 +112,7 @@ func emitCompressionAttemptTelemetry(ctx context.Context, a *AIAgent, e attemptT
 		}
 	}()
 	compressor, _ := a.contextCompressor.(*ContextCompressor)
-	var telemetry *pyjson.Object
+	var telemetry *jsonutil.Object
 	if !e.ExcludeLastTelemetry && compressor != nil {
 		telemetry = compressor.Last
 	}
@@ -124,10 +124,10 @@ func emitCompressionAttemptTelemetry(ctx context.Context, a *AIAgent, e attemptT
 		own = sameAttemptID(id, seedID)
 	}
 	if !own {
-		telemetry = seed.Copy()
+		telemetry = seed.Clone()
 		telemetry.Set("method", "none")
 	}
-	payload := telemetry.Copy()
+	payload := telemetry.Clone()
 	sessionID, _ := seed.Get("session_id")
 	for _, kv := range []struct {
 		key string
@@ -166,12 +166,12 @@ func emitCompressionAttemptTelemetry(ctx context.Context, a *AIAgent, e attemptT
 	fallback, _ := payload.Get("fallback_used")
 	payload.Set("fallback_used", pyTruthy(fallback) || own && compressor != nil && (compressor.LastSummaryFallbackUsed || compressor.LastAuxModelFailureModel != ""))
 	logAttemptRecord(payload)
-	record, _ := pyjson.Plain(payload).(map[string]any)
+	record, _ := jsonutil.Plain(payload).(map[string]any)
 	PublishCompactionAttempt(ctx, a, record)
 }
 
 // Emits the record of an attempt the caller aborted before it committed
-func emitAbortedAttemptTelemetry(ctx context.Context, a *AIAgent, startedAt time.Time, failureClass string, seed *pyjson.Object) {
+func emitAbortedAttemptTelemetry(ctx context.Context, a *AIAgent, startedAt time.Time, failureClass string, seed *jsonutil.Object) {
 	emitCompressionAttemptTelemetry(ctx, a, attemptTelemetryEmit{StartedAt: startedAt, CommitStatus: "aborted", SplitStatus: "aborted", FailureClass: failureClass, AttemptSeed: seed})
 }
 
@@ -182,7 +182,7 @@ type attemptBypass struct {
 	ApproxTokens any
 	Route        string
 	Method       string
-	AttemptSeed  *pyjson.Object
+	AttemptSeed  *jsonutil.Object
 }
 
 // Logs and publishes an attempt the gate, Codex or a lease holder took
@@ -198,8 +198,8 @@ func emitBypassedAttemptTelemetry(ctx context.Context, a *AIAgent, startedAt tim
 	if b.Method == "" {
 		b.Method = "none"
 	}
-	payload := pyjson.ObjectOf("event", "compression_attempt", "route", b.Route, "method", b.Method, "failure_class", b.FailureClass)
-	payload.Update(attemptSeed(a, true, b.AttemptSeed))
+	payload := jsonutil.ObjectOf("event", "compression_attempt", "route", b.Route, "method", b.Method, "failure_class", b.FailureClass)
+	payload.Merge(attemptSeed(a, true, b.AttemptSeed))
 	var contextLimit, threshold any
 	if compressor, ok := a.contextCompressor.(*ContextCompressor); ok {
 		if compressor.resolvedContextLength != nil {
@@ -223,12 +223,12 @@ func emitBypassedAttemptTelemetry(ctx context.Context, a *AIAgent, startedAt tim
 		payload.Set(kv.key, kv.v)
 	}
 	logAttemptRecord(payload)
-	record, _ := pyjson.Plain(payload).(map[string]any)
+	record, _ := jsonutil.Plain(payload).(map[string]any)
 	PublishCompactionAttempt(ctx, a, record)
 }
 
 // Records an automatic attempt the breaker gate refused, the class keeping only the guard name
-func emitBlockedAttemptTelemetry(ctx context.Context, a *AIAgent, startedAt time.Time, approxTokens any, seed *pyjson.Object, reason string) {
+func emitBlockedAttemptTelemetry(ctx context.Context, a *AIAgent, startedAt time.Time, approxTokens any, seed *jsonutil.Object, reason string) {
 	guard, _, _ := strings.Cut(reason, ":")
 	emitBypassedAttemptTelemetry(ctx, a, startedAt, attemptBypass{CommitStatus: "blocked", FailureClass: "blocked:" + guard, ApproxTokens: approxTokens, AttemptSeed: seed})
 }

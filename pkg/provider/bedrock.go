@@ -17,10 +17,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ---- routed profile credentials ----
@@ -203,12 +202,12 @@ func bedrockOpenAIBaseURL(region string) string {
 
 // Region of a Mantle host and the lowered path without its trailing slash
 func bedrockMantleURLParts(baseURL string) (string, bool, string) {
-	u, err := pyurl.Parse(baseURL)
+	u, err := url.Parse(baseURL)
 	if err != nil {
 		return "", false, ""
 	}
 	path := strings.ToLower(strings.TrimRight(u.Path, "/"))
-	m := bedrockOpenAIHostRe.FindStringSubmatch(u.Hostname())
+	m := bedrockOpenAIHostRe.FindStringSubmatch(strings.ToLower(u.Hostname()))
 	if m == nil {
 		return "", false, path
 	}
@@ -324,7 +323,7 @@ func buildBedrockOpenAIHTTPClient(ctx context.Context, region string, timeout ti
 		return nil, err
 	}
 	if timeout > 0 {
-		rt = pyhttpx.TimeoutTransport(rt, timeout)
+		rt = httputil.TimeoutTransport(rt, httputil.EachPhase(timeout))
 	}
 	return &http.Client{Transport: rt}, nil
 }
@@ -653,7 +652,7 @@ var (
 func bedrockIssuer(msg map[string]any) (string, bool) {
 	details, _ := msg["reasoning_details"].([]any)
 	for _, d := range details {
-		m, ok := pyjson.Dict(d)
+		m, ok := jsonutil.AsMap(d)
 		if !ok || m["type"] != BedrockConverseIssuerType {
 			continue
 		}

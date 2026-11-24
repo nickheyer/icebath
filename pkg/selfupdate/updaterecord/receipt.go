@@ -23,13 +23,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -58,7 +58,7 @@ var (
 
 	finalized struct {
 		sync.Mutex
-		byID map[string]*pyjson.Object
+		byID map[string]*jsonutil.Object
 	}
 )
 
@@ -138,14 +138,14 @@ func UpdateReceiptScope(ctx context.Context) context.Context {
 // A completion child finalized this command's run so its terminal outcome becomes this scope's
 func AdoptTerminalReceipt(ctx context.Context, data any) {
 	st := stateOf(ctx)
-	m, ok := pyjson.AsObject(data)
-	if !ok || !truthy(m.Vals["finished_at"]) {
+	m, ok := jsonutil.AsObject(data)
+	if !ok || !truthy(m.Value("finished_at")) {
 		return
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
 	if st.terminal != nil {
-		st.terminal["outcome"] = m.Vals["outcome"]
+		st.terminal["outcome"] = m.Value("outcome")
 	}
 }
 
@@ -174,12 +174,12 @@ func utcNowISO() string {
 }
 
 // Running code identity as an ordered mapping, empty when the probe fails
-func codeIdentity(refresh bool) *pyjson.Object {
+func codeIdentity(refresh bool) *jsonutil.Object {
 	identity, err := GetCodeIdentity(refresh)
 	if err != nil || identity == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	return pyjson.Clone(identity).(*pyjson.Object)
+	return jsonutil.Clone(identity).(*jsonutil.Object)
 }
 
 // Mapping entries reduced to stringified keys
@@ -190,17 +190,17 @@ func strRecords(entries any, keys []string) ([]any, error) {
 	}
 	records := []any{}
 	for _, entry := range items {
-		m, ok := pyjson.AsObject(entry)
+		m, ok := jsonutil.AsObject(entry)
 		if !ok {
 			continue
 		}
-		record := pyjson.NewObject()
+		record := jsonutil.NewObject()
 		for _, key := range keys {
-			value, present := m.Vals[key]
+			value, present := m.Get(key)
 			if !present {
 				value = ""
 			}
-			record.Set(key, pyrepr.Str(value))
+			record.Set(key, anyutil.String(value))
 		}
 		records = append(records, record)
 	}
@@ -209,7 +209,7 @@ func strRecords(entries any, keys []string) ([]any, error) {
 
 // Observable facts of one icebath update run
 type UpdateReceipt struct {
-	Data          *pyjson.Object
+	Data          *jsonutil.Object
 	CorrelationID string
 	begun         bool
 	prev          *UpdateReceipt
@@ -222,19 +222,19 @@ func NewUpdateReceipt() *UpdateReceipt {
 	for i, a := range os.Args {
 		argv[i] = a
 	}
-	r := &UpdateReceipt{Data: pyjson.ObjectOf(
+	r := &UpdateReceipt{Data: jsonutil.ObjectOf(
 		"schema", 1, "started_at", utcNowISO(), "finished_at", nil,
 		"argv", argv, "pid", os.Getpid(),
-		"outcome", "running", "pre_update", codeIdentity(false), "post_update", pyjson.NewObject(),
-		"steps", []any{}, "skips", []any{}, "gateway_restart", pyjson.NewObject(), "fleet", []any{},
+		"outcome", "running", "pre_update", codeIdentity(false), "post_update", jsonutil.NewObject(),
+		"steps", []any{}, "skips", []any{}, "gateway_restart", jsonutil.NewObject(), "fleet", []any{},
 	)}
 	r.CorrelationID = uuid4Hex()
 	r.Data.Set("update_id", r.CorrelationID)
 	return r
 }
 
-func (r *UpdateReceipt) appendTo(key string, entry *pyjson.Object) error {
-	existing, present := r.Data.Vals[key]
+func (r *UpdateReceipt) appendTo(key string, entry *jsonutil.Object) error {
+	existing, present := r.Data.Get(key)
 	if !present {
 		r.Data.Set(key, []any{entry})
 		return nil
@@ -249,18 +249,18 @@ func (r *UpdateReceipt) appendTo(key string, entry *pyjson.Object) error {
 
 // Records one step outcome
 func (r *UpdateReceipt) Step(name string, ok bool, detail string) error {
-	return r.appendTo("steps", pyjson.ObjectOf("name", name, "ok", ok, "detail", detail, "at", utcNowISO()))
+	return r.appendTo("steps", jsonutil.ObjectOf("name", name, "ok", ok, "detail", detail, "at", utcNowISO()))
 }
 
 // Records a skipped step with its reason
 func (r *UpdateReceipt) Skip(name, reason string) error {
-	return r.appendTo("skips", pyjson.ObjectOf("name", name, "reason", reason, "at", utcNowISO()))
+	return r.appendTo("skips", jsonutil.ObjectOf("name", name, "reason", reason, "at", utcNowISO()))
 }
 
 // Marks a stage end whose duration is the gap since the previous mark, facts following in call order
-func (r *UpdateReceipt) Stage(name, outcome string, facts *pyjson.Object) error {
-	mark := pyjson.ObjectOf("name", name, "outcome", outcome, "at", utcNowISO())
-	mark.Update(facts)
+func (r *UpdateReceipt) Stage(name, outcome string, facts *jsonutil.Object) error {
+	mark := jsonutil.ObjectOf("name", name, "outcome", outcome, "at", utcNowISO())
+	mark.Merge(facts)
 	return r.appendTo("stages", mark)
 }
 
@@ -272,7 +272,7 @@ func (r *UpdateReceipt) Fact(key string, value any) error {
 
 // Records a post commit step the run still owes
 func (r *UpdateReceipt) Followup(step, reason string) error {
-	return r.appendTo("followups", pyjson.ObjectOf("step", step, "reason", reason, "at", utcNowISO()))
+	return r.appendTo("followups", jsonutil.ObjectOf("step", step, "reason", reason, "at", utcNowISO()))
 }
 
 // Gateway restart phase outcome, FreshRecovery nil when the fresh recovery pass did not run
@@ -301,7 +301,7 @@ func (r *UpdateReceipt) GatewayRestartResult(g GatewayRestart) error {
 	for i, p := range g.KilledPIDs {
 		killed[i] = p
 	}
-	result := pyjson.ObjectOf(
+	result := jsonutil.ObjectOf(
 		"restarted_services", stringList(g.RestartedServices),
 		"relaunched_profiles", stringList(g.RelaunchedProfiles),
 		"externally_supervised_profiles", stringList(g.ExternallySupervisedProfiles),
@@ -311,7 +311,7 @@ func (r *UpdateReceipt) GatewayRestartResult(g GatewayRestart) error {
 		"phase_error", g.PhaseError,
 	)
 	if g.FreshRecovery != nil {
-		persisted := pyjson.NewObject()
+		persisted := jsonutil.NewObject()
 		for _, key := range []string{"requested", "verified", "relaunch_attempted", "failed"} {
 			raw, present := g.FreshRecovery[key]
 			if !present {
@@ -323,7 +323,7 @@ func (r *UpdateReceipt) GatewayRestartResult(g GatewayRestart) error {
 			}
 			out := make([]any, len(items))
 			for i, p := range items {
-				out[i] = pyrepr.Str(p)
+				out[i] = anyutil.String(p)
 			}
 			persisted.Set(key, out)
 		}
@@ -344,7 +344,7 @@ func (r *UpdateReceipt) GatewayRestartResult(g GatewayRestart) error {
 
 // Closes the receipt, partial when a committed run still owes a user action
 func (r *UpdateReceipt) Finalize(outcome string) {
-	if outcome == "success" && truthy(r.Data.Vals["user_action"]) {
+	if outcome == "success" && truthy(r.Data.Value("user_action")) {
 		outcome = "partial"
 	}
 	r.Data.Set("outcome", outcome)
@@ -354,7 +354,7 @@ func (r *UpdateReceipt) Finalize(outcome string) {
 
 func (r *UpdateReceipt) clone() *UpdateReceipt {
 	c := *r
-	c.Data = pyjson.Clone(r.Data).(*pyjson.Object)
+	c.Data = jsonutil.Clone(r.Data).(*jsonutil.Object)
 	return &c
 }
 
@@ -370,8 +370,8 @@ func ReceiptDir(ctx context.Context) string { return receiptDir(ctx) }
 func receiptDirs(ctx context.Context) []string {
 	root := receiptDir(ctx)
 	profile := filepath.Join(home.LogsDir(home.Dir(ctx)), "update_receipts")
-	rr, err1 := pypath.Resolve(root)
-	pr, err2 := pypath.Resolve(profile)
+	rr, err1 := pathutil.Resolve(root)
+	pr, err2 := pathutil.Resolve(profile)
 	if err1 == nil && err2 == nil && rr == pr {
 		return []string{root}
 	}
@@ -398,27 +398,27 @@ func writeLatest(ctx context.Context, payload []byte) error {
 func WriteLatest(ctx context.Context, payload []byte) error { return writeLatest(ctx, payload) }
 
 // Archive file of one run, named at begin so the running and terminal records coincide
-func runFile(directory string, data *pyjson.Object) string {
-	started := data.Vals["started_at"]
+func runFile(directory string, data *jsonutil.Object) string {
+	started := data.Value("started_at")
 	text := ""
 	if truthy(started) {
-		text = pyrepr.Str(started)
+		text = anyutil.String(started)
 	}
 	stamp := textutil.First(nonDigit.ReplaceAllString(text, ""), 14)
 	if stamp == "" {
 		stamp = time.Now().Format("20060102150405")
 	}
 	var pid any = os.Getpid()
-	if truthy(data.Vals["pid"]) {
-		pid = data.Vals["pid"]
+	if truthy(data.Value("pid")) {
+		pid = data.Value("pid")
 	}
 	name := fmt.Sprintf("update_%s_%s_%s_%s.json", textutil.First(stamp, 8), textutil.DropFirst(stamp, 8),
-		pyrepr.Str(pid), pyrepr.Str(data.Vals["update_id"]))
+		anyutil.String(pid), anyutil.String(data.Value("update_id")))
 	return filepath.Join(directory, name)
 }
 
 // Exported runFile
-func RunFile(directory string, data *pyjson.Object) string { return runFile(directory, data) }
+func RunFile(directory string, data *jsonutil.Object) string { return runFile(directory, data) }
 
 // Directory entries matching a glob pattern in directory order, regular files and others alike
 func globDir(directory, pattern string) ([]string, error) {
@@ -441,11 +441,11 @@ func loadJSONFile(path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
@@ -457,11 +457,11 @@ func LoadReceiptFile(path string) (any, error) { return loadJSONFile(path) }
 
 // Indented receipt payload with a trailing newline, str for anything JSON cannot encode
 func receiptPayload(data any, indent bool) ([]byte, error) {
-	opts := []pyjson.Option{pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil })}
+	opts := []jsonutil.Option{jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil })}
 	if indent {
-		opts = append(opts, pyjson.Indent(2))
+		opts = append(opts, jsonutil.Indent(2))
 	}
-	text, err := pyjson.Dumps(data, opts...)
+	text, err := jsonutil.Encode(data, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +475,7 @@ func receiptPayload(data any, indent bool) ([]byte, error) {
 func ReceiptPayload(data any, indent bool) ([]byte, error) { return receiptPayload(data, indent) }
 
 // The run's own archive path and record in the root store in key order, never latest.json
-func ReadRunRecord(ctx context.Context, updateID string) (string, *pyjson.Object, bool) {
+func ReadRunRecord(ctx context.Context, updateID string) (string, *jsonutil.Object, bool) {
 	paths, err := globDir(receiptDir(ctx), "update_*_"+updateID+".json")
 	if err != nil {
 		return "", nil, false
@@ -485,7 +485,7 @@ func ReadRunRecord(ctx context.Context, updateID string) (string, *pyjson.Object
 		if err != nil {
 			continue
 		}
-		if record, ok := v.(*pyjson.Object); ok && pyrepr.Equal(record.Vals["update_id"], updateID) {
+		if record, ok := v.(*jsonutil.Object); ok && anyutil.Equal(record.Value("update_id"), updateID) {
 			return path, record, true
 		}
 	}
@@ -493,16 +493,16 @@ func ReadRunRecord(ctx context.Context, updateID string) (string, *pyjson.Object
 }
 
 // Writes the open run to disk unless its archive already holds the terminal record
-func persistRunning(ctx context.Context, data *pyjson.Object) {
+func persistRunning(ctx context.Context, data *jsonutil.Object) {
 	directory := receiptDir(ctx)
 	if err := os.MkdirAll(directory, 0o777); err != nil {
 		return
 	}
 	path := runFile(directory, data)
-	if _, stored, ok := ReadRunRecord(ctx, pyrepr.Str(data.Vals["update_id"])); ok && truthy(stored.Vals["finished_at"]) {
+	if _, stored, ok := ReadRunRecord(ctx, anyutil.String(data.Value("update_id"))); ok && truthy(stored.Value("finished_at")) {
 		return
 	}
-	record := data.Copy()
+	record := data.Clone()
 	record.Set("writer_pid", os.Getpid())
 	if ct := ProcessCreateTime(os.Getpid()); ct != nil {
 		record.Set("writer_create_time", *ct)
@@ -543,11 +543,11 @@ func pidAliveMatches(pid int64, createTime any) *bool {
 }
 
 // Whether the run's owner or last writer may still be alive
-func ownerAlive(record *pyjson.Object) bool {
+func ownerAlive(record *jsonutil.Object) bool {
 	var order []int64
 	identities := map[int64]any{}
 	for _, pair := range [][2]string{{"pid", "pid_create_time"}, {"writer_pid", "writer_create_time"}} {
-		pid, ok := pyIntValue(record.Vals[pair[0]])
+		pid, ok := pyIntValue(record.Value(pair[0]))
 		if !ok || pid <= 0 {
 			continue
 		}
@@ -556,7 +556,7 @@ func ownerAlive(record *pyjson.Object) bool {
 			order = append(order, pid)
 		}
 		if !seen || existing == nil {
-			identities[pid] = record.Vals[pair[1]]
+			identities[pid] = record.Value(pair[1])
 		}
 	}
 	for _, pid := range order {
@@ -568,7 +568,7 @@ func ownerAlive(record *pyjson.Object) bool {
 }
 
 // Exported ownerAlive
-func OwnerAlive(record *pyjson.Object) bool { return ownerAlive(record) }
+func OwnerAlive(record *jsonutil.Object) bool { return ownerAlive(record) }
 
 // Paths under directory matching pattern ordered by modification time, oldest first
 func byMtime(paths []string) ([]string, error) {
@@ -594,7 +594,7 @@ func byMtime(paths []string) ([]string, error) {
 
 // Marks running records whose processes are gone as interrupted and returns them
 func ReconcileInterruptedRuns(ctx context.Context) []map[string]any {
-	var interrupted []*pyjson.Object
+	var interrupted []*jsonutil.Object
 	func() {
 		directory := receiptDir(ctx)
 		latest := readLatestReceipt(ctx)
@@ -614,22 +614,22 @@ func ReconcileInterruptedRuns(ctx context.Context) []map[string]any {
 			if err != nil {
 				continue
 			}
-			record, ok := v.(*pyjson.Object)
-			if !ok || !pyrepr.Equal(record.Vals["outcome"], "running") || ownerAlive(record) {
+			record, ok := v.(*jsonutil.Object)
+			if !ok || !anyutil.Equal(record.Value("outcome"), "running") || ownerAlive(record) {
 				continue
 			}
-			if stages, isMap := record.Vals["stages"].(*pyjson.Object); isMap && stages.Len() > 0 {
+			if stages, isMap := record.Value("stages").(*jsonutil.Object); isMap && stages.Len() > 0 {
 				continue
 			}
 			var last any
-			if stages, err := pyList(orEmptyList(record.Vals["stages"])); err == nil && len(stages) > 0 {
+			if stages, err := pyList(orEmptyList(record.Value("stages"))); err == nil && len(stages) > 0 {
 				last = mapGet(stages[len(stages)-1], "name")
 			} else if err != nil {
 				continue
 			}
 			lastText := "start"
 			if truthy(last) {
-				lastText = pyrepr.Str(last)
+				lastText = anyutil.String(last)
 			}
 			record.Set("outcome", "interrupted")
 			record.Set("interrupted_detected_at", utcNowISO())
@@ -638,7 +638,7 @@ func ReconcileInterruptedRuns(ctx context.Context) []map[string]any {
 			if err != nil || pm.DurableWriteBytes(path, payload) != nil {
 				continue
 			}
-			if pyrepr.Equal(mapGet(latest, "update_id"), record.Vals["update_id"]) {
+			if anyutil.Equal(mapGet(latest, "update_id"), record.Value("update_id")) {
 				if writeLatest(ctx, payload) != nil {
 					continue
 				}
@@ -649,18 +649,18 @@ func ReconcileInterruptedRuns(ctx context.Context) []map[string]any {
 	var out []map[string]any
 	for _, record := range interrupted {
 		fmt.Fprintf(receiptStdout, "⚠ The previous update (%s) was interrupted before it finished (%s); this update completes the work it still owed.\n",
-			pyrepr.Str(record.Vals["started_at"]), pyrepr.Str(record.Vals["stop_reason"]))
+			anyutil.String(record.Value("started_at")), anyutil.String(record.Value("stop_reason")))
 		out = append(out, plainReceipt(record))
 	}
 	return out
 }
 
 // Starts a durably running receipt, restoring any enclosing one when it finalizes
-func BeginUpdateReceipt(ctx context.Context, previous *pyjson.Object, correlationID string) {
+func BeginUpdateReceipt(ctx context.Context, previous *jsonutil.Object, correlationID string) {
 	receipt := NewUpdateReceipt()
 	hasPrevious := previous != nil && previous.Len() > 0
 	if hasPrevious {
-		receipt.Data.Update(pyjson.Clone(previous).(*pyjson.Object))
+		receipt.Data.Merge(jsonutil.Clone(previous).(*jsonutil.Object))
 	}
 	if correlationID != "" {
 		receipt.CorrelationID = correlationID
@@ -668,8 +668,8 @@ func BeginUpdateReceipt(ctx context.Context, previous *pyjson.Object, correlatio
 	receipt.Data.Set("update_id", receipt.CorrelationID)
 	receipt.Data.Set("outcome", "running")
 	receipt.Data.Set("finished_at", nil)
-	if _, present := receipt.Data.Vals["pid_create_time"]; !present {
-		if pid, ok := pyIntValue(receipt.Data.Vals["pid"]); ok && pid > 0 && pid <= math.MaxInt32 {
+	if _, present := receipt.Data.Get("pid_create_time"); !present {
+		if pid, ok := pyIntValue(receipt.Data.Value("pid")); ok && pid > 0 && pid <= math.MaxInt32 {
 			if ct := ProcessCreateTime(int(pid)); ct != nil {
 				receipt.Data.Set("pid_create_time", *ct)
 			} else {
@@ -694,7 +694,7 @@ func PersistRunningReceipt(ctx context.Context) {
 	st.mu.Lock()
 	current := st.current
 	st.mu.Unlock()
-	if current != nil && pyrepr.Equal(current.Data.Vals["outcome"], "running") {
+	if current != nil && anyutil.Equal(current.Data.Value("outcome"), "running") {
 		persistRunning(ctx, current.Data)
 	}
 }
@@ -741,7 +741,7 @@ func RecordFollowup(ctx context.Context, step, reason, retry string) {
 
 // Records a committed run's owed user action so it finalizes partial
 func RecordUserAction(ctx context.Context, step, reason string) {
-	action := pyjson.ObjectOf("step", step, "reason", collapseReason(reason))
+	action := jsonutil.ObjectOf("step", step, "reason", collapseReason(reason))
 	record(ctx, "update user action "+step, func(r *UpdateReceipt) error { return r.Fact("user_action", action) })
 	PersistRunningReceipt(ctx)
 }
@@ -763,7 +763,7 @@ func AmendTerminalFollowup(ctx context.Context, updateID, step, reason string) e
 	if pm.DurableWriteBytes(path, payload) != nil {
 		return nil
 	}
-	if pyrepr.Equal(mapGet(ReadLatestReceipt(ctx), "update_id"), updateID) {
+	if anyutil.Equal(mapGet(ReadLatestReceipt(ctx), "update_id"), updateID) {
 		_ = writeLatest(ctx, payload)
 	}
 	return nil
@@ -809,7 +809,7 @@ func RecordSkip(ctx context.Context, name, reason string) {
 }
 
 // Marks the end of a pipeline stage and refreshes the durable running record
-func RecordStage(ctx context.Context, name, outcome string, facts *pyjson.Object) {
+func RecordStage(ctx context.Context, name, outcome string, facts *jsonutil.Object) {
 	record(ctx, "update stage "+name, func(r *UpdateReceipt) error { return r.Stage(name, outcome, facts) })
 	PersistRunningReceipt(ctx)
 }
@@ -831,7 +831,7 @@ func RecordStopReason(ctx context.Context, reason string) {
 
 // Closed stop token for a failed git command about to end the run, nil for anything else
 func GitErrorStopClass(err error) *string {
-	var called *pysubprocess.CalledProcessError
+	var called *executil.StatusError
 	if !errors.As(err, &called) {
 		return nil
 	}
@@ -902,9 +902,9 @@ func finalizeReceipt(ctx context.Context, receipt *UpdateReceipt, outcome string
 	}
 	finalized.Lock()
 	if finalized.byID == nil {
-		finalized.byID = map[string]*pyjson.Object{}
+		finalized.byID = map[string]*jsonutil.Object{}
 	}
-	finalized.byID[pyrepr.Str(data.Vals["update_id"])] = data
+	finalized.byID[anyutil.String(data.Value("update_id"))] = data
 	finalized.Unlock()
 	AdoptTerminalReceipt(ctx, data)
 	if fleet != nil {
@@ -929,7 +929,7 @@ func finalizeReceipt(ctx context.Context, receipt *UpdateReceipt, outcome string
 }
 
 // Folds in only the pm sync sections filed under this update's correlation id, an embed failure changes nothing
-func embedPMSync(ctx context.Context, data *pyjson.Object, updateID string) {
+func embedPMSync(ctx context.Context, data *jsonutil.Object, updateID string) {
 	defer func() {
 		if r := recover(); r != nil {
 			receiptLog().Debug(fmt.Sprintf("pm sync-section embed skipped: %v", r))
@@ -938,31 +938,31 @@ func embedPMSync(ctx context.Context, data *pyjson.Object, updateID string) {
 	sync := pmLastForUpdate(ctx, updateID, true)
 	if sync != nil {
 		for _, key := range []string{"venv_rebuild", "plugin_bisect", "feature_list", "steps", "exit_code"} {
-			if sync.Vals[key] != nil {
-				data.Set("pm_"+key, sync.Vals[key])
+			if sync.Value(key) != nil {
+				data.Set("pm_"+key, sync.Value(key))
 			}
 		}
-		if sync.Vals["outcome"] != nil {
-			data.Set("pm_sync_outcome", sync.Vals["outcome"])
+		if sync.Value("outcome") != nil {
+			data.Set("pm_sync_outcome", sync.Value("outcome"))
 		}
-		if truthy(sync.Vals["warnings"]) {
-			data.Set("pm_warnings", sync.Vals["warnings"])
+		if truthy(sync.Value("warnings")) {
+			data.Set("pm_warnings", sync.Value("warnings"))
 		}
-		if sync.Vals["refusal"] != nil {
-			data.Set("pm_refusal", sync.Vals["refusal"])
+		if sync.Value("refusal") != nil {
+			data.Set("pm_refusal", sync.Value("refusal"))
 		}
 	}
 }
 
 // Deep copy of the terminal record this process finalized for an update id, nil when none
-func FinalizedReceipt(updateID string) *pyjson.Object {
+func FinalizedReceipt(updateID string) *jsonutil.Object {
 	finalized.Lock()
 	defer finalized.Unlock()
 	data, ok := finalized.byID[updateID]
 	if !ok {
 		return nil
 	}
-	return pyjson.Clone(data).(*pyjson.Object)
+	return jsonutil.Clone(data).(*jsonutil.Object)
 }
 
 // Command boundary safety net that persists a still open receipt with the exit's outcome
@@ -980,7 +980,7 @@ func FinalizePendingUpdateReceipt(ctx context.Context, exitCode *int, stopReason
 		outcome = "success"
 	case *exitCode == 2:
 		outcome = "refused"
-	case truthy(current.Data.Vals["user_action"]):
+	case truthy(current.Data.Value("user_action")):
 		outcome = "partial"
 	}
 	if exitCode != nil {
@@ -1001,13 +1001,13 @@ func ResumeRunRecord(ctx context.Context) string {
 	if current == nil {
 		return ""
 	}
-	path, rec, ok := ReadRunRecord(ctx, pyrepr.Str(current.Data.Vals["update_id"]))
+	path, rec, ok := ReadRunRecord(ctx, anyutil.String(current.Data.Value("update_id")))
 	if !ok {
 		return ""
 	}
 	st.mu.Lock()
 	defer st.mu.Unlock()
-	if truthy(rec.Vals["finished_at"]) {
+	if truthy(rec.Value("finished_at")) {
 		if current.begun && current.owner == st {
 			st.current = current.prev
 		} else {
@@ -1074,7 +1074,7 @@ func pruneOldReceipts(directory string) {
 }
 
 // Most recent update receipt across the stores of this home in key order, nil when none parses
-func readLatestReceipt(ctx context.Context) *pyjson.Object {
+func readLatestReceipt(ctx context.Context) *jsonutil.Object {
 	var best string
 	var bestTime time.Time
 	for _, d := range receiptDirs(ctx) {
@@ -1094,12 +1094,12 @@ func readLatestReceipt(ctx context.Context) *pyjson.Object {
 	if err != nil {
 		return nil
 	}
-	m, _ := v.(*pyjson.Object)
+	m, _ := v.(*jsonutil.Object)
 	return m
 }
 
 // Exported readLatestReceipt keeping the ordered object
-func LatestReceiptObject(ctx context.Context) *pyjson.Object { return readLatestReceipt(ctx) }
+func LatestReceiptObject(ctx context.Context) *jsonutil.Object { return readLatestReceipt(ctx) }
 
 // Most recent update receipt across the stores of this home, nil when none parses
 func ReadLatestReceipt(ctx context.Context) map[string]any {
@@ -1111,7 +1111,7 @@ func ReadLatestReceipt(ctx context.Context) map[string]any {
 
 // Whether a fleet row serves an install this update did not touch
 func RowIsExternal(row any) bool {
-	return pyrepr.Equal(mapGet(row, "state"), ExternalState)
+	return anyutil.Equal(mapGet(row, "state"), ExternalState)
 }
 
 // Random version 4 uuid as 32 hex digits
@@ -1140,7 +1140,7 @@ func truthy(v any) bool {
 		return t != 0
 	case []any:
 		return len(t) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t != nil && t.Len() > 0
 	case map[string]any:
 		return len(t) > 0
@@ -1154,9 +1154,9 @@ func truthy(v any) bool {
 // Value under key of a decoded dict, nil when the key is absent or the value is no dict
 func mapGet(v any, key string) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t != nil {
-			return t.Vals[key]
+			return t.Value(key)
 		}
 	case map[string]any:
 		return t[key]
@@ -1165,8 +1165,8 @@ func mapGet(v any, key string) any {
 }
 
 // Plain map form of an ordered receipt for readers that only look up keys
-func plainReceipt(o *pyjson.Object) map[string]any {
-	m, _ := pyjson.Plain(o).(map[string]any)
+func plainReceipt(o *jsonutil.Object) map[string]any {
+	m, _ := jsonutil.Plain(o).(map[string]any)
 	return m
 }
 
@@ -1202,8 +1202,8 @@ func pyList(v any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
-		return stringList(append([]string(nil), t.Keys...)), nil
+	case *jsonutil.Object:
+		return stringList(append([]string(nil), t.Keys()...)), nil
 	case map[string]any:
 		keys := make([]string, 0, len(t))
 		for k := range t {
@@ -1244,7 +1244,7 @@ func pyIntConvert(v any) (int64, error) {
 	switch t := v.(type) {
 	case float64:
 		if math.IsNaN(t) || math.IsInf(t, 0) {
-			return 0, fmt.Errorf("cannot convert float %s to integer", pyrepr.Float(t))
+			return 0, fmt.Errorf("cannot convert float %s to integer", strconv.FormatFloat(t, 'f', -1, 64))
 		}
 		return int64(t), nil
 	case string:

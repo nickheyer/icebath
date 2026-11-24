@@ -11,9 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -60,7 +59,7 @@ func manifestStr(data map[string]any, key, def string) string {
 func EnvRequirementFromDict(data any) (EnvRequirement, error) {
 	m, ok := data.(map[string]any)
 	if !ok {
-		return EnvRequirement{}, distErrorf("env_requires entry must be a mapping, got %s", pyrepr.TypeName(data))
+		return EnvRequirement{}, distErrorf("env_requires entry must be a mapping, got %s", anyutil.Kind(data))
 	}
 	name := strings.TrimSpace(manifestStr(m, "name", ""))
 	if name == "" {
@@ -112,7 +111,7 @@ func NewDistributionManifest(name string) *DistributionManifest {
 func DistributionManifestFromDict(data any) (*DistributionManifest, error) {
 	m, ok := data.(map[string]any)
 	if !ok {
-		return nil, distErrorf("%s must be a mapping, got %s", ManifestFilename, pyrepr.TypeName(data))
+		return nil, distErrorf("%s must be a mapping, got %s", ManifestFilename, anyutil.Kind(data))
 	}
 	name := strings.TrimSpace(manifestStr(m, "name", ""))
 	if name == "" {
@@ -212,7 +211,7 @@ func readUTF8Sig(path string) ([]byte, error) {
 	for i := 0; i < len(data); {
 		r, n := utf8.DecodeRune(data[i:])
 		if r == utf8.RuneError && n <= 1 {
-			return nil, pystr.UTF8DecodeError(data, i)
+			return nil, &textutil.InvalidUTF8Error{Offset: i}
 		}
 		i += n
 	}
@@ -223,7 +222,7 @@ func readUTF8Sig(path string) ([]byte, error) {
 func pyExcText(err error) string {
 	var pe *os.PathError
 	if errors.As(err, &pe) {
-		return pyfs.OSErrorText(err)
+		return err.Error()
 	}
 	return err.Error()
 }

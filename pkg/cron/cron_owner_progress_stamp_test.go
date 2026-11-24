@@ -9,15 +9,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Runner double holding a real session store and an empty launch adapter map, never draining
 type progressStampRunner struct {
 	store    *gateway.SessionStore
-	adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 }
 
 func (progressStampRunner) SessionRuntimeDescriptor() map[string]any { return nil }
@@ -28,10 +28,10 @@ func (progressStampRunner) AdapterForSource(context.Context, *gateway.SessionSou
 	return nil, nil
 }
 func (progressStampRunner) MultiplexProfiles() bool { return false }
-func (r progressStampRunner) Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (r progressStampRunner) Adapters() *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	return r.adapters
 }
-func (progressStampRunner) ProfileAdapterMap(string) *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (progressStampRunner) ProfileAdapterMap(string) *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	return nil
 }
 
@@ -61,7 +61,7 @@ func TestOwnerProgressReachesTheFirersLedgerRow(t *testing.T) {
 	}
 	cfg := gateway.DefaultGatewayConfig(ctx)
 	runner := progressStampRunner{store: gateway.NewSessionStore(ctx, filepath.Join(s.Home(), "sessions"), cfg, nil),
-		adapters: pydict.New[gateway.Platform, gateway.PlatformAdapter]()}
+		adapters: orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()}
 	authority := gateway.NewSessionAuthority(runner, s.Home(), "test", db, epoch)
 	admitted := make(chan struct{}, 1)
 	prevSchedule := gateway.SwapSessionSchedule(func(context.Context, *gateway.SessionAuthority, gateway.SessionRef) error {
@@ -138,7 +138,7 @@ func TestOwnerProgressReachesTheFirersLedgerRow(t *testing.T) {
 	if _, err := gateway.CronExecute(ctx, authority, gateway.SessionRef{ProfileID: authority.ProfileID, SessionID: sid}, row, policy); err != nil {
 		t.Fatal(err)
 	}
-	result := pyjson.ObjectOf("result", pyjson.ObjectOf("cron_result", []any{true, "doc", "answer", nil}), "usage", pyjson.NewObject())
+	result := jsonutil.ObjectOf("result", jsonutil.ObjectOf("cron_result", []any{true, "doc", "answer", nil}), "usage", jsonutil.NewObject())
 	if _, err := db.SettleSessionInput(ctx, state.SettleInput{Epoch: epoch, AdmissionID: rowField(row, "admission_id"),
 		Generation: *gateway.RowInt(row, "generation"), Outcome: "completed", Result: result}); err != nil {
 		t.Fatal(err)

@@ -17,10 +17,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Entry word the binary runs the ACP adapter module under
@@ -37,15 +38,15 @@ func (benignProbeMethodFilter) Filter(rec *logging.Record) bool {
 	if message != "Background task failed" || rec.ExcInfo == nil {
 		return true
 	}
-	exc, ok := rec.ExcInfo.(*pyacp.RequestError)
+	exc, ok := rec.ExcInfo.(*acputil.RequestError)
 	if !ok || exc.Code != -32601 {
 		return true
 	}
-	data, ok := exc.Data.(*pyjson.Object)
+	data, ok := exc.Data.(*jsonutil.Object)
 	if !ok {
 		return true
 	}
-	method, _ := data.GetOr("method", nil).(string)
+	method, _ := data.ValueOr("method", nil).(string)
 	return !benignProbeMethods[method]
 }
 
@@ -161,7 +162,7 @@ var newEntryAgent = func() entryAgent { return NewAgent().(entryAgent) }
 
 // Serves the agent over stdio until the editor disconnects
 var runAgent = func(agent any, useUnstableProtocol bool) error {
-	return pyacp.RunAgent(agent, nil, nil, useUnstableProtocol, pyacp.DefaultStdioBufferLimitBytes)
+	return pyacp.RunAgent(agent, nil, nil, useUnstableProtocol, acputil.DefaultLineLimit)
 }
 
 // Trusts the operating system certificate store before any outbound call

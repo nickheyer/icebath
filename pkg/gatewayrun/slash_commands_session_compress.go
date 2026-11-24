@@ -10,12 +10,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fewest transcript messages a manual compress works on
@@ -81,7 +81,7 @@ func compressPreviewReply(ctx context.Context, history []map[string]any, partial
 	var pvMsgs []map[string]any
 	for _, m := range history {
 		role := m["role"]
-		if (role == "user" || role == "assistant") && pyrepr.Truthy(m["content"]) {
+		if (role == "user" || role == "assistant") && anyutil.IsTrue(m["content"]) {
 			pvMsgs = append(pvMsgs, map[string]any{"role": role, "content": m["content"]})
 		}
 	}
@@ -122,7 +122,7 @@ func (r *GatewayRunner) compressCodexAppServerSession(ctx context.Context, sessi
 		return nil, err
 	})
 	if err != nil {
-		return i18n.T(ctx, "gateway.compress.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.compress.failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	if countAfter, _ := cached.ContextCompressionCount(); countAfter > countBefore {
 		return i18n.T(ctx, "gateway.compress.codex_compacted", "", nil), nil
@@ -155,8 +155,8 @@ func (r *GatewayRunner) handleCompressCommandInner(ctx context.Context, event *g
 	}
 	reply, err := r.runManualCompression(ctx, source, entry, history, request)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Manual compress failed: %s", pyrepr.ExceptionMessage(err)))
-		return i18n.T(ctx, "gateway.compress.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		pkgLog().Warn(fmt.Sprintf("Manual compress failed: %s", err.Error()))
+		return i18n.T(ctx, "gateway.compress.failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	return reply, nil
 }
@@ -175,10 +175,10 @@ func (r *GatewayRunner) runManualCompression(ctx context.Context, source *gatewa
 	if err != nil {
 		return "", err
 	}
-	if strings.ToLower(pyrepr.Str(pyrepr.Or(runtimeKwargs["api_mode"], ""))) == "codex_app_server" {
+	if strings.ToLower(anyutil.String(anyutil.Or(runtimeKwargs["api_mode"], ""))) == "codex_app_server" {
 		return r.compressCodexAppServerSession(ctx, sessionKey, entry.SessionID)
 	}
-	if !pyrepr.Truthy(runtimeKwargs["api_key"]) {
+	if !anyutil.IsTrue(runtimeKwargs["api_key"]) {
 		return i18n.T(ctx, "gateway.compress.no_provider", "", nil), nil
 	}
 	var msgs []map[string]any
@@ -244,12 +244,12 @@ func (r *GatewayRunner) runManualCompression(ctx context.Context, source *gatewa
 // Throwaway agent performing a manual compress rewrite of the session with its live system prompt restored
 func (r *GatewayRunner) buildManualCompressionAgent(ctx context.Context, sessionID, model string, runtimeKwargs map[string]any, platformKey, sessionKey string, reasoning map[string]any) (*agent.AIAgent, error) {
 	asyncDB := r.sessionDB(ctx)
-	var sessionRow *pyjson.Object
+	var sessionRow *jsonutil.Object
 	if asyncDB != nil {
-		row, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) (*pyjson.Object, error) { return d.GetSession(ctx, sessionID) })
+		row, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) (*jsonutil.Object, error) { return d.GetSession(ctx, sessionID) })
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("Manual compression could not restore the system prompt for session %s: %s. "+
-				"Preserving an empty prompt so the live turn rebuilds it with its configured providers.", sessionID, pyrepr.ExceptionMessage(err)),
+				"Preserving an empty prompt so the live turn rebuilds it with its configured providers.", sessionID, err.Error()),
 				"exc_info", err)
 		} else {
 			sessionRow = row

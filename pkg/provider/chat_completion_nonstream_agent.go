@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // CodexWatchdogState is the watchdog clock one codex request shares with the codex stream its worker runs
@@ -173,8 +173,8 @@ func agentHighEffortSilenceFloor(cfg map[string]any) float64 {
 		return 0
 	}
 	effort := ""
-	if e := cfg["effort"]; pyrepr.Truthy(e) {
-		effort = strings.ToLower(strings.TrimSpace(pyrepr.Str(e)))
+	if e := cfg["effort"]; anyutil.IsTrue(e) {
+		effort = strings.ToLower(strings.TrimSpace(anyutil.String(e)))
 	}
 	if idx := ladderIndex(effort); idx < 0 || idx < ladderIndex("high") {
 		return 0
@@ -318,7 +318,7 @@ func agentNonStreamRequest(ctx context.Context, agent ChatCompletionAgent, apiKw
 	r.callStart = epochSeconds(agentNonStreamClock())
 	model := "the provider"
 	if v, ok := apiKwargs["model"]; ok {
-		model = pyrepr.Str(v)
+		model = anyutil.String(v)
 	}
 	r.waiter = newNonStreamWaiter(model, r.callStart, wd.codexWatchdogs, r.surface)
 	return r.run()
@@ -432,7 +432,7 @@ func (r *nonStreamAgentRequest) awaitWorkerAfterKill(finished bool, result nonSt
 
 func (r *nonStreamAgentRequest) model() string {
 	if v, ok := r.apiKwargs["model"]; ok {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return "unknown"
 }

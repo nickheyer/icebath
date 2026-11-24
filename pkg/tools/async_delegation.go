@@ -17,9 +17,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Ledger owner liveness probes from gateway status, installed by pkg/gateway at init
@@ -205,11 +205,11 @@ func asyncExec(ctx context.Context, conn state.SQLiteConn, query string, args ..
 }
 
 // json.dumps of a ledger value
-func asyncDumps(v any) (string, error) { return pyjson.Dumps(v) }
+func asyncDumps(v any) (string, error) { return jsonutil.Encode(v) }
 
 // json.loads of a ledger payload into plain maps, slices and ints
 func asyncLoads(raw string) (any, error) {
-	v, err := pyjson.Loads(raw)
+	v, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, err
 	}
@@ -219,13 +219,13 @@ func asyncLoads(raw string) (any, error) {
 // Ordered JSON values as plain Go maps and slices with int counts
 func asyncNative(v any) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return nil
 		}
-		m := make(map[string]any, len(t.Keys))
-		for _, k := range t.Keys {
-			m[k] = asyncNative(t.Vals[k])
+		m := make(map[string]any, t.Len())
+		for _, k := range t.Keys() {
+			m[k] = asyncNative(t.Value(k))
 		}
 		return m
 	case map[string]any:
@@ -276,12 +276,12 @@ func asyncText(v any) string {
 	case []byte:
 		return string(t)
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Python str of a value or the empty string when falsy
 func asyncStrOr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return asyncText(v)
@@ -351,11 +351,11 @@ func asyncMap(v any) map[string]any {
 		if m != nil {
 			return m
 		}
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m != nil {
-			out := make(map[string]any, len(m.Keys))
-			for _, k := range m.Keys {
-				out[k] = m.Vals[k]
+			out := make(map[string]any, m.Len())
+			for _, k := range m.Keys() {
+				out[k] = m.Value(k)
 			}
 			return out
 		}
@@ -390,14 +390,14 @@ func asyncResultOrder(m map[string]any) []string {
 }
 
 // Ordered object of a map, listed keys first in that order and any other key after them sorted
-func asyncOrdered(m map[string]any, order []string) *pyjson.Object {
-	out := pyjson.NewObject()
+func asyncOrdered(m map[string]any, order []string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	listed := make(map[string]bool, len(order))
 	for _, k := range order {
 		listed[k] = true
 		if v, ok := m[k]; ok {
 			out.Keys = append(out.Keys, k)
-			out.Vals[k] = v
+			out.Set(k, v)
 		}
 	}
 	var rest []string
@@ -409,7 +409,7 @@ func asyncOrdered(m map[string]any, order []string) *pyjson.Object {
 	sort.Strings(rest)
 	for _, k := range rest {
 		out.Keys = append(out.Keys, k)
-		out.Vals[k] = m[k]
+		out.Set(k, m[k])
 	}
 	return out
 }
@@ -449,7 +449,7 @@ func persistDispatch(env *Env, record map[string]any) error {
 	if st, ok := startTime(os.Getpid()); ok {
 		ownerStartedAt = st
 	}
-	taskPayload := pyjson.NewObject()
+	taskPayload := jsonutil.NewObject()
 	for _, key := range append([]string{"goal", "goals", "context", "toolsets", "role", "model", "is_batch", "task_indexes", "task_transcripts"}, asyncRoutingKeys...) {
 		if v, ok := record[key]; ok {
 			taskPayload.Set(key, v)
@@ -587,12 +587,12 @@ func RecordUnitChild(env *Env, delegationID string, child any) error {
 		if raw == "" {
 			raw = "{}"
 		}
-		loaded, err := pyjson.Loads(raw)
+		loaded, err := jsonutil.Decode(raw)
 		if err != nil {
 			return err
 		}
-		if !pyrepr.Truthy(loaded) {
-			loaded = pyjson.NewObject()
+		if !anyutil.IsTrue(loaded) {
+			loaded = jsonutil.NewObject()
 		}
 		partial := asyncMap(RedactChildResult(env, loaded, nil, true))
 		var results []any
@@ -603,7 +603,7 @@ func RecordUnitChild(env *Env, delegationID string, child any) error {
 			}
 		}
 		results = append(results, entryObj)
-		payload, err := asyncDumps(pyjson.ObjectOf("results", results, "partial", true))
+		payload, err := asyncDumps(jsonutil.ObjectOf("results", results, "partial", true))
 		if err != nil {
 			return err
 		}
@@ -616,7 +616,7 @@ func RecordUnitChild(env *Env, delegationID string, child any) error {
 		if errors.As(err, &wpe) {
 			return err
 		}
-		asyncLog().Warn(fmt.Sprintf("Async delegation %s: could not record finished child %s", delegationID, pyrepr.Str(entry["task_index"])), "error", err)
+		asyncLog().Warn(fmt.Sprintf("Async delegation %s: could not record finished child %s", delegationID, anyutil.String(entry["task_index"])), "error", err)
 	}
 	return nil
 }
@@ -631,7 +631,7 @@ func recoveredResults(task map[string]any, resultJSON, errText string) []any {
 		return nil
 	}
 	partial := asyncMap(loaded)
-	if !(pyrepr.Truthy(task["is_batch"]) && pyrepr.Truthy(partial["partial"]) && pyrepr.Truthy(partial["results"])) {
+	if !(anyutil.IsTrue(task["is_batch"]) && anyutil.IsTrue(partial["partial"]) && anyutil.IsTrue(partial["results"])) {
 		return nil
 	}
 	recorded := map[int]map[string]any{}
@@ -745,7 +745,7 @@ func RecoverAbandonedDelegations(env *Env) (int, error) {
 				"origin_ui_session_id": originUI, "origin_session_id": asyncStrOr(row[8]),
 				"parent_session_id": parentID, "goal": goal, "goals": task["goals"],
 				"context": task["context"], "toolsets": task["toolsets"], "role": task["role"],
-				"model": task["model"], "is_batch": pyrepr.Truthy(task["is_batch"]),
+				"model": task["model"], "is_batch": anyutil.IsTrue(task["is_batch"]),
 				"status": "unknown", "summary": nil, "error": errText,
 			}
 			result := map[string]any{"status": "unknown", "summary": nil, "error": errText}
@@ -760,7 +760,7 @@ func RecoverAbandonedDelegations(env *Env) (int, error) {
 			event["dispatched_at"] = dispatchedAt
 			event["completed_at"] = now
 			for _, k := range asyncRoutingKeys {
-				if pyrepr.Truthy(task[k]) {
+				if anyutil.IsTrue(task[k]) {
 					event[k] = task[k]
 				}
 			}
@@ -1079,7 +1079,7 @@ func asyncRemoteBool(v any, err error) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(v), nil
+	return anyutil.IsTrue(v), nil
 }
 
 // Claims one pending completion across competing consumers and processes
@@ -1115,7 +1115,7 @@ func ClaimCompletionDelivery(env *Env, delegationID, claimID string) (bool, erro
 
 // Reports an early per task notice of a running batch, never the durable completion
 func IsInterimDelegationEvent(evt map[string]any) bool {
-	return evt["type"] == "async_delegation" && pyrepr.Truthy(evt["task_failure_notice"])
+	return evt["type"] == "async_delegation" && anyutil.IsTrue(evt["task_failure_notice"])
 }
 
 // Claims a durable delegation event, an empty token when none is needed and false when another consumer holds it
@@ -1380,7 +1380,7 @@ func FailedDelegationsForSession(env *Env, originUISessionID, parentSessionID st
 		goals := []any{task["goal"]}
 		if g, ok := task["goals"].([]any); ok && len(g) > 0 {
 			goals = g
-		} else if !pyrepr.Truthy(task["goal"]) {
+		} else if !anyutil.IsTrue(task["goal"]) {
 			goals = []any{""}
 		}
 		goalFor := map[int]any{}
@@ -1399,7 +1399,7 @@ func FailedDelegationsForSession(env *Env, originUISessionID, parentSessionID st
 		var tasks []any
 		if list, ok := result["results"].([]any); ok {
 			tasks = list
-		} else if !pyrepr.Truthy(task["is_batch"]) {
+		} else if !anyutil.IsTrue(task["is_batch"]) {
 			tasks = []any{result}
 		}
 		if len(tasks) == 0 && asyncFailedStates[strings.ToLower(asyncText(state))] {
@@ -1408,7 +1408,7 @@ func FailedDelegationsForSession(env *Env, originUISessionID, parentSessionID st
 		for _, e := range tasks {
 			entry := asyncMap(e)
 			statusRaw := entry["status"]
-			if !pyrepr.Truthy(statusRaw) {
+			if !anyutil.IsTrue(statusRaw) {
 				statusRaw = state
 			}
 			status := strings.ToLower(asyncStrOr(statusRaw))
@@ -1420,7 +1420,7 @@ func FailedDelegationsForSession(env *Env, originUISessionID, parentSessionID st
 				index = 0
 			}
 			errVal := entry["error"]
-			if !pyrepr.Truthy(errVal) {
+			if !anyutil.IsTrue(errVal) {
 				errVal = result["error"]
 			}
 			goal, ok := goalFor[index]
@@ -1428,7 +1428,7 @@ func FailedDelegationsForSession(env *Env, originUISessionID, parentSessionID st
 				goal = goals[0]
 			}
 			var errOut any
-			if pyrepr.Truthy(errVal) {
+			if anyutil.IsTrue(errVal) {
 				errOut = asyncText(errVal)
 			}
 			failed = append(failed, map[string]any{
@@ -1523,7 +1523,7 @@ func AsyncDelegationActiveTaskCount() int {
 			continue
 		}
 		goals, _ := r.m["goals"].([]string)
-		if pyrepr.Truthy(r.m["is_batch"]) && len(goals) > 0 {
+		if anyutil.IsTrue(r.m["is_batch"]) && len(goals) > 0 {
 			if idx, ok := r.m["task_indexes"].([]int); ok && len(idx) > 0 {
 				n += len(idx)
 			} else {
@@ -1865,7 +1865,7 @@ type AsyncDelegationRequest struct {
 	Model             *string
 	SessionKey        string
 	ParentSessionID   *string
-	Runner            func() *pyjson.Object
+	Runner            func() *jsonutil.Object
 	OriginUISessionID string
 	OriginSessionID   string
 	MaxAsyncChildren  int
@@ -1991,7 +1991,7 @@ var asyncPersistCompletionFn = persistCompletion
 // Pushes the async_delegation completion event onto the shared completion queue and its durable row
 func pushCompletionEvent(env *Env, record, result map[string]any, status string) {
 	result = asyncMap(RedactChildResult(env, result, nil, false))
-	isBatch := pyrepr.Truthy(record["is_batch"])
+	isBatch := anyutil.IsTrue(record["is_batch"])
 	label := ""
 	if isBatch {
 		label = " batch"
@@ -2016,7 +2016,7 @@ func pushCompletionEvent(env *Env, record, result map[string]any, status string)
 		evt["goals"] = record["goals"]
 		evt["model"] = record["model"]
 		results := result["results"]
-		if !pyrepr.Truthy(results) {
+		if !anyutil.IsTrue(results) {
 			results = []any{}
 		}
 		evt["is_batch"] = true
@@ -2029,7 +2029,7 @@ func pushCompletionEvent(env *Env, record, result map[string]any, status string)
 		}
 	} else {
 		evt["model"] = result["model"]
-		if !pyrepr.Truthy(evt["model"]) {
+		if !anyutil.IsTrue(evt["model"]) {
 			evt["model"] = record["model"]
 		}
 		evt["summary"] = result["summary"]
@@ -2047,7 +2047,7 @@ func pushCompletionEvent(env *Env, record, result map[string]any, status string)
 	evt["dispatched_at"] = dispatchedAt
 	evt["completed_at"] = completedAt
 	for _, k := range asyncRoutingKeys {
-		if pyrepr.Truthy(record[k]) {
+		if anyutil.IsTrue(record[k]) {
 			evt[k] = record[k]
 		}
 	}
@@ -2088,7 +2088,7 @@ func PushTaskFailureNotice(env *Env, delegationID string, entry map[string]any, 
 	asyncRecordsMu.Unlock()
 	now := asyncTimeNow()
 	dispatchedAt := snap["dispatched_at"]
-	if !pyrepr.Truthy(dispatchedAt) {
+	if !anyutil.IsTrue(dispatchedAt) {
 		dispatchedAt = now
 	}
 	evt := map[string]any{
@@ -2101,7 +2101,7 @@ func PushTaskFailureNotice(env *Env, delegationID string, entry map[string]any, 
 		"status": "running", "dispatched_at": dispatchedAt, "completed_at": now,
 	}
 	for _, k := range asyncRoutingKeys {
-		if pyrepr.Truthy(snap[k]) {
+		if anyutil.IsTrue(snap[k]) {
 			evt[k] = snap[k]
 		}
 	}
@@ -2152,7 +2152,7 @@ func sweepStaleLocked(now float64) (stalled []asyncStall, expired []string, anyM
 			continue
 		}
 		anyMonitorable = true
-		if !pyrepr.Truthy(r.m["_started"]) {
+		if !anyutil.IsTrue(r.m["_started"]) {
 			continue
 		}
 		token, inTool, err := asyncSampleProgress(r.progressFn)
@@ -2229,7 +2229,7 @@ func staleMonitorLoop(stop chan struct{}) {
 		asyncRecordsMu.Unlock()
 		for _, s := range stalled {
 			asyncLog().Warn(fmt.Sprintf("Async delegation %s made no progress for %.0fs (in_tool=%s) — interrupting; grace window %.0fs",
-				s.id, s.quiet, pyrepr.Str(s.inTool), asyncStallGraceSeconds))
+				s.id, s.quiet, anyutil.String(s.inTool), asyncStallGraceSeconds))
 			asyncRecordsMu.Lock()
 			var fn func() error
 			if r := asyncRecords[s.id]; r != nil {
@@ -2286,7 +2286,7 @@ func stalledResult(delegationID string, rec map[string]any) map[string]any {
 	var phase any
 	if v, ok := rec["_stall_in_tool"]; ok && v != nil {
 		phase = "idle"
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			phase = "in_tool"
 		}
 	}
@@ -2295,7 +2295,7 @@ func stalledResult(delegationID string, rec map[string]any) map[string]any {
 		"stall_phase": phase, "stall_grace_seconds": asyncStallGraceSeconds,
 	}
 	var out map[string]any
-	if pyrepr.Truthy(rec["is_batch"]) {
+	if anyutil.IsTrue(rec["is_batch"]) {
 		out = batchCrash(errText, duration)
 	} else {
 		out = singleCrash(errText, duration)

@@ -4,19 +4,21 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
-	"math/big"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+
+	"golang.org/x/text/cases"
 )
 
 // Task id of t_ and four random hex bytes
@@ -150,8 +152,8 @@ func projectFromSourceTask(ctx context.Context, conn state.SQLiteConn, projectID
 		src.WorkspacePath == nil || *src.WorkspacePath == "" {
 		return nil, nil, nil
 	}
-	sourcePath := pypath.PathStr(*src.WorkspacePath)
-	if !pypath.IsAbs(sourcePath) || pypath.PathName(sourcePath) != src.ID || pypath.PathName(pypath.PathParent(sourcePath)) != ".worktrees" {
+	sourcePath := filepath.Clean(*src.WorkspacePath)
+	if !filepath.IsAbs(sourcePath) || pathutil.Name(sourcePath) != src.ID || pathutil.Name(filepath.Dir(filepath.Clean(sourcePath))) != ".worktrees" {
 		return nil, nil, nil
 	}
 	slug := ""
@@ -172,7 +174,7 @@ func projectFromSourceTask(ctx context.Context, conn state.SQLiteConn, projectID
 	if slug == "" {
 		return nil, nil, nil
 	}
-	repo := pypath.PathParent(pypath.PathParent(sourcePath))
+	repo := filepath.Dir(filepath.Clean(filepath.Dir(filepath.Clean(sourcePath))))
 	primary := repo
 	return &tools.Project{ID: projectID, Slug: slug, Name: slug, CreatedAt: 0, PrimaryPath: &primary}, &repo, nil
 }
@@ -195,7 +197,7 @@ func normalizeTaskSkills(skills []string) ([]string, error) {
 			return nil, &ValueError{fmt.Sprintf("skill name cannot contain comma: %s "+
 				"(pass a list of separate names instead of a comma-joined string)", errchain.Show(name))}
 		}
-		if known[pystr.Casefold(name)] {
+		if known[cases.Fold().String(name)] {
 			typos = append(typos, name)
 			continue
 		}
@@ -223,8 +225,8 @@ func normalizeTaskSkills(skills []string) ([]string, error) {
 	return cleaned, nil
 }
 
-// int() of a SQLite cell, a ValueError for text that is no integer literal
-func pyIntOf(v any) (int64, error) {
+// Integer of a SQLite cell, a ValueError for text that is no integer literal, text beyond int64 saturated at its bounds
+func cellIntOf(v any) (int64, error) {
 	switch x := v.(type) {
 	case nil:
 		return 0, &RuntimeError{"expected a whole number, got nothing"}
@@ -238,24 +240,13 @@ func pyIntOf(v any) (int64, error) {
 		}
 		return 0, nil
 	case []byte:
-		return pyIntOf(string(x))
+		return cellIntOf(string(x))
 	case string:
-		n, ok := pyint.Parse(x)
-		if !ok {
+		n, err := strconv.ParseInt(strings.TrimSpace(x), 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return 0, &ValueError{fmt.Sprintf("%s is not a whole number", x)}
 		}
-		return clampBig(n), nil
+		return n, nil
 	}
 	return 0, &RuntimeError{fmt.Sprintf("expected a whole number, got %s", errchain.Kind(v))}
-}
-
-// int64 of a big integer saturated at the int64 bounds
-func clampBig(n *big.Int) int64 {
-	if n.IsInt64() {
-		return n.Int64()
-	}
-	if n.Sign() < 0 {
-		return -1 << 63
-	}
-	return 1<<63 - 1
 }

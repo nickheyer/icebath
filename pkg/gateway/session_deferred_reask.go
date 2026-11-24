@@ -4,20 +4,20 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // True when a decoded deferred pick holds the awaiting_confirm marker, by Python in membership
 func pickAwaitsConfirm(decoded any) bool {
 	switch v := decoded.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, found := v.Get("awaiting_confirm")
 		return found
 	case []any:
 		for _, item := range v {
-			if pyrepr.Equal(item, "awaiting_confirm") {
+			if anyutil.Equal(item, "awaiting_confirm") {
 				return true
 			}
 		}
@@ -33,7 +33,7 @@ func reaskOnAttach(ctx context.Context, a *SessionAuthority, ref SessionRef, liv
 	if err != nil || !found {
 		return err
 	}
-	decoded, err := pyjson.Loads(stored)
+	decoded, err := jsonutil.Decode(stored)
 	if err != nil {
 		return err
 	}

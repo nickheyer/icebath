@@ -8,24 +8,25 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // The fake provider of the image and video picker tests, a titled schema with one key and one model
 func pickerFake(name, modelSuffix string, available bool, schema map[string]any) *fakePickerProvider {
 	if schema == nil {
-		schema = map[string]any{"name": pystr.Title(name), "badge": "test", "tag": name + " test tag",
+		schema = map[string]any{"name": textutil.Title(name), "badge": "test", "tag": name + " test tag",
 			"env_vars": []any{map[string]any{"key": strings.ToUpper(name) + "_API_KEY", "prompt": name + " key"}}}
 	}
 	id := name + modelSuffix
-	return &fakePickerProvider{name: name, display: pystr.Title(name), schema: schema, available: available,
+	return &fakePickerProvider{name: name, display: textutil.Title(name), schema: schema, available: available,
 		models: []map[string]any{{"id": id, "display": name + " v1", "speed": "~5s", "strengths": "test", "price": "$"}}, def: id}
 }
 
 // The fake TTS provider, a catalog provider whose default schema names its title cased display name
 func ttsFake(name string) *fakePickerProvider {
-	display := pystr.Title(name)
+	display := textutil.Title(name)
 	return &fakePickerProvider{name: name, display: display, available: true,
 		schema: map[string]any{"name": display, "badge": "", "tag": "", "env_vars": []any{}}}
 }
@@ -39,17 +40,17 @@ func ttsBuiltinNames(t *testing.T) map[string]bool {
 	return ToolsConfigHooks.TTSRegistry.BuiltinNames
 }
 
-func rowsWith(rows []*pyjson.Object, key string) []*pyjson.Object {
-	var out []*pyjson.Object
+func rowsWith(rows []*jsonutil.Object, key string) []*jsonutil.Object {
+	var out []*jsonutil.Object
 	for _, r := range rows {
-		if pyTruthy(rowGet(r, key)) {
+		if anyutil.IsTrue(rowGet(r, key)) {
 			out = append(out, r)
 		}
 	}
 	return out
 }
 
-func rowNames(rows []*pyjson.Object) []string {
+func rowNames(rows []*jsonutil.Object) []string {
 	out := make([]string, len(rows))
 	for i, r := range rows {
 		out[i] = rowText(r, "name")

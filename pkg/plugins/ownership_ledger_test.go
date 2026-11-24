@@ -11,9 +11,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type ledgerPlatformEntry struct {
@@ -157,8 +157,8 @@ func installLedgerServices(t *testing.T) (*ledgerPlatforms, *ledgerProviders) {
 	return platforms, providers
 }
 
-func ledgerSchema(name string) *pyjson.Object {
-	return pyjson.ObjectOf("name", name, "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
+func ledgerSchema(name string) *jsonutil.Object {
+	return jsonutil.ObjectOf("name", name, "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf()))
 }
 
 func ledgerContext(name string, m *Manager) *Context {
@@ -785,7 +785,7 @@ func TestSpawnedSupervisedTaskIsCancelledOnUnload(t *testing.T) {
 	c := newContext(&Manifest{Name: "task_probe", Version: "0.1", Source: "user"}, m)
 	cancelled := make(chan bool, 1)
 	started := make(chan struct{})
-	task, err := c.SpawnTask(pyctx.WithRunningLoop(context.Background()), func(ctx context.Context) error {
+	task, err := c.SpawnTask(ctxutil.WithNonBlocking(context.Background()), func(ctx context.Context) error {
 		close(started)
 		select {
 		case <-ctx.Done():

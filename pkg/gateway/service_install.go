@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 // The gateway.py names the installer and its linger and legacy unit helpers call, a table tests replace like the patched module
@@ -28,7 +28,7 @@ var installHooks = struct {
 	unitIsCurrent      func(ctx context.Context, system bool) (bool, error)
 	refreshUnit        func(ctx context.Context, system bool) (bool, error)
 	readUser           func(unitPath string) (string, error)
-	getpwnam           func(name string) (pypwd.Passwd, error)
+	getpwnam           func(name string) (userutil.Account, error)
 	waitUserBus        func(uid int, timeout time.Duration) bool
 	unitIsActive       func(ctx context.Context, system bool) (bool, error)
 	enableLinger       func(ctx context.Context, username string) (CommandResult, error)
@@ -46,7 +46,7 @@ var installHooks = struct {
 	unitPath: GetSystemdUnitPath, generateUnit: GenerateSystemdUnit, requireRoot: requireRootForSystemService,
 	conflictWarning: printSystemdScopeConflictWarning, prepareLauncher: prepareServiceLauncher,
 	syncHome: SyncIcebathHomeFromSystemdUnit, unitIsCurrent: SystemdUnitIsCurrent, refreshUnit: refreshSystemdUnitIfNeeded,
-	readUser: readSystemdUserFromUnit, getpwnam: pypwd.Getpwnam, waitUserBus: waitForTargetUserBus, unitIsActive: SystemdUnitIsActive,
+	readUser: readSystemdUserFromUnit, getpwnam: userutil.Lookup, waitUserBus: waitForTargetUserBus, unitIsActive: SystemdUnitIsActive,
 	enableLinger: loginctlEnableLinger, unitBelongs: unitBelongsToCaller,
 	definitionBelongs: definitionBelongsToHome, supervising: LaunchctlLabelSupervisingProcess, supervisedPID: LaunchctlSupervisedPID,
 	refuseTemp: refuseTempHomeServiceWrite, clearMarker: clearLaunchdUnsupportedMarker, reloadBudget: launchdReloadBudget,
@@ -103,7 +103,7 @@ func findLegacyIcebathUnits(ctx context.Context) []legacyUnit {
 			if err != nil {
 				continue
 			}
-			text := pystr.DecodeUTF8SigIgnore(raw)
+			text := strings.ToValidUTF8(string(textutil.TrimBOM(raw)), "")
 			for _, marker := range legacyUnitExecstartMarkers {
 				if strings.Contains(text, marker) {
 					out = append(out, legacyUnit{name, unitPath, dir.system})
@@ -275,7 +275,7 @@ func systemdInstall(ctx context.Context, w io.Writer, force, system bool, runAsU
 					return err
 				}
 			}
-			fmt.Fprintf(w, "✓ %s service definition updated\n", pystr.Capitalize(scopeLabel))
+			fmt.Fprintf(w, "✓ %s service definition updated\n", textutil.UpperFirst(strings.ToLower(scopeLabel)))
 		} else {
 			fmt.Fprintf(w, "Service already installed at: %s\n", unitPath)
 			fmt.Fprintln(w, "Use --force to reinstall")
@@ -335,7 +335,7 @@ func systemdInstall(ctx context.Context, w io.Writer, force, system bool, runAsU
 		done = "installed and enabled"
 	}
 	fmt.Fprintln(w)
-	fmt.Fprintf(w, "✓ %s service %s!\n", pystr.Capitalize(scopeLabel), done)
+	fmt.Fprintf(w, "✓ %s service %s!\n", textutil.UpperFirst(strings.ToLower(scopeLabel)), done)
 	fmt.Fprintln(w)
 	fmt.Fprintln(w, "Next steps:")
 	fmt.Fprintf(w, "  %sicebath gateway start%s              # Start the service\n", sudo, scopeFlag)

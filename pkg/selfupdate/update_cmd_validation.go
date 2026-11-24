@@ -12,10 +12,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hidden entry the install binary answers the import health probe on
@@ -23,7 +23,7 @@ const ImportHealthEntry = pm.ImportHealthEntry
 
 // Runner of the import health probe child and the builder of its install bound command
 var (
-	importHealthRun     = pysubprocess.RunWith
+	importHealthRun     = executil.Run
 	importHealthCommand = pm.InstallRuntimeCommand
 )
 
@@ -45,10 +45,10 @@ func criticalModuleImportFailures(ctx context.Context, root string, reportRuntim
 		return nil, nil, err
 	}
 	marker := "__ICEBATH_IMPORT_HEALTH_" + hex.EncodeToString(token) + "__"
-	command := importHealthCommand(root, []string{marker, pyrepr.Repr(reportRuntimeErrors)}, pm.LaunchCommandOptions{Subcommand: []string{ImportHealthEntry}})
-	result, err := importHealthRun(ctx, command, pysubprocess.Options{Dir: root, Timeout: 120 * time.Second})
+	command := importHealthCommand(root, []string{marker, anyutil.Quote(reportRuntimeErrors)}, pm.LaunchCommandOptions{Subcommand: []string{ImportHealthEntry}})
+	result, err := importHealthRun(ctx, command, executil.Options{Dir: root, Timeout: 120 * time.Second})
 	if err != nil {
-		var expired *pysubprocess.TimeoutExpired
+		var expired *executil.TimeoutError
 		if errors.As(err, &expired) {
 			order, failures := probeFailure("TimeoutExpired", "timed out before reporting import health")
 			return order, failures, nil
@@ -73,7 +73,7 @@ func criticalModuleImportFailures(ctx context.Context, root string, reportRuntim
 
 // Decodes the probe's JSON list of module, class and text triples, false when it is any other shape
 func importHealthPayload(text string) ([]string, map[string][2]string, bool) {
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil, false
 	}

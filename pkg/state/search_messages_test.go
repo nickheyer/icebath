@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func searchStore(t *testing.T, rows [][3]string) (*sessionSearch, *fakeSearchHost) {
@@ -27,7 +27,7 @@ func searchStore(t *testing.T, rows [][3]string) (*sessionSearch, *fakeSearchHos
 	return searchFixture(t, path)
 }
 
-func snippets(rows []*pyjson.Object) string {
+func snippets(rows []*jsonutil.Object) string {
 	var out []string
 	for _, r := range rows {
 		v, _ := r.Get("snippet")
@@ -37,7 +37,7 @@ func snippets(rows []*pyjson.Object) string {
 	return strings.Join(out, " ")
 }
 
-func searchRowsT(t *testing.T, s *sessionSearch, query string, mutate func(*SearchMessagesOptions)) []*pyjson.Object {
+func searchRowsT(t *testing.T, s *sessionSearch, query string, mutate func(*SearchMessagesOptions)) []*jsonutil.Object {
 	t.Helper()
 	o := NewSearchMessagesOptions()
 	if mutate != nil {
@@ -99,8 +99,8 @@ func TestSearchRoutesFieldsToolsAndGap(t *testing.T) {
 		{"user", "older walrus memory", ""},
 	})
 	rows := searchRowsT(t, s, "walrus", func(o *SearchMessagesOptions) { o.Fields = []string{"role", "id"}; o.Sort = "oldest" })
-	if len(rows) != 3 || strings.Join(rows[0].Keys, ",") != "id,role" {
-		t.Fatalf("projection in canonical order: %d %v", len(rows), rows[0].Keys)
+	if len(rows) != 3 || strings.Join(rows[0].Keys(), ",") != "id,role" {
+		t.Fatalf("projection in canonical order: %d %v", len(rows), rows[0].Keys())
 	}
 	if !strings.Contains(logs.String(), "slow session search: path=fts5") || !strings.Contains(logs.String(), "query='walrus'") {
 		t.Fatalf("a zero threshold logs every search: %s", logs.String())

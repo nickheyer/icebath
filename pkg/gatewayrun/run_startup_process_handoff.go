@@ -6,19 +6,17 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Executes one handoff row as an inline synthetic turn and posts its reply, an error marking the row failed
-func (r *GatewayRunner) processHandoff(ctx context.Context, row *pyjson.Object, profileName *string) error {
+func (r *GatewayRunner) processHandoff(ctx context.Context, row *jsonutil.Object, profileName *string) error {
 	rawID, ok := row.Get("id")
 	if !ok {
 		return errors.New("a process handoff row has no id")
 	}
-	cliSessionID := pyrepr.Str(rawID)
+	cliSessionID := anyutil.String(rawID)
 	rowMap := make(map[string]any, row.Len())
-	for _, key := range row.Keys {
+	for _, key := range row.Keys() {
 		value, _ := row.Get(key)
 		rowMap[key] = value
 	}
@@ -36,8 +34,8 @@ func (r *GatewayRunner) processHandoff(ctx context.Context, row *pyjson.Object, 
 	r.evictCachedAgent(ctx, sessionKey, false, false)
 	r.releaseRunningAgentState(ctx, sessionKey, nil)
 	cliTitle := ""
-	if title := row.GetOr("title", nil); pyrepr.Truthy(title) {
-		cliTitle = pyrepr.Str(title)
+	if title := row.ValueOr("title", nil); anyutil.IsTrue(title) {
+		cliTitle = anyutil.String(title)
 	} else {
 		runes := []rune(cliSessionID)
 		cliTitle = string(runes[:min(8, len(runes))])

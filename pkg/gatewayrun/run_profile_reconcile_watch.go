@@ -12,9 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -22,6 +19,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Why a single profile boot must stay standalone now that a second profile exists, empty when nothing blocks it
@@ -103,7 +104,7 @@ func (r *GatewayRunner) syncHooksOnConsentChange(ctx context.Context) error {
 func (r *GatewayRunner) resyncChangedHookConsent(ctx context.Context, homes []string, seen map[string][]any) map[string][]any {
 	current := map[string][]any{}
 	for _, h := range homes {
-		resolved, err := pypath.Resolve(h)
+		resolved, err := pathutil.Resolve(h)
 		if err != nil {
 			resolved = h
 		}
@@ -138,21 +139,21 @@ func (r *GatewayRunner) resyncChangedHookConsent(ctx context.Context, homes []st
 }
 
 // Name lists of a reconcile result in their Python key order
-func newReconcileResult(reason string) *pyjson.Object {
-	return pyjson.ObjectOf("added", []any{}, "removed", []any{}, "rescanned", []any{}, "parked", []any{}, "reason", reason)
+func newReconcileResult(reason string) *jsonutil.Object {
+	return jsonutil.ObjectOf("added", []any{}, "removed", []any{}, "rescanned", []any{}, "parked", []any{}, "reason", reason)
 }
 
 // Appends name to the list result holds under key
-func resultAppend(result *pyjson.Object, key, name string) {
+func resultAppend(result *jsonutil.Object, key, name string) {
 	list, _ := result.Get(key)
 	items, _ := list.([]any)
 	result.Set(key, append(items, name))
 }
 
 // Copy of result with the given keys set after its own, the {**result, ...} of the Python
-func resultWith(result *pyjson.Object, kv ...any) *pyjson.Object {
-	out := pyjson.NewObject()
-	for _, k := range result.Keys {
+func resultWith(result *jsonutil.Object, kv ...any) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	for _, k := range result.Keys() {
 		v, _ := result.Get(k)
 		out.Set(k, v)
 	}
@@ -180,8 +181,8 @@ func (r *GatewayRunner) primaryProfileOrDefault() string {
 }
 
 // Ordered copy of a name to home map
-func copyHomes(d *pydict.Dict[string, string]) *pydict.Dict[string, string] {
-	out := pydict.New[string, string]()
+func copyHomes(d *orderedutil.Map[string, string]) *orderedutil.Map[string, string] {
+	out := orderedutil.NewMap[string, string]()
 	if d != nil {
 		for k, v := range d.All() {
 			out.Set(k, v)
@@ -191,12 +192,12 @@ func copyHomes(d *pydict.Dict[string, string]) *pydict.Dict[string, string] {
 }
 
 // Ordered name to home map of the profiles a multiplexer serves now
-func liveServedProfiles(ctx context.Context) (*pydict.Dict[string, string], error) {
+func liveServedProfiles(ctx context.Context) (*orderedutil.Map[string, string], error) {
 	served, err := profiles.ProfilesToServe(ctx, true, false, false)
 	if err != nil {
 		return nil, err
 	}
-	live := pydict.New[string, string]()
+	live := orderedutil.NewMap[string, string]()
 	for _, p := range served {
 		live.Set(p.Name, p.Home)
 	}
@@ -204,7 +205,7 @@ func liveServedProfiles(ctx context.Context) (*pydict.Dict[string, string], erro
 }
 
 // Diffs profiles against the served set, serving new ones, unserving deleted ones and rebuilding changed ones
-func (r *GatewayRunner) reconcileServedProfiles(ctx context.Context, reason string) (*pyjson.Object, error) {
+func (r *GatewayRunner) reconcileServedProfiles(ctx context.Context, reason string) (*jsonutil.Object, error) {
 	result := newReconcileResult(reason)
 	if !r.multiplexOn() {
 		armed, err := r.multiplexForAddedProfile(ctx)
@@ -311,7 +312,7 @@ func (r *GatewayRunner) reconcileServedProfiles(ctx context.Context, reason stri
 			changed = append(changed, name)
 		}
 	}
-	current := pydict.New[string, string]()
+	current := orderedutil.NewMap[string, string]()
 	for name, profileHome := range live.All() {
 		if known.Has(name) || name == active {
 			current.Set(name, profileHome)
@@ -321,8 +322,8 @@ func (r *GatewayRunner) reconcileServedProfiles(ctx context.Context, reason stri
 }
 
 // Applies a selected diff under the reconcile lock, parking new profiles that cannot be served
-func (r *GatewayRunner) applyProfileChanges(ctx context.Context, current *pydict.Dict[string, string], added, removed, changed []string,
-	reason string, live *pydict.Dict[string, string], result *pyjson.Object) (*pyjson.Object, error) {
+func (r *GatewayRunner) applyProfileChanges(ctx context.Context, current *orderedutil.Map[string, string], added, removed, changed []string,
+	reason string, live *orderedutil.Map[string, string], result *jsonutil.Object) (*jsonutil.Object, error) {
 	active := r.primaryProfileOrDefault()
 	if result == nil {
 		result = newReconcileResult(reason)
@@ -504,11 +505,11 @@ func (r *GatewayRunner) multiplexForAddedProfile(ctx context.Context) (bool, err
 	if recorded != gateway.SingleProfileReason && recorded != gateway.AutoMigrationOptedOutReason {
 		return false, nil
 	}
-	launch, err := pypath.Resolve(home.Process())
+	launch, err := pathutil.Resolve(home.Process())
 	if err != nil {
 		return false, err
 	}
-	root, err := pypath.Resolve(home.Root())
+	root, err := pathutil.Resolve(home.Root())
 	if err != nil {
 		return false, err
 	}
@@ -567,7 +568,7 @@ func (r *GatewayRunner) multiplexForAddedProfile(ctx context.Context) (bool, err
 func (r *GatewayRunner) serveReservedProfile(ctx context.Context, name, profileHome string) (string, error) {
 	if err := r.reserveProfileHomeInWorker(ctx, name, profileHome); err != nil {
 		var conflict *gateway.OwnershipConflict
-		if !errors.As(err, &conflict) && !pypath.IsOSError(err) {
+		if !errors.As(err, &conflict) && !errorutil.IsSystem(err) {
 			return "", err
 		}
 		pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: %s", name, err))
@@ -650,13 +651,13 @@ func (r *GatewayRunner) unserveProfile(ctx context.Context, name, profileHome st
 		}
 	}()
 	scoped := gateway.ProfileRuntimeScope(ctx, profileHome, false)
-	var adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	var adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 	if r.profileAdapters != nil {
 		adapters, _ = r.profileAdapters.Get(name)
 		r.profileAdapters.Delete(name)
 	}
 	if adapters == nil {
-		adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+		adapters = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	}
 	for platform, adapter := range adapters.All() {
 		r.holdSecondaryClaims(name, platform, adapter, r.adapterClaims(platform, adapter))

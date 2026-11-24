@@ -8,7 +8,7 @@ import (
 	"math"
 	"os"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
+	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/webp"
 )
@@ -21,7 +21,7 @@ func blank(w, h int) *image.NRGBA { return image.NewNRGBA(image.Rect(0, 0, w, h)
 
 // Straight alpha RGBA copy of an image
 func toRGBA(img image.Image) *image.NRGBA {
-	out := pypil.ToNRGBA(img)
+	out := imageutil.ToNRGBA(img)
 	if out == img {
 		cp := blank(out.Rect.Dx(), out.Rect.Dy())
 		copy(cp.Pix, out.Pix)

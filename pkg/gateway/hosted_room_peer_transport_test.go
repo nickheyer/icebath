@@ -6,7 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var hptBinding = HostedRoomBinding{RoomID: "room-1", GatewayID: "gateway-home", AuthorityEpoch: 2}
@@ -44,7 +45,7 @@ func (c *hptFakePeerClient) Prepare(_ context.Context, req PeerPrepare) (map[str
 	return nil, nil
 }
 
-func (c *hptFakePeerClient) Dispatch(_ context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
+func (c *hptFakePeerClient) Dispatch(_ context.Context, dispatch *jsonutil.Object, grant string) (map[string]any, error) {
 	c.calls = append(c.calls, hptCall{"dispatch", map[string]any{"dispatch": dispatch, "grant": grant}})
 	c.active = true
 	c.taskID, _ = dispatch.Get("task_id")
@@ -61,7 +62,7 @@ func (c *hptFakePeerClient) Status(_ context.Context, roomID, profile, sessionID
 	return map[string]any{"active": c.active, "task_id": c.taskID}, nil
 }
 
-func (c *hptFakePeerClient) Stop(_ context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error) {
+func (c *hptFakePeerClient) Stop(_ context.Context, dispatch *jsonutil.Object, grant string) (map[string]any, error) {
 	c.calls = append(c.calls, hptCall{"stop", map[string]any{"dispatch": dispatch, "grant": grant}})
 	c.active = false
 	return map[string]any{"status": "cancelled", "task_id": c.taskID}, nil
@@ -125,10 +126,10 @@ func TestPeerTransportDispatchesFullFencedCoordinatesAndExactStop(t *testing.T) 
 	if err != nil || result["status"] != "accepted" {
 		t.Fatalf("submit = %v, %v", result, err)
 	}
-	dispatch := client.callsOf("dispatch")[0]["dispatch"].(*pyjson.Object)
+	dispatch := client.callsOf("dispatch")[0]["dispatch"].(*jsonutil.Object)
 	for key, want := range map[string]any{"authority_epoch": int64(2), "execution_generation": int64(3), "target_profile": "reviewer",
 		"capability_digest": strings.Repeat("a", 64)} {
-		if got, _ := dispatch.Get(key); !pyjson.Equal(got, want) {
+		if got, _ := dispatch.Get(key); !anyutil.Equal(got, want) {
 			t.Fatalf("dispatch %s = %v", key, got)
 		}
 	}
@@ -187,10 +188,10 @@ func TestPeerTransportCarriesEachTurnsRealSourceEventSequence(t *testing.T) {
 			"turn-" + string(rune('0'+turn))}, 1, func(map[string]any) error { return nil }, nil); err != nil {
 			t.Fatal(err)
 		}
-		value, _ := client.callsOf("dispatch")[0]["dispatch"].(*pyjson.Object).Get("source_event_seq")
+		value, _ := client.callsOf("dispatch")[0]["dispatch"].(*jsonutil.Object).Get("source_event_seq")
 		observed = append(observed, value)
 	}
-	if !pyjson.Equal(observed, []any{int64(7), int64(42)}) {
+	if !anyutil.Equal(observed, []any{int64(7), int64(42)}) {
 		t.Fatalf("source_event_seq = %v", observed)
 	}
 }

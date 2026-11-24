@@ -14,11 +14,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // Discord REST base URL, a seam tests point at a local stand in
@@ -62,7 +58,7 @@ func (e *DiscordOSError) Error() string { return e.Text }
 
 // Sends one Discord request with a total timeout, a seam tests replace
 var discordHTTPDo = func(req *http.Request, timeout time.Duration) (*http.Response, error) {
-	return (&http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}}).Do(req)
+	return (&http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: httputil.Proxy}}).Do(req)
 }
 
 // Header value http.client refuses, a bare newline or carriage return not starting a folded continuation
@@ -84,15 +80,15 @@ func readLimitedResponseBody(r io.Reader, limit int, label string) ([]byte, erro
 func DiscordRequest(ctx context.Context, method, path, token string, params [][2]string, body any, timeout time.Duration) (any, error) {
 	url := DiscordAPIBase + path
 	if len(params) > 0 {
-		url += "?" + pyurl.URLEncode(params)
+		url += "?" + urlutil.EncodeQuery(params)
 	}
 	authorization := "Bot " + token
 	if illegalHeaderValue.MatchString(authorization) {
-		return nil, &DiscordValueError{Msg: "Invalid header value " + pyrepr.Repr([]byte(authorization))}
+		return nil, &DiscordValueError{Msg: "Invalid header value " + anyutil.Quote([]byte(authorization))}
 	}
 	var payload io.Reader
 	if body != nil {
-		raw, err := pyjson.EncodeWTF8PythonASCII(body)
+		raw, err := jsonutil.Append(nil, body, jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
@@ -129,11 +125,11 @@ func DiscordRequest(ctx context.Context, method, path, token string, params [][2
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8(raw)
+	text, err := textutil.DecodeUTF8(raw)
 	if err != nil {
 		return nil, &DiscordValueError{Msg: err.Error()}
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, &DiscordValueError{Msg: err.Error()}
 	}

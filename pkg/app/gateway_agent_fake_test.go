@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Gateway client double answering every call through a handler and recording what was asked
@@ -26,7 +25,7 @@ func (f *fakeGatewayClient) RPCTimeout(ctx context.Context, method string, param
 	handler := f.handler
 	f.mu.Unlock()
 	if handler == nil {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	return handler(method, params)
 }

@@ -9,9 +9,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Awaits the local session's busy accepted hook once a mid run command accepts, nothing on messaging
@@ -162,7 +162,7 @@ func (r *GatewayRunner) busySteerCommand(ctx context.Context, event *gateway.Mes
 	accepted, failure := func() (accepted bool, failure string) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				failure = pyrepr.Str(rec)
+				failure = anyutil.String(rec)
 			}
 		}()
 		withOrigin, err := r.steerTextWithOrigin(ctx, steerText, event)

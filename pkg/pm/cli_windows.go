@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	"golang.org/x/sys/windows"
 )
 
@@ -15,9 +15,9 @@ var redirectStdout = redirectStdoutToStderr
 
 // Opts a console handle in to VT processing, a writer without a handle rendering escapes when it reports a terminal
 func enableVTProcessing(w io.Writer) bool {
-	fd, ok := pysys.Fileno(w)
+	fd, ok := termutil.Fd(w)
 	if !ok {
-		return pysys.Isatty(w)
+		return termutil.IsTerminal(w)
 	}
 	handle := windows.Handle(fd)
 	var mode uint32

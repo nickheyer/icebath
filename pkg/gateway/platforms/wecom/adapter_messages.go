@@ -4,35 +4,33 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
-// Python repr of a decoded value for a percent r log argument
-func reprOf(v any) string { return pyrepr.Repr(v) }
-
 // Turns one message callback into a message event after dedup and the intake policy
-func (a *WeComAdapter) onMessage(ctx context.Context, payload *pyjson.Object) error {
-	body, ok := payload.Vals["body"].(*pyjson.Object)
+func (a *WeComAdapter) onMessage(ctx context.Context, payload *jsonutil.Object) error {
+	body, ok := payload.Value("body").(*jsonutil.Object)
 	if !ok || body == nil {
 		return nil
 	}
 	reqID := payloadReqID(payload)
-	msgID := pyrepr.Str(pyrepr.Or(pyrepr.Or(body.Vals["msgid"], reqID), uuidHex()))
+	msgID := anyutil.String(anyutil.Or(anyutil.Or(body.Value("msgid"), reqID), uuidHex()))
 	sender := dictOrEmpty(body, "from")
-	senderID := textOf(sender.Vals["userid"])
+	senderID := textOf(sender.Value("userid"))
 	if a.dedup.IsDuplicate(msgID) {
 		var senderUser any
-		if len(sender.Keys) > 0 {
-			senderUser = sender.Vals["userid"]
+		if sender.Len() > 0 {
+			senderUser = sender.Value("userid")
 		}
 		pkgLog().Info(fmt.Sprintf("[%s] Duplicate message %s ignored (dedup drop) req_id=%s sender=%s chattype=%s", a.Name(), msgID, reqID,
-			reprOf(senderUser), reprOf(body.Vals["chattype"])))
+			anyutil.Quote(senderUser), anyutil.Quote(body.Value("chattype"))))
 		return nil
 	}
 	if reqID != "" {
@@ -40,14 +38,14 @@ func (a *WeComAdapter) onMessage(ctx context.Context, payload *pyjson.Object) er
 		gateway.BoundedPut(a.replyReqIDs, msgID, reqID, dedupMaxSize)
 		a.mu.Unlock()
 	}
-	chatID := textOf(pyrepr.Or(body.Vals["chatid"], senderID))
-	pkgLog().Info(fmt.Sprintf("[%s] Inbound callback: chattype=%s chatid=%s sender=%s msgtype=%s has_chatid=%s", a.Name(), reprOf(body.Vals["chattype"]),
-		reprOf(body.Vals["chatid"]), reprOf(senderID), reprOf(body.Vals["msgtype"]), pyrepr.Str(pyrepr.Truthy(body.Vals["chatid"]))))
+	chatID := textOf(anyutil.Or(body.Value("chatid"), senderID))
+	pkgLog().Info(fmt.Sprintf("[%s] Inbound callback: chattype=%s chatid=%s sender=%s msgtype=%s has_chatid=%t", a.Name(), anyutil.Quote(body.Value("chattype")),
+		anyutil.Quote(body.Value("chatid")), strconv.Quote(senderID), anyutil.Quote(body.Value("msgtype")), anyutil.IsTrue(body.Value("chatid"))))
 	if chatID == "" {
-		pkgLog().Info(fmt.Sprintf("[%s] Missing chat id, skipping message; body_keys=%s", a.Name(), listRepr(body.Keys)))
+		pkgLog().Info(fmt.Sprintf("[%s] Missing chat id, skipping message; body_keys=%s", a.Name(), anyutil.String(body.Keys())))
 		return nil
 	}
-	isGroup := lowerOf(body.Vals["chattype"]) == "group"
+	isGroup := lowerOf(body.Value("chattype")) == "group"
 	admitted, err := a.admitInbound(ctx, isGroup, chatID, senderID)
 	if err != nil || !admitted {
 		return err
@@ -67,7 +65,7 @@ func (a *WeComAdapter) onMessage(ctx context.Context, payload *pyjson.Object) er
 		text = replyText
 	}
 	if text == "" && len(mediaURLs) == 0 {
-		pkgLog().Info(fmt.Sprintf("[%s] Empty WeCom message skipped: is_group=%s chat=%s msgtype=%s", a.Name(), pyrepr.Str(isGroup), chatID, reprOf(body.Vals["msgtype"])))
+		pkgLog().Info(fmt.Sprintf("[%s] Empty WeCom message skipped: is_group=%t chat=%s msgtype=%s", a.Name(), isGroup, chatID, anyutil.Quote(body.Value("msgtype"))))
 		return nil
 	}
 	fields := gateway.SourceFields{ChatType: "dm", MessageID: &msgID}
@@ -120,7 +118,7 @@ func (a *WeComAdapter) admitInbound(ctx context.Context, isGroup bool, chatID, s
 	}
 	if !allowed {
 		pkgLog().Info(fmt.Sprintf("[%s] Group message DROPPED by policy: chat=%s sender=%s group_policy=%s (set group_policy to 'open' or add to group_allow_from to receive)",
-			a.Name(), chatID, senderID, reprOf(a.GroupPolicy)))
+			a.Name(), chatID, senderID, strconv.Quote(a.GroupPolicy)))
 	}
 	return allowed, nil
 }
@@ -164,13 +162,13 @@ func (a *WeComAdapter) TextBatchDelayFor(pending *gateway.MessageEvent) float64 
 }
 
 // Message text joined from its text parts and the quoted text or voice transcript it replies to
-func extractText(body *pyjson.Object) (string, string) {
-	msgtype := lowerOf(body.Vals["msgtype"])
+func extractText(body *jsonutil.Object) (string, string) {
+	msgtype := lowerOf(body.Value("msgtype"))
 	var textParts []string
 	if msgtype == "mixed" {
-		items, _ := dictOrEmpty(body, "mixed").Vals["msg_item"].([]any)
+		items, _ := dictOrEmpty(body, "mixed").Value("msg_item").([]any)
 		for _, raw := range items {
-			if item, ok := raw.(*pyjson.Object); ok && item != nil && lowerOf(item.Vals["msgtype"]) == "text" {
+			if item, ok := raw.(*jsonutil.Object); ok && item != nil && lowerOf(item.Value("msgtype")) == "text" {
 				textParts = append(textParts, contentOf(item, "text"))
 			}
 		}
@@ -180,12 +178,12 @@ func extractText(body *pyjson.Object) (string, string) {
 			textParts = append(textParts, contentOf(body, "voice"))
 		}
 		if msgtype == "appmsg" {
-			textParts = append(textParts, textOf(dictOrEmpty(body, "appmsg").Vals["title"]))
+			textParts = append(textParts, textOf(dictOrEmpty(body, "appmsg").Value("title")))
 		}
 	}
 	quote := dictOrEmpty(body, "quote")
 	replyText := ""
-	if quoteType := lowerOf(quote.Vals["msgtype"]); quoteType == "text" || quoteType == "voice" {
+	if quoteType := lowerOf(quote.Value("msgtype")); quoteType == "text" || quoteType == "voice" {
 		replyText = contentOf(quote, quoteType)
 	}
 	var parts []string
@@ -198,7 +196,7 @@ func extractText(body *pyjson.Object) (string, string) {
 }
 
 // Message type from the cached media types, the text and the declared msgtype
-func deriveMessageType(body *pyjson.Object, text string, mediaTypes []string) gateway.MessageType {
+func deriveMessageType(body *jsonutil.Object, text string, mediaTypes []string) gateway.MessageType {
 	hasImage := false
 	for _, mtype := range mediaTypes {
 		if strings.HasPrefix(mtype, "application/") || strings.HasPrefix(mtype, "text/") {
@@ -212,7 +210,7 @@ func deriveMessageType(body *pyjson.Object, text string, mediaTypes []string) ga
 		}
 		return gateway.MessageTypePhoto
 	}
-	if lowerOf(body.Vals["msgtype"]) == "voice" {
+	if lowerOf(body.Value("msgtype")) == "voice" {
 		return gateway.MessageTypeVoice
 	}
 	return gateway.MessageTypeText
@@ -307,16 +305,16 @@ func (a *WeComAdapter) forceReconnectOnStaleSubscription(errcode int) {
 }
 
 // Error text of a response carrying a non zero errcode, empty otherwise
-func responseError(response *pyjson.Object) string {
+func responseError(response *jsonutil.Object) string {
 	errcode := getOr(response, "errcode", int64(0))
-	if errcode == nil || pyjson.Equal(errcode, int64(0)) {
+	if errcode == nil || anyutil.Equal(errcode, int64(0)) {
 		return ""
 	}
-	return fmt.Sprintf("WeCom errcode %s: %s", pyrepr.Str(errcode), pyrepr.Str(pyrepr.Or(response.Vals["errmsg"], "unknown error")))
+	return fmt.Sprintf("WeCom errcode %s: %s", anyutil.String(errcode), anyutil.String(anyutil.Or(response.Value("errmsg"), "unknown error")))
 }
 
-// RuntimeError naming the operation when the response carries an error
-func (a *WeComAdapter) RaiseForWeComError(response *pyjson.Object, operation string) error {
+// Error naming the operation when the response carries an error
+func (a *WeComAdapter) RaiseForWeComError(response *jsonutil.Object, operation string) error {
 	if errText := responseError(response); errText != "" {
 		return runtimeError(fmt.Sprintf("%s failed: %s", operation, errText))
 	}
@@ -329,7 +327,7 @@ func markdownBody(content string) []any {
 }
 
 // Sends markdown as a passive reply to an inbound req id, an error for a refused reply
-func (a *WeComAdapter) sendReplyMarkdown(ctx context.Context, replyReqID, content string) (*pyjson.Object, error) {
+func (a *WeComAdapter) sendReplyMarkdown(ctx context.Context, replyReqID, content string) (*jsonutil.Object, error) {
 	response, err := a.sendReplyRequest(ctx, replyReqID, obj(markdownBody(content)...))
 	if err != nil {
 		return nil, err
@@ -341,7 +339,7 @@ func (a *WeComAdapter) sendReplyMarkdown(ctx context.Context, replyReqID, conten
 }
 
 // Sends markdown proactively to a chat
-func (a *WeComAdapter) sendProactiveMarkdown(ctx context.Context, chatID, content string) (*pyjson.Object, error) {
+func (a *WeComAdapter) sendProactiveMarkdown(ctx context.Context, chatID, content string) (*jsonutil.Object, error) {
 	return a.sendRequest(ctx, appCmdSend, obj(append([]any{"chatid", chatID}, markdownBody(content)...)...), requestTimeoutSeconds)
 }
 
@@ -358,8 +356,8 @@ func (a *WeComAdapter) Send(ctx context.Context, chatID, content, replyTo string
 	if chatID == "" {
 		return gateway.SendResult{Success: false, Error: "chat_id is required"}, nil
 	}
-	isControl := pyrepr.Truthy(metadata["is_approval_prompt"])
-	forceProactive := pyrepr.Truthy(metadata["force_proactive_send"])
+	isControl := anyutil.IsTrue(metadata["is_approval_prompt"])
+	forceProactive := anyutil.IsTrue(metadata["force_proactive_send"])
 	delete(metadata, "is_approval_prompt")
 	delete(metadata, "force_proactive_send")
 	chunks := gateway.TruncateMessage(content, maxMessageLength, nil)
@@ -388,12 +386,12 @@ func (a *WeComAdapter) sendInner(ctx context.Context, chatID, content, replyTo s
 	if !forceProactive || isGroupChat {
 		replyReqID = a.cachedReplyReqID(chatID, replyTo)
 	}
-	var response *pyjson.Object
+	var response *jsonutil.Object
 	var err error
 	switch {
 	case replyReqID != "":
 		if response, err = a.sendReplyMarkdown(ctx, replyReqID, content); err != nil && (isTimeout(err) || isRuntimeError(err)) {
-			pkgLog().Warn(fmt.Sprintf("[%s] Passive reply failed (%s), falling back to proactive send", a.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Passive reply failed (%s), falling back to proactive send", a.Name(), err.Error()))
 			response, err = a.sendProactiveMarkdown(ctx, chatID, content)
 		}
 	case isGroupChat:
@@ -408,11 +406,11 @@ func (a *WeComAdapter) sendInner(ctx context.Context, chatID, content, replyTo s
 	case isTimeout(err):
 		return gateway.SendResult{Success: false, Error: "Timeout sending message to WeCom"}, nil
 	case err != nil:
-		pkgLog().Error(fmt.Sprintf("[%s] Send failed: %s", a.Name(), errText(err)))
-		return a.sendFailure(errText(err), strings.Contains(errText(err), fmt.Sprint(StreamNotSubscribedErrcode))), nil
+		pkgLog().Error(fmt.Sprintf("[%s] Send failed: %s", a.Name(), err.Error()))
+		return a.sendFailure(err.Error(), strings.Contains(err.Error(), strconv.Itoa(StreamNotSubscribedErrcode))), nil
 	}
 	if failure := responseError(response); failure != "" {
-		return a.sendFailure(failure, pyjson.Equal(getOr(response, "errcode", int64(0)), int64(StreamNotSubscribedErrcode))), nil
+		return a.sendFailure(failure, anyutil.Equal(getOr(response, "errcode", int64(0)), int64(StreamNotSubscribedErrcode))), nil
 	}
 	var messageID any = payloadReqID(response)
 	if messageID == "" {

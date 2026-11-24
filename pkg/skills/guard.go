@@ -14,7 +14,7 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Version stamped into scan provenance so cached verdicts expire with the rules
@@ -706,7 +706,7 @@ func ScanSkillCached(skillPath string, source string, sourceURL string, cacheDir
 	prov["summary"] = result.Summary
 	prov["fresh"] = true
 	if os.MkdirAll(cacheDir, 0o755) == nil {
-		if text, err := pyjson.Dumps(scanProvenanceObject(prov), pyjson.Indent(2)); err == nil {
+		if text, err := jsonutil.Encode(scanProvenanceObject(prov), jsonutil.Indent(2)); err == nil {
 			os.WriteFile(cacheFile, []byte(text+"\n"), 0o644)
 		}
 	}

@@ -7,11 +7,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Aware time of an ISO 8601 value with Z accepted, naive values taken as UTC, nil for None or blank
@@ -24,14 +24,14 @@ func parseDatetime(value any) (*time.Time, error) {
 	case *time.Time:
 		return t, nil
 	}
-	text := strings.TrimSpace(pyrepr.Str(value))
+	text := strings.TrimSpace(anyutil.String(value))
 	if text == "" {
 		return nil, nil
 	}
 	if strings.HasSuffix(text, "Z") {
 		text = text[:len(text)-1] + "+00:00"
 	}
-	parsed, aware, err := pydatetime.ParseISOFormat(text)
+	parsed, aware, err := timeutil.ParseISOZone(text, time.UTC)
 	if err != nil {
 		return nil, err
 	}
@@ -46,22 +46,22 @@ func serializeDatetime(value *time.Time) any {
 	if value == nil {
 		return nil
 	}
-	return strings.ReplaceAll(pydatetime.ISOFormatUTC(*value), "+00:00", "Z")
+	return (*value).UTC().Format(timeutil.RFC3339Micro)
 }
 
 // camelCase spelling of a snake_case field name
 func camel(name string) string {
 	parts := strings.Split(name, "_")
 	for i := 1; i < len(parts); i++ {
-		parts[i] = pystr.Title(parts[i])
+		parts[i] = textutil.Title(parts[i])
 	}
 	return strings.Join(parts, "")
 }
 
 // First truthy value among the keys, else the value of the last key
-func pick(payload *pyjson.Object, keys ...string) any {
+func pick(payload *jsonutil.Object, keys ...string) any {
 	for _, k := range keys {
-		if v, _ := payload.Get(k); pyrepr.Truthy(v) {
+		if v, _ := payload.Get(k); anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -70,19 +70,19 @@ func pick(payload *pyjson.Object, keys ...string) any {
 }
 
 // Field value under its snake and camel keys
-func pickField(payload *pyjson.Object, name string) any { return pick(payload, name, camel(name)) }
+func pickField(payload *jsonutil.Object, name string) any { return pick(payload, name, camel(name)) }
 
 // str(value or "").strip()
 func strField(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(value))
+	return strings.TrimSpace(anyutil.String(value))
 }
 
 // list(value or []) over JSON values
 func listField(value any) ([]any, error) {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return []any{}, nil
 	}
 	switch t := value.(type) {
@@ -94,9 +94,9 @@ func listField(value any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := []any{}
-		for _, k := range t.Keys {
+		for _, k := range t.Keys() {
 			out = append(out, k)
 		}
 		return out, nil
@@ -105,15 +105,15 @@ func listField(value any) ([]any, error) {
 }
 
 // dict(value or {}) over JSON values
-func dictField(value any) (*pyjson.Object, error) {
-	if !pyrepr.Truthy(value) {
-		return pyjson.NewObject(), nil
+func dictField(value any) (*jsonutil.Object, error) {
+	if !anyutil.IsTrue(value) {
+		return jsonutil.NewObject(), nil
 	}
-	if o, ok := value.(*pyjson.Object); ok {
-		return o.Copy(), nil
+	if o, ok := value.(*jsonutil.Object); ok {
+		return o.Clone(), nil
 	}
 	if items, ok := value.([]any); ok {
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for i, it := range items {
 			pair, ok := it.([]any)
 			if !ok {
@@ -122,7 +122,7 @@ func dictField(value any) (*pyjson.Object, error) {
 			if len(pair) != 2 {
 				return nil, fmt.Errorf("item %d has %d parts where a key and a value were expected", i, len(pair))
 			}
-			out.Set(pyrepr.Str(pair[0]), pair[1])
+			out.Set(anyutil.String(pair[0]), pair[1])
 		}
 		return out, nil
 	}
@@ -130,8 +130,8 @@ func dictField(value any) (*pyjson.Object, error) {
 }
 
 // Payload as a dict, failing like attribute access on a non dict
-func asDict(value any) (*pyjson.Object, error) {
-	if o, ok := value.(*pyjson.Object); ok {
+func asDict(value any) (*jsonutil.Object, error) {
+	if o, ok := value.(*jsonutil.Object); ok {
 		return o, nil
 	}
 	return nil, fmt.Errorf("expected a mapping, got %s", errchain.Kind(value))
@@ -147,12 +147,12 @@ func serializeValue(value any) any {
 			return nil
 		}
 		return t
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil || t.Len() == 0 {
 			return nil
 		}
 		return t
-	case interface{ ToDict() *pyjson.Object }:
+	case interface{ ToDict() *jsonutil.Object }:
 		if isNilModel(t) {
 			return nil
 		}
@@ -175,8 +175,8 @@ func isNilModel(m any) bool {
 }
 
 // Dict of the given field pairs with None values dropped
-func modelDict(pairs ...any) *pyjson.Object {
-	out := pyjson.NewObject()
+func modelDict(pairs ...any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for i := 0; i+1 < len(pairs); i += 2 {
 		if v := serializeValue(pairs[i+1]); v != nil {
 			out.Set(pairs[i].(string), v)
@@ -203,7 +203,7 @@ type GraphSubscription struct {
 }
 
 // Subscription from snake or camel case keys with required fields validated
-func GraphSubscriptionFromDict(payload *pyjson.Object) (*GraphSubscription, error) {
+func GraphSubscriptionFromDict(payload *jsonutil.Object) (*GraphSubscription, error) {
 	s := &GraphSubscription{
 		SubscriptionID:  strField(pick(payload, "subscription_id", "id")),
 		Resource:        strField(pickField(payload, "resource")),
@@ -231,7 +231,7 @@ func GraphSubscriptionFromDict(payload *pyjson.Object) (*GraphSubscription, erro
 }
 
 // Snake case dict with None fields dropped
-func (s *GraphSubscription) ToDict() *pyjson.Object {
+func (s *GraphSubscription) ToDict() *jsonutil.Object {
 	return modelDict("subscription_id", s.SubscriptionID, "resource", s.Resource, "change_type", s.ChangeType, "notification_url", s.NotificationURL,
 		"expiration_datetime", s.ExpirationDatetime, "client_state", s.ClientState, "latest_renewal_at", s.LatestRenewalAt, "status", s.Status)
 }
@@ -244,11 +244,11 @@ type TeamsMeetingRef struct {
 	CalendarEventID any
 	ThreadID        any
 	TenantID        any
-	Metadata        *pyjson.Object
+	Metadata        *jsonutil.Object
 }
 
 // Meeting reference from snake or camel case keys with the meeting id required
-func TeamsMeetingRefFromDict(payload *pyjson.Object) (*TeamsMeetingRef, error) {
+func TeamsMeetingRefFromDict(payload *jsonutil.Object) (*TeamsMeetingRef, error) {
 	meta, err := dictField(pickField(payload, "metadata"))
 	if err != nil {
 		return nil, err
@@ -269,7 +269,7 @@ func TeamsMeetingRefFromDict(payload *pyjson.Object) (*TeamsMeetingRef, error) {
 }
 
 // Snake case dict with None fields and an empty metadata dropped
-func (r *TeamsMeetingRef) ToDict() *pyjson.Object {
+func (r *TeamsMeetingRef) ToDict() *jsonutil.Object {
 	return modelDict("meeting_id", r.MeetingID, "organizer_user_id", r.OrganizerUserID, "join_web_url", r.JoinWebURL, "calendar_event_id", r.CalendarEventID,
 		"thread_id", r.ThreadID, "tenant_id", r.TenantID, "metadata", r.Metadata)
 }
@@ -285,11 +285,11 @@ type MeetingArtifact struct {
 	CreatedAt    *time.Time
 	AvailableAt  *time.Time
 	SizeBytes    *int64
-	Metadata     *pyjson.Object
+	Metadata     *jsonutil.Object
 }
 
 // Artifact from Graph or snake case keys with the type and id validated
-func MeetingArtifactFromDict(payload *pyjson.Object) (*MeetingArtifact, error) {
+func MeetingArtifactFromDict(payload *jsonutil.Object) (*MeetingArtifact, error) {
 	kind := pickField(payload, "artifact_type")
 	ks, _ := kind.(string)
 	meta, err := dictField(pickField(payload, "metadata"))
@@ -329,7 +329,7 @@ func MeetingArtifactFromDict(payload *pyjson.Object) (*MeetingArtifact, error) {
 }
 
 // Snake case dict with None fields and an empty metadata dropped
-func (a *MeetingArtifact) ToDict() *pyjson.Object {
+func (a *MeetingArtifact) ToDict() *jsonutil.Object {
 	var size any
 	if a.SizeBytes != nil {
 		size = *a.SizeBytes
@@ -350,7 +350,7 @@ type TeamsMeetingSummaryPayload struct {
 	KeyDecisions    []any
 	ActionItems     []any
 	Risks           []any
-	CallMetrics     *pyjson.Object
+	CallMetrics     *jsonutil.Object
 	SourceArtifacts []*MeetingArtifact
 	Confidence      any
 	ConfidenceNotes any
@@ -366,7 +366,7 @@ func (e *missingPayloadKey) Error() string      { return "the meeting summary pa
 func (e *missingPayloadKey) PyTypeName() string { return "KeyError" }
 
 // Summary payload whose meeting_ref key is mandatory and nested payloads read from snake case keys only
-func TeamsMeetingSummaryPayloadFromDict(payload *pyjson.Object) (*TeamsMeetingSummaryPayload, error) {
+func TeamsMeetingSummaryPayloadFromDict(payload *jsonutil.Object) (*TeamsMeetingSummaryPayload, error) {
 	refRaw, ok := payload.Get("meeting_ref")
 	if !ok {
 		return nil, &missingPayloadKey{"meeting_ref"}
@@ -419,7 +419,7 @@ func TeamsMeetingSummaryPayloadFromDict(payload *pyjson.Object) (*TeamsMeetingSu
 }
 
 // Snake case dict with None fields and empty collections dropped
-func (p *TeamsMeetingSummaryPayload) ToDict() *pyjson.Object {
+func (p *TeamsMeetingSummaryPayload) ToDict() *jsonutil.Object {
 	arts := make([]any, 0, len(p.SourceArtifacts))
 	for _, a := range p.SourceArtifacts {
 		arts = append(arts, a.ToDict())
@@ -447,18 +447,18 @@ type TeamsMeetingPipelineJob struct {
 	MeetingRef               *TeamsMeetingRef
 	SelectedArtifactStrategy any
 	SummaryPayload           *TeamsMeetingSummaryPayload
-	ErrorInfo                *pyjson.Object
+	ErrorInfo                *jsonutil.Object
 }
 
 // Job from snake or camel case keys with required ids validated and nested models built when present
-func TeamsMeetingPipelineJobFromDict(payload *pyjson.Object) (*TeamsMeetingPipelineJob, error) {
+func TeamsMeetingPipelineJobFromDict(payload *jsonutil.Object) (*TeamsMeetingPipelineJob, error) {
 	j := &TeamsMeetingPipelineJob{
 		JobID: strField(pickField(payload, "job_id")), EventID: strField(pickField(payload, "event_id")),
 		SourceEventType: strField(pickField(payload, "source_event_type")), DedupeKey: strField(pickField(payload, "dedupe_key")),
 		Status: strField(pickField(payload, "status")), SelectedArtifactStrategy: pickField(payload, "selected_artifact_strategy"),
 	}
 	var err error
-	if v := pickField(payload, "meeting_ref"); pyrepr.Truthy(v) {
+	if v := pickField(payload, "meeting_ref"); anyutil.IsTrue(v) {
 		d, err := asDict(v)
 		if err != nil {
 			return nil, err
@@ -467,7 +467,7 @@ func TeamsMeetingPipelineJobFromDict(payload *pyjson.Object) (*TeamsMeetingPipel
 			return nil, err
 		}
 	}
-	if v := pickField(payload, "summary_payload"); pyrepr.Truthy(v) {
+	if v := pickField(payload, "summary_payload"); anyutil.IsTrue(v) {
 		d, err := asDict(v)
 		if err != nil {
 			return nil, err
@@ -491,7 +491,7 @@ func TeamsMeetingPipelineJobFromDict(payload *pyjson.Object) (*TeamsMeetingPipel
 		return nil, err
 	}
 	retry := pickField(payload, "retry_count")
-	if !pyrepr.Truthy(retry) {
+	if !anyutil.IsTrue(retry) {
 		retry = int64(0)
 	}
 	n, err := pyint.Of(retry)
@@ -503,7 +503,7 @@ func TeamsMeetingPipelineJobFromDict(payload *pyjson.Object) (*TeamsMeetingPipel
 }
 
 // Snake case dict with None fields and an empty error_info dropped
-func (j *TeamsMeetingPipelineJob) ToDict() *pyjson.Object {
+func (j *TeamsMeetingPipelineJob) ToDict() *jsonutil.Object {
 	var ref, summary any
 	if j.MeetingRef != nil {
 		ref = j.MeetingRef

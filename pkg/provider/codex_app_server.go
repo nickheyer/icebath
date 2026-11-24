@@ -3,12 +3,14 @@ package provider
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -19,12 +21,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // CodexMinVersion is the oldest codex CLI the app server runtime accepts
@@ -40,17 +42,15 @@ type CodexAppServerError struct {
 }
 
 func (e *CodexAppServerError) Error() string {
-	return fmt.Sprintf("codex app-server error %s: %s", pyrepr.Str(e.Code), e.Message)
+	return fmt.Sprintf("codex app-server error %s: %s", anyutil.String(e.Code), e.Message)
 }
-func (e *CodexAppServerError) PyTypeName() string { return "CodexAppServerError" }
 
 // CodexAppServerTransportError reports the JSON-RPC transport gone, a failed write or a drained request
 type CodexAppServerTransportError struct{ CodexAppServerError }
 
-func (e *CodexAppServerTransportError) Error() string      { return e.Message }
-func (e *CodexAppServerTransportError) PyTypeName() string { return "CodexAppServerTransportError" }
+func (e *CodexAppServerTransportError) Error() string { return e.Message }
 
-// Matches a CodexAppServerError target as the Python subclass does
+// Matches a CodexAppServerError target, a lost transport being an app server error too
 func (e *CodexAppServerTransportError) As(target any) bool {
 	if t, ok := target.(**CodexAppServerError); ok {
 		*t = &e.CodexAppServerError
@@ -63,21 +63,22 @@ func codexTransportLost(msg string) *CodexAppServerTransportError {
 	return &CodexAppServerTransportError{CodexAppServerError{Code: codexTransportLostCode, Message: msg}}
 }
 
-// CodexRequestTimeoutError is the TimeoutError a request raises when no reply lands in time
+// CodexRequestTimeoutError reports a request whose reply did not land in time
 type CodexRequestTimeoutError struct {
 	Method  string
 	Timeout time.Duration
 }
 
 func (e *CodexRequestTimeoutError) Error() string {
-	return fmt.Sprintf("codex app-server method %s timed out after %ss", pyrepr.Repr(e.Method), pyrepr.Str(e.Timeout.Seconds()))
+	return fmt.Sprintf("codex app-server method %q timed out after %ss", e.Method, strconv.FormatFloat(e.Timeout.Seconds(), 'f', -1, 64))
 }
-func (e *CodexRequestTimeoutError) PyTypeName() string { return "TimeoutError" }
+func (e *CodexRequestTimeoutError) ErrorKind() string { return "TimeoutError" }
 
-type codexPyError struct{ name, msg string }
+// Failure of the app server protocol carrying the kind of mistake it reports
+type codexKindError struct{ kind, msg string }
 
-func (e *codexPyError) Error() string      { return e.msg }
-func (e *codexPyError) PyTypeName() string { return e.name }
+func (e *codexKindError) Error() string     { return e.msg }
+func (e *codexKindError) ErrorKind() string { return e.kind }
 
 // Unbounded FIFO with a timed take, the queue.Queue the reader threads feed
 type codexQueue struct {
@@ -181,7 +182,7 @@ func codexAppServerSpawn(opts CodexAppServerOptions) ([]string, map[string]strin
 	if ownedTask {
 		for _, key := range append(tools.KanbanEnvKeys(), "ICEBATH_KANBAN_DB", "ICEBATH_KANBAN_BOARD") {
 			if val, ok := os.LookupEnv(key); ok {
-				quoted, _ := pyjson.Dumps(val)
+				quoted, _ := jsonutil.Encode(val)
 				argv = append(argv, "-c", fmt.Sprintf("mcp_servers.%s.env.%s=%s", CodexToolsMCPServerName, key, quoted))
 			}
 		}
@@ -195,10 +196,10 @@ func codexAppServerSpawn(opts CodexAppServerOptions) ([]string, map[string]strin
 		}
 		kanbanRoot, rootSet := spawnEnv["ICEBATH_KANBAN_ROOT"]
 		if !rootSet {
-			kanbanRoot = pypath.PathJoin(homeDir, "kanban")
+			kanbanRoot = pathutil.Join(homeDir, "kanban")
 		}
 		if db := spawnEnv["ICEBATH_KANBAN_DB"]; db != "" {
-			kanbanRoot = pypath.Dirname(db)
+			kanbanRoot = filepath.Dir(db)
 		}
 		argv = append(argv,
 			"-c", `sandbox_mode="workspace-write"`,
@@ -278,15 +279,15 @@ func (c *CodexAppServerClient) PID() int { return c.cmd.Process.Pid }
 // Sends initialize then initialized and returns the server's InitializeResponse
 func (c *CodexAppServerClient) Initialize(clientName, clientTitle, clientVersion string, capabilities any, timeout time.Duration) (any, error) {
 	if c.initialized {
-		return nil, &codexPyError{"RuntimeError", "already initialized"}
+		return nil, &codexKindError{"RuntimeError", "already initialized"}
 	}
-	info := pyjson.NewObject()
+	info := jsonutil.NewObject()
 	info.Set("name", clientName)
 	info.Set("title", clientTitle)
 	info.Set("version", clientVersion)
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("clientInfo", info)
-	params.Set("capabilities", cxOr(capabilities, pyjson.NewObject()))
+	params.Set("capabilities", cxOr(capabilities, jsonutil.NewObject()))
 	result, err := c.Request("initialize", params, timeout)
 	if err != nil {
 		return nil, err
@@ -330,10 +331,10 @@ func (c *CodexAppServerClient) failPendingRequests(reason string) {
 	if len(items) == 0 {
 		return
 	}
-	errObj := pyjson.NewObject()
+	errObj := jsonutil.NewObject()
 	errObj.Set("code", codexTransportLostCode)
 	errObj.Set("message", reason)
-	synthetic := pyjson.NewObject()
+	synthetic := jsonutil.NewObject()
 	synthetic.Set("error", errObj)
 	synthetic.Set("transportLost", true)
 	for _, ch := range items {
@@ -354,10 +355,10 @@ func (c *CodexAppServerClient) Request(method string, params any, timeout time.D
 	c.pendingMu.Lock()
 	c.pending[rid] = ch
 	c.pendingMu.Unlock()
-	msg := pyjson.NewObject()
+	msg := jsonutil.NewObject()
 	msg.Set("id", rid)
 	msg.Set("method", method)
-	msg.Set("params", cxOr(params, pyjson.NewObject()))
+	msg.Set("params", cxOr(params, jsonutil.NewObject()))
 	if err := c.send(msg); err != nil {
 		c.dropPending(rid)
 		return nil, err
@@ -374,7 +375,7 @@ func (c *CodexAppServerClient) Request(method string, params any, timeout time.D
 	if cxHas(reply, "error") {
 		errVal := cxGet(reply, "error")
 		if !cxIsObject(errVal) {
-			return nil, &codexPyError{"AttributeError", fmt.Sprintf("the Codex app server error is %s, expected a mapping", errchain.Kind(errVal))}
+			return nil, &codexKindError{"AttributeError", fmt.Sprintf("the Codex app server error is %s, expected a mapping", errchain.Kind(errVal))}
 		}
 		code := any(-1)
 		if cxHas(errVal, "code") {
@@ -382,7 +383,7 @@ func (c *CodexAppServerClient) Request(method string, params any, timeout time.D
 		}
 		message := ""
 		if cxHas(errVal, "message") {
-			message = pyrepr.Str(cxGet(errVal, "message"))
+			message = anyutil.String(cxGet(errVal, "message"))
 		}
 		base := CodexAppServerError{Code: code, Message: message, Data: cxGet(errVal, "data")}
 		if cxTruthy(cxGet(reply, "transportLost")) {
@@ -393,7 +394,7 @@ func (c *CodexAppServerClient) Request(method string, params any, timeout time.D
 	if cxHas(reply, "result") {
 		return cxGet(reply, "result"), nil
 	}
-	return pyjson.NewObject(), nil
+	return jsonutil.NewObject(), nil
 }
 
 func (c *CodexAppServerClient) dropPending(rid int) {
@@ -404,15 +405,15 @@ func (c *CodexAppServerClient) dropPending(rid int) {
 
 // Sends a JSON-RPC notification, no id and no reply
 func (c *CodexAppServerClient) Notify(method string, params any) error {
-	msg := pyjson.NewObject()
+	msg := jsonutil.NewObject()
 	msg.Set("method", method)
-	msg.Set("params", cxOr(params, pyjson.NewObject()))
+	msg.Set("params", cxOr(params, jsonutil.NewObject()))
 	return c.send(msg)
 }
 
 // Replies to a server initiated request such as an approval prompt
 func (c *CodexAppServerClient) Respond(requestID any, result any) error {
-	msg := pyjson.NewObject()
+	msg := jsonutil.NewObject()
 	msg.Set("id", requestID)
 	msg.Set("result", result)
 	return c.send(msg)
@@ -420,13 +421,13 @@ func (c *CodexAppServerClient) Respond(requestID any, result any) error {
 
 // Replies to a server initiated request with an error, data only when given
 func (c *CodexAppServerClient) RespondError(requestID any, code int, message string, data any) error {
-	errObj := pyjson.NewObject()
+	errObj := jsonutil.NewObject()
 	errObj.Set("code", code)
 	errObj.Set("message", message)
 	if data != nil {
 		errObj.Set("data", data)
 	}
-	msg := pyjson.NewObject()
+	msg := jsonutil.NewObject()
 	msg.Set("id", requestID)
 	msg.Set("error", errObj)
 	return c.send(msg)
@@ -442,7 +443,7 @@ func (c *CodexAppServerClient) TakeServerRequest(timeout time.Duration) any {
 	return c.serverRequests.take(timeout)
 }
 
-// Last n lines of codex stderr with Python list slice semantics for n
+// Last n lines of codex stderr, every line for zero and all but the first -n for a negative n
 func (c *CodexAppServerClient) StderrTail(n int) []string {
 	if !c.IsAlive() {
 		select {
@@ -479,7 +480,7 @@ func (c *CodexAppServerClient) send(obj any) error {
 	if c.stdin == nil {
 		return codexTransportLost("codex app-server stdin not available")
 	}
-	text, err := pyjson.Dumps(obj, pyjson.Separators(",", ":"), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(obj)
 	if err != nil {
 		return err
 	}
@@ -491,7 +492,7 @@ func (c *CodexAppServerClient) send(obj any) error {
 	return nil
 }
 
-// Python str of the OSError or ValueError a write on a torn down pipe raises
+// Text of a failed read or write on the app server pipes
 func codexOSErrorText(err error) string {
 	if errors.Is(err, os.ErrClosed) {
 		return "write to closed file"
@@ -516,15 +517,15 @@ func (c *CodexAppServerClient) readStdout(r io.ReadCloser) {
 	for {
 		raw, readErr := reader.ReadBytes('\n')
 		if line := bytes.TrimSpace(raw); len(line) > 0 {
-			msg, err := pyjson.LoadsBytes(line)
-			var decodeErr *pyjson.DecodeError
+			msg, err := jsonutil.Decode(line)
+			var decodeErr *jsonutil.SyntaxError
 			switch {
 			case errors.As(err, &decodeErr):
 				cut := line
 				if len(cut) > 200 {
 					cut = cut[:200]
 				}
-				c.appendStderr("<non-json on stdout> " + pyrepr.Repr(cut))
+				c.appendStderr("<non-json on stdout> " + strconv.Quote(string(cut)))
 				continue
 			case err != nil:
 				c.appendStderr("<stdout reader error> " + err.Error())
@@ -544,10 +545,10 @@ func (c *CodexAppServerClient) readStdout(r io.ReadCloser) {
 	}
 }
 
-// Python membership test of key in a decoded message, a TypeError for a non container
+// Whether a decoded message holds key, a type error for a message that is no container
 func codexMsgHas(msg any, key string) (bool, error) {
 	switch m := msg.(type) {
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return cxHas(m, key), nil
 	case []any:
 		for _, v := range m {
@@ -559,10 +560,10 @@ func codexMsgHas(msg any, key string) (bool, error) {
 	case string:
 		return strings.Contains(m, key), nil
 	}
-	return false, &codexPyError{"TypeError", fmt.Sprintf("a Codex app server message is %s, expected a mapping", errchain.Kind(msg))}
+	return false, &codexKindError{"TypeError", fmt.Sprintf("a Codex app server message is %s, expected a mapping", errchain.Kind(msg))}
 }
 
-// Pending reply key of a JSON id, integral numbers and bools hashing as the Python int keys do
+// Pending reply key of a JSON id, integral numbers and bools keyed by their integer value
 func codexReplyKey(id any) (int, bool) {
 	switch v := id.(type) {
 	case bool:
@@ -576,8 +577,8 @@ func codexReplyKey(id any) (int, bool) {
 		}
 		return 0, false
 	}
-	if n, ok := pyrepr.Int(id); ok && n.IsInt64() {
-		return int(n.Int64()), true
+	if n, ok := anyutil.Int(id); ok {
+		return int(n), true
 	}
 	return 0, false
 }
@@ -592,7 +593,7 @@ func (c *CodexAppServerClient) dispatch(msg any) error {
 	hasMethod, _ := codexMsgHas(msg, "method")
 	if hasID && (hasResult || hasError) {
 		if !cxIsObject(msg) {
-			return &codexPyError{"TypeError", fmt.Sprintf("a Codex app server message is %s, expected a mapping", errchain.Kind(msg))}
+			return &codexKindError{"TypeError", fmt.Sprintf("a Codex app server message is %s, expected a mapping", errchain.Kind(msg))}
 		}
 		key, ok := codexReplyKey(cxGet(msg, "id"))
 		if !ok {
@@ -668,24 +669,25 @@ func CheckCodexBinary(codexBin string, minVersion [3]int) (bool, string, error) 
 	if codexBin == "" {
 		codexBin = "codex"
 	}
-	stdout, stderr, err := pysubprocess.Run([]string{codexBin, "--version"}, 10, true)
+	res, err := executil.Run(context.Background(), []string{codexBin, "--version"}, executil.Options{Timeout: 10 * time.Second, RequireSuccess: true})
+	stdout, stderr := res.Stdout, res.Stderr
 	var notFound *exec.Error
-	var timeout *pysubprocess.TimeoutExpired
-	var called *pysubprocess.CalledProcessError
+	var timeout *executil.TimeoutError
+	var called *executil.StatusError
 	switch {
 	case errors.As(err, &notFound) && errors.Is(notFound.Err, exec.ErrNotFound), errors.Is(err, fs.ErrNotExist):
-		return false, fmt.Sprintf("codex CLI not found at %s. Install with: npm i -g @openai/codex", pyrepr.Repr(codexBin)), nil
+		return false, fmt.Sprintf("codex CLI not found at %q. Install with: npm i -g @openai/codex", codexBin), nil
 	case errors.As(err, &timeout):
 		return false, "codex --version timed out", nil
 	case errors.As(err, &called):
-		return false, fmt.Sprintf("codex --version exited %d: %s", called.Returncode, strings.TrimSpace(pystr.TranslateNewlines(strings.ToValidUTF8(string(stderr), "\uFFFD")))), nil
+		return false, fmt.Sprintf("codex --version exited %d: %s", called.ExitCode, strings.TrimSpace(textutil.NormalizeNewlines(strings.ToValidUTF8(string(stderr), "\uFFFD")))), nil
 	case err != nil:
 		return false, "", err
 	}
-	out := pystr.TranslateNewlines(strings.ToValidUTF8(string(stdout), "\uFFFD"))
+	out := textutil.NormalizeNewlines(strings.ToValidUTF8(string(stdout), "\uFFFD"))
 	version, ok := ParseCodexVersion(out)
 	if !ok {
-		return false, fmt.Sprintf("could not parse codex version from: %s", pyrepr.Repr(out)), nil
+		return false, fmt.Sprintf("could not parse codex version from: %q", out), nil
 	}
 	have := codexVersionText(version)
 	if codexVersionLess(version, minVersion) {

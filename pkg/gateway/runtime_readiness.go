@@ -6,18 +6,18 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Whether any inference provider is usable in the bound profile, assigned from cmd/icebath in wiring.go
 var HasAnyProviderConfigured func(ctx context.Context, strictProfileScope bool) bool
 
 // Runtime check answer for a resolve that raised, the error code riding along only for an unrepairable failure
-func ReadinessFailure(err error) *pyjson.Object {
-	out := pyjson.ObjectOf("ok", false, "error", err.Error())
+func ReadinessFailure(err error) *jsonutil.Object {
+	out := jsonutil.ObjectOf("ok", false, "error", err.Error())
 	var local *provider.LocalRuntimeUnavailableError
 	if errors.As(err, &local) {
 		out.Set("error_code", local.ErrorCode())
@@ -26,7 +26,7 @@ func ReadinessFailure(err error) *pyjson.Object {
 }
 
 // Readiness verdict of the runtime a session would be built with, a failure naming the provider the user pinned
-func CheckRuntimeReadiness(ctx context.Context, requested string, strictProfileScope bool) (*pyjson.Object, error) {
+func CheckRuntimeReadiness(ctx context.Context, requested string, strictProfileScope bool) (*jsonutil.Object, error) {
 	h := home.Dir(ctx)
 	sctx := profileEnvScope(ctx, h)
 	target := strings.TrimSpace(settings.Model.Get(sctx))
@@ -52,7 +52,7 @@ func CheckRuntimeReadiness(ctx context.Context, requested string, strictProfileS
 		}
 		runtime = resolved
 		switch {
-		case pyrepr.Truthy(entry["model"]):
+		case anyutil.IsTrue(entry["model"]):
 			model = entry["model"]
 		case configured != nil:
 			model = *configured
@@ -74,8 +74,8 @@ func CheckRuntimeReadiness(ctx context.Context, requested string, strictProfileS
 	if blamed == "" {
 		blamed = providerName
 	}
-	fail := func(message string, src any) *pyjson.Object {
-		return pyjson.ObjectOf("ok", false, "provider", blamed, "model", model, "source", src, "error", message)
+	fail := func(message string, src any) *jsonutil.Object {
+		return jsonutil.ObjectOf("ok", false, "provider", blamed, "model", model, "source", src, "error", message)
 	}
 	if !anyConfigured && providerName == "bedrock" && (source == "iam-role" || source == "aws-sdk-default-chain") {
 		return fail("No Icebath provider is configured.", source), nil
@@ -94,5 +94,5 @@ func CheckRuntimeReadiness(ctx context.Context, requested string, strictProfileS
 	if runtime.Source != "" {
 		resolvedSource = runtime.Source
 	}
-	return pyjson.ObjectOf("ok", true, "provider", resolvedProvider, "model", model, "source", resolvedSource), nil
+	return jsonutil.ObjectOf("ok", true, "provider", resolvedProvider, "model", model, "source", resolvedSource), nil
 }

@@ -16,8 +16,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var launchEnv = []string{"ICEBATH_YOLO_MODE", "ICEBATH_SAFE_MODE", "ICEBATH_IGNORE_USER_CONFIG", "ICEBATH_IGNORE_RULES",
@@ -38,12 +39,12 @@ func launchAgent(t *testing.T) (*GatewayACPAgent, *[]map[string]any) {
 	var mu sync.Mutex
 	created := &[]map[string]any{}
 	a, link := bareGatewayAgent(t, nil)
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch method {
 		case "runtime.describe":
 			return jsonObj(t, `{"session_create": {"sources": ["acp"]}, "capabilities": ["acp-editor-policy-v1"]}`), nil
 		case "config.set":
-			return pyjson.ObjectOf("key", params["key"], "value", params["value"], "scope", "session"), nil
+			return jsonutil.ObjectOf("key", params["key"], "value", params["value"], "scope", "session"), nil
 		}
 		if method != "session.create" {
 			t.Errorf("unexpected %s", method)
@@ -51,7 +52,7 @@ func launchAgent(t *testing.T) (*GatewayACPAgent, *[]map[string]any) {
 		mu.Lock()
 		*created = append(*created, params)
 		mu.Unlock()
-		return pyjson.ObjectOf("session_id", "s", "info", pyjson.ObjectOf("cwd", params["cwd"])), nil
+		return jsonutil.ObjectOf("session_id", "s", "info", jsonutil.ObjectOf("cwd", params["cwd"])), nil
 	})
 	return a, created
 }
@@ -64,7 +65,7 @@ func TestLaunchEnvRidesSessionCreate(t *testing.T) {
 	t.Setenv("ICEBATH_MODEL", "explicit-model")
 	t.Setenv("ICEBATH_INFERENCE_PROVIDER", "openrouter")
 	a, created := launchAgent(t)
-	if _, err := a.NewSession(context.Background(), &pyacp.NewSessionRequest{Cwd: t.TempDir()}); err != nil {
+	if _, err := a.NewSession(context.Background(), &acputil.NewSessionRequest{Cwd: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
 	for _, flag := range launchFlags {
@@ -89,7 +90,7 @@ func TestSafeModeAcpSessionFreezesTheLaunchModel(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, created := launchAgent(t)
-	if _, err := a.NewSession(ctx, &pyacp.NewSessionRequest{Cwd: t.TempDir()}); err != nil {
+	if _, err := a.NewSession(ctx, &acputil.NewSessionRequest{Cwd: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
 	params := (*created)[0]
@@ -99,7 +100,7 @@ func TestSafeModeAcpSessionFreezesTheLaunchModel(t *testing.T) {
 	frozenParams := map[string]any{}
 	for k, v := range params {
 		if k != "request_id" {
-			frozenParams[k] = pyjson.Plain(v)
+			frozenParams[k] = jsonutil.Plain(v)
 		}
 	}
 	frozen, err := gateway.BypassLaunchPolicy(ctx, frozenParams)
@@ -117,7 +118,7 @@ func TestBypassWithoutAModelNamesTheMissingFlag(t *testing.T) {
 			clearLaunchEnv(t)
 			t.Setenv(flag, "1")
 			a, created := launchAgent(t)
-			_, err := a.NewSession(context.Background(), &pyacp.NewSessionRequest{Cwd: t.TempDir()})
+			_, err := a.NewSession(context.Background(), &acputil.NewSessionRequest{Cwd: t.TempDir()})
 			var refused *gateway.GatewayClientError
 			if err == nil || !strings.Contains(err.Error(), "icebath -m <model>") || !asClientError(err, &refused) {
 				t.Fatalf("err = %v", err)
@@ -142,7 +143,7 @@ func TestBypassWithAModelButNoProviderIsRefusedAtSessionNew(t *testing.T) {
 			t.Setenv(flag, "1")
 			t.Setenv("ICEBATH_MODEL", "gpt-4o-mini")
 			a, created := launchAgent(t)
-			_, err := a.NewSession(context.Background(), &pyacp.NewSessionRequest{Cwd: t.TempDir()})
+			_, err := a.NewSession(context.Background(), &acputil.NewSessionRequest{Cwd: t.TempDir()})
 			var refused *gateway.GatewayClientError
 			if err == nil || !strings.Contains(err.Error(), "launch with --provider too") || !asClientError(err, &refused) {
 				t.Fatalf("err = %v", err)
@@ -162,7 +163,7 @@ func TestCliOnlyAcpFlagsReachTheSession(t *testing.T) {
 		t.Fatal(err)
 	}
 	a, created := launchAgent(t)
-	if _, err := a.NewSession(ctx, &pyacp.NewSessionRequest{Cwd: t.TempDir()}); err != nil {
+	if _, err := a.NewSession(ctx, &acputil.NewSessionRequest{Cwd: t.TempDir()}); err != nil {
 		t.Fatal(err)
 	}
 	params := (*created)[0]
@@ -210,23 +211,23 @@ func TestAModeChangeQueuedBehindANewWatermarkStillRepaintsTheEditor(t *testing.T
 			a, link := bareGatewayAgent(t, map[string]string{"s": `{"pending": [], "replay_epoch": "e", "last_sequence": 10, "execution_generation": 1, "revision": 1}`})
 			editor := &editorFake{}
 			onLoop(a, func() bool { a.conn = editor; a.modes["s"] = "default"; return true })
-			link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				switch method {
 				case "session.resume":
 					return jsonObj(t, `{"session_id": "s", "pending": [], "prompts": [], "replay_epoch": "e", "last_sequence": 12, "execution_generation": 1, "revision": 3, "info": `+owner+`, "messages": [{"row_id": 1, "role": "user", "content": "hello"}]}`), nil
 				case "session.mutate":
-					return pyjson.ObjectOf("session_id", "s", "operation", params["operation"], "revision", int64(3), "model", "m", "provider", "p",
-						"rewound_count", int64(1), "target_message", pyjson.ObjectOf("content", "hello")), nil
+					return jsonutil.ObjectOf("session_id", "s", "operation", params["operation"], "revision", int64(3), "model", "m", "provider", "p",
+						"rewound_count", int64(1), "target_message", jsonutil.ObjectOf("content", "hello")), nil
 				case "session.stats":
 					return jsonObj(t, `{"context_length": 1000, "context_tokens": 0}`), nil
 				}
 				t.Errorf("unexpected %s", method)
-				return pyjson.NewObject(), nil
+				return jsonutil.NewObject(), nil
 			})
 			if err := onLoop(a, func() error { return install.run(a) }); err != nil {
 				t.Fatal(err)
 			}
-			link.put(pyjson.ObjectOf("params", pyjson.ObjectOf("session_id", "s", "type", "session.info", "replay_epoch", "e", "seq", int64(11), "payload", jsonObj(t, owner))))
+			link.put(jsonutil.ObjectOf("params", jsonutil.ObjectOf("session_id", "s", "type", "session.info", "replay_epoch", "e", "seq", int64(11), "payload", jsonObj(t, owner))))
 			link.put(io.ErrUnexpectedEOF)
 			done := make(chan error, 1)
 			go func() { done <- onLoop(a, func() error { return a.events(context.Background()) }) }()
@@ -240,7 +241,7 @@ func TestAModeChangeQueuedBehindANewWatermarkStillRepaintsTheEditor(t *testing.T
 			}
 			var modes []string
 			for _, u := range updatesOf(editor) {
-				if update, ok := u.(*pyacp.CurrentModeUpdate); ok {
+				if update, ok := u.(*acputil.CurrentModeUpdate); ok {
 					modes = append(modes, update.CurrentModeID)
 				}
 			}
@@ -259,11 +260,11 @@ func TestAcpPromptSettlesAVoiceStoppedReplyAsAnEndedTurn(t *testing.T) {
 	a, link := bareGatewayAgent(t, map[string]string{"s": `{}`})
 	editor := &editorFake{}
 	onLoop(a, func() bool { a.conn = editor; return true })
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		if method == "prompt.submit" {
 			return jsonObj(t, `{"voice_stopped": true}`), nil
 		}
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	})
 	resp, err := a.Prompt(context.Background(), textPrompt("s", "stop"))
 	if err != nil || resp.StopReason != "end_turn" {
@@ -294,7 +295,7 @@ func TestSuccessorUnknownDoesNotOverwriteCompletedEditorPrompt(t *testing.T) {
 				projectJSON(t, a, `{"session_id": "s", "type": "message.complete", "admission_id": "ours", "payload": {"outcome": "completed", "text": "done"}}`)
 				projectJSON(t, a, `{"session_id": "s", "type": "session.info", "payload": {"pending": [{"admission_id": "next", "status": "unknown"}]}}`)
 			}
-			link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				if method != "prompt.submit" {
 					t.Errorf("unexpected %s", method)
 				}
@@ -337,43 +338,43 @@ func TestMislabeledOrUnadmittableImageNeverRejectsThePrompt(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			var blocks []pyacp.ContentBlock
+			var blocks []acputil.ContentBlock
 			switch tc.name {
 			case "jpg-named-png":
 				path := filepath.Join(dir, "shot.jpg")
 				os.WriteFile(path, pngFixture, 0o600)
-				blocks = []pyacp.ContentBlock{&pyacp.ResourceContentBlock{URI: fileURI(path), Name: "shot.jpg"}}
+				blocks = []acputil.ContentBlock{&acputil.ResourceContentBlock{URI: fileURI(path), Name: "shot.jpg"}}
 			case "bmp":
 				path := filepath.Join(dir, "pic.bmp")
 				os.WriteFile(path, bmp, 0o600)
-				blocks = []pyacp.ContentBlock{&pyacp.ResourceContentBlock{URI: fileURI(path), Name: "pic.bmp"}}
+				blocks = []acputil.ContentBlock{&acputil.ResourceContentBlock{URI: fileURI(path), Name: "pic.bmp"}}
 			case "oversize":
-				blocks = []pyacp.ContentBlock{&pyacp.ImageContentBlock{Data: base64.StdEncoding.EncodeToString(pngFixture), MimeType: "image/png"}}
+				blocks = []acputil.ContentBlock{&acputil.ImageContentBlock{Data: base64.StdEncoding.EncodeToString(pngFixture), MimeType: "image/png"}}
 			default:
-				blocks = []pyacp.ContentBlock{&pyacp.ImageContentBlock{Data: base64.StdEncoding.EncodeToString(jpeg), MimeType: ""}}
+				blocks = []acputil.ContentBlock{&acputil.ImageContentBlock{Data: base64.StdEncoding.EncodeToString(jpeg), MimeType: ""}}
 			}
 			a := NewGatewayACPAgent()
 			link := &scriptedGateway{}
-			link.fakeGateway = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
-				onLoop(a, func() bool { a.terminals.Set("adm-1", pyjson.NewObject()); return true })
+			link.fakeGateway = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
+				onLoop(a, func() bool { a.terminals.Set("adm-1", jsonutil.NewObject()); return true })
 				return jsonObj(t, `{"admission_id": "adm-1"}`), nil
 			})
-			onLoop(a, func() bool { a.gateway = link; a.snapshots.Set("s", pyjson.NewObject()); return true })
-			prompt := append([]pyacp.ContentBlock{pyacp.TextBlock("what is this?")}, blocks...)
-			resp, err := a.Prompt(context.Background(), &pyacp.PromptRequest{Prompt: prompt, SessionID: "s"})
+			onLoop(a, func() bool { a.gateway = link; a.snapshots.Set("s", jsonutil.NewObject()); return true })
+			prompt := append([]acputil.ContentBlock{acputil.TextBlock("what is this?")}, blocks...)
+			resp, err := a.Prompt(context.Background(), &acputil.PromptRequest{Prompt: prompt, SessionID: "s"})
 			if err != nil || resp.StopReason != "end_turn" {
 				t.Fatalf("resp = %+v, %v", resp, err)
 			}
 			calls := link.log()
-			if len(calls) != 1 || calls[0].method != "prompt.submit" || !strings.HasPrefix(pyStr(calls[0].params["text"]), "what is this?") {
+			if len(calls) != 1 || calls[0].method != "prompt.submit" || !strings.HasPrefix(anyutil.String(calls[0].params["text"]), "what is this?") {
 				t.Fatalf("calls = %v", calls)
 			}
 			attachments, has := calls[0].params["attachments"].([]any)
 			if tc.mime != "" {
-				if !has || len(attachments) != 1 || attachments[0].(*pyjson.Object).GetOr("mime", nil) != tc.mime {
+				if !has || len(attachments) != 1 || attachments[0].(*jsonutil.Object).ValueOr("mime", nil) != tc.mime {
 					t.Fatalf("attachments = %v", calls[0].params["attachments"])
 				}
-			} else if has || !strings.Contains(pyStr(calls[0].params["text"]), "[Image omitted:") {
+			} else if has || !strings.Contains(anyutil.String(calls[0].params["text"]), "[Image omitted:") {
 				t.Fatalf("params = %v", calls[0].params)
 			}
 		})

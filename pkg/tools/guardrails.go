@@ -16,10 +16,10 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ---- Result classification ----
@@ -43,7 +43,7 @@ const GuardrailRefusalKey = "guardrail_refusal"
 
 // Parses JSON returning nil on any error the way utils.safe_json_loads does
 func safeJSONLoads(text string) any {
-	v, err := pyjson.DecodeWTF8([]byte(text))
+	v, err := jsonutil.DecodePlain([]byte(text))
 	if err != nil {
 		return nil
 	}
@@ -203,11 +203,11 @@ func ShapeFailureError(data map[string]any) string {
 	}
 	if first, ok := errs[0].(map[string]any); ok {
 		if msg := first["message"]; truthy(msg) {
-			return pyrepr.Str(msg)
+			return anyutil.String(msg)
 		}
-		return pyrepr.Str(first)
+		return anyutil.String(first)
 	}
-	return pyrepr.Str(errs[0])
+	return anyutil.String(errs[0])
 }
 
 // FileMutationResultLanded is true when a file mutation result proves the write landed
@@ -483,8 +483,9 @@ func (d ToolGuardrailDecision) ToMetadata() map[string]any {
 
 // Sorted compact JSON of any value with unencodable values rendered as strings
 func canonicalJSON(value any) string {
-	return pyDumps(value, pyjson.EnsureASCII(false), pyjson.SortKeys(true), pyjson.Separators(",", ":"),
-		pyjson.Default(func(o any) (any, error) { return pyrepr.Str(o), nil }))
+	return pyDumps(value, jsonutil.SortKeys(),
+		jsonutil.Convert(func(o any) (any, error) { return anyutil.String(o), nil }))
+
 }
 
 func canonicalizable(v any) any {
@@ -504,8 +505,8 @@ func canonicalizable(v any) any {
 	case nil, bool, string, float64, float32, int, int64, int32, json.Number:
 		return v
 	default:
-		if b, err := pyjson.EncodeWTF8(v); err == nil {
-			if round, err := pyjson.DecodeWTF8(b); err == nil {
+		if b, err := jsonutil.Append(nil, v); err == nil {
+			if round, err := jsonutil.DecodePlain(b); err == nil {
 				return round
 			}
 		}
@@ -990,14 +991,14 @@ func guardCoerceArgs(args map[string]any) map[string]any {
 
 // Drops the per call kernel bookkeeping execute_code reports so identical probes hash alike
 func withoutExecuteCodeMetadata(parsed any) any {
-	m, ok := pyjson.AsObject(parsed)
+	m, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		return parsed
 	}
-	cleaned := m.Copy()
+	cleaned := m.Clone()
 	cleaned.Delete("duration_seconds")
-	if kernel, ok := pyjson.AsObject(cleaned.Vals["kernel"]); ok {
-		kc := kernel.Copy()
+	if kernel, ok := jsonutil.AsObject(cleaned.Value("kernel")); ok {
+		kc := kernel.Clone()
 		kc.Delete("execution_count")
 		cleaned.Set("kernel", kc)
 	}
@@ -1009,7 +1010,7 @@ func guardResultHash(result *string, toolName string) string {
 	if result != nil {
 		text = *result
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil || parsed == nil {
 		return guardSHA256(text)
 	}
@@ -1100,7 +1101,7 @@ func UniquifyToolCallIDs(toolCalls []state.ToolCall, taken map[string]bool) []st
 	for i := range toolCalls {
 		tc := &toolCalls[i]
 		raw := state.ToolCallField(tc, "call_id")
-		if !pyrepr.Truthy(raw) {
+		if !anyutil.IsTrue(raw) {
 			raw = state.ToolCallField(tc, "id")
 		}
 		text, _ := raw.(string)
@@ -1125,7 +1126,7 @@ func UniquifyToolCallIDs(toolCalls []state.ToolCall, taken map[string]bool) []st
 		} else {
 			tc.ID = newID
 		}
-		if pyrepr.Truthy(state.ToolCallField(tc, "call_id")) {
+		if anyutil.IsTrue(state.ToolCallField(tc, "call_id")) {
 			_ = state.ToolCallSet(tc, "call_id", newID)
 		}
 		fnName := tc.Function.Name
@@ -1149,14 +1150,14 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 			expanded = append(expanded, call)
 			continue
 		}
-		decoded, parseErr := pyjson.Loads(call.Function.Arguments)
-		args, _ := decoded.(*pyjson.Object)
+		decoded, parseErr := jsonutil.Decode(call.Function.Arguments)
+		args, _ := decoded.(*jsonutil.Object)
 		var entries []ToolCallEntry
 		errText := ""
 		if parseErr != nil || args == nil {
 			errText = "unparseable"
 		} else {
-			entries, errText = NormalizeToolCallEntries(args.Vals)
+			entries, errText = NormalizeToolCallEntries(args.Map())
 		}
 		if errText != "" || len(entries) <= 1 || len(entries) > ToolCallMaxBatchEntries {
 			expanded = append(expanded, call)
@@ -1165,7 +1166,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 		parentID := state.CoalesceToolCallID(call)
 		var children []state.ToolCall
 		for index, entry := range entries {
-			arguments := pyDumps(pyjson.ObjectOf("calls", []any{pyjson.ObjectOf("name", entry.Name, "arguments", entry.Arguments)}), pyjson.EnsureASCII(false))
+			arguments := pyDumps(jsonutil.ObjectOf("calls", []any{jsonutil.ObjectOf("name", entry.Name, "arguments", entry.Arguments)}))
 			var child state.ToolCall
 			if index == 0 {
 				child = call
@@ -1201,7 +1202,7 @@ func ExpandLocalToolBatches(toolCalls []state.ToolCall, providerData map[string]
 
 // Typed and ordered json.loads of a split child's arguments, the input its replayed content block carries
 func decodedArguments(call state.ToolCall) any {
-	v, err := pyjson.Loads(call.Function.Arguments)
+	v, err := jsonutil.Decode(call.Function.Arguments)
 	if err != nil {
 		panic(fmt.Sprintf("split tool call batch child carries arguments that are not JSON: %v", err))
 	}
@@ -1388,7 +1389,7 @@ func batchAdmission(ctx context.Context, env *Env, call state.ToolCall, executio
 	if NeverParallelTools[toolName] {
 		return nil
 	}
-	parsed, err := pyjson.DecodeWTF8([]byte(call.Function.Arguments))
+	parsed, err := jsonutil.DecodePlain([]byte(call.Function.Arguments))
 	if err != nil {
 		raw := call.Function.Arguments
 		if len(raw) > 200 {
@@ -1606,7 +1607,7 @@ func MultimodalTextSummary(value any) string {
 	if IsMultimodalToolResult(value) {
 		return state.MultimodalEnvelopeSummary(value)
 	}
-	b, err := pyjson.EncodeWTF8(canonicalizable(value))
+	b, err := jsonutil.Append(nil, canonicalizable(value))
 	if err != nil {
 		return fmt.Sprint(value)
 	}
@@ -2108,7 +2109,7 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 			toolCalls[i].Function.Arguments = "{}"
 			continue
 		}
-		if _, err := pyjson.Loads(args); err != nil {
+		if _, err := jsonutil.Decode(args); err != nil {
 			if !(mixed && !validNames[toolCalls[i].Function.Name]) {
 				invalidJSON = append(invalidJSON, badArgs{toolCalls[i].Function.Name, err.Error()})
 			}
@@ -2131,7 +2132,7 @@ func ValidateToolCalls(host TurnValidationHost, toolCalls []state.ToolCall, fini
 			}
 		}
 		if truncated {
-			host.Print(fmt.Sprintf("%s⚠️  Truncated tool call arguments detected (finish_reason=%s) — refusing to execute.", host.LogPrefix(), pyrepr.Repr(finishReason)), true)
+			host.Print(fmt.Sprintf("%s⚠️  Truncated tool call arguments detected (finish_reason=%s) — refusing to execute.", host.LogPrefix(), anyutil.Quote(finishReason)), true)
 			retries.InvalidJSON = 0
 			host.CleanupTaskResources()
 			code := "truncated_unreported"

@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -38,7 +38,7 @@ func envEnablement(ctx context.Context) map[string]any {
 		panic(err)
 	}
 	for _, k := range []string{"client_id", "client_secret", "tenant_id"} {
-		if !pyrepr.Truthy(seed[k]) {
+		if !anyutil.IsTrue(seed[k]) {
 			return nil
 		}
 	}
@@ -62,8 +62,8 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		return gateway.SendError("Teams standalone send: TEAMS_CLIENT_ID, TEAMS_CLIENT_SECRET, and TEAMS_TENANT_ID are all required"), nil
 	}
 	rawServiceURL := ""
-	if v := extra["service_url"]; pyrepr.Truthy(v) {
-		rawServiceURL = pyrepr.Str(v)
+	if v := extra["service_url"]; anyutil.IsTrue(v) {
+		rawServiceURL = anyutil.String(v)
 	} else if rawServiceURL, err = gateway.GetScopedSecret(ctx, "TEAMS_SERVICE_URL", "", false); err != nil {
 		return gateway.SendError("Teams standalone send failed: " + err.Error()), nil
 	}
@@ -74,7 +74,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	for _, check := range []struct {
 		failed bool
 		msg    string
-	}{{serviceURL == "", "TEAMS_SERVICE_URL host is not on the Bot Framework allowlist; expected one of " + pyrepr.Repr(allowedTeamsServiceHosts)},
+	}{{serviceURL == "", "TEAMS_SERVICE_URL host is not on the Bot Framework allowlist; expected one of " + anyutil.Quote(allowedTeamsServiceHosts)},
 		{chatID == "", "chat_id (conversation ID) is required"},
 		{!teamsConvIDRe(chatID), "chat_id contains characters outside the Bot Framework conversation ID set"},
 		{!teamsConvIDRe(tenantID), "TEAMS_TENANT_ID contains characters outside the expected set"}} {
@@ -120,7 +120,7 @@ func standalonePost(ctx context.Context, tenantID, clientID, clientSecret, activ
 	if accessToken == "" {
 		return gateway.SendError("Teams standalone send: token response missing access_token"), nil
 	}
-	payload, err := pyjson.Dumps(pyjson.ObjectOf("type", "message", "text", message, "textFormat", "markdown"))
+	payload, err := jsonutil.Encode(jsonutil.ObjectOf("type", "message", "text", message, "textFormat", "markdown"))
 	if err != nil {
 		return nil, err
 	}

@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Identity of a map, slice or pointer held on a conversion path
@@ -58,7 +58,7 @@ func plainDataText(value any, active map[plainDataID]bool, nested bool) string {
 		sort.Strings(keys)
 		parts := make([]string, len(keys))
 		for i, k := range keys {
-			parts[i] = pyrepr.Repr(k) + ": " + plainDataText(v[k], active, true)
+			parts[i] = anyutil.Quote(k) + ": " + plainDataText(v[k], active, true)
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	case []any:
@@ -76,9 +76,9 @@ func plainDataText(value any, active map[plainDataID]bool, nested bool) string {
 		return fmt.Sprintf("<%s object at %#x>", rv.Elem().Type().String(), rv.Pointer())
 	}
 	if nested {
-		return pyrepr.Repr(value)
+		return anyutil.Quote(value)
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Attribute name of a struct field, its JSON name when tagged, empty for a field that is not exported or is private
@@ -123,13 +123,13 @@ func toPlainData(value any, depth int, path map[plainDataID]bool) any {
 			out[k] = rec(item)
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return value
 		}
-		out := make(map[string]any, len(v.Keys))
-		for _, k := range v.Keys {
-			out[k] = rec(v.GetOr(k, nil))
+		out := make(map[string]any, v.Len())
+		for _, k := range v.Keys() {
+			out[k] = rec(v.ValueOr(k, nil))
 		}
 		return out
 	case []any:
@@ -149,7 +149,7 @@ func toPlainData(value any, depth int, path map[plainDataID]bool) any {
 	case reflect.Map:
 		out := make(map[string]any, rv.Len())
 		for iter := rv.MapRange(); iter.Next(); {
-			out[pyrepr.Str(iter.Key().Interface())] = rec(iter.Value().Interface())
+			out[anyutil.String(iter.Key().Interface())] = rec(iter.Value().Interface())
 		}
 		return out
 	case reflect.Slice, reflect.Array:

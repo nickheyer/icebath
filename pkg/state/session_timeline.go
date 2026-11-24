@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -116,7 +116,7 @@ func displayRowsSQL(ctx context.Context, conn SQLiteConn, sessionID string, user
 }
 
 // Driver level connection under the tracking and lazy transaction wrappers, false when none is exposed
-func rawConnOf(conn SQLiteConn) (pysqlite.RawConn, bool) {
+func rawConnOf(conn SQLiteConn) (sqliteutil.RawConn, bool) {
 	for {
 		switch c := conn.(type) {
 		case *TrackedConn:
@@ -124,7 +124,7 @@ func rawConnOf(conn SQLiteConn) (pysqlite.RawConn, bool) {
 		case *lazyTxConn:
 			conn = c.SQLiteConn
 		default:
-			raw, ok := conn.(pysqlite.RawConn)
+			raw, ok := conn.(sqliteutil.RawConn)
 			return raw, ok
 		}
 	}
@@ -145,17 +145,17 @@ func registerTimelineFunctions(conn SQLiteConn) error {
 		}
 		return content, nil
 	}
-	if err := pysqlite.CreateFunction(raw, "timeline_identity_content", 2, true, identity); err != nil {
+	if err := sqliteutil.CreateFunction(raw, "timeline_identity_content", 2, true, identity); err != nil {
 		return err
 	}
-	return pysqlite.CreateFunction(raw, "timeline_preview", 3, true, func(args []any) (any, error) {
+	return sqliteutil.CreateFunction(raw, "timeline_preview", 3, true, func(args []any) (any, error) {
 		return promptPreview(args[0], args[1], args[2])
 	})
 }
 
 // Display page of at most limit rows from an exact human prompt, nil when the row is no such prompt
-func (d *SessionDB) GetSessionMessagesAround(ctx context.Context, sessionID string, rowID int64, limit int) (*pyjson.Object, error) {
-	var rows []*pyjson.Object
+func (d *SessionDB) GetSessionMessagesAround(ctx context.Context, sessionID string, rowID int64, limit int) (*jsonutil.Object, error) {
+	var rows []*jsonutil.Object
 	var total, offset int64
 	found := false
 	err := d.timelineSnapshot(ctx, func(conn SQLiteConn) error {
@@ -211,7 +211,7 @@ func (d *SessionDB) GetSessionMessagesAround(ctx context.Context, sessionID stri
 		messages = append(messages, msg)
 	}
 	returned := int64(len(messages))
-	return pyjson.ObjectOf("messages", messages, "pagination", pyjson.ObjectOf(
+	return jsonutil.ObjectOf("messages", messages, "pagination", jsonutil.ObjectOf(
 		"row_id", rowID, "limit", limit, "returned", returned, "order", "oldest",
 		"offset", offset, "total", total,
 		"has_older", offset > 0,
@@ -220,8 +220,8 @@ func (d *SessionDB) GetSessionMessagesAround(ctx context.Context, sessionID stri
 }
 
 // Chronological human prompts after a cursor, the cursor being the first physical row id of a logical turn
-func (d *SessionDB) GetSessionTimeline(ctx context.Context, sessionID string, limit int, afterRowID int64) (*pyjson.Object, error) {
-	var rows []*pyjson.Object
+func (d *SessionDB) GetSessionTimeline(ctx context.Context, sessionID string, limit int, afterRowID int64) (*jsonutil.Object, error) {
+	var rows []*jsonutil.Object
 	var total any
 	err := d.timelineSnapshot(ctx, func(conn SQLiteConn) error {
 		if err := registerTimelineFunctions(conn); err != nil {
@@ -264,7 +264,7 @@ func (d *SessionDB) GetSessionTimeline(ctx context.Context, sessionID string, li
 	page := rows[:min(max(limit, 0), len(rows))]
 	entries := make([]any, 0, len(page))
 	for _, row := range page {
-		entries = append(entries, pyjson.ObjectOf("row_id", rowValue(row, "row_id"), "preview", rowValue(row, "preview"), "timestamp", rowValue(row, "timestamp")))
+		entries = append(entries, jsonutil.ObjectOf("row_id", rowValue(row, "row_id"), "preview", rowValue(row, "preview"), "timestamp", rowValue(row, "timestamp")))
 	}
 	var nextCursor any
 	if hasMore {
@@ -273,7 +273,7 @@ func (d *SessionDB) GetSessionTimeline(ctx context.Context, sessionID string, li
 		}
 		nextCursor = rowValue(page[len(page)-1], "sort_id")
 	}
-	return pyjson.ObjectOf("entries", entries, "pagination", pyjson.ObjectOf(
+	return jsonutil.ObjectOf("entries", entries, "pagination", jsonutil.ObjectOf(
 		"limit", limit, "after_row_id", afterRowID, "returned", len(page),
 		"total", total, "has_more", hasMore, "next_cursor", nextCursor,
 	)), nil

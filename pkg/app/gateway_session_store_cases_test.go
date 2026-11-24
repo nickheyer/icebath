@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 type storeCaseClient struct {
@@ -84,7 +83,7 @@ func TestAProjectResumedAfterWIsSentNotTheWWorktree(t *testing.T) {
 			if _, err := db.Create(ctx, map[string]any{"toolsets": []any{"file"}}, "", false); err != nil {
 				t.Fatal(err)
 			}
-			want, err := pypath.Resolve(projectB)
+			want, err := pathutil.Resolve(projectB)
 			if err != nil {
 				t.Fatal(err)
 			}

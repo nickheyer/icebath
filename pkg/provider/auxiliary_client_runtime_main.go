@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type auxRuntimeMainKey struct{}
@@ -27,7 +27,7 @@ func auxRuntimeMainValue(ctx context.Context, field string) any {
 	if runtime == nil {
 		return ""
 	}
-	if value := runtime[field]; pyrepr.Truthy(value) {
+	if value := runtime[field]; anyutil.IsTrue(value) {
 		return value
 	}
 	return ""

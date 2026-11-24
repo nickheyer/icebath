@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -1410,7 +1410,7 @@ func NormalizeToolSchema(schema any) (map[string]any, bool) {
 		return nil, false
 	}
 	if m["type"] == "function" {
-		if fn, ok := pyjson.Dict(m["function"]); ok {
+		if fn, ok := jsonutil.AsMap(m["function"]); ok {
 			m = fn
 		}
 	}
@@ -1446,7 +1446,7 @@ func MemoryProviderToolsEnabled(ctx context.Context, env *tools.Env, enabled, di
 
 // Name of a tool in OpenAI function form
 func functionToolName(tool map[string]any) string {
-	fn, _ := pyjson.Dict(tool["function"])
+	fn, _ := jsonutil.AsMap(tool["function"])
 	name, _ := fn["name"].(string)
 	return name
 }

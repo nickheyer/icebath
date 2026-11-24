@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const peerReportingSession = "20260916_bot_chat"
@@ -27,7 +27,7 @@ func peerReportingRun(t *testing.T, base string, raiseOnPost, raiseOnSession err
 		return peerReportingSession, nil
 	})
 	if raiseOnPost != nil {
-		swapSeam(t, &peerRequest, func(context.Context, string, string, peerRequestOptions) (*pyjson.Object, error) {
+		swapSeam(t, &peerRequest, func(context.Context, string, string, peerRequestOptions) (*jsonutil.Object, error) {
 			return nil, raiseOnPost
 		})
 	}
@@ -42,7 +42,7 @@ func peerReportingRun(t *testing.T, base string, raiseOnPost, raiseOnSession err
 }
 
 func TestOnlyATimeoutOnAnAcceptedTurnIsReportedAsDelivered(t *testing.T) {
-	timedOut := func() error { return &peerOSError{class: "TimeoutError", text: "timed out"} }
+	timedOut := func() error { return &peerOSError{text: "timed out", timeout: true} }
 	cases := []struct {
 		id             string
 		raiseOnPost    error
@@ -52,9 +52,9 @@ func TestOnlyATimeoutOnAnAcceptedTurnIsReportedAsDelivered(t *testing.T) {
 	}{
 		{"response-timeout", timedOut(), nil, "accepted the message but its turn is still running", "Could not reach"},
 		{"connect-timeout", &peerURLError{timedOut()}, nil, "Could not reach peer", "still running"},
-		{"connection-refused", &peerURLError{&peerOSError{class: "ConnectionRefusedError", text: "[Errno 61] Connection refused"}}, nil,
+		{"connection-refused", &peerURLError{&peerOSError{text: "connect: connection refused"}}, nil,
 			"Could not reach peer", "still running"},
-		{"network-unreachable", &peerOSError{class: "OSError", text: "[Errno 51] Network is unreachable"}, nil, "Could not reach peer", "still running"},
+		{"network-unreachable", &peerOSError{text: "connect: network is unreachable"}, nil, "Could not reach peer", "still running"},
 		{"timeout-before-the-session-is-known", timedOut(), timedOut(), "Could not reach peer", "still running"},
 		{"http-rejection", &peerHTTPError{code: 503, msg: "Service Unavailable"}, nil, "rejected the request (HTTP 503)", "still running"},
 	}

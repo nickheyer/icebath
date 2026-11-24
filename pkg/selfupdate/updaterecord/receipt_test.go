@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Isolated ICEBATH_HOME with a fresh receipt scope
@@ -232,8 +232,8 @@ func rcFinishedArchive(t *testing.T, h, updateID string) map[string]any {
 func TestReceiptHandoffKeepsTheUpdateID(t *testing.T) {
 	ctx, h := rcHome(t)
 	BeginUpdateReceipt(ctx, nil, "")
-	preSwap := rcCurrent(ctx).Data.Copy()
-	updateID := preSwap.Vals["update_id"].(string)
+	preSwap := rcCurrent(ctx).Data.Clone()
+	updateID := preSwap.Value("update_id").(string)
 	inner := UpdateReceiptScope(ctx)
 	BeginUpdateReceipt(inner, preSwap, updateID)
 	FinalizeUpdateReceipt(inner, "success", nil, "")
@@ -244,7 +244,7 @@ func TestReceiptHandoffKeepsTheUpdateID(t *testing.T) {
 
 func TestReceiptLegacyHandoffKeepsItsUpdateID(t *testing.T) {
 	ctx, h := rcHome(t)
-	BeginUpdateReceipt(ctx, pyjson.ObjectOf("update_id", "abc123", "steps", []any{}), "abc123")
+	BeginUpdateReceipt(ctx, jsonutil.ObjectOf("update_id", "abc123", "steps", []any{}), "abc123")
 	FinalizeUpdateReceipt(ctx, "success", nil, "")
 	if payload := rcFinishedArchive(t, h, "abc123"); payload == nil {
 		t.Fatal("legacy handoff receipt was not archived under its update id")
@@ -275,8 +275,8 @@ func TestReceiptNestedBeginDoesNotReconcileLiveOuterReceipt(t *testing.T) {
 	FinalizePendingUpdateReceipt(ctx, rcExit(0), "")
 	restored := CurrentCorrelationID(ctx)
 	FinalizePendingUpdateReceipt(ctx, rcExit(0), "")
-	if before["outcome"] != "running" || restored == nil || *restored != outer.Vals["update_id"] {
-		t.Fatalf("outcome %v restored %v outer %v", before["outcome"], restored, outer.Vals["update_id"])
+	if before["outcome"] != "running" || restored == nil || *restored != outer.Value("update_id") {
+		t.Fatalf("outcome %v restored %v outer %v", before["outcome"], restored, outer.Value("update_id"))
 	}
 }
 
@@ -291,9 +291,9 @@ func TestReceiptWriterIdentityCannotResurrectAMismatchedOwner(t *testing.T) {
 		t.Fatal("child creation time unreadable")
 	}
 	pid := int64(child.Process.Pid)
-	same := pyjson.ObjectOf("pid", pid, "writer_pid", pid, "pid_create_time", *ct-60)
-	writer := pyjson.ObjectOf("pid", int64(0), "writer_pid", pid, "writer_create_time", *ct-60)
-	control := pyjson.ObjectOf("pid", pid, "writer_pid", pid, "pid_create_time", *ct)
+	same := jsonutil.ObjectOf("pid", pid, "writer_pid", pid, "pid_create_time", *ct-60)
+	writer := jsonutil.ObjectOf("pid", int64(0), "writer_pid", pid, "writer_create_time", *ct-60)
+	control := jsonutil.ObjectOf("pid", pid, "writer_pid", pid, "pid_create_time", *ct)
 	if ownerAlive(same) || ownerAlive(writer) || !ownerAlive(control) {
 		t.Fatalf("same %v writer %v control %v", ownerAlive(same), ownerAlive(writer), ownerAlive(control))
 	}
@@ -328,7 +328,7 @@ func TestReceiptCommandScopeRetainsOuterReceipt(t *testing.T) {
 	if FinalizePendingUpdateReceipt(scoped, rcExit(0), "") != "" {
 		t.Fatal("scope finalized twice")
 	}
-	if id := CurrentCorrelationID(ctx); id == nil || *id != outer || rcCurrent(ctx).Data.Vals["outcome"] != "running" {
+	if id := CurrentCorrelationID(ctx); id == nil || *id != outer || rcCurrent(ctx).Data.Value("outcome") != "running" {
 		t.Fatalf("outer receipt lost: %v", id)
 	}
 }
@@ -338,7 +338,7 @@ func TestReceiptCopiedContextFinalizeDoesNotMutateParent(t *testing.T) {
 	BeginUpdateReceipt(ctx, nil, "")
 	defer FinalizeUpdateReceipt(ctx, "success", nil, "")
 	FinalizePendingUpdateReceipt(CopyReceiptContext(ctx), rcExit(1), "child failed")
-	parent := rcCurrent(ctx).Data.Vals
+	parent := rcCurrent(ctx).Data.Map()
 	_, hasExit := parent["exit_code"]
 	_, hasStop := parent["stop_reason"]
 	if parent["outcome"] != "running" || hasExit || hasStop {
@@ -361,7 +361,7 @@ func TestReceiptFollowUpOnAnOpenRunIsRecordedOnceNotAmendedAgain(t *testing.T) {
 	BeginUpdateReceipt(ctx, nil, "")
 	run := rcCurrent(ctx).Data
 	archive := runFile(receiptDir(ctx), run)
-	id := run.Vals["update_id"].(string)
+	id := run.Value("update_id").(string)
 	if err := OweFollowup(ctx, &id, "channel_adoption", "remote refused", "the next `icebath update` adopts it again"); err != nil {
 		t.Fatal(err)
 	}
@@ -382,9 +382,9 @@ func TestReceiptFollowUpAfterTheRunClosedAmendsItsTerminalReceipt(t *testing.T) 
 	receiptStdout = &strings.Builder{}
 	t.Cleanup(func() { receiptStdout = os.Stdout })
 	BeginUpdateReceipt(ctx, nil, "")
-	run := rcCurrent(ctx).Data.Copy()
+	run := rcCurrent(ctx).Data.Clone()
 	FinalizeUpdateReceipt(ctx, "success", nil, "")
-	id := run.Vals["update_id"].(string)
+	id := run.Value("update_id").(string)
 	if err := OweFollowup(ctx, &id, "windows_resume", "Windows gateway recovery failed: boom", FollowupRetryDefault); err != nil {
 		t.Fatal(err)
 	}
@@ -549,7 +549,7 @@ func TestExportedReceiptStoreWrappersAnswerLikeTheirPrivateForms(t *testing.T) {
 	}
 	BeginUpdateReceipt(ctx, nil, "")
 	current := CurrentReceipt(ctx)
-	if current == nil || current.Data.Vals["outcome"] != "running" {
+	if current == nil || current.Data.Value("outcome") != "running" {
 		t.Fatalf("current %+v", current)
 	}
 	if RunFile(ReceiptDir(ctx), current.Data) != runFile(receiptDir(ctx), current.Data) {
@@ -566,12 +566,12 @@ func TestExportedReceiptStoreWrappersAnswerLikeTheirPrivateForms(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	obj, ok := loaded.(*pyjson.Object)
-	if !ok || obj.Vals["update_id"] != current.CorrelationID {
+	obj, ok := loaded.(*jsonutil.Object)
+	if !ok || obj.Value("update_id") != current.CorrelationID {
 		t.Fatalf("loaded %v", loaded)
 	}
 	latest := LatestReceiptObject(ctx)
-	if latest == nil || latest.Vals["update_id"] != current.CorrelationID {
+	if latest == nil || latest.Value("update_id") != current.CorrelationID {
 		t.Fatalf("latest %v", latest)
 	}
 	if OwnerAlive(latest) != ownerAlive(latest) || !OwnerAlive(latest) {

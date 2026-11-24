@@ -7,16 +7,16 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var (
 	// Captured run of a short systemctl probe, swapped by tests
-	systemdRunProbe = func(ctx context.Context, argv []string, timeout time.Duration) (*pysubprocess.Completed, error) {
-		return pysubprocess.RunWith(ctx, argv, pysubprocess.Options{Timeout: timeout})
+	systemdRunProbe = func(ctx context.Context, argv []string, timeout time.Duration) (*executil.Completed, error) {
+		return executil.Run(ctx, argv, executil.Options{Timeout: timeout})
 	}
 	systemdProcRoot = "/proc"
 )
@@ -32,7 +32,7 @@ func pidUnifiedCgroupEntries(pid int) []string {
 		return nil
 	}
 	var entries []string
-	for _, line := range textutil.Lines(pystr.DecodeUTF8SigReplace(raw)) {
+	for _, line := range textutil.Lines(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError))) {
 		if _, entry, found := strings.Cut(strings.TrimSpace(line), "::"); found {
 			entries = append(entries, entry)
 		}

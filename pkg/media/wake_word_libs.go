@@ -8,14 +8,14 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/internal/pvporcupine"
-	"github.com/nickheyer/icebath/pkg/internal/pyopenwakeword"
 	"github.com/nickheyer/icebath/pkg/internal/sherpaonnx"
 	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	wakewordutil "github.com/nickheyer/icebath/pkg/utils/wakeword"
 )
 
-// Directory of an installed Python package in its extra's environment, the import path or the selected environment, else ModuleNotFoundError
+// Directory of an installed Python package in its extra's environment, the import path or the selected environment, else a not installed error
 func wakeInstalledPackage(ctx context.Context, name string) (string, error) {
 	roots := append(pm.AnchorSitePackages(ctx, name), pm.ImportPathEntries()...)
 	venv, envErr := pm.SelectedVenv(ctx, pm.RepoRoot())
@@ -31,21 +31,21 @@ func wakeInstalledPackage(ctx context.Context, name string) (string, error) {
 			return dir, nil
 		}
 	}
-	return "", &WakeWordError{Class: "ModuleNotFoundError", Msg: "the Python package " + name + " is not installed in the wake word environment", Cause: envErr}
+	return "", &WakeWordError{Kind: errWakeNotInstalled, Msg: "the Python package " + name + " is not installed in the wake word environment", Cause: envErr}
 }
 
-type pyOpenWakeWordLib struct{ module *pyopenwakeword.Module }
+type openWakeWordLib struct{ bundle *wakewordutil.Bundle }
 
-func (l pyOpenWakeWordLib) FeaturesFromBuiltin() (owwFeatures, error) {
-	features, err := l.module.FeaturesFromBuiltin(nil, nil)
+func (l openWakeWordLib) FeaturesFromBuiltin() (owwFeatures, error) {
+	features, err := l.bundle.Features()
 	if err != nil {
 		return nil, err
 	}
 	return features, nil
 }
 
-func (l pyOpenWakeWordLib) ModelFromModel(modelPath string) (owwModel, error) {
-	model, err := l.module.FromModel(modelPath, nil)
+func (l openWakeWordLib) ModelFromModel(modelPath string) (owwModel, error) {
+	model, err := l.bundle.Model(modelPath)
 	if err != nil {
 		return nil, err
 	}
@@ -53,12 +53,12 @@ func (l pyOpenWakeWordLib) ModelFromModel(modelPath string) (owwModel, error) {
 }
 
 // pyopen_wakeword of the installed distribution over the tensorflowlite_c library it carries
-func importPyOpenWakeWord(ctx context.Context) (pyOpenWakeWordModule, error) {
+func importOpenWakeWord(ctx context.Context) (openWakeWordModule, error) {
 	dir, err := wakeInstalledPackage(ctx, "pyopen_wakeword")
 	if err != nil {
 		return nil, err
 	}
-	return pyOpenWakeWordLib{pyopenwakeword.Import(dir)}, nil
+	return openWakeWordLib{wakewordutil.NewBundle(dir)}, nil
 }
 
 type pvporcupineLib struct{ module *pvporcupine.Module }
@@ -154,7 +154,7 @@ var wakeSpeechEngine = func(ctx context.Context) (*sherpaonnx.Module, error) { r
 func importSherpaOnnx(ctx context.Context) (sherpaOnnxModule, error) {
 	module, err := wakeSpeechEngine(ctx)
 	if err != nil {
-		return nil, &WakeWordError{Class: "ImportError", Msg: err.Error(), Cause: err}
+		return nil, &WakeWordError{Kind: errWakeUnavailable, Msg: err.Error(), Cause: err}
 	}
 	return sherpaOnnxLib{module}, nil
 }
@@ -178,5 +178,6 @@ func LoadOpenWakeWordLibrary(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	return pyopenwakeword.Import(dir).LoadLibrary()
+	_, err = wakewordutil.NewBundle(dir).Runtime()
+	return err
 }

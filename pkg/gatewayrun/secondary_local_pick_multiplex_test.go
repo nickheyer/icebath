@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Root home and one named profile home with the loopback custom route as every profile's gateway config
@@ -98,8 +98,8 @@ func TestSecondaryPickReachesNextTurnAfterPrimaryLocalSession(t *testing.T) {
 	}
 	revision, _ := row.Get("runtime_revision")
 	generation, _ := row.Get("runtime_generation")
-	response, err := owner.Dispatch(ctx, pyjson.ObjectOf("id", int64(1), "method", "session.mutate", "params", pyjson.ObjectOf(
-		"session_id", ref.SessionID, "request_id", "pick", "operation", "model", "payload", pyjson.ObjectOf("model", "picked-b"),
+	response, err := owner.Dispatch(ctx, jsonutil.ObjectOf("id", int64(1), "method", "session.mutate", "params", jsonutil.ObjectOf(
+		"session_id", ref.SessionID, "request_id", "pick", "operation", "model", "payload", jsonutil.ObjectOf("model", "picked-b"),
 		"expected_revision", revision, "expected_generation", generation)))
 	if err != nil {
 		t.Fatal(err)

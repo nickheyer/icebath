@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Turn boundary restore bookkeeping kept between turns
@@ -47,7 +47,7 @@ func (p primaryRestoreRoute) matchesEntry(ctx context.Context, entry provider.Po
 func (p primaryRestoreRoute) loadPool(ctx context.Context) *provider.Pool {
 	requested := ""
 	if v := p.rt["requested_provider"]; v != nil {
-		requested = pyrepr.Str(v)
+		requested = anyutil.String(v)
 	}
 	loaded := provider.LoadRuntimePoolWith(agentPoolEnv(ctx), agentLoadPool, p.provider, p.baseURL, requested, p.rt)
 	if loaded != nil && p.matchesPool(ctx, loaded) {
@@ -65,16 +65,16 @@ func (a *AIAgent) restorePrimaryRuntime(ctx context.Context) (bool, error) {
 	}
 	rt := a.primaryRuntime
 	route := primaryRestoreRoute{rt: rt,
-		provider: strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(rt["provider"])))),
-		model:    strings.TrimSpace(pyrepr.Str(orEmpty(rt["model"]))),
-		baseURL:  pyrepr.Str(orEmpty(rt["base_url"]))}
+		provider: strings.ToLower(strings.TrimSpace(anyutil.String(anyutil.Or(rt["provider"], "")))),
+		model:    strings.TrimSpace(anyutil.String(anyutil.Or(rt["model"], ""))),
+		baseURL:  anyutil.String(anyutil.Or(rt["base_url"], ""))}
 	if route.model != "" && (isEntitlementRejected(ctx, a, route.provider, route.model) || provider.IsKnownNonChatModel(route.model)) {
 		return false, nil
 	}
 	if a.primaryQuotaReopenedEarly(ctx, route) {
 		a.rateLimitedUntil = 0
 	}
-	if a.rateLimitedUntil > pythread.Monotonic() {
+	if a.rateLimitedUntil > timeutil.Monotonic() {
 		return false, nil
 	}
 	blocked, prefetchedPool, prefetched := a.primaryResetGateBlocks(ctx, route)
@@ -187,7 +187,7 @@ func (a *AIAgent) primaryQuotaReopenedEarly(ctx context.Context, route primaryRe
 	if route.provider != "openai-codex" {
 		return false
 	}
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	if a.codexReopenChecked && now-a.codexReopenCheckedAt < provider.CodexQuotaProbeMinInterval.Seconds() {
 		return false
 	}

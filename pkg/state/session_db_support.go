@@ -8,7 +8,6 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const (
@@ -70,10 +69,10 @@ func deleteUnreferencedSystemPrompts(ctx context.Context, conn SQLiteConn) error
 }
 
 // Copies a session row, applying resolved prompt columns and lifting reset and branch markers from model_config
-func sessionRowDict(row *pyjson.Object) *pyjson.Object {
-	data := pyjson.NewObject()
-	for _, k := range row.Keys {
-		data.Set(k, row.Vals[k])
+func sessionRowDict(row *jsonutil.Object) *jsonutil.Object {
+	data := jsonutil.NewObject()
+	for _, k := range row.Keys() {
+		data.Set(k, row.Value(k))
 	}
 	for _, column := range []string{"system_prompt", "tool_names"} {
 		key := "_" + column + "_resolved"
@@ -90,18 +89,18 @@ func sessionRowDict(row *pyjson.Object) *pyjson.Object {
 		return data
 	}
 	raw, _ := data.Get("model_config")
-	var cfg *pyjson.Object
+	var cfg *jsonutil.Object
 	switch v := raw.(type) {
 	case string:
 		if v != "" {
-			if parsed, err := pyjson.Loads(v); err == nil {
-				cfg, _ = parsed.(*pyjson.Object)
+			if parsed, err := jsonutil.Decode(v); err == nil {
+				cfg, _ = parsed.(*jsonutil.Object)
 			}
 		}
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		cfg = v
 	case map[string]any:
-		cfg = pyjson.NewObject()
+		cfg = jsonutil.NewObject()
 		for k, val := range v {
 			cfg.Set(k, val)
 		}
@@ -113,7 +112,7 @@ func sessionRowDict(row *pyjson.Object) *pyjson.Object {
 		if current, _ := data.Get(key); pyTruthy(current) {
 			continue
 		}
-		if value, ok := cfg.Vals[key].(string); ok && strings.TrimSpace(value) != "" {
+		if value, ok := cfg.Value(key).(string); ok && strings.TrimSpace(value) != "" {
 			data.Set(key, strings.TrimSpace(value))
 		}
 	}

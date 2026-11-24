@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 func TestOpencodeGoAppearsWhenAPIKeySet(t *testing.T) {
@@ -59,7 +59,7 @@ func modelsDevOnlyListing(t *testing.T, envName, provider string, cached []strin
 	ctx, _ := pickerTestHome(t, nil)
 	t.Setenv(envName, "test-key")
 	pickerFetchModelsDevFn = func(context.Context, bool) map[string]any {
-		return map[string]any{provider: map[string]any{"env": []any{envName}, "name": pystr.Title(provider)}}
+		return map[string]any{provider: map[string]any{"env": []any{envName}, "name": textutil.Title(provider)}}
 	}
 	cachedProviderModelIDsFn = func(context.Context, string, CachedModelsOptions) []string { return cached }
 	saved := providerToModelsDev

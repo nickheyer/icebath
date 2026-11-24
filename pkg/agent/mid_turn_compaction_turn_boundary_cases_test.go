@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Engine whose compression verdict is a test closure and whose usage counters stay as the case set them
@@ -47,8 +47,8 @@ func toolLoopAgent(t *testing.T, script *thinkingScript, maxIterations int, tool
 	a.setBaseURL("https://openrouter.ai/api/v1")
 	a.DisableStreaming()
 	a.cachedSystemPrompt, a.usePromptCaching, a.saveTrajectories = "You are helpful.", false, false
-	schema := pyjson.ObjectOf("name", "web_search", "description", "s",
-		"parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf("query", pyjson.ObjectOf("type", "string"))))
+	schema := jsonutil.ObjectOf("name", "web_search", "description", "s",
+		"parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf("query", jsonutil.ObjectOf("type", "string"))))
 	reg := tools.NewRegistry()
 	reg.Register(tools.Def{Name: "web_search", Toolset: "web", Schema: schema, Handler: func(context.Context, *tools.Call) string { return toolResult }})
 	a.toolDispatcher = tools.NewDispatcher(reg)

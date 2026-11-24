@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Accepted stop the record could not checkpoint, aged past its TTL and orphaned, the acceptance kept beside the request
@@ -23,11 +23,11 @@ func paAcceptedUnrecorded(t *testing.T, homeWritable bool) (string, map[string]a
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := pyjson.Loads(string(raw))
+	loaded, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	accepted, _ := loaded.(*pyjson.Object).Get("accepted")
+	accepted, _ := loaded.(*jsonutil.Object).Get("accepted")
 	if homeWritable && accepted != nil || !homeWritable && accepted != true {
 		t.Fatalf("premise: receipt vs stamped request, accepted %v", accepted)
 	}
@@ -47,7 +47,7 @@ func paOwed(t *testing.T, pauseID any) map[string]any {
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-		if token := seToken(t, src); pyrepr.Equal(token["pause_id"], pauseID) {
+		if token := seToken(t, src); anyutil.Equal(token["pause_id"], pauseID) {
 			return token["profiles"].(map[string]any)
 		}
 	}

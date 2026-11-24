@@ -23,11 +23,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/media"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Seconds added to a clip's duration when sizing its playback timeout
@@ -102,7 +101,7 @@ func probeAudioDurationSeconds(ctx context.Context, audioPath string) *float64 {
 	if err := cmd.Run(); err != nil {
 		return nil
 	}
-	text, err := pystr.DecodeUTF8(stdout.Bytes())
+	text, err := textutil.DecodeUTF8(stdout.Bytes())
 	if err != nil {
 		return nil
 	}
@@ -110,7 +109,7 @@ func probeAudioDurationSeconds(ctx context.Context, audioPath string) *float64 {
 	if raw == "" {
 		return nil
 	}
-	seconds, err := pyint.ParseFloat(raw)
+	seconds, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
 		return nil
 	}
@@ -278,7 +277,7 @@ func (a *DiscordAdapter) PlayAckInVoice(ctx context.Context, guildID int, phrase
 	if present && isPath {
 		actual = path
 	}
-	if !pyrepr.Truthy(result["success"]) {
+	if !anyutil.IsTrue(result["success"]) {
 		return false, nil
 	}
 	if present && !isPath {
@@ -550,7 +549,7 @@ func (a *DiscordAdapter) GetUserVoiceChannel(ctx context.Context, guildID int64,
 	if userID == nil {
 		return nil, errors.New("no Discord user id was given to look up a voice channel for")
 	}
-	uid, err := pyint.Int64(*userID)
+	uid, err := anyutil.ToInt(*userID)
 	if err != nil {
 		return nil, err
 	}
@@ -729,11 +728,11 @@ func (a *DiscordAdapter) BindVoiceTextChannel(guildID, textChannelID int64) {
 }
 
 // Stores the source of the message that joined the guild's voice channel
-func (a *DiscordAdapter) SetVoiceSource(guildID int64, source *pyjson.Object) {
+func (a *DiscordAdapter) SetVoiceSource(guildID int64, source *jsonutil.Object) {
 	stored := map[string]any{}
 	if source != nil {
-		for _, k := range source.Keys {
-			stored[k] = source.Vals[k]
+		for _, k := range source.Keys() {
+			stored[k] = source.Value(k)
 		}
 	}
 	a.mu.Lock()

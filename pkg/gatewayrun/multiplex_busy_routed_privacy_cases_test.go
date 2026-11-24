@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/state"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // test_multiplex_busy_input_mode.py test_primary_adapter_busy_origin_uses_routed_privacy
@@ -54,8 +54,8 @@ func primaryAdapterBusyOriginUsesRoutedPrivacy(t *testing.T, mode string, second
 	on := true
 	r.config.MultiplexProfiles = &on
 	r.busyInputMode, r.busyTextMode = mode, "interrupt"
-	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
-	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	r.profileAdapters = orderedutil.NewMap[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]()
+	r.adapters = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	r.sessions = map[string]*SessionState{}
 	r.hooks = NewProfileHookRegistries()
 	r.config.ProfileRoutes = routesOf(t, map[string]any{"name": "research-chat", "platform": "telegram", "profile": "research", "chat_id": "chat-1"})

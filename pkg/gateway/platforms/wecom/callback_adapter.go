@@ -9,16 +9,12 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -32,6 +28,11 @@ const (
 	callbackMaxMessageLength    = 2048
 	callbackRequestTimeout      = 20 * time.Second
 	callbackDedupDefaultMaxSize = 2000
+)
+
+var (
+	errCallbackNotConnected = errors.New("WeCom callback adapter is not connected")
+	errAppWithoutName       = errors.New("WeCom callback app has no name")
 )
 
 // Wall clock seconds the access token expiry is measured on
@@ -87,7 +88,7 @@ func parseXML(text string) (*xmlElement, error) {
 		switch t := token.(type) {
 		case xml.Directive:
 			if bytes.Contains(bytes.ToUpper(t), []byte("<!ENTITY")) {
-				return nil, &pyErr{"EntitiesForbidden", "EntitiesForbidden(name='entity', system_id=None, public_id=None)"}
+				return nil, &pyErr{"EntitiesForbidden", "XML entity declarations are not allowed"}
 			}
 		case xml.StartElement:
 			elem := &xmlElement{tag: t.Name.Local}
@@ -202,22 +203,22 @@ func NewWecomCallbackAdapter(_ context.Context, cfg *gateway.PlatformConfig) (*W
 	if extra == nil {
 		extra = map[string]any{}
 	}
-	if rawHost := extra["host"]; pyrepr.Truthy(rawHost) {
-		host := pyrepr.Str(rawHost)
+	if rawHost := extra["host"]; anyutil.IsTrue(rawHost) {
+		host := anyutil.String(rawHost)
 		a.host = &host
 	}
 	var rawPort any = int64(callbackDefaultPort)
-	if v := extra["port"]; pyrepr.Truthy(v) {
+	if v := extra["port"]; anyutil.IsTrue(v) {
 		rawPort = v
 	}
-	port, err := pyint.Int64(rawPort)
+	port, err := anyutil.ToInt(rawPort)
 	if err != nil {
 		return nil, err
 	}
 	a.port = int(port)
 	a.path = callbackDefaultPath
-	if v := extra["path"]; pyrepr.Truthy(v) {
-		a.path = pyrepr.Str(v)
+	if v := extra["path"]; anyutil.IsTrue(v) {
+		a.path = anyutil.String(v)
 	}
 	a.apps = normalizeApps(extra)
 	return a, nil
@@ -236,7 +237,7 @@ func normalizeApps(extra map[string]any) []map[string]any {
 	if apps, ok := extra["apps"].([]any); ok && len(apps) > 0 {
 		out := []map[string]any{}
 		for _, raw := range apps {
-			if app, isDict := pyjson.Dict(raw); isDict {
+			if app, isDict := jsonutil.AsMap(raw); isDict {
 				copied := make(map[string]any, len(app))
 				for k, v := range app {
 					copied[k] = v
@@ -246,24 +247,24 @@ func normalizeApps(extra map[string]any) []map[string]any {
 		}
 		return out
 	}
-	if !pyrepr.Truthy(extra["corp_id"]) {
+	if !anyutil.IsTrue(extra["corp_id"]) {
 		return []map[string]any{}
 	}
-	return []map[string]any{{"name": pyrepr.Or(extra["name"], "default"), "corp_id": extraOr(extra, "corp_id", ""),
-		"corp_secret": extraOr(extra, "corp_secret", ""), "agent_id": pyrepr.Str(extraOr(extra, "agent_id", "")),
+	return []map[string]any{{"name": anyutil.Or(extra["name"], "default"), "corp_id": extraOr(extra, "corp_id", ""),
+		"corp_secret": extraOr(extra, "corp_secret", ""), "agent_id": anyutil.String(extraOr(extra, "agent_id", "")),
 		"token": extraOr(extra, "token", ""), "encoding_aes_key": extraOr(extra, "encoding_aes_key", "")}}
 }
 
-// str of an app field with its falsy value read as empty
+// Text of an app field, empty for an empty or missing value
 func appText(app map[string]any, key string) string {
-	if v := app[key]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := app[key]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
 
 // Name of an app for log lines, default when the key is absent
-func appLabel(app map[string]any) string { return pyrepr.Str(extraOr(app, "name", "default")) }
+func appLabel(app map[string]any) string { return anyutil.String(extraOr(app, "name", "default")) }
 
 // Binds or publishes the callback listener, starts the poll loop and refreshes every app token
 func (a *WecomCallbackAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
@@ -326,7 +327,7 @@ func (a *WecomCallbackAdapter) start(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			pkgLog().Warn(fmt.Sprintf("[WecomCallback] Initial token refresh failed for app '%s': %s", appLabel(app), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[WecomCallback] Initial token refresh failed for app '%s': %s", appLabel(app), err.Error()))
 		}
 	}
 	return nil
@@ -386,7 +387,7 @@ func (a *WecomCallbackAdapter) sendText(ctx context.Context, app map[string]any,
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		return gateway.SendResult{Success: false, Error: errText(err)}, nil
+		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	return result, nil
 }
@@ -394,16 +395,16 @@ func (a *WecomCallbackAdapter) sendText(ctx context.Context, app map[string]any,
 // One message/send exchange with the token retry, the error the caller turns into a failed result
 func (a *WecomCallbackAdapter) postText(ctx context.Context, app map[string]any, chatID, content string) (gateway.SendResult, error) {
 	var agentRaw any = int64(0)
-	if v := app["agent_id"]; pyrepr.Truthy(v) {
+	if v := app["agent_id"]; anyutil.IsTrue(v) {
 		agentRaw = v
 	}
-	agentID, err := pyint.Of(pyrepr.Str(agentRaw))
+	agentID, err := anyutil.ToInt(agentRaw)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
 	parts := strings.SplitN(chatID, ":", 2)
-	payload := obj("touser", parts[len(parts)-1], "msgtype", "text", "agentid", pyint.Value(agentID), "text", obj("content", content), "safe", int64(0))
-	body, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+	payload := obj("touser", parts[len(parts)-1], "msgtype", "text", "agentid", agentID, "text", obj("content", content), "safe", int64(0))
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
@@ -416,9 +417,9 @@ func (a *WecomCallbackAdapter) postText(ctx context.Context, app map[string]any,
 		client := a.httpClient
 		a.mu.Unlock()
 		if client == nil {
-			return gateway.SendResult{}, &pyErr{"AttributeError", "'NoneType' object has no attribute 'post'"}
+			return gateway.SendResult{}, errCallbackNotConnected
 		}
-		req, err := http.NewRequestWithContext(ctx, http.MethodPost, callbackSendURL+pyrepr.Str(token), bytes.NewReader([]byte(body)))
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, callbackSendURL+anyutil.String(token), bytes.NewReader([]byte(body)))
 		if err != nil {
 			return gateway.SendResult{}, err
 		}
@@ -427,9 +428,9 @@ func (a *WecomCallbackAdapter) postText(ctx context.Context, app map[string]any,
 		if err != nil {
 			return gateway.SendResult{}, err
 		}
-		errcode := data.Vals["errcode"]
-		if (pyjson.Equal(errcode, int64(40001)) || pyjson.Equal(errcode, int64(42001))) && attempt == 0 {
-			pkgLog().Warn(fmt.Sprintf("[WecomCallback] Token rejected for app '%s' (errcode=%s), refreshing", appLabel(app), pyrepr.Str(errcode)))
+		errcode := data.Value("errcode")
+		if (anyutil.Equal(errcode, int64(40001)) || anyutil.Equal(errcode, int64(42001))) && attempt == 0 {
+			pkgLog().Warn(fmt.Sprintf("[WecomCallback] Token rejected for app '%s' (errcode=%s), refreshing", appLabel(app), anyutil.String(errcode)))
 			name, err := appName(app)
 			if err != nil {
 				return gateway.SendResult{}, err
@@ -439,52 +440,48 @@ func (a *WecomCallbackAdapter) postText(ctx context.Context, app map[string]any,
 			a.mu.Unlock()
 			continue
 		}
-		if errcode != nil && pyjson.Equal(errcode, int64(0)) {
-			return gateway.SendResult{Success: true, MessageID: pyrepr.Str(getOr(data, "msgid", "")), RawResponse: data}, nil
+		if errcode != nil && anyutil.Equal(errcode, int64(0)) {
+			return gateway.SendResult{Success: true, MessageID: anyutil.String(getOr(data, "msgid", "")), RawResponse: data}, nil
 		}
-		return gateway.SendResult{Success: false, Error: pyrepr.Str(data)}, nil
+		return gateway.SendResult{Success: false, Error: anyutil.String(data)}, nil
 	}
 	return gateway.SendResult{Success: false, Error: "send failed after token refresh"}, nil
 }
 
-// Sends a request and decodes its JSON object body, the AttributeError a non object body raises on get
-func callbackJSON(client *http.Client, req *http.Request) (*pyjson.Object, error) {
-	resp, err := pyhttpx.Do(client, req, callbackRequestTimeout)
+// Sends a request and decodes its JSON object body, an error for a body that is not an object
+func callbackJSON(client *http.Client, req *http.Request) (*jsonutil.Object, error) {
+	resp, err := httputil.Do(client, req, httputil.EachPhase(callbackRequestTimeout))
 	if err != nil {
 		if req.Context().Err() != nil {
 			return nil, req.Context().Err()
 		}
-		var te *pyhttpx.TimeoutError
-		if errors.As(err, &te) {
-			return nil, &pyErr{"ReadTimeout", ""}
-		}
-		return nil, &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+		return nil, err
 	}
 	decoded, err := resp.JSON()
 	if err != nil {
 		return nil, err
 	}
-	data, ok := decoded.(*pyjson.Object)
+	data, ok := decoded.(*jsonutil.Object)
 	if !ok || data == nil {
-		return nil, &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))}
+		return nil, fmt.Errorf("WeCom response is not a JSON object: got %s", anyutil.Kind(decoded))
 	}
 	return data, nil
 }
 
-// Name of an app as its token cache key, the KeyError of an app without one
+// Name of an app as its token cache key, an error for an app without one
 func appName(app map[string]any) (string, error) {
 	name, ok := app["name"]
 	if !ok {
-		return "", &pyErr{"KeyError", "'name'"}
+		return "", errAppWithoutName
 	}
-	return pyrepr.Str(name), nil
+	return anyutil.String(name), nil
 }
 
 // App that last heard from the chat, a bare user id matching only a unique corp scoped key, else the first app
 func (a *WecomCallbackAdapter) resolveAppForChat(chatID string) (map[string]any, error) {
 	a.mu.Lock()
 	appName := a.userAppMap[chatID]
-	if !pyrepr.Truthy(appName) && !strings.Contains(chatID, ":") {
+	if !anyutil.IsTrue(appName) && !strings.Contains(chatID, ":") {
 		var matching []string
 		for k := range a.userAppMap {
 			if strings.HasSuffix(k, ":"+chatID) {
@@ -500,7 +497,7 @@ func (a *WecomCallbackAdapter) resolveAppForChat(chatID string) (map[string]any,
 		return app, nil
 	}
 	if len(a.apps) == 0 {
-		return nil, &pyErr{"IndexError", "list index out of range"}
+		return nil, errors.New("no WeCom callback app is configured")
 	}
 	return a.apps[0], nil
 }
@@ -571,7 +568,7 @@ func (a *WecomCallbackAdapter) handleCallback(ctx context.Context, request *gate
 		if event.Source != nil && event.Source.UserID != nil && *event.Source.UserID != "" {
 			name, ok := app["name"]
 			if !ok {
-				pkgLog().Error("[WecomCallback] Error handling message", "error", &pyErr{"KeyError", "'name'"})
+				pkgLog().Error("[WecomCallback] Error handling message", "error", errAppWithoutName)
 				break
 			}
 			a.mu.Lock()
@@ -618,7 +615,7 @@ func decryptRequest(app map[string]any, body, msgSignature, timestamp, nonce str
 	if err != nil {
 		return "", err
 	}
-	return pystr.DecodeUTF8(raw)
+	return textutil.DecodeUTF8(raw)
 }
 
 // Text event of a decrypted callback, a bare event becoming the start command and lifecycle events dropped
@@ -635,7 +632,7 @@ func (a *WecomCallbackAdapter) buildEvent(ctx context.Context, app map[string]an
 		return nil, nil
 	}
 	userID := root.findtext("FromUserName", "")
-	corpID := root.findtext("ToUserName", pyrepr.Str(extraOr(app, "corp_id", "")))
+	corpID := root.findtext("ToUserName", anyutil.String(extraOr(app, "corp_id", "")))
 	content := strings.TrimSpace(root.findtext("Content", ""))
 	if content == "" && msgType == "event" {
 		content = "/start"
@@ -657,11 +654,11 @@ func cryptForApp(app map[string]any) (*WXBizMsgCrypt, error) {
 
 // App configured under a name, nil for a blank name or no match
 func (a *WecomCallbackAdapter) getAppByName(name any) map[string]any {
-	if !pyrepr.Truthy(name) {
+	if !anyutil.IsTrue(name) {
 		return nil
 	}
 	for _, app := range a.apps {
-		if pyrepr.Equal(app["name"], name) {
+		if anyutil.Equal(app["name"], name) {
 			return app
 		}
 	}
@@ -683,23 +680,15 @@ func (a *WecomCallbackAdapter) getAccessToken(ctx context.Context, app map[strin
 	return a.refreshAccessToken(ctx, app)
 }
 
-// Query text of a parameter value, empty for None
-func paramText(v any) string {
-	if v == nil {
-		return ""
-	}
-	return pyrepr.Str(v)
-}
-
-// Fetches and caches a fresh access token of an app, a RuntimeError when WeCom refuses
+// Fetches and caches a fresh access token of an app, an error when WeCom refuses
 func (a *WecomCallbackAdapter) refreshAccessToken(ctx context.Context, app map[string]any) (any, error) {
 	a.mu.Lock()
 	client := a.httpClient
 	a.mu.Unlock()
 	if client == nil {
-		return nil, &pyErr{"AttributeError", "'NoneType' object has no attribute 'get'"}
+		return nil, errCallbackNotConnected
 	}
-	rawURL := pyhttpx.MergeParams(callbackTokenURL, pyhttpx.Params{{"corpid", paramText(app["corp_id"])}, {"corpsecret", paramText(app["corp_secret"])}})
+	rawURL := httputil.MergeQuery(callbackTokenURL, url.Values{"corpid": {anyutil.String(app["corp_id"])}, "corpsecret": {anyutil.String(app["corp_secret"])}})
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, err
@@ -708,14 +697,14 @@ func (a *WecomCallbackAdapter) refreshAccessToken(ctx context.Context, app map[s
 	if err != nil {
 		return nil, err
 	}
-	if errcode := data.Vals["errcode"]; errcode == nil || !pyjson.Equal(errcode, int64(0)) {
-		return nil, runtimeError("WeCom token refresh failed: " + pyrepr.Str(data))
+	if errcode := data.Value("errcode"); errcode == nil || !anyutil.Equal(errcode, int64(0)) {
+		return nil, runtimeError("WeCom token refresh failed: " + anyutil.String(data))
 	}
-	token, ok := data.Vals["access_token"]
+	token, ok := data.Get("access_token")
 	if !ok {
-		return nil, &pyErr{"KeyError", "'access_token'"}
+		return nil, errors.New("WeCom token response has no access_token")
 	}
-	expiresIn, err := pyint.Int64(getOr(data, "expires_in", int64(accessTokenTTLSeconds)))
+	expiresIn, err := anyutil.ToInt(getOr(data, "expires_in", int64(accessTokenTTLSeconds)))
 	if err != nil {
 		return nil, err
 	}
@@ -726,6 +715,6 @@ func (a *WecomCallbackAdapter) refreshAccessToken(ctx context.Context, app map[s
 	a.mu.Lock()
 	a.accessTokens[name] = accessToken{token: token, expiresAt: callbackNow() + float64(expiresIn)}
 	a.mu.Unlock()
-	pkgLog().Info(fmt.Sprintf("[WecomCallback] Token refreshed for app '%s' (corp=%s), expires in %ds", appLabel(app), pyrepr.Str(extraOr(app, "corp_id", "")), expiresIn))
+	pkgLog().Info(fmt.Sprintf("[WecomCallback] Token refreshed for app '%s' (corp=%s), expires in %ds", appLabel(app), anyutil.String(extraOr(app, "corp_id", "")), expiresIn))
 	return token, nil
 }

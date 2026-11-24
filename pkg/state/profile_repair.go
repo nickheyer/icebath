@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -62,7 +62,7 @@ func (e *SessionLedgeredError) PyTypeName() string { return "SessionLedgeredErro
 
 // Crossed profile identity findings of one store, a row possibly in more than one list
 type CrossedProfileSessions struct {
-	Mislabelled, Foreign, CrossedParents []*pyjson.Object
+	Mislabelled, Foreign, CrossedParents []*jsonutil.Object
 }
 
 // Keyed session rows whose identity disagrees with itself or with the owner of this store
@@ -78,7 +78,7 @@ func (d *SessionDB) FindCrossedProfileSessions(ctx context.Context, owner string
 	if err != nil {
 		return nil, err
 	}
-	found := &CrossedProfileSessions{Mislabelled: []*pyjson.Object{}, Foreign: []*pyjson.Object{}, CrossedParents: []*pyjson.Object{}}
+	found := &CrossedProfileSessions{Mislabelled: []*jsonutil.Object{}, Foreign: []*jsonutil.Object{}, CrossedParents: []*jsonutil.Object{}}
 	for _, row := range rows {
 		keyProfile, ok := SessionKeyProfile(rowValue(row, "session_key"))
 		if !ok {
@@ -86,17 +86,17 @@ func (d *SessionDB) FindCrossedProfileSessions(ctx context.Context, owner string
 		}
 		id := rowValue(row, "id")
 		if label, labelled := storedProfile(rowValue(row, "profile_name")); labelled && label != keyProfile {
-			found.Mislabelled = append(found.Mislabelled, pyjson.ObjectOf("id", id, "session_key", rowValue(row, "session_key"),
+			found.Mislabelled = append(found.Mislabelled, jsonutil.ObjectOf("id", id, "session_key", rowValue(row, "session_key"),
 				"profile_name", label, "key_profile", keyProfile))
 		}
 		if keyProfile != owner {
 			count, _ := exactInt(rowValue(row, "message_count"))
-			found.Foreign = append(found.Foreign, pyjson.ObjectOf("id", id, "session_key", rowValue(row, "session_key"),
+			found.Foreign = append(found.Foreign, jsonutil.ObjectOf("id", id, "session_key", rowValue(row, "session_key"),
 				"key_profile", keyProfile, "message_count", count, "parent_session_id", rowValue(row, "parent_session_id"),
 				"ledgered", ledgered[pyStr(id)]))
 		}
 		if parentProfile, ok := SessionKeyProfile(rowValue(row, "parent_session_key")); ok && parentProfile != keyProfile {
-			found.CrossedParents = append(found.CrossedParents, pyjson.ObjectOf("id", id, "key_profile", keyProfile,
+			found.CrossedParents = append(found.CrossedParents, jsonutil.ObjectOf("id", id, "key_profile", keyProfile,
 				"parent_session_id", rowValue(row, "parent_session_id"), "parent_profile", parentProfile))
 		}
 	}
@@ -129,7 +129,7 @@ func (d *SessionDB) ledgeredSessionIDs(ctx context.Context) (map[string]bool, er
 				return err
 			}
 			for _, row := range rows {
-				ids[pyStr(rowValue(row, row.Keys[0]))] = true
+				ids[pyStr(rowValue(row, row.Keys()[0]))] = true
 			}
 		}
 		return nil
@@ -138,13 +138,13 @@ func (d *SessionDB) ledgeredSessionIDs(ctx context.Context) (map[string]bool, er
 }
 
 // Every gateway routing row ordered by scope and key
-func (d *SessionDB) ListGatewayRoutingRows(ctx context.Context) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListGatewayRoutingRows(ctx context.Context) ([]*jsonutil.Object, error) {
 	return d.readAll(ctx, "SELECT scope, session_key, entry_json, updated_at FROM gateway_routing ORDER BY scope, session_key")
 }
 
 // Telegram topic bindings labelled default whose session key names a named profile
-func (d *SessionDB) FindProfileLessTelegramTopicRows(ctx context.Context) ([]*pyjson.Object, error) {
-	var rows []*pyjson.Object
+func (d *SessionDB) FindProfileLessTelegramTopicRows(ctx context.Context) ([]*jsonutil.Object, error) {
+	var rows []*jsonutil.Object
 	err := d.readRetryingIOErr(ctx, func(conn SQLiteConn) error {
 		rows = nil
 		existing, err := queryObjects(ctx, conn, "SELECT name FROM sqlite_master WHERE type='table' AND name = 'telegram_dm_topic_bindings'")
@@ -162,10 +162,10 @@ func (d *SessionDB) FindProfileLessTelegramTopicRows(ctx context.Context) ([]*py
 	if err != nil {
 		return nil, err
 	}
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	for _, row := range rows {
 		if keyProfile, ok := SessionKeyProfile(rowValue(row, "session_key")); ok && keyProfile != "default" {
-			labelled := row.Copy()
+			labelled := row.Clone()
 			labelled.Set("key_profile", keyProfile)
 			out = append(out, labelled)
 		}
@@ -179,7 +179,7 @@ func (d *SessionDB) CountMessagesAll(ctx context.Context, sessionID string) (int
 	if err != nil || row == nil {
 		return 0, err
 	}
-	n, _ := exactInt(row.Vals[row.Keys[0]])
+	n, _ := exactInt(row.Value(row.Keys()[0]))
 	return int(n), nil
 }
 
@@ -248,11 +248,11 @@ func (d *SessionDB) SeverCrossedParents(ctx context.Context, ids []string) (int6
 
 // Everything a target store needs to hold a session as its own, every message generation included
 type SessionMovePayload struct {
-	Session      *pyjson.Object
+	Session      *jsonutil.Object
 	SystemPrompt any
 	ToolPin      any
-	Messages     []*pyjson.Object
-	Usage        []*pyjson.Object
+	Messages     []*jsonutil.Object
+	Usage        []*jsonutil.Object
 }
 
 // Move payload of a session, nil when absent, refused for a row the gateway ledger references
@@ -309,7 +309,7 @@ func (d *SessionDB) ExportSessionForMove(ctx context.Context, sessionID string) 
 
 // Inserts a moved session into this store as profile's own, present when the id already exists else imported
 func (d *SessionDB) ImportMovedSession(ctx context.Context, payload *SessionMovePayload, profileName string) (string, error) {
-	session := payload.Session.Copy()
+	session := payload.Session.Clone()
 	sessionID := pyStr(rowValue(session, "id"))
 	outcome := ""
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
@@ -358,14 +358,14 @@ func (d *SessionDB) ImportMovedSession(ctx context.Context, payload *SessionMove
 			return err
 		}
 		for _, message := range payload.Messages {
-			moved := message.Copy()
+			moved := message.Clone()
 			moved.Set("session_id", sessionID)
 			if err := insertRow(ctx, conn, "messages", moved, messageMoveSkip); err != nil {
 				return err
 			}
 		}
 		for _, usage := range payload.Usage {
-			moved := usage.Copy()
+			moved := usage.Clone()
 			moved.Set("session_id", sessionID)
 			if err := insertRow(ctx, conn, "session_model_usage", moved, nil); err != nil {
 				return err
@@ -378,7 +378,7 @@ func (d *SessionDB) ImportMovedSession(ctx context.Context, payload *SessionMove
 }
 
 // Inserts the values the table declares, skipping the named columns and any the target schema lacks
-func insertRow(ctx context.Context, conn SQLiteConn, table string, values *pyjson.Object, skip map[string]bool) error {
+func insertRow(ctx context.Context, conn SQLiteConn, table string, values *jsonutil.Object, skip map[string]bool) error {
 	declared, err := tableColumns(ctx, conn, table)
 	if err != nil {
 		return err
@@ -501,8 +501,8 @@ func (d *SessionDB) InsertGatewayRoutingRowsIfAbsent(ctx context.Context, rows [
 }
 
 // Stamps the key's profile onto default labelled topic bindings and lone mode rows, duplicates removed
-func (d *SessionDB) RelabelTelegramTopicRows(ctx context.Context, rows []*pyjson.Object) (*pyjson.Object, error) {
-	counts := pyjson.ObjectOf("bindings_relabelled", int64(0), "bindings_duplicates_removed", int64(0), "mode_rows_relabelled", int64(0))
+func (d *SessionDB) RelabelTelegramTopicRows(ctx context.Context, rows []*jsonutil.Object) (*jsonutil.Object, error) {
+	counts := jsonutil.ObjectOf("bindings_relabelled", int64(0), "bindings_duplicates_removed", int64(0), "mode_rows_relabelled", int64(0))
 	if len(rows) == 0 {
 		return counts, nil
 	}
@@ -512,7 +512,7 @@ func (d *SessionDB) RelabelTelegramTopicRows(ctx context.Context, rows []*pyjson
 		counts.Set(key, value+n)
 	}
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
-		counts = pyjson.ObjectOf("bindings_relabelled", int64(0), "bindings_duplicates_removed", int64(0), "mode_rows_relabelled", int64(0))
+		counts = jsonutil.ObjectOf("bindings_relabelled", int64(0), "bindings_duplicates_removed", int64(0), "mode_rows_relabelled", int64(0))
 		modeColumns, err := tableColumns(ctx, conn, "telegram_dm_topic_mode")
 		if err != nil {
 			return err

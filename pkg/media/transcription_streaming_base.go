@@ -3,7 +3,7 @@ package media
 import (
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -15,8 +15,8 @@ const (
 )
 
 // Ordered JSON object from alternating keys and values
-func jsonObject(pairs ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func jsonObject(pairs ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i < len(pairs); i += 2 {
 		o.Set(pairs[i].(string), pairs[i+1])
 	}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -31,7 +31,7 @@ func agentCustomProviderEntries(a *AIAgent) []map[string]any {
 func answerInReasoningCapability(ctx context.Context, a *AIAgent) bool {
 	baseURL := a.baseURL
 	prov := strings.ToLower(strings.TrimSpace(a.provider))
-	if hostMatches, _ := pyurl.BaseURLHostMatches(baseURL, "openrouter.ai"); prov == "openrouter" || hostMatches {
+	if hostMatches, _ := urlutil.BaseHostMatches(baseURL, "openrouter.ai"); prov == "openrouter" || hostMatches {
 		return false
 	}
 	if mode := strings.ToLower(strings.TrimSpace(a.apiMode)); mode != "" && mode != "chat_completions" {

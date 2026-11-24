@@ -7,19 +7,19 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Skin names with their description, else their source, the /skin completion rows
 func LiveSkinRows(ctx context.Context) []NameMeta {
 	var rows []NameMeta
 	for _, s := range config.ListSkins(ctx) {
-		meta := pyrepr.Str(s.Description)
-		if !pyrepr.Truthy(s.Description) {
+		meta := anyutil.String(s.Description)
+		if !anyutil.IsTrue(s.Description) {
 			meta = s.Source
 		}
-		rows = append(rows, NameMeta{pyrepr.Str(s.Name), meta})
+		rows = append(rows, NameMeta{anyutil.String(s.Name), meta})
 	}
 	return rows
 }
@@ -56,8 +56,8 @@ func LiveConnectedPlatforms(ctx context.Context) []PlatformHome {
 	var out []PlatformHome
 	for _, p := range gw.GetConnectedPlatforms(ctx) {
 		row := PlatformHome{Name: string(p)}
-		if h := gw.GetHomeChannel(p); h != nil && pyrepr.Truthy(h.Name) {
-			row.Home = pyrepr.Str(h.Name)
+		if h := gw.GetHomeChannel(p); h != nil && anyutil.IsTrue(h.Name) {
+			row.Home = anyutil.String(h.Name)
 		}
 		out = append(out, row)
 	}

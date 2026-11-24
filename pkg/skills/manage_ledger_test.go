@@ -20,8 +20,8 @@ func manageLedgerRows(t *testing.T, s *Scope, skill string) []map[string]any {
 	out := make([]map[string]any, 0, len(rows))
 	for _, r := range rows {
 		m := map[string]any{}
-		for _, k := range r.Keys {
-			m[k] = r.Vals[k]
+		for _, k := range r.Keys() {
+			m[k] = r.Value(k)
 		}
 		out = append(out, m)
 	}

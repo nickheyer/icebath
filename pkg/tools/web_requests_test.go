@@ -5,53 +5,56 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 func TestKeenableTransportFailuresUseRequestsText(t *testing.T) {
 	ln, _ := net.Listen("tcp", "127.0.0.1:0")
 	addr := ln.Addr().String()
 	ln.Close()
-	port := addr[strings.LastIndex(addr, ":")+1:]
 	setVar(t, &keenableAPIURL, "http://"+addr)
 	env := httpxProviderEnv(t, "KEENABLE_API_KEY=kn\n", nil)
 	resp, _ := keenableP().Search(context.Background(), env, "q", 5)
-	want := fmt.Sprintf(`Keenable search failed: HTTPConnectionPool(host='127.0.0.1', port=%s): Max retries exceeded with url: /v1/search (Caused by NewConnectionError("HTTPConnection(host='127.0.0.1', port=%s): Failed to establish a new connection: [Errno 111] Connection refused"))`, port, port)
+	want := fmt.Sprintf(`Keenable search failed: Post "http://%s/v1/search": dial tcp %s: connect: connection refused`, addr, addr)
 	if resp.Error != want {
 		t.Fatalf("search %q", resp.Error)
 	}
 	pages, _ := keenableP().Extract(context.Background(), env, []string{"https://a.example/x"}, "")
-	if len(pages) != 1 || !strings.HasPrefix(pages[0].Error, "Keenable extract failed: HTTPConnectionPool(host='127.0.0.1', port="+port+"): Max retries exceeded with url: /v1/fetch?url=https%3A%2F%2Fa.example%2Fx (Caused by NewConnectionError(") {
+	if len(pages) != 1 || !strings.HasPrefix(pages[0].Error, `Keenable extract failed: Get "http://`+addr+`/v1/fetch?url=https%3A%2F%2Fa.example%2Fx": dial tcp `+addr+": ") {
 		t.Fatalf("extract %+v", pages)
 	}
 }
 
 func TestExaTypedTimeouts(t *testing.T) {
-	tm := pyrequests.Seconds(600.0)
-	refused := &pyrequests.Error{Class: "ConnectionError", Text: "pool: refused", Reason: "NewConnectionError"}
-	var re *pyrequests.Error
-	if err := exaTypedTimeouts(refused, tm, time.Second); !errors.As(err, &re) || re != refused {
-		t.Fatalf("quick refusal stays a ConnectionError %v", err)
+	tm := httputil.EachPhase(600 * time.Second)
+	target := exaBaseURL + "/search"
+	refused := &url.Error{Op: "Post", URL: target, Err: &net.OpError{Op: "dial", Net: "tcp", Err: syscall.ECONNREFUSED}}
+	if err := exaTypedTimeouts(refused, tm, time.Second); err != error(refused) {
+		t.Fatalf("quick refusal stays the dial error %v", err)
 	}
 	err := exaTypedTimeouts(refused, tm, 600*time.Second)
-	if !errors.As(err, &re) || re.Class != "ExaTimeoutError" || re.Text != "Connect timed out. (connect timeout=600.0) The last address tried failed with: pool: refused" {
-		t.Fatalf("failover %+v", re)
+	var xe *exaTimeoutError
+	if !errors.As(err, &xe) || !errors.Is(err, syscall.ECONNREFUSED) || err.Error() != "connect timed out after 10m0s, the last address tried failed with: "+refused.Error() {
+		t.Fatalf("failover %v", err)
 	}
-	dns := &pyrequests.Error{Class: "ConnectionError", Text: "pool: dns", Reason: "NameResolutionError", DNS: true}
-	if err := exaTypedTimeouts(dns, tm, 700*time.Second); !errors.As(err, &re) || re != dns {
+	dns := &url.Error{Op: "Post", URL: target, Err: &net.OpError{Op: "dial", Net: "tcp", Err: &net.DNSError{Err: "no such host", Name: "api.exa.ai", IsNotFound: true}}}
+	if err := exaTypedTimeouts(dns, tm, 700*time.Second); err != error(dns) {
 		t.Fatalf("dns stays %v", err)
 	}
-	for _, e := range []*pyrequests.Error{{Class: "ReadTimeout", Text: "r"}, {Class: "ConnectionError", Reason: "ReadTimeoutError", Text: "b"}, {Class: "ConnectTimeout", Text: "c"}} {
-		if err := exaTypedTimeouts(e, tm, 0); !errors.As(err, &re) || re.Class != "ExaTimeoutError" || re.Text != e.Text {
-			t.Fatalf("typed %+v", re)
+	for _, phase := range []string{httputil.PhaseRead, httputil.PhaseConnect} {
+		timedOut := &url.Error{Op: "Post", URL: target, Err: &httputil.TimeoutError{Phase: phase, Limit: 600 * time.Second}}
+		if err := exaTypedTimeouts(timedOut, tm, 0); !errors.As(err, &xe) || err.Error() != timedOut.Error() {
+			t.Fatalf("typed %s %v", phase, err)
 		}
 	}
 	plain := errors.New("x")
 	if exaTypedTimeouts(plain, tm, 0) != plain {
-		t.Fatal("non requests errors pass through")
+		t.Fatal("non transport errors pass through")
 	}
 }

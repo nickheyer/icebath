@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/botdesktop"
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Bot Desktop runtime seams the screen tests swap
@@ -27,12 +27,12 @@ var (
 	screenGetpass         = provider.Getpass
 )
 
-// Field of a dataclass optional rendered the way an f-string prints it, None for a nil pointer
+// Text of an optional status field, unknown when it is unset
 func screenText[T any](p *T) string {
 	if p == nil {
-		return "None"
+		return "unknown"
 	}
-	return pyrepr.Str(*p)
+	return anyutil.String(*p)
 }
 
 // Installed, running and control state of this profile screen, as JSON with the redacted lease or as text
@@ -45,7 +45,7 @@ func screenStatusCmd(_ context.Context, cli *ComputerUseCLI, ns ComputerUseArgs)
 	if ns.JSON {
 		payload := st.AsDict()
 		payload.Set("lease", botdesktop.LeasePublicView(botdesktop.LeaseGet(key)))
-		text, err := pyjson.Dumps(payload, pyjson.Indent(2), pyjson.SortKeys(true))
+		text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.SortKeys())
 		if err != nil {
 			return 0, err
 		}
@@ -71,8 +71,8 @@ func screenStatusCmd(_ context.Context, cli *ComputerUseCLI, ns ComputerUseArgs)
 	if st.Running {
 		holder := botdesktop.LeasePublicView(botdesktop.LeaseGet(key))
 		who := "agent"
-		if pyrepr.Str(cuGet(holder, "holder")) == botdesktop.LeaseHuman {
-			who = "human (viewer " + pyrepr.Str(cuGet(holder, "viewer_hash")) + ")"
+		if anyutil.String(cuGet(holder, "holder")) == botdesktop.LeaseHuman {
+			who = "human (viewer " + anyutil.String(cuGet(holder, "viewer_hash")) + ")"
 		}
 		cli.printf("Bot Desktop [%s]: running on DISPLAY %s (%s), pid %s\n", st.Profile, screenText(st.Display), st.Geometry, screenText(st.PID))
 		cli.printf("  control: %s   rfb socket: %s\n", who, screenText(st.Socket))

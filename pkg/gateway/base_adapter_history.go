@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const historyMediaLookupMaxWorkers = 2
@@ -25,7 +25,7 @@ var (
 		`flac|epub|pdf|zip|rar|7z|docx?|xlsx?|pptx?|` +
 		`txt|csv|apk|ipa))`)
 	threePlusNewlinesRE = regexp.MustCompile(`\n{3,}`)
-	localFileExpanduser = pypath.Expanduser
+	localFileExpanduser = pathutil.ExpandUser
 	localFileIsFile     = func(p string) bool {
 		info, err := os.Stat(p)
 		return err == nil && info.Mode().IsRegular()
@@ -75,8 +75,8 @@ func collectHistoryMediaPaths(ctx context.Context, history []any) (map[string]st
 		}
 		contentV, _ := dictGet(msg, "content")
 		content := ""
-		if pyrepr.Truthy(contentV) {
-			content = pyrepr.Str(contentV)
+		if anyutil.IsTrue(contentV) {
+			content = anyutil.String(contentV)
 		}
 		if strings.Contains(content, "MEDIA:") {
 			if err := addTextMediaPaths(content); err != nil {
@@ -88,21 +88,21 @@ func collectHistoryMediaPaths(ctx context.Context, history []any) (map[string]st
 			continue
 		}
 		cid := ""
-		if v, err := firstTruthy(msg, "tool_call_id", "call_id"); err == nil && pyrepr.Truthy(v) {
-			cid = pyrepr.Str(v)
+		if v, err := firstTruthy(msg, "tool_call_id", "call_id"); err == nil && anyutil.IsTrue(v) {
+			cid = anyutil.String(v)
 		}
 		if toolNames[cid] != "image_generate" {
 			continue
 		}
-		payload, err := pyjson.Loads(content)
+		payload, err := jsonutil.Decode(content)
 		if err != nil {
 			continue
 		}
-		obj, ok := payload.(*pyjson.Object)
+		obj, ok := payload.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
-		if success, _ := obj.Get("success"); !pyrepr.Truthy(success) {
+		if success, _ := obj.Get("success"); !anyutil.IsTrue(success) {
 			continue
 		}
 		for _, field := range jsonMediaToolPathFields {

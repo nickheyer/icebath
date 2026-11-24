@@ -1,14 +1,14 @@
 package tools
 
 import (
+	"html"
 	"strings"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -120,7 +120,7 @@ func StripMarkdownForTTS(text string) string {
 	if text == "" {
 		return ""
 	}
-	text = pyhtml.Unescape(text)
+	text = html.UnescapeString(text)
 	text = ttsSubLiteral(ttsMDCodeBlockRe, text, " ")
 	text = ttsSub(ttsMDImageRe, text, func(m regexp2.Match) string {
 		if alt := ttsGroup(m, 1); alt != "" {
@@ -243,7 +243,7 @@ func PruneIdentifierTokensForTTS(text string) string {
 }
 
 func lastRuneIn(s, set string) bool {
-	r, _ := pystr.DecodeLastRune(s)
+	r, _ := utf8.DecodeLastRuneInString(s)
 	return strings.ContainsRune(set, r)
 }
 

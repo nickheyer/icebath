@@ -12,9 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -31,41 +28,41 @@ func tuiWorktreeRecordPath(ctx context.Context) string {
 
 // Case normalized real path of a tree, the key of its record
 func tuiWorktreeKey(path string) string {
-	real, err := pypath.Realpath(path, pypath.Lax)
+	real, err := pathutil.Resolve(path)
 	if err != nil {
 		real = filepath.Clean(path)
 	}
-	return pypath.Normcase(real)
+	return pathutil.FoldCase(real)
 }
 
 // Recorded trees in file order, empty when the record is missing, malformed or holds no object
-func readTUIWorktrees(ctx context.Context) *pyjson.Object {
+func readTUIWorktrees(ctx context.Context) *jsonutil.Object {
 	raw, err := os.ReadFile(tuiWorktreeRecordPath(ctx))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	parsed, err := pyjson.Loads(strings.TrimLeftFunc(string(raw), unicode.IsSpace))
+	parsed, err := jsonutil.Decode(strings.TrimLeftFunc(string(raw), unicode.IsSpace))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	doc, ok := parsed.(*pyjson.Object)
+	doc, ok := parsed.(*jsonutil.Object)
 	if !ok {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	trees, ok := doc.Vals["trees"].(*pyjson.Object)
+	trees, ok := doc.Value("trees").(*jsonutil.Object)
 	if !ok {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return trees
 }
 
 // Tree record fields as strings, empty for an absent or null value
-func tuiRecordField(entry *pyjson.Object, key string) string {
+func tuiRecordField(entry *jsonutil.Object, key string) string {
 	v, _ := entry.Get(key)
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Remembers a tree the TUI worktree launcher created or a worktree new moved a session into, never raising
@@ -78,10 +75,10 @@ func RecordTUIWorktree(ctx context.Context, wtInfo map[string]string) {
 		return
 	}
 	defer release()
-	kept := pyjson.NewObject()
+	kept := jsonutil.NewObject()
 	trees := readTUIWorktrees(ctx)
-	for _, k := range trees.Keys {
-		entry, ok := trees.Vals[k].(*pyjson.Object)
+	for _, k := range trees.Keys() {
+		entry, ok := trees.Value(k).(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -89,19 +86,19 @@ func RecordTUIWorktree(ctx context.Context, wtInfo map[string]string) {
 			kept.Set(k, entry)
 		}
 	}
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("path", wtInfo["path"])
 	record.Set("branch", wtInfo["branch"])
 	record.Set("repo_root", wtInfo["repo_root"])
 	kept.Set(tuiWorktreeKey(wtInfo["path"]), record)
-	if len(kept.Keys) > tuiWorktreeMaxRecords {
-		trimmed := pyjson.NewObject()
-		for _, k := range kept.Keys[len(kept.Keys)-tuiWorktreeMaxRecords:] {
-			trimmed.Set(k, kept.Vals[k])
+	if kept.Len() > tuiWorktreeMaxRecords {
+		trimmed := jsonutil.NewObject()
+		for _, k := range kept.Keys()[kept.Len()-tuiWorktreeMaxRecords:] {
+			trimmed.Set(k, kept.Value(k))
 		}
 		kept = trimmed
 	}
-	doc := pyjson.NewObject()
+	doc := jsonutil.NewObject()
 	doc.Set("version", 1)
 	doc.Set("trees", kept)
 	if err := config.AtomicJSONWrite(ctx, path, doc); err != nil {
@@ -114,7 +111,7 @@ func recordedTreeFor(ctx context.Context, cwd string) map[string]string {
 	trees := readTUIWorktrees(ctx)
 	probe := filepath.Clean(cwd)
 	for candidate := probe; ; candidate = filepath.Dir(candidate) {
-		entry, ok := trees.Vals[tuiWorktreeKey(candidate)].(*pyjson.Object)
+		entry, ok := trees.Value(tuiWorktreeKey(candidate)).(*jsonutil.Object)
 		if ok {
 			repo, tree, branch := tuiRecordField(entry, "repo_root"), tuiRecordField(entry, "path"), tuiRecordField(entry, "branch")
 			if _, err := os.Stat(filepath.Join(repo, ".git")); branch != "" && err == nil &&

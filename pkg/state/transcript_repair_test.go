@@ -24,7 +24,7 @@ func repairScalar(t *testing.T, db *SessionDB, query string, args ...any) any {
 	if row == nil {
 		return nil
 	}
-	v, _ := row.Get(row.Keys[0])
+	v, _ := row.Get(row.Keys()[0])
 	return v
 }
 

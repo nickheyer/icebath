@@ -9,8 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Spawns icebath update for the gateway detached so it outlives the restart, output and exit code in files
@@ -29,11 +29,11 @@ func spawnDetachedUpdate(icebathCmd []string, outputPath, exitCodePath string) e
 	}
 	quoted := make([]string, len(icebathCmd))
 	for i, part := range icebathCmd {
-		quoted[i] = pyshlex.Quote(part)
+		quoted[i] = shellutil.Quote(part)
 	}
 	updateCmd := fmt.Sprintf("PYTHONUNBUFFERED=1 %s update --gateway > %s 2>&1; "+
-		"rc=$?; printf '%%s' \"$rc\" > %s && mv -f %s %s", strings.Join(quoted, " "), pyshlex.Quote(outputPath),
-		pyshlex.Quote(exitCodePath+".tmp"), pyshlex.Quote(exitCodePath+".tmp"), pyshlex.Quote(exitCodePath))
+		"rc=$?; printf '%%s' \"$rc\" > %s && mv -f %s %s", strings.Join(quoted, " "), shellutil.Quote(outputPath),
+		shellutil.Quote(exitCodePath+".tmp"), shellutil.Quote(exitCodePath+".tmp"), shellutil.Quote(exitCodePath))
 	argv := []string{"bash", "-c", updateCmd}
 	if setsid, ok := pyshutil.Which("setsid", nil); ok && setsid != "" {
 		argv = append([]string{setsid}, argv...)

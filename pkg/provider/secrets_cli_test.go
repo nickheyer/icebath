@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
 // Secrets CLI over a temp home writing to a buffer, every seam restored after the test
 func newSecretsTestCLI(t *testing.T) (*secretsCLI, *bytes.Buffer) {
 	t.Helper()
 	var out bytes.Buffer
-	console := pyrich.NewConsole(&out)
+	console := consoleutil.NewConsole(&out)
 	console.Width = 200
 	cli := &secretsCLI{ctx: context.Background(), home: newTestHome(t), console: console}
 	prevTTY, prevFind, prevVersion, prevLoad := stdinIsATTY, findBws, bwsVersion, secretsLoadConfig
@@ -100,7 +100,7 @@ func TestBwTokenNoVerifySkipsProbe(t *testing.T) {
 	saved := bwEnv(t)
 	t.Setenv("BWS_ACCESS_TOKEN", "")
 	probed := false
-	listProjects = func(*secretsCLI, string, string, *pyrich.Console, string) ([]map[string]any, bool) {
+	listProjects = func(*secretsCLI, string, string, *consoleutil.Console, string) ([]map[string]any, bool) {
 		probed = true
 		return nil, false
 	}

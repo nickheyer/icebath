@@ -3,13 +3,13 @@ package gateway
 import (
 	"context"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // One env override step a platform declares, run in order after the config loads
@@ -36,8 +36,8 @@ func CSVList(value string) []any {
 // Parser of a base ten int falling back to def on malformed or blank input
 func IntOr(def int) func(string) any {
 	return func(raw string) any {
-		if n, ok := pyint.Parse(strings.TrimSpace(raw)); ok {
-			return pyint.Native(n)
+		if n, err := strconv.ParseInt(strings.TrimSpace(raw), 10, 64); err == nil {
+			return int(n)
 		}
 		return def
 	}
@@ -60,13 +60,13 @@ func TruthyToken(value string) any {
 
 // Shared truthy coercion of an env string, blanks stripped
 func TruthyValue(value string) any {
-	v, _ := pystr.BoolToken(value)
+	v, _ := textutil.ParseBool(value)
 	return v
 }
 
 // JSON value of the text, else its comma or newline separated items
 func MentionPatterns(value string) any {
-	if v, err := pyjson.Loads(value); err == nil {
+	if v, err := jsonutil.Decode(value); err == nil {
 		return v
 	}
 	return CSVList(strings.ReplaceAll(value, "\n", ","))
@@ -119,8 +119,8 @@ func EnvExtras(ctx context.Context, extra map[string]any, spec []EnvSpec, strip 
 		}
 		switch {
 		case s.Int:
-			if n, ok := pyint.Parse(value); ok {
-				extra[s.Key] = pyint.Native(n)
+			if n, err := strconv.ParseInt(strings.TrimSpace(value), 10, 64); err == nil {
+				extra[s.Key] = int(n)
 			}
 		case s.Fn != nil:
 			extra[s.Key] = s.Fn(value)
@@ -321,12 +321,12 @@ func AuthzField(name any, field string, entry *PlatformEntry) any {
 	if entry != nil {
 		value = entryKeyword(entry, field)
 	}
-	if pyrepr.Truthy(value) {
+	if anyutil.IsTrue(value) {
 		return value
 	}
 	text := ""
-	if pyrepr.Truthy(name) {
-		text = pyrepr.Str(name)
+	if anyutil.IsTrue(name) {
+		text = anyutil.String(name)
 	}
 	return BundledAuthz(strings.ToLower(strings.TrimSpace(text)))[field]
 }

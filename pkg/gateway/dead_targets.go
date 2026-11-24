@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var deadErrorKinds = map[string]bool{"forbidden": true, "not_found": true}
@@ -36,7 +36,7 @@ func ClassifyDeadError(errorText string) string {
 // DeadTargetRegistry is the persistent per profile set of delivery targets confirmed unreachable
 type DeadTargetRegistry struct {
 	mu   sync.Mutex
-	dead *pyjson.Object
+	dead *jsonutil.Object
 	path string
 }
 
@@ -45,7 +45,7 @@ func NewDeadTargetRegistry(ctx context.Context, path string) *DeadTargetRegistry
 	if path == "" {
 		path = filepath.Join(home.Dir(ctx), "gateway", "dead_targets.json")
 	}
-	r := &DeadTargetRegistry{dead: pyjson.NewObject(), path: path}
+	r := &DeadTargetRegistry{dead: jsonutil.NewObject(), path: path}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if !os.IsNotExist(err) {
@@ -53,19 +53,19 @@ func NewDeadTargetRegistry(ctx context.Context, path string) *DeadTargetRegistry
 		}
 		return r
 	}
-	text, err := pystr.DecodeUTF8Sig(data)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("dead_targets: could not load %s (%v) — starting empty", path, err))
 		return r
 	}
-	raw, err := pyjson.Loads(text)
+	raw, err := jsonutil.Decode(text)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("dead_targets: could not load %s (%v) — starting empty", path, err))
 		return r
 	}
-	if obj, ok := raw.(*pyjson.Object); ok {
-		for _, k := range obj.Keys {
-			if v, ok := obj.Vals[k].(*pyjson.Object); ok {
+	if obj, ok := raw.(*jsonutil.Object); ok {
+		for _, k := range obj.Keys() {
+			if v, ok := obj.Value(k).(*jsonutil.Object); ok {
 				r.dead.Set(k, v)
 			}
 		}
@@ -75,7 +75,7 @@ func NewDeadTargetRegistry(ctx context.Context, path string) *DeadTargetRegistry
 
 // Writes the set through a temp file, keeping memory state when the disk refuses
 func (r *DeadTargetRegistry) flushLocked() {
-	text, err := pyjson.Dumps(r.dead, pyjson.Indent(2))
+	text, err := jsonutil.Encode(r.dead, jsonutil.Indent(2))
 	if err == nil {
 		if err = os.MkdirAll(filepath.Dir(r.path), 0o755); err == nil {
 			tmp := r.path + ".tmp"
@@ -108,7 +108,7 @@ func (r *DeadTargetRegistry) MarkDead(platform, chatID, reason string) bool {
 	key := normalizeDeadKey(platform, chatID)
 	r.mu.Lock()
 	_, existed := r.dead.Get(key)
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("platform", strings.ToLower(strings.TrimSpace(platform)))
 	entry.Set("chat_id", chatID)
 	if rs := []rune(reason); len(rs) > 200 {

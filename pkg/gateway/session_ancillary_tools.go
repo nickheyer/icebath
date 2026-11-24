@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Saved outcome of one tools enable or disable before the calling session adopts it
@@ -19,9 +19,9 @@ type toolsChange struct {
 }
 
 // Enables or disables toolsets and MCP tools in the owner profile and commits the selection into the calling session
-func configureTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
-	rawAction, isStr := params.GetOr("action", nil).(string)
-	rawNames, isList := params.GetOr("names", nil).([]any)
+func configureTools(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
+	rawAction, isStr := params.ValueOr("action", nil).(string)
+	rawNames, isList := params.ValueOr("names", nil).([]any)
 	if paramsOutside(params, "session_id", "profile", "action", "names") || !isStr || !isList {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -85,7 +85,7 @@ func configureTools(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 		}
 		info = sessionInfo
 	}
-	return pyjson.ObjectOf("changed", change.changed, "enabled_toolsets", change.enabled, "info", info,
+	return jsonutil.ObjectOf("changed", change.changed, "enabled_toolsets", change.enabled, "info", info,
 		"missing_servers", change.missing, "reset", local, "unknown", change.unknown), nil
 }
 

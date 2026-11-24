@@ -29,8 +29,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 )
 
 // AuxClient is one resolved auxiliary chat client, the OpenAI SDK client or a wire adapter
@@ -68,7 +66,7 @@ var auxSDKSleep = func(ctx context.Context, d time.Duration) error {
 
 // Shared default HTTP client of SDK clients built without a keepalive client, an error for an environment proxy httpx refuses
 var auxSDKDefaultHTTPClient = sync.OnceValues(func() (*http.Client, error) {
-	proxies, err := pyhttpx.NewEnvProxies(pyurl.Getproxies())
+	proxies, err := pyhttpx.NewEnvProxies(httputil.Proxies())
 	if err != nil {
 		return nil, err
 	}
@@ -239,7 +237,7 @@ func newAuxOpenAIClient(apiKey any, baseURL string, opts auxOpenAIOptions) *auxO
 	for k, v := range opts.DefaultHeaders {
 		c.customHeaders[k] = v
 	}
-	c.customOrder = pyhttpx.HeaderOrder(opts.DefaultHeaders)
+	c.customOrder = slices.Sorted(maps.Keys(opts.DefaultHeaders))
 	for k, v := range opts.DefaultQuery {
 		c.customQuery[k] = v
 	}
@@ -350,7 +348,7 @@ type auxSDKRequest struct {
 	body    []byte
 	stream  bool
 	params  map[string]any
-	extra   *pyjson.Object
+	extra   *jsonutil.Object
 	headers map[string]any
 	// Order of the per request headers, the extra_headers mapping order
 	headerOrder []string
@@ -376,20 +374,20 @@ func auxUniformTimeouts(seconds float64, on bool) auxSDKTimeouts {
 }
 
 // Phase limits of an httpx.Timeout value, a zero phase left without a limit
-func auxPhaseTimeouts(t pyhttpx.Timeout) auxSDKTimeouts {
+func auxPhaseTimeouts(t httputil.Timeout) auxSDKTimeouts {
 	limit := func(d time.Duration) auxPhaseLimit { return auxPhaseLimit{d: d, on: d > 0} }
 	return auxSDKTimeouts{pool: limit(t.Pool), connect: limit(t.Connect), write: limit(t.Write), read: limit(t.Read)}
 }
 
 // Connect, read, write and pool budgets in seconds as the httpx.Timeout a streamed request carries
-func sdkStreamTimeout(connect, read, write, pool float64) pyhttpx.Timeout {
-	return pyhttpx.Timeout{Connect: secondsDuration(connect), Read: secondsDuration(read), Write: secondsDuration(write), Pool: secondsDuration(pool)}
+func sdkStreamTimeout(connect, read, write, pool float64) httputil.Timeout {
+	return httputil.Timeout{Connect: secondsDuration(connect), Read: secondsDuration(read), Write: secondsDuration(write), Pool: secondsDuration(pool)}
 }
 
 func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKRequest, error) {
 	r := &auxSDKRequest{path: "chat/completions", query: map[string]string{}, headers: map[string]any{}, timeout: auxUniformTimeouts(c.timeout, c.hasTimeout),
 		readTimeoutText: c.timeoutText}
-	r.params, r.extra = map[string]any{}, pyjson.NewObject()
+	r.params, r.extra = map[string]any{}, jsonutil.NewObject()
 	for k, v := range kwargs {
 		switch k {
 		case "extra_body", "extra_headers", "extra_query", "timeout":
@@ -398,9 +396,9 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 		}
 	}
 	switch extra := kwargs["extra_body"].(type) {
-	case *pyjson.Object:
-		for _, k := range extra.Keys {
-			r.extra.Set(k, extra.Vals[k])
+	case *jsonutil.Object:
+		for _, k := range extra.Keys() {
+			r.extra.Set(k, extra.Value(k))
 		}
 	case map[string]any:
 		for _, k := range sortedHeaderKeys(extra) {
@@ -408,11 +406,11 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 		}
 	}
 	switch h := kwargs["extra_headers"].(type) {
-	case *pyjson.Object:
-		for _, k := range h.Keys {
-			r.headers[k] = h.Vals[k]
+	case *jsonutil.Object:
+		for _, k := range h.Keys() {
+			r.headers[k] = h.Value(k)
 		}
-		r.headerOrder = append([]string(nil), h.Keys...)
+		r.headerOrder = append([]string(nil), h.Keys()...)
 	case map[string]any:
 		for k, v := range h {
 			r.headers[k] = v
@@ -422,12 +420,12 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 		for k, v := range h {
 			r.headers[k] = v
 		}
-		r.headerOrder = pyhttpx.HeaderOrder(h)
+		r.headerOrder = slices.Sorted(maps.Keys(h))
 	}
 	switch q := kwargs["extra_query"].(type) {
 	case map[string]any:
 		for k, v := range q {
-			r.query[k] = pyrepr.Str(v)
+			r.query[k] = anyutil.String(v)
 		}
 	case map[string]string:
 		for k, v := range q {
@@ -448,10 +446,10 @@ func auxSDKBuildRequest(c *auxOpenAIClient, kwargs map[string]any) (*auxSDKReque
 			r.timeout, r.readTimeoutText = auxUniformTimeouts(float64(v), true), strconv.FormatInt(v, 10)
 		case time.Duration:
 			r.timeout, r.readTimeoutText = auxUniformTimeouts(v.Seconds(), true), pyFloatRepr(v.Seconds())
-		case pyhttpx.Timeout:
+		case httputil.Timeout:
 			r.timeout, r.readTimeoutText = auxPhaseTimeouts(v), pyFloatRepr(v.Read.Seconds())
 		default:
-			return nil, fmt.Errorf("Timeout value must be a float, a Timeout or None, got %s", pyrepr.Repr(v))
+			return nil, fmt.Errorf("Timeout value must be a float, a Timeout or None, got %s", anyutil.Quote(v))
 		}
 	}
 	if err := r.encodeBody(); err != nil {
@@ -489,24 +487,24 @@ func auxSDKWireParam(path, key string, v any) any {
 
 // Encodes the body for the request path, signature parameters first, other keys sorted, then extra_body merged over them
 func (r *auxSDKRequest) encodeBody() error {
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	for _, k := range auxSDKBodyOrder[r.path] {
 		if v, ok := r.params[k]; ok {
 			body.Set(k, auxSDKWireParam(r.path, k, v))
 		}
 	}
 	for _, k := range sortedHeaderKeys(r.params) {
-		if _, placed := body.Vals[k]; !placed {
+		if _, placed := body.Get(k); !placed {
 			body.Set(k, r.params[k])
 		}
 	}
 	if r.extra != nil {
-		for _, k := range r.extra.Keys {
-			body.Set(k, auxSDKWireParam(r.path, k, r.extra.Vals[k]))
+		for _, k := range r.extra.Keys() {
+			body.Set(k, auxSDKWireParam(r.path, k, r.extra.Value(k)))
 		}
 	}
-	r.stream, _ = body.Vals["stream"].(bool)
-	raw, err := pyhttpx.JSONBody(body)
+	r.stream, _ = body.Value("stream").(bool)
+	raw, err := httputil.JSONBody(body)
 	if err != nil {
 		return err
 	}
@@ -695,7 +693,7 @@ func (c *auxOpenAIClient) attempt(ctx context.Context, r *auxSDKRequest, retries
 
 // Body the SDK parses as response.json(), else the response.text a non JSON content type falls back to
 func auxSDKResponseData(header http.Header, data []byte) (any, error) {
-	parsed, err := pyjson.LoadsBytes(data)
+	parsed, err := jsonutil.Decode(data)
 	if err == nil {
 		shaped := pyjson.WTF8Shape(parsed)
 		if m, ok := shaped.(map[string]any); ok {
@@ -705,13 +703,13 @@ func auxSDKResponseData(header http.Header, data []byte) (any, error) {
 		return shaped, nil
 	}
 	if contentType, _, _ := strings.Cut(header.Get("Content-Type"), ";"); !strings.HasSuffix(contentType, "json") {
-		return pyhttpx.DecodeText(header, data), nil
+		return httputil.DecodeText(header, data), nil
 	}
-	var decodeErr *pyjson.DecodeError
+	var decodeErr *jsonutil.SyntaxError
 	if !errors.As(err, &decodeErr) {
 		return nil, err
 	}
-	doc, textErr := pyjson.DecodeBytes(data)
+	doc, textErr := jsonutil.Text(data)
 	if textErr != nil {
 		return nil, textErr
 	}
@@ -797,7 +795,7 @@ func (c *auxOpenAIClient) wireHeaders(key string, r *auxSDKRequest, retries int)
 		if v := r.headers[k]; v == nil {
 			d.omit(k)
 		} else {
-			d.set(k, pyrepr.Str(v))
+			d.set(k, anyutil.String(v))
 		}
 	}
 	sdk := pyhttpx.NewHeaders(d.lines...)
@@ -822,10 +820,10 @@ func auxSDKStatusError(resp *http.Response, data []byte) *AuxSDKError {
 	e.ResponseText = strings.ToValidUTF8(string(data), "\uFFFD")
 	text := strings.TrimSpace(e.ResponseText)
 	var body any = text
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err == nil {
 		body = parsed
-		e.Message = fmt.Sprintf("Error code: %d - %s", resp.StatusCode, pyrepr.Str(parsed))
+		e.Message = fmt.Sprintf("Error code: %d - %s", resp.StatusCode, anyutil.String(parsed))
 	} else if text != "" {
 		e.Message = text
 	} else {
@@ -840,10 +838,10 @@ func auxSDKStatusError(resp *http.Response, data []byte) *AuxSDKError {
 	e.Body = plain
 	if m, ok := plain.(map[string]any); ok {
 		if v := m["code"]; v != nil {
-			e.Code = pyrepr.Str(v)
+			e.Code = anyutil.String(v)
 		}
 		if v := m["type"]; v != nil {
-			e.Type = pyrepr.Str(v)
+			e.Type = anyutil.String(v)
 		}
 	}
 	return e
@@ -1153,7 +1151,7 @@ func (s *auxSDKStream) Next(ctx context.Context) (map[string]any, error) {
 		if strings.HasPrefix(ev.event, "thread.") {
 			return map[string]any{"data": data, "event": ev.event}, nil
 		}
-		if isMap && pyrepr.Truthy(m["error"]) {
+		if isMap && anyutil.IsTrue(m["error"]) {
 			s.finish()
 			return nil, auxSDKStreamErrorEvent(m["error"])
 		}
@@ -1169,10 +1167,10 @@ func auxSDKStreamErrorEvent(errObj any) *AuxSDKError {
 			e.Message = msg
 		}
 		if v := m["code"]; v != nil {
-			e.Code = pyrepr.Str(v)
+			e.Code = anyutil.String(v)
 		}
 		if v := m["type"]; v != nil {
-			e.Type = pyrepr.Str(v)
+			e.Type = anyutil.String(v)
 		}
 	}
 	if e.Message == "" {

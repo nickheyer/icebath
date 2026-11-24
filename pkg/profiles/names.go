@@ -13,7 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Directories bootstrapped inside every new profile
@@ -249,11 +249,11 @@ func ProfileMatchesHome(ctx context.Context, name, homeDir string) bool {
 	if homeDir == "" {
 		homeDir = home.Dir(ctx)
 	}
-	target, err = pypath.PathExpanduser(target)
+	target, err = pathutil.ExpandUserPath(target)
 	if err != nil {
 		return false
 	}
-	homeDir, err = pypath.PathExpanduser(homeDir)
+	homeDir, err = pathutil.ExpandUserPath(homeDir)
 	if err != nil {
 		return false
 	}

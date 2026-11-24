@@ -18,11 +18,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keys of the owner's bootstrap frame, attachments_v1 riding beside them
@@ -42,11 +42,11 @@ type WorkerChannel struct {
 func NewWorkerChannel(stream io.WriteCloser) *WorkerChannel { return &WorkerChannel{stream: stream} }
 
 // Writes one typed frame with its payload keys
-func (c *WorkerChannel) Send(kind string, payload *pyjson.Object) error {
-	frame := pyjson.ObjectOf("type", kind)
+func (c *WorkerChannel) Send(kind string, payload *jsonutil.Object) error {
+	frame := jsonutil.ObjectOf("type", kind)
 	if payload != nil {
-		for _, k := range payload.Keys {
-			frame.Set(k, payload.Vals[k])
+		for _, k := range payload.Keys() {
+			frame.Set(k, payload.Value(k))
 		}
 	}
 	data, err := gateway.EncodeFrame(frame)
@@ -63,10 +63,10 @@ func (c *WorkerChannel) Send(kind string, payload *pyjson.Object) error {
 func (c *WorkerChannel) Close() error { return c.stream.Close() }
 
 // Validated bootstrap frame of the owner, ValueError invalid_managed_worker_bootstrap for anything else
-func ValidateBootstrap(frame *pyjson.Object) (*pyjson.Object, error) {
+func ValidateBootstrap(frame *jsonutil.Object) (*jsonutil.Object, error) {
 	invalid := &workerStoreError{"ValueError", "invalid_managed_worker_bootstrap"}
 	keys := map[string]bool{}
-	for _, k := range frame.Keys {
+	for _, k := range frame.Keys() {
 		if k != "attachments_v1" {
 			keys[k] = true
 		}
@@ -79,44 +79,44 @@ func ValidateBootstrap(frame *pyjson.Object) (*pyjson.Object, error) {
 			return nil, invalid
 		}
 	}
-	if !pyjson.Equal(frame.Vals["version"], int64(1)) {
+	if !anyutil.Equal(frame.Value("version"), int64(1)) {
 		return nil, invalid
 	}
-	scope, isDict := frame.Vals["scope"].(*pyjson.Object)
-	homeText, homeIsText := frame.Vals["home"].(string)
+	scope, isDict := frame.Value("scope").(*jsonutil.Object)
+	homeText, homeIsText := frame.Value("home").(string)
 	if !isDict || !sameKeySet(scope, "profile_id", "session_id", "execution_id", "generation", "pid", "birth", "secret", "epoch") ||
-		!pyjson.Equal(scope.Vals["pid"], int64(os.Getpid())) || !pyjson.Equal(scope.Vals["profile_id"], frame.Vals["home"]) ||
+		!anyutil.Equal(scope.Value("pid"), int64(os.Getpid())) || !anyutil.Equal(scope.Value("profile_id"), frame.Value("home")) ||
 		!homeIsText || !filepath.IsAbs(homeText) {
 		return nil, invalid
 	}
-	if _, ok := frame.Vals["policy"].(*pyjson.Object); !ok {
+	if _, ok := frame.Value("policy").(*jsonutil.Object); !ok {
 		return nil, invalid
 	}
 	for _, k := range []string{"text", "route", "user_id", "chat_id"} {
-		if _, ok := frame.Vals[k].(string); !ok {
+		if _, ok := frame.Value(k).(string); !ok {
 			return nil, invalid
 		}
 	}
-	safeMode, safeOK := frame.Vals["safe_mode"].(bool)
-	ignore, ignoreOK := frame.Vals["ignore_user_config"].(bool)
+	safeMode, safeOK := frame.Value("safe_mode").(bool)
+	ignore, ignoreOK := frame.Value("ignore_user_config").(bool)
 	if !safeOK || !ignoreOK || (safeMode && !ignore) {
 		return nil, invalid
 	}
-	if key := frame.Vals["api_key"]; key != nil {
+	if key := frame.Value("api_key"); key != nil {
 		if _, ok := key.(string); !ok {
 			return nil, invalid
 		}
 	}
-	if author := frame.Vals["turn_author"]; author != nil {
-		obj, ok := author.(*pyjson.Object)
-		if !ok || provider.ParseTurnAuthor(pyjson.Plain(obj).(map[string]any)) == nil {
+	if author := frame.Value("turn_author"); author != nil {
+		obj, ok := author.(*jsonutil.Object)
+		if !ok || provider.ParseTurnAuthor(jsonutil.Plain(obj).(map[string]any)) == nil {
 			return nil, invalid
 		}
 	}
 	return frame, nil
 }
 
-func sameKeySet(obj *pyjson.Object, keys ...string) bool {
+func sameKeySet(obj *jsonutil.Object, keys ...string) bool {
 	if obj.Len() != len(keys) {
 		return false
 	}
@@ -129,19 +129,19 @@ func sameKeySet(obj *pyjson.Object, keys ...string) bool {
 }
 
 // Freezes the owner's assignment process wide before any config or provider read, bypass sessions binding the safe policy too
-func BindWorkerPolicy(frame *pyjson.Object) error {
-	policy, _ := frame.Vals["policy"].(*pyjson.Object)
-	text, _ := policy.GetOr("config_json", nil).(string)
-	decoded, err := pyjson.Loads(text)
+func BindWorkerPolicy(frame *jsonutil.Object) error {
+	policy, _ := frame.Value("policy").(*jsonutil.Object)
+	text, _ := policy.ValueOr("config_json", nil).(string)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return err
 	}
 	cfg, _ := config.ConfigFromJSON(decoded).(map[string]any)
-	if ignore, _ := frame.Vals["ignore_user_config"].(bool); !ignore {
+	if ignore, _ := frame.Value("ignore_user_config").(bool); !ignore {
 		_, err := config.BindWorkerConfig(cfg)
 		return err
 	}
-	safeMode, _ := frame.Vals["safe_mode"].(bool)
+	safeMode, _ := frame.Value("safe_mode").(bool)
 	_, err = config.BindSafeWorkerPolicy(safeMode, true, cfg)
 	return err
 }
@@ -197,7 +197,7 @@ func (a *AIAgent) RetiringSessionMessages() []map[string]any {
 }
 
 // This process's pid and birth with the ancestors it observes, the owner deciding whether they match its handle
-func ManagedWorkerHello() (*pyjson.Object, error) {
+func ManagedWorkerHello() (*jsonutil.Object, error) {
 	pid := os.Getpid()
 	birth, err := proc.WorkerBirth(pid)
 	if err != nil {
@@ -214,7 +214,7 @@ func ManagedWorkerHello() (*pyjson.Object, error) {
 		}
 		ancestors = append(ancestors, int64(p))
 	}
-	return pyjson.ObjectOf("pid", int64(pid), "birth", birth, "ancestors", ancestors), nil
+	return jsonutil.ObjectOf("pid", int64(pid), "birth", birth, "ancestors", ancestors), nil
 }
 
 // Answer a stopped or cancelled clarification carries
@@ -308,11 +308,11 @@ func (c *WorkerControls) read(input *bufio.Reader) {
 	for {
 		frame, err := gateway.ReadFrame(input)
 		if err == nil {
-			if sameKeySet(frame, "type") && pyjson.Equal(frame.Vals["type"], "stop") {
+			if sameKeySet(frame, "type") && anyutil.Equal(frame.Value("type"), "stop") {
 				c.Stop()
 				continue
 			}
-			if sameKeySet(frame, "type") && pyjson.Equal(frame.Vals["type"], "finish") {
+			if sameKeySet(frame, "type") && anyutil.Equal(frame.Value("type"), "finish") {
 				c.setFinish()
 				return
 			}
@@ -332,11 +332,11 @@ func (c *WorkerControls) read(input *bufio.Reader) {
 }
 
 // Applies one approval or clarify answer, ValueError invalid_managed_control for anything else
-func (c *WorkerControls) control(frame *pyjson.Object) error {
+func (c *WorkerControls) control(frame *jsonutil.Object) error {
 	invalid := &workerStoreError{"ValueError", "invalid_managed_control"}
-	kind, _ := frame.Vals["type"].(string)
-	promptID, idOK := frame.Vals["prompt_id"].(string)
-	value, valueOK := frame.Vals["value"].(string)
+	kind, _ := frame.Value("type").(string)
+	promptID, idOK := frame.Value("prompt_id").(string)
+	value, valueOK := frame.Value("value").(string)
 	if !sameKeySet(frame, "type", "prompt_id", "value") || (kind != "approval" && kind != "clarify") || !idOK || !valueOK || utf8.RuneCountInString(value) > 16384 {
 		return invalid
 	}
@@ -365,8 +365,8 @@ func (c *WorkerControls) Approval(data map[string]any) error {
 			forwarded[k] = v
 		}
 	}
-	obj, _ := pyjson.AsObject(forwarded)
-	if err := c.channel.Send("approval", pyjson.ObjectOf("data", obj)); err != nil {
+	obj, _ := jsonutil.AsObject(forwarded)
+	if err := c.channel.Send("approval", jsonutil.ObjectOf("data", obj)); err != nil {
 		return err
 	}
 	requestID, _ := data["request_id"].(string)
@@ -377,7 +377,7 @@ func (c *WorkerControls) Approval(data map[string]any) error {
 // clarify_tool's batch contract, one owner prompt per question until one is interrupted or unanswered
 func (c *WorkerControls) Clarify(ctx context.Context, questions []any) map[string]any {
 	if finite, _ := gateway.FiniteTurnRequired(ctx).(bool); finite {
-		return pyjson.Plain(gateway.FiniteClarifyReply()).(map[string]any)
+		return jsonutil.Plain(gateway.FiniteClarifyReply()).(map[string]any)
 	}
 	answers := map[string]any{}
 	reply := map[string]any{"answers": answers, "outcome": "submitted"}
@@ -393,9 +393,9 @@ func (c *WorkerControls) Clarify(ctx context.Context, questions []any) map[strin
 			break
 		}
 		if text := strings.TrimSpace(answer.(string)); text != "" {
-			answers[pyrepr.Str(entry["qid"])] = text
+			answers[anyutil.String(entry["qid"])] = text
 		} else {
-			answers[pyrepr.Str(entry["qid"])] = nil
+			answers[anyutil.String(entry["qid"])] = nil
 		}
 	}
 	return reply
@@ -420,14 +420,14 @@ func (c *WorkerControls) ask(question, choices, multiSelect any) any {
 		c.mu.Lock()
 		delete(c.clarifications, id)
 		c.mu.Unlock()
-		_ = c.channel.Send("prompt_settled", pyjson.ObjectOf("prompt_id", id))
+		_ = c.channel.Send("prompt_settled", jsonutil.ObjectOf("prompt_id", id))
 	}()
 	list := []any{}
 	if items, ok := choices.([]any); ok {
 		list = append(list, items...)
 	}
-	if err := c.channel.Send("clarify", pyjson.ObjectOf("prompt_id", id, "question", question, "choices", list,
-		"multi_select", pyrepr.Truthy(multiSelect))); err != nil {
+	if err := c.channel.Send("clarify", jsonutil.ObjectOf("prompt_id", id, "question", question, "choices", list,
+		"multi_select", anyutil.IsTrue(multiSelect))); err != nil {
 		return nil
 	}
 	if timeout > 0 {

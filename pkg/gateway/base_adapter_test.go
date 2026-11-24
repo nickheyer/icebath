@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type baseFakeAdapter struct {
@@ -112,8 +112,8 @@ func TestNotifyFatalErrorNoHandlerIsNoop(t *testing.T) {
 }
 
 // test_stale_platform_lock_retryable.py
-func lockRecord(pairs ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func lockRecord(pairs ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i < len(pairs); i += 2 {
 		o.Set(pairs[i].(string), pairs[i+1])
 	}
@@ -123,10 +123,10 @@ func lockRecord(pairs ...any) *pyjson.Object {
 func patchAcquire(t *testing.T, results ...[2]any) *int {
 	calls := 0
 	prev := acquireScopedLockFn
-	acquireScopedLockFn = func(_ context.Context, scope, identity string, meta *pyjson.Object) (bool, *pyjson.Object, error) {
+	acquireScopedLockFn = func(_ context.Context, scope, identity string, meta *jsonutil.Object) (bool, *jsonutil.Object, error) {
 		r := results[calls]
 		calls++
-		existing, _ := r[1].(*pyjson.Object)
+		existing, _ := r[1].(*jsonutil.Object)
 		return r[0].(bool), existing, nil
 	}
 	t.Cleanup(func() { acquireScopedLockFn = prev })
@@ -151,9 +151,9 @@ func TestExplicitReplaceTakeoverReacquiresLockOnce(t *testing.T) {
 	a := newBaseFake(PlatformTelegram)
 	existing := lockRecord("pid", 4242, "kind", "icebath-gateway", "argv", []any{"icebath", "gateway", "run"}, "start_time", 123)
 	calls := patchAcquire(t, [2]any{false, existing}, [2]any{true, nil})
-	var taken []*pyjson.Object
+	var taken []*jsonutil.Object
 	prev := takeOverScopedLockHolderFn
-	takeOverScopedLockHolderFn = func(_ context.Context, record *pyjson.Object) (int, bool) {
+	takeOverScopedLockHolderFn = func(_ context.Context, record *jsonutil.Object) (int, bool) {
 		taken = append(taken, record)
 		return 4242, true
 	}

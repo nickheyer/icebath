@@ -5,13 +5,13 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Validated prune filter keywords, scalar values of known names only
 func pruneFilters(raw any) (map[string]any, error) {
-	plain := pyjson.Plain(raw)
+	plain := jsonutil.Plain(raw)
 	filters, ok := plain.(map[string]any)
 	if !ok {
 		return nil, runtimeRefusal("invalid_params")
@@ -34,7 +34,7 @@ func pruneFilters(raw any) (map[string]any, error) {
 }
 
 // Owner run bulk prune of its own store for the local operator, the delete tracked as a mutation
-func prune(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func prune(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	a, actor := c.authority, c.actor
 	if !c.nativeOwner || !actor.Capabilities["session:operator"] {
 		return nil, runtimeRefusal("permission_denied")
@@ -42,7 +42,7 @@ func prune(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *
 	if actor.ProfileID != a.ProfileID {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
-	neverActive := params.GetOr("never_active_days", nil)
+	neverActive := params.ValueOr("never_active_days", nil)
 	_, hasFilters := params.Get("filters")
 	if hasFilters == (neverActive != nil) {
 		return nil, runtimeRefusal("invalid_params")

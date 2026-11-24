@@ -5,8 +5,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Marker returned when the redactor itself fails so raw text never leaves the process
@@ -119,13 +119,13 @@ func walkStrings(value any, fix func(string) string) any {
 			out[k] = walkStrings(item, fix)
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return value
 		}
-		out := pyjson.NewObject()
-		for _, k := range v.Keys {
-			out.Set(k, walkStrings(v.Vals[k], fix))
+		out := jsonutil.NewObject()
+		for _, k := range v.Keys() {
+			out.Set(k, walkStrings(v.Value(k), fix))
 		}
 		return out
 	case []any:

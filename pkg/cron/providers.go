@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -98,7 +98,7 @@ func (h *hostedCronScheduler) checkName() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name := pyrepr.Str(v)
+	name := anyutil.String(v)
 	h.mu.Lock()
 	h.name = name
 	h.mu.Unlock()
@@ -114,7 +114,7 @@ func (h *hostedCronScheduler) checkAvailable() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(res), nil
+	return anyutil.IsTrue(res), nil
 }
 
 // Remembered name, read from the child on first use, its raised exception escaping as a panic
@@ -193,7 +193,7 @@ func (h *hostedCronScheduler) RegisterJob(job *Job) error {
 	if err != nil {
 		return err
 	}
-	_, err = h.obj.Call(h.ctx, "register_job", []any{pyjson.Plain(o)}, nil)
+	_, err = h.obj.Call(h.ctx, "register_job", []any{jsonutil.Plain(o)}, nil)
 	return err
 }
 
@@ -248,5 +248,5 @@ func (h *hostedCronScheduler) FireClaimed(ctx context.Context, job *Job, o FireO
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(res), nil
+	return anyutil.IsTrue(res), nil
 }

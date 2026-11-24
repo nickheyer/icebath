@@ -13,8 +13,9 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Loopback TCP relay whose owner to worker direction can be held, the replies a stalled owner has not written yet
@@ -226,7 +227,7 @@ func startReuseOwner(t *testing.T, home string) *reuseOwner {
 			payload := gateway.BuildIdentifyPayload()
 			for _, kv := range [][2]any{{"pid", int64(-1)}, {"runtime_protocol", int64(1)}, {"state", "ready"}, {"supervisor", "external"},
 				{"capabilities", []any{"session-authority-v1"}}, {"authority_epoch", int64(1)}, {"instance_id", "owner-instance"},
-				{"api_origin", origin}, {"served_profiles", []any{pyjson.ObjectOf("home", canonical, "profile_id", canonical)}}} {
+				{"api_origin", origin}, {"served_profiles", []any{jsonutil.ObjectOf("home", canonical, "profile_id", canonical)}}} {
 				payload.Set(kv[0].(string), kv[1])
 			}
 			return payload, nil
@@ -244,7 +245,7 @@ func startReuseOwner(t *testing.T, home string) *reuseOwner {
 			owner.tickets++
 			n := owner.tickets
 			owner.mu.Unlock()
-			return pyjson.ObjectOf("ticket", "ticket-"+string(rune('0'+n)), "profile_id", canonical, "instance_id", "owner-instance",
+			return jsonutil.ObjectOf("ticket", "ticket-"+string(rune('0'+n)), "profile_id", canonical, "instance_id", "owner-instance",
 				"runtime_protocol", int64(1)), nil
 		},
 	})
@@ -258,11 +259,11 @@ func startReuseOwner(t *testing.T, home string) *reuseOwner {
 // One call's result as a plain map
 func reuseCall(t *testing.T, rpc *WorkerRPC, method string, kv ...any) map[string]any {
 	t.Helper()
-	result, err := rpc.Call(context.Background(), method, pyjson.ObjectOf(kv...))
+	result, err := rpc.Call(context.Background(), method, jsonutil.ObjectOf(kv...))
 	if err != nil {
 		t.Fatalf("%s: %v", method, err)
 	}
-	plain, _ := pyjson.Plain(result).(map[string]any)
+	plain, _ := jsonutil.Plain(result).(map[string]any)
 	return plain
 }
 
@@ -281,7 +282,7 @@ func TestOneConnectionServesEveryCall(t *testing.T) {
 	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	for i := 1; i <= 5; i++ {
-		if n := reuseCall(t, rpc, "worker.persist")["n"]; !pyjson.Equal(n, int64(i)) {
+		if n := reuseCall(t, rpc, "worker.persist")["n"]; !anyutil.Equal(n, int64(i)) {
 			t.Fatalf("call %d answered n=%v", i, n)
 		}
 	}
@@ -296,7 +297,7 @@ func TestReconnectsWithAFreshTicketAfterTheOwnerDropsIt(t *testing.T) {
 	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
 	owner.setDrop("after_reply")
-	if got := reuseCall(t, rpc, "worker.persist"); !pyjson.Equal(got, map[string]any{"n": int64(1)}) {
+	if got := reuseCall(t, rpc, "worker.persist"); !anyutil.Equal(got, map[string]any{"n": int64(1)}) {
 		t.Fatalf("first %v", got)
 	}
 	select {
@@ -305,7 +306,7 @@ func TestReconnectsWithAFreshTicketAfterTheOwnerDropsIt(t *testing.T) {
 		t.Fatal("owner never closed")
 	}
 	waitLinkClosed(t, rpc)
-	if got := reuseCall(t, rpc, "worker.persist"); !pyjson.Equal(got, map[string]any{"n": int64(2)}) {
+	if got := reuseCall(t, rpc, "worker.persist"); !anyutil.Equal(got, map[string]any{"n": int64(2)}) {
 		t.Fatalf("second %v", got)
 	}
 	if connections, tickets, _ := owner.snapshot(); connections != 2 || tickets != 2 {
@@ -318,7 +319,7 @@ func TestInFlightCallOnADroppedConnectionFailsAndIsNotResent(t *testing.T) {
 	owner := startReuseOwner(t, home)
 	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
-	if got := reuseCall(t, rpc, "worker.persist"); !pyjson.Equal(got, map[string]any{"n": int64(1)}) {
+	if got := reuseCall(t, rpc, "worker.persist"); !anyutil.Equal(got, map[string]any{"n": int64(1)}) {
 		t.Fatalf("first %v", got)
 	}
 	owner.setDrop("before_reply")
@@ -334,7 +335,7 @@ func TestInFlightCallOnADroppedConnectionFailsAndIsNotResent(t *testing.T) {
 	if _, _, requests := owner.snapshot(); len(requests) != 2 || requests[0] != "worker.persist" || requests[1] != "worker.persist" {
 		t.Fatalf("requests %v", requests)
 	}
-	if got := reuseCall(t, rpc, "worker.persist"); !pyjson.Equal(got, map[string]any{"n": int64(3)}) {
+	if got := reuseCall(t, rpc, "worker.persist"); !anyutil.Equal(got, map[string]any{"n": int64(3)}) {
 		t.Fatalf("third %v", got)
 	}
 	if connections, _, _ := owner.snapshot(); connections != 2 {
@@ -364,7 +365,7 @@ func TestIdleBroadcastsPastTheReceiveHighWaterMarkKeepTheConnection(t *testing.T
 	owner := startReuseOwner(t, home)
 	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
-	if n := reuseCall(t, rpc, "flood", "events", int64(64))["n"]; !pyjson.Equal(n, int64(1)) {
+	if n := reuseCall(t, rpc, "flood", "events", int64(64))["n"]; !anyutil.Equal(n, int64(1)) {
 		t.Fatalf("flood n=%v", n)
 	}
 	select {
@@ -372,7 +373,7 @@ func TestIdleBroadcastsPastTheReceiveHighWaterMarkKeepTheConnection(t *testing.T
 	case <-time.After(10 * time.Second):
 		t.Fatal("owner never finished the flood")
 	}
-	if n := reuseCall(t, rpc, "worker.persist")["n"]; !pyjson.Equal(n, int64(2)) {
+	if n := reuseCall(t, rpc, "worker.persist")["n"]; !anyutil.Equal(n, int64(2)) {
 		t.Fatalf("persist n=%v", n)
 	}
 	owner.mu.Lock()
@@ -391,17 +392,17 @@ func TestOwnerStallShorterThanTheReceiptBudgetDoesNotFailOnAPingDeadline(t *test
 	owner := startReuseOwner(t, home)
 	rpc := mustNewWorkerRPC(t, home)
 	defer rpc.Close()
-	if n := reuseCall(t, rpc, "worker.persist")["n"]; !pyjson.Equal(n, int64(1)) {
+	if n := reuseCall(t, rpc, "worker.persist")["n"]; !anyutil.Equal(n, int64(1)) {
 		t.Fatalf("first n=%v", n)
 	}
 	started := time.Now()
-	if got := reuseCall(t, rpc, "stall", "seconds", 1.5); !pyjson.Equal(got, map[string]any{"n": int64(2), "seconds": 1.5}) {
+	if got := reuseCall(t, rpc, "stall", "seconds", 1.5); !anyutil.Equal(got, map[string]any{"n": int64(2), "seconds": 1.5}) {
 		t.Fatalf("stall %v", got)
 	}
 	if time.Since(started) < 1400*time.Millisecond {
 		t.Fatalf("stall answered after %v", time.Since(started))
 	}
-	if n := reuseCall(t, rpc, "worker.persist")["n"]; !pyjson.Equal(n, int64(3)) {
+	if n := reuseCall(t, rpc, "worker.persist")["n"]; !anyutil.Equal(n, int64(3)) {
 		t.Fatalf("third n=%v", n)
 	}
 	if connections, _, _ := owner.snapshot(); connections != 1 {
@@ -423,14 +424,14 @@ func TestConcurrentCallersAreSerializedAndEachGetsItsOwnReply(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for index := range 25 {
-				result, err := rpc.Call(context.Background(), "worker.persist", pyjson.ObjectOf("tag", tag, "index", int64(index)))
+				result, err := rpc.Call(context.Background(), "worker.persist", jsonutil.ObjectOf("tag", tag, "index", int64(index)))
 				mu.Lock()
 				if err != nil {
 					errs = append(errs, err)
 					mu.Unlock()
 					return
 				}
-				replies[tag] = append(replies[tag], pyjson.Plain(result).(map[string]any))
+				replies[tag] = append(replies[tag], jsonutil.Plain(result).(map[string]any))
 				mu.Unlock()
 			}
 		}()
@@ -445,7 +446,7 @@ func TestConcurrentCallersAreSerializedAndEachGetsItsOwnReply(t *testing.T) {
 			t.Fatalf("%s got %d replies", tag, len(got))
 		}
 		for index, reply := range got {
-			if reply["tag"] != tag || !pyjson.Equal(reply["index"], int64(index)) {
+			if reply["tag"] != tag || !anyutil.Equal(reply["index"], int64(index)) {
 				t.Fatalf("%s reply %d is %v", tag, index, reply)
 			}
 			n, _ := reply["n"].(int64)
@@ -473,7 +474,7 @@ func TestAnOwnerErrorReplyKeepsTheConnectionForTheNextCall(t *testing.T) {
 	if !asWorkerPersistence(err, &persistence) || err.Error() != "stale_generation" {
 		t.Fatalf("fail error %v", err)
 	}
-	if got := reuseCall(t, rpc, "worker.persist"); !pyjson.Equal(got, map[string]any{"n": int64(2)}) {
+	if got := reuseCall(t, rpc, "worker.persist"); !anyutil.Equal(got, map[string]any{"n": int64(2)}) {
 		t.Fatalf("persist %v", got)
 	}
 	if connections, tickets, requests := owner.snapshot(); connections != 1 || tickets != 1 || len(requests) != 2 || requests[0] != "fail" || requests[1] != "worker.persist" {

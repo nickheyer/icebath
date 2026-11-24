@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 )
 
 // Process wide libopus handle shared by every voice connection
@@ -16,15 +17,15 @@ var opus = &opusCodec{}
 // Loaded libopus library, nil until a load succeeds
 type opusCodec struct {
 	mu  sync.Mutex
-	lib *pyctypes.CDLL
+	lib *dlutil.Library
 }
 
 // Loads libopus from a name or path, keeping the handle once the encoder symbol resolves
 func (o *opusCodec) load(path string) error {
-	if !pyctypes.Supported {
+	if !dlutil.Supported {
 		return &pyctypes.OSError{Msg: "shared library loading is unavailable on this platform"}
 	}
-	lib, err := pyctypes.LoadLibrary(path, false)
+	lib, err := dlutil.Open(path, false)
 	if err != nil {
 		return err
 	}
@@ -50,7 +51,7 @@ func opusCandidates() []string {
 	if bundled := findDiscordWindowsBundledOpus(); bundled != "" {
 		candidates = append(candidates, bundled)
 	}
-	if opusPath := pyctypes.FindLibrary("opus"); opusPath != "" {
+	if opusPath := dlutil.FindLibrary("opus"); opusPath != "" {
 		candidates = append(candidates, opusPath)
 	} else if runtime.GOOS == "darwin" {
 		for _, hp := range []string{"/opt/homebrew/lib/libopus.dylib", "/usr/local/lib/libopus.dylib"} {

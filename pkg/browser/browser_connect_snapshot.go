@@ -3,25 +3,29 @@ package browser
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var snapshotIgnores = []string{
@@ -70,40 +74,40 @@ var (
 	connectResolveSourceProfile = resolveSourceProfile
 	connectCopyAuthFile         = copyAuthFile
 	connectCloseBrowserHolding  = closeBrowserHoldingProfile
-	connectCopyTree             = pyshutil.CopyTreeIgnore
+	connectCopyTree             = fsutil.CopyTree
 	connectOpenFile             = os.Open
 	connectProcesses            = listProfileProcesses
 )
 
 func connectErrText(err error) string {
-	if pypath.IsOSError(err) {
-		return pypath.OSErrorText(err)
+	if errorutil.IsSystem(err) {
+		return err.Error()
 	}
 	return state.ErrText(err)
 }
 
 // The snapshot dir Icebath owns for a browser's real profile
 func realProfileCopyDir(env *tools.Env, browser string) string {
-	return pypath.PathJoin(cfgOf(env).homeDir(), "browser-profile", browser)
+	return pathutil.Join(cfgOf(env).homeDir(), "browser-profile", browser)
 }
 
 // Profile dir the browser last used per Local State, Default when unreadable or missing on disk
 func lastUsedProfile(src string) string {
 	var last any = "Default"
-	if raw, err := os.ReadFile(pypath.Join(src, "Local State")); err == nil {
-		if parsed, err := pyjson.Loads(pystr.DecodeUTF8SigReplace(raw)); err == nil {
-			if obj, ok := pyjson.AsObject(parsed); ok {
+	if raw, err := os.ReadFile(pathutil.Join(src, "Local State")); err == nil {
+		if parsed, err := jsonutil.Decode(strings.ToValidUTF8(string(textutil.TrimBOM(raw)), string(utf8.RuneError))); err == nil {
+			if obj, ok := jsonutil.AsObject(parsed); ok {
 				profile := anyGet(obj, "profile")
-				if !pyrepr.Truthy(profile) {
-					profile = pyjson.NewObject()
+				if !anyutil.IsTrue(profile) {
+					profile = jsonutil.NewObject()
 				}
-				if prof, ok := pyjson.AsObject(profile); ok {
-					last = pyrepr.Or(anyGet(prof, "last_used"), "Default")
+				if prof, ok := jsonutil.AsObject(profile); ok {
+					last = anyutil.Or(anyGet(prof, "last_used"), "Default")
 				}
 			}
 		}
 	}
-	if name, ok := last.(string); ok && isDirPath(pypath.Join(src, name)) {
+	if name, ok := last.(string); ok && isDirPath(pathutil.Join(src, name)) {
 		return name
 	}
 	return "Default"
@@ -160,7 +164,7 @@ func backupAuthDB(srcFile, dstFile string, deadline time.Duration) error {
 		lastRemaining, seen = remaining, true
 		if status != 101 && !time.Now().Before(deadlineAt) {
 			if remaining < before {
-				limit, _ := pyrepr.Format(authBackupDeadlineS, "g")
+				limit := strconv.FormatFloat(authBackupDeadlineS, 'g', 6, 64)
 				return &backupTimeout{"SQLite backup exceeded " + limit + "s while still making progress"}
 			}
 			return &backupTimeout{authDBLocked}
@@ -181,7 +185,7 @@ func backupAuthDB(srcFile, dstFile string, deadline time.Duration) error {
 	if err != nil {
 		return err
 	}
-	dstURI, err := pypath.AsURI(dstAbs)
+	dstURI, err := pathutil.FileURL(dstAbs)
 	if err != nil {
 		return err
 	}
@@ -191,23 +195,23 @@ func backupAuthDB(srcFile, dstFile string, deadline time.Duration) error {
 	}
 	defer dstDB.Close()
 	defer out.Close()
-	return pysqlite.Backup(source, out, 256, progress, 100*time.Millisecond)
+	return sqliteutil.Backup(source, out, 256, progress, 100*time.Millisecond)
 }
 
 // Copies auth state, the reason a file could not be snapshotted returned and a database never raw copied
 func copyAuthFile(srcFile, dstFile string, deadlineS *float64) (string, error) {
-	if err := os.MkdirAll(pypath.Dirname(dstFile), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dstFile), 0o777); err != nil {
 		return "", err
 	}
 	var err error
-	if hasToken(sqliteAuthDBs, pypath.Basename(srcFile)) {
+	if hasToken(sqliteAuthDBs, pathutil.Name(srcFile)) {
 		seconds := authBackupDeadlineS
 		if deadlineS != nil {
 			seconds = *deadlineS
 		}
 		err = backupAuthDB(srcFile, dstFile, time.Duration(seconds*float64(time.Second)))
 	} else {
-		err = pyshutil.Copy2(srcFile, dstFile)
+		err = fsutil.CopyFile(srcFile, dstFile)
 	}
 	if err == nil {
 		return "", nil
@@ -216,7 +220,7 @@ func copyAuthFile(srcFile, dstFile string, deadlineS *float64) (string, error) {
 	if reason := connectErrText(err); reason != "" {
 		return reason, nil
 	}
-	return pyrepr.ExceptionName(err), nil
+	return errorutil.Kind(err), nil
 }
 
 type authFailure struct{ rel, reason string }
@@ -225,18 +229,18 @@ type authFailure struct{ rel, reason string }
 func mirrorProfileAuth(src, dst, sourceProfile string) ([]authFailure, error) {
 	failed := []authFailure{}
 	for _, rel := range authRefreshProfileFiles {
-		s := pypath.Join(src, sourceProfile, rel)
+		s := pathutil.Join(src, sourceProfile, rel)
 		if !isFilePath(s) {
 			continue
 		}
-		base := pypath.Basename(rel)
+		base := pathutil.Name(rel)
 		sessionDB := base == "Cookies"
 		var deadline *float64
 		if !sessionDB {
 			optional := optionalAuthBackupDeadlineS
 			deadline = &optional
 		}
-		reason, err := connectCopyAuthFile(s, pypath.Join(dst, "Default", rel), deadline)
+		reason, err := connectCopyAuthFile(s, pathutil.Join(dst, "Default", rel), deadline)
 		if err != nil {
 			return nil, err
 		}
@@ -279,13 +283,13 @@ func unavailableAuthDBsError(browser string, failed []authFailure) string {
 
 // True when the active profile's cookie database cannot be opened for a permission reason
 func profileIsLocked(src, sourceProfile string) bool {
-	db := firstPresent([]string{pypath.Join(src, sourceProfile, pypath.Join("Network", "Cookies")), pypath.Join(src, sourceProfile, "Cookies")})
+	db := firstPresent([]string{pathutil.Join(src, sourceProfile, pathutil.Join("Network", "Cookies")), pathutil.Join(src, sourceProfile, "Cookies")})
 	if db == "" {
 		return false
 	}
 	f, err := connectOpenFile(db)
 	if err != nil {
-		return pypath.OSErrorClass(err) == "PermissionError"
+		return errors.Is(err, fs.ErrPermission)
 	}
 	f.Close()
 	return false
@@ -302,12 +306,12 @@ func resolveSourceProfile(env *tools.Env, src string) (string, string) {
 	if pin == "" {
 		return lastUsedProfile(src), ""
 	}
-	if isDirPath(pypath.Join(src, pin)) {
+	if isDirPath(pathutil.Join(src, pin)) {
 		return pin, ""
 	}
 	return "", "browser.real_profile_pin is set to '" + pin + "' but that profile directory does not " +
-		"exist under " + pyrepr.Repr(src) + ". Profile directories are named like 'Default' or 'Profile 2' " +
-		"— list them with: ls " + pyrepr.Repr(src) + ". Fix the pin, or remove it to fall back to the " +
+		"exist under " + anyutil.Quote(src) + ". Profile directories are named like 'Default' or 'Profile 2' " +
+		"— list them with: ls " + anyutil.Quote(src) + ". Fix the pin, or remove it to fall back to the " +
 		"last-used profile."
 }
 
@@ -344,7 +348,7 @@ var profileBrowserBins = []string{
 
 // Chromium family processes whose argv references exactly this user data dir
 func processesHoldingProfile(src string) []profileProcess {
-	norm := pypath.Normcase(pypath.Normpath(src))
+	norm := pathutil.FoldCase(filepath.Clean(src))
 	out := []profileProcess{}
 	for _, p := range connectProcesses() {
 		name := strings.ToLower(p.Name)
@@ -363,7 +367,7 @@ func processesHoldingProfile(src string) []profileProcess {
 		if !isBrowser {
 			continue
 		}
-		if strings.Contains(pypath.Normcase(pypath.Normpath(joined)), norm) ||
+		if strings.Contains(pathutil.FoldCase(filepath.Clean(joined)), norm) ||
 			strings.Contains(strings.ToLower(joined), strings.ToLower("--user-data-dir="+src)) {
 			out = append(out, p)
 		}
@@ -382,7 +386,7 @@ func waitProcesses(pids []int, timeout time.Duration) []int {
 		}
 		return left, len(left) == 0
 	}
-	return pydeadline.PollUntil(alive, timeout, 40*time.Millisecond)
+	return syncutil.PollUntil(context.Background(), timeout, 40*time.Millisecond, alive)
 }
 
 // Terminates the browser process tree holding a user data dir and waits for the profile lock to release
@@ -412,10 +416,10 @@ func closeBrowserHoldingProfile(env *tools.Env, src string, timeout float64) (bo
 	if sourceProfile == "" {
 		sourceProfile = lastUsedProfile(src)
 	}
-	released := pydeadline.PollUntil(func() (bool, bool) {
+	released := syncutil.PollUntil(context.Background(), time.Duration(timeout*float64(time.Second)), 500*time.Millisecond, func() (bool, bool) {
 		free := !connectProfileIsLocked(src, sourceProfile)
 		return free, free
-	}, time.Duration(timeout*float64(time.Second)), 500*time.Millisecond)
+	})
 	if released {
 		return true, "closed the browser and the profile lock released."
 	}
@@ -425,9 +429,9 @@ func closeBrowserHoldingProfile(env *tools.Env, src string, timeout float64) (bo
 
 // Copies Local State into the snapshot and rewrites it for the single Default profile of the copy
 func syncLocalState(src, dst, sourceProfile string) {
-	lsSrc, lsDst := pypath.Join(src, "Local State"), pypath.Join(dst, "Local State")
+	lsSrc, lsDst := pathutil.Join(src, "Local State"), pathutil.Join(dst, "Local State")
 	if isFilePath(lsSrc) {
-		if err := pyshutil.Copy2(lsSrc, lsDst); err != nil {
+		if err := fsutil.CopyFile(lsSrc, lsDst); err != nil {
 			pkgLog().Debug(fmt.Sprintf("real-profile snapshot: skipped Local State: %s", connectErrText(err)))
 		}
 	}
@@ -436,32 +440,32 @@ func syncLocalState(src, dst, sourceProfile string) {
 		if err != nil {
 			return err
 		}
-		text, err := pystr.DecodeUTF8Sig(raw)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if err != nil {
 			return err
 		}
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return err
 		}
-		stateObj, ok := pyjson.AsObject(parsed)
+		stateObj, ok := jsonutil.AsObject(parsed)
 		if !ok {
-			panic(fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(parsed)))
+			panic(fmt.Errorf("'%s' object has no attribute 'get'", anyutil.Kind(parsed)))
 		}
-		if prof, ok := pyjson.AsObject(anyGet(stateObj, "profile")); ok {
-			if cache, ok := pyjson.AsObject(anyGet(prof, "info_cache")); ok {
+		if prof, ok := jsonutil.AsObject(anyGet(stateObj, "profile")); ok {
+			if cache, ok := jsonutil.AsObject(anyGet(prof, "info_cache")); ok {
 				entry := anyGet(cache, sourceProfile)
-				if !pyrepr.Truthy(entry) {
+				if !anyutil.IsTrue(entry) {
 					entry = anyGet(cache, "Default")
 				}
-				if pyrepr.Truthy(entry) {
-					prof.Set("info_cache", pyjson.ObjectOf("Default", entry))
+				if anyutil.IsTrue(entry) {
+					prof.Set("info_cache", jsonutil.ObjectOf("Default", entry))
 				}
 			}
 			prof.Set("last_used", "Default")
 			prof.Set("last_active_profiles", []any{"Default"})
 		}
-		out, err := pyjson.Dumps(stateObj)
+		out, err := jsonutil.Encode(stateObj)
 		if err != nil {
 			return err
 		}
@@ -500,22 +504,22 @@ func countJoined(err error) int {
 
 // Fresh copy of the active profile dir into the copy's Default without caches and the auth databases
 func copyProfileTree(src, dst, sourceProfile string) error {
-	dstDefault := pypath.Join(dst, "Default")
+	dstDefault := pathutil.Join(dst, "Default")
 	os.RemoveAll(dstDefault)
-	patterns := pyshutil.IgnorePatterns(append(append([]string{}, snapshotIgnores...), sqliteAuthDBs...)...)
-	ignore := func(dir string, names []string) []string {
+	patterns := fsutil.IgnorePatterns(append(append([]string{}, snapshotIgnores...), sqliteAuthDBs...)...)
+	ignore := func(dir string, names []string) map[string]bool {
 		skipped := patterns(dir, names)
 		for _, name := range names {
 			entry := filepath.Join(dir, name)
 			if info, err := os.Lstat(entry); err == nil && info.Mode()&os.ModeSymlink != 0 {
 				if _, err := os.Stat(entry); err != nil {
-					skipped = append(skipped, name)
+					skipped[name] = true
 				}
 			}
 		}
 		return skipped
 	}
-	err := connectCopyTree(pypath.Join(src, sourceProfile), dstDefault, false, true, ignore)
+	err := connectCopyTree(pathutil.Join(src, sourceProfile), dstDefault, fsutil.CopyTreeOptions{DirsExistOK: true, Ignore: ignore})
 	if err == nil {
 		return nil
 	}
@@ -529,7 +533,7 @@ func copyProfileTree(src, dst, sourceProfile string) error {
 // Removes live instance leftovers that make the browser think the copy is already open
 func dropSingletonLeftovers(dst string) {
 	for _, leftover := range []string{"SingletonLock", "SingletonSocket", "SingletonCookie"} {
-		os.Remove(pypath.Join(dst, leftover))
+		os.Remove(pathutil.Join(dst, leftover))
 	}
 }
 
@@ -539,7 +543,7 @@ func snapshotSource(marker string) string {
 	if err != nil {
 		return ""
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		panic(err)
 	}
@@ -562,7 +566,7 @@ func snapshotRealProfile(env *tools.Env, browser, src string) (string, string) {
 	if src == "" || !isDirPath(src) {
 		shown := "None"
 		if src != "" {
-			shown = pyrepr.Repr(src)
+			shown = anyutil.Quote(src)
 		}
 		return "", "profile directory for '" + browser + "' was not found (" + shown + "). " +
 			"Launch that browser at least once, or turn browser.use_real_profile off."
@@ -572,7 +576,7 @@ func snapshotRealProfile(env *tools.Env, browser, src string) (string, string) {
 		return "", resolveErr
 	}
 	dst := connectRealProfileCopyDir(env, browser)
-	marker := pypath.Join(dst, snapshotDoneMarker)
+	marker := pathutil.Join(dst, snapshotDoneMarker)
 	populated := isFilePath(marker)
 	sameSource := populated && snapshotSource(marker) == sourceProfile
 	if connectProfileIsLocked(src, sourceProfile) {
@@ -590,7 +594,7 @@ func snapshotRealProfile(env *tools.Env, browser, src string) (string, string) {
 		if err := os.MkdirAll(dst, 0o777); err != nil {
 			return nil, err
 		}
-		for _, path := range []string{pypath.Dirname(dst), dst} {
+		for _, path := range []string{filepath.Dir(dst), dst} {
 			if path != "" {
 				secureSnapshot(env, path, false)
 			}
@@ -623,7 +627,7 @@ func snapshotRealProfile(env *tools.Env, browser, src string) (string, string) {
 
 // Deletes the whole real profile snapshot store when consent is off
 func cleanupRealProfileSnapshots(env *tools.Env) {
-	root := pypath.PathJoin(cfgOf(env).homeDir(), "browser-profile")
+	root := pathutil.Join(cfgOf(env).homeDir(), "browser-profile")
 	if isDirPath(root) {
 		os.RemoveAll(root)
 		pkgLog().Info(fmt.Sprintf("real-profile: removed snapshot store %s (consent off)", root))

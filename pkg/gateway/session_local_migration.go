@@ -12,14 +12,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Value of a stored row field, nil when the row or the field is absent
-func rowField(row *pyjson.Object, key string) any {
+func rowField(row *jsonutil.Object, key string) any {
 	if row == nil {
 		return nil
 	}
@@ -78,17 +78,17 @@ func resolveLocalTarget(ctx context.Context, a *SessionAuthority, actor Principa
 }
 
 // Create params and api mode a legacy row resumes on, its saved route and runtime choices preserved
-func legacyLaunchParams(row *pyjson.Object) (map[string]any, any, error) {
+func legacyLaunchParams(row *jsonutil.Object) (map[string]any, any, error) {
 	params := map[string]any{}
 	for _, key := range []string{"cwd", "model"} {
-		if value := rowField(row, key); pyrepr.Truthy(value) {
+		if value := rowField(row, key); anyutil.IsTrue(value) {
 			params[key] = value
 		}
 	}
 	saved := state.ParseModelConfig(rowField(row, "model_config"))
 	route := map[string]any{}
 	if runtime := state.SessionGatewayRuntime(row); runtime != nil {
-		for _, key := range runtime.Keys {
+		for _, key := range runtime.Keys() {
 			value, _ := runtime.Get(key)
 			if text, ok := value.(string); ok && strings.TrimSpace(text) != "" {
 				route[key] = strings.TrimSpace(text)
@@ -135,13 +135,13 @@ func legacyLaunchParams(row *pyjson.Object) (map[string]any, any, error) {
 }
 
 // Main's Bot Chat rule for a stored row, the follow marker or an exact Bot Chat title
-func botChatRow(row *pyjson.Object) bool {
+func botChatRow(row *jsonutil.Object) bool {
 	saved := state.ParseModelConfig(rowField(row, "model_config"))
 	return saved["follow_profile_config"] == true || strings.TrimSpace(routeStr(rowField(row, "title"))) == "Bot Chat"
 }
 
 // Whether a row's composer pick still holds because the profile targets what it diverged from
-func composerPickHolds(row *pyjson.Object, cfg map[string]any) bool {
+func composerPickHolds(row *jsonutil.Object, cfg map[string]any) bool {
 	composer, ok := state.ParseModelConfig(rowField(row, "model_config"))["composer_override_profile"].(map[string]any)
 	if !ok {
 		return false
@@ -151,7 +151,7 @@ func composerPickHolds(row *pyjson.Object, cfg map[string]any) bool {
 }
 
 // Params and api mode for adoption, a Bot Chat following its profile unless its composer pick holds
-func legacyBotChatLaunch(row *pyjson.Object, params map[string]any, apiMode any, cfg map[string]any) (map[string]any, any) {
+func legacyBotChatLaunch(row *jsonutil.Object, params map[string]any, apiMode any, cfg map[string]any) (map[string]any, any) {
 	if !botChatRow(row) {
 		return params, apiMode
 	}
@@ -174,9 +174,9 @@ func legacyBotChatLaunch(row *pyjson.Object, params map[string]any, apiMode any,
 }
 
 // Whether the row's only route record is the custom billing usage stamp
-func routeIsUsageStamp(row *pyjson.Object) bool {
+func routeIsUsageStamp(row *jsonutil.Object) bool {
 	saved := state.ParseModelConfig(rowField(row, "model_config"))
-	if runtime, ok := saved["gateway_runtime"].(map[string]any); ok && pyrepr.Truthy(runtime["provider"]) {
+	if runtime, ok := saved["gateway_runtime"].(map[string]any); ok && anyutil.IsTrue(runtime["provider"]) {
 		return false
 	}
 	for _, key := range []string{"provider", "base_url"} {
@@ -247,7 +247,7 @@ func endpointOwner(ctx context.Context, saved, cfg map[string]any) (any, error) 
 }
 
 // Adopts a legacy local row as a canonical local session committed under the liveness guard
-func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principal, row *pyjson.Object) (SessionRef, error) {
+func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principal, row *jsonutil.Object) (SessionRef, error) {
 	if actor.ProfileID != a.ProfileID {
 		return SessionRef{}, runtimeRefusal("profile_mismatch")
 	}
@@ -297,7 +297,7 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 		}
 		owner := ""
 		bareCustom := false
-		if !same && routeIsUsageStamp(row) && pyrepr.Truthy(saved["base_url"]) && savedID == "custom" {
+		if !same && routeIsUsageStamp(row) && anyutil.IsTrue(saved["base_url"]) && savedID == "custom" {
 			if owner, err = configuredOwner(ctx, saved, cfg); err != nil {
 				return SessionRef{}, err
 			}
@@ -315,7 +315,7 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 				}
 			}
 			cfg["model"] = kept
-			if pyrepr.Truthy(saved["base_url"]) {
+			if anyutil.IsTrue(saved["base_url"]) {
 				if params["provider"], err = endpointOwner(ctx, saved, cfg); err != nil {
 					return SessionRef{}, err
 				}
@@ -326,22 +326,22 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 	if err != nil {
 		return SessionRef{}, err
 	}
-	if pyrepr.Truthy(apiMode) {
+	if anyutil.IsTrue(apiMode) {
 		frozen, err := loadsObject(policy.ConfigJSON)
 		if err != nil {
 			return SessionRef{}, err
 		}
 		raw, present := frozen.Get("model")
 		if !present {
-			raw = pyjson.NewObject()
+			raw = jsonutil.NewObject()
 			frozen.Set("model", raw)
 		}
-		model, ok := raw.(*pyjson.Object)
+		model, ok := raw.(*jsonutil.Object)
 		if !ok {
 			return SessionRef{}, &PyError{Kind: "TypeError", Msg: "the legacy session record is " + errchain.Kind(raw) + ", expected a mapping"}
 		}
 		model.Set("api_mode", apiMode)
-		text, err := pyjson.Dumps(frozen)
+		text, err := jsonutil.Encode(frozen)
 		if err != nil {
 			return SessionRef{}, err
 		}
@@ -386,7 +386,7 @@ func adoptLegacySession(ctx context.Context, a *SessionAuthority, actor Principa
 	now := pyDatetime{T: time.Unix(0, int64(started*1e9))}
 	entry := NewSessionEntry(route, sid, now, now)
 	entry.Origin, entry.Platform = source, PlatformLocal
-	receipt := pyjson.ObjectOf("profile_id", a.ProfileID, "principal_id", actor.Subject, "request_id", requestID,
+	receipt := jsonutil.ObjectOf("profile_id", a.ProfileID, "principal_id", actor.Subject, "request_id", requestID,
 		"session_id", sid, "route", route, "entry", entry.ToDict(), "policy", localPolicyAsDict(policy),
 		"legacy_session_id", sid, "lineage", []any{sid})
 	registryHome := filepath.Dir(a.DB.Path())

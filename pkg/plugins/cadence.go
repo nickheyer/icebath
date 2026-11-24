@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const updateCheckMarkersDir = "plugin-update-checks"
@@ -46,7 +46,7 @@ func recordCheckResults(ctx context.Context, results []*CheckResult, checked map
 	if err != nil {
 		return
 	}
-	text, err := pyjson.Dumps(rows, pyjson.Indent(2))
+	text, err := jsonutil.Encode(rows, jsonutil.Indent(2))
 	if err != nil {
 		return
 	}
@@ -59,7 +59,7 @@ func installFingerprint(record any) any {
 	if !ok {
 		return nil
 	}
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("source", m["source"])
 	o.Set("revision", m["revision"])
 	o.Set("pinned", m["pinned"] == true)
@@ -78,19 +78,19 @@ func CachedGitUpdates(ctx context.Context, installMetadata map[string]any) map[s
 	if err != nil {
 		return out
 	}
-	rows, err := pyjson.Loads(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
+	rows, err := jsonutil.Decode(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
 	if err != nil {
 		return out
 	}
 	list, _ := rows.([]any)
 	for _, item := range list {
-		row, ok := item.(*pyjson.Object)
+		row, ok := item.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
 		class, _ := row.Get("class")
 		available, _ := row.Get("update_available")
-		if !pyrepr.Equal(class, "git") || available != true {
+		if !anyutil.Equal(class, "git") || available != true {
 			continue
 		}
 		name, _ := row.Get("name")
@@ -98,12 +98,12 @@ func CachedGitUpdates(ctx context.Context, installMetadata map[string]any) map[s
 		if key, ok := name.(string); ok {
 			record = installMetadata[key]
 		}
-		current, _ := installFingerprint(record).(*pyjson.Object)
+		current, _ := installFingerprint(record).(*jsonutil.Object)
 		checked, _ := row.Get("checked_install")
 		latest, _ := row.Get("latest")
 		if current != nil {
-			if pinned, _ := current.Get("pinned"); pinned != true && pyrepr.Equal(current, checked) && pyrepr.Truthy(latest) {
-				out[pyrepr.Str(name)] = pyrepr.Str(latest)
+			if pinned, _ := current.Get("pinned"); pinned != true && anyutil.Equal(current, checked) && anyutil.IsTrue(latest) {
+				out[anyutil.String(name)] = anyutil.String(latest)
 			}
 		}
 	}

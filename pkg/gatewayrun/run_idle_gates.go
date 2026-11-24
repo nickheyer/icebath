@@ -7,8 +7,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Goals cached session database of profileHome read with only its home override installed, nil when unavailable
@@ -36,7 +36,7 @@ func idleGate(ctx context.Context, profileHome string, storeHasWork func(ctx con
 	}()
 	found, err := storeHasWork(ctx, db)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("idle probe failed for %s; keeping the full sweep", profileHome), "error", pyrepr.ExceptionMessage(err))
+		pkgLog().Debug(fmt.Sprintf("idle probe failed for %s; keeping the full sweep", profileHome), "error", err.Error())
 		return true
 	}
 	return found
@@ -65,5 +65,5 @@ func (r *GatewayRunner) offLoopGate(ctx context.Context, probe func(ctx context.
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(out), nil
+	return anyutil.IsTrue(out), nil
 }

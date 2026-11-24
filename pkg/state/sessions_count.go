@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type SessionCountOptions struct {
@@ -48,14 +48,14 @@ func (d *SessionDB) SessionCountGE(ctx context.Context, n int) (bool, error) {
 }
 
 // Session counts keyed by source in one grouped read, an empty source counted as cli
-func (d *SessionDB) SessionCountBySource(ctx context.Context, includeArchived, archivedOnly, excludeChildren bool) (*pyjson.Object, error) {
+func (d *SessionDB) SessionCountBySource(ctx context.Context, includeArchived, archivedOnly, excludeChildren bool) (*jsonutil.Object, error) {
 	clauses, params := sessionFilterWhere(sessionFilter{excludeChildren: excludeChildren, archivedOnly: archivedOnly, includeArchived: includeArchived})
 	if excludeChildren {
 		if _, err := d.excludeSupersededSegments(ctx, &clauses, &params); err != nil {
 			return nil, err
 		}
 	}
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := d.readCtx(ctx, true, func(conn SQLiteConn) error {
 		if !d.hasWriterConn() {
 			return errors.New("SessionDB connection is closed")
@@ -68,7 +68,7 @@ func (d *SessionDB) SessionCountBySource(ctx context.Context, includeArchived, a
 	if err != nil {
 		return nil, err
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, row := range rows {
 		count, _ := rowInt(row, "count")
 		out.Set(pyStr(rowValue(row, "source")), count)

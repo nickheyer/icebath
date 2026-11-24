@@ -8,9 +8,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var skillsBlockRe = regexp.MustCompile(`(?s)<available_skills>.*?</available_skills>`)
@@ -113,7 +113,7 @@ func breakdownJSONTokens(tools []map[string]any) int {
 	if len(tools) == 0 {
 		return 0
 	}
-	text, err := pyjson.Dumps(tools, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(tools)
 	if err != nil {
 		return 0
 	}
@@ -138,7 +138,7 @@ func skillsBlock(stable string) string {
 func splitBreakdownTools(tools []map[string]any) (builtin, mcp, subagent []map[string]any) {
 	for _, tool := range tools {
 		source := tool
-		if fn, ok := pyjson.Dict(tool["function"]); ok {
+		if fn, ok := jsonutil.AsMap(tool["function"]); ok {
 			source = fn
 		}
 		name, _ := source["name"].(string)

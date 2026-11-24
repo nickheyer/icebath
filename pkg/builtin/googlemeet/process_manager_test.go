@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestStartRefusesUnsafeURL(t *testing.T) {
@@ -32,7 +32,7 @@ func TestStatusReportsNoActiveMeeting(t *testing.T) {
 	st, _ := pmStatus(ctx)
 	tr, _ := pmTranscript(ctx, 0)
 	sp, _ := pmStop(ctx, "requested")
-	for _, r := range []*pyjson.Object{st, tr, sp} {
+	for _, r := range []*jsonutil.Object{st, tr, sp} {
 		if ok, _ := r.Get("ok"); ok != false {
 			t.Fatal(r)
 		}
@@ -45,7 +45,7 @@ func TestTranscriptReadsLastNLines(t *testing.T) {
 	dir := filepath.Join(h, "workspace", "meetings", "abc-defg-hij")
 	_ = os.MkdirAll(dir, 0o755)
 	_ = os.WriteFile(filepath.Join(dir, "transcript.txt"), []byte("[10:00:00] Alice: one\n[10:00:01] Bob: two\n[10:00:02] Alice: three\n"), 0o644)
-	if err := writeActive(ctx, pyjson.ObjectOf("pid", 0, "meeting_id", "abc-defg-hij", "out_dir", dir, "url", "https://meet.google.com/abc-defg-hij", "started_at", 0)); err != nil {
+	if err := writeActive(ctx, jsonutil.ObjectOf("pid", 0, "meeting_id", "abc-defg-hij", "out_dir", dir, "url", "https://meet.google.com/abc-defg-hij", "started_at", 0)); err != nil {
 		t.Fatal(err)
 	}
 	res, err := pmTranscript(ctx, 2)
@@ -64,7 +64,7 @@ func TestTranscriptReadsLastNLines(t *testing.T) {
 func TestStopSignalsProcessAndClearsPointer(t *testing.T) {
 	isolateHome(t)
 	ctx := context.Background()
-	_ = writeActive(ctx, pyjson.ObjectOf("pid", 11111, "meeting_id", "x-y-z", "out_dir", filepath.Join(t.TempDir(), "x-y-z"), "url", "https://meet.google.com/x-y-z", "started_at", 0))
+	_ = writeActive(ctx, jsonutil.ObjectOf("pid", 11111, "meeting_id", "x-y-z", "out_dir", filepath.Join(t.TempDir(), "x-y-z"), "url", "https://meet.google.com/x-y-z", "started_at", 0))
 	seq := []bool{true, true, false}
 	var sent [][2]int
 	ra, rk, rs := pidAlive, killProcess, pmSleep

@@ -67,7 +67,7 @@ func sessionTitle(ctx context.Context, a *SessionAuthority, sessionID string) st
 	if err != nil || row == nil {
 		return ""
 	}
-	title, _ := row.GetOr("title", nil).(string)
+	title, _ := row.ValueOr("title", nil).(string)
 	return strings.TrimSpace(title)
 }
 
@@ -89,7 +89,7 @@ func oldestIdleTitle(ctx context.Context, a *SessionAuthority, open []string) st
 		}
 		if best == "" || at < bestAt {
 			best, bestAt = id, at
-			if title, _ := row.GetOr("title", nil).(string); strings.TrimSpace(title) != "" {
+			if title, _ := row.ValueOr("title", nil).(string); strings.TrimSpace(title) != "" {
 				best = strings.TrimSpace(title)
 			}
 		}
@@ -98,8 +98,8 @@ func oldestIdleTitle(ctx context.Context, a *SessionAuthority, open []string) st
 }
 
 // Number a row column holds, zero for NULL or anything else
-func rowFloat(row interface{ GetOr(string, any) any }, key string) float64 {
-	switch n := row.GetOr(key, nil).(type) {
+func rowFloat(row interface{ ValueOr(string, any) any }, key string) float64 {
+	switch n := row.ValueOr(key, nil).(type) {
 	case float64:
 		return n
 	case int64:

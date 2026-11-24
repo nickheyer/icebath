@@ -10,15 +10,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Keyword options of a policy build, the zero value is a profile terminal launch without posture
@@ -136,15 +136,15 @@ func buildPolicy(ctx context.Context, params, cfg map[string]any, opts buildPoli
 	if _, err := launchSkills(params); err != nil {
 		return nil, err
 	}
-	text, err := pyjson.Dumps(cfg)
+	text, err := jsonutil.Encode(cfg)
 	if err != nil {
 		return nil, err
 	}
-	copied, err := pyjson.Loads(text)
+	copied, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	plain, _ := pyjson.Plain(copied).(map[string]any)
+	plain, _ := jsonutil.Plain(copied).(map[string]any)
 	config := presentSections(plain)
 	picked := withoutAutoPick(params)
 	_, pm := picked["model"]
@@ -186,16 +186,16 @@ func buildPolicy(ctx context.Context, params, cfg map[string]any, opts buildPoli
 		rules := state.ClientEnvRulesFor(config, opts.ClientLocal)
 		env, err := state.NormaliseClientEnv(raw, rules)
 		if err != nil {
-			if typed, ok := err.(interface{ PyTypeName() string }); ok && typed.PyTypeName() == "ValueError" {
+			if typed, ok := err.(interface{ ErrorKind() string }); ok && typed.ErrorKind() == "ValueError" {
 				return nil, refuseText("client_env", err.Error())
 			}
 			return nil, err
 		}
-		envText, err := pyjson.Dumps(env, pyjson.SortKeys(true))
+		envText, err := jsonutil.Encode(env, jsonutil.SortKeys())
 		if err != nil {
 			return nil, err
 		}
-		rulesText, err := pyjson.Dumps(rules.Object(), pyjson.SortKeys(true))
+		rulesText, err := jsonutil.Encode(rules.Object(), jsonutil.SortKeys())
 		if err != nil {
 			return nil, err
 		}
@@ -224,15 +224,15 @@ func buildPolicy(ctx context.Context, params, cfg map[string]any, opts buildPoli
 		toolsets = append(toolsets, name)
 	}
 	sort.Strings(toolsets)
-	configJSON, err := pyjson.Dumps(config)
+	configJSON, err := jsonutil.Encode(config)
 	if err != nil {
 		return nil, err
 	}
-	requestJSON, err := pyjson.Dumps(request, pyjson.SortKeys(true))
+	requestJSON, err := jsonutil.Encode(request, jsonutil.SortKeys())
 	if err != nil {
 		return nil, err
 	}
-	terminalJSON, err := pyjson.Dumps(terminal)
+	terminalJSON, err := jsonutil.Encode(terminal)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,7 @@ func profileWorkspaceCwd(ctx context.Context, h string) (string, error) {
 	case "", ".", "auto", "cwd":
 		return "", nil
 	}
-	configured, err := pypath.Abspath(pypath.Expanduser(text))
+	configured, err := filepath.Abs(pathutil.ExpandUser(text))
 	if err != nil {
 		return "", err
 	}
@@ -285,8 +285,8 @@ func withEntryPick(ctx context.Context, params, config map[string]any) (map[stri
 		url, hasURL := params["base_url"]
 		hasURL = hasURL && url != nil
 		model := ""
-		if pyrepr.Truthy(params["model"]) {
-			model = pyrepr.Str(params["model"])
+		if anyutil.IsTrue(params["model"]) {
+			model = anyutil.String(params["model"])
 		}
 		_, routeURL := modelRoute(config["model"])
 		ownURL := provider.RouteKey(routeURL)
@@ -309,7 +309,7 @@ func withEntryPick(ctx context.Context, params, config map[string]any) (map[stri
 		}
 		urlText := ""
 		if hasURL {
-			urlText = pyrepr.Str(url)
+			urlText = anyutil.String(url)
 		}
 		healed := provider.RoutedCustomIdentity(provider.WithFrozenRuntimeConfig(ctx, config), urlText, model, held)
 		if healed == "" && strings.HasPrefix(identity, "custom:") && !hasURL {
@@ -402,7 +402,7 @@ func applyLaunchOverrides(ctx context.Context, params, cfg map[string]any) error
 			}
 		}
 		if !known {
-			return refuseText("service_tier", "not a known tier: "+pyrepr.Repr(raw))
+			return refuseText("service_tier", "not a known tier: "+anyutil.Quote(raw))
 		}
 		if tier == "" {
 			tier = "normal"
@@ -442,7 +442,7 @@ func applyLaunchOverrides(ctx context.Context, params, cfg map[string]any) error
 			limit = config.ResolveTurnLimit(raw, 0)
 		}
 		if limit == 0 {
-			return refuseText("max_turns", "unreadable cap: "+pyrepr.Repr(raw))
+			return refuseText("max_turns", "unreadable cap: "+anyutil.Quote(raw))
 		}
 		agent, err := setdefaultMap(cfg, "agent")
 		if err != nil {
@@ -452,7 +452,7 @@ func applyLaunchOverrides(ctx context.Context, params, cfg map[string]any) error
 	}
 	if raw, ok := params["reasoning"]; ok {
 		if s, isS := raw.(string); !isS || config.ParseReasoningEffort(s) == nil {
-			return refuseText("reasoning", "not a known effort level: "+pyrepr.Repr(raw))
+			return refuseText("reasoning", "not a known effort level: "+anyutil.Quote(raw))
 		}
 		if err := pinReasoningEffort(cfg, raw, false); err != nil {
 			return err
@@ -491,7 +491,7 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 				if line, refused := tools.ToolsetTierRefusal(name); isS && refused {
 					return nil, refuseText("toolsets", line)
 				}
-				return nil, refuseText("toolsets", "unknown or invalid toolset name: "+pyrepr.Repr(item))
+				return nil, refuseText("toolsets", "unknown or invalid toolset name: "+anyutil.Quote(item))
 			}
 			server := name
 			if _, own := configured[name]; strings.HasPrefix(name, "mcp-") && !own {
@@ -502,7 +502,7 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 				if _, isMap := entry.(map[string]any); isMap {
 					why = "is disabled in config"
 				}
-				return nil, refuseText("toolsets", fmt.Sprintf("MCP server %s %s", pyrepr.Repr(server), why))
+				return nil, refuseText("toolsets", fmt.Sprintf("MCP server %s %s", anyutil.Quote(server), why))
 			}
 		}
 		section, err := setdefaultMap(cfg, "platform_toolsets")
@@ -549,7 +549,7 @@ func resolveToolsets(ctx context.Context, params, cfg map[string]any, source str
 	}
 	if !hasExplicit && (source == "tui" || source == "gui") {
 		agent, isMap := cfg["agent"].(map[string]any)
-		if !isMap && pyrepr.Truthy(cfg["agent"]) {
+		if !isMap && anyutil.IsTrue(cfg["agent"]) {
 			return nil, fmt.Errorf("the agent section of config.yaml is %s, expected a mapping", errchain.Kind(cfg["agent"]))
 		}
 		disabled := map[string]bool{}

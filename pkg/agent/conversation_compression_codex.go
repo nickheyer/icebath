@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // codexThreadCompactor is the slice of the codex app server session the compaction route drives
@@ -107,7 +107,7 @@ func compressionErrorClass(ctx context.Context, v any) string {
 }
 
 // Lets codex compact its own thread and leaves the local transcript unchanged, one attempt record per exit
-func compressContextViaCodexAppServer(ctx context.Context, a *AIAgent, messages []map[string]any, systemMessage *string, approxTokens *int, taskID string, force bool, startedAt time.Time, attemptSeed *pyjson.Object) (out []map[string]any, prompt string, err error) {
+func compressContextViaCodexAppServer(ctx context.Context, a *AIAgent, messages []map[string]any, systemMessage *string, approxTokens *int, taskID string, force bool, startedAt time.Time, attemptSeed *jsonutil.Object) (out []map[string]any, prompt string, err error) {
 	var approx any
 	if approxTokens != nil {
 		approx = *approxTokens

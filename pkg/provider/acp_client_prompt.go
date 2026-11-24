@@ -3,8 +3,8 @@ package provider
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Transcript label of each message role, unknown roles reading as Context
@@ -37,8 +37,8 @@ func acpFormatMessagesAsPrompt(messages []any, tools []any, toolChoice any) (str
 		}
 		roleRaw, _ := bridgeAttr(message, "role")
 		role := "unknown"
-		if pyrepr.Truthy(roleRaw) {
-			role = pyrepr.Str(roleRaw)
+		if anyutil.IsTrue(roleRaw) {
+			role = anyutil.String(roleRaw)
 		}
 		role = strings.ToLower(strings.TrimSpace(role))
 		content, _ := bridgeAttr(message, "content")
@@ -74,17 +74,17 @@ func acpRenderMessageContent(content any) (string, error) {
 	}
 	if bridgeIsDict(content) {
 		if text, ok := bridgeAttr(content, "text"); ok {
-			if !pyrepr.Truthy(text) {
+			if !anyutil.IsTrue(text) {
 				return "", nil
 			}
-			return strings.TrimSpace(pyrepr.Str(text)), nil
+			return strings.TrimSpace(anyutil.String(text)), nil
 		}
 		if inner, _ := bridgeAttr(content, "content"); inner != nil {
 			if s, ok := inner.(string); ok {
 				return strings.TrimSpace(s), nil
 			}
 		}
-		return pyjson.Dumps(content, pyjson.EnsureASCII(true))
+		return jsonutil.Encode(content, jsonutil.ASCII())
 	}
 	if items, ok := bridgeList(content); ok {
 		var parts []string
@@ -102,5 +102,5 @@ func acpRenderMessageContent(content any) (string, error) {
 		}
 		return strings.TrimSpace(strings.Join(parts, "\n")), nil
 	}
-	return strings.TrimSpace(pyrepr.Str(content)), nil
+	return strings.TrimSpace(anyutil.String(content)), nil
 }

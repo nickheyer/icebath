@@ -6,9 +6,9 @@ import (
 	"math"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner that revives a persisted routing entry's source pinned to its receiving bot
@@ -46,14 +46,14 @@ func namesAnotherConversation(ctx context.Context, a *SessionAuthority, sid, rou
 }
 
 // Routing entry rebuilt from the row alone once the route no longer vouches for it, nil without a matching source
-func rowEntry(ctx context.Context, row *pyjson.Object, platform Platform, route, profile string) (*SessionEntry, error) {
+func rowEntry(ctx context.Context, row *jsonutil.Object, platform Platform, route, profile string) (*SessionEntry, error) {
 	source := rowSource(ctx, row, platform, profile)
 	if source == nil || source.Platform != platform {
 		return nil, nil
 	}
 	started := sessionNow()
 	if stamp, _ := row.Get("started_at"); pyTruthy(stamp) {
-		seconds, err := pyint.Float(stamp)
+		seconds, err := anyutil.ToFloat(stamp)
 		if err != nil {
 			return nil, err
 		}

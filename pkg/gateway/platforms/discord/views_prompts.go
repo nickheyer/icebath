@@ -15,9 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var errListIndex = errors.New("list index out of range")
@@ -26,7 +26,7 @@ var errListIndex = errors.New("list index out of range")
 func requiredKey(row map[string]any, key string) (any, error) {
 	v, ok := row[key]
 	if !ok {
-		return nil, errors.New(pyrepr.Repr(key))
+		return nil, errors.New(anyutil.Quote(key))
 	}
 	return v, nil
 }
@@ -47,7 +47,7 @@ func rowModels(row map[string]any) []string {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, m := range v {
-			out = append(out, pyrepr.Str(m))
+			out = append(out, anyutil.String(m))
 		}
 		return out
 	}
@@ -235,7 +235,7 @@ func (a *DiscordAdapter) newModelPickerView(ctx context.Context, providers []map
 // Provider row with the slug, nil when no row has it
 func (v *modelPickerView) providerBySlug(slug string) map[string]any {
 	for _, p := range v.providers {
-		if pyrepr.Str(p["slug"]) == slug {
+		if anyutil.String(p["slug"]) == slug {
 			return p
 		}
 	}
@@ -257,11 +257,11 @@ func (v *modelPickerView) buildProviderSelectLocked(ctx context.Context) error {
 		}
 		count := strconv.Itoa(len(rowModels(p)))
 		if total, ok := p["total_models"]; ok {
-			count = pyrepr.Str(total)
+			count = anyutil.String(total)
 		}
-		opt := selectOption{value: pyrepr.Str(slug), label: tDiscord(ctx, "platform.discord.picker.provider_option", discordSelectFieldLimit,
-			map[string]any{"provider": pyrepr.Str(name), "count": count})}
-		if pyrepr.Truthy(p["is_current"]) {
+		opt := selectOption{value: anyutil.String(slug), label: tDiscord(ctx, "platform.discord.picker.provider_option", discordSelectFieldLimit,
+			map[string]any{"provider": anyutil.String(name), "count": count})}
+		if anyutil.IsTrue(p["is_current"]) {
 			opt.description = tDiscord(ctx, "platform.discord.picker.current", discordSelectFieldLimit, nil)
 		}
 		options = append(options, opt)
@@ -293,7 +293,7 @@ func (v *modelPickerView) buildModelSelectLocked(ctx context.Context, slug strin
 		chunks = append(chunks, models[idx:min(idx+discordSelectMaxOptions, len(models))])
 	}
 	chunks = chunks[:min(len(chunks), discordSelectMaxRows-2)]
-	hintBase := i18n.T(ctx, "platform.discord.picker.model_placeholder", "", map[string]any{"provider": pyrepr.Str(rowGet(p, "name", slug))})
+	hintBase := i18n.T(ctx, "platform.discord.picker.model_placeholder", "", map[string]any{"provider": anyutil.String(rowGet(p, "name", slug))})
 	for idx, chunk := range chunks {
 		options := make([]selectOption, 0, len(chunk))
 		for _, modelID := range chunk {
@@ -369,7 +369,7 @@ func (v *modelPickerView) onProviderSelected(ctx context.Context, i *discordgo.I
 	p := v.providerBySlug(slug)
 	pname := slug
 	if p != nil {
-		pname = pyrepr.Str(rowGet(p, "name", slug))
+		pname = anyutil.String(rowGet(p, "name", slug))
 	}
 	err = v.buildModelSelectLocked(ctx, slug)
 	v.mu.Unlock()
@@ -381,8 +381,8 @@ func (v *modelPickerView) onProviderSelected(ctx context.Context, i *discordgo.I
 	if p != nil {
 		total = rowInt(rowGet(p, "total_models", 0))
 		shown = min(len(rowModels(p)), discordModelSelectCapacity)
-		if pyrepr.Truthy(p["plan_line"]) {
-			planLine = "⚠️ " + pyrepr.Str(p["plan_line"]) + "\n"
+		if anyutil.IsTrue(p["plan_line"]) {
+			planLine = "⚠️ " + anyutil.String(p["plan_line"]) + "\n"
 		}
 	}
 	extra := ""
@@ -530,9 +530,9 @@ func (a *DiscordAdapter) newChoicePickerView(ctx context.Context, choices []map[
 	v.initView(a, "ChoicePickerView", v, users, roles, 120)
 	options := make([]selectOption, 0, len(v.choices))
 	for _, choice := range v.choices {
-		label := pyrepr.Str(pyrepr.Or(choice["label"], pyrepr.Or(choice["value"], "")))
-		opt := selectOption{label: truncateDiscordComponentText(label, discordSelectFieldLimit), value: pyrepr.Str(pyrepr.Or(choice["value"], ""))}
-		if pyrepr.Truthy(choice["is_current"]) {
+		label := anyutil.String(anyutil.Or(choice["label"], anyutil.Or(choice["value"], "")))
+		opt := selectOption{label: truncateDiscordComponentText(label, discordSelectFieldLimit), value: anyutil.String(anyutil.Or(choice["value"], ""))}
+		if anyutil.IsTrue(choice["is_current"]) {
 			opt.description = tDiscord(ctx, "platform.discord.picker.current", discordSelectFieldLimit, nil)
 		}
 		options = append(options, opt)
@@ -690,8 +690,8 @@ func (v *clarifyChoiceView) resolveChoice(ctx context.Context, i *discordgo.Inte
 		resolvedText = entry.Choices[index]
 	}
 	resolved := tools.ResolveGatewayClarify(v.clarifyID, resolvedText)
-	pkgLog().Info(fmt.Sprintf("Discord clarify button resolved (id=%s, choice=%s, user=%s, ok=%s)", v.clarifyID, pyrepr.Repr(resolvedText),
-		clickerName(i, "?"), pyrepr.Repr(resolved)))
+	pkgLog().Info(fmt.Sprintf("Discord clarify button resolved (id=%s, choice=%s, user=%s, ok=%s)", v.clarifyID, anyutil.Quote(resolvedText),
+		clickerName(i, "?"), anyutil.Quote(resolved)))
 	return nil
 }
 

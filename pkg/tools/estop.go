@@ -12,9 +12,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // File name of the emergency stop sentinel under a home
@@ -37,8 +34,8 @@ func SentinelPath(ctx context.Context) string {
 func candidateSentinelPaths(ctx context.Context) []string {
 	primary := SentinelPath(ctx)
 	root := filepath.Join(home.Root(), EstopSentinelName)
-	resolvedRoot, errRoot := pypath.Resolve(root)
-	resolvedPrimary, errPrimary := pypath.Resolve(primary)
+	resolvedRoot, errRoot := pathutil.Resolve(root)
+	resolvedPrimary, errPrimary := pathutil.Resolve(primary)
 	distinct := root != primary
 	if errRoot == nil && errPrimary == nil {
 		distinct = resolvedRoot != resolvedPrimary
@@ -69,8 +66,8 @@ func Engage(ctx context.Context, reason string) string {
 	if reason != "" {
 		reasonValue = reason
 	}
-	payload := pyjson.ObjectOf("engaged_at", time.Now().UTC().Format("2006-01-02T15:04:05.999999-07:00"), "reason", reasonValue)
-	body, err := pyjson.Dumps(payload, pyjson.Indent(2))
+	payload := jsonutil.ObjectOf("engaged_at", time.Now().UTC().Format("2006-01-02T15:04:05.999999-07:00"), "reason", reasonValue)
+	body, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		body = "{}"
 	}
@@ -125,15 +122,15 @@ func GetState(ctx context.Context) *EstopState {
 		if !utf8.Valid(body) {
 			continue
 		}
-		parsed, err := pyjson.Loads(string(body))
+		parsed, err := jsonutil.Decode(string(body))
 		if err != nil {
 			continue
 		}
-		raw, ok := parsed.(*pyjson.Object)
+		raw, ok := parsed.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
-		state = &EstopState{Reason: stringField(raw.Vals, "reason"), EngagedAt: stringField(raw.Vals, "engaged_at")}
+		state = &EstopState{Reason: stringField(raw.Map(), "reason"), EngagedAt: stringField(raw.Map(), "engaged_at")}
 		break
 	}
 	if !found {
@@ -152,10 +149,10 @@ func estopStripBOM(data []byte) []byte {
 
 // Python str of a truthy JSON object field, empty for a missing or falsy value
 func stringField(raw map[string]any, key string) string {
-	if !pyrepr.Truthy(raw[key]) {
+	if !anyutil.IsTrue(raw[key]) {
 		return ""
 	}
-	return pyrepr.Str(raw[key])
+	return anyutil.String(raw[key])
 }
 
 // Short notice for new gateway turns while paused, empty when not paused

@@ -17,12 +17,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Reader behind the delete confirmation prompt, swapped by tests
@@ -202,9 +201,9 @@ func printDeleteSummary(ctx context.Context, canon, profileDir string, gwRunning
 	fmt.Fprintf(stdout, "\nProfile: %s\n", canon)
 	fmt.Fprintf(stdout, "Path:    %s\n", profileDir)
 	if truthy(model) {
-		line := "Model:   " + pyrepr.Str(model)
+		line := "Model:   " + anyutil.String(model)
 		if truthy(prov) {
-			line += " (" + pyrepr.Str(prov) + ")"
+			line += " (" + anyutil.String(prov) + ")"
 		}
 		fmt.Fprintln(stdout, line)
 	}
@@ -214,11 +213,11 @@ func printDeleteSummary(ctx context.Context, canon, profileDir string, gwRunning
 	if truthy(distName) {
 		version := "?"
 		if truthy(distVersion) {
-			version = pyrepr.Str(distVersion)
+			version = anyutil.String(distVersion)
 		}
-		fmt.Fprintf(stdout, "Distribution: %s@%s\n", pyrepr.Str(distName), version)
+		fmt.Fprintf(stdout, "Distribution: %s@%s\n", anyutil.String(distName), version)
 		if truthy(distSource) {
-			fmt.Fprintf(stdout, "Installed from: %s\n", pyrepr.Str(distSource))
+			fmt.Fprintf(stdout, "Installed from: %s\n", anyutil.String(distSource))
 		}
 	}
 	fmt.Fprintln(stdout, "\nThis will permanently delete:")
@@ -365,7 +364,7 @@ func errText(err error) string {
 	var pe *fs.PathError
 	var le *os.LinkError
 	if errors.As(err, &pe) || errors.As(err, &le) {
-		return pyfs.OSErrorText(err)
+		return err.Error()
 	}
 	return err.Error()
 }
@@ -541,18 +540,18 @@ func stopRecordedGateway(profileDir, pidFile string) error {
 	text := strings.TrimSpace(strings.TrimPrefix(string(raw), "\ufeff"))
 	data := map[string]any{}
 	if strings.HasPrefix(text, "{") {
-		v, err := pyjson.Loads(text)
+		v, err := jsonutil.Decode(text)
 		if err != nil {
 			return err
 		}
-		obj, ok := v.(*pyjson.Object)
+		obj, ok := v.(*jsonutil.Object)
 		if !ok {
 			if _, isList := v.([]any); isList {
 				return errors.New("list indices must be integers or slices, not str")
 			}
-			return fmt.Errorf("'%s' object is not subscriptable", pyrepr.TypeName(v))
+			return fmt.Errorf("'%s' object is not subscriptable", anyutil.Kind(v))
 		}
-		data = obj.Vals
+		data = obj.Map()
 	} else {
 		n, err := pyInt(text)
 		if err != nil {
@@ -606,11 +605,11 @@ func pyInt(v any) (int, error) {
 	case string:
 		n, err := strconv.Atoi(strings.ReplaceAll(strings.TrimSpace(x), "_", ""))
 		if err != nil {
-			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(x))
+			return 0, fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(x))
 		}
 		return n, nil
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", anyutil.Kind(v))
 }
 
 // Integer start time of a pid record, false when absent or null

@@ -17,8 +17,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Temp home holding the cadence markers with the package logger captured
@@ -156,7 +156,7 @@ func TestGatewayCheckRunsRealCadenceAndBacksOff(t *testing.T) {
 		if failed {
 			outcome, code = "failed", 1
 		}
-		if saved["outcome"] != outcome || !pyrepr.Equal(saved["exit_code"], code) {
+		if saved["outcome"] != outcome || !anyutil.Equal(saved["exit_code"], code) {
 			t.Fatalf("%v", saved)
 		}
 		if _, err := os.Stat(filepath.Join(h, "plugin-update-checks", "last-run")); err != nil {
@@ -165,7 +165,7 @@ func TestGatewayCheckRunsRealCadenceAndBacksOff(t *testing.T) {
 		if failed {
 			warnings, _ := saved["warnings"].([]any)
 			first, _ := warnings[0].(map[string]any)
-			if msg := pyrepr.Str(first["message"]); msg == "" || !strings.Contains(buf.String(), msg) {
+			if msg := anyutil.String(first["message"]); msg == "" || !strings.Contains(buf.String(), msg) {
 				t.Fatalf("%v %s", saved["warnings"], buf.String())
 			}
 		}

@@ -1,6 +1,7 @@
 package recap
 
 import (
+	"path/filepath"
 	"unicode"
 	"unicode/utf8"
 
@@ -10,10 +11,10 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -35,7 +36,7 @@ func mappingGet(v any, key string) (any, bool) {
 	switch m := v.(type) {
 	case map[string]any:
 		return m[key], true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil, false
 		}
@@ -100,7 +101,7 @@ func coerceText(value any) string {
 	}
 	blocks, ok := listItems(value)
 	if !ok {
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	}
 	var parts []string
 	for _, block := range blocks {
@@ -132,12 +133,12 @@ func toolCallNameAndArgs(call any) toolCall {
 	}
 	rawName, _ := mappingGet(fn, "name")
 	name := ""
-	if pyrepr.Truthy(rawName) {
-		name = pyrepr.Str(rawName)
+	if anyutil.IsTrue(rawName) {
+		name = anyutil.String(rawName)
 	}
 	rawArgs, _ := mappingGet(fn, "arguments")
 	if text, ok := rawArgs.(string); ok && text != "" {
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return toolCall{name: name, args: map[string]any{}}
 		}
@@ -216,15 +217,15 @@ func shortenedPath(path string) string {
 	if path == "" {
 		return path
 	}
-	absPath, err := pypath.Abspath(pypath.Expanduser(path))
+	absPath, err := filepath.Abs(pathutil.ExpandUser(path))
 	if err != nil {
 		return path
 	}
-	cwd, err := pypath.Getcwd()
+	cwd, err := os.Getwd()
 	if err != nil {
 		return path
 	}
-	home := pypath.Expanduser("~")
+	home := pathutil.ExpandUser("~")
 	sep := string(os.PathSeparator)
 	switch {
 	case absPath == cwd:

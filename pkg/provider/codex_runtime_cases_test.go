@@ -9,10 +9,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const codexCaseThread, codexCaseTurn = "thread-fake-001", "turn-fake-001"
@@ -70,13 +70,13 @@ func TestCodexRuntimeLiveEvents(t *testing.T) {
 		bridge(codexItemNote("item/started", map[string]any{"type": "mcpToolCall", "id": "m1", "server": "filesystem", "tool": "read", "arguments": map[string]any{"path": "a.py"}}))
 		start := a.callsOf("tool_start_callback")
 		if len(start) != 1 || start[0][0] != codexDeterministicCallID("mcp__filesystem__read", "m1") || start[0][1] != "mcp.filesystem.read" ||
-			!pyrepr.Equal(pyjson.Plain(start[0][2]), map[string]any{"path": "a.py"}) {
+			!anyutil.Equal(jsonutil.Plain(start[0][2]), map[string]any{"path": "a.py"}) {
 			t.Fatalf("mcp start %v", start)
 		}
 		bridge(codexItemNote("item/started", map[string]any{"type": "fileChange", "id": "p1", "changes": []any{map[string]any{"kind": map[string]any{"type": "add"}, "path": "a.py"}}}))
 		start = a.callsOf("tool_start_callback")
 		if len(start) != 2 || start[1][0] != codexDeterministicCallID("apply_patch", "p1") || start[1][1] != "apply_patch" ||
-			!pyrepr.Equal(pyjson.Plain(start[1][2]), map[string]any{"changes": []any{map[string]any{"kind": "add", "path": "a.py"}}}) {
+			!anyutil.Equal(jsonutil.Plain(start[1][2]), map[string]any{"changes": []any{map[string]any{"kind": "add", "path": "a.py"}}}) {
 			t.Fatalf("patch start %v", start)
 		}
 	})
@@ -269,7 +269,7 @@ func TestCodexAppServerIntegrationRuntime(t *testing.T) {
 		}}
 		a := codexCaseAgent(t, f)
 		result := codexCaseRun(t, a, "hi", []map[string]any{{"role": "user", "content": "hi"}})
-		if result["partial"] != true || result["completed"] != false || !strings.Contains(pyrepr.Str(result["error"]), "codex crashed") || a.session != nil {
+		if result["partial"] != true || result["completed"] != false || !strings.Contains(anyutil.String(result["error"]), "codex crashed") || a.session != nil {
 			t.Fatalf("test_session_exception_returns_partial_with_error and test_exception_path_also_drops_session %v", result)
 		}
 		var stopped *fakeCodexAgent
@@ -341,23 +341,23 @@ func TestCodexRebuiltAgentResumesTheStoredThreadAndAnUnresumableOneFailsClosed(t
 		f.handler = func(method string, params any) (any, error) {
 			switch method {
 			case "thread/resume":
-				id := pyrepr.Str(cxGet(params, "threadId"))
+				id := anyutil.String(cxGet(params, "threadId"))
 				if id == dead {
 					return nil, &CodexAppServerError{Code: -32600, Message: "no rollout found for thread id " + id}
 				}
 				return map[string]any{"thread": map[string]any{"id": id}}, nil
 			case "thread/start":
 				counter++
-				return map[string]any{"thread": map[string]any{"id": "thread-" + pyrepr.Str(counter)}}, nil
+				return map[string]any{"thread": map[string]any{"id": "thread-" + anyutil.String(counter)}}, nil
 			}
 			return map[string]any{"turn": map[string]any{"id": "turn-1"}}, nil
 		}
 		return f
 	}
 	turn := func(f *fakeCodexClient, user string) *fakeCodexAgent {
-		thread := "thread-" + pyrepr.Str(counter+1)
+		thread := "thread-" + anyutil.String(counter+1)
 		if v, ok := db.values[codexThreadIDKey]; ok && dead == "" {
-			thread = pyrepr.Str(v)
+			thread = anyutil.String(v)
 		}
 		agentDone(f, thread, "turn-1", "echo "+user)
 		a := codexCaseAgent(t, f)
@@ -459,7 +459,7 @@ func TestCodexRuntimeHistorySeed(t *testing.T) {
 			t.Fatal(err)
 		}
 		resumes := codexStartParams(f, "thread/resume", "developerInstructions")
-		if len(resumes) != 1 || strings.Contains(pyrepr.Str(resumes[0]), "my dog is called Shadow") {
+		if len(resumes) != 1 || strings.Contains(anyutil.String(resumes[0]), "my dog is called Shadow") {
 			t.Fatalf("resume %v", resumes)
 		}
 		failing := &fakeCodexClient{handler: func(method string, params any) (any, error) {
@@ -477,7 +477,7 @@ func TestCodexRuntimeHistorySeed(t *testing.T) {
 			t.Fatalf("fallback %q %v", id, err)
 		}
 		starts := codexStartParams(failing, "thread/start", "developerInstructions")
-		if len(starts) != 1 || !strings.Contains(pyrepr.Str(starts[0]), "my dog is called Shadow") {
+		if len(starts) != 1 || !strings.Contains(anyutil.String(starts[0]), "my dog is called Shadow") {
 			t.Fatalf("fresh start %v", starts)
 		}
 	})
@@ -512,13 +512,13 @@ func TestCodexNamedCustomProviderSelectsCodexModelProvider(t *testing.T) {
 		return out
 	}
 	named := threadStart(t, "custom", "custom:my-gateway", "gpt-5.4")
-	if !pyrepr.Equal(named, base("modelProvider", "my-gateway", "model", "gpt-5.4")) || strings.Contains(pyrepr.Repr(named), "sk-secret") {
+	if !anyutil.Equal(named, base("modelProvider", "my-gateway", "model", "gpt-5.4")) || strings.Contains(anyutil.Quote(named), "sk-secret") {
 		t.Fatalf("named %v", named)
 	}
-	if got := threadStart(t, "openai-codex", "openai-codex", "gpt-5.4"); !pyrepr.Equal(got, base("model", "gpt-5.4")) {
+	if got := threadStart(t, "openai-codex", "openai-codex", "gpt-5.4"); !anyutil.Equal(got, base("model", "gpt-5.4")) {
 		t.Fatalf("openai-codex %v", got)
 	}
-	if got := threadStart(t, "custom", "custom", "gpt-5.4"); !pyrepr.Equal(got, base("model", "gpt-5.4")) {
+	if got := threadStart(t, "custom", "custom", "gpt-5.4"); !anyutil.Equal(got, base("model", "gpt-5.4")) {
 		t.Fatalf("bare custom %v", got)
 	}
 	if got := threadStart(t, "openai-codex", "openai-codex", "gpt-5.6-sol-900k"); got["model"] != "gpt-5.6-sol" {

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestFormatIterationProgressHidesUnboundedCeiling(t *testing.T) {
@@ -31,13 +31,13 @@ func TestFormatIterationProgressHidesUnboundedCeiling(t *testing.T) {
 		}
 	}
 	if _, err := FormatIterationProgress(context.Background(), 3, math.Inf(1)); err == nil {
-		t.Fatal("an infinite cap must raise like int(inf)")
+		t.Fatal("an infinite cap must fail its integer conversion")
 	}
 }
 
 func TestBuildActivitySnapshotIncludesCompatAliases(t *testing.T) {
 	at, now := 100.0, 110.0
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	extra.Set("api_call_count", 1)
 	snap := BuildActivitySnapshot(&at, "starting API call #1", string(state.ActivityProvenanceUnknown), &now, extra)
 	want := map[string]any{

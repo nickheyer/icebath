@@ -18,10 +18,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -133,16 +132,16 @@ func versionToken(text string) string {
 }
 
 // Identity block comparing the resolved binary's own version with the health report's
-func buildIdentity(ctx context.Context, env *tools.Env, binary string, report *pyjson.Object) *pyjson.Object {
+func buildIdentity(ctx context.Context, env *tools.Env, binary string, report *jsonutil.Object) *jsonutil.Object {
 	cli := ""
 	if v := readCLIVersion(ctx, env, binary); v != nil {
 		cli = *v
 	}
 	reportV := ""
-	if v := report.Vals["driver_version"]; pyrepr.Truthy(v) {
-		reportV = pyrepr.Str(v)
+	if v := report.Value("driver_version"); anyutil.IsTrue(v) {
+		reportV = anyutil.String(v)
 	}
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("resolved_binary", binary)
 	o.Set("cli_version", orNil(cli))
 	o.Set("health_report_driver_version", orNil(reportV))
@@ -161,26 +160,26 @@ func orNil(s string) any {
 
 // True for a mapping with schema_version, overall and a checks list
 func isValidHealthReport(payload any) bool {
-	o, ok := payload.(*pyjson.Object)
+	o, ok := payload.(*jsonutil.Object)
 	if !ok {
 		return false
 	}
-	_, hasSchema := o.Vals["schema_version"]
-	_, hasOverall := o.Vals["overall"]
-	_, isList := o.Vals["checks"].([]any)
+	_, hasSchema := o.Get("schema_version")
+	_, hasOverall := o.Get("overall")
+	_, isList := o.Value("checks").([]any)
 	return hasSchema && hasOverall && isList
 }
 
 // Text of every text content item of a tools/call result
-func textItems(result *pyjson.Object) []string {
+func textItems(result *jsonutil.Object) []string {
 	var out []string
-	items, _ := result.Vals["content"].([]any)
+	items, _ := result.Value("content").([]any)
 	for _, it := range items {
-		if o, ok := it.(*pyjson.Object); ok && o.Vals["type"] == "text" {
-			if s, ok := o.Vals["text"].(string); ok {
+		if o, ok := it.(*jsonutil.Object); ok && o.Value("type") == "text" {
+			if s, ok := o.Value("text").(string); ok {
 				out = append(out, s)
-			} else if pyrepr.Truthy(o.Vals["text"]) {
-				out = append(out, pyrepr.Str(o.Vals["text"]))
+			} else if anyutil.IsTrue(o.Value("text")) {
+				out = append(out, anyutil.String(o.Value("text")))
 			} else {
 				out = append(out, "")
 			}
@@ -190,7 +189,7 @@ func textItems(result *pyjson.Object) []string {
 }
 
 // First non blank stripped text item, else the default
-func firstText(result *pyjson.Object, def string) string {
+func firstText(result *jsonutil.Object, def string) string {
 	for _, t := range textItems(result) {
 		if s := strings.TrimSpace(t); s != "" {
 			return s
@@ -200,21 +199,21 @@ func firstText(result *pyjson.Object, def string) string {
 }
 
 // Health report of a tools/call result, unavailable when denied or not a real report
-func extractHealthReportFromResult(result *pyjson.Object) (*pyjson.Object, error) {
-	if result.Vals["isError"] == true {
+func extractHealthReportFromResult(result *jsonutil.Object) (*jsonutil.Object, error) {
+	if result.Value("isError") == true {
 		return nil, &healthReportUnavailable{firstText(result, "health_report returned isError=true")}
 	}
-	sc := result.Vals["structuredContent"]
+	sc := result.Value("structuredContent")
 	if isValidHealthReport(sc) {
-		return sc.(*pyjson.Object), nil
+		return sc.(*jsonutil.Object), nil
 	}
 	for _, text := range textItems(result) {
-		if parsed, err := pyjson.Loads(text); err == nil && isValidHealthReport(parsed) {
-			return parsed.(*pyjson.Object), nil
+		if parsed, err := jsonutil.Decode(text); err == nil && isValidHealthReport(parsed) {
+			return parsed.(*jsonutil.Object), nil
 		}
 	}
-	if o, ok := sc.(*pyjson.Object); ok {
-		keys := append([]string(nil), o.Keys...)
+	if o, ok := sc.(*jsonutil.Object); ok {
+		keys := append([]string(nil), o.Keys()...)
 		sort.Strings(keys)
 		ks := make([]any, len(keys))
 		for i, k := range keys {
@@ -222,8 +221,8 @@ func extractHealthReportFromResult(result *pyjson.Object) (*pyjson.Object, error
 		}
 		return nil, &healthReportUnavailable{"health_report structuredContent lacks schema_version/overall/checks (keys=" + errchain.Show(ks) + ")"}
 	}
-	ks := make([]any, len(result.Keys))
-	for i, k := range result.Keys {
+	ks := make([]any, result.Len())
+	for i, k := range result.Keys() {
 		ks[i] = k
 	}
 	return nil, &doctorRuntimeError{"health_report response carried neither structuredContent nor a parseable JSON text block. Result keys: " + errchain.Show(ks)}
@@ -260,15 +259,15 @@ var openMCP = func(ctx context.Context, env *tools.Env, binary string) (*cuMCPPr
 }
 
 // Writes one JSON-RPC request and reads one response line
-func mcpRPC(p *cuMCPProc, msgID int, method string, params any) (*pyjson.Object, error) {
-	payload := pyjson.NewObject()
+func mcpRPC(p *cuMCPProc, msgID int, method string, params any) (*jsonutil.Object, error) {
+	payload := jsonutil.NewObject()
 	payload.Set("jsonrpc", "2.0")
 	payload.Set("id", msgID)
 	payload.Set("method", method)
 	if params != nil {
 		payload.Set("params", params)
 	}
-	text, err := pyjson.Dumps(payload)
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -296,36 +295,36 @@ func mcpRPC(p *cuMCPProc, msgID int, method string, params any) (*pyjson.Object,
 		}
 		return nil, &doctorRuntimeError{fmt.Sprintf("cua-driver mcp produced no response for %s. stderr tail: %s", errchain.Show(method), tail)}
 	}
-	decoded, err := pyjson.Loads(line)
+	decoded, err := jsonutil.Decode(line)
 	if err != nil {
-		return nil, &doctorRuntimeError{fmt.Sprintf("%s response was not valid JSON: %v\nraw: %s", method, err, pyPrefix(line, 200))}
+		return nil, &doctorRuntimeError{fmt.Sprintf("%s response was not valid JSON: %v\nraw: %s", method, err, textutil.First(line, 200))}
 	}
-	resp, ok := decoded.(*pyjson.Object)
+	resp, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, &AttributeError{"the MCP server replied with " + errchain.Kind(decoded) + " where a mapping was expected"}
 	}
-	if e, has := resp.Vals["error"]; has {
-		return nil, &doctorRuntimeError{fmt.Sprintf("%s JSON-RPC error: %s", method, pyrepr.Str(e))}
+	if e, has := resp.Get("error"); has {
+		return nil, &doctorRuntimeError{fmt.Sprintf("%s JSON-RPC error: %s", method, anyutil.String(e))}
 	}
 	return resp, nil
 }
 
 // Raw result of a tools/call, an empty mapping when absent
-func callTool(p *cuMCPProc, msgID int, name string, arguments *pyjson.Object) (any, error) {
+func callTool(p *cuMCPProc, msgID int, name string, arguments *jsonutil.Object) (any, error) {
 	if arguments == nil {
-		arguments = pyjson.NewObject()
+		arguments = jsonutil.NewObject()
 	}
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("name", name)
 	params.Set("arguments", arguments)
 	resp, err := mcpRPC(p, msgID, "tools/call", params)
 	if err != nil {
 		return nil, err
 	}
-	if r := resp.Vals["result"]; pyrepr.Truthy(r) {
+	if r := resp.Value("result"); anyutil.IsTrue(r) {
 		return r, nil
 	}
-	return pyjson.NewObject(), nil
+	return jsonutil.NewObject(), nil
 }
 
 // Runs fn in an MCP session, closing stdin and waiting out or killing the child afterwards
@@ -349,8 +348,8 @@ func withMCPSession(ctx context.Context, env *tools.Env, binary string, timeout 
 }
 
 // Handshake then health_report, unavailable for the fallback or a runtime failure
-func driveHealthReport(ctx context.Context, env *tools.Env, binary string, include, skip []string, timeout float64) (*pyjson.Object, error) {
-	args := pyjson.NewObject()
+func driveHealthReport(ctx context.Context, env *tools.Env, binary string, include, skip []string, timeout float64) (*jsonutil.Object, error) {
+	args := jsonutil.NewObject()
 	for _, kv := range []struct {
 		k string
 		v []string
@@ -365,7 +364,7 @@ func driveHealthReport(ctx context.Context, env *tools.Env, binary string, inclu
 	}
 	var result any
 	err := withMCPSession(ctx, env, binary, timeout, func(p *cuMCPProc) error {
-		if _, err := mcpRPC(p, 1, "initialize", pyjson.NewObject()); err != nil {
+		if _, err := mcpRPC(p, 1, "initialize", jsonutil.NewObject()); err != nil {
 			return err
 		}
 		r, err := callTool(p, 2, "health_report", args)
@@ -375,7 +374,7 @@ func driveHealthReport(ctx context.Context, env *tools.Env, binary string, inclu
 	if err != nil {
 		return nil, err
 	}
-	o, ok := result.(*pyjson.Object)
+	o, ok := result.(*jsonutil.Object)
 	if !ok {
 		return nil, &doctorRuntimeError{"health_report result is " + errchain.Kind(result) + " where a mapping was expected"}
 	}
@@ -383,15 +382,15 @@ func driveHealthReport(ctx context.Context, env *tools.Env, binary string, inclu
 }
 
 // Structured content of a result, empty when absent
-func structuredOf(result *pyjson.Object) *pyjson.Object {
-	if o, ok := result.Vals["structuredContent"].(*pyjson.Object); ok {
+func structuredOf(result *jsonutil.Object) *jsonutil.Object {
+	if o, ok := result.Value("structuredContent").(*jsonutil.Object); ok {
 		return o
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Result of one probe tool, or the error text on isError or RPC failure
-func probeTool(p *cuMCPProc, msgID int, name string) (*pyjson.Object, *string, error) {
+func probeTool(p *cuMCPProc, msgID int, name string) (*jsonutil.Object, *string, error) {
 	r, err := callTool(p, msgID, name, nil)
 	if err != nil {
 		var rt *doctorRuntimeError
@@ -401,11 +400,11 @@ func probeTool(p *cuMCPProc, msgID int, name string) (*pyjson.Object, *string, e
 		}
 		return nil, nil, err
 	}
-	result, ok := r.(*pyjson.Object)
+	result, ok := r.(*jsonutil.Object)
 	if !ok {
 		return nil, nil, &AttributeError{"the MCP tool result is " + errchain.Kind(r) + " where a mapping was expected"}
 	}
-	if result.Vals["isError"] == true {
+	if result.Value("isError") == true {
 		msg := firstText(result, name+" isError")
 		return nil, &msg, nil
 	}
@@ -414,7 +413,7 @@ func probeTool(p *cuMCPProc, msgID int, name string) (*pyjson.Object, *string, e
 
 type fallbackProbes struct {
 	initVersion      any
-	permissions      *pyjson.Object
+	permissions      *jsonutil.Object
 	permissionsError *string
 	listAppsOK       *bool
 	listAppsError    *string
@@ -425,13 +424,13 @@ type fallbackProbes struct {
 func driveFallbackProbes(ctx context.Context, env *tools.Env, binary string, timeout float64) (*fallbackProbes, error) {
 	out := &fallbackProbes{}
 	err := withMCPSession(ctx, env, binary, timeout, func(p *cuMCPProc) error {
-		init, err := mcpRPC(p, 1, "initialize", pyjson.NewObject())
+		init, err := mcpRPC(p, 1, "initialize", jsonutil.NewObject())
 		if err != nil {
 			return err
 		}
-		if res, ok := init.Vals["result"].(*pyjson.Object); ok {
-			if info, ok := res.Vals["serverInfo"].(*pyjson.Object); ok {
-				out.initVersion = info.Vals["version"]
+		if res, ok := init.Value("result").(*jsonutil.Object); ok {
+			if info, ok := res.Value("serverInfo").(*jsonutil.Object); ok {
+				out.initVersion = info.Value("version")
 			}
 		}
 		perms, permErr, err := probeTool(p, 2, "check_permissions")
@@ -450,7 +449,7 @@ func driveFallbackProbes(ctx context.Context, env *tools.Env, binary string, tim
 		ok := apps != nil
 		out.listAppsOK = &ok
 		if apps != nil {
-			if l, isList := structuredOf(apps).Vals["apps"].([]any); isList {
+			if l, isList := structuredOf(apps).Value("apps").([]any); isList {
 				n := len(l)
 				out.listAppsCount = &n
 			}
@@ -460,24 +459,19 @@ func driveFallbackProbes(ctx context.Context, env *tools.Env, binary string, tim
 	return out, err
 }
 
-// Lowercased Python platform.system, unknown when empty
-var doctorPlatformName = func() string {
-	if s := strings.ToLower(pyplatform.System()); s != "" {
-		return s
-	}
-	return "unknown"
-}
+// Operating system the doctor reports, as Go names it
+var doctorPlatformName = func() string { return runtime.GOOS }
 
 type doctorRow struct {
 	status, message string
 	hint            *string
-	data            *pyjson.Object
+	data            *jsonutil.Object
 }
 
 type doctorCtx struct {
 	plat, verStatus, verMsg, reasonShort string
 	probes                               *fallbackProbes
-	perms                                *pyjson.Object
+	perms                                *jsonutil.Object
 	permErr                              *string
 	axGranted                            bool
 	doctorTxt                            *string
@@ -491,7 +485,7 @@ func tccRow(field, label string, platformBound bool, c *doctorCtx) *doctorRow {
 		}
 		return &doctorRow{status: "skip", message: "check_permissions unavailable"}
 	}
-	granted, isBool := c.perms.Vals[field].(bool)
+	granted, isBool := c.perms.Value(field).(bool)
 	if !isBool {
 		if platformBound && c.plat != "darwin" {
 			return &doctorRow{status: "skip", message: "not applicable on " + c.plat}
@@ -500,15 +494,15 @@ func tccRow(field, label string, platformBound bool, c *doctorCtx) *doctorRow {
 	}
 	if !granted {
 		hint := fmt.Sprintf(cuTCCHint, label)
-		data := pyjson.NewObject()
+		data := jsonutil.NewObject()
 		data.Set(field, false)
 		return &doctorRow{status: "fail", message: label + " is not granted.", hint: &hint, data: data}
 	}
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	data.Set(field, true)
 	if field == "screen_recording" {
-		data.Set("screen_recording_capturable", c.perms.Vals["screen_recording_capturable"])
-		if data.Vals["screen_recording_capturable"] == false {
+		data.Set("screen_recording_capturable", c.perms.Value("screen_recording_capturable"))
+		if data.Value("screen_recording_capturable") == false {
 			hint := "Screen Recording permission may need a restart of CuaDriver or a re-grant in System Settings."
 			return &doctorRow{status: "fail", message: "Screen Recording granted but not capturable.", hint: &hint, data: data}
 		}
@@ -551,8 +545,8 @@ func cliDoctorRow(txt *string) *doctorRow {
 	if strings.Contains(strings.ToLower(*txt), "[ok") || strings.Contains(*txt, "ok  ]") {
 		status = "pass"
 	}
-	data := pyjson.NewObject()
-	data.Set("snippet", pyPrefix(*txt, 2000))
+	data := jsonutil.NewObject()
+	data.Set("snippet", textutil.First(*txt, 2000))
 	return &doctorRow{status: status, message: strings.TrimSpace(textutil.Lines(*txt)[0]), data: data}
 }
 
@@ -586,9 +580,9 @@ func overallFrom(checks []any) string {
 	byName := map[any]any{}
 	anyFail := false
 	for _, c := range checks {
-		o := c.(*pyjson.Object)
-		byName[o.Vals["name"]] = o.Vals["status"]
-		anyFail = anyFail || o.Vals["status"] == "fail"
+		o := c.(*jsonutil.Object)
+		byName[o.Value("name")] = o.Value("status")
+		anyFail = anyFail || o.Value("status") == "fail"
 	}
 	if byName["binary_version"] != "pass" {
 		return "failed"
@@ -600,15 +594,15 @@ func overallFrom(checks []any) string {
 }
 
 // Schema version one report synthesized from CLI and MCP probes when health_report is denied
-func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason string, timeout float64) (*pyjson.Object, error) {
+func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason string, timeout float64) (*jsonutil.Object, error) {
 	plat := doctorPlatformName()
 	verStatus, verValue := cliDriverVersion(ctx, env, binary)
 	probes, err := driveFallbackProbes(ctx, env, binary, timeout)
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(probes.initVersion) {
-		verStatus, verValue = "pass", pyrepr.Str(probes.initVersion)
+	if anyutil.IsTrue(probes.initVersion) {
+		verStatus, verValue = "pass", anyutil.String(probes.initVersion)
 	}
 	reasonShort := reason
 	if reasonShort == "" {
@@ -616,7 +610,7 @@ func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason s
 	}
 	reasonShort = strings.TrimSpace(reasonShort)
 	if utf8.RuneCountInString(reasonShort) > 160 {
-		reasonShort = pyPrefix(reasonShort, 157) + "..."
+		reasonShort = textutil.First(reasonShort, 157) + "..."
 	}
 	verMsg := verValue
 	if verStatus == "pass" {
@@ -626,7 +620,7 @@ func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason s
 	}
 	c := &doctorCtx{plat: plat, verStatus: verStatus, verMsg: verMsg, reasonShort: reasonShort, probes: probes,
 		perms: probes.permissions, permErr: probes.permissionsError,
-		axGranted: probes.permissions != nil && probes.permissions.Vals["accessibility"] == true,
+		axGranted: probes.permissions != nil && probes.permissions.Value("accessibility") == true,
 		doctorTxt: cliDoctorSnippet(ctx, env, binary)}
 	checks := []any{}
 	for _, p := range fallbackProbeTable {
@@ -634,7 +628,7 @@ func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason s
 		if row == nil {
 			continue
 		}
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		o.Set("name", p.name)
 		o.Set("status", row.status)
 		o.Set("message", row.message)
@@ -653,7 +647,7 @@ func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason s
 	if reason == "" {
 		reason = "health_report unavailable"
 	}
-	report := pyjson.NewObject()
+	report := jsonutil.NewObject()
 	report.Set("schema_version", "1")
 	report.Set("platform", plat)
 	report.Set("driver_version", driver)
@@ -665,11 +659,11 @@ func composeFallbackReport(ctx context.Context, env *tools.Env, binary, reason s
 }
 
 // Check mappings of the report's checks list
-func reportChecks(report *pyjson.Object) ([]*pyjson.Object, bool) {
-	l, ok := report.Vals["checks"].([]any)
-	var out []*pyjson.Object
+func reportChecks(report *jsonutil.Object) ([]*jsonutil.Object, bool) {
+	l, ok := report.Value("checks").([]any)
+	var out []*jsonutil.Object
 	for _, c := range l {
-		if o, isObj := c.(*pyjson.Object); isObj {
+		if o, isObj := c.(*jsonutil.Object); isObj {
 			out = append(out, o)
 		}
 	}
@@ -677,14 +671,14 @@ func reportChecks(report *pyjson.Object) ([]*pyjson.Object, bool) {
 }
 
 // Appends the stale grant recovery hint to every failed tcc check
-func applyStaleTCCGuard(report *pyjson.Object) *pyjson.Object {
+func applyStaleTCCGuard(report *jsonutil.Object) *jsonutil.Object {
 	checks, _ := reportChecks(report)
 	for _, c := range checks {
-		name, _ := c.Vals["name"].(string)
-		if field := cuTCCCheckFields[name]; field != "" && c.Vals["status"] == "fail" {
+		name, _ := c.Value("name").(string)
+		if field := cuTCCCheckFields[name]; field != "" && c.Value("status") == "fail" {
 			prev := ""
-			if h := c.Vals["hint"]; pyrepr.Truthy(h) {
-				prev = pyrepr.Str(h)
+			if h := c.Value("hint"); anyutil.IsTrue(h) {
+				prev = anyutil.String(h)
 			}
 			c.Set("hint", strings.TrimSpace(prev+" "+staleTCCGrantHint(field)))
 		}
@@ -693,21 +687,21 @@ func applyStaleTCCGuard(report *pyjson.Object) *pyjson.Object {
 }
 
 // Fails a passing screen capture check that reports zero displays and degrades an ok overall
-func applyDisplayCountGuard(report *pyjson.Object) *pyjson.Object {
+func applyDisplayCountGuard(report *jsonutil.Object) *jsonutil.Object {
 	checks, _ := reportChecks(report)
 	for _, c := range checks {
-		if c.Vals["name"] != "screen_capture_capability" {
+		if c.Value("name") != "screen_capture_capability" {
 			continue
 		}
 		var count any
-		if d, ok := c.Vals["data"].(*pyjson.Object); ok {
-			count = d.Vals["display_count"]
+		if d, ok := c.Value("data").(*jsonutil.Object); ok {
+			count = d.Value("display_count")
 		}
-		if cuIsZero(count) && c.Vals["status"] == "pass" {
+		if cuIsZero(count) && c.Value("status") == "pass" {
 			c.Set("status", "fail")
 			c.Set("message", cuZeroDisplayMsg)
 			c.Set("hint", cuZeroDisplayHint)
-			if report.Vals["overall"] == "ok" {
+			if report.Value("overall") == "ok" {
 				report.Set("overall", "degraded")
 			}
 		}
@@ -715,19 +709,16 @@ func applyDisplayCountGuard(report *pyjson.Object) *pyjson.Object {
 	return report
 }
 
-// Python equality with zero for a JSON number or bool
+// Whether a decoded count is zero: an integer or float zero, or false
 func cuIsZero(v any) bool {
 	switch n := v.(type) {
 	case bool:
 		return !n
-	case int:
-		return n == 0
-	case int64:
-		return n == 0
 	case float64:
 		return n == 0
 	}
-	return pyrepr.TypeName(v) == "int" && pyrepr.Str(v) == "0"
+	n, ok := anyutil.Int(v)
+	return ok && n == 0
 }
 
 type cuDaemonUnit struct {
@@ -834,8 +825,8 @@ func staleCuaExecReferences(configDir string) [][3]string {
 var doctorSysPlatform = func() string { return cuPlatform }
 
 // Liveness check per configured serve daemon unit on Linux, degrading an ok overall for a silent socket
-func applyDaemonLivenessGuard(ctx context.Context, env *tools.Env, report *pyjson.Object, binary string) *pyjson.Object {
-	checks, isList := report.Vals["checks"].([]any)
+func applyDaemonLivenessGuard(ctx context.Context, env *tools.Env, report *jsonutil.Object, binary string) *jsonutil.Object {
+	checks, isList := report.Value("checks").([]any)
 	if doctorSysPlatform() != "linux" || !isList {
 		return report
 	}
@@ -855,7 +846,7 @@ func applyDaemonLivenessGuard(ctx context.Context, env *tools.Env, report *pyjso
 		if sock != "" {
 			shown = sock
 		}
-		c := pyjson.NewObject()
+		c := jsonutil.NewObject()
 		c.Set("name", "daemon ("+u.unit+")")
 		if *listening {
 			c.Set("status", "pass")
@@ -867,7 +858,7 @@ func applyDaemonLivenessGuard(ctx context.Context, env *tools.Env, report *pyjso
 		c.Set("message", fmt.Sprintf(cuDeadDaemonMsg, u.unit, shown))
 		c.Set("hint", fmt.Sprintf(cuDeadDaemonHint, u.unit, u.unit))
 		checks = append(checks, c)
-		if report.Vals["overall"] == "ok" {
+		if report.Value("overall") == "ok" {
 			report.Set("overall", "degraded")
 		}
 	}
@@ -876,22 +867,22 @@ func applyDaemonLivenessGuard(ctx context.Context, env *tools.Env, report *pyjso
 }
 
 // Fail check per daemon unit whose Exec target was pruned, degrading an ok overall
-func applyStaleUnitGuard(report *pyjson.Object) *pyjson.Object {
+func applyStaleUnitGuard(report *jsonutil.Object) *jsonutil.Object {
 	if doctorSysPlatform() != "linux" {
 		return report
 	}
 	for _, f := range staleCuaExecReferences("") {
-		checks, isList := report.Vals["checks"].([]any)
+		checks, isList := report.Value("checks").([]any)
 		if !isList {
 			continue
 		}
-		c := pyjson.NewObject()
+		c := jsonutil.NewObject()
 		c.Set("name", "daemon unit ("+f[1]+")")
 		c.Set("status", "fail")
 		c.Set("message", fmt.Sprintf(cuPrunedUnitMsg, f[2]))
 		c.Set("hint", fmt.Sprintf(cuPrunedUnitHint, f[0]))
 		report.Set("checks", append(checks, c))
-		if report.Vals["overall"] == "ok" {
+		if report.Value("overall") == "ok" {
 			report.Set("overall", "degraded")
 		}
 	}
@@ -899,38 +890,38 @@ func applyStaleUnitGuard(report *pyjson.Object) *pyjson.Object {
 }
 
 // Environment note for Linux under Wayland, where doctor probes the CLI process and not the gateway
-func waylandEnvironmentContext(report *pyjson.Object) *pyjson.Object {
-	if report.Vals["platform"] != "linux" || os.Getenv("WAYLAND_DISPLAY") == "" {
+func waylandEnvironmentContext(report *jsonutil.Object) *jsonutil.Object {
+	if report.Value("platform") != "linux" || os.Getenv("WAYLAND_DISPLAY") == "" {
 		return nil
 	}
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("scope", "cli_process")
 	o.Set("gateway_environment_checked", false)
 	return o
 }
 
 // Report value or the question mark default when the key is absent
-func reportField(report *pyjson.Object, k string) any {
-	if v, ok := report.Vals[k]; ok {
+func reportField(report *jsonutil.Object, k string) any {
+	if v, ok := report.Get(k); ok {
 		return v
 	}
 	return "?"
 }
 
 // Renders the report like the driver does with identity, environment, checks, hints and data rows
-func printTextReport(w io.Writer, report *pyjson.Object, color bool, identity, environment *pyjson.Object) {
-	platform, reportV, overall := pyrepr.Str(reportField(report, "platform")), reportField(report, "driver_version"), reportField(report, "overall")
-	overallS := pyrepr.Str(overall)
+func printTextReport(w io.Writer, report *jsonutil.Object, color bool, identity, environment *jsonutil.Object) {
+	platform, reportV, overall := anyutil.String(reportField(report, "platform")), reportField(report, "driver_version"), reportField(report, "overall")
+	overallS := anyutil.String(overall)
 	if identity == nil {
-		identity = pyjson.NewObject()
+		identity = jsonutil.NewObject()
 	}
 	cliV := ""
-	if v := identity.Vals["cli_version"]; pyrepr.Truthy(v) {
-		cliV = pyrepr.Str(v)
+	if v := identity.Value("cli_version"); anyutil.IsTrue(v) {
+		cliV = anyutil.String(v)
 	}
 	headerV := cliV
 	if headerV == "" {
-		headerV = pyrepr.Str(reportV)
+		headerV = anyutil.String(reportV)
 	}
 	red, yellow, green, reset, dim := "", "", "", "", ""
 	if _, known := cuOverallGlyph[overallS]; color && known {
@@ -943,47 +934,47 @@ func printTextReport(w io.Writer, report *pyjson.Object, color bool, identity, e
 		glyph = "•"
 	}
 	lines := []string{fmt.Sprintf("%s cua-driver %s on %s — %s%s%s", glyph, headerV, platform, colFor, overallS, reset)}
-	if b := identity.Vals["resolved_binary"]; pyrepr.Truthy(b) {
-		lines = append(lines, fmt.Sprintf("  %sbinary: %s%s", dim, pyrepr.Str(b), reset))
+	if b := identity.Value("resolved_binary"); anyutil.IsTrue(b) {
+		lines = append(lines, fmt.Sprintf("  %sbinary: %s%s", dim, anyutil.String(b), reset))
 	}
-	rv := pyrepr.Str(reportV)
-	if cliV != "" && pyrepr.Truthy(reportV) && !strings.Contains(cliV, rv) && !strings.Contains(rv, cliV) {
+	rv := anyutil.String(reportV)
+	if cliV != "" && anyutil.IsTrue(reportV) && !strings.Contains(cliV, rv) && !strings.Contains(rv, cliV) {
 		lines = append(lines, fmt.Sprintf("  %s--version: %s%s", dim, cliV, reset), fmt.Sprintf("  %shealth_report.driver_version: %s%s", dim, rv, reset))
 	}
-	if environment != nil && len(environment.Keys) > 0 {
+	if environment != nil && environment.Len() > 0 {
 		lines = append(lines, fmt.Sprintf("  %senvironment: current CLI process%s", dim, reset),
 			fmt.Sprintf("  %sgateway environment was not checked; active gateway computer_use sessions use that process environment%s", dim, reset))
 	}
-	if pyrepr.Truthy(identity.Vals["version_mismatch"]) {
+	if anyutil.IsTrue(identity.Value("version_mismatch")) {
 		lines = append(lines, fmt.Sprintf("  %s⚠️ version mismatch: health_report says %s but binary --version is %s%s", yellow, errchain.Show(reportV), errchain.Show(cliV), reset),
 			fmt.Sprintf("  %s→ trust --version / packages/current for debugging; health_report's binary_version check can lag on Windows%s", dim, reset))
 	}
-	checks, _ := report.Vals["checks"].([]any)
+	checks, _ := report.Value("checks").([]any)
 	for _, raw := range checks {
-		c, _ := raw.(*pyjson.Object)
+		c, _ := raw.(*jsonutil.Object)
 		if c == nil {
 			continue
 		}
-		status := pyrepr.Str(reportFieldOr(c, "status", "?"))
+		status := anyutil.String(reportFieldOr(c, "status", "?"))
 		g, ok := cuStatusGlyph[status]
 		if !ok {
 			g = "•"
 		}
 		msg := ""
-		if m := c.Vals["message"]; pyrepr.Truthy(m) {
-			msg = pyrepr.Str(m)
+		if m := c.Value("message"); anyutil.IsTrue(m) {
+			msg = anyutil.String(m)
 		}
-		lines = append(lines, fmt.Sprintf("  %s %s%s%s: %s", g, statusCols[status], pyrepr.Str(reportFieldOr(c, "name", "?")), reset, msg))
-		if h := c.Vals["hint"]; pyrepr.Truthy(h) {
-			lines = append(lines, fmt.Sprintf("      → %s%s%s", dim, pyrepr.Str(h), reset))
+		lines = append(lines, fmt.Sprintf("  %s %s%s%s: %s", g, statusCols[status], anyutil.String(reportFieldOr(c, "name", "?")), reset, msg))
+		if h := c.Value("hint"); anyutil.IsTrue(h) {
+			lines = append(lines, fmt.Sprintf("      → %s%s%s", dim, anyutil.String(h), reset))
 		}
-		if d, ok := c.Vals["data"].(*pyjson.Object); ok {
-			for _, k := range d.Keys {
-				v := d.Vals[k]
-				s := pyrepr.Str(v)
+		if d, ok := c.Value("data").(*jsonutil.Object); ok {
+			for _, k := range d.Keys() {
+				v := d.Value(k)
+				s := anyutil.String(v)
 				switch v.(type) {
-				case *pyjson.Object, []any:
-					s, _ = pyjson.Dumps(v)
+				case *jsonutil.Object, []any:
+					s, _ = jsonutil.Encode(v)
 				}
 				lines = append(lines, fmt.Sprintf("      %s%s=%s%s", dim, k, s, reset))
 			}
@@ -993,8 +984,8 @@ func printTextReport(w io.Writer, report *pyjson.Object, color bool, identity, e
 }
 
 // Mapping value or the default when the key is absent
-func reportFieldOr(o *pyjson.Object, k string, def any) any {
-	if v, ok := o.Vals[k]; ok {
+func reportFieldOr(o *jsonutil.Object, k string, def any) any {
+	if v, ok := o.Get(k); ok {
 		return v
 	}
 	return def
@@ -1052,15 +1043,15 @@ func runComputerUseDoctor(ctx context.Context, env *tools.Env, stdout, stderr io
 	identity := buildIdentity(ctx, env, binary, report)
 	environment := waylandEnvironmentContext(report)
 	if jsonOutput {
-		payload := pyjson.NewObject()
-		for _, k := range report.Keys {
-			payload.Set(k, report.Vals[k])
+		payload := jsonutil.NewObject()
+		for _, k := range report.Keys() {
+			payload.Set(k, report.Value(k))
 		}
 		payload.Set("icebath_identity", identity)
 		if environment != nil {
 			payload.Set("icebath_environment", environment)
 		}
-		text, err := pyjson.Dumps(payload, pyjson.Indent(2), pyjson.SortKeys(true))
+		text, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.SortKeys())
 		if err != nil {
 			return 0, err
 		}
@@ -1072,7 +1063,7 @@ func runComputerUseDoctor(ctx context.Context, env *tools.Env, stdout, stderr io
 		}
 		printTextReport(stdout, report, useColor, identity, environment)
 	}
-	if report.Vals["overall"] == "ok" {
+	if report.Value("overall") == "ok" {
 		return 0, nil
 	}
 	return 1, nil

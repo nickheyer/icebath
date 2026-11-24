@@ -3,9 +3,9 @@ package plugins
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,20 +22,20 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	diffutil "github.com/nickheyer/icebath/pkg/utils/diff"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -62,7 +62,7 @@ var (
 	shellHookProcessAccept    atomic.Bool
 	shellHookSkipLogged                 = map[[3]string]bool{}
 	shellHookStdinIsTTY                 = func() bool { return xterm.IsTerminal(os.Stdin.Fd()) }
-	shellHookStdout           io.Writer = pysys.Stdout
+	shellHookStdout           io.Writer = termutil.Stdout
 	shellHookStdinReader      *bufio.Reader
 	shellHookAtomicWrite      = config.AtomicJSONWriteMode
 	shellHookReadLine         = func() (string, error) {
@@ -180,11 +180,11 @@ func shellHookDict(v any) (map[string]any, bool) {
 		return m, m != nil
 	case config.Tree:
 		return map[string]any(m), m != nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil, false
 		}
-		plain, _ := pyjson.Plain(m).(map[string]any)
+		plain, _ := jsonutil.Plain(m).(map[string]any)
 		return plain, true
 	case map[any]any:
 		return asMap(m), true
@@ -203,12 +203,12 @@ func shellHookISO(t time.Time) string {
 }
 
 // Common stdin payload fields in wire order, the profile and owned kanban task resolved at fire time
-func shellHookPayloadFields(ctx context.Context, kwargs map[string]any) *pyjson.Object {
+func shellHookPayloadFields(ctx context.Context, kwargs map[string]any) *jsonutil.Object {
 	cwd, err := os.Getwd()
 	if err != nil {
 		cwd = ""
 	}
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	keys := make([]string, 0, len(kwargs))
 	for k := range kwargs {
 		if !shellHookTopLevelKeys[k] {
@@ -225,21 +225,21 @@ func shellHookPayloadFields(ctx context.Context, kwargs map[string]any) *pyjson.
 		toolInput = args
 	}
 	session := kwargs["session_id"]
-	if !pyrepr.Truthy(session) {
+	if !anyutil.IsTrue(session) {
 		session = kwargs["parent_session_id"]
 	}
-	if !pyrepr.Truthy(session) {
+	if !anyutil.IsTrue(session) {
 		session = ""
 	}
-	return pyjson.ObjectOf("tool_name", kwargs["tool_name"], "tool_input", toolInput, "session_id", session,
+	return jsonutil.ObjectOf("tool_name", kwargs["tool_name"], "tool_input", toolInput, "session_id", session,
 		"cwd", cwd, "profile", profiles.GetActiveProfileName(ctx), "extra", extra)
 }
 
 // Stdin JSON of one firing, values JSON cannot encode written as their str
 func serializeShellHookPayload(ctx context.Context, event string, kwargs map[string]any) (string, error) {
-	payload := pyjson.ObjectOf("hook_event_name", event)
-	payload.Update(shellHookPayloadFields(ctx, kwargs))
-	return pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	payload := jsonutil.ObjectOf("hook_event_name", event)
+	payload.Merge(shellHookPayloadFields(ctx, kwargs))
+	return jsonutil.Encode(payload, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 }
 
 // Registers every consented configured hook once per home and returns the newly wired specs
@@ -546,7 +546,7 @@ func parseShellHooks(hooksCfg any) ([]*ShellHookSpec, bool) {
 			continue
 		}
 		if !validHooks[eventName] {
-			if suggestion := pydifflib.GetCloseMatches(eventName, ValidHooks(), 1, 0.6); len(suggestion) > 0 {
+			if suggestion := diffutil.CloseMatches(eventName, ValidHooks(), 1, 0.6); len(suggestion) > 0 {
 				pkgLog().Warn(fmt.Sprintf("unknown hook event %s in hooks: config — did you mean %s?", errchain.Show(eventName), errchain.Show(suggestion[0])))
 			} else {
 				pkgLog().Warn(fmt.Sprintf("unknown hook event %s in hooks: config (valid: %s)", errchain.Show(eventName), strings.Join(ValidHooks(), ", ")))
@@ -606,15 +606,15 @@ func parseShellHookEntry(event string, index int, raw any) *ShellHookSpec {
 		timeoutRaw = int64(ShellHookDefaultTimeoutSeconds)
 	}
 	timeout := ShellHookDefaultTimeoutSeconds
-	if n, err := pyint.Of(timeoutRaw); err != nil {
+	if n, err := anyutil.ToInt(timeoutRaw); err != nil && !errors.Is(err, anyutil.ErrRange) {
 		warn(fmt.Sprintf(".timeout must be an int (got %s); using default %ds", errchain.Show(timeoutRaw), ShellHookDefaultTimeoutSeconds))
-	} else if n.Cmp(big.NewInt(1)) < 0 {
+	} else if n < 1 {
 		warn(fmt.Sprintf(".timeout must be >=1; using default %ds", ShellHookDefaultTimeoutSeconds))
-	} else if n.Cmp(big.NewInt(ShellHookMaxTimeoutSeconds)) > 0 {
+	} else if n > ShellHookMaxTimeoutSeconds {
 		warn(fmt.Sprintf(".timeout=%ds exceeds max %ds; clamping", n, ShellHookMaxTimeoutSeconds))
 		timeout = ShellHookMaxTimeoutSeconds
 	} else {
-		timeout = int(n.Int64())
+		timeout = int(n)
 	}
 	failRaw, present := entry["fail_closed"]
 	if !present {
@@ -656,7 +656,7 @@ func windowsShellHookArgv(ctx context.Context, argv []string) ([]string, error) 
 
 // Runs the hook command with the payload on stdin, reaping its whole tree on timeout or interrupt
 func spawnShellHook(ctx context.Context, spec *ShellHookSpec, stdinJSON string) (*ShellHookResult, error) {
-	argv, err := pyshlex.SplitCommandLine(pypath.Expanduser(spec.Command))
+	argv, err := shellutil.SplitCommandLine(pathutil.ExpandUser(spec.Command))
 	if err != nil {
 		pkgLog().Debug("shell hook command unparsable: " + errchain.Text(err))
 		return &ShellHookResult{Error: fmt.Sprintf("command %s cannot be parsed: its quotes or escapes are unbalanced", errchain.Show(spec.Command))}, nil
@@ -689,7 +689,7 @@ func spawnShellHookArgv(ctx context.Context, argv []string, dir string, timeout 
 	if err != nil {
 		return failed(err.Error())
 	}
-	run, err := startShellHookProcess(argv, dir, childEnv, pystr.EncodeUTF8Replace(stdinJSON))
+	run, err := startShellHookProcess(argv, dir, childEnv, []byte(stdinJSON))
 	if err != nil {
 		return failed(shellHookPopenError(argv[0], err))
 	}
@@ -699,14 +699,14 @@ func spawnShellHookArgv(ctx context.Context, argv []string, dir string, timeout 
 	case <-run.done:
 		code := run.returnCode()
 		r.ReturnCode = &code
-		r.Stdout = pystr.TranslateNewlines(strings.ToValidUTF8(string(run.stdout.Bytes()), "\uFFFD"))
-		r.Stderr = pystr.TranslateNewlines(strings.ToValidUTF8(string(run.stderr.Bytes()), "\uFFFD"))
-		r.ElapsedSeconds = pyint.Round(time.Since(t0).Seconds(), 3)
+		r.Stdout = textutil.NormalizeNewlines(strings.ToValidUTF8(string(run.stdout.Bytes()), "\uFFFD"))
+		r.Stderr = textutil.NormalizeNewlines(strings.ToValidUTF8(string(run.stderr.Bytes()), "\uFFFD"))
+		r.ElapsedSeconds = mathutil.Round(time.Since(t0).Seconds(), 3)
 		return r, nil
 	case <-timer.C:
 		run.reap()
 		r.TimedOut = true
-		r.ElapsedSeconds = pyint.Round(time.Since(t0).Seconds(), 3)
+		r.ElapsedSeconds = mathutil.Round(time.Since(t0).Seconds(), 3)
 		return r, nil
 	case <-ctx.Done():
 		run.reap()
@@ -714,7 +714,7 @@ func spawnShellHookArgv(ctx context.Context, argv []string, dir string, timeout 
 	}
 }
 
-// Diagnostic of a failed process start, Python Popen wording per error class
+// Diagnostic of a failed process start per kind of failure
 func shellHookPopenError(name string, err error) string {
 	switch {
 	case isNotFoundError(err):
@@ -723,10 +723,8 @@ func shellHookPopenError(name string, err error) string {
 		return "command not executable"
 	case isBadExeFormat(err):
 		return errchain.Show(name) + " " + shellHookNotDirectlyExecutable
-	case isOSError(err):
-		return errchain.OSText(err)
 	}
-	return err.Error()
+	return errchain.OSText(err)
 }
 
 // Callback invoke_hook calls per firing, nil outside the matcher or inside a safe worker
@@ -814,15 +812,15 @@ func evaluateShellHookResult(spec *ShellHookSpec, r *ShellHookResult) map[string
 }
 
 func shellHookIsJSONObject(text string) bool {
-	v, err := pyjson.Loads(text)
-	_, ok := v.(*pyjson.Object)
+	v, err := jsonutil.Decode(text)
+	_, ok := v.(*jsonutil.Object)
 	return err == nil && ok
 }
 
 // Validated string block message, primary first, else the default
 func shellHookBlockMessage(primary, secondary any) string {
 	raw := primary
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = secondary
 	}
 	if s, ok := raw.(string); ok && s != "" {
@@ -858,15 +856,15 @@ func parseShellPreToolCall(data map[string]any) map[string]any {
 // Continue nudge from a pre_verify answer, nil without a message
 func parseShellPreVerify(data map[string]any) map[string]any {
 	actionRaw := data["action"]
-	if !pyrepr.Truthy(actionRaw) {
+	if !anyutil.IsTrue(actionRaw) {
 		actionRaw = data["decision"]
 	}
 	action := ""
-	if pyrepr.Truthy(actionRaw) {
-		action = strings.ToLower(strings.TrimSpace(pyrepr.Str(actionRaw)))
+	if anyutil.IsTrue(actionRaw) {
+		action = strings.ToLower(strings.TrimSpace(anyutil.String(actionRaw)))
 	}
 	message := data["message"]
-	if !pyrepr.Truthy(message) {
+	if !anyutil.IsTrue(message) {
 		message = data["reason"]
 	}
 	if m, ok := message.(string); ok && (action == "continue" || action == "block") && strings.TrimSpace(m) != "" {
@@ -898,16 +896,16 @@ func parseShellHookResponse(event, stdout string) map[string]any {
 	if stdout == "" {
 		return nil
 	}
-	v, err := pyjson.Loads(stdout)
+	v, err := jsonutil.Decode(stdout)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("shell hook stdout was not valid JSON (event=%s): %s", event, textutil.First(stdout, 200)))
 		return nil
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
-	data, _ := pyjson.Plain(obj).(map[string]any)
+	data, _ := jsonutil.Plain(obj).(map[string]any)
 	switch event {
 	case "pre_tool_call":
 		return parseShellPreToolCall(data)
@@ -931,15 +929,15 @@ func readShellHookAllowlist(ctx context.Context) (map[string]any, bool) {
 	if err != nil {
 		return empty(), os.IsNotExist(err)
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return empty(), false
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return empty(), false
 	}
-	data, ok := pyjson.Plain(v).(map[string]any)
+	data, ok := jsonutil.Plain(v).(map[string]any)
 	if !ok {
 		return empty(), false
 	}
@@ -959,8 +957,8 @@ func LoadShellHookAllowlist(ctx context.Context) map[string]any {
 // Writes the allowlist atomically at mode 0600, an OS failure logged and the approval held in memory only
 func SaveShellHookAllowlist(ctx context.Context, data map[string]any) error {
 	p := ShellHookAllowlistPath(ctx)
-	err := shellHookAtomicWrite(ctx, p, data, 0o600, pyjson.Indent(2), pyjson.SortKeys(true))
-	if err != nil && isOSError(err) {
+	err := shellHookAtomicWrite(ctx, p, data, 0o600, jsonutil.Indent(2), jsonutil.SortKeys())
+	if errorutil.IsSystem(err) {
 		pkgLog().Warn(fmt.Sprintf("Failed to persist shell hook allowlist to %s: %s. The approval holds for this process "+
 			"only (a gateway keeps a launch's --accept-hooks until it restarts); a gateway session "+
 			"opened from a CLI prompt skips the hook, and the next run re-prompts.", p, errchain.OSText(err)))
@@ -1053,7 +1051,7 @@ func RevokeShellHook(ctx context.Context, command string) (int, error) {
 
 // First token with a script suffix, else the first path like token, else the first token
 func shellHookScriptPath(command string) string {
-	parts, err := pyshlex.SplitCommandLine(command)
+	parts, err := shellutil.SplitCommandLine(command)
 	if err != nil {
 		return command
 	}
@@ -1099,23 +1097,23 @@ func ShellHookScriptMtimeISO(command string) (string, bool) {
 	if path == "" {
 		return "", false
 	}
-	fi, err := os.Stat(pypath.Expanduser(path))
+	fi, err := os.Stat(pathutil.ExpandUser(path))
 	if err != nil {
 		return "", false
 	}
 	mt := fi.ModTime()
 	ts := float64(mt.Unix()) + float64(mt.Nanosecond())*1e-9
-	return shellHookISO(pydatetime.FromTimestamp(ts)), true
+	return shellHookISO(timeutil.FromEpoch(ts)), true
 }
 
 // Whether the command runs as configured, a bare script needing execute and an interpreted one read access
 func ShellHookScriptIsExecutable(command string) bool {
 	path := shellHookScriptPath(command)
-	expanded := pypath.Expanduser(path)
+	expanded := pathutil.ExpandUser(path)
 	if path == "" || !isFile(expanded) {
 		return false
 	}
-	argv, err := pyshlex.SplitCommandLine(command)
+	argv, err := shellutil.SplitCommandLine(command)
 	if err != nil {
 		return false
 	}

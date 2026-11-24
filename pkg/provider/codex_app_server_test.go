@@ -128,7 +128,7 @@ cat > /dev/null`)
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		tail := c.StderrTail(20)
-		if slices.Contains(tail, "<non-json on stdout> b'garbage'") && slices.Contains(tail, "boom on stderr") {
+		if slices.Contains(tail, `<non-json on stdout> "garbage"`) && slices.Contains(tail, "boom on stderr") {
 			return
 		}
 		time.Sleep(20 * time.Millisecond)
@@ -139,14 +139,14 @@ cat > /dev/null`)
 func TestCodexRequestTimeoutMessage(t *testing.T) {
 	c := startFakeCodex(t, "cat > /dev/null")
 	_, err := c.Request("turn/start", nil, 100*time.Millisecond)
-	if err == nil || err.Error() != "codex app-server method 'turn/start' timed out after 0.1s" || !codexIsTimeout(err) {
+	if err == nil || err.Error() != `codex app-server method "turn/start" timed out after 0.1s` || !codexIsTimeout(err) {
 		t.Fatalf("timeout %v", err)
 	}
 }
 
 func TestCodexCheckBinary(t *testing.T) {
 	ok, msg, err := CheckCodexBinary("/nonexistent/codex", CodexMinVersion)
-	if ok || err != nil || msg != "codex CLI not found at '/nonexistent/codex'. Install with: npm i -g @openai/codex" {
+	if ok || err != nil || msg != `codex CLI not found at "/nonexistent/codex". Install with: npm i -g @openai/codex` {
 		t.Fatalf("missing %v %q %v", ok, msg, err)
 	}
 	if ok, msg, _ := CheckCodexBinary(fakeCodexBin(t, "echo 'codex-cli 0.130.0'"), CodexMinVersion); !ok || msg != "0.130.0" {
@@ -158,7 +158,7 @@ func TestCodexCheckBinary(t *testing.T) {
 	if ok, msg, _ := CheckCodexBinary(fakeCodexBin(t, "echo ' bad flag ' >&2; exit 3"), CodexMinVersion); ok || msg != "codex --version exited 3: bad flag" {
 		t.Fatalf("exit %v %q", ok, msg)
 	}
-	if ok, msg, _ := CheckCodexBinary(fakeCodexBin(t, "echo 'codex dev'"), CodexMinVersion); ok || msg != `could not parse codex version from: 'codex dev\n'` {
+	if ok, msg, _ := CheckCodexBinary(fakeCodexBin(t, "echo 'codex dev'"), CodexMinVersion); ok || msg != `could not parse codex version from: "codex dev\n"` {
 		t.Fatalf("unparsable %v %q", ok, msg)
 	}
 	if v, ok := ParseCodexVersion("codex-cli 0.130.0 (abc)"); !ok || v != [3]int{0, 130, 0} {

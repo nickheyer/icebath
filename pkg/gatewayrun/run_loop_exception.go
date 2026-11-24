@@ -71,7 +71,7 @@ func gatewayLoopExceptionHandler(loop *gateway.CallbackLoop, c gateway.LoopExcep
 			task = "<unknown task>"
 		}
 		pkgLog().Warn(fmt.Sprintf("Gateway swallowed transient network error from %s: %s: %s", task,
-			ownExceptionName(c.Exception), pyrepr.ExceptionMessage(c.Exception)), "exc_info", c.Exception)
+			ownExceptionName(c.Exception), c.Exception.Error()), "exc_info", c.Exception)
 		return
 	}
 	loop.DefaultExceptionHandler(c)

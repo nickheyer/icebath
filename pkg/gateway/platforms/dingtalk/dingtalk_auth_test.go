@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
 	"github.com/nickheyer/icebath/pkg/provider"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestMain(m *testing.M) {
@@ -39,20 +40,20 @@ func registrationText(t *testing.T, err error) string {
 }
 
 func TestApiPostRaisesOnNetworkError(t *testing.T) {
-	swap(t, &registrationPost, func(context.Context, string, any) (*pyrequests.Response, error) {
-		return nil, &pyrequests.Error{Class: "ConnectionError", Text: "nope"}
+	swap(t, &registrationPost, func(_ context.Context, endpoint string, _ any) (*httputil.Response, error) {
+		return nil, &url.Error{Op: "Post", URL: endpoint, Err: errors.New("nope")}
 	})
-	_, err := apiPost(context.Background(), "/app/registration/init", pyjson.ObjectOf("source", "icebath"))
+	_, err := apiPost(context.Background(), "/app/registration/init", jsonutil.ObjectOf("source", "icebath"))
 	if !strings.Contains(registrationText(t, err), "Network error") {
 		t.Fatalf("error %v", err)
 	}
 }
 
 func TestApiPostRaisesOnNonzeroErrcode(t *testing.T) {
-	swap(t, &registrationPost, func(context.Context, string, any) (*pyrequests.Response, error) {
-		return &pyrequests.Response{Status: 200, Body: []byte(`{"errcode": 42, "errmsg": "boom"}`)}, nil
+	swap(t, &registrationPost, func(context.Context, string, any) (*httputil.Response, error) {
+		return &httputil.Response{StatusCode: 200, Content: []byte(`{"errcode": 42, "errmsg": "boom"}`)}, nil
 	})
-	_, err := apiPost(context.Background(), "/app/registration/init", pyjson.ObjectOf("source", "icebath"))
+	_, err := apiPost(context.Background(), "/app/registration/init", jsonutil.ObjectOf("source", "icebath"))
 	if !strings.Contains(registrationText(t, err), "boom (errcode=42)") {
 		t.Fatalf("error %v", err)
 	}
@@ -61,13 +62,13 @@ func TestApiPostRaisesOnNonzeroErrcode(t *testing.T) {
 // Fake of the registration API answering the decoded responses in order
 func scriptedAPIPost(t *testing.T, responses ...string) {
 	t.Helper()
-	swap(t, &apiPostFn, func(context.Context, string, *pyjson.Object) (*pyjson.Object, error) {
-		decoded, err := pyjson.Loads(responses[0])
+	swap(t, &apiPostFn, func(context.Context, string, *jsonutil.Object) (*jsonutil.Object, error) {
+		decoded, err := jsonutil.Decode(responses[0])
 		responses = responses[1:]
 		if err != nil {
 			t.Fatal(err)
 		}
-		return decoded.(*pyjson.Object), nil
+		return decoded.(*jsonutil.Object), nil
 	})
 }
 
@@ -84,8 +85,8 @@ func TestBeginRegistrationChainsInitThenBegin(t *testing.T) {
 }
 
 func TestBeginRegistrationMissingNonceRaises(t *testing.T) {
-	swap(t, &apiPostFn, func(context.Context, string, *pyjson.Object) (*pyjson.Object, error) {
-		return pyjson.ObjectOf("errcode", int64(0), "nonce", ""), nil
+	swap(t, &apiPostFn, func(context.Context, string, *jsonutil.Object) (*jsonutil.Object, error) {
+		return jsonutil.ObjectOf("errcode", int64(0), "nonce", ""), nil
 	})
 	_, err := beginRegistration(context.Background())
 	if !strings.Contains(registrationText(t, err), "missing nonce") {

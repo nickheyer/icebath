@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -57,7 +56,7 @@ func workerLogLock(path string) *sync.Mutex {
 
 // Appends text under the file lock as a private file, rotating once past the size cap
 func appendWorkerLog(ctx context.Context, path, text string) error {
-	data := pystr.EncodeUTF8Replace(text)
+	data := []byte(text)
 	lock := workerLogLock(path)
 	lock.Lock()
 	defer lock.Unlock()

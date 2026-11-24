@@ -9,12 +9,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Local wall clock in datetime.isoformat form
-func debugNow() string { return pydatetime.ISOFormatNaive(time.Now()) }
+func debugNow() string { return time.Now().Format(timeutil.RFC3339Micro) }
 
 // DebugSession records tool calls to a JSON log when the tool's env var is true
 type DebugSession struct {
@@ -24,7 +22,7 @@ type DebugSession struct {
 	logDir    string
 	start     string
 	mu        sync.Mutex
-	calls     []*pyjson.Object
+	calls     []*jsonutil.Object
 }
 
 // NewDebugSession enables recording when envVar is true
@@ -49,7 +47,7 @@ func (s *DebugSession) LogCall(callName string, callData map[string]any) {
 	if !s.enabled {
 		return
 	}
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("timestamp", debugNow())
 	entry.Set("tool_name", callName)
 	for _, k := range sortedKeys(callData) {
@@ -66,16 +64,16 @@ func (s *DebugSession) Save(env *Env) {
 		return
 	}
 	s.mu.Lock()
-	calls := append([]*pyjson.Object{}, s.calls...)
+	calls := append([]*jsonutil.Object{}, s.calls...)
 	s.mu.Unlock()
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("session_id", s.sessionID)
 	payload.Set("start_time", s.start)
 	payload.Set("end_time", debugNow())
 	payload.Set("debug_enabled", true)
 	payload.Set("total_calls", len(calls))
 	payload.Set("tool_calls", calls)
-	body, err := pyjson.Dumps(payload, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	body, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		envLog(env).Error("Error saving debug log", "tool", s.toolName, "error", err)
 		return

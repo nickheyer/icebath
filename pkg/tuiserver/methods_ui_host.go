@@ -18,6 +18,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var uiHostRegistry = &handlerRegistry{}
@@ -310,7 +311,7 @@ func worktreeSyncBase(ctx context.Context) bool {
 		return true
 	}
 	if v, set := cfg["worktree_sync"]; set {
-		return truthy(v)
+		return anyutil.IsTrue(v)
 	}
 	return true
 }

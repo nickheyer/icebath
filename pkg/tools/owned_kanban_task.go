@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 type toolEnvKey struct{}
@@ -52,16 +52,16 @@ func KanbanPathIsFenced(ctx context.Context, path string) bool {
 	if marker == "1" {
 		return true
 	}
-	target, err := pypath.Resolve(pypath.Expanduser(path))
+	target, err := pathutil.Resolve(pathutil.ExpandUser(path))
 	if err != nil {
 		return true
 	}
 	if pinned := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_DB")); pinned != "" {
-		if p, err := pypath.Resolve(pypath.Expanduser(pinned)); err != nil || p == target {
+		if p, err := pathutil.Resolve(pathutil.ExpandUser(pinned)); err != nil || p == target {
 			return true
 		}
 	}
-	root, err := pypath.Resolve(pypath.Expanduser(marker))
+	root, err := pathutil.Resolve(pathutil.ExpandUser(marker))
 	if err != nil {
 		return true
 	}

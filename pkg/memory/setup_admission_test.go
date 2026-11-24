@@ -17,6 +17,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -28,9 +29,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Developer cache directory the pinned uv is kept in between runs
@@ -69,7 +70,7 @@ func admissionFetchUV() (string, error) {
 	if len(artifacts) == 0 || admissionCacheRoot == "" {
 		return "", &fs.PathError{Op: "pin", Path: "uv " + target, Err: fs.ErrNotExist}
 	}
-	url, sha := pyrepr.Str(artifacts[0]["url"]), pyrepr.Str(artifacts[0]["sha256"])
+	url, sha := anyutil.String(artifacts[0]["url"]), anyutil.String(artifacts[0]["sha256"])
 	root := filepath.Join(admissionCacheRoot, "icebath-pm-tests", "uv-"+sha[:16])
 	find := func() string {
 		found := ""
@@ -124,7 +125,7 @@ func admissionWheel(t *testing.T, dir, name, version string) {
 	metadata := name + "-" + version + ".dist-info"
 	paths := []string{name + "/__init__.py", metadata + "/METADATA", metadata + "/WHEEL"}
 	entries := map[string]string{
-		paths[0]: "__version__ = " + pyrepr.StrRepr(version) + "\n",
+		paths[0]: "__version__ = " + strconv.Quote(version) + "\n",
 		paths[1]: "Metadata-Version: 2.1\nName: " + name + "\nVersion: " + version + "\n",
 		paths[2]: "Wheel-Version: 1.0\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
 	}

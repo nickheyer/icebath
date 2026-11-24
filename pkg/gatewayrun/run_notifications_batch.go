@@ -12,9 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Owner and platform an async completion was held for, warned once per outage
@@ -38,7 +38,7 @@ func surfacesNotification(ctx context.Context, evt map[string]any) bool {
 func eventRouteKey(evt map[string]any, fields []string) string {
 	parts := make([]string, len(fields))
 	for i, field := range fields {
-		parts[i] = pyrepr.Str(pyrepr.Or(evt[field], ""))
+		parts[i] = anyutil.String(anyutil.Or(evt[field], ""))
 	}
 	return strings.Join(parts, "\x1f")
 }
@@ -101,14 +101,14 @@ func formatCoalescedProcessCompletions(ctx context.Context, entries []completion
 	shown := entries[:min(len(entries), 10)]
 	for _, entry := range shown {
 		evt := entry.evt
-		sessionID := pyrepr.Str(pyrepr.Or(evt["session_id"], "unknown"))
-		reason := pyrepr.Str(pyrepr.Or(evt["completion_reason"], "exited"))
-		output := []rune(strings.TrimSpace(redactGatewayUserFacingSecrets(ctx, pyrepr.Str(pyrepr.Or(evt["output"], "")))))
+		sessionID := anyutil.String(anyutil.Or(evt["session_id"], "unknown"))
+		reason := anyutil.String(anyutil.Or(evt["completion_reason"], "exited"))
+		output := []rune(strings.TrimSpace(redactGatewayUserFacingSecrets(ctx, anyutil.String(anyutil.Or(evt["output"], "")))))
 		text := string(output)
 		if len(output) > 800 {
 			text = "[… truncated …]\n" + string(output[len(output)-800:])
 		}
-		lines = append(lines, fmt.Sprintf("\n- %s: exit_code=%s, reason=%s", sessionID, pyrepr.Str(evt["exit_code"]), reason))
+		lines = append(lines, fmt.Sprintf("\n- %s: exit_code=%s, reason=%s", sessionID, anyutil.String(evt["exit_code"]), reason))
 		if text != "" {
 			lines = append(lines, text)
 		}
@@ -272,7 +272,7 @@ func (r *GatewayRunner) deliverCompletionNotificationScoped(ctx context.Context,
 	if !surfacesNotification(ctx, evt) {
 		return nil, nil
 	}
-	if err := gateway.RestoreCompletionRoute(ctx, r, pyrepr.Str(pyrepr.Or(evt["session_key"], ""))); err != nil {
+	if err := gateway.RestoreCompletionRoute(ctx, r, anyutil.String(anyutil.Or(evt["session_key"], ""))); err != nil {
 		return nil, err
 	}
 	evt, err = gateway.FollowDetachedPin(ctx, r, evt)
@@ -299,7 +299,7 @@ func (r *GatewayRunner) deliverCompletionNotificationScoped(ctx context.Context,
 		}
 		for _, sibling := range siblingClaims {
 			if sibling.claimID != "" {
-				settleDurableClaim(ctx, operation, pyrepr.Str(sibling.evt["delegation_id"]), sibling.claimID)
+				settleDurableClaim(ctx, operation, anyutil.String(sibling.evt["delegation_id"]), sibling.claimID)
 			}
 		}
 		if accepted && len(siblingClaims) > 0 {
@@ -457,13 +457,13 @@ func (r *GatewayRunner) preflightCompletionDelivery(ctx context.Context, evt map
 			return claim, nil
 		}
 	}
-	if evtType == "async_delegation" && !pyrepr.Truthy(evt["task_failure_notice"]) {
+	if evtType == "async_delegation" && !anyutil.IsTrue(evt["task_failure_notice"]) {
 		claim.delegationID = truthyText(evt["delegation_id"])
 		if claim.delegationID != "" {
 			claim.claimID = fmt.Sprintf("gateway:%d:%s", reflect.ValueOf(r).Pointer(), strings.ReplaceAll(uuid.NewString(), "-", ""))
 			claimed, err := tools.ClaimCompletionDelivery(&tools.Env{Home: home.Dir(ctx)}, claim.delegationID, claim.claimID)
 			if err != nil {
-				pkgLog().Warn(fmt.Sprintf("Could not claim durable async completion %s: %s", claim.delegationID, pyrepr.ExceptionMessage(err)))
+				pkgLog().Warn(fmt.Sprintf("Could not claim durable async completion %s: %s", claim.delegationID, err.Error()))
 				claim.proceed, claim.earlyResult = false, boolp(false)
 				return claim, nil
 			}
@@ -497,7 +497,7 @@ func (r *GatewayRunner) preflightCompletionDelivery(ctx context.Context, evt map
 			}
 		} else {
 			pkgLog().Warn(fmt.Sprintf("Background process %s completion targets permanently-gone session %s (user boundary such as /new); dropping notification (output remains available via process(action='log')).",
-				pyrepr.Str(pyrepr.Or(evt["session_id"], "<unknown>")), parent))
+				anyutil.String(anyutil.Or(evt["session_id"], "<unknown>")), parent))
 		}
 		claim.proceed = false
 	case "retry":

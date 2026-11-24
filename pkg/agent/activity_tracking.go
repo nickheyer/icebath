@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Mirrors agent activity onto the board of a dispatched kanban worker, installed by the extras tier that carries kanban
@@ -108,7 +108,7 @@ func (a *AIAgent) GetActivitySummary() map[string]any {
 	if provenance == "" {
 		provenance = string(state.ActivityProvenanceUnknown)
 	}
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	if currentTool != "" {
 		extra.Set("current_tool", currentTool)
 	} else {
@@ -122,5 +122,5 @@ func (a *AIAgent) GetActivitySummary() map[string]any {
 	}
 	extra.Set("budget_used", budgetUsed)
 	extra.Set("budget_max", budgetMax)
-	return BuildActivitySnapshot(at, desc, provenance, nil, extra).Vals
+	return BuildActivitySnapshot(at, desc, provenance, nil, extra).Map()
 }

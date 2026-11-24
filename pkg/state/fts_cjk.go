@@ -12,8 +12,8 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const FTSCJKTableSQL = `
@@ -78,7 +78,7 @@ END;
 // Location of the cjk_unicode61 extension, ICEBATH_FTS5_CJK_SO or the home lib directory
 func FTS5CJKSoPath(ctx context.Context) string {
 	if env := os.Getenv("ICEBATH_FTS5_CJK_SO"); env != "" {
-		return pypath.Expanduser(env)
+		return pathutil.ExpandUser(env)
 	}
 	return filepath.Join(home.Dir(ctx), "lib", "libfts5_cjk.so")
 }

@@ -3,13 +3,13 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Whether a resume adopts a phone app's self labelled chat as a writable conversation for its native owner
-func adoptsClientHistory(ctx context.Context, a *SessionAuthority, actor Principal, row *pyjson.Object) (bool, error) {
-	id, _ := row.GetOr("id", "").(string)
+func adoptsClientHistory(ctx context.Context, a *SessionAuthority, actor Principal, row *jsonutil.Object) (bool, error) {
+	id, _ := row.ValueOr("id", "").(string)
 	live, held := a.live(id)
 	a.mu.Lock()
 	legacy, known := a.nativeLegacyTransports[actor.TransportID]

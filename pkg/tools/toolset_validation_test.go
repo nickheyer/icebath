@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var tvKnown = map[string]bool{"icebath-cli": true, "icebath-telegram": true, "icebath-discord": true, "icebath-whatsapp": true, "discord": true, "terminal": true, "web": true}
@@ -29,8 +29,8 @@ func tvAny(warnings []string, parts ...string) bool {
 	return false
 }
 
-func tvOrdered(pairs ...any) *pyjson.Object {
-	o := &pyjson.Object{}
+func tvOrdered(pairs ...any) *jsonutil.Object {
+	o := &jsonutil.Object{}
 	for i := 0; i < len(pairs); i += 2 {
 		o.Set(pairs[i].(string), pairs[i+1])
 	}

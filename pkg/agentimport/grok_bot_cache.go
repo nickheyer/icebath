@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Grok Bot app user data folder per OS
@@ -45,7 +45,7 @@ func sliceValue(path string) any {
 	if err != nil || !utf8.Valid(raw) {
 		return nil
 	}
-	data, err := pyjson.Loads(string(raw))
+	data, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil
 	}
@@ -100,7 +100,7 @@ func ReadGrokBotCache() GrokBotCache {
 	}
 	blobs, _ := filepath.Glob(filepath.Join(globEscape(folder), "*.blob"))
 	sortPaths(blobs)
-	slices := pyjson.NewObject()
+	slices := jsonutil.NewObject()
 	for _, p := range blobs {
 		sid := sliceID(p)
 		if sid == "" || !strings.HasPrefix(sid, grokSlicePrefx+"account.") {
@@ -112,65 +112,65 @@ func ReadGrokBotCache() GrokBotCache {
 		}
 	}
 	var roster any
-	if p, ok := slices.Vals["roster.last-roster"].(string); ok {
+	if p, ok := slices.Value("roster.last-roster").(string); ok {
 		roster = sliceValue(p)
 	}
-	names := pyjson.NewObject()
+	names := jsonutil.NewObject()
 	if rows, ok := get(roster, "rows").([]any); ok {
 		for _, row := range rows {
 			o, ok := asObject(row)
-			if !ok || truthy(o.Vals["isGroup"]) {
+			if !ok || truthy(o.Value("isGroup")) {
 				continue
 			}
 			name := ""
-			if truthy(o.Vals["name"]) {
-				name = strings.TrimSpace(pyStr(o.Vals["name"]))
+			if truthy(o.Value("name")) {
+				name = strings.TrimSpace(pyStr(o.Value("name")))
 			}
 			if name != "" {
-				names.Set(pyStr(o.Vals["id"]), name)
+				names.Set(pyStr(o.Value("id")), name)
 			}
 		}
 	}
-	for _, id := range names.Keys {
-		cache.Bots = append(cache.Bots, names.Vals[id].(string))
+	for _, id := range names.Keys() {
+		cache.Bots = append(cache.Bots, names.Value(id).(string))
 	}
-	for _, kind := range slices.Keys {
+	for _, kind := range slices.Keys() {
 		id := kind[strings.LastIndex(kind, ".")+1:]
-		if _, known := names.Vals[id]; !strings.HasPrefix(kind, "transcript.replicas.") || !known {
+		if _, known := names.Get(id); !strings.HasPrefix(kind, "transcript.replicas.") || !known {
 			continue
 		}
-		seen := pyjson.NewObject()
-		entries, _ := get(sliceValue(slices.Vals[kind].(string)), "entries").([]any)
+		seen := jsonutil.NewObject()
+		entries, _ := get(sliceValue(slices.Value(kind).(string)), "entries").([]any)
 		for _, entry := range entries {
 			event, ok := asObject(get(entry, "event"))
-			if evType, _ := event.Vals["type"].(string); !ok || evType != "automation-changed" {
+			if evType, _ := event.Value("type").(string); !ok || evType != "automation-changed" {
 				continue
 			}
 			key := ""
 			switch {
-			case truthy(event.Vals["automationId"]):
-				key = pyStr(event.Vals["automationId"])
-			case truthy(event.Vals["automationName"]):
-				key = pyStr(event.Vals["automationName"])
+			case truthy(event.Value("automationId")):
+				key = pyStr(event.Value("automationId"))
+			case truthy(event.Value("automationName")):
+				key = pyStr(event.Value("automationName"))
 			}
-			if action, _ := event.Vals["action"].(string); action == "deleted" {
+			if action, _ := event.Value("action").(string); action == "deleted" {
 				seen.Delete(key)
 			} else if key != "" {
 				label := key
-				if truthy(event.Vals["automationName"]) {
-					label = pyStr(event.Vals["automationName"])
+				if truthy(event.Value("automationName")) {
+					label = pyStr(event.Value("automationName"))
 				}
 				seen.Set(key, label)
 			}
 		}
 		if seen.Len() > 0 {
-			bot := names.Vals[id].(string)
+			bot := names.Value(id).(string)
 			if _, had := cache.Routines[bot]; !had {
 				cache.RoutineBots = append(cache.RoutineBots, bot)
 			}
 			var routines []string
-			for _, k := range seen.Keys {
-				routines = append(routines, seen.Vals[k].(string))
+			for _, k := range seen.Keys() {
+				routines = append(routines, seen.Value(k).(string))
 			}
 			cache.Routines[bot] = routines
 		}

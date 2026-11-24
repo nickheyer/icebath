@@ -5,20 +5,20 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Final response of a side agent run, the whole result's text when it carries none
 func sideFinalResponseText(result map[string]any) string {
 	value, ok := result["final_response"]
 	if !ok {
-		return pyrepr.Str(result)
+		return anyutil.String(result)
 	}
 	if value == nil {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Background prompt run to completion by a fresh agent on the session's frozen route, closed afterwards

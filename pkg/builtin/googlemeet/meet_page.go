@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/browser"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Page surface the bot drives, the Playwright sync page calls the bot makes
@@ -294,7 +294,7 @@ func (c *cdpContext) onOrigin(origin, js string) (any, error) {
 }
 
 // Playwright storage state of the context, cookies plus localStorage of every visited origin
-func (c *cdpContext) storageState() (*pyjson.Object, error) {
+func (c *cdpContext) storageState() (*jsonutil.Object, error) {
 	var out struct {
 		Cookies []map[string]any `json:"cookies"`
 	}
@@ -315,7 +315,7 @@ func (c *cdpContext) storageState() (*pyjson.Object, error) {
 		if !ok {
 			sameSite = "Lax"
 		}
-		cookies = append(cookies, pyjson.ObjectOf("name", ck["name"], "value", ck["value"], "domain", ck["domain"],
+		cookies = append(cookies, jsonutil.ObjectOf("name", ck["name"], "value", ck["value"], "domain", ck["domain"],
 			"path", ck["path"], "expires", expires, "httpOnly", ck["httpOnly"], "secure", ck["secure"], "sameSite", sameSite))
 	}
 	read := "(() => Object.keys(localStorage).map(name => ({name, value: localStorage.getItem(name)})))()"
@@ -341,11 +341,11 @@ func (c *cdpContext) storageState() (*pyjson.Object, error) {
 		storage := []any{}
 		for _, it := range list {
 			m, _ := it.(map[string]any)
-			storage = append(storage, pyjson.ObjectOf("name", m["name"], "value", m["value"]))
+			storage = append(storage, jsonutil.ObjectOf("name", m["name"], "value", m["value"]))
 		}
-		entries = append(entries, pyjson.ObjectOf("origin", origin, "localStorage", storage))
+		entries = append(entries, jsonutil.ObjectOf("origin", origin, "localStorage", storage))
 	}
-	return pyjson.ObjectOf("cookies", cookies, "origins", entries), nil
+	return jsonutil.ObjectOf("cookies", cookies, "origins", entries), nil
 }
 
 // Open page of the context whose document is at origin
@@ -367,7 +367,7 @@ func (c *cdpContext) saveStorageState(path string) error {
 	if err != nil {
 		return err
 	}
-	text, err := pyjson.Dumps(st, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(st, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}

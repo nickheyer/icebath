@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const threadHorizonMinutes = 60
@@ -41,10 +41,10 @@ func (s *Store) firstFireWithinThreadHorizon(schedule any) bool {
 	case *Schedule:
 		parsed = v
 	case map[string]any:
-		if kind, _ := v["kind"].(string); kind != "once" || !pyrepr.Truthy(v["run_at"]) {
+		if kind, _ := v["kind"].(string); kind != "once" || !anyutil.IsTrue(v["run_at"]) {
 			return false
 		}
-		parsed = &Schedule{Kind: "once", RunAt: pyrepr.Str(v["run_at"])}
+		parsed = &Schedule{Kind: "once", RunAt: anyutil.String(v["run_at"])}
 	case string:
 		if v == "" {
 			return false
@@ -191,7 +191,7 @@ func splitMonitorArg(monitor, monitorScript, monitorURL any) (any, any) {
 	if monitor == nil {
 		return monitorScript, monitorURL
 	}
-	value := strings.TrimSpace(pyrepr.Str(monitor))
+	value := strings.TrimSpace(anyutil.String(monitor))
 	if value == "" {
 		return "", ""
 	}
@@ -239,7 +239,7 @@ func cleanStrList(items any) []string {
 	}
 	out := []string{}
 	for _, i := range raw {
-		if s := strings.TrimSpace(pyrepr.Str(i)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(i)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -251,7 +251,7 @@ func canonicalSkills(skill, skills any) []string {
 	var items []any
 	switch v := skills.(type) {
 	case nil:
-		if pyrepr.Truthy(skill) {
+		if anyutil.IsTrue(skill) {
 			items = []any{skill}
 		}
 	case string:
@@ -267,7 +267,7 @@ func canonicalSkills(skill, skills any) []string {
 	}
 	cleaned := make([]any, 0, len(items))
 	for _, item := range items {
-		if !pyrepr.Truthy(item) {
+		if !anyutil.IsTrue(item) {
 			item = ""
 		}
 		cleaned = append(cleaned, item)
@@ -294,7 +294,7 @@ func normalizeOptionalJobValue(value any, stripTrailingSlash bool) *string {
 		}
 		value = *p
 	}
-	text := strings.TrimSpace(pyrepr.Str(value))
+	text := strings.TrimSpace(anyutil.String(value))
 	if stripTrailingSlash {
 		text = strings.TrimRight(text, "/")
 	}
@@ -316,7 +316,7 @@ func normalizeDeliverParam(value any) *string {
 		}
 		return &joined
 	}
-	text := strings.TrimSpace(pyrepr.Str(value))
+	text := strings.TrimSpace(anyutil.String(value))
 	if text == "" {
 		return nil
 	}
@@ -396,11 +396,11 @@ func truthyText(v string) bool {
 
 // Scheme, host and effective port equality with a configured endpoint
 func sameOrigin(baseURL, configured string) bool {
-	ws, wh, wp, err := pyurl.BaseURLOrigin(configured)
+	ws, wh, wp, err := urlutil.BaseOrigin(configured)
 	if err != nil {
 		return false
 	}
-	gs, gh, gp, err := pyurl.BaseURLOrigin(baseURL)
+	gs, gh, gp, err := urlutil.BaseOrigin(baseURL)
 	if err != nil {
 		return false
 	}
@@ -409,7 +409,7 @@ func sameOrigin(baseURL, configured string) bool {
 
 // Refusal wording for a base_url override naming the violated endpoint rule
 func baseURLRefused(bu, prov, why string) string {
-	return fmt.Sprintf("base_url %s is not allowed for provider %s. %s", pyrepr.Repr(bu), pyrepr.Repr(prov), why)
+	return fmt.Sprintf("base_url %s is not allowed for provider %s. %s", anyutil.Quote(bu), anyutil.Quote(prov), why)
 }
 
 // Refusal when a bare custom base_url would receive a host gated stored key off every configured origin
@@ -417,7 +417,7 @@ func (s *Store) customStoredKeyError(ctx context.Context, bu string) (string, er
 	customWhy := "A stored API key matches its hostname, and a stored credential may only be sent to a " +
 		"configured endpoint (same scheme, host and port); configure the endpoint as a custom " +
 		"provider to use it."
-	if _, _, _, err := pyurl.BaseURLOrigin(bu); err != nil {
+	if _, _, _, err := urlutil.BaseOrigin(bu); err != nil {
 		return baseURLRefused(bu, "custom", "It is not a valid URL."), nil
 	}
 	usable := false
@@ -438,8 +438,8 @@ func (s *Store) customStoredKeyError(ctx context.Context, bu string) (string, er
 	configured = append(configured, provider.GetSecretStr(ctx, "OPENAI_BASE_URL", ""), provider.OpenRouterBaseURL)
 	configured = append(configured, cronProviderResolver.registryURLs()...)
 	for _, entry := range provider.CustomProviderEntries(sctx) {
-		if u, ok := entry["base_url"]; ok && pyrepr.Truthy(u) {
-			configured = append(configured, pyrepr.Str(u))
+		if u, ok := entry["base_url"]; ok && anyutil.IsTrue(u) {
+			configured = append(configured, anyutil.String(u))
 		}
 	}
 	for _, u := range configured {
@@ -470,8 +470,8 @@ func (s *Store) validateCronBaseURL(ctx context.Context, prov, baseURL any) (str
 			cp = nil
 		}
 		cfgURL := ""
-		if u, ok := cp["base_url"]; ok && pyrepr.Truthy(u) {
-			cfgURL = pyrepr.Str(u)
+		if u, ok := cp["base_url"]; ok && anyutil.IsTrue(u) {
+			cfgURL = anyutil.String(u)
 		}
 		if cfgURL != "" && sameOrigin(*bu, cfgURL) {
 			return "", nil
@@ -504,13 +504,13 @@ func (s *Store) validateCronScriptPath(script string) string {
 	scriptsDir := filepath.Join(s.home, "scripts")
 	if strings.HasPrefix(raw, "/") || strings.HasPrefix(raw, "~") || (len(raw) >= 2 && raw[1] == ':') {
 		return fmt.Sprintf("Script path must be relative to %s/. ", scriptsDir) +
-			fmt.Sprintf("Got absolute or home-relative path: %s. ", pyrepr.Repr(raw)) +
+			fmt.Sprintf("Got absolute or home-relative path: %s. ", anyutil.Quote(raw)) +
 			fmt.Sprintf("Place scripts in %s/ and use just the filename.", scriptsDir)
 	}
 	_ = os.MkdirAll(scriptsDir, 0o777)
 	resolved := filepath.Join(scriptsDir, raw)
 	if tools.ValidateWithinDir(resolved, scriptsDir) != "" {
-		return fmt.Sprintf("Script path escapes the scripts directory via traversal: %s", pyrepr.Repr(raw))
+		return fmt.Sprintf("Script path escapes the scripts directory via traversal: %s", anyutil.Quote(raw))
 	}
 	if st, err := os.Stat(resolved); err != nil || !st.Mode().IsRegular() {
 		return fmt.Sprintf("Script file not found: %s. ", resolved) + fmt.Sprintf("Create it in %s/ first.", scriptsDir)
@@ -550,12 +550,12 @@ func (s *Store) validateContextFromRefs(ctx context.Context, refs []any) (string
 		if str, ok := ref.(string); ok && strings.ToLower(strings.TrimSpace(str)) == "self" {
 			continue
 		}
-		job, err := s.getJob(home.WithOverride(ctx, s.home), pyrepr.Str(ref))
+		job, err := s.getJob(home.WithOverride(ctx, s.home), anyutil.String(ref))
 		if err != nil {
 			return "", err
 		}
 		if job == nil {
-			return fmt.Sprintf("context_from job '%s' not found. ", pyrepr.Str(ref)) +
+			return fmt.Sprintf("context_from job '%s' not found. ", anyutil.String(ref)) +
 				"Use cronjob(action='list') to see available jobs.", nil
 		}
 	}
@@ -563,7 +563,7 @@ func (s *Store) validateContextFromRefs(ctx context.Context, refs []any) (string
 }
 
 // Model facing view of one job with secrets redacted from the last error
-func (s *Store) formatJob(job *Job) *pyjson.Object {
+func (s *Store) formatJob(job *Job) *jsonutil.Object {
 	skills := canonicalSkills(strPtrAny(job.Skill), stringsAny(job.Skills))
 	jobID := job.ID
 	if jobID == "" {
@@ -603,7 +603,7 @@ func (s *Store) formatJob(job *Job) *pyjson.Object {
 	} else if job.LastError != nil {
 		lastError = *job.LastError
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("job_id", jobID)
 	out.Set("name", name)
 	out.Set("skill", skill)
@@ -638,7 +638,7 @@ func (s *Store) formatJob(job *Job) *pyjson.Object {
 		{"interpreter", strPtrAny(job.Interpreter)},
 	}
 	for _, o := range optional {
-		if pyrepr.Truthy(o.v) {
+		if anyutil.IsTrue(o.v) {
 			if o.key == "no_agent" {
 				out.Set(o.key, true)
 			} else {
@@ -709,7 +709,7 @@ func jsonValue(v any) any {
 	if err != nil || string(data) == "null" {
 		return nil
 	}
-	out, err := pyjson.LoadsBytes(data)
+	out, err := jsonutil.Decode(data)
 	if err != nil {
 		return nil
 	}
@@ -717,8 +717,8 @@ func jsonValue(v any) any {
 }
 
 // Gateway running payload so the tool and the CLI agree on whether the scheduler is active
-func (s *Store) gatewayLivenessNotice(ctx context.Context, plural bool) *pyjson.Object {
-	out := pyjson.NewObject()
+func (s *Store) gatewayLivenessNotice(ctx context.Context, plural bool) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	gw, known := s.builtinGatewayLiveness(ctx)
 	if !known {
 		out.Set("gateway_running", nil)

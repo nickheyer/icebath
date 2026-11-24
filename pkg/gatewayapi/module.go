@@ -5,9 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
-	"math/big"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,14 +16,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -48,7 +47,7 @@ const (
 )
 
 // Static feature flags of the capabilities payload in wire order
-var staticFeatureFlags = pyjson.ObjectOf(
+var staticFeatureFlags = jsonutil.ObjectOf(
 	"run_status", true, "run_events_sse", true, "run_stop", true, "run_steer", true,
 	"run_approval_response", true, "tool_progress_events", true, "approval_events", true,
 	"session_resources", true, "model_options", true, "session_chat", true,
@@ -99,10 +98,10 @@ func approvalEventChoices(smartDenied, allowSession, allowPermanent bool) []any 
 }
 
 // Approval request payload with the command and description redacted and the run event envelope and choices
-func approvalRequestEvent(ctx context.Context, runID string, approvalData *pyjson.Object, fields ...any) *pyjson.Object {
-	event := pyjson.NewObject()
+func approvalRequestEvent(ctx context.Context, runID string, approvalData *jsonutil.Object, fields ...any) *jsonutil.Object {
+	event := jsonutil.NewObject()
 	if approvalData != nil {
-		event = approvalData.Copy()
+		event = approvalData.Clone()
 	}
 	for _, key := range []string{"command", "description"} {
 		if v, ok := event.Get(key); ok {
@@ -112,8 +111,8 @@ func approvalRequestEvent(ctx context.Context, runID string, approvalData *pyjso
 	smart, _ := event.Get("smart_denied")
 	allowSession, _ := event.Get("allow_session")
 	allowPermanent, _ := event.Get("allow_permanent")
-	fields = append(fields, "choices", approvalEventChoices(pyrepr.Truthy(smart), allowSession != false, allowPermanent != false))
-	event.Update(runEvent(runID, "approval.request", fields...))
+	fields = append(fields, "choices", approvalEventChoices(anyutil.IsTrue(smart), allowSession != false, allowPermanent != false))
+	event.Merge(runEvent(runID, "approval.request", fields...))
 	return event
 }
 
@@ -151,59 +150,59 @@ func resolveRequestRuntimeAgentKwargs(ctx context.Context, providerName, targetM
 
 // Per request model, provider and options, a bare model honored only when allowed and never the virtual one
 func requestAgentOverrides(body any, virtualModel string, allowBareModel bool) map[string]any {
-	obj, ok := body.(*pyjson.Object)
+	obj, ok := body.(*jsonutil.Object)
 	if !ok {
 		return map[string]any{}
 	}
 	overrides := map[string]any{}
-	providerName := gateway.APICleanRequestString(obj.GetOr("provider", nil))
+	providerName := gateway.APICleanRequestString(obj.ValueOr("provider", nil))
 	if providerName != nil {
 		overrides["requested_provider"] = *providerName
 	}
-	model := gateway.APICleanRequestString(obj.GetOr("model", nil))
+	model := gateway.APICleanRequestString(obj.ValueOr("model", nil))
 	if model != nil && *model != virtualModel && (providerName != nil || allowBareModel) {
 		overrides["requested_model"] = *model
 	}
-	if options, ok := obj.GetOr("model_options", nil).(*pyjson.Object); ok {
-		overrides["model_options"] = options.Copy()
+	if options, ok := obj.ValueOr("model_options", nil).(*jsonutil.Object); ok {
+		overrides["model_options"] = options.Clone()
 	}
 	return overrides
 }
 
 // Relay metadata object of an OpenAI request body, empty when absent or malformed
-func requestRelayMetadata(body any) *pyjson.Object {
-	obj, ok := body.(*pyjson.Object)
+func requestRelayMetadata(body any) *jsonutil.Object {
+	obj, ok := body.(*jsonutil.Object)
 	if !ok {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	metadata, ok := obj.GetOr("metadata", nil).(*pyjson.Object)
+	metadata, ok := obj.ValueOr("metadata", nil).(*jsonutil.Object)
 	if !ok {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	return metadata.Copy()
+	return metadata.Clone()
 }
 
 // Whether a message is any compaction carrier shape the compressor classifies
 func isCompressedSummaryMessage(message any) bool {
-	if _, ok := message.(*pyjson.Object); !ok {
+	if _, ok := message.(*jsonutil.Object); !ok {
 		if _, isMap := message.(map[string]any); !isMap {
 			return false
 		}
 	}
-	return state.IsCompactionSummaryMessage(pyjson.Plain(message))
+	return state.IsCompactionSummaryMessage(jsonutil.Plain(message))
 }
 
 // Client view of a stored message with compaction scaffolding hidden and diagnostic rows emptied
-func projectClientMessage(message *pyjson.Object) *pyjson.Object {
+func projectClientMessage(message *jsonutil.Object) *jsonutil.Object {
 	kind, _ := message.Get("display_kind")
-	meta, _ := message.GetOr("display_metadata", nil).(*pyjson.Object)
+	meta, _ := message.ValueOr("display_metadata", nil).(*jsonutil.Object)
 	var category any
 	if meta != nil {
 		category, _ = meta.Get("notification_category")
 	}
 	if kind == "hidden" && category == "diagnostic" {
-		kept := pyjson.NewObject()
-		for _, k := range message.Keys {
+		kept := jsonutil.NewObject()
+		for _, k := range message.Keys() {
 			switch k {
 			case "id", "session_id", "role", "timestamp", "display_kind", "platform_message_id":
 				v, _ := message.Get(k)
@@ -213,14 +212,14 @@ func projectClientMessage(message *pyjson.Object) *pyjson.Object {
 		kept.Set("content", "")
 		return kept
 	}
-	projected := state.ProjectCompactionMessageForDisplay(pyjson.Plain(message))
+	projected := state.ProjectCompactionMessageForDisplay(jsonutil.Plain(message))
 	if projected == nil {
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		internal := map[string]bool{}
 		for _, k := range state.CompactionInternalFields() {
 			internal[k] = true
 		}
-		for _, k := range message.Keys {
+		for _, k := range message.Keys() {
 			if !internal[k] {
 				v, _ := message.Get(k)
 				out.Set(k, v)
@@ -230,14 +229,14 @@ func projectClientMessage(message *pyjson.Object) *pyjson.Object {
 		out.Set("display_kind", "hidden")
 		return out
 	}
-	out, _ := pyjson.AsObject(projected)
-	ordered := pyjson.NewObject()
-	for _, k := range message.Keys {
+	out, _ := jsonutil.AsObject(projected)
+	ordered := jsonutil.NewObject()
+	for _, k := range message.Keys() {
 		if v, ok := out.Get(k); ok {
 			ordered.Set(k, v)
 		}
 	}
-	keys := append([]string(nil), out.Keys...)
+	keys := append([]string(nil), out.Keys()...)
 	sort.Strings(keys)
 	for _, k := range keys {
 		if _, ok := ordered.Get(k); !ok {
@@ -384,10 +383,10 @@ func clearTurnProcessOwnership(a *agent.AIAgent) {
 }
 
 // Normalized session chat message or input, a 400 when missing or malformed
-func sessionChatUserMessage(ctx context.Context, body *pyjson.Object, param string) (any, *gateway.WebResponse) {
-	userMessage := body.GetOr("message", nil)
-	if !pyrepr.Truthy(userMessage) {
-		userMessage = body.GetOr("input", nil)
+func sessionChatUserMessage(ctx context.Context, body *jsonutil.Object, param string) (any, *gateway.WebResponse) {
+	userMessage := body.ValueOr("message", nil)
+	if !anyutil.IsTrue(userMessage) {
+		userMessage = body.ValueOr("input", nil)
 	}
 	if !gateway.APIContentHasVisiblePayload(userMessage) {
 		return nil, errorResponse("Missing 'message' field", http.StatusBadRequest, errOpts{Code: "missing_message"})
@@ -400,12 +399,12 @@ func sessionChatUserMessage(ctx context.Context, body *pyjson.Object, param stri
 }
 
 // Parsed body author, nil when absent or null, a ValueError when not an object
-func requestTurnAuthor(body *pyjson.Object) (*pyjson.Object, error) {
-	raw := body.GetOr("author", nil)
+func requestTurnAuthor(body *jsonutil.Object) (*jsonutil.Object, error) {
+	raw := body.ValueOr("author", nil)
 	if raw == nil {
 		return nil, nil
 	}
-	if _, ok := raw.(*pyjson.Object); !ok {
+	if _, ok := raw.(*jsonutil.Object); !ok {
 		return nil, &gateway.PyError{Kind: "ValueError", Msg: "author must be an object"}
 	}
 	return provider.ParseTurnAuthor(raw), nil
@@ -414,8 +413,8 @@ func requestTurnAuthor(body *pyjson.Object) (*pyjson.Object, error) {
 var usageTokenKeys = []string{"input_tokens", "output_tokens", "total_tokens"}
 
 // Chat completions usage block from the agent usage
-func chatUsagePayload(usage map[string]any) *pyjson.Object {
-	out := pyjson.NewObject()
+func chatUsagePayload(usage map[string]any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for i, name := range []string{"prompt_tokens", "completion_tokens", "total_tokens"} {
 		out.Set(name, usageValue(usage, usageTokenKeys[i]))
 	}
@@ -423,8 +422,8 @@ func chatUsagePayload(usage map[string]any) *pyjson.Object {
 }
 
 // Responses usage block from the agent usage
-func responsesUsagePayload(usage map[string]any) *pyjson.Object {
-	out := pyjson.NewObject()
+func responsesUsagePayload(usage map[string]any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, key := range usageTokenKeys {
 		out.Set(key, usageValue(usage, key))
 	}
@@ -517,11 +516,11 @@ func bodyLimitMiddleware(ctx context.Context, request *gateway.WebRequest, handl
 	switch request.Method {
 	case http.MethodPost, http.MethodPut, http.MethodPatch:
 		if values, ok := request.Header["Content-Length"]; ok && len(values) > 0 {
-			n, ok := pyint.Parse(values[0])
-			if !ok {
+			n, err := strconv.ParseInt(strings.TrimSpace(values[0]), 10, 64)
+			if err != nil && !errors.Is(err, strconv.ErrRange) {
 				return errorResponse("Invalid Content-Length header.", http.StatusBadRequest, errOpts{Code: "invalid_content_length"}), nil
 			}
-			if n.Cmp(big.NewInt(gateway.APIMaxRequestBytes)) > 0 {
+			if n > gateway.APIMaxRequestBytes {
 				return errorResponse("Request body too large.", http.StatusRequestEntityTooLarge, errOpts{Code: "body_too_large"}), nil
 			}
 		}
@@ -554,7 +553,7 @@ func securityHeadersMiddleware(ctx context.Context, request *gateway.WebRequest,
 
 // Error text redacted before it crosses the HTTP boundary, cut to the limit when one is given
 func redactAPIErrorText(value any, limit int) string {
-	redacted := tools.RedactSensitiveTextWith(nil, pyrepr.Str(value), tools.RedactOptions{Force: true})
+	redacted := tools.RedactSensitiveTextWith(nil, anyutil.String(value), tools.RedactOptions{Force: true})
 	if limit >= 0 {
 		runes := []rune(redacted)
 		if len(runes) > limit {
@@ -565,11 +564,11 @@ func redactAPIErrorText(value any, limit int) string {
 }
 
 // OpenAI style error envelope with the message redacted
-func openAIError(message, errType string, param, code any) *pyjson.Object {
+func openAIError(message, errType string, param, code any) *jsonutil.Object {
 	if errType == "" {
 		errType = "invalid_request_error"
 	}
-	return pyjson.ObjectOf("error", pyjson.ObjectOf(
+	return jsonutil.ObjectOf("error", jsonutil.ObjectOf(
 		"message", redactAPIErrorText(message, -1), "type", errType, "param", param, "code", code))
 }
 
@@ -588,7 +587,7 @@ func errorResponse(message string, status int, o errOpts) *gateway.WebResponse {
 
 // Bad request with the bare message and type envelope OpenAI validators use
 func invalidRequest(message string) *gateway.WebResponse {
-	return jsonResponse(pyjson.ObjectOf("error", pyjson.ObjectOf("message", message, "type", "invalid_request_error")), http.StatusBadRequest, nil)
+	return jsonResponse(jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", message, "type", "invalid_request_error")), http.StatusBadRequest, nil)
 }
 
 // JSON response of a value the encoder always accepts
@@ -751,12 +750,12 @@ func (c *idempotencyCache) getOrSet(key, fingerprint string, compute func() (any
 var idemCache = newIdempotencyCache(1000, 300)
 
 // SHA256 of the repr of the body subset under the given keys
-func makeRequestFingerprint(body *pyjson.Object, keys []string) string {
-	subset := pyjson.NewObject()
+func makeRequestFingerprint(body *jsonutil.Object, keys []string) string {
+	subset := jsonutil.NewObject()
 	for _, k := range keys {
-		subset.Set(k, body.GetOr(k, nil))
+		subset.Set(k, body.ValueOr(k, nil))
 	}
-	sum := sha256.Sum256([]byte(pyrepr.Repr(subset)))
+	sum := sha256.Sum256([]byte(anyutil.Quote(subset)))
 	return hex.EncodeToString(sum[:])
 }
 
@@ -836,7 +835,7 @@ type sessionEventQueue struct {
 
 type sessionEvent struct {
 	name    string
-	payload *pyjson.Object
+	payload *jsonutil.Object
 	end     bool
 }
 
@@ -845,7 +844,7 @@ func newSessionEventQueue(sessionID, runID string) *sessionEventQueue {
 }
 
 // Stamps session, run, sequence and time onto a payload
-func (q *sessionEventQueue) payload(name string, payload *pyjson.Object) sessionEvent {
+func (q *sessionEventQueue) payload(name string, payload *jsonutil.Object) sessionEvent {
 	q.mu.Lock()
 	q.seq++
 	seq := q.seq
@@ -869,7 +868,7 @@ func (q *sessionEventQueue) put(ev sessionEvent) {
 }
 
 // Queues a named event in order
-func (q *sessionEventQueue) enqueue(name string, payload *pyjson.Object) {
+func (q *sessionEventQueue) enqueue(name string, payload *jsonutil.Object) {
 	q.put(q.payload(name, payload))
 }
 
@@ -903,7 +902,7 @@ func (q *sessionEventQueue) next(ctx context.Context, timeout time.Duration) (se
 }
 
 // Sets a key only when absent, the dict setdefault
-func setDefault(o *pyjson.Object, key string, value any) any {
+func setDefault(o *jsonutil.Object, key string, value any) any {
 	if v, ok := o.Get(key); ok {
 		return v
 	}
@@ -991,7 +990,7 @@ func submitAPIWorker[T any](fn func() (T, error)) <-chan workerResult[T] {
 // First truthy value, else the last one, the a or b or c chain
 func firstTruthy(values ...any) any {
 	for _, v := range values {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v
 		}
 	}

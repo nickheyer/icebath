@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestWorkerReceiptIsExactEvenIfLatestIsReplaced(t *testing.T) {
@@ -33,7 +33,7 @@ func TestWorkerReceiptIsExactEvenIfLatestIsReplaced(t *testing.T) {
 		t.Fatalf("received %v result %v", received, result)
 	}
 	got, _ := json.Marshal(result)
-	want, _ := json.Marshal(pyjson.Plain(received[0]))
+	want, _ := json.Marshal(jsonutil.Plain(received[0]))
 	if string(got) != string(want) || result["update_id"] != "my-update" || result["outcome"] != "ok" {
 		t.Fatalf("result %s received %s", got, want)
 	}

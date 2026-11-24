@@ -9,6 +9,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -16,10 +18,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -108,7 +110,7 @@ func registerMeetCLI(parser any) {
 	}
 	join.RunE = func(cmd *cobra.Command, a []string) error {
 		if mode != "transcribe" && mode != "realtime" {
-			return fmt.Errorf("argument --mode: invalid choice: %s (choose from 'transcribe', 'realtime')", pyrepr.StrRepr(mode))
+			return fmt.Errorf("argument --mode: invalid choice: %s (choose from 'transcribe', 'realtime')", strconv.Quote(mode))
 		}
 		return run(cmd, map[string]any{"url": a[0], "guest_name": guestName, "duration": optional(cmd, "duration", duration),
 			"headed": headed, "mode": mode, "node": optional(cmd, "node", joinNode)})
@@ -146,7 +148,7 @@ func meetHandler(args any) error {
 // Runs the meet subcommand named in the namespace, returning the exit code
 func meetCommand(ns map[string]any) int {
 	sub := ns["meet_command"]
-	if !pyrepr.Truthy(sub) {
+	if !anyutil.IsTrue(sub) {
 		fmt.Fprintln(cliOut, "usage: icebath meet {setup,auth,join,status,transcript,say,stop,node}")
 		return 2
 	}
@@ -156,7 +158,7 @@ func meetCommand(ns map[string]any) int {
 	case "setup":
 		return cmdSetup(ctx)
 	case "install":
-		return cmdInstall(ctx, pyrepr.Truthy(ns["realtime"]), pyrepr.Truthy(ns["yes"]))
+		return cmdInstall(ctx, anyutil.IsTrue(ns["realtime"]), anyutil.IsTrue(ns["yes"]))
 	case "auth":
 		return cmdAuth(ctx)
 	case "join":
@@ -164,7 +166,7 @@ func meetCommand(ns map[string]any) int {
 		if d, ok := ns["duration"].(string); ok {
 			duration = &d
 		}
-		return cmdJoin(ctx, nsStr(ns, "url"), nsStr(ns, "guest_name"), duration, pyrepr.Truthy(ns["headed"]), nsStr(ns, "mode"), ns["node"])
+		return cmdJoin(ctx, nsStr(ns, "url"), nsStr(ns, "guest_name"), duration, anyutil.IsTrue(ns["headed"]), nsStr(ns, "mode"), ns["node"])
 	case "status":
 		res, err := pmStatus(ctx)
 		if err != nil {
@@ -188,7 +190,7 @@ func meetCommand(ns map[string]any) int {
 	case "node":
 		return nodeCommand(ns)
 	}
-	fmt.Fprintf(cliOut, "unknown subcommand: %s\n", pyrepr.Str(sub))
+	fmt.Fprintf(cliOut, "unknown subcommand: %s\n", anyutil.String(sub))
 	return 2
 }
 
@@ -224,13 +226,12 @@ func readLine(prompt string) (string, error) {
 // Prints the preflight of platform, bot driver, Chromium and saved Google auth
 func cmdSetup(ctx context.Context) int {
 	fmt.Fprintln(cliOut, "google_meet preflight\n---------------------")
-	system := pyplatform.System()
-	systemOK := system == "Linux" || system == "Darwin"
+	systemOK := runtime.GOOS == "linux" || runtime.GOOS == "darwin"
 	state := "unsupported"
 	if systemOK {
 		state = "ok"
 	}
-	fmt.Fprintf(cliOut, "  platform       : %s  [%s]\n", system, state)
+	fmt.Fprintf(cliOut, "  platform       : %s  [%s]\n", hostutil.OSName(), state)
 	pwOK := meetDriverAvailable()
 	if pwOK {
 		fmt.Fprintln(cliOut, "  playwright     : installed")
@@ -289,9 +290,9 @@ func installPkgs(assumeYes bool, prompt string, argv []string, failMsg string) e
 
 // Installs PM Chromium for the built in bot driver, plus platform audio tools with realtime
 func cmdInstall(ctx context.Context, realtime, assumeYes bool) int {
-	system := pyplatform.System()
-	if system != "Linux" && system != "Darwin" {
-		fmt.Fprintf(cliOut, "google_meet install: %s is not supported (linux/macos only)\n", system)
+	system := runtime.GOOS
+	if system != "linux" && system != "darwin" {
+		fmt.Fprintf(cliOut, "google_meet install: %s is not supported (linux/macos only)\n", hostutil.OSName())
 		return 1
 	}
 	fmt.Fprintln(cliOut, "google_meet install\n-------------------")
@@ -316,7 +317,7 @@ func installAudioTools(system string, assumeYes bool) error {
 	fmt.Fprintln(cliOut, "\n[3/3] realtime audio deps")
 	have := func(name string) bool { _, err := lookPath(name); return err == nil }
 	switch system {
-	case "Linux":
+	case "linux":
 		if have("paplay") && have("pactl") {
 			fmt.Fprintln(cliOut, "  pulseaudio-utils already installed.")
 			return nil
@@ -324,7 +325,7 @@ func installAudioTools(system string, assumeYes bool) error {
 		return installPkgs(assumeYes, "  install pulseaudio-utils? this runs `sudo apt-get install -y pulseaudio-utils`",
 			[]string{"sudo", "apt-get", "install", "-y", "pulseaudio-utils"},
 			"  apt install failed — install pulseaudio-utils manually")
-	case "Darwin":
+	case "darwin":
 		out, err := audioDevices()
 		haveBH := err == nil && strings.Contains(out, "BlackHole")
 		var needs []string
@@ -392,26 +393,26 @@ var authSession = func(ctx context.Context, path string) error {
 }
 
 // Prints the result as indented JSON, exit code zero when ok
-func printResult(res *pyjson.Object) int {
-	out, err := pyjson.Dumps(res, pyjson.Indent(2))
+func printResult(res *jsonutil.Object) int {
+	out, err := jsonutil.Encode(res, jsonutil.Indent(2))
 	if err != nil {
 		return uncaught(err)
 	}
 	fmt.Fprintln(cliOut, out)
-	if pyrepr.Truthy(getOr(res, "ok", nil)) {
+	if anyutil.IsTrue(getOr(res, "ok", nil)) {
 		return 0
 	}
 	return 1
 }
 
 // Runs call against the registered node and prints its result with the node name
-func remoteCall(ctx context.Context, node any, op string, call func(*nodeClient) (*pyjson.Object, error)) int {
+func remoteCall(ctx context.Context, node any, op string, call func(*nodeClient) (*jsonutil.Object, error)) int {
 	client, name, err := resolveNode(ctx, node)
 	if err != nil {
 		return uncaught(err)
 	}
 	if client == nil {
-		fmt.Fprintf(cliOut, "no registered node matches %s\n", pyrepr.Repr(node))
+		fmt.Fprintf(cliOut, "no registered node matches %s\n", anyutil.Quote(node))
 		return 1
 	}
 	res, err := call(client)
@@ -419,8 +420,8 @@ func remoteCall(ctx context.Context, node any, op string, call func(*nodeClient)
 		fmt.Fprintf(cliOut, "remote %s failed: %v\n", op, err)
 		return 1
 	}
-	out := pyjson.ObjectOf("node", name)
-	out.Update(res)
+	out := jsonutil.ObjectOf("node", name)
+	out.Merge(res)
 	return printResult(out)
 }
 
@@ -430,8 +431,8 @@ func cmdJoin(ctx context.Context, url, guestName string, duration *string, heade
 		fmt.Fprintf(cliOut, "refusing: not a meet.google.com URL: %s\n", url)
 		return 2
 	}
-	if pyrepr.Truthy(node) {
-		return remoteCall(ctx, node, "start_bot", func(c *nodeClient) (*pyjson.Object, error) {
+	if anyutil.IsTrue(node) {
+		return remoteCall(ctx, node, "start_bot", func(c *nodeClient) (*jsonutil.Object, error) {
 			return c.startBot(url, guestName, duration, headed, mode)
 		})
 	}
@@ -456,8 +457,8 @@ func cmdSay(ctx context.Context, text string, node any) int {
 		fmt.Fprintln(cliOut, "refusing: empty text")
 		return 2
 	}
-	if pyrepr.Truthy(node) {
-		return remoteCall(ctx, node, "say", func(c *nodeClient) (*pyjson.Object, error) { return c.say(text) })
+	if anyutil.IsTrue(node) {
+		return remoteCall(ctx, node, "say", func(c *nodeClient) (*jsonutil.Object, error) { return c.say(text) })
 	}
 	res, err := pmEnqueueSay(ctx, text)
 	if err != nil {
@@ -476,12 +477,12 @@ func cmdTranscript(ctx context.Context, last *int) int {
 	if err != nil {
 		return uncaught(err)
 	}
-	if !pyrepr.Truthy(getOr(res, "ok", nil)) {
+	if !anyutil.IsTrue(getOr(res, "ok", nil)) {
 		return printResult(res)
 	}
 	lines, _ := getOr(res, "lines", []any{}).([]any)
 	for _, ln := range lines {
-		fmt.Fprintln(cliOut, pyrepr.Str(ln))
+		fmt.Fprintln(cliOut, anyutil.String(ln))
 	}
 	return 0
 }

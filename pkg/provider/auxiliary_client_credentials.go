@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Pool entry selector seam the tests swap for a present but exhausted pool
@@ -226,7 +226,7 @@ func auxHeaderMap(answer any) map[string]string {
 		}
 		out := make(map[string]string, len(h))
 		for k, v := range h {
-			out[k] = pyrepr.Str(v)
+			out[k] = anyutil.String(v)
 		}
 		return out
 	}
@@ -308,7 +308,7 @@ func auxWarnPaidLaneOnce(model string) {
 	}
 	pkgLog().Warn(fmt.Sprintf("Auxiliary client: PAID lane engaged for auxiliary task — OpenRouter fallback model %s is not "+
 		"a :free SKU and may incur real spend. Set auxiliary.free_only: true to restrict auxiliary "+
-		"fallbacks to free models, or auxiliary.openrouter_model to a :free model.", pyrepr.Repr(model)))
+		"fallbacks to free models, or auxiliary.openrouter_model to a :free model.", anyutil.Quote(model)))
 }
 
 // OpenRouter client from an explicit key, the pool or OPENROUTER_API_KEY, honouring the free only policy
@@ -321,7 +321,7 @@ func auxTryOpenrouter(ctx context.Context, explicitAPIKey any, model, explicitBa
 	if freeOnly && !auxIsFreeModel(orModel) {
 		pkgLog().Warn(fmt.Sprintf("Auxiliary client: auxiliary.free_only is enabled but the OpenRouter fallback model %s is "+
 			"not a :free SKU — skipping the OpenRouter fallback. Set auxiliary.openrouter_model to a "+
-			":free model (e.g. nvidia/nemotron-3-ultra-550b-a55b:free) or disable auxiliary.free_only.", pyrepr.Repr(orModel)))
+			":free model (e.g. nvidia/nemotron-3-ultra-550b-a55b:free) or disable auxiliary.free_only.", anyutil.Quote(orModel)))
 		return nil, "", nil
 	}
 	if !auxIsFreeModel(orModel) {
@@ -381,7 +381,7 @@ func auxDescribeOpenrouterUnavailable(ctx context.Context, model string) (string
 	}
 	if freeOnly && !auxIsFreeModel(orModel) {
 		return fmt.Sprintf("auxiliary.free_only rejected non-free model %s; "+
-			"the request was skipped before provider availability checks", pyrepr.Repr(orModel)), nil
+			"the request was skipped before provider availability checks", anyutil.Quote(orModel)), nil
 	}
 	present, entry := auxSelectPoolEntryFn(ctx, "openrouter")
 	if present {

@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func seSkipRoot(t *testing.T) {
@@ -88,13 +88,13 @@ func seAcceptedThenOrphaned(t *testing.T, homeWritable, consume, markSent bool) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := pyjson.Loads(string(raw))
+	loaded, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	body := loaded.(*pyjson.Object)
+	body := loaded.(*jsonutil.Object)
 	body.Set("written_at", time.Now().UTC().Add(-120*time.Second).Format("2006-01-02T15:04:05.000000-07:00"))
-	text, err := pyjson.Dumps(body)
+	text, err := jsonutil.Encode(body)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,21 +114,21 @@ func seOwedAfterRecovery(t *testing.T, pauseID any) map[string]any {
 	retired := strings.TrimSuffix(path, ".json") + ".retired"
 	ids := []any{}
 	if raw, err := os.ReadFile(retired); err == nil {
-		loaded, _ := pyjson.Loads(string(raw))
-		ids, _ = pyjson.Plain(loaded).(map[string]any)["ids"].([]any)
+		loaded, _ := jsonutil.Decode(string(raw))
+		ids, _ = jsonutil.Plain(loaded).(map[string]any)["ids"].([]any)
 	}
 	var owed []map[string]any
 	for _, src := range append([]string{path}, seClaims()...) {
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-		if token := seToken(t, src); pyrepr.Equal(token["pause_id"], pauseID) {
+		if token := seToken(t, src); anyutil.Equal(token["pause_id"], pauseID) {
 			owed = append(owed, token["profiles"].(map[string]any))
 		}
 	}
 	retiredHere := false
 	for _, id := range ids {
-		retiredHere = retiredHere || pyrepr.Equal(id, pauseID)
+		retiredHere = retiredHere || anyutil.Equal(id, pauseID)
 	}
 	if (len(owed) > 0) == retiredHere {
 		t.Fatalf("an obligation is either owed or retired, never both or neither: owed %v retired %v", owed, ids)
@@ -141,7 +141,7 @@ func seOwedAfterRecovery(t *testing.T, pauseID any) map[string]any {
 
 func seSameProfiles(t *testing.T, got map[string]any) bool {
 	t.Helper()
-	return len(got) == 1 && pyrepr.Equal(got["p"], os.Getpid())
+	return len(got) == 1 && anyutil.Equal(got["p"], os.Getpid())
 }
 
 func TestAnUnreadableAcceptedStopReceiptKeepsTheDrainingGatewayOwed(t *testing.T) {
@@ -182,7 +182,7 @@ func TestAnUnreadableAcceptedStopReceiptKeepsTheDrainingGatewayOwed(t *testing.T
 				t.Fatal("no claim carries the owed set")
 			}
 			for _, sent := range seToken(t, claims[0])["stop_sent"].([]any) {
-				if pyrepr.Equal(sent, strconv.Itoa(os.Getpid())) {
+				if anyutil.Equal(sent, strconv.Itoa(os.Getpid())) {
 					t.Fatal("unknown evidence was resolved into sent")
 				}
 			}

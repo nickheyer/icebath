@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // SendResult is the outcome of one adapter send or edit, gateway/platforms/base.py SendResult
@@ -103,7 +103,7 @@ func IsChatLevelNotFound(exc error, errorText string) bool {
 func IsPartialDelivery(result any) bool {
 	raw, _ := sendResultAttr(result, "raw_response")
 	m, ok := raw.(map[string]any)
-	return ok && pyrepr.Truthy(m["partial_overflow"])
+	return ok && anyutil.IsTrue(m["partial_overflow"])
 }
 
 func snakeToCamelField(key string) string {

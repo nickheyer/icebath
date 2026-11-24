@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 	"github.com/nickheyer/icebath/pkg/state"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 )
 
 // Python RuntimeError raised by misuse of the write transaction helper
@@ -92,11 +92,11 @@ func inTransaction(conn state.SQLiteConn) bool {
 	if t, ok := conn.(*state.TrackedConn); ok {
 		inner = t.SQLiteConn
 	}
-	raw, ok := inner.(pysqlite.RawConn)
+	raw, ok := inner.(sqliteutil.RawConn)
 	if !ok {
 		return false
 	}
-	open, err := pysqlite.InTransaction(raw)
+	open, err := sqliteutil.InTransaction(raw)
 	return err == nil && open
 }
 

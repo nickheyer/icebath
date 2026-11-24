@@ -11,10 +11,10 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Core platform rows of the env names whose presence drives its env enable, in table order
@@ -96,7 +96,7 @@ func enableFromEnv(ctx context.Context, cfg *GatewayConfig, platform Platform, p
 	if pc.Enabled {
 		return pc
 	}
-	if !pyrepr.Truthy(explicit) && !(SharedListenerMirrorPlatforms[string(platform)] && loadingSecondaryUnderMultiplexer(ctx)) {
+	if !anyutil.IsTrue(explicit) && !(SharedListenerMirrorPlatforms[string(platform)] && loadingSecondaryUnderMultiplexer(ctx)) {
 		pc.Enabled = true
 	} else if warn {
 		warnExplicitDisableBeatsEnv(ctx, platform)
@@ -119,7 +119,7 @@ func applyAPIServerEnv(ctx context.Context, cfg *GatewayConfig) {
 
 // Webhook enable on WEBHOOK_ENABLED, its port and secret also reaching a configured webhook
 func applyWebhookEnv(ctx context.Context, cfg *GatewayConfig) {
-	enabled, _ := pystr.BoolToken(getenvStr(ctx, "WEBHOOK_ENABLED", ""))
+	enabled, _ := textutil.ParseBool(getenvStr(ctx, "WEBHOOK_ENABLED", ""))
 	existing, configured := cfg.Platforms[PlatformWebhook]
 	if !enabled && !configured {
 		return
@@ -133,7 +133,7 @@ func applyWebhookEnv(ctx context.Context, cfg *GatewayConfig) {
 
 // Microsoft Graph webhook config from env, the explicit marker read and kept for the relay pass
 func applyMSGraphWebhookEnv(ctx context.Context, cfg *GatewayConfig) {
-	enabled, _ := pystr.BoolToken(getenvStr(ctx, "MSGRAPH_WEBHOOK_ENABLED", ""))
+	enabled, _ := textutil.ParseBool(getenvStr(ctx, "MSGRAPH_WEBHOOK_ENABLED", ""))
 	clientState := getenvStr(ctx, "MSGRAPH_WEBHOOK_CLIENT_STATE", "")
 	resources := getenvStr(ctx, "MSGRAPH_WEBHOOK_ACCEPTED_RESOURCES", "")
 	allowedCIDRs := getenvStr(ctx, "MSGRAPH_WEBHOOK_ALLOWED_SOURCE_CIDRS", "")
@@ -214,7 +214,7 @@ func entryDepsOK(ctx context.Context, entry *PlatformEntry) (ok bool) {
 func enablePluginPlatform(ctx context.Context, cfg *GatewayConfig, entry *PlatformEntry) {
 	platform, err := ParsePlatform(ctx, entry.Name)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("unknown platform name %s: %s", pyrepr.Repr(entry.Name), err))
+		pkgLog().Debug(fmt.Sprintf("unknown platform name %s: %s", anyutil.Quote(entry.Name), err))
 		return
 	}
 	existing, has := cfg.Platforms[platform]
@@ -223,7 +223,7 @@ func enablePluginPlatform(ctx context.Context, cfg *GatewayConfig, entry *Platfo
 	if has {
 		maps.Copy(existingExtra, existing.Extra)
 	}
-	if has && !alreadyEnabled && pyrepr.Truthy(existingExtra["_enabled_explicit"]) {
+	if has && !alreadyEnabled && anyutil.IsTrue(existingExtra["_enabled_explicit"]) {
 		return
 	}
 	seed := pluginProbeSeed(ctx, entry)
@@ -242,14 +242,14 @@ func enablePluginPlatform(ctx context.Context, cfg *GatewayConfig, entry *Platfo
 	homeRaw := commit["home_channel"]
 	delete(commit, "home_channel")
 	maps.Copy(pc.Extra, commit)
-	if h, ok := homeRaw.(map[string]any); ok && pyrepr.Truthy(h["chat_id"]) {
+	if h, ok := homeRaw.(map[string]any); ok && anyutil.IsTrue(h["chat_id"]) {
 		name := "Home"
-		if pyrepr.Truthy(h["name"]) {
-			name = pyrepr.Str(h["name"])
+		if anyutil.IsTrue(h["name"]) {
+			name = anyutil.String(h["name"])
 		}
-		hc := &HomeChannel{Platform: platform, ChatID: pyrepr.Str(h["chat_id"]), Name: name}
-		if pyrepr.Truthy(h["thread_id"]) {
-			t := pyrepr.Str(h["thread_id"])
+		hc := &HomeChannel{Platform: platform, ChatID: anyutil.String(h["chat_id"]), Name: name}
+		if anyutil.IsTrue(h["thread_id"]) {
+			t := anyutil.String(h["thread_id"])
 			hc.ThreadID = &t
 		}
 		hc.PostInit()
@@ -375,10 +375,10 @@ func applyRelayEnv(ctx context.Context, cfg *GatewayConfig) {
 	relayURLYAML := ""
 	if existing, ok := cfg.Platforms[PlatformRelay]; ok {
 		v := existing.Extra["relay_url"]
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			v = ""
 		}
-		relayURLYAML = strings.TrimSpace(pyrepr.Str(v))
+		relayURLYAML = strings.TrimSpace(anyutil.String(v))
 	}
 	relayURL := relayURLEnv
 	if relayURL == "" {
@@ -391,7 +391,7 @@ func applyRelayEnv(ctx context.Context, cfg *GatewayConfig) {
 			return
 		}
 	}
-	if allow, _ := pystr.BoolToken(getenvStr(ctx, "GATEWAY_RELAY_ALLOW_DIRECT_PLATFORMS", "")); relayURLEnv == "" || allow {
+	if allow, _ := textutil.ParseBool(getenvStr(ctx, "GATEWAY_RELAY_ALLOW_DIRECT_PLATFORMS", "")); relayURLEnv == "" || allow {
 		return
 	}
 	skip := map[Platform]bool{PlatformRelay: true, PlatformLocal: true, PlatformAPIServer: true, PlatformWebhook: true}
@@ -400,7 +400,7 @@ func applyRelayEnv(ctx context.Context, cfg *GatewayConfig) {
 		if skip[platform] || !pc.Enabled {
 			continue
 		}
-		if pyrepr.Truthy(pc.Extra["_enabled_explicit"]) {
+		if anyutil.IsTrue(pc.Extra["_enabled_explicit"]) {
 			pkgLog().Warn(fmt.Sprintf("Relay connector is configured via GATEWAY_RELAY_URL; "+
 				"disabling directly-connected platform '%s' even though "+
 				"it is explicitly enabled in this profile's configuration. "+

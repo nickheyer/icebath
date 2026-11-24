@@ -19,10 +19,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Hidden first argument that routes a re-executed test binary to a pause child stand-in
@@ -294,7 +294,7 @@ func TestARecordThatCannotBeWrittenLeavesTheUpdateUnpausedAndUngated(t *testing.
 			pauseDiscoverSystemd = func(context.Context) ([]map[string]any, error) { return nil, nil }
 			pauseDiscoverLaunchd = func(context.Context) ([]map[string]any, error) { return nil, nil }
 			pauseDiscoverBare = func(context.Context, map[int]bool) ([]map[string]any, []string, error) {
-				return []map[string]any{pycopy.DeepCopy(entry).(map[string]any)}, nil, nil
+				return []map[string]any{any(anyutil.Clone(entry)).(map[string]any)}, nil, nil
 			}
 			stopped := false
 			pauseStopGateways = func(context.Context, map[string]any, []map[string]any) error {
@@ -305,7 +305,7 @@ func TestARecordThatCannotBeWrittenLeavesTheUpdateUnpausedAndUngated(t *testing.
 			for key, value := range priors[id] {
 				token[key] = value
 			}
-			before := pycopy.DeepCopy(token).(map[string]any)
+			before := any(anyutil.Clone(token)).(map[string]any)
 			if err := os.Chmod(served, 0o500); err != nil {
 				t.Fatal(err)
 			}

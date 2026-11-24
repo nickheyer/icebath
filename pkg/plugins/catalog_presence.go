@@ -14,9 +14,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Catalog card app state with the reason sentence, empty when present or unknown
@@ -63,8 +63,8 @@ var (
 	presenceCatalog = LoadCatalogLive
 	presenceCache   = struct {
 		sync.Mutex
-		manifests map[[3]string]*pyjson.Object
-	}{manifests: map[[3]string]*pyjson.Object{}}
+		manifests map[[3]string]*jsonutil.Object
+	}{manifests: map[[3]string]*jsonutil.Object{}}
 )
 
 // Raw github URL of plugin.json at the pinned commit, empty for a repo off github
@@ -83,7 +83,7 @@ func rawManifestURL(repo, sha, subdir string) string {
 }
 
 // Manifest of one pin, remembered for good when read or absent and forgotten after a transient failure
-func pinnedManifest(ctx context.Context, repo, sha, subdir string) *pyjson.Object {
+func pinnedManifest(ctx context.Context, repo, sha, subdir string) *jsonutil.Object {
 	key := [3]string{repo, sha, subdir}
 	presenceCache.Lock()
 	cached, ok := presenceCache.manifests[key]
@@ -91,7 +91,7 @@ func pinnedManifest(ctx context.Context, repo, sha, subdir string) *pyjson.Objec
 	if ok {
 		return cached
 	}
-	var manifest *pyjson.Object
+	var manifest *jsonutil.Object
 	if url := rawManifestURL(repo, sha, subdir); url != "" {
 		body, status, err := fetchPresenceManifest(ctx, url)
 		if err != nil {
@@ -99,12 +99,12 @@ func pinnedManifest(ctx context.Context, repo, sha, subdir string) *pyjson.Objec
 			return nil
 		}
 		if status == http.StatusOK && len(body) <= presenceMaxBytes {
-			data, err := pyjson.LoadsBytes(body)
+			data, err := jsonutil.Decode(body)
 			if err != nil {
 				pkgLog().Debug(fmt.Sprintf("plugin catalog presence: %s unreadable: %s", url, err))
 				return nil
 			}
-			manifest, _ = data.(*pyjson.Object)
+			manifest, _ = data.(*jsonutil.Object)
 		} else if status != http.StatusNotFound {
 			return nil
 		}
@@ -143,7 +143,7 @@ func livenessFieldsTypeError(raw map[string]any) error {
 			return nil
 		}
 	}
-	if f := raw["fields"]; pyrepr.Truthy(f) {
+	if f := raw["fields"]; anyutil.IsTrue(f) {
 		if _, ok := f.(map[string]any); !ok {
 			return fmt.Errorf("catalog presence fields are %s where a mapping was expected", errchain.Kind(f))
 		}
@@ -218,27 +218,27 @@ func serverPresence(ctx context.Context, decl *tools.PlatformDeclaration, livene
 }
 
 // Ordered server names under the vendor extension of a manifest object
-func presenceServerOrder(raw *pyjson.Object) []string {
+func presenceServerOrder(raw *jsonutil.Object) []string {
 	cur := raw
 	for _, key := range []string{"extensions", PortableExtension, "servers"} {
-		next, _ := cur.Vals[key].(*pyjson.Object)
+		next, _ := cur.Value(key).(*jsonutil.Object)
 		if next == nil {
 			return nil
 		}
 		cur = next
 	}
-	return cur.Keys
+	return cur.Keys()
 }
 
 // App state of one catalog entry on this host, the worst server winning in manifest order
 func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, error) {
 	raw := pinnedManifest(ctx, entry.Repo, entry.Sha, entry.Subdir)
-	if raw == nil || len(raw.Keys) == 0 {
+	if raw == nil || raw.Len() == 0 {
 		return UnknownPresence, nil
 	}
-	manifest, _ := pyjson.Plain(raw).(map[string]any)
+	manifest, _ := jsonutil.Plain(raw).(map[string]any)
 	ext := manifest["extensions"]
-	if !pyrepr.Truthy(ext) {
+	if !anyutil.IsTrue(ext) {
 		ext = map[string]any{}
 	}
 	extMap, ok := ext.(map[string]any)
@@ -254,7 +254,7 @@ func CatalogPresence(ctx context.Context, entry *PluginCatalogEntry) (Presence, 
 		return Presence{}, fmt.Errorf("plugin catalog vendor extension is %s where a mapping was expected", errchain.Kind(vendor))
 	}
 	rawServers := vendorMap["servers"]
-	if !pyrepr.Truthy(rawServers) {
+	if !anyutil.IsTrue(rawServers) {
 		return UnknownPresence, nil
 	}
 	servers, ok := rawServers.(map[string]any)

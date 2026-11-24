@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDivertSessionTranscriptJSONLAppends(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", dir)
-	msg := pyjson.NewObject()
+	msg := jsonutil.NewObject()
 	msg.Set("role", "user")
 	msg.Set("content", "hello-jsonl")
 	path, err := DivertSessionTranscriptJSONL(context.Background(), "sess-jsonl", []any{msg, nil, 42})

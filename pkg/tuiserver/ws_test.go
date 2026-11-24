@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Drives one session to its disconnect teardown, seed running with the live transport at the first read
@@ -85,8 +85,8 @@ func wsTestSlowDispatchHarness(t *testing.T) (*wsTestSocket, *wsTestLog, chan st
 	t.Helper()
 	wsTestNoOrphanGrace(t)
 	log, release := &wsTestLog{}, make(chan struct{})
-	wsTestFakeAuthority(t, func(_ context.Context, request *pyjson.Object) (*pyjson.Object, error) {
-		method, _ := request.GetOr("method", nil).(string)
+	wsTestFakeAuthority(t, func(_ context.Context, request *jsonutil.Object) (*jsonutil.Object, error) {
+		method, _ := request.ValueOr("method", nil).(string)
 		log.add("dispatch:" + method)
 		if method == "slow" || method == "session.context_breakdown" {
 			select {
@@ -95,7 +95,7 @@ func wsTestSlowDispatchHarness(t *testing.T) (*wsTestSocket, *wsTestLog, chan st
 			}
 		}
 		log.add("done:" + method)
-		return pyjson.ObjectOf("jsonrpc", "2.0", "id", request.GetOr("id", nil), "result", pyjson.ObjectOf("method", method)), nil
+		return jsonutil.ObjectOf("jsonrpc", "2.0", "id", request.ValueOr("id", nil), "result", jsonutil.ObjectOf("method", method)), nil
 	})
 	prevRelease := wsReleaseSetupForTransport
 	wsReleaseSetupForTransport = func(tuihost.Transport) { log.add("teardown") }

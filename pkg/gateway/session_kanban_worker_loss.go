@@ -7,11 +7,10 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -28,14 +27,14 @@ func writeWorkerLoss(ctx context.Context, policy *LocalSessionPolicy, reason str
 	if policy.KanbanJSON != nil && *policy.KanbanJSON != "" {
 		text = *policy.KanbanJSON
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(decoded) {
+	if !anyutil.IsTrue(decoded) {
 		return nil
 	}
-	context_, isDict := decoded.(*pyjson.Object)
+	context_, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
 		return &PyError{Kind: "TypeError", Msg: "the kanban worker record is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
@@ -50,7 +49,7 @@ func writeWorkerLoss(ctx context.Context, policy *LocalSessionPolicy, reason str
 	if err != nil {
 		return err
 	}
-	runID, err := pyint.Int64(rawRun)
+	runID, err := anyutil.ToInt(rawRun)
 	if err != nil {
 		return err
 	}
@@ -58,7 +57,7 @@ func writeWorkerLoss(ctx context.Context, policy *LocalSessionPolicy, reason str
 	if err != nil {
 		return err
 	}
-	return kanban.ConnectClosing(ctx, pyrepr.Str(db), nil, func(conn state.SQLiteConn) error {
+	return kanban.ConnectClosing(ctx, anyutil.String(db), nil, func(conn state.SQLiteConn) error {
 		return kanban.WriteTxn(ctx, conn, false, func() error {
 			taskID, err := field("task_id")
 			if err != nil {
@@ -68,15 +67,15 @@ func writeWorkerLoss(ctx context.Context, policy *LocalSessionPolicy, reason str
 			if err != nil {
 				return err
 			}
-			if row == nil || row["status"] != "running" || !pyrepr.Equal(row["current_run_id"], runID) {
+			if row == nil || row["status"] != "running" || !anyutil.Equal(row["current_run_id"], runID) {
 				return nil
 			}
 			claim, err := field("claim_lock")
 			if err != nil {
 				return err
 			}
-			return kanban.AppendTaskEvent(ctx, conn, pyrepr.Str(taskID), "worker_lost",
-				pyjson.ObjectOf("reason", textutil.First(reason, 200), "claim_lock", claim, "run_id", runID, "pid", pid, "bound", bound), &runID)
+			return kanban.AppendTaskEvent(ctx, conn, anyutil.String(taskID), "worker_lost",
+				jsonutil.ObjectOf("reason", textutil.First(reason, 200), "claim_lock", claim, "run_id", runID, "pid", pid, "bound", bound), &runID)
 		})
 	})
 }

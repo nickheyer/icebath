@@ -313,7 +313,7 @@ func TestApplySettlesEveryRepairableCrossingAndIsIdempotent(t *testing.T) {
 		if row == nil {
 			return nil
 		}
-		return row.Vals
+		return row.Map()
 	}
 	count := func(db *state.SessionDB, sid string) int {
 		msgs, err := db.GetMessages(ctx, sid, state.GetMessagesOptions{})
@@ -409,7 +409,7 @@ func TestLegacyMainRekeyAdoptsAStandaloneGatewaysHistory(t *testing.T) {
 	acme := repairOpen(t, homes["acme"])
 	row, err := acme.GetSession(context.Background(), "legacy-main")
 	acme.Close()
-	if err != nil || row.Vals["session_key"] != "agent:acme:telegram:dm:203" || row.Vals["profile_name"] != "acme" {
+	if err != nil || row.Value("session_key") != "agent:acme:telegram:dm:203" || row.Value("profile_name") != "acme" {
 		t.Fatalf("row %v %v", row, err)
 	}
 	for _, f := range repairJSONReport(t).Findings {
@@ -455,14 +455,14 @@ func TestMoveIntoAStoreThatAlreadyHoldsTheTitle(t *testing.T) {
 	}
 	other, _ := acme.GetSession(ctx, "s-b")
 	resident, _ := acme.GetSession(ctx, "w-1")
-	if other.Vals["title"] != "Weekend plans" || resident.Vals["title"] != title {
-		t.Fatalf("titles %v %v", other.Vals["title"], resident.Vals["title"])
+	if other.Value("title") != "Weekend plans" || resident.Value("title") != title {
+		t.Fatalf("titles %v %v", other.Value("title"), resident.Value("title"))
 	}
 	if resolved, err := acme.ResolveByTitle(title); err != nil || resolved != "w-1" {
 		t.Fatalf("resolved %q %v", resolved, err)
 	}
 	clash, _ := acme.GetSession(ctx, "s-a")
-	moved, _ := clash.Vals["title"].(string)
+	moved, _ := clash.Value("title").(string)
 	if moved == "" || moved == title || len([]rune(moved)) > state.MaxTitleLength {
 		t.Fatalf("moved title %q", moved)
 	}
@@ -532,8 +532,8 @@ func TestALedgeredStrayIsReportedNeverCopied(t *testing.T) {
 					t.Fatalf("%s moved", sid)
 				}
 			}
-			if kid, _ := root.GetSession(ctx, "led-kid"); kid.Vals["parent_session_id"] != "led" {
-				t.Fatalf("led-kid parent %v", kid.Vals["parent_session_id"])
+			if kid, _ := root.GetSession(ctx, "led-kid"); kid.Value("parent_session_id") != "led" {
+				t.Fatalf("led-kid parent %v", kid.Value("parent_session_id"))
 			}
 			free, _ := root.GetSession(ctx, "free")
 			msgs, _ := acme.GetMessages(ctx, "free", state.GetMessagesOptions{})

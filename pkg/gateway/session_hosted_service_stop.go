@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Hosted room service that stops its worker within a timeout without interrupting accepted turns
@@ -13,7 +13,7 @@ type hostedServiceStopper interface {
 
 // Stops the hosted room service of every authority within one shared deadline, true when all stopped
 func StopHostedService(ctx context.Context, runner any, timeout float64) bool {
-	deadline := pythread.Monotonic() + max(0, timeout)
+	deadline := timeutil.Monotonic() + max(0, timeout)
 	stopped := true
 	for _, a := range allAuthorities(runner) {
 		service, ok := a.HostedRoomService.(hostedServiceStopper)
@@ -21,7 +21,7 @@ func StopHostedService(ctx context.Context, runner any, timeout float64) bool {
 			continue
 		}
 		result := make(chan bool, 1)
-		budget := max(0, deadline-pythread.Monotonic())
+		budget := max(0, deadline-timeutil.Monotonic())
 		go func() { result <- service.Stop(budget) }()
 		select {
 		case ok := <-result:

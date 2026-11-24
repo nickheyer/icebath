@@ -11,10 +11,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const slackDirectoryWarningInterval = 3600 * time.Second
@@ -59,7 +59,7 @@ type DiscordDirectoryChannel interface {
 
 // Slack adapter exposing one Web API client per connected workspace
 type SlackDirectoryAdapter interface {
-	SlackTeamClients() *pydict.Dict[string, SlackDirectoryClient]
+	SlackTeamClients() *orderedutil.Map[string, SlackDirectoryClient]
 }
 
 // Slack Web API calls the directory makes, each returning the decoded response body
@@ -100,8 +100,8 @@ func reportSlackFailure(teamID string, errorCode any, detail string) {
 }
 
 // Builds the directory from connected adapters and session history, persists it and returns it
-func BuildChannelDirectory(ctx context.Context, adapters *pydict.Dict[Platform, PlatformAdapter]) (*pyjson.Object, error) {
-	platforms := pyjson.NewObject()
+func BuildChannelDirectory(ctx context.Context, adapters *orderedutil.Map[Platform, PlatformAdapter]) (*jsonutil.Object, error) {
+	platforms := jsonutil.NewObject()
 	connected := map[string]bool{}
 	for platform, adapter := range adapters.All() {
 		connected[string(platform)] = true
@@ -134,7 +134,7 @@ func BuildChannelDirectory(ctx context.Context, adapters *pydict.Dict[Platform, 
 		}
 	}
 	applyChannelAliases(ctx, platforms)
-	directory := pyjson.ObjectOf("updated_at", pydatetime.ISOFormatNaive(time.Now()), "platforms", platforms)
+	directory := jsonutil.ObjectOf("updated_at", time.Now().Format(timeutil.RFC3339Micro), "platforms", platforms)
 	path := channelDirectoryFile(ctx)
 	if _, err := runOffLoop(ctx, func() (struct{}, error) { return struct{}{}, writeChannelDirectoryFn(ctx, path, directory) }); err != nil {
 		if ctx.Err() != nil {
@@ -146,7 +146,7 @@ func BuildChannelDirectory(ctx context.Context, adapters *pydict.Dict[Platform, 
 }
 
 // Fills one platform from its list_channels hook or its Discord or Slack builder
-func buildPlatformChannels(ctx context.Context, platforms *pyjson.Object, platform Platform, adapter PlatformAdapter) error {
+func buildPlatformChannels(ctx context.Context, platforms *jsonutil.Object, platform Platform, adapter PlatformAdapter) error {
 	if lister, ok := adapter.(ChannelListingAdapter); ok {
 		raw, err := lister.ListChannels(ctx)
 		if err != nil {
@@ -175,7 +175,7 @@ func buildPlatformChannels(ctx context.Context, platforms *pyjson.Object, platfo
 }
 
 // Session entries as a JSON list, empty rather than null when none were found
-func directoryList(entries []*pyjson.Object) []any {
+func directoryList(entries []*jsonutil.Object) []any {
 	out := make([]any, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, e)
@@ -207,7 +207,7 @@ func buildDiscord(ctx context.Context, adapter any) ([]any, error) {
 				if !has {
 					return nil, fmt.Errorf("a Discord channel in %v has no name", guild.GuildName())
 				}
-				channels = append(channels, pyjson.ObjectOf("id", fmt.Sprint(ch.DiscordChannelID()), "name", name, "guild", guild.GuildName(), "type", group.kind))
+				channels = append(channels, jsonutil.ObjectOf("id", fmt.Sprint(ch.DiscordChannelID()), "name", name, "guild", guild.GuildName(), "type", group.kind))
 			}
 		}
 	}
@@ -220,7 +220,7 @@ func slackGet(v any, key string) (any, bool, error) {
 	case map[string]any:
 		got, ok := m[key]
 		return got, ok, nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil, false, fmt.Errorf("a Slack directory entry is missing")
 		}
@@ -243,8 +243,8 @@ func slackGetOr(v any, key string, def any) (any, error) {
 func slackAPIErrorCode(err error) any {
 	var apiErr *SlackAPIError
 	if errors.As(err, &apiErr) {
-		if value := apiErr.Response["error"]; pyrepr.Truthy(value) {
-			return pyrepr.Str(value)
+		if value := apiErr.Response["error"]; anyutil.IsTrue(value) {
+			return anyutil.String(value)
 		}
 	}
 	return nil
@@ -260,20 +260,20 @@ func normalizeAdapterChannels(raw any) []any {
 	seen := map[string]bool{}
 	for _, item := range list {
 		if _, isDict := item.(map[string]any); !isDict {
-			if obj, isObj := item.(*pyjson.Object); !isObj || obj == nil {
+			if obj, isObj := item.(*jsonutil.Object); !isObj || obj == nil {
 				continue
 			}
 		}
 		field := func(key string) any { v, _ := slackGetOr(item, key, nil); return v }
-		channelID := strings.TrimSpace(pyrepr.Str(pyrepr.Or(field("id"), "")))
-		name := strings.TrimSpace(pyrepr.Str(pyrepr.Or(field("name"), channelID)))
+		channelID := strings.TrimSpace(anyutil.String(anyutil.Or(field("id"), "")))
+		name := strings.TrimSpace(anyutil.String(anyutil.Or(field("name"), channelID)))
 		if channelID == "" || name == "" || seen[channelID] {
 			continue
 		}
-		entry := pyjson.ObjectOf("id", channelID, "name", name, "type", pyrepr.Str(pyrepr.Or(field("type"), "dm")))
+		entry := jsonutil.ObjectOf("id", channelID, "name", name, "type", anyutil.String(anyutil.Or(field("type"), "dm")))
 		for _, key := range []string{"thread_id", "guild"} {
-			if v := field(key); pyrepr.Truthy(v) {
-				entry.Set(key, pyrepr.Str(v))
+			if v := field(key); anyutil.IsTrue(v) {
+				entry.Set(key, anyutil.String(v))
 			}
 		}
 		channels = append(channels, entry)
@@ -293,8 +293,8 @@ func slackBaseID(entryID any) (string, error) {
 }
 
 // Whether an entry is still named by a raw Slack conversation id
-func slackHasRawName(entry *pyjson.Object) (bool, error) {
-	name := entry.GetOr("name", "")
+func slackHasRawName(entry *jsonutil.Object) (bool, error) {
+	name := entry.ValueOr("name", "")
 	s, ok := name.(string)
 	if !ok {
 		return false, fmt.Errorf("a Slack channel name is %s, expected text", errchain.Kind(name))
@@ -329,8 +329,8 @@ func slackSetKey(v any) (any, error) {
 }
 
 // Public and private channels the bot is a member of in one workspace, at most twenty pages
-func slackTeamChannels(ctx context.Context, teamID string, client SlackDirectoryClient, seen map[any]bool) ([]*pyjson.Object, error) {
-	var channels []*pyjson.Object
+func slackTeamChannels(ctx context.Context, teamID string, client SlackDirectoryClient, seen map[any]bool) ([]*jsonutil.Object, error) {
+	var channels []*jsonutil.Object
 	err := func() error {
 		cursor := ""
 		for range 20 {
@@ -338,9 +338,9 @@ func slackTeamChannels(ctx context.Context, teamID string, client SlackDirectory
 			if err != nil {
 				return err
 			}
-			if ok, _ := slackGetOr(response, "ok", nil); !pyrepr.Truthy(ok) {
+			if ok, _ := slackGetOr(response, "ok", nil); !anyutil.IsTrue(ok) {
 				code, _ := slackGetOr(response, "error", "unknown")
-				reportSlackFailure(teamID, code, "users.conversations not ok: "+pyrepr.Str(code))
+				reportSlackFailure(teamID, code, "users.conversations not ok: "+anyutil.String(code))
 				return nil
 			}
 			raw, has := response["channels"]
@@ -357,7 +357,7 @@ func slackTeamChannels(ctx context.Context, teamID string, client SlackDirectory
 					return err
 				}
 				name, _ := slackGetOr(ch, "name", nil)
-				if !pyrepr.Truthy(cid) || !pyrepr.Truthy(name) {
+				if !anyutil.IsTrue(cid) || !anyutil.IsTrue(name) {
 					continue
 				}
 				key, err := slackSetKey(cid)
@@ -369,23 +369,23 @@ func slackTeamChannels(ctx context.Context, teamID string, client SlackDirectory
 				}
 				seen[key] = true
 				kind := "channel"
-				if private, _ := slackGetOr(ch, "is_private", nil); pyrepr.Truthy(private) {
+				if private, _ := slackGetOr(ch, "is_private", nil); anyutil.IsTrue(private) {
 					kind = "private"
 				}
-				channels = append(channels, pyjson.ObjectOf("id", cid, "name", name, "type", kind))
+				channels = append(channels, jsonutil.ObjectOf("id", cid, "name", name, "type", kind))
 			}
 			meta, _ := slackGetOr(response, "response_metadata", nil)
-			if !pyrepr.Truthy(meta) {
+			if !anyutil.IsTrue(meta) {
 				meta = map[string]any{}
 			}
 			next, err := slackGetOr(meta, "next_cursor", nil)
 			if err != nil {
 				return err
 			}
-			if !pyrepr.Truthy(next) {
+			if !anyutil.IsTrue(next) {
 				return nil
 			}
-			cursor = pyrepr.Str(next)
+			cursor = anyutil.String(next)
 		}
 		return nil
 	}()
@@ -399,9 +399,9 @@ func slackTeamChannels(ctx context.Context, teamID string, client SlackDirectory
 }
 
 // Names entries still holding raw ids through conversations.info and users.info, once per base conversation
-func slackResolveRawNames(ctx context.Context, client SlackDirectoryClient, channels []*pyjson.Object) error {
+func slackResolveRawNames(ctx context.Context, client SlackDirectoryClient, channels []*jsonutil.Object) error {
 	var order []string
-	unresolved := map[string][]*pyjson.Object{}
+	unresolved := map[string][]*jsonutil.Object{}
 	for _, entry := range channels {
 		raw, err := slackHasRawName(entry)
 		if err != nil {
@@ -433,12 +433,12 @@ func slackResolveRawNames(ctx context.Context, client SlackDirectoryClient, chan
 }
 
 // Resolves one base conversation and renames its entries, a DM taking the user display name
-func slackResolveBase(ctx context.Context, client SlackDirectoryClient, baseID string, entries []*pyjson.Object) error {
+func slackResolveBase(ctx context.Context, client SlackDirectoryClient, baseID string, entries []*jsonutil.Object) error {
 	resp, err := client.ConversationsInfo(ctx, baseID)
 	if err != nil {
 		return err
 	}
-	if ok, _ := slackGetOr(resp, "ok", nil); !pyrepr.Truthy(ok) {
+	if ok, _ := slackGetOr(resp, "ok", nil); !anyutil.IsTrue(ok) {
 		return nil
 	}
 	info, _ := slackGetOr(resp, "channel", map[string]any{})
@@ -447,19 +447,19 @@ func slackResolveBase(ctx context.Context, client SlackDirectoryClient, baseID s
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(isIM) {
+	if !anyutil.IsTrue(isIM) {
 		name, _ := slackGetOr(info, "name", nil)
 		normalized, _ := slackGetOr(info, "name_normalized", nil)
-		resolvedName = pyrepr.Or(name, normalized)
-	} else if user, _ := slackGetOr(info, "user", ""); pyrepr.Truthy(user) {
-		userResp, err := client.UsersInfo(ctx, pyrepr.Str(user))
+		resolvedName = anyutil.Or(name, normalized)
+	} else if user, _ := slackGetOr(info, "user", ""); anyutil.IsTrue(user) {
+		userResp, err := client.UsersInfo(ctx, anyutil.String(user))
 		if err != nil {
 			return err
 		}
-		if ok, _ := slackGetOr(userResp, "ok", nil); pyrepr.Truthy(ok) {
+		if ok, _ := slackGetOr(userResp, "ok", nil); anyutil.IsTrue(ok) {
 			u, has := userResp["user"]
 			if !has {
-				return fmt.Errorf("Slack users.info for %s returned no user", pyrepr.Str(user))
+				return fmt.Errorf("Slack users.info for %s returned no user", anyutil.String(user))
 			}
 			profile, err := slackGetOr(u, "profile", map[string]any{})
 			if err != nil {
@@ -471,16 +471,16 @@ func slackResolveBase(ctx context.Context, client SlackDirectoryClient, baseID s
 			}
 			realName, _ := slackGetOr(u, "real_name", nil)
 			plain, _ := slackGetOr(u, "name", nil)
-			resolvedName = pyrepr.Or(display, pyrepr.Or(realName, plain))
+			resolvedName = anyutil.Or(display, anyutil.Or(realName, plain))
 			resolvedType = "dm"
 		}
 	}
-	if !pyrepr.Truthy(resolvedName) {
+	if !anyutil.IsTrue(resolvedName) {
 		return nil
 	}
 	for _, entry := range entries {
 		entry.Set("name", resolvedName)
-		if pyrepr.Truthy(resolvedType) {
+		if anyutil.IsTrue(resolvedType) {
 			entry.Set("type", resolvedType)
 		}
 	}
@@ -489,14 +489,14 @@ func slackResolveBase(ctx context.Context, client SlackDirectoryClient, baseID s
 
 // Slack channels the bot joined in every workspace merged with session history, raw ids resolved to names
 func buildSlack(ctx context.Context, adapter any) ([]any, error) {
-	var teams *pydict.Dict[string, SlackDirectoryClient]
+	var teams *orderedutil.Map[string, SlackDirectoryClient]
 	if sa, ok := adapter.(SlackDirectoryAdapter); ok {
 		teams = sa.SlackTeamClients()
 	}
 	if teams == nil || teams.Len() == 0 {
 		return runOffLoop(ctx, func() ([]any, error) { return directoryList(BuildFromSessions(ctx, "slack")), nil })
 	}
-	var channels []*pyjson.Object
+	var channels []*jsonutil.Object
 	seen := map[any]bool{}
 	for teamID, client := range teams.All() {
 		got, err := slackTeamChannels(ctx, teamID, client, seen)
@@ -514,12 +514,12 @@ func buildSlack(ctx context.Context, adapter any) ([]any, error) {
 		}
 		lookup[key], _ = ch.Get("name")
 	}
-	sessions, err := runOffLoop(ctx, func() ([]*pyjson.Object, error) { return BuildFromSessions(ctx, "slack"), nil })
+	sessions, err := runOffLoop(ctx, func() ([]*jsonutil.Object, error) { return BuildFromSessions(ctx, "slack"), nil })
 	if err != nil {
 		return nil, err
 	}
 	for _, entry := range sessions {
-		eid, isStr := entry.GetOr("id", nil).(string)
+		eid, isStr := entry.ValueOr("id", nil).(string)
 		if !isStr || seen[eid] {
 			continue
 		}

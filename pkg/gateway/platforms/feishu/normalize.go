@@ -9,10 +9,10 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -112,7 +112,7 @@ func newNormalized(rawType, text string) FeishuNormalizedMessage {
 	return FeishuNormalizedMessage{RawType: rawType, TextContent: text, PreferredMessageType: "text", RelationKind: "plain", Metadata: map[string]any{}}
 }
 
-type mentionsMap = pydict.Dict[string, FeishuMentionRef]
+type mentionsMap = orderedutil.Map[string, FeishuMentionRef]
 
 // Mention as the event payload or message.get carries it, the string id form with its id type or the nested id object
 type rawMention struct {
@@ -217,10 +217,10 @@ func toBoolean(value any) bool {
 	case nil:
 		return false
 	}
-	return pyrepr.Equal(value, int64(1))
+	return anyutil.Equal(value, int64(1))
 }
 
-func isStyleEnabled(style *pyjson.Object, key string) bool {
+func isStyleEnabled(style *jsonutil.Object, key string) bool {
 	if style == nil || style.Len() == 0 {
 		return false
 	}
@@ -250,9 +250,9 @@ func sanitizeFenceLanguage(language string) string {
 var textStyleWrappers = [][3]string{{"bold", "**", "**"}, {"italic", "*", "*"}, {"underline", "<u>", "</u>"}, {"strikethrough", "~~", "~~"}}
 
 // Markdown for a post text element from its raw text and style flags
-func renderTextElement(element *pyjson.Object) string {
+func renderTextElement(element *jsonutil.Object) string {
 	text := strOr(dgetDef(element, "text", ""))
-	styleDict, _ := dget(element, "style").(*pyjson.Object)
+	styleDict, _ := dget(element, "style").(*jsonutil.Object)
 	if isStyleEnabled(styleDict, "code") {
 		return wrapInlineCode(text)
 	}
@@ -269,7 +269,7 @@ func renderTextElement(element *pyjson.Object) string {
 }
 
 // Fenced code block of a post code element
-func renderCodeBlockElement(element *pyjson.Object) string {
+func renderCodeBlockElement(element *jsonutil.Object) string {
 	language := strOr(dgetDef(element, "language", ""))
 	if language == "" {
 		language = strOr(dgetDef(element, "lang", ""))
@@ -303,16 +303,16 @@ func stripMarkdownToPlainText(text string) string {
 // Post content JSON of markdown under the zh_cn locale
 func buildMarkdownPostPayload(content string) string {
 	rows := buildMarkdownPostRows(content)
-	locale := pyjson.NewObject()
+	locale := jsonutil.NewObject()
 	locale.Set("content", rows)
-	root := pyjson.NewObject()
+	root := jsonutil.NewObject()
 	root.Set("zh_cn", locale)
-	out, _ := pyjson.Dumps(root, pyjson.EnsureASCII(false))
+	out, _ := jsonutil.Encode(root)
 	return out
 }
 
 func mdRow(text string) []any {
-	el := pyjson.NewObject()
+	el := jsonutil.NewObject()
 	el.Set("tag", "md")
 	el.Set("text", text)
 	return []any{el}
@@ -369,7 +369,7 @@ func parseFeishuPostPayload(payload any, mentions *mentionsMap) FeishuPostParseR
 	var imageKeys []string
 	var mediaRefs []FeishuPostMediaRef
 	var parts []string
-	if title := normalizeFeishuText(strings.TrimSpace(pyrepr.Str(dgetDef(resolved, "title", ""))), nil); title != "" {
+	if title := normalizeFeishuText(strings.TrimSpace(anyutil.String(dgetDef(resolved, "title", ""))), nil); title != "" {
 		parts = append(parts, title)
 	}
 	rowsVal := dgetDef(resolved, "content", []any{})
@@ -389,12 +389,12 @@ func parseFeishuPostPayload(payload any, mentions *mentionsMap) FeishuPostParseR
 	}
 	files, _ := dgetDef(resolved, "files", []any{}).([]any)
 	for _, entry := range files {
-		e, ok := entry.(*pyjson.Object)
-		if !ok || toBoolean(dget(e, "is_folder")) || strings.TrimSpace(pyrepr.Str(dgetDef(e, "file_key", ""))) == "" {
+		e, ok := entry.(*jsonutil.Object)
+		if !ok || toBoolean(dget(e, "is_folder")) || strings.TrimSpace(anyutil.String(dgetDef(e, "file_key", ""))) == "" {
 			continue
 		}
-		withTag := pyjson.NewObject()
-		for _, k := range e.Keys {
+		withTag := jsonutil.NewObject()
+		for _, k := range e.Keys() {
 			v, _ := e.Get(k)
 			withTag.Set(k, v)
 		}
@@ -411,11 +411,11 @@ func parseFeishuPostPayload(payload any, mentions *mentionsMap) FeishuPostParseR
 }
 
 // Post body of a payload given directly, under post, or under a locale key
-func resolvePostPayload(payload any) *pyjson.Object {
+func resolvePostPayload(payload any) *jsonutil.Object {
 	if direct := toPostPayload(payload); direct != nil {
 		return direct
 	}
-	d, ok := payload.(*pyjson.Object)
+	d, ok := payload.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -426,11 +426,11 @@ func resolvePostPayload(payload any) *pyjson.Object {
 }
 
 // Post body of the preferred locales first, then of any locale carrying a content list
-func resolveLocalePayload(payload any) *pyjson.Object {
+func resolveLocalePayload(payload any) *jsonutil.Object {
 	if direct := toPostPayload(payload); direct != nil {
 		return direct
 	}
-	d, ok := payload.(*pyjson.Object)
+	d, ok := payload.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -439,7 +439,7 @@ func resolveLocalePayload(payload any) *pyjson.Object {
 			return c
 		}
 	}
-	for _, k := range d.Keys {
+	for _, k := range d.Keys() {
 		v, _ := d.Get(k)
 		if c := toPostPayload(v); c != nil {
 			return c
@@ -449,8 +449,8 @@ func resolveLocalePayload(payload any) *pyjson.Object {
 }
 
 // Title, content and files of a candidate holding a content list, nil for anything else
-func toPostPayload(candidate any) *pyjson.Object {
-	d, ok := candidate.(*pyjson.Object)
+func toPostPayload(candidate any) *jsonutil.Object {
+	d, ok := candidate.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -462,7 +462,7 @@ func toPostPayload(candidate any) *pyjson.Object {
 	if !ok {
 		files = []any{}
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("title", strOr(dgetDef(d, "title", "")))
 	out.Set("content", content)
 	out.Set("files", files)
@@ -471,8 +471,8 @@ func toPostPayload(candidate any) *pyjson.Object {
 
 var staticPostTags = map[string]string{"br": "\n", "hr": "\n\n---\n\n", "divider": "\n\n---\n\n"}
 
-func strippedField(el *pyjson.Object, key string) string {
-	return strings.TrimSpace(pyrepr.Str(dgetDef(el, key, "")))
+func strippedField(el *jsonutil.Object, key string) string {
+	return strings.TrimSpace(anyutil.String(dgetDef(el, key, "")))
 }
 
 // Markdown of one post element, recording image keys, media refs and an at all mention it meets
@@ -480,7 +480,7 @@ func renderPostElement(element any, imageKeys *[]string, mediaRefs *[]FeishuPost
 	if s, ok := element.(string); ok {
 		return s
 	}
-	el, ok := element.(*pyjson.Object)
+	el, ok := element.(*jsonutil.Object)
 	if !ok {
 		return ""
 	}
@@ -595,7 +595,7 @@ func renderNestedPost(value any, imageKeys *[]string, mediaRefs *[]FeishuPostMed
 		return escapeMarkdownText(v)
 	case []any:
 		return joinNestedPosts(v, imageKeys, mediaRefs, mentions)
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if direct := renderPostElement(v, imageKeys, mediaRefs, mentions); direct != "" {
 			return direct
 		}
@@ -664,26 +664,26 @@ func normalizeFeishuMessage(messageType, rawContent string, mentions []rawMentio
 }
 
 // Decoded JSON object of message content, the raw text under text when it is not JSON, a non object under content
-func loadFeishuPayload(rawContent string) *pyjson.Object {
+func loadFeishuPayload(rawContent string) *jsonutil.Object {
 	if rawContent == "" {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	parsed, err := pyjson.Loads(rawContent)
+	parsed, err := jsonutil.Decode(rawContent)
 	if err != nil {
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		out.Set("text", rawContent)
 		return out
 	}
-	if d, ok := parsed.(*pyjson.Object); ok {
+	if d, ok := parsed.(*jsonutil.Object); ok {
 		return d
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("content", parsed)
 	return out
 }
 
 // Title plus the first eight forwarded entries of a merged forward
-func normalizeMergeForwardMessage(payload *pyjson.Object) FeishuNormalizedMessage {
+func normalizeMergeForwardMessage(payload *jsonutil.Object) FeishuNormalizedMessage {
 	title := firstTextField(payload, []string{"title", "summary", "preview"}, []string{"title", "summary", "preview", "description"})
 	entries := collectForwardEntries(payload)
 	var lines []string
@@ -702,7 +702,7 @@ func normalizeMergeForwardMessage(payload *pyjson.Object) FeishuNormalizedMessag
 }
 
 // Shared chat name and id lines of a share_chat message
-func normalizeShareChatMessage(payload *pyjson.Object) FeishuNormalizedMessage {
+func normalizeShareChatMessage(payload *jsonutil.Object) FeishuNormalizedMessage {
 	chatName := firstTextField(payload, []string{"chat_name", "name", "title"}, []string{"chat_name", "name", "title"})
 	shareID := firstTextField(payload, []string{"chat_id", "open_chat_id", "share_chat_id"}, nil)
 	lines := []string{fallbackShareChatText}
@@ -719,9 +719,9 @@ func normalizeShareChatMessage(payload *pyjson.Object) FeishuNormalizedMessage {
 }
 
 // Title, text lines and action labels of an interactive card, capped at twelve lines
-func normalizeInteractiveMessage(messageType string, payload *pyjson.Object) FeishuNormalizedMessage {
+func normalizeInteractiveMessage(messageType string, payload *jsonutil.Object) FeishuNormalizedMessage {
 	var cardPayload any = payload
-	if card, ok := dget(payload, "card").(*pyjson.Object); ok {
+	if card, ok := dget(payload, "card").(*jsonutil.Object); ok {
 		cardPayload = card
 	}
 	title := firstNonEmptyText(findHeaderTitle(cardPayload), dget(payload, "title"), findFirstText(cardPayload, []string{"title", "summary", "subtitle"}))
@@ -752,7 +752,7 @@ func normalizeInteractiveMessage(messageType string, payload *pyjson.Object) Fei
 }
 
 // Bulleted sender and body lines of every forwarded entry, deduplicated
-func collectForwardEntries(payload *pyjson.Object) []string {
+func collectForwardEntries(payload *jsonutil.Object) []string {
 	var candidates []any
 	for _, key := range []string{"messages", "items", "message_list", "records", "content"} {
 		if v, ok := dget(payload, key).([]any); ok {
@@ -761,7 +761,7 @@ func collectForwardEntries(payload *pyjson.Object) []string {
 	}
 	var entries []string
 	for _, item := range candidates {
-		d, ok := item.(*pyjson.Object)
+		d, ok := item.(*jsonutil.Object)
 		if !ok {
 			if text := normalizeFeishuText(strOr(item), nil); text != "" {
 				entries = append(entries, "- "+text)
@@ -770,14 +770,14 @@ func collectForwardEntries(payload *pyjson.Object) []string {
 		}
 		sender := firstTextField(d, []string{"sender_name", "user_name", "sender", "name"}, nil)
 		typeVal := dgetDef(d, "message_type", "")
-		if !pyrepr.Truthy(typeVal) {
+		if !anyutil.IsTrue(typeVal) {
 			typeVal = dgetDef(d, "msg_type", "")
 		}
-		nestedType := strings.ToLower(strings.TrimSpace(pyrepr.Str(typeVal)))
+		nestedType := strings.ToLower(strings.TrimSpace(anyutil.String(typeVal)))
 		var body string
 		if nestedType == "post" {
 			content := dget(d, "content")
-			if !pyrepr.Truthy(content) {
+			if !anyutil.IsTrue(content) {
 				content = d
 			}
 			body = parseFeishuPostPayload(content, nil).TextContent
@@ -809,7 +809,7 @@ var actionTags = map[string]bool{"button": true, "select_static": true, "overflo
 // Labels of every button, select, overflow and picker in a card, deduplicated
 func collectActionLabels(payload any) []string {
 	var labels []string
-	walkNodes(payload, func(item *pyjson.Object) bool {
+	walkNodes(payload, func(item *jsonutil.Object) bool {
 		if !actionTags[nodeTag(item)] {
 			return true
 		}
@@ -821,12 +821,12 @@ func collectActionLabels(payload any) []string {
 	return uniqueLines(labels)
 }
 
-func nodeTag(d *pyjson.Object) string {
+func nodeTag(d *jsonutil.Object) string {
 	v := dgetDef(d, "tag", "")
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		v = dgetDef(d, "type", "")
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(v)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(v)))
 }
 
 // Text of every string inside rich blocks of a card tree, skipping id and routing keys
@@ -843,7 +843,7 @@ func collectTextSegments(value any, inRichBlock bool) []string {
 			out = append(out, collectTextSegments(item, inRichBlock)...)
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		next := inRichBlock || richBlockTags[nodeTag(v)]
 		var segments []string
 		if next {
@@ -855,7 +855,7 @@ func collectTextSegments(value any, inRichBlock bool) []string {
 				}
 			}
 		}
-		for _, k := range v.Keys {
+		for _, k := range v.Keys() {
 			if skipTextKeys[k] {
 				continue
 			}
@@ -868,7 +868,7 @@ func collectTextSegments(value any, inRichBlock bool) []string {
 }
 
 // File key, name and audio, video or file resource type of a media payload
-func buildMediaRefFromPayload(payload *pyjson.Object, resourceType string) FeishuPostMediaRef {
+func buildMediaRefFromPayload(payload *jsonutil.Object, resourceType string) FeishuPostMediaRef {
 	fileKey := strings.TrimSpace(strOr(dgetDef(payload, "file_key", "")))
 	fileName := firstTextField(payload, []string{"file_name", "title", "text"}, nil)
 	effective := "file"
@@ -887,16 +887,16 @@ func attachmentLabel(fileName string) string {
 
 // Card header title from its content, text or name, or the header title itself
 func findHeaderTitle(payload any) string {
-	d, ok := payload.(*pyjson.Object)
+	d, ok := payload.(*jsonutil.Object)
 	if !ok {
 		return ""
 	}
-	header, ok := dget(d, "header").(*pyjson.Object)
+	header, ok := dget(d, "header").(*jsonutil.Object)
 	if !ok {
 		return ""
 	}
 	title := dget(header, "title")
-	if t, ok := title.(*pyjson.Object); ok {
+	if t, ok := title.(*jsonutil.Object); ok {
 		return firstNonEmptyText(dget(t, "content"), dget(t, "text"), dget(t, "name"))
 	}
 	return normalizeFeishuText(strOr(title), nil)
@@ -905,7 +905,7 @@ func findHeaderTitle(payload any) string {
 // First non empty normalized string under any of keys in a depth first walk
 func findFirstText(payload any, keys []string) string {
 	found := ""
-	walkNodes(payload, func(node *pyjson.Object) bool {
+	walkNodes(payload, func(node *jsonutil.Object) bool {
 		for _, key := range keys {
 			if s, ok := dget(node, key).(string); ok {
 				if n := normalizeFeishuText(s, nil); n != "" {
@@ -920,13 +920,13 @@ func findFirstText(payload any, keys []string) string {
 }
 
 // Visits every dict of a tree depth first, stopping when visit returns false
-func walkNodes(value any, visit func(*pyjson.Object) bool) bool {
+func walkNodes(value any, visit func(*jsonutil.Object) bool) bool {
 	switch v := value.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if !visit(v) {
 			return false
 		}
-		for _, k := range v.Keys {
+		for _, k := range v.Keys() {
 			item, _ := v.Get(k)
 			if !walkNodes(item, visit) {
 				return false
@@ -946,10 +946,10 @@ func walkNodes(value any, visit func(*pyjson.Object) bool) bool {
 func firstNonEmptyText(values ...any) string {
 	for _, value := range values {
 		switch value.(type) {
-		case nil, *pyjson.Object, []any, map[string]any:
+		case nil, *jsonutil.Object, []any, map[string]any:
 			continue
 		}
-		if n := normalizeFeishuText(pyrepr.Str(value), nil); n != "" {
+		if n := normalizeFeishuText(anyutil.String(value), nil); n != "" {
 			return n
 		}
 	}
@@ -957,7 +957,7 @@ func firstNonEmptyText(values ...any) string {
 }
 
 // First non empty text among payload keys, then a deep search over the deep keys
-func firstTextField(payload *pyjson.Object, keys []string, deep []string) string {
+func firstTextField(payload *jsonutil.Object, keys []string, deep []string) string {
 	values := make([]any, 0, len(keys)+1)
 	for _, key := range keys {
 		values = append(values, dget(payload, key))
@@ -1025,7 +1025,7 @@ func extractMentionIDs(m rawMention) (string, string) {
 
 // Token keyed mention refs with the bot's own mentions flagged
 func buildMentionsMap(mentions []rawMention, bot feishuBotIdentity) *mentionsMap {
-	result := pydict.New[string, FeishuMentionRef]()
+	result := orderedutil.NewMap[string, FeishuMentionRef]()
 	for _, m := range mentions {
 		if m.Key == "" {
 			continue
@@ -1142,7 +1142,7 @@ const (
 )
 
 // Card value under its key, the old key read when a card an older icebath posted lacks the new one
-func cardValue(value *pyjson.Object, key, legacy string, def any) any {
+func cardValue(value *jsonutil.Object, key, legacy string, def any) any {
 	if value != nil {
 		if v, ok := value.Get(key); ok {
 			return v
@@ -1151,7 +1151,7 @@ func cardValue(value *pyjson.Object, key, legacy string, def any) any {
 	return dgetDef(value, legacy, def)
 }
 
-func dget(d *pyjson.Object, key string) any {
+func dget(d *jsonutil.Object, key string) any {
 	if d == nil {
 		return nil
 	}
@@ -1159,7 +1159,7 @@ func dget(d *pyjson.Object, key string) any {
 	return v
 }
 
-func dgetDef(d *pyjson.Object, key string, def any) any {
+func dgetDef(d *jsonutil.Object, key string, def any) any {
 	if d == nil {
 		return def
 	}
@@ -1171,15 +1171,15 @@ func dgetDef(d *pyjson.Object, key string, def any) any {
 
 // Python str of value or the empty string when value is falsy
 func strOr(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
-func objectValues(d *pyjson.Object) []any {
+func objectValues(d *jsonutil.Object) []any {
 	out := make([]any, 0, d.Len())
-	for _, k := range d.Keys {
+	for _, k := range d.Keys() {
 		v, _ := d.Get(k)
 		out = append(out, v)
 	}

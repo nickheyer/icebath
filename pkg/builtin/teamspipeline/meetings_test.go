@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Graph client double whose calls are recorded and answered by the optional script functions
@@ -66,8 +66,8 @@ func TestTranscriptDownloadRequestsGraphVTTContent(t *testing.T) {
 	g := &scriptGraph{download: func(_, destination string) (map[string]any, error) {
 		return map[string]any{"content_type": "text/vtt"}, os.WriteFile(destination, []byte("WEBVTT\n\n00:00:00.000 --> 00:00:01.000\n<v Speaker>Hello</v>\n"), 0o644)
 	}}
-	ref, _ := newMeetingRef("meeting-1", "organizer-1", nil, nil, nil, nil, pyjson.NewObject())
-	tr, err := newMeetingArtifact("transcript", "transcript-1", "transcript.vtt", nil, nil, nil, nil, nil, nil, pyjson.NewObject())
+	ref, _ := newMeetingRef("meeting-1", "organizer-1", nil, nil, nil, nil, jsonutil.NewObject())
+	tr, err := newMeetingArtifact("transcript", "transcript-1", "transcript.vtt", nil, nil, nil, nil, nil, nil, jsonutil.NewObject())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,7 +180,7 @@ func TestSelectPreferredTranscriptRanksCompletedDownloadableRecent(t *testing.T)
 	}, download: func(_, destination string) (map[string]any, error) {
 		return nil, os.WriteFile(destination, []byte(" \r\n"), 0o644)
 	}}
-	ref, _ := newMeetingRef("m-1", nil, nil, nil, nil, nil, pyjson.NewObject())
+	ref, _ := newMeetingRef("m-1", nil, nil, nil, nil, nil, jsonutil.NewObject())
 	items, err := listTranscriptArtifacts(context.Background(), g, ref)
 	if err != nil || len(items) != 3 || g.calls[0] != "/communications/onlineMeetings/m-1/transcripts" {
 		t.Fatal(items, err, g.calls)
@@ -196,14 +196,14 @@ func TestSelectPreferredTranscriptRanksCompletedDownloadableRecent(t *testing.T)
 
 func TestDownloadRecordingArtifactReportsPathSizeAndType(t *testing.T) {
 	g := &scriptGraph{download: func(string, string) (map[string]any, error) { return map[string]any{"size_bytes": 0}, nil }}
-	ref, _ := newMeetingRef("m-1", "o@x", nil, nil, nil, nil, pyjson.NewObject())
+	ref, _ := newMeetingRef("m-1", "o@x", nil, nil, nil, nil, jsonutil.NewObject())
 	rec, _ := normalizeArtifact("recording", obj("id", "r 1", "size", "12", "fileMimeType", "video/mp4"))
 	out, err := downloadRecordingArtifact(context.Background(), g, ref, rec, "out//rec.mp4")
 	if err != nil || g.calls[0] != "/users/o%40x/onlineMeetings/m-1/recordings/r%201/content" {
 		t.Fatal(err, g.calls)
 	}
 	want := `{"artifact": {"artifact_type": "recording", "artifact_id": "r 1", "content_type": "video/mp4", "size_bytes": 12, "metadata": {"id": "r 1", "size": "12", "fileMimeType": "video/mp4"}}, "path": "out/rec.mp4", "size_bytes": 12, "content_type": "video/mp4"}`
-	if got, _ := pyjson.Dumps(out); got != want {
+	if got, _ := jsonutil.Encode(out); got != want {
 		t.Fatal(got)
 	}
 }
@@ -222,10 +222,10 @@ func TestEnrichMeetingWithCallRecordSoftensDenialAndCollectsMetrics(t *testing.T
 	if err != nil || a.ArtifactType != "call_record" || a.DisplayName != "call_record" || g.calls[1] != "/communications/callRecords/cr-1" {
 		t.Fatal(a, err)
 	}
-	if got, _ := pyjson.Dumps(get(a.Metadata, "metrics")); got != `{"version": 2, "modalities": ["audio"], "participant_count": 2, "organizer": "org", "session_count": 1}` {
+	if got, _ := jsonutil.Encode(get(a.Metadata, "metrics")); got != `{"version": 2, "modalities": ["audio"], "participant_count": 2, "organizer": "org", "session_count": 1}` {
 		t.Fatal(got)
 	}
-	empty, _ := newMeetingRef("m-1", nil, nil, nil, nil, nil, pyjson.NewObject())
+	empty, _ := newMeetingRef("m-1", nil, nil, nil, nil, nil, jsonutil.NewObject())
 	if a, err := enrichMeetingWithCallRecord(context.Background(), &scriptGraph{}, empty, "", true); a != nil || err != nil {
 		t.Fatal(a, err)
 	}

@@ -16,9 +16,9 @@ import (
 
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/commands"
-	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	diffutil "github.com/nickheyer/icebath/pkg/utils/diff"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -237,7 +237,7 @@ func (e *ConsoleEngine) resolveCommand(tokens []string) (*ConsoleCommand, []stri
 		probe = strings.Join(tokens[:2], " ")
 	}
 	suffix := ""
-	if suggestions := pydifflib.GetCloseMatches(probe, available, 3, 0.45); len(suggestions) > 0 {
+	if suggestions := diffutil.CloseMatches(probe, available, 3, 0.45); len(suggestions) > 0 {
 		suffix = " Did you mean: " + strings.Join(suggestions, ", ") + "?"
 	}
 	return nil, nil, &ConsoleCommandError{Msg: "Unsupported Icebath Console command: " + probe + "." + suffix}
@@ -297,9 +297,9 @@ func consoleRejectionFor(tokens []string) string {
 
 // Tokens of a console line split the Windows safe way, unbalanced quotes a console error
 func consoleSplitLine(line string) ([]string, error) {
-	tokens, err := pyshlex.SplitCommandLine(line)
+	tokens, err := shellutil.SplitCommandLine(line)
 	if err != nil {
-		return nil, &ConsoleCommandError{Msg: "Could not parse command: " + pyrepr.ExceptionMessage(err)}
+		return nil, &ConsoleCommandError{Msg: "Could not parse command: " + err.Error()}
 	}
 	return tokens, nil
 }
@@ -587,12 +587,12 @@ func consoleApplyConfirmedDefaults(cli *commands.CLI, cmd *cobra.Command, args [
 	if root == "checkpoints" && (sub == "prune" || sub == "clear" || sub == "clear-legacy") {
 		consoleSetDest(cmd, "force")
 	}
-	if root == "plugins" && sub == "install" && !pyrepr.Truthy(ns["enable"]) && !pyrepr.Truthy(ns["no_enable"]) {
+	if root == "plugins" && sub == "install" && !anyutil.IsTrue(ns["enable"]) && !anyutil.IsTrue(ns["no_enable"]) {
 		consoleSetDest(cmd, "no_enable")
 	}
 	if root == "auth" && sub == "add" {
 		authType := ns["type"]
-		if (authType == "api-key" || authType == "api_key") && !pyrepr.Truthy(ns["api_key"]) {
+		if (authType == "api-key" || authType == "api_key") && !anyutil.IsTrue(ns["api_key"]) {
 			return &ConsoleCommandError{Msg: "auth add --type api-key requires --api-key in Icebath Console."}
 		}
 	}

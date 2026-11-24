@@ -3,7 +3,7 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Registers the authority as this process's cron owner of its store home while loop lives
@@ -48,7 +48,7 @@ func RecoverAuthorityAPITurns(ctx context.Context, a *SessionAuthority) error {
 }
 
 // Adapters by platform the authority's local sessions restore through
-func LocalAdapterMap(ctx context.Context, a *SessionAuthority) (*pydict.Dict[Platform, PlatformAdapter], error) {
+func LocalAdapterMap(ctx context.Context, a *SessionAuthority) (*orderedutil.Map[Platform, PlatformAdapter], error) {
 	return localAdapterMap(ctx, a)
 }
 

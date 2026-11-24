@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Limits of the docker image probe and pull a container prompt runs before its agent
@@ -31,7 +31,7 @@ var errStopped = errors.New("batch run stopped")
 // One dataset entry with its position in the dataset
 type indexedEntry struct {
 	index int
-	entry *pyjson.Object
+	entry *jsonutil.Object
 }
 
 // State one worker keeps across the prompts it runs
@@ -53,14 +53,14 @@ type promptResult struct {
 	partial      any
 	apiCalls     any
 	toolsetsUsed []string
-	metadata     *pyjson.Object
+	metadata     *jsonutil.Object
 }
 
 // Result of a prompt that produced no trajectory
 func failureResult(promptIndex, batchNum int, message string) promptResult {
 	return promptResult{
 		promptIndex: promptIndex, err: message, toolStats: newToolStats(),
-		metadata: pyjson.ObjectOf("batch_num", batchNum, "timestamp", pydatetime.ISOFormatNaive(time.Now())),
+		metadata: jsonutil.ObjectOf("batch_num", batchNum, "timestamp", time.Now().Format(timeutil.RFC3339Micro)),
 	}
 }
 
@@ -99,7 +99,7 @@ func (r *Runner) verifyDockerImage(ctx context.Context, promptIndex, batchNum in
 	name, ok := image.(string)
 	if !ok {
 		if r.o.Verbose {
-			r.printf("   Prompt %d: Docker image check failed: the image is %s, expected text\n", promptIndex, pyrepr.TypeName(image))
+			r.printf("   Prompt %d: Docker image check failed: the image is %s, expected text\n", promptIndex, anyutil.Kind(image))
 		}
 		return nil
 	}
@@ -125,12 +125,12 @@ func (r *Runner) verifyDockerImage(ctx context.Context, promptIndex, batchNum in
 }
 
 // Registers the container image a dataset row names for its task sandbox, a failure result when a docker image cannot be pulled
-func (r *Runner) prepareContainerImage(ctx context.Context, env *tools.Env, promptIndex int, entry *pyjson.Object, batchNum int, taskID string) (*promptResult, error) {
-	image := entry.Vals["image"]
-	if !pyrepr.Truthy(image) {
-		image = entry.Vals["docker_image"]
+func (r *Runner) prepareContainerImage(ctx context.Context, env *tools.Env, promptIndex int, entry *jsonutil.Object, batchNum int, taskID string) (*promptResult, error) {
+	image := entry.Value("image")
+	if !anyutil.IsTrue(image) {
+		image = entry.Value("docker_image")
 	}
-	if !pyrepr.Truthy(image) {
+	if !anyutil.IsTrue(image) {
 		return nil, nil
 	}
 	backend := terminalBackend(env)
@@ -140,14 +140,14 @@ func (r *Runner) prepareContainerImage(ctx context.Context, env *tools.Env, prom
 		}
 	}
 	overrides := map[string]any{"docker_image": image, "modal_image": image, "daytona_image": image, backend + "_image": image}
-	if cwd := entry.Vals["cwd"]; pyrepr.Truthy(cwd) {
+	if cwd := entry.Value("cwd"); anyutil.IsTrue(cwd) {
 		overrides["cwd"] = cwd
 	}
 	if err := tools.RegisterTaskEnvOverrides(env, taskID, overrides); err != nil {
 		return nil, err
 	}
 	if r.o.Verbose {
-		r.printf("   Prompt %d: Using container image %s\n", promptIndex, pyrepr.Str(image))
+		r.printf("   Prompt %d: Using container image %s\n", promptIndex, anyutil.String(image))
 	}
 	return nil, nil
 }
@@ -163,13 +163,13 @@ func resultMessages(result map[string]any) ([]map[string]any, error) {
 	}
 	items, ok := raw.([]any)
 	if !ok {
-		return nil, fmt.Errorf("the conversation messages are %s, expected a list", pyrepr.TypeName(raw))
+		return nil, fmt.Errorf("the conversation messages are %s, expected a list", anyutil.Kind(raw))
 	}
 	messages := make([]map[string]any, 0, len(items))
 	for _, item := range items {
-		msg, ok := pyjson.Dict(item)
+		msg, ok := jsonutil.AsMap(item)
 		if !ok {
-			return nil, fmt.Errorf("a conversation message is %s, expected a mapping", pyrepr.TypeName(item))
+			return nil, fmt.Errorf("a conversation message is %s, expected a mapping", anyutil.Kind(item))
 		}
 		messages = append(messages, msg)
 	}
@@ -302,7 +302,7 @@ func (r *Runner) converse(ctx context.Context, opts agent.AIAgentOptions, prompt
 		return conv, err
 	}
 	if !isText && len(conv.trajectory) > 1 {
-		if human, ok := conv.trajectory[1].(*pyjson.Object); ok {
+		if human, ok := conv.trajectory[1].(*jsonutil.Object); ok {
 			human.Set("value", prompt)
 		}
 	}
@@ -344,8 +344,8 @@ func (r *Runner) agentOptions(ctx context.Context, env *tools.Env, selected []st
 }
 
 // Runs the agent on one prompt and returns its trajectory, statistics and metadata, or a failure result
-func (r *Runner) processPrompt(ctx context.Context, w *workerState, promptIndex int, entry *pyjson.Object, batchNum int) (promptResult, error) {
-	prompt := entry.Vals["prompt"]
+func (r *Runner) processPrompt(ctx context.Context, w *workerState, promptIndex int, entry *jsonutil.Object, batchNum int) (promptResult, error) {
+	prompt := entry.Value("prompt")
 	taskID := fmt.Sprintf("task_%d", promptIndex)
 	env := &tools.Env{Home: r.home, Cwd: r.cwd, Values: &sync.Map{}}
 	ctx = tools.WithToolEnv(ctx, env)
@@ -375,12 +375,12 @@ func (r *Runner) processPrompt(ctx context.Context, w *workerState, promptIndex 
 		selected = []string{}
 	}
 	if r.o.Verbose {
-		r.printf("   Prompt %d: Using toolsets %s\n", promptIndex, pyrepr.Repr(selected))
+		r.printf("   Prompt %d: Using toolsets %s\n", promptIndex, anyutil.Quote(selected))
 	}
 	switch prompt.(type) {
 	case string, []any:
 	default:
-		return fail(fmt.Errorf("the prompt is %s, expected text or a list of content parts", pyrepr.TypeName(prompt)))
+		return fail(fmt.Errorf("the prompt is %s, expected text or a list of content parts", anyutil.Kind(prompt)))
 	}
 	conv, err := r.converse(ctx, r.agentOptions(ctx, env, selected, batchNum, promptIndex), prompt, taskID)
 	if r.agents.isStopping() || ctx.Err() != nil {
@@ -405,6 +405,6 @@ func (r *Runner) processPrompt(ctx context.Context, w *workerState, promptIndex 
 		success: true, promptIndex: promptIndex, trajectory: conv.trajectory, toolStats: conv.stats,
 		reasoning: conv.reasoning, hasReasoning: conv.hasReasoning, completed: completed, partial: partial, apiCalls: apiCalls,
 		toolsetsUsed: selected,
-		metadata:     pyjson.ObjectOf("batch_num", batchNum, "timestamp", pydatetime.ISOFormatNaive(time.Now()), "model", r.o.Model),
+		metadata:     jsonutil.ObjectOf("batch_num", batchNum, "timestamp", time.Now().Format(timeutil.RFC3339Micro), "model", r.o.Model),
 	}, nil
 }

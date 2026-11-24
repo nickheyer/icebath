@@ -7,8 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // V4A operation kinds
@@ -77,7 +76,7 @@ func pyReprStr(s string) string {
 	var b strings.Builder
 	b.WriteRune(quote)
 	for i := 0; i < len(s); {
-		r, size := pystr.DecodeRune(s[i:])
+		r, size := utf8.DecodeRuneInString(s[i:])
 		i += size
 		switch {
 		case r == quote || r == '\\':
@@ -415,7 +414,7 @@ type v4aApplyResult struct {
 	ok      bool
 	payload string
 	lsp     string
-	lint    *pyjson.Object
+	lint    *jsonutil.Object
 	write   *patchWrite
 	notes   []string
 }
@@ -493,7 +492,7 @@ func applyV4AOperations(operations []*v4aOperation, fileOps v4aFileOps) *PatchRe
 	}
 	files := map[string][]string{"created": {}, "deleted": {}, "modified": {}}
 	var allDiffs, notes, lspBlocks []string
-	lintResults := &pyjson.Object{Vals: map[string]any{}}
+	lintResults := jsonutil.NewObject()
 	var writes []patchWrite
 	for _, op := range operations {
 		d := v4aApplyDispatch[op.kind]
@@ -519,7 +518,7 @@ func applyV4AOperations(operations []*v4aOperation, fileOps v4aFileOps) *PatchRe
 		if res.lsp != "" {
 			lspBlocks = append(lspBlocks, res.lsp)
 		}
-		if res.lint != nil && len(res.lint.Keys) > 0 {
+		if res.lint != nil && res.lint.Len() > 0 {
 			lintResults.Set(op.filePath, res.lint)
 		}
 	}
@@ -536,7 +535,7 @@ func applyV4AOperations(operations []*v4aOperation, fileOps v4aFileOps) *PatchRe
 	if len(errs) > 0 {
 		out.Error = "Apply phase failed (state may be inconsistent — run `git diff` to assess):\n" + v4aBullets(errs)
 	}
-	if len(lintResults.Keys) > 0 {
+	if lintResults.Len() > 0 {
 		out.Lint = lintResults
 	}
 	return out
@@ -640,7 +639,7 @@ func insertAdditionOnly(newContent string, h *v4aHunk, insertText string) (strin
 // Byte offset n characters before pos, clamped at the start
 func runeOffsetBack(s string, pos, n int) int {
 	for ; n > 0 && pos > 0; n-- {
-		_, size := pystr.DecodeLastRune(s[:pos])
+		_, size := utf8.DecodeLastRuneInString(s[:pos])
 		pos -= size
 	}
 	return pos
@@ -649,7 +648,7 @@ func runeOffsetBack(s string, pos, n int) int {
 // Byte offset n characters after pos, clamped at the end
 func runeOffsetFwd(s string, pos, n int) int {
 	for ; n > 0 && pos < len(s); n-- {
-		_, size := pystr.DecodeRune(s[pos:])
+		_, size := utf8.DecodeRuneInString(s[pos:])
 		pos += size
 	}
 	return pos

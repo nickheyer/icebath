@@ -9,18 +9,17 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
 // The supervisor calls the vault tool makes on a task's CDP session
 type vaultSupervisor interface {
-	evaluateRuntime(expression string, returnByValue, awaitPromise bool, timeout float64) *pyjson.Object
-	focusPage(origin, accept string, timeout float64) *pyjson.Object
+	evaluateRuntime(expression string, returnByValue, awaitPromise bool, timeout float64) *jsonutil.Object
+	focusPage(origin, accept string, timeout float64) *jsonutil.Object
 }
 
 // Module attributes of the vault tool tests patch
@@ -55,15 +54,15 @@ const pageFillFailedKey = "icebath_vault_eval_failed"
 func vaultDumps(v any) string { return jsonText(v) }
 
 func vaultDumpsUnicode(v any) string {
-	text, err := pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		panic(err)
 	}
 	return text
 }
 
-func vaultFail(pairs ...any) *pyjson.Object {
-	return pyjson.ObjectOf(append([]any{"success", false}, pairs...)...)
+func vaultFail(pairs ...any) *jsonutil.Object {
+	return jsonutil.ObjectOf(append([]any{"success", false}, pairs...)...)
 }
 
 // The plugin browser holding the task's live page, nil for the CDP session
@@ -72,10 +71,10 @@ func vaultPageBackend(ctx context.Context, taskID string) BrowserPageBackend {
 }
 
 // Evaluates on a plugin page backend, every failure of the secret path answered with fixed text
-func vaultPageEval(backend BrowserPageBackend, taskID, expression string, secret bool) *pyjson.Object {
+func vaultPageEval(backend BrowserPageBackend, taskID, expression string, secret bool) *jsonutil.Object {
 	if secret {
 		expression = "(() => { try { return (" + expression + "); } catch (_) { return " +
-			vaultDumps(pyjson.ObjectOf(pageFillFailedKey, true)) + "; } })()"
+			vaultDumps(jsonutil.ObjectOf(pageFillFailedKey, true)) + "; } })()"
 	}
 	result, err := func() (result any, err error) {
 		defer func() {
@@ -93,15 +92,15 @@ func vaultPageEval(backend BrowserPageBackend, taskID, expression string, secret
 		return vaultFail("error_type", "eval_failed", "error", "The "+backend.Name()+" browser could not run the vault script"+detail)
 	}
 	if secret {
-		if parsed, ok := pyjson.AsObject(parseVaultJSON(result)); ok && parsed.Len() == 1 && pyrepr.Equal(anyGet(parsed, pageFillFailedKey), true) {
+		if parsed, ok := jsonutil.AsObject(parseVaultJSON(result)); ok && parsed.Len() == 1 && anyutil.Equal(anyGet(parsed, pageFillFailedKey), true) {
 			return vaultFail("error_type", "eval_failed", "error", "The "+backend.Name()+" browser could not run the vault script")
 		}
 	}
-	return pyjson.ObjectOf("success", true, "result", result)
+	return jsonutil.ObjectOf("success", true, "result", result)
 }
 
 // Evaluates inspection script on the page backend holding the task's page, else over its CDP supervisor
-func evalVaultJS(ctx context.Context, env *tools.Env, taskID, expression string) *pyjson.Object {
+func evalVaultJS(ctx context.Context, env *tools.Env, taskID, expression string) *jsonutil.Object {
 	if page := vaultPageBackend(ctx, taskID); page != nil {
 		return vaultPageEval(page, taskID, expression, false)
 	}
@@ -110,10 +109,10 @@ func evalVaultJS(ctx context.Context, env *tools.Env, taskID, expression string)
 		return vaultFail("error", "no supervised browser session for this task; open the page with browser_exec first")
 	}
 	sup := supervisor.evaluateRuntime(expression, true, true, 10.0)
-	if pyrepr.Truthy(anyGet(sup, "ok")) {
-		return pyjson.ObjectOf("success", true, "result", anyGet(sup, "result"))
+	if anyutil.IsTrue(anyGet(sup, "ok")) {
+		return jsonutil.ObjectOf("success", true, "result", anyGet(sup, "result"))
 	}
-	return vaultFail("error", pyrepr.Str(pyrepr.Or(anyGet(sup, "error"), "evaluate failed")))
+	return vaultFail("error", anyutil.String(anyutil.Or(anyGet(sup, "error"), "evaluate failed")))
 }
 
 // The task's supervisor, attached on demand to its session CDP endpoint, nil when no endpoint is known
@@ -139,7 +138,7 @@ func vaultBotDesktopSession(env *tools.Env, taskID string) bool {
 }
 
 // Evaluates a secret bearing script over the supervisor socket or the page backend, never through argv
-func evalVaultJSSecret(ctx context.Context, env *tools.Env, taskID, expression string) *pyjson.Object {
+func evalVaultJSSecret(ctx context.Context, env *tools.Env, taskID, expression string) *jsonutil.Object {
 	page := vaultPageBackend(ctx, taskID)
 	var supervisor vaultSupervisor
 	if page == nil {
@@ -168,14 +167,14 @@ func evalVaultJSSecret(ctx context.Context, env *tools.Env, taskID, expression s
 		return vaultPageEval(page, taskID, expression, true)
 	}
 	sup := supervisor.evaluateRuntime(expression, true, true, 10.0)
-	if pyrepr.Truthy(anyGet(sup, "ok")) {
-		return pyjson.ObjectOf("success", true, "result", anyGet(sup, "result"))
+	if anyutil.IsTrue(anyGet(sup, "ok")) {
+		return jsonutil.ObjectOf("success", true, "result", anyGet(sup, "result"))
 	}
 	errorType := "eval_failed"
 	if strings.Contains(strings.ToLower(vaultText(anyGet(sup, "error"))), "supervisor") {
 		errorType = "supervisor_required"
 	}
-	return vaultFail("error_type", errorType, "error", pyrepr.Str(pyrepr.Or(anyGet(sup, "error"), "eval failed")))
+	return vaultFail("error_type", errorType, "error", anyutil.String(anyutil.Or(anyGet(sup, "error"), "eval failed")))
 }
 
 // JSON text decoded to its value, anything that is not JSON text returned as is
@@ -184,7 +183,7 @@ func parseVaultJSON(raw any) any {
 	if !ok {
 		return raw
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return raw
 	}
@@ -202,7 +201,7 @@ func parseVaultJSONTwice(raw any) any {
 // Normalized origin of the current page, empty for a blank page or an unreadable one
 func currentVaultPageOrigin(ctx context.Context, env *tools.Env, taskID string) string {
 	res := vaultEvalJS(ctx, env, taskID, "window.location.href")
-	if !pyrepr.Truthy(anyGet(res, "success")) {
+	if !anyutil.IsTrue(anyGet(res, "success")) {
 		return ""
 	}
 	href := strings.Trim(strings.Trim(strings.TrimSpace(vaultText(anyGet(res, "result"))), `"`), "'")
@@ -248,7 +247,7 @@ func focusVaultBoundOrigin(ctx context.Context, env *tools.Env, taskID, origin, 
 		return ""
 	}
 	focused := supervisor.focusPage(origin, vaultTabProbes[kind], 10.0)
-	if !pyrepr.Truthy(anyGet(focused, "ok")) {
+	if !anyutil.IsTrue(anyGet(focused, "ok")) {
 		return ""
 	}
 	if origin != "" {
@@ -262,17 +261,17 @@ func savedOrigins(meta *vault.VaultItemMeta) []string {
 	if len(meta.AllowedOrigins) > 0 {
 		return append([]string(nil), meta.AllowedOrigins...)
 	}
-	if pyrepr.Truthy(meta.Origin) {
-		return []string{pyrepr.Str(meta.Origin)}
+	if anyutil.IsTrue(meta.Origin) {
+		return []string{anyutil.String(meta.Origin)}
 	}
 	return []string{}
 }
 
 // The page origin when it is one of the item's saved origins, else the refusal to return
-func boundVaultPageOrigin(ctx context.Context, env *tools.Env, taskID string, meta *vault.VaultItemMeta, probeKind string) (string, *pyjson.Object) {
+func boundVaultPageOrigin(ctx context.Context, env *tools.Env, taskID string, meta *vault.VaultItemMeta, probeKind string) (string, *jsonutil.Object) {
 	allowed := savedOrigins(meta)
 	if len(allowed) == 0 {
-		return "", vaultFail("error_type", "no_origin", "error", "Vault item "+pyrepr.Repr(meta.ID)+" has no bound origin; "+meta.Kind+
+		return "", vaultFail("error_type", "no_origin", "error", "Vault item "+anyutil.Quote(meta.ID)+" has no bound origin; "+meta.Kind+
 			" items are filled only on the site they were saved for.")
 	}
 	pageOrigin := ""
@@ -309,17 +308,17 @@ func browserVaultList(ctx context.Context, env *tools.Env) (string, error) {
 			if vaultCanPromptHere(ctx, env) {
 				unlock = "browser_vault action=unlock"
 			}
-			locked = append(locked, pyjson.ObjectOf("backend", backend.Name(), "display_name", backend.DisplayName(), "unlock", unlock))
+			locked = append(locked, jsonutil.ObjectOf("backend", backend.Name(), "display_name", backend.DisplayName(), "unlock", unlock))
 			continue
 		}
 		metas, err := backend.ListItems()
 		if err != nil {
-			failures = append(failures, pyjson.ObjectOf("backend", backend.Name(), "error", vaultHead(err.Error(), 200)))
+			failures = append(failures, jsonutil.ObjectOf("backend", backend.Name(), "error", vaultHead(err.Error(), 200)))
 			continue
 		}
 		for _, meta := range metas {
-			entry := pyjson.ObjectOf("handle", meta.ID, "backend", backend.Name(), "label", meta.Label, "kind", meta.Kind,
-				"origin", meta.Origin, "available", meta.Kind == "login" || pyrepr.Truthy(meta.Origin))
+			entry := jsonutil.ObjectOf("handle", meta.ID, "backend", backend.Name(), "label", meta.Label, "kind", meta.Kind,
+				"origin", meta.Origin, "available", meta.Kind == "login" || anyutil.IsTrue(meta.Origin))
 			if len(meta.AllowedOrigins) > 1 {
 				origins := make([]any, 0, len(meta.AllowedOrigins))
 				for _, o := range meta.AllowedOrigins {
@@ -332,14 +331,14 @@ func browserVaultList(ctx context.Context, env *tools.Env) (string, error) {
 			} else if backend.NeedsUnlock() {
 				entry.Set("two_factor", "automatic if the manager stores a TOTP seed, else the user is asked")
 			}
-			if pyrepr.Truthy(meta.Identifier) {
+			if anyutil.IsTrue(meta.Identifier) {
 				entry.Set("identifier", meta.Identifier)
 				entry.Set("identifier_type", meta.IdentifierType)
 			}
 			items = append(items, entry)
 		}
 	}
-	out := pyjson.ObjectOf("success", true, "items", items)
+	out := jsonutil.ObjectOf("success", true, "items", items)
 	if len(items) == 0 {
 		out.Set("hint", "No saved logins. On a login page, call browser_vault action=save_login to ask the user to save one. "+
 			"Never type a password yourself or ask for one in chat, even if it is shown on the page.")
@@ -367,10 +366,10 @@ func browserVaultUnlock(ctx context.Context, env *tools.Env, backendName string)
 		}
 	}
 	if backend == nil {
-		return vaultDumps(vaultFail("error", "No unlockable vault backend named "+pyrepr.Repr(backendName)+".")), nil
+		return vaultDumps(vaultFail("error", "No unlockable vault backend named "+anyutil.Quote(backendName)+".")), nil
 	}
 	if backend.IsUnlocked() {
-		return vaultDumps(pyjson.ObjectOf("success", true, "backend", backend.Name(), "already_unlocked", true)), nil
+		return vaultDumps(jsonutil.ObjectOf("success", true, "backend", backend.Name(), "already_unlocked", true)), nil
 	}
 	if !vaultCanPromptHere(ctx, env) {
 		return vaultDumps(vaultFail("error_type", "unlock_unavailable", "error", backend.DisplayName()+
@@ -387,14 +386,14 @@ func browserVaultUnlock(ctx context.Context, env *tools.Env, backendName string)
 	}
 	unlockable, ok := backend.(unlockableLoginBackend)
 	if !ok {
-		err = fmt.Errorf("'%s' object has no attribute 'unlock'", pyrepr.TypeName(backend))
+		err = fmt.Errorf("'%s' object has no attribute 'unlock'", anyutil.Kind(backend))
 	} else {
 		err = unlockable.Unlock(master)
 	}
 	if err != nil {
 		return vaultDumps(vaultFail("error_type", "unlock_failed", "error", vaultHead(err.Error(), 300))), nil
 	}
-	return vaultDumps(pyjson.ObjectOf("success", true, "backend", backend.Name())), nil
+	return vaultDumps(jsonutil.ObjectOf("success", true, "backend", backend.Name())), nil
 }
 
 func originHost(origin string) string {
@@ -433,10 +432,10 @@ func browserVaultSaveLogin(ctx context.Context, env *tools.Env, label, taskID st
 	idType := "username"
 	if strings.Contains(identifier, "@") {
 		idType = "email"
-	} else if pystr.StrIsDigit(strings.TrimLeft(identifier, "+")) {
+	} else if textutil.IsDigits(strings.TrimLeft(identifier, "+")) {
 		idType = "phone"
 	}
-	meta, err := localVaultStore(ctx).AddItem("login", site, pyjson.ObjectOf("identifier_type", idType, "identifier", identifier,
+	meta, err := localVaultStore(ctx).AddItem("login", site, jsonutil.ObjectOf("identifier_type", idType, "identifier", identifier,
 		"password", answer["password"]), origin)
 	clear(answer)
 	if err != nil {
@@ -446,11 +445,11 @@ func browserVaultSaveLogin(ctx context.Context, env *tools.Env, label, taskID st
 	if err != nil {
 		return "", err
 	}
-	filled, err := pyjson.Loads(fillText)
+	filled, err := jsonutil.Decode(fillText)
 	if err != nil {
 		return "", err
 	}
-	return vaultDumpsUnicode(pyjson.ObjectOf("success", true, "handle", meta.ID, "origin", origin, "identifier", identifier,
+	return vaultDumpsUnicode(jsonutil.ObjectOf("success", true, "handle", meta.ID, "origin", origin, "identifier", identifier,
 		"identifier_type", idType, "fill", filled,
 		"next", "Type the identifier into the username field if the form has one, then submit.")), nil
 }
@@ -485,7 +484,7 @@ func pluginErrorsAsRefusal(result string, err error) (string, error) {
 }
 
 // Nil when the item still binds the page origin inside a backend's own fill context, else the refusal
-func snapshotRefusal(backend LoginBackend, handle string, meta *vault.VaultItemMeta, pageOrigin string, ownContext bool) (*pyjson.Object, error) {
+func snapshotRefusal(backend LoginBackend, handle string, meta *vault.VaultItemMeta, pageOrigin string, ownContext bool) (*jsonutil.Object, error) {
 	if !ownContext {
 		return nil, nil
 	}
@@ -549,21 +548,21 @@ func vaultNonce() string {
 // Controls of the inspection result that are objects, each built into its descriptor
 func inspectedControls(raw any) ([]LoginControl, error) {
 	out := []LoginControl{}
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return out, nil
 	}
 	list, ok := raw.([]any)
 	if !ok {
-		if obj, isObj := pyjson.AsObject(raw); isObj && obj.Len() > 0 {
+		if obj, isObj := jsonutil.AsObject(raw); isObj && obj.Len() > 0 {
 			return out, nil
 		}
 		if _, isStr := raw.(string); isStr {
 			return out, nil
 		}
-		return nil, fmt.Errorf("'%s' object is not iterable", pyrepr.TypeName(raw))
+		return nil, fmt.Errorf("'%s' object is not iterable", anyutil.Kind(raw))
 	}
 	for _, entry := range list {
-		if obj, ok := pyjson.AsObject(entry); ok {
+		if obj, ok := jsonutil.AsObject(entry); ok {
 			control, err := LoginControlFromDict(obj)
 			if err != nil {
 				return nil, err
@@ -610,7 +609,7 @@ func enterVaultCode(ctx context.Context, env *tools.Env, handle, taskID string) 
 	nonce := vaultNonce()
 	inspect := vaultEvalJS(ctx, env, taskID, BuildInspectionJS(nonce))
 	var rawControls any
-	if pyrepr.Truthy(anyGet(inspect, "success")) {
+	if anyutil.IsTrue(anyGet(inspect, "success")) {
 		rawControls = parseVaultJSONTwice(anyGet(inspect, "result"))
 	}
 	controls, err := inspectedControls(rawControls)
@@ -628,24 +627,24 @@ func enterVaultCode(ctx context.Context, env *tools.Env, handle, taskID string) 
 		tools.RegisterVaultRedactionValueIn(ctx, code)
 		fills := BuildOTPFills(otpControls, code)
 		result := vaultEvalJSSecret(ctx, env, taskID, BuildFillJS(fills, origin, nonce))
-		if !pyrepr.Truthy(anyGet(result, "success")) {
-			return vaultDumps(vaultFail("error", vaultHead(pyrepr.Str(pyrepr.Or(anyGet(result, "error"), "fill failed")), 200)))
+		if !anyutil.IsTrue(anyGet(result, "success")) {
+			return vaultDumps(vaultFail("error", vaultHead(anyutil.String(anyutil.Or(anyGet(result, "error"), "fill failed")), 200)))
 		}
-		parsed, isObj := pyjson.AsObject(parseVaultJSONTwice(anyGet(result, "result")))
+		parsed, isObj := jsonutil.AsObject(parseVaultJSONTwice(anyGet(result, "result")))
 		if isObj && anyGet(parsed, "refused") == "origin_changed" {
 			return vaultDumps(vaultFail("error_type", "origin_changed", "error", "The page navigated before the code could be entered. Nothing was written."))
 		}
 		var filled int64
 		if isObj {
 			if v, ok := parsed.Get("filled"); ok {
-				n, err := pyint.Int64(v)
+				n, err := anyutil.ToInt(v)
 				if err != nil {
 					panic(err)
 				}
 				filled = n
 			}
 		}
-		return vaultDumps(pyjson.ObjectOf("success", filled != 0, "filled_fields", filled, "origin", origin, "source", source,
+		return vaultDumps(jsonutil.ObjectOf("success", filled != 0, "filled_fields", filled, "origin", origin, "source", source,
 			"next", "Submit the form (many sites auto-submit when the last digit lands)."))
 	}
 
@@ -693,11 +692,11 @@ func fillVaultHandle(ctx context.Context, env *tools.Env, handle, taskID string)
 		if err != nil {
 			return "", err
 		}
-		unlocked, err := pyjson.Loads(unlockText)
+		unlocked, err := jsonutil.Decode(unlockText)
 		if err != nil {
 			return "", err
 		}
-		if !pyrepr.Truthy(anyGet(unlocked, "success")) {
+		if !anyutil.IsTrue(anyGet(unlocked, "success")) {
 			return vaultDumps(unlocked), nil
 		}
 	}
@@ -713,7 +712,7 @@ func fillVaultHandle(ctx context.Context, env *tools.Env, handle, taskID string)
 		}
 	}
 	if meta == nil {
-		return vaultDumps(vaultFail("error", "No vault item with handle "+pyrepr.Repr(handle)+". Use browser_vault action=list. "+
+		return vaultDumps(vaultFail("error", "No vault item with handle "+anyutil.Quote(handle)+". Use browser_vault action=list. "+
 			"To save a credential: run `icebath vault add` in a terminal.")), nil
 	}
 	pageOrigin, refusal := boundVaultPageOrigin(ctx, env, taskID, meta, meta.Kind)
@@ -746,7 +745,7 @@ func fillVaultHandle(ctx context.Context, env *tools.Env, handle, taskID string)
 }
 
 // Secret payload as an ordered object, longer values first so a scrub never leaves a tail behind
-func secretObject(secret map[string]string) *pyjson.Object {
+func secretObject(secret map[string]string) *jsonutil.Object {
 	keys := make([]string, 0, len(secret))
 	for k := range secret {
 		keys = append(keys, k)
@@ -757,7 +756,7 @@ func secretObject(secret map[string]string) *pyjson.Object {
 		}
 		return keys[i] < keys[j]
 	})
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, k := range keys {
 		out.Set(k, secret[k])
 	}
@@ -768,12 +767,12 @@ func secretObject(secret map[string]string) *pyjson.Object {
 func fillBoundPage(ctx context.Context, env *tools.Env, backend LoginBackend, handle string, meta *vault.VaultItemMeta, pageOrigin, taskID string) (string, error) {
 	nonce := vaultNonce()
 	inspect := vaultEvalJS(ctx, env, taskID, BuildInspectionJS(nonce))
-	if !pyrepr.Truthy(anyGet(inspect, "success")) {
+	if !anyutil.IsTrue(anyGet(inspect, "success")) {
 		detail, ok := inspect.Get("error")
 		if !ok {
 			detail = "eval failed"
 		}
-		return vaultDumps(vaultFail("error", "Could not inspect page inputs: "+pyrepr.Str(detail))), nil
+		return vaultDumps(vaultFail("error", "Could not inspect page inputs: "+anyutil.String(detail))), nil
 	}
 	rawControls, isList := parseVaultJSONTwice(anyGet(inspect, "result")).([]any)
 	if !isList {
@@ -785,7 +784,7 @@ func fillBoundPage(ctx context.Context, env *tools.Env, backend LoginBackend, ha
 	}
 	classified := []ClassifiedLoginControl{}
 	for _, raw := range rawControls {
-		obj, ok := pyjson.AsObject(raw)
+		obj, ok := jsonutil.AsObject(raw)
 		if !ok {
 			continue
 		}
@@ -802,7 +801,7 @@ func fillBoundPage(ctx context.Context, env *tools.Env, backend LoginBackend, ha
 	}
 
 	var secret map[string]string
-	var fills []*pyjson.Object
+	var fills []*jsonutil.Object
 	var err error
 	if meta.Kind == "login" {
 		var password string
@@ -841,7 +840,7 @@ func fillBoundPage(ctx context.Context, env *tools.Env, backend LoginBackend, ha
 	}
 
 	scrubKeys := secretObject(secret)
-	fillResult, evalErr := func() (result *pyjson.Object, err error) {
+	fillResult, evalErr := func() (result *jsonutil.Object, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				err = fmt.Errorf("%v", r)
@@ -852,20 +851,20 @@ func fillBoundPage(ctx context.Context, env *tools.Env, backend LoginBackend, ha
 	if evalErr != nil {
 		return vaultDumps(vaultFail("error", vault.ScrubSecretFromText(evalErr.Error(), scrubKeys))), nil
 	}
-	if !pyrepr.Truthy(anyGet(fillResult, "success")) {
-		out := vaultFail("error", vault.ScrubSecretFromText(pyrepr.Str(pyrepr.Or(anyGet(fillResult, "error"), "fill failed")), scrubKeys))
-		if errorType := anyGet(fillResult, "error_type"); pyrepr.Truthy(errorType) {
+	if !anyutil.IsTrue(anyGet(fillResult, "success")) {
+		out := vaultFail("error", vault.ScrubSecretFromText(anyutil.String(anyutil.Or(anyGet(fillResult, "error"), "fill failed")), scrubKeys))
+		if errorType := anyGet(fillResult, "error_type"); anyutil.IsTrue(errorType) {
 			out.Set("error_type", errorType)
 		}
 		return vaultDumps(out), nil
 	}
 
-	parsed, isObj := pyjson.AsObject(parseVaultJSONTwice(anyGet(fillResult, "result")))
+	parsed, isObj := jsonutil.AsObject(parseVaultJSONTwice(anyGet(fillResult, "result")))
 	if isObj && anyGet(parsed, "refused") == "origin_changed" {
 		return vaultDumps(vaultFail("error_type", "origin_changed", "error",
 			"Refused: the page navigated away from the bound origin "+
 				"("+pageOrigin+") before the fill could run "+
-				"(now on "+pyrepr.Str(pyrepr.Or(anyGet(parsed, "found"), "unknown"))+"). "+
+				"(now on "+anyutil.String(anyutil.Or(anyGet(parsed, "found"), "unknown"))+"). "+
 				"Nothing was written.")), nil
 	}
 	var filled any = int64(0)
@@ -874,11 +873,11 @@ func fillBoundPage(ctx context.Context, env *tools.Env, backend LoginBackend, ha
 			filled = v
 		}
 	}
-	count, err := pyint.Int64(filled)
+	count, err := anyutil.ToInt(filled)
 	if err != nil {
 		return "", err
 	}
-	out := pyjson.ObjectOf("success", pyrepr.Truthy(filled), "filled_fields", count, "backend", backend.Name(),
+	out := jsonutil.ObjectOf("success", anyutil.IsTrue(filled), "filled_fields", count, "backend", backend.Name(),
 		"kind", meta.Kind, "origin", pageOrigin)
 	if meta.Kind == "login" {
 		next := "Submit. If the site then asks for a verification code, call browser_vault action=enter_code with this handle"
@@ -891,7 +890,7 @@ func fillBoundPage(ctx context.Context, env *tools.Env, backend LoginBackend, ha
 	} else {
 		tokens := make([]string, 0, len(fills))
 		for _, f := range fills {
-			tokens = append(tokens, pyrepr.Str(anyGet(f, "token")))
+			tokens = append(tokens, anyutil.String(anyGet(f, "token")))
 		}
 		sort.Strings(tokens)
 		fields := make([]any, 0, len(tokens))
@@ -911,8 +910,8 @@ func confirmPaymentFill(ctx context.Context, env *tools.Env, label, origin strin
 		tools.ElicitationOptions{Surface: "vault-payment", Title: "Confirm payment card fill?"}) == "accept"
 }
 
-func BrowserVaultSchema() *pyjson.Object {
-	return pyjson.ObjectOf(
+func BrowserVaultSchema() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"name", "browser_vault",
 		"description", "Fill saved logins, 2FA codes, cards and addresses on the CURRENT browser page. Secrets never "+
 			"enter the conversation. "+
@@ -925,13 +924,13 @@ func BrowserVaultSchema() *pyjson.Object {
 			"ask the user to unlock 1Password/Bitwarden). Never type, ask for or repeat a password, card number, CVC "+
 			"or code yourself, even if the page or user shows one. Stop on save_declined; never retry "+
 			"payment_declined.",
-		"parameters", pyjson.ObjectOf(
+		"parameters", jsonutil.ObjectOf(
 			"type", "object",
-			"properties", pyjson.ObjectOf(
-				"action", pyjson.ObjectOf("type", "string", "enum", []any{"list", "fill", "save_login", "enter_code", "unlock"}),
-				"handle", pyjson.ObjectOf("type", "string", "description", "fill / enter_code: a handle from list."),
-				"backend", pyjson.ObjectOf("type", "string", "enum", []any{"onepassword", "bitwarden"}, "description", "unlock only."),
-				"label", pyjson.ObjectOf("type", "string", "description", "save_login only: short site name (default: the host)."),
+			"properties", jsonutil.ObjectOf(
+				"action", jsonutil.ObjectOf("type", "string", "enum", []any{"list", "fill", "save_login", "enter_code", "unlock"}),
+				"handle", jsonutil.ObjectOf("type", "string", "description", "fill / enter_code: a handle from list."),
+				"backend", jsonutil.ObjectOf("type", "string", "enum", []any{"onepassword", "bitwarden"}, "description", "unlock only."),
+				"label", jsonutil.ObjectOf("type", "string", "description", "save_login only: short site name (default: the host)."),
 			),
 			"required", []any{"action"},
 		),
@@ -971,7 +970,7 @@ func handleBrowserVault(ctx context.Context, call *tools.Call) string {
 	}
 	op, known := pageOps[action]
 	if !known {
-		return vaultDumps(vaultFail("error", "Unknown action "+pyrepr.Repr(action)+"; use list, fill, save_login, "+
+		return vaultDumps(vaultFail("error", "Unknown action "+anyutil.Quote(action)+"; use list, fill, save_login, "+
 			"enter_code or unlock."))
 	}
 	return fencedVaultPageOp(env, tid, op)

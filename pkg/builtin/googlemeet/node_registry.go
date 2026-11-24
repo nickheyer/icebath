@@ -8,7 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // File backed registry of approved remote nodes, name to url and token
@@ -23,32 +23,32 @@ func newNodeRegistry(ctx context.Context, path string) *nodeRegistry {
 }
 
 // The nodes map, empty when the file is missing or malformed
-func (r *nodeRegistry) load() *pyjson.Object {
-	if data, ok := readJSON(r.path).(*pyjson.Object); ok {
-		if nodes, ok := data.Vals["nodes"].(*pyjson.Object); ok {
+func (r *nodeRegistry) load() *jsonutil.Object {
+	if data, ok := readJSON(r.path).(*jsonutil.Object); ok {
+		if nodes, ok := data.Value("nodes").(*jsonutil.Object); ok {
 			return nodes
 		}
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
-func (r *nodeRegistry) save(ctx context.Context, nodes *pyjson.Object) error {
-	return config.AtomicJSONWrite(ctx, r.path, pyjson.ObjectOf("nodes", nodes))
+func (r *nodeRegistry) save(ctx context.Context, nodes *jsonutil.Object) error {
+	return config.AtomicJSONWrite(ctx, r.path, jsonutil.ObjectOf("nodes", nodes))
 }
 
 // Entry with its name prepended, the TypeError of a non mapping entry returned
-func withName(name string, entry any) (*pyjson.Object, error) {
-	e, ok := entry.(*pyjson.Object)
+func withName(name string, entry any) (*jsonutil.Object, error) {
+	e, ok := entry.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("'%s' object is not a mapping", pyTypeName(entry))
 	}
-	out := pyjson.ObjectOf("name", name)
-	out.Update(e)
+	out := jsonutil.ObjectOf("name", name)
+	out.Merge(e)
 	return out, nil
 }
 
 // Entry of a named node, nil when unknown
-func (r *nodeRegistry) get(name string) (*pyjson.Object, error) {
+func (r *nodeRegistry) get(name string) (*jsonutil.Object, error) {
 	entry, ok := r.load().Get(name)
 	if !ok || entry == nil {
 		return nil, nil
@@ -64,7 +64,7 @@ func (r *nodeRegistry) add(ctx context.Context, name, url, token string) error {
 		}
 	}
 	nodes := r.load()
-	nodes.Set(name, pyjson.ObjectOf("url", url, "token", token, "added_at", nowSeconds()))
+	nodes.Set(name, jsonutil.ObjectOf("url", url, "token", token, "added_at", nowSeconds()))
 	return r.save(ctx, nodes)
 }
 
@@ -78,13 +78,13 @@ func (r *nodeRegistry) remove(ctx context.Context, name string) (bool, error) {
 }
 
 // Every node sorted by name
-func (r *nodeRegistry) listAll() ([]*pyjson.Object, error) {
+func (r *nodeRegistry) listAll() ([]*jsonutil.Object, error) {
 	nodes := r.load()
-	names := append([]string(nil), nodes.Keys...)
+	names := append([]string(nil), nodes.Keys()...)
 	sort.Strings(names)
-	out := make([]*pyjson.Object, 0, len(names))
+	out := make([]*jsonutil.Object, 0, len(names))
 	for _, n := range names {
-		e, err := withName(n, nodes.Vals[n])
+		e, err := withName(n, nodes.Value(n))
 		if err != nil {
 			return nil, err
 		}
@@ -94,7 +94,7 @@ func (r *nodeRegistry) listAll() ([]*pyjson.Object, error) {
 }
 
 // Named node, or the sole registered node when name is empty, nil when unknown or ambiguous
-func (r *nodeRegistry) resolve(chromeNode string) (*pyjson.Object, error) {
+func (r *nodeRegistry) resolve(chromeNode string) (*jsonutil.Object, error) {
 	if chromeNode != "" {
 		return r.get(chromeNode)
 	}

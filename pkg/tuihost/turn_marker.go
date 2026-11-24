@@ -14,10 +14,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -42,12 +41,12 @@ func turnMarkerCrossProcessLock(path string) (func(), error) {
 }
 
 // Start time of an entry as a float, zero when falsy, the float error when unparseable
-func turnMarkerStartedAt(entry *pyjson.Object) (float64, error) {
+func turnMarkerStartedAt(entry *jsonutil.Object) (float64, error) {
 	v, _ := entry.Get("started_at")
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
-	return pyint.Float(v)
+	return anyutil.ToFloat(v)
 }
 
 // Pid and process start time of the writer so a recycled pid never passes as it
@@ -57,8 +56,8 @@ func turnMarkerWriterIdentity() (int64, float64, bool) {
 }
 
 // Journal entries whose values are objects, empty when missing or unreadable
-func turnMarkerLoad(path string) *pyjson.Object {
-	out := pyjson.NewObject()
+func turnMarkerLoad(path string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		if !errors.Is(err, fs.ErrNotExist) {
@@ -66,17 +65,17 @@ func turnMarkerLoad(path string) *pyjson.Object {
 		}
 		return out
 	}
-	data, err := pyjson.Loads(string(raw))
+	data, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		turnMarkerLogger().Debug("unreadable turn-marker file "+path+"; starting fresh", "error", err)
 		return out
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return out
 	}
-	for _, key := range obj.Keys {
-		if entry, isObj := obj.Vals[key].(*pyjson.Object); isObj {
+	for _, key := range obj.Keys() {
+		if entry, isObj := obj.Value(key).(*jsonutil.Object); isObj {
 			out.Set(key, entry)
 		}
 	}
@@ -84,11 +83,11 @@ func turnMarkerLoad(path string) *pyjson.Object {
 }
 
 // Entries younger than the age cap, the newest ones when more than the count cap remain
-func turnMarkerPrune(entries *pyjson.Object, now float64) (*pyjson.Object, error) {
-	fresh := pyjson.NewObject()
+func turnMarkerPrune(entries *jsonutil.Object, now float64) (*jsonutil.Object, error) {
+	fresh := jsonutil.NewObject()
 	started := map[string]float64{}
-	for _, key := range entries.Keys {
-		entry := entries.Vals[key].(*pyjson.Object)
+	for _, key := range entries.Keys() {
+		entry := entries.Value(key).(*jsonutil.Object)
 		at, err := turnMarkerStartedAt(entry)
 		if err != nil {
 			return nil, err
@@ -101,17 +100,17 @@ func turnMarkerPrune(entries *pyjson.Object, now float64) (*pyjson.Object, error
 	if fresh.Len() <= turnMarkerMaxEntries {
 		return fresh, nil
 	}
-	keys := append([]string{}, fresh.Keys...)
+	keys := append([]string{}, fresh.Keys()...)
 	sort.SliceStable(keys, func(i, j int) bool { return started[keys[i]] > started[keys[j]] })
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, key := range keys[:turnMarkerMaxEntries] {
-		out.Set(key, fresh.Vals[key])
+		out.Set(key, fresh.Value(key))
 	}
 	return out, nil
 }
 
 // Writes the journal privately, removing the file when no entry remains
-func turnMarkerStore(path string, entries *pyjson.Object) error {
+func turnMarkerStore(path string, entries *jsonutil.Object) error {
 	if entries.Len() == 0 {
 		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
@@ -122,7 +121,7 @@ func turnMarkerStore(path string, entries *pyjson.Object) error {
 }
 
 // Loads, mutates and stores the journal under both locks, a nil mutation result skipping the write
-func turnMarkerUpdate(home, sessionKey string, mutate func(*pyjson.Object) (*pyjson.Object, error), what string) {
+func turnMarkerUpdate(home, sessionKey string, mutate func(*jsonutil.Object) (*jsonutil.Object, error), what string) {
 	err := func() error {
 		path := turnMarkerPath(home)
 		turnMarkerLock.Lock()
@@ -149,7 +148,7 @@ func RecordTurnStart(home, sessionKey, prompt string, attempts int, autoContinue
 		return
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("attempts", int64(max(0, attempts)))
 	entry.Set("prompt", textutil.First(prompt, turnMarkerMaxPromptChar))
 	entry.Set("started_at", now)
@@ -163,7 +162,7 @@ func RecordTurnStart(home, sessionKey, prompt string, attempts int, autoContinue
 		entry.Set("notification_category", notificationCategory)
 	}
 	turnMarkerLogger().Debug("turn marker recorded for session " + sessionKey + " by writer pid " + strconv.FormatInt(pid, 10))
-	turnMarkerUpdate(home, sessionKey, func(entries *pyjson.Object) (*pyjson.Object, error) {
+	turnMarkerUpdate(home, sessionKey, func(entries *jsonutil.Object) (*jsonutil.Object, error) {
 		pruned, err := turnMarkerPrune(entries, now)
 		if err != nil {
 			return nil, err
@@ -178,14 +177,14 @@ func ClearTurnMarker(home, sessionKey string) {
 	if sessionKey == "" {
 		return
 	}
-	turnMarkerUpdate(home, sessionKey, func(entries *pyjson.Object) (*pyjson.Object, error) {
+	turnMarkerUpdate(home, sessionKey, func(entries *jsonutil.Object) (*jsonutil.Object, error) {
 		if _, ok := entries.Get(sessionKey); !ok {
 			return nil, nil
 		}
-		out := pyjson.NewObject()
-		for _, key := range entries.Keys {
+		out := jsonutil.NewObject()
+		for _, key := range entries.Keys() {
 			if key != sessionKey {
-				out.Set(key, entries.Vals[key])
+				out.Set(key, entries.Value(key))
 			}
 		}
 		return out, nil

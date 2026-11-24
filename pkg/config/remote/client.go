@@ -11,16 +11,15 @@ import (
 	"net/http/httptrace"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -90,7 +89,7 @@ func loadJSON(raw []byte) (any, error) {
 	if !utf8.Valid(raw) {
 		return nil, errors.New("invalid utf-8")
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -99,12 +98,12 @@ func loadJSON(raw []byte) (any, error) {
 
 func plainJSON(v any) any {
 	switch c := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := make(map[string]any, c.Len())
-		for _, k := range c.Keys {
-			out[k] = plainJSON(c.Vals[k])
+		for _, k := range c.Keys() {
+			out[k] = plainJSON(c.Value(k))
 		}
-		config.SetMappingKeys(out, c.Keys)
+		config.SetMappingKeys(out, c.Keys())
 		return out
 	case []any:
 		out := make([]any, len(c))
@@ -142,7 +141,7 @@ func parseRetryAfter(value string) (float64, bool) {
 	if value == "" {
 		return 0, false
 	}
-	f, err := pyint.ParseFloat(value)
+	f, err := strconv.ParseFloat(strings.TrimSpace(value), 64)
 	if err != nil {
 		return 0, false
 	}
@@ -192,7 +191,7 @@ func (p *requestPhase) reason(err error, https bool) string {
 	if p.connected.Load() && (errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF)) {
 		return "Remote end closed connection without response"
 	}
-	return pyhttpx.OSErrorText(err)
+	return err.Error()
 }
 
 // Plane bearer, resolved only once the plane destination passed the policy
@@ -218,7 +217,7 @@ func Request(ctx context.Context, method, profile, etag string, body any, token 
 	var reader io.Reader
 	var data string
 	if body != nil {
-		if data, err = pyjson.Dumps(body, pyjson.Separators(",", ":"), pyjson.EnsureASCII(false)); err != nil {
+		if data, err = jsonutil.Encode(body); err != nil {
 			return Response{}, err
 		}
 		reader = strings.NewReader(data)
@@ -304,5 +303,5 @@ func pyTruthyStr(v any) string {
 			return ""
 		}
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }

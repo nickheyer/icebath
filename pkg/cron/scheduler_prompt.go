@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
@@ -16,12 +18,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -38,8 +38,8 @@ const (
 )
 
 var (
-	promptFrameRE   = mustCompileCronRE(`(?m)^\*\*Prompt\ Characters:\*\*\ (\d+)\n\#\#\ Prompt\n\n`)
-	responseFrameRE = mustCompileCronRE(`(?m)^\*\*Response\ Characters:\*\*\ (\d+)\n\#\#\ Response\n\n`)
+	promptFrameRE   = regexutil.Lazy(regexutil.MustCompile, `(?m)^\*\*Prompt\ Characters:\*\*\ (\d+)\n\#\#\ Prompt\n\n`)
+	responseFrameRE = regexutil.Lazy(regexutil.MustCompile, `(?m)^\*\*Response\ Characters:\*\*\ (\d+)\n\#\#\ Response\n\n`)
 )
 
 const cronHint = "[IMPORTANT: You are running as a scheduled cron job. " +
@@ -99,11 +99,11 @@ func parseWakeGate(scriptOutput string) bool {
 	if len(lines) == 0 {
 		return true
 	}
-	gate, err := pyjson.Loads(strings.TrimSpace(lines[len(lines)-1]))
+	gate, err := jsonutil.Decode(strings.TrimSpace(lines[len(lines)-1]))
 	if err != nil {
 		return true
 	}
-	obj, ok := gate.(*pyjson.Object)
+	obj, ok := gate.(*jsonutil.Object)
 	if !ok {
 		return true
 	}
@@ -147,7 +147,7 @@ func runeIndex(s, sub string) int {
 	return utf8.RuneCountInString(s[:i])
 }
 
-// Python match at a code point position, honouring a multiline caret against the preceding character
+// Match starting exactly at a code point position, honouring a multiline caret against the preceding character
 func matchAt(re *regexp2.Regexp, runes []rune, pos int) *regexp2.Match {
 	if pos > len(runes) || (pos > 0 && runes[pos-1] != '\n') {
 		return nil
@@ -164,18 +164,18 @@ func matchAt(re *regexp2.Regexp, runes []rune, pos int) *regexp2.Match {
 
 // Frame length as an int, false when it overflows every index the document could hold
 func frameLength(m *regexp2.Match) (int, bool) {
-	n, ok := pyint.Parse(m.GroupByNumber(1).String())
-	if !ok || !n.IsInt64() || n.Int64() > int64(1<<40) {
+	n, err := strconv.ParseInt(m.GroupByNumber(1).String(), 10, 64)
+	if err != nil || n > 1<<40 {
 		return 0, false
 	}
-	return int(n.Int64()), true
+	return int(n), true
 }
 
 // Reusable answer of a stored run through its length frames, nil when blank, silent or truncated
 func archiveAnswer(archive string) *string {
 	runes := []rune(archive)
 	var answer string
-	pf, err := promptFrameRE.FindRunesMatch(runes)
+	pf, err := promptFrameRE().FindRunesMatch(runes)
 	if err != nil {
 		panic(err)
 	}
@@ -185,7 +185,7 @@ func archiveAnswer(archive string) *string {
 			return nil
 		}
 		start := pf.RuneIndex + pf.RuneLength + plen + utf8.RuneCountInString(promptSeparator)
-		frame := matchAt(responseFrameRE, runes, start)
+		frame := matchAt(responseFrameRE(), runes, start)
 		if frame == nil {
 			return nil
 		}
@@ -235,7 +235,7 @@ func cronJobOriginLogSuffix(job *Job) string {
 			if len(r) > 200 {
 				r = r[:200]
 			}
-			fields = append(fields, fmt.Sprintf("origin_%s=%s", key, pyrepr.StrRepr(string(r))))
+			fields = append(fields, fmt.Sprintf("origin_%s=%s", key, strconv.Quote(string(r))))
 		}
 	}
 	if len(fields) == 0 {
@@ -254,7 +254,7 @@ func (s *Store) resolveJobWorkdir(job *Job, jobID string) *string {
 		return nil
 	}
 	if st, err := os.Stat(workdir); err != nil || !st.IsDir() {
-		s.log.Warn(fmt.Sprintf("Job '%s': configured workdir %s no longer exists \u2014 running without it", jobID, pyrepr.StrRepr(workdir)))
+		s.log.Warn(fmt.Sprintf("Job '%s': configured workdir %s no longer exists \u2014 running without it", jobID, strconv.Quote(workdir)))
 		return nil
 	}
 	return &workdir
@@ -296,11 +296,11 @@ func latestContextOutput(dir string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		text, err := pystr.DecodeUTF8Sig(raw)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if err != nil {
 			return "", &contextDecodeError{err}
 		}
-		candidate := pystr.TranslateNewlines(text)
+		candidate := textutil.NormalizeNewlines(text)
 		if strings.TrimSpace(candidate) == "" || silentAuditDocument(candidate) {
 			continue
 		}
@@ -329,7 +329,7 @@ func (s *Store) injectContextFrom(job *Job, prompt string) (string, bool, error)
 		}
 		isSelf := sourceID == job.ID
 		if sourceID == "" || strings.Trim(sourceID, "0123456789abcdef") != "" {
-			s.log.Warn(fmt.Sprintf("context_from: skipping invalid job_id %s for job_id=%s name=%s%s", pyrepr.StrRepr(sourceID), pyrepr.StrRepr(job.ID), pyrepr.StrRepr(job.Name), cronJobOriginLogSuffix(job)))
+			s.log.Warn(fmt.Sprintf("context_from: skipping invalid job_id %s for job_id=%s name=%s%s", strconv.Quote(sourceID), strconv.Quote(job.ID), strconv.Quote(job.Name), cronJobOriginLogSuffix(job)))
 			continue
 		}
 		latest, err := latestContextOutput(filepath.Join(s.outputDir, sourceID))
@@ -338,7 +338,7 @@ func (s *Store) injectContextFrom(job *Job, prompt string) (string, bool, error)
 			if errors.As(err, &dec) {
 				return prompt, injected, dec.err
 			}
-			s.log.Warn(fmt.Sprintf("context_from: failed to read output for job %s: %v", pyrepr.StrRepr(sourceID), err))
+			s.log.Warn(fmt.Sprintf("context_from: failed to read output for job %s: %v", strconv.Quote(sourceID), err))
 			continue
 		}
 		if latest == "" {
@@ -429,12 +429,12 @@ func (s *Store) loadCronSkillParts(ctx context.Context, job *Job, skillNames []s
 // Wall clock line of this fire in the configured zone with its UTC offset
 func (s *Store) runTimeLine() string {
 	now := s.clk.now()
-	offset := config.SafeStrftime(now, "%z")
+	offset := now.Format("-0700")
 	zone := ""
 	if offset != "" {
 		zone = fmt.Sprintf(" (UTC%s:%s)", offset[:3], offset[3:])
 	}
-	return fmt.Sprintf("[CURRENT RUN TIME: %s%s]\n\n", strings.TrimSpace(config.SafeStrftime(now, "%A, %Y-%m-%d %H:%M %Z")), zone)
+	return fmt.Sprintf("[CURRENT RUN TIME: %s%s]\n\n", strings.TrimSpace(now.Format("Monday, 2006-01-02 15:04 MST")), zone)
 }
 
 // Effective prompt of a run with script output, context, notepad and skills, nil when the script printed nothing
@@ -557,7 +557,7 @@ func (s *Store) blockAndPauseJob(ctx context.Context, jobID, jobName, reason str
 	if _, err := s.pauseJob(home.WithOverride(ctx, s.home), jobID, &pauseReason); err != nil {
 		s.log.Error(fmt.Sprintf("Job '%s': failed to auto-pause unrunnable job: %v", jobID, err))
 	}
-	nowISO := config.SafeStrftime(s.clk.now(), "%Y-%m-%d %H:%M:%S")
+	nowISO := s.clk.now().Format(time.DateTime)
 	doc := fmt.Sprintf("# Cron Job: %s\n\n**Job ID:** %s\n**Run Time:** %s\n**Status:** blocked (unrunnable job) \u2014 auto-paused\n\n%s\n", jobName, jobID, nowISO, reason)
 	alert := fmt.Sprintf("\u26a0 Cron job '%s' was auto-paused\n\n%s", jobName, reason)
 	return jobRunOutcome{Success: false, Output: doc, FinalResponse: alert, Error: &reason}

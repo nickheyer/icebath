@@ -9,7 +9,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 func TestGitProgramRecognisesEveryFormOfGit(t *testing.T) {
@@ -100,7 +100,7 @@ func TestLockHoldAnswersAndTheProbeSeams(t *testing.T) {
 	}
 	prevWhich := SwapLockWhich(func(string) (string, bool) { return "", false })
 	t.Cleanup(func() { SwapLockWhich(prevWhich) })
-	prevRun := SwapLockRunner(func(context.Context, []string, pysubprocess.Options) (*pysubprocess.Completed, error) {
+	prevRun := SwapLockRunner(func(context.Context, []string, executil.Options) (*executil.Completed, error) {
 		return nil, errors.New("[Errno 2] No such file or directory: 'lsof'")
 	})
 	t.Cleanup(func() { SwapLockRunner(prevRun) })
@@ -109,8 +109,8 @@ func TestLockHoldAnswersAndTheProbeSeams(t *testing.T) {
 		t.Fatalf("a failing lsof answers unknown, got %+v", got)
 	}
 	SwapLockWhich(func(name string) (string, bool) { return name, true })
-	SwapLockRunner(func(_ context.Context, argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
-		return &pysubprocess.Completed{Args: argv, Returncode: 1}, nil
+	SwapLockRunner(func(_ context.Context, argv []string, _ executil.Options) (*executil.Completed, error) {
+		return &executil.Completed{Args: argv, ExitCode: 1}, nil
 	})
 	if got := HeldOpenLsof(lock, "", false); !got.Free() {
 		t.Fatalf("an empty lsof without a root is free, got %+v", got)
@@ -130,8 +130,8 @@ func TestReleaseDeadLockDropsAnUnheldLockAndKeepsNothingAbsent(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		prevWhich := SwapLockWhich(func(name string) (string, bool) { return name, true })
 		t.Cleanup(func() { SwapLockWhich(prevWhich) })
-		prevRun := SwapLockRunner(func(_ context.Context, argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
-			return &pysubprocess.Completed{Args: argv, Returncode: 1}, nil
+		prevRun := SwapLockRunner(func(_ context.Context, argv []string, _ executil.Options) (*executil.Completed, error) {
+			return &executil.Completed{Args: argv, ExitCode: 1}, nil
 		})
 		t.Cleanup(func() { SwapLockRunner(prevRun) })
 	}

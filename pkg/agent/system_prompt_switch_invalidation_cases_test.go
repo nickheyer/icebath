@@ -4,9 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const switchSessionID = "switch-session"
@@ -30,7 +30,7 @@ func switchStored(t *testing.T, db *state.SessionDB) string {
 	if err != nil || row == nil {
 		t.Fatalf("session row %v %v", row, err)
 	}
-	prompt, _ := row.GetOr("system_prompt", "").(string)
+	prompt, _ := row.ValueOr("system_prompt", "").(string)
 	return prompt
 }
 
@@ -47,7 +47,7 @@ func switchRunTurn(t *testing.T, db *state.SessionDB, model, prov, prose string)
 	}
 	defer func() { loopBuildSystemPrompt = prev }()
 	a := &AIAgent{sessionID: switchSessionID, model: model, provider: prov, platform: "discord", sessionDB: db,
-		env: &tools.Env{Home: h, Cwd: h}, quietMode: true, sessionPersistLock: &pythread.RLock{}}
+		env: &tools.Env{Home: h, Cwd: h}, quietMode: true, sessionPersistLock: &syncutil.ReentrantMutex{}}
 	if err := restoreOrBuildSystemPrompt(tools.WithToolEnv(context.Background(), a.env), a, nil, hiHistory()); err != nil {
 		t.Fatal(err)
 	}

@@ -8,8 +8,8 @@ import (
 	"time"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var tokenCounters = []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"}
@@ -274,7 +274,7 @@ func (d *SessionDB) applyClaimedBatch(batch []queuedTokenDelta) {
 
 // Read side token barrier that never waits on a goroutine running an event loop
 func (d *SessionDB) FlushForRead(ctx context.Context) bool {
-	if !pyctx.RunningLoop(ctx) {
+	if !ctxutil.NonBlocking(ctx) {
 		return d.FlushTokenCounts(5.0)
 	}
 	return d.FlushTokenCounts(0.0)
@@ -598,7 +598,7 @@ func (d *SessionDB) updateTokenCountsInTransaction(ctx context.Context, conn SQL
 	if err != nil {
 		return err
 	}
-	existing := pyjson.NewObject()
+	existing := jsonutil.NewObject()
 	if len(rows) > 0 {
 		existing = rows[0]
 	}
@@ -636,7 +636,7 @@ func (d *SessionDB) recordModelUsage(ctx context.Context, conn SQLiteConn, sessi
 	if err != nil {
 		return err
 	}
-	sess := pyjson.NewObject()
+	sess := jsonutil.NewObject()
 	if len(rows) > 0 && task == "" {
 		sess = rows[0]
 	}
@@ -691,8 +691,8 @@ func (d *SessionDB) RecordAuxiliaryUsage(ctx context.Context, sessionID, task st
 }
 
 // Per task auxiliary usage summed over the compression lineage, cut at the nearest explicit branch
-func (d *SessionDB) AuxiliaryUsageByTask(ctx context.Context, sessionID string) (*pyjson.Object, error) {
-	out := pyjson.NewObject()
+func (d *SessionDB) AuxiliaryUsageByTask(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
+	out := jsonutil.NewObject()
 	if sessionID == "" {
 		return out, nil
 	}
@@ -729,10 +729,10 @@ func (d *SessionDB) AuxiliaryUsageByTask(ctx context.Context, sessionID string) 
 		return nil, err
 	}
 	for _, row := range rows {
-		values := pyjson.NewObject()
-		for _, k := range row.Keys {
+		values := jsonutil.NewObject()
+		for _, k := range row.Keys() {
 			if k != "task" {
-				values.Set(k, row.Vals[k])
+				values.Set(k, row.Value(k))
 			}
 		}
 		out.Set(pyStr(rowValue(row, "task")), values)

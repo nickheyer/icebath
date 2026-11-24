@@ -7,8 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Job runner the owner executes a fire with, the scheduler run_job attribute tests patch
@@ -20,20 +20,20 @@ func ownerStore(ctx context.Context) *Store {
 }
 
 // Ordered JSON object of a job record
-func jobObject(job *Job) (*pyjson.Object, error) {
+func jobObject(job *Job) (*jsonutil.Object, error) {
 	raw, err := json.Marshal(job)
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.LoadsBytes(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, err
 	}
-	return decoded.(*pyjson.Object), nil
+	return decoded.(*jsonutil.Object), nil
 }
 
 // Job record of an ordered JSON object
-func objectJob(obj *pyjson.Object) (*Job, error) {
+func objectJob(obj *jsonutil.Object) (*Job, error) {
 	raw, err := json.Marshal(obj)
 	if err != nil {
 		return nil, err
@@ -52,7 +52,7 @@ func objectJob(obj *pyjson.Object) (*Job, error) {
 }
 
 // Cancel source over the owner's per admission latch, reporting no reason of its own
-type ownerLatchCancel struct{ event *pythread.Event }
+type ownerLatchCancel struct{ event *syncutil.Event }
 
 func (c *ownerLatchCancel) IsSet() bool    { return c.event.IsSet() }
 func (c *ownerLatchCancel) Set()           { c.event.Set() }
@@ -61,14 +61,14 @@ func (c *ownerLatchCancel) Reason() string { return "" }
 func init() {
 	gateway.WebhookExecuteJobForEvent = ExecuteJobForEvent
 	gateway.SetCronOwnerHooks(&gateway.CronOwnerHooks{
-		GetJob: func(ctx context.Context, jobID string) (*pyjson.Object, error) {
+		GetJob: func(ctx context.Context, jobID string) (*jsonutil.Object, error) {
 			job, err := ownerStore(ctx).getJob(ctx, jobID)
 			if err != nil || job == nil {
 				return nil, err
 			}
 			return jobObject(job)
 		},
-		JobModel: func(ctx context.Context, obj *pyjson.Object, jobID, jobName string) (*string, error) {
+		JobModel: func(ctx context.Context, obj *jsonutil.Object, jobID, jobName string) (*string, error) {
 			job, err := objectJob(obj)
 			if err != nil {
 				return nil, err
@@ -82,14 +82,14 @@ func init() {
 		GetExecution: func(ctx context.Context, executionID string) (map[string]any, error) {
 			return openExecutionsLedger(ownerStore(ctx)).Get(ctx, executionID)
 		},
-		EnterExecution: func(ctx context.Context, obj *pyjson.Object, executionID string, record map[string]any) context.Context {
+		EnterExecution: func(ctx context.Context, obj *jsonutil.Object, executionID string, record map[string]any) context.Context {
 			job, err := objectJob(obj)
 			if err != nil {
 				panic(err)
 			}
 			return enterCronExecution(ctx, job, executionID, record)
 		},
-		RunJob: func(ctx context.Context, obj *pyjson.Object, executionID string, extraPrompt *string, local *pythread.Event) (gateway.CronRunResult, error) {
+		RunJob: func(ctx context.Context, obj *jsonutil.Object, executionID string, extraPrompt *string, local *syncutil.Event) (gateway.CronRunResult, error) {
 			s := ownerStore(ctx)
 			job, err := objectJob(obj)
 			if err != nil {

@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -54,11 +54,11 @@ func APIProfileRejectionResponse(request *WebRequest) (*WebResponse, error) {
 		return nil, err
 	}
 	if profile == apiDefaultProfileHandle && !apiHandleIsFree() {
-		return WebJSONResponse(pyjson.ObjectOf("error", pyjson.ObjectOf(
+		return WebJSONResponse(jsonutil.ObjectOf("error", jsonutil.ObjectOf(
 			"message", fmt.Sprintf("Profile '%s' exists on this host but this gateway does not serve it", apiDefaultProfileHandle),
 			"code", "profile_not_served")), http.StatusNotFound, nil)
 	}
-	return WebJSONResponse(pyjson.ObjectOf("error", apiUnknownProfileError), http.StatusNotFound, nil)
+	return WebJSONResponse(jsonutil.ObjectOf("error", apiUnknownProfileError), http.StatusNotFound, nil)
 }
 
 // Profile a request prefix routes to, nil for none or this gateway's own profile, rejected when not served

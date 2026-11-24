@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // UIElement is one interactable element of a capture, bounds are x y w h in logical pixels
@@ -41,10 +41,10 @@ type ActionResult struct {
 	Action       string
 	Message      string
 	Capture      *CaptureResult
-	Meta         *pyjson.Object
+	Meta         *jsonutil.Object
 	Verified     *bool
 	Effect       *string
-	Escalation   *pyjson.Object
+	Escalation   *jsonutil.Object
 	Path         *string
 	Degraded     *bool
 	DeliveryMode *string
@@ -103,7 +103,7 @@ type ComputerUseBackend interface {
 	TypeText(text string, d DeliveryArgs) (*ActionResult, error)
 	Key(keys string, d DeliveryArgs) (*ActionResult, error)
 	ListApps() ([]any, error)
-	ListWindows() ([]*pyjson.Object, error)
+	ListWindows() ([]*jsonutil.Object, error)
 	FocusApp(app string, raiseWindow bool) (*ActionResult, error)
 	SetValue(value string, element *int) (*ActionResult, error)
 	Wait(seconds float64) (*ActionResult, error)
@@ -113,12 +113,12 @@ type ComputerUseBackend interface {
 type BackendDefaults struct{}
 
 // Reports no windows for backends that predate window discovery
-func (BackendDefaults) ListWindows() ([]*pyjson.Object, error) { return []*pyjson.Object{}, nil }
+func (BackendDefaults) ListWindows() ([]*jsonutil.Object, error) { return []*jsonutil.Object{}, nil }
 
 // Sleeps the requested seconds clamped to zero through thirty and reports the wait
 func (BackendDefaults) Wait(seconds float64) (*ActionResult, error) {
 	time.Sleep(time.Duration(max(0.0, min(seconds, 30.0)) * float64(time.Second)))
-	return &ActionResult{OK: true, Action: "wait", Message: fmt.Sprintf("waited %.2fs", seconds), Meta: pyjson.NewObject()}, nil
+	return &ActionResult{OK: true, Action: "wait", Message: fmt.Sprintf("waited %.2fs", seconds), Meta: jsonutil.NewObject()}, nil
 }
 
 // ComputerUseProvider is the factory a computer use provider plugin registers for one backend name

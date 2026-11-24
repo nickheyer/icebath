@@ -13,7 +13,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Routes the package manager's worker operations beside the binary store's ensure
@@ -73,7 +73,7 @@ func assignKwarg(op, name string, field reflect.Value, value any) error {
 		field.SetString(s)
 		return nil
 	case reflect.TypeOf(false):
-		field.SetBool(pyrepr.Truthy(value))
+		field.SetBool(anyutil.IsTrue(value))
 		return nil
 	case reflect.TypeOf([]string(nil)):
 		if value == nil {

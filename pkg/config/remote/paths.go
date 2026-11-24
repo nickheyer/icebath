@@ -2,9 +2,8 @@ package remote
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Config plane path as its mapping key segments
@@ -40,14 +39,14 @@ func Decode(encoded string) (Path, error) {
 		switch ch := runes[i]; ch {
 		case '\\':
 			if i+1 >= len(runes) || (runes[i+1] != '\\' && runes[i+1] != '.') {
-				return nil, &PathError{fmt.Sprintf("invalid escape in config path %s", pyrepr.StrRepr(encoded))}
+				return nil, &PathError{fmt.Sprintf("invalid escape in config path %s", strconv.Quote(encoded))}
 			}
 			current.WriteRune(runes[i+1])
 			empty = false
 			i++
 		case '.':
 			if empty {
-				return nil, &PathError{fmt.Sprintf("empty segment in config path %s", pyrepr.StrRepr(encoded))}
+				return nil, &PathError{fmt.Sprintf("empty segment in config path %s", strconv.Quote(encoded))}
 			}
 			segments = append(segments, current.String())
 			current.Reset()
@@ -58,7 +57,7 @@ func Decode(encoded string) (Path, error) {
 		}
 	}
 	if empty {
-		return nil, &PathError{fmt.Sprintf("empty segment in config path %s", pyrepr.StrRepr(encoded))}
+		return nil, &PathError{fmt.Sprintf("empty segment in config path %s", strconv.Quote(encoded))}
 	}
 	segments = append(segments, current.String())
 	if err := Validate(segments, &encoded); err != nil {
@@ -74,22 +73,22 @@ func Validate(segments []string, encoded *string) error {
 		shown = *encoded
 	}
 	if len(segments) < 1 || len(segments) > MaxSegments {
-		return &PathError{fmt.Sprintf("config path %s must have 1-%d segments", pyrepr.StrRepr(shown), MaxSegments)}
+		return &PathError{fmt.Sprintf("config path %s must have 1-%d segments", strconv.Quote(shown), MaxSegments)}
 	}
 	if len(shown) > MaxEncodedBytes {
 		return &PathError{fmt.Sprintf("config path is longer than %d bytes", MaxEncodedBytes)}
 	}
 	for _, seg := range segments {
 		if len(seg) < 1 || len(seg) > MaxSegmentBytes {
-			return &PathError{fmt.Sprintf("config path %s: a segment must be 1-%d bytes", pyrepr.StrRepr(shown), MaxSegmentBytes)}
+			return &PathError{fmt.Sprintf("config path %s: a segment must be 1-%d bytes", strconv.Quote(shown), MaxSegmentBytes)}
 		}
 		for _, c := range seg {
 			if c < 0x20 || c == 0x7F {
-				return &PathError{fmt.Sprintf("config path %s: control character in a segment", pyrepr.StrRepr(shown))}
+				return &PathError{fmt.Sprintf("config path %s: control character in a segment", strconv.Quote(shown))}
 			}
 		}
 		if seg == "__proto__" {
-			return &PathError{fmt.Sprintf("reserved segment '__proto__' in config path %s", pyrepr.StrRepr(shown))}
+			return &PathError{fmt.Sprintf("reserved segment '__proto__' in config path %s", strconv.Quote(shown))}
 		}
 	}
 	return nil

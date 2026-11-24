@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Claims the host lock and writes the owner record as raw JSON with no served set proof
@@ -16,7 +16,7 @@ func publishRaw(t *testing.T, pid int, home string, served []string) {
 	if o, _ := ClaimHostLock(context.Background(), RoleGateway); o != HostLockAcquired {
 		t.Fatal(o)
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("role", RoleGateway)
 	payload.Set("home", home)
 	payload.Set("pid", int64(pid))
@@ -45,7 +45,7 @@ func publishRaw(t *testing.T, pid int, home string, served []string) {
 	}
 }
 
-func setHostControl(t *testing.T, identify, rescan func(string, time.Duration) *pyjson.Object) {
+func setHostControl(t *testing.T, identify, rescan func(string, time.Duration) *jsonutil.Object) {
 	t.Helper()
 	prevID, prevRescan, prevWait := hostIdentifyGateway, hostRescanGatewayProfiles, attachChannelWait
 	if identify != nil {
@@ -64,7 +64,7 @@ func TestARecordOnlyOwnerNeverProducesAttach(t *testing.T) {
 	owner := startHostChild(t, "sleep")
 	ours := filepath.Join(dir, "root", "profiles", "other")
 	publishRaw(t, owner.pid(), filepath.Join(dir, "root"), []string{"default", "other"})
-	silent := func(string, time.Duration) *pyjson.Object { return nil }
+	silent := func(string, time.Duration) *jsonutil.Object { return nil }
 	setHostControl(t, silent, silent)
 	attachChannelWait = 0
 	d, err := DecideHostAttach(t.Context(), ours, false)

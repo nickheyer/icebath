@@ -2,15 +2,14 @@ package gateway
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"regexp"
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Logged in place of a URL no part of which can be told apart from a credential
@@ -25,26 +24,6 @@ var (
 
 // Proxy variables a transport reads from the environment, by lower case name
 var envProxyKeys = map[string]bool{"https_proxy": true, "http_proxy": true, "all_proxy": true, "wss_proxy": true, "ws_proxy": true, "socks_proxy": true, "grpc_proxy": true}
-
-// Host and port of a network location the way a URL parser reads them, false for a port that is not a number in range
-func netlocHostPort(netloc string) (host, port string, ok bool) {
-	hostinfo := netloc[strings.LastIndex(netloc, "@")+1:]
-	if _, bracketed, open := strings.Cut(hostinfo, "["); open {
-		var rest string
-		host, rest, _ = strings.Cut(bracketed, "]")
-		_, port, _ = strings.Cut(rest, ":")
-	} else {
-		host, port, _ = strings.Cut(hostinfo, ":")
-	}
-	if port != "" {
-		n, err := strconv.Atoi(port)
-		if err != nil || strings.Trim(port, "0123456789") != "" || n > 65535 {
-			return "", "", false
-		}
-		port = strconv.Itoa(n)
-	}
-	return strings.ToLower(host), port, true
-}
 
 // Last path segment worth keeping in a log line, a media file name and never a bare token
 var logFileNameRE = regexp.MustCompile(`^[\p{L}\p{N}_-]{1,40}\.[A-Za-z0-9]{1,5}$`)
@@ -68,11 +47,11 @@ func SafeURLForLog(raw string, maxLen int) string {
 	if maxLen <= 0 || raw == "" {
 		return ""
 	}
-	parsed, err := pyurl.Split(raw)
+	parsed, err := urlutil.Split(raw)
 	if err != nil {
 		return placeholderForLog(maxLen)
 	}
-	if strings.EqualFold(parsed.Scheme, "file") && parsed.Netloc == "" && !strings.Contains(raw, "@") {
+	if strings.EqualFold(parsed.Scheme, "file") && parsed.Authority == "" && !strings.Contains(raw, "@") {
 		local, _, _ := strings.Cut(raw, "?")
 		local, _, _ = strings.Cut(local, "#")
 		return fitForLog(local, maxLen)
@@ -112,24 +91,25 @@ func SafeProxyURLForLog(raw string) string {
 // scheme://host[:port] of a proxy URL in full, the placeholder when the URL has no clean authority: a proxy URL's path means nothing to routing, so none
 // of it is shown, and neither is the user info
 func proxyAuthority(raw string) string {
-	parsed, err := pyurl.Split(raw)
 	if raw == "" {
 		return ""
 	}
-	if err != nil || parsed.Scheme == "" || parsed.Netloc == "" || strings.EqualFold(parsed.Scheme, "file") {
+	parsed, err := urlutil.Split(raw)
+	if err != nil || parsed.Scheme == "" || parsed.Authority == "" || strings.EqualFold(parsed.Scheme, "file") {
 		return unsafeURLPlaceholder
 	}
-	host, port, ok := netlocHostPort(parsed.Netloc)
-	if !ok || host == "" || strings.Count(raw, "@") != strings.Count(parsed.Netloc, "@") || !plausibleHostRE.MatchString(host) {
+	host := strings.ToLower(parsed.Hostname())
+	port, hasPort, err := parsed.Port()
+	if err != nil || host == "" || strings.Count(raw, "@") != strings.Count(parsed.Authority, "@") || !plausibleHostRE.MatchString(host) {
 		return unsafeURLPlaceholder
 	}
 	if strings.Contains(host, ":") {
 		host = "[" + host + "]"
 	}
-	if port != "" {
-		host += ":" + port
+	if hasPort {
+		host += ":" + strconv.Itoa(port)
 	}
-	return strings.ToLower(parsed.Scheme) + "://" + host
+	return parsed.Scheme + "://" + host
 }
 
 // Scheme a proxy library reads from a value, a bare host:port taken as http
@@ -164,22 +144,7 @@ func DescribeProxyError(err error, proxyURL string) string {
 	if err == nil || proxyURL == "" || proxyShownInFull(proxyURL) {
 		return ""
 	}
-	return proxyErrorKind(err) + " via " + proxyAuthority(proxyURL)
-}
-
-// Kind of an error named in a redacted line, the exception class it stands for when it declares one and its Go type otherwise
-func proxyErrorKind(err error) string {
-	var named pyrepr.PyTypeNamed
-	if errors.As(err, &named) && named.PyTypeName() != "" {
-		return named.PyTypeName()
-	}
-	if kind := pyErrorKind(err); kind != "" {
-		return kind
-	}
-	if pyrepr.ExceptionMessage(err) != err.Error() {
-		return pyrepr.ExceptionName(err)
-	}
-	return fmt.Sprintf("%T", err)
+	return errorutil.Kind(err) + " via " + proxyAuthority(proxyURL)
 }
 
 // Text of a failed request for a log line or a send result: the redacted form when the request went through a proxy whose URL holds a secret the raw
@@ -253,15 +218,15 @@ func noProxyBypassesAll(values, noProxies, targets []string) bool {
 		return false
 	}
 	for _, target := range targets {
-		parsed, err := pyurl.Split(target)
+		parsed, err := urlutil.Split(target)
 		if err != nil {
 			return false
 		}
-		host, _, ok := netlocHostPort(parsed.Netloc)
-		if !ok {
+		if _, _, err := parsed.Port(); err != nil {
 			return false
 		}
-		netloc := parsed.Netloc[strings.LastIndex(parsed.Netloc, "@")+1:]
+		host := strings.ToLower(parsed.Hostname())
+		netloc := parsed.Authority[strings.LastIndex(parsed.Authority, "@")+1:]
 		for _, noProxy := range noProxies {
 			if !noProxyBypasses(noProxy, host, netloc) {
 				return false
@@ -280,8 +245,7 @@ func noProxyBypasses(noProxy, host, netloc string) bool {
 	if host == "" || strings.Contains(noProxy, "*") || !ascii(host) || !ascii(netloc) || !ascii(noProxy) || strings.Contains(strings.ToLower(host), "xn--") {
 		return false
 	}
-	proxies := map[string]string{"no": noProxy}
-	if !pyurl.ProxyBypassEnvironment(host, proxies) || !pyurl.ProxyBypassEnvironment(netloc, proxies) {
+	if !httputil.NoProxyBypass(noProxy, host) || !httputil.NoProxyBypass(noProxy, netloc) {
 		return false
 	}
 	for _, entry := range strings.Split(noProxy, ",") {

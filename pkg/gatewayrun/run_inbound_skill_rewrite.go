@@ -8,8 +8,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Platform value of a source, empty when the source names none
@@ -117,10 +117,10 @@ func (r *GatewayRunner) skillSlashRewrite(ctx context.Context, event *gateway.Me
 	if !ok {
 		return nil, fmt.Errorf("no skill command %s", cmdKey)
 	}
-	nameOf := func(info map[string]any) string { return pyrepr.Str(pyrepr.Or(info["name"], "")) }
+	nameOf := func(info map[string]any) string { return anyutil.String(anyutil.Or(info["name"], "")) }
 	skillName := ""
 	if v, has := entry["name"]; has {
-		skillName = pyrepr.Str(v)
+		skillName = anyutil.String(v)
 	}
 	if platform != "" && (skillName != "" || len(extraKeys) > 0) {
 		platDisabled := scope.DisabledSkillNames(platform)

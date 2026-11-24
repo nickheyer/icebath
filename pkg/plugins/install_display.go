@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Prints after-install.md in a green panel, or the installed location panel unless brief asks for silence
@@ -17,17 +17,17 @@ func displayAfterInstall(console *Console, pluginDir, identifier string, brief b
 	if brief && !exists {
 		return nil
 	}
-	panel := pyrich.Panel{BorderStyle: "green", Fit: true}
+	panel := consoleutil.Panel{BorderStyle: "green", Fit: true}
 	if exists {
 		raw, err := os.ReadFile(afterInstall)
 		if err != nil {
 			return err
 		}
-		text, err := pystr.DecodeUTF8Sig(raw)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if err != nil {
 			return err
 		}
-		panel.Content = &pyrich.Markdown{Source: pystr.TranslateNewlines(text)}
+		panel.Content = consoleutil.Markdown(textutil.NormalizeNewlines(text))
 	} else {
 		panel.Body = fmt.Sprintf("[green bold]Plugin installed:[/] %s\n[dim]Location:[/] %s", identifier, pluginDir)
 		panel.Title = "✓ Installed"

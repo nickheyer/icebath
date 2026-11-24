@@ -12,7 +12,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 var cleanupCaptureNextMid atomic.Int64
@@ -70,7 +69,7 @@ func newCleanupCaptureAdapter() *cleanupCaptureAdapter {
 // Bare runner serving the adapter on a running gateway loop, the make runner of the tests
 func makeTurnRunner(t *testing.T, adapter gateway.PlatformAdapter) *GatewayRunner {
 	r := allocGatewayRunner()
-	r.adapters = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	r.adapters = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	r.adapters.Set(adapter.Base().Platform, adapter)
 	loop := gateway.NewCallbackLoop()
 	loopCtx, stop := context.WithCancel(context.Background())
@@ -106,7 +105,7 @@ func TestMessagingAgentForwardsCheckpointConfig(t *testing.T) {
 	installTurnFakes(t, server, "checkpoints:\n  enabled: true\n  max_snapshots: 9\n  max_total_size_mb: 444\n  max_file_size_mb: 6\n")
 	adapter := newCleanupCaptureAdapter()
 	r := makeTurnRunner(t, adapter)
-	r.agentCache, r.agentCacheLock = pydict.New[string, agentCacheEntry](), &sync.Mutex{}
+	r.agentCache, r.agentCacheLock = orderedutil.NewMap[string, agentCacheEntry](), &sync.Mutex{}
 	source := &gateway.SessionSource{Platform: gateway.PlatformTelegram, ChatID: "-1001"}
 	sessionKey := "agent:main:telegram:group:-1001"
 	result, err := r.runAgent(context.Background(), runAgentParams{message: "hello", source: source, sessionID: "sess-checkpoints", sessionKey: sessionKey})

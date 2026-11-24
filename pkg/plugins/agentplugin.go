@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"net/netip"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -15,12 +17,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Schema ids of the portable Agent Plugins v1 manifests
@@ -162,33 +163,33 @@ func validHeaders(v any) bool {
 
 // Reports whether path resolves under root resolved strictly, false when either resolution fails
 func insideRoot(path, root string) bool {
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return false
 	}
-	rootResolved, err := pypath.Realpath(pypath.PathStr(root), pypath.StrictAll)
+	rootResolved, err := pathutil.ResolveExisting(filepath.Clean(root))
 	if err != nil {
 		return false
 	}
-	_, ok := pypath.PathRelativeTo(resolved, pypath.PathStr(rootResolved))
+	_, ok := pathutil.RelativeTo(resolved, filepath.Clean(rootResolved))
 	return ok
 }
 
 // Ordered JSON object of a utf-8-sig file, read and decode failures named under label
-func readJSONObject(path, label string) (*pyjson.Object, error) {
+func readJSONObject(path, label string) (*jsonutil.Object, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, agentErr("%s is not valid readable JSON: %s", label, errchain.OSText(err))
 	}
-	text, err := pycodecs.Decode(raw, "utf-8-sig")
+	text, err := charsetutil.Decode(raw, "utf-8-sig")
 	if err != nil {
 		return nil, agentErr("%s is not valid readable JSON: %v", label, err)
 	}
-	value, err := pyjson.Loads(text)
+	value, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, agentErr("%s is not valid readable JSON: %v", label, err)
 	}
-	obj, ok := value.(*pyjson.Object)
+	obj, ok := value.(*jsonutil.Object)
 	if !ok {
 		return nil, agentErr("%s must contain a JSON object", label)
 	}
@@ -205,7 +206,7 @@ func validatePortableManifest(root string) (map[string]any, []AgentPluginDiagnos
 	if err != nil {
 		return nil, nil, err
 	}
-	manifest := pyjson.Plain(obj).(map[string]any)
+	manifest := jsonutil.Plain(obj).(map[string]any)
 	var diags []AgentPluginDiagnostic
 	for _, k := range sortedKeys(manifest) {
 		if !portablePluginFields[k] {
@@ -265,7 +266,7 @@ func parseSkillFrontmatter(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	content, err := pycodecs.Decode(raw, "utf-8-sig")
+	content, err := charsetutil.Decode(raw, "utf-8-sig")
 	if err != nil {
 		return nil, err
 	}
@@ -367,11 +368,11 @@ func discoverPortableSkills(root string, diags *[]AgentPluginDiagnostic) ([]Agen
 			*diags = append(*diags, AgentPluginDiagnostic{"skill:" + e.Name(), problem})
 			continue
 		}
-		rootReal, err := pypath.Realpath(child, pypath.StrictAll)
+		rootReal, err := pathutil.ResolveExisting(child)
 		if err != nil {
 			return nil, err
 		}
-		mdReal, err := pypath.Realpath(skillMD, pypath.StrictAll)
+		mdReal, err := pathutil.ResolveExisting(skillMD)
 		if err != nil {
 			return nil, err
 		}
@@ -398,15 +399,15 @@ func resolveScopedPath(value, pluginRoot, dataRoot string, expand bool) (string,
 	default:
 		return "", errors.New("path must start with ./, ${PLUGIN_ROOT}, or ${PLUGIN_DATA}")
 	}
-	resolved, err := pypath.Resolve(candidate)
+	resolved, err := pathutil.Resolve(candidate)
 	if err != nil {
 		return "", errors.New("path escapes its resolved root")
 	}
-	baseResolved, err := pypath.Resolve(base)
+	baseResolved, err := pathutil.Resolve(base)
 	if err != nil {
 		return "", errors.New("path escapes its resolved root")
 	}
-	if _, ok := pypath.PathRelativeTo(resolved, baseResolved); !ok {
+	if _, ok := pathutil.RelativeTo(resolved, baseResolved); !ok {
 		return "", errors.New("path escapes its resolved root")
 	}
 	return resolved, nil
@@ -429,7 +430,7 @@ func validateRemoteURL(v any) (string, error) {
 	if !ok || s == "" {
 		return "", errors.New("url must be a non-empty string")
 	}
-	u, err := pyurl.Split(s)
+	u, err := url.Parse(s)
 	if err != nil {
 		return "", fmt.Errorf("url is not parseable: %v", err)
 	}
@@ -437,19 +438,19 @@ func validateRemoteURL(v any) (string, error) {
 	if scheme != "http" && scheme != "https" {
 		return "", errors.New("url scheme must be http or https")
 	}
-	if strings.Contains(u.Netloc, "@") {
+	if u.User != nil {
 		return "", errors.New("url must not contain user information")
 	}
 	if u.Fragment != "" {
 		return "", errors.New("url must not contain a fragment")
 	}
-	host := u.Hostname()
+	host := strings.ToLower(u.Hostname())
 	if host == "" {
 		return "", errors.New("url must have a host")
 	}
 	if scheme == "http" && host != "localhost" {
-		ip, parsed := pyipaddress.IPAddress(host)
-		if !parsed || !pyipaddress.IsLoopback(ip) {
+		ip, err := netip.ParseAddr(host)
+		if err != nil || !ip.IsLoopback() {
 			return "", errors.New("non-loopback url must use https")
 		}
 	}
@@ -539,7 +540,7 @@ func translateStdioServer(cfg map[string]any, pluginRoot, dataRoot string, creat
 		if err := os.MkdirAll(dataRoot, 0o777); err != nil {
 			return nil, err
 		}
-		if _, under := pypath.PathRelativeTo(cwdPath, dataRoot); under {
+		if _, under := pathutil.RelativeTo(cwdPath, dataRoot); under {
 			if err := os.MkdirAll(cwdPath, 0o777); err != nil {
 				return nil, err
 			}
@@ -597,21 +598,21 @@ func discoverPortableMCP(root, dataRoot string, diags *[]AgentPluginDiagnostic, 
 	if err != nil {
 		return fail(err.Error())
 	}
-	_, hasSchema := cfg.Vals["$schema"]
-	_, hasServers := cfg.Vals["mcpServers"]
-	if len(cfg.Keys) != 2 || !hasSchema || !hasServers {
+	_, hasSchema := cfg.Get("$schema")
+	_, hasServers := cfg.Get("mcpServers")
+	if cfg.Len() != 2 || !hasSchema || !hasServers {
 		return fail("mcp.json has an invalid top-level shape")
 	}
-	if cfg.Vals["$schema"] != MCPSchemaV1 {
+	if cfg.Value("$schema") != MCPSchemaV1 {
 		return fail("mcp.json declares an unsupported schema")
 	}
-	servers, ok := cfg.Vals["mcpServers"].(*pyjson.Object)
+	servers, ok := cfg.Value("mcpServers").(*jsonutil.Object)
 	if !ok {
 		return fail("mcpServers must be an object")
 	}
 	out := map[string]map[string]any{}
-	for _, name := range servers.Keys {
-		server, isMap := pyjson.Plain(servers.Vals[name]).(map[string]any)
+	for _, name := range servers.Keys() {
+		server, isMap := jsonutil.Plain(servers.Value(name)).(map[string]any)
 		var translated map[string]any
 		var terr error
 		if name == "" || !isMap {
@@ -801,9 +802,8 @@ func portableServerTimeouts(manifest map[string]any, servers map[string]map[stri
 		if !ok {
 			continue
 		}
-		_, isBool := value.(bool)
-		f, numeric := pyNumber(value)
-		if isBool || !numeric || !(f > 0 && f <= threadingTimeoutMax) {
+		f, numeric := anyutil.Float(value)
+		if !numeric || !(f > 0 && f <= threadingTimeoutMax) {
 			return nil, agentErr("server declaration '%s' timeout must be positive seconds within the platform wait limit", name)
 		}
 		out[name] = f
@@ -848,7 +848,7 @@ func portableServerCosts(manifest map[string]any, servers map[string]map[string]
 
 // Strictly resolved root directory with its validated manifest and diagnostics
 func validatePortableRoot(pluginRoot string) (string, map[string]any, []AgentPluginDiagnostic, error) {
-	root, err := pypath.Realpath(pypath.PathStr(pluginRoot), pypath.StrictAll)
+	root, err := pathutil.ResolveExisting(filepath.Clean(pluginRoot))
 	if err != nil {
 		return "", nil, nil, err
 	}
@@ -868,7 +868,7 @@ func LoadAgentPlugin(pluginRoot, dataRoot string) (*AgentPluginPackage, error) {
 	if err != nil {
 		return nil, err
 	}
-	resolvedData, err := pypath.Resolve(dataRoot)
+	resolvedData, err := pathutil.Resolve(dataRoot)
 	if err != nil {
 		return nil, err
 	}

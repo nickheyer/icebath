@@ -17,10 +17,9 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -38,7 +37,7 @@ func slackTimestampSortKey(ts any) (int64, int64, string) {
 	if pair, ok := ts.([2]string); ok {
 		ts = pair[1]
 	}
-	text := pyrepr.Str(ts)
+	text := anyutil.String(ts)
 	seconds, fraction, _ := strings.Cut(text, ".")
 	frac := (fraction + "000000")[:6]
 	return intOrZero(seconds), intOrZero(frac), text
@@ -82,7 +81,7 @@ func discardOldestFromSet[K comparable](entries map[K]bool, count int, tsGetter 
 	}
 }
 
-func discardOldestFromDict[K comparable, V any](entries *pydict.Dict[K, V], count int, tsGetter func(K) any) {
+func discardOldestFromDict[K comparable, V any](entries *orderedutil.Map[K, V], count int, tsGetter func(K) any) {
 	if count <= 0 {
 		return
 	}
@@ -94,7 +93,7 @@ func discardOldestFromDict[K comparable, V any](entries *pydict.Dict[K, V], coun
 
 func identityTS[K comparable](k K) any { return k }
 
-func trimOldestDictEntries[K comparable, V any](mapping *pydict.Dict[K, V], maxSize int) {
+func trimOldestDictEntries[K comparable, V any](mapping *orderedutil.Map[K, V], maxSize int) {
 	if mapping.Len() <= maxSize {
 		return
 	}
@@ -189,12 +188,12 @@ func metadataTeamID(metadata map[string]any) string {
 		return ""
 	}
 	if found := firstTruthy(metadata, "scope_id", "slack_team_id", "team_id", "team", "guild_id", "workspace_id"); found != nil {
-		return pyrepr.Str(found)
+		return anyutil.String(found)
 	}
 	switch source := metadata["source"].(type) {
 	case map[string]any:
 		if found := firstTruthy(source, "scope_id", "slack_team_id", "team_id", "guild_id"); found != nil {
-			return pyrepr.Str(found)
+			return anyutil.String(found)
 		}
 	case *gateway.SessionSource:
 		if source != nil {
@@ -231,7 +230,7 @@ func truthyConfig(value any) bool {
 		}
 		return false
 	}
-	return pyrepr.Truthy(value)
+	return anyutil.IsTrue(value)
 }
 
 func taskUpdateChunk(task map[string]string) map[string]any {
@@ -399,12 +398,12 @@ func replaceFirst(re *regexp2.Regexp, s string, fn func(reMatch) string) string 
 func parseUsersInfo(payload map[string]any, userID string) (string, bool) {
 	user := asMap(getOr(payload, "user", map[string]any{}))
 	profile := asMap(getOr(user, "profile", map[string]any{}))
-	isBot := pyrepr.Truthy(user["is_bot"]) || pyrepr.Truthy(user["is_workflow_bot"]) || pyrepr.Truthy(profile["bot_id"])
+	isBot := anyutil.IsTrue(user["is_bot"]) || anyutil.IsTrue(user["is_workflow_bot"]) || anyutil.IsTrue(profile["bot_id"])
 	name := userID
 	if v := firstTruthy(profile, "display_name", "real_name"); v != nil {
-		name = pyrepr.Str(v)
+		name = anyutil.String(v)
 	} else if v := firstTruthy(user, "real_name", "name"); v != nil {
-		name = pyrepr.Str(v)
+		name = anyutil.String(v)
 	}
 	return name, isBot
 }
@@ -432,13 +431,13 @@ func eventTeamID(event, body map[string]any) string {
 		if s, ok := team.(string); ok && s != "" {
 			return s
 		}
-		if m, ok := team.(map[string]any); ok && pyrepr.Truthy(m["id"]) {
-			return pyrepr.Str(m["id"])
+		if m, ok := team.(map[string]any); ok && anyutil.IsTrue(m["id"]) {
+			return anyutil.String(m["id"])
 		}
 	}
 	for _, raw := range asList(orEmptyMap(body)["authorizations"]) {
-		if auth, ok := raw.(map[string]any); ok && pyrepr.Truthy(auth["team_id"]) {
-			return pyrepr.Str(auth["team_id"])
+		if auth, ok := raw.(map[string]any); ok && anyutil.IsTrue(auth["team_id"]) {
+			return anyutil.String(auth["team_id"])
 		}
 	}
 	return ""
@@ -449,8 +448,8 @@ func contextChannelID(context any) string {
 	if !ok {
 		return ""
 	}
-	if pyrepr.Truthy(ctxMap["channel_id"]) {
-		return pyrepr.Str(ctxMap["channel_id"])
+	if anyutil.IsTrue(ctxMap["channel_id"]) {
+		return anyutil.String(ctxMap["channel_id"])
 	}
 	for _, raw := range asList(ctxMap["entities"]) {
 		entity, ok := raw.(map[string]any)
@@ -459,8 +458,8 @@ func contextChannelID(context any) string {
 		}
 		switch value := entity["value"].(type) {
 		case map[string]any:
-			if pyrepr.Truthy(value["channel_id"]) {
-				return pyrepr.Str(value["channel_id"])
+			if anyutil.IsTrue(value["channel_id"]) {
+				return anyutil.String(value["channel_id"])
 			}
 		case string:
 			if strings.HasSuffix(strOrEmpty(entity["type"]), "channel_id") {
@@ -474,7 +473,7 @@ func contextChannelID(context any) string {
 func extractAssistantThreadMetadata(event, body map[string]any) map[string]string {
 	assistantThread := asMap(event["assistant_thread"])
 	context := assistantThread["context"]
-	if !pyrepr.Truthy(context) {
+	if !anyutil.IsTrue(context) {
 		context = firstTruthy(event, "app_context", "context")
 	}
 	ctxMap := asMap(context)
@@ -494,7 +493,7 @@ func extractAssistantThreadMetadata(event, body map[string]any) map[string]strin
 
 func firstTruthyValue(values ...any) any {
 	for _, v := range values {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -550,7 +549,7 @@ func formatSlackMrkdwn(content string) string {
 			if inner != "" {
 				r := []rune(inner)
 				last := r[len(r)-1]
-				if !(pystr.IsAlnum(last) || last == '_') {
+				if !((unicode.IsLetter(last) || unicode.IsNumber(last)) || last == '_') {
 					zw = "​"
 				}
 			}

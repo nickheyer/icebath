@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // System prompt hint telling the agent that A2A peers are untrusted external agents
@@ -37,7 +37,7 @@ func isSet(ctx context.Context, e settings.Entry) bool {
 
 // Connected when explicitly enabled or the profile sets a2a.port
 func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error) {
-	if cfg != nil && pyrepr.Truthy(cfg.Extra["enabled"]) {
+	if cfg != nil && anyutil.IsTrue(cfg.Extra["enabled"]) {
 		return true, nil
 	}
 	return isSet(ctx, settings.A2aPort), nil
@@ -68,8 +68,8 @@ func InteractiveSetup(ctx context.Context) error {
 		currentPort = strconv.Itoa(settings.A2aPort.Get(sctx))
 	}
 	if port := strings.TrimSpace(cli.Prompt("Inbound A2A port (default 9900)", currentPort, false)); port != "" && port != currentPort {
-		if n, ok := pyint.Parse(port); ok && n.IsInt64() {
-			if _, err := settings.Set(sctx, settings.A2aPort.Key, int(n.Int64()), settings.Global); err != nil {
+		if n, err := strconv.Atoi(port); err == nil {
+			if _, err := settings.Set(sctx, settings.A2aPort.Key, n, settings.Global); err != nil {
 				return err
 			}
 		} else {

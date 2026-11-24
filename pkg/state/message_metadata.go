@@ -1,12 +1,12 @@
 package state
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"reflect"
 	"strings"
 	"time"
 	"unicode/utf8"
+
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Transcript repair bookkeeping and durable record keys that never reach a provider
@@ -42,7 +42,7 @@ func mappingGet(value any, key string) (any, bool) {
 		return v, ok
 	case pyObject:
 		return m.get(key)
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil, false
 		}
@@ -53,7 +53,7 @@ func mappingGet(value any, key string) (any, bool) {
 
 func isMapping(value any) bool {
 	switch value.(type) {
-	case map[string]any, pyObject, *pyjson.Object:
+	case map[string]any, pyObject, *jsonutil.Object:
 		return true
 	}
 	return false

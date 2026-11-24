@@ -6,9 +6,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -22,22 +20,22 @@ func OneshotToolSchemas(schemas []map[string]any) ([]map[string]any, error) {
 	out := make([]map[string]any, 0, len(schemas))
 	for _, tool := range schemas {
 		raw := tool["function"]
-		fn, isMap := pyjson.AsObject(raw)
-		if !isMap && pyrepr.Truthy(raw) {
+		fn, isMap := jsonutil.AsObject(raw)
+		if !isMap && anyutil.IsTrue(raw) {
 			return nil, fmt.Errorf("tool schema function is %s where a mapping was expected", errchain.Kind(raw))
 		}
 		if !isMap {
-			fn = pyjson.NewObject()
+			fn = jsonutil.NewObject()
 		}
-		if name, _ := fn.Vals["name"].(string); name != "delegate_task" {
+		if name, _ := fn.Value("name").(string); name != "delegate_task" {
 			out = append(out, tool)
 			continue
 		}
-		params, hasParams := pyjson.Dict(fn.Vals["parameters"])
+		params, hasParams := jsonutil.AsMap(fn.Value("parameters"))
 		if !hasParams {
 			return nil, errors.New("the delegate_task tool schema has no parameters")
 		}
-		if _, hasProps := pyjson.Dict(params["properties"]); !hasProps {
+		if _, hasProps := jsonutil.AsMap(params["properties"]); !hasProps {
 			return nil, errors.New("the delegate_task tool schema parameters have no properties")
 		}
 		variant := tools.OneshotDelegateFunction(fn)

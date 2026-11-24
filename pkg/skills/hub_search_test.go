@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const repoRootSkillMD = "---\nname: win-disk-cleaner\ndescription: Clean a Windows disk safely.\n---\n\n# Win Disk Cleaner\n\nSee references/free_tools.md\n"
@@ -21,7 +21,7 @@ const repoRootSkillMD = "---\nname: win-disk-cleaner\ndescription: Clean a Windo
 // skills.sh source whose GitHub API serves one repo root skill tree and its root files
 func repoRootSource(t *testing.T, tree string) *SkillsShSource {
 	_, h := githubTestSource(t)
-	h.io.httpGet = plainGet(func(u string, _ hubGet) *pyhttpx.Response {
+	h.io.httpGet = plainGet(func(u string, _ hubGet) *httputil.Response {
 		base := strings.SplitN(u, "?", 2)[0]
 		switch {
 		case strings.HasSuffix(strings.TrimRight(base, "/"), "orzcls/win-disk-cleaner"):
@@ -78,8 +78,8 @@ func TestFetchResolvesGenericSkillDirectoryFromIndexSlug(t *testing.T) {
 	index := func(entry string, fetched []*SkillBundle) *IndexSource {
 		_, h := githubTestSource(t)
 		x := NewIndexSource(h, anonAuth(h))
-		x.index, x.loaded = pyjson.NewObject(), true
-		x.index.(*pyjson.Object).Set("skills", pyList(t, "["+entry+"]"))
+		x.index, x.loaded = jsonutil.NewObject(), true
+		x.index.(*jsonutil.Object).Set("skills", pyList(t, "["+entry+"]"))
 		x.github = NewGitHubSource(h, x.Auth, nil)
 		x.github.seams.fetch = func(string) *SkillBundle { b := fetched[0]; fetched = fetched[1:]; return b }
 		x.github.seams.findSkillInRepoTree = func(repo, name string) (string, bool) {
@@ -103,9 +103,9 @@ func TestFetchResolvesGenericSkillDirectoryFromIndexSlug(t *testing.T) {
 	}
 	_, h := githubTestSource(t)
 	ss := NewSkillsShSource(h, anonAuth(h))
-	ss.seams.fetchDetailPage = func(string) *pyjson.Object { return nil }
+	ss.seams.fetchDetailPage = func(string) *jsonutil.Object { return nil }
 	ss.seams.candidateIdentifiers = func(string) []string { return nil }
-	ss.seams.discoverIdentifier = func(string, *pyjson.Object) (string, bool) { return "tencent/wechatreading/skills", true }
+	ss.seams.discoverIdentifier = func(string, *jsonutil.Object) (string, bool) { return "tencent/wechatreading/skills", true }
 	ss.GitHub.seams.fetch = generic
 	if b, _ := ss.Fetch(context.Background(), "skills-sh/tencent/wechatreading/weread-skills"); b == nil || b.Name != "weread-skills" {
 		t.Fatal(b)
@@ -169,8 +169,8 @@ func TestParallelSearchSourcesTimeoutAndIndexMissFallback(t *testing.T) {
 		t.Fatal(n)
 	}
 	x := NewIndexSource(h, nil)
-	x.index, x.loaded = pyjson.NewObject(), true
-	x.index.(*pyjson.Object).Set("skills", pyList(t, `[{"name": "zzz", "identifier": "zzz"}]`))
+	x.index, x.loaded = jsonutil.NewObject(), true
+	x.index.(*jsonutil.Object).Set("skills", pyList(t, `[{"name": "zzz", "identifier": "zzz"}]`))
 	skillsSh := &fixedSource{SourceBase{ID: "skills-sh"}, []SkillMeta{{Name: "live", Identifier: "skills-sh/o/r/live"}}, 0}
 	gh := &fixedSource{SourceBase{ID: "github"}, []SkillMeta{{Name: "g", Identifier: "g"}}, 0}
 	all, _, _ = h.ParallelSearchSources(context.Background(), []SkillSource{x, skillsSh, gh}, "live", nil, "all", 5*time.Second, nil)
@@ -189,13 +189,13 @@ func TestLoadIndexGzipAndStaleFallback(t *testing.T) {
 	w := gzip.NewWriter(&gz)
 	w.Write([]byte(`{"skills": [{"name": "x"}]}`))
 	w.Close()
-	h.io.httpGet = plainGet(func(_ string, o hubGet) *pyhttpx.Response {
+	h.io.httpGet = plainGet(func(_ string, o hubGet) *httputil.Response {
 		hd := http.Header{}
 		hd.Set("Content-Encoding", "gzip")
-		return &pyhttpx.Response{StatusCode: 200, Header: hd, Content: gz.Bytes()}
+		return &httputil.Response{StatusCode: 200, Header: hd, Content: gz.Bytes()}
 	})
 	v := h.loadIndex(context.Background())
-	if o, ok := v.(*pyjson.Object); !ok || o.Len() != 1 {
+	if o, ok := v.(*jsonutil.Object); !ok || o.Len() != 1 {
 		t.Fatal(v)
 	}
 	if _, err := os.Stat(filepath.Join(h.IndexCacheDir(), "skills-index.json")); err != nil {
@@ -203,8 +203,8 @@ func TestLoadIndexGzipAndStaleFallback(t *testing.T) {
 	}
 	old := time.Now().Add(-7 * time.Hour)
 	os.Chtimes(h.indexCacheFile(), old, old)
-	h.io.httpGet = plainGet(func(string, hubGet) *pyhttpx.Response { return textResp(500, "") })
-	if o, ok := h.loadIndex(context.Background()).(*pyjson.Object); !ok || o.Len() != 1 {
+	h.io.httpGet = plainGet(func(string, hubGet) *httputil.Response { return textResp(500, "") })
+	if o, ok := h.loadIndex(context.Background()).(*jsonutil.Object); !ok || o.Len() != 1 {
 		t.Fatal("stale cache not served")
 	}
 }

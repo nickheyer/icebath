@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // The llama.app latest pointer first, then the bucket tree, then GitHub releases when the bucket shows nothing
@@ -60,7 +60,7 @@ func githubReleaseDigests(repo, tag string) (map[string]string, error) {
 			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("a GitHub release asset is %s, expected a mapping", errchain.Kind(item))}
 		}
 		digest := ""
-		if raw := asset["digest"]; pyrepr.Truthy(raw) {
+		if raw := asset["digest"]; anyutil.IsTrue(raw) {
 			text, isText := raw.(string)
 			if !isText {
 				return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("a GitHub release asset digest is %s, expected text", errchain.Kind(raw))}
@@ -74,7 +74,7 @@ func githubReleaseDigests(repo, tag string) (map[string]string, error) {
 		if !present {
 			return nil, missingKey("a GitHub release asset has no name")
 		}
-		digests[pyrepr.Str(name)] = digest
+		digests[anyutil.String(name)] = digest
 	}
 	releaseDigestMu.Lock()
 	releaseDigestCache[key] = digests

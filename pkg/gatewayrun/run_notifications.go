@@ -17,12 +17,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var (
@@ -67,9 +67,9 @@ type noticeTargetKey struct {
 
 // Key of a notice destination, the thread part absent for a falsy thread
 func noticeTargetKeyOf(platformValue string, chatID, threadID any) noticeTargetKey {
-	key := noticeTargetKey{platform: platformValue, chatID: pyrepr.Str(chatID)}
-	if pyrepr.Truthy(threadID) {
-		key.threadID, key.threaded = pyrepr.Str(threadID), true
+	key := noticeTargetKey{platform: platformValue, chatID: anyutil.String(chatID)}
+	if anyutil.IsTrue(threadID) {
+		key.threadID, key.threaded = anyutil.String(threadID), true
 	}
 	return key
 }
@@ -84,7 +84,7 @@ func (k noticeTargetKey) list() []any {
 
 // Key of one delivered chat, Telegram private chats kept apart per served profile
 func deliveryTargetKey(platformValue string, chatID, threadID any, profile *string) noticeTargetKey {
-	if profile != nil && *profile != "" && *profile != "default" && platformValue == "telegram" && gateway.LooksLikeTelegramPrivateChatID(pyrepr.Str(chatID)) {
+	if profile != nil && *profile != "" && *profile != "default" && platformValue == "telegram" && gateway.LooksLikeTelegramPrivateChatID(anyutil.String(chatID)) {
 		platformValue = *profile + ":" + platformValue
 	}
 	return noticeTargetKeyOf(platformValue, chatID, threadID)
@@ -106,13 +106,13 @@ func csvOrListToSet(raw any) map[string]bool {
 	}
 	if items, ok := raw.([]any); ok {
 		for _, part := range items {
-			if text := strings.TrimSpace(pyrepr.Str(part)); text != "" {
+			if text := strings.TrimSpace(anyutil.String(part)); text != "" {
 				out[text] = true
 			}
 		}
 		return out
 	}
-	for _, part := range strings.Split(pyrepr.Str(raw), ",") {
+	for _, part := range strings.Split(anyutil.String(raw), ",") {
 		if text := strings.TrimSpace(part); text != "" {
 			out[text] = true
 		}
@@ -160,7 +160,7 @@ func isSlackIgnoredChannel(ctx context.Context, cfg *gateway.GatewayConfig, chat
 func refusalRetryAt(step int) float64 {
 	delay := provider.JitteredBackoff(step, provider.BackoffOptions{BaseDelay: time.Duration(watchInjectionRetryBaseDelay * float64(time.Second)),
 		MaxDelay: completionInjectionRetryMaxDelay * time.Second, JitterRatio: 0})
-	return pythread.Monotonic() + delay.Seconds()
+	return timeutil.Monotonic() + delay.Seconds()
 }
 
 // Why a completion has no transport, naming the bot or saved route that is missing
@@ -190,7 +190,7 @@ func rawProcessEventSessionID(evt map[string]any) string {
 	}
 	if platform == "" {
 		for _, field := range []string{"chat_id", "chat_type", "thread_id"} {
-			if pyrepr.Truthy(evt[field]) {
+			if anyutil.IsTrue(evt[field]) {
 				return ""
 			}
 		}
@@ -235,7 +235,7 @@ func watchNotificationMetadata(evt map[string]any, source *gateway.SessionSource
 	if parent := strings.TrimSpace(truthyText(evt["parent_session_id"])); parent != "" {
 		metadata["gateway_session_id"] = parent
 	}
-	if pyrepr.Truthy(evt["_automation_identities"]) {
+	if anyutil.IsTrue(evt["_automation_identities"]) {
 		metadata["automation_identities"] = evt["_automation_identities"]
 	}
 	if source.Platform == gateway.PlatformLocal {
@@ -246,7 +246,7 @@ func watchNotificationMetadata(evt map[string]any, source *gateway.SessionSource
 	if proven := strings.TrimSpace(truthyText(evt["proven_session_id"])); proven != "" {
 		metadata["gateway_proven_session_id"] = proven
 	}
-	if ids := evt["completion_ids"]; pyrepr.Truthy(ids) {
+	if ids := evt["completion_ids"]; anyutil.IsTrue(ids) {
 		metadata["gateway_completion_ids"] = pyListOf(ids)
 	}
 	return metadata
@@ -493,7 +493,7 @@ func (r *GatewayRunner) deliverRestartNotification(ctx context.Context, notifyPa
 		return nil, err
 	}
 	platformStr, chatID, threadID := rowField(data, "platform"), rowField(data, "chat_id"), rowField(data, "thread_id")
-	if !pyrepr.Truthy(platformStr) || !pyrepr.Truthy(chatID) {
+	if !anyutil.IsTrue(platformStr) || !anyutil.IsTrue(chatID) {
 		return nil, nil
 	}
 	platform, err := gateway.ParsePlatform(ctx, platformStr)
@@ -506,14 +506,14 @@ func (r *GatewayRunner) deliverRestartNotification(ctx context.Context, notifyPa
 	}
 	transport := gateway.ResolveDeliveryTransport(ctx, platform, r.config, live)
 	if transport == nil {
-		pkgLog().Debug(fmt.Sprintf("Restart notification skipped: no live transport for %s", pyrepr.Str(platformStr)))
+		pkgLog().Debug(fmt.Sprintf("Restart notification skipped: no live transport for %s", anyutil.String(platformStr)))
 		return nil, nil
 	}
 	if platformCfg := r.config.Platforms[platform]; platformCfg != nil && !platformCfg.GatewayRestartNotification {
-		pkgLog().Info(fmt.Sprintf("Restart notification suppressed: %s has gateway_restart_notification=false", pyrepr.Str(platformStr)))
+		pkgLog().Info(fmt.Sprintf("Restart notification suppressed: %s has gateway_restart_notification=false", anyutil.String(platformStr)))
 		return nil, nil
 	}
-	chat := pyrepr.Str(chatID)
+	chat := anyutil.String(chatID)
 	adapter, _ := transport.Adapter.(gateway.PlatformAdapter)
 	metadata := r.pendingMarkerMetadata(platform, chat, data, adapter)
 	if rowField(data, "delivered_via_upstream_relay") == true {
@@ -522,8 +522,8 @@ func (r *GatewayRunner) deliverRestartNotification(ctx context.Context, notifyPa
 			merged[k] = v
 		}
 		for _, field := range []string{"user_id", "scope_id"} {
-			if v := rowField(data, field); pyrepr.Truthy(v) {
-				merged[field] = pyrepr.Str(v)
+			if v := rowField(data, field); anyutil.IsTrue(v) {
+				merged[field] = anyutil.String(v)
 			}
 		}
 		metadata = merged
@@ -533,13 +533,13 @@ func (r *GatewayRunner) deliverRestartNotification(ctx context.Context, notifyPa
 		return nil, err
 	}
 	if sendFailed(result) {
-		pkgLog().Warn(fmt.Sprintf("Restart notification to %s:%s was not delivered: %s", pyrepr.Str(platformStr), chat, sendError(result)))
+		pkgLog().Warn(fmt.Sprintf("Restart notification to %s:%s was not delivered: %s", anyutil.String(platformStr), chat, sendError(result)))
 		return nil, nil
 	}
-	pkgLog().Info(fmt.Sprintf("Sent restart notification to %s:%s", pyrepr.Str(platformStr), chat))
-	target := &restartNoticeTarget{platform: pyrepr.Str(platformStr), chatID: chat}
-	if pyrepr.Truthy(threadID) {
-		thread := pyrepr.Str(threadID)
+	pkgLog().Info(fmt.Sprintf("Sent restart notification to %s:%s", anyutil.String(platformStr), chat))
+	target := &restartNoticeTarget{platform: anyutil.String(platformStr), chatID: chat}
+	if anyutil.IsTrue(threadID) {
+		thread := anyutil.String(threadID)
 		target.threadID = &thread
 	}
 	return target, nil
@@ -607,9 +607,9 @@ func (r *GatewayRunner) replayPlannedRestartMarker(ctx context.Context, path str
 			if !isList || len(parts) != 3 {
 				return errors.New("a restart marker delivered target is not a platform, chat and thread")
 			}
-			key := noticeTargetKey{platform: pyrepr.Str(parts[0]), chatID: pyrepr.Str(parts[1])}
+			key := noticeTargetKey{platform: anyutil.String(parts[0]), chatID: anyutil.String(parts[1])}
 			if parts[2] != nil {
-				key.threadID, key.threaded = pyrepr.Str(parts[2]), true
+				key.threadID, key.threaded = anyutil.String(parts[2]), true
 			}
 			delivered[key] = true
 		}

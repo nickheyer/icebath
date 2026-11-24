@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Wait a delete grants a multiplexer to release the gateway.lock of a profile it is tearing down
@@ -44,7 +44,7 @@ func WaitProfileUnowned(profileDir string, timeout *time.Duration) (bool, error)
 }
 
 // Error handler of an rmtree that adds owner write permission to the path and its parent and retries
-func rmtreeMakeWritable(op pyfs.RmTreeOp, path string, err error) error {
+func rmtreeMakeWritable(op fsutil.RemoveOp, path string, err error) error {
 	if !errors.Is(err, fs.ErrPermission) {
 		return err
 	}
@@ -62,10 +62,10 @@ func rmtreeMakeWritable(op pyfs.RmTreeOp, path string, err error) error {
 var rmtreeSleep = time.Sleep
 
 // Tree removal each profile delete attempt runs, swapped by tests
-var rmtreeProfile = pyfs.RmTree
+var rmtreeProfile = fsutil.RemoveTree
 
 // Removes a profile tree with three attempts, absorbing writes a just stopped process landed mid walk
-func rmtreeWithRetry(profileDir string, onexc func(pyfs.RmTreeOp, string, error) error) error {
+func rmtreeWithRetry(profileDir string, onexc func(fsutil.RemoveOp, string, error) error) error {
 	const attempts = 3
 	var last error
 	for attempt := range attempts {

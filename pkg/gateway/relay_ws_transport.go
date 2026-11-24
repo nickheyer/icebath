@@ -17,10 +17,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -473,7 +473,7 @@ func (t *WebSocketRelayTransport) dialAndStart(ctx context.Context) error {
 	reader := t.reader
 	t.mu.Unlock()
 	for _, id := range t.identities {
-		hello := pyjson.ObjectOf("type", "hello", "platform", id[0], "botId", id[1])
+		hello := jsonutil.ObjectOf("type", "hello", "platform", id[0], "botId", id[1])
 		if id[0] == "discord" {
 			manifest := BuildRelayCommandManifest()
 			rows := make([]any, len(manifest))
@@ -508,7 +508,7 @@ func awaitReaderVerdict(ctx context.Context, reader *relayTask) {
 func (t *WebSocketRelayTransport) dial(ctx context.Context) (*relayConn, error) {
 	netDialer := &net.Dialer{FallbackDelay: relayWSHappyEyeballs}
 	dialer := websocket.Dialer{
-		Proxy: pyurl.UrlopenProxy, HandshakeTimeout: relayWSOpenTimeout, EnableCompression: true,
+		Proxy: httputil.Proxy, HandshakeTimeout: relayWSOpenTimeout, EnableCompression: true,
 		NetDialContext: netpref.DialContext(netDialer.DialContext),
 	}
 	header := http.Header{}
@@ -765,7 +765,7 @@ func (t *WebSocketRelayTransport) GetChatInfo(ctx context.Context, chatID string
 		return nil, err
 	}
 	info := result
-	if ci, ok := result["chat_info"]; ok && pyrepr.Truthy(ci) {
+	if ci, ok := result["chat_info"]; ok && anyutil.IsTrue(ci) {
 		m, ok := ci.(map[string]any)
 		if !ok {
 			return nil, &PyError{"AttributeError", "the relay chat info is " + errchain.Kind(ci) + ", expected a mapping"}
@@ -789,7 +789,7 @@ func (t *WebSocketRelayTransport) SendInterrupt(ctx context.Context, sessionKey 
 	if reason != nil {
 		r = *reason
 	}
-	return t.send(pyjson.ObjectOf("type", "interrupt", "session_key", sessionKey, "reason", r))
+	return t.send(jsonutil.ObjectOf("type", "interrupt", "session_key", sessionKey, "reason", r))
 }
 
 // Asks the connector to buffer this instance, true only on its acknowledgement within the timeout
@@ -807,7 +807,7 @@ func (t *WebSocketRelayTransport) GoIdle(ctx context.Context, timeoutS float64) 
 		t.goingIdleAck = nil
 		t.mu.Unlock()
 	}()
-	if err := t.send(pyjson.ObjectOf("type", "going_idle")); err != nil {
+	if err := t.send(jsonutil.ObjectOf("type", "going_idle")); err != nil {
 		return false
 	}
 	_, err := ack.wait(ctx, timeoutS)
@@ -837,7 +837,7 @@ func (t *WebSocketRelayTransport) GoDormant(ctx context.Context, timeoutS float6
 
 // Acknowledges durable receipt of a replayed buffered inbound
 func (t *WebSocketRelayTransport) sendInboundAck(bufferID string) {
-	if err := t.send(pyjson.ObjectOf("type", "inbound_ack", "bufferId", bufferID)); err != nil {
+	if err := t.send(jsonutil.ObjectOf("type", "inbound_ack", "bufferId", bufferID)); err != nil {
 		pkgLog().Debug(fmt.Sprintf("relay: inbound_ack send failed for %s", bufferID))
 	}
 }
@@ -855,8 +855,8 @@ func (t *WebSocketRelayTransport) requestResponse(ctx context.Context, action ma
 	}
 	requestID := relayUUIDHex()
 	op := ""
-	if v := action["op"]; pyrepr.Truthy(v) {
-		op = pyrepr.Str(v)
+	if v := action["op"]; anyutil.IsTrue(v) {
+		op = anyutil.String(v)
 	}
 	p := &relayPending{op: op, fut: newRelayFuture[map[string]any]()}
 	t.pending[requestID] = p
@@ -866,7 +866,7 @@ func (t *WebSocketRelayTransport) requestResponse(ctx context.Context, action ma
 		delete(t.pending, requestID)
 		t.mu.Unlock()
 	}()
-	frame := pyjson.ObjectOf("type", "outbound", "requestId", requestID, "action", action)
+	frame := jsonutil.ObjectOf("type", "outbound", "requestId", requestID, "action", action)
 	if platform != "" {
 		frame.Set("platform", platform)
 		if botID, ok := t.BotIDFor(platform).(string); ok && botID != "" {
@@ -913,14 +913,14 @@ func relayUUIDHex() string {
 }
 
 // One newline terminated JSON text frame
-func (t *WebSocketRelayTransport) send(frame *pyjson.Object) error {
+func (t *WebSocketRelayTransport) send(frame *jsonutil.Object) error {
 	t.mu.Lock()
 	conn := t.conn
 	t.mu.Unlock()
 	if conn == nil {
 		return &PyError{"RuntimeError", "relay transport not connected"}
 	}
-	text, err := pyjson.Dumps(frame)
+	text, err := jsonutil.Encode(frame)
 	if err != nil {
 		return err
 	}
@@ -1013,7 +1013,7 @@ func (t *WebSocketRelayTransport) readFrames(ctx context.Context, conn *relayCon
 			return closed
 		}
 		if !utf8.Valid(data) {
-			_, derr := pystr.DecodeUTF8(data)
+			_, derr := textutil.DecodeUTF8(data)
 			if kind == websocket.TextMessage {
 				conn.fail(1007, derr.Error())
 				return conn.closedErr(derr)
@@ -1205,18 +1205,18 @@ func (t *WebSocketRelayTransport) awaitRedialHold(ctx context.Context) error {
 
 // Dispatches one frame by type, a malformed JSON line skipped
 func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) error {
-	parsed, err := pyjson.Loads(line)
+	parsed, err := jsonutil.Decode(line)
 	if err != nil {
 		pkgLog().Warn("relay: skipping malformed frame")
 		return nil
 	}
-	frame, ok := pyjson.AsObject(parsed)
+	frame, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		return &PyError{"AttributeError", "a relay frame is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
-	typ := frame.GetOr("type", nil)
+	typ := frame.ValueOr("type", nil)
 	switch typ.(type) {
-	case []any, *pyjson.Object:
+	case []any, *jsonutil.Object:
 		return &PyError{"TypeError", "a relay frame type is " + errchain.Kind(typ) + ", expected text"}
 	}
 	switch typ {
@@ -1232,9 +1232,9 @@ func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) 
 			ack.settle(struct{}{}, nil)
 		}
 	case "outbound_result":
-		rawID := frame.GetOr("requestId", "")
+		rawID := frame.ValueOr("requestId", "")
 		switch rawID.(type) {
-		case []any, *pyjson.Object:
+		case []any, *jsonutil.Object:
 			return &PyError{"TypeError", "a relay frame id is " + errchain.Kind(rawID) + ", expected text"}
 		}
 		id, _ := rawID.(string)
@@ -1242,8 +1242,8 @@ func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) 
 		p := t.pending[id]
 		t.mu.Unlock()
 		if p != nil {
-			rawResult := frame.GetOr("result", pyjson.NewObject())
-			if result, ok := pyjson.Plain(rawResult).(map[string]any); ok {
+			rawResult := frame.ValueOr("result", jsonutil.NewObject())
+			if result, ok := jsonutil.Plain(rawResult).(map[string]any); ok {
 				p.fut.settle(result, nil)
 			} else {
 				p.fut.settle(nil, &relayResultShapeError{Kind: errchain.Kind(rawResult)})
@@ -1254,27 +1254,27 @@ func (t *WebSocketRelayTransport) handleFrame(ctx context.Context, line string) 
 		h := t.interruptHandler
 		t.mu.Unlock()
 		if h != nil {
-			return h(ctx, relayWireStr(frame.GetOr("session_key", "")), relayWireStr(frame.GetOr("chat_id", "")))
+			return h(ctx, anyutil.String(frame.Value("session_key")), anyutil.String(frame.Value("chat_id")))
 		}
 	case "passthrough_forward":
 		t.mu.Lock()
 		h := t.passthroughHandler
 		t.mu.Unlock()
 		if h != nil {
-			raw, err := relayWireMapping(frame.GetOr("forward", map[string]any{}))
+			raw, err := relayWireMapping(frame.ValueOr("forward", map[string]any{}))
 			if err != nil {
 				return err
 			}
 			fwd := relayPassthroughFromWire(raw)
-			return h(RelayCallback(ctx, t, &fwd), &fwd, frame.GetOr("bufferId", nil))
+			return h(RelayCallback(ctx, t, &fwd), &fwd, frame.ValueOr("bufferId", nil))
 		}
 	}
 	return nil
 }
 
 // Records a negotiated descriptor per platform and resolves the first handshake
-func (t *WebSocketRelayTransport) onDescriptor(frame *pyjson.Object) error {
-	text, err := pyjson.Dumps(frame.GetOr("descriptor", pyjson.NewObject()))
+func (t *WebSocketRelayTransport) onDescriptor(frame *jsonutil.Object) error {
+	text, err := jsonutil.Encode(frame.ValueOr("descriptor", jsonutil.NewObject()))
 	if err != nil {
 		return err
 	}
@@ -1300,14 +1300,14 @@ func (t *WebSocketRelayTransport) onDescriptor(frame *pyjson.Object) error {
 }
 
 // Hands an inbound event to the handler, acknowledging its buffer id once admission settles
-func (t *WebSocketRelayTransport) onInbound(ctx context.Context, frame *pyjson.Object) error {
+func (t *WebSocketRelayTransport) onInbound(ctx context.Context, frame *jsonutil.Object) error {
 	t.mu.Lock()
 	handler := t.inbound
 	t.mu.Unlock()
 	if handler == nil {
 		return nil
 	}
-	raw, err := relayWireMapping(frame.GetOr("event", map[string]any{}))
+	raw, err := relayWireMapping(frame.ValueOr("event", map[string]any{}))
 	if err != nil {
 		return err
 	}
@@ -1320,11 +1320,11 @@ func (t *WebSocketRelayTransport) onInbound(ctx context.Context, frame *pyjson.O
 		pkgLog().Error("relay: inbound handler failed; frame left unacknowledged", "exc_info", herr)
 		return nil
 	}
-	bufferID := frame.GetOr("bufferId", nil)
+	bufferID := frame.ValueOr("bufferId", nil)
 	if admitting != nil {
 		go t.ackAdmitted(admitting, bufferID)
-	} else if pyrepr.Truthy(bufferID) {
-		t.sendInboundAck(pyrepr.Str(bufferID))
+	} else if anyutil.IsTrue(bufferID) {
+		t.sendInboundAck(anyutil.String(bufferID))
 	}
 	return nil
 }
@@ -1352,8 +1352,8 @@ func (t *WebSocketRelayTransport) ackAdmitted(admission RelayAdmission, bufferID
 		}
 		return
 	}
-	if pyrepr.Truthy(bufferID) {
-		t.sendInboundAck(pyrepr.Str(bufferID))
+	if anyutil.IsTrue(bufferID) {
+		t.sendInboundAck(anyutil.String(bufferID))
 	}
 }
 

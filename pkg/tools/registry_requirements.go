@@ -3,7 +3,7 @@ package tools
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Entries in merged dict order with the toolset checks overlaid by each entry's check, read under one lock
@@ -75,9 +75,9 @@ func (r *Registry) ToolsetRequirements(ctx context.Context, scope string) map[st
 // ToolResult encodes the data object like json.dumps with ensure_ascii off
 func ToolResult(data any) string {
 	if data == nil {
-		data = pyjson.NewObject()
+		data = jsonutil.NewObject()
 	}
-	s, err := pyjson.Dumps(data, pyjson.EnsureASCII(false))
+	s, err := jsonutil.Encode(data)
 	if err != nil {
 		return ErrorResult(err)
 	}

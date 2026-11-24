@@ -10,16 +10,16 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Keyword arguments of task creation, nil pointers and nil slices standing for None
@@ -59,8 +59,8 @@ type CreateTaskOptions struct {
 }
 
 // Ordered payload object from alternating key and value arguments
-func payload(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func payload(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -199,7 +199,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 			return "", err
 		}
 		if def := objGet(meta, "default_workdir"); truthy(def) {
-			s := pyrepr.Str(def)
+			s := anyutil.String(def)
 			workspacePath = &s
 		}
 	}
@@ -209,7 +209,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 		for i, s := range skills {
 			items[i] = s
 		}
-		text, err := pyjson.Dumps(items)
+		text, err := jsonutil.Encode(items)
 		if err != nil {
 			return "", err
 		}
@@ -235,7 +235,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 				return err
 			}
 			if link.Project != nil && workspaceKind == "worktree" {
-				if link.ProjectRepo != nil && *link.ProjectRepo != "" && (workspacePath == nil || *workspacePath == "" || (workspacePath == o.WorkspacePath && o.workspacePathRaw != nil && !pyrepr.Truthy(o.workspacePathRaw))) {
+				if link.ProjectRepo != nil && *link.ProjectRepo != "" && (workspacePath == nil || *workspacePath == "" || (workspacePath == o.WorkspacePath && o.workspacePathRaw != nil && !anyutil.IsTrue(o.workspacePathRaw))) {
 					p := filepath.Join(*link.ProjectRepo, ".worktrees", taskID)
 					workspacePath = &p
 				}
@@ -323,7 +323,7 @@ func CreateTask(ctx context.Context, conn state.SQLiteConn, o CreateTaskOptions)
 }
 
 // Metadata of the named board, or of the current board when the name is empty
-func boardMetaFor(ctx context.Context, board *string) (*pyjson.Object, error) {
+func boardMetaFor(ctx context.Context, board *string) (*jsonutil.Object, error) {
 	if board != nil && *board != "" {
 		return ReadBoardMetadata(board)
 	}
@@ -398,7 +398,7 @@ func inheritNotifySubs(ctx context.Context, conn state.SQLiteConn, childID strin
 	}
 	var cursor int64
 	if row != nil {
-		if cursor, err = pyIntOf(row.Get("cursor")); err != nil {
+		if cursor, err = cellIntOf(row.Get("cursor")); err != nil {
 			return err
 		}
 	}
@@ -568,7 +568,7 @@ func SetModelOverride(ctx context.Context, conn state.SQLiteConn, taskID string,
 }
 
 // Writes a per task override refusing archived tasks, records the event and fires the updated observer after commit
-func setTaskOverride(ctx context.Context, conn state.SQLiteConn, taskID, query string, params []any, eventKind string, body *pyjson.Object, changed []string, archivedMsg string) (bool, error) {
+func setTaskOverride(ctx context.Context, conn state.SQLiteConn, taskID, query string, params []any, eventKind string, body *jsonutil.Object, changed []string, archivedMsg string) (bool, error) {
 	found := false
 	err := WriteTxn(ctx, conn, false, func() error {
 		st, err := taskStatusOf(ctx, conn, taskID)
@@ -723,8 +723,8 @@ func ChildIDs(ctx context.Context, conn state.SQLiteConn, taskID string) ([]stri
 }
 
 // Direct parents and children with title and status for each requested task in request order
-func TaskGraphContexts(ctx context.Context, conn state.SQLiteConn, taskIDs []string) (*pyjson.Object, error) {
-	contexts := pyjson.NewObject()
+func TaskGraphContexts(ctx context.Context, conn state.SQLiteConn, taskIDs []string) (*jsonutil.Object, error) {
+	contexts := jsonutil.NewObject()
 	var ordered []any
 	for _, id := range taskIDs {
 		if id == "" {
@@ -747,7 +747,7 @@ func TaskGraphContexts(ctx context.Context, conn state.SQLiteConn, taskIDs []str
 		}
 		for _, r := range rows {
 			owner, _ := contexts.Get(cellStr(r.Get("owner_id")))
-			entry := owner.(*pyjson.Object)
+			entry := owner.(*jsonutil.Object)
 			list, _ := entry.Get(bucket)
 			entry.Set(bucket, append(list.([]any), payload("id", r.Get("id"), "title", r.Get("title"), "status", r.Get("status"))))
 		}
@@ -756,13 +756,13 @@ func TaskGraphContexts(ctx context.Context, conn state.SQLiteConn, taskIDs []str
 }
 
 // Direct parents and children with title and status for one task
-func TaskGraphContext(ctx context.Context, conn state.SQLiteConn, taskID string) (*pyjson.Object, error) {
+func TaskGraphContext(ctx context.Context, conn state.SQLiteConn, taskID string) (*jsonutil.Object, error) {
 	all, err := TaskGraphContexts(ctx, conn, []string{taskID})
 	if err != nil {
 		return nil, err
 	}
 	v, _ := all.Get(taskID)
-	return v.(*pyjson.Object), nil
+	return v.(*jsonutil.Object), nil
 }
 
 // Adds a stripped comment with a commented event and returns its id
@@ -842,7 +842,7 @@ func safeAttachmentName(raw string) (string, error) {
 	name := strings.TrimSpace(parts[len(parts)-1])
 	var b strings.Builder
 	for _, r := range name {
-		if pystr.IsPrintable(r) && r != 0 {
+		if unicode.IsPrint(r) && r != 0 {
 			b.WriteRune(r)
 		}
 	}
@@ -910,7 +910,7 @@ func StoreAttachmentBytes(ctx context.Context, conn state.SQLiteConn, taskID, fi
 	if err := os.WriteFile(destPath, data, 0o666); err != nil {
 		return 0, err
 	}
-	resolved, err := pypath.Resolve(destPath)
+	resolved, err := pathutil.Resolve(destPath)
 	if err == nil {
 		var id int64
 		id, err = addAttachment(ctx, conn, taskID, filepath.Base(destPath), resolved, o.ContentType, int64(len(data)), o.UploadedBy, o.contentTypeBindErr)
@@ -1091,7 +1091,7 @@ func optInt(value any) (*int64, error) {
 	if value == nil {
 		return nil, nil
 	}
-	n, err := pyIntOf(value)
+	n, err := cellIntOf(value)
 	if err != nil {
 		return nil, err
 	}
@@ -1103,8 +1103,8 @@ func jsonOrNull(obj any) (any, error) {
 	switch v := obj.(type) {
 	case nil:
 		return nil, nil
-	case *pyjson.Object:
-		if v == nil || len(v.Keys) == 0 {
+	case *jsonutil.Object:
+		if v == nil || v.Len() == 0 {
 			return nil, nil
 		}
 	case map[string]any:
@@ -1112,7 +1112,7 @@ func jsonOrNull(obj any) (any, error) {
 			return nil, nil
 		}
 	}
-	text, err := pyjson.Dumps(obj, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(obj)
 	if err != nil {
 		return nil, err
 	}
@@ -1134,7 +1134,7 @@ func currentRunID(ctx context.Context, conn state.SQLiteConn, taskID string) (*i
 	if err != nil || row == nil || !truthy(row.Get("current_run_id")) {
 		return nil, err
 	}
-	n, err := pyIntOf(row.Get("current_run_id"))
+	n, err := cellIntOf(row.Get("current_run_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -1217,16 +1217,16 @@ func toEpoch(val any) *int64 {
 		n := int64(v)
 		return &n
 	}
-	s := strings.TrimSpace(pyrepr.Str(val))
+	s := strings.TrimSpace(anyutil.String(val))
 	if s == "" {
 		return nil
 	}
-	if n, err := pyIntOf(s); err == nil {
+	if n, err := cellIntOf(s); err == nil {
 		return &n
 	} else if !errors.As(err, new(*ValueError)) {
 		return nil
 	}
-	t, aware, err := pydatetime.ParseISOFormat(s)
+	t, aware, err := timeutil.ParseISOZone(s, time.UTC)
 	if err != nil {
 		return nil
 	}

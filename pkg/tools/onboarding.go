@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Stable config.yaml keys under onboarding.seen
@@ -124,7 +125,7 @@ func IsSeen(cfg any, flag string) bool {
 	if !ok {
 		return false
 	}
-	return pyTruthy(seen[flag])
+	return anyutil.IsTrue(seen[flag])
 }
 
 // Persists onboarding.seen.flag as true atomically, false on any error

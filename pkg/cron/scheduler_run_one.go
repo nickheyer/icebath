@@ -10,9 +10,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -42,7 +42,7 @@ type runMarks struct {
 	failureReason                    string
 	failureIncidentID                *string
 	notificationAllTargetsSuppressed bool
-	botChatDeliveryReceipts          *pyjson.Object
+	botChatDeliveryReceipts          *jsonutil.Object
 	mediaAckLost                     bool
 	botChatRunID                     string
 }

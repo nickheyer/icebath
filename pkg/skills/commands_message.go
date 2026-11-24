@@ -10,7 +10,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -48,15 +48,15 @@ func (s *Scope) registerStablePrefix(prefix string) {
 
 // Setup note for a loaded skill, empty when nothing needs saying
 func setupNote(loaded map[string]any) string {
-	if pyrepr.Truthy(loaded["setup_skipped"]) {
+	if anyutil.IsTrue(loaded["setup_skipped"]) {
 		return setupSkippedNote
 	}
-	if v := loaded["gateway_setup_hint"]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := loaded["gateway_setup_hint"]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
-	if pyrepr.Truthy(loaded["setup_needed"]) {
-		if v := loaded["setup_note"]; pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+	if anyutil.IsTrue(loaded["setup_needed"]) {
+		if v := loaded["setup_note"]; anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	return ""
@@ -95,7 +95,7 @@ func supportingFilesListing(loaded map[string]any, skillDir string) []string {
 				continue
 			}
 			for _, e := range entries {
-				supporting = append(supporting, pathAsPosix(pyrepr.Str(e)))
+				supporting = append(supporting, pathAsPosix(anyutil.String(e)))
 			}
 		}
 	}
@@ -167,8 +167,8 @@ func (s *Scope) buildSkillMessage(ctx context.Context, loaded map[string]any, sk
 		target := ""
 		if rel, ok := lexicalRelative(skillDir, s.SkillsDir()); ok {
 			target = rel
-		} else if n := loaded["name"]; pyrepr.Truthy(n) {
-			target = pyrepr.Str(n)
+		} else if n := loaded["name"]; anyutil.IsTrue(n) {
+			target = anyutil.String(n)
 		} else {
 			target = filepath.Base(skillDir)
 		}

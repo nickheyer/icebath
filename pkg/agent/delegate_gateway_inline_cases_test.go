@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var inlineLiveControl = []string{"action", "subagent_id", "message"}
@@ -26,7 +26,7 @@ func delegateFunctionOf(t *testing.T, list []any) map[string]any {
 	t.Helper()
 	for _, item := range list {
 		m, _ := item.(map[string]any)
-		fn, _ := pyjson.Dict(m["function"])
+		fn, _ := jsonutil.AsMap(m["function"])
 		if fn["name"] == "delegate_task" {
 			return fn
 		}
@@ -39,7 +39,7 @@ func toolNamesOf(list []any) map[string]bool {
 	names := map[string]bool{}
 	for _, item := range list {
 		m, _ := item.(map[string]any)
-		fn, _ := pyjson.Dict(m["function"])
+		fn, _ := jsonutil.AsMap(m["function"])
 		if n, _ := fn["name"].(string); n != "" {
 			names[n] = true
 		}
@@ -63,9 +63,9 @@ func TestTheBuildScopePicksTheSchemaAndTheAgentKeepsIt(t *testing.T) {
 	env := inlineTestEnv(t)
 	ctx := tools.WithToolEnv(context.Background(), env)
 	background := builtInlineAgent(t, env, false)
-	var registry *pyjson.Object
+	var registry *jsonutil.Object
 	for _, d := range tools.Default.ToolDefinitions(ctx, env, tools.DefinitionOptions{Enabled: []string{"icebath-cli"}, Disabled: background.disabledToolsets, Quiet: true}) {
-		if fn, _ := d["function"].(*pyjson.Object); fn != nil && fn.Vals["name"] == "delegate_task" {
+		if fn, _ := d["function"].(*jsonutil.Object); fn != nil && fn.Value("name") == "delegate_task" {
 			registry = fn
 		}
 	}
@@ -78,8 +78,8 @@ func TestTheBuildScopePicksTheSchemaAndTheAgentKeepsIt(t *testing.T) {
 	if sortedJSON(t, inlineFn) != sortedJSON(t, joined) || strings.Contains(inlineFn["description"].(string), "END YOUR TURN") {
 		t.Fatalf("inline schema %v", inlineFn)
 	}
-	params, _ := pyjson.Dict(inlineFn["parameters"])
-	props, _ := pyjson.Dict(params["properties"])
+	params, _ := jsonutil.AsMap(inlineFn["parameters"])
+	props, _ := jsonutil.AsMap(params["properties"])
 	for _, p := range inlineLiveControl {
 		if _, has := props[p]; has {
 			t.Fatalf("inline schema carries live control %q", p)
@@ -159,8 +159,8 @@ func fastInlineChildren(t *testing.T, env *tools.Env) {
 	buildChildPreservingParentToolsFn = func(context.Context, childBuildSpec) (*AIAgent, error) {
 		return &AIAgent{delegateRole: "leaf", subagentID: "s1"}, nil
 	}
-	runSingleChildFn = func(_ context.Context, i int, goal string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
-		return pyjson.ObjectOf("task_index", i, "status", "completed", "summary", "done: "+goal, "api_calls", 1,
+	runSingleChildFn = func(_ context.Context, i int, goal string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
+		return jsonutil.ObjectOf("task_index", i, "status", "completed", "summary", "done: "+goal, "api_calls", 1,
 			"duration_seconds", 0.1, "model", "m", "exit_reason", "completed")
 	}
 	resolveDelegationCredentialsFn = func(context.Context, map[string]any, *AIAgent) (map[string]any, error) {
@@ -172,7 +172,7 @@ func fastInlineChildren(t *testing.T, env *tools.Env) {
 	tools.SetSessionVars(env, tools.SessionVars{Platform: "whatsapp", ChatID: "c1", SessionKey: "agent:main:whatsapp:dm:c1", SessionID: "sess"})
 }
 
-func inlineDelegate(t *testing.T, env *tools.Env, parent *AIAgent, kwargs map[string]any) *pyjson.Object {
+func inlineDelegate(t *testing.T, env *tools.Env, parent *AIAgent, kwargs map[string]any) *jsonutil.Object {
 	t.Helper()
 	out, err := delegateTask(tools.WithToolEnv(context.Background(), env), parent, kwargs)
 	return dispatchPayload(t, out, err)

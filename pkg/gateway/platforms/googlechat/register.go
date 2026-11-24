@@ -12,8 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -23,7 +23,7 @@ func validateConfig(ctx context.Context, cfg *gateway.PlatformConfig) (bool, err
 		return false, nil
 	}
 	extra := cfg.Extra
-	return pyrepr.Truthy(extra["http_events_url"]) || (pyrepr.Truthy(extra["project_id"]) && pyrepr.Truthy(extra["subscription_name"])), nil
+	return anyutil.IsTrue(extra["http_events_url"]) || (anyutil.IsTrue(extra["project_id"]) && anyutil.IsTrue(extra["subscription_name"])), nil
 }
 
 // Whether the platform is enabled and its config is complete
@@ -101,20 +101,20 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	message, _ := kwargs["message"].(string)
 	threadID, hasThread := "", false
 	if v := kwargs["thread_id"]; v != nil {
-		threadID, hasThread = pyrepr.Str(v), true
+		threadID, hasThread = anyutil.String(v), true
 	}
 	if chatID == "" {
 		return standaloneError("chat_id (space resource) is required"), nil
 	}
 	if !chatIDRE.MatchString(chatID) {
-		return standaloneError(fmt.Sprintf("chat_id %s must match 'spaces/<id>' or 'users/<id>' with only [A-Za-z0-9_-] in the id", pyrepr.Repr(chatID))), nil
+		return standaloneError(fmt.Sprintf("chat_id %s must match 'spaces/<id>' or 'users/<id>' with only [A-Za-z0-9_-] in the id", anyutil.Quote(chatID))), nil
 	}
 	if hasThread && !threadIDRE.MatchString(threadID) {
-		return standaloneError(fmt.Sprintf("thread_id %s must match 'spaces/<id>/threads/<id>'", pyrepr.Repr(threadID))), nil
+		return standaloneError(fmt.Sprintf("thread_id %s must match 'spaces/<id>/threads/<id>'", anyutil.Quote(threadID))), nil
 	}
 	saValue := ""
-	if pconfig != nil && pyrepr.Truthy(pconfig.Extra["service_account_json"]) {
-		saValue = pyrepr.Str(pconfig.Extra["service_account_json"])
+	if pconfig != nil && anyutil.IsTrue(pconfig.Extra["service_account_json"]) {
+		saValue = anyutil.String(pconfig.Extra["service_account_json"])
 	} else {
 		saValue = scopedFirst(ctx, "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON", "GOOGLE_APPLICATION_CREDENTIALS")
 	}

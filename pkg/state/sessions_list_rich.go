@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Listing filters of a rich session page, a nil Limit meaning 20 and a nil ProjectCompressionTips meaning true
@@ -151,7 +151,7 @@ func chainSearchWhere(where, idNeedle, searchNeedle string) (string, []any, erro
 }
 
 // Unread when activity postdates the last read watermark, a missing watermark reading as read
-func sessionUnread(row *pyjson.Object) (bool, error) {
+func sessionUnread(row *jsonutil.Object) (bool, error) {
 	lastRead := rowValue(row, "last_read_at")
 	if lastRead == nil {
 		return false, nil
@@ -163,11 +163,11 @@ func sessionUnread(row *pyjson.Object) (bool, error) {
 	if !pyTruthy(lastActive) {
 		lastActive = int64(0)
 	}
-	active, err := pyint.Float(lastActive)
+	active, err := anyutil.ToFloat(lastActive)
 	if err != nil {
 		return false, err
 	}
-	read, err := pyint.Float(lastRead)
+	read, err := anyutil.ToFloat(lastRead)
 	if err != nil {
 		return false, err
 	}
@@ -175,14 +175,14 @@ func sessionUnread(row *pyjson.Object) (bool, error) {
 }
 
 // List row with its preview shaped and the internal ordering column dropped
-func listRow(row *pyjson.Object) *pyjson.Object {
+func listRow(row *jsonutil.Object) *jsonutil.Object {
 	s := richRow(row)
 	s.Delete("_effective_last_active")
 	return s
 }
 
 // Sessions with preview and last_active in one query, chain tip ordered when asked, pins back filled and tips projected
-func (d *SessionDB) ListSessionsRich(ctx context.Context, o ListSessionsRichOptions) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListSessionsRich(ctx context.Context, o ListSessionsRichOptions) ([]*jsonutil.Object, error) {
 	limit := 20
 	if o.Limit != nil {
 		limit = *o.Limit
@@ -288,7 +288,7 @@ func (d *SessionDB) ListSessionsRich(ctx context.Context, o ListSessionsRichOpti
 	if err != nil {
 		return nil, err
 	}
-	sessions := make([]*pyjson.Object, 0, len(rows))
+	sessions := make([]*jsonutil.Object, 0, len(rows))
 	for _, row := range rows {
 		sessions = append(sessions, listRow(row))
 	}

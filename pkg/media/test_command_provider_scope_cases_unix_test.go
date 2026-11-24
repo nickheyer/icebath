@@ -12,9 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Context of a multiplexed secondary profile under the launch home, each env file holding its own token value
@@ -52,7 +52,7 @@ func tokenWriterScript(t *testing.T, name string) string {
 func TestTextToSpeechToolUnderMultiplexRunsTheCommandProviderWithTheScopedProfilesToken(t *testing.T) {
 	script := tokenWriterScript(t, "MY_TTS_TOKEN")
 	ctx, _ := scopedProviderProfile(t, "MY_TTS_TOKEN", "tts:\n  provider: srv\n  providers:\n    srv:\n      type: command\n"+
-		"      command: \"sh "+pyshlex.Quote(script)+" {output_path}\"\n      env_passthrough: [MY_TTS_TOKEN]\n")
+		"      command: \"sh "+shellutil.Quote(script)+" {output_path}\"\n      env_passthrough: [MY_TTS_TOKEN]\n")
 	out := filepath.Join(t.TempDir(), "reply.mp3")
 	raw, err := TextToSpeechTool(ctx, "hello there", out)
 	if err != nil {
@@ -85,7 +85,7 @@ func TestCommandSTTUnderMultiplexRunsWithTheScopedProfilesToken(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := commandSTTDefaults
-	p.Name, p.Command, p.Timeout, p.EnvPassthrough = "probe", "sh "+pyshlex.Quote(script)+" {output_path}", 5*time.Second, []string{"MY_STT_TOKEN"}
+	p.Name, p.Command, p.Timeout, p.EnvPassthrough = "probe", "sh "+shellutil.Quote(script)+" {output_path}", 5*time.Second, []string{"MY_STT_TOKEN"}
 	r := transcribeCommandSTT(scoped, audio, &p, loadSTTRequest(scoped), "", "", "")
 	if r["success"] != true || r["transcript"] != "served-token" {
 		t.Fatalf("command stt result %v", r)

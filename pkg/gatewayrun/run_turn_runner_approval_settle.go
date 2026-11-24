@@ -8,15 +8,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Arms a settle hook posting the timed out notice for the approval request once its wait times out
 func registerTimeoutNotice(t *TurnRunner, approvalData map[string]any, command string, cardMessageID *string) {
 	requestID := ""
-	if pyrepr.Truthy(approvalData["request_id"]) {
-		requestID = pyrepr.Str(approvalData["request_id"])
+	if anyutil.IsTrue(approvalData["request_id"]) {
+		requestID = anyutil.String(approvalData["request_id"])
 	}
 	sessionKey := t.ctx.sessionKey
 	if requestID == "" || sessionKey == "" {
@@ -29,8 +29,8 @@ func registerTimeoutNotice(t *TurnRunner, approvalData map[string]any, command s
 		}
 	}
 	flagged := gateway.EADefaultReasonLocalized(t.turnCtx)
-	if pyrepr.Truthy(approvalData["description"]) {
-		flagged = pyrepr.Str(approvalData["description"])
+	if anyutil.IsTrue(approvalData["description"]) {
+		flagged = anyutil.String(approvalData["description"])
 	}
 	tools.RegisterGatewaySettle(sessionKey, requestID, func(reason string) {
 		if reason != "timeout" {

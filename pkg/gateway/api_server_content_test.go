@@ -4,10 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func textPart(kind, text string) *pyjson.Object { return pyjson.ObjectOf("type", kind, "text", text) }
+func textPart(kind, text string) *jsonutil.Object {
+	return jsonutil.ObjectOf("type", kind, "text", text)
+}
 
 func TestNoneReturnsEmptyString(t *testing.T) {
 	if got := apiNormalizeChatContent(nil); got != "" {
@@ -67,7 +69,7 @@ func TestResponsesInputTextCanonicalized(t *testing.T) {
 }
 
 func TestListWithImageOnly(t *testing.T) {
-	if !apiContentHasVisiblePayload([]any{pyjson.ObjectOf("type", "image_url", "image_url", pyjson.ObjectOf("url", "x"))}) {
+	if !apiContentHasVisiblePayload([]any{jsonutil.ObjectOf("type", "image_url", "image_url", jsonutil.ObjectOf("url", "x"))}) {
 		t.Fatal("image only content has no payload")
 	}
 }

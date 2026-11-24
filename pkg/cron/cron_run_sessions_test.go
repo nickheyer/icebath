@@ -10,8 +10,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Owner of the test home admitting cron fires without running them, config.yaml naming test-model
@@ -124,7 +125,7 @@ func TestAnExecutionIDAdmittedWithAColonBeforeTheUpgradeKeepsItsAdmission(t *tes
 		t.Fatalf("misfiled runs = %v", runs)
 	}
 	identity, err := db.CronRunIdentity(ctx, sid)
-	if err != nil || !pyjson.Equal(identity, pyjson.ObjectOf("cron_job_id", job, "cron_execution_id", "fire:1")) {
+	if err != nil || !anyutil.Equal(identity, jsonutil.ObjectOf("cron_job_id", job, "cron_execution_id", "fire:1")) {
 		t.Fatalf("identity = %v, %v", identity, err)
 	}
 }

@@ -5,16 +5,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Transport recording every frame written to it
 type frameRecorder struct {
 	mu     sync.Mutex
-	frames []*pyjson.Object
+	frames []*jsonutil.Object
 }
 
-func (r *frameRecorder) Write(obj *pyjson.Object) bool {
+func (r *frameRecorder) Write(obj *jsonutil.Object) bool {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.frames = append(r.frames, obj)
@@ -57,10 +57,10 @@ type stallingTransport struct {
 	written  []string
 }
 
-func (s *stallingTransport) Write(obj *pyjson.Object) bool {
+func (s *stallingTransport) Write(obj *jsonutil.Object) bool {
 	params, _ := obj.Get("params")
 	frameSID := ""
-	if p, isObj := params.(*pyjson.Object); isObj {
+	if p, isObj := params.(*jsonutil.Object); isObj {
 		v, _ := p.Get("session_id")
 		frameSID, _ = v.(string)
 	}

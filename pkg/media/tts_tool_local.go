@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -247,7 +247,7 @@ type localVoice interface {
 
 // Voice files of a path or name, a file the user has first, then the voices directory, then the pinned catalog
 var resolvePiperVoice = func(ctx context.Context, voice, voicesDir string) (speech.PiperVoice, error) {
-	if candidate := pypath.Expanduser(voice); strings.EqualFold(filepath.Ext(candidate), ".onnx") && fileExists(candidate) {
+	if candidate := pathutil.ExpandUser(voice); strings.EqualFold(filepath.Ext(candidate), ".onnx") && fileExists(candidate) {
 		return speech.AdoptPiper(ctx, candidate)
 	}
 	if local := filepath.Join(voicesDir, voice+".onnx"); fileExists(local) {
@@ -278,7 +278,7 @@ func loadPiperVoiceForConfig(ctx context.Context, env *tools.Env, req *ttsReques
 	voiceName := textOr(pc.Voice, defaultPiperVoice)
 	voicesDir := home.IcebathDir(ttsHome(ctx, env), "cache/piper-voices", "piper_voices_cache")
 	if v := strings.TrimSpace(pc.VoicesDir); v != "" {
-		voicesDir = pypath.Expanduser(v)
+		voicesDir = pathutil.ExpandUser(v)
 	}
 	useCUDA := pc.UseCUDA
 	files, err := resolvePiperVoice(ctx, voiceName, voicesDir)

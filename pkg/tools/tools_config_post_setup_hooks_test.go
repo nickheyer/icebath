@@ -11,8 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestLocalSTTModelSummaryMarksTheDefault(t *testing.T) {
@@ -304,7 +305,7 @@ func TestPostSetupOpenAICodexSignIn(t *testing.T) {
 		if !slices.Equal(questions, []string{"    How do you want to sign in? Sign in with ChatGPT/Codex OAuth — browser login | Skip — configure later via `" + relogin + "`"}) {
 			t.Fatalf("questions %q", questions)
 		}
-		if len(saves) == 1 && (!pyjson.Equal(saves[0].tokens, map[string]any{"access_token": "a"}) || saves[0].lastRefresh != pyOrStr(c.creds["last_refresh"])) {
+		if len(saves) == 1 && (!anyutil.Equal(saves[0].tokens, map[string]any{"access_token": "a"}) || saves[0].lastRefresh != pyOrStr(c.creds["last_refresh"])) {
 			t.Fatalf("save call %+v", saves[0])
 		}
 	}
@@ -385,7 +386,7 @@ func TestRunPostSetupCommandExitCodes(t *testing.T) {
 	}
 	saved := ToolCategories
 	t.Cleanup(func() { ToolCategories = saved })
-	ToolCategories = pyjson.NewObject()
+	ToolCategories = jsonutil.NewObject()
 	savedWeb := webPickerRegistry
 	t.Cleanup(func() { webPickerRegistry = savedWeb })
 	webPickerRegistry = fakePickerRegistry(nil)

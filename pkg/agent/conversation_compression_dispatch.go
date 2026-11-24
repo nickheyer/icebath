@@ -10,8 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -320,7 +320,7 @@ func salvageOrRefuseGrownTranscript(ctx context.Context, a *AIAgent, original, c
 
 // sessionRowReader is the get_session half of a session store
 type sessionRowReader interface {
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 }
 
 // Reports a parent ended by a non automatic reason, failing open on an unreadable row
@@ -398,7 +398,7 @@ func carrySessionStateToChild(ctx context.Context, a *AIAgent, oldSessionID, old
 
 // Persisted source of the parent row so a compression child keeps its conversation label
 func compressionChildSource(ctx context.Context, a *AIAgent, parentSessionID string) string {
-	var parent *pyjson.Object
+	var parent *jsonutil.Object
 	if a.sessionDB != nil {
 		func() {
 			defer func() { _ = recover() }()

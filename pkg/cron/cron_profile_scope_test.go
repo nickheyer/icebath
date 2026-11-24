@@ -9,7 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func TestForeignProcessTickPersistsOwningProfileOffset(t *testing.T) {
@@ -58,7 +58,7 @@ func TestCronStorageAnchorsAtProfileHome(t *testing.T) {
 	os.MkdirAll(profileHome, 0o700)
 	t.Setenv("ICEBATH_HOME", profileHome)
 	resolve := func(p string) string {
-		r, _ := pypath.Realpath(p, pypath.Lax)
+		r, _ := pathutil.Resolve(p)
 		return r
 	}
 	if got := resolve(home.Dir(context.Background())); got != resolve(profileHome) {

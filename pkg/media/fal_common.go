@@ -13,9 +13,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 const falQueuePollSeconds = 2.0
@@ -215,11 +215,11 @@ func falRaiseForStatus(resp *falResponse) error {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
-	msg := pyhttpx.DecodeText(resp.Header, resp.Body)
+	msg := httputil.DecodeText(resp.Header, resp.Body)
 	if v, err := resp.JSON(); err == nil {
 		if m, ok := v.(map[string]any); ok {
 			if d, ok := m["detail"]; ok {
-				msg = pyrepr.Str(d)
+				msg = anyutil.String(d)
 			}
 		}
 	}
@@ -343,7 +343,7 @@ func (h *falRequestHandle) Status(ctx context.Context, withLogs bool) (falStatus
 	case "COMPLETED":
 		return falStatus{Kind: "Completed", Logs: data["logs"], Metrics: data["metrics"]}, nil
 	}
-	return falStatus{}, fmt.Errorf("Unknown status: %s", pyrepr.Str(data["status"]))
+	return falStatus{}, fmt.Errorf("Unknown status: %s", anyutil.String(data["status"]))
 }
 
 // Polls status at the interval until the request completes

@@ -12,13 +12,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Unicode dash a phone keyboard substitutes for a double hyphen before an insights flag
@@ -26,7 +27,7 @@ var insightsDashFlagRe = regexp.MustCompile(`[\x{2012}\x{2013}\x{2014}\x{2015}](
 
 // Agents rows for one background delegation with its live per child activity
 func agentsDelegationLines(ctx context.Context, d map[string]any) []string {
-	goal := clipText(strings.Join(strings.Fields(pyrepr.Str(pyrepr.Or(d["goal"], ""))), " "), 70)
+	goal := clipText(strings.Join(strings.Fields(anyutil.String(anyutil.Or(d["goal"], ""))), " "), 70)
 	status, ok := d["status"]
 	if !ok {
 		status = "?"
@@ -35,7 +36,7 @@ func agentsDelegationLines(ctx context.Context, d map[string]any) []string {
 	if !ok {
 		delegationID = "?"
 	}
-	row := fmt.Sprintf("- `%s` · %s", pyrepr.Str(delegationID), pyrepr.Str(status))
+	row := fmt.Sprintf("- `%s` · %s", anyutil.String(delegationID), anyutil.String(status))
 	quiet := d["stalled_after_quiet_seconds"]
 	sinceProgress, _ := d["seconds_since_progress"].(float64)
 	if status == "stalling" && quiet != nil {
@@ -55,8 +56,8 @@ func agentsDelegationLines(ctx context.Context, d map[string]any) []string {
 			continue
 		}
 		doing := i18n.T(ctx, "gateway.agents.between_turns", "", nil)
-		if tool := child["current_tool"]; pyrepr.Truthy(tool) {
-			doing = "`" + pyrepr.Str(tool) + "`"
+		if tool := child["current_tool"]; anyutil.IsTrue(tool) {
+			doing = "`" + anyutil.String(tool) + "`"
 		}
 		calls, ok := child["api_calls"]
 		if !ok {
@@ -190,12 +191,12 @@ func (r *GatewayRunner) handleAgentsCommand(ctx context.Context, event *gateway.
 	})...)
 	lines = append(lines, "", i18n.T(ctx, "gateway.agents.running_processes", "", map[string]any{"count": len(runningProcs)}))
 	lines = append(lines, cappedRows(ctx, runningProcs, func(p map[string]any) []string {
-		cmd := clipText(strings.Join(strings.Fields(pyrepr.Str(pyrepr.Or(p["command"], ""))), " "), 90)
+		cmd := clipText(strings.Join(strings.Fields(anyutil.String(anyutil.Or(p["command"], ""))), " "), 90)
 		sessionID, ok := p["session_id"]
 		if !ok {
 			sessionID = "?"
 		}
-		return []string{fmt.Sprintf("- `%s` · %s · `%s`", pyrepr.Str(sessionID), tools.FormatUptimeShort(intValue(p["uptime_seconds"])), cmd)}
+		return []string{fmt.Sprintf("- `%s` · %s · `%s`", anyutil.String(sessionID), tools.FormatUptimeShort(intValue(p["uptime_seconds"])), cmd)}
 	})...)
 	lines = append(lines, "", i18n.T(ctx, "gateway.agents.async_jobs", "", map[string]any{"count": len(backgroundTasks)}))
 	if len(delegations) > 0 {
@@ -300,7 +301,7 @@ func (r *GatewayRunner) handleUsageCommand(ctx context.Context, event *gateway.M
 
 // Billing provider and base url of the session row or its most recent route, empty when none resolves
 func (r *GatewayRunner) persistedBillingRoute(ctx context.Context, source *gateway.SessionSource) (string, string) {
-	persisted, recent := pyjson.NewObject(), pyjson.NewObject()
+	persisted, recent := jsonutil.NewObject(), jsonutil.NewObject()
 	func() {
 		defer func() { _ = recover() }()
 		entry, err := r.slashStore().GetOrCreateSession(ctx, source, false, true)
@@ -324,17 +325,17 @@ func (r *GatewayRunner) persistedBillingRoute(ctx context.Context, source *gatew
 		}
 	}()
 	row := persisted
-	if v, _ := recent.Get("billing_provider"); pyrepr.Truthy(v) {
+	if v, _ := recent.Get("billing_provider"); anyutil.IsTrue(v) {
 		row = recent
 	}
 	providerValue, _ := row.Get("billing_provider")
 	baseValue, _ := row.Get("billing_base_url")
 	providerName, baseURL := "", ""
 	if providerValue != nil {
-		providerName = pyrepr.Str(providerValue)
+		providerName = anyutil.String(providerValue)
 	}
 	if baseValue != nil {
-		baseURL = pyrepr.Str(baseValue)
+		baseURL = anyutil.String(baseValue)
 	}
 	return providerName, baseURL
 }
@@ -359,7 +360,7 @@ func (r *GatewayRunner) handleInsightsCommand(ctx context.Context, event *gatewa
 			source = parts[i+1]
 			i += 2
 		default:
-			if pystr.StrIsDigit(flag) {
+			if textutil.IsDigits(flag) {
 				if n, ok := pystr.IntText(flag); ok && n.IsInt64() {
 					days = int(n.Int64())
 				}
@@ -385,8 +386,8 @@ func (r *GatewayRunner) handleInsightsCommand(ctx context.Context, event *gatewa
 		return engine.FormatGateway(report), nil
 	})
 	if err != nil {
-		pkgLog().Error(fmt.Sprintf("Insights command error: %s", pyrepr.ExceptionMessage(err)), "exc_info", err)
-		return i18n.T(ctx, "gateway.insights.error", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		pkgLog().Error(fmt.Sprintf("Insights command error: %s", err.Error()), "exc_info", err)
+		return i18n.T(ctx, "gateway.insights.error", "", map[string]any{"error": err.Error()}), nil
 	}
 	return value.(string), nil
 }

@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Telegram descriptor of the media cases, send_media advertised unless ops are given
@@ -137,7 +139,7 @@ func TestInboundWithoutClientKeepsPublicDropsRehost(t *testing.T) {
 func relayReprOf(action map[string]any) string {
 	var b strings.Builder
 	for k, v := range action {
-		b.WriteString(k + "=" + strings.ReplaceAll(strings.TrimSpace(relayWireStr(v)), "\n", " ") + ";")
+		b.WriteString(k + "=" + strings.ReplaceAll(strings.TrimSpace(anyutil.String(v)), "\n", " ") + ";")
 	}
 	return b.String()
 }

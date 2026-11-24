@@ -7,8 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Module whose BasePlatformAdapter methods a hosted adapter inherits rather than defines
@@ -44,7 +45,7 @@ func buildAdapter(ctx context.Context, platform string, f *plugins.HostedCallabl
 	}
 	obj, ok := value.(*plugins.HostedObject)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("adapter_factory returned a %s, not a platform adapter", pyrepr.TypeName(value))}
+		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("adapter_factory returned a %s, not a platform adapter", anyutil.Kind(value))}
 	}
 	return NewAdapter(ctx, gateway.Platform(platform), cfg, obj)
 }
@@ -113,7 +114,7 @@ func sendResult(v any, err error) (gateway.SendResult, error) {
 	}
 	m := plainMap(v)
 	if m == nil {
-		return gateway.SendResult{}, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a SendResult, got %s", pyrepr.TypeName(v))}
+		return gateway.SendResult{}, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected a SendResult, got %s", anyutil.Kind(v))}
 	}
 	out := gateway.SendResult{Success: config.PyTruthy(m["success"]), MessageID: m["message_id"], Error: m["error"],
 		RawResponse: m["raw_response"], Retryable: config.PyTruthy(m["retryable"])}
@@ -526,7 +527,7 @@ func sourceToDict(s *gateway.SessionSource) any {
 	}
 	obj := s.ToDict()
 	out := make(map[string]any, obj.Len())
-	for _, k := range obj.Keys {
+	for _, k := range obj.Keys() {
 		v, _ := obj.Get(k)
 		out[k] = v
 	}
@@ -601,7 +602,7 @@ func eventFromDict(ctx context.Context, d map[string]any) (*gateway.MessageEvent
 		e.AllowGatewayControl = config.PyTruthy(v)
 	}
 	if ts := plainMap(d["timestamp"]); ts != nil {
-		parsed, err := parseISO(config.PyStr(ts["__datetime__"]))
+		parsed, err := timeutil.ParseISO(config.PyStr(ts["__datetime__"]), time.Local)
 		if err != nil {
 			return nil, err
 		}
@@ -615,14 +616,4 @@ func orEmpty(v any) any {
 		return ""
 	}
 	return v
-}
-
-// Time of a Python isoformat string, naive values read as local time like datetime.now
-func parseISO(s string) (time.Time, error) {
-	for _, layout := range []string{"2006-01-02T15:04:05.999999999Z07:00", "2006-01-02T15:04:05.999999999"} {
-		if t, err := time.ParseInLocation(layout, s, time.Local); err == nil {
-			return t, nil
-		}
-	}
-	return time.Time{}, &gateway.PyError{Kind: "ValueError", Msg: fmt.Sprintf("Invalid isoformat string: %s", config.PyRepr(s))}
 }

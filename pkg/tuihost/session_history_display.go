@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"math/big"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -14,11 +15,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -119,7 +119,7 @@ func refImageProjection(text string) (string, []string, bool) {
 // Whether an attached image part carries exactly the bytes of the regular file at path
 func imagePartMatchesFile(ctx context.Context, p string, raw any) bool {
 	part, isDict := raw.(map[string]any)
-	if !pypath.IsAbs(p) || !isDict || part["type"] != "image_url" {
+	if !filepath.IsAbs(p) || !isDict || part["type"] != "image_url" {
 		return false
 	}
 	m := imageDataRe.FindStringSubmatch(historyPartImageURL(part))
@@ -210,8 +210,8 @@ func dictGet(v any, key string, def any) any {
 			return value
 		}
 		return def
-	case *pyjson.Object:
-		return d.GetOr(key, def)
+	case *jsonutil.Object:
+		return d.ValueOr(key, def)
 	}
 	panic("expected a mapping, got " + errchain.Kind(v))
 }
@@ -225,16 +225,16 @@ func rememberToolCallArgs(toolCalls any, index map[any]toolCallArgs) {
 	for _, tc := range calls {
 		fn, tcID := dictGet(tc, "function", map[string]any{}), dictGet(tc, "id", "")
 		name := dictGet(fn, "name", nil)
-		if !pyrepr.Truthy(tcID) || !pyrepr.Truthy(name) {
+		if !anyutil.IsTrue(tcID) || !anyutil.IsTrue(name) {
 			continue
 		}
 		var args any = map[string]any{}
 		if raw, isStr := dictGet(fn, "arguments", "{}").(string); isStr {
-			if decoded, err := pyjson.Loads(raw); err == nil {
-				args = pyjson.Plain(decoded)
+			if decoded, err := jsonutil.Decode(raw); err == nil {
+				args = jsonutil.Plain(decoded)
 			}
 		}
-		index[hashableKey(tcID)] = toolCallArgs{pyrepr.Str(name), args}
+		index[hashableKey(tcID)] = toolCallArgs{anyutil.String(name), args}
 	}
 }
 
@@ -254,7 +254,7 @@ func toolArgsDict(args any) map[string]any {
 	if d, isDict := args.(map[string]any); isDict {
 		return d
 	}
-	if !pyrepr.Truthy(args) {
+	if !anyutil.IsTrue(args) {
 		return map[string]any{}
 	}
 	panic("tool arguments are " + errchain.Kind(args) + ", expected a mapping")
@@ -298,7 +298,7 @@ func HistoryToMessages(ctx context.Context, history []any, profileHome string, i
 		if !historyRoles[role] {
 			continue
 		}
-		if role == "assistant" && pyrepr.Truthy(m["tool_calls"]) {
+		if role == "assistant" && anyutil.IsTrue(m["tool_calls"]) {
 			rememberToolCallArgs(m["tool_calls"], index)
 		}
 		if m["display_kind"] == "hidden" {
@@ -329,7 +329,7 @@ func HistoryToMessages(ctx context.Context, history []any, profileHome string, i
 			messages = append(messages, toolHistoryRow(ctx, m, index))
 			continue
 		}
-		hasDetail := role == "assistant" && slices.ContainsFunc(historyAssistantDetail, func(k string) bool { return pyrepr.Truthy(m[k]) })
+		hasDetail := role == "assistant" && slices.ContainsFunc(historyAssistantDetail, func(k string) bool { return anyutil.IsTrue(m[k]) })
 		if strings.TrimSpace(contentText) == "" && !hasDetail {
 			continue
 		}
@@ -353,15 +353,15 @@ func HistoryToMessages(ctx context.Context, history []any, profileHome string, i
 			}
 		}
 		displayKind := m["display_kind"]
-		if !pyrepr.Truthy(displayKind) {
+		if !anyutil.IsTrue(displayKind) {
 			if legacy := legacyDisplayKind(role, contentText); legacy != "" {
 				displayKind = legacy
 			}
 		}
-		if pyrepr.Truthy(displayKind) {
+		if anyutil.IsTrue(displayKind) {
 			msg["display_kind"] = displayKind
 		}
-		if pyrepr.Truthy(m["display_metadata"]) {
+		if anyutil.IsTrue(m["display_metadata"]) {
 			msg["display_metadata"] = m["display_metadata"]
 		}
 		messages = append(messages, msg)
@@ -372,20 +372,20 @@ func HistoryToMessages(ctx context.Context, history []any, profileHome string, i
 // Compact display row of a tool result labelled from the call that produced it, a failed or refused call with its reason
 func toolHistoryRow(ctx context.Context, m map[string]any, index map[any]toolCallArgs) map[string]any {
 	key := m["tool_call_id"]
-	if !pyrepr.Truthy(key) {
+	if !anyutil.IsTrue(key) {
 		key = ""
 	}
 	call, found := index[hashableKey(key)]
 	name := ""
 	if found && call.name != "" {
 		name = call.name
-	} else if pyrepr.Truthy(m["tool_name"]) {
-		name = pyrepr.Str(m["tool_name"])
+	} else if anyutil.IsTrue(m["tool_name"]) {
+		name = anyutil.String(m["tool_name"])
 	} else {
 		name = "tool"
 	}
 	var args any = map[string]any{}
-	if found && pyrepr.Truthy(call.args) {
+	if found && anyutil.IsTrue(call.args) {
 		args = call.args
 	}
 	argsDict := toolArgsDict(args)
@@ -406,7 +406,7 @@ func toolHistoryRow(ctx context.Context, m map[string]any, index map[any]toolCal
 		row["result_text"] = text
 	}
 	for _, k := range []string{"duration_s", "inline_diff", "image_path"} {
-		if v := displayMetadataField(m["display_metadata"], k); pyrepr.Truthy(v) {
+		if v := displayMetadataField(m["display_metadata"], k); anyutil.IsTrue(v) {
 			row[k] = v
 		}
 	}
@@ -415,7 +415,7 @@ func toolHistoryRow(ctx context.Context, m map[string]any, index map[any]toolCal
 			row[k] = m[k]
 		}
 	}
-	if pyrepr.Truthy(args) {
+	if anyutil.IsTrue(args) {
 		row["args"] = args
 	}
 	if len(labels) > 0 {

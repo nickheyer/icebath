@@ -6,7 +6,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Real stdout reserved for JSON RPC frames, the module stdio transport over it and the live session records
@@ -22,7 +22,7 @@ var (
 )
 
 func init() {
-	BindSinks(func(frame *pyjson.Object) { WriteJSON(context.Background(), frame) },
+	BindSinks(func(frame *jsonutil.Object) { WriteJSON(context.Background(), frame) },
 		func(event, sid string, payload map[string]any) { Emit(context.Background(), event, sid, payload) },
 		sessionClientAnswersRequests, sessionAnsweringClients)
 }
@@ -30,7 +30,7 @@ func init() {
 // Detached WebSocket sink that keeps a session resumable while dropping stale frames
 type dropTransport struct{ _ byte }
 
-func (*dropTransport) Write(obj *pyjson.Object) bool { return false }
+func (*dropTransport) Write(obj *jsonutil.Object) bool { return false }
 
 func (*dropTransport) Close() {}
 
@@ -67,15 +67,15 @@ func sessionEntries() []sessionEntry {
 }
 
 // Writes one frame through the transport of its session, else the context bound one, else module stdio
-func WriteJSON(ctx context.Context, obj *pyjson.Object) bool {
+func WriteJSON(ctx context.Context, obj *jsonutil.Object) bool {
 	StampEvent(obj)
-	params, _ := obj.GetOr("params", nil).(*pyjson.Object)
-	_, idIsString := obj.GetOr("id", nil).(string)
+	params, _ := obj.ValueOr("params", nil).(*jsonutil.Object)
+	_, idIsString := obj.ValueOr("id", nil).(string)
 	_, hasMethod := obj.Get("method")
-	if obj.GetOr("method", nil) == "event" || (idIsString && hasMethod) {
+	if obj.ValueOr("method", nil) == "event" || (idIsString && hasMethod) {
 		ProjectRoomMemberActivity(ctx, obj, SessionRecord)
 		if params != nil {
-			if sid, _ := params.GetOr("session_id", nil).(string); sid != "" {
+			if sid, _ := params.ValueOr("session_id", nil).(string); sid != "" {
 				if transport, ok := SessionRecord(sid).Get("transport").(Transport); ok && transport != nil {
 					return transport.Write(obj)
 				}

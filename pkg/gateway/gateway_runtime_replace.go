@@ -3,15 +3,14 @@ package gateway
 import (
 	"context"
 	"errors"
-	"math/big"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Graceful drain before the guarded force kill, and the wait after it
@@ -31,7 +30,7 @@ var ReplaceRefusalDetail = map[string]string{
 
 // Resolved root of this install
 func replaceInstallRoot() string {
-	root, err := pypath.Resolve(home.Root())
+	root, err := pathutil.Resolve(home.Root())
 	if err != nil {
 		return home.Root()
 	}
@@ -39,7 +38,7 @@ func replaceInstallRoot() string {
 }
 
 // Control home and identify payload of the process answering for home, its own socket then the multiplexer's
-func replaceIdentify(h string, timeout time.Duration) (string, *pyjson.Object, error) {
+func replaceIdentify(h string, timeout time.Duration) (string, *jsonutil.Object, error) {
 	for _, control := range []string{h, MultiplexerRootFor(h)} {
 		if control == "" {
 			continue
@@ -67,7 +66,7 @@ func replaceSame(a any, b string) bool {
 
 // Whether home is this install's root or one of its profiles
 func replaceWithinInstall(h, root string) bool {
-	resolved, err := pypath.Resolve(h)
+	resolved, err := pathutil.Resolve(h)
 	if err != nil {
 		return false
 	}
@@ -75,12 +74,9 @@ func replaceWithinInstall(h, root string) bool {
 }
 
 // Live pid and start time of a verified older owner, or the refusal code naming why it is not one
-func replaceVerifiedOwner(control string, payload *pyjson.Object) (int, any, string) {
+func replaceVerifiedOwner(control string, payload *jsonutil.Object) (int, any, string) {
 	protocol, _ := payload.Get("runtime_protocol")
 	if n, ok := protocol.(int64); ok && n > 1 {
-		return 0, nil, "owner_newer"
-	}
-	if n, ok := protocol.(*big.Int); ok && n.Cmp(big.NewInt(1)) > 0 {
 		return 0, nil, "owner_newer"
 	}
 	reported, _ := home.RecordValue(payload.Get, home.RecordKey)
@@ -107,7 +103,7 @@ func replaceVerifiedOwner(control string, payload *pyjson.Object) (int, any, str
 
 // Planned stop marker in the owner's own home so it exits as a planned stop
 func replaceWritePlannedStop(ctx context.Context, control string, pid int, startTime any) {
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("target_pid", int64(pid))
 	record.Set("target_start_time", startTime)
 	record.Set("stopper_pid", int64(os.Getpid()))
@@ -117,9 +113,9 @@ func replaceWritePlannedStop(ctx context.Context, control string, pid int, start
 
 // Whether pid is gone within seconds, polling every tenth of a second
 func replaceWaitGone(pid int, seconds float64) bool {
-	end := pythread.Monotonic() + max(seconds, 0)
+	end := timeutil.Monotonic() + max(seconds, 0)
 	for statusPidExists(pid) {
-		if pythread.Monotonic() >= end {
+		if timeutil.Monotonic() >= end {
 			return false
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -136,7 +132,7 @@ var (
 
 // Stops the older gateway answering for home like gateway stop, empty once gone, else a refusal code
 func ReplaceIncompatibleOwner(ctx context.Context, h string, deadline float64) string {
-	budget := deadline - pythread.Monotonic()
+	budget := deadline - timeutil.Monotonic()
 	if budget <= 0 {
 		return "owner_unreachable"
 	}
@@ -152,7 +148,7 @@ func ReplaceIncompatibleOwner(ctx context.Context, h string, deadline float64) s
 		return refusal
 	}
 	replaceWritePlannedStop(ctx, control, pid, startTime)
-	graceful := min(replaceGracefulStopSeconds, max(deadline-pythread.Monotonic()-replaceForcedStopSeconds, 1.0))
+	graceful := min(replaceGracefulStopSeconds, max(deadline-timeutil.Monotonic()-replaceForcedStopSeconds, 1.0))
 	err = nil
 	if !nativeWindows {
 		err = TerminatePid(pid, false, startTime)

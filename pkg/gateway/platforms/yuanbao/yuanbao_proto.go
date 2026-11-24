@@ -10,9 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -182,7 +182,7 @@ type fieldEntry struct {
 // FieldDict maps a field number to its entries in wire order, repeated fields holding several
 type FieldDict map[string][]fieldEntry
 
-func fieldKey(n any) string { return pyrepr.Str(n) }
+func fieldKey(n any) string { return anyutil.String(n) }
 
 // FieldsToDict groups parsed fields by field number
 func FieldsToDict(fields []Field) FieldDict {
@@ -375,8 +375,8 @@ type specField struct {
 // Dict view over a decoded JSON object or a Go map, ok false for any other value
 func asDict(v any) (map[string]any, bool) {
 	switch d := v.(type) {
-	case *pyjson.Object:
-		return d.Vals, true
+	case *jsonutil.Object:
+		return d.Map(), true
 	case map[string]any:
 		return d, true
 	}
@@ -385,8 +385,8 @@ func asDict(v any) (map[string]any, bool) {
 
 // Keys of a dict in iteration order, Go maps in sorted order
 func dictKeys(v any) []string {
-	if o, ok := v.(*pyjson.Object); ok {
-		return o.Keys
+	if o, ok := v.(*jsonutil.Object); ok {
+		return o.Keys()
 	}
 	m, _ := v.(map[string]any)
 	keys := make([]string, 0, len(m))
@@ -416,7 +416,7 @@ func encodeSpec(objValue any, spec []specField) ([]byte, error) {
 		}
 		switch f.kind {
 		case 's':
-			p.s(f.fn, pyrepr.Str(v))
+			p.s(f.fn, anyutil.String(v))
 		case 'r':
 			s, ok := v.(string)
 			if !ok {
@@ -441,11 +441,11 @@ func truthyNum(v any) bool {
 	if n, ok := v.(*big.Int); ok {
 		return n.Sign() != 0
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
-func decodeSpec(fd FieldDict, spec []specField) *pyjson.Object {
-	out := pyjson.NewObject()
+func decodeSpec(fd FieldDict, spec []specField) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, f := range spec {
 		var v any
 		if f.kind == 's' || f.kind == 'r' {
@@ -469,12 +469,12 @@ func encodeHead(cmdType int64, cmd string, seqNo int64, msgID, module string, ne
 		{6, 'v', ack}, {10, 'v', new(big.Int).And(status, mask64)}})
 }
 
-func decodeHead(data []byte) (*pyjson.Object, error) {
+func decodeHead(data []byte) (*jsonutil.Object, error) {
 	fd, err := parseDict(data)
 	if err != nil {
 		return nil, err
 	}
-	head := pyjson.NewObject()
+	head := jsonutil.NewObject()
 	head.Set("cmd_type", fd.GetVarint(1))
 	head.Set("cmd", fd.GetString(2))
 	head.Set("seq_no", fd.GetVarint(3))
@@ -500,7 +500,7 @@ func EncodeConnMsgFull(cmdType int64, cmd string, seqNo int64, msgID, module str
 }
 
 // DecodeConnMsg decodes a ConnMsg into msg_type, seq_no, data and the full head
-func DecodeConnMsg(data []byte) (*pyjson.Object, error) {
+func DecodeConnMsg(data []byte) (*jsonutil.Object, error) {
 	fd, err := parseDict(data)
 	if err != nil {
 		return nil, err
@@ -509,9 +509,9 @@ func DecodeConnMsg(data []byte) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := pyjson.NewObject()
-	out.Set("msg_type", head.Vals["cmd_type"])
-	out.Set("seq_no", head.Vals["seq_no"])
+	out := jsonutil.NewObject()
+	out.Set("msg_type", head.Value("cmd_type"))
+	out.Set("seq_no", head.Value("seq_no"))
 	out.Set("data", fd.GetBytes(2))
 	out.Set("head", head)
 	return out, nil
@@ -549,7 +549,7 @@ func encodeMsgContent(contentValue any) ([]byte, error) {
 	}
 	content, _ := asDict(contentValue)
 	p := &pbuf{b: buf}
-	if imgs := content["image_info_array"]; pyrepr.Truthy(imgs) {
+	if imgs := content["image_info_array"]; anyutil.IsTrue(imgs) {
 		list, ok := imgs.([]any)
 		if !ok {
 			return nil, fmt.Errorf("image_info_array must be a list, got %s", errchain.Kind(imgs))
@@ -564,7 +564,7 @@ func encodeMsgContent(contentValue any) ([]byte, error) {
 	}
 	if extMap, ok := asDict(content["ext_map"]); ok {
 		for _, k := range dictKeys(content["ext_map"]) {
-			entry := map[string]any{"key": k, "value": pyrepr.Str(extMap[k])}
+			entry := map[string]any{"key": k, "value": anyutil.String(extMap[k])}
 			enc, err := encodeSpec(entry, mapEntrySpec)
 			if err != nil {
 				return nil, err
@@ -575,7 +575,7 @@ func encodeMsgContent(contentValue any) ([]byte, error) {
 	return p.b, p.err
 }
 
-func decodeMsgContent(data []byte) (*pyjson.Object, error) {
+func decodeMsgContent(data []byte) (*jsonutil.Object, error) {
 	fd, err := parseDict(data)
 	if err != nil {
 		return nil, err
@@ -595,7 +595,7 @@ func decodeMsgContent(data []byte) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	extMap := pyjson.NewObject()
+	extMap := jsonutil.NewObject()
 	for _, e := range entries {
 		if k := e.GetString(1); k != "" {
 			extMap.Set(k, e.GetString(2))
@@ -621,7 +621,7 @@ func EncodeMsgBodyElement(elementValue any) ([]byte, error) {
 		content = map[string]any{}
 	}
 	var contentBytes []byte
-	if pyrepr.Truthy(content) {
+	if anyutil.IsTrue(content) {
 		enc, err := encodeMsgContent(content)
 		if err != nil {
 			return nil, err
@@ -636,14 +636,14 @@ func EncodeMsgBodyElement(elementValue any) ([]byte, error) {
 }
 
 // DecodeMsgBodyElement decodes a body element into msg_type and msg_content
-func DecodeMsgBodyElement(data []byte) (*pyjson.Object, error) {
+func DecodeMsgBodyElement(data []byte) (*jsonutil.Object, error) {
 	fd, err := parseDict(data)
 	if err != nil {
 		return nil, err
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("msg_type", fd.GetString(1))
-	content := pyjson.NewObject()
+	content := jsonutil.NewObject()
 	if b := fd.GetBytes(2); len(b) > 0 {
 		if content, err = decodeMsgContent(b); err != nil {
 			return nil, err
@@ -686,7 +686,7 @@ var inboundPushSpec = []pushField{
 		}
 		out := []any{}
 		for _, d := range rep {
-			item := pyjson.NewObject()
+			item := jsonutil.NewObject()
 			item.Set("msg_seq", d.GetVarint(1))
 			item.Set("msg_id", d.GetString(2))
 			out = append(out, item)
@@ -708,12 +708,12 @@ var inboundPushSpec = []pushField{
 }
 
 // DecodeInboundPush parses an InboundMessagePush payload dropping empty values except msg_body and msg_seq, nil on failure
-func DecodeInboundPush(data []byte) *pyjson.Object {
+func DecodeInboundPush(data []byte) *jsonutil.Object {
 	fd, err := parseDict(data)
 	if err != nil {
 		return nil
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, f := range inboundPushSpec {
 		v, err := f.get(fd, f.fn)
 		if err != nil {
@@ -726,12 +726,12 @@ func DecodeInboundPush(data []byte) *pyjson.Object {
 	return out
 }
 
-func decodeForwardMsgContent(data []byte) (*pyjson.Object, error) {
+func decodeForwardMsgContent(data []byte) (*jsonutil.Object, error) {
 	fd, err := parseDict(data)
 	if err != nil {
 		return nil, err
 	}
-	content := pyjson.NewObject()
+	content := jsonutil.NewObject()
 	content.Set("type", fd.GetVarint(1))
 	if s := fd.GetString(2); s != "" {
 		content.Set("text", s)
@@ -751,7 +751,7 @@ func decodeForwardMsgContent(data []byte) (*pyjson.Object, error) {
 }
 
 // DecodeForwardMsgData parses ForwardMsgData bytes into sub_type, times, nick_name and msg, nil on failure
-func DecodeForwardMsgData(data []byte) *pyjson.Object {
+func DecodeForwardMsgData(data []byte) *jsonutil.Object {
 	fd, err := parseDict(data)
 	if err != nil {
 		return nil
@@ -770,14 +770,14 @@ func DecodeForwardMsgData(data []byte) *pyjson.Object {
 			}
 			contents = append(contents, c)
 		}
-		m := pyjson.NewObject()
+		m := jsonutil.NewObject()
 		m.Set("sender", d.GetString(1))
 		m.Set("time", d.GetVarint(2))
 		m.Set("plainText", d.GetString(3))
 		m.Set("msgContent", contents)
 		msgs = append(msgs, m)
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("sub_type", fd.GetVarint(1))
 	out.Set("begin_time", fd.GetVarint(2))
 	out.Set("end_time", fd.GetVarint(3))
@@ -851,7 +851,7 @@ func EncodePushAck(originalHead any) ([]byte, error) {
 			v = ""
 		}
 		s, ok := v.(string)
-		if !ok && pyrepr.Truthy(v) {
+		if !ok && anyutil.IsTrue(v) {
 			return nil, typeErr("encode", v)
 		}
 		fields[i] = s
@@ -903,12 +903,12 @@ func EncodeQueryGroupInfo(groupCode string) ([]byte, error) {
 }
 
 // DecodeQueryGroupInfoRsp parses code, message and the group info fields, nil on failure
-func DecodeQueryGroupInfoRsp(data []byte) *pyjson.Object {
+func DecodeQueryGroupInfoRsp(data []byte) *jsonutil.Object {
 	fd, err := parseDict(data)
 	if err != nil {
 		return nil
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("code", fd.GetVarint(1))
 	if s := fd.GetString(2); s != "" {
 		result.Set("message", s)
@@ -943,7 +943,7 @@ func EncodeGetGroupMemberList(groupCode string, offset, limit int64) ([]byte, er
 }
 
 // DecodeGetGroupMemberListRsp parses code, message, members without empty fields except role, next_offset and is_complete
-func DecodeGetGroupMemberListRsp(data []byte) *pyjson.Object {
+func DecodeGetGroupMemberListRsp(data []byte) *jsonutil.Object {
 	fd, err := parseDict(data)
 	if err != nil {
 		return nil
@@ -954,7 +954,7 @@ func DecodeGetGroupMemberListRsp(data []byte) *pyjson.Object {
 	}
 	members := []any{}
 	for _, m := range rep {
-		mem := pyjson.NewObject()
+		mem := jsonutil.NewObject()
 		for _, kv := range []struct {
 			k string
 			v any
@@ -965,7 +965,7 @@ func DecodeGetGroupMemberListRsp(data []byte) *pyjson.Object {
 		}
 		members = append(members, mem)
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("code", fd.GetVarint(1))
 	out.Set("message", fd.GetString(2))
 	out.Set("members", members)

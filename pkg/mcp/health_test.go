@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registers a tool under a toolset in the default registry for the life of the test
@@ -43,6 +43,6 @@ func TestHealthRefreshToolsSkips(t *testing.T) {
 
 // Minimal registrable tool definition
 func testToolDef(name, toolset string) tools.Def {
-	return tools.Def{Name: name, Toolset: toolset, Schema: pyjson.ObjectOf("name", name),
+	return tools.Def{Name: name, Toolset: toolset, Schema: jsonutil.ObjectOf("name", name),
 		Handler: func(context.Context, *tools.Call) string { return "{}" }}
 }

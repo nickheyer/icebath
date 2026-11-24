@@ -10,22 +10,23 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func terminalReceipt(t testing.TB, admission, reply string, reused bool) *pyjson.Object {
-	result := pyjson.ObjectOf("final_response", reply, "completed", true)
+func terminalReceipt(t testing.TB, admission, reply string, reused bool) *jsonutil.Object {
+	result := jsonutil.ObjectOf("final_response", reply, "completed", true)
 	if reused {
 		result.Set("response_reused", true)
 	}
-	return pyjson.ObjectOf("admission_id", admission, "status", "terminal", "outcome", "completed", "result", result)
+	return jsonutil.ObjectOf("admission_id", admission, "status", "terminal", "outcome", "completed", "result", result)
 }
 
 func TestCompletionInDeliveryBeatsARecoveryError(t *testing.T) {
 	delivering, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch method {
 		case "prompt.submit":
 			r.link.put(eventFrame(t, "session.replay_gap", `{}`, "s", "", 0))
@@ -38,7 +39,7 @@ func TestCompletionInDeliveryBeatsARecoveryError(t *testing.T) {
 		}
 		return nil, &gateway.GatewayClientError{Msg: "read_failed"}
 	})
-	r.editor.onUpdate = func(string, pyacp.SessionUpdate) error {
+	r.editor.onUpdate = func(string, acputil.SessionUpdate) error {
 		once.Do(func() { close(delivering) })
 		<-release
 		return nil
@@ -62,7 +63,7 @@ func TestOneRecoveryReadSettlesACancellationAndThePumpSurvives(t *testing.T) {
 	var once sync.Once
 	var mu sync.Mutex
 	var reads []string
-	r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch {
 		case method == "prompt.submit" && params["session_id"] == "t":
 			return jsonObj(t, `{"admission_id": "t-a", "status": "queued"}`), nil
@@ -76,7 +77,7 @@ func TestOneRecoveryReadSettlesACancellationAndThePumpSurvives(t *testing.T) {
 			return resumedSnapshot(t, ""), nil
 		}
 		mu.Lock()
-		reads = append(reads, pyStr(params["admission_id"]))
+		reads = append(reads, anyutil.String(params["admission_id"]))
 		count := len(reads)
 		mu.Unlock()
 		if count > 1 {
@@ -108,11 +109,11 @@ func TestOneRecoveryReadSettlesACancellationAndThePumpSurvives(t *testing.T) {
 func TestRetryAfterALostAckCompletesAPartialReusedReply(t *testing.T) {
 	var mu sync.Mutex
 	var submissions []string
-	r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch method {
 		case "prompt.submit":
 			mu.Lock()
-			submissions = append(submissions, pyStr(params["input_id"]))
+			submissions = append(submissions, anyutil.String(params["input_id"]))
 			count := len(submissions)
 			mu.Unlock()
 			if count == 1 {
@@ -144,7 +145,7 @@ func TestRetryAfterALostAckCompletesAPartialReusedReply(t *testing.T) {
 func TestInterimAfterTheGapShowsTheReplyOnce(t *testing.T) {
 	for _, completion := range []string{"", "ANSWER"} {
 		t.Run("completion_"+completion, func(t *testing.T) {
-			r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				if method == "prompt.submit" {
 					return jsonObj(t, `{"admission_id": "a", "status": "queued"}`), nil
 				}
@@ -160,8 +161,8 @@ func TestInterimAfterTheGapShowsTheReplyOnce(t *testing.T) {
 				if kind == "message.complete" {
 					text = completion
 				}
-				payload := pyjson.ObjectOf("text", text, "already_streamed", false, "outcome", "completed")
-				dumped, _ := pyjson.Dumps(payload)
+				payload := jsonutil.ObjectOf("text", text, "already_streamed", false, "outcome", "completed")
+				dumped, _ := jsonutil.Encode(payload)
 				r.link.put(eventFrame(t, kind, dumped, "s", "a", i+1))
 			}
 			resp, err := task.wait(t, 2*time.Second)
@@ -176,7 +177,7 @@ func TestInterimAfterTheGapShowsTheReplyOnce(t *testing.T) {
 }
 
 func TestWithoutAGapAStreamedReusedReplyIsNotRepainted(t *testing.T) {
-	r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	r := newRig(t, func(r *gatewayRig, ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		return jsonObj(t, `{"admission_id": "a", "status": "queued"}`), nil
 	})
 	task := r.ask("s")

@@ -18,11 +18,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/monitoring"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -112,14 +111,14 @@ func defaultOwnerIsLive(pid int64, startedAt any) (bool, error) {
 	if !ok {
 		return true, nil
 	}
-	recorded, err := pyint.Of(startedAt)
+	recorded, err := anyutil.ToInt(startedAt)
+	if errors.Is(err, anyutil.ErrRange) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
-	if !recorded.IsInt64() {
-		return false, nil
-	}
-	diff := current - recorded.Int64()
+	diff := current - recorded
 	if diff < 0 {
 		diff = -diff
 	}
@@ -156,7 +155,7 @@ func (s *Store) staleAgeSeconds(claimedAt string, progressAt any) (float64, erro
 			return s.claimAgeSeconds(p)
 		}
 	default:
-		if pyrepr.Truthy(p) {
+		if anyutil.IsTrue(p) {
 			return 0, &pyTypeError{"the execution progress time is " + errchain.Kind(p) + ", expected ISO 8601 text"}
 		}
 	}

@@ -20,9 +20,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Least privilege scope covering media upload and the message create that references it
@@ -242,7 +242,7 @@ func checkAuth(ctx context.Context, email string) (string, bool) {
 
 // Validates a Google OAuth client secret file and stores it under the home
 func storeClientSecret(ctx context.Context, path string) (string, error) {
-	src, err := filepath.Abs(pypath.Expanduser(path))
+	src, err := filepath.Abs(pathutil.ExpandUser(path))
 	if err != nil {
 		return "", err
 	}
@@ -253,7 +253,7 @@ func storeClientSecret(ctx context.Context, path string) (string, error) {
 	if err != nil {
 		return "", failOAuth("ERROR: File not found: " + src)
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	var data map[string]any
 	if err != nil || json.Unmarshal([]byte(text), &data) != nil {
 		return "", failOAuth("ERROR: File is not valid JSON.")
@@ -280,7 +280,7 @@ func loadClientConfig(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -349,7 +349,7 @@ func loadPendingAuth(ctx context.Context, email string) (map[string]any, error) 
 	var data map[string]any
 	if err == nil {
 		var text string
-		if text, err = pystr.DecodeUTF8Sig(raw); err == nil {
+		if text, err = textutil.DecodeUTF8(textutil.TrimBOM(raw)); err == nil {
 			err = json.Unmarshal([]byte(text), &data)
 		}
 	}

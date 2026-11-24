@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Credential bound for a destination the transport policy forbids, never retryable
@@ -57,7 +56,7 @@ func urlsplit(raw string) (splitURL, error) {
 		if strings.Contains(p.netloc, "[") {
 			bracketed := strings.SplitN(strings.SplitN(p.netloc, "[", 2)[1], "]", 2)[0]
 			if !strings.HasPrefix(bracketed, "v") && net.ParseIP(strings.SplitN(bracketed, "%", 2)[0]) == nil {
-				return p, fmt.Errorf("%s does not appear to be an IPv4 or IPv6 address", pyrepr.StrRepr(bracketed))
+				return p, fmt.Errorf("%s does not appear to be an IPv4 or IPv6 address", strconv.Quote(bracketed))
 			}
 		}
 	}
@@ -112,7 +111,7 @@ func (p splitURL) port() (int, error) {
 	}
 	for _, c := range raw {
 		if !(c >= '0' && c <= '9') {
-			return 0, fmt.Errorf("Port could not be cast to integer value as %s", pyrepr.StrRepr(raw))
+			return 0, fmt.Errorf("Port could not be cast to integer value as %s", strconv.Quote(raw))
 		}
 	}
 	n, err := strconv.Atoi(raw)
@@ -188,11 +187,11 @@ func CheckedURL(url, envName string) (string, error) {
 		_, err = p.port()
 	}
 	if err != nil {
-		return "", newCredentialDestinationError(fmt.Sprintf("%s=%s is not a valid URL: %v", envName, pyrepr.StrRepr(DisplayURL(url)), err))
+		return "", newCredentialDestinationError(fmt.Sprintf("%s=%s is not a valid URL: %v", envName, strconv.Quote(DisplayURL(url)), err))
 	}
 	host := p.hostname()
 	if host == "" {
-		return "", newCredentialDestinationError(fmt.Sprintf("%s=%s has no host.", envName, pyrepr.StrRepr(DisplayURL(url))))
+		return "", newCredentialDestinationError(fmt.Sprintf("%s=%s has no host.", envName, strconv.Quote(DisplayURL(url))))
 	}
 	if hasUser, _ := p.userinfo(); hasUser || p.query != "" || p.fragment != "" {
 		return "", newCredentialDestinationError(envName + " must be a plain origin and path (no user info, query or fragment); " +
@@ -228,7 +227,7 @@ func openCredentialed(req *http.Request, timeout time.Duration) (*http.Response,
 		cancel()
 		return nil, newCredentialDestinationError(fmt.Sprintf("%s answered HTTP %d redirecting to %s; "+
 			"Remote Config never follows a redirect with credentials. Point the URL at the final destination.",
-			req.URL.String(), resp.StatusCode, pyrepr.StrRepr(DisplayURL(resp.Header.Get("Location")))))
+			req.URL.String(), resp.StatusCode, strconv.Quote(DisplayURL(resp.Header.Get("Location")))))
 	}
 	resp.Body = &cancelBody{ReadCloser: resp.Body, cancel: cancel}
 	return resp, nil

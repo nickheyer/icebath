@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Provider double whose availability and generate result tests control
@@ -27,7 +27,7 @@ type fakeImageProvider struct {
 }
 
 func (p *fakeImageProvider) Name() string        { return p.name }
-func (p *fakeImageProvider) DisplayName() string { return pystr.Title(p.name) }
+func (p *fakeImageProvider) DisplayName() string { return textutil.Title(p.name) }
 func (p *fakeImageProvider) GetSetupSchema() map[string]any {
 	return map[string]any{"name": p.DisplayName(), "badge": "", "tag": "", "env_vars": []any{}}
 }

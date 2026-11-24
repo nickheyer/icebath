@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func bridgeTestTools() []any {
@@ -19,7 +20,7 @@ func bridgeTestTools() []any {
 	}
 }
 
-func bridgeSpecNames(specs []*pyjson.Object) []string {
+func bridgeSpecNames(specs []*jsonutil.Object) []string {
 	names := []string{}
 	for _, s := range specs {
 		n, _ := s.Get("name")
@@ -41,15 +42,15 @@ func TestSpecsAreFlattenedAndMalformedEntriesSkipped(t *testing.T) {
 	if got := bridgeSpecNames(specs); !reflect.DeepEqual(got, []string{"memory", "read_file"}) {
 		t.Fatalf("names %v", got)
 	}
-	want := pyjson.NewObject()
+	want := jsonutil.NewObject()
 	want.Set("name", "memory")
 	want.Set("description", "d1")
 	want.Set("parameters", map[string]any{"a": 1})
-	if !pyjson.Equal(specs[0], want) {
+	if !anyutil.Equal(specs[0], want) {
 		t.Fatalf("spec %v", specs[0])
 	}
-	if !reflect.DeepEqual(specs[0].Keys, []string{"name", "description", "parameters"}) {
-		t.Fatalf("spec key order %v", specs[0].Keys)
+	if !reflect.DeepEqual(specs[0].Keys(), []string{"name", "description", "parameters"}) {
+		t.Fatalf("spec key order %v", specs[0].Keys())
 	}
 }
 
@@ -77,13 +78,13 @@ func TestRenderedSectionsCarryTheContractAndTheSchemas(t *testing.T) {
 		t.Fatalf("contract missing %q", sections[0])
 	}
 	_, body, _ := strings.Cut(sections[0], "\n")
-	payload, err := pyjson.Loads(body)
+	payload, err := jsonutil.Decode(body)
 	if err != nil {
 		t.Fatal(err)
 	}
 	names := []string{}
 	for _, s := range payload.([]any) {
-		n, _ := s.(*pyjson.Object).Get("name")
+		n, _ := s.(*jsonutil.Object).Get("name")
 		names = append(names, n.(string))
 	}
 	if !reflect.DeepEqual(names, []string{"memory", "read_file"}) {
@@ -112,8 +113,8 @@ func TestToolCallBlockIsParsedAndStrippedFromTheText(t *testing.T) {
 	if len(calls) != 1 || calls[0].Function.Name != "memory" || calls[0].ID != "c1" {
 		t.Fatalf("calls %+v", calls)
 	}
-	args, err := pyjson.Loads(calls[0].Function.Arguments)
-	if err != nil || !reflect.DeepEqual(pyjson.Plain(args), map[string]any{"action": "add"}) {
+	args, err := jsonutil.Decode(calls[0].Function.Arguments)
+	if err != nil || !reflect.DeepEqual(jsonutil.Plain(args), map[string]any{"action": "add"}) {
 		t.Fatalf("arguments %q", calls[0].Function.Arguments)
 	}
 	if strings.Contains(cleaned, "<tool_call>") || cleaned != "Sure.\nDone." {

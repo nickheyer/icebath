@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/logging"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // GatewayHealthSnapshot holds the gauges and events one runtime status read produces
@@ -31,8 +31,8 @@ var (
 // Bounded source controlled gateway logger name for the OTLP scope, nil for any other name
 func SourceLoggerForExport(name any) *string {
 	value := ""
-	if pyrepr.Truthy(name) {
-		value = pyrepr.Str(name)
+	if anyutil.IsTrue(name) {
+		value = anyutil.String(name)
 	}
 	if len([]rune(value)) <= 128 && sourceLoggerRe.MatchString(value) {
 		return &value
@@ -96,12 +96,12 @@ func deriveGatewayDrainable(gatewayRunning bool, gatewayState string, running bo
 }
 
 // Converts gateway_state.json compatible runtime state into service health gauges and events
-func BuildGatewayHealthSnapshot(runtime *pyjson.Object, gatewayRunning bool, profile, installID, version, supervisionMode string) (GatewayHealthSnapshot, error) {
+func BuildGatewayHealthSnapshot(runtime *jsonutil.Object, gatewayRunning bool, profile, installID, version, supervisionMode string) (GatewayHealthSnapshot, error) {
 	if runtime == nil {
-		runtime = pyjson.NewObject()
+		runtime = jsonutil.NewObject()
 	}
-	gatewayState := boundedState(runtime.GetOr("gateway_state", nil), knownGatewayStates)
-	activeAgents, err := parseActiveAgents(runtime.GetOr("active_agents", 0))
+	gatewayState := boundedState(runtime.ValueOr("gateway_state", nil), knownGatewayStates)
+	activeAgents, err := parseActiveAgents(runtime.ValueOr("active_agents", 0))
 	if err != nil {
 		return GatewayHealthSnapshot{}, err
 	}
@@ -112,7 +112,7 @@ func BuildGatewayHealthSnapshot(runtime *pyjson.Object, gatewayRunning bool, pro
 	}
 	drainable := deriveGatewayDrainable(gatewayRunning, gatewayState, running)
 	platforms := platformsOf(runtime)
-	mode := strings.ToLower(pyrepr.Str(pyrepr.Or(supervisionMode, "unknown")))
+	mode := strings.ToLower(anyutil.String(anyutil.Or(supervisionMode, "unknown")))
 	if !supervisionModes[mode] {
 		mode = "unknown"
 	}
@@ -142,15 +142,15 @@ func BuildGatewayHealthSnapshot(runtime *pyjson.Object, gatewayRunning bool, pro
 		metric("icebath.gateway.active_agents", activeAgents),
 		metric("icebath.gateway.busy", flag(busy)),
 		metric("icebath.gateway.drainable", flag(drainable)),
-		metric("icebath.gateway.restart_requested", flag(pyrepr.Truthy(runtime.GetOr("restart_requested", nil)))),
+		metric("icebath.gateway.restart_requested", flag(anyutil.IsTrue(runtime.ValueOr("restart_requested", nil)))),
 		metric("icebath.gateway.state", 1, "icebath.gateway.state", gatewayState),
 	}
 	fatalCount := 0
 	var events []Event
-	for _, platform := range platforms.Keys {
-		pdata := dictOrEmpty(platforms.Vals[platform])
-		state := boundedState(pdata.GetOr("state", nil), knownPlatformStates)
-		errorCode := ClassifyGatewayError(pyrepr.Or(pdata.GetOr("error_code", nil), pdata.GetOr("error_message", nil)))
+	for _, platform := range platforms.Keys() {
+		pdata := dictOrEmpty(platforms.Value(platform))
+		state := boundedState(pdata.ValueOr("state", nil), knownPlatformStates)
+		errorCode := ClassifyGatewayError(anyutil.Or(pdata.ValueOr("error_code", nil), pdata.ValueOr("error_message", nil)))
 		degraded := fatalPlatformStates[state]
 		fatalCount += flag(degraded)
 		metrics = append(metrics,
@@ -166,13 +166,13 @@ func BuildGatewayHealthSnapshot(runtime *pyjson.Object, gatewayRunning bool, pro
 			events = append(events, ev)
 		}
 	}
-	pid, err := coercePID(runtime.GetOr("pid", nil))
+	pid, err := coercePID(runtime.ValueOr("pid", nil))
 	if err != nil {
 		return GatewayHealthSnapshot{}, err
 	}
 	health := NewGatewayHealthEvent("gateway.health_snapshot")
 	health.GatewayState, health.ActiveAgents, health.GatewayBusy, health.GatewayDrainable = new(gatewayState), activeAgents, busy, drainable
-	health.PlatformCount, health.FatalPlatformCount = len(platforms.Keys), fatalCount
+	health.PlatformCount, health.FatalPlatformCount = platforms.Len(), fatalCount
 	health.Profile, health.InstallID, health.Version, health.SupervisionMode, health.PID = new(profile), new(installID), new(version), new(supervisionMode), pid
 	return GatewayHealthSnapshot{Metrics: metrics, Events: append([]Event{health}, events...)}, nil
 }

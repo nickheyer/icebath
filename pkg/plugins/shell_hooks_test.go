@@ -16,7 +16,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -491,7 +490,7 @@ func TestShellHookAllowlistReadsUTF8SigAndRejectsBrokenFiles(t *testing.T) {
 			t.Fatalf("%q readable = %v", body, readable)
 		}
 	}
-	shellHookAtomicWrite = func(context.Context, string, any, os.FileMode, ...pyjson.Option) error {
+	shellHookAtomicWrite = func(context.Context, string, any, os.FileMode, ...jsonutil.Option) error {
 		return &os.PathError{Op: "open", Path: p, Err: errors.New("ro")}
 	}
 	logs := captureLogs(t)

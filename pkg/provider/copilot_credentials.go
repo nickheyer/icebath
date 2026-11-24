@@ -23,8 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // GitHub App client id of VS Code Copilot, minting ghu_ tokens the Copilot API exchanges
@@ -102,7 +102,7 @@ func (e *copilotNotDictError) Error() string {
 // Python truth of a decoded JSON or config value, empty objects and zero big ints false
 func cpTruthy(v any) bool {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t.Len() > 0
 	case *big.Int:
 		return t.Sign() != 0
@@ -121,7 +121,7 @@ func cpOrStr(v any) string {
 // Key of a decoded JSON object, false for a missing key or a non object
 func cpGet(v any, key string) (any, bool) {
 	switch o := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return o.Get(key)
 	case map[string]any:
 		val, ok := o[key]
@@ -141,7 +141,7 @@ func cpGetOr(v any, key string, def any) any {
 // Reports a decoded JSON object
 func cpIsDict(v any) bool {
 	switch v.(type) {
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return true
 	}
 	return false
@@ -150,10 +150,10 @@ func cpIsDict(v any) bool {
 // Values of a decoded JSON object in key order
 func cpValues(v any) []any {
 	switch o := v.(type) {
-	case *pyjson.Object:
-		out := make([]any, 0, len(o.Keys))
-		for _, k := range o.Keys {
-			out = append(out, o.Vals[k])
+	case *jsonutil.Object:
+		out := make([]any, 0, o.Len())
+		for _, k := range o.Keys() {
+			out = append(out, o.Value(k))
 		}
 		return out
 	case map[string]any:
@@ -272,7 +272,7 @@ func copilotDoJSON(client *http.Client, req *http.Request) (any, error) {
 	if !utf8.Valid(body) {
 		return nil, errors.New("the Copilot reply is not valid UTF-8")
 	}
-	return pyjson.Loads(string(body))
+	return jsonutil.Decode(string(body))
 }
 
 // POST of urlencoded fields answered with a JSON object, the GitHub device flow wire
@@ -358,7 +358,7 @@ func copilotTokenFingerprint(raw string) string {
 }
 
 // Bounded read of the persisted JWT store, nil when missing, oversized, unreadable or not an object
-func copilotReadJWTStore(path string) *pyjson.Object {
+func copilotReadJWTStore(path string) *jsonutil.Object {
 	info, err := os.Stat(path)
 	if err != nil {
 		return nil
@@ -373,12 +373,12 @@ func copilotReadJWTStore(path string) *pyjson.Object {
 		return nil
 	}
 	text := strings.TrimPrefix(string(data), "\uFEFF")
-	loaded, err := pyjson.Loads(text)
+	loaded, err := jsonutil.Decode(text)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to read persisted Copilot JWT store: %v", err))
 		return nil
 	}
-	obj, _ := loaded.(*pyjson.Object)
+	obj, _ := loaded.(*jsonutil.Object)
 	return obj
 }
 
@@ -388,7 +388,7 @@ func copilotJWTDiskPath(ctx context.Context) string {
 }
 
 // Runs op against the disk store, logging and swallowing every failure
-func copilotWithJWTStore(ctx context.Context, verb string, op func(path string, store *pyjson.Object) error) {
+func copilotWithJWTStore(ctx context.Context, verb string, op func(path string, store *jsonutil.Object) error) {
 	path := copilotJWTDiskPath(ctx)
 	if err := op(path, copilotReadJWTStore(path)); err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to %s Copilot JWT: %v", verb, err))
@@ -396,7 +396,7 @@ func copilotWithJWTStore(ctx context.Context, verb string, op func(path string, 
 }
 
 // Writes the JWT store compactly with owner only permissions
-func copilotWriteJWTStore(ctx context.Context, path string, store *pyjson.Object) error {
+func copilotWriteJWTStore(ctx context.Context, path string, store *jsonutil.Object) error {
 	return config.AtomicJSONWriteMode(ctx, path, store, 0o600)
 }
 
@@ -410,7 +410,7 @@ func evictCachedExchangedToken(ctx context.Context, raw string) {
 	delete(copilotJWTCache, fp)
 	delete(copilotFailureCache, fp)
 	copilotStateMu.Unlock()
-	copilotWithJWTStore(ctx, "evict cached", func(path string, store *pyjson.Object) error {
+	copilotWithJWTStore(ctx, "evict cached", func(path string, store *jsonutil.Object) error {
 		if store != nil {
 			if _, ok := store.Get(fp); ok {
 				store.Delete(fp)
@@ -425,7 +425,7 @@ func evictCachedExchangedToken(ctx context.Context, raw string) {
 func copilotLoadJWTFromDisk(ctx context.Context, fp string) (copilotJWT, bool) {
 	var out copilotJWT
 	found := false
-	copilotWithJWTStore(ctx, "load persisted", func(_ string, store *pyjson.Object) error {
+	copilotWithJWTStore(ctx, "load persisted", func(_ string, store *jsonutil.Object) error {
 		if store == nil {
 			return nil
 		}
@@ -450,12 +450,12 @@ func copilotLoadJWTFromDisk(ctx context.Context, fp string) (copilotJWT, bool) {
 
 // Persists an exchange with owner only permissions, pruning expired entries
 func copilotSaveJWTToDisk(ctx context.Context, fp string, jwt copilotJWT) {
-	copilotWithJWTStore(ctx, "persist", func(path string, store *pyjson.Object) error {
+	copilotWithJWTStore(ctx, "persist", func(path string, store *jsonutil.Object) error {
 		now := copilotNow()
-		kept := pyjson.NewObject()
+		kept := jsonutil.NewObject()
 		if store != nil {
-			for _, k := range store.Keys {
-				v := store.Vals[k]
+			for _, k := range store.Keys() {
+				v := store.Value(k)
 				if !cpIsDict(v) {
 					continue
 				}
@@ -472,7 +472,7 @@ func copilotSaveJWTToDisk(ctx context.Context, fp string, jwt copilotJWT) {
 		if jwt.baseURL != "" {
 			base = jwt.baseURL
 		}
-		kept.Set(fp, pyjson.ObjectOf("api_token", jwt.token, "expires_at", jwt.expiresAt, "base_url", base))
+		kept.Set(fp, jsonutil.ObjectOf("api_token", jwt.token, "expires_at", jwt.expiresAt, "base_url", base))
 		return copilotWriteJWTStore(ctx, path, kept)
 	})
 }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -17,11 +18,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+
+	"golang.org/x/text/cases"
 )
 
 const (
@@ -98,7 +101,7 @@ func gitPathsZ(ctx context.Context, gitCmd, args []string, cwd string) (map[stri
 		return nil, false, nil
 	}
 	paths := map[string]bool{}
-	for _, path := range strings.Split(pystr.TranslateNewlines(pystr.SurrogateEscapeDecode([]byte(result.Stdout))), "\x00") {
+	for _, path := range strings.Split(textutil.NormalizeNewlines(string(result.Stdout)), "\x00") {
 		if path != "" {
 			paths[path] = true
 		}
@@ -168,7 +171,7 @@ func targetTreePaths(ctx context.Context, gitCmd []string, cwd string, refs []st
 			return nil, nil, false, err
 		}
 		for path := range paths {
-			files[pystr.Casefold(path)] = true
+			files[cases.Fold().String(path)] = true
 		}
 		readAny = true
 	}
@@ -188,7 +191,7 @@ func targetTreePaths(ctx context.Context, gitCmd []string, cwd string, refs []st
 
 // Whether the update could write where an untracked directory record or file sits
 func untrackedCollides(entry string, files, dirs map[string]bool) bool {
-	path := pystr.Casefold(strings.TrimRight(entry, "/"))
+	path := cases.Fold().String(strings.TrimRight(entry, "/"))
 	if files[path] || dirs[path] {
 		return true
 	}
@@ -566,7 +569,7 @@ func untrackedFilesReplacedByUpdate(ctx context.Context, gitCmd []string, cwd, s
 		if err != nil {
 			return nil, err
 		}
-		current, readErr := os.ReadFile(pypath.Join(cwd, rel))
+		current, readErr := os.ReadFile(pathutil.Join(cwd, rel))
 		if stashed.ReturnCode != 0 || readErr != nil || !bytes.Equal(current, []byte(stashed.Stdout)) {
 			replaced = append(replaced, rel)
 		}
@@ -660,8 +663,8 @@ func restoreIsNonRuntime(ctx context.Context, gitCmd []string, cwd, stashRef str
 		return false, err
 	}
 	for path := range restored {
-		parent := pypath.PathAsPosix(pypath.PathParent(path))
-		if !nonRuntimeSuffixes[strings.ToLower(pypath.PathSuffix(path))] || isSymlink(pypath.Join(cwd, fsEncode(path))) ||
+		parent := filepath.ToSlash(filepath.Clean(filepath.Dir(filepath.Clean(path))))
+		if !nonRuntimeSuffixes[strings.ToLower(pathutil.Suffix(path))] || isSymlink(pathutil.Join(cwd, fsEncode(path))) ||
 			(parent != "." && !headDirs[parent]) {
 			return false, nil
 		}

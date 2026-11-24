@@ -107,8 +107,8 @@ func TestSessionRowDictResolvesPromptsAndLiftsMarkers(t *testing.T) {
 	if v, _ := got.Get("_branched_from"); v != nil {
 		t.Fatalf("blank _branched_from lifted to %v", v)
 	}
-	if got.Keys[1] != "system_prompt" {
-		t.Fatalf("resolved prompt moved its column, keys %v", got.Keys)
+	if got.Keys()[1] != "system_prompt" {
+		t.Fatalf("resolved prompt moved its column, keys %v", got.Keys())
 	}
 	kept := sessionRowDict(msgObj("_reset_from", "a", "_branched_from", "b", "model_config", `{"_reset_from": "x"}`))
 	if v, _ := kept.Get("_reset_from"); v != "a" {
@@ -116,7 +116,7 @@ func TestSessionRowDictResolvesPromptsAndLiftsMarkers(t *testing.T) {
 	}
 	bad := sessionRowDict(msgObj("model_config", "{not json"))
 	if bad.Len() != 1 {
-		t.Fatalf("invalid model_config added keys %v", bad.Keys)
+		t.Fatalf("invalid model_config added keys %v", bad.Keys())
 	}
 	dict := sessionRowDict(msgObj("model_config", msgObj("_branched_from", "fork")))
 	if v, _ := dict.Get("_branched_from"); v != "fork" {

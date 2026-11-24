@@ -14,13 +14,14 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -119,16 +120,16 @@ func kreaHeaders(token string, jsonBody bool) map[string]string {
 // Error message of a failed submit body, the first 300 characters of the text when it names none
 func kreaSubmitErrorMessage(_ int, body []byte) string {
 	fallback := textutil.First(strings.ToValidUTF8(string(body), "�"), 300)
-	parsed, err := pyjson.LoadsBytes(body)
+	parsed, err := jsonutil.Decode(body)
 	if err != nil {
 		return fallback
 	}
-	obj, ok := parsed.(*pyjson.Object)
+	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return fallback
 	}
 	var message any
-	if e, ok := kreaGet(obj, "error").(*pyjson.Object); ok {
+	if e, ok := kreaGet(obj, "error").(*jsonutil.Object); ok {
 		message = kreaGet(e, "message")
 	} else if message = kreaGet(obj, "message"); !pyTruthy(message) {
 		message = kreaGet(obj, "detail")
@@ -136,7 +137,7 @@ func kreaSubmitErrorMessage(_ int, body []byte) string {
 	if !pyTruthy(message) {
 		return fallback
 	}
-	return pyrepr.Str(message)
+	return anyutil.String(message)
 }
 
 // Value under key of a JSON object, nil for anything else
@@ -191,7 +192,7 @@ func kreaDetailText(detail any) string {
 	if err, ok := detail.(error); ok {
 		return err.Error()
 	}
-	return pyrepr.Str(detail)
+	return anyutil.String(detail)
 }
 
 // Polls the job until terminal, onError answering fatal main path failures, nil when the enhance path gives up
@@ -246,7 +247,7 @@ func kreaPollJob(ctx context.Context, baseURL, token, jobID string, timeout time
 			}
 			continue
 		}
-		job, err := pyjson.LoadsBytes(raw)
+		job, err := jsonutil.Decode(raw)
 		if err != nil {
 			if !enhance {
 				pkgLog().Warn(fmt.Sprintf("Krea poll returned invalid JSON for job %s: %s", jobID, err))
@@ -289,7 +290,7 @@ func kreaExtractResultURL(job any) string {
 
 // Enhanced URL of a Krea Enhance pass, empty on any failure, an error only when the call is cancelled
 func kreaEnhanceImage(ctx context.Context, baseURL, token, imageURL, prompt string) (string, error) {
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("image_url", imageURL)
 	payload.Set("image_scaling_factor", kreaEnhanceScaleFactor)
 	payload.Set("prompt", prompt)
@@ -327,8 +328,8 @@ func kreaEnhanceImage(ctx context.Context, baseURL, token, imageURL, prompt stri
 // Copy of a dict reference with its url replaced, nil when the value is no dict
 func kreaDictWithURL(ref any, newURL string) any {
 	switch m := ref.(type) {
-	case *pyjson.Object:
-		c := m.Copy()
+	case *jsonutil.Object:
+		c := m.Clone()
 		c.Set("url", newURL)
 		return c
 	case map[string]any:
@@ -390,7 +391,7 @@ func kreaInlineLocalImages(env *tools.Env, refs []any, fail errorFn) ([]any, map
 			inlined = append(inlined, ref)
 			continue
 		}
-		path := pypath.PathStr(pypath.Expanduser(s))
+		path := filepath.Clean(pathutil.ExpandUser(s))
 		if denied := tools.ReadBlockError(env, path); denied != "" {
 			return []any{}, fail(denied, "invalid_image_url")
 		}
@@ -441,8 +442,8 @@ func readAtMost(path string, n int) ([]byte, error) {
 }
 
 // Krea 2 body with seed, in range sliders, styles, style reference objects and at most one moodboard
-func kreaBuildPayload(prompt, kreaAR, creativity string, styleRefs []any, kwargs map[string]any) *pyjson.Object {
-	payload := pyjson.NewObject()
+func kreaBuildPayload(prompt, kreaAR, creativity string, styleRefs []any, kwargs map[string]any) *jsonutil.Object {
+	payload := jsonutil.NewObject()
 	payload.Set("prompt", prompt)
 	payload.Set("aspect_ratio", kreaAR)
 	payload.Set("resolution", kreaDefaultResolution)
@@ -466,7 +467,7 @@ func kreaBuildPayload(prompt, kreaAR, creativity string, styleRefs []any, kwargs
 		objs := make([]any, len(styleRefs))
 		for i, ref := range styleRefs {
 			if s, ok := ref.(string); ok {
-				o := pyjson.NewObject()
+				o := jsonutil.NewObject()
 				o.Set("url", s)
 				o.Set("strength", kreaDefaultStyleStrength)
 				objs[i] = o
@@ -483,7 +484,7 @@ func kreaBuildPayload(prompt, kreaAR, creativity string, styleRefs []any, kwargs
 }
 
 // Krea 2 body whose pictures are style references, local files inlined
-func kreaKrea2Payload(env *tools.Env, prompt, kreaAR, imageURL string, referenceImageURLs []string, kwargs map[string]any, fail errorFn) (*pyjson.Object, map[string]any) {
+func kreaKrea2Payload(env *tools.Env, prompt, kreaAR, imageURL string, referenceImageURLs []string, kwargs map[string]any, fail errorFn) (*jsonutil.Object, map[string]any) {
 	styleRefs := kreaCollectStyleRefs(imageURL, referenceImageURLs, kwargs["image_style_references"])
 	payload := kreaBuildPayload(prompt, kreaAR, kreaResolveCreativity(env, kwargs["creativity"]), styleRefs, kwargs)
 	if refs, _ := payload.Get("image_style_references"); pyTruthy(refs) {
@@ -497,7 +498,7 @@ func kreaKrea2Payload(env *tools.Env, prompt, kreaAR, imageURL string, reference
 }
 
 // Krea 3 body whose pictures are edited, with priced resolution and thinking mode and no aspect ratio for an edit
-func kreaKrea3Payload(env *tools.Env, prompt, kreaAR, imageURL string, referenceImageURLs []string, kwargs map[string]any, fail errorFn) (*pyjson.Object, map[string]any) {
+func kreaKrea3Payload(env *tools.Env, prompt, kreaAR, imageURL string, referenceImageURLs []string, kwargs map[string]any, fail errorFn) (*jsonutil.Object, map[string]any) {
 	seen := map[string]bool{}
 	sources := []any{}
 	for _, s := range collectSourceImages(imageURL, referenceImageURLs, -1) {
@@ -511,11 +512,11 @@ func kreaKrea3Payload(env *tools.Env, prompt, kreaAR, imageURL string, reference
 	}
 	imageURLs, errEnv := kreaInlineLocalImages(env, sources, fail)
 	if errEnv != nil {
-		return pyjson.NewObject(), errEnv
+		return jsonutil.NewObject(), errEnv
 	}
 	resolution := ""
 	if r := kwargs["resolution"]; pyTruthy(r) {
-		resolution = strings.ToUpper(pyrepr.Str(r))
+		resolution = strings.ToUpper(anyutil.String(r))
 	}
 	if !kreaKrea3Resolutions[resolution] {
 		resolution = kreaDefaultResolution
@@ -524,7 +525,7 @@ func kreaKrea3Payload(env *tools.Env, prompt, kreaAR, imageURL string, reference
 	if t, _ := kwargs["thinking"].(string); t == "high" {
 		thinking = "high"
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("prompt", prompt)
 	payload.Set("resolution", resolution)
 	payload.Set("thinking_mode", thinking)
@@ -540,7 +541,7 @@ func kreaKrea3Payload(env *tools.Env, prompt, kreaAR, imageURL string, reference
 }
 
 // Submits the generation body and returns the job id or an error envelope
-func kreaSubmitJob(ctx context.Context, baseURL, token, modelPath string, payload *pyjson.Object, fail errorFn) (string, map[string]any, error) {
+func kreaSubmitJob(ctx context.Context, baseURL, token, modelPath string, payload *jsonutil.Object, fail errorFn) (string, map[string]any, error) {
 	body, failure, err := postJSON(ctx, baseURL+modelPath, kreaHeaders(token, true), payload,
 		requestsTimeout{Connect: kreaRequestTimeout, Read: kreaRequestTimeout}, "Krea", kreaSubmitErrorMessage, false)
 	if err != nil {
@@ -580,7 +581,7 @@ func kreaTerminalResultURL(job any, jobID string, fail errorFn) (string, map[str
 		}
 		detail := "unknown error"
 		if pyTruthy(errV) {
-			detail = pyrepr.Str(errV)
+			detail = anyutil.String(errV)
 		}
 		return "", fail(fmt.Sprintf("Krea job %s failed: %s", jobID, detail), "api_error")
 	case "cancelled":
@@ -662,7 +663,7 @@ func (p *kreaImageGenProvider) Generate(ctx context.Context, env *tools.Env, req
 	explicit, _ := kwargs["model"].(string)
 	modelID, meta := kreaResolveModel(env, explicit)
 	fail := errorFactory("krea", aspect, modelID, prompt)
-	var payload *pyjson.Object
+	var payload *jsonutil.Object
 	var errEnv map[string]any
 	if pyTruthy(meta["edit"]) {
 		payload, errEnv = kreaKrea3Payload(env, prompt, kreaAR, req.ImageURL, req.ReferenceImageURLs, kwargs, fail)

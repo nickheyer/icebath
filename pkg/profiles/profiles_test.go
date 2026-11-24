@@ -10,10 +10,11 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Temp user home with the default home under it and caches cleared
@@ -205,7 +206,7 @@ func TestAliasCollisionSubcommandExistingCommandAndLaunchFailures(t *testing.T) 
 	if msg, _ := CheckAliasCollision("foo"); msg != "'foo' conflicts with an existing command (/usr/bin/foo)" {
 		t.Fatalf("existing %q", msg)
 	}
-	for _, skip := range []error{exec.ErrNotFound, &pysubprocess.TimeoutExpired{Cmd: []string{"which", "foo"}, Timeout: 5}} {
+	for _, skip := range []error{exec.ErrNotFound, &executil.TimeoutError{Args: []string{"which", "foo"}, Timeout: time.Duration(5) * time.Second}} {
 		fakeWhich(t, "", -1, skip)
 		if msg, err := CheckAliasCollision("foo"); msg != "" || err != nil {
 			t.Fatalf("%v: %q %v", skip, msg, err)

@@ -10,9 +10,10 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	netutil "github.com/nickheyer/icebath/pkg/utils/net"
 )
 
 var privateHostSuffixes = []string{".localhost", ".local", ".lan", ".internal"}
@@ -47,8 +48,8 @@ var (
 	}
 )
 
-func policyErr(msg string, extra ...any) *pyjson.Object {
-	out := pyjson.NewObject()
+func policyErr(msg string, extra ...any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("success", false)
 	out.Set("error", msg)
 	for i := 0; i+1 < len(extra); i += 2 {
@@ -66,7 +67,7 @@ func privateIP(env *tools.Env, host string) (private, ok bool) {
 	if tools.IsDeclaredFakeIP(env, ip) {
 		return false, true
 	}
-	return pyipaddress.IsPrivate(ip) || pyipaddress.IsLoopback(ip) || pyipaddress.IsLinkLocal(ip) || (ip.Is4() && cgnatPrefix.Contains(ip)), true
+	return netutil.IsPrivate(ip) || ip.IsLoopback() || ip.IsLinkLocalUnicast() || (ip.Is4() && cgnatPrefix.Contains(ip)), true
 }
 
 // True when the host is or resolves to a private, LAN, loopback or CGNAT address, DNS failure is not private
@@ -117,7 +118,7 @@ func hybridRoutesLocally(env *tools.Env, rawURL string) (bool, error) {
 }
 
 // Refuses urls embedding an API key or token in raw or percent decoded form
-func secretURLError(rawURL string) *pyjson.Object {
+func secretURLError(rawURL string) *jsonutil.Object {
 	if tools.RedactPrefixSearch(rawURL) || tools.RedactPrefixSearch(pyurl.Unquote(rawURL)) {
 		return policyErr("Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs.")
 	}
@@ -125,7 +126,7 @@ func secretURLError(rawURL string) *pyjson.Object {
 }
 
 // Metadata floor, then the private address floor for non local backends, then the website policy
-func urlPolicyError(env *tools.Env, rawURL string, autoLocal bool) *pyjson.Object {
+func urlPolicyError(env *tools.Env, rawURL string, autoLocal bool) *jsonutil.Object {
 	if tools.IsAlwaysBlockedURL(env, rawURL) {
 		return policyErr("Blocked: URL targets a cloud metadata endpoint")
 	}
@@ -133,7 +134,7 @@ func urlPolicyError(env *tools.Env, rawURL string, autoLocal bool) *pyjson.Objec
 		return policyErr("Blocked: URL targets a private or internal address")
 	}
 	if blocked := policyCheckWebsiteAccess(env, rawURL); blocked != nil {
-		byPolicy := pyjson.NewObject()
+		byPolicy := jsonutil.NewObject()
 		byPolicy.Set("host", blocked.Host)
 		byPolicy.Set("rule", blocked.Rule)
 		byPolicy.Set("source", blocked.Source)
@@ -143,7 +144,7 @@ func urlPolicyError(env *tools.Env, rawURL string, autoLocal bool) *pyjson.Objec
 }
 
 // Nil when the url is safe to open, autoLocal relaxes only the private address floor
-func evaluateURLSafety(env *tools.Env, rawURL string, autoLocal bool) *pyjson.Object {
+func evaluateURLSafety(env *tools.Env, rawURL string, autoLocal bool) *jsonutil.Object {
 	err := secretURLError(rawURL)
 	if err == nil {
 		rawURL = tools.NormalizeURLForRequest(rawURL)

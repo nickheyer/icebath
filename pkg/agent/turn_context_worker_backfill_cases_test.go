@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Registered compute worker execution on session owned, the test setup worker fixture
@@ -33,7 +33,7 @@ func workerFixture(t *testing.T) (*state.SessionDB, *RuntimeSessionStore) {
 	if _, err := db.RegisterWorkerExecution(ctx, state.WorkerRegistration{Epoch: epoch, ExecutionID: "worker", SessionID: "owned", Kind: "compute", AdoptionSecret: "secret"}); err != nil {
 		t.Fatal(err)
 	}
-	scope := pyjson.ObjectOf("epoch", epoch, "execution_id", "worker", "session_id", "owned", "generation", int64(0))
+	scope := jsonutil.ObjectOf("epoch", epoch, "execution_id", "worker", "session_id", "owned", "generation", int64(0))
 	store := mustStore(t, dbWorkerCall(db), scope, filepath.Join(t.TempDir(), "outbox"), 0)
 	t.Cleanup(store.closeOwner)
 	return db, store
@@ -72,7 +72,7 @@ func TestTurnPrologueRowBackfillsLandThroughTheWorkerLikeDirect(t *testing.T) {
 		sid   string
 		store SessionStore
 	}{{"direct", db}, {"owned", store}} {
-		a := &AIAgent{sessionDB: tc.store, sessionID: tc.sid, sessionPersistLock: &pythread.RLock{}, lastCompactionInPlace: true}
+		a := &AIAgent{sessionDB: tc.store, sessionID: tc.sid, sessionPersistLock: &syncutil.ReentrantMutex{}, lastCompactionInPlace: true}
 		text := []map[string]any{{"role": "user", "content": "question"}}
 		if _, err := tc.store.ArchiveAndCompact(ctx, tc.sid, text, state.ArchiveCompactOptions{TailCount: 0}); err != nil {
 			t.Fatal(err)

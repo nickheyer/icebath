@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session ids reach the registry handler on the standard path and on the execute_code path
@@ -37,7 +37,7 @@ func TestExecuteCodePathForwardsSessionId(t *testing.T) {
 func transformDispatcher(t *testing.T, tool, result string, post PostToolCallHook, transforms ...TransformToolResultHook) (*Dispatcher, *Env) {
 	t.Helper()
 	r := NewRegistry()
-	r.Register(Def{Name: tool, Toolset: "test", Schema: pyjson.ObjectOf("name", tool, "description", tool, "parameters", pyjson.ObjectOf("type", "object")), Handler: constHandler(result)})
+	r.Register(Def{Name: tool, Toolset: "test", Schema: jsonutil.ObjectOf("name", tool, "description", tool, "parameters", jsonutil.ObjectOf("type", "object")), Handler: constHandler(result)})
 	d := NewDispatcher(r)
 	if post != nil {
 		d.PostToolCall = append(d.PostToolCall, post)
@@ -245,7 +245,7 @@ func TestKanbanSelectionReachesChecksPerBuild(t *testing.T) {
 	names := func(enabled []string) map[string]bool {
 		out := map[string]bool{}
 		for _, d := range r.ToolDefinitions(context.Background(), env, DefinitionOptions{Enabled: enabled, Quiet: true, SkipToolSearchAssembly: true}) {
-			fn, _ := pyjson.Dict(d["function"])
+			fn, _ := jsonutil.AsMap(d["function"])
 			out[fn["name"].(string)] = true
 		}
 		return out

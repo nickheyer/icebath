@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Text of an optional string as Python formats it, None when absent
@@ -20,7 +19,7 @@ func noneOrText(s *string) string {
 
 // Python str of a metadata value stripped, empty for a falsy value
 func metadataText(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
 	return strings.TrimSpace(noneText(value))
@@ -67,7 +66,7 @@ func (r *GatewayRunner) hmwaResolveSession(ctx context.Context, event *gateway.M
 			return nil, nil, "", nil
 		}
 	}
-	strictSession := pyrepr.Truthy(metadata["gateway_session_strict"])
+	strictSession := anyutil.IsTrue(metadata["gateway_session_strict"])
 	pinnedSessionID := metadataText(metadata["gateway_session_id"])
 	var entry *gateway.SessionEntry
 	if strictSession {
@@ -159,7 +158,7 @@ func (r *GatewayRunner) hmwaHealTelegramTopicBinding(ctx context.Context, source
 		} else if binding != nil && binding.Len() > 0 {
 			bound = true
 			value, _ := binding.Get("session_id")
-			if pyrepr.Truthy(value) {
+			if anyutil.IsTrue(value) {
 				storedSessionID = noneText(value)
 			}
 		}

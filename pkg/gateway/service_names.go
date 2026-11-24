@@ -16,8 +16,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -58,7 +58,7 @@ func mustService(v string, err error) string {
 
 // Profile name when resolved home is a service safe child of the profiles dir under def, empty otherwise
 func profileNameFromHome(resolvedHome, def string) string {
-	base, err := pypath.Resolve(filepath.Join(def, "profiles"))
+	base, err := pathutil.Resolve(filepath.Join(def, "profiles"))
 	if err != nil {
 		return ""
 	}
@@ -80,7 +80,7 @@ func nativeServiceHomes(ctx context.Context) (map[string]bool, error) {
 		if h == "" {
 			continue
 		}
-		r, err := pypath.Resolve(h)
+		r, err := pathutil.Resolve(h)
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +102,7 @@ func bareUnitPinnedHome(ctx context.Context) (string, error) {
 	if err != nil || pinned == "" {
 		return "", err
 	}
-	r, err := pypath.Resolve(pypath.Expanduser(pinned))
+	r, err := pathutil.Resolve(pathutil.ExpandUser(pinned))
 	if err != nil {
 		return "", nil
 	}
@@ -125,7 +125,7 @@ func homeOwnsBareServiceName(ctx context.Context, resolvedHome string) (bool, er
 // Service suffix of the home in effect, empty for the bare name owner, the profile name or an eight digit path hash
 func ProfileSuffix(ctx context.Context) (string, error) {
 	current := home.Dir(ctx)
-	resolved, err := pypath.Resolve(current)
+	resolved, err := pathutil.Resolve(current)
 	if err != nil {
 		return "", err
 	}
@@ -133,7 +133,7 @@ func ProfileSuffix(ctx context.Context) (string, error) {
 	if err != nil || owns {
 		return "", err
 	}
-	root, err := pypath.Resolve(home.RootOf(current))
+	root, err := pathutil.Resolve(home.RootOf(current))
 	if err != nil {
 		return "", err
 	}
@@ -163,14 +163,14 @@ func profileArg(ctx context.Context, icebathHome, defaultRoot string) (string, e
 	if icebathHome == "" {
 		icebathHome = home.Dir(ctx)
 	}
-	h, err := pypath.Resolve(icebathHome)
+	h, err := pathutil.Resolve(icebathHome)
 	if err != nil {
 		return "", err
 	}
 	if defaultRoot == "" {
 		defaultRoot = home.RootOf(home.Dir(ctx))
 	}
-	def, err := pypath.Resolve(defaultRoot)
+	def, err := pathutil.Resolve(defaultRoot)
 	if err != nil {
 		return "", err
 	}

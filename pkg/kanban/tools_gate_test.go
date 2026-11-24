@@ -12,8 +12,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Tool call through the registry dispatch the way registry.dispatch runs a handler
@@ -213,8 +213,8 @@ func TestExactArgsRestoresNumberTypesAndKeyOrderFromTheRawJSON(t *testing.T) {
 	if got["ratio"] != 2.5 || got["edited"] != "new" || got["flag"] != true || got["loose"] != 3.0 {
 		t.Fatalf("args %#v", got)
 	}
-	meta, isObject := got["meta"].(*pyjson.Object)
-	if !isObject || strings.Join(meta.Keys, ",") != "b,a" || meta.Vals["a"] != int64(2) {
+	meta, isObject := got["meta"].(*jsonutil.Object)
+	if !isObject || strings.Join(meta.Keys(), ",") != "b,a" || meta.Value("a") != int64(2) {
 		t.Fatalf("meta %#v", got["meta"])
 	}
 	for _, raw := range []string{"", "not json", "[1, 2]"} {
@@ -256,7 +256,7 @@ func TestSqliteBindMatchesTheSQLiteTextAffinity(t *testing.T) {
 		want     string
 	}{
 		{[]any{1}, 3, "SQL parameter 3 is a list, which SQLite cannot store"},
-		{pyjson.ObjectOf("a", 1), 1, "SQL parameter 1 is a mapping, which SQLite cannot store"},
+		{jsonutil.ObjectOf("a", 1), 1, "SQL parameter 1 is a mapping, which SQLite cannot store"},
 		{new(big.Int).Lsh(big.NewInt(1), 70), 6, "the number is too large for a SQLite INTEGER"},
 	} {
 		if _, err := sqliteBind(c.value, c.position); err == nil || err.Error() != c.want {

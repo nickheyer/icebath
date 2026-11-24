@@ -12,11 +12,12 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Voice state of shared gateway sessions, the window that plays each one's speech and the voice turn speaking it
@@ -40,8 +41,8 @@ type sessionVoiceTurn struct {
 	ctx      context.Context
 	speaker  tuihost.Transport
 	queue    *ttsTurnQueue
-	stop     *pythread.Event
-	done     *pythread.Event
+	stop     *syncutil.Event
+	done     *syncutil.Event
 	mu       sync.Mutex
 	finished bool
 }
@@ -101,7 +102,7 @@ func openLocalVoiceTurn(ctx context.Context, source *gateway.SessionSource) gate
 	}
 	cutSessionSpeech(sid, false)
 	speaker := sessionSpeaker(sid)
-	turn := &sessionVoiceTurn{sid: sid, ctx: context.WithoutCancel(ctx), speaker: speaker, stop: &pythread.Event{}, done: &pythread.Event{}}
+	turn := &sessionVoiceTurn{sid: sid, ctx: context.WithoutCancel(ctx), speaker: speaker, stop: &syncutil.Event{}, done: &syncutil.Event{}}
 	ready := false
 	if mode == "all" && speaker != nil {
 		suppress(func() { ready = media.CheckTTSRequirements(turn.ctx) })
@@ -286,7 +287,7 @@ func setRemotePlaying(transport tuihost.Transport, playing bool) {
 
 // voice.playback, the calling window's speech started or stopped sounding
 func voicePlayback(ctx context.Context, rid any, params map[string]any) map[string]any {
-	setRemotePlaying(callerTransport(ctx), truthy(params["playing"]))
+	setRemotePlaying(callerTransport(ctx), anyutil.IsTrue(params["playing"]))
 	return ok(rid, map[string]any{})
 }
 

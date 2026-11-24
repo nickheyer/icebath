@@ -18,11 +18,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 var (
@@ -69,12 +69,12 @@ func lockCache(cache string) (func(), error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := pyfs.LockFile(f); err != nil {
+	if err := fsutil.LockFile(f); err != nil {
 		f.Close()
 		return nil, err
 	}
 	return func() {
-		pyfs.UnlockFile(f)
+		fsutil.UnlockFile(f)
 		f.Close()
 	}, nil
 }
@@ -269,7 +269,7 @@ func pinnedTool(cache, target, pkg string) (string, error) {
 	if len(artifacts) == 0 {
 		return "", &fs.PathError{Op: "pin", Path: pkg + " " + target, Err: fs.ErrNotExist}
 	}
-	url, sha := pyrepr.Str(artifacts[0]["url"]), pyrepr.Str(artifacts[0]["sha256"])
+	url, sha := anyutil.String(artifacts[0]["url"]), anyutil.String(artifacts[0]["sha256"])
 	root := filepath.Join(cache, pkg+"-"+sha[:16])
 	name := map[string]string{"python": "python3", "uv": "uv"}[pkg]
 	if strings.HasPrefix(target, "win32") {

@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func TestDisplayIcebathHomePosix(t *testing.T) {
-	user := pypath.Expanduser("~")
+	user := pathutil.ExpandUser("~")
 	t.Run("nested_home_renders_forward_slashes", func(t *testing.T) {
 		out := Display(filepath.Join(user, "AppData", "Local", "icebath"))
 		if out != "~/AppData/Local/icebath" || strings.Contains(out, `\`) {

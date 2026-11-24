@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func moonshotProps(t *testing.T, out map[string]any, names ...string) map[string]any {
@@ -43,7 +43,7 @@ func TestMoonshotModelDetectionNegativeMatches(t *testing.T) {
 func TestMissingTypeFilledNestedPropertiesAreRepaired(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "object", "properties": map[string]any{
 		"filter": map[string]any{"type": "object", "properties": map[string]any{"field": map[string]any{"description": "no type"}}}}})
-	if got := moonshotProps(t, pyjson.Plain(out).(map[string]any), "filter", "field")["type"]; got != "string" {
+	if got := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "filter", "field")["type"]; got != "string" {
 		t.Fatalf("nested type %v", got)
 	}
 }
@@ -51,7 +51,7 @@ func TestMissingTypeFilledNestedPropertiesAreRepaired(t *testing.T) {
 func TestMissingTypeFilledRefNodeIsNotGivenSyntheticType(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "object", "properties": map[string]any{"payload": map[string]any{"$ref": "#/$defs/Payload"}},
 		"$defs": map[string]any{"Payload": map[string]any{"type": "object", "properties": map[string]any{}}}})
-	payload := moonshotProps(t, pyjson.Plain(out).(map[string]any), "payload")
+	payload := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "payload")
 	if _, has := payload["type"]; has || payload["$ref"] != "#/$defs/Payload" {
 		t.Fatalf("ref node %v", payload)
 	}
@@ -63,7 +63,7 @@ func TestConditionalSchemaNotGivenSyntheticTypeIfThenNodeIsNotGivenSyntheticType
 			map[string]any{"required": []any{"goal"}, "not": map[string]any{"required": []any{"prompt"}}}},
 		"allOf": []any{map[string]any{"if": map[string]any{"required": []any{"goal"}},
 			"then": map[string]any{"properties": map[string]any{"mode": map[string]any{"enum": []any{"build", "edit"}}}}}}})
-	conditional := pyjson.Plain(out.Vals["allOf"]).([]any)[0].(map[string]any)
+	conditional := jsonutil.Plain(out.Value("allOf")).([]any)[0].(map[string]any)
 	if _, has := conditional["type"]; has {
 		t.Fatalf("conditional typed %v", conditional)
 	}
@@ -75,7 +75,7 @@ func TestConditionalSchemaNotGivenSyntheticTypeIfThenNodeIsNotGivenSyntheticType
 func TestAnyOfParentTypeAnyofNullBranchCollapsedToSingleType(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "object", "properties": map[string]any{
 		"from_format": map[string]any{"type": "string", "anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "null"}}}}})
-	fromFormat := moonshotProps(t, pyjson.Plain(out).(map[string]any), "from_format")
+	fromFormat := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "from_format")
 	if _, has := fromFormat["anyOf"]; has || fromFormat["type"] != "string" {
 		t.Fatalf("from_format %v", fromFormat)
 	}
@@ -84,7 +84,7 @@ func TestAnyOfParentTypeAnyofNullBranchCollapsedToSingleType(t *testing.T) {
 func TestAnyOfParentTypeAnyofMultipleNonNullPreserved(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "object", "properties": map[string]any{
 		"mode": map[string]any{"anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "integer"}}}}})
-	mode := moonshotProps(t, pyjson.Plain(out).(map[string]any), "mode")
+	mode := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "mode")
 	_, hasAnyOf := mode["anyOf"]
 	_, hasType := mode["type"]
 	if !hasAnyOf || hasType {
@@ -95,7 +95,7 @@ func TestAnyOfParentTypeAnyofMultipleNonNullPreserved(t *testing.T) {
 func TestAnyOfParentTypeAnyofEnumWithNullCollapsed(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "object", "properties": map[string]any{
 		"db_type": map[string]any{"anyOf": []any{map[string]any{"enum": []any{"mysql", "postgresql", ""}}, map[string]any{"type": "null"}}}}})
-	dbType := moonshotProps(t, pyjson.Plain(out).(map[string]any), "db_type")
+	dbType := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "db_type")
 	if _, has := dbType["anyOf"]; has || dbType["type"] != "string" || !reflect.DeepEqual(dbType["enum"], []any{"mysql", "postgresql"}) {
 		t.Fatalf("db_type %v", dbType)
 	}
@@ -104,7 +104,7 @@ func TestAnyOfParentTypeAnyofEnumWithNullCollapsed(t *testing.T) {
 func TestTopLevelGuaranteesNonDictInputReturnsEmptyObject(t *testing.T) {
 	empty := map[string]any{"type": "object", "properties": map[string]any{}, "required": []any{}}
 	for _, in := range []any{nil, "garbage", []any{}} {
-		if got := sanitizeMoonshotToolParameters(in); !reflect.DeepEqual(pyjson.Plain(got), empty) {
+		if got := sanitizeMoonshotToolParameters(in); !reflect.DeepEqual(jsonutil.Plain(got), empty) {
 			t.Fatalf("%v -> %v", in, got)
 		}
 	}
@@ -124,21 +124,21 @@ func TestTopLevelGuaranteesDoesNotMutateInput(t *testing.T) {
 
 func TestRequiredArrayDanglingRequiredPruned(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "object", "properties": map[string]any{"q": map[string]any{"type": "string"}}, "required": []any{"q", "ghost"}})
-	if !reflect.DeepEqual(out.Vals["required"], []any{"q"}) {
-		t.Fatalf("required %v", out.Vals["required"])
+	if !reflect.DeepEqual(out.Value("required"), []any{"q"}) {
+		t.Fatalf("required %v", out.Value("required"))
 	}
 }
 
 func TestRequiredArrayNestedObjectPropertyGetsRequired(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "object", "properties": map[string]any{"filter": map[string]any{"type": "object", "properties": map[string]any{}}}})
-	if !reflect.DeepEqual(moonshotProps(t, pyjson.Plain(out).(map[string]any), "filter")["required"], []any{}) || !reflect.DeepEqual(out.Vals["required"], []any{}) {
+	if !reflect.DeepEqual(moonshotProps(t, jsonutil.Plain(out).(map[string]any), "filter")["required"], []any{}) || !reflect.DeepEqual(out.Value("required"), []any{}) {
 		t.Fatalf("required arrays %v", out)
 	}
 }
 
 func TestRequiredArrayCoercedTopLevelGetsRequired(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "string"})
-	if out.Vals["type"] != "object" || !reflect.DeepEqual(out.Vals["required"], []any{}) {
+	if out.Value("type") != "object" || !reflect.DeepEqual(out.Value("required"), []any{}) {
 		t.Fatalf("coerced top level %v", out)
 	}
 }
@@ -151,11 +151,11 @@ func TestToolListSanitizerAppliesPerTool(t *testing.T) {
 			"parameters": map[string]any{"type": "object", "properties": map[string]any{}}}},
 	}
 	out := sanitizeMoonshotTools(tools)
-	first := pyjson.Plain(out[0]["function"]).(map[string]any)["parameters"].(map[string]any)
+	first := jsonutil.Plain(out[0]["function"]).(map[string]any)["parameters"].(map[string]any)
 	if got := moonshotProps(t, first, "q")["type"]; got != "string" {
 		t.Fatalf("first tool q type %v", got)
 	}
-	second := pyjson.Plain(out[1]["function"]).(map[string]any)["parameters"]
+	second := jsonutil.Plain(out[1]["function"]).(map[string]any)["parameters"]
 	if !reflect.DeepEqual(second, map[string]any{"type": "object", "properties": map[string]any{}, "required": []any{}}) {
 		t.Fatalf("second tool parameters %v", second)
 	}
@@ -184,18 +184,18 @@ func TestRealWorldMCPShapeCombinedRewrites(t *testing.T) {
 		"filter": map[string]any{"type": "string", "anyOf": []any{map[string]any{"type": "string"}, map[string]any{"type": "null"}}},
 		"tags":   map[string]any{"type": "array", "items": map[string]any{"description": "tag"}}},
 		"required": []any{"query"}})
-	if moonshotProps(t, pyjson.Plain(out).(map[string]any), "query")["type"] != "string" {
+	if moonshotProps(t, jsonutil.Plain(out).(map[string]any), "query")["type"] != "string" {
 		t.Fatalf("query %v", out)
 	}
-	filter := moonshotProps(t, pyjson.Plain(out).(map[string]any), "filter")
+	filter := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "filter")
 	if _, has := filter["anyOf"]; has || filter["type"] != "string" {
 		t.Fatalf("filter %v", filter)
 	}
-	if moonshotProps(t, pyjson.Plain(out).(map[string]any), "tags")["items"].(map[string]any)["type"] != "string" {
+	if moonshotProps(t, jsonutil.Plain(out).(map[string]any), "tags")["items"].(map[string]any)["type"] != "string" {
 		t.Fatalf("tags items %v", out)
 	}
-	if !reflect.DeepEqual(out.Vals["required"], []any{"query"}) {
-		t.Fatalf("required %v", out.Vals["required"])
+	if !reflect.DeepEqual(out.Value("required"), []any{"query"}) {
+		t.Fatalf("required %v", out.Value("required"))
 	}
 }
 
@@ -204,7 +204,7 @@ func TestEnumNullStrippingDataslayerDbTypeAfterMcpNormalize(t *testing.T) {
 		"datasource": map[string]any{"type": "string"},
 		"db_type":    map[string]any{"enum": []any{"mysql", "mariadb", "postgresql", "sqlserver", "oracle", "", nil}, "type": "string", "nullable": true, "default": nil}},
 		"required": []any{"datasource"}})
-	dbType := moonshotProps(t, pyjson.Plain(out).(map[string]any), "db_type")
+	dbType := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "db_type")
 	if _, has := dbType["nullable"]; has {
 		t.Fatalf("nullable keyword kept %v", dbType)
 	}
@@ -215,14 +215,14 @@ func TestEnumNullStrippingDataslayerDbTypeAfterMcpNormalize(t *testing.T) {
 
 func TestUnionTypeListUnionTypeListNormalizesToFirstConcreteType(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "object", "properties": map[string]any{"limit": map[string]any{"type": []any{"number", "string"}, "description": "Max results"}}})
-	if got := moonshotProps(t, pyjson.Plain(out).(map[string]any), "limit")["type"]; got != "number" {
+	if got := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "limit")["type"]; got != "number" {
 		t.Fatalf("limit type %v", got)
 	}
 }
 
 func TestUnionTypeListUnionTypeListSkipsNullType(t *testing.T) {
 	out := sanitizeMoonshotToolParameters(map[string]any{"type": "object", "properties": map[string]any{"name": map[string]any{"type": []any{"null", "string"}}}})
-	if got := moonshotProps(t, pyjson.Plain(out).(map[string]any), "name")["type"]; got != "string" {
+	if got := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "name")["type"]; got != "string" {
 		t.Fatalf("name type %v", got)
 	}
 }
@@ -231,7 +231,7 @@ func TestUnionTypeListUnionTypeListWithEnumDoesNotCrashOrMutateInput(t *testing.
 	sort := map[string]any{"type": []any{"string", "null"}, "enum": []any{"asc", "desc", nil, ""}}
 	params := map[string]any{"type": "object", "properties": map[string]any{"sort": sort}}
 	out := sanitizeMoonshotToolParameters(params)
-	got := moonshotProps(t, pyjson.Plain(out).(map[string]any), "sort")
+	got := moonshotProps(t, jsonutil.Plain(out).(map[string]any), "sort")
 	if got["type"] != "string" || !reflect.DeepEqual(got["enum"], []any{"asc", "desc"}) {
 		t.Fatalf("sort %v", got)
 	}

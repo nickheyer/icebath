@@ -11,7 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Vision prompt that describes a sticker once for the description cache
@@ -26,15 +26,15 @@ func stickerCachePath(ctx context.Context) string {
 }
 
 // Sticker cache read BOM tolerant, empty on a missing, unreadable or malformed file
-func loadStickerCache(ctx context.Context) *pyjson.Object {
+func loadStickerCache(ctx context.Context) *jsonutil.Object {
 	raw, err := os.ReadFile(stickerCachePath(ctx))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	text := strings.TrimPrefix(string(raw), "\uFEFF")
-	obj, err := pyjson.LoadsDict(text)
+	obj, err := jsonutil.DecodeObject(text)
 	if err != nil || obj == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return obj
 }
@@ -46,10 +46,10 @@ func GetCachedStickerDescription(ctx context.Context, fileUniqueID string) map[s
 		return nil
 	}
 	switch entry := value.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := map[string]any{}
-		for _, k := range entry.Keys {
-			out[k] = entry.Vals[k]
+		for _, k := range entry.Keys() {
+			out[k] = entry.Value(k)
 		}
 		return out
 	case map[string]any:
@@ -60,7 +60,7 @@ func GetCachedStickerDescription(ctx context.Context, fileUniqueID string) map[s
 
 // Stores a vision description under the stable sticker id through an atomic JSON write
 func CacheStickerDescription(ctx context.Context, fileUniqueID, description, emoji, setName string) error {
-	entry := pyjson.ObjectOf("description", description, "emoji", emoji, "set_name", setName,
+	entry := jsonutil.ObjectOf("description", description, "emoji", emoji, "set_name", setName,
 		"cached_at", float64(time.Now().UnixNano())/1e9)
 	stickerCacheMu.Lock()
 	defer stickerCacheMu.Unlock()

@@ -18,12 +18,12 @@ import (
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Replaces a title seam for one test, joining background upgrades before restoring it
@@ -472,7 +472,7 @@ func TestAutoTitleSessionUpgradesADerivedTitleButNotAnLlmOne(t *testing.T) {
 
 func TestAutoTitleSessionBodyExceptionRoutedToFailureCallback(t *testing.T) {
 	titleTestHome(t)
-	boom := &pyint.Error{Kind: "ImportError", Msg: "stale module"}
+	boom := &errorutil.Error{Kind: "ImportError", Msg: "stale module"}
 	swapTitleSeam(t, &generateTitleFn, func(context.Context, string, generateTitleOptions) string { panic(boom) })
 	type failure struct {
 		task string
@@ -876,7 +876,7 @@ func TestAutoTitleDuplicateHandlingBackgroundStageNamesACollisionTheInstantStage
 
 func TestAutoTitleDuplicateHandlingDedupesDuplicateTitleViaLineage(t *testing.T) {
 	titleTestHome(t)
-	db := &fakeTitleDB{setAuto: []fakeSetAutoResult{{err: &pyint.Error{Kind: "ValueError", Msg: "in use"}}, {ok: true}}, next: "Debugging Import Error #2"}
+	db := &fakeTitleDB{setAuto: []fakeSetAutoResult{{err: &errorutil.Error{Kind: "ValueError", Msg: "in use"}}, {ok: true}}, next: "Debugging Import Error #2"}
 	swapTitleSeam(t, &generateTitleFn, func(context.Context, string, generateTitleOptions) string { return "Debugging Import Error" })
 	var seen []string
 	autoTitleSession(context.Background(), db, "sess-1", "hi", autoTitleSessionOptions{TitleCallback: func(title, _ string) { seen = append(seen, title) }})

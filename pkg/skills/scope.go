@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Scope binds one home, config, platform, and working directory for every skills operation
@@ -116,7 +116,7 @@ func (s *Scope) displayHome() string {
 
 // Expands a tilde and environment references in a config path entry
 func expandPath(entry string) string {
-	return pypath.Expanduser(tools.OSPathExpandVars(entry))
+	return pathutil.ExpandUser(tools.OSPathExpandVars(entry))
 }
 
 // Anchors a relative config path at the home, absolute paths passing through
@@ -128,11 +128,11 @@ func (s *Scope) homeRelative(p string) string {
 }
 
 // Encodes a tool payload as the JSON string handed to the model
-func jsonResult(payload *pyjson.Object) string { return tools.JSON(payload) }
+func jsonResult(payload *jsonutil.Object) string { return tools.JSON(payload) }
 
 // Failure payload with an error message and extra fields
-func failResult(message string, extra *pyjson.Object) string {
-	payload := pyjson.ObjectOf("success", false, "error", message)
-	payload.Update(extra)
+func failResult(message string, extra *jsonutil.Object) string {
+	payload := jsonutil.ObjectOf("success", false, "error", message)
+	payload.Merge(extra)
 	return jsonResult(payload)
 }

@@ -14,9 +14,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Pins unit ownership so fake units on an invented main pid still prove budgets and health
@@ -54,7 +55,7 @@ func TestUnitTransactionBudgetPreservesScopeAndHealth(t *testing.T) {
 			scope := []string{"systemctl", "--no-ask-password"}
 			manage := append([]string{"sudo", "-n"}, scope...)
 			calls := []systemctlCall{}
-			vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, timeout float64) (*pysubprocess.Completed, error) {
+			vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, timeout float64) (*executil.Completed, error) {
 				calls = append(calls, systemctlCall{cmd, timeout})
 				if slices.Contains(cmd, "show") {
 					if !hasPrefix(cmd, scope) {
@@ -125,7 +126,7 @@ func TestFleetRestartBudgetPreservesUserScopeAndVerifiesHealth(t *testing.T) {
 			}
 			checks := []healthCheck{}
 			name := "icebath-gateway-test"
-			vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, timeout float64) (*pysubprocess.Completed, error) {
+			vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, timeout float64) (*executil.Completed, error) {
 				calls = append(calls, systemctlCall{cmd, timeout})
 				if !hasPrefix(cmd, scope) {
 					t.Errorf("call left the user scope: %v", cmd)
@@ -178,7 +179,7 @@ func TestBudgetFallbackKeepsRealErrors(t *testing.T) {
 	for i, limits := range limitCases {
 		for _, outcome := range []any{0, 7, "timeout"} {
 			t.Run(fmt.Sprintf("limits%d-%v", i, outcome), func(t *testing.T) {
-				vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, timeout float64) (*pysubprocess.Completed, error) {
+				vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, timeout float64) (*executil.Completed, error) {
 					switch {
 					case slices.Contains(cmd, "show"):
 						return completedText(cmd, limits), nil
@@ -187,9 +188,9 @@ func TestBudgetFallbackKeepsRealErrors(t *testing.T) {
 							t.Errorf("restart timeout = %v", timeout)
 						}
 						if outcome == "timeout" {
-							return nil, &pysubprocess.TimeoutExpired{Cmd: cmd, Timeout: int(timeout)}
+							return nil, &executil.TimeoutError{Args: cmd, Timeout: time.Duration(int(timeout)) * time.Second}
 						}
-						return &pysubprocess.Completed{Args: cmd, Returncode: outcome.(int), Stdout: []byte{}, Stderr: []byte("manager diagnostic")}, nil
+						return &executil.Completed{Args: cmd, ExitCode: outcome.(int), Stdout: []byte{}, Stderr: []byte("manager diagnostic")}, nil
 					}
 					return completedText(cmd, ""), nil
 				})
@@ -237,7 +238,7 @@ func TestFleetRestartRepairsASystemUnitThatCannotParkOnExit78(t *testing.T) {
 				refreshed = append(refreshed, system)
 				return true, nil
 			})
-			vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+			vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*executil.Completed, error) {
 				return completedText(cmd, "active"), nil
 			})
 			vsSwap(t, &fleetDrainOrSignal, func(context.Context, io.Writer, int, float64, string, ...map[int]bool) (bool, error) {
@@ -284,7 +285,7 @@ func TestRestartCountsAUnitWhoseStartJobOutlivedTheClient(t *testing.T) {
 		return "deactivating", 0, "7"
 	}
 	scripted := []string{"active", "42"}
-	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, timeout float64) (*pysubprocess.Completed, error) {
+	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, timeout float64) (*executil.Completed, error) {
 		if len(verbs) == 0 && (slices.Contains(cmd, "is-active") || slices.Contains(cmd, "--property=MainPID")) {
 			next := scripted[0]
 			scripted = scripted[1:]
@@ -295,7 +296,7 @@ func TestRestartCountsAUnitWhoseStartJobOutlivedTheClient(t *testing.T) {
 				verbs = append(verbs, verb)
 				doneAt, issued = clock.now.Seconds()+jobSeconds, true
 				fleetSleep(secondsDuration(timeout))
-				return nil, &pysubprocess.TimeoutExpired{Cmd: cmd, Timeout: int(timeout)}
+				return nil, &executil.TimeoutError{Args: cmd, Timeout: time.Duration(int(timeout)) * time.Second}
 			}
 		}
 		active, mainPID, job := state()
@@ -344,7 +345,7 @@ func unitRestartHost(t *testing.T, mainPID func(svc string) int, units ...string
 	}
 	restarted := []string{}
 	vsSwap(t, &fleetUnitMainPid, func(_ context.Context, _ []string, svc string) (int, error) { return mainPID(svc), nil })
-	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*executil.Completed, error) {
 		switch {
 		case slices.Contains(cmd, "list-units"):
 			return completedText(cmd, strings.Join(lines, "\n")), nil

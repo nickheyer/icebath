@@ -14,9 +14,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -81,7 +81,7 @@ type UploadDailyLimitExceededError struct{ UploadError }
 // NewUploadDailyLimitExceededError defaults the message to the daily limit text
 func NewUploadDailyLimitExceededError(fileName string, fileSize int64, message string) *UploadDailyLimitExceededError {
 	if message == "" {
-		message = fmt.Sprintf("Daily upload limit exceeded for %s", pyrepr.Repr(fileName))
+		message = fmt.Sprintf("Daily upload limit exceeded for %q", fileName)
 	}
 	return &UploadDailyLimitExceededError{UploadError{fileName, fileSize, message}}
 }
@@ -100,58 +100,53 @@ type prepareResult struct {
 	retryTimeout float64
 }
 
-func reprHead(v any) string {
-	r := []rune(pyrepr.Str(v))
-	return string(r[:min(200, len(r))])
-}
-
 // Parses an upload_prepare response, bare or wrapped in data
 func parsePrepareResponse(rawValue any) (prepareResult, error) {
-	raw, ok := asDict(rawValue)
+	raw, ok := jsonutil.AsMap(rawValue)
 	if !ok {
 		return prepareResult{}, notDictErr(rawValue)
 	}
 	src := raw
-	if d, ok := asDict(raw["data"]); ok {
+	if d, ok := jsonutil.AsMap(raw["data"]); ok {
 		src = d
 	}
-	uploadID := pyrepr.Str(getOr(src, "upload_id", ""))
+	uploadID := anyutil.String(getOr(src, "upload_id", ""))
 	if uploadID == "" {
-		return prepareResult{}, fmt.Errorf("upload_prepare response missing upload_id: %s", reprHead(rawValue))
+		return prepareResult{}, fmt.Errorf("upload_prepare response missing upload_id: %s", textutil.First(anyutil.String(rawValue), 200))
 	}
-	blockSize, err := pyInt64(getOr(src, "block_size", int64(0)))
+	blockSize, err := anyutil.ToInt(getOr(src, "block_size", int64(0)))
 	if err != nil {
 		return prepareResult{}, err
 	}
 	rawParts, ok := orDefault(orDefault(src["parts"], src["part_list"]), []any{}).([]any)
 	if !ok || len(rawParts) == 0 {
-		return prepareResult{}, fmt.Errorf("upload_prepare response missing parts: %s", reprHead(rawValue))
+		return prepareResult{}, fmt.Errorf("upload_prepare response missing parts: %s", textutil.First(anyutil.String(rawValue), 200))
 	}
 	var parts []preparePart
 	for _, pv := range rawParts {
-		p, ok := asDict(pv)
+		p, ok := jsonutil.AsMap(pv)
 		if !ok {
 			continue
 		}
-		index, err := pyInt64(orDefault(orDefault(p["part_index"], p["index"]), int64(0)))
+		index, err := anyutil.ToInt(orDefault(orDefault(p["part_index"], p["index"]), int64(0)))
 		if err != nil {
 			return prepareResult{}, err
 		}
-		url := pyrepr.Str(orDefault(orDefault(p["presigned_url"], p["url"]), ""))
-		size, err := pyInt64(getOr(p, "block_size", int64(0)))
+		url := anyutil.String(orDefault(orDefault(p["presigned_url"], p["url"]), ""))
+		size, err := anyutil.ToInt(getOr(p, "block_size", int64(0)))
 		if err != nil {
 			return prepareResult{}, err
 		}
 		parts = append(parts, preparePart{index, url, size})
 	}
-	concurrency, err := pyInt64(getOr(src, "concurrency", int64(defaultConcurrentParts)))
+	concurrency, err := anyutil.ToInt(getOr(src, "concurrency", int64(defaultConcurrentParts)))
 	if err != nil {
 		return prepareResult{}, err
 	}
 	if concurrency == 0 {
 		concurrency = defaultConcurrentParts
 	}
-	retryTimeout, err := pyint.Float(orDefault(getOr(src, "retry_timeout", 0.0), 0.0))
+	retryTimeout, err := anyutil.ToFloat(orDefault(getOr(src, "retry_timeout", 0.0), 0.0))
 	if err != nil {
 		return prepareResult{}, err
 	}
@@ -180,7 +175,7 @@ type uploadJob struct {
 func (j *uploadJob) path(endpoint string) string { return apiPath(j.chatType, j.targetID, endpoint) }
 
 // APIRequestFunc is the adapter api request, failing with a RuntimeError that names the biz_code
-type APIRequestFunc func(ctx context.Context, method, path string, body *pyjson.Object, timeout float64) (any, error)
+type APIRequestFunc func(ctx context.Context, method, path string, body *jsonutil.Object, timeout float64) (any, error)
 
 // PutResponse is the status and body text of a COS PUT
 type PutResponse struct {
@@ -215,14 +210,14 @@ var uploadSleep = func(ctx context.Context, d time.Duration) error {
 	}
 }
 
-func (u *ChunkedUploader) post(ctx context.Context, job *uploadJob, endpoint string, body *pyjson.Object) (any, error) {
+func (u *ChunkedUploader) post(ctx context.Context, job *uploadJob, endpoint string, body *jsonutil.Object) (any, error) {
 	return u.apiRequest(ctx, "POST", job.path(endpoint), body, FileUploadTimeout)
 }
 
 // Upload runs the whole chunked upload and returns the raw complete_upload response carrying file_info
 func (u *ChunkedUploader) Upload(ctx context.Context, chatType, targetID, filePath string, fileType int, fileName string) (any, error) {
 	if chatType != "c2c" && chatType != "group" {
-		return nil, fmt.Errorf("ChunkedUploader: unsupported chat_type %s", pyrepr.Repr(chatType))
+		return nil, fmt.Errorf("ChunkedUploader: unsupported chat_type %q", chatType)
 	}
 	fi, err := os.Stat(filePath)
 	if err != nil {
@@ -277,7 +272,7 @@ func (u *ChunkedUploader) uploadParts(ctx context.Context, job *uploadJob, parts
 }
 
 func (u *ChunkedUploader) prepare(ctx context.Context, job *uploadJob, fileType int, fileName string, hashes map[string]string) (prepareResult, error) {
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("file_type", int64(fileType))
 	body.Set("file_name", fileName)
 	body.Set("file_size", job.fileSize)
@@ -388,7 +383,7 @@ func (u *ChunkedUploader) putToPresignedURL(ctx context.Context, url string, dat
 
 // Calls upload_part_finish, retrying biz_code 40093001 until the job retry timeout
 func (u *ChunkedUploader) partFinishWithRetry(ctx context.Context, job *uploadJob, partIndex, blockSize int64, md5Hex string) error {
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("upload_id", job.uploadID)
 	body.Set("part_index", partIndex)
 	body.Set("block_size", blockSize)
@@ -418,7 +413,7 @@ func (u *ChunkedUploader) partFinishWithRetry(ctx context.Context, job *uploadJo
 // Calls complete_upload on the files endpoint with retry
 func (u *ChunkedUploader) complete(ctx context.Context, job *uploadJob) (any, error) {
 	return u.withRetries(ctx, func() (any, error) {
-		body := pyjson.NewObject()
+		body := jsonutil.NewObject()
 		body.Set("upload_id", job.uploadID)
 		return u.post(ctx, job, "files", body)
 	}, completeUploadMaxRetries, completeUploadBaseDelay, "complete_upload", "complete_upload")

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type relayToolsTestError struct{ msg string }
@@ -68,7 +68,7 @@ func relayToolsTurn(t *testing.T) (*relayToolsFake, context.Context, *Conversati
 	f := newRelayToolsFake()
 	RegisterNemoRelayBinding(func() (*NemoRelay, error) { return f.relay, nil })
 	ResetRelayRuntimeForTests()
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	lease := RelayCoordinator.AcquireConversation(ctx, RelayConversation{ProfileKey: CurrentRelayProfileKey(ctx), SessionID: "session-1", Platform: "cli"})
 	turn, err := RelayCoordinator.BeginTurn(ctx, lease, "turn-1", "task-1", nil)
 	if err != nil {
@@ -145,11 +145,11 @@ func TestRequestRewriteReachesAuthorizedCallbackOnce(t *testing.T) {
 	if !ok {
 		t.Fatalf("result %#v is not a string", result)
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(pyjson.Plain(decoded), map[string]any{"ok": true, "wrapped": true}) || strings.Contains(text, "annotation-canary") {
+	if !reflect.DeepEqual(jsonutil.Plain(decoded), map[string]any{"ok": true, "wrapped": true}) || strings.Contains(text, "annotation-canary") {
 		t.Fatalf("result %s", text)
 	}
 	if !reflect.DeepEqual(f.annotations, []map[string]any{{"audit": "annotation-canary"}}) {

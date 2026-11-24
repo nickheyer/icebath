@@ -12,9 +12,9 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -250,7 +250,7 @@ func (a *BuzzAdapter) Connect(ctx context.Context, isReconnect bool) (bool, erro
 			fmt.Sprintf("Buzz: failed to fetch own profile from %s — %s", a.relayURL, message), res.code == 2)
 	}
 	profiles := parseJSONList(res.stdout)
-	if len(profiles) == 0 || !pyrepr.Truthy(profiles[0]["pubkey"]) {
+	if len(profiles) == 0 || !anyutil.IsTrue(profiles[0]["pubkey"]) {
 		return a.connectFailed(ctx, "connect_failed", "buzz users get returned no profile",
 			"Buzz: 'users get' returned no profile — is the key a member of this community?", true)
 	}
@@ -482,7 +482,7 @@ func (a *BuzzAdapter) profileDisplayName(ctx context.Context, pubkey string) (st
 	if list, ok := profiles.([]any); ok && len(list) > 0 {
 		if p0, ok := list[0].(map[string]any); ok {
 			name = firstNonEmpty(strOf(p0["display_name"]), strOf(p0["name"]))
-			if name == "" && pyrepr.Truthy(p0["content"]) {
+			if name == "" && anyutil.IsTrue(p0["content"]) {
 				if prof, ok := jsonOr(strOf(p0["content"]), map[string]any{}).(map[string]any); ok {
 					name = firstNonEmpty(strOf(prof["display_name"]), strOf(prof["name"]))
 				}
@@ -633,7 +633,7 @@ func (a *BuzzAdapter) Send(ctx context.Context, chatID, content, replyTo string,
 		a.mu.Lock()
 		self := a.selfPubkey
 		a.mu.Unlock()
-		a.rememberEventMeta(chatID, pyrepr.Str(result.MessageID), self, content)
+		a.rememberEventMeta(chatID, anyutil.String(result.MessageID), self, content)
 	}
 	return result, nil
 }
@@ -641,8 +641,8 @@ func (a *BuzzAdapter) Send(ctx context.Context, chatID, content, replyTo string,
 // First truthy value as text, empty when none is
 func firstTruthy(values ...any) string {
 	for _, v := range values {
-		if pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	return ""
@@ -721,12 +721,12 @@ func (a *BuzzAdapter) EditMessage(ctx context.Context, chatID, messageID, conten
 	if data == nil {
 		data = map[string]any{}
 	}
-	if pyrepr.Truthy(data["event_id"]) {
+	if anyutil.IsTrue(data["event_id"]) {
 		a.markSeen(chatID, strOf(data["event_id"]))
 	}
 	accepted := true
 	if v, ok := data["accepted"]; ok {
-		accepted = pyrepr.Truthy(v)
+		accepted = anyutil.IsTrue(v)
 	}
 	return gateway.SendResult{Success: accepted, MessageID: messageID, RawResponse: data}, nil
 }
@@ -747,11 +747,11 @@ func (a *BuzzAdapter) DeleteMessage(ctx context.Context, chatID, messageID strin
 	if !ok {
 		return true, nil
 	}
-	if pyrepr.Truthy(data["event_id"]) {
+	if anyutil.IsTrue(data["event_id"]) {
 		a.markSeen(chatID, strOf(data["event_id"]))
 	}
 	if v, ok := data["accepted"]; ok {
-		return pyrepr.Truthy(v), nil
+		return anyutil.IsTrue(v), nil
 	}
 	return true, nil
 }
@@ -759,7 +759,7 @@ func (a *BuzzAdapter) DeleteMessage(ctx context.Context, chatID, messageID strin
 // Uploads a local image file or posts a URL as an image link
 func (a *BuzzAdapter) SendImage(ctx context.Context, chatID, imageURL, caption, replyTo string, metadata map[string]any) (gateway.SendResult, error) {
 	if !strings.HasPrefix(imageURL, "http://") && !strings.HasPrefix(imageURL, "https://") {
-		local := pypath.Expanduser(imageURL)
+		local := pathutil.ExpandUser(imageURL)
 		if isFile(local) {
 			return a.sendFileAttachment(ctx, chatID, local, caption, replyTo, metadata, false)
 		}
@@ -779,7 +779,7 @@ func isFile(path string) bool {
 
 // Uploads a local file as a native attachment, never naming the host path in chat visible errors
 func (a *BuzzAdapter) sendFileAttachment(ctx context.Context, chatID, filePath, caption, replyTo string, metadata map[string]any, probe bool) (gateway.SendResult, error) {
-	local := pypath.Expanduser(filePath)
+	local := pathutil.ExpandUser(filePath)
 	if probe && !isFile(local) {
 		return gateway.SendResult{Success: false, Error: "Media file not found"}, nil
 	}
@@ -797,7 +797,7 @@ func (a *BuzzAdapter) sendFileAttachment(ctx context.Context, chatID, filePath, 
 
 // Uploads a local image, a missing path taking the base fallback so host paths never reach chat
 func (a *BuzzAdapter) SendImageFile(ctx context.Context, chatID, imagePath, caption, replyTo string, metadata, extra map[string]any) (gateway.SendResult, error) {
-	local := pypath.Expanduser(imagePath)
+	local := pathutil.ExpandUser(imagePath)
 	if isFile(local) {
 		return a.sendFileAttachment(ctx, chatID, local, caption, replyTo, metadata, false)
 	}
@@ -834,7 +834,7 @@ func (a *BuzzAdapter) GetChatInfo(ctx context.Context, chatID string) (map[strin
 		if err != nil {
 			return nil, err
 		}
-		if m, ok := data.(map[string]any); ok && pyrepr.Truthy(m["name"]) {
+		if m, ok := data.(map[string]any); ok && anyutil.IsTrue(m["name"]) {
 			name = strOf(m["name"])
 			a.mu.Lock()
 			a.channelNames[chatID] = name

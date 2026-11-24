@@ -2,8 +2,7 @@ package state
 
 import (
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	"unicode"
 )
 
 // State key prefix of a durable deleted session tombstone
@@ -34,7 +33,7 @@ func runtimeOneLine(value *string, limit int) *string {
 	}
 	var b strings.Builder
 	for _, r := range strings.Join(pySplitWhitespace(*value), " ") {
-		if pystr.IsPrintable(r) {
+		if unicode.IsPrint(r) {
 			b.WriteRune(r)
 		}
 	}

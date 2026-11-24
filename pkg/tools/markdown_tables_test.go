@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
+	"github.com/mattn/go-runewidth"
 )
 
 // Display cell index of every pipe in the line, negative widths counted as one cell
@@ -16,7 +16,7 @@ func tableColumnOffsets(line string) []int {
 		if ch == '|' {
 			cells = append(cells, width)
 		}
-		if w := pyunicode.WcsWidth(string(ch)); w > 0 {
+		if w := (&runewidth.Condition{StrictEmojiNeutral: true}).StringWidth(string(ch)); w > 0 {
 			width += w
 		} else {
 			width++
@@ -99,7 +99,7 @@ func TestVerticalFallbackWrapsLongCellTextWithIndent(t *testing.T) {
 		t.Fatalf("no indented continuation after Value in %q", lines)
 	}
 	for _, line := range lines {
-		if pyunicode.WcsWidth(line) > 60 {
+		if (&runewidth.Condition{StrictEmojiNeutral: true}).StringWidth(line) > 60 {
 			t.Fatalf("line over budget %q", line)
 		}
 	}

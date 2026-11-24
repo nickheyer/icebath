@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Dotenv lines decoded as utf-8-sig with replacement, each normalized and ending in one newline
@@ -29,7 +29,7 @@ func writeEnvLinesMode(ctx context.Context, h, path string, lines []string, pres
 			mode, keep = info.Mode()&(os.ModePerm|os.ModeSetuid|os.ModeSetgid|os.ModeSticky), true
 		}
 	}
-	tmp, err := pyfs.MkstempBeside(path, ".env_", ".tmp")
+	tmp, err := fsutil.CreateTempBeside(path, ".env_", ".tmp")
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func writeEnvLinesMode(ctx context.Context, h, path string, lines []string, pres
 		err = closeErr
 	}
 	if err == nil {
-		_, err = pyfs.AtomicReplace(tmp.Name(), path)
+		_, err = fsutil.Replace(tmp.Name(), path)
 	}
 	if err != nil {
 		_ = os.Remove(tmp.Name())

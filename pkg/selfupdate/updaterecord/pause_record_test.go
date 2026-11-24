@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func prOwedIDs(t *testing.T) []string {
@@ -152,8 +152,8 @@ func TestAnUnreadableRetiredListClaimsNothingAndForgetsNothing(t *testing.T) {
 		}
 	}()
 	raw, _ := os.ReadFile(retired)
-	v, _ := pyjson.Loads(string(raw))
-	if !reflect.DeepEqual(pyjson.Plain(v).(map[string]any)["ids"], []any{done}) {
+	v, _ := jsonutil.Decode(string(raw))
+	if !reflect.DeepEqual(jsonutil.Plain(v).(map[string]any)["ids"], []any{done}) {
 		t.Fatalf("the history was rewritten %s", raw)
 	}
 	for _, id := range prOwedIDs(t) {

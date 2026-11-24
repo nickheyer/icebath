@@ -5,8 +5,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Run recorder standing in for the worker's agent, the SimpleNamespace of the test
@@ -35,10 +35,10 @@ func (r *workerTurnRecorder) SessionStore() SessionStore              { return n
 func TestWorkerTurnPassesTheAuthorToRunConversation(t *testing.T) {
 	ctx := context.Background()
 	agent := &workerTurnRecorder{}
-	author := pyjson.ObjectOf("id", "alice", "name", "alice", "is_bot", true)
-	frames := []*pyjson.Object{
-		pyjson.ObjectOf("policy", pyjson.ObjectOf("kanban_json", nil), "text", "hello", "turn_author", author),
-		pyjson.ObjectOf("policy", pyjson.ObjectOf("kanban_json", nil), "text", "again", "turn_author", nil),
+	author := jsonutil.ObjectOf("id", "alice", "name", "alice", "is_bot", true)
+	frames := []*jsonutil.Object{
+		jsonutil.ObjectOf("policy", jsonutil.ObjectOf("kanban_json", nil), "text", "hello", "turn_author", author),
+		jsonutil.ObjectOf("policy", jsonutil.ObjectOf("kanban_json", nil), "text", "again", "turn_author", nil),
 	}
 	for _, frame := range frames {
 		if _, err := RunWorkerTurns(ctx, agent, frame, []map[string]any{}); err != nil {

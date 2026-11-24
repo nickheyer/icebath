@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -19,10 +19,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -39,7 +38,7 @@ const (
 )
 
 // os.access, a var so tests can race a sibling close against the preflight
-var osAccess = pyfs.Access
+var osAccess = fsutil.Access
 
 var (
 	dbSidecarSuffixes               = []string{"-wal", "-shm", "-journal"}
@@ -177,10 +176,10 @@ func bumpSchemaCookie(ctx context.Context, conn SQLiteConn) {
 		err = errors.New("the schema cookie row is missing")
 	}
 	if err == nil {
-		var current *big.Int
-		if current, err = pyint.Of(row[0]); err == nil {
-			next := new(big.Int).And(current.Add(current, big.NewInt(1)), big.NewInt(0x7FFFFFFF))
-			_, err = conn.ExecContext(ctx, "PRAGMA schema_version="+next.String())
+		var current int64
+		if current, err = anyutil.ToInt(row[0]); err == nil {
+			next := (current + 1) & 0x7FFFFFFF
+			_, err = conn.ExecContext(ctx, "PRAGMA schema_version="+strconv.FormatInt(next, 10))
 		}
 	}
 	if err != nil {
@@ -371,25 +370,25 @@ func backupContentIdentity(dbPath string) (string, bool) {
 }
 
 // Decoded repair ledger object, empty when missing, unreadable, malformed or not an object
-func readRepairLedger(dbPath string) *pyjson.Object {
+func readRepairLedger(dbPath string) *jsonutil.Object {
 	data, err := os.ReadFile(repairLedgerPath(dbPath))
 	if err != nil || !utf8.Valid(data) {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	raw, err := pyjson.Loads(string(data))
-	if obj, ok := raw.(*pyjson.Object); err == nil && ok {
+	raw, err := jsonutil.Decode(string(data))
+	if obj, ok := raw.(*jsonutil.Object); err == nil && ok {
 		return obj
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
-// Recorded failure count of a ledger, int of a missing key being zero
-func ledgerFailedAttempts(ledger *pyjson.Object) (*big.Int, error) {
+// Recorded failure count of a ledger, zero when the key is missing
+func ledgerFailedAttempts(ledger *jsonutil.Object) (int64, error) {
 	raw, ok := ledger.Get("failed_attempts")
 	if !ok {
-		return big.NewInt(0), nil
+		return 0, nil
 	}
-	return pyint.Of(raw)
+	return anyutil.ToInt(raw)
 }
 
 // Whether the current file has already burned its cross restart repair budget
@@ -414,7 +413,7 @@ func persistentRepairAttemptsExhausted(dbPath string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return n.Cmp(big.NewInt(maxPersistentRepairAttempts)) >= 0, nil
+	return n >= maxPersistentRepairAttempts, nil
 }
 
 // Operator diagnostic for an exhausted repair budget carrying the profile selector
@@ -449,19 +448,19 @@ func recordRepairOutcome(dbPath string, repaired bool) {
 			}
 			fp = recorded
 		}
-		attempts := big.NewInt(1)
+		attempts := int64(1)
 		if isStr && recorded == fp {
 			n, err := ledgerFailedAttempts(ledger)
 			if err != nil {
 				return err
 			}
-			attempts = n.Add(n, big.NewInt(1))
+			attempts = n + 1
 		}
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		out.Set("fingerprint", fp)
-		out.Set("failed_attempts", pyint.Native(attempts))
+		out.Set("failed_attempts", int(attempts))
 		out.Set("last_attempt", time.Now().Format("2006-01-02T15:04:05"))
-		text, err := pyjson.Dumps(out)
+		text, err := jsonutil.Encode(out)
 		if err != nil {
 			return err
 		}
@@ -841,8 +840,8 @@ func IntegrityDamageIsStructural(integrityLines []string, masterRows []SQLiteMas
 			return true
 		}
 		if m, _ := integrityTreeRE.FindStringMatch(text); m != nil {
-			if n, err := pyint.Of(m.GroupByNumber(1).String()); err == nil && n.IsInt64() {
-				if name := nameByRootpage[n.Int64()]; name != "" && !repairFTSObjectRE.MatchString(name) {
+			if n, err := strconv.ParseInt(m.GroupByNumber(1).String(), 10, 64); err == nil {
+				if name := nameByRootpage[n]; name != "" && !repairFTSObjectRE.MatchString(name) {
 					return true
 				}
 			}

@@ -8,7 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestAQueuedReleaseReturnsWhileTheRegistryIsLockedAndLandsAfter(t *testing.T) {
@@ -49,11 +49,11 @@ func TestAQueuedReleaseReturnsWhileTheRegistryIsLockedAndLandsAfter(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, err := pyjson.Loads(string(raw))
+	data, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entries, _ := data.(*pyjson.Object).GetOr("entries", nil).([]any); len(entries) != 0 {
+	if entries, _ := data.(*jsonutil.Object).ValueOr("entries", nil).([]any); len(entries) != 0 {
 		t.Fatalf("entries %v", entries)
 	}
 }

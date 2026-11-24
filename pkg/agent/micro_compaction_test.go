@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Micro compaction enabled compressor whose summarizer answers with the given text
@@ -341,8 +341,8 @@ func captureInfoLogs(t *testing.T) *bytes.Buffer {
 }
 
 // Decoded payloads of every micro compaction telemetry line in the captured log
-func microTelemetryPayloads(t *testing.T, logs *bytes.Buffer) []*pyjson.Object {
-	var out []*pyjson.Object
+func microTelemetryPayloads(t *testing.T, logs *bytes.Buffer) []*jsonutil.Object {
+	var out []*jsonutil.Object
 	for line := range strings.SplitSeq(logs.String(), "\n") {
 		_, rest, ok := strings.Cut(line, "micro compaction telemetry: ")
 		if !ok {
@@ -350,16 +350,16 @@ func microTelemetryPayloads(t *testing.T, logs *bytes.Buffer) []*pyjson.Object {
 		}
 		rest, _, _ = strings.Cut(rest, `" logger=`)
 		rest = strings.ReplaceAll(rest, `\"`, `"`)
-		v, err := pyjson.Loads(rest)
+		v, err := jsonutil.Decode(rest)
 		if err != nil {
 			t.Fatalf("telemetry line %q: %v", rest, err)
 		}
-		out = append(out, v.(*pyjson.Object))
+		out = append(out, v.(*jsonutil.Object))
 	}
 	return out
 }
 
-func objInt(o *pyjson.Object, key string) int {
+func objInt(o *jsonutil.Object, key string) int {
 	v, _ := o.Get(key)
 	n, _ := telemetrySafeInt(v).(int)
 	return n
@@ -377,7 +377,7 @@ func TestMicroEmitsContentFreeTokenTelemetry(t *testing.T) {
 	p := payloads[0]
 	event, _ := p.Get("event")
 	outcome, _ := p.Get("outcome")
-	blob, _ := pyjson.Dumps(p)
+	blob, _ := jsonutil.Encode(p)
 	if event != "micro_compaction" || outcome != "absorbed" || objInt(p, "tokens_saved_total") != -objInt(p, "tokens_delta") ||
 		objInt(p, "passes_total") != 1 || objInt(p, "messages_after") != len(result) || objInt(p, "exchange_tokens") <= 0 ||
 		strings.Contains(blob, "answer 0") || strings.Contains(blob, "question 0") {

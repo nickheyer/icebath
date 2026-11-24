@@ -10,9 +10,8 @@ import (
 	"path/filepath"
 	"time"
 
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 	"golang.org/x/sys/windows"
-
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Non blocking byte range lock probe with short sleeps up to the budget, a TurnBusyError when exhausted
@@ -32,7 +31,7 @@ func acquireTurnLock(ctx context.Context, root, profile string, timeoutSeconds *
 		return nil, err
 	}
 	handle := windows.Handle(f.Fd())
-	start := pythread.Monotonic()
+	start := timeutil.Monotonic()
 	deadline := start + budget
 	for {
 		var overlapped windows.Overlapped
@@ -44,7 +43,7 @@ func acquireTurnLock(ctx context.Context, root, profile string, timeoutSeconds *
 			_ = f.Close()
 			return nil, &os.PathError{Op: "lock", Path: path, Err: lockErr}
 		}
-		now := pythread.Monotonic()
+		now := timeutil.Monotonic()
 		if now >= deadline {
 			_ = f.Close()
 			return nil, &TurnBusyError{Profile: profile, WaitedSeconds: now - start}

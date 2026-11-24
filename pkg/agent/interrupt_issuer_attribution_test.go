@@ -7,12 +7,12 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Bare agent with only its interrupt slots seeded, built without its constructor
 func bareIssuerAgent() *AIAgent {
-	return &AIAgent{hardInterruptRequested: &pythread.Event{}, activeChildrenLock: &sync.Mutex{}, quietMode: true}
+	return &AIAgent{hardInterruptRequested: &syncutil.Event{}, activeChildrenLock: &sync.Mutex{}, quietMode: true}
 }
 
 func TestSystemProducerIsRecordedAndLoggedAtPublication(t *testing.T) {

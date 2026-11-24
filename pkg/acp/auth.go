@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
 	"github.com/nickheyer/icebath/pkg/provider"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
 )
 
 const TerminalSetupAuthMethodID = "icebath-setup"
@@ -29,17 +29,17 @@ func DetectProvider(ctx context.Context) string {
 }
 
 // Registry compatible auth methods, the detected provider first and terminal setup always
-func BuildAuthMethods(ctx context.Context) []pyacp.AuthMethod {
-	var methods []pyacp.AuthMethod
+func BuildAuthMethods(ctx context.Context) []acputil.AuthMethod {
+	var methods []acputil.AuthMethod
 	if p := DetectProvider(ctx); p != "" {
-		methods = append(methods, &pyacp.AuthMethodAgent{
+		methods = append(methods, &acputil.AuthMethodAgent{
 			ID: p, Name: p + " runtime credentials",
-			Description: pyacp.Ptr("Authenticate Icebath using the currently configured " + p + " runtime credentials."),
+			Description: new("Authenticate Icebath using the currently configured " + p + " runtime credentials."),
 		})
 	}
-	methods = append(methods, &pyacp.TerminalAuthMethod{
+	methods = append(methods, &acputil.TerminalAuthMethod{
 		ID: TerminalSetupAuthMethodID, Name: "Configure Icebath provider", Args: []string{"--setup"},
-		Description: pyacp.Ptr("Open Icebath's interactive model/provider setup in a terminal. " +
+		Description: new("Open Icebath's interactive model/provider setup in a terminal. " +
 			"Use this when Icebath has not been configured on this machine yet."),
 	})
 	return methods

@@ -7,11 +7,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Value of a row column, nil when the column is absent
-func rowValue(row *pyjson.Object, key string) any {
+func rowValue(row *jsonutil.Object, key string) any {
 	if row == nil {
 		return nil
 	}
@@ -20,7 +19,7 @@ func rowValue(row *pyjson.Object, key string) any {
 }
 
 // Python str of a row column after the or empty fallback
-func rowStrOr(row *pyjson.Object, key string) string {
+func rowStrOr(row *jsonutil.Object, key string) string {
 	v := rowValue(row, key)
 	if !pyTruthy(v) {
 		return ""
@@ -177,7 +176,7 @@ func (d *SessionDB) EnsureSession(n NewSession) error {
 }
 
 // Session row by id with resolved prompt columns after the queued token deltas land, nil when absent
-func (d *SessionDB) GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	if readConnOf(ctx) == nil {
 		d.FlushForRead(ctx)
 	}
@@ -192,7 +191,7 @@ func (d *SessionDB) GetSession(ctx context.Context, sessionID string) (*pyjson.O
 }
 
 // Newest main loop model route of a session as one per call tuple, nil when none was recorded
-func (d *SessionDB) GetRecentSessionModelRoute(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) GetRecentSessionModelRoute(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	d.FlushForRead(ctx)
 	return d.readOne(ctx, `SELECT model, billing_provider, billing_base_url, billing_mode,
                       api_call_count
@@ -206,18 +205,18 @@ func (d *SessionDB) GetRecentSessionModelRoute(ctx context.Context, sessionID st
 }
 
 // Tolerant model_config decode, JSON text or an object copied, anything else empty
-func parseModelConfigValue(raw any) *pyjson.Object {
+func parseModelConfigValue(raw any) *jsonutil.Object {
 	if text, ok := raw.(string); ok && pyStrip(text) != "" {
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
-			return pyjson.NewObject()
+			return jsonutil.NewObject()
 		}
 		raw = parsed
 	}
-	out := pyjson.NewObject()
-	if obj, ok := raw.(*pyjson.Object); ok {
-		for _, k := range obj.Keys {
-			out.Set(k, obj.Vals[k])
+	out := jsonutil.NewObject()
+	if obj, ok := raw.(*jsonutil.Object); ok {
+		for _, k := range obj.Keys() {
+			out.Set(k, obj.Value(k))
 		}
 	}
 	return out
@@ -291,7 +290,7 @@ func (d *SessionDB) UpdateSystemPrompt(ctx context.Context, sessionID string, sy
 func (d *SessionDB) UpdateSessionToolNames(sessionID string, pin any) error {
 	var payload any
 	if pin != nil {
-		text, err := pyjson.Dumps(pin)
+		text, err := jsonutil.Encode(pin)
 		if err != nil {
 			return err
 		}
@@ -351,7 +350,7 @@ func (d *SessionDB) ClearSessionActivityLabels(sessionID string) error {
 }
 
 // Merges the patch into the stored model_config, nil values deleting keys, returning the JSON text or nil when empty
-func mergeModelConfigJSON(ctx context.Context, conn SQLiteConn, sessionID string, patch *pyjson.Object, raiseOnMissing bool) (any, bool, error) {
+func mergeModelConfigJSON(ctx context.Context, conn SQLiteConn, sessionID string, patch *jsonutil.Object, raiseOnMissing bool) (any, bool, error) {
 	row, err := connRow(ctx, conn, "SELECT model_config FROM sessions WHERE id = ?", sessionID)
 	if err != nil {
 		return nil, false, err
@@ -363,8 +362,8 @@ func mergeModelConfigJSON(ctx context.Context, conn SQLiteConn, sessionID string
 		return nil, true, nil
 	}
 	config := parseModelConfigValue(row["model_config"])
-	for _, key := range patch.Keys {
-		if value := patch.Vals[key]; value == nil {
+	for _, key := range patch.Keys() {
+		if value := patch.Value(key); value == nil {
 			config.Delete(key)
 		} else {
 			config.Set(key, value)
@@ -373,7 +372,7 @@ func mergeModelConfigJSON(ctx context.Context, conn SQLiteConn, sessionID string
 	if config.Len() == 0 {
 		return nil, false, nil
 	}
-	text, err := pyjson.Dumps(config)
+	text, err := jsonutil.Encode(config)
 	if err != nil {
 		return nil, false, err
 	}

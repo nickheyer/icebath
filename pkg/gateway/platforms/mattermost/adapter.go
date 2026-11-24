@@ -16,15 +16,16 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 const (
@@ -53,7 +54,7 @@ var (
 
 // AttributeError an attribute read raises on a value of another type
 func attributeError(v any, attr string) error {
-	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
 }
 
 // dict get of a decoded JSON value, the AttributeError a non dict raises
@@ -69,12 +70,12 @@ func dictGet(v any, key string, def any) (any, error) {
 }
 
 // Post payload with the property that stops Mattermost from firing mentions
-func withMentionsDisabled(payload *pyjson.Object) *pyjson.Object {
-	props := pyjson.NewObject()
+func withMentionsDisabled(payload *jsonutil.Object) *jsonutil.Object {
+	props := jsonutil.NewObject()
 	if existing, _ := payload.Get("props"); existing != nil {
 		switch p := existing.(type) {
-		case *pyjson.Object:
-			props = p.Copy()
+		case *jsonutil.Object:
+			props = p.Clone()
 		case map[string]any:
 			for k, v := range p {
 				props.Set(k, v)
@@ -99,7 +100,7 @@ func channelSetting(ctx context.Context, channels *settings.List) map[string]boo
 func postResult(data any, failure string) gateway.SendResult {
 	m, _ := data.(map[string]any)
 	id, ok := m["id"]
-	if !pyrepr.Truthy(data) || !ok {
+	if !anyutil.IsTrue(data) || !ok {
 		return gateway.SendResult{Success: false, Error: failure}
 	}
 	return gateway.SendResult{Success: true, MessageID: id}
@@ -124,7 +125,7 @@ func urlAndToken(ctx context.Context, config *gateway.PlatformConfig) (any, any,
 	if config != nil {
 		token = config.Token
 	}
-	if !pyrepr.Truthy(token) {
+	if !anyutil.IsTrue(token) {
 		scoped, err := gateway.GetScopedSecret(ctx, "MATTERMOST_TOKEN", "", false)
 		if err != nil {
 			return nil, nil, err
@@ -176,7 +177,7 @@ type MattermostAdapter struct {
 	botUsername    any
 	session        *http.Client
 	sessionClosed  bool
-	ws             *pyaiohttpws.Conn
+	ws             *websocketutil.Conn
 	wsTask         *gateway.AdapterTask
 	reconnectTask  *gateway.AdapterTask
 	closing        bool
@@ -216,7 +217,7 @@ func NewMattermostAdapter(ctx context.Context, config *gateway.PlatformConfig) (
 
 // Bearer authorization header of the bot token
 func (a *MattermostAdapter) authHeader() map[string]string {
-	return map[string]string{"Authorization": "Bearer " + pyrepr.Str(a.token)}
+	return map[string]string{"Authorization": "Bearer " + anyutil.String(a.token)}
 }
 
 // Authorization and JSON content type headers of an API call
@@ -227,7 +228,7 @@ func (a *MattermostAdapter) headers() map[string]string {
 }
 
 // One REST v4 call returning the decoded reply, an empty dict on a refused or failed call, POST recording its status and error
-func (a *MattermostAdapter) api(ctx context.Context, method, path string, payload *pyjson.Object) (any, error) {
+func (a *MattermostAdapter) api(ctx context.Context, method, path string, payload *jsonutil.Object) (any, error) {
 	if strings.Contains(path, "..") {
 		pkgLog().Error(fmt.Sprintf("MM API path traversal blocked: %s", path))
 		return map[string]any{}, nil
@@ -241,7 +242,7 @@ func (a *MattermostAdapter) api(ctx context.Context, method, path string, payloa
 	}
 	var body []byte
 	if payload != nil {
-		encoded, err := pyjson.Dumps(payload)
+		encoded, err := jsonutil.Encode(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -291,7 +292,7 @@ func (a *MattermostAdapter) apiGet(ctx context.Context, path string) (any, error
 	return a.api(ctx, "GET", path, nil)
 }
 
-func (a *MattermostAdapter) apiPost(ctx context.Context, path string, payload *pyjson.Object) (any, error) {
+func (a *MattermostAdapter) apiPost(ctx context.Context, path string, payload *jsonutil.Object) (any, error) {
 	return a.api(ctx, "POST", path, payload)
 }
 
@@ -301,7 +302,7 @@ func (a *MattermostAdapter) AddReaction(ctx context.Context, chatID, messageID, 
 	if !ok {
 		return fmt.Errorf("%s has no Mattermost emoji name, pass a name such as thumbsup", emoji)
 	}
-	reply, err := a.apiPost(ctx, "reactions", pyjson.ObjectOf("user_id", pyrepr.Str(a.botUserID), "post_id", messageID, "emoji_name", name))
+	reply, err := a.apiPost(ctx, "reactions", jsonutil.ObjectOf("user_id", anyutil.String(a.botUserID), "post_id", messageID, "emoji_name", name))
 	if err != nil {
 		return err
 	}
@@ -334,24 +335,24 @@ func (a *MattermostAdapter) lastPostFailureIsBrokenThreadRoot() bool {
 }
 
 // Posts once, a notify worthy threaded post whose root is broken going out flat with a warning
-func (a *MattermostAdapter) postPreservingThread(ctx context.Context, chatID string, payload *pyjson.Object, metadata map[string]any) (any, error) {
+func (a *MattermostAdapter) postPreservingThread(ctx context.Context, chatID string, payload *jsonutil.Object, metadata map[string]any) (any, error) {
 	data, err := a.apiPost(ctx, "posts", payload)
 	if err != nil {
 		return nil, err
 	}
 	_, hasRoot := payload.Get("root_id")
-	if pyrepr.Truthy(data) || !hasRoot || !pyrepr.Truthy(metadata["notify"]) || !a.lastPostFailureIsBrokenThreadRoot() {
+	if anyutil.IsTrue(data) || !hasRoot || !anyutil.IsTrue(metadata["notify"]) || !a.lastPostFailureIsBrokenThreadRoot() {
 		return data, nil
 	}
-	flat := pyjson.NewObject()
-	for _, k := range payload.Keys {
+	flat := jsonutil.NewObject()
+	for _, k := range payload.Keys() {
 		if k != "root_id" {
-			flat.Set(k, payload.Vals[k])
+			flat.Set(k, payload.Value(k))
 		}
 	}
 	body := ""
-	if message, _ := flat.Get("message"); pyrepr.Truthy(message) {
-		body = pyrepr.Str(message)
+	if message, _ := flat.Get("message"); anyutil.IsTrue(message) {
+		body = anyutil.String(message)
 	}
 	visible := strings.TrimSpace("⚠️ Mattermost thread delivery failed; posting final reply in channel.\n\n" + body)
 	var message any
@@ -365,7 +366,7 @@ func (a *MattermostAdapter) postPreservingThread(ctx context.Context, chatID str
 
 // Builds a mentions disabled post, threaded under the resolved root in thread mode, and posts it
 func (a *MattermostAdapter) postMessage(ctx context.Context, chatID, message, replyTo string, metadata map[string]any, fileIDs []any) (any, error) {
-	base := pyjson.ObjectOf("channel_id", chatID, "message", message)
+	base := jsonutil.ObjectOf("channel_id", chatID, "message", message)
 	if fileIDs != nil {
 		base.Set("file_ids", fileIDs)
 	}
@@ -374,12 +375,12 @@ func (a *MattermostAdapter) postMessage(ctx context.Context, chatID, message, re
 		var candidate any = replyTo
 		if replyTo == "" {
 			candidate = metadata["thread_id"]
-			if !pyrepr.Truthy(candidate) {
+			if !anyutil.IsTrue(candidate) {
 				candidate = metadata["root_id"]
 			}
 		}
-		if pyrepr.Truthy(candidate) {
-			root, err := a.resolveRootID(ctx, pyrepr.Str(candidate))
+		if anyutil.IsTrue(candidate) {
+			root, err := a.resolveRootID(ctx, anyutil.String(candidate))
 			if err != nil {
 				return nil, err
 			}
@@ -420,7 +421,7 @@ func (a *MattermostAdapter) uploadFile(ctx context.Context, channelID string, fi
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(infos) {
+	if !anyutil.IsTrue(infos) {
 		return nil, nil
 	}
 	list, ok := infos.([]any)
@@ -429,7 +430,7 @@ func (a *MattermostAdapter) uploadFile(ctx context.Context, channelID string, fi
 	}
 	first, ok := list[0].(map[string]any)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(list[0]))}
+		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(list[0]))}
 	}
 	id, ok := first["id"]
 	if !ok {
@@ -440,7 +441,7 @@ func (a *MattermostAdapter) uploadFile(ctx context.Context, channelID string, fi
 
 // Authenticates the bot against the REST API and starts the WebSocket listener
 func (a *MattermostAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error) {
-	if a.baseURL == "" || !pyrepr.Truthy(a.token) {
+	if a.baseURL == "" || !anyutil.IsTrue(a.token) {
 		pkgLog().Error("Mattermost: URL or token not configured")
 		return false, nil
 	}
@@ -454,7 +455,7 @@ func (a *MattermostAdapter) Connect(ctx context.Context, isReconnect bool) (bool
 	}
 	meMap, _ := me.(map[string]any)
 	id, hasID := meMap["id"]
-	if !pyrepr.Truthy(me) || !hasID {
+	if !anyutil.IsTrue(me) || !hasID {
 		pkgLog().Error("Mattermost: failed to authenticate — check MATTERMOST_TOKEN and the server address")
 		a.closeSession()
 		return false, nil
@@ -466,7 +467,7 @@ func (a *MattermostAdapter) Connect(ctx context.Context, isReconnect bool) (bool
 	a.mu.Lock()
 	a.botUserID, a.botUsername = id, username
 	a.mu.Unlock()
-	pkgLog().Info(fmt.Sprintf("Mattermost: authenticated as @%s (%s) on %s", pyrepr.Str(username), pyrepr.Str(id), a.baseURL))
+	pkgLog().Info(fmt.Sprintf("Mattermost: authenticated as @%s (%s) on %s", anyutil.String(username), anyutil.String(id), a.baseURL))
 	task := gateway.SpawnAdapterTask(ctx, a.wsLoop)
 	a.mu.Lock()
 	a.wsTask = task
@@ -521,14 +522,14 @@ func (a *MattermostAdapter) resolveRootID(ctx context.Context, postID string) (a
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(data) {
+	if !anyutil.IsTrue(data) {
 		return postID, nil
 	}
 	root, err := dictGet(data, "root_id", nil)
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(root) {
+	if anyutil.IsTrue(root) {
 		return root, nil
 	}
 	return postID, nil
@@ -558,7 +559,7 @@ func (a *MattermostAdapter) GetChatInfo(ctx context.Context, chatID string) (map
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(data) {
+	if !anyutil.IsTrue(data) {
 		return map[string]any{"name": chatID, "type": "channel"}, nil
 	}
 	name, err := dictGet(data, "display_name", nil)
@@ -566,10 +567,10 @@ func (a *MattermostAdapter) GetChatInfo(ctx context.Context, chatID string) (map
 		return nil, err
 	}
 	m := data.(map[string]any)
-	if !pyrepr.Truthy(name) {
+	if !anyutil.IsTrue(name) {
 		name = m["name"]
 	}
-	if !pyrepr.Truthy(name) {
+	if !anyutil.IsTrue(name) {
 		name = chatID
 	}
 	var code any = "O"
@@ -590,13 +591,13 @@ func (a *MattermostAdapter) SendTyping(ctx context.Context, chatID string, metad
 	a.mu.Lock()
 	botUserID := a.botUserID
 	a.mu.Unlock()
-	_, err := a.apiPost(ctx, "users/"+pyrepr.Str(botUserID)+"/typing", pyjson.ObjectOf("channel_id", chatID))
+	_, err := a.apiPost(ctx, "users/"+anyutil.String(botUserID)+"/typing", jsonutil.ObjectOf("channel_id", chatID))
 	return err
 }
 
 // Patches a post with the formatted content, mentions disabled
 func (a *MattermostAdapter) EditMessage(ctx context.Context, chatID, messageID, content string, finalize bool) (gateway.SendResult, error) {
-	payload := withMentionsDisabled(pyjson.ObjectOf("message", a.FormatMessage(content)))
+	payload := withMentionsDisabled(jsonutil.ObjectOf("message", a.FormatMessage(content)))
 	data, err := a.api(ctx, "PUT", "posts/"+messageID+"/patch", payload)
 	if err != nil {
 		return gateway.SendResult{}, err
@@ -678,7 +679,7 @@ func (a *MattermostAdapter) sendURLAsFile(ctx context.Context, chatID, rawURL, c
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	if pyrepr.Truthy(fileID) {
+	if anyutil.IsTrue(fileID) {
 		return a.postWithFile(ctx, chatID, fileID, caption, replyTo, metadata)
 	}
 	return fallback()
@@ -700,7 +701,7 @@ func (a *MattermostAdapter) sendLocalFile(ctx context.Context, chatID, filePath,
 	}
 	fname := fileName
 	if fname == "" {
-		fname = pypath.PathName(filePath)
+		fname = pathutil.Name(filePath)
 	}
 	data, err := os.ReadFile(filePath)
 	if err != nil {
@@ -710,7 +711,7 @@ func (a *MattermostAdapter) sendLocalFile(ctx context.Context, chatID, filePath,
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	if !pyrepr.Truthy(fileID) {
+	if !anyutil.IsTrue(fileID) {
 		return gateway.SendResult{Success: false, Error: "File upload failed"}, nil
 	}
 	return a.postWithFile(ctx, chatID, fileID, caption, replyTo, metadata)
@@ -735,7 +736,7 @@ func (a *MattermostAdapter) loadBatchImage(ctx context.Context, imageURL string,
 		if err != nil {
 			return nil, err
 		}
-		name := pypath.PathName(localPath)
+		name := pathutil.Name(localPath)
 		return &batchImage{data: data, filename: name, contentType: guessType(name, "image/png")}, nil
 	}
 	if !tools.IsSafeURL(gateway.URLSafetyEnv(ctx), imageURL) {
@@ -790,7 +791,7 @@ func (a *MattermostAdapter) SendMultipleImages(ctx context.Context, chatID strin
 		}
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("Mattermost: multi-image send failed (chunk %d/%d), falling back: %s", chunkIdx+1, len(chunks),
-				pyrepr.ExceptionMessage(err)), "error", err)
+				err.Error()), "error", err)
 		} else if posted {
 			delivered = true
 			continue
@@ -828,7 +829,7 @@ func (a *MattermostAdapter) postImageChunk(ctx context.Context, chatID string, c
 		if err != nil {
 			return false, false, err
 		}
-		if pyrepr.Truthy(fid) {
+		if anyutil.IsTrue(fid) {
 			fileIDs = append(fileIDs, fid)
 		}
 	}
@@ -842,7 +843,7 @@ func (a *MattermostAdapter) postImageChunk(ctx context.Context, chatID string, c
 	}
 	m, _ := data.(map[string]any)
 	_, hasID := m["id"]
-	return pyrepr.Truthy(data) && hasID, false, nil
+	return anyutil.IsTrue(data) && hasID, false, nil
 }
 
 // Whether the adapter is shutting down
@@ -874,7 +875,7 @@ func (a *MattermostAdapter) wsLoop(ctx context.Context) error {
 					"the System Console.", handshake.Status), false)
 				return a.NotifyFatalError(ctx)
 			}
-			pkgLog().Warn(fmt.Sprintf("Mattermost WS error: %s — reconnecting in %.0fs", pyrepr.ExceptionMessage(err), delay))
+			pkgLog().Warn(fmt.Sprintf("Mattermost WS error: %s — reconnecting in %.0fs", err.Error(), delay))
 		}
 		if a.isClosing() {
 			return nil
@@ -906,7 +907,7 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 		return &gateway.PyError{Kind: "RuntimeError", Msg: "Session is closed"}
 	}
 	dctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-	ws, err := pyaiohttpws.Connect(dctx, wsURL, pyaiohttpws.Options{Heartbeat: 30 * time.Second, TrustEnv: gateway.GatewayTrustEnv(ctx)})
+	ws, err := websocketutil.Connect(dctx, wsURL, pyaiohttpws.Options{Heartbeat: 30 * time.Second, TrustEnv: gateway.GatewayTrustEnv(ctx)})
 	timedOut := dctx.Err() != nil && ctx.Err() == nil
 	cancel()
 	if err != nil {
@@ -918,8 +919,8 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 	a.mu.Lock()
 	a.ws = ws
 	a.mu.Unlock()
-	challenge, err := pyjson.Dumps(pyjson.ObjectOf("seq", 1, "action", "authentication_challenge", "data",
-		pyjson.ObjectOf("token", a.token)))
+	challenge, err := jsonutil.Encode(jsonutil.ObjectOf("seq", 1, "action", "authentication_challenge", "data",
+		jsonutil.ObjectOf("token", a.token)))
 	if err != nil {
 		return err
 	}
@@ -940,22 +941,22 @@ func (a *MattermostAdapter) wsConnectAndListen(ctx context.Context) error {
 			return nil
 		}
 		switch msg.Type {
-		case pyaiohttpws.Text, pyaiohttpws.Binary:
+		case websocketutil.Text, websocketutil.Binary:
 			var event any
 			var perr error
 			if text, ok := msg.Data.(string); ok {
-				event, perr = pyjson.Loads(text)
+				event, perr = jsonutil.Decode(text)
 			} else if raw, ok := msg.Data.([]byte); ok {
-				event, perr = pyjson.LoadsBytes(raw)
+				event, perr = jsonutil.Decode(raw)
 			}
 			if perr != nil {
-				var decodeErr *pyjson.DecodeError
+				var decodeErr *jsonutil.SyntaxError
 				if errors.As(perr, &decodeErr) {
 					continue
 				}
 				return perr
 			}
-			if err := a.handleWSEvent(ctx, pyjson.Plain(event)); err != nil {
+			if err := a.handleWSEvent(ctx, jsonutil.Plain(event)); err != nil {
 				return err
 			}
 		case pyaiohttpws.Error:
@@ -974,7 +975,7 @@ func (a *MattermostAdapter) applyChannelGating(ctx context.Context, channelID, m
 	requireMention := settings.MattermostRequireMention.Get(gateway.SettingsContext(ctx))
 	freeChannels := channelSetting(ctx, settings.MattermostFreeResponseChannels)
 	a.mu.Lock()
-	mentionPatterns := []string{"@" + pyrepr.Str(a.botUsername), "@" + pyrepr.Str(a.botUserID)}
+	mentionPatterns := []string{"@" + anyutil.String(a.botUsername), "@" + anyutil.String(a.botUserID)}
 	a.mu.Unlock()
 	hasMention := false
 	lowered := strings.ToLower(messageText)
@@ -1008,13 +1009,13 @@ func (a *MattermostAdapter) applyChannelGating(ctx context.Context, channelID, m
 func (a *MattermostAdapter) downloadAttachments(ctx context.Context, fileIDs []any) ([]string, []string, error) {
 	mediaURLs, mediaTypes := []string{}, []string{}
 	for _, fid := range fileIDs {
-		id := pyrepr.Str(fid)
+		id := anyutil.String(fid)
 		cached, mime, skip, err := a.downloadAttachment(ctx, id)
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Mattermost: error downloading file %s: %s", id, pyrepr.ExceptionMessage(err)))
+			pkgLog().Warn(fmt.Sprintf("Mattermost: error downloading file %s: %s", id, err.Error()))
 			continue
 		}
 		if skip {
@@ -1051,13 +1052,13 @@ func (a *MattermostAdapter) downloadAttachment(ctx context.Context, fid string) 
 	fname, ok := nameValue.(string)
 	if !ok {
 		return "", "", false, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
-			pyrepr.TypeName(nameValue))}
+			anyutil.Kind(nameValue))}
 	}
 	for _, row := range inboundCacheExt {
 		if !strings.HasPrefix(mime, row[0]) {
 			continue
 		}
-		ext := pypath.PathSuffix(fname)
+		ext := pathutil.Suffix(fname)
 		if ext == "" {
 			ext = row[1]
 		}
@@ -1078,7 +1079,7 @@ func (a *MattermostAdapter) handleWSEvent(ctx context.Context, event any) error 
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Equal(kind, "posted") {
+	if !anyutil.Equal(kind, "posted") {
 		return nil
 	}
 	data := event.(map[string]any)["data"]
@@ -1090,18 +1091,18 @@ func (a *MattermostAdapter) handleWSEvent(ctx context.Context, event any) error 
 		return err
 	}
 	postText := ""
-	if pyrepr.Truthy(rawPost) {
+	if anyutil.IsTrue(rawPost) {
 		text, ok := rawPost.(string)
 		if !ok {
 			return nil
 		}
 		postText = text
 	}
-	parsed, err := pyjson.Loads(postText)
+	parsed, err := jsonutil.Decode(postText)
 	if err != nil {
 		return nil
 	}
-	post := pyjson.Plain(parsed)
+	post := jsonutil.Plain(parsed)
 	senderValue, err := dictGet(post, "user_id", "")
 	if err != nil {
 		return err
@@ -1117,17 +1118,17 @@ func (a *MattermostAdapter) handleWSEvent(ctx context.Context, event any) error 
 	a.mu.Lock()
 	botUserID := a.botUserID
 	a.mu.Unlock()
-	senderID, postID := pyrepr.Str(senderValue), pyrepr.Str(postIDValue)
-	if pyrepr.Equal(senderValue, botUserID) || pyrepr.Truthy(postMap["type"]) || (pyrepr.Truthy(postIDValue) && a.dedup.IsDuplicate(postID)) {
+	senderID, postID := anyutil.String(senderValue), anyutil.String(postIDValue)
+	if anyutil.Equal(senderValue, botUserID) || anyutil.IsTrue(postMap["type"]) || (anyutil.IsTrue(postIDValue) && a.dedup.IsDuplicate(postID)) {
 		return nil
 	}
-	channelID := pyrepr.Str(field("channel_id"))
+	channelID := anyutil.String(field("channel_id"))
 	dataMap := data.(map[string]any)
 	var channelType any = "O"
 	if v, ok := dataMap["channel_type"]; ok {
 		channelType = v
 	}
-	isDM := pyrepr.Equal(channelType, "D")
+	isDM := anyutil.Equal(channelType, "D")
 	messageValue := field("message")
 	messageText, ok := messageValue.(string)
 	if !ok {
@@ -1144,18 +1145,18 @@ func (a *MattermostAdapter) handleWSEvent(ctx context.Context, event any) error 
 		messageText = gated
 	}
 	threadID := ""
-	if root := postMap["root_id"]; pyrepr.Truthy(root) {
-		threadID = pyrepr.Str(root)
+	if root := postMap["root_id"]; anyutil.IsTrue(root) {
+		threadID = anyutil.String(root)
 	}
-	if threadID == "" && a.replyMode == "thread" && !isDM && pyrepr.Truthy(postIDValue) {
+	if threadID == "" && a.replyMode == "thread" && !isDM && anyutil.IsTrue(postIDValue) {
 		threadID = postID
 	}
 	if first := textutil.First(messageText, 1); first != "" && strings.TrimSpace(first) == "" && strings.HasPrefix(strings.TrimLeftFunc(messageText, unicode.IsSpace), "/") {
 		messageText = strings.TrimLeftFunc(messageText, unicode.IsSpace)
 	}
 	fileIDs, _ := postMap["file_ids"].([]any)
-	if raw := postMap["file_ids"]; pyrepr.Truthy(raw) && fileIDs == nil {
-		return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(raw))}
+	if raw := postMap["file_ids"]; anyutil.IsTrue(raw) && fileIDs == nil {
+		return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(raw))}
 	}
 	mediaURLs, mediaTypes, err := a.downloadAttachments(ctx, fileIDs)
 	if err != nil {

@@ -8,11 +8,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const apiSettingsPrefix = "gateway.api.settings.v1."
@@ -45,8 +45,8 @@ func newAdmissionQueued() *AdmissionQueuedError {
 
 func (e *AdmissionQueuedError) Error() string { return admissionQueuedMessage }
 
-// Python class name of the error
-func (e *AdmissionQueuedError) PyTypeName() string { return "AdmissionQueued" }
+// Kind label of the error
+func (e *AdmissionQueuedError) ErrorKind() string { return "AdmissionQueued" }
 
 func (e *AdmissionQueuedError) Unwrap() error { return e.RuntimeStoreError }
 
@@ -63,17 +63,17 @@ func apiSettings(ctx context.Context, a *SessionAuthority, ref SessionRef) (any,
 		return nil, err
 	}
 	if !found {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	return pyjson.Loads(saved)
+	return jsonutil.Decode(saved)
 }
 
 // Members iterating a decoded JSON value yields, the TypeError Python raises for a scalar
 func pyIterMembers(value any) ([]any, error) {
 	switch v := value.(type) {
-	case *pyjson.Object:
-		members := make([]any, len(v.Keys))
-		for i, key := range v.Keys {
+	case *jsonutil.Object:
+		members := make([]any, v.Len())
+		for i, key := range v.Keys() {
 			members[i] = key
 		}
 		return members, nil
@@ -91,7 +91,7 @@ func pyIterMembers(value any) ([]any, error) {
 
 // Value of key in a decoded dict, the AttributeError Python raises calling get on anything else
 func pyDictGet(value any, key string, def any) (any, error) {
-	obj, ok := value.(*pyjson.Object)
+	obj, ok := value.(*jsonutil.Object)
 	if !ok {
 		return nil, &PyError{Kind: "AttributeError", Msg: "expected a mapping, got " + errchain.Kind(value)}
 	}
@@ -110,7 +110,7 @@ func checkAPITurnEnvelope(data any) error {
 	keys := map[any]bool{}
 	for _, member := range members {
 		switch member.(type) {
-		case []any, *pyjson.Object:
+		case []any, *jsonutil.Object:
 			return &PyError{Kind: "TypeError", Msg: "an API turn envelope member is " + errchain.Kind(member) + ", expected text"}
 		}
 		keys[member] = true
@@ -128,14 +128,14 @@ func checkAPITurnEnvelope(data any) error {
 	if resume != true || !keys["history"] || !keys["settings"] {
 		return invalid
 	}
-	relay, err := pyDictGet(data, "relay_metadata", pyjson.NewObject())
+	relay, err := pyDictGet(data, "relay_metadata", jsonutil.NewObject())
 	if err != nil {
 		return err
 	}
-	if _, isDict := relay.(*pyjson.Object); !isDict {
+	if _, isDict := relay.(*jsonutil.Object); !isDict {
 		return invalid
 	}
-	obj := data.(*pyjson.Object)
+	obj := data.(*jsonutil.Object)
 	history, _ := obj.Get("history")
 	if _, isList := history.([]any); history != nil && !isList {
 		return invalid
@@ -157,7 +157,7 @@ func checkAPITurnEnvelope(data any) error {
 }
 
 // Adapter that may run an admitted API turn for the session, refusing a draining or malformed one
-func checkAPITurn(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *pyjson.Object) (PlatformAdapter, error) {
+func checkAPITurn(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *jsonutil.Object) (PlatformAdapter, error) {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
 		return nil, &pyKeyError{ref.SessionID}
@@ -185,9 +185,9 @@ func checkAPITurn(ctx context.Context, a *SessionAuthority, ref SessionRef, payl
 	}
 	var settings any
 	if hasData {
-		settings, _ = data.(*pyjson.Object).Get("settings")
+		settings, _ = data.(*jsonutil.Object).Get("settings")
 	}
-	if !pyrepr.Truthy(settings) {
+	if !anyutil.IsTrue(settings) {
 		saved, err := apiSettings(ctx, a, ref)
 		if err != nil {
 			return nil, err
@@ -217,7 +217,7 @@ func APISessionVars(ctx context.Context) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(delivery) {
+	if !anyutil.IsTrue(delivery) {
 		delivery = ""
 	}
 	return map[string]any{"session_history_delivery": delivery}, nil
@@ -255,7 +255,7 @@ func checkAPISettings(ctx context.Context, adapter PlatformAdapter, settings any
 	if err != nil {
 		return err
 	}
-	if current.CatalogDigest != bound.CapabilityDigest || !pyjson.Equal(current.ExecutionPolicy.AsMapping(), policy) {
+	if current.CatalogDigest != bound.CapabilityDigest || !anyutil.Equal(current.ExecutionPolicy.AsMapping(), policy) {
 		return runtimeRefusal("permission_denied")
 	}
 	return nil
@@ -295,8 +295,8 @@ func roomImagesAsText(ctx context.Context, settings any, parts, media []any) (st
 	}
 	text := ""
 	for _, part := range parts {
-		if obj, ok := part.(*pyjson.Object); ok && obj.GetOr("type", nil) == "text" {
-			text, _ = obj.GetOr("text", "").(string)
+		if obj, ok := part.(*jsonutil.Object); ok && obj.ValueOr("type", nil) == "text" {
+			text, _ = obj.ValueOr("text", "").(string)
 			break
 		}
 	}
@@ -305,14 +305,14 @@ func roomImagesAsText(ctx context.Context, settings any, parts, media []any) (st
 }
 
 // Execution state of one admitted API turn, its adapter, settings, history and content
-func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *pyjson.Object) (*pyjson.Object, error) {
+func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRef, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	adapter, err := checkAPITurn(ctx, a, ref, payload)
 	if err != nil {
 		return nil, err
 	}
 	rawData, _ := payload.Get("api_turn_v1")
-	data, _ := rawData.(*pyjson.Object)
-	hasData := pyrepr.Truthy(rawData)
+	data, _ := rawData.(*jsonutil.Object)
+	hasData := anyutil.IsTrue(rawData)
 	var settings any
 	if hasData {
 		var present bool
@@ -329,7 +329,7 @@ func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRe
 	if parts, isList := content.([]any); hasData && isList {
 		media, _ := data.Get("media")
 		mediaList, _ := media.([]any)
-		if pyrepr.Truthy(media) && mediaList == nil {
+		if anyutil.IsTrue(media) && mediaList == nil {
 			return nil, &PyError{Kind: "TypeError", Msg: "the API turn media are " + errchain.Kind(media) + ", expected a list"}
 		}
 		restored, err := RestoreAPIImages(ctx, parts, mediaList)
@@ -342,7 +342,7 @@ func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRe
 			return nil, err
 		}
 		if described != "" {
-			content = []any{pyjson.ObjectOf("type", "text", "text", described)}
+			content = []any{jsonutil.ObjectOf("type", "text", "text", described)}
 		}
 	}
 	var history, author, relay any
@@ -355,22 +355,22 @@ func prepareAPIExecution(ctx context.Context, a *SessionAuthority, ref SessionRe
 		author, _ = data.Get("turn_author")
 		relay, _ = data.Get("relay_metadata")
 		resumeValue, _ := data.Get("resume_unanswered")
-		resume = pyrepr.Truthy(resumeValue)
+		resume = anyutil.IsTrue(resumeValue)
 	}
-	return pyjson.ObjectOf("adapter", adapter, "settings", settings, "history", history, "content", content,
+	return jsonutil.ObjectOf("adapter", adapter, "settings", settings, "history", history, "content", content,
 		"turn_author", author, "relay_metadata", relay, "resume_unanswered", resume), nil
 }
 
 type apiExecutionKey struct{}
 
 // Context carrying prepared as the executing API admission, nil clearing it
-func bindAPIExecution(ctx context.Context, prepared *pyjson.Object) context.Context {
+func bindAPIExecution(ctx context.Context, prepared *jsonutil.Object) context.Context {
 	return context.WithValue(ctx, apiExecutionKey{}, prepared)
 }
 
 // Executing API admission the context carries, nil outside one
-func APIExecution(ctx context.Context) *pyjson.Object {
-	prepared, _ := ctx.Value(apiExecutionKey{}).(*pyjson.Object)
+func APIExecution(ctx context.Context) *jsonutil.Object {
+	prepared, _ := ctx.Value(apiExecutionKey{}).(*jsonutil.Object)
 	return prepared
 }
 
@@ -455,7 +455,7 @@ func publishAPIEvent(a *SessionAuthority, sessionID, eventType string, payload a
 	}
 	var text any
 	switch p := payload.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		value, present := p.Get("text")
 		if !present {
 			return false, &pyKeyError{"text"}
@@ -510,8 +510,8 @@ func PublishAPIToolEvent(ctx context.Context, a *SessionAuthority, sessionID str
 		}
 		return err
 	}
-	if !pyrepr.Truthy(args) {
-		args = pyjson.NewObject()
+	if !anyutil.IsTrue(args) {
+		args = jsonutil.NewObject()
 	}
 	var err error
 	switch eventType {
@@ -524,14 +524,14 @@ func PublishAPIToolEvent(ctx context.Context, a *SessionAuthority, sessionID str
 }
 
 // Executing API admission when its settings carry a confirmed Browser model lock, else nil
-func APIRuntimeLocked(ctx context.Context) (*pyjson.Object, error) {
+func APIRuntimeLocked(ctx context.Context) (*jsonutil.Object, error) {
 	current := APIExecution(ctx)
 	if current == nil {
 		return nil, nil
 	}
 	settings, _ := current.Get("settings")
 	locked, err := pyDictGet(settings, "confirmed_runtime_lock", nil)
-	if err != nil || !pyrepr.Truthy(locked) {
+	if err != nil || !anyutil.IsTrue(locked) {
 		return nil, err
 	}
 	return current, nil

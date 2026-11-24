@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Filters of icebath plugins list
@@ -108,7 +108,7 @@ func CmdList(ctx context.Context, opts ListOptions, out io.Writer) error {
 	if opts.JSON {
 		list := make([]any, 0, len(rows))
 		for _, r := range rows {
-			o := pyjson.NewObject()
+			o := jsonutil.NewObject()
 			o.Set("name", r.name)
 			o.Set("status", r.status)
 			o.Set("version", r.version)
@@ -117,7 +117,7 @@ func CmdList(ctx context.Context, opts ListOptions, out io.Writer) error {
 			o.Set("removed", r.removed)
 			list = append(list, o)
 		}
-		text, err := pyjson.Dumps(list, pyjson.Indent(2))
+		text, err := jsonutil.Encode(list, jsonutil.Indent(2))
 		if err != nil {
 			return err
 		}
@@ -242,15 +242,15 @@ func orNone(joined []string) string {
 	return strings.Join(joined, ", ")
 }
 
-func newPluginTable(title string, columns [][2]string) *pyrich.Table {
-	t := &pyrich.Table{Title: title}
+func newPluginTable(title string, columns [][2]string) *consoleutil.Table {
+	t := &consoleutil.Table{Title: title}
 	for _, c := range columns {
-		t.Columns = append(t.Columns, pyrich.Column{Header: c[0], Style: c[1]})
+		t.Columns = append(t.Columns, consoleutil.Column{Header: c[0], Style: c[1]})
 	}
 	return t
 }
 
 // Prints a table fitted to the console width
-func (c *Console) printTable(t *pyrich.Table) {
+func (c *Console) printTable(t *consoleutil.Table) {
 	fmt.Fprintln(c.Out, t.RenderWidth(c.Color, c.width()))
 }

@@ -7,7 +7,7 @@ import (
 	"os"
 	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 // Owner name of a path for the log line, never failing
@@ -17,7 +17,7 @@ func dirOwner(path string) string {
 		return fmt.Sprintf("unknown (%s)", deliveryOSErrorText(err))
 	}
 	uid := int(st.Sys().(*syscall.Stat_t).Uid)
-	pw, err := pypwd.Getpwuid(uid)
+	pw, err := userutil.LookupID(uid)
 	if err != nil {
 		return fmt.Sprintf("uid %d", uid)
 	}

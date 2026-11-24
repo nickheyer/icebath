@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Store that names held rows whose stored payload changed since they were loaded
@@ -26,7 +26,7 @@ func exactHeldRowID(m map[string]any, copied bool) (int64, bool) {
 	default:
 		return 0, false
 	}
-	if rid <= 0 || (!copied && !pyrepr.Truthy(m[dbPersistedMarker])) {
+	if rid <= 0 || (!copied && !anyutil.IsTrue(m[dbPersistedMarker])) {
 		return 0, false
 	}
 	return rid, true

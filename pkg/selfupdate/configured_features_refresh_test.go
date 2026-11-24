@@ -14,9 +14,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Sets the feature refresh steps to no ops for a re-executed test child
@@ -50,23 +50,23 @@ func frRecording(t *testing.T, calls *[]string, depsErr, memoryErr error) {
 }
 
 // Followup steps and reasons of a receipt
-func frFollowups(t *testing.T, receipt *pyjson.Object) [][2]string {
+func frFollowups(t *testing.T, receipt *jsonutil.Object) [][2]string {
 	t.Helper()
 	out := [][2]string{}
-	items, _ := receipt.GetOr("followups", nil).([]any)
+	items, _ := receipt.ValueOr("followups", nil).([]any)
 	for _, item := range items {
-		entry := item.(*pyjson.Object)
-		out = append(out, [2]string{entry.GetOr("step", nil).(string), entry.GetOr("reason", nil).(string)})
+		entry := item.(*jsonutil.Object)
+		out = append(out, [2]string{entry.ValueOr("step", nil).(string), entry.ValueOr("reason", nil).(string)})
 	}
 	return out
 }
 
 // Outcome the receipt recorded for one stage
-func frStage(receipt *pyjson.Object, name string) any {
-	items, _ := receipt.GetOr("stages", nil).([]any)
+func frStage(receipt *jsonutil.Object, name string) any {
+	items, _ := receipt.ValueOr("stages", nil).([]any)
 	for _, item := range items {
-		if entry, ok := item.(*pyjson.Object); ok && entry.GetOr("name", nil) == name {
-			return entry.GetOr("outcome", nil)
+		if entry, ok := item.(*jsonutil.Object); ok && entry.ValueOr("name", nil) == name {
+			return entry.ValueOr("outcome", nil)
 		}
 	}
 	return nil
@@ -194,7 +194,7 @@ func frFinishRequest(t *testing.T, root, updateID string) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
 	request := filepath.Join(dir, "request.json")
-	text, err := pyjson.Dumps(pyjson.ObjectOf("root", root, "update_id", updateID, "assume_yes", true, "gateway_mode", false))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("root", root, "update_id", updateID, "assume_yes", true, "gateway_mode", false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,9 +211,9 @@ func frFinishSteps(t *testing.T, calls *[]string) {
 		*calls = append(*calls, "maintenance")
 		return true, nil
 	})
-	vsSwap(t, &finishWriteSourceStamp, func(string, bool) (*pyjson.Object, error) {
+	vsSwap(t, &finishWriteSourceStamp, func(string, bool) (*jsonutil.Object, error) {
 		*calls = append(*calls, "stamp")
-		return pyjson.ObjectOf(), nil
+		return jsonutil.ObjectOf(), nil
 	})
 	vsSwap(t, &finishRestartFleet, func(context.Context, io.Writer, *UpdatePlan, bool) (*gatewayRestartOutcome, error) {
 		*calls = append(*calls, "restart")

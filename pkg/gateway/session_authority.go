@@ -7,11 +7,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Runner surface the session authority reads, the gateway runner's drain state, session store and adapters
@@ -35,7 +35,7 @@ type LiveSession struct {
 	drain         chan struct{}
 	scheduled     uint64
 	Rescan        bool
-	Settling      map[string]*pyjson.Object
+	Settling      map[string]*jsonutil.Object
 	RetireTimer   *time.Timer
 	Subscribers   map[string]Principal
 	Detaching     int
@@ -64,7 +64,7 @@ type LiveSession struct {
 
 // Live session on a route with a fresh event stream
 func NewLiveSession(source *SessionSource, route string) *LiveSession {
-	return &LiveSession{Source: source, Route: route, EventStream: NewSessionEvents(), Settling: map[string]*pyjson.Object{}}
+	return &LiveSession{Source: source, Route: route, EventStream: NewSessionEvents(), Settling: map[string]*jsonutil.Object{}}
 }
 
 // Gateway owned live sessions and canonical durable FIFO scheduling of one profile store
@@ -80,13 +80,13 @@ type SessionAuthority struct {
 	Sessions               map[string]*LiveSession
 	waiters                map[string]*admissionWaiter
 	nativeWaiters          map[string]bool
-	PendingResults         map[string]*pyjson.Object
+	PendingResults         map[string]*jsonutil.Object
 	cancelObligations      map[string]bool
 	Retiring               bool
 	Retired                bool
 	retiredRoutes          map[string]string
 	rotatedOwners          map[string]string
-	cronCancellations      map[string]*pythread.Event
+	cronCancellations      map[string]*syncutil.Event
 	orderedWrites          sync.Mutex
 	mutationTasks          map[*trackedTask]bool
 	managedWorkers         map[string]managedWorkerHandle
@@ -112,7 +112,7 @@ type SessionAuthority struct {
 	botReceiptRefreshes    map[string]*adapterTask
 	botReceiptDirty        map[string]bool
 	launchSlots            *launchSecretSlots
-	localOwnerKeyRequests  map[string]*pyjson.Object
+	localOwnerKeyRequests  map[string]*jsonutil.Object
 	pendingStops           map[string]int64
 	pendingStopCauses      map[string]stopCause
 	pendingSteers          map[string]latchedSteers
@@ -143,7 +143,7 @@ type SessionAuthority struct {
 func NewSessionAuthority(runner AuthorityRunner, profileID, instanceID string, db *state.SessionDB, epoch int64) *SessionAuthority {
 	return &SessionAuthority{Runner: runner, ProfileID: profileID, InstanceID: instanceID, DB: db, Epoch: epoch,
 		Sessions: map[string]*LiveSession{}, waiters: map[string]*admissionWaiter{}, Events: map[string]tuihost.Transport{}, nativeWaiters: map[string]bool{},
-		PendingResults: map[string]*pyjson.Object{}, cancelObligations: map[string]bool{}, retiredRoutes: map[string]string{},
+		PendingResults: map[string]*jsonutil.Object{}, cancelObligations: map[string]bool{}, retiredRoutes: map[string]string{},
 		rotatedOwners: map[string]string{}, mutationTasks: map[*trackedTask]bool{}}
 }
 
@@ -205,7 +205,7 @@ func (a *SessionAuthority) Authorize(ctx context.Context, actor Principal, ref S
 		chatID, _ := row.Get("chat_id")
 		chatText := ""
 		if pyTruthy(chatID) {
-			chatText = pyrepr.Str(chatID)
+			chatText = anyutil.String(chatID)
 		}
 		if local || strings.HasPrefix(chatText, "local-") {
 			if _, err := restoreLocalSession(ctx, a, ref.SessionID); err != nil {
@@ -304,7 +304,7 @@ func (a *SessionAuthority) PhysicalTarget(ctx context.Context, ref SessionRef) (
 }
 
 // Integer column of a row, nil for NULL
-func rowInt(row *pyjson.Object, key string) *int64 {
+func rowInt(row *jsonutil.Object, key string) *int64 {
 	v, _ := row.Get(key)
 	switch n := v.(type) {
 	case int:
@@ -320,14 +320,14 @@ func rowInt(row *pyjson.Object, key string) *int64 {
 }
 
 // String column of a row, empty for NULL
-func rowString(row *pyjson.Object, key string) string {
+func rowString(row *jsonutil.Object, key string) string {
 	v, _ := row.Get(key)
 	s, _ := v.(string)
 	return s
 }
 
 // Public receipt of an admission row, a steering handoff reading as its running execution
-func (a *SessionAuthority) receiptOf(row *pyjson.Object) AdmissionReceipt {
+func (a *SessionAuthority) receiptOf(row *jsonutil.Object) AdmissionReceipt {
 	status := rowString(row, "status")
 	outcomeValue, _ := row.Get("outcome")
 	var outcome *string
@@ -422,7 +422,7 @@ func logDrainFailure(err error) {
 }
 
 // Publishes committed input and returns its receipt, marking a native event accepted
-func (a *SessionAuthority) admitted(ctx context.Context, ref SessionRef, event *MessageEvent, row *pyjson.Object) (AdmissionReceipt, error) {
+func (a *SessionAuthority) admitted(ctx context.Context, ref SessionRef, event *MessageEvent, row *jsonutil.Object) (AdmissionReceipt, error) {
 	if event != nil {
 		event.setGatewayAccepted(true)
 		if rowString(row, "status") == AdmissionQueued && event.OnCommit != nil {
@@ -474,7 +474,7 @@ func (a *SessionAuthority) publishPending(ctx context.Context, ref SessionRef) e
 			}
 			pending = append(pending, pendingAdmissionDict(receipt))
 		}
-		live.EventStream.Publish(ref.SessionID, pyjson.ObjectOf(
+		live.EventStream.Publish(ref.SessionID, jsonutil.ObjectOf(
 			"stored_session_id", ref.SessionID, "pending", pending, "authority_epoch", a.Epoch,
 			"gateway_protocol", CanonicalGatewayProtocol, "running", handle.ExecutionState == "running",
 			"execution_generation", handle.ExecutionGeneration, "revision", handle.Revision), "session.info", nil)
@@ -527,7 +527,7 @@ func (a *SessionAuthority) handle(ctx context.Context, ref SessionRef) (SessionH
 }
 
 // Pending admissions as the event stream presents them, an unpublished settlement reading as its claim
-func (a *SessionAuthority) pendingRowsMasked(ctx context.Context, ref SessionRef) ([]*pyjson.Object, error) {
+func (a *SessionAuthority) pendingRowsMasked(ctx context.Context, ref SessionRef) ([]*jsonutil.Object, error) {
 	rows, err := a.DB.ListSessionAdmissions(ctx, ref.SessionID, true)
 	if err != nil {
 		return nil, err
@@ -536,7 +536,7 @@ func (a *SessionAuthority) pendingRowsMasked(ctx context.Context, ref SessionRef
 	if !ok || len(live.Settling) == 0 {
 		return rows, nil
 	}
-	byID := map[string]*pyjson.Object{}
+	byID := map[string]*jsonutil.Object{}
 	var order []string
 	for _, row := range rows {
 		id := rowString(row, "admission_id")
@@ -549,7 +549,7 @@ func (a *SessionAuthority) pendingRowsMasked(ctx context.Context, ref SessionRef
 		}
 		byID[id] = row
 	}
-	out := make([]*pyjson.Object, 0, len(order))
+	out := make([]*jsonutil.Object, 0, len(order))
 	for _, id := range order {
 		out = append(out, byID[id])
 	}
@@ -558,8 +558,8 @@ func (a *SessionAuthority) pendingRowsMasked(ctx context.Context, ref SessionRef
 }
 
 // Stable sort of admission rows by their FIFO sequence
-func sortRowsBySeq(rows []*pyjson.Object) {
-	seqOf := func(r *pyjson.Object) int64 {
+func sortRowsBySeq(rows []*jsonutil.Object) {
+	seqOf := func(r *jsonutil.Object) int64 {
 		if s := rowInt(r, "seq"); s != nil {
 			return *s
 		}
@@ -573,9 +573,9 @@ func sortRowsBySeq(rows []*pyjson.Object) {
 }
 
 // Viewer facing pending admission with only its public input text
-func (a *SessionAuthority) pendingReceipt(ctx context.Context, row *pyjson.Object) (PendingAdmission, error) {
+func (a *SessionAuthority) pendingReceipt(ctx context.Context, row *jsonutil.Object) (PendingAdmission, error) {
 	payloadValue, _ := row.Get("payload")
-	payload, _ := payloadValue.(*pyjson.Object)
+	payload, _ := payloadValue.(*jsonutil.Object)
 	var text any
 	if payload != nil {
 		text, _ = payload.Get("text")
@@ -584,9 +584,9 @@ func (a *SessionAuthority) pendingReceipt(ctx context.Context, row *pyjson.Objec
 		text = ""
 		if payload != nil {
 			if native, ok := payload.Get("native_text_v1"); ok {
-				if obj, isObj := native.(*pyjson.Object); isObj {
+				if obj, isObj := native.(*jsonutil.Object); isObj {
 					if event, ok := obj.Get("event"); ok {
-						if eventObj, isObj := event.(*pyjson.Object); isObj {
+						if eventObj, isObj := event.(*jsonutil.Object); isObj {
 							if t, ok := eventObj.Get("text"); ok {
 								text = t
 							}
@@ -608,18 +608,18 @@ func (a *SessionAuthority) pendingReceipt(ctx context.Context, row *pyjson.Objec
 }
 
 // Display kind and metadata the admitted turn's user row will be stored with, read from the committed payload
-func pendingDisplay(payload *pyjson.Object) (string, map[string]any) {
+func pendingDisplay(payload *jsonutil.Object) (string, map[string]any) {
 	metadata := map[string]any{}
 	if payload == nil {
 		return "", metadata
 	}
-	display, _ := pyjson.Plain(payload.GetOr("display_v1", nil)).(map[string]any)
+	display, _ := jsonutil.Plain(payload.ValueOr("display_v1", nil)).(map[string]any)
 	if preview, isStr := display["title_preview"].(string); isStr && preview != "" {
 		metadata["title_preview"] = preview
 	}
 	descriptor := automationDescriptor(payload)
-	name, _ := descriptor.GetOr("display_kind", nil).(string)
-	body, _ := descriptor.GetOr("display_text", nil).(string)
+	name, _ := descriptor.ValueOr("display_kind", nil).(string)
+	body, _ := descriptor.ValueOr("display_text", nil).(string)
 	if ProducerNoticeDisplayKinds[name] && strings.TrimSpace(body) != "" {
 		metadata["display_text"] = body
 	}
@@ -635,7 +635,7 @@ func pendingDisplay(payload *pyjson.Object) (string, map[string]any) {
 }
 
 // Dataclass dict of a pending admission as viewers receive it
-func pendingAdmissionDict(p PendingAdmission) *pyjson.Object {
+func pendingAdmissionDict(p PendingAdmission) *jsonutil.Object {
 	var outcome, generation any
 	if p.Outcome != nil {
 		outcome = *p.Outcome
@@ -654,8 +654,8 @@ func pendingAdmissionDict(p PendingAdmission) *pyjson.Object {
 	if len(p.DisplayMetadata) > 0 {
 		metadata = p.DisplayMetadata
 	}
-	return pyjson.ObjectOf("admission_id", p.AdmissionID,
-		"ref", pyjson.ObjectOf("profile_id", p.Ref.ProfileID, "session_id", p.Ref.SessionID),
+	return jsonutil.ObjectOf("admission_id", p.AdmissionID,
+		"ref", jsonutil.ObjectOf("profile_id", p.Ref.ProfileID, "session_id", p.Ref.SessionID),
 		"sequence", p.Sequence, "status", p.Status, "outcome", outcome, "authority_epoch", p.AuthorityEpoch,
 		"execution_generation", generation, "input_id", p.InputID, "text", p.Text, "display_kind", kind,
 		"display_metadata", metadata, "controls", controls, "steering", p.Steering)
@@ -702,11 +702,11 @@ func (a *SessionAuthority) CancelQueued(ctx context.Context, actor Principal, re
 	if err := releaseAdmissionMedia(ctx, a.DB, admissionID); err != nil {
 		return AdmissionReceipt{}, err
 	}
-	return a.receiptOf(result.(*pyjson.Object)), nil
+	return a.receiptOf(result.(*jsonutil.Object)), nil
 }
 
 // Cancels a row read queued, returning the started row when the drain claimed it first
-func (a *SessionAuthority) CancelOrClaimed(ctx context.Context, actor Principal, ref SessionRef, admissionID string) (*pyjson.Object, error) {
+func (a *SessionAuthority) CancelOrClaimed(ctx context.Context, actor Principal, ref SessionRef, admissionID string) (*jsonutil.Object, error) {
 	_, err := a.CancelQueued(ctx, actor, ref, admissionID)
 	if err == nil {
 		return nil, nil
@@ -725,7 +725,7 @@ func (a *SessionAuthority) CancelOrClaimed(ctx context.Context, actor Principal,
 }
 
 // Commits a cancellation off the loop and settles its observers once it lands
-func (a *SessionAuthority) commitCancel(ctx context.Context, ref SessionRef, admissionID string, before AdmissionReceipt) (*pyjson.Object, error) {
+func (a *SessionAuthority) commitCancel(ctx context.Context, ref SessionRef, admissionID string, before AdmissionReceipt) (*jsonutil.Object, error) {
 	if before.Status == AdmissionQueued {
 		a.mu.Lock()
 		a.cancelObligations[admissionID] = true
@@ -776,9 +776,9 @@ func (a *SessionAuthority) settleCancelled(ctx context.Context, ref SessionRef, 
 			return err
 		}
 		running := stream.Execution
-		stream.Execution = pyjson.ObjectOf("authority_epoch", a.Epoch, "admission_id", admissionID)
+		stream.Execution = jsonutil.ObjectOf("authority_epoch", a.Epoch, "admission_id", admissionID)
 		defer func() { stream.Execution = running }()
-		stream.Publish(ref.SessionID, pyjson.ObjectOf("text", "", "content", "", "admission_id", admissionID, "outcome", outcome),
+		stream.Publish(ref.SessionID, jsonutil.ObjectOf("text", "", "content", "", "admission_id", admissionID, "outcome", outcome),
 			"message.complete", nil)
 		return nil
 	}()

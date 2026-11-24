@@ -5,11 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"regexp"
 	"strings"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // Codex OAuth context windows, lower than the direct API for the same slugs, longest key first
@@ -211,7 +210,10 @@ func fetchCodexOAuthContextLengthsWithSource(ctx context.Context, accessToken, b
 	if ok && now.Sub(cached.at) < codexOAuthContextCacheTTL {
 		return cached.lengths, false
 	}
-	headers := pyhttpx.MergeHeaderMaps(pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + accessToken}), codexAccountHeaders(accessToken))
+	account := codexAccountHeaders(accessToken)
+	headers := make(map[string]string, len(account)+1)
+	headers["Authorization"] = "Bearer " + accessToken
+	maps.Copy(headers, account)
 	client := newProbeClient(ctx, "", headers, 5*time.Second, 10*time.Second)
 	entries, status, err := FetchCodexCatalogEntries(func(u string) (*probeResponse, error) { return client.Get(u, nil) }, baseURL)
 	if err != nil {

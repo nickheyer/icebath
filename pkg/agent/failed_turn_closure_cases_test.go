@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session database holding the given rows, an agent bound to it and the same rows as flushed live messages
@@ -59,7 +59,7 @@ func closureStored(t *testing.T, db *state.SessionDB) []map[string]any {
 }
 
 func closureSurfaceCode(row map[string]any) any {
-	raw, err := pyjson.Dumps(row["display_metadata"])
+	raw, err := jsonutil.Encode(row["display_metadata"])
 	if err != nil {
 		return err
 	}

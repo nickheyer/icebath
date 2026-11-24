@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Hub whose skills dir is tmp/skills, the patched SKILLS_DIR of the tests
@@ -67,7 +67,7 @@ func TestHubLockFileLoadCorruptJSON(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := pyjson.Dumps(data); got != `{"version": 1, "installed": {}}` {
+	if got, _ := jsonutil.Encode(data); got != `{"version": 1, "installed": {}}` {
 		t.Fatalf("load gave %s", got)
 	}
 }
@@ -85,8 +85,8 @@ func TestHubLockFileListInstalled(t *testing.T) {
 		t.Fatalf("list gave %v %v", installed, err)
 	}
 	for i, n := range []string{"s1", "s2"} {
-		if v, _ := installed[i].Get("name"); v != n || installed[i].Keys[0] != "name" {
-			t.Fatalf("entry %d is %v", i, installed[i].Keys)
+		if v, _ := installed[i].Get("name"); v != n || installed[i].Keys()[0] != "name" {
+			t.Fatalf("entry %d is %v", i, installed[i].Keys())
 		}
 	}
 }
@@ -138,7 +138,7 @@ func TestQuarantineBundleWritesBinaryFilesAndHashesLikeTheBundle(t *testing.T) {
 	if !strings.HasPrefix(string(md), "---") || strings.Contains(string(md), "\r\n") || string(wav) != "RIFF\x00\x01fakewav" {
 		t.Fatalf("quarantined %q %q", md, wav)
 	}
-	if want, _ := bundleContentHash(b); ContentHash(q) != want {
+	if want := bundleContentHash(b); ContentHash(q) != want {
 		t.Fatalf("content hash %s, bundle hash %s", ContentHash(q), want)
 	}
 }
@@ -164,11 +164,11 @@ func TestBundleContentHashMatchesInstalledContentHash(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "demo-skill")
 	writeTestFile(t, filepath.Join(dir, "SKILL.md"), "same content")
 	writeTestFile(t, filepath.Join(dir, "references", "checklist.md"), "- [ ] security\n")
-	if got, _ := bundleContentHash(b); got != ContentHash(dir) {
+	if got := bundleContentHash(b); got != ContentHash(dir) {
 		t.Fatalf("bundle hash %s, content hash %s", got, ContentHash(dir))
 	}
 	b.Files[1].Path = `references\checklist.md`
-	if got, _ := bundleContentHash(b); got != ContentHash(dir) {
+	if got := bundleContentHash(b); got != ContentHash(dir) {
 		t.Fatal("backslash keys hash differently")
 	}
 }
@@ -176,7 +176,7 @@ func TestBundleContentHashMatchesInstalledContentHash(t *testing.T) {
 // Lock file holding one demo-skill entry with the given install path value
 func writeDemoLock(t *testing.T, path string, installPath any, extra map[string]any) {
 	t.Helper()
-	e := pyjson.NewObject()
+	e := jsonutil.NewObject()
 	for _, kv := range [][2]any{{"source", "github"}, {"identifier", "owner/repo/demo-skill"}, {"content_hash", "oldhash"},
 		{"install_path", installPath}, {"trust_level", "trusted"}} {
 		e.Set(kv[0].(string), kv[1])
@@ -184,11 +184,11 @@ func writeDemoLock(t *testing.T, path string, installPath any, extra map[string]
 	for k, v := range extra {
 		e.Set(k, v)
 	}
-	inst := pyjson.NewObject()
+	inst := jsonutil.NewObject()
 	inst.Set("demo-skill", e)
-	doc := pyjson.NewObject()
+	doc := jsonutil.NewObject()
 	doc.Set("installed", inst)
-	text, _ := pyjson.Dumps(doc)
+	text, _ := jsonutil.Encode(doc)
 	writeTestFile(t, path, text)
 }
 
@@ -382,7 +382,7 @@ func TestInstallFromQuarantineRecordsSuccessfulInstall(t *testing.T) {
 		t.Fatalf("usage record created_by %v", v)
 	}
 	entry, _ := h.LockFile("").GetInstalled("good-skill")
-	if o, ok := entry.(*pyjson.Object); !ok || o.Vals["install_path"] != "good-skill" || o.Vals["scan_verdict"] != "safe" {
+	if o, ok := entry.(*jsonutil.Object); !ok || o.Value("install_path") != "good-skill" || o.Value("scan_verdict") != "safe" {
 		t.Fatalf("lock entry %v", entry)
 	}
 }

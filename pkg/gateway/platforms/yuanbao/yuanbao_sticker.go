@@ -2,12 +2,12 @@ package yuanbao
 
 import (
 	"math/rand/v2"
+	"regexp"
 	"sort"
 	"strings"
 
-	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -76,10 +76,10 @@ var stickerRows = [][3]string{
 // Builtin catalogue keyed by name, each value a sticker dict in package 1003 at 128x128 png
 var StickerMap = buildStickerMap()
 
-func buildStickerMap() *pyjson.Object {
-	m := pyjson.NewObject()
+func buildStickerMap() *jsonutil.Object {
+	m := jsonutil.NewObject()
 	for _, row := range stickerRows {
-		s := pyjson.NewObject()
+		s := jsonutil.NewObject()
 		s.Set("sticker_id", row[1])
 		s.Set("package_id", "1003")
 		s.Set("name", row[0])
@@ -97,32 +97,32 @@ type KeyError struct{ Of, Key string }
 
 func (e *KeyError) Error() string { return "the " + e.Of + " has no " + e.Key }
 
-func stickers() []*pyjson.Object {
-	out := make([]*pyjson.Object, 0, StickerMap.Len())
-	for _, k := range StickerMap.Keys {
-		out = append(out, StickerMap.Vals[k].(*pyjson.Object))
+func stickers() []*jsonutil.Object {
+	out := make([]*jsonutil.Object, 0, StickerMap.Len())
+	for _, k := range StickerMap.Keys() {
+		out = append(out, StickerMap.Value(k).(*jsonutil.Object))
 	}
 	return out
 }
 
-func stickerField(s *pyjson.Object, key string) string {
+func stickerField(s *jsonutil.Object, key string) string {
 	v, _ := s.Get(key)
 	text, _ := v.(string)
 	return text
 }
 
 // Exact name, then mutual substring of name, then description containment, then the best fuzzy hit, nil when none
-func GetStickerByName(name string) *pyjson.Object {
+func GetStickerByName(name string) *jsonutil.Object {
 	if name == "" {
 		return nil
 	}
 	query := strings.TrimSpace(name)
 	if v, ok := StickerMap.Get(query); ok {
-		return v.(*pyjson.Object)
+		return v.(*jsonutil.Object)
 	}
-	for _, key := range StickerMap.Keys {
+	for _, key := range StickerMap.Keys() {
 		if strings.Contains(key, query) || strings.Contains(query, key) {
-			return StickerMap.Vals[key].(*pyjson.Object)
+			return StickerMap.Value(key).(*jsonutil.Object)
 		}
 	}
 	for _, s := range stickers() {
@@ -137,8 +137,8 @@ func GetStickerByName(name string) *pyjson.Object {
 }
 
 // Random sticker, drawn from those whose description or name contains category when any do, else from all
-func GetRandomSticker(category string) *pyjson.Object {
-	var candidates []*pyjson.Object
+func GetRandomSticker(category string) *jsonutil.Object {
+	var candidates []*jsonutil.Object
 	if category != "" {
 		for _, s := range stickers() {
 			if strings.Contains(stickerField(s, "description"), category) || strings.Contains(stickerField(s, "name"), category) {
@@ -153,7 +153,7 @@ func GetRandomSticker(category string) *pyjson.Object {
 }
 
 // Sticker whose id equals the stripped id, nil when the id is empty or unknown
-func GetStickerByID(stickerID string) *pyjson.Object {
+func GetStickerByID(stickerID string) *jsonutil.Object {
 	if stickerID == "" {
 		return nil
 	}
@@ -166,24 +166,14 @@ func GetStickerByID(stickerID string) *pyjson.Object {
 	return nil
 }
 
-var punctRe = func() *regexp2.Regexp {
-	re, err := pyre.Compile(`[\s\u3000\-_·.,，。!！?？\"“”'‘’、/\\]+`)
-	if err != nil {
-		panic(err)
-	}
-	return re
-}()
+var punctRe = regexutil.Lazy(regexp.MustCompile, `[\s\v\x{85}\p{Z}\-_·.,，。!！?？\"“”'‘’、/\\]+`)
 
 func normalizeText(raw string) string {
 	return strings.ToLower(strings.TrimSpace(norm.NFKC.String(raw)))
 }
 
 func compactText(raw string) string {
-	out, err := punctRe.Replace(normalizeText(raw), "", -1, -1)
-	if err != nil {
-		panic(err)
-	}
-	return out
+	return punctRe().ReplaceAllLiteralString(normalizeText(raw), "")
 }
 
 func multisetCharHitRatio(needle, haystack []rune) float64 {
@@ -267,7 +257,7 @@ func scoreField(haystack, query string) float64 {
 }
 
 // Builtin stickers ranked by fuzzy match on name, description and id, table order for an empty query
-func SearchStickers(query string, limit int) []*pyjson.Object {
+func SearchStickers(query string, limit int) []*jsonutil.Object {
 	if limit == 0 {
 		limit = 10
 	}
@@ -279,7 +269,7 @@ func SearchStickers(query string, limit int) []*pyjson.Object {
 	}
 	type scoredSticker struct {
 		score   float64
-		sticker *pyjson.Object
+		sticker *jsonutil.Object
 	}
 	scored := make([]scoredSticker, 0, len(all))
 	for _, s := range all {
@@ -294,8 +284,8 @@ func SearchStickers(query string, limit int) []*pyjson.Object {
 		scored = append(scored, scoredSticker{score, s})
 	}
 	sort.SliceStable(scored, func(i, j int) bool { return scored[i].score > scored[j].score })
-	pick := func(pairs []scoredSticker) []*pyjson.Object {
-		out := make([]*pyjson.Object, 0, safeLimit)
+	pick := func(pairs []scoredSticker) []*jsonutil.Object {
+		out := make([]*jsonutil.Object, 0, safeLimit)
 		for _, p := range pairs[:min(safeLimit, len(pairs))] {
 			out = append(out, p.sticker)
 		}
@@ -328,19 +318,19 @@ func SearchStickers(query string, limit int) []*pyjson.Object {
 
 // TIMFaceElem message body carrying faceIndex as index and the sticker data string only when one is given
 func BuildFaceMsgBody(faceIndex int, data *string) []any {
-	content := pyjson.NewObject()
+	content := jsonutil.NewObject()
 	content.Set("index", faceIndex)
 	if data != nil {
 		content.Set("data", *data)
 	}
-	elem := pyjson.NewObject()
+	elem := jsonutil.NewObject()
 	elem.Set("msg_type", "TIMFaceElem")
 	elem.Set("msg_content", content)
 	return []any{elem}
 }
 
 // TIMFaceElem message body at index 0 whose data is the compact JSON metadata of the sticker
-func BuildStickerMsgBody(sticker *pyjson.Object) ([]any, error) {
+func BuildStickerMsgBody(sticker *jsonutil.Object) ([]any, error) {
 	get := func(key string, def any) (any, error) {
 		if v, ok := sticker.Get(key); ok {
 			return v, nil
@@ -350,7 +340,7 @@ func BuildStickerMsgBody(sticker *pyjson.Object) ([]any, error) {
 		}
 		return def, nil
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	for _, f := range []struct {
 		key string
 		def any
@@ -361,7 +351,7 @@ func BuildStickerMsgBody(sticker *pyjson.Object) ([]any, error) {
 		}
 		payload.Set(f.key, v)
 	}
-	data, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	data, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}

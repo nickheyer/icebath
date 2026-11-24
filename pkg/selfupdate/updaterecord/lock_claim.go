@@ -21,7 +21,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -50,7 +51,7 @@ func (e *MarkerBusy) Error() string { return e.Path + " is held by another updat
 func isOSError(err error) bool {
 	var busy *MarkerBusy
 	var pause *PauseRecordError
-	return errors.As(err, &busy) || errors.As(err, &pause) || pypath.IsOSError(err)
+	return errors.As(err, &busy) || errors.As(err, &pause) || errorutil.IsSystem(err)
 }
 
 var runtimeHostMatcher atomic.Pointer[func([]string) bool]
@@ -505,7 +506,7 @@ func lockHolder(path string) UpdateHolder {
 func strerrorOf(err error) string {
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return pypath.Strerror(errno)
+		return errno.Error()
 	}
 	return errchain.OSText(err)
 }
@@ -723,8 +724,8 @@ func HoldsCheckoutLock(installRoot string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	heldReal, _ := pypath.Realpath(held.path, pypath.Lax)
-	wantReal, _ := pypath.Realpath(path, pypath.Lax)
+	heldReal, _ := pathutil.Resolve(held.path)
+	wantReal, _ := pathutil.Resolve(path)
 	return heldReal == wantReal, nil
 }
 

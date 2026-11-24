@@ -13,18 +13,19 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -87,8 +88,8 @@ func nowSeconds() float64 { return float64(nowTime().UnixNano()) / 1e9 }
 // ISO 8601 UTC timestamp with millisecond precision
 func NowISO() string { return nowTime().UTC().Format("2006-01-02T15:04:05.000") + "Z" }
 
-func obj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func obj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -97,7 +98,7 @@ func obj(kv ...any) *pyjson.Object {
 
 func get(v any, key string) (any, bool) {
 	switch o := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if o == nil {
 			return nil, false
 		}
@@ -111,7 +112,7 @@ func get(v any, key string) (any, bool) {
 
 func isDict(v any) bool {
 	switch o := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return o != nil
 	case map[string]any:
 		return true
@@ -126,7 +127,7 @@ func getOr(v any, key string) any {
 
 func orValue(vals ...any) any {
 	for _, v := range vals {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -146,7 +147,7 @@ type AgentCardOptions struct {
 }
 
 // A2A v1.0 Agent Card with its JSONRPC interface, capabilities and the bearer scheme when auth is required
-func BuildAgentCard(ctx context.Context, o AgentCardOptions) *pyjson.Object {
+func BuildAgentCard(ctx context.Context, o AgentCardOptions) *jsonutil.Object {
 	iface := obj("url", o.URL, "protocolBinding", "JSONRPC", "protocolVersion", ProtocolVersion)
 	if o.Tenant != "" {
 		iface.Set("tenant", o.Tenant)
@@ -185,9 +186,9 @@ func BuildAgentCard(ctx context.Context, o AgentCardOptions) *pyjson.Object {
 func SkillsFromToolsets(toolsets any) []any {
 	names := map[string][]any{}
 	switch ts := toolsets.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if ts != nil {
-			for _, k := range ts.Keys {
+			for _, k := range ts.Keys() {
 				v, _ := ts.Get(k)
 				names[k] = toolList(v)
 			}
@@ -206,7 +207,7 @@ func SkillsFromToolsets(toolsets any) []any {
 		}
 	case []any:
 		for _, k := range ts {
-			names[pyrepr.Str(k)] = nil
+			names[anyutil.String(k)] = nil
 		}
 	}
 	keys := make([]string, 0, len(names))
@@ -222,7 +223,7 @@ func SkillsFromToolsets(toolsets any) []any {
 			if i == 10 {
 				break
 			}
-			tags = append(tags, pyrepr.Str(t))
+			tags = append(tags, anyutil.String(t))
 		}
 		skills = append(skills, obj("id", "toolset."+name, "name", name,
 			"description", fmt.Sprintf("Icebath '%s' capabilities", name), "tags", tags))
@@ -255,18 +256,18 @@ func toolList(v any) []any {
 }
 
 // JSON-RPC 2.0 result envelope
-func JsonrpcResult(reqID, result any) *pyjson.Object {
+func JsonrpcResult(reqID, result any) *jsonutil.Object {
 	return obj("jsonrpc", "2.0", "id", reqID, "result", result)
 }
 
 // JSON-RPC 2.0 error envelope
-func JsonrpcError(reqID any, code int, message string) *pyjson.Object {
+func JsonrpcError(reqID any, code int, message string) *jsonutil.Object {
 	return obj("jsonrpc", "2.0", "id", reqID, "error", obj("code", code, "message", message))
 }
 
 // SendMessageResponse holding a task when the payload has a status and an id and a message otherwise
-func SendMessageResponse(payload any) *pyjson.Object {
-	if isDict(payload) && pyrepr.Truthy(getOr(payload, "status")) && pyrepr.Truthy(getOr(payload, "id")) {
+func SendMessageResponse(payload any) *jsonutil.Object {
+	if isDict(payload) && anyutil.IsTrue(getOr(payload, "status")) && anyutil.IsTrue(getOr(payload, "id")) {
 		return obj("task", payload)
 	}
 	return obj("message", payload)
@@ -286,7 +287,7 @@ func UnwrapSendMessageResponse(result any) any {
 }
 
 // StreamResponse with a task member
-func StreamTask(task any) *pyjson.Object { return obj("task", task) }
+func StreamTask(task any) *jsonutil.Object { return obj("task", task) }
 
 func hex16() string { return strings.ReplaceAll(uuid.NewString(), "-", "")[:16] }
 
@@ -301,10 +302,10 @@ func MessageContextID(scope, messageID string) string {
 }
 
 // v1.0 text Part
-func TextPart(text string) *pyjson.Object { return obj("text", text, "mediaType", "text/plain") }
+func TextPart(text string) *jsonutil.Object { return obj("text", text, "mediaType", "text/plain") }
 
 // v1.0 Message with a single text Part
-func TextMessage(role, text, contextID string) *pyjson.Object {
+func TextMessage(role, text, contextID string) *jsonutil.Object {
 	msg := obj("role", role, "parts", []any{TextPart(text)}, "messageId", strings.ReplaceAll(uuid.NewString(), "-", ""))
 	if contextID != "" {
 		msg.Set("contextId", contextID)
@@ -314,26 +315,26 @@ func TextMessage(role, text, contextID string) *pyjson.Object {
 
 func fileNote(fname any, body string, mtype any) string {
 	label := "[file]"
-	if pyrepr.Truthy(fname) {
-		label = "[file: " + pyrepr.Str(fname) + "]"
+	if anyutil.IsTrue(fname) {
+		label = "[file: " + anyutil.String(fname) + "]"
 	}
 	out := label + " " + body
-	if pyrepr.Truthy(mtype) {
-		out += " (" + pyrepr.Str(mtype) + ")"
+	if anyutil.IsTrue(mtype) {
+		out += " (" + anyutil.String(mtype) + ")"
 	}
 	return out
 }
 
 func jsonOrStr(data any) string {
-	text, err := pyjson.Dumps(data, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	text, err := jsonutil.Encode(data, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
-		return pyrepr.Str(data)
+		return anyutil.String(data)
 	}
 	return text
 }
 
 // Concatenated text of a Message, Task result or params payload across v1.0, v0.3 and older Part shapes
-func ExtractText(messageOrParams *pyjson.Object) string {
+func ExtractText(messageOrParams *jsonutil.Object) string {
 	msg, ok := messageOrParams.Get("message")
 	if !ok {
 		msg = messageOrParams
@@ -359,7 +360,7 @@ func ExtractText(messageOrParams *pyjson.Object) string {
 			chunks = append(chunks, fileNote(orValue(getOr(part, "filename"), ""),
 				fmt.Sprintf("%d bytes base64-encoded", utf8.RuneCountInString(raw)), orValue(getOr(part, "mediaType"), "")))
 		} else if data := getOr(part, "data"); data != nil {
-			chunks = append(chunks, fmt.Sprintf("[data (%s)]\n%s", pyrepr.Str(orValue(getOr(part, "mediaType"), "application/json")), jsonOrStr(data)))
+			chunks = append(chunks, fmt.Sprintf("[data (%s)]\n%s", anyutil.String(orValue(getOr(part, "mediaType"), "application/json")), jsonOrStr(data)))
 		}
 	}
 	return strings.TrimSpace(strings.Join(chunks, "\n"))
@@ -371,27 +372,27 @@ func isString(v any) bool {
 }
 
 // messageId inside the v1.0 Message, repeated by a peer retrying a send
-func ExtractMessageID(params *pyjson.Object) string {
+func ExtractMessageID(params *jsonutil.Object) string {
 	msg := orValue(getOr(params, "message"), obj())
 	if !isDict(msg) {
 		return ""
 	}
-	return pyrepr.Str(orValue(getOr(msg, "messageId"), ""))
+	return anyutil.String(orValue(getOr(msg, "messageId"), ""))
 }
 
 // contextId inside the v1.0 Message, a legacy top level contextId accepted
-func ExtractContextID(params *pyjson.Object) string {
+func ExtractContextID(params *jsonutil.Object) string {
 	msg := orValue(getOr(params, "message"), obj())
 	if isDict(msg) {
-		if s := pyrepr.Str(orValue(getOr(msg, "contextId"), "")); s != "" {
+		if s := anyutil.String(orValue(getOr(msg, "contextId"), "")); s != "" {
 			return s
 		}
 	}
-	return pyrepr.Str(orValue(getOr(params, "contextId"), ""))
+	return anyutil.String(orValue(getOr(params, "contextId"), ""))
 }
 
 // v1.0 Task whose agent text becomes the status message and, once completed, its artifact
-func BuildTask(taskID, contextID, state, agentText string) *pyjson.Object {
+func BuildTask(taskID, contextID, state, agentText string) *jsonutil.Object {
 	status := obj("state", state, "timestamp", NowISO())
 	task := obj("id", taskID, "contextId", contextID, "status", status)
 	if agentText != "" {
@@ -404,7 +405,7 @@ func BuildTask(taskID, contextID, state, agentText string) *pyjson.Object {
 }
 
 // StreamResponse with a statusUpdate member
-func StatusUpdate(taskID, contextID, state, text string) *pyjson.Object {
+func StatusUpdate(taskID, contextID, state, text string) *jsonutil.Object {
 	status := obj("state", state, "timestamp", NowISO())
 	if text != "" {
 		status.Set("message", TextMessage(RoleAgent, text, contextID))
@@ -413,7 +414,7 @@ func StatusUpdate(taskID, contextID, state, text string) *pyjson.Object {
 }
 
 // StreamResponse with an artifactUpdate member
-func ArtifactUpdate(taskID, contextID, text string) *pyjson.Object {
+func ArtifactUpdate(taskID, contextID, text string) *jsonutil.Object {
 	artifact := obj("artifactId", strings.ReplaceAll(uuid.NewString(), "-", ""), "parts", []any{TextPart(text)})
 	return obj("artifactUpdate", obj("taskId", taskID, "contextId", contextID, "artifact", artifact))
 }
@@ -424,7 +425,7 @@ func SSEData(payload, reqID any) (string, error) {
 	if reqID != nil {
 		envelope = JsonrpcResult(reqID, payload)
 	}
-	text, err := pyjson.Dumps(envelope, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(envelope)
 	if err != nil {
 		return "", err
 	}
@@ -442,11 +443,11 @@ type turnEntry struct {
 // Inbound turns per context, beyond the pingpong cap the adapter rejects
 type TurnTracker struct {
 	mu    sync.Mutex
-	turns *pydict.Dict[string, turnEntry]
+	turns *orderedutil.Map[string, turnEntry]
 }
 
 func NewTurnTracker() *TurnTracker {
-	return &TurnTracker{turns: pydict.New[string, turnEntry]()}
+	return &TurnTracker{turns: orderedutil.NewMap[string, turnEntry]()}
 }
 
 // Increments and returns the context turn count after pruning contexts idle past an hour
@@ -454,7 +455,7 @@ func (t *TurnTracker) Track(contextID string) int {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	now := nowSeconds()
-	kept := pydict.New[string, turnEntry]()
+	kept := orderedutil.NewMap[string, turnEntry]()
 	for cid, v := range t.turns.All() {
 		if now-v.lastSeen <= turnTTLSeconds {
 			kept.Set(cid, v)
@@ -548,13 +549,13 @@ func (m *Metrics) AvgLatency() float64 {
 }
 
 // Uptime, every counter and the average latency in milliseconds
-func (m *Metrics) Snapshot() *pyjson.Object {
-	return obj("uptime_seconds", pyint.Round(nowSeconds()-m.startTime, 1),
+func (m *Metrics) Snapshot() *jsonutil.Object {
+	return obj("uptime_seconds", mathutil.Round(nowSeconds()-m.startTime, 1),
 		"inbound_total", m.InboundTotal.Load(), "outbound_total", m.OutboundTotal.Load(),
 		"streams_started", m.StreamsStarted.Load(), "push_sent", m.PushSent.Load(), "push_failed", m.PushFailed.Load(),
 		"tasks_completed", m.TasksCompleted.Load(), "tasks_failed", m.TasksFailed.Load(),
 		"anti_loop_triggers", m.AntiLoopTriggers.Load(), "rate_limit_triggers", m.RateLimitTriggers.Load(),
-		"avg_latency_ms", pyint.Round(m.AvgLatency()*1000, 1))
+		"avg_latency_ms", mathutil.Round(m.AvgLatency()*1000, 1))
 }
 
 // Stored A2A task with its scope, push config and outcome
@@ -616,12 +617,12 @@ func (w *TaskWatch) Result(ctx context.Context) (string, string, error) {
 // In memory tasks kept after completion whose readers see only records inside their scope
 type TaskStore struct {
 	mu       sync.Mutex
-	tasks    *pydict.Dict[string, *TaskRecord]
+	tasks    *orderedutil.Map[string, *TaskRecord]
 	watchers map[string][]*TaskWatch
 }
 
 func NewTaskStore() *TaskStore {
-	return &TaskStore{tasks: pydict.New[string, *TaskRecord](), watchers: map[string][]*TaskWatch{}}
+	return &TaskStore{tasks: orderedutil.NewMap[string, *TaskRecord](), watchers: map[string][]*TaskWatch{}}
 }
 
 func inScope(rec *TaskRecord, agentSlug, tenant string) bool {
@@ -644,7 +645,7 @@ func (s *TaskStore) pushRec(taskID, configID, agentSlug, tenant string) *TaskRec
 	return nil
 }
 
-func pushConfigView(rec *TaskRecord) *pyjson.Object {
+func pushConfigView(rec *TaskRecord) *jsonutil.Object {
 	return obj("configId", rec.PushConfigID, "taskId", rec.TaskID, "createdAt", rec.CreatedISO,
 		"pushNotificationConfig", obj("url", rec.PushURL))
 }
@@ -669,7 +670,7 @@ func (s *TaskStore) SetState(taskID, state string) {
 }
 
 // Attaches a push notification config to the scoped task and returns its view, nil outside scope
-func (s *TaskStore) SetPushConfig(taskID, url, agentSlug, tenant string) *pyjson.Object {
+func (s *TaskStore) SetPushConfig(taskID, url, agentSlug, tenant string) *jsonutil.Object {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rec := s.scoped(taskID, agentSlug, tenant)
@@ -680,7 +681,7 @@ func (s *TaskStore) SetPushConfig(taskID, url, agentSlug, tenant string) *pyjson
 	return pushConfigView(rec)
 }
 
-func (s *TaskStore) GetPushConfig(taskID, configID, agentSlug, tenant string) *pyjson.Object {
+func (s *TaskStore) GetPushConfig(taskID, configID, agentSlug, tenant string) *jsonutil.Object {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if rec := s.pushRec(taskID, configID, agentSlug, tenant); rec != nil {
@@ -689,11 +690,11 @@ func (s *TaskStore) GetPushConfig(taskID, configID, agentSlug, tenant string) *p
 	return nil
 }
 
-func (s *TaskStore) ListPushConfigs(taskID, agentSlug, tenant string) []*pyjson.Object {
+func (s *TaskStore) ListPushConfigs(taskID, agentSlug, tenant string) []*jsonutil.Object {
 	if cfg := s.GetPushConfig(taskID, "", agentSlug, tenant); cfg != nil {
-		return []*pyjson.Object{cfg}
+		return []*jsonutil.Object{cfg}
 	}
-	return []*pyjson.Object{}
+	return []*jsonutil.Object{}
 }
 
 // Clears the matching push config and reports whether one existed
@@ -796,22 +797,17 @@ func pySlice[T any](items []T, start, stop int) []T {
 	return items[lo:hi]
 }
 
-// Newest first task page with the next offset and the total, int of the page size raising like Python
+// Newest first task page with the next offset and the total, the conversion error of a page size that is not a number
 func (s *TaskStore) List(o ListOptions) ([]TaskRecord, int, int, error) {
 	raw := o.PageSize
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = 50
 	}
-	n, err := pyint.Of(raw)
-	if err != nil {
+	n, err := anyutil.ToInt(raw)
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return nil, 0, 0, err
 	}
-	pageSize := 100
-	if n.IsInt64() {
-		pageSize = int(max(1, min(n.Int64(), 100)))
-	} else if n.Sign() < 0 {
-		pageSize = 1
-	}
+	pageSize := int(max(1, min(n, 100)))
 	s.mu.Lock()
 	vals := s.tasks.Values()
 	var recs []TaskRecord
@@ -863,7 +859,7 @@ func (s *TaskStore) trimLocked() {
 }
 
 // Stored record rendered as a v1.0 Task, artifacts dropped on request
-func ToTask(rec TaskRecord, includeArtifacts bool) *pyjson.Object {
+func ToTask(rec TaskRecord, includeArtifacts bool) *jsonutil.Object {
 	task := BuildTask(rec.TaskID, rec.ContextID, rec.State, rec.Reply)
 	if !includeArtifacts {
 		task.Delete("artifacts")
@@ -879,7 +875,7 @@ func convPath(ctx context.Context, contextID string) string {
 	}
 	var b strings.Builder
 	for _, c := range contextID {
-		if pystr.IsAlnum(c) || c == '-' || c == '_' {
+		if (unicode.IsLetter(c) || unicode.IsNumber(c)) || c == '-' || c == '_' {
 			b.WriteRune(c)
 		}
 	}
@@ -900,7 +896,7 @@ func PersistMessage(ctx context.Context, contextID, role, text, taskID, inputID 
 	if inputID != "" {
 		entry.Set("input_id", inputID)
 	}
-	line, err := pyjson.Dumps(entry, pyjson.EnsureASCII(false))
+	line, err := jsonutil.Encode(entry)
 	if err != nil {
 		return
 	}
@@ -925,25 +921,25 @@ func LoggedInput(ctx context.Context, contextID, inputID string) bool {
 }
 
 // Last limit messages of the context log, empty when missing or unreadable
-func LoadConversation(ctx context.Context, contextID string, limit int) []*pyjson.Object {
+func LoadConversation(ctx context.Context, contextID string, limit int) []*jsonutil.Object {
 	raw, err := os.ReadFile(convPath(ctx, contextID))
 	if err != nil {
-		return []*pyjson.Object{}
+		return []*jsonutil.Object{}
 	}
 	raw = []byte(strings.TrimPrefix(string(raw), "\uFEFF"))
 	if !utf8.Valid(raw) {
-		return []*pyjson.Object{}
+		return []*jsonutil.Object{}
 	}
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	for _, line := range textutil.Lines(string(raw)) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		entry, err := pyjson.Loads(line)
+		entry, err := jsonutil.Decode(line)
 		if err != nil {
 			continue
 		}
-		if o, ok := entry.(*pyjson.Object); ok {
+		if o, ok := entry.(*jsonutil.Object); ok {
 			out = append(out, o)
 		}
 	}

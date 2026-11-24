@@ -13,9 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Notepad size caps, package vars so tests can shrink them
@@ -114,7 +114,7 @@ func validateNote(jobID, key, value string) error {
 }
 
 // Upserts one key and returns the stored entry, refusing a write past a size cap
-func (n *Notepad) Set(jobID, key, value string) (*pyjson.Object, error) {
+func (n *Notepad) Set(jobID, key, value string) (*jsonutil.Object, error) {
 	if err := validateNote(jobID, key, value); err != nil {
 		return nil, err
 	}
@@ -142,7 +142,7 @@ func (n *Notepad) Set(jobID, key, value string) (*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("job_id", jobID)
 	entry.Set("key", key)
 	entry.Set("value", value)
@@ -190,8 +190,8 @@ func (n *Notepad) Delete(jobID, key string) (bool, error) {
 }
 
 // Every entry of one job sorted by key, each in column order
-func (n *Notepad) List(jobID string) ([]*pyjson.Object, error) {
-	notes := []*pyjson.Object{}
+func (n *Notepad) List(jobID string) ([]*jsonutil.Object, error) {
+	notes := []*jsonutil.Object{}
 	ctx := n.homeContext()
 	err := n.transaction(ctx, func(conn state.SQLiteConn) error {
 		if err := bindableText(jobID); err != nil {
@@ -207,7 +207,7 @@ func (n *Notepad) List(jobID string) ([]*pyjson.Object, error) {
 			if err := rows.Scan(&job, &key, &value, &updated); err != nil {
 				return err
 			}
-			entry := pyjson.NewObject()
+			entry := jsonutil.NewObject()
 			entry.Set("job_id", job)
 			entry.Set("key", key)
 			entry.Set("value", value)
@@ -248,7 +248,7 @@ func (n *Notepad) Clear(jobID string) (int64, error) {
 
 // Prompt section listing a job's notes, empty for an empty or unreadable notepad
 func (n *Notepad) RenderSection(jobID string) string {
-	notes, err := func() (notes []*pyjson.Object, err error) {
+	notes, err := func() (notes []*jsonutil.Object, err error) {
 		defer func() {
 			if r := recover(); r != nil {
 				notes, err = nil, fmt.Errorf("%v", r)

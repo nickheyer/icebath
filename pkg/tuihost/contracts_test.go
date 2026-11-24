@@ -3,13 +3,13 @@ package tuihost
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestProfileRenameHistorySurvivesResultValidation(t *testing.T) {
 	for _, names := range [][]any{{}, {"old-bot", "older-bot"}} {
-		payload := pyjson.ObjectOf("profiles", []any{pyjson.ObjectOf("name", "bot", "path", "/profiles/bot", "previous_names", names)})
+		payload := jsonutil.ObjectOf("profiles", []any{jsonutil.ObjectOf("name", "bot", "path", "/profiles/bot", "previous_names", names)})
 		if err := tuigateway.ProfilesList.Entry().CheckResult(payload); err != nil {
 			t.Fatal(err)
 		}
@@ -21,11 +21,11 @@ func TestProfileRenameHistorySurvivesResultValidation(t *testing.T) {
 			t.Fatalf("previous_names %v, want %v", got, names)
 		}
 	}
-	empty, err := tuigateway.ProfilesList.Result(pyjson.ObjectOf("profiles", []any{}))
+	empty, err := tuigateway.ProfilesList.Result(jsonutil.ObjectOf("profiles", []any{}))
 	if err != nil || len(empty.Profiles) != 0 {
 		t.Fatalf("empty roster %v %v", empty, err)
 	}
-	legacy, err := tuigateway.ProfilesList.Result(pyjson.ObjectOf("profiles", []any{pyjson.ObjectOf("name", "bot", "path", "/profiles/bot")}))
+	legacy, err := tuigateway.ProfilesList.Result(jsonutil.ObjectOf("profiles", []any{jsonutil.ObjectOf("name", "bot", "path", "/profiles/bot")}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,15 +35,15 @@ func TestProfileRenameHistorySurvivesResultValidation(t *testing.T) {
 }
 
 func TestProfileRenameHistoryKeepsStrictResultValidation(t *testing.T) {
-	for _, extra := range []*pyjson.Object{
-		pyjson.ObjectOf("previous_names", []any{nil}),
-		pyjson.ObjectOf("previous_names", "old-bot"),
-		pyjson.ObjectOf("unknown_field", []any{}),
+	for _, extra := range []*jsonutil.Object{
+		jsonutil.ObjectOf("previous_names", []any{nil}),
+		jsonutil.ObjectOf("previous_names", "old-bot"),
+		jsonutil.ObjectOf("unknown_field", []any{}),
 	} {
-		row := pyjson.ObjectOf("name", "bot", "path", "/profiles/bot")
-		row.Update(extra)
-		if err := tuigateway.ProfilesList.Entry().CheckResult(pyjson.ObjectOf("profiles", []any{row})); err == nil {
-			t.Fatalf("row with %v validated", extra.Keys)
+		row := jsonutil.ObjectOf("name", "bot", "path", "/profiles/bot")
+		row.Merge(extra)
+		if err := tuigateway.ProfilesList.Entry().CheckResult(jsonutil.ObjectOf("profiles", []any{row})); err == nil {
+			t.Fatalf("row with %v validated", extra.Keys())
 		}
 	}
 }

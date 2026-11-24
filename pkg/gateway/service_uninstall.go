@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Prints a yellow warning line on the lifecycle output like the setup print_warning
@@ -41,15 +41,15 @@ func systemdUnitBelongsToCurrentHome(ctx context.Context, system bool) (bool, er
 	if err != nil || unitHome == "" {
 		return err == nil, err
 	}
-	expanded, err := pypath.PathExpanduser(unitHome)
+	expanded, err := pathutil.ExpandUserPath(unitHome)
 	if err != nil {
 		return false, err
 	}
-	resolvedUnit, err := pypath.Resolve(expanded)
+	resolvedUnit, err := pathutil.Resolve(expanded)
 	if err != nil {
 		return false, err
 	}
-	resolvedHome, err := pypath.Resolve(home.Dir(ctx))
+	resolvedHome, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return false, err
 	}
@@ -102,7 +102,7 @@ func SystemdUninstall(ctx context.Context, system bool) error {
 	if _, _, _, err := removeRetired(ctx, lifecycleOut, retiredSystemdServices, removeRetiredSystemdUnit); err != nil {
 		return err
 	}
-	lifecyclePrintf("✓ %s service uninstalled\n", pystr.Capitalize(ServiceScopeLabel(system)))
+	lifecyclePrintf("✓ %s service uninstalled\n", textutil.UpperFirst(strings.ToLower(ServiceScopeLabel(system))))
 	return nil
 }
 
@@ -172,7 +172,7 @@ func WindowsUninstall(ctx context.Context) error {
 		switch {
 		case code == 0:
 			removed = true
-			winPrintln("✓ Removed Scheduled Task " + pyrepr.Repr(taskName))
+			winPrintln("✓ Removed Scheduled Task " + anyutil.Quote(taskName))
 		case windowsIsAccessDenied(detail) && !admin:
 			reason := detail
 			if reason == "" {

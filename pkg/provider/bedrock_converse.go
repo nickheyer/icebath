@@ -13,9 +13,9 @@ import (
 	"time"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registers the Bedrock Converse adapter
@@ -270,11 +270,11 @@ func bedrockConverseResponse(r *bedrockConverseResult, model, provider string) *
 			details = append(details, anthWireBlock(d))
 		}
 		if model != "" {
-			details = append(details, pyjson.ObjectOf("type", BedrockConverseIssuerType, "model", model))
+			details = append(details, jsonutil.ObjectOf("type", BedrockConverseIssuerType, "model", model))
 		}
 	}
 	if len(details) > 0 {
-		text, _ := pyjson.Dumps(details)
+		text, _ := jsonutil.Encode(details)
 		msg.ReasoningDetails = json.RawMessage(text)
 	}
 	if len(r.ContentBlocks) > 0 {
@@ -326,7 +326,7 @@ var bedrockStreamPoll = 300 * time.Millisecond
 // modelId of Converse kwargs, unknown when absent
 func bedrockStreamModel(kwargs map[string]any) string {
 	if m, ok := kwargs["modelId"]; ok {
-		return pyrepr.Str(m)
+		return anyutil.String(m)
 	}
 	return "unknown"
 }

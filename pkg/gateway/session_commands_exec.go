@@ -11,15 +11,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -153,7 +153,7 @@ func splitCommandArg(arg string) ([]string, error) {
 	if strings.TrimSpace(arg) == "" {
 		return []string{}, nil
 	}
-	tokens, err := pyshlex.SplitPOSIX(arg, false)
+	tokens, err := shellutil.Split(arg)
 	if err != nil {
 		field, detail := "arg", err.Error()
 		return nil, state.NewRuntimeStoreError("invalid_params", &field, &detail)
@@ -330,17 +330,17 @@ func ownerPluginsCommand(ctx context.Context, arg string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !pyrepr.Truthy(result["ok"]) {
-		return fmt.Sprintf("Plugin %s was not changed: %s", name, pyrepr.Str(result["error"])), nil
+	if !anyutil.IsTrue(result["ok"]) {
+		return fmt.Sprintf("Plugin %s was not changed: %s", name, anyutil.String(result["error"])), nil
 	}
-	if pyrepr.Truthy(result["name"]) {
-		name = pyrepr.Str(result["name"])
+	if anyutil.IsTrue(result["name"]) {
+		name = anyutil.String(result["name"])
 	}
 	done := "disabled"
 	if enable {
 		done = "enabled"
 	}
-	if pyrepr.Truthy(result["unchanged"]) {
+	if anyutil.IsTrue(result["unchanged"]) {
 		return fmt.Sprintf("Plugin %s is already %s.", name, done), nil
 	}
 	lines := []string{fmt.Sprintf("Plugin %s %s.", name, done)}
@@ -348,19 +348,19 @@ func ownerPluginsCommand(ctx context.Context, arg string) (string, error) {
 		if missing, _ := activation["missing_dependencies"].([]any); len(missing) > 0 {
 			names := make([]string, len(missing))
 			for i, item := range missing {
-				names[i] = pyrepr.Str(item)
+				names[i] = anyutil.String(item)
 			}
 			lines = append(lines, "It needs packages that are not installed: "+strings.Join(names, ", ")+".")
 		}
 	}
-	if pyrepr.Truthy(result["restart_required"]) {
+	if anyutil.IsTrue(result["restart_required"]) {
 		lines = append(lines, "Type /restart to restart the background service so every session picks up the change.")
 	}
 	return strings.Join(lines, "\n"), nil
 }
 
 // Command name and argument of a slash exec or command dispatch request
-func parseCommandParams(params *pyjson.Object, dispatch bool) (string, string, error) {
+func parseCommandParams(params *jsonutil.Object, dispatch bool) (string, string, error) {
 	allowed := []string{"session_id", "profile", "command"}
 	if dispatch {
 		allowed = []string{"session_id", "profile", "name", "arg"}
@@ -368,8 +368,8 @@ func parseCommandParams(params *pyjson.Object, dispatch bool) (string, string, e
 	if paramsOutside(params, allowed...) {
 		return "", "", runtimeRefusal("invalid_params")
 	}
-	for _, key := range params.Keys {
-		if _, isStr := params.GetOr(key, nil).(string); !isStr {
+	for _, key := range params.Keys() {
+		if _, isStr := params.ValueOr(key, nil).(string); !isStr {
 			return "", "", runtimeRefusal("invalid_params")
 		}
 	}
@@ -377,13 +377,13 @@ func parseCommandParams(params *pyjson.Object, dispatch bool) (string, string, e
 	if dispatch {
 		field = "name"
 	}
-	text, _ := params.GetOr(field, "").(string)
+	text, _ := params.ValueOr(field, "").(string)
 	parts := textutil.FieldsN(strings.TrimLeft(strings.TrimSpace(text), "/"), 1)
 	if len(parts) == 0 || (dispatch && len(parts) != 1) {
 		return "", "", runtimeRefusal("invalid_params")
 	}
 	if dispatch {
-		arg, _ := params.GetOr("arg", "").(string)
+		arg, _ := params.ValueOr("arg", "").(string)
 		return parts[0], arg, nil
 	}
 	if len(parts) > 1 {
@@ -395,7 +395,7 @@ func parseCommandParams(params *pyjson.Object, dispatch bool) (string, string, e
 // Quick commands of the gateway config in the active profile
 func quickCommands(ctx context.Context) any {
 	quick := loadGatewayConfig(ctx, "")["quick_commands"]
-	if !pyrepr.Truthy(quick) {
+	if !anyutil.IsTrue(quick) {
 		return map[string]any{}
 	}
 	return quick
@@ -466,8 +466,8 @@ func runnerCommand(ctx context.Context, name string) (string, string, bool, erro
 	}
 	if entry, ok := table[name].(map[string]any); ok && entry["type"] == "exec" {
 		shell := ""
-		if pyrepr.Truthy(entry["command"]) {
-			shell = pyrepr.Str(entry["command"])
+		if anyutil.IsTrue(entry["command"]) {
+			shell = anyutil.String(entry["command"])
 		}
 		return "exec", shell, true, nil
 	}
@@ -561,7 +561,7 @@ func skillDirective(ctx context.Context, name, arg, route string) (*tuigateway.C
 	if message == "" {
 		return nil, runtimeRefusal("command_unavailable")
 	}
-	shown := pyrepr.Str(commands[key]["name"])
+	shown := anyutil.String(commands[key]["name"])
 	if stacked {
 		shown = strings.Join(loaded, ", ")
 	}
@@ -752,7 +752,7 @@ func preCommandBefore(ctx context.Context, a *SessionAuthority, ref SessionRef, 
 }
 
 // Command observe verb, pre command queued after the reply for a command the client runs itself
-func observeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func observeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	a := c.authority
 	if err := a.Authorize(ctx, c.actor, ref, "session:read"); err != nil {
 		return nil, err
@@ -761,7 +761,7 @@ func observeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	if err != nil {
 		return nil, err
 	}
-	if profile, _ := params.GetOr("profile", "").(string); profile != "" && !profiles.ProfileMatchesHome(ctx, profile, a.ProfileID) {
+	if profile, _ := params.ValueOr("profile", "").(string); profile != "" && !profiles.ProfileMatchesHome(ctx, profile, a.ProfileID) {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
 	definition, known := ResolveRegistryCommand(name)
@@ -787,16 +787,16 @@ func viewerChoices(ctx context.Context, live *LiveSession, sessionID string) con
 		for i, label := range labels {
 			choices[i] = label
 		}
-		question0 := pyjson.ObjectOf("qid", "q0", "question", question, "choices", choices, "multi_select", false)
-		result := AskViewerResult(live.EventStream, sessionID, "clarify", pyjson.ObjectOf("questions", []any{question0}), nil, timeout, []string{"q0"})
+		question0 := jsonutil.ObjectOf("qid", "q0", "question", question, "choices", choices, "multi_select", false)
+		result := AskViewerResult(live.EventStream, sessionID, "clarify", jsonutil.ObjectOf("questions", []any{question0}), nil, timeout, []string{"q0"})
 		if result == nil {
 			return "", false
 		}
-		answers, _ := result.GetOr("answers", nil).(*pyjson.Object)
+		answers, _ := result.ValueOr("answers", nil).(*jsonutil.Object)
 		if answers == nil {
 			return "", false
 		}
-		answer, isStr := answers.GetOr("q0", nil).(string)
+		answer, isStr := answers.ValueOr("q0", nil).(string)
 		return answer, isStr
 	})
 }
@@ -821,10 +821,10 @@ func commandText(output any) string {
 	case interface{ Text() string }:
 		return v.Text()
 	}
-	if !pyrepr.Truthy(output) {
+	if !anyutil.IsTrue(output) {
 		return ""
 	}
-	return pyrepr.Str(output)
+	return anyutil.String(output)
 }
 
 // Joins the non empty parts with newlines
@@ -839,7 +839,7 @@ func joinNonEmpty(parts ...string) string {
 }
 
 // Slash exec or command dispatch run by the gateway for a local session, a directive the client submits for a turn
-func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, dispatch bool) (*tuigateway.CommandDispatchResult, error) {
+func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object, dispatch bool) (*tuigateway.CommandDispatchResult, error) {
 	a, actor := c.authority, c.actor
 	if err := a.Authorize(ctx, actor, ref, "session:read"); err != nil {
 		return nil, err
@@ -848,7 +848,7 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 	if err != nil {
 		return nil, err
 	}
-	if profile, _ := params.GetOr("profile", "").(string); profile != "" && !profiles.ProfileMatchesHome(ctx, profile, a.ProfileID) {
+	if profile, _ := params.ValueOr("profile", "").(string); profile != "" && !profiles.ProfileMatchesHome(ctx, profile, a.ProfileID) {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
 	scoped := profileRuntimeScope(ctx, a.ProfileID, true)
@@ -1077,7 +1077,7 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 		prompt = sink.Prompt
 	}
 	if prompt != nil && *prompt != "" {
-		notice := joinNonEmpty(append(append([]string{}, sink.Notices...), pyrepr.Str(pyrepr.Or(output, "")))...)
+		notice := joinNonEmpty(append(append([]string{}, sink.Notices...), anyutil.String(anyutil.Or(output, "")))...)
 		display := typed
 		if sink.Display != nil && *sink.Display != "" {
 			display = *sink.Display
@@ -1088,7 +1088,7 @@ func executeCommand(ctx context.Context, c *AuthorityConnection, ref SessionRef,
 }
 
 // Slash exec verb
-func (c *AuthorityConnection) slashExec(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) slashExec(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	directive, err := executeCommand(ctx, c, ref, params, false)
 	if err != nil || directive == nil {
 		return nil, err
@@ -1097,7 +1097,7 @@ func (c *AuthorityConnection) slashExec(ctx context.Context, ref SessionRef, par
 }
 
 // Command dispatch verb
-func (c *AuthorityConnection) commandDispatch(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) commandDispatch(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	directive, err := executeCommand(ctx, c, ref, params, true)
 	if err != nil || directive == nil {
 		return nil, err
@@ -1106,11 +1106,11 @@ func (c *AuthorityConnection) commandDispatch(ctx context.Context, ref SessionRe
 }
 
 // Command observe verb
-func (c *AuthorityConnection) commandObserve(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) commandObserve(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	return observeCommand(ctx, c, ref, params)
 }
 
 // Submission parser of the queued row verbs
-func (c *AuthorityConnection) Submission(ctx context.Context, ref SessionRef, params *pyjson.Object) (Submission, error) {
+func (c *AuthorityConnection) Submission(ctx context.Context, ref SessionRef, params *jsonutil.Object) (Submission, error) {
 	return c.submission(ctx, ref, params)
 }

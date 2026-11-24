@@ -3,8 +3,8 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const LocalLegacyPrefix = "gateway.local_legacy.v1:"
@@ -14,10 +14,10 @@ func runtimeRefusal(reason string) error { return NewRuntimeStoreError(reason, n
 
 // Canonical runtime JSON of a dict, sorted compact and non ASCII kept, invalid_params for anything else
 func runtimeJSON(value any) (string, error) {
-	if obj, ok := value.(*pyjson.Object); !ok || obj == nil {
+	if obj, ok := value.(*jsonutil.Object); !ok || obj == nil {
 		return "", runtimeRefusal("invalid_params")
 	}
-	text, err := pyjson.Dumps(value, pyjson.EnsureASCII(false), pyjson.SortKeys(true), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+	text, err := jsonutil.Encode(value, jsonutil.SortKeys())
 	if err != nil {
 		return "", runtimeRefusal("invalid_params")
 	}
@@ -29,7 +29,7 @@ func receiptItem(v any, key string) (any, error) {
 	var item any
 	var ok bool
 	switch obj := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if obj == nil {
 			return nil, &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 		}
@@ -46,7 +46,7 @@ func receiptItem(v any, key string) (any, error) {
 }
 
 // Lineage root of a receipt, the legacy session id only when its migration record matches exactly
-func legacyLineageRoot(ctx context.Context, conn SQLiteConn, receipt *pyjson.Object) (any, error) {
+func legacyLineageRoot(ctx context.Context, conn SQLiteConn, receipt *jsonutil.Object) (any, error) {
 	sessionID, err := receiptItem(receipt, "session_id")
 	if err != nil {
 		return nil, err
@@ -55,10 +55,10 @@ func legacyLineageRoot(ctx context.Context, conn SQLiteConn, receipt *pyjson.Obj
 	if !hasLegacy {
 		return sessionID, nil
 	}
-	if !pyrepr.Equal(legacy, sessionID) {
+	if !anyutil.Equal(legacy, sessionID) {
 		return nil, runtimeRefusal("storage_unavailable")
 	}
-	expected := pyjson.NewObject()
+	expected := jsonutil.NewObject()
 	for _, k := range []string{"session_id", "profile_id", "principal_id", "legacy_session_id"} {
 		v, err := receiptItem(receipt, k)
 		if err != nil {
@@ -74,18 +74,18 @@ func legacyLineageRoot(ctx context.Context, conn SQLiteConn, receipt *pyjson.Obj
 		return nil, runtimeRefusal("storage_unavailable")
 	}
 	text, _ := row["value"].(string)
-	stored, err := pyjson.Loads(text)
+	stored, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
-	if !pyrepr.Equal(stored, expected) {
+	if !anyutil.Equal(stored, expected) {
 		return nil, runtimeRefusal("storage_unavailable")
 	}
 	return legacy, nil
 }
 
 // Validates a receipt's recorded lineage edge by edge, returning its tip
-func validateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *pyjson.Object) (string, error) {
+func validateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *jsonutil.Object) (string, error) {
 	if _, legacy := receipt.Get("legacy_session_id"); !legacy {
 		var ids [4]any
 		for i, k := range []string{"session_id", "profile_id", "principal_id", "request_id"} {
@@ -120,12 +120,12 @@ func validateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *pyjson.
 		return "", err
 	}
 	lineage, ok := rawLineage.([]any)
-	if !ok || len(lineage) == 0 || !pyrepr.Equal(lineage[0], root) || !pyrepr.Equal(lineage[len(lineage)-1], entrySession) {
+	if !ok || len(lineage) == 0 || !anyutil.Equal(lineage[0], root) || !anyutil.Equal(lineage[len(lineage)-1], entrySession) {
 		return "", runtimeRefusal("storage_unavailable")
 	}
 	seen := map[string]bool{}
 	for _, id := range lineage {
-		key := pyrepr.Repr(id)
+		key := anyutil.Quote(id)
 		if seen[key] {
 			return "", runtimeRefusal("storage_unavailable")
 		}
@@ -141,7 +141,7 @@ func validateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *pyjson.
 		if err != nil {
 			return "", err
 		}
-		if parent == nil || child == nil || !pyrepr.Equal(child["parent_session_id"], parentID) {
+		if parent == nil || child == nil || !anyutil.Equal(child["parent_session_id"], parentID) {
 			return "", runtimeRefusal("storage_unavailable")
 		}
 		valid := false
@@ -150,22 +150,22 @@ func validateLocalLineage(ctx context.Context, conn SQLiteConn, receipt *pyjson.
 			if s, ok := child["model_config"].(string); ok && s != "" {
 				text = s
 			}
-			cfg, err := pyjson.Loads(text)
+			cfg, err := jsonutil.Decode(text)
 			if err != nil {
 				return "", pyValueError(err.Error())
 			}
-			obj, ok := cfg.(*pyjson.Object)
+			obj, ok := cfg.(*jsonutil.Object)
 			if !ok {
 				return "", &stateTypedError{"AttributeError", "model_config has no get"}
 			}
 			from, _ := obj.Get("_reset_from")
-			valid = pyrepr.Equal(from, parentID)
+			valid = anyutil.Equal(from, parentID)
 		} else {
 			tip, err := connRow(ctx, conn, chainStepSQL, parentID)
 			if err != nil {
 				return "", err
 			}
-			valid = pyEquals(parent["end_reason"], "compression") && tip != nil && pyrepr.Equal(tip["id"], childID)
+			valid = pyEquals(parent["end_reason"], "compression") && tip != nil && anyutil.Equal(tip["id"], childID)
 		}
 		if !valid {
 			return "", runtimeRefusal("storage_unavailable")
@@ -191,11 +191,11 @@ func localPhysicalTarget(ctx context.Context, conn SQLiteConn, sessionID string)
 		return sessionID, nil
 	}
 	text, _ := saved["value"].(string)
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return "", pyValueError(err.Error())
 	}
-	receipt, ok := decoded.(*pyjson.Object)
+	receipt, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return "", &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 	}
@@ -210,13 +210,13 @@ func localPhysicalTarget(ctx context.Context, conn SQLiteConn, sessionID string)
 }
 
 // Routing entry of a route while it still targets the tip, nil otherwise
-func routedEntry(ctx context.Context, conn SQLiteConn, route, tip any) (*pyjson.Object, error) {
+func routedEntry(ctx context.Context, conn SQLiteConn, route, tip any) (*jsonutil.Object, error) {
 	row, err := connRow(ctx, conn, "SELECT entry_json FROM gateway_routing WHERE scope='' AND session_key=?", route)
 	if err != nil || row == nil {
 		return nil, err
 	}
 	text, _ := row["entry_json"].(string)
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
@@ -227,14 +227,14 @@ func routedEntry(ctx context.Context, conn SQLiteConn, route, tip any) (*pyjson.
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Equal(sessionID, tip) {
+	if !anyutil.Equal(sessionID, tip) {
 		return nil, nil
 	}
-	return decoded.(*pyjson.Object), nil
+	return decoded.(*jsonutil.Object), nil
 }
 
 // Stores the receipt and its route entry and bumps the logical revision in one transaction
-func commitLocalTarget(ctx context.Context, conn SQLiteConn, receipt, routed *pyjson.Object) error {
+func commitLocalTarget(ctx context.Context, conn SQLiteConn, receipt, routed *jsonutil.Object) error {
 	routedText, err := runtimeJSON(routed)
 	if err != nil {
 		return err
@@ -256,7 +256,7 @@ func commitLocalTarget(ctx context.Context, conn SQLiteConn, receipt, routed *py
 }
 
 // Moves a local owner's physical target from the parent to its published child inside the publication transaction
-func advanceLocalTarget(ctx context.Context, conn SQLiteConn, parentSessionID, childSessionID string, entry *pyjson.Object) error {
+func advanceLocalTarget(ctx context.Context, conn SQLiteConn, parentSessionID, childSessionID string, entry *jsonutil.Object) error {
 	parent, err := connRow(ctx, conn, "SELECT * FROM sessions WHERE id=?", parentSessionID)
 	if err != nil {
 		return err
@@ -298,16 +298,16 @@ func advanceLocalTarget(ctx context.Context, conn SQLiteConn, parentSessionID, c
 
 // Receipt with its entry and lineage advanced to the child, validated before commit
 func advancedReceipt(ctx context.Context, conn SQLiteConn, raw any, logicalID string, parent map[string]any, parentSessionID, childSessionID string,
-	entry *pyjson.Object) (*pyjson.Object, *pyjson.Object, error) {
+	entry *jsonutil.Object) (*jsonutil.Object, *jsonutil.Object, error) {
 	text, ok := raw.(string)
 	if !ok {
 		return nil, nil, &stateTypedError{"TypeError", "the JSON object must be str"}
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil, pyValueError(err.Error())
 	}
-	receipt, ok := decoded.(*pyjson.Object)
+	receipt, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, nil, &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 	}
@@ -331,7 +331,7 @@ func advancedReceipt(ctx context.Context, conn SQLiteConn, raw any, logicalID st
 		if err != nil {
 			return nil, nil, err
 		}
-		if !pyrepr.Equal(got, c.want) {
+		if !anyutil.Equal(got, c.want) {
 			return nil, nil, runtimeRefusal("storage_unavailable")
 		}
 	}
@@ -347,9 +347,9 @@ func advancedReceipt(ctx context.Context, conn SQLiteConn, raw any, logicalID st
 	if entry != nil && entry.Len() > 0 {
 		source = entry
 	}
-	candidate := pyjson.NewObject()
-	for _, k := range source.Keys {
-		candidate.Set(k, source.Vals[k])
+	candidate := jsonutil.NewObject()
+	for _, k := range source.Keys() {
+		candidate.Set(k, source.Value(k))
 	}
 	candidate.Set("session_id", childSessionID)
 	receipt.Set("entry", candidate)
@@ -379,7 +379,7 @@ func untrackedSteps(ctx context.Context, conn SQLiteConn, tip string, lineage []
 	steps := []string{}
 	current := tip
 	for {
-		chain, err := walkCompressionChain(current, func(sid string) (*pyjson.Object, error) {
+		chain, err := walkCompressionChain(current, func(sid string) (*jsonutil.Object, error) {
 			rows, err := queryObjects(ctx, conn, chainStepSQL, sid)
 			if err != nil || len(rows) == 0 {
 				return nil, err
@@ -407,7 +407,7 @@ func untrackedSteps(ctx context.Context, conn SQLiteConn, tip string, lineage []
 }
 
 // Receipt lineage, the owner alone when the receipt records none
-func receiptLineage(receipt *pyjson.Object, owner any) ([]any, error) {
+func receiptLineage(receipt *jsonutil.Object, owner any) ([]any, error) {
 	raw, has := receipt.Get("lineage")
 	if !has {
 		return []any{owner}, nil
@@ -420,7 +420,7 @@ func receiptLineage(receipt *pyjson.Object, owner any) ([]any, error) {
 }
 
 // Untracked compression steps the receipt would adopt with its route entry, nil when nothing is adoptable
-func adoptableCompression(ctx context.Context, conn SQLiteConn, receipt *pyjson.Object) ([]string, *pyjson.Object, error) {
+func adoptableCompression(ctx context.Context, conn SQLiteConn, receipt *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	entry, err := receiptItem(receipt, "entry")
 	if err != nil {
 		return nil, nil, err
@@ -458,7 +458,7 @@ func adoptableCompression(ctx context.Context, conn SQLiteConn, receipt *pyjson.
 		if child == nil {
 			return nil, nil, &stateTypedError{"TypeError", "the compression child session is missing"}
 		}
-		if !pyjson.Equal([]any{child["session_key"], child["chat_id"], child["user_id"]}, identity) {
+		if !anyutil.Equal([]any{child["session_key"], child["chat_id"], child["user_id"]}, identity) {
 			return nil, nil, nil
 		}
 	}
@@ -470,7 +470,7 @@ func adoptableCompression(ctx context.Context, conn SQLiteConn, receipt *pyjson.
 }
 
 // Records once the compression steps a receipt unaware build published past the receipt tip, while the receipt is still expected
-func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, sessionID string, expected *pyjson.Object) error {
+func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, sessionID string, expected *jsonutil.Object) error {
 	return d.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
 			return err
@@ -483,7 +483,7 @@ func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, 
 			return &stateTypedError{"TypeError", "the saved compression receipt is missing"}
 		}
 		text, _ := saved["value"].(string)
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return pyValueError(err.Error())
 		}
@@ -491,10 +491,10 @@ func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, 
 		if expected != nil {
 			want = expected
 		}
-		if !pyjson.Equal(decoded, want) {
+		if !anyutil.Equal(decoded, want) {
 			return nil
 		}
-		receipt, isObj := decoded.(*pyjson.Object)
+		receipt, isObj := decoded.(*jsonutil.Object)
 		if !isObj {
 			return &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 		}
@@ -504,7 +504,7 @@ func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, 
 		}
 		tip := children[len(children)-1]
 		entry, _ := receipt.Get("entry")
-		moved := entry.(*pyjson.Object).Copy()
+		moved := entry.(*jsonutil.Object).Clone()
 		moved.Set("session_id", tip)
 		receipt.Set("entry", moved)
 		lineage, err := receiptLineage(receipt, sessionID)
@@ -516,14 +516,14 @@ func (d *SessionDB) AdoptUntrackedCompression(ctx context.Context, epoch int64, 
 		if _, err := validateLocalLineage(ctx, conn, receipt); err != nil {
 			return err
 		}
-		target := routed.Copy()
+		target := routed.Clone()
 		target.Set("session_id", tip)
 		return commitLocalTarget(ctx, conn, receipt, target)
 	}, nil)
 }
 
 // Publishes a reset child of a local session's live target and advances its receipt and route to it
-func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSessionID string, entry *pyjson.Object) error {
+func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSessionID string, entry *jsonutil.Object) error {
 	return d.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
 			return err
@@ -547,11 +547,11 @@ func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSes
 			return runtimeRefusal("storage_unavailable")
 		}
 		text, _ := saved["value"].(string)
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return pyValueError(err.Error())
 		}
-		receipt, isObj := decoded.(*pyjson.Object)
+		receipt, isObj := decoded.(*jsonutil.Object)
 		if !isObj {
 			return &stateTypedError{"TypeError", "the lineage receipt is not a mapping"}
 		}
@@ -594,7 +594,7 @@ func (d *SessionDB) ResetLocalTarget(ctx context.Context, epoch int64, parentSes
 		}
 		publish := CompressionChildPublish{ParentSessionID: parentSessionID, ChildSessionID: childID,
 			Source: pyStr(fields["source"]), Model: anyStrPtr(fields["model"]), Cwd: anyStrPtr(fields["cwd"]),
-			ModelConfig: pyjson.ObjectOf("_reset_from", parentSessionID), ProfileName: anyStrPtr(parent["profile_name"])}
+			ModelConfig: jsonutil.ObjectOf("_reset_from", parentSessionID), ProfileName: anyStrPtr(parent["profile_name"])}
 		if err := d.publishChildSessionRow(ctx, conn, parent, publish); err != nil {
 			return err
 		}

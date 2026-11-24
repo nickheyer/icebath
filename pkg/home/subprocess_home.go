@@ -3,12 +3,13 @@ package home
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var homeModeAliases = map[string]string{
@@ -22,11 +23,11 @@ func NormHomePath(path string) string {
 	if raw == "" {
 		return ""
 	}
-	abs, err := pypath.Abspath(pypath.Expanduser(raw))
+	abs, err := filepath.Abs(pathutil.ExpandUser(raw))
 	if err != nil {
-		return pypath.Normcase(raw)
+		return pathutil.FoldCase(raw)
 	}
-	return pypath.Normcase(abs)
+	return pathutil.FoldCase(abs)
 }
 
 // The home subdirectory of the home in effect when that directory exists
@@ -41,7 +42,7 @@ func profileHomePath(ctx context.Context, env map[string]string) string {
 	if h == "" {
 		return ""
 	}
-	p := pypath.PathJoin(expand(h), "home")
+	p := pathutil.Join(expand(h), "home")
 	if st, err := os.Stat(p); err == nil && st.IsDir() {
 		return p
 	}
@@ -77,10 +78,10 @@ func realHomeCandidates(env map[string]string) []string {
 		if strings.HasPrefix(path, `\`) || strings.HasPrefix(path, "/") {
 			candidates = append(candidates, drive+path)
 		} else {
-			candidates = append(candidates, pypath.Join(drive, path))
+			candidates = append(candidates, pathutil.Join(drive, path))
 		}
 	}
-	if expanded := pypath.Expanduser("~"); expanded != "~" {
+	if expanded := pathutil.ExpandUser("~"); expanded != "~" {
 		candidates = append(candidates, expanded)
 	}
 	out := candidates[:0]
@@ -106,7 +107,7 @@ func RealHome(ctx context.Context, env map[string]string) string {
 			return candidate
 		}
 	}
-	if tmp, err := pypath.Gettempdir(); err == nil {
+	if tmp, err := pathutil.TempDir(); err == nil {
 		return tmp
 	}
 	return "/tmp"

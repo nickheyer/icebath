@@ -6,23 +6,23 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Transcript notice of an automation turn the owner settled interrupted
 const automationInterruptedNotice = "An automated delivery was interrupted and was not run again. Some actions may already have run; verify their effects."
 
 // True for an admission no person submitted, so nobody can be asked to resend it
-func isUnattended(row *pyjson.Object) bool {
+func isUnattended(row *jsonutil.Object) bool {
 	principal := rowString(row, "principal_id")
 	if principal == state.CronPrincipalID || strings.HasPrefix(principal, "automation:") {
 		return true
 	}
 	payload := rowPayload(row)
-	native := pyjson.NewObject()
+	native := jsonutil.NewObject()
 	if value, _ := payload.Get("native_text_v1"); pyTruthy(value) {
-		if obj, ok := value.(*pyjson.Object); ok {
+		if obj, ok := value.(*jsonutil.Object); ok {
 			native = obj
 		}
 	}
@@ -40,8 +40,8 @@ func isUnattended(row *pyjson.Object) bool {
 }
 
 // Unknown rows no person submitted
-func unattendedUnknown(rows []*pyjson.Object) []*pyjson.Object {
-	var out []*pyjson.Object
+func unattendedUnknown(rows []*jsonutil.Object) []*jsonutil.Object {
+	var out []*jsonutil.Object
 	for _, row := range rows {
 		if rowString(row, "status") == AdmissionUnknown && isUnattended(row) {
 			out = append(out, row)
@@ -52,7 +52,7 @@ func unattendedUnknown(rows []*pyjson.Object) []*pyjson.Object {
 
 // Settles every unattended unknown turn at boot before any FIFO runs, returning how many it settled
 func settleRecoveredUnattended(ctx context.Context, db *state.SessionDB, epoch int64) (int, error) {
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := db.ReadCtx(ctx, func(conn state.SQLiteConn) error {
 		rows = rows[:0]
 		listed, err := conn.QueryContext(ctx, "SELECT admission_id FROM session_admissions WHERE status='unknown' ORDER BY seq")
@@ -91,7 +91,7 @@ func settleRecoveredUnattended(ctx context.Context, db *state.SessionDB, epoch i
 			generation = *stamped
 		}
 		_, err := db.ResolveUnknownSessionInput(ctx, epoch, admissionID, generation,
-			func(writeCtx context.Context, conn state.SQLiteConn, lost *pyjson.Object) error {
+			func(writeCtx context.Context, conn state.SQLiteConn, lost *jsonutil.Object) error {
 				_, err := closeDiscardedTurn(writeCtx, db, conn, lost, automationInterruptedNotice, nil, nil)
 				return err
 			}, nil)

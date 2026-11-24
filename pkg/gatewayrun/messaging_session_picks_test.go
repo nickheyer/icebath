@@ -7,16 +7,16 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Transport of a viewer connection that drops every frame
 type picksTransport struct{}
 
-func (picksTransport) Write(*pyjson.Object) bool { return true }
-func (picksTransport) Close()                    {}
+func (picksTransport) Write(*jsonutil.Object) bool { return true }
+func (picksTransport) Close()                      {}
 
 // Telegram chat compressed once on a real runner, resumed by its segment id with the mount fences
 type compressedPicksChat struct {
@@ -26,7 +26,7 @@ type compressedPicksChat struct {
 	route  string
 	viewer *gateway.AuthorityConnection
 	root   string
-	fences *pyjson.Object
+	fences *jsonutil.Object
 }
 
 func newCompressedPicksChat(t *testing.T) *compressedPicksChat {
@@ -62,7 +62,7 @@ func newCompressedPicksChat(t *testing.T) *compressedPicksChat {
 	if entry, err := runner.sessionStore.AdvanceCompressionSession(ctx, route, root, "seg-1"); err != nil || entry == nil {
 		t.Fatalf("advance %v %v", entry, err)
 	}
-	origin, err := pyjson.Dumps(source.ToDict())
+	origin, err := jsonutil.Encode(source.ToDict())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +88,7 @@ func newCompressedPicksChat(t *testing.T) *compressedPicksChat {
 		runner.sessionStore.CloseAllDBHandles()
 	})
 	chat := &compressedPicksChat{ctx: ctx, runner: runner, source: source, route: route, viewer: viewer, root: root}
-	resumed := chat.dispatch(t, pyjson.ObjectOf("id", int64(1), "method", "session.resume", "params", pyjson.ObjectOf("session_id", "seg-1")))
+	resumed := chat.dispatch(t, jsonutil.ObjectOf("id", int64(1), "method", "session.resume", "params", jsonutil.ObjectOf("session_id", "seg-1")))
 	result := picksField(resumed, "result")
 	if sid, _ := result.Get("session_id"); sid != root {
 		t.Fatalf("resumed %s", picksDump(resumed))
@@ -98,7 +98,7 @@ func newCompressedPicksChat(t *testing.T) *compressedPicksChat {
 }
 
 // Response of one request on the viewer connection
-func (c *compressedPicksChat) dispatch(t *testing.T, request *pyjson.Object) *pyjson.Object {
+func (c *compressedPicksChat) dispatch(t *testing.T, request *jsonutil.Object) *jsonutil.Object {
 	t.Helper()
 	response, err := c.viewer.Dispatch(c.ctx, request)
 	if err != nil {
@@ -108,42 +108,42 @@ func (c *compressedPicksChat) dispatch(t *testing.T, request *pyjson.Object) *py
 }
 
 // Session mutate request carrying the fences a viewer holds
-func picksMutate(sid string, fences *pyjson.Object, operation string, payload *pyjson.Object, requestID string) *pyjson.Object {
+func picksMutate(sid string, fences *jsonutil.Object, operation string, payload *jsonutil.Object, requestID string) *jsonutil.Object {
 	revision, _ := fences.Get("revision")
 	generation, _ := fences.Get("execution_generation")
-	return pyjson.ObjectOf("id", requestID, "method", "session.mutate", "params", pyjson.ObjectOf(
+	return jsonutil.ObjectOf("id", requestID, "method", "session.mutate", "params", jsonutil.ObjectOf(
 		"session_id", sid, "request_id", requestID, "operation", operation, "payload", payload,
 		"expected_revision", revision, "expected_generation", generation))
 }
 
 // Object under a key, an empty object when absent
-func picksField(obj *pyjson.Object, key string) *pyjson.Object {
+func picksField(obj *jsonutil.Object, key string) *jsonutil.Object {
 	if obj == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	value, _ := obj.Get(key)
-	if out, ok := pyjson.AsObject(value); ok {
+	if out, ok := jsonutil.AsObject(value); ok {
 		return out
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Session info of the chat as a viewer reads it
-func (c *compressedPicksChat) info(t *testing.T) *pyjson.Object {
+func (c *compressedPicksChat) info(t *testing.T) *jsonutil.Object {
 	t.Helper()
-	return c.dispatch(t, pyjson.ObjectOf("id", int64(3), "method", "session.info", "params", pyjson.ObjectOf("session_id", c.root)))
+	return c.dispatch(t, jsonutil.ObjectOf("id", int64(3), "method", "session.info", "params", jsonutil.ObjectOf("session_id", c.root)))
 }
 
 // test_messaging_session_picks.py test_a_reasoning_pick_on_a_compressed_messaging_chat_is_the_chats_next_turn_level
 func TestAReasoningPickOnACompressedMessagingChatIsTheChatsNextTurnLevel(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	chat := newCompressedPicksChat(t)
-	before := chat.dispatch(t, pyjson.ObjectOf("id", int64(2), "method", "session.info", "params", pyjson.ObjectOf("session_id", chat.root)))
+	before := chat.dispatch(t, jsonutil.ObjectOf("id", int64(2), "method", "session.info", "params", jsonutil.ObjectOf("session_id", chat.root)))
 	if effort, _ := picksField(before, "result").Get("reasoning_effort"); func() bool { _, ok := effort.(string); return !ok }() {
 		t.Fatalf("before %s", picksDump(before))
 	}
 
-	picked := chat.dispatch(t, picksMutate("seg-1", chat.fences, "reasoning", pyjson.ObjectOf("effort", "high"), "pick-high"))
+	picked := chat.dispatch(t, picksMutate("seg-1", chat.fences, "reasoning", jsonutil.ObjectOf("effort", "high"), "pick-high"))
 
 	if effort, _ := picksField(picked, "result").Get("effort"); effort != "high" {
 		t.Fatalf("picked %s", picksDump(picked))
@@ -160,9 +160,9 @@ func TestAReasoningPickOnACompressedMessagingChatIsTheChatsNextTurnLevel(t *test
 
 // JSON text of a response with sorted keys, equal for equal mappings in any order
 func picksDump(v any) string {
-	text, err := pyjson.Dumps(v, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(v, jsonutil.SortKeys())
 	if err != nil {
-		return pyrepr.Repr(v)
+		return anyutil.Quote(v)
 	}
 	return text
 }
@@ -171,22 +171,22 @@ func picksDump(v any) string {
 func TestAMessagingPickIsFencedByItsReceiptAndRevision(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", t.TempDir())
 	chat := newCompressedPicksChat(t)
-	revision := func(obj *pyjson.Object) int64 {
+	revision := func(obj *jsonutil.Object) int64 {
 		value, _ := obj.Get("revision")
 		n, _ := value.(int64)
 		return n
 	}
 	base := revision(chat.fences)
-	first := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", pyjson.ObjectOf("effort", "high"), "pick-a"))
+	first := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", jsonutil.ObjectOf("effort", "high"), "pick-a"))
 	if revision(picksField(first, "result")) != base+1 {
 		t.Fatalf("first %s", picksDump(first))
 	}
-	second := chat.dispatch(t, picksMutate(chat.root, picksField(first, "result"), "reasoning", pyjson.ObjectOf("effort", "low"), "pick-b"))
+	second := chat.dispatch(t, picksMutate(chat.root, picksField(first, "result"), "reasoning", jsonutil.ObjectOf("effort", "low"), "pick-b"))
 	if revision(picksField(second, "result")) != base+2 {
 		t.Fatalf("second %s", picksDump(second))
 	}
 
-	retried := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", pyjson.ObjectOf("effort", "high"), "pick-a"))
+	retried := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", jsonutil.ObjectOf("effort", "high"), "pick-a"))
 
 	if picksDump(picksField(retried, "result")) != picksDump(picksField(first, "result")) {
 		t.Fatalf("retried %s first %s", picksDump(retried), picksDump(first))
@@ -195,15 +195,15 @@ func TestAMessagingPickIsFencedByItsReceiptAndRevision(t *testing.T) {
 	if err != nil || level == nil || level["effort"] != "low" {
 		t.Fatalf("level %v %v", level, err)
 	}
-	reason := func(obj *pyjson.Object) any {
+	reason := func(obj *jsonutil.Object) any {
 		value, _ := picksField(picksField(obj, "error"), "data").Get("reason")
 		return value
 	}
-	reused := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", pyjson.ObjectOf("effort", "medium"), "pick-a"))
+	reused := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", jsonutil.ObjectOf("effort", "medium"), "pick-a"))
 	if reason(reused) != "admission_conflict" {
 		t.Fatalf("reused %s", picksDump(reused))
 	}
-	stale := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", pyjson.ObjectOf("effort", "medium"), "pick-c"))
+	stale := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", jsonutil.ObjectOf("effort", "medium"), "pick-c"))
 	if reason(stale) != "revision_conflict" {
 		t.Fatalf("stale %s", picksDump(stale))
 	}
@@ -222,7 +222,7 @@ func TestAMessagingChatsEffortWireIsClampedForItsAPIMode(t *testing.T) {
 		t.Fatal(err)
 	}
 	chat := newCompressedPicksChat(t)
-	picked := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", pyjson.ObjectOf("effort", "ultra"), "pick-ultra"))
+	picked := chat.dispatch(t, picksMutate(chat.root, chat.fences, "reasoning", jsonutil.ObjectOf("effort", "ultra"), "pick-ultra"))
 	if effort, _ := picksField(picked, "result").Get("effort"); effort != "ultra" {
 		t.Fatalf("picked %s", picksDump(picked))
 	}
@@ -245,7 +245,7 @@ func TestAModelPickOnAMessagingChatIsTheChatsNextTurnModel(t *testing.T) {
 	}
 	chat := newCompressedPicksChat(t)
 
-	picked := chat.dispatch(t, picksMutate(chat.root, chat.fences, "model", pyjson.ObjectOf("model", "picked", "reasoning", "low"), "pick"))
+	picked := chat.dispatch(t, picksMutate(chat.root, chat.fences, "model", jsonutil.ObjectOf("model", "picked", "reasoning", "low"), "pick"))
 
 	if model, _ := picksField(picked, "result").Get("model"); model != "picked" {
 		t.Fatalf("picked %s", picksDump(picked))
@@ -280,7 +280,7 @@ func TestAColdModelPickResolvesAgainstTheChatsSavedProvider(t *testing.T) {
 		t.Fatalf("in memory before the pick %v", override)
 	}
 
-	picked := chat.dispatch(t, picksMutate(chat.root, chat.fences, "model", pyjson.ObjectOf("model", "picked"), "cold-pick"))
+	picked := chat.dispatch(t, picksMutate(chat.root, chat.fences, "model", jsonutil.ObjectOf("model", "picked"), "cold-pick"))
 
 	if model, _ := picksField(picked, "result").Get("model"); model != "picked" {
 		t.Fatalf("picked %s", picksDump(picked))

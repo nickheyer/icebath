@@ -7,12 +7,12 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Connector relevance policy of a fronted platform, nil when relay is generic or nothing non default is configured
-func RelayRelevancePolicy(ctx context.Context, platform *string) *pyjson.Object {
+func RelayRelevancePolicy(ctx context.Context, platform *string) *jsonutil.Object {
 	name := ""
 	if platform == nil {
 		name = RelayPlatformIdentity()[0]
@@ -32,7 +32,7 @@ func RelayRelevancePolicy(ctx context.Context, platform *string) *pyjson.Object 
 	for i, s := range freeResponse {
 		scopes[i] = s
 	}
-	return pyjson.ObjectOf("platform", name, "requireAddress", pyrepr.Truthy(requireMention),
+	return jsonutil.ObjectOf("platform", name, "requireAddress", anyutil.IsTrue(requireMention),
 		"freeResponseScopes", scopes, "allowOtherBots", allowOtherBots)
 }
 
@@ -55,7 +55,7 @@ func relayPolicyConfig(ctx context.Context, platform string) (requireMention any
 	switch v := frc.(type) {
 	case []any:
 		for _, c := range v {
-			if s := strings.TrimSpace(pyrepr.Str(c)); s != "" {
+			if s := strings.TrimSpace(anyutil.String(c)); s != "" {
 				freeResponse = append(freeResponse, s)
 			}
 		}
@@ -77,7 +77,7 @@ func relayPolicyPlatformBlock(cfg map[string]any, platform string) (map[string]a
 		return block, true
 	}
 	platsRaw := cfg["platforms"]
-	if !pyrepr.Truthy(platsRaw) {
+	if !anyutil.IsTrue(platsRaw) {
 		platsRaw = map[string]any{}
 	}
 	plats, ok := platsRaw.(map[string]any)
@@ -91,7 +91,7 @@ func relayPolicyPlatformBlock(cfg map[string]any, platform string) (map[string]a
 }
 
 // HTTP status of the policy POST, RelayRuntimeError when the connector is unreachable
-func relayPostPolicy(policyURL, token string, policy *pyjson.Object) (int, error) {
+func relayPostPolicy(policyURL, token string, policy *jsonutil.Object) (int, error) {
 	resp, err := relayJSONPost(policyURL, token, policy, relayHTTPTimeout)
 	if err != nil {
 		var httpErr *RelayHTTPError
@@ -137,10 +137,10 @@ func SendRelayPolicy(ctx context.Context) (bool, error) {
 		}
 		if status == 200 {
 			anyDeclared = true
-			scopes, _ := policy.GetOr("freeResponseScopes", nil).([]any)
+			scopes, _ := policy.ValueOr("freeResponseScopes", nil).([]any)
 			pkgLog().Info(fmt.Sprintf("relay policy declared (platform=%s require_address=%s free_scopes=%d allow_bots=%s)",
-				pyrepr.Str(policy.GetOr("platform", nil)), pyrepr.Str(policy.GetOr("requireAddress", nil)), len(scopes),
-				pyrepr.Str(policy.GetOr("allowOtherBots", nil))))
+				anyutil.String(policy.ValueOr("platform", nil)), anyutil.String(policy.ValueOr("requireAddress", nil)), len(scopes),
+				anyutil.String(policy.ValueOr("allowOtherBots", nil))))
 		} else {
 			pkgLog().Warn(fmt.Sprintf("relay policy declaration for platform=%s returned HTTP %d; connector keeps prior/default policy", platform, status))
 		}

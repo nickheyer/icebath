@@ -15,8 +15,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/treekill"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // ChildProcess is a retained child handle the tree kill helpers signal, wait on and reap
@@ -228,7 +228,7 @@ func (p *PipedChild) Communicate(timeout time.Duration) (stdout, stderr []byte, 
 func posixIsZombie(pid int) (bool, error) {
 	raw, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err == nil {
-		text, err := pystr.DecodeUTF8(raw)
+		text, err := textutil.DecodeUTF8(raw)
 		if err != nil {
 			return false, err
 		}

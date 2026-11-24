@@ -5,14 +5,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // State meta prefix of a session's durable hosted transport binding
@@ -27,11 +28,11 @@ var ownerRequestReasons = map[string]bool{"permission_denied": true, "profile_mi
 
 // Authenticated private socket exchange with the owner of home, no owner start or storage fallback
 func ownerRequest(ctx context.Context, ownerHome, verb string, params map[string]any, timeout time.Duration) (any, error) {
-	resolved, err := pypath.Resolve(ownerHome)
+	resolved, err := pathutil.Resolve(ownerHome)
 	if err != nil {
 		return nil, err
 	}
-	if pypath.PathStr(ownerHome) != resolved {
+	if filepath.Clean(ownerHome) != resolved {
 		return nil, runtimeRefusal("permission_denied")
 	}
 	deadline := time.Now().Add(timeout)
@@ -54,7 +55,7 @@ func ownerRequest(ctx context.Context, ownerHome, verb string, params map[string
 	if time.Until(deadline) <= 0 {
 		return nil, runtimeRefusal("runtime_draining")
 	}
-	text, err := pyjson.Dumps(pyjson.ObjectOf("protocol", 1, "id", 1, "verb", verb, "params", sent))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("protocol", 1, "id", 1, "verb", verb, "params", sent))
 	if err != nil {
 		return nil, err
 	}
@@ -69,12 +70,12 @@ func ownerRequest(ctx context.Context, ownerHome, verb string, params map[string
 	if len(raw) == 0 {
 		return nil, runtimeRefusal("runtime_draining")
 	}
-	response, err := pyjson.LoadsDict(string(raw))
+	response, err := jsonutil.DecodeObject(string(raw))
 	if err != nil {
 		return nil, err
 	}
 	if ok, _ := response.Get("ok"); ok != true {
-		problem := pyrepr.Str(response.GetOr("error", ""))
+		problem := anyutil.String(response.ValueOr("error", ""))
 		parts := strings.Split(problem, ": ")
 		reason := parts[len(parts)-1]
 		if !ownerRequestReasons[reason] {
@@ -82,17 +83,17 @@ func ownerRequest(ctx context.Context, ownerHome, verb string, params map[string
 		}
 		return nil, runtimeRefusal(reason)
 	}
-	if protocol, _ := response.Get("protocol"); !pyjson.Equal(protocol, 1) {
+	if protocol, _ := response.Get("protocol"); !anyutil.Equal(protocol, 1) {
 		return nil, runtimeRefusal("runtime_draining")
 	}
-	if id, _ := response.Get("id"); !pyjson.Equal(id, 1) {
+	if id, _ := response.Get("id"); !anyutil.Equal(id, 1) {
 		return nil, runtimeRefusal("runtime_draining")
 	}
 	return pyItem(response, "result")
 }
 
 // Source owner attestation of one operation on a bound target, refusing a result naming no owner or another target
-func hostedAttest(ctx context.Context, binding *pyjson.Object, operation string, params map[string]any) (*pyjson.Object, error) {
+func hostedAttest(ctx context.Context, binding *jsonutil.Object, operation string, params map[string]any) (*jsonutil.Object, error) {
 	sourceHome, err := pyItem(binding, "source_home")
 	if err != nil {
 		return nil, err
@@ -109,7 +110,7 @@ func hostedAttest(ctx context.Context, binding *pyjson.Object, operation string,
 	for k, v := range params {
 		sent[k] = v
 	}
-	result, err := ownerRequest(ctx, pyrepr.Str(sourceHome), "hosted-attest", map[string]any{"selector": selector, "operation": operation, "params": sent}, 30*time.Second)
+	result, err := ownerRequest(ctx, anyutil.String(sourceHome), "hosted-attest", map[string]any{"selector": selector, "operation": operation, "params": sent}, 30*time.Second)
 	if err != nil {
 		var refusal *state.RuntimeStoreError
 		if errors.As(err, &refusal) {
@@ -119,7 +120,7 @@ func hostedAttest(ctx context.Context, binding *pyjson.Object, operation string,
 		drained.Cause = err
 		return nil, drained
 	}
-	attested, ok := pyjson.AsObject(result)
+	attested, ok := jsonutil.AsObject(result)
 	if !ok {
 		return nil, runtimeRefusal("permission_denied")
 	}
@@ -128,14 +129,14 @@ func hostedAttest(ctx context.Context, binding *pyjson.Object, operation string,
 	} else if _, isText := owner.(string); !isText {
 		return nil, runtimeRefusal("permission_denied")
 	}
-	if attestedHome, _ := attested.Get("target_home"); !pyjson.Equal(attestedHome, targetHome) {
+	if attestedHome, _ := attested.Get("target_home"); !anyutil.Equal(attestedHome, targetHome) {
 		return nil, runtimeRefusal("permission_denied")
 	}
 	return attested, nil
 }
 
 // Hosted owner principal namespaced by its source profile so equal owner strings never alias
-func hostedPrincipal(a *SessionAuthority, binding *pyjson.Object) (Principal, error) {
+func hostedPrincipal(a *SessionAuthority, binding *jsonutil.Object) (Principal, error) {
 	sourceHome, err := pyItem(binding, "source_home")
 	if err != nil {
 		return Principal{}, err
@@ -144,7 +145,7 @@ func hostedPrincipal(a *SessionAuthority, binding *pyjson.Object) (Principal, er
 	if err != nil {
 		return Principal{}, err
 	}
-	identity, err := pyjson.Dumps([]any{sourceHome, owner}, pyjson.Separators(",", ":"))
+	identity, err := jsonutil.Encode([]any{sourceHome, owner})
 	if err != nil {
 		return Principal{}, err
 	}
@@ -154,7 +155,7 @@ func hostedPrincipal(a *SessionAuthority, binding *pyjson.Object) (Principal, er
 }
 
 // Reauthorizes a durable target binding at its source owner before claim, false only for a non transport session
-func checkRemoteHostedAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object) (bool, error) {
+func checkRemoteHostedAdmission(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object) (bool, error) {
 	ctx = ownerScope(ctx, a, false)
 	stored, found, err := a.DB.GetMeta(ctx, hostedTransportBinding+ref.SessionID)
 	if err != nil || !found {
@@ -178,8 +179,8 @@ func checkRemoteHostedAdmission(ctx context.Context, a *SessionAuthority, ref Se
 }
 
 // Attested source result of a hosted row whose owner, target and input still match its durable binding
-func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object, stored string) (*pyjson.Object, error) {
-	binding, err := pyjson.LoadsDict(stored)
+func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object, stored string) (*jsonutil.Object, error) {
+	binding, err := jsonutil.DecodeObject(stored)
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +188,7 @@ func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref Session
 	if len(requestID) < 7 {
 		return nil, &PyError{Kind: "ValueError", Msg: "binding mismatch"}
 	}
-	decoded, err := pyjson.Loads(requestID[7:])
+	decoded, err := jsonutil.Decode(requestID[7:])
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +202,7 @@ func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref Session
 	}
 	targetHome, _ := binding.Get("target_home")
 	if !strings.HasPrefix(requestID, "hosted:") || !SameOwner(rowValue(row, "principal_id"), principal.Subject) ||
-		ref.ProfileID != a.ProfileID || !pyjson.Equal(targetHome, a.ProfileID) {
+		ref.ProfileID != a.ProfileID || !anyutil.Equal(targetHome, a.ProfileID) {
 		return nil, &PyError{Kind: "ValueError", Msg: "binding mismatch"}
 	}
 	attested, err := hostedAttest(ctx, binding, "execute", map[string]any{"task": pair[0], "execution_generation": pair[1]})
@@ -211,7 +212,7 @@ func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref Session
 	owner, _ := binding.Get("owner")
 	if attestedOwner, err := pyItem(attested, "owner"); err != nil {
 		return nil, err
-	} else if !pyjson.Equal(attestedOwner, owner) {
+	} else if !anyutil.Equal(attestedOwner, owner) {
 		return nil, &PyError{Kind: "ValueError", Msg: "owner changed"}
 	}
 	prompt, err := pyItem(attested, "prompt")
@@ -228,7 +229,7 @@ func attestRemoteHostedRow(ctx context.Context, a *SessionAuthority, ref Session
 	if err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(rowPayload(row), expected) {
+	if !anyutil.Equal(rowPayload(row), expected) {
 		return nil, &PyError{Kind: "ValueError", Msg: "input changed"}
 	}
 	return attested, nil

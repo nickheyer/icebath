@@ -12,11 +12,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 // GPT Image 2 tiers on the gpt-image-2 API model, then every GPT Image 2.5 Flare and Sunburst quality
@@ -145,15 +145,15 @@ func loadOpenAIImageBytes(ctx context.Context, env *tools.Env, ref string) ([]by
 		}
 		resp, err := tools.NewSSRFSafeClient(env, 60*time.Second, true).Do(req)
 		if err != nil {
-			return nil, "", fmt.Errorf("%s", pyhttpx.ErrorText(err))
+			return nil, "", fmt.Errorf("%s", err.Error())
 		}
 		defer resp.Body.Close()
 		data, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return nil, "", fmt.Errorf("%s", pyhttpx.ErrorText(err))
+			return nil, "", fmt.Errorf("%s", err.Error())
 		}
 		if resp.StatusCode >= 400 {
-			return nil, "", fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.Request.URL.String(), resp.Header.Get("Location")))
+			return nil, "", &httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.Request.URL.String(), Location: resp.Header.Get("Location")}
 		}
 		name := strings.SplitN(ref, "?", 2)[0]
 		name = name[strings.LastIndex(name, "/")+1:]

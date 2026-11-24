@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Plants one retained file under its digest directory and returns its path and reference
-func plantRetained(t *testing.T, ctx context.Context, index int, name string) (string, *pyjson.Object) {
+func plantRetained(t *testing.T, ctx context.Context, index int, name string) (string, *jsonutil.Object) {
 	t.Helper()
 	root, err := nativeInputsRoot(ctx)
 	if err != nil {
@@ -26,16 +26,16 @@ func plantRetained(t *testing.T, ctx context.Context, index int, name string) (s
 	if err := os.WriteFile(path, []byte(fmt.Sprint("bytes", index)), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ref := pyjson.NewObject()
+	ref := jsonutil.NewObject()
 	ref.Set("path", path)
 	ref.Set("sha256", digest)
 	return path, ref
 }
 
 // Writes one admission row holding the payload in the given status
-func admitRow(t *testing.T, ctx context.Context, db *state.SessionDB, id, requestID, status string, payload *pyjson.Object) {
+func admitRow(t *testing.T, ctx context.Context, db *state.SessionDB, id, requestID, status string, payload *jsonutil.Object) {
 	t.Helper()
-	text, err := pyjson.Dumps(payload)
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -62,14 +62,14 @@ func onDisk(path string) bool {
 	return err == nil
 }
 
-func mediaPayload(section string, refs ...*pyjson.Object) *pyjson.Object {
+func mediaPayload(section string, refs ...*jsonutil.Object) *jsonutil.Object {
 	media := []any{}
 	for _, r := range refs {
 		media = append(media, r)
 	}
-	inner := pyjson.NewObject()
+	inner := jsonutil.NewObject()
 	inner.Set("media", media)
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set(section, inner)
 	return payload
 }
@@ -81,7 +81,7 @@ func TestHostedDocumentReferencesNamesOnlyRetainedDocuments(t *testing.T) {
 	foreign := filepath.Join(t.TempDir(), fmt.Sprintf("%064x", 3), "other.txt")
 	text := "read" + HostedDocumentLine + doc + "\n" + HostedDocumentLine[1:] + image + "\n" +
 		HostedDocumentLine[1:] + foreign + "\n" + HostedDocumentLine[1:] + "relative/x.txt\n"
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("text", text)
 	refs, err := HostedDocumentReferences("hosted:room:turn", payload)
 	if err != nil {
@@ -112,22 +112,22 @@ func TestAdmissionMediaReferencesJoinsAttachmentAndNativeMedia(t *testing.T) {
 	_, a := plantRetained(t, ctx, 1, "a.png")
 	_, b := plantRetained(t, ctx, 2, "b.png")
 	payload := mediaPayload("attachments_v1", a)
-	native := pyjson.NewObject()
+	native := jsonutil.NewObject()
 	native.Set("media", []any{b})
 	payload.Set("native_text_v1", native)
 	refs, err := AdmissionMediaReferences(payload)
 	if err != nil || len(refs) != 2 || refs[0] != a || refs[1] != b {
 		t.Fatalf("refs %v %v", refs, err)
 	}
-	if refs, err := AdmissionMediaReferences(pyjson.NewObject()); err != nil || len(refs) != 0 {
+	if refs, err := AdmissionMediaReferences(jsonutil.NewObject()); err != nil || len(refs) != 0 {
 		t.Fatalf("empty payload gave %v %v", refs, err)
 	}
-	bad := pyjson.NewObject()
+	bad := jsonutil.NewObject()
 	bad.Set("attachments_v1", []any{})
 	if _, err := AdmissionMediaReferences(bad); err == nil || err.Error() != "the admission media section is a list, expected a mapping" {
 		t.Fatalf("list section error %v", err)
 	}
-	inner := pyjson.NewObject()
+	inner := jsonutil.NewObject()
 	inner.Set("media", "ab")
 	bad.Set("attachments_v1", inner)
 	if _, err := AdmissionMediaReferences(bad); err == nil || err.Error() != "an admission media entry is text, expected a mapping" {
@@ -172,12 +172,12 @@ func TestReleaseUnheldMediaKeepsLiveAdmissionAndAPIImageMedia(t *testing.T) {
 	doc, _ := plantRetained(t, ctx, 4, "doc.txt")
 	admitRow(t, ctx, db, "a-live", "turn-live", "queued", mediaPayload("native_text_v1", liveRef))
 	admitRow(t, ctx, db, "a-settled", "turn-settled", "terminal", mediaPayload("attachments_v1", settledRef))
-	apiTurn := pyjson.NewObject()
+	apiTurn := jsonutil.NewObject()
 	apiTurn.Set("media", []any{apiRef})
-	apiPayload := pyjson.NewObject()
+	apiPayload := jsonutil.NewObject()
 	apiPayload.Set("api_turn_v1", apiTurn)
 	admitRow(t, ctx, db, "a-api", "turn-api", "terminal", apiPayload)
-	hosted := pyjson.NewObject()
+	hosted := jsonutil.NewObject()
 	hosted.Set("text", "read"+HostedDocumentLine+doc+"\n")
 	admitRow(t, ctx, db, "a-hosted", "hosted:room:turn", "started", hosted)
 	docRefs, err := HostedDocumentReferences("hosted:room:turn", hosted)
@@ -235,7 +235,7 @@ func TestReleaseUnheldMediaIgnoresForeignAndRejectsMalformedReferences(t *testin
 	if err := os.WriteFile(foreign, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ref := pyjson.NewObject()
+	ref := jsonutil.NewObject()
 	ref.Set("path", foreign)
 	ref.Set("sha256", fmt.Sprintf("%064x", 1))
 	_, mismatched := plantRetained(t, ctx, 2, "m.png")
@@ -244,11 +244,11 @@ func TestReleaseUnheldMediaIgnoresForeignAndRejectsMalformedReferences(t *testin
 	if err != nil || released != 0 || !onDisk(foreign) {
 		t.Fatalf("released %d %v", released, err)
 	}
-	noPath := pyjson.NewObject()
+	noPath := jsonutil.NewObject()
 	if _, err := releaseUnheldMedia(ctx, db, []any{noPath}, true); err == nil || err.Error() != "missing path" {
 		t.Fatalf("missing path error %v", err)
 	}
-	intPath := pyjson.NewObject()
+	intPath := jsonutil.NewObject()
 	intPath.Set("path", 7)
 	if _, err := releaseUnheldMedia(ctx, db, []any{intPath}, true); err == nil || err.Error() != "a media path is a number, expected text" {
 		t.Fatalf("int path error %v", err)

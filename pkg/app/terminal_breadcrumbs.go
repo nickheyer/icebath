@@ -12,9 +12,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Multiplexer and terminal emulator identity env vars checked in order when no tty path is available
@@ -83,7 +83,7 @@ func WriteBreadcrumb(ctx context.Context, sessionID, cwd string) {
 		cwd, _ = os.Getwd()
 	}
 	now := breadcrumbNow()
-	payload := pyjson.ObjectOf("session_id", sessionID, "cwd", cwd, "ts", now)
+	payload := jsonutil.ObjectOf("session_id", sessionID, "cwd", cwd, "ts", now)
 	if err := config.AtomicJSONWriteWith(ctx, filepath.Join(dir, terminalID), payload); err != nil {
 		return
 	}

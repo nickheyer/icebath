@@ -4,9 +4,10 @@ import (
 	"errors"
 	"math"
 	"reflect"
+	"strconv"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestPyFormatMatchesPython(t *testing.T) {
@@ -135,7 +136,7 @@ func TestPyFloatRepr(t *testing.T) {
 	cases := map[float64]string{0.1: "0.1", 1e22: "1e+22", 123456789012345.0: "123456789012345.0", 1234567890123456.0: "1234567890123456.0",
 		12345678901234567.0: "1.2345678901234568e+16", 0.0001: "0.0001", math.Inf(1): "inf", 2.5e-7: "2.5e-07"}
 	for f, want := range cases {
-		if got := pyrepr.Float(f); got != want {
+		if got := strconv.FormatFloat(f, 'f', -1, 64); got != want {
 			t.Errorf("%v got %q want %q", f, got, want)
 		}
 	}
@@ -167,7 +168,7 @@ func TestYAML11Resolution(t *testing.T) {
 		t.Fatalf("empty doc %v %v", got, err)
 	}
 	merged, err := ParseLocaleYAML("x", []byte("base: &b\n  x: one\n  q: two\nchild:\n  <<: *b\n  q: own\n"))
-	if err != nil || merged["child.x"] != "one" || merged["child.q"] != "own" || pyrepr.Float(math.Copysign(0, -1)) != "-0.0" {
+	if err != nil || merged["child.x"] != "one" || merged["child.q"] != "own" || strconv.FormatFloat(math.Copysign(0, -1), 'f', -1, 64) != "-0.0" {
 		t.Fatalf("merge %v %v", merged, err)
 	}
 	stamps := map[string]string{
@@ -179,7 +180,7 @@ func TestYAML11Resolution(t *testing.T) {
 	}
 	for text, want := range stamps {
 		v, err := parseYAML11Timestamp(text)
-		if got := pyrepr.Repr(pyMap{{Key: "k", Value: v}}); err != nil || got != "{'k': "+want+"}" {
+		if got := anyutil.Quote(pyMap{{Key: "k", Value: v}}); err != nil || got != "{'k': "+want+"}" {
 			t.Errorf("timestamp %q repr %s %v", text, got, err)
 		}
 	}

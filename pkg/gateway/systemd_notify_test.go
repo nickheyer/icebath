@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 // Bound datagram receiver at name, closed with the test
@@ -66,7 +66,7 @@ func TestWatchdogSendsReadyHeartbeatAndStopping(t *testing.T) {
 	t.Setenv("NOTIFY_SOCKET", path)
 	t.Setenv("WATCHDOG_USEC", "20000")
 	watchdog := NewSystemdWatchdog(true, 1.0)
-	ctx := pyctx.WithRunningLoop(context.Background())
+	ctx := ctxutil.WithNonBlocking(context.Background())
 	if !watchdog.Start(ctx) {
 		t.Fatal("start returned false")
 	}

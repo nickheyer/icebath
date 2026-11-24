@@ -11,8 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Pushes a credits or out of band notice from the agent goroutine to the chat as one line
@@ -86,7 +86,7 @@ func (t *TurnRunner) makeBgReviewCallbacks() (func(string), gateway.PostDelivery
 		if localViewer {
 			live, ok := owner.authority.Live(owner.sessionID)
 			deadline := time.Now().Add(120 * time.Second)
-			for ok && time.Now().Before(deadline) && pyrepr.Equal(executionGenerationOf(live), owner.generation) {
+			for ok && time.Now().Before(deadline) && anyutil.Equal(executionGenerationOf(live), owner.generation) {
 				time.Sleep(50 * time.Millisecond)
 			}
 			deliver(message)
@@ -117,7 +117,7 @@ func mergeTurnRequestOverrides(a *agent.AIAgent, route turnRoute) {
 		overrides = map[string]any{}
 	}
 	for key, value := range a.GatewayTurnRequestOverrides() {
-		if current, ok := overrides[key]; ok && pyrepr.Equal(current, value) {
+		if current, ok := overrides[key]; ok && anyutil.Equal(current, value) {
 			delete(overrides, key)
 		}
 	}

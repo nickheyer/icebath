@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Live identity keys of a message dict, shared with the agent message metadata
@@ -42,7 +41,7 @@ func pyTruthy(v any) bool {
 		return len(x) > 0
 	case map[string]any:
 		return len(x) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x != nil && x.Len() > 0
 	}
 	return true

@@ -6,10 +6,10 @@ import (
 	"log/slog"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Says why a secondary platform built no adapter at startup, stamps its status and queues it when it can heal
@@ -123,13 +123,13 @@ func (r *GatewayRunner) endSecondaryReconnect(profileName string, platform gatew
 }
 
 // Adapter map of a served profile, created on first use
-func (r *GatewayRunner) profileAdapterMap(profileName string) *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (r *GatewayRunner) profileAdapterMap(profileName string) *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	if r.profileAdapters == nil {
-		r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
+		r.profileAdapters = orderedutil.NewMap[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]()
 	}
 	profileMap, ok := r.profileAdapters.Get(profileName)
 	if !ok {
-		profileMap = pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+		profileMap = orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 		r.profileAdapters.Set(profileName, profileMap)
 	}
 	return profileMap
@@ -157,7 +157,7 @@ func (r *GatewayRunner) installSecondaryReconnect(ctx context.Context, profileNa
 // Reconnects a retryable secondary adapter under its own profile scope until it is installed or gives up
 func (r *GatewayRunner) runSecondaryProfileReconnect(ctx context.Context, profileName string, platform gateway.Platform, predecessor gateway.PlatformAdapter) error {
 	attempts := 0
-	queueInfo := map[string]any{"queued_at": pythread.Monotonic(), "attempts": 0}
+	queueInfo := map[string]any{"queued_at": timeutil.Monotonic(), "attempts": 0}
 	current := currentGatewayTask(ctx)
 	defer func() {
 		r.profileFailedMu.Lock()
@@ -237,7 +237,7 @@ func (r *GatewayRunner) runSecondaryProfileReconnect(ctx context.Context, profil
 				logSuppressed(slog.LevelDebug, r.rearmFailedPluginLoad(scoped, platform, queueInfo), "plugin load re-arm for %s failed (profile: %s): %s", platform, profileName)
 			}()
 		}
-		flagged := r.flagReconnectNeedsAttention(scoped, platform, queueInfo, pythread.Monotonic(), statusKey)
+		flagged := r.flagReconnectNeedsAttention(scoped, platform, queueInfo, timeutil.Monotonic(), statusKey)
 		if flagged && rearm {
 			r.markAdapterUnavailable(scoped, statusKey, platform, true, nil)
 		}

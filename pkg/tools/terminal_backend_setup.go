@@ -10,9 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // TerminalBackendRow is one registered backend the setup menu offers after the built in ones
@@ -69,7 +69,7 @@ func NearestVercelProject(start string) (map[string]string, error) {
 		}
 		start = cwd
 	}
-	current, err := pypath.Resolve(start)
+	current, err := pathutil.Resolve(start)
 	if err != nil {
 		return nil, err
 	}
@@ -94,17 +94,17 @@ func vercelProjectIDs(projectFile string) (map[string]string, error) {
 	if err != nil {
 		return out, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return out, nil
 	}
 	var get func(key string) (any, bool)
 	switch obj := data.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		get = obj.Get
 	case map[string]any:
 		get = func(key string) (any, bool) { v, held := obj[key]; return v, held }

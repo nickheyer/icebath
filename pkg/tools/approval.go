@@ -14,9 +14,9 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/settings"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Process wide yolo flag frozen at start so a skill cannot flip it through the environment later
@@ -1359,7 +1359,7 @@ func uvUninstallTarget(words []string) string {
 		if m := uvInstallDirRe.FindStringSubmatch(strings.ReplaceAll(root, "\\", "/")); m != nil {
 			version = m[uvInstallDirRe.SubexpIndex("version")]
 		}
-		rootName := pypath.Basename(root)
+		rootName := pathutil.Name(root)
 		for _, spec := range specs {
 			if versionSpecMatches(spec, version, rootName) {
 				return description
@@ -1379,7 +1379,7 @@ func commandDeletesRuntime(command string) string {
 		if len(words) == 0 {
 			continue
 		}
-		name := strings.ToLower(pypath.Basename(words[0]))
+		name := strings.ToLower(pathutil.Name(words[0]))
 		if name == "uv" {
 			if target := uvUninstallTarget(words); target != "" {
 				return target

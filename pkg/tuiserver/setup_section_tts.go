@@ -7,9 +7,9 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 // Seam over the engine install, its progress written to the setup job
@@ -30,8 +30,8 @@ func installSpeechEngine(ctx context.Context, extra string, out io.Writer) bool 
 				remedy = strings.ToUpper(remedy[:1]) + remedy[1:]
 			}
 			detail = strings.TrimSpace(install.Cause + "\n" + remedy)
-		case pypath.IsOSError(err):
-			detail = pypath.OSErrorText(err)
+		case errorutil.IsSystem(err):
+			detail = err.Error()
 		}
 		fmt.Fprintf(out, "Failed to install %s: %s\nRetry with /setup voice\n", extra, detail)
 		return false

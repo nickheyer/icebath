@@ -15,9 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/install"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Release planning and swap, checkout rebuild and build revision, replaced by tests
@@ -225,11 +225,11 @@ func updateViaRelease(ctx context.Context, w io.Writer, args map[string]any, com
 	}
 	root := fleetProjectRoot()
 	var channelArg *string
-	if pyrepr.Truthy(args["channel"]) {
-		text := pyrepr.Str(args["channel"])
+	if anyutil.IsTrue(args["channel"]) {
+		text := anyutil.String(args["channel"])
 		channelArg = &text
 	}
-	u, err := planReleaseUpdate(ctx, root, channelArg, resolveUpdateBranch(args), pyrepr.Truthy(args["branch"]))
+	u, err := planReleaseUpdate(ctx, root, channelArg, resolveUpdateBranch(args), anyutil.IsTrue(args["branch"]))
 	heldMessage := ""
 	if err == nil {
 		fmt.Fprintf(w, "→ Update channel: %s\n", u.channel)

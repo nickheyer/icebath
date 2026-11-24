@@ -14,14 +14,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var respawnBlockerRE = regexp2.MustCompile(`\b(quota|rate[\s_\-]?limit|429|403|`+
@@ -44,7 +43,7 @@ const (
 
 // GatewayDispatchProbeSet is the gateway memory sampling and pressure classification the dispatcher reads
 type GatewayDispatchProbeSet struct {
-	SampleMemory     func() *pyjson.Object
+	SampleMemory     func() *jsonutil.Object
 	ClassifyPressure func(availableKiB, totalKiB any) string
 	Liveness         func(ctx context.Context, profileDir string) (pid any, probeError bool)
 }
@@ -77,7 +76,7 @@ func CheckRespawnGuard(ctx context.Context, conn state.SQLiteConn, taskID, lane 
 	}
 	if latestRun != nil && latestRun.Get("outcome") == "spawn_failed" {
 		infra, _ := jsonDict(latestRun.Get("metadata")).Get("infrastructure")
-		if rlCooldown > 0 && pyrepr.Truthy(infra) {
+		if rlCooldown > 0 && anyutil.IsTrue(infra) {
 			if endedAt := toEpoch(latestRun.Get("ended_at")); endedAt != nil && now-*endedAt < rlCooldown {
 				return reason("infrastructure_cooldown")
 			}
@@ -187,7 +186,7 @@ func isHandoffEvent(kind string, payloadValue any) bool {
 	if kind != "assigned" {
 		return true
 	}
-	data, ok := jsonOr(payloadValue, pyjson.NewObject()).(*pyjson.Object)
+	data, ok := jsonOr(payloadValue, jsonutil.NewObject()).(*jsonutil.Object)
 	if !ok {
 		return false
 	}
@@ -196,7 +195,7 @@ func isHandoffEvent(kind string, payloadValue any) bool {
 	}
 	to, _ := data.Get("assignee")
 	from, hasFrom := data.Get("from")
-	return pyrepr.Truthy(to) && hasFrom && !pyjson.Equal(from, to)
+	return anyutil.IsTrue(to) && hasFrom && !anyutil.Equal(from, to)
 }
 
 // Profile predicate the dispatcher spawns for, narrowed to kanban.dispatch_profiles when that key is set
@@ -217,8 +216,7 @@ func dispatchProfileExistsFn(ctx context.Context) func(string) bool {
 // Claim allowlist of this home from kanban.dispatch_profiles, nil for any profile and empty when fail closed
 func dispatchProfileAllowlist(ctx context.Context) map[string]bool {
 	if _, err := config.LoadUserEffectiveFailClosed(home.ConfigPath(home.Dir(ctx)), os.LookupEnv); err != nil {
-		pkgLog().Warn(fmt.Sprintf("kanban: could not read kanban.dispatch_profiles (%s: %s) — this home claims no cards until the config is readable",
-			pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("kanban: could not read kanban.dispatch_profiles (%v) — this home claims no cards until the config is readable", err))
 		return map[string]bool{}
 	}
 	raw := settings.KanbanDispatchProfiles.Get(ctx)
@@ -264,7 +262,7 @@ func hasSpawnable(ctx context.Context, conn state.SQLiteConn, status string) (bo
 	}
 	exists := dispatchProfileExistsFn(ctx)
 	for _, row := range rows {
-		if exists(pyrepr.Str(row.Get("assignee"))) {
+		if exists(anyutil.String(row.Get("assignee"))) {
 			return true, nil
 		}
 	}
@@ -287,27 +285,24 @@ func ReviewDispatchEnabled(ctx context.Context) bool {
 }
 
 // System memory snapshot in KiB values, empty when unknown
-func systemMemorySample() *pyjson.Object {
+func systemMemorySample() *jsonutil.Object {
 	if s := gatewayDispatch().SampleMemory(); s != nil {
 		return s
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Memory derived default for kanban.max_in_progress, nil when total memory is unknown
-func DeriveDefaultMaxInProgress(sample *pyjson.Object) *int {
+func DeriveDefaultMaxInProgress(sample *jsonutil.Object) *int {
 	if sample == nil {
 		sample = systemMemorySample()
 	}
 	raw, _ := sample.Get("mem_total_kib")
-	if _, isBool := raw.(bool); isBool {
+	total, ok := anyutil.Int(raw)
+	if !ok || total <= 0 {
 		return nil
 	}
-	total, ok := pyint.Instance(raw)
-	if !ok || total.Sign() <= 0 {
-		return nil
-	}
-	workers := total.Int64() / 1024 / MemoryGuardMBPerWorker
+	workers := total / 1024 / MemoryGuardMBPerWorker
 	n := int(max(DerivedMaxInProgressFloor, min(workers, DerivedMaxInProgressCeiling)))
 	return &n
 }
@@ -339,18 +334,18 @@ func CountRunningTasks(ctx context.Context, conn state.SQLiteConn) int {
 	if err != nil || row == nil {
 		return 0
 	}
-	n, err := pyint.Of(row.Get("n"))
+	n, err := anyutil.ToInt(row.Get("n"))
 	if err != nil {
 		return 0
 	}
-	return int(n.Int64())
+	return int(n)
 }
 
 // Running tasks across every board except the given one, matched by resolved database path
 func CountRunningTasksOtherBoards(ctx context.Context, board *string) int {
 	var currentPath *string
 	if p, err := KanbanDBPath(ctx, board); err == nil {
-		if resolved, err := pypath.Resolve(pypath.Expanduser(p)); err == nil {
+		if resolved, err := pathutil.Resolve(pathutil.ExpandUser(p)); err == nil {
 			currentPath = &resolved
 		}
 	}
@@ -361,15 +356,15 @@ func CountRunningTasksOtherBoards(ctx context.Context, board *string) int {
 	total := 0
 	for _, meta := range boards {
 		slug := DefaultBoard
-		if v, _ := meta.Get("slug"); pyrepr.Truthy(v) {
-			slug = pyrepr.Str(v)
+		if v, _ := meta.Get("slug"); anyutil.IsTrue(v) {
+			slug = anyutil.String(v)
 		}
 		path, err := KanbanDBPath(ctx, BoardArg(slug))
 		if err != nil {
 			continue
 		}
-		path = pypath.Expanduser(path)
-		resolved, err := pypath.Resolve(path)
+		path = pathutil.ExpandUser(path)
+		resolved, err := pathutil.Resolve(path)
 		if err != nil {
 			continue
 		}
@@ -390,7 +385,7 @@ func CountRunningTasksOtherBoards(ctx context.Context, board *string) int {
 }
 
 // Memory pressure level ok, elevated, critical or unknown, unknown imposing no restriction
-func memoryPressureLevel(sample *pyjson.Object) (level string) {
+func memoryPressureLevel(sample *jsonutil.Object) (level string) {
 	if sample == nil {
 		sample = systemMemorySample()
 	}
@@ -487,7 +482,7 @@ type laneParams struct {
 
 // Guards, claims, resolves the workspace and spawns one lane row, true when a spawn slot was consumed
 func dispatchLaneTask(ctx context.Context, conn state.SQLiteConn, row *Row, assignee string, result *DispatchResult, lane string, p *laneParams) (bool, error) {
-	taskID := pyrepr.Str(row.Get("id"))
+	taskID := anyutil.String(row.Get("id"))
 	if !dispatchProfileExistsFn(ctx)(assignee) {
 		result.SkippedNonspawnable = append(result.SkippedNonspawnable, taskID)
 		if !p.dryRun {
@@ -501,7 +496,7 @@ func dispatchLaneTask(ctx context.Context, conn state.SQLiteConn, row *Row, assi
 				if err != nil {
 					return err
 				}
-				if last == nil || last.Get("kind") != "skipped_nonspawnable" || !pyjson.Equal(last.Get("payload"), want) {
+				if last == nil || last.Get("kind") != "skipped_nonspawnable" || !anyutil.Equal(last.Get("payload"), want) {
 					return appendEvent(ctx, conn, taskID, "skipped_nonspawnable", payload("assignee", assignee), nil)
 				}
 				return nil
@@ -558,7 +553,7 @@ func dispatchLaneTask(ctx context.Context, conn state.SQLiteConn, row *Row, assi
 		workspace, err = ResolveWorkspace(ctx, claimed, p.board)
 	}
 	if err != nil {
-		blocked, ferr := recordTaskFailure(ctx, conn, claimed.ID, "workspace: "+pyrepr.ExceptionMessage(err), RecordFailureOptions{
+		blocked, ferr := recordTaskFailure(ctx, conn, claimed.ID, "workspace: "+err.Error(), RecordFailureOptions{
 			Outcome: "spawn_failed", FailureLimit: &p.failureLimit, ReleaseClaim: true, EndRun: true,
 		})
 		if ferr != nil {
@@ -627,9 +622,9 @@ func dispatchLaneTask(ctx context.Context, conn state.SQLiteConn, row *Row, assi
 	var scope *tools.RestartSafeScopeUnavailable
 	infrastructure := errors.As(spawnErr, &scope)
 	if infrastructure {
-		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: spawn of %s deferred, host cannot place the worker: %s", claimed.ID, pyrepr.ExceptionMessage(spawnErr)))
+		pkgLog().Warn(fmt.Sprintf("kanban dispatcher: spawn of %s deferred, host cannot place the worker: %s", claimed.ID, spawnErr.Error()))
 	}
-	blocked, err := recordTaskFailure(ctx, conn, claimed.ID, pyrepr.ExceptionMessage(spawnErr), RecordFailureOptions{
+	blocked, err := recordTaskFailure(ctx, conn, claimed.ID, spawnErr.Error(), RecordFailureOptions{
 		Outcome: "spawn_failed", FailureLimit: &p.failureLimit, ReleaseClaim: true, EndRun: true, Infrastructure: infrastructure,
 	})
 	if err != nil {
@@ -751,7 +746,7 @@ func anySpawnableReview(ctx context.Context, conn state.SQLiteConn, reviewRows [
 		if perProfileCap != nil && perProfileRunning[assignee] >= *perProfileCap {
 			continue
 		}
-		guard, err := CheckRespawnGuard(ctx, conn, pyrepr.Str(row.Get("id")), "review")
+		guard, err := CheckRespawnGuard(ctx, conn, anyutil.String(row.Get("id")), "review")
 		if err != nil {
 			return false, err
 		}
@@ -808,8 +803,8 @@ func dispatchOnceLocked(ctx context.Context, conn state.SQLiteConn, o DispatchOp
 			return nil, err
 		}
 		for _, prow := range rows {
-			n, _ := pyint.Of(prow.Get("n"))
-			perProfileRunning[pyrepr.Str(prow.Get("assignee"))] = int(n.Int64())
+			n, _ := anyutil.ToInt(prow.Get("n"))
+			perProfileRunning[anyutil.String(prow.Get("assignee"))] = int(n)
 		}
 	}
 	readyBudget := spawnBudget
@@ -835,7 +830,7 @@ func dispatchOnceLocked(ctx context.Context, conn state.SQLiteConn, o DispatchOp
 		}
 		rowAssignee, _ := row.Get("assignee").(string)
 		if rowAssignee == "" {
-			id := pyrepr.Str(row.Get("id"))
+			id := anyutil.String(row.Get("id"))
 			if defaultAssignee == nil || !applyDefaultAssignee(ctx, conn, id, *defaultAssignee, o.DryRun) {
 				result.SkippedUnassigned = append(result.SkippedUnassigned, id)
 				continue
@@ -857,7 +852,7 @@ func dispatchOnceLocked(ctx context.Context, conn state.SQLiteConn, o DispatchOp
 		}
 		assignee, _ := row.Get("assignee").(string)
 		if assignee == "" {
-			result.SkippedUnassigned = append(result.SkippedUnassigned, pyrepr.Str(row.Get("id")))
+			result.SkippedUnassigned = append(result.SkippedUnassigned, anyutil.String(row.Get("id")))
 			continue
 		}
 		ok, err := dispatchLaneTask(ctx, conn, row, assignee, result, "review", params)

@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -27,9 +28,9 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -92,9 +93,9 @@ func serializeAttr(v any) (any, bool) {
 
 // JSON text of a value as the Langfuse event serializer writes it
 func eventJSON(v any) string {
-	out, err := pyjson.Dumps(eventDefault(v, 1))
+	out, err := jsonutil.Encode(eventDefault(v, 1))
 	if err != nil {
-		return fmt.Sprintf(`"<not serializable object of type: %s>"`, pyrepr.TypeName(v))
+		return fmt.Sprintf(`"<not serializable object of type: %s>"`, anyutil.Kind(v))
 	}
 	return out
 }
@@ -132,10 +133,10 @@ func eventDefault(v any, depth int) any {
 		return jsSafeInt(n, t)
 	}
 	if depth >= serializeDepth {
-		return "<" + pyrepr.TypeName(v) + ">"
+		return "<" + anyutil.Kind(v) + ">"
 	}
 	if items, ok := dictItems(v); ok {
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for _, it := range items {
 			out.Set(it.key, eventDefault(it.val, depth+1))
 		}
@@ -150,13 +151,13 @@ func eventDefault(v any, depth int) any {
 	}
 	if vars, ok := structVars(v); ok {
 		items, _ := dictItems(vars)
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for _, it := range items {
 			out.Set(it.key, eventDefault(it.val, depth+1))
 		}
 		return out
 	}
-	return "<" + pyrepr.TypeName(v) + ">"
+	return "<" + anyutil.Kind(v) + ">"
 }
 
 // Float or its NaN and Infinity spelling
@@ -331,7 +332,7 @@ func toAttr(key string, v any) (attribute.KeyValue, bool) {
 		}
 	}
 	pkgLog().Warn(fmt.Sprintf("Invalid type %s for attribute '%s' value. Expected one of ['bool', 'str', 'bytes', 'int', 'float'] or a sequence of those types",
-		pyrepr.TypeName(v), key))
+		anyutil.Kind(v), key))
 	return attribute.KeyValue{}, false
 }
 
@@ -389,7 +390,7 @@ func validatePropagated(value any, key string) any {
 }
 
 // Span attributes propagate_attributes stamps on observations opened under the propagated trace attributes
-func propagatedAttrs(p *pyjson.Object) []attrEntry {
+func propagatedAttrs(p *jsonutil.Object) []attrEntry {
 	if p == nil {
 		return nil
 	}
@@ -407,7 +408,7 @@ func propagatedAttrs(p *pyjson.Object) []attrEntry {
 		for _, it := range items {
 			coerced, isStr := it.val.(string)
 			if !isStr {
-				coerced = pyStr(it.val)
+				coerced = anyutil.String(it.val)
 			}
 			if validPropagatedString(coerced, "metadata."+it.key) {
 				meta = append(meta, attrEntry{attrTraceMetadata + "." + it.key, coerced})
@@ -468,20 +469,20 @@ func newClient(o clientOptions) (*lfClient, error) {
 	if o.sampleRate != nil {
 		sampleRate = *o.sampleRate
 	} else if text, ok := os.LookupEnv("LANGFUSE_SAMPLE_RATE"); ok {
-		f, err := pyint.ParseFloat(text)
+		f, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
 		if err != nil {
 			return nil, err
 		}
 		sampleRate = f
 	}
 	if !(sampleRate >= 0 && sampleRate <= 1) {
-		return nil, fmt.Errorf("Sample rate must be between 0.0 and 1.0, got %s", pyrepr.Float(sampleRate))
+		return nil, fmt.Errorf("Sample rate must be between 0.0 and 1.0, got %s", strconv.FormatFloat(sampleRate, 'f', -1, 64))
 	}
 	timeoutSecs := 5
 	if text, ok := os.LookupEnv("LANGFUSE_TIMEOUT"); ok {
-		n, ok := pyint.Parse(text)
-		if !ok {
-			return nil, &pyint.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.StrRepr(text)}
+		n, err := parseIntText("LANGFUSE_TIMEOUT", text)
+		if err != nil {
+			return nil, err
 		}
 		timeoutSecs = clampInt(n)
 	}
@@ -529,15 +530,15 @@ func envOr(name, def string) string {
 func (c *lfClient) buildProvider(sampleRate float64, defaultService bool) (*sdktrace.TracerProvider, error) {
 	var flushAt, flushIntervalMs *int
 	if text, ok := os.LookupEnv("LANGFUSE_FLUSH_AT"); ok {
-		n, ok := pyint.Parse(text)
-		if !ok {
-			return nil, &pyint.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.StrRepr(text)}
+		n, err := parseIntText("LANGFUSE_FLUSH_AT", text)
+		if err != nil {
+			return nil, err
 		}
 		v := clampInt(n)
 		flushAt = &v
 	}
 	if text, ok := os.LookupEnv("LANGFUSE_FLUSH_INTERVAL"); ok {
-		f, err := pyint.ParseFloat(text)
+		f, err := strconv.ParseFloat(strings.TrimSpace(text), 64)
 		if err != nil {
 			return nil, err
 		}
@@ -693,7 +694,7 @@ type observation struct {
 }
 
 // Root observation of a trace id under a remote parent, stamped with the propagated trace attributes
-func (c *lfClient) startRoot(traceID, name, asType string, input, metadata any, propagated *pyjson.Object) *observation {
+func (c *lfClient) startRoot(traceID, name, asType string, input, metadata any, propagated *jsonutil.Object) *observation {
 	if !isHex(traceID, 32) {
 		pkgLog().Warn(fmt.Sprintf("Passed trace ID '%s' is not a valid 32 lowercase hex char Langfuse trace id. Ignoring trace ID.", traceID))
 	}
@@ -713,7 +714,7 @@ func (c *lfClient) startRoot(traceID, name, asType string, input, metadata any, 
 }
 
 // Child observation under parent, stamped with the propagated trace attributes
-func (p *observation) startChild(name, asType string, f obsFields, propagated *pyjson.Object) *observation {
+func (p *observation) startChild(name, asType string, f obsFields, propagated *jsonutil.Object) *observation {
 	if !generationLikeTypes[asType] && !spanLikeTypes[asType] {
 		pkgLog().Warn(fmt.Sprintf("Unknown observation type: %s, falling back to LangfuseSpan", asType))
 		asType = "span"

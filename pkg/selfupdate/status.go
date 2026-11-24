@@ -23,17 +23,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Shared state of one status run, the config and the deep flag
@@ -133,7 +132,7 @@ func (s *statusRun) detail(label string, value any) { s.kvIndent(label, value, "
 func (s *statusRun) kv(label string, value any) { s.kvIndent(label, value, "  ", 14) }
 
 func (s *statusRun) kvIndent(label string, value any, indent string, width int) {
-	s.println(indent, fmt.Sprintf("%-*s", width, label), pyrepr.Str(value))
+	s.println(indent, fmt.Sprintf("%-*s", width, label), anyutil.String(value))
 }
 
 // Label with a mark followed by the on or off text
@@ -173,8 +172,8 @@ func statusDict(v any) (map[string]any, bool) {
 		return t, true
 	case config.Tree:
 		return t, true
-	case *pyjson.Object:
-		return t.Vals, true
+	case *jsonutil.Object:
+		return t.Map(), true
 	}
 	return nil, false
 }
@@ -190,7 +189,7 @@ func (s *statusRun) configuredModelLabel() string {
 // First truthy value, the last value when none is
 func statusOr(values ...any) any {
 	for _, v := range values[:len(values)-1] {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -438,17 +437,17 @@ func (s *statusRun) renderGatewayRows() error {
 			if err != nil {
 				return err
 			}
-			names := append([]string{}, urls.Keys...)
+			names := append([]string{}, urls.Keys()...)
 			sort.Strings(names)
 			for _, name := range names {
-				perPlatform, ok := pyjson.AsObject(urls.Vals[name])
+				perPlatform, ok := jsonutil.AsObject(urls.Value(name))
 				if !ok {
-					return fmt.Errorf("the gateway URLs of %s are %s, expected a mapping", name, errchain.Kind(urls.Vals[name]))
+					return fmt.Errorf("the gateway URLs of %s are %s, expected a mapping", name, errchain.Kind(urls.Value(name)))
 				}
-				platforms := append([]string{}, perPlatform.Keys...)
+				platforms := append([]string{}, perPlatform.Keys()...)
 				sort.Strings(platforms)
 				for _, platform := range platforms {
-					s.kv("  "+name+"/"+platform+":", perPlatform.Vals[platform])
+					s.kv("  "+name+"/"+platform+":", perPlatform.Value(platform))
 				}
 			}
 		}
@@ -466,9 +465,9 @@ func statusIterate(v any) ([]any, bool) {
 	switch t := v.(type) {
 	case []any:
 		return t, true
-	case *pyjson.Object:
-		out := make([]any, len(t.Keys))
-		for i, k := range t.Keys {
+	case *jsonutil.Object:
+		out := make([]any, t.Len())
+		for i, k := range t.Keys() {
 			out[i] = k
 		}
 		return out, true
@@ -493,12 +492,12 @@ func statusCronSummary(h string) string {
 	if err != nil {
 		return unreadable
 	}
-	obj, ok := pyjson.AsObject(doc)
+	obj, ok := jsonutil.AsObject(doc)
 	if !ok {
 		return unreadable
 	}
 	var jobs any = []any{}
-	if raw, has := obj.Vals["jobs"]; has {
+	if raw, has := obj.Get("jobs"); has {
 		jobs = raw
 	}
 	items, ok := statusIterate(jobs)
@@ -507,12 +506,12 @@ func statusCronSummary(h string) string {
 	}
 	active := 0
 	for _, item := range items {
-		job, ok := pyjson.AsObject(item)
+		job, ok := jsonutil.AsObject(item)
 		if !ok {
 			return unreadable
 		}
-		enabled, has := job.Vals["enabled"]
-		if !has || pyrepr.Truthy(enabled) {
+		enabled, has := job.Get("enabled")
+		if !has || anyutil.IsTrue(enabled) {
 			active++
 		}
 	}
@@ -525,11 +524,11 @@ func statusLoadJSON(path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 func (s *statusRun) renderCron() error {
@@ -539,7 +538,7 @@ func (s *statusRun) renderCron() error {
 }
 
 // Open gateway sessions of the read only session database, none when it cannot be opened or read
-func statusGatewayRows(ctx context.Context, h string) (rows []*pyjson.Object) {
+func statusGatewayRows(ctx context.Context, h string) (rows []*jsonutil.Object) {
 	defer func() {
 		if recover() != nil {
 			rows = nil
@@ -565,7 +564,7 @@ func (s *statusRun) renderSessions() error {
 		s.kv("Active:", fmt.Sprintf("%d session(s)", len(gatewayRows)))
 		freshest := 0.0
 		for _, r := range gatewayRows {
-			v, err := pyint.Float(statusOr(r.Vals["last_active"], 0))
+			v, err := anyutil.ToFloat(statusOr(r.Value("last_active"), 0))
 			if err != nil {
 				return err
 			}
@@ -574,7 +573,7 @@ func (s *statusRun) renderSessions() error {
 			}
 		}
 		if freshest > 0 {
-			s.println("  Last activity:", fmt.Sprintf("%13s", pydatetime.RelativeTime(freshest, "", time.Now())))
+			s.println("  Last activity:", fmt.Sprintf("%13s", timeutil.RelativeAge(freshest, "", time.Now())))
 		}
 	} else if _, err := os.Stat(sessionsFile); err != nil {
 		s.kv("Active:", 0)
@@ -582,8 +581,8 @@ func (s *statusRun) renderSessions() error {
 		s.kv("Active:", "(error reading sessions file)")
 	} else {
 		entries := 0
-		if obj, ok := pyjson.AsObject(data); ok {
-			for _, k := range obj.Keys {
+		if obj, ok := jsonutil.AsObject(data); ok {
+			for _, k := range obj.Keys() {
 				if !strings.HasPrefix(k, "_") {
 					entries++
 				}
@@ -598,7 +597,7 @@ func (s *statusRun) renderSessions() error {
 	if capacity == nil {
 		return nil
 	}
-	var held []*pyjson.Object
+	var held []*jsonutil.Object
 	if statusRecover(func() error {
 		var err error
 		held, err = activesessions.RegistrySnapshot(s.ctx, s.h, false)
@@ -612,7 +611,7 @@ func (s *statusRun) renderSessions() error {
 	}
 	s.kv("Slots:", s.c.Color(fmt.Sprintf("%d/%s in use", len(held), capacity.String()), style))
 	now := float64(time.Now().UnixNano()) / 1e9
-	startedAt := func(e *pyjson.Object) (float64, error) { return pyint.Float(statusOr(e.Vals["started_at"], 0)) }
+	startedAt := func(e *jsonutil.Object) (float64, error) { return anyutil.ToFloat(statusOr(e.Value("started_at"), 0)) }
 	keys := make([]float64, len(held))
 	for i, e := range held {
 		k, err := startedAt(e)
@@ -628,13 +627,13 @@ func (s *statusRun) renderSessions() error {
 	sort.SliceStable(order, func(a, b int) bool { return keys[order[a]] < keys[order[b]] })
 	for _, i := range order {
 		entry := held[i]
-		started, err := pyint.Float(statusOr(entry.Vals["started_at"], now))
+		started, err := anyutil.ToFloat(statusOr(entry.Value("started_at"), now))
 		if err != nil {
 			return err
 		}
 		age := activesessions.FormatAge(now - started)
-		s.println("                ", fmt.Sprintf("%-17s", pyrepr.Str(statusOr(entry.Vals["surface"], "unknown"))), " ",
-			fmt.Sprintf("%-24s", pyrepr.Str(statusOr(entry.Vals["session_id"], "?"))), " ", age)
+		s.println("                ", fmt.Sprintf("%-17s", anyutil.String(statusOr(entry.Value("surface"), "unknown"))), " ",
+			fmt.Sprintf("%-24s", anyutil.String(statusOr(entry.Value("session_id"), "?"))), " ", age)
 	}
 	return nil
 }
@@ -648,14 +647,14 @@ func (s *statusRun) renderDeep() error {
 		req, err := http.NewRequestWithContext(s.ctx, http.MethodGet, home.OpenRouterModelsURL, nil)
 		if err == nil {
 			req.Header.Set("Authorization", "Bearer "+key)
-			var resp *pyhttpx.Response
-			resp, err = pyhttpx.Do(pyhttpx.PlainClient(false), req, 10*time.Second)
+			var resp *httputil.Response
+			resp, err = httputil.Do(httputil.Client(false), req, httputil.EachPhase(10*time.Second))
 			if err == nil {
 				s.kvFlag("OpenRouter:", resp.StatusCode == 200, "reachable", fmt.Sprintf("error (%d)", resp.StatusCode))
 			}
 		}
 		if err != nil {
-			s.kv("OpenRouter:", s.checkMark(false)+" error: "+pyhttpx.ErrorText(err))
+			s.kv("OpenRouter:", s.checkMark(false)+" error: "+err.Error())
 		}
 	}
 	conn, err := net.DialTimeout("tcp", "127.0.0.1:18789", time.Second)
@@ -714,7 +713,7 @@ func (s *statusRun) authenticatedProviderNames() ([]string, error) {
 		if !has {
 			return nil, errors.New("an authenticated provider row has no name")
 		}
-		out = append(out, pyrepr.Str(name))
+		out = append(out, anyutil.String(name))
 	}
 	return out, nil
 }
@@ -805,9 +804,9 @@ func (s *statusRun) sections() []func() error {
 
 // One screen summary by default, every section under the full or deep flag
 func ShowStatus(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error) {
-	s := &statusRun{ctx: ctx, h: h, w: w, c: &cliui.Console{Out: w}, deep: pyrepr.Truthy(ns["deep"]), config: map[string]any{}}
+	s := &statusRun{ctx: ctx, h: h, w: w, c: &cliui.Console{Out: w}, deep: anyutil.IsTrue(ns["deep"]), config: map[string]any{}}
 	renders := []func() error{s.renderSummary}
-	if pyrepr.Truthy(ns["full"]) || s.deep {
+	if anyutil.IsTrue(ns["full"]) || s.deep {
 		renders = s.sections()
 	}
 	for _, render := range renders {

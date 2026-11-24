@@ -3,8 +3,8 @@ package agent
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Real agent bound to a real session store with the early flush bookkeeping of a fresh session
@@ -18,7 +18,7 @@ func earlyFlushAgent(t *testing.T, sid string) (*AIAgent, *state.SessionDB) {
 	return a, db
 }
 
-func storedRows(t *testing.T, db *state.SessionDB, sid string) []*pyjson.Object {
+func storedRows(t *testing.T, db *state.SessionDB, sid string) []*jsonutil.Object {
 	t.Helper()
 	rows, err := db.GetMessages(t.Context(), sid, state.GetMessagesOptions{})
 	if err != nil {
@@ -38,7 +38,7 @@ func intLike(v any) (int64, bool) {
 	return 0, false
 }
 
-func rowField(row *pyjson.Object, key string) any {
+func rowField(row *jsonutil.Object, key string) any {
 	v, _ := row.Get(key)
 	return v
 }

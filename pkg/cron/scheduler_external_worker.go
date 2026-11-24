@@ -18,14 +18,14 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -241,8 +241,8 @@ func (s *Store) launchExternalCronWorker(ctx context.Context, job *Job) (bool, e
 				return waitOn(payloadPath, stderrPath)
 			}
 			ackPID, _ := ack.Get("pid")
-			s.log.Info(fmt.Sprintf("Cron job '%s' handed to restart-safe worker pid=%s execution=%s dispatch=%s", jobID, pyrepr.Str(ackPID), executionID, dispatch.Mode))
-			if !pyTruthy(ackPID) {
+			s.log.Info(fmt.Sprintf("Cron job '%s' handed to restart-safe worker pid=%s execution=%s dispatch=%s", jobID, anyutil.String(ackPID), executionID, dispatch.Mode))
+			if !anyutil.IsTrue(ackPID) {
 				ackPID = pid
 			}
 			s.recordExternalCronWorker(jobID, ackPID, dispatch.Mode == "scoped")
@@ -349,16 +349,16 @@ func spawnExternalWorker(argv []string, dir string, env map[string]string, stder
 }
 
 // Acknowledgement object the worker published, read as utf-8-sig, an error when it is not valid JSON
-func readWorkerAck(path string) (*pyjson.Object, error) {
+func readWorkerAck(path string) (*jsonutil.Object, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	v, err := pyjson.LoadsBytes(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
+	v, err := jsonutil.Decode(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf")))
 	if err != nil {
 		return nil, err
 	}
-	obj, _ := v.(*pyjson.Object)
+	obj, _ := v.(*jsonutil.Object)
 	return obj, nil
 }
 
@@ -502,17 +502,17 @@ func loadWorkerPayload(path string) (*Job, string, bool, string, *string, error)
 	if err != nil {
 		return nil, "", false, "", nil, err
 	}
-	profileHome, err := pypath.Realpath(pyrepr.Str(homeValue), pypath.Lax)
+	profileHome, err := pathutil.Resolve(anyutil.String(homeValue))
 	if err != nil {
 		return nil, "", false, "", nil, err
 	}
-	executionID := pyrepr.Str(execValue)
+	executionID := anyutil.String(execValue)
 	job.ExecutionID = &executionID
 	var extra *string
 	if text, ok := payload["extra_prompt"].(string); ok {
 		extra = &text
 	}
-	return job, profileHome, pyTruthy(payload["multiplex_active"]), executionID, extra, nil
+	return job, profileHome, anyutil.IsTrue(payload["multiplex_active"]), executionID, extra, nil
 }
 
 // Writes the acknowledgement to a temp sibling and renames it so readers see it absent or whole

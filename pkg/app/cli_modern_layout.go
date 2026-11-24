@@ -5,13 +5,12 @@ import (
 	"fmt"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync/atomic"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
@@ -60,14 +59,14 @@ func modernFg(hexColor string, bold bool) string {
 	digits := strings.TrimLeft(hexColor, "#")
 	var rgb [3]string
 	for i, start := range []int{0, 2, 4} {
-		n, ok := pyint.ParseBase(textutil.Between(digits, start, start+2), 16)
-		if !ok {
+		n, err := strconv.ParseUint(textutil.Between(digits, start, start+2), 16, 8)
+		if err != nil {
 			if bold {
 				return modernBold
 			}
 			return ""
 		}
-		rgb[i] = n.String()
+		rgb[i] = strconv.FormatUint(n, 10)
 	}
 	prefix := ""
 	if bold {
@@ -217,14 +216,14 @@ func displayPath(path string) string {
 	if strings.HasPrefix(path, "//") {
 		path = path[1:]
 	}
-	if !pypath.IsAbs(path) {
+	if !filepath.IsAbs(path) {
 		return path
 	}
-	base, err := pypath.Abspath(localFolder())
+	base, err := filepath.Abs(localFolder())
 	if err != nil {
 		return path
 	}
-	rel, err := filepath.Rel(base, pypath.Normpath(path))
+	rel, err := filepath.Rel(base, filepath.Clean(path))
 	if err != nil {
 		return path
 	}

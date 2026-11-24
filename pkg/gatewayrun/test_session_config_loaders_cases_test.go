@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const configLoadersConfig = "platform_toolsets: {cli: []}\n" +
@@ -32,9 +31,9 @@ type configLoadersOwner struct {
 	built     *agent.AIAgentOptions
 }
 
-func (o *configLoadersOwner) dispatch(t *testing.T, id, method string, params *pyjson.Object) *pyjson.Object {
+func (o *configLoadersOwner) dispatch(t *testing.T, id, method string, params *jsonutil.Object) *jsonutil.Object {
 	t.Helper()
-	response, err := o.owner.Dispatch(o.ctx, pyjson.ObjectOf("id", id, "method", method, "params", params))
+	response, err := o.owner.Dispatch(o.ctx, jsonutil.ObjectOf("id", id, "method", method, "params", params))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +41,7 @@ func (o *configLoadersOwner) dispatch(t *testing.T, id, method string, params *p
 	if !ok {
 		t.Fatalf("%s answered %s", method, picksDump(response))
 	}
-	out, _ := result.(*pyjson.Object)
+	out, _ := result.(*jsonutil.Object)
 	return out
 }
 
@@ -82,7 +81,7 @@ func newConfigLoadersOwner(t *testing.T) *configLoadersOwner {
 		runner.sessionStore.CloseAllDBHandles()
 	})
 	o.runner, o.authority, o.owner = runner, authority, owner
-	created := o.dispatch(t, "c", "session.create", pyjson.ObjectOf("request_id", "bg", "source", "cli", "cwd", home, "toolsets", []any{}))
+	created := o.dispatch(t, "c", "session.create", jsonutil.ObjectOf("request_id", "bg", "source", "cli", "cwd", home, "toolsets", []any{}))
 	sid, _ := created.Get("session_id")
 	o.sid, _ = sid.(string)
 	return o
@@ -117,8 +116,8 @@ func TestInProcessTurnRoutesWithTheSessionsOwnProviderRouting(t *testing.T) {
 
 func TestBgSideAgentUsesTheSessionsProviderRouting(t *testing.T) {
 	o := newConfigLoadersOwner(t)
-	o.dispatch(t, "r", "session.resume", pyjson.ObjectOf("session_id", o.sid))
-	reply := o.dispatch(t, "b", "prompt.background", pyjson.ObjectOf("session_id", o.sid, "text", "BG"))
+	o.dispatch(t, "r", "session.resume", jsonutil.ObjectOf("session_id", o.sid))
+	reply := o.dispatch(t, "b", "prompt.background", jsonutil.ObjectOf("session_id", o.sid, "text", "BG"))
 	taskID, _ := reply.Get("task_id")
 	if text, _ := taskID.(string); !strings.HasPrefix(text, "bg_") {
 		t.Fatalf("background reply %s", picksDump(reply))

@@ -6,9 +6,11 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -18,15 +20,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const matrixVoiceWaveformBins = 30
@@ -48,7 +47,7 @@ var runMediaTool = func(cmd []string, timeout time.Duration) (mediaToolResult, e
 	c.Stderr = &bytes.Buffer{}
 	err := c.Run()
 	if ctx.Err() != nil {
-		return mediaToolResult{}, fmt.Errorf("Command %s timed out after %v seconds", pyrepr.Repr(cmd), timeout.Seconds())
+		return mediaToolResult{}, fmt.Errorf("Command %s timed out after %v seconds", anyutil.Quote(cmd), timeout.Seconds())
 	}
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -80,7 +79,7 @@ func matrixVoiceMetadataForFile(path string) map[string]any {
 			if text == "" {
 				text = "0"
 			}
-			duration, perr := pyint.ParseFloat(text)
+			duration, perr := strconv.ParseFloat(strings.TrimSpace(text), 64)
 			if perr != nil {
 				err = perr
 			} else if duration > 0 {
@@ -368,7 +367,7 @@ func utf8Len(text string) int { return len(text) }
 
 // Size of event content as the homeserver counts it, compact JSON without ASCII escaping
 func contentBytes(content map[string]any) int {
-	out, err := pyjson.Dumps(content, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+	out, err := jsonutil.Encode(content)
 	if err != nil {
 		return 0
 	}
@@ -412,15 +411,14 @@ func looksLikeTransportFilename(text string, mimePrefixes []string, exts map[str
 	if rejectSpaces && strings.ContainsFunc(candidate, unicode.IsSpace) {
 		return false
 	}
-	if pypath.PathName(candidate) != candidate {
+	if pathutil.Name(candidate) != candidate {
 		return false
 	}
-	suffix := strings.ToLower(pypath.PathSuffix(candidate))
+	suffix := strings.ToLower(pathutil.Suffix(candidate))
 	if suffix == "" {
 		return false
 	}
-	guessed, _, _ := pymimetypes.GuessType(candidate, true)
-	if guessed != "" {
+	if guessed := mimeutil.TypeByName(candidate); guessed != "" {
 		for _, p := range mimePrefixes {
 			if strings.HasPrefix(guessed, p) {
 				return true
@@ -455,8 +453,8 @@ func matrixEventTimestampSeconds(ts int64) float64 {
 // Canonical E2EE mode of a configured value, required, optional or off
 func normalizeE2EEMode(value any) string {
 	raw := ""
-	if pyTruthy(value) {
-		raw = strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	if anyutil.IsTrue(value) {
+		raw = strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 	}
 	switch raw {
 	case "required", "require", "true", "1", "yes", "on":
@@ -470,18 +468,18 @@ func normalizeE2EEMode(value any) string {
 // E2EE mode from config or env, the legacy encryption flag meaning required
 func resolveE2EEMode(ctx context.Context, extra map[string]any) string {
 	explicit := extra["e2ee_mode"]
-	if !pyTruthy(explicit) {
+	if !anyutil.IsTrue(explicit) {
 		secret, _ := gateway.GetScopedSecret(ctx, "MATRIX_E2EE_MODE", "", false)
 		explicit = secret
 	}
-	if pyTruthy(explicit) {
+	if anyutil.IsTrue(explicit) {
 		return normalizeE2EEMode(explicit)
 	}
 	legacy, ok := extra["encryption"]
 	if !ok {
 		legacy = envTruthy(ctx, "MATRIX_ENCRYPTION", "")
 	}
-	if pyTruthy(legacy) {
+	if anyutil.IsTrue(legacy) {
 		return "required"
 	}
 	return "off"
@@ -499,8 +497,8 @@ func envTruthy(ctx context.Context, name, def string) bool {
 
 // Scoped env value as a float, the default when it does not parse
 func envFloat(ctx context.Context, name string, def float64) float64 {
-	v, _ := gateway.GetScopedSecret(ctx, name, pyrepr.Str(def), false)
-	f, err := pyint.ParseFloat(v)
+	v, _ := gateway.GetScopedSecret(ctx, name, strconv.FormatFloat(def, 'f', -1, 64), false)
+	f, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
 	if err != nil {
 		return def
 	}
@@ -509,8 +507,8 @@ func envFloat(ctx context.Context, name string, def float64) float64 {
 
 // Scoped env value as an int, the default when it does not parse
 func envInt(ctx context.Context, name string, def int64) int64 {
-	v, _ := gateway.GetScopedSecret(ctx, name, pyrepr.Str(def), false)
-	n, err := pyint.Int64(v)
+	v, _ := gateway.GetScopedSecret(ctx, name, strconv.FormatInt(def, 10), false)
+	n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
 	if err != nil {
 		return def
 	}
@@ -524,7 +522,7 @@ func threadRoot(relatesTo map[string]any) string {
 			return s
 		}
 		if v := relatesTo["event_id"]; v != nil {
-			return pyrepr.Str(v)
+			return anyutil.String(v)
 		}
 	}
 	return ""
@@ -534,7 +532,7 @@ func threadRoot(relatesTo map[string]any) string {
 func recoveryKeyOutputPath(ctx context.Context) string {
 	v, _ := gateway.GetScopedSecret(ctx, "MATRIX_RECOVERY_KEY_OUTPUT_FILE", "", false)
 	if out := strings.TrimSpace(v); out != "" {
-		return pypath.Expanduser(out)
+		return pathutil.ExpandUser(out)
 	}
 	return ""
 }
@@ -572,7 +570,7 @@ func getMatrixRecoveryKeyOutputTarget(ctx context.Context) (string, string) {
 		return "", "exists"
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
-		return "", "unusable: " + pypath.OSErrorText(err)
+		return "", "unusable: " + err.Error()
 	}
 	return path, ""
 }
@@ -589,7 +587,7 @@ func handleGeneratedMatrixRecoveryKey(ctx context.Context, mxid, recoveryKey str
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Matrix: bootstrapped cross-signing for %s, but failed to write "+
 			"MATRIX_RECOVERY_KEY_OUTPUT_FILE: %s. Store the generated key "+
-			"securely and set MATRIX_RECOVERY_KEY for future restarts.", mxid, pypath.OSErrorText(err)))
+			"securely and set MATRIX_RECOVERY_KEY for future restarts.", mxid, err.Error()))
 		return
 	}
 	if outputPath != "" {
@@ -637,30 +635,31 @@ func latexToTokens(text string) (string, []texEntry) {
 }
 
 // Sentinel tokens expanded into data-mx-maths markup with the TeX escaped, unknown tokens kept verbatim
-func tokensToMxMaths(html string, store []texEntry) string {
-	return reSub(texTokenRE, html, func(m regexp2.Match) string {
-		idx, err := pyint.Int64(group(m, 1))
+func tokensToMxMaths(markup string, store []texEntry) string {
+	return reSub(texTokenRE, markup, func(m regexp2.Match) string {
+		idx, err := strconv.ParseInt(group(m, 1), 10, 64)
 		if err != nil || idx >= int64(len(store)) {
 			return m.String()
 		}
 		entry := store[idx]
-		escaped := htmlEscape(entry.tex, true)
+		escaped := html.EscapeString(entry.tex)
 		return fmt.Sprintf(`<%s data-mx-maths="%s">%s</%s>`, entry.tag, escaped, escaped, entry.tag)
 	})
 }
 
-// URL with query and fragment removed for logging signed media links
+// URL with user info, query and fragment removed for logging signed media links
 func redactURLForLog(raw string) string {
-	parts, err := pyurl.Split(raw)
+	parts, err := urlutil.Split(raw)
 	if err != nil {
 		return "<url>"
 	}
-	if parts.Scheme == "" && parts.Netloc == "" {
+	if parts.Scheme == "" && parts.Authority == "" {
 		s, _, _ := strings.Cut(raw, "?")
 		s, _, _ = strings.Cut(s, "#")
 		return s
 	}
-	return pyurl.Unsplit(pyurl.URL{Scheme: parts.Scheme, Netloc: parts.Netloc, Path: parts.Path})
+	authority := parts.Authority[strings.LastIndexByte(parts.Authority, '@')+1:]
+	return urlutil.Parts{Scheme: parts.Scheme, Authority: authority, Path: parts.Path}.String()
 }
 
 var (
@@ -691,27 +690,4 @@ func ensureMatrixDeps(ctx context.Context) (bool, error) {
 		pkgLog().Warn(fmt.Sprintf("Matrix: E2EE optional but dependencies are missing. %s", e2eeInstallHint))
 	}
 	return true, nil
-}
-
-// Python truthiness of a config or JSON value
-func pyTruthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case string:
-		return x != ""
-	case float64:
-		return x != 0
-	case int:
-		return x != 0
-	case int64:
-		return x != 0
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	return true
 }

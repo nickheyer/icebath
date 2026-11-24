@@ -6,12 +6,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Notify subscriptions of a task on the default board
-func listSubsForTask(t *testing.T, taskID string) []*pyjson.Object {
+func listSubsForTask(t *testing.T, taskID string) []*jsonutil.Object {
 	t.Helper()
 	conn := mustConnect(t, "", nil)
 	defer conn.Close()

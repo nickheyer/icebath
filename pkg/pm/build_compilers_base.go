@@ -6,7 +6,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Executable a command resolves to on a search path the way shutil which finds it, nil path meaning PATH
@@ -68,7 +68,7 @@ func whichOn(cmd string, path *string) string {
 		}
 		seen[norm] = true
 		for _, file := range files {
-			name := pypath.Join(dir, file)
+			name := pathutil.Join(dir, file)
 			if dir == "" {
 				name = file
 			}

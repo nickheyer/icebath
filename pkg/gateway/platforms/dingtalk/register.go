@@ -6,10 +6,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Out of process delivery through the static robot webhook, the per session webhooks being out of reach of cron
@@ -21,17 +20,17 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if pconfig != nil {
 		webhookURL = pconfig.Extra["webhook_url"]
 	}
-	if !pyrepr.Truthy(webhookURL) {
+	if !anyutil.IsTrue(webhookURL) {
 		scoped, err := gateway.GetScopedSecret(ctx, "DINGTALK_WEBHOOK_URL", "", false)
 		if err != nil {
 			return nil, err
 		}
 		webhookURL = scoped
 	}
-	if !pyrepr.Truthy(webhookURL) {
+	if !anyutil.IsTrue(webhookURL) {
 		return gateway.SendError("DingTalk not configured. Set DINGTALK_WEBHOOK_URL env var or webhook_url in dingtalk platform extra config."), nil
 	}
-	target := pyrepr.Str(webhookURL)
+	target := anyutil.String(webhookURL)
 	sendFailed := func(err error, text string) map[string]any {
 		return gateway.SendError("DingTalk send failed: " + cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(target)), text))
 	}
@@ -39,31 +38,30 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return sendFailed(err, pyrepr.ExceptionMessage(err)), nil
+		return sendFailed(err, err.Error()), nil
 	}
 	client := gateway.LimitedHTTPClient(gateway.DefaultHTTPXLimits(), false)
 	defer client.CloseIdleConnections()
-	resp, err := postJSON(ctx, client, target, pyjson.ObjectOf("msgtype", "text", "text", pyjson.ObjectOf("content", message)), 30*time.Second)
+	resp, err := postJSON(ctx, client, target, jsonutil.ObjectOf("msgtype", "text", "text", jsonutil.ObjectOf("content", message)), 30*time.Second)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return sendFailed(err, pyhttpx.ErrorText(err)), nil
+		return sendFailed(err, err.Error()), nil
 	}
-	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		text := resp.StatusErrorText(resp.URL)
-		return sendFailed(&gateway.PyError{Kind: "HTTPStatusError", Msg: text}, text), nil
+	if err := resp.CheckStatus(); err != nil {
+		return sendFailed(err, err.Error()), nil
 	}
 	parsed, err := resp.JSON()
 	if err != nil {
 		return failed(err)
 	}
-	data, ok := parsed.(*pyjson.Object)
+	data, ok := parsed.(*jsonutil.Object)
 	if !ok {
-		return failed(attributeError(parsed, "get"))
+		return failed(kindError("send answer", "an object", parsed))
 	}
-	if errcode := data.GetOr("errcode", int64(0)); !pyrepr.Equal(errcode, int64(0)) {
-		return gateway.SendError("DingTalk API error: " + pyrepr.Str(data.GetOr("errmsg", "unknown"))), nil
+	if errcode := data.ValueOr("errcode", int64(0)); !anyutil.Equal(errcode, int64(0)) {
+		return gateway.SendError("DingTalk API error: " + anyutil.String(data.ValueOr("errmsg", "unknown"))), nil
 	}
 	return map[string]any{"success": true, "platform": "dingtalk", "chat_id": chatID}, nil
 }
@@ -78,7 +76,7 @@ func isConnected(ctx context.Context, config *gateway.PlatformConfig) (bool, err
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(clientID) && pyrepr.Truthy(clientSecret), nil
+	return anyutil.IsTrue(clientID) && anyutil.IsTrue(clientSecret), nil
 }
 
 // DingTalk platform plugin compiled into the binary under the bundled platforms/dingtalk key

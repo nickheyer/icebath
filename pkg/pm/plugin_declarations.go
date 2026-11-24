@@ -12,7 +12,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // PluginManifestHost is the plugin manifest surface pkg/plugins installs at init, a package pm cannot import
@@ -182,10 +182,10 @@ func ManifestVersionError(manifest map[string]any, name string) (string, error) 
 		return "", err
 	}
 	if !valid {
-		return fmt.Sprintf("Plugin '%s' has invalid manifest_version '%s' (expected an integer).", name, pyrepr.Str(version)), nil
+		return fmt.Sprintf("Plugin '%s' has invalid manifest_version '%s' (expected an integer).", name, anyutil.String(version)), nil
 	}
 	if parsed.Cmp(big.NewInt(int64(host.SupportedManifestVersion))) > 0 {
-		return fmt.Sprintf("Plugin '%s' requires manifest_version %s, but this installer only supports up to %d.", name, pyrepr.Str(version), host.SupportedManifestVersion), nil
+		return fmt.Sprintf("Plugin '%s' requires manifest_version %s, but this installer only supports up to %d.", name, anyutil.String(version), host.SupportedManifestVersion), nil
 	}
 	return "", nil
 }
@@ -214,8 +214,8 @@ func newPythonDeclaration(d PythonDeclaration) (*PythonDeclaration, error) {
 func (d *PythonDeclaration) External() bool {
 	value := d.Manifest["python_runtime"]
 	text := ""
-	if pyrepr.Truthy(value) {
-		text = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		text = anyutil.String(value)
 	}
 	return strings.ToLower(strings.TrimSpace(text)) == "external"
 }

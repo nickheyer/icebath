@@ -8,8 +8,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Placement values the screen resolves to
@@ -69,8 +69,8 @@ func placementSetting(env *tools.Env) (string, error) {
 		return "", err
 	}
 	value := "auto"
-	if raw := cfg["placement"]; pyrepr.Truthy(raw) {
-		value = strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
+	if raw := cfg["placement"]; anyutil.IsTrue(raw) {
+		value = strings.ToLower(strings.TrimSpace(anyutil.String(raw)))
 	}
 	if value == "auto" || value == Terminal || value == Gateway {
 		return value, nil
@@ -84,8 +84,8 @@ func terminalBackend(env *tools.Env) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if raw := cfg["env_type"]; pyrepr.Truthy(raw) {
-		return pyrepr.Str(raw), nil
+	if raw := cfg["env_type"]; anyutil.IsTrue(raw) {
+		return anyutil.String(raw), nil
 	}
 	return "local", nil
 }

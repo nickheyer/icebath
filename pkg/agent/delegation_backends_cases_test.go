@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Plugin services carrying the delegation provider registry the plugin manager registers into
@@ -69,8 +69,8 @@ func dbRecord(t *testing.T) *dbRecorded {
 		model, _ := spec.Model.(string)
 		return &AIAgent{model: model, delegateRole: "leaf"}, nil
 	}
-	runSingleChildFn = func(_ context.Context, taskIndex int, _ string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
-		return pyjson.ObjectOf("task_index", taskIndex, "status", "completed", "summary", "ok", "api_calls", 1, "duration_seconds", 0)
+	runSingleChildFn = func(_ context.Context, taskIndex int, _ string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
+		return jsonutil.ObjectOf("task_index", taskIndex, "status", "completed", "summary", "ok", "api_calls", 1, "duration_seconds", 0)
 	}
 	t.Cleanup(func() { buildChildAgentFn, runSingleChildFn = prevBuild, prevRun })
 	return rec
@@ -113,17 +113,17 @@ func dbJSON(t *testing.T, v any) string {
 // Go provider standing in for the test classes with one route rule
 type dbProvider struct {
 	name   string
-	params *pyjson.Object
+	params *jsonutil.Object
 	route  func(task, config map[string]any) (map[string]any, error)
 }
 
-func (p *dbProvider) Name() string                                 { return p.name }
-func (p *dbProvider) DisplayName() string                          { return p.name }
-func (p *dbProvider) GetSetupSchema() map[string]any               { return map[string]any{} }
-func (p *dbProvider) Summary() string                              { return "" }
-func (p *dbProvider) IsAvailable() bool                            { return true }
-func (p *dbProvider) Description(map[string]any) string            { return "" }
-func (p *dbProvider) TaskParameters(map[string]any) *pyjson.Object { return p.params }
+func (p *dbProvider) Name() string                                   { return p.name }
+func (p *dbProvider) DisplayName() string                            { return p.name }
+func (p *dbProvider) GetSetupSchema() map[string]any                 { return map[string]any{} }
+func (p *dbProvider) Summary() string                                { return "" }
+func (p *dbProvider) IsAvailable() bool                              { return true }
+func (p *dbProvider) Description(map[string]any) string              { return "" }
+func (p *dbProvider) TaskParameters(map[string]any) *jsonutil.Object { return p.params }
 func (p *dbProvider) RouteTask(task, config map[string]any) (map[string]any, error) {
 	return p.route(task, config)
 }
@@ -149,7 +149,7 @@ func TestRouteTaskAlwaysSeesTheCoreTaskPosition(t *testing.T) {
 	dbRealRegistry(t)
 	var mu sync.Mutex
 	var seen []any
-	positional := &dbProvider{name: "positional", params: pyjson.ObjectOf("index", pyjson.ObjectOf("type", "integer")),
+	positional := &dbProvider{name: "positional", params: jsonutil.ObjectOf("index", jsonutil.ObjectOf("type", "integer")),
 		route: func(task, _ map[string]any) (map[string]any, error) {
 			mu.Lock()
 			seen = append(seen, task["index"])
@@ -210,7 +210,7 @@ func TestRuntimeWithZeroPluginsLoadedStillDelegatesOnTheBundledDefault(t *testin
 }
 
 func TestAReplacementDefaultStrategyGetsTheFullRouteContract(t *testing.T) {
-	replacement := &dbProvider{name: "default", params: pyjson.NewObject(),
+	replacement := &dbProvider{name: "default", params: jsonutil.NewObject(),
 		route: func(map[string]any, map[string]any) (map[string]any, error) {
 			return map[string]any{"base_url": "https://chatgpt.com/backend-api/codex", "api_key": "k", "model": "gpt-6-astra",
 				"service_tier": "fast", "label": "codex-fast"}, nil

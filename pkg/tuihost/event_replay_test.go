@@ -3,28 +3,28 @@ package tuihost
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Event frame of a session with an empty payload
-func replayFrameOf(sid, etype string) *pyjson.Object {
-	return pyjson.ObjectOf("jsonrpc", "2.0", "method", "event",
-		"params", pyjson.ObjectOf("type", etype, "session_id", sid, "payload", pyjson.NewObject()))
+func replayFrameOf(sid, etype string) *jsonutil.Object {
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event",
+		"params", jsonutil.ObjectOf("type", etype, "session_id", sid, "payload", jsonutil.NewObject()))
 }
 
-func replayParams(frame *pyjson.Object) *pyjson.Object {
-	return frame.GetOr("params", nil).(*pyjson.Object)
+func replayParams(frame *jsonutil.Object) *jsonutil.Object {
+	return frame.ValueOr("params", nil).(*jsonutil.Object)
 }
 
-func replaySeqs(events []*pyjson.Object) []int {
+func replaySeqs(events []*jsonutil.Object) []int {
 	out := []int{}
 	for _, event := range events {
-		out = append(out, event.GetOr("seq", nil).(int))
+		out = append(out, event.ValueOr("seq", nil).(int))
 	}
 	return out
 }
 
-func replayStat(key string) int { return ReplayStats().GetOr(key, nil).(int) }
+func replayStat(key string) int { return ReplayStats().ValueOr(key, nil).(int) }
 
 // Restores a patched ring bound when the case ends
 func patchReplayBound(t *testing.T, bound *int, value int) {
@@ -35,7 +35,7 @@ func patchReplayBound(t *testing.T, bound *int, value int) {
 }
 
 // Buffer occupancy for the ops and debug surface
-func ReplayStats() *pyjson.Object {
+func ReplayStats() *jsonutil.Object {
 	replay.Lock()
 	defer replay.Unlock()
 	drainReleasedLocked()
@@ -43,7 +43,7 @@ func ReplayStats() *pyjson.Object {
 	for e := replay.order.Front(); e != nil; e = e.Next() {
 		events += len(e.Value.(*replayRing).frames)
 	}
-	return pyjson.ObjectOf("sessions", len(replay.buffers), "events", events, "bytes", replay.totalBytes,
+	return jsonutil.ObjectOf("sessions", len(replay.buffers), "events", events, "bytes", replay.totalBytes,
 		"max_per_session", replayBufferMax, "max_bytes_per_session", replayBufferBytesMax,
 		"max_bytes_process", replayProcessBytesMax)
 }

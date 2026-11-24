@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Handler runs one tool call and returns the JSON string result shown to the model
@@ -23,7 +23,7 @@ type Def struct {
 	Name    string
 	Toolset string
 	// OpenAI function schema with name, description, and parameters in definition order
-	Schema      *pyjson.Object
+	Schema      *jsonutil.Object
 	Handler     Handler
 	Check       func(env *Env) bool
 	RequiresEnv []string
@@ -32,12 +32,12 @@ type Def struct {
 	// Zero means the global tool output limit applies
 	MaxResultChars int
 	// Merged over Schema at every definition read so limits in descriptions stay current
-	DynamicSchema func(env *Env) *pyjson.Object
+	DynamicSchema func(env *Env) *jsonutil.Object
 	Timeout       time.Duration
 	Override      bool
 	Plugin        string
 	// Builds Schema on the first registry read when Schema is nil, deferring config reads past init
-	SchemaBuilder func() *pyjson.Object
+	SchemaBuilder func() *jsonutil.Object
 	schemaOnce    *sync.Once
 }
 
@@ -162,7 +162,7 @@ func (e *Env) Emit(ev Event) {
 
 // JSON encodes a tool result as json.dumps does with ensure_ascii off and its default separators
 func JSON(v any) string {
-	b, err := pyjson.EncodeWTF8Python(v)
+	b, err := jsonutil.Append(nil, v)
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -171,7 +171,7 @@ func JSON(v any) string {
 
 // JSONASCII encodes a tool result as json.dumps does with every default, non ASCII text escaped
 func JSONASCII(v any) string {
-	b, err := pyjson.EncodeWTF8PythonASCII(v)
+	b, err := jsonutil.Append(nil, v, jsonutil.ASCII())
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -179,11 +179,11 @@ func JSONASCII(v any) string {
 }
 
 // Dict builds a Python dict from alternating keys and values, kept in the order given
-func Dict(kv ...any) *pyjson.Object { return pyjson.ObjectOf(kv...) }
+func Dict(kv ...any) *jsonutil.Object { return jsonutil.ObjectOf(kv...) }
 
 // ErrorResult formats an error as the JSON object the model reads
 func ErrorResult(err error) string {
-	b, _ := pyjson.EncodeWTF8Python(Dict("error", err.Error()))
+	b, _ := jsonutil.Append(nil, Dict("error", err.Error()))
 	return string(b)
 }
 
@@ -233,7 +233,7 @@ func (d *Def) resolveSchema() *Def {
 			panic("tools: " + err.Error())
 		}
 		d.Schema = schema
-		if s, ok := schema.Vals["description"].(string); ok && d.Description == "" {
+		if s, ok := schema.Value("description").(string); ok && d.Description == "" {
 			d.Description = s
 		}
 	})
@@ -245,7 +245,7 @@ func (d *Def) SchemaMap() map[string]any {
 	if d == nil || d.Schema == nil {
 		return nil
 	}
-	m, _ := pyjson.Plain(d.Schema).(map[string]any)
+	m, _ := jsonutil.Plain(d.Schema).(map[string]any)
 	return m
 }
 

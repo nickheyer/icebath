@@ -12,16 +12,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Python class name of an error, the kind of a pyint error first
 func pyErrorClass(err error) string {
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	if errors.As(err, &pe) && pe.Kind != "" {
 		return pe.Kind
 	}
@@ -41,7 +41,7 @@ func quietBool(fn func() bool) (out bool) {
 // Manager error reply prefixed for the command when the error class is one the command answers, else the error itself
 func mgrCallError(prefix string, err error, classes ...string) (string, error) {
 	if slices.Contains(classes, pyErrorClass(err)) {
-		return prefix + ": " + pyrepr.ExceptionMessage(err), nil
+		return prefix + ": " + err.Error(), nil
 	}
 	return "", err
 }
@@ -85,7 +85,7 @@ func (r *GatewayRunner) handleGoalCommand(ctx context.Context, event *gateway.Me
 func (r *GatewayRunner) clearGoalContinuations(ctx context.Context, event *gateway.MessageEvent, verb string) {
 	adapter, quickKey, err := r.adapterAndKeyFor(ctx, event)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("goal %s: pending continuation cleanup failed: %s", verb, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("goal %s: pending continuation cleanup failed: %s", verb, err.Error()))
 		return
 	}
 	if adapter != nil && quickKey != "" {
@@ -105,7 +105,7 @@ func (r *GatewayRunner) enqueueGoalTurn(ctx context.Context, event *gateway.Mess
 	}
 	adapter, quickKey, err := r.adapterAndKeyFor(ctx, event)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("goal %s failed: %s", label, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("goal %s failed: %s", label, err.Error()))
 		return
 	}
 	if text == "" || adapter == nil || quickKey == "" {
@@ -271,7 +271,7 @@ func (r *GatewayRunner) handleLoopCommand(ctx context.Context, event *gateway.Me
 		return i18n.T(ctx, "gateway.loop.no_session", "", nil), nil
 	}
 	mgr := agent.NewLoopManager(ctx, sid)
-	route := pyjson.NewObject()
+	route := jsonutil.NewObject()
 	if src := event.Source; src != nil {
 		for _, kv := range [][2]string{{"platform", string(src.Platform)}, {"chat_id", src.ChatID}, {"chat_type", src.ChatType},
 			{"thread_id", sattr(src.ThreadID)}, {"user_id", sattr(src.UserID)}, {"user_name", sattr(src.UserName)}, {"profile", sattr(src.Profile)}} {

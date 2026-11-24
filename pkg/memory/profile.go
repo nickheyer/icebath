@@ -12,10 +12,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Bare directory or file stem a provider name must be so a hand edited config cannot aim the copy elsewhere
@@ -169,7 +169,7 @@ func ClonedMemoryProvider(ctx context.Context, profileDir string) string {
 func NotifyMemoryProvider(ctx context.Context, profileDir string, call func(ctx context.Context, p Provider) error) {
 	name := ""
 	failed := func(reason any) {
-		pkgLog().Warn(fmt.Sprintf("memory provider %s: profile hook failed for %s: %v", pyrepr.Repr(name), profileDir, reason))
+		pkgLog().Warn(fmt.Sprintf("memory provider %s: profile hook failed for %s: %v", anyutil.Quote(name), profileDir, reason))
 	}
 	defer func() {
 		if r := recover(); r != nil {

@@ -8,18 +8,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // RoomGrantReauthorizationRequired is a validly signed room grant that was revoked or superseded
 type RoomGrantReauthorizationRequired struct{ Msg string }
 
 func (e *RoomGrantReauthorizationRequired) Error() string { return e.Msg }
-func (e *RoomGrantReauthorizationRequired) PyTypeName() string {
-	return "RoomGrantReauthorizationRequired"
-}
 
 // JSON error response with the OpenAI envelope, code and type optional
 func jsonError(message, code string, status int) *gateway.WebResponse {
@@ -53,47 +47,47 @@ func roomGrantToken(request *gateway.WebRequest) string {
 var roomIdentityFields = []string{"room_id", "home_install_id", "authority_gateway_id", "authority_epoch", "member_id"}
 
 // Refuses a renewal whose live execution policy digest differs from the one the grant was issued for
-func requireUnchangedExecutionPolicy(claims, executionPolicy *pyjson.Object) error {
+func requireUnchangedExecutionPolicy(claims, executionPolicy *jsonutil.Object) error {
 	digest := func(value any) string {
-		if !pyrepr.Truthy(value) {
+		if !anyutil.IsTrue(value) {
 			return ""
 		}
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	}
-	if digest(executionPolicy.GetOr("policy_digest", nil)) != digest(claims.GetOr("execution_policy_digest", nil)) {
+	if digest(executionPolicy.ValueOr("policy_digest", nil)) != digest(claims.ValueOr("execution_policy_digest", nil)) {
 		return &RoomGrantReauthorizationRequired{"room execution policy changed"}
 	}
 	return nil
 }
 
 // Status horizon of a grant, its dispatch expiry when it carries none
-func hardExpiry(claims *pyjson.Object) (float64, error) {
+func hardExpiry(claims *jsonutil.Object) (float64, error) {
 	value, ok := claims.Get("status_expires_at")
 	if !ok {
 		if value, ok = claims.Get("expires_at"); !ok {
 			return 0, &gateway.PyError{Kind: "KeyError", Msg: "'expires_at'"}
 		}
 	}
-	return pyint.Float(value)
+	return anyutil.ToFloat(value)
 }
 
 // Room authority values of a mapping for an issued grant, body values coerced to text and int
-func roomIdentity(source *pyjson.Object, coerce bool) (map[string]any, error) {
+func roomIdentity(source *jsonutil.Object, coerce bool) (map[string]any, error) {
 	out := map[string]any{}
 	for _, key := range roomIdentityFields {
 		value, ok := source.Get(key)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "KeyError", Msg: pyrepr.Repr(key)}
+			return nil, &gateway.PyError{Kind: "KeyError", Msg: anyutil.Quote(key)}
 		}
 		switch {
 		case key == "authority_epoch":
-			n, err := pyint.Of(value)
+			n, err := anyutil.ToInt(value)
 			if err != nil {
 				return nil, err
 			}
-			out[key] = pyint.Value(n)
+			out[key] = n
 		case coerce:
-			out[key] = pyrepr.Str(value)
+			out[key] = anyutil.String(value)
 		default:
 			out[key] = value
 		}
@@ -102,7 +96,7 @@ func roomIdentity(source *pyjson.Object, coerce bool) (map[string]any, error) {
 }
 
 // Profile and installation this gateway serves the request for, refused when the claims target another
-func localTarget(ctx context.Context, claims *pyjson.Object) (string, string, error) {
+func localTarget(ctx context.Context, claims *jsonutil.Object) (string, string, error) {
 	profile := requestProfile(ctx)
 	if profile == "" {
 		profile = "default"
@@ -111,8 +105,8 @@ func localTarget(ctx context.Context, claims *pyjson.Object) (string, string, er
 	if err != nil {
 		return "", "", err
 	}
-	if claims != nil && (!pyjson.Equal(claims.GetOr("target_profile", nil), profile) ||
-		!pyjson.Equal(claims.GetOr("target_install_id", nil), installationID)) {
+	if claims != nil && (!anyutil.Equal(claims.ValueOr("target_profile", nil), profile) ||
+		!anyutil.Equal(claims.ValueOr("target_install_id", nil), installationID)) {
 		return "", "", &gateway.PyError{Kind: "ValueError", Msg: "room grant target does not match this profile"}
 	}
 	return profile, installationID, nil
@@ -124,7 +118,7 @@ func (a *APIServerAdapter) roomGrantSecret(ctx context.Context) ([]byte, error) 
 }
 
 // Grant claims of a request after signature, scope and horizon checks, without the revocation lookup
-func (a *APIServerAdapter) decodeRequestGrant(ctx context.Context, request *gateway.WebRequest, permission string) (*pyjson.Object, error) {
+func (a *APIServerAdapter) decodeRequestGrant(ctx context.Context, request *gateway.WebRequest, permission string) (*jsonutil.Object, error) {
 	token := roomGrantToken(request)
 	if token == "" {
 		return nil, &gateway.PyError{Kind: "ValueError", Msg: "room grant is missing"}
@@ -137,7 +131,7 @@ func (a *APIServerAdapter) decodeRequestGrant(ctx context.Context, request *gate
 }
 
 // Grant claims of a request that are neither revoked nor superseded by the target's live reservation
-func (a *APIServerAdapter) roomGrantClaims(ctx context.Context, request *gateway.WebRequest, permission string) (*pyjson.Object, error) {
+func (a *APIServerAdapter) roomGrantClaims(ctx context.Context, request *gateway.WebRequest, permission string) (*jsonutil.Object, error) {
 	claims, err := a.decodeRequestGrant(ctx, request, permission)
 	if err != nil {
 		return nil, err
@@ -186,7 +180,7 @@ func (a *APIServerAdapter) handleRoomMemberInvitation(ctx context.Context, reque
 		allowed[field] = true
 	}
 	present := map[string]bool{}
-	for _, key := range body.Keys {
+	for _, key := range body.Keys() {
 		present[key] = true
 		if !allowed[key] {
 			return jsonError("Invitation is missing required room authority fields.", "invalid_room_invitation", http.StatusBadRequest), nil
@@ -198,28 +192,28 @@ func (a *APIServerAdapter) handleRoomMemberInvitation(ctx context.Context, reque
 		}
 	}
 	var token, profile string
-	var catalog, claims *pyjson.Object
+	var catalog, claims *jsonutil.Object
 	err := func() error {
 		var targetInstallID string
 		var err error
 		if profile, targetInstallID, err = localTarget(ctx, nil); err != nil {
 			return err
 		}
-		ttl, err := pyint.Float(body.GetOr("ttl_seconds", int64(3600)))
+		ttl, err := anyutil.ToFloat(body.ValueOr("ttl_seconds", int64(3600)))
 		if err != nil {
 			return err
 		}
 		if !(60 <= ttl && ttl <= 24*60*60) {
 			return &gateway.PyError{Kind: "ValueError", Msg: "ttl_seconds must be between 60 and 86400"}
 		}
-		statusTTL, err := pyint.Float(body.GetOr("status_ttl_seconds", ttl))
+		statusTTL, err := anyutil.ToFloat(body.ValueOr("status_ttl_seconds", ttl))
 		if err != nil {
 			return err
 		}
 		if !(ttl <= statusTTL && statusTTL <= 30*24*60*60) {
 			return &gateway.PyError{Kind: "ValueError", Msg: "status_ttl_seconds must be at least ttl_seconds and no more than 2592000"}
 		}
-		var executionPolicy *pyjson.Object
+		var executionPolicy *jsonutil.Object
 		if executionPolicy, catalog, err = gateway.APILocalRoomCatalog(ctx, a, profile, targetInstallID); err != nil {
 			return err
 		}
@@ -231,14 +225,14 @@ func (a *APIServerAdapter) handleRoomMemberInvitation(ctx context.Context, reque
 		if err != nil {
 			return err
 		}
-		grantID := body.GetOr("grant_id", nil)
-		if pyrepr.Truthy(grantID) {
-			grantID = pyrepr.Str(grantID)
+		grantID := body.ValueOr("grant_id", nil)
+		if anyutil.IsTrue(grantID) {
+			grantID = anyutil.String(grantID)
 		} else {
 			grantID = "grant-" + hexUUID()
 		}
 		issuedAt := wallClock()
-		digest, _ := executionPolicy.GetOr("policy_digest", "").(string)
+		digest, _ := executionPolicy.ValueOr("policy_digest", "").(string)
 		if token, err = gateway.IssueRoomGrant(ctx, secret, gateway.RoomGrantIssue{GrantID: grantID, RoomID: identity["room_id"],
 			HomeInstallID: identity["home_install_id"], AuthorityGatewayID: identity["authority_gateway_id"],
 			AuthorityEpoch: identity["authority_epoch"], MemberID: identity["member_id"], TargetInstallID: targetInstallID,
@@ -258,21 +252,21 @@ func (a *APIServerAdapter) handleRoomMemberInvitation(ctx context.Context, reque
 	if err != nil {
 		return jsonError(err.Error(), "invalid_room_invitation", http.StatusBadRequest), nil
 	}
-	expiresAt, err := pyint.Float(claims.GetOr("expires_at", nil))
+	expiresAt, err := anyutil.ToFloat(claims.ValueOr("expires_at", nil))
 	if err != nil {
 		return nil, err
 	}
-	statusExpiresAt, err := pyint.Float(claims.GetOr("status_expires_at", nil))
+	statusExpiresAt, err := anyutil.ToFloat(claims.ValueOr("status_expires_at", nil))
 	if err != nil {
 		return nil, err
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.room_member.invitation", "grant", token, "target_profile", profile,
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.room_member.invitation", "grant", token, "target_profile", profile,
 		"catalog", catalog, "expires_at", expiresAt, "status_expires_at", statusExpiresAt), http.StatusCreated, nil), nil
 }
 
 // Verifies a scoped grant and answers this target's live room catalog
 func (a *APIServerAdapter) handleRoomMemberCapabilities(ctx context.Context, request *gateway.WebRequest) (*gateway.WebResponse, error) {
-	var claims, catalog *pyjson.Object
+	var claims, catalog *jsonutil.Object
 	var profile string
 	err := func() error {
 		var installationID string
@@ -289,11 +283,11 @@ func (a *APIServerAdapter) handleRoomMemberCapabilities(ctx context.Context, req
 	if err != nil {
 		return roomGrantErrorResponse(err), nil
 	}
-	out := pyjson.ObjectOf("object", "icebath.room_member.capabilities")
+	out := jsonutil.ObjectOf("object", "icebath.room_member.capabilities")
 	for _, field := range roomIdentityFields {
 		value, ok := claims.Get(field)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "KeyError", Msg: pyrepr.Repr(field)}
+			return nil, &gateway.PyError{Kind: "KeyError", Msg: anyutil.Quote(field)}
 		}
 		out.Set(field, value)
 	}
@@ -308,14 +302,14 @@ func (a *APIServerAdapter) handleRoomMemberGrantRefresh(ctx context.Context, req
 	if errResp != nil {
 		return errResp, nil
 	}
-	for _, key := range body.Keys {
+	for _, key := range body.Keys() {
 		if key != "ttl_seconds" {
 			return jsonError("Grant refresh accepts only ttl_seconds.", "invalid_room_grant_refresh", http.StatusBadRequest), nil
 		}
 	}
 	var token string
 	var now, dispatchTTL, expiry float64
-	var executionPolicy *pyjson.Object
+	var executionPolicy *jsonutil.Object
 	err := func() error {
 		claims, err := a.roomGrantClaims(ctx, request, "dispatch")
 		if err != nil {
@@ -330,7 +324,7 @@ func (a *APIServerAdapter) handleRoomMemberGrantRefresh(ctx context.Context, req
 			return err
 		}
 		remaining := expiry - now
-		requested, err := pyint.Float(body.GetOr("ttl_seconds", int64(gateway.MaxDispatchGrantTTLSeconds)))
+		requested, err := anyutil.ToFloat(body.ValueOr("ttl_seconds", int64(gateway.MaxDispatchGrantTTLSeconds)))
 		if err != nil {
 			return err
 		}
@@ -361,7 +355,7 @@ func (a *APIServerAdapter) handleRoomMemberGrantRefresh(ctx context.Context, req
 		if err != nil {
 			return err
 		}
-		digest, _ := executionPolicy.GetOr("policy_digest", "").(string)
+		digest, _ := executionPolicy.ValueOr("policy_digest", "").(string)
 		token, err = gateway.IssueRoomGrant(ctx, secret, gateway.RoomGrantIssue{GrantID: "grant-refresh-" + hexUUID(),
 			RoomID: identity["room_id"], HomeInstallID: identity["home_install_id"], AuthorityGatewayID: identity["authority_gateway_id"],
 			AuthorityEpoch: identity["authority_epoch"], MemberID: identity["member_id"], TargetInstallID: installationID,
@@ -372,7 +366,7 @@ func (a *APIServerAdapter) handleRoomMemberGrantRefresh(ctx context.Context, req
 	if err != nil {
 		return roomGrantErrorResponse(err), nil
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.room_member.grant", "grant", token, "expires_at", now+dispatchTTL,
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.room_member.grant", "grant", token, "expires_at", now+dispatchTTL,
 		"status_expires_at", expiry, "execution_policy", executionPolicy), http.StatusOK, nil), nil
 }
 
@@ -402,5 +396,5 @@ func (a *APIServerAdapter) handleRoomMemberGrantRevoke(ctx context.Context, requ
 	if err != nil {
 		return roomGrantErrorResponse(nil), nil
 	}
-	return jsonResponse(pyjson.ObjectOf("object", "icebath.room_member.grant.revocation", "revoked", true), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("object", "icebath.room_member.grant.revocation", "revoked", true), http.StatusOK, nil), nil
 }

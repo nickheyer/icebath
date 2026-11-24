@@ -2,18 +2,18 @@ package commands
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Time a gateway exec quick command may run before its whole process tree is stopped
@@ -50,7 +50,7 @@ func RunGatewayExecQuickCommand(ctx context.Context, env *tools.Env, execCmd any
 		q.stdout.close()
 		q.stderr.close()
 		if err := killShell(q); err != nil && !isPermissionOrLookup(err) {
-			return gatewayQuickError(ctx, pyOSErrorText(err)), nil
+			return gatewayQuickError(ctx, err.Error()), nil
 		}
 		<-q.exited
 		return "", ctx.Err()
@@ -75,7 +75,7 @@ func RunGatewayExecQuickCommand(ctx context.Context, env *tools.Env, execCmd any
 	if len(out) == 0 {
 		out = q.stderr.bytes()
 	}
-	text, err := pystr.DecodeUTF8(out)
+	text, err := textutil.DecodeUTF8(out)
 	if err != nil {
 		return gatewayQuickError(ctx, err.Error()), nil
 	}
@@ -112,21 +112,9 @@ func closed(ch <-chan struct{}) bool {
 	}
 }
 
-// Python str of the OSError a signal or terminate call raised
-func pyOSErrorText(err error) string {
-	if text, ok := pypath.ErrnoText(err); ok {
-		return text
-	}
-	return pypath.OSErrorText(err)
-}
-
-// Whether the error is the ProcessLookupError or PermissionError asyncio suppresses when it closes a transport
+// Whether killing the shell failed only because it is gone or not ours to signal, which closing the run ignores
 func isPermissionOrLookup(err error) bool {
-	switch pypath.OSErrorClass(err) {
-	case "PermissionError", "ProcessLookupError":
-		return true
-	}
-	return false
+	return errors.Is(err, fs.ErrPermission) || errors.Is(err, syscall.ESRCH) || errors.Is(err, os.ErrProcessDone)
 }
 
 // Kills what the shell started, its group on POSIX, then reaps the shell for at most five seconds
@@ -157,17 +145,17 @@ type quickProc struct {
 	stdout, stderr *quickStream
 }
 
-// Opens the pipes, converts the args, then spawns with the inherited stdin, every error text being the Python one
+// Opens the pipes, builds the program, then spawns it with the inherited stdin
 func startQuickProc(build func() (quickProgram, error), cwd string, env *tools.ChildEnv) (*quickProc, error) {
 	outR, outW, err := os.Pipe()
 	if err != nil {
-		return nil, pyError(pyOSErrorText(err))
+		return nil, err
 	}
 	errR, errW, err := os.Pipe()
 	if err != nil {
 		outR.Close()
 		outW.Close()
-		return nil, pyError(pyOSErrorText(err))
+		return nil, err
 	}
 	prog, err := build()
 	envList := quickEnvList(env)
@@ -189,7 +177,7 @@ func startQuickProc(build func() (quickProgram, error), cwd string, env *tools.C
 	if err != nil {
 		outR.Close()
 		errR.Close()
-		return nil, pyError(spawnErrorText(err, cwd))
+		return nil, spawnError(err, cwd)
 	}
 	q := &quickProc{proc: proc, exited: make(chan struct{}), stdout: newQuickStream(outR), stderr: newQuickStream(errR)}
 	go func() {
@@ -269,12 +257,5 @@ func (s *quickStream) bytes() []byte {
 
 func (s *quickStream) close() { _ = s.f.Close() }
 
-// Exception text standing for a Python error raised before the shell starts
-type pyError string
-
-func (e pyError) Error() string { return string(e) }
-
-// TypeError os.fsencode and os.fsdecode raise for an argument that is neither str nor bytes
-func notPathLike(v any) error {
-	return pyError("expected str, bytes or os.PathLike object, not " + config.PyTypeName(v))
-}
+// Refusal of a command, environment entry or directory holding a NUL byte, which no process argument can carry
+var errEmbeddedNUL = errors.New("embedded null byte")

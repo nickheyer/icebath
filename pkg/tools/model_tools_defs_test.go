@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Provider metadata doubles answering with the configured window and no runtime override
@@ -79,8 +79,8 @@ func (s *memoMailState) probeCount() int {
 	return s.probes
 }
 
-func memoSchema(name, description string) *pyjson.Object {
-	return pyjson.ObjectOf("name", name, "description", description, "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf()))
+func memoSchema(name, description string) *jsonutil.Object {
+	return jsonutil.ObjectOf("name", name, "description", description, "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf()))
 }
 
 // A recovering mail tool next to an always healthy anchor whose dynamic schema counts definition builds
@@ -106,7 +106,7 @@ func memoRegistry(t *testing.T) (*Registry, *memoMailState, *Env) {
 		}})
 	r.Register(Def{Name: memoAnchor, Toolset: "mcp-probe-anchor", Schema: memoSchema(memoAnchor, "Ping the anchor server"), Handler: constHandler("ANCHOR_OK"),
 		Check: func(*Env) bool { return true },
-		DynamicSchema: func(*Env) *pyjson.Object {
+		DynamicSchema: func(*Env) *jsonutil.Object {
 			st.mu.Lock()
 			st.computes++
 			st.mu.Unlock()
@@ -504,7 +504,7 @@ func TestRewriterChangeReachesAFreshBuild(t *testing.T) {
 	opts := DefinitionOptions{Enabled: []string{"clarify"}, Quiet: true, SkipToolSearchAssembly: true}
 	description := func() string {
 		defs := r.ToolDefinitions(context.Background(), env, opts)
-		fn, _ := pyjson.Dict(defs[0]["function"])
+		fn, _ := jsonutil.AsMap(defs[0]["function"])
 		s, _ := fn["description"].(string)
 		return s
 	}
@@ -514,7 +514,7 @@ func TestRewriterChangeReachesAFreshBuild(t *testing.T) {
 	changed := "Changed after the session pinned its tools."
 	RegisterSchemaRewriter("clarify", func(_ *Env, td map[string]any, _ map[string]bool) map[string]any {
 		fn := map[string]any{}
-		current, _ := pyjson.Dict(td["function"])
+		current, _ := jsonutil.AsMap(td["function"])
 		for k, v := range current {
 			fn[k] = v
 		}

@@ -10,9 +10,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fingerprint binding a durable Responses request to its wire fingerprint and declared session key
@@ -22,13 +22,13 @@ func requestBinding(ctx context.Context, a *APIServerAdapter, request *gateway.W
 	if declared != "" {
 		declaredValue = declared
 	}
-	return makeRequestFingerprint(pyjson.ObjectOf("request", fingerprint, "declared_session_key", declaredValue),
+	return makeRequestFingerprint(jsonutil.ObjectOf("request", fingerprint, "declared_session_key", declaredValue),
 		[]string{"request", "declared_session_key"})
 }
 
 // Live and retired API admissions carrying a request id, a lost pointer never erasing an accepted identity
-func requestAdmissionRows(ctx context.Context, db *state.SessionDB, requestID string) ([]*pyjson.Object, error) {
-	var rows []*pyjson.Object
+func requestAdmissionRows(ctx context.Context, db *state.SessionDB, requestID string) ([]*jsonutil.Object, error) {
+	var rows []*jsonutil.Object
 	err := db.ReadCtx(ctx, func(conn state.SQLiteConn) error {
 		live, err := state.QueryObjects(ctx, conn, "SELECT * FROM session_admissions WHERE principal_id='api' AND request_id=?", requestID)
 		if err != nil {
@@ -40,9 +40,9 @@ func requestAdmissionRows(ctx context.Context, db *state.SessionDB, requestID st
 		}
 		rows = live
 		for _, record := range retired {
-			row, ok := record.(*pyjson.Object)
+			row, ok := record.(*jsonutil.Object)
 			if !ok {
-				return &gateway.PyError{Kind: "TypeError", Msg: "'" + pyrepr.TypeName(record) + "' object is not iterable"}
+				return &gateway.PyError{Kind: "TypeError", Msg: "terminal admission record must be an object, got " + anyutil.Kind(record)}
 			}
 			rows = append(rows, row)
 		}
@@ -58,7 +58,7 @@ func lookupAdmission(ctx context.Context, authority *gateway.SessionAuthority, s
 	if err != nil {
 		return nil, err
 	}
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	if admissionID != "" {
 		if row, err = authority.DB.GetSessionAdmission(ctx, admissionID); err != nil {
 			return nil, err
@@ -81,7 +81,7 @@ func lookupAdmission(ctx context.Context, authority *gateway.SessionAuthority, s
 			return nil, err
 		}
 	}
-	if !pyjson.Equal(row.GetOr("principal_id", nil), "api") || !pyjson.Equal(row.GetOr("request_id", nil), requestID) {
+	if !anyutil.Equal(row.ValueOr("principal_id", nil), "api") || !anyutil.Equal(row.ValueOr("request_id", nil), requestID) {
 		return nil, state.NewRuntimeStoreError("permission_denied", nil, nil)
 	}
 	created, err := store.RequestCreatedAt(ctx, durableKey)
@@ -109,7 +109,7 @@ func restoreAdmitted(ctx context.Context, found *gateway.APIAdmission) (*gateway
 	if err := gateway.RestoreAPISession(ctx, found.Authority, found.Ref.SessionID); err != nil {
 		return nil, err
 	}
-	payload, _ := found.Row.GetOr("payload", nil).(*pyjson.Object)
+	payload, _ := found.Row.ValueOr("payload", nil).(*jsonutil.Object)
 	if err := gateway.CheckAPITurn(ctx, found.Authority, found.Ref, payload); err != nil {
 		return nil, err
 	}
@@ -156,25 +156,25 @@ func findAdmission(ctx context.Context, a *APIServerAdapter, durableKey, request
 
 // Responses context of an admitted turn, its result observed from the canonical admission
 func admittedContext(ctx context.Context, admitted *gateway.APIAdmission, replay bool) (*responsesContext, error) {
-	payload, _ := admitted.Row.GetOr("payload", nil).(*pyjson.Object)
+	payload, _ := admitted.Row.ValueOr("payload", nil).(*jsonutil.Object)
 	if payload == nil {
-		payload = pyjson.NewObject()
+		payload = jsonutil.NewObject()
 	}
-	data, _ := payload.GetOr("api_turn_v1", pyjson.NewObject()).(*pyjson.Object)
+	data, _ := payload.ValueOr("api_turn_v1", jsonutil.NewObject()).(*jsonutil.Object)
 	if data == nil {
-		data = pyjson.NewObject()
+		data = jsonutil.NewObject()
 	}
-	userMessage, err := gateway.RehydrateAPIImages(ctx, payload.GetOr("text", ""), data.GetOr("media", nil))
+	userMessage, err := gateway.RehydrateAPIImages(ctx, payload.ValueOr("text", ""), data.ValueOr("media", nil))
 	if err != nil {
 		return nil, err
 	}
-	history, _ := data.GetOr("history", nil).([]any)
+	history, _ := data.ValueOr("history", nil).([]any)
 	if history == nil {
 		history = []any{}
 	}
 	var instructions any
-	if settings, ok := data.GetOr("settings", pyjson.NewObject()).(*pyjson.Object); ok && settings != nil {
-		instructions = settings.GetOr("ephemeral_system_prompt", nil)
+	if settings, ok := data.ValueOr("settings", jsonutil.NewObject()).(*jsonutil.Object); ok && settings != nil {
+		instructions = settings.ValueOr("ephemeral_system_prompt", nil)
 	}
 	observe := func(ctx context.Context, run runAgentOptions) (map[string]any, map[string]any, error) {
 		return gateway.ObserveAPITurn(ctx, admitted, observerCallbacks("stream_delta_callback", run.streamDeltaCallback,
@@ -285,7 +285,7 @@ func bindSuccessor(ctx context.Context, a *APIServerAdapter, sessionID, walkedFr
 }
 
 // Validates a first time Responses request, an exact retry answering from its accepted payload and result
-func prepareResponsesContext(ctx context.Context, a *APIServerAdapter, request *gateway.WebRequest, body *pyjson.Object, gatewaySessionKey,
+func prepareResponsesContext(ctx context.Context, a *APIServerAdapter, request *gateway.WebRequest, body *jsonutil.Object, gatewaySessionKey,
 	durableKey, durableFP, scope, idempotencyKey string) (*responsesContext, *gateway.WebResponse, error) {
 	requestID := ""
 	if durableKey != "" {
@@ -299,14 +299,14 @@ func prepareResponsesContext(ctx context.Context, a *APIServerAdapter, request *
 			return rc, nil, err
 		}
 	}
-	previous := body.GetOr("previous_response_id", nil)
+	previous := body.ValueOr("previous_response_id", nil)
 	responseStore, err := a.currentResponseStore(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	if conversation := body.GetOr("conversation", nil); pyrepr.Truthy(conversation) {
+	if conversation := body.ValueOr("conversation", nil); anyutil.IsTrue(conversation) {
 		named, err := responseStore.Atomically(ctx, func(ctx context.Context) (any, error) {
-			return responseStore.GetConversation(ctx, pyrepr.Str(conversation))
+			return responseStore.GetConversation(ctx, anyutil.String(conversation))
 		})
 		if err != nil {
 			return nil, nil, err
@@ -316,31 +316,31 @@ func prepareResponsesContext(ctx context.Context, a *APIServerAdapter, request *
 			previous = text
 		}
 	}
-	messages, errResp := parseResponsesInput(ctx, body.GetOr("input", nil))
+	messages, errResp := parseResponsesInput(ctx, body.ValueOr("input", nil))
 	if errResp != nil {
 		return nil, errResp, nil
 	}
 	history := []any{}
-	if raw := body.GetOr("conversation_history", nil); pyrepr.Truthy(raw) {
+	if raw := body.ValueOr("conversation_history", nil); anyutil.IsTrue(raw) {
 		if history, errResp = parseConversationHistory(ctx, raw); errResp != nil {
 			return nil, errResp, nil
 		}
 	}
 	storedSessionID, chainRoot := "", ""
-	instructions := body.GetOr("instructions", nil)
-	if len(history) == 0 && pyrepr.Truthy(previous) {
-		stored, err := responseStore.Atomically(ctx, func(ctx context.Context) (any, error) { return responseStore.Get(ctx, pyrepr.Str(previous)) })
+	instructions := body.ValueOr("instructions", nil)
+	if len(history) == 0 && anyutil.IsTrue(previous) {
+		stored, err := responseStore.Atomically(ctx, func(ctx context.Context) (any, error) { return responseStore.Get(ctx, anyutil.String(previous)) })
 		if err != nil {
 			return nil, nil, err
 		}
-		storedDict, _ := stored.(*pyjson.Object)
+		storedDict, _ := stored.(*jsonutil.Object)
 		if storedDict == nil {
-			return nil, errorResponse("Previous response not found: "+pyrepr.Str(previous), http.StatusNotFound, errOpts{}), nil
+			return nil, errorResponse("Previous response not found: "+anyutil.String(previous), http.StatusNotFound, errOpts{}), nil
 		}
-		if prior, ok := storedDict.GetOr("conversation_history", []any{}).([]any); ok {
+		if prior, ok := storedDict.ValueOr("conversation_history", []any{}).([]any); ok {
 			history = append([]any{}, prior...)
 		}
-		storedSession, _ := storedDict.GetOr("session_id", nil).(string)
+		storedSession, _ := storedDict.ValueOr("session_id", nil).(string)
 		if chainRoot, err = storedOwner(ctx, a, storedSession); err != nil {
 			return nil, nil, err
 		}
@@ -353,7 +353,7 @@ func prepareResponsesContext(ctx context.Context, a *APIServerAdapter, request *
 		}
 		storedSessionID = resolved
 		if instructions == nil {
-			instructions = storedDict.GetOr("instructions", nil)
+			instructions = storedDict.ValueOr("instructions", nil)
 		}
 	}
 	for _, message := range messages[:max(0, len(messages)-1)] {
@@ -361,12 +361,12 @@ func prepareResponsesContext(ctx context.Context, a *APIServerAdapter, request *
 	}
 	var userMessage any = ""
 	if len(messages) > 0 {
-		userMessage = messages[len(messages)-1].GetOr("content", "")
+		userMessage = messages[len(messages)-1].ValueOr("content", "")
 	}
 	if !gateway.APIContentHasVisiblePayload(userMessage) {
 		return nil, errorResponse("No user message found in input", http.StatusBadRequest, errOpts{}), nil
 	}
-	if body.GetOr("truncation", nil) == "auto" {
+	if body.ValueOr("truncation", nil) == "auto" {
 		history = autoTruncateResponseHistory(history, responsesAutoTruncationHistoryLimit)
 	}
 	declaredSelected := storedSessionID == "" && gatewaySessionKey != ""
@@ -381,7 +381,7 @@ func prepareResponsesContext(ctx context.Context, a *APIServerAdapter, request *
 		sum := sha256.Sum256([]byte(scope + "\x00" + idempotencyKey))
 		sessionID = "response-" + hex.EncodeToString(sum[:])
 	}
-	route, overrides, errResp := a.selectRequestRoute(ctx, body, sessionID, gatewaySessionKey, body.GetOr("model", nil))
+	route, overrides, errResp := a.selectRequestRoute(ctx, body, sessionID, gatewaySessionKey, body.ValueOr("model", nil))
 	if errResp != nil {
 		return nil, errResp, nil
 	}
@@ -413,7 +413,7 @@ func prepareResponsesContext(ctx context.Context, a *APIServerAdapter, request *
 		turn := &gateway.APITurn{UserMessage: userMessage, ConversationHistory: history, SessionID: sessionID,
 			GatewaySessionKey: gatewaySessionKey, BindDeclaredConversation: declaredSelected, Settings: settings,
 			RelayMetadata: relayValue, RequestID: requestID, WalkedFrom: walkedFrom}
-		model := body.GetOr("model", a.modelName)
+		model := body.ValueOr("model", a.modelName)
 		rc, err := admitResponses(ctx, a, durableKey, requestID, requestBinding(ctx, a, request, durableKey, durableFP), turn, model)
 		return rc, nil, err
 	}

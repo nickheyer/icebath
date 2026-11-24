@@ -17,12 +17,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // JWT of three or more dotted segments or a long opaque base64url bearer, the ambient endpoint body shape
@@ -48,8 +48,8 @@ func (e *RelayURLError) Error() string { return "could not reach the relay: " + 
 // urllib client with environment proxies, a per operation socket timeout and urllib redirect rules
 func relayURLOpenClient(timeout time.Duration) *http.Client {
 	dialer := &net.Dialer{Timeout: timeout}
-	transport := &http.Transport{Proxy: pyurl.UrlopenProxy, DisableKeepAlives: true, DialContext: netpref.DialContext(dialer.DialContext)}
-	return &http.Client{Transport: pyhttpx.TimeoutTransport(transport, timeout), CheckRedirect: func(req *http.Request, via []*http.Request) error {
+	transport := &http.Transport{Proxy: httputil.Proxy, DisableKeepAlives: true, DialContext: netpref.DialContext(dialer.DialContext)}
+	return &http.Client{Transport: httputil.TimeoutTransport(transport, httputil.EachPhase(timeout)), CheckRedirect: func(req *http.Request, via []*http.Request) error {
 		if via[0].Method == http.MethodPost && (req.Response.StatusCode == 307 || req.Response.StatusCode == 308) {
 			return http.ErrUseLastResponse
 		}
@@ -142,7 +142,7 @@ func ResolveRelayIdentityToken(ctx context.Context) (string, error) {
 	if scope != "" {
 		form = append(form, [2]string{"scope", scope})
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(pyurl.URLEncode(form)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenURL, strings.NewReader(urlutil.EncodeQuery(form)))
 	if err != nil {
 		return "", err
 	}
@@ -152,21 +152,21 @@ func ResolveRelayIdentityToken(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text, err := pystr.DecodeUTF8(raw)
+	text, err := textutil.DecodeUTF8(raw)
 	if err != nil {
 		return "", err
 	}
-	payload, err := pyjson.Loads(text)
+	payload, err := jsonutil.Decode(text)
 	if err != nil {
 		return "", err
 	}
 	var accessToken any
-	if pyrepr.Truthy(payload) {
-		obj, ok := payload.(*pyjson.Object)
+	if anyutil.IsTrue(payload) {
+		obj, ok := payload.(*jsonutil.Object)
 		if !ok {
 			return "", fmt.Errorf("the relay identity token reply is %s, expected a mapping", errchain.Kind(payload))
 		}
-		accessToken = obj.GetOr("access_token", nil)
+		accessToken = obj.ValueOr("access_token", nil)
 	}
 	s, ok := accessToken.(string)
 	if !ok || strings.TrimSpace(s) == "" {
@@ -186,16 +186,16 @@ func relayAmbientToken(ctx context.Context, tokenURL string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	decoded, err := pystr.DecodeUTF8(raw)
+	decoded, err := textutil.DecodeUTF8(raw)
 	if err != nil {
 		return "", err
 	}
 	body := strings.TrimSpace(decoded)
 	token := ""
 	if strings.HasPrefix(body, "{") {
-		if parsed, err := pyjson.Loads(body); err == nil {
-			if obj, ok := parsed.(*pyjson.Object); ok {
-				if s, ok := obj.GetOr("access_token", nil).(string); ok {
+		if parsed, err := jsonutil.Decode(body); err == nil {
+			if obj, ok := parsed.(*jsonutil.Object); ok {
+				if s, ok := obj.ValueOr("access_token", nil).(string); ok {
 					token = strings.TrimSpace(s)
 				}
 			}

@@ -16,11 +16,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Callbacks of the active continuous loop
@@ -53,14 +53,14 @@ var (
 	continuousCallbacks     ContinuousCallbacks
 	continuousNoSpeechCount int
 
-	ttsPlaying     = setEvent()
+	ttsIdle        = newSetEvent()
 	voiceBusyMu    sync.Mutex
 	voiceBusyProbe func() bool
 )
 
-// Event already set, the not playing state of the TTS guard
-func setEvent() *pythread.Event {
-	e := &pythread.Event{}
+// Event that starts out set, the idle state of the TTS guard
+func newSetEvent() *syncutil.Event {
+	e := &syncutil.Event{}
 	e.Set()
 	return e
 }
@@ -110,10 +110,10 @@ func transcribeWav(ctx context.Context, wavPath, failMsg, debugPrefix string) (t
 		}
 		return ""
 	}
-	success := pyrepr.Truthy(result["success"])
+	success := anyutil.IsTrue(result["success"])
 	transcript := ""
-	if raw := result["transcript"]; pyrepr.Truthy(raw) {
-		transcript = strings.TrimSpace(pyrepr.Str(raw))
+	if raw := result["transcript"]; anyutil.IsTrue(raw) {
+		transcript = strings.TrimSpace(anyutil.String(raw))
 	}
 	if debugPrefix != "" {
 		voiceDebug(fmt.Sprintf("%s: transcribe -> success=%s text=%s err=%s", debugPrefix, errchain.Show(success), errchain.Show(transcript), errchain.Show(result["error"])))
@@ -143,7 +143,7 @@ func SetVoiceBusyProbe(probe func() bool) {
 
 // Whether silent cycles must not count, TTS playing or the agent mid turn, false when the probe fails
 func voiceActivityHeld() (held bool) {
-	if !ttsPlaying.IsSet() {
+	if !ttsIdle.IsSet() {
 		return true
 	}
 	voiceBusyMu.Lock()
@@ -396,9 +396,9 @@ func continuousOnSilence(ctx context.Context) {
 
 // Waits out playing TTS then restarts capture, or stops a client driven loop
 func rearmAfterTurn(ctx context.Context, rec VoiceRecorder, onStatus func(string), noSpeech int) {
-	if !ttsPlaying.IsSet() {
+	if !ttsIdle.IsSet() {
 		voiceDebug("_continuous_on_silence: waiting for TTS to finish")
-		ttsPlaying.Wait(60)
+		ttsIdle.WaitTimeout(time.Minute)
 		time.Sleep(300 * time.Millisecond)
 		continuousMu.Lock()
 		active := continuousActive
@@ -458,13 +458,8 @@ func (q *replyTextQueue) Get(timeout time.Duration) (any, bool) {
 	}
 }
 
-// Threading event over pythread for the speaker pipeline
-type speakEvent struct{ *pythread.Event }
-
-func (e speakEvent) Wait(timeout time.Duration) bool { return e.Event.Wait(timeout.Seconds()) }
-
 // Speaks through the streaming pipeline when a chunked streamer resolves, false sending the caller to the whole file path
-func speakStreaming(ctx context.Context, text string, stop *pythread.Event) bool {
+func speakStreaming(ctx context.Context, text string, stop *syncutil.Event) bool {
 	env := &tools.Env{Home: home.Dir(ctx)}
 	provider := ResolveStreamingProvider(ctx, env, "")
 	if provider == nil {
@@ -473,11 +468,11 @@ func speakStreaming(ctx context.Context, text string, stop *pythread.Event) bool
 	queue := &replyTextQueue{items: make(chan any, 2)}
 	queue.items <- text
 	queue.items <- nil
-	done := &pythread.Event{}
+	done := &syncutil.Event{}
 	if stop == nil {
-		stop = &pythread.Event{}
+		stop = &syncutil.Event{}
 	}
-	StreamTTSToSpeaker(ctx, queue, speakEvent{stop}, speakEvent{done}, nil, "")
+	StreamTTSToSpeaker(ctx, queue, stop, done, nil, "")
 	return done.IsSet()
 }
 
@@ -498,7 +493,7 @@ func speakWholeFile(ctx context.Context, text string) error {
 	if ttsText == "" {
 		return nil
 	}
-	tmp, err := pypath.Gettempdir()
+	tmp, err := pathutil.TempDir()
 	if err != nil {
 		return err
 	}
@@ -519,15 +514,15 @@ func speakWholeFile(ctx context.Context, text string) error {
 	var playPaths []string
 	if paths, isList := result["file_paths"].([]any); isList && len(paths) > 0 {
 		for _, p := range paths {
-			playPaths = append(playPaths, pyrepr.Str(p))
+			playPaths = append(playPaths, anyutil.String(p))
 		}
-	} else if single := result["file_path"]; pyrepr.Truthy(single) {
-		playPaths = []string{pyrepr.Str(single)}
+	} else if single := result["file_path"]; anyutil.IsTrue(single) {
+		playPaths = []string{anyutil.String(single)}
 	} else {
 		playPaths = []string{mp3Path}
 	}
 	playedAny := false
-	if pyrepr.Truthy(result["success"]) {
+	if anyutil.IsTrue(result["success"]) {
 		for _, playPath := range playPaths {
 			if st, statErr := os.Stat(playPath); statErr == nil && st.Mode().IsRegular() && st.Size() > 0 {
 				voiceDebug(fmt.Sprintf("speak_text: playing %s (%d bytes)", playPath, st.Size()))
@@ -552,7 +547,7 @@ func speakWholeFile(ctx context.Context, text string) error {
 }
 
 // SpeakText synthesizes and plays text, pausing live capture so the reply never feeds back into the mic
-func SpeakText(ctx context.Context, text string, stop *pythread.Event) {
+func SpeakText(ctx context.Context, text string, stop *syncutil.Event) {
 	if strings.TrimSpace(text) == "" {
 		return
 	}
@@ -565,10 +560,10 @@ func SpeakText(ctx context.Context, text string, stop *pythread.Event) {
 		})
 	}
 	continuousMu.Unlock()
-	ttsPlaying.Clear()
+	ttsIdle.Clear()
 	voiceDebug(fmt.Sprintf("speak_text: TTS begin (paused_recording=%s)", errchain.Show(pausedRecording)))
 	defer func() {
-		ttsPlaying.Set()
+		ttsIdle.Set()
 		voiceDebug("speak_text: TTS done")
 		if pausedRecording {
 			time.Sleep(300 * time.Millisecond)

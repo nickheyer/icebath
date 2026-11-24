@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Clears stale bytecode caches once when the checkout fingerprint changed since the last sweep, never failing
@@ -21,7 +21,7 @@ func SweepStaleBytecodeIfCheckoutChanged() {
 	}
 	recorded := ""
 	if raw, err := os.ReadFile(filepath.Join(root, bytecodeFingerprintFile)); err == nil {
-		text, err := pystr.DecodeUTF8Sig(raw)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if err != nil {
 			pkgLog().Debug(fmt.Sprintf("Stale-bytecode launch sweep failed: %s", err.Error()))
 			return

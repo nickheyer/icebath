@@ -5,12 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // ScopeKey canonicalizes a profile home into the key scoped registrations live under
@@ -362,7 +361,7 @@ func (r *Registry) PluginScopeForModule(current, module string) (string, error) 
 			return s, nil
 		}
 	}
-	return "", &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s is active in multiple profiles and cannot register outside one of those scopes.", pyrepr.StrRepr(owner))}
+	return "", &deregisterDeniedError{msg: fmt.Sprintf("Plugin module %s is active in multiple profiles and cannot register outside one of those scopes.", strconv.Quote(owner))}
 }
 
 // RegisterScoped registers a plugin owned tool into a profile overlay under the override policy
@@ -378,7 +377,7 @@ func (r *Registry) RegisterScoped(scope string, d Def) error {
 	if lazy {
 		d.schemaOnce = new(sync.Once)
 	} else if d.Description == "" {
-		if s, ok := d.Schema.Vals["description"].(string); ok {
+		if s, ok := d.Schema.Value("description").(string); ok {
 			d.Description = s
 		}
 	}
@@ -466,7 +465,7 @@ func (r *Registry) DeregisterIn(ctx context.Context, name, scope, callerPlugin s
 	if entry == nil {
 		if scope != "" && callerOwner != "" && r.globalLocked(name) != nil {
 			return &deregisterDeniedError{msg: fmt.Sprintf("Scoped plugin module %s cannot deregister process-global tool %s; register a scoped override instead.",
-				pyrepr.StrRepr(callerPlugin), pyrepr.StrRepr(name))}
+				strconv.Quote(callerPlugin), strconv.Quote(name))}
 		}
 		return nil
 	}
@@ -679,7 +678,7 @@ func (r *Registry) MaxResultSize(ctx context.Context, scope, name string, fallba
 }
 
 // Schema returns a visible tool's raw schema bypassing availability checks
-func (r *Registry) Schema(ctx context.Context, scope, name string) *pyjson.Object {
+func (r *Registry) Schema(ctx context.Context, scope, name string) *jsonutil.Object {
 	if d := r.Lookup(ctx, scope, name); d != nil {
 		return d.Schema
 	}

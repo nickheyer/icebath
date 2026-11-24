@@ -18,11 +18,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -79,7 +81,7 @@ func readDirUnsorted(dir string) ([]fs.DirEntry, error) {
 }
 
 // Python repr of a filesystem path or name, undecodable bytes shown as surrogate escapes
-func pathRepr(p string) string { return pyrepr.StrRepr(pystr.SurrogateEscapeDecode([]byte(p))) }
+func pathRepr(p string) string { return strconv.Quote(string(p)) }
 
 // Modification time of fi as float epoch seconds
 func mtimeOf(fi fs.FileInfo) float64 { return float64(fi.ModTime().UnixNano()) / 1e9 }
@@ -101,7 +103,7 @@ func (a *pruneAudit) info(msg string) {
 		return
 	}
 	if err := os.MkdirAll(filepath.Dir(a.path), 0o777); err != nil {
-		pkgLog().Warn(fmt.Sprintf("scratch prune: cannot create %s: %s", filepath.Dir(a.path), pypath.OSErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("scratch prune: cannot create %s: %s", filepath.Dir(a.path), err.Error()))
 		a.path = ""
 		return
 	}
@@ -245,15 +247,15 @@ func birthStamp(pid int) (float64, error) {
 	}
 	end := strings.LastIndexByte(string(data), ')')
 	if end < 0 {
-		return 0, &pyint.Error{Kind: "IndexError", Msg: "list index out of range"}
+		return 0, &errorutil.Error{Kind: "IndexError", Msg: "list index out of range"}
 	}
 	fields := strings.Fields(string(data[end+1:]))
 	if len(fields) <= 19 {
-		return 0, &pyint.Error{Kind: "IndexError", Msg: "list index out of range"}
+		return 0, &errorutil.Error{Kind: "IndexError", Msg: "list index out of range"}
 	}
 	ticks, err := strconv.ParseInt(fields[19], 10, 64)
 	if err != nil {
-		return 0, &pyint.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.BytesRepr([]byte(fields[19]))}
+		return 0, &errorutil.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(string([]byte(fields[19])))}
 	}
 	return float64(ticks), nil
 }
@@ -326,14 +328,14 @@ func liveBootID() string {
 }
 
 // Boot relative birth under key, minus one for an entry from another boot, nil when either boot id is unknown
-func entryBoot(entry *pyjson.Object, key string) (any, bool) {
-	recorded, ok := entry.Vals["boot_id"].(string)
+func entryBoot(entry *jsonutil.Object, key string) (any, bool) {
+	recorded, ok := entry.Value("boot_id").(string)
 	live := liveBootID()
 	if !ok || live == "" {
 		return nil, false
 	}
 	if recorded == live {
-		v := entry.Vals[key]
+		v := entry.Value(key)
 		return v, v != nil
 	}
 	return -1.0, true
@@ -346,13 +348,13 @@ func pidAliveMatches(pid int, createTime any, boot any, hasBoot bool) (alive boo
 	}
 	same := true
 	if live, ok := proc.BootStart(pid); hasBoot && ok {
-		want, err := pyint.Float(boot)
+		want, err := anyutil.ToFloat(boot)
 		if err != nil {
 			return false, false
 		}
 		same = live == want
 	} else if createTime != nil {
-		want, err := pyint.Float(createTime)
+		want, err := anyutil.ToFloat(createTime)
 		if err != nil {
 			return false, false
 		}
@@ -383,24 +385,24 @@ func jsonInt(v any) (int, bool) {
 }
 
 // Whether the ledger entry's process is still the recorded incarnation or cannot be disproved
-func entryStillRunning(entry *pyjson.Object) bool {
-	pid, ok := jsonInt(entry.Vals["pid"])
+func entryStillRunning(entry *jsonutil.Object) bool {
+	pid, ok := jsonInt(entry.Value("pid"))
 	if !ok || pid <= 0 {
 		return false
 	}
 	boot, hasBoot := entryBoot(entry, "boot_start")
-	alive, known := pidAliveMatches(pid, entry.Vals["create_time"], boot, hasBoot)
+	alive, known := pidAliveMatches(pid, entry.Value("create_time"), boot, hasBoot)
 	return alive || !known
 }
 
 // Whether the entry's recorded spawner is provably gone, known false when that cannot be proved
-func spawnerIsDead(entry *pyjson.Object) (dead bool, known bool) {
-	pid, ok := jsonInt(entry.Vals["spawner_pid"])
+func spawnerIsDead(entry *jsonutil.Object) (dead bool, known bool) {
+	pid, ok := jsonInt(entry.Value("spawner_pid"))
 	if !ok || pid <= 0 {
 		return false, false
 	}
 	boot, hasBoot := entryBoot(entry, "spawner_boot")
-	alive, known := pidAliveMatches(pid, entry.Vals["spawner_create"], boot, hasBoot)
+	alive, known := pidAliveMatches(pid, entry.Value("spawner_create"), boot, hasBoot)
 	return !alive, known
 }
 
@@ -432,7 +434,7 @@ func readJSONList(path string) ([]any, bool) {
 	if !ok {
 		return nil, false
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, false
 	}
@@ -462,24 +464,24 @@ func registeredLivePIDs(h string) map[int]bool {
 	for _, src := range sources {
 		entries, _ := readJSONList(src.path)
 		for _, raw := range entries {
-			entry, ok := raw.(*pyjson.Object)
+			entry, ok := raw.(*jsonutil.Object)
 			if !ok {
 				continue
 			}
-			pid, ok := jsonInt(entry.Vals["pid"])
+			pid, ok := jsonInt(entry.Value("pid"))
 			if !ok || pid <= 0 {
 				continue
 			}
-			if scope, has := entry.Vals["pid_scope"]; has && scope != "host" {
+			if scope, has := entry.Get("pid_scope"); has && scope != "host" {
 				continue
 			}
-			if entry.Vals["purpose"] == "mcp-helper" {
+			if entry.Value("purpose") == "mcp-helper" {
 				if dead, known := spawnerIsDead(entry); known && dead {
 					continue
 				}
 			}
 			var alive bool
-			stamp := entry.Vals[src.stampKey]
+			stamp := entry.Value(src.stampKey)
 			switch {
 			case src.stampKey == "create_time":
 				alive = entryStillRunning(entry)
@@ -532,7 +534,7 @@ func ownedByIcebath(pid int, registered map[int]bool) bool {
 
 // os.path.realpath without strictness
 func realpath(p string) string {
-	if r, err := pypath.Realpath(p, pypath.Lax); err == nil {
+	if r, err := pathutil.Resolve(p); err == nil {
 		return r
 	}
 	return p
@@ -558,7 +560,7 @@ func (c reapCandidate) current() bool {
 // TERMs then KILLs same user processes living in doomed entries or vanished scratch dirs, sparing icebath owned ones
 func reapProcessesRootedIn(scratchRoot string, doomed *[]string, audit *pruneAudit) (int, error) {
 	if !proc.CwdAvailable {
-		return 0, &pyint.Error{Kind: "NotImplementedError", Msg: "platform " + runtime.GOOS + " is not supported"}
+		return 0, &errorutil.Error{Kind: "NotImplementedError", Msg: "platform " + runtime.GOOS + " is not supported"}
 	}
 	root := realpath(scratchRoot)
 	var targets []string
@@ -729,13 +731,13 @@ func PruneIdleEntries(root string, maxIdleHours float64, skipNames map[string]bo
 
 // Python exception class and message for an error raised inside a prune pass
 func excInfo(err error) (string, string) {
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	if errors.As(err, &pe) {
 		return pe.Kind, pe.Msg
 	}
 	var errno syscall.Errno
 	if errors.As(err, &errno) {
-		return pypath.OSErrorClass(err), pypath.OSErrorText(err)
+		return pypath.OSErrorClass(err), err.Error()
 	}
 	return "OSError", err.Error()
 }
@@ -771,7 +773,7 @@ func pruneIdleEntries(root string, maxIdleHours float64, skipNames map[string]bo
 	}
 	if _, err := reapStep(root, &doomed, audit); err != nil {
 		class, msg := excInfo(err)
-		audit.info(fmt.Sprintf("scratch prune: process check failed (%s: %s), nothing deleted this pass", class, pyrepr.StrRepr(msg)))
+		audit.info(fmt.Sprintf("scratch prune: process check failed (%s: %s), nothing deleted this pass", class, strconv.Quote(msg)))
 		return 0, nil
 	}
 	if len(doomed) == 0 {
@@ -803,7 +805,7 @@ func pruneIdleEntries(root string, maxIdleHours float64, skipNames map[string]bo
 		if isRealDir(entry) {
 			denied = rmtreeStep(entry)
 		} else if err := os.Remove(entry); err != nil {
-			audit.info(fmt.Sprintf("scratch prune: could not remove %s: %s", pathRepr(entry), pypath.OSErrorText(err)))
+			audit.info(fmt.Sprintf("scratch prune: could not remove %s: %s", pathRepr(entry), err.Error()))
 			continue
 		}
 		if _, err := scratchLstat(entry); err == nil {

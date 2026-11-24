@@ -22,9 +22,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One recorded auxiliary completion
@@ -1011,10 +1011,10 @@ func TestVideoAnalyze(t *testing.T) {
 func TestVisionToolsRegistered(t *testing.T) {
 	registerVisionTools()
 	v := Default.Get("vision_analyze")
-	if v == nil || v.Toolset != "vision" || v.Emoji != "\U0001F441️" || v.Schema.Vals["name"] != "vision_analyze" {
+	if v == nil || v.Toolset != "vision" || v.Emoji != "\U0001F441️" || v.Schema.Value("name") != "vision_analyze" {
 		t.Fatalf("vision_analyze %+v", v)
 	}
-	req := pyjson.Plain(v.Schema.Vals["parameters"]).(map[string]any)["required"].([]any)
+	req := jsonutil.Plain(v.Schema.Value("parameters")).(map[string]any)["required"].([]any)
 	if len(req) != 2 || req[0] != "image_url" || req[1] != "question" {
 		t.Fatalf("required %v", req)
 	}

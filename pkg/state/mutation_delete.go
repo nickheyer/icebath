@@ -3,11 +3,11 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Retires the delete targets and removes their rows, terminal rows surviving as digest tombstones
-func deleteInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) ([]string, *pyjson.Object, error) {
+func deleteInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	targets, err := DeleteTargets(ctx, conn, sessionID)
 	if err != nil {
 		return nil, nil, err
@@ -37,5 +37,5 @@ func deleteInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, ses
 	if err := deleteUnreferencedSystemPrompts(ctx, conn); err != nil {
 		return nil, nil, err
 	}
-	return []string{}, pyjson.ObjectOf("deleted_ids", anyStrings(targets)), nil
+	return []string{}, jsonutil.ObjectOf("deleted_ids", anyStrings(targets)), nil
 }

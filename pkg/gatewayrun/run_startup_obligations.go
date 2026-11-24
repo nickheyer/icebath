@@ -8,15 +8,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 )
 
 // Flood redelivery workers keyed by platform and bot identity, one per identity
 type floodRedelivery struct {
 	mu    sync.Mutex
 	tasks map[[2]string]*gatewayTask
-	wakes map[[2]string]*pythread.Event
+	wakes map[[2]string]*syncutil.Event
 }
 
 // Clears resume flags of claimed rows and returns the rows safe to redeliver, strict for runtime reconnects
@@ -99,14 +97,14 @@ func (r *GatewayRunner) scheduleFloodRedelivery(ctx context.Context, platform ga
 	flood.mu.Lock()
 	if flood.tasks == nil {
 		flood.tasks = map[[2]string]*gatewayTask{}
-		flood.wakes = map[[2]string]*pythread.Event{}
+		flood.wakes = map[[2]string]*syncutil.Event{}
 	}
 	if _, running := flood.tasks[key]; running {
 		flood.wakes[key].Set()
 		flood.mu.Unlock()
 		return
 	}
-	wake := &pythread.Event{}
+	wake := &syncutil.Event{}
 	flood.wakes[key] = wake
 	task := spawnGatewayTask(context.WithoutCancel(ctx), fmt.Sprintf("flood-redelivery:%s:%s", key[0], key[1]), func(ctx context.Context) (any, error) {
 		defer func() {
@@ -200,8 +198,8 @@ func (r *GatewayRunner) redeliverClaimedObligations(ctx context.Context, claimed
 			pkgLog().Info(fmt.Sprintf("Redelivered recovered final response to %s:%s (obligation %s, attempt %d)", row.Platform, row.ChatID, row.ObligationID, row.Attempts))
 		} else {
 			errText := "send failed"
-			if err == nil && pyrepr.Truthy(result.Error) {
-				errText = pyrepr.Str(result.Error)
+			if err == nil && anyutil.IsTrue(result.Error) {
+				errText = anyutil.String(result.Error)
 			}
 			logSuppressedExc(slog.LevelDebug, gateway.MarkFailed(ctx, row.ObligationID, errText), "delivery ledger update failed")
 		}

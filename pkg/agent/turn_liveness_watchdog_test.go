@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 type watchdogDB struct {
@@ -33,8 +33,8 @@ func (d *watchdogDB) snapshot() ([][]string, []float64) {
 	return append([][]string(nil), d.events...), append([]float64(nil), d.refreshTimes...)
 }
 
-func (d *watchdogDB) GetSession(_ context.Context, sessionID string) (*pyjson.Object, error) {
-	return pyjson.ObjectOf("id", sessionID), nil
+func (d *watchdogDB) GetSession(_ context.Context, sessionID string) (*jsonutil.Object, error) {
+	return jsonutil.ObjectOf("id", sessionID), nil
 }
 
 func (d *watchdogDB) AcquireSessionTurnLease(sessionID, holder string, _ state.TurnLeaseWait) (bool, error) {
@@ -71,7 +71,7 @@ func watchdogAgent(t *testing.T, db *watchdogDB) *AIAgent {
 	stores := useLeaseStores(t)
 	interval := 60.0
 	a := &AIAgent{sessionID: "stalled-session", platform: "tui", model: "test-model", quietMode: true,
-		suppressStatusOutput: true, hardInterruptRequested: &pythread.Event{}, pendingRedirectLock: &sync.Mutex{}}
+		suppressStatusOutput: true, hardInterruptRequested: &syncutil.Event{}, pendingRedirectLock: &sync.Mutex{}}
 	a.sessionDBCreated = true
 	a.sessionTurnLeaseRefreshInterval = &interval
 	a.lastActivityTS = activityWallNow() - 1000.0
@@ -225,7 +225,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesDuringWarning(t *testing.T) {
 	a := watchdogAgent(t, db)
 	interval := 0.05
 	a.sessionTurnLeaseRefreshInterval = &interval
-	resume, touched := &pythread.Event{}, &pythread.Event{}
+	resume, touched := &syncutil.Event{}, &syncutil.Event{}
 	a.statusCallback = func(kind string, _ any) {
 		if kind == "warn" {
 			resume.Set()
@@ -298,7 +298,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesAfterRevalidation(t *testing.T)
 }
 
 type blockingCommitFence struct {
-	entered, release *pythread.Event
+	entered, release *syncutil.Event
 	mu               sync.Mutex
 	calls            int
 }
@@ -322,7 +322,7 @@ func TestWatchdogDeclinesAbortWhenActivityResumesInsideInterruptPublication(t *t
 	a := watchdogAgent(t, db)
 	interval := 0.05
 	a.sessionTurnLeaseRefreshInterval = &interval
-	fence := &blockingCommitFence{entered: &pythread.Event{}, release: &pythread.Event{}}
+	fence := &blockingCommitFence{entered: &syncutil.Event{}, release: &syncutil.Event{}}
 	a.activeCompressionCommitFence = fence
 	records := captureLogger(t, "agent", slog.LevelError)
 	start := time.Now()
@@ -392,8 +392,8 @@ type parkingReleaseLock struct {
 	inner         sync.Locker
 	parkOnRelease int64
 	releaseCount  atomic.Int64
-	parked        *pythread.Event
-	releasePark   *pythread.Event
+	parked        *syncutil.Event
+	releasePark   *syncutil.Event
 }
 
 func (l *parkingReleaseLock) Lock() { l.inner.Lock() }
@@ -409,11 +409,11 @@ func (l *parkingReleaseLock) Unlock() {
 }
 
 func TestDeclinedAbortDoesNotCancelPendingCompressionCommit(t *testing.T) {
-	a := &AIAgent{quietMode: true, hardInterruptRequested: &pythread.Event{}}
+	a := &AIAgent{quietMode: true, hardInterruptRequested: &syncutil.Event{}}
 	a.turnLivenessActivityGeneration = 5
 	fence := NewCompressionCommitFence()
 	a.activeCompressionCommitFence = fence
-	lock := &parkingReleaseLock{inner: &sync.Mutex{}, parkOnRelease: 1, parked: &pythread.Event{}, releasePark: &pythread.Event{}}
+	lock := &parkingReleaseLock{inner: &sync.Mutex{}, parkOnRelease: 1, parked: &syncutil.Event{}, releasePark: &syncutil.Event{}}
 	a.turnLivenessActivityLocker = lock
 	var ret bool
 	done := make(chan struct{})

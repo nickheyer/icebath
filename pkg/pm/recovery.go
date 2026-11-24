@@ -10,10 +10,11 @@ import (
 	"os/exec"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // StartupImports are the distribution, module and attribute triples a dependency environment must import
@@ -31,7 +32,7 @@ var StartupImports = [][3]string{
 func startupImportsLiteral() string {
 	rows := make([]string, len(StartupImports))
 	for i, row := range StartupImports {
-		rows[i] = fmt.Sprintf("(%s, %s, %s)", pyrepr.StrRepr(row[0]), pyrepr.StrRepr(row[1]), pyrepr.StrRepr(row[2]))
+		rows[i] = fmt.Sprintf("(%s, %s, %s)", strconv.Quote(row[0]), strconv.Quote(row[1]), strconv.Quote(row[2]))
 	}
 	return "(" + strings.Join(rows, ", ") + ")"
 }
@@ -131,7 +132,7 @@ func baselineGaps(ctx context.Context, root string) ([]string, error) {
 	if venv, ok := storeFacts.Get("venv"); ok {
 		if list, ok := venv["extras"].([]any); ok {
 			for _, e := range list {
-				shipped = append(shipped, pyrepr.Str(e))
+				shipped = append(shipped, anyutil.String(e))
 			}
 		}
 	}
@@ -207,7 +208,7 @@ func managedRefreshDependencies(ctx context.Context, projectRoot string) (string
 	var recorded []string
 	if list, ok := fact["extras"].([]any); ok {
 		for _, e := range list {
-			recorded = append(recorded, pyrepr.Str(e))
+			recorded = append(recorded, anyutil.String(e))
 		}
 	}
 	stamp, _ := fact["stamp"].(string)

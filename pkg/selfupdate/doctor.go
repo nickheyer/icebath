@@ -13,10 +13,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Names whose presence in the .env text means a provider credential or endpoint is configured
@@ -38,12 +38,12 @@ func checkAuthProviders(ctx context.Context, d *Doctor, shouldFix bool) (*Findin
 		}
 		minimaxStatus := provider.GetMinimaxOAuthAuthStatus(env)
 		minimaxDetail := "(logged in)"
-		if region := minimaxStatus["region"]; pyrepr.Truthy(region) {
-			minimaxDetail = "(logged in, region=" + pyrepr.Str(region) + ")"
+		if region := minimaxStatus["region"]; anyutil.IsTrue(region) {
+			minimaxDetail = "(logged in, region=" + anyutil.String(region) + ")"
 		}
 		doctorLoginRow(d.W, "MiniMax OAuth", minimaxStatus, minimaxDetail, false)
 		xaiStatus := provider.GetXAIOAuthAuthStatus(env)
-		if !pyrepr.Truthy(xaiStatus) {
+		if !anyutil.IsTrue(xaiStatus) {
 			xaiStatus = map[string]any{}
 		}
 		doctorLoginRow(d.W, "xAI OAuth", xaiStatus, "(logged in)", true)
@@ -53,10 +53,10 @@ func checkAuthProviders(ctx context.Context, d *Doctor, shouldFix bool) (*Findin
 
 // Prints the ok or warn row of an OAuth status, plus its error hint when showError is set
 func doctorLoginRow(w io.Writer, label string, status map[string]any, okDetail string, showError bool) bool {
-	loggedIn := doctorCheckBool(w, pyrepr.Truthy(status["logged_in"]),
+	loggedIn := doctorCheckBool(w, anyutil.IsTrue(status["logged_in"]),
 		doctorRow{Text: label, Detail: okDetail}, doctorRow{Text: label, Detail: "(not logged in)"}, false)
-	if !loggedIn && showError && pyrepr.Truthy(status["error"]) {
-		doctorCheckInfo(w, pyrepr.Str(status["error"]))
+	if !loggedIn && showError && anyutil.IsTrue(status["error"]) {
+		doctorCheckInfo(w, anyutil.String(status["error"]))
 	}
 	return loggedIn
 }
@@ -205,12 +205,12 @@ func RunDoctor(ctx context.Context, h string, ns map[string]any, w io.Writer) (i
 // Walks the given checks for one doctor run, or only persists an advisory dismissal when ack is set
 func runDoctor(ctx context.Context, d *Doctor, ns map[string]any, checks []doctorCheckEntry) (int, error) {
 	w := d.W
-	shouldFix := pyrepr.Truthy(ns["fix"])
+	shouldFix := anyutil.IsTrue(ns["fix"])
 	if _, set := os.LookupEnv("ICEBATH_INTERACTIVE"); !set {
 		os.Setenv("ICEBATH_INTERACTIVE", "1")
 	}
-	if ack := ns["ack"]; pyrepr.Truthy(ack) {
-		return doctorAckAdvisory(ctx, d, pyrepr.Str(ack)), nil
+	if ack := ns["ack"]; anyutil.IsTrue(ack) {
+		return doctorAckAdvisory(ctx, d, anyutil.String(ack)), nil
 	}
 	c := &cliui.Console{Out: w}
 	fmt.Fprintln(w)

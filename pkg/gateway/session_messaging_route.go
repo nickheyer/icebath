@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner resolving a messaging chat's next turn route without building an agent
@@ -18,7 +18,7 @@ type messagingRouteRunner interface {
 }
 
 // Model and effort fields a messaging chat's next turn resolves, session override over channel over config
-func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveSession) (*pyjson.Object, error) {
+func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveSession) (*jsonutil.Object, error) {
 	configured := settings.ModelProvider.Get(ctx)
 	model, providerName, baseURL := any(settings.Model.Get(ctx)), any(configured), any(settings.ModelBaseURL.Get(ctx))
 	resolver, ok := runner.(messagingRouteRunner)
@@ -26,7 +26,7 @@ func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveS
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("the gateway runner (%T) cannot look up a channel override", runner)}
 	}
 	if channel := resolver.ChannelOverrideFor(live.Source); channel != nil {
-		model, providerName = pyrepr.Or(channel.Model, model), pyrepr.Or(channel.Provider, providerName)
+		model, providerName = anyutil.Or(channel.Model, model), anyutil.Or(channel.Provider, providerName)
 	}
 	get := func(string) any { return nil }
 	if override := resolver.SessionModelOverride(live.Route); len(override) > 0 {
@@ -37,12 +37,12 @@ func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveS
 			return value
 		}
 	}
-	model = pyrepr.Or(get("model"), model)
-	providerName, baseURL = pyrepr.Or(get("provider"), providerName), pyrepr.Or(get("base_url"), baseURL)
+	model = anyutil.Or(get("model"), model)
+	providerName, baseURL = anyutil.Or(get("provider"), providerName), anyutil.Or(get("base_url"), baseURL)
 	apiMode := get("api_mode")
 	if !pyTruthy(apiMode) {
 		apiMode = nil
-		if pyrepr.Equal(providerName, configured) && settings.ModelAPIMode.Get(ctx) != "" {
+		if anyutil.Equal(providerName, configured) && settings.ModelAPIMode.Get(ctx) != "" {
 			apiMode = settings.ModelAPIMode.Get(ctx)
 		}
 	}
@@ -63,7 +63,7 @@ func messagingRouteInfo(ctx context.Context, runner AuthorityRunner, live *LiveS
 	if tier != nil {
 		tierText = *tier
 	}
-	info := pyjson.ObjectOf("model", model)
+	info := jsonutil.ObjectOf("model", model)
 	mergeObject(info, effortFields(reasoningValue, tierText, model, providerName, baseURL, apiMode))
 	return info, nil
 }

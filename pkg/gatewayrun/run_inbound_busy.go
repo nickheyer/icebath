@@ -13,6 +13,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Tool interrupt reason of a turn whose session slot was evicted
@@ -57,9 +58,9 @@ func (r *GatewayRunner) hmEvictIdleStaleAgent(ctx context.Context, quickKey stri
 			}
 			field := func(key string, def any) string {
 				if value, ok := summary[key]; ok {
-					return pyrepr.Str(value)
+					return anyutil.String(value)
 				}
-				return pyrepr.Str(def)
+				return anyutil.String(def)
 			}
 			staleDetail = fmt.Sprintf(" | last_activity=%s (%ss ago) | iteration=%s/%s", field("last_activity_desc", "unknown"),
 				zeroDecimals(staleIdle), field("api_call_count", 0), field("max_iterations", 0))
@@ -136,7 +137,7 @@ func (r *GatewayRunner) hmStopOwnerTurn(ctx context.Context, quickKey string) er
 	}
 	paused := false
 	for _, row := range rows {
-		if row.GetOr("status", nil) == "unknown" {
+		if row.ValueOr("status", nil) == "unknown" {
 			paused = true
 			break
 		}
@@ -147,9 +148,9 @@ func (r *GatewayRunner) hmStopOwnerTurn(ctx context.Context, quickKey string) er
 			return err
 		}
 		for _, row := range rows {
-			principal, _ := row.GetOr("principal_id", "").(string)
-			if row.GetOr("status", nil) == "queued" && strings.HasPrefix(principal, "messaging:") {
-				admissionID, _ := row.GetOr("admission_id", "").(string)
+			principal, _ := row.ValueOr("principal_id", "").(string)
+			if row.ValueOr("status", nil) == "queued" && strings.HasPrefix(principal, "messaging:") {
+				admissionID, _ := row.ValueOr("admission_id", "").(string)
 				if _, err := authority.CancelQueued(ctx, actor, ref, admissionID); err != nil && !isRuntimeStoreError(err) {
 					return err
 				}

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Elevation fact, whoami and the native writer faked like the Python _fake_elevated fixture, returning the grants and command runs
@@ -27,7 +27,7 @@ func fakeElevated(t *testing.T, tmp string, elevated bool) (*[]string, *[][]stri
 	runACLCommand = func(argv []string) error { runs = append(runs, argv); return nil }
 	processIsElevated = func() bool { return elevated }
 	grantNative = func(p string, _ bool, _ string) (bool, error) {
-		real, _ := pypath.Realpath(p, pypath.Lax)
+		real, _ := pathutil.Resolve(p)
 		granted = append(granted, real)
 		return false, nil
 	}

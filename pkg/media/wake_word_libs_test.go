@@ -12,9 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pvporcupine"
-	"github.com/nickheyer/icebath/pkg/internal/pyopenwakeword"
 	"github.com/nickheyer/icebath/pkg/internal/sherpaonnx"
 	"github.com/nickheyer/icebath/pkg/pm"
+	wakewordutil "github.com/nickheyer/icebath/pkg/utils/wakeword"
 )
 
 // Empty install tree with a venv record, returning the context and the site packages directory PM selects in it
@@ -56,11 +56,11 @@ func TestWakeLibraryImportsWithoutTheDistributions(t *testing.T) {
 	check := func(name string, err error) {
 		t.Helper()
 		var we *WakeWordError
-		if !errors.As(err, &we) || we.Class != "ModuleNotFoundError" || we.Msg != "the Python package "+name+" is not installed in the wake word environment" {
+		if !errors.As(err, &we) || !errors.Is(err, errWakeNotInstalled) || we.Msg != "the Python package "+name+" is not installed in the wake word environment" {
 			t.Fatalf("import of %s gave %v", name, err)
 		}
 	}
-	_, err := importPyOpenWakeWord(ctx)
+	_, err := importOpenWakeWord(ctx)
 	check("pyopen_wakeword", err)
 	_, err = importPvporcupine(ctx)
 	check("pvporcupine", err)
@@ -92,15 +92,14 @@ func TestWakeLibraryImportsFromTheSelectedEnvironment(t *testing.T) {
 		t.Fatalf("mismatched sensitivities gave %v", err)
 	}
 
-	oww, err := importPyOpenWakeWord(ctx)
+	oww, err := importOpenWakeWord(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	var owwErr *pyopenwakeword.PyError
-	if _, err := oww.FeaturesFromBuiltin(); !errors.As(err, &owwErr) || owwErr.Class != "ValueError" {
+	if _, err := oww.FeaturesFromBuiltin(); !errors.Is(err, wakewordutil.ErrLibraryNotFound) {
 		t.Fatalf("features without the TFLite library gave %v", err)
 	}
-	if _, err := oww.ModelFromModel(filepath.Join(site, "hey_jarvis.tflite")); !errors.As(err, &owwErr) || owwErr.Class != "ValueError" {
+	if _, err := oww.ModelFromModel(filepath.Join(site, "hey_jarvis.tflite")); !errors.Is(err, wakewordutil.ErrLibraryNotFound) {
 		t.Fatalf("classifier without the TFLite library gave %v", err)
 	}
 
@@ -114,7 +113,7 @@ func TestSherpaWakeEngineRunsOnTheNativeSpeechEngine(t *testing.T) {
 	}
 	swap(t, &wakeSpeechEngine, func(context.Context) (*sherpaonnx.Module, error) { return nil, &sherpaonnx.PlatformError{} })
 	var we *WakeWordError
-	if _, err := importSherpaOnnx(ctx); !errors.As(err, &we) || we.Class != "ImportError" || !strings.Contains(we.Msg, "no build for") {
+	if _, err := importSherpaOnnx(ctx); !errors.As(err, &we) || !errors.Is(err, errWakeUnavailable) || !strings.Contains(we.Msg, "no build for") {
 		t.Fatalf("an engine without a library build gave %v", err)
 	}
 	for supported, want := range map[bool]bool{true: true, false: false} {

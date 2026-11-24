@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func wslHost(t *testing.T) {
@@ -17,21 +17,21 @@ func wslHost(t *testing.T) {
 	t.Cleanup(func() { home.SetWSLProbe(previous) })
 }
 
-func jsonField(t *testing.T, row *pyjson.Object, key string) *pyjson.Object {
+func jsonField(t *testing.T, row *jsonutil.Object, key string) *jsonutil.Object {
 	t.Helper()
-	text, _ := row.GetOr(key, nil).(string)
-	v, err := pyjson.Loads(text)
+	text, _ := row.ValueOr(key, nil).(string)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatalf("%s is not JSON: %v", key, err)
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		t.Fatalf("%s is not an object: %#v", key, v)
 	}
 	return obj
 }
 
-func getRow(t *testing.T, db *state.SessionDB, sid string) *pyjson.Object {
+func getRow(t *testing.T, db *state.SessionDB, sid string) *jsonutil.Object {
 	t.Helper()
 	row, err := db.GetSession(context.Background(), sid)
 	if err != nil {

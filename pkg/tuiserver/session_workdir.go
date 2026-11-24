@@ -12,14 +12,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // A Windows drive path rewritten to its WSL mount on POSIX hosts, user syntax expanded
 func normalizeCompletionPath(pathPart string) string {
-	expanded := pypath.Expanduser(pathPart)
+	expanded := pathutil.ExpandUser(pathPart)
 	if runtime.GOOS != "windows" {
 		normalized := strings.ReplaceAll(expanded, "\\", "/")
 		if len(normalized) >= 3 && normalized[1] == ':' && normalized[2] == '/' && unicode.IsLetter(rune(normalized[0])) {
@@ -67,7 +67,7 @@ func completionCwd(ctx context.Context) (string, error) {
 	if profileHomePath == "" && strings.HasPrefix(raw, "~") && cwdIsRemote(ctx, "") {
 		return raw, nil
 	}
-	if resolved, err := pypath.Abspath(pypath.Expanduser(raw)); err == nil && isDir(resolved) {
+	if resolved, err := filepath.Abs(pathutil.ExpandUser(raw)); err == nil && isDir(resolved) {
 		return resolved, nil
 	}
 	if profileHomePath == "" && isRemoteCwdShape(raw) && cwdIsRemote(ctx, "") {

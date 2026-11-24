@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Answers a config backend outage with that request's 503 instead of ending the gateway
@@ -14,7 +14,7 @@ func APIConfigUnavailableMiddleware(ctx context.Context, request *WebRequest, ha
 	resp, err := handler(ctx, request)
 	var unavailable *config.ConfigBackendUnavailable
 	if errors.As(err, &unavailable) {
-		return WebJSONResponse(pyjson.ObjectOf("error", pyjson.ObjectOf("message", unavailable.SystemExitCode(),
+		return WebJSONResponse(jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", unavailable.SystemExitCode(),
 			"type", "server_error", "code", "config_backend_unavailable")), http.StatusServiceUnavailable, nil)
 	}
 	return resp, err

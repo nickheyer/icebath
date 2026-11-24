@@ -20,15 +20,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -50,11 +49,11 @@ var (
 	updateSleep     = time.Sleep
 	// Terminal probes of the interactive restore prompt
 	updateStdinIsTTY  = func() bool { return fileIsTTY(os.Stdin) }
-	updateStdoutIsTTY = func(w io.Writer) bool { return pysys.Isatty(w) }
+	updateStdoutIsTTY = func(w io.Writer) bool { return termutil.IsTerminal(w) }
 )
 
 // Whether an open file is a terminal the way isatty reports one
-func fileIsTTY(f *os.File) bool { return pysys.Isatty(f) }
+func fileIsTTY(f *os.File) bool { return termutil.IsTerminal(f) }
 
 // Git argv that points every git the update runs at the CA bundle SSL_CERT_FILE names, unchanged when GIT_SSL_CAINFO or git's own config already names one
 func mapSSLCertFileForGit(ctx context.Context, gitCmd []string) ([]string, error) {
@@ -92,7 +91,7 @@ func recordPreUpdateBackupOutcome(ctx context.Context, args map[string]any, snap
 	}
 	if resolvePreUpdateBackupMode(ctx, args) == "off" {
 		reason := "disabled by updates.pre_update_backup (mode: off)"
-		if pyrepr.Truthy(args["no_backup"]) {
+		if anyutil.IsTrue(args["no_backup"]) {
 			reason = "disabled by --no-backup"
 		}
 		recordUpdateSkip(ctx, "pre_update_backup", reason)
@@ -161,7 +160,7 @@ func subprocessStderr(err error) string {
 	if called, ok := asCalledProcessError(err); ok {
 		return called.Stderr
 	}
-	var expired *pysubprocess.TimeoutExpired
+	var expired *executil.TimeoutError
 	if errors.As(err, &expired) {
 		return strings.ToValidUTF8(string(expired.Stderr), "\uFFFD")
 	}
@@ -171,7 +170,7 @@ func subprocessStderr(err error) string {
 // Fetches the history a shallow checkout lacks before the bounded fetch, a failure only warned
 func healStaleShallowCheckout(ctx context.Context, w io.Writer, repoRoot, branch string) error {
 	kw := noPromptGitKwargs()
-	healed, err := tools.HealShallowHistory(ctx, repoRoot, branch, pysubprocess.Options{Env: kw.Env, Attr: kw.Attr})
+	healed, err := tools.HealShallowHistory(ctx, repoRoot, branch, executil.Options{Env: kw.Env, Attr: kw.Attr})
 	if err != nil {
 		if !isOSOrSubprocessError(err) {
 			return err
@@ -210,7 +209,7 @@ func compileErrorWords(class string) string {
 
 // One line naming where a Python source fails to compile and why
 func pyCompileErrorMessage(err error, file string) string {
-	var se *pyast.SyntaxError
+	var se *pythonutil.SyntaxError
 	if errors.As(err, &se) {
 		msg := se.Msg
 		if msg == "" {
@@ -221,7 +220,7 @@ func pyCompileErrorMessage(err error, file string) string {
 		}
 		return compileErrorWords(se.Class) + ": " + msg
 	}
-	var limit *pyast.LimitError
+	var limit *pythonutil.LimitError
 	if errors.As(err, &limit) {
 		return "the source exceeds a compiler limit: " + limit.Msg
 	}
@@ -239,7 +238,7 @@ func validatePythonFilesSyntax(root string, relpaths []string) (bool, string, st
 		if err != nil {
 			return false, file, "could not read: " + launchErrorText(err)
 		}
-		if err := pyast.Compile(source, file); err != nil {
+		if err := pythonutil.Compile(source, file); err != nil {
 			return false, file, pyCompileErrorMessage(err, file)
 		}
 	}
@@ -270,7 +269,7 @@ func gatewayPrompt(ctx context.Context, w io.Writer, promptText, def string, tim
 	if err := unlinkMissingOK(responsePath); err != nil {
 		return "", err
 	}
-	payload, err := pyjson.Dumps(pyjson.ObjectOf("prompt", promptText, "default", def, "id", uuid.NewString()))
+	payload, err := jsonutil.Encode(jsonutil.ObjectOf("prompt", promptText, "default", def, "id", uuid.NewString()))
 	if err != nil {
 		return "", err
 	}
@@ -309,7 +308,7 @@ func readGatewayResponse(responsePath, promptPath string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return "", false
 	}
@@ -340,7 +339,7 @@ func asCalledProcessError(err error) (*calledProcess, bool) {
 	if errors.As(err, &custody) {
 		return &calledProcess{Cmd: custody.Cmd, ReturnCode: custody.ReturnCode, Stdout: custody.Output, Stderr: custody.Stderr}, true
 	}
-	var plain *pysubprocess.CalledProcessError
+	var plain *executil.StatusError
 	if errors.As(err, &plain) {
 		return &calledProcess{Cmd: plain.Cmd, ReturnCode: plain.Returncode, Stdout: strings.ToValidUTF8(string(plain.Stdout), "\uFFFD"),
 			Stderr: strings.ToValidUTF8(string(plain.Stderr), "\uFFFD")}, true

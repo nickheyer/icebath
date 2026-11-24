@@ -8,8 +8,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 func TestLintLooksLikeLinterUnusable(t *testing.T) {
@@ -562,7 +560,7 @@ var tomllibGoldenCases = []tomllibGoldenCase{
 	{"table repr unicode 17 point", "[\"\\u088F\\U0001FAEA\"]\n[\"\\u088F\\U0001FAEA\"]", "invalid TOML: Cannot declare ('\\u088f\\U0001faea',) twice (at line 2, column 20)", false},
 	{"table repr printable unicode", "['\xc3\xa9\xf0\x9f\x98\x80\xe6\x97\xa5']\n['\xc3\xa9\xf0\x9f\x98\x80\xe6\x97\xa5']", "invalid TOML: Cannot declare ('\xc3\xa9\xf0\x9f\x98\x80\xe6\x97\xa5',) twice (at line 2, column 7)", false},
 	{"table repr control escapes", "[\"\\t\\n\\r\\b\\f\\u007f\"]\n[\"\\t\\n\\r\\b\\f\\u007f\"]", "invalid TOML: Cannot declare ('\\t\\n\\r\\x08\\x0c\\x7f',) twice (at line 2, column 20)", false},
-	{"table repr surrogate", pystr.SurrogateEscapeDecode([]byte("['\xed\xa0\x80']\n['\xed\xa0\x80']")), "invalid TOML: Cannot declare ('\\udced\\udca0\\udc80',) twice (at line 2, column 7)", false},
+	{"table repr surrogate", string("['\xed\xa0\x80']\n['\xed\xa0\x80']"), "invalid TOML: Cannot declare ('\\udced\\udca0\\udc80',) twice (at line 2, column 7)", false},
 	{"table repr lone surrogate", "['\xed\xa0\x80']\n['\xed\xa0\x80']", "invalid TOML: Cannot declare ('\\ud800',) twice (at line 2, column 5)", false},
 	{"lone surrogate value", "a = '\xed\xa0\x80'", "", false},
 	{"lone surrogate bare key", "k\xed\xa0\x80 = 1", "invalid TOML: Expected '=' after a key in a key/value pair (at line 1, column 2)", false},
@@ -1059,7 +1057,7 @@ func TestRuamelCParseSurrogates(t *testing.T) {
 		{"first run reported", "a\xff b\xfe\xfd", "invalid YAML: the file holds a lone surrogate U+DCFF at character 1, which UTF-8 cannot encode"},
 		{"surrogate before nul", "\x00\xff", "invalid YAML: the file holds a lone surrogate U+DCFF at character 1, which UTF-8 cannot encode"},
 		{"surrogate before scanner error", "a: b: c\xff", "invalid YAML: the file holds a lone surrogate U+DCFF at character 7, which UTF-8 cannot encode"},
-		{"encoded surrogate bytes", pystr.SurrogateEscapeDecode([]byte("a\xed\xa0\x80")), "invalid YAML: the file holds lone surrogates at characters 1 to 3, which UTF-8 cannot encode"},
+		{"encoded surrogate bytes", string("a\xed\xa0\x80"), "invalid YAML: the file holds lone surrogates at characters 1 to 3, which UTF-8 cannot encode"},
 		{"lone surrogate code point", "a\xed\xa0\x80", "invalid YAML: the file holds a lone surrogate U+D800 at character 1, which UTF-8 cannot encode"},
 		{"escape range code point", "x\xed\xb2\x80y", "invalid YAML: the file holds a lone surrogate U+DC80 at character 1, which UTF-8 cannot encode"},
 		{"overlong bytes", "\xc0\x80", "invalid YAML: the file holds lone surrogates at characters 0 to 1, which UTF-8 cannot encode"},

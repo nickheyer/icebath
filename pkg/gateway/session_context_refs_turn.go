@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Runner whose inbound turns expand @ references in the session workspace with the turn model context
@@ -25,7 +25,7 @@ func inboundCwd(ctx context.Context, runner AuthorityRunner, source *SessionSour
 	if policy != nil {
 		return policy.Cwd, nil
 	}
-	return tenv(ctx, "TERMINAL_CWD", pypath.Expanduser("~"))
+	return tenv(ctx, "TERMINAL_CWD", pathutil.ExpandUser("~"))
 }
 
 // Inbound turn text with its references expanded in the session workspace, or the typed text and the refusal

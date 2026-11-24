@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Local session committed as commit_local_session reserves its row, route and receipt
@@ -20,14 +20,14 @@ func seedGatewayLocalSession(t *testing.T, scope string) string {
 		t.Fatal(err)
 	}
 	route := "local:" + sid
-	origin := pyjson.ObjectOf("platform", "local", "chat_id", sid, "user_id", "human", "chat_type", "dm")
-	entry := pyjson.ObjectOf("session_key", route, "session_id", sid, "created_at", "2026-11-06T00:00:00",
+	origin := jsonutil.ObjectOf("platform", "local", "chat_id", sid, "user_id", "human", "chat_type", "dm")
+	entry := jsonutil.ObjectOf("session_key", route, "session_id", sid, "created_at", "2026-11-06T00:00:00",
 		"updated_at", "2026-11-06T00:00:00", "origin", origin, "platform", "local", "chat_type", "dm", "display_name", "Title")
-	policy := pyjson.ObjectOf("source", "cli", "cwd", t.TempDir(), "model", "m", "request_json", `{"source":"cli"}`)
-	receipt := pyjson.ObjectOf("profile_id", "profile", "principal_id", "human", "request_id", "r", "session_id", sid,
+	policy := jsonutil.ObjectOf("source", "cli", "cwd", t.TempDir(), "model", "m", "request_json", `{"source":"cli"}`)
+	receipt := jsonutil.ObjectOf("profile_id", "profile", "principal_id", "human", "request_id", "r", "session_id", sid,
 		"route", route, "entry", entry, "policy", policy)
 	dump := func(v any) string {
-		text, err := pyjson.Dumps(v)
+		text, err := jsonutil.Encode(v)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -72,7 +72,7 @@ func TestResetLocalSession(t *testing.T) {
 	if _, err := store.ResetSession(ctx, route, nil); err == nil {
 		t.Fatal("a reset ran before any authority bound its epoch")
 	}
-	key, err := pypath.Resolve(db.Path())
+	key, err := pathutil.Resolve(db.Path())
 	if err != nil {
 		t.Fatal(err)
 	}

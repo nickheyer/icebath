@@ -17,13 +17,16 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
+
+	"golang.org/x/text/cases"
 )
 
 // Unit properties whose loaded values bind a systemd service to an account, home and command
@@ -50,7 +53,7 @@ func identityAbsolute(value string) (string, error) {
 	if value == "" || !filepath.IsAbs(value) {
 		return "", unverifiedIdentity()
 	}
-	return pypath.Resolve(value)
+	return pathutil.Resolve(value)
 }
 
 // Root anchoring a home, the parent of its dot directory for a profiles child and the parent otherwise
@@ -64,7 +67,7 @@ func identityInstallRoot(h string) string {
 
 // Accepts the same home, refuses a sibling profile as a mismatch and another root as foreign
 func VerifyHome(h, configured string) error {
-	ours, err := pypath.Resolve(h)
+	ours, err := pathutil.Resolve(h)
 	if err != nil {
 		return err
 	}
@@ -72,10 +75,10 @@ func VerifyHome(h, configured string) error {
 	if err != nil {
 		return err
 	}
-	if pypath.Normcase(theirs) == pypath.Normcase(ours) {
+	if pathutil.FoldCase(theirs) == pathutil.FoldCase(ours) {
 		return nil
 	}
-	if pypath.Normcase(identityInstallRoot(theirs)) != pypath.Normcase(identityInstallRoot(ours)) {
+	if pathutil.FoldCase(identityInstallRoot(theirs)) != pathutil.FoldCase(identityInstallRoot(ours)) {
 		return &ServiceIdentityError{Reason: "foreign_root", Foreign: true}
 	}
 	return &ServiceIdentityError{Reason: "profile_mismatch"}
@@ -85,15 +88,15 @@ var pythonExecutableRE = regexp.MustCompile(`^python(?:w|\d+(?:\.\d+)*)?(?:\.exe
 
 // Whether executable is the store launcher of this install root, never another checkout's
 func ownStoreLauncher(executable string) bool {
-	root, err := pypath.Resolve(pm.RepoRoot())
+	root, err := pathutil.Resolve(pm.RepoRoot())
 	if err != nil {
 		return false
 	}
-	resolved, err := pypath.Resolve(executable)
+	resolved, err := pathutil.Resolve(executable)
 	if err != nil {
 		return false
 	}
-	return pypath.Normcase(resolved) == pypath.Normcase(filepath.Join(root, home.DirName, "bin", "icebath"))
+	return pathutil.FoldCase(resolved) == pathutil.FoldCase(filepath.Join(root, home.DirName, "bin", "icebath"))
 }
 
 // Whether a token is the hidden default home pin of a runtime command
@@ -124,7 +127,7 @@ func launchModule(argv []string, legacy bool) (string, []string, bool) {
 	}
 	if len(argv) > 1 {
 		if pinned, ok := runtimePinToken(argv[1]); ok {
-			root, err := pypath.Resolve(pm.RepoRoot())
+			root, err := pathutil.Resolve(pm.RepoRoot())
 			if err != nil {
 				return "", nil, false
 			}
@@ -139,9 +142,9 @@ func launchModule(argv []string, legacy bool) (string, []string, bool) {
 
 // Whether two paths resolve to the same case normalised path
 func sameResolvedPath(a, b string) bool {
-	ra, errA := pypath.Resolve(a)
-	rb, errB := pypath.Resolve(b)
-	return errA == nil && errB == nil && pypath.Normcase(ra) == pypath.Normcase(rb)
+	ra, errA := pathutil.Resolve(a)
+	rb, errB := pathutil.Resolve(b)
+	return errA == nil && errB == nil && pathutil.FoldCase(ra) == pathutil.FoldCase(rb)
 }
 
 // Accepts only an installer form of gateway run for home with its quiet and supervisor flags
@@ -154,7 +157,7 @@ func VerifyGatewayArgv(argv []string, h string, wrapped bool) error {
 		}
 		argv, ownLauncherOnly = rest[3:], true
 	}
-	if len(argv) == 0 || !LooksLikeGatewayCommandLine(pysubprocess.List2cmdline(argv)) {
+	if len(argv) == 0 || !LooksLikeGatewayCommandLine(executil.WindowsCommandLine(argv)) {
 		return unverifiedIdentity()
 	}
 	executable := strings.ToLower(filepath.Base(argv[0]))
@@ -221,7 +224,7 @@ func EnvironmentPairs(value string) (map[string]string, error) {
 	if strings.Contains(value, "\\") {
 		return nil, unverifiedIdentity()
 	}
-	items, err := pyshlex.SplitPOSIX(value, false)
+	items, err := shellutil.Split(value)
 	if err != nil {
 		return nil, unverifiedIdentity()
 	}
@@ -253,7 +256,7 @@ func systemdServiceUID(user string) (int, error) {
 		}, user)
 		return strconv.Atoi(digits)
 	}
-	p, err := pypwd.Getpwnam(user)
+	p, err := userutil.Lookup(user)
 	if err != nil {
 		var keyErr *pypwd.KeyError
 		if errors.As(err, &keyErr) {
@@ -324,7 +327,7 @@ func VerifySystemd(props map[string]string, managerEnv, h string, system bool) e
 	for k, v := range own {
 		env[k] = v
 	}
-	unset, err := pyshlex.SplitPOSIX(props["UnsetEnvironment"], false)
+	unset, err := shellutil.Split(props["UnsetEnvironment"])
 	if err != nil {
 		return unverifiedIdentity()
 	}
@@ -338,7 +341,7 @@ func VerifySystemd(props map[string]string, managerEnv, h string, system bool) e
 	if configured == "" {
 		base := env["HOME"]
 		if base == "" {
-			account, err := pypwd.Getpwuid(uid)
+			account, err := userutil.LookupID(uid)
 			if err != nil {
 				return err
 			}
@@ -357,7 +360,7 @@ func VerifySystemd(props map[string]string, managerEnv, h string, system bool) e
 	if match == nil || strings.ContainsAny(match[2], "$\\{}") {
 		return unverifiedIdentity()
 	}
-	argv, err := pyshlex.SplitPOSIX(match[2], false)
+	argv, err := shellutil.Split(match[2])
 	if err != nil {
 		return unverifiedIdentity()
 	}
@@ -387,7 +390,7 @@ func launchdCommand(argv []string) ([]string, bool, error) {
 		var shell any
 		if json.NewDecoder(strings.NewReader(script[at+len(opener):])).Decode(&shell) == nil {
 			if text, ok := shell.(string); ok {
-				if split, err := pyshlex.SplitPOSIX(text, false); err == nil {
+				if split, err := shellutil.Split(text); err == nil {
 					tokens = split
 				}
 			}
@@ -639,7 +642,7 @@ func vbsIdentity(script string) (string, []string, error) {
 	if strings.Contains(command, "%") || strings.Contains(env["ICEBATH_HOME"], "%") {
 		return "", nil, unverifiedIdentity()
 	}
-	parts, err := pyshlex.SplitNonPOSIX(command)
+	parts, err := shellutil.SplitRaw(command)
 	if err != nil {
 		return "", nil, unverifiedIdentity()
 	}
@@ -743,7 +746,7 @@ func VerifyWindowsTask(definition, h, account, sid string) error {
 	if user == "" || account == "" || sid == "" || len(principal.findAll("GroupId")) > 0 {
 		return unverifiedIdentity()
 	}
-	if folded := pystr.Casefold(user); folded != pystr.Casefold(account) && folded != pystr.Casefold(sid) {
+	if folded := cases.Fold().String(user); folded != cases.Fold().String(account) && folded != cases.Fold().String(sid) {
 		return &ServiceIdentityError{Reason: "service_account_mismatch"}
 	}
 	context, hasContext := actions.attrs["Context"]

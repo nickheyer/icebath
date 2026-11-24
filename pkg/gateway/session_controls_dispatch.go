@@ -5,10 +5,10 @@ import (
 	"database/sql"
 	"errors"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Method to handler of every verb dispatch serves outside the group controls, session_controls.py handlers L215
@@ -42,8 +42,8 @@ func (c *AuthorityConnection) handlers() map[string]controlHandler {
 			verbs[name] = handler
 		}
 	}
-	bind := func(fn func(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error)) controlHandler {
-		return func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+	bind := func(fn func(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error)) controlHandler {
+		return func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return fn(ctx, c, ref, params)
 		}
 	}
@@ -64,7 +64,7 @@ func (c *AuthorityConnection) handlers() map[string]controlHandler {
 func queuedHandlersOf(c *AuthorityConnection) map[string]controlHandler {
 	out := map[string]controlHandler{}
 	for name, handler := range queuedControlHandlers(c) {
-		out[name] = func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		out[name] = func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return handler(ctx, ref, params)
 		}
 	}
@@ -72,22 +72,22 @@ func queuedHandlersOf(c *AuthorityConnection) map[string]controlHandler {
 }
 
 // JSON-RPC error reply with the refusal data
-func refusalReply(rid any, code int, message string, data map[string]any) *pyjson.Object {
-	return pyjson.ObjectOf("jsonrpc", "2.0", "id", rid, "error", pyjson.ObjectOf("code", code, "message", message, "data", data))
+func refusalReply(rid any, code int, message string, data map[string]any) *jsonutil.Object {
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "id", rid, "error", jsonutil.ObjectOf("code", code, "message", message, "data", data))
 }
 
 // One WS frame of a viewer answered on the owner, session_controls.py dispatch L282
-func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error) {
+func (c *AuthorityConnection) Dispatch(ctx context.Context, request *jsonutil.Object) (*jsonutil.Object, error) {
 	if IsResponseFrame(request) {
 		return nil, c.resolveResponse(ctx, request)
 	}
-	rid := request.GetOr("id", nil)
-	method, _ := request.GetOr("method", nil).(string)
-	rawParams := request.GetOr("params", nil)
+	rid := request.ValueOr("id", nil)
+	method, _ := request.ValueOr("method", nil).(string)
+	rawParams := request.ValueOr("params", nil)
 	if rawParams == nil {
-		rawParams = pyjson.NewObject()
+		rawParams = jsonutil.NewObject()
 	}
-	params, ok := rawParams.(*pyjson.Object)
+	params, ok := rawParams.(*jsonutil.Object)
 	if !ok {
 		return refusalReply(rid, 4001, "invalid_params", map[string]any{"reason": "invalid_params"}), nil
 	}
@@ -96,7 +96,7 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 		logRefusal(c.actor.ProfileID, method, err)
 		return refusalReply(rid, 4001, "runtime_draining", refusalData(err)), nil
 	}
-	if profile, isStr := params.GetOr("profile", nil).(string); isStr && profile != "" {
+	if profile, isStr := params.ValueOr("profile", nil).(string); isStr && profile != "" {
 		routed, err := connectionSiblingFor(c, ctx, profile)
 		if err != nil {
 			var refusal *state.RuntimeStoreError
@@ -110,11 +110,11 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 			return routed.Dispatch(ctx, request)
 		}
 		if profileImplicitMethods[method] {
-			params = params.Copy()
+			params = params.Clone()
 			params.Delete("profile")
 		}
 	}
-	sessionID, _ := params.GetOr("session_id", "").(string)
+	sessionID, _ := params.ValueOr("session_id", "").(string)
 	ref := SessionRef{ProfileID: c.actor.ProfileID, SessionID: sessionID}
 	typed := tuigateway.Lookup(tuigateway.KindCanonical, method)
 	if typed == nil {
@@ -158,12 +158,12 @@ func (c *AuthorityConnection) Dispatch(ctx context.Context, request *pyjson.Obje
 			return refusalReply(rid, code, message, refusalData(err)), nil
 		}
 		if errors.Is(err, sql.ErrConnDone) || isSQLiteError(err) {
-			logStorageFailure(c.actor.ProfileID, method, params.GetOr("session_id", nil), err, sqliteErrorClass(err))
+			logStorageFailure(c.actor.ProfileID, method, params.ValueOr("session_id", nil), err, sqliteErrorClass(err))
 			return refusalReply(rid, 5001, "storage_unavailable", map[string]any{"reason": "storage_unavailable"}), nil
 		}
 		return nil, err
 	}
-	return pyjson.ObjectOf("jsonrpc", "2.0", "id", rid, "result", checkCanonicalResult(typed, method, result)), nil
+	return jsonutil.ObjectOf("jsonrpc", "2.0", "id", rid, "result", checkCanonicalResult(typed, method, result)), nil
 }
 
 // Result of a verb checked against its typed contract, a misfit reported and the result sent as the verb gave it

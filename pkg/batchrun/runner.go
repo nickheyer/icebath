@@ -15,13 +15,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Options are the settings of one batch run
@@ -60,24 +60,12 @@ type Runner struct {
 	outputDir   string
 	checkpoint  string
 	statsFile   string
-	dataset     []*pyjson.Object
+	dataset     []*jsonutil.Object
 	batches     [][]indexedEntry
 	// Every registered tool name sorted, the schema of the per row tool statistics
 	allTools []string
 	known    map[string]bool
 	agents   agentRegistry
-}
-
-// Writer resolving the process stdout at every write, so a live progress display that reroutes it sees every line
-type processStdout struct{}
-
-// Write sends p to whatever the process stdout is at this moment
-func (processStdout) Write(p []byte) (int, error) { return os.Stdout.Write(p) }
-
-// Whether the run prints to the process stdout, the only output a live progress display is drawn on
-func (r *Runner) onProcessStdout() bool {
-	_, ok := r.out.(processStdout)
-	return ok
 }
 
 // Prints one formatted piece of run output in a single write
@@ -94,9 +82,9 @@ func (r *Runner) banner(title string) {
 // Joins a directory and a name the way a path object does, an absolute name replacing the directory
 func joinPath(dir, name string) string {
 	if filepath.IsAbs(name) {
-		return pypath.PurePathStr(name)
+		return filepath.Clean(name)
 	}
-	return pypath.PurePathStr(dir + string(filepath.Separator) + name)
+	return filepath.Clean(dir + string(filepath.Separator) + name)
 }
 
 // Lines of a text read with universal newlines, the last one kept even without a line end
@@ -135,12 +123,12 @@ func readText(path string) (string, error) {
 // New validates the distribution, creates the output directory, loads the dataset and splits it into batches
 func New(ctx context.Context, o Options, out io.Writer) (*Runner, error) {
 	if out == nil || out == io.Writer(os.Stdout) {
-		out = processStdout{}
+		out = termutil.Stdout
 	}
-	r := &Runner{o: o, out: out, home: home.Dir(ctx), datasetFile: pypath.PurePathStr(o.DatasetFile)}
+	r := &Runner{o: o, out: out, home: home.Dir(ctx), datasetFile: filepath.Clean(o.DatasetFile)}
 	r.cwd, _ = os.Getwd()
 	if !tools.ValidateDistribution(o.Distribution) {
-		return nil, fmt.Errorf("Unknown distribution: %s. Available: %s", o.Distribution, pyrepr.Repr(availableDistributions()))
+		return nil, fmt.Errorf("Unknown distribution: %s. Available: %s", o.Distribution, anyutil.Quote(availableDistributions()))
 	}
 	if o.BatchSize < 1 {
 		return nil, errors.New("the batch size must be a positive integer")
@@ -212,12 +200,12 @@ func (r *Runner) loadDataset() error {
 		if line == "" {
 			continue
 		}
-		decoded, err := pyjson.Loads(line)
+		decoded, err := jsonutil.Decode(line)
 		if err != nil {
 			r.printf("⚠️  Warning: Invalid JSON on line %d: %s\n", n+1, err.Error())
 			continue
 		}
-		entry, ok := decoded.(*pyjson.Object)
+		entry, ok := decoded.(*jsonutil.Object)
 		if ok = ok && entry != nil; ok {
 			_, ok = entry.Get("prompt")
 		}
@@ -234,7 +222,7 @@ func (r *Runner) loadDataset() error {
 }
 
 // Dataset entries paired with their index
-func enumerate(dataset []*pyjson.Object) []indexedEntry {
+func enumerate(dataset []*jsonutil.Object) []indexedEntry {
 	entries := make([]indexedEntry, len(dataset))
 	for i, entry := range dataset {
 		entries[i] = indexedEntry{index: i, entry: entry}
@@ -252,39 +240,39 @@ func chunk(entries []indexedEntry, size int) [][]indexedEntry {
 }
 
 // Checkpoint of a run that recorded nothing yet
-func (r *Runner) emptyCheckpoint() *pyjson.Object {
-	return pyjson.ObjectOf("run_name", r.o.RunName, "completed_prompts", []any{}, "batch_stats", pyjson.NewObject(), "last_updated", nil)
+func (r *Runner) emptyCheckpoint() *jsonutil.Object {
+	return jsonutil.ObjectOf("run_name", r.o.RunName, "completed_prompts", []any{}, "batch_stats", jsonutil.NewObject(), "last_updated", nil)
 }
 
 // Checkpoint on disk, an empty one when the file is missing or unreadable
-func (r *Runner) loadCheckpoint() (*pyjson.Object, error) {
+func (r *Runner) loadCheckpoint() (*jsonutil.Object, error) {
 	if _, err := os.Stat(r.checkpoint); err != nil {
 		return r.emptyCheckpoint(), nil
 	}
 	text, err := readText(r.checkpoint)
 	var decoded any
 	if err == nil {
-		decoded, err = pyjson.Loads(text)
+		decoded, err = jsonutil.Decode(text)
 	}
 	if err != nil {
 		r.printf("⚠️  Warning: Failed to load checkpoint: %s\n", err.Error())
 		return r.emptyCheckpoint(), nil
 	}
-	checkpoint, ok := decoded.(*pyjson.Object)
+	checkpoint, ok := decoded.(*jsonutil.Object)
 	if !ok || checkpoint == nil {
-		return nil, fmt.Errorf("the checkpoint %s holds %s, expected an object", r.checkpoint, pyrepr.TypeName(decoded))
+		return nil, fmt.Errorf("the checkpoint %s holds %s, expected an object", r.checkpoint, anyutil.Kind(decoded))
 	}
 	return checkpoint, nil
 }
 
 // Stamps the checkpoint with the current time and replaces the file atomically
-func (r *Runner) saveCheckpoint(ctx context.Context, checkpoint *pyjson.Object) error {
-	checkpoint.Set("last_updated", pydatetime.ISOFormatNaive(time.Now()))
+func (r *Runner) saveCheckpoint(ctx context.Context, checkpoint *jsonutil.Object) error {
+	checkpoint.Set("last_updated", time.Now().Format(timeutil.RFC3339Micro))
 	return config.AtomicJSONWrite(ctx, r.checkpoint, checkpoint)
 }
 
 // Prompt indices a checkpoint lists as completed
-func completedIndices(checkpoint *pyjson.Object) map[int]bool {
+func completedIndices(checkpoint *jsonutil.Object) map[int]bool {
 	completed := map[int]bool{}
 	listed, _ := checkpoint.Get("completed_prompts")
 	for _, item := range listItems(listed) {
@@ -317,20 +305,20 @@ func sortedIndices(completed map[int]bool) []any {
 }
 
 // Records one finished batch in the checkpoint and writes it, so a resume after a crash keeps the progress
-func (r *Runner) checkpointBatch(ctx context.Context, checkpoint *pyjson.Object, completed map[int]bool, result batchResult) error {
+func (r *Runner) checkpointBatch(ctx context.Context, checkpoint *jsonutil.Object, completed map[int]bool, result batchResult) error {
 	for _, index := range result.completedPrompts {
 		completed[index] = true
 	}
 	raw, present := checkpoint.Get("batch_stats")
-	stats, ok := raw.(*pyjson.Object)
+	stats, ok := raw.(*jsonutil.Object)
 	if !present {
-		stats, ok = pyjson.NewObject(), true
+		stats, ok = jsonutil.NewObject(), true
 		checkpoint.Set("batch_stats", stats)
 	}
 	if !ok || stats == nil {
-		return fmt.Errorf("the checkpoint batch_stats are %s, expected an object", pyrepr.TypeName(raw))
+		return fmt.Errorf("the checkpoint batch_stats are %s, expected an object", anyutil.Kind(raw))
 	}
-	stats.Set(fmt.Sprint(result.batchNum), pyjson.ObjectOf("processed", result.processed, "skipped", result.skipped, "discarded_no_reasoning", result.discarded))
+	stats.Set(fmt.Sprint(result.batchNum), jsonutil.ObjectOf("processed", result.processed, "skipped", result.skipped, "discarded_no_reasoning", result.discarded))
 	checkpoint.Set("completed_prompts", sortedIndices(completed))
 	return r.saveCheckpoint(ctx, checkpoint)
 }
@@ -357,12 +345,12 @@ func (r *Runner) scanCompletedPrompts() map[string]bool {
 			continue
 		}
 		for _, line := range splitLines(text) {
-			decoded, err := pyjson.Loads(strings.TrimSpace(line))
+			decoded, err := jsonutil.Decode(strings.TrimSpace(line))
 			if err != nil {
 				continue
 			}
-			fields, ok := pyjson.Dict(decoded)
-			if !ok || pyrepr.Truthy(fields["failed"]) {
+			fields, ok := jsonutil.AsMap(decoded)
+			if !ok || anyutil.IsTrue(fields["failed"]) {
 				continue
 			}
 			if text := entryPromptText(decoded); text != "" {
@@ -377,13 +365,13 @@ func (r *Runner) scanCompletedPrompts() map[string]bool {
 func mustStrip(v any) (string, error) {
 	text, ok := v.(string)
 	if !ok {
-		return "", fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(v))
+		return "", fmt.Errorf("'%s' object has no attribute 'strip'", anyutil.Kind(v))
 	}
 	return strings.TrimSpace(text), nil
 }
 
 // Human prompt text of a dataset entry as resume matches it, the flat prompt or the first user turn of its conversations
-func datasetPromptText(entry *pyjson.Object) (string, error) {
+func datasetPromptText(entry *jsonutil.Object) (string, error) {
 	var prompt any = ""
 	if v, ok := entry.Get("prompt"); ok {
 		prompt = v
@@ -394,19 +382,19 @@ func datasetPromptText(entry *pyjson.Object) (string, error) {
 	}
 	conversations, _ := entry.Get("conversations")
 	for _, item := range listItems(conversations) {
-		msg, ok := pyjson.Dict(item)
+		msg, ok := jsonutil.AsMap(item)
 		if !ok {
-			return "", fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(item))
+			return "", fmt.Errorf("'%s' object has no attribute 'get'", anyutil.Kind(item))
 		}
 		role := msg["role"]
-		if !pyrepr.Truthy(role) {
+		if !anyutil.IsTrue(role) {
 			role = msg["from"]
 		}
 		if role != "user" && role != "human" {
 			continue
 		}
 		content := msg["content"]
-		if !pyrepr.Truthy(content) {
+		if !anyutil.IsTrue(content) {
 			content = ""
 			if v, ok := msg["value"]; ok {
 				content = v
@@ -518,13 +506,13 @@ func (r *Runner) Run(ctx context.Context, resume bool) error {
 	if err != nil {
 		return err
 	}
-	stats := pyjson.ObjectOf(
+	stats := jsonutil.ObjectOf(
 		"run_name", r.o.RunName, "distribution", r.o.Distribution, "total_prompts", len(r.dataset), "total_batches", len(r.batches),
-		"batch_size", r.o.BatchSize, "model", r.o.Model, "completed_at", pydatetime.ISOFormatNaive(time.Now()),
+		"batch_size", r.o.BatchSize, "model", r.o.Model, "completed_at", time.Now().Format(timeutil.RFC3339Micro),
 		"duration_seconds", roundTo(time.Since(started).Seconds(), 2), "tool_statistics", totalTools.statistics(),
 		"reasoning_statistics", totalReasoning.object(), "discarded_no_reasoning", discarded,
 	)
-	text, err := pyjson.Dumps(stats, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(stats, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}

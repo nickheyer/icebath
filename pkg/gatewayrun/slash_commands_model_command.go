@@ -10,8 +10,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Models previewed per provider in the text listing of a bare model command
@@ -22,10 +22,10 @@ func modelProviderListingLines(ctx context.Context, providers []map[string]any) 
 	lines := []string{}
 	for _, p := range providers {
 		tag := ""
-		if pyrepr.Truthy(p["is_current"]) {
+		if anyutil.IsTrue(p["is_current"]) {
 			tag = i18n.T(ctx, "gateway.model.current_tag", "", nil)
 		}
-		lines = append(lines, fmt.Sprintf("**%s** `--provider %s`%s:", pyrepr.Str(p["name"]), pyrepr.Str(p["slug"]), tag))
+		lines = append(lines, fmt.Sprintf("**%s** `--provider %s`%s:", anyutil.String(p["name"]), anyutil.String(p["slug"]), tag))
 		models := listingModels(p["models"])
 		if len(models) > 0 {
 			shown := models
@@ -34,7 +34,7 @@ func modelProviderListingLines(ctx context.Context, providers []map[string]any) 
 			}
 			quoted := make([]string, len(shown))
 			for i, m := range shown {
-				quoted[i] = "`" + pyrepr.Str(m) + "`"
+				quoted[i] = "`" + anyutil.String(m) + "`"
 			}
 			hidden := listingTotal(p["total_models"]) - len(shown)
 			extra := ""
@@ -42,8 +42,8 @@ func modelProviderListingLines(ctx context.Context, providers []map[string]any) 
 				extra = i18n.T(ctx, "gateway.model.more_models_suffix", "", map[string]any{"count": hidden})
 			}
 			lines = append(lines, "  "+strings.Join(quoted, ", ")+extra)
-		} else if pyrepr.Truthy(p["api_url"]) {
-			lines = append(lines, "  `"+pyrepr.Str(p["api_url"])+"`")
+		} else if anyutil.IsTrue(p["api_url"]) {
+			lines = append(lines, "  `"+anyutil.String(p["api_url"])+"`")
 		}
 		lines = append(lines, "")
 	}
@@ -93,7 +93,7 @@ func modelListingArgsFor(sw *gateway.ModelSwitchContext) modelListingArgs {
 	userProviders, _ := sw.UserProviders.(map[string]any)
 	excluded := make([]string, 0, len(sw.ExcludedProvider))
 	for _, slug := range sw.ExcludedProvider {
-		excluded = append(excluded, pyrepr.Str(slug))
+		excluded = append(excluded, anyutil.String(slug))
 	}
 	return modelListingArgs{currentProvider: sw.CurrentProvider, currentBaseURL: sw.CurrentBaseURL, currentModel: sw.CurrentModel,
 		userProviders: userProviders, customProviders: switchCustomProviders(sw.CustomProviders), excluded: excluded}
@@ -306,10 +306,10 @@ func (r *GatewayRunner) channelDefaultRoute(ctx context.Context, source *gateway
 	}
 	providerName := ""
 	if modelCfg, ok := cfg["model"].(map[string]any); ok {
-		providerName = pyrepr.Str(pyrepr.Or(modelCfg["provider"], ""))
+		providerName = anyutil.String(anyutil.Or(modelCfg["provider"], ""))
 	}
-	if channel := r.channelOverrideFor(source); channel != nil && pyrepr.Truthy(channel.Model) {
-		return pyrepr.Str(channel.Model), pyrepr.Str(pyrepr.Or(channel.Provider, ""))
+	if channel := r.channelOverrideFor(source); channel != nil && anyutil.IsTrue(channel.Model) {
+		return anyutil.String(channel.Model), anyutil.String(anyutil.Or(channel.Provider, ""))
 	}
 	if strings.ToLower(providerName) == "auto" {
 		providerName = ""
@@ -367,7 +367,7 @@ func (r *GatewayRunner) handleModelReset(ctx context.Context, event *gateway.Mes
 		}
 	}
 	r.stageSessionNote(&r.pendingModelNotes, sessionKey, fmt.Sprintf("[Note: the session model override was cleared; model changed from %s back to the default %s. Adjust your self-identification accordingly.]",
-		provider.FormatModelForDisplay(pyrepr.Str(pyrepr.Or(previous["model"], ""))), provider.FormatModelForDisplay(defaultModel)))
+		provider.FormatModelForDisplay(anyutil.String(anyutil.Or(previous["model"], ""))), provider.FormatModelForDisplay(defaultModel)))
 	r.evictCachedAgent(ctx, sessionKey, false, false)
 	reply := i18n.T(ctx, "gateway.model.reset_done", "", map[string]any{"model": provider.FormatModelForDisplay(shown)})
 	return &reply, nil

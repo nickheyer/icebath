@@ -3,6 +3,7 @@ package line
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,10 +12,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // SDK message object every outbound bubble is built from
@@ -101,7 +100,7 @@ func (a *LineAdapter) sendMessages(ctx context.Context, chatID string, messages 
 
 // Registers a local file for HTTPS serving after evicting expired tokens and returns its URL token
 func (a *LineAdapter) registerMedia(filePath string, cleanup bool) (string, error) {
-	resolved, err := pypath.Resolve(filePath)
+	resolved, err := pathutil.Resolve(filePath)
 	if err != nil {
 		return "", err
 	}
@@ -143,12 +142,12 @@ func (a *LineAdapter) mediaURL(token, filename string) string {
 			base = fmt.Sprintf("https://%s:%d", host, a.webhookPort)
 		}
 	}
-	return base + defaultMediaPathPrefix + "/" + token + "/" + pyurl.Quote(filename, "")
+	return base + defaultMediaPathPrefix + "/" + token + "/" + url.PathEscape(filename)
 }
 
 // URL serving a local file under its own name
 func (a *LineAdapter) serveFile(path string) (string, error) {
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return "", err
 	}
@@ -215,21 +214,21 @@ func (a *LineAdapter) handleMedia(ctx context.Context, request *gateway.WebReque
 	if st, err := os.Stat(entry.path); err != nil || !st.Mode().IsRegular() {
 		return gateway.WebTextResponse(404, "not found", "", nil), nil
 	}
-	icebathHome, err := pypath.Resolve(home.Dir(ctx))
+	icebathHome, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := pypath.Resolve(entry.path)
+	resolved, err := pathutil.Resolve(entry.path)
 	if err != nil {
 		return nil, err
 	}
-	tempdir, err := pypath.Gettempdir()
+	tempdir, err := pathutil.TempDir()
 	if err != nil {
 		return nil, err
 	}
 	roots := []string{icebathHome}
 	for _, dir := range []string{tempdir, "/tmp"} {
-		r, err := pypath.Resolve(dir)
+		r, err := pathutil.Resolve(dir)
 		if err != nil {
 			return nil, err
 		}
@@ -246,7 +245,7 @@ func (a *LineAdapter) handleMedia(ctx context.Context, request *gateway.WebReque
 		pkgLog().Warn(fmt.Sprintf("LINE: refusing to serve outside allowed roots: %s", resolved))
 		return gateway.WebTextResponse(403, "forbidden", "", nil), nil
 	}
-	contentType, _, _ := pymimetypes.GuessType(entry.path, true)
+	contentType := mimeutil.TypeByName(entry.path)
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
@@ -281,7 +280,7 @@ func (a *LineAdapter) SendVoice(ctx context.Context, chatID, audioPath, caption,
 	}
 	var durationMS int64 = 1000
 	if v, ok := extra["duration_ms"]; ok {
-		n, err := pyint.Int64(v)
+		n, err := anyutil.ToInt(v)
 		if err != nil {
 			return gateway.SendResult{}, err
 		}
@@ -322,7 +321,7 @@ func (a *LineAdapter) SendVideo(ctx context.Context, chatID, videoPath, caption,
 
 // Writes the fallback PNG to a temp file registered for cleanup and returns its URL
 func (a *LineAdapter) servePreviewPNG() (string, error) {
-	dir, err := pypath.Gettempdir()
+	dir, err := pathutil.TempDir()
 	if err != nil {
 		return "", err
 	}

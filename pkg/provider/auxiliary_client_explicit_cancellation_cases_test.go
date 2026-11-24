@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Stream whose first Next records its goroutine, signals started and blocks until closed
@@ -28,7 +28,7 @@ func newAuxBlockingChatStream() *auxBlockingChatStream {
 }
 
 func (s *auxBlockingChatStream) Next(context.Context) (map[string]any, error) {
-	s.worker.Store(pythread.GoroutineID())
+	s.worker.Store(syncutil.GoroutineID())
 	s.startOnce.Do(func() { close(s.started) })
 	select {
 	case <-s.closed:
@@ -247,7 +247,7 @@ type auxRacingCancelSource struct {
 }
 
 func (s *auxRacingCancelSource) IsSet() bool {
-	id := pythread.GoroutineID()
+	id := syncutil.GoroutineID()
 	if s.winner == "timeout" && s.worker.Load() != 0 && id != s.owner.Load() && id != s.worker.Load() {
 		wasSet := s.requestCancelled.Load()
 		s.startOnce.Do(func() { close(s.timerReadStarted) })
@@ -269,7 +269,7 @@ func auxCodexLinearizedOutcomeCase(t *testing.T, winner string) {
 		timerReadStarted: make(chan struct{}), allowTimerReadReturn: make(chan struct{})}
 	outcome := make(chan error, 1)
 	go func() {
-		source.owner.Store(pythread.GoroutineID())
+		source.owner.Store(syncutil.GoroutineID())
 		ctx := AuxInterruptProtection(context.Background(), true, nil, source)
 		_, err := auxRelaySyncCompletion(ctx, wrapper, map[string]any{"model": "owner", "messages": []any{}, "timeout": 0.08}, "", "", nil)
 		outcome <- err
@@ -363,10 +363,10 @@ func TestBedrockSilentNonstreamRequestIsIsolatedWithoutCloseWakeup(t *testing.T)
 }
 
 func TestUnprotectedSyncCompletionStaysOnCallingThread(t *testing.T) {
-	caller := pythread.GoroutineID()
+	caller := syncutil.GoroutineID()
 	var observed []uint64
 	client := &auxCallFakeClient{create: func(context.Context, map[string]any) (any, error) {
-		observed = append(observed, pythread.GoroutineID())
+		observed = append(observed, syncutil.GoroutineID())
 		return map[string]any{"choices": []any{}}, nil
 	}}
 	if _, err := auxRelaySyncCompletion(context.Background(), client, map[string]any{"model": "test", "messages": []any{}}, "", "", nil); err != nil {
@@ -378,13 +378,13 @@ func TestUnprotectedSyncCompletionStaysOnCallingThread(t *testing.T) {
 }
 
 func TestIsolatedProviderWorkerInheritsProtectionAndProgressHook(t *testing.T) {
-	caller := pythread.GoroutineID()
+	caller := syncutil.GoroutineID()
 	var mu sync.Mutex
 	var progress []string
 	var thread atomic.Uint64
 	var protected atomic.Bool
 	client := &auxCallFakeClient{create: func(ctx context.Context, _ map[string]any) (any, error) {
-		thread.Store(pythread.GoroutineID())
+		thread.Store(syncutil.GoroutineID())
 		protected.Store(auxInterruptProtected(ctx))
 		auxNotifyAuxProgress(ctx)
 		return map[string]any{"choices": []any{}}, nil

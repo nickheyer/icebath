@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 func resetThinking(t *testing.T) {
@@ -19,7 +19,7 @@ func resetThinking(t *testing.T) {
 	t.Cleanup(StopThinkingSound)
 }
 
-func currentThinkingStop() *pythread.Event {
+func currentThinkingStop() *syncutil.Event {
 	thinkingMu.Lock()
 	defer thinkingMu.Unlock()
 	return thinkingStop
@@ -71,7 +71,7 @@ func TestLoopLifecycleLoopPlaysBlipsAndStopsInstantly(t *testing.T) {
 	withVoiceHome(t, "")
 	swapVoice(t, &soundDeviceOutputAllowed, func() bool { return true })
 	sd := withFakeSD(t)
-	stop := &pythread.Event{}
+	stop := &syncutil.Event{}
 	done := make(chan struct{})
 	go func() {
 		thinkingSoundLoop(context.Background(), stop, nil)

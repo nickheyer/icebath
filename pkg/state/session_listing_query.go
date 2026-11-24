@@ -4,12 +4,12 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store surface an interactive session listing reads its rows from
 type SessionLister interface {
-	ListSessionsRich(ctx context.Context, o ListSessionsRichOptions) ([]*pyjson.Object, error)
+	ListSessionsRich(ctx context.Context, o ListSessionsRichOptions) ([]*jsonutil.Object, error)
 }
 
 // Arguments of an interactive session listing, a zero Limit meaning ten rows
@@ -26,7 +26,7 @@ type SessionListingQuery struct {
 }
 
 // Session rows for the listing surfaces, source scoped, unnamed and current rows hidden unless asked for
-func QuerySessionListing(ctx context.Context, db SessionLister, q SessionListingQuery) ([]*pyjson.Object, error) {
+func QuerySessionListing(ctx context.Context, db SessionLister, q SessionListingQuery) ([]*jsonutil.Object, error) {
 	limit := q.Limit
 	if limit == 0 {
 		limit = 10
@@ -42,14 +42,14 @@ func QuerySessionListing(ctx context.Context, db SessionLister, q SessionListing
 	if err != nil {
 		return nil, err
 	}
-	result := []*pyjson.Object{}
+	result := []*jsonutil.Object{}
 	for _, row := range rows {
-		isCurrent := q.CurrentSessionID != "" && row.Vals["id"] == q.CurrentSessionID
-		if (isCurrent && !q.IncludeCurrentSession) || (!q.IncludeUnnamed && !pyTruthy(row.Vals["title"]) && search == "" && !isCurrent) {
+		isCurrent := q.CurrentSessionID != "" && row.Value("id") == q.CurrentSessionID
+		if (isCurrent && !q.IncludeCurrentSession) || (!q.IncludeUnnamed && !pyTruthy(row.Value("title")) && search == "" && !isCurrent) {
 			continue
 		}
 		if isCurrent {
-			row = row.Copy()
+			row = row.Clone()
 			row.Set("is_current_session", true)
 		}
 		result = append(result, row)

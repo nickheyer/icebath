@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestAtomicCacheWriteAllowsLiveProfileHome(t *testing.T) {
@@ -24,7 +24,7 @@ func TestAtomicCacheWriteAllowsLiveProfileHome(t *testing.T) {
 	}
 	t.Setenv(home.EnvHome, def)
 	cachePath := filepath.Join(worker, "cache", "models.json")
-	if err := modelsWriteJSONCache(context.Background(), cachePath, map[string]any{"cached": true}, pyjson.Indent(2)); err != nil {
+	if err := modelsWriteJSONCache(context.Background(), cachePath, map[string]any{"cached": true}, jsonutil.Indent(2)); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(cachePath); string(b) != "{\n  \"cached\": true\n}" {
@@ -34,7 +34,7 @@ func TestAtomicCacheWriteAllowsLiveProfileHome(t *testing.T) {
 
 func TestAtomicCacheWriteAllowsUnrelatedProfilesPath(t *testing.T) {
 	cachePath := filepath.Join(t.TempDir(), "custom", "profiles", "cache", "models.json")
-	if err := modelsWriteJSONCache(context.Background(), cachePath, map[string]any{"cached": true}, pyjson.Indent(2)); err != nil {
+	if err := modelsWriteJSONCache(context.Background(), cachePath, map[string]any{"cached": true}, jsonutil.Indent(2)); err != nil {
 		t.Fatal(err)
 	}
 	if b, _ := os.ReadFile(cachePath); string(b) != "{\n  \"cached\": true\n}" {

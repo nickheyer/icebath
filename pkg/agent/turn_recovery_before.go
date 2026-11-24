@@ -8,10 +8,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python exception classes an isinstance check against RuntimeError accepts
@@ -32,8 +32,8 @@ func apiErrorBodyText(err error) string {
 	var apiErr *provider.APIError
 	if errors.As(err, &apiErr) {
 		if apiErr.Body != "" {
-			if parsed, perr := pyjson.Loads(apiErr.Body); perr == nil && pyTruthy(parsed) {
-				return pyrepr.Str(parsed)
+			if parsed, perr := jsonutil.Decode(apiErr.Body); perr == nil && pyTruthy(parsed) {
+				return anyutil.String(parsed)
 			}
 			return apiErr.Body
 		}
@@ -157,7 +157,7 @@ func recoverBeforeClassification(ctx context.Context, a *AIAgent, s *LoopState, 
 
 	status := apiErrorStatus(apiError)
 	if status != nil && *status == 429 && s.APIKwargs != nil {
-		extraBody, _ := pyjson.Dict(s.APIKwargs["extra_body"])
+		extraBody, _ := jsonutil.AsMap(s.APIKwargs["extra_body"])
 		if provider.FastModeUnprovisioned(&provider.APIError{StatusCode: 429}, extraBody, apiErrorHeaders(apiError)) && a.markFastModeUnavailable() {
 			vlines(a, fmt.Sprintf("⚠️  Fast mode isn't available for %s on this Anthropic organization — using standard speed for this session, retrying...", a.model))
 			pkgLog().Warn(fmt.Sprintf("%sFast mode: %s has a fast-mode limit of 0; standard speed for this session", a.logPrefix, a.model))

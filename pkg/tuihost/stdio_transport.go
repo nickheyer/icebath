@@ -12,7 +12,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Stream flushes are skipped when the no flush variable is set to a true word
@@ -67,7 +67,7 @@ func NewStdioTransport(streamGetter func() io.Writer, lock *sync.Mutex) *StdioTr
 }
 
 // Writes one frame line and flushes it, false only when the peer is gone
-func (t *StdioTransport) Write(obj *pyjson.Object) bool {
+func (t *StdioTransport) Write(obj *jsonutil.Object) bool {
 	line := SerializeFrame(obj, "stdio", transportLog()) + "\n"
 	t.lock.Lock()
 	defer t.lock.Unlock()

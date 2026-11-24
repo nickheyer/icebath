@@ -7,11 +7,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestManageConnectionsValidatesMCPActions(t *testing.T) {
-	props := pyjson.Plain(ManageConnectionsSchema).(map[string]any)["parameters"].(map[string]any)["properties"].(map[string]any)
+	props := jsonutil.Plain(ManageConnectionsSchema).(map[string]any)["parameters"].(map[string]any)["properties"].(map[string]any)
 	enum := props["action"].(map[string]any)["enum"].([]any)
 	for _, verb := range []string{"install", "enable", "authorize"} {
 		if !slices.Contains(enum, any(verb)) {

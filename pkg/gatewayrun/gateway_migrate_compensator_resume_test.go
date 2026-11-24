@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 type strandedHost struct {
@@ -24,12 +23,12 @@ type strandedHost struct {
 
 // Writes the pid file and runtime record a live gateway writes, served profiles when given
 func writeLiveGateway(t *testing.T, h string, pid int, served []any) {
-	record := pyjson.ObjectOf("pid", int64(pid), "icebath_home", h, "gateway_state", "running")
+	record := jsonutil.ObjectOf("pid", int64(pid), "icebath_home", h, "gateway_state", "running")
 	if served != nil {
 		record.Set("served_profiles", served)
 	}
-	for name, v := range map[string]any{"gateway.pid": pyjson.ObjectOf("pid", int64(pid), "icebath_home", h), "gateway_state.json": record} {
-		text, err := pyjson.Dumps(v)
+	for name, v := range map[string]any{"gateway.pid": jsonutil.ObjectOf("pid", int64(pid), "icebath_home", h), "gateway_state.json": record} {
+		text, err := jsonutil.Encode(v)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -54,12 +53,12 @@ func newStrandedHost(t *testing.T) *strandedHost {
 		t.Setenv(name, "")
 		os.Unsetenv(name)
 	}
-	secondary := func(name string, pid int64) *pyjson.Object {
-		return pyjson.ObjectOf("profile", name, "home", filepath.Join(root, "profiles", name), "pid", pid,
-			"services", []any{pyjson.ObjectOf("kind", "systemd", "system", false)})
+	secondary := func(name string, pid int64) *jsonutil.Object {
+		return jsonutil.ObjectOf("profile", name, "home", filepath.Join(root, "profiles", name), "pid", pid,
+			"services", []any{jsonutil.ObjectOf("kind", "systemd", "system", false)})
 	}
-	manifest, _ := pyjson.Dumps(pyjson.ObjectOf("version", int64(1), "flag_was", false,
-		"default", pyjson.ObjectOf("profile", "default", "home", root, "pid", nil, "services", []any{}),
+	manifest, _ := jsonutil.Encode(jsonutil.ObjectOf("version", int64(1), "flag_was", false,
+		"default", jsonutil.ObjectOf("profile", "default", "home", root, "pid", nil, "services", []any{}),
 		"secondaries", []any{secondary("coder", 4101), secondary("ops", 4102)}))
 	fleetWrite(t, filepath.Join(root, MigrationManifestName), manifest)
 	exe, err := os.Executable()

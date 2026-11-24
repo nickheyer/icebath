@@ -3,8 +3,8 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Adds a platform module's attributes to the builtin adapter table
@@ -67,7 +67,7 @@ func APINextItemID(responseID string, counters map[APIItemCounterKey]int, kind s
 type APIItemCounterKey = apiItemCounterKey
 
 // Output items with stable ids assigned
-func APIIdentifyOutput(items []*pyjson.Object, responseID string) ([]*pyjson.Object, error) {
+func APIIdentifyOutput(items []*jsonutil.Object, responseID string) ([]*jsonutil.Object, error) {
 	return apiIdentifyOutput(items, responseID)
 }
 
@@ -104,6 +104,6 @@ func CollectUnheldAPIImages(ctx context.Context, db *state.SessionDB) error {
 func APIRunTerminalStatus(status string) bool { return apiRunTerminalStatuses[status] }
 
 // Execution policy and catalog advertised for one served profile
-func APILocalRoomCatalog(ctx context.Context, adapter PlatformAdapter, profile, installationID string) (*pyjson.Object, *pyjson.Object, error) {
+func APILocalRoomCatalog(ctx context.Context, adapter PlatformAdapter, profile, installationID string) (*jsonutil.Object, *jsonutil.Object, error) {
 	return localRoomCatalog(ctx, adapter, profile, installationID)
 }

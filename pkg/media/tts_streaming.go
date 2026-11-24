@@ -3,7 +3,7 @@ package media
 import (
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const speechInterruptTTLSeconds = 120.0
@@ -15,7 +15,7 @@ var (
 
 // MarkSpeechInterrupted latches that the user cut a spoken reply off before it finished
 func MarkSpeechInterrupted() {
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	speechInterruptedMu.Lock()
 	speechInterruptedAt = &now
 	speechInterruptedMu.Unlock()
@@ -27,5 +27,5 @@ func TakeSpeechInterrupted() bool {
 	at := speechInterruptedAt
 	speechInterruptedAt = nil
 	speechInterruptedMu.Unlock()
-	return at != nil && pythread.Monotonic()-*at < speechInterruptTTLSeconds
+	return at != nil && timeutil.Monotonic()-*at < speechInterruptTTLSeconds
 }

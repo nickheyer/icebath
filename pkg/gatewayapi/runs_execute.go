@@ -7,16 +7,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Approval bridge redacting, stamping the envelope, parking the run status and queueing the event
 func (a *APIServerAdapter) makeApprovalNotify(ctx context.Context, run *runLaunch) tools.GatewayNotifyFunc {
 	return func(approvalData map[string]any) error {
-		data, _ := pyjson.AsObject(approvalData)
+		data, _ := jsonutil.AsObject(approvalData)
 		event := approvalRequestEvent(ctx, run.runID, data)
 		a.setRunStatus(ctx, run.runID, "waiting_for_approval", "last_event", "approval.request", "approval", event)
 		func() {
@@ -28,12 +28,12 @@ func (a *APIServerAdapter) makeApprovalNotify(ctx context.Context, run *runLaunc
 }
 
 // Field pairs of an object in order
-func objectPairs(o *pyjson.Object) []any {
+func objectPairs(o *jsonutil.Object) []any {
 	if o == nil {
 		return nil
 	}
-	out := make([]any, 0, 2*len(o.Keys))
-	for _, k := range o.Keys {
+	out := make([]any, 0, 2*o.Len())
+	for _, k := range o.Keys() {
 		v, _ := o.Get(k)
 		out = append(out, k, v)
 	}
@@ -82,16 +82,16 @@ func (a *APIServerAdapter) executeRunViaLiveOwner(ctx context.Context, run *runL
 		finish("failed", "completed", false, "partial", false, "interrupted", false, "error", err.Error())
 		return
 	}
-	switch status := pyrepr.Str(next["status"]); status {
+	switch status := anyutil.String(next["status"]); status {
 	case "queued", "claimed", "cancelled":
 		finish("cancelled", "completed", false, "partial", false, "interrupted", true)
 	case "settled":
-		finish("completed", "completed", true, "partial", false, "interrupted", false, "output", pyrepr.Or(next["reply"], ""),
-			"usage", pyjson.NewObject())
+		finish("completed", "completed", true, "partial", false, "interrupted", false, "output", anyutil.Or(next["reply"], ""),
+			"usage", jsonutil.NewObject())
 	default:
 		fields := []any{"completed", false, "partial", false, "interrupted", false,
-			"error", pyrepr.Or(next["error"], "Bot Chat delivery "+status)}
-		if pyrepr.Truthy(next["reason"]) {
+			"error", anyutil.Or(next["error"], "Bot Chat delivery "+status)}
+		if anyutil.IsTrue(next["reason"]) {
 			fields = append(fields, "reason", next["reason"])
 		}
 		finish("failed", fields...)
@@ -120,7 +120,7 @@ func (a *APIServerAdapter) executeRun(ctx context.Context, run *runLaunch) {
 		}
 		run.putEvent(runEvent(runID, "message.interim", "text", text, "already_streamed", alreadyStreamed))
 	}
-	finish := func(status string, extra *pyjson.Object, fields ...any) {
+	finish := func(status string, extra *jsonutil.Object, fields ...any) {
 		a.mu.Lock()
 		interrupted := a.shutdownInterruptedRunIDs[runID]
 		a.mu.Unlock()
@@ -157,12 +157,12 @@ func (a *APIServerAdapter) executeRun(ctx context.Context, run *runLaunch) {
 		return
 	}
 	var result map[string]any
-	var usage, served *pyjson.Object
+	var usage, served *jsonutil.Object
 	err := func() error {
 		if run.admission != nil {
 			toolCB := a.makeRunEventCallback(ctx, runID)
 			env := &tools.Env{}
-			controlCB := func(eventType string, prompt *pyjson.Object) {
+			controlCB := func(eventType string, prompt *jsonutil.Object) {
 				func() {
 					defer func() { _ = recover() }()
 					run.putEvent(runEvent(runID, eventType, objectPairs(prompt)...))
@@ -183,13 +183,13 @@ func (a *APIServerAdapter) executeRun(ctx context.Context, run *runLaunch) {
 				return err
 			}
 			result = res
-			usage, _ = pyjson.AsObject(use)
-			if rt, ok := use["runtime"].(*pyjson.Object); ok && rt.Len() > 0 {
+			usage, _ = jsonutil.AsObject(use)
+			if rt, ok := use["runtime"].(*jsonutil.Object); ok && rt.Len() > 0 {
 				served = rt
-			} else if rt, ok := res["runtime"].(*pyjson.Object); ok && rt.Len() > 0 {
+			} else if rt, ok := res["runtime"].(*jsonutil.Object); ok && rt.Len() > 0 {
 				served = rt
 			} else {
-				served = pyjson.NewObject()
+				served = jsonutil.NewObject()
 			}
 			return nil
 		}
@@ -213,7 +213,7 @@ func (a *APIServerAdapter) executeRun(ctx context.Context, run *runLaunch) {
 		notify := a.makeApprovalNotify(ctx, run)
 		type syncOutcome struct {
 			result         map[string]any
-			usage, runtime *pyjson.Object
+			usage, runtime *jsonutil.Object
 		}
 		res := <-submitAPIWorker(func() (syncOutcome, error) {
 			r, u, s, err := a.runAgentSync(scoped, run, ag, env, notify)
@@ -254,12 +254,12 @@ func (a *APIServerAdapter) executeRun(ctx context.Context, run *runLaunch) {
 	switch {
 	case status == "cancelled":
 		finish("cancelled", fields)
-	case pyrepr.Truthy(result["failed"]):
+	case anyutil.IsTrue(result["failed"]):
 		finish("failed", fields, "error", redactAPIErrorText(firstTruthy(result["error"], "agent run failed"), -1))
 	default:
-		requested := pyjson.ObjectOf("provider", nullableString(run.agentOptions.requestedProvider), "model", nullableString(run.agentOptions.requestedModel))
+		requested := jsonutil.ObjectOf("provider", nullableString(run.agentOptions.requestedProvider), "model", nullableString(run.agentOptions.requestedModel))
 		anyRequested := run.agentOptions.requestedProvider != "" || run.agentOptions.requestedModel != ""
-		var requestedRuntime *pyjson.Object
+		var requestedRuntime *jsonutil.Object
 		source := "global"
 		if anyRequested {
 			requestedRuntime = requested
@@ -269,14 +269,14 @@ func (a *APIServerAdapter) executeRun(ctx context.Context, run *runLaunch) {
 			source = "model_routes"
 		}
 		runtime := sanitizeRuntimeMetadata(served, requestedRuntime, source, "")
-		finish(status, fields, "output", pyrepr.Or(result["final_response"], ""), "usage", usage, "runtime", runtime)
+		finish(status, fields, "output", anyutil.Or(result["final_response"], ""), "usage", usage, "runtime", runtime)
 	}
 }
 
 // Usage object as the metrics map
-func usageMap(usage *pyjson.Object) map[string]any {
+func usageMap(usage *jsonutil.Object) map[string]any {
 	if usage == nil {
 		return nil
 	}
-	return usage.Vals
+	return usage.Map()
 }

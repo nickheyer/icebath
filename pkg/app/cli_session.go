@@ -11,13 +11,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Records this terminal's live session so a later bare -c in this terminal resumes it
@@ -52,7 +51,7 @@ func exitSummaryProfileName(ctx context.Context) (name string) {
 }
 
 // Session clock reading the wall time as datetime.now() does, swapped by tests
-var cliNow = pydatetime.Now
+var cliNow = time.Now
 
 // Prints the session resume commands, title, duration and message counts on exit
 func (c *CLI) printExitSummary() {
@@ -123,7 +122,7 @@ func (c *CLI) dimNotice(msg string, quiet bool) {
 		fmt.Fprintln(stderrWriter(), msg)
 		return
 	}
-	c.consolePrint("[dim]" + pyrich.Escape(msg) + "[/dim]")
+	c.consolePrint("[dim]" + consoleutil.Escape(msg) + "[/dim]")
 }
 
 // Moves a resumed session back into the directory it was started from, a missing directory only noted
@@ -131,14 +130,14 @@ func (c *CLI) restoreSessionCwd(sessionMeta map[string]any, quiet bool) {
 	if !cliTruthy(sessionMeta["cwd"]) {
 		return
 	}
-	recorded := pypath.Expanduser(pyrepr.Str(sessionMeta["cwd"]))
+	recorded := pathutil.ExpandUser(anyutil.String(sessionMeta["cwd"]))
 	current, err := os.Getwd()
 	if err != nil {
 		current = ""
 	}
 	if current != "" {
-		a, aerr := pypath.Realpath(recorded, pypath.Lax)
-		b, berr := pypath.Realpath(current, pypath.Lax)
+		a, aerr := pathutil.Resolve(recorded)
+		b, berr := pathutil.Resolve(current)
 		if aerr == nil && berr == nil && a == b {
 			return
 		}

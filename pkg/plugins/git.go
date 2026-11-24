@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -17,11 +18,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gitcred"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var exactCommitRE = regexp.MustCompile(`^[0-9a-fA-F]{40}$`)
@@ -52,12 +53,12 @@ func installMetadataPath(h string) string {
 
 // Replaces the profile local plugin install metadata atomically with sorted two space JSON
 var writeInstallMetadata = func(ctx context.Context, h string, metadata map[string]any) error {
-	text, err := pyjson.Dumps(metadata, pyjson.Indent(2), pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(metadata, jsonutil.Indent(2), jsonutil.SortKeys())
 	if err != nil {
 		return err
 	}
 	path := installMetadataPath(h)
-	return pyfs.AtomicWriteText(ctx, path, text+"\n", filepath.Base(path)+".tmp-")
+	return fsutil.WriteFile(ctx, path, []byte(text+"\n"), fsutil.WriteOptions{Prefix: filepath.Base(path) + ".tmp-", NativeLineEnds: true})
 }
 
 type metadataLockKey struct{ path string }
@@ -270,7 +271,7 @@ func checkoutExactRevision(ctx context.Context, h, repo, gitExe, revision, sourc
 
 // HTTP git url without credentials, query or fragment, other urls unchanged
 func scrubGitURL(gitURL string) (string, error) {
-	parsed, err := pyurl.Split(gitURL)
+	parsed, err := urlutil.Split(gitURL)
 	if err != nil {
 		return "", err
 	}
@@ -287,9 +288,9 @@ func scrubGitURL(gitURL string) (string, error) {
 		return "", err
 	}
 	if ok {
-		host = fmt.Sprintf("%s:%d", host, port)
+		host += ":" + strconv.Itoa(port)
 	}
-	return pyurl.Unsplit(pyurl.URL{Scheme: parsed.Scheme, Netloc: host, Path: parsed.Path}), nil
+	return urlutil.Parts{Scheme: parsed.Scheme, Authority: host, Path: parsed.Path}.String(), nil
 }
 
 func canonicalSource(gitURL, subdir string) (string, error) {

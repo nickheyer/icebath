@@ -1,15 +1,16 @@
 package botdesktop
 
 import (
+	"errors"
 	"fmt"
-	"math/big"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -79,12 +80,11 @@ func statValue(path, key string) *int64 {
 	for _, line := range strings.Split(text, "\n") {
 		name, rest, _ := strings.Cut(line, " ")
 		if name == key {
-			n, ok := pyint.Parse(strings.TrimSpace(rest))
-			if !ok || !n.IsInt64() {
+			n, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64)
+			if err != nil {
 				return nil
 			}
-			v := n.Int64()
-			return &v
+			return &n
 		}
 	}
 	return nil
@@ -161,17 +161,17 @@ func MinFreeMB(env *tools.Env) (int, error) {
 	if v, ok := cfg["min_free_memory_mb"]; ok {
 		raw = v
 	}
-	n, err := pyint.Of(raw)
-	if err != nil {
+	n, err := anyutil.ToInt(raw)
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return DefaultMinFreeMB, nil
 	}
-	if n.Sign() < 0 {
+	if n < 0 {
 		return 0, nil
 	}
-	if !n.IsInt64() || n.Cmp(big.NewInt(int64(^uint(0)>>1))) > 0 {
-		return int(^uint(0) >> 1), nil
+	if n > math.MaxInt {
+		return math.MaxInt, nil
 	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Free memory below which a start is allowed and logged, a third above the floor

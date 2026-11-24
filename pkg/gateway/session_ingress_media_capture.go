@@ -17,12 +17,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var attachmentMimes = map[string]bool{"image/png": true, "image/jpeg": true, "image/gif": true, "image/webp": true}
@@ -139,7 +139,7 @@ func releaseAbandonedCapture(ctx context.Context, scope *captureScope) error {
 	slices.Sort(paths)
 	var references []any
 	for _, path := range slices.Compact(paths) {
-		references = append(references, pyjson.ObjectOf("path", path, "sha256", pypath.PathName(pypath.PathParent(pypath.PathStr(path)))))
+		references = append(references, jsonutil.ObjectOf("path", path, "sha256", pathutil.Name(filepath.Dir(filepath.Clean(filepath.Clean(path))))))
 	}
 	if len(references) == 0 {
 		return nil
@@ -168,16 +168,16 @@ func attachmentItem(item any) (map[string]any, bool) {
 	switch v := item.(type) {
 	case map[string]any:
 		return v, true
-	case *pyjson.Object:
-		plain, ok := pyjson.Plain(v).(map[string]any)
+	case *jsonutil.Object:
+		plain, ok := jsonutil.Plain(v).(map[string]any)
 		return plain, ok
 	}
 	return nil, false
 }
 
 // Committed payload fields of a submission's attachments, empty when it carries none
-func admitAttachments(ctx context.Context, attachments any, admitted func() (*pyjson.Object, error)) (*pyjson.Object, error) {
-	out := pyjson.NewObject()
+func admitAttachments(ctx context.Context, attachments any, admitted func() (*jsonutil.Object, error)) (*jsonutil.Object, error) {
+	out := jsonutil.NewObject()
 	if attachments == nil {
 		return out, nil
 	}
@@ -194,30 +194,30 @@ func admitAttachments(ctx context.Context, attachments any, admitted func() (*py
 		if !ok || len(item) != 2 || !isPath || !isMime || !attachmentMimes[mime] {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		paths = append(paths, pypath.PathStr(path))
+		paths = append(paths, filepath.Clean(path))
 		mimes = append(mimes, mime)
 	}
 	cache, err := mediacache.ImageCacheDir(ctx, home.Dir(ctx))
 	if err != nil {
 		return nil, err
 	}
-	staging, err := pypath.Resolve(cache)
+	staging, err := pathutil.Resolve(cache)
 	if err != nil {
 		return nil, err
 	}
 	for _, path := range paths {
-		if !pypath.IsAbs(path) {
+		if !filepath.IsAbs(path) {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		resolved, err := pypath.Resolve(path)
+		resolved, err := pathutil.Resolve(path)
 		if err != nil {
 			return nil, err
 		}
-		if !samePath(pypath.PathParent(resolved), staging) {
+		if !samePath(filepath.Dir(filepath.Clean(resolved)), staging) {
 			return nil, runtimeRefusal("invalid_params")
 		}
 	}
-	var row, committed *pyjson.Object
+	var row, committed *jsonutil.Object
 	if admitted != nil {
 		if row, err = admitted(); err != nil {
 			return nil, err
@@ -225,7 +225,7 @@ func admitAttachments(ctx context.Context, attachments any, admitted func() (*py
 	}
 	if row != nil {
 		value, _ := rowPayload(row).Get("attachments_v1")
-		committed, _ = value.(*pyjson.Object)
+		committed, _ = value.(*jsonutil.Object)
 	}
 	hashes, err := attachmentHashes(paths)
 	if err != nil {
@@ -244,24 +244,24 @@ func admitAttachments(ctx context.Context, attachments any, admitted func() (*py
 	}
 	retry := false
 	if slices.Contains(hashes, "") {
-		if committed == nil || len(media) != len(paths) || !pyjson.Equal(committedTypes, mimes) {
+		if committed == nil || len(media) != len(paths) || !anyutil.Equal(committedTypes, mimes) {
 			return nil, runtimeRefusal("invalid_params")
 		}
 		for i, reference := range media {
-			if pypath.PathName(pypath.PathStr(rowString(reference.(*pyjson.Object), "path"))) != pypath.PathName(paths[i]) {
+			if pathutil.Name(filepath.Clean(rowString(reference.(*jsonutil.Object), "path"))) != pathutil.Name(paths[i]) {
 				return nil, runtimeRefusal("invalid_params")
 			}
 		}
 		for i, digest := range hashes {
-			if digest != "" && digest != rowString(media[i].(*pyjson.Object), "sha256") {
+			if digest != "" && digest != rowString(media[i].(*jsonutil.Object), "sha256") {
 				return nil, state.NewRuntimeStoreError("admission_conflict", &state.AdmittedRequestConflictField, &state.AdmittedRequestConflictDetail)
 			}
 		}
 		retry = true
-	} else if committed != nil && pyjson.Equal(committedTypes, mimes) && len(media) == len(hashes) {
+	} else if committed != nil && anyutil.Equal(committedTypes, mimes) && len(media) == len(hashes) {
 		retry = true
 		for i, reference := range media {
-			if rowString(reference.(*pyjson.Object), "sha256") != hashes[i] {
+			if rowString(reference.(*jsonutil.Object), "sha256") != hashes[i] {
 				retry = false
 			}
 		}
@@ -279,24 +279,24 @@ func admitAttachments(ctx context.Context, attachments any, admitted func() (*py
 	if err != nil {
 		return nil, err
 	}
-	out.Set("attachments_v1", pyjson.ObjectOf("media", captured, "media_types", mimes))
+	out.Set("attachments_v1", jsonutil.ObjectOf("media", captured, "media_types", mimes))
 	return out, nil
 }
 
 // SHA-256 of a delivery as received, its prepared payload and the provider payload the hook also sees
-func ingressFingerprint(payload *pyjson.Object, raw any) (string, error) {
+func ingressFingerprint(payload *jsonutil.Object, raw any) (string, error) {
 	native, _ := payload.Get("native_text_v1")
-	source, ok := native.(*pyjson.Object)
+	source, ok := native.(*jsonutil.Object)
 	if !ok {
 		return "", &pyKeyError{"native_text_v1"}
 	}
-	envelope := source.Copy()
+	envelope := source.Clone()
 	envelope.Delete("ingress_sha256")
 	if value, ok := envelope.Get("media"); ok {
 		list, _ := value.([]any)
 		sized := make([]any, 0, len(list))
 		for _, item := range list {
-			media, _ := item.(*pyjson.Object)
+			media, _ := item.(*jsonutil.Object)
 			if media == nil {
 				return "", strSubscriptError(item)
 			}
@@ -306,14 +306,15 @@ func ingressFingerprint(payload *pyjson.Object, raw any) (string, error) {
 		}
 		envelope.Set("media", sized)
 	}
-	received := payload.Copy()
+	received := payload.Clone()
 	received.Set("native_text_v1", envelope)
 	var value any = received
 	if raw != nil {
-		value = pyjson.ObjectOf("payload", received, "raw_message", raw)
+		value = jsonutil.ObjectOf("payload", received, "raw_message", raw)
 	}
-	canonical, err := pyjson.Dumps(value, pyjson.SortKeys(true), pyjson.Separators(",", ":"),
-		pyjson.Default(func(v any) (any, error) { return pyrepr.Repr(v), nil }))
+	canonical, err := jsonutil.Encode(value, jsonutil.SortKeys(),
+		jsonutil.Convert(func(v any) (any, error) { return anyutil.Quote(v), nil }))
+
 	if err != nil {
 		return "", err
 	}
@@ -322,9 +323,9 @@ func ingressFingerprint(payload *pyjson.Object, raw any) (string, error) {
 }
 
 // Media references of a native payload, empty when it carries none
-func nativeMedia(payload *pyjson.Object) []any {
+func nativeMedia(payload *jsonutil.Object) []any {
 	native, _ := payload.Get("native_text_v1")
-	envelope, _ := native.(*pyjson.Object)
+	envelope, _ := native.(*jsonutil.Object)
 	if envelope == nil {
 		return nil
 	}
@@ -337,7 +338,7 @@ func nativeMedia(payload *pyjson.Object) []any {
 func mediaIdentities(references []any) []any {
 	out := make([]any, 0, len(references))
 	for _, item := range references {
-		reference, _ := item.(*pyjson.Object)
+		reference, _ := item.(*jsonutil.Object)
 		digest, _ := rowGet(reference, "sha256")
 		size, _ := rowGet(reference, "size")
 		out = append(out, []any{digest, size})
@@ -346,7 +347,7 @@ func mediaIdentities(references []any) []any {
 }
 
 // Payload a redelivered native message commits, the committed references standing in for an identical fresh capture
-func reconcileNativeRetry(ctx context.Context, db *state.SessionDB, principalID, sessionID, requestID string, payload *pyjson.Object, raw any) (*pyjson.Object, error) {
+func reconcileNativeRetry(ctx context.Context, db *state.SessionDB, principalID, sessionID, requestID string, payload *jsonutil.Object, raw any) (*jsonutil.Object, error) {
 	fresh := nativeMedia(payload)
 	found, status, encoded := false, "", ""
 	err := db.ReadCtx(ctx, func(conn state.SQLiteConn) error {
@@ -366,21 +367,21 @@ func reconcileNativeRetry(ctx context.Context, db *state.SessionDB, principalID,
 	if err != nil {
 		return nil, err
 	}
-	retained := pyjson.NewObject()
+	retained := jsonutil.NewObject()
 	if found {
-		decoded, err := pyjson.Loads(encoded)
+		decoded, err := jsonutil.Decode(encoded)
 		if err != nil {
 			return nil, err
 		}
-		if obj, ok := decoded.(*pyjson.Object); ok {
+		if obj, ok := decoded.(*jsonutil.Object); ok {
 			retained = obj
 		}
 	}
 	var recorded any
 	if native, ok := retained.Get("native_text_v1"); ok {
-		recorded, _ = rowGet(native.(*pyjson.Object), "ingress_sha256")
+		recorded, _ = rowGet(native.(*jsonutil.Object), "ingress_sha256")
 	}
-	var resolved *pyjson.Object
+	var resolved *jsonutil.Object
 	if recorded != nil {
 		fingerprint, err := ingressFingerprint(payload, raw)
 		if err != nil {
@@ -392,13 +393,13 @@ func reconcileNativeRetry(ctx context.Context, db *state.SessionDB, principalID,
 	}
 	if resolved == nil {
 		committed := nativeMedia(retained)
-		if len(fresh) == 0 || len(committed) == 0 || !pyjson.Equal(mediaIdentities(committed), mediaIdentities(fresh)) {
+		if len(fresh) == 0 || len(committed) == 0 || !anyutil.Equal(mediaIdentities(committed), mediaIdentities(fresh)) {
 			return payload, nil
 		}
 		native, _ := payload.Get("native_text_v1")
-		envelope := native.(*pyjson.Object).Copy()
+		envelope := native.(*jsonutil.Object).Clone()
 		envelope.Set("media", committed)
-		resolved = payload.Copy()
+		resolved = payload.Clone()
 		resolved.Set("native_text_v1", envelope)
 	}
 	committed := nativeMedia(resolved)
@@ -409,12 +410,12 @@ func reconcileNativeRetry(ctx context.Context, db *state.SessionDB, principalID,
 	}
 	kept := map[string]bool{}
 	for _, item := range committed {
-		kept[rowString(item.(*pyjson.Object), "path")] = true
+		kept[rowString(item.(*jsonutil.Object), "path")] = true
 	}
 	var unowned []any
 	dropped := map[string]bool{}
 	for _, item := range fresh {
-		if path := rowString(item.(*pyjson.Object), "path"); !kept[path] {
+		if path := rowString(item.(*jsonutil.Object), "path"); !kept[path] {
 			unowned = append(unowned, item)
 			dropped[path] = true
 		}
@@ -466,9 +467,9 @@ func fileSHA256(path string) (string, error) {
 }
 
 // Event media fields of a row's committed attachments, nil for a text only row
-func restoreAttachments(ctx context.Context, payload *pyjson.Object) (urls []string, types []string, err error) {
+func restoreAttachments(ctx context.Context, payload *jsonutil.Object) (urls []string, types []string, err error) {
 	value, _ := payload.Get("attachments_v1")
-	data, _ := value.(*pyjson.Object)
+	data, _ := value.(*jsonutil.Object)
 	if data == nil || data.Len() == 0 {
 		return nil, nil, nil
 	}
@@ -487,7 +488,7 @@ func restoreAttachments(ctx context.Context, payload *pyjson.Object) (urls []str
 	typeList, _ := mediaTypes.([]any)
 	types = make([]string, 0, len(typeList))
 	for _, item := range typeList {
-		types = append(types, pyrepr.Str(item))
+		types = append(types, anyutil.String(item))
 	}
 	return urls, types, nil
 }
@@ -499,7 +500,7 @@ func (e *mediaValueError) Error() string { return e.message }
 
 // Opens a local regular file without following a final link
 func openRegular(path string) (*os.File, error) {
-	if !pypath.IsAbs(path) {
+	if !filepath.IsAbs(path) {
 		return nil, &mediaValueError{"native media must be a local regular file"}
 	}
 	if info, err := os.Lstat(path); err == nil && info.Mode()&os.ModeSymlink != 0 {
@@ -538,12 +539,12 @@ func CaptureNativeMedia(ctx context.Context, paths []string) ([]any, error) {
 		}
 	}()
 	for _, value := range paths {
-		if err := captureFile(ctx, pypath.PathStr(value), limit, total, &references, &staged); err != nil {
+		if err := captureFile(ctx, filepath.Clean(value), limit, total, &references, &staged); err != nil {
 			return nil, err
 		}
 		total = 0
 		for _, reference := range references {
-			size, _ := reference.(*pyjson.Object).Get("size")
+			size, _ := reference.(*jsonutil.Object).Get("size")
 			total += size.(int64)
 		}
 	}
@@ -555,33 +556,33 @@ func CaptureNativeMedia(ctx context.Context, paths []string) ([]any, error) {
 		if i >= len(references) {
 			break
 		}
-		reference := references[i].(*pyjson.Object)
+		reference := references[i].(*jsonutil.Object)
 		target := rowString(reference, "path")
-		parent := pypath.PathParent(target)
-		root := pypath.PathParent(parent)
-		resolved, err := pypath.Resolve(parent)
+		parent := filepath.Dir(filepath.Clean(target))
+		root := filepath.Dir(filepath.Clean(parent))
+		resolved, err := pathutil.Resolve(parent)
 		if err != nil {
 			return nil, err
 		}
 		if !samePath(resolved, parent) {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		if _, err := home.MakeUserDir(ctx, filepath.Join(store, pypath.PathName(parent)), 0o700, false, true); err != nil {
+		if _, err := home.MakeUserDir(ctx, filepath.Join(store, pathutil.Name(parent)), 0o700, false, true); err != nil {
 			return nil, err
 		}
 		if err := publishCapture(ctx, temporary, target, reference); err != nil {
 			return nil, err
 		}
-		up := pypath.PathParent(root)
-		for _, directory := range []string{parent, root, up, pypath.PathParent(up), pypath.PathParent(pypath.PathParent(up))} {
-			pyfs.FsyncDirectory(directory)
+		up := filepath.Dir(filepath.Clean(root))
+		for _, directory := range []string{parent, root, up, filepath.Dir(filepath.Clean(up)), filepath.Dir(filepath.Clean(filepath.Dir(filepath.Clean(up))))} {
+			fsutil.SyncDir(directory)
 		}
 	}
 	return references, nil
 }
 
 // Publishes one private snapshot under its content address and leases it, reusing identical bytes already there
-func publishCapture(ctx context.Context, temporary, target string, reference *pyjson.Object) error {
+func publishCapture(ctx context.Context, temporary, target string, reference *jsonutil.Object) error {
 	scope := leaseScope(ctx)
 	mediaLeaseMu.Lock()
 	defer mediaLeaseMu.Unlock()
@@ -610,7 +611,7 @@ func captureFile(ctx context.Context, path string, limit, total int64, reference
 	if err != nil {
 		return err
 	}
-	resolved, err := pypath.Resolve(root)
+	resolved, err := pathutil.Resolve(root)
 	if err != nil {
 		return err
 	}
@@ -637,16 +638,16 @@ func captureFile(ctx context.Context, path string, limit, total int64, reference
 		return err
 	}
 	hexDigest := hex.EncodeToString(digest.Sum(nil))
-	target := filepath.Join(root, hexDigest, pypath.PathName(path))
-	parent := pypath.PathParent(target)
-	resolvedParent, err := pypath.Resolve(parent)
+	target := filepath.Join(root, hexDigest, pathutil.Name(path))
+	parent := filepath.Dir(filepath.Clean(target))
+	resolvedParent, err := pathutil.Resolve(parent)
 	if err != nil {
 		return err
 	}
 	if !samePath(resolvedParent, parent) {
 		return runtimeRefusal("invalid_params")
 	}
-	reference := pyjson.ObjectOf("path", target, "sha256", hexDigest, "size", size)
+	reference := jsonutil.ObjectOf("path", target, "sha256", hexDigest, "size", size)
 	if _, err := os.Lstat(target); err == nil {
 		if _, err := restoreNativeMedia(ctx, []any{reference}); err != nil {
 			return err
@@ -709,7 +710,7 @@ func restoreNativeMedia(ctx context.Context, references []any) ([]string, error)
 	}
 	unavailable := runtimeRefusal("storage_unavailable")
 	for _, item := range references {
-		reference, ok := item.(*pyjson.Object)
+		reference, ok := item.(*jsonutil.Object)
 		if !ok || reference.Len() != 3 {
 			return nil, unavailable
 		}
@@ -720,13 +721,13 @@ func restoreNativeMedia(ctx context.Context, references []any) ([]string, error)
 		if !hasPath || !hasDigest || !hasSize || !isPath {
 			return nil, unavailable
 		}
-		path := pypath.PathStr(value)
-		resolved, err := pypath.Resolve(path)
+		path := filepath.Clean(value)
+		resolved, err := pathutil.Resolve(path)
 		if err != nil {
 			return nil, unavailable
 		}
-		parent := pypath.PathParent(path)
-		if !samePath(pypath.PathParent(parent), root) || !samePath(resolved, path) || pypath.PathName(parent) != digest {
+		parent := filepath.Dir(filepath.Clean(path))
+		if !samePath(filepath.Dir(filepath.Clean(parent)), root) || !samePath(resolved, path) || pathutil.Name(parent) != digest {
 			return nil, unavailable
 		}
 		source, err := openRegular(path)

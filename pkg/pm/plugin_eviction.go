@@ -19,7 +19,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 
 	"gopkg.in/yaml.v3"
 )
@@ -455,8 +455,8 @@ func recordedEvictions(ctx context.Context) ([]recordedEviction, error) {
 		plugins, _ := orEmpty(selection["plugins"]).(map[string]any)
 		memory, _ := orEmpty(selection["memory"]).(map[string]any)
 		provider := ""
-		if raw := memory["provider"]; pyrepr.Truthy(raw) {
-			provider = strings.TrimSpace(pyrepr.Str(raw))
+		if raw := memory["provider"]; anyutil.IsTrue(raw) {
+			provider = strings.TrimSpace(anyutil.String(raw))
 		}
 		record, ok := plugins[DisabledByUpdateRecord].(map[string]any)
 		if !ok {
@@ -486,7 +486,7 @@ func recordedEvictions(ctx context.Context) ([]recordedEviction, error) {
 			if pluginDir == "" {
 				continue
 			}
-			keep := pyrepr.Truthy(earlier["enabled"])
+			keep := anyutil.IsTrue(earlier["enabled"])
 			if !keep {
 				spellings, err := pluginSpellings(pluginDir, name)
 				if err != nil {
@@ -504,7 +504,7 @@ func recordedEvictions(ctx context.Context) ([]recordedEviction, error) {
 
 // Empty mapping for a falsy decoded value, the value otherwise
 func orEmpty(v any) any {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return map[string]any{}
 	}
 	return v
@@ -1021,8 +1021,8 @@ func outcomeNotices(entries []PluginEntry, recorded []recordedEviction, reasons,
 		if why == "" {
 			why = waiting[key]
 		}
-		if why == "" && pyrepr.Truthy(r.Record["reason"]) {
-			why = pyrepr.Str(r.Record["reason"])
+		if why == "" && anyutil.IsTrue(r.Record["reason"]) {
+			why = anyutil.String(r.Record["reason"])
 		}
 		if why == "" {
 			why = "unknown"

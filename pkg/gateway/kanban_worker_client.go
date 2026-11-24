@@ -15,11 +15,12 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // KanbanOwnerWaitSeconds is the longest the owner may stay silent between answers before the worker gives up
@@ -51,14 +52,14 @@ type kanbanWorkerParams struct {
 
 // Python KeyError of a missing mapping key
 func kanbanKeyError(key string) error {
-	return &kanbanPyError{"KeyError", pyrepr.Repr(key)}
+	return &kanbanPyError{"KeyError", anyutil.Quote(key)}
 }
 
 // kanbanPyError is a Python exception class this client raises without a dedicated Go type
 type kanbanPyError struct{ Class, Msg string }
 
-func (e *kanbanPyError) Error() string      { return e.Msg }
-func (e *kanbanPyError) PyTypeName() string { return e.Class }
+func (e *kanbanPyError) Error() string     { return e.Msg }
+func (e *kanbanPyError) ErrorKind() string { return e.Class }
 
 // Whether an error is one the reconnect loop handles, a gateway client, websocket, OS or timeout failure
 func kanbanWorkerLoopError(err error) bool {
@@ -67,7 +68,7 @@ func kanbanWorkerLoopError(err error) bool {
 	var netErr net.Error
 	return errors.As(err, &gce) || errors.As(err, &closeErr) || errors.Is(err, websocket.ErrBadHandshake) ||
 		errors.Is(err, websocket.ErrCloseSent) || errors.As(err, &netErr) || errors.Is(err, os.ErrDeadlineExceeded) ||
-		errors.Is(err, context.DeadlineExceeded) || pypath.IsOSError(err)
+		errors.Is(err, context.DeadlineExceeded) || errorutil.IsSystem(err)
 }
 
 // False for the owner's own final answer, true for a restarting owner or a lost transport
@@ -148,7 +149,7 @@ func kanbanItem(m map[string]any, key string) (any, error) {
 func kanbanAwaitReceipt(ctx context.Context, client *GatewayClient, params kanbanWorkerParams, boardDB string, claim *kanbanClaim) (map[string]any, error) {
 	var receipt map[string]any
 	if claim.admissionID == nil {
-		db, err := pypath.Resolve(boardDB)
+		db, err := pathutil.Resolve(boardDB)
 		if err != nil {
 			return nil, err
 		}
@@ -159,7 +160,7 @@ func kanbanAwaitReceipt(ctx context.Context, client *GatewayClient, params kanba
 		if err != nil {
 			return nil, err
 		}
-		accepted, ok := pyjson.Plain(raw).(map[string]any)
+		accepted, ok := jsonutil.Plain(raw).(map[string]any)
 		if !ok {
 			return nil, &kanbanPyError{"TypeError", fmt.Sprintf("the kanban receipt is %s, expected a mapping", errchain.Kind(raw))}
 		}
@@ -179,7 +180,7 @@ func kanbanAwaitReceipt(ctx context.Context, client *GatewayClient, params kanba
 			return nil, err
 		}
 		claim.sessionID, claim.admissionID = sessionID, admissionID
-		fmt.Fprintf(os.Stderr, "Session: %s\n", pyrepr.Str(claim.sessionID))
+		fmt.Fprintf(os.Stderr, "Session: %s\n", anyutil.String(claim.sessionID))
 	} else {
 		var err error
 		if receipt, err = kanbanReceipt(ctx, client, claim); err != nil {
@@ -216,8 +217,8 @@ func kanbanWorkerExitCode(receipt map[string]any, params kanbanWorkerParams, boa
 	if err != nil {
 		return 0, err
 	}
-	if out, _ := result.Get("last_output"); pyrepr.Truthy(out) {
-		fmt.Fprintln(os.Stdout, pyrepr.Str(out))
+	if out, _ := result.Get("last_output"); anyutil.IsTrue(out) {
+		fmt.Fprintln(os.Stdout, anyutil.String(out))
 	}
 	code, ok := result.Get("exit_code")
 	if !ok {
@@ -231,12 +232,12 @@ func kanbanWorkerExitCode(receipt map[string]any, params kanbanWorkerParams, boa
 }
 
 // The worker_result event of exactly this attempt read only, empty unless its claim lock matches
-func kanbanWorkerResult(path string, params kanbanWorkerParams) (*pyjson.Object, error) {
-	resolved, err := pypath.Resolve(path)
+func kanbanWorkerResult(path string, params kanbanWorkerParams) (*jsonutil.Object, error) {
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return nil, err
 	}
-	uri, err := pypath.AsURI(resolved)
+	uri, err := pathutil.FileURL(resolved)
 	if err != nil {
 		return nil, err
 	}
@@ -248,17 +249,17 @@ func kanbanWorkerResult(path string, params kanbanWorkerParams) (*pyjson.Object,
 	var payload sql.NullString
 	err = db.QueryRow("SELECT payload FROM task_events WHERE run_id=? AND task_id=? AND kind='worker_result' ORDER BY id DESC LIMIT 1",
 		params.runID, params.taskID).Scan(&payload)
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 	case err != nil:
 		return nil, err
 	default:
-		decoded, err := pyjson.Loads(payload.String)
+		decoded, err := jsonutil.Decode(payload.String)
 		if err != nil {
 			return nil, err
 		}
-		obj, ok := decoded.(*pyjson.Object)
+		obj, ok := decoded.(*jsonutil.Object)
 		if !ok {
 			return nil, &kanbanPyError{"AttributeError", fmt.Sprintf("the kanban worker result is %s, expected a mapping", errchain.Kind(decoded))}
 		}
@@ -267,7 +268,7 @@ func kanbanWorkerResult(path string, params kanbanWorkerParams) (*pyjson.Object,
 	if lock, _ := result.Get("claim_lock"); lock == params.claimLock {
 		return result, nil
 	}
-	return pyjson.NewObject(), nil
+	return jsonutil.NewObject(), nil
 }
 
 // The owner's receipt of this attempt's admission
@@ -312,9 +313,9 @@ func kanbanWorkerClientSubmit(ctx context.Context) (int, error) {
 		}
 	}
 	var pyErr *kanbanPyError
-	if (errors.As(err, &pyErr) && (pyErr.Class == "KeyError" || pyErr.Class == "ValueError")) || pypath.IsOSError(err) {
-		text := pyrepr.ExceptionMessage(err)
-		if pypath.IsOSError(err) {
+	if (errors.As(err, &pyErr) && (pyErr.Class == "KeyError" || pyErr.Class == "ValueError")) || errorutil.IsSystem(err) {
+		text := err.Error()
+		if errorutil.IsSystem(err) {
 			text = errchain.OSText(err)
 		}
 		fmt.Fprintf(os.Stderr, "Kanban owner refused: %s\n", text)

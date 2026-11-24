@@ -9,15 +9,16 @@ import (
 	"net/url"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -73,7 +74,7 @@ const dialogBridgeScript = `
 })();
 `
 
-var autoAttachParams = pyjson.ObjectOf("autoAttach", true, "waitForDebuggerOnStart", false, "flatten", true)
+var autoAttachParams = jsonutil.ObjectOf("autoAttach", true, "waitForDebuggerOnStart", false, "flatten", true)
 
 // Python exception of the given class carrying msg as its str
 func pyError(class, msg string) error { return &cloudError{Class: class, Msg: msg} }
@@ -85,15 +86,15 @@ var errLoopUnavailable = pyError("_LoopUnavailable", "Browser supervisor loop un
 // Endpoint credentials masked in an error or url text
 func redactCDPErrorText(text string) string { return tools.RedactCDPURL(text) }
 
-func supervisorFail(msg string) *pyjson.Object { return pyjson.ObjectOf("ok", false, "error", msg) }
+func supervisorFail(msg string) *jsonutil.Object { return jsonutil.ObjectOf("ok", false, "error", msg) }
 
-func supervisorErr(err error) *pyjson.Object {
-	return supervisorFail(pyrepr.ExceptionName(err) + ": " + pyrepr.ExceptionMessage(err))
+func supervisorErr(err error) *jsonutil.Object {
+	return supervisorFail(err.Error())
 }
 
 // Value of key in a decoded CDP object, nil when absent or the holder is not an object
 func anyGet(v any, key string) any {
-	o, ok := pyjson.AsObject(v)
+	o, ok := jsonutil.AsObject(v)
 	if !ok {
 		return nil
 	}
@@ -102,31 +103,31 @@ func anyGet(v any, key string) any {
 }
 
 // Object under key with an empty object for a missing or non object value
-func objChild(v any, key string) *pyjson.Object {
-	if o, ok := pyjson.AsObject(anyGet(v, key)); ok {
+func objChild(v any, key string) *jsonutil.Object {
+	if o, ok := jsonutil.AsObject(anyGet(v, key)); ok {
 		return o
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // str of the value under key or the empty string when it is falsy
 func objStr(v any, key string) string {
 	got := anyGet(v, key)
-	if !pyrepr.Truthy(got) {
+	if !anyutil.IsTrue(got) {
 		return ""
 	}
-	return pyrepr.Str(got)
+	return anyutil.String(got)
 }
 
 // Subscript that raises KeyError as dict indexing does
 func objIndex(v any, key string) (any, error) {
-	o, ok := pyjson.AsObject(v)
+	o, ok := jsonutil.AsObject(v)
 	if ok {
 		if out, has := o.Get(key); has {
 			return out, nil
 		}
 	}
-	return nil, pyError("KeyError", pyrepr.StrRepr(key))
+	return nil, pyError("KeyError", strconv.Quote(key))
 }
 
 // Websocket surface the supervisor speaks CDP over
@@ -217,8 +218,8 @@ type PendingDialog struct {
 }
 
 // Snapshot dict with the page originated text redacted
-func (d PendingDialog) toDict(env *tools.Env) *pyjson.Object {
-	return pyjson.ObjectOf("id", d.ID, "type", d.Type, "message", redactSupervisorText(env, d.Message),
+func (d PendingDialog) toDict(env *tools.Env) *jsonutil.Object {
+	return jsonutil.ObjectOf("id", d.ID, "type", d.Type, "message", redactSupervisorText(env, d.Message),
 		"default_prompt", redactSupervisorText(env, d.DefaultPrompt), "opened_at", d.OpenedAt, "frame_id", d.FrameID)
 }
 
@@ -230,8 +231,8 @@ type DialogRecord struct {
 	FrameID            any
 }
 
-func (r DialogRecord) toDict(env *tools.Env) *pyjson.Object {
-	return pyjson.ObjectOf("id", r.ID, "type", r.Type, "message", redactSupervisorText(env, r.Message),
+func (r DialogRecord) toDict(env *tools.Env) *jsonutil.Object {
+	return jsonutil.ObjectOf("id", r.ID, "type", r.Type, "message", redactSupervisorText(env, r.Message),
 		"opened_at", r.OpenedAt, "closed_at", r.ClosedAt, "closed_by", r.ClosedBy, "frame_id", r.FrameID)
 }
 
@@ -257,8 +258,8 @@ type FrameInfo struct {
 	Name                 string
 }
 
-func (f FrameInfo) toDict() *pyjson.Object {
-	d := pyjson.ObjectOf("frame_id", f.FrameID, "url", f.URL, "origin", f.Origin, "is_oopif", f.IsOOPIF)
+func (f FrameInfo) toDict() *jsonutil.Object {
+	d := jsonutil.ObjectOf("frame_id", f.FrameID, "url", f.URL, "origin", f.Origin, "is_oopif", f.IsOOPIF)
 	for _, kv := range [][2]string{{"session_id", f.CDPSessionID}, {"parent_frame_id", f.ParentFrameID}, {"name", f.Name}} {
 		if kv[1] != "" {
 			d.Set(kv[0], kv[1])
@@ -313,19 +314,19 @@ func (t *frameTable) values() []FrameInfo {
 type SupervisorSnapshot struct {
 	PendingDialogs []PendingDialog
 	RecentDialogs  []DialogRecord
-	FrameTree      *pyjson.Object
+	FrameTree      *jsonutil.Object
 	Active         bool
 	CDPURL, TaskID string
 	env            *tools.Env
 }
 
 // Serialized snapshot for tool output, recent dialogs only when any exist
-func (s SupervisorSnapshot) ToDict() *pyjson.Object {
+func (s SupervisorSnapshot) ToDict() *jsonutil.Object {
 	pending := make([]any, 0, len(s.PendingDialogs))
 	for _, d := range s.PendingDialogs {
 		pending = append(pending, d.toDict(s.env))
 	}
-	out := pyjson.ObjectOf("pending_dialogs", pending, "frame_tree", s.FrameTree)
+	out := jsonutil.ObjectOf("pending_dialogs", pending, "frame_tree", s.FrameTree)
 	if len(s.RecentDialogs) > 0 {
 		recent := make([]any, 0, len(s.RecentDialogs))
 		for _, r := range s.RecentDialogs {
@@ -337,7 +338,7 @@ func (s SupervisorSnapshot) ToDict() *pyjson.Object {
 }
 
 type supervisorReply struct {
-	msg *pyjson.Object
+	msg *jsonutil.Object
 	err error
 }
 
@@ -361,7 +362,7 @@ type cdpSupervisor struct {
 	threadDone    chan struct{}
 	stopCh        chan struct{}
 	startErr      error
-	ready         *pythread.Event
+	ready         *syncutil.Event
 	stopRequested atomic.Bool
 
 	wsMu         sync.Mutex
@@ -378,10 +379,10 @@ type cdpSupervisor struct {
 func newCDPSupervisor(env *tools.Env, taskID, cdpURL, policy string, dialogTimeoutS float64) (*cdpSupervisor, error) {
 	if !validDialogPolicies[policy] {
 		return nil, pyError("ValueError", fmt.Sprintf("Invalid dialog_policy %s; must be one of ['auto_accept', 'auto_dismiss', 'must_respond']",
-			pyrepr.StrRepr(policy)))
+			strconv.Quote(policy)))
 	}
 	return &cdpSupervisor{taskID: taskID, cdpURL: cdpURL, dialogPolicy: policy, dialogTimeoutS: dialogTimeoutS, env: env,
-		log: cfgOf(env).logger(), pendingDialogs: map[string]PendingDialog{}, ready: &pythread.Event{},
+		log: cfgOf(env).logger(), pendingDialogs: map[string]PendingDialog{}, ready: &syncutil.Event{},
 		pendingCalls: map[int64]chan supervisorReply{}, watchdogs: map[string]*time.Timer{}}, nil
 }
 
@@ -456,14 +457,14 @@ func (s *cdpSupervisor) start(timeout float64) error {
 		if len(redacted) > 80 {
 			redacted = redacted[:80]
 		}
-		return timeoutError(fmt.Sprintf("CDP supervisor did not attach within %ss (cdp_url=%s...)", pyrepr.Float(timeout), string(redacted)))
+		return timeoutError(fmt.Sprintf("CDP supervisor did not attach within %ss (cdp_url=%s...)", strconv.FormatFloat(timeout, 'f', -1, 64), string(redacted)))
 	}
 	s.ctlMu.Lock()
 	err := s.startErr
 	s.ctlMu.Unlock()
 	if err != nil {
 		s.stop(5.0)
-		return runtimeError("CDP supervisor failed to start: " + redactCDPErrorText(pyrepr.ExceptionMessage(err)))
+		return runtimeError("CDP supervisor failed to start: " + redactCDPErrorText(err.Error()))
 	}
 	return nil
 }
@@ -546,9 +547,9 @@ func (s *cdpSupervisor) snapshot() SupervisorSnapshot {
 }
 
 // Accepts or dismisses a pending dialog through the loop, an ok false dict for recoverable errors
-func (s *cdpSupervisor) respondToDialog(action string, promptText *string, dialogID string, timeout float64) *pyjson.Object {
+func (s *cdpSupervisor) respondToDialog(action string, promptText *string, dialogID string, timeout float64) *jsonutil.Object {
 	if action != "accept" && action != "dismiss" {
-		return supervisorFail("action must be 'accept' or 'dismiss', got " + pyrepr.StrRepr(action))
+		return supervisorFail("action must be 'accept' or 'dismiss', got " + strconv.Quote(action))
 	}
 	s.stateMu.Lock()
 	if !s.active {
@@ -567,13 +568,13 @@ func (s *cdpSupervisor) respondToDialog(action string, promptText *string, dialo
 			known := append([]string(nil), s.pendingKeys...)
 			sort.Strings(known)
 			s.stateMu.Unlock()
-			return supervisorFail(fmt.Sprintf("dialog_id %s not found (known: %s)", pyrepr.StrRepr(dialogID), pyrepr.Repr(stringsAny(known))))
+			return supervisorFail(fmt.Sprintf("dialog_id %s not found (known: %s)", strconv.Quote(dialogID), anyutil.Quote(stringsAny(known))))
 		}
 		dialog = d
 	case len(s.pendingKeys) > 1:
 		ids := append([]string(nil), s.pendingKeys...)
 		s.stateMu.Unlock()
-		return supervisorFail(fmt.Sprintf("%d pending dialogs; specify dialog_id. Candidates: %s", len(ids), pyrepr.Repr(stringsAny(ids))))
+		return supervisorFail(fmt.Sprintf("%d pending dialogs; specify dialog_id. Candidates: %s", len(ids), anyutil.Quote(stringsAny(ids))))
 	default:
 		dialog = s.pendingDialogs[s.pendingKeys[0]]
 	}
@@ -594,7 +595,7 @@ func (s *cdpSupervisor) respondToDialog(action string, promptText *string, dialo
 	if err != nil {
 		return supervisorErr(err)
 	}
-	return pyjson.ObjectOf("ok", true, "dialog", dialog.toDict(s.env))
+	return jsonutil.ObjectOf("ok", true, "dialog", dialog.toDict(s.env))
 }
 
 func stringsAny(in []string) []any {
@@ -606,7 +607,7 @@ func stringsAny(in []string) []any {
 }
 
 // Evaluates expression in the attached page over the live socket, retrying by reference on a too deep value
-func (s *cdpSupervisor) evaluateRuntime(expression string, returnByValue, awaitPromise bool, timeout float64) *pyjson.Object {
+func (s *cdpSupervisor) evaluateRuntime(expression string, returnByValue, awaitPromise bool, timeout float64) *jsonutil.Object {
 	if !s.currentLoop().isRunning() {
 		return supervisorFail("supervisor loop is not running")
 	}
@@ -620,32 +621,32 @@ func (s *cdpSupervisor) evaluateRuntime(expression string, returnByValue, awaitP
 		return supervisorFail("supervisor has no attached page session")
 	}
 	runEval := func(byValue bool) (any, error) {
-		params := pyjson.ObjectOf("expression", expression, "returnByValue", byValue, "awaitPromise", awaitPromise, "userGesture", true)
+		params := jsonutil.ObjectOf("expression", expression, "returnByValue", byValue, "awaitPromise", awaitPromise, "userGesture", true)
 		return s.schedule(func() (any, error) { return s.cdpCall("Runtime.evaluate", params, sessionID, timeout) }, timeout+1, false)
 	}
 	response, err := runEval(returnByValue)
 	if err != nil {
-		if !(returnByValue && strings.Contains(strings.ToLower(pyrepr.ExceptionMessage(err)), "reference chain is too long")) {
+		if !(returnByValue && strings.Contains(strings.ToLower(err.Error()), "reference chain is too long")) {
 			return supervisorErr(err)
 		}
 		if response, err = runEval(false); err != nil {
 			return supervisorErr(err)
 		}
 	}
-	resultPayload := pyjson.NewObject()
-	if o, ok := response.(*pyjson.Object); ok && o != nil {
+	resultPayload := jsonutil.NewObject()
+	if o, ok := response.(*jsonutil.Object); ok && o != nil {
 		resultPayload = objChild(o, "result")
 	}
-	if details := anyGet(resultPayload, "exceptionDetails"); pyrepr.Truthy(details) {
+	if details := anyGet(resultPayload, "exceptionDetails"); anyutil.IsTrue(details) {
 		excText := anyGet(details, "text")
-		if !pyrepr.Truthy(excText) {
+		if !anyutil.IsTrue(excText) {
 			excText = "JavaScript exception"
 		}
 		description := anyGet(objChild(details, "exception"), "description")
-		if pyrepr.Truthy(description) {
-			return supervisorFail(pyrepr.Str(excText) + ": " + pyrepr.Str(description))
+		if anyutil.IsTrue(description) {
+			return supervisorFail(anyutil.String(excText) + ": " + anyutil.String(description))
 		}
-		return supervisorFail(pyrepr.Str(excText))
+		return supervisorFail(anyutil.String(excText))
 	}
 	resultObj := objChild(resultPayload, "result")
 	resultType, ok := resultObj.Get("type")
@@ -657,20 +658,20 @@ func (s *cdpSupervisor) evaluateRuntime(expression string, returnByValue, awaitP
 		value = v
 	} else if resultType != "undefined" {
 		value = anyGet(resultObj, "description")
-		if !pyrepr.Truthy(value) {
+		if !anyutil.IsTrue(value) {
 			value = anyGet(resultObj, "unserializableValue")
 		}
 	}
-	return pyjson.ObjectOf("ok", true, "result", value, "result_type", resultType)
+	return jsonutil.ObjectOf("ok", true, "result", value, "result_type", resultType)
 }
 
 // Re-attaches the page session to an open page on origin, the first tab where accept is truthy winning
-func (s *cdpSupervisor) focusPage(origin, accept string, timeout float64) *pyjson.Object {
+func (s *cdpSupervisor) focusPage(origin, accept string, timeout float64) *jsonutil.Object {
 	if !s.currentLoop().isRunning() {
 		return supervisorFail("supervisor loop is not running")
 	}
 	attach := func(targetID string) (string, error) {
-		reply, err := s.cdpCall("Target.attachToTarget", pyjson.ObjectOf("targetId", targetID, "flatten", true), "", timeout)
+		reply, err := s.cdpCall("Target.attachToTarget", jsonutil.ObjectOf("targetId", targetID, "flatten", true), "", timeout)
 		if err != nil {
 			return "", err
 		}
@@ -682,7 +683,7 @@ func (s *cdpSupervisor) focusPage(origin, accept string, timeout float64) *pyjso
 		if err != nil {
 			return "", err
 		}
-		sid := pyrepr.Str(sidVal)
+		sid := anyutil.String(sidVal)
 		if err := s.enablePageDomains(sid, timeout); err != nil {
 			return "", err
 		}
@@ -713,7 +714,7 @@ func (s *cdpSupervisor) focusPage(origin, accept string, timeout float64) *pyjso
 			if err != nil {
 				continue
 			}
-			candidates = append(candidates, candidate{pyrepr.Str(id), u})
+			candidates = append(candidates, candidate{anyutil.String(id), u})
 		}
 		for _, c := range candidates {
 			sid, err := attach(c.targetID)
@@ -721,19 +722,19 @@ func (s *cdpSupervisor) focusPage(origin, accept string, timeout float64) *pyjso
 				return nil, err
 			}
 			if accept != "" {
-				probe, err := s.cdpCall("Runtime.evaluate", pyjson.ObjectOf("expression", accept, "returnByValue", true), sid, timeout)
+				probe, err := s.cdpCall("Runtime.evaluate", jsonutil.ObjectOf("expression", accept, "returnByValue", true), sid, timeout)
 				if err != nil {
 					return nil, err
 				}
-				if !pyrepr.Truthy(anyGet(objChild(objChild(probe, "result"), "result"), "value")) {
-					if _, err := s.cdpCall("Target.detachFromTarget", pyjson.ObjectOf("sessionId", sid), "", timeout); err != nil {
+				if !anyutil.IsTrue(anyGet(objChild(objChild(probe, "result"), "result"), "value")) {
+					if _, err := s.cdpCall("Target.detachFromTarget", jsonutil.ObjectOf("sessionId", sid), "", timeout); err != nil {
 						return nil, err
 					}
 					continue
 				}
 			}
 			s.setPageSession(sid)
-			return pyjson.ObjectOf("ok", true, "url", c.url), nil
+			return jsonutil.ObjectOf("ok", true, "url", c.url), nil
 		}
 		where := origin
 		if where == "" {
@@ -749,7 +750,7 @@ func (s *cdpSupervisor) focusPage(origin, accept string, timeout float64) *pyjso
 	if err != nil {
 		return supervisorErr(err)
 	}
-	return out.(*pyjson.Object)
+	return out.(*jsonutil.Object)
 }
 
 // Thread entry running the reconnecting supervisor until it returns, then closing its loop
@@ -765,7 +766,7 @@ func (s *cdpSupervisor) threadMain(done chan struct{}) {
 	}
 	err := catchRaised(s.run)
 	if err != nil && !s.failStart(err) {
-		s.log.Warn(fmt.Sprintf("CDP supervisor %s crashed: %s", s.taskID, pyrepr.ExceptionMessage(err)))
+		s.log.Warn(fmt.Sprintf("CDP supervisor %s crashed: %s", s.taskID, err.Error()))
 	}
 	close(quit)
 	<-loop.stopped
@@ -805,7 +806,7 @@ func (s *cdpSupervisor) reconnectBudgetSpent(failures int, err error) bool {
 		return false
 	}
 	s.log.Warn(fmt.Sprintf("CDP supervisor %s: stopped after %d failed reconnect attempts: %s",
-		s.taskID, failures, redactCDPErrorText(pyrepr.ExceptionMessage(err))))
+		s.taskID, failures, redactCDPErrorText(err.Error())))
 	if supervisors.get(s.taskID) == s {
 		supervisors.pop(s.taskID)
 	}
@@ -856,7 +857,7 @@ func (s *cdpSupervisor) run() error {
 				return nil
 			}
 			s.log.Warn(fmt.Sprintf("CDP supervisor %s: connect failed (attempt %d/%d): %s", s.taskID, failures,
-				maxPostAttachReconnectFailures, redactCDPErrorText(pyrepr.ExceptionMessage(err))))
+				maxPostAttachReconnectFailures, redactCDPErrorText(err.Error())))
 			supervisorSleep(s.stopChan(), seconds(min(backoff, 10.0)))
 			backoff = min(backoff*2, 10.0)
 			continue
@@ -915,7 +916,7 @@ func (s *cdpSupervisor) run() error {
 			}
 			s.log.Warn(fmt.Sprintf("CDP supervisor %s: session dropped after %.1fs (attempt %d/%d): %s", s.taskID,
 				float64(time.Now().UnixNano())/1e9-lastSuccess, failures, maxPostAttachReconnectFailures,
-				redactCDPErrorText(pyrepr.ExceptionMessage(attachErr))))
+				redactCDPErrorText(attachErr.Error())))
 		}
 		cleanup()
 		if s.stopRequested.Load() {
@@ -944,7 +945,7 @@ func (s *cdpSupervisor) attachInitialPage() error {
 		}
 	}
 	if page == nil {
-		created, err := s.cdpCall("Target.createTarget", pyjson.ObjectOf("url", "about:blank"), "", 10.0)
+		created, err := s.cdpCall("Target.createTarget", jsonutil.ObjectOf("url", "about:blank"), "", 10.0)
 		if err != nil {
 			return err
 		}
@@ -956,7 +957,7 @@ func (s *cdpSupervisor) attachInitialPage() error {
 	if err != nil {
 		return err
 	}
-	attach, err := s.cdpCall("Target.attachToTarget", pyjson.ObjectOf("targetId", targetID, "flatten", true), "", 10.0)
+	attach, err := s.cdpCall("Target.attachToTarget", jsonutil.ObjectOf("targetId", targetID, "flatten", true), "", 10.0)
 	if err != nil {
 		return err
 	}
@@ -968,7 +969,7 @@ func (s *cdpSupervisor) attachInitialPage() error {
 	if err != nil {
 		return err
 	}
-	sid := pyrepr.Str(sidVal)
+	sid := anyutil.String(sidVal)
 	s.setPageSession(sid)
 	if err := s.enablePageDomains(sid, 10.0); err != nil {
 		return err
@@ -978,11 +979,11 @@ func (s *cdpSupervisor) attachInitialPage() error {
 }
 
 // Sends one CDP command and waits timeout seconds for its reply, a negative timeout waiting until the socket closes
-func (s *cdpSupervisor) cdpCall(method string, params any, sessionID string, timeout float64) (*pyjson.Object, error) {
+func (s *cdpSupervisor) cdpCall(method string, params any, sessionID string, timeout float64) (*jsonutil.Object, error) {
 	return supervisorCDP(s, method, params, sessionID, timeout)
 }
 
-func (s *cdpSupervisor) sendCDP(method string, params any, sessionID string, timeout float64) (*pyjson.Object, error) {
+func (s *cdpSupervisor) sendCDP(method string, params any, sessionID string, timeout float64) (*jsonutil.Object, error) {
 	s.wsMu.Lock()
 	ws := s.ws
 	if ws == nil {
@@ -991,8 +992,8 @@ func (s *cdpSupervisor) sendCDP(method string, params any, sessionID string, tim
 	}
 	s.nextCallID++
 	id := s.nextCallID
-	payload := pyjson.ObjectOf("id", id, "method", method)
-	if pyrepr.Truthy(params) {
+	payload := jsonutil.ObjectOf("id", id, "method", method)
+	if anyutil.IsTrue(params) {
 		payload.Set("params", params)
 	}
 	if sessionID != "" {
@@ -1006,7 +1007,7 @@ func (s *cdpSupervisor) sendCDP(method string, params any, sessionID string, tim
 		delete(s.pendingCalls, id)
 		s.wsMu.Unlock()
 	}()
-	text, err := pyjson.Dumps(payload)
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}
@@ -1038,21 +1039,21 @@ func (s *cdpSupervisor) readLoop(ctx context.Context) {
 		if err != nil {
 			var closed *ErrWSClosed
 			if !(errors.As(err, &closed) && (closed.Code == 1000 || closed.Code == 1001)) && ctx.Err() == nil {
-				s.log.Debug(fmt.Sprintf("CDP read loop exited: %s", pyrepr.ExceptionMessage(pyWSError(err, s.cdpURL))))
+				s.log.Debug(fmt.Sprintf("CDP read loop exited: %s", pyWSError(err, s.cdpURL).Error()))
 			}
 			return
 		}
 		if s.stopRequested.Load() {
 			return
 		}
-		decoded, err := pyjson.LoadsBytes(raw)
+		decoded, err := jsonutil.Decode(raw)
 		if err != nil {
 			s.log.Debug("CDP supervisor: non-JSON frame dropped")
 			continue
 		}
-		msg, ok := decoded.(*pyjson.Object)
+		msg, ok := decoded.(*jsonutil.Object)
 		if !ok {
-			s.log.Debug(fmt.Sprintf("CDP read loop exited: '%s' object has no attribute 'get'", pyrepr.TypeName(decoded)))
+			s.log.Debug(fmt.Sprintf("CDP read loop exited: '%s' object has no attribute 'get'", anyutil.Kind(decoded)))
 			return
 		}
 		loop := s.currentLoop()
@@ -1072,21 +1073,21 @@ func (s *cdpSupervisor) readLoop(ctx context.Context) {
 }
 
 // Resolves a reply or runs an event handler on the loop, returning the handler's awaited remainder
-func (s *cdpSupervisor) dispatch(msg *pyjson.Object) func() {
+func (s *cdpSupervisor) dispatch(msg *jsonutil.Object) func() {
 	if idVal, ok := msg.Get("id"); ok {
-		id, isInt := pyrepr.Int(idVal)
-		if !isInt || !id.IsInt64() {
+		id, isInt := anyutil.Int(idVal)
+		if !isInt {
 			return nil
 		}
 		s.wsMu.Lock()
-		ch := s.pendingCalls[id.Int64()]
-		delete(s.pendingCalls, id.Int64())
+		ch := s.pendingCalls[id]
+		delete(s.pendingCalls, id)
 		s.wsMu.Unlock()
 		if ch == nil {
 			return nil
 		}
 		if errVal, has := msg.Get("error"); has {
-			ch <- supervisorReply{err: runtimeError(fmt.Sprintf("CDP error on id=%s: %s", pyrepr.Str(idVal), pyrepr.Repr(errVal)))}
+			ch <- supervisorReply{err: runtimeError(fmt.Sprintf("CDP error on id=%s: %s", anyutil.String(idVal), anyutil.Quote(errVal)))}
 		} else {
 			ch <- supervisorReply{msg: msg}
 		}
@@ -1098,18 +1099,18 @@ func (s *cdpSupervisor) dispatch(msg *pyjson.Object) func() {
 	if handler == nil {
 		return nil
 	}
-	params, ok := pyjson.AsObject(anyGet(msg, "params"))
+	params, ok := jsonutil.AsObject(anyGet(msg, "params"))
 	if !ok {
-		params = pyjson.NewObject()
+		params = jsonutil.NewObject()
 	}
 	sid, _ := anyGet(msg, "sessionId").(string)
 	return handler(s, params, sid)
 }
 
-var supervisorEventHandlers map[string]func(*cdpSupervisor, *pyjson.Object, string) func()
+var supervisorEventHandlers map[string]func(*cdpSupervisor, *jsonutil.Object, string) func()
 
 func init() {
-	supervisorEventHandlers = map[string]func(*cdpSupervisor, *pyjson.Object, string) func(){
+	supervisorEventHandlers = map[string]func(*cdpSupervisor, *jsonutil.Object, string) func(){
 		"Page.javascriptDialogOpening": (*cdpSupervisor).onDialogOpening,
 		"Page.javascriptDialogClosed":  (*cdpSupervisor).onDialogClosed,
 		"Fetch.requestPaused":          (*cdpSupervisor).onFetchPaused,
@@ -1124,7 +1125,7 @@ func init() {
 // CDP call whose failure is only logged at debug
 func (s *cdpSupervisor) cdpQuiet(method string, params any, sessionID string, timeout float64, what string) {
 	if _, err := s.cdpCall(method, params, sessionID, timeout); err != nil {
-		s.log.Debug(fmt.Sprintf("%s failed (%s): %s", method, what, pyrepr.ExceptionMessage(err)))
+		s.log.Debug(fmt.Sprintf("%s failed (%s): %s", method, what, err.Error()))
 	}
 }
 
@@ -1135,29 +1136,29 @@ func (s *cdpSupervisor) installDialogBridge(sessionID string) {
 		sid = sid[:16]
 	}
 	what := "dialog bridge sid=" + string(sid)
-	s.cdpQuiet("Page.addScriptToEvaluateOnNewDocument", pyjson.ObjectOf("source", dialogBridgeScript, "runImmediately", true), sessionID, 5.0, what)
-	s.cdpQuiet("Fetch.enable", pyjson.ObjectOf("patterns", []any{pyjson.ObjectOf("urlPattern", dialogBridgeURLPattern, "requestStage", "Request")},
+	s.cdpQuiet("Page.addScriptToEvaluateOnNewDocument", jsonutil.ObjectOf("source", dialogBridgeScript, "runImmediately", true), sessionID, 5.0, what)
+	s.cdpQuiet("Fetch.enable", jsonutil.ObjectOf("patterns", []any{jsonutil.ObjectOf("urlPattern", dialogBridgeURLPattern, "requestStage", "Request")},
 		"handleAuthRequests", false), sessionID, 5.0, what)
-	s.cdpQuiet("Runtime.evaluate", pyjson.ObjectOf("expression", dialogBridgeScript, "returnByValue", true), sessionID, 3.0,
+	s.cdpQuiet("Runtime.evaluate", jsonutil.ObjectOf("expression", dialogBridgeScript, "returnByValue", true), sessionID, 3.0,
 		"dialog bridge inject sid="+string(sid))
 }
 
-func (s *cdpSupervisor) onDialogOpening(params *pyjson.Object, sessionID string) func() {
+func (s *cdpSupervisor) onDialogOpening(params *jsonutil.Object, sessionID string) func() {
 	frameID, _ := params.Get("frameId")
 	s.admitDialog(objStr(params, "type"), objStr(params, "message"), objStr(params, "defaultPrompt"), sessionID, frameID, "")
 	return nil
 }
 
 // Bridge XHR becomes a pending dialog, any other paused request continues unchanged
-func (s *cdpSupervisor) onFetchPaused(params *pyjson.Object, sessionID string) func() {
+func (s *cdpSupervisor) onFetchPaused(params *jsonutil.Object, sessionID string) func() {
 	rawURL := objStr(objChild(params, "request"), "url")
 	requestID, _ := params.Get("requestId")
-	if !pyrepr.Truthy(requestID) {
+	if !anyutil.IsTrue(requestID) {
 		return nil
 	}
 	if !strings.Contains(rawURL, dialogBridgeHost) {
 		return func() {
-			s.cdpQuiet("Fetch.continueRequest", pyjson.ObjectOf("requestId", requestID), sessionID, 3.0, "passthrough")
+			s.cdpQuiet("Fetch.continueRequest", jsonutil.ObjectOf("requestId", requestID), sessionID, 3.0, "passthrough")
 		}
 	}
 	query := map[string]string{}
@@ -1171,7 +1172,7 @@ func (s *cdpSupervisor) onFetchPaused(params *pyjson.Object, sessionID string) f
 		kind = "alert"
 	}
 	frameID, _ := params.Get("frameId")
-	s.admitDialog(kind, query["message"], query["default_prompt"], sessionID, frameID, pyrepr.Str(requestID))
+	s.admitDialog(kind, query["message"], query["default_prompt"], sessionID, frameID, anyutil.String(requestID))
 	return nil
 }
 
@@ -1234,17 +1235,17 @@ func (s *cdpSupervisor) respond(dialog PendingDialog, accept bool, promptText *s
 		if dialog.Type == "prompt" && promptText != nil {
 			text = *promptText
 		}
-		body, err := pyjson.Dumps(pyjson.ObjectOf("accept", accept, "dialog_id", dialog.ID, "prompt_text", text))
+		body, err := jsonutil.Encode(jsonutil.ObjectOf("accept", accept, "dialog_id", dialog.ID, "prompt_text", text))
 		if err != nil {
 			return err
 		}
-		s.cdpQuiet("Fetch.fulfillRequest", pyjson.ObjectOf("requestId", dialog.BridgeRequestID, "responseCode", 200,
-			"responseHeaders", []any{pyjson.ObjectOf("name", "Content-Type", "value", "application/json"),
-				pyjson.ObjectOf("name", "Access-Control-Allow-Origin", "value", "*")},
+		s.cdpQuiet("Fetch.fulfillRequest", jsonutil.ObjectOf("requestId", dialog.BridgeRequestID, "responseCode", 200,
+			"responseHeaders", []any{jsonutil.ObjectOf("name", "Content-Type", "value", "application/json"),
+				jsonutil.ObjectOf("name", "Access-Control-Allow-Origin", "value", "*")},
 			"body", base64.StdEncoding.EncodeToString([]byte(body))), dialog.CDPSessionID, 5.0, "bridge fulfill "+dialog.ID)
 		return nil
 	}
-	params := pyjson.ObjectOf("accept", accept)
+	params := jsonutil.ObjectOf("accept", accept)
 	if promptText != nil && dialog.Type == "prompt" {
 		params.Set("promptText", *promptText)
 	}
@@ -1255,7 +1256,7 @@ func (s *cdpSupervisor) respond(dialog PendingDialog, accept bool, promptText *s
 // Auto policy or watchdog answer whose failure is only logged
 func (s *cdpSupervisor) respondQuiet(dialog PendingDialog, accept bool, promptText *string) {
 	if err := s.respond(dialog, accept, promptText); err != nil {
-		s.log.Debug(fmt.Sprintf("auto response failed for %s: %s", dialog.ID, pyrepr.ExceptionMessage(err)))
+		s.log.Debug(fmt.Sprintf("auto response failed for %s: %s", dialog.ID, err.Error()))
 	}
 }
 
@@ -1273,7 +1274,7 @@ func (s *cdpSupervisor) dialogTimeoutExpired(dialogID string) {
 		return
 	}
 	s.log.Warn(fmt.Sprintf("CDP supervisor %s: dialog %s (%s) auto-dismissed after %ss timeout", s.taskID, dialogID, dialog.Type,
-		pyrepr.Float(s.dialogTimeoutS)))
+		strconv.FormatFloat(s.dialogTimeoutS, 'f', -1, 64)))
 	s.retireDialog(dialogID, "watchdog")
 	s.respondQuiet(dialog, false, nil)
 }
@@ -1306,7 +1307,7 @@ func (s *cdpSupervisor) archiveDialogLocked(d PendingDialog, closedBy string) {
 	s.recentDialogs = trimDialogRing(append(append([]DialogRecord(nil), s.recentDialogs...), record), recentDialogsMax)
 }
 
-func (s *cdpSupervisor) onDialogClosed(_ *pyjson.Object, sessionID string) func() {
+func (s *cdpSupervisor) onDialogClosed(_ *jsonutil.Object, sessionID string) func() {
 	s.stateMu.Lock()
 	candidate := ""
 	for _, k := range s.pendingKeys {
@@ -1335,7 +1336,7 @@ func (s *cdpSupervisor) enablePageDomains(sessionID string, timeout float64) err
 	return err
 }
 
-func (s *cdpSupervisor) onFrameAttached(params *pyjson.Object, sessionID string) func() {
+func (s *cdpSupervisor) onFrameAttached(params *jsonutil.Object, sessionID string) func() {
 	frameID := objStr(params, "frameId")
 	if frameID != "" {
 		s.stateMu.Lock()
@@ -1345,7 +1346,7 @@ func (s *cdpSupervisor) onFrameAttached(params *pyjson.Object, sessionID string)
 	return nil
 }
 
-func (s *cdpSupervisor) onFrameNavigated(params *pyjson.Object, sessionID string) func() {
+func (s *cdpSupervisor) onFrameNavigated(params *jsonutil.Object, sessionID string) func() {
 	frame := objChild(params, "frame")
 	frameID := objStr(frame, "id")
 	if frameID == "" {
@@ -1375,7 +1376,7 @@ func (s *cdpSupervisor) onFrameNavigated(params *pyjson.Object, sessionID string
 }
 
 // Drops a frame only when truly gone, never on a process swap or while its child session lives
-func (s *cdpSupervisor) onFrameDetached(params *pyjson.Object, _ string) func() {
+func (s *cdpSupervisor) onFrameDetached(params *jsonutil.Object, _ string) func() {
 	frameID := objStr(params, "frameId")
 	reason := objStr(params, "reason")
 	if reason == "" {
@@ -1392,7 +1393,7 @@ func (s *cdpSupervisor) onFrameDetached(params *pyjson.Object, _ string) func() 
 	return nil
 }
 
-func (s *cdpSupervisor) onTargetAttached(params *pyjson.Object, _ string) func() {
+func (s *cdpSupervisor) onTargetAttached(params *jsonutil.Object, _ string) func() {
 	info := objChild(params, "targetInfo")
 	sid := objStr(params, "sessionId")
 	targetType, _ := info.Get("type")
@@ -1425,13 +1426,13 @@ func (s *cdpSupervisor) enableChildDomains(sid string) {
 		if len(short) > 16 {
 			short = short[:16]
 		}
-		s.log.Debug(fmt.Sprintf("child session %s setup failed: %s", string(short), pyrepr.ExceptionMessage(err)))
+		s.log.Debug(fmt.Sprintf("child session %s setup failed: %s", string(short), err.Error()))
 	}
 	s.installDialogBridge(sid)
 }
 
 // Clears the session binding of frames on a detached child session, keeping the frames
-func (s *cdpSupervisor) onTargetDetached(params *pyjson.Object, _ string) func() {
+func (s *cdpSupervisor) onTargetDetached(params *jsonutil.Object, _ string) func() {
 	sid := objStr(params, "sessionId")
 	if sid == "" {
 		return nil
@@ -1448,7 +1449,7 @@ func (s *cdpSupervisor) onTargetDetached(params *pyjson.Object, _ string) func()
 }
 
 // Capped breadth first frame tree from the top frame, state lock held
-func (s *cdpSupervisor) buildFrameTreeLocked() *pyjson.Object {
+func (s *cdpSupervisor) buildFrameTreeLocked() *jsonutil.Object {
 	frames := s.frames.values()
 	var tops []FrameInfo
 	for _, f := range frames {
@@ -1457,7 +1458,7 @@ func (s *cdpSupervisor) buildFrameTreeLocked() *pyjson.Object {
 		}
 	}
 	if len(tops) == 0 {
-		return pyjson.ObjectOf("top", nil, "children", []any{}, "truncated", false)
+		return jsonutil.ObjectOf("top", nil, "children", []any{}, "truncated", false)
 	}
 	top := tops[0]
 	for _, f := range tops {
@@ -1497,7 +1498,7 @@ func (s *cdpSupervisor) buildFrameTreeLocked() *pyjson.Object {
 			}
 		}
 	}
-	return pyjson.ObjectOf("top", top.toDict(), "children", children, "truncated", truncated || len(queue) > 0)
+	return jsonutil.ObjectOf("top", top.toDict(), "children", children, "truncated", truncated || len(queue) > 0)
 }
 
 // Process wide task to supervisor map with idempotent start and stop

@@ -7,11 +7,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/relayhost"
 	"github.com/nickheyer/icebath/pkg/relayhost/relaytest"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Dispatches the fake llama-server, scratch prune and tools MCP server entries so a child runs its mode instead
@@ -51,8 +51,8 @@ func installSpilloverWiring() {
 	state.SpilloverSQLFilter = tools.SpilloverSQLFilter
 	state.SpilloverNamesInText = tools.SpilloverNamesInText
 	state.ReferencedSpilloverNames = tools.ReferencedSpilloverNames
-	state.AdmissionMediaReferences = func(*pyjson.Object) ([]*pyjson.Object, error) { return nil, nil }
-	state.HostedDocumentReferences = func(string, *pyjson.Object) ([]*pyjson.Object, error) { return nil, nil }
+	state.AdmissionMediaReferences = func(*jsonutil.Object) ([]*jsonutil.Object, error) { return nil, nil }
+	state.HostedDocumentReferences = func(string, *jsonutil.Object) ([]*jsonutil.Object, error) { return nil, nil }
 	state.ReleaseUnheldMedia = func(*state.SessionDB, []any) error { return nil }
 }
 

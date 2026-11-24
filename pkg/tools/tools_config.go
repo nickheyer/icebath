@@ -4,7 +4,8 @@ import (
 	"context"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // PluginToolsetCatalog is the plugin toolset source pkg/plugins installs at init
@@ -111,15 +112,15 @@ func toolsetLabel(ctx context.Context, tsKey string) string {
 
 // True when the toolset has provider rows or env var requirements to prompt for
 func isConfigurableToolset(tsKey string) bool {
-	if v, ok := ToolCategories.Get(tsKey); ok && pyTruthy(v) {
+	if v, ok := ToolCategories.Get(tsKey); ok && anyutil.IsTrue(v) {
 		return true
 	}
 	return len(ToolsetEnvRequirements[tsKey]) > 0
 }
 
 // One env_vars entry of a provider row, extra pairs before the optional url
-func toolKey(key, prompt, url string, extra ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func toolKey(key, prompt, url string, extra ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("key", key)
 	o.Set("prompt", prompt)
 	for i := 0; i+1 < len(extra); i += 2 {
@@ -132,8 +133,8 @@ func toolKey(key, prompt, url string, extra ...any) *pyjson.Object {
 }
 
 // One provider row, markers as ordered key value pairs after env_vars
-func toolRow(name, badge, tag string, envVars []any, markers ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func toolRow(name, badge, tag string, envVars []any, markers ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("name", name)
 	if badge != "" {
 		o.Set("badge", badge)
@@ -148,8 +149,8 @@ func toolRow(name, badge, tag string, envVars []any, markers ...any) *pyjson.Obj
 	return o
 }
 
-func toolCategory(pairs ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func toolCategory(pairs ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(pairs); i += 2 {
 		o.Set(pairs[i].(string), pairs[i+1])
 	}
@@ -162,11 +163,11 @@ var ToolsetEnvRequirements = map[string][][2]string{"vision": {{"OPENROUTER_API_
 // ToolCategories is the ordered provider catalog of every configurable tool category
 var ToolCategories = buildToolCategories()
 
-func buildToolCategories() *pyjson.Object {
+func buildToolCategories() *jsonutil.Object {
 	openAIVoice := toolKey("VOICE_TOOLS_OPENAI_KEY", "OpenAI API key", "https://platform.openai.com/api-keys")
 	eleven := toolKey("ELEVENLABS_API_KEY", "ElevenLabs API key", "https://elevenlabs.io/app/settings/api-keys")
 	deepinfra := toolKey("DEEPINFRA_API_KEY", "DeepInfra API key", "https://deepinfra.com/dash/api_keys")
-	mistral := func() *pyjson.Object {
+	mistral := func() *jsonutil.Object {
 		return toolKey("MISTRAL_API_KEY", "Mistral API key", "https://console.mistral.ai/")
 	}
 	return toolCategory(

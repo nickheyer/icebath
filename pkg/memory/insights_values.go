@@ -6,6 +6,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Python int or float result of summing stored cells, float once any operand was a float
@@ -45,7 +46,7 @@ func numOf(v any) InsightsNum {
 
 // Value of x or 0 the way Python short circuits a falsy cell
 func or0(v any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return int64(0)
@@ -96,7 +97,7 @@ func pyFloat(v any) (float64, error) {
 	case []byte:
 		v = string(x)
 	}
-	return pyint.Float(v)
+	return anyutil.ToFloat(v)
 }
 
 // Python int() of a stored cell, truncating floats and parsing decimal text

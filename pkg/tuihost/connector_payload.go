@@ -3,8 +3,8 @@ package tuihost
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var connectorSecretHeaders = map[string]bool{"authorization": true, "proxy-authorization": true, "cookie": true,
@@ -22,13 +22,13 @@ func ConnectorUIPayload(value any) any {
 		return ConnectorUIPayload(item)
 	}
 	switch typed := value.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if typed == nil {
 			return value
 		}
-		out := pyjson.NewObject()
-		for _, key := range typed.Keys {
-			out.Set(key, entry(key, typed.Vals[key]))
+		out := jsonutil.NewObject()
+		for _, key := range typed.Keys() {
+			out.Set(key, entry(key, typed.Value(key)))
 		}
 		return out
 	case map[string]any:

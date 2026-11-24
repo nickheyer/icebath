@@ -16,8 +16,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // EnvInstallRoot names the tree whose install stamp a steward wrapper keeps outside the binary dir
@@ -324,7 +324,7 @@ func launcherBoundRoot(projectRoot string, candidates []string) string {
 			if err != nil {
 				continue
 			}
-			for path := pypath.PurePathStr(record); ; {
+			for path := filepath.Clean(record); ; {
 				resolved, err := pathResolve(path)
 				if err != nil {
 					break
@@ -385,7 +385,7 @@ func payloadManifest(root string) (map[string]any, string, bool, error) {
 		if !wellFormed {
 			continue
 		}
-		tree, err := pathResolve(pypath.Join(filepath.Dir(path), repo))
+		tree, err := pathResolve(pathutil.Join(filepath.Dir(path), repo))
 		if err != nil {
 			return nil, "", false, err
 		}
@@ -420,7 +420,7 @@ func pathResolve(p string) (string, error) {
 
 // Payload relative path resolved from its manifest's root, refused when it escapes that root
 func payloadPath(payloadRoot, relative, what string) (string, error) {
-	path, err := pathResolve(pypath.Join(payloadRoot, relative))
+	path, err := pathResolve(pathutil.Join(payloadRoot, relative))
 	if err != nil {
 		return "", err
 	}
@@ -474,7 +474,7 @@ func EnvironmentStoreRoot(ctx context.Context, projectRoot string, honorRuntimeO
 				return unstampedStore(ctx, root), nil
 			}
 			if m, ok := doc.(map[string]any); ok {
-				if value, has := m["runtimeDir"]; has && pyrepr.Truthy(value) {
+				if value, has := m["runtimeDir"]; has && anyutil.IsTrue(value) {
 					s, isStr := value.(string)
 					if !isStr {
 						return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the install stamp runtimeDir must be text, got %s", errchain.Kind(value))}

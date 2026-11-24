@@ -18,7 +18,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const ledgerValidSkill = "---\nname: my-skill\ndescription: test skill\n---\n\n# My Skill\n\nOriginal body.\n"
@@ -75,7 +75,7 @@ func ledgerManifest(t *testing.T, s *Scope, skills, name string, files map[strin
 	return out
 }
 
-func ledgerAppendOK(t *testing.T, s *Scope, action, skill string, before, after []any, actor string, evidence *pyjson.Object) string {
+func ledgerAppendOK(t *testing.T, s *Scope, action, skill string, before, after []any, actor string, evidence *jsonutil.Object) string {
 	t.Helper()
 	id, ok := s.ledgerAppend(context.Background(), action, skill, before, after, actor, evidence)
 	if !ok || id == "" {
@@ -84,7 +84,7 @@ func ledgerAppendOK(t *testing.T, s *Scope, action, skill string, before, after 
 	return id
 }
 
-func ledgerEntry(t *testing.T, s *Scope, id string) *pyjson.Object {
+func ledgerEntry(t *testing.T, s *Scope, id string) *jsonutil.Object {
 	t.Helper()
 	e, err := s.LedgerGetEntry(id)
 	if err != nil || e == nil {
@@ -97,7 +97,7 @@ func ledgerNames(v any) map[string]bool {
 	out := map[string]bool{}
 	items, _ := v.([]any)
 	for _, it := range items {
-		p, _ := it.(*pyjson.Object).Get("path")
+		p, _ := it.(*jsonutil.Object).Get("path")
 		out[filepath.Base(p.(string))] = true
 	}
 	return out
@@ -300,8 +300,8 @@ func TestLedgerBackupFillIgnoresTarPathTraversal(t *testing.T) {
 	}
 }
 
-func ledgerPad(pad string) *pyjson.Object {
-	o := pyjson.NewObject()
+func ledgerPad(pad string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("pad", pad)
 	return o
 }
@@ -320,25 +320,25 @@ func TestLedgerAutoCompactTriggersAtThreshold(t *testing.T) {
 	s.Config["skills"] = map[string]any{"ledger_max_bytes": 8192}
 	first := ledgerAppendOK(t, s, "patch", "my-skill", []any{}, []any{}, "", nil)
 	raw, _ := os.ReadFile(s.LedgerPath())
-	tmplV, err := pyjson.Loads(strings.SplitN(string(raw), "\n", 2)[0])
+	tmplV, err := jsonutil.Decode(strings.SplitN(string(raw), "\n", 2)[0])
 	if err != nil {
 		t.Fatal(err)
 	}
-	tmpl := tmplV.(*pyjson.Object)
+	tmpl := tmplV.(*jsonutil.Object)
 	f, _ := os.OpenFile(s.LedgerPath(), os.O_APPEND|os.O_WRONLY, 0o644)
 	for i := 0; i < 3; i++ {
 		var fat []any
 		for j := 0; j < 40; j++ {
 			fat = append(fat, newLedgerItem("my-skill/f"+itoa(i)+"j"+itoa(j)+".md", strings.Repeat("a", 64)))
 		}
-		row := pyjson.NewObject()
-		for _, k := range tmpl.Keys {
-			row.Set(k, tmpl.Vals[k])
+		row := jsonutil.NewObject()
+		for _, k := range tmpl.Keys() {
+			row.Set(k, tmpl.Value(k))
 		}
 		row.Set("id", "legacy"+itoa(i))
 		row.Set("before", fat)
 		row.Set("after", append([]any{}, fat...))
-		line, _ := pyjson.Dumps(row)
+		line, _ := jsonutil.Encode(row)
 		f.WriteString(line + "\n")
 	}
 	f.Close()
@@ -503,11 +503,11 @@ func TestLedgerConcurrentAppendsNeverLoseMiddleRow(t *testing.T) {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		v, err := pyjson.Loads(line)
+		v, err := jsonutil.Decode(line)
 		if err != nil {
 			t.Fatal(err)
 		}
-		id, _ := v.(*pyjson.Object).Get("id")
+		id, _ := v.(*jsonutil.Object).Get("id")
 		present = append(present, id.(string))
 		presentSet[id.(string)] = true
 	}
@@ -549,8 +549,8 @@ func TestLedgerEntryStoresOnlyChangedPathsAndRollbackRestores(t *testing.T) {
 		t.Fatalf("%v %v", nb, na)
 	}
 	for _, it := range after {
-		p, _ := it.(*pyjson.Object).Get("path")
-		sha, _ := it.(*pyjson.Object).Get("sha256")
+		p, _ := it.(*jsonutil.Object).Get("path")
+		sha, _ := it.(*jsonutil.Object).Get("sha256")
 		data, _ := s.LedgerReadBlob(sha.(string))
 		os.MkdirAll(filepath.Dir(p.(string)), 0o755)
 		os.WriteFile(p.(string), data, 0o644)
@@ -578,14 +578,14 @@ func TestLedgerCompactRewritesLegacyFullManifests(t *testing.T) {
 	changedBefore := append(append([]any{}, full...), ledgerManifest(t, s, skills, "big", map[string]string{"SKILL.md": "v1"})...)
 	changedAfter := append(append([]any{}, full...), ledgerManifest(t, s, skills, "big", map[string]string{"SKILL.md": "v2"})...)
 	row := func(id, action string, b, a []any) string {
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		for _, kv := range [][2]string{{"id", id}, {"ts", "2026-01-01T00:00:00+00:00"}, {"actor", "agent"}, {"action", action}, {"skill", "big"}} {
 			o.Set(kv[0], kv[1])
 		}
-		o.Set("evidence", pyjson.NewObject())
+		o.Set("evidence", jsonutil.NewObject())
 		o.Set("before", b)
 		o.Set("after", a)
-		line, _ := pyjson.Dumps(o)
+		line, _ := jsonutil.Encode(o)
 		return line
 	}
 	os.WriteFile(s.LedgerPath(), []byte(row("abc123", "patch", changedBefore, changedAfter)+"\n"+row("def456", "pre-rollback", full, full)+"\nnot json\n"), 0o644)
@@ -654,7 +654,7 @@ func TestLedgerGCBlobsRemovesOnlyUnreferenced(t *testing.T) {
 	if d != 1 || freed != int64(len("never referenced by any entry")) || err != nil {
 		t.Fatalf("%d %d %v", d, freed, err)
 	}
-	sha, _ := kept[0].(*pyjson.Object).Get("sha256")
+	sha, _ := kept[0].(*jsonutil.Object).Get("sha256")
 	if data, ok := s.LedgerReadBlob(sha.(string)); lexistsFollow(filepath.Join(s.LedgerBlobsDir(), orphan)) || !ok || string(data) != "v1" {
 		t.Fatal("referenced blob lost or orphan kept")
 	}

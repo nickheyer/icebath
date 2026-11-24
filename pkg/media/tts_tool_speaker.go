@@ -5,6 +5,7 @@ package media
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -17,10 +18,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pysounddevice"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	portaudioutil "github.com/nickheyer/icebath/pkg/utils/portaudio"
 )
 
 // Queue of text deltas the speaker drains, a nil item ending the text
@@ -28,12 +30,11 @@ type TextQueue interface {
 	Get(timeout time.Duration) (any, bool)
 }
 
-// Threading event surface of the stop and done signals
+// Event surface of the stop and done signals, which a *syncutil.Event satisfies
 type Event interface {
 	Set()
 	Clear()
 	IsSet() bool
-	Wait(timeout time.Duration) bool
 }
 
 const (
@@ -56,7 +57,7 @@ var (
 	speakerPlayAudioFile            = PlayAudioFile
 	speakerTextToSpeechTool         = TextToSpeechTool
 	speakerResolveStreamingProvider = resolveStreamingProvider
-	ttsImportSounddevice            = pysounddevice.Import
+	speakerOpenAudio                = portaudioutil.Open
 	speakerNamedTempFile            = func(suffix string) (speakerTempFile, error) { return speakerCreateTemp(suffix) }
 	speakerMkstemp                  = func(suffix string) (string, error) {
 		f, err := speakerCreateTemp(suffix)
@@ -66,20 +67,20 @@ var (
 		return f.Name(), f.Close()
 	}
 	speakerDeviceUsable = func() bool {
-		if voicePlatformSystem() == "Darwin" {
+		if voicePlatformSystem() == "darwin" {
 			return false
 		}
-		if _, err := ttsImportSounddevice(); err != nil {
-			pkgLog().Debug(fmt.Sprintf("sounddevice not available, streamer→tempfile: %s", err))
+		if _, err := speakerOpenAudio(); err != nil {
+			pkgLog().Debug(fmt.Sprintf("PortAudio not available, streamer→tempfile: %s", err))
 			return false
 		}
 		return true
 	}
 )
 
-// New file named tmp, random text and the suffix inside the Python temp directory
+// New file named tmp, random text and the suffix inside the temp directory
 func speakerCreateTemp(suffix string) (*os.File, error) {
-	dir, err := pypath.Gettempdir()
+	dir, err := pathutil.TempDir()
 	if err != nil {
 		return nil, err
 	}
@@ -252,7 +253,7 @@ func isNonEmptyFile(path string) bool {
 func firstWrittenArtifact(raw any, requested string) string {
 	payload := raw
 	if text, ok := raw.(string); ok {
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return requested
 		}
@@ -261,16 +262,16 @@ func firstWrittenArtifact(raw any, requested string) string {
 	var reported any
 	var get func(key string) any
 	switch p := payload.(type) {
-	case *pyjson.Object:
-		get = func(key string) any { return p.GetOr(key, nil) }
+	case *jsonutil.Object:
+		get = func(key string) any { return p.ValueOr(key, nil) }
 	case map[string]any:
 		get = func(key string) any { return p[key] }
 	default:
 		return requested
 	}
-	if reported = get("file_paths"); !pyTruthy(reported) {
+	if reported = get("file_paths"); !anyutil.IsTrue(reported) {
 		reported = []any{}
-		if one := get("file_path"); pyTruthy(one) {
+		if one := get("file_path"); anyutil.IsTrue(one) {
 			reported = []any{one}
 		}
 	}
@@ -427,14 +428,14 @@ type streamerPlayback struct {
 	streamer        StreamingTTSProvider
 	stop            Event
 	mu              sync.Mutex
-	outputStream    pysounddevice.OutputStream
+	outputStream    portaudioutil.OutputStream
 	useDevice       bool
 	audioQueue      *sentenceQueue
 	prefetchThreads []chan struct{}
 	prefetchSem     chan struct{}
 	workerDone      chan struct{}
 	reinitCount     int
-	currentStream   pysounddevice.OutputStream
+	currentStream   portaudioutil.OutputStream
 	currentRate     int
 }
 
@@ -446,27 +447,27 @@ func newStreamerPlaybackTo(ctx context.Context, streamer StreamingTTSProvider, s
 	return p
 }
 
-func (p *streamerPlayback) setOutputStream(stream pysounddevice.OutputStream) {
+func (p *streamerPlayback) setOutputStream(stream portaudioutil.OutputStream) {
 	p.mu.Lock()
 	p.outputStream = stream
 	p.mu.Unlock()
 }
 
-func (p *streamerPlayback) getOutputStream() pysounddevice.OutputStream {
+func (p *streamerPlayback) getOutputStream() portaudioutil.OutputStream {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return p.outputStream
 }
 
 // Opens and starts a PortAudio output stream at the current rate and channel count of the streamer
-func (p *streamerPlayback) createOutputStream() (pysounddevice.OutputStream, error) {
-	var stream pysounddevice.OutputStream
+func (p *streamerPlayback) createOutputStream() (portaudioutil.OutputStream, error) {
+	var stream portaudioutil.OutputStream
 	err := pluginCall(func() error {
-		sd, err := ttsImportSounddevice()
+		sd, err := speakerOpenAudio()
 		if err != nil {
 			return err
 		}
-		opened, err := sd.OutputStream(pysounddevice.StreamParams{Samplerate: float64(p.streamer.SampleRate()), Channels: p.streamer.Channels()})
+		opened, err := sd.OpenOutput(portaudioutil.StreamParams{SampleRate: float64(p.streamer.SampleRate()), Channels: p.streamer.Channels()})
 		if err != nil {
 			return err
 		}
@@ -491,7 +492,7 @@ func (p *streamerPlayback) ensureOutputStream() bool {
 	p.closeOutputStream()
 	stream, err := p.createOutputStream()
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("sounddevice OutputStream failed: %s", err))
+		pkgLog().Warn(fmt.Sprintf("PortAudio output stream failed: %s", err))
 		stream, p.reinitCount = nil, speakerMaxReinit
 	}
 	p.setOutputStream(stream)
@@ -503,10 +504,8 @@ func (p *streamerPlayback) ensureOutputStream() bool {
 func (p *streamerPlayback) closeOutputStream() {
 	if stream := p.getOutputStream(); stream != nil {
 		_ = pluginCall(func() error {
-			if err := stream.Stop(true); err != nil {
-				return err
-			}
-			return stream.Close(true)
+			stopErr := stream.Stop()
+			return errors.Join(stopErr, stream.Close())
 		})
 	}
 }
@@ -556,11 +555,12 @@ func (p *streamerPlayback) consumeToQueue(audio iter.Seq2[[]byte, error], q chan
 	}
 }
 
-// Python queue.Full raised by a bounded put that timed out
+// A bounded chunk put that timed out
 type queueFullError struct{}
 
-func (*queueFullError) Error() string      { return "" }
-func (*queueFullError) PyTypeName() string { return "Full" }
+func (*queueFullError) Error() string {
+	return "audio chunk queue stayed full for " + speakerChunkPutWait.String()
+}
 
 func (p *streamerPlayback) playSentenceViaTempfile(q chan pcmItem) {
 	chunks := drainChunks(q)
@@ -584,7 +584,7 @@ func (p *streamerPlayback) writePCM(buf []byte) error {
 			samples[i] = int16(binary.LittleEndian.Uint16(buf[2*i:]))
 		}
 		if p.streamer.Channels() != 1 {
-			return &pysounddevice.ValueError{Msg: "number of channels must match"}
+			return portaudioutil.ErrChannelMismatch
 		}
 		_, err := p.currentStream.Write(samples)
 		return err

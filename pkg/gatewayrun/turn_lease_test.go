@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Seconds as an optional timeout
@@ -293,7 +292,7 @@ func TestDefaultTurnLeaseTimeoutMatchesTheRuntimeFallback(t *testing.T) {
 	case map[string]any:
 		agentDefaults = block
 	}
-	value, err := pyint.Float(agentDefaults["gateway_turn_lease_timeout"])
+	value, err := anyutil.ToFloat(agentDefaults["gateway_turn_lease_timeout"])
 	if err != nil || value != defaultLeaseWait {
 		t.Fatalf("default %v %v, runtime %v", value, err, defaultLeaseWait)
 	}

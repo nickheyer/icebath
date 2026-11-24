@@ -11,11 +11,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Refresh of a session's policy ready to commit with the stored receipt it replaces and its generation
@@ -30,11 +33,11 @@ type preparedRefresh struct {
 
 // Decoded JSON object of a policy column, the JSONDecodeError or TypeError json.loads and dict use raise
 func loadsPolicyMap(text string) (map[string]any, error) {
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
-	out, ok := pyjson.Plain(parsed).(map[string]any)
+	out, ok := jsonutil.Plain(parsed).(map[string]any)
 	if !ok {
 		return nil, &PyError{Kind: "TypeError", Msg: "the refreshed session policy is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
@@ -43,15 +46,15 @@ func loadsPolicyMap(text string) (map[string]any, error) {
 
 // Deep copy through a JSON dump and load, the json.loads(json.dumps(value)) of the Python
 func jsonRoundTrip(value any) (any, error) {
-	text, err := pyjson.Dumps(value)
+	text, err := jsonutil.Encode(value)
 	if err != nil {
 		return nil, &PyError{Kind: "TypeError", Msg: err.Error()}
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Plain(parsed), nil
+	return jsonutil.Plain(parsed), nil
 }
 
 // Copies key from live into target, or drops it from target when live lacks it
@@ -71,7 +74,7 @@ func followLive(target map[string]any, live any, key string) error {
 		}
 		return &PyError{Kind: "TypeError", Msg: "the live session policy is text, expected a mapping"}
 	case []any:
-		if !slices.ContainsFunc(source, func(item any) bool { return pyjson.Equal(item, key) }) {
+		if !slices.ContainsFunc(source, func(item any) bool { return anyutil.Equal(item, key) }) {
 			delete(target, key)
 			return nil
 		}
@@ -82,7 +85,7 @@ func followLive(target map[string]any, live any, key string) error {
 
 // Mapping a dict() call builds from a config value, an empty one for a falsy value
 func dictOf(value any) (map[string]any, error) {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return map[string]any{}, nil
 	}
 	source, ok := value.(map[string]any)
@@ -142,7 +145,7 @@ func refreshedPolicy(ctx context.Context, policy *LocalSessionPolicy, live, term
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if pyjson.Equal(cfg, old) && slices.Equal(toolsets, policy.Toolsets) && pyjson.Equal(terminal, frozenTerminal) {
+	if anyutil.Equal(cfg, old) && slices.Equal(toolsets, policy.Toolsets) && anyutil.Equal(terminal, frozenTerminal) {
 		moved, err := secretsMoved(policy.ConfigSecretRef, secrets, replaced)
 		if err != nil {
 			return nil, nil, nil, err
@@ -151,11 +154,11 @@ func refreshedPolicy(ctx context.Context, policy *LocalSessionPolicy, live, term
 			return policy, &RecoveredSecrets{}, nil, nil
 		}
 	}
-	configJSON, err := pyjson.Dumps(cfg)
+	configJSON, err := jsonutil.Encode(cfg)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	terminalJSON, err := pyjson.Dumps(terminal)
+	terminalJSON, err := jsonutil.Encode(terminal)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -171,7 +174,7 @@ func refreshSettings(ctx context.Context, policy *LocalSessionPolicy, cfg, live 
 		return nil, err
 	}
 	liveAgent := live["agent"]
-	if !pyrepr.Truthy(liveAgent) {
+	if !anyutil.IsTrue(liveAgent) {
 		liveAgent = map[string]any{}
 	}
 	agent, err := dictOf(cfg["agent"])
@@ -410,7 +413,7 @@ func prepareRefresh(ctx context.Context, a *SessionAuthority, sessionID string, 
 	if old.IgnoreUserConfig || SourceSurface(old.Source) == "" {
 		return nil, nil
 	}
-	dbPath, err := pypath.Resolve(a.DB.Path())
+	dbPath, err := pathutil.Resolve(a.DB.Path())
 	if err != nil {
 		return nil, err
 	}
@@ -587,7 +590,7 @@ func commitRefreshTask(ctx context.Context, a *SessionAuthority, ref SessionRef,
 	if err != nil {
 		return false, err
 	}
-	moved := !pyjson.Equal(newTerminal, oldTerminal)
+	moved := !anyutil.Equal(newTerminal, oldTerminal)
 	policy, err := rebindRefresh(ctx, a, ref.SessionID, prepared.old, prepared.policy, prepared.secrets, prepared.replaced)
 	if err != nil {
 		return false, err
@@ -625,7 +628,7 @@ func noteSkippedRefresh(sessionID string, err error) {
 	if reason == "" {
 		reason = pyErrorKind(err)
 	}
-	if reason == "" && pypath.IsOSError(err) {
+	if reason == "" && errorutil.IsSystem(err) {
 		reason = pypath.OSErrorClass(err)
 	}
 	if reason == "" {

@@ -3,7 +3,7 @@ package agent
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Calls of a loop manager the loop command and the CLI make, answered in process or by the gateway
@@ -15,7 +15,7 @@ type LoopAutomation interface {
 	HasLoop() bool
 	StatusLine() string
 	IsDue() bool
-	Set(ctx context.Context, prompt string, intervalSeconds *int64, times int64, until string, route *pyjson.Object) (*SessionLoopState, error)
+	Set(ctx context.Context, prompt string, intervalSeconds *int64, times int64, until string, route *jsonutil.Object) (*SessionLoopState, error)
 	Pause(ctx context.Context, reason string) (*SessionLoopState, error)
 	Resume(ctx context.Context) *SessionLoopState
 	Clear(ctx context.Context) bool

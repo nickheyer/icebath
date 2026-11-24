@@ -6,8 +6,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Telegram adapter surface that opens a forum topic in a private chat, nil when no topic was created
@@ -27,7 +25,7 @@ func (r *GatewayRunner) transferTelegramRootDM(ctx context.Context, source *gate
 	var thread *int64
 	if creator, has := adapter.(dmTopicCreator); has && adapter != nil {
 		thread, err = func() (*int64, error) {
-			chatID, err := pyint.Int64(source.ChatID)
+			chatID, err := anyutil.ToInt(source.ChatID)
 			if err != nil {
 				return nil, err
 			}
@@ -38,7 +36,7 @@ func (r *GatewayRunner) transferTelegramRootDM(ctx context.Context, source *gate
 		}
 	}
 	if thread != nil && *thread != 0 {
-		pkgLog().Info(fmt.Sprintf("telegram topic auto-transfer: chat=%s user=%s root -> new topic %d", source.ChatID, pyrepr.Str(optAny(source.UserID)), *thread))
+		pkgLog().Info(fmt.Sprintf("telegram topic auto-transfer: chat=%s user=%s root -> new topic %d", source.ChatID, anyutil.String(optAny(source.UserID)), *thread))
 		return fmt.Sprint(*thread), true, true, nil
 	}
 	recovered := r.recoverTelegramLobbyThreadID(ctx, source)

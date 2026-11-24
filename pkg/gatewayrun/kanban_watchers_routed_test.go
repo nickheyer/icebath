@@ -15,9 +15,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/provider"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Multiplexing runner with a Discord primary, profiles yuki and other and a yuki route on guild parent
@@ -39,7 +39,7 @@ func setupRoutedRunner(t *testing.T) (*GatewayRunner, string, string) {
 	}
 	r := allocGatewayRunner()
 	r.adapters = adapterDict(gateway.PlatformDiscord, newKanbanRecordingAdapterOn(gateway.PlatformDiscord))
-	r.profileAdapters = pydict.New[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]()
+	r.profileAdapters = orderedutil.NewMap[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]()
 	r.profileAdapters.Set("yuki", adapterDict())
 	r.primaryProfileName = "default"
 	r.kanbanNotifierProfile = "default"

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Child of test_delegate_cost_footer.py _make_mock_child, returned from the child constructor seam
@@ -25,7 +25,7 @@ func costFooterChild(t *testing.T, env *tools.Env, cost float64, costStatus stri
 }
 
 // Runs one delegation over the canned child and returns the parent and the parsed result
-func runCostFooter(t *testing.T, cost float64, costStatus string) (*AIAgent, *pyjson.Object) {
+func runCostFooter(t *testing.T, cost float64, costStatus string) (*AIAgent, *jsonutil.Object) {
 	t.Helper()
 	parent := batchValidationParent(t)
 	parent.sessionEstimatedCostUSD, parent.sessionCostSource, parent.sessionCostStatus = 0.0, "none", "unknown"
@@ -34,13 +34,13 @@ func runCostFooter(t *testing.T, cost float64, costStatus string) (*AIAgent, *py
 	return parent, dispatchPayload(t, out, err)
 }
 
-func firstResult(t *testing.T, payload *pyjson.Object) *pyjson.Object {
+func firstResult(t *testing.T, payload *jsonutil.Object) *jsonutil.Object {
 	t.Helper()
 	results := batchResults(t, payload)
 	if len(results) == 0 {
 		t.Fatalf("payload %v", payload)
 	}
-	return results[0].(*pyjson.Object)
+	return results[0].(*jsonutil.Object)
 }
 
 func TestCostInResultEntryEntryCarriesCostUsdAndStatus(t *testing.T) {
@@ -55,7 +55,7 @@ func TestCostInResultEntryEntryCarriesCostUsdAndStatus(t *testing.T) {
 func TestCostInResultEntryInternalChildCostFieldStillStripped(t *testing.T) {
 	_, payload := runCostFooter(t, 0.25, "estimated")
 	for _, raw := range batchResults(t, payload) {
-		entry := raw.(*pyjson.Object)
+		entry := raw.(*jsonutil.Object)
 		if entryHas(entry, "_child_cost_usd") || entryHas(entry, "_child_role") {
 			t.Fatalf("entry %v", entry)
 		}

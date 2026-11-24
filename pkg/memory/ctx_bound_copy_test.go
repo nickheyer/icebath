@@ -4,12 +4,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 func TestCtxBoundRunsTheJobInACopyOfTheSpawnersPythonContext(t *testing.T) {
-	scope := pyctx.NewVar("test.ctx_bound.scope", "")
-	parent := pyctx.With(context.Background(), pyctx.New())
+	scope := ctxutil.NewVar[any]("test.ctx_bound.scope", "")
+	parent := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	scope.Set(parent, "turn")
 	job := CtxBound(parent)
 	if got := scope.Get(job); got != "turn" {

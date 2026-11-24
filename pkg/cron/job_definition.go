@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // JobDefinitionFields are the authored keys a foreign store refreshes, every other key is scheduler owned
@@ -25,7 +25,7 @@ var JobDefinitionFields = []string{
 // Installs the cron store access the profile distribution installer reaches through hooks
 func init() {
 	profiles.CronDistributionHooks.LoadJobs = distributionLoadJobs
-	profiles.CronDistributionHooks.ImportJobDefinitions = func(ctx context.Context, home string, shipped *pyjson.Object, pausedReason string) error {
+	profiles.CronDistributionHooks.ImportJobDefinitions = func(ctx context.Context, home string, shipped *jsonutil.Object, pausedReason string) error {
 		return openCronStore(home, nil).importJobDefinitions(ctx, shipped, pausedReason)
 	}
 }
@@ -42,7 +42,7 @@ func distributionLoadJobs(ctx context.Context, home string) ([]any, error) {
 		if err != nil {
 			return nil, err
 		}
-		record, err := pyjson.DecodeWTF8(raw)
+		record, err := jsonutil.DecodePlain(raw)
 		if err != nil {
 			return nil, err
 		}
@@ -52,16 +52,16 @@ func distributionLoadJobs(ctx context.Context, home string) ([]any, error) {
 }
 
 // Ordered object of a JSON shaped record, the Python TypeError or AttributeError a merge raises for any other shape
-func recordObject(v any) (*pyjson.Object, error) {
+func recordObject(v any) (*jsonutil.Object, error) {
 	raw, err := marshalNoEscape(v)
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(string(raw))
+	decoded, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return nil, err
 	}
-	if obj, ok := decoded.(*pyjson.Object); ok {
+	if obj, ok := decoded.(*jsonutil.Object); ok {
 		return obj, nil
 	}
 	return nil, recordShapeFailure(decoded)
@@ -86,7 +86,7 @@ func canonicalValue(v any, present bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	plain, err := pyjson.DecodeWTF8(raw)
+	plain, err := jsonutil.DecodePlain(raw)
 	if err != nil {
 		return "", err
 	}
@@ -96,10 +96,10 @@ func canonicalValue(v any, present bool) (string, error) {
 
 // Value of key in a falsy defaulted repeat record, a refusal for a truthy non mapping
 func objectGet(v any, key string) (any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, &recordShapeError{fmt.Sprintf("the repeat field of a job definition is %s, expected a mapping holding %s", errchain.Kind(v), key)}
 	}
@@ -121,8 +121,8 @@ func (s *Store) mergeJobDefinition(local *Job, authored any) (*Job, error) {
 	for _, key := range JobDefinitionFields {
 		definition[key] = true
 	}
-	merged := pyjson.NewObject()
-	for _, key := range localObj.Keys {
+	merged := jsonutil.NewObject()
+	for _, key := range localObj.Keys() {
 		if !definition[key] {
 			v, _ := localObj.Get(key)
 			merged.Set(key, v)
@@ -135,7 +135,7 @@ func (s *Store) mergeJobDefinition(local *Job, authored any) (*Job, error) {
 	}
 	localRepeat, _ := localObj.Get("repeat")
 	var completed any = int64(0)
-	if obj, ok := localRepeat.(*pyjson.Object); ok {
+	if obj, ok := localRepeat.(*jsonutil.Object); ok {
 		if v, has := obj.Get("completed"); has {
 			completed = v
 		}
@@ -147,11 +147,11 @@ func (s *Store) mergeJobDefinition(local *Job, authored any) (*Job, error) {
 	if err != nil {
 		return nil, err
 	}
-	repeat := pyjson.NewObject()
+	repeat := jsonutil.NewObject()
 	repeat.Set("completed", completed)
 	repeat.Set("times", times)
 	merged.Set("repeat", repeat)
-	if text, ok := merged.Vals["schedule"].(string); ok {
+	if text, ok := merged.Value("schedule").(string); ok {
 		sched, err := s.parseSchedule(text)
 		if err != nil {
 			return nil, err
@@ -215,14 +215,14 @@ func (s *Store) mergeOrName(local *Job, authored any) (*Job, error) {
 		return nil, oerr
 	}
 	name, _ := obj.Get("name")
-	if !pyrepr.Truthy(name) {
+	if !anyutil.IsTrue(name) {
 		name = local.ID
 	}
-	return nil, fmt.Errorf("cron job %s: %w", pyrepr.Repr(name), err)
+	return nil, fmt.Errorf("cron job %s: %w", anyutil.Quote(name), err)
 }
 
 // Merges shipped job id to authored record into this store under its lock, new ids arriving paused
-func (s *Store) importJobDefinitions(ctx context.Context, shipped *pyjson.Object, pausedReason string) error {
+func (s *Store) importJobDefinitions(ctx context.Context, shipped *jsonutil.Object, pausedReason string) error {
 	now := FormatISO(s.clk.now())
 	return s.withJobsLock(home.WithOverride(ctx, s.home), func(tx *jobsTx) error {
 		locals, err := s.loadJobs(home.WithOverride(ctx, s.home), tx)
@@ -248,11 +248,11 @@ func (s *Store) importJobDefinitions(ctx context.Context, shipped *pyjson.Object
 			}
 			merged = append(merged, job)
 		}
-		for _, id := range shipped.Keys {
+		for _, id := range shipped.Keys() {
 			if taken[id] {
 				continue
 			}
-			seed := pyjson.NewObject()
+			seed := jsonutil.NewObject()
 			seed.Set("id", id)
 			seed.Set("enabled", false)
 			seed.Set("state", "paused")
@@ -268,7 +268,7 @@ func (s *Store) importJobDefinitions(ctx context.Context, shipped *pyjson.Object
 			if err := json.Unmarshal(raw, local); err != nil {
 				return err
 			}
-			job, err := s.mergeOrName(local, shipped.Vals[id])
+			job, err := s.mergeOrName(local, shipped.Value(id))
 			if err != nil {
 				return err
 			}

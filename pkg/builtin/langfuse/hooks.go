@@ -8,8 +8,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -21,7 +22,7 @@ func kwStr(kw map[string]any, key string) string {
 	case string:
 		return v
 	default:
-		return pyStr(v)
+		return anyutil.String(v)
 	}
 }
 
@@ -38,8 +39,8 @@ func onPreLLMCall(ctx context.Context, kw map[string]any) (any, error) {
 	taskID, sessionID, turnID, apiRequestID := kwStr(kw, "task_id"), kwStr(kw, "session_id"), kwStr(kw, "turn_id"), kwStr(kw, "api_request_id")
 	senderID := kw["sender_id"]
 	sender := ""
-	if truthy(senderID) && endUserAttribution(ctx) {
-		sender = strings.TrimSpace(pyStr(senderID))
+	if anyutil.IsTrue(senderID) && endUserAttribution(ctx) {
+		sender = strings.TrimSpace(anyutil.String(senderID))
 	}
 	messages := kw["messages"]
 	if _, isList := listItems(messages); !isList {
@@ -77,7 +78,7 @@ func emitMoAReferenceGenerations(state *traceState, references any) {
 		}
 		usage := dget(r, "usage")
 		var outputTokens any
-		if truthy(usage) {
+		if anyutil.IsTrue(usage) {
 			if !isDict(usage) {
 				panic(fmt.Sprintf("a mixture of agents reference usage is %s, expected a mapping", errchain.Kind(usage)))
 			}
@@ -85,7 +86,7 @@ func emitMoAReferenceGenerations(state *traceState, references any) {
 		}
 		rows = append(rows, []any{dget(r, "label"), dget(r, "model"), outputTokens})
 	}
-	fingerprint, err := pyjson.Dumps(rows, pyjson.SortKeys(true), pyjson.Default(func(v any) (any, error) { return pyStr(v), nil }))
+	fingerprint, err := jsonutil.Encode(rows, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
 		panic(err)
 	}
@@ -102,34 +103,34 @@ func emitMoAReferenceGenerations(state *traceState, references any) {
 			continue
 		}
 		usage := dget(ref, "usage")
-		if !truthy(usage) {
-			usage = pyjson.NewObject()
+		if !anyutil.IsTrue(usage) {
+			usage = jsonutil.NewObject()
 		}
-		usageDetails := pyjson.NewObject()
+		usageDetails := jsonutil.NewObject()
 		if isDict(usage) {
 			buckets := usageBuckets(func(attr string) any { return dget(usage, attr) })
-			for _, k := range buckets.Keys {
-				if n := buckets.Vals[k].(int); n != 0 {
+			for _, k := range buckets.Keys() {
+				if n := buckets.Value(k).(int); n != 0 {
 					usageDetails.Set(k, n)
 				}
 			}
 		}
-		costDetails := pyjson.NewObject()
+		costDetails := jsonutil.NewObject()
 		if cost := dget(ref, "cost_usd"); isNumber(cost) || isBool(cost) {
 			f, _ := toFloat(cost)
 			costDetails.Set("total", f)
 		}
 		label := dget(ref, "label")
-		if !truthy(label) {
+		if !anyutil.IsTrue(label) {
 			label = "advisor"
 		}
-		metadata := obj("moa_role", "reference", "label", label)
+		metadata := jsonutil.ObjectOf("moa_role", "reference", "label", label)
 		for _, k := range []string{"provider", "cost_status", "cost_source", "temperature"} {
 			if v := dget(ref, k); v != nil {
 				metadata.Set(k, v)
 			}
 		}
-		observation := startChildObservation(state, "MoA advisor: "+pyStr(label), "generation", nil, metadata, dget(ref, "model"), nil)
+		observation := startChildObservation(state, "MoA advisor: "+anyutil.String(label), "generation", nil, metadata, dget(ref, "model"), nil)
 		endObservation(observation, endArgs{output: captureContent(dget(ref, "output"), false, nil), usage: usageDetails,
 			cost: costDetails, metadata: metadata})
 	}
@@ -163,10 +164,10 @@ func onPreLLMRequest(ctx context.Context, kw map[string]any) (any, error) {
 	systemChars := 0
 	if len(langfuseInput) > 0 && strEq(dget(langfuseInput[0], "role"), "system") {
 		content := dget(langfuseInput[0], "content")
-		if !truthy(content) {
+		if !anyutil.IsTrue(content) {
 			content = ""
 		}
-		systemChars = utf8.RuneCountInString(pyStr(content))
+		systemChars = utf8.RuneCountInString(anyutil.String(content))
 	}
 	reqKey := requestKey(apiCallCount)
 	safeBaseURL := tools.RedactSensitiveTextWith(nil, kwStr(kw, "base_url"), tools.RedactOptions{Force: true, URLCredentials: true})
@@ -177,13 +178,13 @@ func onPreLLMRequest(ctx context.Context, kw map[string]any) (any, error) {
 		if previous, ok := state.generations.pop(reqKey); ok {
 			endObservation(previous, endArgs{level: "WARNING", statusMessage: "Retried: no response was recorded for this attempt."})
 		}
-		genMetadata := obj("provider", providerName, "platform", platform, "api_mode", apiMode, "base_url", safeBaseURL,
+		genMetadata := jsonutil.ObjectOf("provider", providerName, "platform", platform, "api_mode", apiMode, "base_url", safeBaseURL,
 			"message_count", kwOr(kw, "message_count", 0), "approx_input_tokens", kwOr(kw, "approx_input_tokens", 0))
 		if systemChars != 0 {
 			genMetadata.Set("system_prompt_chars", systemChars)
 		}
-		state.generations.set(reqKey, startChildObservation(state, "LLM call "+pyStr(apiCallCount), "generation", langfuseInput, genMetadata,
-			model, obj("api_mode", apiMode, "provider", providerName)))
+		state.generations.set(reqKey, startChildObservation(state, "LLM call "+anyutil.String(apiCallCount), "generation", langfuseInput, genMetadata,
+			model, jsonutil.ObjectOf("api_mode", apiMode, "provider", providerName)))
 		state.generationModels.set(reqKey, model)
 	})
 	return nil, nil
@@ -210,28 +211,28 @@ func onPostLLMCall(ctx context.Context, kw map[string]any) (any, error) {
 	if requestedModel == "" {
 		requestedModel = model
 	}
-	if refs := kw["moa_references"]; truthy(refs) {
+	if refs := kw["moa_references"]; anyutil.IsTrue(refs) {
 		emitMoAReferenceGenerations(state, refs)
 	}
 	assistantMessage, assistantResponse := kw["assistant_message"], kw["assistant_response"]
 	contentChars := kwOr(kw, "assistant_content_chars", 0)
 	toolCallCount := kwOr(kw, "assistant_tool_call_count", 0)
-	var output *pyjson.Object
+	var output *jsonutil.Object
 	switch {
 	case assistantMessage != nil:
 		output = serializeAssistantMessage(assistantMessage)
 	case assistantResponse != nil:
-		output = obj("content", captureContent(assistantResponse, false, nil), "reasoning", nil, "tool_calls", []any{})
+		output = jsonutil.ObjectOf("content", captureContent(assistantResponse, false, nil), "reasoning", nil, "tool_calls", []any{})
 	default:
 		var content any
-		if truthy(contentChars) {
-			content = fmt.Sprintf("[%s chars]", pyStr(contentChars))
+		if anyutil.IsTrue(contentChars) {
+			content = fmt.Sprintf("[%s chars]", anyutil.String(contentChars))
 		}
 		calls := []any{}
 		for i := range max(toInt(toolCallCount), 0) {
-			calls = append(calls, obj("id", fmt.Sprintf("tc_%d", i)))
+			calls = append(calls, jsonutil.ObjectOf("id", fmt.Sprintf("tc_%d", i)))
 		}
-		output = obj("content", content, "reasoning", nil, "tool_calls", calls)
+		output = jsonutil.ObjectOf("content", content, "reasoning", nil, "tool_calls", calls)
 	}
 	outputCalls, _ := listItems(dget(output, "tool_calls"))
 	if len(outputCalls) > 0 {
@@ -242,22 +243,22 @@ func onPostLLMCall(ctx context.Context, kw map[string]any) (any, error) {
 		costModel = servedModel
 	}
 	response, usage := kw["response"], kw["usage"]
-	var usageDetails, costDetails *pyjson.Object
+	var usageDetails, costDetails *jsonutil.Object
 	switch {
 	case objectAttr(response, "usage") != nil:
 		usageDetails, costDetails = usageAndCost(ctx, response, providerName, costModel, baseURL, apiMode, nil)
-	case isDict(usage) && truthy(usage):
+	case isDict(usage) && anyutil.IsTrue(usage):
 		usageDetails, costDetails = usageAndCost(ctx, nil, providerName, costModel, baseURL, "", usage)
 	default:
-		usageDetails, costDetails = pyjson.NewObject(), pyjson.NewObject()
+		usageDetails, costDetails = jsonutil.NewObject(), jsonutil.NewObject()
 	}
 	var callCount any = len(outputCalls)
 	if len(outputCalls) == 0 {
 		callCount = toolCallCount
 	}
-	genMetadata := obj("tool_call_count", callCount)
-	genMetadata.Update(durationMeta(kw["api_duration"]))
-	if reason := kw["finish_reason"]; truthy(reason) {
+	genMetadata := jsonutil.ObjectOf("tool_call_count", callCount)
+	genMetadata.Merge(durationMeta(kw["api_duration"]))
+	if reason := kw["finish_reason"]; anyutil.IsTrue(reason) {
 		genMetadata.Set("finish_reason", reason)
 	}
 	if servedModel != "" && requestedModel != "" && servedModel != requestedModel {
@@ -269,10 +270,10 @@ func onPostLLMCall(ctx context.Context, kw map[string]any) (any, error) {
 	}
 	endObservation(generation, endArgs{output: output, usage: usageDetails, cost: costDetails, metadata: genMetadata, model: servedAttr})
 	hasTools := toInt(toolCallCount) > 0
-	if truthy(assistantMessage) {
-		hasTools = truthy(getattr(assistantMessage, "tool_calls"))
+	if anyutil.IsTrue(assistantMessage) {
+		hasTools = anyutil.IsTrue(getattr(assistantMessage, "tool_calls"))
 	}
-	if !hasTools && truthy(dget(output, "content")) {
+	if !hasTools && anyutil.IsTrue(dget(output, "content")) {
 		finishTrace(ctx, key, output)
 	}
 	return nil, nil
@@ -291,7 +292,7 @@ func onPreToolCall(ctx context.Context, kw map[string]any) (any, error) {
 			return
 		}
 		o := startChildObservation(state, "Tool: "+toolName, "tool", captureContent(kw["args"], false, nil),
-			obj("tool_name", kwOr(kw, "tool_name", ""), "tool_call_id", kwOr(kw, "tool_call_id", "")), nil, nil)
+			jsonutil.ObjectOf("tool_name", kwOr(kw, "tool_name", ""), "tool_call_id", kwOr(kw, "tool_call_id", "")), nil, nil)
 		if toolCallID != "" {
 			state.tools.set(toolCallID, o)
 		} else {
@@ -339,7 +340,7 @@ func onPostToolCall(ctx context.Context, kw map[string]any) (any, error) {
 			}
 			for i := len(state.turnToolCalls) - 1; i >= 0; i-- {
 				tc := state.turnToolCalls[i]
-				if !pyjson.Equal(dget(tc, "id"), toolCallID) {
+				if !anyutil.Equal(dget(tc, "id"), toolCallID) {
 					continue
 				}
 				for _, target := range []any{tc, dget(tc, "function")} {
@@ -354,12 +355,12 @@ func onPostToolCall(ctx context.Context, kw map[string]any) (any, error) {
 	statusMessage := ""
 	if level != "" {
 		reason := kw["error_type"]
-		if !truthy(reason) {
+		if !anyutil.IsTrue(reason) {
 			reason = kwOr(kw, "status", "")
 		}
-		statusMessage = textutil.First(pyStr(reason), 200)
+		statusMessage = textutil.First(anyutil.String(reason), 200)
 	}
-	endObservation(o, endArgs{output: safeResult, metadata: obj("tool_name", kwOr(kw, "tool_name", ""), "args", captureContent(args, true, nil)),
+	endObservation(o, endArgs{output: safeResult, metadata: jsonutil.ObjectOf("tool_name", kwOr(kw, "tool_name", ""), "args", captureContent(args, true, nil)),
 		level: level, statusMessage: statusMessage})
 	return nil, nil
 }
@@ -367,7 +368,7 @@ func onPostToolCall(ctx context.Context, kw map[string]any) (any, error) {
 // Sets a key on a dict value in place
 func setDictKey(target any, key string, val any) {
 	switch t := target.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t != nil {
 			t.Set(key, val)
 		}
@@ -388,19 +389,19 @@ func onAPIRequestError(ctx context.Context, kw map[string]any) (any, error) {
 	}
 	errInfo := kw["error"]
 	if !isDict(errInfo) {
-		errInfo = pyjson.NewObject()
+		errInfo = jsonutil.NewObject()
 	}
 	errorType, errorMessage := "", ""
-	if v := dget(errInfo, "type"); truthy(v) {
-		errorType = pyStr(v)
+	if v := dget(errInfo, "type"); anyutil.IsTrue(v) {
+		errorType = anyutil.String(v)
 	}
-	if v := dget(errInfo, "message"); truthy(v) {
-		errorMessage = pyStr(v)
+	if v := dget(errInfo, "message"); anyutil.IsTrue(v) {
+		errorMessage = anyutil.String(v)
 	}
-	errorMetadata := obj("error", true, "error_type", errorType, "error_message", captureContent(errorMessage, false, nil))
+	errorMetadata := jsonutil.ObjectOf("error", true, "error_type", errorType, "error_message", captureContent(errorMessage, false, nil))
 	var reason any
-	if r := kw["reason"]; truthy(r) {
-		reason = pyStr(r)
+	if r := kw["reason"]; anyutil.IsTrue(r) {
+		reason = anyutil.String(r)
 	}
 	for _, kv := range []struct {
 		key string
@@ -411,7 +412,7 @@ func onAPIRequestError(ctx context.Context, kw map[string]any) (any, error) {
 			errorMetadata.Set(kv.key, kv.val)
 		}
 	}
-	errorMetadata.Update(durationMeta(kw["api_duration"]))
+	errorMetadata.Merge(durationMeta(kw["api_duration"]))
 	if generation != nil {
 		failsafe("error-level update", func() {
 			label := errorType
@@ -423,7 +424,7 @@ func onAPIRequestError(ctx context.Context, kw map[string]any) (any, error) {
 		endObservation(generation, endArgs{metadata: errorMetadata})
 	}
 	if retryable, ok := kw["retryable"].(bool); ok && !retryable {
-		finishTrace(ctx, key, obj("error", errorMetadata))
+		finishTrace(ctx, key, jsonutil.ObjectOf("error", errorMetadata))
 	} else {
 		withState(func() { state.lastUpdated = time.Now() })
 	}
@@ -462,7 +463,7 @@ func onSessionFinalize(ctx context.Context, kw map[string]any) (any, error) {
 func onSubagentStart(ctx context.Context, kw map[string]any) (any, error) {
 	client := getLangfuse(ctx)
 	childSessionID := kw["child_session_id"]
-	if client == nil || !truthy(childSessionID) {
+	if client == nil || !anyutil.IsTrue(childSessionID) {
 		return nil, nil
 	}
 	withState(func() {
@@ -470,13 +471,13 @@ func onSubagentStart(ctx context.Context, kw map[string]any) (any, error) {
 		if state == nil {
 			return
 		}
-		metadata := obj("child_session_id", childSessionID, "child_subagent_id", kw["child_subagent_id"], "child_role", kwOr(kw, "child_role", ""))
-		if parent := kw["parent_subagent_id"]; truthy(parent) {
+		metadata := jsonutil.ObjectOf("child_session_id", childSessionID, "child_subagent_id", kw["child_subagent_id"], "child_role", kwOr(kw, "child_role", ""))
+		if parent := kw["parent_subagent_id"]; anyutil.IsTrue(parent) {
 			metadata.Set("parent_subagent_id", parent)
 		}
-		child := pyStr(childSessionID)
-		if user, _ := state.propagated.Get("user_id"); truthy(user) {
-			rememberLocked(userByChildSession, child, pyStr(user))
+		child := anyutil.String(childSessionID)
+		if user, _ := state.propagated.Get("user_id"); anyutil.IsTrue(user) {
+			rememberLocked(userByChildSession, child, anyutil.String(user))
 		}
 		role := kwStr(kw, "child_role")
 		if role == "" {
@@ -490,10 +491,10 @@ func onSubagentStart(ctx context.Context, kw map[string]any) (any, error) {
 // subagent_stop, ending the child's span with its summary, status, duration and tool calls
 func onSubagentStop(ctx context.Context, kw map[string]any) (any, error) {
 	childSessionID := kw["child_session_id"]
-	if !truthy(childSessionID) {
+	if !anyutil.IsTrue(childSessionID) {
 		return nil, nil
 	}
-	child := pyStr(childSessionID)
+	child := anyutil.String(childSessionID)
 	var o *observation
 	withState(func() {
 		userByChildSession.pop(child)
@@ -506,9 +507,9 @@ func onSubagentStop(ctx context.Context, kw map[string]any) (any, error) {
 	if o == nil {
 		return nil, nil
 	}
-	metadata := obj("child_role", kwOr(kw, "child_role", ""))
+	metadata := jsonutil.ObjectOf("child_role", kwOr(kw, "child_role", ""))
 	for _, k := range []string{"child_status", "duration_ms"} {
-		if v := kw[k]; truthy(v) {
+		if v := kw[k]; anyutil.IsTrue(v) {
 			metadata.Set(strings.TrimPrefix(k, "child_"), v)
 		}
 	}

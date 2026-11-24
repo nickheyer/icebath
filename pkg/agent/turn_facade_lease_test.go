@@ -13,9 +13,9 @@ import (
 	"time"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type leaseFakeDB struct {
@@ -43,9 +43,9 @@ func (d *leaseFakeDB) recorded() [][3]string {
 	return append([][3]string(nil), d.events...)
 }
 
-func (d *leaseFakeDB) GetSession(_ context.Context, sessionID string) (*pyjson.Object, error) {
+func (d *leaseFakeDB) GetSession(_ context.Context, sessionID string) (*jsonutil.Object, error) {
 	if d.exists {
-		return pyjson.ObjectOf("id", sessionID), nil
+		return jsonutil.ObjectOf("id", sessionID), nil
 	}
 	return nil, nil
 }

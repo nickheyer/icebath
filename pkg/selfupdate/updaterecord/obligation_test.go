@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var obSHA = strings.Repeat("a", 40)
@@ -179,7 +179,7 @@ func TestObligationUnwritableHostStateDirNeverHidesTheDebtFromAnotherProfile(t *
 	}
 	_ = os.Chmod(lockDir, 0o500)
 	defer os.Chmod(lockDir, 0o700)
-	runtimes := []any{pyjson.ObjectOf("kind", "gateway", "profile", "coder")}
+	runtimes := []any{jsonutil.ObjectOf("kind", "gateway", "profile", "coder")}
 	armed, err := ArmHostObligation(context.Background(), filepath.Join(homes["coder"], ProfileMarkerName), obSHA, runtimes, "coder", "")
 	if err != nil || armed {
 		t.Fatalf("a debt the writer profile cannot see was reported armed: %v %v", armed, err)

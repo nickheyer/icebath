@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // MaxSkillsForPrompt bounds the skill names a description prompt lists
@@ -109,7 +109,7 @@ func sampleSkills(names []string) []string {
 }
 
 // First JSON object between the outer braces after fence stripping, nil when none parses to an object
-func extractJSONBlob(raw string, fence *regexp.Regexp) *pyjson.Object {
+func extractJSONBlob(raw string, fence *regexp.Regexp) *jsonutil.Object {
 	if raw == "" {
 		return nil
 	}
@@ -118,11 +118,11 @@ func extractJSONBlob(raw string, fence *regexp.Regexp) *pyjson.Object {
 	if first == -1 || last == -1 || last <= first {
 		return nil
 	}
-	val, err := pyjson.Loads(stripped[first : last+1])
+	val, err := jsonutil.Decode(stripped[first : last+1])
 	if err != nil {
 		return nil
 	}
-	obj, _ := val.(*pyjson.Object)
+	obj, _ := val.(*jsonutil.Object)
 	return obj
 }
 
@@ -212,10 +212,10 @@ func DescribeProfile(ctx context.Context, profileName string, overwrite bool, ti
 
 // Python str of a config value or the unset marker when it is falsy
 func unsetOr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "(unset)"
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Profile names that can be described, only those lacking a user authored description when missingOnly

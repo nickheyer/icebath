@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 type relayCompactionHandle struct{ name string }
@@ -67,7 +67,7 @@ func relayCompactionHost(t *testing.T) (*relayCompactionFake, context.Context, *
 	tools.RegisterNemoRelayBinding(func() (*tools.NemoRelay, error) { return f.relay, nil })
 	tools.ResetRelayRuntimeForTests()
 	relayCompactionStalled.Store(false)
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	host := tools.GetRelayRuntime(ctx, true, tools.CurrentRelayProfileKey(ctx))
 	if host == nil {
 		t.Fatal("no runtime")
@@ -170,7 +170,7 @@ func TestRelayCompactionNoRelayHostSkipsQuietly(t *testing.T) {
 	t.Setenv("ICEBATH_HOME", filepath.Join(t.TempDir(), "profile"))
 	tools.ResetRelayRuntimeForTests()
 	t.Cleanup(tools.ResetRelayRuntimeForTests)
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	if relayCompactionEmit(t, ctx, "s1", "compaction", relayCompactionCommitted("s1"), "") {
 		t.Fatal("mark emitted without a host")
 	}

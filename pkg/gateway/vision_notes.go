@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Prompt the vision tool describes an inbound image with for a model that cannot read images
@@ -31,7 +31,7 @@ func VisionImageNotes(ctx context.Context, env *tools.Env, userText string, imag
 				"with vision_analyze using image_url: "+path+"]")
 			continue
 		}
-		if pyrepr.Truthy(result["success"]) {
+		if anyutil.IsTrue(result["success"]) {
 			analysis, _ := result["analysis"].(string)
 			parts = append(parts, "[The user sent an image. Here's what I can see:\n"+memory.SanitizeContext(analysis)+"]\n"+
 				"[If you need a closer look, use vision_analyze with "+

@@ -5,10 +5,11 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Serializes one live message with the exact durable shape the INSERT writes
@@ -206,13 +207,13 @@ func scalarKey(values ...any) string {
 			if x == math.Trunc(x) && !math.IsInf(x, 0) {
 				fmt.Fprintf(&b, "I%s|", new(big.Float).SetFloat64(x).Text('f', 0))
 			} else {
-				fmt.Fprintf(&b, "F%s|", pyrepr.Float(x))
+				fmt.Fprintf(&b, "F%s|", strconv.FormatFloat(x, 'f', -1, 64))
 			}
 		default:
 			if n, ok := pyIntID(x); ok {
 				fmt.Fprintf(&b, "I%d|", n)
 			} else {
-				fmt.Fprintf(&b, "R%s|", pyrepr.Repr(x))
+				fmt.Fprintf(&b, "R%s|", anyutil.Quote(x))
 			}
 		}
 	}
@@ -226,7 +227,7 @@ func (d *SessionDB) carryParentTimestamps(ctx context.Context, conn SQLiteConn, 
 		if msg == nil {
 			continue
 		}
-		if _, ok := pydatetime.CoerceEpoch(msg["timestamp"], "", "message timestamp"); !ok {
+		if _, ok := timeutil.StoredEpoch(msg["timestamp"], "", "message timestamp"); !ok {
 			candidates = append(candidates, i)
 		}
 	}

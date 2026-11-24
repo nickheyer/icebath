@@ -6,10 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Number of a filter dict value as the store binds it, nil for None
@@ -21,14 +21,14 @@ func pruneKwargs(filters map[string]any) (*float64, string, state.PruneFilters) 
 }
 
 // Messages of an exported session or segment as a list of rows, empty when unset
-func exportMessages(segment *pyjson.Object) []*pyjson.Object {
+func exportMessages(segment *jsonutil.Object) []*jsonutil.Object {
 	switch list := rowGet(segment, "messages").(type) {
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		return list
 	case []any:
-		out := make([]*pyjson.Object, 0, len(list))
+		out := make([]*jsonutil.Object, 0, len(list))
 		for _, item := range list {
-			if row, ok := item.(*pyjson.Object); ok {
+			if row, ok := item.(*jsonutil.Object); ok {
 				out = append(out, row)
 			}
 		}
@@ -39,7 +39,7 @@ func exportMessages(segment *pyjson.Object) []*pyjson.Object {
 
 // Outcome of collecting the sessions of a flat export, stop carrying the exit code of a preview or an error
 type exportCollection struct {
-	sessions []*pyjson.Object
+	sessions []*jsonutil.Object
 	code     int
 	stop     bool
 }
@@ -67,7 +67,7 @@ func cmdExport(r *sessionsRun, db *state.SessionDB) (int, error) {
 			return notFound(r, sessionID), nil
 		}
 	}
-	redact := func(data *pyjson.Object) *pyjson.Object {
+	redact := func(data *jsonutil.Object) *jsonutil.Object {
 		if !nsTruthy(r.ns, "redact") || data == nil {
 			return data
 		}
@@ -100,7 +100,7 @@ func cmdExport(r *sessionsRun, db *state.SessionDB) (int, error) {
 		}
 		return false, err
 	}
-	one := func(id string) (*pyjson.Object, error) {
+	one := func(id string) (*jsonutil.Object, error) {
 		data, err := db.ExportSession(r.ctx, id, includeCompacted, includeInactive)
 		return redact(data), err
 	}
@@ -111,7 +111,7 @@ func cmdExport(r *sessionsRun, db *state.SessionDB) (int, error) {
 			if err != nil {
 				return failed, err
 			}
-			var data *pyjson.Object
+			var data *jsonutil.Object
 			if resolved != "" {
 				if large, err := tooLarge([]string{resolved}, false); err != nil || large {
 					return failed, err
@@ -123,7 +123,7 @@ func cmdExport(r *sessionsRun, db *state.SessionDB) (int, error) {
 			if data == nil || data.Len() == 0 {
 				return exportCollection{code: notFound(r, sessionID), stop: true}, nil
 			}
-			return exportCollection{sessions: []*pyjson.Object{data}}, nil
+			return exportCollection{sessions: []*jsonutil.Object{data}}, nil
 		}
 		if len(filters) > 0 {
 			days, source, f := pruneKwargs(filters)
@@ -142,7 +142,7 @@ func cmdExport(r *sessionsRun, db *state.SessionDB) (int, error) {
 			if large, err := tooLarge(ids, false); err != nil || large {
 				return failed, err
 			}
-			sessions := []*pyjson.Object{}
+			sessions := []*jsonutil.Object{}
 			for _, id := range ids {
 				s, err := one(id)
 				if err != nil {
@@ -165,7 +165,7 @@ func cmdExport(r *sessionsRun, db *state.SessionDB) (int, error) {
 		if err != nil {
 			return failed, err
 		}
-		sessions := make([]*pyjson.Object, 0, len(all))
+		sessions := make([]*jsonutil.Object, 0, len(all))
 		for _, s := range all {
 			sessions = append(sessions, redact(s))
 		}
@@ -192,7 +192,7 @@ func pluralS(n int) string {
 }
 
 // Prompt view of the sessions, one record per line for jsonl or headed sections for markdown
-func renderOnly(r *sessionsRun, sessions []*pyjson.Object) (string, string, error) {
+func renderOnly(r *sessionsRun, sessions []*jsonutil.Object) (string, string, error) {
 	format, only := "jsonl", r.ns["only"]
 	if nsText(r.ns, "format") == "md" {
 		format = "markdown"
@@ -209,7 +209,7 @@ func renderOnly(r *sessionsRun, sessions []*pyjson.Object) (string, string, erro
 }
 
 // One self contained HTML file, a single session or several behind a sidebar
-func renderHTML(r *sessionsRun, sessions []*pyjson.Object) (string, string, error) {
+func renderHTML(r *sessionsRun, sessions []*jsonutil.Object) (string, string, error) {
 	single := len(sessions) == 1
 	noun := "sessions"
 	generate := func() (string, error) { return state.GenerateMultiSessionHTMLExport(sessions) }
@@ -225,7 +225,7 @@ func renderHTML(r *sessionsRun, sessions []*pyjson.Object) (string, string, erro
 }
 
 // One JSON object per session per line, non ASCII text kept as written
-func renderJSONL(r *sessionsRun, sessions []*pyjson.Object) (string, string, error) {
+func renderJSONL(r *sessionsRun, sessions []*jsonutil.Object) (string, string, error) {
 	lines := ""
 	for _, s := range sessions {
 		text, err := state.DumpsExportedSession(s)
@@ -245,7 +245,7 @@ func renderJSONL(r *sessionsRun, sessions []*pyjson.Object) (string, string, err
 type flatExporter struct {
 	unusable func(ns map[string]any) bool
 	message  string
-	render   func(r *sessionsRun, sessions []*pyjson.Object) (string, string, error)
+	render   func(r *sessionsRun, sessions []*jsonutil.Object) (string, string, error)
 }
 
 var flatExporters = map[string]flatExporter{
@@ -280,7 +280,7 @@ func exportFlat(r *sessionsRun, kind string, collect func() (exportCollection, e
 	if len(sessions) == 1 {
 		id := ""
 		if v, ok := sessions[0].Get("id"); ok {
-			id = pyrepr.Str(v)
+			id = anyutil.String(v)
 		}
 		name = state.DefaultSaveFilename(id, format)
 	}
@@ -432,13 +432,13 @@ func exportTraceFiles(r *sessionsRun, ids []string, renderTrace func(string) (st
 
 // One exported session with the file it was written to and the message snapshot of each segment
 type exportedItem struct {
-	data      *pyjson.Object
+	data      *jsonutil.Object
 	path      string
-	snapshots map[string][]*pyjson.Object
+	snapshots map[string][]*jsonutil.Object
 }
 
 // Markdown or QMD export, one file per session plus a manifest entry
-func exportMarkdown(r *sessionsRun, db *state.SessionDB, filters map[string]any, redact func(*pyjson.Object) *pyjson.Object) (int, error) {
+func exportMarkdown(r *sessionsRun, db *state.SessionDB, filters map[string]any, redact func(*jsonutil.Object) *jsonutil.Object) (int, error) {
 	output, format := nsText(r.ns, "output"), nsText(r.ns, "format")
 	if output == "-" {
 		r.print("Markdown/QMD export writes files; stdout (-) is only supported with --format jsonl.")
@@ -457,18 +457,18 @@ func exportMarkdown(r *sessionsRun, db *state.SessionDB, filters map[string]any,
 		if err != nil || rawData == nil || rawData.Len() == 0 {
 			return nil, err
 		}
-		segments := []*pyjson.Object{rawData}
+		segments := []*jsonutil.Object{rawData}
 		if list, ok := rowGet(rawData, "segments").([]any); ok && len(list) > 0 {
 			segments = segments[:0]
 			for _, item := range list {
-				if segment, ok := item.(*pyjson.Object); ok {
+				if segment, ok := item.(*jsonutil.Object); ok {
 					segments = append(segments, segment)
 				}
 			}
-		} else if typed, ok := rowGet(rawData, "segments").([]*pyjson.Object); ok && len(typed) > 0 {
+		} else if typed, ok := rowGet(rawData, "segments").([]*jsonutil.Object); ok && len(typed) > 0 {
 			segments = typed
 		}
-		snapshots := map[string][]*pyjson.Object{}
+		snapshots := map[string][]*jsonutil.Object{}
 		for _, segment := range segments {
 			if id := rowText(segment, "id"); id != "" {
 				snapshots[id] = exportMessages(segment)
@@ -574,14 +574,14 @@ func exportMarkdownSingle(r *sessionsRun, db *state.SessionDB, exportOne func(st
 	if !deleteAfter {
 		return 0, nil
 	}
-	expectedMessages := map[string][]*pyjson.Object{}
+	expectedMessages := map[string][]*jsonutil.Object{}
 	for _, item := range items {
 		ok, reason, err := memory.VerifyExportFile(item.path, item.data)
 		if err != nil {
 			return 1, err
 		}
 		if !ok {
-			r.printf("Export verification failed; not deleting session '%s': %s", pyrepr.Str(rowGet(item.data, "id")), reason)
+			r.printf("Export verification failed; not deleting session '%s': %s", anyutil.String(rowGet(item.data, "id")), reason)
 			return 1, nil
 		}
 		for id, messages := range item.snapshots {

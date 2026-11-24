@@ -17,13 +17,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Launch defaults, labels and vendor hooks a provider customises
@@ -121,7 +121,7 @@ func New(ctx context.Context, v Vendor, o Options) (*Client, error) {
 		}
 		cwd = resolved
 	}
-	resolved, err := pypath.Resolve(cwd)
+	resolved, err := pathutil.Resolve(cwd)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func (c *Client) resolveArgs() ([]string, error) {
 	if c.ArgsEnvVar != "" {
 		override = strings.TrimSpace(os.Getenv(c.ArgsEnvVar))
 	}
-	split, err := pyshlex.SplitPOSIX(override, false)
+	split, err := shellutil.Split(override)
 	if err != nil {
 		return nil, pyErr("ValueError", "%s", err.Error())
 	}
@@ -192,12 +192,12 @@ func (c *Client) resolveArgs() ([]string, error) {
 func (c *Client) requestError(method string, errValue any) string {
 	var shown any = errValue
 	if isDict(errValue) {
-		if m := dictGet(errValue, "message"); pyrepr.Truthy(m) {
+		if m := dictGet(errValue, "message"); anyutil.IsTrue(m) {
 			shown = m
 		}
 	}
-	text := fmt.Sprintf("%s %s failed: %s", c.Label, method, pyrepr.Str(shown))
-	authRequired := isDict(errValue) && pyrepr.Equal(dictGet(errValue, "code"), acpAuthRequired)
+	text := fmt.Sprintf("%s %s failed: %s", c.Label, method, anyutil.String(shown))
+	authRequired := isDict(errValue) && anyutil.Equal(dictGet(errValue, "code"), acpAuthRequired)
 	if authRequired && c.AuthRequiredHint != nil && *c.AuthRequiredHint != "" {
 		return text + " " + *c.AuthRequiredHint
 	}
@@ -352,7 +352,7 @@ var startProcess = func(argv []string, cwd string, childEnv map[string]string) (
 		err := cmd.Wait()
 		var exitErr *exec.ExitError
 		if errors.As(err, &exitErr) {
-			p.returncode = pysubprocess.Returncode(exitErr)
+			p.returncode = executil.ExitCode(exitErr.ProcessState)
 		}
 		close(p.done)
 	}()
@@ -401,9 +401,9 @@ func pumpLines(r io.Reader, sink func(string)) {
 
 // Decoded JSON of one stdout line, a raw record for anything that does not parse
 func decodeLine(line string) any {
-	v, err := pyjson.Loads(line)
+	v, err := jsonutil.Decode(line)
 	if err != nil {
-		raw := pyjson.NewObject()
+		raw := jsonutil.NewObject()
 		raw.Set("raw", strings.TrimRight(line, "\n"))
 		return raw
 	}
@@ -503,7 +503,7 @@ func (c *Client) openSession(ctx context.Context, timeoutSeconds float64, allowF
 		s.close()
 		return nil, err
 	}
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("cwd", c.acpCwd)
 	params.Set("mcpServers", []any{})
 	result, err := s.request(ctx, "session/new", params, nil, nil)
@@ -511,7 +511,7 @@ func (c *Client) openSession(ctx context.Context, timeoutSeconds float64, allowF
 		s.close()
 		return nil, err
 	}
-	result = or(result, pyjson.NewObject())
+	result = or(result, jsonutil.NewObject())
 	sid, err := attrGet(result, "sessionId")
 	if err != nil {
 		s.close()
@@ -539,17 +539,17 @@ func (c *Client) withSession(ctx context.Context, timeoutSeconds float64, allowF
 }
 
 // Parameters of the initialize request
-func initializeParams() *pyjson.Object {
-	fsCaps := pyjson.NewObject()
+func initializeParams() *jsonutil.Object {
+	fsCaps := jsonutil.NewObject()
 	fsCaps.Set("readTextFile", true)
 	fsCaps.Set("writeTextFile", true)
-	caps := pyjson.NewObject()
+	caps := jsonutil.NewObject()
 	caps.Set("fs", fsCaps)
-	info := pyjson.NewObject()
+	info := jsonutil.NewObject()
 	info.Set("name", "icebath-agent")
 	info.Set("title", "Icebath Agent")
 	info.Set("version", "0.0.0")
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("protocolVersion", 1)
 	o.Set("clientCapabilities", caps)
 	o.Set("clientInfo", info)
@@ -568,12 +568,12 @@ func textNewline() string {
 func (s *session) request(ctx context.Context, method string, params any, textParts, reasoningParts *[]string) (any, error) {
 	s.nextID++
 	requestID := s.nextID
-	msg := pyjson.NewObject()
+	msg := jsonutil.NewObject()
 	msg.Set("jsonrpc", "2.0")
 	msg.Set("id", requestID)
 	msg.Set("method", method)
 	msg.Set("params", params)
-	line, err := pyjson.Dumps(msg)
+	line, err := jsonutil.Encode(msg)
 	if err != nil {
 		return nil, err
 	}
@@ -601,11 +601,11 @@ func (s *session) request(ctx context.Context, method string, params any, textPa
 		if err != nil {
 			return nil, err
 		}
-		if handled || !pyrepr.Equal(dictGet(m, "id"), requestID) {
+		if handled || !anyutil.Equal(dictGet(m, "id"), requestID) {
 			continue
 		}
 		if dictHas(m, "error") {
-			return nil, pyErr("RuntimeError", "%s", s.c.requestError(method, or(dictGet(m, "error"), pyjson.NewObject())))
+			return nil, pyErr("RuntimeError", "%s", s.c.requestError(method, or(dictGet(m, "error"), jsonutil.NewObject())))
 		}
 		return dictGet(m, "result"), nil
 	}
@@ -650,20 +650,20 @@ func (c *Client) runPrompt(ctx context.Context, promptText string, timeoutSecond
 			if err == nil && ok {
 				_, err = s.request(ctx, method, params, nil, nil)
 			} else if err == nil {
-				logWarning("%s does not offer model %s; using the session default.", c.Label, pyrepr.Repr(requestedModel))
+				logWarning("%s does not offer model %s; using the session default.", c.Label, anyutil.Quote(requestedModel))
 			}
 			if err != nil {
 				if ctxErr := ctx.Err(); ctxErr != nil {
 					return ctxErr
 				}
-				logWarning("%s model selection for %s failed; continuing with the session default: %s", c.Label, pyrepr.Repr(requestedModel), exceptionText(err))
+				logWarning("%s model selection for %s failed; continuing with the session default: %s", c.Label, anyutil.Quote(requestedModel), exceptionText(err))
 			}
 		}
 		textParts, reasoningParts := []string{}, []string{}
-		part := pyjson.NewObject()
+		part := jsonutil.NewObject()
 		part.Set("type", "text")
 		part.Set("text", promptText)
-		prompt := pyjson.NewObject()
+		prompt := jsonutil.NewObject()
 		prompt.Set("sessionId", sessionID)
 		prompt.Set("prompt", []any{part})
 		if _, err := s.request(ctx, "session/prompt", prompt, &textParts, &reasoningParts); err != nil {
@@ -693,8 +693,8 @@ func (c *Client) CreateChatCompletion(ctx context.Context, kwargs map[string]any
 	}
 	model := kwargs["model"]
 	requestedModel := ""
-	if pyrepr.Truthy(model) {
-		requestedModel = pyrepr.Str(model)
+	if anyutil.IsTrue(model) {
+		requestedModel = anyutil.String(model)
 	}
 	responseText, reasoning, err := c.runPrompt(ctx, promptText, effectiveTimeout(kwargs["timeout"]), requestedModel)
 	if err != nil {
@@ -722,7 +722,7 @@ func (c *Client) CreateChatCompletion(ctx context.Context, kwargs map[string]any
 			"prompt_tokens_details": map[string]any{"cached_tokens": 0}},
 		"model": or(model, c.PlaceholderModel),
 	}
-	if pyrepr.Truthy(kwargs["stream"]) {
+	if anyutil.IsTrue(kwargs["stream"]) {
 		return provider.CompletionToStreamChunks(completion)
 	}
 	return completion, nil
@@ -737,9 +737,9 @@ func exceptionText(err error) string {
 	var pathErr *fs.PathError
 	var errno syscall.Errno
 	if errors.As(err, &pathErr) || errors.As(err, &errno) {
-		return pypath.OSErrorText(err)
+		return err.Error()
 	}
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }
 
 // Consumes one agent message, true when it was a notification or a request this client answered
@@ -753,20 +753,20 @@ func (c *Client) handleServerMessage(msg any, stdin io.Writer, cwd string, textP
 		return false, nil
 	}
 	if method == "session/update" {
-		update, err := attrGet(or(dictGet(msg, "params"), pyjson.NewObject()), "update")
+		update, err := attrGet(or(dictGet(msg, "params"), jsonutil.NewObject()), "update")
 		if err != nil {
 			return false, err
 		}
-		update = or(update, pyjson.NewObject())
+		update = or(update, jsonutil.NewObject())
 		content, err := attrGet(update, "content")
 		if err != nil {
 			return false, err
 		}
-		content = or(content, pyjson.NewObject())
+		content = or(content, jsonutil.NewObject())
 		chunkText := ""
 		if isDict(content) {
-			if t := dictGet(content, "text"); pyrepr.Truthy(t) {
-				chunkText = pyrepr.Str(t)
+			if t := dictGet(content, "text"); anyutil.IsTrue(t) {
+				chunkText = anyutil.String(t)
 			}
 		}
 		var sink *[]string
@@ -785,12 +785,12 @@ func (c *Client) handleServerMessage(msg any, stdin io.Writer, cwd string, textP
 		return true, nil
 	}
 	messageID := dictGet(msg, "id")
-	var response *pyjson.Object
+	var response *jsonutil.Object
 	switch method {
 	case "session/request_permission":
-		outcome := pyjson.NewObject()
+		outcome := jsonutil.NewObject()
 		outcome.Set("outcome", "cancelled")
-		result := pyjson.NewObject()
+		result := jsonutil.NewObject()
 		result.Set("outcome", outcome)
 		response = jsonrpcResult(messageID, result)
 	case "fs/read_text_file", "fs/write_text_file":
@@ -802,7 +802,7 @@ func (c *Client) handleServerMessage(msg any, stdin io.Writer, cwd string, textP
 		if method == "fs/write_text_file" {
 			handler = fsWriteTextFile
 		}
-		result, herr := handler(c.env, or(dictGet(msg, "params"), pyjson.NewObject()), cwd)
+		result, herr := handler(c.env, or(dictGet(msg, "params"), jsonutil.NewObject()), cwd)
 		if herr != nil {
 			response = jsonrpcError(messageID, -32602, exceptionText(herr))
 		} else {
@@ -811,7 +811,7 @@ func (c *Client) handleServerMessage(msg any, stdin io.Writer, cwd string, textP
 	default:
 		response = jsonrpcError(messageID, -32601, fmt.Sprintf("ACP client method '%s' is not supported by Icebath yet.", method))
 	}
-	line, err := pyjson.Dumps(response)
+	line, err := jsonutil.Encode(response)
 	if err != nil {
 		return false, err
 	}

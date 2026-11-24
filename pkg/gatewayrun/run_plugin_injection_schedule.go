@@ -8,10 +8,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Publishes this live gateway's plugin message scheduler process wide
@@ -67,7 +67,7 @@ func pluginInjectionArgsFrom(kwargs map[string]any) (pluginInjectionArgs, error)
 		args.origin = origin
 	}
 	args.pluginHome, _ = kwargs["plugin_home"].(string)
-	args.keyless = pyrepr.Truthy(kwargs["keyless"])
+	args.keyless = anyutil.IsTrue(kwargs["keyless"])
 	args.callingSessionKey, _ = kwargs["calling_session_key"].(string)
 	return args, nil
 }
@@ -335,7 +335,7 @@ func (r *GatewayRunner) pluginOriginSource(ctx context.Context, origin map[strin
 	}
 	requested := fields["profile"]
 	delete(fields, "profile")
-	if named, isText := requested.(string); pyrepr.Truthy(requested) && (!isText || named != *profile) {
+	if named, isText := requested.(string); anyutil.IsTrue(requested) && (!isText || named != *profile) {
 		refuse(fmt.Sprintf("origin names profile %s; plugins may only start sessions in their own profile (%s)", errchain.Show(requested), *profile))
 		return nil, nil
 	}

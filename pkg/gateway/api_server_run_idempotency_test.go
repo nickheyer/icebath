@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store at the path under a temp home, failing the test when it cannot open
@@ -20,7 +20,7 @@ func openRunIdempotencyStore(t *testing.T, path string) *RunIdempotencyStore {
 }
 
 // Outcome of a reserve with no owner and no retention horizon
-func reserveRun(t *testing.T, store *RunIdempotencyStore, scope, key, fingerprint, runID string, status *pyjson.Object, retention float64) (string, *RunIdempotencyRecord) {
+func reserveRun(t *testing.T, store *RunIdempotencyStore, scope, key, fingerprint, runID string, status *jsonutil.Object, retention float64) (string, *RunIdempotencyRecord) {
 	t.Helper()
 	outcome, record, err := store.Reserve(context.Background(), scope, key, fingerprint, runID, status, 0, 0, retention)
 	if err != nil {
@@ -41,13 +41,13 @@ func TestRestartDurabilityAndTerminalSemantics(t *testing.T) {
 	for _, terminal := range []string{"completed", "failed", "cancelled"} {
 		first := openRunIdempotencyStore(t, path)
 		runID := "run_" + terminal
-		if outcome, _ := reserveRun(t, first, "tenant", terminal, "fp", runID, pyjson.ObjectOf("run_id", runID, "status", terminal), 0); outcome != "created" {
+		if outcome, _ := reserveRun(t, first, "tenant", terminal, "fp", runID, jsonutil.ObjectOf("run_id", runID, "status", terminal), 0); outcome != "created" {
 			t.Fatalf("%s: %s", terminal, outcome)
 		}
 		first.Close()
 		restarted := openRunIdempotencyStore(t, path)
-		outcome, record := reserveRun(t, restarted, "tenant", terminal, "fp", "run_new", pyjson.ObjectOf("status", "queued"), 0)
-		if outcome != "reused" || *record.RunID != runID || record.Status.(*pyjson.Object).GetOr("status", nil) != terminal {
+		outcome, record := reserveRun(t, restarted, "tenant", terminal, "fp", "run_new", jsonutil.ObjectOf("status", "queued"), 0)
+		if outcome != "reused" || *record.RunID != runID || record.Status.(*jsonutil.Object).ValueOr("status", nil) != terminal {
 			t.Fatalf("%s: %s %+v", terminal, outcome, record)
 		}
 		restarted.Close()
@@ -57,10 +57,10 @@ func TestRestartDurabilityAndTerminalSemantics(t *testing.T) {
 func TestTenantIsolationAndRetention(t *testing.T) {
 	store := openRunIdempotencyStore(t, filepath.Join(t.TempDir(), "idem.db"))
 	defer store.Close()
-	if outcome, _ := reserveRun(t, store, "tenant-a", "key", "fp-a", "run_a", pyjson.ObjectOf("status", "queued"), 0); outcome != "created" {
+	if outcome, _ := reserveRun(t, store, "tenant-a", "key", "fp-a", "run_a", jsonutil.ObjectOf("status", "queued"), 0); outcome != "created" {
 		t.Fatal(outcome)
 	}
-	if outcome, _ := reserveRun(t, store, "tenant-b", "key", "fp-b", "run_b", pyjson.ObjectOf("status", "queued"), 0); outcome != "created" {
+	if outcome, _ := reserveRun(t, store, "tenant-b", "key", "fp-b", "run_b", jsonutil.ObjectOf("status", "queued"), 0); outcome != "created" {
 		t.Fatal(outcome)
 	}
 }
@@ -70,10 +70,10 @@ func TestRetentionNeverReleasesAnActiveIdempotencyReservation(t *testing.T) {
 	defer store.Close()
 	now := 100.0
 	pinAPIClock(t, &now)
-	if outcome, _ := reserveRun(t, store, "tenant", "active-key", "active-fingerprint", "run-active", pyjson.ObjectOf("status", "running"), 0); outcome != "created" {
+	if outcome, _ := reserveRun(t, store, "tenant", "active-key", "active-fingerprint", "run-active", jsonutil.ObjectOf("status", "running"), 0); outcome != "created" {
 		t.Fatal(outcome)
 	}
-	if outcome, _ := reserveRun(t, store, "tenant", "done-key", "done-fingerprint", "run-done", pyjson.ObjectOf("status", "completed"), 0); outcome != "created" {
+	if outcome, _ := reserveRun(t, store, "tenant", "done-key", "done-fingerprint", "run-done", jsonutil.ObjectOf("status", "completed"), 0); outcome != "created" {
 		t.Fatal(outcome)
 	}
 	now = 100 + RunIdempotencyRetentionSeconds + 1
@@ -97,17 +97,17 @@ func TestRoomTerminalReceiptSurvivesOfflineHomeUntilGrantHorizon(t *testing.T) {
 	defer store.Close()
 	horizon := now + 30*24*60*60
 	if outcome, _ := reserveRun(t, store, "room-scope", "room:task-1:1", "room-fingerprint", "run-room",
-		pyjson.ObjectOf("run_id", "run-room", "status", "completed"), horizon); outcome != "created" {
+		jsonutil.ObjectOf("run_id", "run-room", "status", "completed"), horizon); outcome != "created" {
 		t.Fatal(outcome)
 	}
 	now += RunIdempotencyRetentionSeconds + 1
-	reserveRun(t, store, "other-scope", "other-key", "other-fingerprint", "run-other", pyjson.ObjectOf("run_id", "run-other", "status", "queued"), 0)
+	reserveRun(t, store, "other-scope", "other-key", "other-fingerprint", "run-other", jsonutil.ObjectOf("run_id", "run-other", "status", "queued"), 0)
 	outcome, record, err := store.Lookup(context.Background(), "room-scope", "room:task-1:1", "room-fingerprint", 0)
 	if err != nil || outcome != "reused" || *record.RunID != "run-room" {
 		t.Fatalf("%s %+v %v", outcome, record, err)
 	}
 	now = horizon + 1
-	reserveRun(t, store, "third-scope", "third-key", "third-fingerprint", "run-third", pyjson.ObjectOf("run_id", "run-third", "status", "queued"), 0)
+	reserveRun(t, store, "third-scope", "third-key", "third-fingerprint", "run-third", jsonutil.ObjectOf("run_id", "run-third", "status", "queued"), 0)
 	outcome, record, err = store.Lookup(context.Background(), "room-scope", "room:task-1:1", "room-fingerprint", 0)
 	if err != nil || outcome != "missing" || record != nil {
 		t.Fatalf("%s %+v %v", outcome, record, err)

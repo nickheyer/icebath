@@ -10,9 +10,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Swappable discovery and lock probes the ensure loop reads, the seams ensure tests replace
@@ -144,7 +144,7 @@ func EnsureGatewayRuntime(ctx context.Context, profileHome string, timeout float
 	if math.IsNaN(timeout) || math.IsInf(timeout, 0) || timeout <= 0 {
 		return ObservedEndpoint{}, fmt.Errorf("timeout must be finite and positive")
 	}
-	deadline := pythread.Monotonic() + timeout
+	deadline := timeutil.Monotonic() + timeout
 	canonical, err := CanonicalHome(profileHome)
 	if err != nil {
 		return ObservedEndpoint{}, err

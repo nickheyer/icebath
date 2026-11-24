@@ -9,9 +9,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Native Anthropic or AnthropicBedrock client with the per request MiniMax token source when that route asks for one
@@ -320,7 +320,7 @@ func routedClientKwargs(ctx context.Context, a *AIAgent, fallbackModel []map[str
 // OpenRouter Claude beta header, the model default headers, then the custom provider TLS and extra headers
 func applyOpenAIHeaderPolicy(ctx context.Context, a *AIAgent, kwargs map[string]any) {
 	effectiveBase := strings.ToLower(fmt.Sprint(kwargs["base_url"]))
-	if matched, _ := pyurl.BaseURLHostMatches(effectiveBase, "openrouter.ai"); matched && strings.Contains(strings.ToLower(a.model), "claude") {
+	if matched, _ := urlutil.BaseHostMatches(effectiveBase, "openrouter.ai"); matched && strings.Contains(strings.ToLower(a.model), "claude") {
 		headers := stringHeaders(kwargs["default_headers"])
 		if headers == nil {
 			headers = map[string]string{}
@@ -462,7 +462,7 @@ var hostDefaultHeadersTable = []hostDefaultHeaders{
 // Header factory of the first table host the base url matches, nil when none does
 func hostDefaultHeadersFactory(baseURL string) hostHeadersFactory {
 	for _, entry := range hostDefaultHeadersTable {
-		if matched, _ := pyurl.BaseURLHostMatches(baseURL, entry.host); matched {
+		if matched, _ := urlutil.BaseHostMatches(baseURL, entry.host); matched {
 			return entry.factory
 		}
 	}

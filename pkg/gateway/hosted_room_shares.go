@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Pause between two syncs of every peer a hosted room is shared with
@@ -101,7 +101,7 @@ func RoomPeerRegistry(ctx context.Context) ([]any, error) {
 	out := make([]any, 0, len(names))
 	for _, name := range names {
 		entry, _ := peers[name].(map[string]any)
-		row := map[string]any{"name": name, "url": pyrepr.Str(entry["url"]), "key": peerSecret(ctx, name) != ""}
+		row := map[string]any{"name": name, "url": anyutil.String(entry["url"]), "key": peerSecret(ctx, name) != ""}
 		if note, ok := entry["note"].(string); ok && note != "" {
 			row["note"] = note
 		}
@@ -112,7 +112,7 @@ func RoomPeerRegistry(ctx context.Context) ([]any, error) {
 
 // Share rows of one room, or of every room for an empty id
 func RoomShares(ctx context.Context, dbPath, roomID string) ([]any, error) {
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := shareTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) (err error) {
 		rows, err = state.QueryObjects(ctx, conn, `SELECT room_id, peer, pushed_seq, removing, last_error, synced_at
             FROM hosted_room_shares WHERE room_id=? OR ?='' ORDER BY peer`, roomID, roomID)
@@ -128,10 +128,10 @@ func RoomShares(ctx context.Context, dbPath, roomID string) ([]any, error) {
 		if hrInt(row, "removing") != 0 {
 			share["state"] = "removing"
 		}
-		if text := hrStr(row, "last_error"); row.Vals["last_error"] != nil && text != "" {
+		if text := hrStr(row, "last_error"); row.Value("last_error") != nil && text != "" {
 			share["error"] = text
 		}
-		if row.Vals["synced_at"] != nil {
+		if row.Value("synced_at") != nil {
 			share["synced_at"] = hrFloat(row, "synced_at")
 		}
 		out = append(out, share)
@@ -275,7 +275,7 @@ func (c *CanonicalHostedRoomService) runShares(p *roomSharePump) {
 
 // Distinct peers some room is shared with or being unshared from
 func (c *CanonicalHostedRoomService) shareTargets() ([]string, error) {
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := shareTransaction(c.ctx, c.DBPath, false, func(conn state.SQLiteConn) (err error) {
 		rows, err = state.QueryObjects(c.ctx, conn, "SELECT DISTINCT peer FROM hosted_room_shares ORDER BY peer")
 		return err
@@ -329,7 +329,7 @@ func (c *CanonicalHostedRoomService) syncPeerOnce(p *roomSharePump, target strin
 	if err != nil {
 		return false, err
 	}
-	var shares []*pyjson.Object
+	var shares []*jsonutil.Object
 	if err := shareTransaction(c.ctx, c.DBPath, false, func(conn state.SQLiteConn) (err error) {
 		shares, err = state.QueryObjects(c.ctx, conn, "SELECT room_id, pushed_seq, removing FROM hosted_room_shares WHERE peer=? ORDER BY room_id", target)
 		return err
@@ -393,7 +393,7 @@ func (c *CanonicalHostedRoomService) syncPeerOnce(p *roomSharePump, target strin
 		budget -= end - f.offset
 	}
 	p.mu.Unlock()
-	body := pyjson.ObjectOf("home_gateway_id", local, "home_label", roomShareHomeLabel(c.ctx), "rooms", rooms, "removed", removed,
+	body := jsonutil.ObjectOf("home_gateway_id", local, "home_label", roomShareHomeLabel(c.ctx), "rooms", rooms, "removed", removed,
 		"acks", acks, "files", files)
 	answer, err := peerRequest(c.ctx, peer.base+"/v1/rooms/sync", peer.key, peerRequestOptions{method: "POST", body: body, timeout: roomShareTimeout})
 	if err != nil {
@@ -402,7 +402,7 @@ func (c *CanonicalHostedRoomService) syncPeerOnce(p *roomSharePump, target strin
 		p.mu.Unlock()
 		return false, err
 	}
-	reply, _ := pyjson.Plain(answer).(map[string]any)
+	reply, _ := jsonutil.Plain(answer).(map[string]any)
 	p.mu.Lock()
 	for i, f := range sentFrom {
 		f.offset += sentBytes[i]
@@ -519,7 +519,7 @@ func (c *CanonicalHostedRoomService) applyPeerOp(p *roomSharePump, target, peerG
 	if err != nil {
 		return err
 	}
-	data, err := base64.StdEncoding.DecodeString(pyrepr.Str(saved["data_base64"]))
+	data, err := base64.StdEncoding.DecodeString(anyutil.String(saved["data_base64"]))
 	if err != nil {
 		return err
 	}
@@ -562,7 +562,7 @@ func (c *CanonicalHostedRoomService) applyRoomOp(roomID, kind string, params, ac
 
 // Whether a room is shared with the peer and not being unshared
 func (c *CanonicalHostedRoomService) sharedWith(roomID, target string) bool {
-	var row *pyjson.Object
+	var row *jsonutil.Object
 	err := shareTransaction(c.ctx, c.DBPath, false, func(conn state.SQLiteConn) (err error) {
 		row, err = state.QueryRowObject(c.ctx, conn, "SELECT 1 AS hit FROM hosted_room_shares WHERE room_id=? AND peer=? AND removing=0", roomID, target)
 		return err
@@ -580,18 +580,18 @@ func (c *CanonicalHostedRoomService) applySend(roomID string, params, actor map[
 	uploads, _ := params["uploads"].([]any)
 	for _, raw := range uploads {
 		upload, _ := raw.(map[string]any)
-		stored, err := StoreUpload(c.ctx, c.HostedRoomService, roomID, map[string]any{"upload_id": "peer-" + pyrepr.Str(upload["upload_id"]),
+		stored, err := StoreUpload(c.ctx, c.HostedRoomService, roomID, map[string]any{"upload_id": "peer-" + anyutil.String(upload["upload_id"]),
 			"kind": upload["kind"], "name": upload["name"], "mime": upload["mime"], "data_base64": upload["data_base64"]})
 		if err != nil {
 			return err
 		}
-		renamed[pyrepr.Str(upload["attachment_id"])] = pyrepr.Str(stored["attachment_id"])
+		renamed[anyutil.String(upload["attachment_id"])] = anyutil.String(stored["attachment_id"])
 	}
 	if items, ok := payload["attachments"].([]any); ok {
 		mapped := make([]any, 0, len(items))
 		for _, raw := range items {
 			item, _ := raw.(map[string]any)
-			own, known := renamed[pyrepr.Str(item["attachment_id"])]
+			own, known := renamed[anyutil.String(item["attachment_id"])]
 			if !known {
 				return roomRefusal("invalid_params", "an attachment of the message did not arrive")
 			}

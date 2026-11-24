@@ -9,10 +9,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Bounds Slack sets on the long app description, in characters
@@ -23,15 +19,15 @@ const (
 
 // Text of the long description file, read with its newlines kept, or the error text the failure prints
 func readLongDescription(sourceArg string) (string, string) {
-	source, err := pypath.PathExpanduser(sourceArg)
+	source, err := pathutil.ExpandUserPath(sourceArg)
 	if err != nil {
 		return "", err.Error()
 	}
 	raw, err := os.ReadFile(source)
 	if err != nil {
-		return "", pypath.OSErrorText(err)
+		return "", err.Error()
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return "", err.Error()
 	}
@@ -41,17 +37,17 @@ func readLongDescription(sourceArg string) (string, string) {
 // Prints or writes the Slack app manifest JSON, exit code two for an input the manifest refuses
 func ManifestCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) (int, error) {
 	name, description := "Icebath", "Your Icebath agent on Slack"
-	if value := ns["name"]; pyrepr.Truthy(value) {
-		name = pyrepr.Str(value)
+	if value := ns["name"]; anyutil.IsTrue(value) {
+		name = anyutil.String(value)
 	}
-	if value := ns["description"]; pyrepr.Truthy(value) {
-		description = pyrepr.Str(value)
+	if value := ns["description"]; anyutil.IsTrue(value) {
+		description = anyutil.String(value)
 	}
 	var longDescription *string
 	if value, ok := ns["long_description"].(string); ok {
 		longDescription = &value
 	}
-	slashesOnly := pyrepr.Truthy(ns["slashes_only"])
+	slashesOnly := anyutil.IsTrue(ns["slashes_only"])
 	fail := func(msg string) (int, error) {
 		fmt.Fprintf(errw, "icebath slack manifest: %s\n", msg)
 		return 2, nil
@@ -77,9 +73,9 @@ func ManifestCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) 
 		}
 	}
 	messagingExperience := "assistant"
-	if pyrepr.Truthy(ns["agent_view"]) {
+	if anyutil.IsTrue(ns["agent_view"]) {
 		messagingExperience = "agent"
-	} else if pyrepr.Truthy(ns["no_assistant"]) {
+	} else if anyutil.IsTrue(ns["no_assistant"]) {
 		messagingExperience = "none"
 	}
 	var manifest any
@@ -96,7 +92,7 @@ func ManifestCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) 
 		}
 		manifest = full
 	}
-	payload, err := pyjson.Dumps(manifest, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	payload, err := jsonutil.Encode(manifest, jsonutil.Indent(2))
 	if err != nil {
 		return 0, err
 	}
@@ -108,7 +104,7 @@ func ManifestCommand(ctx context.Context, ns map[string]any, w, errw io.Writer) 
 	}
 	target := filepath.Join(home.Dir(ctx), "slack-manifest.json")
 	if bare, isBool := writeTarget.(bool); !isBool || !bare {
-		expanded, err := pypath.PathExpanduser(pyrepr.Str(writeTarget))
+		expanded, err := pathutil.ExpandUserPath(anyutil.String(writeTarget))
 		if err != nil {
 			return 0, err
 		}
@@ -150,6 +146,6 @@ func CmdSlack(ctx context.Context, ns map[string]any, w, errw io.Writer) (int, e
 	if sub == "manifest" {
 		return ManifestCommand(ctx, ns, w, errw)
 	}
-	fmt.Fprintf(errw, "Unknown slack subcommand: %s\n", pyrepr.Str(sub))
+	fmt.Fprintf(errw, "Unknown slack subcommand: %s\n", anyutil.String(sub))
 	return 1, nil
 }

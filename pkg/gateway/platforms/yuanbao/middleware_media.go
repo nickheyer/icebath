@@ -5,18 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -42,8 +43,8 @@ type cachedResource struct {
 // Download cache of the whole process keyed by resource id
 var resourceCache = struct {
 	sync.Mutex
-	entries *pydict.Dict[string, cachedResource]
-}{entries: pydict.New[string, cachedResource]()}
+	entries *orderedutil.Map[string, cachedResource]
+}{entries: orderedutil.NewMap[string, cachedResource]()}
 
 // Cached path and MIME of a resource, the entry dropped once it expired or its file is gone
 func getCachedResource(resourceID string) (string, string, bool) {
@@ -102,11 +103,11 @@ var imageURLExts = map[string]bool{".jpg": true, ".jpeg": true, ".png": true, ".
 
 // Lowercased image extension of the URL path, jpg for any other extension
 func guessImageExtFromURL(rawURL string) (string, error) {
-	parsed, err := pyurl.Parse(rawURL)
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
-	_, ext := pypath.Splitext(parsed.Path)
+	_, ext := pathutil.SplitExt(parsed.Path)
 	if ext = strings.ToLower(ext); imageURLExts[ext] {
 		return ext, nil
 	}
@@ -116,19 +117,19 @@ func guessImageExtFromURL(rawURL string) (string, error) {
 // Auth headers of a resource API request, nil without a token or a bot id
 func resourceAuthHeaders(adapter *YuanbaoAdapter, tokenData map[string]any, fallbackSource string) map[string]string {
 	token := stripOrEmpty(tokenData["token"])
-	botID := strings.TrimSpace(pyrepr.Str(pyrepr.Or(pyrepr.Or(tokenData["bot_id"], adapter.botIDValue()), adapter.appKey)))
+	botID := strings.TrimSpace(anyutil.String(anyutil.Or(anyutil.Or(tokenData["bot_id"], adapter.botIDValue()), adapter.appKey)))
 	if token == "" || botID == "" {
 		return nil
 	}
-	source := strings.TrimSpace(pyrepr.Str(pyrepr.Or(tokenData["source"], fallbackSource)))
+	source := strings.TrimSpace(anyutil.String(anyutil.Or(tokenData["source"], fallbackSource)))
 	if source == "" {
 		source = "web"
 	}
 	return map[string]string{"Content-Type": "application/json", "X-ID": botID, "X-Token": token, "X-Source": source}
 }
 
-// HTTP client of a resource API request, a package var the way tests patch httpx
-var resourceHTTPClient = func() *http.Client { return pyhttpx.PlainClient(true) }
+// HTTP client of a resource API request, a package var so tests can substitute it
+var resourceHTTPClient = func() *http.Client { return httputil.Client(true) }
 
 // Exchanges a resource id for a direct download URL, retrying once with a fresh token after a 401
 func fetchResourceURL(ctx context.Context, adapter *YuanbaoAdapter, resourceID string) (string, error) {
@@ -144,7 +145,7 @@ func fetchResourceURL(ctx context.Context, adapter *YuanbaoAdapter, resourceID s
 	if headers == nil {
 		return "", runtimeError("missing token or bot_id for resource download")
 	}
-	apiURL := pyhttpx.MergeParams(adapter.apiDomain+"/api/resource/v1/download", pyhttpx.Params{{"resourceId", resourceID}})
+	apiURL := httputil.MergeQuery(adapter.apiDomain+"/api/resource/v1/download", url.Values{"resourceId": {resourceID}})
 	client := resourceHTTPClient()
 	defer client.CloseIdleConnections()
 	for attempt := 0; attempt < 2; attempt++ {
@@ -155,7 +156,7 @@ func fetchResourceURL(ctx context.Context, adapter *YuanbaoAdapter, resourceID s
 		for name, value := range headers {
 			req.Header.Set(name, value)
 		}
-		resp, err := pyhttpx.Do(client, req, resourceHTTPTimeout)
+		resp, err := httputil.Do(client, req, httputil.EachPhase(resourceHTTPTimeout))
 		if err != nil {
 			if ctx.Err() != nil {
 				return "", ctx.Err()
@@ -173,7 +174,7 @@ func fetchResourceURL(ctx context.Context, adapter *YuanbaoAdapter, resourceID s
 			continue
 		}
 		if resp.StatusCode < 200 || resp.StatusCode > 299 {
-			return "", fmt.Errorf("%s", pyhttpx.RaiseForStatusMessage(resp.StatusCode, resp.URL, resp.Header.Get("Location")))
+			return "", &httputil.StatusError{StatusCode: resp.StatusCode, URL: resp.URL, Location: resp.Header.Get("Location")}
 		}
 		decoded, err := resp.JSON()
 		if err != nil {
@@ -188,14 +189,14 @@ func fetchResourceURL(ctx context.Context, adapter *YuanbaoAdapter, resourceID s
 			return "", err
 		}
 		if code != nil && !equalsInt(code, 0) {
-			return "", runtimeError(fmt.Sprintf("resource/v1/download failed: code=%s, msg=%s", pyrepr.Str(code),
-				pyrepr.Str(dictGetOr(payload, "msg", ""))))
+			return "", runtimeError(fmt.Sprintf("resource/v1/download failed: code=%s, msg=%s", anyutil.String(code),
+				anyutil.String(dictGetOr(payload, "msg", ""))))
 		}
 		data := payload
 		if inner, isDict := asDict(payload["data"]); isDict {
 			data = inner
 		}
-		if realURL := stripOrEmpty(pyrepr.Or(data["url"], data["realUrl"])); realURL != "" {
+		if realURL := stripOrEmpty(anyutil.Or(data["url"], data["realUrl"])); realURL != "" {
 			return realURL, nil
 		}
 		return "", runtimeError("resource/v1/download missing url/realUrl")
@@ -233,7 +234,7 @@ func downloadAndCache(ctx context.Context, adapter *YuanbaoAdapter, fetchURL, ki
 		if ctx.Err() != nil {
 			return "", "", false, ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] inbound media download failed: kind=%s %s err=%s", name, kind, logTag, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] inbound media download failed: kind=%s %s err=%s", name, kind, logTag, err.Error()))
 		return "", "", false, nil
 	}
 	switch kind {
@@ -246,7 +247,7 @@ func downloadAndCache(ctx context.Context, adapter *YuanbaoAdapter, fetchURL, ki
 			if ctx.Err() != nil || !isValueError(err) {
 				return "", "", false, err
 			}
-			pkgLog().Warn(fmt.Sprintf("[%s] inbound image cache rejected: %s err=%s", name, logTag, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] inbound image cache rejected: %s err=%s", name, logTag, err.Error()))
 			return "", "", false, nil
 		}
 		if mime = GuessMIMEType("image" + ext); !strings.HasPrefix(mime, "image/") {
@@ -262,11 +263,11 @@ func downloadAndCache(ctx context.Context, adapter *YuanbaoAdapter, fetchURL, ki
 		mime = GuessMIMEType(localPath)
 	default:
 		if fileName == "" {
-			parsed, err := pyurl.Parse(fetchURL)
+			parsed, err := url.Parse(fetchURL)
 			if err != nil {
 				return "", "", false, err
 			}
-			if fileName = pypath.Basename(parsed.Path); fileName == "" {
+			if fileName = pathutil.Name(parsed.Path); fileName == "" {
 				fileName = "file"
 			}
 		}
@@ -274,7 +275,7 @@ func downloadAndCache(ctx context.Context, adapter *YuanbaoAdapter, fetchURL, ki
 			if ctx.Err() != nil {
 				return "", "", false, ctx.Err()
 			}
-			pkgLog().Warn(fmt.Sprintf("[%s] inbound file cache failed: %s err=%s", name, logTag, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] inbound file cache failed: %s err=%s", name, logTag, err.Error()))
 			return "", "", false, nil
 		}
 		mime = GuessMIMEType(fileName)
@@ -402,10 +403,10 @@ func resolveMediaURLs(ctx context.Context, adapter *YuanbaoAdapter, mediaRefs []
 			return resolveDownloadURLFn(ctx, adapter, rawURL)
 		},
 		failed: func(kind, rawURL string, err error) string {
-			return fmt.Sprintf("[%s] inbound media resolve failed: kind=%s url=%s err=%s", name, kind, rawURL, errText(err))
+			return fmt.Sprintf("[%s] inbound media resolve failed: kind=%s url=%s err=%s", name, kind, rawURL, err.Error())
 		},
 		crashed: func(kind, rawURL string, err error) string {
-			return fmt.Sprintf("[%s] inbound media resolve crashed: kind=%s url=%s err=%s", name, kind, textutil.First(rawURL, 80), errText(err))
+			return fmt.Sprintf("[%s] inbound media resolve crashed: kind=%s url=%s err=%s", name, kind, textutil.First(rawURL, 80), err.Error())
 		},
 		logTag: func(rawURL string) string { return "placeholder_url=" + textutil.First(rawURL, 80) },
 	}, &mediaURLs, &mediaTypes)
@@ -429,10 +430,10 @@ func resolveYbresRefs(ctx context.Context, adapter *YuanbaoAdapter, refs []ybres
 		scope:  "ybres",
 		getURL: func(ctx context.Context, rid string) (string, error) { return fetchResourceURLFn(ctx, adapter, rid) },
 		failed: func(kind, rid string, err error) string {
-			return fmt.Sprintf("[%s] %s resolve failed: rid=%s kind=%s err=%s", name, logPrefix, rid, kind, errText(err))
+			return fmt.Sprintf("[%s] %s resolve failed: rid=%s kind=%s err=%s", name, logPrefix, rid, kind, err.Error())
 		},
 		crashed: func(kind, rid string, err error) string {
-			return fmt.Sprintf("[%s] %s resolve crashed: rid=%s kind=%s err=%s", name, logPrefix, rid, kind, errText(err))
+			return fmt.Sprintf("[%s] %s resolve crashed: rid=%s kind=%s err=%s", name, logPrefix, rid, kind, err.Error())
 		},
 		logTag: func(rid string) string { return logPrefix + " rid=" + rid },
 	}, &mediaPaths, &mimes)
@@ -456,9 +457,9 @@ func collectObservedMedia(ctx context.Context, adapter *YuanbaoAdapter, source *
 		}
 		var unreadable *gateway.TranscriptReadError
 		if errors.As(err, &unreadable) {
-			pkgLog().Warn(fmt.Sprintf("[%s] Observed-media hydration: transcript unreadable: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Observed-media hydration: transcript unreadable: %s", adapter.Name(), err.Error()))
 		} else {
-			pkgLog().Warn(fmt.Sprintf("[%s] Observed-media hydration setup failed: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Observed-media hydration setup failed: %s", adapter.Name(), err.Error()))
 		}
 		return nil, nil, nil
 	}
@@ -474,7 +475,7 @@ func collectObservedMedia(ctx context.Context, adapter *YuanbaoAdapter, source *
 		if !isStr || !strings.Contains(content, "|ybres:") {
 			continue
 		}
-		matches := findAll(ybResRefRE, content)
+		matches := ybResRefRE().FindAllStringSubmatch(content, -1)
 		for j, k := 0, len(matches)-1; j < k; j, k = j+1, k-1 {
 			matches[j], matches[k] = matches[k], matches[j]
 		}
@@ -509,8 +510,8 @@ func collectQuoteLocalMedia(ic *InboundContext) ([]string, []string) {
 		return paths, mimes
 	}
 	seen := map[string]bool{}
-	for _, m := range findAll(ybLocalMediaRE, ic.Adapter.cachedMsgContent(*ic.ReplyToMessageID)) {
-		path := strings.TrimSpace(m.GroupByNumber(2).String())
+	for _, m := range ybLocalMediaRE().FindAllStringSubmatch(ic.Adapter.cachedMsgContent(*ic.ReplyToMessageID), -1) {
+		path := strings.TrimSpace(m[2])
 		if path == "" || seen[path] {
 			continue
 		}
@@ -519,7 +520,7 @@ func collectQuoteLocalMedia(ic *InboundContext) ([]string, []string) {
 		}
 		seen[path] = true
 		paths = append(paths, path)
-		mimes = append(mimes, GuessMIMEType(pypath.Basename(path)))
+		mimes = append(mimes, GuessMIMEType(pathutil.Name(path)))
 	}
 	return paths, mimes
 }
@@ -564,14 +565,14 @@ func (m *MediaResolveMiddleware) Handle(ctx context.Context, ic *InboundContext,
 		case err != nil && ctx.Err() != nil:
 			return ctx.Err()
 		case err != nil:
-			pkgLog().Warn(fmt.Sprintf("[%s] observed-image hydration raised, continuing anyway: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] observed-image hydration raised, continuing anyway: %s", adapter.Name(), err.Error()))
 		default:
 			addUnique(paths, mimes)
 		}
 	}
 	ic.MediaURLs, ic.MediaTypes = urls, types
 	if isSkippablePlaceholder(ic.RawText, ownCount) {
-		pkgLog().Debug(fmt.Sprintf("[%s] Skip placeholder after media download: %s", adapter.Name(), pyrepr.StrRepr(ic.RawText)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Skip placeholder after media download: %s", adapter.Name(), strconv.Quote(ic.RawText)))
 		return nil
 	}
 	return next()
@@ -592,11 +593,11 @@ func patchAnchors(text string, urls, types []string) string {
 		if !strings.HasPrefix(path, "/") {
 			continue
 		}
-		anchor, err := ybResRefRE.FindStringMatch(patched)
-		if err != nil || anchor == nil {
+		loc := ybResRefRE().FindStringSubmatchIndex(patched)
+		if loc == nil {
 			break
 		}
-		kind, filename := pystrPartition(anchor.GroupByNumber(1).String(), ":")
+		kind, filename, _ := strings.Cut(patched[loc[2]:loc[3]], ":")
 		var replacement string
 		switch kind = strings.TrimSpace(kind); {
 		case kind == "image" && strings.HasPrefix(mime, "image/"):
@@ -604,7 +605,7 @@ func patchAnchors(text string, urls, types []string) string {
 		case kind == "file":
 			label := strings.TrimSpace(filename)
 			if label == "" {
-				label = pypath.Basename(path)
+				label = pathutil.Name(path)
 			}
 			replacement = "[file: " + label + " → " + path + "]"
 		case kind == "video":
@@ -612,8 +613,7 @@ func patchAnchors(text string, urls, types []string) string {
 		default:
 			continue
 		}
-		start, length := anchor.ByteRange()
-		patched = patched[:start] + replacement + patched[start+length:]
+		patched = patched[:loc[0]] + replacement + patched[loc[1]:]
 	}
 	return patched
 }

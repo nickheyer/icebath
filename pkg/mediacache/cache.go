@@ -8,13 +8,14 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Age in hours past which the cleanup sweeps delete cached media
@@ -39,13 +40,10 @@ var SupportedDocumentTypes = map[string]string{
 	".ts":   "text/plain", ".py": "text/plain", ".sh": "text/plain",
 }
 
-// Error the Python cache functions raise as ValueError
+// Error for a media payload or reference the cache refuses
 type ValueError struct{ Msg string }
 
 func (e *ValueError) Error() string { return e.Msg }
-
-// Python exception class name the error stands for
-func (e *ValueError) PyTypeName() string { return "ValueError" }
 
 // Inbound media byte cap of a home's settings
 func InboundMediaMaxBytes(ctx context.Context, h string) int64 {
@@ -92,7 +90,7 @@ func (k cacheKind) cleanup(ctx context.Context, h string, maxAgeHours float64) (
 	if err != nil {
 		return 0, err
 	}
-	return pyfs.UnlinkFilesOlderThan(d, "*", maxAgeHours*3600, nil), nil
+	return fsutil.RemoveOlderThan(d, "*", time.Now().Add(-time.Duration(maxAgeHours*float64(time.Hour)))), nil
 }
 
 // Image cache directory of the home, created on demand
@@ -196,7 +194,7 @@ func CacheImageFromBytes(ctx context.Context, h string, data []byte, ext string)
 			head = head[:80]
 		}
 		snippet := strings.ToValidUTF8(string(head), "\uFFFD")
-		return "", &ValueError{Msg: fmt.Sprintf("Refusing to cache non-image data as %s (starts with: %s)", ext, pyrepr.Repr(snippet))}
+		return "", &ValueError{Msg: fmt.Sprintf("Refusing to cache non-image data as %s (starts with: %s)", ext, anyutil.Quote(snippet))}
 	}
 	dir, err := ImageCacheDir(ctx, h)
 	if err != nil {
@@ -237,23 +235,23 @@ func CacheDocumentFromBytes(ctx context.Context, h string, data []byte, filename
 	}
 	safeName := "document"
 	if filename != "" {
-		safeName = pypath.PathName(filename)
+		safeName = pathutil.Name(filename)
 	}
 	safeName = strings.TrimSpace(strings.ReplaceAll(safeName, "\x00", ""))
 	if safeName == "" || safeName == "." || safeName == ".." {
 		safeName = "document"
 	}
 	path := filepath.Join(dir, "doc_"+uuidHex12()+"_"+safeName)
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return "", err
 	}
-	root, err := pypath.Resolve(dir)
+	root, err := pathutil.Resolve(dir)
 	if err != nil {
 		return "", err
 	}
 	if !isRelativeTo(resolved, root) {
-		return "", &ValueError{Msg: "Path traversal rejected: " + pyrepr.Repr(filename)}
+		return "", &ValueError{Msg: "Path traversal rejected: " + anyutil.Quote(filename)}
 	}
 	if err := os.WriteFile(path, data, 0o666); err != nil {
 		return "", err

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Seconds between SessionStore prunes of stale routing entries
@@ -34,7 +34,7 @@ func (r *GatewayRunner) sessionHousekeepingWatcher(ctx context.Context, interval
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			pkgLog().Debug(fmt.Sprintf("Session housekeeping error: %s", pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Session housekeeping error: %s", err.Error()))
 		}
 		if err := interruptibleSleep(ctx, r, interval); err != nil {
 			return err
@@ -47,7 +47,7 @@ func (r *GatewayRunner) sessionHousekeepingWatcher(ctx context.Context, interval
 func guardedSweep(label string, sweep func()) {
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Debug(fmt.Sprintf("%s: %s", label, pyrepr.Str(rec)))
+			pkgLog().Debug(fmt.Sprintf("%s: %s", label, anyutil.String(rec)))
 		}
 	}()
 	sweep()
@@ -70,7 +70,7 @@ func (r *GatewayRunner) sessionHousekeeping(ctx context.Context) error {
 		if maxAge > 0 {
 			n, err := r.asyncSessionStore.Store().PruneOldEntries(ctx, maxAge)
 			if err != nil {
-				pkgLog().Debug(fmt.Sprintf("SessionStore prune failed: %s", pyrepr.ExceptionMessage(err)))
+				pkgLog().Debug(fmt.Sprintf("SessionStore prune failed: %s", err.Error()))
 			} else if n > 0 {
 				pkgLog().Info(fmt.Sprintf("SessionStore prune: dropped %d stale entries", n))
 			}

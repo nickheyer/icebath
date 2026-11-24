@@ -14,13 +14,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyplist"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	plistutil "github.com/nickheyer/icebath/pkg/utils/plist"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 // RuntimeStartError is a start the service manager refused or failed, with the verdict state it reports
@@ -35,12 +36,12 @@ func runtimeStartError(reason string) *RuntimeStartError {
 	return &RuntimeStartError{Reason: reason, State: "inaccessible"}
 }
 
-// ErrRuntimeDeadline is the ensure deadline passing, an OS level timeout like Python's TimeoutError
+// ErrRuntimeDeadline is the ensure deadline passing, a timeout runtimeOSError counts as an operating system failure
 var ErrRuntimeDeadline = errors.New("ensure deadline passed")
 
 // Seconds left before a monotonic deadline, the deadline error once none remain
 func runtimeRemaining(deadline float64) (float64, error) {
-	budget := deadline - pythread.Monotonic()
+	budget := deadline - timeutil.Monotonic()
 	if budget <= 0 {
 		return 0, ErrRuntimeDeadline
 	}
@@ -49,22 +50,22 @@ func runtimeRemaining(deadline float64) (float64, error) {
 
 // Whether err is an OS level failure, the ensure deadline included
 func runtimeOSError(err error) bool {
-	return errors.Is(err, ErrRuntimeDeadline) || pypath.IsOSError(err)
+	return errors.Is(err, ErrRuntimeDeadline) || errorutil.IsSystem(err)
 }
 
 // Whether err is a subprocess timeout
 func subprocessTimedOut(err error) bool {
-	var expired *pysubprocess.TimeoutExpired
+	var expired *executil.TimeoutError
 	return errors.As(err, &expired)
 }
 
 // Host service suffix of the requested home, empty for the native default and a path hash for a foreign root
 func ServiceSuffix(ctx context.Context, h string) (string, error) {
-	def, err := pypath.Resolve(home.AccountDefault(ctx))
+	def, err := pathutil.Resolve(home.AccountDefault(ctx))
 	if err != nil {
 		return "", err
 	}
-	resolved, err := pypath.Resolve(h)
+	resolved, err := pathutil.Resolve(h)
 	if err != nil {
 		return "", err
 	}
@@ -103,12 +104,12 @@ type ExistingService struct {
 }
 
 // Runs argv with no stdin under the remaining budget, stdout decoded as strict UTF-8 when text is set
-func runServiceProbe(ctx context.Context, argv []string, deadline float64, text bool) (*pysubprocess.Completed, string, error) {
+func runServiceProbe(ctx context.Context, argv []string, deadline float64, text bool) (*executil.Completed, string, error) {
 	budget, err := runtimeRemaining(deadline)
 	if err != nil {
 		return nil, "", err
 	}
-	res, err := serviceProbeRun(ctx, argv, pysubprocess.Options{Env: UserSystemdEnv(), Timeout: time.Duration(budget * float64(time.Second)),
+	res, err := serviceProbeRun(ctx, argv, executil.Options{Env: UserSystemdEnv(), Timeout: time.Duration(budget * float64(time.Second)),
 		Attr: hiddenServiceProbeAttr()})
 	if err != nil {
 		return nil, "", err
@@ -138,7 +139,7 @@ func verifyServiceBinding(err error, reasons ...string) error {
 		}
 	}
 	var identity *ServiceIdentityError
-	var plistErr *pyplist.Error
+	var plistErr *plistutil.Error
 	var value serviceValueError
 	if errors.As(err, &identity) || errors.As(err, &plistErr) || errors.As(err, &value) {
 		return runtimeStartError("service_identity_unverified")
@@ -159,7 +160,7 @@ func serviceLexists(path string) (bool, error) {
 
 // Swappable host facts of the service probes, the runner, systemctl argv and the account home
 var (
-	serviceProbeRun     = pysubprocess.RunWith
+	serviceProbeRun     = executil.Run
 	runtimeSystemctlCmd = SystemctlCmd
 	runtimeAccountHome  = os.UserHomeDir
 	runtimeUID          = os.Getuid
@@ -221,10 +222,10 @@ func systemdExistingService(ctx context.Context, h string, deadline float64) (*E
 		if err != nil {
 			return nil, err
 		}
-		if !scoped && (res.Returncode != 0 || props["LoadState"] == "not-found") {
+		if !scoped && (res.ExitCode != 0 || props["LoadState"] == "not-found") {
 			continue
 		}
-		if res.Returncode != 0 || props["LoadState"] != "loaded" {
+		if res.ExitCode != 0 || props["LoadState"] != "loaded" {
 			return nil, runtimeStartError("service_manager_unavailable")
 		}
 		if state := props["UnitFileState"]; state == "masked" || state == "masked-runtime" {
@@ -244,7 +245,7 @@ func systemdExistingService(ctx context.Context, h string, deadline float64) (*E
 		if err != nil {
 			return nil, err
 		}
-		if envRes.Returncode != 0 {
+		if envRes.ExitCode != 0 {
 			return nil, runtimeStartError("service_identity_unverified")
 		}
 		if err := VerifySystemd(props, envOut, h, system); err != nil {
@@ -280,7 +281,7 @@ func s6ExistingService(ctx context.Context, h string, deadline float64) (*Existi
 	if err != nil {
 		return nil, runtimeStartError("service_identity_unverified")
 	}
-	text, err := pycodecs.Decode(raw, "utf-8-sig")
+	text, err := charsetutil.Decode(raw, "utf-8-sig")
 	if err != nil {
 		return nil, runtimeStartError("service_identity_unverified")
 	}
@@ -288,11 +289,11 @@ func s6ExistingService(ctx context.Context, h string, deadline float64) (*Existi
 	if containerHome == "" {
 		return nil, runtimeStartError("service_identity_unverified")
 	}
-	root, err := pypath.Resolve(containerHome)
+	root, err := pathutil.Resolve(containerHome)
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := pypath.Resolve(h)
+	resolved, err := pathutil.Resolve(h)
 	if err != nil {
 		return nil, err
 	}
@@ -334,11 +335,11 @@ func launchdExistingService(ctx context.Context, h string, deadline float64) (*E
 		label += "-" + suffix
 	}
 	uid := runtimeUID()
-	account, err := pypwd.Getpwuid(uid)
+	account, err := userutil.LookupID(uid)
 	if err != nil {
 		return nil, err
 	}
-	plist := filepath.Join(account.Dir, "Library/LaunchAgents", label+".plist")
+	plist := filepath.Join(account.Home, "Library/LaunchAgents", label+".plist")
 	installed, err := serviceLexists(plist)
 	if err != nil {
 		return nil, err
@@ -351,12 +352,12 @@ func launchdExistingService(ctx context.Context, h string, deadline float64) (*E
 		if err != nil {
 			return nil, err
 		}
-		if res.Returncode == 0 {
+		if res.ExitCode == 0 {
 			loaded = append(loaded, stdout)
 			found = append(found, ExistingService{Backend: "launchd", StartArgv: []string{"launchctl", "kickstart", domain + "/" + label}, Running: strings.Contains(stdout, "state = running")})
 			continue
 		}
-		if res.Returncode != 113 {
+		if res.ExitCode != 113 {
 			return nil, runtimeStartError("service_manager_unavailable")
 		}
 	}
@@ -374,7 +375,7 @@ func launchdExistingService(ctx context.Context, h string, deadline float64) (*E
 		if err != nil {
 			return nil, err
 		}
-		decoded, err := pyplist.Load(raw)
+		decoded, err := plistutil.Decode(raw)
 		if err != nil {
 			return nil, verifyServiceBinding(err)
 		}
@@ -459,7 +460,7 @@ func StartExistingGatewayService(ctx context.Context, service *ExistingService, 
 		}
 		return err
 	}
-	if res.Returncode != 0 {
+	if res.ExitCode != 0 {
 		return runtimeStartError("service_start_failed")
 	}
 	return nil

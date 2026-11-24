@@ -13,10 +13,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -29,7 +30,7 @@ const (
 func reviewDeferMode(taskCfg map[string]any) string {
 	raw := "auto"
 	if v, ok := taskCfg["defer"]; ok {
-		raw = pyrepr.Str(v)
+		raw = anyutil.String(v)
 	}
 	raw = strings.ToLower(strings.TrimSpace(raw))
 	if raw == "auto" || raw == "never" {
@@ -116,7 +117,7 @@ type reviewWake interface {
 }
 
 // Event backed wake that waits without a timeout
-type eventWake struct{ ev pythread.Event }
+type eventWake struct{ ev syncutil.Event }
 
 func (w *eventWake) Wait()  { w.ev.Wait(-1) }
 func (w *eventWake) Set()   { w.ev.Set() }
@@ -138,7 +139,7 @@ type reviewIdleQueue struct {
 
 // Empty queue on the monotonic clock probing the managed server for idleness
 func newReviewIdleQueue() *reviewIdleQueue {
-	q := &reviewIdleQueue{pending: map[string]*pendingReview{}, wake: &eventWake{}, now: pythread.Monotonic, serverIdle: managedServerIdle}
+	q := &reviewIdleQueue{pending: map[string]*pendingReview{}, wake: &eventWake{}, now: timeutil.Monotonic, serverIdle: managedServerIdle}
 	q.ensureThread = q.startDispatcher
 	return q
 }
@@ -371,7 +372,7 @@ func managedServerIdle() (idle bool) {
 	}
 	baseURL := ""
 	if v, ok := doc["base_url"]; ok {
-		baseURL = pyrepr.Str(v)
+		baseURL = anyutil.String(v)
 	}
 	base := baseURL
 	if i := strings.LastIndex(baseURL, "/v1"); i >= 0 {
@@ -379,7 +380,7 @@ func managedServerIdle() (idle bool) {
 	}
 	apiKey := ""
 	if v, ok := doc["api_key"]; ok {
-		apiKey = pyrepr.Str(v)
+		apiKey = anyutil.String(v)
 	}
 	if base == "" {
 		return true

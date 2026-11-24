@@ -5,16 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Config paths an update must never change, a one element path protecting a whole section
@@ -39,22 +40,22 @@ func isTrustedRootAuthAlias(path, h string) bool {
 	if st, err := os.Lstat(path); err != nil || st.Mode()&os.ModeSymlink == 0 {
 		return false
 	}
-	root, err := pypath.Resolve(home.RootOf(h))
+	root, err := pathutil.Resolve(home.RootOf(h))
 	if err != nil {
 		return false
 	}
-	resolvedHome, err := pypath.Resolve(h)
+	resolvedHome, err := pathutil.Resolve(h)
 	if err != nil || resolvedHome == root {
 		return false
 	}
-	trusted, err := pypath.Resolve(pypath.PathJoin(root, "auth.json"))
+	trusted, err := pathutil.Resolve(pathutil.Join(root, "auth.json"))
 	if err != nil {
 		return false
 	}
-	if _, under := pypath.PathRelativeTo(trusted, root); !under {
+	if _, under := pathutil.RelativeTo(trusted, root); !under {
 		return false
 	}
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	return err == nil && resolved == trusted
 }
 
@@ -97,19 +98,19 @@ func snapshotEpochsRestorable(ctx context.Context, files []string, entryPaths en
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-		isState := pypath.PathName(dst) == "state.db"
+		isState := pathutil.Name(dst) == "state.db"
 		if !isState {
-			resolved, err := pypath.Resolve(dst)
+			resolved, err := pathutil.Resolve(dst)
 			if err != nil {
 				return false, err
 			}
-			isState = pypath.PathName(resolved) == "state.db"
+			isState = pathutil.Name(resolved) == "state.db"
 		}
 		if !isState {
 			continue
 		}
 		if _, err := restoreDestinationEpoch(ctx, dst); err != nil {
-			if isOSError(err) {
+			if isRestoreFailure(err) {
 				pkgLog().Error(excText(err))
 				return false, nil
 			}
@@ -123,7 +124,7 @@ func snapshotEpochsRestorable(ctx context.Context, files []string, entryPaths en
 func restoreSnapshotEntry(ctx context.Context, rel, src, dst string) (bool, error) {
 	err := func() error {
 		switch {
-		case pypath.PathSuffix(dst) == ".db":
+		case pathutil.Suffix(dst) == ".db":
 			ok, err := safeRestoreDB(ctx, src, dst)
 			if err != nil {
 				return err
@@ -138,11 +139,11 @@ func restoreSnapshotEntry(ctx context.Context, rel, src, dst string) (bool, erro
 				return errEntryRefused
 			}
 		default:
-			if err := pyfs.Copy2(src, dst); err != nil {
+			if err := fsutil.CopyFile(src, dst); err != nil {
 				return err
 			}
 			// The copy carries the mode the snapshot was taken with, and the secrets file is owner only as an import leaves it
-			switch pypath.PathName(dst) {
+			switch pathutil.Name(dst) {
 			case "config.yaml":
 				config.DropOtherAccess(ctx, dst)
 			case ".env":
@@ -155,7 +156,7 @@ func restoreSnapshotEntry(ctx context.Context, rel, src, dst string) (bool, erro
 		return false, nil
 	}
 	if err != nil {
-		if isOSError(err) {
+		if isRestoreFailure(err) {
 			pkgLog().Error(fmt.Sprintf("Failed to restore %s: %s", rel, excText(err)))
 			return false, nil
 		}
@@ -169,23 +170,23 @@ var errEntryRefused = errors.New("snapshot entry refused")
 
 // Manifest file names in listing order, the keys of a mapping or the items of a list
 func manifestFiles(meta any) ([]string, error) {
-	obj, ok := meta.(*pyjson.Object)
+	obj, ok := meta.(*jsonutil.Object)
 	if !ok {
-		return nil, &pyValueError{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(meta))}
+		return nil, fmt.Errorf("snapshot manifest is %s, not an object", anyutil.Kind(meta))
 	}
 	files, ok := obj.Get("files")
 	if !ok {
 		return nil, nil
 	}
 	switch t := files.(type) {
-	case *pyjson.Object:
-		return append([]string(nil), t.Keys...), nil
+	case *jsonutil.Object:
+		return append([]string(nil), t.Keys()...), nil
 	case []any:
 		out := make([]string, 0, len(t))
 		for _, item := range t {
 			s, ok := item.(string)
 			if !ok {
-				return nil, &pyValueError{"TypeError", fmt.Sprintf("unsupported operand type(s) for /: 'PosixPath' and '%s'", pyrepr.TypeName(item))}
+				return nil, fmt.Errorf("snapshot manifest lists a file name that is %s, not a string", anyutil.Kind(item))
 			}
 			out = append(out, s)
 		}
@@ -197,7 +198,7 @@ func manifestFiles(meta any) ([]string, error) {
 		}
 		return out, nil
 	}
-	return nil, &pyValueError{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(files))}
+	return nil, fmt.Errorf("snapshot manifest files are %s, not a list, an object or a string", anyutil.Kind(files))
 }
 
 // Restores a quick snapshot while the home is reserved, every state.db epoch proven before any file changes
@@ -206,15 +207,15 @@ func restoreQuickSnapshotExclusive(ctx context.Context, snapshotID, h string) (b
 	if err != nil || snapDir == "" {
 		return false, err
 	}
-	raw, err := os.ReadFile(pypath.PathJoin(snapDir, "manifest.json"))
+	raw, err := os.ReadFile(pathutil.Join(snapDir, "manifest.json"))
 	if err != nil {
 		return false, err
 	}
-	text, err := pycodecs.Decode(raw, "utf-8-sig")
+	text, err := charsetutil.Decode(raw, "utf-8-sig")
 	if err != nil {
 		return false, err
 	}
-	meta, err := pyjson.Loads(text)
+	meta, err := jsonutil.Decode(text)
 	if err != nil {
 		return false, err
 	}
@@ -222,27 +223,27 @@ func restoreQuickSnapshotExclusive(ctx context.Context, snapshotID, h string) (b
 	if err != nil {
 		return false, err
 	}
-	snapRes, err := pypath.Resolve(snapDir)
+	snapRes, err := pathutil.Resolve(snapDir)
 	if err != nil {
 		return false, err
 	}
-	homeRes, err := pypath.Resolve(h)
+	homeRes, err := pathutil.Resolve(h)
 	if err != nil {
 		return false, err
 	}
 	entryPaths := func(rel string) (string, string, bool, error) {
-		src, dst := pypath.PathJoin(snapDir, rel), pypath.PathJoin(h, rel)
-		resolved, err := pypath.Resolve(src)
+		src, dst := pathutil.Join(snapDir, rel), pathutil.Join(h, rel)
+		resolved, err := pathutil.Resolve(src)
 		if err != nil {
 			return "", "", false, err
 		}
-		if _, under := pypath.PathRelativeTo(resolved, snapRes); !under {
+		if _, under := pathutil.RelativeTo(resolved, snapRes); !under {
 			return "", "", false, nil
 		}
-		if resolved, err = pypath.Resolve(dst); err != nil {
+		if resolved, err = pathutil.Resolve(dst); err != nil {
 			return "", "", false, err
 		}
-		if _, under := pypath.PathRelativeTo(resolved, homeRes); !under {
+		if _, under := pathutil.RelativeTo(resolved, homeRes); !under {
 			if rel != "auth.json" || !isTrustedRootAuthAlias(dst, h) {
 				return "", "", false, nil
 			}
@@ -256,17 +257,17 @@ func restoreQuickSnapshotExclusive(ctx context.Context, snapshotID, h string) (b
 		if err != nil {
 			return false, err
 		}
-		if ok && pypath.PathSuffix(dst) == ".db" {
+		if ok && pathutil.Suffix(dst) == ".db" {
 			abs, err := pathAbsolute(dst)
 			if err != nil {
 				return false, err
 			}
-			resolved, err := pypath.Resolve(dst)
+			resolved, err := pathutil.Resolve(dst)
 			if err != nil {
 				return false, err
 			}
-			homes = addHome(homes, seen, pypath.PathParent(abs))
-			homes = addHome(homes, seen, pypath.PathParent(resolved))
+			homes = addHome(homes, seen, filepath.Dir(filepath.Clean(abs)))
+			homes = addHome(homes, seen, filepath.Dir(filepath.Clean(resolved)))
 		}
 	}
 	inner, release, err := gateway.ExclusiveMaintenance(ctx, homes, "")
@@ -294,12 +295,12 @@ func restoreQuickSnapshotExclusive(ctx context.Context, snapshotID, h string) (b
 			}
 			if _, err := os.Stat(src); err != nil {
 				if rel == "auth.json" {
-					pkgLog().Error("Snapshot auth.json listed in manifest is missing: " + pypath.PathStr(src))
+					pkgLog().Error("Snapshot auth.json listed in manifest is missing: " + filepath.Clean(src))
 					authFailed = true
 				}
 				continue
 			}
-			if err := home.PathMkdir(pypath.PathParent(dst), 0o777, true, true); err != nil {
+			if err := home.PathMkdir(filepath.Dir(filepath.Clean(dst)), 0o777, true, true); err != nil {
 				return 0, false, false, err
 			}
 			done, err := restoreSnapshotEntry(inner, rel, src, dst)
@@ -322,17 +323,17 @@ func restoreQuickSnapshotExclusive(ctx context.Context, snapshotID, h string) (b
 }
 
 // Restores cron/jobs.json from the pre-update snapshot when the live file lost jobs, nil when nothing was done
-func RestoreCronJobsIfEmptied(snapshotID, h string) (*pyjson.Object, error) {
+func RestoreCronJobsIfEmptied(snapshotID, h string) (*jsonutil.Object, error) {
 	if snapshotID == "" {
 		return nil, nil
 	}
 	h = restoreHome(context.Background(), h)
-	livePath := pypath.PathJoin(h, cronJobsRel)
+	livePath := pathutil.Join(h, cronJobsRel)
 	liveCount, err := countCronJobs(livePath)
 	if err != nil || liveCount == nil {
 		return nil, err
 	}
-	snapPath := pypath.PathJoin(QuickSnapshotRoot(h), snapshotID, cronJobsRel)
+	snapPath := pathutil.Join(QuickSnapshotRoot(h), snapshotID, cronJobsRel)
 	snapCount, err := countCronJobs(snapPath)
 	if err != nil || snapCount == nil || *snapCount == 0 {
 		return nil, err
@@ -340,12 +341,12 @@ func RestoreCronJobsIfEmptied(snapshotID, h string) (*pyjson.Object, error) {
 	if *liveCount >= *snapCount {
 		return nil, nil
 	}
-	err = home.PathMkdir(pypath.PathParent(livePath), 0o777, true, true)
+	err = home.PathMkdir(filepath.Dir(filepath.Clean(livePath)), 0o777, true, true)
 	if err == nil {
-		err = pyfs.Copy2(snapPath, livePath)
+		err = fsutil.CopyFile(snapPath, livePath)
 	}
 	if err != nil {
-		if isOSError(err) {
+		if isRestoreFailure(err) {
 			pkgLog().Error("Cron jobs were emptied during update but auto-restore failed: " + excText(err))
 			return nil, nil
 		}
@@ -354,7 +355,7 @@ func RestoreCronJobsIfEmptied(snapshotID, h string) (*pyjson.Object, error) {
 	pkgLog().Warn(fmt.Sprintf("Restored %d cron job(s) from pre-update snapshot %s "+
 		"(live file had %d job(s), snapshot had %d — jobs were lost during migration)",
 		*snapCount, snapshotID, *liveCount, *snapCount))
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("restored", true)
 	result.Set("job_count", int64(*snapCount))
 	result.Set("snapshot_id", snapshotID)
@@ -370,7 +371,7 @@ func readRawYAMLDict(path string) map[string]any {
 	if err != nil {
 		return nil
 	}
-	text, err := pycodecs.Decode(raw, "utf-8-sig")
+	text, err := charsetutil.Decode(raw, "utf-8-sig")
 	if err != nil {
 		return nil
 	}
@@ -401,7 +402,7 @@ func unsetConfigValue(v any) bool {
 var supportsFileTooling = config.SupportsFileTooling
 
 // Restores the protected model and MoA keys an update rewrote, nil when nothing was done
-func RestoreConfigModelSettingsIfRewritten(ctx context.Context, snapshotID, h string) (*pyjson.Object, error) {
+func RestoreConfigModelSettingsIfRewritten(ctx context.Context, snapshotID, h string) (*jsonutil.Object, error) {
 	if snapshotID == "" {
 		return nil, nil
 	}
@@ -410,8 +411,8 @@ func RestoreConfigModelSettingsIfRewritten(ctx context.Context, snapshotID, h st
 		return nil, err
 	}
 	h = restoreHome(ctx, h)
-	livePath := pypath.PathJoin(h, "config.yaml")
-	snap := readRawYAMLDict(pypath.PathJoin(QuickSnapshotRoot(h), snapshotID, "config.yaml"))
+	livePath := pathutil.Join(h, "config.yaml")
+	snap := readRawYAMLDict(pathutil.Join(QuickSnapshotRoot(h), snapshotID, "config.yaml"))
 	if len(snap) == 0 {
 		return nil, nil
 	}
@@ -425,7 +426,7 @@ func RestoreConfigModelSettingsIfRewritten(ctx context.Context, snapshotID, h st
 		if unsetConfigValue(snapVal) {
 			continue
 		}
-		if pyrepr.Equal(getConfigPathValue(live, dotted), snapVal) {
+		if anyutil.Equal(getConfigPathValue(live, dotted), snapVal) {
 			continue
 		}
 		setConfigPathValue(live, dotted, snapVal)
@@ -435,7 +436,7 @@ func RestoreConfigModelSettingsIfRewritten(ctx context.Context, snapshotID, h st
 		return nil, nil
 	}
 	if err := config.AtomicConfigWrite(ctx, h, livePath, live, ""); err != nil {
-		if isOSError(err) {
+		if isRestoreFailure(err) {
 			pkgLog().Error("config.yaml model settings were rewritten during update but auto-restore failed: " + excText(err))
 			return nil, nil
 		}
@@ -447,7 +448,7 @@ func RestoreConfigModelSettingsIfRewritten(ctx context.Context, snapshotID, h st
 	for i, k := range restoredKeys {
 		keys[i] = k
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("restored", true)
 	result.Set("keys", keys)
 	result.Set("snapshot_id", snapshotID)
@@ -455,8 +456,8 @@ func RestoreConfigModelSettingsIfRewritten(ctx context.Context, snapshotID, h st
 }
 
 // Runs a per profile safety net over every sibling profile against its own snapshot, failures logged and skipped
-func restoreAllProfiles(ctx context.Context, profileSnapshots *pyjson.Object, invokingHome, what string, restore func(snapID, h string) (*pyjson.Object, error)) []*pyjson.Object {
-	restored := []*pyjson.Object{}
+func restoreAllProfiles(ctx context.Context, profileSnapshots *jsonutil.Object, invokingHome, what string, restore func(snapID, h string) (*jsonutil.Object, error)) []*jsonutil.Object {
+	restored := []*jsonutil.Object{}
 	if profileSnapshots == nil || profileSnapshots.Len() == 0 {
 		return restored
 	}
@@ -465,7 +466,7 @@ func restoreAllProfiles(ctx context.Context, profileSnapshots *pyjson.Object, in
 	for _, pair := range SiblingProfileHomes(invokingHome) {
 		byName[pair[0]] = pair[1]
 	}
-	for _, name := range profileSnapshots.Keys {
+	for _, name := range profileSnapshots.Keys() {
 		profileHome, ok := byName[name]
 		if !ok {
 			continue
@@ -486,13 +487,13 @@ func restoreAllProfiles(ctx context.Context, profileSnapshots *pyjson.Object, in
 }
 
 // Config model settings safety net of every sibling profile, one result per restored profile
-func RestoreConfigModelSettingsAllProfiles(ctx context.Context, profileSnapshots *pyjson.Object, invokingHome string) []*pyjson.Object {
-	return restoreAllProfiles(ctx, profileSnapshots, invokingHome, "Config model-settings restore check", func(snapID, h string) (*pyjson.Object, error) {
+func RestoreConfigModelSettingsAllProfiles(ctx context.Context, profileSnapshots *jsonutil.Object, invokingHome string) []*jsonutil.Object {
+	return restoreAllProfiles(ctx, profileSnapshots, invokingHome, "Config model-settings restore check", func(snapID, h string) (*jsonutil.Object, error) {
 		return RestoreConfigModelSettingsIfRewritten(ctx, snapID, h)
 	})
 }
 
 // Cron jobs safety net of every sibling profile, one result per restored profile
-func RestoreCronJobsAllProfiles(profileSnapshots *pyjson.Object, invokingHome string) []*pyjson.Object {
+func RestoreCronJobsAllProfiles(profileSnapshots *jsonutil.Object, invokingHome string) []*jsonutil.Object {
 	return restoreAllProfiles(context.Background(), profileSnapshots, invokingHome, "Cron restore check", RestoreCronJobsIfEmptied)
 }

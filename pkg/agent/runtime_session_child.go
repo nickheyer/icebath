@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Owner refusal reasons of a child reservation as the delegate_task tool error reads them
@@ -76,17 +76,17 @@ func ReserveChildStore(ctx context.Context, parent *RuntimeSessionStore) (*Child
 	var result any
 	if err := CallOffEventLoop(ctx, func(ctx context.Context) error {
 		var err error
-		result, err = parent.apply(ctx, "child.reserve", pyjson.ObjectOf("secret", secret))
+		result, err = parent.apply(ctx, "child.reserve", jsonutil.ObjectOf("secret", secret))
 		return err
 	}); err != nil {
 		return nil, err
 	}
-	obj, ok := result.(*pyjson.Object)
+	obj, ok := result.(*jsonutil.Object)
 	if !ok {
 		return nil, &workerStoreError{"TypeError", "child store reservation returned " + errchain.Kind(result) + " where a mapping was expected"}
 	}
 	if refused, has := obj.Get("refused"); has {
-		reason := pyrepr.Str(refused)
+		reason := anyutil.String(refused)
 		message, known := childRefusals[reason]
 		if !known {
 			message = "the gateway owner refused a subagent: " + reason
@@ -97,16 +97,16 @@ func ReserveChildStore(ctx context.Context, parent *RuntimeSessionStore) (*Child
 	if err != nil {
 		return nil, err
 	}
-	child, ok := childRaw.(*pyjson.Object)
+	child, ok := childRaw.(*jsonutil.Object)
 	if !ok {
 		return nil, &workerStoreError{"TypeError", "child store receipt is " + errchain.Kind(childRaw) + " where a mapping was expected"}
 	}
 	scope := parent.Scope()
-	for _, k := range child.Keys {
-		scope.Set(k, child.Vals[k])
+	for _, k := range child.Keys() {
+		scope.Set(k, child.Value(k))
 	}
 	scope.Set("secret", secret)
-	executionID, err := receiptText(child.GetOr("execution_id", nil))
+	executionID, err := receiptText(child.ValueOr("execution_id", nil))
 	if err != nil {
 		return nil, err
 	}
@@ -115,7 +115,7 @@ func ReserveChildStore(ctx context.Context, parent *RuntimeSessionStore) (*Child
 		tail = executionID[i+1:]
 	}
 	outbox := filepath.Join(parent.OutboxDir(), "child-"+tail)
-	offLoop := func(ctx context.Context, method string, params *pyjson.Object) (any, error) {
+	offLoop := func(ctx context.Context, method string, params *jsonutil.Object) (any, error) {
 		var out any
 		err := CallOffEventLoop(ctx, func(ctx context.Context) error {
 			var err error

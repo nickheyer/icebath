@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"log/slog"
 	"os"
+	"path"
+	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
@@ -15,6 +17,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Detail of a 404 for a path that likely names a file inside the agent sandbox
@@ -45,25 +49,25 @@ var (
 
 // Absolute resolved candidate of a raw path, relative paths joined to cwd or the process cwd
 func resolveFsCandidate(raw string, cwd *string) (string, error) {
-	candidate, err := pypath.PathExpanduser(raw)
+	candidate, err := pathutil.ExpandUserPath(raw)
 	if err != nil {
 		return "", err
 	}
-	if !pypath.IsAbs(candidate) {
+	if !filepath.IsAbs(candidate) {
 		var base string
 		if cwd != nil {
-			if base, err = pypath.PathExpanduser(*cwd); err != nil {
+			if base, err = pathutil.ExpandUserPath(*cwd); err != nil {
 				return "", err
 			}
 		} else if base, err = os.Getwd(); err != nil {
 			return "", err
 		}
-		if !pypath.IsAbs(base) {
+		if !filepath.IsAbs(base) {
 			return "", &HTTPError{400, "Session working directory is unavailable"}
 		}
-		candidate = pypath.PathJoin(base, candidate)
+		candidate = pathutil.Join(base, candidate)
 	}
-	return pypath.Resolve(candidate)
+	return pathutil.Resolve(candidate)
 }
 
 // Count of dot segments in a path split on the host separators
@@ -114,12 +118,12 @@ func fileURLPath(url string) (string, error) {
 		}
 		uriPath = "//" + host + uriPath
 	}
-	return pyurl.URL2Pathname(uriPath, false, false)
+	return urlutil.FilePath("file:" + uriPath)
 }
 
 // Whether a candidate exists, the errors pathlib does not swallow returned
 func candidateExists(p string) (bool, error) {
-	fi, err := pypath.PathlibStat(p)
+	fi, err := pathutil.StatIfExists(p)
 	return fi != nil, err
 }
 
@@ -194,7 +198,7 @@ func agentPathScope(ctx context.Context, profileHome string) context.Context {
 
 // Resolved path, the raw path when resolution fails
 func resolvedOrRaw(p string) string {
-	if resolved, err := pypath.Resolve(p); err == nil {
+	if resolved, err := pathutil.Resolve(p); err == nil {
 		return resolved
 	}
 	return p
@@ -227,7 +231,7 @@ func IsUnmappedContainerPath(ctx context.Context, raw, profileHome string) (unma
 	}
 	roots := []string{"/workspace", "/root"}
 	for _, mount := range mounts {
-		roots = append(roots, pypath.PathAsPosix(mount[1]))
+		roots = append(roots, filepath.ToSlash(filepath.Clean(mount[1])))
 	}
 	for _, root := range roots {
 		if raw == root || strings.HasPrefix(raw, strings.TrimRight(root, "/")+"/") {
@@ -249,7 +253,7 @@ func IsSensitiveFilename(name string) bool {
 		return true
 	}
 	for _, store := range profiles.SecretCacheStores() {
-		if lowered == pypath.PosixBasename(store) {
+		if lowered == path.Base(store) {
 			return true
 		}
 	}
@@ -258,10 +262,10 @@ func IsSensitiveFilename(name string) bool {
 
 // Whether the basename is sensitive or any component is a credential directory
 func IsSensitivePath(p string) bool {
-	if IsSensitiveFilename(pypath.PathName(p)) {
+	if IsSensitiveFilename(pathutil.Name(p)) {
 		return true
 	}
-	anchor, parts := pypath.PathParts(p)
+	anchor, parts := pathutil.Parts(p)
 	for _, part := range append([]string{anchor}, parts...) {
 		if sensitiveDirNames[strings.ToLower(part)] {
 			return true
@@ -272,7 +276,7 @@ func IsSensitivePath(p string) bool {
 
 // 404 detail telling an untranslated sandbox path apart from a plain missing file
 func fsSandboxNotFoundDetail(ctx context.Context, p, profileHome string) string {
-	if IsUnmappedContainerPath(ctx, pypath.PathAsPosix(p), profileHome) {
+	if IsUnmappedContainerPath(ctx, filepath.ToSlash(filepath.Clean(p)), profileHome) {
 		return SandboxNotFound
 	}
 	return "File not found"
@@ -280,7 +284,7 @@ func fsSandboxNotFoundDetail(ctx context.Context, p, profileHome string) string 
 
 // Resolved regular readable non sensitive file a path names with its stat, else the HTTP error
 func FsRegularFile(ctx context.Context, p, profileHome string) (string, fs.FileInfo, *HTTPError) {
-	target, herr := FsPath(pypath.PathStr(p), nil, false)
+	target, herr := FsPath(filepath.Clean(p), nil, false)
 	if herr != nil {
 		return "", nil, herr
 	}
@@ -292,7 +296,7 @@ func FsRegularFile(ctx context.Context, p, profileHome string) (string, fs.FileI
 		case "PermissionError":
 			return "", nil, &HTTPError{403, "File is not readable"}
 		}
-		detail := pypath.OSErrorText(err)
+		detail := err.Error()
 		if detail == "" {
 			detail = "Invalid path"
 		}

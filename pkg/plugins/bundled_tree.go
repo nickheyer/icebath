@@ -7,9 +7,10 @@ import (
 	"path"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/plugintree"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Bundled plugins tree a reader walks, the ICEBATH_BUNDLED_PLUGINS directory when set, else the copy compiled in
@@ -59,7 +60,7 @@ func readCompiledManifestInfo(tree fs.FS, d, prefix string) (string, any, any, s
 func scanCompiledLevel(tree fs.FS, base string, skip map[string]bool, prefix string, depth int, seen *entrySet) {
 	children, err := fs.ReadDir(tree, base)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", base, pyErrorText(err)))
+		pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", base, errchain.OSText(err)))
 		return
 	}
 	for _, child := range children {
@@ -69,7 +70,7 @@ func scanCompiledLevel(tree fs.FS, base string, skip map[string]bool, prefix str
 		}
 		name, version, description, key, ok, err := readCompiledManifestInfo(tree, d, prefix)
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", d, pyErrorText(err)))
+			pkgLog().Warn(fmt.Sprintf("Skipping unreadable plugin directory %s: %s", d, errchain.OSText(err)))
 			continue
 		}
 		if !ok {
@@ -142,7 +143,7 @@ func bundledManifestDefaultOn(manifest map[string]any) bool {
 	if v, ok := manifest["kind"]; ok {
 		rawKind = v
 	}
-	kind := strings.ToLower(strings.TrimSpace(pyrepr.Str(rawKind)))
+	kind := strings.ToLower(strings.TrimSpace(anyutil.String(rawKind)))
 	return kind == "model-provider" || bundledDefaultOnKinds[kind]
 }
 

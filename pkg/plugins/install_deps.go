@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -29,7 +28,7 @@ func installPluginPythonDeps(ctx context.Context, manifest map[string]any, targe
 		hasPython, err = declaration.InstallsPackages()
 	}
 	if err != nil {
-		return false, &ConsentRefusal{"invalid Python dependency declaration: " + pyrepr.ExceptionMessage(err), "manifest_invalid"}
+		return false, &ConsentRefusal{"invalid Python dependency declaration: " + err.Error(), "manifest_invalid"}
 	}
 	hasPackageJSON := isFile(filepath.Join(target, "package.json"))
 	if !hasPython && !hasPackageJSON {
@@ -91,7 +90,7 @@ func pythonDependencySummary(target string, warnings *[]string) []string {
 		deps, err = declaration.InstallRequirements()
 	}
 	if err != nil {
-		*warnings = append(*warnings, "Could not read Python dependencies: "+pyrepr.ExceptionMessage(err))
+		*warnings = append(*warnings, "Could not read Python dependencies: "+err.Error())
 		return []string{}
 	}
 	return append([]string{}, deps...)

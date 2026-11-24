@@ -2,16 +2,15 @@ package state
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"slices"
 	"strings"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Holder deferral escalation thresholds and the bounded doubling backoff of the in process stale FTS retry
@@ -62,13 +61,13 @@ func holderCmdline(pid int) string {
 	return string(runes)
 }
 
-// Python repr of a holder list, a list of pid and path tuples
+// Holder list as text, a list of pid and path pairs
 func holdersRepr(holders []Holder) string {
 	items := make([]any, len(holders))
 	for i, h := range holders {
-		items[i] = pyrepr.Tuple{int64(h.PID), h.Target}
+		items[i] = []any{int64(h.PID), h.Target}
 	}
-	return pyrepr.Repr(items)
+	return anyutil.String(items)
 }
 
 // Sorted distinct positive holder pids
@@ -83,7 +82,7 @@ func positiveHolderPIDs(holders []Holder) []int {
 	return pids
 }
 
-// Python list of ints for equality and JSON rendering
+// Pids as a list of integers for equality and JSON rendering
 func pidList(pids []int) []any {
 	out := make([]any, len(pids))
 	for i, pid := range pids {
@@ -92,34 +91,33 @@ func pidList(pids []int) []any {
 	return out
 }
 
-// Deferral bookkeeping read from the stored record, reset as Python does on a TypeError or ValueError
-func deferralCounters(record *pyjson.Object, now float64) (firstSeen float64, attempts *big.Int, holdersSince float64, holdersAttempts *big.Int, err error) {
+// Deferral bookkeeping read from the stored record, reset when a stored field has no numeric form
+func deferralCounters(record *jsonutil.Object, now float64) (firstSeen float64, attempts int64, holdersSince float64, holdersAttempts int64, err error) {
 	get := func(key string, def any) any {
 		if v, ok := record.Get(key); ok {
 			return v
 		}
 		return def
 	}
-	one := big.NewInt(1)
-	firstSeen, err = pyint.Float(get("first_seen", now))
+	firstSeen, err = anyutil.ToFloat(get("first_seen", now))
 	if err == nil {
-		attempts, err = pyint.Of(get("attempts", int64(0)))
+		attempts, err = anyutil.ToInt(get("attempts", int64(0)))
 	}
 	if err == nil {
-		attempts = new(big.Int).Add(attempts, one)
-		holdersSince, err = pyint.Float(get("holders_since", now))
+		attempts++
+		holdersSince, err = anyutil.ToFloat(get("holders_since", now))
 	}
 	if err == nil {
-		holdersAttempts, err = pyint.Of(get("holders_attempts", int64(0)))
+		holdersAttempts, err = anyutil.ToInt(get("holders_attempts", int64(0)))
 	}
 	if err == nil {
-		holdersAttempts = new(big.Int).Add(holdersAttempts, one)
+		holdersAttempts++
 		return firstSeen, attempts, holdersSince, holdersAttempts, nil
 	}
-	if pe, ok := err.(*pyint.Error); ok && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
-		return now, big.NewInt(1), now, big.NewInt(1), nil
+	if errors.Is(err, anyutil.ErrNotNumber) {
+		return now, 1, now, 1, nil
 	}
-	return 0, nil, 0, nil, err
+	return 0, 0, 0, 0, err
 }
 
 // Records the holder deferral diagnostic and reports whether foreign holders still block the rebuild
@@ -132,10 +130,17 @@ func (s *sessionSchema) deferStaleFTSForHolders(ctx context.Context, conn SQLite
 		}
 		row = nil
 	}
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	if row != nil {
-		if parsed, ok := pyjson.SafeLoads(row[0], nil).(*pyjson.Object); ok {
-			record = parsed
+		var parsed any
+		switch raw := row[0].(type) {
+		case string:
+			parsed, _ = jsonutil.Decode(raw)
+		case []byte:
+			parsed, _ = jsonutil.Decode(raw)
+		}
+		if obj, ok := parsed.(*jsonutil.Object); ok {
+			record = obj
 		}
 	}
 	firstSeen, attempts, holdersSince, holdersAttempts, err := deferralCounters(record, now)
@@ -146,21 +151,21 @@ func (s *sessionSchema) deferStaleFTSForHolders(ctx context.Context, conn SQLite
 		firstSeen = now
 	}
 	holderPIDs := positiveHolderPIDs(foreignHolders)
-	if stored, _ := record.Get("holder_pids"); !pyrepr.Equal(pidList(holderPIDs), stored) {
-		holdersSince, holdersAttempts = now, big.NewInt(1)
+	if stored, _ := record.Get("holder_pids"); !anyutil.Equal(pidList(holderPIDs), stored) {
+		holdersSince, holdersAttempts = now, 1
 	}
-	escalate := attempts.Cmp(big.NewInt(ftsHolderEscalateAttempts)) >= 0 && now-firstSeen >= ftsHolderEscalateSeconds
-	futile := len(holderPIDs) > 0 && holdersAttempts.Cmp(big.NewInt(ftsHolderFutileAttempts)) >= 0 &&
+	escalate := attempts >= ftsHolderEscalateAttempts && now-firstSeen >= ftsHolderEscalateSeconds
+	futile := len(holderPIDs) > 0 && holdersAttempts >= ftsHolderFutileAttempts &&
 		now-holdersSince >= ftsHolderFutileSeconds
-	diagnostic := pyjson.NewObject()
+	diagnostic := jsonutil.NewObject()
 	diagnostic.Set("first_seen", firstSeen)
 	diagnostic.Set("last_seen", now)
-	diagnostic.Set("attempts", pyint.Value(attempts))
+	diagnostic.Set("attempts", attempts)
 	diagnostic.Set("holder_pids", pidList(holderPIDs))
 	diagnostic.Set("holders_since", holdersSince)
-	diagnostic.Set("holders_attempts", pyint.Value(holdersAttempts))
+	diagnostic.Set("holders_attempts", holdersAttempts)
 	diagnostic.Set("futile", futile)
-	text, err := pyjson.Dumps(diagnostic, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(diagnostic, jsonutil.SortKeys())
 	if err != nil {
 		return false, err
 	}
@@ -177,18 +182,18 @@ func (s *sessionSchema) deferStaleFTSForHolders(ctx context.Context, conn SQLite
 		for i, pid := range holderPIDs {
 			named[i] = fmt.Sprintf("pid %d: %s", pid, holderCmdline(pid))
 		}
-		pkgLog().Error(fmt.Sprintf("state.db FTS repair has been blocked by the same holder(s) for %s deferrals over %s min "+
+		pkgLog().Error(fmt.Sprintf("state.db FTS repair has been blocked by the same holder(s) for %d deferrals over %s min "+
 			"(%s); waiting is futile. Stop ONLY the other holder(s) — this process keeps running and its "+
 			"own retry admits the rebuild within %ss of the holder leaving. `icebath doctor` shows this.",
-			holdersAttempts.String(), pyFixed0((now-holdersSince)/60.0), strings.Join(named, ", "), pyFixed0(ftsStaleRetrySeconds)))
+			holdersAttempts, pyFixed0((now-holdersSince)/60.0), strings.Join(named, ", "), pyFixed0(ftsStaleRetrySeconds)))
 	} else if escalate {
-		pkgLog().Error(fmt.Sprintf("state.db FTS repair remains blocked after %s deferrals by holder(s) %s. Stop the listed "+
+		pkgLog().Error(fmt.Sprintf("state.db FTS repair remains blocked after %d deferrals by holder(s) %s. Stop the listed "+
 			"processes (this process's own retry then rebuilds), or run `icebath sessions optimize-storage` "+
-			"with every holder stopped. `icebath doctor` reports this degraded state.", attempts.String(), holdersRepr(foreignHolders)))
+			"with every holder stopped. `icebath doctor` reports this degraded state.", attempts, holdersRepr(foreignHolders)))
 	}
 	pkgLog().Warn(fmt.Sprintf("Deferred stale state.db FTS rebuild while foreign processes "+
-		"hold the database or WAL sidecars (%s); canonical writes and LIKE search remain available (deferral %s).",
-		holdersRepr(foreignHolders), attempts.String()))
+		"hold the database or WAL sidecars (%s); canonical writes and LIKE search remain available (deferral %d).",
+		holdersRepr(foreignHolders), attempts))
 	return true, nil
 }
 

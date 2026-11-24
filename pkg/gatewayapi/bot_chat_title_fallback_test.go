@@ -4,14 +4,14 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store double holding one titled row whose local receipt carries a reset lineage
-type titleFallbackDB struct{ row *pyjson.Object }
+type titleFallbackDB struct{ row *jsonutil.Object }
 
 func newTitleFallbackDB(overrides ...any) *titleFallbackDB {
-	row := pyjson.ObjectOf("id", "local-root", "title", "Bot Chat", "end_reason", "session_reset", "hidden", int64(0),
+	row := jsonutil.ObjectOf("id", "local-root", "title", "Bot Chat", "end_reason", "session_reset", "hidden", int64(0),
 		"archived", int64(0), "source", "local")
 	for i := 0; i+1 < len(overrides); i += 2 {
 		row.Set(overrides[i].(string), overrides[i+1])
@@ -19,15 +19,15 @@ func newTitleFallbackDB(overrides ...any) *titleFallbackDB {
 	return &titleFallbackDB{row: row}
 }
 
-func (d *titleFallbackDB) GetSessionByTitle(_ context.Context, title string) (*pyjson.Object, error) {
-	if title == d.row.GetOr("title", nil) {
-		return d.row.Copy(), nil
+func (d *titleFallbackDB) GetSessionByTitle(_ context.Context, title string) (*jsonutil.Object, error) {
+	if title == d.row.ValueOr("title", nil) {
+		return d.row.Clone(), nil
 	}
 	return nil, nil
 }
 
-func (d *titleFallbackDB) LocalReceipt(_ context.Context, sessionID string) (*pyjson.Object, error) {
-	return pyjson.ObjectOf("lineage", []any{sessionID, "fresh"}), nil
+func (d *titleFallbackDB) LocalReceipt(_ context.Context, sessionID string) (*jsonutil.Object, error) {
+	return jsonutil.ObjectOf("lineage", []any{sessionID, "fresh"}), nil
 }
 
 // Ids of the rows the fallback answers
@@ -39,7 +39,7 @@ func fallbackIDs(t *testing.T, db *titleFallbackDB, includeHidden bool, source s
 	}
 	ids := []any{}
 	for _, row := range rows {
-		ids = append(ids, row.GetOr("id", nil))
+		ids = append(ids, row.ValueOr("id", nil))
 	}
 	return ids
 }

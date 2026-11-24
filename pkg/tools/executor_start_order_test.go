@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type dispatchStamp struct {
@@ -31,7 +31,7 @@ func wedgedExecutor(t *testing.T, wedged string, gateS float64, batchTimeout str
 	var stamps []dispatchStamp
 	r := NewRegistry()
 	for _, n := range []string{"tool_a", "tool_b", "tool_c"} {
-		r.Register(Def{Name: n, Toolset: "probe", Schema: pyjson.ObjectOf("name", n, "parameters", pyjson.ObjectOf("type", "object")),
+		r.Register(Def{Name: n, Toolset: "probe", Schema: jsonutil.ObjectOf("name", n, "parameters", jsonutil.ObjectOf("type", "object")),
 			Handler: func(_ context.Context, c *Call) string {
 				mu.Lock()
 				stamps = append(stamps, dispatchStamp{c.Name, time.Now()})
@@ -159,7 +159,7 @@ func TestAbandonedBatchDoesNotDispatchLate(t *testing.T) {
 
 func TestDictErrorResultReachesTheModelFromAConcurrentWorker(t *testing.T) {
 	r := NewRegistry()
-	r.Register(Def{Name: "terminal", Toolset: "terminal", Schema: pyjson.ObjectOf("name", "terminal", "parameters", pyjson.ObjectOf("type", "object")),
+	r.Register(Def{Name: "terminal", Toolset: "terminal", Schema: jsonutil.ObjectOf("name", "terminal", "parameters", jsonutil.ObjectOf("type", "object")),
 		Handler: func(context.Context, *Call) string { return `{"exit_code": 2, "output": "", "error": "boom"}` }})
 	e := NewExecutor(&fakeExecutorHost{env: newTestToolEnv(t)}, NewDispatcher(r))
 	var messages []*state.Message

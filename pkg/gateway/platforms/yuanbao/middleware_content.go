@@ -2,20 +2,21 @@ package yuanbao
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/url"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Parsed data of one TIMCustomElem with the msg_content dict it came from
@@ -26,15 +27,15 @@ func iterCustomElems(msgBody []any) []customElem {
 	var out []customElem
 	for _, elem := range msgBody {
 		d, ok := asDict(elem)
-		if !ok || !pyrepr.Equal(d["msg_type"], "TIMCustomElem") {
+		if !ok || !anyutil.Equal(d["msg_type"], "TIMCustomElem") {
 			continue
 		}
-		content := pyrepr.Or(dictGetOr(d, "msg_content", pyjson.NewObject()), pyjson.NewObject())
+		content := anyutil.Or(dictGetOr(d, "msg_content", jsonutil.NewObject()), jsonutil.NewObject())
 		var dataStr any = ""
 		if c, isDict := asDict(content); isDict {
 			dataStr = dictGetOr(c, "data", "")
 		}
-		if !pyrepr.Truthy(dataStr) {
+		if !anyutil.IsTrue(dataStr) {
 			continue
 		}
 		if custom, err := jsonLoads(dataStr); err == nil {
@@ -64,7 +65,7 @@ func optText(v any) *string {
 	if v == nil {
 		return nil
 	}
-	return strPtr(pyrepr.Str(v))
+	return strPtr(anyutil.String(v))
 }
 
 // ExtractContentMiddleware extracts the raw text, media refs and forwarded records of the message body
@@ -82,9 +83,9 @@ const (
 // Bracket placeholder text of a share card, elem_type 1010
 func formatSharedLink(custom map[string]any) string {
 	title, link := dictGetOr(custom, "title", ""), dictGetOr(custom, "link", "")
-	first := "[share_card: " + pyrepr.Str(title) + "]"
-	if pyrepr.Truthy(link) {
-		first = "[share_card: " + pyrepr.Str(title) + " | " + pyrepr.Str(link) + "]"
+	first := "[share_card: " + anyutil.String(title) + "]"
+	if anyutil.IsTrue(link) {
+		first = "[share_card: " + anyutil.String(title) + " | " + anyutil.String(link) + "]"
 	}
 	lines := []string{first}
 	preview := ""
@@ -100,7 +101,7 @@ func formatSharedLink(custom map[string]any) string {
 		}
 		lines = append(lines, "Preview: "+preview)
 	}
-	if pyrepr.Truthy(link) {
+	if anyutil.IsTrue(link) {
 		lines = append(lines, "[visit link for full content]")
 	}
 	return strings.Join(lines, "\n")
@@ -109,7 +110,7 @@ func formatSharedLink(custom map[string]any) string {
 // Bracket placeholder text of a link understanding card, elem_type 1007, false when it names no link
 func formatLinkUnderstanding(custom map[string]any) (string, bool) {
 	content := custom["content"]
-	if !pyrepr.Truthy(content) {
+	if !anyutil.IsTrue(content) {
 		return "", false
 	}
 	var link any
@@ -129,19 +130,16 @@ func parseResourceID(rawURL string) string {
 	if rawURL == "" {
 		return ""
 	}
-	parsed, err := pyurl.Parse(rawURL)
+	parsed, err := url.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return ""
 	}
-	query := pyurl.ParseQS(parsed.Query, false)
-	ids := query["resourceId"]
-	if len(ids) == 0 {
-		ids = query["resourceid"]
+	query := parsed.Query()
+	id := query.Get("resourceId")
+	if id == "" {
+		id = query.Get("resourceid")
 	}
-	if len(ids) == 0 {
-		return ""
-	}
-	return strings.TrimSpace(ids[0])
+	return strings.TrimSpace(id)
 }
 
 // URL of the medium image at index one, falling back to index zero, else empty
@@ -172,13 +170,13 @@ func extractText(msgBody []any) (string, error) {
 		kind, isMedia := mediaElemKinds[name]
 		var content map[string]any
 		if isMedia || name == textElemType || name == "TIMFileElem" || name == "TIMCustomElem" || name == "TIMFaceElem" {
-			if content, err = dictOf(dictGetOr(d, "msg_content", pyjson.NewObject())); err != nil {
+			if content, err = dictOf(dictGetOr(d, "msg_content", jsonutil.NewObject())); err != nil {
 				return "", err
 			}
 		}
 		switch {
 		case name == textElemType:
-			if text := dictGetOr(content, "text", ""); pyrepr.Truthy(text) {
+			if text := dictGetOr(content, "text", ""); anyutil.IsTrue(text) {
 				parts = append(parts, text)
 			}
 		case isMedia:
@@ -195,12 +193,12 @@ func extractText(msgBody []any) (string, error) {
 			filename := dictGetOr(content, "file_name", dictGetOr(content, "fileName", dictGetOr(content, "filename", "")))
 			rid := parseResourceID(stripOrEmpty(content["url"]))
 			switch {
-			case rid != "" && pyrepr.Truthy(filename):
-				parts = append(parts, "[file:"+pyrepr.Str(filename)+"|ybres:"+rid+"]")
+			case rid != "" && anyutil.IsTrue(filename):
+				parts = append(parts, "[file:"+anyutil.String(filename)+"|ybres:"+rid+"]")
 			case rid != "":
 				parts = append(parts, "[file|ybres:"+rid+"]")
-			case pyrepr.Truthy(filename):
-				parts = append(parts, "[file: "+pyrepr.Str(filename)+"]")
+			case anyutil.IsTrue(filename):
+				parts = append(parts, "[file: "+anyutil.String(filename)+"]")
 			default:
 				parts = append(parts, "[file]")
 			}
@@ -208,10 +206,10 @@ func extractText(msgBody []any) (string, error) {
 			parts = append(parts, customElemText(dictGetOr(content, "data", "")))
 		case name == "TIMFaceElem":
 			faceName := ""
-			if data := dictGetOr(content, "data", ""); pyrepr.Truthy(data) {
+			if data := dictGetOr(content, "data", ""); anyutil.IsTrue(data) {
 				if parsed, err := jsonLoads(data); err == nil {
 					if face, isDict := asDict(parsed); isDict {
-						if s, isStr := pyrepr.Or(face["name"], "").(string); isStr {
+						if s, isStr := anyutil.Or(face["name"], "").(string); isStr {
 							faceName = strings.TrimSpace(s)
 						}
 					}
@@ -222,8 +220,8 @@ func extractText(msgBody []any) (string, error) {
 			} else {
 				parts = append(parts, "[emoji]")
 			}
-		case pyrepr.Truthy(elemType):
-			parts = append(parts, "["+pyrepr.Str(elemType)+"]")
+		case anyutil.IsTrue(elemType):
+			parts = append(parts, "["+anyutil.String(elemType)+"]")
 		}
 	}
 	return joinParts(" ", parts)
@@ -231,7 +229,7 @@ func extractText(msgBody []any) (string, error) {
 
 // Text of a TIMCustomElem by its elem_type, data that is not JSON passed through and anything else unsupported
 func customElemText(dataVal any) any {
-	if !pyrepr.Truthy(dataVal) {
+	if !anyutil.IsTrue(dataVal) {
 		return unsupportedElemText
 	}
 	parsed, err := jsonLoads(dataVal)
@@ -275,16 +273,16 @@ func extractInboundMediaRefs(msgBody []any) []InboundMediaRef {
 		if !ok {
 			continue
 		}
-		content, isDict := asDict(pyrepr.Or(dictGetOr(d, "msg_content", pyjson.NewObject()), pyjson.NewObject()))
+		content, isDict := asDict(anyutil.Or(dictGetOr(d, "msg_content", jsonutil.NewObject()), jsonutil.NewObject()))
 		if !isDict {
 			continue
 		}
 		switch msgType := dictGetOr(d, "msg_type", ""); {
-		case pyrepr.Equal(msgType, "TIMImageElem"):
+		case anyutil.Equal(msgType, "TIMImageElem"):
 			if imageURL := pickImageURL(content); imageURL != "" {
 				refs = append(refs, mediaRef("image", imageURL, ""))
 			}
-		case pyrepr.Equal(msgType, "TIMFileElem"):
+		case anyutil.Equal(msgType, "TIMFileElem"):
 			if fileURL := stripOrEmpty(content["url"]); fileURL != "" {
 				refs = append(refs, mediaRef("file", fileURL, fileName(content)))
 			}
@@ -294,7 +292,7 @@ func extractInboundMediaRefs(msgBody []any) []InboundMediaRef {
 }
 
 // Forwarded chat records of an elem_type 1009 custom elem, the first base64 protobuf ext_map entry of sub type one
-func extractForwardedRecords(msgBody []any) *pyjson.Object {
+func extractForwardedRecords(msgBody []any) *jsonutil.Object {
 	for _, ce := range iterCustomElems(msgBody) {
 		custom, isDict := asDict(ce.custom)
 		if !isDict || !equalsInt(custom["elem_type"], 1009) {
@@ -310,11 +308,11 @@ func extractForwardedRecords(msgBody []any) *pyjson.Object {
 			if !strings.HasPrefix(key, "wexin_forward_msg_") || !isStr || value == "" {
 				continue
 			}
-			raw, err := pybase64.B64Decode(value)
+			raw, err := base64.StdEncoding.DecodeString(value)
 			if err != nil {
 				continue
 			}
-			if data := DecodeForwardMsgData(raw); data != nil && equalsInt(data.GetOr("sub_type", nil), 1) {
+			if data := DecodeForwardMsgData(raw); data != nil && equalsInt(data.ValueOr("sub_type", nil), 1) {
 				return data
 			}
 		}
@@ -350,7 +348,7 @@ func isSkippablePlaceholder(text string, mediaCount int) bool {
 
 func (m *PlaceholderFilterMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
 	if isSkippablePlaceholder(ic.RawText, len(ic.MediaRefs)) {
-		pkgLog().Debug(fmt.Sprintf("[%s] Skipping placeholder message: %s", ic.Adapter.Name(), pyrepr.StrRepr(ic.RawText)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Skipping placeholder message: %s", ic.Adapter.Name(), strconv.Quote(ic.RawText)))
 		return nil
 	}
 	return next()
@@ -367,7 +365,7 @@ var ownerCommandAllowlist = map[string]bool{"/new": true, "/reset": true, "/retr
 	"/approve": true, "/deny": true, "/bg": true, "/btw": true, "/queue": true, "/q": true}
 
 // Allowlisted command, its full line and whether the sender is the bot owner, an empty command when none matched
-func detectOwnerCommand(push *pyjson.Object, msgBody []any, chatType string, fromAccount any) (cmd, cmdLine string, isOwner bool, err error) {
+func detectOwnerCommand(push *jsonutil.Object, msgBody []any, chatType string, fromAccount any) (cmd, cmdLine string, isOwner bool, err error) {
 	if chatType != "group" || len(ownerCommandAllowlist) == 0 {
 		return "", "", false, nil
 	}
@@ -377,14 +375,14 @@ func detectOwnerCommand(push *pyjson.Object, msgBody []any, chatType string, fro
 		if err != nil {
 			return "", "", false, err
 		}
-		if pyrepr.Equal(d["msg_type"], textElemType) {
+		if anyutil.Equal(d["msg_type"], textElemType) {
 			textElems = append(textElems, d)
 		}
 	}
 	if len(textElems) != 1 {
 		return "", "", false, nil
 	}
-	content, err := dictOf(pyrepr.Or(textElems[0]["msg_content"], pyjson.NewObject()))
+	content, err := dictOf(anyutil.Or(textElems[0]["msg_content"], jsonutil.NewObject()))
 	if err != nil {
 		return "", "", false, err
 	}
@@ -402,10 +400,10 @@ func detectOwnerCommand(push *pyjson.Object, msgBody []any, chatType string, fro
 	}
 	var owner any
 	if push != nil {
-		owner = push.GetOr("bot_owner_id", nil)
+		owner = push.ValueOr("bot_owner_id", nil)
 	}
 	ownerID := stripOrEmpty(owner)
-	return name, line, ownerID != "" && pyrepr.Equal(ownerID, fromAccount), nil
+	return name, line, ownerID != "" && anyutil.Equal(ownerID, fromAccount), nil
 }
 
 func (m *OwnerCommandMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
@@ -416,7 +414,7 @@ func (m *OwnerCommandMiddleware) Handle(ctx context.Context, ic *InboundContext,
 	}
 	if matched != "" && !isOwner {
 		pkgLog().Info(fmt.Sprintf("[%s] Reject non-owner slash command: chat=%s from=%s cmd=%s", adapter.Name(), ic.ChatID,
-			pyrepr.Str(ic.FromAccount), matched))
+			anyutil.String(ic.FromAccount), matched))
 		chatID := ic.ChatID
 		denial := i18n.T(ctx, "platform.yuanbao.owner_command_denied", "", map[string]any{"command": matched})
 		adapter.trackTask(gateway.SpawnAdapterTask(ctx, func(tctx context.Context) error {
@@ -427,7 +425,7 @@ func (m *OwnerCommandMiddleware) Handle(ctx context.Context, ic *InboundContext,
 	}
 	if matched != "" && isOwner && cmdLine != "" {
 		pkgLog().Info(fmt.Sprintf("[%s] Bot owner slash command: chat=%s from=%s cmd=%s", adapter.Name(), ic.ChatID,
-			pyrepr.Str(ic.FromAccount), matched))
+			anyutil.String(ic.FromAccount), matched))
 		ic.OwnerCommand = &matched
 		ic.RawText = cmdLine
 	}
@@ -443,8 +441,8 @@ func newBuildSourceMiddleware() InboundMiddleware {
 
 func (m *BuildSourceMiddleware) Handle(ctx context.Context, ic *InboundContext, next func() error) error {
 	fields := gateway.SourceFields{ChatName: optText(ic.ChatName), ChatType: ic.ChatType,
-		UserName: optText(pyrepr.Or(ic.SenderNickname, ic.FromAccount))}
-	if pyrepr.Truthy(ic.FromAccount) {
+		UserName: optText(anyutil.Or(ic.SenderNickname, ic.FromAccount))}
+	if anyutil.IsTrue(ic.FromAccount) {
 		fields.UserID = optText(ic.FromAccount)
 	}
 	if ic.ChatType == "group" {
@@ -463,7 +461,7 @@ func newGroupAtGuardMiddleware() InboundMiddleware {
 
 // Visits each custom elem that mentions the bot, elem_type 1002 with the bot as user_id, until visit returns false
 func iterBotMentions(msgBody []any, botID any, visit func(custom map[string]any) bool) error {
-	if !pyrepr.Truthy(botID) {
+	if !anyutil.IsTrue(botID) {
 		return nil
 	}
 	for _, ce := range iterCustomElems(msgBody) {
@@ -471,7 +469,7 @@ func iterBotMentions(msgBody []any, botID any, visit func(custom map[string]any)
 		if err != nil {
 			return err
 		}
-		if equalsInt(custom["elem_type"], 1002) && pyrepr.Equal(custom["user_id"], botID) && !visit(custom) {
+		if equalsInt(custom["elem_type"], 1002) && anyutil.Equal(custom["user_id"], botID) && !visit(custom) {
 			return nil
 		}
 	}
@@ -508,7 +506,7 @@ func buildGroupChannelPrompt(msgBody []any, botID any) (string, error) {
 		botMention = "unknown"
 	}
 	return "You are handling a Yuanbao group chat message.\n" +
-		"- Your identity: user_id=" + pyrepr.Str(pyrepr.Or(botID, "unknown")) + ", @-mention name in this group=" + botMention + "\n" +
+		"- Your identity: user_id=" + anyutil.String(anyutil.Or(botID, "unknown")) + ", @-mention name in this group=" + botMention + "\n" +
 		"- Lines in history prefixed with `[nickname|user_id]` are observed group context " +
 		"and are not necessarily addressed to you.\n" +
 		"- Treat only the current new message as a request explicitly directed at you, " +
@@ -517,7 +515,7 @@ func buildGroupChannelPrompt(msgBody []any, botID any) (string, error) {
 
 // Appends a group message to the transcript as an observed user row without running the agent, a failure only warned
 func observeGroupMessage(ctx context.Context, adapter *YuanbaoAdapter, source *gateway.SessionSource, senderDisplay any, text string,
-	ic *InboundContext, msgID any, forwardedRecords *pyjson.Object) {
+	ic *InboundContext, msgID any, forwardedRecords *jsonutil.Object) {
 	store := sessionStoreOf(adapter)
 	if store == nil {
 		return
@@ -547,15 +545,15 @@ func observeGroupMessage(ctx context.Context, adapter *YuanbaoAdapter, source *g
 		if source.UserID != nil && *source.UserID != "" {
 			userID = *source.UserID
 		}
-		entry := map[string]any{"role": "user", "content": "[" + pyrepr.Str(senderDisplay) + "|" + userID + "]\n" + bodyText,
-			"timestamp": pydatetime.ISOFormatUTC(time.Now()), "observed": true}
-		if pyrepr.Truthy(msgID) {
+		entry := map[string]any{"role": "user", "content": "[" + anyutil.String(senderDisplay) + "|" + userID + "]\n" + bodyText,
+			"timestamp": time.Now().UTC().Format(timeutil.RFC3339Micro), "observed": true}
+		if anyutil.IsTrue(msgID) {
 			entry["message_id"] = msgID
 		}
 		return store.AppendToTranscript(ctx, sessionEntry.SessionID, entry, false)
 	}()
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[%s] Failed to observe group message: %s", adapter.Name(), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to observe group message: %s", adapter.Name(), err.Error()))
 	}
 }
 
@@ -568,11 +566,11 @@ func (m *GroupAtGuardMiddleware) Handle(ctx context.Context, ic *InboundContext,
 		}
 		if !atBot {
 			var msgID any
-			if pyrepr.Truthy(ic.MsgID) {
+			if anyutil.IsTrue(ic.MsgID) {
 				msgID = ic.MsgID
 			}
-			observeGroupMessage(ctx, adapter, ic.Source, pyrepr.Or(ic.SenderNickname, ic.FromAccount), ic.RawText, ic, msgID, ic.ForwardedRecords)
-			pkgLog().Info(fmt.Sprintf("[%s] Group message observed (no @bot): chat=%s from=%s", adapter.Name(), ic.ChatID, pyrepr.Str(ic.FromAccount)))
+			observeGroupMessage(ctx, adapter, ic.Source, anyutil.Or(ic.SenderNickname, ic.FromAccount), ic.RawText, ic, msgID, ic.ForwardedRecords)
+			pkgLog().Info(fmt.Sprintf("[%s] Group message observed (no @bot): chat=%s from=%s", adapter.Name(), ic.ChatID, anyutil.String(ic.FromAccount)))
 			return nil
 		}
 	}
@@ -593,8 +591,8 @@ func (m *GroupAttributionMiddleware) Handle(ctx context.Context, ic *InboundCont
 			return err
 		}
 		ic.ChannelPrompt = &prompt
-		ic.RawText = "[" + pyrepr.Str(pyrepr.Or(pyrepr.Or(ic.SenderNickname, ic.FromAccount), "unknown")) + "|" +
-			pyrepr.Str(pyrepr.Or(ic.FromAccount, "unknown")) + "]\n" + ic.RawText
+		ic.RawText = "[" + anyutil.String(anyutil.Or(anyutil.Or(ic.SenderNickname, ic.FromAccount), "unknown")) + "|" +
+			anyutil.String(anyutil.Or(ic.FromAccount, "unknown")) + "]\n" + ic.RawText
 		if ic.Source != nil {
 			ic.Source = gateway.ReplaceSource(ic.Source, func(s *gateway.SessionSource) { s.UserName = nil })
 		}
@@ -638,7 +636,7 @@ func classifyMessage(text string, msgBody []any) (any, error) {
 		if name != "TIMCustomElem" {
 			continue
 		}
-		content, err := dictOf(pyrepr.Or(d["msg_content"], pyjson.NewObject()))
+		content, err := dictOf(anyutil.Or(d["msg_content"], jsonutil.NewObject()))
 		if err != nil {
 			return nil, err
 		}
@@ -670,7 +668,7 @@ func newQuoteContextMiddleware() InboundMiddleware {
 // Quoted message id and its sender prefixed description from cloud_custom_data, nil for whichever is missing
 func extractQuoteContext(cloudCustomData any) (*string, *string) {
 	var parsed any
-	if pyrepr.Truthy(cloudCustomData) {
+	if anyutil.IsTrue(cloudCustomData) {
 		if loaded, err := jsonLoads(cloudCustomData); err == nil {
 			parsed = loaded
 		}
@@ -687,7 +685,7 @@ func extractQuoteContext(cloudCustomData any) (*string, *string) {
 		quoteID = &id
 	}
 	desc := stripOrEmpty(quote["desc"])
-	sender := stripOrEmpty(pyrepr.Or(quote["sender_nickname"], quote["sender_id"]))
+	sender := stripOrEmpty(anyutil.Or(quote["sender_nickname"], quote["sender_id"]))
 	if desc != "" {
 		text := desc
 		if sender != "" {
@@ -724,11 +722,11 @@ func extractMediaRefsFromTranscript(ctx context.Context, ic *InboundContext) ([]
 				return err
 			}
 			mid := dictGetOr(msg, "message_id", "")
-			if !pyrepr.Truthy(mid) || !pyrepr.Equal(mid, *ic.ReplyToMessageID) {
+			if !anyutil.IsTrue(mid) || !anyutil.Equal(mid, *ic.ReplyToMessageID) {
 				continue
 			}
 			if content, isStr := dictGetOr(msg, "content", "").(string); isStr && strings.Contains(content, "|ybres:") {
-				mediaRefs = append(mediaRefs, iterYbresRefs(findAll(ybResRefRE, content))...)
+				mediaRefs = append(mediaRefs, iterYbresRefs(ybResRefRE().FindAllStringSubmatch(content, -1))...)
 			}
 			break
 		}
@@ -740,9 +738,9 @@ func extractMediaRefsFromTranscript(ctx context.Context, ic *InboundContext) ([]
 		}
 		var unreadable *gateway.TranscriptReadError
 		if errors.As(err, &unreadable) {
-			pkgLog().Warn(fmt.Sprintf("[%s] quote transcript lookup: transcript unreadable: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] quote transcript lookup: transcript unreadable: %s", adapter.Name(), err.Error()))
 		} else {
-			pkgLog().Warn(fmt.Sprintf("[%s] quote transcript lookup failed: %s", adapter.Name(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] quote transcript lookup failed: %s", adapter.Name(), err.Error()))
 		}
 	}
 	return mediaRefs, nil

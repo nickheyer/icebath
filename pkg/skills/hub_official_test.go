@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Optional source over a fresh optional-skills dir with the given live repo dirs already listed
@@ -21,7 +21,7 @@ func optionalSource(t *testing.T, root string, remoteDirs ...string) *OptionalSk
 	h, _ := newTestHub(t)
 	o := NewOptionalSkillSource(h, anonAuth(h))
 	if remoteDirs != nil {
-		o.remoteDirs = pyjson.NewObject()
+		o.remoteDirs = jsonutil.NewObject()
 		for _, d := range remoteDirs {
 			o.remoteDirs.Set(d, true)
 		}
@@ -113,7 +113,7 @@ func TestOptionalFetchRejectsSiblingDirectoryTraversal(t *testing.T) {
 	writeTestFile(t, filepath.Join(tmp, "optional-skills-escape", "pwned", "SKILL.md"), "---\nname: pwned\ndescription: traversal\n---\n\nBody\n")
 	o := optionalSource(t, root)
 	untouchableGitHub(t, o)
-	o.remoteDirs = pyjson.NewObject()
+	o.remoteDirs = jsonutil.NewObject()
 	if b, err := o.Fetch(context.Background(), "official/../optional-skills-escape/pwned"); b != nil || err != nil {
 		t.Fatalf("%v %v", b, err)
 	}
@@ -192,7 +192,7 @@ func TestOptionalInspectSurfacesRemoteOnlySkill(t *testing.T) {
 
 func TestOptionalOfflineDegradesToLocalOnly(t *testing.T) {
 	o := optionalSource(t, filepath.Join(t.TempDir(), "optional-skills"))
-	o.remoteDirs = pyjson.NewObject()
+	o.remoteDirs = jsonutil.NewObject()
 	untouchableGitHub(t, o)
 	if b, err := o.Fetch(context.Background(), "official/never-heard-of-it"); b != nil || err != nil {
 		t.Fatalf("%v %v", b, err)

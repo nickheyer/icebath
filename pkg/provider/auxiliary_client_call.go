@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Keyword arguments of one call_llm or async_call_llm request
@@ -96,7 +96,7 @@ func auxParseCallKwargs(fn string, kwargs map[string]any, sync bool) (auxCallReq
 	} else if headers, ok := kwargs["extra_headers"].(map[string]any); ok {
 		req.ExtraHeaders = make(map[string]string, len(headers))
 		for k, v := range headers {
-			req.ExtraHeaders[k] = pyrepr.Str(v)
+			req.ExtraHeaders[k] = anyutil.String(v)
 		}
 	}
 	var err error
@@ -107,7 +107,7 @@ func auxParseCallKwargs(fn string, kwargs map[string]any, sync bool) (auxCallReq
 		return req, err
 	}
 	if kwargs["timeout"] != nil {
-		req.TimeoutText = pyrepr.Str(kwargs["timeout"])
+		req.TimeoutText = anyutil.String(kwargs["timeout"])
 	}
 	return req, nil
 }
@@ -243,7 +243,7 @@ func auxPrepareAuxRequest(ctx context.Context, req auxCallRequest, asyncMode boo
 	effectiveTimeout := EffectiveAuxTimeout(ctx, task, req.Timeout)
 	timeoutText := req.TimeoutText
 	if req.Timeout == nil || timeoutText == "" {
-		timeoutText = pyrepr.Str(effectiveTimeout)
+		timeoutText = anyutil.String(effectiveTimeout)
 	}
 	var noProgressTimeout *float64
 	switch client.(type) {
@@ -590,7 +590,7 @@ func auxLadderProviderFallback(ctx context.Context, yield auxLadderYield, firstE
 	if reason == "request timed out" {
 		var watchdog *AuxTimeoutError
 		stalled := errors.As(firstErr, &watchdog) && watchdog.Watchdog
-		detail := fmt.Sprintf("timed out after %ss", auxOrDefault(route.TimeoutText, pyrepr.Str(route.Timeout)))
+		detail := fmt.Sprintf("timed out after %ss", auxOrDefault(route.TimeoutText, anyutil.String(route.Timeout)))
 		knob := "timeout"
 		if stalled {
 			detail, knob = firstErr.Error(), "no_progress_timeout"
@@ -767,8 +767,8 @@ func CallLLM(ctx context.Context, kwargs map[string]any) (any, error) {
 
 // Task label of the relay call record, the text of a truthy task argument
 func auxRelayCallTask(kwargs map[string]any) string {
-	if task := kwargs["task"]; pyrepr.Truthy(task) {
-		return pyrepr.Str(task)
+	if task := kwargs["task"]; anyutil.IsTrue(task) {
+		return anyutil.String(task)
 	}
 	return ""
 }

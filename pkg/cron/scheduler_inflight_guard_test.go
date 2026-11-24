@@ -7,8 +7,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // Store with an empty registry and a 30 minute floor, every claim it seeds removed on cleanup
@@ -166,7 +166,7 @@ type InflightGuardStats struct {
 	Running              []string
 	RunningAgesSeconds   map[string]float64
 	ForcedReleases       int
-	RecentForcedReleases []*pyjson.Object
+	RecentForcedReleases []*jsonutil.Object
 }
 
 // Running job ids, their ages, the forced release count and the recent forced releases
@@ -180,8 +180,8 @@ func getInflightGuardStats() InflightGuardStats {
 	}
 	sort.Strings(out.Running)
 	for k, started := range inflight.since {
-		out.RunningAgesSeconds[k.JobID] = pyint.Round(now-started, 1)
+		out.RunningAgesSeconds[k.JobID] = mathutil.Round(now-started, 1)
 	}
-	out.RecentForcedReleases = append([]*pyjson.Object(nil), inflightGuard.forcedReleases...)
+	out.RecentForcedReleases = append([]*jsonutil.Object(nil), inflightGuard.forcedReleases...)
 	return out
 }

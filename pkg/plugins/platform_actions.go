@@ -3,13 +3,12 @@ package plugins
 import (
 	"context"
 	"fmt"
-	"math/big"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -65,7 +64,7 @@ type telegramReactionAdapter interface {
 }
 
 type telegramTopicAdapter interface {
-	RenameDMTopic(ctx context.Context, chatID string, threadID *big.Int, title string) error
+	RenameDMTopic(ctx context.Context, chatID string, threadID int64, title string) error
 }
 
 type discordThreadAdapter interface {
@@ -78,12 +77,12 @@ type discordClientAdapter interface {
 
 // Discord client calls the reaction verb makes, a nil channel from GetChannel meaning not cached
 type DiscordActionClient interface {
-	GetChannel(id *big.Int) DiscordActionChannel
-	FetchChannel(ctx context.Context, id *big.Int) (DiscordActionChannel, error)
+	GetChannel(id int64) DiscordActionChannel
+	FetchChannel(ctx context.Context, id int64) (DiscordActionChannel, error)
 }
 
 type DiscordActionChannel interface {
-	FetchMessage(ctx context.Context, id *big.Int) (DiscordActionMessage, error)
+	FetchMessage(ctx context.Context, id int64) (DiscordActionMessage, error)
 }
 
 type DiscordActionMessage interface {
@@ -136,9 +135,9 @@ func discordAddReaction(ctx context.Context, adapter any, args []string) (map[st
 	if client == nil {
 		return actionErr("adapter_disconnected", "discord client unavailable"), nil
 	}
-	channelID, okChannel := pyint.Parse(args[0])
-	messageID, okMessage := pyint.Parse(args[1])
-	if !okChannel || !okMessage {
+	channelID, channelErr := strconv.ParseInt(strings.TrimSpace(args[0]), 10, 64)
+	messageID, messageErr := strconv.ParseInt(strings.TrimSpace(args[1]), 10, 64)
+	if channelErr != nil || messageErr != nil {
 		return actionErr("invalid_argument", "discord ids must be numeric"), nil
 	}
 	channel := client.GetChannel(channelID)
@@ -163,7 +162,7 @@ func telegramSetThreadTitle(ctx context.Context, adapter any, args []string) (ma
 	if !ok {
 		return nil, missingAdapterMethod(adapter, "rename_dm_topic")
 	}
-	threadID, err := pyint.Of(args[1])
+	threadID, err := textutil.ParseInt(args[1])
 	if err != nil {
 		return nil, errchain.Reword(err, "thread id %s is not a whole number", args[1])
 	}
@@ -215,7 +214,7 @@ func (p *PlatformActions) resolveAdapter(ctx context.Context, platform any) (any
 	if runner == nil {
 		return nil, actionErr("gateway_unavailable", "no gateway runner is active in this process")
 	}
-	value, err := runner.ParsePlatform(ctx, strings.ToLower(strings.TrimSpace(pyrepr.Str(platform))))
+	value, err := runner.ParsePlatform(ctx, strings.ToLower(strings.TrimSpace(anyutil.String(platform))))
 	if err != nil {
 		return nil, actionErr("unknown_platform", fmt.Sprintf("unknown platform %s", errchain.Show(platform)))
 	}
@@ -318,10 +317,10 @@ func (p *PlatformActions) SetThreadTitle(ctx context.Context, platform, chatID, 
 // Logs every platform action with its outcome
 func (p *PlatformActions) audit(verb string, platform any, result map[string]any) {
 	tail := ""
-	if !pyrepr.Truthy(result["ok"]) {
-		tail = " error=" + pyrepr.Str(result["error"])
+	if !anyutil.IsTrue(result["ok"]) {
+		tail = " error=" + anyutil.String(result["error"])
 	}
-	pkgLog().Info(fmt.Sprintf("platform_action plugin=%s verb=%s platform=%s ok=%s%s", p.pluginID, verb, pyrepr.Str(platform), pyrepr.Str(result["ok"]), tail))
+	pkgLog().Info(fmt.Sprintf("platform_action plugin=%s verb=%s platform=%s ok=%s%s", p.pluginID, verb, anyutil.String(platform), anyutil.String(result["ok"]), tail))
 }
 
 // Python attribute of the facade a hosted plugin reads, both verbs answering as coroutine methods

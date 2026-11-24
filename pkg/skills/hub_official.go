@@ -10,8 +10,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var indexIDPrefixes = []string{"skills-sh/", "skills.sh/", "official/", "github/", "clawhub/"}
@@ -42,10 +42,10 @@ func cleanRelParts(p string) []string {
 // Lowercased extra provider label of a raw index entry
 func entryProvider(entry any) string {
 	extra := pyGet(entry, "extra", nil)
-	if !pyrepr.Truthy(extra) {
-		extra = pyjson.NewObject()
+	if !anyutil.IsTrue(extra) {
+		extra = jsonutil.NewObject()
 	}
-	return strings.ToLower(pyrepr.Str(pyGet(extra, "provider", "")))
+	return strings.ToLower(anyutil.String(pyGet(extra, "provider", "")))
 }
 
 const (
@@ -61,7 +61,7 @@ type OptionalSkillSource struct {
 	auth       *GitHubAuth
 	tree       skillTree
 	github     *GitHubSource
-	remoteDirs *pyjson.Object
+	remoteDirs *jsonutil.Object
 }
 
 // Source over the packaged optional skills tree
@@ -106,7 +106,7 @@ func (o *OptionalSkillSource) Search(ctx context.Context, query string, limit in
 		}
 	}
 	if len(results) < limit {
-		remote := slices.Clone(o.listRemoteSkillDirs(ctx).Keys)
+		remote := slices.Clone(o.listRemoteSkillDirs(ctx).Keys())
 		slices.Sort(remote)
 		for _, rel := range remote {
 			if local[rel] || (ql != "" && !strings.Contains(strings.ToLower(rel), ql)) {
@@ -242,7 +242,7 @@ func (o *OptionalSkillSource) getGitHub() *GitHubSource {
 
 func (o *OptionalSkillSource) remoteMatches(ctx context.Context, name string) []string {
 	var out []string
-	for _, d := range o.listRemoteSkillDirs(ctx).Keys {
+	for _, d := range o.listRemoteSkillDirs(ctx).Keys() {
 		if d[strings.LastIndex(d, "/")+1:] == name {
 			out = append(out, d)
 		}
@@ -294,7 +294,7 @@ func (o *OptionalSkillSource) fetchFromLiveRepo(ctx context.Context, rel string)
 }
 
 // Category and skill dirs of the optional tree on live main through the index cache, empty offline
-func (o *OptionalSkillSource) listRemoteSkillDirs(ctx context.Context) *pyjson.Object {
+func (o *OptionalSkillSource) listRemoteSkillDirs(ctx context.Context) *jsonutil.Object {
 	if o.remoteDirs != nil {
 		return o.remoteDirs
 	}
@@ -303,7 +303,7 @@ func (o *OptionalSkillSource) listRemoteSkillDirs(ctx context.Context) *pyjson.O
 		if tree == nil {
 			return nil, nil
 		}
-		dirs := pyjson.NewObject()
+		dirs := jsonutil.NewObject()
 		prefix, suffix := optionalSkillsPrefix+"/", "/SKILL.md"
 		for _, item := range pyIterate(tree.Entries) {
 			pv := pyGet(item, "path", "")
@@ -322,13 +322,13 @@ func (o *OptionalSkillSource) listRemoteSkillDirs(ctx context.Context) *pyjson.O
 			return nil, nil
 		}
 		return dirs, nil
-	}, func(c any) bool { d, ok := c.(*pyjson.Object); return ok && d.Len() > 0 })
+	}, func(c any) bool { d, ok := c.(*jsonutil.Object); return ok && d.Len() > 0 })
 	if err != nil {
 		hubRaise(err)
 	}
-	o.remoteDirs, _ = v.(*pyjson.Object)
+	o.remoteDirs, _ = v.(*jsonutil.Object)
 	if o.remoteDirs == nil {
-		o.remoteDirs = pyjson.NewObject()
+		o.remoteDirs = jsonutil.NewObject()
 	}
 	return o.remoteDirs
 }
@@ -363,7 +363,7 @@ func upstreamPointerFromContent(content []byte) (repo, upath string, ok bool) {
 		if !has {
 			v = ""
 		}
-		return strings.Trim(strings.TrimSpace(pyrepr.Str(v)), "/")
+		return strings.Trim(strings.TrimSpace(anyutil.String(v)), "/")
 	}
 	repo, upath = field("repo"), field("path")
 	if repo == "" || strings.Count(repo, "/") != 1 || upath == "" {
@@ -383,9 +383,9 @@ func (o *OptionalSkillSource) fetchFromUpstream(ctx context.Context, repo, upath
 		o.h.S.logger().Warn(fmt.Sprintf("Upstream fetch failed for optional skill %s (%s:%s)", relID, repo, upath))
 		return nil
 	}
-	md := pyjson.NewObject()
+	md := jsonutil.NewObject()
 	if b.Metadata != nil {
-		for _, k := range b.Metadata.Keys {
+		for _, k := range b.Metadata.Keys() {
 			v, _ := b.Metadata.Get(k)
 			md.Set(k, v)
 		}
@@ -437,7 +437,7 @@ func (o *OptionalSkillSource) scanAll() []SkillMeta {
 		}
 		name := path.Base(parent)
 		if v, has := fm["name"]; has {
-			name = pyrepr.Str(v)
+			name = anyutil.String(v)
 		}
 		desc := ""
 		if v, has := fm["description"]; has {
@@ -467,8 +467,8 @@ func (x *IndexSource) ensureLoaded(ctx context.Context) any {
 	if !x.loaded {
 		x.index, x.loaded = x.h.loadIndex(ctx), true
 	}
-	if !pyrepr.Truthy(x.index) {
-		return pyjson.NewObject()
+	if !anyutil.IsTrue(x.index) {
+		return jsonutil.NewObject()
 	}
 	return x.index
 }
@@ -486,17 +486,17 @@ func (x *IndexSource) getGitHub() *GitHubSource {
 
 // Whether the index loaded with at least one skill
 func (x *IndexSource) IsAvailable() bool {
-	return pyrepr.Truthy(pyGet(x.ensureLoaded(context.Background()), "skills", []any{}))
+	return anyutil.IsTrue(pyGet(x.ensureLoaded(context.Background()), "skills", []any{}))
 }
 
 // Trust level recorded for the identifier in the index, community otherwise
 func (x *IndexSource) TrustLevelFor(identifier string) string {
 	for _, s := range x.skills(context.Background()) {
 		if pyGet(s, "identifier", nil) == identifier {
-			if !pyrepr.Truthy(s) {
+			if !anyutil.IsTrue(s) {
 				break
 			}
-			return pyrepr.Str(pyGet(s, "trust_level", "community"))
+			return anyutil.String(pyGet(s, "trust_level", "community"))
 		}
 	}
 	return "community"
@@ -537,14 +537,14 @@ func (x *IndexSource) SearchProvider(ctx context.Context, query string, limit in
 	}
 	var hits []scored
 	for i, s := range skills {
-		name := strings.ToLower(pyrepr.Str(pyGet(s, "name", "")))
+		name := strings.ToLower(anyutil.String(pyGet(s, "name", "")))
 		provider := entryProvider(s)
 		var tags []string
 		for _, t := range pyIterate(pyGet(s, "tags", []any{})) {
-			tags = append(tags, strings.ToLower(pyrepr.Str(t)))
+			tags = append(tags, strings.ToLower(anyutil.String(t)))
 		}
-		hay := strings.Join([]string{name, strings.ToLower(pyrepr.Str(pyGet(s, "description", ""))), strings.Join(tags, " "),
-			strings.ToLower(pyrepr.Str(pyGet(s, "identifier", ""))), provider}, " ")
+		hay := strings.Join([]string{name, strings.ToLower(anyutil.String(pyGet(s, "description", ""))), strings.Join(tags, " "),
+			strings.ToLower(anyutil.String(pyGet(s, "identifier", ""))), provider}, " ")
 		if !strings.Contains(hay, ql) {
 			continue
 		}
@@ -585,12 +585,12 @@ func (x *IndexSource) Fetch(ctx context.Context, identifier string) (b *SkillBun
 	src := pyGet(entry, "source", nil)
 	skillsSh := src == "skills.sh" || src == "skills-sh"
 	candidates := []any{pyGet(entry, "resolved_github_id", nil)}
-	if pyrepr.Truthy(repoV) && pyrepr.Truthy(pathV) {
-		candidates = append(candidates, pyrepr.Str(repoV)+"/"+p)
+	if anyutil.IsTrue(repoV) && anyutil.IsTrue(pathV) {
+		candidates = append(candidates, anyutil.String(repoV)+"/"+p)
 	}
 	var bundle *SkillBundle
 	for _, c := range candidates {
-		if !pyrepr.Truthy(c) {
+		if !anyutil.IsTrue(c) {
 			continue
 		}
 		if bundle = github.fetch(ctx, pyStrOf(c)); bundle != nil {
@@ -598,7 +598,7 @@ func (x *IndexSource) Fetch(ctx context.Context, identifier string) (b *SkillBun
 		}
 	}
 	if bundle == nil {
-		if !skillsSh || !pyrepr.Truthy(repoV) || slug == "" {
+		if !skillsSh || !anyutil.IsTrue(repoV) || slug == "" {
 			return nil, nil
 		}
 		repo := pyStrOf(repoV)
@@ -616,7 +616,7 @@ func (x *IndexSource) Fetch(ctx context.Context, identifier string) (b *SkillBun
 	if skillsSh && bundle.Name == "skills" {
 		bundle.Name = slug
 	}
-	bundle.Source = pyrepr.Str(pyGet(entry, "source", "skills-index"))
+	bundle.Source = anyutil.String(pyGet(entry, "source", "skills-index"))
 	bundle.Identifier = identifier
 	return bundle, nil
 }
@@ -635,13 +635,13 @@ func (x *IndexSource) Inspect(ctx context.Context, identifier string) (m *SkillM
 func (x *IndexSource) findEntry(ctx context.Context, identifier string) any {
 	skills := x.skills(ctx)
 	for _, s := range skills {
-		if pyGet(s, "identifier", nil) == identifier && pyrepr.Truthy(s) {
+		if pyGet(s, "identifier", nil) == identifier && anyutil.IsTrue(s) {
 			return s
 		}
 	}
 	normalized := stripIDPrefix(identifier, indexIDPrefixes)
 	for _, s := range skills {
-		if stripIDPrefix(pyStrOf(pyGet(s, "identifier", "")), indexIDPrefixes) == normalized && pyrepr.Truthy(s) {
+		if stripIDPrefix(pyStrOf(pyGet(s, "identifier", "")), indexIDPrefixes) == normalized && anyutil.IsTrue(s) {
 			return s
 		}
 	}
@@ -655,11 +655,11 @@ func indexToMeta(entry any) SkillMeta {
 		if v == nil {
 			return nil
 		}
-		return strPtr(pyrepr.Str(v))
+		return strPtr(anyutil.String(v))
 	}
-	extra, _ := pyGet(entry, "extra", pyjson.NewObject()).(*pyjson.Object)
-	return SkillMeta{Name: pyrepr.Str(pyGet(entry, "name", "")), Description: pyrepr.Str(pyGet(entry, "description", "")),
-		Source: pyrepr.Str(pyGet(entry, "source", "skills-index")), Identifier: pyrepr.Str(pyGet(entry, "identifier", "")),
-		TrustLevel: pyrepr.Str(pyGet(entry, "trust_level", "community")), Repo: optStr("repo"), Path: optStr("path"),
+	extra, _ := pyGet(entry, "extra", jsonutil.NewObject()).(*jsonutil.Object)
+	return SkillMeta{Name: anyutil.String(pyGet(entry, "name", "")), Description: anyutil.String(pyGet(entry, "description", "")),
+		Source: anyutil.String(pyGet(entry, "source", "skills-index")), Identifier: anyutil.String(pyGet(entry, "identifier", "")),
+		TrustLevel: anyutil.String(pyGet(entry, "trust_level", "community")), Repo: optStr("repo"), Path: optStr("path"),
 		Tags: tagStrings(pyGet(entry, "tags", []any{})), Extra: extra}
 }

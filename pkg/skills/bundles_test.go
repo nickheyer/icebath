@@ -106,7 +106,7 @@ func TestBundleFileShapesAreSkippedOrRaised(t *testing.T) {
 		t.Fatalf("shapes %v", out)
 	}
 	os.WriteFile(filepath.Join(dir, "zz.yaml"), []byte("name: \xff\n"), 0o644)
-	if _, err := s.ScanBundles(); err == nil || !strings.Contains(err.Error(), "not valid UTF-8 at byte 6") {
+	if _, err := s.ScanBundles(); err == nil || !strings.Contains(err.Error(), "invalid UTF-8 at byte 6") {
 		t.Fatalf("decode error %v", err)
 	}
 }

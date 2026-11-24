@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Overridable base methods a source answers in place of the spec driven defaults
@@ -129,8 +129,8 @@ func (h hostedSecretSource) call(ctx context.Context, method string, args ...any
 // Class attributes of the hosted source read through the proxy
 func (h hostedSecretSource) Spec() SecretSourceSpec {
 	version := 0
-	if n, ok := pyrepr.Int(h.attr("api_version")); ok {
-		version = int(n.Int64())
+	if n, ok := anyutil.Int(h.attr("api_version")); ok {
+		version = int(n)
 	}
 	hints := map[SecretErrorKind]string{}
 	for k, v := range hostedMapping(h.attr("remediation_hints")) {
@@ -151,7 +151,7 @@ func (h hostedSecretSource) Fetch(cfg map[string]any, homePath string, _ *Source
 	}
 	dc, ok := got.(*plugins.Dataclass)
 	if !ok || dc == nil || dc.Type != "FetchResult" {
-		name := pyrepr.TypeName(got)
+		name := anyutil.Kind(got)
 		if ok && dc != nil {
 			name = dc.Type
 		}
@@ -252,7 +252,7 @@ func (h hostedSecretSource) Remediation(kind SecretErrorKind, cfg map[string]any
 	if got == nil || got == "" {
 		return "", nil
 	}
-	return pyrepr.Str(got), nil
+	return anyutil.String(got), nil
 }
 
 // String keyed view of a dict the host child returned

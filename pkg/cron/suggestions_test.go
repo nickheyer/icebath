@@ -9,13 +9,13 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func addTestSuggestion(t *testing.T, s *Store, key, title, source, schedule string) *pyjson.Object {
+func addTestSuggestion(t *testing.T, s *Store, key, title, source, schedule string) *jsonutil.Object {
 	t.Helper()
-	spec := pyjson.NewObject()
+	spec := jsonutil.NewObject()
 	spec.Set("prompt", "do it")
 	spec.Set("schedule", schedule)
 	spec.Set("name", title)
@@ -56,8 +56,8 @@ func TestSuggestionFileOverrideAndProfileRouting(t *testing.T) {
 	if err != nil || rec == nil {
 		t.Fatal(rec, err)
 	}
-	spec := rec["job_spec"].(*pyjson.Object)
-	if rec["source"] != "blueprint" || spec.Vals["schedule"] != "0 8 * * *" || len(spec.Vals["skills"].([]any)) != 1 || spec.Vals["skills"].([]any)[0] != "morning-brief" {
+	spec := rec["job_spec"].(*jsonutil.Object)
+	if rec["source"] != "blueprint" || spec.Value("schedule") != "0 8 * * *" || len(spec.Value("skills").([]any)) != 1 || spec.Value("skills").([]any)[0] != "morning-brief" {
 		t.Fatal(rec)
 	}
 	if _, err := os.Stat(filepath.Join(profileB, "cron", "suggestions.json")); err != nil {
@@ -70,11 +70,11 @@ func TestSuggestionFileOverrideAndProfileRouting(t *testing.T) {
 
 func TestSuggestionStoreLifecycle(t *testing.T) {
 	s, _ := newTestStore(t)
-	if rec := addTestSuggestion(t, s, "k1", "Test", "catalog", "0 9 * * *"); rec == nil || rec.Vals["status"] != "pending" {
+	if rec := addTestSuggestion(t, s, "k1", "Test", "catalog", "0 9 * * *"); rec == nil || rec.Value("status") != "pending" {
 		t.Fatal(rec)
 	}
 	p, _ := s.ListPendingSuggestions()
-	if len(p) != 1 || p[0].(*pyjson.Object).Vals["title"] != "Test" {
+	if len(p) != 1 || p[0].(*jsonutil.Object).Value("title") != "Test" {
 		t.Fatal(p)
 	}
 	if addTestSuggestion(t, s, "k1", "Test", "catalog", "0 9 * * *") != nil || pendingCount(t, s) != 1 {
@@ -86,18 +86,18 @@ func TestSuggestionStoreLifecycle(t *testing.T) {
 	if pendingCount(t, s) != 0 || addTestSuggestion(t, s, "k1", "Test", "catalog", "0 9 * * *") != nil {
 		t.Fatal("dismissed key offered again")
 	}
-	if _, err := s.AddSuggestion("x", "d", "bogus", pyjson.NewObject(), "k"); err == nil || err.Error() != "unknown suggestion source: 'bogus'" {
+	if _, err := s.AddSuggestion("x", "d", "bogus", jsonutil.NewObject(), "k"); err == nil || err.Error() != "unknown suggestion source: 'bogus'" {
 		t.Fatal(err)
 	}
-	if _, err := s.AddSuggestion("  ", "d", "catalog", pyjson.NewObject(), "k"); err == nil || err.Error() != "title and dedup_key are required" {
+	if _, err := s.AddSuggestion("  ", "d", "catalog", jsonutil.NewObject(), "k"); err == nil || err.Error() != "title and dedup_key are required" {
 		t.Fatal(err)
 	}
 	rec := addTestSuggestion(t, s, "usage:weekly-summary", "Weekly project summary", "usage", "0 17 * * 5")
-	if rec.Vals["source"] != "usage" || rec.Vals["status"] != "pending" || rec.Vals["job_spec"].(*pyjson.Object).Vals["schedule"] != "0 17 * * 5" {
+	if rec.Value("source") != "usage" || rec.Value("status") != "pending" || rec.Value("job_spec").(*jsonutil.Object).Value("schedule") != "0 17 * * 5" {
 		t.Fatal(rec)
 	}
 	p, _ = s.ListPendingSuggestions()
-	if p[0].(*pyjson.Object).Vals["dedup_key"] != "usage:weekly-summary" {
+	if p[0].(*jsonutil.Object).Value("dedup_key") != "usage:weekly-summary" {
 		t.Fatal(p)
 	}
 	if info, err := os.Stat(s.suggestionsFile()); err != nil || info.Mode().Perm() != 0o600 {
@@ -144,9 +144,9 @@ func TestSuggestionRegistrationFailureMarksAccepted(t *testing.T) {
 	rec := addTestSuggestion(t, s, "registration-failed", "My Job", "catalog", "0 9 * * *")
 	failure := &CronSchedulerRegistrationError{Job: &Job{ID: "job123", Name: "My Job"}, Cause: errors.New("private detail")}
 	prev := acceptCreateJob
-	acceptCreateJob = func(context.Context, *Store, *pyjson.Object) (*Job, error) { return nil, failure }
+	acceptCreateJob = func(context.Context, *Store, *jsonutil.Object) (*Job, error) { return nil, failure }
 	t.Cleanup(func() { acceptCreateJob = prev })
-	_, err := s.AcceptSuggestion(context.Background(), rec.Vals["id"].(string), nil)
+	_, err := s.AcceptSuggestion(context.Background(), rec.Value("id").(string), nil)
 	var regErr *CronSchedulerRegistrationError
 	if !errors.As(err, &regErr) {
 		t.Fatal(err)
@@ -154,7 +154,7 @@ func TestSuggestionRegistrationFailureMarksAccepted(t *testing.T) {
 	if pendingCount(t, s) != 0 {
 		t.Fatal("still pending")
 	}
-	if again, err := s.AcceptSuggestion(context.Background(), rec.Vals["id"].(string), nil); again != nil || err != nil {
+	if again, err := s.AcceptSuggestion(context.Background(), rec.Value("id").(string), nil); again != nil || err != nil {
 		t.Fatal(again, err)
 	}
 }
@@ -163,7 +163,7 @@ func TestSchedulerRegistrationFailureKeepsSavedJob(t *testing.T) {
 	s, _ := newTestStore(t)
 	testScheduler.registerErr = errors.New("private detail")
 	t.Cleanup(func() { testScheduler.registerErr = nil })
-	spec := pyjson.NewObject()
+	spec := jsonutil.NewObject()
 	spec.Set("prompt", "p")
 	spec.Set("schedule", "every 1h")
 	spec.Set("name", "Reg")
@@ -179,20 +179,20 @@ func TestSchedulerRegistrationFailureKeepsSavedJob(t *testing.T) {
 		t.Fatal(regErr.UserMessage())
 	}
 	d := regErr.ToDict()
-	if d.Vals["job_id"] != regErr.Job.ID || d.Vals["job_saved"] != true || d.Vals["scheduler_registered"] != false || d.Vals["retry_create"] != false {
+	if d.Value("job_id") != regErr.Job.ID || d.Value("job_saved") != true || d.Value("scheduler_registered") != false || d.Value("retry_create") != false {
 		t.Fatal(d)
 	}
 	jobs, _ := s.LoadJobs(context.Background())
 	if len(jobs) != 1 {
 		t.Fatal(len(jobs))
 	}
-	bad := pyjson.NewObject()
+	bad := jsonutil.NewObject()
 	bad.Set("prompt", "p")
 	bad.Set("bogus", 1)
 	if _, err := s.createJobWithSchedulerRegistration(context.Background(), bad); err == nil || err.Error() != "unknown cron job field bogus" {
 		t.Fatal(err)
 	}
-	if _, err := s.createJobWithSchedulerRegistration(context.Background(), pyjson.NewObject()); err == nil || err.Error() != "a cron job spec needs prompt and schedule" {
+	if _, err := s.createJobWithSchedulerRegistration(context.Background(), jsonutil.NewObject()); err == nil || err.Error() != "a cron job spec needs prompt and schedule" {
 		t.Fatal(err)
 	}
 }
@@ -200,8 +200,8 @@ func TestSchedulerRegistrationFailureKeepsSavedJob(t *testing.T) {
 func TestGetSuggestionByIDIndexTitleAndClearResolved(t *testing.T) {
 	s, _ := newTestStore(t)
 	rec := addTestSuggestion(t, s, "byref", "Findable", "catalog", "0 9 * * *")
-	for _, ref := range []string{rec.Vals["id"].(string), "1", "findable"} {
-		if got, err := s.GetSuggestion(ref); err != nil || got == nil || got.Vals["id"] != rec.Vals["id"] {
+	for _, ref := range []string{rec.Value("id").(string), "1", "findable"} {
+		if got, err := s.GetSuggestion(ref); err != nil || got == nil || got.Value("id") != rec.Value("id") {
 			t.Fatal(ref, got, err)
 		}
 	}
@@ -213,7 +213,7 @@ func TestGetSuggestionByIDIndexTitleAndClearResolved(t *testing.T) {
 		t.Fatal("dismiss b")
 	}
 	prev := acceptCreateJob
-	acceptCreateJob = func(context.Context, *Store, *pyjson.Object) (*Job, error) { return &Job{ID: "j"}, nil }
+	acceptCreateJob = func(context.Context, *Store, *jsonutil.Object) (*Job, error) { return &Job{ID: "j"}, nil }
 	t.Cleanup(func() { acceptCreateJob = prev })
 	if job, err := s.AcceptSuggestion(context.Background(), "1", nil); job == nil || err != nil {
 		t.Fatal(job, err)
@@ -239,7 +239,7 @@ func TestSuggestionsFailedWriteKeepsOldBytesAndNoTemp(t *testing.T) {
 	}
 	suggestionsFileOverride = target
 	t.Cleanup(func() { suggestionsFileOverride = "" })
-	rec := pyjson.NewObject()
+	rec := jsonutil.NewObject()
 	rec.Set("id", int64(1))
 	if err := s.saveSuggestionsRaw([]any{rec}); err == nil {
 		t.Fatal("write whose temp name exceeds the name limit succeeded")

@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Every shipped compaction handoff prefix newest first, byte pinned so stale directives stay recognisable on resume
@@ -24,7 +24,7 @@ func partText(item any) any {
 	switch v := item.(type) {
 	case string:
 		return v
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		text, _ := v.Get("text")
 		return text
 	case map[string]any:

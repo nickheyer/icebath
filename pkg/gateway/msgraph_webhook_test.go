@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Graph adapter with the test defaults overridden by the given extra keys
@@ -97,12 +97,12 @@ func TestMissingClientStateIsAuthRejected(t *testing.T) {
 func TestValidNotificationAcceptedAndScheduled(t *testing.T) {
 	adapter := makeMSGraphAdapter(t, nil)
 	type scheduledCall struct {
-		notification *pyjson.Object
+		notification *jsonutil.Object
 		event        *MessageEvent
 	}
 	var mu sync.Mutex
 	var scheduled []scheduledCall
-	adapter.SetNotificationScheduler(func(ctx context.Context, notification *pyjson.Object, event *MessageEvent) error {
+	adapter.SetNotificationScheduler(func(ctx context.Context, notification *jsonutil.Object, event *MessageEvent) error {
 		mu.Lock()
 		scheduled = append(scheduled, scheduledCall{notification, event})
 		mu.Unlock()
@@ -150,7 +150,7 @@ func TestNonASCIIClientStateRejectedWithoutRaising(t *testing.T) {
 
 func TestResourcePatternsAcceptLeadingSlash(t *testing.T) {
 	adapter := makeMSGraphAdapter(t, map[string]any{"accepted_resources": []any{"/communications/onlineMeetings"}})
-	adapter.SetNotificationScheduler(func(context.Context, *pyjson.Object, *MessageEvent) error { return nil })
+	adapter.SetNotificationScheduler(func(context.Context, *jsonutil.Object, *MessageEvent) error { return nil })
 	body := `{"value": [{"id": "notif-slash", "subscriptionId": "sub-1", "changeType": "updated", "resource": "communications/onlineMeetings/meeting-4", "clientState": "expected-client-state"}]}`
 	resp, err := adapter.handleNotification(context.Background(), msgraphFakeRequest(nil, body, -1, ""))
 	if err != nil || resp.Status != 202 {
@@ -169,7 +169,7 @@ func TestPublicBindWithoutAllowlistFailsClosed(t *testing.T) {
 
 func TestLoopbackBindWithoutAllowlistStillAcceptsLocalRequests(t *testing.T) {
 	adapter := makeMSGraphAdapter(t, map[string]any{"host": "127.0.0.1", "allowed_source_cidrs": []any{}})
-	adapter.SetNotificationScheduler(func(context.Context, *pyjson.Object, *MessageEvent) error { return nil })
+	adapter.SetNotificationScheduler(func(context.Context, *jsonutil.Object, *MessageEvent) error { return nil })
 	body := `{"value": [{"id": "notif-ip-local", "resource": "communications/onlineMeetings/m", "clientState": "expected-client-state"}]}`
 	resp, err := adapter.handleNotification(context.Background(), msgraphFakeRequest(nil, body, -1, "127.0.0.1"))
 	if err != nil || resp.Status != 202 {

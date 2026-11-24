@@ -14,17 +14,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Points both fleet probes at the rows a test keeps editing
-func pinFleetRows(t *testing.T, rows *[]*pyjson.Object) {
+func pinFleetRows(t *testing.T, rows *[]*jsonutil.Object) {
 	t.Helper()
-	read := func() []*pyjson.Object { return append([]*pyjson.Object{}, (*rows)...) }
+	read := func() []*jsonutil.Object { return append([]*jsonutil.Object{}, (*rows)...) }
 	vsSwap(t, &fleetCollectVersions, read)
-	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*pyjson.Object { return read() })
+	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*jsonutil.Object { return read() })
 }
 
 // Fakes the legacy unit check of the verification pass
@@ -66,7 +66,7 @@ func TestCallSiteWiringEmptyProbeSettlesAndFailsOnlyWhenRowsExpected(t *testing.
 			h := newFleetHarness(t)
 			ctx := updaterecord.UpdateReceiptScope(h.ctx)
 			quietVerification(t)
-			vsSwap(t, &fleetReportUnaccounted, func(io.Writer, []*pyjson.Object) bool { return false })
+			vsSwap(t, &fleetReportUnaccounted, func(io.Writer, []*jsonutil.Object) bool { return false })
 			vsSwap(t, &fleetAutoMigrate, func(context.Context, io.Writer) error { return nil })
 			events := []string{}
 			base, now := time.Unix(1_700_000_000, 0), time.Duration(0)
@@ -75,9 +75,9 @@ func TestCallSiteWiringEmptyProbeSettlesAndFailsOnlyWhenRowsExpected(t *testing.
 				events = append(events, "settle")
 				now += d
 			})
-			vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*pyjson.Object {
+			vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*jsonutil.Object {
 				events = append(events, "probe")
-				return []*pyjson.Object{}
+				return []*jsonutil.Object{}
 			})
 			restart := newGatewayRestartOutcome()
 			plan := NewUpdatePlan()
@@ -136,7 +136,7 @@ func TestUnmappedStopKeepsTheRestartOwed(t *testing.T) {
 	h := newFleetHarness(t)
 	ctx := updaterecord.UpdateReceiptScope(h.ctx)
 	quietVerification(t)
-	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*pyjson.Object { return []*pyjson.Object{} })
+	vsSwap(t, &fleetCollectVersionsWith, func([]int, []int) []*jsonutil.Object { return []*jsonutil.Object{} })
 	cleared := 0
 	vsSwap(t, &fleetClearMarker, func(context.Context) { cleared++ })
 	out := unmappedStopOutcome(101)
@@ -160,7 +160,7 @@ func TestUnmappedStopDebtSurvivesStartupUntilACurrentGatewayRuns(t *testing.T) {
 	h.checkout("head")
 	quietVerification(t)
 	vsSwap(t, &fleetHostOwesNoRestart, func(context.Context) bool { return true })
-	rows := []*pyjson.Object{}
+	rows := []*jsonutil.Object{}
 	pinFleetRows(t, &rows)
 	h.arm("head", nil)
 	out := unmappedStopOutcome(101)
@@ -190,7 +190,7 @@ func TestUnmappedStopDebtIsNotSettledByTheMappedGatewaysRestart(t *testing.T) {
 		map[string]any{"kind": "gateway", "profile": "default", "pid": int64(7)},
 		map[string]any{"kind": "gateway", "profile": nil, "pid": int64(101), "stopped_unmapped": true},
 	})
-	rows := []*pyjson.Object{fleetObject("profile", "default", "state", "current", "code_sha", "head", "pid", int64(8))}
+	rows := []*jsonutil.Object{fleetObject("profile", "default", "state", "current", "code_sha", "head", "pid", int64(8))}
 	pinFleetRows(t, &rows)
 
 	if !owesFleetRestart(t, h) || !h.armed() {
@@ -210,7 +210,7 @@ func TestSameShaRetryAddsNewlyStoppedUnmappedDebtToAnExistingInventory(t *testin
 	quietVerification(t)
 	vsSwap(t, &fleetProbeSettleTimeoutSeconds, 0)
 	vsSwap(t, &fleetSignalStaleSurvivors, func(context.Context, io.Writer, []any, *gatewayRestartOutcome, float64) []int { return nil })
-	rows := []*pyjson.Object{fleetObject("profile", "default", "state", "down", "code_sha", "old", "pid", int64(7))}
+	rows := []*jsonutil.Object{fleetObject("profile", "default", "state", "down", "code_sha", "old", "pid", int64(7))}
 	pinFleetRows(t, &rows)
 	h.arm("head", []any{map[string]any{"kind": "gateway", "profile": "default", "pid": int64(7)}})
 	out := unmappedStopOutcome(7999)
@@ -243,7 +243,7 @@ func TestSameShaRetryAddsNewlyStoppedUnmappedDebtToAnExistingInventory(t *testin
 		!holds(map[string]any{"kind": "gateway", "profile": nil, "pid": float64(7999), "stopped_unmapped": true}) {
 		t.Fatalf("inventory = %v", inventory.Runtimes)
 	}
-	rows = []*pyjson.Object{fleetObject("profile", "default", "state", "current", "code_sha", "head", "pid", int64(8))}
+	rows = []*jsonutil.Object{fleetObject("profile", "default", "state", "current", "code_sha", "head", "pid", int64(8))}
 	if obsolete, err := markerOnlyRestartObsolete(h.ctx); err != nil || obsolete || !h.armed() {
 		t.Fatalf("obsolete=%v armed=%v err=%v", obsolete, h.armed(), err)
 	}
@@ -345,13 +345,13 @@ func verifyRestartCase(t *testing.T, restart *gatewayRestartOutcome, fleetState 
 	t.Helper()
 	h := newFleetHarness(t)
 	ctx := updaterecord.UpdateReceiptScope(h.ctx)
-	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*pysubprocess.Completed, error) {
+	vsSwap(t, &fleetSystemctl, func(_ context.Context, cmd []string, _ float64) (*executil.Completed, error) {
 		return completedText(cmd, "LoadState=not-found\nMainPID=0\n"), nil
 	})
 	vsSwap(t, &fleetAutoMigrate, func(context.Context, io.Writer) error { return nil })
 	vsSwap(t, &fleetSignalStaleSurvivors, func(context.Context, io.Writer, []any, *gatewayRestartOutcome, float64) []int { return nil })
-	vsSwap(t, &fleetCollectSnapshot, func(context.Context, *gatewayRestartOutcome, bool) ([]*pyjson.Object, error) {
-		return []*pyjson.Object{fleetObject("profile", "default", "pid", int64(1563620), "state", fleetState)}, nil
+	vsSwap(t, &fleetCollectSnapshot, func(context.Context, *gatewayRestartOutcome, bool) ([]*jsonutil.Object, error) {
+		return []*jsonutil.Object{fleetObject("profile", "default", "pid", int64(1563620), "state", fleetState)}, nil
 	})
 	h.arm("", nil)
 	updaterecord.BeginUpdateReceipt(ctx, nil, "")

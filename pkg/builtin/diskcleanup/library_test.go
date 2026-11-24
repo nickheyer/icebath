@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var bg = context.Background()
@@ -42,12 +42,12 @@ func write(t *testing.T, p, content string) {
 
 // Tracked entry in the stored key order
 func entry(path, category, stamp string, size int64) Entry {
-	return pyjson.ObjectOf("path", path, "category", category, "timestamp", stamp, "size", size)
+	return jsonutil.ObjectOf("path", path, "category", category, "timestamp", stamp, "size", size)
 }
 
 // Timestamp a number of days in the past
 func daysAgo(n int) string {
-	return pydatetime.ISOFormatUTC(time.Now().UTC().Add(-time.Duration(n) * 24 * time.Hour))
+	return time.Now().UTC().Add(-time.Duration(n) * 24 * time.Hour).UTC().Format(timeutil.RFC3339Micro)
 }
 
 func mustGuess(t *testing.T, p string) string {
@@ -336,7 +336,7 @@ func writeTrackedJSON(t *testing.T, h string, items ...Entry) string {
 	for i, e := range items {
 		list[i] = e
 	}
-	text, err := pyjson.Dumps(list)
+	text, err := jsonutil.Encode(list)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,12 +349,12 @@ func TestQuickSkipsStaleCronOutputForJobsJSON(t *testing.T) {
 	h := isolate(t)
 	jobs := filepath.Join(h, "cron", "jobs.json")
 	write(t, jobs, `{"jobs": []}`)
-	tf := writeTrackedJSON(t, h, pyjson.ObjectOf("path", jobs, "category", "cron-output", "timestamp", "2025-01-01T00:00:00+00:00", "size", int64(123)))
+	tf := writeTrackedJSON(t, h, jsonutil.ObjectOf("path", jobs, "category", "cron-output", "timestamp", "2025-01-01T00:00:00+00:00", "size", int64(123)))
 	if s := mustQuick(t); s.Deleted != 0 || gone(jobs) {
 		t.Fatalf("summary %+v", s)
 	}
 	data, _ := os.ReadFile(tf)
-	if v, _ := pyjson.Loads(string(data)); len(v.([]any)) != 0 {
+	if v, _ := jsonutil.Decode(string(data)); len(v.([]any)) != 0 {
 		t.Fatalf("remaining %s", data)
 	}
 }
@@ -363,7 +363,7 @@ func TestDryRunOmitsStaleCronOutput(t *testing.T) {
 	h := isolate(t)
 	jobs := filepath.Join(h, "cron", "jobs.json")
 	write(t, jobs, "[]")
-	writeTrackedJSON(t, h, pyjson.ObjectOf("path", jobs, "category", "cron-output", "timestamp", "2025-01-01T00:00:00+00:00", "size", int64(123)))
+	writeTrackedJSON(t, h, jsonutil.ObjectOf("path", jobs, "category", "cron-output", "timestamp", "2025-01-01T00:00:00+00:00", "size", int64(123)))
 	auto, prompt, err := DryRun(bg)
 	if err != nil || len(auto) != 0 || len(prompt) != 0 {
 		t.Fatalf("%v %v %v", auto, prompt, err)
@@ -374,7 +374,7 @@ func TestLegitimateCronOutputStillDeleted(t *testing.T) {
 	h := isolate(t)
 	run := filepath.Join(h, "cron", "output", "job_1", "run.md")
 	write(t, run, "x")
-	writeTrackedJSON(t, h, pyjson.ObjectOf("path", run, "category", "cron-output", "timestamp", daysAgo(20), "size", int64(10)))
+	writeTrackedJSON(t, h, jsonutil.ObjectOf("path", run, "category", "cron-output", "timestamp", daysAgo(20), "size", int64(10)))
 	if s := mustQuick(t); s.Deleted != 1 || !gone(run) {
 		t.Fatalf("summary %+v", s)
 	}

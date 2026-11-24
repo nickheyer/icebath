@@ -19,12 +19,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Spawn metadata a Windows launcher sets on a breakaway gateway child
@@ -42,7 +42,7 @@ func truthyEnv(name string) bool {
 func gatewayDetachedEnv() bool { return truthyEnv("ICEBATH_GATEWAY_DETACHED") }
 
 // Home a stale pid record names, unknown when it carries none
-func staleRecordHome(record *pyjson.Object) any {
+func staleRecordHome(record *jsonutil.Object) any {
 	if recorded, ok := home.RecordValue(record.Get, home.RecordKey); ok {
 		return recorded
 	}
@@ -246,8 +246,8 @@ func makeExitDiag(ctx context.Context) func(tag string, extra ...[2]any) {
 		if err := os.MkdirAll(logDir, 0o777); err != nil {
 			return
 		}
-		line := pyjson.NewObject()
-		line.Set("ts", pydatetime.ISOFormatUTC(time.Now()))
+		line := jsonutil.NewObject()
+		line.Set("ts", time.Now().UTC().Format(timeutil.RFC3339Micro))
 		line.Set("tag", tag)
 		line.Set("pid", int64(os.Getpid()))
 		line.Set("go", hostinfo.GoVersion())
@@ -255,7 +255,7 @@ func makeExitDiag(ctx context.Context) func(tag string, extra ...[2]any) {
 		for _, kv := range extra {
 			line.Set(kv[0].(string), kv[1])
 		}
-		text, err := pyjson.Dumps(line, pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+		text, err := jsonutil.Encode(line, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 		if err != nil {
 			return
 		}

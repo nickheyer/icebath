@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Anonymous credential chain, the MagicMock(spec=GitHubAuth) of the tests
@@ -34,15 +34,15 @@ func githubTestSource(t *testing.T) (*GitHubSource, *Hub) {
 
 func pyList(t *testing.T, js string) []any {
 	t.Helper()
-	v, err := pyjson.Loads(js)
+	v, err := jsonutil.Decode(js)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return v.([]any)
 }
 
-func plainGet(fn func(url string, o hubGet) *pyhttpx.Response) func(context.Context, string, hubGet) (*pyhttpx.Response, error) {
-	return func(_ context.Context, url string, o hubGet) (*pyhttpx.Response, error) { return fn(url, o), nil }
+func plainGet(fn func(url string, o hubGet) *httputil.Response) func(context.Context, string, hubGet) (*httputil.Response, error) {
+	return func(_ context.Context, url string, o hubGet) (*httputil.Response, error) { return fn(url, o), nil }
 }
 
 func TestParseFrontmatterQuick(t *testing.T) {
@@ -81,9 +81,9 @@ func TestSkillsShGroupings(t *testing.T) {
 		src, _ := githubTestSource(t)
 		src.seams.getSkillshGroupings = func(string) map[string]string { return c.groupings }
 		src.seams.inspect = func(string) *SkillMeta {
-			return &SkillMeta{Name: c.name, Description: "d", Source: "github", Identifier: c.repo + "/skills/" + c.dir, TrustLevel: c.trust, Extra: pyjson.NewObject()}
+			return &SkillMeta{Name: c.name, Description: "d", Source: "github", Identifier: c.repo + "/skills/" + c.dir, TrustLevel: c.trust, Extra: jsonutil.NewObject()}
 		}
-		src.seams.githubGet = func(string, ghGet) *pyhttpx.Response {
+		src.seams.githubGet = func(string, ghGet) *httputil.Response {
 			return textResp(200, `[{"type": "dir", "name": "`+c.dir+`"}]`)
 		}
 		skills := src.listSkillsInRepo(context.Background(), c.repo, "skills/", "science")
@@ -115,7 +115,7 @@ func TestTrustLevelFor(t *testing.T) {
 func TestGitHubSourceFileFetchQuotesDecodedSupportPath(t *testing.T) {
 	src, _ := githubTestSource(t)
 	var urls []string
-	src.seams.githubGet = func(url string, _ ghGet) *pyhttpx.Response { urls = append(urls, url); return nil }
+	src.seams.githubGet = func(url string, _ ghGet) *httputil.Response { urls = append(urls, url); return nil }
 	src.fetchFileBytes(context.Background(), "owner/repo", "skill/references/foo#bar.md", "")
 	if urls[0] != "https://api.github.com/repos/owner/repo/contents/skill/references/foo%23bar.md" {
 		t.Fatal(urls)
@@ -128,7 +128,7 @@ func TestRejectedTokenFallsThroughToNextCredential(t *testing.T) {
 		src.Auth.tryPat = func() string { return "pat-dead" }
 		src.Auth.tryGhCLI = func() string { return gh }
 		var sent []map[string]string
-		h.io.httpGet = plainGet(func(_ string, o hubGet) *pyhttpx.Response {
+		h.io.httpGet = plainGet(func(_ string, o hubGet) *httputil.Response {
 			sent = append(sent, o.Headers)
 			if strings.HasSuffix(o.Headers["Authorization"], "-dead") {
 				return textResp(401, "body")
@@ -157,7 +157,7 @@ func TestPinnedFileComesFromRawAndSpendsNoAPICall(t *testing.T) {
 	for _, rawStatus := range []int{200, 404} {
 		src, h := githubTestSource(t)
 		var hosts []string
-		h.io.httpGet = plainGet(func(url string, _ hubGet) *pyhttpx.Response {
+		h.io.httpGet = plainGet(func(url string, _ hubGet) *httputil.Response {
 			hosts = append(hosts, strings.Split(url, "/")[2])
 			if strings.Contains(url, "raw.githubusercontent.com") && rawStatus != 200 {
 				return textResp(rawStatus, "")
@@ -178,7 +178,7 @@ func TestPinnedFileComesFromRawAndSpendsNoAPICall(t *testing.T) {
 func TestUnreachableRawHostFallsBackToTheAPIAndIsTriedOnce(t *testing.T) {
 	src, h := githubTestSource(t)
 	var hosts []string
-	h.io.httpGet = func(_ context.Context, url string, _ hubGet) (*pyhttpx.Response, error) {
+	h.io.httpGet = func(_ context.Context, url string, _ hubGet) (*httputil.Response, error) {
 		hosts = append(hosts, strings.Split(url, "/")[2])
 		if strings.Contains(url, "raw.githubusercontent.com") {
 			return nil, &tools.SSRFConnectionBlocked{}
@@ -199,7 +199,7 @@ func TestFindSkillInRepoTree(t *testing.T) {
 	src, h := githubTestSource(t)
 	entries := `[{"path": "README.md", "type": "blob"}, {"path": "cli-tool/components/skills/development/senior-backend/SKILL.md", "type": "blob"},` +
 		` {"path": "cli-tool/components/skills/development/other/SKILL.md", "type": "blob"}]`
-	h.io.httpGet = plainGet(func(url string, _ hubGet) *pyhttpx.Response {
+	h.io.httpGet = plainGet(func(url string, _ hubGet) *httputil.Response {
 		switch {
 		case strings.HasSuffix(url, "/davila7/claude-code-templates"):
 			return textResp(200, `{"default_branch": "main"}`)
@@ -213,7 +213,7 @@ func TestFindSkillInRepoTree(t *testing.T) {
 		t.Fatal(id)
 	}
 	src2, h2 := githubTestSource(t)
-	h2.io.httpGet = plainGet(func(string, hubGet) *pyhttpx.Response { return textResp(404, "") })
+	h2.io.httpGet = plainGet(func(string, hubGet) *httputil.Response { return textResp(404, "") })
 	if _, ok := src2.findSkillInRepoTree(context.Background(), "owner/repo", "my-skill"); ok {
 		t.Fatal("found in a failed repo")
 	}
@@ -223,7 +223,7 @@ func TestFindsSingleGenericSkillsDirectoryWhenSlugIsStale(t *testing.T) {
 	for _, c := range []struct{ lone, want string }{{"skills/SKILL.md", "tencent/wechatreading/skills"}, {"skills/bar/SKILL.md", ""}} {
 		src, h := githubTestSource(t)
 		calls := 0
-		h.io.httpGet = plainGet(func(string, hubGet) *pyhttpx.Response {
+		h.io.httpGet = plainGet(func(string, hubGet) *httputil.Response {
 			calls++
 			if calls == 1 {
 				return textResp(200, `{"default_branch": "main"}`)
@@ -244,7 +244,7 @@ func githubSourceWithTree(t *testing.T, treeSHA string, calls *int) *GitHubSourc
 		`{"path": "demo-skill/references/notes.md", "type": "blob", "sha": "sha-references/notes.md", "size": 3}]`
 	api := map[string]string{"/repos/owner/repo": `{"default_branch": "main"}`, "/repos/owner/repo/git/trees/main": `{"sha": "` + treeSHA + `", "tree": ` + entries + `}`}
 	src.seams.githubJSON = func(url string, _ ghGet) any {
-		v, _ := pyjson.Loads(api[strings.SplitN(url, "api.github.com", 2)[1]])
+		v, _ := jsonutil.Decode(api[strings.SplitN(url, "api.github.com", 2)[1]])
 		return v
 	}
 	body := "---\nname: demo-skill\n---\nSee scripts/run.sh and references/notes.md\n"
@@ -265,7 +265,7 @@ func TestUnchangedUpstreamRevisionSkipsBundleDownload(t *testing.T) {
 			t.Fatal(err)
 		}
 		lock := h.LockFile("")
-		md := pyjson.NewObject()
+		md := jsonutil.NewObject()
 		md.Set("source_revision", c.recorded)
 		if err := lock.RecordInstall(context.Background(), "demo-skill", "github", "owner/repo/demo-skill", "community", "safe", "installed-hash", "demo-skill", nil, md, nil); err != nil {
 			t.Fatal(err)
@@ -411,7 +411,7 @@ func TestGitHubGetRetriesRateLimitAndFlagsExhaustion(t *testing.T) {
 	var waits []time.Duration
 	src.seams.sleep = func(d time.Duration) { waits = append(waits, d) }
 	statuses := []int{429, 503, 200}
-	h.io.httpGet = plainGet(func(string, hubGet) *pyhttpx.Response {
+	h.io.httpGet = plainGet(func(string, hubGet) *httputil.Response {
 		r := textResp(statuses[0], "{}")
 		if statuses[0] == 429 {
 			r.Header.Set("Retry-After", "7")
@@ -425,7 +425,7 @@ func TestGitHubGetRetriesRateLimitAndFlagsExhaustion(t *testing.T) {
 	if !slices.Equal(waits, []time.Duration{7 * time.Second, 2 * time.Second}) {
 		t.Fatal(waits)
 	}
-	h.io.httpGet = plainGet(func(string, hubGet) *pyhttpx.Response {
+	h.io.httpGet = plainGet(func(string, hubGet) *httputil.Response {
 		r := textResp(403, "{}")
 		r.Header.Set("X-RateLimit-Remaining", "0")
 		return r
@@ -433,7 +433,7 @@ func TestGitHubGetRetriesRateLimitAndFlagsExhaustion(t *testing.T) {
 	if r := src.githubGet(context.Background(), githubAPI+"/o/r", ghGet{}); r == nil || r.StatusCode != 403 || !src.IsRateLimited() {
 		t.Fatal("terminal exhaustion not flagged")
 	}
-	h.io.httpGet = plainGet(func(string, hubGet) *pyhttpx.Response { return textResp(403, "{}") })
+	h.io.httpGet = plainGet(func(string, hubGet) *httputil.Response { return textResp(403, "{}") })
 	waits = nil
 	if r := src.githubGet(context.Background(), githubAPI+"/o/r", ghGet{}); r.StatusCode != 403 || len(waits) != 0 {
 		t.Fatal("plain 403 retried")

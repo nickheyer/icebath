@@ -1,7 +1,7 @@
 package mcp
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/webhooksubs"
 )
 
@@ -10,13 +10,13 @@ func webhookSubscriptionsLock(h string) (func(), error) { return webhooksubs.Loc
 
 // One webhook subscription store snapshot as plain maps, unreadable files reading as empty
 func loadWebhookSubscriptions(h string) map[string]any {
-	return pyjson.Plain(webhooksubs.LoadUnlocked(h)).(map[string]any)
+	return jsonutil.Plain(webhooksubs.LoadUnlocked(h)).(map[string]any)
 }
 
 // Locks, rereads, mutates and atomically publishes the webhook subscription store
 func mutateWebhookSubscriptions(h string, mutate func(subscriptions map[string]any)) error {
-	return webhooksubs.Mutate(h, func(subs *pyjson.Object) error {
-		plain := pyjson.Plain(subs).(map[string]any)
+	return webhooksubs.Mutate(h, func(subs *jsonutil.Object) error {
+		plain := jsonutil.Plain(subs).(map[string]any)
 		mutate(plain)
 		webhooksubs.ApplyPlain(subs, plain)
 		return nil

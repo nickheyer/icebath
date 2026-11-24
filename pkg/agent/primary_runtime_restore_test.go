@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Fixture agent on a primary endpoint with an optional fallback chain whose client builds are doubled
@@ -340,7 +340,7 @@ func TestRateLimitCooldownRestoreBlockedDuringCooldown(t *testing.T) {
 	if !a.fallbackActivated {
 		t.Fatal("fallback did not activate")
 	}
-	a.rateLimitedUntil = pythread.Monotonic() + 60
+	a.rateLimitedUntil = timeutil.Monotonic() + 60
 	if mustRestore(t, a) {
 		t.Fatal("restored during cooldown")
 	}
@@ -351,7 +351,7 @@ func TestRateLimitCooldownRestoreBlockedDuringCooldown(t *testing.T) {
 
 func TestRateLimitCooldownCooldownSetOnRateLimitReason(t *testing.T) {
 	a := newRestoreAgent(t, "", openrouterFallback, "custom", restoreBaseURL, nil)
-	before := pythread.Monotonic()
+	before := timeutil.Monotonic()
 	a.tryActivateFallback(context.Background(), provider.ReasonRateLimit)
 	if a.rateLimitedUntil <= before+50 {
 		t.Fatalf("cooldown until %v from %v", a.rateLimitedUntil, before)

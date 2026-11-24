@@ -10,11 +10,11 @@ import (
 	"unicode"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -96,7 +96,7 @@ func (c *ContextCompressor) computeSummaryBudget(turns []map[string]any) int {
 
 // Indented name and redacted arguments line, object shaped calls rendering as name and dots
 func renderToolCallForSummary(tc any) string {
-	call, ok := pyjson.Dict(tc)
+	call, ok := jsonutil.AsMap(tc)
 	if !ok {
 		fn := tcGet(tc, "function", nil)
 		if fn == nil {
@@ -104,7 +104,7 @@ func renderToolCallForSummary(tc any) string {
 		}
 		return "  " + pyStrOf(tcGet(fn, "name", "?")) + "(...)"
 	}
-	fn, _ := pyjson.Dict(call["function"])
+	fn, _ := jsonutil.AsMap(call["function"])
 	var rawArgs any = ""
 	var name any = "?"
 	if fn != nil {
@@ -201,7 +201,7 @@ func fallbackAnchors(turns []map[string]any) fallbackAnchorSet {
 			}
 			if args != "" {
 				var parsed any = args
-				if v, err := pyjson.Loads(args); err == nil {
+				if v, err := jsonutil.Decode(args); err == nil {
 					parsed = v
 				}
 				collectPathsFromJSONish(parsed, &a.relevantFiles)
@@ -289,7 +289,7 @@ func (c *ContextCompressor) buildStaticFallbackSummary(turns []map[string]any, r
 	anchors := fallbackAnchors(turns)
 	activeTask := noUserTaskSentinel
 	if n := len(anchors.userAsks); n > 0 {
-		activeTask = "User asked: " + pyrepr.Repr(anchors.userAsks[n-1])
+		activeTask = "User asked: " + anyutil.Quote(anchors.userAsks[n-1])
 	}
 	previousNote := ""
 	if c.previousSummary != nil && *c.previousSummary != "" {

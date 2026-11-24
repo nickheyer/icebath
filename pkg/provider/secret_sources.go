@@ -21,9 +21,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // SecretSourceAPIVersion gates plugin secret source compatibility
@@ -459,24 +459,24 @@ func (c *SecretDiskCache) Read(key string, ttl float64, homePath string) (Cached
 	for i := 0; i < len(raw); {
 		r, size := utf8.DecodeRune(raw[i:])
 		if r == utf8.RuneError && size <= 1 {
-			return CachedFetch{}, false, pystr.UTF8DecodeError(raw, i)
+			return CachedFetch{}, false, &textutil.InvalidUTF8Error{Offset: i}
 		}
 		i += size
 	}
-	parsed, err := pyjson.Loads(string(raw))
+	parsed, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return CachedFetch{}, false, nil
 	}
-	obj, isDict := parsed.(*pyjson.Object)
+	obj, isDict := parsed.(*jsonutil.Object)
 	if !isDict {
 		return CachedFetch{}, false, nil
 	}
-	if stored, isStr := obj.Vals["key"].(string); !isStr || stored != key {
+	if stored, isStr := obj.Value("key").(string); !isStr || stored != key {
 		return CachedFetch{}, false, nil
 	}
-	payload := map[string]any{"fetched_at": obj.Vals["fetched_at"]}
-	if secrets, isObj := obj.Vals["secrets"].(*pyjson.Object); isObj {
-		payload["secrets"] = secrets.Vals
+	payload := map[string]any{"fetched_at": obj.Value("fetched_at")}
+	if secrets, isObj := obj.Value("secrets").(*jsonutil.Object); isObj {
+		payload["secrets"] = secrets.Map()
 	}
 	entry, ok := CachedFetchFromPayload(payload)
 	if !ok || !entry.IsFresh(ttl) {

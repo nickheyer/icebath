@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/netip"
 	"net/textproto"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -24,13 +25,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
+	netutil "github.com/nickheyer/icebath/pkg/utils/net"
 )
 
 const defaultMistralSTTServerURL = "https://api.mistral.ai"
@@ -154,7 +155,7 @@ var sttOpenAISleep = time.Sleep
 
 // audio.transcriptions.create with SDK retries, a text body for response_format text, else the decoded JSON
 func (c openAITranscriptionClient) Create(ctx context.Context, filePath string, fields [][2]string) (any, error) {
-	ctype, _ := pymimetypes.GuessFileType(filePath, true)
+	ctype := mimeutil.TypeByName(filePath)
 	if ctype == "" {
 		ctype = "application/octet-stream"
 	}
@@ -428,7 +429,7 @@ var sttMistralTranscribe = func(ctx context.Context, apiKey, filePath string, fi
 	for _, f := range fields {
 		parts = append(parts, sttFormPart{Name: f[0], Value: f[1]})
 	}
-	ctype, _ := pymimetypes.GuessFileType(filePath, true)
+	ctype := mimeutil.TypeByName(filePath)
 	if ctype == "" {
 		ctype = "application/octet-stream"
 	}
@@ -439,7 +440,7 @@ var sttMistralTranscribe = func(ctx context.Context, apiKey, filePath string, fi
 		if errors.As(err, &oe) && errors.Is(err, fs.ErrPermission) {
 			return nil, "PermissionError", err
 		}
-		return nil, pyrepr.ExceptionName(err), err
+		return nil, errorutil.Kind(err), err
 	}
 	rctx, cancel := context.WithTimeout(ctx, 120*time.Second)
 	defer cancel()
@@ -491,7 +492,7 @@ func transcribeMistral(ctx context.Context, filePath, modelName string, h sttHin
 			pkgLog().Info(fmt.Sprintf("Transcribed %s via Mistral API (%s, %d chars)", filepath.Base(filePath), modelName, utf8.RuneCountInString(text)))
 			return sttOK(text, "mistral"), nil
 		}
-		className = pyrepr.ExceptionName(err)
+		className = errorutil.Kind(err)
 		var re *sttResponseError
 		if errors.As(err, &re) {
 			className = "STTResponseError"
@@ -500,8 +501,8 @@ func transcribeMistral(ctx context.Context, filePath, modelName string, h sttHin
 	return sttCloudFailure(err, filePath, "Mistral transcription", className), nil
 }
 
-// Multipart POST of an audio file with form data under the requests 120 second timeout, the seam tests replace
-var postAudioMultipart = func(ctx context.Context, rawURL string, headers map[string]string, filePath string, data [][2]string) (*pyrequests.Response, error) {
+// Multipart POST of an audio file with form data under a 120 second limit per phase, the seam tests replace
+var postAudioMultipart = func(ctx context.Context, rawURL string, headers map[string]string, filePath string, data [][2]string) (*httputil.Response, error) {
 	parts := []sttFormPart{}
 	for _, d := range data {
 		parts = append(parts, sttFormPart{Name: d[0], Value: d[1]})
@@ -519,7 +520,8 @@ var postAudioMultipart = func(ctx context.Context, rawURL string, headers map[st
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	return pyrequests.Send(ctx, http.DefaultTransport.(*http.Transport), pyrequests.Seconds(120), req)
+	client := &http.Client{Transport: httputil.TrustEnvCA(nil), CheckRedirect: httputil.RedirectPolicy(true)}
+	return httputil.Do(client, req, httputil.EachPhase(120*time.Second))
 }
 
 // First n code points of a response body
@@ -532,25 +534,25 @@ func sttBodyPrefix(body []byte, n int) string {
 }
 
 // Shared multipart REST flow mapping non 200 replies, empty text and failures to envelopes
-func restProvider(filePath, providerName, label string, post func() (*pyrequests.Response, error),
+func restProvider(filePath, providerName, label string, post func() (*httputil.Response, error),
 	extractDetail func(map[string]any) string, extractText func(map[string]any) (string, error), log func(string, map[string]any)) map[string]any {
 	run := func() (map[string]any, error) {
 		resp, err := post()
 		if err != nil {
 			return nil, err
 		}
-		if resp.Status != 200 {
-			detail := sttBodyPrefix(resp.Body, 300)
+		if resp.StatusCode != 200 {
+			detail := sttBodyPrefix(resp.Content, 300)
 			var parsed map[string]any
-			if json.Unmarshal(resp.Body, &parsed) == nil {
+			if json.Unmarshal(resp.Content, &parsed) == nil {
 				if d := sttSafeDetail(extractDetail, parsed); d != "" {
 					detail = d
 				}
 			}
-			return sttError(fmt.Sprintf("%s API error (HTTP %d): %s", label, resp.Status, detail)), nil
+			return sttError(fmt.Sprintf("%s API error (HTTP %d): %s", label, resp.StatusCode, detail)), nil
 		}
 		var decoded any
-		if err := json.Unmarshal(resp.Body, &decoded); err != nil {
+		if err := json.Unmarshal(resp.Content, &decoded); err != nil {
 			return nil, &sttValueError{msg: err.Error()}
 		}
 		body, ok := decoded.(map[string]any)
@@ -574,7 +576,7 @@ func restProvider(filePath, providerName, label string, post func() (*pyrequests
 	return result
 }
 
-// Detail extractor call that reads a panic as no detail like the Python except branch
+// Detail extractor call that reads a panic as no detail
 func sttSafeDetail(extract func(map[string]any) string, body map[string]any) (out string) {
 	defer func() {
 		if recover() != nil {
@@ -621,7 +623,7 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 	if language == "" {
 		language = resolveSTTLanguage(ctx, "xai", req)
 	}
-	post := func() (*pyrequests.Response, error) {
+	post := func() (*httputil.Response, error) {
 		data := [][2]string{{"model", normalizeXAISTTModel(modelName)}}
 		if language != "" {
 			data = append(data, [2]string{"language", language})
@@ -632,20 +634,20 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 		if req.XAI.Diarize {
 			data = append(data, [2]string{"diarize", "true"})
 		}
-		send := func(bearer, base string) (*pyrequests.Response, error) {
+		send := func(bearer, base string) (*httputil.Response, error) {
 			return postAudioMultipart(ctx, base+"/stt", map[string]string{"Authorization": "Bearer " + bearer, "User-Agent": tools.IcebathXAIUserAgent()}, filePath, data)
 		}
 		resp, err := send(apiKey, resolveBase(credProvider, credBase))
 		if err != nil {
 			return nil, err
 		}
-		if (resp.Status == 401 || resp.Status == 403) && credProvider == "xai-oauth" {
-			pkgLog().Info(fmt.Sprintf("xAI STT got HTTP %d; refreshing OAuth credentials and retrying once", resp.Status))
+		if (resp.StatusCode == 401 || resp.StatusCode == 403) && credProvider == "xai-oauth" {
+			pkgLog().Info(fmt.Sprintf("xAI STT got HTTP %d; refreshing OAuth credentials and retrying once", resp.StatusCode))
 			rp, rk, rb, rerr := sttRefreshXAICredentials(ctx, apiKey)
 			if rerr == nil {
 				rk = strings.TrimSpace(rk)
 				if rk != "" && rk != apiKey {
-					var retried *pyrequests.Response
+					var retried *httputil.Response
 					retried, rerr = send(rk, resolveBase(rp, rb))
 					if rerr == nil {
 						resp = retried
@@ -653,7 +655,7 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 				}
 			}
 			if rerr != nil {
-				pkgLog().Warn(fmt.Sprintf("xAI STT OAuth refresh-and-retry after HTTP %d failed: %v", resp.Status, rerr))
+				pkgLog().Warn(fmt.Sprintf("xAI STT OAuth refresh-and-retry after HTTP %d failed: %v", resp.StatusCode, rerr))
 			}
 		}
 		return resp, nil
@@ -668,7 +670,7 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 			duration = v
 		}
 		d, _ := sttCastFloat(duration)
-		pkgLog().Info(fmt.Sprintf("Transcribed %s via xAI Grok STT (lang=%s, %.1fs audio, %d chars)", filepath.Base(filePath), pyrepr.Str(lang), d, utf8.RuneCountInString(text)))
+		pkgLog().Info(fmt.Sprintf("Transcribed %s via xAI Grok STT (lang=%s, %.1fs audio, %d chars)", filepath.Base(filePath), anyutil.String(lang), d, utf8.RuneCountInString(text)))
 	}
 	detail := func(body map[string]any) string {
 		errVal, ok := body["error"]
@@ -677,10 +679,10 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 		}
 		m, ok := errVal.(map[string]any)
 		if !ok {
-			panic("AttributeError")
+			return ""
 		}
 		if msg, ok := m["message"]; ok {
-			return pyrepr.Str(msg)
+			return anyutil.String(msg)
 		}
 		return ""
 	}
@@ -701,17 +703,17 @@ func transcribeXAI(ctx context.Context, filePath, modelName string, h sttHints) 
 // ElevenLabs error detail from a detail or error field, the message of a mapping preferred
 func elevenLabsErrorDetail(body map[string]any) string {
 	value := body["detail"]
-	if !pyTruthy(value) {
+	if !anyutil.IsTrue(value) {
 		value = body["error"]
 	}
 	if m, ok := value.(map[string]any); ok {
-		if msg := m["message"]; pyTruthy(msg) {
-			return pyrepr.Str(msg)
+		if msg := m["message"]; anyutil.IsTrue(msg) {
+			return anyutil.String(msg)
 		}
-		return pyrepr.Str(m)
+		return anyutil.String(m)
 	}
-	if pyTruthy(value) {
-		return pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		return anyutil.String(value)
 	}
 	return ""
 }
@@ -736,7 +738,7 @@ func transcribeElevenLabs(ctx context.Context, filePath, modelName string, h stt
 	if languageCode == "" {
 		languageCode = resolveSTTLanguage(ctx, "elevenlabs", req)
 	}
-	post := func() (*pyrequests.Response, error) {
+	post := func() (*httputil.Response, error) {
 		data := [][2]string{{"model_id", modelName},
 			{"tag_audio_events", strconv.FormatBool(el.TagAudioEvents)},
 			{"diarize", strconv.FormatBool(el.Diarize)}}
@@ -776,7 +778,7 @@ func transcribeDeepInfra(ctx context.Context, filePath, modelName string, h sttH
 
 // Whether a URL host is loopback, private or LAN internal where an empty api key is acceptable
 func sttIsLocalOrPrivateURL(rawURL string) bool {
-	u, err := pyurl.Parse(rawURL)
+	u, err := url.Parse(rawURL)
 	if err != nil {
 		return false
 	}
@@ -785,10 +787,7 @@ func sttIsLocalOrPrivateURL(rawURL string) bool {
 		return true
 	}
 	addr, err := netip.ParseAddr(host)
-	if err != nil || addr.Zone() != "" && !addr.Is6() {
-		return false
-	}
-	return pyipaddress.IsPrivate(addr) || addr.Unmap().IsLoopback()
+	return err == nil && netutil.IsPrivate(addr)
 }
 
 // Config key, keyless local base URL with a placeholder key, then env key, false when none apply; the env key goes only to an endpoint STT_OPENAI_BASE_URL names
@@ -819,7 +818,7 @@ var sttReadSelection = func(ctx context.Context) string { return tools.ReadSelec
 // Audio transcoder ahead of a cloud upload, the seam tests replace
 var sttTranscode = transcodeAudioForSTT
 
-// OpenAI STT key and base URL strict on the stored stt selection, a ValueError when unresolvable
+// OpenAI STT key and base URL strict on the stored stt selection, an *sttValueError when unresolvable
 func resolveSTTOpenAIAudioClientConfig(ctx context.Context) (string, string, error) {
 	oai := loadSTTRequest(ctx).OpenAI
 	selected := sttReadSelection(ctx)
@@ -842,13 +841,13 @@ func extractTranscriptText(transcription any) (string, error) {
 		if s, ok := v["text"].(string); ok {
 			text = strings.TrimSpace(s)
 		} else {
-			if e := v["error"]; pyTruthy(e) {
-				return "", &sttResponseError{msg: pyrepr.Str(e)}
+			if e := v["error"]; anyutil.IsTrue(e) {
+				return "", &sttResponseError{msg: anyutil.String(e)}
 			}
 			return "", &sttResponseError{msg: "Transcription response contained no text"}
 		}
 	default:
-		text = strings.TrimSpace(pyrepr.Str(v))
+		text = strings.TrimSpace(anyutil.String(v))
 	}
 	if m, _ := asrTextRe.FindStringMatch(text); m != nil {
 		return strings.TrimSpace(m.GroupByName("text").String()), nil

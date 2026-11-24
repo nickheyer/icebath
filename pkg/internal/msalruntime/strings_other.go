@@ -5,7 +5,7 @@ package msalruntime
 import (
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 )
 
 // NUL terminated os_char string, UTF-8 bytes outside Windows
@@ -37,4 +37,4 @@ func (b osBuffer) text() string {
 }
 
 // Text of a NUL terminated os_char string the runtime owns
-func decodeOSString(p uintptr) string { return pyctypes.GoString(p) }
+func decodeOSString(p uintptr) string { return dlutil.GoString(p) }

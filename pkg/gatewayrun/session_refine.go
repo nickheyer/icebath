@@ -11,10 +11,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Agent constructor every gateway run path builds its agents with
@@ -107,7 +107,7 @@ func (r *GatewayRunner) sideAgent(ctx context.Context, a *gateway.SessionAuthori
 	if err != nil {
 		return nil, err
 	}
-	agentCfg, _ := pyrepr.Or(config["agent"], map[string]any{}).(map[string]any)
+	agentCfg, _ := anyutil.Or(config["agent"], map[string]any{}).(map[string]any)
 	var disabled any
 	if parsed := tools.ParseConfigStringList(agentCfg["disabled_toolsets"]); len(parsed) > 0 {
 		disabled = parsed
@@ -129,7 +129,7 @@ func (r *GatewayRunner) sideAgent(ctx context.Context, a *gateway.SessionAuthori
 		tierValue = *tier
 	}
 	requestOverrides := map[string]any{}
-	if overridesCfg, ok := pyrepr.Or(runtime["request_overrides"], map[string]any{}).(map[string]any); ok {
+	if overridesCfg, ok := anyutil.Or(runtime["request_overrides"], map[string]any{}).(map[string]any); ok {
 		for k, v := range overridesCfg {
 			requestOverrides[k] = v
 		}
@@ -223,7 +223,7 @@ func (r *GatewayRunner) refineLocalSession(ctx context.Context, source *gateway.
 	holder := &sideAgentSlot{}
 	publish := func(message string) {
 		if current, ok := authority.Live(ref.SessionID); ok && current != nil {
-			current.EventStream.Publish(ref.SessionID, pyjson.ObjectOf("text", message), "review.summary", nil)
+			current.EventStream.Publish(ref.SessionID, jsonutil.ObjectOf("text", message), "review.summary", nil)
 		}
 	}
 	var focusArg *string

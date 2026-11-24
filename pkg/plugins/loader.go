@@ -589,7 +589,7 @@ func (m *Manager) directoryModuleName(mf *Manifest) string {
 func (m *Manager) policyModuleName(mf *Manifest) string {
 	if mf.Source == "entrypoint" && mf.Path != "" {
 		module, _, _ := strings.Cut(mf.Path, ":")
-		if module = pyStrip(module); module != "" {
+		if module = strings.TrimSpace(module); module != "" {
 			return module
 		}
 	}

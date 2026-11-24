@@ -6,15 +6,15 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -29,16 +29,16 @@ type unlockableLoginBackend interface {
 }
 
 // Entries of a parsed JSON value that must each be an object, any other entry raising the attribute error
-func managerItems(raw any) ([]*pyjson.Object, error) {
+func managerItems(raw any) ([]*jsonutil.Object, error) {
 	list, ok := raw.([]any)
 	if !ok {
 		return nil, nil
 	}
-	out := make([]*pyjson.Object, 0, len(list))
+	out := make([]*jsonutil.Object, 0, len(list))
 	for _, entry := range list {
-		obj, ok := pyjson.AsObject(entry)
+		obj, ok := jsonutil.AsObject(entry)
 		if !ok {
-			return nil, fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(entry))
+			return nil, fmt.Errorf("'%s' object has no attribute 'get'", anyutil.Kind(entry))
 		}
 		out = append(out, obj)
 	}
@@ -47,7 +47,7 @@ func managerItems(raw any) ([]*pyjson.Object, error) {
 
 // Members of a truthy list value, nothing for a falsy one
 func managerList(v any) []any {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil
 	}
 	list, _ := v.([]any)
@@ -140,7 +140,7 @@ func (b *OnePasswordLoginBackend) op() (string, error) {
 	if op == "" {
 		return "", errors.New("1Password CLI (op) not found — install it or set vault.onepassword.binary_path")
 	}
-	return pypath.PathStr(op), nil
+	return filepath.Clean(op), nil
 }
 
 // Allowlisted child environment, Connect credentials and the service token coming from the profile scope only
@@ -244,7 +244,7 @@ func (b *OnePasswordLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 	if text == "" {
 		text = "[]"
 	}
-	raw, err := pyjson.Loads(text)
+	raw, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
@@ -255,21 +255,21 @@ func (b *OnePasswordLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 	out := []vault.VaultItemMeta{}
 	b.itemVaults = map[string]string{}
 	for _, item := range items {
-		if id := anyGet(item, "id"); pyrepr.Truthy(id) {
+		if id := anyGet(item, "id"); anyutil.IsTrue(id) {
 			vaultID := ""
 			itemVault := anyGet(item, "vault")
-			if !pyrepr.Truthy(itemVault) {
-				itemVault = pyjson.NewObject()
+			if !anyutil.IsTrue(itemVault) {
+				itemVault = jsonutil.NewObject()
 			}
-			if v, ok := pyjson.AsObject(itemVault); ok {
+			if v, ok := jsonutil.AsObject(itemVault); ok {
 				vaultID = vaultText(anyGet(v, "id"))
 			}
-			b.itemVaults[pyrepr.Str(id)] = vaultID
+			b.itemVaults[anyutil.String(id)] = vaultID
 		}
 		urls := []string{}
 		for _, u := range managerList(anyGet(item, "urls")) {
-			if entry, ok := pyjson.AsObject(u); ok && pyrepr.Truthy(anyGet(entry, "href")) {
-				urls = append(urls, pyrepr.Str(anyGet(entry, "href")))
+			if entry, ok := jsonutil.AsObject(u); ok && anyutil.IsTrue(anyGet(entry, "href")) {
+				urls = append(urls, anyutil.String(anyGet(entry, "href")))
 			}
 		}
 		origins := allOrigins(urls)
@@ -281,7 +281,7 @@ func (b *OnePasswordLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 		if label == "" {
 			label = origins[0]
 		}
-		out = append(out, vault.VaultItemMeta{ID: b.Prefix() + pyrepr.Str(anyGet(item, "id")), Kind: "login", Label: label,
+		out = append(out, vault.VaultItemMeta{ID: b.Prefix() + anyutil.String(anyGet(item, "id")), Kind: "login", Label: label,
 			Origin: origins[0], CreatedAt: vaultText(anyGet(item, "created_at")), IdentifierType: identifierType,
 			Identifier: identifier, AllowedOrigins: webOrigins(origins)})
 	}
@@ -338,7 +338,7 @@ func (b *OnePasswordLoginBackend) ResolveOTP(handle string) (string, bool, error
 		return "", false, nil
 	}
 	code := strings.TrimSpace(out)
-	if !pystr.StrIsDigit(code) {
+	if !textutil.IsDigits(code) {
 		return "", false, nil
 	}
 	return code, true, nil
@@ -385,7 +385,7 @@ func (b *BitwardenLoginBackend) bw() (string, error) {
 	if found == "" {
 		return "", errors.New("Bitwarden CLI (bw) not found — install it or set vault.bitwarden.binary_path")
 	}
-	return pypath.PathStr(found), nil
+	return filepath.Clean(found), nil
 }
 
 func (b *BitwardenLoginBackend) env(sessionToken string) map[string]string {
@@ -471,7 +471,7 @@ func (b *BitwardenLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 	if text == "" {
 		text = "[]"
 	}
-	raw, err := pyjson.Loads(text)
+	raw, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
@@ -481,8 +481,8 @@ func (b *BitwardenLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 	}
 	out := []vault.VaultItemMeta{}
 	for _, item := range items {
-		login, isLogin := pyjson.AsObject(anyGet(item, "login"))
-		if !pyrepr.Equal(anyGet(item, "type"), int64(1)) || !isLogin {
+		login, isLogin := jsonutil.AsObject(anyGet(item, "login"))
+		if !anyutil.Equal(anyGet(item, "type"), int64(1)) || !isLogin {
 			continue
 		}
 		uris, err := managerItems(managerList(anyGet(login, "uris")))
@@ -491,7 +491,7 @@ func (b *BitwardenLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 		}
 		origins := []string{}
 		for _, uri := range uris {
-			if pyrepr.Equal(anyGet(uri, "match"), int64(5)) {
+			if anyutil.Equal(anyGet(uri, "match"), int64(5)) {
 				continue
 			}
 			origin, err := vault.NormalizeOrigin(vaultText(anyGet(uri, "uri")))
@@ -510,7 +510,7 @@ func (b *BitwardenLoginBackend) ListItems() ([]vault.VaultItemMeta, error) {
 		if label == "" {
 			label = origins[0]
 		}
-		out = append(out, vault.VaultItemMeta{ID: b.Prefix() + pyrepr.Str(anyGet(item, "id")), Kind: "login", Label: label,
+		out = append(out, vault.VaultItemMeta{ID: b.Prefix() + anyutil.String(anyGet(item, "id")), Kind: "login", Label: label,
 			Origin: origins[0], CreatedAt: vaultText(anyGet(item, "creationDate")), IdentifierType: identifierType,
 			Identifier: identifier, AllowedOrigins: webOrigins(origins)})
 	}
@@ -549,7 +549,7 @@ func (b *BitwardenLoginBackend) ResolveOTP(handle string) (string, bool, error) 
 		return "", false, nil
 	}
 	code := strings.TrimSpace(out)
-	if !pystr.StrIsDigit(code) {
+	if !textutil.IsDigits(code) {
 		return "", false, nil
 	}
 	return code, true, nil

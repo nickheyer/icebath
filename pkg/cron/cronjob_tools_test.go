@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runs the cronjob tool on the store with Python keyword arguments and decodes the JSON result
@@ -210,7 +210,7 @@ func TestCronjobCreateAndUpdateNormalizeListFormDeliver(t *testing.T) {
 }
 
 func TestCronjobSchemaHasNoInferencePinParams(t *testing.T) {
-	props := pyjson.Plain(cronjobSchema.Vals["parameters"]).(map[string]any)["properties"].(map[string]any)
+	props := jsonutil.Plain(cronjobSchema.Value("parameters")).(map[string]any)["properties"].(map[string]any)
 	for _, k := range []string{"model", "provider", "base_url"} {
 		if _, ok := props[k]; ok {
 			t.Fatalf("schema exposes %s", k)

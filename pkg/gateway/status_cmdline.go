@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -13,9 +14,9 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Seams over the three command line sources, procfs, the process table and ps
@@ -65,7 +66,7 @@ func readProcessCmdlineLive(pid int) (string, bool) {
 
 // Tokens of a command line split like shlex non posix, plain whitespace when the quoting is unbalanced
 func gatewayRawTokens(command string) []string {
-	raw, err := pyshlex.SplitNonPOSIX(command)
+	raw, err := shellutil.SplitRaw(command)
 	if err != nil {
 		return strings.Fields(command)
 	}
@@ -181,8 +182,8 @@ func LooksLikeGatewayRuntimeCommandLine(command string) bool {
 
 // Profile id of a profiles child home, false for the root or any other home
 func profileNameForHomeDir(profileHome string) (string, bool) {
-	if pypath.PathName(pypath.PathParent(profileHome)) == "profiles" {
-		return pypath.PathName(profileHome), true
+	if pathutil.Name(filepath.Dir(filepath.Clean(profileHome))) == "profiles" {
+		return pathutil.Name(profileHome), true
 	}
 	return "", false
 }
@@ -241,7 +242,7 @@ func CommandLineNamesIcebathHome(commandLC, homeLC string) bool {
 func commandLineBelongsToProfile(command, profileHome string) bool {
 	commandLC := strings.ReplaceAll(strings.ToLower(command), `\`, "/")
 	profileName, named := profileNameForHomeDir(profileHome)
-	homeLC := strings.TrimRight(strings.ReplaceAll(strings.ToLower(pypath.PathStr(profileHome)), `\`, "/"), "/")
+	homeLC := strings.TrimRight(strings.ReplaceAll(strings.ToLower(filepath.Clean(profileHome)), `\`, "/"), "/")
 	flag, hasFlag := ProfileFlagValue(command)
 	if named && profileName != "default" {
 		if hasFlag && flag == strings.ToLower(profileName) {
@@ -262,7 +263,7 @@ func hostGatewayServesHome(pid int, profileHome string) bool {
 }
 
 // Whether a live pid still identifies as the record's gateway, the record deciding when the command line is unreadable
-func recordMatchesLiveGatewayPid(record *pyjson.Object, pid int, expectedHome string) bool {
+func recordMatchesLiveGatewayPid(record *jsonutil.Object, pid int, expectedHome string) bool {
 	live, ok := statusReadProcessCmdline(pid)
 	if !ok || live == "" {
 		return recordLooksLikeGateway(record)

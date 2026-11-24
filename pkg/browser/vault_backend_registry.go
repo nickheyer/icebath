@@ -8,10 +8,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/providerregistry"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Profile scoped login backends registered by trusted in process plugins
@@ -102,7 +102,7 @@ func RegisterLoginBackendProvider(ctx context.Context, provider LoginBackend, sc
 		return err
 	}
 	if loginBackendRegistry.Merged(ctx, scope).Has(name) {
-		return &providerregistry.ValueError{Message: fmt.Sprintf("login backend name %s is already registered", pyrepr.Repr(name))}
+		return &providerregistry.ValueError{Message: fmt.Sprintf("login backend name %s is already registered", anyutil.Quote(name))}
 	}
 	if err := loginBackendRegistry.Register(provider, scope); err != nil {
 		return err

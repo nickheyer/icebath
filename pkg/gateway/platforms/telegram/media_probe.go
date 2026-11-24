@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Measured geometry of a local video, the duration only when the probe read one
@@ -29,7 +29,7 @@ var errDurationOverflow = errors.New("cannot convert float infinity to integer")
 
 // Raw length rounded half to even to whole positive seconds, false when unusable
 func coerceDurationSeconds(value any) (int, bool, error) {
-	f, err := pyint.Float(value)
+	f, err := anyutil.ToFloat(value)
 	if err != nil || math.IsNaN(f) {
 		return 0, false, nil
 	}
@@ -127,7 +127,7 @@ func runProbe(ctx context.Context, timeout time.Duration, name string, args ...s
 
 // Whole second audio length from the WAVE header then ffprobe, false when unreadable
 func ProbeVoiceDurationSeconds(ctx context.Context, path string) (int, bool) {
-	if _, ext := pypath.Splitext(path); strings.ToLower(ext) == ".wav" {
+	if _, ext := pathutil.SplitExt(path); strings.ToLower(ext) == ".wav" {
 		if rate, frames, err := waveFrames(path); err == nil && rate != 0 {
 			if secs, ok, _ := coerceDurationSeconds(float64(frames) / float64(rate)); ok {
 				return secs, true

@@ -1,14 +1,13 @@
 package provider
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func TestRouterRequestFollowsRedirectsAsUrllibDoes(t *testing.T) {
@@ -70,7 +69,8 @@ func TestRouterRequestFollowsRedirectsAsUrllibDoes(t *testing.T) {
 		}
 	}
 	_, err = lmRouterRequest(endpoint("/gone"), "/models", 5*time.Second, nil)
-	if repr := pyrepr.ExceptionRepr(err); repr != "<HTTPError 404: 'Not Found'>" {
-		t.Fatalf("repr %s", repr)
+	var refused *lmHTTPStatusError
+	if !errors.As(err, &refused) || refused.Error() != "HTTP 404 Not Found" {
+		t.Fatalf("refusal %v", err)
 	}
 }

@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 const generatedSubdir = "generated"
@@ -124,7 +124,7 @@ func saveURL(ctx context.Context, env *tools.Env, kind, rawURL string, o saveURL
 			if tools.IsAlwaysBlockedURL(env, current) {
 				return "", fmt.Errorf("%s URL targets an always-blocked address: %s", o.Label, current)
 			}
-			client = pyhttpx.PlainClient(false)
+			client = httputil.Client(false)
 			client.Timeout = o.Timeout
 		} else {
 			if !tools.IsSafeURL(env, current) {
@@ -169,7 +169,7 @@ func saveURL(ctx context.Context, env *tools.Env, kind, rawURL string, o saveURL
 func writeSavedURLBody(env *tools.Env, kind, original, current string, resp *http.Response, o saveURLOptions) (string, error) {
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		_, _ = io.Copy(io.Discard, resp.Body)
-		return "", errors.New(pyhttpx.RaiseForStatusMessage(resp.StatusCode, current, resp.Header.Get("Location")))
+		return "", &httputil.StatusError{StatusCode: resp.StatusCode, URL: current, Location: resp.Header.Get("Location")}
 	}
 	contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(resp.Header.Get("Content-Type"), ";", 2)[0]))
 	extension, known := o.ContentTypes[contentType]

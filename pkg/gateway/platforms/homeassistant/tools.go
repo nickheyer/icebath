@@ -4,10 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,14 +15,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 const (
@@ -31,7 +31,7 @@ const (
 	toolEmoji      = "\U0001F3E0"
 )
 
-// Tool error envelope with non ASCII text kept, the json.dumps ensure_ascii off shape
+// Tool error envelope with non ASCII text kept
 func toolError(message string) string { return tools.JSON(tools.Dict("error", message)) }
 
 // Why a URL cannot be the Home Assistant base URL, empty when it can
@@ -86,25 +86,22 @@ func getEntityFilterConfig(ctx context.Context) ([]string, []string, error) {
 	return parseEntityFilterPatterns(allow), parseEntityFilterPatterns(deny), nil
 }
 
-// Positive HASS_MAX_ENTITIES cap of the active profile, nil when unset, not an integer or not positive
-func getMaxEntitiesConfig(ctx context.Context) (*big.Int, error) {
+// Positive HASS_MAX_ENTITIES cap of the active profile, 0 when unset, not an integer or not positive
+func getMaxEntitiesConfig(ctx context.Context) (int64, error) {
 	raw, err := getSecret(ctx, "HASS_MAX_ENTITIES", "")
 	if err != nil {
-		return nil, err
+		return 0, err
 	}
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return nil, nil
+		return 0, nil
 	}
 	value, ok := parseIntStr(raw)
 	if !ok {
-		pkgLog().Debug(fmt.Sprintf("Ignoring non-integer HASS_MAX_ENTITIES value %s", pyrepr.StrRepr(raw)))
-		return nil, nil
+		pkgLog().Debug(fmt.Sprintf("Ignoring non-integer HASS_MAX_ENTITIES value %s", strconv.Quote(raw)))
+		return 0, nil
 	}
-	if value.Sign() > 0 {
-		return value, nil
-	}
-	return nil, nil
+	return max(value, 0), nil
 }
 
 // Trimmed non empty patterns of a comma separated value
@@ -231,7 +228,7 @@ func emptyTargetValue(v any) bool {
 		return t == ""
 	case []any:
 		return len(t) == 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t.Len() == 0
 	case map[string]any:
 		return len(t) == 0
@@ -353,10 +350,10 @@ func normalizeIDList(value any) map[string]bool {
 		parts = strings.FieldsFunc(strings.TrimSpace(t), func(r rune) bool { return r == ',' || unicode.IsSpace(r) })
 	case []any:
 		for _, p := range t {
-			parts = append(parts, strings.TrimSpace(pyrepr.Str(p)))
+			parts = append(parts, strings.TrimSpace(anyutil.String(p)))
 		}
 	default:
-		parts = []string{strings.TrimSpace(pyrepr.Str(value))}
+		parts = []string{strings.TrimSpace(anyutil.String(value))}
 	}
 	for _, p := range parts {
 		if p != "" {
@@ -376,7 +373,7 @@ var (
 // Domains that run code or reach the network from the Home Assistant host
 var blockedDomains = []string{"command_line", "hassio", "pyscript", "python_script", "rest_command", "shell_command"}
 
-// re.match of a pattern against a tool argument, the TypeError a non str raises
+// Whether a pattern matches a tool argument, panicking with a TypeError for an argument that is not text
 func reMatch(re interface{ MatchString(string) (bool, error) }, v any) bool {
 	s, ok := v.(string)
 	if !ok {
@@ -423,13 +420,7 @@ func apiJSON(ctx context.Context, method, path string, timeout time.Duration, pa
 		return nil, err
 	}
 	if resp.status >= 400 {
-		text, terr := resp.text()
-		if terr != nil {
-			text = ""
-		} else {
-			text = textutil.First(text, 500)
-		}
-		message := text
+		message := textutil.First(resp.text(), 500)
 		if message == "" {
 			message = resp.reason
 		}
@@ -438,7 +429,7 @@ func apiJSON(ctx context.Context, method, path string, timeout time.Duration, pa
 	return resp.json()
 }
 
-// Lower of a str argument, the AttributeError of any other value
+// Lower case of a text argument, an AttributeError for any other value
 func pyLower(v any) (string, error) {
 	s, ok := v.(string)
 	if !ok {
@@ -447,17 +438,17 @@ func pyLower(v any) (string, error) {
 	return strings.ToLower(s), nil
 }
 
-// Lower of a value or the empty str when it is falsy
+// Lower case of a value, empty when the value is empty
 func lowerOrEmpty(v any) (string, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	return pyLower(v)
 }
 
-// Friendly name of a state's attributes, the empty str when absent
+// Friendly name of a state's attributes, empty when absent
 func friendlyName(s any) (any, error) {
-	attrs, err := pyGet(s, "attributes", pyjson.NewObject())
+	attrs, err := pyGet(s, "attributes", jsonutil.NewObject())
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +472,7 @@ func inArea(s any, areaLower string, entityArea keyedMap) (bool, error) {
 		}
 		return strings.Contains(lowered, areaLower), nil
 	}
-	attrs, err := pyGet(s, "attributes", pyjson.NewObject())
+	attrs, err := pyGet(s, "attributes", jsonutil.NewObject())
 	if err != nil {
 		return false, err
 	}
@@ -524,7 +515,7 @@ func filterStates(states []any, keep func(s any) (bool, error)) ([]any, error) {
 
 // Operator lists, caller filters and the entity cap applied to raw states, then the compact payload
 func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs, name, maxEntities any,
-	entityArea, entityDevice keyedMap) (*pyjson.Object, error) {
+	entityArea, entityDevice keyedMap) (*jsonutil.Object, error) {
 	if entityArea == nil {
 		entityArea = keyedMap{}
 	}
@@ -573,8 +564,8 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 			return nil, err
 		}
 	} else {
-		if pyrepr.Truthy(domain) {
-			prefix := pyrepr.Str(domain) + "."
+		if anyutil.IsTrue(domain) {
+			prefix := anyutil.String(domain) + "."
 			if err := comprehend(func(s any) (bool, error) {
 				eid, err := pyGet(s, "entity_id", "")
 				if err != nil {
@@ -589,7 +580,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 				return nil, err
 			}
 		}
-		if pyrepr.Truthy(area) {
+		if anyutil.IsTrue(area) {
 			areaLower, err := pyLower(area)
 			if err != nil {
 				return nil, err
@@ -598,7 +589,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 				return nil, err
 			}
 		}
-		if pyrepr.Truthy(name) {
+		if anyutil.IsTrue(name) {
 			nameLower, err := pyLower(name)
 			if err != nil {
 				return nil, err
@@ -629,8 +620,8 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 			}
 		}
 	}
-	var limit *big.Int
-	if n, ok := strictInt(maxEntities); ok && n.Sign() > 0 {
+	var limit int64
+	if n, ok := anyutil.Int(maxEntities); ok && n > 0 {
 		limit = n
 	} else if limit, err = getMaxEntitiesConfig(ctx); err != nil {
 		return nil, err
@@ -643,12 +634,12 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 		list = items
 	}
 	total := len(list)
-	truncated := limit != nil && big.NewInt(int64(total)).Cmp(limit) > 0
+	truncated := limit > 0 && int64(total) > limit
 	if truncated {
 		if !listed && isDict(filtered) {
-			return nil, &pyErr{"KeyError", fmt.Sprintf("slice(None, %s, None)", limit.String())}
+			return nil, &pyErr{"KeyError", fmt.Sprintf("the entity filter gave a mapping, which cannot be cut to its first %d entities", limit)}
 		}
-		list = list[:limit.Int64()]
+		list = list[:limit]
 	}
 	entities := []any{}
 	for _, s := range list {
@@ -664,7 +655,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 		if err != nil {
 			return nil, err
 		}
-		item := pyjson.ObjectOf("entity_id", eid, "state", state, "friendly_name", fn)
+		item := jsonutil.ObjectOf("entity_id", eid, "state", state, "friendly_name", fn)
 		if v, ok, err := entityArea.get(eid); err != nil {
 			return nil, err
 		} else if ok {
@@ -677,12 +668,12 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 		}
 		entities = append(entities, item)
 	}
-	result := pyjson.ObjectOf("count", len(entities), "entities", entities)
+	result := jsonutil.ObjectOf("count", len(entities), "entities", entities)
 	if truncated {
 		result.Set("truncated", true)
-		result.Set("truncated_note", fmt.Sprintf("Showing first %s of %d matching entities. "+
+		result.Set("truncated_note", fmt.Sprintf("Showing first %d of %d matching entities. "+
 			"Refine with domain/area/name filters or an explicit entity_ids "+
-			"list, or pass a larger max.", limit.String(), total))
+			"list, or pass a larger max.", limit, total))
 	}
 	return result, nil
 }
@@ -690,7 +681,7 @@ func filterAndSummarize(ctx context.Context, states any, domain, area, entityIDs
 const (
 	registryTTL        = 300.0
 	registryFailureTTL = 60.0
-	registryTimeout    = 20.0
+	registryTimeout    = 20 * time.Second
 	registryMaxMsg     = 64 * 1024 * 1024
 )
 
@@ -705,7 +696,7 @@ var registryCache = struct {
 	entityDevice keyedMap
 }{entityArea: keyedMap{}, entityDevice: keyedMap{}}
 
-// Seconds since the epoch as time.time returns them
+// Seconds since the epoch with the fraction kept
 func epochSeconds() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // WebSocket URL of the instance base URL
@@ -713,45 +704,37 @@ func wsBaseURL(hassURL string) string {
 	return strings.ReplaceAll(strings.ReplaceAll(hassURL, "https://", "wss://"), "http://", "ws://")
 }
 
-// aiohttp WSMessageTypeError of a received message that is not text
-type wsMessageTypeError struct{ msg pyaiohttpws.Message }
+// Message received where a text message was expected
+type wsMessageTypeError struct{ msg websocketutil.Message }
 
 func (e *wsMessageTypeError) Error() string {
-	var data string
-	if err, ok := e.msg.Data.(error); ok {
-		data = pyrepr.ExceptionRepr(err)
-	} else {
-		data = pyrepr.Repr(e.msg.Data)
-	}
-	return fmt.Sprintf("Received message %s:%s is not WSMsgType.TEXT", e.msg.Type, data)
+	return fmt.Sprintf("received a %s message of %d bytes where text was expected", e.msg.Type, len(e.msg.Data))
 }
-func (e *wsMessageTypeError) PyTypeName() string { return "WSMessageTypeError" }
 
-// receive_json of a websocket, the type error of a non text message and the decode error of bad JSON
-func receiveJSON(ctx context.Context, conn *pyaiohttpws.Conn) (any, error) {
+// Next message of a websocket decoded as JSON, a wsMessageTypeError for a binary message and the decode error of bad JSON
+func receiveJSON(ctx context.Context, conn *websocketutil.Conn) (any, error) {
 	msg, err := conn.Receive(ctx)
 	if err != nil {
 		return nil, err
 	}
-	if msg.Type != pyaiohttpws.Text {
+	if msg.Type != websocketutil.Text {
 		return nil, &wsMessageTypeError{msg: msg}
 	}
-	text, _ := msg.Data.(string)
-	return pyjson.Loads(text)
+	return jsonutil.Decode(msg.Data)
 }
 
-// send_json of a websocket, the value encoded as json.dumps does
-func sendJSON(conn *pyaiohttpws.Conn, v any) error {
-	text, err := pyjson.Dumps(v)
+// Sends a value as a JSON text message
+func sendJSON(conn *websocketutil.Conn, v any) error {
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		return err
 	}
-	return conn.SendStr(text)
+	return conn.SendText(text)
 }
 
 // Result list of one registry request, the RuntimeError of a refused request
-func registryFetch(ctx context.Context, conn *pyaiohttpws.Conn, mid int64, mtype string) (any, error) {
-	if err := sendJSON(conn, pyjson.ObjectOf("id", mid, "type", mtype)); err != nil {
+func registryFetch(ctx context.Context, conn *websocketutil.Conn, mid int64, mtype string) (any, error) {
+	if err := sendJSON(conn, jsonutil.ObjectOf("id", mid, "type", mtype)); err != nil {
 		return nil, err
 	}
 	for {
@@ -763,23 +746,23 @@ func registryFetch(ctx context.Context, conn *pyaiohttpws.Conn, mid int64, mtype
 		if err != nil {
 			return nil, err
 		}
-		if !pyrepr.Equal(id, mid) {
+		if !anyutil.Equal(id, mid) {
 			continue
 		}
 		kind, err := pyGet(m, "type", nil)
 		if err != nil {
 			return nil, err
 		}
-		if !pyrepr.Equal(kind, "result") {
+		if kind != "result" {
 			continue
 		}
 		success, _ := pyGet(m, "success", true)
-		if !pyrepr.Truthy(success) {
+		if !anyutil.IsTrue(success) {
 			detail, _ := pyGet(m, "error", nil)
-			return nil, &pyErr{"RuntimeError", fmt.Sprintf("%s refused: %s", mtype, pyrepr.Str(detail))}
+			return nil, &pyErr{"RuntimeError", fmt.Sprintf("%s refused: %s", mtype, anyutil.String(detail))}
 		}
 		result, _ := pyGet(m, "result", nil)
-		if !pyrepr.Truthy(result) {
+		if !anyutil.IsTrue(result) {
 			return []any{}, nil
 		}
 		return result, nil
@@ -788,16 +771,12 @@ func registryFetch(ctx context.Context, conn *pyaiohttpws.Conn, mid int64, mtype
 
 // Authenticates and reads the area, device and entity registries, refused true when the token was rejected
 func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev keyedMap, refused bool, err error) {
-	traced, handshake := withTLSTrace(ctx)
-	conn, err := pyaiohttpws.Connect(traced, wsURL, pyaiohttpws.Options{MaxMsgSize: registryMaxMsg})
+	conn, err := websocketutil.Connect(ctx, wsURL, websocketutil.Options{PingInterval: -1, MaxMessageSize: registryMaxMsg})
 	if err != nil {
-		if tlsErr := handshake.get(); tlsErr != nil && ctx.Err() == nil {
-			return nil, nil, false, sslConnectError(wsURL, tlsErr)
-		}
 		return nil, nil, false, err
 	}
 	defer func() {
-		conn.Close(ctx)
+		conn.CloseWith(ctx, websocketutil.CloseNormal, "")
 		if err == nil && ctx.Err() != nil {
 			entArea, entDev, refused, err = nil, nil, false, ctx.Err()
 		}
@@ -805,7 +784,7 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 	if _, err := receiveJSON(ctx, conn); err != nil {
 		return nil, nil, false, err
 	}
-	if err := sendJSON(conn, pyjson.ObjectOf("type", "auth", "access_token", token)); err != nil {
+	if err := sendJSON(conn, jsonutil.ObjectOf("type", "auth", "access_token", token)); err != nil {
 		return nil, nil, false, err
 	}
 	authReply, err := receiveJSON(ctx, conn)
@@ -816,12 +795,12 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 	if err != nil {
 		return nil, nil, false, err
 	}
-	if !pyrepr.Equal(authType, "auth_ok") {
+	if authType != "auth_ok" {
 		reason, _ := pyGet(authReply, "message", nil)
-		if !pyrepr.Truthy(reason) {
+		if !anyutil.IsTrue(reason) {
 			reason = authType
 		}
-		pkgLog().Warn(fmt.Sprintf("HA registry websocket auth failed (%s); area filter degraded", pyrepr.Str(reason)))
+		pkgLog().Warn(fmt.Sprintf("HA registry websocket auth failed (%s); area filter degraded", anyutil.String(reason)))
 		return nil, nil, true, nil
 	}
 	areaReg, err := registryFetch(ctx, conn, 1, "config/area_registry/list")
@@ -882,14 +861,14 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 		if err != nil {
 			return nil, nil, false, err
 		}
-		if !pyrepr.Truthy(dev) {
-			dev = pyjson.NewObject()
+		if !anyutil.IsTrue(dev) {
+			dev = jsonutil.NewObject()
 		}
 		aid, err := pyGet(e, "area_id", nil)
 		if err != nil {
 			return nil, nil, false, err
 		}
-		if !pyrepr.Truthy(aid) {
+		if !anyutil.IsTrue(aid) {
 			if aid, err = pyGet(dev, "area_id", nil); err != nil {
 				return nil, nil, false, err
 			}
@@ -911,12 +890,12 @@ func pullRegistry(ctx context.Context, wsURL, token string) (entArea, entDev key
 		if err != nil {
 			return nil, nil, false, err
 		}
-		if !pyrepr.Truthy(dname) {
+		if !anyutil.IsTrue(dname) {
 			if dname, err = pyGet(dev, "name", nil); err != nil {
 				return nil, nil, false, err
 			}
 		}
-		if pyrepr.Truthy(dname) {
+		if anyutil.IsTrue(dname) {
 			eid, err := pyIndex(e, "entity_id")
 			if err != nil {
 				return nil, nil, false, err
@@ -949,7 +928,7 @@ func registryAreaMap(ctx context.Context) (keyedMap, keyedMap, error) {
 		}
 	}
 	registryCache.Unlock()
-	pullCtx, cancel := context.WithTimeout(ctx, time.Duration(registryTimeout*float64(time.Second)))
+	pullCtx, cancel := context.WithTimeout(ctx, registryTimeout)
 	entArea, entDev, refused, err := pullRegistry(pullCtx, wsBaseURL(hassURL)+"/api/websocket", hassToken)
 	cancel()
 	if ctx.Err() != nil {
@@ -959,9 +938,9 @@ func registryAreaMap(ctx context.Context) (keyedMap, keyedMap, error) {
 	pulled := err == nil && !refused && !timedOut
 	switch {
 	case timedOut:
-		pkgLog().Warn(fmt.Sprintf("HA registry lookup timed out after %ss; area filter degraded", pyrepr.Float(registryTimeout)))
+		pkgLog().Warn(fmt.Sprintf("HA registry lookup timed out after %s; area filter degraded", registryTimeout))
 	case err != nil:
-		pkgLog().Warn(fmt.Sprintf("HA registry lookup failed (%s: %s); area filter degraded", pyrepr.ExceptionName(err), err.Error()))
+		pkgLog().Warn(fmt.Sprintf("HA registry lookup failed (%v); area filter degraded", err))
 	}
 	registryCache.Lock()
 	defer registryCache.Unlock()
@@ -1001,7 +980,7 @@ func listEntities(ctx context.Context, domain, area, entityIDs, name, maxEntitie
 		return nil, err
 	}
 	var entityArea, entityDevice keyedMap
-	if pyrepr.Truthy(area) {
+	if anyutil.IsTrue(area) {
 		entityArea, entityDevice, err = registryAreaMap(ctx)
 	} else {
 		entityArea, entityDevice, err = warmRegistryMaps(ctx)
@@ -1026,41 +1005,41 @@ func getState(ctx context.Context, entityID string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	attrs, err := pyGet(data, "attributes", pyjson.NewObject())
+	attrs, err := pyGet(data, "attributes", jsonutil.NewObject())
 	if err != nil {
 		return nil, err
 	}
 	lastChanged, _ := pyGet(data, "last_changed", nil)
 	lastUpdated, _ := pyGet(data, "last_updated", nil)
-	return pyjson.ObjectOf("entity_id", eid, "state", state, "attributes", attrs, "last_changed", lastChanged,
+	return jsonutil.ObjectOf("entity_id", eid, "state", state, "attributes", attrs, "last_changed", lastChanged,
 		"last_updated", lastUpdated), nil
 }
 
 // Service call payload of the data with the entity id argument overriding data entity_id
-func buildServicePayload(entityID, data any) (*pyjson.Object, error) {
+func buildServicePayload(entityID, data any) (*jsonutil.Object, error) {
 	payload, err := pyDict(data)
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(entityID) {
+	if anyutil.IsTrue(entityID) {
 		payload.Set("entity_id", entityID)
 	}
 	return payload, nil
 }
 
 // Compact service response of either the bare changed states list or the return_response shape
-func parseServiceResponse(domain, service string, result, entityID any) (*pyjson.Object, error) {
+func parseServiceResponse(domain, service string, result, entityID any) (*jsonutil.Object, error) {
 	affected := []any{}
 	var serviceResponse any
 	compact := func(s any) {
 		eid, _ := pyGet(s, "entity_id", "")
 		state, _ := pyGet(s, "state", "")
-		affected = append(affected, pyjson.ObjectOf("entity_id", eid, "state", state))
+		affected = append(affected, jsonutil.ObjectOf("entity_id", eid, "state", state))
 	}
 	switch {
 	case isDict(result):
 		changed, _ := pyGet(result, "changed_states", nil)
-		if !pyrepr.Truthy(changed) {
+		if !anyutil.IsTrue(changed) {
 			changed = []any{}
 		}
 		items, err := pyIter(changed)
@@ -1082,13 +1061,13 @@ func parseServiceResponse(domain, service string, result, entityID any) (*pyjson
 			}
 		}
 	}
-	out := pyjson.ObjectOf("success", true, "service", domain+"."+service, "affected_entities", affected)
+	out := jsonutil.ObjectOf("success", true, "service", domain+"."+service, "affected_entities", affected)
 	if serviceResponse != nil {
 		out.Set("service_response", serviceResponse)
 	}
-	if pyrepr.Truthy(entityID) && len(affected) == 0 && serviceResponse == nil {
+	if anyutil.IsTrue(entityID) && len(affected) == 0 && serviceResponse == nil {
 		out.Set("success", false)
-		out.Set("error", fmt.Sprintf("%s.%s affected no entities for %s", domain, service, pyrepr.Str(entityID)))
+		out.Set("error", fmt.Sprintf("%s.%s affected no entities for %s", domain, service, anyutil.String(entityID)))
 	}
 	return out, nil
 }
@@ -1113,10 +1092,10 @@ func callService(ctx context.Context, domain, service string, entityID, data any
 	if err != nil {
 		return nil, err
 	}
-	if success, _ := out.Get("success"); success != false || !pyrepr.Truthy(entityID) {
+	if success, _ := out.Get("success"); success != false || !anyutil.IsTrue(entityID) {
 		return out, nil
 	}
-	eid := pyrepr.Str(entityID)
+	eid := anyutil.String(entityID)
 	errText, _ := out.Get("error")
 	state, err := apiJSON(ctx, http.MethodGet, "/api/states/"+eid, 10*time.Second, nil)
 	if err != nil {
@@ -1129,9 +1108,9 @@ func callService(ctx context.Context, domain, service string, entityID, data any
 			out.Set("error", fmt.Sprintf("%s.%s affected no entities: %s does not exist in "+
 				"Home Assistant. Check the exact entity_id with ha_list_entities.", domain, service, eid))
 		case errors.As(err, &re):
-			out.Set("error", fmt.Sprintf("%s (could not verify %s: HTTP %d)", pyrepr.Str(errText), eid, re.status))
+			out.Set("error", fmt.Sprintf("%s (could not verify %s: HTTP %d)", anyutil.String(errText), eid, re.status))
 		default:
-			out.Set("error", fmt.Sprintf("%s (could not verify %s: %s)", pyrepr.Str(errText), eid, err.Error()))
+			out.Set("error", fmt.Sprintf("%s (could not verify %s: %s)", anyutil.String(errText), eid, err.Error()))
 		}
 		return out, nil
 	}
@@ -1156,7 +1135,7 @@ func callService(ctx context.Context, domain, service string, entityID, data any
 	}
 	out.Set("success", true)
 	out.Delete("error")
-	out.Set("note", fmt.Sprintf("%s was already in state '%s' — nothing to change.", eid, pyrepr.Str(current)))
+	out.Set("note", fmt.Sprintf("%s was already in state '%s' — nothing to change.", eid, anyutil.String(current)))
 	return out, nil
 }
 
@@ -1170,37 +1149,37 @@ func listServices(ctx context.Context, domain any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(domain) {
+	if anyutil.IsTrue(domain) {
 		if items, err = filterStates(items, func(s any) (bool, error) {
 			d, err := pyGet(s, "domain", nil)
-			return err == nil && pyrepr.Equal(d, domain), err
+			return err == nil && anyutil.Equal(d, domain), err
 		}); err != nil {
 			return nil, err
 		}
 	}
 	result := []any{}
 	for _, svcDomain := range items {
-		svcs, err := pyGet(svcDomain, "services", pyjson.NewObject())
+		svcs, err := pyGet(svcDomain, "services", jsonutil.NewObject())
 		if err != nil {
 			return nil, err
 		}
 		if !isDict(svcs) {
 			return nil, attrErr(svcs, "the services of a domain", "a mapping")
 		}
-		domainServices := pyjson.NewObject()
+		domainServices := jsonutil.NewObject()
 		for _, svcName := range dictKeys(svcs) {
 			svcInfo, _ := pyGet(svcs, svcName, nil)
 			description, err := pyGet(svcInfo, "description", "")
 			if err != nil {
 				return nil, err
 			}
-			entry := pyjson.ObjectOf("description", description)
-			fields, _ := pyGet(svcInfo, "fields", pyjson.NewObject())
-			if pyrepr.Truthy(fields) {
+			entry := jsonutil.ObjectOf("description", description)
+			fields, _ := pyGet(svcInfo, "fields", jsonutil.NewObject())
+			if anyutil.IsTrue(fields) {
 				if !isDict(fields) {
 					return nil, attrErr(fields, "the fields of a service", "a mapping")
 				}
-				described := pyjson.NewObject()
+				described := jsonutil.NewObject()
 				for _, k := range dictKeys(fields) {
 					v, _ := pyGet(fields, k, nil)
 					if isDict(v) {
@@ -1213,9 +1192,9 @@ func listServices(ctx context.Context, domain any) (any, error) {
 			domainServices.Set(svcName, entry)
 		}
 		d, _ := pyGet(svcDomain, "domain", "")
-		result = append(result, pyjson.ObjectOf("domain", d, "services", domainServices))
+		result = append(result, jsonutil.ObjectOf("domain", d, "services", domainServices))
 	}
-	return pyjson.ObjectOf("count", len(result), "domains", result), nil
+	return jsonutil.ObjectOf("count", len(result), "domains", result), nil
 }
 
 // Runs a tool body and wraps its value as result, logging an error and returning the tool error envelope
@@ -1228,7 +1207,7 @@ func dispatch(run func() (any, error), logName, failMsg string) string {
 	return tools.JSONASCII(tools.Dict("result", value))
 }
 
-// Lists entities, a str max coerced to an int and rejected when it is not one
+// Lists entities, a text max converted to an integer and refused when it is not one
 func handleListEntities(ctx context.Context, call *tools.Call) string {
 	args := tools.PythonCallArgs(call)
 	maxEntities := args["max"]
@@ -1244,7 +1223,7 @@ func handleListEntities(ctx context.Context, call *tools.Call) string {
 	}, "ha_list_entities", "Failed to list entities")
 }
 
-// Value of an argument with the default for a missing key, the dict get of Python
+// Value of an argument, the default for a missing key
 func argOr(args map[string]any, key string, def any) any {
 	if v, ok := args[key]; ok {
 		return v
@@ -1256,11 +1235,11 @@ func argOr(args map[string]any, key string, def any) any {
 func handleGetState(ctx context.Context, call *tools.Call) string {
 	args := tools.PythonCallArgs(call)
 	entityID := argOr(args, "entity_id", "")
-	if !pyrepr.Truthy(entityID) {
+	if !anyutil.IsTrue(entityID) {
 		return toolError("Missing required parameter: entity_id")
 	}
 	if !reMatch(entityIDRE, entityID) {
-		return toolError("Invalid entity_id format: " + pyrepr.Str(entityID))
+		return toolError("Invalid entity_id format: " + anyutil.String(entityID))
 	}
 	id := entityID.(string)
 	violation, err := operatorFilterViolation(ctx, id)
@@ -1279,7 +1258,7 @@ func handleGetState(ctx context.Context, call *tools.Call) string {
 func handleCallService(ctx context.Context, call *tools.Call) string {
 	args := tools.PythonCallArgs(call)
 	domainArg, serviceArg := argOr(args, "domain", ""), argOr(args, "service", "")
-	if !pyrepr.Truthy(domainArg) || !pyrepr.Truthy(serviceArg) {
+	if !anyutil.IsTrue(domainArg) || !anyutil.IsTrue(serviceArg) {
 		return toolError("Missing required parameters: domain and service")
 	}
 	if !reMatch(serviceNameRE, domainArg) {
@@ -1294,15 +1273,15 @@ func handleCallService(ctx context.Context, call *tools.Call) string {
 			domain, strings.Join(blockedDomains, ", ")))
 	}
 	entityID := args["entity_id"]
-	if pyrepr.Truthy(entityID) && !reMatch(entityIDRE, entityID) {
-		return toolError("Invalid entity_id format: " + pyrepr.Str(entityID))
+	if anyutil.IsTrue(entityID) && !reMatch(entityIDRE, entityID) {
+		return toolError("Invalid entity_id format: " + anyutil.String(entityID))
 	}
 	data := args["data"]
 	if s, ok := data.(string); ok {
 		if strings.TrimSpace(s) == "" {
 			data = nil
 		} else {
-			parsed, err := pyjson.Loads(s)
+			parsed, err := jsonutil.Decode(s)
 			if err != nil {
 				return toolError("Invalid JSON string in 'data' parameter: " + err.Error())
 			}
@@ -1356,7 +1335,7 @@ func scopedSecretRaw(env *tools.Env, name string) string {
 // Tools are available only when HASS_TOKEN is set
 func checkHAAvailable(env *tools.Env) bool { return scopedSecretRaw(env, "HASS_TOKEN") != "" }
 
-var haListEntitiesSchema = pyjson.ObjectOf(
+var haListEntitiesSchema = jsonutil.ObjectOf(
 	"name", "ha_list_entities",
 	"description", "List Home Assistant entities. On a large install a bare call can return "+
 		"thousands of entities, so use the filters (domain, area, name, "+
@@ -1371,17 +1350,17 @@ var haListEntitiesSchema = pyjson.ObjectOf(
 		"An operator may configure a global cap (HASS_MAX_ENTITIES); when that "+
 		"or a 'max' parameter limits a result, the response is marked "+
 		"'truncated' with a note on how to narrow the query or get more.",
-	"parameters", pyjson.ObjectOf(
+	"parameters", jsonutil.ObjectOf(
 		"type", "object",
-		"properties", pyjson.ObjectOf(
-			"domain", pyjson.ObjectOf(
+		"properties", jsonutil.ObjectOf(
+			"domain", jsonutil.ObjectOf(
 				"type", "string",
 				"description", "Entity domain to filter by (e.g. 'light', 'switch', 'climate', "+
 					"'sensor', 'binary_sensor', 'cover', 'fan', 'media_player'). "+
 					"The cheapest filter; combine with area or name for a "+
 					"targeted query. Omit to list all entities.",
 			),
-			"area", pyjson.ObjectOf(
+			"area", jsonutil.ObjectOf(
 				"type", "string",
 				"description", "Area/room name to filter by (e.g. 'living room', 'kitchen'). "+
 					"Use this, not name, for any request about a room. "+
@@ -1390,21 +1369,21 @@ var haListEntitiesSchema = pyjson.ObjectOf(
 					"room; falls back to matching friendly names when the "+
 					"registry is unreachable. Omit to list all.",
 			),
-			"name", pyjson.ObjectOf(
+			"name", jsonutil.ObjectOf(
 				"type", "string",
 				"description", "Substring to match against entity friendly names and "+
 					"entity_ids (e.g. 'thermostat', 'temperature'). "+
 					"Useful when you don't know the domain. Not for rooms: "+
 					"use area, because names rarely mention the room.",
 			),
-			"entity_ids", pyjson.ObjectOf(
+			"entity_ids", jsonutil.ObjectOf(
 				"type", "array",
-				"items", pyjson.ObjectOf("type", "string"),
+				"items", jsonutil.ObjectOf("type", "string"),
 				"description", "Exact list of entity_ids to fetch (e.g. "+
 					"['climate.office', 'sensor.office_temp']). Returns just "+
 					"these entities, ignoring the domain/area/name filters.",
 			),
-			"max", pyjson.ObjectOf(
+			"max", jsonutil.ObjectOf(
 				"type", "integer",
 				"description", "Maximum number of entities to return for this call. "+
 					"Overrides any operator-configured cap (HASS_MAX_ENTITIES) "+
@@ -1416,14 +1395,14 @@ var haListEntitiesSchema = pyjson.ObjectOf(
 	),
 )
 
-var haGetStateSchema = pyjson.ObjectOf(
+var haGetStateSchema = jsonutil.ObjectOf(
 	"name", "ha_get_state",
 	"description", "Get the detailed state of a single Home Assistant entity, including all "+
 		"attributes (brightness, color, temperature setpoint, sensor readings, etc.).",
-	"parameters", pyjson.ObjectOf(
+	"parameters", jsonutil.ObjectOf(
 		"type", "object",
-		"properties", pyjson.ObjectOf(
-			"entity_id", pyjson.ObjectOf(
+		"properties", jsonutil.ObjectOf(
+			"entity_id", jsonutil.ObjectOf(
 				"type", "string",
 				"description", "The entity ID to query (e.g. 'light.living_room', "+
 					"'climate.thermostat', 'sensor.temperature').",
@@ -1433,16 +1412,16 @@ var haGetStateSchema = pyjson.ObjectOf(
 	),
 )
 
-var haListServicesSchema = pyjson.ObjectOf(
+var haListServicesSchema = jsonutil.ObjectOf(
 	"name", "ha_list_services",
 	"description", "List available Home Assistant services (actions) for device control. "+
 		"Shows what actions can be performed on each device type and what "+
 		"parameters they accept. Use this to discover how to control devices "+
 		"found via ha_list_entities.",
-	"parameters", pyjson.ObjectOf(
+	"parameters", jsonutil.ObjectOf(
 		"type", "object",
-		"properties", pyjson.ObjectOf(
-			"domain", pyjson.ObjectOf(
+		"properties", jsonutil.ObjectOf(
+			"domain", jsonutil.ObjectOf(
 				"type", "string",
 				"description", "Filter by domain (e.g. 'light', 'climate', 'switch'). "+
 					"Omit to list services for all domains.",
@@ -1452,7 +1431,7 @@ var haListServicesSchema = pyjson.ObjectOf(
 	),
 )
 
-var haCallServiceSchema = pyjson.ObjectOf(
+var haCallServiceSchema = jsonutil.ObjectOf(
 	"name", "ha_call_service",
 	"description", "Call a Home Assistant service to control a device. Use ha_list_services "+
 		"to discover available services and their parameters for each domain. "+
@@ -1465,26 +1444,26 @@ var haCallServiceSchema = pyjson.ObjectOf(
 		"domain, or already in that state) — follow its suggestion and retry. "+
 		"If the operator restricts entities, target explicit entity_ids: calls "+
 		"on restricted entities, or by area/device/label or with no target, are refused.",
-	"parameters", pyjson.ObjectOf(
+	"parameters", jsonutil.ObjectOf(
 		"type", "object",
-		"properties", pyjson.ObjectOf(
-			"domain", pyjson.ObjectOf(
+		"properties", jsonutil.ObjectOf(
+			"domain", jsonutil.ObjectOf(
 				"type", "string",
 				"description", "Service domain (e.g. 'light', 'switch', 'climate', "+
 					"'cover', 'media_player', 'fan', 'scene', 'script').",
 			),
-			"service", pyjson.ObjectOf(
+			"service", jsonutil.ObjectOf(
 				"type", "string",
 				"description", "Service name (e.g. 'turn_on', 'turn_off', 'toggle', "+
 					"'set_temperature', 'set_hvac_mode', 'open_cover', "+
 					"'close_cover', 'set_volume_level').",
 			),
-			"entity_id", pyjson.ObjectOf(
+			"entity_id", jsonutil.ObjectOf(
 				"type", "string",
 				"description", "Target entity ID (e.g. 'light.living_room'). "+
 					"Some services (like scene.turn_on) may not need this.",
 			),
-			"data", pyjson.ObjectOf(
+			"data", jsonutil.ObjectOf(
 				"type", "string",
 				"description", "Additional service data as a JSON string. Examples: "+
 					`{"brightness": 255, "color_name": "blue"} for lights, `+
@@ -1498,7 +1477,7 @@ var haCallServiceSchema = pyjson.ObjectOf(
 
 // Schema and handler of each tool in registration order
 var haTools = []struct {
-	schema  *pyjson.Object
+	schema  *jsonutil.Object
 	handler tools.Handler
 }{
 	{haListEntitiesSchema, handleListEntities},
@@ -1511,7 +1490,7 @@ var haTools = []struct {
 func registerTools(pctx *plugins.Context) error {
 	ctx := pctx.HomeContext()
 	for _, t := range haTools {
-		if _, err := pctx.RegisterTool(ctx, plugins.ToolSpec{Name: t.schema.Vals["name"].(string), Toolset: toolset, Schema: t.schema,
+		if _, err := pctx.RegisterTool(ctx, plugins.ToolSpec{Name: t.schema.Value("name").(string), Toolset: toolset, Schema: t.schema,
 			Handler: t.handler, Check: checkHAAvailable, Emoji: toolEmoji}); err != nil {
 			return err
 		}

@@ -10,8 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Realpath prefixes that block writes, only the sensitive macOS private var subtrees
@@ -487,8 +487,8 @@ func staleOverwriteBlocker(env *Env, filePath, resolved, taskID string) (string,
 }
 
 // Model facing refusal for write_file, stale_write_blocked tells it apart from I/O errors
-func staleWriteRefusal(filePath, reason, resolved string) *pyjson.Object {
-	out := &pyjson.Object{Vals: map[string]any{}}
+func staleWriteRefusal(filePath, reason, resolved string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("error", "Refusing to overwrite "+filePath+": "+reason+" "+
 		"The file was NOT modified. Reload the current contents with read_file "+
 		"(every page, for a file that needs offset/limit), merge the requested "+

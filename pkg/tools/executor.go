@@ -15,10 +15,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Sequential and concurrent tool call execution driven by the agent through ExecutorHost
@@ -119,7 +120,7 @@ func InterruptSkipWording(reason string) string {
 		return "Turn interrupted"
 	}
 	if userInterruptReasons[reason] {
-		return pystr.Capitalize(reason)
+		return textutil.UpperFirst(strings.ToLower(reason))
 	}
 	return "Turn aborted — " + strings.ReplaceAll(reason, "_", " ")
 }
@@ -341,7 +342,7 @@ func interruptWorkerIDs(ids []WorkerID, reason string) {
 
 // ParseToolArguments parses model emitted arguments without repairing them
 func ParseToolArguments(raw string) (map[string]any, string) {
-	if parsed, err := pyjson.DecodeWTF8([]byte(raw)); err == nil {
+	if parsed, err := jsonutil.DecodePlain([]byte(raw)); err == nil {
 		if m, ok := parsed.(map[string]any); ok {
 			return m, ""
 		}
@@ -456,21 +457,21 @@ func (e *Executor) unwrapToolSearchCall(ctx context.Context, name string, args m
 	if !e.toolSearchScopedNames(ctx)[underlying] {
 		return name, args, SessionScopeBlockReason(ctx, env, underlying, e.Host.EnabledToolsets(), e.Host.DisabledToolsets())
 	}
-	scopeBlock := ValidateDeferredCallArgs(ctx, env, underlying, DeferredCallArguments(orderedArgsObject(raw, args).Vals))
+	scopeBlock := ValidateDeferredCallArgs(ctx, env, underlying, DeferredCallArguments(orderedArgsObject(raw, args).Map()))
 	if scopeBlock == "" {
 		return underlying, underlyingArgs, ""
 	}
 	if flattenProbe {
-		decoded, err := pyjson.Loads(scopeBlock)
-		if probe, isMap := decoded.(*pyjson.Object); err == nil && isMap {
+		decoded, err := jsonutil.Decode(scopeBlock)
+		if probe, isMap := decoded.(*jsonutil.Object); err == nil && isMap {
 			get := func(key string, def any) any {
 				if v, ok := probe.Get(key); ok {
 					return v
 				}
 				return def
 			}
-			scopeBlock = strings.TrimSpace(fmt.Sprintf("%s Parameters schema: %s. %s", pyrepr.Str(get("error", "")),
-				dumpsUnicode(get("parameters", pyjson.NewObject())), pyrepr.Str(get("hint", ""))))
+			scopeBlock = strings.TrimSpace(fmt.Sprintf("%s Parameters schema: %s. %s", anyutil.String(get("error", "")),
+				dumpsUnicode(get("parameters", jsonutil.NewObject())), anyutil.String(get("hint", ""))))
 		}
 	}
 	return name, args, scopeBlock
@@ -497,7 +498,7 @@ func (p *ParsedCall) Ref(taskID string) *ToolCallRef {
 
 // JSON text inside raw that decodes to args, searching members, items and JSON strings, empty when absent
 func rawArgsFor(raw []byte, args map[string]any) string {
-	decoded, err := pyjson.DecodeWTF8(raw)
+	decoded, err := jsonutil.DecodePlain(raw)
 	if err != nil {
 		return ""
 	}
@@ -682,15 +683,15 @@ func touchActivitySafely(host ExecutorHost, label string) (ok bool) {
 }
 
 // Synthesizes the result for a blocked call and emits its terminal post tool call
-func (e *Executor) blockedToolResult(ctx context.Context, ref *ToolCallRef, blockBody *pyjson.Object, blockErrorType string, decision *ToolGuardrailDecision) string {
+func (e *Executor) blockedToolResult(ctx context.Context, ref *ToolCallRef, blockBody *jsonutil.Object, blockErrorType string, decision *ToolGuardrailDecision) string {
 	var result, errorType, errorMessage string
 	if blockBody != nil {
 		result = dumpsUnicode(blockBody)
 		errorType = blockErrorType
-		if msg, ok := blockBody.Vals["message"].(string); ok && msg != "" {
+		if msg, ok := blockBody.Value("message").(string); ok && msg != "" {
 			errorMessage = msg
 		} else {
-			errorMessage, _ = blockBody.Vals["error"].(string)
+			errorMessage, _ = blockBody.Value("error").(string)
 		}
 	} else {
 		result = e.Host.GuardrailBlockResult(*decision)
@@ -743,9 +744,9 @@ func (e *Executor) dispatchAuthorizedOnce(ctx context.Context, st *ManagedToolRe
 		}
 		st.Args = ref.Args
 	}
-	var blockBody *pyjson.Object
+	var blockBody *jsonutil.Object
 	if blockMessage != "" {
-		blockBody = pyjson.ObjectOf("error", blockMessage)
+		blockBody = jsonutil.ObjectOf("error", blockMessage)
 	}
 	if blockBody == nil {
 		if pruned := ContextPrunedArgumentPaths(ref.Name, ref.Args); len(pruned) > 0 {
@@ -753,7 +754,7 @@ func (e *Executor) dispatchAuthorizedOnce(ctx context.Context, st *ManagedToolRe
 			for i, p := range pruned {
 				paths[i] = p
 			}
-			blockBody = pyjson.ObjectOf("error", PrunedToolArgumentsError, "message", PrunedToolArgumentsMessage, "argument_paths", paths)
+			blockBody = jsonutil.ObjectOf("error", PrunedToolArgumentsError, "message", PrunedToolArgumentsMessage, "argument_paths", paths)
 			blockErrorType = PrunedToolArgumentsError
 		}
 	}
@@ -761,7 +762,7 @@ func (e *Executor) dispatchAuthorizedOnce(ctx context.Context, st *ManagedToolRe
 	if blockBody == nil {
 		controller := e.Host.Guardrails()
 		guardrailCallMu.Lock()
-		d := controller.BeforeCall(ref.Name, orderedArgsObject(ref.RawArgs, ref.Args).Vals)
+		d := controller.BeforeCall(ref.Name, orderedArgsObject(ref.RawArgs, ref.Args).Map())
 		guardrailCallMu.Unlock()
 		if !d.AllowsExecution() {
 			decision = &d
@@ -856,7 +857,7 @@ func (e *Executor) beginToolExecution(ref *ToolCallRef, displayIndex int) {
 		ordered := orderedArgsObject(ref.RawArgs, displayArgs)
 		if host.VerboseLogging() {
 			host.Print(fmt.Sprintf("  \U0001F4DE %s: %s(%s)", prefix, ref.Name, argKeysRepr(ordered)))
-			indented, err := pyjson.Dumps(ordered, pyjson.Indent(2), pyjson.EnsureASCII(false))
+			indented, err := jsonutil.Encode(ordered, jsonutil.Indent(2))
 			if err != nil {
 				indented = ErrorResult(err)
 			}
@@ -1073,7 +1074,7 @@ func (e *Executor) commitToolResult(ctx context.Context, messages *[]*state.Mess
 	log := envLog(host.Env())
 	if in.observed {
 		if !in.blocked {
-			result = host.AppendGuardrailObservation(ref.Name, orderedArgsObject(ref.RawArgs, ref.Args).Vals, result, in.isError, ref.CallID)
+			result = host.AppendGuardrailObservation(ref.Name, orderedArgsObject(ref.RawArgs, ref.Args).Map(), result, in.isError, ref.CallID)
 		}
 		if in.isError {
 			preview := result
@@ -1783,8 +1784,8 @@ func (e *Executor) finishQuietToolSpinner(spinner Spinner, name string, args map
 
 func delegateSpinnerLabel(args map[string]any) string {
 	action := ""
-	if a, ok := args["action"]; ok && pyTruthy(a) {
-		action = strings.ToLower(strings.TrimSpace(pyrepr.Str(a)))
+	if a, ok := args["action"]; ok && anyutil.IsTrue(a) {
+		action = strings.ToLower(strings.TrimSpace(anyutil.String(a)))
 	}
 	switch action {
 	case "list", "steer", "stop":
@@ -1830,7 +1831,7 @@ func (e *Executor) resolveSequentialDispatch(ctx context.Context, ref *ToolCallR
 		spinner := e.startQuietToolSpinner(ctx, name, args, true, delegateSpinnerLabel(args))
 		host.SetDelegateSpinner(spinner)
 		return &sequentialDispatch{execute: func(ctx context.Context, next map[string]any) (string, error) {
-			return host.DispatchDelegateTask(ctx, orderedArgsObject(rawArgs, next).Vals)
+			return host.DispatchDelegateTask(ctx, orderedArgsObject(rawArgs, next).Map())
 		},
 			spinner: spinner, isDelegate: true, finishSpinner: true, finishInFinally: true}
 	}
@@ -2265,7 +2266,7 @@ func (e *Executor) ExecuteToolCallsSegmented(ctx context.Context, toolCalls []st
 
 // json.dumps with its default ensure_ascii and separators
 func dumpsASCII(v any) string {
-	out, err := pyjson.Dumps(v)
+	out, err := jsonutil.Encode(v)
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -2273,11 +2274,11 @@ func dumpsASCII(v any) string {
 }
 
 // Arguments as an ordered object, keys in the model's raw order then any added keys sorted
-func orderedArgsObject(raw string, args map[string]any) *pyjson.Object {
-	o := pyjson.NewObject()
-	if parsed, err := pyjson.Loads(raw); err == nil {
-		if obj, ok := parsed.(*pyjson.Object); ok {
-			for _, k := range obj.Keys {
+func orderedArgsObject(raw string, args map[string]any) *jsonutil.Object {
+	o := jsonutil.NewObject()
+	if parsed, err := jsonutil.Decode(raw); err == nil {
+		if obj, ok := parsed.(*jsonutil.Object); ok {
+			for _, k := range obj.Keys() {
 				v, present := args[k]
 				if !present {
 					continue
@@ -2298,11 +2299,11 @@ func orderedArgsObject(raw string, args map[string]any) *pyjson.Object {
 }
 
 // Python repr of the argument key list
-func argKeysRepr(o *pyjson.Object) string {
-	keys := o.Keys
+func argKeysRepr(o *jsonutil.Object) string {
+	keys := o.Keys()
 	items := make([]any, len(keys))
 	for i, k := range keys {
 		items[i] = k
 	}
-	return pyrepr.Repr(items)
+	return anyutil.Quote(items)
 }

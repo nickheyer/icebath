@@ -5,16 +5,16 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Python str of the value parsed as a recognized truthy or falsy token, ok false otherwise
 func boolToken(value any) (bool, bool) {
 	if s, ok := value.(string); ok {
-		return pystr.BoolToken(s)
+		return textutil.ParseBool(s)
 	}
-	return pystr.BoolToken(pyrepr.Str(value))
+	return textutil.ParseBool(anyutil.String(value))
 }
 
 // Bool-ish config value with nil keeping the default and unrecognized strings keeping it too
@@ -29,7 +29,7 @@ func coerceBool(value any, def bool) bool {
 		}
 		return parsed
 	}
-	return pyrepr.Truthy(value)
+	return anyutil.IsTrue(value)
 }
 
 // Policies for the runner when the last messaging adapter goes down
@@ -46,7 +46,7 @@ func normalizeTransportToken(value any) string {
 		}
 		return "off"
 	}
-	if t := strings.ToLower(strings.TrimSpace(pyrepr.Str(value))); t != "" {
+	if t := strings.ToLower(strings.TrimSpace(anyutil.String(value))); t != "" {
 		return t
 	}
 	return "auto"
@@ -120,7 +120,7 @@ func PlatformBindsPort(platformValue string, extra map[string]any) bool {
 	if !ok {
 		mode = "websocket"
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(mode))) == expected
+	return strings.ToLower(strings.TrimSpace(anyutil.String(mode))) == expected
 }
 
 var discordChannelLinkRE = regexp.MustCompile(`^https://(?:(?:ptb|canary)\.)?discord(?:app)?\.com/channels/(?:[0-9]+|@me)/([0-9]+)/?$`)

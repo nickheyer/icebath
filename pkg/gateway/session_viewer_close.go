@@ -11,12 +11,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const viewerClosePrefix = state.ViewerClosePrefix
@@ -38,20 +38,20 @@ type pendingClose struct {
 
 // Close with a fresh operation id record
 func newPendingClose(reason string) *pendingClose {
-	record, _ := pyjson.Dumps(map[string]any{"op": uuid4HexString(), "reason": reason}, pyjson.SortKeys(true))
+	record, _ := jsonutil.Encode(map[string]any{"op": uuid4HexString(), "reason": reason}, jsonutil.SortKeys())
 	return &pendingClose{reason: reason, record: record}
 }
 
 // Close rebuilt from its stored record, a bare reason record from before operation ids kept as the reason
 func pendingCloseFromRecord(record string) *pendingClose {
 	reason := record
-	if decoded, err := pyjson.Loads(record); err == nil {
-		if obj, ok := decoded.(*pyjson.Object); ok {
+	if decoded, err := jsonutil.Decode(record); err == nil {
+		if obj, ok := decoded.(*jsonutil.Object); ok {
 			if value, found := obj.Get("reason"); found {
 				if text, isText := value.(string); isText {
 					reason = text
 				} else {
-					reason = pyrepr.Str(value)
+					reason = anyutil.String(value)
 				}
 			}
 		}
@@ -236,7 +236,7 @@ func rearmPersistedCloses(ctx context.Context, a *SessionAuthority) ([]string, e
 
 // Orphan end grace of the store's profile, zero when unset and a session reap or startup sweep opt out holds
 func orphanCloseGrace(ctx context.Context, a *SessionAuthority, startup bool) (float64, error) {
-	resolved, err := pypath.Resolve(a.DB.Path())
+	resolved, err := pathutil.Resolve(a.DB.Path())
 	if err != nil {
 		return 0, err
 	}
@@ -263,7 +263,7 @@ func orphanCandidate(ctx context.Context, a *SessionAuthority, sessionID string)
 	}
 	var source any
 	if policy, ok := receipt.Get("policy"); ok {
-		obj, isObj := policy.(*pyjson.Object)
+		obj, isObj := policy.(*jsonutil.Object)
 		if !isObj {
 			return false, &PyError{Kind: "AttributeError", Msg: "the viewer session policy is " + errchain.Kind(policy) + ", expected a mapping"}
 		}
@@ -277,7 +277,7 @@ func orphanCandidate(ctx context.Context, a *SessionAuthority, sessionID string)
 }
 
 // Stored local receipt of a session and the row of the transcript its entry names
-func orphanReceiptRow(ctx context.Context, a *SessionAuthority, sessionID string) (*pyjson.Object, *pyjson.Object, error) {
+func orphanReceiptRow(ctx context.Context, a *SessionAuthority, sessionID string) (*jsonutil.Object, *jsonutil.Object, error) {
 	receipt, err := a.DB.LocalReceipt(ctx, sessionID)
 	if err != nil {
 		return nil, nil, err
@@ -286,7 +286,7 @@ func orphanReceiptRow(ctx context.Context, a *SessionAuthority, sessionID string
 	if err != nil {
 		return nil, nil, err
 	}
-	entry, ok := rawEntry.(*pyjson.Object)
+	entry, ok := rawEntry.(*jsonutil.Object)
 	if !ok {
 		return nil, nil, &PyError{Kind: "TypeError", Msg: "a viewer receipt entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
 	}
@@ -488,7 +488,7 @@ func settleViewerClose(ctx context.Context, a *SessionAuthority, sessionID strin
 	platform := ""
 	if row != nil {
 		if source, _ := row.Get("source"); pyTruthy(source) {
-			platform = pyrepr.Str(source)
+			platform = anyutil.String(source)
 		}
 	}
 	if platform == "" && live.Source != nil {
@@ -511,7 +511,7 @@ func resolveAbandonedUnknown(ctx context.Context, a *SessionAuthority, sessionID
 	if err != nil {
 		return false, err
 	}
-	var unknown []*pyjson.Object
+	var unknown []*jsonutil.Object
 	for _, row := range rows {
 		if rowString(row, "status") == "unknown" {
 			unknown = append(unknown, row)

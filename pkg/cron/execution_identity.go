@@ -5,6 +5,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // CronExecution identifies the scheduled occurrence the current code runs inside
@@ -27,7 +28,7 @@ func enterCronExecution(ctx context.Context, job *Job, executionID string, recor
 		name = job.ID
 	}
 	source := ""
-	if pyTruthy(record["source"]) {
+	if anyutil.IsTrue(record["source"]) {
 		source = pyStrOrEmpty(record["source"])
 	}
 	profile := profiles.CurrentProfileName(ctx)

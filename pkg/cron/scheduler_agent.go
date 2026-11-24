@@ -3,10 +3,10 @@ package cron
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // AIAgent keyword arguments the cron run path constructs its agent with
@@ -48,23 +48,21 @@ type CronAgent interface {
 	Close() error
 }
 
-func pyTruthy(v any) bool { return pyrepr.Truthy(v) }
-
 // str(v or "") of a config value
 func pyStrOrEmpty(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // First truthy value, the last value when none is, like a chain of or
 func firstTruthy(vals ...any) any {
 	for _, v := range vals {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v
 		}
 	}

@@ -18,14 +18,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Prompt configuration the agent resolves at init and the per session prompt bookkeeping the builders write
@@ -164,8 +164,8 @@ func pyDict(v any) (map[string]any, bool) {
 		return m, true
 	case config.Tree:
 		return map[string]any(m), true
-	case *pyjson.Object:
-		return pyjson.Dict(m)
+	case *jsonutil.Object:
+		return jsonutil.AsMap(m)
 	}
 	return nil, false
 }
@@ -353,11 +353,11 @@ func agentSkillsDir(ctx context.Context, a *AIAgent) string {
 
 // Profile name X for a home at root profiles X, default for anything else
 func profileNameForHome(h string) string {
-	resolved, err := pypath.Realpath(h, pypath.Lax)
+	resolved, err := pathutil.Resolve(h)
 	if err != nil {
 		return "default"
 	}
-	profilesDir, err := pypath.Realpath(filepath.Join(home.Root(), "profiles"), pypath.Lax)
+	profilesDir, err := pathutil.Resolve(filepath.Join(home.Root(), "profiles"))
 	if err != nil {
 		return "default"
 	}
@@ -506,11 +506,11 @@ func botModeParts(ctx context.Context, a *AIAgent) []string {
 
 // Profile X when the ambient home resolves under the resolved root's profiles dir, default otherwise
 func ambientFileSafetyProfileName(ctx context.Context) string {
-	resolved, err := pypath.Realpath(home.Dir(ctx), pypath.Lax)
+	resolved, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return "default"
 	}
-	root, err := pypath.Realpath(home.Root(), pypath.Lax)
+	root, err := pathutil.Resolve(home.Root())
 	if err != nil {
 		return "default"
 	}
@@ -791,11 +791,11 @@ func persistedWorkspaceBlock(prompt, key string) (string, bool) {
 	if start < 0 {
 		return "", true
 	}
-	cwd, _ := pypath.Realpath(key, pypath.Lax)
+	cwd, _ := pathutil.Resolve(key)
 	for start >= 0 {
 		block, _, _ := strings.Cut(prompt[start+2:], "\n\n")
 		lines := strings.SplitN(block, "\n", 3)
-		root, _ := pypath.Realpath(lines[1][len("- Root: "):], pypath.Lax)
+		root, _ := pathutil.Resolve(lines[1][len("- Root: "):])
 		if root == cwd || pathHasParent(cwd, root) {
 			return block, true
 		}
@@ -1050,12 +1050,12 @@ func FormatToolsForSystemMessage(a *AIAgent) (string, error) {
 		if !ok {
 			parameters = map[string]any{}
 		}
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		row.Set("name", name)
 		row.Set("description", description)
 		row.Set("parameters", parameters)
 		row.Set("required", nil)
 		out = append(out, row)
 	}
-	return pyjson.Dumps(out, pyjson.EnsureASCII(false))
+	return jsonutil.Encode(out)
 }

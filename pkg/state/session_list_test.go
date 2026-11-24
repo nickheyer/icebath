@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func projBuildChain(t *testing.T, db *SessionDB, t0 float64) {
@@ -45,7 +45,7 @@ func projSolo(t *testing.T, db *SessionDB) {
 	readAppend(t, db, "solo", map[string]any{"role": "user", "content": "standalone"})
 }
 
-func projList(t *testing.T, db *SessionDB, o ListSessionsRichOptions) []*pyjson.Object {
+func projList(t *testing.T, db *SessionDB, o ListSessionsRichOptions) []*jsonutil.Object {
 	t.Helper()
 	rows, err := db.ListSessionsRich(context.Background(), o)
 	if err != nil {
@@ -54,13 +54,13 @@ func projList(t *testing.T, db *SessionDB, o ListSessionsRichOptions) []*pyjson.
 	return rows
 }
 
-func projCLI(t *testing.T, db *SessionDB) []*pyjson.Object {
+func projCLI(t *testing.T, db *SessionDB) []*jsonutil.Object {
 	t.Helper()
 	limit := 20
 	return projList(t, db, ListSessionsRichOptions{Source: "cli", Limit: &limit})
 }
 
-func projRow(t *testing.T, rows []*pyjson.Object, id string) *pyjson.Object {
+func projRow(t *testing.T, rows []*jsonutil.Object, id string) *jsonutil.Object {
 	t.Helper()
 	for _, r := range rows {
 		if rowValue(r, "id") == id {
@@ -71,7 +71,7 @@ func projRow(t *testing.T, rows []*pyjson.Object, id string) *pyjson.Object {
 	return nil
 }
 
-func projIDs(rows []*pyjson.Object) map[string]bool {
+func projIDs(rows []*jsonutil.Object) map[string]bool {
 	out := map[string]bool{}
 	for _, r := range rows {
 		out[pyStr(rowValue(r, "id"))] = true
@@ -79,7 +79,7 @@ func projIDs(rows []*pyjson.Object) map[string]bool {
 	return out
 }
 
-func projAbsent(t *testing.T, row *pyjson.Object, key string) {
+func projAbsent(t *testing.T, row *jsonutil.Object, key string) {
 	t.Helper()
 	if v, ok := row.Get(key); ok && v != nil {
 		t.Fatalf("%s = %v on %v", key, v, rowValue(row, "id"))
@@ -178,11 +178,11 @@ func TestListBatchesTipRowFetchIntoOneQuery(t *testing.T) {
 	projSecondChain(t, db, t0, "second continuation")
 	var batchCalls [][]string
 	var singleCalls []string
-	db.richRowSeams.batch = func(ctx context.Context, ids []string, compactRows bool) (map[string]*pyjson.Object, error) {
+	db.richRowSeams.batch = func(ctx context.Context, ids []string, compactRows bool) (map[string]*jsonutil.Object, error) {
 		batchCalls = append(batchCalls, append([]string(nil), ids...))
 		return db.readSessionRichRowsBatch(ctx, ids, compactRows)
 	}
-	db.richRowSeams.single = func(ctx context.Context, id string, compactRows bool) (*pyjson.Object, error) {
+	db.richRowSeams.single = func(ctx context.Context, id string, compactRows bool) (*jsonutil.Object, error) {
 		singleCalls = append(singleCalls, id)
 		return db.readSessionRichRow(ctx, id, compactRows)
 	}
@@ -345,7 +345,7 @@ func projLineage(t *testing.T, db *SessionDB, id string, want ...string) {
 	}
 }
 
-func projOrder(rows []*pyjson.Object) []string {
+func projOrder(rows []*jsonutil.Object) []string {
 	out := make([]string, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, pyStr(rowValue(r, "id")))

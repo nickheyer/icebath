@@ -7,14 +7,14 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // MoA facade progress keys mapped onto the payload keys the TUI gateway emits
@@ -81,8 +81,8 @@ func showLocalReasoning(ctx context.Context, t *TurnRunner) (bool, error) {
 }
 
 // Whether a subagent event belongs to a delegate this turn's agent spawned
-func isActiveSessionSubagent(t *TurnRunner, payload *pyjson.Object, eventType string) bool {
-	subagentID, _ := payload.GetOr("subagent_id", nil).(string)
+func isActiveSessionSubagent(t *TurnRunner, payload *jsonutil.Object, eventType string) bool {
+	subagentID, _ := payload.ValueOr("subagent_id", nil).(string)
 	if subagentID == "" {
 		return false
 	}
@@ -90,13 +90,13 @@ func isActiveSessionSubagent(t *TurnRunner, payload *pyjson.Object, eventType st
 	if turnAgent == nil {
 		return false
 	}
-	parentID, _ := payload.GetOr("parent_id", nil).(string)
+	parentID, _ := payload.ValueOr("parent_id", nil).(string)
 	return agent.IsActiveSessionSubagent(turnAgent, subagentID, parentID, eventType == "subagent.spawn_requested")
 }
 
 // Publishes a subagent event in turn, or outside it for a background delegate this turn spawned
-func publishLocalSubagent(t *TurnRunner, eventType string, payload *pyjson.Object) {
-	plain, _ := pyjson.Plain(payload).(map[string]any)
+func publishLocalSubagent(t *TurnRunner, eventType string, payload *jsonutil.Object) {
+	plain, _ := jsonutil.Plain(payload).(map[string]any)
 	owner := t.approvalOwner
 	if owner == nil {
 		t.publishExecution(eventType, plain)
@@ -121,7 +121,7 @@ func publishLocalSubagent(t *TurnRunner, eventType string, payload *pyjson.Objec
 		return
 	}
 	if stream != nil && isActiveSessionSubagent(t, payload, eventType) {
-		stream.Publish(owner.sessionID, payload, eventType, pyjson.NewObject())
+		stream.Publish(owner.sessionID, payload, eventType, jsonutil.NewObject())
 	}
 }
 
@@ -168,7 +168,7 @@ func publishLocalProgress(ctx context.Context, t *TurnRunner, eventType, name, p
 	if !shown {
 		return nil
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	switch eventType {
 	case "reasoning.available":
 		payload.Set("text", preview)
@@ -194,10 +194,10 @@ func publishLocalProgress(ctx context.Context, t *TurnRunner, eventType, name, p
 			return nil
 		}
 	}
-	if eventType == "moa.phase" && !pyrepr.Truthy(payload.GetOr("phase", nil)) {
+	if eventType == "moa.phase" && !anyutil.IsTrue(payload.ValueOr("phase", nil)) {
 		return nil
 	}
-	plain, _ := pyjson.Plain(payload).(map[string]any)
+	plain, _ := jsonutil.Plain(payload).(map[string]any)
 	t.publishExecution(eventType, plain)
 	return nil
 }
@@ -221,14 +221,14 @@ func publishLocalControlIfChanged(t *TurnRunner) {
 // Records the start time of a call and the before state of a write capable tool's local files
 func noteLocalToolStart(t *TurnRunner, callID any, toolName *string, args any) {
 	key := ""
-	if pyrepr.Truthy(callID) {
-		key = pyrepr.Str(callID)
+	if anyutil.IsTrue(callID) {
+		key = anyutil.String(callID)
 	}
 	t.localToolMu.Lock()
 	if t.localToolStarts == nil {
 		t.localToolStarts = map[string]float64{}
 	}
-	t.localToolStarts[key] = pythread.Monotonic()
+	t.localToolStarts[key] = timeutil.Monotonic()
 	t.localToolMu.Unlock()
 	if toolName == nil {
 		return
@@ -264,13 +264,13 @@ func (t *TurnRunner) localToolResultMetadata(callID, name string, args map[strin
 	fields := localCompleteFields(t.turnCtx, t, callID, &name, args, result)
 	t.localToolMu.Lock()
 	if t.localToolFields == nil {
-		t.localToolFields = map[string]*pyjson.Object{}
+		t.localToolFields = map[string]*jsonutil.Object{}
 	}
 	t.localToolFields[callID] = fields
 	t.localToolMu.Unlock()
 	stored := map[string]any{}
 	for _, key := range []string{"duration_s", "inline_diff", "image_path"} {
-		if value := fields.Vals[key]; value != nil {
+		if value := fields.Value(key); value != nil {
 			stored[key] = value
 		}
 	}
@@ -278,7 +278,7 @@ func (t *TurnRunner) localToolResultMetadata(callID, name string, args map[strin
 }
 
 // Completion fields of a local viewer tool call, the ones worked out when its result was stored, else worked out now for a call that stored none
-func (t *TurnRunner) takeLocalCompleteFields(callID string, toolName *string, args, result any) *pyjson.Object {
+func (t *TurnRunner) takeLocalCompleteFields(callID string, toolName *string, args, result any) *jsonutil.Object {
 	t.localToolMu.Lock()
 	fields, kept := t.localToolFields[callID]
 	delete(t.localToolFields, callID)
@@ -290,18 +290,18 @@ func (t *TurnRunner) takeLocalCompleteFields(callID string, toolName *string, ar
 }
 
 // Duration, rendered inline diff and task list snapshot of a completed local viewer tool call
-func localCompleteFields(ctx context.Context, t *TurnRunner, callID any, toolName *string, args, result any) *pyjson.Object {
+func localCompleteFields(ctx context.Context, t *TurnRunner, callID any, toolName *string, args, result any) *jsonutil.Object {
 	key := ""
-	if pyrepr.Truthy(callID) {
-		key = pyrepr.Str(callID)
+	if anyutil.IsTrue(callID) {
+		key = anyutil.String(callID)
 	}
 	t.localToolMu.Lock()
 	started, ok := t.localToolStarts[key]
 	delete(t.localToolStarts, key)
 	t.localToolMu.Unlock()
-	fields := pyjson.NewObject()
+	fields := jsonutil.NewObject()
 	if ok {
-		fields.Set("duration_s", pythread.Monotonic()-started)
+		fields.Set("duration_s", timeutil.Monotonic()-started)
 	} else {
 		fields.Set("duration_s", nil)
 	}
@@ -339,21 +339,21 @@ func localCompleteFields(ctx context.Context, t *TurnRunner, callID any, toolNam
 		fields.Set("image_path", nil)
 	}
 	if todo := localTodoState(*toolName, result); todo != nil {
-		for _, k := range todo.Keys {
-			fields.Set(k, todo.Vals[k])
+		for _, k := range todo.Keys() {
+			fields.Set(k, todo.Value(k))
 		}
 	}
 	return fields
 }
 
 // Client safe task items and revision snapshot a task list tool result carries, nil otherwise
-func localTodoState(toolName string, result any) *pyjson.Object {
+func localTodoState(toolName string, result any) *jsonutil.Object {
 	if !tools.IsTodoToolName(toolName) {
 		return nil
 	}
 	value := result
 	if text, ok := result.(string); ok {
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil
 		}
@@ -387,5 +387,5 @@ func clarifyBatchTurn(ctx context.Context, t *TurnRunner) bool {
 	if _, inboundID, _ := t.runner.turnReplyAnchors(t.ctx); inboundID != nil {
 		inbound = *inboundID
 	}
-	return pyrepr.Truthy(gateway.CLITurn(ctx, inbound).GetOr("clarify_batch", nil))
+	return anyutil.IsTrue(gateway.CLITurn(ctx, inbound).ValueOr("clarify_batch", nil))
 }

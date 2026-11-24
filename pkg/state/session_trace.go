@@ -3,7 +3,7 @@ package state
 import (
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 )
 
 // Installs fn as the statement trace of the writer and of every read connection handed out, nil removing it
@@ -28,7 +28,7 @@ func (d *SessionDB) SetTraceCallback(fn func(sql string)) error {
 			if !ok {
 				return fmt.Errorf("connection %T exposes no driver connection for a statement trace", conn)
 			}
-			if err := pysqlite.SetTraceCallback(raw, nil); err != nil {
+			if err := sqliteutil.SetTrace(raw, nil); err != nil {
 				return err
 			}
 			continue
@@ -54,7 +54,7 @@ func (c *sessionCore) applyTrace(conn SQLiteConn) error {
 	if !ok {
 		return fmt.Errorf("connection %T exposes no driver connection for a statement trace", conn)
 	}
-	return pysqlite.SetTraceCallback(raw, fn)
+	return sqliteutil.SetTrace(raw, fn)
 }
 
 // Drops a closing connection from the traced set

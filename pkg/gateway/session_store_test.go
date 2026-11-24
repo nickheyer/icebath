@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Temp home with a real state database carrying the gateway routing table
@@ -171,13 +172,13 @@ func pinnedOverrideKey(ctx context.Context, t *testing.T, store *SessionStore) s
 	if err != nil {
 		t.Fatal(err)
 	}
-	override := pyjson.NewObject()
+	override := jsonutil.NewObject()
 	override.Set("model", "openrouter/anthropic/claude-sonnet-4")
 	override.Set("provider", "openrouter")
 	if err := store.SetModelOverride(ctx, entry.SessionKey, override); err != nil {
 		t.Fatal(err)
 	}
-	if got := store.GetModelOverride(ctx, entry.SessionKey); got == nil || !pyjson.Equal(got, override) {
+	if got := store.GetModelOverride(ctx, entry.SessionKey); got == nil || !anyutil.Equal(got, override) {
 		t.Fatalf("override %v", got)
 	}
 	return entry.SessionKey
@@ -220,21 +221,21 @@ func TestSessionEntryRoundTripAndLegacyKeys(t *testing.T) {
 	if v, _ := d.Get("created_at"); v != "2026-01-02T03:04:05.000006" {
 		t.Fatalf("created_at %v", v)
 	}
-	text, _ := pyjson.Dumps(d)
-	parsed, _ := pyjson.Loads(text)
-	back, err := SessionEntryFromDict(ctx, parsed.(*pyjson.Object))
+	text, _ := jsonutil.Encode(d)
+	parsed, _ := jsonutil.Decode(text)
+	back, err := SessionEntryFromDict(ctx, parsed.(*jsonutil.Object))
 	if err != nil || back.Yolo == nil || *back.Yolo || !back.CreatedAt.T.Equal(created.T) {
 		t.Fatalf("round trip %+v %v", back, err)
 	}
-	legacy, _ := pyjson.Loads(`{"session_key": "k", "session_id": "s", "created_at": "2026-01-01T00:00:00",
+	legacy, _ := jsonutil.Decode(`{"session_key": "k", "session_id": "s", "created_at": "2026-01-01T00:00:00",
 		"updated_at": "2026-01-01T00:00:00", "yolo": false, "memory_flushed": true, "active_turn_token": "",
 		"active_turn_started_at": "2026-01-01T00:00:00"}`)
-	old, err := SessionEntryFromDict(ctx, legacy.(*pyjson.Object))
+	old, err := SessionEntryFromDict(ctx, legacy.(*jsonutil.Object))
 	if err != nil || old.Yolo != nil || !old.ExpiryFinalized || old.ActiveTurnStartedAt != nil {
 		t.Fatalf("legacy %+v %v", old, err)
 	}
-	unsafe, _ := pyjson.Loads(`{"session_key": "k", "session_id": "../x", "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00"}`)
-	if _, err := SessionEntryFromDict(ctx, unsafe.(*pyjson.Object)); err == nil || !strings.Contains(err.Error(), "directory traversal") {
+	unsafe, _ := jsonutil.Decode(`{"session_key": "k", "session_id": "../x", "created_at": "2026-01-01T00:00:00", "updated_at": "2026-01-01T00:00:00"}`)
+	if _, err := SessionEntryFromDict(ctx, unsafe.(*jsonutil.Object)); err == nil || !strings.Contains(err.Error(), "directory traversal") {
 		t.Fatalf("traversal %v", err)
 	}
 	if isPathUnsafe("spaces/a/threads/b", false) || !isPathUnsafe("/abs", false) || !isPathUnsafe("C:x", true) {
@@ -272,7 +273,7 @@ func TestTurnMarkersResumeAndPromptPin(t *testing.T) {
 	if ok, _ := store.MarkResumePending(ctx, key, "restart_timeout"); ok {
 		t.Fatal("resume armed over a suspension")
 	}
-	pin, _ := pyjson.Loads(`{"version": 1, "context_key": "ck", "context_prompt": "p", "redact_pii": false}`)
+	pin, _ := jsonutil.Decode(`{"version": 1, "context_key": "ck", "context_prompt": "p", "redact_pii": false}`)
 	sid := entry.SessionID
 	other := "other"
 	if ok, _ := store.SetPromptPin(ctx, key, pin, &other); ok {

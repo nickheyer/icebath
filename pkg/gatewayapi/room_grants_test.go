@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func TestRoomGrantSecretStaysGatewayOwnedOnNamedProfile(t *testing.T) {
@@ -48,7 +47,7 @@ func TestSupersededRoomAuthorityCannotReuseItsGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	oldClaims := pyjson.ObjectOf("room_id", "room-1", "home_install_id", "install-home", "authority_gateway_id", "gateway-old",
+	oldClaims := jsonutil.ObjectOf("room_id", "room-1", "home_install_id", "install-home", "authority_gateway_id", "gateway-old",
 		"authority_epoch", int64(1), "member_id", "member-reviewer", "target_install_id", target, "target_profile", "reviewer")
 	dbPath := gateway.HostedRoomsDefaultDBPath(ctx)
 	if err := gateway.ReservePeerRoom(ctx, dbPath, oldClaims, now+3600, &now); err != nil {
@@ -60,10 +59,10 @@ func TestSupersededRoomAuthorityCannotReuseItsGrant(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if claims.GetOr("authority_gateway_id", nil) != "gateway-old" {
-		t.Fatalf("authority_gateway_id = %v", claims.GetOr("authority_gateway_id", nil))
+	if claims.ValueOr("authority_gateway_id", nil) != "gateway-old" {
+		t.Fatalf("authority_gateway_id = %v", claims.ValueOr("authority_gateway_id", nil))
 	}
-	newClaims := oldClaims.Copy()
+	newClaims := oldClaims.Clone()
 	newClaims.Set("authority_gateway_id", "gateway-new")
 	newClaims.Set("authority_epoch", int64(2))
 	newClaims.Set("member_id", "member-new")

@@ -10,8 +10,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Body fields only a verified room grant may supply
@@ -39,7 +40,7 @@ func (a *APIServerAdapter) ensureHostedMemberSession(ctx context.Context, dispat
 		if _, sessionID, err = gateway.HostedMemberSession(ctx, authority.DB, identity); err != nil {
 			return "", err
 		}
-		hosted, _ := pyjson.Plain(dispatch.AsMapping()).(map[string]any)
+		hosted, _ := jsonutil.Plain(dispatch.AsMapping()).(map[string]any)
 		bound, err := gateway.RunStepsOffLoop(ctx, authority, gateway.BindAPISteps(ctx, authority, sessionID, hosted, "", ""))
 		if err != nil {
 			return "", err
@@ -52,7 +53,7 @@ func (a *APIServerAdapter) ensureHostedMemberSession(ctx context.Context, dispat
 			return err
 		}
 		if row != nil {
-			if !pyjson.Equal(row.GetOr("title", nil), title) || !pyjson.Equal(row.GetOr("source", nil), "bot_room") {
+			if !anyutil.Equal(row.ValueOr("title", nil), title) || !anyutil.Equal(row.ValueOr("source", nil), "bot_room") {
 				return &gateway.PyError{Kind: "RuntimeError", Msg: "room session identity conflicts with existing data"}
 			}
 			return nil
@@ -95,7 +96,7 @@ func roomDispatchError(err error) *gateway.WebResponse {
 // Validated and normalized body of a scoped RoomLink dispatch, the body unchanged without a room grant
 func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *gateway.WebRequest, body any) (any, *gateway.WebResponse, error) {
 	roomToken := roomGrantToken(request)
-	dict, isDict := body.(*pyjson.Object)
+	dict, isDict := body.(*jsonutil.Object)
 	if roomToken == "" {
 		if isDict {
 			for _, field := range roomOnlyFields {
@@ -110,13 +111,13 @@ func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *g
 	if !isDict {
 		return body, jsonError("Room dispatch accepts only input and hosted_room_dispatch.", "invalid_room_dispatch", http.StatusBadRequest), nil
 	}
-	for _, key := range dict.Keys {
+	for _, key := range dict.Keys() {
 		if key != "input" && key != "hosted_room_dispatch" {
 			return body, jsonError("Room dispatch accepts only input and hosted_room_dispatch.", "invalid_room_dispatch", http.StatusBadRequest), nil
 		}
 	}
-	normalized, err := func() (*pyjson.Object, error) {
-		dispatch, err := gateway.HostedMemberDispatchFromMapping(dict.GetOr("hosted_room_dispatch", nil))
+	normalized, err := func() (*jsonutil.Object, error) {
+		dispatch, err := gateway.HostedMemberDispatchFromMapping(dict.ValueOr("hosted_room_dispatch", nil))
 		if err != nil {
 			return nil, err
 		}
@@ -157,7 +158,7 @@ func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *g
 		if !hmac.Equal([]byte(catalog.CatalogDigest), []byte(dispatch.CapabilityDigest)) {
 			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room capability catalog changed"}
 		}
-		if input := dict.GetOr("input", nil); input != nil && !pyjson.Equal(input, dispatch.Prompt) {
+		if input := dict.ValueOr("input", nil); input != nil && !anyutil.Equal(input, dispatch.Prompt) {
 			return nil, &gateway.PyError{Kind: "ValueError", Msg: "room dispatch input does not match its prompt"}
 		}
 		expectedKey := "room:" + dispatch.TaskID + ":" + dispatch.ExecutionGeneration.String()
@@ -172,7 +173,7 @@ func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *g
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("input", input, "session_id", sessionID, "hosted_room_dispatch", dispatch.AsMapping(),
+		return jsonutil.ObjectOf("input", input, "session_id", sessionID, "hosted_room_dispatch", dispatch.AsMapping(),
 			"_room_execution_policy", policy.AsMapping()), nil
 	}()
 	var refusal *gateway.PeerFileRefusal
@@ -186,7 +187,7 @@ func (a *APIServerAdapter) normalizeRoomDispatch(ctx context.Context, request *g
 }
 
 // Turn input of a verified dispatch, the files it names read from this gateway's hold for the member seat
-func roomTurnInput(ctx context.Context, claims *pyjson.Object, profile string, dispatch *gateway.HostedMemberDispatch) (any, error) {
+func roomTurnInput(ctx context.Context, claims *jsonutil.Object, profile string, dispatch *gateway.HostedMemberDispatch) (any, error) {
 	if len(dispatch.Attachments) == 0 {
 		return dispatch.Prompt, nil
 	}

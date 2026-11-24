@@ -10,10 +10,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 func TestMain(m *testing.M) {
@@ -117,13 +118,13 @@ func makePolicy(t *testing.T, dmPolicy string, dmAllowFrom []string, groupPolicy
 // JSON callback push of one text message, a group push when a group code is given
 func makeJSONPush(t *testing.T, fromAccount, groupCode, text, msgID string) []byte {
 	t.Helper()
-	push := pyjson.ObjectOf("CallbackCommand", "C2C.CallbackAfterSendMsg", "From_Account", fromAccount, "To_Account", "bot_123",
-		"MsgBody", []any{pyjson.ObjectOf("MsgType", "TIMTextElem", "MsgContent", pyjson.ObjectOf("text", text))}, "MsgKey", msgID)
+	push := jsonutil.ObjectOf("CallbackCommand", "C2C.CallbackAfterSendMsg", "From_Account", fromAccount, "To_Account", "bot_123",
+		"MsgBody", []any{jsonutil.ObjectOf("MsgType", "TIMTextElem", "MsgContent", jsonutil.ObjectOf("text", text))}, "MsgKey", msgID)
 	if groupCode != "" {
 		push.Set("CallbackCommand", "Group.CallbackAfterSendMsg")
 		push.Set("GroupId", groupCode)
 	}
-	encoded, err := pyjson.Dumps(push)
+	encoded, err := jsonutil.Encode(push)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,11 +164,11 @@ func eventually(t *testing.T, what string, cond func() bool) {
 // Gateway socket double that answers auth binds, pings and business requests the way the Yuanbao server does
 type fakeServer struct {
 	mu         sync.Mutex
-	inbox      chan any
+	inbox      chan []byte
 	failures   chan error
 	done       chan struct{}
 	closeOnce  sync.Once
-	frames     []*pyjson.Object
+	frames     []*jsonutil.Object
 	replies    map[string][]byte
 	silent     map[string]bool
 	closeDelay time.Duration
@@ -176,50 +177,50 @@ type fakeServer struct {
 }
 
 func newFakeServer() *fakeServer {
-	return &fakeServer{inbox: make(chan any, 64), failures: make(chan error, 1), done: make(chan struct{}), replies: map[string][]byte{},
+	return &fakeServer{inbox: make(chan []byte, 64), failures: make(chan error, 1), done: make(chan struct{}), replies: map[string][]byte{},
 		silent: map[string]bool{}}
 }
 
-func (s *fakeServer) Open() bool {
+func (s *fakeServer) Closed() bool {
 	select {
 	case <-s.done:
-		return false
-	default:
 		return true
+	default:
+		return false
 	}
 }
 
-func (s *fakeServer) Recv(ctx context.Context) (any, error) {
+func (s *fakeServer) Receive(ctx context.Context) (websocketutil.Message, error) {
 	select {
 	case frame := <-s.inbox:
-		return frame, nil
+		return websocketutil.Message{Type: websocketutil.Binary, Data: frame}, nil
 	case err := <-s.failures:
-		return nil, err
+		return websocketutil.Message{}, err
 	case <-s.done:
-		return nil, &pywebsockets.ConnectionClosed{}
+		return websocketutil.Message{}, &websocketutil.CloseError{Code: websocketutil.CloseAbnormal}
 	case <-ctx.Done():
-		return nil, ctx.Err()
+		return websocketutil.Message{}, ctx.Err()
 	}
 }
 
 // Records a client frame and queues the response a request gets, none for a cmd marked silent
-func (s *fakeServer) SendBytes(frame []byte) error {
+func (s *fakeServer) SendBinary(frame []byte) error {
 	select {
 	case <-s.done:
-		return &pywebsockets.ConnectionClosed{}
+		return &websocketutil.CloseError{Code: websocketutil.CloseAbnormal}
 	default:
 	}
 	msg, err := DecodeConnMsg(frame)
 	if err != nil {
 		return err
 	}
-	head := msg.Vals["head"].(*pyjson.Object)
-	cmd, msgID := head.Vals["cmd"].(string), head.Vals["msg_id"].(string)
+	head := msg.Value("head").(*jsonutil.Object)
+	cmd, msgID := head.Value("cmd").(string), head.Value("msg_id").(string)
 	s.mu.Lock()
 	s.frames = append(s.frames, msg)
 	silent, reply := s.silent[cmd], s.replies[cmd]
 	s.mu.Unlock()
-	if silent || !pyjson.Equal(head.Vals["cmd_type"], CmdType["Request"]) {
+	if silent || !anyutil.Equal(head.Value("cmd_type"), CmdType["Request"]) {
 		return nil
 	}
 	if cmd == Cmd["AuthBind"] {
@@ -227,7 +228,7 @@ func (s *fakeServer) SendBytes(frame []byte) error {
 		bound.s(3, "conn-1")
 		reply = bound.b
 	}
-	response, err := EncodeConnMsgFull(CmdType["Response"], cmd, 0, msgID, head.Vals["module"].(string), reply, false)
+	response, err := EncodeConnMsgFull(CmdType["Response"], cmd, 0, msgID, head.Value("module").(string), reply, false)
 	if err != nil {
 		return err
 	}
@@ -235,7 +236,7 @@ func (s *fakeServer) SendBytes(frame []byte) error {
 	return nil
 }
 
-func (s *fakeServer) Close() {
+func (s *fakeServer) Close() error {
 	s.mu.Lock()
 	s.closeCalls++
 	delay, panics := s.closeDelay, s.closePanic
@@ -245,15 +246,16 @@ func (s *fakeServer) Close() {
 	}
 	time.Sleep(delay)
 	s.closeOnce.Do(func() { close(s.done) })
+	return nil
 }
 
 // Decoded client frames carrying the cmd, oldest first
-func (s *fakeServer) sent(cmd string) []*pyjson.Object {
+func (s *fakeServer) sent(cmd string) []*jsonutil.Object {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []*pyjson.Object
+	var out []*jsonutil.Object
 	for _, frame := range s.frames {
-		if frame.Vals["head"].(*pyjson.Object).Vals["cmd"] == cmd {
+		if frame.Value("head").(*jsonutil.Object).Value("cmd") == cmd {
 			out = append(out, frame)
 		}
 	}
@@ -271,13 +273,13 @@ func (s *fakeServer) push(t *testing.T, msgID string, payload []byte, needAck bo
 }
 
 // Message body elements a sent message frame carries in the given request field
-func bodyElems(t *testing.T, frame *pyjson.Object, field int64) []*pyjson.Object {
+func bodyElems(t *testing.T, frame *jsonutil.Object, field int64) []*jsonutil.Object {
 	t.Helper()
-	fields, err := parseDict(frame.Vals["data"].([]byte))
+	fields, err := parseDict(frame.Value("data").([]byte))
 	if err != nil {
 		t.Fatal(err)
 	}
-	var elems []*pyjson.Object
+	var elems []*jsonutil.Object
 	for _, raw := range fields.GetRepeatedBytes(field) {
 		elem, err := DecodeMsgBodyElement(raw)
 		if err != nil {
@@ -289,13 +291,13 @@ func bodyElems(t *testing.T, frame *pyjson.Object, field int64) []*pyjson.Object
 }
 
 // Text of the first element of a sent message frame
-func firstText(t *testing.T, frame *pyjson.Object, field int64) string {
+func firstText(t *testing.T, frame *jsonutil.Object, field int64) string {
 	t.Helper()
 	elems := bodyElems(t, frame, field)
 	if len(elems) == 0 {
 		t.Fatal("frame carries no message body")
 	}
-	text, _ := elems[0].Vals["msg_content"].(*pyjson.Object).GetOr("text", "").(string)
+	text, _ := elems[0].Value("msg_content").(*jsonutil.Object).ValueOr("text", "").(string)
 	return text
 }
 
@@ -319,7 +321,7 @@ func connectAdapter(t *testing.T, extra map[string]any) (*YuanbaoAdapter, *fakeS
 	adapter := makeAdapter(t, extra)
 	server := newFakeServer()
 	seedToken(t, adapter.appKey)
-	swap(t, &wsDial, func(context.Context, string, pywebsockets.ConnectOptions) (wsConn, error) { return server, nil })
+	swap(t, &wsDial, func(context.Context, string, websocketutil.Options) (wsConn, error) { return server, nil })
 	connected, err := adapter.Connect(context.Background(), false)
 	if err != nil || !connected {
 		t.Fatalf("connect %v %v", connected, err)

@@ -4,7 +4,8 @@ import (
 	"context"
 	"math"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keys a worker may persist on a message dict, the owner's insert and coverage reading them
@@ -31,7 +32,7 @@ var rowAnnotationKeys = []string{"_row_id", "timestamp", DBRowSnapshot, Canonica
 func rowAnnotations(messages []map[string]any) []any {
 	out := make([]any, 0, len(messages))
 	for _, msg := range messages {
-		annotation := pyjson.NewObject()
+		annotation := jsonutil.NewObject()
 		for _, key := range rowAnnotationKeys {
 			annotation.Set(key, msg[key])
 		}
@@ -41,7 +42,7 @@ func rowAnnotations(messages []map[string]any) []any {
 }
 
 // Appends validated messages to the assigned transcript under the turn lease guard
-func workerAppend(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerAppend(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	rawMessages, hasMessages := payload.Get("messages")
 	if payloadHasKeysOutside(payload, map[string]bool{"messages": true, "turn_lease_holder": true}) || !hasMessages {
 		return nil, runtimeRefusal("invalid_params")
@@ -51,7 +52,7 @@ func workerAppend(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID 
 		return nil, runtimeRefusal("invalid_params")
 	}
 	for _, item := range list {
-		msg, ok := item.(*pyjson.Object)
+		msg, ok := item.(*jsonutil.Object)
 		if !ok || payloadHasKeysOutside(msg, messageFields) || !validMessageRole(msg) {
 			return nil, runtimeRefusal("invalid_params")
 		}
@@ -76,12 +77,12 @@ func workerAppend(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID 
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("count", count, "annotations", rowAnnotations(messages)), nil
+	return jsonutil.ObjectOf("count", count, "annotations", rowAnnotations(messages)), nil
 }
 
 // Acquires, renews or releases the logical turn lease of the assigned session
 func workerTurn(operation string) WorkerHandler {
-	return func(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+	return func(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 		allowed := []string{"holder", "ttl_seconds"}
 		if operation == "turn.release" {
 			allowed = []string{"holder"}
@@ -133,7 +134,7 @@ func workerTurn(operation string) WorkerHandler {
 				return nil, err
 			}
 		}
-		return pyjson.ObjectOf("value", value), nil
+		return jsonutil.ObjectOf("value", value), nil
 	}
 }
 
@@ -169,7 +170,7 @@ func validUsageValue(key string, value any) bool {
 }
 
 // Optional float of a validated cost value
-func usageCost(payload *pyjson.Object, key string) *float64 {
+func usageCost(payload *jsonutil.Object, key string) *float64 {
 	value, _ := payload.Get(key)
 	if value == nil {
 		return nil
@@ -179,7 +180,7 @@ func usageCost(payload *pyjson.Object, key string) *float64 {
 }
 
 // Counter of a validated usage value, zero when absent
-func usageCounter(payload *pyjson.Object, key string) int64 {
+func usageCounter(payload *jsonutil.Object, key string) int64 {
 	value, _ := payload.Get(key)
 	n, _ := exactInt(value)
 	return n
@@ -187,17 +188,17 @@ func usageCounter(payload *pyjson.Object, key string) int64 {
 
 // Records main loop or auxiliary usage of the assigned session, a main report also stamping its created surface
 func workerUsage(auxiliary bool) WorkerHandler {
-	return func(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+	return func(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 		var source any
 		if !auxiliary {
 			raw, _ := payload.Get("source")
 			if _, ok := raw.(string); ok {
 				source = raw
 			}
-			trimmed := pyjson.NewObject()
-			for _, k := range payload.Keys {
+			trimmed := jsonutil.NewObject()
+			for _, k := range payload.Keys() {
 				if k != "source" {
-					trimmed.Set(k, payload.Vals[k])
+					trimmed.Set(k, payload.Value(k))
 				}
 			}
 			payload = trimmed
@@ -212,8 +213,8 @@ func workerUsage(auxiliary bool) WorkerHandler {
 		if payloadHasKeysOutside(payload, allowed) {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		for _, k := range payload.Keys {
-			if !validUsageValue(k, payload.Vals[k]) {
+		for _, k := range payload.Keys() {
+			if !validUsageValue(k, payload.Value(k)) {
 				return nil, runtimeRefusal("invalid_params")
 			}
 		}
@@ -236,7 +237,7 @@ func workerUsage(auxiliary bool) WorkerHandler {
 			if err := d.recordModelUsage(ctx, conn, sessionID, task, usage); err != nil {
 				return nil, err
 			}
-			return pyjson.ObjectOf("value", nil), nil
+			return jsonutil.ObjectOf("value", nil), nil
 		}
 		absolute, _ := payload.Get("absolute")
 		absoluteBool, _ := absolute.(bool)
@@ -265,22 +266,22 @@ func workerUsage(auxiliary bool) WorkerHandler {
 				return nil, err
 			}
 		}
-		return pyjson.ObjectOf("value", nil), nil
+		return jsonutil.ObjectOf("value", nil), nil
 	}
 }
 
 // Payload value of a key, nil when absent
-func payloadValue(payload *pyjson.Object, key string) any {
+func payloadValue(payload *jsonutil.Object, key string) any {
 	v, _ := payload.Get(key)
 	return v
 }
 
 // Closes the execution, the only operation that makes it terminal
-func workerFinish(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) (*pyjson.Object, error) {
+func workerFinish(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) (*jsonutil.Object, error) {
 	if payload.Len() > 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	return pyjson.ObjectOf("status", "terminal"), nil
+	return jsonutil.ObjectOf("status", "terminal"), nil
 }
 
 // Every worker.persist operation by wire name
@@ -320,12 +321,12 @@ type WorkerReceipt struct {
 }
 
 // One closed durable worker mutation and its receipt through the built in operation table
-func (d *SessionDB) MutateWorkerExecution(ctx context.Context, in WorkerReceipt) (*pyjson.Object, error) {
+func (d *SessionDB) MutateWorkerExecution(ctx context.Context, in WorkerReceipt) (*jsonutil.Object, error) {
 	return d.ApplyWorkerReceipt(ctx, in, workerExecutionHandlers)
 }
 
 // One fenced worker receipt transaction, an exact retry replaying the stored result
-func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, handlers map[string]WorkerHandler) (*pyjson.Object, error) {
+func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, handlers map[string]WorkerHandler) (*jsonutil.Object, error) {
 	handler, known := handlers[in.Operation]
 	if in.Sequence < 1 || !known {
 		return nil, runtimeRefusal("invalid_params")
@@ -337,7 +338,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 	if len(encoded) > 4*1024*1024 {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	decodedForDigest, err := pyjson.Loads(encoded)
+	decodedForDigest, err := jsonutil.Decode(encoded)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
@@ -345,7 +346,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 	if err != nil {
 		return nil, err
 	}
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	patience := sessionTranscriptWritePatienceS
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
 		result = nil
@@ -356,7 +357,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 		if err != nil {
 			return err
 		}
-		if !pyjson.Equal(rowValue(row, "owner_epoch"), in.Epoch) {
+		if !anyutil.Equal(rowValue(row, "owner_epoch"), in.Epoch) {
 			return runtimeRefusal("stale_epoch")
 		}
 		old, err := connObject(ctx, conn, "SELECT * FROM worker_receipts WHERE execution_id=? AND sequence=?", in.ExecutionID, in.Sequence)
@@ -364,7 +365,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 			return err
 		}
 		if old != nil {
-			if !pyjson.Equal(rowValue(old, "payload_digest"), digest) {
+			if !anyutil.Equal(rowValue(old, "payload_digest"), digest) {
 				return runtimeRefusal("admission_conflict")
 			}
 			resultText, _ := rowValue(old, "result_json").(string)
@@ -375,11 +376,11 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 			if retired {
 				return runtimeRefusal("stale_generation")
 			}
-			decoded, err := pyjson.Loads(resultText)
+			decoded, err := jsonutil.Decode(resultText)
 			if err != nil {
 				return pyValueError(err.Error())
 			}
-			stored, ok := decoded.(*pyjson.Object)
+			stored, ok := decoded.(*jsonutil.Object)
 			if !ok {
 				return &stateTypedError{"TypeError", "stored receipt result is not a dict"}
 			}
@@ -390,18 +391,18 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 		if status != "registered" && status != "running" {
 			return runtimeRefusal("stale_generation")
 		}
-		if !pyjson.Equal(in.Sequence, pyAdd(rowValue(row, "last_sequence"), 1)) {
+		if !anyutil.Equal(in.Sequence, pyAdd(rowValue(row, "last_sequence"), 1)) {
 			return runtimeRefusal("invalid_params")
 		}
 		changes, err := totalChanges(ctx, conn)
 		if err != nil {
 			return err
 		}
-		decoded, err := pyjson.Loads(encoded)
+		decoded, err := jsonutil.Decode(encoded)
 		if err != nil {
 			return pyValueError(err.Error())
 		}
-		out, err := handler(d, ctx, conn, in.SessionID, decoded.(*pyjson.Object))
+		out, err := handler(d, ctx, conn, in.SessionID, decoded.(*jsonutil.Object))
 		if err != nil {
 			return err
 		}
@@ -414,7 +415,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 		if err != nil {
 			return err
 		}
-		stored, err := pyjson.Loads(resultJSON)
+		stored, err := jsonutil.Decode(resultJSON)
 		if err != nil {
 			return pyValueError(err.Error())
 		}
@@ -440,7 +441,7 @@ func (d *SessionDB) ApplyWorkerReceipt(ctx context.Context, in WorkerReceipt, ha
 				return err
 			}
 		}
-		result = stored.(*pyjson.Object)
+		result = stored.(*jsonutil.Object)
 		return nil
 	}, &patience)
 	if err != nil {

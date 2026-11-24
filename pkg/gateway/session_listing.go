@@ -4,8 +4,8 @@ import (
 	"context"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Local labels, a cron run being a canonical local session whose last viewer is its own fire
@@ -17,33 +17,33 @@ func pickerExcludedSources() []string {
 }
 
 // One stored picker entry of a row under its compression tip
-func pickerRow(row, tip *pyjson.Object, sid string) *pyjson.Object {
-	title := row.GetOr("title", nil)
+func pickerRow(row, tip *jsonutil.Object, sid string) *jsonutil.Object {
+	title := row.ValueOr("title", nil)
 	if !pyTruthy(title) {
 		title = ""
 	}
-	return pyjson.ObjectOf("id", row.GetOr("id", nil), "session_id", sid, "resolved_id", sid, "title", title,
-		"source", tip.GetOr("source", nil), "started_at", row.GetOr("started_at", nil),
-		"message_count", row.GetOr("message_count", int64(0)), "model", tip.GetOr("model", nil), "running", false,
-		"preview", listingPreview(row), "pinned", pyTruthy(row.GetOr("pinned", nil)), "archived", pyTruthy(row.GetOr("archived", nil)),
-		"last_active", row.GetOr("last_active", nil))
+	return jsonutil.ObjectOf("id", row.ValueOr("id", nil), "session_id", sid, "resolved_id", sid, "title", title,
+		"source", tip.ValueOr("source", nil), "started_at", row.ValueOr("started_at", nil),
+		"message_count", row.ValueOr("message_count", int64(0)), "model", tip.ValueOr("model", nil), "running", false,
+		"preview", listingPreview(row), "pinned", pyTruthy(row.ValueOr("pinned", nil)), "archived", pyTruthy(row.ValueOr("archived", nil)),
+		"last_active", row.ValueOr("last_active", nil))
 }
 
 // Opening words of a stored session's listing row, empty when it has none
-func listingPreview(row *pyjson.Object) string {
-	text, _ := row.GetOr("preview", "").(string)
+func listingPreview(row *jsonutil.Object) string {
+	text, _ := row.ValueOr("preview", "").(string)
 	return text
 }
 
 // Legacy local and mountable messaging rows offered only to the native transport that may resume them
-func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Principal, limit int, includeHidden, includeArchived bool) (*pyjson.Object, error) {
+func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Principal, limit int, includeHidden, includeArchived bool) (*jsonutil.Object, error) {
 	if actor.ProfileID != a.ProfileID {
 		return nil, runtimeRefusal("profile_mismatch")
 	}
 	a.mu.Lock()
 	legacy, known := a.nativeLegacyTransports[actor.TransportID]
 	a.mu.Unlock()
-	empty := pyjson.ObjectOf("sessions", []any{}, "scope", "stored")
+	empty := jsonutil.ObjectOf("sessions", []any{}, "scope", "stored")
 	if !known || !samePrincipal(legacy, actor) || !actor.Capabilities["session:read"] || !actor.Capabilities["session:create"] {
 		return empty, nil
 	}
@@ -61,14 +61,14 @@ func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Princi
 			return nil, err
 		}
 		for _, row := range rows {
-			source, _ := row.GetOr("source", nil).(string)
+			source, _ := row.ValueOr("source", nil).(string)
 			local := slices.Contains(pickerLocalSources, source) || state.ClientHistoryRow(row)
 			if !local {
-				if _, messaging := messagingPlatform(ctx, row.GetOr("source", nil)); !messaging {
+				if _, messaging := messagingPlatform(ctx, row.ValueOr("source", nil)); !messaging {
 					continue
 				}
 			}
-			id, _ := row.GetOr("id", "").(string)
+			id, _ := row.ValueOr("id", "").(string)
 			sid, err := db.GetCompressionTip(ctx, id)
 			if err != nil {
 				return nil, err
@@ -84,11 +84,11 @@ func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Princi
 				continue
 			}
 			if !local {
-				root, _ := row.GetOr("_lineage_root_id", nil).(string)
+				root, _ := row.ValueOr("_lineage_root_id", nil).(string)
 				if root == "" {
 					root = id
 				}
-				profile := row.GetOr("profile_name", nil)
+				profile := row.ValueOr("profile_name", nil)
 				owned := profile == nil || profile == "" || profile == ownProfile
 				if owned && !seen[root] {
 					open, err := mountable(ctx, a, root)
@@ -97,7 +97,7 @@ func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Princi
 					}
 					if open {
 						seen[root] = true
-						rooted := row.Copy()
+						rooted := row.Clone()
 						rooted.Set("id", root)
 						sessions = append(sessions, pickerRow(rooted, tip, root))
 					}
@@ -112,7 +112,7 @@ func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Princi
 				return nil, err
 			}
 			if closed != nil {
-				closedID, _ := closed.GetOr("id", "").(string)
+				closedID, _ := closed.ValueOr("id", "").(string)
 				if !seen[closedID] {
 					seen[closedID] = true
 					sessions = append(sessions, closed)
@@ -139,11 +139,11 @@ func storedPickerSessions(ctx context.Context, a *SessionAuthority, actor Princi
 		}
 		offset += len(rows)
 	}
-	return pyjson.ObjectOf("sessions", sessions, "scope", "stored"), nil
+	return jsonutil.ObjectOf("sessions", sessions, "scope", "stored"), nil
 }
 
 // Whether a legacy row validates for the actor and its history authorizes, a not found or denied refusal skipping it
-func legacyHistoryAllowed(ctx context.Context, db *state.SessionDB, actor Principal, tip *pyjson.Object, sid string) (bool, error) {
+func legacyHistoryAllowed(ctx context.Context, db *state.SessionDB, actor Principal, tip *jsonutil.Object, sid string) (bool, error) {
 	err := db.ValidateLegacyRow(tip, actor.Subject)
 	allowed := false
 	if err == nil {
@@ -164,8 +164,8 @@ func legacyHistoryAllowed(ctx context.Context, db *state.SessionDB, actor Princi
 }
 
 // A canonical local session its last viewer closed listed as resumable, nil for anything else
-func closedLocalSession(ctx context.Context, a *SessionAuthority, actor Principal, row, tip *pyjson.Object) (*pyjson.Object, error) {
-	owner, _ := tip.GetOr("chat_id", nil).(string)
+func closedLocalSession(ctx context.Context, a *SessionAuthority, actor Principal, row, tip *jsonutil.Object) (*jsonutil.Object, error) {
+	owner, _ := tip.ValueOr("chat_id", nil).(string)
 	var live *LiveSession
 	if owner != "" {
 		live, _ = a.live(owner)
@@ -194,18 +194,18 @@ func closedLocalSession(ctx context.Context, a *SessionAuthority, actor Principa
 			return nil, err
 		}
 	}
-	title := tip.GetOr("title", nil)
+	title := tip.ValueOr("title", nil)
 	if !pyTruthy(title) {
-		title = row.GetOr("title", nil)
+		title = row.ValueOr("title", nil)
 	}
 	if !pyTruthy(title) {
 		title = ""
 	}
-	return pyjson.ObjectOf("id", owner, "session_id", owner, "resolved_id", owner, "title", title,
-		"source", tip.GetOr("source", nil), "started_at", row.GetOr("started_at", nil),
-		"message_count", row.GetOr("message_count", int64(0)), "model", tip.GetOr("model", nil), "running", false,
-		"preview", listingPreview(row), "pinned", pyTruthy(row.GetOr("pinned", nil)), "archived", pyTruthy(row.GetOr("archived", nil)),
-		"last_active", row.GetOr("last_active", nil)), nil
+	return jsonutil.ObjectOf("id", owner, "session_id", owner, "resolved_id", owner, "title", title,
+		"source", tip.ValueOr("source", nil), "started_at", row.ValueOr("started_at", nil),
+		"message_count", row.ValueOr("message_count", int64(0)), "model", tip.ValueOr("model", nil), "running", false,
+		"preview", listingPreview(row), "pinned", pyTruthy(row.ValueOr("pinned", nil)), "archived", pyTruthy(row.ValueOr("archived", nil)),
+		"last_active", row.ValueOr("last_active", nil)), nil
 }
 
 // Whether an unrestored ended session's stored receipt reads as closed for the actor with no admission left
@@ -223,11 +223,11 @@ func storedClosed(ctx context.Context, a *SessionAuthority, actor Principal, own
 	if receipt == nil {
 		return false, nil
 	}
-	entry, isDict := receipt.GetOr("entry", nil).(*pyjson.Object)
+	entry, isDict := receipt.ValueOr("entry", nil).(*jsonutil.Object)
 	if !isDict {
 		return false, nil
 	}
-	target, isText := entry.GetOr("session_id", nil).(string)
+	target, isText := entry.ValueOr("session_id", nil).(string)
 	if !isText {
 		return false, nil
 	}
@@ -238,13 +238,13 @@ func storedClosed(ctx context.Context, a *SessionAuthority, actor Principal, own
 		}
 		return false, err
 	}
-	if receipt.GetOr("profile_id", nil) != a.ProfileID {
+	if receipt.ValueOr("profile_id", nil) != a.ProfileID {
 		return false, nil
 	}
-	if !SameOwner(receipt.GetOr("principal_id", nil), actor.Subject) && !actor.Capabilities["session:operator"] {
+	if !SameOwner(receipt.ValueOr("principal_id", nil), actor.Subject) && !actor.Capabilities["session:operator"] {
 		return false, nil
 	}
-	if row == nil || row.GetOr("ended_at", nil) == nil {
+	if row == nil || row.ValueOr("ended_at", nil) == nil {
 		return false, nil
 	}
 	admissions, err := a.DB.ListSessionAdmissions(ctx, owner, true)

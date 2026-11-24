@@ -5,9 +5,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Insights report over a window of days, Empty with zero sections when no session matched
@@ -165,11 +165,11 @@ func (e *InsightsEngine) FormatTerminal(r *InsightsReport) string {
 		"",
 	}
 	if o.DateRangeStart != nil && o.DateRangeEnd != nil {
-		start, sok := pydatetime.CoerceEpoch(*o.DateRangeStart, "", "")
-		end, eok := pydatetime.CoerceEpoch(*o.DateRangeEnd, "", "")
+		start, sok := timeutil.StoredEpoch(*o.DateRangeStart, "", "")
+		end, eok := timeutil.StoredEpoch(*o.DateRangeEnd, "", "")
 		if sok && eok {
-			lines = append(lines, "  Period: "+pydatetime.Strftime(pydatetime.FromTimestamp(start), "%b %d, %Y")+" — "+
-				pydatetime.Strftime(pydatetime.FromTimestamp(end), "%b %d, %Y"), "")
+			lines = append(lines, "  Period: "+timeutil.FromEpoch(start).Format("Jan 02, 2006")+" — "+
+				timeutil.FromEpoch(end).Format("Jan 02, 2006"), "")
 		}
 	}
 	lines = append(lines, insightsSection("📋 Overview")...)
@@ -220,7 +220,7 @@ func (e *InsightsEngine) FormatTerminal(r *InsightsReport) string {
 		lines = append(lines, "  "+pyFormat("Skill", "<28")+" "+pyFormat("Loads", ">7")+" "+pyFormat("Edits", ">7")+" "+pyFormat("Last used", ">11"))
 		for _, s := range top[:min(10, len(top))] {
 			last := "—"
-			if pyrepr.Truthy(s.LastUsedAt) {
+			if anyutil.IsTrue(s.LastUsedAt) {
 				last = insightsDay(s.LastUsedAt)
 			}
 			lines = append(lines, "  "+pyFormat(insightsRuneSlice(s.Skill, 28), "<28")+" "+pyFormat(s.ViewCount, ">7,")+" "+pyFormat(s.ManageCount, ">7,")+" "+pyFormat(last, ">11"))
@@ -315,7 +315,7 @@ func (e *InsightsEngine) FormatGateway(r *InsightsReport) string {
 	if len(r.Tools) > 0 {
 		lines = append(lines, "**🔧 Top Tools:**")
 		for _, t := range r.Tools[:min(8, len(r.Tools))] {
-			lines = append(lines, fmt.Sprintf("  %s — %s calls (%s%%)", pyrepr.Str(t.Tool), pyFormat(t.Count, ","), pyFormat(t.Percentage, ".1f")))
+			lines = append(lines, fmt.Sprintf("  %s — %s calls (%s%%)", anyutil.String(t.Tool), pyFormat(t.Count, ","), pyFormat(t.Percentage, ".1f")))
 		}
 		lines = append(lines, "")
 	}
@@ -323,7 +323,7 @@ func (e *InsightsEngine) FormatGateway(r *InsightsReport) string {
 		lines = append(lines, "**🧠 Top Skills:**")
 		for _, s := range top[:min(5, len(top))] {
 			suffix := ""
-			if pyrepr.Truthy(s.LastUsedAt) {
+			if anyutil.IsTrue(s.LastUsedAt) {
 				suffix = ", last used " + insightsDay(s.LastUsedAt)
 			}
 			lines = append(lines, fmt.Sprintf("  %s — %s loads, %s edits%s", s.Skill, pyFormat(s.ViewCount, ","), pyFormat(s.ManageCount, ","), suffix))

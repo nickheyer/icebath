@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Host backend at dir running real bash, rg hidden from command lookup when noRg
@@ -62,7 +62,7 @@ func requireUnreadableDirs(t *testing.T) {
 // Fresh dir under the first tempfile root lacking dot named and pruned components that rg globs and grep exclude
 func searchableTempDir(t *testing.T) string {
 	t.Helper()
-	for _, base := range pypath.TempdirCandidates() {
+	for _, base := range pathutil.TempDirCandidates() {
 		abs, err := filepath.Abs(base)
 		if err != nil {
 			continue
@@ -80,7 +80,7 @@ func searchableTempDir(t *testing.T) string {
 		t.Cleanup(func() { os.RemoveAll(dir) })
 		return dir
 	}
-	t.Fatalf("no temp root in %q is free of dot named and pruned directory components", pypath.TempdirCandidates())
+	t.Fatalf("no temp root in %q is free of dot named and pruned directory components", pathutil.TempDirCandidates())
 	return ""
 }
 

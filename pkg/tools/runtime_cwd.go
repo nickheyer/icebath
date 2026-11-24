@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 const sessionCwdKey = "session.cwd"
@@ -77,7 +76,7 @@ func ScopeTerminalCwd(env *Env) (string, error) { return scopeTerminalCwd(env) }
 
 // Normalized path of a configured directory with its user home expanded, empty with a warning when it is no directory
 func existingDirErr(env *Env, raw, label string) (string, error) {
-	p, err := pypath.PathExpanduser(raw)
+	p, err := pathutil.ExpandUserPath(raw)
 	if err != nil {
 		return "", err
 	}

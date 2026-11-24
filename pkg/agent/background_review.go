@@ -10,11 +10,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Seconds a live turn waits for the review to acknowledge its cancellation, a test shortens it
@@ -37,8 +37,8 @@ type backgroundReviewState struct {
 
 // Per review cancellation and request completion handshake
 type backgroundReviewRun struct {
-	cancelRequested  pythread.Event
-	requestDone      pythread.Event
+	cancelRequested  syncutil.Event
+	requestDone      syncutil.Event
 	mu               sync.Mutex
 	reviewAgent      any
 	requestFinished  bool
@@ -294,7 +294,7 @@ var resolveReviewRuntime = func(ctx context.Context, a *AIAgent, taskCfg map[str
 		if !ok {
 			return ""
 		}
-		return strings.TrimSpace(pyrepr.Str(v))
+		return strings.TrimSpace(anyutil.String(v))
 	}
 	taskProvider, taskModel, taskBaseURL, taskAPIKey := field("provider"), field("model"), field("base_url"), field("api_key")
 	if taskProvider == "" || taskProvider == "auto" || taskModel == "" || (taskProvider == a.provider && taskModel == a.model) {
@@ -405,14 +405,14 @@ func digestHistory(messagesSnapshot []map[string]any, tail int) []map[string]any
 			if calls := reviewToolCalls(m["tool_calls"]); len(calls) > 0 {
 				var names []string
 				for _, tc := range calls {
-					call, ok := pyjson.Dict(tc)
+					call, ok := jsonutil.AsMap(tc)
 					if !ok {
 						continue
 					}
 					name := "?"
-					if fn, ok := pyjson.Dict(call["function"]); ok {
+					if fn, ok := jsonutil.AsMap(call["function"]); ok {
 						if n, has := fn["name"]; has {
-							name = pyrepr.Str(n)
+							name = anyutil.String(n)
 						}
 					}
 					names = append(names, name)

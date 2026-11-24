@@ -10,17 +10,17 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/monitoring"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Persists the latest status snapshot on one background goroutine, newer submissions replacing the pending one
 type RuntimeStatusWriter struct {
-	writeFn             func(path string, payload *pyjson.Object) error
+	writeFn             func(path string, payload *jsonutil.Object) error
 	mu                  sync.Mutex
 	changed             chan struct{}
 	pending             *statusSnapshot
@@ -36,11 +36,11 @@ type RuntimeStatusWriter struct {
 type statusSnapshot struct {
 	generation int
 	path       string
-	payload    *pyjson.Object
+	payload    *jsonutil.Object
 }
 
 // Writer persisting through writeFn, the merged atomic file write when writeFn is nil
-func NewRuntimeStatusWriter(writeFn func(path string, payload *pyjson.Object) error) *RuntimeStatusWriter {
+func NewRuntimeStatusWriter(writeFn func(path string, payload *jsonutil.Object) error) *RuntimeStatusWriter {
 	return &RuntimeStatusWriter{writeFn: writeFn, changed: make(chan struct{})}
 }
 
@@ -50,12 +50,12 @@ func (w *RuntimeStatusWriter) notifyLocked() {
 }
 
 // Queues a deep copy of payload for path and returns its generation
-func (w *RuntimeStatusWriter) Submit(ctx context.Context, path string, payload *pyjson.Object) int {
+func (w *RuntimeStatusWriter) Submit(ctx context.Context, path string, payload *jsonutil.Object) int {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 	w.submittedGeneration++
 	generation := w.submittedGeneration
-	w.pending = &statusSnapshot{generation, path, pycopy.DeepCopy(payload).(*pyjson.Object)}
+	w.pending = &statusSnapshot{generation, path, any(anyutil.Clone(payload)).(*jsonutil.Object)}
 	if !w.started {
 		w.started = true
 		go w.run(ctx)
@@ -178,17 +178,17 @@ func (w *RuntimeStatusWriter) run(ctx context.Context) {
 }
 
 // Canonical snapshot laid over the record on disk so out of process fields survive
-func mergeOverOnDisk(path string, payload *pyjson.Object) *pyjson.Object {
+func mergeOverOnDisk(path string, payload *jsonutil.Object) *jsonutil.Object {
 	existing := readJSONFile(path, false)
 	if existing == nil {
 		return payload
 	}
 	home.AdoptRecordKey(existing.Keys, existing.Vals)
-	merged := pyjson.NewObject()
-	for _, k := range existing.Keys {
+	merged := jsonutil.NewObject()
+	for _, k := range existing.Keys() {
 		merged.Set(k, recGet(existing, k))
 	}
-	for _, k := range payload.Keys {
+	for _, k := range payload.Keys() {
 		merged.Set(k, recGet(payload, k))
 	}
 	return merged
@@ -197,7 +197,7 @@ func mergeOverOnDisk(path string, payload *pyjson.Object) *pyjson.Object {
 var (
 	runtimeStatusStateMu   sync.Mutex
 	runtimeStatusStatePath string
-	runtimeStatusState     *pyjson.Object
+	runtimeStatusState     *jsonutil.Object
 	runtimeStatusWriter    *RuntimeStatusWriter
 )
 
@@ -284,19 +284,19 @@ var runtimeStatusFieldNames = map[string]bool{
 
 func coerceSessionStore(v any) any {
 	state := ""
-	if m, ok := v.(*pyjson.Object); ok {
-		if s := recGet(m, "status"); pyrepr.Truthy(s) {
-			state = pyrepr.Str(s)
+	if m, ok := v.(*jsonutil.Object); ok {
+		if s := recGet(m, "status"); anyutil.IsTrue(s) {
+			state = anyutil.String(s)
 		}
 	} else if m, ok := v.(map[string]any); ok {
-		if s := m["status"]; pyrepr.Truthy(s) {
-			state = pyrepr.Str(s)
+		if s := m["status"]; anyutil.IsTrue(s) {
+			state = anyutil.String(s)
 		}
 	}
 	if state != "ok" && state != "unavailable" && state != "retrying" {
 		state = "unknown"
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("status", state)
 	return out
 }
@@ -328,21 +328,21 @@ func pyList(v any) ([]any, error) {
 func coerceStatusField(key string, v any) (any, error) {
 	switch key {
 	case "restart_requested", "needs_attention":
-		return pyrepr.Truthy(v), nil
+		return anyutil.IsTrue(v), nil
 	case "active_agents":
 		return ParseActiveAgents(v)
 	case "active_work":
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			return nil, nil
 		}
 		return pyList(v)
 	case "served_profiles":
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			v = nil
 		}
 		return pyList(v)
 	case "parked_profiles":
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		switch t := v.(type) {
 		case nil:
 		case map[string]string:
@@ -351,23 +351,23 @@ func coerceStatusField(key string, v any) (any, error) {
 			}
 		case map[string]any:
 			for k, r := range t {
-				out.Set(k, pyrepr.Str(r))
+				out.Set(k, anyutil.String(r))
 			}
-		case *pyjson.Object:
-			for _, k := range t.Keys {
-				out.Set(k, pyrepr.Str(recGet(t, k)))
+		case *jsonutil.Object:
+			for _, k := range t.Keys() {
+				out.Set(k, anyutil.String(recGet(t, k)))
 			}
 		default:
-			if pyrepr.Truthy(v) {
+			if anyutil.IsTrue(v) {
 				return nil, fmt.Errorf("parked_profiles must map each profile to its reason, got %s", errchain.Kind(v))
 			}
 		}
 		return out, nil
 	case "multiplex_standalone_reason":
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			return nil, nil
 		}
-		return pyrepr.Str(v), nil
+		return anyutil.String(v), nil
 	case "session_store":
 		return coerceSessionStore(v), nil
 	}
@@ -382,7 +382,7 @@ type statusSetField struct {
 }
 
 // Assigns each field whose keyword was explicitly passed, coerced when the field names a coercion
-func applySetFields(target *pyjson.Object, passed map[string]any, fields []statusSetField) error {
+func applySetFields(target *jsonutil.Object, passed map[string]any, fields []statusSetField) error {
 	for _, field := range fields {
 		value, set := passed[field.keyword]
 		if !set {
@@ -401,7 +401,7 @@ func applySetFields(target *pyjson.Object, passed map[string]any, fields []statu
 }
 
 // Merges one update into the process wide canonical snapshot, the state lock held by the caller
-func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloadExisting bool) (string, *pyjson.Object, *pyjson.Object, error) {
+func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloadExisting bool) (string, *jsonutil.Object, *jsonutil.Object, error) {
 	for key := range u.Fields {
 		if !runtimeStatusFieldNames[key] {
 			return "", nil, nil, fmt.Errorf("unknown runtime status field %s", key)
@@ -410,7 +410,7 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 	path := runtimeStatusPath()
 	if reloadExisting || runtimeStatusStatePath != path || runtimeStatusState == nil {
 		runtimeStatusStatePath = path
-		var loaded *pyjson.Object
+		var loaded *jsonutil.Object
 		if loadExisting {
 			loaded = readJSONFile(path, false)
 		}
@@ -421,14 +421,14 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 		runtimeStatusState = loaded
 	}
 	previous := runtimeStatusState
-	payload := pycopy.DeepCopy(previous).(*pyjson.Object)
+	payload := any(anyutil.Clone(previous)).(*jsonutil.Object)
 	current := statusBuildPidRecord()
 	if _, ok := payload.Get("platforms"); !ok {
-		payload.Set("platforms", pyjson.NewObject())
+		payload.Set("platforms", jsonutil.NewObject())
 	}
-	platforms, ok := recGet(payload, "platforms").(*pyjson.Object)
+	platforms, ok := recGet(payload, "platforms").(*jsonutil.Object)
 	if !ok {
-		platforms = pyjson.NewObject()
+		platforms = jsonutil.NewObject()
 		payload.Set("platforms", platforms)
 	}
 	if u.ClearProfilePlatforms || u.DropProfilePlatforms != "" {
@@ -440,8 +440,8 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 		for _, k := range u.KeepPlatforms {
 			keep[k] = true
 		}
-		kept := pyjson.NewObject()
-		for _, k := range platforms.Keys {
+		kept := jsonutil.NewObject()
+		for _, k := range platforms.Keys() {
 			if !strings.Contains(k, ":") || (dropPrefix != "" && !strings.HasPrefix(k, dropPrefix)) || keep[k] {
 				kept.Set(k, recGet(platforms, k))
 			}
@@ -473,9 +473,9 @@ func prepareRuntimeStatusUpdateLocked(u RuntimeStatusUpdate, loadExisting, reloa
 	}
 	if platformValue, set := u.Fields["platform"]; set {
 		platform := jsonKey(platformValue)
-		entry, ok := pycopy.DeepCopy(recGet(platforms, platform)).(*pyjson.Object)
+		entry, ok := any(anyutil.Clone(recGet(platforms, platform))).(*jsonutil.Object)
 		if !ok {
-			entry = pyjson.NewObject()
+			entry = jsonutil.NewObject()
 		}
 		fields := map[string]any{}
 		for k, v := range u.Fields {
@@ -535,7 +535,7 @@ func PublishRuntimeStatus(ctx context.Context, u RuntimeStatusUpdate) (int, erro
 }
 
 // Reports a status transition to monitoring, a failure of the observer never reaching the writer
-func emitRuntimeStatusTransition(previous, payload *pyjson.Object) {
+func emitRuntimeStatusTransition(previous, payload *jsonutil.Object) {
 	defer func() { _ = recover() }()
 	monitoring.EmitRuntimeStatusTransition(previous, payload)
 }
@@ -544,7 +544,7 @@ func emitRuntimeStatusTransition(previous, payload *pyjson.Object) {
 func init() { monitoring.GatewayParseActiveAgents = ParseActiveAgents }
 
 // Reads gateway_state.json of this process home, or of another home when path is set
-func ReadRuntimeStatus(path string) *pyjson.Object {
+func ReadRuntimeStatus(path string) *jsonutil.Object {
 	if path == "" {
 		path = runtimeStatusPath()
 	}
@@ -555,19 +555,19 @@ func ReadRuntimeStatus(path string) *pyjson.Object {
 const RuntimeStatusStaleTTL = 120
 
 // Whether the snapshot updated_at is older than ttl or missing
-func RuntimeStatusIsStale(record *pyjson.Object, ttl int) bool {
+func RuntimeStatusIsStale(record *jsonutil.Object, ttl int) bool {
 	if record == nil {
 		return true
 	}
 	stamp := recGet(record, "updated_at")
-	if !pyrepr.Truthy(stamp) {
+	if !anyutil.IsTrue(stamp) {
 		stamp = ""
 	}
 	return markerIsStale(stamp, ttl)
 }
 
 // Whole seconds since the snapshot updated_at, false when missing or unparseable
-func RuntimeStatusHeartbeatAgeS(record *pyjson.Object) (int, bool, error) {
+func RuntimeStatusHeartbeatAgeS(record *jsonutil.Object) (int, bool, error) {
 	if record == nil {
 		return 0, false, nil
 	}
@@ -575,7 +575,7 @@ func RuntimeStatusHeartbeatAgeS(record *pyjson.Object) (int, bool, error) {
 	if err != nil || !ok || updatedAt == "" {
 		return 0, false, err
 	}
-	stamp, _, err := pydatetime.ParseISOFormat(updatedAt)
+	stamp, _, err := timeutil.ParseISOZone(updatedAt, time.UTC)
 	if err != nil {
 		return 0, false, err
 	}
@@ -583,7 +583,7 @@ func RuntimeStatusHeartbeatAgeS(record *pyjson.Object) (int, bool, error) {
 }
 
 // Whether the snapshot pid is alive and passes the start time reuse guard
-func RuntimeStatusPidIsLive(record *pyjson.Object) bool {
+func RuntimeStatusPidIsLive(record *jsonutil.Object) bool {
 	_, ok := liveFromRecord(record)
 	return ok
 }
@@ -592,7 +592,7 @@ func RuntimeStatusPidIsLive(record *pyjson.Object) bool {
 func ParseActiveAgents(raw any) (any, error) {
 	n, err := pyint.Of(raw)
 	if err != nil {
-		if pe, ok := err.(*pyint.Error); ok && pe.Kind == "OverflowError" {
+		if pe, ok := err.(*errorutil.Error); ok && pe.Kind == "OverflowError" {
 			return nil, err
 		}
 		return int64(0), nil
@@ -633,5 +633,5 @@ func jsonKey(v any) string {
 	case string:
 		return t
 	}
-	return pyrepr.Repr(v)
+	return anyutil.Quote(v)
 }

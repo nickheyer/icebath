@@ -10,15 +10,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Realpath of a home the way Path.resolve settles it
 func resolveHome(h string) string {
-	resolved, err := pypath.Realpath(h, pypath.Lax)
+	resolved, err := pathutil.Resolve(h)
 	if err != nil {
 		return h
 	}
@@ -106,7 +106,7 @@ func (r *GatewayRunner) storeOpenFailure(profileHome string) string {
 // Builds one profile's authority against its own state.db, an error when that store is unusable
 func (r *GatewayRunner) buildProfileAuthority(ctx context.Context, name, profileHome string, register bool) (*gateway.SessionAuthority, error) {
 	registry := r.sessionAuthorities
-	instanceID := pyrepr.Str(r.sessionRuntimeDescriptor.load()["instance_id"])
+	instanceID := anyutil.String(r.sessionRuntimeDescriptor.load()["instance_id"])
 	db := r.openProfileStore(ctx, profileHome)
 	scoped := gateway.ProfileRuntimeScope(ctx, profileHome, false)
 	if db == nil {
@@ -132,11 +132,11 @@ func (r *GatewayRunner) buildProfileAuthority(ctx context.Context, name, profile
 // Parks a secondary whose store is unusable, releasing its reservation so boot serves every other profile
 func (r *GatewayRunner) parkReservedProfile(ctx context.Context, name, profileHome string, cause error) error {
 	pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: its session store is unusable (%s): %s",
-		name, profileHome, pyrepr.ExceptionMessage(cause)))
+		name, profileHome, cause.Error()))
 	if err := r.releaseProfileHome(ctx, profileHome); err != nil {
 		return err
 	}
-	r.parkProfile(ctx, name, "session store unusable: "+pyrepr.ExceptionMessage(cause))
+	r.parkProfile(ctx, name, "session store unusable: "+cause.Error())
 	return nil
 }
 

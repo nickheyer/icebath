@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 type relayFakeHandle struct {
@@ -41,12 +41,12 @@ type relayFake struct {
 	flushed    int
 	stack      []*relayFakeHandle
 	strict     bool
-	wedgePop   *pythread.Event
-	wedgeFlush *pythread.Event
+	wedgePop   *syncutil.Event
+	wedgeFlush *syncutil.Event
 	relay      *NemoRelay
 }
 
-func newRelayFake(wedgePop, wedgeFlush *pythread.Event) *relayFake {
+func newRelayFake(wedgePop, wedgeFlush *syncutil.Event) *relayFake {
 	f := &relayFake{wedgePop: wedgePop, wedgeFlush: wedgeFlush}
 	f.relay = &NemoRelay{
 		Scope:         &NemoRelayScope{Push: f.push, Pop: f.pop},
@@ -179,7 +179,7 @@ func relayTestRuntime(t *testing.T, f *relayFake) *RelayRuntime {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		for _, ev := range []*pythread.Event{f.wedgePop, f.wedgeFlush} {
+		for _, ev := range []*syncutil.Event{f.wedgePop, f.wedgeFlush} {
 			if ev != nil {
 				ev.Set()
 			}
@@ -333,7 +333,7 @@ func TestEndTurnFinalizationSurvivesPopWithoutMetadata(t *testing.T) {
 func TestEndTurnReturnsWhenNativePopWedges(t *testing.T) {
 	relayTestEnv(t, nil)
 	c := NewRelaySessionCoordinator(RelayHosts)
-	rt := relayTestRuntime(t, newRelayFake(&pythread.Event{}, nil))
+	rt := relayTestRuntime(t, newRelayFake(&syncutil.Event{}, nil))
 	lease := relayAcquire(c, rt, "sess-1", nil, nil)
 	if lease.Session == nil {
 		t.Fatal("fake session must initialize")
@@ -350,7 +350,7 @@ func TestEndTurnReturnsWhenNativePopWedges(t *testing.T) {
 func TestCloseSessionReturnsWhenNativePopWedges(t *testing.T) {
 	relayTestEnv(t, nil)
 	c := NewRelaySessionCoordinator(RelayHosts)
-	rt := relayTestRuntime(t, newRelayFake(&pythread.Event{}, nil))
+	rt := relayTestRuntime(t, newRelayFake(&syncutil.Event{}, nil))
 	if relayAcquire(c, rt, "sess-1", nil, nil).Session == nil {
 		t.Fatal("fake session must initialize")
 	}
@@ -362,7 +362,7 @@ func TestCloseSessionReturnsWhenNativePopWedges(t *testing.T) {
 func TestCloseSessionReturnsWhenSubscriberFlushWedges(t *testing.T) {
 	relayTestEnv(t, nil)
 	c := NewRelaySessionCoordinator(RelayHosts)
-	rt := relayTestRuntime(t, newRelayFake(nil, &pythread.Event{}))
+	rt := relayTestRuntime(t, newRelayFake(nil, &syncutil.Event{}))
 	if relayAcquire(c, rt, "sess-1", nil, nil).Session == nil {
 		t.Fatal("fake session must initialize")
 	}
@@ -374,7 +374,7 @@ func TestCloseSessionReturnsWhenSubscriberFlushWedges(t *testing.T) {
 func TestFinishLogicalCallsReturnsAndRetainsPrefix(t *testing.T) {
 	relayTestEnv(t, nil)
 	c := NewRelaySessionCoordinator(RelayHosts)
-	rt := relayTestRuntime(t, newRelayFake(&pythread.Event{}, nil))
+	rt := relayTestRuntime(t, newRelayFake(&syncutil.Event{}, nil))
 	lease := relayAcquire(c, rt, "sess-1", nil, nil)
 	turn, err := c.BeginTurn(context.Background(), lease, "t1", "task1", nil)
 	if err != nil {
@@ -714,7 +714,7 @@ func TestNeverRotatesMidTurn(t *testing.T) {
 func TestWedgedRotationIsBoundedAndAgentContinues(t *testing.T) {
 	relayTestEnv(t, map[string]any{"on_compaction": true, "max_turns": 0})
 	c := NewRelaySessionCoordinator(RelayHosts)
-	f := newRelayFake(&pythread.Event{}, nil)
+	f := newRelayFake(&syncutil.Event{}, nil)
 	rt := relayTestRuntime(t, f)
 	ctx := context.Background()
 	lease := relayAcquire(c, rt, "sess-1", nil, nil)

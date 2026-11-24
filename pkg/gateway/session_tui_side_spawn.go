@@ -8,10 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Holder the side agent ledger counts, abandoned once its work no longer holds the owner
@@ -46,7 +45,7 @@ func sideAgentAbandoned(holder SideAgentHolder) bool {
 
 // Error text a failed side agent publishes, a refusal naming the check that fired
 func sideAgentErrorText(err error) string {
-	reason := pyrepr.ExceptionMessage(err)
+	reason := err.Error()
 	named := ""
 	var refusal *state.RuntimeStoreError
 	if errors.As(err, &refusal) {
@@ -76,7 +75,7 @@ func runSideBody(ctx context.Context, body func(ctx context.Context) (string, er
 
 // Runs body on its own goroutine counted as owner work, publishing its text or error on the session
 func SpawnSideAgent(ctx context.Context, a *SessionAuthority, ref SessionRef, taskID, eventType string,
-	body func(ctx context.Context) (string, error), extra *pyjson.Object, holder SideAgentHolder) *pyjson.Object {
+	body func(ctx context.Context) (string, error), extra *jsonutil.Object, holder SideAgentHolder) *jsonutil.Object {
 	key := &sideAgentThread{name: "side-agent-" + taskID}
 	a.mu.Lock()
 	if a.sideAgents == nil {
@@ -99,14 +98,14 @@ func SpawnSideAgent(ctx context.Context, a *SessionAuthority, ref SessionRef, ta
 		}
 		live, ok := a.Live(ref.SessionID)
 		if ok && live != nil && !sideAgentAbandoned(holder) {
-			payload := pyjson.ObjectOf("task_id", taskID)
+			payload := jsonutil.ObjectOf("task_id", taskID)
 			if extra != nil {
-				payload.Update(extra)
+				payload.Merge(extra)
 			}
 			payload.Set("text", text)
 			live.EventStream.Publish(ref.SessionID, payload, eventType, nil)
 		}
 	}()
 	persistWorkCount(a)
-	return pyjson.ObjectOf("task_id", taskID)
+	return jsonutil.ObjectOf("task_id", taskID)
 }

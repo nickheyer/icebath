@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Catalog plugin that applies idle and daily session resets
@@ -23,10 +23,10 @@ func TimedSessionReset(cfg any) (mode string, ok bool) {
 		return "", false
 	}
 	block, isBlock := doc[SessionResetConfigKey].(map[string]any)
-	if !isBlock || !pyrepr.Truthy(block["mode"]) {
+	if !isBlock || !anyutil.IsTrue(block["mode"]) {
 		return "", false
 	}
-	mode = strings.ToLower(strings.TrimSpace(pyrepr.Str(block["mode"])))
+	mode = strings.ToLower(strings.TrimSpace(anyutil.String(block["mode"])))
 	if !sessionResetTimedModes[mode] {
 		return "", false
 	}
@@ -37,7 +37,7 @@ func TimedSessionReset(cfg any) (mode string, ok bool) {
 func ResetPluginEnabled(ctx context.Context) bool {
 	DiscoverPlugins(ctx, false)
 	for _, p := range GetPluginManager(ctx).ListPlugins() {
-		if pyrepr.Equal(p["name"], SessionResetPluginName) && pyrepr.Truthy(p["enabled"]) {
+		if anyutil.Equal(p["name"], SessionResetPluginName) && anyutil.IsTrue(p["enabled"]) {
 			return true
 		}
 	}

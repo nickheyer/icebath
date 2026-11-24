@@ -11,8 +11,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -287,10 +288,10 @@ func EnabledToolsOf(ctx context.Context) ([]string, bool) {
 
 // Derives status, error type, and error message from a tool result for observer hooks
 func toolResultObserverFields(toolName, result string) (string, string, string) {
-	if decoded, err := pyjson.Loads(result); err == nil {
-		if data, ok := decoded.(*pyjson.Object); ok {
-			if e, _ := data.Get("error"); pyrepr.Truthy(e) {
-				return "error", "tool_error", pyrepr.Str(e)
+	if decoded, err := jsonutil.Decode(result); err == nil {
+		if data, ok := decoded.(*jsonutil.Object); ok {
+			if e, _ := data.Get("error"); anyutil.IsTrue(e) {
+				return "error", "tool_error", anyutil.String(e)
 			}
 		}
 	}
@@ -587,7 +588,7 @@ func (d *Dispatcher) RegistryDispatch(ctx context.Context, call *Call) (result s
 
 // Python values of a call's args, each key read from the raw text when that text still reads back as its value
 func pythonCallArgs(call *Call) map[string]any {
-	return orderedArgsObject(call.RawArgs, call.Args).Vals
+	return orderedArgsObject(call.RawArgs, call.Args).Map()
 }
 
 // Handles a bridge call returning the finished result or the underlying call to re dispatch, tool_call resolved from Python valued args

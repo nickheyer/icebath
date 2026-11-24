@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -92,8 +92,8 @@ func SessionOwnedByProfile(ctx context.Context, cfg *GatewayConfig, profile stri
 		return false
 	}
 	owner := profile
-	if v, _ := row.Get("profile_name"); pyrepr.Truthy(v) {
-		owner = pyrepr.Str(v)
+	if v, _ := row.Get("profile_name"); anyutil.IsTrue(v) {
+		owner = anyutil.String(v)
 	}
 	return owner == profile
 }
@@ -180,7 +180,7 @@ func DeliverWake(ctx context.Context, adapter PlatformAdapter, opts WakeOptions)
 }
 
 // Display metadata of a persisted delegation delivery row
-func delegationDisplayMetadata(ctx context.Context, evt map[string]any) *pyjson.Object {
+func delegationDisplayMetadata(ctx context.Context, evt map[string]any) *jsonutil.Object {
 	var results []map[string]any
 	if raw, ok := evt["results"].([]any); ok {
 		for _, r := range raw {
@@ -205,16 +205,16 @@ func delegationDisplayMetadata(ctx context.Context, evt map[string]any) *pyjson.
 	if completed == 0 {
 		completed = taskCount - failed
 	}
-	metadata := pyjson.NewObject()
+	metadata := jsonutil.NewObject()
 	metadata.Set("delegation_id", truthyString(evt["delegation_id"]))
 	metadata.Set("task_count", taskCount)
 	metadata.Set("completed_count", completed)
 	metadata.Set("failed_count", failed)
-	if pyrepr.Truthy(evt["task_failure_notice"]) {
+	if anyutil.IsTrue(evt["task_failure_notice"]) {
 		index := ""
 		if len(results) > 0 {
 			if v, ok := results[0]["task_index"]; ok {
-				index = pyrepr.Str(v)
+				index = anyutil.String(v)
 			}
 		}
 		metadata.Set("delivery_notice", "task_failure:"+index)
@@ -224,7 +224,7 @@ func delegationDisplayMetadata(ctx context.Context, evt map[string]any) *pyjson.
 		}
 	}
 	duration := evt["total_duration_seconds"]
-	if !pyrepr.Truthy(duration) {
+	if !anyutil.IsTrue(duration) {
 		duration = evt["duration_seconds"]
 	}
 	switch duration.(type) {
@@ -236,10 +236,10 @@ func delegationDisplayMetadata(ctx context.Context, evt map[string]any) *pyjson.
 
 // Python str of a value, empty for a falsy one
 func truthyString(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Stateless adapter whose session store takes delegation delivery rows
@@ -293,7 +293,7 @@ func selfPostChatCompletion(ctx context.Context, adapter PlatformAdapter, text, 
 	if profile != "" && profile != "default" {
 		runner, ok := adapter.(InternalSessionTurnRunner)
 		if !ok {
-			return fmt.Errorf("wake self-post for served profile %s requires in-process session delivery; refusing to self-post as the default profile", pyrepr.Repr(profile))
+			return fmt.Errorf("wake self-post for served profile %s requires in-process session delivery; refusing to self-post as the default profile", anyutil.Quote(profile))
 		}
 		return runner.RunInternalSessionTurn(ctx, sessionID, text, profile, category)
 	}

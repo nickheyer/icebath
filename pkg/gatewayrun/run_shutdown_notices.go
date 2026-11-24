@@ -8,7 +8,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // False when the platform config turns gateway restart notifications off
@@ -75,7 +74,7 @@ func (r *GatewayRunner) shutdownNotificationTarget(ctx context.Context, sessionK
 	if len(parsed) == 0 {
 		return nil
 	}
-	target := &shutdownTarget{platformStr: pyrepr.Str(parsed["platform"]), chatID: pyrepr.Str(parsed["chat_id"])}
+	target := &shutdownTarget{platformStr: anyutil.String(parsed["platform"]), chatID: anyutil.String(parsed["chat_id"])}
 	if thread, ok := parsed["thread_id"].(string); ok {
 		target.threadID = &thread
 	}
@@ -111,13 +110,13 @@ func sendNoticeLogged(ctx context.Context, adapter gateway.PlatformAdapter, chat
 	merged["_interim_send"] = true
 	defer func() {
 		if rec := recover(); rec != nil {
-			pkgLog().Debug(fmt.Sprintf(raiseFmt, platformStr, chatID, pyrepr.Str(rec)))
+			pkgLog().Debug(fmt.Sprintf(raiseFmt, platformStr, chatID, anyutil.String(rec)))
 			delivered = false
 		}
 	}()
 	result, err := adapter.Send(ctx, chatID, msg, "", merged)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf(raiseFmt, platformStr, chatID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf(raiseFmt, platformStr, chatID, err.Error()))
 		return false
 	}
 	if sendFailed(result) {
@@ -195,12 +194,12 @@ func (r *GatewayRunner) activeShutdownTarget(ctx context.Context, target *shutdo
 	}()
 	platform, err := gateway.ParsePlatform(ctx, target.platformStr)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %s", target.platformStr, target.chatID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %s", target.platformStr, target.chatID, err.Error()))
 		return "", nil, nil, false
 	}
 	if target.source != nil {
 		if adapter, err = r.deliveryAdapterFor(ctx, target.source); err != nil {
-			pkgLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %s", target.platformStr, target.chatID, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Failed to send shutdown notification to %s:%s: %s", target.platformStr, target.chatID, err.Error()))
 			return "", nil, nil, false
 		}
 	}

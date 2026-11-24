@@ -3,8 +3,8 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // SessionSource is where a message originated, routing responses and recording cron delivery origin
@@ -111,8 +111,8 @@ func strOrNil(v *string) any {
 }
 
 // Byte stable wire layout with the always present fields then the truthy optionals around the scope pair
-func (s *SessionSource) ToDict() *pyjson.Object {
-	d := pyjson.NewObject()
+func (s *SessionSource) ToDict() *jsonutil.Object {
+	d := jsonutil.NewObject()
 	d.Set("platform", string(s.Platform))
 	d.Set("chat_id", s.ChatID)
 	d.Set("chat_name", strOrNil(s.ChatName))
@@ -161,7 +161,7 @@ func dictStrField(data map[string]any, key string) *string {
 	}
 	s, ok := v.(string)
 	if !ok {
-		s = pyrepr.Str(v)
+		s = anyutil.String(v)
 	}
 	return &s
 }
@@ -189,8 +189,8 @@ func SessionSourceFromDict(ctx context.Context, data map[string]any) (*SessionSo
 		scope = dictStrField(data, "guild_id")
 	}
 	src := &SessionSource{
-		Platform: platform, ChatID: pyrepr.Str(chatRaw), ChatType: chatType, ScopeID: scope,
-		AutoThreadCreated: pyrepr.Truthy(data["auto_thread_created"]),
+		Platform: platform, ChatID: anyutil.String(chatRaw), ChatType: chatType, ScopeID: scope,
+		AutoThreadCreated: anyutil.IsTrue(data["auto_thread_created"]),
 		ChatName:          dictStrField(data, "chat_name"), UserID: dictStrField(data, "user_id"),
 		UserName: dictStrField(data, "user_name"), ThreadID: dictStrField(data, "thread_id"),
 		ChatTopic: dictStrField(data, "chat_topic"), UserIDAlt: dictStrField(data, "user_id_alt"),

@@ -10,7 +10,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -46,7 +46,7 @@ func pyTruthy(v any) bool {
 func normalizeChatType(chatType any, isForum bool) string {
 	raw := "dm"
 	if pyTruthy(chatType) {
-		raw = pyrepr.Str(chatType)
+		raw = anyutil.String(chatType)
 	}
 	normalized := strings.ToLower(strings.TrimSpace(raw))
 	if normalized == "" {
@@ -91,7 +91,7 @@ func metadataID(metadata map[string]any, keys ...string) *string {
 	if value == nil {
 		return nil
 	}
-	text := pyrepr.Str(value)
+	text := anyutil.String(value)
 	return &text
 }
 

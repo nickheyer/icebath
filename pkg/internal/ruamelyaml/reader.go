@@ -7,6 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 )
 
 // Document handed to a loader, a Python str of code points or a Python bytes object
@@ -70,7 +71,7 @@ func newReader(in Input) (*reader, error) {
 			}
 			data = []rune(string(raw))
 		} else {
-			text, err := pycodecs.Decode(raw, r.encoding)
+			text, err := charsetutil.Decode(raw, r.encoding)
 			if err != nil {
 				var de *pycodecs.UnicodeDecodeError
 				if errors.As(err, &de) {

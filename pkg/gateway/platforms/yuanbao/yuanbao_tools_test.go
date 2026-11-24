@@ -9,22 +9,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Decoded JSON result of a registered Yuanbao tool called with the arguments
-func callTool(t *testing.T, name string, args map[string]any) *pyjson.Object {
+func callTool(t *testing.T, name string, args map[string]any) *jsonutil.Object {
 	t.Helper()
 	def := tools.Default.Get(name)
 	if def == nil || def.Toolset != yuanbaoToolset || def.Check == nil {
 		t.Fatalf("tool %s is not registered for the yuanbao toolset", name)
 	}
-	decoded, err := pyjson.Loads(def.Handler(context.Background(), &tools.Call{Name: name, Args: args}))
+	decoded, err := jsonutil.Decode(def.Handler(context.Background(), &tools.Call{Name: name, Args: args}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, isObject := decoded.(*pyjson.Object)
+	result, isObject := decoded.(*jsonutil.Object)
 	if !isObject {
 		t.Fatalf("tool %s returned %v", name, decoded)
 	}
@@ -34,7 +35,7 @@ func callTool(t *testing.T, name string, args map[string]any) *pyjson.Object {
 // Compact JSON of a decoded tool result
 func compact(t *testing.T, value any) string {
 	t.Helper()
-	encoded, err := pyjson.Dumps(value, pyjson.EnsureASCII(false))
+	encoded, err := jsonutil.Encode(value)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -109,12 +110,12 @@ func TestGroupInfoAndMemberTools(t *testing.T) {
 		t.Fatalf("all members %s", got)
 	}
 	found := callTool(t, "yb_query_group_members", map[string]any{"group_code": "grp-1", "action": "find", "name": " ALI "})
-	if members := found.GetOr("members", nil).([]any); found.GetOr("msg", nil) != `Found 2 member(s) matching " ALI ".` || len(members) != 2 {
+	if members := found.ValueOr("members", nil).([]any); found.ValueOr("msg", nil) != `Found 2 member(s) matching " ALI ".` || len(members) != 2 {
 		t.Fatalf("found members %s", compact(t, found))
 	}
 	missed := callTool(t, "yb_query_group_members", map[string]any{"group_code": "grp-1", "action": "find", "name": "zed"})
-	if members := missed.GetOr("members", nil).([]any); missed.GetOr("success", nil) != false || len(members) != 3 ||
-		missed.GetOr("msg", nil) != `No match for "zed". All members listed below.` {
+	if members := missed.ValueOr("members", nil).([]any); missed.ValueOr("success", nil) != false || len(members) != 3 ||
+		missed.ValueOr("msg", nil) != `No match for "zed". All members listed below.` {
 		t.Fatalf("missed members %s", compact(t, missed))
 	}
 	if got := compact(t, callTool(t, "yb_query_group_members", map[string]any{"group_code": "grp-1", "action": "list_bots"})); got !=
@@ -130,44 +131,44 @@ func TestGroupInfoAndMemberTools(t *testing.T) {
 func TestStickerTools(t *testing.T) {
 	_, server := connectAdapter(t, nil)
 	listed := callTool(t, "yb_search_sticker", map[string]any{"limit": int64(3)})
-	rows := listed.GetOr("results", nil).([]any)
-	first := rows[0].(*pyjson.Object)
-	if listed.GetOr("success", nil) != true || listed.GetOr("query", nil) != "" || !pyjson.Equal(listed.GetOr("count", nil), int64(3)) || len(rows) != 3 ||
-		!reflect.DeepEqual(first.Keys, []string{"sticker_id", "name", "description", "package_id"}) {
+	rows := listed.ValueOr("results", nil).([]any)
+	first := rows[0].(*jsonutil.Object)
+	if listed.ValueOr("success", nil) != true || listed.ValueOr("query", nil) != "" || !anyutil.Equal(listed.ValueOr("count", nil), int64(3)) || len(rows) != 3 ||
+		!reflect.DeepEqual(first.Keys(), []string{"sticker_id", "name", "description", "package_id"}) {
 		t.Fatalf("listing %s", compact(t, listed))
 	}
 	for limit, want := range map[any]int{int64(999): 50, int64(-4): 1, "many": 10, nil: 10, "2": 2} {
 		got := callTool(t, "yb_search_sticker", map[string]any{"query": "", "limit": limit})
-		if !pyjson.Equal(got.GetOr("count", nil), int64(want)) {
-			t.Fatalf("limit %v returned %v results", limit, got.GetOr("count", nil))
+		if !anyutil.Equal(got.ValueOr("count", nil), int64(want)) {
+			t.Fatalf("limit %v returned %v results", limit, got.ValueOr("count", nil))
 		}
 	}
-	name, stickerID := first.GetOr("name", "").(string), first.GetOr("sticker_id", "").(string)
+	name, stickerID := first.ValueOr("name", "").(string), first.ValueOr("sticker_id", "").(string)
 	t.Setenv("ICEBATH_SESSION_CHAT_ID", "group:grp-1")
 	byID := callTool(t, "yb_send_sticker", map[string]any{"sticker": " " + stickerID + " ", "reply_to": "ref-9"})
-	if byID.GetOr("success", nil) != true || byID.GetOr("chat_id", nil) != "group:grp-1" ||
-		compact(t, byID.GetOr("sticker", nil)) != compact(t, pyjson.ObjectOf("sticker_id", stickerID, "name", name)) {
+	if byID.ValueOr("success", nil) != true || byID.ValueOr("chat_id", nil) != "group:grp-1" ||
+		compact(t, byID.ValueOr("sticker", nil)) != compact(t, jsonutil.ObjectOf("sticker_id", stickerID, "name", name)) {
 		t.Fatalf("sticker by id %s", compact(t, byID))
 	}
 	frame := server.sent("send_group_message")[0]
-	fields, err := parseDict(frame.Vals["data"].([]byte))
+	fields, err := parseDict(frame.Value("data").([]byte))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if elems := bodyElems(t, frame, 6); len(elems) != 1 || elems[0].Vals["msg_type"] != "TIMFaceElem" || fields.GetString(7) != "ref-9" {
+	if elems := bodyElems(t, frame, 6); len(elems) != 1 || elems[0].Value("msg_type") != "TIMFaceElem" || fields.GetString(7) != "ref-9" {
 		t.Fatalf("sticker frame %v", elems)
 	}
 	byName := callTool(t, "yb_send_sticker", map[string]any{"sticker": name, "chat_id": " direct:alice "})
-	if byName.GetOr("success", nil) != true || byName.GetOr("chat_id", nil) != "direct:alice" || len(server.sent("send_c2c_message")) != 1 {
+	if byName.ValueOr("success", nil) != true || byName.ValueOr("chat_id", nil) != "direct:alice" || len(server.sent("send_c2c_message")) != 1 {
 		t.Fatalf("sticker by name %s", compact(t, byName))
 	}
-	if random := callTool(t, "yb_send_sticker", map[string]any{}); random.GetOr("success", nil) != true {
+	if random := callTool(t, "yb_send_sticker", map[string]any{}); random.ValueOr("success", nil) != true {
 		t.Fatalf("random sticker %s", compact(t, random))
 	}
 }
 
 func TestSendDMToolResolvesTheRecipientAndSendsMedia(t *testing.T) {
-	backend := startCOSBackend(t, pyjson.ObjectOf("bucketName", "bucket-1", "region", "ap-test", "location", "media/doc.txt",
+	backend := startCOSBackend(t, jsonutil.ObjectOf("bucketName", "bucket-1", "region", "ap-test", "location", "media/doc.txt",
 		"encryptTmpSecretId", "sid", "encryptTmpSecretKey", "skey", "encryptToken", "session", "resourceUrl", "https://cdn.example.com/res/2"))
 	adapter, server := connectGroupAdapter(t)
 	allowAllUsers(t)
@@ -189,17 +190,17 @@ func TestSendDMToolResolvesTheRecipientAndSendsMedia(t *testing.T) {
 	if err := os.WriteFile(document, []byte("attached"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	sent := callTool(t, "yb_send_dm", map[string]any{"name": "bob", "message": "hello Bob", "media_files": []any{pyjson.ObjectOf("path", document)}})
+	sent := callTool(t, "yb_send_dm", map[string]any{"name": "bob", "message": "hello Bob", "media_files": []any{jsonutil.ObjectOf("path", document)}})
 	if got := compact(t, sent); got != `{"success": true, "user_id": "u3", "nickname": "Bob", "message_id": "", "note": "DM sent to \"Bob\" successfully."}` {
 		t.Fatalf("sent DM %s", got)
 	}
 	frames := server.sent("send_c2c_message")
-	if len(frames) != 2 || firstText(t, frames[0], 5) != "hello Bob" || bodyElems(t, frames[1], 5)[0].Vals["msg_type"] != "TIMFileElem" ||
+	if len(frames) != 2 || firstText(t, frames[0], 5) != "hello Bob" || bodyElems(t, frames[1], 5)[0].Value("msg_type") != "TIMFileElem" ||
 		backend.uploaded("/media/doc.txt") != "attached" {
 		t.Fatalf("DM frames %d", len(frames))
 	}
 	for _, frame := range frames {
-		fields, err := parseDict(frame.Vals["data"].([]byte))
+		fields, err := parseDict(frame.Value("data").([]byte))
 		if err != nil {
 			t.Fatal(err)
 		}

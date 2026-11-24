@@ -24,10 +24,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const discordCommandSyncStateFilename = "discord_command_sync_state.json"
@@ -85,17 +85,17 @@ func readCommandSyncState(ctx context.Context) map[string]any {
 	if err != nil {
 		return map[string]any{}
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return map[string]any{}
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return map[string]any{}
 	}
-	if obj, ok := data.(*pyjson.Object); ok {
+	if obj, ok := data.(*jsonutil.Object); ok {
 		out := map[string]any{}
-		for _, k := range obj.Keys {
+		for _, k := range obj.Keys() {
 			v, _ := obj.Get(k)
 			out[k] = pyjsonPlain(v)
 		}
@@ -107,9 +107,9 @@ func readCommandSyncState(ctx context.Context) map[string]any {
 // Plain Go maps and slices of a pyjson value
 func pyjsonPlain(v any) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := map[string]any{}
-		for _, k := range t.Keys {
+		for _, k := range t.Keys() {
 			x, _ := t.Get(k)
 			out[k] = pyjsonPlain(x)
 		}
@@ -126,7 +126,7 @@ func pyjsonPlain(v any) any {
 
 // Writes the sync state compactly
 func writeCommandSyncState(ctx context.Context, st map[string]any) error {
-	return config.AtomicJSONWriteWith(ctx, commandSyncStatePath(ctx), st, pyjson.Separators(",", ":"))
+	return config.AtomicJSONWriteWith(ctx, commandSyncStatePath(ctx), st)
 }
 
 // State key of an application id
@@ -150,17 +150,17 @@ func (a *DiscordAdapter) desiredCommandSyncFingerprint(ctx context.Context) stri
 		}
 		return x["name"].(string) < y["name"].(string)
 	})
-	payload, _ := pyjson.Dumps(map[string]any{"language": i18n.GetLanguage(ctx), "commands": desired}, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	payload, _ := jsonutil.Encode(map[string]any{"language": i18n.GetLanguage(ctx), "commands": desired}, jsonutil.SortKeys())
 	sum := sha256.Sum256([]byte(payload))
 	return hex.EncodeToString(sum[:])
 }
 
 // Python float of a state value, zero when falsy or unparsable
 func stateFloat(v any) float64 {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0
 	}
-	f, err := pyint.Float(v)
+	f, err := anyutil.ToFloat(v)
 	if err != nil {
 		return 0
 	}
@@ -290,7 +290,7 @@ func (a *DiscordAdapter) getDiscordCommandSyncPolicy(ctx context.Context) string
 }
 
 func intOr(v any, def int64) int64 {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return def
 	}
 	n, err := pyint.Of(v)
@@ -301,10 +301,10 @@ func intOr(v any, def int64) int64 {
 }
 
 func strOr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func boolOr(m map[string]any, key string, def bool) bool {
@@ -312,7 +312,7 @@ func boolOr(m map[string]any, key string, def bool) bool {
 	if !ok {
 		return def
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 func sortedInts(v any) any {
@@ -367,7 +367,7 @@ func normalizePermissions(value any) any {
 	if value == nil {
 		return nil
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Payload of a fetched command with the attributes its dict form omits

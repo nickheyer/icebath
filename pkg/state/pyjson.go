@@ -1,8 +1,6 @@
 package state
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,6 +11,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Holds the json.dumps keyword arguments state code passes
@@ -76,14 +76,14 @@ func (o pyJSON) encode(b *strings.Builder, v any) error {
 		fmt.Fprint(b, x)
 	case pyObject:
 		return o.encodeObject(b, x)
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if x == nil {
 			b.WriteString("null")
 			return nil
 		}
-		obj := make(pyObject, 0, len(x.Keys))
-		for _, k := range x.Keys {
-			obj = append(obj, pyKeyValue{k, x.Vals[k]})
+		obj := make(pyObject, 0, x.Len())
+		for _, k := range x.Keys() {
+			obj = append(obj, pyKeyValue{k, x.Value(k)})
 		}
 		return o.encodeObject(b, obj)
 	case map[string]any:

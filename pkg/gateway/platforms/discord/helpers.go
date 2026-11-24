@@ -23,10 +23,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -423,7 +423,7 @@ func metadataMarksNonconversational(metadata map[string]any) bool {
 		return false
 	}
 	for _, key := range discordNonconversationalMetadataKeys {
-		if pyrepr.Truthy(metadata[key]) {
+		if anyutil.IsTrue(metadata[key]) {
 			return true
 		}
 	}
@@ -432,8 +432,8 @@ func metadataMarksNonconversational(metadata map[string]any) bool {
 
 // Interactive prompt target, the metadata thread when present else the chat
 func promptTargetID(chatID string, metadata map[string]any) string {
-	if metadata != nil && pyrepr.Truthy(metadata["thread_id"]) {
-		return pyrepr.Str(metadata["thread_id"])
+	if metadata != nil && anyutil.IsTrue(metadata["thread_id"]) {
+		return anyutil.String(metadata["thread_id"])
 	}
 	return chatID
 }

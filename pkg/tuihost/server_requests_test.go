@@ -3,7 +3,7 @@ package tuihost
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type wireFrame struct{ event, id string }
@@ -17,9 +17,9 @@ func wireEvents(frames []wireFrame) []string {
 }
 
 // Compact JSON of an object for comparisons
-func objText(t *testing.T, o *pyjson.Object) string {
+func objText(t *testing.T, o *jsonutil.Object) string {
 	t.Helper()
-	text, err := pyjson.Dumps(o)
+	text, err := jsonutil.Encode(o)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -27,28 +27,28 @@ func objText(t *testing.T, o *pyjson.Object) string {
 }
 
 func TestTheRuleItself(t *testing.T) {
-	locked := pyjson.ObjectOf("q0", "blue")
+	locked := jsonutil.ObjectOf("q0", "blue")
 	kept := `{"answers": {"q0": "blue"}, "outcome": "cancelled"}`
 	if got := objText(t, settleBatch(locked, nil, "cancelled")); got != kept {
 		t.Fatalf("ended cancelled = %s", got)
 	}
-	if got := objText(t, settleBatch(locked, pyjson.NewObject(), "")); got != kept {
+	if got := objText(t, settleBatch(locked, jsonutil.NewObject(), "")); got != kept {
 		t.Fatalf("empty frame = %s", got)
 	}
 	if got := objText(t, settleBatch(locked, nil, "")); got != kept {
 		t.Fatalf("error frame = %s", got)
 	}
-	bogus := pyjson.ObjectOf("answers", pyjson.NewObject(), "outcome", "bogus")
+	bogus := jsonutil.ObjectOf("answers", jsonutil.NewObject(), "outcome", "bogus")
 	if got := objText(t, settleBatch(locked, bogus, "")); got != `{"answers": {"q0": "blue"}, "outcome": "submitted"}` {
 		t.Fatalf("bogus outcome = %s", got)
 	}
-	if settleBatch(locked, nil, "timed_out").GetOr("answers", nil).(*pyjson.Object) == locked {
+	if settleBatch(locked, nil, "timed_out").ValueOr("answers", nil).(*jsonutil.Object) == locked {
 		t.Fatal("the locked answers were aliased into the result")
 	}
 	if got := objText(t, settleBatch(locked, nil, "weird")); got != kept {
 		t.Fatalf("unknown ending = %s", got)
 	}
-	extra := pyjson.ObjectOf("answers", pyjson.ObjectOf("q1", "red"), "outcome", "bogus", "extra", 1)
+	extra := jsonutil.ObjectOf("answers", jsonutil.ObjectOf("q1", "red"), "outcome", "bogus", "extra", 1)
 	if got := objText(t, settleBatch(locked, extra, "")); got != `{"answers": {"q0": "blue", "q1": "red"}, "outcome": "submitted", "extra": 1}` {
 		t.Fatalf("extra frame keys = %s", got)
 	}

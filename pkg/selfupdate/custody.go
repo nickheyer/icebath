@@ -19,10 +19,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -326,7 +326,7 @@ func (c *startedChild) communicate(ctx context.Context, opts ChildOptions, onTim
 }
 
 func decodeChildText(raw []byte) string {
-	return pystr.TranslateNewlines(strings.ToValidUTF8(string(raw), "\uFFFD"))
+	return textutil.NormalizeNewlines(strings.ToValidUTF8(string(raw), "\uFFFD"))
 }
 
 // Pid is the child process id
@@ -575,7 +575,7 @@ func reportRefusedJoin(ctx context.Context, report string, argv []string) *strin
 	raw, err := os.ReadFile(report)
 	note := ""
 	if err == nil {
-		if text, derr := pystr.DecodeUTF8Sig(raw); derr == nil {
+		if text, derr := textutil.DecodeUTF8(textutil.TrimBOM(raw)); derr == nil {
 			note = strings.TrimSpace(text)
 		}
 	}

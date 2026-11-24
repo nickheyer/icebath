@@ -7,12 +7,12 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var roomCommonIdentifierRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]*$`)
 
-// Error constructor of one hosted room module, its own ValueError subclass
+// Error constructor of one hosted room module, giving its own invalid value error
 type roomErrorFunc func(msg string) error
 
 // Shape options of one bounded identifier check
@@ -58,7 +58,7 @@ func roomBoundedInt(value any, fail roomErrorFunc, message string, low int64, hi
 	return nil, fail(message)
 }
 
-// Python int value of a decoded JSON integer, false for floats and every other type
+// Integer value of a decoded JSON integer, false for floats and every other type
 func roomInt(value any) (*big.Int, bool) {
 	switch v := value.(type) {
 	case int:
@@ -124,5 +124,9 @@ func roomExactFields(value any, label string, required, optional map[string]bool
 
 // Sorted key separator free JSON, the digest and storage canonical form
 func roomCompactJSON(value any, ensureASCII bool) (string, error) {
-	return pyjson.Dumps(value, pyjson.SortKeys(true), pyjson.Separators(",", ":"), pyjson.EnsureASCII(ensureASCII))
+	opts := []jsonutil.Option{jsonutil.SortKeys()}
+	if ensureASCII {
+		opts = append(opts, jsonutil.ASCII())
+	}
+	return jsonutil.Encode(value, opts...)
 }

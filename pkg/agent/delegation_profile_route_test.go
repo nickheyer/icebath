@@ -13,9 +13,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Home, PROBE_SECRET and model.default as a task bound to ctx sees them, the snapshot
@@ -464,4 +464,4 @@ func TestProfilePinnedToAMissingAcpCommandIsRefusedAtRouting(t *testing.T) {
 	}
 }
 
-var _ = pyjson.NewObject
+var _ = jsonutil.NewObject

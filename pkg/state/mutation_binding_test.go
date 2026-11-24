@@ -7,7 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const historyLogin = `auth:v1:["basic","","e2e"]`
@@ -24,7 +25,7 @@ func installOwnerIdentityDoubles(t *testing.T) {
 		if !ok || !strings.HasPrefix(text, "auth:v1:") {
 			return parts, false
 		}
-		decoded, err := pyjson.Loads(text[len("auth:v1:"):])
+		decoded, err := jsonutil.Decode(text[len("auth:v1:"):])
 		list, isList := decoded.([]any)
 		if err != nil || !isList || len(list) != 3 {
 			return parts, false
@@ -46,7 +47,7 @@ func installOwnerIdentityDoubles(t *testing.T) {
 		return logins[provider]
 	}
 	SameOwner = func(stored, subject any) bool {
-		if pyjson.Equal(stored, subject) {
+		if anyutil.Equal(stored, subject) {
 			return true
 		}
 		text, ok := stored.(string)
@@ -218,37 +219,37 @@ func TestAuthorizeHistoryClaimsOnceAndRoutedRowsAreNeverHistory(t *testing.T) {
 
 func TestClientHistoryRowsAndLegacyValidation(t *testing.T) {
 	_, db := historyDB(t)
-	mobile := pyjson.ObjectOf("source", "mobile", "user_id", nil)
+	mobile := jsonutil.ObjectOf("source", "mobile", "user_id", nil)
 	if !ClientHistoryRow(mobile) || !LegacyHistoryRow(mobile) || ClientLabel("telegram") || ClientLabel("cli") || ClientLabel("  ") {
 		t.Fatal("client labels")
 	}
 	if source, err := LegacyCreationSource(mobile); err != nil || source != "gui" {
 		t.Fatalf("mobile creation %v %v", source, err)
 	}
-	if source, err := LegacyCreationSource(pyjson.ObjectOf("source", "desktop")); err != nil || source != "gui" {
+	if source, err := LegacyCreationSource(jsonutil.ObjectOf("source", "desktop")); err != nil || source != "gui" {
 		t.Fatalf("desktop creation %v %v", source, err)
 	}
-	if ClientHistoryRow(pyjson.ObjectOf("source", "mobile", "session_key", "k")) {
+	if ClientHistoryRow(jsonutil.ObjectOf("source", "mobile", "session_key", "k")) {
 		t.Fatal("routed client row")
 	}
-	retired := pyjson.ObjectOf("source", "desktop", "user_id", "nous:acct")
+	retired := jsonutil.ObjectOf("source", "desktop", "user_id", "nous:acct")
 	if label, _ := LegacyAccountLabel(retired); !label || db.ValidateLegacyRow(retired, nil) != nil {
 		t.Fatal("nous account label blocks adoption")
 	}
-	for name, row := range map[string]*pyjson.Object{
-		"foreign user":    pyjson.ObjectOf("source", "cli", "user_id", "telegram:42"),
-		"routed":          pyjson.ObjectOf("source", "cli", "chat_id", "c"),
-		"foreign profile": pyjson.ObjectOf("source", "cli", "profile_name", "other"),
-		"messaging":       pyjson.ObjectOf("source", "telegram"),
+	for name, row := range map[string]*jsonutil.Object{
+		"foreign user":    jsonutil.ObjectOf("source", "cli", "user_id", "telegram:42"),
+		"routed":          jsonutil.ObjectOf("source", "cli", "chat_id", "c"),
+		"foreign profile": jsonutil.ObjectOf("source", "cli", "profile_name", "other"),
+		"messaging":       jsonutil.ObjectOf("source", "telegram"),
 	} {
 		if refusalReason(t, db.ValidateLegacyRow(row, "alice")) != "not_found" {
 			t.Fatalf("%s adopted", name)
 		}
 	}
-	if err := db.ValidateLegacyRow(pyjson.ObjectOf("source", "cli", "user_id", "alice", "profile_name", "default"), "alice"); err != nil {
+	if err := db.ValidateLegacyRow(jsonutil.ObjectOf("source", "cli", "user_id", "alice", "profile_name", "default"), "alice"); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.ValidateLegacyRow(pyjson.ObjectOf("source", "tui", "user_id", "basic:e2e"), testHostOwner); err != nil {
+	if err := db.ValidateLegacyRow(jsonutil.ObjectOf("source", "tui", "user_id", "basic:e2e"), testHostOwner); err != nil {
 		t.Fatalf("owner login stamp %v", err)
 	}
 }
@@ -285,11 +286,11 @@ func TestBindLegacyTargetClaimsAnIdleUnboundRowOnce(t *testing.T) {
 	profileExec(t, db, "INSERT INTO sessions(id,source,started_at) VALUES('legacy','mobile',?)", now())
 	profileExec(t, db, "INSERT INTO sessions(id,source,started_at) VALUES('imported','cli',?)", now())
 	profileExec(t, db, "INSERT INTO state_meta(key,value) VALUES(?,?)", BindingPrefix+"imported", `["p","bob"]`)
-	receipt := func(target, sessionID string) *pyjson.Object {
-		return pyjson.ObjectOf("legacy_session_id", target, "session_id", sessionID, "principal_id", "alice", "profile_id", "p",
-			"route", "local:"+sessionID, "entry", pyjson.ObjectOf("origin", pyjson.ObjectOf("platform", "local", "chat_id", sessionID)))
+	receipt := func(target, sessionID string) *jsonutil.Object {
+		return jsonutil.ObjectOf("legacy_session_id", target, "session_id", sessionID, "principal_id", "alice", "profile_id", "p",
+			"route", "local:"+sessionID, "entry", jsonutil.ObjectOf("origin", jsonutil.ObjectOf("platform", "local", "chat_id", sessionID)))
 	}
-	bind := func(r *pyjson.Object) error {
+	bind := func(r *jsonutil.Object) error {
 		return db.executeWrite(ctx, func(conn SQLiteConn) error { return db.bindLegacyTarget(ctx, conn, r) }, nil)
 	}
 	if refusalReason(t, bind(receipt("legacy", "other"))) != "storage_unavailable" {

@@ -6,15 +6,15 @@ import (
 	"math"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const defaultMediaSendTimeout = 300
 
 // Integer part of a positive number, false for zero or below, an error for unparsable input
 func positiveInt(raw any) (int, bool, error) {
-	v, err := pyint.Float(raw)
+	v, err := anyutil.ToFloat(raw)
 	if err != nil {
 		return 0, false, err
 	}

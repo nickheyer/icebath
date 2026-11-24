@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+
+	"golang.org/x/text/cases"
 )
 
 var windowsServiceExecutable = os.Executable
@@ -25,8 +27,8 @@ func IcebathServiceRoots(ctx context.Context) []string {
 // True for an SCM service named icebath or whose binary path starts under one of the roots
 func IcebathOwnsWindowsService(name, binpath string, roots []string) bool {
 	var normalized strings.Builder
-	for _, char := range pystr.Casefold(name) {
-		if pystr.IsAlnum(char) {
+	for _, char := range cases.Fold().String(name) {
+		if unicode.IsLetter(char) || unicode.IsNumber(char) {
 			normalized.WriteRune(char)
 		}
 	}

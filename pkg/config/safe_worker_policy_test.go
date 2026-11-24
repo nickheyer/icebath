@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Clears the process worker policy and runtime marks for one test and again afterwards
@@ -75,7 +75,7 @@ func TestPrivatePolicyRefusesLateBindingAndForkInheritance(t *testing.T) {
 	freshWorkerPolicy(t)
 	workerPolicy.Store(&SafeWorkerPolicy{pid: os.Getpid() + 1, safeMode: true, ignoreUserConfig: true, configJSON: "{}"})
 	defer func() {
-		if err, ok := recover().(*WorkerPolicyError); !ok || err.PyTypeName() != "RuntimeError" || !strings.Contains(err.Error(), "fresh exec") {
+		if err, ok := recover().(*WorkerPolicyError); !ok || err.ErrorKind() != "RuntimeError" || !strings.Contains(err.Error(), "fresh exec") {
 			t.Fatalf("fork inheritance %v", err)
 		}
 	}()
@@ -84,7 +84,7 @@ func TestPrivatePolicyRefusesLateBindingAndForkInheritance(t *testing.T) {
 
 func TestWorkerConfigSnapshotKeepsKeyOrderAndPythonJSONText(t *testing.T) {
 	freshWorkerPolicy(t)
-	decoded, err := pyjson.Loads(`{"zeta": {"b": 1, "a": [2.5, "x"]}, "alpha": true}`)
+	decoded, err := jsonutil.Decode(`{"zeta": {"b": 1, "a": [2.5, "x"]}, "alpha": true}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestWorkerConfigSnapshotKeepsKeyOrderAndPythonJSONText(t *testing.T) {
 	if keys := MappingKeys(snap["zeta"].(map[string]any)); !reflect.DeepEqual(keys, []string{"b", "a"}) {
 		t.Fatalf("nested keys %v", keys)
 	}
-	if _, err := BindWorkerConfig(map[string]any{}); err == nil || err.(*WorkerPolicyError).PyTypeName() != "RuntimeError" {
+	if _, err := BindWorkerConfig(map[string]any{}); err == nil || err.(*WorkerPolicyError).ErrorKind() != "RuntimeError" {
 		t.Fatalf("rebind %v", err)
 	}
 }

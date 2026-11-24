@@ -10,9 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const (
@@ -92,15 +89,15 @@ func (s *CursorStore) LoadCursors(ctx context.Context) error {
 	var data any
 	if err == nil {
 		var text string
-		if text, err = pystr.DecodeUTF8Sig(raw); err == nil {
-			data, err = pyjson.Loads(text)
+		if text, err = textutil.DecodeUTF8(raw); err == nil {
+			data, err = jsonutil.Decode(text)
 		}
 	}
 	if err != nil {
 		pkgLog().Debug("Buzz: could not read channel cursors", "error", err)
 		return nil
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -111,39 +108,38 @@ func (s *CursorStore) LoadCursors(ctx context.Context) error {
 		return nil
 	}
 	channelsRaw, _ := obj.Get("channels")
-	channels, ok := channelsRaw.(*pyjson.Object)
+	channels, ok := channelsRaw.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
-	for _, channelID := range channels.Keys {
-		entry, ok := channels.Vals[channelID].(*pyjson.Object)
+	for _, channelID := range channels.Keys() {
+		entry, ok := channels.Value(channelID).(*jsonutil.Object)
 		if !ok {
 			continue
 		}
 		var lastTS int64
-		if v, _ := entry.Get("last_ts"); pyrepr.Truthy(v) {
-			n, err := pyint.Of(v)
-			var pe *pyint.Error
-			if errors.As(err, &pe) && pe.Kind == "OverflowError" {
+		if v, _ := entry.Get("last_ts"); anyutil.IsTrue(v) {
+			n, err := anyutil.ToInt(v)
+			if errors.Is(err, anyutil.ErrRange) {
 				return err
 			}
-			if err != nil || !n.IsInt64() {
+			if err != nil {
 				continue
 			}
-			lastTS = n.Int64()
+			lastTS = n
 		}
 		seen := []string{}
-		if list, ok := entry.Vals["seen"].([]any); ok {
+		if list, ok := entry.Value("seen").([]any); ok {
 			for _, id := range list {
-				seen = append(seen, pyrepr.Str(id))
+				seen = append(seen, anyutil.String(id))
 			}
 			if len(seen) > seenCap {
 				seen = seen[len(seen)-seenCap:]
 			}
 		}
 		chatType := ""
-		if v, _ := entry.Get("chat_type"); pyrepr.Truthy(v) {
-			chatType = pyrepr.Str(v)
+		if v, _ := entry.Get("chat_type"); anyutil.IsTrue(v) {
+			chatType = anyutil.String(v)
 		}
 		s.RestoredCursors[channelID] = ChannelCursor{ChatType: chatType, LastTS: lastTS, Seen: seen}
 	}
@@ -151,8 +147,8 @@ func (s *CursorStore) LoadCursors(ctx context.Context) error {
 }
 
 // Snapshot of every watched channel cursor in watch order
-func (s *CursorStore) cursorPayload() *pyjson.Object {
-	channels := pyjson.NewObject()
+func (s *CursorStore) cursorPayload() *jsonutil.Object {
+	channels := jsonutil.NewObject()
 	for _, id := range s.ChannelOrder {
 		state := s.ChannelState[id]
 		chatType := state.ChatType
@@ -163,9 +159,9 @@ func (s *CursorStore) cursorPayload() *pyjson.Object {
 		for i, e := range state.Seen {
 			seen[i] = e
 		}
-		channels.Set(id, pyjson.ObjectOf("chat_type", chatType, "last_ts", state.LastTS, "seen", seen))
+		channels.Set(id, jsonutil.ObjectOf("chat_type", chatType, "last_ts", state.LastTS, "seen", seen))
 	}
-	return pyjson.ObjectOf("identity", s.SelfPubkey, "relay", s.RelayURL, "channels", channels)
+	return jsonutil.ObjectOf("identity", s.SelfPubkey, "relay", s.RelayURL, "channels", channels)
 }
 
 // Persists every watched channel cursor, logging instead of failing
@@ -174,7 +170,7 @@ func (s *CursorStore) SaveCursors(ctx context.Context) {
 }
 
 // Atomic compact JSON write of the payload, a failure only logged
-func writeCursors(ctx context.Context, path string, payload *pyjson.Object) {
+func writeCursors(ctx context.Context, path string, payload *jsonutil.Object) {
 	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
 		pkgLog().Debug("Buzz: could not persist channel cursors", "error", err)
 	}

@@ -3,6 +3,7 @@ package acp
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -12,8 +13,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Downloads an image URL into the image cache through the SSRF guarded fetcher
@@ -58,18 +59,18 @@ func stageUserContent(ctx context.Context, content any, ownerHome string) (strin
 	attachments := []StagedAttachment{}
 	for _, part := range parts {
 		if part["type"] == "text" {
-			texts = append(texts, pyStr(part["text"]))
+			texts = append(texts, anyutil.String(part["text"]))
 			continue
 		}
 		image, _ := part["image_url"].(map[string]any)
-		url := pyStr(image["url"])
+		url := anyutil.String(image["url"])
 		if len(attachments) >= gateway.AttachmentLimit {
 			return "", nil, &gateway.GatewayClientError{Msg: "acp_content_invalid"}
 		}
 		var raw []byte
 		if strings.HasPrefix(url, "data:") {
 			_, encoded, _ := strings.Cut(url, ",")
-			decoded, err := pybase64.B64DecodeValidate(encoded)
+			decoded, err := base64.StdEncoding.DecodeString(encoded)
 			if err != nil {
 				return "", nil, &gateway.GatewayClientError{Msg: "acp_content_invalid"}
 			}
@@ -128,11 +129,11 @@ func submitFingerprint(sessionID string, content any) submitKey {
 		parts, _ := content.([]map[string]any)
 		for _, part := range parts {
 			if part["type"] == "text" {
-				add("text", pyStr(part["text"]))
+				add("text", anyutil.String(part["text"]))
 				continue
 			}
 			image, _ := part["image_url"].(map[string]any)
-			add("image", pyStr(image["url"]))
+			add("image", anyutil.String(image["url"]))
 		}
 	}
 	return submitKey{SessionID: sessionID, Digest: hex.EncodeToString(digest.Sum(nil))}

@@ -4,8 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type idSet map[string]bool
@@ -40,7 +40,7 @@ func ensureCompressedKeepsLastAssistantReply(ctx context.Context, original, comp
 		if message == nil || message["role"] != "assistant" {
 			continue
 		}
-		if pyrepr.Truthy(message["tool_calls"]) || state.IsCompactionSummaryMessage(message) {
+		if anyutil.IsTrue(message["tool_calls"]) || state.IsCompactionSummaryMessage(message) {
 			continue
 		}
 		replyText = strings.TrimSpace(compressionMessageText(message))
@@ -54,7 +54,7 @@ func ensureCompressedKeepsLastAssistantReply(ctx context.Context, original, comp
 		return compressed, nil
 	}
 	isReplyTwin := func(message map[string]any) bool {
-		if message == nil || message["role"] != "assistant" || pyrepr.Truthy(message["tool_calls"]) {
+		if message == nil || message["role"] != "assistant" || anyutil.IsTrue(message["tool_calls"]) {
 			return false
 		}
 		return sameVisibleContent(message, reply, replyText)
@@ -112,7 +112,7 @@ func sameVisibleContent(left, right map[string]any, rightText string) bool {
 	if leftText != "" || rightText != "" {
 		return leftText == rightText
 	}
-	return pyrepr.Equal(left["content"], right["content"])
+	return anyutil.Equal(left["content"], right["content"])
 }
 
 // Rows of a tool_calls value whether held as a generic list or a dict list
@@ -197,7 +197,7 @@ func replyInsertionIndex(followers, compressed []map[string]any, reusedIDs idSet
 		}
 		for pos := len(compressed) - 1; pos >= 0; pos-- {
 			message := compressed[pos]
-			if message == nil || !pyrepr.Equal(message["role"], followerRole) {
+			if message == nil || !anyutil.Equal(message["role"], followerRole) {
 				continue
 			}
 			messageCallIDs := toolCallIDs(message)

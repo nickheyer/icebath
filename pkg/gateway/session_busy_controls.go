@@ -7,12 +7,12 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var busyModes = map[string]bool{"interrupt": true, "steer": true, "queue": true}
@@ -30,8 +30,8 @@ type serviceTierRunner interface {
 }
 
 // Param keys outside the allowed set
-func paramsOutside(params *pyjson.Object, allowed ...string) bool {
-	for _, key := range params.Keys {
+func paramsOutside(params *jsonutil.Object, allowed ...string) bool {
+	for _, key := range params.Keys() {
 		if !slices.Contains(allowed, key) {
 			return true
 		}
@@ -49,7 +49,7 @@ func liveSession(a *SessionAuthority, sessionID string) (*LiveSession, error) {
 }
 
 // Checks the capability on the session and that a non null profile names this owner
-func authorizeBusy(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object, capability string) error {
+func authorizeBusy(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object, capability string) error {
 	if err := a.Authorize(ctx, actor, ref, capability); err != nil {
 		return err
 	}
@@ -110,7 +110,7 @@ func preferenceCapability(write bool) string {
 }
 
 // Session scoped busy input mode and the verbose, reasoning, tier and yolo preferences it routes
-func busyConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object, write bool) (*pyjson.Object, error) {
+func busyConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object, write bool) (*jsonutil.Object, error) {
 	key, _ := params.Get("key")
 	if write && key == "model" {
 		return nil, runtimeRefusal("use_session_mutation_model")
@@ -147,11 +147,11 @@ func busyConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref S
 		}
 	}
 	current := settings.BusyMode.Get(sessionSettingsCtx(ctx, a, ref.SessionID))
-	return pyjson.ObjectOf("key", "busy", "value", current, "scope", "session"), nil
+	return jsonutil.ObjectOf("key", "busy", "value", current, "scope", "session"), nil
 }
 
 // Session scoped tool progress mode the next tool events render with, cycled or set
-func verboseConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object, write bool) (*pyjson.Object, error) {
+func verboseConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object, write bool) (*jsonutil.Object, error) {
 	value, _ := params.Get("value")
 	word, isStr := value.(string)
 	if write && !(isStr && (slices.Contains(verboseCycle, word) || word == "cycle")) {
@@ -178,13 +178,13 @@ func verboseConfig(ctx context.Context, a *SessionAuthority, actor Principal, re
 			return nil, err
 		}
 	}
-	return pyjson.ObjectOf("key", "verbose", "value", current, "scope", "session"), nil
+	return jsonutil.ObjectOf("key", "verbose", "value", current, "scope", "session"), nil
 }
 
 // Session scoped reasoning display, the launch default when the session never set it
-func showReasoningConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object, write bool) (*pyjson.Object, error) {
+func showReasoningConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object, write bool) (*jsonutil.Object, error) {
 	value, _ := params.Get("value")
-	word := strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	word := strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 	setting, known := yoloWords[word]
 	if write && !known {
 		return nil, runtimeRefusal("invalid_params")
@@ -209,7 +209,7 @@ func showReasoningConfig(ctx context.Context, a *SessionAuthority, actor Princip
 	if shown {
 		flag = "1"
 	}
-	return pyjson.ObjectOf("key", "show_reasoning", "value", flag, "scope", "session"), nil
+	return jsonutil.ObjectOf("key", "show_reasoning", "value", flag, "scope", "session"), nil
 }
 
 // Whether a session shows the model's thinking: its own pick, else the profile's for a terminal UI launch, else hidden
@@ -238,7 +238,7 @@ func launchShowsReasoning(ctx context.Context, policy *LocalSessionPolicy) bool 
 }
 
 // Session scoped fast tier pick the next turn reads, normal pinning the normal tier
-func serviceTierConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object) (*pyjson.Object, error) {
+func serviceTierConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object) (*jsonutil.Object, error) {
 	value, _ := params.Get("value")
 	raw, isStr := value.(string)
 	if !isStr {
@@ -271,13 +271,13 @@ func serviceTierConfig(ctx context.Context, a *SessionAuthority, actor Principal
 	if word == "" {
 		word = "normal"
 	}
-	return pyjson.ObjectOf("key", "service_tier", "value", word, "scope", "session"), nil
+	return jsonutil.ObjectOf("key", "service_tier", "value", word, "scope", "session"), nil
 }
 
 // Session scoped approval bypass, persisted on the route before the live flip
-func yoloConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *pyjson.Object, write bool) (*pyjson.Object, error) {
+func yoloConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref SessionRef, params *jsonutil.Object, write bool) (*jsonutil.Object, error) {
 	value, _ := params.Get("value")
-	word := strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	word := strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 	if _, known := yoloWords[word]; write && value != nil && !known {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -321,5 +321,5 @@ func yoloConfig(ctx context.Context, a *SessionAuthority, actor Principal, ref S
 	if enabled {
 		flag = "1"
 	}
-	return pyjson.ObjectOf("key", "yolo", "value", flag, "scope", "session"), nil
+	return jsonutil.ObjectOf("key", "yolo", "value", flag, "scope", "session"), nil
 }

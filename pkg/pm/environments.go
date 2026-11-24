@@ -17,8 +17,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Records which checkout owns an install state, the root the orphan collector and the update owner lookup read
@@ -56,7 +56,7 @@ func payloadStorePython(root string) (string, error) {
 	}
 	target := ""
 	if v, present := manifest["target"]; present {
-		target = pyrepr.Str(v)
+		target = anyutil.String(v)
 	}
 	if strings.HasSuffix(target, "-bionic") {
 		return "", nil
@@ -184,7 +184,7 @@ func managedActivateDependencies(ctx context.Context, projectRoot string) error 
 	importPath.Lock()
 	var kept []string
 	for _, entry := range importPath.entries {
-		if name := pypath.PathName(entry); name == "site-packages" || name == "dist-packages" || resolvePath(entry) == root {
+		if name := pathutil.Name(entry); name == "site-packages" || name == "dist-packages" || resolvePath(entry) == root {
 			continue
 		}
 		kept = append(kept, entry)
@@ -344,7 +344,7 @@ func composeEnviron(diffs []EnvDiff) *environList {
 	for _, diff := range diffs {
 		for _, key := range sortedKeys(diff) {
 			if key != "PATH" {
-				env.set(key, Native(pyrepr.Str(diff[key])))
+				env.set(key, Native(anyutil.String(diff[key])))
 			}
 		}
 	}
@@ -440,7 +440,7 @@ func recoverJournal(ctx context.Context, project, journal string, data []byte) e
 		}
 		configs = append(configs, journalConfig{path: config, previous: previous, after: entry.(map[string]any)["config_after"]})
 	}
-	if !pyrepr.Truthy(row["committed"]) {
+	if !anyutil.IsTrue(row["committed"]) {
 		before, err := rowItem(row, "facts_before")
 		if err != nil {
 			return err

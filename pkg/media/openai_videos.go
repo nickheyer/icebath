@@ -10,13 +10,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Video job object the SDK constructs from a videos response, attributes looked up like getattr
 type openAIVideo struct {
-	fields *pyjson.Object
+	fields *jsonutil.Object
 	text   string
 }
 
@@ -31,7 +29,7 @@ func (v *openAIVideo) attr(key string) (any, bool) {
 // Plain attribute value, nil for a missing attribute
 func (v *openAIVideo) get(key string) any {
 	val, _ := v.attr(key)
-	return pyjson.Plain(val)
+	return jsonutil.Plain(val)
 }
 
 // Job id or the AttributeError text the SDK raises reading a missing id
@@ -40,7 +38,7 @@ func (v *openAIVideo) id() (string, error) {
 	if !ok {
 		return "", errors.New("OpenAI video reply has no id")
 	}
-	return pyrepr.Str(pyjson.Plain(raw)), nil
+	return anyutil.String(jsonutil.Plain(raw)), nil
 }
 
 // Job error as str() renders the constructed VideoCreateError model, a plain value as itself
@@ -49,10 +47,10 @@ func (v *openAIVideo) errorText() (string, bool) {
 	if !ok || raw == nil {
 		return "", false
 	}
-	obj, isObj := pyjson.AsObject(raw)
+	obj, isObj := jsonutil.AsObject(raw)
 	if !isObj {
-		s := pyrepr.Str(pyjson.Plain(raw))
-		return s, pyTruthy(pyjson.Plain(raw))
+		s := anyutil.String(jsonutil.Plain(raw))
+		return s, pyTruthy(jsonutil.Plain(raw))
 	}
 	var parts []string
 	seen := map[string]bool{}
@@ -62,7 +60,7 @@ func (v *openAIVideo) errorText() (string, bool) {
 			seen[k] = true
 		}
 	}
-	for _, k := range obj.Keys {
+	for _, k := range obj.Keys() {
 		if !seen[k] {
 			val, _ := obj.Get(k)
 			parts = append(parts, k+"="+errchain.Show(val))
@@ -73,12 +71,12 @@ func (v *openAIVideo) errorText() (string, bool) {
 
 // Video model of a 2xx body, the text kept when the body is not a JSON object
 func parseOpenAIVideo(raw []byte) *openAIVideo {
-	text, _ := pyjson.DecodeBytes(raw)
-	parsed, err := pyjson.Loads(text)
+	text, _ := jsonutil.Text(raw)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return &openAIVideo{text: text}
 	}
-	if obj, ok := pyjson.AsObject(parsed); ok {
+	if obj, ok := jsonutil.AsObject(parsed); ok {
 		return &openAIVideo{fields: obj}
 	}
 	return &openAIVideo{text: text}
@@ -96,7 +94,7 @@ func (c *openAIClient) VideosCreate(ctx context.Context, req map[string]any, ext
 			return nil, &openAIError{Class: "TypeError", Message: fmt.Sprintf("video create request has an unknown option %s", k)}
 		}
 	}
-	obj := pyjson.NewObject()
+	obj := jsonutil.NewObject()
 	for _, k := range openAIVideoCreateParams {
 		if v, ok := req[k]; ok {
 			obj.Set(k, v)
@@ -107,7 +105,7 @@ func (c *openAIClient) VideosCreate(ctx context.Context, req map[string]any, ext
 			obj.Set(k, v)
 		}
 	}
-	body, err := pyjson.Dumps(obj, pyjson.AllowNaN(false))
+	body, err := jsonutil.Encode(obj)
 	if err != nil {
 		return nil, err
 	}

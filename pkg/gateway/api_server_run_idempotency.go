@@ -11,9 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Run statuses after which a replay record may be pruned
@@ -38,7 +37,7 @@ var apiRunMigrations = [][2]string{{"owner_pid", "INTEGER NOT NULL DEFAULT 0"}, 
 
 // Canonical JSON of a public run status
 func apiEncodeRunStatus(status any) (string, error) {
-	return pyjson.Dumps(status, pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	return jsonutil.Encode(status, jsonutil.SortKeys())
 }
 
 // RunIdempotencyRecord is the stored public run status of one reservation with its owner
@@ -52,7 +51,7 @@ type RunIdempotencyRecord struct {
 
 // Stored record decoded from its columns
 func apiRunRecord(runID *string, statusJSON string, ownerPID, ownerStarted sql.NullInt64, updatedAt sql.NullFloat64) (RunIdempotencyRecord, error) {
-	status, err := pyjson.Loads(statusJSON)
+	status, err := jsonutil.Decode(statusJSON)
 	if err != nil {
 		return RunIdempotencyRecord{}, err
 	}
@@ -110,7 +109,7 @@ func NewRunIdempotencyStore(ctx context.Context, dbPath string) (*RunIdempotency
 	}
 	if err != nil {
 		pkgLog().Warn("Run idempotency storage is unavailable; falling back to process memory, so replay will not survive a restart: " +
-			pyrepr.ExceptionMessage(err))
+			err.Error())
 		if conn, err = state.ConnectSQLite(":memory:", state.SQLiteConfig{Timeout: 5}); err != nil {
 			return nil, err
 		}
@@ -323,9 +322,9 @@ func (s *RunIdempotencyStore) pruneStaleTerminalLocked(ctx context.Context, now 
 			return err
 		}
 		terminal := false
-		if decoded, err := pyjson.Loads(statusJSON); err == nil {
-			if obj, ok := decoded.(*pyjson.Object); ok {
-				text, isText := obj.GetOr("status", nil).(string)
+		if decoded, err := jsonutil.Decode(statusJSON); err == nil {
+			if obj, ok := decoded.(*jsonutil.Object); ok {
+				text, isText := obj.ValueOr("status", nil).(string)
 				terminal = isText && apiRunTerminalStatuses[text]
 			}
 		}

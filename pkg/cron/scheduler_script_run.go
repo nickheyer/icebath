@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -18,15 +19,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Seconds between run claim heartbeats of a long one shot script
@@ -47,7 +49,7 @@ var (
 
 // Float a value converts to, false with the error when it does not convert
 func anyFloat(raw any) (float64, bool, error) {
-	v, err := pyint.Float(raw)
+	v, err := anyutil.ToFloat(raw)
 	return v, err == nil, err
 }
 
@@ -62,29 +64,29 @@ func (s *Store) resolveJobScriptPath(scriptPath string) (string, string, error) 
 	if err := ensureCronDir(scriptsDir); err != nil {
 		return "", "", err
 	}
-	scriptsDirResolved, err := pypath.Resolve(scriptsDir)
+	scriptsDirResolved, err := pathutil.Resolve(scriptsDir)
 	if err != nil {
 		return "", "", err
 	}
 	if strings.IndexByte(scriptPath, 0) >= 0 {
-		return "", "Blocked: script path contains a NUL byte: " + pyrepr.StrRepr(scriptPath), nil
+		return "", "Blocked: script path contains a NUL byte: " + strconv.Quote(scriptPath), nil
 	}
-	raw, err := pypath.PathExpanduser(scriptPath)
+	raw, err := pathutil.ExpandUserPath(scriptPath)
 	if err != nil {
-		return "", "Blocked: script path is not a valid filesystem path: " + pyrepr.StrRepr(scriptPath), nil
+		return "", "Blocked: script path is not a valid filesystem path: " + strconv.Quote(scriptPath), nil
 	}
 	target := raw
-	if !pypath.IsAbs(raw) {
-		target = pypath.PathJoin(scriptsDir, raw)
+	if !filepath.IsAbs(raw) {
+		target = pathutil.Join(scriptsDir, raw)
 	}
-	path, err := pypath.Resolve(target)
+	path, err := pathutil.Resolve(target)
 	if err != nil {
 		return "", "", err
 	}
-	if _, inside := pypath.PathRelativeTo(path, scriptsDirResolved); !inside {
-		return "", fmt.Sprintf("Blocked: script path resolves outside the scripts directory (%s): %s", scriptsDirResolved, pyrepr.StrRepr(scriptPath)), nil
+	if _, inside := pathutil.RelativeTo(path, scriptsDirResolved); !inside {
+		return "", fmt.Sprintf("Blocked: script path resolves outside the scripts directory (%s): %s", scriptsDirResolved, strconv.Quote(scriptPath)), nil
 	}
-	info, err := pypath.PathlibStat(path)
+	info, err := pathutil.StatIfExists(path)
 	if err != nil {
 		return "", "", err
 	}
@@ -103,15 +105,15 @@ func (s *Store) resolveJobScriptPath(scriptPath string) (string, string, error) 
 func resolveCronInterpreter(interpreter string) (string, string, error) {
 	raw := strings.TrimSpace(interpreter)
 	unresolvable := func(text string) (string, string, error) {
-		return "", fmt.Sprintf("Unable to resolve interpreter path %s: %s", pyrepr.StrRepr(raw), text), nil
+		return "", fmt.Sprintf("Unable to resolve interpreter path %s: %s", strconv.Quote(raw), text), nil
 	}
-	resolved, err := pypath.PathExpanduser(raw)
+	resolved, err := pathutil.ExpandUserPath(raw)
 	if err != nil {
 		return unresolvable(err.Error())
 	}
-	if !pypath.IsAbs(resolved) {
+	if !filepath.IsAbs(resolved) {
 		return "", fmt.Sprintf("Interpreter must be an absolute or ~-prefixed path (got %s). "+
-			"Bare names like 'python3' are not stable across PATH changes.", pyrepr.StrRepr(raw)), nil
+			"Bare names like 'python3' are not stable across PATH changes.", strconv.Quote(raw)), nil
 	}
 	if strings.IndexByte(resolved, 0) >= 0 {
 		return "", "", &pypath.ValueError{Msg: "stat: embedded null character in path"}
@@ -123,11 +125,11 @@ func resolveCronInterpreter(interpreter string) (string, string, error) {
 		}
 		return unresolvable(errchain.OSText(err))
 	}
-	target, err := pypath.Resolve(resolved)
+	target, err := pathutil.Resolve(resolved)
 	if err != nil {
 		return unresolvable(errchain.OSText(err))
 	}
-	names := []string{strings.ToLower(pypath.PathName(resolved)), strings.ToLower(pypath.PathName(target))}
+	names := []string{strings.ToLower(pathutil.Name(resolved)), strings.ToLower(pathutil.Name(target))}
 	if !info.Mode().IsRegular() {
 		return "", "Interpreter path is not a file: " + resolved, nil
 	}
@@ -159,7 +161,7 @@ func cronHostPython() (string, error) {
 
 // Argv by extension, bash for sh scripts, else the job interpreter or the Python on PATH
 func (s *Store) scriptArgv(path string, interpreter *string) ([]string, string, error) {
-	suffix := strings.ToLower(pypath.PathSuffix(path))
+	suffix := strings.ToLower(pathutil.Suffix(path))
 	if suffix == ".sh" || suffix == ".bash" {
 		bash, found := cronWhich("bash", nil)
 		if !found {
@@ -170,7 +172,7 @@ func (s *Store) scriptArgv(path string, interpreter *string) ([]string, string, 
 		if !found {
 			return nil, fmt.Sprintf("Cannot run .sh/.bash script %s: bash not found on PATH. "+
 				"On Windows, install Git for Windows (which ships Git Bash) "+
-				"or rewrite the script as Python (.py).", pyrepr.StrRepr(pypath.PathName(path))), nil
+				"or rewrite the script as Python (.py).", strconv.Quote(pathutil.Name(path))), nil
 		}
 		return []string{bash, path}, "", nil
 	}
@@ -280,7 +282,7 @@ func (s *Store) terminateCronScriptProcess(p *cronScriptProcess) error {
 		return nil
 	}
 	seconds := 1.0
-	return &pysubprocess.TimeoutExpired{Cmd: p.cmd.Args, TimeoutFloat: &seconds}
+	return &executil.TimeoutError{Args: p.cmd.Args, Timeout: time.Duration(*&seconds * float64(time.Second))}
 }
 
 // Kills the whole tree through the provider walk, falling back to the process group path
@@ -330,9 +332,9 @@ func drainScriptPipes(p *cronScriptProcess) {
 func scriptText(b []byte) (string, error) {
 	encoding := "utf-8"
 	if runtime.GOOS != "windows" {
-		encoding = pycodecs.LocaleEncoding()
+		encoding = charsetutil.Locale()
 	}
-	text, err := pycodecs.DecodeReplace(b, encoding)
+	text, err := charsetutil.DecodeReplace(b, encoding)
 	if err != nil {
 		return "", err
 	}
@@ -342,7 +344,7 @@ func scriptText(b []byte) (string, error) {
 
 // Python str of an error the script run reports, OS failures in their errno form
 func scriptErrorText(err error) string {
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return errchain.OSText(err)
 	}
 	return err.Error()

@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fails handoffs a dead gateway left running in the scoped store
@@ -40,7 +40,7 @@ func (r *GatewayRunner) handoffWatcher(ctx context.Context, interval, drainTimeo
 	}
 	var mu sync.Mutex
 	inflight := map[string]*gatewayTask{}
-	dispatch := func(c context.Context, row *pyjson.Object, sessionID string, db *state.SessionDB, profileName *string) error {
+	dispatch := func(c context.Context, row *jsonutil.Object, sessionID string, db *state.SessionDB, profileName *string) error {
 		defer func() {
 			mu.Lock()
 			delete(inflight, sessionID)
@@ -70,8 +70,8 @@ func (r *GatewayRunner) handoffWatcher(ctx context.Context, interval, drainTimeo
 		for _, row := range db.ListPendingHandoffs(c) {
 			raw, _ := row.Get("id")
 			sessionID := ""
-			if pyrepr.Truthy(raw) {
-				sessionID = pyrepr.Str(raw)
+			if anyutil.IsTrue(raw) {
+				sessionID = anyutil.String(raw)
 			}
 			mu.Lock()
 			_, busy := inflight[sessionID]

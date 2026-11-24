@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -17,12 +18,10 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"golang.org/x/text/encoding/charmap"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
 var clawhubSlugRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
@@ -155,7 +154,7 @@ func clawhubFirstStr(values ...any) string {
 
 // Overrides of the ClawHub internals tests replace
 type clawhubSeams struct {
-	stream    func(rawURL string, params pyhttpx.Params, timeout time.Duration) *pyhttpx.StreamResponse
+	stream    func(rawURL string, params url.Values, timeout time.Duration) *httputil.StreamResponse
 	sleep     func(d time.Duration)
 	monotonic func() float64
 	catalog   func(maxItems int) []SkillMeta
@@ -177,8 +176,7 @@ func NewClawHubSource(h *Hub) *ClawHubSource {
 		CatalogWalkBudgetSeconds: 12, ZipDownloadMaxBytes: 25 * 1024 * 1024, ZipDownloadChunkBytes: 64 * 1024}
 }
 
-func (c *ClawHubSource) sleep(seconds float64) {
-	d := time.Duration(seconds * float64(time.Second))
+func (c *ClawHubSource) sleep(d time.Duration) {
 	if c.seams.sleep != nil {
 		c.seams.sleep(d)
 		return
@@ -196,7 +194,7 @@ func (c *ClawHubSource) monotonic() float64 {
 var processStart = time.Now()
 
 // Plain JSON GET whose escaping exceptions are raised to the method boundary
-func (c *ClawHubSource) getJSON(ctx context.Context, rawURL string, timeout time.Duration, params pyhttpx.Params) any {
+func (c *ClawHubSource) getJSON(ctx context.Context, rawURL string, timeout time.Duration, params url.Values) any {
 	v, err := c.h.getJSON(ctx, rawURL, hubGet{Timeout: timeout, Params: params})
 	if err != nil {
 		hubRaise(err)
@@ -210,12 +208,12 @@ func clawhubNormalizeTags(tags any) []string {
 	case []any:
 		out := make([]string, len(t))
 		for i, v := range t {
-			out[i] = pyrepr.Str(v)
+			out[i] = anyutil.String(v)
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := []string{}
-		for _, k := range t.Keys {
+		for _, k := range t.Keys() {
 			if k != "latest" {
 				out = append(out, k)
 			}
@@ -226,18 +224,18 @@ func clawhubNormalizeTags(tags any) []string {
 }
 
 // Listing shape with a nested skill flattened, latestVersion and owner carried beside it
-func clawhubCoerceSkillPayload(data any) *pyjson.Object {
-	o, ok := data.(*pyjson.Object)
+func clawhubCoerceSkillPayload(data any) *jsonutil.Object {
+	o, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
 	nv, _ := o.Get("skill")
-	nested, ok := nv.(*pyjson.Object)
+	nested, ok := nv.(*jsonutil.Object)
 	if !ok {
 		return o
 	}
-	merged := pyjson.NewObject()
-	for _, k := range nested.Keys {
+	merged := jsonutil.NewObject()
+	for _, k := range nested.Keys() {
 		v, _ := nested.Get(k)
 		merged.Set(k, v)
 	}
@@ -255,12 +253,12 @@ func clawhubCoerceSkillPayload(data any) *pyjson.Object {
 }
 
 // Stripped owner handle of a payload, empty when absent
-func clawhubOwnerFromPayload(data *pyjson.Object) string {
+func clawhubOwnerFromPayload(data *jsonutil.Object) string {
 	if data == nil {
 		return ""
 	}
 	owner, _ := data.Get("owner")
-	if o, ok := owner.(*pyjson.Object); ok {
+	if o, ok := owner.(*jsonutil.Object); ok {
 		owner, _ = o.Get("handle")
 	}
 	if s, ok := owner.(string); ok {
@@ -270,7 +268,7 @@ func clawhubOwnerFromPayload(data *pyjson.Object) string {
 }
 
 // True without an expected owner or when the payload owner is absent or equal ignoring case
-func clawhubOwnerMatches(expected string, data *pyjson.Object) bool {
+func clawhubOwnerMatches(expected string, data *jsonutil.Object) bool {
 	if expected == "" {
 		return true
 	}
@@ -284,11 +282,11 @@ func clawhubItemToMeta(item any) *SkillMeta {
 	if !ok || slug == "" {
 		return nil
 	}
-	o := item.(*pyjson.Object)
+	o := item.(*jsonutil.Object)
 	owner := clawhubOwnerFromPayload(o)
 	firstTruthy := func(keys ...string) any {
 		for _, k := range keys {
-			if v, _ := o.Get(k); pyrepr.Truthy(v) {
+			if v, _ := o.Get(k); anyutil.IsTrue(v) {
 				return v
 			}
 		}
@@ -296,13 +294,13 @@ func clawhubItemToMeta(item any) *SkillMeta {
 	}
 	name := slug
 	if v := firstTruthy("displayName", "name"); v != nil {
-		name = pyrepr.Str(v)
+		name = anyutil.String(v)
 	}
 	desc := ""
 	if v := firstTruthy("summary", "description"); v != nil {
-		desc = pyrepr.Str(v)
+		desc = anyutil.String(v)
 	}
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	if owner != "" {
 		extra.Set("owner", owner)
 	}
@@ -310,15 +308,15 @@ func clawhubItemToMeta(item any) *SkillMeta {
 		Tags: clawhubNormalizeTags(pyGet(o, "tags", []any{})), Extra: extra}
 }
 
-func ownerParams(owner string) pyhttpx.Params {
+func ownerParams(owner string) url.Values {
 	if owner == "" {
 		return nil
 	}
-	return pyhttpx.Params{{"owner", owner}}
+	return url.Values{"owner": {owner}}
 }
 
 // Slug and detail payload of an identifier, ok false when unparsable, missing or owned by someone else
-func (c *ClawHubSource) skillDetail(ctx context.Context, identifier string) (string, *pyjson.Object, bool) {
+func (c *ClawHubSource) skillDetail(ctx context.Context, identifier string) (string, *jsonutil.Object, bool) {
 	slug, owner, _, ok := clawhubParseIdentifier(identifier)
 	if !ok {
 		return "", nil, false
@@ -435,9 +433,9 @@ func (c *ClawHubSource) Search(ctx context.Context, query string, limit int) (ou
 	if ok {
 		return c.finalizeSearchResults(ctx, query, cached, limit), nil
 	}
-	data := c.getJSON(ctx, c.BaseURL+"/skills", 15*time.Second, pyhttpx.Params{{"search", query}, {"limit", strconv.Itoa(limit)}})
+	data := c.getJSON(ctx, c.BaseURL+"/skills", 15*time.Second, url.Values{"search": {query}, "limit": {strconv.Itoa(limit)}})
 	skillsData := data
-	if o, isObj := data.(*pyjson.Object); isObj {
+	if o, isObj := data.(*jsonutil.Object); isObj {
 		skillsData = pyGet(o, "items", data)
 	}
 	list, isList := skillsData.([]any)
@@ -485,11 +483,11 @@ func (c *ClawHubSource) Fetch(ctx context.Context, identifier string) (b *SkillB
 	files := c.downloadZip(ctx, slug, latest, owner)
 	if !hasSkill(files) {
 		vd := c.getJSON(ctx, c.BaseURL+"/skills/"+slug+"/versions/"+latest, 0, ownerParams(owner))
-		if vo, isObj := vd.(*pyjson.Object); isObj && clawhubOwnerMatches(owner, vo) {
+		if vo, isObj := vd.(*jsonutil.Object); isObj && clawhubOwnerMatches(owner, vo) {
 			if extracted := c.extractFiles(ctx, vo); len(extracted) > 0 {
 				files = extracted
 			}
-			nested, isNested := pyGet(vo, "version", pyjson.NewObject()).(*pyjson.Object)
+			nested, isNested := pyGet(vo, "version", jsonutil.NewObject()).(*jsonutil.Object)
 			if !hasSkill(files) && isNested {
 				if extracted := c.extractFiles(ctx, nested); len(extracted) > 0 {
 					files = extracted
@@ -519,12 +517,12 @@ func (c *ClawHubSource) inspect(ctx context.Context, identifier string) *SkillMe
 	if !ok {
 		return nil
 	}
-	item := pyjson.NewObject()
-	for _, k := range data.Keys {
+	item := jsonutil.NewObject()
+	for _, k := range data.Keys() {
 		v, _ := data.Get(k)
 		item.Set(k, v)
 	}
-	if v, _ := data.Get("slug"); pyrepr.Truthy(v) {
+	if v, _ := data.Get("slug"); anyutil.IsTrue(v) {
 		item.Set("slug", v)
 	} else {
 		item.Set("slug", slug)
@@ -589,9 +587,9 @@ func (c *ClawHubSource) loadCatalogIndex(ctx context.Context, maxItems int) []Sk
 			partial = true
 			break
 		}
-		params := pyhttpx.Params{{"limit", "200"}}
+		params := url.Values{"limit": {"200"}}
 		if cursor != "" {
-			params = append(params, [2]string{"cursor", cursor})
+			params.Set("cursor", cursor)
 		}
 		data := c.getJSON(ctx, c.BaseURL+"/skills", 30*time.Second, params)
 		if data == nil {
@@ -601,14 +599,14 @@ func (c *ClawHubSource) loadCatalogIndex(ctx context.Context, maxItems int) []Sk
 				break
 			}
 			if bounded {
-				c.sleep(0.5)
+				c.sleep(500 * time.Millisecond)
 			} else {
-				c.sleep(math.Min(math.Pow(2, float64(failures)), 8))
+				c.sleep(min(time.Duration(1<<failures)*time.Second, 8*time.Second))
 			}
 			continue
 		}
 		failures = 0
-		obj, isObj := data.(*pyjson.Object)
+		obj, isObj := data.(*jsonutil.Object)
 		var items []any
 		if isObj {
 			iv, _ := obj.Get("items")
@@ -651,25 +649,25 @@ func (c *ClawHubSource) loadCatalogIndex(ctx context.Context, maxItems int) []Sk
 }
 
 // Latest version from the payload, else the first entry of the versions listing
-func (c *ClawHubSource) resolveLatestVersion(ctx context.Context, slug string, data *pyjson.Object, owner string) string {
+func (c *ClawHubSource) resolveLatestVersion(ctx context.Context, slug string, data *jsonutil.Object, owner string) string {
 	latest, _ := data.Get("latestVersion")
 	tags, _ := data.Get("tags")
 	var lv, tv any
-	if o, ok := latest.(*pyjson.Object); ok {
+	if o, ok := latest.(*jsonutil.Object); ok {
 		lv, _ = o.Get("version")
 	}
-	if o, ok := tags.(*pyjson.Object); ok {
+	if o, ok := tags.(*jsonutil.Object); ok {
 		tv, _ = o.Get("latest")
 	}
 	if v := clawhubFirstStr(lv, tv); v != "" {
 		return v
 	}
 	vd := c.getJSON(ctx, c.BaseURL+"/skills/"+slug+"/versions", 0, ownerParams(owner))
-	if o, ok := vd.(*pyjson.Object); ok {
+	if o, ok := vd.(*jsonutil.Object); ok {
 		vd, _ = o.Get("items")
 	}
 	if list, ok := vd.([]any); ok && len(list) > 0 {
-		if first, ok := list[0].(*pyjson.Object); ok {
+		if first, ok := list[0].(*jsonutil.Object); ok {
 			v, _ := first.Get("version")
 			return clawhubFirstStr(v)
 		}
@@ -679,12 +677,12 @@ func (c *ClawHubSource) resolveLatestVersion(ctx context.Context, slug string, d
 
 // Owner handle from the detail API with three attempts honouring Retry-After on 429
 func (c *ClawHubSource) fetchOwnerHandle(ctx context.Context, slug string) string {
-	url := c.BaseURL + "/skills/" + slug
+	detailURL := c.BaseURL + "/skills/" + slug
 	const maxAttempts = 3
 	for attempt := range maxAttempts {
-		delay := 2.0 * math.Pow(2, float64(attempt))
+		delay := time.Duration(2<<attempt) * time.Second
 		var reason string
-		resp, err := c.h.skillsHubHTTPGet(ctx, url, hubGet{Timeout: 20 * time.Second})
+		resp, err := c.h.skillsHubHTTPGet(ctx, detailURL, hubGet{Timeout: 20 * time.Second})
 		if err != nil {
 			if pass := hubPassThrough(err); pass != nil {
 				hubRaise(pass)
@@ -699,7 +697,7 @@ func (c *ClawHubSource) fetchOwnerHandle(ctx context.Context, slug string) strin
 				}
 				return clawhubOwnerFromPayload(clawhubCoerceSkillPayload(raw))
 			case resp.StatusCode == 429:
-				if ra, ok := pyhttpx.RetryAfterSeconds(resp.Header); ok {
+				if ra, ok := httputil.RetryAfter(resp.Header); ok {
 					delay = ra
 				}
 				reason = "HTTP 429"
@@ -712,7 +710,7 @@ func (c *ClawHubSource) fetchOwnerHandle(ctx context.Context, slug string) strin
 		if attempt >= maxAttempts-1 {
 			return ""
 		}
-		c.h.S.logger().Debug(fmt.Sprintf("_fetch_owner_handle(%s): %s on attempt %d/%d, retrying in %.1fs", slug, reason, attempt+1, maxAttempts, delay))
+		c.h.S.logger().Debug(fmt.Sprintf("_fetch_owner_handle(%s): %s on attempt %d/%d, retrying in %.1fs", slug, reason, attempt+1, maxAttempts, delay.Seconds()))
 		c.sleep(delay)
 	}
 	return ""
@@ -729,7 +727,7 @@ func (c *ClawHubSource) EnrichOwners(ctx context.Context, skills []SkillMeta, ma
 		if s.Extra != nil {
 			owner, _ = s.Extra.Get("owner")
 		}
-		if !pyrepr.Truthy(owner) {
+		if !anyutil.IsTrue(owner) {
 			needs = append(needs, i)
 		}
 	}
@@ -789,7 +787,7 @@ func (c *ClawHubSource) EnrichOwners(ctx context.Context, skills []SkillMeta, ma
 		if r.handle != "" {
 			failures = 0
 			if skills[r.idx].Extra == nil {
-				skills[r.idx].Extra = pyjson.NewObject()
+				skills[r.idx].Extra = jsonutil.NewObject()
 			}
 			skills[r.idx].Extra.Set("owner", r.handle)
 			enriched++
@@ -811,11 +809,11 @@ func (c *ClawHubSource) EnrichOwners(ctx context.Context, skills []SkillMeta, ma
 }
 
 // Text files of version metadata, inline content first then a guarded raw URL fetch
-func (c *ClawHubSource) extractFiles(ctx context.Context, versionData *pyjson.Object) []BundleFile {
+func (c *ClawHubSource) extractFiles(ctx context.Context, versionData *jsonutil.Object) []BundleFile {
 	files := []BundleFile{}
 	fl, _ := versionData.Get("files")
-	if o, ok := fl.(*pyjson.Object); ok {
-		for _, k := range o.Keys {
+	if o, ok := fl.(*jsonutil.Object); ok {
+		for _, k := range o.Keys() {
 			if v, _ := o.Get(k); v != nil {
 				if s, isStr := v.(string); isStr {
 					files = append(files, BundleFile{Path: k, Data: []byte(s)})
@@ -826,13 +824,13 @@ func (c *ClawHubSource) extractFiles(ctx context.Context, versionData *pyjson.Ob
 	}
 	list, _ := fl.([]any)
 	for _, fm := range list {
-		meta, ok := fm.(*pyjson.Object)
+		meta, ok := fm.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
 		first := func(keys ...string) any {
 			for _, k := range keys {
-				if v, _ := meta.Get(k); pyrepr.Truthy(v) {
+				if v, _ := meta.Get(k); anyutil.IsTrue(v) {
 					return v
 				}
 			}
@@ -856,7 +854,7 @@ func (c *ClawHubSource) extractFiles(ctx context.Context, versionData *pyjson.Ob
 	return files
 }
 
-func (c *ClawHubSource) stream(ctx context.Context, rawURL string, params pyhttpx.Params, timeout time.Duration) *pyhttpx.StreamResponse {
+func (c *ClawHubSource) stream(ctx context.Context, rawURL string, params url.Values, timeout time.Duration) *httputil.StreamResponse {
 	if c.seams.stream != nil {
 		return c.seams.stream(rawURL, params, timeout)
 	}
@@ -866,9 +864,9 @@ func (c *ClawHubSource) stream(ctx context.Context, rawURL string, params pyhttp
 // Text members of the bounded streamed skill ZIP, retrying a rate limited download
 func (c *ClawHubSource) downloadZip(ctx context.Context, slug, version, owner string) []BundleFile {
 	files := []BundleFile{}
-	params := pyhttpx.Params{{"slug", slug}, {"version", version}}
+	params := url.Values{"slug": {slug}, "version": {version}}
 	if owner != "" {
-		params = append(params, [2]string{"owner", owner})
+		params.Set("owner", owner)
 	}
 	log := c.h.S.logger()
 	const maxRetries = 3
@@ -879,11 +877,11 @@ func (c *ClawHubSource) downloadZip(ctx context.Context, slug, version, owner st
 		}
 		if retryAfter >= 0 {
 			if attempt < maxRetries-1 {
-				c.sleep(float64(retryAfter))
+				c.sleep(time.Duration(retryAfter) * time.Second)
 			}
 			continue
 		}
-		zr, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+		zr, err := ziputil.NewReader(bytes.NewReader(archive), int64(len(archive)))
 		if err != nil {
 			log.Warn(fmt.Sprintf("ClawHub returned invalid ZIP for %s v%s", slug, version))
 			return files
@@ -898,7 +896,7 @@ func (c *ClawHubSource) downloadZip(ctx context.Context, slug, version, owner st
 }
 
 // One download attempt, the archive bytes or the capped 429 delay, stop set when the download ends empty
-func (c *ClawHubSource) readZipResponse(ctx context.Context, slug, version string, params pyhttpx.Params, attempt, maxRetries int) ([]byte, int, bool) {
+func (c *ClawHubSource) readZipResponse(ctx context.Context, slug, version string, params url.Values, attempt, maxRetries int) ([]byte, int, bool) {
 	log := c.h.S.logger()
 	resp := c.stream(ctx, c.BaseURL+"/download", params, 30*time.Second)
 	if resp == nil {
@@ -906,14 +904,11 @@ func (c *ClawHubSource) readZipResponse(ctx context.Context, slug, version strin
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 429 {
-		wait := 5.0
-		if ra, ok := pyhttpx.RetryAfterSeconds(resp.Header); ok {
+		wait := 5 * time.Second
+		if ra, ok := httputil.RetryAfter(resp.Header); ok {
 			wait = ra
 		}
-		if math.IsInf(wait, 0) {
-			hubRaise(errors.New("cannot convert float infinity to integer"))
-		}
-		retryAfter := min(int(wait), 15)
+		retryAfter := int(min(wait, 15*time.Second) / time.Second)
 		log.Debug(fmt.Sprintf("ClawHub download rate-limited for %s, retrying in %ds (attempt %d/%d)", slug, retryAfter, attempt+1, maxRetries))
 		return nil, retryAfter, false
 	}
@@ -921,12 +916,13 @@ func (c *ClawHubSource) readZipResponse(ctx context.Context, slug, version strin
 		log.Debug(fmt.Sprintf("ClawHub ZIP download for %s v%s returned %d", slug, version, resp.StatusCode))
 		return nil, -1, true
 	}
-	if cl := pyhttpx.HeaderGet(resp.Header, "content-length", ""); cl != "" {
-		declared := int64(0)
-		if n, ok := pyint.Parse(cl); ok && n.IsInt64() {
-			declared = n.Int64()
-		} else if ok {
+	if cl := resp.Header.Get("content-length"); cl != "" {
+		declared, err := strconv.ParseInt(strings.TrimSpace(cl), 10, 64)
+		switch {
+		case errors.Is(err, strconv.ErrRange):
 			declared = math.MaxInt64
+		case err != nil:
+			declared = 0
 		}
 		if declared > c.ZipDownloadMaxBytes {
 			log.Debug(fmt.Sprintf("Skipping oversized ClawHub ZIP for %s v%s: %d bytes", slug, version, declared))
@@ -958,16 +954,10 @@ func (c *ClawHubSource) readZipResponse(ctx context.Context, slug, version strin
 }
 
 // Safe small UTF-8 members of the archive, bad set when a member read hits a corrupt entry
-func (c *ClawHubSource) extractZip(zr *zip.Reader, files *[]BundleFile) (bad bool) {
+func (c *ClawHubSource) extractZip(zr *ziputil.Reader, files *[]BundleFile) (bad bool) {
 	log := c.h.S.logger()
-	byName := map[string]*zip.File{}
-	names := make([]string, len(zr.File))
-	for i, f := range zr.File {
-		names[i] = zipMemberName(f)
-		byName[names[i]] = f
-	}
-	for i, f := range zr.File {
-		filename := names[i]
+	for _, f := range zr.File {
+		filename := f.Name
 		if strings.HasSuffix(filename, "/") {
 			continue
 		}
@@ -980,13 +970,9 @@ func (c *ClawHubSource) extractZip(zr *zip.Reader, files *[]BundleFile) (bad boo
 			log.Debug(fmt.Sprintf("Skipping large file in ZIP: %s (%d bytes)", name, f.UncompressedSize64))
 			continue
 		}
-		member := byName[filename]
-		if member.Flags&1 != 0 {
-			hubRaise(fmt.Errorf("File %s is encrypted, password required for extraction", errchain.Show(filename)))
-		}
-		rc, err := member.Open()
-		if errors.Is(err, zip.ErrAlgorithm) {
-			hubRaise(errors.New("That compression method is not supported"))
+		rc, err := zr.Open(filename)
+		if errors.Is(err, ziputil.ErrEncrypted) || errors.Is(err, zip.ErrAlgorithm) {
+			hubRaise(fmt.Errorf("zip member %q: %w", filename, err))
 		}
 		if err != nil {
 			return true
@@ -1003,18 +989,4 @@ func (c *ClawHubSource) extractZip(zr *zip.Reader, files *[]BundleFile) (bad boo
 		setBundleFile(files, name, data, false)
 	}
 	return false
-}
-
-// Member name as CPython zipfile decodes it, cp437 without the UTF-8 flag and cut at a NUL
-func zipMemberName(f *zip.File) string {
-	name := f.Name
-	if f.Flags&0x800 == 0 {
-		if decoded, err := charmap.CodePage437.NewDecoder().String(name); err == nil {
-			name = decoded
-		}
-	}
-	if i := strings.IndexByte(name, 0); i >= 0 {
-		name = name[:i]
-	}
-	return name
 }

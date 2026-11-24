@@ -16,11 +16,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const codeRootMaxDepth = 8
@@ -72,7 +73,7 @@ func fleetProfileHomes() []profileHome {
 }
 
 // Pid and identity the gateway owning a home's control socket declares, false when none answers
-func socketIdentity(h string) (int, *pyjson.Object, bool) {
+func socketIdentity(h string) (int, *jsonutil.Object, bool) {
 	identity := gateway.IdentifyGateway(h, gateway.DefaultControlClientTimeout)
 	if identity == nil || identity.Len() == 0 {
 		return 0, nil, false
@@ -111,7 +112,7 @@ func codeRootForPath(raw any) string {
 	candidate := filepath.Clean(text)
 	for depth := 0; depth < codeRootMaxDepth; depth++ {
 		if st, err := os.Stat(filepath.Join(candidate, binary)); err == nil && st.Mode().IsRegular() {
-			resolved, err := pypath.Resolve(candidate)
+			resolved, err := pathutil.Resolve(candidate)
 			if err != nil {
 				return ""
 			}
@@ -132,7 +133,7 @@ func updaterCodeRoot() string {
 	if err != nil {
 		return ""
 	}
-	if resolved, err := pypath.Resolve(exe); err == nil {
+	if resolved, err := pathutil.Resolve(exe); err == nil {
 		exe = resolved
 	}
 	return codeRootForPath(exe)
@@ -172,22 +173,22 @@ func gatewayCodeRoot(pid int, h string) string {
 
 // One fleet matrix row classified against the expected identity and install
 func fleetRow(profile string, pid int, codeSHA, codeVersion, expectedSHA any, state, codeRoot, expectedRoot string,
-	servedProfiles any, selfRestartPending map[int]bool) *pyjson.Object {
+	servedProfiles any, selfRestartPending map[int]bool) *jsonutil.Object {
 	if state == "unknown" && codeRoot != "" && expectedRoot != "" && codeRoot != expectedRoot {
 		state = updaterecord.ExternalState
 	}
 	if state == "unknown" && truthyValue(codeSHA) && truthyValue(expectedSHA) {
 		state = "stale"
-		if pyrepr.Str(codeSHA) == pyrepr.Str(expectedSHA) {
+		if anyutil.String(codeSHA) == anyutil.String(expectedSHA) {
 			state = "current"
 		}
 	}
 	if state == "stale" && selfRestartPending[pid] {
 		state = updaterecord.RestartPendingState
 	}
-	row := pyjson.ObjectOf("profile", profile, "pid", pid, "code_sha", nil, "code_version", codeVersion, "state", state, "code_root", nil)
+	row := jsonutil.ObjectOf("profile", profile, "pid", pid, "code_sha", nil, "code_version", codeVersion, "state", state, "code_root", nil)
 	if truthyValue(codeSHA) {
-		row.Set("code_sha", pyrepr.Str(codeSHA))
+		row.Set("code_sha", anyutil.String(codeSHA))
 	}
 	if codeRoot != "" {
 		row.Set("code_root", codeRoot)
@@ -226,7 +227,7 @@ func truthyValue(v any) bool {
 	return true
 }
 
-func objectGet(o *pyjson.Object, key string) any {
+func objectGet(o *jsonutil.Object, key string) any {
 	if o == nil {
 		return nil
 	}
@@ -235,7 +236,7 @@ func objectGet(o *pyjson.Object, key string) any {
 }
 
 // Every profile gateway's code identity against the running install, down rows only for pre restart pids
-func CollectFleetVersions(preRestartPIDs []int, selfRestartPending []int) []*pyjson.Object {
+func CollectFleetVersions(preRestartPIDs []int, selfRestartPending []int) []*jsonutil.Object {
 	preRestart, pending := map[int]bool{}, map[int]bool{}
 	for _, p := range preRestartPIDs {
 		preRestart[p] = true
@@ -243,7 +244,7 @@ func CollectFleetVersions(preRestartPIDs []int, selfRestartPending []int) []*pyj
 	for _, p := range selfRestartPending {
 		pending[p] = true
 	}
-	results := []*pyjson.Object{}
+	results := []*jsonutil.Object{}
 	var expectedSHA any
 	if identity, err := fleetCodeIdentity(true); err == nil {
 		expectedSHA = objectGet(identity, "sha")
@@ -252,13 +253,13 @@ func CollectFleetVersions(preRestartPIDs []int, selfRestartPending []int) []*pyj
 	for _, ph := range fleetHomes() {
 		if pid, identity, ok := fleetSocketIdentity(ph.home); ok {
 			row := fleetRow(ph.profile, pid, objectGet(identity, "code_sha"), objectGet(identity, "code_version"), expectedSHA,
-				"unknown", gatewayCodeRoot(pid, ph.home), expectedRoot, pyjson.Plain(objectGet(identity, "served_profiles")), pending)
+				"unknown", gatewayCodeRoot(pid, ph.home), expectedRoot, jsonutil.Plain(objectGet(identity, "served_profiles")), pending)
 			row.Set("source", "socket")
 			results = append(results, row)
 			continue
 		}
 		record := fleetReadStatus(filepath.Join(ph.home, "gateway_state.json"))
-		if record == nil || len(record.Vals) == 0 {
+		if record == nil || record.Len() == 0 {
 			continue
 		}
 		n, ok := pyrepr.Int(objectGet(record, "pid"))
@@ -273,7 +274,7 @@ func CollectFleetVersions(preRestartPIDs []int, selfRestartPending []int) []*pyj
 		}
 		if found && live == pid {
 			results = append(results, fleetRow(ph.profile, pid, objectGet(record, "code_sha"), objectGet(record, "code_version"), expectedSHA,
-				"unknown", gatewayCodeRoot(pid, ph.home), expectedRoot, pyjson.Plain(objectGet(record, "served_profiles")), pending))
+				"unknown", gatewayCodeRoot(pid, ph.home), expectedRoot, jsonutil.Plain(objectGet(record, "served_profiles")), pending))
 			continue
 		}
 		if fleetStatusPidIsLive(record) {
@@ -288,7 +289,7 @@ func CollectFleetVersions(preRestartPIDs []int, selfRestartPending []int) []*pyj
 }
 
 // Prints the post update fleet matrix, true when a gateway is provably stale or down
-func PrintFleetVersionMatrix(fleet []*pyjson.Object) bool {
+func PrintFleetVersionMatrix(fleet []*jsonutil.Object) bool {
 	if len(fleet) == 0 {
 		return false
 	}
@@ -299,25 +300,25 @@ func PrintFleetVersionMatrix(fleet []*pyjson.Object) bool {
 	var externalRoots []string
 	staleOrDown := 0
 	for _, entry := range fleet {
-		states[entry.Vals["state"]] = true
-		if updaterecord.RowIsExternal(entry) && truthyValue(entry.Vals["code_root"]) {
-			externalRoots = append(externalRoots, fmt.Sprintf("%s: %s", pyrepr.Str(entry.Vals["profile"]), pyrepr.Str(entry.Vals["code_root"])))
+		states[entry.Value("state")] = true
+		if updaterecord.RowIsExternal(entry) && truthyValue(entry.Value("code_root")) {
+			externalRoots = append(externalRoots, fmt.Sprintf("%s: %s", anyutil.String(entry.Value("profile")), anyutil.String(entry.Value("code_root"))))
 		}
 		line := fleetRowUnknown
-		if truthyValue(entry.Vals["identity_pending"]) {
+		if truthyValue(entry.Value("identity_pending")) {
 			line = fleetRowIdentityPendingLine
 		}
-		if state, ok := entry.Vals["state"].(string); ok {
+		if state, ok := entry.Value("state").(string); ok {
 			if known, ok := fleetRowLines[state]; ok {
 				line = known
 			}
 		}
 		short := "?"
-		if sha, ok := entry.Vals["code_sha"].(string); ok && sha != "" {
+		if sha, ok := entry.Value("code_sha").(string); ok && sha != "" {
 			short = sha[:min(8, len(sha))]
 		}
-		fmt.Fprintln(out, fmt.Sprintf(line, pyrepr.Str(entry.Vals["profile"]), pyrepr.Str(entry.Vals["pid"]), short))
-		if entry.Vals["state"] == "stale" || entry.Vals["state"] == "down" {
+		fmt.Fprintln(out, fmt.Sprintf(line, anyutil.String(entry.Value("profile")), anyutil.String(entry.Value("pid")), short))
+		if entry.Value("state") == "stale" || entry.Value("state") == "down" {
 			staleOrDown++
 		}
 	}

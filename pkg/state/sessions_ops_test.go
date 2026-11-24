@@ -8,7 +8,8 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Points the process home at a fresh profile whose config.yaml holds body
@@ -42,7 +43,7 @@ func cascadeSession(t *testing.T, conn SQLiteConn, sid, delegateFrom, parent str
 	ctx := context.Background()
 	var modelConfig, parentArg any
 	if delegateFrom != "" {
-		text, err := pyDumps(pyjson.ObjectOf("_delegate_from", delegateFrom), pyJSONDefault)
+		text, err := pyDumps(jsonutil.ObjectOf("_delegate_from", delegateFrom), pyJSONDefault)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -288,8 +289,8 @@ func TestDeleteSessionRemovesSessionAndMessages(t *testing.T) {
 		t.Fatalf("session still readable %v %v", row, err)
 	}
 	remaining, err := db.readOne(ctx, "SELECT COUNT(*) AS n FROM messages WHERE session_id = ?", "doomed")
-	if err != nil || !pyjson.Equal(rowValue(remaining, "n"), int64(0)) {
-		t.Fatalf("messages remain %v %v", pyjson.Plain(remaining), err)
+	if err != nil || !anyutil.Equal(rowValue(remaining, "n"), int64(0)) {
+		t.Fatalf("messages remain %v %v", jsonutil.Plain(remaining), err)
 	}
 	if deleted, err := db.DeleteSession(ctx, "doomed", DeleteSessionOptions{}); err != nil || deleted {
 		t.Fatalf("second delete %v %v", deleted, err)

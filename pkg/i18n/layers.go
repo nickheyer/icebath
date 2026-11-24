@@ -7,12 +7,13 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const CoreSurface = "core"
@@ -54,9 +55,9 @@ func Flatten(node any, prefix string, out map[string]string) map[string]string {
 	}
 	join := func(k any) string {
 		if prefix == "" {
-			return pyrepr.Str(k)
+			return anyutil.String(k)
 		}
-		return prefix + "." + pyrepr.Str(k)
+		return prefix + "." + anyutil.String(k)
 	}
 	switch n := node.(type) {
 	case pyMap:
@@ -86,9 +87,9 @@ func Flatten(node any, prefix string, out map[string]string) map[string]string {
 func NonTextLeaves(node any, prefix string) []string {
 	join := func(k any) string {
 		if prefix == "" {
-			return pyrepr.Str(k)
+			return anyutil.String(k)
 		}
-		return prefix + "." + pyrepr.Str(k)
+		return prefix + "." + anyutil.String(k)
 	}
 	switch n := node.(type) {
 	case pyMap:
@@ -129,7 +130,7 @@ func ParseLocaleYAML(name string, data []byte) (map[string]string, error) {
 		return map[string]string{}, nil
 	}
 	if _, ok := doc.(pyMap); !ok {
-		return nil, fmt.Errorf("%s: top level must be a mapping, got %s", name, pyrepr.TypeName(doc))
+		return nil, fmt.Errorf("%s: top level must be a mapping, got %s", name, anyutil.Kind(doc))
 	}
 	return Flatten(doc, "", nil), nil
 }
@@ -197,7 +198,7 @@ func scanLocaleFS(fsys fs.FS, label string) []LocaleFile {
 		}
 		path := filepath.Join(label, e.Name())
 		if !surfaceKnown(surface) {
-			pkgLog().Warn(fmt.Sprintf("Ignoring locale file %s: unknown surface %s (expected one of %s)", path, pyrepr.StrRepr(surface), strings.Join(Surfaces, ", ")))
+			pkgLog().Warn(fmt.Sprintf("Ignoring locale file %s: unknown surface %s (expected one of %s)", path, strconv.Quote(surface), strings.Join(Surfaces, ", ")))
 			continue
 		}
 		found = append(found, LocaleFile{Lang: m[1], Surface: surface, Path: path})
@@ -238,10 +239,10 @@ var (
 func RegisterPack(lang, surface string, messages map[string]string, source, endonym string, rtl bool) (*PackEntry, error) {
 	langID := NormalizeLanguageID(lang)
 	if !IsLanguageID(langID) {
-		return nil, fmt.Errorf("invalid language id %s (expected e.g. 'pl', 'pt-br', 'zh-hant')", pyrepr.StrRepr(lang))
+		return nil, fmt.Errorf("invalid language id %s (expected e.g. 'pl', 'pt-br', 'zh-hant')", strconv.Quote(lang))
 	}
 	if !surfaceKnown(surface) {
-		return nil, fmt.Errorf("unknown locale surface %s (expected one of %s)", pyrepr.StrRepr(surface), strings.Join(Surfaces, ", "))
+		return nil, fmt.Errorf("unknown locale surface %s (expected one of %s)", strconv.Quote(surface), strings.Join(Surfaces, ", "))
 	}
 	copied := make(map[string]string, len(messages))
 	for k, v := range messages {

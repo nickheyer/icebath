@@ -7,12 +7,12 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Refusal on the in-process server's wire shape, its code and message beside the reason
@@ -210,7 +210,7 @@ func lastAdmissionText(ctx context.Context, a *SessionAuthority, ref SessionRef)
 		return "", err
 	}
 	for i := len(rows) - 1; i >= 0; i-- {
-		payload, _ := pyjson.Plain(rows[i].GetOr("payload", nil)).(map[string]any)
+		payload, _ := jsonutil.Plain(rows[i].ValueOr("payload", nil)).(map[string]any)
 		if text, _ := payload["text"].(string); strings.TrimSpace(text) != "" {
 			return text, nil
 		}
@@ -221,7 +221,7 @@ func lastAdmissionText(ctx context.Context, a *SessionAuthority, ref SessionRef)
 // Login verb that parses its typed params, runs the shared login code in the owning profile off the loop and answers its result or refusal
 func loginVerb[P any, R any](c *AuthorityConnection, parse func(any) (P, error), write bool,
 	body func(ctx context.Context, sessions tuihost.LoginSessions, p P) (R, error)) controlHandler {
-	return func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+	return func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 		if write {
 			if _, err := authorizeSettingsWrite(ctx, c, SessionRef{ProfileID: ref.ProfileID}, params); err != nil {
 				return nil, err
@@ -229,7 +229,7 @@ func loginVerb[P any, R any](c *AuthorityConnection, parse func(any) (P, error),
 		} else if _, err := authorizeSettingsRead(ctx, c, SessionRef{ProfileID: ref.ProfileID}, params); err != nil {
 			return nil, err
 		}
-		plain, _ := pyjson.Plain(params).(map[string]any)
+		plain, _ := jsonutil.Plain(params).(map[string]any)
 		p, err := parse(plain)
 		if err != nil {
 			field, detail := "params", err.Error()

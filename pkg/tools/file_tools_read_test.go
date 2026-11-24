@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python PermissionError analog carrying its own message
@@ -114,7 +114,7 @@ func TestFileToolsReadHandlerDispatchWithoutLimitUsesSchemaDefault(t *testing.T)
 	}}
 	installScriptedFileOps(t, env, ops, nil)
 	handleReadFile(context.Background(), &Call{Args: map[string]any{"path": filepath.Join(ws, "test.txt")}, TaskID: "t-default", Env: env})
-	props := pyjson.Plain(readFileSchema.Vals["parameters"]).(map[string]any)["properties"].(map[string]any)
+	props := jsonutil.Plain(readFileSchema.Value("parameters")).(map[string]any)["properties"].(map[string]any)
 	want := props["limit"].(map[string]any)["default"]
 	if gotLimit != want.(int) {
 		t.Fatalf("limit %d, schema default %v", gotLimit, want)
@@ -380,7 +380,7 @@ func TestFileToolsReadPatchV4ALayerKeepsPerModeDocumentation(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
 	ftrSetMain(env, "openai", "gpt-5.2")
 	o := patchSchemaOverrides(env)
-	params, _ := pyjson.Plain(o.Vals["parameters"]).(map[string]any)
+	params, _ := jsonutil.Plain(o.Value("parameters")).(map[string]any)
 	if params == nil {
 		t.Fatalf("override %v", o)
 	}
@@ -825,7 +825,7 @@ func TestFileToolsReadRegularFileUnaffectedByFifoGuard(t *testing.T) {
 func TestFileToolsReadSchemaHostedOCRGateStates(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
 	t.Setenv("PATH", t.TempDir())
-	base := readFileSchema.Vals["description"].(string)
+	base := readFileSchema.Value("description").(string)
 	upgraded := strings.Replace(base, "PDF (text layer)", "PDF (scanned or text)", 1)
 	check := func(state string, want bool) {
 		t.Helper()
@@ -839,7 +839,7 @@ func TestFileToolsReadSchemaHostedOCRGateStates(t *testing.T) {
 			}
 			return
 		}
-		if o == nil || o.Vals["description"] != upgraded || o.Len() != 1 {
+		if o == nil || o.Value("description") != upgraded || o.Len() != 1 {
 			t.Fatalf("%s override %v", state, o)
 		}
 	}
@@ -950,7 +950,7 @@ func TestFileToolsReadV4AFamilyDetector(t *testing.T) {
 func TestFileToolsReadV4AOpenAIFamilyGetsLayer(t *testing.T) {
 	env, _ := newFileToolTestEnv(t)
 	ftrSetMain(env, "openai", "gpt-5.2")
-	params, _ := pyjson.Plain(patchSchemaOverrides(env).Vals["parameters"]).(map[string]any)
+	params, _ := jsonutil.Plain(patchSchemaOverrides(env).Value("parameters")).(map[string]any)
 	props, _ := params["properties"].(map[string]any)
 	for _, k := range []string{"mode", "patch"} {
 		if _, ok := props[k]; !ok {

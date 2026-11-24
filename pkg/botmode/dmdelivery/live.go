@@ -9,18 +9,21 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Live owner wait windows, one await budget and the ceiling past which a runner reports pending and exits
@@ -62,9 +65,9 @@ func (e *pyError) PyTypeName() string { return e.class }
 func excText(err error) string {
 	switch err.(type) {
 	case *fs.PathError, *os.LinkError:
-		return pyfs.OSErrorText(err)
+		return err.Error()
 	}
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }
 
 // Text a delivery answer quotes for a failure, an OS error with its errno and quoted path
@@ -103,11 +106,11 @@ func LiveIntentFile(dmFile string) string {
 
 // One delivery id per DM file, the sha256 of its resolved path shared by ack, intent and every retry
 func DMDeliveryID(dmFile string) (string, error) {
-	resolved, err := pypath.Resolve(dmFile)
+	resolved, err := pathutil.Resolve(dmFile)
 	if err != nil {
 		return "", err
 	}
-	if err := pystr.StrictUTF8EncodeError(pystr.SurrogateEscapeDecode([]byte(resolved))); err != nil {
+	if err := pystr.StrictUTF8EncodeError(string(resolved)); err != nil {
 		return "", err
 	}
 	sum := sha256.Sum256([]byte(resolved))
@@ -116,7 +119,7 @@ func DMDeliveryID(dmFile string) (string, error) {
 
 // Removes a DM file or intent, every OS error swallowed
 func UnlinkDMFile(path string) {
-	_ = pypath.Unlink(path)
+	_ = os.Remove(path)
 }
 
 // Runner and tool answer to a definite no send, reason and delivery id with the safe to resend text
@@ -125,7 +128,7 @@ func UnavailablePayload(dmFile string, exc LiveTargetError) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pyjson.Dumps(pyjson.ObjectOf("reason", exc.Reason(), "delivery_id", id,
+	return jsonutil.Encode(jsonutil.ObjectOf("reason", exc.Reason(), "delivery_id", id,
 		"error", exc.Error()+" — the message was NOT sent; it is safe to resend "+exc.Resend()+"."))
 }
 
@@ -150,7 +153,7 @@ func LiveOutcomeUnknown(dmFile, cause string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pyjson.Dumps(pyjson.ObjectOf("status", "ambiguous", "delivery_id", id,
+	return jsonutil.Encode(jsonutil.ObjectOf("status", "ambiguous", "delivery_id", id,
 		"error", "Live admission outcome unknown: "+cause+". Do not resend.", "evidence_file", dmFile))
 }
 
@@ -167,11 +170,11 @@ func readText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	text, err := pystr.DecodeUTF8SigFile(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return "", err
 	}
-	return pystr.TranslateNewlines(text), nil
+	return textutil.NormalizeNewlines(text), nil
 }
 
 // Decoded JSON of a utf-8-sig file
@@ -180,16 +183,16 @@ func readJSON(path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 // Value of a str subscript, the KeyError or TypeError Python raises for a missing key or non dict
 func subscript(v any, key string) (any, error) {
-	if d, ok := pyjson.Dict(v); ok {
+	if d, ok := jsonutil.AsMap(v); ok {
 		if val, has := d[key]; has {
 			return val, nil
 		}
-		return nil, &pyError{"KeyError", pyrepr.StrRepr(key)}
+		return nil, &pyError{"KeyError", strconv.Quote(key)}
 	}
 	switch v.(type) {
 	case string:
@@ -197,7 +200,7 @@ func subscript(v any, key string) (any, error) {
 	case []any:
 		return nil, &pyError{"TypeError", "list indices must be integers or slices, not str"}
 	}
-	return nil, &pyError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(v))}
+	return nil, &pyError{"TypeError", fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(v))}
 }
 
 // Path argument of a decoded value, the TypeError pathlib raises for a non str
@@ -205,19 +208,19 @@ func pathArg(v any) (string, error) {
 	if s, ok := v.(string); ok {
 		return s, nil
 	}
-	return "", &pyError{"TypeError", fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", pyrepr.TypeName(v))}
+	return "", &pyError{"TypeError", fmt.Sprintf("argument should be a str or an os.PathLike object where __fspath__ returns a str, not '%s'", anyutil.Kind(v))}
 }
 
 // Owner pin as an ordered object in its fixed key order, any further key after them sorted
-func ownerObject(owner map[string]any) *pyjson.Object {
-	out := pyjson.NewObject()
+func ownerObject(owner map[string]any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, k := range liveOwnerKeyOrder {
 		if v, ok := owner[k]; ok {
 			out.Set(k, v)
 		}
 	}
-	sorted, _ := pyjson.AsObject(owner)
-	for _, k := range sorted.Keys {
+	sorted, _ := jsonutil.AsObject(owner)
+	for _, k := range sorted.Keys() {
 		if _, ok := out.Get(k); !ok {
 			out.Set(k, owner[k])
 		}
@@ -227,7 +230,7 @@ func ownerObject(owner map[string]any) *pyjson.Object {
 
 // Python dict of a decoded value, a copy of a dict or the pairs of a sequence with the errors dict raises
 func pyDict(v any) (map[string]any, error) {
-	if d, ok := pyjson.Dict(v); ok {
+	if d, ok := jsonutil.AsMap(v); ok {
 		out := make(map[string]any, len(d))
 		for k, val := range d {
 			out[k] = val
@@ -243,7 +246,7 @@ func pyDict(v any) (map[string]any, error) {
 	case []any:
 		items = t
 	default:
-		return nil, &pyError{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+		return nil, &pyError{"TypeError", fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
 	}
 	out := map[string]any{}
 	for i, item := range items {
@@ -256,8 +259,8 @@ func pyDict(v any) (map[string]any, error) {
 				pair = append(pair, string([]rune{r}))
 			}
 		default:
-			if d, ok := pyjson.AsObject(item); ok {
-				for _, k := range d.Keys {
+			if d, ok := jsonutil.AsObject(item); ok {
+				for _, k := range d.Keys() {
 					pair = append(pair, k)
 				}
 				break
@@ -291,18 +294,18 @@ func jsonKey(k any) (string, error) {
 	case []any:
 		return "", &pyError{"TypeError", "unhashable type: 'list'"}
 	}
-	if _, ok := pyjson.Dict(k); ok {
+	if _, ok := jsonutil.AsMap(k); ok {
 		return "", &pyError{"TypeError", "unhashable type: 'dict'"}
 	}
-	return pyjson.Dumps(k)
+	return jsonutil.Encode(k)
 }
 
 // Pins the intent beside a DM file before admission, a retry inspecting the pinned owner and message only
-func AdmitLiveDM(ctx context.Context, profileHome, dmFile string, author *pyjson.Object) (map[string]any, error) {
+func AdmitLiveDM(ctx context.Context, profileHome, dmFile string, author *jsonutil.Object) (map[string]any, error) {
 	intentPath := LiveIntentFile(dmFile)
 	pinnedNow := false
 	var intent any
-	info, err := pypath.PathlibStat(intentPath)
+	info, err := pathutil.StatIfExists(intentPath)
 	if err != nil {
 		return nil, err
 	}
@@ -329,7 +332,7 @@ func AdmitLiveDM(ctx context.Context, profileHome, dmFile string, author *pyjson
 		if err != nil {
 			return nil, err
 		}
-		fresh := pyjson.ObjectOf("owner", ownerObject(owner), "message", message, "delivery_id", id)
+		fresh := jsonutil.ObjectOf("owner", ownerObject(owner), "message", message, "delivery_id", id)
 		if author != nil && author.Len() > 0 {
 			fresh.Set("author", author)
 		}
@@ -345,7 +348,7 @@ func AdmitLiveDM(ctx context.Context, profileHome, dmFile string, author *pyjson
 			if err := writeIntent(f, fresh); err != nil {
 				return nil, err
 			}
-			pyfs.FsyncDirectory(pypath.PathParent(intentPath))
+			fsutil.SyncDir(filepath.Dir(filepath.Clean(intentPath)))
 			intent, pinnedNow = fresh, true
 		}
 	}
@@ -353,8 +356,8 @@ func AdmitLiveDM(ctx context.Context, profileHome, dmFile string, author *pyjson
 }
 
 // Writes the intent JSON, syncs it to disk and closes the descriptor
-func writeIntent(f *os.File, intent *pyjson.Object) error {
-	text, err := pyjson.Dumps(intent)
+func writeIntent(f *os.File, intent *jsonutil.Object) error {
+	text, err := jsonutil.Encode(intent)
 	if err == nil {
 		_, err = io.WriteString(f, text)
 	}
@@ -393,9 +396,9 @@ func admitPinned(ctx context.Context, dmFile string, intent any, pinnedNow bool)
 	if err != nil {
 		return nil, err
 	}
-	owner, _ := pyjson.Dict(ownerVal)
-	if record == nil || pyrepr.Truthy(owner["canonical"]) {
-		intentDict, _ := pyjson.Dict(intent)
+	owner, _ := jsonutil.AsMap(ownerVal)
+	if record == nil || anyutil.IsTrue(owner["canonical"]) {
+		intentDict, _ := jsonutil.AsMap(intent)
 		authorVal := intentDict["author"]
 		messageVal, err := subscript(intent, "message")
 		if err != nil {
@@ -409,7 +412,7 @@ func admitPinned(ctx context.Context, dmFile string, intent any, pinnedNow bool)
 			return nil, &pyError{"ValueError", "message must be a string"}
 		}
 		var author map[string]any
-		if pyrepr.Truthy(authorVal) {
+		if anyutil.IsTrue(authorVal) {
 			if err := gateway.CheckLiveOwner(home, owner); err != nil {
 				return nil, err
 			}
@@ -519,14 +522,14 @@ func WaitLiveDM(ctx context.Context, stdout io.Writer, home, deliveryID, dmFile 
 		}
 	}
 	var status any = "ambiguous"
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	if len(record) > 0 {
 		var err error
 		if status, err = recordStatus(record); err != nil {
 			return 0, err
 		}
 		for _, key := range []string{"reply", "error", "reason"} {
-			if v := record[key]; pyrepr.Truthy(v) {
+			if v := record[key]; anyutil.IsTrue(v) {
 				payload.Set(key, v)
 			}
 		}
@@ -539,7 +542,7 @@ func WaitLiveDM(ctx context.Context, stdout io.Writer, home, deliveryID, dmFile 
 		UnlinkDMFile(LiveIntentFile(dmFile))
 		UnlinkDMFile(dmFile)
 	}
-	text, err := pyjson.Dumps(payload)
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return 0, err
 	}

@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // A pm sync that runs while the update receipt is open
@@ -179,7 +179,7 @@ func TestReceiptPMWarningsAndRefusalEmbed(t *testing.T) {
 
 func TestReceiptEmbedFailureNeverBreaksTheUpdateReceipt(t *testing.T) {
 	ctx, _ := rcHome(t)
-	pmLastForUpdate = func(context.Context, string, bool) *pyjson.Object { panic("pm import exploded") }
+	pmLastForUpdate = func(context.Context, string, bool) *jsonutil.Object { panic("pm import exploded") }
 	t.Cleanup(func() { pmLastForUpdate = pm.LastForUpdateObject })
 	BeginUpdateReceipt(ctx, nil, "")
 	path := FinalizeUpdateReceipt(ctx, "success", nil, "")
@@ -205,7 +205,7 @@ func TestReceiptGitStopClassFromArgvAndFixedPhrases(t *testing.T) {
 		{"git@github.com: Permission denied (publickey).", []string{"git", "fetch"}, 128, ""},
 	}
 	for _, c := range cases {
-		got := GitErrorStopClass(fmt.Errorf("wrapped: %w", &pysubprocess.CalledProcessError{Cmd: c.argv, Returncode: c.code, Stderr: []byte(c.stderr)}))
+		got := GitErrorStopClass(fmt.Errorf("wrapped: %w", &executil.StatusError{Args: c.argv, ExitCode: c.code, Stderr: []byte(c.stderr)}))
 		if (got == nil) != (c.want == "") || (got != nil && *got != c.want) {
 			t.Fatalf("%q %v: %v want %q", c.stderr, c.argv, got, c.want)
 		}

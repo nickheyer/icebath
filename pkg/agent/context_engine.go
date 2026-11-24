@@ -4,8 +4,8 @@ import (
 	"math"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // MemoryContextMaxChars is the code point cap of memory context crossing a context engine boundary
@@ -117,9 +117,9 @@ func (b *ContextEngineBase) GetToolSchemas() []map[string]any { return []map[str
 
 // JSON error for a tool name the engine does not own
 func (b *ContextEngineBase) HandleToolCall(name string, args map[string]any, kwargs map[string]any) string {
-	obj := pyjson.NewObject()
+	obj := jsonutil.NewObject()
 	obj.Set("error", "Unknown context engine tool: "+name)
-	out, _ := pyjson.Dumps(obj)
+	out, _ := jsonutil.Encode(obj)
 	return out
 }
 

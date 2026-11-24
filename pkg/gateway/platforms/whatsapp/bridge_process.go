@@ -1,7 +1,6 @@
 package whatsapp
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -19,11 +18,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -45,25 +44,14 @@ var (
 
 // Stdout of a short command with stdin closed, exec.ErrNotFound when the binary is missing
 func runText(timeout time.Duration, name string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	cmd := exec.CommandContext(ctx, name, args...)
-	cmd.Stdin = nil
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &bytes.Buffer{}
-	err := cmd.Run()
+	res, err := executil.Run(context.Background(), append([]string{name}, args...), executil.Options{Timeout: timeout})
 	if errors.Is(err, exec.ErrNotFound) {
 		return "", exec.ErrNotFound
 	}
-	if ctx.Err() != nil {
-		return "", fmt.Errorf("Command '%s' timed out after %v seconds", strings.Join(append([]string{name}, args...), " "), timeout.Seconds())
-	}
-	var exitErr *exec.ExitError
-	if err != nil && !errors.As(err, &exitErr) {
+	if err != nil {
 		return "", err
 	}
-	return strings.ToValidUTF8(out.String(), "�"), nil
+	return strings.ToValidUTF8(string(res.Stdout), "\uFFFD"), nil
 }
 
 // Integers of the tokens that parse, the rest dropped
@@ -329,7 +317,7 @@ func readBridgePidfile(sessionPath string) (*int, *int64, *int) {
 	if err != nil {
 		return nil, nil, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, nil, nil
 	}
@@ -401,7 +389,7 @@ func writeBridgePidfile(sessionPath string, pid int, port *int) {
 	start := gateway.GetProcessStartTime(pid)
 	text := strconv.Itoa(pid)
 	if start != nil {
-		text = fmt.Sprintf("%d\n%s", pid, pyrepr.Str(start))
+		text = fmt.Sprintf("%d\n%s", pid, anyutil.String(start))
 		if port != nil {
 			text += fmt.Sprintf("\n%d", *port)
 		}
@@ -426,7 +414,7 @@ func cacheDirs(ctx context.Context) ([4]string, error) {
 
 // Whether an absolute bridge path resolves, symlinks included, inside a media cache directory
 func isAllowedBridgePath(ctx context.Context, url string) bool {
-	resolved, err := pypath.Resolve(url)
+	resolved, err := pathutil.Resolve(url)
 	if err != nil {
 		return false
 	}
@@ -435,7 +423,7 @@ func isAllowedBridgePath(ctx context.Context, url string) bool {
 		return false
 	}
 	for _, root := range dirs {
-		rootResolved, err := pypath.Resolve(root)
+		rootResolved, err := pathutil.Resolve(root)
 		if err != nil {
 			continue
 		}

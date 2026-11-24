@@ -3,7 +3,7 @@ package provider
 import (
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Body key order of messages.create as the SDK builds its body dict
@@ -47,7 +47,7 @@ var (
 )
 
 // SDK params of a Messages body in the order the called method builds them, and the extra_body mapping merged after them
-func anthWireParams(body map[string]any, op anthOperation) (*pyjson.Object, *pyjson.Object, error) {
+func anthWireParams(body map[string]any, op anthOperation) (*jsonutil.Object, *jsonutil.Object, error) {
 	keys, method := anthCreateBodyKeys, "Messages.create()"
 	stream, _ := body["stream"].(bool)
 	switch {
@@ -62,29 +62,29 @@ func anthWireParams(body map[string]any, op anthOperation) (*pyjson.Object, *pyj
 	}
 	for k := range body {
 		if k != "extra_body" && !known[k] {
-			return nil, nil, &pyjson.TypeError{Msg: fmt.Sprintf("%s takes no argument named %s", method, k)}
+			return nil, nil, fmt.Errorf("%s takes no argument named %s", method, k)
 		}
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, k := range keys {
 		if v, has := body[k]; has {
 			out.Set(k, anthWireParam(k, v))
 		}
 	}
-	var extra *pyjson.Object
+	var extra *jsonutil.Object
 	if v, has := body["extra_body"]; has && v != nil {
-		extra, _ = pyjson.AsObject(v)
+		extra, _ = jsonutil.AsObject(v)
 	}
 	return out, extra, nil
 }
 
 // Body dict the SDK posts, the params with the extra_body keys merged over them as _merge_mappings does
-func anthMergedWireBody(params, extra *pyjson.Object) *pyjson.Object {
+func anthMergedWireBody(params, extra *jsonutil.Object) *jsonutil.Object {
 	if extra == nil || extra.Len() == 0 {
 		return params
 	}
-	out := params.Copy()
-	out.Update(extra)
+	out := params.Clone()
+	out.Merge(extra)
 	return out
 }
 
@@ -120,7 +120,7 @@ func anthWireParam(key string, v any) any {
 		if !ok {
 			return v
 		}
-		if f, ok := orderedByBuild(cfg.Vals["format"], anthOutputFormatKeyOrder); ok {
+		if f, ok := orderedByBuild(cfg.Value("format"), anthOutputFormatKeyOrder); ok {
 			cfg = withNested(cfg, "format", f)
 		}
 		return cfg
@@ -146,7 +146,7 @@ func anthWireMessage(v any) any {
 	if !ok {
 		return v
 	}
-	if content, has := msg.Vals["content"]; has {
+	if content, has := msg.Get("content"); has {
 		msg = withNested(msg, "content", anthWireBlocks(content))
 	}
 	return msg
@@ -177,20 +177,20 @@ func anthWireBlock(v any) any {
 	}
 	switch typ {
 	case "image":
-		src, _ := pyjson.Dict(b.Vals["source"])
+		src, _ := jsonutil.AsMap(b.Value("source"))
 		srcOrder, known := anthImageSourceKeyOrder[asStr(src["type"])]
 		if !known {
 			srcOrder = []string{"type"}
 		}
-		if s, ok := orderedByBuild(b.Vals["source"], srcOrder); ok {
+		if s, ok := orderedByBuild(b.Value("source"), srcOrder); ok {
 			b = withNested(b, "source", s)
 		}
 	case "tool_result":
-		if _, isList := wireListItems(b.Vals["content"]); isList {
-			b = withNested(b, "content", anthWireBlocks(b.Vals["content"]))
+		if _, isList := wireListItems(b.Value("content")); isList {
+			b = withNested(b, "content", anthWireBlocks(b.Value("content")))
 		}
 	}
-	if cc, ok := orderedByBuild(b.Vals["cache_control"], chatCacheControlKeyOrder); ok {
+	if cc, ok := orderedByBuild(b.Value("cache_control"), chatCacheControlKeyOrder); ok {
 		b = withNested(b, "cache_control", cc)
 	}
 	return b
@@ -201,7 +201,7 @@ func anthWireTool(v any) any {
 	if !ok {
 		return v
 	}
-	if cc, ok := orderedByBuild(tool.Vals["cache_control"], chatCacheControlKeyOrder); ok {
+	if cc, ok := orderedByBuild(tool.Value("cache_control"), chatCacheControlKeyOrder); ok {
 		tool = withNested(tool, "cache_control", cc)
 	}
 	return tool

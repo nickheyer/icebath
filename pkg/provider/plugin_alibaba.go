@@ -1,6 +1,8 @@
 package provider
 
-import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+import (
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 // Profiles the bundled alibaba plugin registers, the intl and China DashScope routes plus the Token Plan tier
 func alibabaPluginProfiles() []Profile {
@@ -27,6 +29,6 @@ func alibabaPluginProfiles() []Profile {
 }
 
 // Asks DashScope compatible mode to keep replayed prior turn reasoning
-func dashscopeBuildAPIKwargsExtras(_ *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
+func dashscopeBuildAPIKwargsExtras(_ *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
 	return dashscopePreserveThinkingExtras(hookString(kw, "model")), map[string]any{}
 }

@@ -6,7 +6,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/go-telegram/bot/models"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Message fields the group addressing helpers read, a nil pointer or nil value standing for an absent attribute
@@ -70,7 +69,7 @@ func isOtherParticipant(host ContextHost, sourceText string, entity MessageEntit
 		if !ok {
 			botID = nil
 		}
-		return entity.User != nil && !pyrepr.Equal(entity.User.ID, botID)
+		return entity.User != nil && !anyutil.Equal(entity.User.ID, botID)
 	}
 	handle := strings.ToLower(strings.TrimLeft(strings.TrimSpace(host.EntitySpan(sourceText, entity)), "@"))
 	return handle != "" && handle != host.CurrentBotUsername()
@@ -90,7 +89,7 @@ func MentionsOtherParticipants(host ContextHost, message *ContextMessage) bool {
 func StartsWithOtherParticipantMention(host ContextHost, message *ContextMessage) bool {
 	for _, se := range mentionEntities(host, message) {
 		lead := utf8.RuneCountInString(se.text) - utf8.RuneCountInString(strings.TrimLeftFunc(se.text, unicode.IsSpace))
-		if pyrepr.Equal(se.entity.Offset, lead) && isOtherParticipant(host, se.text, se.entity) {
+		if anyutil.Equal(se.entity.Offset, lead) && isOtherParticipant(host, se.text, se.entity) {
 			return true
 		}
 	}
@@ -100,7 +99,7 @@ func StartsWithOtherParticipantMention(host ContextHost, message *ContextMessage
 // Replied message, nil when absent or when it is only the forum topic root anchor
 func quotedReply(message *ContextMessage) *ContextMessage {
 	replied := message.ReplyToMessage
-	if replied == nil || (message.IsTopicMessage && pyrepr.Equal(replied.MessageID, message.MessageThreadID)) {
+	if replied == nil || (message.IsTopicMessage && anyutil.Equal(replied.MessageID, message.MessageThreadID)) {
 		return nil
 	}
 	return replied

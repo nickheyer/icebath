@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Prepared owner mutations for the ACP adapter, a derived payload given as a plain function of the snapshot
@@ -35,7 +35,7 @@ func (m *ACPMutations) Acknowledge(sessionID, operation string, payload any) {
 func (m *ACPMutations) Retire(sessionID string) { m.inner.Retire(sessionID, nil) }
 
 // Operation and payload of a /model or /compress line, no operation for a /model that only asks for the current model
-func ACPSlashMutation(command, arg string) (string, *pyjson.Object, error) {
+func ACPSlashMutation(command, arg string) (string, *jsonutil.Object, error) {
 	return slashMutation(command, arg)
 }
 

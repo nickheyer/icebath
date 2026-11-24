@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const messageUIDLen = 32
@@ -444,11 +444,11 @@ func uidToolCall(id string) map[string]any {
 func plainUIDMap(v any) map[string]any {
 	switch t := v.(type) {
 	case map[string]any:
-		return pyjson.Plain(t).(map[string]any)
+		return jsonutil.Plain(t).(map[string]any)
 	case interface{ PyItems() iter.Seq2[any, any] }:
 		out := map[string]any{}
 		for k, val := range t.PyItems() {
-			out[fmt.Sprint(k)] = pyjson.Plain(val)
+			out[fmt.Sprint(k)] = jsonutil.Plain(val)
 		}
 		return out
 	}

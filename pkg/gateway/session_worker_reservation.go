@@ -9,16 +9,17 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Launcher hops allowed between the owner's handle and the real worker interpreter
 const maxLauncherHops = 3
 
 // Verified pid and birth of the interpreter behind a live direct child, proven by the owner from the hello frame
-func verifyWorkerIdentity(process *workerProcess, hello *pyjson.Object) (int, float64, error) {
+func verifyWorkerIdentity(process *workerProcess, hello *jsonutil.Object) (int, float64, error) {
 	if process == nil || process.poll() {
 		return 0, 0, runtimeRefusal("worker_not_live")
 	}
@@ -83,7 +84,7 @@ func workerSecret(n int) string {
 }
 
 // Private bootstrap scope reserving a started admission for the owner's verified live child
-func reserveAdmissionWorker(ctx context.Context, a *SessionAuthority, admissionID string, process *workerProcess, principalID any, hello *pyjson.Object, workerSubject string) (*pyjson.Object, error) {
+func reserveAdmissionWorker(ctx context.Context, a *SessionAuthority, admissionID string, process *workerProcess, principalID any, hello *jsonutil.Object, workerSubject string) (*jsonutil.Object, error) {
 	if err := a.requireAdmissionOpen(false); err != nil {
 		return nil, err
 	}
@@ -92,7 +93,7 @@ func reserveAdmissionWorker(ctx context.Context, a *SessionAuthority, admissionI
 		return nil, err
 	}
 	secret := workerSecret(32)
-	var scope *pyjson.Object
+	var scope *jsonutil.Object
 	err = a.DB.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
 		scope = nil
 		if err := state.RuntimeEpoch(ctx, conn, a.Epoch); err != nil {
@@ -104,20 +105,20 @@ func reserveAdmissionWorker(ctx context.Context, a *SessionAuthority, admissionI
 		}
 		status, _ := admission.Get("status")
 		ownerEpoch, _ := admission.Get("owner_epoch")
-		if status != "started" || !pyrepr.Equal(ownerEpoch, a.Epoch) {
+		if status != "started" || !anyutil.Equal(ownerEpoch, a.Epoch) {
 			return runtimeRefusal("producer_not_started")
 		}
 		storedPrincipal, _ := admission.Get("principal_id")
 		if !SameOwner(storedPrincipal, principalID) {
 			return runtimeRefusal("permission_denied")
 		}
-		owner := pyStrOf(admission.GetOr("target_session_id", nil))
+		owner := pyStrOf(admission.ValueOr("target_session_id", nil))
 		generation, _ := admission.Get("generation")
 		session, err := state.RuntimeSession(ctx, conn, owner)
 		if err != nil {
 			return err
 		}
-		if !pyrepr.Equal(session["runtime_generation"], generation) {
+		if !anyutil.Equal(session["runtime_generation"], generation) {
 			return runtimeRefusal("stale_generation")
 		}
 		sid, err := state.LocalPhysicalTarget(ctx, conn, owner)
@@ -160,7 +161,7 @@ func reserveAdmissionWorker(ctx context.Context, a *SessionAuthority, admissionI
 			"VALUES(?,?,'compute',?,?,'registered',?)", executionID, sid, a.Epoch, generation, digest); err != nil {
 			return err
 		}
-		scope = pyjson.ObjectOf("profile_id", a.ProfileID, "session_id", sid, "execution_id", executionID, "generation", generation,
+		scope = jsonutil.ObjectOf("profile_id", a.ProfileID, "session_id", sid, "execution_id", executionID, "generation", generation,
 			"pid", pid, "birth", birth, "secret", secret, "epoch", a.Epoch)
 		return nil
 	})
@@ -171,11 +172,11 @@ func reserveAdmissionWorker(ctx context.Context, a *SessionAuthority, admissionI
 }
 
 // Revokes a lost worker's private assignment and pauses its FIFO at unknown, with no inference replay
-func loseAdmissionWorker(ctx context.Context, a *SessionAuthority, row, scope *pyjson.Object) error {
+func loseAdmissionWorker(ctx context.Context, a *SessionAuthority, row, scope *jsonutil.Object) error {
 	return a.DB.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
 		epoch, _ := scope.Get("epoch")
 		generation, _ := scope.Get("generation")
-		executionID := pyStrOf(scope.GetOr("execution_id", nil))
+		executionID := pyStrOf(scope.ValueOr("execution_id", nil))
 		epochValue, _ := pyrepr.Int(epoch)
 		if epochValue == nil {
 			return &PyError{Kind: "TypeError", Msg: "epoch must be an int"}
@@ -190,14 +191,14 @@ func loseAdmissionWorker(ctx context.Context, a *SessionAuthority, row, scope *p
 		status, _ := current.Get("status")
 		ownerEpoch, _ := current.Get("owner_epoch")
 		currentGeneration, _ := current.Get("generation")
-		if status != "started" || !pyrepr.Equal(ownerEpoch, epoch) || !pyrepr.Equal(currentGeneration, generation) {
+		if status != "started" || !anyutil.Equal(ownerEpoch, epoch) || !anyutil.Equal(currentGeneration, generation) {
 			return runtimeRefusal("stale_generation")
 		}
 		worker, err := state.ConnRow(ctx, conn, "SELECT * FROM worker_executions WHERE execution_id=?", executionID)
 		if err != nil {
 			return err
 		}
-		if worker == nil || !pyrepr.Equal(worker["generation"], generation) || !pyrepr.Equal(worker["owner_epoch"], epoch) {
+		if worker == nil || !anyutil.Equal(worker["generation"], generation) || !anyutil.Equal(worker["owner_epoch"], epoch) {
 			return runtimeRefusal("stale_generation")
 		}
 		if _, err := conn.ExecContext(ctx, "UPDATE worker_executions SET status='terminal' WHERE execution_id=?", executionID); err != nil {
@@ -209,7 +210,7 @@ func loseAdmissionWorker(ctx context.Context, a *SessionAuthority, row, scope *p
 		if _, err := conn.ExecContext(ctx, "UPDATE session_admissions SET status='unknown' WHERE admission_id=?", rowString(row, "admission_id")); err != nil {
 			return err
 		}
-		_, err = conn.ExecContext(ctx, "UPDATE sessions SET runtime_revision=runtime_revision+1 WHERE id=?", current.GetOr("target_session_id", nil))
+		_, err = conn.ExecContext(ctx, "UPDATE sessions SET runtime_revision=runtime_revision+1 WHERE id=?", current.ValueOr("target_session_id", nil))
 		return err
 	})
 }

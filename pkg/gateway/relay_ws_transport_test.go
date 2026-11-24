@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var relayWSDescriptor = map[string]any{"contract_version": 1, "platform": "discord", "label": "Discord", "max_message_length": 2000,
@@ -68,7 +69,7 @@ func newRelayWSServer(t *testing.T, onHello func(s *relayWSServer, ws *websocket
 					}
 					action, _ := frame["action"].(map[string]any)
 					relayWSSend(ws, map[string]any{"type": "outbound_result", "requestId": frame["requestId"],
-						"result": map[string]any{"success": true, "message_id": "srv-" + relayWireStr(action["op"])}})
+						"result": map[string]any{"success": true, "message_id": "srv-" + anyutil.String(action["op"])}})
 				}
 			}
 		}

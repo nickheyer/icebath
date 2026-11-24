@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Python format failure tagged with the exception class it raises
@@ -127,11 +128,11 @@ func formatField(field string, kwargs map[string]any, auto *int, depth int) (str
 	switch conv {
 	case 0:
 	case 'r':
-		value = pyrepr.Repr(value)
+		value = anyutil.Quote(value)
 	case 's':
-		value = pyrepr.Str(value)
+		value = anyutil.String(value)
 	case 'a':
-		value = pyrepr.EscapeNonASCII(pyrepr.Repr(value))
+		value = pyrepr.EscapeNonASCII(anyutil.Quote(value))
 	default:
 		return "", fmtErr("ValueError", "Unknown conversion specifier %c", conv)
 	}
@@ -191,7 +192,7 @@ func resolveFieldName(name string, kwargs map[string]any, auto *int) (any, error
 	default:
 		v, ok := kwargs[arg]
 		if !ok {
-			return nil, fmtErr("KeyError", "%s", pyrepr.Repr(arg))
+			return nil, fmtErr("KeyError", "%s", anyutil.Quote(arg))
 		}
 		value = v
 	}
@@ -259,7 +260,7 @@ func pyGetAttr(value any, attr string) (any, error) {
 			return f.Interface(), nil
 		}
 	}
-	return nil, fmtErr("AttributeError", "'%s' object has no attribute '%s'", pyrepr.TypeName(value), attr)
+	return nil, fmtErr("AttributeError", "'%s' object has no attribute '%s'", anyutil.Kind(value), attr)
 }
 
 // Sequence index for digit keys, mapping lookup otherwise, like format field subscripts
@@ -305,16 +306,16 @@ func pyGetItem(value any, key string) (any, error) {
 		} else if kt.Kind() == reflect.String || kt.Kind() == reflect.Interface {
 			k = reflect.ValueOf(key).Convert(kt)
 		} else {
-			return nil, fmtErr("KeyError", "%s", pyrepr.Repr(key))
+			return nil, fmtErr("KeyError", "%s", anyutil.Quote(key))
 		}
 		v := rv.MapIndex(k)
 		if !v.IsValid() {
 			if isDigits(key) {
 				return nil, fmtErr("KeyError", "%s", key)
 			}
-			return nil, fmtErr("KeyError", "%s", pyrepr.Repr(key))
+			return nil, fmtErr("KeyError", "%s", anyutil.Quote(key))
 		}
 		return v.Interface(), nil
 	}
-	return nil, fmtErr("TypeError", "'%s' object is not subscriptable", pyrepr.TypeName(value))
+	return nil, fmtErr("TypeError", "'%s' object is not subscriptable", anyutil.Kind(value))
 }

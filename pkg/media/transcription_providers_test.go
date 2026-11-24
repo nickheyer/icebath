@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 // Saves and restores the provider seams the cloud and dispatch tests replace
@@ -40,7 +40,7 @@ type sttPostCall struct {
 // Scripted multipart POST double answering each call with the next status and JSON body
 func fakeSTTPosts(t *testing.T, replies ...[2]any) *[]sttPostCall {
 	calls := &[]sttPostCall{}
-	postAudioMultipart = func(_ context.Context, rawURL string, headers map[string]string, _ string, data [][2]string) (*pyrequests.Response, error) {
+	postAudioMultipart = func(_ context.Context, rawURL string, headers map[string]string, _ string, data [][2]string) (*httputil.Response, error) {
 		d := map[string]string{}
 		for _, kv := range data {
 			d[kv[0]] = kv[1]
@@ -52,7 +52,7 @@ func fakeSTTPosts(t *testing.T, replies ...[2]any) *[]sttPostCall {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return &pyrequests.Response{Status: r[0].(int), Body: body}, nil
+		return &httputil.Response{StatusCode: r[0].(int), Content: body}, nil
 	}
 	return calls
 }
@@ -375,12 +375,12 @@ func TestShellSafetyAutoDetectedTemplateIsShlexSafe(t *testing.T) {
 	if err != nil || tpl == "" {
 		t.Fatalf("template %q %v", tpl, err)
 	}
-	cmd, err := pyrepr.FormatMap(tpl, map[string]any{"input_path": pyshlex.Quote("/tmp/test.wav"), "output_dir": pyshlex.Quote("/tmp/out"),
-		"language": pyshlex.Quote("en"), "model": pyshlex.Quote("base")})
+	cmd, err := templateutil.Format(tpl, map[string]any{"input_path": shellutil.Quote("/tmp/test.wav"), "output_dir": shellutil.Quote("/tmp/out"),
+		"language": shellutil.Quote("en"), "model": shellutil.Quote("base")})
 	if err != nil {
 		t.Fatal(err)
 	}
-	parts, _ := pyshlex.SplitPOSIX(cmd, false)
+	parts, _ := shellutil.Split(cmd)
 	found := false
 	for _, p := range parts {
 		found = found || p == "/tmp/test.wav"
@@ -607,7 +607,7 @@ func TestCommandSttIdleTimeoutPreservesTranscriptionContract(t *testing.T) {
 		script := filepath.Join(dir, "transcribe.sh")
 		os.WriteFile(script, []byte("[ \"$(cat \"$1\")\" = 'fixture audio' ] || exit 3\n"+body+"printf 'actual transcript' > \"$2\"\n"), 0o755)
 		p := commandSTTDefaults
-		p.Name, p.Command, p.Timeout = "probe", "sh "+pyshlex.Quote(script)+" {input_path} {output_path}", 2*time.Second
+		p.Name, p.Command, p.Timeout = "probe", "sh "+shellutil.Quote(script)+" {input_path} {output_path}", 2*time.Second
 		r := transcribeCommandSTT(ctx, audio, &p, sttRequestOf(t, map[string]any{}), "", "", "")
 		if r["success"] != progress || r["provider"] != "probe" {
 			t.Fatalf("progress %v result %v", progress, r)

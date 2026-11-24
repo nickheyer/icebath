@@ -9,11 +9,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Brings up adapters for every non launch profile under multiplexing and returns the connected count
@@ -181,7 +181,7 @@ func (r *GatewayRunner) startOneProfileAdapters(ctx context.Context, profileName
 		return 0, err
 	}
 	if r.profileConfigs == nil {
-		r.profileConfigs = pydict.New[string, *gateway.GatewayConfig]()
+		r.profileConfigs = orderedutil.NewMap[string, *gateway.GatewayConfig]()
 	}
 	r.profileConfigs.Set(profileName, profileCfg)
 	multiplex := r.multiplexOn()

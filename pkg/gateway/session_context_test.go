@@ -5,12 +5,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
-func piiContext(userID, userName string, platform Platform, homes *pydict.Dict[Platform, *HomeChannel]) *SessionContext {
+func piiContext(userID, userName string, platform Platform, homes *orderedutil.Map[Platform, *HomeChannel]) *SessionContext {
 	src := &SessionSource{Platform: platform, ChatID: "telegram:99999", ChatType: "dm"}
 	if userID != "" {
 		src.UserID = strPtr(userID)
@@ -19,7 +19,7 @@ func piiContext(userID, userName string, platform Platform, homes *pydict.Dict[P
 		src.UserName = strPtr(userName)
 	}
 	if homes == nil {
-		homes = pydict.New[Platform, *HomeChannel]()
+		homes = orderedutil.NewMap[Platform, *HomeChannel]()
 	}
 	return &SessionContext{Source: src, ConnectedPlatforms: []Platform{platform}, HomeChannels: homes}
 }
@@ -40,7 +40,7 @@ func TestPIIRedaction(t *testing.T) {
 	if p := prompt(piiContext("user-123", "Alice", PlatformTelegram, nil), true); !strings.Contains(p, "Alice") || strings.Contains(p, "user-123") {
 		t.Fatal("user name not redacted")
 	}
-	homes := pydict.New[Platform, *HomeChannel]()
+	homes := orderedutil.NewMap[Platform, *HomeChannel]()
 	homes.Set(PlatformTelegram, &HomeChannel{Platform: PlatformTelegram, ChatID: "telegram:99999", Name: "Home Chat"})
 	if p := prompt(piiContext("user-123", "", PlatformTelegram, homes), false); !strings.Contains(p, "99999") {
 		t.Fatal("home channel id preserved without redaction")

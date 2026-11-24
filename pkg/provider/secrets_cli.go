@@ -8,10 +8,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const bwDefaultTokenEnv = "BWS_ACCESS_TOKEN"
@@ -69,20 +68,20 @@ func registerBitwardenCLI(parent *secretsParser) {
 	})
 }
 
-func step(console *pyrich.Console, n int, title string) {
+func step(console *consoleutil.Console, n int, title string) {
 	console.Print()
 	console.Print(fmt.Sprintf("[bold]Step %d[/bold]  %s", n, title))
 }
 
 // Step 1, the located or downloaded bws binary, empty after printing on failure
-func setupBinary(bw bitwardenBackend, console *pyrich.Console) string {
+func setupBinary(bw bitwardenBackend, console *consoleutil.Console) string {
 	step(console, 1, "Install the bws CLI")
 	binary := bw.find(false)
 	if binary == "" {
 		console.Print("  No bws on PATH — downloading…")
 		installed, err := bw.install()
 		if err != nil {
-			console.Print(fmt.Sprintf("  [red]✗ Could not install bws: %s[/red]", pyrepr.ExceptionMessage(err)))
+			console.Print(fmt.Sprintf("  [red]✗ Could not install bws: %s[/red]", err.Error()))
 			console.Print("  Manual install: https://github.com/bitwarden/sdk-sm/releases")
 			return ""
 		}
@@ -155,7 +154,7 @@ func setupProject(cli *secretsCLI, binary, token, serverURL string) (string, err
 	for i, p := range projects {
 		rows = append(rows, []string{fmt.Sprint(i + 1), projectField(p, "name"), projectField(p, "id")})
 	}
-	printTable(cli.console, []pyrich.Column{{Header: "#", Style: "cyan", Width: 4}, {Header: "Name"}, {Header: "ID", Style: "dim"}}, rows, nil, "")
+	printTable(cli.console, []consoleutil.Column{{Header: "#", Style: "cyan", Width: 4}, {Header: "Name"}, {Header: "ID", Style: "dim"}}, rows, nil, "")
 	idx, err := promptIndex(cli.console, fmt.Sprintf("  Select project [1-%d]: ", len(projects)), len(projects), false, "")
 	if err != nil {
 		return "", err
@@ -175,7 +174,7 @@ func projectField(project map[string]any, key string) string {
 func bwCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 	backend := loadBw()
 	console := cli.console
-	console.PrintPanel(pyrich.Panel{Body: "[bold]Bitwarden Secrets Manager setup[/bold]\n\n" +
+	console.PrintPanel(consoleutil.Panel{Body: "[bold]Bitwarden Secrets Manager setup[/bold]\n\n" +
 		"Need an access token? In the Bitwarden web app:\n" +
 		"  Secrets Manager → Machine accounts → [your account] →\n" +
 		"  Access tokens → Create access token\n\n" +
@@ -236,7 +235,7 @@ func bwCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 	secrets, warnings, err := backend.fetch(BitwardenFetchOptions{AccessToken: token, ProjectID: projectID, Binary: binary,
 		CacheTTL: 300, UseCache: false, ServerURL: serverURL, HomePath: cli.home})
 	if err != nil {
-		console.Print(fmt.Sprintf("  [red]✗ Fetch failed: %s[/red]", pyrepr.ExceptionMessage(err)))
+		console.Print(fmt.Sprintf("  [red]✗ Fetch failed: %s[/red]", err.Error()))
 		return 1, nil
 	}
 	if len(secrets) == 0 {
@@ -246,7 +245,7 @@ func bwCmdSetup(cli *secretsCLI, ns map[string]any) (int, error) {
 		for _, key := range sortedStringKeys(secrets) {
 			rows = append(rows, []string{key, fetchStatus(key, tokenEnv)})
 		}
-		printTable(console, []pyrich.Column{{Header: "Name", Style: "cyan"}, {Header: "Status"}}, rows, nil, "")
+		printTable(console, []consoleutil.Column{{Header: "Name", Style: "cyan"}, {Header: "Status"}}, rows, nil, "")
 	}
 	for _, w := range warnings {
 		console.Print("  [yellow]warning:[/yellow] " + w)
@@ -449,7 +448,7 @@ func bwCmdSync(cli *secretsCLI, ns map[string]any) (int, error) {
 	secrets, warnings, err := backend.fetch(BitwardenFetchOptions{AccessToken: token, ProjectID: projectID,
 		CacheTTL: 300, UseCache: false, ServerURL: cfgStr(bw, "server_url"), HomePath: cli.home})
 	if err != nil {
-		console.Print(fmt.Sprintf("[red]Fetch failed: %s[/red]", pyrepr.ExceptionMessage(err)))
+		console.Print(fmt.Sprintf("[red]Fetch failed: %s[/red]", err.Error()))
 		return 1, nil
 	}
 	if len(secrets) == 0 {
@@ -483,7 +482,7 @@ func bwCmdSync(cli *secretsCLI, ns map[string]any) (int, error) {
 		}
 		rows = append(rows, []string{key, action})
 	}
-	printTable(console, []pyrich.Column{{Header: "Name", Style: "cyan"}, {Header: "Action"}}, rows, warnings, "")
+	printTable(console, []consoleutil.Column{{Header: "Name", Style: "cyan"}, {Header: "Action"}}, rows, warnings, "")
 	if !apply {
 		console.Print("\n  This was a dry-run — secrets are picked up automatically on the " +
 			"next [cyan]icebath[/cyan] invocation.  Re-run with [cyan]--apply[/cyan] " +
@@ -505,7 +504,7 @@ func bwCmdDisable(cli *secretsCLI, ns map[string]any) (int, error) {
 func bwCmdInstall(cli *secretsCLI, ns map[string]any) (int, error) {
 	path, err := loadBw().install()
 	if err != nil {
-		cli.console.Print(fmt.Sprintf("[red]Install failed: %s[/red]", pyrepr.ExceptionMessage(err)))
+		cli.console.Print(fmt.Sprintf("[red]Install failed: %s[/red]", err.Error()))
 		return 1, nil
 	}
 	cli.console.Print(fmt.Sprintf("[green]✓[/green] %s  (%s)", path, bwsVersion(path)))
@@ -527,7 +526,7 @@ func tokenValidationStatus(cli *secretsCLI, enabled bool, binary, token, serverU
 		messages = append(messages, notBSMTokenWarningContinuing)
 	}
 	var recorded strings.Builder
-	probeConsole := pyrich.NewConsole(&recorded)
+	probeConsole := consoleutil.NewConsole(&recorded)
 	probeConsole.Width = 200
 	if _, ok := listProjects(cli, binary, token, probeConsole, serverURL); !ok {
 		if details := strings.TrimSpace(recorded.String()); details != "" {
@@ -589,19 +588,19 @@ func projectListCause(failure string) string {
 func bitwardenProjects(ctx context.Context, binary, token, serverURL string) ([]map[string]any, *bitwardenProjectsFailure) {
 	env, err := secretCLIEnv(ctx)
 	if err != nil {
-		return nil, &bitwardenProjectsFailure{Text: "Couldn't list projects: " + pyrepr.ExceptionMessage(err)}
+		return nil, &bitwardenProjectsFailure{Text: "Couldn't list projects: " + err.Error()}
 	}
 	env["BWS_ACCESS_TOKEN"] = token
 	if serverURL != "" {
 		env["BWS_SERVER_URL"] = serverURL
 	}
-	res, err := pysubprocess.RunWith(ctx, []string{binary, "project", "list", "--output", "json"},
-		pysubprocess.Options{Env: envList(env), Timeout: 15 * time.Second})
+	res, err := executil.Run(ctx, []string{binary, "project", "list", "--output", "json"},
+		executil.Options{Env: envList(env), Timeout: 15 * time.Second})
 	if err != nil {
-		return nil, &bitwardenProjectsFailure{Text: "Couldn't list projects: " + pyrepr.ExceptionMessage(err)}
+		return nil, &bitwardenProjectsFailure{Text: "Couldn't list projects: " + err.Error()}
 	}
 	stdout := decodeCLIOutput(res.Stdout)
-	if res.Returncode != 0 {
+	if res.ExitCode != 0 {
 		output := decodeCLIOutput(res.Stderr)
 		if output == "" {
 			output = stdout
@@ -612,9 +611,9 @@ func bitwardenProjects(ctx context.Context, binary, token, serverURL string) ([]
 	if stdout == "" {
 		stdout = "[]"
 	}
-	data, err := pyjson.Loads(stdout)
+	data, err := jsonutil.Decode(stdout)
 	if err != nil {
-		return nil, &bitwardenProjectsFailure{Text: "bws returned non-JSON: " + pyrepr.ExceptionMessage(err)}
+		return nil, &bitwardenProjectsFailure{Text: "bws returned non-JSON: " + err.Error()}
 	}
 	items, ok := data.([]any)
 	if !ok {
@@ -630,7 +629,7 @@ func bitwardenProjects(ctx context.Context, binary, token, serverURL string) ([]
 }
 
 // Calls bws project list and returns the parsed list, false after printing why it failed and what that usually means
-func listBitwardenProjects(cli *secretsCLI, binary, token string, console *pyrich.Console, serverURL string) ([]map[string]any, bool) {
+func listBitwardenProjects(cli *secretsCLI, binary, token string, console *consoleutil.Console, serverURL string) ([]map[string]any, bool) {
 	projects, failure := bitwardenProjects(cli.ctx, binary, token, serverURL)
 	if failure == nil {
 		return projects, true
@@ -663,7 +662,7 @@ func resolveServerURL(cli *secretsCLI, ns map[string]any, secretsCfg map[string]
 		console.Print(fmt.Sprintf("  Existing config: [cyan]%s[/cyan]. "+
 			"Press Enter to keep, or pick a different option below.", existing))
 	}
-	table := &pyrich.Table{NoBox: true, PadX: 2, Columns: []pyrich.Column{{Header: "#", Style: "cyan", Width: 4}, {Header: "Region / endpoint"}}}
+	table := &consoleutil.Table{NoBox: true, PadX: 2, Columns: []consoleutil.Column{{Header: "#", Style: "cyan", Width: 4}, {Header: "Region / endpoint"}}}
 	for i, preset := range regionPresets {
 		table.AddRow(fmt.Sprint(i+1), preset[0])
 	}

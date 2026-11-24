@@ -2,10 +2,11 @@ package agent
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var relayCwdSentinels = map[string]bool{"": true, ".": true, "./": true, "auto": true, "cwd": true}
@@ -119,9 +120,9 @@ func resolveRelayScopeCwds(a *AIAgent, taskID, sessionID, platform string) (*str
 	if sessionCwd == "" && (platform == "" || platform == "cli") && (backend == "" || backend == "local") {
 		if resolved, err := relayResolveAgentCwd(env); err != nil {
 			pkgLog().Debug(fmt.Sprintf("Unable to resolve the local Relay session cwd: %v", err))
-		} else if pypath.IsAbs(resolved) {
+		} else if filepath.IsAbs(resolved) {
 			sessionCwd = cleanRelayCwd(resolved)
-		} else if absolute, err := pypath.Resolve(resolved); err != nil {
+		} else if absolute, err := pathutil.Resolve(resolved); err != nil {
 			pkgLog().Debug(fmt.Sprintf("Unable to resolve the local Relay session cwd: %v", err))
 		} else {
 			sessionCwd = cleanRelayCwd(absolute)

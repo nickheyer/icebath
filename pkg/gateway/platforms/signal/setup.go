@@ -4,33 +4,33 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/provider"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 // Wizard seams tests replace, the line reader, the PATH probe and the daemon health probe
 var (
 	wizardLineInput = func(prompt string) (string, error) { return provider.SetupConsole().LineInput(prompt) }
 	wizardWhich     = func(cmd string) bool {
-		_, ok := pyshutil.Which(cmd, nil)
-		return ok
+		_, err := exec.LookPath(cmd)
+		return err == nil
 	}
 	wizardCheck = func(ctx context.Context, rawURL string) (int, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			return 0, err
 		}
-		client := &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone()), CheckRedirect: pyhttpx.RedirectPolicy(false)}
+		client := &http.Client{Transport: netpref.Follow(http.DefaultTransport.(*http.Transport).Clone()), CheckRedirect: httputil.RedirectPolicy(false)}
 		defer client.CloseIdleConnections()
-		resp, err := pyhttpx.Do(client, req, 10*time.Second)
+		resp, err := httputil.Do(client, req, httputil.EachPhase(10*time.Second))
 		if err != nil {
-			return 0, &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+			return 0, err
 		}
 		return resp.StatusCode, nil
 	}
@@ -102,7 +102,7 @@ func InteractiveSetup(ctx context.Context) error {
 	case err != nil && ctx.Err() != nil:
 		return ctx.Err()
 	case err != nil:
-		w.PrintWarning(fmt.Sprintf("  Could not reach signal-cli at %s: %s", url, errText(err)))
+		w.PrintWarning(fmt.Sprintf("  Could not reach signal-cli at %s: %v", url, err))
 		if !w.PromptYesNo("  Save this URL anyway? (you can start signal-cli later)", true) {
 			return nil
 		}

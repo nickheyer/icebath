@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 const streamAbandonedText = "request abandoned"
@@ -365,7 +365,7 @@ func TestAbandonJoinsTheWorkerForRelayTeardownLikeStop(t *testing.T) {
 	h := newAbandonHarness(t, func() (anthMessageStream, error) { return wedgedMessageStream(release), nil })
 	relayLLMInstallFake(t, "stream-abandon-profile")
 	setSettingsForTest(t, map[string]any{"agent.stream_stale_timeout": 0.3})
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	host := tools.GetRelayRuntime(ctx, true, tools.CurrentRelayProfileKey(ctx))
 	if host == nil {
 		t.Fatal("no runtime")

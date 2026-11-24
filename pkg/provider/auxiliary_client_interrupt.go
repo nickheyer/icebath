@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // AuxExplicitCancelCause is the frozen cause every explicit auxiliary cancellation carries
@@ -232,14 +232,14 @@ func auxAnthropicEventHasContent(event any) bool {
 	case "content_block_delta":
 		delta := auxField(event, "delta", nil)
 		for _, f := range []string{"text", "thinking", "partial_json", "signature", "citation"} {
-			if pyrepr.Truthy(auxField(delta, f, nil)) {
+			if anyutil.IsTrue(auxField(delta, f, nil)) {
 				return true
 			}
 		}
 	case "content_block_start":
 		block := auxField(event, "content_block", nil)
 		return auxField(block, "type", nil) == "tool_use" &&
-			(pyrepr.Truthy(auxField(block, "id", nil)) || pyrepr.Truthy(auxField(block, "name", nil)))
+			(anyutil.IsTrue(auxField(block, "id", nil)) || anyutil.IsTrue(auxField(block, "name", nil)))
 	}
 	return false
 }

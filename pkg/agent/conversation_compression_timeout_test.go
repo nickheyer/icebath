@@ -9,9 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 func TestTimeoutOutcomeIsIsolatedBetweenOverlappingEntrypoints(t *testing.T) {
@@ -46,7 +47,7 @@ func TestTimeoutOutcomeIsIsolatedBetweenOverlappingEntrypoints(t *testing.T) {
 type expiredBeforeStartExecutor struct{ fence *CompressionCommitFence }
 
 func (e expiredBeforeStartExecutor) Submit(ctx context.Context, fn func(context.Context) (any, error)) (*tools.PoolFuture, error) {
-	past := pythread.Monotonic() - 1.0
+	past := timeutil.Monotonic() - 1.0
 	e.fence.deadline.Store(&past)
 	return getCompressTimeoutExecutor().Submit(ctx, fn)
 }
@@ -176,7 +177,7 @@ func TestPoolSaturationRefusesNewCompression(t *testing.T) {
 
 func TestCommitFenceCancellationAndLockRelease(t *testing.T) {
 	f := NewCompressionCommitFence()
-	ev := &pythread.Event{}
+	ev := &syncutil.Event{}
 	if !f.CancelBeforeCommit(ev) || !ev.IsSet() || !f.IsCancelled() || f.BeginCommit(nil) {
 		t.Fatal("a pre commit cancel must win and refuse admission")
 	}
@@ -417,10 +418,10 @@ func TestPropagatesConversationContextIntoWorker(t *testing.T) {
 }
 
 func TestRunsWorkerOffCallerThread(t *testing.T) {
-	caller := pythread.GoroutineID()
+	caller := syncutil.GoroutineID()
 	var worker atomic.Int64
 	msgs, prompt, err := runCompressContextWithProgressTimeout(context.Background(), compressionTimeoutRun{
-		Worker:   committingWorker(func(context.Context) { worker.Store(int64(pythread.GoroutineID())) }),
+		Worker:   committingWorker(func(context.Context) { worker.Store(int64(syncutil.GoroutineID())) }),
 		Messages: nil, SystemPromptFallback: func() string { return "" }, IdleTimeoutSeconds: 1, TotalCeilingSeconds: 1,
 	})
 	if worker.Load() == 0 || worker.Load() == int64(caller) || err != nil || prompt != "p" || msgs[0]["content"] != "ok" {

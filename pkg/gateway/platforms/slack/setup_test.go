@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Records of a scripted wizard run, the env saves and removals its fakes saw
@@ -68,8 +68,8 @@ func stubManifest(t *testing.T) {
 	t.Helper()
 	saved := buildFullManifestFn
 	t.Cleanup(func() { buildFullManifestFn = saved })
-	buildFullManifestFn = func(context.Context, string, string, bool, *string, *string) (*pyjson.Object, error) {
-		return pyjson.ObjectOf("display_information", pyjson.NewObject()), nil
+	buildFullManifestFn = func(context.Context, string, string, bool, *string, *string) (*jsonutil.Object, error) {
+		return jsonutil.ObjectOf("display_information", jsonutil.NewObject()), nil
 	}
 }
 

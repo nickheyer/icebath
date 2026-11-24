@@ -77,7 +77,7 @@ func TestProfilesFromHostedRunsEachOverrideInTheHost(t *testing.T) {
 		t.Fatalf("get_max_tokens = %d", got)
 	}
 	a, b := p.BuildAPIKwargsExtrasHook(&Reasoning{Effort: "high"}, map[string]any{"model": "m"})
-	if a.Vals["a"] != int64(1) || b["b"] != "x" {
+	if a.Value("a") != int64(1) || b["b"] != "x" {
 		t.Fatalf("build_api_kwargs_extras = %v %v", a, b)
 	}
 	ids, listed := p.FetchModelsHook(context.Background(), "", "https://api.acme.test/v1", 8*time.Second)

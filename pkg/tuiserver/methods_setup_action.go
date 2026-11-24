@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os/exec"
 	"regexp"
 	"strconv"
 	"strings"
@@ -12,12 +13,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var setupActionRegistry = &handlerRegistry{}
@@ -46,10 +46,10 @@ func setupFact(ctx context.Context, h string, cfg config.Tree, name string) (boo
 	case "module":
 		return provider.SetupModuleInstalled(ctx, subject), nil
 	case "binary":
-		_, found := pyshutil.Which(subject, nil)
-		return found, nil
+		_, lookErr := exec.LookPath(subject)
+		return lookErr == nil, nil
 	case "xai.oauth":
-		return pyrepr.Truthy(provider.GetXAIOAuthAuthStatus(setupPoolEnv(ctx, h))["logged_in"]), nil
+		return anyutil.IsTrue(provider.GetXAIOAuthAuthStatus(setupPoolEnv(ctx, h))["logged_in"]), nil
 	}
 	return false, fmt.Errorf("unknown setup fact %s", name)
 }
@@ -75,7 +75,7 @@ var (
 )
 
 // Reports a terminal so installers redraw their progress in place instead of printing a line per step
-func (j *setupJob) IsATTY() bool { return true }
+func (j *setupJob) IsTerminal() bool { return true }
 
 // Visible text of a line a carriage return redraws, without terminal styling
 func setupLineText(line string) string {

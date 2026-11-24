@@ -13,9 +13,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -69,13 +69,13 @@ func (a *GoogleChatAdapter) buildMessageEvent(ctx context.Context, msg, envelope
 	if len(space) == 0 {
 		space, _ = msg["space"].(map[string]any)
 	}
-	spaceName := pyrepr.Str(orEmpty(space["name"]))
-	spaceType := strings.ToUpper(pyrepr.Str(orEmpty(firstTruthy(space["type"], space["spaceType"]))))
+	spaceName := anyutil.String(space["name"])
+	spaceType := strings.ToUpper(anyutil.String(firstTruthy(space["type"], space["spaceType"])))
 	thread, _ := msg["thread"].(map[string]any)
-	threadName := pyrepr.Str(orEmpty(thread["name"]))
+	threadName := anyutil.String(thread["name"])
 	sender, _ := msg["sender"].(map[string]any)
-	senderName := pyrepr.Str(orEmpty(sender["name"]))
-	senderEmail := pyrepr.Str(orEmpty(sender["email"]))
+	senderName := anyutil.String(sender["name"])
+	senderEmail := anyutil.String(sender["email"])
 	if senderEmail != "" && spaceName != "" {
 		a.mu.Lock()
 		a.lastSenderByChat[spaceName] = strings.ToLower(strings.TrimSpace(senderEmail))
@@ -85,10 +85,10 @@ func (a *GoogleChatAdapter) buildMessageEvent(ctx context.Context, msg, envelope
 	if spaceType == "DIRECT_MESSAGE" || spaceType == "DM" {
 		chatType = "dm"
 	}
-	text := strings.TrimSpace(pyrepr.Str(orEmpty(firstTruthy(msg["argumentText"], msg["text"]))))
+	text := strings.TrimSpace(anyutil.String(firstTruthy(msg["argumentText"], msg["text"])))
 	slash, _ := msg["slashCommand"].(map[string]any)
 	if len(slash) > 0 {
-		if commandID := pyrepr.Str(orEmpty(slash["commandId"])); commandID != "" && !strings.HasPrefix(text, "/") {
+		if commandID := anyutil.String(slash["commandId"]); commandID != "" && !strings.HasPrefix(text, "/") {
 			text = strings.TrimSpace(fmt.Sprintf("/cmd_%s %s", commandID, text))
 		}
 	}
@@ -141,17 +141,17 @@ func (a *GoogleChatAdapter) buildMessageEvent(ctx context.Context, msg, envelope
 		}
 	}
 	a.mu.Unlock()
-	chatName := pyrepr.Str(orEmpty(firstTruthy(space["displayName"], space["name"])))
+	chatName := anyutil.String(firstTruthy(space["displayName"], space["name"]))
 	userID := senderEmail
 	if userID == "" {
 		userID = senderName
 	}
-	userName := pyrepr.Str(orEmpty(firstTruthy(sender["displayName"], senderEmail, senderName)))
+	userName := anyutil.String(firstTruthy(sender["displayName"], senderEmail, senderName))
 	fields := gateway.SourceFields{ChatName: &chatName, ChatType: chatType, UserID: &userID, UserName: &userName, ThreadID: sessionThread}
 	if senderName != "" {
 		fields.UserIDAlt = &senderName
 	}
-	msgName := pyrepr.Str(orEmpty(msg["name"]))
+	msgName := anyutil.String(msg["name"])
 	if msgName != "" {
 		fields.MessageID = &msgName
 	}
@@ -168,7 +168,7 @@ func (a *GoogleChatAdapter) buildMessageEvent(ctx context.Context, msg, envelope
 // First truthy value, nil when none is
 func firstTruthy(values ...any) any {
 	for _, v := range values {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -177,12 +177,12 @@ func firstTruthy(values ...any) any {
 
 // Downloads an inbound attachment into the cache through media download, a Google owned download URI as the last resort
 func (a *GoogleChatAdapter) downloadAttachment(ctx context.Context, att map[string]any) (string, string, error) {
-	mime := pyrepr.Str(orEmpty(att["contentType"]))
-	name := pyrepr.Str(orEmpty(att["name"]))
+	mime := anyutil.String(att["contentType"])
+	name := anyutil.String(att["name"])
 	ref, _ := att["attachmentDataRef"].(map[string]any)
-	resourceName := pyrepr.Str(orEmpty(ref["resourceName"]))
-	downloadURI := pyrepr.Str(orEmpty(att["downloadUri"]))
-	if pyrepr.Str(orEmpty(att["source"])) == "DRIVE_FILE" && resourceName == "" {
+	resourceName := anyutil.String(ref["resourceName"])
+	downloadURI := anyutil.String(att["downloadUri"])
+	if anyutil.String(att["source"]) == "DRIVE_FILE" && resourceName == "" {
 		pkgLog().Info("[GoogleChat] Skipping Drive-picker attachment (no resourceName, would need user-OAuth Drive scope)")
 		return "", mime, nil
 	}
@@ -262,20 +262,20 @@ func (a *GoogleChatAdapter) VerifyHTTPEventRequest(ctx context.Context, authHead
 			expected[item] = true
 		}
 	}
-	if !expected[strings.ToLower(strings.TrimSpace(pyrepr.Str(orEmpty(claims["email"]))))] {
+	if !expected[strings.ToLower(strings.TrimSpace(anyutil.String(claims["email"])))] {
 		return false, "unexpected_google_bearer_identity", nil
 	}
 	return true, "", nil
 }
 
 // Dispatches one HTTP callback event, a card click answered in the reply, a message retried when its route is parked
-func (a *GoogleChatAdapter) DispatchHTTPEvent(ctx context.Context, payload *pyjson.Object) (any, error) {
-	envelope, ok := pyjson.Plain(payload).(map[string]any)
+func (a *GoogleChatAdapter) DispatchHTTPEvent(ctx context.Context, payload *jsonutil.Object) (any, error) {
+	envelope, ok := jsonutil.Plain(payload).(map[string]any)
 	if !ok {
 		return map[string]any{}, nil
 	}
 	if click, ok := parseCardClick(envelope); ok {
-		return pyjson.Ordered(a.handleCardClick(ctx, click, true)), nil
+		return jsonutil.Ordered(a.handleCardClick(ctx, click, true)), nil
 	}
 	msg, env, ok := a.prepareInbound(envelope, "", false)
 	if !ok {
@@ -296,13 +296,13 @@ func (a *GoogleChatAdapter) DispatchHTTPEvent(ctx context.Context, payload *pyjs
 
 // Undoes the dedup claim and DM thread count of a delivery that was not admitted
 func (a *GoogleChatAdapter) releaseUnadmitted(msg, envelope map[string]any) {
-	a.dedup.Discard(pyrepr.Str(orEmpty(msg["name"])))
+	a.dedup.Discard(anyutil.String(msg["name"]))
 	space, _ := envelope["space"].(map[string]any)
 	if len(space) == 0 {
 		space, _ = msg["space"].(map[string]any)
 	}
 	thread, _ := msg["thread"].(map[string]any)
-	spaceName, threadName := pyrepr.Str(orEmpty(space["name"])), pyrepr.Str(orEmpty(thread["name"]))
+	spaceName, threadName := anyutil.String(space["name"]), anyutil.String(thread["name"])
 	if spaceName != "" && threadName != "" {
 		a.threadCounts.decr(spaceName, threadName)
 	}
@@ -342,14 +342,14 @@ func chunkText(text string) []string {
 // Thread to reply under from the metadata, a thread shaped reply target or the last inbound thread unless cron
 func (a *GoogleChatAdapter) resolveThreadID(replyTo string, metadata map[string]any, chatID string) string {
 	for _, key := range []string{"thread_id", "thread_name", "thread_ts"} {
-		if v := metadata[key]; pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v := metadata[key]; anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	if replyTo != "" && strings.Contains(replyTo, "/threads/") && !strings.Contains(replyTo, "/messages/") {
 		return replyTo
 	}
-	if pyrepr.Truthy(metadata["job_id"]) {
+	if anyutil.IsTrue(metadata["job_id"]) {
 		return ""
 	}
 	if chatID == "" {
@@ -363,7 +363,7 @@ func (a *GoogleChatAdapter) resolveThreadID(replyTo string, metadata map[string]
 // Counts the destination thread of an outbound message so a later reply in it reads as a side thread
 func (a *GoogleChatAdapter) trackOutboundThread(chatID string, resp chatMessage) {
 	thread, _ := resp["thread"].(map[string]any)
-	if name := pyrepr.Str(orEmpty(thread["name"])); chatID != "" && name != "" {
+	if name := anyutil.String(thread["name"]); chatID != "" && name != "" {
 		a.threadCounts.incr(chatID, name)
 	}
 }
@@ -594,8 +594,8 @@ func (a *GoogleChatAdapter) SendTyping(ctx context.Context, chatID string, metad
 	a.mu.Unlock()
 	thread := a.resolveThreadID("", metadata, chatID)
 	text := tr(ctx, "typing.thinking", nil)
-	if pyrepr.Truthy(a.Config.TypingStatusText) {
-		text = pyrepr.Str(a.Config.TypingStatusText)
+	if anyutil.IsTrue(a.Config.TypingStatusText) {
+		text = anyutil.String(a.Config.TypingStatusText)
 	}
 	body := threadBody(text, thread)
 	detached := context.WithoutCancel(ctx)
@@ -611,7 +611,7 @@ func (a *GoogleChatAdapter) SendTyping(ctx context.Context, chatID string, metad
 			pkgLog().Debug("[GoogleChat] send_typing background create failed", errAttr(err)...)
 			return
 		}
-		if id := pyrepr.Str(orEmpty(res.MessageID)); res.Success && id != "" {
+		if id := anyutil.String(res.MessageID); res.Success && id != "" {
 			a.mu.Lock()
 			if _, taken := a.typingMessages[chatID]; !taken {
 				a.typingMessages[chatID] = id
@@ -850,7 +850,7 @@ func (a *GoogleChatAdapter) sendFile(ctx context.Context, chatID, path, caption,
 		return gateway.SendResult{Success: false, Error: excText(err)}, nil
 	}
 	ref, ok := upload["attachmentDataRef"]
-	if !ok || !pyrepr.Truthy(ref) {
+	if !ok || !anyutil.IsTrue(ref) {
 		return gateway.SendResult{Success: false, Error: "upload returned no attachmentDataRef"}, nil
 	}
 	body := map[string]any{"attachment": []any{map[string]any{"attachmentDataRef": ref}}}
@@ -899,12 +899,12 @@ func (a *GoogleChatAdapter) GetChatInfo(ctx context.Context, chatID string) (map
 		pkgLog().Debug("[GoogleChat] get_chat_info failed: " + excText(err))
 		return map[string]any{"name": chatID, "type": "group", "chat_id": chatID}, nil
 	}
-	spaceType := strings.ToUpper(pyrepr.Str(orEmpty(firstTruthy(info["spaceType"], info["type"]))))
+	spaceType := strings.ToUpper(anyutil.String(firstTruthy(info["spaceType"], info["type"])))
 	chatType := "group"
 	if spaceType == "DIRECT_MESSAGE" || spaceType == "DM" {
 		chatType = "dm"
 	}
-	name := pyrepr.Str(orEmpty(info["displayName"]))
+	name := anyutil.String(info["displayName"])
 	if name == "" {
 		name = chatID
 	}

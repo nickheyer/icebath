@@ -6,7 +6,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Sends a new chunk threaded to replyToID, the new message id or replyToID when nothing landed
@@ -17,7 +17,7 @@ func (s *GatewayStreamConsumer) sendNewChunk(ctx context.Context, text, replyToI
 	}
 	result, err := s.adapter.Send(ctx, s.chatID, text, replyToID, s.metadataForSend(final, !final))
 	if err != nil {
-		pkgLog().Error("Stream send chunk error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("Stream send chunk error: " + err.Error())
 		return replyToID
 	}
 	newID := sendResultID(result.MessageID)
@@ -108,7 +108,7 @@ func (s *GatewayStreamConsumer) sendFallbackFinal(ctx context.Context, text stri
 		}
 		result, err := s.sendWithFloodRetry(ctx, chunk, replyTo, "Flood control on fallback send, retrying in %.1fs")
 		if err != nil {
-			pkgLog().Error("Stream consumer error: " + pyrepr.ExceptionMessage(err))
+			pkgLog().Error("Stream consumer error: " + err.Error())
 		}
 		if err != nil || result == nil || !result.Success {
 			s.alreadySent = sentAnyChunk
@@ -196,7 +196,7 @@ func (s *GatewayStreamConsumer) fallbackLenBudget() (func(string) int, int) {
 		}
 	}
 	if err != nil {
-		pkgLog().Debug("per-chat limit resolution failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("per-chat limit resolution failed: " + err.Error())
 	}
 	return lenFn, rawLimit
 }
@@ -217,7 +217,7 @@ func (s *GatewayStreamConsumer) sendWithFloodRetry(ctx context.Context, content,
 		if attempt > 0 || !ok {
 			break
 		}
-		if raw, isMap := sent.RawResponse.(map[string]any); isMap && pyrepr.Truthy(raw["partial_overflow"]) {
+		if raw, isMap := sent.RawResponse.(map[string]any); isMap && anyutil.IsTrue(raw["partial_overflow"]) {
 			break
 		}
 		pkgLog().Debug(fmt.Sprintf(retryLog, delay))
@@ -233,7 +233,7 @@ func (s *GatewayStreamConsumer) sendEmptyFallbackFinal(ctx context.Context, fina
 	staleIDs := s.stalePreviewIDs(true)
 	result, err := s.sendWithFloodRetry(ctx, finalText, s.initialReplyToID, "Flood control on empty fallback final send; retrying in %.1fs")
 	if err != nil {
-		pkgLog().Debug("Empty fallback final send failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("Empty fallback final send failed: " + err.Error())
 		if sendErrorMayHaveDelivered(err) {
 			return "ambiguous"
 		}
@@ -271,14 +271,14 @@ func sendResultMayHaveDelivered(result SendResult) bool {
 	if result.Retryable {
 		return false
 	}
-	text := strings.ToLower(pyrepr.Str(pyrepr.Or(result.Error, "")))
+	text := strings.ToLower(anyutil.String(anyutil.Or(result.Error, "")))
 	return strings.Contains(text, "timeout") || strings.Contains(text, "timed out")
 }
 
 // Whether a raised send error is a timeout that may still have landed
 func sendErrorMayHaveDelivered(err error) bool {
-	text := strings.ToLower(pyrepr.ExceptionMessage(err))
-	name := strings.ToLower(pyrepr.TypeName(err))
+	text := strings.ToLower(err.Error())
+	name := strings.ToLower(anyutil.Kind(err))
 	return strings.Contains(text, "timeout") || strings.Contains(text, "timed out") || strings.Contains(name, "timeout")
 }
 
@@ -300,7 +300,7 @@ func (s *GatewayStreamConsumer) fallbackFloodRetryDelay(result SendResult) (floa
 
 // Whether a failed send result is flood control or rate limiting
 func isFloodError(result SendResult) bool {
-	errLower := strings.ToLower(pyrepr.Str(pyrepr.Or(result.Error, "")))
+	errLower := strings.ToLower(anyutil.String(anyutil.Or(result.Error, "")))
 	return strings.Contains(errLower, "flood") || strings.Contains(errLower, "retry after") || strings.Contains(errLower, "rate")
 }
 
@@ -330,7 +330,7 @@ func (s *GatewayStreamConsumer) flushSegmentTailOnEditFailure(ctx context.Contex
 	md["_interim_send"] = true
 	result, err := s.adapter.Send(ctx, s.chatID, tail, "", md)
 	if err != nil {
-		pkgLog().Error("Segment-break tail flush error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("Segment-break tail flush error: " + err.Error())
 		return
 	}
 	if result.Success {
@@ -375,7 +375,7 @@ func (s *GatewayStreamConsumer) sendCommentary(ctx context.Context, text string)
 	}
 	result, err := s.adapter.Send(ctx, s.chatID, text, replyTo, md)
 	if err != nil {
-		pkgLog().Error("Commentary send error: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Error("Commentary send error: " + err.Error())
 		return false
 	}
 	if result.Success {
@@ -395,7 +395,7 @@ func (s *GatewayStreamConsumer) rawMessageLimit() int {
 		base = limit
 	}
 	if limit, err := s.adapter.MaxMessageLengthForChat(s.chatID); err != nil {
-		pkgLog().Debug("max_message_length_for_chat failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Debug("max_message_length_for_chat failed: " + err.Error())
 	} else {
 		base = limit
 	}

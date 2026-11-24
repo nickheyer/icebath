@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func ghostCompressor(t *testing.T, edit func(*ContextCompressorOptions)) *ContextCompressor {
@@ -178,11 +178,7 @@ func contentStrOrEmpty(v any) string {
 	if v == nil {
 		return ""
 	}
-	return dumpsAny(v)
-}
-
-func dumpsAny(v any) string {
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func safetyTranscript() []map[string]any {

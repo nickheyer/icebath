@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Isolated ICEBATH_HOME with a fresh receipt scope
@@ -46,11 +46,11 @@ func glKilledUpdateReceipt(t *testing.T) context.Context {
 	current.Data.Set("pid_create_time", nil)
 	current.Data.Set("writer_pid", pid)
 	current.Data.Set("writer_create_time", nil)
-	started, _, err := pydatetime.ParseISOFormat(pyrepr.Str(current.Data.Vals["started_at"]))
+	started, _, err := timeutil.ParseISOZone(anyutil.String(current.Data.Value("started_at")), time.UTC)
 	if err != nil {
 		t.Fatal(err)
 	}
-	current.Data.Set("started_at", pydatetime.ISOFormat(started.Add(-5*time.Second)))
+	current.Data.Set("started_at", started.Add(-5*time.Second).Format(timeutil.RFC3339Micro))
 	payload, err := updaterecord.ReceiptPayload(current.Data, false)
 	if err != nil {
 		t.Fatal(err)
@@ -116,20 +116,20 @@ func TestAFreshLockWithNoKilledUpdateBehindItIsKept(t *testing.T) {
 }
 
 // Injected lsof and ps answers naming one process with the given command and cwd
-func glPsLists(command, cwd string) func(context.Context, []string, pysubprocess.Options) (*pysubprocess.Completed, error) {
-	return func(_ context.Context, argv []string, _ pysubprocess.Options) (*pysubprocess.Completed, error) {
+func glPsLists(command, cwd string) func(context.Context, []string, executil.Options) (*executil.Completed, error) {
+	return func(_ context.Context, argv []string, _ executil.Options) (*executil.Completed, error) {
 		joined := strings.Join(argv, " ")
 		if argv[0] == "lsof" {
 			if strings.Contains(joined, "cwd") {
-				return &pysubprocess.Completed{Args: argv, Returncode: 0, Stdout: []byte("p4242\nn" + cwd + "\n")}, nil
+				return &executil.Completed{Args: argv, ExitCode: 0, Stdout: []byte("p4242\nn" + cwd + "\n")}, nil
 			}
-			return &pysubprocess.Completed{Args: argv, Returncode: 1}, nil
+			return &executil.Completed{Args: argv, ExitCode: 1}, nil
 		}
 		rows := "4242 " + command
 		if strings.Contains(joined, "-ocomm=") {
 			rows = "4242 " + strconv.Itoa(os.Getuid()) + " " + strings.Fields(command)[0]
 		}
-		return &pysubprocess.Completed{Args: argv, Returncode: 0, Stdout: []byte(rows + "\n")}, nil
+		return &executil.Completed{Args: argv, ExitCode: 0, Stdout: []byte(rows + "\n")}, nil
 	}
 }
 

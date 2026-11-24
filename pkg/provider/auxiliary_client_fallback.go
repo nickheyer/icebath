@@ -9,7 +9,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Positive float of a config timeout, false for bools, non numbers and non positive values
@@ -73,7 +73,7 @@ func auxStrOr(v any) string {
 	if !pyTruthy(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Python str of a present key, empty when the key is absent
@@ -82,7 +82,7 @@ func auxStrGet(m map[string]any, key string) string {
 	if !ok {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Route identity of a configured fallback entry, the client base URL standing in for a missing one

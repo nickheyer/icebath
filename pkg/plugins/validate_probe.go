@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -61,7 +60,7 @@ func environMapOf(entries []string) map[string]string {
 func runCapabilityProbe(ctx context.Context, pluginDir string, manifest map[string]any, probe *capabilityProbe) (map[string]any, string) {
 	scratch, err := os.MkdirTemp("", "icebath-validate-")
 	if err != nil {
-		return nil, "capability probe produced no result: " + pyrepr.ExceptionMessage(err)
+		return nil, "capability probe produced no result: " + err.Error()
 	}
 	defer os.RemoveAll(scratch)
 	var python string
@@ -102,7 +101,7 @@ func runCapabilityProbe(ctx context.Context, pluginDir string, manifest map[stri
 	}
 	var exit *exec.ExitError
 	if runErr != nil && !errors.As(runErr, &exit) {
-		return nil, "capability probe produced no result: " + pyrepr.ExceptionMessage(runErr)
+		return nil, "capability probe produced no result: " + runErr.Error()
 	}
 	var payload map[string]any
 	for _, line := range strings.Split(strings.ReplaceAll(strings.ToValidUTF8(stdout.String(), "�"), "\r\n", "\n"), "\n") {
@@ -238,7 +237,7 @@ func checkPythonDependencies(report *ValidationReport, pluginDir string) {
 		installable, err = declaration.InstallRequirements()
 	}
 	if err != nil {
-		report.add("python dependencies", false, "declaration invalid: "+pyrepr.ExceptionMessage(err))
+		report.add("python dependencies", false, "declaration invalid: "+err.Error())
 		return
 	}
 	if len(urls) > 0 {

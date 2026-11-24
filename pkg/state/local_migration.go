@@ -6,7 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Source label older builds stored client app chats under, also given to a bound client app history row
@@ -60,12 +61,12 @@ func ClientLabel(source any) bool {
 	return ok && strings.TrimSpace(text) != "" && !NotClientLabels()[text]
 }
 
-func rowGet(row *pyjson.Object, key string) any {
+func rowGet(row *jsonutil.Object, key string) any {
 	v, _ := row.Get(key)
 	return v
 }
 
-func routedRow(row *pyjson.Object) bool {
+func routedRow(row *jsonutil.Object) bool {
 	for _, key := range []string{"session_key", "chat_id", "origin_json"} {
 		if pyTruthy(rowGet(row, key)) {
 			return true
@@ -75,17 +76,17 @@ func routedRow(row *pyjson.Object) bool {
 }
 
 // Whether a routeless row is a chat a client app wrote under its own label, adopted as gui
-func ClientHistoryRow(row *pyjson.Object) bool {
+func ClientHistoryRow(row *jsonutil.Object) bool {
 	return ClientLabel(rowGet(row, "source")) && !routedRow(row)
 }
 
 // Whether resume adopts the row as old local history, a local surface label or a client app label
-func LegacyHistoryRow(row *pyjson.Object) bool {
+func LegacyHistoryRow(row *jsonutil.Object) bool {
 	source, ok := rowGet(row, "source").(string)
 	return (ok && legacyLocalSources[source]) || ClientHistoryRow(row)
 }
 
-func rowSource(row *pyjson.Object) (any, error) {
+func rowSource(row *jsonutil.Object) (any, error) {
 	source, has := row.Get("source")
 	if !has {
 		return nil, &stateTypedError{"KeyError", "'source'"}
@@ -94,7 +95,7 @@ func rowSource(row *pyjson.Object) (any, error) {
 }
 
 // Creation source an adopted legacy row resumes on
-func LegacyCreationSource(row *pyjson.Object) (any, error) {
+func LegacyCreationSource(row *jsonutil.Object) (any, error) {
 	if ClientHistoryRow(row) {
 		return "gui", nil
 	}
@@ -114,7 +115,7 @@ func LegacyCreationSource(row *pyjson.Object) (any, error) {
 const retiredAccountLabelPrefix = "nous:"
 
 // Whether the row's user_id is the retired hosted account label a client history row carried, not an owner
-func LegacyAccountLabel(row *pyjson.Object) (bool, error) {
+func LegacyAccountLabel(row *jsonutil.Object) (bool, error) {
 	source, err := rowSource(row)
 	if err != nil {
 		return false, err
@@ -131,7 +132,7 @@ func clearRetiredAccountLabels(ctx context.Context, conn SQLiteConn) error {
 }
 
 // Whether the subject owns the login stamp a legacy row carries
-func LoginOwnedBy(row *pyjson.Object, subject any) bool {
+func LoginOwnedBy(row *jsonutil.Object, subject any) bool {
 	userID, ok := rowGet(row, "user_id").(string)
 	if !ok || !pyTruthy(subject) {
 		return false
@@ -140,7 +141,7 @@ func LoginOwnedBy(row *pyjson.Object, subject any) bool {
 }
 
 // Refuses as not_found every row but unrouted old local history of this profile
-func (d *SessionDB) ValidateLegacyRow(row *pyjson.Object, subject any) error {
+func (d *SessionDB) ValidateLegacyRow(row *jsonutil.Object, subject any) error {
 	if !LegacyHistoryRow(row) || routedRow(row) {
 		return runtimeRefusal("not_found")
 	}
@@ -164,7 +165,7 @@ func (d *SessionDB) ValidateLegacyRow(row *pyjson.Object, subject any) error {
 }
 
 // Claims an idle unbound legacy row for the receipt's route and records the legacy binding
-func (d *SessionDB) bindLegacyTarget(ctx context.Context, conn SQLiteConn, receipt *pyjson.Object) error {
+func (d *SessionDB) bindLegacyTarget(ctx context.Context, conn SQLiteConn, receipt *jsonutil.Object) error {
 	target, err := receiptItem(receipt, "legacy_session_id")
 	if err != nil {
 		return err
@@ -173,7 +174,7 @@ func (d *SessionDB) bindLegacyTarget(ctx context.Context, conn SQLiteConn, recei
 	if err != nil {
 		return err
 	}
-	if !pyjson.Equal(target, sessionID) {
+	if !anyutil.Equal(target, sessionID) {
 		return runtimeRefusal("storage_unavailable")
 	}
 	targetID, _ := target.(string)
@@ -252,7 +253,7 @@ func (d *SessionDB) bindLegacyTarget(ctx context.Context, conn SQLiteConn, recei
 	if err != nil {
 		return err
 	}
-	text, err := runtimeJSON(pyjson.ObjectOf("session_id", sessionID, "profile_id", profileID, "principal_id", principal, "legacy_session_id", target))
+	text, err := runtimeJSON(jsonutil.ObjectOf("session_id", sessionID, "profile_id", profileID, "principal_id", principal, "legacy_session_id", target))
 	if err != nil {
 		return err
 	}

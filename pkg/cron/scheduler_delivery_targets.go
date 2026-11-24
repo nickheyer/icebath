@@ -6,12 +6,12 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -58,7 +58,7 @@ func resolveCronSurfaceMode(pconfig *gateway.PlatformConfig, logicalPlatform str
 	if raw == nil {
 		raw = extra["cron_continuable_surface"]
 	}
-	if raw != nil && strings.ToLower(strings.TrimSpace(pyrepr.Str(raw))) == "in_channel" {
+	if raw != nil && strings.ToLower(strings.TrimSpace(anyutil.String(raw))) == "in_channel" {
 		return "in_channel"
 	}
 	return "thread"
@@ -67,10 +67,10 @@ func resolveCronSurfaceMode(pconfig *gateway.PlatformConfig, logicalPlatform str
 // Job origin with a platform and chat id, nil for a missing, malformed or non push origin
 func resolveOrigin(job *Job) map[string]any {
 	origin := job.Origin
-	if origin == nil || !pyTruthy(origin["platform"]) || !pyTruthy(origin["chat_id"]) {
+	if origin == nil || !anyutil.IsTrue(origin["platform"]) || !anyutil.IsTrue(origin["chat_id"]) {
 		return nil
 	}
-	if nonPushOriginPlatforms[strings.ToLower(pyrepr.Str(origin["platform"]))] {
+	if nonPushOriginPlatforms[strings.ToLower(anyutil.String(origin["platform"]))] {
 		return nil
 	}
 	return origin
@@ -90,7 +90,7 @@ func targetMatchesOrigin(origin map[string]any, platform, chatID, threadID strin
 		return false
 	}
 	originThread, ok := origin["thread_id"]
-	return !ok || originThread == nil || pyrepr.Str(originThread) == threadID
+	return !ok || originThread == nil || anyutil.String(originThread) == threadID
 }
 
 // Whether a resolved target may receive the transcript mirror given its provenance
@@ -232,12 +232,12 @@ func (s *Store) getConfigHomeChannel(ctx context.Context, platform string) (home
 	}()
 	cfg, err := loadGatewayConfig(ctx)
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("config home_channel lookup failed for platform %s", pyrepr.Repr(platform)))
+		s.log.Debug(fmt.Sprintf("config home_channel lookup failed for platform %s", anyutil.Quote(platform)))
 		return nil
 	}
 	p, err := gateway.ParsePlatform(ctx, strings.ToLower(platform))
 	if err != nil {
-		s.log.Debug(fmt.Sprintf("config home_channel lookup failed for platform %s", pyrepr.Repr(platform)))
+		s.log.Debug(fmt.Sprintf("config home_channel lookup failed for platform %s", anyutil.Quote(platform)))
 		return nil
 	}
 	return cfg.GetHomeChannel(p)
@@ -339,11 +339,11 @@ func (s *Store) relayFrontedConnectedPlatforms(ctx context.Context, connected ma
 
 // Slack origin thread stamped in the home chat is a session key, not a location
 func (s *Store) originThreadIsStale(ctx context.Context, origin map[string]any) bool {
-	if strings.ToLower(pyStrOrEmpty(origin["platform"])) != "slack" || !pyTruthy(origin["thread_id"]) {
+	if strings.ToLower(pyStrOrEmpty(origin["platform"])) != "slack" || !anyutil.IsTrue(origin["thread_id"]) {
 		return false
 	}
 	homeChat := s.getHomeTargetChatID(ctx, "slack")
-	return homeChat != "" && pyrepr.Str(origin["chat_id"]) == homeChat
+	return homeChat != "" && anyutil.String(origin["chat_id"]) == homeChat
 }
 
 // Thread a deliver=origin job uses with stale Slack stamps dropped
@@ -359,7 +359,7 @@ func optionalStr(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func (s *Store) homeTarget(ctx context.Context, platform, chatID, resolvedFrom string) Target {
@@ -377,7 +377,7 @@ func (s *Store) resolveSingleDeliveryTarget(ctx context.Context, job *Job, deliv
 	}
 	if deliverValue == "origin" {
 		if origin != nil {
-			return Target{Platform: pyrepr.Str(origin["platform"]), ChatID: pyrepr.Str(origin["chat_id"]), ThreadID: s.originDeliveryThread(ctx, origin), ResolvedFrom: "origin"}, true
+			return Target{Platform: anyutil.String(origin["platform"]), ChatID: anyutil.String(origin["chat_id"]), ThreadID: s.originDeliveryThread(ctx, origin), ResolvedFrom: "origin"}, true
 		}
 		for _, platform := range iterHomeTargetPlatforms(ctx) {
 			if chatID := s.getHomeTargetChatID(ctx, platform); chatID != "" {
@@ -400,8 +400,8 @@ func (s *Store) resolveSingleDeliveryTarget(ctx context.Context, job *Job, deliv
 		if threadID != nil {
 			thread = *threadID
 		}
-		if threadID == nil && key == "slack" && origin != nil && strings.ToLower(pyStrOrEmpty(origin["platform"])) == key && pyrepr.Str(origin["chat_id"]) == chatID && pyTruthy(origin["thread_id"]) && !s.originThreadIsStale(ctx, origin) {
-			thread = pyrepr.Str(origin["thread_id"])
+		if threadID == nil && key == "slack" && origin != nil && strings.ToLower(pyStrOrEmpty(origin["platform"])) == key && anyutil.String(origin["chat_id"]) == chatID && anyutil.IsTrue(origin["thread_id"]) && !s.originThreadIsStale(ctx, origin) {
+			thread = anyutil.String(origin["thread_id"])
 		}
 		return Target{Platform: platform, ChatID: chatID, ThreadID: thread, ResolvedFrom: "explicit"}, true
 	}
@@ -414,7 +414,7 @@ func (s *Store) resolveSingleDeliveryTarget(ctx context.Context, job *Job, deliv
 		if chatID := s.getHomeTargetChatID(ctx, platform); chatID != "" {
 			return s.homeTarget(ctx, platform, chatID, provenance), true
 		}
-		return Target{Platform: platform, ChatID: pyrepr.Str(origin["chat_id"]), ThreadID: optionalStr(origin["thread_id"])}, true
+		return Target{Platform: platform, ChatID: anyutil.String(origin["chat_id"]), ThreadID: optionalStr(origin["thread_id"])}, true
 	}
 	if !isKnownDeliveryPlatform(ctx, platform) {
 		return Target{}, false

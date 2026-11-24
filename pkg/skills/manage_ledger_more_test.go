@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Scope with my-skill created through skill_manage and its SKILL.md path
@@ -72,7 +72,7 @@ func TestLedgerRollbackFailsClosedWhenSafetyCaptureFails(t *testing.T) {
 	entry := ledgerRowWithAction(t, s, "patch")
 	current := readText(t, skillMD)
 	real := ledgerSteps.append
-	ledgerSteps.append = func(*Scope, context.Context, string, any, []any, []any, string, *pyjson.Object) (string, bool) {
+	ledgerSteps.append = func(*Scope, context.Context, string, any, []any, []any, string, *jsonutil.Object) (string, bool) {
 		return "", false
 	}
 	defer func() { ledgerSteps.append = real }()

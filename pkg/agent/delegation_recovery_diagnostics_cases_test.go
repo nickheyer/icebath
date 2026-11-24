@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -35,7 +35,7 @@ func dispatchDelegationRecoveryChild() {
 	buildChildPreservingParentToolsFn = func(context.Context, childBuildSpec) (*AIAgent, error) {
 		return &AIAgent{delegateRole: "leaf", subagentID: "diagnostic-child"}, nil
 	}
-	runSingleChildFn = func(context.Context, int, string, *AIAgent, *AIAgent, string, any, any) *pyjson.Object {
+	runSingleChildFn = func(context.Context, int, string, *AIAgent, *AIAgent, string, any, any) *jsonutil.Object {
 		startOnce.Do(func() { close(started) })
 		time.Sleep(60 * time.Second)
 		return nil
@@ -60,12 +60,12 @@ func dispatchDelegationRecoveryChild() {
 		os.Stderr.WriteString("delegate_task: " + err.Error() + "\n")
 		os.Exit(2)
 	}
-	handle, perr := pyjson.Loads(out)
+	handle, perr := jsonutil.Decode(out)
 	if perr != nil {
 		os.Stderr.WriteString("handle: " + out + "\n")
 		os.Exit(2)
 	}
-	if status, _ := handle.(*pyjson.Object).Get("status"); status != "dispatched" {
+	if status, _ := handle.(*jsonutil.Object).Get("status"); status != "dispatched" {
 		os.Stderr.WriteString("handle: " + out + "\n")
 		os.Exit(2)
 	}
@@ -100,9 +100,9 @@ func stringMap(v any) map[string]string {
 		for k, val := range m {
 			out[k], _ = val.(string)
 		}
-	case *pyjson.Object:
-		for _, k := range m.Keys {
-			out[k], _ = m.Vals[k].(string)
+	case *jsonutil.Object:
+		for _, k := range m.Keys() {
+			out[k], _ = m.Value(k).(string)
 		}
 	}
 	return out

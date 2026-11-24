@@ -22,9 +22,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Usage record keys whose first parseable value dates a skill
@@ -572,7 +572,7 @@ func skillFiles(root SkillRoot) ([]skillFile, error) {
 	if err != nil {
 		base = root.Dir
 	}
-	found, err := pypath.Glob(root.Dir, "**/SKILL.md")
+	found, err := pathutil.Glob(root.Dir, "**/SKILL.md")
 	if err != nil {
 		return nil, err
 	}

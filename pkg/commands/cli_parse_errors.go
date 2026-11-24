@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -164,11 +163,11 @@ func invalidValueText(invalid *pflag.InvalidValueError) string {
 	var num *strconv.NumError
 	switch t := invalid.GetFlag().Value.Type(); {
 	case t == "bool":
-		return "ignored explicit argument " + pyrepr.StrRepr(invalid.GetValue())
+		return "ignored explicit argument " + strconv.Quote(invalid.GetValue())
 	case errors.As(cause, &num) && (t == "int" || t == "count"):
-		return "invalid int value: " + pyrepr.StrRepr(invalid.GetValue())
+		return "invalid int value: " + strconv.Quote(invalid.GetValue())
 	case errors.As(cause, &num) && t == "float64":
-		return "invalid float value: " + pyrepr.StrRepr(invalid.GetValue())
+		return "invalid float value: " + strconv.Quote(invalid.GetValue())
 	case cause != nil:
 		return cause.Error()
 	}

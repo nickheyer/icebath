@@ -8,13 +8,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 // Bare runner with an ordered agent cache and its lock, the cache infrastructure of a real runner
 func cacheRunner() *GatewayRunner {
 	r := &GatewayRunner{}
-	r.agentCache = pydict.New[string, agentCacheEntry]()
+	r.agentCache = orderedutil.NewMap[string, agentCacheEntry]()
 	r.agentCacheLock = &sync.Mutex{}
 	return r
 }
@@ -38,7 +37,7 @@ func strp(s string) *string { return &s }
 
 // Session context of a Discord thread with one home channel, the prompt freeze fixture
 func freezeContext(platform gateway.Platform, threadID, parentChatID *string) *gateway.SessionContext {
-	homes := pydict.New[gateway.Platform, *gateway.HomeChannel]()
+	homes := orderedutil.NewMap[gateway.Platform, *gateway.HomeChannel]()
 	homes.Set(gateway.PlatformDiscord, &gateway.HomeChannel{Platform: gateway.PlatformDiscord, ChatID: "111222333", Name: "general"})
 	return &gateway.SessionContext{
 		Source: &gateway.SessionSource{

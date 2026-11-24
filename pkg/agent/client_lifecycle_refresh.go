@@ -3,10 +3,10 @@ package agent
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Python str of an arbitrary value, empty for nil
@@ -17,7 +17,7 @@ func pyStrValue(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Recomputes TLS material and default headers for the current base url after it may have moved
@@ -59,7 +59,7 @@ var routeDefaultHeadersTable = []hostDefaultHeaders{
 // Header factory of the first rebuild table host the base url matches, nil when none does
 func routeDefaultHeadersFactory(baseURL string) hostHeadersFactory {
 	for _, entry := range routeDefaultHeadersTable {
-		if matched, _ := pyurl.BaseURLHostMatches(baseURL, entry.host); matched {
+		if matched, _ := urlutil.BaseHostMatches(baseURL, entry.host); matched {
 			return entry.factory
 		}
 	}
@@ -80,7 +80,7 @@ func (a *AIAgent) applyClientHeadersForBaseURL(ctx context.Context, baseURL stri
 	} else {
 		delete(a.clientKwargs, "default_headers")
 		apiKey := ""
-		if v := a.clientKwargs["api_key"]; pyrepr.Truthy(v) {
+		if v := a.clientKwargs["api_key"]; anyutil.IsTrue(v) {
 			apiKey = pyStrValue(v)
 		}
 		routeHeaders := stringHeaders(provider.RouteAnswer(ctx, "client_headers", a.provider, a, map[string]any{"base_url": baseURL, "api_key": apiKey}))

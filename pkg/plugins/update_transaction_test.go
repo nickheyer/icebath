@@ -17,9 +17,9 @@ import (
 	"github.com/pelletier/go-toml/v2"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Installed transactional plugin over a real PM publication, its origin repo and the catalog pin state
@@ -50,7 +50,7 @@ func txVersion(t *testing.T, repo, version string, broken bool, minimum string, 
 	}
 	c6Write(t, filepath.Join(repo, "plugin.yaml"), fmt.Sprintf("name: transactional\nversion: %s\nmanifest_version: %d\nrequires_icebath: '%s'\n",
 		version, SupportedManifestVersion, minimum))
-	c6Write(t, filepath.Join(repo, "helper.py"), fmt.Sprintf("VERSION = %s\ndef register(ctx):\n    pass\n", pyrepr.Repr(version)))
+	c6Write(t, filepath.Join(repo, "helper.py"), fmt.Sprintf("VERSION = %s\ndef register(ctx):\n    pass\n", anyutil.Quote(version)))
 	c6Write(t, filepath.Join(repo, ".gitignore"), "node_modules/\n")
 	deps := `["impossible-plugin-dep==1", "impossible-plugin-dep==2"]`
 	sources := ""
@@ -201,7 +201,7 @@ func txFailure(t *testing.T, failure string) {
 			if failure == "publication" {
 				os.Chmod(filepath.Dir(facts), 0o755)
 			}
-			if err != nil || result["ok"] != false || !pyrepr.Truthy(result["error"]) {
+			if err != nil || result["ok"] != false || !anyutil.IsTrue(result["error"]) {
 				t.Fatalf("%s: %v %v", failure, result, err)
 			}
 			if w.selected(t) != selected || w.head(t) != oldHead {
@@ -240,13 +240,13 @@ func TestSuccessfulUpdatePublishesMatchingCodeAndDurableWorkspace(t *testing.T) 
 		fact := venvFact()
 		extras := []string{}
 		for _, e := range toList(fact["extras"]) {
-			extras = append(extras, pyrepr.Str(e))
+			extras = append(extras, anyutil.String(e))
 		}
 		stamp, err := pm.NewVenv(filepath.Join(w.root, "core")).(*pm.Venv).ExpectedStamp(extras)
 		if err != nil || w.selected(t) == before || fact["stamp"] != stamp {
 			t.Fatalf("%v %v %v", err, fact["stamp"], stamp)
 		}
-		workspace := filepath.Dir(pyrepr.Str(fact["resolved_lock"]))
+		workspace := filepath.Dir(anyutil.String(fact["resolved_lock"]))
 		var document map[string]any
 		if err := toml.Unmarshal(txRead(t, filepath.Join(workspace, "pyproject.toml")), &document); err != nil {
 			t.Fatal(err)
@@ -259,7 +259,7 @@ func TestSuccessfulUpdatePublishesMatchingCodeAndDurableWorkspace(t *testing.T) 
 			t.Fatal("workspace has no members")
 		}
 		for _, member := range members {
-			path := resolvePath(filepath.Join(workspace, pyrepr.Str(member)))
+			path := resolvePath(filepath.Join(workspace, anyutil.String(member)))
 			if rel, err := filepath.Rel(workspace, path); err != nil || strings.HasPrefix(rel, "..") {
 				t.Fatalf("member %s escapes the workspace", path)
 			}
@@ -283,7 +283,7 @@ func TestSuccessfulUpdatePublishesMatchingCodeAndDurableWorkspace(t *testing.T) 
 		if venvFact()["stamp"] == previousStamp {
 			t.Fatal("a code only update kept the venv stamp")
 		}
-		if block, _ := record["catalog"].(map[string]any); pyrepr.Truthy(block["name"]) {
+		if block, _ := record["catalog"].(map[string]any); anyutil.IsTrue(block["name"]) {
 			w.sha = txVersion(t, w.repo, "3.0.0", false, "")
 			noNetwork := func(context.Context, string) (string, error) {
 				t.Error("catalog pin must not consult a custom update source")
@@ -417,7 +417,7 @@ func TestPinnedPluginCmdUpdateRefusesToDrift(t *testing.T) {
 func TestUnattendedUpdateAlsoRefusesToDriftPin(t *testing.T) {
 	ctx, h, oldSha := txPinnedDemo(t)
 	result, err := UnattendedUpdateUserPlugin(ctx, "demo", false, false)
-	if err != nil || result["ok"] != false || !strings.Contains(pyrepr.Str(result["error"]), "pinned") {
+	if err != nil || result["ok"] != false || !strings.Contains(anyutil.String(result["error"]), "pinned") {
 		t.Fatalf("%v %v", result, err)
 	}
 	if c6Git(t, filepath.Join(h, "plugins", "demo"), "rev-parse", "HEAD") != oldSha {

@@ -3,13 +3,13 @@ package gateway
 import (
 	"context"
 	"math"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -159,7 +159,7 @@ func (c *RecoverableHandleCache) Get(ctx context.Context, path string, opener fu
 
 // Cached handle or one bounded open, raising non cacheable errors and every error under RaiseOnError
 func (c *RecoverableHandleCache) GetWith(ctx context.Context, path string, opener func() (any, error), opts HandleCacheGetOptions) (any, error) {
-	path = pypath.PathStr(path)
+	path = filepath.Clean(path)
 	c.Lock.Lock()
 	if handle, ok := c.Handles[path]; ok {
 		if !c.registryBacked[path] || registryOwned(handle) {
@@ -199,7 +199,7 @@ func (c *RecoverableHandleCache) GetWith(ctx context.Context, path string, opene
 		}
 		if !stale {
 			unavailable.failures++
-			unavailable.err = pyrepr.ExceptionName(err) + ": " + pyrepr.ExceptionMessage(err)
+			unavailable.err = err.Error()
 			unavailable.cause = err
 			backoff := c.initialRetryDelay * math.Pow(2, float64(min(unavailable.failures-1, 30)))
 			unavailable.nextRetryAt = c.clock() + math.Min(backoff, c.maxRetryDelay)
@@ -247,11 +247,11 @@ func (c *RecoverableHandleCache) GetWith(ctx context.Context, path string, opene
 
 // Error text the latest failed open of the path raised, empty when none is recorded
 func (c *RecoverableHandleCache) LastError(path string) string {
-	target, _ := pypath.Resolve(path)
+	target, _ := pathutil.Resolve(path)
 	c.Lock.Lock()
 	defer c.Lock.Unlock()
 	for key, u := range c.unavailable {
-		if resolved, _ := pypath.Resolve(key); resolved == target {
+		if resolved, _ := pathutil.Resolve(key); resolved == target {
 			return u.err
 		}
 	}
@@ -260,7 +260,7 @@ func (c *RecoverableHandleCache) LastError(path string) string {
 
 // Error the latest failed open of the path returned, nil when none is recorded
 func (c *RecoverableHandleCache) LastFailure(path string) error {
-	path = pypath.PathStr(path)
+	path = filepath.Clean(path)
 	c.Lock.Lock()
 	defer c.Lock.Unlock()
 	if u := c.unavailable[path]; u != nil {

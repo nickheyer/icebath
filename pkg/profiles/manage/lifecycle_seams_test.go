@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 func TestRmtreeFailureRaises(t *testing.T) {
@@ -29,7 +29,7 @@ func TestRmtreeFailureRaises(t *testing.T) {
 	oldClean, oldSleep, oldRm := cleanupGatewayService, rmtreeSleep, rmtreeProfile
 	cleanupGatewayService = func(context.Context, string, string) bool { return false }
 	rmtreeSleep = func(time.Duration) {}
-	rmtreeProfile = func(string, func(pyfs.RmTreeOp, string, error) error) error {
+	rmtreeProfile = func(string, func(fsutil.RemoveOp, string, error) error) error {
 		return fmt.Errorf("locked: %w", fs.ErrPermission)
 	}
 	t.Cleanup(func() { cleanupGatewayService, rmtreeSleep, rmtreeProfile = oldClean, oldSleep, oldRm })

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const naDay = 86400.0
@@ -69,7 +69,7 @@ func naColumn(t *testing.T, db *SessionDB, query string) []string {
 	}
 	out := []string{}
 	for _, r := range rows {
-		out = append(out, pyStr(r.Vals[r.Keys[0]]))
+		out = append(out, pyStr(r.Value(r.Keys()[0])))
 	}
 	sort.Strings(out)
 	return out
@@ -194,7 +194,7 @@ func TestGuardedRowSurvivesAndKeepsItsRoutingEntry(t *testing.T) {
 	if ok, err := db.TryAcquireSessionTurnLease("live-junk", holder, 300, nil); err != nil || !ok {
 		t.Fatalf("lease %v %v", ok, err)
 	}
-	db.neverActiveListSeam = func(ctx context.Context, days float64) ([]*pyjson.Object, error) {
+	db.neverActiveListSeam = func(ctx context.Context, days float64) ([]*jsonutil.Object, error) {
 		rows, err := db.ListNeverActiveKeyedSessions(ctx, days)
 		profileExec(t, db, "DELETE FROM sessions WHERE id = 'gone-junk'")
 		return rows, err
@@ -293,7 +293,7 @@ func TestRoutingLineageCteAgreesWithPythonWalkForResetFork(t *testing.T) {
 	}
 }
 
-func peerFind(t *testing.T, db *SessionDB, q GatewayPeerQuery) *pyjson.Object {
+func peerFind(t *testing.T, db *SessionDB, q GatewayPeerQuery) *jsonutil.Object {
 	t.Helper()
 	row, err := db.FindLatestGatewaySessionForPeer(context.Background(), q)
 	if err != nil {

@@ -10,8 +10,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Built in generic status phrases shipped beside the gateway
@@ -64,10 +62,10 @@ func cleanPhraseList(value any) []string {
 	}
 	cleaned := []string{}
 	for _, item := range items {
-		if !pyrepr.Truthy(item) {
+		if !anyutil.IsTrue(item) {
 			item = ""
 		}
-		phrase := strings.TrimSpace(pyrepr.Str(item))
+		phrase := strings.TrimSpace(anyutil.String(item))
 		if phrase != "" && len([]rune(phrase)) <= maxPhraseChars && !slices.Contains(cleaned, phrase) {
 			cleaned = append(cleaned, phrase)
 		}
@@ -78,13 +76,13 @@ func cleanPhraseList(value any) []string {
 // Merges one section's phrases, replacing a surface in replace mode and appending otherwise
 func mergePhraseMapping(catalog statusPhraseCatalog, section map[string]any, inheritedMode string) {
 	mode := section["mode"]
-	if !pyrepr.Truthy(mode) {
+	if !anyutil.IsTrue(mode) {
 		mode = inheritedMode
 		if inheritedMode == "" {
 			mode = "append"
 		}
 	}
-	replace := strings.ToLower(strings.TrimSpace(pyrepr.Str(mode))) == "replace"
+	replace := strings.ToLower(strings.TrimSpace(anyutil.String(mode))) == "replace"
 	phraseMap, isMap := section["phrases"].(map[string]any)
 	if !isMap {
 		phraseMap = section
@@ -125,11 +123,11 @@ func hasYAMLSuffix(name string) bool {
 
 // YAML files under the base dir at a relative path, none for absolute, parent or escaping paths
 func iterPhraseFiles(baseDir string, rawPath any) []string {
-	if !pyrepr.Truthy(rawPath) {
+	if !anyutil.IsTrue(rawPath) {
 		rawPath = ""
 	}
-	raw := strings.TrimSpace(pyrepr.Str(rawPath))
-	candidate := pypath.Expanduser(raw)
+	raw := strings.TrimSpace(anyutil.String(rawPath))
+	candidate := pathutil.ExpandUser(raw)
 	if raw == "" || filepath.IsAbs(candidate) || slices.Contains(strings.Split(filepath.ToSlash(candidate), "/"), "..") {
 		return nil
 	}
@@ -203,10 +201,10 @@ func mergePhraseConfig(catalog statusPhraseCatalog, section any, baseDir string)
 		return
 	}
 	mode := mapping["mode"]
-	if !pyrepr.Truthy(mode) {
+	if !anyutil.IsTrue(mode) {
 		mode = "append"
 	}
-	modeText := strings.ToLower(strings.TrimSpace(pyrepr.Str(mode)))
+	modeText := strings.ToLower(strings.TrimSpace(anyutil.String(mode)))
 	for _, key := range []string{"path", "paths"} {
 		mergePhrasePaths(catalog, mapping[key], baseDir, modeText)
 	}

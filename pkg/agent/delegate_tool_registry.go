@@ -3,17 +3,18 @@ package agent
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 const recentSubagentsCap = 200
@@ -117,10 +118,7 @@ func subagentKey(v any) string {
 	if !pyTruthy(v) {
 		return ""
 	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // GetSubagentAttribution returns the subagent id, goal and delegation id of a live or recently finished child task
@@ -176,7 +174,7 @@ func unregisterSubagent(subagentID string, agent any) {
 	activeSubagentsMu.Lock()
 	defer activeSubagentsMu.Unlock()
 	record := activeSubagents.get(subagentID)
-	if record == nil || !(agent == nil || pyrepr.Is(record["agent"], agent)) {
+	if record == nil || !(agent == nil || record["agent"] == agent) {
 		return
 	}
 	activeSubagents.pop(subagentID)
@@ -197,7 +195,7 @@ func closeSubagentSteering(subagentID string, agent any) string {
 	activeSubagentsMu.Lock()
 	defer activeSubagentsMu.Unlock()
 	record := activeSubagents.get(subagentID)
-	if record == nil || !pyrepr.Is(record["agent"], agent) {
+	if record == nil || record["agent"] != agent {
 		return ""
 	}
 	record["accepting_steer"] = false
@@ -241,7 +239,7 @@ func subagentTransportMatches(record map[string]any, transport any) bool {
 	default:
 		bound = record["owner_transport"]
 	}
-	if pyrepr.Is(bound, transport) {
+	if bound == transport {
 		return true
 	}
 	fanout, ok := bound.(*tuihost.FanoutTransport)
@@ -250,6 +248,16 @@ func subagentTransportMatches(record map[string]any, transport any) bool {
 	}
 	member, ok := transport.(tuihost.Transport)
 	return ok && fanout.Contains(member)
+}
+
+// Whether two owner session records are the same record: one map value, or the same session
+func sameRecord(a, b any) bool {
+	ma, okA := a.(map[string]any)
+	mb, okB := b.(map[string]any)
+	if okA || okB {
+		return okA && okB && reflect.ValueOf(ma).UnsafePointer() == reflect.ValueOf(mb).UnsafePointer()
+	}
+	return a == b
 }
 
 // SteerSubagent queues steering text into a running child, an owner session id demanding exact gateway authority
@@ -263,9 +271,9 @@ func SteerSubagent(subagentID, text string, ownerSessionID *string, ownerTranspo
 	if len(record) == 0 || !pyTruthy(record["accepting_steer"]) {
 		return false
 	}
-	if ownerSessionID != nil && (!pyrepr.Equal(record["owner_session_id"], *ownerSessionID) || ownerTransport == nil ||
+	if ownerSessionID != nil && (record["owner_session_id"] != *ownerSessionID || ownerTransport == nil ||
 		!subagentTransportMatches(record, ownerTransport) || ownerSessionRecord == nil ||
-		!pyrepr.Is(record["owner_session_record"], ownerSessionRecord)) {
+		!sameRecord(record["owner_session_record"], ownerSessionRecord)) {
 		return false
 	}
 	agent := record["agent"]
@@ -337,7 +345,7 @@ func isDescendantOf(child, parent any, maxHops int) bool {
 		if ancestor == nil {
 			return false
 		}
-		if pyrepr.Is(ancestor, parent) {
+		if ancestor == parent {
 			return true
 		}
 		cur = ancestor
@@ -408,11 +416,11 @@ func runningSeconds(started any) (float64, bool) {
 		return 0, false
 	}
 	now := float64(time.Now().UnixNano()) / 1e9
-	return pyint.Round(now-start, 1), true
+	return mathutil.Round(now-start, 1), true
 }
 
 // The list action payload of the children this parent owns
-func listSubagentsPayload(parent *AIAgent) *pyjson.Object {
+func listSubagentsPayload(parent *AIAgent) *jsonutil.Object {
 	activeSubagentsMu.Lock()
 	records := activeSubagents.values()
 	snapshots := make([]map[string]any, len(records))
@@ -429,7 +437,7 @@ func listSubagentsPayload(parent *AIAgent) *pyjson.Object {
 		if !ownsSubagentRecord(r, parent) {
 			continue
 		}
-		entry := pyjson.NewObject()
+		entry := jsonutil.NewObject()
 		entry.Set("subagent_id", r["subagent_id"])
 		entry.Set("parent_id", r["parent_id"])
 		entry.Set("goal", r["goal"])
@@ -448,7 +456,7 @@ func listSubagentsPayload(parent *AIAgent) *pyjson.Object {
 		entry.Set("live_transcript", transcript)
 		entries = append(entries, entry)
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("action", "list")
 	payload.Set("count", len(entries))
 	payload.Set("subagents", entries)
@@ -495,7 +503,7 @@ func controlText(name string, v any) (string, error) {
 // Runs the list, steer or stop control action over the parent's own spawn tree
 func handleDelegateControlAction(action string, subagentID, message any, parent *AIAgent) (string, error) {
 	if action == "list" {
-		return pyjson.Dumps(listSubagentsPayload(parent), pyjson.EnsureASCII(false))
+		return jsonutil.Encode(listSubagentsPayload(parent))
 	}
 	rawID, err := controlText("subagent_id", subagentID)
 	if err != nil {
@@ -538,12 +546,12 @@ func handleDelegateControlAction(action string, subagentID, message any, parent 
 		done = SteerSubagent(sid, strings.TrimSpace(text), nil, nil, nil)
 	}
 	if done {
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("action", action)
 		payload.Set("subagent_id", sid)
 		payload.Set("status", outcome[0])
 		payload.Set("note", outcome[1])
-		return pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+		return jsonutil.Encode(payload)
 	}
 	return delegateToolError(fmt.Sprintf(outcome[2], sid)), nil
 }

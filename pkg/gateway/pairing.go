@@ -22,14 +22,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Unambiguous code alphabet without 0, O, 1 and I, and the code length
@@ -68,8 +68,8 @@ func allowlistEnvForPlatform(ctx context.Context, platform string) (name string)
 			name = ""
 		}
 	}()
-	if value := AuthzField(platform, "allowed_users_env", Registry.Get(ctx, platform)); pyrepr.Truthy(value) {
-		return pyrepr.Str(value)
+	if value := AuthzField(platform, "allowed_users_env", Registry.Get(ctx, platform)); anyutil.IsTrue(value) {
+		return anyutil.String(value)
 	}
 	return ""
 }
@@ -141,9 +141,9 @@ func pairingUserIDsMatch(ctx context.Context, platform, left, right string) (boo
 }
 
 // Approved ids that name the same principal as userID, in file order
-func pairingMatchingIDs(ctx context.Context, platform string, approved *pyjson.Object, userID string) ([]string, error) {
+func pairingMatchingIDs(ctx context.Context, platform string, approved *jsonutil.Object, userID string) ([]string, error) {
 	matching := []string{}
-	for _, uid := range approved.Keys {
+	for _, uid := range approved.Keys() {
 		same, err := pairingUserIDsMatch(ctx, platform, uid, userID)
 		if err != nil {
 			return nil, err
@@ -208,7 +208,7 @@ func syncAllowlistAdd(ctx context.Context, platform, userID string) error {
 
 // Runner exposing the adapters of its primary profile
 type primaryAdaptersRunner interface {
-	Adapters() *pydict.Dict[Platform, PlatformAdapter]
+	Adapters() *orderedutil.Map[Platform, PlatformAdapter]
 }
 
 // Adapters of the in process gateway runner across every served profile, none without a runner
@@ -291,7 +291,7 @@ func purgeAllowlistEntries(ctx context.Context, entries any, platform, userID st
 	case []any:
 		kept := []any{}
 		for _, item := range value {
-			if keep(pyrepr.Str(item)) {
+			if keep(anyutil.String(item)) {
 				kept = append(kept, item)
 			}
 		}
@@ -366,9 +366,9 @@ func syncAllowlistRemove(ctx context.Context, platform, userID string) (err erro
 }
 
 // JSON object of a file, empty when missing, malformed, unreadable or not an object, an error for undecodable bytes
-func loadPairingJSONFile(path string) (*pyjson.Object, error) {
+func loadPairingJSONFile(path string) (*jsonutil.Object, error) {
 	if _, err := os.Stat(path); err != nil {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	raw, err := os.ReadFile(path)
 	if err != nil {
@@ -383,20 +383,20 @@ func loadPairingJSONFile(path string) (*pyjson.Object, error) {
 				"chown the existing file to the icebath user, or restart the "+
 				"container so the entrypoint can fix ownership.", path, pairingEUID(), ownerInfo, errchain.OSText(err)))
 		}
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	if object, ok := data.(*pyjson.Object); ok {
+	if object, ok := data.(*jsonutil.Object); ok {
 		return object, nil
 	}
-	return pyjson.NewObject(), nil
+	return jsonutil.NewObject(), nil
 }
 
 // Effective uid for the unreadable file warning, n/a where the platform has none
@@ -422,18 +422,18 @@ func unixModeBits(mode os.FileMode) uint32 {
 	return bits
 }
 
-func savePairingJSONFile(ctx context.Context, path string, data *pyjson.Object) error {
-	return config.AtomicJSONWriteMode(ctx, path, data, 0o600, pyjson.Indent(2))
+func savePairingJSONFile(ctx context.Context, path string, data *jsonutil.Object) error {
+	return config.AtomicJSONWriteMode(ctx, path, data, 0o600, jsonutil.Indent(2))
 }
 
 // Merges the pairing data of the other layout into the active directory, active entries winning
 func migrateSplitPairingDirs(ctx context.Context, h, active string) error {
 	oldDir := filepath.Join(h, "pairing")
-	activeResolved, err := pypath.Resolve(active)
+	activeResolved, err := pathutil.Resolve(active)
 	if err != nil {
 		return err
 	}
-	oldResolved, err := pypath.Resolve(oldDir)
+	oldResolved, err := pathutil.Resolve(oldDir)
 	if err != nil {
 		return err
 	}
@@ -441,7 +441,7 @@ func migrateSplitPairingDirs(ctx context.Context, h, active string) error {
 	if activeResolved == oldResolved {
 		alternate = filepath.Join(h, "platforms", "pairing")
 	}
-	alternateResolved, err := pypath.Resolve(alternate)
+	alternateResolved, err := pathutil.Resolve(alternate)
 	if err != nil {
 		return err
 	}
@@ -453,7 +453,7 @@ func migrateSplitPairingDirs(ctx context.Context, h, active string) error {
 	}
 	sources, _ := filepath.Glob(filepath.Join(alternate, "*.json"))
 	for _, src := range sources {
-		merged := pyjson.NewObject()
+		merged := jsonutil.NewObject()
 		if info, err := os.Stat(src); err == nil && info.Mode().IsRegular() {
 			loaded, err := loadPairingJSONFile(src)
 			if err != nil {
@@ -469,8 +469,8 @@ func migrateSplitPairingDirs(ctx context.Context, h, active string) error {
 		if err != nil {
 			return err
 		}
-		merged.Update(current)
-		if !pyrepr.Equal(merged, current) {
+		merged.Merge(current)
+		if !anyutil.Equal(merged, current) {
 			if err := savePairingJSONFile(ctx, target, merged); err != nil {
 				return err
 			}
@@ -480,7 +480,7 @@ func migrateSplitPairingDirs(ctx context.Context, h, active string) error {
 }
 
 func isHashedPairingEntry(entry any) bool {
-	object, ok := entry.(*pyjson.Object)
+	object, ok := entry.(*jsonutil.Object)
 	if !ok {
 		return false
 	}
@@ -491,11 +491,11 @@ func isHashedPairingEntry(entry any) bool {
 
 // Numeric created_at of a pending entry, false for malformed and legacy entries
 func pairingEntryCreatedAt(info any) (float64, bool) {
-	object, ok := info.(*pyjson.Object)
+	object, ok := info.(*jsonutil.Object)
 	if !ok {
 		return 0, false
 	}
-	return pairingNumber(object.GetOr("created_at", nil))
+	return pairingNumber(object.ValueOr("created_at", nil))
 }
 
 // Float of an int, float or bool the way arithmetic reads them, false for anything else
@@ -510,7 +510,7 @@ func pairingNumber(v any) (float64, bool) {
 }
 
 // Number a rate limit slot holds, zero for an absent slot and a TypeError for a value arithmetic refuses
-func pairingLimit(limits *pyjson.Object, key string) (float64, error) {
+func pairingLimit(limits *jsonutil.Object, key string) (float64, error) {
 	value, present := limits.Get(key)
 	if !present {
 		return 0, nil
@@ -523,7 +523,7 @@ func pairingLimit(limits *pyjson.Object, key string) (float64, error) {
 
 type approvedCacheEntry struct {
 	key  []any
-	data *pyjson.Object
+	data *jsonutil.Object
 }
 
 // Pairing codes and approved users of one pairing directory, shared by the adapters of a gateway
@@ -534,7 +534,7 @@ type PairingStore struct {
 	scoped        bool
 	approvedCache map[string]approvedCacheEntry
 	// Reader of one store file, the module loader unless a caller of the store replaces it
-	loadJSON func(path string) (*pyjson.Object, error)
+	loadJSON func(path string) (*jsonutil.Object, error)
 }
 
 // Store of the bound home, or of a named profile resolved the way `icebath -p <name> pairing` resolves it
@@ -585,10 +585,10 @@ func (s *PairingStore) cleanupExpired(ctx context.Context, platform string) erro
 		return err
 	}
 	now := pairingNow()
-	live := pyjson.NewObject()
-	for _, key := range pending.Keys {
-		if created, ok := pairingEntryCreatedAt(pending.Vals[key]); ok && now-created <= PairingCodeTTLSeconds {
-			live.Set(key, pending.Vals[key])
+	live := jsonutil.NewObject()
+	for _, key := range pending.Keys() {
+		if created, ok := pairingEntryCreatedAt(pending.Value(key)); ok && now-created <= PairingCodeTTLSeconds {
+			live.Set(key, pending.Value(key))
 		}
 	}
 	if live.Len() != pending.Len() {
@@ -619,7 +619,7 @@ func (s *PairingStore) platforms(platform, suffix string) ([]string, error) {
 }
 
 // Approved users of a platform, parsed once per file version, an unreadable file failing closed as empty
-func (s *PairingStore) loadApproved(platform string) (*pyjson.Object, error) {
+func (s *PairingStore) loadApproved(platform string) (*jsonutil.Object, error) {
 	path := s.approvedPath(platform)
 	data, key, err := s.readApproved(platform, path)
 	if err != nil {
@@ -631,7 +631,7 @@ func (s *PairingStore) loadApproved(platform string) (*pyjson.Object, error) {
 }
 
 // Opens the approved file and returns its cached or parsed object with the cache key of the opened file
-func (s *PairingStore) readApproved(platform, path string) (*pyjson.Object, []any, error) {
+func (s *PairingStore) readApproved(platform, path string) (*jsonutil.Object, []any, error) {
 	stream, err := os.Open(path)
 	if err != nil {
 		return nil, nil, err
@@ -641,25 +641,25 @@ func (s *PairingStore) readApproved(platform, path string) (*pyjson.Object, []an
 	if err != nil {
 		return nil, nil, err
 	}
-	dev, _, err := pyfs.LstatIdentity(path)
+	dev, _, err := fsutil.Identity(path)
 	if err != nil {
 		return nil, nil, err
 	}
 	key := append([]any{dev}, config.FileCacheVersionOf(path, info)...)
-	if cached, ok := s.approvedCache[platform]; ok && pyrepr.Equal(cached.key, key) {
+	if cached, ok := s.approvedCache[platform]; ok && anyutil.Equal(cached.key, key) {
 		return cached.data, key, nil
 	}
 	var raw bytes.Buffer
 	if _, err := raw.ReadFrom(stream); err != nil {
 		return nil, nil, err
 	}
-	parsed, err := pyjson.LoadsBytes(raw.Bytes())
+	parsed, err := jsonutil.Decode(raw.Bytes())
 	if err != nil {
 		return nil, nil, err
 	}
-	data, ok := parsed.(*pyjson.Object)
+	data, ok := parsed.(*jsonutil.Object)
 	if !ok {
-		data = pyjson.NewObject()
+		data = jsonutil.NewObject()
 	}
 	return data, key, nil
 }
@@ -677,24 +677,24 @@ func (s *PairingStore) IsApproved(ctx context.Context, platform, userID string) 
 }
 
 // Approved users as rows of platform, user_id and the stored fields, of one platform or of all
-func (s *PairingStore) ListApproved(platform string) ([]*pyjson.Object, error) {
+func (s *PairingStore) ListApproved(platform string) ([]*jsonutil.Object, error) {
 	platforms, err := s.platforms(platform, "approved")
 	if err != nil {
 		return nil, err
 	}
-	rows := []*pyjson.Object{}
+	rows := []*jsonutil.Object{}
 	for _, p := range platforms {
 		approved, err := s.loadJSON(s.approvedPath(p))
 		if err != nil {
 			return nil, err
 		}
-		for _, uid := range approved.Keys {
-			row := pyjson.ObjectOf("platform", p, "user_id", uid)
-			info, ok := approved.Vals[uid].(*pyjson.Object)
+		for _, uid := range approved.Keys() {
+			row := jsonutil.ObjectOf("platform", p, "user_id", uid)
+			info, ok := approved.Value(uid).(*jsonutil.Object)
 			if !ok {
-				return nil, &PyError{Kind: "TypeError", Msg: "an approved pairing is " + errchain.Kind(approved.Vals[uid]) + ", expected a mapping"}
+				return nil, &PyError{Kind: "TypeError", Msg: "an approved pairing is " + errchain.Kind(approved.Value(uid)) + ", expected a mapping"}
 			}
-			row.Update(info)
+			row.Merge(info)
 			rows = append(rows, row)
 		}
 	}
@@ -715,7 +715,7 @@ func (s *PairingStore) approveUser(ctx context.Context, platform, userID string,
 	for _, uid := range matching {
 		approved.Delete(uid)
 	}
-	approved.Set(normalized, pyjson.ObjectOf("user_name", userName, "approved_at", pairingNow()))
+	approved.Set(normalized, jsonutil.ObjectOf("user_name", userName, "approved_at", pairingNow()))
 	if err := savePairingJSONFile(ctx, s.approvedPath(platform), approved); err != nil {
 		return err
 	}
@@ -755,11 +755,11 @@ func hashPairingCode(code string, salt []byte) string {
 // Approved identity of a settled pairing request
 type PairingApproval struct {
 	UserID, UserName string
-	Row              *pyjson.Object
+	Row              *jsonutil.Object
 }
 
 // Removes a pending request and approves its user, the store lock held
-func (s *PairingStore) finishApproval(ctx context.Context, platform string, pending *pyjson.Object, matchedKey string, matched *pyjson.Object) (*PairingApproval, error) {
+func (s *PairingStore) finishApproval(ctx context.Context, platform string, pending *jsonutil.Object, matchedKey string, matched *jsonutil.Object) (*PairingApproval, error) {
 	pending.Delete(matchedKey)
 	if err := savePairingJSONFile(ctx, s.pendingPath(platform), pending); err != nil {
 		return nil, err
@@ -771,11 +771,11 @@ func (s *PairingStore) finishApproval(ctx context.Context, platform string, pend
 	if !present {
 		return nil, &PyError{Kind: "KeyError", Msg: "'user_id'"}
 	}
-	userName := matched.GetOr("user_name", "")
-	result := &PairingApproval{UserID: pyrepr.Str(userID), UserName: pyrepr.Str(userName),
-		Row: pyjson.ObjectOf("user_id", userID, "user_name", userName)}
+	userName := matched.ValueOr("user_name", "")
+	result := &PairingApproval{UserID: anyutil.String(userID), UserName: anyutil.String(userName),
+		Row: jsonutil.ObjectOf("user_id", userID, "user_name", userName)}
 	idText := ""
-	if pyrepr.Truthy(userID) {
+	if anyutil.IsTrue(userID) {
 		idText = result.UserID
 	}
 	return result, s.approveUser(ctx, platform, idText, userName)
@@ -835,7 +835,7 @@ func (s *PairingStore) GenerateCode(ctx context.Context, platform, userID, userN
 	if _, err := rand.Read(entryID); err != nil {
 		return "", false, err
 	}
-	pending.Set(hex.EncodeToString(entryID), pyjson.ObjectOf("hash", hashPairingCode(code, salt), "salt", hex.EncodeToString(salt),
+	pending.Set(hex.EncodeToString(entryID), jsonutil.ObjectOf("hash", hashPairingCode(code, salt), "salt", hex.EncodeToString(salt),
 		"user_id", normalized, "user_name", userName, "created_at", pairingNow()))
 	if err := savePairingJSONFile(ctx, s.pendingPath(platform), pending); err != nil {
 		return "", false, err
@@ -864,23 +864,23 @@ func (s *PairingStore) ApproveCode(ctx context.Context, platform, code string) (
 	if err != nil {
 		return nil, err
 	}
-	for _, entryID := range pending.Keys {
-		entry := pending.Vals[entryID]
+	for _, entryID := range pending.Keys() {
+		entry := pending.Value(entryID)
 		if !isHashedPairingEntry(entry) {
 			continue
 		}
-		object := entry.(*pyjson.Object)
-		saltText, ok := object.GetOr("salt", nil).(string)
+		object := entry.(*jsonutil.Object)
+		saltText, ok := object.ValueOr("salt", nil).(string)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "the stored pairing salt is " + errchain.Kind(object.GetOr("salt", nil)) + ", expected hexadecimal text"}
+			return nil, &PyError{Kind: "TypeError", Msg: "the stored pairing salt is " + errchain.Kind(object.ValueOr("salt", nil)) + ", expected hexadecimal text"}
 		}
-		salt, err := pystr.BytesFromHex(saltText)
+		salt, err := hex.DecodeString(saltText)
 		if err != nil {
 			continue
 		}
-		stored, ok := object.GetOr("hash", nil).(string)
+		stored, ok := object.ValueOr("hash", nil).(string)
 		if !ok {
-			return nil, &PyError{Kind: "TypeError", Msg: "the stored pairing hash is " + errchain.Kind(object.GetOr("hash", nil)) + ", expected text"}
+			return nil, &PyError{Kind: "TypeError", Msg: "the stored pairing hash is " + errchain.Kind(object.ValueOr("hash", nil)) + ", expected text"}
 		}
 		if subtle.ConstantTimeCompare([]byte(hashPairingCode(code, salt)), []byte(stored)) == 1 {
 			return s.finishApproval(ctx, platform, pending, entryID, object)
@@ -921,10 +921,10 @@ func (s *PairingStore) ApproveRequest(ctx context.Context, platform, requestID s
 	if err != nil {
 		return nil, err
 	}
-	for _, entryID := range pending.Keys {
-		entry := pending.Vals[entryID]
+	for _, entryID := range pending.Keys() {
+		entry := pending.Value(entryID)
 		if isHashedPairingEntry(entry) && subtle.ConstantTimeCompare([]byte(strings.ToLower(entryID)), []byte(requestID)) == 1 {
-			return s.finishApproval(ctx, platform, pending, entryID, entry.(*pyjson.Object))
+			return s.finishApproval(ctx, platform, pending, entryID, entry.(*jsonutil.Object))
 		}
 	}
 	return nil, nil
@@ -957,21 +957,21 @@ func (s *PairingStore) ListPending(ctx context.Context, platform string) ([]Pend
 		if err != nil {
 			return nil, err
 		}
-		for _, entryID := range pending.Keys {
-			info := pending.Vals[entryID]
+		for _, entryID := range pending.Keys() {
+			info := pending.Value(entryID)
 			createdAt, ok := pairingEntryCreatedAt(info)
 			if !ok {
 				continue
 			}
-			object := info.(*pyjson.Object)
-			_, hashIsText := object.GetOr("hash", nil).(string)
-			_, saltIsText := object.GetOr("salt", nil).(string)
+			object := info.(*jsonutil.Object)
+			_, hashIsText := object.ValueOr("hash", nil).(string)
+			_, saltIsText := object.ValueOr("salt", nil).(string)
 			requestID := ""
 			if hashIsText && saltIsText {
 				requestID = entryID
 			}
-			results = append(results, PendingPairing{Platform: p, RequestID: requestID, UserID: object.GetOr("user_id", ""),
-				UserName: object.GetOr("user_name", ""), AgeMinutes: int((pairingNow() - createdAt) / 60)})
+			results = append(results, PendingPairing{Platform: p, RequestID: requestID, UserID: object.ValueOr("user_id", ""),
+				UserName: object.ValueOr("user_name", ""), AgeMinutes: int((pairingNow() - createdAt) / 60)})
 		}
 	}
 	return results, nil
@@ -995,18 +995,18 @@ func (s *PairingStore) ClearPending(ctx context.Context, platform string) (int, 
 			return 0, err
 		}
 		count += pending.Len()
-		if err := savePairingJSONFile(ctx, s.pendingPath(p), pyjson.NewObject()); err != nil {
+		if err := savePairingJSONFile(ctx, s.pendingPath(p), jsonutil.NewObject()); err != nil {
 			return 0, err
 		}
 	}
 	return count, nil
 }
 
-func (s *PairingStore) limits() (*pyjson.Object, error) {
+func (s *PairingStore) limits() (*jsonutil.Object, error) {
 	return s.loadJSON(s.rateLimitPath())
 }
 
-func (s *PairingStore) saveLimits(ctx context.Context, limits *pyjson.Object) error {
+func (s *PairingStore) saveLimits(ctx context.Context, limits *jsonutil.Object) error {
 	return savePairingJSONFile(ctx, s.rateLimitPath(), limits)
 }
 
@@ -1060,7 +1060,7 @@ func (s *PairingStore) HasRecentDecline(ctx context.Context, platform, userID st
 	}
 	now := pairingNow()
 	for alias := range aliases {
-		if stamped, ok := pairingNumber(stamps.GetOr(platform+":"+alias, nil)); ok && now-stamped < PairingDeclineDedupeSeconds {
+		if stamped, ok := pairingNumber(stamps.ValueOr(platform+":"+alias, nil)); ok && now-stamped < PairingDeclineDedupeSeconds {
 			return true, nil
 		}
 	}
@@ -1079,10 +1079,10 @@ func (s *PairingStore) RecordDecline(ctx context.Context, platform, userID strin
 		return err
 	}
 	now := pairingNow()
-	stamps := pyjson.NewObject()
-	for _, key := range loaded.Keys {
-		if value, ok := pairingNumber(loaded.Vals[key]); ok && now-value < PairingDeclineDedupeSeconds {
-			stamps.Set(key, loaded.Vals[key])
+	stamps := jsonutil.NewObject()
+	for _, key := range loaded.Keys() {
+		if value, ok := pairingNumber(loaded.Value(key)); ok && now-value < PairingDeclineDedupeSeconds {
+			stamps.Set(key, loaded.Value(key))
 		}
 	}
 	aliases, err := pairingUserIDAliases(ctx, platform, userID)
@@ -1144,7 +1144,7 @@ func (s *PairingStore) resetFailedAttempts(ctx context.Context, platform string)
 		return err
 	}
 	failKey := "_failures:" + platform
-	if pyrepr.Truthy(limits.GetOr(failKey, nil)) {
+	if anyutil.IsTrue(limits.ValueOr(failKey, nil)) {
 		limits.Set(failKey, 0)
 		return s.saveLimits(ctx, limits)
 	}

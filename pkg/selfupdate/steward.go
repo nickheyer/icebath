@@ -205,7 +205,7 @@ func SealedSteward(projectRoot string) *string {
 	}
 	steward := "unknown"
 	stamp := pm.ReadInstallStamp(projectRoot)
-	if distribution, ok := stamp.Vals["distribution"].(string); ok && distribution != "" {
+	if distribution, ok := stamp.Value("distribution").(string); ok && distribution != "" {
 		steward = distribution
 	} else {
 		binary := installBinary(projectRoot)

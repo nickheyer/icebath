@@ -10,12 +10,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -66,7 +65,7 @@ func traceDict(v any) (func(string) (any, bool), bool) {
 	switch d := v.(type) {
 	case map[string]any:
 		return func(k string) (any, bool) { x, ok := d[k]; return x, ok }, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return d.Get, true
 	}
 	return nil, false
@@ -91,7 +90,7 @@ func traceList(v any) ([]any, bool) {
 			out[i] = x
 		}
 		return out, true
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		out := make([]any, len(l))
 		for i, x := range l {
 			out[i] = x
@@ -102,28 +101,28 @@ func traceList(v any) ([]any, bool) {
 }
 
 // json.dumps with default options
-func traceDumps(v any) (string, error) { return pyjson.Dumps(v) }
+func traceDumps(v any) (string, error) { return jsonutil.Encode(v) }
 
 // Text block with its body redacted
-func traceTextBlock(text any, redact bool) (*pyjson.Object, error) {
+func traceTextBlock(text any, redact bool) (*jsonutil.Object, error) {
 	body, err := traceRedact(text, redact)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("type", "text", "text", body), nil
+	return jsonutil.ObjectOf("type", "text", "text", body), nil
 }
 
 // Anthropic content block of one OpenAI content part, images omitted
-func tracePartToBlock(part any, redact bool) (*pyjson.Object, error) {
+func tracePartToBlock(part any, redact bool) (*jsonutil.Object, error) {
 	get, ok := traceDict(part)
 	if !ok {
-		return traceTextBlock(pyrepr.Str(part), redact)
+		return traceTextBlock(anyutil.String(part), redact)
 	}
 	switch traceGet(get, "type", nil) {
 	case "text":
 		return traceTextBlock(traceGet(get, "text", ""), redact)
 	case "image_url", "image":
-		return pyjson.ObjectOf("type", "text", "text", "[image omitted]"), nil
+		return jsonutil.ObjectOf("type", "text", "text", "[image omitted]"), nil
 	}
 	text, err := traceDumps(part)
 	if err != nil {
@@ -169,14 +168,14 @@ func traceParseToolArgs(raw any) any {
 		if _, isDict := traceDict(raw); isDict {
 			return raw
 		}
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	if strings.TrimSpace(s) == "" {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	parsed, err := pyjson.Loads(s)
+	parsed, err := jsonutil.Decode(s)
 	if err != nil {
-		return pyjson.ObjectOf("_raw", s)
+		return jsonutil.ObjectOf("_raw", s)
 	}
 	return parsed
 }
@@ -191,8 +190,8 @@ func traceToolCallsToBlocks(toolCalls any, redact bool) ([]any, error) {
 			continue
 		}
 		fnVal := traceGet(get, "function", nil)
-		if !pyrepr.Truthy(fnVal) {
-			fnVal = pyjson.NewObject()
+		if !anyutil.IsTrue(fnVal) {
+			fnVal = jsonutil.NewObject()
 		}
 		fn, ok := traceDict(fnVal)
 		if !ok {
@@ -208,23 +207,23 @@ func traceToolCallsToBlocks(toolCalls any, redact bool) ([]any, error) {
 			if err != nil {
 				return nil, err
 			}
-			if parsed, err = pyjson.Loads(redacted.(string)); err != nil {
+			if parsed, err = jsonutil.Decode(redacted.(string)); err != nil {
 				pkgLog().Warn("Trace upload redacted tool arguments are not valid JSON; refusing upload")
 				return nil, &traceRedactionError{traceRedactionBlocked}
 			}
 		}
 		id := traceGet(get, "id", nil)
-		if !pyrepr.Truthy(id) {
+		if !anyutil.IsTrue(id) {
 			id = "toolu_" + strings.ReplaceAll(uuid.NewString(), "-", "")[:16]
 		}
 		name := traceGet(fn, "name", nil)
-		if !pyrepr.Truthy(name) {
+		if !anyutil.IsTrue(name) {
 			name = traceGet(get, "name", nil)
 		}
-		if !pyrepr.Truthy(name) {
+		if !anyutil.IsTrue(name) {
 			name = "tool"
 		}
-		blocks = append(blocks, pyjson.ObjectOf("type", "tool_use", "id", id, "name", name, "input", parsed))
+		blocks = append(blocks, jsonutil.ObjectOf("type", "tool_use", "id", id, "name", name, "input", parsed))
 	}
 	return blocks, nil
 }
@@ -234,8 +233,8 @@ func traceGitBranch(ctx context.Context, cwd string) string {
 	if cwd == "" {
 		return ""
 	}
-	done, err := pysubprocess.RunWith(ctx, []string{"git", "rev-parse", "--abbrev-ref", "HEAD"},
-		pysubprocess.Options{Dir: cwd, Timeout: 3 * time.Second})
+	done, err := executil.Run(ctx, []string{"git", "rev-parse", "--abbrev-ref", "HEAD"},
+		executil.Options{Dir: cwd, Timeout: 3 * time.Second})
 	if err != nil || done.Returncode != 0 {
 		return ""
 	}
@@ -243,7 +242,7 @@ func traceGitBranch(ctx context.Context, cwd string) string {
 }
 
 // Assistant turn with text and tool_use blocks, one empty text block when it has neither
-func traceAssistantMessage(get func(string) (any, bool), model string, redact bool) (*pyjson.Object, error) {
+func traceAssistantMessage(get func(string) (any, bool), model string, redact bool) (*jsonutil.Object, error) {
 	blocks, err := traceContentToBlocks(traceGet(get, "content", nil), redact)
 	if err != nil {
 		return nil, err
@@ -254,16 +253,16 @@ func traceAssistantMessage(get func(string) (any, bool), model string, redact bo
 	}
 	blocks = append(blocks, calls...)
 	if len(blocks) == 0 {
-		blocks = []any{pyjson.ObjectOf("type", "text", "text", "")}
+		blocks = []any{jsonutil.ObjectOf("type", "text", "text", "")}
 	}
 	if model == "" {
 		model = "unknown"
 	}
-	return pyjson.ObjectOf("role", "assistant", "model", model, "content", blocks), nil
+	return jsonutil.ObjectOf("role", "assistant", "model", model, "content", blocks), nil
 }
 
 // Tool result riding on a user turn keyed by the tool call id
-func traceToolResultMessage(get func(string) (any, bool), redact bool) (*pyjson.Object, error) {
+func traceToolResultMessage(get func(string) (any, bool), redact bool) (*jsonutil.Object, error) {
 	content := traceGet(get, "content", nil)
 	text, ok := content.(string)
 	if !ok {
@@ -277,30 +276,30 @@ func traceToolResultMessage(get func(string) (any, bool), redact bool) (*pyjson.
 		return nil, err
 	}
 	id := traceGet(get, "tool_call_id", nil)
-	if !pyrepr.Truthy(id) {
+	if !anyutil.IsTrue(id) {
 		id = traceGet(get, "tool_name", nil)
 	}
-	if !pyrepr.Truthy(id) {
+	if !anyutil.IsTrue(id) {
 		id = "tool"
 	}
-	return pyjson.ObjectOf("role", "user", "content", []any{pyjson.ObjectOf("type", "tool_result", "tool_use_id", id, "content", body)}), nil
+	return jsonutil.ObjectOf("role", "user", "content", []any{jsonutil.ObjectOf("type", "tool_result", "tool_use_id", id, "content", body)}), nil
 }
 
 // User turn with a redacted string or content blocks
-func traceUserMessage(get func(string) (any, bool), redact bool) (*pyjson.Object, error) {
+func traceUserMessage(get func(string) (any, bool), redact bool) (*jsonutil.Object, error) {
 	content := traceGet(get, "content", nil)
 	if s, ok := content.(string); ok {
 		body, err := traceRedact(s, redact)
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("role", "user", "content", body), nil
+		return jsonutil.ObjectOf("role", "user", "content", body), nil
 	}
 	blocks, err := traceContentToBlocks(content, redact)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("role", "user", "content", blocks), nil
+	return jsonutil.ObjectOf("role", "user", "content", blocks), nil
 }
 
 // Claude Code JSONL of a transcript, one linked line per non system message
@@ -317,7 +316,7 @@ func buildTraceJSONL(ctx context.Context, messages []map[string]any, sessionID, 
 		}
 		turnUUID := uuid.NewString()
 		var lineType string
-		var rendered *pyjson.Object
+		var rendered *jsonutil.Object
 		var err error
 		switch role {
 		case "assistant":
@@ -335,14 +334,14 @@ func buildTraceJSONL(ctx context.Context, messages []map[string]any, sessionID, 
 		}
 		lineCwd := cwd
 		if lineCwd == "" {
-			if lineCwd, err = pypath.Getcwd(); err != nil {
+			if lineCwd, err = os.Getwd(); err != nil {
 				return "", err
 			}
 		}
-		entry := pyjson.ObjectOf("parentUuid", parent, "isSidechain", false, "userType", "external", "cwd", lineCwd,
+		entry := jsonutil.ObjectOf("parentUuid", parent, "isSidechain", false, "userType", "external", "cwd", lineCwd,
 			"sessionId", sessionID, "version", traceVersion, "gitBranch", gitBranch, "uuid", turnUUID,
 			"timestamp", baseTS, "type", lineType, "message", rendered)
-		text, err := pyjson.Dumps(entry, pyjson.EnsureASCII(false))
+		text, err := jsonutil.Encode(entry)
 		if err != nil {
 			return "", err
 		}
@@ -369,32 +368,32 @@ func traceResolveHFToken() string {
 func traceDoUpload(ctx context.Context, jsonl, token, sessionID, datasetName string, private bool) string {
 	who, err := hfWhoami(ctx, token)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("HF whoami failed: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("HF whoami failed: %s", err.Error()))
 		return "Your Hugging Face token was rejected (whoami failed). Make sure it has WRITE access and isn't expired."
 	}
 	var user any
-	if obj, ok := who.(*pyjson.Object); ok {
-		user = obj.GetOr("name", nil)
+	if obj, ok := who.(*jsonutil.Object); ok {
+		user = obj.Value("name")
 	}
-	if !pyrepr.Truthy(user) {
+	if !anyutil.IsTrue(user) {
 		return "Could not resolve your Hugging Face username from the token."
 	}
-	repoID := pyrepr.Str(user) + "/" + datasetName
+	repoID := anyutil.String(user) + "/" + datasetName
 	if err := hfCreateDatasetRepo(ctx, token, repoID, private); err != nil {
-		pkgLog().Warn(fmt.Sprintf("HF create_repo failed for %s: %s", repoID, pyrepr.ExceptionMessage(err)))
-		return fmt.Sprintf("Could not create/access dataset %s: %s", repoID, pyrepr.ExceptionMessage(err))
+		pkgLog().Warn(fmt.Sprintf("HF create_repo failed for %s: %s", repoID, err.Error()))
+		return fmt.Sprintf("Could not create/access dataset %s: %s", repoID, err.Error())
 	}
 	pathInRepo := "sessions/" + sessionID + ".jsonl"
 	if err := hfUploadFile(ctx, token, repoID, pathInRepo, []byte(jsonl), "add session trace "+sessionID); err != nil {
-		pkgLog().Warn(fmt.Sprintf("HF upload_file failed for %s: %s", repoID, pyrepr.ExceptionMessage(err)))
-		return "Upload to Hugging Face failed: " + pyrepr.ExceptionMessage(err)
+		pkgLog().Warn(fmt.Sprintf("HF upload_file failed for %s: %s", repoID, err.Error()))
+		return "Upload to Hugging Face failed: " + err.Error()
 	}
 	return fmt.Sprintf("Uploaded -> https://huggingface.co/datasets/%s/blob/main/%s\n"+
 		"View in the trace viewer: https://huggingface.co/datasets/%s", repoID, pathInRepo, repoID)
 }
 
 // Conversation and session row of a session, an empty row when it is missing
-func traceLoadSessionMessages(ctx context.Context, sessionID, dbPath string) ([]map[string]any, *pyjson.Object, error) {
+func traceLoadSessionMessages(ctx context.Context, sessionID, dbPath string) ([]map[string]any, *jsonutil.Object, error) {
 	if dbPath == "" {
 		dbPath = home.StatePath(home.Dir(ctx))
 	}
@@ -415,7 +414,7 @@ func traceLoadSessionMessages(ctx context.Context, sessionID, dbPath string) ([]
 		return nil, nil, err
 	}
 	if meta == nil {
-		meta = pyjson.NewObject()
+		meta = jsonutil.NewObject()
 	}
 	messages, err := db.GetMessagesAsConversation(ctx, resolved, state.ConversationOptions{})
 	if err != nil {
@@ -442,15 +441,15 @@ func uploadSessionTraceWith(ctx context.Context, sessionID, model, cwd string, r
 	}
 	messages, meta, err := traceLoadSessionMessages(ctx, sessionID, dbPath)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to load session %s for trace upload: %s", sessionID, pyrepr.ExceptionMessage(err)))
-		return fmt.Sprintf("Could not load session %s: %s", sessionID, pyrepr.ExceptionMessage(err)), nil
+		pkgLog().Warn(fmt.Sprintf("Failed to load session %s for trace upload: %s", sessionID, err.Error()))
+		return fmt.Sprintf("Could not load session %s: %s", sessionID, err.Error()), nil
 	}
 	if len(messages) == 0 {
 		return "No transcript to upload for this session yet.", nil
 	}
 	if model == "" {
-		if m := meta.GetOr("model", nil); pyrepr.Truthy(m) {
-			model = pyrepr.Str(m)
+		if m := meta.Value("model"); anyutil.IsTrue(m) {
+			model = anyutil.String(m)
 		}
 	}
 	jsonl, err := buildTraceJSONL(ctx, messages, sessionID, model, cwd, redact)

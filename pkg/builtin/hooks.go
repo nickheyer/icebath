@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/skills"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Claude tool names the edit hooks report for the icebath write tools
@@ -38,9 +38,9 @@ func impeccableLauncherName() string {
 
 // Paths a write tool reports it wrote, else the path argument, resolved against the session cwd
 func editedPaths(result string, args any, cwd string) []string {
-	parsed, _ := pyjson.Loads(result)
+	parsed, _ := jsonutil.Decode(result)
 	var raw []any
-	if obj, ok := pyjson.AsObject(parsed); ok {
+	if obj, ok := jsonutil.AsObject(parsed); ok {
 		if _, has := obj.Get("error"); has {
 			return nil
 		}
@@ -81,7 +81,7 @@ func argValue(args any, key string) any {
 	switch a := args.(type) {
 	case map[string]any:
 		return a[key]
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		v, _ := a.Get(key)
 		return v
 	}
@@ -90,10 +90,10 @@ func argValue(args any, key string) any {
 
 // Result with findings under a key when it is a JSON object, else appended after a blank line
 func withFindings(result, key, text string) string {
-	parsed, _ := pyjson.Loads(result)
-	if obj, ok := pyjson.AsObject(parsed); ok {
+	parsed, _ := jsonutil.Decode(result)
+	if obj, ok := jsonutil.AsObject(parsed); ok {
 		obj.Set(key, text)
-		if out, err := pyjson.Dumps(obj, pyjson.EnsureASCII(false)); err == nil {
+		if out, err := jsonutil.Encode(obj); err == nil {
 			return out
 		}
 	}
@@ -101,12 +101,12 @@ func withFindings(result, key, text string) string {
 }
 
 // The additionalContext string of a Claude hook answer, empty when absent
-func additionalContext(output *pyjson.Object) string {
+func additionalContext(output *jsonutil.Object) string {
 	if output == nil {
 		return ""
 	}
 	specific, _ := output.Get("hookSpecificOutput")
-	obj, ok := pyjson.AsObject(specific)
+	obj, ok := jsonutil.AsObject(specific)
 	if !ok {
 		return ""
 	}
@@ -116,8 +116,8 @@ func additionalContext(output *pyjson.Object) string {
 }
 
 // Runs a hook command with the event on stdin and returns its stdout parsed as an object, nil when silent
-func runHookCommand(ctx context.Context, cmd *exec.Cmd, event *pyjson.Object) (*pyjson.Object, error) {
-	payload, err := pyjson.Dumps(event)
+func runHookCommand(ctx context.Context, cmd *exec.Cmd, event *jsonutil.Object) (*jsonutil.Object, error) {
+	payload, err := jsonutil.Encode(event)
 	if err != nil {
 		return nil, err
 	}
@@ -136,11 +136,11 @@ func runHookCommand(ctx context.Context, cmd *exec.Cmd, event *pyjson.Object) (*
 	if out == "" {
 		return nil, nil
 	}
-	parsed, err := pyjson.Loads(out)
+	parsed, err := jsonutil.Decode(out)
 	if err != nil {
 		return nil, err
 	}
-	obj, _ := pyjson.AsObject(parsed)
+	obj, _ := jsonutil.AsObject(parsed)
 	return obj, nil
 }
 
@@ -221,7 +221,7 @@ func (h *designHook) findLauncher(ctx context.Context, start string) string {
 }
 
 // Runs the launcher hook verb with the event, the materialized launcher through the Go engine resolver
-func (h *designHook) runHook(ctx context.Context, launcher, cwd string, event *pyjson.Object, timeout time.Duration) (*pyjson.Object, error) {
+func (h *designHook) runHook(ctx context.Context, launcher, cwd string, event *jsonutil.Object, timeout time.Duration) (*jsonutil.Object, error) {
 	if launcher == "" || h.disabled() {
 		return nil, nil
 	}
@@ -254,8 +254,8 @@ func (h *designHook) transformToolResult(ctx context.Context, kw map[string]any)
 	cwd := h.sessionCwd(ctx)
 	var texts []string
 	for _, p := range editedPaths(result, kw["args"], cwd) {
-		event := pyjson.ObjectOf("hook_event_name", "PostToolUse", "cwd", cwd, "tool_name", hookToolNames[toolName],
-			"tool_input", pyjson.ObjectOf("file_path", p))
+		event := jsonutil.ObjectOf("hook_event_name", "PostToolUse", "cwd", cwd, "tool_name", hookToolNames[toolName],
+			"tool_input", jsonutil.ObjectOf("file_path", p))
 		if sessionID != "" {
 			event.Set("session_id", sessionID)
 		}
@@ -284,7 +284,7 @@ func (h *designHook) transformToolResult(ctx context.Context, kw map[string]any)
 func (h *designHook) preVerify(ctx context.Context, kw map[string]any) (any, error) {
 	sessionID, _ := kw["session_id"].(string)
 	cwd := h.sessionCwd(ctx)
-	event := pyjson.ObjectOf("hook_event_name", "Stop", "cwd", cwd, "stop_hook_active", false)
+	event := jsonutil.ObjectOf("hook_event_name", "Stop", "cwd", cwd, "stop_hook_active", false)
 	if sessionID != "" {
 		event.Set("session_id", sessionID)
 	}
@@ -334,12 +334,12 @@ func (h *hallmarkHook) transformToolResult(ctx context.Context, kw map[string]an
 	}
 	var texts []string
 	for _, p := range editedPaths(result, kw["args"], cwd) {
-		event := pyjson.ObjectOf("hook_event_name", "PostToolUse", "cwd", cwd, "tool_name", hookToolNames[toolName],
-			"tool_input", pyjson.ObjectOf("file_path", p))
+		event := jsonutil.ObjectOf("hook_event_name", "PostToolUse", "cwd", cwd, "tool_name", hookToolNames[toolName],
+			"tool_input", jsonutil.ObjectOf("file_path", p))
 		if sessionID != "" {
 			event.Set("session_id", sessionID)
 		}
-		out, err := func() (*pyjson.Object, error) {
+		out, err := func() (*jsonutil.Object, error) {
 			runCtx, cancel := context.WithTimeout(ctx, hallmarkLintTimeout)
 			defer cancel()
 			cmd, err := h.command(runCtx, "lint-hook")

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Installers' receipt file a published checkout identity moves with it
@@ -23,8 +23,8 @@ func optionalValue[T any](v *T) any {
 }
 
 // Writes a JSON document durably through a mkstemp sibling, the directory synced after the rename
-func writeDurableJSON(root, prefix, target string, payload *pyjson.Object) error {
-	text, err := pyjson.Dumps(payload, pyjson.Indent(2))
+func writeDurableJSON(root, prefix, target string, payload *jsonutil.Object) error {
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func writeDurableJSON(root, prefix, target string, payload *pyjson.Object) error
 }
 
 // Moves the installers' bootstrap receipt to the commit the stamp just published, only when one exists
-func refreshBootstrapReceipt(root string, stamp *pyjson.Object) error {
+func refreshBootstrapReceipt(root string, stamp *jsonutil.Object) error {
 	receiptPath := filepath.Join(root, BootstrapReceipt)
 	raw, err := os.ReadFile(receiptPath)
 	if errors.Is(err, os.ErrNotExist) {
@@ -64,7 +64,7 @@ func refreshBootstrapReceipt(root string, stamp *pyjson.Object) error {
 	}
 	previous := map[string]any{}
 	if err == nil {
-		if text, derr := pystr.DecodeUTF8Sig(raw); derr == nil {
+		if text, derr := textutil.DecodeUTF8(textutil.TrimBOM(raw)); derr == nil {
 			var decoded any
 			if json.Unmarshal([]byte(text), &decoded) == nil {
 				if m, ok := decoded.(map[string]any); ok {
@@ -73,7 +73,7 @@ func refreshBootstrapReceipt(root string, stamp *pyjson.Object) error {
 			}
 		}
 	}
-	receipt := pyjson.NewObject()
+	receipt := jsonutil.NewObject()
 	for k, v := range previous {
 		receipt.Set(k, v)
 	}
@@ -87,7 +87,7 @@ func refreshBootstrapReceipt(root string, stamp *pyjson.Object) error {
 	receipt.Set("pinnedCommit", commit)
 	receipt.Set("pinnedBranch", branch)
 	receipt.Set("completedAt", now.Format("2006-01-02T15:04:05.000")+"Z")
-	text, err := pyjson.Dumps(receipt, pyjson.Indent(2))
+	text, err := jsonutil.Encode(receipt, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}

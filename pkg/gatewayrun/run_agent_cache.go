@@ -10,8 +10,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Override fields layered onto runtime kwargs when set so partial overrides keep the defaults
@@ -23,8 +24,8 @@ var overrideApplyKeys = []string{
 func agentConfigSignature(model string, runtime map[string]any, enabledToolsets []string, ephemeralPrompt string,
 	cacheKeys map[string]any, userID, userIDAlt string, skipContextFiles bool) string {
 	apiKey := ""
-	if v := runtime["api_key"]; pyrepr.Truthy(v) {
-		apiKey = pyrepr.Str(v)
+	if v := runtime["api_key"]; anyutil.IsTrue(v) {
+		apiKey = anyutil.String(v)
 	}
 	keyHash := ""
 	if apiKey != "" {
@@ -39,7 +40,7 @@ func agentConfigSignature(model string, runtime map[string]any, enabledToolsets 
 			toolsets = append(toolsets, t)
 		}
 	}
-	blob, _ := pyjson.Dumps([]any{
+	blob, _ := jsonutil.Encode([]any{
 		model, keyHash,
 		runtimeGet(runtime, "base_url"), runtimeGet(runtime, "provider"),
 		runtimeGet(runtime, "requested_provider"), runtimeGet(runtime, "api_mode"),
@@ -49,7 +50,7 @@ func agentConfigSignature(model string, runtime map[string]any, enabledToolsets 
 		sortedItems(cacheKeys),
 		userID, userIDAlt,
 		skipContextFiles,
-	}, pyjson.SortKeys(true), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	}, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	sum := sha256.Sum256([]byte(blob))
 	return hex.EncodeToString(sum[:])[:16]
 }
@@ -125,8 +126,8 @@ func ephemeralChangeKey(ctx context.Context, sc *gateway.SessionContext, redactP
 		for p, hc := range sc.HomeChannels.All() {
 			name, chatID := "", ""
 			if hc != nil {
-				if pyrepr.Truthy(hc.Name) {
-					name = pyrepr.Str(hc.Name)
+				if anyutil.IsTrue(hc.Name) {
+					name = anyutil.String(hc.Name)
 				}
 				chatID = hc.ChatID
 			}
@@ -141,6 +142,6 @@ func ephemeralChangeKey(ctx context.Context, sc *gateway.SessionContext, redactP
 		connected, homes,
 		redactPII, home.Display(home.Dir(ctx)),
 	}
-	sum := sha256.Sum256([]byte(pyrepr.Repr(key)))
+	sum := sha256.Sum256([]byte(anyutil.Quote(key)))
 	return fmt.Sprintf("%x", sum[:])
 }

@@ -16,14 +16,15 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Watchdog defaults, a 60 second leash past the drain, 30 second heartbeats and a 5 second loop floor timer
@@ -42,7 +43,7 @@ const (
 
 // float() of the value floored, the default when float() rejects it
 func watchdogCoerceFloat(value any, def, floor float64) float64 {
-	f, err := pyint.Float(value)
+	f, err := anyutil.ToFloat(value)
 	if err != nil {
 		return def
 	}
@@ -103,7 +104,7 @@ func drainLogQueue(timeoutS float64) {
 }
 
 // threading.Event.wait, a non positive or NaN timeout polls and one past TIMEOUT_MAX overflows
-func pyEventWait(e *pythread.Event, timeoutS float64) (bool, error) {
+func pyEventWait(e *syncutil.Event, timeoutS float64) (bool, error) {
 	if !(timeoutS > 0) {
 		return e.IsSet(), nil
 	}
@@ -169,12 +170,12 @@ func ArmLoopFloorTimer(loop EventLoop, interval any) (*LoopFloorTimerHandle, err
 
 // Stop, join and liveness of a running loop liveness watchdog
 type LoopLivenessWatchdogHandle struct {
-	stopEvent *pythread.Event
+	stopEvent *syncutil.Event
 	finished  chan struct{}
 }
 
 // Handle over a watchdog's stop event and the channel its goroutine closes when it ends
-func newLoopLivenessWatchdogHandle(stopEvent *pythread.Event, finished chan struct{}) *LoopLivenessWatchdogHandle {
+func newLoopLivenessWatchdogHandle(stopEvent *syncutil.Event, finished chan struct{}) *LoopLivenessWatchdogHandle {
 	return &LoopLivenessWatchdogHandle{stopEvent: stopEvent, finished: finished}
 }
 
@@ -203,7 +204,7 @@ func (h *LoopLivenessWatchdogHandle) IsAlive() bool {
 
 // Out of loop watchdog that dumps stacks and hard exits after maxStrikes consecutive missed loop probes
 func StartLoopLivenessWatchdog(ctx context.Context, loop EventLoop, probeInterval, probeTimeout float64, maxStrikes, exitCode int) *LoopLivenessWatchdogHandle {
-	h := newLoopLivenessWatchdogHandle(&pythread.Event{}, make(chan struct{}))
+	h := newLoopLivenessWatchdogHandle(&syncutil.Event{}, make(chan struct{}))
 	go pprof.Do(context.Background(), pprof.Labels("name", "gateway-loop-liveness-watchdog"), func(context.Context) {
 		defer close(h.finished)
 		if err := loopLivenessWatch(ctx, loop, h.stopEvent, probeInterval, probeTimeout, maxStrikes, exitCode); err != nil {
@@ -214,27 +215,27 @@ func StartLoopLivenessWatchdog(ctx context.Context, loop EventLoop, probeInterva
 }
 
 // Probe cycle of the loop liveness watchdog, an error only for a wait the thread runtime refuses
-func loopLivenessWatch(ctx context.Context, loop EventLoop, stop *pythread.Event, probeInterval, probeTimeout float64, maxStrikes, exitCode int) error {
+func loopLivenessWatch(ctx context.Context, loop EventLoop, stop *syncutil.Event, probeInterval, probeTimeout float64, maxStrikes, exitCode int) error {
 	strikes := 0
 	for {
 		stopped, err := pyEventWait(stop, probeInterval)
 		if err != nil || stopped {
 			return err
 		}
-		probe := &pythread.Event{}
+		probe := &syncutil.Event{}
 		if err := loop.CallSoonThreadsafe(probe.Set); err != nil {
 			if !errors.Is(err, ErrLoopClosed) {
 				pkgLog().Debug(fmt.Sprintf("Failed to schedule gateway loop liveness probe: %v", err))
 			}
 			return nil
 		}
-		deadline := pythread.Monotonic() + probeTimeout
+		deadline := timeutil.Monotonic() + probeTimeout
 		answered := false
 		for !answered {
 			if stop.IsSet() {
 				return nil
 			}
-			remaining := deadline - pythread.Monotonic()
+			remaining := deadline - timeutil.Monotonic()
 			if remaining <= 0 {
 				break
 			}
@@ -269,8 +270,8 @@ func loopLivenessWatch(ctx context.Context, loop EventLoop, stop *pythread.Event
 }
 
 // Ordered JSON object of alternating keys and values
-func rec2(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func rec2(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -304,16 +305,16 @@ func markExitedQuietly(ctx context.Context, exitCode int, reason string) {
 }
 
 // Rewrites the loop heartbeat file atomically with pid, time, memory and extra fields, returning its path
-func WriteLoopHeartbeat(ctx context.Context, pid *int, startTime *float64, h string, extra *pyjson.Object) string {
+func WriteLoopHeartbeat(ctx context.Context, pid *int, startTime *float64, h string, extra *jsonutil.Object) string {
 	path := GetLoopHeartbeatPath(ctx, h)
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	p := os.Getpid()
 	if pid != nil {
 		p = *pid
 	}
 	payload.Set("pid", int64(p))
 	payload.Set("updated_at", ledgerNowISO())
-	payload.Set("monotonic", pythread.Monotonic())
+	payload.Set("monotonic", timeutil.Monotonic())
 	if startTime != nil {
 		payload.Set("start_time", *startTime)
 	}
@@ -321,8 +322,8 @@ func WriteLoopHeartbeat(ctx context.Context, pid *int, startTime *float64, h str
 		payload.Set("mem", mem)
 	}
 	if extra != nil {
-		for _, k := range extra.Keys {
-			payload.Set(k, extra.Vals[k])
+		for _, k := range extra.Keys() {
+			payload.Set(k, extra.Value(k))
 		}
 	}
 	if err := config.AtomicJSONWriteWith(ctx, path, payload); err != nil {
@@ -345,18 +346,18 @@ func allGoroutineStacks() []byte {
 
 // Appends a metadata header and every goroutine stack to the dump file, then repeats the stacks on stderr
 func writeWatchdogDump(dumpPath string, delayS float64, snapshot any, event string) {
-	header := pyjson.NewObject()
+	header := jsonutil.NewObject()
 	header.Set("event", event)
 	header.Set("pid", int64(os.Getpid()))
 	header.Set("delay_s", delayS)
 	header.Set("fired_at", ledgerNowISO())
-	if pyrepr.Truthy(snapshot) {
+	if anyutil.IsTrue(snapshot) {
 		header.Set("snapshot", snapshot)
 	} else {
-		header.Set("snapshot", pyjson.NewObject())
+		header.Set("snapshot", jsonutil.NewObject())
 	}
 	os.MkdirAll(filepath.Dir(dumpPath), 0o777)
-	if text, err := pyjson.Dumps(header, pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil })); err == nil {
+	if text, err := jsonutil.Encode(header, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil })); err == nil {
 		if f, err := os.OpenFile(dumpPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o666); err == nil {
 			f.WriteString(text + "\n--- faulthandler dump (all threads) ---\n")
 			f.Write(allGoroutineStacks())
@@ -371,7 +372,7 @@ func writeWatchdogDump(dumpPath string, delayS float64, snapshot any, event stri
 
 // Keyword options of the shutdown watchdog, nil ExitCode is 1 and empty DumpPath and Name take the defaults
 type ShutdownWatchdogOptions struct {
-	Done       *pythread.Event
+	Done       *syncutil.Event
 	SnapshotFn func() (any, error)
 	ExitCode   *int
 	DumpPath   string
@@ -379,10 +380,10 @@ type ShutdownWatchdogOptions struct {
 }
 
 // Hard exit backstop for a wedged shutdown that fires unless the returned event is set within delayS seconds
-func ArmShutdownWatchdog(ctx context.Context, delayS any, opts ShutdownWatchdogOptions) *pythread.Event {
+func ArmShutdownWatchdog(ctx context.Context, delayS any, opts ShutdownWatchdogOptions) *syncutil.Event {
 	done := opts.Done
 	if done == nil {
-		done = &pythread.Event{}
+		done = &syncutil.Event{}
 	}
 	delay := watchdogCoerceFloat(delayS, DefaultShutdownWatchdogGraceS, 0)
 	if delay <= 0 {
@@ -396,8 +397,8 @@ func ArmShutdownWatchdog(ctx context.Context, delayS any, opts ShutdownWatchdogO
 		name = "gateway-shutdown-watchdog"
 	}
 	go pprof.Do(context.Background(), pprof.Labels("name", name), func(context.Context) {
-		deadline := pythread.Monotonic() + delay
-		for now := pythread.Monotonic(); now < deadline; now = pythread.Monotonic() {
+		deadline := timeutil.Monotonic() + delay
+		for now := timeutil.Monotonic(); now < deadline; now = timeutil.Monotonic() {
 			if done.Wait(min(deadline-now, 1.0)) {
 				return
 			}
@@ -438,12 +439,12 @@ func shutdownSnapshot(fn func() (any, error)) (snapshot any) {
 	}
 	defer func() {
 		if r := recover(); r != nil {
-			snapshot = rec2("snapshot_error", fmt.Sprintf("Exception(%s)", pyrepr.StrRepr(fmt.Sprint(r))))
+			snapshot = rec2("snapshot_error", fmt.Sprintf("Exception(%s)", strconv.Quote(fmt.Sprint(r))))
 		}
 	}()
 	v, err := fn()
 	if err != nil {
-		return rec2("snapshot_error", fmt.Sprintf("Exception(%s)", pyrepr.StrRepr(err.Error())))
+		return rec2("snapshot_error", fmt.Sprintf("Exception(%s)", strconv.Quote(err.Error())))
 	}
 	return v
 }

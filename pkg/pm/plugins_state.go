@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Plugins config key mapping each plugin an update disabled to what to undo once it fits
@@ -310,8 +310,8 @@ func pluginSpellings(pluginDir, key string) (map[string]bool, error) {
 		return nil, err
 	case err == nil && manifest != nil:
 		name := ""
-		if pyrepr.Truthy(manifest["name"]) {
-			name = pyrepr.Str(manifest["name"])
+		if anyutil.IsTrue(manifest["name"]) {
+			name = anyutil.String(manifest["name"])
 		}
 		names[name] = true
 	}

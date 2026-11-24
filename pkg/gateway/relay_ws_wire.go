@@ -2,14 +2,14 @@ package gateway
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -68,22 +68,22 @@ func relayRenderContext(context any) *string {
 	}
 	var lines []string
 	for _, item := range items {
-		obj, ok := pyjson.AsObject(item)
+		obj, ok := jsonutil.AsObject(item)
 		if !ok {
 			continue
 		}
-		text := obj.GetOr("text", nil)
-		if !pyrepr.Truthy(text) {
+		text := obj.ValueOr("text", nil)
+		if !anyutil.IsTrue(text) {
 			continue
 		}
 		author := any("")
-		if src, ok := pyjson.AsObject(obj.GetOr("source", nil)); ok {
-			author = pyrepr.Or(pyrepr.Or(src.GetOr("user_name", nil), src.GetOr("user_id", nil)), "")
+		if src, ok := jsonutil.AsObject(obj.ValueOr("source", nil)); ok {
+			author = anyutil.Or(anyutil.Or(src.ValueOr("user_name", nil), src.ValueOr("user_id", nil)), "")
 		}
-		if pyrepr.Truthy(author) {
-			lines = append(lines, pyrepr.Str(author)+": "+pyrepr.Str(text))
+		if anyutil.IsTrue(author) {
+			lines = append(lines, anyutil.String(author)+": "+anyutil.String(text))
 		} else {
-			lines = append(lines, pyrepr.Str(text))
+			lines = append(lines, anyutil.String(text))
 		}
 	}
 	if len(lines) == 0 {
@@ -129,23 +129,23 @@ func relayNormalizeSlackParentCommand(ctx context.Context, text string, messageT
 }
 
 // Per media_urls entry value of media[].key matched by URL, padded with empty strings
-func relayPerURLFromWire(raw *pyjson.Object, key string) []string {
-	urls, ok := raw.GetOr("media_urls", nil).([]any)
+func relayPerURLFromWire(raw *jsonutil.Object, key string) []string {
+	urls, ok := raw.ValueOr("media_urls", nil).([]any)
 	if !ok || len(urls) == 0 {
 		return []string{}
 	}
 	byURL := map[string]string{}
-	media, _ := raw.GetOr("media", nil).([]any)
+	media, _ := raw.ValueOr("media", nil).([]any)
 	for _, m := range media {
-		obj, ok := pyjson.AsObject(m)
+		obj, ok := jsonutil.AsObject(m)
 		if !ok {
 			continue
 		}
-		u, ok := obj.GetOr("url", nil).(string)
+		u, ok := obj.ValueOr("url", nil).(string)
 		if !ok || u == "" {
 			continue
 		}
-		v, _ := obj.GetOr(key, nil).(string)
+		v, _ := obj.ValueOr(key, nil).(string)
 		byURL[u] = v
 	}
 	out := make([]string, len(urls))
@@ -158,7 +158,7 @@ func relayPerURLFromWire(raw *pyjson.Object, key string) []string {
 }
 
 // Per attachment MIME types parallel to media_urls
-func relayMediaTypesFromWire(raw *pyjson.Object) []string {
+func relayMediaTypesFromWire(raw *jsonutil.Object) []string {
 	types := relayPerURLFromWire(raw, "mime")
 	missing := 0
 	for _, t := range types {
@@ -166,14 +166,14 @@ func relayMediaTypesFromWire(raw *pyjson.Object) []string {
 			missing++
 		}
 	}
-	if media, ok := raw.GetOr("media", nil).([]any); missing > 0 && ok && len(media) > 0 {
+	if media, ok := raw.ValueOr("media", nil).([]any); missing > 0 && ok && len(media) > 0 {
 		pkgLog().Debug(fmt.Sprintf("relay inbound: %d/%d media_urls had no matching media[] mime", missing, len(types)))
 	}
 	return types
 }
 
 // Per attachment display cleaned original filenames parallel to media_urls
-func relayMediaFilenamesFromWire(raw *pyjson.Object) []string {
+func relayMediaFilenamesFromWire(raw *jsonutil.Object) []string {
 	names := relayPerURLFromWire(raw, "filename")
 	for i, n := range names {
 		names[i] = CleanAttachmentFilename(n)
@@ -181,101 +181,90 @@ func relayMediaFilenamesFromWire(raw *pyjson.Object) []string {
 	return names
 }
 
-// Wire value as a Python str would print it, empty for null
-func relayWireStr(v any) string {
-	if v == nil {
-		return ""
-	}
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return pyrepr.Str(v)
-}
-
 // Optional wire string, nil for an absent or null value
 func relayWireOptStr(v any) *string {
 	if v == nil {
 		return nil
 	}
-	s := relayWireStr(v)
+	s := anyutil.String(v)
 	return &s
 }
 
 // Getter of a wire mapping, an AttributeError for any other non empty value
-func relayWireMapping(v any) (*pyjson.Object, error) {
-	if !pyrepr.Truthy(v) {
-		return pyjson.NewObject(), nil
+func relayWireMapping(v any) (*jsonutil.Object, error) {
+	if !anyutil.IsTrue(v) {
+		return jsonutil.NewObject(), nil
 	}
-	if obj, ok := pyjson.AsObject(v); ok {
+	if obj, ok := jsonutil.AsObject(v); ok {
 		return obj, nil
 	}
 	return nil, &PyError{"AttributeError", "a relay wire value is " + errchain.Kind(v) + ", expected a mapping"}
 }
 
 // Message event rebuilt from the connector inbound payload, unknown platforms as relay and unknown types as text
-func relayEventFromWire(ctx context.Context, raw *pyjson.Object) (*MessageEvent, error) {
-	src, err := relayWireMapping(raw.GetOr("source", map[string]any{}))
+func relayEventFromWire(ctx context.Context, raw *jsonutil.Object) (*MessageEvent, error) {
+	src, err := relayWireMapping(raw.ValueOr("source", map[string]any{}))
 	if err != nil {
 		return nil, err
 	}
-	platform, perr := ParsePlatform(ctx, src.GetOr("platform", "relay"))
+	platform, perr := ParsePlatform(ctx, src.ValueOr("platform", "relay"))
 	if perr != nil {
 		platform = PlatformRelay
 	}
-	userName := pyrepr.Or(pyrepr.Or(src.GetOr("user_display_name", nil), src.GetOr("user_name", nil)), src.GetOr("user_handle", nil))
+	userName := anyutil.Or(anyutil.Or(src.ValueOr("user_display_name", nil), src.ValueOr("user_name", nil)), src.ValueOr("user_handle", nil))
 	source := &SessionSource{
 		Platform:                  platform,
-		ChatID:                    relayWireStr(src.GetOr("chat_id", "")),
-		ChatType:                  relayWireStr(src.GetOr("chat_type", "dm")),
-		ChatName:                  relayWireOptStr(src.GetOr("chat_name", nil)),
-		UserID:                    relayWireOptStr(src.GetOr("user_id", nil)),
+		ChatID:                    anyutil.String(src.Value("chat_id")),
+		ChatType:                  anyutil.String(src.ValueOr("chat_type", "dm")),
+		ChatName:                  relayWireOptStr(src.ValueOr("chat_name", nil)),
+		UserID:                    relayWireOptStr(src.ValueOr("user_id", nil)),
 		UserName:                  relayWireOptStr(userName),
-		ThreadID:                  relayWireOptStr(src.GetOr("thread_id", nil)),
-		ChatTopic:                 relayWireOptStr(src.GetOr("chat_topic", nil)),
-		UserIDAlt:                 relayWireOptStr(src.GetOr("user_id_alt", nil)),
-		ChatIDAlt:                 relayWireOptStr(src.GetOr("chat_id_alt", nil)),
-		ScopeID:                   relayWireOptStr(src.GetOr("scope_id", nil)),
-		ParentChatID:              relayWireOptStr(src.GetOr("parent_chat_id", nil)),
-		MessageID:                 relayWireOptStr(src.GetOr("message_id", nil)),
-		Profile:                   relayWireOptStr(src.GetOr("profile", nil)),
-		AutoThreadCreated:         pyrepr.Truthy(src.GetOr("auto_thread_created", false)),
-		AutoThreadInitialName:     relayWireOptStr(src.GetOr("auto_thread_initial_name", nil)),
-		ProspectiveThreadID:       relayWireOptStr(src.GetOr("prospective_thread_id", nil)),
+		ThreadID:                  relayWireOptStr(src.ValueOr("thread_id", nil)),
+		ChatTopic:                 relayWireOptStr(src.ValueOr("chat_topic", nil)),
+		UserIDAlt:                 relayWireOptStr(src.ValueOr("user_id_alt", nil)),
+		ChatIDAlt:                 relayWireOptStr(src.ValueOr("chat_id_alt", nil)),
+		ScopeID:                   relayWireOptStr(src.ValueOr("scope_id", nil)),
+		ParentChatID:              relayWireOptStr(src.ValueOr("parent_chat_id", nil)),
+		MessageID:                 relayWireOptStr(src.ValueOr("message_id", nil)),
+		Profile:                   relayWireOptStr(src.ValueOr("profile", nil)),
+		AutoThreadCreated:         anyutil.IsTrue(src.ValueOr("auto_thread_created", false)),
+		AutoThreadInitialName:     relayWireOptStr(src.ValueOr("auto_thread_initial_name", nil)),
+		ProspectiveThreadID:       relayWireOptStr(src.ValueOr("prospective_thread_id", nil)),
 		DeliveredViaUpstreamRelay: true,
 	}
 	msgType := MessageTypeText
-	if s, ok := raw.GetOr("message_type", "text").(string); ok && relayValidMessageType(s) {
+	if s, ok := raw.ValueOr("message_type", "text").(string); ok && relayValidMessageType(s) {
 		msgType = MessageType(s)
 	}
-	text := relayWireStr(raw.GetOr("text", ""))
+	text := anyutil.String(raw.Value("text"))
 	if platform == PlatformSlack {
 		text, msgType = relayNormalizeSlackParentCommand(ctx, text, msgType)
 	}
-	replyTo, err := relayWireMapping(raw.GetOr("reply_to", nil))
+	replyTo, err := relayWireMapping(raw.ValueOr("reply_to", nil))
 	if err != nil {
 		return nil, err
 	}
 	event := NewMessageEvent(text)
 	event.MessageType = msgType
 	event.Source = source
-	event.MessageID = relayWireOptStr(raw.GetOr("message_id", nil))
-	event.ReplyToMessageID = relayWireOptStr(raw.GetOr("reply_to_message_id", nil))
-	event.ReplyToText = relayWireOptStr(replyTo.GetOr("text", nil))
-	event.ReplyToAuthorName = relayWireOptStr(replyTo.GetOr("author", nil))
-	event.ReplyToIsOwnMessage = pyrepr.Truthy(replyTo.GetOr("is_own", false))
+	event.MessageID = relayWireOptStr(raw.ValueOr("message_id", nil))
+	event.ReplyToMessageID = relayWireOptStr(raw.ValueOr("reply_to_message_id", nil))
+	event.ReplyToText = relayWireOptStr(replyTo.ValueOr("text", nil))
+	event.ReplyToAuthorName = relayWireOptStr(replyTo.ValueOr("author", nil))
+	event.ReplyToIsOwnMessage = anyutil.IsTrue(replyTo.ValueOr("is_own", false))
 	event.MediaURLs = []string{}
-	if urls, ok := raw.GetOr("media_urls", nil).([]any); ok {
+	if urls, ok := raw.ValueOr("media_urls", nil).([]any); ok {
 		for _, u := range urls {
-			event.MediaURLs = append(event.MediaURLs, relayWireStr(u))
+			event.MediaURLs = append(event.MediaURLs, anyutil.String(u))
 		}
 	}
 	event.MediaTypes = relayMediaTypesFromWire(raw)
 	event.MediaFilenames = relayMediaFilenamesFromWire(raw)
-	event.ChannelContext = relayRenderContext(raw.GetOr("context", nil))
-	if pr, ok := pyjson.AsObject(raw.GetOr("prompt_response", nil)); ok {
+	event.ChannelContext = relayRenderContext(raw.ValueOr("context", nil))
+	if pr, ok := jsonutil.AsObject(raw.ValueOr("prompt_response", nil)); ok {
 		event.PromptResponse = map[string]any{}
-		for _, k := range pr.Keys {
-			event.PromptResponse[k] = pr.Vals[k]
+		for _, k := range pr.Keys() {
+			event.PromptResponse[k] = pr.Value(k)
 		}
 	}
 	return event, nil
@@ -303,22 +292,22 @@ type PassthroughForward struct {
 }
 
 // Passthrough request rebuilt from the wire frame, an undecodable body becoming empty
-func relayPassthroughFromWire(raw *pyjson.Object) PassthroughForward {
-	body, err := pybase64.B64Decode(relayWireStr(pyrepr.Or(raw.GetOr("bodyB64", ""), "")))
+func relayPassthroughFromWire(raw *jsonutil.Object) PassthroughForward {
+	body, err := base64.StdEncoding.DecodeString(anyutil.String(raw.Value("bodyB64")))
 	if err != nil {
 		body = []byte{}
 	}
 	var headers [][2]string
-	if pairs, ok := pyrepr.Or(raw.GetOr("headers", []any{}), []any{}).([]any); ok {
+	if pairs, ok := anyutil.Or(raw.ValueOr("headers", []any{}), []any{}).([]any); ok {
 		for _, pair := range pairs {
 			if p, ok := pair.([]any); ok && len(p) == 2 {
-				headers = append(headers, [2]string{pyrepr.Str(p[0]), pyrepr.Str(p[1])})
+				headers = append(headers, [2]string{anyutil.String(p[0]), anyutil.String(p[1])})
 			}
 		}
 	}
 	return PassthroughForward{
-		Platform: pyrepr.Str(raw.GetOr("platform", "")), BotID: pyrepr.Str(raw.GetOr("botId", "")),
-		Method: pyrepr.Str(raw.GetOr("method", "")), Path: pyrepr.Str(raw.GetOr("path", "")), Headers: headers,
-		Body: body, Profile: relayWireOptStr(raw.GetOr("profile", nil)),
+		Platform: anyutil.String(raw.ValueOr("platform", "")), BotID: anyutil.String(raw.ValueOr("botId", "")),
+		Method: anyutil.String(raw.ValueOr("method", "")), Path: anyutil.String(raw.ValueOr("path", "")), Headers: headers,
+		Body: body, Profile: relayWireOptStr(raw.ValueOr("profile", nil)),
 	}
 }

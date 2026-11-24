@@ -18,17 +18,17 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -201,7 +201,7 @@ func FoldCatalogText(value string) string {
 		return strings.ToLower(value)
 	}
 	var out strings.Builder
-	for _, r := range pystr.Casefold(norm.NFKD.String(value)) {
+	for _, r := range cases.Fold().String(norm.NFKD.String(value)) {
 		if norm.NFD.PropertiesString(string(r)).CCC() == 0 {
 			out.WriteRune(r)
 		}
@@ -233,7 +233,7 @@ type HostedRoomAttachmentStore struct {
 	GatewayQuotaBytes int64
 	RoomQuotaCount    int64
 	GatewayQuotaCount int64
-	lock              pythread.RLock
+	lock              syncutil.ReentrantMutex
 }
 
 // Store options, zero quotas meaning the module defaults
@@ -311,7 +311,7 @@ func (s *HostedRoomAttachmentStore) startupKey() (startedAttachmentStore, bool) 
 }
 
 func resolvedOr(path string) string {
-	if resolved, err := pypath.Resolve(path); err == nil {
+	if resolved, err := pathutil.Resolve(path); err == nil {
 		return resolved
 	}
 	return path
@@ -388,7 +388,7 @@ func (s *HostedRoomAttachmentStore) initialize(conn state.SQLiteConn) error {
 		}
 		for _, row := range named {
 			if _, err := conn.ExecContext(ctx, "UPDATE hosted_room_attachments SET catalog_name=? WHERE attachment_id=?",
-				FoldCatalogText(pyrepr.Str(row.Vals["name"])), row.Vals["attachment_id"]); err != nil {
+				FoldCatalogText(anyutil.String(row.Value("name"))), row.Value("attachment_id")); err != nil {
 				return err
 			}
 		}
@@ -432,7 +432,7 @@ func (s *HostedRoomAttachmentStore) blobPath(blobID string) (string, error) {
 
 func (s *HostedRoomAttachmentStore) writeBlob(target string, data []byte) error {
 	mode := os.FileMode(0o600)
-	return pyfs.AtomicWriteBytes(s.ctx, target, data, ".tmp-", &mode, true)
+	return fsutil.WriteFile(s.ctx, target, data, fsutil.WriteOptions{Prefix: ".tmp-", Mode: &mode, SyncDir: true})
 }
 
 // Regular blob file fenced against the durable row's size
@@ -493,11 +493,11 @@ func (s *HostedRoomAttachmentStore) readBlobRange(blobID string, size, offset, l
 	return data, nil
 }
 
-func attachmentMetadata(row *pyjson.Object, idempotent bool) map[string]any {
+func attachmentMetadata(row *jsonutil.Object, idempotent bool) map[string]any {
 	result := map[string]any{"attachment_id": hrStr(row, "attachment_id"), "kind": hrStr(row, "kind"), "name": hrStr(row, "name"),
 		"size": hrInt(row, "size"), "mime": hrStr(row, "mime"), "sha256": hrStr(row, "sha256"), "state": hrStr(row, "state"),
 		"created_at": hrFloat(row, "created_at"), "idempotent": idempotent}
-	if row.Vals["event_id"] != nil {
+	if row.Value("event_id") != nil {
 		result["event_id"] = hrStr(row, "event_id")
 	}
 	return result
@@ -672,7 +672,7 @@ func (s *HostedRoomAttachmentStore) FindUpload(roomIDValue, uploadIDValue any) (
 		if err != nil || row == nil || hrStr(row, "state") == "disbanded" {
 			return err
 		}
-		if row.Vals["expires_at"] != nil && hrFloat(row, "expires_at") <= now {
+		if row.Value("expires_at") != nil && hrFloat(row, "expires_at") <= now {
 			return nil
 		}
 		if _, err := s.readBlob(hrStr(row, "blob_id"), hrInt(row, "size"), hrStr(row, "sha256")); err != nil {
@@ -727,7 +727,7 @@ func (s *HostedRoomAttachmentStore) CommitMessageWithReceipt(c AttachmentCommit)
 	}
 	sorted := append([]string(nil), recipients...)
 	sort.Strings(sorted)
-	recipientsJSON, err := pyjson.Dumps(sorted, pyjson.Separators(",", ":"))
+	recipientsJSON, err := jsonutil.Encode(sorted)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -758,29 +758,29 @@ func (s *HostedRoomAttachmentStore) CommitMessageWithReceipt(c AttachmentCommit)
 			}
 			durable := map[string]any{"attachment_id": hrStr(row, "attachment_id"), "kind": hrStr(row, "kind"), "name": hrStr(row, "name"),
 				"size": hrInt(row, "size"), "mime": hrStr(row, "mime")}
-			if !pyjson.Equal(durable, entry) {
+			if !anyutil.Equal(durable, entry) {
 				return attachmentConflict("attachment manifest metadata does not match the uploaded bytes")
 			}
-			if row.Vals["expires_at"] != nil && hrFloat(row, "expires_at") <= now {
+			if row.Value("expires_at") != nil && hrFloat(row, "expires_at") <= now {
 				return attachmentNotFound("attachment has expired")
 			}
 			rowState := hrStr(row, "state")
 			if rowState == "disbanded" {
 				return attachmentNotFound("attachment belongs to a disbanded room")
 			}
-			if rowState == "committed" && (hostedStrOrEmpty(row.Vals["event_id"]) != eventID || hrStr(row, "recipient_member_ids_json") != recipientsJSON ||
-				pyrepr.Truthy(row.Vals["viewer_access"]) != c.ViewerAccess) {
+			if rowState == "committed" && (hostedStrOrEmpty(row.Value("event_id")) != eventID || hrStr(row, "recipient_member_ids_json") != recipientsJSON ||
+				anyutil.IsTrue(row.Value("viewer_access")) != c.ViewerAccess) {
 				return attachmentConflict("attachment is already owned by a different room event")
 			}
 			if rowState == "uploaded" {
-				transitioned = append(transitioned, pyrepr.Str(entry["attachment_id"]))
+				transitioned = append(transitioned, anyutil.String(entry["attachment_id"]))
 			}
 			if _, err := s.readBlob(hrStr(row, "blob_id"), hrInt(row, "size"), hrStr(row, "sha256")); err != nil {
 				return err
 			}
 		}
 		for _, entry := range normalized {
-			id := pyrepr.Str(entry["attachment_id"])
+			id := anyutil.String(entry["attachment_id"])
 			found := false
 			for _, t := range transitioned {
 				found = found || t == id
@@ -883,7 +883,7 @@ func publishedAttachmentIDs(payloadJSON string) (map[string]bool, error) {
 	items, _ := mapping["attachments"].([]any)
 	for _, item := range items {
 		if m, ok := item.(map[string]any); ok {
-			out[pyrepr.Str(m["attachment_id"])] = true
+			out[anyutil.String(m["attachment_id"])] = true
 		}
 	}
 	return out, nil
@@ -1013,7 +1013,7 @@ func (s *HostedRoomAttachmentStore) ReconcileRoomEvents() (int64, error) {
 			return err
 		}
 		for _, row := range rows {
-			payload, err := roomLoads(pyrepr.Str(row.Vals["payload_json"]))
+			payload, err := roomLoads(anyutil.String(row.Value("payload_json")))
 			if err != nil {
 				continue
 			}
@@ -1171,7 +1171,7 @@ func (s *HostedRoomAttachmentStore) sweepOrphans() error {
 			if !(strings.HasPrefix(name, ".tmp-") || strings.HasPrefix(name, ".prune-") || (blobIDRe.MatchString(name) && !live[name])) {
 				continue
 			}
-			quarantine := filepath.Join(s.BlobRoot, fmt.Sprintf(".prune-%d-%d-%d-%d", os.Getpid(), pythread.GoroutineID(), time.Now().UnixNano(), index))
+			quarantine := filepath.Join(s.BlobRoot, fmt.Sprintf(".prune-%d-%d-%d-%d", os.Getpid(), syncutil.GoroutineID(), time.Now().UnixNano(), index))
 			if err := os.Rename(filepath.Join(s.BlobRoot, name), quarantine); err != nil {
 				continue
 			}
@@ -1201,8 +1201,8 @@ func (s *HostedRoomAttachmentStore) ReadViewer(roomIDValue, attachmentIDValue, e
 	if !isInt || epoch < 1 {
 		return AttachmentData{}, attachmentErr("authority_epoch must be a positive integer")
 	}
-	fenced := func() (*pyjson.Object, error) {
-		var row *pyjson.Object
+	fenced := func() (*jsonutil.Object, error) {
+		var row *jsonutil.Object
 		err := s.transaction(false, func(conn state.SQLiteConn) error {
 			if _, err := conn.ExecContext(s.ctx, "BEGIN"); err != nil {
 				return err
@@ -1228,7 +1228,7 @@ func (s *HostedRoomAttachmentStore) ReadViewer(roomIDValue, attachmentIDValue, e
 	if err != nil {
 		return AttachmentData{}, err
 	}
-	if !pyrepr.Equal(current.Vals["blob_id"], row.Vals["blob_id"]) || !pyjson.Equal(attachmentMetadata(current, false), attachmentMetadata(row, false)) {
+	if !anyutil.Equal(current.Value("blob_id"), row.Value("blob_id")) || !anyutil.Equal(attachmentMetadata(current, false), attachmentMetadata(row, false)) {
 		return AttachmentData{}, attachmentNotFound("attachment changed during viewer read")
 	}
 	return AttachmentData{Attachment: attachmentMetadata(current, false), Data: data}, nil
@@ -1247,7 +1247,7 @@ func requireViewerRoom(ctx context.Context, conn state.SQLiteConn, roomID, gatew
 	if err != nil {
 		return err
 	}
-	if room == nil || room.Vals["disbanded_at"] != nil || !pyrepr.Equal(room.Vals["authority_gateway_id"], gatewayID) || !pyrepr.Equal(room.Vals["authority_epoch"], epoch) {
+	if room == nil || room.Value("disbanded_at") != nil || !anyutil.Equal(room.Value("authority_gateway_id"), gatewayID) || !anyutil.Equal(room.Value("authority_epoch"), epoch) {
 		return attachmentNotFound("Group Chat viewer authority changed")
 	}
 	for _, table := range []string{"hosted_room_quarantine", "hosted_room_disband_fences"} {
@@ -1270,7 +1270,7 @@ func requireViewerRoom(ctx context.Context, conn state.SQLiteConn, roomID, gatew
 }
 
 // Committed row the selection may read, room visible files requiring a published owner event
-func readCommittedAttachmentRow(ctx context.Context, conn state.SQLiteConn, sel attachmentSelection, now float64) (*pyjson.Object, error) {
+func readCommittedAttachmentRow(ctx context.Context, conn state.SQLiteConn, sel attachmentSelection, now float64) (*jsonutil.Object, error) {
 	row, err := state.QueryRowObject(ctx, conn, "SELECT * FROM hosted_room_attachments WHERE attachment_id=? AND room_id=?", sel.attachmentID, sel.roomID)
 	if err != nil {
 		return nil, err
@@ -1278,13 +1278,13 @@ func readCommittedAttachmentRow(ctx context.Context, conn state.SQLiteConn, sel 
 	if row == nil || hrStr(row, "state") != "committed" {
 		return nil, attachmentNotFound("attachment is not committed for this room")
 	}
-	if row.Vals["expires_at"] != nil && hrFloat(row, "expires_at") <= now {
+	if row.Value("expires_at") != nil && hrFloat(row, "expires_at") <= now {
 		return nil, attachmentNotFound("attachment has expired")
 	}
-	if sel.event != nil && hostedStrOrEmpty(row.Vals["event_id"]) != *sel.event {
+	if sel.event != nil && hostedStrOrEmpty(row.Value("event_id")) != *sel.event {
 		return nil, attachmentNotFound("attachment is not owned by this room event")
 	}
-	viewerAccess, err := hostedIntOrZero(row.Vals["viewer_access"])
+	viewerAccess, err := hostedIntOrZero(row.Value("viewer_access"))
 	if err != nil {
 		return nil, err
 	}
@@ -1297,13 +1297,13 @@ func readCommittedAttachmentRow(ctx context.Context, conn state.SQLiteConn, sel 
 			return nil, attachmentNotFound("attachment is not published in this room")
 		}
 		owner, err := state.QueryRowObject(ctx, conn, `SELECT payload_json FROM hosted_room_events
-                       WHERE room_id=? AND event_id=? AND kind IN ('message.user', 'message.member')`, sel.roomID, hostedStrOrEmpty(row.Vals["event_id"]))
+                       WHERE room_id=? AND event_id=? AND kind IN ('message.user', 'message.member')`, sel.roomID, hostedStrOrEmpty(row.Value("event_id")))
 		if err != nil {
 			return nil, err
 		}
 		manifest := map[string]any{}
 		for _, key := range []string{"attachment_id", "kind", "name", "size", "mime"} {
-			manifest[key] = row.Vals[key]
+			manifest[key] = row.Value(key)
 		}
 		var published []any
 		if owner != nil {
@@ -1317,7 +1317,7 @@ func readCommittedAttachmentRow(ctx context.Context, conn state.SQLiteConn, sel 
 		}
 		listed := false
 		for _, item := range published {
-			listed = listed || pyjson.Equal(item, manifest)
+			listed = listed || anyutil.Equal(item, manifest)
 		}
 		if !listed {
 			return nil, attachmentNotFound("attachment is not published in this room")
@@ -1348,7 +1348,7 @@ func attachmentRecipientListed(recipients any, memberID string) (bool, error) {
 	switch typed := recipients.(type) {
 	case []any:
 		for _, member := range typed {
-			if pyjson.Equal(member, memberID) {
+			if anyutil.Equal(member, memberID) {
 				return true, nil
 			}
 		}
@@ -1363,7 +1363,7 @@ func attachmentRecipientListed(recipients any, memberID string) (bool, error) {
 }
 
 // Owner event row of an attachment commitment, nil without a canonical room log
-func attachmentOwnerEvent(ctx context.Context, conn state.SQLiteConn, roomID, eventID string) (*pyjson.Object, error) {
+func attachmentOwnerEvent(ctx context.Context, conn state.SQLiteConn, roomID, eventID string) (*jsonutil.Object, error) {
 	exists, err := hostedTableExists(ctx, conn, "hosted_room_events")
 	if err != nil || !exists {
 		return nil, err

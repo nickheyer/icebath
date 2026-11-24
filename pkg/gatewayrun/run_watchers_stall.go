@@ -9,10 +9,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Bound of one stall notice send so a wedged transport cannot stall the watcher pass
@@ -160,8 +160,8 @@ func (r *GatewayRunner) stallNotified(sessionKey string) bool {
 // First truthy value of an activity summary among keys, unknown when none is
 func activityText(activity map[string]any, keys ...string) string {
 	for _, k := range keys {
-		if v := activity[k]; pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v := activity[k]; anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	return "unknown"
@@ -195,7 +195,7 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 			fresh = *freshIdle
 		}
 		pkgLog().Info(fmt.Sprintf("Session stall notify aborted (no longer stale): session=%s pending=%s fresh_idle=%s",
-			sessionKey, pyrepr.Str(stillPending), pyrepr.Str(fresh)))
+			sessionKey, anyutil.String(stillPending), anyutil.String(fresh)))
 		r.setStallNotified(sessionKey, false)
 		return false, nil
 	}
@@ -229,7 +229,7 @@ func (r *GatewayRunner) notifySessionStall(ctx context.Context, sessionKey strin
 			return errStallSuppressed
 		}
 		if result != nil && !result.Success {
-			return fmt.Errorf("%s", pyrepr.Str(result.Error))
+			return fmt.Errorf("%s", anyutil.String(result.Error))
 		}
 		return nil
 	}()
@@ -274,9 +274,9 @@ func (r *GatewayRunner) modelCatalogRefreshWatcher(ctx context.Context) error {
 			pkgLog().Debug(fmt.Sprintf("Model catalog refresh failed: %s", err.Error()))
 		}
 		interval := provider.CatalogRefreshInterval(ctx).Seconds()
-		deadline := pythread.Monotonic() + interval
-		for r.running.Load() && pythread.Monotonic() < deadline {
-			if err := sleepCtx(ctx, min(30.0, max(0.0, deadline-pythread.Monotonic()))); err != nil {
+		deadline := timeutil.Monotonic() + interval
+		for r.running.Load() && timeutil.Monotonic() < deadline {
+			if err := sleepCtx(ctx, min(30.0, max(0.0, deadline-timeutil.Monotonic()))); err != nil {
 				return err
 			}
 		}

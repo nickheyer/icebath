@@ -15,14 +15,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/botmode/dmdelivery"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Output tail a delivery runner's completion carries, a whole reply plus its attribution header
@@ -45,10 +45,10 @@ func init() {
 
 // Text of a tool argument, empty for a missing or falsy one
 func botDMArgText(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Local profile folder id a target names, by handle, exact folder id, then one unambiguous friendly name
@@ -86,7 +86,7 @@ func resolveLocalName(target string, roster []string, root *string) (string, boo
 
 // JSON error answer with its classified reason, the teammates and peers listed when given
 func botDMErr(message string, roster, peers *[]string) string {
-	payload := pyjson.ObjectOf("error", message, "reason", tools.ClassifyAgentError(message))
+	payload := jsonutil.ObjectOf("error", message, "reason", tools.ClassifyAgentError(message))
 	if roster != nil {
 		payload.Set("teammates", botDMList(*roster))
 	}
@@ -106,8 +106,8 @@ func botDMList(names []string) []any {
 }
 
 // JSON text of an answer whose values are text, numbers, booleans and lists of text
-func botDMDumps(payload *pyjson.Object) string {
-	text, err := pyjson.Dumps(payload)
+func botDMDumps(payload *jsonutil.Object) string {
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		panic(err)
 	}
@@ -156,7 +156,7 @@ func messageAgentTool(ctx context.Context, a *AIAgent, target, message, taskID s
 		meHome = h
 	}
 	content := fmt.Sprintf("Message from 🤖 %s (@%s): ", botmode.DisplayName(me, meHome, roster), botmode.Handle(me, roster)) + body
-	author := pyjson.ObjectOf("id", "bot:"+me, "name", botmode.Handle(me, roster), "is_bot", true)
+	author := jsonutil.ObjectOf("id", "bot:"+me, "name", botmode.Handle(me, roster), "is_bot", true)
 
 	peerMatch := botPeerTargetRE.FindStringSubmatch(rawTarget)
 	if peerMatch != nil || slices.Contains(peers, strings.ToLower(rawTarget)) {
@@ -171,7 +171,7 @@ func messageAgentTool(ctx context.Context, a *AIAgent, target, message, taskID s
 		if peerProfile != "" {
 			dmTarget, who = peerName+"/"+peerProfile, peerProfile
 		}
-		peerAuthor := pyjson.ObjectOf("id", provider.BotAuthorID(me, provider.LocalOrigin()), "name", botmode.Handle(me, roster), "is_bot", true)
+		peerAuthor := jsonutil.ObjectOf("id", provider.BotAuthorID(me, provider.LocalOrigin()), "name", botmode.Handle(me, roster), "is_bot", true)
 		return startDelivery(ctx, []string{botmode.IcebathCLI(), "-p", botmode.ProfileName(root), "peer", "dm", dmTarget}, content,
 			fmt.Sprintf("@%s on peer '%s'", who, peerName), true, taskID, a, "", peerAuthor)
 	}
@@ -210,7 +210,7 @@ func botModeGate(a *AIAgent, h string) (refusal string, refused bool) {
 }
 
 // Shell command of the cleanup owning background runner for one DM file, every argv word quoted
-func deliveryCommand(argv []string, dmFile string, stdinFile bool, profileHome string, author *pyjson.Object) (string, error) {
+func deliveryCommand(argv []string, dmFile string, stdinFile bool, profileHome string, author *jsonutil.Object) (string, error) {
 	executable, err := os.Executable()
 	if err != nil || executable == "" {
 		executable = "icebath"
@@ -221,7 +221,7 @@ func deliveryCommand(argv []string, dmFile string, stdinFile bool, profileHome s
 	}
 	runnerArgv := []string{executable, botmode.DMRunnerEntry, "--run-delivery", mode, dmFile}
 	if profileHome != "" {
-		resolved, err := pypath.Resolve(profileHome)
+		resolved, err := pathutil.Resolve(profileHome)
 		if err != nil {
 			return "", err
 		}
@@ -233,18 +233,18 @@ func deliveryCommand(argv []string, dmFile string, stdinFile bool, profileHome s
 			runnerArgv[i] = strings.ReplaceAll(part, "\\", "/")
 		}
 	}
-	if author != nil && len(author.Keys) > 0 {
-		text, err := pyjson.Dumps(author, pyjson.Separators(",", ":"))
+	if author != nil && author.Len() > 0 {
+		text, err := jsonutil.Encode(author)
 		if err != nil {
 			return "", err
 		}
 		runnerArgv = slices.Insert(runnerArgv, 3, "--author", text)
 	}
-	return pyshlex.Join(runnerArgv), nil
+	return shellutil.Join(runnerArgv), nil
 }
 
 // Writes the DM file, admits a local delivery through the profile authority and hands the file to the runner
-func startDelivery(ctx context.Context, argv []string, content, label string, stdinFile bool, taskID string, a *AIAgent, profileHome string, author *pyjson.Object) (string, error) {
+func startDelivery(ctx context.Context, argv []string, content, label string, stdinFile bool, taskID string, a *AIAgent, profileHome string, author *jsonutil.Object) (string, error) {
 	dmFile, err := dmdelivery.WriteDMFile(content)
 	if err != nil {
 		return "", err
@@ -260,7 +260,7 @@ func startDelivery(ctx context.Context, argv []string, content, label string, st
 			if idErr != nil {
 				return "", idErr
 			}
-			return botDMDumps(pyjson.ObjectOf("status", "ambiguous", "delivery_id", deliveryID,
+			return botDMDumps(jsonutil.ObjectOf("status", "ambiguous", "delivery_id", deliveryID,
 				"error", fmt.Sprintf("Live delivery admission could not be confirmed: %s. Do not resend.", dmdelivery.ExcText(err)),
 				"evidence_file", dmFile)), nil
 		}
@@ -269,23 +269,23 @@ func startDelivery(ctx context.Context, argv []string, content, label string, st
 			if err != nil {
 				return "", err
 			}
-			notification, err := pyjson.LoadsDict(spawnDelivery(ctx, command, label, "", "", taskID, a))
+			notification, err := jsonutil.DecodeObject(spawnDelivery(ctx, command, label, "", "", taskID, a))
 			if err != nil {
 				return "", err
 			}
-			result := pyjson.ObjectOf("status", record["status"], "delivery_id", record["delivery_id"], "to", label,
+			result := jsonutil.ObjectOf("status", record["status"], "delivery_id", record["delivery_id"], "to", label,
 				"detail", "Durably queued for the live Bot Chat owner. Do NOT wait or resend; finish your turn.")
-			if notifyErr := notification.GetOr("error", nil); pyrepr.Truthy(notifyErr) {
+			if notifyErr := notification.ValueOr("error", nil); anyutil.IsTrue(notifyErr) {
 				result.Set("notification_error", notifyErr)
-			} else if procID := notification.GetOr("process_id", nil); pyrepr.Truthy(procID) {
+			} else if procID := notification.ValueOr("process_id", nil); anyutil.IsTrue(procID) {
 				result.Set("process_id", procID)
-				replyDelivery := notification.GetOr("reply_delivery", "notification")
+				replyDelivery := notification.ValueOr("reply_delivery", "notification")
 				result.Set("reply_delivery", replyDelivery)
 				if replyDelivery == "poll" {
-					result.Set("detail", "Durably queued for the live Bot Chat owner. Do NOT resend. "+pyrepr.Str(notification.GetOr("detail", "")))
+					result.Set("detail", "Durably queued for the live Bot Chat owner. Do NOT resend. "+anyutil.String(notification.ValueOr("detail", "")))
 				}
 			}
-			return pyjson.Dumps(result)
+			return jsonutil.Encode(result)
 		}
 	}
 	command, err := deliveryCommand(argv, dmFile, stdinFile, profileHome, author)
@@ -310,22 +310,22 @@ func spawnDelivery(ctx context.Context, command, label, dmFile, deliveryID, task
 	}()
 	raw := botDMTerminalTool(ctx, a.env, tools.TerminalRequest{Command: command, Background: true, NotifyOnComplete: true,
 		TaskID: taskID, Workdir: pm.RepoRoot(), HostLocal: true, CompletionOutputChars: replyCompletionChars})
-	parsed := pyjson.NewObject()
-	if decoded, err := pyjson.Loads(raw); err == nil {
-		obj, isObject := decoded.(*pyjson.Object)
+	parsed := jsonutil.NewObject()
+	if decoded, err := jsonutil.Decode(raw); err == nil {
+		obj, isObject := decoded.(*jsonutil.Object)
 		if !isObject {
 			panic(fmt.Sprintf("the terminal tool replied with %s where a mapping was expected", errchain.Kind(decoded)))
 		}
 		parsed = obj
 	}
 	procID := ""
-	if id := parsed.GetOr("session_id", nil); pyrepr.Truthy(id) {
-		procID = pyrepr.Str(id)
+	if id := parsed.ValueOr("session_id", nil); anyutil.IsTrue(id) {
+		procID = anyutil.String(id)
 	}
-	if startErr := parsed.GetOr("error", nil); pyrepr.Truthy(startErr) {
-		return botDMErr(fmt.Sprintf("Delivery to %s failed to start: %s", label, pyrepr.Str(startErr)), nil, nil)
+	if startErr := parsed.ValueOr("error", nil); anyutil.IsTrue(startErr) {
+		return botDMErr(fmt.Sprintf("Delivery to %s failed to start: %s", label, anyutil.String(startErr)), nil, nil)
 	}
-	if parsed.GetOr("status", nil) == "pending_approval" {
+	if parsed.ValueOr("status", nil) == "pending_approval" {
 		tail := "."
 		if dmFile != "" {
 			tail = ", so nothing was sent. Approve it (or add it to command_allowlist) and send again."
@@ -337,7 +337,7 @@ func spawnDelivery(ctx context.Context, command, label, dmFile, deliveryID, task
 		return botDMErr(fmt.Sprintf("Delivery to %s failed to start: no process id returned", label), nil, nil)
 	}
 	transferred = true
-	pollOnly := parsed.GetOr("notify_on_complete", nil) == false
+	pollOnly := parsed.ValueOr("notify_on_complete", nil) == false
 	var detail, replyDelivery string
 	if pollOnly {
 		replyDelivery = "poll"
@@ -366,7 +366,7 @@ func spawnDelivery(ctx context.Context, command, label, dmFile, deliveryID, task
 		}
 		deliveryID = id
 	}
-	return botDMDumps(pyjson.ObjectOf("status", "queued", "delivery_id", deliveryID, "to", label, "reply_delivery", replyDelivery,
+	return botDMDumps(jsonutil.ObjectOf("status", "queued", "delivery_id", deliveryID, "to", label, "reply_delivery", replyDelivery,
 		"detail", detail, "process_id", procID, "queued_at", time.Now().Unix()))
 }
 

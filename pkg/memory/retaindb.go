@@ -23,9 +23,9 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const retaindbManifest = `name: retaindb
@@ -225,7 +225,7 @@ func quotePlus(s string) string {
 
 // Decoded JSON body, the text when the body is not JSON
 func decodeBody(data []byte) (any, bool) {
-	v, err := pyjson.LoadsOrdered(data)
+	v, err := jsonutil.Decode(data)
 	if err != nil {
 		return decodeReplace(data), false
 	}
@@ -250,7 +250,7 @@ func (c *retaindbClient) request(ctx context.Context, method, path string, param
 	payload, _ := decodeBody(data)
 	if resp.StatusCode >= 400 {
 		msg := ""
-		if m, ok := pyjson.Dict(payload); ok {
+		if m, ok := jsonutil.AsMap(payload); ok {
 			if pyTruthy(m["message"]) {
 				msg = pyStr(m["message"])
 			} else if pyTruthy(m["error"]) {
@@ -621,7 +621,7 @@ func mappingOrEmpty(v any) (map[string]any, error) {
 	if !pyTruthy(v) {
 		return map[string]any{}, nil
 	}
-	m, ok := pyjson.Dict(v)
+	m, ok := jsonutil.AsMap(v)
 	if !ok {
 		return nil, retaindbNoGet(v)
 	}
@@ -642,7 +642,7 @@ func buildRetainDBOverlay(profile, queryResult any, localEntries []string) (stri
 			switch x := items.(type) {
 			case []any:
 				list = x
-			case string, map[string]any, *pyjson.Object:
+			case string, map[string]any, *jsonutil.Object:
 				return nil, fmt.Errorf("RetainDB memories are %s where a list was expected", errchain.Kind(items))
 			default:
 				return nil, fmt.Errorf("RetainDB memories are %s where a list was expected", errchain.Kind(items))
@@ -754,8 +754,8 @@ func pyIterStrings(v any) []string {
 			keys = append(keys, k)
 		}
 		return keys
-	case *pyjson.Object:
-		return append([]string(nil), x.Keys...)
+	case *jsonutil.Object:
+		return append([]string(nil), x.Keys()...)
 	}
 	return nil
 }
@@ -969,7 +969,7 @@ func (p *RetainDBProvider) QueuePrefetch(ctx context.Context, query, sessionID s
 			if err != nil {
 				return nil, false, err
 			}
-			m, ok := pyjson.Dict(answer)
+			m, ok := jsonutil.AsMap(answer)
 			if !ok {
 				return nil, false, retaindbNoGet(answer)
 			}
@@ -984,7 +984,7 @@ func (p *RetainDBProvider) QueuePrefetch(ctx context.Context, query, sessionID s
 			if err != nil {
 				return nil, false, err
 			}
-			model, ok := pyjson.Dict(raw)
+			model, ok := jsonutil.AsMap(raw)
 			if !ok {
 				return nil, false, retaindbNoGet(raw)
 			}
@@ -993,7 +993,7 @@ func (p *RetainDBProvider) QueuePrefetch(ctx context.Context, query, sessionID s
 				return nil, false, err
 			}
 			return model, count > 0, nil
-		}, func(v any) { p.agentModel, _ = pyjson.Dict(v) }},
+		}, func(v any) { p.agentModel, _ = jsonutil.AsMap(v) }},
 	}
 	threads := make([]*ContextThread, 0, len(jobs))
 	for _, job := range jobs {
@@ -1276,13 +1276,13 @@ func (p *RetainDBProvider) toolUploadFile(ctx context.Context, client *retaindbC
 		return nil, err
 	}
 	if pyTruthy(args["ingest"]) {
-		rm, ok := pyjson.Dict(result)
+		rm, ok := jsonutil.AsMap(result)
 		if !ok {
 			return nil, retaindbNoGet(result)
 		}
 		file := map[string]any{}
 		if raw, present := rm["file"]; present {
-			fm, ok := pyjson.Dict(raw)
+			fm, ok := jsonutil.AsMap(raw)
 			if !ok {
 				return nil, retaindbNoGet(raw)
 			}
@@ -1293,7 +1293,7 @@ func (p *RetainDBProvider) toolUploadFile(ctx context.Context, client *retaindbC
 			if err != nil {
 				return nil, err
 			}
-			if o, isObject := result.(*pyjson.Object); isObject {
+			if o, isObject := result.(*jsonutil.Object); isObject {
 				o.Set("ingest", ingested)
 			} else {
 				rm["ingest"] = ingested
@@ -1309,7 +1309,7 @@ func (p *RetainDBProvider) toolReadFile(ctx context.Context, client *retaindbCli
 	if err != nil {
 		return nil, err
 	}
-	im, ok := pyjson.Dict(info)
+	im, ok := jsonutil.AsMap(info)
 	if !ok {
 		return nil, retaindbNoGet(info)
 	}
@@ -1321,7 +1321,7 @@ func (p *RetainDBProvider) toolReadFile(ctx context.Context, client *retaindbCli
 	if err != nil {
 		return nil, err
 	}
-	out := pyjson.ObjectOf("file_id", fileID, "rdb_uri", fileInfo["rdb_uri"], "name", fileInfo["name"])
+	out := jsonutil.ObjectOf("file_id", fileID, "rdb_uri", fileInfo["rdb_uri"], "name", fileInfo["name"])
 	mimeType := ""
 	if pyTruthy(fileInfo["mime_type"]) {
 		mimeType = pyLower(pyStr(fileInfo["mime_type"]))

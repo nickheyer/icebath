@@ -9,29 +9,30 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Completion payload publishCompletion sends for an outcome, row fields and captured result
-func publishedCompletion(t *testing.T, outcome string, response any, row, captured *pyjson.Object) *pyjson.Object {
+func publishedCompletion(t *testing.T, outcome string, response any, row, captured *jsonutil.Object) *jsonutil.Object {
 	t.Helper()
 	live := NewLiveSession(nil, "route")
-	var frames []*pyjson.Object
-	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *pyjson.Object) { frames = append(frames, frame) }}] = true
+	var frames []*jsonutil.Object
+	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *jsonutil.Object) { frames = append(frames, frame) }}] = true
 	live.EventStream.Lock.Lock()
 	err := publishCompletion(context.Background(), &SessionAuthority{}, live, SessionRef{SessionID: "s"}, row,
-		pyjson.ObjectOf("outcome", outcome), response, captured)
+		jsonutil.ObjectOf("outcome", outcome), response, captured)
 	live.EventStream.Lock.Unlock()
 	if err != nil {
 		t.Fatal(err)
 	}
-	var payloads []*pyjson.Object
+	var payloads []*jsonutil.Object
 	for _, frame := range frames {
 		params, _ := frame.Get("params")
-		if kind, _ := params.(*pyjson.Object).Get("type"); kind == "message.complete" {
-			payload, _ := params.(*pyjson.Object).Get("payload")
-			payloads = append(payloads, payload.(*pyjson.Object))
+		if kind, _ := params.(*jsonutil.Object).Get("type"); kind == "message.complete" {
+			payload, _ := params.(*jsonutil.Object).Get("payload")
+			payloads = append(payloads, payload.(*jsonutil.Object))
 		}
 	}
 	if len(payloads) != 1 {
@@ -41,22 +42,22 @@ func publishedCompletion(t *testing.T, outcome string, response any, row, captur
 }
 
 // Captured result of a turn interrupted with the recorded cause
-func interruptCause(message string, extra ...any) *pyjson.Object {
-	result := pyjson.ObjectOf("interrupted", true, "interrupt_message", message)
+func interruptCause(message string, extra ...any) *jsonutil.Object {
+	result := jsonutil.ObjectOf("interrupted", true, "interrupt_message", message)
 	for i := 0; i+1 < len(extra); i += 2 {
 		result.Set(extra[i].(string), extra[i+1])
 	}
-	return pyjson.ObjectOf("result", result)
+	return jsonutil.ObjectOf("result", result)
 }
 
-func personRow() *pyjson.Object {
-	return pyjson.ObjectOf("admission_id", "adm-1", "request_id", "sub-1")
+func personRow() *jsonutil.Object {
+	return jsonutil.ObjectOf("admission_id", "adm-1", "request_id", "sub-1")
 }
 
 func TestOtherEndingsGetNoRestartNotice(t *testing.T) {
-	for name, frame := range map[string]*pyjson.Object{
+	for name, frame := range map[string]*jsonutil.Object{
 		"completed": publishedCompletion(t, "completed", "partial reply", personRow(), interruptCause("Gateway restarting")),
-		"no cause":  publishedCompletion(t, "interrupted", "partial reply", personRow(), pyjson.ObjectOf("result", pyjson.ObjectOf("interrupted", true))),
+		"no cause":  publishedCompletion(t, "interrupted", "partial reply", personRow(), jsonutil.ObjectOf("result", jsonutil.ObjectOf("interrupted", true))),
 		"user stop": publishedCompletion(t, "interrupted", "partial reply", personRow(), interruptCause("User requested stop")),
 		"no result": publishedCompletion(t, "interrupted", "partial reply", personRow(), nil),
 	} {
@@ -74,16 +75,16 @@ func TestATurnWarningIsNotOverwritten(t *testing.T) {
 }
 
 func TestAutomationTurnTheOwnerStopInterruptedIsNeverAskedToResend(t *testing.T) {
-	rows := []func() *pyjson.Object{
-		func() *pyjson.Object {
-			return pyjson.ObjectOf("principal_id", "cron-owner", "payload", pyjson.ObjectOf("text", "job"))
+	rows := []func() *jsonutil.Object{
+		func() *jsonutil.Object {
+			return jsonutil.ObjectOf("principal_id", "cron-owner", "payload", jsonutil.ObjectOf("text", "job"))
 		},
-		func() *pyjson.Object {
-			return pyjson.ObjectOf("principal_id", "automation:agent:main:telegram:dm:x", "payload", pyjson.ObjectOf("text", "done"))
+		func() *jsonutil.Object {
+			return jsonutil.ObjectOf("principal_id", "automation:agent:main:telegram:dm:x", "payload", jsonutil.ObjectOf("text", "done"))
 		},
-		func() *pyjson.Object {
-			return pyjson.ObjectOf("principal_id", "person", "payload",
-				pyjson.ObjectOf("text", "hook", "native_text_v1", pyjson.ObjectOf("webhook_delivery", pyjson.NewObject())))
+		func() *jsonutil.Object {
+			return jsonutil.ObjectOf("principal_id", "person", "payload",
+				jsonutil.ObjectOf("text", "hook", "native_text_v1", jsonutil.ObjectOf("webhook_delivery", jsonutil.NewObject())))
 		},
 	}
 	for _, cause := range []string{"Gateway restarting", "Gateway shutting down"} {
@@ -104,7 +105,7 @@ func TestAutomationTurnTheOwnerStopInterruptedIsNeverAskedToResend(t *testing.T)
 }
 
 // One claimed admission on a real store, stamped on its live session
-func claimedOnRealStore(t *testing.T, principal string, earlier func(ctx context.Context, db *state.SessionDB)) (context.Context, *state.SessionDB, *SessionAuthority, *LiveSession, *pyjson.Object) {
+func claimedOnRealStore(t *testing.T, principal string, earlier func(ctx context.Context, db *state.SessionDB)) (context.Context, *state.SessionDB, *SessionAuthority, *LiveSession, *jsonutil.Object) {
 	t.Helper()
 	ctx, db := newTestStateDB(t)
 	if err := db.CreateSession(state.NewSession{ID: "s", Source: "test"}); err != nil {
@@ -121,7 +122,7 @@ func claimedOnRealStore(t *testing.T, principal string, earlier func(ctx context
 	live := NewLiveSession(nil, "route")
 	a.Sessions["s"] = live
 	if _, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: principal, SessionID: "s", RequestID: "r",
-		Payload: pyjson.ObjectOf("text", "please work")}); err != nil {
+		Payload: jsonutil.ObjectOf("text", "please work")}); err != nil {
 		t.Fatal(err)
 	}
 	row, _, err := db.ClaimSessionInput(ctx, state.ClaimInput{Epoch: epoch, SessionID: "s"})
@@ -143,19 +144,19 @@ func appendTurnRow(t *testing.T, ctx context.Context, db *state.SessionDB, field
 }
 
 // Settles one claimed admission through CommitAndPublish with the cause recorded on its result
-func settleOnRealStore(t *testing.T, cause, principal string) (context.Context, *state.SessionDB, *SessionAuthority, *pyjson.Object, *[]*pyjson.Object, *TurnSettlement) {
+func settleOnRealStore(t *testing.T, cause, principal string) (context.Context, *state.SessionDB, *SessionAuthority, *jsonutil.Object, *[]*jsonutil.Object, *TurnSettlement) {
 	t.Helper()
 	ctx, db, a, live, row := claimedOnRealStore(t, principal, nil)
 	appendTurnRow(t, ctx, db, map[string]any{"role": "user", "content": "please work"})
 	appendTurnRow(t, ctx, db, map[string]any{"role": "assistant", "content": "partial reply"})
-	frames := &[]*pyjson.Object{}
-	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *pyjson.Object) { *frames = append(*frames, frame) }}] = true
-	result := pyjson.ObjectOf("final_response", "partial reply", "messages", []any{}, "interrupted", true, "completed", false)
+	frames := &[]*jsonutil.Object{}
+	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *jsonutil.Object) { *frames = append(*frames, frame) }}] = true
+	result := jsonutil.ObjectOf("final_response", "partial reply", "messages", []any{}, "interrupted", true, "completed", false)
 	if cause != "" {
 		result.Set("interrupt_message", cause)
 	}
 	settlement := &TurnSettlement{}
-	if err := CommitAndPublish(ctx, a, live, testRef, row, "partial reply", "interrupted", pyjson.ObjectOf("result", result), settlement); err != nil {
+	if err := CommitAndPublish(ctx, a, live, testRef, row, "partial reply", "interrupted", jsonutil.ObjectOf("result", result), settlement); err != nil {
 		t.Fatal(err)
 	}
 	return ctx, db, a, row, frames, settlement
@@ -187,12 +188,12 @@ func TestOwnerStopReasonIsInTheTranscriptForAViewerThatReconnects(t *testing.T) 
 			if got := failedTurnNotices(t, ctx, db); !slices.Equal(got, []string{notice}) {
 				t.Fatalf("notices %v", got)
 			}
-			var completions []*pyjson.Object
+			var completions []*jsonutil.Object
 			for _, frame := range *frames {
 				params, _ := frame.Get("params")
-				if kind, _ := params.(*pyjson.Object).Get("type"); kind == "message.complete" {
-					payload, _ := params.(*pyjson.Object).Get("payload")
-					completions = append(completions, payload.(*pyjson.Object))
+				if kind, _ := params.(*jsonutil.Object).Get("type"); kind == "message.complete" {
+					payload, _ := params.(*jsonutil.Object).Get("payload")
+					completions = append(completions, payload.(*jsonutil.Object))
 				}
 			}
 			if len(completions) != 1 {
@@ -201,7 +202,7 @@ func TestOwnerStopReasonIsInTheTranscriptForAViewerThatReconnects(t *testing.T) 
 			if warning, _ := completions[0].Get("warning"); warning != notice {
 				t.Fatalf("warning %v", warning)
 			}
-			retried := pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "partial reply", "messages", []any{}, "interrupted", true,
+			retried := jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "partial reply", "messages", []any{}, "interrupted", true,
 				"interrupt_message", cause))
 			if _, _, err := finishResult(ctx, db, a.Epoch, row, "partial reply", "interrupted", retried, nil, nil); err != nil {
 				t.Fatal(err)
@@ -235,8 +236,8 @@ func TestAnEarlierTurnsFailedBoundaryIsKeptAndTheRestartNoticeAppended(t *testin
 		appendTurnRow(t, ctx, db, map[string]any{"role": "user", "content": "earlier request"})
 		appendTurnRow(t, ctx, db, map[string]any{"role": "assistant", "content": failedTurnNotice, "display_kind": failedTurnDisplayKind})
 	})
-	result := pyjson.ObjectOf("final_response", "", "interrupted", true, "completed", false, "interrupt_message", "Gateway restarting")
-	if err := CommitAndPublish(ctx, a, live, testRef, row, "", "interrupted", pyjson.ObjectOf("result", result), &TurnSettlement{}); err != nil {
+	result := jsonutil.ObjectOf("final_response", "", "interrupted", true, "completed", false, "interrupt_message", "Gateway restarting")
+	if err := CommitAndPublish(ctx, a, live, testRef, row, "", "interrupted", jsonutil.ObjectOf("result", result), &TurnSettlement{}); err != nil {
 		t.Fatal(err)
 	}
 	if got := failedTurnNotices(t, ctx, db); !slices.Equal(got, []string{failedTurnNotice, restartInterruptNotice}) {
@@ -247,9 +248,9 @@ func TestAnEarlierTurnsFailedBoundaryIsKeptAndTheRestartNoticeAppended(t *testin
 func TestUserStopIsNotRelabelledWhenShutdownStartsDuringSettlement(t *testing.T) {
 	ctx, db, a, live, row := claimedOnRealStore(t, "person", nil)
 	runner := a.Runner.(*authorityRunnerDouble)
-	var frames []*pyjson.Object
-	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *pyjson.Object) { frames = append(frames, frame) }}] = true
-	captured := pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "", "messages", []any{}, "interrupted", true,
+	var frames []*jsonutil.Object
+	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *jsonutil.Object) { frames = append(frames, frame) }}] = true
+	captured := jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "", "messages", []any{}, "interrupted", true,
 		"completed", false, "interrupt_message", "User requested stop"))
 	raw, err := sql.Open("sqlite", db.Path())
 	if err != nil {
@@ -280,12 +281,12 @@ func TestUserStopIsNotRelabelledWhenShutdownStartsDuringSettlement(t *testing.T)
 	if err := <-settled; err != nil {
 		t.Fatal(err)
 	}
-	var complete []*pyjson.Object
+	var complete []*jsonutil.Object
 	for _, frame := range frames {
 		params, _ := frame.Get("params")
-		if kind, _ := params.(*pyjson.Object).Get("type"); kind == "message.complete" {
-			payload, _ := params.(*pyjson.Object).Get("payload")
-			complete = append(complete, payload.(*pyjson.Object))
+		if kind, _ := params.(*jsonutil.Object).Get("type"); kind == "message.complete" {
+			payload, _ := params.(*jsonutil.Object).Get("payload")
+			complete = append(complete, payload.(*jsonutil.Object))
 		}
 	}
 	persisted, err := admissionResult(ctx, db, rowString(row, "admission_id"))
@@ -295,8 +296,8 @@ func TestUserStopIsNotRelabelledWhenShutdownStartsDuringSettlement(t *testing.T)
 	if len(complete) != 1 {
 		t.Fatalf("completions %d", len(complete))
 	}
-	result, _ := persisted.(*pyjson.Object).Get("result")
-	if cause, _ := result.(*pyjson.Object).Get("interrupt_message"); cause != "User requested stop" {
+	result, _ := persisted.(*jsonutil.Object).Get("result")
+	if cause, _ := result.(*jsonutil.Object).Get("interrupt_message"); cause != "User requested stop" {
 		t.Fatalf("persisted cause %v", cause)
 	}
 	if _, warned := complete[0].Get("warning"); warned {
@@ -306,7 +307,7 @@ func TestUserStopIsNotRelabelledWhenShutdownStartsDuringSettlement(t *testing.T)
 
 func TestRestartDrainTimeoutDefaultStaysZero(t *testing.T) {
 	agent, _ := config.Defaults()["agent"].(map[string]any)
-	if value, declared := agent["restart_drain_timeout"]; !declared || !pyjson.Equal(value, 0) {
+	if value, declared := agent["restart_drain_timeout"]; !declared || !anyutil.Equal(value, 0) {
 		t.Fatalf("agent.restart_drain_timeout default %v", value)
 	}
 	if DefaultGatewayRestartDrainTimeout != 0.0 {

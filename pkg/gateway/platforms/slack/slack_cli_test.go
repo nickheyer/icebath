@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Home for a manifest run with the namespace the slack manifest parser yields for unset flags
@@ -57,13 +57,13 @@ func TestSlackManifestArgparseLongDescriptionFilePreservesNewlines(t *testing.T)
 	if code, err := ManifestCommand(ctx, ns, &out, &errOut); err != nil || code != 0 {
 		t.Fatalf("code %d err %v stderr %s", code, err, errOut.String())
 	}
-	manifest, err := pyjson.LoadsDict(out.String())
+	manifest, err := jsonutil.DecodeObject(out.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	display := manifest.GetOr("display_information", nil).(*pyjson.Object)
-	if display.GetOr("long_description", nil) != content {
-		t.Fatalf("long description = %q", display.GetOr("long_description", nil))
+	display := manifest.ValueOr("display_information", nil).(*jsonutil.Object)
+	if display.ValueOr("long_description", nil) != content {
+		t.Fatalf("long description = %q", display.ValueOr("long_description", nil))
 	}
 }
 
@@ -85,15 +85,15 @@ func TestSlackFullManifestAssistantFeaturesRemainEnabled(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	features := manifest.GetOr("features", nil).(*pyjson.Object)
+	features := manifest.ValueOr("features", nil).(*jsonutil.Object)
 	if _, ok := features.Get("assistant_view"); !ok {
 		t.Fatal("assistant_view missing")
 	}
 	if _, ok := features.Get("agent_view"); ok {
 		t.Fatal("agent_view present")
 	}
-	scopes := stringList(t, manifest.GetOr("oauth_config", nil).(*pyjson.Object).GetOr("scopes", nil).(*pyjson.Object).GetOr("bot", nil))
-	events := stringList(t, manifest.GetOr("settings", nil).(*pyjson.Object).GetOr("event_subscriptions", nil).(*pyjson.Object).GetOr("bot_events", nil))
+	scopes := stringList(t, manifest.ValueOr("oauth_config", nil).(*jsonutil.Object).ValueOr("scopes", nil).(*jsonutil.Object).ValueOr("bot", nil))
+	events := stringList(t, manifest.ValueOr("settings", nil).(*jsonutil.Object).ValueOr("event_subscriptions", nil).(*jsonutil.Object).ValueOr("bot_events", nil))
 	if !slices.Contains(scopes, "assistant:write") || !slices.Contains(events, "assistant_thread_started") {
 		t.Fatalf("scopes %v events %v", scopes, events)
 	}
@@ -105,24 +105,24 @@ func TestSlackFullManifestNoAssistantPreservesCoreSurface(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	features := manifest.GetOr("features", nil).(*pyjson.Object)
-	if features.GetOr("app_home", nil).(*pyjson.Object).GetOr("messages_tab_enabled", nil) != true {
+	features := manifest.ValueOr("features", nil).(*jsonutil.Object)
+	if features.ValueOr("app_home", nil).(*jsonutil.Object).ValueOr("messages_tab_enabled", nil) != true {
 		t.Fatal("the Messages tab is not writable")
 	}
-	if slashes, _ := features.GetOr("slash_commands", nil).([]any); len(slashes) == 0 {
+	if slashes, _ := features.ValueOr("slash_commands", nil).([]any); len(slashes) == 0 {
 		t.Fatal("no slash commands")
 	}
-	settings := manifest.GetOr("settings", nil).(*pyjson.Object)
-	if settings.GetOr("socket_mode_enabled", nil) != true {
+	settings := manifest.ValueOr("settings", nil).(*jsonutil.Object)
+	if settings.ValueOr("socket_mode_enabled", nil) != true {
 		t.Fatal("socket mode disabled")
 	}
-	scopes := stringList(t, manifest.GetOr("oauth_config", nil).(*pyjson.Object).GetOr("scopes", nil).(*pyjson.Object).GetOr("bot", nil))
+	scopes := stringList(t, manifest.ValueOr("oauth_config", nil).(*jsonutil.Object).ValueOr("scopes", nil).(*jsonutil.Object).ValueOr("bot", nil))
 	for _, scope := range []string{"commands", "channels:history", "groups:read", "im:history"} {
 		if !slices.Contains(scopes, scope) {
 			t.Fatalf("scope %s missing from %v", scope, scopes)
 		}
 	}
-	events := stringList(t, settings.GetOr("event_subscriptions", nil).(*pyjson.Object).GetOr("bot_events", nil))
+	events := stringList(t, settings.ValueOr("event_subscriptions", nil).(*jsonutil.Object).ValueOr("bot_events", nil))
 	for _, event := range []string{"message.im", "message.channels", "message.groups", "app_mention"} {
 		if !slices.Contains(events, event) {
 			t.Fatalf("event %s missing from %v", event, events)

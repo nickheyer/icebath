@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var imageAspectRatios = []string{"landscape", "square", "portrait"}
@@ -243,7 +243,7 @@ func (h hostedImageGenProvider) DisplayName() string {
 	if s, ok := h.get("display_name").(string); ok {
 		return s
 	}
-	return pystr.Title(h.Name())
+	return textutil.Title(h.Name())
 }
 
 func (h hostedImageGenProvider) GetSetupSchema() map[string]any {

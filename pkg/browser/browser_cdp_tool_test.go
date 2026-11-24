@@ -10,17 +10,17 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-type cdpMockHandler func(params *pyjson.Object, sessionID string) (any, error)
+type cdpMockHandler func(params *jsonutil.Object, sessionID string) (any, error)
 
 // In process CDP endpoint answering each request through the handler registered for its method
 type cdpMock struct {
 	mu       sync.Mutex
 	handlers map[string]cdpMockHandler
-	msgs     []*pyjson.Object
+	msgs     []*jsonutil.Object
 	url      string
 }
 
@@ -33,11 +33,11 @@ func newCDPMock(t *testing.T) *cdpMock {
 			if err != nil || op == opClose {
 				return
 			}
-			decoded, err := pyjson.LoadsBytes(payload)
+			decoded, err := jsonutil.Decode(payload)
 			if err != nil {
 				return
 			}
-			msg := decoded.(*pyjson.Object)
+			msg := decoded.(*jsonutil.Object)
 			id, _ := msg.Get("id")
 			method := objStr(msg, "method")
 			sid := objStr(msg, "sessionId")
@@ -45,18 +45,18 @@ func newCDPMock(t *testing.T) *cdpMock {
 			m.msgs = append(m.msgs, msg)
 			fn := m.handlers[method]
 			m.mu.Unlock()
-			reply := pyjson.ObjectOf("id", id)
+			reply := jsonutil.ObjectOf("id", id)
 			if fn == nil {
-				reply.Set("error", pyjson.ObjectOf("code", -32601, "message", "No handler for "+method))
+				reply.Set("error", jsonutil.ObjectOf("code", -32601, "message", "No handler for "+method))
 			} else if res, err := fn(objChild(msg, "params"), sid); err != nil {
-				reply.Set("error", pyjson.ObjectOf("code", -1, "message", err.Error()))
+				reply.Set("error", jsonutil.ObjectOf("code", -1, "message", err.Error()))
 			} else {
 				reply.Set("result", res)
 			}
 			if sid != "" {
 				reply.Set("sessionId", sid)
 			}
-			text, _ := pyjson.Dumps(reply)
+			text, _ := jsonutil.Encode(reply)
 			if s.writeText(text) != nil {
 				return
 			}
@@ -75,10 +75,10 @@ func (m *cdpMock) on(method string, fn cdpMockHandler) {
 }
 
 // Requests received for method
-func (m *cdpMock) received(method string) []*pyjson.Object {
+func (m *cdpMock) received(method string) []*jsonutil.Object {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	var out []*pyjson.Object
+	var out []*jsonutil.Object
 	for _, msg := range m.msgs {
 		if objStr(msg, "method") == method {
 			out = append(out, msg)
@@ -87,13 +87,13 @@ func (m *cdpMock) received(method string) []*pyjson.Object {
 	return out
 }
 
-func decodeResult(t *testing.T, text string) *pyjson.Object {
+func decodeResult(t *testing.T, text string) *jsonutil.Object {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatalf("bad json %q: %v", text, err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 func dig(v any, keys ...string) any {
@@ -103,11 +103,11 @@ func dig(v any, keys ...string) any {
 	return v
 }
 
-func result(v any) func(*pyjson.Object, string) (any, error) {
-	return func(*pyjson.Object, string) (any, error) { return v, nil }
+func result(v any) func(*jsonutil.Object, string) (any, error) {
+	return func(*jsonutil.Object, string) (any, error) { return v, nil }
 }
 
-func obj(pairs ...any) *pyjson.Object { return pyjson.ObjectOf(pairs...) }
+func obj(pairs ...any) *jsonutil.Object { return jsonutil.ObjectOf(pairs...) }
 
 func TestMissingMethodReturnsError(t *testing.T) {
 	env := testEnv(t)
@@ -126,7 +126,7 @@ func TestNoEndpointReturnsHelpfulError(t *testing.T) {
 	}
 }
 
-func runCDP(t *testing.T, env *tools.Env, method string, params any, targetID any) *pyjson.Object {
+func runCDP(t *testing.T, env *tools.Env, method string, params any, targetID any) *jsonutil.Object {
 	t.Helper()
 	return decodeResult(t, browserCDP(t.Context(), env, method, params, targetID, nil, 30.0, ""))
 }
@@ -205,7 +205,7 @@ func assertPassThrough(t *testing.T, method, field, payload string, extra ...any
 	}
 }
 
-func assertRedacted(t *testing.T, method string, res *pyjson.Object, marker string) {
+func assertRedacted(t *testing.T, method string, res *jsonutil.Object, marker string) {
 	t.Helper()
 	env := testEnv(t)
 	m := newCDPMock(t)
@@ -273,10 +273,10 @@ func TestNestedUnflaggedBinaryPathPassesThrough(t *testing.T) {
 const cdpPrivateURL = "http://169.254.169.254/latest/meta-data/"
 
 // Fake transport recording every stateless call
-func fakeCDPCalls(t *testing.T, reply *pyjson.Object) *int {
+func fakeCDPCalls(t *testing.T, reply *jsonutil.Object) *int {
 	t.Helper()
 	calls := 0
-	pin(t, &cdpCallFn, func(_ context.Context, _, _ string, _ any, _ any, _ float64) (*pyjson.Object, error) {
+	pin(t, &cdpCallFn, func(_ context.Context, _, _ string, _ any, _ any, _ float64) (*jsonutil.Object, error) {
 		calls++
 		return reply, nil
 	})
@@ -341,7 +341,7 @@ func TestPageNavigateToPrivateUrlBlockedBeforeCdp(t *testing.T) {
 	}
 }
 
-func targets(infos ...*pyjson.Object) func(*pyjson.Object, string) (any, error) {
+func targets(infos ...*jsonutil.Object) func(*jsonutil.Object, string) (any, error) {
 	list := make([]any, len(infos))
 	for i, v := range infos {
 		list[i] = v
@@ -424,7 +424,7 @@ func TestFrameIdIsJudgedByItsOwnTargetNotTheFirstPage(t *testing.T) {
 func TestUnreadableTargetListFailsClosed(t *testing.T) {
 	env := testEnv(t)
 	m := newCDPMock(t)
-	m.on("Target.getTargets", func(*pyjson.Object, string) (any, error) { return nil, errors.New("Target domain unavailable") })
+	m.on("Target.getTargets", func(*jsonutil.Object, string) (any, error) { return nil, errors.New("Target domain unavailable") })
 	m.on("Runtime.evaluate", result(obj("result", obj("value", "page body"))))
 	pin(t, &cdpEvalSSRFGuardActive, func(*tools.Env) bool { return true })
 	out := runCDP(t, env, "Runtime.evaluate", obj("expression", "document.title"), nil)
@@ -436,7 +436,7 @@ func TestUnreadableTargetListFailsClosed(t *testing.T) {
 func TestTabManagementStaysUsableWhileATabIsPrivate(t *testing.T) {
 	for _, tc := range []struct {
 		method  string
-		params  *pyjson.Object
+		params  *jsonutil.Object
 		allowed bool
 	}{
 		{"Target.createTarget", obj("url", cdpPublicPage), true},
@@ -519,7 +519,7 @@ func nest(leaf any, levels int, asDict bool) any {
 
 func TestHostileDeepPageValueIsCutOffNotRaised(t *testing.T) {
 	for _, asDict := range []bool{false, true} {
-		blob, err := pyjson.Dumps(redactCDPOutput(nil, nest(redactDepthSecret, 2000, asDict), nil, nil, 0))
+		blob, err := jsonutil.Encode(redactCDPOutput(nil, nest(redactDepthSecret, 2000, asDict), nil, nil, 0))
 		if err != nil || strings.Contains(blob, redactDepthSecret) {
 			t.Fatalf("as_dict=%v: err %v leaked=%v", asDict, err, strings.Contains(blob, redactDepthSecret))
 		}
@@ -531,8 +531,8 @@ func TestDeepestDomChromeReturnsIsNotTruncated(t *testing.T) {
 	for i := range 150 {
 		node = obj("nodeId", i+2, "nodeName", "DIV", "children", []any{node})
 	}
-	want, _ := pyjson.Dumps(node)
-	got, _ := pyjson.Dumps(redactCDPOutput(nil, node, nil, nil, 0))
+	want, _ := jsonutil.Encode(node)
+	got, _ := jsonutil.Encode(redactCDPOutput(nil, node, nil, nil, 0))
 	if got != want {
 		t.Fatal("deep DOM tree was altered")
 	}
@@ -574,7 +574,7 @@ func TestRawCdpUrlParamsAreScreenedEvenWhenTheOpenPageIsPublic(t *testing.T) {
 		metadata := "http://metadata.google.internal/computeMetadata/v1/"
 		calls := []struct {
 			method string
-			params *pyjson.Object
+			params *jsonutil.Object
 		}{
 			{"Network.loadNetworkResource", obj("frameId", "F", "url", metadata, "options", obj())},
 			{"Runtime.callFunctionOn", obj("functionDeclaration", "() => fetch('"+metadata+"')")},
@@ -604,7 +604,7 @@ func TestRawCdpParamsTheCallNeverFetchesAreNotScreened(t *testing.T) {
 		guard := cdpGuard(t, local, false)
 		calls := []struct {
 			method string
-			params *pyjson.Object
+			params *jsonutil.Object
 		}{
 			{"Network.setBlockedURLs", obj("urls", []any{"https://*.doubleclick.net/*", "http://127.0.0.1/*", "http://169.254.169.254/*"})},
 			{"Fetch.enable", obj("patterns", []any{obj("urlPattern", "https://*.example.invalid/*")})},

@@ -13,8 +13,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 const (
@@ -36,8 +34,8 @@ const (
 
 // Hooks into pkg/gateway and pkg/tools that the process wiring assigns, since both import this package
 var (
-	AdmissionMediaReferences func(payload *pyjson.Object) ([]*pyjson.Object, error)
-	HostedDocumentReferences func(requestID string, payload *pyjson.Object) ([]*pyjson.Object, error)
+	AdmissionMediaReferences func(payload *jsonutil.Object) ([]*jsonutil.Object, error)
+	HostedDocumentReferences func(requestID string, payload *jsonutil.Object) ([]*jsonutil.Object, error)
 	ReleaseUnheldMedia       func(db *SessionDB, references []any) error
 	SpilloverSQLFilter       string
 	SpilloverNamesInText     func(texts ...string) map[string]bool
@@ -63,7 +61,7 @@ const liveLedgerSQL = `SELECT 1 FROM session_admissions WHERE target_session_id=
 var derivedAPISQL = "(source='bot_room' OR (source='api_server' AND id GLOB 'api-" + strings.Repeat("[0-9a-f]", 16) + "'))"
 
 // Object whose keys are exactly the given names
-func objectKeysAre(o *pyjson.Object, names ...string) bool {
+func objectKeysAre(o *jsonutil.Object, names ...string) bool {
 	if o.Len() != len(names) {
 		return false
 	}
@@ -77,19 +75,19 @@ func objectKeysAre(o *pyjson.Object, names ...string) bool {
 
 // Stored form of a terminal result keeping the closing reply once through a reply_ref envelope
 func encodeTerminalResult(result any) any {
-	obj, ok := result.(*pyjson.Object)
+	obj, ok := result.(*jsonutil.Object)
 	if !ok {
 		return result
 	}
 	if raw, has := obj.Get(terminalStoredKey); has {
-		out, env := obj.Copy(), pyjson.NewObject()
+		out, env := obj.Clone(), jsonutil.NewObject()
 		env.Set("v", int64(1))
 		env.Set("raw", raw)
 		out.Set(terminalStoredKey, env)
 		return out
 	}
 	value, _ := obj.Get("result")
-	vobj, ok := value.(*pyjson.Object)
+	vobj, ok := value.(*jsonutil.Object)
 	if !ok {
 		return result
 	}
@@ -102,7 +100,7 @@ func encodeTerminalResult(result any) any {
 	reply, _ := vobj.Get("final_response")
 	last := -1
 	for i := len(messages) - 1; i >= 0; i-- {
-		if m, ok := messages[i].(*pyjson.Object); ok {
+		if m, ok := messages[i].(*jsonutil.Object); ok {
 			if role, _ := m.Get("role"); role == "assistant" {
 				last = i
 				break
@@ -113,14 +111,14 @@ func encodeTerminalResult(result any) any {
 	if !isText || text == "" || last < 0 {
 		return result
 	}
-	closing := messages[last].(*pyjson.Object)
-	if content, _ := closing.Get("content"); !pyjson.Equal(content, text) {
+	closing := messages[last].(*jsonutil.Object)
+	if content, _ := closing.Get("content"); !anyutil.Equal(content, text) {
 		return result
 	}
-	stripped := closing.Copy()
+	stripped := closing.Clone()
 	stripped.Set("content", nil)
 	messages[last] = stripped
-	nv, out, env := vobj.Copy(), obj.Copy(), pyjson.NewObject()
+	nv, out, env := vobj.Clone(), obj.Clone(), jsonutil.NewObject()
 	nv.Set("messages", messages)
 	out.Set("result", nv)
 	env.Set("v", int64(1))
@@ -131,16 +129,16 @@ func encodeTerminalResult(result any) any {
 
 // Decodes a stored terminal result, only an exact encodeTerminalResult envelope being unwrapped
 func loadTerminalResult(text string) (any, error) {
-	result, err := pyjson.Loads(text)
+	result, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := result.(*pyjson.Object)
+	obj, ok := result.(*jsonutil.Object)
 	if !ok {
 		return result, nil
 	}
 	rawEnv, _ := obj.Get(terminalStoredKey)
-	env, ok := rawEnv.(*pyjson.Object)
+	env, ok := rawEnv.(*jsonutil.Object)
 	if !ok {
 		return result, nil
 	}
@@ -152,7 +150,7 @@ func loadTerminalResult(text string) (any, error) {
 	}
 	value, _ := obj.Get("result")
 	ref, _ := env.Get("reply_ref")
-	vobj, _ := value.(*pyjson.Object)
+	vobj, _ := value.(*jsonutil.Object)
 	var messages []any
 	listed := false
 	if vobj != nil {
@@ -165,7 +163,7 @@ func loadTerminalResult(text string) (any, error) {
 	}
 	reply, _ := vobj.Get("final_response")
 	text2, isText := reply.(string)
-	msg, isObj := messages[idx].(*pyjson.Object)
+	msg, isObj := messages[idx].(*jsonutil.Object)
 	if !isText || !isObj {
 		return result, nil
 	}
@@ -174,7 +172,7 @@ func loadTerminalResult(text string) (any, error) {
 	if role != "assistant" || !has || content != nil {
 		return result, nil
 	}
-	restored := msg.Copy()
+	restored := msg.Clone()
 	restored.Set("content", text2)
 	messages[idx] = restored
 	obj.Delete(terminalStoredKey)
@@ -194,7 +192,7 @@ func terminalIdentityKey(principalID, sessionID, requestID any) (string, error) 
 }
 
 // Records the media an admission payload references as durable deletion candidates
-func retireMedia(ctx context.Context, conn SQLiteConn, payload *pyjson.Object, requestID string) error {
+func retireMedia(ctx context.Context, conn SQLiteConn, payload *jsonutil.Object, requestID string) error {
 	requireHook(AdmissionMediaReferences != nil, "AdmissionMediaReferences", "gateway admission_media_references")
 	requireHook(HostedDocumentReferences != nil, "HostedDocumentReferences", "gateway hosted_document_references")
 	refs, err := AdmissionMediaReferences(payload)
@@ -207,7 +205,7 @@ func retireMedia(ctx context.Context, conn SQLiteConn, payload *pyjson.Object, r
 	}
 	refs = append(refs, hosted...)
 	if turn, has := payload.Get("api_turn_v1"); has {
-		tobj, ok := turn.(*pyjson.Object)
+		tobj, ok := turn.(*jsonutil.Object)
 		if !ok {
 			return fmt.Errorf("a retired turn is %s, expected a mapping", errchain.Kind(turn))
 		}
@@ -217,7 +215,7 @@ func retireMedia(ctx context.Context, conn SQLiteConn, payload *pyjson.Object, r
 				return fmt.Errorf("the media of a retired turn is %s, expected a list", errchain.Kind(media))
 			}
 			for _, m := range list {
-				mo, ok := m.(*pyjson.Object)
+				mo, ok := m.(*jsonutil.Object)
 				if !ok {
 					return fmt.Errorf("a media entry of a retired turn is %s, expected a mapping", errchain.Kind(m))
 				}
@@ -232,7 +230,7 @@ func retireMedia(ctx context.Context, conn SQLiteConn, payload *pyjson.Object, r
 			return fmt.Errorf("media reference without a str path: %s", pyReprValue(path))
 		}
 		sum := sha256.Sum256([]byte(ps))
-		text, err := pyjson.Dumps(ref)
+		text, err := jsonutil.Encode(ref)
 		if err != nil {
 			return err
 		}
@@ -262,7 +260,7 @@ func retireSpillover(ctx context.Context, conn SQLiteConn, sessionIDs []string) 
 			}
 			slices.Sort(sorted)
 			for _, n := range sorted {
-				text, err := pyjson.Dumps(n)
+				text, err := jsonutil.Encode(n)
 				if err != nil {
 					return err
 				}
@@ -316,7 +314,7 @@ func (d *SessionDB) collectRetiredSpillover(ctx context.Context) error {
 	}
 	var done []string
 	for _, row := range rows {
-		name, err := pyjson.Loads(pyStr(row["value"]))
+		name, err := jsonutil.Decode(pyStr(row["value"]))
 		if err != nil {
 			return err
 		}
@@ -346,7 +344,7 @@ func (d *SessionDB) CollectRetiredMedia(ctx context.Context) error {
 	}
 	refs := make([]any, 0, len(rows))
 	for _, row := range rows {
-		v, err := pyjson.Loads(pyStr(row["value"]))
+		v, err := jsonutil.Decode(pyStr(row["value"]))
 		if err != nil {
 			return err
 		}
@@ -357,11 +355,11 @@ func (d *SessionDB) CollectRetiredMedia(ctx context.Context) error {
 	}
 	var gone []string
 	for _, row := range rows {
-		v, err := pyjson.Loads(pyStr(row["value"]))
+		v, err := jsonutil.Decode(pyStr(row["value"]))
 		if err != nil {
 			return err
 		}
-		o, ok := v.(*pyjson.Object)
+		o, ok := v.(*jsonutil.Object)
 		if !ok {
 			return fmt.Errorf("a retired media record is %s, expected a mapping", errchain.Kind(v))
 		}
@@ -392,11 +390,11 @@ func entrySessionID(raw any) any {
 	if !ok {
 		return nil
 	}
-	value, err := pyjson.Loads(text)
+	value, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
-	if o, ok := value.(*pyjson.Object); ok {
+	if o, ok := value.(*jsonutil.Object); ok {
 		v, _ := o.Get("session_id")
 		return v
 	}
@@ -406,7 +404,7 @@ func entrySessionID(raw any) any {
 // Membership of a decoded value in a string set, refusing unhashable values as Python does
 func hashableIn(v any, set map[string]bool) (bool, error) {
 	switch x := v.(type) {
-	case []any, *pyjson.Object:
+	case []any, *jsonutil.Object:
 		return false, fmt.Errorf("a retirement key is %s, expected text", errchain.Kind(x))
 	case string:
 		return set[x], nil
@@ -424,16 +422,16 @@ func compactTerminalResult(ctx context.Context, conn SQLiteConn, admissionID str
 	if err != nil {
 		return err
 	}
-	obj, ok := value.(*pyjson.Object)
+	obj, ok := value.(*jsonutil.Object)
 	if !ok {
 		return fmt.Errorf("a terminal result is %s, expected a mapping", errchain.Kind(value))
 	}
 	if result, _ := obj.Get("result"); result != nil {
-		if ro, ok := result.(*pyjson.Object); ok {
-			kept := pyjson.NewObject()
-			for _, k := range ro.Keys {
+		if ro, ok := result.(*jsonutil.Object); ok {
+			kept := jsonutil.NewObject()
+			for _, k := range ro.Keys() {
 				if !terminalTranscriptFields[k] {
-					kept.Set(k, ro.Vals[k])
+					kept.Set(k, ro.Value(k))
 				}
 			}
 			kept.Set("messages", []any{})
@@ -473,11 +471,11 @@ func retireTerminalReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 			return runtimeRefusal("session_busy")
 		}
 		for _, row := range admissions {
-			payload, err := pyjson.Loads(pyStr(rowValue(row, "payload_json")))
+			payload, err := jsonutil.Decode(pyStr(rowValue(row, "payload_json")))
 			if err != nil {
 				return err
 			}
-			po, ok := payload.(*pyjson.Object)
+			po, ok := payload.(*jsonutil.Object)
 			if !ok {
 				return fmt.Errorf("a terminal receipt payload is %s, expected a mapping", errchain.Kind(payload))
 			}
@@ -502,7 +500,7 @@ func retireTerminalReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 			if err != nil {
 				return err
 			}
-			idText, err := pyjson.Dumps(rowValue(row, "admission_id"))
+			idText, err := jsonutil.Encode(rowValue(row, "admission_id"))
 			if err != nil {
 				return err
 			}
@@ -576,7 +574,7 @@ func retireMutationReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 	for i, p := range receiptSessionPaths {
 		named[i] = "json_extract(value,'" + p + "') IN (SELECT value FROM json_each(?1))"
 	}
-	ids, err := pyjson.Dumps(stringsToAny(sessionIDs))
+	ids, err := jsonutil.Encode(stringsToAny(sessionIDs))
 	if err != nil {
 		return err
 	}
@@ -586,25 +584,25 @@ func retireMutationReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 		return err
 	}
 	for _, row := range rows {
-		receipt, err := pyjson.Loads(pyStr(row["value"]))
+		receipt, err := jsonutil.Decode(pyStr(row["value"]))
 		if err != nil {
 			return err
 		}
-		ro, ok := receipt.(*pyjson.Object)
+		ro, ok := receipt.(*jsonutil.Object)
 		if !ok {
 			return fmt.Errorf("a mutation receipt is %s, expected a mapping", errchain.Kind(receipt))
 		}
 		result, _ := ro.Get("result")
-		res, ok := result.(*pyjson.Object)
+		res, ok := result.(*jsonutil.Object)
 		if !ok || !slices.ContainsFunc(mutationTranscriptFields, func(f string) bool { _, has := res.Get(f); return has }) {
 			continue
 		}
-		stripped := pyjson.NewObject()
-		for _, k := range res.Keys {
+		stripped := jsonutil.NewObject()
+		for _, k := range res.Keys() {
 			if slices.Contains(mutationTranscriptFields, k) {
 				stripped.Set(k, nil)
 			} else {
-				stripped.Set(k, res.Vals[k])
+				stripped.Set(k, res.Value(k))
 			}
 		}
 		ro.Set("result", stripped)
@@ -621,14 +619,14 @@ func retireMutationReceipts(ctx context.Context, conn SQLiteConn, sessionIDs []s
 
 // Writes a retirement marker, a sweep marker never shortening a permanent one and unscoped markers staying unscoped
 func markRetired(ctx context.Context, conn SQLiteConn, key string, expires, own bool) error {
-	value := pyjson.NewObject()
+	value := jsonutil.NewObject()
 	value.Set("retired_at", now())
 	if own {
 		value.Set("own", true)
 	}
 	if expires {
 		value.Set("expires", true)
-		text, err := pyjson.Dumps(value)
+		text, err := jsonutil.Encode(value)
 		if err != nil {
 			return err
 		}
@@ -637,7 +635,7 @@ func markRetired(ctx context.Context, conn SQLiteConn, key string, expires, own 
 			"AND json_extract(state_meta.value, '$.expires')", key, text)
 		return err
 	}
-	text, err := pyjson.Dumps(value)
+	text, err := jsonutil.Encode(value)
 	if err != nil {
 		return err
 	}
@@ -687,16 +685,16 @@ func localPolicyTarget(raw any) any {
 	if !ok {
 		return nil
 	}
-	value, err := pyjson.Loads(text)
+	value, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
-	o, ok := value.(*pyjson.Object)
+	o, ok := value.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
 	entry, _ := o.Get("entry")
-	eo, ok := entry.(*pyjson.Object)
+	eo, ok := entry.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -757,11 +755,11 @@ func localPolicyLineage(ctx context.Context, conn SQLiteConn, owner string) ([]a
 	if !ok {
 		return nil, false, nil
 	}
-	value, err := pyjson.Loads(text)
+	value, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, false, nil
 	}
-	o, ok := value.(*pyjson.Object)
+	o, ok := value.(*jsonutil.Object)
 	if !ok {
 		return nil, false, nil
 	}
@@ -852,11 +850,11 @@ func localConversationsIndex(ctx context.Context, conn SQLiteConn) (map[string][
 		if !ok {
 			continue
 		}
-		value, err := pyjson.Loads(text)
+		value, err := jsonutil.Decode(text)
 		if err != nil {
 			continue
 		}
-		receipt, ok := value.(*pyjson.Object)
+		receipt, ok := value.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -867,7 +865,7 @@ func localConversationsIndex(ctx context.Context, conn SQLiteConn) (map[string][
 		if list, ok := lineage.([]any); ok {
 			candidates = append(candidates, list...)
 		}
-		if eo, ok := entry.(*pyjson.Object); ok {
+		if eo, ok := entry.(*jsonutil.Object); ok {
 			sid, _ := eo.Get("session_id")
 			candidates = append(candidates, sid)
 		} else {
@@ -898,7 +896,7 @@ func localConversationsIndex(ctx context.Context, conn SQLiteConn) (map[string][
 
 // Ids among the sessions of derived API sessions
 func derivedAPISessions(ctx context.Context, conn SQLiteConn, sessionIDs []string) (map[string]bool, error) {
-	ids, err := pyjson.Dumps(stringsToAny(sessionIDs))
+	ids, err := jsonutil.Encode(stringsToAny(sessionIDs))
 	if err != nil {
 		return nil, err
 	}
@@ -990,18 +988,18 @@ func pruneRetiredTombstones(ctx context.Context, conn SQLiteConn, olderThan floa
 		return err
 	}
 	for _, r := range rows {
-		decoded, err := pyjson.Loads(pyStr(rowValue(r, "value")))
+		decoded, err := jsonutil.Decode(pyStr(rowValue(r, "value")))
 		if err != nil {
 			return err
 		}
-		row, _ := decoded.(*pyjson.Object)
+		row, _ := decoded.(*jsonutil.Object)
 		field := func(name string) (any, error) {
 			if row == nil {
-				return nil, &pyint.Error{Kind: "TypeError", Msg: "a retired tombstone is not a mapping"}
+				return nil, &errorutil.Error{Kind: "TypeError", Msg: "a retired tombstone is not a mapping"}
 			}
 			v, ok := row.Get(name)
 			if !ok {
-				return nil, &pyint.Error{Kind: "KeyError", Msg: "'" + name + "'"}
+				return nil, &errorutil.Error{Kind: "KeyError", Msg: "'" + name + "'"}
 			}
 			return v, nil
 		}
@@ -1011,7 +1009,7 @@ func pruneRetiredTombstones(ctx context.Context, conn SQLiteConn, olderThan floa
 		}
 		admissionID, isStr := admission.(string)
 		if !isStr {
-			return &pyint.Error{Kind: "TypeError", Msg: "a retired tombstone admission id is " + errchain.Kind(admission) + ", expected text"}
+			return &errorutil.Error{Kind: "TypeError", Msg: "a retired tombstone admission id is " + errchain.Kind(admission) + ", expected text"}
 		}
 		var parts [3]any
 		for i, name := range []string{"principal_id", "target_session_id", "request_id"} {
@@ -1173,7 +1171,7 @@ func (d *SessionDB) ExpiringRetirements(ctx context.Context, sessionIDs []string
 	for i, sid := range sessionIDs {
 		ids[i] = sid
 	}
-	list, err := pyjson.Dumps(ids)
+	list, err := jsonutil.Encode(ids)
 	if err != nil {
 		return nil, err
 	}
@@ -1238,7 +1236,7 @@ func (d *SessionDB) HasMutationReceipt(ctx context.Context, principalID, session
 			return false, err
 		}
 	}
-	key, _, err := MutationReceiptKey(principalID, sessionID, requestID, "model", pyjson.NewObject(), 0, nil)
+	key, _, err := MutationReceiptKey(principalID, sessionID, requestID, "model", jsonutil.NewObject(), 0, nil)
 	if err != nil {
 		return false, err
 	}

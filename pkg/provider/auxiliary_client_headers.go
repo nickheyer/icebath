@@ -2,15 +2,17 @@ package provider
 
 import (
 	"context"
+	"maps"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Default auxiliary models and endpoints of the OpenRouter and Anthropic routes
@@ -46,12 +48,12 @@ func auxApplyUserDefaultHeaders(ctx context.Context, headers map[string]string) 
 		return headers
 	}
 	var lines []pyhttpx.HeaderLine
-	for _, k := range pyhttpx.HeaderOrder(headers) {
+	for _, k := range slices.Sorted(maps.Keys(headers)) {
 		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
 	}
 	for _, k := range config.MappingKeys(user) {
 		if v := user[k]; v != nil {
-			lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: pyrepr.Str(v)})
+			lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: anyutil.String(v)})
 		}
 	}
 	if len(lines) == 0 {
@@ -72,7 +74,7 @@ func BuildORHeaders(ctx context.Context) map[string]string {
 		return headers
 	}
 	headers["X-OpenRouter-Cache"] = "true"
-	pyhttpx.SetHeaderOrder(headers, append(pyhttpx.HeaderOrder(auxORHeadersBase()), "X-OpenRouter-Cache"))
+	pyhttpx.SetHeaderOrder(headers, append(slices.Sorted(maps.Keys(auxORHeadersBase())), "X-OpenRouter-Cache"))
 	if ttl := settings.OpenrouterResponseCacheTtl.Get(ctx); ttl >= 1 && ttl <= 86400 {
 		headers["X-OpenRouter-Cache-TTL"] = strconv.Itoa(ttl)
 	}

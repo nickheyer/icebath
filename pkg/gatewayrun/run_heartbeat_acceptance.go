@@ -5,7 +5,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Keeps normal reset and topic resolution, then admits only the heartbeat's original lineage
@@ -54,21 +53,21 @@ func settleHeartbeatAttempt(event *gateway.MessageEvent, manager *agent.Heartbea
 }
 
 // Whether an admission row carries a heartbeat automation, native or local
-func admissionIsHeartbeat(row *pyjson.Object) bool {
+func admissionIsHeartbeat(row *jsonutil.Object) bool {
 	payload, _ := row.Get("payload")
-	object, _ := payload.(*pyjson.Object)
+	object, _ := payload.(*jsonutil.Object)
 	if object == nil {
 		return false
 	}
 	for _, path := range [][2]string{{"native_text_v1", "automation"}, {"local_automation_v1", ""}} {
 		outer, _ := object.Get(path[0])
-		holder, _ := outer.(*pyjson.Object)
+		holder, _ := outer.(*jsonutil.Object)
 		if holder == nil {
 			continue
 		}
 		if path[1] != "" {
 			inner, _ := holder.Get(path[1])
-			holder, _ = inner.(*pyjson.Object)
+			holder, _ = inner.(*jsonutil.Object)
 			if holder == nil {
 				continue
 			}
@@ -108,7 +107,7 @@ func admitHeartbeat(ctx context.Context, r *GatewayRunner, adapter gateway.Platf
 		return nil
 	}
 	state := manager.State()
-	identity, err := pyjson.Dumps([]any{"heartbeat", sessionID, state.CreatedAt, state.FireCount}, pyjson.Separators(",", ":"))
+	identity, err := jsonutil.Encode([]any{"heartbeat", sessionID, state.CreatedAt, state.FireCount})
 	if err != nil {
 		return err
 	}

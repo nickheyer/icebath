@@ -12,14 +12,13 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyast"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
 )
 
 // Directory profile distribution installs stage into before an atomic swap
@@ -88,7 +87,7 @@ func isSkillSupportPath(path string, root string) bool {
 
 // Reports whether a platforms declaration includes sys.platform of this host, falsy meaning all
 func skillMatchesPlatformList(platforms any) bool {
-	if !pyrepr.Truthy(platforms) {
+	if !anyutil.IsTrue(platforms) {
 		return true
 	}
 	items, isList := platforms.([]any)
@@ -97,7 +96,7 @@ func skillMatchesPlatformList(platforms any) bool {
 	}
 	current := hostinfo.OSFamily()
 	for _, p := range items {
-		norm := strings.TrimSpace(strings.ToLower(pyrepr.Str(p)))
+		norm := strings.TrimSpace(strings.ToLower(anyutil.String(p)))
 		mapped, ok := platformMap[norm]
 		if !ok {
 			mapped = norm
@@ -173,7 +172,7 @@ func (s *Scope) profileHasKanbanToolset() (has bool) {
 		}
 	}()
 	cfg := s.tree()
-	if toolsets := cfg["toolsets"]; pyrepr.Truthy(toolsets) && tools.PyContainsKanban(toolsets) {
+	if toolsets := cfg["toolsets"]; anyutil.IsTrue(toolsets) && tools.PyContainsKanban(toolsets) {
 		return true
 	}
 	if inAssembly {
@@ -260,11 +259,7 @@ func parseConfigStringList(v any) []string {
 	switch t := v.(type) {
 	case string:
 		if strings.HasPrefix(strings.TrimSpace(t), "[") {
-			items, ok, err := pyast.LiteralStrList(t)
-			if err != nil {
-				panic(err)
-			}
-			if ok {
+			if items, ok := pythonutil.LiteralStrings(t); ok {
 				return items
 			}
 		}
@@ -272,7 +267,7 @@ func parseConfigStringList(v any) []string {
 	case []any:
 		out := make([]string, 0, len(t))
 		for _, item := range t {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 		return out
 	case []string:
@@ -319,7 +314,7 @@ func (s *Scope) DisabledSkillNames(platform string) map[string]bool {
 
 // Path with symlinks resolved, the cleaned absolute path when resolution fails
 func resolvePath(p string) string {
-	if r, err := pypath.Realpath(p, pypath.Lax); err == nil {
+	if r, err := pathutil.Resolve(p); err == nil {
 		return r
 	}
 	if a, err := filepath.Abs(p); err == nil {
@@ -1048,17 +1043,17 @@ func isString(v any) bool {
 const SkillPromptDescLimit = 60
 
 var (
-	lastWhitespaceRe = regexp.MustCompile(`[` + pySpaceClass + `][^` + pySpaceClass + `]*\n?\z`)
-	clipTrailRe      = regexp.MustCompile(`[` + pySpaceClass + `.,;:\-–—(/]+\n?\z`)
+	lastWhitespaceRe = regexp.MustCompile(`[` + spaceClass + `][^` + spaceClass + `]*\n?\z`)
+	clipTrailRe      = regexp.MustCompile(`[` + spaceClass + `.,;:\-–—(/]+\n?\z`)
 )
 
 // Normalized description of a frontmatter for comparison and truncation
 func normalizeSkillDescription(fm map[string]any) string {
 	raw := fm["description"]
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return ""
 	}
-	return strings.Trim(strings.TrimSpace(pyrepr.Str(raw)), "'\"")
+	return strings.Trim(strings.TrimSpace(anyutil.String(raw)), "'\"")
 }
 
 // Description fitted to the index budget and cut at a word boundary

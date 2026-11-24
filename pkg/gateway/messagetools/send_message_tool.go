@@ -11,7 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const mediaPlatformsNote = "telegram, discord, matrix, weixin, signal, yuanbao, feishu, whatsapp, slack and qqbot"
@@ -28,8 +28,8 @@ type SendOptions struct {
 // Untrusted send failure detail bounded to max characters
 func boundedSendError(detail any) string {
 	text := "send failed"
-	if pyrepr.Truthy(detail) {
-		text = pyrepr.Str(detail)
+	if anyutil.IsTrue(detail) {
+		text = anyutil.String(detail)
 	}
 	if utf8.RuneCountInString(text) <= 900 {
 		return text
@@ -110,14 +110,14 @@ func sendLiveAdapterMedia(ctx context.Context, live any, chatID, message string,
 			detail = boundedSendError(err)
 		case r.Success:
 			last = &r
-			if raw, ok := r.RawResponse.(map[string]any); ok && pyrepr.Truthy(raw["ambiguous"]) {
+			if raw, ok := r.RawResponse.(map[string]any); ok && anyutil.IsTrue(raw["ambiguous"]) {
 				unconfirmed = append(unconfirmed, index+1)
 			}
 			continue
 		default:
 			last = &r
 			errDetail := r.Error
-			if !pyrepr.Truthy(errDetail) {
+			if !anyutil.IsTrue(errDetail) {
 				errDetail = "media send failed"
 			}
 			detail = boundedSendError(errDetail)
@@ -271,8 +271,8 @@ func sendViaAdapter(ctx context.Context, platform gateway.Platform, pconfig *gat
 		pkgLog().Debug(fmt.Sprintf("Plugin standalone send for %s raised", platformName), "error", err)
 		return map[string]any{"error": "Plugin standalone send failed: " + boundedSendError(err)}, nil
 	}
-	if result != nil && (pyrepr.Truthy(result["success"]) || pyrepr.Truthy(result["error"])) {
-		if pyrepr.Truthy(result["error"]) {
+	if result != nil && (anyutil.IsTrue(result["success"]) || anyutil.IsTrue(result["error"])) {
+		if anyutil.IsTrue(result["error"]) {
 			out := map[string]any{}
 			for k, v := range result {
 				out[k] = v
@@ -298,7 +298,7 @@ func sendChunks(ctx context.Context, chunks []string, sendOne func(ctx context.C
 		if err != nil {
 			return nil, err
 		}
-		if result = r; result != nil && pyrepr.Truthy(result["error"]) {
+		if result = r; result != nil && anyutil.IsTrue(result["error"]) {
 			break
 		}
 	}
@@ -419,7 +419,7 @@ func SendToPlatform(ctx context.Context, platform gateway.Platform, pconfig *gat
 		disableLinkPreviews := false
 		if pconfig != nil {
 			token = pconfig.Token
-			disableLinkPreviews = len(pconfig.Extra) > 0 && pyrepr.Truthy(pconfig.Extra["disable_link_previews"])
+			disableLinkPreviews = len(pconfig.Extra) > 0 && anyutil.IsTrue(pconfig.Extra["disable_link_previews"])
 		}
 		return sendTelegram(ctx, token, chatID, message, mediaFiles, opts.ThreadID, disableLinkPreviews, opts.ForceDocument)
 	}
@@ -489,7 +489,7 @@ func SendToPlatform(ctx context.Context, platform gateway.Platform, pconfig *gat
 	if err != nil {
 		return nil, err
 	}
-	if warning != "" && lastResult != nil && pyrepr.Truthy(lastResult["success"]) && !pyrepr.Truthy(lastResult["media_delivered"]) {
+	if warning != "" && lastResult != nil && anyutil.IsTrue(lastResult["success"]) && !anyutil.IsTrue(lastResult["media_delivered"]) {
 		switch w := lastResult["warnings"].(type) {
 		case []string:
 			lastResult["warnings"] = append(append([]string{}, w...), warning)

@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyversion"
 	"github.com/nickheyer/icebath/pkg/pm"
+	versionutil "github.com/nickheyer/icebath/pkg/utils/version"
 )
 
 func TestCoreRequirementErrorExport(t *testing.T) {
@@ -29,7 +29,7 @@ func TestCoreRequirementErrorExport(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := ""
-	if _, perr := pyversion.Parse(RunningVersion); perr == nil {
+	if _, perr := versionutil.Parse(RunningVersion); perr == nil {
 		want = "requires icebath-agent>=999, running " + RunningVersion
 	}
 	if reason != want {

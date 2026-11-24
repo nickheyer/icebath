@@ -7,8 +7,8 @@ import (
 	"iter"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const rewindHistoryChanged = "session history changed before the rewind could be persisted"
@@ -193,7 +193,7 @@ func DurableContent(content any) any {
 			if !has {
 				text = ""
 			}
-			txt = append(txt, pyrepr.Str(text))
+			txt = append(txt, anyutil.String(text))
 		case persistImagePartTypes[kind]:
 			txt = append(txt, imageMarker(part))
 		}
@@ -230,11 +230,11 @@ func contentDict(v any) (map[string]any, bool) {
 			m[kv.Key] = kv.Value
 		}
 		return m, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if d == nil {
 			return nil, false
 		}
-		return d.Vals, true
+		return d.Map(), true
 	}
 	return nil, false
 }
@@ -367,7 +367,7 @@ func (d *SessionDB) PlanUserTurnRewind(ctx context.Context, sessionID string, us
 		if err != nil {
 			return nil, err
 		}
-		if !pyrepr.Equal(rewindComparisonContent(liveView), rewindComparisonContent(warmLiveView)) {
+		if !anyutil.Equal(rewindComparisonContent(liveView), rewindComparisonContent(warmLiveView)) {
 			return nil, &RewindRuntimeError{rewindHistoryChanged}
 		}
 		plan.Prefix, plan.prefixIsDurable = prefix, false
@@ -473,10 +473,10 @@ func (d *SessionDB) RewindUserTurn(ctx context.Context, sessionID string, userOr
 func warmMatchesDurable(prefix, durablePrefix []map[string]any) bool {
 	for i, warm := range prefix {
 		durable := durablePrefix[i]
-		if !pyrepr.Equal(warm["role"], durable["role"]) || pyTruthy(warm["display_kind"]) != pyTruthy(durable["display_kind"]) {
+		if !anyutil.Equal(warm["role"], durable["role"]) || pyTruthy(warm["display_kind"]) != pyTruthy(durable["display_kind"]) {
 			return false
 		}
-		if !pyrepr.Equal(rewindComparisonContent(warm), rewindComparisonContent(durable)) {
+		if !anyutil.Equal(rewindComparisonContent(warm), rewindComparisonContent(durable)) {
 			return false
 		}
 	}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -26,13 +27,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -79,26 +80,17 @@ func boundsUnknown(b [4]int) bool {
 	return b == [4]int{}
 }
 
-// Python slice prefix of the first n code points
-func pyPrefix(s string, n int) string {
-	rs := []rune(s)
-	if len(rs) <= n {
-		return s
-	}
-	return string(rs[:n])
-}
-
 // Bounds tuple as a JSON list
 func boundsList(b [4]int) []any {
 	return []any{b[0], b[1], b[2], b[3]}
 }
 
 // JSON form of an element with its label capped and an unknown rect nulled
-func elementToDict(e UIElement) *pyjson.Object {
-	o := pyjson.NewObject()
+func elementToDict(e UIElement) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("index", e.Index)
 	o.Set("role", e.Role)
-	o.Set("label", pyPrefix(e.Label, cuMaxElementLabelChars))
+	o.Set("label", textutil.First(e.Label, cuMaxElementLabelChars))
 	if boundsUnknown(e.Bounds) {
 		o.Set("bounds", nil)
 	} else {
@@ -118,7 +110,7 @@ func formatElements(elements []UIElement, maxLines int) []string {
 		if i >= maxLines {
 			break
 		}
-		line := fmt.Sprintf("  #%d %s %s ", e.Index, e.Role, errchain.Show(pyPrefix(strings.ReplaceAll(e.Label, "\n", " "), 60)))
+		line := fmt.Sprintf("  #%d %s %s ", e.Index, e.Role, errchain.Show(textutil.First(strings.ReplaceAll(e.Label, "\n", " "), 60)))
 		if boundsUnknown(e.Bounds) {
 			line += "@ bounds-unknown (click by element index)"
 		} else {
@@ -150,7 +142,7 @@ func boundsHints(elements []UIElement, imageWidth, imageHeight int) (*float64, s
 	note := fmt.Sprintf("element bounds are in native desktop coordinates (extend to ~%dx%d), "+
 		"NOT screenshot pixels (%dx%d). coordinate= clicks expect the native "+
 		"space — derive click points from element bounds, or scale screenshot positions up accordingly", maxX, maxY, imageWidth, imageHeight)
-	scale := pyint.Round(max(float64(maxX)/float64(imageWidth), float64(maxY)/float64(imageHeight)), 2)
+	scale := mathutil.Round(max(float64(maxX)/float64(imageWidth), float64(maxY)/float64(imageHeight)), 2)
 	return &scale, note
 }
 
@@ -169,7 +161,7 @@ type captureView struct {
 	hasImage       bool
 }
 
-// Python slice of the first n elements, a negative n dropping from the end
+// First n elements, a negative n dropping that many from the end
 func elementsPrefix(es []UIElement, n int) []UIElement {
 	if n < 0 {
 		n = max(len(es)+n, 0)
@@ -182,7 +174,7 @@ func newCaptureView(ctx context.Context, env *tools.Env, c *CaptureResult, maxEl
 	visible := elementsPrefix(c.Elements, maxElements)
 	var dims *[2]int
 	if b64 := capturePNG(c); b64 != "" {
-		if raw, err := pybase64.B64Decode(b64); err == nil {
+		if raw, err := base64.StdEncoding.DecodeString(b64); err == nil {
 			if w, h, ok := provider.ImageDimensionsFromBytes(raw); ok {
 				dims = &[2]int{w, h}
 			}
@@ -266,7 +258,7 @@ func captureSummaryLines(v *captureView) []string {
 }
 
 // Sets each optional field whose value is truthy, in the given order
-func setPresent(o *pyjson.Object, truncated int, elementsFile, screenshotPath *string, scale *float64, order ...string) {
+func setPresent(o *jsonutil.Object, truncated int, elementsFile, screenshotPath *string, scale *float64, order ...string) {
 	for _, k := range order {
 		switch k {
 		case "truncated_elements":
@@ -290,8 +282,8 @@ func setPresent(o *pyjson.Object, truncated int, elementsFile, screenshotPath *s
 }
 
 // JSON text payload of the AX, vision unavailable and aux vision branches in contract key order
-func textCapturePayload(v *captureView, summary string, extra *pyjson.Object) string {
-	o := pyjson.NewObject()
+func textCapturePayload(v *captureView, summary string, extra *jsonutil.Object) string {
+	o := jsonutil.NewObject()
 	o.Set("mode", v.cap.Mode)
 	o.Set("width", v.width)
 	o.Set("height", v.height)
@@ -305,13 +297,13 @@ func textCapturePayload(v *captureView, summary string, extra *pyjson.Object) st
 	o.Set("total_elements", v.total)
 	o.Set("summary", summary)
 	if extra != nil {
-		for _, k := range extra.Keys {
-			o.Set(k, extra.Vals[k])
+		for _, k := range extra.Keys() {
+			o.Set(k, extra.Value(k))
 		}
 	}
 	setPresent(o, v.truncated, v.elementsFile, v.screenshotPath, v.boundsScale,
 		"truncated_elements", "elements_file", "screenshot_path", "bounds_scale")
-	out, err := pyjson.Dumps(o)
+	out, err := jsonutil.Encode(o)
 	if err != nil {
 		panic(err)
 	}
@@ -342,14 +334,14 @@ func captureResponse(ctx context.Context, env *tools.Env, c *CaptureResult, maxE
 	v := newCaptureView(tools.WithEnvHome(ctx, env), env, c, maxElements)
 	lines := captureSummaryLines(v)
 	summary := strings.Join(lines, "\n")
-	var extra *pyjson.Object
+	var extra *jsonutil.Object
 	switch {
 	case v.hasImage && sessionID != nil && *sessionID != "" &&
 		screenshotDedupCheck(scopedSID(ctx, *sessionID), captureDigest(c), [2]string{c.App, c.WindowTitle}):
 		lines = append(lines, "  (screen unchanged since the previous capture — image omitted to save context; the previous "+
 			"capture's screenshot/analysis still shows the current state. Element indices below are fresh "+
 			"and remain the preferred way to act.)")
-		extra = pyjson.NewObject()
+		extra = jsonutil.NewObject()
 		extra.Set("screen_unchanged", true)
 	case v.hasImage:
 		if !shouldRouteThroughAuxVision(ctx, env) {
@@ -360,7 +352,7 @@ func captureResponse(ctx context.Context, env *tools.Env, c *CaptureResult, maxE
 		}
 		lines = append(lines, "  (vision unavailable: the auxiliary vision model could not be reached; screenshot "+
 			"omitted. Element-index actions still work — drive via the element list above.)")
-		extra = pyjson.NewObject()
+		extra = jsonutil.NewObject()
 		extra.Set("vision_unavailable", true)
 	}
 	if v.truncated != 0 {
@@ -371,24 +363,24 @@ func captureResponse(ctx context.Context, env *tools.Env, c *CaptureResult, maxE
 }
 
 // Multimodal envelope carrying the summary text, the screenshot data URL and the capture meta
-func multimodalCaptureEnvelope(v *captureView, summary string) *pyjson.Object {
-	text := pyjson.NewObject()
+func multimodalCaptureEnvelope(v *captureView, summary string) *jsonutil.Object {
+	text := jsonutil.NewObject()
 	text.Set("type", "text")
 	text.Set("text", summary)
-	url := pyjson.NewObject()
+	url := jsonutil.NewObject()
 	mime, _ := captureImageFormat(v.cap)
 	url.Set("url", "data:"+mime+";base64,"+capturePNG(v.cap))
-	img := pyjson.NewObject()
+	img := jsonutil.NewObject()
 	img.Set("type", "image_url")
 	img.Set("image_url", url)
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("mode", v.cap.Mode)
 	meta.Set("width", v.width)
 	meta.Set("height", v.height)
 	meta.Set("elements", v.total)
 	meta.Set("png_bytes", v.cap.PNGBytesLen)
 	setPresent(meta, 0, v.elementsFile, v.screenshotPath, v.boundsScale, "screenshot_path", "elements_file", "bounds_scale")
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("_multimodal", true)
 	out.Set("content", []any{text, img})
 	out.Set("text_summary", summary)
@@ -487,7 +479,7 @@ var persistCaptureImage = func(ctx context.Context, env *tools.Env, c *CaptureRe
 	_, ext := captureImageFormat(c)
 	return writeCacheFile(tools.WithEnvHome(ctx, env), env, "screenshot persistence", "cache/images", "image_cache", "computer_use_"+uuid4Hex()+ext,
 		"computer_use_*.*", cuMaxCaptureFiles, func(p string) error {
-			raw, err := pybase64.B64Decode(b64)
+			raw, err := base64.StdEncoding.DecodeString(b64)
 			if err != nil {
 				return err
 			}
@@ -497,13 +489,13 @@ var persistCaptureImage = func(ctx context.Context, env *tools.Env, c *CaptureRe
 
 // Full element tree with untruncated labels in a cache file for read_file and search_files
 var spillElementsToFile = func(ctx context.Context, env *tools.Env, c *CaptureResult) *string {
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("app", c.App)
 	payload.Set("window_title", c.WindowTitle)
 	payload.Set("total_elements", len(c.Elements))
 	elems := make([]any, 0, len(c.Elements))
 	for _, e := range c.Elements {
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		o.Set("index", e.Index)
 		o.Set("role", e.Role)
 		o.Set("label", e.Label)
@@ -514,7 +506,7 @@ var spillElementsToFile = func(ctx context.Context, env *tools.Env, c *CaptureRe
 	payload.Set("elements", elems)
 	return writeCacheFile(tools.WithEnvHome(ctx, env), env, "element spill", "cache/computer_use", "computer_use_cache", "elements_"+uuid4Hex()+".json",
 		"elements_*.json", cuMaxSpillFiles, func(p string) error {
-			text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Indent(1))
+			text, err := jsonutil.Encode(payload, jsonutil.Indent(1))
 			if err != nil {
 				return err
 			}
@@ -525,7 +517,7 @@ var spillElementsToFile = func(ctx context.Context, env *tools.Env, c *CaptureRe
 		})
 }
 
-// Pillow mode facts of encoded bytes, alpha for RGBA and LA PNGs and nearest resampling for palette and bilevel
+// Pixel format facts of encoded bytes: alpha for RGBA and grey with alpha PNGs, nearest resampling for palette and one bit grey
 func visionImageMode(raw []byte, img image.Image) (hasAlpha, nearest bool) {
 	if bytes.HasPrefix(raw, []byte("\x89PNG\r\n\x1a\n")) && len(raw) > 25 {
 		depth, colorType := raw[24], raw[25]
@@ -540,7 +532,7 @@ func visionImageMode(raw []byte, img image.Image) (hasAlpha, nearest bool) {
 	return false, false
 }
 
-// Nearest neighbour resize sampling each output pixel at its centre as the Pillow affine transform does
+// Nearest neighbour resize sampling the source pixel under the centre of each output pixel
 func nearestResize(img image.Image, w, h int) image.Image {
 	b := img.Bounds()
 	sx, sy := float64(b.Dx())/float64(w), float64(b.Dy())/float64(h)
@@ -579,11 +571,11 @@ func shrinkCaptureForVision(raw []byte, ext string, maxDim int) ([]byte, *string
 	return out, note
 }
 
-// Pillow thumbnail of the capture saved as JPEG or PNG by extension, the bytes unchanged when they fit
+// Capture shrunk to fit inside maxDim and saved as JPEG or PNG by extension, the bytes unchanged when they fit
 func shrinkCaptureBytes(raw []byte, ext string, maxDim int) ([]byte, *string, error) {
 	img, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
-		return nil, nil, errors.New("cannot identify image file")
+		return nil, nil, fmt.Errorf("decode capture image: %w", err)
 	}
 	origW, origH := img.Bounds().Dx(), img.Bounds().Dy()
 	if max(origW, origH) <= maxDim {
@@ -592,16 +584,16 @@ func shrinkCaptureBytes(raw []byte, ext string, maxDim int) ([]byte, *string, er
 	hasAlpha, nearest := visionImageMode(raw, img)
 	var small image.Image
 	if nearest {
-		w, h, _ := pypil.ThumbnailSize(origW, origH, maxDim)
+		w, h, _ := imageutil.FitSize(origW, origH, maxDim)
 		small = nearestResize(img, w, h)
 	} else {
-		small = pypil.Thumbnail(pypil.ToNRGBA(img), maxDim, hasAlpha)
+		small = imageutil.Thumbnail(imageutil.ToNRGBA(img), maxDim, imageutil.CatmullRom)
 	}
 	newW, newH := small.Bounds().Dx(), small.Bounds().Dy()
 	var buf bytes.Buffer
 	if ext == ".jpg" {
 		if hasAlpha || nearest && !isGray(small) {
-			return nil, nil, errors.New("cannot write mode with alpha or palette as JPEG")
+			return nil, nil, errors.New("a JPEG cannot hold an image with alpha or a palette")
 		}
 		err = jpeg.Encode(&buf, small, &jpeg.Options{Quality: 75})
 	} else {
@@ -625,7 +617,7 @@ func shrinkCaptureBytes(raw []byte, ext string, maxDim int) ([]byte, *string, er
 	return buf.Bytes(), &note, nil
 }
 
-// True for a single channel grey image, which JPEG accepts as Pillow mode one
+// True for a single channel grey image, which a JPEG can hold
 func isGray(img image.Image) bool {
 	_, ok := img.(*image.Gray)
 	return ok
@@ -655,7 +647,7 @@ var routeCaptureThroughAuxVision = func(ctx context.Context, env *tools.Env, c *
 	if b64 == "" {
 		return nil
 	}
-	raw, err := pybase64.B64Decode(b64)
+	raw, err := base64.StdEncoding.DecodeString(b64)
 	if err != nil {
 		pkgLog(nil).Debug(fmt.Sprintf("computer_use: failed to decode capture base64: %v", err))
 		return nil
@@ -677,11 +669,11 @@ var routeCaptureThroughAuxVision = func(ctx context.Context, env *tools.Env, c *
 		prompt += "\n\nNote: " + *scaleNote
 	}
 	analysis := strings.TrimSpace(cuVisionAnalyze(ctx, env, tempPath, prompt))
-	if parsed, err := pyjson.Loads(analysis); err == nil {
+	if parsed, err := jsonutil.Decode(analysis); err == nil {
 		analysis = ""
-		if obj, ok := parsed.(*pyjson.Object); ok {
-			if a := obj.Vals["analysis"]; pyrepr.Truthy(a) {
-				analysis = strings.TrimSpace(pyrepr.Str(a))
+		if obj, ok := parsed.(*jsonutil.Object); ok {
+			if a := obj.Value("analysis"); anyutil.IsTrue(a) {
+				analysis = strings.TrimSpace(anyutil.String(a))
 			}
 		}
 	}
@@ -693,7 +685,7 @@ var routeCaptureThroughAuxVision = func(ctx context.Context, env *tools.Env, c *
 	}
 	view := &captureView{cap: c, visible: visible, total: len(c.Elements), width: c.Width, height: c.Height,
 		truncated: truncated, elementsFile: elementsFile, screenshotPath: screenshotPath}
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	extra.Set("vision_analysis", analysis)
 	extra.Set("vision_analysis_routed_via", "auxiliary.vision")
 	out := textCapturePayload(view, summary, extra)
@@ -701,6 +693,6 @@ var routeCaptureThroughAuxVision = func(ctx context.Context, env *tools.Env, c *
 }
 
 // Schema of the computer_use tool as the registry advertises it
-func getComputerUseToolSchema() *pyjson.Object {
+func getComputerUseToolSchema() *jsonutil.Object {
 	return GetComputerUseSchema()
 }

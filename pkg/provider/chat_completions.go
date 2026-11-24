@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -486,29 +486,29 @@ func spliceOrderedReasoningDetails(data []byte, payload map[string]any) {
 	if payload == nil || !bytes.Contains(data, []byte(`"reasoning_details"`)) {
 		return
 	}
-	decoded, err := pyjson.LoadsOrdered(data)
+	decoded, err := jsonutil.Decode(data)
 	if err != nil {
 		return
 	}
-	root, _ := decoded.(*pyjson.Object)
+	root, _ := decoded.(*jsonutil.Object)
 	if root == nil {
 		return
 	}
-	wireChoices, _ := root.Vals["choices"].([]any)
+	wireChoices, _ := root.Value("choices").([]any)
 	choices, _ := payload["choices"].([]any)
 	for i, wc := range wireChoices {
-		wireChoice, _ := wc.(*pyjson.Object)
+		wireChoice, _ := wc.(*jsonutil.Object)
 		if wireChoice == nil || i >= len(choices) {
 			continue
 		}
 		choice, _ := choices[i].(map[string]any)
 		for _, key := range []string{"delta", "message"} {
-			wireInner, _ := wireChoice.Vals[key].(*pyjson.Object)
+			wireInner, _ := wireChoice.Value(key).(*jsonutil.Object)
 			inner, _ := choice[key].(map[string]any)
 			if wireInner == nil || inner == nil {
 				continue
 			}
-			if details, ok := wireInner.Vals["reasoning_details"].([]any); ok {
+			if details, ok := wireInner.Value("reasoning_details").([]any); ok {
 				inner["reasoning_details"] = details
 			}
 		}
@@ -533,7 +533,7 @@ func ccExtractReasoning(plain, reasoningContent string, details []any, content a
 	add(plain)
 	add(reasoningContent)
 	for _, d := range details {
-		dm, ok := pyjson.Dict(d)
+		dm, ok := jsonutil.AsMap(d)
 		if !ok {
 			continue
 		}
@@ -615,7 +615,7 @@ func (c *chatCompletionsClient) normalizeResponse(payload map[string]any, status
 	if list, ok := msg["tool_calls"].([]any); ok {
 		for i, rawTC := range list {
 			tc, _ := rawTC.(map[string]any)
-			fn, _ := pyjson.Dict(tc["function"])
+			fn, _ := jsonutil.AsMap(tc["function"])
 			if fn == nil || fn["name"] == nil {
 				continue
 			}
@@ -700,7 +700,7 @@ func (c *chatCompletionsClient) normalizeResponse(payload map[string]any, status
 	kept := make([]any, 0, len(details)+1)
 	for _, d := range details {
 		switch d.(type) {
-		case map[string]any, *pyjson.Object:
+		case map[string]any, *jsonutil.Object:
 			kept = append(kept, d)
 		}
 	}

@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -179,23 +179,13 @@ func (FileBackend) WritePath(ctx context.Context, path string, changes Changes) 
 	return nil
 }
 
-// Reentrancy trackers of the config files being written, one per path so every profile has its own
-var configFileLockHolders = struct {
-	sync.Mutex
-	byPath map[string]*pyfs.LockHolder
-}{byPath: map[string]*pyfs.LockHolder{}}
-
 // Serializes a read, change and write of one config file across goroutines and processes, reentrant per goroutine
 func configFileLock(path string) (func(), error) {
-	configFileLockHolders.Lock()
-	holder, ok := configFileLockHolders.byPath[path]
-	if !ok {
-		holder = &pyfs.LockHolder{}
-		configFileLockHolders.byPath[path] = holder
+	release, err := fsutil.SharedFileLock(filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock")).Lock(context.Background(), 15*time.Second)
+	if err != nil {
+		return nil, fmt.Errorf("settings file lock (%s): %w", path, err)
 	}
-	configFileLockHolders.Unlock()
-	return pyfs.HolderFileLock(filepath.Join(filepath.Dir(path), "."+filepath.Base(path)+".lock"), holder, 15*time.Second,
-		fmt.Sprintf("Timed out waiting for the settings file lock (%s)", path))
+	return release, nil
 }
 
 func (b FileBackend) Name() string { return "file" }
@@ -205,7 +195,7 @@ func (b FileBackend) ConfigPath(home string) string {
 	if b.explicit != "" {
 		return b.explicit
 	}
-	return pypath.PathJoin(home, ConfigFilename)
+	return pathutil.Join(home, ConfigFilename)
 }
 
 func (b FileBackend) ReadUserDoc(ctx context.Context, home string) (any, error) {
@@ -399,18 +389,18 @@ func GetConfigBackend(ctx context.Context) (ConfigBackend, error) {
 
 // Backend and home serving a config path, a home config.yaml through the selected backend
 func route(ctx context.Context, configPath string) (ConfigBackend, string, error) {
-	path := pypath.PathStr(configPath)
-	if pypath.PathName(path) == ConfigFilename {
+	path := filepath.Clean(configPath)
+	if pathutil.Name(path) == ConfigFilename {
 		backend, err := GetConfigBackend(ctx)
-		return backend, pypath.PathParent(path), err
+		return backend, filepath.Dir(filepath.Clean(path)), err
 	}
-	return FileBackend{explicit: path}, pypath.PathParent(path), nil
+	return FileBackend{explicit: path}, filepath.Dir(filepath.Clean(path)), nil
 }
 
 // Local file backend of a path whichever backend is selected, for the PM dependency runtime
 func LocalFileLayer(configPath string) (ConfigBackend, string) {
-	path := pypath.PathStr(configPath)
-	return FileBackend{explicit: path}, pypath.PathParent(path)
+	path := filepath.Clean(configPath)
+	return FileBackend{explicit: path}, filepath.Dir(filepath.Clean(path))
 }
 
 // Parsed root of a config file, nil when empty

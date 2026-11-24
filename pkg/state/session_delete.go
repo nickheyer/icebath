@@ -9,7 +9,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Ids under a live turn lease or compression lock, idle compression ended parents counting as closed
@@ -236,7 +237,7 @@ func (d *SessionDB) expandCompressionLineage(ctx context.Context, conn SQLiteCon
 type DeleteSessionOptions struct {
 	SessionsDir              string
 	ExpectedDeleteIDs        []string
-	ExpectedDisplayMessages  map[string][]*pyjson.Object
+	ExpectedDisplayMessages  map[string][]*jsonutil.Object
 	ExcludeActiveWriteGuards bool
 	IncludeCompressionChain  bool
 }
@@ -352,12 +353,12 @@ func sameIDSet(a, b []string) bool {
 }
 
 // Python list equality of two display message lists
-func displayMessagesEqual(a, b []*pyjson.Object) bool {
+func displayMessagesEqual(a, b []*jsonutil.Object) bool {
 	if len(a) != len(b) {
 		return false
 	}
 	for i := range a {
-		if !pyjson.Equal(a[i], b[i]) {
+		if !anyutil.Equal(a[i], b[i]) {
 			return false
 		}
 	}

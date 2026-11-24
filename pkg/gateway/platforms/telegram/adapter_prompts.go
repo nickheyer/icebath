@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"html"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,10 +19,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -138,12 +138,12 @@ func (a *TelegramAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, 
 
 // Approval card header with the localized text escaped before the bold wrapper
 func (a *TelegramAdapter) EAHeader(ctx context.Context) string {
-	return "⚠️ <b>" + pyhtml.Escape(tr(ctx, "gateway.exec_approval.header"), true) + "</b>\n\n"
+	return "⚠️ <b>" + html.EscapeString(tr(ctx, "gateway.exec_approval.header")) + "</b>\n\n"
 }
 
 // Escaped reason label of the approval card
 func (a *TelegramAdapter) EAReasonLabel(ctx context.Context) string {
-	return pyhtml.Escape(tr(ctx, "gateway.exec_approval.reason_label"), true) + ": "
+	return html.EscapeString(tr(ctx, "gateway.exec_approval.reason_label")) + ": "
 }
 
 // Smart deny line of the approval card with its bold label
@@ -152,7 +152,7 @@ func (a *TelegramAdapter) EASmartDenyLine(ctx context.Context) string {
 }
 
 // HTML escape of approval card text
-func (a *TelegramAdapter) EAEscape(text string) string { return pyhtml.Escape(text, true) }
+func (a *TelegramAdapter) EAEscape(text string) string { return html.EscapeString(text) }
 
 // Command preview budget left by the card framing under the 4096 UTF-16 cap
 func (a *TelegramAdapter) ExecApprovalCmdBudget(ctx context.Context, description string, smartDenied bool) int {
@@ -217,12 +217,12 @@ func (a *TelegramAdapter) SendSlashConfirm(ctx context.Context, chatID, title, m
 func (a *TelegramAdapter) SendClarify(ctx context.Context, chatID, question string, choices []string, clarifyID, sessionKey string,
 	metadata map[string]any) (gateway.SendResult, error) {
 	build := func() (builtPrompt, error) {
-		text := "❓ " + pyhtml.Escape(question, true)
+		text := "❓ " + html.EscapeString(question)
 		var keyboard models.ReplyMarkup
 		if len(choices) > 0 {
 			lines := make([]string, 0, len(choices))
 			for i, c := range choices {
-				lines = append(lines, fmt.Sprintf("%d. %s", i+1, pyhtml.Escape(c, true)))
+				lines = append(lines, fmt.Sprintf("%d. %s", i+1, html.EscapeString(c)))
 			}
 			text += "\n\n" + strings.Join(lines, "\n")
 			rows := make([][]models.InlineKeyboardButton, 0, len(choices)+1)
@@ -270,7 +270,7 @@ func pickerThreadID(metadata map[string]any) *string {
 	if !ok || v == nil {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	return &s
 }
 
@@ -296,7 +296,7 @@ func (a *TelegramAdapter) SendChoicePicker(ctx context.Context, chatID, title st
 	build := func() (builtPrompt, error) {
 		var buttons []models.InlineKeyboardButton
 		for i, choice := range choices {
-			label := pyrepr.Str(pyrepr.Or(choice["label"], pyrepr.Or(choice["value"], "")))
+			label := anyutil.String(anyutil.Or(choice["label"], anyutil.Or(choice["value"], "")))
 			if pyTruthy(choice["is_current"]) {
 				label = "✓ " + label
 			}
@@ -396,10 +396,10 @@ func (a *TelegramAdapter) handleChoicePickerCallback(ctx context.Context, q call
 	if state.onChoiceSelected == nil {
 		return q.answer(ctx, toast(ctx, "platform.telegram.picker.expired", nil))
 	}
-	resultText, cbErr := state.onChoiceSelected(ctx, chatID, pyrepr.Str(pyrepr.Or(choice["value"], "")))
+	resultText, cbErr := state.onChoiceSelected(ctx, chatID, anyutil.String(anyutil.Or(choice["value"], "")))
 	if cbErr != nil {
-		pkgLog().Error(fmt.Sprintf("Choice picker selection failed: %s", pyrepr.ExceptionMessage(cbErr)))
-		resultText = tr(ctx, "platform.telegram.picker.apply_error", "error", pyrepr.ExceptionMessage(cbErr))
+		pkgLog().Error(fmt.Sprintf("Choice picker selection failed: %s", cbErr.Error()))
+		resultText = tr(ctx, "platform.telegram.picker.apply_error", "error", cbErr.Error())
 	}
 	a.editResultText(ctx, q, resultText)
 	if err := q.answer(ctx, ""); err != nil {
@@ -427,7 +427,7 @@ func stringList(v any) []string {
 	case []any:
 		out := make([]string, 0, len(t))
 		for _, item := range t {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 		return out
 	}
@@ -436,11 +436,11 @@ func stringList(v any) []string {
 
 // Provider button with its model count and the current marker
 func providerButton(p map[string]any) models.InlineKeyboardButton {
-	label := fmt.Sprintf("%s (%s)", pyrepr.Str(p["name"]), pyrepr.Str(providerModelCount(p)))
+	label := fmt.Sprintf("%s (%s)", anyutil.String(p["name"]), anyutil.String(providerModelCount(p)))
 	if pyTruthy(p["is_current"]) {
 		label = "✓ " + label
 	}
-	return button(label, "mp:"+pyrepr.Str(p["slug"]))
+	return button(label, "mp:"+anyutil.String(p["slug"]))
 }
 
 // Previous, position and next row of a paged picker
@@ -482,7 +482,7 @@ func pagedKeyboard(ctx context.Context, buttons []models.InlineKeyboardButton, m
 		rows = append(rows, pickerNavRow(ctx, metaInt(meta, "page"), metaInt(meta, "total_pages"), navPrefix))
 	}
 	rows = append(rows, tail)
-	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}, pyrepr.Str(meta["page_info"])
+	return &models.InlineKeyboardMarkup{InlineKeyboard: rows}, anyutil.String(meta["page_info"])
 }
 
 // Paginated provider keyboard folding provider families into one group button
@@ -490,7 +490,7 @@ func (a *TelegramAdapter) buildProviderKeyboard(ctx context.Context, providers [
 	bySlug := map[string]map[string]any{}
 	slugs := make([]string, 0, len(providers))
 	for _, p := range providers {
-		slug := pyrepr.Str(p["slug"])
+		slug := anyutil.String(p["slug"])
 		bySlug[slug] = p
 		slugs = append(slugs, slug)
 	}
@@ -561,7 +561,7 @@ func (a *TelegramAdapter) pickerEdit(ctx context.Context, q callbackQuery, textM
 // Provider row of a slug, nil when absent
 func findProvider(providers []map[string]any, slug string) map[string]any {
 	for _, p := range providers {
-		if pyrepr.Str(p["slug"]) == slug {
+		if anyutil.String(p["slug"]) == slug {
 			return p
 		}
 	}
@@ -584,7 +584,7 @@ func (a *TelegramAdapter) pickerShowModels(ctx context.Context, q callbackQuery,
 	}
 	planLine := ""
 	if p != nil && pyTruthy(p["plan_line"]) {
-		planLine = "\n⚠️ " + pyrepr.Str(p["plan_line"])
+		planLine = "\n⚠️ " + anyutil.String(p["plan_line"])
 	}
 	text := fmt.Sprintf("⚙ *%s*\n\n%s%s%s\n%s%s", tr(ctx, "platform.telegram.picker.title"),
 		tr(ctx, "platform.telegram.picker.provider_label", "provider", "*"+state.selectedProviderName+"*"), pageInfo, planLine,
@@ -630,8 +630,8 @@ func (a *TelegramAdapter) pickerSwitch(ctx context.Context, q callbackQuery, cha
 	failed := false
 	resultText, err := callback(ctx, chatID, modelID, providerSlug)
 	if err != nil {
-		pkgLog().Error(fmt.Sprintf("Model picker switch failed: %s", pyrepr.ExceptionMessage(err)))
-		resultText = tr(ctx, "platform.telegram.picker.switch_error", "error", pyrepr.ExceptionMessage(err))
+		pkgLog().Error(fmt.Sprintf("Model picker switch failed: %s", err.Error()))
+		resultText = tr(ctx, "platform.telegram.picker.switch_error", "error", err.Error())
 		failed = true
 	}
 	a.editResultText(ctx, q, resultText)
@@ -673,9 +673,9 @@ func (a *TelegramAdapter) handleModelPickerCallback(ctx context.Context, q callb
 			return q.answer(ctx, toast(ctx, "platform.telegram.picker.provider_not_found", nil))
 		}
 		state.selectedProvider = slug
-		state.selectedProviderName = pyrepr.Str(pyrepr.Or(p["name"], slug))
+		state.selectedProviderName = anyutil.String(anyutil.Or(p["name"], slug))
 		if _, has := p["name"]; has {
-			state.selectedProviderName = pyrepr.Str(p["name"])
+			state.selectedProviderName = anyutil.String(p["name"])
 		}
 		state.modelList = stringList(p["models"])
 		return a.pickerShowModels(ctx, q, state, 0)
@@ -758,8 +758,8 @@ func (a *TelegramAdapter) handleModelPickerCallback(ctx context.Context, q callb
 // Tells the user a clarify tap arrived after its entry expired
 func (a *TelegramAdapter) notifyClarifyExpired(ctx context.Context, q callbackQuery) {
 	_ = q.answer(ctx, toast(ctx, "platform.telegram.prompt.expired_toast", nil))
-	a.editHTMLQuiet(ctx, q, fmt.Sprintf("❓ %s\n\n<i>%s</i>", pyhtml.Escape(q.messageText(), true),
-		pyhtml.Escape(tr(ctx, "platform.telegram.prompt.expired_body"), true)))
+	a.editHTMLQuiet(ctx, q, fmt.Sprintf("❓ %s\n\n<i>%s</i>", html.EscapeString(q.messageText()),
+		html.EscapeString(tr(ctx, "platform.telegram.prompt.expired_body"))))
 }
 
 // HTML edit with the keyboard removed, failures ignored
@@ -992,7 +992,7 @@ func (a *TelegramAdapter) handleSlashConfirmCallback(ctx context.Context, q call
 		return err
 	}
 	if err := a.sendSlashConfirmResult(ctx, q, sessionKey, confirmID, choice); err != nil {
-		pkgLog().Error(fmt.Sprintf("[%s] slash-confirm callback failed: %s", a.Name(), pyrepr.ExceptionMessage(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] slash-confirm callback failed: %s", a.Name(), err.Error()))
 	}
 	return nil
 }
@@ -1053,7 +1053,7 @@ func (a *TelegramAdapter) handleClarifyCallback(ctx context.Context, q callbackQ
 			return err
 		}
 		a.editHTMLQuiet(ctx, q, fmt.Sprintf("❓ %s\n\n<i>%s</i>", q.messageText(),
-			pyhtml.Escape(tr(ctx, "platform.telegram.prompt.awaiting_typed", "user", user), true)))
+			html.EscapeString(tr(ctx, "platform.telegram.prompt.awaiting_typed", "user", user))))
 		return nil
 	}
 	idx, convErr := pyIntOf(token)
@@ -1076,9 +1076,9 @@ func (a *TelegramAdapter) handleClarifyCallback(ctx context.Context, q callbackQ
 		if err := q.answer(ctx, "✓ "+clipRunes(*resolvedText, 60)); err != nil {
 			return err
 		}
-		a.editHTMLQuiet(ctx, q, fmt.Sprintf("❓ %s\n\n<b>%s:</b> %s", pyhtml.Escape(q.messageText(), true), pyhtml.Escape(user, true),
-			pyhtml.Escape(*resolvedText, true)))
-		pkgLog().Info(fmt.Sprintf("Telegram clarify button resolved (id=%s, choice=%s, user=%s)", clarifyID, pyrepr.Repr(*resolvedText), user))
+		a.editHTMLQuiet(ctx, q, fmt.Sprintf("❓ %s\n\n<b>%s:</b> %s", html.EscapeString(q.messageText()), html.EscapeString(user),
+			html.EscapeString(*resolvedText)))
+		pkgLog().Info(fmt.Sprintf("Telegram clarify button resolved (id=%s, choice=%s, user=%s)", clarifyID, anyutil.Quote(*resolvedText), user))
 		return nil
 	}
 	a.notifyClarifyExpired(ctx, q)
@@ -1108,7 +1108,7 @@ func (a *TelegramAdapter) handleUpdatePromptCallback(ctx context.Context, q call
 		writeErr = os.Rename(tmp, responsePath)
 	}
 	if writeErr != nil {
-		pkgLog().Error(fmt.Sprintf("Failed to write update response from callback: %s", pyrepr.ExceptionMessage(writeErr)))
+		pkgLog().Error(fmt.Sprintf("Failed to write update response from callback: %s", writeErr.Error()))
 		return nil
 	}
 	pkgLog().Info(fmt.Sprintf("Telegram update prompt answered '%s' by user %d", answer, q.q.From.ID))
@@ -1158,8 +1158,8 @@ func (a *TelegramAdapter) handleGmailTriageCallback(ctx context.Context, q callb
 	env, envErr := tools.BuildSubprocessEnv(ctx, tools.EnvForProfileHome(ctx, nil, home.Dir(ctx)),
 		tools.SubprocessEnvOptions{InheritProfileHome: true, ScrubSecrets: true, StripLaunchProfile: true})
 	if envErr != nil {
-		label = tr(ctx, "platform.telegram.gmail_triage.error", "verb", verb, "error", pyrepr.ExceptionMessage(envErr))
-		pkgLog().Error(fmt.Sprintf("[%s] gmail-triage callback exception: verb=%s arg=%s err=%s", a.Name(), verb, arg, pyrepr.ExceptionMessage(envErr)))
+		label = tr(ctx, "platform.telegram.gmail_triage.error", "verb", verb, "error", envErr.Error())
+		pkgLog().Error(fmt.Sprintf("[%s] gmail-triage callback exception: verb=%s arg=%s err=%s", a.Name(), verb, arg, envErr.Error()))
 	} else {
 		runCtx, cancel := context.WithTimeout(ctx, 60*time.Second)
 		cmd := exec.CommandContext(runCtx, scriptPath, append([]string{arg}, entry.extraArgs...)...)
@@ -1187,8 +1187,8 @@ func (a *TelegramAdapter) handleGmailTriageCallback(ctx context.Context, q callb
 			label = tr(ctx, "platform.telegram.gmail_triage.failed", "verb", verb, "detail", clipRunes(lastLine, 80))
 			pkgLog().Error(fmt.Sprintf("[%s] gmail-triage callback failed: verb=%s arg=%s rc=%d stderr=%s", a.Name(), verb, arg, exitErr.ExitCode(), stderrText))
 		default:
-			label = tr(ctx, "platform.telegram.gmail_triage.error", "verb", verb, "error", pyrepr.ExceptionMessage(runErr))
-			pkgLog().Error(fmt.Sprintf("[%s] gmail-triage callback exception: verb=%s arg=%s err=%s", a.Name(), verb, arg, pyrepr.ExceptionMessage(runErr)))
+			label = tr(ctx, "platform.telegram.gmail_triage.error", "verb", verb, "error", runErr.Error())
+			pkgLog().Error(fmt.Sprintf("[%s] gmail-triage callback exception: verb=%s arg=%s err=%s", a.Name(), verb, arg, runErr.Error()))
 		}
 	}
 	if err := q.answer(ctx, clipRunes(label, toastLimit)); err != nil {

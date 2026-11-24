@@ -14,9 +14,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func orVeo() map[string]any {
@@ -73,7 +73,7 @@ func TestCatalogDrivesPickerRowsAndSelectedModelCapabilities(t *testing.T) {
 
 func TestPayloadClampsToModelLimitsAndDropsUnsupportedToggles(t *testing.T) {
 	ninetyNine, seven, five, yes, no := 99, 7, 5, true, false
-	payload := pyjson.Plain(openRouterBuildPayload(orHailuo(), openRouterPayloadInput{Model: "minimax/hailuo-3-max", Prompt: "p",
+	payload := jsonutil.Plain(openRouterBuildPayload(orHailuo(), openRouterPayloadInput{Model: "minimax/hailuo-3-max", Prompt: "p",
 		ImageURL: "https://x/a.png", ReferenceImageURLs: []string{"https://x/r.png"}, Duration: &ninetyNine, AspectRatio: "2:3",
 		Resolution: "720p", Audio: &yes, Seed: &seven})).(map[string]any)
 	if payload["duration"] != 15 || payload["resolution"] != "768p" || payload["aspect_ratio"] != "3:4" {
@@ -92,7 +92,7 @@ func TestPayloadClampsToModelLimitsAndDropsUnsupportedToggles(t *testing.T) {
 	if _, ok := payload["seed"]; ok {
 		t.Fatal("seed sent to Hailuo")
 	}
-	veo := pyjson.Plain(openRouterBuildPayload(orVeo(), openRouterPayloadInput{Model: "google/veo-3.1", Prompt: "p",
+	veo := jsonutil.Plain(openRouterBuildPayload(orVeo(), openRouterPayloadInput{Model: "google/veo-3.1", Prompt: "p",
 		Duration: &five, AspectRatio: "16:9", Resolution: "1080p", Audio: &no, Seed: &seven})).(map[string]any)
 	if veo["duration"] != 4 || veo["generate_audio"] != false || veo["seed"] != 7 {
 		t.Fatal(veo)
@@ -127,8 +127,8 @@ func (s *orSession) RoundTrip(r *http.Request) (*http.Response, error) {
 	}
 	if r.Method == http.MethodPost {
 		raw, _ := io.ReadAll(r.Body)
-		parsed, _ := pyjson.Loads(string(raw))
-		m, _ := pyjson.Plain(parsed).(map[string]any)
+		parsed, _ := jsonutil.Decode(string(raw))
+		m, _ := jsonutil.Plain(parsed).(map[string]any)
 		s.posts = append(s.posts, orCall{url: r.URL.String(), headers: r.Header.Clone(), json: m})
 		return reply(202, `{"id": "job-1", "polling_url": "`+r.URL.String()+`/job-1", "status": "pending"}`), nil
 	}

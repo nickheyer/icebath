@@ -7,7 +7,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
 )
 
 func fileURI(p string) string {
@@ -18,9 +18,9 @@ func fileURI(p string) string {
 }
 
 func TestAcpImageBlocksConvertToOpenaiMultimodalContent(t *testing.T) {
-	content, err := ContentBlocksToOpenAIUserContent([]pyacp.ContentBlock{
-		&pyacp.TextContentBlock{Text: "What is in this image?"},
-		&pyacp.ImageContentBlock{Data: "aGVsbG8=", MimeType: "image/png"},
+	content, err := ContentBlocksToOpenAIUserContent([]acputil.ContentBlock{
+		&acputil.TextContentBlock{Text: "What is in this image?"},
+		&acputil.ImageContentBlock{Data: "aGVsbG8=", MimeType: "image/png"},
 	})
 	want := []map[string]any{
 		{"type": "text", "text": "What is in this image?"},
@@ -32,7 +32,7 @@ func TestAcpImageBlocksConvertToOpenaiMultimodalContent(t *testing.T) {
 }
 
 func TestTextOnlyAcpBlocksStayStringForLegacyPromptPath(t *testing.T) {
-	content, err := ContentBlocksToOpenAIUserContent([]pyacp.ContentBlock{&pyacp.TextContentBlock{Text: "/help"}})
+	content, err := ContentBlocksToOpenAIUserContent([]acputil.ContentBlock{&acputil.TextContentBlock{Text: "/help"}})
 	if err != nil || content != "/help" {
 		t.Fatalf("content %#v", content)
 	}
@@ -44,9 +44,9 @@ func TestAcpResourceLinkFileIsInlinedAsText(t *testing.T) {
 		t.Fatal(err)
 	}
 	uri := fileURI(attached)
-	content, err := ContentBlocksToOpenAIUserContent([]pyacp.ContentBlock{
-		&pyacp.TextContentBlock{Text: "Please read this file"},
-		&pyacp.ResourceContentBlock{Name: "notes.md", Title: pyacp.Ptr("Project notes"), URI: uri, MimeType: pyacp.Ptr("text/markdown")},
+	content, err := ContentBlocksToOpenAIUserContent([]acputil.ContentBlock{
+		&acputil.TextContentBlock{Text: "Please read this file"},
+		&acputil.ResourceContentBlock{Name: "notes.md", Title: new("Project notes"), URI: uri, MimeType: new("text/markdown")},
 	})
 	want := "Please read this file\n[Attached file: Project notes (notes.md)]\nURI: " + uri + "\n\n# Notes\n\nAttached file body"
 	if err != nil || content != want {

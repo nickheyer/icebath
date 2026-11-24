@@ -8,8 +8,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const LocalPolicyPrefix = "gateway.local_policy.v1:"
@@ -46,7 +46,7 @@ func richSelect(selectCols, where, tail string, promptSelect *string) string {
 }
 
 // Session row dict with the raw preview shaped into preview
-func richRow(row *pyjson.Object) *pyjson.Object {
+func richRow(row *jsonutil.Object) *jsonutil.Object {
 	s := sessionRowDict(row)
 	raw, ok := s.Get("_preview_raw")
 	if !ok {
@@ -58,8 +58,8 @@ func richRow(row *pyjson.Object) *pyjson.Object {
 }
 
 // Pure read query on a reader connection, never the writer lock
-func (d *SessionDB) readRows(ctx context.Context, query string, args ...any) ([]*pyjson.Object, error) {
-	var out []*pyjson.Object
+func (d *SessionDB) readRows(ctx context.Context, query string, args ...any) ([]*jsonutil.Object, error) {
+	var out []*jsonutil.Object
 	err := d.readCtx(ctx, true, func(conn SQLiteConn) error {
 		rows, err := queryObjects(ctx, conn, query, args...)
 		out = rows
@@ -83,12 +83,12 @@ func cronJobRunsQuery(jobID string, limit, offset int) (string, []any, error) {
 }
 
 // Run sessions of one cron job newest first in the rich row shape, stamped with the job and execution ids
-func (d *SessionDB) ListCronJobRuns(ctx context.Context, jobID string, limit int) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListCronJobRuns(ctx context.Context, jobID string, limit int) ([]*jsonutil.Object, error) {
 	return d.ListCronJobRunsFrom(ctx, jobID, limit, 0)
 }
 
 // Run sessions of one cron job from an offset, newest first in the rich row shape
-func (d *SessionDB) ListCronJobRunsFrom(ctx context.Context, jobID string, limit, offset int) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListCronJobRunsFrom(ctx context.Context, jobID string, limit, offset int) ([]*jsonutil.Object, error) {
 	query, args, err := cronJobRunsQuery(jobID, limit, offset)
 	if err != nil {
 		return nil, err
@@ -97,7 +97,7 @@ func (d *SessionDB) ListCronJobRunsFrom(ctx context.Context, jobID string, limit
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*pyjson.Object, 0, len(rows))
+	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, row := range rows {
 		r := richRow(row)
 		r.Set("cron_job_id", jobID)
@@ -125,12 +125,12 @@ func compactSessionCols(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	declared, _ := rowValue(tables, "sessions").(*pyjson.Object)
+	declared, _ := rowValue(tables, "sessions").(*jsonutil.Object)
 	if declared == nil {
-		return "", &pyint.Error{Kind: "KeyError", Msg: "'sessions'"}
+		return "", &errorutil.Error{Kind: "KeyError", Msg: "'sessions'"}
 	}
 	var cols []string
-	for _, name := range declared.Keys {
+	for _, name := range declared.Keys() {
 		if !sessionCompactExcluded[name] {
 			cols = append(cols, "s."+name)
 		}
@@ -140,12 +140,12 @@ func compactSessionCols(ctx context.Context) (string, error) {
 }
 
 type richRowSeams struct {
-	single func(ctx context.Context, sessionID string, compactRows bool) (*pyjson.Object, error)
-	batch  func(ctx context.Context, sessionIDs []string, compactRows bool) (map[string]*pyjson.Object, error)
+	single func(ctx context.Context, sessionID string, compactRows bool) (*jsonutil.Object, error)
+	batch  func(ctx context.Context, sessionIDs []string, compactRows bool) (map[string]*jsonutil.Object, error)
 }
 
 // One session with the list enriched columns, nil when missing
-func (d *SessionDB) GetSessionRichRow(ctx context.Context, sessionID string, compactRows bool) (*pyjson.Object, error) {
+func (d *SessionDB) GetSessionRichRow(ctx context.Context, sessionID string, compactRows bool) (*jsonutil.Object, error) {
 	if d.richRowSeams.single != nil {
 		return d.richRowSeams.single(ctx, sessionID, compactRows)
 	}
@@ -153,7 +153,7 @@ func (d *SessionDB) GetSessionRichRow(ctx context.Context, sessionID string, com
 }
 
 // Reads one enriched session row through the batched fetch
-func (d *SessionDB) readSessionRichRow(ctx context.Context, sessionID string, compactRows bool) (*pyjson.Object, error) {
+func (d *SessionDB) readSessionRichRow(ctx context.Context, sessionID string, compactRows bool) (*jsonutil.Object, error) {
 	rows, err := d.getSessionRichRowsBatch(ctx, []string{sessionID}, compactRows)
 	if err != nil {
 		return nil, err
@@ -162,7 +162,7 @@ func (d *SessionDB) readSessionRichRow(ctx context.Context, sessionID string, co
 }
 
 // Enriched rows of many sessions keyed by id in one round trip per chunk, missing ids absent
-func (d *SessionDB) getSessionRichRowsBatch(ctx context.Context, sessionIDs []string, compactRows bool) (map[string]*pyjson.Object, error) {
+func (d *SessionDB) getSessionRichRowsBatch(ctx context.Context, sessionIDs []string, compactRows bool) (map[string]*jsonutil.Object, error) {
 	if d.richRowSeams.batch != nil {
 		return d.richRowSeams.batch(ctx, sessionIDs, compactRows)
 	}
@@ -170,14 +170,14 @@ func (d *SessionDB) getSessionRichRowsBatch(ctx context.Context, sessionIDs []st
 }
 
 // Reads enriched rows in chunks of 900 with the prompt resolved unless compact
-func (d *SessionDB) readSessionRichRowsBatch(ctx context.Context, sessionIDs []string, compactRows bool) (map[string]*pyjson.Object, error) {
+func (d *SessionDB) readSessionRichRowsBatch(ctx context.Context, sessionIDs []string, compactRows bool) (map[string]*jsonutil.Object, error) {
 	var ids []string
 	for _, sid := range sessionIDs {
 		if sid != "" {
 			ids = append(ids, sid)
 		}
 	}
-	result := map[string]*pyjson.Object{}
+	result := map[string]*jsonutil.Object{}
 	if len(ids) == 0 {
 		return result, nil
 	}

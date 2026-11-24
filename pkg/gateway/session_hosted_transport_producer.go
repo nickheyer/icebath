@@ -13,12 +13,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Raw bytes per private socket exchange, 480 KiB as base64 under the 512 KiB response line
@@ -39,7 +38,7 @@ type hostedAttestingService interface {
 // Whether the store's metadata of a bound input matches its manifest item
 func hostedItemMatches(saved, item map[string]any) bool {
 	for _, key := range []string{"kind", "name", "mime", "size"} {
-		if !pyrepr.Equal(saved[key], item[key]) {
+		if !anyutil.Equal(saved[key], item[key]) {
 			return false
 		}
 	}
@@ -93,12 +92,12 @@ func sourceAttachmentDigests(ctx context.Context, dbPath, member, roomID string,
 }
 
 // Bytes of every attested input pulled chunk by chunk from the source owner, each chunk task fenced
-func hostedAttachmentData(ctx context.Context, binding *pyjson.Object, attested *pyjson.Object, params map[string]any) ([]TransferredAttachment, error) {
+func hostedAttachmentData(ctx context.Context, binding *jsonutil.Object, attested *jsonutil.Object, params map[string]any) ([]TransferredAttachment, error) {
 	rawManifest, has := attested.Get("attachments")
 	if !has {
 		rawManifest = []any{}
 	}
-	if !pyrepr.Truthy(rawManifest) {
+	if !anyutil.IsTrue(rawManifest) {
 		return []TransferredAttachment{}, nil
 	}
 	manifest, err := validateBoundTaskManifest(rawManifest)
@@ -106,7 +105,7 @@ func hostedAttachmentData(ctx context.Context, binding *pyjson.Object, attested 
 		return nil, err
 	}
 	rawDigests, _ := attested.Get("attachment_digests")
-	digests, ok := pyjson.Plain(rawDigests).([]any)
+	digests, ok := jsonutil.Plain(rawDigests).([]any)
 	if !ok || len(digests) != len(manifest) {
 		return nil, runtimeRefusal("permission_denied")
 	}
@@ -139,7 +138,7 @@ func hostedAttachmentData(ctx context.Context, binding *pyjson.Object, attested 
 				return nil, err
 			}
 			text, _ := encoded.(string)
-			raw, err := pybase64.B64DecodeValidate(text)
+			raw, err := base64.StdEncoding.DecodeString(text)
 			if err != nil {
 				return nil, err
 			}
@@ -156,13 +155,13 @@ func hostedAttachmentData(ctx context.Context, binding *pyjson.Object, attested 
 			if err != nil {
 				return nil, err
 			}
-			if !pyrepr.Equal(chunkOwner, owner) || int64(len(raw)) != expected || !pyrepr.Equal(chunkDigest, digests[index]) {
+			if !anyutil.Equal(chunkOwner, owner) || int64(len(raw)) != expected || !anyutil.Equal(chunkDigest, digests[index]) {
 				return nil, runtimeRefusal("permission_denied")
 			}
 			data = append(data, raw...)
 		}
 		digest := sha256.Sum256(data)
-		if !pyrepr.Equal(hex.EncodeToString(digest[:]), digests[index]) {
+		if !anyutil.Equal(hex.EncodeToString(digest[:]), digests[index]) {
 			return nil, runtimeRefusal("permission_denied")
 		}
 		result = append(result, TransferredAttachment{Item: item, Data: data})
@@ -172,7 +171,7 @@ func hostedAttachmentData(ctx context.Context, binding *pyjson.Object, attested 
 
 // Exact selector of a producer envelope, refused unless it names room, member and profile only
 func hostedSelector(value any) (map[string]any, bool) {
-	selector, ok := hostedMapping(pyjson.Plain(value))
+	selector, ok := hostedMapping(jsonutil.Plain(value))
 	if !ok || len(selector) != 3 {
 		return nil, false
 	}
@@ -194,15 +193,15 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 			}
 		}
 		profileID, ok := envelope["profile_id"].(string)
-		if !ok || !filepath.IsAbs(pypath.PurePathStr(profileID)) {
+		if !ok || !filepath.IsAbs(filepath.Clean(profileID)) {
 			return nil, nil, runtimeRefusal("profile_mismatch")
 		}
-		profileHome := pypath.PurePathStr(profileID)
-		resolved, err := pypath.Resolve(profileHome)
+		profileHome := filepath.Clean(profileID)
+		resolved, err := pathutil.Resolve(profileHome)
 		if err != nil {
 			return nil, nil, err
 		}
-		if pypath.Normcase(pypath.PurePathStr(resolved)) != pypath.Normcase(profileHome) {
+		if pathutil.FoldCase(filepath.Clean(resolved)) != pathutil.FoldCase(profileHome) {
 			return nil, nil, runtimeRefusal("profile_mismatch")
 		}
 		selected := authority
@@ -231,7 +230,7 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 			}
 		}
 		operation, _ := envelope["operation"].(string)
-		wire, isMap := hostedMapping(pyjson.Plain(envelope["params"]))
+		wire, isMap := hostedMapping(jsonutil.Plain(envelope["params"]))
 		if !isMap {
 			return nil, runtimeRefusal("invalid_params")
 		}
@@ -243,10 +242,10 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 		if !hostedOperations[operation] || !ok {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		if !pyrepr.Equal(selector["profile"], servedProfileName(pypath.PurePathStr(selected.ProfileID))) {
+		if !anyutil.Equal(selector["profile"], servedProfileName(filepath.Clean(selected.ProfileID))) {
 			return nil, runtimeRefusal("profile_mismatch")
 		}
-		binding := pyjson.ObjectOf("source_home", envelope["source_home"], "selector", selector, "target_home", selected.ProfileID)
+		binding := jsonutil.ObjectOf("source_home", envelope["source_home"], "selector", selector, "target_home", selected.ProfileID)
 		attested, err := hostedAttest(ctx, binding, operation, params)
 		if err != nil {
 			return nil, err
@@ -269,7 +268,7 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 			return nil, err
 		}
 		key := hostedTransportBinding + rpc.Ref.SessionID
-		encoded, err := pyjson.Dumps(binding, pyjson.SortKeys(true))
+		encoded, err := jsonutil.Encode(binding, jsonutil.SortKeys())
 		if err != nil {
 			return nil, err
 		}
@@ -281,7 +280,7 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 			if err != nil {
 				return err
 			}
-			if old != nil && !pyrepr.Equal(old["value"], encoded) {
+			if old != nil && !anyutil.Equal(old["value"], encoded) {
 				return runtimeRefusal("permission_denied")
 			}
 			_, err = conn.ExecContext(ctx, "INSERT OR IGNORE INTO state_meta(key,value) VALUES(?,?)", key, encoded)
@@ -305,12 +304,12 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 				return nil, err
 			}
 			params["prompt"] = prompt
-			if pyrepr.Truthy(attachments) {
-				params["attachments"] = pyjson.Plain(attachments)
+			if anyutil.IsTrue(attachments) {
+				params["attachments"] = jsonutil.Plain(attachments)
 			} else {
 				params["attachments"] = nil
 			}
-			task, err := taskIdentityFromKwargs(pyjson.Plain(params["task"]))
+			task, err := taskIdentityFromKwargs(jsonutil.Plain(params["task"]))
 			if err != nil {
 				return nil, err
 			}
@@ -346,11 +345,11 @@ func InstallHostedTransport(server *GatewayControlServer, authority *SessionAuth
 		if callback == nil {
 			return nil, runtimeRefusal("runtime_draining")
 		}
-		selector, ok := hostedMapping(pyjson.Plain(params["selector"]))
+		selector, ok := hostedMapping(jsonutil.Plain(params["selector"]))
 		if !ok {
 			return nil, runtimeRefusal("invalid_params")
 		}
-		wire, ok := hostedMapping(pyjson.Plain(params["params"]))
+		wire, ok := hostedMapping(jsonutil.Plain(params["params"]))
 		if !ok {
 			return nil, runtimeRefusal("invalid_params")
 		}
@@ -371,7 +370,7 @@ type HostedRoomOwnerRPC struct {
 	HostedRoomAuthorityRPC
 	Home      string
 	binding   map[string]any
-	pending   *pydict.Dict[string, func(map[string]any) error]
+	pending   *orderedutil.Map[string, func(map[string]any) error]
 	lock      sync.Mutex
 	monitored bool
 	hasRef    bool
@@ -379,9 +378,9 @@ type HostedRoomOwnerRPC struct {
 
 // Producer forwarding to the owner at the home for the source room member and profile
 func NewHostedRoomOwnerRPC(ownerHome, sourceHome, roomID, memberID, profile string) *HostedRoomOwnerRPC {
-	o := &HostedRoomOwnerRPC{Home: pypath.PurePathStr(ownerHome), pending: pydict.New[string, func(map[string]any) error]()}
+	o := &HostedRoomOwnerRPC{Home: filepath.Clean(ownerHome), pending: orderedutil.NewMap[string, func(map[string]any) error]()}
 	o.MemberID, o.RoomID, o.Profile = memberID, roomID, profile
-	o.binding = map[string]any{"source_home": pypath.PurePathStr(sourceHome),
+	o.binding = map[string]any{"source_home": filepath.Clean(sourceHome),
 		"selector": map[string]any{"room_id": roomID, "member_id": memberID, "profile": profile}}
 	o.self = o
 	return o
@@ -420,7 +419,7 @@ func (o *HostedRoomOwnerRPC) call(ctx context.Context, operation string, params 
 	if err != nil {
 		return nil, err
 	}
-	result := pyjson.Plain(raw)
+	result := jsonutil.Plain(raw)
 	if (operation == "create" || operation == "resume" || operation == "resolve_exact") && result != nil {
 		mapping, _ := hostedMapping(result)
 		sessionID, has := mapping["session_id"]
@@ -428,7 +427,7 @@ func (o *HostedRoomOwnerRPC) call(ctx context.Context, operation string, params 
 			return nil, &pyKeyError{"session_id"}
 		}
 		o.lock.Lock()
-		o.Ref, o.hasRef = SessionRef{ProfileID: o.Home, SessionID: pyrepr.Str(sessionID)}, true
+		o.Ref, o.hasRef = SessionRef{ProfileID: o.Home, SessionID: anyutil.String(sessionID)}, true
 		o.lock.Unlock()
 	}
 	if operation == "submit" && callback != nil {
@@ -437,9 +436,9 @@ func (o *HostedRoomOwnerRPC) call(ctx context.Context, operation string, params 
 		if !has {
 			return nil, &pyKeyError{"admission_id"}
 		}
-		sessionID := pyrepr.Str(params["session_id"])
+		sessionID := anyutil.String(params["session_id"])
 		o.lock.Lock()
-		o.pending.Set(pyrepr.Str(admissionID), callback)
+		o.pending.Set(anyutil.String(admissionID), callback)
 		if !o.monitored {
 			o.monitored = true
 			go o.watch(sessionID)
@@ -483,7 +482,7 @@ func (o *HostedRoomOwnerRPC) deliver(history any) error {
 	for _, raw := range rows {
 		row, _ := hostedMapping(raw)
 		o.lock.Lock()
-		key := pyrepr.Str(row["settlement_id"])
+		key := anyutil.String(row["settlement_id"])
 		callback, found := o.pending.Get(key)
 		if found {
 			o.pending.Delete(key)
@@ -517,7 +516,7 @@ func (o *HostedRoomOwnerRPC) watch(sessionID string) {
 			wanted[i] = key
 		}
 		selector := o.binding["selector"].(map[string]any)
-		if _, err := o.Results(context.Background(), pyrepr.Str(selector["profile"]), sessionID, RoomSessionSource, wanted); err != nil {
+		if _, err := o.Results(context.Background(), anyutil.String(selector["profile"]), sessionID, RoomSessionSource, wanted); err != nil {
 			o.lock.Lock()
 			o.monitored = false
 			o.lock.Unlock()

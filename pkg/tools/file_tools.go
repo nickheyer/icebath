@@ -20,10 +20,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools/anydoc"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Above this size a wide read gets a hint toward targeted reads
@@ -92,7 +92,7 @@ func truncateToCharBudget(content string, maxChars int) (string, int, bool) {
 }
 
 // Trims content to the budget and annotates the result with the continuation hint
-func applyCharBudget(result *pyjson.Object, content string, offset int, totalLines any, maxChars int) string {
+func applyCharBudget(result *jsonutil.Object, content string, offset int, totalLines any, maxChars int) string {
 	trimmed, linesKept, _ := truncateToCharBudget(content, maxChars)
 	nextOffset := offset + linesKept
 	result.Set("content", trimmed)
@@ -357,25 +357,19 @@ func hostDirname(p string) string {
 	return posixDirname(p)
 }
 
-// True when the literal path, any symlink hop, or the final realpath is a blocked device, raising the readlink encode error
-func isBlockedDevice(env *Env, filePath, baseDir string) (bool, error) {
-	expanded, err := expandTildeErr(env, filePath)
-	if err != nil {
-		return false, err
-	}
+// True when the literal path, any symlink hop, or the final realpath is a blocked device
+func isBlockedDevice(env *Env, filePath, baseDir string) bool {
+	expanded := expandTildeFor(env, filePath)
 	if baseDir != "" && !filepath.IsAbs(expanded) {
 		expanded = pyOSPathJoin(baseDir, expanded)
 	}
 	normalized := hostNormpath(expanded)
 	if isBlockedDevicePath(env, normalized) {
-		return true, nil
+		return true
 	}
 	seen := map[string]bool{}
 	current := normalized
-	for i := 0; i < 20; i++ {
-		if err := fsEncodeError(current); err != nil {
-			return false, err
-		}
+	for range 20 {
 		target, err := os.Readlink(current)
 		if err != nil {
 			break
@@ -385,7 +379,7 @@ func isBlockedDevice(env *Env, filePath, baseDir string) (bool, error) {
 		}
 		target = hostNormpath(target)
 		if isBlockedDevicePath(env, target) {
-			return true, nil
+			return true
 		}
 		if seen[target] {
 			break
@@ -393,10 +387,7 @@ func isBlockedDevice(env *Env, filePath, baseDir string) (bool, error) {
 		seen[target] = true
 		current = target
 	}
-	if realpathEncodeError(normalized) != nil {
-		return false, nil
-	}
-	return isBlockedDevicePath(env, hostNormpath(resolveNonStrict(normalized))), nil
+	return isBlockedDevicePath(env, hostNormpath(resolveNonStrict(normalized)))
 }
 
 // Task cwd resolution of a search hit, the raw path when it cannot resolve
@@ -482,18 +473,15 @@ func specialFileKind(path string) string {
 	return "a special (non-regular) file"
 }
 
-// Empty ordered result object
-func newDict() *pyjson.Object { return &pyjson.Object{Vals: map[string]any{}} }
-
 // Sets a key only when absent, the dict setdefault form
-func dictSetDefault(o *pyjson.Object, key string, v any) {
-	if _, ok := o.Vals[key]; !ok {
+func dictSetDefault(o *jsonutil.Object, key string, v any) {
+	if _, ok := o.Get(key); !ok {
 		o.Set(key, v)
 	}
 }
 
 // Truthy value of a result key
-func dictTruthy(o *pyjson.Object, key string) bool {
+func dictTruthy(o *jsonutil.Object, key string) bool {
 	v, _ := o.Get(key)
 	if n, ok := v.(json.Number); ok {
 		f, _ := n.Float64()
@@ -503,14 +491,14 @@ func dictTruthy(o *pyjson.Object, key string) bool {
 }
 
 // String value of a result key, empty when absent or not a string
-func dictString(o *pyjson.Object, key string) string {
+func dictString(o *jsonutil.Object, key string) string {
 	v, _ := o.Get(key)
 	s, _ := v.(string)
 	return s
 }
 
 // Integer value of a result key and whether it held a JSON integer
-func dictInt(o *pyjson.Object, key string) (int, bool) {
+func dictInt(o *jsonutil.Object, key string) (int, bool) {
 	v, _ := o.Get(key)
 	switch n := v.(type) {
 	case json.Number:
@@ -523,28 +511,28 @@ func dictInt(o *pyjson.Object, key string) (int, bool) {
 }
 
 // Ordered dict of a result value through its JSON encoding, nested objects ordered and surrogates kept
-func toDict(v any) *pyjson.Object {
-	data, err := pyjson.EncodeWTF8(v)
+func toDict(v any) *jsonutil.Object {
+	data, err := jsonutil.Append(nil, v)
 	if err != nil {
-		out := newDict()
+		out := jsonutil.NewObject()
 		out.Set("error", err.Error())
 		return out
 	}
-	value, err := pyjson.DecodeWTF8Ordered(data)
-	if obj, ok := value.(*pyjson.Object); ok && err == nil {
+	value, err := jsonutil.Decode(data)
+	if obj, ok := value.(*jsonutil.Object); ok && err == nil {
 		return obj
 	}
-	return newDict()
+	return jsonutil.NewObject()
 }
 
 // Compact JSON of an ordered result object
-func dictJSON(o *pyjson.Object) string {
+func dictJSON(o *jsonutil.Object) string {
 	return JSON(o)
 }
 
 // Error envelope with a bounded message and extra keys in the given order
 func fileToolError(message string, extra ...any) string {
-	out := newDict()
+	out := jsonutil.NewObject()
 	out.Set("error", boundErrorText(message))
 	for i := 0; i+1 < len(extra); i += 2 {
 		out.Set(extra[i].(string), extra[i+1])
@@ -604,7 +592,7 @@ func readBinaryHex(ctx context.Context, env *Env, handle *fileOpsHandle, resolve
 	content := strings.TrimRight(b.String(), "\n")
 	totalRows := int((r.FileSize + hexRowBytes - 1) / hexRowBytes)
 	endRow := offset + limit - 1
-	result := newDict()
+	result := jsonutil.NewObject()
 	result.Set("content", content)
 	result.Set("total_lines", totalRows)
 	result.Set("file_size", r.FileSize)
@@ -697,7 +685,7 @@ func renderDocument(ctx context.Context, env *Env, path, resolved string, offset
 		}
 	}
 	ops := handle.forCall(ctx)
-	result := newDict()
+	result := jsonutil.NewObject()
 	content := ""
 	if pageText != "" {
 		content = ops.addLineNumbers(pageText, offset)
@@ -748,7 +736,7 @@ func dedupStubOrBlock(td *taskTracker, key dedupKey, path string) string {
 			"the information you already have.", hits+1),
 			"path", path, "already_read", hits+1, GuardrailRefusalKey, true)
 	}
-	out := newDict()
+	out := jsonutil.NewObject()
 	out.Set("status", "unchanged")
 	out.Set("message", readDedupStatusMessage)
 	out.Set("path", path)
@@ -866,11 +854,7 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 		}
 		deviceBase = base
 	}
-	blocked, err := isBlockedDevice(env, path, deviceBase)
-	if err != nil {
-		return "", err
-	}
-	if blocked {
+	if isBlockedDevice(env, path, deviceBase) {
 		return fileToolError(fmt.Sprintf("Cannot read '%s': this is a device file that would block or produce infinite output.", path)), nil
 	}
 	resolved, err := resolvePathForTaskID(env, taskID, path)
@@ -883,7 +867,7 @@ func readFileToolErr(ctx context.Context, env *Env, path string, offsetArg, limi
 	}
 	if handle.usesHostPaths() {
 		if kind := specialFileKind(resolved); kind != "" {
-			out := newDict()
+			out := jsonutil.NewObject()
 			out.Set("success", false)
 			out.Set("note", fmt.Sprintf("'%s' is %s, not a regular file — reading it would block indefinitely, so no read was attempted. Use terminal utilities if you need to interact with it.", path, kind))
 			return JSONASCII(out), nil
@@ -1357,7 +1341,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string) (st
 	for _, r := range lockOrder {
 		unlocks = append(unlocks, fileState.lockPath(r))
 	}
-	dict, early, err := func() (*pyjson.Object, bool, error) {
+	dict, early, err := func() (*jsonutil.Object, bool, error) {
 		defer func() {
 			for i := len(unlocks) - 1; i >= 0; i-- {
 				unlocks[i]()
@@ -1439,7 +1423,7 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string) (st
 	if early {
 		return dictJSON(dict), nil
 	}
-	if errText := pyDisplay(dict.Vals["error"]); dictTruthy(dict, "error") && holdsNoMatch(errText) {
+	if errText := pyDisplay(dict.Value("error")); dictTruthy(dict, "error") && holdsNoMatch(errText) {
 		failureCount := 0
 		if a.mode == "replace" && a.path != "" {
 			target := pathToResolved[a.path]
@@ -1465,8 +1449,8 @@ func patchToolErr(ctx context.Context, env *Env, a patchArgs, taskID string) (st
 }
 
 // Bounded error object returned straight from inside the locked patch section
-func patchErrorDict(message string) *pyjson.Object {
-	out := newDict()
+func patchErrorDict(message string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("error", boundErrorText(message))
 	return out
 }
@@ -1498,7 +1482,7 @@ func pathlibTypeError(v any) string {
 // Scalar JSON value, the Python types an in test rejects as not a container
 func pyScalarArg(v any) bool {
 	switch v.(type) {
-	case []any, map[string]any, *pyjson.Object, string:
+	case []any, map[string]any, *jsonutil.Object, string:
 		return false
 	}
 	return true
@@ -1516,7 +1500,7 @@ func pyContainsStr(v any, s string) bool {
 	case map[string]any:
 		_, ok := t[s]
 		return ok
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, ok := t.Get(s)
 		return ok
 	}
@@ -1531,7 +1515,7 @@ func tildePathTypeError(v any) string {
 	if pyContainsStr(v, "~") {
 		return "the path is " + errchain.Kind(v) + ", expected text"
 	}
-	if pyScalarArg(v) && pyrepr.Truthy(v) {
+	if pyScalarArg(v) && anyutil.IsTrue(v) {
 		return "the path is " + errchain.Kind(v) + ", expected text"
 	}
 	return pathlibTypeError(v)
@@ -1553,7 +1537,7 @@ func searchPatternKey(a searchArgs) any {
 	if f, ok := pyNumericValue(a.patternValue); ok {
 		return "\x01" + strconv.FormatFloat(f, 'g', -1, 64)
 	}
-	return "\x01" + pyrepr.Repr(a.patternValue)
+	return "\x01" + anyutil.Quote(a.patternValue)
 }
 
 // Numeric value of a JSON bool or number, the way Python equality compares them
@@ -1693,7 +1677,7 @@ var writeFileSchema = Dict(
 )
 
 // Replace only properties shared by the base schema and the V4A layer
-func patchBaseProperties() *pyjson.Object {
+func patchBaseProperties() *jsonutil.Object {
 	return Dict(
 		"path", Dict(
 			"type", "string",
@@ -1737,7 +1721,7 @@ const patchV4ADescription = "Targeted find-and-replace edits in files. Use this 
 	"REQUIRED PARAMETERS: mode, patch."
 
 // V4A mode and patch parameters layered on for OpenAI family mains
-func patchV4AParams() (*pyjson.Object, *pyjson.Object) {
+func patchV4AParams() (*jsonutil.Object, *jsonutil.Object) {
 	return Dict(
 			"type", "string",
 			"enum", []any{"replace", "patch"},
@@ -1898,12 +1882,12 @@ func handlePatch(ctx context.Context, call *Call) string {
 	pyArgs := pythonCallArgs(call)
 	if p, ok := pyArgs["patch"].(string); ok {
 		a.patch = p
-	} else if mode == "patch" && pyrepr.Truthy(pyArgs["patch"]) {
+	} else if mode == "patch" && anyutil.IsTrue(pyArgs["patch"]) {
 		panic(&pyTypeError{msg: "the patch is " + errchain.Kind(pyArgs["patch"]) + ", expected text"})
 	}
 	if p, ok := pyArgs["path"].(string); ok {
 		a.path = p
-	} else if pyrepr.Truthy(pyArgs["path"]) {
+	} else if anyutil.IsTrue(pyArgs["path"]) {
 		panic(&pyTypeError{msg: tildePathTypeError(pyArgs["path"])})
 	}
 	return owned(ctx, call, func(ctx context.Context) string {
@@ -1958,7 +1942,7 @@ func handleSearchFiles(ctx context.Context, call *Call) string {
 }
 
 // One word capability upgrade of the read_file description when hosted or local OCR reads scanned pages
-func readFileSchemaOverrides(env *Env) *pyjson.Object {
+func readFileSchemaOverrides(env *Env) *jsonutil.Object {
 	if HostedOCRAvailable(env) || localOCRTools() {
 		return Dict("description", strings.Replace(readFileDescription, "PDF (text layer)", "PDF (scanned or text)", 1))
 	}
@@ -1966,13 +1950,13 @@ func readFileSchemaOverrides(env *Env) *pyjson.Object {
 }
 
 // Layers the V4A patch mode onto the replace only schema for OpenAI family mains
-func patchSchemaOverrides(env *Env) *pyjson.Object {
+func patchSchemaOverrides(env *Env) *jsonutil.Object {
 	if !isOpenAIFamilyMain(env) {
 		return nil
 	}
 	mode, patch := patchV4AParams()
 	props := Dict("mode", mode)
-	props.Update(patchBaseProperties())
+	props.Merge(patchBaseProperties())
 	props.Set("patch", patch)
 	return Dict(
 		"description", patchV4ADescription,

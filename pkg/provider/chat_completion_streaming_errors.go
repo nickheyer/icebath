@@ -9,9 +9,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -142,14 +142,14 @@ func streamRejectsStreamOptions(err error) bool {
 	body := ""
 	switch e := err.(type) {
 	case *AuxSDKError:
-		if pyrepr.Truthy(e.Body) {
-			body = pyrepr.Str(e.Body)
+		if anyutil.IsTrue(e.Body) {
+			body = anyutil.String(e.Body)
 		}
 	case *APIError:
 		body = e.Body
 	case *ProviderStreamError:
 		if len(e.Body) > 0 {
-			body = pyrepr.Str(e.Body)
+			body = anyutil.String(e.Body)
 		}
 	}
 	text := strings.ToLower(body + " " + err.Error())
@@ -190,7 +190,7 @@ func bufferAnthropicToolInput(apiKwargs map[string]any, baseURL string) {
 // Classifies a failed attempt, true to retry, false to stop with the error recorded
 func streamingCallHandleError(c *streamingCall, err error, attempt, maxRetries int) bool {
 	if c.requestCancelled.Load() {
-		pkgLog().Debug(fmt.Sprintf("Streaming worker caught %s after request cancellation — exiting without retry.", pyrepr.TypeName(err)))
+		pkgLog().Debug(fmt.Sprintf("Streaming worker caught %s after request cancellation — exiting without retry.", anyutil.Kind(err)))
 		return false
 	}
 	err = c.asLifetimeError(err)

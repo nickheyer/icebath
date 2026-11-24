@@ -13,9 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Transport of out of process sends, a clone of the default transport when nil
@@ -24,33 +21,33 @@ var standaloneTransport http.RoundTripper
 // Posts one batch and returns the decoded RPC response
 type batchPoster func(ctx context.Context, attachments []any, message string) (any, error)
 
-// The error member of a decoded RPC response the way the in operator and subscript read it
+// The error member of a decoded RPC response; an array or text response holds none unless it names an error, which fails like any other kind of value
 func rpcErrorMember(data any) (rpcErr any, present bool, err error) {
-	if m, isDict := pyjson.Dict(data); isDict {
+	if m, isDict := jsonutil.AsMap(data); isDict {
 		rpcErr, present = m["error"]
 		return rpcErr, present, nil
 	}
 	switch d := data.(type) {
 	case []any:
 		for _, item := range d {
-			if pyrepr.Equal(item, "error") {
-				return nil, false, &pyErr{"TypeError", "list indices must be integers or slices, not str"}
+			if item == "error" {
+				return nil, false, errors.New("signal-cli RPC response is an array that names an error instead of an object")
 			}
 		}
 		return nil, false, nil
 	case string:
 		if strings.Contains(d, "error") {
-			return nil, false, &pyErr{"TypeError", "string indices must be integers, not 'str'"}
+			return nil, false, errors.New("signal-cli RPC response is text that names an error instead of an object")
 		}
 		return nil, false, nil
 	}
-	return nil, false, &pyErr{"TypeError", fmt.Sprintf("argument of type '%s' is not iterable", pyrepr.TypeName(data))}
+	return nil, false, fmt.Errorf("signal-cli RPC response: %w", unexpectedKind("a JSON object", data))
 }
 
 // Text of a failed request to the signal-cli daemon at target for a log line or a send result, the kind of error and the proxy's host when the proxy URL
 // the client reads from the environment holds a secret the raw text could repeat
 func proxySafeErrText(err error, target string) string {
-	return cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(target)), errText(err))
+	return cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(target)), err.Error())
 }
 
 // One batch posted to target under the scheduler with rate limit retries, lost when retries ran out and a payload for an RPC error
@@ -74,9 +71,9 @@ func signalSendBatch(ctx context.Context, post batchPoster, scheduler *SignalAtt
 				scheduler.ReportRPCDuration(monotonic()-rpcT0, n)
 				return false, nil, nil
 			}
-			plain := pyjson.Plain(rpcErr)
+			plain := jsonutil.Plain(rpcErr)
 			if !isSignalRateLimitError(plain) {
-				return false, gateway.SendError(fmt.Sprintf("Signal RPC error on batch %d/%d: %s", idx+1, nBatches, pyrepr.Str(rpcErr))), nil
+				return false, gateway.SendError(fmt.Sprintf("Signal RPC error on batch %d/%d: %s", idx+1, nBatches, anyutil.String(rpcErr))), nil
 			}
 			if retryAfter, found, attemptErr = extractRetryAfterSeconds(plain); attemptErr == nil {
 				rateLimited = true
@@ -114,36 +111,31 @@ func signalSendBatch(ctx context.Context, post batchPoster, scheduler *SignalAtt
 }
 
 // One send RPC posted on a fresh client with the given timeout
-func standaloneRPCSend(ctx context.Context, httpURL string, params *pyjson.Object, idPrefix string, timeout float64) (*pyhttpx.Response, string, error) {
-	payload := pyjson.ObjectOf("jsonrpc", "2.0", "method", "send", "params", params, "id", fmt.Sprintf("%s_%d", idPrefix, int64(wallClock()*1000)))
-	body, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+func standaloneRPCSend(ctx context.Context, httpURL string, params *jsonutil.Object, idPrefix string, timeout float64) (*httputil.Response, error) {
+	payload := jsonutil.ObjectOf("jsonrpc", "2.0", "method", "send", "params", params, "id", fmt.Sprintf("%s_%d", idPrefix, int64(wallClock()*1000)))
+	body, err := jsonutil.Encode(payload)
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
-	rawURL := httpURL + "/api/v1/rpc"
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL, bytes.NewReader([]byte(body)))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, httpURL+"/api/v1/rpc", strings.NewReader(body))
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	transport := standaloneTransport
 	if transport == nil {
 		transport = netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	}
-	client := &http.Client{Transport: transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}
+	client := &http.Client{Transport: transport, CheckRedirect: httputil.RedirectPolicy(false)}
 	defer client.CloseIdleConnections()
-	resp, err := pyhttpx.Do(client, req, time.Duration(timeout*float64(time.Second)))
+	resp, err := httputil.Do(client, req, httputil.EachPhase(time.Duration(timeout*float64(time.Second))))
 	if err != nil {
 		if ctx.Err() != nil {
-			return nil, "", ctx.Err()
+			return nil, ctx.Err()
 		}
-		var te *pyhttpx.TimeoutError
-		if errors.As(err, &te) {
-			return nil, "", &pyErr{"ReadTimeout", ""}
-		}
-		return nil, "", &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+		return nil, err
 	}
-	return resp, rawURL, nil
+	return resp, nil
 }
 
 // signal-cli JSON-RPC send with attachments batched and metered by the process wide scheduler
@@ -154,8 +146,8 @@ func sendSignal(ctx context.Context, extra map[string]any, chatID, message strin
 			return nil, ctx.Err()
 		}
 		target := ""
-		if v := getOr(extra, "http_url", "http://127.0.0.1:8080"); pyrepr.Truthy(v) {
-			target = pyrepr.Str(v)
+		if v := getOr(extra, "http_url", "http://127.0.0.1:8080"); anyutil.IsTrue(v) {
+			target = anyutil.String(v)
 		}
 		return gateway.SendError("Signal send failed: " + proxySafeErrText(err, target)), nil
 	}
@@ -167,10 +159,10 @@ func sendSignalBatches(ctx context.Context, extra map[string]any, chatID, messag
 	rawURL := getOr(extra, "http_url", "http://127.0.0.1:8080")
 	urlText, ok := rawURL.(string)
 	if !ok {
-		return nil, noAttr(rawURL, "rstrip")
+		return nil, unexpectedKind("a string", rawURL)
 	}
 	httpURL, account := strings.TrimRight(urlText, "/"), getOr(extra, "account", "")
-	if !pyrepr.Truthy(account) {
+	if !anyutil.IsTrue(account) {
 		return map[string]any{"error": "Signal account not configured"}, nil
 	}
 	var attachmentPaths []any
@@ -190,8 +182,8 @@ func sendSignalBatches(ctx context.Context, extra map[string]any, chatID, messag
 	}
 	nBatches := len(attBatches)
 	plainText, textStyles := markdownToSignal(message)
-	rpcSend := func(ctx context.Context, text, idPrefix string, timeout float64, attachments []any, styled bool) (*pyhttpx.Response, string, error) {
-		params := pyjson.ObjectOf("account", account, "message", text)
+	rpcSend := func(ctx context.Context, text, idPrefix string, timeout float64, attachments []any, styled bool) (*httputil.Response, error) {
+		params := jsonutil.ObjectOf("account", account, "message", text)
 		if strings.HasPrefix(chatID, "group:") {
 			params.Set("groupId", chatID[6:])
 		} else {
@@ -210,23 +202,23 @@ func sendSignalBatches(ctx context.Context, extra map[string]any, chatID, messag
 		return standaloneRPCSend(ctx, httpURL, params, idPrefix, timeout)
 	}
 	post := func(ctx context.Context, batchAttachments []any, batchMessage string) (any, error) {
-		resp, reqURL, err := rpcSend(ctx, batchMessage, "send", signalSendTimeout(len(batchAttachments)), batchAttachments, true)
+		resp, err := rpcSend(ctx, batchMessage, "send", signalSendTimeout(len(batchAttachments)), batchAttachments, true)
 		if err != nil {
 			return nil, err
 		}
-		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-			return nil, &pyErr{"HTTPStatusError", resp.StatusErrorText(reqURL)}
+		if err := resp.CheckStatus(); err != nil {
+			return nil, err
 		}
 		return resp.JSON()
 	}
 	scheduler := GetScheduler()
-	pkgLog().Info(fmt.Sprintf("send_message Signal: scheduler state=%s, %d attachment(s) in %d batch(es)", pyrepr.Str(scheduler.State()), len(attachmentPaths), nBatches))
+	pkgLog().Info(fmt.Sprintf("send_message Signal: scheduler state=%s, %d attachment(s) in %d batch(es)", anyutil.String(scheduler.State()), len(attachmentPaths), nBatches))
 	var failedBatches []string
 	for idx, attBatch := range attBatches {
 		if n := len(attBatch); n > 0 {
 			if estimated := scheduler.EstimateWait(n); estimated >= SignalBatchPacingNoticeThreshold {
 				notice := fmt.Sprintf("(More images coming — pausing ~%s for Signal rate limit, batch %d/%d.)", formatWait(ctx, estimated), idx+1, nBatches)
-				if _, _, err := rpcSend(ctx, notice, "notice", 30.0, nil, false); err != nil {
+				if _, err := rpcSend(ctx, notice, "notice", 30.0, nil, false); err != nil {
 					if ctx.Err() != nil {
 						return nil, ctx.Err()
 					}

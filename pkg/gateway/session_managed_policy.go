@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Frozen policy of a session executing out of process, bypass sessions always, others under the custom provider opt in
@@ -35,11 +35,11 @@ func managedPolicy(ctx context.Context, a *SessionAuthority, ref SessionRef) (*L
 	if managed != true {
 		return nil, nil
 	}
-	decoded, err := pyjson.Loads(policy.RequestJSON)
+	decoded, err := jsonutil.Decode(policy.RequestJSON)
 	if err != nil {
 		return nil, err
 	}
-	request, isObj := decoded.(*pyjson.Object)
+	request, isObj := decoded.(*jsonutil.Object)
 	if !isObj {
 		return nil, &PyError{Kind: "AttributeError", Msg: "the managed policy is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}

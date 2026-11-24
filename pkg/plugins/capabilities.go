@@ -11,7 +11,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One declarable capability and the legacy config gate it maps to
@@ -51,7 +51,7 @@ func ValidCapabilityIDs() []string {
 
 // Known capability ids of a manifest capabilities value, unknown ids dropped with a warning
 func ParseDeclaredCapabilities(raw any, pluginName string) []string {
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return nil
 	}
 	items, ok := raw.([]any)

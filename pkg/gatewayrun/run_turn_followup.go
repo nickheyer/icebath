@@ -7,7 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Recursion cap of interrupt and queued follow up turns before the message is queued instead
@@ -97,7 +96,7 @@ func (r *GatewayRunner) runAgentDeliverFirstResponse(ctx context.Context, tc *Tu
 		}
 	}
 	r.recordRoomSilenceDecision(ctx, sessionKey, deliveryResult, silent, displayKind, replyExpected)
-	deliverMedia := !pyrepr.Truthy(deliveryResult["failed"])
+	deliverMedia := !anyutil.IsTrue(deliveryResult["failed"])
 	if firstResponse != "" {
 		if alreadyStreamed {
 			pkgLog().Info(fmt.Sprintf("Queued follow-up for session %s: final text delivery confirmed; delivering explicit media before continuing.", logSessionKey(sessionKey)))
@@ -111,7 +110,7 @@ func (r *GatewayRunner) runAgentDeliverFirstResponse(ctx context.Context, tc *Tu
 		textDelivered, err := func() (delivered bool, err error) {
 			defer func() {
 				if rec := recover(); rec != nil {
-					delivered, err = false, fmt.Errorf("%s", pyrepr.Str(rec))
+					delivered, err = false, fmt.Errorf("%s", anyutil.String(rec))
 				}
 			}()
 			return r.deliverQueuedFirstResponse(ctx, firstResponse, tc.source, adapter, tc.statusThreadMetadata, anchor,
@@ -154,7 +153,7 @@ func (r *GatewayRunner) runAgentQueuedFollowup(ctx context.Context, tc *TurnCont
 		}
 		return map[string]any{"final_response": finalResponse, "messages": history}, nil
 	}
-	if !pyrepr.Truthy(result["interrupted"]) {
+	if !anyutil.IsTrue(result["interrupted"]) {
 		r.runAgentDeliverFirstResponse(ctx, tc, adapter, response, result, streamTask)
 	}
 	updatedHistory := history

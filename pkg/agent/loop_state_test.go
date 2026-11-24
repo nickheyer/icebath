@@ -9,9 +9,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func loopInterval(n int64) *int64 { return &n }
@@ -21,7 +20,7 @@ func TestLoopStateSerdeRoundTrip(t *testing.T) {
 	s.Mode = "interval"
 	s.IntervalSeconds, s.CurrentDelay = 300.0, 300.0
 	s.Times, s.Until, s.TicksFired = 5, "ci is green", 2
-	s.Route = pyjson.ObjectOf("platform", "telegram", "chat_id", "123")
+	s.Route = jsonutil.ObjectOf("platform", "telegram", "chat_id", "123")
 	raw, err := s.ToJSON()
 	if err != nil {
 		t.Fatal(err)
@@ -33,8 +32,8 @@ func TestLoopStateSerdeRoundTrip(t *testing.T) {
 	if s2.Prompt != "check CI" || s2.IntervalSeconds != 300.0 || s2.Times != 5 || s2.Until != "ci is green" || s2.TicksFired != 2 {
 		t.Fatalf("restored %#v", s2)
 	}
-	if !pyrepr.Equal(s2.Route, pyjson.ObjectOf("platform", "telegram", "chat_id", "123")) {
-		t.Fatalf("route %s", pyrepr.Repr(s2.Route))
+	if !anyutil.Equal(s2.Route, jsonutil.ObjectOf("platform", "telegram", "chat_id", "123")) {
+		t.Fatalf("route %s", anyutil.Quote(s2.Route))
 	}
 }
 

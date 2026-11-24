@@ -18,12 +18,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
@@ -31,6 +25,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -88,7 +86,7 @@ func doctorMemoryConfig(ctx context.Context, icebathHome string) (section map[st
 // Value of a key in a mapping decoded as an ordered object or a plain map, false when absent
 func doctorDictGet(mapping any, key string) (any, bool) {
 	switch m := mapping.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m == nil {
 			return nil, false
 		}
@@ -102,7 +100,7 @@ func doctorDictGet(mapping any, key string) (any, bool) {
 
 // Python truth value of a decoded value, an empty ordered object being false
 func doctorTruthy(v any) bool {
-	if o, ok := v.(*pyjson.Object); ok {
+	if o, ok := v.(*jsonutil.Object); ok {
 		return o != nil && o.Len() > 0
 	}
 	return config.PyTruthy(v)
@@ -151,7 +149,7 @@ func doctorHumanBytes(n any) string {
 
 // Number with thousands separators the way the comma format spec renders it
 func doctorCommaNumber(v any) string {
-	text := pyrepr.Str(v)
+	text := anyutil.String(v)
 	sign := ""
 	if strings.HasPrefix(text, "-") {
 		sign, text = "-", text[1:]
@@ -216,7 +214,7 @@ func doctorRenderStateDBStats(stats any, holders *int, hostNote string) []doctor
 		rowBits = append(rowBits, doctorCommaNumber(v)+" sessions")
 	}
 	if v := get("journal_mode"); doctorTruthy(v) {
-		rowBits = append(rowBits, "journal_mode="+pyrepr.Str(v))
+		rowBits = append(rowBits, "journal_mode="+anyutil.String(v))
 	}
 	if holders != nil {
 		rowBits = append(rowBits, fmt.Sprintf("%d process(es) holding the DB open%s", *holders, hostNote))
@@ -227,9 +225,9 @@ func doctorRenderStateDBStats(stats any, holders *int, hostNote string) []doctor
 	if fts := get("fts_tables"); doctorTruthy(fts) {
 		present := []string{}
 		switch tables := fts.(type) {
-		case *pyjson.Object:
-			for _, name := range tables.Keys {
-				if doctorTruthy(tables.Vals[name]) {
+		case *jsonutil.Object:
+			for _, name := range tables.Keys() {
+				if doctorTruthy(tables.Value(name)) {
 					present = append(present, name)
 				}
 			}
@@ -252,12 +250,12 @@ func doctorRenderStateDBStats(stats any, holders *int, hostNote string) []doctor
 		lines = append(lines, doctorStatRow{"info", "FTS tables: " + shown, ""})
 	}
 	deferral := get("fts_rebuild_deferral")
-	_, isObject := deferral.(*pyjson.Object)
+	_, isObject := deferral.(*jsonutil.Object)
 	_, isMap := deferral.(map[string]any)
 	if isObject || isMap {
 		orText := func(key, fallback string) string {
 			if v, _ := doctorDictGet(deferral, key); doctorTruthy(v) {
-				return pyrepr.Str(v)
+				return anyutil.String(v)
 			}
 			return fallback
 		}
@@ -295,7 +293,7 @@ func doctorReadText(path string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pystr.DecodeUTF8SigFile(raw)
+	return textutil.DecodeUTF8(textutil.TrimBOM(raw))
 }
 
 // Writes text the way a text mode file does, line feeds becoming CRLF on Windows
@@ -350,7 +348,7 @@ func checkDirectoryStructure(ctx context.Context, d *Doctor, shouldFix bool) (*F
 		} else {
 			doctorCheckWarn(w, dhh+"/SOUL.md not found", "(create it to give Icebath a custom personality)")
 			if shouldFix {
-				if err := pyfs.Makedirs(filepath.Dir(soulPath), 0o777, true); err != nil {
+				if err := os.MkdirAll(filepath.Dir(soulPath), 0o777); err != nil {
 					return err
 				}
 				if err := doctorWriteText(soulPath, "# Icebath Agent Persona\n\n<!-- Edit this file to customize how Icebath communicates. -->\n\n"+
@@ -784,8 +782,8 @@ func checkCronStore(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, e
 		}
 		cronDir := filepath.Join(d.Home, "cron")
 		if report := doctorCronProbeReport(cronDir); report != nil {
-			doctorCheckWarn(d.W, d.DisplayHome+"/cron/ is NOT writable ("+pyrepr.Str(report["error"])+") — scheduled cron jobs are being skipped", "")
-			f.Issues = append(f.Issues, "Cron store "+pyrepr.Str(report["store"])+" is not writable: "+pyrepr.Str(report["fix"]))
+			doctorCheckWarn(d.W, d.DisplayHome+"/cron/ is NOT writable ("+anyutil.String(report["error"])+") — scheduled cron jobs are being skipped", "")
+			f.Issues = append(f.Issues, "Cron store "+anyutil.String(report["store"])+" is not writable: "+anyutil.String(report["fix"]))
 			return nil
 		}
 		if info, err := os.Stat(cronDir); err == nil && info.IsDir() {
@@ -815,14 +813,14 @@ func doctorGhAuthenticated(ctx context.Context) bool {
 	if safeWhich("gh") == "" {
 		return false
 	}
-	done, err := doctorSubprocessRun(ctx, []string{"gh", "auth", "status"}, pysubprocess.Options{Timeout: 10 * time.Second})
+	done, err := doctorSubprocessRun(ctx, []string{"gh", "auth", "status"}, executil.Options{Timeout: 10 * time.Second})
 	return err == nil && done.Returncode == 0
 }
 
 // Python len of a decoded JSON value, false for a value without a length
 func doctorJSONLen(v any) (int, bool) {
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len(), true
 	case map[string]any:
 		return len(x), true
@@ -849,11 +847,11 @@ func checkSkillsHub(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, e
 					if err != nil {
 						return err
 					}
-					doc, err := pyjson.Loads(text)
+					doc, err := jsonutil.Decode(text)
 					if err != nil {
 						return err
 					}
-					obj, ok := doc.(*pyjson.Object)
+					obj, ok := doc.(*jsonutil.Object)
 					if !ok {
 						return fmt.Errorf("skills hub lock is %s where a mapping was expected", errchain.Kind(doc))
 					}
@@ -930,7 +928,7 @@ func checkMemoryProvider(ctx context.Context, d *Doctor, shouldFix bool) (*Findi
 	return doctorCheck(func(f *Finding) error {
 		name := ""
 		if v, ok := doctorMemoryConfig(ctx, d.Home)["provider"]; ok && v != nil {
-			name = pyrepr.Str(v)
+			name = anyutil.String(v)
 		}
 		if memory.IsCoreMemoryProvider(name) {
 			doctorCheckOK(d.W, "Built-in memory active", "(no external provider configured — this is fine)")
@@ -976,7 +974,7 @@ func checkPluginsDisabledByUpdate(ctx context.Context, d *Doctor, shouldFix bool
 		switch listed := pluginsSection["disabled"].(type) {
 		case []any:
 			for _, name := range listed {
-				disabled[pyrepr.Str(name)] = true
+				disabled[anyutil.String(name)] = true
 			}
 		case string:
 			for _, r := range listed {
@@ -997,7 +995,7 @@ func checkPluginsDisabledByUpdate(ctx context.Context, d *Doctor, shouldFix bool
 			reason := ""
 			if entry, ok := record[name].(map[string]any); ok {
 				if v, present := entry["reason"]; present && doctorTruthy(v) {
-					reason = pyrepr.Str(v)
+					reason = anyutil.String(v)
 				}
 			}
 			detail := ""
@@ -1106,7 +1104,7 @@ func checkProfiles(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, er
 					if match == nil || profiles.ProfileExists(match[1]) {
 						return nil
 					}
-					stem := pypath.PathStem(entry.Name())
+					stem := pathutil.Stem(entry.Name())
 					alias := entry.Name()
 					if owned, err := profiles.WrapperPath(stem); err != nil {
 						return err

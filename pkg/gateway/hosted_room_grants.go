@@ -20,20 +20,17 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Room scoped grant that is invalid or expired, a HostedRoomPeerError
 type HostedRoomGrantError struct{ *HostedRoomPeerError }
 
 func (e *HostedRoomGrantError) Unwrap() error { return e.HostedRoomPeerError }
-
-// Python class name of the error
-func (e *HostedRoomGrantError) PyTypeName() string { return "HostedRoomGrantError" }
 
 func hostedGrantError(msg string) error {
 	return &HostedRoomGrantError{&HostedRoomPeerError{msg}}
@@ -182,7 +179,7 @@ func hostedMintGrantSecret(homeValue, path string) (material []byte, err error) 
 		}
 		return nil, err
 	}
-	pyfs.FsyncDirectory(homeValue)
+	fsutil.SyncDir(homeValue)
 	return material, nil
 }
 
@@ -194,11 +191,11 @@ func GatewayRoomGrantSecret(ctx context.Context, root string) ([]byte, error) {
 			root = home.Dir(ctx)
 		}
 	}
-	expanded, err := pypath.PathExpanduser(root)
+	expanded, err := pathutil.ExpandUserPath(root)
 	if err != nil {
 		return nil, err
 	}
-	resolved, err := pypath.Resolve(expanded)
+	resolved, err := pathutil.Resolve(expanded)
 	if err != nil {
 		return nil, err
 	}
@@ -212,7 +209,7 @@ func hostedB64Encode(value []byte) string {
 
 // Bytes of padded URL safe base64 text, a grant error for any malformed input
 func hostedB64Decode(value string) ([]byte, error) {
-	decoded, err := pybase64.URLSafeB64Decode(value + strings.Repeat("=", (4-len(value)%4)%4))
+	decoded, err := base64.URLEncoding.DecodeString(value + strings.Repeat("=", (4-len(value)%4)%4))
 	if err != nil {
 		return nil, hostedGrantError("room grant encoding is invalid")
 	}
@@ -295,7 +292,7 @@ func IssueRoomGrant(ctx context.Context, secret []byte, o RoomGrantIssue) (strin
 	scope := map[string]any{"grant_id": o.GrantID, "room_id": o.RoomID, "home_install_id": o.HomeInstallID,
 		"authority_gateway_id": o.AuthorityGatewayID, "authority_epoch": o.AuthorityEpoch, "member_id": o.MemberID,
 		"target_install_id": o.TargetInstallID, "target_profile": o.TargetProfile}
-	payload := pyjson.ObjectOf("version", int64(HostedProtocolVersion))
+	payload := jsonutil.ObjectOf("version", int64(HostedProtocolVersion))
 	for _, name := range hostedGrantScope {
 		if name == "authority_epoch" {
 			epoch, err := hostedPositiveInt(scope[name], name)
@@ -313,11 +310,11 @@ func IssueRoomGrant(ctx context.Context, secret []byte, o RoomGrantIssue) (strin
 	}
 	digestSource := o.ExecutionPolicyDigest
 	if digestSource == "" {
-		policy, err := ExecutionPolicyMapping(ctx, payload.GetOr("target_profile", "").(string), nil)
+		policy, err := ExecutionPolicyMapping(ctx, payload.ValueOr("target_profile", "").(string), nil)
 		if err != nil {
 			return "", err
 		}
-		digestSource, _ = policy.GetOr("policy_digest", "").(string)
+		digestSource, _ = policy.ValueOr("policy_digest", "").(string)
 	}
 	digest, err := hostedDigest(digestSource, "execution_policy_digest")
 	if err != nil {
@@ -346,7 +343,7 @@ func IssueRoomGrant(ctx context.Context, secret []byte, o RoomGrantIssue) (strin
 }
 
 // Grant payload once its signature, lifetime and operation verify, without a dispatch
-func DecodeRoomGrant(secret []byte, token, permission string, now *float64) (*pyjson.Object, error) {
+func DecodeRoomGrant(secret []byte, token, permission string, now *float64) (*jsonutil.Object, error) {
 	if len(token) > hostedMaxTokenBytes {
 		return nil, hostedGrantError("room grant is invalid")
 	}
@@ -365,11 +362,11 @@ func DecodeRoomGrant(secret []byte, token, permission string, now *float64) (*py
 			return nil, invalidPayload
 		}
 	}
-	decoded, err := pyjson.Loads(string(encoded))
+	decoded, err := jsonutil.Decode(string(encoded))
 	if err != nil {
 		return nil, invalidPayload
 	}
-	payload, isDict := decoded.(*pyjson.Object)
+	payload, isDict := decoded.(*jsonutil.Object)
 	if !isDict || !hostedGrantFieldSetValid(payload) {
 		return nil, hostedGrantError("room grant fields are invalid")
 	}
@@ -378,16 +375,16 @@ func DecodeRoomGrant(secret []byte, token, permission string, now *float64) (*py
 		return nil, hostedGrantError("room grant clock is invalid")
 	}
 	lifetimeInvalid := hostedGrantError("room grant lifetime is invalid")
-	issuedAt, err := pyint.Float(payload.GetOr("issued_at", nil))
+	issuedAt, err := anyutil.ToFloat(payload.ValueOr("issued_at", nil))
 	if err != nil {
 		return nil, lifetimeInvalid
 	}
-	expiresRaw := payload.GetOr("expires_at", nil)
-	expiresAt, err := pyint.Float(expiresRaw)
+	expiresRaw := payload.ValueOr("expires_at", nil)
+	expiresAt, err := anyutil.ToFloat(expiresRaw)
 	if err != nil {
 		return nil, lifetimeInvalid
 	}
-	statusExpiresAt, err := pyint.Float(payload.GetOr(hostedGrantStatusExpiresAtField, expiresRaw))
+	statusExpiresAt, err := anyutil.ToFloat(payload.ValueOr(hostedGrantStatusExpiresAtField, expiresRaw))
 	if err != nil {
 		return nil, lifetimeInvalid
 	}
@@ -406,10 +403,10 @@ func DecodeRoomGrant(secret []byte, token, permission string, now *float64) (*py
 	if checkedNow < issuedAt-hostedGrantClockSkewToleranceS || checkedNow >= operationExpiresAt {
 		return nil, hostedGrantError("room grant is expired or not active")
 	}
-	permissions, isList := payload.GetOr(hostedGrantPermissionsField, nil).([]any)
+	permissions, isList := payload.ValueOr(hostedGrantPermissionsField, nil).([]any)
 	allowed := false
 	for _, granted := range permissions {
-		allowed = allowed || pyjson.Equal(granted, permission)
+		allowed = allowed || anyutil.Equal(granted, permission)
 	}
 	if !isList || !allowed {
 		return nil, hostedGrantError("room grant does not allow this operation")
@@ -418,7 +415,7 @@ func DecodeRoomGrant(secret []byte, token, permission string, now *float64) (*py
 }
 
 // Whether the payload's keys are exactly the grant fields, or those plus the status horizon
-func hostedGrantFieldSetValid(payload *pyjson.Object) bool {
+func hostedGrantFieldSetValid(payload *jsonutil.Object) bool {
 	_, refreshed := payload.Get(hostedGrantStatusExpiresAtField)
 	want := len(hostedGrantFields)
 	if refreshed {
@@ -427,7 +424,7 @@ func hostedGrantFieldSetValid(payload *pyjson.Object) bool {
 	if payload.Len() != want {
 		return false
 	}
-	for _, key := range payload.Keys {
+	for _, key := range payload.Keys() {
 		if !hostedGrantFields[key] && key != hostedGrantStatusExpiresAtField {
 			return false
 		}
@@ -436,17 +433,17 @@ func hostedGrantFieldSetValid(payload *pyjson.Object) bool {
 }
 
 // Grant payload once it verifies against the exact recipient dispatch coordinates
-func VerifyRoomGrant(secret []byte, token string, dispatch *HostedMemberDispatch, permission string, now *float64) (*pyjson.Object, error) {
+func VerifyRoomGrant(secret []byte, token string, dispatch *HostedMemberDispatch, permission string, now *float64) (*jsonutil.Object, error) {
 	payload, err := DecodeRoomGrant(secret, token, permission, now)
 	if err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(payload.GetOr(hostedGrantVersionField, nil), pyint.Value(dispatch.ProtocolVersion)) {
+	if !anyutil.Equal(payload.ValueOr(hostedGrantVersionField, nil), pyint.Value(dispatch.ProtocolVersion)) {
 		return nil, hostedGrantError("room grant protocol does not match dispatch")
 	}
 	coordinates := dispatch.AsMapping()
 	for _, field := range append(append([]string(nil), hostedGrantScope[1:]...), "execution_policy_digest") {
-		if !pyjson.Equal(payload.GetOr(field, nil), coordinates.GetOr(field, nil)) {
+		if !anyutil.Equal(payload.ValueOr(field, nil), coordinates.ValueOr(field, nil)) {
 			return nil, hostedGrantError("room grant scope does not match dispatch")
 		}
 	}
@@ -454,14 +451,14 @@ func VerifyRoomGrant(secret []byte, token string, dispatch *HostedMemberDispatch
 }
 
 // Canonical wire mapping of the dispatch in field order, the one fingerprinting reads
-func (d *HostedMemberDispatch) AsMapping() *pyjson.Object {
+func (d *HostedMemberDispatch) AsMapping() *jsonutil.Object {
 	value := func(n *big.Int) any {
 		if n == nil {
 			return nil
 		}
 		return pyint.Value(n)
 	}
-	mapping := pyjson.ObjectOf("protocol_version", value(d.ProtocolVersion), "room_id", d.RoomID, "home_install_id", d.HomeInstallID,
+	mapping := jsonutil.ObjectOf("protocol_version", value(d.ProtocolVersion), "room_id", d.RoomID, "home_install_id", d.HomeInstallID,
 		"authority_gateway_id", d.AuthorityGatewayID, "authority_epoch", value(d.AuthorityEpoch), "member_id", d.MemberID,
 		"target_install_id", d.TargetInstallID, "target_profile", d.TargetProfile, "task_id", d.TaskID,
 		"execution_generation", value(d.ExecutionGeneration), "source_event_seq", value(d.SourceEventSeq),
@@ -470,7 +467,7 @@ func (d *HostedMemberDispatch) AsMapping() *pyjson.Object {
 	if len(d.Attachments) > 0 {
 		items := make([]any, len(d.Attachments))
 		for i, item := range d.Attachments {
-			items[i] = pyjson.ObjectOf("attachment_id", item["attachment_id"], "kind", item["kind"], "mime", item["mime"], "name", item["name"],
+			items[i] = jsonutil.ObjectOf("attachment_id", item["attachment_id"], "kind", item["kind"], "mime", item["mime"], "name", item["name"],
 				"size", item["size"], "sha256", item["sha256"])
 		}
 		mapping.Set("attachments", items)

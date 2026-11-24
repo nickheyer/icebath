@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -58,7 +58,7 @@ func pageBackendFixture(t *testing.T) (context.Context, *tools.Env, *vaultFakePa
 	if err := BrowserPageBackendRegistry.Register(fake, ""); err != nil {
 		t.Fatal(err)
 	}
-	meta, err := store.AddItem("login", "Example", pyjson.ObjectOf("identifier_type", "email", "identifier", "a@example.com",
+	meta, err := store.AddItem("login", "Example", jsonutil.ObjectOf("identifier_type", "email", "identifier", "a@example.com",
 		"password", pageSecret), "https://example.com")
 	if err != nil {
 		t.Fatal(err)

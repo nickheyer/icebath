@@ -17,8 +17,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Longest SSE line the proxy reader buffers before failing the stream
@@ -89,7 +89,7 @@ func (r *GatewayRunner) runAgentViaProxy(ctx context.Context, p proxyRunParams) 
 	}
 	for _, msg := range p.history {
 		role := msg["role"]
-		if (role == "user" || role == "assistant") && pyrepr.Truthy(msg["content"]) {
+		if (role == "user" || role == "assistant") && anyutil.IsTrue(msg["content"]) {
 			apiMessages = append(apiMessages, map[string]any{"role": role, "content": msg["content"]})
 		}
 	}
@@ -271,7 +271,7 @@ func (r *GatewayRunner) streamProxyReply(ctx context.Context, proxyURL, proxyKey
 
 // Logs a proxy failure, the connection error reply when nothing streamed, else the partial response
 func (r *GatewayRunner) proxyConnectionError(ctx context.Context, proxyURL, fullResponse string, err error) (string, map[string]any, error) {
-	shown := cmp.Or(gateway.DescribeProxyError(err, proxyURL), pyrepr.ExceptionMessage(err))
+	shown := cmp.Or(gateway.DescribeProxyError(err, proxyURL), err.Error())
 	pkgLog().Error(fmt.Sprintf("Proxy connection error to %s: %s", gateway.SafeProxyURLForLog(proxyURL), shown))
 	if fullResponse == "" {
 		return "", proxyErrorResult(i18n.T(ctx, "gateway.proxy.connection_error", "", map[string]any{"error": shown})), nil

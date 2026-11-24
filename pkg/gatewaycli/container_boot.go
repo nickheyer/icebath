@@ -15,9 +15,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	homepkg "github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -164,7 +164,7 @@ func seedGatewayRunState(ctx context.Context, rootHome string, containerArgv []s
 		return nil, nil
 	}
 	if !dryRun {
-		text, err := pyjson.Dumps(pyjson.ObjectOf("gateway_state", "running", "desired_state", "running",
+		text, err := jsonutil.Encode(jsonutil.ObjectOf("gateway_state", "running", "desired_state", "running",
 			"timestamp", time.Now().Unix()))
 		if err != nil {
 			return nil, err

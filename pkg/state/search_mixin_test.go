@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 type fakeSearchHost struct {
@@ -63,11 +62,11 @@ func (h *fakeSearchHost) readCtx(ctx context.Context, reopen bool, fn func(conn 
 	return fn(h.reader)
 }
 
-func (h *fakeSearchHost) readAll(ctx context.Context, query string, args ...any) ([]*pyjson.Object, error) {
+func (h *fakeSearchHost) readAll(ctx context.Context, query string, args ...any) ([]*jsonutil.Object, error) {
 	return queryObjects(ctx, h.reader, query, args...)
 }
 
-func (h *fakeSearchHost) readOne(ctx context.Context, query string, args ...any) (*pyjson.Object, error) {
+func (h *fakeSearchHost) readOne(ctx context.Context, query string, args ...any) (*jsonutil.Object, error) {
 	rows, err := queryObjects(ctx, h.reader, query, args...)
 	if err != nil || len(rows) == 0 {
 		return nil, err
@@ -77,7 +76,7 @@ func (h *fakeSearchHost) readOne(ctx context.Context, query string, args ...any)
 
 func (h *fakeSearchHost) decodeContent(content any) any {
 	if text, ok := content.(string); ok && strings.HasPrefix(text, "\x00json:") {
-		decoded, err := pyjson.Loads(strings.TrimPrefix(text, "\x00json:"))
+		decoded, err := jsonutil.Decode(strings.TrimPrefix(text, "\x00json:"))
 		if err == nil {
 			return decoded
 		}
@@ -169,7 +168,7 @@ func legacySearch(t *testing.T) (*sessionSearch, *fakeSearchHost) {
 	return s, host
 }
 
-func objJSON(t *testing.T, o *pyjson.Object) string {
+func objJSON(t *testing.T, o *jsonutil.Object) string {
 	t.Helper()
 	b, err := json.Marshal(o)
 	if err != nil {
@@ -178,19 +177,19 @@ func objJSON(t *testing.T, o *pyjson.Object) string {
 	return string(b)
 }
 
-func objInt(o *pyjson.Object, key string) int64 {
+func objInt(o *jsonutil.Object, key string) int64 {
 	v, _ := o.Get(key)
 	n, _ := pyint.Of(v)
 	return n.Int64()
 }
 
-func objStr(o *pyjson.Object, key string) string {
+func objStr(o *jsonutil.Object, key string) string {
 	v, _ := o.Get(key)
 	s, _ := v.(string)
 	return s
 }
 
-func objBool(o *pyjson.Object, key string) bool {
+func objBool(o *jsonutil.Object, key string) bool {
 	v, _ := o.Get(key)
 	b, _ := v.(bool)
 	return b
@@ -232,7 +231,7 @@ func TestSearchMessageFieldsCanonicalOrder(t *testing.T) {
 		t.Fatalf("canonical order: %v %v", got, err)
 	}
 	_, err = searchMessageFields([]string{"zeta", "id", "alpha"})
-	if err == nil || err.Error() != "unknown search result field(s): alpha, zeta" || err.(*pyint.Error).Kind != "ValueError" {
+	if err == nil || err.Error() != "unknown search result field(s): alpha, zeta" || err.(*errorutil.Error).Kind != "ValueError" {
 		t.Fatalf("unknown fields: %v", err)
 	}
 }
@@ -281,10 +280,10 @@ func TestOptimizeLegacyStoreReportsProgressInEveryPhase(t *testing.T) {
 			s, host := legacySearch(t)
 			s.vacuumTickS = 0.01
 			var mu sync.Mutex
-			var events []*pyjson.Object
+			var events []*jsonutil.Object
 			inVacuum, ticked := make(chan struct{}), make(chan struct{})
 			var inOnce, tickOnce sync.Once
-			progress := func(info *pyjson.Object) {
+			progress := func(info *jsonutil.Object) {
 				mu.Lock()
 				events = append(events, info)
 				mu.Unlock()
@@ -331,7 +330,7 @@ func TestOptimizeLegacyStoreReportsProgressInEveryPhase(t *testing.T) {
 			if objStr(events[len(events)-1], "phase") != "done" {
 				t.Fatalf("last event %s", objJSON(t, events[len(events)-1]))
 			}
-			var backfill, vacuum, teardown, docsize []*pyjson.Object
+			var backfill, vacuum, teardown, docsize []*jsonutil.Object
 			for _, e := range events {
 				switch objStr(e, "phase") {
 				case "backfill":
@@ -509,8 +508,8 @@ func TestOptimizePacesOnceAWriterOpensTheStore(t *testing.T) {
 			}
 		}
 	}
-	var events []*pyjson.Object
-	result, err := s.OptimizeFTSStorage(ctx, func(o *pyjson.Object) { events = append(events, o) }, true)
+	var events []*jsonutil.Object
+	result, err := s.OptimizeFTSStorage(ctx, func(o *jsonutil.Object) { events = append(events, o) }, true)
 	if err != nil || objJSON(t, result) != `{"ok":true,"vacuumed":false,"vacuum_skipped":"in_use"}` {
 		t.Fatalf("a live writer skips VACUUM: %v %v", result, err)
 	}
@@ -577,17 +576,17 @@ func TestOptimizeDriveRetriesOnlyOperationalErrors(t *testing.T) {
 			return false, locked
 		}
 		return calls < 4, nil
-	}, nil, func(*pyjson.Object) {}, w)
+	}, nil, func(*jsonutil.Object) {}, w)
 	if err != nil || calls != 4 || fmt.Sprint(*slept) != "[0.25 0.5]" {
 		t.Fatalf("two failures retried with backoff: err=%v calls=%d slept=%v", err, calls, *slept)
 	}
 	calls = 0
-	if err := s.optimizeDrive(func() (bool, error) { calls++; return false, locked }, nil, func(*pyjson.Object) {}, w); err != locked || calls != 3 {
+	if err := s.optimizeDrive(func() (bool, error) { calls++; return false, locked }, nil, func(*jsonutil.Object) {}, w); err != locked || calls != 3 {
 		t.Fatalf("the third failure ends the run: %v %d", err, calls)
 	}
 	corrupt := &SQLiteError{Class: SQLiteDatabaseError, Msg: "database disk image is malformed", Code: 11, HasCode: true}
 	calls = 0
-	if err := s.optimizeDrive(func() (bool, error) { calls++; return false, corrupt }, nil, func(*pyjson.Object) {}, w); err != corrupt || calls != 1 {
+	if err := s.optimizeDrive(func() (bool, error) { calls++; return false, corrupt }, nil, func(*jsonutil.Object) {}, w); err != corrupt || calls != 1 {
 		t.Fatalf("a non operational error is never retried: %v %d", err, calls)
 	}
 }

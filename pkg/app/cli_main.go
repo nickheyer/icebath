@@ -7,22 +7,32 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
+	"github.com/nickheyer/icebath/pkg/agent"
+	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/gateway"
+	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
-// MainOptions carries the cli.py main keyword arguments
+// MainOptions carries the options of a one shot chat run
 type MainOptions struct {
 	Model, Reasoning, Toolsets, Query, OutputFormat, Provider, Image, Resume, APIKey, BaseURL string
 	IgnoreRules, Verbose, Quiet, Worktree, Checkpoints, PassSessionID                         bool
@@ -45,7 +55,7 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 				code = 130
 				return
 			}
-			if raised, isErr := r.(error); isErr && isValueErrorClass(raised) {
+			if raised, isErr := r.(error); isErr && isValueFailure(raised) {
 				code, err = 1, raised
 				return
 			}
@@ -102,13 +112,13 @@ func Main(ctx context.Context, o MainOptions) (code int, err error) {
 	return 0, nil
 }
 
-// Runs main as the chat command does, a ValueError printed to stdout as Error then its message with exit 1
+// Runs main as the chat command does, a rejected value printed to stdout as Error then its message with exit 1
 func ChatMain(ctx context.Context, o MainOptions) int {
 	code, err := Main(ctx, o)
 	if err == nil {
 		return code
 	}
-	if isValueErrorClass(err) {
+	if isValueFailure(err) {
 		fmt.Fprintln(console().Out, "Error: "+err.Error())
 		return 1
 	}
@@ -116,14 +126,30 @@ func ChatMain(ctx context.Context, o MainOptions) int {
 	return 1
 }
 
-// Reports an error of the Python ValueError class or a subclass, the errors an except ValueError clause catches
-func isValueErrorClass(err error) bool {
-	mro := pyrepr.BuiltinExceptionMRO(pyrepr.ExceptionName(err))
-	var declared interface{ PyExceptionMRO() []string }
-	if errors.As(err, &declared) {
-		mro = declared.PyExceptionMRO()
+// Kinds of package-made errors that reject a value: bad values, text that does not decode or encode, JSON that does not parse
+var valueErrorKinds = map[string]bool{"ValueError": true, "UnicodeDecodeError": true, "UnicodeEncodeError": true, "JSONDecodeError": true}
+
+// Whether an error rejects a value given to a command, a setting or a reply, the failures the chat command reports as Error: and the message
+func isValueFailure(err error) bool {
+	var ge *errorutil.Error
+	if errors.As(err, &ge) && valueErrorKinds[ge.Kind] {
+		return true
 	}
-	return slices.Contains(mro, "ValueError")
+	var hb *plugins.HostBuiltinError
+	if errors.As(err, &hb) && (hb.Type == "ValueError" || slices.Contains(hb.Bases, "ValueError")) {
+		return true
+	}
+	var he *plugins.PluginHostError
+	if errors.As(err, &he) && he.TypeName != "" && (he.TypeName == "ValueError" || slices.Contains(he.Bases, "ValueError")) {
+		return true
+	}
+	return isValueError(err) || errors.Is(err, anyutil.ErrNotNumber) || errors.As(err, new(*strconv.NumError)) ||
+		errors.As(err, new(*jsonutil.SyntaxError)) || errors.As(err, new(*textutil.InvalidUTF8Error)) ||
+		errors.As(err, new(*config.EnvValueError)) || errors.As(err, new(*commands.UnknownPersonalityError)) ||
+		errors.As(err, new(*agent.HeartbeatValueError)) || errors.As(err, new(*gatewaycli.TitleInUseError)) ||
+		errors.As(err, new(*gateway.RoomValueError)) || errors.As(err, new(*gateway.ServiceChoiceError)) ||
+		errors.As(err, new(*plugins.PluginEventNameError)) || errors.As(err, new(*plugins.PluginSettingsValueError)) ||
+		errors.As(err, new(*mediacache.ValueError))
 }
 
 // Splits a comma separated toolsets flag, nil when the flag was not given
@@ -289,7 +315,7 @@ func (c *CLI) claimActiveSession(surface string, stderr bool) bool {
 		if stderr {
 			fmt.Fprintln(stderrWriter(), activesessions.FormatRefusalStderr(message))
 		} else {
-			c.consolePrint(fmt.Sprintf("[bold red]%s[/]", message.Message))
+			c.consolePrint(fmt.Sprintf("[bold red]%s[/]", consoleutil.Escape(message.Message)))
 		}
 		return false
 	}

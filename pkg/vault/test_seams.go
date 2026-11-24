@@ -4,7 +4,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // MemoryKeyring is an in memory OS keychain stand in for tests of the packages that drive the vault
@@ -62,7 +62,7 @@ func (s *VaultStore) EncryptVaultBody(plaintext []byte) error {
 		return err
 	}
 	mode := os.FileMode(0o600)
-	return pyfs.AtomicWriteBytes(s.ctx, s.vaultPath, f.Encrypt(plaintext), "", &mode, true)
+	return fsutil.WriteFile(s.ctx, s.vaultPath, f.Encrypt(plaintext), fsutil.WriteOptions{Mode: &mode, SyncDir: true})
 }
 
 // RequiredFields lists the fields a payment or address item must carry

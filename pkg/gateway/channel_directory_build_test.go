@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 type listingAdapter struct {
@@ -52,7 +52,7 @@ type fakeDiscordClient struct {
 
 func (c *fakeDiscordClient) Guilds() []DiscordDirectoryGuild {
 	c.mu.Lock()
-	c.callers = append(c.callers, pythread.GoroutineID())
+	c.callers = append(c.callers, syncutil.GoroutineID())
 	c.mu.Unlock()
 	return c.guilds
 }
@@ -94,14 +94,16 @@ func (c *fakeSlackClient) UsersInfo(context.Context, string) (map[string]any, er
 
 type slackAdapter struct {
 	*baseFakeAdapter
-	teams *pydict.Dict[string, SlackDirectoryClient]
+	teams *orderedutil.Map[string, SlackDirectoryClient]
 }
 
-func (a *slackAdapter) SlackTeamClients() *pydict.Dict[string, SlackDirectoryClient] { return a.teams }
+func (a *slackAdapter) SlackTeamClients() *orderedutil.Map[string, SlackDirectoryClient] {
+	return a.teams
+}
 
 // Adapter table holding the given adapters in order
-func adapterTable(pairs ...any) *pydict.Dict[Platform, PlatformAdapter] {
-	d := pydict.New[Platform, PlatformAdapter]()
+func adapterTable(pairs ...any) *orderedutil.Map[Platform, PlatformAdapter] {
+	d := orderedutil.NewMap[Platform, PlatformAdapter]()
 	for i := 0; i < len(pairs); i += 2 {
 		d.Set(pairs[i].(Platform), pairs[i+1].(PlatformAdapter))
 	}
@@ -126,7 +128,7 @@ func writeSessionOrigins(t *testing.T, homeDir string, origins ...map[string]any
 
 // Slack adapter whose single workspace client is c
 func slackTeam(c *fakeSlackClient) *slackAdapter {
-	teams := pydict.New[string, SlackDirectoryClient]()
+	teams := orderedutil.NewMap[string, SlackDirectoryClient]()
 	teams.Set("T1", c)
 	return &slackAdapter{newBaseFake(PlatformSlack), teams}
 }
@@ -136,7 +138,7 @@ func entryField(t *testing.T, entries []any, key string) []any {
 	t.Helper()
 	var out []any
 	for _, e := range entries {
-		v, _ := e.(*pyjson.Object).Get(key)
+		v, _ := e.(*jsonutil.Object).Get(key)
 		out = append(out, v)
 	}
 	return out
@@ -156,8 +158,8 @@ func TestBuildChannelDirectoryWritesFailedWritePreservesPreviousCache(t *testing
 	if _, err := BuildChannelDirectory(context.Background(), adapterTable()); err != nil {
 		t.Fatal(err)
 	}
-	want, _ := pyjson.Dumps(previous)
-	got, _ := pyjson.Dumps(loadChannelDirectory(context.Background()))
+	want, _ := jsonutil.Encode(previous)
+	got, _ := jsonutil.Encode(loadChannelDirectory(context.Background()))
 	if got != want {
 		t.Fatalf("directory changed: %s want %s", got, want)
 	}
@@ -177,8 +179,8 @@ func TestBuildChannelDirectoryWritesUsesAdapterListChannelsWhenAvailable(t *test
 		t.Fatal(err)
 	}
 	platforms, _ := directory.Get("platforms")
-	telegram, _ := platforms.(*pyjson.Object).Get("telegram")
-	got, _ := pyjson.Dumps(telegram, pyjson.EnsureASCII(false))
+	telegram, _ := platforms.(*jsonutil.Object).Get("telegram")
+	got, _ := jsonutil.Encode(telegram)
 	want := `[{"id": "default", "name": "主对话", "type": "dm"}, {"id": "family_1", "name": "达拉崩吧", "type": "group"}]`
 	if got != want {
 		t.Fatalf("telegram %s", got)
@@ -193,7 +195,7 @@ func TestBuildChannelDirectoryOffloadDiscordBuilderRunsOffEventLoopThread(t *tes
 	if _, err := BuildChannelDirectory(context.Background(), adapterTable(PlatformDiscord, adapter)); err != nil {
 		t.Fatal(err)
 	}
-	loop := pythread.GoroutineID()
+	loop := syncutil.GoroutineID()
 	if len(client.callers) == 0 {
 		t.Fatal("discord builder never ran")
 	}
@@ -211,14 +213,14 @@ func TestBuildChannelDirectoryOffloadDirectoryWriteRunsOffEventLoopThread(t *tes
 	t.Cleanup(func() { writeChannelDirectoryFn = saved })
 	var writers []uint64
 	writeChannelDirectoryFn = func(context.Context, string, any) error {
-		writers = append(writers, pythread.GoroutineID())
+		writers = append(writers, syncutil.GoroutineID())
 		return nil
 	}
 	adapter := &discordAdapter{newBaseFake(PlatformDiscord), &fakeDiscordClient{}}
 	if _, err := BuildChannelDirectory(context.Background(), adapterTable(PlatformDiscord, adapter)); err != nil {
 		t.Fatal(err)
 	}
-	loop := pythread.GoroutineID()
+	loop := syncutil.GoroutineID()
 	if len(writers) == 0 {
 		t.Fatal("directory was never written")
 	}
@@ -233,7 +235,7 @@ func TestBuildSlackNoTeamClientsFallsBackToSessions(t *testing.T) {
 	homeDir := t.TempDir()
 	t.Setenv("ICEBATH_HOME", homeDir)
 	writeSessionOrigins(t, homeDir, map[string]any{"platform": "slack", "chat_id": "D123", "chat_name": "Alice"})
-	adapter := &slackAdapter{newBaseFake(PlatformSlack), pydict.New[string, SlackDirectoryClient]()}
+	adapter := &slackAdapter{newBaseFake(PlatformSlack), orderedutil.NewMap[string, SlackDirectoryClient]()}
 	entries, err := buildSlack(context.Background(), adapter)
 	if err != nil {
 		t.Fatal(err)
@@ -397,7 +399,7 @@ func TestDoesNotResurrectDisconnectedPlatformsFromSessionHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := directory.Get("platforms")
-	plats := raw.(*pyjson.Object)
+	plats := raw.(*jsonutil.Object)
 	if _, ok := plats.Get("telegram"); !ok {
 		t.Fatal("telegram missing")
 	}
@@ -406,7 +408,7 @@ func TestDoesNotResurrectDisconnectedPlatformsFromSessionHistory(t *testing.T) {
 			t.Fatalf("%s resurrected from session history", stale)
 		}
 	}
-	if !reflect.DeepEqual(plats.Keys, []string{"telegram"}) {
-		t.Fatalf("platforms %v", plats.Keys)
+	if !reflect.DeepEqual(plats.Keys(), []string{"telegram"}) {
+		t.Fatalf("platforms %v", plats.Keys())
 	}
 }

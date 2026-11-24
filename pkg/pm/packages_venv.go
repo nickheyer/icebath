@@ -16,7 +16,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Venv is the project venv made true by a frozen uv sync of pyproject, uv.lock and the enabled extras
@@ -190,8 +190,8 @@ func (v *Venv) Prepare(ctx context.Context, extras []string, opts VenvApplyOptio
 		replay = filepath.Dir(recorded)
 	}
 	seed := filepath.Join(source, "uv.lock")
-	if lockText := prior["resolved_lock"]; len(members) > 0 && pyrepr.Truthy(lockText) {
-		seed = pyrepr.Str(lockText)
+	if lockText := prior["resolved_lock"]; len(members) > 0 && anyutil.IsTrue(lockText) {
+		seed = anyutil.String(lockText)
 	}
 	workspace := filepath.Join(generation, "workspace")
 	if err := LockAndSync(ctx, members, extras, LockAndSyncOptions{

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,14 +17,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -32,29 +32,25 @@ const (
 	orchestrateMaxWorkers = 6
 )
 
-// PyError is a Python exception raised by the client tools, named for the handler error text
-type PyError struct {
-	Type string
-	Msg  string
+// Failure the a2a_call tool reports with its own text instead of the generic call failure line
+type callError struct{ msg string }
+
+func (e *callError) Error() string { return e.msg }
+
+// Failure for a config or peer value of the wrong JSON kind
+func kindError(want string, v any) error {
+	return fmt.Errorf("expected %s, got %s", want, anyutil.Kind(v))
 }
 
-func (e *PyError) Error() string      { return e.Msg }
-func (e *PyError) PyTypeName() string { return e.Type }
-
-func attributeError(v any, attr string) error {
-	return &PyError{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
-}
-
-// HTTPError is urllib.error.HTTPError, a non success status from a peer
+// Non success HTTP status from a peer or a push callback
 type HTTPError struct {
 	Code   int
 	Reason string
 }
 
-func (e *HTTPError) Error() string      { return fmt.Sprintf("HTTP Error %d: %s", e.Code, e.Reason) }
-func (e *HTTPError) PyTypeName() string { return "HTTPError" }
+func (e *HTTPError) Error() string { return fmt.Sprintf("HTTP %d: %s", e.Code, e.Reason) }
 
-// Python dict.get on a mapping value, the AttributeError for any other value
+// Value of a key of a mapping value, the default when absent, a kind error for any other value
 func pyGet(v any, key string, def any) any {
 	switch m := v.(type) {
 	case map[string]any:
@@ -62,7 +58,7 @@ func pyGet(v any, key string, def any) any {
 			return x
 		}
 		return def
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m != nil {
 			if x, ok := m.Get(key); ok {
 				return x
@@ -70,22 +66,14 @@ func pyGet(v any, key string, def any) any {
 			return def
 		}
 	}
-	panic(attributeError(v, "get"))
-}
-
-// Value or the fallback when the value is falsy, the Python or idiom
-func pyOr(v, fallback any) any {
-	if pyrepr.Truthy(v) {
-		return v
-	}
-	return fallback
+	panic(kindError("an object", v))
 }
 
 func isMapping(v any) bool {
 	switch m := v.(type) {
 	case map[string]any:
 		return true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return m != nil
 	}
 	return false
@@ -96,17 +84,15 @@ func mappingKeys(v any) []string {
 	switch m := v.(type) {
 	case map[string]any:
 		return config.MappingKeys(m)
-	case *pyjson.Object:
-		return slices.Clone(m.Keys)
+	case *jsonutil.Object:
+		return slices.Clone(m.Keys())
 	}
 	return nil
 }
 
-// Iteration of a Python value, list items, string characters or mapping keys, the TypeError otherwise
+// Items of a value, list items, string characters or mapping keys, a kind error otherwise
 func pyIter(v any) []any {
 	switch x := v.(type) {
-	case nil:
-		panic(&PyError{"TypeError", "'NoneType' object is not iterable"})
 	case []any:
 		return x
 	case string:
@@ -115,32 +101,32 @@ func pyIter(v any) []any {
 			out = append(out, string(r))
 		}
 		return out
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		var out []any
 		for _, k := range mappingKeys(x) {
 			out = append(out, k)
 		}
 		return out
 	}
-	panic(&PyError{"TypeError", fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))})
+	panic(kindError("an array, a string or an object", v))
 }
 
-// Python membership of needle in a list, a substring of a string or a key of a mapping
+// Membership of needle in a list, a substring of a string or a key of a mapping
 func pyIn(needle string, container any) bool {
 	switch c := container.(type) {
 	case []any:
 		for _, item := range c {
-			if pyrepr.Equal(item, needle) {
+			if item == needle {
 				return true
 			}
 		}
 		return false
 	case string:
 		return strings.Contains(c, needle)
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		return slices.Contains(mappingKeys(c), needle)
 	}
-	panic(&PyError{"TypeError", fmt.Sprintf("argument of type '%s' is not a container or iterable", pyrepr.TypeName(container))})
+	panic(kindError("an array, a string or an object", container))
 }
 
 // Configured a2a_agents peers keyed by name, an empty mapping when unset
@@ -156,18 +142,14 @@ type peerSpec struct {
 	Tenant       any
 }
 
-// Python int of a config value with its ValueError or TypeError
-func pyIntOf(v any) int {
-	n, err := pyint.Of(v)
+// Peer of a configured entry, panicking with the conversion error of a timeout that is not a number
+func peerFromEntry(entry any) peerSpec {
+	timeout, err := anyutil.ToInt(pyGet(entry, "timeout", defaultToolTimeout))
 	if err != nil {
 		panic(err)
 	}
-	return int(n.Int64())
-}
-
-func peerFromEntry(entry any) peerSpec {
-	return peerSpec{URL: pyGet(entry, "url", ""), Auth: pyOr(pyGet(entry, "auth", map[string]any{}), map[string]any{}),
-		Timeout: pyIntOf(pyGet(entry, "timeout", defaultToolTimeout))}
+	return peerSpec{URL: pyGet(entry, "url", ""), Auth: anyutil.Or(pyGet(entry, "auth", map[string]any{}), map[string]any{}),
+		Timeout: int(timeout)}
 }
 
 // Peer for a configured name or a direct URL, false when the name is unknown
@@ -177,19 +159,19 @@ func resolvePeer(ctx context.Context, agent string) (peerSpec, bool) {
 	}
 	peers := configuredPeers(ctx)
 	entry := pyGet(peers, agent, nil)
-	if !pyrepr.Truthy(entry) {
+	if !anyutil.IsTrue(entry) {
 		return peerSpec{}, false
 	}
 	p := peerFromEntry(entry)
-	p.Capabilities = pyOr(pyGet(entry, "capabilities", []any{}), []any{})
+	p.Capabilities = anyutil.Or(pyGet(entry, "capabilities", []any{}), []any{})
 	p.Tenant = pyGet(entry, "tenant", "")
 	return p, true
 }
 
 // Bearer Authorization header of a peer auth block, empty for any other auth
 func authHeader(auth any) map[string]string {
-	if pyrepr.Truthy(auth) && pyrepr.Equal(pyGet(auth, "type", nil), "bearer") && pyrepr.Truthy(pyGet(auth, "token", nil)) {
-		return map[string]string{"Authorization": "Bearer " + pyrepr.Str(pyGet(auth, "token", nil))}
+	if anyutil.IsTrue(auth) && pyGet(auth, "type", nil) == "bearer" && anyutil.IsTrue(pyGet(auth, "token", nil)) {
+		return map[string]string{"Authorization": "Bearer " + anyutil.String(pyGet(auth, "token", nil))}
 	}
 	return map[string]string{}
 }
@@ -205,7 +187,7 @@ func httpJSON(ctx context.Context, url string, headers map[string]string, timeou
 		err = errors.New("no scheme")
 	}
 	if err != nil {
-		return nil, &PyError{"ValueError", "unknown url type: " + pyrepr.StrRepr(url)}
+		return nil, &callError{"invalid peer URL " + strconv.Quote(url) + ": " + err.Error()}
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
@@ -213,23 +195,22 @@ func httpJSON(ctx context.Context, url string, headers map[string]string, timeou
 	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, &PyError{"URLError", fmt.Sprintf("<urlopen error %s>", err)}
+		return nil, err
 	}
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, &PyError{"IncompleteRead", err.Error()}
+		return nil, fmt.Errorf("read peer response: %w", err)
 	}
 	if resp.StatusCode >= 400 {
 		return nil, &HTTPError{Code: resp.StatusCode, Reason: strings.TrimPrefix(resp.Status, fmt.Sprintf("%d ", resp.StatusCode))}
 	}
-	text, err := pycodecs.Decode(raw, "utf-8")
-	if err != nil {
-		return nil, &PyError{"ValueError", err.Error()}
+	if !utf8.Valid(raw) {
+		return nil, &callError{"peer response is not valid UTF-8"}
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(raw)
 	if err != nil {
-		return nil, &PyError{"ValueError", err.Error()}
+		return nil, &callError{"peer response is not JSON: " + err.Error()}
 	}
 	return v, nil
 }
@@ -240,12 +221,12 @@ var httpGetJSON = func(ctx context.Context, url string, headers map[string]strin
 }
 
 // POST of a JSON-RPC body with the A2A version header, swapped by tests
-var httpPostJSON = func(ctx context.Context, url string, body *pyjson.Object, headers map[string]string, timeout int) (any, error) {
+var httpPostJSON = func(ctx context.Context, url string, body *jsonutil.Object, headers map[string]string, timeout int) (any, error) {
 	hdrs := map[string]string{"Content-Type": "application/json", "A2A-Version": ProtocolVersion}
 	for k, v := range headers {
 		hdrs[k] = v
 	}
-	data, err := pyjson.Dumps(body)
+	data, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
@@ -268,8 +249,8 @@ func selectJSONRPCInterface(card any) any {
 	if !isMapping(card) {
 		return nil
 	}
-	for _, iface := range pyIter(pyOr(pyGet(card, "supportedInterfaces", []any{}), []any{})) {
-		if isMapping(iface) && pyrepr.Equal(pyGet(iface, "protocolBinding", nil), "JSONRPC") && pyrepr.Truthy(pyGet(iface, "url", nil)) {
+	for _, iface := range pyIter(anyutil.Or(pyGet(card, "supportedInterfaces", []any{}), []any{})) {
+		if isMapping(iface) && pyGet(iface, "protocolBinding", nil) == "JSONRPC" && anyutil.IsTrue(pyGet(iface, "url", nil)) {
 			return iface
 		}
 	}
@@ -279,7 +260,7 @@ func selectJSONRPCInterface(card any) any {
 // RPC URL from the card JSONRPC interface, then its legacy top level url, then the base
 func rpcURL(baseURL any, card any) string {
 	if iface := selectJSONRPCInterface(card); iface != nil {
-		return pyrepr.Str(pyGet(iface, "url", nil))
+		return anyutil.String(pyGet(iface, "url", nil))
 	}
 	if isMapping(card) {
 		if u, ok := pyGet(card, "url", nil).(string); ok && u != "" {
@@ -288,7 +269,7 @@ func rpcURL(baseURL any, card any) string {
 	}
 	base, ok := baseURL.(string)
 	if !ok {
-		panic(attributeError(baseURL, "rstrip"))
+		panic(kindError("a string", baseURL))
 	}
 	return strings.TrimRight(base, "/")
 }
@@ -304,7 +285,7 @@ func sendTask(ctx context.Context, agentLabel string, peer peerSpec, message, co
 			err = e
 		}
 	}()
-	headers := authHeader(pyOr(peer.Auth, map[string]any{}))
+	headers := authHeader(anyutil.Or(peer.Auth, map[string]any{}))
 	timeout := peer.Timeout
 	var card any
 	if base, ok := peer.URL.(string); ok {
@@ -317,11 +298,11 @@ func sendTask(ctx context.Context, agentLabel string, peer peerSpec, message, co
 		cid = NewContextID()
 	}
 	safe := RedactOutbound(message)
-	params := pyjson.ObjectOf("message", TextMessage(RoleUser, safe, cid))
-	rpcBody := pyjson.ObjectOf("jsonrpc", "2.0", "id", NewTaskID(), "method", "SendMessage", "params", params)
-	tenant := pyrepr.Str(pyOr(peer.Tenant, ""))
-	if iface := selectJSONRPCInterface(card); iface != nil && pyrepr.Truthy(pyGet(iface, "tenant", nil)) {
-		tenant = pyrepr.Str(pyGet(iface, "tenant", nil))
+	params := jsonutil.ObjectOf("message", TextMessage(RoleUser, safe, cid))
+	rpcBody := jsonutil.ObjectOf("jsonrpc", "2.0", "id", NewTaskID(), "method", "SendMessage", "params", params)
+	tenant := anyutil.String(anyutil.Or(peer.Tenant, ""))
+	if iface := selectJSONRPCInterface(card); iface != nil && anyutil.IsTrue(pyGet(iface, "tenant", nil)) {
+		tenant = anyutil.String(pyGet(iface, "tenant", nil))
 	}
 	if tenant != "" {
 		params.Set("tenant", tenant)
@@ -335,25 +316,22 @@ func sendTask(ctx context.Context, agentLabel string, peer peerSpec, message, co
 		return "", "", "", err
 	}
 	if pyIn("error", resp) {
-		if _, isStr := resp.(string); isStr {
-			panic(&PyError{"TypeError", "string indices must be integers, not 'str'"})
-		}
 		if !isMapping(resp) {
-			panic(&PyError{"TypeError", fmt.Sprintf("%s indices must be integers or slices, not str", pyrepr.TypeName(resp))})
+			panic(kindError("an object", resp))
 		}
 		e := pyGet(resp, "error", nil)
-		return "", "", "", &PyError{"ValueError", fmt.Sprintf("Peer '%s' returned an error: %s", agentLabel,
-			pyrepr.Str(pyGet(e, "message", e)))}
+		return "", "", "", &callError{fmt.Sprintf("Peer '%s' returned an error: %s", agentLabel,
+			anyutil.String(pyGet(e, "message", e)))}
 	}
 	payload := UnwrapSendMessageResponse(pyGet(resp, "result", map[string]any{}))
 	reply = replyTextFromResult(payload)
 	replyCtx = cid
 	if isMapping(payload) {
-		replyCtx = pyrepr.Str(pyGet(payload, "contextId", cid))
-		st := pyGet(pyOr(pyGet(payload, "status", nil), map[string]any{}), "state", "")
+		replyCtx = anyutil.String(pyGet(payload, "contextId", cid))
+		st := pyGet(anyutil.Or(pyGet(payload, "status", nil), map[string]any{}), "state", "")
 		s, ok := st.(string)
 		if !ok {
-			panic(attributeError(st, "replace"))
+			panic(kindError("a string", st))
 		}
 		state = s
 	}
@@ -363,34 +341,34 @@ func sendTask(ctx context.Context, agentLabel string, peer peerSpec, message, co
 }
 
 // Object form of a mapping value for the protocol text helpers
-func asObject(v any) *pyjson.Object {
+func asObject(v any) *jsonutil.Object {
 	switch m := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if m != nil {
 			return m
 		}
 	case map[string]any:
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		for _, k := range mappingKeys(m) {
 			o.Set(k, m[k])
 		}
 		return o
 	}
-	panic(attributeError(v, "get"))
+	panic(kindError("an object", v))
 }
 
 // Reply text of a send result, artifacts first, then the status message, else the bare message
 func replyTextFromResult(result any) string {
 	result = UnwrapSendMessageResponse(result)
 	if !isMapping(result) {
-		return pyrepr.Str(result)
+		return anyutil.String(result)
 	}
-	for _, artifact := range pyIter(pyOr(pyGet(result, "artifacts", []any{}), []any{})) {
+	for _, artifact := range pyIter(anyutil.Or(pyGet(result, "artifacts", []any{}), []any{})) {
 		if txt := ExtractText(asObject(artifact)); txt != "" {
 			return txt
 		}
 	}
-	return ExtractText(asObject(pyOr(pyGet(pyOr(pyGet(result, "status", map[string]any{}), map[string]any{}), "message", nil), result)))
+	return ExtractText(asObject(anyutil.Or(pyGet(anyutil.Or(pyGet(result, "status", map[string]any{}), map[string]any{}), "message", nil), result)))
 }
 
 const authErrText = "Error: peer '%s' rejected auth (HTTP %d). Check the configured token."
@@ -409,11 +387,11 @@ func httpCallError(agent string, code int) string {
 func argText(args map[string]any, names ...string) string {
 	var v any
 	for _, n := range names {
-		if v = args[n]; pyrepr.Truthy(v) {
+		if v = args[n]; anyutil.IsTrue(v) {
 			break
 		}
 	}
-	return strings.TrimSpace(pyrepr.Str(pyOr(v, "")))
+	return strings.TrimSpace(anyutil.String(anyutil.Or(v, "")))
 }
 
 // Agent Card of a URL summarized as name, protocol, capabilities and skills
@@ -430,33 +408,33 @@ func A2ADiscover(ctx context.Context, args map[string]any) string {
 		}
 		return fmt.Sprintf("Error: could not reach %s — %s.", url, err)
 	}
-	caps := pyOr(pyGet(card, "capabilities", map[string]any{}), map[string]any{})
-	skills := pyOr(pyGet(card, "skills", []any{}), []any{})
+	caps := anyutil.Or(pyGet(card, "capabilities", map[string]any{}), map[string]any{})
+	skills := anyutil.Or(pyGet(card, "skills", []any{}), []any{})
 	auth := "no"
-	if pyrepr.Truthy(pyGet(card, "security", nil)) {
+	if anyutil.IsTrue(pyGet(card, "security", nil)) {
 		auth = "yes"
 	}
 	var protos []string
-	for _, i := range pyIter(pyOr(pyGet(card, "supportedInterfaces", []any{}), []any{})) {
+	for _, i := range pyIter(anyutil.Or(pyGet(card, "supportedInterfaces", []any{}), []any{})) {
 		if isMapping(i) {
-			protos = append(protos, fmt.Sprintf("%s v%s", pyrepr.Str(pyGet(i, "protocolBinding", "?")), pyrepr.Str(pyGet(i, "protocolVersion", "?"))))
+			protos = append(protos, fmt.Sprintf("%s v%s", anyutil.String(pyGet(i, "protocolBinding", "?")), anyutil.String(pyGet(i, "protocolVersion", "?"))))
 		}
 	}
 	proto := strings.Join(protos, ", ")
 	if proto == "" {
-		proto = fmt.Sprintf("v%s (pre-1.0 card)", pyrepr.Str(pyGet(card, "protocolVersion", "?")))
+		proto = fmt.Sprintf("v%s (pre-1.0 card)", anyutil.String(pyGet(card, "protocolVersion", "?")))
 	}
 	skillList := pyIter(skills)
-	lines := []string{"Agent: " + pyrepr.Str(pyGet(card, "name", "?")), "Description: " + pyrepr.Str(pyGet(card, "description", "")),
+	lines := []string{"Agent: " + anyutil.String(pyGet(card, "name", "?")), "Description: " + anyutil.String(pyGet(card, "description", "")),
 		"URL: " + rpcURL(url, card), "Protocol: " + proto,
-		fmt.Sprintf("Streaming: %s  Push: %s  Auth required: %s", pyrepr.Str(pyrepr.Truthy(pyGet(caps, "streaming", nil))),
-			pyrepr.Str(pyrepr.Truthy(pyGet(caps, "pushNotifications", nil))), auth),
+		fmt.Sprintf("Streaming: %s  Push: %s  Auth required: %s", strconv.FormatBool(anyutil.IsTrue(pyGet(caps, "streaming", nil))),
+			strconv.FormatBool(anyutil.IsTrue(pyGet(caps, "pushNotifications", nil))), auth),
 		fmt.Sprintf("Skills (%d):", len(skillList))}
-	if _, isDict := skills.([]any); !isDict && isMapping(skills) {
-		panic(&PyError{"KeyError", "slice(None, 20, None)"})
+	if isMapping(skills) {
+		panic(kindError("an array", skills))
 	}
 	for _, s := range skillList[:min(len(skillList), 20)] {
-		lines = append(lines, fmt.Sprintf("  - %s: %s", pyrepr.Str(pyGet(s, "name", pyGet(s, "id", "?"))), pyrepr.Str(pyGet(s, "description", ""))))
+		lines = append(lines, fmt.Sprintf("  - %s: %s", anyutil.String(pyGet(s, "name", pyGet(s, "id", "?"))), anyutil.String(pyGet(s, "description", ""))))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -470,18 +448,18 @@ func A2ACall(ctx context.Context, args map[string]any) string {
 		return "Error: both 'agent' and 'message' are required."
 	}
 	peer, ok := resolvePeer(ctx, agent)
-	if !ok || !pyrepr.Truthy(peer.URL) {
+	if !ok || !anyutil.IsTrue(peer.URL) {
 		return fmt.Sprintf("Error: unknown agent '%s'. Configure it under 'a2a_agents' in config.yaml or pass a full http(s):// URL.", agent)
 	}
 	reply, replyCtx, state, err := sendTask(ctx, agent, peer, message, contextID)
 	if err != nil {
 		var he *HTTPError
-		var pe *PyError
+		var ce *callError
 		switch {
 		case errors.As(err, &he):
 			return httpCallError(agent, he.Code)
-		case errors.As(err, &pe) && pe.Type == "ValueError":
-			return pe.Msg
+		case errors.As(err, &ce):
+			return ce.msg
 		}
 		return fmt.Sprintf("Error: call to '%s' failed — %s.", agent, err)
 	}
@@ -501,13 +479,13 @@ func A2ACall(ctx context.Context, args map[string]any) string {
 	return header + "\n" + body
 }
 
-// Python str.join of a capabilities value, the TypeError for a non string item
+// Capabilities value joined by sep, panicking on an item that is not a string
 func joinStrings(v any, sep string) string {
 	var parts []string
 	for i, item := range pyIter(v) {
 		s, ok := item.(string)
 		if !ok {
-			panic(&PyError{"TypeError", fmt.Sprintf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(item))})
+			panic(fmt.Errorf("capability %d: %w", i, kindError("a string", item)))
 		}
 		parts = append(parts, s)
 	}
@@ -518,18 +496,15 @@ func joinStrings(v any, sep string) string {
 func A2AList(ctx context.Context, _ map[string]any) string {
 	peers := configuredPeers(ctx)
 	var lines []string
-	if pyrepr.Truthy(peers) {
+	if len(peers) > 0 {
 		names := mappingKeys(peers)
-		if !isMapping(peers) {
-			panic(attributeError(peers, "items"))
-		}
 		lines = append(lines, fmt.Sprintf("Configured peers (%d):", len(names)))
 		for _, name := range names {
 			entry := pyGet(peers, name, nil)
 			caps := pyGet(entry, "capabilities", []any{})
-			line := fmt.Sprintf("  - %s: %s (auth: %s)", name, pyrepr.Str(pyGet(entry, "url", "?")),
-				pyrepr.Str(pyGet(pyOr(pyGet(entry, "auth", nil), map[string]any{}), "type", "none")))
-			if pyrepr.Truthy(caps) {
+			line := fmt.Sprintf("  - %s: %s (auth: %s)", name, anyutil.String(pyGet(entry, "url", "?")),
+				anyutil.String(pyGet(anyutil.Or(pyGet(entry, "auth", nil), map[string]any{}), "type", "none")))
+			if anyutil.IsTrue(caps) {
 				line += " caps: " + joinStrings(caps, ", ")
 			}
 			lines = append(lines, line)
@@ -544,7 +519,7 @@ func A2AList(ctx context.Context, _ map[string]any) string {
 		}
 	}
 	m := SharedMetrics.Snapshot()
-	g := func(k string) string { v, _ := m.Get(k); return pyrepr.Str(v) }
+	g := func(k string) string { v, _ := m.Get(k); return anyutil.String(v) }
 	lines = append(lines, "", fmt.Sprintf("Metrics: %s in / %s out, %s completed, %s failed, %s streams, %s push sent, "+
 		"%s anti-loop, %s rate-limited, avg %sms", g("inbound_total"), g("outbound_total"), g("tasks_completed"),
 		g("tasks_failed"), g("streams_started"), g("push_sent"), g("anti_loop_triggers"), g("rate_limit_triggers"),
@@ -558,7 +533,7 @@ func A2AHistory(ctx context.Context, args map[string]any) string {
 	if contextID == "" {
 		return "Error: 'context_id' is required (see a2a_list for known conversations)."
 	}
-	limit := max(1, min(gateway.CoercePort(pyOr(args["limit"], int64(50)), 50), 200))
+	limit := max(1, min(gateway.CoercePort(anyutil.Or(args["limit"], int64(50)), 50), 200))
 	messages := LoadConversation(ctx, contextID, limit)
 	if len(messages) == 0 {
 		return fmt.Sprintf("No persisted conversation for context '%s'.", contextID)
@@ -566,7 +541,7 @@ func A2AHistory(ctx context.Context, args map[string]any) string {
 	lines := []string{fmt.Sprintf("Conversation %s (last %d messages):", contextID, len(messages))}
 	for _, m := range messages {
 		raw, _ := m.Get("text")
-		text := strings.TrimSpace(pyrepr.Str(pyOr(raw, "")))
+		text := strings.TrimSpace(anyutil.String(anyutil.Or(raw, "")))
 		if utf8.RuneCountInString(text) > 1000 {
 			text = textutil.First(text, 1000) + " …[truncated]"
 		}
@@ -574,7 +549,7 @@ func A2AHistory(ctx context.Context, args map[string]any) string {
 		if !ok {
 			role = "?"
 		}
-		lines = append(lines, fmt.Sprintf("[%s] %s", pyrepr.Str(role), text))
+		lines = append(lines, fmt.Sprintf("[%s] %s", anyutil.String(role), text))
 	}
 	return strings.Join(lines, "\n")
 }
@@ -587,13 +562,10 @@ type peerMatch struct {
 // Configured peers advertising the capability, the star matching every peer
 func matchPeersByCapability(ctx context.Context, capability string) []peerMatch {
 	peers := configuredPeers(ctx)
-	if !isMapping(peers) {
-		panic(attributeError(peers, "items"))
-	}
 	var out []peerMatch
 	for _, name := range mappingKeys(peers) {
 		entry := pyGet(peers, name, nil)
-		if pyIn(capability, pyOr(pyGet(entry, "capabilities", []any{}), []any{})) || capability == "*" {
+		if pyIn(capability, anyutil.Or(pyGet(entry, "capabilities", []any{}), []any{})) || capability == "*" {
 			out = append(out, peerMatch{name, entry})
 		}
 	}
@@ -718,15 +690,15 @@ func runPeerPool(ctx context.Context, matches []peerMatch, message, contextID st
 	return results
 }
 
-func strProp(description string) *pyjson.Object {
-	return pyjson.ObjectOf("type", "string", "description", description)
+func strProp(description string) *jsonutil.Object {
+	return jsonutil.ObjectOf("type", "string", "description", description)
 }
 
 type a2aTool struct {
 	name        string
 	handler     func(context.Context, map[string]any) string
 	description string
-	properties  *pyjson.Object
+	properties  *jsonutil.Object
 	required    []string
 }
 
@@ -734,29 +706,29 @@ var a2aTools = []a2aTool{
 	{"a2a_discover", A2ADiscover,
 		"Fetch a remote agent's A2A Agent Card (name, capabilities, skills) from a URL. " +
 			"Use this to find out what a remote agent can do before calling it.",
-		pyjson.ObjectOf("url", strProp("Base URL of the remote A2A agent, e.g. http://localhost:9999")), []string{"url"}},
+		jsonutil.ObjectOf("url", strProp("Base URL of the remote A2A agent, e.g. http://localhost:9999")), []string{"url"}},
 	{"a2a_call", A2ACall,
 		"Send a natural-language task to a remote A2A agent and return its reply. The agent is a peer " +
 			"(any A2A-compliant framework), not a sub-agent you control. Pass 'context_id' from a previous " +
 			"reply to continue a multi-turn exchange.",
-		pyjson.ObjectOf("agent", strProp("Configured peer name (from a2a_agents) or a full http(s):// URL."),
+		jsonutil.ObjectOf("agent", strProp("Configured peer name (from a2a_agents) or a full http(s):// URL."),
 			"message", strProp("The task / message to send the peer, in natural language."),
 			"context_id", strProp("Optional: context id from a prior reply, to continue the conversation.")),
 		[]string{"agent", "message"}},
-	{"a2a_list", A2AList, "List configured A2A peer agents, persisted A2A conversations, and metrics.", pyjson.ObjectOf(), nil},
+	{"a2a_list", A2AList, "List configured A2A peer agents, persisted A2A conversations, and metrics.", jsonutil.ObjectOf(), nil},
 	{"a2a_history", A2AHistory,
 		"Recall a persisted A2A conversation transcript by context_id. It survives restarts and " +
 			"context compaction; use a2a_list to see known context ids.",
-		pyjson.ObjectOf("context_id", strProp("Context id of the conversation to recall."),
-			"limit", pyjson.ObjectOf("type", "integer", "description", "Max messages to return (default 50, max 200).")),
+		jsonutil.ObjectOf("context_id", strProp("Context id of the conversation to recall."),
+			"limit", jsonutil.ObjectOf("type", "integer", "description", "Max messages to return (default 50, max 200).")),
 		[]string{"context_id"}},
 	{"a2a_orchestrate", A2AOrchestrate,
 		"Fan-out a task to multiple peer agents by capability. Peers are matched from config.yaml " +
 			"a2a_agents.*.capabilities. Modes: 'all' (return all replies), 'first' (first successful), " +
 			"'best' (longest successful reply).",
-		pyjson.ObjectOf("capability", strProp("Capability to match (e.g. 'research', 'code') or '*' for all peers."),
+		jsonutil.ObjectOf("capability", strProp("Capability to match (e.g. 'research', 'code') or '*' for all peers."),
 			"message", strProp("The task to send to all matching peers."),
-			"mode", pyjson.ObjectOf("type", "string", "enum", []any{"all", "first", "best"},
+			"mode", jsonutil.ObjectOf("type", "string", "enum", []any{"all", "first", "best"},
 				"description", "How to aggregate results. Default: 'all'."),
 			"context_id", strProp("Optional: shared context id for all peers.")),
 		[]string{"capability", "message"}},
@@ -778,20 +750,20 @@ func a2aToolsAvailable(env *tools.Env) bool {
 		return true
 	}
 	block, _ := settings.Platforms.Get(ctx)["a2a"].(map[string]any)
-	return pyrepr.Truthy(block["enabled"])
+	return anyutil.IsTrue(block["enabled"])
 }
 
 // Tool specs of the a2a toolset, each gated on the opt in check
 func toolSpecs() []plugins.ToolSpec {
 	specs := make([]plugins.ToolSpec, 0, len(a2aTools))
 	for _, t := range a2aTools {
-		parameters := pyjson.ObjectOf("type", "object", "properties", t.properties)
+		parameters := jsonutil.ObjectOf("type", "object", "properties", t.properties)
 		if len(t.required) > 0 {
 			parameters.Set("required", t.required)
 		}
 		handler := t.handler
 		specs = append(specs, plugins.ToolSpec{Name: t.name, Toolset: "a2a", Description: t.description,
-			Schema:  pyjson.ObjectOf("name", t.name, "description", t.description, "parameters", parameters),
+			Schema:  jsonutil.ObjectOf("name", t.name, "description", t.description, "parameters", parameters),
 			Handler: func(ctx context.Context, call *tools.Call) string { return handler(ctx, call.Args) },
 			Emoji:   "\U0001f9e9", Check: a2aToolsAvailable})
 	}

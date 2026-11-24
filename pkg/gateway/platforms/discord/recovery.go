@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/state"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -105,7 +105,7 @@ func (s *DiscordRecoveryStore) initialize(ctx context.Context, conn state.SQLite
 	if _, err := conn.ExecContext(ctx, recoverySchema); err != nil {
 		return err
 	}
-	cutoff := pydatetime.ISOFormatUTC(time.Now().UTC().Add(-recoveryRetention))
+	cutoff := time.Now().UTC().Add(-recoveryRetention).UTC().Format(timeutil.RFC3339Micro)
 	for _, query := range []string{
 		"DELETE FROM discord_messages WHERE updated_at < ?",
 		"DELETE FROM discord_recovery_scans WHERE COALESCE(completed_at, started_at) < ?",

@@ -12,10 +12,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Board whose database stays at the legacy root kanban.db
@@ -90,7 +90,7 @@ func requireSlug(slug string) (string, error) {
 
 var kanbanHomeFn = func() string {
 	if override := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_HOME")); override != "" {
-		return pypath.PathStr(pypath.Expanduser(override))
+		return filepath.Clean(pathutil.ExpandUser(override))
 	}
 	return home.Root()
 }
@@ -103,10 +103,10 @@ func init() {
 }
 
 // Parent of the additional named boards under the kanban root
-func BoardsRoot() string { return pypath.PathJoin(KanbanHome(), "kanban", "boards") }
+func BoardsRoot() string { return pathutil.Join(KanbanHome(), "kanban", "boards") }
 
 // File holding the slug boards switch writes
-func CurrentBoardPath() string { return pypath.PathJoin(KanbanHome(), "kanban", "current") }
+func CurrentBoardPath() string { return pathutil.Join(KanbanHome(), "kanban", "current") }
 
 // Live board slug of a candidate, empty when malformed, missing or archived
 func existingBoard(candidate string) string {
@@ -118,7 +118,7 @@ func existingBoard(candidate string) string {
 		return ""
 	}
 	meta, err := ReadBoardMetadata(&normed)
-	if err != nil || pyrepr.Truthy(objGet(meta, "archived")) {
+	if err != nil || anyutil.IsTrue(objGet(meta, "archived")) {
 		return ""
 	}
 	return normed
@@ -132,7 +132,7 @@ func GetCurrentBoard(ctx context.Context) string {
 		}
 	}
 	if raw, err := os.ReadFile(CurrentBoardPath()); err == nil {
-		if text, err := pystr.DecodeUTF8Sig(raw); err == nil {
+		if text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw)); err == nil {
 			if val := strings.TrimSpace(text); val != "" {
 				if normed, err := normalizeBoardSlug(&val); err == nil && normed != "" && BoardExists(&normed) {
 					return normed
@@ -176,7 +176,7 @@ func BoardDir(board *string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathJoin(BoardsRoot(), slug), nil
+	return pathutil.Join(BoardsRoot(), slug), nil
 }
 
 // Reports whether the board has a board.json on disk, default always existing
@@ -188,7 +188,7 @@ func BoardExists(board *string) bool {
 	if slug == DefaultBoard {
 		return true
 	}
-	return dirHoldsBoard(pypath.PathJoin(BoardsRoot(), slug))
+	return dirHoldsBoard(pathutil.Join(BoardsRoot(), slug))
 }
 
 // Explicit caller intent from the board argument else the scoped override, empty when neither
@@ -225,15 +225,15 @@ func boardPath(ctx context.Context, envVar string, board *string, defaultParts [
 		return "", err
 	}
 	if pin != "" && (slug == "" || explicitBoardIntentPinned(ctx)) {
-		return pypath.PathStr(pypath.Expanduser(pin)), nil
+		return filepath.Clean(pathutil.ExpandUser(pin)), nil
 	}
 	if slug == "" {
 		slug = GetCurrentBoard(ctx)
 	}
 	if slug == DefaultBoard {
-		return pypath.PathJoin(KanbanHome(), defaultParts...), nil
+		return pathutil.Join(KanbanHome(), defaultParts...), nil
 	}
-	return pypath.PathJoin(BoardsRoot(), slug, leaf), nil
+	return pathutil.Join(BoardsRoot(), slug, leaf), nil
 }
 
 var kanbanDBPathFn func(ctx context.Context, board *string) (string, error)
@@ -265,7 +265,7 @@ func TaskAttachmentsDir(ctx context.Context, taskID string, board *string) (stri
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathJoin(root, taskID), nil
+	return pathutil.Join(root, taskID), nil
 }
 
 // Per board worker log directory

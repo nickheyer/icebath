@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Dispatches the scratch prune entry so a prune child never reruns this suite
@@ -61,7 +61,7 @@ func hostRuntime(t *testing.T) interpreter {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prefix, err := pypath.Realpath(strings.TrimSpace(string(out)), pypath.Lax)
+	prefix, err := pathutil.Resolve(strings.TrimSpace(string(out)))
 	if err != nil {
 		t.Fatal(err)
 	}

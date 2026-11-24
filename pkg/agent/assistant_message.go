@@ -7,11 +7,11 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var inlineThinkBlockRe = regexp.MustCompile(`(?s)<think>(.*?)</think>`)
@@ -36,7 +36,7 @@ func messageAttr(m *state.Message, key string) any {
 	}
 	if len(raw) > 0 {
 		if key == "reasoning_details" {
-			if out, err := pyjson.LoadsOrdered(raw); err == nil {
+			if out, err := jsonutil.Decode(raw); err == nil {
 				return out
 			}
 		}
@@ -93,7 +93,7 @@ func nonblankString(v any) (string, bool) {
 }
 
 // Replayable tool call dict with resolved call and response item ids, arguments kept unredacted for replay
-func (a *AIAgent) assistantToolCallDict(tc state.ToolCall, index int) *pyjson.Object {
+func (a *AIAgent) assistantToolCallDict(tc state.ToolCall, index int) *jsonutil.Object {
 	rawID := tc.ID
 	callID, ok := nonblankString(tc.Extra["call_id"])
 	if !ok {
@@ -112,14 +112,14 @@ func (a *AIAgent) assistantToolCallDict(tc state.ToolCall, index int) *pyjson.Ob
 	if !ok {
 		_, responseItemID = provider.SplitResponsesToolID(rawID)
 	}
-	fn := pyjson.ObjectOf("name", tc.Function.Name, "arguments", tc.Function.Arguments)
-	out := pyjson.ObjectOf("id", callID, "call_id", callID,
+	fn := jsonutil.ObjectOf("name", tc.Function.Name, "arguments", tc.Function.Arguments)
+	out := jsonutil.ObjectOf("id", callID, "call_id", callID,
 		"response_item_id", provider.DeriveResponsesFunctionCallID(callID, responseItemID), "type", tc.Type, "function", fn)
 	if extra, has := tc.Extra["extra_content"]; has && extra != nil {
 		out.Set("extra_content", provider.DumpIfModel(extra))
 	}
 	sig := tc.Extra["thought_signature"]
-	if !pyrepr.Truthy(sig) {
+	if !anyutil.IsTrue(sig) {
 		sig = tc.Function.Extra["thought_signature"]
 	}
 	if s, ok := sig.(string); ok && s != "" {
@@ -156,11 +156,11 @@ func (a *AIAgent) buildAssistantMessageRow(resp *provider.Response, finishReason
 	case reasoningText != nil:
 		msg["reasoning_content"] = reasoningText
 	}
-	if details := messageAttr(m, "reasoning_details"); pyrepr.Truthy(details) {
+	if details := messageAttr(m, "reasoning_details"); anyutil.IsTrue(details) {
 		var preserved []any
 		for _, d := range anyRows(details) {
 			switch dv := d.(type) {
-			case map[string]any, *pyjson.Object:
+			case map[string]any, *jsonutil.Object:
 				preserved = append(preserved, dv)
 			case provider.ModelDumper:
 				preserved = append(preserved, provider.DumpIfModel(dv))
@@ -172,7 +172,7 @@ func (a *AIAgent) buildAssistantMessageRow(resp *provider.Response, finishReason
 	}
 	for _, attr := range assistantCarrierAttrs {
 		value := messageAttr(m, attr)
-		if !pyrepr.Truthy(value) {
+		if !anyutil.IsTrue(value) {
 			continue
 		}
 		msg[attr] = value

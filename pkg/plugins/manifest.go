@@ -371,11 +371,11 @@ func parseManifestV2Fields(data map[string]any, key string) manifestV2Fields {
 	}
 	for _, item := range manifestFieldList(data, key, "python_dependencies", "a list of requirement strings") {
 		s, ok := item.(string)
-		if !ok || pyStrip(s) == "" {
+		if !ok || strings.TrimSpace(s) == "" {
 			pkgLog().Warn(fmt.Sprintf("Plugin %s: python_dependencies entry %s must be a non-empty requirement string; skipping", key, errchain.Show(item)))
 			continue
 		}
-		out.pythonDeps = append(out.pythonDeps, pyStrip(s))
+		out.pythonDeps = append(out.pythonDeps, strings.TrimSpace(s))
 	}
 	out.configSchema = configSchemaEntries(key, manifestFieldOfType(data, key, "config_schema", func(v any) bool { return asMap(v) != nil }, "a mapping"))
 	for _, t := range manifestFieldList(data, key, "tags", "a list") {

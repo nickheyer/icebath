@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestRestartNoticeReplacesTheCoreFailedTurnBoundaryOfTheSameTurn(t *testing.T) {
@@ -33,7 +33,7 @@ func TestRestartNoticeReplacesTheCoreFailedTurnBoundaryOfTheSameTurn(t *testing.
 			if got := gateway.FailedTurnNoticesForTests(t, ctx, db); !slices.Equal(got, []string{agent.FailedTurnNotice}) {
 				t.Fatalf("core closer notices %q", got)
 			}
-			captured := pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "", "interrupted", true, "completed", false,
+			captured := jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "", "interrupted", true, "completed", false,
 				"interrupt_message", "Gateway restarting", "messages", []any{map[string]any{"role": "user", "content": "please work"}}))
 			if err := gateway.CommitAndPublishForTests(ctx, authority, live, row, "", "interrupted", captured); err != nil {
 				t.Fatal(err)

@@ -16,10 +16,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -164,7 +164,7 @@ func StampTree(ctx context.Context, token map[string]any, root string) (map[stri
 		return nil, err
 	}
 	for _, b := range baselines {
-		if pyrepr.Equal(b["pause_id"], pauseID) {
+		if anyutil.Equal(b["pause_id"], pauseID) {
 			return token, nil
 		}
 	}
@@ -221,7 +221,7 @@ func MarkMove(ctx context.Context, token map[string]any, target string) error {
 		return err
 	}
 	for _, b := range baselines {
-		if pyrepr.Equal(b["pause_id"], token["pause_id"]) {
+		if anyutil.Equal(b["pause_id"], token["pause_id"]) {
 			set := strSet(b["move_targets"])
 			set[target] = true
 			b["move_targets"] = sortedSet(set)
@@ -236,7 +236,7 @@ func stringItems(v any) []string {
 	items := listItems(orEmptyList(v))
 	out := make([]string, len(items))
 	for i, item := range items {
-		out[i] = pyrepr.Str(item)
+		out[i] = anyutil.String(item)
 	}
 	return out
 }
@@ -279,7 +279,7 @@ func pathsAMoveCouldWrite(ctx context.Context, root string) (map[string]bool, bo
 		return nil, false
 	default:
 		raw = bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))
-		fetched = strings.Split(pystr.TranslateNewlines(strings.ToValidUTF8(string(raw), "\uFFFD")), "\n")
+		fetched = strings.Split(textutil.NormalizeNewlines(strings.ToValidUTF8(string(raw), "\uFFFD")), "\n")
 	}
 	targets := map[string]bool{}
 	for _, line := range fetched {
@@ -310,7 +310,7 @@ func seenAtPause(root string, baseline map[string]any, path string) (bool, error
 	if !ok {
 		return false, fmt.Errorf("pause baseline digests are %s where a mapping was expected", errchain.Kind(digests))
 	}
-	return pyrepr.Equal(m[path], fileDigest(filepath.Join(root, path))), nil
+	return anyutil.Equal(m[path], fileDigest(filepath.Join(root, path))), nil
 }
 
 // Changes at an unmoved HEAD the update's move may have left half written, for the first baseline with any
@@ -364,7 +364,7 @@ func TornByMove(ctx context.Context, root string, found map[string]any, changes 
 	var writable map[string]bool
 	known := false
 	if truthy(found["pre_sha"]) {
-		writable, known = pathsBetween(ctx, root, []string{pyrepr.Str(found["pre_sha"])})
+		writable, known = pathsBetween(ctx, root, []string{anyutil.String(found["pre_sha"])})
 	}
 	if !known || !changesKnown {
 		return nil, false, nil
@@ -443,7 +443,7 @@ func depsHoldResume(ctx context.Context, root string) (holds bool) {
 		}
 	}()
 	mechanism, _ := pauseReadInstallStamp(root).Get("updateMechanism")
-	if !pyrepr.Equal(mechanism, "self") {
+	if !anyutil.Equal(mechanism, "self") {
 		return false
 	}
 	current, err := pauseVenvIsCurrent(ctx, pm.VenvIsCurrentOptions{ProjectRoot: root})
@@ -497,7 +497,7 @@ func TreeIsWhole(ctx context.Context, token map[string]any, root string) (bool, 
 		}
 		var atHead, landed []map[string]any
 		for _, b := range baselines {
-			if pyrepr.Equal(b["pre_sha"], head) {
+			if anyutil.Equal(b["pre_sha"], head) {
 				atHead = append(atHead, b)
 				continue
 			}

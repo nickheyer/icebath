@@ -7,10 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -57,23 +56,23 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		return strings.TrimSpace(val), err
 	}
 	var publishTopic any = chatID
-	if !pyrepr.Truthy(publishTopic) {
+	if !anyutil.IsTrue(publishTopic) {
 		publishTopic = extra["publish_topic"]
 	}
-	if !pyrepr.Truthy(publishTopic) {
+	if !anyutil.IsTrue(publishTopic) {
 		if publishTopic, err = scopedStripped("NTFY_PUBLISH_TOPIC"); err != nil {
 			return nil, err
 		}
 	}
-	if !pyrepr.Truthy(publishTopic) {
+	if !anyutil.IsTrue(publishTopic) {
 		publishTopic = extra["topic"]
 	}
-	if !pyrepr.Truthy(publishTopic) {
+	if !anyutil.IsTrue(publishTopic) {
 		if publishTopic, err = scopedStripped("NTFY_TOPIC"); err != nil {
 			return nil, err
 		}
 	}
-	if !pyrepr.Truthy(publishTopic) {
+	if !anyutil.IsTrue(publishTopic) {
 		return gateway.SendError("ntfy standalone send: NTFY_TOPIC not configured"), nil
 	}
 	token, err := gateway.ExtraOrSecret(ctx, extra, "token", "NTFY_TOKEN", "", true)
@@ -87,12 +86,12 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	body := truncateBody(message, "ntfy standalone")
 	client := newHTTPClient()
 	defer client.CloseIdleConnections()
-	resp, err := publish(ctx, client, server+"/"+pyrepr.Str(publishTopic), body, headers)
+	resp, err := publish(ctx, client, server+"/"+anyutil.String(publishTopic), body, headers)
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return gateway.SendError("ntfy standalone send failed: " + cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(server)), pyhttpx.ErrorText(err))), nil
+		return gateway.SendError("ntfy standalone send failed: " + cmp.Or(gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(server)), err.Error())), nil
 	}
 	if resp.StatusCode >= 300 {
 		return gateway.SendError(fmt.Sprintf("ntfy HTTP %d: %s", resp.StatusCode, textutil.First(resp.Text(), 200))), nil

@@ -14,10 +14,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -53,12 +53,12 @@ func apiCapList(items []any) []any {
 }
 
 // Lowercased stripped part type of a content part, empty when unset
-func apiPartType(part *pyjson.Object) string {
-	raw := part.GetOr("type", nil)
-	if !pyrepr.Truthy(raw) {
+func apiPartType(part *jsonutil.Object) string {
+	raw := part.ValueOr("type", nil)
+	if !anyutil.IsTrue(raw) {
 		return ""
 	}
-	return strings.ToLower(strings.TrimSpace(pyrepr.Str(raw)))
+	return strings.ToLower(strings.TrimSpace(anyutil.String(raw)))
 }
 
 // OpenAI chat content flattened to one plain string, non text parts skipped and depth, size and length bounded
@@ -82,10 +82,10 @@ func apiNormalizeChatContentDepth(content any, maxDepth, depth int) string {
 			switch it := item.(type) {
 			case string:
 				part = it
-			case *pyjson.Object:
+			case *jsonutil.Object:
 				if apiTextPartTypes[apiPartType(it)] {
-					if text := it.GetOr("text", ""); pyrepr.Truthy(text) {
-						part = pyrepr.Str(text)
+					if text := it.ValueOr("text", ""); anyutil.IsTrue(text) {
+						part = anyutil.String(text)
 					}
 				}
 			case []any:
@@ -102,17 +102,17 @@ func apiNormalizeChatContentDepth(content any, maxDepth, depth int) string {
 		}
 		return apiCapText(strings.Join(parts, "\n"))
 	}
-	return apiCapText(pyrepr.Str(content))
+	return apiCapText(anyutil.String(content))
 }
 
 // Canonical vision part of one image part, the coded ValueError of a malformed one
-func apiNormalizeImagePart(part *pyjson.Object) (*pyjson.Object, error) {
-	detail := part.GetOr("detail", nil)
-	imageRef := part.GetOr("image_url", nil)
+func apiNormalizeImagePart(part *jsonutil.Object) (*jsonutil.Object, error) {
+	detail := part.ValueOr("detail", nil)
+	imageRef := part.ValueOr("image_url", nil)
 	urlValue := imageRef
-	if ref, isDict := imageRef.(*pyjson.Object); isDict {
-		urlValue = ref.GetOr("url", nil)
-		detail = ref.GetOr("detail", detail)
+	if ref, isDict := imageRef.(*jsonutil.Object); isDict {
+		urlValue = ref.ValueOr("url", nil)
+		detail = ref.ValueOr("detail", detail)
 	}
 	text, ok := urlValue.(string)
 	if !ok || strings.TrimSpace(text) == "" {
@@ -128,7 +128,7 @@ func apiNormalizeImagePart(part *pyjson.Object) (*pyjson.Object, error) {
 	} else if !strings.HasPrefix(lowered, "http://") && !strings.HasPrefix(lowered, "https://") {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid_image_url:Image inputs must use http(s) URLs or data:image/... URLs."}
 	}
-	imageURL := pyjson.ObjectOf("url", text)
+	imageURL := jsonutil.ObjectOf("url", text)
 	if detail != nil {
 		detailText, isText := detail.(string)
 		if !isText || strings.TrimSpace(detailText) == "" {
@@ -136,7 +136,7 @@ func apiNormalizeImagePart(part *pyjson.Object) (*pyjson.Object, error) {
 		}
 		imageURL.Set("detail", strings.TrimSpace(detailText))
 	}
-	return pyjson.ObjectOf("type", "image_url", "image_url", imageURL), nil
+	return jsonutil.ObjectOf("type", "image_url", "image_url", imageURL), nil
 }
 
 // Coded ValueError of a malformed file part
@@ -223,13 +223,13 @@ func apiFileText(ctx context.Context, data []byte, name, mediaType string) (stri
 }
 
 // One file part read into a text part naming where its bytes are kept, an image file becoming a vision part
-func apiNormalizeFilePart(ctx context.Context, part *pyjson.Object) (*pyjson.Object, error) {
+func apiNormalizeFilePart(ctx context.Context, part *jsonutil.Object) (*jsonutil.Object, error) {
 	fields := part
-	if inner, ok := part.GetOr("file", nil).(*pyjson.Object); ok {
+	if inner, ok := part.ValueOr("file", nil).(*jsonutil.Object); ok {
 		fields = inner
 	}
 	field := func(key string) string {
-		if v, ok := fields.GetOr(key, nil).(string); ok {
+		if v, ok := fields.ValueOr(key, nil).(string); ok {
 			return strings.TrimSpace(v)
 		}
 		return ""
@@ -265,7 +265,7 @@ func apiNormalizeFilePart(ctx context.Context, part *pyjson.Object) (*pyjson.Obj
 		}
 	}
 	if strings.HasPrefix(mediaType, "image/") {
-		return pyjson.ObjectOf("type", "image_url", "image_url", pyjson.ObjectOf("url",
+		return jsonutil.ObjectOf("type", "image_url", "image_url", jsonutil.ObjectOf("url",
 			"data:"+mediaType+";base64,"+base64.StdEncoding.EncodeToString(data))), nil
 	}
 	saved, err := mediacache.CacheDocumentFromBytes(ctx, home.Dir(ctx), data, name)
@@ -274,7 +274,7 @@ func apiNormalizeFilePart(ctx context.Context, part *pyjson.Object) (*pyjson.Obj
 	}
 	text, readErr := apiFileText(ctx, data, name, mediaType)
 	if readErr != nil {
-		return pyjson.ObjectOf("type", "text", "text", fmt.Sprintf("[The user sent a document: '%s'. It is saved at: %s. "+
+		return jsonutil.ObjectOf("type", "text", "text", fmt.Sprintf("[The user sent a document: '%s'. It is saved at: %s. "+
 			"Its text could not be read here (%s); read the saved file with read_file before answering.]", name, saved, readErr)), nil
 	}
 	note := fmt.Sprintf("[The user sent a document: '%s'. It is saved at: %s. Its text follows.]\n", name, saved)
@@ -282,7 +282,7 @@ func apiNormalizeFilePart(ctx context.Context, part *pyjson.Object) (*pyjson.Obj
 	if runeLen(body) < runeLen(text) {
 		body += "\n[The text continues past this point; read the saved file with read_file for the rest.]"
 	}
-	return pyjson.ObjectOf("type", "text", "text", note+body), nil
+	return jsonutil.ObjectOf("type", "text", "text", note+body), nil
 }
 
 // Validated multimodal content, a plain string when text only, else canonical text and image_url parts
@@ -293,23 +293,23 @@ func apiNormalizeMultimodalContent(ctx context.Context, content any) (any, error
 	case string:
 		return apiCapText(v), nil
 	case []any:
-		var normalized []*pyjson.Object
+		var normalized []*jsonutil.Object
 		for _, item := range apiCapList(v) {
 			if text, isText := item.(string); isText {
 				if text != "" {
-					normalized = append(normalized, pyjson.ObjectOf("type", "text", "text", apiCapText(text)))
+					normalized = append(normalized, jsonutil.ObjectOf("type", "text", "text", apiCapText(text)))
 				}
 				continue
 			}
-			part, isDict := item.(*pyjson.Object)
+			part, isDict := item.(*jsonutil.Object)
 			if !isDict {
 				continue
 			}
 			partType := apiPartType(part)
 			switch {
 			case apiTextPartTypes[partType]:
-				if text := part.GetOr("text", nil); text != nil && pyrepr.Str(text) != "" {
-					normalized = append(normalized, pyjson.ObjectOf("type", "text", "text", apiCapText(pyrepr.Str(text))))
+				if text := part.ValueOr("text", nil); text != nil && anyutil.String(text) != "" {
+					normalized = append(normalized, jsonutil.ObjectOf("type", "text", "text", apiCapText(anyutil.String(text))))
 				}
 			case apiImagePartTypes[partType]:
 				image, err := apiNormalizeImagePart(part)
@@ -325,7 +325,7 @@ func apiNormalizeMultimodalContent(ctx context.Context, content any) (any, error
 				normalized = append(normalized, file)
 			default:
 				return nil, &PyError{Kind: "ValueError", Msg: fmt.Sprintf("unsupported_content_type:Unsupported content part type %s. "+
-					"Content parts are text/input_text, image_url/input_image and file/input_file.", pyrepr.Repr(part.GetOr("type", nil)))}
+					"Content parts are text/input_text, image_url/input_image and file/input_file.", anyutil.Quote(part.ValueOr("type", nil)))}
 			}
 		}
 		if len(normalized) == 0 {
@@ -333,7 +333,7 @@ func apiNormalizeMultimodalContent(ctx context.Context, content any) (any, error
 		}
 		textOnly := true
 		for _, part := range normalized {
-			if part.GetOr("type", nil) != "text" {
+			if part.ValueOr("type", nil) != "text" {
 				textOnly = false
 				break
 			}
@@ -341,7 +341,7 @@ func apiNormalizeMultimodalContent(ctx context.Context, content any) (any, error
 		if textOnly {
 			var texts []string
 			for _, part := range normalized {
-				if text := part.GetOr("text", nil); pyrepr.Truthy(text) {
+				if text := part.ValueOr("text", nil); anyutil.IsTrue(text) {
 					texts = append(texts, text.(string))
 				}
 			}
@@ -363,13 +363,13 @@ func apiContentHasVisiblePayload(content any) bool {
 		return strings.TrimSpace(v) != ""
 	case []any:
 		for _, item := range v {
-			part, isDict := item.(*pyjson.Object)
+			part, isDict := item.(*jsonutil.Object)
 			if !isDict {
 				continue
 			}
 			partType := apiPartType(part)
-			text := part.GetOr("text", nil)
-			if apiImagePartTypes[partType] || apiFilePartTypes[partType] || (apiTextPartTypes[partType] && pyrepr.Truthy(text) && strings.TrimSpace(pyrepr.Str(text)) != "") {
+			text := part.ValueOr("text", nil)
+			if apiImagePartTypes[partType] || apiFilePartTypes[partType] || (apiTextPartTypes[partType] && anyutil.IsTrue(text) && strings.TrimSpace(anyutil.String(text)) != "") {
 				return true
 			}
 		}

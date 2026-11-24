@@ -4,7 +4,8 @@ import (
 	"context"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -66,7 +67,7 @@ func runtimeSession(ctx context.Context, conn SQLiteConn, sessionID string) (map
 }
 
 // Live admission row else its retired tombstone, refused not found when neither exists
-func runtimeAdmission(ctx context.Context, conn SQLiteConn, admissionID string) (*pyjson.Object, error) {
+func runtimeAdmission(ctx context.Context, conn SQLiteConn, admissionID string) (*jsonutil.Object, error) {
 	rows, err := queryObjects(ctx, conn, "SELECT * FROM session_admissions WHERE admission_id=?", admissionID)
 	if err != nil {
 		return nil, err
@@ -85,14 +86,14 @@ func runtimeAdmission(ctx context.Context, conn SQLiteConn, admissionID string) 
 }
 
 // Live admission row else its retired tombstone, refused not found when neither exists
-func RuntimeAdmission(ctx context.Context, conn SQLiteConn, admissionID string) (*pyjson.Object, error) {
+func RuntimeAdmission(ctx context.Context, conn SQLiteConn, admissionID string) (*jsonutil.Object, error) {
 	return runtimeAdmission(ctx, conn, admissionID)
 }
 
 // Retires the workers the admission's generation owns on its logical owner and its current physical transcript
-func retireAdmissionWorkers(ctx context.Context, conn SQLiteConn, row *pyjson.Object, ownerEpoch any) error {
+func retireAdmissionWorkers(ctx context.Context, conn SQLiteConn, row *jsonutil.Object, ownerEpoch any) error {
 	lineageText, _ := rowValue(row, "lineage_json").(string)
-	decoded, err := pyjson.Loads(lineageText)
+	decoded, err := jsonutil.Decode(lineageText)
 	if err != nil {
 		return pyValueError(err.Error())
 	}
@@ -102,7 +103,7 @@ func retireAdmissionWorkers(ctx context.Context, conn SQLiteConn, row *pyjson.Ob
 		last = lineage[len(lineage)-1]
 	}
 	targets := []any{target}
-	if !pyjson.Equal(last, target) {
+	if !anyutil.Equal(last, target) {
 		targets = append(targets, last)
 	}
 	scope := "session_id IN (" + placeholders(len(targets)) + ") AND generation=? AND owner_epoch=?"
@@ -121,12 +122,12 @@ func retireAdmissionWorkers(ctx context.Context, conn SQLiteConn, row *pyjson.Ob
 }
 
 // Public admission dict with its payload decoded and its digest, lineage and retention stamp dropped
-func admissionRow(row *pyjson.Object) (*pyjson.Object, error) {
+func admissionRow(row *jsonutil.Object) (*jsonutil.Object, error) {
 	if row == nil {
 		return nil, nil
 	}
-	result := row.Copy()
-	raw, has := result.Pop("payload_json")
+	result := row.Clone()
+	raw, has := result.Take("payload_json")
 	if !has {
 		return nil, &stateTypedError{"KeyError", "payload_json"}
 	}
@@ -134,17 +135,17 @@ func admissionRow(row *pyjson.Object) (*pyjson.Object, error) {
 	if !ok {
 		return nil, &stateTypedError{"TypeError", "the JSON object must be str"}
 	}
-	payload, err := pyjson.Loads(text)
+	payload, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
 	result.Set("payload", payload)
 	for _, k := range []string{"payload_digest", "lineage_json"} {
-		if _, has := result.Pop(k); !has {
+		if _, has := result.Take(k); !has {
 			return nil, &stateTypedError{"KeyError", k}
 		}
 	}
-	result.Pop("retired_at")
+	result.Take("retired_at")
 	return result, nil
 }
 
@@ -175,7 +176,7 @@ type SessionInput struct {
 	PrincipalID string
 	SessionID   string
 	RequestID   string
-	Payload     *pyjson.Object
+	Payload     *jsonutil.Object
 	Intent      string
 	// Raises to refuse a new write, never seeing exact or terminal replays
 	AuthorizeWrite func(ctx context.Context, conn SQLiteConn) error
@@ -192,7 +193,7 @@ func (in SessionInput) intent() string {
 }
 
 // Canonical encoding of the admission payload, refused invalid params when it is not JSON safe
-func encodeAdmissionPayload(payload *pyjson.Object) (string, error) {
+func encodeAdmissionPayload(payload *jsonutil.Object) (string, error) {
 	if payload == nil {
 		return "", runtimeRefusal("invalid_params")
 	}
@@ -205,7 +206,7 @@ func admissionDigest(in SessionInput) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	input, err := pyjson.Loads(encoded)
+	input, err := jsonutil.Decode(encoded)
 	if err != nil {
 		return "", pyValueError(err.Error())
 	}
@@ -213,7 +214,7 @@ func admissionDigest(in SessionInput) (string, error) {
 }
 
 // Admits input exactly once per principal request, replaying an identical retry and refusing a changed one
-func (d *SessionDB) AdmitSessionInput(ctx context.Context, in SessionInput) (*pyjson.Object, error) {
+func (d *SessionDB) AdmitSessionInput(ctx context.Context, in SessionInput) (*jsonutil.Object, error) {
 	for _, v := range []string{in.PrincipalID, in.SessionID, in.RequestID} {
 		if err := runtimeText(v); err != nil {
 			return nil, err
@@ -235,11 +236,11 @@ func (d *SessionDB) AdmitSessionInput(ctx context.Context, in SessionInput) (*py
 	if err != nil {
 		return nil, err
 	}
-	lineage, err := pyjson.Dumps([]any{in.SessionID})
+	lineage, err := jsonutil.Encode([]any{in.SessionID})
 	if err != nil {
 		return nil, err
 	}
-	var out *pyjson.Object
+	var out *jsonutil.Object
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, in.Epoch); err != nil {
 			return err
@@ -253,7 +254,7 @@ func (d *SessionDB) AdmitSessionInput(ctx context.Context, in SessionInput) (*py
 			return err
 		}
 		if len(old) > 0 {
-			if !pyjson.Equal(rowValue(old[0], "payload_digest"), digest) {
+			if !anyutil.Equal(rowValue(old[0], "payload_digest"), digest) {
 				return admittedRequestConflict()
 			}
 			if in.ReplayGuard != nil {
@@ -295,14 +296,14 @@ func (d *SessionDB) AdmitSessionInput(ctx context.Context, in SessionInput) (*py
 }
 
 // Admission by id, its retired tombstone when the live row is gone, nil when neither exists
-func (d *SessionDB) GetSessionAdmission(ctx context.Context, admissionID string) (*pyjson.Object, error) {
-	var out *pyjson.Object
+func (d *SessionDB) GetSessionAdmission(ctx context.Context, admissionID string) (*jsonutil.Object, error) {
+	var out *jsonutil.Object
 	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		rows, err := queryObjects(ctx, conn, "SELECT * FROM session_admissions WHERE admission_id=?", admissionID)
 		if err != nil {
 			return err
 		}
-		var row *pyjson.Object
+		var row *jsonutil.Object
 		if len(rows) > 0 {
 			row = rows[0]
 		} else if row, err = terminalAdmission(ctx, conn, admissionID); err != nil {
@@ -315,8 +316,8 @@ func (d *SessionDB) GetSessionAdmission(ctx context.Context, admissionID string)
 }
 
 // Admission at its exact durable identity, the unique principal, target and request key
-func (d *SessionDB) FindSessionAdmission(ctx context.Context, principalID, sessionID, requestID string) (*pyjson.Object, error) {
-	var out *pyjson.Object
+func (d *SessionDB) FindSessionAdmission(ctx context.Context, principalID, sessionID, requestID string) (*jsonutil.Object, error) {
+	var out *jsonutil.Object
 	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		rows, err := queryObjects(ctx, conn, "SELECT * FROM session_admissions WHERE principal_id=? AND target_session_id=? "+
 			"AND request_id=?", principalID, sessionID, requestID)
@@ -330,13 +331,13 @@ func (d *SessionDB) FindSessionAdmission(ctx context.Context, principalID, sessi
 }
 
 // Admissions of a session in FIFO order, only queued, started and unknown ones when pending only
-func (d *SessionDB) ListSessionAdmissions(ctx context.Context, sessionID string, pendingOnly bool) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListSessionAdmissions(ctx context.Context, sessionID string, pendingOnly bool) ([]*jsonutil.Object, error) {
 	query := "SELECT * FROM session_admissions WHERE target_session_id=? "
 	if pendingOnly {
 		query += "AND status IN ('queued','started','unknown') "
 	}
 	query += "ORDER BY seq"
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		rows, err := queryObjects(ctx, conn, query, sessionID)
 		if err != nil {
@@ -366,7 +367,7 @@ type ClaimInput struct {
 }
 
 // Claims the FIFO head, nil when nothing is claimable and moved when the head is no longer the one checked
-func (d *SessionDB) ClaimSessionInput(ctx context.Context, in ClaimInput) (claimed *pyjson.Object, moved bool, err error) {
+func (d *SessionDB) ClaimSessionInput(ctx context.Context, in ClaimInput) (claimed *jsonutil.Object, moved bool, err error) {
 	err = d.executeWrite(ctx, func(conn SQLiteConn) error {
 		claimed, moved = nil, false
 		if err := runtimeEpoch(ctx, conn, in.Epoch); err != nil {
@@ -413,7 +414,7 @@ func (d *SessionDB) ClaimSessionInput(ctx context.Context, in ClaimInput) (claim
 			if in.Head != nil {
 				want = *in.Head
 			}
-			if !pyjson.Equal(seen, want) {
+			if !anyutil.Equal(seen, want) {
 				moved = true
 				return nil
 			}
@@ -458,13 +459,13 @@ func (d *SessionDB) ClaimSessionInput(ctx context.Context, in ClaimInput) (claim
 }
 
 // Text field of a decoded admission payload, nil when absent
-func admissionPayloadText(row *pyjson.Object) (any, error) {
+func admissionPayloadText(row *jsonutil.Object) (any, error) {
 	text, _ := rowValue(row, "payload_json").(string)
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, &stateTypedError{"AttributeError", "payload has no attribute get"}
 	}
@@ -472,7 +473,7 @@ func admissionPayloadText(row *pyjson.Object) (any, error) {
 }
 
 // Stores the compacted and encoded turn result under the admission's result key
-func storeAdmissionResult(ctx context.Context, conn SQLiteConn, row *pyjson.Object, admissionID string, result *pyjson.Object) error {
+func storeAdmissionResult(ctx context.Context, conn SQLiteConn, row *jsonutil.Object, admissionID string, result *jsonutil.Object) error {
 	userMessage, err := admissionPayloadText(row)
 	if err != nil {
 		return err
@@ -496,20 +497,20 @@ type SettleInput struct {
 	AdmissionID string
 	Generation  int64
 	Outcome     string
-	Result      *pyjson.Object
+	Result      *jsonutil.Object
 	// Steer transfers bound to this claim, true when the text reached the claim's agent
 	Transfers     map[string]bool
-	TerminalWrite func(ctx context.Context, conn SQLiteConn, row *pyjson.Object) error
+	TerminalWrite func(ctx context.Context, conn SQLiteConn, row *jsonutil.Object) error
 }
 
 // Settles a started claim at its own epoch and generation, retiring its workers and storing its result
-func (d *SessionDB) SettleSessionInput(ctx context.Context, in SettleInput) (*pyjson.Object, error) {
+func (d *SessionDB) SettleSessionInput(ctx context.Context, in SettleInput) (*jsonutil.Object, error) {
 	switch in.Outcome {
 	case "completed", "interrupted", "rejected", "failed":
 	default:
 		return nil, runtimeRefusal("invalid_params")
 	}
-	var out *pyjson.Object
+	var out *jsonutil.Object
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, in.Epoch); err != nil {
 			return err
@@ -526,7 +527,7 @@ func (d *SessionDB) SettleSessionInput(ctx context.Context, in SettleInput) (*py
 		owner, ownerOK := exactInt(rowValue(row, "owner_epoch"))
 		generation, genOK := exactInt(rowValue(row, "generation"))
 		current, curOK := exactInt(session["runtime_generation"])
-		if !pyjson.Equal(rowValue(row, "status"), "started") || !ownerOK || owner != in.Epoch ||
+		if !anyutil.Equal(rowValue(row, "status"), "started") || !ownerOK || owner != in.Epoch ||
 			!genOK || generation != in.Generation || !curOK || current != in.Generation {
 			return runtimeRefusal("stale_generation")
 		}
@@ -563,8 +564,8 @@ func (d *SessionDB) SettleSessionInput(ctx context.Context, in SettleInput) (*py
 }
 
 // Cancels a queued admission, refusing a started, unknown or steering one and replaying a terminal one
-func (d *SessionDB) CancelSessionInput(ctx context.Context, epoch int64, admissionID string) (*pyjson.Object, error) {
-	var out *pyjson.Object
+func (d *SessionDB) CancelSessionInput(ctx context.Context, epoch int64, admissionID string) (*jsonutil.Object, error) {
+	var out *jsonutil.Object
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
 			return err
@@ -574,13 +575,13 @@ func (d *SessionDB) CancelSessionInput(ctx context.Context, epoch int64, admissi
 			return err
 		}
 		status := rowValue(row, "status")
-		if pyjson.Equal(status, "unknown") {
+		if anyutil.Equal(status, "unknown") {
 			return runtimeRefusal("unknown_execution")
 		}
-		if pyjson.Equal(status, "started") || pyjson.Equal(rowValue(row, "outcome"), Steering) {
+		if anyutil.Equal(status, "started") || anyutil.Equal(rowValue(row, "outcome"), Steering) {
 			return runtimeRefusal("stale_generation")
 		}
-		if pyjson.Equal(status, "queued") {
+		if anyutil.Equal(status, "queued") {
 			if _, err := conn.ExecContext(ctx, cancelQueuedAdmissionQ, admissionID); err != nil {
 				return err
 			}
@@ -596,9 +597,9 @@ func (d *SessionDB) CancelSessionInput(ctx context.Context, epoch int64, admissi
 }
 
 // True for a committed steer transfer an exact retry replays
-func SteerReplayed(row *pyjson.Object) bool {
+func SteerReplayed(row *jsonutil.Object) bool {
 	outcome := rowValue(row, "outcome")
-	return pyjson.Equal(rowValue(row, "status"), "terminal") && (pyjson.Equal(outcome, Steering) || pyjson.Equal(outcome, "steered"))
+	return anyutil.Equal(rowValue(row, "status"), "terminal") && (anyutil.Equal(outcome, Steering) || anyutil.Equal(outcome, "steered"))
 }
 
 // Puts a transfer still bound to the claim back in its FIFO place
@@ -614,8 +615,8 @@ func requeueTransfer(ctx context.Context, conn SQLiteConn, admissionID string, e
 }
 
 // Hands a queued admission to the running claim of the generation, true when this call committed the transfer
-func (d *SessionDB) SteerSessionInput(ctx context.Context, epoch int64, admissionID string, generation int64) (*pyjson.Object, bool, error) {
-	var out *pyjson.Object
+func (d *SessionDB) SteerSessionInput(ctx context.Context, epoch int64, admissionID string, generation int64) (*jsonutil.Object, bool, error) {
+	var out *jsonutil.Object
 	committed := false
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
 		committed = false
@@ -630,7 +631,7 @@ func (d *SessionDB) SteerSessionInput(ctx context.Context, epoch int64, admissio
 			out, err = admissionRow(row)
 			return err
 		}
-		if !pyjson.Equal(rowValue(row, "status"), "queued") {
+		if !anyutil.Equal(rowValue(row, "status"), "queued") {
 			return runtimeRefusal("admission_started")
 		}
 		running, err := connRow(ctx, conn, "SELECT 1 AS one FROM session_admissions WHERE target_session_id=? AND status='started' "+
@@ -724,13 +725,13 @@ func (d *SessionDB) RecoverSessionInputs(ctx context.Context, epoch int64) (int6
 // Result this owner captured for a turn before its settlement write failed
 type CapturedResult struct {
 	Outcome string
-	Stored  *pyjson.Object
+	Stored  *jsonutil.Object
 }
 
 // Operator acknowledgement of an unknown turn, resolving it without requeue and committing a captured result of this epoch
 func (d *SessionDB) ResolveUnknownSessionInput(ctx context.Context, epoch int64, admissionID string, generation int64,
-	terminalWrite func(ctx context.Context, conn SQLiteConn, row *pyjson.Object) error, captured *CapturedResult) (*pyjson.Object, error) {
-	var out *pyjson.Object
+	terminalWrite func(ctx context.Context, conn SQLiteConn, row *jsonutil.Object) error, captured *CapturedResult) (*jsonutil.Object, error) {
+	var out *jsonutil.Object
 	err := d.executeWrite(ctx, func(conn SQLiteConn) error {
 		if err := runtimeEpoch(ctx, conn, epoch); err != nil {
 			return err
@@ -742,8 +743,8 @@ func (d *SessionDB) ResolveUnknownSessionInput(ctx context.Context, epoch int64,
 		rowGeneration, genOK := exactInt(rowValue(row, "generation"))
 		sameGeneration := genOK && rowGeneration == generation
 		status := rowValue(row, "status")
-		if sameGeneration && pyjson.Equal(status, "terminal") {
-			replay := pyjson.Equal(rowValue(row, "outcome"), "interrupted")
+		if sameGeneration && anyutil.Equal(status, "terminal") {
+			replay := anyutil.Equal(rowValue(row, "outcome"), "interrupted")
 			if !replay {
 				stored, err := connRow(ctx, conn, "SELECT 1 AS one FROM state_meta WHERE key=?", TerminalResultPrefix+admissionID)
 				if err != nil {
@@ -756,7 +757,7 @@ func (d *SessionDB) ResolveUnknownSessionInput(ctx context.Context, epoch int64,
 				return err
 			}
 		}
-		if !pyjson.Equal(status, "unknown") || !sameGeneration {
+		if !anyutil.Equal(status, "unknown") || !sameGeneration {
 			return runtimeRefusal("stale_generation")
 		}
 		outcome := "interrupted"

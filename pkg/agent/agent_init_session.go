@@ -11,13 +11,13 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Tool definitions of the default registry, the model_tools.get_tool_definitions the tool snapshot reads
@@ -162,7 +162,7 @@ func setSessionStateDefaults(a *AIAgent) {
 	a.autoLoadSkillsResult = autoLoadSkillsResult{}
 	a.frozenWorkspaceSnapshot = nil
 	a.ownsSessionDB = false
-	a.sessionPersistLock = &pythread.RLock{}
+	a.sessionPersistLock = &syncutil.ReentrantMutex{}
 	a.pendingCLIUserMessage = nil
 	a.lastFlushedDBIdx = 0
 	a.sessionDBCreated = false

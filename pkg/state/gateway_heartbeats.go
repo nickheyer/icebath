@@ -3,7 +3,7 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type BackendHeartbeat struct {
@@ -59,7 +59,7 @@ func (d *SessionDB) PruneStaleHeartbeats(ctx context.Context, maxAgeSeconds floa
 }
 
 // Snapshot of every backend heartbeat row, freshest first
-func (d *SessionDB) ListBackendHeartbeats(ctx context.Context) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListBackendHeartbeats(ctx context.Context) ([]*jsonutil.Object, error) {
 	return d.readAll(ctx, "SELECT backend_id, pid, started_at, last_heartbeat, profile, host FROM gateway_heartbeats"+
 		" ORDER BY last_heartbeat DESC")
 }

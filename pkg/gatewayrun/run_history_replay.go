@@ -15,9 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Copy of metadata marked as a mid turn send that must not seal a turn final stream
@@ -53,17 +53,17 @@ func approvalSendOutcome(future *concurrentFuture, timeout float64) string {
 	if result.Success {
 		return "sent"
 	}
-	if raw, ok := result.RawResponse.(map[string]any); ok && pyrepr.Truthy(raw["ambiguous"]) {
-		pkgLog().Warn(fmt.Sprintf("Prompt send AMBIGUOUS (lost ack): %s", pyrepr.Str(raw["error"])))
+	if raw, ok := result.RawResponse.(map[string]any); ok && anyutil.IsTrue(raw["ambiguous"]) {
+		pkgLog().Warn(fmt.Sprintf("Prompt send AMBIGUOUS (lost ack): %s", anyutil.String(raw["error"])))
 		return "ambiguous"
 	}
 	if gateway.DeclinedSend(&result) {
-		pkgLog().Warn(fmt.Sprintf("Prompt send DECLINED by connector egress guard: %s", pyrepr.Str(result.Error)))
+		pkgLog().Warn(fmt.Sprintf("Prompt send DECLINED by connector egress guard: %s", anyutil.String(result.Error)))
 		return "declined"
 	}
 	reason := "unknown error"
-	if pyrepr.Truthy(result.Error) {
-		reason = pyrepr.Str(result.Error)
+	if anyutil.IsTrue(result.Error) {
+		reason = anyutil.String(result.Error)
 	}
 	pkgLog().Warn(fmt.Sprintf("Prompt send failed: %s", reason))
 	return "failed"
@@ -138,7 +138,7 @@ var assistantReplayFields = []string{"reasoning", "reasoning_content", "reasonin
 // Replay entry of a message without tool calls keeping the replay fields, sidecar, identity and durable stamps
 func buildReplayEntry(role string, content any, msg map[string]any, preserveTimestamp bool) map[string]any {
 	entry := map[string]any{"role": role, "content": content}
-	if sidecar, ok := msg["api_content"].(string); ok && sidecar != "" && (role == "user" || role == "assistant") && pyrepr.Equal(content, msg["content"]) {
+	if sidecar, ok := msg["api_content"].(string); ok && sidecar != "" && (role == "user" || role == "assistant") && anyutil.Equal(content, msg["content"]) {
 		entry["api_content"] = sidecar
 	}
 	if role == "assistant" {
@@ -151,13 +151,13 @@ func buildReplayEntry(role string, content any, msg map[string]any, preserveTime
 				if value == nil {
 					continue
 				}
-			} else if !pyrepr.Truthy(value) {
+			} else if !anyutil.IsTrue(value) {
 				continue
 			}
 			entry[key] = value
 		}
 	}
-	if preserveTimestamp && pyrepr.Truthy(msg["timestamp"]) {
+	if preserveTimestamp && anyutil.IsTrue(msg["timestamp"]) {
 		entry["timestamp"] = msg["timestamp"]
 	}
 	for k, v := range state.ScaffoldingReplayFields(msg) {
@@ -170,11 +170,11 @@ func buildReplayEntry(role string, content any, msg map[string]any, preserveTime
 		}
 	}
 	state.CopyIdentityFields(identity, entry)
-	if pyrepr.Truthy(msg[state.DBPersistedMarker]) {
+	if anyutil.IsTrue(msg[state.DBPersistedMarker]) {
 		entry[state.DBPersistedMarker] = true
 	}
 	for _, stamp := range []string{state.MergedDurableRows, state.UnnamedDurableRows, state.RetiredDurableRows} {
-		if pyrepr.Truthy(msg[stamp]) {
+		if anyutil.IsTrue(msg[stamp]) {
 			entry[stamp] = msg[stamp]
 		}
 	}
@@ -195,7 +195,7 @@ func usesTelegramObservedGroupContext(channelPrompt *string) bool {
 // Whether an assistant row keeps its reply only in the api_content sidecar
 func hasReplayableSidecar(role, content any, msg map[string]any) bool {
 	sidecar, ok := msg["api_content"].(string)
-	return role == "assistant" && !pyrepr.Truthy(content) && ok && sidecar != ""
+	return role == "assistant" && !anyutil.IsTrue(content) && ok && sidecar != ""
 }
 
 const (
@@ -214,7 +214,7 @@ func stripAutoContinueNoise(content any) any {
 	if !isAutoContinueNoise(content) {
 		return content
 	}
-	text := pyrepr.Str(content)
+	text := anyutil.String(content)
 	for isAutoContinueNoise(text) {
 		end := strings.Index(text, "]")
 		if end < 0 {
@@ -237,7 +237,7 @@ func buildGatewayAgentHistory(ctx context.Context, history []map[string]any, cha
 			continue
 		}
 		content := msg["content"]
-		if separateObserved && pyrepr.Truthy(msg["observed"]) && role == "user" && pyrepr.Truthy(content) {
+		if separateObserved && anyutil.IsTrue(msg["observed"]) && role == "user" && anyutil.IsTrue(content) {
 			if text, ok := content.(string); ok && injectTimestamps {
 				rendered, err := gateway.RenderUserContentWithTimestamp(text, msg["timestamp"], tz)
 				if err != nil {
@@ -245,7 +245,7 @@ func buildGatewayAgentHistory(ctx context.Context, history []map[string]any, cha
 				}
 				content = rendered
 			}
-			observed = append(observed, strings.TrimSpace(pyrepr.Str(content)))
+			observed = append(observed, strings.TrimSpace(anyutil.String(content)))
 			continue
 		}
 		_, hasCalls := msg["tool_calls"]
@@ -260,7 +260,7 @@ func buildGatewayAgentHistory(ctx context.Context, history []map[string]any, cha
 			agentHistory = append(agentHistory, clean)
 			continue
 		}
-		if !pyrepr.Truthy(content) && !hasReplayableSidecar(role, content, msg) {
+		if !anyutil.IsTrue(content) && !hasReplayableSidecar(role, content, msg) {
 			continue
 		}
 		replayTimestamp := msg["timestamp"]
@@ -268,14 +268,14 @@ func buildGatewayAgentHistory(ctx context.Context, history []map[string]any, cha
 			if text, ok := content.(string); ok {
 				body, embedded := gateway.StripLeadingMessageTimestamps(text, tz)
 				cleanBody := stripAutoContinueNoise(body)
-				if !pyrepr.Equal(cleanBody, body) {
+				if !anyutil.Equal(cleanBody, body) {
 					content = cleanBody
 					if embedded != nil {
 						replayTimestamp = *embedded
 					}
 				}
 			}
-			if !pyrepr.Truthy(content) {
+			if !anyutil.IsTrue(content) {
 				continue
 			}
 		}
@@ -286,20 +286,20 @@ func buildGatewayAgentHistory(ctx context.Context, history []map[string]any, cha
 				return nil, nil, err
 			}
 			sidecar, _ := entry["api_content"].(string)
-			if !pyrepr.Equal(rendered, text) && sidecar != "" {
-				renderedText := pyrepr.Str(rendered)
+			if !anyutil.Equal(rendered, text) && sidecar != "" {
+				renderedText := anyutil.String(rendered)
 				if !(sidecar == renderedText || strings.HasPrefix(sidecar, renderedText+"\n\n")) {
 					delete(entry, "api_content")
 				}
 			}
 			entry["content"] = rendered
 		}
-		if pyrepr.Truthy(msg["mirror"]) {
+		if anyutil.IsTrue(msg["mirror"]) {
 			mirrorSrc, present := msg["mirror_source"]
 			if !present {
 				mirrorSrc = "another session"
 			}
-			entry["content"] = fmt.Sprintf("[Delivered from %s] %s", pyrepr.Str(mirrorSrc), pyrepr.Str(entry["content"]))
+			entry["content"] = fmt.Sprintf("[Delivered from %s] %s", anyutil.String(mirrorSrc), anyutil.String(entry["content"]))
 			delete(entry, "api_content")
 		}
 		agentHistory = append(agentHistory, entry)
@@ -315,7 +315,7 @@ func buildGatewayAgentHistory(ctx context.Context, history []map[string]any, cha
 func selectCachedAgentHistory(persisted []map[string]any, live []map[string]any) ([]map[string]any, bool) {
 	if live != nil && len(live) > len(persisted) {
 		for _, message := range live {
-			if !pyrepr.Truthy(message[state.DBPersistedMarker]) && !state.IsEphemeralScaffolding(message) {
+			if !anyutil.IsTrue(message[state.DBPersistedMarker]) && !state.IsEphemeralScaffolding(message) {
 				return slices.Clone(live), true
 			}
 		}
@@ -351,7 +351,7 @@ func wrapCurrentMessageWithObservedContext(message any, observedContext *string)
 				if !present {
 					text = ""
 				}
-				d["text"] = prefix + pyrepr.Str(text)
+				d["text"] = prefix + anyutil.String(text)
 				return wrapped
 			}
 		}
@@ -423,22 +423,22 @@ func collectAutoAppendMediaTags(messages []map[string]any, historyOffset int, hi
 			continue
 		}
 		callID := ""
-		if pyrepr.Truthy(msg["tool_call_id"]) {
-			callID = pyrepr.Str(msg["tool_call_id"])
-		} else if pyrepr.Truthy(msg["call_id"]) {
-			callID = pyrepr.Str(msg["call_id"])
+		if anyutil.IsTrue(msg["tool_call_id"]) {
+			callID = anyutil.String(msg["tool_call_id"])
+		} else if anyutil.IsTrue(msg["call_id"]) {
+			callID = anyutil.String(msg["call_id"])
 		}
 		toolName, known := toolNames[callID]
 		if !known || !autoAppendMediaToolNames[toolName] {
 			continue
 		}
 		content := ""
-		if pyrepr.Truthy(msg["content"]) {
-			content = pyrepr.Str(msg["content"])
+		if anyutil.IsTrue(msg["content"]) {
+			content = anyutil.String(msg["content"])
 		}
 		if toolName == "image_generate" && !strings.Contains(content, "MEDIA:") {
 			var payload map[string]any
-			if json.Unmarshal([]byte(content), &payload) == nil && payload != nil && pyrepr.Truthy(payload["success"]) {
+			if json.Unmarshal([]byte(content), &payload) == nil && payload != nil && anyutil.IsTrue(payload["success"]) {
 				for _, field := range jsonMediaToolPathFields {
 					path, ok := payload[field].(string)
 					if !ok {

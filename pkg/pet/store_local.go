@@ -10,8 +10,7 @@ import (
 	"strings"
 
 	"github.com/HugoSmits86/nativewebp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -33,7 +32,7 @@ func DisplayNameFor(concept string) string {
 		words = words[:3]
 	}
 	for i, w := range words {
-		words[i] = pystr.Capitalize(w)
+		words[i] = textutil.UpperFirst(strings.ToLower(w))
 	}
 	return strings.TrimSpace(textutil.First(strings.Join(words, " "), 28))
 }
@@ -57,8 +56,8 @@ func UniqueSlug(h, name string) (string, error) {
 }
 
 // Writes the pet.json of a pet directory indented two spaces with ASCII escapes
-func writePetJSON(directory string, meta *pyjson.Object) error {
-	text, err := pyjson.Dumps(meta, pyjson.Indent(2))
+func writePetJSON(directory string, meta *jsonutil.Object) error {
+	text, err := jsonutil.Encode(meta, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -91,7 +90,7 @@ func RegisterLocalPet(h string, spritesheet image.Image, encoded []byte, slug, d
 	if displayName == "" {
 		displayName = slug
 	}
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("id", slug)
 	meta.Set("displayName", displayName)
 	meta.Set("description", description)

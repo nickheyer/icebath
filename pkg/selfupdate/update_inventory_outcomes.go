@@ -9,8 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Restart bookkeeping a plan is reconciled against, a nil pid set or pid map meaning that probe did not run
@@ -26,7 +26,7 @@ type runtimeOutcomeEvidence struct {
 
 // Bare unit or label name of a service value, its service suffix and scope prefix dropped
 func bareServiceName(service any) string {
-	name := strings.TrimSuffix(pyrepr.Str(service), ".service")
+	name := strings.TrimSuffix(anyutil.String(service), ".service")
 	return name[strings.LastIndex(name, "/")+1:]
 }
 
@@ -50,8 +50,8 @@ func gatewayNamedIn(r *RuntimeRecord, names []string) bool {
 }
 
 // One row of kind, profile, pid, mechanism and outcome per planned runtime, reconciled against the restart bookkeeping
-func matchRuntimeOutcomes(plan *UpdatePlan, e runtimeOutcomeEvidence) []*pyjson.Object {
-	outcomes := []*pyjson.Object{}
+func matchRuntimeOutcomes(plan *UpdatePlan, e runtimeOutcomeEvidence) []*jsonutil.Object {
+	outcomes := []*jsonutil.Object{}
 	if plan == nil {
 		return outcomes
 	}
@@ -110,16 +110,16 @@ func matchRuntimeOutcomes(plan *UpdatePlan, e runtimeOutcomeEvidence) []*pyjson.
 		if r.PID != nil {
 			pid = int64(*r.PID)
 		}
-		outcomes = append(outcomes, pyjson.ObjectOf("kind", r.Kind, "profile", r.Profile, "pid", pid, "mechanism", r.RestartVia, "outcome", outcome(r)))
+		outcomes = append(outcomes, jsonutil.ObjectOf("kind", r.Kind, "profile", r.Profile, "pid", pid, "mechanism", r.RestartVia, "outcome", outcome(r)))
 	}
 	return outcomes
 }
 
 // Warns about every runtime the restart phase never touched and reports whether one exists
-func reportUnaccountedRuntimes(w io.Writer, outcomes []*pyjson.Object) bool {
-	field := func(o *pyjson.Object, key string) string { return pyrepr.Str(rowValue(o, key)) }
-	is := func(o *pyjson.Object, key string, want string) bool { return pyrepr.Equal(rowValue(o, key), want) }
-	var external, missed []*pyjson.Object
+func reportUnaccountedRuntimes(w io.Writer, outcomes []*jsonutil.Object) bool {
+	field := func(o *jsonutil.Object, key string) string { return anyutil.String(rowValue(o, key)) }
+	is := func(o *jsonutil.Object, key string, want string) bool { return anyutil.Equal(rowValue(o, key), want) }
+	var external, missed []*jsonutil.Object
 	for _, o := range outcomes {
 		switch {
 		case is(o, "outcome", "external"):

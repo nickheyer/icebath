@@ -15,11 +15,11 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"golang.org/x/text/width"
 )
@@ -99,8 +99,8 @@ var fileMarkerNameRe = mustPyRe(`[\r\n\[\]]+`)
 
 // Python str of a value when truthy, empty otherwise
 func strOrEmpty(value any) string {
-	if pyrepr.Truthy(value) {
-		return pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		return anyutil.String(value)
 	}
 	return ""
 }
@@ -108,7 +108,7 @@ func strOrEmpty(value any) string {
 // First truthy value under the keys in order, nil when none is truthy
 func firstTruthy(mapping map[string]any, keys ...string) any {
 	for _, key := range keys {
-		if value := mapping[key]; pyrepr.Truthy(value) {
+		if value := mapping[key]; anyutil.IsTrue(value) {
 			return value
 		}
 	}
@@ -119,7 +119,7 @@ func firstTruthy(mapping map[string]any, keys ...string) any {
 func slackFileMarker(fileObj map[string]any) string {
 	name := "file"
 	if v := firstTruthy(fileObj, "name", "title", "id"); v != nil {
-		name = pyrepr.Str(v)
+		name = anyutil.String(v)
 	}
 	name = strings.TrimSpace(replaceAll(fileMarkerNameRe, name, func(reMatch) string { return " " }))
 	if name == "" {
@@ -259,8 +259,8 @@ func collectSlackBlockMentions(blocks any) []string {
 		case map[string]any:
 			nodeType, _ := n["type"].(string)
 			quoted := inQuote || nodeType == "rich_text_quote"
-			if nodeType == "user" && !quoted && pyrepr.Truthy(n["user_id"]) {
-				mentions = append(mentions, "<@"+pyrepr.Str(n["user_id"])+">")
+			if nodeType == "user" && !quoted && anyutil.IsTrue(n["user_id"]) {
+				mentions = append(mentions, "<@"+anyutil.String(n["user_id"])+">")
 			}
 			for _, key := range []string{"elements", "element"} {
 				if child, ok := n[key]; ok && child != nil {
@@ -278,7 +278,7 @@ func slackMentionDetectionText(event map[string]any) string {
 	flat := strOrEmpty(event["text"])
 	blocks := event["blocks"]
 	var extra []string
-	if pyrepr.Truthy(blocks) {
+	if anyutil.IsTrue(blocks) {
 		for _, m := range collectSlackBlockMentions(blocks) {
 			if !strings.Contains(flat, m) {
 				extra = append(extra, m)
@@ -312,10 +312,10 @@ func rewriteKnownBangCommand(ctx context.Context, text string) string {
 
 // Workspace independent archives tail of a message permalink, empty without channel or ts
 func slackPermalinkPath(channelID, messageTS any) string {
-	if !pyrepr.Truthy(channelID) || !pyrepr.Truthy(messageTS) {
+	if !anyutil.IsTrue(channelID) || !anyutil.IsTrue(messageTS) {
 		return ""
 	}
-	return "archives/" + pyrepr.Str(channelID) + "/p" + strings.ReplaceAll(pyrepr.Str(messageTS), ".", "")
+	return "archives/" + anyutil.String(channelID) + "/p" + strings.ReplaceAll(anyutil.String(messageTS), ".", "")
 }
 
 // Whether a Slack API error carries the code as its structured error field
@@ -356,7 +356,7 @@ func renderSlackInlineElement(el map[string]any) string {
 		if !present {
 			value = entity.def
 		}
-		return fmt.Sprintf(entity.format, pyrepr.Str(value))
+		return fmt.Sprintf(entity.format, anyutil.String(value))
 	}
 	if elType == "date" {
 		if fallback := slackStrField(el, "fallback"); fallback != "" {
@@ -470,7 +470,7 @@ func extractTextFromSlackBlocks(blocks []any) string {
 					}
 				}
 				if codeText := strings.Join(codeLines, "\n"); codeText != "" {
-					lang := pyrepr.Str(getOr(elem, "language", ""))
+					lang := anyutil.String(getOr(elem, "language", ""))
 					appendLine("```"+lang+"\n"+codeText+"\n```", quoteDepth, bullet)
 				}
 			default:
@@ -576,31 +576,31 @@ func extractTextFromSlackAttachments(attachments []any) string {
 	var lines []string
 	for _, raw := range attachments {
 		att, ok := raw.(map[string]any)
-		if !ok || pyrepr.Truthy(att["is_msg_unfurl"]) {
+		if !ok || anyutil.IsTrue(att["is_msg_unfurl"]) {
 			continue
 		}
 		var got []string
 		for _, key := range []string{"pretext", "title", "text"} {
-			if pyrepr.Truthy(att[key]) {
-				got = append(got, pyrepr.Str(att[key]))
+			if anyutil.IsTrue(att[key]) {
+				got = append(got, anyutil.String(att[key]))
 			}
 		}
 		for _, rawField := range asList(att["fields"]) {
 			if field, ok := rawField.(map[string]any); ok {
 				for _, k := range []string{"title", "value"} {
-					if pyrepr.Truthy(field[k]) {
-						got = append(got, pyrepr.Str(field[k]))
+					if anyutil.IsTrue(field[k]) {
+						got = append(got, anyutil.String(field[k]))
 					}
 				}
 			}
 		}
-		if pyrepr.Truthy(att["blocks"]) {
+		if anyutil.IsTrue(att["blocks"]) {
 			if blockText := extractTextFromSlackBlocks(asList(att["blocks"])); blockText != "" {
 				got = append(got, blockText)
 			}
 		}
-		if len(got) == 0 && pyrepr.Truthy(att["fallback"]) {
-			got = append(got, pyrepr.Str(att["fallback"]))
+		if len(got) == 0 && anyutil.IsTrue(att["fallback"]) {
+			got = append(got, anyutil.String(att["fallback"]))
 		}
 		lines = append(lines, got...)
 	}
@@ -726,7 +726,7 @@ func emptySanitized(v any) bool {
 		return t == ""
 	case []any:
 		return len(t) == 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t.Len() == 0
 	}
 	return false
@@ -744,7 +744,7 @@ func sanitizeBlockValue(value any) any {
 		}
 		return out
 	case map[string]any:
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for _, key := range sortedKeys(t) {
 			item := t[key]
 			if blockScalarKeys[key] {
@@ -759,7 +759,7 @@ func sanitizeBlockValue(value any) any {
 	case nil, string, bool, int, int64, float64, json.Number:
 		return value
 	}
-	return pyrepr.Repr(value)
+	return anyutil.Quote(value)
 }
 
 // Compact redacted JSON view of the non rich text, non table blocks, empty when none remain
@@ -774,9 +774,9 @@ func serializeSlackBlocksForAgent(blocks []any, maxChars int) string {
 	if len(inspectable) == 0 {
 		return ""
 	}
-	payload, err := pyjson.Dumps(sanitizeBlockValue(inspectable), pyjson.Indent(2), pyjson.EnsureASCII(false))
+	payload, err := jsonutil.Encode(sanitizeBlockValue(inspectable), jsonutil.Indent(2))
 	if err != nil {
-		payload = pyrepr.Repr(inspectable)
+		payload = anyutil.Quote(inspectable)
 	}
 	payload = tools.Elide(payload, maxChars)
 	return "[Slack Block Kit payload for this message]\n```json\n" + payload + "\n```"
@@ -832,7 +832,7 @@ var slackSTTSupportedExts = map[string]bool{
 
 // Cache extension matching inbound audio bytes, from the filename, then the mimetype, else m4a
 func resolveSlackAudioExt(fileObj map[string]any, mimetype string) string {
-	_, ext := pypath.Splitext(strings.TrimSpace(strOrEmpty(fileObj["name"])))
+	_, ext := pathutil.SplitExt(strings.TrimSpace(strOrEmpty(fileObj["name"])))
 	nameExt := strings.ToLower(ext)
 	if slackSTTSupportedExts[nameExt] {
 		return nameExt
@@ -853,7 +853,7 @@ func isSlackVoiceClip(fileObj map[string]any) bool {
 // Human label of a Slack file object for user facing diagnostics
 func attachmentLabel(fileObj map[string]any) string {
 	if v := firstTruthy(fileObj, "name", "id"); v != nil {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return "this attachment"
 }
@@ -871,7 +871,7 @@ func appendLinkUnfurls(text string, slackAttachments []any) string {
 		attText := strOrEmpty(att["text"])
 		attFooter := strOrEmpty(att["footer"])
 		attFallback := strOrEmpty(att["fallback"])
-		if pyrepr.Truthy(att["is_msg_unfurl"]) {
+		if anyutil.IsTrue(att["is_msg_unfurl"]) {
 			continue
 		}
 		header := ""

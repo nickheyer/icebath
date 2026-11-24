@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,11 +16,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // User configured provider definitions
@@ -374,7 +375,7 @@ func (s *CommandTokenSource) mint(ctx context.Context) (string, time.Duration, e
 	runCtx, cancel := context.WithTimeout(ctx, mintTimeout)
 	defer cancel()
 	stdout, code, err := s.run(runCtx, s.Command, env)
-	label := pyrepr.StrRepr(s.Label)
+	label := strconv.Quote(s.Label)
 	if runCtx.Err() == context.DeadlineExceeded {
 		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s timed out after %ds", label, int(mintTimeout.Seconds()))}
 	}
@@ -385,25 +386,25 @@ func (s *CommandTokenSource) mint(ctx context.Context) (string, time.Duration, e
 		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s exited %d. Run that provider's key_cmd manually to see why "+
 			"(e.g. `databricks auth login` if its OAuth session expired).", label, code)}
 	}
-	out := pystr.TranslateNewlines(strings.ToValidUTF8(string(stdout), "\uFFFD"))
+	out := textutil.NormalizeNewlines(strings.ToValidUTF8(string(stdout), "\uFFFD"))
 	if strings.TrimSpace(out) == "" {
 		return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s produced no output", label)}
 	}
 	if strings.HasPrefix(strings.TrimLeftFunc(out, unicode.IsSpace), "{") {
-		decoded, _ := pyjson.Loads(out)
-		if payload, isDict := decoded.(*pyjson.Object); isDict && payload != nil {
+		decoded, _ := jsonutil.Decode(out)
+		if payload, isDict := decoded.(*jsonutil.Object); isDict && payload != nil {
 			token := ""
-			if raw, _ := payload.Get("access_token"); pyrepr.Truthy(raw) {
-				token = strings.TrimSpace(pyrepr.Str(raw))
+			if raw, _ := payload.Get("access_token"); anyutil.IsTrue(raw) {
+				token = strings.TrimSpace(anyutil.String(raw))
 			}
 			if token == "" {
 				return "", 0, &CommandTokenError{fmt.Sprintf("key_cmd for provider %s returned JSON without an 'access_token' field", label)}
 			}
-			if ttl, numeric := commandTokenSeconds(payload.GetOr("expires_in", nil)); numeric && ttl > 0 {
+			if ttl, numeric := commandTokenSeconds(payload.ValueOr("expires_in", nil)); numeric && ttl > 0 {
 				return token, time.Duration(ttl * float64(time.Second)), nil
 			}
 			for _, field := range []string{"expiry", "expiresOn"} {
-				if deadline, ok := ParseISOTimestamp(payload.GetOr(field, nil)); ok {
+				if deadline, ok := ParseISOTimestamp(payload.ValueOr(field, nil)); ok {
 					if remaining := time.Until(time.Unix(0, int64(deadline*float64(time.Second)))); remaining > 0 {
 						return token, remaining, nil
 					}

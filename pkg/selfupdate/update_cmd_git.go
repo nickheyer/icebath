@@ -20,16 +20,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -71,7 +71,7 @@ type checkoutMoveFunc func(ctx context.Context, bind checkoutMoveBind) (step map
 // Whether a failure stands for a Python OSError, a custody refusal included
 func isUpdateOSError(err error) bool {
 	var refused *updaterecord.CustodyRefused
-	return err != nil && (errors.As(err, &refused) || pypath.IsOSError(err) || osErrorClasses[pm.ErrorClass(err)])
+	return err != nil && (errors.As(err, &refused) || errorutil.IsSystem(err) || osErrorClasses[pm.ErrorClass(err)])
 }
 
 // Whether a failure stands for a subprocess.SubprocessError, a failed check or a timeout
@@ -80,7 +80,7 @@ func isSubprocessError(err error) bool {
 		return true
 	}
 	var gitTimeout *updaterecord.GitTimeout
-	var expired *pysubprocess.TimeoutExpired
+	var expired *executil.TimeoutError
 	return errors.As(err, &gitTimeout) || errors.As(err, &expired)
 }
 
@@ -315,7 +315,7 @@ func assessParkedBranchSwitch(ctx context.Context, gitCmd []string, cwd, current
 		return false, "", err
 	}
 	aheadText := strings.TrimSpace(ahead.Stdout)
-	if ahead.ReturnCode != 0 || !pystr.StrIsDigit(aheadText) {
+	if ahead.ReturnCode != 0 || !textutil.IsDigits(aheadText) {
 		return false, "unverifiable", nil
 	}
 	aheadCount, ok := pyint.Parse(aheadText)
@@ -668,17 +668,17 @@ func freshCheckoutCommand(root, branch string) string {
 		return "Move-Item -LiteralPath " + quote(root) + " " + quote(aside) + "; if ($?) { " + clone + " }; if ($?) { & " +
 			quote(strings.TrimRight(root, `\/`)+`\setup-icebath.ps1`) + " }"
 	}
-	clone := "git clone " + pyshlex.Quote(repo) + " " + pyshlex.Quote(root)
+	clone := "git clone " + shellutil.Quote(repo) + " " + shellutil.Quote(root)
 	if branch != "" {
-		clone = "git clone --branch " + pyshlex.Quote(branch) + " " + pyshlex.Quote(repo) + " " + pyshlex.Quote(root)
+		clone = "git clone --branch " + shellutil.Quote(branch) + " " + shellutil.Quote(repo) + " " + shellutil.Quote(root)
 	}
-	return "mv " + pyshlex.Quote(root) + " " + pyshlex.Quote(aside) + " && " + clone + " && " +
-		pyshlex.Quote(strings.TrimRight(root, "/")+"/setup-icebath.sh")
+	return "mv " + shellutil.Quote(root) + " " + shellutil.Quote(aside) + " && " + clone + " && " +
+		shellutil.Quote(strings.TrimRight(root, "/")+"/setup-icebath.sh")
 }
 
 // Repair text for a checkout git rejects, a fresh checkout of the update branch set up in its place
 func damagedCheckoutMessage(ctx context.Context, root, branch string) string {
-	return "✗ This Icebath checkout's git data is damaged (git no longer recognizes " + pypath.PathJoin(root, ".git") + ")," +
+	return "✗ This Icebath checkout's git data is damaged (git no longer recognizes " + pathutil.Join(root, ".git") + ")," +
 		" so it cannot be updated in place.\n" +
 		"  Move it aside and set up a fresh checkout; your config and chats in " + home.Display(home.Dir(ctx)) +
 		" stay where they are:\n    " + freshCheckoutCommand(root, branch)
@@ -703,15 +703,15 @@ func checkoutRejectedByGit(ctx context.Context, stderr string, gitCmd []string, 
 	if top.ReturnCode != 0 {
 		return true, nil
 	}
-	seen, err := pypath.Realpath(strings.TrimSpace(top.Stdout), pypath.Lax)
+	seen, err := pathutil.Resolve(strings.TrimSpace(top.Stdout))
 	if err != nil {
 		return false, err
 	}
-	own, err := pypath.Realpath(root, pypath.Lax)
+	own, err := pathutil.Resolve(root)
 	if err != nil {
 		return false, err
 	}
-	return pypath.Normcase(seen) != pypath.Normcase(own), nil
+	return pathutil.FoldCase(seen) != pathutil.FoldCase(own), nil
 }
 
 // Prints the classified fetch diagnosis and bounded raw stderr, a fresh checkout of branch for a rejected one
@@ -719,14 +719,14 @@ func printFetchFailure(ctx context.Context, w io.Writer, stderr string, gitCmd [
 	stderr = strings.TrimSpace(stderr)
 	damaged := false
 	if root != "" {
-		rejected, err := checkoutRejectedByGit(ctx, stderr, gitCmd, pypath.PathStr(root))
+		rejected, err := checkoutRejectedByGit(ctx, stderr, gitCmd, filepath.Clean(root))
 		if err != nil {
 			return err
 		}
 		damaged = rejected
 	}
 	if damaged {
-		fmt.Fprintln(w, damagedCheckoutMessage(ctx, pypath.PathStr(root), branch))
+		fmt.Fprintln(w, damagedCheckoutMessage(ctx, filepath.Clean(root), branch))
 	} else {
 		fmt.Fprintln(w, ClassifyFetchFailure(stderr))
 	}
@@ -805,30 +805,30 @@ func npmLockfileOwners(repoRoot string) (map[string]bool, error) {
 	owners := map[string]bool{manifestDirKey("."): true}
 	raw, err := os.ReadFile(filepath.Join(repoRoot, "package.json"))
 	if err != nil {
-		if pypath.IsOSError(err) {
+		if errorutil.IsSystem(err) {
 			return owners, nil
 		}
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return owners, nil
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return owners, nil
 	}
-	pkg, ok := pyjson.AsObject(parsed)
+	pkg, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		return nil, &pm.PyError{Class: "AttributeError", Message: "package-lock.json is " + errchain.Kind(parsed) + " where a mapping was expected"}
 	}
 	var workspaces any = []any{}
-	if value, set := pkg.Vals["workspaces"]; set {
+	if value, set := pkg.Get("workspaces"); set {
 		workspaces = value
 	}
-	if nested, isObject := pyjson.AsObject(workspaces); isObject {
+	if nested, isObject := jsonutil.AsObject(workspaces); isObject {
 		workspaces = []any{}
-		if value, set := nested.Vals["packages"]; set {
+		if value, set := nested.Get("packages"); set {
 			workspaces = value
 		}
 	}
@@ -837,7 +837,7 @@ func npmLockfileOwners(repoRoot string) (map[string]bool, error) {
 		return owners, nil
 	}
 	for _, pattern := range patterns {
-		matches, err := pypath.Glob(repoRoot, pyrepr.Str(pattern))
+		matches, err := pathutil.Glob(repoRoot, anyutil.String(pattern))
 		if err != nil {
 			continue
 		}
@@ -857,7 +857,7 @@ func npmLockfileOwners(repoRoot string) (map[string]bool, error) {
 
 // Comparison key of a manifest directory the way two pathlib paths compare equal
 func manifestDirKey(dir string) string {
-	return pypath.Normcase(pypath.PathStr(dir))
+	return pathutil.FoldCase(filepath.Clean(dir))
 }
 
 // The checkout move of a run with no paused gateways, the step running unbound
@@ -885,7 +885,7 @@ func lockfileChurnSteps(ctx context.Context, w io.Writer, gitCmd []string, repoR
 		path := strings.TrimSpace(line)
 		changed = append(changed, path)
 		if strings.HasSuffix(path, "package.json") {
-			dirtyManifests[manifestDirKey(pypath.PathParent(path))] = true
+			dirtyManifests[manifestDirKey(filepath.Dir(filepath.Clean(path)))] = true
 		}
 	}
 	rootOwners, err := npmLockfileOwners(repoRoot)
@@ -903,7 +903,7 @@ func lockfileChurnSteps(ctx context.Context, w io.Writer, gitCmd []string, repoR
 		if !strings.HasSuffix(path, "package-lock.json") {
 			continue
 		}
-		lockDir := manifestDirKey(pypath.PathParent(path))
+		lockDir := manifestDirKey(filepath.Dir(filepath.Clean(path)))
 		atRoot := lockDir == manifestDirKey(".")
 		if (atRoot && rootDirty) || (!atRoot && dirtyManifests[lockDir]) {
 			continue

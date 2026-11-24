@@ -19,8 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var hubCronRegistry = &handlerRegistry{}
@@ -236,7 +236,7 @@ func cronJobsRun(ctx context.Context, rid any, params map[string]any) (map[strin
 	}
 	job, err := cron.ResolveJobRef(ctx, home.Dir(ctx), p.JobID)
 	if err != nil {
-		return ok(rid, tuigateway.Plain(tuigateway.CronJobResult{Output: pyrepr.ExceptionMessage(err)})), nil
+		return ok(rid, tuigateway.Plain(tuigateway.CronJobResult{Output: err.Error()})), nil
 	}
 	if job == nil {
 		return rpcErr(rid, 4172, "no scheduled job "+p.JobID, nil), nil
@@ -278,7 +278,7 @@ func cronJobsRuns(ctx context.Context, rid any, params map[string]any) (map[stri
 	}
 	text := func(r map[string]any, k string) string {
 		if v, ok := r[k]; ok && v != nil {
-			return pyrepr.Str(v)
+			return anyutil.String(v)
 		}
 		return ""
 	}

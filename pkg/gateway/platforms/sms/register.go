@@ -12,8 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Standalone send markdown rules, looser than the shared stripper and kept in order
@@ -49,7 +49,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if pconfig != nil {
 		rawToken = pconfig.APIKey
 	}
-	if !pyrepr.Truthy(rawToken) {
+	if !anyutil.IsTrue(rawToken) {
 		token, err := gateway.GetScopedSecret(ctx, "TWILIO_AUTH_TOKEN", "", false)
 		if err != nil {
 			return nil, err
@@ -57,8 +57,8 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		rawToken = token
 	}
 	authToken := ""
-	if pyrepr.Truthy(rawToken) {
-		authToken = strings.TrimSpace(pyrepr.Str(rawToken))
+	if anyutil.IsTrue(rawToken) {
+		authToken = strings.TrimSpace(anyutil.String(rawToken))
 	}
 	accountSID, err := gateway.GetScopedSecret(ctx, "TWILIO_ACCOUNT_SID", "", false)
 	if err != nil {

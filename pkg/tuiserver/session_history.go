@@ -1,7 +1,7 @@
 package tuiserver
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Message of a raised or returned error, the type name when an exception carries no text
@@ -10,7 +10,7 @@ func errorMessage(err any) string {
 		if msg := e.Error(); msg != "" {
 			return msg
 		}
-		return pyrepr.TypeName(e)
+		return anyutil.Kind(e)
 	}
-	return pyrepr.Str(err)
+	return anyutil.String(err)
 }

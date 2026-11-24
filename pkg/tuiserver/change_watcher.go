@@ -16,10 +16,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Active profile home of the watcher probes, the context override else the launch home
@@ -196,7 +197,7 @@ func readSessionRowsSig(dbPath string, ns int64, known bool) (signature any, err
 		if err := rows.Scan(targets...); err != nil {
 			return nil, err
 		}
-		digest.Write([]byte(pyrepr.Repr(pyrepr.Tuple(values))))
+		digest.Write([]byte(anyutil.Quote(pyrepr.Tuple(values))))
 		digest.Write([]byte{0})
 	}
 	if err := rows.Err(); err != nil {
@@ -354,7 +355,7 @@ func ensureSkinWatcher(ctx context.Context) {
 		for {
 			time.Sleep(changeWatcherTick)
 			tuihost.BroadcastSkinIfChanged(loop)
-			broadcastWatchedChanges(loop, pythread.Monotonic())
+			broadcastWatchedChanges(loop, timeutil.Monotonic())
 		}
 	}()
 }

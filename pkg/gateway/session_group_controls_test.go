@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Room service double answering only what a groups.list page reads, rooms outside m* refused
@@ -15,7 +15,7 @@ type pagingRoomService struct{ dbPath string }
 
 func (s *pagingRoomService) StorePath() string             { return s.dbPath }
 func (s *pagingRoomService) RuntimeStatus() map[string]any { return map[string]any{"running": true} }
-func (s *pagingRoomService) CheckAdmission(context.Context, SessionRef, *pyjson.Object) error {
+func (s *pagingRoomService) CheckAdmission(context.Context, SessionRef, *jsonutil.Object) error {
 	return nil
 }
 func (s *pagingRoomService) AuthorizeRoom(_ context.Context, _, roomID any, _ bool, _ state.SQLiteConn) (bool, error) {
@@ -43,13 +43,13 @@ func TestGroupsListPagesTheActorVisibleRooms(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		page := result.(*pyjson.Object)
+		page := result.(*jsonutil.Object)
 		var ids []string
-		for _, room := range page.GetOr("rooms", nil).([]any) {
+		for _, room := range page.ValueOr("rooms", nil).([]any) {
 			ids = append(ids, room.(map[string]any)["room_id"].(string))
 		}
 		pages = append(pages, ids)
-		next := page.GetOr("next_offset", nil)
+		next := page.ValueOr("next_offset", nil)
 		if next == nil {
 			break
 		}

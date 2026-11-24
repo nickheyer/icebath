@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Plugins dir of the active home when it exists
@@ -34,7 +34,7 @@ var pluginDirRead = os.ReadDir
 func pathlibProbe(p string, wantDir bool) (bool, error) {
 	st, err := pluginDirStat(p)
 	if err != nil {
-		if pypath.PathlibIgnoredError(err) {
+		if pathutil.IsMissing(err) {
 			return false, nil
 		}
 		return false, err
@@ -59,8 +59,8 @@ func ReadPluginDescription(dir string) string {
 	if !ok {
 		return ""
 	}
-	if v := m["description"]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := m["description"]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -84,7 +84,7 @@ func ProbeAvailability(load func() (any, error)) (ok bool) {
 		ctx := context.Background()
 		if v.HasMethod("is_available") {
 			res, err := v.Call(ctx, "is_available", nil, nil)
-			return err == nil && pyrepr.Truthy(res)
+			return err == nil && anyutil.IsTrue(res)
 		}
 		if _, err := v.Get(ctx, "is_available"); err == nil {
 			return false

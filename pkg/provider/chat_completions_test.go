@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ---- think scrubber (tests/agent/test_think_scrubber.py) ----
@@ -351,7 +351,7 @@ func TestSeparateGluedReasoningBlocks(t *testing.T) {
 // ---- streamed reasoning details (tests/agent/test_streamed_reasoning_details.py) ----
 
 func TestStreamedReasoningDetailsMergeAndBackfill(t *testing.T) {
-	var acc []*pyjson.Object
+	var acc []*jsonutil.Object
 	acc = appendStreamedReasoningDetail(acc, map[string]any{"type": "reasoning.text", "text": "The user "})
 	acc = appendStreamedReasoningDetail(acc, map[string]any{"type": "reasoning.text", "text": "wants X.", "signature": "sig1"})
 	acc = appendStreamedReasoningDetail(acc, map[string]any{"type": "reasoning.encrypted", "data": "AAAA"})
@@ -360,15 +360,15 @@ func TestStreamedReasoningDetailsMergeAndBackfill(t *testing.T) {
 	acc = appendStreamedReasoningDetail(acc, map[string]any{"type": "reasoning.summary", "summary": "s2"})
 	var types []string
 	for _, d := range acc {
-		types = append(types, stringOf(d.Vals["type"]))
+		types = append(types, stringOf(d.Value("type")))
 	}
 	if fmt.Sprint(types) != "[reasoning.text reasoning.encrypted reasoning.encrypted reasoning.summary]" {
 		t.Fatalf("types %v", types)
 	}
-	if acc[0].Vals["text"] != "The user wants X." || acc[0].Vals["signature"] != "sig1" || acc[0].Len() != 3 {
+	if acc[0].Value("text") != "The user wants X." || acc[0].Value("signature") != "sig1" || acc[0].Len() != 3 {
 		t.Fatalf("first %v", acc[0])
 	}
-	if acc[3].Vals["summary"] != "s1 s2" {
+	if acc[3].Value("summary") != "s1 s2" {
 		t.Fatalf("summary %v", acc[3])
 	}
 	if streamedReasoningDetailText(map[string]any{"type": "reasoning.encrypted", "data": "x", "text": "not readable"}) != "" {

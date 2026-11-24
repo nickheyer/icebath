@@ -25,7 +25,7 @@ func guardSession(t *testing.T, db *SessionDB, sid string) map[string]any {
 		return nil
 	}
 	out := map[string]any{}
-	for _, k := range row.Keys {
+	for _, k := range row.Keys() {
 		out[k] = rowValue(row, k)
 	}
 	return out

@@ -2,21 +2,20 @@ package telegram
 
 import (
 	"context"
+	"html"
 	"sort"
 	"strconv"
 	"strings"
 	"unicode/utf16"
 
 	"github.com/go-telegram/bot/models"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
 )
 
 // Appends the decision to the prompt and drops its buttons, the decision only edit running when the body is unusable or too long
 func editKeepingPrompt(ctx context.Context, a *TelegramAdapter, q callbackQuery, decision string) error {
 	if m := q.message(); m != nil && m.Text != "" {
 		body := strings.ReplaceAll(messageTextHTML(m), a.EADeadlineLine(ctx), "")
-		err := q.editMessageText(ctx, body+"\n\n— "+pyhtml.Escape(decision, true), models.ParseModeHTML, nil)
+		err := q.editMessageText(ctx, body+"\n\n— "+html.EscapeString(decision), models.ParseModeHTML, nil)
 		if err == nil {
 			return nil
 		}
@@ -67,7 +66,7 @@ func parseEntitiesHTML(units []uint16, entities []models.MessageEntity, offset i
 			}
 		}
 		text := utf16Span(units, entity.Offset-offset, entity.Offset-offset+entity.Length)
-		escaped := pyhtml.Escape(text, true)
+		escaped := html.EscapeString(text)
 		if len(nested) > 0 {
 			inner := utf16.Encode([]rune(text))
 			escaped = parseEntitiesHTML(inner, nested, entity.Offset)
@@ -109,11 +108,11 @@ func parseEntitiesHTML(units []uint16, entities []models.MessageEntity, offset i
 		default:
 			insert = escaped
 		}
-		out.WriteString(pyhtml.Escape(utf16Span(units, lastOffset, entity.Offset-offset), true))
+		out.WriteString(html.EscapeString(utf16Span(units, lastOffset, entity.Offset-offset)))
 		out.WriteString(insert)
 		lastOffset = entity.Offset - offset + entity.Length
 	}
-	out.WriteString(pyhtml.Escape(utf16Span(units, lastOffset, len(units)), true))
+	out.WriteString(html.EscapeString(utf16Span(units, lastOffset, len(units))))
 	return out.String()
 }
 

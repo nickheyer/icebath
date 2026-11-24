@@ -1,7 +1,7 @@
 package kanban
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One board task row
@@ -78,8 +78,8 @@ func TaskFromRow(row *Row) (*Task, error) {
 		t.SkillsSet = true
 		t.Skills = []string{}
 		for _, s := range list {
-			if pyrepr.Truthy(s) {
-				t.Skills = append(t.Skills, pyrepr.Str(s))
+			if anyutil.IsTrue(s) {
+				t.Skills = append(t.Skills, anyutil.String(s))
 			}
 		}
 	}
@@ -87,7 +87,7 @@ func TaskFromRow(row *Row) (*Task, error) {
 	if !truthy(recurrences) {
 		recurrences = int64(0)
 	}
-	n, err := pyIntOf(recurrences)
+	n, err := cellIntOf(recurrences)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ type Run struct {
 
 // Run from a task_runs row
 func RunFromRow(row *Row) (*Run, error) {
-	id, err := pyIntOf(row.Get("id"))
+	id, err := cellIntOf(row.Get("id"))
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +215,7 @@ func cellStr(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Optional text of a cell
@@ -229,7 +229,7 @@ func cellOptStr(v any) *string {
 
 // Integer of a cell, zero for null or an unparseable value
 func cellInt(v any) int64 {
-	n, _ := pyIntOf(v)
+	n, _ := cellIntOf(v)
 	return n
 }
 

@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -174,7 +174,7 @@ func reaperExclusionPids(ctx context.Context, extraExclude map[int]bool) map[int
 		}
 	}
 	var recorded []int
-	for _, record := range []*pyjson.Object{readPidRecord(""), readGatewayLockRecord("")} {
+	for _, record := range []*jsonutil.Object{readPidRecord(""), readGatewayLockRecord("")} {
 		if p, ok := pidFromRecord(record, "pid"); ok {
 			recorded = append(recorded, p)
 		}

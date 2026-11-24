@@ -15,12 +15,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypwd"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 // Seconds apply waits for the default gateway to confirm serving every profile
@@ -271,19 +272,19 @@ func planTail(plan *MigrationPlan) []string {
 }
 
 // Secondary records of the manifest, false when a hand edited record lacks its profile or home
-func manifestSecondaries(manifest *pyjson.Object) ([]*pyjson.Object, bool) {
+func manifestSecondaries(manifest *jsonutil.Object) ([]*jsonutil.Object, bool) {
 	raw, present := manifest.Get("secondaries")
 	if !present {
-		return []*pyjson.Object{}, true
+		return []*jsonutil.Object{}, true
 	}
 	list, ok := raw.([]any)
 	if !ok {
 		return nil, false
 	}
-	recs := make([]*pyjson.Object, 0, len(list))
+	recs := make([]*jsonutil.Object, 0, len(list))
 	for _, item := range list {
-		rec, ok := item.(*pyjson.Object)
-		if !ok || !pyrepr.Truthy(rec.GetOr("profile", nil)) || !pyrepr.Truthy(rec.GetOr("home", nil)) {
+		rec, ok := item.(*jsonutil.Object)
+		if !ok || !anyutil.IsTrue(rec.ValueOr("profile", nil)) || !anyutil.IsTrue(rec.ValueOr("home", nil)) {
 			return nil, false
 		}
 		recs = append(recs, rec)
@@ -292,16 +293,16 @@ func manifestSecondaries(manifest *pyjson.Object) ([]*pyjson.Object, bool) {
 }
 
 func serviceFromDict(service any) *ServiceUnit {
-	rec, ok := service.(*pyjson.Object)
-	if !ok || !pyrepr.Truthy(rec.GetOr("kind", nil)) {
+	rec, ok := service.(*jsonutil.Object)
+	if !ok || !anyutil.IsTrue(rec.ValueOr("kind", nil)) {
 		return nil
 	}
-	return &ServiceUnit{Kind: pyrepr.Str(rec.GetOr("kind", nil)), System: pyrepr.Truthy(rec.GetOr("system", nil))}
+	return &ServiceUnit{Kind: anyutil.String(rec.ValueOr("kind", nil)), System: anyutil.IsTrue(rec.ValueOr("system", nil))}
 }
 
 // Every service a record names, services when present else the single service of an older manifest
-func recordedServices(rec *pyjson.Object) []ServiceUnit {
-	if list, ok := rec.GetOr("services", nil).([]any); ok {
+func recordedServices(rec *jsonutil.Object) []ServiceUnit {
+	if list, ok := rec.ValueOr("services", nil).([]any); ok {
 		out := []ServiceUnit{}
 		for _, item := range list {
 			if s := serviceFromDict(item); s != nil {
@@ -310,21 +311,21 @@ func recordedServices(rec *pyjson.Object) []ServiceUnit {
 		}
 		return out
 	}
-	if s := serviceFromDict(rec.GetOr("service", nil)); s != nil {
+	if s := serviceFromDict(rec.ValueOr("service", nil)); s != nil {
 		return []ServiceUnit{*s}
 	}
 	return []ServiceUnit{}
 }
 
-func recordedRunAsUser(rec *pyjson.Object) string {
-	user, _ := rec.GetOr("run_as_user", nil).(string)
+func recordedRunAsUser(rec *jsonutil.Object) string {
+	user, _ := rec.ValueOr("run_as_user", nil).(string)
 	return user
 }
 
 // Default record then the secondary records that are dicts
-func manifestRecords(manifest *pyjson.Object) []*pyjson.Object {
-	recs := []*pyjson.Object{}
-	if d, ok := manifest.GetOr("default", nil).(*pyjson.Object); ok {
+func manifestRecords(manifest *jsonutil.Object) []*jsonutil.Object {
+	recs := []*jsonutil.Object{}
+	if d, ok := manifest.ValueOr("default", nil).(*jsonutil.Object); ok {
 		recs = append(recs, d)
 	}
 	secondaries, _ := manifestSecondaries(manifest)
@@ -332,7 +333,7 @@ func manifestRecords(manifest *pyjson.Object) []*pyjson.Object {
 }
 
 // Service manager and User the resumed default install uses, read from the recorded footprint
-func targetFromManifest(manifest *pyjson.Object) (*ServiceUnit, string) {
+func targetFromManifest(manifest *jsonutil.Object) (*ServiceUnit, string) {
 	recs := manifestRecords(manifest)
 	var target *ServiceUnit
 	for _, r := range recs {
@@ -367,35 +368,35 @@ func manifestPath(defaultHome string) string {
 }
 
 // Manifest on disk, nil when missing, unreadable, malformed or not an object
-func readManifest(defaultHome string) *pyjson.Object {
+func readManifest(defaultHome string) *jsonutil.Object {
 	raw, err := os.ReadFile(manifestPath(defaultHome))
 	if err != nil || !utf8.Valid(raw) {
 		return nil
 	}
-	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+	data, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
 		return nil
 	}
-	obj, _ := data.(*pyjson.Object)
+	obj, _ := data.(*jsonutil.Object)
 	return obj
 }
 
 // Whether a live default has not yet recorded serving every unparked profile the manifest migrated
-func manifestNotYetServed(manifest *pyjson.Object, liveServed []string) bool {
+func manifestNotYetServed(manifest *jsonutil.Object, liveServed []string) bool {
 	if manifest == nil {
 		return false
 	}
 	migrated := map[string]bool{"default": true}
 	for _, r := range manifestRecords(manifest) {
-		h := r.GetOr("home", nil)
-		if pyrepr.Truthy(h) && profiles.ProfileIsParked(pyrepr.Str(h)) {
+		h := r.ValueOr("home", nil)
+		if anyutil.IsTrue(h) && profiles.ProfileIsParked(anyutil.String(h)) {
 			continue
 		}
-		name := r.GetOr("profile", nil)
-		if !pyrepr.Truthy(name) {
+		name := r.ValueOr("profile", nil)
+		if !anyutil.IsTrue(name) {
 			name = "default"
 		}
-		migrated[pyrepr.Str(name)] = true
+		migrated[anyutil.String(name)] = true
 	}
 	served := map[string]bool{}
 	for _, s := range liveServed {
@@ -417,15 +418,15 @@ func reconcileStandaloneRuntime(ctx context.Context, defaultHome string, seconda
 		return nil
 	}
 	runtime.Set("served_profiles", []any{})
-	if platforms, ok := runtime.GetOr("platforms", nil).(*pyjson.Object); ok {
+	if platforms, ok := runtime.ValueOr("platforms", nil).(*jsonutil.Object); ok {
 		prefixes := []string{}
 		for name := range secondaryNames {
 			if name != "" {
 				prefixes = append(prefixes, name+":")
 			}
 		}
-		kept := pyjson.NewObject()
-		for _, key := range platforms.Keys {
+		kept := jsonutil.NewObject()
+		for _, key := range platforms.Keys() {
 			owned := false
 			for _, prefix := range prefixes {
 				if strings.HasPrefix(key, prefix) {
@@ -434,12 +435,12 @@ func reconcileStandaloneRuntime(ctx context.Context, defaultHome string, seconda
 				}
 			}
 			if !owned {
-				kept.Set(key, platforms.Vals[key])
+				kept.Set(key, platforms.Value(key))
 			}
 		}
 		runtime.Set("platforms", kept)
 	}
-	return config.AtomicJSONWriteWith(ctx, path, runtime, pyjson.Separators(",", ":"))
+	return config.AtomicJSONWriteWith(ctx, path, runtime)
 }
 
 // Polls the default's served record until it covers expected, the last record read on timeout
@@ -576,7 +577,7 @@ var migratePreflightApply = func(ctx context.Context, plan *MigrationPlan, targe
 				return "", err
 			}
 		} else {
-			_, err := pypwd.Getpwnam(runAsUser)
+			_, err := userutil.Lookup(runAsUser)
 			var keyErr *pypwd.KeyError
 			if errors.As(err, &keyErr) {
 				return fmt.Sprintf("default: the recorded service user '%s' does not exist on this host", runAsUser), nil
@@ -673,7 +674,7 @@ func ApplyMigration(ctx context.Context, w io.Writer, plan *MigrationPlan, serve
 		for _, p := range plan.StandaloneSecondaries() {
 			secondaries = append(secondaries, p.ToDict())
 		}
-		manifest := pyjson.ObjectOf("version", int64(1), "migrated_at", time.Now().Format("2006-01-02T15:04:05-0700"),
+		manifest := jsonutil.ObjectOf("version", int64(1), "migrated_at", time.Now().Format("2006-01-02T15:04:05-0700"),
 			"flag_was", plan.MultiplexFlagOn, "default", plan.Default().ToDict(), "secondaries", secondaries)
 		if err := config.AtomicJSONWrite(ctx, manifestPath(plan.DefaultHome), manifest); err != nil {
 			return false, err
@@ -744,10 +745,13 @@ func ApplyMigration(ctx context.Context, w io.Writer, plan *MigrationPlan, serve
 
 // Bounded wait for a gateway that is actually up for the home, zero on timeout
 var migrateWaitForLiveGateway = func(h string, timeout time.Duration) int {
-	return pydeadline.PollUntil(func() (int, bool) {
-		pid := migrateLiveGatewayPid(h)
-		return pid, pid != 0
-	}, timeout, 500*time.Millisecond)
+	return syncutil.PollUntil(context.Background(),
+
+		timeout, 500*time.Millisecond, func() (int, bool) {
+			pid := migrateLiveGatewayPid(h)
+			return pid, pid != 0
+		})
+
 }
 
 // Compensator of a failed apply, puts the default's one gateway back on the recorded flag
@@ -767,7 +771,7 @@ func RollbackMigration(ctx context.Context, w io.Writer, defaultHome string) (bo
 		fmt.Fprintf(w, "✗ Malformed secondary records in %s; fix or delete the manifest.\n", manifestPath(defaultHome))
 		return false, nil
 	}
-	if err := migrateWriteMultiplexFlag(ctx, defaultHome, pyrepr.Truthy(manifest.GetOr("flag_was", false))); err != nil {
+	if err := migrateWriteMultiplexFlag(ctx, defaultHome, anyutil.IsTrue(manifest.ValueOr("flag_was", false))); err != nil {
 		if isSystemExit(err) {
 			return false, err
 		}
@@ -777,7 +781,7 @@ func RollbackMigration(ctx context.Context, w io.Writer, defaultHome string) (bo
 	}
 	fmt.Fprintln(w, "  ✓ default: gateway.multiplex_profiles restored")
 	services := []ServiceUnit{}
-	if rec, ok := manifest.GetOr("default", nil).(*pyjson.Object); ok {
+	if rec, ok := manifest.ValueOr("default", nil).(*jsonutil.Object); ok {
 		services = recordedServices(rec)
 	}
 	if len(services) == 0 {
@@ -791,7 +795,7 @@ func RollbackMigration(ctx context.Context, w io.Writer, defaultHome string) (bo
 	names := make([]string, len(secondaries))
 	nameSet := map[string]bool{}
 	for i, rec := range secondaries {
-		names[i] = pyrepr.Str(rec.GetOr("profile", nil))
+		names[i] = anyutil.String(rec.ValueOr("profile", nil))
 		nameSet[names[i]] = true
 	}
 	if err := reconcileStandaloneRuntime(ctx, defaultHome, nameSet); err != nil {
@@ -805,7 +809,7 @@ func RollbackMigration(ctx context.Context, w io.Writer, defaultHome string) (bo
 	fmt.Fprintln(w, "  ✓ default: cleared multiplex-owned runtime status")
 	anyRecorded := false
 	for _, rec := range secondaries {
-		if pyrepr.Truthy(rec.GetOr("pid", nil)) || len(recordedServices(rec)) > 0 {
+		if anyutil.IsTrue(rec.ValueOr("pid", nil)) || len(recordedServices(rec)) > 0 {
 			anyRecorded = true
 			break
 		}

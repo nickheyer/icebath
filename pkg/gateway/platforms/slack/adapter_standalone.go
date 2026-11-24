@@ -15,11 +15,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	slackapi "github.com/slack-go/slack"
 )
 
@@ -27,7 +27,7 @@ const slackDMCacheMax = 5000
 
 var (
 	slackDMCacheMu sync.Mutex
-	slackDMCache   = pydict.New[string, string]()
+	slackDMCache   = orderedutil.NewMap[string, string]()
 )
 
 // Bounds the standalone DM cache oldest insertion first
@@ -61,18 +61,18 @@ func loadSlackBotTokens(ctx context.Context, rawToken string, quiet bool) []stri
 	var saved any
 	if err == nil {
 		var text string
-		if text, err = pystr.DecodeUTF8Sig(raw); err == nil {
-			saved, err = pyjson.Loads(text)
+		if text, err = textutil.DecodeUTF8(textutil.TrimBOM(raw)); err == nil {
+			saved, err = jsonutil.Decode(text)
 		}
 	}
 	if err == nil {
-		obj, ok := saved.(*pyjson.Object)
+		obj, ok := saved.(*jsonutil.Object)
 		if !ok {
-			err = fmt.Errorf("'%s' object has no attribute 'items'", pyrepr.TypeName(pyjson.Plain(saved)))
+			err = fmt.Errorf("'%s' object has no attribute 'items'", anyutil.Kind(jsonutil.Plain(saved)))
 		} else {
-			for _, teamID := range obj.Keys {
+			for _, teamID := range obj.Keys() {
 				entry, _ := obj.Get(teamID)
-				entryMap, isMap := pyjson.Plain(entry).(map[string]any)
+				entryMap, isMap := jsonutil.Plain(entry).(map[string]any)
 				tok := ""
 				if isMap {
 					tok = strOrEmpty(entryMap["token"])
@@ -84,7 +84,7 @@ func loadSlackBotTokens(ctx context.Context, rawToken string, quiet bool) []stri
 				if !quiet {
 					label := teamID
 					if isMap {
-						label = pyrepr.Str(getOr(entryMap, "team_name", teamID))
+						label = anyutil.String(getOr(entryMap, "team_name", teamID))
 					}
 					pkgLog().Info(fmt.Sprintf("[Slack] Loaded saved token for workspace %s", label))
 				}
@@ -160,7 +160,7 @@ func resolveSlackUserDM(ctx context.Context, token, userID string) string {
 		pkgLog().Warn(fmt.Sprintf("[Slack] conversations.open exception for %s: %s", userID, standaloneErrorText(ctx, err)))
 		return ""
 	}
-	if pyrepr.Truthy(data["ok"]) {
+	if anyutil.IsTrue(data["ok"]) {
 		if channelID := strOrEmpty(asMap(getOr(data, "channel", map[string]any{}))["id"]); channelID != "" {
 			slackDMCacheMu.Lock()
 			slackDMCache.Set(cacheKey, channelID)
@@ -169,7 +169,7 @@ func resolveSlackUserDM(ctx context.Context, token, userID string) string {
 			return channelID
 		}
 	}
-	pkgLog().Warn(fmt.Sprintf("[Slack] conversations.open failed for %s: %s", userID, pyrepr.Str(getOr(data, "error", "unknown"))))
+	pkgLog().Warn(fmt.Sprintf("[Slack] conversations.open failed for %s: %s", userID, anyutil.String(getOr(data, "error", "unknown"))))
 	return ""
 }
 
@@ -211,7 +211,7 @@ func standaloneUploadFile(ctx context.Context, client *webClient, chatID, mediaP
 		payload = result.Data
 	}
 	if payload["ok"] == false {
-		return gateway.SendError("Slack API error: " + pyrepr.Str(getOr(payload, "error", "unknown"))), nil
+		return gateway.SendError("Slack API error: " + anyutil.String(getOr(payload, "error", "unknown"))), nil
 	}
 	var messageID any
 	if len(payload) > 0 {
@@ -225,17 +225,17 @@ func standaloneUploadFile(ctx context.Context, client *webClient, chatID, mediaP
 			}
 			for _, entriesKey := range sortedKeys(bucket) {
 				if entries, ok := bucket[entriesKey].([]any); ok && len(entries) > 0 {
-					if ts := asMap(entries[0])["ts"]; pyrepr.Truthy(ts) {
+					if ts := asMap(entries[0])["ts"]; anyutil.IsTrue(ts) {
 						messageID = ts
 					}
 					break
 				}
 			}
-			if pyrepr.Truthy(messageID) {
+			if anyutil.IsTrue(messageID) {
 				break sharesLoop
 			}
 		}
-		if !pyrepr.Truthy(messageID) {
+		if !anyutil.IsTrue(messageID) {
 			messageID = firstTruthyValue(fileObj["timestamp"], payload["ts"])
 		}
 	}
@@ -261,8 +261,8 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 		if err != nil {
 			return gateway.SendError("Slack send failed: " + gateway.ProxySafeErrorText(err, proxyURL))
 		}
-		if !pyrepr.Truthy(getOr(payload, "ok", true)) {
-			return gateway.SendError("Slack API error: " + pyrepr.Str(getOr(payload, "error", "unknown")))
+		if !anyutil.IsTrue(getOr(payload, "ok", true)) {
+			return gateway.SendError("Slack API error: " + anyutil.String(getOr(payload, "error", "unknown")))
 		}
 		lastMessageID = payload["ts"]
 	}
@@ -279,7 +279,7 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 					pkgLog().Warn("[Slack] Caption-fallback send failed for missing media")
 				} else if err != nil {
 					pkgLog().Warn("[Slack] Caption-fallback send failed for missing media", "error", err)
-				} else if pyrepr.Truthy(getOr(fb, "ok", true)) {
+				} else if anyutil.IsTrue(getOr(fb, "ok", true)) {
 					lastMessageID = firstTruthyValue(fb["ts"], lastMessageID)
 					captionPending = false
 				}
@@ -297,8 +297,8 @@ func standaloneSendMedia(ctx context.Context, token, chatID string, mediaFiles [
 			warnings = append(warnings, warning)
 			continue
 		}
-		if pyrepr.Truthy(uploadResult["error"]) {
-			warnings = append(warnings, fmt.Sprintf("Failed to send media %s: %s", media.Path, pyrepr.Str(uploadResult["error"])))
+		if anyutil.IsTrue(uploadResult["error"]) {
+			warnings = append(warnings, fmt.Sprintf("Failed to send media %s: %s", media.Path, anyutil.String(uploadResult["error"])))
 			continue
 		}
 		uploadedAny = true
@@ -337,7 +337,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 	if pconfig != nil {
 		rawToken = pconfig.Token
 	}
-	if !pyrepr.Truthy(rawToken) {
+	if !anyutil.IsTrue(rawToken) {
 		rawToken, _, _ = provider.GetSecret(ctx, "SLACK_BOT_TOKEN")
 	}
 	tokens := loadSlackBotTokens(ctx, strOrEmpty(rawToken), true)
@@ -380,10 +380,10 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		if err != nil {
 			return gateway.SendError("Slack send failed: " + standaloneErrorText(ctx, err)), nil
 		}
-		if pyrepr.Truthy(data["ok"]) {
+		if anyutil.IsTrue(data["ok"]) {
 			return map[string]any{"success": true, "platform": "slack", "chat_id": chatID, "message_id": data["ts"]}, nil
 		}
-		lastError = pyrepr.Str(getOr(data, "error", "unknown"))
+		lastError = anyutil.String(getOr(data, "error", "unknown"))
 		if !wrongWorkspaceTokenErrors[lastError] {
 			break
 		}

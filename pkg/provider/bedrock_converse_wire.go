@@ -1,13 +1,11 @@
 package provider
 
 import (
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Converse body members in the order the adapter inserts them into its kwargs, modelId going to the path
@@ -51,32 +49,17 @@ func converseRequestBody(kwargs map[string]any) ([]byte, error) {
 		}
 		return nil, fmt.Errorf("Parameter validation failed:\n%s", strings.Join(lines, "\n"))
 	}
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	for _, k := range converseBodyKeys {
 		if v, ok := kwargs[k]; ok {
 			body.Set(k, converseWireParam(k, v))
 		}
 	}
-	text, err := pyjson.Dumps(body, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.Default(converseBlobDefault))
+	text, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
 	return []byte(text), nil
-}
-
-// Base64 text of a blob member as botocore's _get_base64 writes it, ordered dicts for Go marshalers
-func converseBlobDefault(v any) (any, error) {
-	switch b := v.(type) {
-	case []byte:
-		return base64.StdEncoding.EncodeToString(b), nil
-	case json.RawMessage:
-		return pyjson.LoadsBytes(b)
-	}
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return nil, &pyjson.TypeError{Msg: fmt.Sprintf("cannot write %T as JSON", v)}
-	}
-	return pyjson.LoadsBytes(raw)
 }
 
 func converseOrdered(v any, order []string) any {
@@ -126,13 +109,13 @@ func converseWireParam(key string, v any) any {
 		if !ok {
 			return v
 		}
-		if th, ok := orderedByBuild(fields.Vals["thinking"], anthThinkingKeyOrder); ok {
+		if th, ok := orderedByBuild(fields.Value("thinking"), anthThinkingKeyOrder); ok {
 			fields = withNested(fields, "thinking", th)
 		}
-		if oc, ok := orderedByBuild(fields.Vals["output_config"], anthOutputConfigKeyOrder); ok {
+		if oc, ok := orderedByBuild(fields.Value("output_config"), anthOutputConfigKeyOrder); ok {
 			fields = withNested(fields, "output_config", oc)
 		}
-		if rc, ok := orderedByBuild(fields.Vals["reasoningConfig"], converseNovaReasoningOrder); ok {
+		if rc, ok := orderedByBuild(fields.Value("reasoningConfig"), converseNovaReasoningOrder); ok {
 			fields = withNested(fields, "reasoningConfig", rc)
 		}
 		return fields
@@ -158,28 +141,28 @@ func converseWireBlock(v any) any {
 	if !ok {
 		return v
 	}
-	if tu, ok := orderedByBuild(block.Vals["toolUse"], converseToolUseKeyOrder); ok {
+	if tu, ok := orderedByBuild(block.Value("toolUse"), converseToolUseKeyOrder); ok {
 		block = withNested(block, "toolUse", tu)
 	}
-	if tr, ok := orderedByBuild(block.Vals["toolResult"], converseToolResultKeyOrder); ok {
+	if tr, ok := orderedByBuild(block.Value("toolResult"), converseToolResultKeyOrder); ok {
 		if content, has := tr.Get("content"); has {
 			tr = withNested(tr, "content", converseWireBlocks(content))
 		}
 		block = withNested(block, "toolResult", tr)
 	}
-	if img, ok := orderedByBuild(block.Vals["image"], converseImageKeyOrder); ok {
+	if img, ok := orderedByBuild(block.Value("image"), converseImageKeyOrder); ok {
 		block = withNested(block, "image", img)
 	}
-	if rc, ok := orderedByBuild(block.Vals["reasoningContent"], nil); ok {
-		if rt, ok := orderedByBuild(rc.Vals["reasoningText"], converseReasoningTextOrder); ok {
+	if rc, ok := orderedByBuild(block.Value("reasoningContent"), nil); ok {
+		if rt, ok := orderedByBuild(rc.Value("reasoningText"), converseReasoningTextOrder); ok {
 			rc = withNested(rc, "reasoningText", rt)
 		}
 		block = withNested(block, "reasoningContent", rc)
 	}
-	if spec, ok := orderedByBuild(block.Vals["toolSpec"], converseToolSpecKeyOrder); ok {
+	if spec, ok := orderedByBuild(block.Value("toolSpec"), converseToolSpecKeyOrder); ok {
 		block = withNested(block, "toolSpec", spec)
 	}
-	if cp, ok := orderedByBuild(block.Vals["cachePoint"], []string{"type"}); ok {
+	if cp, ok := orderedByBuild(block.Value("cachePoint"), []string{"type"}); ok {
 		block = withNested(block, "cachePoint", cp)
 	}
 	return block

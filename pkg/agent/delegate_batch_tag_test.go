@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Empties the per conversation batch ordinal table for one test
@@ -118,8 +118,8 @@ func TestBatchCompletionLinesAreAttributableAcrossTwoBatches(t *testing.T) {
 	t.Cleanup(func() {
 		runSingleChildFn, buildChildPreservingParentToolsFn, resolveDelegationCredentialsFn = prevRun, prevBuild, prevCreds
 	})
-	runSingleChildFn = func(_ context.Context, taskIndex int, _ string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
-		return pyjson.ObjectOf("task_index", taskIndex, "status", "completed", "summary", "ok", "error", nil, "api_calls", 1, "duration_seconds", 1)
+	runSingleChildFn = func(_ context.Context, taskIndex int, _ string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
+		return jsonutil.ObjectOf("task_index", taskIndex, "status", "completed", "summary", "ok", "error", nil, "api_calls", 1, "duration_seconds", 1)
 	}
 	buildChildPreservingParentToolsFn = func(context.Context, childBuildSpec) (*AIAgent, error) { return &AIAgent{}, nil }
 	resolveDelegationCredentialsFn = func(context.Context, map[string]any, *AIAgent) (map[string]any, error) {

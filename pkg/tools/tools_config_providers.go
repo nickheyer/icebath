@@ -11,46 +11,46 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/setupflow"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
-func rowGet(p *pyjson.Object, key string) any {
+func rowGet(p *jsonutil.Object, key string) any {
 	v, _ := p.Get(key)
 	return v
 }
 
-func rowGetOr(p *pyjson.Object, key string, def any) any {
+func rowGetOr(p *jsonutil.Object, key string, def any) any {
 	if v, ok := p.Get(key); ok {
 		return v
 	}
 	return def
 }
 
-func rowHas(p *pyjson.Object, key string) bool {
+func rowHas(p *jsonutil.Object, key string) bool {
 	_, ok := p.Get(key)
 	return ok
 }
 
 // Text a row value formats as inside an f-string
-func rowText(p *pyjson.Object, key string) string { return pyrepr.Str(rowGet(p, key)) }
+func rowText(p *jsonutil.Object, key string) string { return anyutil.String(rowGet(p, key)) }
 
 // Python str of a raised exception, empty for the bare Ctrl-C and EOF interrupts
 func pyExcText(err error) string {
 	if errors.Is(err, cliui.ErrInterrupt) || errors.Is(err, cliui.ErrEOF) {
 		return ""
 	}
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }
 
 // Rows of a category, a panic for a provider entry that is not a mapping
-func catProviders(cat *pyjson.Object) []*pyjson.Object {
-	raw, _ := cat.GetOr("providers", []any{}).([]any)
-	out := make([]*pyjson.Object, 0, len(raw))
+func catProviders(cat *jsonutil.Object) []*jsonutil.Object {
+	raw, _ := cat.ValueOr("providers", []any{}).([]any)
+	out := make([]*jsonutil.Object, 0, len(raw))
 	for _, item := range raw {
-		row, ok := item.(*pyjson.Object)
+		row, ok := item.(*jsonutil.Object)
 		if !ok {
 			panic(fmt.Sprintf("a tool provider entry is %s, expected a mapping", errchain.Kind(item)))
 		}
@@ -60,20 +60,20 @@ func catProviders(cat *pyjson.Object) []*pyjson.Object {
 }
 
 // Category of the catalog by toolset key, nil when absent
-func catalogCategory(tsKey string) *pyjson.Object {
+func catalogCategory(tsKey string) *jsonutil.Object {
 	v, _ := ToolCategories.Get(tsKey)
-	cat, _ := v.(*pyjson.Object)
+	cat, _ := v.(*jsonutil.Object)
 	return cat
 }
 
 // Membership of a value among members, an error for a list or mapping value
 func pySetContains(v any, members ...any) (bool, error) {
 	switch v.(type) {
-	case []any, []string, map[string]any, config.Tree, *pyjson.Object:
+	case []any, []string, map[string]any, config.Tree, *jsonutil.Object:
 		return false, fmt.Errorf("expected a single name, got %s", errchain.Kind(v))
 	}
 	for _, m := range members {
-		if pyjson.Equal(v, m) {
+		if anyutil.Equal(v, m) {
 			return true, nil
 		}
 	}
@@ -107,7 +107,7 @@ func setdefaultSection(cfg map[string]any, key string) (map[string]any, error) {
 func pickerValue(v any) any {
 	switch x := v.(type) {
 	case map[string]any:
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		keys := make([]string, 0, len(x))
 		for k := range x {
 			keys = append(keys, k)
@@ -148,7 +148,7 @@ func pickerValue(v any) any {
 
 // Dict entries of a schema variants value as iteration sees them, a TypeError panic for a non iterable
 func pyIterDicts(v any) []map[string]any {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil
 	}
 	var out []map[string]any
@@ -158,8 +158,8 @@ func pyIterDicts(v any) []map[string]any {
 			switch m := item.(type) {
 			case map[string]any:
 				out = append(out, m)
-			case *pyjson.Object:
-				out = append(out, m.Vals)
+			case *jsonutil.Object:
+				out = append(out, m.Map())
 			}
 		}
 	case []map[string]any:
@@ -252,10 +252,10 @@ func pickerSchema(p PickerProvider) (schema map[string]any, ok bool) {
 }
 
 // Picker rows of a plugin registry, every marker key set to the provider name so config writes route through it
-func (s *ToolsSetup) pluginProviderRows(category string, markerKeys []string, requireName, skipBuiltin, flattenVariants bool) []*pyjson.Object {
+func (s *ToolsSetup) pluginProviderRows(category string, markerKeys []string, requireName, skipBuiltin, flattenVariants bool) []*jsonutil.Object {
 	reg := s.pluginRegistry(category)
 	if reg == nil {
-		return []*pyjson.Object{}
+		return []*jsonutil.Object{}
 	}
 	providers, builtin, ok := func() (ps []PickerProvider, b map[string]bool, ok bool) {
 		defer func() {
@@ -273,9 +273,9 @@ func (s *ToolsSetup) pluginProviderRows(category string, markerKeys []string, re
 		return ps, b, true
 	}()
 	if !ok {
-		return []*pyjson.Object{}
+		return []*jsonutil.Object{}
 	}
-	rows := []*pyjson.Object{}
+	rows := []*jsonutil.Object{}
 	for _, provider := range providers {
 		var name string
 		if requireName {
@@ -296,7 +296,7 @@ func (s *ToolsSetup) pluginProviderRows(category string, markerKeys []string, re
 			entries = append(entries, pyIterDicts(schema["variants"])...)
 		}
 		for _, entry := range entries {
-			row := pyjson.NewObject()
+			row := jsonutil.NewObject()
 			display := provider.DisplayName()
 			row.Set("name", mapGetOr(entry, "name", display))
 			row.Set("badge", mapGetOr(entry, "badge", ""))
@@ -305,10 +305,10 @@ func (s *ToolsSetup) pluginProviderRows(category string, markerKeys []string, re
 			for _, key := range markerKeys {
 				row.Set(key, name)
 			}
-			if flattenVariants && pyTruthy(entry["web_tier"]) {
+			if flattenVariants && anyutil.IsTrue(entry["web_tier"]) {
 				row.Set("web_tier", entry["web_tier"])
 			}
-			if pyTruthy(entry["post_setup"]) {
+			if anyutil.IsTrue(entry["post_setup"]) {
 				row.Set("post_setup", entry["post_setup"])
 			}
 			rows = append(rows, row)
@@ -339,7 +339,7 @@ var pluginProviderRowSpecs = map[string]pluginRowSpec{
 }
 
 // Picker rows of the plugin registered providers of one category
-func (s *ToolsSetup) pluginRowsFor(category string) []*pyjson.Object {
+func (s *ToolsSetup) pluginRowsFor(category string) []*jsonutil.Object {
 	spec, ok := pluginProviderRowSpecs[category]
 	if !ok {
 		panic("unknown provider category " + category)
@@ -347,17 +347,21 @@ func (s *ToolsSetup) pluginRowsFor(category string) []*pyjson.Object {
 	return s.pluginProviderRows(category, spec.markers, spec.requireName, spec.skipBuiltin, spec.flattenVariants)
 }
 
-func (s *ToolsSetup) pluginImageGenProviders() []*pyjson.Object  { return s.pluginRowsFor("image_gen") }
-func (s *ToolsSetup) pluginVideoGenProviders() []*pyjson.Object  { return s.pluginRowsFor("video_gen") }
-func (s *ToolsSetup) pluginWebSearchProviders() []*pyjson.Object { return s.pluginRowsFor("web") }
-func (s *ToolsSetup) pluginBrowserProviders() []*pyjson.Object   { return s.pluginRowsFor("browser") }
-func (s *ToolsSetup) pluginTTSProviders() []*pyjson.Object       { return s.pluginRowsFor("tts") }
-func pluginRowsBuilder(fn func(*ToolsSetup) []*pyjson.Object) func(*ToolsSetup) ([]*pyjson.Object, error) {
-	return func(s *ToolsSetup) ([]*pyjson.Object, error) { return fn(s), nil }
+func (s *ToolsSetup) pluginImageGenProviders() []*jsonutil.Object {
+	return s.pluginRowsFor("image_gen")
+}
+func (s *ToolsSetup) pluginVideoGenProviders() []*jsonutil.Object {
+	return s.pluginRowsFor("video_gen")
+}
+func (s *ToolsSetup) pluginWebSearchProviders() []*jsonutil.Object { return s.pluginRowsFor("web") }
+func (s *ToolsSetup) pluginBrowserProviders() []*jsonutil.Object   { return s.pluginRowsFor("browser") }
+func (s *ToolsSetup) pluginTTSProviders() []*jsonutil.Object       { return s.pluginRowsFor("tts") }
+func pluginRowsBuilder(fn func(*ToolsSetup) []*jsonutil.Object) func(*ToolsSetup) ([]*jsonutil.Object, error) {
+	return func(s *ToolsSetup) ([]*jsonutil.Object, error) { return fn(s), nil }
 }
 
 // Plugin row builders keyed by the category display name
-var pluginRowBuilders = map[string]func(*ToolsSetup) ([]*pyjson.Object, error){
+var pluginRowBuilders = map[string]func(*ToolsSetup) ([]*jsonutil.Object, error){
 	"Image Generation":                   pluginRowsBuilder((*ToolsSetup).pluginImageGenProviders),
 	"Video Generation":                   pluginRowsBuilder((*ToolsSetup).pluginVideoGenProviders),
 	"Web Search & Extract":               pluginRowsBuilder((*ToolsSetup).pluginWebSearchProviders),
@@ -367,7 +371,7 @@ var pluginRowBuilders = map[string]func(*ToolsSetup) ([]*pyjson.Object, error){
 }
 
 // Rows for installed computer use providers other than the built in cua row, read without loading any
-func (s *ToolsSetup) computerUseProviderRows() ([]*pyjson.Object, error) {
+func (s *ToolsSetup) computerUseProviderRows() ([]*jsonutil.Object, error) {
 	discover, def := ToolsConfigHooks.ComputerUseProviders, ToolsConfigHooks.ComputerUseDefaultBackend
 	requireToolsConfigHook("ComputerUseProviders", discover != nil)
 	requireToolsConfigHook("ComputerUseDefaultBackend", def != nil)
@@ -375,12 +379,12 @@ func (s *ToolsSetup) computerUseProviderRows() ([]*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows := []*pyjson.Object{}
+	rows := []*jsonutil.Object{}
 	for _, pair := range pairs {
 		if pair[0] == def() {
 			continue
 		}
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		row.Set("name", pair[0])
 		row.Set("badge", "")
 		row.Set("tag", pair[1])
@@ -392,8 +396,8 @@ func (s *ToolsSetup) computerUseProviderRows() ([]*pyjson.Object, error) {
 }
 
 // Provider rows of a category, plugin rows after the catalog rows
-func (s *ToolsSetup) VisibleProviders(cat *pyjson.Object) ([]*pyjson.Object, error) {
-	visible := append([]*pyjson.Object{}, catProviders(cat)...)
+func (s *ToolsSetup) VisibleProviders(cat *jsonutil.Object) ([]*jsonutil.Object, error) {
+	visible := append([]*jsonutil.Object{}, catProviders(cat)...)
 	if name, ok := rowGet(cat, "name").(string); ok {
 		if builder, ok := pluginRowBuilders[name]; ok {
 			rows, err := builder(s)
@@ -418,7 +422,7 @@ func (s *ToolsSetup) toolsetNeedsConfigurationPrompt(tsKey string, cfg config.Tr
 		return false, err
 	}
 	for _, provider := range providers {
-		if postSetup := rowGet(provider, "post_setup"); pyTruthy(postSetup) && !s.PostSetupAlreadyInstalled(pyrepr.Str(postSetup)) {
+		if postSetup := rowGet(provider, "post_setup"); anyutil.IsTrue(postSetup) && !s.PostSetupAlreadyInstalled(anyutil.String(postSetup)) {
 			return true, nil
 		}
 	}
@@ -471,7 +475,7 @@ func pickerAvailable(p PickerProvider) (ok bool) {
 }
 
 // Provider selection for a tool category, then key setup for the chosen row
-func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg config.Tree, reconfigure bool) error {
+func (s *ToolsSetup) configureToolCategory(tsKey string, cat *jsonutil.Object, cfg config.Tree, reconfigure bool) error {
 	name, ok := cat.Get("name")
 	if !ok {
 		return errors.New("a tool category has no name")
@@ -483,18 +487,18 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 	single := len(providers) == 1
 	title := "Choose a provider"
 	if !reconfigure {
-		title = pyrepr.Str(cat.GetOr("setup_title", "Choose a provider"))
+		title = anyutil.String(cat.ValueOr("setup_title", "Choose a provider"))
 	}
 	s.println("")
 	heading := "- " + title
 	if single {
 		heading = "(" + rowText(providers[0], "name") + ")"
 	}
-	s.println(s.color("  --- "+pyrepr.Str(cat.GetOr("icon", ""))+" "+pyrepr.Str(name)+" "+heading+" ---", cliui.Cyan))
-	if single && !reconfigure && pyTruthy(rowGet(providers[0], "tag")) {
+	s.println(s.color("  --- "+anyutil.String(cat.ValueOr("icon", ""))+" "+anyutil.String(name)+" "+heading+" ---", cliui.Cyan))
+	if single && !reconfigure && anyutil.IsTrue(rowGet(providers[0], "tag")) {
 		s.Con.PrintInfo("  " + rowText(providers[0], "tag"))
 	}
-	if !reconfigure && pyTruthy(rowGet(cat, "setup_note")) {
+	if !reconfigure && anyutil.IsTrue(rowGet(cat, "setup_note")) {
 		s.Con.PrintInfo("  " + rowText(cat, "setup_note"))
 	}
 	if single {
@@ -504,10 +508,10 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 	choices, options := []string{}, []setupflow.Option{}
 	for _, p := range providers {
 		badge, tag, configured := "", "", ""
-		if pyTruthy(rowGet(p, "badge")) {
+		if anyutil.IsTrue(rowGet(p, "badge")) {
 			badge = " [" + rowText(p, "badge") + "]"
 		}
-		if pyTruthy(rowGet(p, "tag")) {
+		if anyutil.IsTrue(rowGet(p, "tag")) {
 			tag = rowText(p, "tag")
 		}
 		ready, err := providerEnvReady(s.ctx(), s.home(), p)
@@ -521,7 +525,7 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 			}
 			if active {
 				configured = " [active]"
-			} else if pyTruthy(rowGetOr(p, "env_vars", []any{})) {
+			} else if anyutil.IsTrue(rowGetOr(p, "env_vars", []any{})) {
 				configured = " [configured]"
 			}
 		}
@@ -550,7 +554,7 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 		return err
 	}
 	if idx >= len(providers) {
-		s.Con.PrintInfo("  Skipped " + pyrepr.Str(name))
+		s.Con.PrintInfo("  Skipped " + anyutil.String(name))
 		return nil
 	}
 	return s.configureProvider(providers[idx], cfg, reconfigure)
@@ -560,9 +564,9 @@ func (s *ToolsSetup) configureToolCategory(tsKey string, cat *pyjson.Object, cfg
 var webTierProviderEnv = providerEnv
 
 // Whether a tiered web row matches the configured tier, auto meaning paid exactly when the vendor key is present
-func (s *ToolsSetup) webTierMatches(provider *pyjson.Object, cfg config.Tree) bool {
+func (s *ToolsSetup) webTierMatches(provider *jsonutil.Object, cfg config.Tree) bool {
 	rowTier := rowGet(provider, "web_tier")
-	if !pyTruthy(rowTier) {
+	if !anyutil.IsTrue(rowTier) {
 		return true
 	}
 	webCfg, ok := pyDictOf(cfg["web"])
@@ -577,10 +581,10 @@ func (s *ToolsSetup) webTierMatches(provider *pyjson.Object, cfg config.Tree) bo
 	if !has {
 		panic("a web provider row has no web_backend")
 	}
-	backend := pyrepr.Str(backendValue)
+	backend := anyutil.String(backendValue)
 	configured := strings.TrimSpace(strings.ToLower(pyOrStr(mapGetOr(tiers, backend, ""))))
 	if configured == "free" || configured == "paid" {
-		return pyjson.Equal(configured, rowTier)
+		return anyutil.Equal(configured, rowTier)
 	}
 	hasKey := func() (has bool) {
 		defer func() {
@@ -599,7 +603,7 @@ func (s *ToolsSetup) webTierMatches(provider *pyjson.Object, cfg config.Tree) bo
 	if hasKey {
 		want = "paid"
 	}
-	return pyjson.Equal(rowTier, want)
+	return anyutil.Equal(rowTier, want)
 }
 
 // Backend names serving web search or extract, each capability override first then the shared backend
@@ -628,23 +632,23 @@ func webServingBackends(cfg config.Tree) map[string]bool {
 }
 
 // Whether a web row's backend serves a capability as configured, sibling rows sharing a backend split by their credential
-func (s *ToolsSetup) webBackendActive(provider *pyjson.Object, cfg config.Tree) (bool, error) {
+func (s *ToolsSetup) webBackendActive(provider *jsonutil.Object, cfg config.Tree) (bool, error) {
 	backend := rowGet(provider, "web_backend")
-	if !(pyTruthy(backend) && webServingBackends(cfg)[pyrepr.Str(backend)] && s.webTierMatches(provider, cfg)) {
+	if !(anyutil.IsTrue(backend) && webServingBackends(cfg)[anyutil.String(backend)] && s.webTierMatches(provider, cfg)) {
 		return false, nil
 	}
-	if !pyTruthy(rowGet(provider, "env_vars")) {
+	if !anyutil.IsTrue(rowGet(provider, "env_vars")) {
 		return true, nil
 	}
 	ready, err := providerEnvReady(s.ctx(), s.home(), provider)
 	if err != nil || ready {
 		return ready, err
 	}
-	if !pyTruthy(rowGet(provider, "web_search_plugin_name")) {
+	if !anyutil.IsTrue(rowGet(provider, "web_search_plugin_name")) {
 		return false, nil
 	}
 	for _, row := range catProviders(catalogCategory("web")) {
-		if pyjson.Equal(rowGet(row, "web_backend"), backend) && pyTruthy(rowGet(row, "env_vars")) {
+		if anyutil.Equal(rowGet(row, "web_backend"), backend) && anyutil.IsTrue(rowGet(row, "env_vars")) {
 			ready, err := providerEnvReady(s.ctx(), s.home(), row)
 			if err != nil {
 				return false, err
@@ -658,34 +662,34 @@ func (s *ToolsSetup) webBackendActive(provider *pyjson.Object, cfg config.Tree) 
 }
 
 // Browser provider markers test membership since a local row carries an empty one, every other marker truthiness
-func hasMarker(provider *pyjson.Object, marker string) bool {
+func hasMarker(provider *jsonutil.Object, marker string) bool {
 	if marker == "browser_provider" {
 		return rowHas(provider, marker)
 	}
-	return pyTruthy(rowGet(provider, marker))
+	return anyutil.IsTrue(rowGet(provider, marker))
 }
 
 // Whether a browser row matches the configured cloud provider and, for the local engine rows, the engine
-func browserProviderActive(provider *pyjson.Object, cfg config.Tree) bool {
+func browserProviderActive(provider *jsonutil.Object, cfg config.Tree) bool {
 	current, _ := config.CfgGet(cfg, "browser", "cloud_provider")
-	if !pyjson.Equal(rowGet(provider, "browser_provider"), current) {
+	if !anyutil.Equal(rowGet(provider, "browser_provider"), current) {
 		return false
 	}
-	if pyTruthy(rowGet(provider, "browser_engine")) {
+	if anyutil.IsTrue(rowGet(provider, "browser_engine")) {
 		raw, _ := config.CfgGet(cfg, "browser", "engine")
 		engine := pyOrStr(raw)
 		if engine == "" {
 			engine = "auto"
 		}
-		return pyjson.Equal(strings.ToLower(strings.TrimSpace(engine)), rowGet(provider, "browser_engine"))
+		return anyutil.Equal(strings.ToLower(strings.TrimSpace(engine)), rowGet(provider, "browser_engine"))
 	}
 	return true
 }
 
 // Whether the in tree FAL row is the configured direct key image backend
-func imagegenBackendActive(provider *pyjson.Object, cfg config.Tree) (bool, error) {
+func imagegenBackendActive(provider *jsonutil.Object, cfg config.Tree) (bool, error) {
 	imageCfg, ok := cfgDictOr(cfg, "image_gen")
-	if !ok || !pyjson.Equal(rowGet(provider, "imagegen_backend"), "fal") {
+	if !ok || !anyutil.Equal(rowGet(provider, "imagegen_backend"), "fal") {
 		return false, nil
 	}
 	allowed, err := pySetContains(imageCfg["provider"], nil, "", "fal")
@@ -695,36 +699,38 @@ func imagegenBackendActive(provider *pyjson.Object, cfg config.Tree) (bool, erro
 // Active checks in order, the first marker a row carries decides
 var activeChecks = []struct {
 	marker string
-	check  func(s *ToolsSetup, p *pyjson.Object, c config.Tree) (bool, error)
+	check  func(s *ToolsSetup, p *jsonutil.Object, c config.Tree) (bool, error)
 }{
-	{"tts_provider", func(_ *ToolsSetup, p *pyjson.Object, c config.Tree) (bool, error) {
+	{"tts_provider", func(_ *ToolsSetup, p *jsonutil.Object, c config.Tree) (bool, error) {
 		v, _ := config.CfgGet(c, "tts", "provider")
-		return pyjson.Equal(v, rowGet(p, "tts_provider")), nil
+		return anyutil.Equal(v, rowGet(p, "tts_provider")), nil
 	}},
-	{"stt_provider", func(_ *ToolsSetup, p *pyjson.Object, c config.Tree) (bool, error) {
+	{"stt_provider", func(_ *ToolsSetup, p *jsonutil.Object, c config.Tree) (bool, error) {
 		v, _ := config.CfgGet(c, "stt", "provider")
-		if !pyTruthy(v) {
+		if !anyutil.IsTrue(v) {
 			v = "local"
 		}
-		return pyjson.Equal(v, rowGet(p, "stt_provider")), nil
+		return anyutil.Equal(v, rowGet(p, "stt_provider")), nil
 	}},
-	{"browser_provider", func(_ *ToolsSetup, p *pyjson.Object, c config.Tree) (bool, error) {
+	{"browser_provider", func(_ *ToolsSetup, p *jsonutil.Object, c config.Tree) (bool, error) {
 		return browserProviderActive(p, c), nil
 	}},
 	{"web_backend", (*ToolsSetup).webBackendActive},
-	{"computer_use_backend", func(_ *ToolsSetup, p *pyjson.Object, c config.Tree) (bool, error) {
+	{"computer_use_backend", func(_ *ToolsSetup, p *jsonutil.Object, c config.Tree) (bool, error) {
 		v, _ := config.CfgGet(c, "computer_use", "backend")
-		return pyjson.Equal(v, rowGet(p, "computer_use_backend")), nil
+		return anyutil.Equal(v, rowGet(p, "computer_use_backend")), nil
 	}},
-	{"imagegen_backend", func(_ *ToolsSetup, p *pyjson.Object, c config.Tree) (bool, error) { return imagegenBackendActive(p, c) }},
+	{"imagegen_backend", func(_ *ToolsSetup, p *jsonutil.Object, c config.Tree) (bool, error) {
+		return imagegenBackendActive(p, c)
+	}},
 }
 
 // Whether a provider row matches the active config
-func (s *ToolsSetup) IsProviderActive(provider *pyjson.Object, cfg config.Tree) (bool, error) {
+func (s *ToolsSetup) IsProviderActive(provider *jsonutil.Object, cfg config.Tree) (bool, error) {
 	for _, section := range []string{"image_gen", "video_gen"} {
-		if pluginName := rowGet(provider, section+"_plugin_name"); pyTruthy(pluginName) {
+		if pluginName := rowGet(provider, section+"_plugin_name"); anyutil.IsTrue(pluginName) {
 			genCfg, ok := cfgDictOr(cfg, section)
-			return ok && pyjson.Equal(genCfg["provider"], pluginName), nil
+			return ok && anyutil.Equal(genCfg["provider"], pluginName), nil
 		}
 	}
 	for _, c := range activeChecks {
@@ -736,7 +742,7 @@ func (s *ToolsSetup) IsProviderActive(provider *pyjson.Object, cfg config.Tree) 
 }
 
 // Index of the active provider row, else the first keyed row whose keys are present, else 0
-func (s *ToolsSetup) detectActiveProviderIndex(providers []*pyjson.Object, cfg config.Tree) (int, error) {
+func (s *ToolsSetup) detectActiveProviderIndex(providers []*jsonutil.Object, cfg config.Tree) (int, error) {
 	for i, p := range providers {
 		active, err := s.IsProviderActive(p, cfg)
 		if err != nil {
@@ -745,7 +751,7 @@ func (s *ToolsSetup) detectActiveProviderIndex(providers []*pyjson.Object, cfg c
 		if active {
 			return i, nil
 		}
-		if pyTruthy(rowGetOr(p, "env_vars", []any{})) {
+		if anyutil.IsTrue(rowGetOr(p, "env_vars", []any{})) {
 			ready, err := providerEnvReady(s.ctx(), s.home(), p)
 			if err != nil {
 				return 0, err
@@ -832,7 +838,7 @@ func (s *ToolsSetup) pluginModelCatalog(category, pluginName string) (cat *model
 			continue
 		}
 		if id, ok := m["id"]; ok {
-			cat.put(pyrepr.Str(id), m)
+			cat.put(anyutil.String(id), m)
 		}
 	}
 	return cat, def
@@ -874,7 +880,7 @@ func (s *ToolsSetup) pickModelFromCatalog(cat *modelCatalog, defaultModel, cfgKe
 	}
 	curCfg := cfgSection(cfg, cfgKey)
 	current := curCfg["model"]
-	if !pyTruthy(current) {
+	if !anyutil.IsTrue(current) {
 		current = defaultModel
 	}
 	currentModel, isStr := current.(string)
@@ -919,7 +925,7 @@ func (s *ToolsSetup) pickModelFromCatalog(cat *modelCatalog, defaultModel, cfgKe
 		speed, _ := metaText(meta, "speed")
 		strengths, _ := metaText(meta, "strengths")
 		row := rowIndent + padRight(mid, widthModel) + "  " + padRight(speed, widthSpeed) + "  " + padRight(strengths, widthStrengths) +
-			"  " + pyrepr.Str(mapGetOr(meta, "price", ""))
+			"  " + anyutil.String(mapGetOr(meta, "price", ""))
 		if mid == currentModel {
 			row += "  ← currently in use"
 		}
@@ -950,7 +956,7 @@ func (s *ToolsSetup) pickModelOption(cat *modelCatalog, ordered []string, curren
 				parts = append(parts, text)
 			}
 		}
-		if price := pyrepr.Str(mapGetOr(meta, "price", "")); price != "" {
+		if price := anyutil.String(mapGetOr(meta, "price", "")); price != "" {
 			parts = append(parts, price)
 		}
 		if mid == currentModel {
@@ -1026,7 +1032,7 @@ func selectInto(cfg config.Tree, section, key string, vendor any) map[string]any
 // Persists a plugin image or video provider pick then runs its model picker
 func (s *ToolsSetup) selectPluginGenProvider(section, pluginName string, cfg config.Tree) error {
 	sec := selectInto(cfg, section, "provider", pluginName)
-	s.Con.PrintSuccess("  " + section + ".provider set to: " + pyrepr.Str(sec["provider"]))
+	s.Con.PrintSuccess("  " + section + ".provider set to: " + anyutil.String(sec["provider"]))
 	if err := s.configureGenModelForPlugin(section, pluginName, cfg); err != nil {
 		return err
 	}
@@ -1078,27 +1084,27 @@ func (s *ToolsSetup) configureSTTModel(sttProvider string, cfg config.Tree) erro
 }
 
 // Persists the provider and backend keys of a picked row, one provider string per category
-func (s *ToolsSetup) writeProviderConfig(provider *pyjson.Object, cfg config.Tree) error {
+func (s *ToolsSetup) writeProviderConfig(provider *jsonutil.Object, cfg config.Tree) error {
 	for _, pair := range [][2]string{{"tts_provider", "tts"}, {"stt_provider", "stt"}} {
-		if v := rowGet(provider, pair[0]); pyTruthy(v) {
+		if v := rowGet(provider, pair[0]); anyutil.IsTrue(v) {
 			selectInto(cfg, pair[1], "provider", v)
 		}
 	}
-	if bp := rowGet(provider, "browser_provider"); pyTruthy(bp) {
+	if bp := rowGet(provider, "browser_provider"); anyutil.IsTrue(bp) {
 		selectInto(cfg, "browser", "cloud_provider", bp)
 	}
-	if engine := rowGet(provider, "browser_engine"); pyTruthy(engine) {
+	if engine := rowGet(provider, "browser_engine"); anyutil.IsTrue(engine) {
 		browser, err := setdefaultSection(cfg, "browser")
 		if err != nil {
 			return err
 		}
 		browser["engine"] = engine
 	}
-	if backend := rowGet(provider, "web_backend"); pyTruthy(backend) {
+	if backend := rowGet(provider, "web_backend"); anyutil.IsTrue(backend) {
 		webCfg := selectInto(cfg, "web", "backend", backend)
 		tier := rowGet(provider, "web_tier")
 		var tiers any
-		if pyTruthy(tier) {
+		if anyutil.IsTrue(tier) {
 			if _, ok := webCfg["provider_tier"]; !ok {
 				webCfg["provider_tier"] = map[string]any{}
 			}
@@ -1107,14 +1113,14 @@ func (s *ToolsSetup) writeProviderConfig(provider *pyjson.Object, cfg config.Tre
 			tiers = webCfg["provider_tier"]
 		}
 		if m, ok := pyDictOf(tiers); ok {
-			if pyTruthy(tier) {
-				m[pyrepr.Str(backend)] = tier
+			if anyutil.IsTrue(tier) {
+				m[anyutil.String(backend)] = tier
 			} else {
-				delete(m, pyrepr.Str(backend))
+				delete(m, anyutil.String(backend))
 			}
 		}
 	}
-	if cu := rowGet(provider, "computer_use_backend"); pyTruthy(cu) {
+	if cu := rowGet(provider, "computer_use_backend"); anyutil.IsTrue(cu) {
 		section, err := setdefaultSection(cfg, "computer_use")
 		if err != nil {
 			return err
@@ -1125,22 +1131,22 @@ func (s *ToolsSetup) writeProviderConfig(provider *pyjson.Object, cfg config.Tre
 }
 
 // Model pickers that follow a provider pick, plugin image or video gen, the in tree image backend, then STT
-func (s *ToolsSetup) finishProviderSelection(provider *pyjson.Object, cfg config.Tree) error {
+func (s *ToolsSetup) finishProviderSelection(provider *jsonutil.Object, cfg config.Tree) error {
 	for _, section := range []string{"image_gen", "video_gen"} {
-		if pluginName := rowGet(provider, section+"_plugin_name"); pyTruthy(pluginName) {
-			return s.selectPluginGenProvider(section, pyrepr.Str(pluginName), cfg)
+		if pluginName := rowGet(provider, section+"_plugin_name"); anyutil.IsTrue(pluginName) {
+			return s.selectPluginGenProvider(section, anyutil.String(pluginName), cfg)
 		}
 	}
-	if backend := rowGet(provider, "imagegen_backend"); pyTruthy(backend) {
-		if err := s.configureImagegenModel(pyrepr.Str(backend), cfg); err != nil {
+	if backend := rowGet(provider, "imagegen_backend"); anyutil.IsTrue(backend) {
+		if err := s.configureImagegenModel(anyutil.String(backend), cfg); err != nil {
 			return err
 		}
 		selectInto(cfg, "image_gen", "provider", "fal")
 	}
-	if stt := rowGet(provider, "stt_provider"); pyTruthy(stt) {
-		return s.configureSTTModel(pyrepr.Str(stt), cfg)
+	if stt := rowGet(provider, "stt_provider"); anyutil.IsTrue(stt) {
+		return s.configureSTTModel(anyutil.String(stt), cfg)
 	}
-	if pyrepr.Str(rowGet(provider, "tts_provider")) == "piper" {
+	if anyutil.String(rowGet(provider, "tts_provider")) == "piper" {
 		return s.configurePiperVoice(cfg)
 	}
 	return nil
@@ -1170,33 +1176,33 @@ func (s *ToolsSetup) configurePiperVoice(cfg config.Tree) error {
 }
 
 // Status lines announcing the backend and provider keys a pick writes
-func (s *ToolsSetup) printProviderSelection(provider *pyjson.Object, reconfigure bool) {
-	if reconfigure && pyTruthy(rowGet(provider, "tts_provider")) {
+func (s *ToolsSetup) printProviderSelection(provider *jsonutil.Object, reconfigure bool) {
+	if reconfigure && anyutil.IsTrue(rowGet(provider, "tts_provider")) {
 		s.Con.PrintSuccess("  TTS provider set to: " + rowText(provider, "tts_provider"))
 	}
-	if pyTruthy(rowGet(provider, "stt_provider")) {
+	if anyutil.IsTrue(rowGet(provider, "stt_provider")) {
 		s.Con.PrintSuccess("  STT provider set to: " + rowText(provider, "stt_provider"))
 	}
 	if rowHas(provider, "browser_provider") {
 		bp := rowGet(provider, "browser_provider")
 		switch {
-		case pyjson.Equal(bp, "local"):
+		case anyutil.Equal(bp, "local"):
 			s.Con.PrintSuccess("  Browser set to local mode")
-		case pyTruthy(bp):
-			s.Con.PrintSuccess("  Browser cloud provider set to: " + pyrepr.Str(bp))
+		case anyutil.IsTrue(bp):
+			s.Con.PrintSuccess("  Browser cloud provider set to: " + anyutil.String(bp))
 		}
 	}
-	if engine := rowGet(provider, "browser_engine"); pyTruthy(engine) && !pyjson.Equal(engine, "auto") {
-		s.Con.PrintSuccess("  Browser engine set to: " + pyrepr.Str(engine))
+	if engine := rowGet(provider, "browser_engine"); anyutil.IsTrue(engine) && !anyutil.Equal(engine, "auto") {
+		s.Con.PrintSuccess("  Browser engine set to: " + anyutil.String(engine))
 	}
-	if backend := rowGet(provider, "web_backend"); pyTruthy(backend) {
+	if backend := rowGet(provider, "web_backend"); anyutil.IsTrue(backend) {
 		tier := ""
-		if reconfigure && pyTruthy(rowGet(provider, "web_tier")) {
+		if reconfigure && anyutil.IsTrue(rowGet(provider, "web_tier")) {
 			tier = " (" + rowText(provider, "web_tier") + " tier)"
 		}
-		s.Con.PrintSuccess("  Web backend set to: " + pyrepr.Str(backend) + tier)
+		s.Con.PrintSuccess("  Web backend set to: " + anyutil.String(backend) + tier)
 	}
-	if reconfigure && pyTruthy(rowGet(provider, "computer_use_backend")) {
+	if reconfigure && anyutil.IsTrue(rowGet(provider, "computer_use_backend")) {
 		s.Con.PrintSuccess("  Computer Use backend set to: " + rowText(provider, "computer_use_backend"))
 	}
 }
@@ -1250,12 +1256,12 @@ func (s *ToolsSetup) promptSecret(key, label, url, defaultVal string, reconfigur
 }
 
 // Row dict of an env_vars entry
-func envVarRow(v any) (*pyjson.Object, error) {
+func envVarRow(v any) (*jsonutil.Object, error) {
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x, nil
 	case map[string]any:
-		return pickerValue(x).(*pyjson.Object), nil
+		return pickerValue(x).(*jsonutil.Object), nil
 	}
 	return nil, fmt.Errorf("an env_vars entry is %s, expected a mapping", errchain.Kind(v))
 }
@@ -1272,7 +1278,7 @@ func (s *ToolsSetup) promptEnvVars(envVars []any, reconfigure bool) (bool, error
 		if !ok {
 			return false, errors.New("an env_vars entry has no key")
 		}
-		key := pyrepr.Str(keyValue)
+		key := anyutil.String(keyValue)
 		if !reconfigure {
 			existing, err := s.getEnvValue(key)
 			if err != nil {
@@ -1283,8 +1289,8 @@ func (s *ToolsSetup) promptEnvVars(envVars []any, reconfigure bool) (bool, error
 				continue
 			}
 		}
-		ok, err = s.promptSecret(key, pyrepr.Str(row.GetOr("prompt", key)), pyrepr.Str(row.GetOr("url", "")),
-			pyrepr.Str(row.GetOr("default", "")), reconfigure, "Get yours at", false)
+		ok, err = s.promptSecret(key, anyutil.String(row.ValueOr("prompt", key)), anyutil.String(row.ValueOr("url", "")),
+			anyutil.String(row.ValueOr("default", "")), reconfigure, "Get yours at", false)
 		if err != nil {
 			return false, err
 		}
@@ -1311,16 +1317,16 @@ func envVarList(v any) []any {
 }
 
 // Configures one provider, prompting for its keys, writing its config and running its post setup hook
-func (s *ToolsSetup) configureProvider(provider *pyjson.Object, cfg config.Tree, reconfigure bool) error {
+func (s *ToolsSetup) configureProvider(provider *jsonutil.Object, cfg config.Tree, reconfigure bool) error {
 	envVars := rowGetOr(provider, "env_vars", []any{})
 	s.printProviderSelection(provider, reconfigure)
 	if err := s.writeProviderConfig(provider, cfg); err != nil {
 		return err
 	}
 	postSetup := rowGet(provider, "post_setup")
-	if !pyTruthy(envVars) {
-		if pyTruthy(postSetup) {
-			if err := s.runPostSetup(pyrepr.Str(postSetup)); err != nil {
+	if !anyutil.IsTrue(envVars) {
+		if anyutil.IsTrue(postSetup) {
+			if err := s.runPostSetup(anyutil.String(postSetup)); err != nil {
 				return err
 			}
 		}
@@ -1331,8 +1337,8 @@ func (s *ToolsSetup) configureProvider(provider *pyjson.Object, cfg config.Tree,
 	if err != nil {
 		return err
 	}
-	if pyTruthy(postSetup) && allConfigured {
-		if err := s.runPostSetup(pyrepr.Str(postSetup)); err != nil {
+	if anyutil.IsTrue(postSetup) && allConfigured {
+		if err := s.runPostSetup(anyutil.String(postSetup)); err != nil {
 			return err
 		}
 	}
@@ -1385,7 +1391,7 @@ func (s *ToolsSetup) configureVisionBackend() error {
 		if baseURL == "" {
 			baseURL = "https://api.openai.com/v1"
 		}
-		host, err := pyurl.BaseURLHostname(baseURL)
+		host, err := urlutil.BaseHost(baseURL)
 		if err != nil {
 			return err
 		}
@@ -1488,14 +1494,14 @@ func (s *ToolsSetup) configureVisionProviderModel(cfg config.Tree, visionCfg map
 		models = slices.Clone(list)
 	case []any:
 		for _, m := range list {
-			models = append(models, pyrepr.Str(m))
+			models = append(models, anyutil.String(m))
 		}
 	}
 	label := chosen["name"]
-	if !pyTruthy(label) {
+	if !anyutil.IsTrue(label) {
 		label = slug
 	}
-	midx, err := s.promptChoice("  Choose vision model for "+pyrepr.Str(label)+":", append(slices.Clone(models), "Type a custom model id…"), 0)
+	midx, err := s.promptChoice("  Choose vision model for "+anyutil.String(label)+":", append(slices.Clone(models), "Type a custom model id…"), 0)
 	if err != nil {
 		return err
 	}
@@ -1519,7 +1525,7 @@ func (s *ToolsSetup) configureVisionProviderModel(cfg config.Tree, visionCfg map
 	if err := s.saveConfig(cfg); err != nil {
 		return err
 	}
-	s.Con.PrintSuccess("  Vision set to " + pyrepr.Str(slug) + " / " + model)
+	s.Con.PrintSuccess("  Vision set to " + anyutil.String(slug) + " / " + model)
 	return nil
 }
 

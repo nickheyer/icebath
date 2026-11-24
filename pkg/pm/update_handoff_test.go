@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestLegacyPostSwapInvocationRecognizesOnlyTheShippedShape(t *testing.T) {
@@ -34,8 +34,8 @@ func TestLegacyPostSwapInvocationRecognizesOnlyTheShippedShape(t *testing.T) {
 }
 
 func TestTakeoverRequestMapsHistoricalPayloadNames(t *testing.T) {
-	for _, resume := range []any{nil, pyjson.ObjectOf("resume_needed", true)} {
-		payload := pyjson.ObjectOf("gateway_mode", true, "windows_gateway_resume", resume)
+	for _, resume := range []any{nil, jsonutil.ObjectOf("resume_needed", true)} {
+		payload := jsonutil.ObjectOf("gateway_mode", true, "windows_gateway_resume", resume)
 		request := takeoverRequest(payload, []string{"--yes"})
 		for key, want := range map[string]any{"assume_yes": true, "restart_update": false,
 			"gateway_mode": true, "windows_resume": resume} {
@@ -44,7 +44,7 @@ func TestTakeoverRequestMapsHistoricalPayloadNames(t *testing.T) {
 			}
 		}
 	}
-	current := takeoverRequest(pyjson.ObjectOf("windows_resume", "kept", "assume_yes", false, "restart_update", true), nil)
+	current := takeoverRequest(jsonutil.ObjectOf("windows_resume", "kept", "assume_yes", false, "restart_update", true), nil)
 	for key, want := range map[string]any{"windows_resume": "kept", "assume_yes": false, "restart_update": true} {
 		if got, _ := current.Get(key); got != want {
 			t.Fatalf("new schema %s = %#v, want %#v", key, got, want)

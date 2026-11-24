@@ -2,19 +2,20 @@ package provider
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"os"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -31,17 +32,11 @@ func HookPayloadMaxChars() int {
 	if !set {
 		return defaultHookPayloadMaxChars
 	}
-	n, valid := pystr.IntText(raw)
-	if !valid {
+	n, err := textutil.ParseInt(raw)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		return defaultHookPayloadMaxChars
 	}
-	if n.Cmp(big.NewInt(1000)) < 0 {
-		return 1000
-	}
-	if !n.IsInt64() || n.Int64() > math.MaxInt {
-		return math.MaxInt
-	}
-	return int(n.Int64())
+	return int(min(max(n, 1000), math.MaxInt))
 }
 
 // IsSensitiveHookKey reports a credential bearing key such as api_key, authorization, or any _api_key suffix
@@ -102,7 +97,7 @@ func HookJSONable(value any, caps HookJSONCaps) any {
 
 func hookJSONable(value any, depth int, caps HookJSONCaps) any {
 	if depth > caps.MaxDepth {
-		return fmt.Sprintf("<%s depth limit>", pyrepr.TypeName(value))
+		return fmt.Sprintf("<%s depth limit>", anyutil.Kind(value))
 	}
 	recurse := func(item any) any { return hookJSONable(item, depth+1, caps) }
 	switch v := value.(type) {
@@ -112,11 +107,11 @@ func hookJSONable(value any, depth int, caps HookJSONCaps) any {
 		return v
 	case json.Number:
 		return v
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if v == nil {
 			return nil
 		}
-		return hookJSONableItems(v.Keys, func(key string) any { return v.Vals[key] }, recurse, caps)
+		return hookJSONableItems(v.Keys(), func(key string) any { return v.Value(key) }, recurse, caps)
 	case string:
 		cut, dropped := truncateRunes(v, caps.MaxString)
 		if dropped > 0 {
@@ -183,7 +178,7 @@ func hookJSONable(value any, depth int, caps HookJSONCaps) any {
 				return recurse(decoded)
 			}
 		}
-		s, _ := truncateRunes(pyrepr.Str(value), caps.MaxString)
+		s, _ := truncateRunes(anyutil.String(value), caps.MaxString)
 		return s
 	case reflect.String:
 		return recurse(rv.String())
@@ -196,7 +191,7 @@ func hookJSONable(value any, depth int, caps HookJSONCaps) any {
 	case reflect.Float32, reflect.Float64:
 		return rv.Float()
 	}
-	s, _ := truncateRunes(pyrepr.Str(value), caps.MaxString)
+	s, _ := truncateRunes(anyutil.String(value), caps.MaxString)
 	return s
 }
 
@@ -205,7 +200,7 @@ func hookJSONableMap(rv reflect.Value, recurse func(any) any, caps HookJSONCaps)
 	values := make(map[string]any, rv.Len())
 	keys := make([]string, 0, rv.Len())
 	for _, k := range rv.MapKeys() {
-		strKey := pyrepr.Str(k.Interface())
+		strKey := anyutil.String(k.Interface())
 		keys = append(keys, strKey)
 		values[strKey] = rv.MapIndex(k).Interface()
 	}
@@ -252,9 +247,9 @@ func SanitizeHookPayload(value any) any {
 	encoded := ""
 	for _, caps := range []HookJSONCaps{DefaultHookJSONCaps, {MaxDepth: 8, MaxString: 1000, MaxSequence: 50}} {
 		payload := HookJSONable(value, caps)
-		text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+		text, err := jsonutil.Encode(payload, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 		if err != nil {
-			s, _ := truncateRunes(pyrepr.Str(payload), limit)
+			s, _ := truncateRunes(anyutil.String(payload), limit)
 			return s
 		}
 		encoded = text
@@ -262,5 +257,5 @@ func SanitizeHookPayload(value any) any {
 			return payload
 		}
 	}
-	return map[string]any{"_truncated": true, "original_type": pyrepr.TypeName(value), "preview": textutil.First(encoded, limit)}
+	return map[string]any{"_truncated": true, "original_type": anyutil.Kind(value), "preview": textutil.First(encoded, limit)}
 }

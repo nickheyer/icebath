@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Runs a session's pending slash confirm handler with the choice, empty when stale, superseded or resolved
@@ -25,7 +25,7 @@ var relayAckEmojiDefault = [3]string{"\U0001f440", "✅", "❌"}
 
 var relayAckEmojiByPlatform = map[string][3]string{"telegram": {"\U0001f440", "\U0001f44d", "\U0001f44e"}}
 
-// Unix time in fractional seconds, the time.time of Python
+// Unix time in fractional seconds
 func relayNow() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Registers a pending prompt under an owner nonce prefixed id and sweeps expired ones
@@ -100,7 +100,7 @@ func (a *RelayAdapter) sendPrompt(ctx context.Context, chatID, promptKind, text,
 	if result == nil {
 		return nil
 	}
-	if !pyrepr.Truthy(result["success"]) {
+	if !anyutil.IsTrue(result["success"]) {
 		return &SendResult{Success: false, Error: DeclineError(result), RawResponse: result}
 	}
 	return &SendResult{Success: true, MessageID: result["message_id"], RawResponse: result}
@@ -193,8 +193,8 @@ func (a *RelayAdapter) consumePromptResponse(ctx context.Context, event *Message
 	if pr == nil {
 		return false, nil
 	}
-	promptID := pyrepr.Str(pyrepr.Or(pr["prompt_id"], ""))
-	optionID := pyrepr.Str(pyrepr.Or(pr["option_id"], ""))
+	promptID := anyutil.String(anyutil.Or(pr["prompt_id"], ""))
+	optionID := anyutil.String(anyutil.Or(pr["option_id"], ""))
 	if promptID == "" || optionID == "" {
 		return false, nil
 	}
@@ -221,7 +221,7 @@ func (a *RelayAdapter) consumePromptResponse(ctx context.Context, event *Message
 	if event.Source != nil {
 		chatSource = event.Source.ChatID
 	}
-	chatID := pyrepr.Str(pyrepr.Or(state["chat_id"], chatSource))
+	chatID := anyutil.String(anyutil.Or(state["chat_id"], chatSource))
 	ackMeta := a.promptReplyMetadata(event)
 	var err error
 	switch kind {
@@ -232,7 +232,7 @@ func (a *RelayAdapter) consumePromptResponse(ctx context.Context, event *Message
 	case "clarify":
 		err = a.resolveClarify(ctx, state, optionID, chatID, ackMeta)
 	default:
-		pkgLog().Warn(fmt.Sprintf("relay prompt_response with unknown kind %s", pyrepr.Repr(kind)))
+		pkgLog().Warn(fmt.Sprintf("relay prompt_response with unknown kind %s", anyutil.Quote(kind)))
 	}
 	if err != nil {
 		if ctx.Err() != nil {
@@ -249,7 +249,7 @@ func (a *RelayAdapter) resolveExecApproval(ctx context.Context, state map[string
 	if _, known := relayExecApprovalLabels[choice]; !known {
 		choice = "deny"
 	}
-	count := tools.ResolveGatewayApproval(pyrepr.Str(pyrepr.Or(state["session_key"], "")), choice, false, "", "")
+	count := tools.ResolveGatewayApproval(anyutil.String(anyutil.Or(state["session_key"], "")), choice, false, "", "")
 	label := "⌛ Approval expired — no command was waiting."
 	if count != 0 {
 		label = relayExecApprovalLabels[choice]
@@ -267,7 +267,7 @@ func (a *RelayAdapter) resolveSlashConfirm(ctx context.Context, state map[string
 	if _, known := relaySlashConfirmLabels[choice]; !known {
 		choice = "cancel"
 	}
-	resultText := SlashConfirmResolve(ctx, pyrepr.Str(pyrepr.Or(state["session_key"], "")), pyrepr.Str(pyrepr.Or(state["confirm_id"], "")), choice)
+	resultText := SlashConfirmResolve(ctx, anyutil.String(anyutil.Or(state["session_key"], "")), anyutil.String(anyutil.Or(state["confirm_id"], "")), choice)
 	a.sendLifecycleAck(ctx, chatID, relaySlashConfirmLabels[choice], ackMeta)
 	if resultText != "" {
 		a.sendLifecycleAck(ctx, chatID, resultText, ackMeta)
@@ -277,7 +277,7 @@ func (a *RelayAdapter) resolveSlashConfirm(ctx context.Context, state map[string
 
 // Resolves a clarify with the chosen text, flipping to text capture for other or an unmappable option
 func (a *RelayAdapter) resolveClarify(ctx context.Context, state map[string]any, optionID, chatID string, ackMeta map[string]any) error {
-	clarifyID := pyrepr.Str(pyrepr.Or(state["clarify_id"], ""))
+	clarifyID := anyutil.String(anyutil.Or(state["clarify_id"], ""))
 	if optionID == "other" {
 		tools.MarkClarifyAwaitingText(clarifyID)
 		a.sendLifecycleAck(ctx, chatID, "✏️ Type your answer:", ackMeta)
@@ -286,13 +286,13 @@ func (a *RelayAdapter) resolveClarify(ctx context.Context, state map[string]any,
 	choices, _ := state["choices"].([]any)
 	idx := -1
 	if strings.HasPrefix(optionID, "c") {
-		if n, ok := pystr.IntText(optionID[1:]); ok && n.IsInt64() {
-			idx = int(n.Int64())
+		if n, err := textutil.ParseInt(optionID[1:]); err == nil && n >= 0 && n < int64(len(choices)) {
+			idx = int(n)
 		}
 	}
 	if idx >= 0 && idx < len(choices) {
-		tools.ResolveGatewayClarify(clarifyID, pyrepr.Str(choices[idx]))
-		a.sendLifecycleAck(ctx, chatID, "✅ "+pyrepr.Str(choices[idx]), ackMeta)
+		tools.ResolveGatewayClarify(clarifyID, anyutil.String(choices[idx]))
+		a.sendLifecycleAck(ctx, chatID, "✅ "+anyutil.String(choices[idx]), ackMeta)
 		return nil
 	}
 	tools.MarkClarifyAwaitingText(clarifyID)
@@ -405,11 +405,11 @@ func (a *RelayAdapter) CreateHandoffThread(ctx context.Context, parentChatID, na
 	if result == nil {
 		return "", false, nil
 	}
-	threadID := pyrepr.Or(result["thread_id"], result["message_id"])
-	if !pyrepr.Truthy(threadID) {
+	threadID := anyutil.Or(result["thread_id"], result["message_id"])
+	if !anyutil.IsTrue(threadID) {
 		return "", false, nil
 	}
-	return pyrepr.Str(threadID), true, nil
+	return anyutil.String(threadID), true, nil
 }
 
 // Renames a thread through the connector, its no clobber guard preferred over the legacy name guard

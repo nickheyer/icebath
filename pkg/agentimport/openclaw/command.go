@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -19,10 +20,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Current and legacy OpenClaw directory names under the user home
@@ -41,13 +42,13 @@ func init() {
 
 // Existing OpenClaw directories under the user home, current name first
 func FindOpenClawDirs() []string {
-	userHome, err := pypath.PathHome()
+	userHome, err := pathutil.Home()
 	if err != nil {
 		panic(err)
 	}
 	var out []string
 	for _, name := range openclawDirNames {
-		if d := pypath.PathJoin(userHome, name); isDir(d) {
+		if d := pathutil.Join(userHome, name); isDir(d) {
 			out = append(out, d)
 		}
 	}
@@ -228,19 +229,19 @@ func warnIfOpenClawRunning(ctx context.Context, c *cliui.Console, autoYes bool) 
 func warnIfGatewayRunning(ctx context.Context, c *cliui.Console, autoYes bool) (declined bool, err error) {
 	defer catch(&err)
 	liveness := gateway.ResolveGatewayLiveness(gateway.LivenessOptions{NoCache: true})
-	var platforms any = pyjson.NewObject()
+	var platforms any = jsonutil.NewObject()
 	if liveness.Running {
 		profile := profiles.GetActiveProfileName(ctx)
 		if liveness.Source == "multiplexer" && profile != "" && profile != "default" {
 			platforms = gateway.ProfilePlatformsFromMultiplexer(liveness.Runtime, profile)
 		} else {
-			var runtimeRec any = pyjson.NewObject()
+			var runtimeRec any = jsonutil.NewObject()
 			if liveness.Runtime != nil && liveness.Runtime.Len() > 0 {
 				runtimeRec = liveness.Runtime
 			} else if rec := gateway.ReadRuntimeStatus(""); rec != nil && rec.Len() > 0 {
 				runtimeRec = rec
 			}
-			platforms = or(dget(runtimeRec, "platforms", nil), pyjson.NewObject())
+			platforms = or(dget(runtimeRec, "platforms", nil), jsonutil.NewObject())
 		}
 	}
 	var connected []string
@@ -280,15 +281,15 @@ func Migrate(ctx context.Context, args agentimport.OpenClawArgs) (int, error) {
 		opts.SkillConflict = defaultSkillConflictMode
 	}
 	if opts.Source != "" {
-		opts.sourceDir = pypath.PathStr(opts.Source)
+		opts.sourceDir = filepath.Clean(opts.Source)
 	} else if dirs := FindOpenClawDirs(); len(dirs) > 0 {
 		opts.sourceDir = dirs[0]
 	} else {
-		userHome, err := pypath.PathHome()
+		userHome, err := pathutil.Home()
 		if err != nil {
 			return 1, err
 		}
-		opts.sourceDir = pypath.PathJoin(userHome, ".openclaw")
+		opts.sourceDir = pathutil.Join(userHome, ".openclaw")
 	}
 	if opts.JSON {
 		return migrateJSON(ctx, c, opts)
@@ -300,7 +301,7 @@ func Migrate(ctx context.Context, args agentimport.OpenClawArgs) (int, error) {
 			"You can specify a custom path: icebath import-agent openclaw --source /path/to/.openclaw")
 		return 0, nil
 	}
-	opts.icebathHome = pypath.PathStr(home.Dir(ctx))
+	opts.icebathHome = filepath.Clean(home.Dir(ctx))
 	outln(c, "")
 	c.PrintHeader("Migration Settings")
 	overwrite, secrets := "no (skip conflicts)", "no"
@@ -383,7 +384,7 @@ func printReportJSON(c *cliui.Console, report *Report) error {
 	if err != nil {
 		return err
 	}
-	text, err := pyjson.Dumps(redacted, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(redacted, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -393,7 +394,7 @@ func printReportJSON(c *cliui.Console, report *Report) error {
 
 // Prints an error as the JSON object the migration script prints for it
 func printJSONError(c *cliui.Console, msg string) error {
-	text, err := pyjson.Dumps(pyjson.ObjectOf("error", msg), pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("error", msg), jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -407,7 +408,7 @@ func migrateJSON(ctx context.Context, c *cliui.Console, opts migrateOptions) (in
 	if err != nil {
 		return selectionErrorStatus, printJSONError(c, excText(err))
 	}
-	opts.icebathHome = pypath.PathStr(home.Dir(ctx))
+	opts.icebathHome = filepath.Clean(home.Dir(ctx))
 	if isDir(opts.sourceDir) {
 		if err := ensureConfigFile(ctx, opts.icebathHome); err != nil {
 			return 1, err
@@ -450,22 +451,22 @@ func loadMigrator(opts migrateOptions, selected map[string]bool) (func(execute b
 	var err error
 	wsTarget := ""
 	if opts.WorkspaceTarget != "" {
-		if wsTarget, err = pypath.Resolve(opts.WorkspaceTarget); err != nil {
+		if wsTarget, err = pathutil.Resolve(opts.WorkspaceTarget); err != nil {
 			return nil, err
 		}
 	}
 	outputDir := ""
 	if opts.OutputDir != "" {
-		if outputDir, err = pypath.Resolve(pypath.Expanduser(opts.OutputDir)); err != nil {
+		if outputDir, err = pathutil.Resolve(pathutil.ExpandUser(opts.OutputDir)); err != nil {
 			return nil, err
 		}
 	}
 	return func(execute bool) (*Report, error) {
-		sourceRoot, err := pypath.Resolve(opts.sourceDir)
+		sourceRoot, err := pathutil.Resolve(opts.sourceDir)
 		if err != nil {
 			return nil, err
 		}
-		targetRoot, err := pypath.Resolve(opts.icebathHome)
+		targetRoot, err := pathutil.Resolve(opts.icebathHome)
 		if err != nil {
 			return nil, err
 		}
@@ -550,7 +551,7 @@ func applyMigration(ctx context.Context, c *cliui.Console, run func(bool) (*Repo
 		outln(c, "")
 		if archive != "" {
 			c.PrintSuccess(fmt.Sprintf("Pre-migration backup: %s (%s)", archive, tools.SizefmtBytes(size)))
-			c.PrintInfo("Restore with: icebath import " + pypath.PathName(archive))
+			c.PrintInfo("Restore with: icebath import " + pathutil.Name(archive))
 		} else {
 			c.PrintWarning("Pre-migration backup was not created (nothing to back up, the write failed, or it was incomplete); " +
 				"if incomplete, a partial pre-migration-*.incomplete.zip may exist in the backups dir.")
@@ -560,7 +561,7 @@ func applyMigration(ctx context.Context, c *cliui.Console, run func(bool) (*Repo
 	if err != nil {
 		errorBlock(c, "Migration failed: "+excText(err))
 		if backupArchive != "" {
-			info(c, "A pre-migration backup is available at: "+backupArchive, "Restore with: icebath import "+pypath.PathName(backupArchive))
+			info(c, "A pre-migration backup is available at: "+backupArchive, "Restore with: icebath import "+pathutil.Name(backupArchive))
 		}
 		return 0, nil
 	}
@@ -603,7 +604,7 @@ func printMigrationReport(c *cliui.Console, report *Report, dryRun, compactSkipp
 	if dryRun {
 		migratedHeading = "  ✓ Would migrate:"
 	}
-	userHome, err := pypath.PathHome()
+	userHome, err := pathutil.Home()
 	if err != nil {
 		panic(err)
 	}
@@ -668,7 +669,7 @@ func printMigrationReport(c *cliui.Console, report *Report, dryRun, compactSkipp
 	if os.Getenv("MIGRATION_JSON_OUTPUT") == "" {
 		return nil
 	}
-	text, err := pyjson.Dumps(report.JSON(), pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(report.JSON(), jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -721,16 +722,16 @@ func scanWorkspaceState(sourceDir string) []stateFile {
 	type candidate struct{ path, scope string }
 	var candidates []candidate
 	for _, name := range []string{"todo.json", "sessions", "logs"} {
-		candidates = append(candidates, candidate{pypath.PathJoin(sourceDir, name), "Root"})
+		candidates = append(candidates, candidate{pathutil.Join(sourceDir, name), "Root"})
 	}
 	if entries, err := os.ReadDir(sourceDir); err == nil {
 		for _, e := range entries {
-			child := pypath.PathJoin(sourceDir, e.Name())
+			child := pathutil.Join(sourceDir, e.Name())
 			if !isDir(child) || strings.HasPrefix(e.Name(), ".") {
 				continue
 			}
 			for _, name := range []string{"todo.json", "sessions", "logs", "memory"} {
-				candidates = append(candidates, candidate{pypath.PathJoin(child, name), "Workspace"})
+				candidates = append(candidates, candidate{pathutil.Join(child, name), "Workspace"})
 			}
 		}
 	}
@@ -743,17 +744,17 @@ func scanWorkspaceState(sourceDir string) []stateFile {
 		if isDir(cand.path) {
 			kind = "directory"
 		}
-		rel, _ := pypath.PathRelativeTo(cand.path, sourceDir)
-		out = append(out, stateFile{cand.scope + " " + kind + ": " + pypath.PathAsPosix(rel)})
+		rel, _ := pathutil.RelativeTo(cand.path, sourceDir)
+		out = append(out, stateFile{cand.scope + " " + kind + ": " + filepath.ToSlash(filepath.Clean(rel))})
 	}
 	return out
 }
 
 // Archive name for an OpenClaw directory, .pre-migration then date stamped then numbered, renamed unless a dry run
 func archiveDirectory(sourceDir string, dryRun bool) (string, error) {
-	base := pypath.PathName(sourceDir) + ".pre-migration"
+	base := pathutil.Name(sourceDir) + ".pre-migration"
 	stamped := base + "-" + time.Now().Format("20060102")
-	parent := pypath.PathParent(sourceDir)
+	parent := filepath.Dir(filepath.Clean(sourceDir))
 	archivePath := ""
 	for n := 0; archivePath == ""; n++ {
 		name := base
@@ -763,7 +764,7 @@ func archiveDirectory(sourceDir string, dryRun bool) (string, error) {
 		case n > 1:
 			name = fmt.Sprintf("%s-%d", stamped, n)
 		}
-		if candidate := pypath.PathJoin(parent, name); !exists(candidate) {
+		if candidate := pathutil.Join(parent, name); !exists(candidate) {
 			archivePath = candidate
 		}
 	}
@@ -778,16 +779,16 @@ func archiveDirectory(sourceDir string, dryRun bool) (string, error) {
 // Labels of the workspace items present in a workspace directory
 func workspaceItems(ws string) []string {
 	var out []string
-	if exists(pypath.PathJoin(ws, "todo.json")) {
+	if exists(pathutil.Join(ws, "todo.json")) {
 		out = append(out, "todo.json")
 	}
-	if isDir(pypath.PathJoin(ws, "sessions")) {
+	if isDir(pathutil.Join(ws, "sessions")) {
 		out = append(out, "sessions/")
 	}
-	if exists(pypath.PathJoin(ws, "SOUL.md")) {
+	if exists(pathutil.Join(ws, "SOUL.md")) {
 		out = append(out, "SOUL.md")
 	}
-	if exists(pypath.PathJoin(ws, "MEMORY.md")) {
+	if exists(pathutil.Join(ws, "MEMORY.md")) {
 		out = append(out, "MEMORY.md")
 	}
 	return out
@@ -801,12 +802,12 @@ func describeOpenClawDir(c *cliui.Console, sourceDir string) {
 	var workspaceDirs []string
 	if entries, err := os.ReadDir(sourceDir); err == nil {
 		for _, e := range entries {
-			d := pypath.PathJoin(sourceDir, e.Name())
+			d := pathutil.Join(sourceDir, e.Name())
 			if !isDir(d) || strings.HasPrefix(e.Name(), ".") {
 				continue
 			}
 			for _, marker := range workspaceMarkers {
-				if exists(pypath.PathJoin(d, marker)) {
+				if exists(pathutil.Join(d, marker)) {
 					workspaceDirs = append(workspaceDirs, d)
 					break
 				}
@@ -821,7 +822,7 @@ func describeOpenClawDir(c *cliui.Console, sourceDir string) {
 			if items == "" {
 				items = "empty"
 			}
-			rows[i] = pypath.PathName(ws) + "/  (" + items + ")"
+			rows[i] = pathutil.Name(ws) + "/  (" + items + ")"
 		}
 		printRows(c, rows, 5)
 	}
@@ -843,7 +844,7 @@ func Cleanup(ctx context.Context, args agentimport.OpenClawCleanupArgs) (int, er
 	printBanner(c, "OpenClaw Cleanup")
 	var dirs []string
 	if args.Source != "" {
-		dirs = []string{pypath.PathStr(args.Source)}
+		dirs = []string{filepath.Clean(args.Source)}
 	} else {
 		dirs = FindOpenClawDirs()
 	}

@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -70,7 +70,7 @@ func (r *GatewayRunner) handleRollbackCommand(ctx context.Context, event *gatewa
 		targetHash = checkpoints[idx].Hash
 	}
 	result := mgr.Restore(cwd, targetHash, "", !restoreAll)
-	if !pyrepr.Truthy(result["success"]) {
+	if !anyutil.IsTrue(result["success"]) {
 		return i18n.T(ctx, "gateway.rollback.restore_failed", "", map[string]any{"error": result["error"]}), nil
 	}
 	msg := i18n.T(ctx, "gateway.rollback.restored", "", map[string]any{"hash": result["restored_to"], "reason": result["reason"]})
@@ -129,9 +129,9 @@ func (r *GatewayRunner) handleDiffCommand(ctx context.Context, event *gateway.Me
 			result["error"] = d.Error
 		}
 	}
-	if !pyrepr.Truthy(result["success"]) {
+	if !anyutil.IsTrue(result["success"]) {
 		errText := result["error"]
-		if !pyrepr.Truthy(errText) {
+		if !anyutil.IsTrue(errText) {
 			errText = i18n.T(ctx, "gateway.diff.err_default", "", nil)
 		}
 		return i18n.T(ctx, "gateway.diff.failed", "", map[string]any{"error": errText}), nil
@@ -144,7 +144,7 @@ func renderDiffResult(ctx context.Context, result map[string]any, statOnly bool)
 	stat, _ := result["stat"].(string)
 	diff, _ := result["diff"].(string)
 	untracked := stringItems(result["untracked"])
-	if pyrepr.Truthy(result["empty"]) || (stat == "" && diff == "" && len(untracked) == 0) {
+	if anyutil.IsTrue(result["empty"]) || (stat == "" && diff == "" && len(untracked) == 0) {
 		return i18n.T(ctx, "gateway.diff.no_changes", "", nil)
 	}
 	var out []string

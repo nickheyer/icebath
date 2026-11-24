@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -17,11 +18,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 const (
@@ -60,24 +61,7 @@ var (
 	}
 )
 
-// Python exception carried as a Go error with its class name
-type pyErr struct{ kind, msg string }
-
-func (e *pyErr) Error() string      { return e.msg }
-func (e *pyErr) PyTypeName() string { return e.kind }
-
 func runtimeError(msg string) error { return &RuntimeError{Msg: msg} }
-
-// str of an exception as a percent s log argument renders it
-func errText(err error) string { return pyrepr.ExceptionMessage(err) }
-
-// str of an exception, its class name when the message is empty
-func errTextOrName(err error) string {
-	if msg := errText(err); msg != "" {
-		return msg
-	}
-	return pyrepr.ExceptionName(err)
-}
 
 // Websocket close carrying the close code and reason for the reconnect loop
 type QQCloseError struct {
@@ -85,17 +69,17 @@ type QQCloseError struct {
 	Reason string
 }
 
-// Close error of a received close frame, a falsy code or reason read as none
-func newQQCloseError(code any, reason string) *QQCloseError {
+// Close error of a received close frame, a zero code read as none
+func newQQCloseError(code int, reason string) *QQCloseError {
 	e := &QQCloseError{Reason: reason}
-	if n, ok := code.(int); ok && n != 0 {
-		e.Code = &n
+	if code != 0 {
+		e.Code = &code
 	}
 	return e
 }
 
 func (e *QQCloseError) Error() string {
-	code := "None"
+	code := "none"
 	if e.Code != nil {
 		code = strconv.Itoa(*e.Code)
 	}
@@ -133,7 +117,7 @@ type QQAdapter struct {
 	tokenLock sync.Mutex
 
 	mu                  sync.Mutex
-	ws                  *pyaiohttpws.Conn
+	ws                  *websocketutil.Conn
 	httpClient          *http.Client
 	listenTask          *gateway.AdapterTask
 	heartbeatTask       *gateway.AdapterTask
@@ -150,12 +134,12 @@ type QQAdapter struct {
 	interactionCallback func(ctx context.Context, event InteractionEvent) error
 }
 
-// Stripped str of a falsy defaulted value, like str(value or "").strip()
+// Text of a value with surrounding white space removed, empty for nil, false, zero and empty values
 func textOf(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Adapter configured from the platform extra and the profile scoped QQ env
@@ -178,8 +162,8 @@ func NewQQAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*QQAdapter,
 		extra = map[string]any{}
 	}
 	credential := func(key, env string) (string, error) {
-		if v := extra[key]; pyrepr.Truthy(v) {
-			return strings.TrimSpace(pyrepr.Str(v)), nil
+		if v := extra[key]; anyutil.IsTrue(v) {
+			return strings.TrimSpace(anyutil.String(v)), nil
 		}
 		secret, err := gateway.GetScopedSecret(ctx, env, "", false)
 		return strings.TrimSpace(secret), err
@@ -257,7 +241,7 @@ func (a *QQAdapter) markTransportDisconnected(ctx context.Context) {
 func (a *QQAdapter) running() bool { return a.BasePlatformAdapter.IsConnected() }
 
 // Live websocket, nil while none is open
-func (a *QQAdapter) socket() *pyaiohttpws.Conn {
+func (a *QQAdapter) socket() *websocketutil.Conn {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.ws
@@ -293,7 +277,7 @@ func (a *QQAdapter) Connect(ctx context.Context, isReconnect bool) (bool, error)
 			return false, ctx.Err()
 		}
 		shown := describeConnectProxyError(err, wsProxy())
-		message := "QQ startup failed: " + cmp.Or(shown, errText(err))
+		message := "QQ startup failed: " + cmp.Or(shown, err.Error())
 		a.SetFatalError(ctx, "qq_connect_error", message, true)
 		if shown != "" {
 			pkgLog().Error(fmt.Sprintf("[%s] %s", a.logTag(), message))
@@ -338,7 +322,7 @@ func (a *QQAdapter) closeWS(ctx context.Context) {
 	a.ws = nil
 	a.mu.Unlock()
 	if ws != nil && !ws.Closed() {
-		ws.Close(ctx)
+		ws.CloseWith(ctx, websocketutil.CloseNormal, "")
 	}
 }
 
@@ -355,8 +339,8 @@ func (a *QQAdapter) cleanup(ctx context.Context) {
 	a.failPending("Disconnected")
 }
 
-// One JSON or raw request through a client with the httpx timeout, failures carrying the httpx error class
-func httpRequest(ctx context.Context, client *http.Client, method, rawURL string, headers map[string]string, body []byte, timeout float64) (*pyhttpx.Response, error) {
+// One JSON or raw request through a client with every phase held to the timeout, a failure as the *url.Error of the exchange
+func httpRequest(ctx context.Context, client *http.Client, method, rawURL string, headers map[string]string, body []byte, timeout float64) (*httputil.Response, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -368,32 +352,19 @@ func httpRequest(ctx context.Context, client *http.Client, method, rawURL string
 	for name, value := range headers {
 		req.Header.Set(name, value)
 	}
-	resp, err := pyhttpx.Do(client, req, time.Duration(timeout*float64(time.Second)))
+	resp, err := httputil.Do(client, req, httputil.EachPhase(time.Duration(timeout*float64(time.Second))))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		var te *pyhttpx.TimeoutError
-		if errors.As(err, &te) {
-			return nil, &pyErr{"ReadTimeout", ""}
-		}
-		return nil, &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+		return nil, err
 	}
 	return resp, nil
 }
 
-// Compact JSON body the way httpx encodes a json argument
+// Compact UTF-8 JSON body of a payload
 func jsonBody(payload any) ([]byte, error) {
-	text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
-	return []byte(text), err
-}
-
-// HTTPStatusError of httpx raise_for_status for a response outside the success range
-func raiseForStatus(resp *pyhttpx.Response, rawURL string) error {
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return nil
-	}
-	return &pyErr{"HTTPStatusError", resp.StatusErrorText(rawURL)}
+	return jsonutil.Append(nil, payload)
 }
 
 // HTTP client in use, a RuntimeError while disconnected
@@ -413,7 +384,7 @@ func (a *QQAdapter) fetchJSON(ctx context.Context, what, method, rawURL string, 
 		client := a.httpClient
 		a.mu.Unlock()
 		if client == nil {
-			return nil, &pyErr{"AttributeError", "'NoneType' object has no attribute '" + strings.ToLower(method) + "'"}
+			return nil, errors.New("HTTP client not initialized")
 		}
 		var body []byte
 		if payload != nil {
@@ -430,14 +401,14 @@ func (a *QQAdapter) fetchJSON(ctx context.Context, what, method, rawURL string, 
 		if err != nil {
 			return nil, err
 		}
-		if err := raiseForStatus(resp, rawURL); err != nil {
+		if err := resp.CheckStatus(); err != nil {
 			return nil, err
 		}
 		decoded, err := resp.JSON()
 		if err != nil {
 			return nil, err
 		}
-		dict, ok := asDict(decoded)
+		dict, ok := jsonutil.AsMap(decoded)
 		if !ok {
 			return nil, notDictErr(decoded)
 		}
@@ -447,7 +418,7 @@ func (a *QQAdapter) fetchJSON(ctx context.Context, what, method, rawURL string, 
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return nil, runtimeError(fmt.Sprintf("Failed to get QQ Bot %s: %s", what, errText(err)))
+		return nil, runtimeError(fmt.Sprintf("Failed to get QQ Bot %s: %v", what, err))
 	}
 	return data, nil
 }
@@ -474,15 +445,15 @@ func (a *QQAdapter) ensureToken(ctx context.Context) (string, error) {
 		return "", err
 	}
 	token := data["access_token"]
-	if !pyrepr.Truthy(token) {
-		return "", runtimeError("QQ Bot token response missing access_token: " + pyrepr.Str(data))
+	if !anyutil.IsTrue(token) {
+		return "", runtimeError("QQ Bot token response missing access_token: " + anyutil.String(data))
 	}
-	expiresIn, err := pyInt64(getOr(data, "expires_in", int64(7200)))
+	expiresIn, err := anyutil.ToInt(getOr(data, "expires_in", int64(7200)))
 	if err != nil {
 		return "", err
 	}
 	a.mu.Lock()
-	a.accessToken, a.tokenExpiresAt = pyrepr.Str(token), wallClock()+float64(expiresIn)
+	a.accessToken, a.tokenExpiresAt = anyutil.String(token), wallClock()+float64(expiresIn)
 	access := a.accessToken
 	a.mu.Unlock()
 	pkgLog().Info(fmt.Sprintf("[%s] Access token refreshed, expires in %ds", a.logTag(), expiresIn))
@@ -500,11 +471,11 @@ func (a *QQAdapter) getGatewayURL(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	url := data["url"]
-	if !pyrepr.Truthy(url) {
-		return "", runtimeError("QQ Bot gateway response missing url: " + pyrepr.Str(data))
+	gatewayURL := data["url"]
+	if !anyutil.IsTrue(gatewayURL) {
+		return "", runtimeError("QQ Bot gateway response missing url: " + anyutil.String(data))
 	}
-	return pyrepr.Str(url), nil
+	return anyutil.String(gatewayURL), nil
 }
 
 // Token, gateway URL and websocket in turn, shared by the first connect and every reconnect
@@ -532,11 +503,22 @@ func wsProxy() string {
 	return ""
 }
 
-// Opens the websocket through the first proxy env var that is set
+// Opens the websocket through the first proxy env var that is set, else through the system proxy settings when the gateway trusts the environment
 func (a *QQAdapter) openWS(ctx context.Context, gatewayURL string) error {
 	a.closeWS(ctx)
-	ws, err := pyaiohttpws.Connect(ctx, gatewayURL, pyaiohttpws.Options{TrustEnv: gateway.GatewayTrustEnv(ctx), Proxy: wsProxy(),
-		Header: http.Header{"User-Agent": []string{BuildUserAgent()}}, CloseTimeout: time.Duration(ConnectTimeoutSeconds * float64(time.Second))})
+	opts := websocketutil.Options{PingInterval: -1, MaxMessageSize: -1, Header: http.Header{"User-Agent": []string{BuildUserAgent()}},
+		CloseTimeout: time.Duration(ConnectTimeoutSeconds * float64(time.Second))}
+	if gateway.GatewayTrustEnv(ctx) {
+		opts.Proxy = httputil.Proxy
+	}
+	if raw := wsProxy(); raw != "" {
+		proxyURL, err := url.Parse(raw)
+		if err != nil {
+			return err
+		}
+		opts.Proxy = http.ProxyURL(proxyURL)
+	}
+	ws, err := websocketutil.Connect(ctx, gatewayURL, opts)
 	if err != nil {
 		return err
 	}
@@ -578,7 +560,7 @@ func (a *QQAdapter) listenLoop(ctx context.Context) error {
 		}
 		var closeErr *QQCloseError
 		if !errors.As(err, &closeErr) {
-			pkgLog().Warn(fmt.Sprintf("[%s] WebSocket error: %s", a.logTag(), errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] WebSocket error: %v", a.logTag(), err))
 			a.markTransportDisconnected(ctx)
 			a.failPending("Connection interrupted")
 			if backoffIdx >= MaxReconnectAttempts {
@@ -591,7 +573,7 @@ func (a *QQAdapter) listenLoop(ctx context.Context) error {
 			}
 			continue
 		}
-		codeText, code := "None", 0
+		codeText, code := "none", 0
 		if closeErr.Code != nil {
 			code, codeText = *closeErr.Code, strconv.Itoa(*closeErr.Code)
 		}
@@ -663,7 +645,7 @@ func (a *QQAdapter) reconnect(ctx context.Context, backoffIdx int) (bool, error)
 		if ctx.Err() != nil {
 			return false, ctx.Err()
 		}
-		pkgLog().Warn(fmt.Sprintf("[%s] Reconnect failed: %s", a.logTag(), cmp.Or(describeConnectProxyError(err, wsProxy()), errText(err))))
+		pkgLog().Warn(fmt.Sprintf("[%s] Reconnect failed: %s", a.logTag(), cmp.Or(describeConnectProxyError(err, wsProxy()), err.Error())))
 		return false, nil
 	}
 	a.MarkConnected(ctx, "")
@@ -687,31 +669,33 @@ func (a *QQAdapter) readEvents(ctx context.Context) error {
 		}
 		msg, err := ws.Receive(ctx)
 		if err != nil {
-			return err
+			var closed *websocketutil.CloseError
+			if !errors.As(err, &closed) {
+				return err
+			}
+			if closed.Received() && !closed.SentFirst {
+				return newQQCloseError(closed.Code, closed.Reason)
+			}
+			return runtimeError("WebSocket closed")
 		}
-		switch msg.Type {
-		case pyaiohttpws.Text:
+		if msg.Type == websocketutil.Text {
 			if payload := parseJSON(msg.Data); len(payload) > 0 {
 				if err := a.dispatchPayload(ctx, payload); err != nil {
 					return err
 				}
 			}
-		case pyaiohttpws.Close:
-			return newQQCloseError(msg.Data, msg.Extra)
-		case pyaiohttpws.Closed, pyaiohttpws.Error:
-			return runtimeError("WebSocket closed")
 		}
 	}
 	return nil
 }
 
-// Sends one JSON frame over the websocket with the default json.dumps separators
-func sendJSON(ws *pyaiohttpws.Conn, payload any) error {
-	text, err := pyjson.Dumps(payload)
+// Sends one payload over the websocket as a compact JSON text frame
+func sendJSON(ws *websocketutil.Conn, payload any) error {
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return err
 	}
-	return ws.SendStr(text)
+	return ws.SendText(text)
 }
 
 // Sends op 1 heartbeats with the latest sequence at the interval the Hello set
@@ -734,21 +718,21 @@ func (a *QQAdapter) heartbeatLoop(ctx context.Context) error {
 		}
 		a.mu.Unlock()
 		if err := sendJSON(ws, obj("op", int64(1), "d", seq)); err != nil {
-			pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat failed: %s", a.logTag(), errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat failed: %v", a.logTag(), err))
 		}
 	}
 	return nil
 }
 
 // Sends an Identify or Resume payload, false only when the send itself failed
-func (a *QQAdapter) sendWSAuth(name string, payload *pyjson.Object, sentMsg string) bool {
+func (a *QQAdapter) sendWSAuth(name string, payload *jsonutil.Object, sentMsg string) bool {
 	ws := a.socket()
 	if ws == nil || ws.Closed() {
 		pkgLog().Warn(fmt.Sprintf("[%s] Cannot send %s: WebSocket not connected", a.logTag(), name))
 		return true
 	}
 	if err := sendJSON(ws, payload); err != nil {
-		pkgLog().Error(fmt.Sprintf("[%s] Failed to send %s: %s", a.logTag(), name, errText(err)))
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to send %s: %v", a.logTag(), name, err))
 		return false
 	}
 	pkgLog().Info(fmt.Sprintf("[%s] %s", a.logTag(), sentMsg))
@@ -781,7 +765,7 @@ func (a *QQAdapter) sendResume(ctx context.Context) error {
 	}
 	a.mu.Unlock()
 	if !a.sendWSAuth("Resume", obj("op", int64(6), "d", obj("token", "QQBot "+token, "session_id", sessionID, "seq", seq)),
-		fmt.Sprintf("Resume sent (session_id=%s, seq=%s)", pyrepr.Str(sessionID), pyrepr.Str(seq))) {
+		fmt.Sprintf("Resume sent (session_id=%s, seq=%s)", anyutil.String(sessionID), anyutil.String(seq))) {
 		a.mu.Lock()
 		a.sessionID, a.lastSeq = nil, nil
 		a.mu.Unlock()
@@ -793,14 +777,14 @@ func (a *QQAdapter) sendResume(ctx context.Context) error {
 func (a *QQAdapter) closeWSSoon(ctx context.Context) {
 	if ws := a.socket(); ws != nil && !ws.Closed() {
 		gateway.SpawnAdapterTask(ctx, func(tctx context.Context) error {
-			ws.Close(tctx)
+			ws.CloseWith(tctx, websocketutil.CloseNormal, "")
 			return nil
 		})
 	}
 }
 
-// Whether a decoded value equals an int the way Python compares numbers
-func equalsInt(v any, n int64) bool { return v != nil && pyjson.Equal(v, n) }
+// Whether a decoded value is a number equal to n, integer and float forms alike
+func equalsInt(v any, n int64) bool { return v != nil && anyutil.Equal(v, n) }
 
 // Routes one websocket payload by its opcode, spawning the async handlers
 func (a *QQAdapter) dispatchPayload(ctx context.Context, payload map[string]any) error {
@@ -816,17 +800,17 @@ func (a *QQAdapter) dispatchPayload(ctx context.Context, payload map[string]any)
 	switch {
 	case equalsInt(op, 10):
 		var intervalRaw any = int64(30000)
-		if dict, ok := asDict(d); ok {
+		if dict, ok := jsonutil.AsMap(d); ok {
 			intervalRaw = getOr(dict, "heartbeat_interval", int64(30000))
 		}
-		intervalMS, err := pyjsonFloat(intervalRaw)
+		intervalMS, err := jsonFloat(intervalRaw)
 		if err != nil {
 			return err
 		}
 		a.mu.Lock()
 		a.heartbeatInterval = intervalMS / 1000.0 * 0.8
 		interval := a.heartbeatInterval
-		resume := pyrepr.Truthy(a.sessionID) && a.lastSeq != nil
+		resume := anyutil.IsTrue(a.sessionID) && a.lastSeq != nil
 		a.mu.Unlock()
 		pkgLog().Debug(fmt.Sprintf("[%s] Hello received, heartbeat_interval=%dms (sending every %.1fs)", a.logTag(), int64(intervalMS), interval))
 		if resume {
@@ -834,15 +818,15 @@ func (a *QQAdapter) dispatchPayload(ctx context.Context, payload map[string]any)
 		} else {
 			spawn(a.sendIdentify)
 		}
-	case equalsInt(op, 0) && pyrepr.Truthy(t):
-		event := pyrepr.Str(t)
+	case equalsInt(op, 0) && anyutil.IsTrue(t):
+		event := anyutil.String(t)
 		switch {
 		case event == "READY":
-			if dict, ok := asDict(d); ok {
+			if dict, ok := jsonutil.AsMap(d); ok {
 				a.mu.Lock()
 				a.sessionID = dict["session_id"]
 				a.mu.Unlock()
-				pkgLog().Info(fmt.Sprintf("[%s] Ready, session_id=%s", a.logTag(), pyrepr.Str(dict["session_id"])))
+				pkgLog().Info(fmt.Sprintf("[%s] Ready, session_id=%s", a.logTag(), anyutil.String(dict["session_id"])))
 			}
 		case event == "RESUMED":
 			pkgLog().Info(fmt.Sprintf("[%s] Session resumed", a.logTag()))
@@ -861,7 +845,7 @@ func (a *QQAdapter) dispatchPayload(ctx context.Context, payload map[string]any)
 		pkgLog().Info(fmt.Sprintf("[%s] Server requested reconnect (op 7)", a.logTag()))
 		a.closeWSSoon(ctx)
 	case equalsInt(op, 9):
-		if d != nil && pyrepr.Truthy(d) {
+		if d != nil && anyutil.IsTrue(d) {
 			pkgLog().Info(fmt.Sprintf("[%s] Invalid session (op 9, resumable)", a.logTag()))
 		} else {
 			pkgLog().Info(fmt.Sprintf("[%s] Invalid session (op 9, not resumable), clearing session", a.logTag()))
@@ -871,13 +855,13 @@ func (a *QQAdapter) dispatchPayload(ctx context.Context, payload map[string]any)
 		}
 		a.closeWSSoon(ctx)
 	default:
-		pkgLog().Debug(fmt.Sprintf("[%s] Unknown op: %s", a.logTag(), pyrepr.Str(op)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Unknown op: %s", a.logTag(), anyutil.String(op)))
 	}
 	return nil
 }
 
-// Float of a decoded JSON number, the TypeError dividing any other value raises
-func pyjsonFloat(v any) (float64, error) {
+// Float of a decoded JSON number or boolean, an error for any other value
+func jsonFloat(v any) (float64, error) {
 	switch n := v.(type) {
 	case float64:
 		return n, nil
@@ -889,18 +873,17 @@ func pyjsonFloat(v any) (float64, error) {
 		}
 		return 0, nil
 	}
-	return 0, &pyErr{"TypeError", fmt.Sprintf("unsupported operand type(s) for /: '%s' and 'float'", pyrepr.TypeName(v))}
+	return 0, errors.New("expected a number, got " + anyutil.Kind(v))
 }
 
 // Decoded object of a text frame, nil for a frame that does not parse or is not an object
-func parseJSON(raw any) map[string]any {
-	text, _ := raw.(string)
-	payload, err := pyjson.Loads(text)
+func parseJSON(raw []byte) map[string]any {
+	payload, err := jsonutil.Decode(raw)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[QQBot] Failed to parse JSON: %s", pyrepr.Repr(raw)))
+		pkgLog().Warn(fmt.Sprintf("[QQBot] Failed to parse JSON: %s", strconv.Quote(string(raw))))
 		return nil
 	}
-	dict, _ := asDict(payload)
+	dict, _ := jsonutil.AsMap(payload)
 	return dict
 }
 

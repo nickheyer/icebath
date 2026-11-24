@@ -3,7 +3,7 @@ package gateway
 import (
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Process hook classifying a failed turn result into its client error descriptor, bound by the binary
@@ -14,18 +14,18 @@ var errorSurfaceKeyOrder = []string{"layer", "code", "retryable", "provider", "m
 	"api_key_env", "message", "resets_at"}
 
 // Stamps the UI failure verdict fields on a terminal result in place
-func stampTurnFailure(result *pyjson.Object, reason string, retryable bool) {
+func stampTurnFailure(result *jsonutil.Object, reason string, retryable bool) {
 	result.Set("failure_reason", reason)
 	result.Set("failure_retryable", retryable)
 }
 
 // Client error descriptor of a failed turn result, nil when it carries no failure signal
-func buildErrorSurfaceFromResult(result *pyjson.Object, providerName, model string) any {
-	surface := ErrorSurfaceFromResult(pyjson.Plain(result), providerName, model)
+func buildErrorSurfaceFromResult(result *jsonutil.Object, providerName, model string) any {
+	surface := ErrorSurfaceFromResult(jsonutil.Plain(result), providerName, model)
 	if surface == nil {
 		return nil
 	}
-	descriptor := pyjson.NewObject()
+	descriptor := jsonutil.NewObject()
 	for _, key := range errorSurfaceKeyOrder {
 		if value, ok := surface[key]; ok {
 			descriptor.Set(key, value)

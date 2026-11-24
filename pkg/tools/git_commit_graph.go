@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -47,13 +47,13 @@ func lockedSlot(lock string, wait bool) (*os.File, error) {
 		return nil, err
 	}
 	if wait {
-		if err := pyfs.LockFile(f); err != nil {
+		if err := fsutil.LockFile(f); err != nil {
 			f.Close()
 			return nil, nil
 		}
 		return f, nil
 	}
-	ok, err := pyfs.TryLockFile(f)
+	ok, err := fsutil.TryLockFile(f)
 	if err != nil || !ok {
 		f.Close()
 		return nil, nil
@@ -63,7 +63,7 @@ func lockedSlot(lock string, wait bool) (*os.File, error) {
 
 // Drops the slot lock and closes the file, the file itself is never unlinked
 func closeSlot(f *os.File) {
-	_ = pyfs.UnlockFile(f)
+	_ = fsutil.UnlockFile(f)
 	_ = f.Close()
 }
 

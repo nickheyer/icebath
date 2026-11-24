@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestReadChunkShortReadRaises(t *testing.T) {
@@ -26,7 +26,7 @@ func TestReadChunkShortReadRaises(t *testing.T) {
 }
 
 func TestParsePrepareResponseWrappedInData(t *testing.T) {
-	raw, _ := pyjson.Loads(`{"data": {"upload_id": "uid-42", "block_size": 4096, "parts": [
+	raw, _ := jsonutil.Decode(`{"data": {"upload_id": "uid-42", "block_size": 4096, "parts": [
 		{"part_index": 1, "presigned_url": "https://cos/1", "block_size": 4096}, {"index": 2, "url": "https://cos/2"}],
 		"concurrency": 3, "retry_timeout": 90}}`)
 	r, err := parsePrepareResponse(raw)
@@ -41,7 +41,7 @@ func TestParsePrepareResponseWrappedInData(t *testing.T) {
 
 type apiCall struct {
 	method, path string
-	body         *pyjson.Object
+	body         *jsonutil.Object
 }
 
 func TestFullUploadTwoPartsSuccess(t *testing.T) {
@@ -51,19 +51,19 @@ func TestFullUploadTwoPartsSuccess(t *testing.T) {
 	}
 	var mu sync.Mutex
 	var apiCalls []apiCall
-	api := func(_ context.Context, method, path string, body *pyjson.Object, _ float64) (any, error) {
+	api := func(_ context.Context, method, path string, body *jsonutil.Object, _ float64) (any, error) {
 		mu.Lock()
 		apiCalls = append(apiCalls, apiCall{method, path, body})
 		mu.Unlock()
 		switch {
 		case strings.HasSuffix(path, "/upload_prepare"):
-			return pyjson.Loads(`{"upload_id": "uid-xyz", "block_size": 5000000, "parts": [
+			return jsonutil.Decode(`{"upload_id": "uid-xyz", "block_size": 5000000, "parts": [
 				{"part_index": 1, "presigned_url": "https://cos.example/p1"}, {"part_index": 2, "presigned_url": "https://cos.example/p2"}],
 				"concurrency": 1}`)
 		case strings.HasSuffix(path, "/upload_part_finish"):
-			return pyjson.NewObject(), nil
+			return jsonutil.NewObject(), nil
 		}
-		return pyjson.Loads(`{"file_info": "FILEINFO_TOKEN", "file_uuid": "u-1"}`)
+		return jsonutil.Decode(`{"file_info": "FILEINFO_TOKEN", "file_uuid": "u-1"}`)
 	}
 	type putCall struct {
 		url     string
@@ -81,7 +81,7 @@ func TestFullUploadTwoPartsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if v, _ := result.(*pyjson.Object).Get("file_info"); v != "FILEINFO_TOKEN" {
+	if v, _ := result.(*jsonutil.Object).Get("file_info"); v != "FILEINFO_TOKEN" {
 		t.Fatalf("file_info = %v", v)
 	}
 	if len(puts) != 2 || puts[0].url != "https://cos.example/p1" || puts[1].url != "https://cos.example/p2" {
@@ -95,7 +95,7 @@ func TestFullUploadTwoPartsSuccess(t *testing.T) {
 		!strings.HasSuffix(apiCalls[3].path, "/files") {
 		t.Fatalf("api calls = %+v", apiCalls)
 	}
-	if body, _ := pyjson.Dumps(apiCalls[3].body); body != `{"upload_id": "uid-xyz"}` {
+	if body, _ := jsonutil.Encode(apiCalls[3].body); body != `{"upload_id": "uid-xyz"}` {
 		t.Fatalf("complete body = %s", body)
 	}
 }
@@ -106,15 +106,15 @@ func TestGroupPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	var seen []string
-	api := func(_ context.Context, _, path string, _ *pyjson.Object, _ float64) (any, error) {
+	api := func(_ context.Context, _, path string, _ *jsonutil.Object, _ float64) (any, error) {
 		seen = append(seen, path)
 		switch {
 		case strings.HasSuffix(path, "/upload_prepare"):
-			return pyjson.Loads(`{"upload_id": "gid-1", "block_size": 100, "parts": [{"part_index": 1, "presigned_url": "https://cos/g1"}]}`)
+			return jsonutil.Decode(`{"upload_id": "gid-1", "block_size": 100, "parts": [{"part_index": 1, "presigned_url": "https://cos/g1"}]}`)
 		case strings.HasSuffix(path, "/upload_part_finish"):
-			return pyjson.NewObject(), nil
+			return jsonutil.NewObject(), nil
 		}
-		return pyjson.Loads(`{"file_info": "GFILE"}`)
+		return jsonutil.Decode(`{"file_info": "GFILE"}`)
 	}
 	put := func(context.Context, string, []byte, map[string]string) (PutResponse, error) {
 		return PutResponse{StatusCode: 200}, nil
@@ -140,7 +140,7 @@ func TestPrepareDailyLimitBecomesTypedError(t *testing.T) {
 	if err := os.WriteFile(f, []byte("x"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	api := func(context.Context, string, string, *pyjson.Object, float64) (any, error) {
+	api := func(context.Context, string, string, *jsonutil.Object, float64) (any, error) {
 		return nil, &RuntimeError{Msg: "API error biz_code=40093002", BizCode: 40093002}
 	}
 	_, err := NewChunkedUploader(api, nil, "T").Upload(context.Background(), "c2c", "u", f, 4, "a.bin")
@@ -179,7 +179,7 @@ func TestBuildApprovalKeyboardEmbedsSessionKey(t *testing.T) {
 	if !reflect.DeepEqual(datas, want) {
 		t.Fatalf("datas = %v", datas)
 	}
-	got, _ := pyjson.Dumps(BuildUpdatePromptKeyboard().ToDict(), pyjson.EnsureASCII(false))
+	got, _ := jsonutil.Encode(BuildUpdatePromptKeyboard().ToDict())
 	if !strings.HasPrefix(got, `{"content": {"rows": [{"buttons": [{"id": "yes", "render_data": {"label": "✓ 确认", "visited_label": "已确认", "style": 1}, "action": {"type": 1, "data": "update_prompt:y", "permission": {"type": 2}, "click_limit": 1}, "group_id": "update_prompt"}`) {
 		t.Fatalf("dict = %s", got)
 	}
@@ -200,7 +200,7 @@ func TestBuildApprovalTextTruncatesLongCommands(t *testing.T) {
 }
 
 func TestParseC2CInteraction(t *testing.T) {
-	raw, _ := pyjson.Loads(`{"id": "interaction-42", "chat_type": 2, "user_openid": "user-1",
+	raw, _ := jsonutil.Decode(`{"id": "interaction-42", "chat_type": 2, "user_openid": "user-1",
 		"data": {"type": 11, "resolved": {"button_data": "approve:sess:allow-once", "button_id": "allow"}}}`)
 	ev, err := ParseInteractionEvent(raw)
 	if err != nil {

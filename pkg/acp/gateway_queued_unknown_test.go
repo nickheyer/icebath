@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func bareGatewayAgent(t *testing.T, snapshots map[string]string) (*GatewayACPAgent, *scriptedGateway) {
 	t.Helper()
 	a := newGatewayAgent(t)
 	link := &scriptedGateway{}
-	link.fakeGateway = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.fakeGateway = newFakeGateway(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		link.mu.Lock()
 		rpc := link.rpc
 		link.mu.Unlock()
@@ -58,7 +58,7 @@ func TestEditorFollowerReportsUnknownWithoutPoisoningOtherSessions(t *testing.T)
 	for _, beforeAck := range []bool{false, true} {
 		t.Run(map[bool]string{false: "after_ack", true: "before_ack"}[beforeAck], func(t *testing.T) {
 			a, link := bareGatewayAgent(t, map[string]string{"s": `{}`, "other": `{}`})
-			link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				if method != "prompt.submit" {
 					t.Errorf("unexpected %s", method)
 				}
@@ -112,7 +112,7 @@ func TestEditorRechecksLostTurnAfterDiscardInAnotherViewer(t *testing.T) {
 	a, link := bareGatewayAgent(t, map[string]string{"s": `{"pending": ` + lostPending + `, "replay_epoch": "owner", "last_sequence": 1}`})
 	var mu sync.Mutex
 	ownerPending := lostPending
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		if method == "session.resume" {
 			mu.Lock()
 			defer mu.Unlock()
@@ -154,12 +154,12 @@ func countMethod(methods []string, want string) int {
 	return n
 }
 
-func ownerEvent(t *testing.T, seq int, kind, admission, payload string) *pyjson.Object {
-	params := pyjson.ObjectOf("session_id", "s", "replay_epoch", "owner", "seq", int64(seq), "type", kind, "payload", jsonObj(t, payload))
+func ownerEvent(t *testing.T, seq int, kind, admission, payload string) *jsonutil.Object {
+	params := jsonutil.ObjectOf("session_id", "s", "replay_epoch", "owner", "seq", int64(seq), "type", kind, "payload", jsonObj(t, payload))
 	if admission != "" {
 		params.Set("admission_id", admission)
 	}
-	return pyjson.ObjectOf("params", params)
+	return jsonutil.ObjectOf("params", params)
 }
 
 func startPump(t *testing.T, a *GatewayACPAgent) {
@@ -176,8 +176,8 @@ func startPump(t *testing.T, a *GatewayACPAgent) {
 func lastAgentText(e *editorFake) string {
 	text := ""
 	for _, u := range updatesOf(e) {
-		if chunk, ok := u.(*pyacp.AgentMessageChunk); ok {
-			text = chunk.Content.(*pyacp.TextContentBlock).Text
+		if chunk, ok := u.(*acputil.AgentMessageChunk); ok {
+			text = chunk.Content.(*acputil.TextContentBlock).Text
 		}
 	}
 	return text
@@ -190,7 +190,7 @@ func TestUnknownRefreshKeepsUnreadReplyEventsWithoutRestoringOldPending(t *testi
 	var once sync.Once
 	onLoop(a, func() bool {
 		a.conn = editor
-		a.answerApproval = func(ctx context.Context, sessionID string, prompt *pyjson.Object) bool {
+		a.answerApproval = func(ctx context.Context, sessionID string, prompt *jsonutil.Object) bool {
 			once.Do(func() { close(approvalSeen) })
 			a.loop.await(func() {
 				select {
@@ -237,7 +237,7 @@ func TestUnknownRefreshOrdersPendingStateIndependentlyOfReplyEvents(t *testing.T
 			entered, release := make(chan struct{}), make(chan struct{})
 			var once, releaseOnce sync.Once
 			t.Cleanup(func() { releaseOnce.Do(func() { close(release) }) })
-			link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+			link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 				if method == "session.resume" {
 					once.Do(func() { close(entered) })
 					<-release
@@ -298,7 +298,7 @@ func TestStopDuringUnknownRefreshCancelsTheUnsentPrompt(t *testing.T) {
 	a, link := bareGatewayAgent(t, map[string]string{"s": `{"pending": ` + lostPending + `}`})
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		if method == "session.resume" {
 			once.Do(func() { close(entered) })
 			<-release
@@ -316,7 +316,7 @@ func TestStopDuringUnknownRefreshCancelsTheUnsentPrompt(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("the refresh did not start")
 	}
-	if err := a.Cancel(context.Background(), &pyacp.CancelNotification{SessionID: "s"}); err != nil {
+	if err := a.Cancel(context.Background(), &acputil.CancelNotification{SessionID: "s"}); err != nil {
 		t.Fatal(err)
 	}
 	close(release)
@@ -336,17 +336,17 @@ func TestResumedUnknownTurnNamesTheExistingDiscardRecovery(t *testing.T) {
 	editor := &editorFake{}
 	onLoop(a, func() bool { a.conn = editor; return true })
 	t.Cleanup(a.Close)
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		switch method {
 		case "session.info", "config.set":
-			return pyjson.NewObject(), nil
+			return jsonutil.NewObject(), nil
 		case "session.resume":
 			return jsonObj(t, `{"session_id": "s", "messages": [], "prompts": [], "pending": [{"admission_id": "`+lostAdmission+`", "status": "unknown", "execution_generation": 4}]}`), nil
 		}
 		return nil, context.Canceled
 	})
-	held, _ := pyacp.WithResponseScope(context.Background())
-	if _, err := a.LoadSession(held, &pyacp.LoadSessionRequest{Cwd: "/", SessionID: "s"}); err != nil {
+	held, _ := acputil.WithResponseScope(context.Background())
+	if _, err := a.LoadSession(held, &acputil.LoadSessionRequest{Cwd: "/", SessionID: "s"}); err != nil {
 		t.Fatal(err)
 	}
 	notice := lastAgentText(editor)
@@ -373,7 +373,7 @@ func TestResumedUnknownTurnCanBeDiscardedWithoutLeavingTheEditor(t *testing.T) {
 	a, link := bareGatewayAgent(t, map[string]string{"s": unknown})
 	var mu sync.Mutex
 	resolved := 0
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		if method == "prompt.resolve_unknown" {

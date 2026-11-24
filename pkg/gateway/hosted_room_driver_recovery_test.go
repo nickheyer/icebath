@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const hrDriverSchemaChildEnv = "ICEBATH_TEST_HOSTED_DRIVER_SCHEMA"
@@ -56,7 +56,7 @@ func TestIndeterminateTaskCanBeDeferredRetriedAndCancelled(t *testing.T) {
 	repeated := hrOK(DriverDeferIndeterminateTask(ctx, db, identity, recovered, original.ExecutionGeneration, original.CancelGeneration, "member_unavailable", clock.now))
 	requeued := hrOK(DriverRequeueDeferredTask(ctx, db, identity, recovered, original.ExecutionGeneration, original.CancelGeneration, clock.now))
 	retried := hrOK(hrStart(db, identity, recovered, clock))
-	if deferred["status"] != "deferred" || !pyjson.Equal(deferred["result"], map[string]any{"reason": "member_unavailable", "retryable": true}) ||
+	if deferred["status"] != "deferred" || !anyutil.Equal(deferred["result"], map[string]any{"reason": "member_unavailable", "retryable": true}) ||
 		repeated["idempotent"] != true || requeued["status"] != "queued" || retried.ExecutionGeneration != original.ExecutionGeneration+1 {
 		t.Fatalf("deferred %v repeated %v requeued %v retried %+v", deferred, repeated, requeued, retried)
 	}
@@ -79,7 +79,7 @@ func TestProvenNotAdmittedAttemptReturnsToQueueUnderExactFence(t *testing.T) {
 	attempt := hrOK(DriverStartTask(ctx, db, identity, lease, admitted["cancel_generation"].(int64), clock.now))
 	queued := hrOK(DriverRequeueNotAdmittedTask(ctx, db, attempt, clock.now))
 	repeated := hrOK(DriverRequeueNotAdmittedTask(ctx, db, attempt, clock.now))
-	if queued["status"] != "queued" || queued["execution_generation"] != attempt.ExecutionGeneration || !pyjson.Equal(queued["payload"], admitted["payload"]) ||
+	if queued["status"] != "queued" || queued["execution_generation"] != attempt.ExecutionGeneration || !anyutil.Equal(queued["payload"], admitted["payload"]) ||
 		queued["run_gateway_id"] != nil || queued["run_process_generation"] != nil || queued["run_lease_generation"] != nil || repeated["idempotent"] != true {
 		t.Fatalf("queued %v repeated %v", queued, repeated)
 	}
@@ -135,7 +135,7 @@ func TestStateSurvivesSqliteReopenAndConcurrentDuplicateAdmission(t *testing.T) 
 	}
 	reopened := hrOK(DriverGetTask(ctx, db, identity))
 	listed := hrOK(DriverListTasks(ctx, db, "room-1", nil))
-	if reopened["identity"] != identity || !pyjson.Equal(reopened["payload"], hrPayload("", 1, "")) || !pyjson.Equal(listed[0]["payload"], hrPayload("", 1, "")) {
+	if reopened["identity"] != identity || !anyutil.Equal(reopened["payload"], hrPayload("", 1, "")) || !anyutil.Equal(listed[0]["payload"], hrPayload("", 1, "")) {
 		t.Fatalf("reopened %v", reopened)
 	}
 }

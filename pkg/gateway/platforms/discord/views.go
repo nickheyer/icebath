@@ -15,7 +15,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // discord.py Color presets the component views paint their embeds with
@@ -117,9 +116,9 @@ func (it *viewItem) payload() map[string]any {
 // Item repr the view error log names, discord.py style
 func (it *viewItem) repr() string {
 	if it.kind == discordgo.SelectMenuComponent {
-		return fmt.Sprintf("<Select placeholder=%s min_values=1 max_values=1 disabled=%s>", pyrepr.Repr(it.hint), pyrepr.Repr(it.disabled))
+		return fmt.Sprintf("<Select placeholder=%s min_values=1 max_values=1 disabled=%s>", anyutil.Quote(it.hint), anyutil.Quote(it.disabled))
 	}
-	return fmt.Sprintf("<Button style=%d disabled=%s label=%s>", int(it.style), pyrepr.Repr(it.disabled), pyrepr.Repr(it.label))
+	return fmt.Sprintf("<Button style=%d disabled=%s label=%s>", int(it.style), anyutil.Quote(it.disabled), anyutil.Quote(it.label))
 }
 
 // Thirty two hex digits, the custom id discord.py gives an item declared without one
@@ -265,7 +264,7 @@ func (v *uiView) stop() {
 func (v *uiView) repr() string {
 	v.mu.Lock()
 	defer v.mu.Unlock()
-	return fmt.Sprintf("<%s timeout=%s children=%d>", v.name, pyrepr.Repr(v.timeout.Seconds()), len(v.children))
+	return fmt.Sprintf("<%s timeout=%s children=%d>", v.name, anyutil.Quote(v.timeout.Seconds()), len(v.children))
 }
 
 // Live views keyed by the message they are attached to

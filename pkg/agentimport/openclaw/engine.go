@@ -20,9 +20,10 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -335,7 +336,7 @@ func normalizeText(text string) string {
 
 // Creates the parent directories of a path
 func ensureParent(path string) {
-	if err := os.MkdirAll(pypath.PathParent(path), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(path)), 0o777); err != nil {
 		raise(err)
 	}
 }
@@ -369,7 +370,7 @@ func ResolveSecretInput(value any, env map[string]string) (string, bool) {
 		}
 		source := dget(value, "source", "")
 		refID := dget(value, "id", "")
-		if eqStr(source, "env") && truthy(refID) && len(env) > 0 {
+		if eqStr(source, "env") && anyutil.IsTrue(refID) && len(env) > 0 {
 			key, isKey := refID.(string)
 			if !isKey {
 				return "", false
@@ -426,12 +427,12 @@ var yamlDumpOptions = config.SafeDumpOptions{AllowUnicode: false, Width: 80, Ind
 
 // Writes data as YAML through a synced temp file and an atomic rename, a symlinked target written through its link
 func DumpYAMLFile(path string, data map[string]any) (err error) {
-	if err = os.MkdirAll(pypath.PathParent(path), 0o777); err != nil {
+	if err = os.MkdirAll(filepath.Dir(filepath.Clean(path)), 0o777); err != nil {
 		return err
 	}
 	target := path
 	if st, lerr := os.Lstat(path); lerr == nil && st.Mode()&os.ModeSymlink != 0 {
-		if target, err = pypath.Realpath(path, pypath.Lax); err != nil {
+		if target, err = pathutil.Resolve(path); err != nil {
 			return err
 		}
 	}
@@ -467,7 +468,7 @@ func DumpYAMLFile(path string, data map[string]any) (err error) {
 	if !errors.Is(err, syscall.EXDEV) && !errors.Is(err, syscall.EBUSY) {
 		return err
 	}
-	if err = pyshutil.CopyFile(tmpPath, target); err != nil {
+	if err = fsutil.CopyFile(tmpPath, target); err != nil {
 		return err
 	}
 	copyStat(tmpPath, target)
@@ -491,7 +492,7 @@ func copyStat(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.Chtimes(dst, pyshutil.FileAtime(st), st.ModTime()); err != nil {
+	if err := os.Chtimes(dst, fsutil.Atime(st), st.ModTime()); err != nil {
 		return err
 	}
 	if err := copyXattrs(src, dst); err != nil {
@@ -566,17 +567,17 @@ func backupExisting(path, backupRoot string) string {
 		return ""
 	}
 	rel := path
-	anchor, parts := pypath.PathParts(path)
+	anchor, parts := pathutil.Parts(path)
 	if anchor != "" && len(parts) > 0 {
-		rel = pypath.PathJoin(parts[0], parts[1:]...)
+		rel = pathutil.Join(parts[0], parts[1:]...)
 	}
-	dest := pypath.PathJoin(backupRoot, rel)
+	dest := pathutil.Join(backupRoot, rel)
 	ensureParent(dest)
 	if isDir(path) {
-		if err := pyshutil.CopyTree(path, dest, false, true); err != nil {
+		if err := fsutil.CopyTree(path, dest, fsutil.CopyTreeOptions{DirsExistOK: true}); err != nil {
 			raise(err)
 		}
-	} else if err := pyshutil.Copy2(path, dest); err != nil {
+	} else if err := fsutil.CopyFile(path, dest); err != nil {
 		raise(err)
 	}
 	return dest
@@ -787,10 +788,10 @@ func MergeEntries(existing, incoming []string, limit int) ([]string, MergeStats,
 
 // Path relative to root, the path itself when outside it
 func relativeLabel(path, root string) string {
-	if rel, ok := pypath.PathRelativeTo(path, root); ok {
+	if rel, ok := pathutil.RelativeTo(path, root); ok {
 		return rel
 	}
-	return pypath.PathStr(path)
+	return filepath.Clean(path)
 }
 
 // Local timestamp naming one migration run

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Provider whose cached token never expires so no token request is made
@@ -22,7 +22,7 @@ func makeCachedProvider() *MicrosoftGraphTokenProvider {
 
 func graphJSON(t *testing.T, v any) string {
 	t.Helper()
-	s, err := pyjson.Dumps(v)
+	s, err := jsonutil.Encode(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestGraphClientRefreshesTokenAfter401AndBacksOffOnServerErrors(t *testing.T
 		}),
 		Sleep: func(ctx context.Context, seconds float64) error { sleeps = append(sleeps, seconds); return nil },
 	})
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("name", "é")
 	body.Set("n", []any{int64(1), int64(2)})
 	got, err := client.PatchJSON(context.Background(), "/subscriptions/1", body, map[string]string{"X-Extra": "yes"})

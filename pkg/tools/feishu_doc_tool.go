@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/feishu/feishuclient"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const feishuRawContentURI = "/open-apis/docx/v1/documents/:document_id/raw_content"
@@ -55,11 +53,11 @@ func handleFeishuDocRead(ctx context.Context, call *Call) string {
 	}
 	resp := larkRequest(ctx, client, buildLarkRequest("GET", feishuRawContentURI, map[string]string{"document_id": docToken}, nil, nil))
 	if !larkCodeOK(resp.code) {
-		return toolErrorJSON(fmt.Sprintf("Failed to read document: code=%s msg=%s", pyrepr.Str(resp.code), pyrepr.Str(resp.msg)), nil)
+		return toolErrorJSON(fmt.Sprintf("Failed to read document: code=%s msg=%s", anyutil.String(resp.code), anyutil.String(resp.msg)), nil)
 	}
 	if body := larkRawBody(resp); body != nil {
-		if data, ok := body.GetOr("data", pyjson.NewObject()).(*pyjson.Object); ok {
-			return ToolResult(Dict("success", true, "content", data.GetOr("content", "")))
+		if data, ok := body.ValueOr("data", jsonutil.NewObject()).(*jsonutil.Object); ok {
+			return ToolResult(Dict("success", true, "content", data.ValueOr("content", "")))
 		}
 	}
 	return toolErrorJSON("No content returned from document API", nil)

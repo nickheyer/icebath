@@ -11,8 +11,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -91,7 +91,7 @@ type StreamJSONEmitter struct {
 // Writes the system init event and returns the emitter holding the session id and start time
 func NewStreamJSONEmitter(model, sessionID string) *StreamJSONEmitter {
 	e := &StreamJSONEmitter{sessionID: sessionID, start: time.Now(), toolStarted: map[string]time.Time{}}
-	init := pyjson.NewObject()
+	init := jsonutil.NewObject()
 	init.Set("type", "system")
 	init.Set("subtype", "init")
 	init.Set("model", model)
@@ -118,12 +118,12 @@ func (e *StreamJSONEmitter) BindSession(sessionID string) {
 
 // Emits a text event for every truthy delta, dropping only the None and empty turn end sentinels
 func (e *StreamJSONEmitter) OnTextDelta(text any) {
-	if !pyrepr.Truthy(text) {
+	if !anyutil.IsTrue(text) {
 		return
 	}
-	ev := pyjson.NewObject()
+	ev := jsonutil.NewObject()
 	ev.Set("type", "text")
-	ev.Set("text", pyrepr.Str(text))
+	ev.Set("text", anyutil.String(text))
 	e.emit(ev)
 }
 
@@ -134,8 +134,8 @@ func (e *StreamJSONEmitter) OnToolProgress(eventType, toolName, preview string, 
 		name = "unknown"
 	}
 	callID := ""
-	if pyrepr.Truthy(extra["tool_call_id"]) {
-		callID = pyrepr.Str(extra["tool_call_id"])
+	if anyutil.IsTrue(extra["tool_call_id"]) {
+		callID = anyutil.String(extra["tool_call_id"])
 	}
 	key := callID
 	if key == "" {
@@ -146,7 +146,7 @@ func (e *StreamJSONEmitter) OnToolProgress(eventType, toolName, preview string, 
 		e.mu.Lock()
 		e.toolStarted[key] = time.Now()
 		e.mu.Unlock()
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("type", "tool_use")
 		payload.Set("name", name)
 		if callID != "" {
@@ -158,7 +158,7 @@ func (e *StreamJSONEmitter) OnToolProgress(eventType, toolName, preview string, 
 		e.emit(payload)
 	case "tool.completed":
 		var duration float64
-		if pyrepr.Truthy(extra["duration"]) {
+		if anyutil.IsTrue(extra["duration"]) {
 			duration = pyFloat(extra["duration"])
 		} else {
 			e.mu.Lock()
@@ -170,13 +170,13 @@ func (e *StreamJSONEmitter) OnToolProgress(eventType, toolName, preview string, 
 			}
 		}
 		output := ""
-		if pyrepr.Truthy(extra["result"]) {
-			output = pyrepr.Str(extra["result"])
+		if anyutil.IsTrue(extra["result"]) {
+			output = anyutil.String(extra["result"])
 		}
 		if utf8.RuneCountInString(output) > streamJSONToolOutputCap {
 			output = textutil.First(output, streamJSONToolOutputCap) + "..."
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("type", "tool_result")
 		payload.Set("name", name)
 		if callID != "" {
@@ -184,7 +184,7 @@ func (e *StreamJSONEmitter) OnToolProgress(eventType, toolName, preview string, 
 		}
 		payload.Set("output", output)
 		payload.Set("duration_ms", int64(duration*1000))
-		payload.Set("is_error", pyrepr.Truthy(extra["is_error"]))
+		payload.Set("is_error", anyutil.IsTrue(extra["is_error"]))
 		e.emit(payload)
 	}
 }
@@ -223,11 +223,11 @@ func (e *StreamJSONEmitter) EmitResult(result any, sessionID string, exitCode in
 	if !ok {
 		final := ""
 		if result != nil {
-			final = pyrepr.Str(result)
+			final = anyutil.String(result)
 		}
 		data = map[string]any{"final_response": final}
 	}
-	if exitCode == 0 && pyrepr.Truthy(data["failed"]) {
+	if exitCode == 0 && anyutil.IsTrue(data["failed"]) {
 		exitCode = 1
 	}
 	e.mu.Lock()
@@ -236,27 +236,27 @@ func (e *StreamJSONEmitter) EmitResult(result any, sessionID string, exitCode in
 	}
 	start := e.start
 	e.mu.Unlock()
-	tokens := pyjson.NewObject()
+	tokens := jsonutil.NewObject()
 	tokens.Set("input", orZero(data["input_tokens"]))
 	tokens.Set("output", orZero(data["output_tokens"]))
 	tokens.Set("total", orZero(data["total_tokens"]))
 	tokens.Set("cache_read", orZero(data["cache_read_tokens"]))
 	tokens.Set("cache_write", orZero(data["cache_write_tokens"]))
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("type", "result")
 	payload.Set("session_id", sessionID)
 	payload.Set("exit_code", exitCode)
 	text := ""
-	if pyrepr.Truthy(data["final_response"]) {
-		text = pyrepr.Str(data["final_response"])
+	if anyutil.IsTrue(data["final_response"]) {
+		text = anyutil.String(data["final_response"])
 	}
 	payload.Set("text", text)
 	payload.Set("tokens", tokens)
 	payload.Set("duration_ms", int64(time.Since(start).Seconds()*1000))
-	if pyrepr.Truthy(data["error"]) {
-		payload.Set("error", pyrepr.Str(data["error"]))
+	if anyutil.IsTrue(data["error"]) {
+		payload.Set("error", anyutil.String(data["error"]))
 	}
-	if pyrepr.Truthy(data["replay_gap"]) {
+	if anyutil.IsTrue(data["replay_gap"]) {
 		payload.Set("replay_gap", true)
 	}
 	e.emit(payload)
@@ -266,16 +266,16 @@ func (e *StreamJSONEmitter) EmitResult(result any, sessionID string, exitCode in
 
 // The value when truthy, otherwise the integer zero
 func orZero(v any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return 0
 }
 
 // Writes one JSON line with a timestamp and flushes, a closed consumer pipe ending the write silently
-func (e *StreamJSONEmitter) emit(obj *pyjson.Object) {
+func (e *StreamJSONEmitter) emit(obj *jsonutil.Object) {
 	obj.Set("timestamp", nowMS())
-	line, err := pyjson.Dumps(obj, pyjson.EnsureASCII(false))
+	line, err := jsonutil.Encode(obj)
 	if err != nil {
 		panic(err)
 	}

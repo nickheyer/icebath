@@ -18,8 +18,8 @@ import (
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ErrEditorSchemaChanged is the state authority refusal when an editor session server changes its frozen manifest
@@ -411,11 +411,11 @@ func cachedTools(raws []any) []*Tool {
 		if !ok || !pyTruthy(row["name"]) {
 			continue
 		}
-		t := &Tool{Name: pyStr(row["name"]), InputSchema: pyjson.NewObject()}
+		t := &Tool{Name: pyStr(row["name"]), InputSchema: jsonutil.NewObject()}
 		if pyTruthy(row["description"]) {
 			t.Description = pyStr(row["description"])
 		}
-		if schema, ok := pyjson.AsObject(row["inputSchema"]); ok {
+		if schema, ok := jsonutil.AsObject(row["inputSchema"]); ok {
 			t.InputSchema = schema
 		}
 		if ann, ok := row["annotations"].(map[string]any); ok {
@@ -436,7 +436,7 @@ func cachedTools(raws []any) []*Tool {
 type candidate struct {
 	registryName string
 	origin       string
-	schema       *pyjson.Object
+	schema       *jsonutil.Object
 	handler      tools.Handler
 }
 
@@ -454,7 +454,7 @@ func toolCandidates(serverName string, list []*Tool, shouldRegister func(string)
 		scanDescription(serverName, t.Name, t.Description)
 		schema := convertToolSchema(serverName, t)
 		out = append(out, candidate{
-			registryName: pyStr(schema.Vals["name"]), origin: "tool " + pyReprStr(t.Name), schema: schema,
+			registryName: pyStr(schema.Value("name")), origin: "tool " + pyReprStr(t.Name), schema: schema,
 			handler: makeToolHandler(serverName, t.Name, toolTimeout, true),
 		})
 	}
@@ -469,14 +469,14 @@ func utilityCandidates(serverName string, entries []any, toolTimeout float64) []
 		if !ok {
 			continue
 		}
-		schema, ok := pyjson.AsObject(row["schema"])
+		schema, ok := jsonutil.AsObject(row["schema"])
 		key, isStr := row["handler_key"].(string)
 		factory, known := utilityHandlerFactories[key]
-		if !ok || !isStr || !known || !pyTruthy(schema.Vals["name"]) {
+		if !ok || !isStr || !known || !pyTruthy(schema.Value("name")) {
 			continue
 		}
 		out = append(out, candidate{
-			registryName: pyStr(schema.Vals["name"]), origin: utilityOriginPrefix + pyReprStr(key), schema: schema,
+			registryName: pyStr(schema.Value("name")), origin: utilityOriginPrefix + pyReprStr(key), schema: schema,
 			handler: factory(serverName, toolTimeout),
 		})
 	}
@@ -590,7 +590,7 @@ func registerCandidates(ctx context.Context, serverName string, candidates []can
 			}
 			continue
 		}
-		desc, _ := c.schema.Vals["description"].(string)
+		desc, _ := c.schema.Value("description").(string)
 		err := tools.Default.RegisterScoped(scopeValue, tools.Def{
 			Name: c.registryName, Toolset: toolset, Schema: c.schema, Handler: c.handler, Check: check,
 			Description: desc, Timeout: executionTimeout(timeout),
@@ -632,7 +632,7 @@ func writeSchemaCache(ctx context.Context, serverName string, s *serverTask, cfg
 		}
 		schema := t.InputSchema
 		if schema == nil {
-			schema = pyjson.NewObject()
+			schema = jsonutil.NewObject()
 		}
 		payload = append(payload, map[string]any{
 			"name": t.Name, "description": t.Description, "inputSchema": schema,
@@ -714,12 +714,12 @@ func writePyJSON(b *strings.Builder, v any) {
 			writePyJSON(b, x[k])
 		}
 		b.WriteByte('}')
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if x == nil {
 			b.WriteString("null")
 			return
 		}
-		writePyJSON(b, x.Vals)
+		writePyJSON(b, x.Map())
 	case map[string]string:
 		m := make(map[string]any, len(x))
 		for k, s := range x {

@@ -9,8 +9,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var noticeRe = regexp.MustCompile(`\n\n\.\.\. \[(?P<label>[A-Z ]+) TRUNCATED - (?P<omitted>[\d,]+) (?P<unit>chars|bytes) omitted out of (?P<total>[\d,]+) total\] \.\.\.\n\n`)
@@ -179,6 +179,6 @@ func TestBudgetForContextWindow(t *testing.T) {
 }
 
 func probeDef(name string, maxChars int) Def {
-	return Def{Name: name, Toolset: "test", MaxResultChars: maxChars, Schema: pyjson.ObjectOf("name", name),
+	return Def{Name: name, Toolset: "test", MaxResultChars: maxChars, Schema: jsonutil.ObjectOf("name", name),
 		Handler: func(context.Context, *Call) string { return "" }}
 }

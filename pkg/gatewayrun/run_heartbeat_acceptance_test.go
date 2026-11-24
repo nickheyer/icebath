@@ -8,17 +8,17 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestInflightHeartbeatOnTheLogicalOwnerBlocksAnother(t *testing.T) {
-	envelopes := map[string]func() *pyjson.Object{
-		"native": func() *pyjson.Object {
-			return pyjson.ObjectOf("text", "check", "native_text_v1", pyjson.ObjectOf("automation", pyjson.ObjectOf("heartbeat", "root")))
+	envelopes := map[string]func() *jsonutil.Object{
+		"native": func() *jsonutil.Object {
+			return jsonutil.ObjectOf("text", "check", "native_text_v1", jsonutil.ObjectOf("automation", jsonutil.ObjectOf("heartbeat", "root")))
 		},
-		"local": func() *pyjson.Object {
-			return pyjson.ObjectOf("text", "check", "local_automation_v1", pyjson.ObjectOf("heartbeat", "root"))
+		"local": func() *jsonutil.Object {
+			return jsonutil.ObjectOf("text", "check", "local_automation_v1", jsonutil.ObjectOf("heartbeat", "root"))
 		},
 	}
 	for name, payload := range envelopes {
@@ -36,7 +36,7 @@ func TestInflightHeartbeatOnTheLogicalOwnerBlocksAnother(t *testing.T) {
 			}
 			model, prompt := "offline", "offline"
 			if err := db.PublishCompressionChild(ctx, state.CompressionChildPublish{ParentSessionID: "root", ChildSessionID: "tip",
-				Source: "telegram", Model: &model, ModelConfig: pyjson.NewObject(), SystemPrompt: &prompt,
+				Source: "telegram", Model: &model, ModelConfig: jsonutil.NewObject(), SystemPrompt: &prompt,
 				Messages: []map[string]any{{"role": "user", "content": "retained"}}}); err != nil {
 				t.Fatal(err)
 			}

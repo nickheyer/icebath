@@ -13,10 +13,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Model every tests/cron case runs with, the autouse fixture of its conftest
@@ -58,7 +58,7 @@ func drainableOwner(t *testing.T, s *Store) (*gateway.SessionAuthority, *state.S
 	cfg := gateway.DefaultGatewayConfig(ctx)
 	draining := &atomic.Bool{}
 	runner := drainingRunner{progressStampRunner{store: gateway.NewSessionStore(ctx, filepath.Join(s.Home(), "sessions"), cfg, nil),
-		adapters: pydict.New[gateway.Platform, gateway.PlatformAdapter]()}, draining}
+		adapters: orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()}, draining}
 	return gateway.NewSessionAuthority(runner, s.Home(), "test", db, epoch), db, ctx, draining
 }
 
@@ -83,7 +83,7 @@ func ownerSubmit(t *testing.T, ctx context.Context, authority *gateway.SessionAu
 }
 
 // Claims the session head at the authority epoch
-func ownerClaim(t *testing.T, ctx context.Context, db *state.SessionDB, authority *gateway.SessionAuthority, sessionID string) *pyjson.Object {
+func ownerClaim(t *testing.T, ctx context.Context, db *state.SessionDB, authority *gateway.SessionAuthority, sessionID string) *jsonutil.Object {
 	t.Helper()
 	row, _, err := db.ClaimSessionInput(ctx, state.ClaimInput{Epoch: authority.Epoch, SessionID: sessionID})
 	if err != nil || row == nil {
@@ -110,8 +110,8 @@ func ownerSettleAnswer(t *testing.T, ctx context.Context, db *state.SessionDB, a
 }
 
 // Settled admission result carrying a canonical cron result with no error
-func pyjsonCronResult(success bool, output, answer string) *pyjson.Object {
-	return pyjson.ObjectOf("result", pyjson.ObjectOf("cron_result", []any{success, output, answer, nil}), "usage", pyjson.ObjectOf())
+func pyjsonCronResult(success bool, output, answer string) *jsonutil.Object {
+	return jsonutil.ObjectOf("result", jsonutil.ObjectOf("cron_result", []any{success, output, answer, nil}), "usage", jsonutil.ObjectOf())
 }
 
 func writeFireJournal(t *testing.T, s *Store, jobID, fire string) string {
@@ -253,14 +253,14 @@ func TestAdmissionJournalSurvivesPowerLoss(t *testing.T) {
 	pinCronTestModel(t)
 	var mu sync.Mutex
 	var synced []string
-	real := pyfs.FsyncDirectory
-	pyfs.FsyncDirectory = func(path string) {
+	real := fsutil.SyncDir
+	fsutil.SyncDir = func(path string) {
 		mu.Lock()
 		synced = append(synced, path)
 		mu.Unlock()
 		real(path)
 	}
-	t.Cleanup(func() { pyfs.FsyncDirectory = real })
+	t.Cleanup(func() { fsutil.SyncDir = real })
 	job := removedWorkdirJob(t, s)
 	authority, _, ctx := recoveryOwner(t, s)
 	release := bindRecoveryOwner(ctx, authority)
@@ -277,8 +277,8 @@ func TestFailedManualRunExitsNonzero(t *testing.T) {
 	s, _ := newTestStore(t)
 	prev := cronAPIDoor
 	t.Cleanup(func() { cronAPIDoor = prev })
-	cronAPIDoor = func(*Store, context.Context, *cronjobArgs) *pyjson.Object {
-		return pyjson.ObjectOf("success", true, "job", pyjson.ObjectOf("executed", true, "execution_success", false))
+	cronAPIDoor = func(*Store, context.Context, *cronjobArgs) *jsonutil.Object {
+		return jsonutil.ObjectOf("success", true, "job", jsonutil.ObjectOf("executed", true, "execution_success", false))
 	}
 	if rc := s.jobAction(context.Background(), io.Discard, "run", "job", "Triggered"); rc != 1 {
 		t.Fatalf("rc = %d", rc)

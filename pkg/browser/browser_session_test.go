@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const localTestCDP = "ws://127.0.0.1:9333/devtools/browser/local"
@@ -52,9 +52,9 @@ func (p *scriptedCloud) EmergencyCleanup(*tools.Env, string) {}
 // Fresh session tables and no janitor or supervisor, as the test fixtures isolate browser state
 func isolateSessions(t *testing.T) *tools.Env {
 	t.Helper()
-	pin(t, &activeSessions, pydict.New[string, map[string]any]())
-	pin(t, &sessionLastActivity, pydict.New[string, float64]())
-	pin(t, &sessionOwnerEnvs, pydict.New[string, *tools.Env]())
+	pin(t, &activeSessions, orderedutil.NewMap[string, map[string]any]())
+	pin(t, &sessionLastActivity, orderedutil.NewMap[string, float64]())
+	pin(t, &sessionOwnerEnvs, orderedutil.NewMap[string, *tools.Env]())
 	pin(t, &cleanupFailures, map[string]int{})
 	pin(t, &sessionStartCleanup, func(context.Context, *tools.Env) {})
 	pin(t, &sessionEnsureSupervisor, func(*tools.Env, string) {})

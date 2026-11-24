@@ -10,15 +10,15 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Ordered result object built from alternating keys and values
-func resultObj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func resultObj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -26,36 +26,33 @@ func resultObj(kv ...any) *pyjson.Object {
 }
 
 // Failed skill_manage result carrying the message and any extra keys
-func refusal(message string, extra ...any) *pyjson.Object {
+func refusal(message string, extra ...any) *jsonutil.Object {
 	return resultObj(append([]any{"success", false, "error", message}, extra...)...)
 }
 
 // Registry style error result with success false
-func toolErrorObj(message string) *pyjson.Object {
+func toolErrorObj(message string) *jsonutil.Object {
 	return resultObj("error", tools.BoundErrorText(message), "success", false)
 }
 
-// Registry error a raised Python exception becomes at dispatch
-func raisedObj(err error) *pyjson.Object {
-	class, msg := "OSError", err.Error()
-	var typed interface{ PyTypeName() string }
+// Registry error result of a failed call, the kind of the error before its message
+func raisedObj(err error) *jsonutil.Object {
+	msg := err.Error()
+	var labelled interface{ ErrorKind() string }
 	var pe *fs.PathError
-	switch {
-	case errors.As(err, &typed):
-		class = typed.PyTypeName()
-	case errors.As(err, &pe):
-		class, msg = pypath.OSErrorClass(err), osErrorText(err)
+	if !errors.As(err, &labelled) && errors.As(err, &pe) {
+		msg = osErrorText(err)
 	}
-	return resultObj("error", tools.BoundErrorText(tools.SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %s", class, msg))))
+	return resultObj("error", tools.BoundErrorText(tools.SanitizeToolError(fmt.Sprintf("Tool execution failed: %s: %s", errorutil.Kind(err), msg))))
 }
 
 // Truthiness of a skill record value
-func objTruthy(o *pyjson.Object, key string) bool {
+func objTruthy(o *jsonutil.Object, key string) bool {
 	if o == nil {
 		return false
 	}
 	v, _ := o.Get(key)
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Resolved skill path plus every skills root paired with its resolved form
@@ -133,7 +130,7 @@ func (s *Scope) pinnedGuard(name string) string {
 }
 
 // Refuses review fork deletes of anything but curator managed agent skills
-func (s *Scope) backgroundReviewDeleteGuard(name, skillDir string) *pyjson.Object {
+func (s *Scope) backgroundReviewDeleteGuard(name, skillDir string) *jsonutil.Object {
 	if !IsBackgroundReview(s.Env) {
 		return nil
 	}
@@ -144,7 +141,7 @@ func (s *Scope) backgroundReviewDeleteGuard(name, skillDir string) *pyjson.Objec
 	if s.isExternalSkillPath(skillDir) {
 		return refusal(fmt.Sprintf("%s skill '%s': the skill lives in skills.external_dirs, which are externally owned and read-only to autonomous curation.", refuse, name))
 	}
-	unverified := func(err error) *pyjson.Object {
+	unverified := func(err error) *jsonutil.Object {
 		s.logger().Warn(fmt.Sprintf("owned skill guard lookup failed for %s", name), "error", err)
 		return refusal(fmt.Sprintf("%s skill '%s': agent ownership could not be verified because the provenance record is unavailable or unreadable.", refuse, name))
 	}
@@ -168,7 +165,7 @@ func (s *Scope) backgroundReviewDeleteGuard(name, skillDir string) *pyjson.Objec
 	rec, _ := usage.Get(name)
 	if !isCuratorManagedRecord(rec) {
 		detail := "no usage record"
-		if obj, ok := rec.(*pyjson.Object); ok {
+		if obj, ok := rec.(*jsonutil.Object); ok {
 			createdBy, _ := obj.Get("created_by")
 			detail = "created_by=" + errchain.Show(createdBy)
 		}
@@ -178,7 +175,7 @@ func (s *Scope) backgroundReviewDeleteGuard(name, skillDir string) *pyjson.Objec
 }
 
 // Requires the review fork to have loaded the exact target before mutating it
-func (s *Scope) backgroundReviewReadBeforeWriteGuard(name, target, action, fileLabel string) *pyjson.Object {
+func (s *Scope) backgroundReviewReadBeforeWriteGuard(name, target, action, fileLabel string) *jsonutil.Object {
 	if !IsBackgroundReview(s.Env) || backgroundReviewHasRead(s.Env, target) {
 		return nil
 	}
@@ -187,7 +184,7 @@ func (s *Scope) backgroundReviewReadBeforeWriteGuard(name, target, action, fileL
 }
 
 // Refuses every mutation of a user locked skill, failing closed only for autonomous passes
-func (s *Scope) lockedGuard(name, action string) *pyjson.Object {
+func (s *Scope) lockedGuard(name, action string) *jsonutil.Object {
 	if action == "create" || name == "" {
 		return nil
 	}
@@ -222,7 +219,7 @@ func (s *Scope) lockedGuard(name, action string) *pyjson.Object {
 }
 
 // Lock guard for every mutating action plus the ownership guard for deletes, run before any handler
-func (s *Scope) backgroundReviewPreflight(action, name string) *pyjson.Object {
+func (s *Scope) backgroundReviewPreflight(action, name string) *jsonutil.Object {
 	if locked := s.lockedGuard(name, action); locked != nil {
 		return locked
 	}
@@ -236,7 +233,7 @@ func (s *Scope) backgroundReviewPreflight(action, name string) *pyjson.Object {
 }
 
 // Fails closed on review fork deletes that name no umbrella the skill was absorbed into
-func (s *Scope) curatorConsolidationDeleteGuard(name string, absorbedInto *string) *pyjson.Object {
+func (s *Scope) curatorConsolidationDeleteGuard(name string, absorbedInto *string) *jsonutil.Object {
 	if !IsBackgroundReview(s.Env) || (absorbedInto != nil && strings.TrimSpace(*absorbedInto) != "") {
 		return nil
 	}

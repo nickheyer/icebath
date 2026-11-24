@@ -21,12 +21,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -160,7 +160,7 @@ func gatewaysPaused() bool {
 
 // Whether a failure is one the OSError and SubprocessError suppressions swallow
 func pauseSuppressed(err error) bool {
-	return pypath.IsOSError(err) || isSubprocessError(err)
+	return errorutil.IsSystem(err) || isSubprocessError(err)
 }
 
 func pauseText(raw []byte) string {
@@ -171,8 +171,8 @@ func pauseText(raw []byte) string {
 func unitCgroup(ctx context.Context, scopeCmd []string, unit string) (string, error) {
 	result, err := systemctl(ctx, append(append([]string{}, scopeCmd...), "show", unit, "--property=ControlGroup", "--value"), 10)
 	if err != nil {
-		var expired *pysubprocess.TimeoutExpired
-		if pypath.IsOSError(err) || errors.As(err, &expired) {
+		var expired *executil.TimeoutError
+		if errorutil.IsSystem(err) || errors.As(err, &expired) {
 			return "", nil
 		}
 		return "", err
@@ -356,7 +356,7 @@ func respawningService(ctx context.Context, pid int) (string, error) {
 	}
 	main, err := unitMainPid(ctx, scopeCmd, leaf)
 	if err == nil && main > 0 && (main == pid || main == ppid(pid)) {
-		var restart *pysubprocess.Completed
+		var restart *executil.Completed
 		if restart, err = systemctl(ctx, append(scopeCmd, "show", leaf, "--property=Restart", "--value"), 10); err == nil {
 			if policy := pauseText(restart.Stdout); policy != "" && policy != "no" {
 				return leaf, nil
@@ -469,7 +469,7 @@ func escapeCgroup(ctx context.Context, unit map[string]any) bool {
 		fmt.Sprintf("icebath-update-%d.scope", self), "fail", "2", "PIDs", "au", strconv.Itoa(len(pids))}
 	cmd = append(cmd, pids...)
 	cmd = append(cmd, "Description", "s", fmt.Sprintf("icebath update (outside %s while it is paused)", entryStr(unit, "unit")), "0")
-	_, _ = pysubprocess.RunWith(ctx, cmd, pysubprocess.Options{Timeout: 15 * time.Second})
+	_, _ = executil.Run(ctx, cmd, executil.Options{Timeout: 15 * time.Second})
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
 		if now := pidCgroup("self"); now != "" && !inside(now, unitCg) {
@@ -598,8 +598,8 @@ func stopJob(ctx context.Context, job map[string]any, drained bool) error {
 			return err
 		}
 	}
-	result, err := pysubprocess.RunWith(ctx, []string{"launchctl", "bootout", entryStr(job, "domain") + "/" + label},
-		pysubprocess.Options{Timeout: 90 * time.Second})
+	result, err := executil.Run(ctx, []string{"launchctl", "bootout", entryStr(job, "domain") + "/" + label},
+		executil.Options{Timeout: 90 * time.Second})
 	if err != nil {
 		return err
 	}
@@ -634,8 +634,8 @@ func startJob(ctx context.Context, job map[string]any) error {
 			return err
 		}
 	}
-	if _, err := pysubprocess.RunWith(ctx, []string{"launchctl", "kickstart", domain + "/" + label},
-		pysubprocess.Options{Timeout: 30 * time.Second}); err != nil {
+	if _, err := executil.Run(ctx, []string{"launchctl", "kickstart", domain + "/" + label},
+		executil.Options{Timeout: 30 * time.Second}); err != nil {
 		return err
 	}
 	back, err := gateway.WaitForLaunchdServicePID(ctx, label, entryPid(job), true, 15.0, domain)
@@ -657,7 +657,7 @@ func alive(pid int, ct any) bool {
 		return true
 	}
 	started := gateway.GetProcessStartTime(pid)
-	return started == nil || pyrepr.Equal(started, ct)
+	return started == nil || anyutil.Equal(started, ct)
 }
 
 // Polls every fifth of a second until the pids are gone or the timeout passes, the ones still alive
@@ -690,7 +690,7 @@ func askToDrain(entry map[string]any) bool {
 	if ack == nil || ack.Len() == 0 {
 		return false
 	}
-	return tokenTruthy(ack.GetOr("pausing", nil)) || tokenTruthy(ack.GetOr("already_stopping", nil))
+	return tokenTruthy(ack.ValueOr("pausing", nil)) || tokenTruthy(ack.ValueOr("already_stopping", nil))
 }
 
 // Sends the terminate or kill signal, a pid already gone or not ours counting as sent
@@ -829,7 +829,7 @@ func names(entries []map[string]any) string {
 		case entryStr(entry, "label") != "":
 			parts[i] = entryStr(entry, "label")
 		default:
-			parts[i] = "gateway PID " + pyrepr.Str(entry["pid"])
+			parts[i] = "gateway PID " + anyutil.String(entry["pid"])
 		}
 	}
 	return strings.Join(parts, ", ")
@@ -846,15 +846,15 @@ func gatewayOnHome(served string, exclude map[int]bool) (int, bool) {
 
 // Environment a replayed gateway starts with, the launcher's for its own named profile else the home's own secrets
 func replayEnv(ctx context.Context, served string) (map[string]string, error) {
-	target, err := pypath.Resolve(served)
+	target, err := pathutil.Resolve(served)
 	if err != nil {
 		return nil, err
 	}
-	root, err := pypath.Resolve(home.Root())
+	root, err := pathutil.Resolve(home.Root())
 	if err != nil {
 		return nil, err
 	}
-	routing, err := pypath.Resolve(home.RoutingProcess())
+	routing, err := pathutil.Resolve(home.RoutingProcess())
 	if err != nil {
 		return nil, err
 	}
@@ -894,7 +894,7 @@ func relaunchBare(ctx context.Context, entry map[string]any) (int, error) {
 	switch list := entry["argv"].(type) {
 	case []any:
 		for _, arg := range list {
-			argv = append(argv, pyrepr.Str(arg))
+			argv = append(argv, anyutil.String(arg))
 		}
 	case []string:
 		argv = list
@@ -923,7 +923,7 @@ func relaunchBare(ctx context.Context, entry map[string]any) (int, error) {
 			code := 0
 			var exitErr *exec.ExitError
 			if errors.As(waitErr, &exitErr) {
-				code = pysubprocess.Returncode(exitErr)
+				code = executil.ExitCode(exitErr.ProcessState)
 			}
 			return 0, fmt.Errorf("replayed gateway for %s exited %d (see %s)", served, code, logPath)
 		default:
@@ -944,7 +944,7 @@ func describe(token map[string]any) string {
 	}
 	for _, entry := range tokenEntries(token["unmapped"]) {
 		if tokenTruthy(entry["argv"]) {
-			parts = append(parts, "gateway PID "+pyrepr.Str(entry["pid"]))
+			parts = append(parts, "gateway PID "+anyutil.String(entry["pid"]))
 		}
 	}
 	return strings.Join(parts, ", ")
@@ -1000,7 +1000,7 @@ func pause(ctx context.Context, token map[string]any) error {
 		return nil
 	}
 	all := append(append([]map[string]any{}, supervised...), bare...)
-	before, _ := pycopy.DeepCopy(token).(map[string]any)
+	before, _ := any(anyutil.Clone(token)).(map[string]any)
 	pids := make([]int, len(all))
 	barePids := make([]any, len(bare))
 	identities := map[string]any{}
@@ -1035,7 +1035,7 @@ func pause(ctx context.Context, token map[string]any) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		if !pyrepr.Equal(token["pause_id"], before["pause_id"]) {
+		if !anyutil.Equal(token["pause_id"], before["pause_id"]) {
 			_ = updaterecord.DischargePause(ctx, token, "")
 		}
 		for key := range token {
@@ -1108,7 +1108,7 @@ func resumePausedSet(ctx context.Context, w io.Writer, token map[string]any) err
 			continue
 		}
 		posixPauseRestarted.PIDs[pid] = true
-		restarted = append(restarted, fmt.Sprintf("gateway PID %s → %d", pyrepr.Str(entry["pid"]), pid))
+		restarted = append(restarted, fmt.Sprintf("gateway PID %s → %d", anyutil.String(entry["pid"]), pid))
 	}
 	token["unmapped"], token["unmapped_pids"], token["profiles"] = keptBare, keptPids, map[string]any{}
 	if len(restarted) > 0 {

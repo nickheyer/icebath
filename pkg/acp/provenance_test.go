@@ -79,7 +79,7 @@ func TestMetaWrapperShape(t *testing.T) {
 	db := provenanceDB(t)
 	mkSession(t, db, "root1", "")
 	meta := SessionProvenanceMeta(context.Background(), db, "acp-1", "root1", "")
-	if meta.Len() != 1 || meta.Keys[0] != "icebath" {
+	if meta.Len() != 1 || meta.Keys()[0] != "icebath" {
 		t.Fatalf("meta %v", meta)
 	}
 	inner := provGet(t, meta, "icebath").(interface{ Get(string) (any, bool) })

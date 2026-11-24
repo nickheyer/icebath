@@ -3,7 +3,7 @@ package cron
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Jobs of a home's store, disabled ones included when asked
@@ -27,7 +27,7 @@ func TriggerJobWithPrompt(ctx context.Context, h, ref, extraPrompt string) (*Job
 }
 
 // Creates a job and registers it with the active scheduler provider
-func CreateJobWithSchedulerRegistration(ctx context.Context, h string, spec *pyjson.Object) (*Job, error) {
+func CreateJobWithSchedulerRegistration(ctx context.Context, h string, spec *jsonutil.Object) (*Job, error) {
 	return openCronStore(h, nil).createJobWithSchedulerRegistration(ctx, spec)
 }
 

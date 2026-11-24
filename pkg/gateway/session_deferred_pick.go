@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // State meta key and digest of a deferred pick's exact retry receipt, an absent fence fingerprinted as None
-func deferredPickReceiptKey(principalID, sessionID, requestID, operation string, payload *pyjson.Object, expectedRevision, expectedGeneration any) (string, string, error) {
+func deferredPickReceiptKey(principalID, sessionID, requestID, operation string, payload *jsonutil.Object, expectedRevision, expectedGeneration any) (string, string, error) {
 	keyDigest, err := state.AdmissionFingerprint(sessionID, map[string]any{"principal": principalID, "request": requestID})
 	if err != nil {
 		return "", "", err
@@ -32,13 +32,13 @@ func deferredPickReceiptKey(principalID, sessionID, requestID, operation string,
 type deferredPickRequest struct {
 	Operation          string
 	RequestID          string
-	Payload            *pyjson.Object
+	Payload            *jsonutil.Object
 	ExpectedRevision   any
 	ExpectedGeneration any
 }
 
 // Records a pick for the next turn with its receipt, the latest pick winning and a level beside it
-func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref SessionRef, request deferredPickRequest) (*pyjson.Object, error) {
+func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref SessionRef, request deferredPickRequest) (*jsonutil.Object, error) {
 	operation := request.Operation
 	if operation == "" {
 		operation = "model"
@@ -64,9 +64,9 @@ func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref
 	if err != nil {
 		return nil, err
 	}
-	pick := pyjson.ObjectOf("principal_id", principalID, "request_id", request.RequestID, "payload", request.Payload,
+	pick := jsonutil.ObjectOf("principal_id", principalID, "request_id", request.RequestID, "payload", request.Payload,
 		"application_id", "deferred-pick:"+request.RequestID)
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	err = a.DB.ExecuteWrite(ctx, func(conn state.SQLiteConn) error {
 		if err := state.RuntimeEpoch(ctx, conn, a.Epoch); err != nil {
 			return err
@@ -76,7 +76,7 @@ func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref
 			return err
 		}
 		if replay != nil {
-			stored, ok := replay.(*pyjson.Object)
+			stored, ok := replay.(*jsonutil.Object)
 			if !ok {
 				return &PyError{Kind: "TypeError", Msg: "stored mutation result is not a dict"}
 			}
@@ -90,11 +90,11 @@ func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref
 			}
 			return err
 		}
-		current := pyjson.NewObject()
+		current := jsonutil.NewObject()
 		var stored string
 		switch err := conn.QueryRowContext(ctx, "SELECT value FROM state_meta WHERE key=?", state.DeferredPickPrefix+ref.SessionID).Scan(&stored); {
 		case err == nil:
-			loaded, err := pyjson.LoadsDict(stored)
+			loaded, err := jsonutil.DecodeObject(stored)
 			if err != nil {
 				return err
 			}
@@ -102,14 +102,14 @@ func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref
 		case !errors.Is(err, sql.ErrNoRows):
 			return err
 		}
-		var value, picked *pyjson.Object
+		var value, picked *jsonutil.Object
 		if operation == "reasoning" {
-			if prior, ok := current.GetOr("payload", pyjson.NewObject()).(*pyjson.Object); ok {
+			if prior, ok := current.ValueOr("payload", jsonutil.NewObject()).(*jsonutil.Object); ok {
 				prior.Delete("reasoning")
 			}
 			value = preparedWith(current, "reasoning", pick)
 			effort, _ := request.Payload.Get("effort")
-			picked = pyjson.ObjectOf("effort", effort)
+			picked = jsonutil.ObjectOf("effort", effort)
 		} else {
 			_, held := current.Get("reasoning")
 			_, picks := request.Payload.Get("reasoning")
@@ -122,9 +122,9 @@ func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref
 			if pyTruthy(shown) {
 				model = shown
 			}
-			picked = pyjson.ObjectOf("model", model)
+			picked = jsonutil.ObjectOf("model", model)
 		}
-		result = preparedWith(pyjson.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "deferred"), flattenObject(picked)...)
+		result = preparedWith(jsonutil.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "deferred"), flattenObject(picked)...)
 		result.Set("revision", sqlNumber(revision))
 		result.Set("execution_generation", sqlNumber(generation))
 		text, err := state.RuntimeJSON(value)
@@ -135,7 +135,7 @@ func deferPick(ctx context.Context, a *SessionAuthority, principalID string, ref
 			state.DeferredPickPrefix+ref.SessionID, text); err != nil {
 			return err
 		}
-		receipt, err := state.RuntimeJSON(pyjson.ObjectOf("digest", digest, "result", result))
+		receipt, err := state.RuntimeJSON(jsonutil.ObjectOf("digest", digest, "result", result))
 		if err != nil {
 			return err
 		}
@@ -157,7 +157,7 @@ func sqlNumber(v any) any {
 }
 
 // Commits a deferred entry as a mutation, nil while a worker still holds the transcript
-func commitDeferredEntry(ctx context.Context, a *SessionAuthority, ref SessionRef, entry *pyjson.Object, operation string) (*pyjson.Object, error) {
+func commitDeferredEntry(ctx context.Context, a *SessionAuthority, ref SessionRef, entry *jsonutil.Object, operation string) (*jsonutil.Object, error) {
 	principal := rowString(entry, "principal_id")
 	application := rowString(entry, "application_id")
 	committed, err := a.DB.HasMutationReceipt(ctx, principal, ref.SessionID, application)
@@ -165,7 +165,7 @@ func commitDeferredEntry(ctx context.Context, a *SessionAuthority, ref SessionRe
 		return nil, err
 	}
 	if committed {
-		return pyjson.ObjectOf("status", "replayed"), nil
+		return jsonutil.ObjectOf("status", "replayed"), nil
 	}
 	row, err := a.DB.GetSession(ctx, ref.SessionID)
 	if err != nil {
@@ -188,17 +188,17 @@ func commitDeferredEntry(ctx context.Context, a *SessionAuthority, ref SessionRe
 		if refusal.Reason == "session_busy" {
 			return nil, nil
 		}
-		return pyjson.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "refused", "reason", refusal.Reason), nil
+		return jsonutil.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "refused", "reason", refusal.Reason), nil
 	}
 	pkgLog().Error(fmt.Sprintf("Deferred %s pick on %s failed to resolve: %s", operation, ref.SessionID, pyExceptionRepr(err)))
-	return pyjson.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "refused", "reason", operation+"_resolution_failed"), nil
+	return jsonutil.ObjectOf("session_id", ref.SessionID, "operation", operation, "status", "refused", "reason", operation+"_resolution_failed"), nil
 }
 
 // Commits the level deferred beside a pick and drops it, returning the remaining slot text when any is left
-func commitLevel(ctx context.Context, a *SessionAuthority, ref SessionRef, key, raw string, pick *pyjson.Object) (string, bool, error) {
+func commitLevel(ctx context.Context, a *SessionAuthority, ref SessionRef, key, raw string, pick *jsonutil.Object) (string, bool, error) {
 	level, _ := pick.Get("reasoning")
 	pick.Delete("reasoning")
-	entry, ok := level.(*pyjson.Object)
+	entry, ok := level.(*jsonutil.Object)
 	if !ok {
 		return "", false, &PyError{Kind: "TypeError", Msg: "deferred reasoning pick is not a dict"}
 	}
@@ -237,11 +237,11 @@ func committedRoute(ctx context.Context, a *SessionAuthority, sessionID string) 
 		return nil, nil, err
 	}
 	if current == nil {
-		current = pyjson.NewObject()
+		current = jsonutil.NewObject()
 	}
-	config := pyjson.NewObject()
+	config := jsonutil.NewObject()
 	if text, _ := current.Get("model_config"); pyTruthy(text) {
-		if config, err = pyjson.LoadsDict(pyrepr.Str(text)); err != nil {
+		if config, err = jsonutil.DecodeObject(anyutil.String(text)); err != nil {
 			return nil, nil, err
 		}
 	}
@@ -257,7 +257,7 @@ func applyDeferredPick(ctx context.Context, a *SessionAuthority, ref SessionRef,
 	if err != nil || !found {
 		return err
 	}
-	pick, err := pyjson.LoadsDict(raw)
+	pick, err := jsonutil.DecodeObject(raw)
 	if err != nil {
 		return err
 	}
@@ -317,7 +317,7 @@ func applyDeferredPick(ctx context.Context, a *SessionAuthority, ref SessionRef,
 	}
 	if rowString(result, "status") == "refused" {
 		reason, _ := result.Get("reason")
-		pkgLog().Warn(fmt.Sprintf("Deferred model pick on %s not applied: %s", ref.SessionID, pyrepr.Str(reason)))
+		pkgLog().Warn(fmt.Sprintf("Deferred model pick on %s not applied: %s", ref.SessionID, anyutil.String(reason)))
 		model, providerName, err := committedRoute(ctx, a, ref.SessionID)
 		if err != nil {
 			return err

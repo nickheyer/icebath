@@ -12,9 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	slackapi "github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
@@ -315,8 +315,8 @@ func (h *socketModeHandler) handle(ctx context.Context, app *slackApp, evt socke
 		return
 	}
 	body := map[string]any{}
-	if decoded, err := pyjson.Loads(string(req.Payload)); err == nil {
-		body = asMap(pyjson.Plain(decoded))
+	if decoded, err := jsonutil.Decode(string(req.Payload)); err == nil {
+		body = asMap(jsonutil.Plain(decoded))
 	}
 	var once sync.Once
 	ack := func(payload map[string]any) error {
@@ -549,8 +549,8 @@ func (a *SlackAdapter) authenticateWorkspace(ctx context.Context, token, proxyUR
 	}
 	teamID := strOrEmpty(getOr(auth.Data, "team_id", ""))
 	botUserID := strOrEmpty(getOr(auth.Data, "user_id", ""))
-	botName := pyrepr.Str(getOr(auth.Data, "user", "unknown"))
-	teamName := pyrepr.Str(getOr(auth.Data, "team", "unknown"))
+	botName := anyutil.String(getOr(auth.Data, "user", "unknown"))
+	teamName := anyutil.String(getOr(auth.Data, "team", "unknown"))
 	a.mu.Lock()
 	a.teamClients.Set(teamID, client)
 	a.teamBotUserIDs[teamID] = botUserID
@@ -619,7 +619,7 @@ func (a *SlackAdapter) connectLocked(ctx context.Context, appToken, proxyURL str
 	a.appToken = appToken
 	a.proxyURL = proxyURL
 	a.botUserID, a.botDisplayName = nil, nil
-	a.teamClients = pydict.New[string, *webClient]()
+	a.teamClients = orderedutil.NewMap[string, *webClient]()
 	a.teamBotUserIDs, a.teamBotNames = map[string]string{}, map[string]string{}
 	a.app = &slackApp{client: newWebClient(botTokens[0], proxyURL)}
 	a.mu.Unlock()
@@ -724,10 +724,10 @@ func (a *SlackAdapter) Disconnect(ctx context.Context) error {
 	a.closeWorkspaceClients()
 	a.mu.Lock()
 	a.app, a.appToken, a.proxyURL, a.botUserID = nil, "", "", nil
-	a.teamClients = pydict.New[string, *webClient]()
+	a.teamClients = orderedutil.NewMap[string, *webClient]()
 	a.teamBotUserIDs = map[string]string{}
-	a.channelTeam = pydict.New[string, string]()
-	a.dmConversationCache = pydict.New[string, string]()
+	a.channelTeam = orderedutil.NewMap[string, string]()
+	a.dmConversationCache = orderedutil.NewMap[string, string]()
 	a.mu.Unlock()
 	a.ReleasePlatformLock()
 	pkgLog().Info("[Slack] Disconnected")

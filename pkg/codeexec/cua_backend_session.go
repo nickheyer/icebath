@@ -14,10 +14,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // bridgeTimeoutError is concurrent.futures.TimeoutError of a bridged call whose deadline passed
@@ -62,13 +62,13 @@ func (b *cuaAsyncBridge) loop() context.Context {
 }
 
 // Runs fn on the loop and waits up to timeout seconds, zero or less waits without a deadline
-func (b *cuaAsyncBridge) run(fn func(ctx context.Context) (*pyjson.Object, error), timeout float64) (*pyjson.Object, error) {
+func (b *cuaAsyncBridge) run(fn func(ctx context.Context) (*jsonutil.Object, error), timeout float64) (*jsonutil.Object, error) {
 	ctx := b.loop()
 	if ctx == nil {
 		return nil, errors.New("cua-driver bridge not started")
 	}
 	type outcome struct {
-		out *pyjson.Object
+		out *jsonutil.Object
 		err error
 	}
 	done := make(chan outcome, 1)
@@ -111,9 +111,9 @@ var unknownOutcomeMessages = map[string]string{
 }
 
 // Fail closed isError envelope for an unknown outcome code
-func outcomeUnknown(name string, exc error, code string) *pyjson.Object {
+func outcomeUnknown(name string, exc error, code string) *jsonutil.Object {
 	message := strings.ReplaceAll(unknownOutcomeMessages[code], "{name}", name)
-	structured := pyjson.NewObject()
+	structured := jsonutil.NewObject()
 	structured.Set("ok", false)
 	structured.Set("code", code)
 	structured.Set("message", message)
@@ -124,7 +124,7 @@ func outcomeUnknown(name string, exc error, code string) *pyjson.Object {
 }
 
 // Field of a raw MCP object under its wire name, the last of names
-func toolField(obj *pyjson.Object, names ...string) any { return cuGet(obj, names[len(names)-1]) }
+func toolField(obj *jsonutil.Object, names ...string) any { return cuGet(obj, names[len(names)-1]) }
 
 // Attempts of the CLI fallback transport, backing off from half a second doubling
 const cliAttempts = 4
@@ -165,7 +165,7 @@ func cliRunJSON(cmd []string, env map[string]string, name string, timeout float6
 			}
 		}
 		if start != -1 {
-			if v, err := pyjson.Loads(out[start:]); err == nil {
+			if v, err := jsonutil.Decode(out[start:]); err == nil {
 				return v, nil
 			}
 		}
@@ -180,18 +180,18 @@ func cliRunJSON(cmd []string, env map[string]string, name string, timeout float6
 }
 
 // Remaps a cua-driver call JSON body into the flattened tool result envelope without image mime types
-func cliResult(parsed any, shotFile string) *pyjson.Object {
-	obj, ok := parsed.(*pyjson.Object)
+func cliResult(parsed any, shotFile string) *jsonutil.Object {
+	obj, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return toolEnvelope(nil, []any{}, nil, false, nil)
 	}
 	isError := cuGet(obj, "isError") == true || cuGet(obj, "is_error") == true
 	shot := cuGet(obj, "screenshot_png_b64")
 	fpath := cuGet(obj, "screenshot_file_path")
-	if !pyrepr.Truthy(fpath) {
+	if !anyutil.IsTrue(fpath) {
 		fpath = shotFile
 	}
-	if p, isStr := fpath.(string); !pyrepr.Truthy(shot) && isStr && p != "" {
+	if p, isStr := fpath.(string); !anyutil.IsTrue(shot) && isStr && p != "" {
 		if _, err := os.Stat(p); err == nil {
 			if raw, err := os.ReadFile(p); err == nil {
 				shot = base64.StdEncoding.EncodeToString(raw)
@@ -205,17 +205,17 @@ func cliResult(parsed any, shotFile string) *pyjson.Object {
 		data = nil
 	}
 	if data != nil && cuGet(obj, "element_count") != nil {
-		data = pyrepr.Str(cuGet(obj, "element_count")) + " elements\n" + pyrepr.Str(data)
+		data = anyutil.String(cuGet(obj, "element_count")) + " elements\n" + anyutil.String(data)
 	}
 	images := []any{}
-	if pyrepr.Truthy(shot) {
+	if anyutil.IsTrue(shot) {
 		images = append(images, shot)
 	}
 	return toolEnvelope(data, images, obj, isError, nil)
 }
 
 // Flattens a logical MCP error into text for narrow classification
-func logicalErrorText(result *pyjson.Object) string {
+func logicalErrorText(result *jsonutil.Object) string {
 	var chunks []string
 	for _, value := range []any{cuGet(result, "data"), cuGet(result, "structuredContent")} {
 		if value == nil {
@@ -225,17 +225,17 @@ func logicalErrorText(result *pyjson.Object) string {
 			chunks = append(chunks, s)
 			continue
 		}
-		if s, err := pyjson.Dumps(value, pyjson.SortKeys(true)); err == nil {
+		if s, err := jsonutil.Encode(value, jsonutil.SortKeys()); err == nil {
 			chunks = append(chunks, s)
 		} else {
-			chunks = append(chunks, pyrepr.Str(value))
+			chunks = append(chunks, anyutil.String(value))
 		}
 	}
 	return strings.Join(chunks, "\n")
 }
 
 // Recognises the explicit recoverable ended session rejection of cua-driver
-func isEndedSessionResult(result *pyjson.Object) bool {
+func isEndedSessionResult(result *jsonutil.Object) bool {
 	if result == nil || cuGet(result, "isError") != true {
 		return false
 	}
@@ -247,8 +247,8 @@ func isEndedSessionResult(result *pyjson.Object) bool {
 // cuaMCPClient is the initialized MCP client session the lifecycle owns
 type cuaMCPClient interface {
 	Initialize(ctx context.Context) error
-	ListTools(ctx context.Context) (*pyjson.Object, error)
-	CallTool(ctx context.Context, name string, args *pyjson.Object) (*pyjson.Object, error)
+	ListTools(ctx context.Context) (*jsonutil.Object, error)
+	CallTool(ctx context.Context, name string, args *jsonutil.Object) (*jsonutil.Object, error)
 	Close() error
 }
 
@@ -329,7 +329,7 @@ func (c *stdioMCPClient) request(ctx context.Context, method string, params any)
 		if msg.Error != nil {
 			return nil, errors.New(msg.Error.Message)
 		}
-		return pyjson.LoadsBytes(msg.Result)
+		return jsonutil.Decode(msg.Result)
 	case <-c.closed:
 		return nil, cuaClosedResourceError{}
 	case <-ctx.Done():
@@ -345,14 +345,14 @@ func (c *stdioMCPClient) Initialize(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	obj, _ := res.(*pyjson.Object)
+	obj, _ := res.(*jsonutil.Object)
 	version, _ := cuGet(obj, "protocolVersion").(string)
 	supported := version == mcp.LatestProtocolVersion
 	for _, v := range mcp.SupportedProtocolVersions {
 		supported = supported || v == version
 	}
 	if !supported {
-		return fmt.Errorf("Unsupported protocol version from the server: %s", pyrepr.Str(cuGet(obj, "protocolVersion")))
+		return fmt.Errorf("Unsupported protocol version from the server: %s", anyutil.String(cuGet(obj, "protocolVersion")))
 	}
 	note, err := mcp.NewNotification("notifications/initialized", nil)
 	if err != nil {
@@ -362,25 +362,25 @@ func (c *stdioMCPClient) Initialize(ctx context.Context) error {
 }
 
 // Raw tools/list result object
-func (c *stdioMCPClient) ListTools(ctx context.Context) (*pyjson.Object, error) {
+func (c *stdioMCPClient) ListTools(ctx context.Context) (*jsonutil.Object, error) {
 	res, err := c.request(ctx, "tools/list", nil)
 	if err != nil {
 		return nil, err
 	}
-	obj, _ := res.(*pyjson.Object)
+	obj, _ := res.(*jsonutil.Object)
 	return obj, nil
 }
 
 // Raw CallToolResult object of one tools/call
-func (c *stdioMCPClient) CallTool(ctx context.Context, name string, args *pyjson.Object) (*pyjson.Object, error) {
-	params := pyjson.NewObject()
+func (c *stdioMCPClient) CallTool(ctx context.Context, name string, args *jsonutil.Object) (*jsonutil.Object, error) {
+	params := jsonutil.NewObject()
 	params.Set("name", name)
 	params.Set("arguments", args)
 	res, err := c.request(ctx, "tools/call", params)
 	if err != nil {
 		return nil, err
 	}
-	obj, _ := res.(*pyjson.Object)
+	obj, _ := res.(*jsonutil.Object)
 	return obj, nil
 }
 
@@ -419,7 +419,7 @@ type cuaDriverSession struct {
 	setupErr          error
 	startupPhase      string
 	capabilities      map[string]map[string]bool
-	toolSchemas       map[string]*pyjson.Object
+	toolSchemas       map[string]*jsonutil.Object
 	capabilityVersion string
 
 	ready         chan struct{}
@@ -434,13 +434,13 @@ type cuaDriverSession struct {
 
 	isClosedSessionError   func(err error) bool
 	isTransientDaemonError func(err error) bool
-	callToolViaCLIFn       func(name string, args *pyjson.Object, timeout float64) (*pyjson.Object, error)
+	callToolViaCLIFn       func(name string, args *jsonutil.Object, timeout float64) (*jsonutil.Object, error)
 }
 
 // New session over the bridge with an optional private daemon
 func newCuaDriverSession(env *tools.Env, bridge *cuaAsyncBridge, daemon *embeddedCuaDaemon) *cuaDriverSession {
 	s := &cuaDriverSession{bridge: bridge, embeddedDaemon: daemon, env: env, capabilities: map[string]map[string]bool{},
-		toolSchemas: map[string]*pyjson.Object{}, ready: make(chan struct{})}
+		toolSchemas: map[string]*jsonutil.Object{}, ready: make(chan struct{})}
 	s.isClosedSessionError = cuaIsClosedSessionError
 	s.isTransientDaemonError = cuaIsTransientDaemonError
 	s.callToolViaCLIFn = s.callToolViaCLI
@@ -539,7 +539,7 @@ func (s *cuaDriverSession) lifecycle(ctx context.Context, ready, shutdown chan s
 
 // Caches per tool capability sets, input schemas and the capability version from tools/list
 func (s *cuaDriverSession) populateCapabilities(ctx context.Context, client cuaMCPClient) {
-	caps, schemas, version := map[string]map[string]bool{}, map[string]*pyjson.Object{}, ""
+	caps, schemas, version := map[string]map[string]bool{}, map[string]*jsonutil.Object{}, ""
 	s.state.Lock()
 	s.capabilities, s.toolSchemas, s.capabilityVersion = caps, schemas, version
 	s.state.Unlock()
@@ -550,7 +550,7 @@ func (s *cuaDriverSession) populateCapabilities(ctx context.Context, client cuaM
 	}
 	toolsList, _ := toolField(list, "tools").([]any)
 	for _, raw := range toolsList {
-		tool, ok := raw.(*pyjson.Object)
+		tool, ok := raw.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -567,10 +567,10 @@ func (s *cuaDriverSession) populateCapabilities(ctx context.Context, client cuaM
 			}
 		}
 		caps[name] = set
-		if schema, ok := toolField(tool, "input_schema", "inputSchema").(*pyjson.Object); ok {
-			schemas[name] = schema.Copy()
+		if schema, ok := toolField(tool, "input_schema", "inputSchema").(*jsonutil.Object); ok {
+			schemas[name] = schema.Clone()
 		} else {
-			schemas[name] = pyjson.NewObject()
+			schemas[name] = jsonutil.NewObject()
 		}
 	}
 	if cv, ok := toolField(list, "capability_version").(string); ok {
@@ -695,8 +695,8 @@ func (s *cuaDriverSession) signalShutdownLocked() {
 }
 
 // One tools/call on the live client flattened into the envelope
-func (s *cuaDriverSession) callToolAsync(name string, args *pyjson.Object) func(ctx context.Context) (*pyjson.Object, error) {
-	return func(ctx context.Context) (*pyjson.Object, error) {
+func (s *cuaDriverSession) callToolAsync(name string, args *jsonutil.Object) func(ctx context.Context) (*jsonutil.Object, error) {
+	return func(ctx context.Context) (*jsonutil.Object, error) {
 		s.state.Lock()
 		client := s.client
 		s.state.Unlock()
@@ -738,7 +738,7 @@ func (s *cuaDriverSession) hasTool(name string) bool {
 func (s *cuaDriverSession) supportsInputProperty(tool, property string) bool {
 	s.state.Lock()
 	defer s.state.Unlock()
-	props, ok := cuGet(s.toolSchemas[tool], "properties").(*pyjson.Object)
+	props, ok := cuGet(s.toolSchemas[tool], "properties").(*jsonutil.Object)
 	if !ok {
 		return false
 	}
@@ -773,10 +773,11 @@ func cuaIsTransientDaemonError(err error) bool {
 
 // Redeclares the stable public label, logging the failure message on rejection
 func (s *cuaDriverSession) redeclareSession(timeout float64, failureMsg string) (bool, error) {
-	sessionID := s.declaredSessionID
-	args := pyjson.NewObject()
+	sessionID, label := s.declaredSessionID, ""
+	args := jsonutil.NewObject()
 	if sessionID != nil {
-		args.Set("session", *sessionID)
+		label = *sessionID
+		args.Set("session", label)
 	} else {
 		args.Set("session", nil)
 	}
@@ -785,16 +786,9 @@ func (s *cuaDriverSession) redeclareSession(timeout float64, failureMsg string) 
 		return false, err
 	}
 	if cuGet(result, "isError") == true {
-		pkgLog(nil).Warn(fmt.Sprintf(failureMsg, pyrepr.Str(derefOr(sessionID)), logicalErrorText(result)))
+		pkgLog(nil).Warn(fmt.Sprintf(failureMsg, label, logicalErrorText(result)))
 	}
 	return cuGet(result, "isError") != true, nil
-}
-
-func derefOr(p *string) any {
-	if p == nil {
-		return nil
-	}
-	return *p
 }
 
 // Starts a dead session or rebuilds the lifecycle from scratch, then reattaches the declared label
@@ -813,7 +807,7 @@ func (s *cuaDriverSession) recreateSession(name string, timeout float64, logMsg 
 			}
 			s.started.Store(false)
 			s.state.Lock()
-			s.capabilities, s.toolSchemas, s.capabilityVersion = map[string]map[string]bool{}, map[string]*pyjson.Object{}, ""
+			s.capabilities, s.toolSchemas, s.capabilityVersion = map[string]map[string]bool{}, map[string]*jsonutil.Object{}, ""
 			s.state.Unlock()
 			if err := s.startLifecycleLocked(); err != nil {
 				return err
@@ -845,8 +839,8 @@ func (s *cuaDriverSession) driverCallContext() context.Context {
 }
 
 // cua-driver call subprocess fallback transport with the screenshot routed through a temp file
-func (s *cuaDriverSession) callToolViaCLI(name string, args *pyjson.Object, timeout float64) (*pyjson.Object, error) {
-	callArgs, shotFile := args.Copy(), ""
+func (s *cuaDriverSession) callToolViaCLI(name string, args *jsonutil.Object, timeout float64) (*jsonutil.Object, error) {
+	callArgs, shotFile := args.Clone(), ""
 	if _, has := callArgs.Get("screenshot_out_file"); name == "get_window_state" && !has {
 		f, err := os.CreateTemp("", "cua_shot_*.png")
 		if err != nil {
@@ -879,7 +873,7 @@ func (s *cuaDriverSession) callToolViaCLI(name string, args *pyjson.Object, time
 		driverCommand, childEnv = command, s.embeddedDaemon.childEnv()
 		socketArgs = []string{"--socket", s.embeddedDaemon.socketPath}
 	}
-	encoded, err := pyjson.Dumps(callArgs)
+	encoded, err := jsonutil.Encode(callArgs)
 	if err != nil {
 		return nil, err
 	}
@@ -896,7 +890,7 @@ func (s *cuaDriverSession) callToolViaCLI(name string, args *pyjson.Object, time
 }
 
 // One driver tool call with restart of a suspect or dead session, fail closed timeouts and the CLI fallback
-func (s *cuaDriverSession) callTool(name string, args *pyjson.Object, timeout float64) (*pyjson.Object, error) {
+func (s *cuaDriverSession) callTool(name string, args *jsonutil.Object, timeout float64) (*jsonutil.Object, error) {
 	if !cuaLifecycleCalls[name] {
 		if s.timeoutSuspect.Load() {
 			if err := s.recreateSession(name, timeout, "cua-driver session suspect after earlier MCP timeout; recreating before %s", true, true); err != nil {

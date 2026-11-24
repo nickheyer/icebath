@@ -5,8 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // On-device faster-whisper settings
@@ -184,5 +184,5 @@ func providerField(ctx context.Context, root, name, field string) string {
 	if err != nil || v.Value == nil {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v.Value))
+	return strings.TrimSpace(anyutil.String(v.Value))
 }

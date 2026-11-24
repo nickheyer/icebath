@@ -11,7 +11,7 @@ import (
 	"time"
 
 	xterm "github.com/charmbracelet/x/term"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Seams of exec_in_container the tests replace, each defaulting to the real process operation
@@ -33,8 +33,8 @@ func containerErr() io.Writer {
 
 // Exit status of a 15 second container inspect probe, timedOut set when the daemon never answered
 func runContainerProbe(argv []string) (returncode int, timedOut bool, err error) {
-	done, err := pysubprocess.RunWith(context.Background(), argv, pysubprocess.Options{Timeout: 15 * time.Second})
-	var expired *pysubprocess.TimeoutExpired
+	done, err := executil.Run(context.Background(), argv, executil.Options{Timeout: 15 * time.Second})
+	var expired *executil.TimeoutError
 	if errors.As(err, &expired) {
 		return 0, true, nil
 	}

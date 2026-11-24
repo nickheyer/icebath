@@ -11,9 +11,6 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 )
 
 var hintFilenames = []string{"AGENTS.override.md", "AGENTS.md", "agents.md", "CLAUDE.md", "claude.md", ".cursorrules"}
@@ -27,11 +24,11 @@ var (
 	hintPathArgKeys = []string{"path", "file_path", "workdir"}
 	hintNavCommands = setOf("cd", "pushd")
 	hintShellOps    = setOf("&&", "||", "|", ";", "&", ";;", "|&", "(", ")")
-	containerHomes  = setOf(pypath.PathStr("/home"), pypath.PathStr("/root"), pypath.PathStr("/workspace"))
+	containerHomes  = setOf(filepath.Clean("/home"), filepath.Clean("/root"), filepath.Clean("/workspace"))
 )
 
 // Followed stat behind every hint is_file, is_dir and exists check, swapped by tests to raise
-var hintPathStat = pypath.PathlibStat
+var hintPathStat = pathutil.StatIfExists
 
 // Hex sha256 of the utf-8 content
 func hintDigest(content string) string {
@@ -41,11 +38,11 @@ func hintDigest(content string) string {
 
 // Resolved target of a hint file inside workingDir and off the read deny list, false when it must not load
 func resolvedHintTarget(env *Env, hintPath, workingDir string) (string, bool) {
-	resolved, err := pypath.Resolve(hintPath)
+	resolved, err := pathutil.Resolve(hintPath)
 	if err != nil {
 		return "", false
 	}
-	if _, inside := pypath.PathRelativeTo(resolved, workingDir); !inside {
+	if _, inside := pathutil.RelativeTo(resolved, workingDir); !inside {
 		return "", false
 	}
 	if ReadBlockError(env, resolved) != "" {
@@ -60,7 +57,7 @@ func firstHintFile(env *Env, directory string) (string, string, bool) {
 		return "", "", false
 	}
 	for _, filename := range hintFilenames {
-		candidate := pypath.PathJoin(directory, filename)
+		candidate := pathutil.Join(directory, filename)
 		fi, err := hintPathStat(candidate)
 		if err != nil || fi == nil || !fi.Mode().IsRegular() {
 			continue
@@ -80,7 +77,7 @@ func firstHintFile(env *Env, directory string) (string, string, bool) {
 
 // Operands of cd or pushd starting a shell segment, cd dash and a bare cd yielding nothing
 func navTargets(cmd string) []string {
-	tokens, err := pyshlex.SplitPOSIXPunctuation(cmd)
+	tokens, err := shellutil.SplitOperators(cmd)
 	if err != nil {
 		return nil
 	}
@@ -108,14 +105,14 @@ func navTargets(cmd string) []string {
 
 // Whether workingDir is a home or container home the session fell back to rather than a project
 func isHomeLikeWorkingDir(workingDir string) (bool, error) {
-	h, err := pypath.PathHome()
+	h, err := pathutil.Home()
 	if err != nil {
 		return false, err
 	}
-	if workingDir == h || containerHomes[workingDir] || containerHomes[pypath.PathParent(workingDir)] {
+	if workingDir == h || containerHomes[workingDir] || containerHomes[filepath.Dir(filepath.Clean(workingDir))] {
 		return true, nil
 	}
-	_, parts := pypath.PathParts(workingDir)
+	_, parts := pathutil.Parts(workingDir)
 	for _, part := range parts {
 		if part == ".home" || part == "host-home" || part == "host_home" {
 			return true, nil
@@ -144,7 +141,7 @@ func NewSubdirectoryHintTrackerFor(env *Env, workingDir string, enabled bool) *S
 		}
 		workingDir = cwd
 	}
-	resolved, err := pypath.Resolve(workingDir)
+	resolved, err := pathutil.Resolve(workingDir)
 	if err != nil {
 		panic(err)
 	}
@@ -170,11 +167,11 @@ func (t *SubdirectoryHintTracker) anchor() {
 func (t *SubdirectoryHintTracker) RebindWorkingDir(workingDir string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	expanded, err := pypath.PathExpanduser(workingDir)
+	expanded, err := pathutil.ExpandUserPath(workingDir)
 	if err != nil {
 		return
 	}
-	newDir, err := pypath.Resolve(expanded)
+	newDir, err := pathutil.Resolve(expanded)
 	if err != nil {
 		return
 	}
@@ -246,25 +243,25 @@ func (t *SubdirectoryHintTracker) extractDirectories(toolName string, args map[s
 
 // Adds the directory of rawPath and its unloaded ancestors up to the walk bound
 func (t *SubdirectoryHintTracker) addPathCandidate(rawPath string, candidates *[]string, seen map[string]bool) {
-	p, err := pypath.PathExpanduser(rawPath)
+	p, err := pathutil.ExpandUserPath(rawPath)
 	if err != nil {
 		return
 	}
 	if !filepath.IsAbs(p) {
-		p = pypath.PathJoin(t.workingDir, p)
+		p = pathutil.Join(t.workingDir, p)
 	}
-	if p, err = pypath.Resolve(p); err != nil {
+	if p, err = pathutil.Resolve(p); err != nil {
 		return
 	}
-	if pypath.PathSuffix(p) != "" {
-		p = pypath.PathParent(p)
+	if pathutil.Suffix(p) != "" {
+		p = filepath.Dir(filepath.Clean(p))
 	} else {
 		fi, err := hintPathStat(p)
 		if err != nil {
 			return
 		}
 		if fi != nil && fi.Mode().IsRegular() {
-			p = pypath.PathParent(p)
+			p = filepath.Dir(filepath.Clean(p))
 		}
 	}
 	for range maxAncestorWalk {
@@ -275,7 +272,7 @@ func (t *SubdirectoryHintTracker) addPathCandidate(rawPath string, candidates *[
 			seen[p] = true
 			*candidates = append(*candidates, p)
 		}
-		parent := pypath.PathParent(p)
+		parent := filepath.Dir(filepath.Clean(p))
 		if parent == p {
 			break
 		}
@@ -285,7 +282,7 @@ func (t *SubdirectoryHintTracker) addPathCandidate(rawPath string, candidates *[
 
 // Adds navigation operands and path like tokens of a shell command, flags and urls excluded
 func (t *SubdirectoryHintTracker) extractPathsFromCommand(cmd string, candidates *[]string, seen map[string]bool) {
-	tokens, err := pyshlex.SplitPOSIX(cmd, false)
+	tokens, err := shellutil.Split(cmd)
 	if err != nil {
 		tokens = strings.Fields(cmd)
 	}
@@ -303,7 +300,7 @@ func (t *SubdirectoryHintTracker) extractPathsFromCommand(cmd string, candidates
 
 // Whether path sits inside the working dir tree
 func (t *SubdirectoryHintTracker) withinWorkingDir(path string) bool {
-	_, inside := pypath.PathRelativeTo(path, t.workingDir)
+	_, inside := pathutil.RelativeTo(path, t.workingDir)
 	return inside
 }
 
@@ -318,7 +315,7 @@ func (t *SubdirectoryHintTracker) isValidSubdir(path string) bool {
 
 // Whether a segment below the working dir names a dependency, cache, build or backup copy directory
 func (t *SubdirectoryHintTracker) isExcluded(path string) bool {
-	rel, ok := pypath.PathRelativeTo(path, t.workingDir)
+	rel, ok := pathutil.RelativeTo(path, t.workingDir)
 	if !ok {
 		return true
 	}
@@ -341,7 +338,7 @@ func (t *SubdirectoryHintTracker) loadHintsForDirectory(directory string) (strin
 		return "", false
 	}
 	for _, filename := range hintFilenames {
-		hintPath := pypath.PathJoin(directory, filename)
+		hintPath := pathutil.Join(directory, filename)
 		fi, err := hintPathStat(hintPath)
 		if err != nil || fi == nil || !fi.Mode().IsRegular() {
 			continue
@@ -370,7 +367,7 @@ func (t *SubdirectoryHintTracker) loadHintsForDirectory(directory string) (strin
 		limit := maxHintChars
 		content = TruncateContent(context.Background(), t.env, content, filename,
 			TruncateOptions{MaxChars: &limit, ReadPath: relPath, NoQueue: true})
-		pkgLog().Debug(fmt.Sprintf("Loaded subdirectory hints from %s: %s", directory, pyrepr.Repr([]any{relPath})))
+		pkgLog().Debug(fmt.Sprintf("Loaded subdirectory hints from %s: %s", directory, anyutil.Quote([]any{relPath})))
 		return fmt.Sprintf("[Subdirectory context discovered: %s]\n%s", relPath, content), true
 	}
 	return "", false
@@ -378,12 +375,12 @@ func (t *SubdirectoryHintTracker) loadHintsForDirectory(directory string) (strin
 
 // Working dir relative path, else a tilde relative posix path, else the absolute path
 func (t *SubdirectoryHintTracker) displayPath(hintPath string) string {
-	if rel, ok := pypath.PathRelativeTo(hintPath, t.workingDir); ok {
+	if rel, ok := pathutil.RelativeTo(hintPath, t.workingDir); ok {
 		return filepath.FromSlash(rel)
 	}
-	h, err := pypath.PathHome()
+	h, err := pathutil.Home()
 	if err == nil {
-		if rel, ok := pypath.PathRelativeTo(hintPath, h); ok {
+		if rel, ok := pathutil.RelativeTo(hintPath, h); ok {
 			return "~/" + rel
 		}
 	}

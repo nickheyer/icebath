@@ -17,8 +17,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -75,7 +75,7 @@ func gcGit(args []string, cwd string, timeout time.Duration) (*worktreeGitResult
 	}
 	r, err := worktreeGit(args, cwd, timeout, env)
 	if err != nil {
-		var expired *pysubprocess.TimeoutExpired
+		var expired *executil.TimeoutError
 		if errors.As(err, &expired) {
 			return &worktreeGitResult{Returncode: 124, Stderr: fmt.Sprintf("timeout after %ds", int(timeout/time.Second))}, nil
 		}
@@ -125,9 +125,9 @@ func gcArchiveUntracked(ctx context.Context, tree string, untracked []string) st
 			return ""
 		}
 		if lst.IsDir() {
-			err = pyshutil.CopyTree(src, target, false, true)
+			err = fsutil.CopyTree(src, target, fsutil.CopyTreeOptions{DirsExistOK: true})
 		} else {
-			err = pyshutil.Copy2(src, target)
+			err = fsutil.CopyFile(src, target)
 		}
 		if err != nil {
 			envLog(nil).Warn(fmt.Sprintf("Could not archive untracked files from %s: %s", tree, err))

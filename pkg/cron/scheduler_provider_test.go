@@ -13,6 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type testCronScheduler struct {
@@ -620,7 +621,7 @@ func TestMultiplexConnectedSecondaryUsesItsOwnAdapters(t *testing.T) {
 func TestMultiplexEmptySecondaryDoesNotFallBackToShared(t *testing.T) {
 	shared := map[string]any{"kind": "shared"}
 	defaultAd, secAd := runMultiplexCapture(t, map[string]any{"home-ops": map[string]any{}}, shared)
-	if !sameAdapters(defaultAd, shared) || sameAdapters(secAd, shared) || pyTruthy(secAd) {
+	if !sameAdapters(defaultAd, shared) || sameAdapters(secAd, shared) || anyutil.IsTrue(secAd) {
 		t.Fatalf("default %v secondary %v", defaultAd, secAd)
 	}
 }
@@ -628,7 +629,7 @@ func TestMultiplexEmptySecondaryDoesNotFallBackToShared(t *testing.T) {
 func TestMultiplexMissingSecondaryDoesNotFallBackToShared(t *testing.T) {
 	shared := map[string]any{"kind": "shared"}
 	defaultAd, secAd := runMultiplexCapture(t, map[string]any{}, shared)
-	if !sameAdapters(defaultAd, shared) || sameAdapters(secAd, shared) || pyTruthy(secAd) {
+	if !sameAdapters(defaultAd, shared) || sameAdapters(secAd, shared) || anyutil.IsTrue(secAd) {
 		t.Fatalf("default %v secondary %v", defaultAd, secAd)
 	}
 }

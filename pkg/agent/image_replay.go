@@ -6,14 +6,15 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var (
@@ -103,7 +104,7 @@ func NativeInputsRoot(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pypath.Resolve(pypath.PurePathStr(docs + "/native-inputs"))
+	return pathutil.Resolve(filepath.Clean(docs + "/native-inputs"))
 }
 
 // Data URL of a retained local image the profile still holds unchanged, empty otherwise
@@ -111,7 +112,7 @@ func (a *AIAgent) retainedDataURL(ctx context.Context, ref string) string {
 	if ref == "" {
 		return ""
 	}
-	path := pypath.PurePathStr(ref)
+	path := filepath.Clean(ref)
 	root, err := NativeInputsRoot(ctx)
 	if err != nil || purePathParent(purePathParent(path)) != root {
 		return ""

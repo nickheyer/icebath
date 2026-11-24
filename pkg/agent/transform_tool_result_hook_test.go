@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Compiled-in plugin prefixing every tool result with its tool name, the transform_result_canon plugin of the case
@@ -42,7 +42,7 @@ func TestTransformToolResultIntegrationWithRealPlugin(t *testing.T) {
 	plugins.GetPluginManager(ctx).DiscoverAndLoad(ctx, false)
 	r := tools.NewRegistry()
 	r.Register(tools.Def{Name: "some_tool", Toolset: "test", Handler: func(context.Context, *tools.Call) string { return `{"payload": 42}` },
-		Schema: pyjson.ObjectOf("name", "some_tool", "description", "some_tool", "parameters", pyjson.ObjectOf("type", "object"))})
+		Schema: jsonutil.ObjectOf("name", "some_tool", "description", "some_tool", "parameters", jsonutil.ObjectOf("type", "object"))})
 	d := tools.NewDispatcher(r)
 	installToolPluginBridge(d)
 	out := d.DispatchWith(tools.WithDispatcher(ctx, d), &tools.Call{Name: "some_tool", Args: map[string]any{}, TaskID: "t1", SessionID: "s1",

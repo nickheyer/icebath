@@ -3,22 +3,20 @@ package codeexec
 import (
 	"errors"
 	"math"
-	"math/big"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
 	nonAppWindowTitlePrefixes = []string{"@!", "Desktop", "gnome-shell", "GNOME Shell", "xfce4-panel"}
-	elementLineRE             = regexp2.MustCompile(`^\s*(?:-\s+)?\[(\d+)\]\s+(\w+)`+
+	elementLineRE             = regexp2.MustCompile(`^\s*(?:-\s+)?\[([0-9]+)\]\s+(\w+)`+
 		`(?:\s*=\s*"([^"]*)"|\s+"([^"]*)"|\s+\((?!\d+\))([^)]*)\))?`+
 		`(?:\s+(?:\(\d+\)\s+)?id=([^\s\[\]]+))?`, regexp2.Multiline|regexp2.Unicode)
 	xpropWindowIDRE = regexp.MustCompile(`window id # (0x[0-9a-fA-F]+)`)
@@ -29,7 +27,7 @@ var (
 )
 
 // Value of key in an ordered object, nil when the object is nil or lacks the key
-func cuGet(obj *pyjson.Object, key string) any {
+func cuGet(obj *jsonutil.Object, key string) any {
 	if obj == nil {
 		return nil
 	}
@@ -38,10 +36,10 @@ func cuGet(obj *pyjson.Object, key string) any {
 }
 
 // ActionResult lifting the structured verdict, structuredContent first and the flattened meta copy second
-func actionResultFrom(name string, ok bool, message string, meta *pyjson.Object, structured any, requestedDelivery *string) *ActionResult {
-	sc, _ := structured.(*pyjson.Object)
+func actionResultFrom(name string, ok bool, message string, meta *jsonutil.Object, structured any, requestedDelivery *string) *ActionResult {
+	sc, _ := structured.(*jsonutil.Object)
 	if meta == nil {
-		meta = pyjson.NewObject()
+		meta = jsonutil.NewObject()
 	}
 	raw := func(key string) any {
 		if sc != nil {
@@ -64,10 +62,10 @@ func actionResultFrom(name string, ok bool, message string, meta *pyjson.Object,
 		return nil
 	}
 	code := raw("code")
-	if !pyrepr.Truthy(code) {
+	if !anyutil.IsTrue(code) {
 		code = raw("reason_code")
 	}
-	esc, _ := raw("escalation").(*pyjson.Object)
+	esc, _ := raw("escalation").(*jsonutil.Object)
 	return &ActionResult{
 		OK: ok, Action: name, Message: message, Meta: meta,
 		Verified: typedBool(raw("verified")), Effect: typedStr(raw("effect")), Escalation: esc,
@@ -76,7 +74,7 @@ func actionResultFrom(name string, ok bool, message string, meta *pyjson.Object,
 	}
 }
 
-// Hash key of a z_index value under Python equality, ints floats and bools of equal value collide
+// Key of a z_index value under which equal numbers collide whatever their type, true and false counting as 1 and 0
 func zIndexKey(v any) string {
 	switch t := v.(type) {
 	case bool:
@@ -85,21 +83,22 @@ func zIndexKey(v any) string {
 		}
 		return "n0"
 	case float64:
+		if t == 0 {
+			return "n0"
+		}
 		if t == math.Trunc(t) && !math.IsInf(t, 0) {
-			f := new(big.Float).SetFloat64(t)
-			n, _ := f.Int(nil)
-			return "n" + n.String()
+			return "n" + strconv.FormatFloat(t, 'f', 0, 64)
 		}
 		return "f" + strconv.FormatFloat(t, 'g', -1, 64)
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		return "n" + n.String()
+	if n, ok := anyutil.Int(v); ok {
+		return "n" + strconv.FormatInt(n, 10)
 	}
-	return "r" + pyrepr.Repr(v)
+	return "r" + anyutil.Quote(v)
 }
 
 // True when every window shares one z_index
-func zIndexUninformative(windows []*pyjson.Object) bool {
+func zIndexUninformative(windows []*jsonutil.Object) bool {
 	seen := map[string]bool{}
 	for _, w := range windows {
 		v, has := w.Get("z_index")
@@ -120,15 +119,15 @@ func parseXpropNetActiveWindow(stdout string) (int64, bool) {
 	if m == nil {
 		return 0, false
 	}
-	n, ok := new(big.Int).SetString(m[1][2:], 16)
-	if !ok || !n.IsInt64() {
+	n, err := strconv.ParseInt(m[1][2:], 16, 64)
+	if err != nil {
 		return 0, false
 	}
-	return n.Int64(), true
+	return n, true
 }
 
 // False for desktop and shell helper windows that capture as empty
-func isRealAppWindow(w *pyjson.Object) bool {
+func isRealAppWindow(w *jsonutil.Object) bool {
 	raw, has := w.Get("title")
 	if !has {
 		raw = ""
@@ -151,7 +150,7 @@ func parseElementsFromTree(markdown string) []UIElement {
 	m, _ := elementLineRE.FindStringMatch(markdown)
 	for m != nil {
 		g := m.Groups()
-		idx, _ := pyint.Parse(g[1].String())
+		idx, _ := strconv.Atoi(g[1].String())
 		label := ""
 		for _, i := range []int{3, 4, 5, 6} {
 			if s := g[i].String(); s != "" {
@@ -159,7 +158,7 @@ func parseElementsFromTree(markdown string) []UIElement {
 				break
 			}
 		}
-		out = append(out, UIElement{Index: int(idx.Int64()), Role: g[2].String(), Label: label})
+		out = append(out, UIElement{Index: idx, Role: g[2].String(), Label: label})
 		m, _ = elementLineRE.FindNextMatch(m)
 	}
 	if out == nil {
@@ -172,7 +171,7 @@ func parseElementsFromTree(markdown string) []UIElement {
 func parseElementsFromStructured(rawElements []any) ([]UIElement, error) {
 	elements := []UIElement{}
 	for _, r := range rawElements {
-		obj, ok := r.(*pyjson.Object)
+		obj, ok := r.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -184,11 +183,11 @@ func parseElementsFromStructured(rawElements []any) ([]UIElement, error) {
 				idx = 1
 			}
 		default:
-			n, ok := pyrepr.Int(idxRaw)
-			if !ok || idxRaw == nil {
+			n, ok := anyutil.Int(idxRaw)
+			if !ok {
 				continue
 			}
-			idx = int(n.Int64())
+			idx = int(n)
 		}
 		el := UIElement{Index: idx}
 		if s, ok := cuGet(obj, "role").(string); ok {
@@ -200,7 +199,7 @@ func parseElementsFromStructured(rawElements []any) ([]UIElement, error) {
 		if s, ok := cuGet(obj, "element_token").(string); ok && s != "" {
 			el.ElementToken = &s
 		}
-		if frame, ok := cuGet(obj, "frame").(*pyjson.Object); ok && frame.Len() > 0 {
+		if frame, ok := cuGet(obj, "frame").(*jsonutil.Object); ok && frame.Len() > 0 {
 			var b [4]int
 			valid := true
 			for i, k := range []string{"x", "y", "w", "h"} {
@@ -208,16 +207,15 @@ func parseElementsFromStructured(rawElements []any) ([]UIElement, error) {
 				if !has {
 					v = int64(0)
 				}
-				n, err := pyint.Of(v)
+				n, err := anyutil.ToInt(v)
 				if err != nil {
-					var pe *pyint.Error
-					if errors.As(err, &pe) && (pe.Kind == "TypeError" || pe.Kind == "ValueError") {
+					if errors.Is(err, anyutil.ErrNotNumber) {
 						valid = false
 						break
 					}
 					return nil, err
 				}
-				b[i] = int(n.Int64())
+				b[i] = int(n)
 			}
 			if valid {
 				el.Bounds = b
@@ -267,8 +265,8 @@ func parseKeyCombo(keys string) (*string, []string) {
 }
 
 // Normalised tool result every transport emits, image_mime_types only when the transport reports it
-func toolEnvelope(data any, images []any, structured any, isError bool, imageMimeTypes []any) *pyjson.Object {
-	out := pyjson.NewObject()
+func toolEnvelope(data any, images []any, structured any, isError bool, imageMimeTypes []any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("data", data)
 	out.Set("images", images)
 	if imageMimeTypes != nil {
@@ -280,13 +278,13 @@ func toolEnvelope(data any, images []any, structured any, isError bool, imageMim
 }
 
 // Flattens an MCP CallToolResult object into the envelope with joined text parsed as JSON when it looks like JSON
-func extractToolResult(result *pyjson.Object) *pyjson.Object {
+func extractToolResult(result *jsonutil.Object) *jsonutil.Object {
 	var data any
 	images, mimes := []any{}, []any{}
 	var chunks []string
 	content, _ := cuGet(result, "content").([]any)
 	for _, p := range content {
-		part, ok := p.(*pyjson.Object)
+		part, ok := p.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -295,10 +293,10 @@ func extractToolResult(result *pyjson.Object) *pyjson.Object {
 			s, _ := cuGet(part, "text").(string)
 			chunks = append(chunks, s)
 		case "image":
-			if d := cuGet(part, "data"); pyrepr.Truthy(d) {
+			if d := cuGet(part, "data"); anyutil.IsTrue(d) {
 				images = append(images, d)
 				mime := cuGet(part, "mimeType")
-				if !pyrepr.Truthy(mime) {
+				if !anyutil.IsTrue(mime) {
 					mime = ""
 				}
 				mimes = append(mimes, mime)
@@ -315,88 +313,86 @@ func extractToolResult(result *pyjson.Object) *pyjson.Object {
 		joined := strings.Join(kept, "\n")
 		data = joined
 		if s := strings.TrimSpace(joined); strings.HasPrefix(s, "{") || strings.HasPrefix(s, "[") {
-			if v, err := pyjson.Loads(joined); err == nil {
+			if v, err := jsonutil.Decode(joined); err == nil {
 				data = v
 			}
 		}
 	}
 	structured := cuGet(result, "structuredContent")
-	if !pyrepr.Truthy(structured) {
+	if !anyutil.IsTrue(structured) {
 		structured = nil
 	}
 	return toolEnvelope(data, images, structured, cuGet(result, "isError") == true, mimes)
 }
 
 // Screenshot base64 and mime type of a flattened result, the image part first and structured fields second
-func imageFromToolResult(out *pyjson.Object) (*string, *string) {
+func imageFromToolResult(out *jsonutil.Object) (*string, *string) {
 	images, _ := cuGet(out, "images").([]any)
-	if len(images) > 0 && pyrepr.Truthy(images[0]) {
-		b64 := pyrepr.Str(images[0])
+	if len(images) > 0 && anyutil.IsTrue(images[0]) {
+		b64 := anyutil.String(images[0])
 		mimes, _ := cuGet(out, "image_mime_types").([]any)
-		if len(mimes) > 0 && pyrepr.Truthy(mimes[0]) {
-			m := pyrepr.Str(mimes[0])
+		if len(mimes) > 0 && anyutil.IsTrue(mimes[0]) {
+			m := anyutil.String(mimes[0])
 			return &b64, &m
 		}
 		return &b64, nil
 	}
-	structured, _ := cuGet(out, "structuredContent").(*pyjson.Object)
+	structured, _ := cuGet(out, "structuredContent").(*jsonutil.Object)
 	b64 := cuGet(structured, "screenshot_png_b64")
-	if !pyrepr.Truthy(b64) {
+	if !anyutil.IsTrue(b64) {
 		b64 = cuGet(structured, "png_b64")
 	}
-	if !pyrepr.Truthy(b64) {
+	if !anyutil.IsTrue(b64) {
 		return nil, nil
 	}
-	s := pyrepr.Str(b64)
+	s := anyutil.String(b64)
 	mime := cuGet(structured, "screenshot_mime_type")
-	if !pyrepr.Truthy(mime) {
+	if !anyutil.IsTrue(mime) {
 		mime = cuGet(structured, "mime_type")
 	}
-	if !pyrepr.Truthy(mime) {
+	if !anyutil.IsTrue(mime) {
 		return &s, nil
 	}
-	m := pyrepr.Str(mime)
+	m := anyutil.String(mime)
 	return &s, &m
 }
 
 // Integer of an int or numeric string, false for bools, other types and malformed strings
-func intOrNone(value any) (int, bool) {
+func intValue(value any) (int, bool) {
 	switch v := value.(type) {
 	case bool, nil:
 		return 0, false
 	case string:
-		n, ok := pyint.Parse(v)
-		if !ok || !n.IsInt64() {
+		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
+		if err != nil {
 			return 0, false
 		}
-		return int(n.Int64()), true
-	case float64, float32:
+		return int(n), true
+	}
+	n, ok := anyutil.Int(value)
+	if !ok {
 		return 0, false
 	}
-	n, ok := pyrepr.Int(value)
-	if !ok || !n.IsInt64() {
-		return 0, false
-	}
-	return int(n.Int64()), true
+	return int(n), true
 }
 
 // Positive integer of value, false for bools, malformed and non positive values
 func positiveInt(value any) (int, bool) {
-	n, ok := intOrNone(value)
+	n, ok := intValue(value)
 	return n, ok && n > 0
 }
 
 // True for a zero or negative schema filler id, non numeric values still reach validation
 func isSchemaFillerID(value any) bool {
-	n, ok := intOrNone(value)
+	n, ok := intValue(value)
 	return ok && n <= 0
 }
 
 // Normalised list_windows entries with integer pid and window id, unusable entries dropped
-func ingestWindows(rawWindows []any) []*pyjson.Object {
-	windows := []*pyjson.Object{}
+func ingestWindows(rawWindows []any) []*jsonutil.Object {
+	windows := []*jsonutil.Object{}
 	for _, r := range rawWindows {
-		w, ok := r.(*pyjson.Object)
+		w, ok := r.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -414,7 +410,7 @@ func ingestWindows(rawWindows []any) []*pyjson.Object {
 		if !has {
 			title = ""
 		}
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		if s, ok := appName.(string); ok {
 			out.Set("app_name", s)
 		} else {
@@ -434,7 +430,7 @@ func ingestWindows(rawWindows []any) []*pyjson.Object {
 		case float64:
 			z = zRaw
 		default:
-			if _, ok := pyrepr.Int(zRaw); ok {
+			if _, ok := anyutil.Int(zRaw); ok {
 				z = zRaw
 			}
 		}
@@ -445,7 +441,7 @@ func ingestWindows(rawWindows []any) []*pyjson.Object {
 }
 
 // list_windows payload across the structured, text payload and envelope shapes
-func windowsFromToolResult(out *pyjson.Object) []any {
+func windowsFromToolResult(out *jsonutil.Object) []any {
 	candidates := []struct {
 		container any
 		keys      []string
@@ -455,7 +451,7 @@ func windowsFromToolResult(out *pyjson.Object) []any {
 		{out, []string{"windows", "_legacy_windows"}},
 	}
 	for _, c := range candidates {
-		obj, ok := c.container.(*pyjson.Object)
+		obj, ok := c.container.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -469,8 +465,8 @@ func windowsFromToolResult(out *pyjson.Object) []any {
 }
 
 // Distinct named apps with their pid in window order
-func appsFromWindows(windows []any) []*pyjson.Object {
-	apps := []*pyjson.Object{}
+func appsFromWindows(windows []any) []*jsonutil.Object {
+	apps := []*jsonutil.Object{}
 	seen := map[string]bool{}
 	for _, s := range ingestWindows(windows) {
 		name := cuGet(s, "app_name").(string)
@@ -478,7 +474,7 @@ func appsFromWindows(windows []any) []*pyjson.Object {
 		key := name + "\x00" + strconv.Itoa(pid)
 		if name != "" && !seen[key] {
 			seen[key] = true
-			app := pyjson.NewObject()
+			app := jsonutil.NewObject()
 			app.Set("name", name)
 			app.Set("pid", pid)
 			apps = append(apps, app)

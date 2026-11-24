@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Actions that rewrite or delete an existing entry, replace kept so writes staged before its removal still replay
@@ -200,7 +200,7 @@ func ApplyMemoryPending(ctx context.Context, payload map[string]any, store *Stor
 	}
 	for _, op := range destructive {
 		if !pyTruthy(op["matched_entry"]) {
-			return Result{Data: pyjson.ObjectOf("success", false, "error", "This destructive pending write predates entry pinning and cannot be "+
+			return Result{Data: jsonutil.ObjectOf("success", false, "error", "This destructive pending write predates entry pinning and cannot be "+
 				"verified; nothing was applied. Reject it and recreate the change."), FailureClass: "other"}, nil
 		}
 	}
@@ -217,7 +217,7 @@ func ApplyMemoryPending(ctx context.Context, payload map[string]any, store *Stor
 	}
 	verb, _ := action.(string)
 	if verb != "add" && verb != "replace" && verb != "remove" && verb != "patch" {
-		return Result{Data: pyjson.ObjectOf("success", false, "error", fmt.Sprintf("Unknown staged action '%s'.", pyStr(action))), FailureClass: "other"}, nil
+		return Result{Data: jsonutil.ObjectOf("success", false, "error", fmt.Sprintf("Unknown staged action '%s'.", pyStr(action))), FailureClass: "other"}, nil
 	}
 	content, oldText := payload["content"], payload["old_text"]
 	if !pyTruthy(content) {
@@ -428,7 +428,7 @@ func changedEntries(result map[string]any, kind string) []string {
 	if pyTruthy(single) {
 		out = append(out, pyStr(single))
 	}
-	batch, _ := pyjson.Dict(result[kind+"_entries"])
+	batch, _ := jsonutil.AsMap(result[kind+"_entries"])
 	keys := make([]string, 0, len(batch))
 	for k := range batch {
 		keys = append(keys, k)
@@ -463,7 +463,7 @@ func applyOnePending(ctx context.Context, subsystem string, rec map[string]any, 
 		if err != nil {
 			return false, osErrorText(err), map[string]any{}
 		}
-		result, _ = pyjson.Dict(res.Data)
+		result, _ = jsonutil.AsMap(res.Data)
 	} else {
 		raw := opts.ApplySkill(payload)
 		var decoded any

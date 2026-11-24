@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Marker rooted workspace with optional package scripts and a saved verify recipe
@@ -24,13 +24,13 @@ func ledgerNudgeWorkspace(t *testing.T, scripts map[string]any, manifestRecipe m
 	if len(scripts) > 0 {
 		pkg = map[string]any{"scripts": scripts}
 	}
-	body, err := pyjson.Dumps(pkg)
+	body, err := jsonutil.Encode(pkg)
 	if err != nil {
 		t.Fatal(err)
 	}
 	writeFile(t, filepath.Join(project, "package.json"), body)
 	if manifestRecipe != nil {
-		manifest, err := pyjson.Dumps(map[string]any{"version": 1, "recipe": manifestRecipe})
+		manifest, err := jsonutil.Encode(map[string]any{"version": 1, "recipe": manifestRecipe})
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -6,8 +6,9 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Last event of a kind on a task
@@ -67,7 +68,7 @@ func TestSameCardReviewSupportsChangesAndApprovalWithoutBlockLoop(t *testing.T) 
 	tid := mustCreate(t, conn, CreateTaskOptions{Title: "Implement guarded export", Assignee: sp("builder")})
 	implementation := mustClaim(t, conn, tid, sp("builder:1"))
 	if ok, _ := review(t, conn, tid, RequestReviewOptions{Reviewer: sp("reviewer"), Summary: sp("Implementation and focused tests are ready."),
-		Metadata: pyjson.ObjectOf("commit", "abc123"), ExpectedRunID: implementation.CurrentRunID}); !ok {
+		Metadata: jsonutil.ObjectOf("commit", "abc123"), ExpectedRunID: implementation.CurrentRunID}); !ok {
 		t.Fatal("review refused")
 	}
 	awaiting := mustTask(t, conn, tid)
@@ -82,7 +83,7 @@ func TestSameCardReviewSupportsChangesAndApprovalWithoutBlockLoop(t *testing.T) 
 		t.Fatal(requested)
 	}
 	implRun := lastRunOfOutcome(t, conn, tid, "review_requested")
-	if implRun.Summary == nil || *implRun.Summary != "Implementation and focused tests are ready." || !pyjson.Equal(implRun.Metadata, pyjson.ObjectOf("commit", "abc123")) {
+	if implRun.Summary == nil || *implRun.Summary != "Implementation and focused tests are ready." || !anyutil.Equal(implRun.Metadata, jsonutil.ObjectOf("commit", "abc123")) {
 		t.Fatal(implRun.Summary, implRun.Metadata)
 	}
 	rv, err := ClaimReviewTask(ctx, conn, tid, nil, sp("reviewer:1"))
@@ -395,7 +396,7 @@ func TestParkedReviewApprovalWithoutEvidenceStillCreatesAuditRun(t *testing.T) {
 	}
 	run, err := LatestRun(ctx, conn, tid)
 	if err != nil || run == nil || run.ID != *completed.RunID || run.Outcome == nil || *run.Outcome != "completed" || run.Profile == nil || *run.Profile != "reviewer" ||
-		run.Summary == nil || *run.Summary != "Review approved without additional evidence." || !pyjson.Equal(run.Metadata, pyjson.ObjectOf("source_status", "review", "approval", "manual")) {
+		run.Summary == nil || *run.Summary != "Review approved without additional evidence." || !anyutil.Equal(run.Metadata, jsonutil.ObjectOf("source_status", "review", "approval", "manual")) {
 		t.Fatal(run, err)
 	}
 }

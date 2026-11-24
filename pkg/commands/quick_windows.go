@@ -7,49 +7,39 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"syscall"
 
 	"golang.org/x/sys/windows"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
-// ComSpec command line for the gateway string, bytes refused as Popen refuses them on Windows
+// ComSpec command line for the gateway string, a bytes command refused because Windows command lines are text
 func gatewayProgram(command string, isBytes bool) (quickProgram, error) {
 	if isBytes {
-		return quickProgram{}, pyError("bytes args is not allowed on Windows")
+		return quickProgram{}, errors.New("bytes args is not allowed on Windows")
 	}
 	return ntShellProgram(command, 0)
 }
 
-// Hidden window ComSpec program, an empty path left for CreateProcess to search once the strings convert
+// Hidden window program of the resolved command interpreter running the command line
 func ntShellProgram(args string, flags uint32) (quickProgram, error) {
-	executable, cmdline, err := pysubprocess.NtShell(args, os.Getenv)
+	cmd, err := executil.ShellCommand(args)
 	if err != nil {
 		return quickProgram{}, err
 	}
-	return quickProgram{path: executable, argv: []string{executable},
-		attr: &syscall.SysProcAttr{HideWindow: true, CmdLine: cmdline, CreationFlags: flags}}, nil
+	cmd.SysProcAttr.CreationFlags = flags
+	return quickProgram{path: cmd.Path, argv: []string{cmd.Path}, attr: cmd.SysProcAttr}, nil
 }
 
-// ValueError CreateProcess raises for a NUL in its strings, then the search a relative ComSpec leaves to it
+// Refuses a NUL in the program, its command line, the cwd or the environment, which CreateProcess cannot carry
 func finishProgram(prog quickProgram, cwd string, env []string) (quickProgram, error) {
 	texts := append([]string{prog.path, prog.attr.CmdLine, cwd}, env...)
 	for _, s := range texts {
 		if strings.IndexByte(s, 0) >= 0 {
-			return prog, pyError("embedded null character")
+			return prog, errEmbeddedNUL
 		}
 	}
-	if prog.path != "" {
-		return prog, nil
-	}
-	path, err := pysubprocess.WindowsCommandLineModule(prog.attr.CmdLine)
-	if err != nil {
-		return prog, pyError(pypath.OSErrorText(err))
-	}
-	prog.path, prog.argv = path, []string{path}
 	return prog, nil
 }
 
@@ -74,7 +64,7 @@ func quickEnvList(child *tools.ChildEnv) []string {
 	return out
 }
 
-// Inherited standard input handle, an empty pipe when the process has none as Popen creates one
+// Inherited standard input handle, an empty pipe when the process has none
 func quickStdin() (*os.File, func()) {
 	if h, err := windows.GetStdHandle(windows.STD_INPUT_HANDLE); err == nil && h != 0 && os.Stdin != nil {
 		return os.Stdin, func() {}
@@ -87,12 +77,12 @@ func quickStdin() (*os.File, func()) {
 	return r, func() { r.Close() }
 }
 
-// Python str of a CreateProcess failure, the WinError code and message without a filename
-func spawnErrorText(err error, _ string) string {
-	return pypath.OSErrorText(err)
+// Spawn failure as CreateProcess reported it
+func spawnError(err error, _ string) error {
+	return err
 }
 
-// Popen.kill as TerminateProcess, a PermissionError ignored once the shell no longer runs
+// TerminateProcess of the shell, access denied ignored once the shell no longer runs
 func killShell(q *quickProc) error {
 	if closed(q.exited) {
 		return nil

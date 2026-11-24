@@ -2,21 +2,21 @@ package langfuse
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -78,7 +78,7 @@ func captureMode() string {
 	}
 	if warnedInvalidCapture.CompareAndSwap(false, true) {
 		pkgLog().Warn(fmt.Sprintf("Langfuse plugin: invalid ICEBATH_LANGFUSE_CAPTURE=%s, falling back to %s (valid: %s)",
-			pyrepr.Repr(value), pyrepr.Repr(defaultCapture), strings.Join(captureModes, ", ")))
+			strconv.Quote(value), strconv.Quote(defaultCapture), strings.Join(captureModes, ", ")))
 	}
 	return defaultCapture
 }
@@ -99,7 +99,7 @@ func endUserAttribution(ctx context.Context) bool {
 	if warnedInvalidEndUser.CompareAndSwap(false, true) {
 		key := fmt.Sprintf("plugins.entries.%s.settings.%s", pc.PluginID(), endUserSetting)
 		pkgLog().Warn(fmt.Sprintf("Langfuse plugin: %s=%s is not true or false, so traces get no userId. "+
-			"Fix it with `icebath config set %s true` (or false).", key, pyrepr.Repr(value), key))
+			"Fix it with `icebath config set %s true` (or false).", key, anyutil.Quote(value), key))
 	}
 	return false
 }
@@ -115,12 +115,12 @@ func describeContent(value any) any {
 	case nil, bool:
 		return value
 	case []byte:
-		return obj("omitted", true, "type", "bytes", "length", len(t))
+		return jsonutil.ObjectOf("omitted", true, "type", "bytes", "length", len(t))
 	case string:
-		return obj("omitted", true, "type", "text", "chars", utf8.RuneCountInString(t))
+		return jsonutil.ObjectOf("omitted", true, "type", "text", "chars", utf8.RuneCountInString(t))
 	}
 	if isNumber(value) {
-		return obj("omitted", true, "type", "number")
+		return jsonutil.ObjectOf("omitted", true, "type", "number")
 	}
 	if items, ok := dictItems(value); ok {
 		keys := []any{}
@@ -130,12 +130,12 @@ func describeContent(value any) any {
 			}
 			keys = append(keys, it.key)
 		}
-		return obj("omitted", true, "type", "object", "keys", keys)
+		return jsonutil.ObjectOf("omitted", true, "type", "object", "keys", keys)
 	}
 	if elems, ok := listItems(value); ok {
-		return obj("omitted", true, "type", "array", "items", len(elems))
+		return jsonutil.ObjectOf("omitted", true, "type", "array", "items", len(elems))
 	}
-	return obj("omitted", true, "type", pyrepr.TypeName(value))
+	return jsonutil.ObjectOf("omitted", true, "type", anyutil.Kind(value))
 }
 
 // Tool name and arguments marking a content value as one tool's result
@@ -173,7 +173,7 @@ func truncateText(value string, maxChars int) any {
 				mediaType = mt
 			}
 		}
-		return obj("type", "data_uri", "media_type", mediaType, "omitted", true, "length", utf8.RuneCountInString(value))
+		return jsonutil.ObjectOf("type", "data_uri", "media_type", mediaType, "omitted", true, "length", utf8.RuneCountInString(value))
 	}
 	if captureMode() == "sanitized" {
 		value = redactSecrets(value)
@@ -188,11 +188,10 @@ func truncateText(value string, maxChars int) any {
 // JSON object or array a string holds, trailing text kept under _hint or _trailing_text, false when unchanged
 func maybeParseJSONString(value string) (any, bool) {
 	stripped := strings.TrimSpace(value)
-	rs := []rune(stripped)
-	if len(rs) < 2 || (rs[0] != '{' && rs[0] != '[') {
+	if len(stripped) < 2 || (stripped[0] != '{' && stripped[0] != '[') {
 		return value, false
 	}
-	parsed, idx, err := pyjson.RawDecode(stripped)
+	parsed, end, err := jsonutil.DecodePrefix(stripped)
 	if err != nil {
 		return value, false
 	}
@@ -201,7 +200,7 @@ func maybeParseJSONString(value string) (any, bool) {
 			return value, false
 		}
 	}
-	trailing := strings.TrimSpace(string(rs[idx:]))
+	trailing := strings.TrimSpace(stripped[end:])
 	if trailing == "" {
 		return parsed, true
 	}
@@ -210,7 +209,7 @@ func maybeParseJSONString(value string) (any, bool) {
 		hintKey = "_hint"
 	}
 	if items, ok := dictItems(parsed); ok {
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for _, it := range items {
 			out.Set(it.key, it.val)
 		}
@@ -221,13 +220,13 @@ func maybeParseJSONString(value string) (any, bool) {
 		out.Set(key, trailing)
 		return out, true
 	}
-	return obj("data", parsed, hintKey, trailing), true
+	return jsonutil.ObjectOf("data", parsed, hintKey, trailing), true
 }
 
 // Compact preview of a read_file result, false when the value is not one
 func normalizePayload(value any, toolName string, args any) (any, bool) {
 	content, isStr := dget(value, "content").(string)
-	if !isDict(value) || !isStr || truthy(dget(value, "error")) {
+	if !isDict(value) || !isStr || anyutil.IsTrue(dget(value, "error")) {
 		return value, false
 	}
 	for _, k := range []string{"total_lines", "file_size", "is_binary", "is_image"} {
@@ -235,7 +234,7 @@ func normalizePayload(value any, toolName string, args any) (any, bool) {
 			return value, false
 		}
 	}
-	normalized := pyjson.NewObject()
+	normalized := jsonutil.NewObject()
 	if toolName == "read_file" && isDict(args) {
 		if p, ok := dget(args, "path").(string); ok && p != "" {
 			normalized.Set("path", p)
@@ -258,30 +257,30 @@ func normalizePayload(value any, toolName string, args any) (any, bool) {
 				break
 			}
 			groups := m.Groups()
-			n, ok := pyint.Parse(groups[1].String())
-			if !ok {
+			n, err := strconv.Atoi(groups[1].String())
+			if err != nil {
 				all = false
 				break
 			}
-			parsed = append(parsed, obj("line", pyint.Native(n), "text", groups[2].String()))
+			parsed = append(parsed, jsonutil.ObjectOf("line", n, "text", groups[2].String()))
 		}
 		if all {
 			lines = parsed
 		}
 	}
 	if len(lines) > 0 {
-		first, _ := lines[0].(*pyjson.Object).Get("line")
-		last, _ := lines[len(lines)-1].(*pyjson.Object).Get("line")
-		normalized.Set("returned_lines", obj("start", first, "end", last, "count", len(lines)))
+		first, _ := lines[0].(*jsonutil.Object).Get("line")
+		last, _ := lines[len(lines)-1].(*jsonutil.Object).Get("line")
+		normalized.Set("returned_lines", jsonutil.ObjectOf("start", first, "end", last, "count", len(lines)))
 		if len(lines) <= readFileHeadLines+readFileTailLines {
-			normalized.Set("content_preview", obj("lines", lines))
+			normalized.Set("content_preview", jsonutil.ObjectOf("lines", lines))
 		} else {
-			normalized.Set("content_preview", obj("head", append([]any{}, lines[:readFileHeadLines]...),
+			normalized.Set("content_preview", jsonutil.ObjectOf("head", append([]any{}, lines[:readFileHeadLines]...),
 				"tail", append([]any{}, lines[len(lines)-readFileTailLines:]...),
 				"omitted_line_count", len(lines)-readFileHeadLines-readFileTailLines))
 		}
 	} else if content != "" {
-		normalized.Set("content_preview", obj("text", content))
+		normalized.Set("content_preview", jsonutil.ObjectOf("text", content))
 	}
 	for _, k := range readFileMetaKey {
 		if v, ok := dictGet(value, k); ok {
@@ -289,7 +288,7 @@ func normalizePayload(value any, toolName string, args any) (any, bool) {
 		}
 	}
 	if b64, ok := dget(value, "base64_content").(string); ok && b64 != "" {
-		normalized.Set("base64_content", obj("omitted", true, "length", utf8.RuneCountInString(b64)))
+		normalized.Set("base64_content", jsonutil.ObjectOf("omitted", true, "length", utf8.RuneCountInString(b64)))
 	}
 	return normalized, true
 }
@@ -318,15 +317,10 @@ func resolveMaxDepth(configured string) int {
 		return v
 	}
 	depth := 4
-	n, ok := pyint.Parse(configured)
-	if ok && n.Sign() >= 0 {
-		if n.IsInt64() && n.Int64() <= math.MaxInt32 {
-			depth = int(n.Int64())
-		} else {
-			depth = math.MaxInt32
-		}
+	if n, err := strconv.ParseInt(strings.TrimSpace(configured), 10, 64); (err == nil || errors.Is(err, strconv.ErrRange)) && n >= 0 {
+		depth = int(min(n, math.MaxInt32))
 	} else {
-		pkgLog().Warn(fmt.Sprintf("Invalid ICEBATH_LANGFUSE_MAX_DEPTH=%s; use a non-negative integer. Falling back to 4.", pyrepr.Repr(configured)))
+		pkgLog().Warn(fmt.Sprintf("Invalid ICEBATH_LANGFUSE_MAX_DEPTH=%s; use a non-negative integer. Falling back to 4.", strconv.Quote(configured)))
 	}
 	c.vals[configured] = depth
 	c.order = append(c.order, configured)
@@ -337,29 +331,30 @@ func resolveMaxDepth(configured string) int {
 	return depth
 }
 
-// Configured per field character cap, an invalid value raising like int() does
+// Configured per field character cap, panicking on text that is not an integer
 func maxChars() int {
 	text := envStr("ICEBATH_LANGFUSE_MAX_CHARS", "12000")
 	if text == "" {
 		text = "12000"
 	}
-	n, ok := pyint.Parse(text)
-	if !ok {
-		panic(&pyint.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.StrRepr(text)})
+	n, err := parseIntText("ICEBATH_LANGFUSE_MAX_CHARS", text)
+	if err != nil {
+		panic(err)
 	}
 	return clampInt(n)
 }
 
-// Big integer clamped into the int range
-func clampInt(n *big.Int) int {
-	if n.IsInt64() && n.Int64() <= math.MaxInt32 && n.Int64() >= math.MinInt32 {
-		return int(n.Int64())
+// Integer of decimal text around which space is ignored, a number past the int64 range held at its bound, an error naming label for other text
+func parseIntText(label, text string) (int64, error) {
+	n, err := strconv.ParseInt(strings.TrimSpace(text), 10, 64)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
+		return 0, fmt.Errorf("%s %s is not an integer", label, strconv.Quote(text))
 	}
-	if n.Sign() < 0 {
-		return math.MinInt32
-	}
-	return math.MaxInt32
+	return n, nil
 }
+
+// Integer clamped into the int32 range
+func clampInt(n int64) int { return int(min(max(n, math.MinInt32), math.MaxInt32)) }
 
 // Capture caps one value walk carries
 type safeWalk struct {
@@ -387,7 +382,7 @@ func (w safeWalk) walk(value any, depth int) any {
 	case nil, bool:
 		return value
 	case []byte:
-		return obj("type", "bytes", "len", len(t))
+		return jsonutil.ObjectOf("type", "bytes", "len", len(t))
 	case string:
 		if w.parseJSON {
 			if parsed, changed := maybeParseJSONString(t); changed {
@@ -404,7 +399,7 @@ func (w safeWalk) walk(value any, depth int) any {
 			return w.walk(normalized, depth)
 		}
 		mask := captureMode() == "sanitized"
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for i, it := range items {
 			if i >= 50 {
 				break
@@ -431,7 +426,7 @@ func (w safeWalk) walk(value any, depth int) any {
 	if vars, ok := structVars(value); ok {
 		return w.walk(vars, depth+1)
 	}
-	return truncateText(pyrepr.Repr(value), w.maxChars)
+	return truncateText(anyutil.Quote(value), w.maxChars)
 }
 
 // First list among the request, messages and history candidates, else the user message as one turn
@@ -444,7 +439,7 @@ func coerceRequestMessages(requestMessages, messages, history, userMessage any) 
 	if userMessage == nil {
 		return []any{}
 	}
-	return []any{obj("role", "user", "content", userMessage)}
+	return []any{jsonutil.ObjectOf("role", "user", "content", userMessage)}
 }
 
 // System message from a split out system prompt string or Anthropic and Bedrock text blocks, nil when empty
@@ -479,7 +474,7 @@ func serializeSystemPrompt(systemPrompt any) any {
 	if text == "" {
 		return nil
 	}
-	return obj("role", "system", "content", captureContent(text, false, nil))
+	return jsonutil.ObjectOf("role", "system", "content", captureContent(text, false, nil))
 }
 
 // Generation input with the split out system prompt prepended when the messages carry none
@@ -503,7 +498,7 @@ func messagesForLangfuseInput(raw []any, systemPrompt any) []any {
 // Export shape of one chat message or Responses API input item
 func serializeMessage(message any) any {
 	if kind, ok := dget(message, "type").(string); ok && responsesItemTypes[kind] {
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		items, _ := dictItems(message)
 		for _, it := range items {
 			if !responsesItemKeys[it.key] {
@@ -519,14 +514,14 @@ func serializeMessage(message any) any {
 	}
 	role := dget(message, "role")
 	isTool := strEq(role, "tool")
-	out := obj("role", role, "content", captureContent(dget(message, "content"), isTool, nil))
-	if isTool && truthy(dget(message, "tool_call_id")) {
+	out := jsonutil.ObjectOf("role", role, "content", captureContent(dget(message, "content"), isTool, nil))
+	if isTool && anyutil.IsTrue(dget(message, "tool_call_id")) {
 		out.Set("tool_call_id", dget(message, "tool_call_id"))
 	}
-	if isTool && truthy(dget(message, "name")) {
+	if isTool && anyutil.IsTrue(dget(message, "name")) {
 		out.Set("name", safeValue(dget(message, "name"), false))
 	}
-	if truthy(dget(message, "tool_calls")) {
+	if anyutil.IsTrue(dget(message, "tool_calls")) {
 		out.Set("tool_calls", captureContent(dget(message, "tool_calls"), true, nil))
 	}
 	return out
@@ -551,16 +546,16 @@ func serializeMessages(messages any) []any {
 }
 
 // Export shape of one assistant tool call with its arguments captured once
-func serializeToolCall(toolCall any) *pyjson.Object {
+func serializeToolCall(toolCall any) *jsonutil.Object {
 	fn := getattr(toolCall, "function")
 	name := getattr(fn, "name")
 	safeArguments := captureContent(getattr(fn, "arguments"), false, nil)
 	kind := getattr(toolCall, "type")
-	if !truthy(kind) {
+	if !anyutil.IsTrue(kind) {
 		kind = "function"
 	}
-	return obj("id", getattr(toolCall, "id"), "type", kind, "name", name, "arguments", safeArguments,
-		"function", obj("name", name, "arguments", safeArguments))
+	return jsonutil.ObjectOf("id", getattr(toolCall, "id"), "type", kind, "name", name, "arguments", safeArguments,
+		"function", jsonutil.ObjectOf("name", name, "arguments", safeArguments))
 }
 
 // Elements Python iteration of a value yields, dict keys and string characters included
@@ -587,7 +582,7 @@ func pyIter(v any) []any {
 }
 
 // Export shape of an assistant message, reasoning from the first present reasoning field
-func serializeAssistantMessage(message any) *pyjson.Object {
+func serializeAssistantMessage(message any) *jsonutil.Object {
 	content := captureContent(getattr(message, "content"), false, nil)
 	var reasoning any
 	for _, attr := range []string{"reasoning", "reasoning_content", "reasoning_details"} {
@@ -601,10 +596,10 @@ func serializeAssistantMessage(message any) *pyjson.Object {
 		capturedReasoning = captureContent(reasoning, false, nil)
 	}
 	calls := []any{}
-	if raw := getattr(message, "tool_calls"); truthy(raw) {
+	if raw := getattr(message, "tool_calls"); anyutil.IsTrue(raw) {
 		for _, tc := range pyIter(raw) {
 			calls = append(calls, serializeToolCall(tc))
 		}
 	}
-	return obj("content", content, "reasoning", capturedReasoning, "tool_calls", calls)
+	return jsonutil.ObjectOf("content", content, "reasoning", capturedReasoning, "tool_calls", calls)
 }

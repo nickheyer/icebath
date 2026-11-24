@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/media"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Providers that can ground generation on a reference image, in preference order
@@ -144,25 +144,25 @@ func Generate(ctx context.Context, env *tools.Env, prompt string, n int, referen
 			return sprite.Provider.Generate(ctx, env, req)
 		}()
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("provider.generate crashed: %s", pyrepr.ExceptionMessage(err)))
-			return "", pyrepr.ExceptionMessage(err)
+			pkgLog().Debug(fmt.Sprintf("provider.generate crashed: %s", err.Error()))
+			return "", err.Error()
 		}
 		if result == nil {
 			return "", "no result"
 		}
-		if !pyrepr.Truthy(result["success"]) {
+		if !anyutil.IsTrue(result["success"]) {
 			if v, ok := result["error"]; ok {
-				return "", pyrepr.Str(v)
+				return "", anyutil.String(v)
 			}
 			return "", "unknown error"
 		}
 		imageRef := result["image"]
-		if !pyrepr.Truthy(imageRef) {
+		if !anyutil.IsTrue(imageRef) {
 			return "", "provider returned no image"
 		}
-		path, serr := saveLocal(ctx, env, pyrepr.Str(imageRef), prefix)
+		path, serr := saveLocal(ctx, env, anyutil.String(imageRef), prefix)
 		if serr != nil {
-			return "", "could not save generated image: " + pyrepr.ExceptionMessage(serr)
+			return "", "could not save generated image: " + serr.Error()
 		}
 		return path, ""
 	}

@@ -5,8 +5,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tokenizers/tiktoken"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type toolTokenKey struct {
@@ -41,10 +41,10 @@ func estimateToolTokens(ctx context.Context) (map[string]int, error) {
 		if schema == nil || schema.Len() == 0 {
 			continue
 		}
-		wire := pyjson.NewObject()
+		wire := jsonutil.NewObject()
 		wire.Set("type", "function")
 		wire.Set("function", schema)
-		text, err := pyjson.Dumps(wire)
+		text, err := jsonutil.Encode(wire)
 		if err != nil {
 			return nil, err
 		}

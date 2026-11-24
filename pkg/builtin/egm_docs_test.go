@@ -13,8 +13,8 @@ import (
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -309,7 +309,7 @@ func TestEGMSkillsHaveCoLocatedTestScenarios(t *testing.T) {
 					t.Errorf("Scenario in %s missing '%s'", file, key)
 				}
 			}
-			if turns, ok := sc["turns"]; !ok || !pyrepr.Truthy(turns) {
+			if turns, ok := sc["turns"]; !ok || !anyutil.IsTrue(turns) {
 				t.Errorf("Scenario in %s missing non-empty 'turns'", file)
 			}
 		}

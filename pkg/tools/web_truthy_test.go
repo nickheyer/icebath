@@ -7,7 +7,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestTruthyStringIsTheTruthySet(t *testing.T) {
@@ -61,13 +62,13 @@ func TestKeylessEnabledReadsTheSettingWithBool(t *testing.T) {
 }
 
 func TestPyTruthyEmptyContainersAreFalse(t *testing.T) {
-	for _, v := range []any{map[string]any{}, []string{}, []any{}, pyjson.NewObject(), "", 0, int32(0), 0.0, nil, false, new(big.Int)} {
-		if pyTruthy(v) {
+	for _, v := range []any{map[string]any{}, []string{}, []any{}, jsonutil.NewObject(), "", 0, int32(0), 0.0, nil, false, new(big.Int)} {
+		if anyutil.IsTrue(v) {
 			t.Errorf("pyTruthy(%#v) true", v)
 		}
 	}
 	for _, v := range []any{map[string]any{"a": 1}, []string{"x"}, "0", math.NaN(), big.NewInt(3), true} {
-		if !pyTruthy(v) {
+		if !anyutil.IsTrue(v) {
 			t.Errorf("pyTruthy(%#v) false", v)
 		}
 	}

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type executorCall struct {
@@ -29,7 +29,7 @@ func executorTestAgent(t *testing.T, handlers map[string]tools.Handler) (*AIAgen
 	a.validToolNames = map[string]bool{}
 	for name, h := range handlers {
 		h := h
-		reg.Register(tools.Def{Name: name, Toolset: "web", Schema: pyjson.ObjectOf("name", name, "parameters", pyjson.ObjectOf("type", "object")),
+		reg.Register(tools.Def{Name: name, Toolset: "web", Schema: jsonutil.ObjectOf("name", name, "parameters", jsonutil.ObjectOf("type", "object")),
 			Handler: func(ctx context.Context, c *tools.Call) string {
 				mu.Lock()
 				calls = append(calls, executorCall{name: c.Name, taskID: c.TaskID, args: c.Args})

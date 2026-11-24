@@ -42,7 +42,7 @@ func archiveRows(t *testing.T, db *SessionDB, sid string) []archiveRow {
 	}
 	out := make([]archiveRow, len(rows))
 	for i, r := range rows {
-		out[i] = archiveRow{r.Vals["id"].(int64), r.Vals["active"].(int64), r.Vals["compacted"].(int64), r.Vals["content"], r.Vals["message_uid"]}
+		out[i] = archiveRow{r.Value("id").(int64), r.Value("active").(int64), r.Value("compacted").(int64), r.Value("content"), r.Value("message_uid")}
 	}
 	return out
 }
@@ -82,7 +82,7 @@ func archiveDisplayContents(t *testing.T, db *SessionDB, sid string) []any {
 	}
 	out := make([]any, len(rows))
 	for i, r := range rows {
-		out[i] = r.Vals["content"]
+		out[i] = r.Value("content")
 	}
 	return out
 }
@@ -371,8 +371,8 @@ func TestSetMessageAPIContentLeavesOlderIdenticalRow(t *testing.T) {
 		t.Fatalf("rowcount %d %v", n, err)
 	}
 	rows, _ := db.GetMessages(ctx, "s1", GetMessagesOptions{})
-	if rows[0].Vals["api_content"] != "ok\n\nTURN-1" || rows[2].Vals["api_content"] != "ok\n\nTURN-2" {
-		t.Fatalf("sidecars %v %v", rows[0].Vals["api_content"], rows[2].Vals["api_content"])
+	if rows[0].Value("api_content") != "ok\n\nTURN-1" || rows[2].Value("api_content") != "ok\n\nTURN-2" {
+		t.Fatalf("sidecars %v %v", rows[0].Value("api_content"), rows[2].Value("api_content"))
 	}
 }
 
@@ -392,7 +392,7 @@ func TestSetMessageAPIContentGuards(t *testing.T) {
 		}
 	}
 	rows, _ := db.GetMessages(ctx, "s1", GetMessagesOptions{})
-	if rows[0].Vals["api_content"] != nil {
+	if rows[0].Value("api_content") != nil {
 		t.Fatal("sidecar written")
 	}
 	archiveCompact(t, db, "s1", []map[string]any{{"role": "user", "content": "hello"}}, ArchiveCompactOptions{})

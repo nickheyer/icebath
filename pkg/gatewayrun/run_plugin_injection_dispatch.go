@@ -8,8 +8,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Routes a plugin triggered turn into a stored session through its live adapter, false when it cannot run
@@ -140,7 +140,7 @@ func (r *GatewayRunner) admitPluginInjection(ctx context.Context, adapter gatewa
 	if err != nil || authority == nil {
 		return nil, err
 	}
-	identity, err := pyjson.Dumps([]any{"plugin", pluginID, sessionKey, strings.ReplaceAll(uuid.NewString(), "-", "")}, pyjson.Separators(",", ":"))
+	identity, err := jsonutil.Encode([]any{"plugin", pluginID, sessionKey, strings.ReplaceAll(uuid.NewString(), "-", "")})
 	if err != nil {
 		return nil, err
 	}

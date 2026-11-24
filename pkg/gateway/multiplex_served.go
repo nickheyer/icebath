@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Pid of the default profile's gateway when a verified live process owns it, the module attribute tests patch
@@ -26,14 +26,14 @@ func RecordedServedProfiles(defaultRoot string) ([]string, bool, error) {
 	if defaultRoot == "" {
 		defaultRoot = home.Root()
 	}
-	runtime := ReadRuntimeStatus(pypath.PathJoin(defaultRoot, runtimeStatusFile))
+	runtime := ReadRuntimeStatus(pathutil.Join(defaultRoot, runtimeStatusFile))
 	served, ok := recGet(runtime, "served_profiles").([]any)
 	if !ok {
 		return nil, false, nil
 	}
 	out := make([]string, len(served))
 	for i, p := range served {
-		out[i] = pyrepr.Str(p)
+		out[i] = anyutil.String(p)
 	}
 	return out, true, nil
 }
@@ -54,20 +54,20 @@ func MultiplexerServedSecondaries() ([]string, error) {
 }
 
 // Live default record of the multiplexer, nil when no verified gateway owns the default home
-func liveDefaultRuntime() (*pyjson.Object, error) {
+func liveDefaultRuntime() (*jsonutil.Object, error) {
 	if _, live, err := LiveDefaultGatewayPid(); err != nil || !live {
 		return nil, err
 	}
-	runtime := ReadRuntimeStatus(pypath.PathJoin(home.Root(), runtimeStatusFile))
+	runtime := ReadRuntimeStatus(pathutil.Join(home.Root(), runtimeStatusFile))
 	if runtime == nil {
-		runtime = pyjson.NewObject()
+		runtime = jsonutil.NewObject()
 	}
 	return runtime, nil
 }
 
 // Platform to reason for a served profile's platforms the multiplexer deliberately does not run
-func ServedProfileUnservedPlatforms(profile string) (*pyjson.Object, error) {
-	out := pyjson.NewObject()
+func ServedProfileUnservedPlatforms(profile string) (*jsonutil.Object, error) {
+	out := jsonutil.NewObject()
 	if profile == "" {
 		return out, nil
 	}
@@ -75,13 +75,13 @@ func ServedProfileUnservedPlatforms(profile string) (*pyjson.Object, error) {
 	if err != nil || runtime == nil {
 		return out, err
 	}
-	platforms, ok := recGet(runtime, "platforms").(*pyjson.Object)
+	platforms, ok := recGet(runtime, "platforms").(*jsonutil.Object)
 	if !ok {
 		return out, nil
 	}
 	prefix := profile + ":"
-	for _, key := range platforms.Keys {
-		entry, isDict := recGet(platforms, key).(*pyjson.Object)
+	for _, key := range platforms.Keys() {
+		entry, isDict := recGet(platforms, key).(*jsonutil.Object)
 		if !isDict || !strings.HasPrefix(key, prefix) {
 			continue
 		}
@@ -90,41 +90,41 @@ func ServedProfileUnservedPlatforms(profile string) (*pyjson.Object, error) {
 			continue
 		}
 		reason := recGet(entry, "error_message")
-		if !pyrepr.Truthy(reason) {
+		if !anyutil.IsTrue(reason) {
 			reason = "not served under multiplex"
 		}
-		out.Set(key[len(prefix):], pyrepr.Str(reason))
+		out.Set(key[len(prefix):], anyutil.String(reason))
 	}
 	return out, nil
 }
 
 // Profile to platform to URL for every secondary inbound platform the live multiplexer serves, narrowed to profile when set
-func ServedProfileIngressURLs(profile string) (*pyjson.Object, error) {
-	urls := pyjson.NewObject()
+func ServedProfileIngressURLs(profile string) (*jsonutil.Object, error) {
+	urls := jsonutil.NewObject()
 	runtime, err := liveDefaultRuntime()
 	if err != nil || runtime == nil {
 		return urls, err
 	}
-	platforms, ok := recGet(runtime, "platforms").(*pyjson.Object)
+	platforms, ok := recGet(runtime, "platforms").(*jsonutil.Object)
 	if !ok {
 		return urls, nil
 	}
 	put := func(name, platform string, url any) {
-		inner, ok := recGet(urls, name).(*pyjson.Object)
+		inner, ok := recGet(urls, name).(*jsonutil.Object)
 		if !ok {
-			inner = pyjson.NewObject()
+			inner = jsonutil.NewObject()
 			urls.Set(name, inner)
 		}
-		inner.Set(platform, pyrepr.Str(url))
+		inner.Set(platform, anyutil.String(url))
 	}
-	for _, key := range platforms.Keys {
-		entry, isDict := recGet(platforms, key).(*pyjson.Object)
+	for _, key := range platforms.Keys() {
+		entry, isDict := recGet(platforms, key).(*jsonutil.Object)
 		if !isDict || !strings.Contains(key, ":") {
 			continue
 		}
 		url := recGet(entry, "ingress_url")
 		state := recGet(entry, "state")
-		if !pyrepr.Truthy(url) || pyEq(state, "fatal") || pyEq(state, "disconnected") || pyEq(state, "stopped") {
+		if !anyutil.IsTrue(url) || pyEq(state, "fatal") || pyEq(state, "disconnected") || pyEq(state, "stopped") {
 			continue
 		}
 		name, platform, _ := strings.Cut(key, ":")
@@ -135,14 +135,14 @@ func ServedProfileIngressURLs(profile string) (*pyjson.Object, error) {
 	}
 	servedRaw := recGet(runtime, "served_profiles")
 	var served []string
-	if pyrepr.Truthy(servedRaw) {
+	if anyutil.IsTrue(servedRaw) {
 		items, err := pyList(servedRaw)
 		if err != nil {
 			return nil, err
 		}
 		for _, p := range items {
-			if pyrepr.Truthy(p) && !pyEq(p, "default") {
-				served = append(served, pyrepr.Str(p))
+			if anyutil.IsTrue(p) && !pyEq(p, "default") {
+				served = append(served, anyutil.String(p))
 			}
 		}
 	}
@@ -151,9 +151,9 @@ func ServedProfileIngressURLs(profile string) (*pyjson.Object, error) {
 			continue
 		}
 		mirrors := SharedListenerMirrorPlatformsFor(runtime, name)
-		for _, platform := range mirrors.Keys {
-			entry := recGet(mirrors, platform).(*pyjson.Object)
-			if url := recGet(entry, "ingress_url"); pyrepr.Truthy(url) {
+		for _, platform := range mirrors.Keys() {
+			entry := recGet(mirrors, platform).(*jsonutil.Object)
+			if url := recGet(entry, "ingress_url"); anyutil.IsTrue(url) {
 				put(name, platform, url)
 			}
 		}
@@ -184,13 +184,13 @@ func NotifyMultiplexerProfilesChanged(ctx context.Context, profileName string, t
 		return rescanGatewayProfiles(ctx, home.Root(), timeout)
 	}()
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("multiplexer rescan notification failed for %s: %v", pyrepr.Repr(profileName), err))
+		pkgLog().Debug(fmt.Sprintf("multiplexer rescan notification failed for %s: %v", anyutil.Quote(profileName), err))
 		return nil, false
 	}
-	obj, ok := answer.(*pyjson.Object)
+	obj, ok := answer.(*jsonutil.Object)
 	if !ok {
 		if m, isMap := answer.(map[string]any); isMap {
-			obj = pyjson.NewObject()
+			obj = jsonutil.NewObject()
 			for k, v := range m {
 				obj.Set(k, v)
 			}
@@ -207,7 +207,7 @@ func NotifyMultiplexerProfilesChanged(ctx context.Context, profileName string, t
 	}
 	out := make([]string, len(served))
 	for i, p := range served {
-		out[i] = pyrepr.Str(p)
+		out[i] = anyutil.String(p)
 	}
 	return out, true
 }

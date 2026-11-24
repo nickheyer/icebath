@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func anthKw(t *testing.T, model string, cfg *anthReasoningConfig, baseURL string) map[string]any {
@@ -172,7 +172,7 @@ func TestAnthropicInterleavedReplayResourcesRedactedToolInput(t *testing.T) {
 	if len(uses) != 2 || uses["toolu_1"] == nil || uses["toolu_2"] == nil {
 		t.Fatalf("tool_use blocks missing: %v", last)
 	}
-	input, _ := pyjson.Dict(uses["toolu_1"]["input"])
+	input, _ := jsonutil.AsMap(uses["toolu_1"]["input"])
 	cmd := asStr(input["command"])
 	if strings.Contains(cmd, "sk-LIVE-SECRET-123") || !strings.Contains(cmd, "[REDACTED_SECRET]") {
 		t.Fatalf("tool input must come from the redacted tool_calls: %q", cmd)

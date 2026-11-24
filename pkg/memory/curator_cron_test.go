@@ -10,8 +10,8 @@ import (
 	"time"
 
 	_ "github.com/nickheyer/icebath/pkg/cron"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func cronWriteJobs(t *testing.T, h string, payload any) {
@@ -162,7 +162,7 @@ func TestCuratorRollbackRestoresCronSkillLinks(t *testing.T) {
 	if !ok || err != nil {
 		t.Fatal(err)
 	}
-	consolidated := pyjson.NewObject()
+	consolidated := jsonutil.NewObject()
 	consolidated.Set("alpha", "umbrella")
 	consolidated.Set("beta", "umbrella")
 	if _, err := memory.CuratorHooks.RewriteSkillRefs(ctx, h, consolidated, nil); err != nil {
@@ -223,9 +223,9 @@ func TestCuratorRestoreCronSkillLinksStandalone(t *testing.T) {
 	if memory.CurGet(report, "attempted") != true || memory.CurGet(report, "error") != nil || memory.CurGet(report, "unchanged") != 1 || len(restored) != 1 || len(missing) != 1 {
 		t.Fatalf("report %v", report)
 	}
-	r0 := restored[0].(*pyjson.Object)
-	to := memory.CurGet(r0, "to").(*pyjson.Object)
-	if memory.CurGet(r0, "job_id") != "job-1" || cronAsStrings(memory.CurGet(to, "skills")) != `["narrow-a","narrow-b"]` || memory.CurGet(missing[0].(*pyjson.Object), "job_id") != "job-gone" {
+	r0 := restored[0].(*jsonutil.Object)
+	to := memory.CurGet(r0, "to").(*jsonutil.Object)
+	if memory.CurGet(r0, "job_id") != "job-1" || cronAsStrings(memory.CurGet(to, "skills")) != `["narrow-a","narrow-b"]` || memory.CurGet(missing[0].(*jsonutil.Object), "job_id") != "job-gone" {
 		t.Fatalf("report %v", report)
 	}
 }

@@ -9,10 +9,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 type fakePreparedCompressor struct {
@@ -28,7 +28,7 @@ type fakePreparedCompressor struct {
 	tailKeep         int
 	attrs            map[string]any
 	flags            map[string]bool
-	telemetry        *pyjson.Object
+	telemetry        *jsonutil.Object
 	previous         string
 	lastError        string
 	success          []string
@@ -75,7 +75,7 @@ func (f *fakePreparedCompressor) SetSessionDB(db SessionStore)             { f.s
 func (f *fakePreparedCompressor) SetCompressionCancelledCheck(func() bool) {}
 
 func (f *fakePreparedCompressor) BeginCompressionTelemetry(currentTokens *int) {
-	f.telemetry = pyjson.NewObject()
+	f.telemetry = jsonutil.NewObject()
 	f.telemetry.Set("attempt_id", "worker-attempt")
 }
 
@@ -86,12 +86,12 @@ func (f *fakePreparedCompressor) GenerateSummary(ctx context.Context, turns []ma
 	return f.summary(ctx, f, turns)
 }
 
-func (f *fakePreparedCompressor) ActiveCompressionTelemetry() *pyjson.Object { return f.telemetry }
-func (f *fakePreparedCompressor) PreviousSummary() string                    { return f.previous }
-func (f *fakePreparedCompressor) LastSummaryError() string                   { return f.lastError }
-func (f *fakePreparedCompressor) SummaryCallAttr(name string) any            { return f.attrs[name] }
-func (f *fakePreparedCompressor) SetSummaryCallAttr(name string, value any)  { f.attrs[name] = value }
-func (f *fakePreparedCompressor) SummaryFailureFlag(flag string) bool        { return f.flags[flag] }
+func (f *fakePreparedCompressor) ActiveCompressionTelemetry() *jsonutil.Object { return f.telemetry }
+func (f *fakePreparedCompressor) PreviousSummary() string                      { return f.previous }
+func (f *fakePreparedCompressor) LastSummaryError() string                     { return f.lastError }
+func (f *fakePreparedCompressor) SummaryCallAttr(name string) any              { return f.attrs[name] }
+func (f *fakePreparedCompressor) SetSummaryCallAttr(name string, value any)    { f.attrs[name] = value }
+func (f *fakePreparedCompressor) SummaryFailureFlag(flag string) bool          { return f.flags[flag] }
 func (f *fakePreparedCompressor) RecordSummarySuccess(summary string) {
 	f.previous = summary
 	f.success = append(f.success, summary)
@@ -126,9 +126,9 @@ func TestPreparedGatesStartNoPass(t *testing.T) {
 		"benched_summariser":  func(a *AIAgent, cc *fakePreparedCompressor) { cc.fallbackStreak = 2 },
 		"below_band":          func(a *AIAgent, cc *fakePreparedCompressor) { cc.LastPromptTokens = 17000 },
 		"no_usage":            func(a *AIAgent, cc *fakePreparedCompressor) { cc.LastPromptTokens = 0 },
-		"cooldown":            func(a *AIAgent, cc *fakePreparedCompressor) { cc.cooldownUntil = pythread.Monotonic() + 60 },
+		"cooldown":            func(a *AIAgent, cc *fakePreparedCompressor) { cc.cooldownUntil = timeutil.Monotonic() + 60 },
 		"provider_context":    func(a *AIAgent, cc *fakePreparedCompressor) { cc.state.StopForProviderContext(context.Background()) },
-		"retry_after_failure": func(a *AIAgent, cc *fakePreparedCompressor) { cc.state.retryAfter = pythread.Monotonic() + 60 },
+		"retry_after_failure": func(a *AIAgent, cc *fakePreparedCompressor) { cc.state.retryAfter = timeutil.Monotonic() + 60 },
 	}
 	for name, setup := range cases {
 		t.Run(name, func(t *testing.T) {
@@ -196,7 +196,7 @@ func TestPreparedAppendOnlyGrowthSplicesAndAdoptCarriesFallbackAndTelemetry(t *t
 	if taken == nil || taken.CompressEnd != 8 {
 		t.Fatalf("append only growth must splice at the candidate boundary, got %+v", taken)
 	}
-	cc.telemetry = pyjson.NewObject()
+	cc.telemetry = jsonutil.NewObject()
 	cc.telemetry.Set("attempt_id", "live-attempt")
 	AdoptPreparedSummary(cc, taken)
 	if cc.previous != "body" || cc.attrs["summary_model"] != "main-model" || cc.attrs["_last_aux_resolved_model"] != "aux-resolved" {

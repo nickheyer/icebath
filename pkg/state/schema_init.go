@@ -15,11 +15,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Message uid backfill markers and the per open slice size and time budget
@@ -57,8 +58,8 @@ func (s *sessionSchema) reconcileColumns(ctx context.Context, conn SQLiteConn) e
 	if err != nil {
 		return err
 	}
-	for _, table := range expected.Keys {
-		declared, _ := expected.Vals[table].(*pyjson.Object)
+	for _, table := range expected.Keys() {
+		declared, _ := expected.Value(table).(*jsonutil.Object)
 		rows, err := fetchAllRows(ctx, conn, fmt.Sprintf(`PRAGMA table_info("%s")`, table))
 		if err != nil {
 			if isOperationalError(err) {
@@ -73,11 +74,11 @@ func (s *sessionSchema) reconcileColumns(ctx context.Context, conn SQLiteConn) e
 		for _, row := range rows {
 			live[row[1]] = true
 		}
-		for _, column := range declared.Keys {
+		for _, column := range declared.Keys() {
 			if live[column] {
 				continue
 			}
-			decl, _ := declared.Vals[column].(string)
+			decl, _ := declared.Value(column).(string)
 			_, err := conn.ExecContext(ctx, fmt.Sprintf(`ALTER TABLE "%s" ADD COLUMN %s %s`, table, sqlQuoteIdent(column), decl))
 			if err == nil {
 				continue
@@ -201,7 +202,7 @@ func stringsRepr(values []string) string {
 	for i, v := range values {
 		items[i] = v
 	}
-	return pyrepr.Repr(items)
+	return anyutil.Quote(items)
 }
 
 // Rebuilds gateway_routing whose primary key predates scoping, the newest row winning a key collision
@@ -338,7 +339,7 @@ func (s *sessionSchema) stampFreshStore(ctx context.Context, conn SQLiteConn) er
 	if _, err := conn.ExecContext(ctx, "INSERT INTO schema_version (version) VALUES (?)", SchemaVersion); err != nil {
 		return err
 	}
-	nowISO := pydatetime.ISOFormatUTC(time.Now())
+	nowISO := time.Now().UTC().Format(timeutil.RFC3339Micro)
 	for _, kv := range [][2]string{{"store_instance_id", uuid.NewString()}, {"store_created_at_utc", nowISO}, {messageUIDBackfillDone, "1"}} {
 		if _, err := conn.ExecContext(ctx, "INSERT OR IGNORE INTO state_meta (key, value) VALUES (?, ?)", kv[0], kv[1]); err != nil {
 			return err
@@ -380,7 +381,7 @@ func schemaVersionBelow(version any, n int) (bool, error) {
 	case float64:
 		return v < float64(n), nil
 	}
-	return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("the schema version is %s, expected a whole number", errchain.Kind(version))}
+	return false, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("the schema version is %s, expected a whole number", errchain.Kind(version))}
 }
 
 // Version gated data migrations, advancing schema_version unless FTS5 is unavailable or an FTS step is unfinished
@@ -544,7 +545,7 @@ type titleDupRow struct {
 
 // Python ordering of two started_at values, a TypeError for values Python cannot compare
 func pyCompareValues(a, b any) (int, error) {
-	if pyrepr.Equal(a, b) {
+	if anyutil.Equal(a, b) {
 		return 0, nil
 	}
 	if x, ok := a.(float64); ok && math.IsNaN(x) {
@@ -568,7 +569,7 @@ func pyCompareValues(a, b any) (int, error) {
 	if aStr && bStr {
 		return strings.Compare(as, bs), nil
 	}
-	return 0, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("cannot order %s against %s", errchain.Kind(b), errchain.Kind(a))}
+	return 0, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("cannot order %s against %s", errchain.Kind(b), errchain.Kind(a))}
 }
 
 // Exact numeric value of an int or float read from SQLite
@@ -672,14 +673,14 @@ func (s *sessionSchema) repairDuplicateTitles(ctx context.Context, conn SQLiteCo
 			if _, err := conn.ExecContext(ctx, "UPDATE sessions SET title = ? WHERE rowid = ?", renamed, row.rowid); err != nil {
 				return err
 			}
-			pkgLog().Warn(fmt.Sprintf("Renamed duplicate user session title %s to %s", pyrepr.StrRepr(title), pyrepr.StrRepr(renamed)))
+			pkgLog().Warn(fmt.Sprintf("Renamed duplicate user session title %s to %s", strconv.Quote(title), strconv.Quote(renamed)))
 		}
 		for _, row := range group {
 			if row.rowid != keep.rowid && titleRankOf(row.source) != userRank {
 				if _, err := conn.ExecContext(ctx, "UPDATE sessions SET title = NULL WHERE rowid = ?", row.rowid); err != nil {
 					return err
 				}
-				pkgLog().Warn(fmt.Sprintf("Cleared duplicate %s session title %s", pyrepr.Str(row.source), pyrepr.StrRepr(title)))
+				pkgLog().Warn(fmt.Sprintf("Cleared duplicate %s session title %s", anyutil.String(row.source), strconv.Quote(title)))
 			}
 		}
 	}
@@ -833,42 +834,42 @@ func (s *sessionSchema) backfillGatewayMetadataFromSessionsJSON(ctx context.Cont
 	if err != nil {
 		return err
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return err
 	}
-	data, ok := parsed.(*pyjson.Object)
+	data, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
-	for _, key := range data.Keys {
-		entry, ok := data.Vals[key].(*pyjson.Object)
+	for _, key := range data.Keys() {
+		entry, ok := data.Value(key).(*jsonutil.Object)
 		if strings.HasPrefix(key, "_") || !ok {
 			continue
 		}
 		get := func(k string) any { v, _ := entry.Get(k); return v }
 		sessionID := get("session_id")
-		if !pyrepr.Truthy(sessionID) {
+		if !anyutil.IsTrue(sessionID) {
 			continue
 		}
-		origin, isDict := get("origin").(*pyjson.Object)
+		origin, isDict := get("origin").(*jsonutil.Object)
 		var chatID, threadID, originJSON any
 		if isDict {
 			chatID, _ = origin.Get("chat_id")
 			threadID, _ = origin.Get("thread_id")
-			if originJSON, err = pyjson.Dumps(origin); err != nil {
+			if originJSON, err = jsonutil.Encode(origin); err != nil {
 				return err
 			}
 		}
 		sessionKey := get("session_key")
-		if !pyrepr.Truthy(sessionKey) {
+		if !anyutil.IsTrue(sessionKey) {
 			sessionKey = key
 		}
 		finalized := int64(0)
-		if pyrepr.Truthy(get("expiry_finalized")) || pyrepr.Truthy(get("memory_flushed")) {
+		if anyutil.IsTrue(get("expiry_finalized")) || anyutil.IsTrue(get("memory_flushed")) {
 			finalized = 1
 		}
-		values := []any{sessionKey, chatID, get("chat_type"), threadID, get("display_name"), originJSON, finalized, pyrepr.Str(sessionID)}
+		values := []any{sessionKey, chatID, get("chat_type"), threadID, get("display_name"), originJSON, finalized, anyutil.String(sessionID)}
 		params := make([]any, len(values))
 		for i, v := range values {
 			if params[i], err = sqliteParam(i+1, v); err != nil {

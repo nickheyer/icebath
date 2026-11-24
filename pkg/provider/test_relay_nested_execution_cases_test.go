@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 // The relay_turn fixture with a tool pipeline that runs the dispatch callback and wraps its result
@@ -24,7 +24,7 @@ func relayNestedTurn(t *testing.T) (*relayLLMFake, context.Context) {
 	f.relay.Tools.Execute = func(_ context.Context, _ string, args any, callback tools.RelayProviderCallback, _ map[string]any) (any, error) {
 		return tools.RelayAwaitable(func(ctx context.Context) (any, error) { return callback(ctx, args) }), nil
 	}
-	ctx := pyctx.With(context.Background(), pyctx.New())
+	ctx := ctxutil.WithStore(context.Background(), ctxutil.NewStore())
 	lease := tools.RelayCoordinator.AcquireConversation(ctx, tools.RelayConversation{ProfileKey: tools.CurrentRelayProfileKey(ctx), SessionID: "session-1", Platform: "cli"})
 	turn, err := tools.RelayCoordinator.BeginTurn(ctx, lease, "turn-1", "task-1", nil)
 	if err != nil {
@@ -62,7 +62,7 @@ func relayNestedAuxCallFromWorker(ctx context.Context) (map[string]any, error) {
 		err   error
 	}
 	done := make(chan outcome, 1)
-	worker := pyctx.With(ctx, pyctx.CopyContext(ctx))
+	worker := ctxutil.Fork(ctx)
 	go func() {
 		v, err := relayExecuteCurrentAsync(worker, map[string]any{"messages": []any{map[string]any{"role": "user", "content": "look"}}, "model": "m"},
 			provider, "nested-prov", "m", map[string]any{"api_mode": "chat_completions", "api_request_id": "req-nested", "call_role": "auxiliary:vision"}, false)
@@ -85,7 +85,7 @@ func relayNestedAuxCallFromWorker(ctx context.Context) (map[string]any, error) {
 
 // Depth of managed callbacks the context sits inside, zero when no guard ever set it
 func relayNestedCallbackDepth(ctx context.Context) any {
-	for _, item := range pyctx.Current(ctx).Items() {
+	for _, item := range ctxutil.StoreOf(ctx).Items() {
 		if item.Var.Name() == "icebath_relay_managed_callback_depth" {
 			return item.Value
 		}

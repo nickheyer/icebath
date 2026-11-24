@@ -8,9 +8,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fresh plugin manager of the test home with the lifecycle service installed, and a context registering on it
@@ -32,7 +32,7 @@ func bridgedDispatcher(t *testing.T, handler tools.Handler) (*tools.Dispatcher, 
 	t.Helper()
 	r := tools.NewRegistry()
 	r.Register(tools.Def{Name: "web_search", Toolset: "test", Handler: handler,
-		Schema: pyjson.ObjectOf("name", "web_search", "description", "web_search", "parameters", pyjson.ObjectOf("type", "object"))})
+		Schema: jsonutil.ObjectOf("name", "web_search", "description", "web_search", "parameters", jsonutil.ObjectOf("type", "object"))})
 	d := tools.NewDispatcher(r)
 	installToolPluginBridge(d)
 	return d, &tools.Env{Home: t.TempDir()}

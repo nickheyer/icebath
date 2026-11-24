@@ -15,11 +15,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -55,7 +55,7 @@ func pauseInstallKey(root string) string {
 	if root == "" {
 		root = PauseInstallRoot()
 	}
-	sum := sha256.Sum256([]byte(pypath.Normcase(root)))
+	sum := sha256.Sum256([]byte(pathutil.FoldCase(root)))
 	return hex.EncodeToString(sum[:])[:12]
 }
 
@@ -140,7 +140,7 @@ func pauseAtomicWrite(path string, body any) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o777); err != nil {
 		return err
 	}
-	text, err := pyjson.Dumps(body, pyjson.Indent(1), pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(body, jsonutil.Indent(1), jsonutil.SortKeys())
 	if err != nil {
 		return err
 	}
@@ -170,13 +170,13 @@ func ReadPauseRecord(path string) (map[string]any, error) {
 	if err != nil {
 		return nil, &PauseRecordError{Kind: "RecordUnknown", Msg: fmt.Sprintf("cannot read the paused-gateway record %s: %s", path, errchain.OSText(err))}
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
 	var body map[string]any
-	if v, err := pyjson.Loads(text); err == nil {
-		body, _ = pyjson.Plain(v).(map[string]any)
+	if v, err := jsonutil.Decode(text); err == nil {
+		body, _ = jsonutil.Plain(v).(map[string]any)
 	}
 	if _, ok := body["token"].(map[string]any); body == nil || !ok {
 		return nil, &PauseRecordError{Kind: "RecordUnknown", Msg: fmt.Sprintf("the paused-gateway record %s is malformed; fix or remove it to resume", path)}
@@ -213,7 +213,7 @@ func pauseFiles(path string) ([]PauseFile, error) {
 		if err != nil {
 			return nil, err
 		}
-		if body != nil && pyrepr.Equal(body["install_root"], PauseInstallRoot()) {
+		if body != nil && anyutil.Equal(body["install_root"], PauseInstallRoot()) {
 			found = append(found, PauseFile{src, body})
 		}
 	}
@@ -228,7 +228,7 @@ func sortedStrings(v any, extra ...string) ([]any, error) {
 	}
 	set := map[string]bool{}
 	for _, item := range items {
-		set[pyrepr.Str(item)] = true
+		set[anyutil.String(item)] = true
 	}
 	for _, e := range extra {
 		set[e] = true
@@ -242,12 +242,12 @@ func sortedStrings(v any, extra ...string) ([]any, error) {
 }
 
 // Checkpoints a validated gateway stop consume into every matching record before its marker disappears
-func MarkStopConsumed(path string, marker *pyjson.Object, sameHome func(left, right string) (bool, error)) error {
+func MarkStopConsumed(path string, marker *jsonutil.Object, sameHome func(left, right string) (bool, error)) error {
 	rawPID, ok := marker.Get("target_pid")
 	if !ok {
 		return &KeyErrorText{Key: "target_pid"}
 	}
-	pid := pyrepr.Str(rawPID)
+	pid := anyutil.String(rawPID)
 	stopper, _ := marker.Get("stopper_pid")
 	files, err := pauseFiles(PauseRecordPath())
 	if err != nil {
@@ -264,10 +264,10 @@ func MarkStopConsumed(path string, marker *pyjson.Object, sameHome func(left, ri
 		if err != nil {
 			return err
 		}
-		if pyrepr.Str(token["stopper_pid"]) != pyrepr.Str(stopper) || !requested || !truthy(recorded) {
+		if anyutil.String(token["stopper_pid"]) != anyutil.String(stopper) || !requested || !truthy(recorded) {
 			continue
 		}
-		same, err := sameHome(pyrepr.Str(recorded), path)
+		same, err := sameHome(anyutil.String(recorded), path)
 		if err != nil {
 			return err
 		}
@@ -296,7 +296,7 @@ func pyContains(container any, s string) (bool, error) {
 		return ok, nil
 	case []any:
 		for _, item := range t {
-			if pyrepr.Equal(item, s) {
+			if anyutil.Equal(item, s) {
 				return true, nil
 			}
 		}
@@ -324,13 +324,13 @@ func PauseAcceptedPath(markerPath string) string {
 }
 
 // Receipt that this incarnation accepted the stop, beside the marker or stamped into it in place
-func MarkStopAccepted(path string, marker *pyjson.Object) error {
+func MarkStopAccepted(path string, marker *jsonutil.Object) error {
 	refused := pauseAtomicWrite(PauseAcceptedPath(path), marker)
 	if refused == nil {
 		return nil
 	}
-	stamped := pyjson.NewObject()
-	for _, k := range marker.Keys {
+	stamped := jsonutil.NewObject()
+	for _, k := range marker.Keys() {
 		v, _ := marker.Get(k)
 		stamped.Set(k, v)
 	}
@@ -341,7 +341,7 @@ func MarkStopAccepted(path string, marker *pyjson.Object) error {
 			return err
 		}
 		defer f.Close()
-		text, err := pyjson.Dumps(stamped)
+		text, err := jsonutil.Encode(stamped)
 		if err != nil {
 			return err
 		}

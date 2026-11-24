@@ -8,8 +8,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Override runtime keys a session /model override carries straight into the agent kwargs
@@ -26,7 +26,7 @@ func noneText(value any) string {
 	if s, ok := value.(string); ok {
 		return s
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // One shot notice of a provider switch made while resolving credentials, set again only by a resolution that fell back
@@ -55,14 +55,14 @@ func (r *GatewayRunner) takePreAgentFallbackNotice() string {
 // Provider a frozen config's model section names, an attribute error for a model section that is no mapping
 func frozenRouteProvider(frozen map[string]any) (string, error) {
 	block := frozen["model"]
-	if !pyrepr.Truthy(block) {
+	if !anyutil.IsTrue(block) {
 		return "", nil
 	}
 	mapping, ok := block.(map[string]any)
 	if !ok {
 		return "", &gateway.PyError{Kind: "AttributeError", Msg: "frozen route block is " + errchain.Kind(block) + " where a mapping was expected"}
 	}
-	if !pyrepr.Truthy(mapping["provider"]) {
+	if !anyutil.IsTrue(mapping["provider"]) {
 		return "", nil
 	}
 	return noneText(mapping["provider"]), nil
@@ -148,12 +148,12 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 			maps.Copy(capabilities, held)
 		}
 		overrideRuntime["capabilities"] = capabilities
-		if pyrepr.Truthy(overrideRuntime["api_key"]) {
+		if anyutil.IsTrue(overrideRuntime["api_key"]) {
 			if overrideRuntime["credential_pool"] == nil {
 				overrideRuntime["credential_pool"] = credentialPoolForProvider(ctx, noneText(override["provider"]))
 			}
 			pkgLog().Debug(fmt.Sprintf("Session model override (fast): session=%s config_model=%s -> override_model=%s provider=%s",
-				skey, model, overrideModel, pyrepr.Str(overrideRuntime["provider"])))
+				skey, model, overrideModel, anyutil.String(overrideRuntime["provider"])))
 			return overrideModel, overrideRuntime, nil
 		}
 		pkgLog().Debug(fmt.Sprintf("Session model override (no api_key, fallback): session=%s config_model=%s override_model=%s",
@@ -173,7 +173,7 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 		pkgLog().Debug(fmt.Sprintf("No session model override: session=%s config_model=%s override_keys=%s", skey, model, listing))
 	}
 	var runtimeKwargs, unavailableOverride map[string]any
-	if len(override) > 0 && pyrepr.Truthy(override["provider"]) {
+	if len(override) > 0 && anyutil.IsTrue(override["provider"]) {
 		kwargs, err := resolveRuntimeAgentKwargsForProvider(ctx, noneText(override["provider"]), noneText(override["model"]))
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("Session /model override provider %s unavailable: %s", noneText(override["provider"]), err), "error", err)
@@ -194,7 +194,7 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 	r.setPreAgentFallbackNotice(notice)
 	runtimeModel := runtimeKwargs["model"]
 	delete(runtimeKwargs, "model")
-	if pyrepr.Truthy(runtimeModel) {
+	if anyutil.IsTrue(runtimeModel) {
 		pkgLog().Info(fmt.Sprintf("Runtime provider supplied explicit model override: %s -> %s", model, noneText(runtimeModel)))
 		model = noneText(runtimeModel)
 	}
@@ -211,10 +211,10 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 			parentID = source.ParentChatID
 		}
 		if ch := getChannelOverride(r.config, source.Platform, source.ChatID, threadID, parentID); ch != nil {
-			if pyrepr.Truthy(ch.Model) {
+			if anyutil.IsTrue(ch.Model) {
 				model = noneText(ch.Model)
 			}
-			if pyrepr.Truthy(ch.Provider) {
+			if anyutil.IsTrue(ch.Provider) {
 				kwargs, err := resolveRuntimeAgentKwargsForProvider(ctx, noneText(ch.Provider), model)
 				if err != nil {
 					return "", nil, err
@@ -222,7 +222,7 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 				runtimeKwargs = kwargs
 				channelRuntimeModel := runtimeKwargs["model"]
 				delete(runtimeKwargs, "model")
-				if pyrepr.Truthy(channelRuntimeModel) && !pyrepr.Truthy(ch.Model) {
+				if anyutil.IsTrue(channelRuntimeModel) && !anyutil.IsTrue(ch.Model) {
 					model = noneText(channelRuntimeModel)
 				}
 			}
@@ -231,7 +231,7 @@ func (r *GatewayRunner) resolveSessionAgentRuntime(ctx context.Context, source *
 	if len(override) > 0 && skey != "" {
 		model, runtimeKwargs = r.applySessionModelOverride(ctx, skey, model, runtimeKwargs)
 	}
-	if model == "" && pyrepr.Truthy(runtimeKwargs["provider"]) {
+	if model == "" && anyutil.IsTrue(runtimeKwargs["provider"]) {
 		providerName := noneText(runtimeKwargs["provider"])
 		model = provider.GetDefaultModelForProvider(ctx, providerName)
 		if model != "" {

@@ -8,9 +8,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // OpenRouterBaseURL is the default summarization endpoint
@@ -132,7 +132,7 @@ func (c *CompressionConfig) field(attr string) any {
 func assignYAML(dst any, attr string, v any) error {
 	switch d := dst.(type) {
 	case *bool:
-		*d = pyrepr.Truthy(v)
+		*d = anyutil.IsTrue(v)
 		return nil
 	case *string:
 		if s, ok := v.(string); ok {
@@ -175,7 +175,7 @@ func yamlNumber(v any) (float64, bool) {
 	case string, nil:
 		return 0, false
 	}
-	f, err := pyint.Float(v)
+	f, err := anyutil.ToFloat(v)
 	return f, err == nil
 }
 
@@ -190,7 +190,7 @@ func ConfigFromYAML(path string) (*CompressionConfig, error) {
 		return nil, err
 	}
 	cfg := DefaultConfig()
-	if !pyrepr.Truthy(data) {
+	if !anyutil.IsTrue(data) {
 		return cfg, nil
 	}
 	top, ok := data.(map[string]any)
@@ -215,7 +215,7 @@ func ConfigFromYAML(path string) (*CompressionConfig, error) {
 			if !given {
 				continue
 			}
-			if attr == "base_url" && !pyrepr.Truthy(value) {
+			if attr == "base_url" && !anyutil.IsTrue(value) {
 				continue
 			}
 			if err := assignYAML(cfg.field(attr), attr, value); err != nil {
@@ -251,16 +251,16 @@ func NewTrajectoryMetrics() *TrajectoryMetrics {
 }
 
 // Ordered dict of the metrics with the compression region nested after turns_removed
-func (m *TrajectoryMetrics) ToDict() *pyjson.Object {
-	region := pyjson.NewObject()
+func (m *TrajectoryMetrics) ToDict() *jsonutil.Object {
+	region := jsonutil.NewObject()
 	region.Set("start_idx", int64(m.TurnsCompressedStartIdx))
 	region.Set("end_idx", int64(m.TurnsCompressedEndIdx))
 	region.Set("turns_count", int64(m.TurnsInCompressedRegion))
-	d := pyjson.NewObject()
+	d := jsonutil.NewObject()
 	d.Set("original_tokens", int64(m.OriginalTokens))
 	d.Set("compressed_tokens", int64(m.CompressedTokens))
 	d.Set("tokens_saved", int64(m.TokensSaved))
-	d.Set("compression_ratio", pyint.Round(m.CompressionRatio, 4))
+	d.Set("compression_ratio", mathutil.Round(m.CompressionRatio, 4))
 	d.Set("original_turns", int64(m.OriginalTurns))
 	d.Set("compressed_turns", int64(m.CompressedTurns))
 	d.Set("turns_removed", int64(m.TurnsRemoved))
@@ -288,7 +288,7 @@ func mean[T int | float64](values []T, def any) any {
 // round(x, n) of a mean, an integer default staying an integer as Python round keeps int
 func roundAny(v any, n int) any {
 	if f, ok := v.(float64); ok {
-		return pyint.Round(f, n)
+		return mathutil.Round(f, n)
 	}
 	return v
 }
@@ -342,15 +342,15 @@ func (a *AggregateMetrics) AddTrajectoryMetrics(m *TrajectoryMetrics) {
 }
 
 // Ordered dict of summary, tokens, turns, averages, summarization and processing sections
-func (a *AggregateMetrics) ToDict() *pyjson.Object {
-	obj := func(kv ...any) *pyjson.Object {
-		o := pyjson.NewObject()
+func (a *AggregateMetrics) ToDict() *jsonutil.Object {
+	obj := func(kv ...any) *jsonutil.Object {
+		o := jsonutil.NewObject()
 		for i := 0; i < len(kv); i += 2 {
 			o.Set(kv[i].(string), kv[i+1])
 		}
 		return o
 	}
-	ratio := func(n, d int) float64 { return pyint.Round(float64(n)/float64(max(d, 1)), 4) }
+	ratio := func(n, d int) float64 { return mathutil.Round(float64(n)/float64(max(d, 1)), 4) }
 	return obj(
 		"summary", obj("total_trajectories", int64(a.TotalTrajectories), "trajectories_compressed", int64(a.TrajectoriesCompressed),
 			"trajectories_skipped_under_target", int64(a.TrajectoriesSkippedUnderTarget),
@@ -363,8 +363,8 @@ func (a *AggregateMetrics) ToDict() *pyjson.Object {
 			"avg_tokens_saved_per_compressed", roundAny(mean(a.TokensSavedList, int64(0)), 1),
 			"avg_turns_removed_per_compressed", roundAny(mean(a.TurnsRemovedList, int64(0)), 2)),
 		"summarization", obj("total_api_calls", int64(a.TotalSummarizationCalls), "total_errors", int64(a.TotalSummarizationErrors),
-			"success_rate", pyint.Round(1-float64(a.TotalSummarizationErrors)/float64(max(a.TotalSummarizationCalls, 1)), 4)),
+			"success_rate", mathutil.Round(1-float64(a.TotalSummarizationErrors)/float64(max(a.TotalSummarizationCalls, 1)), 4)),
 		"processing", obj("start_time", a.ProcessingStartTime, "end_time", a.ProcessingEndTime,
-			"duration_seconds", pyint.Round(a.ProcessingDurationSeconds, 2)),
+			"duration_seconds", mathutil.Round(a.ProcessingDurationSeconds, 2)),
 	)
 }

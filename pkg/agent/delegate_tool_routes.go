@@ -11,12 +11,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Credential resolver of a delegation config block, swapped by tests the way the Python facade is patched
@@ -199,7 +199,7 @@ func resolveRoute(ctx context.Context, route map[string]any, parent *AIAgent, ba
 		return nil, err
 	}
 	if tier := route["service_tier"]; tier != nil && tier != "" {
-		extra, err := tools.TaskServiceTier(pyrepr.Str(tier), creds, parent)
+		extra, err := tools.TaskServiceTier(anyutil.String(tier), creds, parent)
 		if err != nil {
 			return nil, err
 		}
@@ -217,7 +217,7 @@ func routeToTaskRoute(ctx context.Context, route map[string]any, parent *AIAgent
 	route = withInheritedFallback(route, cfg)
 	keyed := maps.Clone(route)
 	delete(keyed, "label")
-	key, err := pyjson.Dumps(keyed, pyjson.SortKeys(true), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	key, err := jsonutil.Encode(keyed, jsonutil.SortKeys(), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
 		return nil, err
 	}
@@ -236,7 +236,7 @@ func routeToTaskRoute(ctx context.Context, route map[string]any, parent *AIAgent
 // Refuses a backend route whose reasoning effort is not a known level
 func checkBackendEffort(index int, route, cfg map[string]any) error {
 	effort := route["reasoning_effort"]
-	if pyTruthy(route["profile"]) || effort == nil || effort == "" || pyrepr.Equal(effort, cfg["reasoning_effort"]) {
+	if pyTruthy(route["profile"]) || effort == nil || effort == "" || anyutil.Equal(effort, cfg["reasoning_effort"]) {
 		return nil
 	}
 	if config.ParseReasoningEffort(effort) == nil {

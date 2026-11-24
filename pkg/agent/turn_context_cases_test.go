@@ -8,11 +8,11 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestCompressionMadeProgress(t *testing.T) {
@@ -692,7 +692,7 @@ func TestTurnContext(t *testing.T) {
 
 // Plain dict of the author the prologue stashed on the agent, nil when the turn had none
 func stashedTurnAuthor(a *AIAgent) map[string]any {
-	author, _ := a.turnAuthor.(*pyjson.Object)
+	author, _ := a.turnAuthor.(*jsonutil.Object)
 	if author == nil {
 		return nil
 	}

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,13 +16,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const (
@@ -36,7 +34,7 @@ const alreadyRunningError = "Job is already running (a scheduler tick or another
 
 // GatewayRunner is the live gateway a manual run borrows adapters and the event loop from
 type GatewayRunner interface {
-	AdaptersForProfile(profile *string) *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	AdaptersForProfile(profile *string) *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 	IsSharedBotSatellite(ctx context.Context, profileName string, platform gateway.Platform) bool
 	GatewayLoop() gateway.EventLoop
 }
@@ -70,8 +68,8 @@ type cronjobArgs struct {
 }
 
 // JSON with two space indent and ASCII escapes like json dumps indent 2
-func cronDumps(payload *pyjson.Object) string {
-	out, err := pyjson.Dumps(payload, pyjson.Indent(2))
+func cronDumps(payload *jsonutil.Object) string {
+	out, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return fmt.Sprintf(`{"error": %q}`, err.Error())
 	}
@@ -79,16 +77,16 @@ func cronDumps(payload *pyjson.Object) string {
 }
 
 // Tool error JSON with the bounded message and success false plus extra keys
-func cronToolError(message string, extra *pyjson.Object) string {
-	out := pyjson.NewObject()
+func cronToolError(message string, extra *jsonutil.Object) string {
+	out := jsonutil.NewObject()
 	out.Set("error", tools.BoundErrorText(message))
 	out.Set("success", false)
 	if extra != nil {
-		for _, k := range extra.Keys {
-			out.Set(k, extra.Vals[k])
+		for _, k := range extra.Keys() {
+			out.Set(k, extra.Value(k))
 		}
 	}
-	text, err := pyjson.Dumps(out, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(out)
 	if err != nil {
 		return fmt.Sprintf(`{"error": %q, "success": false}`, message)
 	}
@@ -96,8 +94,8 @@ func cronToolError(message string, extra *pyjson.Object) string {
 }
 
 // Ordered object from alternating keys and values
-func pyObj(kv ...any) *pyjson.Object {
-	out := pyjson.NewObject()
+func pyObj(kv ...any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		out.Set(kv[i].(string), kv[i+1])
 	}
@@ -105,9 +103,9 @@ func pyObj(kv ...any) *pyjson.Object {
 }
 
 // Copies every key of src onto dst in order
-func mergeObj(dst, src *pyjson.Object) *pyjson.Object {
-	for _, k := range src.Keys {
-		dst.Set(k, src.Vals[k])
+func mergeObj(dst, src *jsonutil.Object) *jsonutil.Object {
+	for _, k := range src.Keys() {
+		dst.Set(k, src.Value(k))
 	}
 	return dst
 }
@@ -141,8 +139,8 @@ func (s *Store) apiServerBaseURL(ctx context.Context) (string, error) {
 	}
 	hostValue, port := gateway.APIServerListenAddress(home.WithOverride(ctx, s.home), extra)
 	host := ""
-	if pyrepr.Truthy(hostValue) {
-		host = strings.TrimSpace(pyrepr.Str(hostValue))
+	if anyutil.IsTrue(hostValue) {
+		host = strings.TrimSpace(anyutil.String(hostValue))
 	}
 	if host == "" || host == "0.0.0.0" || host == "::" || host == "*" {
 		host = "127.0.0.1"
@@ -267,7 +265,7 @@ func manualRunDeliveryNote(deliver string, refreshed *Job) string {
 		errText = strings.TrimSpace(*refreshed.LastDeliveryError)
 	}
 	if errText == "" {
-		if refreshed != nil && pyrepr.Truthy(refreshed.LastDeliveryQueued) {
+		if refreshed != nil && anyutil.IsTrue(refreshed.LastDeliveryQueued) {
 			return " (output queued for Bot Chat; completion unverified, do not resend)"
 		}
 		return " (output was delivered there by the job itself)"
@@ -431,18 +429,18 @@ func (s *Store) runClaimedJob(ctx context.Context, job *Job, extraPrompt *string
 	}
 	lastStatus := strPtrAny(refreshed.LastStatus)
 	runError := strPtrAny(refreshed.LastError)
-	if lastStatus == "delivery_failed" && !pyrepr.Truthy(runError) {
+	if lastStatus == "delivery_failed" && !anyutil.IsTrue(runError) {
 		runError = strPtrAny(refreshed.LastDeliveryError)
 	}
 	ok := lastStatus == "ok" || lastStatus == "delivery_queued"
 	if execution != nil && execution["status"] != "completed" {
 		ok = false
-		if pyrepr.Truthy(execution["error"]) {
+		if anyutil.IsTrue(execution["error"]) {
 			runError = execution["error"]
 		} else {
 			status := "unknown"
-			if pyrepr.Truthy(execution["status"]) {
-				status = pyrepr.Str(execution["status"])
+			if anyutil.IsTrue(execution["status"]) {
+				status = anyutil.String(execution["status"])
 			}
 			runError = fmt.Sprintf("execution ended in %s state", status)
 		}
@@ -511,15 +509,15 @@ func backgroundSessionKey(env *tools.Env, sessionID any) string {
 	if key := tools.CurrentSessionKeyOr(env, ""); key != "" {
 		return key
 	}
-	if pyrepr.Truthy(sessionID) {
-		return pyrepr.Str(sessionID)
+	if anyutil.IsTrue(sessionID) {
+		return anyutil.String(sessionID)
 	}
 	return ""
 }
 
 // Model and API call totals the fire run session recorded, empty when no run session exists
-func (s *Store) runSessionUsage(ctx context.Context, jobID string, executionID *string) *pyjson.Object {
-	out := pyjson.NewObject()
+func (s *Store) runSessionUsage(ctx context.Context, jobID string, executionID *string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	if executionID == nil || *executionID == "" {
 		return out
 	}
@@ -533,7 +531,7 @@ func (s *Store) runSessionUsage(ctx context.Context, jobID string, executionID *
 		s.log.Debug(fmt.Sprintf("cronjob run: run-session usage lookup failed for %s: %s", jobID, err))
 		return out
 	}
-	var run *pyjson.Object
+	var run *jsonutil.Object
 	for _, r := range runs {
 		if v, _ := r.Get("cron_execution_id"); v == *executionID {
 			run = r
@@ -544,12 +542,12 @@ func (s *Store) runSessionUsage(ctx context.Context, jobID string, executionID *
 		return out
 	}
 	runID, _ := run.Get("id")
-	chain, err := db.GetCompressionChain(ctx, pyrepr.Str(runID))
+	chain, err := db.GetCompressionChain(ctx, anyutil.String(runID))
 	if err != nil {
 		s.log.Debug(fmt.Sprintf("cronjob run: run-session usage lookup failed for %s: %s", jobID, err))
 		return out
 	}
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	for _, sid := range chain {
 		row, err := db.GetSession(ctx, sid)
 		if err != nil {
@@ -557,23 +555,23 @@ func (s *Store) runSessionUsage(ctx context.Context, jobID string, executionID *
 			return out
 		}
 		if row == nil {
-			row = pyjson.NewObject()
+			row = jsonutil.NewObject()
 		}
 		rows = append(rows, row)
 	}
-	calls := new(big.Int)
+	var calls int64
 	for _, r := range rows {
-		if v, _ := r.Get("api_call_count"); pyrepr.Truthy(v) {
-			n, err := pyint.Of(v)
+		if v, _ := r.Get("api_call_count"); anyutil.IsTrue(v) {
+			n, err := anyutil.ToInt(v)
 			if err != nil {
 				return out
 			}
-			calls.Add(calls, n)
+			calls += n
 		}
 	}
-	out.Set("api_calls", pyint.Value(calls))
+	out.Set("api_calls", calls)
 	for i := len(rows) - 1; i >= 0; i-- {
-		if m, _ := rows[i].Get("model"); pyrepr.Truthy(m) {
+		if m, _ := rows[i].Get("model"); anyutil.IsTrue(m) {
 			out.Set("model", m)
 			break
 		}
@@ -582,15 +580,15 @@ func (s *Store) runSessionUsage(ctx context.Context, jobID string, executionID *
 }
 
 // Async delegation completion block of a finished background manual run
-func (s *Store) manualRunCompletion(ctx context.Context, res *manualRunResult, jobID, jobName, deliver string, startedAt time.Time, executionID *string) *pyjson.Object {
+func (s *Store) manualRunCompletion(ctx context.Context, res *manualRunResult, jobID, jobName, deliver string, startedAt time.Time, executionID *string) *jsonutil.Object {
 	duration := math.Round(time.Since(startedAt).Seconds()*100) / 100
 	refreshed, _ := s.getJob(home.WithOverride(ctx, s.home), jobID)
 	result := "FAILED"
 	if res.Success {
 		result = "ok"
 	}
-	if pyrepr.Truthy(res.Error) {
-		result += " — " + pyrepr.Str(res.Error)
+	if anyutil.IsTrue(res.Error) {
+		result += " — " + anyutil.String(res.Error)
 	}
 	lines := []string{
 		fmt.Sprintf("Cron job '%s' (%s) finished its manual run.", jobName, jobID),
@@ -649,8 +647,8 @@ func (s *Store) tryDispatchBackgroundRun(ctx context.Context, env *tools.Env, jo
 	}
 	deliver := normalizeDeliverValue(deliverRaw)
 	var parent *string
-	if pyrepr.Truthy(sessionID) {
-		p := pyrepr.Str(sessionID)
+	if anyutil.IsTrue(sessionID) {
+		p := anyutil.String(sessionID)
 		parent = &p
 	}
 	runCtx := context.WithoutCancel(ctx)
@@ -659,7 +657,7 @@ func (s *Store) tryDispatchBackgroundRun(ctx context.Context, env *tools.Env, jo
 		Context: "Triggered via cronjob(action='run'). The job executed in its own " +
 			"fresh cron session; this block reports its outcome.",
 		Role: "cron_run", SessionKey: sessionKey, ParentSessionID: parent,
-		Runner: func() *pyjson.Object {
+		Runner: func() *jsonutil.Object {
 			r := s.runClaimedJob(runCtx, claimed, extraPrompt)
 			return s.manualRunCompletion(runCtx, r, jobID, jobName, deliver, startedAt, claimed.ExecutionID)
 		},
@@ -673,7 +671,7 @@ func (s *Store) tryDispatchBackgroundRun(ctx context.Context, env *tools.Env, jo
 	if v, ok := dispatch["error"]; ok {
 		reason = v
 	}
-	s.log.Info(fmt.Sprintf("cronjob run: background pool unavailable (%s); running job '%s' inline.", pyrepr.Str(reason), jobName))
+	s.log.Info(fmt.Sprintf("cronjob run: background pool unavailable (%s); running job '%s' inline.", anyutil.String(reason), jobName))
 	result := s.runClaimedJob(ctx, job, extraPrompt)
 	f := false
 	result.Dispatched = &f
@@ -681,7 +679,7 @@ func (s *Store) tryDispatchBackgroundRun(ctx context.Context, env *tools.Env, jo
 }
 
 // Attaches the mode and delivery guidance notes to a create or update result
-func withGuidance(result *pyjson.Object, job *Job, deliver *string) *pyjson.Object {
+func withGuidance(result *jsonutil.Object, job *Job, deliver *string) *jsonutil.Object {
 	if notes := modeGuidanceNotes(job, deliver); len(notes) > 0 {
 		result.Set("guidance", toAnyList(notes))
 	}
@@ -693,7 +691,7 @@ func argText(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Optional string argument as a pointer, nil for nil
@@ -701,7 +699,7 @@ func argPtr(v any) *string {
 	if v == nil {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	return &s
 }
 
@@ -729,11 +727,11 @@ func refsList(v any) []any {
 func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error) {
 	prompt, script := argText(a.Prompt), argText(a.Script)
 	deliver := normalizeDeliverParam(a.Deliver)
-	if !pyrepr.Truthy(a.Schedule) {
+	if !anyutil.IsTrue(a.Schedule) {
 		return cronToolError("schedule is required for create", nil), nil
 	}
 	skills := canonicalSkills(a.Skill, a.Skills)
-	noAgent := pyrepr.Truthy(a.NoAgent)
+	noAgent := anyutil.IsTrue(a.NoAgent)
 	if noAgent {
 		if script == "" {
 			return cronToolError("create with no_agent=True requires a script — "+
@@ -758,7 +756,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 		func() (string, error) { return validateBotChatDeliver(deliver), nil },
 		func() (string, error) { return validateBotChatDeliver(normalizeDeliverParam(a.FailureDeliver)), nil },
 		func() (string, error) {
-			if !pyrepr.Truthy(a.ContextFrom) {
+			if !anyutil.IsTrue(a.ContextFrom) {
 				return "", nil
 			}
 			return s.validateContextFromRefs(home.WithOverride(ctx, s.home), refsList(a.ContextFrom))
@@ -775,7 +773,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 	}
 	contextFrom := a.ContextFrom
 	if a.Continuity != nil {
-		if refs := applyContinuity(contextFrom, pyrepr.Truthy(a.Continuity)); refs != nil {
+		if refs := applyContinuity(contextFrom, anyutil.IsTrue(a.Continuity)); refs != nil {
 			contextFrom = toAnyList(refs)
 		} else {
 			contextFrom = nil
@@ -804,7 +802,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 	spec.Set("interpreter", a.Interpreter)
 	spec.Set("timezone", ptrValue(normalizeOptionalJobValue(a.Timezone, false)))
 	spec.Set("grace_minutes", a.GraceMinutes)
-	spec.Set("pinned", pyrepr.Truthy(a.Pinned))
+	spec.Set("pinned", anyutil.IsTrue(a.Pinned))
 	spec.Set("failure_deliver", ptrValue(resolveCronContextDeliver(a.env, normalizeDeliverParam(a.FailureDeliver))))
 	spec.Set("catch_up", a.CatchUp)
 	if a.Paused != false || a.PausedReason != nil {
@@ -821,7 +819,7 @@ func (s *Store) actionCreate(ctx context.Context, a *cronjobArgs) (string, error
 		partial := regErr.ToDict()
 		msg, _ := partial.Get("error")
 		partial.Delete("error")
-		return cronToolError(pyrepr.Str(msg), partial), nil
+		return cronToolError(anyutil.String(msg), partial), nil
 	}
 	if err != nil {
 		return "", err
@@ -889,7 +887,7 @@ func (s *Store) jobStateResult(updated *Job) string {
 }
 
 // Formatted job reread so the response reflects the post run fields
-func (s *Store) refreshedJobView(ctx context.Context, jobID string) (*pyjson.Object, error) {
+func (s *Store) refreshedJobView(ctx context.Context, jobID string) (*jsonutil.Object, error) {
 	job, err := s.getJob(home.WithOverride(ctx, s.home), jobID)
 	if err != nil {
 		return nil, err
@@ -903,7 +901,7 @@ func (s *Store) refreshedJobView(ctx context.Context, jobID string) (*pyjson.Obj
 func (s *Store) actionRun(ctx context.Context, job *Job, a *cronjobArgs) (string, error) {
 	jobID := job.ID
 	var extraPrompt *string
-	if pyrepr.Truthy(a.Prompt) {
+	if anyutil.IsTrue(a.Prompt) {
 		extraPrompt = argPtr(a.Prompt)
 		if scanErr := scanCronPrompt(*extraPrompt); scanErr != "" {
 			return cronToolError(scanErr, nil), nil
@@ -949,12 +947,12 @@ func (s *Store) actionRun(ctx context.Context, job *Job, a *cronjobArgs) (string
 	result.Set("executed", execResult.Claimed)
 	result.Set("execution_success", execResult.Success)
 	if !execResult.Claimed {
-		if pyrepr.Truthy(execResult.Error) {
+		if anyutil.IsTrue(execResult.Error) {
 			result.Set("execution_skipped", execResult.Error)
 		} else {
 			result.Set("execution_skipped", "Already being fired by the scheduler; not run again.")
 		}
-	} else if pyrepr.Truthy(execResult.Error) {
+	} else if anyutil.IsTrue(execResult.Error) {
 		result.Set("execution_error", execResult.Error)
 	}
 	return cronDumps(pyObj("success", true, "job", result)), nil
@@ -993,13 +991,13 @@ func pickUpdate(updates map[string]any, job *Job, key string) any {
 // Prompt, name, deliver, skills and model pin updates with their validation errors
 func (s *Store) updateCoreFields(ctx context.Context, job *Job, a *cronjobArgs, updates map[string]any) (string, error) {
 	if a.Prompt != nil {
-		prompt := pyrepr.Str(a.Prompt)
+		prompt := anyutil.String(a.Prompt)
 		if scanErr := scanCronPrompt(prompt); scanErr != "" {
 			return scanErr, nil
 		}
 		updates["prompt"] = prompt
 	}
-	if a.Name != nil && strings.TrimSpace(pyrepr.Str(a.Name)) != "" {
+	if a.Name != nil && strings.TrimSpace(anyutil.String(a.Name)) != "" {
 		updates["name"] = a.Name
 	}
 	if a.Deliver != nil {
@@ -1037,7 +1035,7 @@ func (s *Store) updateCoreFields(ctx context.Context, job *Job, a *cronjobArgs, 
 		updates["provider"] = ptrValue(normalizeOptionalJobValue(a.Provider, false))
 	}
 	if a.Pinned != nil {
-		updates["pinned"] = pyrepr.Truthy(a.Pinned)
+		updates["pinned"] = anyutil.IsTrue(a.Pinned)
 	}
 	if a.BaseURL != nil {
 		updates["base_url"] = ptrValue(normalizeOptionalJobValue(a.BaseURL, true))
@@ -1060,8 +1058,8 @@ func (s *Store) updateScriptFields(ctx context.Context, job *Job, a *cronjobArgs
 		if f.value == nil {
 			continue
 		}
-		if pyrepr.Truthy(f.value) {
-			if msg := s.validateCronScriptPath(pyrepr.Str(f.value)); msg != "" {
+		if anyutil.IsTrue(f.value) {
+			if msg := s.validateCronScriptPath(anyutil.String(f.value)); msg != "" {
 				return msg, nil
 			}
 			updates[f.field] = ptrValue(normalizeOptionalJobValue(f.value, false))
@@ -1070,14 +1068,14 @@ func (s *Store) updateScriptFields(ctx context.Context, job *Job, a *cronjobArgs
 		}
 	}
 	if a.MonitorURL != nil {
-		if pyrepr.Truthy(a.MonitorURL) {
+		if anyutil.IsTrue(a.MonitorURL) {
 			updates["monitor_url"] = ptrValue(normalizeOptionalJobValue(a.MonitorURL, false))
 		} else {
 			updates["monitor_url"] = nil
 		}
 	}
 	if (a.MonitorScript != nil || a.MonitorURL != nil) &&
-		pyrepr.Truthy(pickUpdate(updates, job, "monitor_script")) && pyrepr.Truthy(pickUpdate(updates, job, "monitor_url")) {
+		anyutil.IsTrue(pickUpdate(updates, job, "monitor_script")) && anyutil.IsTrue(pickUpdate(updates, job, "monitor_url")) {
 		return "monitor_script and monitor_url are mutually exclusive — clear one before setting the other.", nil
 	}
 	return "", nil
@@ -1094,7 +1092,7 @@ func (s *Store) updateContextFrom(ctx context.Context, job *Job, a *cronjobArgs,
 	}
 	refs := cleanStrList(contextFrom)
 	if a.Continuity != nil {
-		refs = applyContinuity(refs, pyrepr.Truthy(a.Continuity))
+		refs = applyContinuity(refs, anyutil.IsTrue(a.Continuity))
 	}
 	if len(refs) > 0 {
 		msg, err := s.validateContextFromRefs(home.WithOverride(ctx, s.home), toAnyList(refs))
@@ -1114,14 +1112,14 @@ func (s *Store) updateRunFields(ctx context.Context, job *Job, a *cronjobArgs, u
 		updates["enabled_toolsets"] = a.EnabledToolsets
 	}
 	if a.AttachToSession != nil {
-		updates["attach_to_session"] = pyrepr.Truthy(a.AttachToSession)
+		updates["attach_to_session"] = anyutil.IsTrue(a.AttachToSession)
 	}
 	if a.Workdir != nil {
 		updates["workdir"] = ptrValue(normalizeOptionalJobValue(a.Workdir, false))
 	}
 	if a.NoAgent != nil {
-		target := pyrepr.Truthy(a.NoAgent)
-		if target && !pyrepr.Truthy(pickUpdate(updates, job, "script")) {
+		target := anyutil.IsTrue(a.NoAgent)
+		if target && !anyutil.IsTrue(pickUpdate(updates, job, "script")) {
 			return "Cannot set no_agent=True on a job without a script. " +
 				"Set `script` in the same update, or on the job first.", nil
 		}
@@ -1165,7 +1163,7 @@ func (s *Store) updateRunFields(ctx context.Context, job *Job, a *cronjobArgs, u
 		}
 	}
 	if a.Schedule != nil {
-		parsed, err := s.parseSchedule(pyrepr.Str(a.Schedule))
+		parsed, err := s.parseSchedule(anyutil.String(a.Schedule))
 		if err != nil {
 			return "", err
 		}
@@ -1260,10 +1258,10 @@ func (s *Store) cronjob(ctx context.Context, a *cronjobArgs) (out string) {
 	case "list":
 		text, err = s.actionList(ctx, a)
 	default:
-		if !pyrepr.Truthy(a.JobID) {
+		if !anyutil.IsTrue(a.JobID) {
 			return cronToolError(fmt.Sprintf("job_id is required for action '%s'", normalized), nil)
 		}
-		job, errJSON, rerr := s.resolveJobOrError(home.WithOverride(ctx, s.home), pyrepr.Str(a.JobID))
+		job, errJSON, rerr := s.resolveJobOrError(home.WithOverride(ctx, s.home), anyutil.String(a.JobID))
 		if rerr != nil {
 			return cronToolError(rerr.Error(), nil)
 		}
@@ -1307,7 +1305,7 @@ func scriptDescription(h string) string {
 }
 
 // Parameters with the script path hint rebuilt from the active profile at every definition read
-func cronjobSchemaOverrides(env *tools.Env) *pyjson.Object {
+func cronjobSchemaOverrides(env *tools.Env) *jsonutil.Object {
 	h := ""
 	if env != nil {
 		h = env.Home
@@ -1315,9 +1313,9 @@ func cronjobSchemaOverrides(env *tools.Env) *pyjson.Object {
 	if h == "" {
 		h = home.Dir(nil)
 	}
-	params := pyjson.Clone(cronjobSchema.Vals["parameters"]).(*pyjson.Object)
-	params.Vals["properties"].(*pyjson.Object).Vals["script"].(*pyjson.Object).Set("description", scriptDescription(home.Display(h)))
-	return pyjson.ObjectOf("parameters", params)
+	params := jsonutil.Clone(cronjobSchema.Value("parameters")).(*jsonutil.Object)
+	params.Value("properties").(*jsonutil.Object).Value("script").(*jsonutil.Object).Set("description", scriptDescription(home.Display(h)))
+	return jsonutil.ObjectOf("parameters", params)
 }
 
 // Available in one shot chat runs, gateway sessions, exec ask, and cron runs
@@ -1344,7 +1342,7 @@ func cronjobHandler(ctx context.Context, call *tools.Call) string {
 	monScript, monURL := splitMonitorArg(get("monitor"), get("monitor_script"), get("monitor_url"))
 	includeDisabled := true
 	if v, ok := args["include_disabled"]; ok {
-		includeDisabled = pyrepr.Truthy(v)
+		includeDisabled = anyutil.IsTrue(v)
 	}
 	var paused any = false
 	if v, ok := args["paused"]; ok {

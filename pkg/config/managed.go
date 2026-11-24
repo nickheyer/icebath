@@ -11,7 +11,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // EnvManagedDir is the IT only override naming the managed scope directory
@@ -171,7 +171,7 @@ func readManagedText(path string) (string, error) {
 	for i := 0; i < len(data); {
 		r, size := utf8.DecodeRune(data[i:])
 		if r == utf8.RuneError && size <= 1 {
-			return "", pystr.UTF8DecodeError(data, i)
+			return "", &textutil.InvalidUTF8Error{Offset: i}
 		}
 		i += size
 	}

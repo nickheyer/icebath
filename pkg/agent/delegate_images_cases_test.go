@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const delegateImagePNGBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGBgAAAABQABh6FO1AAAAABJRU5ErkJggg=="
@@ -144,7 +144,7 @@ func TestChildRunSendsMultimodalGoalTurn(t *testing.T) {
 }
 
 func TestImagesAdvertisedPerTaskOnly(t *testing.T) {
-	props := pyjson.Plain(tools.DelegateTaskSchema.Vals["parameters"]).(map[string]any)["properties"].(map[string]any)
+	props := jsonutil.Plain(tools.DelegateTaskSchema.Value("parameters")).(map[string]any)["properties"].(map[string]any)
 	item := props["tasks"].(map[string]any)["items"].(map[string]any)
 	images := item["properties"].(map[string]any)["images"].(map[string]any)
 	required, _ := item["required"].([]any)

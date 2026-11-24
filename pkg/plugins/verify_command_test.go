@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func verifyArgs(path string, overrides map[string]any) map[string]any {
@@ -28,13 +28,13 @@ func runVerifyForTest(t *testing.T, ns map[string]any) (int, string, string) {
 	return code, out.String(), errOut.String()
 }
 
-func loadsObject(t *testing.T, text string) *pyjson.Object {
+func loadsObject(t *testing.T, text string) *jsonutil.Object {
 	t.Helper()
-	v, err := pyjson.Loads(strings.TrimSpace(text))
+	v, err := jsonutil.Decode(strings.TrimSpace(text))
 	if err != nil {
 		t.Fatalf("json %v in %q", err, text)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 func TestDetectOnlyJson(t *testing.T) {
@@ -49,8 +49,8 @@ func TestDetectOnlyJson(t *testing.T) {
 	payload := loadsObject(t, out)
 	source, _ := payload.Get("source")
 	recipe, _ := payload.Get("recipe")
-	kind, _ := recipe.(*pyjson.Object).Get("kind")
-	build, _ := recipe.(*pyjson.Object).Get("build")
+	kind, _ := recipe.(*jsonutil.Object).Get("kind")
+	build, _ := recipe.(*jsonutil.Object).Get("build")
 	if source != "detected" || kind != "go" || len(build.([]any)) != 1 || build.([]any)[0] != "go build ./..." {
 		t.Fatalf("payload %s", out)
 	}
@@ -90,7 +90,7 @@ func TestSaveWritesManifest(t *testing.T) {
 	payload := loadsObject(t, string(raw))
 	version, _ := payload.Get("version")
 	recipe, _ := payload.Get("recipe")
-	kind, _ := recipe.(*pyjson.Object).Get("kind")
+	kind, _ := recipe.(*jsonutil.Object).Get("kind")
 	if version != int64(1) || kind != "go" {
 		t.Fatalf("manifest %s", raw)
 	}
@@ -117,7 +117,7 @@ func TestRunPhasesJson(t *testing.T) {
 	ok, _ := payload.Get("ok")
 	source, _ := payload.Get("source")
 	phases, _ := payload.Get("phases")
-	command, _ := phases.([]any)[0].(*pyjson.Object).Get("command")
+	command, _ := phases.([]any)[0].(*jsonutil.Object).Get("command")
 	if ok != true || source != "manifest" || command != "echo ok" {
 		t.Fatalf("payload %s", out)
 	}

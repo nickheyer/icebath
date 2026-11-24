@@ -4,16 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Most domains one xAI search filter may name
@@ -41,8 +41,8 @@ func coerceDomainList(value any) []any {
 }
 
 // web_search tool spec with optional domain filters, nil when both filter kinds are set
-func xaiWebSearchTool(ctx context.Context) *pyjson.Object {
-	filters := pyjson.NewObject()
+func xaiWebSearchTool(ctx context.Context) *jsonutil.Object {
+	filters := jsonutil.NewObject()
 	for _, f := range []struct {
 		name    string
 		setting *settings.List
@@ -54,7 +54,7 @@ func xaiWebSearchTool(ctx context.Context) *pyjson.Object {
 	if filters.Len() == 2 {
 		return nil
 	}
-	tool := pyjson.NewObject()
+	tool := jsonutil.NewObject()
 	tool.Set("type", "web_search")
 	if filters.Len() > 0 {
 		tool.Set("filters", filters)
@@ -73,14 +73,14 @@ func xaiBuildPrompt(query string, limit int) string {
 }
 
 // POST /responses with one forced OAuth refresh and retry on a first 401, failures as search envelopes
-func xaiPostResponses(ctx context.Context, env *Env, baseURL string, payload *pyjson.Object, apiKey string, timeout float64, isOAuthPath bool) (any, *WebSearchResponse, error) {
+func xaiPostResponses(ctx context.Context, env *Env, baseURL string, payload *jsonutil.Object, apiKey string, timeout float64, isOAuthPath bool) (any, *WebSearchResponse, error) {
 	headers := [][2]string{{"Authorization", "Bearer " + apiKey}, {"Content-Type", "application/json"}, {"User-Agent", icebathXAIUserAgent()}}
 	limit := time.Duration(timeout * float64(time.Second))
 	for attempt := 0; attempt < 2; attempt++ {
 		resp, err := httpxSend(ctx, http.MethodPost, baseURL+"/responses", nil, headers, payload, limit)
 		if err != nil {
-			var he *httpxError
-			if !errors.As(err, &he) {
+			var ue *url.Error
+			if !errors.As(err, &ue) {
 				return nil, nil, err
 			}
 			envLog(env).Warn("xAI web search request error", "error", err.Error())
@@ -110,13 +110,13 @@ func xaiPostResponses(ctx context.Context, env *Env, baseURL string, payload *py
 }
 
 // Text blocks and annotation dicts of the output_text chunks of every message item
-func xaiCollectOutputText(data any) ([]string, []*pyjson.Object, error) {
+func xaiCollectOutputText(data any) ([]string, []*jsonutil.Object, error) {
 	output, err := pyDictGet(data, "output")
 	if err != nil {
 		return nil, nil, err
 	}
 	items, _ := output.([]any)
-	var chunks []*pyjson.Object
+	var chunks []*jsonutil.Object
 	for _, item := range items {
 		d, ok := pyDict(item)
 		if !ok {
@@ -137,7 +137,7 @@ func xaiCollectOutputText(data any) ([]string, []*pyjson.Object, error) {
 		}
 	}
 	var texts []string
-	var annotations []*pyjson.Object
+	var annotations []*jsonutil.Object
 	for _, c := range chunks {
 		if t, ok := c.Get("text"); ok {
 			if s, isStr := t.(string); isStr && strings.TrimSpace(s) != "" {
@@ -160,12 +160,12 @@ func xaiCollectOutputText(data any) ([]string, []*pyjson.Object, error) {
 }
 
 // str(row.get(key, "")).strip() of a decoded row
-func xaiRowField(row *pyjson.Object, key string) string {
+func xaiRowField(row *jsonutil.Object, key string) string {
 	v, ok := row.Get(key)
 	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Rows of a JSON object with a results array in the text or its braced block, nil when absent
@@ -175,7 +175,7 @@ func xaiTryParseJSONResults(text string, limit int) []WebSearchHit {
 		candidates = append(candidates, m)
 	}
 	for _, candidate := range candidates {
-		parsed, err := pyjson.Loads(candidate)
+		parsed, err := jsonutil.Decode(candidate)
 		if err != nil {
 			continue
 		}
@@ -206,26 +206,8 @@ func xaiTryParseJSONResults(text string, limit int) []WebSearchHit {
 	return nil
 }
 
-// Python int value of a decoded number, bools included as isinstance int accepts them
-func pyBigIntValue(v any) (*big.Int, bool) {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return big.NewInt(1), true
-		}
-		return big.NewInt(0), true
-	case int:
-		return big.NewInt(int64(x)), true
-	case int64:
-		return big.NewInt(x), true
-	case *big.Int:
-		return x, true
-	}
-	return nil, false
-}
-
 // Rows from url_citation annotations with up to 200 characters of preceding text as the description
-func xaiResultsFromAnnotations(annotations []*pyjson.Object, joined string, limit int) []WebSearchHit {
+func xaiResultsFromAnnotations(annotations []*jsonutil.Object, joined string, limit int) []WebSearchHit {
 	seen := map[string]bool{}
 	runes := []rune(joined)
 	var results []WebSearchHit
@@ -241,10 +223,10 @@ func xaiResultsFromAnnotations(annotations []*pyjson.Object, joined string, limi
 		description := ""
 		startV, _ := ann.Get("start_index")
 		endV, _ := ann.Get("end_index")
-		start, okS := pyBigIntValue(startV)
-		end, okE := pyBigIntValue(endV)
-		if okS && okE && start.Sign() >= 0 && start.Cmp(end) < 0 && end.Cmp(big.NewInt(int64(len(runes)))) <= 0 {
-			s := int(start.Int64())
+		start, okS := anyutil.Int(startV)
+		end, okE := anyutil.Int(endV)
+		if okS && okE && start >= 0 && start < end && end <= int64(len(runes)) {
+			s := int(start)
 			description = strings.TrimSpace(string(runes[max(0, s-200):s]))
 			if r := []rune(description); len(r) > 200 {
 				description = strings.TrimSpace(string(r[len(r)-200:]))
@@ -275,7 +257,7 @@ func xaiExtractResults(data any, limit int) ([]WebSearchHit, error) {
 		}
 	}
 	raw, _ := pyDictGet(data, "citations")
-	citations, ok := pyOr(raw, []any{}).([]any)
+	citations, ok := anyutil.Or(raw, []any{}).([]any)
 	if !ok {
 		return []WebSearchHit{}, nil
 	}
@@ -319,10 +301,10 @@ func (p *xaiWebProvider) Search(ctx context.Context, env *Env, query string, lim
 	if tool == nil {
 		return searchFail("web.xai.allowed_domains and web.xai.excluded_domains cannot both be set (xAI restriction)."), nil
 	}
-	message := pyjson.NewObject()
+	message := jsonutil.NewObject()
 	message.Set("role", "user")
 	message.Set("content", xaiBuildPrompt(query, limit))
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("model", model)
 	payload.Set("input", []any{message})
 	payload.Set("tools", []any{tool})
@@ -340,10 +322,10 @@ func (p *xaiWebProvider) Search(ctx context.Context, env *Env, query string, lim
 		if apiErr, _ := d.Get("error"); apiErr != nil {
 			if e, isDict := pyDict(apiErr); isDict {
 				msg, _ := e.Get("message")
-				if !pyTruthy(msg) {
+				if !anyutil.IsTrue(msg) {
 					msg, _ = e.Get("code")
 				}
-				text := pyrepr.Str(pyOr(msg, "unknown error"))
+				text := anyutil.String(anyutil.Or(msg, "unknown error"))
 				envLog(env).Warn("xAI web search returned error envelope", "error", text)
 				return searchFail("xAI returned an error: " + text), nil
 			}
@@ -367,6 +349,3 @@ func (p *xaiWebProvider) SetupSchema() map[string]any {
 func NewXAIWebProvider() WebProvider {
 	return &xaiWebProvider{baseWebProvider{name: "xai", display: "xAI Web Search (Grok)"}}
 }
-
-// Class name the registry log and type errors print, the plugin provider class
-func (*xaiWebProvider) PyTypeName() string { return "XAIWebSearchProvider" }

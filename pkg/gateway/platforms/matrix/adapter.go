@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,10 +21,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const processedEventsMax = 1000
@@ -210,7 +210,7 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	a.matrixSessionScope = settings.MatrixSessionScope.Get(sctx)
 	a.processNotices = settings.MatrixProcessNotices.Get(sctx)
 	rawReactions, _ := gateway.ExtraOrSecret(ctx, cfg.Extra, "reactions", "MATRIX_REACTIONS", "true", true)
-	switch strings.ToLower(pyrepr.Str(rawReactions)) {
+	switch strings.ToLower(anyutil.String(rawReactions)) {
 	case "false", "0", "no":
 	default:
 		a.reactionsEnabled = true
@@ -227,11 +227,11 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 		pkgLog().Info(fmt.Sprintf("Matrix: proxy configured — %s", gateway.SafeProxyURLForLog(a.proxyURL)))
 	}
 	a.maxMediaBytes = envInt(ctx, "MATRIX_MAX_MEDIA_BYTES", matrixDefaultMaxMediaBytes)
-	delay, err := pyint.ParseFloat(envOr("ICEBATH_MATRIX_TEXT_BATCH_DELAY_SECONDS", "0.6"))
+	delay, err := strconv.ParseFloat(strings.TrimSpace(envOr("ICEBATH_MATRIX_TEXT_BATCH_DELAY_SECONDS", "0.6")), 64)
 	if err != nil {
 		return nil, err
 	}
-	split, err := pyint.ParseFloat(envOr("ICEBATH_MATRIX_TEXT_BATCH_SPLIT_DELAY_SECONDS", "2.0"))
+	split, err := strconv.ParseFloat(strings.TrimSpace(envOr("ICEBATH_MATRIX_TEXT_BATCH_SPLIT_DELAY_SECONDS", "2.0")), 64)
 	if err != nil {
 		return nil, err
 	}
@@ -253,7 +253,7 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 	for _, pattern := range sortedKeys(gateway.SettingSet(ctx, settings.MatrixIgnoreUserPatterns)) {
 		re, err := pyre.Compile(pattern)
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Matrix: ignoring invalid ignored sender pattern %s: %v", pyrepr.Repr(pattern), err))
+			pkgLog().Warn(fmt.Sprintf("Matrix: ignoring invalid ignored sender pattern %s: %v", anyutil.Quote(pattern), err))
 			continue
 		}
 		a.ignoredUserPatterns = append(a.ignoredUserPatterns, re)
@@ -263,7 +263,7 @@ func NewMatrixAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*Matrix
 
 // Configured token as a string, empty when unset
 func tokenOf(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return strOf(v)
@@ -282,7 +282,7 @@ func envOr(name, def string) string {
 
 // Config extra string, the fallback when it is missing or empty
 func extraStr(extra map[string]any, key, fallback string) string {
-	if v := extra[key]; pyTruthy(v) {
+	if v := extra[key]; anyutil.IsTrue(v) {
 		return strOf(v)
 	}
 	return fallback
@@ -312,7 +312,7 @@ func notFalseSpelling(configured any) bool {
 	if b, ok := configured.(bool); ok {
 		return b
 	}
-	switch strings.ToLower(pyrepr.Str(configured)) {
+	switch strings.ToLower(anyutil.String(configured)) {
 	case "false", "0", "no", "off":
 		return false
 	}

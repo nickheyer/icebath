@@ -3,26 +3,25 @@ package camofox
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -34,8 +33,8 @@ const (
 )
 
 // Error result dict with success false, the extra keys after the error
-func policyErr(message string, extra ...any) *pyjson.Object {
-	return pyjson.ObjectOf(append([]any{"success", false, "error", message}, extra...)...)
+func policyErr(message string, extra ...any) *jsonutil.Object {
+	return jsonutil.ObjectOf(append([]any{"success", false, "error", message}, extra...)...)
 }
 
 // browser key of the profile config, def on a miss or an unreadable config
@@ -53,7 +52,7 @@ func (s *scope) redactText(text string) string {
 	return tools.RedactSensitiveTextWith(s.env, text, tools.RedactOptions{Force: true})
 }
 
-// Force redacted value of any type, None kept and other values redacted as their str
+// Force redacted value of any type, nil kept and other values redacted as their text
 func (s *scope) redactAny(v any) any {
 	switch t := v.(type) {
 	case nil:
@@ -61,7 +60,7 @@ func (s *scope) redactAny(v any) any {
 	case string:
 		return s.redactText(t)
 	}
-	return s.redactText(pyrepr.Str(v))
+	return s.redactText(anyutil.String(v))
 }
 
 // Force redacted nested browser data, a tree past the walk limit replaced by the marker
@@ -78,13 +77,13 @@ func (s *scope) redactOutput(value any, depth int) any {
 			out[i] = s.redactOutput(item, depth+1)
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return value
 		}
-		out := pyjson.NewObject()
-		for _, k := range t.Keys {
-			out.Set(pyrepr.Str(s.redactOutput(k, depth+1)), s.redactOutput(t.Vals[k], depth+1))
+		out := jsonutil.NewObject()
+		for _, k := range t.Keys() {
+			out.Set(anyutil.String(s.redactOutput(k, depth+1)), s.redactOutput(t.Value(k), depth+1))
 		}
 		return out
 	}
@@ -109,13 +108,13 @@ func replaceTyped(value any, needle, redacted string) any {
 	switch t := value.(type) {
 	case string:
 		return strings.ReplaceAll(t, needle, redacted)
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return value
 		}
-		out := pyjson.NewObject()
-		for _, k := range t.Keys {
-			out.Set(k, replaceTyped(t.Vals[k], needle, redacted))
+		out := jsonutil.NewObject()
+		for _, k := range t.Keys() {
+			out.Set(k, replaceTyped(t.Value(k), needle, redacted))
 		}
 		return out
 	case []any:
@@ -129,15 +128,15 @@ func replaceTyped(value any, needle, redacted string) any {
 }
 
 // Refusal of a URL embedding an API key or token in raw or percent decoded form
-func secretURLError(raw string) *pyjson.Object {
-	if tools.RedactPrefixSearch(raw) || tools.RedactPrefixSearch(pyurl.Unquote(raw)) {
+func secretURLError(raw string) *jsonutil.Object {
+	if tools.RedactPrefixSearch(raw) || tools.RedactPrefixSearch(urlutil.Unescape(raw)) {
 		return policyErr("Blocked: URL contains what appears to be an API key or token. Secrets must not be sent in URLs.")
 	}
 	return nil
 }
 
 // Normalized navigate target and the refusal of a secret bearing, metadata or blocklisted URL
-func (s *scope) navigationPolicyError(raw string) (string, *pyjson.Object) {
+func (s *scope) navigationPolicyError(raw string) (string, *jsonutil.Object) {
 	if err := secretURLError(raw); err != nil {
 		return raw, err
 	}
@@ -150,7 +149,7 @@ func (s *scope) navigationPolicyError(raw string) (string, *pyjson.Object) {
 	}
 	if blocked, _ := tools.CheckWebsiteAccess(s.env, raw, ""); blocked != nil {
 		return raw, policyErr(blocked.Message, "blocked_by_policy",
-			pyjson.ObjectOf("host", blocked.Host, "rule", blocked.Rule, "source", blocked.Source))
+			jsonutil.ObjectOf("host", blocked.Host, "rule", blocked.Rule, "source", blocked.Source))
 	}
 	return raw, nil
 }
@@ -198,12 +197,12 @@ var sensitiveEvalTokens = []sensitiveToken{
 	newSensitiveToken("sendBeacon", "network beacon"),
 }
 
-// Python truthy spelling of a config value, None false
+// Whether a config value spells true (1, true, yes or on in any case), nil false
 func truthy(v any) bool {
 	if v == nil {
 		return false
 	}
-	switch strings.ToLower(strings.TrimSpace(pyrepr.Str(v))) {
+	switch strings.ToLower(strings.TrimSpace(anyutil.String(v))) {
 	case "1", "true", "yes", "on":
 		return true
 	}
@@ -216,13 +215,112 @@ func decodeJSStringLiteral(literal string) string {
 		return literal
 	}
 	body := textutil.DropLast(textutil.DropFirst(literal, 1), 1)
-	if pystr.StrictUTF8EncodeError(body) != nil {
+	if !utf8.ValidString(body) {
 		return body
 	}
-	if decoded, err := state.UnicodeEscapeDecode([]byte(body)); err == nil {
+	if decoded, ok := unescapeJS(body); ok {
 		return decoded
 	}
 	return body
+}
+
+// Body of a JavaScript string literal with its escapes decoded, false for a malformed hex or unicode escape
+func unescapeJS(body string) (string, bool) {
+	if !strings.Contains(body, `\`) {
+		return body, true
+	}
+	var b strings.Builder
+	b.Grow(len(body))
+	for i := 0; i < len(body); i++ {
+		if body[i] != '\\' {
+			b.WriteByte(body[i])
+			continue
+		}
+		if i++; i == len(body) {
+			return "", false
+		}
+		switch c := body[i]; c {
+		case 'n':
+			b.WriteByte('\n')
+		case 't':
+			b.WriteByte('\t')
+		case 'r':
+			b.WriteByte('\r')
+		case 'b':
+			b.WriteByte('\b')
+		case 'f':
+			b.WriteByte('\f')
+		case 'v':
+			b.WriteByte('\v')
+		case '\n':
+		case '\r':
+			if i+1 < len(body) && body[i+1] == '\n' {
+				i++
+			}
+		case 'x':
+			if i+2 >= len(body) {
+				return "", false
+			}
+			v, err := strconv.ParseUint(body[i+1:i+3], 16, 8)
+			if err != nil {
+				return "", false
+			}
+			b.WriteRune(rune(v))
+			i += 2
+		case 'u':
+			r, n, ok := jsUnicodeEscape(body[i+1:])
+			if !ok {
+				return "", false
+			}
+			b.WriteRune(r)
+			i += n
+		default:
+			if c >= '0' && c <= '7' {
+				v, n := int(c-'0'), 1
+				for n < 3 && i+n < len(body) && body[i+n] >= '0' && body[i+n] <= '7' && v*8+int(body[i+n]-'0') <= 0o377 {
+					v, n = v*8+int(body[i+n]-'0'), n+1
+				}
+				b.WriteRune(rune(v))
+				i += n - 1
+				continue
+			}
+			r, size := utf8.DecodeRuneInString(body[i:])
+			if r != 0x2028 && r != 0x2029 {
+				b.WriteString(body[i : i+size])
+			}
+			i += size - 1
+		}
+	}
+	return b.String(), true
+}
+
+// Code point of the hex digits after a backslash-u, four of them or one to six in braces, the bytes they take, a surrogate pair of escapes joined
+func jsUnicodeEscape(s string) (rune, int, bool) {
+	if strings.HasPrefix(s, "{") {
+		end := strings.IndexByte(s, '}')
+		if end < 2 || end > 7 {
+			return 0, 0, false
+		}
+		v, err := strconv.ParseUint(s[1:end], 16, 32)
+		if err != nil || v > utf8.MaxRune {
+			return 0, 0, false
+		}
+		return rune(v), end + 1, true
+	}
+	if len(s) < 4 {
+		return 0, 0, false
+	}
+	v, err := strconv.ParseUint(s[:4], 16, 16)
+	if err != nil {
+		return 0, 0, false
+	}
+	r := rune(v)
+	if r >= 0xd800 && r < 0xdc00 && len(s) >= 10 && s[4] == '\\' && s[5] == 'u' {
+		if low, err := strconv.ParseUint(s[6:10], 16, 16); err == nil && low >= 0xdc00 && low < 0xe000 {
+			return utf16.DecodeRune(r, rune(low)), 10, true
+		}
+	}
+	return r, 4, true
 }
 
 // Whether a pattern matches anywhere in the subject
@@ -272,26 +370,23 @@ func (s *scope) evalPolicyError(expression string) string {
 		"browser.restrict_evaluate: false in config.yaml to allow programmatic evaluation."
 }
 
-// browser.snapshot_threshold floored at the minimum, the default for a missing or unparsable value
-func (s *scope) snapshotThreshold() (int64, error) {
+// browser.snapshot_threshold floored at the minimum, the default for a missing or unparsable value, a number past the int64 range held at its bound
+func (s *scope) snapshotThreshold() int64 {
 	val := s.browserCfg("snapshot_threshold", nil)
 	if val == nil {
-		return defaultSnapshotThreshold, nil
+		return defaultSnapshotThreshold
 	}
-	n, err := pyint.Of(val)
-	if err != nil {
-		if pe, ok := err.(*pyint.Error); ok && pe.Kind == "OverflowError" {
-			return 0, err
-		}
-		return defaultSnapshotThreshold, nil
+	n, err := anyutil.ToInt(val)
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
+		return defaultSnapshotThreshold
 	}
-	return max(saturateInt64(n), minSnapshotThreshold), nil
+	return max(n, minSnapshotThreshold)
 }
 
 // Replaces path with content without following a planted symlink
 func writeCacheFile(path, content string) error {
 	if st, err := os.Lstat(path); err == nil && st != nil {
-		if err := pypath.Unlink(path); err != nil && !os.IsNotExist(err) {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
 	}
@@ -322,9 +417,6 @@ func (s *scope) storeFullSnapshot(snapshotText string) string {
 			return "", fmt.Errorf("refusing to write through a symlinked %s", cacheDir)
 		}
 		if err := os.MkdirAll(cacheDir, 0o777); err != nil {
-			return "", err
-		}
-		if err := pystr.StrictUTF8EncodeError(content); err != nil {
 			return "", err
 		}
 		digest := sha256.Sum256([]byte(content))
@@ -370,7 +462,7 @@ func (s *scope) truncateSnapshot(snapshotText string, maxChars int64) string {
 	return strings.Join(result, "\n")
 }
 
-// Python floor division of an int by a positive divisor
+// Quotient of a by a positive divisor rounded toward negative infinity
 func floorDiv(a, b int64) int64 {
 	q := a / b
 	if (a%b != 0) && (a < 0) {

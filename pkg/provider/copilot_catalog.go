@@ -12,8 +12,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -197,7 +197,7 @@ var (
 func fetchGithubModelCatalog(ctx context.Context, apiKey string, timeout time.Duration) []any {
 	copilotCatalogMu.Lock()
 	if copilotCatalogCache != nil && copilotCatalogCacheKey == apiKey && time.Since(copilotCatalogCacheAt) < copilotCatalogCacheTTL {
-		out := pycopy.DeepCopy(copilotCatalogCache).([]any)
+		out := any(anyutil.Clone(copilotCatalogCache)).([]any)
 		copilotCatalogMu.Unlock()
 		return out
 	}
@@ -221,7 +221,7 @@ func fetchGithubModelCatalog(ctx context.Context, apiKey string, timeout time.Du
 		}
 		if len(models) > 0 {
 			copilotCatalogMu.Lock()
-			copilotCatalogCache = pycopy.DeepCopy(models).([]any)
+			copilotCatalogCache = any(anyutil.Clone(models)).([]any)
 			copilotCatalogCacheKey = apiKey
 			copilotCatalogCacheAt = time.Now()
 			copilotCatalogMu.Unlock()
@@ -325,14 +325,14 @@ func getCopilotModelContext(ctx context.Context, modelID, apiKey string) int {
 		mid := strings.TrimSpace(cpOrStr(cpGetOr(item, "id", nil)))
 		caps := cpGetOr(item, "capabilities", nil)
 		if !cpTruthy(caps) {
-			caps = pyjson.NewObject()
+			caps = jsonutil.NewObject()
 		}
 		if !cpIsDict(caps) {
 			return 0
 		}
 		limits := cpGetOr(caps, "limits", nil)
 		if !cpTruthy(limits) {
-			limits = pyjson.NewObject()
+			limits = jsonutil.NewObject()
 		}
 		if !cpIsDict(limits) {
 			return 0

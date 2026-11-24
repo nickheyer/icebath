@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -11,10 +12,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 const (
@@ -26,15 +28,15 @@ const (
 
 // Socket surface the connection manager drives
 type wsConn interface {
-	Open() bool
-	Recv(ctx context.Context) (any, error)
-	SendBytes(message []byte) error
-	Close()
+	Closed() bool
+	Receive(ctx context.Context) (websocketutil.Message, error)
+	SendBinary(data []byte) error
+	Close() error
 }
 
-// Opens the gateway socket, a package var the way tests patch websockets connect
-var wsDial = func(ctx context.Context, rawURL string, opts pywebsockets.ConnectOptions) (wsConn, error) {
-	conn, err := pywebsockets.Connect(ctx, rawURL, opts)
+// Opens the gateway socket, a package var so tests can substitute a fake connection
+var wsDial = func(ctx context.Context, rawURL string, opts websocketutil.Options) (wsConn, error) {
+	conn, err := websocketutil.Connect(ctx, rawURL, opts)
 	if err != nil {
 		return nil, err
 	}
@@ -87,7 +89,7 @@ func (c *connectionManager) boundConnectID() string {
 // Whether a socket is held and still open
 func (c *connectionManager) isConnected() bool {
 	ws := c.socket()
-	return ws != nil && ws.Open()
+	return ws != nil && !ws.Closed()
 }
 
 // Signs a token, dials the socket, binds the bot and starts the loops, false when any step fails
@@ -126,7 +128,7 @@ func (c *connectionManager) open(ctx context.Context) (bool, error) {
 			return false, err
 		}
 		c.connected(ctx, false)
-		pkgLog().Info(fmt.Sprintf("[%s] Connected. connectId=%s botId=%s", name, c.boundConnectID(), pyrepr.Str(adapter.botIDValue())))
+		pkgLog().Info(fmt.Sprintf("[%s] Connected. connectId=%s botId=%s", name, c.boundConnectID(), anyutil.String(adapter.botIDValue())))
 		return true, nil
 	}()
 	switch {
@@ -139,7 +141,7 @@ func (c *connectionManager) open(ctx context.Context) (bool, error) {
 	case isTimeout(err):
 		pkgLog().Error(fmt.Sprintf("[%s] Connection timed out", name))
 	default:
-		pkgLog().Error(fmt.Sprintf("[%s] connect() failed: %s", name, errText(err)), "error", err)
+		pkgLog().Error(fmt.Sprintf("[%s] connect() failed: %s", name, err.Error()), "error", err)
 	}
 	c.cleanupWS(ctx)
 	adapter.ReleasePlatformLock()
@@ -148,12 +150,12 @@ func (c *connectionManager) open(ctx context.Context) (bool, error) {
 
 // Adopts the bot id of the sign token, opens the socket without keepalive pings and runs the auth bind
 func (c *connectionManager) dial(ctx context.Context, tokenData map[string]any) (bool, error) {
-	if botID := tokenData["bot_id"]; pyrepr.Truthy(botID) {
-		c.adapter.setBotID(pyrepr.Str(botID))
+	if botID := tokenData["bot_id"]; anyutil.IsTrue(botID) {
+		c.adapter.setBotID(anyutil.String(botID))
 	}
 	dctx, cancel := context.WithTimeout(ctx, durationOf(connectTimeoutSeconds))
-	ws, err := wsDial(dctx, c.adapter.wsURL, pywebsockets.ConnectOptions{NoKeepalive: true, CloseTimeout: wsCloseHandshake,
-		HappyEyeballsDelay: happyEyeballs})
+	ws, err := wsDial(dctx, c.adapter.wsURL, websocketutil.Options{OpenTimeout: 10 * time.Second, CloseTimeout: wsCloseHandshake,
+		PingInterval: -1, MaxMessageSize: 1 << 20, FallbackDelay: happyEyeballs, Compression: true, Proxy: httputil.Proxy})
 	cancel()
 	if err != nil {
 		if ctx.Err() != nil {
@@ -230,7 +232,7 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 	if ws == nil {
 		return false, nil
 	}
-	uidValue := pyrepr.Or(adapter.botIDValue(), dictGetOr(tokenData, "bot_id", ""))
+	uidValue := anyutil.Or(adapter.botIDValue(), dictGetOr(tokenData, "bot_id", ""))
 	msgID := uuid.NewString()
 	version, err := baseVersion()
 	if err != nil {
@@ -240,7 +242,7 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 	if err != nil {
 		return false, err
 	}
-	source, err := encodeText(pyrepr.Or(tokenData["source"], "bot"), "the token source")
+	source, err := encodeText(anyutil.Or(tokenData["source"], "bot"), "the token source")
 	if err != nil {
 		return false, err
 	}
@@ -248,7 +250,7 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 	if err != nil {
 		return false, err
 	}
-	routeEnv, err := protoText(pyrepr.Or(adapter.routeEnv, dictGetOr(tokenData, "route_env", "")), "the route env")
+	routeEnv, err := protoText(anyutil.Or(adapter.routeEnv, dictGetOr(tokenData, "route_env", "")), "the route env")
 	if err != nil {
 		return false, err
 	}
@@ -256,7 +258,7 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 	if err != nil {
 		return false, err
 	}
-	if err := ws.SendBytes(frame); err != nil {
+	if err := ws.SendBinary(frame); err != nil {
 		return false, err
 	}
 	pkgLog().Debug(fmt.Sprintf("[%s] AUTH_BIND sent (msg_id=%s uid=%s)", name, msgID, uid))
@@ -268,7 +270,7 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 			return false, nil
 		}
 		rctx, cancel := context.WithTimeout(ctx, durationOf(remaining))
-		raw, err := ws.Recv(rctx)
+		received, err := ws.Receive(rctx)
 		timedOut := rctx.Err() != nil
 		cancel()
 		switch {
@@ -278,19 +280,18 @@ func (c *connectionManager) authenticate(ctx context.Context, tokenData map[stri
 			pkgLog().Error(fmt.Sprintf("[%s] AUTH_BIND timeout", name))
 			return false, nil
 		case err != nil:
-			pkgLog().Error(fmt.Sprintf("[%s] AUTH_BIND error: %s", name, errText(err)), "error", err)
+			pkgLog().Error(fmt.Sprintf("[%s] AUTH_BIND error: %s", name, err.Error()), "error", err)
 			return false, nil
 		}
-		data, isBytes := raw.([]byte)
-		if !isBytes {
+		if received.Type != websocketutil.Binary {
 			continue
 		}
-		msg, err := DecodeConnMsg(data)
+		msg, err := DecodeConnMsg(received.Data)
 		if err != nil {
 			continue
 		}
-		head, _ := msg.GetOr("head", nil).(*pyjson.Object)
-		if head == nil || !pyjson.Equal(head.GetOr("cmd_type", int64(-1)), CmdType["Response"]) || head.GetOr("cmd", "") != Cmd["AuthBind"] {
+		head, _ := msg.ValueOr("head", nil).(*jsonutil.Object)
+		if head == nil || !anyutil.Equal(head.ValueOr("cmd_type", int64(-1)), CmdType["Response"]) || head.ValueOr("cmd", "") != Cmd["AuthBind"] {
 			continue
 		}
 		connectID := c.extractConnectID(msg)
@@ -330,19 +331,19 @@ func (c *connectionManager) hasPending(msgID string) bool {
 }
 
 // Connection id of a decoded auth bind ack, empty when the ack carries an error code or no id
-func (c *connectionManager) extractConnectID(decoded *pyjson.Object) string {
-	data, _ := decoded.GetOr("data", []byte{}).([]byte)
+func (c *connectionManager) extractConnectID(decoded *jsonutil.Object) string {
+	data, _ := decoded.ValueOr("data", []byte{}).([]byte)
 	if len(data) == 0 {
 		return ""
 	}
 	name := c.adapter.Name()
 	fields, err := parseDict(data)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("[%s] Failed to extract connectId: %s", name, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Failed to extract connectId: %s", name, err.Error()))
 		return ""
 	}
 	if code := fields.GetVarint(1); !equalsInt(code, 0) {
-		pkgLog().Error(fmt.Sprintf("[%s] AuthBindRsp error: code=%s message=%s", name, pyrepr.Str(code), pyrepr.StrRepr(fields.GetString(2))))
+		pkgLog().Error(fmt.Sprintf("[%s] AuthBindRsp error: code=%s message=%s", name, anyutil.String(code), strconv.Quote(fields.GetString(2))))
 		return ""
 	}
 	return fields.GetString(3)
@@ -368,14 +369,14 @@ func (c *connectionManager) heartbeatLoop(ctx context.Context) error {
 		c.mu.Unlock()
 		frame, err := EncodePing(msgID)
 		if err == nil {
-			err = ws.SendBytes(frame)
+			err = ws.SendBinary(frame)
 		}
 		if err != nil {
 			c.mu.Lock()
 			delete(c.pendingAcks, msgID)
 			c.pendingPong = nil
 			c.mu.Unlock()
-			pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", name, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", name, err.Error()))
 			continue
 		}
 		pkgLog().Debug(fmt.Sprintf("[%s] PING sent (msg_id=%s)", name, msgID))
@@ -404,7 +405,7 @@ func (c *connectionManager) heartbeatLoop(ctx context.Context) error {
 				return nil
 			}
 		default:
-			pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", name, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat send failed: %s", name, err.Error()))
 		}
 	}
 	return nil
@@ -420,21 +421,18 @@ func (c *connectionManager) receiveLoop(ctx context.Context, ws wsConn) error {
 		return nil
 	}
 	for {
-		raw, err := ws.Recv(ctx)
+		msg, err := ws.Receive(ctx)
 		if err == nil {
-			if data, isBytes := raw.([]byte); isBytes {
-				c.handleFrame(ctx, data)
+			if msg.Type == websocketutil.Binary {
+				c.handleFrame(ctx, msg.Data)
 			}
 			continue
 		}
-		var closed *pywebsockets.ConnectionClosed
+		var closed *websocketutil.CloseError
 		switch {
-		case ctx.Err() != nil, pywebsockets.IsClosedOK(err):
+		case ctx.Err() != nil, websocketutil.IsCleanClose(err):
 		case errors.As(err, &closed):
-			code, reason := 1006, ""
-			if closed.Rcvd != nil {
-				code, reason = closed.Rcvd.Code, closed.Rcvd.Reason
-			}
+			code, reason := closed.Code, closed.Reason
 			pkgLog().Warn(fmt.Sprintf("[%s] WebSocket connection closed: code=%d reason=%s", name, code, reason))
 			if noReconnectCloseCodes[code] {
 				pkgLog().Error(fmt.Sprintf("[%s] Close code %d is non-recoverable, NOT reconnecting", name, code))
@@ -443,7 +441,7 @@ func (c *connectionManager) receiveLoop(ctx context.Context, ws wsConn) error {
 				c.scheduleReconnect(ctx)
 			}
 		default:
-			pkgLog().Warn(fmt.Sprintf("[%s] receive_loop exited: %s", name, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] receive_loop exited: %s", name, err.Error()))
 			c.scheduleReconnect(ctx)
 		}
 		return nil
@@ -455,29 +453,29 @@ func (c *connectionManager) handleFrame(ctx context.Context, raw []byte) {
 	name := c.adapter.Name()
 	msg, err := DecodeConnMsg(raw)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("[%s] Failed to decode frame: %s", name, errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to decode frame: %s", name, err.Error()))
 		return
 	}
-	head, _ := msg.GetOr("head", nil).(*pyjson.Object)
+	head, _ := msg.ValueOr("head", nil).(*jsonutil.Object)
 	if head == nil {
-		head = pyjson.NewObject()
+		head = jsonutil.NewObject()
 	}
-	cmdType := head.GetOr("cmd_type", int64(-1))
-	cmd := pyrepr.Str(head.GetOr("cmd", ""))
-	msgID := pyrepr.Str(head.GetOr("msg_id", ""))
-	data, _ := msg.GetOr("data", []byte{}).([]byte)
+	cmdType := head.ValueOr("cmd_type", int64(-1))
+	cmd := anyutil.String(head.ValueOr("cmd", ""))
+	msgID := anyutil.String(head.ValueOr("msg_id", ""))
+	data, _ := msg.ValueOr("data", []byte{}).([]byte)
 	switch {
-	case pyjson.Equal(cmdType, CmdType["Response"]):
+	case anyutil.Equal(cmdType, CmdType["Response"]):
 		c.handleResponse(name, cmd, msgID, head, data)
-	case pyjson.Equal(cmdType, CmdType["Push"]):
+	case anyutil.Equal(cmdType, CmdType["Push"]):
 		c.handlePush(ctx, name, cmd, msgID, head, data)
 	default:
-		pkgLog().Debug(fmt.Sprintf("[%s] Ignoring frame: cmd_type=%s cmd=%s msg_id=%s", name, pyrepr.Str(cmdType), cmd, msgID))
+		pkgLog().Debug(fmt.Sprintf("[%s] Ignoring frame: cmd_type=%s cmd=%s msg_id=%s", name, anyutil.String(cmdType), cmd, msgID))
 	}
 }
 
 // Settles the pong of a ping ack and the waiting request of any other response
-func (c *connectionManager) handleResponse(name, cmd, msgID string, head *pyjson.Object, data []byte) {
+func (c *connectionManager) handleResponse(name, cmd, msgID string, head *jsonutil.Object, data []byte) {
 	switch {
 	case cmd == Cmd["Ping"]:
 		pkgLog().Debug(fmt.Sprintf("[%s] HEARTBEAT_ACK received (msg_id=%s)", name, msgID))
@@ -494,7 +492,7 @@ func (c *connectionManager) handleResponse(name, cmd, msgID string, head *pyjson
 		pkgLog().Debug(fmt.Sprintf("[%s] Heartbeat ACK received: cmd=%s msg_id=%s", name, cmd, msgID))
 	case msgID != "" && c.hasPending(msgID):
 		if fut := c.popPending(msgID); fut != nil {
-			result := pyjson.ObjectOf("head", head)
+			result := jsonutil.ObjectOf("head", head)
 			if len(data) > 0 {
 				result.Set("data", data)
 			}
@@ -506,22 +504,22 @@ func (c *connectionManager) handleResponse(name, cmd, msgID string, head *pyjson
 }
 
 // Acks a push that asks for it, then settles its waiting request or buffers it as an inbound message
-func (c *connectionManager) handlePush(ctx context.Context, name, cmd, msgID string, head *pyjson.Object, data []byte) {
+func (c *connectionManager) handlePush(ctx context.Context, name, cmd, msgID string, head *jsonutil.Object, data []byte) {
 	pkgLog().Info(fmt.Sprintf("[%s] Push received: cmd=%s msg_id=%s data_len=%d", name, cmd, msgID, len(data)))
-	if ws := c.socket(); pyrepr.Truthy(head.GetOr("need_ack", false)) && ws != nil {
+	if ws := c.socket(); anyutil.IsTrue(head.ValueOr("need_ack", false)) && ws != nil {
 		frame, err := EncodePushAck(head)
 		if err == nil {
-			err = ws.SendBytes(frame)
+			err = ws.SendBinary(frame)
 		}
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("[%s] Failed to send PushAck: %s", name, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Failed to send PushAck: %s", name, err.Error()))
 		}
 	}
 	if msgID != "" && c.hasPending(msgID) {
 		if fut := c.popPending(msgID); fut != nil {
 			var result any
 			if len(data) == 0 {
-				result = pyjson.ObjectOf("head", head)
+				result = jsonutil.ObjectOf("head", head)
 			} else if push := DecodeInboundPush(data); push != nil {
 				result = push
 			}
@@ -537,17 +535,17 @@ func (c *connectionManager) handlePush(ctx context.Context, name, cmd, msgID str
 
 // Debounce key of a frame, its sender and group from JSON or protobuf, a fresh key when it names neither
 func extractSenderKey(raw []byte) string {
-	if text, err := pystr.DecodeUTF8(raw); err == nil {
-		if parsed, err := pyjson.Loads(text); err == nil {
+	if text, err := textutil.DecodeUTF8(raw); err == nil {
+		if parsed, err := jsonutil.Decode(text); err == nil {
 			if rawJSON, isDict := asDict(parsed); isDict {
-				if fromAccount, groupCode := jsonSenderFields(rawJSON); pyrepr.Truthy(fromAccount) {
-					return pyrepr.Str(fromAccount) + ":" + pyrepr.Str(groupCode)
+				if fromAccount, groupCode := jsonSenderFields(rawJSON); anyutil.IsTrue(fromAccount) {
+					return anyutil.String(fromAccount) + ":" + anyutil.String(groupCode)
 				}
 			}
 		}
 	}
 	if push := DecodeInboundPush(raw); push != nil && push.Len() > 0 {
-		return pyrepr.Str(push.GetOr("from_account", "")) + ":" + pyrepr.Str(push.GetOr("group_code", ""))
+		return anyutil.String(push.ValueOr("from_account", "")) + ":" + anyutil.String(push.ValueOr("group_code", ""))
 	}
 	return fmt.Sprintf("__unknown_%d", unknownSenderSeq.Add(1))
 }
@@ -604,7 +602,7 @@ func (c *connectionManager) sendBizRequest(ctx context.Context, encoded []byte, 
 		delete(c.pendingAcks, reqID)
 		c.mu.Unlock()
 	}()
-	if err := ws.SendBytes(encoded); err != nil {
+	if err := ws.SendBinary(encoded); err != nil {
 		return nil, err
 	}
 	return fut.wait(ctx, timeout)
@@ -668,7 +666,7 @@ func (c *connectionManager) doReconnect(ctx context.Context) (bool, error) {
 		case err != nil && isTimeout(err):
 			pkgLog().Warn(fmt.Sprintf("[%s] Reconnect attempt %d timed out", name, attempt+1))
 		case err != nil:
-			pkgLog().Warn(fmt.Sprintf("[%s] Reconnect attempt %d failed: %s", name, attempt+1, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Reconnect attempt %d failed: %s", name, attempt+1, err.Error()))
 		case !dialed:
 			pkgLog().Warn(fmt.Sprintf("[%s] Re-auth failed on attempt %d", name, attempt+1))
 		default:
@@ -697,7 +695,7 @@ func (c *connectionManager) cleanupWS(ctx context.Context) {
 	closed := make(chan struct{})
 	go func() {
 		defer close(closed)
-		_ = recovered(ws.Close)
+		_ = recovered(func() { _ = ws.Close() })
 	}()
 	bound := time.NewTimer(durationOf(wsCloseTimeoutS))
 	defer bound.Stop()

@@ -3,7 +3,7 @@ package gateway
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestRepairsExplicitComputerUseMediaPathFromJSONResult(t *testing.T) {
@@ -93,7 +93,7 @@ func TestCompressionFallbackSlicesFromLastUserMessage(t *testing.T) {
 
 func pyDumps(t *testing.T, v any) string {
 	t.Helper()
-	s, err := pyjson.Dumps(v)
+	s, err := jsonutil.Encode(v)
 	if err != nil {
 		t.Fatal(err)
 	}

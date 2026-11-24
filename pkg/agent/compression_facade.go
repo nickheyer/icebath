@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One attempt's entry on the commit fence stack, the stall retry swaps its fence in place
@@ -129,7 +129,7 @@ func syncPersistedMarkers(target, source []map[string]any) {
 func runUnderProgressTimeout(ctx context.Context, a *AIAgent, run facadeRun, messages []map[string]any, systemMessage *string, activeFence *CompressionCommitFence, registration *commitFenceRegistration, idleTimeout, totalCeiling float64, approxTokens *int) ([]map[string]any, string, error) {
 	snapshotWorker := func(sameTurnFallbackRecovery bool) compressionWorker {
 		return func(ctx context.Context, fence *CompressionCommitFence) ([]map[string]any, string, error) {
-			snapshot, _ := pycopy.DeepCopy(messages).([]map[string]any)
+			snapshot, _ := any(anyutil.Clone(messages)).([]map[string]any)
 			if snapshot == nil {
 				snapshot = []map[string]any{}
 			}

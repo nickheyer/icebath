@@ -4,18 +4,17 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 )
 
 var _ gateway.RunnerIngressContract = (*GatewayRunner)(nil)
 
 // Adapter map of a served profile, created on first use
-func (r *GatewayRunner) ProfileAdapterMap(name string) *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (r *GatewayRunner) ProfileAdapterMap(name string) *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	return r.profileAdapterMap(name)
 }
 
 // Adapter maps of the served secondary profiles by profile name
-func (r *GatewayRunner) ProfileAdapters() *pydict.Dict[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]] {
+func (r *GatewayRunner) ProfileAdapters() *orderedutil.Map[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]] {
 	return r.profileAdapters
 }
 

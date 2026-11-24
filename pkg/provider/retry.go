@@ -13,7 +13,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var jitterCounter atomic.Uint64
@@ -161,7 +161,7 @@ func IsZAICodingOverload(baseURL, model string, err error) bool {
 		status, text = apiErr.StatusCode, errorText(apiErr)
 	case errors.As(err, &sdkErr) && sdkErr != nil:
 		status = sdkErr.StatusCode
-		text = strings.ToLower(sdkErr.Message + " " + sdkErr.Message + " " + pyrepr.Str(sdkErr.Body) +
+		text = strings.ToLower(sdkErr.Message + " " + sdkErr.Message + " " + anyutil.String(sdkErr.Body) +
 			fmt.Sprintf(" <Response [%d %s]>", sdkErr.StatusCode, http.StatusText(sdkErr.StatusCode)))
 	}
 	if status != 429 {

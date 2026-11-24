@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -38,7 +38,7 @@ func workerTerminalTimeoutEnv(maxRuntimeSeconds *int64, currentTimeout *string) 
 	}
 	existing := int64(0)
 	if currentTimeout != nil && *currentTimeout != "" {
-		if n, err := pyIntOf(strings.TrimSpace(*currentTimeout)); err == nil {
+		if n, err := cellIntOf(strings.TrimSpace(*currentTimeout)); err == nil {
 			existing = n
 		}
 	}
@@ -64,7 +64,7 @@ func workerTerminalTimeouts(ctx context.Context, maxRuntimeSeconds *int64) map[s
 // Python truthiness of any decoded value including ordered objects and lists
 func pyTruthy(v any) bool {
 	switch x := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x != nil && x.Len() > 0
 	case []any:
 		return len(x) > 0
@@ -81,7 +81,7 @@ func relativeAge(ts any, now int64) string {
 	if ts == nil {
 		return ""
 	}
-	n, err := pyIntOf(ts)
+	n, err := cellIntOf(ts)
 	if err != nil {
 		return ""
 	}
@@ -124,7 +124,7 @@ func ctxMetadataLine(metadata any) *string {
 	if !pyTruthy(metadata) {
 		return nil
 	}
-	text, err := pyjson.Dumps(metadata, pyjson.EnsureASCII(false), pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(metadata, jsonutil.SortKeys())
 	if err != nil {
 		return nil
 	}

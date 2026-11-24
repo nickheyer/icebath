@@ -20,6 +20,9 @@ import (
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // fileOperations is the file backend every terminal environment exposes to the file tools
@@ -369,7 +372,9 @@ func isLikelyBinary(path, contentSample string) bool {
 // Image extensions whose files redirect to the vision tool
 var imageExtensions = setOf(".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico")
 
-func isImagePath(path string) bool { return imageExtensions[pyLower(pySplitextExt(path))] }
+func isImagePath(path string) bool {
+	return imageExtensions[cases.Lower(language.Und).String(pySplitextExt(path))]
+}
 
 // Numbered page with a compact gutter, each line clamped to tool_output.max_line_length characters
 func (s *shellFileOps) addLineNumbers(content string, startLine int) string {
@@ -456,11 +461,7 @@ func (s *shellFileOps) escapeNativeToolArg(arg string) string {
 // Atomic write through a same directory temp and rename, natively on a local POSIX host
 func (s *shellFileOps) atomicWrite(path, content string) *ExecuteResult {
 	if s.nativeReadEnabled() {
-		data, err := pystr.SurrogateEscapeEncode(content)
-		if err != nil {
-			panic(err)
-		}
-		if msg := nativeAtomicWrite(s.nativePath(path), data); msg != "" {
+		if msg := nativeAtomicWrite(s.nativePath(path), []byte(content)); msg != "" {
 			return &ExecuteResult{Stdout: msg, ExitCode: 1}
 		}
 		return &ExecuteResult{}

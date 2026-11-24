@@ -73,8 +73,8 @@ func TestUninstallPathTraversal(t *testing.T) {
 }
 
 func TestBundleHashFilenameSensitivity(t *testing.T) {
-	a, _ := bundleContentHash(textBundle("test", "SKILL.md", "hello", "scripts/run.sh", "world"))
-	b, _ := bundleContentHash(textBundle("test", "SKILL.md", "world", "scripts/run.sh", "hello"))
+	a := bundleContentHash(textBundle("test", "SKILL.md", "hello", "scripts/run.sh", "world"))
+	b := bundleContentHash(textBundle("test", "SKILL.md", "world", "scripts/run.sh", "hello"))
 	if a == b {
 		t.Fatal("swapped file contents hashed identically")
 	}
@@ -100,13 +100,13 @@ func TestSkillHashSymmetry(t *testing.T) {
 		}
 		return nil
 	})
-	if got, _ := bundleContentHash(b); got != ContentHash(skill) {
+	if got := bundleContentHash(b); got != ContentHash(skill) {
 		t.Fatalf("bundle %s disk %s", got, ContentHash(skill))
 	}
 	posix := &SkillBundle{Name: "s", Files: []BundleFile{{Path: "references/a.md", Data: []byte("a")}, {Path: "SKILL.md", Data: []byte("s")}}}
 	windows := &SkillBundle{Name: "s", Files: []BundleFile{{Path: `references\a.md`, Data: []byte("a")}, {Path: "SKILL.md", Data: []byte("s")}}}
-	p, _ := bundleContentHash(posix)
-	w, _ := bundleContentHash(windows)
+	p := bundleContentHash(posix)
+	w := bundleContentHash(windows)
 	if p != w {
 		t.Fatalf("posix %s windows %s", p, w)
 	}

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const tavilyClientName = "icebath-agent"
@@ -22,7 +22,7 @@ func tavilyHeaders(apiKey string) [][2]string {
 }
 
 // POST to Tavily and parse the JSON answer, a non 2xx body raised verbatim so its text reaches the model
-func tavilyRequest(ctx context.Context, env *Env, endpoint string, payload *pyjson.Object, apiKey *string) (any, error) {
+func tavilyRequest(ctx context.Context, env *Env, endpoint string, payload *jsonutil.Object, apiKey *string) (any, error) {
 	if apiKey == nil {
 		key, err := providerEnv(ctx, env, "TAVILY_API_KEY")
 		if err != nil {
@@ -94,7 +94,7 @@ func normalizeTavilyDocuments(response any) ([]*WebPage, error) {
 		}
 		title, _ := pyGetDefault(r, "title", "")
 		raw, _ := pyGetDefault(r, "raw_content", "")
-		if !pyTruthy(raw) {
+		if !anyutil.IsTrue(raw) {
 			raw, _ = pyGetDefault(r, "content", "")
 		}
 		docs = append(docs, webDocument(pyStrField(u), pyStrField(title), pyStrField(raw), ""))
@@ -122,7 +122,7 @@ func normalizeTavilyDocuments(response any) ([]*WebPage, error) {
 		return nil, err
 	}
 	for _, u := range rows {
-		docs = append(docs, tavilyFailedDocument(pyrepr.Str(u), "extraction failed"))
+		docs = append(docs, tavilyFailedDocument(anyutil.String(u), "extraction failed"))
 	}
 	if docs == nil {
 		docs = []*WebPage{}
@@ -168,7 +168,7 @@ func (p *tavilyProvider) Search(ctx context.Context, env *Env, query string, lim
 			return searchFail(missing), nil
 		}
 		envLog(env).Info("Tavily "+prefix+"search", "query", query, "limit", limit)
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("query", query)
 		payload.Set("max_results", min(limit, searchLimitCap))
 		payload.Set("include_raw_content", false)
@@ -196,7 +196,7 @@ func (p *tavilyProvider) Extract(ctx context.Context, env *Env, urls []string, f
 		for i, u := range urls {
 			list[i] = u
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("urls", list)
 		payload.Set("include_images", false)
 		data, err := tavilyRequest(ctx, env, "extract", payload, &key)

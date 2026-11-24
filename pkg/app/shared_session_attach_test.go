@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/activesessions"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Live lease of a session in the registry of a profile home, released when the case ends
@@ -30,7 +29,7 @@ func attachLease(t *testing.T, home, sessionID string, metadata map[string]any) 
 // Resolved path of a profile home, the text the handshake carries
 func resolvedHome(t *testing.T, p string) string {
 	t.Helper()
-	resolved, err := pypath.Resolve(p)
+	resolved, err := pathutil.Resolve(p)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +103,7 @@ func TestDiscoveryRefusesUnsupportedOwnerWithoutReleasingLease(t *testing.T) {
 		t.Fatalf("message %q", err.Error())
 	}
 	entries, err := activesessions.RegistrySnapshot(ctx, home, false)
-	if err != nil || len(entries) != 1 || entries[0].GetOr("lease_id", nil) != lease.LeaseID {
+	if err != nil || len(entries) != 1 || entries[0].Value("lease_id") != lease.LeaseID {
 		t.Fatalf("lease not kept %v %v", entries, err)
 	}
 	registry := filepath.Join(home, "runtime", "active_sessions.json")

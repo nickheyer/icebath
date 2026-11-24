@@ -12,8 +12,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Set by the first stale custom base URL warning so later resolutions stay quiet
@@ -116,7 +115,7 @@ func bareModel(model string) string {
 
 // Bare slug of a kwargs model value, an AttributeError for a truthy value that is not a string
 func auxBareModelOf(v any) (string, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return bareModel(""), nil
 	}
 	s, ok := v.(string)
@@ -215,11 +214,11 @@ func RememberTemperatureRejection(provider, baseURL string, rejectedKwargs map[s
 // Temperature policy as omit, a fixed value, or neither when the caller's value stands
 func auxFixedTemperatureForModel(model, baseURL, provider string) (omit bool, fixed *float64, err error) {
 	if isKimiModel(model) {
-		pkgLog().Debug("Omitting temperature for Kimi model " + pyrepr.Repr(model) + " (server-managed)")
+		pkgLog().Debug("Omitting temperature for Kimi model " + anyutil.Quote(model) + " (server-managed)")
 		return true, nil, nil
 	}
 	if isOpenAIDefaultTemperatureOnly(model) || geminiSamplingDeprecated(bareModel(model)) {
-		pkgLog().Debug("Omitting temperature for " + pyrepr.Repr(model) + " (default-only, or Gemini 3.6+ ignores sampling)")
+		pkgLog().Debug("Omitting temperature for " + anyutil.Quote(model) + " (default-only, or Gemini 3.6+ ignores sampling)")
 		return true, nil, nil
 	}
 	route, err := auxRouteKey(provider, baseURL)
@@ -230,7 +229,7 @@ func auxFixedTemperatureForModel(model, baseURL, provider string) (omit bool, fi
 	rejected := auxTemperatureRejectedRoutes[auxTemperatureRoute{route, bareModel(model)}]
 	auxTemperatureRejectedMu.Unlock()
 	if rejected {
-		pkgLog().Debug("Omitting temperature for " + pyrepr.Repr(model) + " (route rejected it earlier)")
+		pkgLog().Debug("Omitting temperature for " + anyutil.Quote(model) + " (route rejected it earlier)")
 		return true, nil, nil
 	}
 	if auxIsArceeTrinityThinking(model) {
@@ -282,7 +281,7 @@ type auxRecencyPart struct {
 	text string
 }
 
-var auxRecencySplitRe = regexp.MustCompile(`\p{Nd}+(?:\.\p{Nd}+)?`)
+var auxRecencySplitRe = regexp.MustCompile(`[0-9]+(?:\.[0-9]+)?`)
 
 // Sort key comparing digit runs numerically so a family's newest release sorts last
 func auxModelRecencyKey(modelID string) []auxRecencyPart {
@@ -293,7 +292,8 @@ func auxModelRecencyKey(modelID string) []auxRecencyPart {
 		if text := lowered[pos:m[0]]; text != "" {
 			parts = append(parts, auxRecencyPart{kind: 0, text: text})
 		}
-		parts = append(parts, auxRecencyPart{kind: 1, num: auxPyFloatDigits(lowered[m[0]:m[1]])})
+		num, _ := strconv.ParseFloat(lowered[m[0]:m[1]], 64)
+		parts = append(parts, auxRecencyPart{kind: 1, num: num})
 		pos = m[1]
 	}
 	if tail := lowered[pos:]; tail != "" {
@@ -302,21 +302,7 @@ func auxModelRecencyKey(modelID string) []auxRecencyPart {
 	return parts
 }
 
-// Python float of a run of Unicode decimal digits with at most one dot
-func auxPyFloatDigits(run string) float64 {
-	var b strings.Builder
-	for _, r := range run {
-		if d, ok := pystr.DecimalValue(r); ok {
-			b.WriteByte(byte('0' + d))
-		} else {
-			b.WriteRune(r)
-		}
-	}
-	f, _ := strconv.ParseFloat(b.String(), 64)
-	return f
-}
-
-// Python tuple ordering of two recency keys
+// Order of two recency keys part by part, text before numbers where the kinds differ, the shorter key first on a tie
 func auxCompareRecency(a, b []auxRecencyPart) int {
 	for i := 0; i < len(a) && i < len(b); i++ {
 		x, y := a[i], b[i]

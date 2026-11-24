@@ -8,12 +8,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 //go:embed locales/*.yaml
@@ -338,7 +339,7 @@ func T(ctx context.Context, key, lang string, kwargs map[string]any) string {
 		value, ok = loadCatalog(ctx, DefaultLanguage, h)[key]
 	}
 	if !ok {
-		pkgLog().Debug(fmt.Sprintf("i18n miss: key=%s lang=%s", pyrepr.StrRepr(key), pyrepr.StrRepr(target)))
+		pkgLog().Debug(fmt.Sprintf("i18n miss: key=%s lang=%s", strconv.Quote(key), strconv.Quote(target)))
 		value = key
 	}
 	if len(kwargs) == 0 {
@@ -348,7 +349,7 @@ func T(ctx context.Context, key, lang string, kwargs map[string]any) string {
 	if err != nil {
 		var fe *FormatError
 		if errors.As(err, &fe) && (fe.Class == "KeyError" || fe.Class == "IndexError" || fe.Class == "ValueError") {
-			pkgLog().Warn(fmt.Sprintf("i18n format failed for key=%s lang=%s kwargs=%s: %s", pyrepr.StrRepr(key), pyrepr.StrRepr(target), pyrepr.Repr(kwargs), fe.Msg))
+			pkgLog().Warn(fmt.Sprintf("i18n format failed for key=%s lang=%s kwargs=%s: %s", strconv.Quote(key), strconv.Quote(target), anyutil.Quote(kwargs), fe.Msg))
 			return value
 		}
 		panic(err)

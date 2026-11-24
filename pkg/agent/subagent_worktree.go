@@ -14,9 +14,9 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -167,8 +167,8 @@ func createSubagentWorktree(ctx context.Context, parentCwd, subagentID string) m
 	return map[string]string{"path": wtPath, "branch": branch, "repo_root": repoRoot, "base_commit": baseCommit}
 }
 
-func worktreeBasePayload(info map[string]string) *pyjson.Object {
-	o := pyjson.NewObject()
+func worktreeBasePayload(info map[string]string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("path", info["path"])
 	o.Set("branch", info["branch"])
 	o.Set("commits", 0)
@@ -178,7 +178,7 @@ func worktreeBasePayload(info map[string]string) *pyjson.Object {
 }
 
 // Flags a worktree payload as uninspected so the parent never reads defaults as no work
-func markWorktreePayloadUnproven(payload *pyjson.Object, reason, unmeasured string) *pyjson.Object {
+func markWorktreePayloadUnproven(payload *jsonutil.Object, reason, unmeasured string) *jsonutil.Object {
 	path, _ := payload.Get("path")
 	branch, _ := payload.Get("branch")
 	payload.Set("inspection_failed", true)
@@ -191,12 +191,12 @@ func markWorktreePayloadUnproven(payload *pyjson.Object, reason, unmeasured stri
 }
 
 // Complete uninspected payload for a finalize that raised
-func unprovenWorktreePayload(info map[string]string, reason string) *pyjson.Object {
+func unprovenWorktreePayload(info map[string]string, reason string) *jsonutil.Object {
 	return markWorktreePayloadUnproven(worktreeBasePayload(info), reason, "commits/dirty")
 }
 
 // Inspects a finished child worktree, pruning an empty clean tree and archiving one with work
-func finalizeSubagentWorktree(info map[string]string, prune bool) (*pyjson.Object, error) {
+func finalizeSubagentWorktree(info map[string]string, prune bool) (*jsonutil.Object, error) {
 	path, branch, baseCommit := info["path"], info["branch"], info["base_commit"]
 	payload := worktreeBasePayload(info)
 	if st, err := os.Stat(path); path == "" || err != nil || !st.IsDir() {
@@ -290,7 +290,7 @@ func finalizeSubagentWorktree(info map[string]string, prune bool) (*pyjson.Objec
 }
 
 // Snapshots a finished tree with work into an archive ref and removes it, keeping the branch
-func archiveFinishedWorktree(info map[string]string, payload *pyjson.Object) *pyjson.Object {
+func archiveFinishedWorktree(info map[string]string, payload *jsonutil.Object) *jsonutil.Object {
 	sweep := tools.SweepSettings()
 	if !sweep.ArchiveDirty {
 		return payload

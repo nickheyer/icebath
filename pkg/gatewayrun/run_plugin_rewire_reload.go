@@ -3,15 +3,16 @@ package gatewayrun
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Wait for a just enabled plugin's MCP servers, inside the caller's 30 s socket timeout
@@ -25,10 +26,10 @@ func reloadPluginsVerb(ctx context.Context, r *GatewayRunner, loop gateway.Event
 	return func(params map[string]any) (any, error) {
 		gatewayHome := home.Dir(ctx)
 		requestedText := gatewayHome
-		if raw := params["home"]; pyrepr.Truthy(raw) {
-			requestedText = pyrepr.Str(raw)
+		if raw := params["home"]; anyutil.IsTrue(raw) {
+			requestedText = anyutil.String(raw)
 		}
-		requested := pypath.Expanduser(pypath.PathStr(requestedText))
+		requested := pathutil.ExpandUser(filepath.Clean(requestedText))
 		requestedKey := home.Key(requested)
 		profileName := ""
 		if requestedKey != home.Key(gatewayHome) {

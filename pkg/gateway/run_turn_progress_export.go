@@ -3,16 +3,16 @@ package gateway
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Tool start payload of the lifecycle contract with the call id, name and bounded args
-func ToolLifecyclePayload(ctx context.Context, callID, toolName, args any) *pyjson.Object {
+func ToolLifecyclePayload(ctx context.Context, callID, toolName, args any) *jsonutil.Object {
 	return toolLifecyclePayload(ctx, callID, toolName, args)
 }
 
 // Tool complete payload with the error flag and the text the call printed
-func ToolCompletePayload(ctx context.Context, callID, toolName, args, result any, isError *bool) *pyjson.Object {
+func ToolCompletePayload(ctx context.Context, callID, toolName, args, result any, isError *bool) *jsonutil.Object {
 	return toolCompletePayload(ctx, callID, toolName, args, result, isError)
 }
 
@@ -20,7 +20,7 @@ func ToolCompletePayload(ctx context.Context, callID, toolName, args, result any
 func SeedCompressionCount(live *LiveSession, agent any) { seedCompressionCount(live, agent) }
 
 // Captured result of the executing admission, nil outside an execution
-func ExecutionResultOf(ctx context.Context) *pyjson.Object { return executionResultOf(ctx) }
+func ExecutionResultOf(ctx context.Context) *jsonutil.Object { return executionResultOf(ctx) }
 
 // Whether the active launch policy shows reasoning for a session with no pick of its own
 func LaunchShowsReasoningActive(ctx context.Context) bool {
@@ -35,7 +35,7 @@ func ConfigDefaultLaunch(ctx context.Context) bool {
 }
 
 // Committed CLI turn fields of the admission whose event id is the message id, empty for any other turn
-func CLITurn(ctx context.Context, messageID any) *pyjson.Object { return cliTurn(ctx, messageID) }
+func CLITurn(ctx context.Context, messageID any) *jsonutil.Object { return cliTurn(ctx, messageID) }
 
 // Generation the session is executing, false when no turn holds the running claim
 func (a *SessionAuthority) ExecutingGeneration(sessionID string) (int64, bool) {
@@ -60,7 +60,7 @@ func AdmissionAuthorOf(ctx context.Context) any { return admissionAuthorOf(ctx) 
 func IsAPIRequestOptionMissing(value any) bool { return value == apiRequestOptionMissing }
 
 // Failed never run result of a session whose working folder is gone
-func WorkspaceUnavailableResult(ctx context.Context, policy *LocalSessionPolicy) *pyjson.Object {
+func WorkspaceUnavailableResult(ctx context.Context, policy *LocalSessionPolicy) *jsonutil.Object {
 	return workspaceUnavailableResult(ctx, policy)
 }
 
@@ -71,6 +71,6 @@ func (p *LocalSessionPolicy) CurrentModel(ctx context.Context, a *SessionAuthori
 }
 
 // Session info frame of a local session as its viewers render it
-func LocalSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*pyjson.Object, error) {
+func LocalSessionInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*jsonutil.Object, error) {
 	return localSessionInfo(ctx, a, ref)
 }

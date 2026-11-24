@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One owner request answered as a plain map within a budget, zero the default
@@ -26,7 +26,7 @@ type PreparedMutations interface {
 // Wiring of the core gateway client modules, bound by wiring.go init, RunModelSetup by cmd/icebath where the CLI runs
 var (
 	NewPreparedMutations   func() PreparedMutations
-	SlashMutation          func(command, arg string) (string, *pyjson.Object, error)
+	SlashMutation          func(command, arg string) (string, *jsonutil.Object, error)
 	ModelRefusalText       func(refusal map[string]any, confirmed bool) string
 	ConfirmationTitle      func(refusal map[string]any) string
 	CommandRefusal         func(command string) string
@@ -34,7 +34,7 @@ var (
 	ReplayGapOwedReply     func(shown, final string) string
 	ReplayGapPendingStatus func(pending []any, admission any) any
 	ReplayGapSettled       func(receipt map[string]any) *bool
-	EnvLaunchFlags         func() *pyjson.Object
+	EnvLaunchFlags         func() *jsonutil.Object
 	ResolveCommand         func(name string) (string, bool)
 	RunModelSetup          func(ctx context.Context) int
 )

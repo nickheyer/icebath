@@ -6,20 +6,20 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Per response stream delivery flags plus the per goroutine writer token a claim stores
 type streamDeliveryState struct {
 	nativeReasoningStreamed     bool
 	streamReasoningHooksEnabled *bool
-	streamWriterTLS             *pythread.Local
+	streamWriterTLS             *syncutil.GoroutineLocal[any]
 }
 
 // Calls a callback with the arguments, true when it ran without panicking
@@ -339,7 +339,7 @@ func (a *AIAgent) ensureStreamWriterState() {
 		a.streamWriterLock = &sync.Mutex{}
 	}
 	if a.streamWriterTLS == nil {
-		a.streamWriterTLS = &pythread.Local{}
+		a.streamWriterTLS = &syncutil.GoroutineLocal[any]{}
 	}
 }
 
@@ -458,7 +458,7 @@ func commentaryItems(msg map[string]any) []string {
 
 // Types a held turn's model row hidden when it has visible text, the wire copy unchanged
 func withholdHeldRow(a *AIAgent, msg map[string]any) map[string]any {
-	if a.holdStream && !pyrepr.Truthy(msg["display_kind"]) && a.interimAssistantVisibleText(msg) != "" {
+	if a.holdStream && !anyutil.IsTrue(msg["display_kind"]) && a.interimAssistantVisibleText(msg) != "" {
 		msg["display_kind"] = "hidden"
 	}
 	return msg
@@ -482,7 +482,7 @@ func publishHeldFinalRow(a *AIAgent, final map[string]any, finalResponse any, jo
 		meta[CommentaryWithheld] = true
 		final["display_metadata"] = meta
 	}
-	if content := final["content"]; joined && pyrepr.Truthy(content) && !reflect.DeepEqual(content, finalResponse) {
+	if content := final["content"]; joined && anyutil.IsTrue(content) && !reflect.DeepEqual(content, finalResponse) {
 		if _, has := final["api_content"]; !has {
 			final["api_content"] = content
 		}

@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var goLiveMu sync.Mutex
@@ -151,7 +151,7 @@ func ActivationSummaries(ctx context.Context, m *Manager) []map[string]any {
 
 // Dict of a truthy value or an empty dict, an AttributeError for any other truthy value
 func pyDictOr(v any) (map[string]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return map[string]any{}, nil
 	}
 	if m, ok := v.(map[string]any); ok {
@@ -162,7 +162,7 @@ func pyDictOr(v any) (map[string]any, error) {
 
 // Items iterating a truthy value yields, none for a falsy one, a TypeError for a non iterable
 func pyItemsOr(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	switch x := v.(type) {
@@ -190,7 +190,7 @@ func pyItemsOr(v any) ([]any, error) {
 
 // Length of a truthy value or zero, a TypeError for a value without a length
 func pyLenOr(v any) (int, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, nil
 	}
 	switch x := v.(type) {
@@ -235,8 +235,8 @@ func findActivation(summaries any, name string) (map[string]any, error) {
 			return nil, fmt.Errorf("an activation summary is %s, expected a mapping", errchain.Kind(e))
 		}
 		key := ""
-		if k := entry["key"]; pyrepr.Truthy(k) {
-			key = pyrepr.Str(k)
+		if k := entry["key"]; anyutil.IsTrue(k) {
+			key = anyutil.String(k)
 		}
 		leaf := key[strings.LastIndex(key, "/")+1:]
 		if n, isStr := entry["name"].(string); (isStr && n == name) || key == name || leaf == name {
@@ -271,7 +271,7 @@ func activatePluginNow(ctx context.Context, name string) (map[string]any, error)
 // Nudges the running gateway and merges its activation of the plugin with the one already made here
 func gatewayActivation(ctx context.Context, name string, activation any) (map[string]any, error) {
 	answer := reloadRunningGateway(ctx)
-	reloaded := answer != nil && pyrepr.Truthy(answer["reloaded"])
+	reloaded := answer != nil && anyutil.IsTrue(answer["reloaded"])
 	var gatewayActivation map[string]any
 	if reloaded {
 		found, err := findActivation(answer["activations"], name)
@@ -318,11 +318,11 @@ func reloadRunningGateway(ctx context.Context) map[string]any {
 			return answer, err
 		}
 		root := home.Root()
-		resolvedRoot, err := pypath.Resolve(root)
+		resolvedRoot, err := pathutil.Resolve(root)
 		if err != nil {
 			return nil, err
 		}
-		resolvedHome, err := pypath.Resolve(h)
+		resolvedHome, err := pathutil.Resolve(h)
 		if err != nil {
 			return nil, err
 		}
@@ -343,14 +343,14 @@ func reloadRunningGateway(ctx context.Context) map[string]any {
 
 // The sentence printed after a disable, saying whether the running gateway unloaded the plugin
 func gatewayReloadHint(answer map[string]any, name string) string {
-	if len(answer) > 0 && pyrepr.Truthy(answer["reloaded"]) {
+	if len(answer) > 0 && anyutil.IsTrue(answer["reloaded"]) {
 		return "The running gateway reloaded its plugins and unloaded " + name + "; platform hooks it already " +
 			"wired up stay until a gateway restart (icebath gateway restart)."
 	}
 	if answer != nil {
 		reason := "no reason given"
-		if e := answer["error"]; pyrepr.Truthy(e) {
-			reason = pyrepr.Str(e)
+		if e := answer["error"]; anyutil.IsTrue(e) {
+			reason = anyutil.String(e)
 		}
 		return "The running gateway refused to reload its plugins: " + reason + ".\n" +
 			"Only the saved config changed; restart the gateway serving this profile to apply it:\n" +
@@ -389,7 +389,7 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 		}
 		portable = m.GetPortableMCPServers()
 		if activation != nil {
-			skills = pluginSkills(lctx, pyrepr.Str(activation["key"]))
+			skills = pluginSkills(lctx, anyutil.String(activation["key"]))
 		}
 		return nil, nil
 	})
@@ -419,7 +419,7 @@ func goLive(ctx context.Context, name string) (map[string]any, error) {
 		return nil, err
 	}
 	if s := installedServices(); s != nil && s.RefreshPluginSessions != nil && (len(servers) > 0 || note != "") {
-		key := pyrepr.Str(activation["key"])
+		key := anyutil.String(activation["key"])
 		if err := callGuarded(func() error { return s.RefreshPluginSessions(ctx, home.Dir(ctx), key, note) }); err != nil {
 			pkgLog().Warn(fmt.Sprintf("open chats were not refreshed after activating %s", errchain.Show(name)), "error", err)
 		}
@@ -438,7 +438,7 @@ func gatewayPresent(ctx context.Context) (bool, error) {
 	}
 	homes := map[string]bool{}
 	for _, h := range []string{home.Dir(ctx), home.Root()} {
-		resolved, err := pypath.Resolve(h)
+		resolved, err := pathutil.Resolve(h)
 		if err != nil {
 			return false, err
 		}
@@ -493,14 +493,14 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 		if !ok {
 			return "", fmt.Errorf("a live MCP server entry is %s, expected a mapping", errchain.Kind(raw))
 		}
-		if pyrepr.Truthy(s["connected"]) {
+		if anyutil.IsTrue(s["connected"]) {
 			connected = append(connected, s)
 		} else {
 			failed = append(failed, s)
 		}
 	}
 	var lines []string
-	if len(connected) > 0 || pyrepr.Truthy(live["skills"]) {
+	if len(connected) > 0 || anyutil.IsTrue(live["skills"]) {
 		tools := 0
 		for _, s := range connected {
 			n, err := pyLenOr(s["tools"])
@@ -521,12 +521,12 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 			return "", errors.New("a failed MCP server entry has no name")
 		}
 		reason := "unknown error"
-		if e := s["error"]; pyrepr.Truthy(e) {
-			reason = pyrepr.Str(e)
+		if e := s["error"]; anyutil.IsTrue(e) {
+			reason = anyutil.String(e)
 		}
-		lines = append(lines, "MCP server "+pyrepr.Str(serverName)+" not connected: "+reason)
+		lines = append(lines, "MCP server "+anyutil.String(serverName)+" not connected: "+reason)
 	}
-	if missing := act["missing_dependencies"]; pyrepr.Truthy(missing) {
+	if missing := act["missing_dependencies"]; anyutil.IsTrue(missing) {
 		deps, err := pyStrItems(missing)
 		if err != nil {
 			return "", err
@@ -541,7 +541,7 @@ func activationHint(ctx context.Context, result map[string]any) (string, error) 
 		}
 		return strings.Join(append(lines, hint), "\n"), nil
 	}
-	if !pyrepr.Truthy(result["gateway_reloaded"]) {
+	if !anyutil.IsTrue(result["gateway_reloaded"]) {
 		if len(lines) > 0 {
 			return strings.Join(lines, "\n"), nil
 		}

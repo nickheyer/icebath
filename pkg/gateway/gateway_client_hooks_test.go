@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Reader with frame hooks logs a malformed frame and keeps answering, the ui-tui link behaviour
@@ -19,7 +19,7 @@ func TestFrameHooksReadPastMalformedFrames(t *testing.T) {
 	var malformed, inbound []string
 	client := NewGatewayClient(owner)
 	client.SetFrameHooks(FrameHooks{
-		Inbound:   func(raw string, _ *pyjson.Object) { mu.Lock(); inbound = append(inbound, raw); mu.Unlock() },
+		Inbound:   func(raw string, _ *jsonutil.Object) { mu.Lock(); inbound = append(inbound, raw); mu.Unlock() },
 		Malformed: func(raw string) { mu.Lock(); malformed = append(malformed, raw); mu.Unlock() },
 	})
 	client.Start()

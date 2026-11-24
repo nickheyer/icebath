@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -30,20 +30,20 @@ type fakePage struct {
 	writes         []string
 }
 
-func (p *fakePage) focusPage(origin, _ string, _ float64) *pyjson.Object {
+func (p *fakePage) focusPage(origin, _ string, _ float64) *jsonutil.Object {
 	current, _ := vault.NormalizeOrigin(p.href)
-	return pyjson.ObjectOf("ok", origin != "" && current == origin, "url", p.href)
+	return jsonutil.ObjectOf("ok", origin != "" && current == origin, "url", p.href)
 }
 
-func (p *fakePage) evaluateRuntime(expression string, _, _ bool, _ float64) *pyjson.Object {
+func (p *fakePage) evaluateRuntime(expression string, _, _ bool, _ float64) *jsonutil.Object {
 	if strings.TrimSpace(expression) == "window.location.href" {
-		return pyjson.ObjectOf("ok", true, "result", p.href)
+		return jsonutil.ObjectOf("ok", true, "result", p.href)
 	}
 	if strings.Contains(expression, "expectedOrigin") {
 		p.writes = append(p.writes, expression)
-		return pyjson.ObjectOf("ok", true, "result", `{"filled": 1}`)
+		return jsonutil.ObjectOf("ok", true, "result", `{"filled": 1}`)
 	}
-	return pyjson.ObjectOf("ok", true, "result", p.controls)
+	return jsonutil.ObjectOf("ok", true, "result", p.controls)
 }
 
 // The real local backend recording which secret kinds were resolved
@@ -101,7 +101,7 @@ func onPage(t *testing.T, page *fakePage) {
 
 func guardLogin(t *testing.T, store *vault.VaultStore, otp bool) vault.VaultItemMeta {
 	t.Helper()
-	secret := pyjson.ObjectOf("identifier_type", "username", "identifier", "tester", "password", guardPassword)
+	secret := jsonutil.ObjectOf("identifier_type", "username", "identifier", "tester", "password", guardPassword)
 	if otp {
 		secret.Set("otp_secret", guardOTPSeed)
 	}
@@ -177,7 +177,7 @@ func TestFillPasswordIsNotResolvedForAPageOnAnotherOrigin(t *testing.T) {
 
 func TestFillCardIsRefusedBeforeTheUserIsAskedToConfirm(t *testing.T) {
 	v := guardFixture(t)
-	meta, err := v.store.AddItem("payment", "Card", pyjson.ObjectOf("card_number", "4111111111111111", "cardholder_name", "Test User",
+	meta, err := v.store.AddItem("payment", "Card", jsonutil.ObjectOf("card_number", "4111111111111111", "cardholder_name", "Test User",
 		"exp_month", "07", "exp_year", "2029", "cvc", "123", "billing_postal_code", "94107"), "https://shop.example")
 	if err != nil {
 		t.Fatal(err)
@@ -198,7 +198,7 @@ func TestFillCardIsRefusedBeforeTheUserIsAskedToConfirm(t *testing.T) {
 
 func TestFillAddressIsNotResolvedForAPageOnAnotherOrigin(t *testing.T) {
 	v := guardFixture(t)
-	meta, err := v.store.AddItem("address", "Home", pyjson.ObjectOf("address_line1", "1 Test Way", "city", "Testville", "state", "CA",
+	meta, err := v.store.AddItem("address", "Home", jsonutil.ObjectOf("address_line1", "1 Test Way", "city", "Testville", "state", "CA",
 		"postal_code", "94107", "country", "US"), "https://shop.example")
 	if err != nil {
 		t.Fatal(err)

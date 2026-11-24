@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Codex singleton store resolver taking force refresh and refresh if expiring
@@ -37,7 +37,7 @@ func (a *AIAgent) tryRefreshCodexClientCredentials(ctx context.Context, force bo
 		return false
 	}
 	singletonKey := ""
-	if v := singletonNow["api_key"]; pyrepr.Truthy(v) {
+	if v := singletonNow["api_key"]; anyutil.IsTrue(v) {
 		singletonKey = strings.TrimSpace(pyStrValue(v))
 	}
 	oldKey := strings.TrimSpace(a.apiKey)

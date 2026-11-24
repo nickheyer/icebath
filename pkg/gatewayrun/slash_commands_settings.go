@@ -10,7 +10,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
@@ -164,8 +163,8 @@ func (r *GatewayRunner) handleVerboseCommand(ctx context.Context, event *gateway
 	}
 	description := i18n.T(ctx, "gateway.verbose.mode_"+newMode, "", nil)
 	if _, err := settings.Set(ctx, settings.PlatformDisplay.EntryKey(platformKey)+".tool_progress", newMode, settings.Global); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to save tool_progress mode: %s", pyrepr.ExceptionMessage(err)))
-		return description + "\n" + i18n.T(ctx, "gateway.verbose.save_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		pkgLog().Warn(fmt.Sprintf("Failed to save tool_progress mode: %s", err.Error()))
+		return description + "\n" + i18n.T(ctx, "gateway.verbose.save_failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	return description + "\n" + i18n.T(ctx, "gateway.verbose.saved_suffix", "", map[string]any{"platform": platformKey}), nil
 }
@@ -249,8 +248,8 @@ func (r *GatewayRunner) handleFooterCommand(ctx context.Context, event *gateway.
 		key = settings.PlatformDisplay.EntryKey(platformKey) + ".runtime_footer.enabled"
 	}
 	if _, err := settings.Set(ctx, key, newState, settings.Global); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to save runtime_footer.enabled: %s", pyrepr.ExceptionMessage(err)))
-		return i18n.T(ctx, "gateway.config_save_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		pkgLog().Warn(fmt.Sprintf("Failed to save runtime_footer.enabled: %s", err.Error()))
+		return i18n.T(ctx, "gateway.config_save_failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	example := ""
 	if newState {

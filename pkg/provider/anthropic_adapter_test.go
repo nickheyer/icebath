@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestAnthropicIsOAuthToken(t *testing.T) {
@@ -130,7 +130,7 @@ func TestAnthropicConvertTools(t *testing.T) {
 	if len(got) != 1 || got[0]["name"] != "search" || got[0]["description"] != "Search the web" {
 		t.Fatalf("converted tool wrong: %v", got)
 	}
-	props := pyjson.Plain(got[0]["input_schema"]).(map[string]any)["properties"].(map[string]any)
+	props := jsonutil.Plain(got[0]["input_schema"]).(map[string]any)["properties"].(map[string]any)
 	if props["query"].(map[string]any)["type"] != "string" {
 		t.Fatalf("schema lost: %v", got[0])
 	}
@@ -141,7 +141,7 @@ func TestAnthropicConvertTools(t *testing.T) {
 
 func TestAnthropicConvertToolsStripsNullableUnion(t *testing.T) {
 	tools := anthMsgs(t, `[{"type":"function","function":{"name":"run","description":"Run command","parameters":{"type":"object","properties":{"command":{"type":"string"},"timeout":{"anyOf":[{"type":"integer"},{"type":"null"}],"default":null}},"required":["command"]}}}]`)
-	schema := pyjson.Plain(convertToolsToAnthropic(tools)[0]["input_schema"]).(map[string]any)
+	schema := jsonutil.Plain(convertToolsToAnthropic(tools)[0]["input_schema"]).(map[string]any)
 	anthMustEqualJSON(t, schema["properties"].(map[string]any)["timeout"], map[string]any{"type": "integer", "default": nil})
 	anthMustEqualJSON(t, schema["required"], []any{"command"})
 }

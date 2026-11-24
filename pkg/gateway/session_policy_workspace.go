@@ -4,8 +4,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registers the frozen workspace as the docker terminal cwd of the turn task, unbinding it off a host mount
@@ -13,15 +13,15 @@ func BindTurnWorkspace(env *tools.Env, policy *LocalSessionPolicy, taskID string
 	if policy == nil || taskID == "" {
 		return nil
 	}
-	decoded, err := pyjson.Loads(policy.TerminalJSON)
+	decoded, err := jsonutil.Decode(policy.TerminalJSON)
 	if err != nil {
 		return err
 	}
-	obj, isDict := decoded.(*pyjson.Object)
+	obj, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
 		return &PyError{Kind: "AttributeError", Msg: "the turn workspace record is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
-	terminal := pyjson.Plain(obj).(map[string]any)
+	terminal := jsonutil.Plain(obj).(map[string]any)
 	if strings.ToLower(strings.TrimSpace(routeStr(terminal["TERMINAL_ENV"]))) != "docker" || !terminalUsesHostCwd(terminal) {
 		tools.UnbindTurnWorkspace(env, taskID)
 		return nil

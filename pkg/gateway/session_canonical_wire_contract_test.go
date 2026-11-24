@@ -8,16 +8,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Socket double for a connection whose frames the case never reads
 type wireContractTransport struct{}
 
-func (wireContractTransport) Write(*pyjson.Object) bool { return true }
-func (wireContractTransport) Close()                    {}
+func (wireContractTransport) Write(*jsonutil.Object) bool { return true }
+func (wireContractTransport) Close()                      {}
 
 // Owned authority over a fresh store holding session s live, with a verified owner connection
 func newWireContractOwner(t *testing.T) (context.Context, *state.SessionDB, *AuthorityConnection) {
@@ -40,9 +40,9 @@ func newWireContractOwner(t *testing.T) (context.Context, *state.SessionDB, *Aut
 }
 
 // Plain JSON tree of a dispatch reply
-func wireReply(t *testing.T, reply *pyjson.Object) map[string]any {
+func wireReply(t *testing.T, reply *jsonutil.Object) map[string]any {
 	t.Helper()
-	plain, ok := pyjson.Plain(reply).(map[string]any)
+	plain, ok := jsonutil.Plain(reply).(map[string]any)
 	if !ok {
 		t.Fatalf("reply %v is not an object", reply)
 	}
@@ -86,10 +86,10 @@ func TestDeclaredParamsGateCanonicalVerbsBeforeTheirHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	revision := row.GetOr("runtime_revision", nil)
-	mutate := func(extra ...any) *pyjson.Object {
-		params := pyjson.ObjectOf("session_id", "s", "request_id", "r1", "expected_revision", revision,
-			"operation", "rename", "payload", pyjson.ObjectOf("title", "Declared"))
+	revision := row.ValueOr("runtime_revision", nil)
+	mutate := func(extra ...any) *jsonutil.Object {
+		params := jsonutil.ObjectOf("session_id", "s", "request_id", "r1", "expected_revision", revision,
+			"operation", "rename", "payload", jsonutil.ObjectOf("title", "Declared"))
 		for i := 0; i+1 < len(extra); i += 2 {
 			params.Set(extra[i].(string), extra[i+1])
 		}
@@ -97,14 +97,14 @@ func TestDeclaredParamsGateCanonicalVerbsBeforeTheirHandlers(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		method string
-		params *pyjson.Object
+		params *jsonutil.Object
 		field  string
 	}{
-		{"prompt.receipt", pyjson.ObjectOf("session_id", "s", "admission_id", "a", "bogus", int64(1)), "bogus"},
-		{"prompt.cancel", pyjson.ObjectOf("session_id", "s"), "admission_id"},
+		{"prompt.receipt", jsonutil.ObjectOf("session_id", "s", "admission_id", "a", "bogus", int64(1)), "bogus"},
+		{"prompt.cancel", jsonutil.ObjectOf("session_id", "s"), "admission_id"},
 		{"session.mutate", mutate("expected_revison", revision), "expected_revison"},
 	} {
-		reply, err := connection.Dispatch(ctx, pyjson.ObjectOf("id", int64(1), "method", tc.method, "params", tc.params))
+		reply, err := connection.Dispatch(ctx, jsonutil.ObjectOf("id", int64(1), "method", tc.method, "params", tc.params))
 		if err != nil {
 			t.Fatalf("%s: %v", tc.method, err)
 		}
@@ -130,7 +130,7 @@ func TestDeclaredParamsGateCanonicalVerbsBeforeTheirHandlers(t *testing.T) {
 			t.Fatalf("%s: field %s not named in %v", tc.method, tc.field, response)
 		}
 	}
-	applied, err := connection.Dispatch(ctx, pyjson.ObjectOf("id", int64(2), "method", "session.mutate", "params", mutate()))
+	applied, err := connection.Dispatch(ctx, jsonutil.ObjectOf("id", int64(2), "method", "session.mutate", "params", mutate()))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func TestDeclaredParamsGateCanonicalVerbsBeforeTheirHandlers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if title := row.GetOr("title", nil); title != "Declared" {
+	if title := row.ValueOr("title", nil); title != "Declared" {
 		t.Fatalf("title %v", title)
 	}
 }
@@ -175,11 +175,11 @@ func TestCanonicalResumeRejectsUnknownKeysAndValidatesRealSnapshot(t *testing.T)
 			t.Fatalf("%s is served without a declared contract", name)
 		}
 	}
-	for i, params := range []*pyjson.Object{
-		pyjson.ObjectOf("session_id", "s", "execution_generaton", int64(100)),
-		pyjson.ObjectOf("session_id", []any{"s"}),
+	for i, params := range []*jsonutil.Object{
+		jsonutil.ObjectOf("session_id", "s", "execution_generaton", int64(100)),
+		jsonutil.ObjectOf("session_id", []any{"s"}),
 	} {
-		reply, err := viewer.Dispatch(ctx, pyjson.ObjectOf("id", int64(1), "method", "session.resume", "params", params))
+		reply, err := viewer.Dispatch(ctx, jsonutil.ObjectOf("id", int64(1), "method", "session.resume", "params", params))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -195,7 +195,7 @@ func TestCanonicalResumeRejectsUnknownKeysAndValidatesRealSnapshot(t *testing.T)
 	if subscribed != 0 {
 		t.Fatalf("refused resumes subscribed %d sessions", subscribed)
 	}
-	reply, err := viewer.Dispatch(ctx, pyjson.ObjectOf("id", int64(2), "method", "session.resume", "params", pyjson.ObjectOf("session_id", "s")))
+	reply, err := viewer.Dispatch(ctx, jsonutil.ObjectOf("id", int64(2), "method", "session.resume", "params", jsonutil.ObjectOf("session_id", "s")))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -247,6 +247,6 @@ func TestCanonicalResultValidationCatchesAHandlerContractViolation(t *testing.T)
 			t.Fatalf("dispatch raised %v, want a ContractViolation naming ping", violation)
 		}
 	}()
-	_, _ = viewer.Dispatch(ctx, pyjson.ObjectOf("id", int64(1), "method", "ping", "params", pyjson.NewObject()))
+	_, _ = viewer.Dispatch(ctx, jsonutil.ObjectOf("id", int64(1), "method", "ping", "params", jsonutil.NewObject()))
 	t.Fatal("a result outside its contract dispatched without a ContractViolation")
 }

@@ -4,8 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // User facing text for a manual compress skipped by the compression lock, naming a confirmed holder
@@ -50,7 +51,7 @@ func SummarizeManualCompression(beforeMessages, afterMessages []map[string]any, 
 	for i, m := range afterMessages {
 		after[i] = m
 	}
-	noop := pyrepr.Equal(after, before)
+	noop := anyutil.Equal(after, before)
 	aborted, refused, fallback := state.LastCompressAborted, state.LastCompressRefusedWouldGrow, state.LastSummaryFallbackUsed
 	failureReason := state.LastSummaryError
 	if strings.TrimSpace(failureReason) == "" {
@@ -82,18 +83,17 @@ func SummarizeManualCompression(beforeMessages, afterMessages []map[string]any, 
 				"compression rewrites the transcript into denser summaries.")
 		}
 	}
-	b, _ := pyrepr.Format(beforeTokens, ",")
-	a, _ := pyrepr.Format(afterTokens, ",")
+	b, a := textutil.Thousands(int64(beforeTokens)), textutil.Thousands(int64(afterTokens))
 	tokenLine := "Approx request size: ~" + b + " → ~" + a + " tokens"
 	if noop && afterTokens == beforeTokens || refused {
 		tokenLine = "Approx request size: ~" + b + " tokens (unchanged)"
 	}
 	if failureReason != "" && (aborted || fallback) {
-		prior := "None"
+		prior := ""
 		if note != nil {
-			prior = *note
+			prior = *note + " "
 		}
-		setNote(prior + " Reason: " + tools.RedactSensitiveTextWith(nil, strings.TrimSpace(failureReason), tools.RedactOptions{Force: true}))
+		setNote(prior + "Reason: " + tools.RedactSensitiveTextWith(nil, strings.TrimSpace(failureReason), tools.RedactOptions{Force: true}))
 	}
 	return ManualCompressionFeedback{Noop: noop, Aborted: aborted, RefusedWouldGrow: refused, FallbackUsed: fallback,
 		Headline: headline, TokenLine: tokenLine, Note: note}

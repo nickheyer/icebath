@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session store of the isolated home with each session holding count user messages
@@ -102,7 +102,7 @@ func TestSessionsExportRejectsOversizedSingleBeforeTouchingOutput(t *testing.T) 
 	consoleExportLimit(t, h, 2)
 	var materialized []string
 	saved := consoleExportSession
-	consoleExportSession = func(db *state.SessionDB, ctx context.Context, id string, compacted, inactive bool) (*pyjson.Object, error) {
+	consoleExportSession = func(db *state.SessionDB, ctx context.Context, id string, compacted, inactive bool) (*jsonutil.Object, error) {
 		materialized = append(materialized, id)
 		return saved(db, ctx, id, compacted, inactive)
 	}
@@ -158,7 +158,7 @@ func TestSessionsExportAllRejectsSingleOversizedSession(t *testing.T) {
 	consoleExportLimit(t, h, 3)
 	var calls []string
 	saved := consoleExportAll
-	consoleExportAll = func(db *state.SessionDB, ctx context.Context, source string, compacted, inactive bool) ([]*pyjson.Object, error) {
+	consoleExportAll = func(db *state.SessionDB, ctx context.Context, source string, compacted, inactive bool) ([]*jsonutil.Object, error) {
 		calls = append(calls, source)
 		return nil, errors.New("export_all must not run before every guard passes")
 	}

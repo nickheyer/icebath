@@ -4,26 +4,26 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func obj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func obj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
 	return o
 }
 
-func contentText(t *testing.T, c pyacp.ToolCallContent) string {
+func contentText(t *testing.T, c acputil.ToolCallContent) string {
 	t.Helper()
-	cc, ok := c.(*pyacp.ContentToolCallContent)
+	cc, ok := c.(*acputil.ContentToolCallContent)
 	if !ok {
 		t.Fatalf("content %T", c)
 	}
-	return cc.Content.(*pyacp.TextContentBlock).Text
+	return cc.Content.(*acputil.TextContentBlock).Text
 }
 
 func TestToolKindMapUnknownToolReturnsOtherKind(t *testing.T) {
@@ -48,7 +48,7 @@ func TestBuildToolTitleUnknownToolUsesName(t *testing.T) {
 func TestBuildToolTitleTitleDerivesFromDisplayPreview(t *testing.T) {
 	for _, c := range []struct {
 		name string
-		args *pyjson.Object
+		args *jsonutil.Object
 	}{
 		{"terminal", obj("command", "git status --short")},
 		{"read_file", obj("path", "/etc/hosts", "offset", int64(10))},
@@ -58,7 +58,7 @@ func TestBuildToolTitleTitleDerivesFromDisplayPreview(t *testing.T) {
 		{"skill_view", obj("name", "github", "file_path", "references/x.md")},
 	} {
 		limit := 80
-		preview := tools.BuildToolPreview(nil, c.name, pyjson.Plain(c.args).(map[string]any), &limit)
+		preview := tools.BuildToolPreview(nil, c.name, jsonutil.Plain(c.args).(map[string]any), &limit)
 		if !strings.Contains(BuildToolTitle(c.name, c.args), preview) {
 			t.Fatalf("%s preview %q", c.name, preview)
 		}
@@ -74,8 +74,8 @@ func TestBuildToolStartForPatch(t *testing.T) {
 
 func TestBuildToolStartAutoApprovedEditStartShowsDiffContent(t *testing.T) {
 	args := obj("path", "/tmp/acp.txt", "old_string", "old", "new_string", "new")
-	res := BuildToolStart("tc-auto-edit", "patch", args, &tools.EditProposal{ToolName: "patch", Path: "/tmp/acp.txt", OldText: pyacp.Ptr("old\n"), NewText: "new\n"})
-	d, ok := res.Content[0].(*pyacp.FileEditToolCallContent)
+	res := BuildToolStart("tc-auto-edit", "patch", args, &tools.EditProposal{ToolName: "patch", Path: "/tmp/acp.txt", OldText: new("old\n"), NewText: "new\n"})
+	d, ok := res.Content[0].(*acputil.FileEditToolCallContent)
 	if *res.Kind != "edit" || len(res.Content) != 1 || !ok || d.Path != "/tmp/acp.txt" || *d.OldText != "old\n" || d.NewText != "new\n" {
 		t.Fatalf("start %#v", res)
 	}
@@ -89,21 +89,21 @@ func TestBuildToolStartForBrowserNavigate(t *testing.T) {
 }
 
 func TestBuildToolCompleteForTerminal(t *testing.T) {
-	res := BuildToolComplete("tc-2", "terminal", pyacp.Ptr("total 42\ndrwxr-xr-x 2 root root 4096 ..."), nil, nil, false)
+	res := BuildToolComplete("tc-2", "terminal", new("total 42\ndrwxr-xr-x 2 root root 4096 ..."), nil, nil, false)
 	if *res.Status != "completed" || len(res.Content) < 1 || !strings.Contains(contentText(t, res.Content[0]), "total 42") || res.RawOutput != nil {
 		t.Fatalf("complete %#v", res)
 	}
 }
 
 func TestBuildToolCompleteMarksReturncodeNonzeroAsFailed(t *testing.T) {
-	res := BuildToolComplete("tc-fail", "execute_code", pyacp.Ptr(`{"output": "bad", "returncode": 2}`), nil, nil, false)
+	res := BuildToolComplete("tc-fail", "execute_code", new(`{"output": "bad", "returncode": 2}`), nil, nil, false)
 	if *res.Status != "failed" {
 		t.Fatal(*res.Status)
 	}
 }
 
 func TestBuildToolCompleteForSearchFilesFormatsMatches(t *testing.T) {
-	res := BuildToolComplete("tc-search", "search_files", pyacp.Ptr(`{"total_count":2,"matches":[{"path":"README.md","line":3,"content":"TODO: fix this"},{"path":"src/app.py","line":9,"content":"needle"}],"truncated":true}`), nil, nil, false)
+	res := BuildToolComplete("tc-search", "search_files", new(`{"total_count":2,"matches":[{"path":"README.md","line":3,"content":"TODO: fix this"},{"path":"src/app.py","line":9,"content":"needle"}],"truncated":true}`), nil, nil, false)
 	text := contentText(t, res.Content[0])
 	if !strings.Contains(text, "README.md:3") || !strings.Contains(text, "TODO: fix this") || !strings.Contains(text, "Results truncated") || res.RawOutput != nil {
 		t.Fatalf("text %q", text)
@@ -111,7 +111,7 @@ func TestBuildToolCompleteForSearchFilesFormatsMatches(t *testing.T) {
 }
 
 func TestBuildToolCompleteGenericallyFormatsUnknownJsonDictWithoutRawOutput(t *testing.T) {
-	res := BuildToolComplete("tc-recall-search", "memory_archive_search", pyacp.Ptr(`{"results":[{"id":"obs-1","status":"active","content":"Recall should render as a readable summary."}],"trust":"lower-trust archive evidence"}`), nil, nil, false)
+	res := BuildToolComplete("tc-recall-search", "memory_archive_search", new(`{"results":[{"id":"obs-1","status":"active","content":"Recall should render as a readable summary."}],"trust":"lower-trust archive evidence"}`), nil, nil, false)
 	text := contentText(t, res.Content[0])
 	if !strings.Contains(text, "lower-trust archive evidence") || !strings.Contains(text, "Recall should render as a readable summary") || strings.Contains(text, `{"results"`) || res.RawOutput != nil {
 		t.Fatalf("text %q", text)

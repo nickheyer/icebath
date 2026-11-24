@@ -15,9 +15,9 @@ import (
 	"golang.org/x/text/encoding/unicode"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Console writing into a buffer with color off
@@ -34,8 +34,8 @@ func cuSetupConsole() (*cliui.Console, *bytes.Buffer) {
 // Contract status answering a fixed state for any binary
 func cuFixedContract(t *testing.T, fields map[string]any) {
 	t.Helper()
-	cuSwap(t, &cuaDriverContractStatus, func(context.Context, *tools.Env, string) (*pyjson.Object, error) {
-		o := pyjson.NewObject()
+	cuSwap(t, &cuaDriverContractStatus, func(context.Context, *tools.Env, string) (*jsonutil.Object, error) {
+		o := jsonutil.NewObject()
 		keys := make([]string, 0, len(fields))
 		for k := range fields {
 			keys = append(keys, k)

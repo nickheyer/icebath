@@ -15,9 +15,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const configLoadersConfig = "platform_toolsets: {cli: []}\n" +
@@ -183,11 +183,11 @@ func configLoadersGoroutine() int64 {
 	return id
 }
 
-func (o configLoadersOwner) mutate(t *testing.T, ref SessionRef, requestID, operation string) *pyjson.Object {
+func (o configLoadersOwner) mutate(t *testing.T, ref SessionRef, requestID, operation string) *jsonutil.Object {
 	t.Helper()
-	result, err := mutateSession(o.ctx, o.a, envRefsActor(o.a), ref, pyjson.ObjectOf(
+	result, err := mutateSession(o.ctx, o.a, envRefsActor(o.a), ref, jsonutil.ObjectOf(
 		"session_id", ref.SessionID, "request_id", requestID, "expected_revision", 0, "expected_generation", 0,
-		"operation", operation, "payload", pyjson.ObjectOf()))
+		"operation", operation, "payload", jsonutil.ObjectOf()))
 	if err != nil {
 		t.Fatal(err)
 	}

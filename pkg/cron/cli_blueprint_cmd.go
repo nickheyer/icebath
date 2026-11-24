@@ -3,12 +3,13 @@ package cron
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydifflib"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	diffutil "github.com/nickheyer/icebath/pkg/utils/diff"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // BlueprintCommandResult is the reply text of one blueprint command and the seed for a guided agent turn
@@ -112,7 +113,7 @@ func matchBlueprint(ctx context.Context, query string) (*AutomationBlueprint, []
 	}
 	close := func() []AutomationBlueprint {
 		var out []AutomationBlueprint
-		for _, k := range pydifflib.GetCloseMatches(q, order, 3, 0.6) {
+		for _, k := range diffutil.CloseMatches(q, order, 3, 0.6) {
 			out = append(out, byKey[k])
 		}
 		return out
@@ -147,12 +148,12 @@ func buildBlueprintSeed(b *AutomationBlueprint) string {
 		if len(s.Options) > 0 {
 			opts := make([]string, len(s.Options))
 			for i, o := range s.Options {
-				opts[i] = pyrepr.Str(o)
+				opts[i] = anyutil.String(o)
 			}
 			bits += " — one of: " + strings.Join(opts, ", ")
 		}
 		if str, isStr := s.Default.(string); s.Default != nil && (!isStr || str != "") {
-			bits += " [default: " + pyrepr.Str(s.Default) + "]"
+			bits += " [default: " + anyutil.String(s.Default) + "]"
 		}
 		if s.Optional {
 			bits += " (optional)"
@@ -164,7 +165,7 @@ func buildBlueprintSeed(b *AutomationBlueprint) string {
 	}
 	presets := make([]string, len(weekdayPresetOrder))
 	for i, k := range weekdayPresetOrder {
-		presets[i] = pyrepr.StrRepr(k) + ": " + pyrepr.StrRepr(weekdayPresets[k])
+		presets[i] = strconv.Quote(k) + ": " + strconv.Quote(weekdayPresets[k])
 	}
 	lines = append(lines, "", "Once you have my answers, create the job by calling the cronjob tool with action='create'. "+
 		"Build the schedule as a cron expression from this template: `"+b.ScheduleTemplate+"` (fill {minute}/{hour} from the chosen time, "+
@@ -205,7 +206,7 @@ func blueprintFmtNoMatch(ctx context.Context, query string) string {
 		keys = append(keys, r.Key)
 	}
 	msg := "No automation blueprint matches '" + query + "'."
-	if near := pydifflib.GetCloseMatches(strings.ToLower(query), keys, 3, 0.4); len(near) > 0 {
+	if near := diffutil.CloseMatches(strings.ToLower(query), keys, 3, 0.4); len(near) > 0 {
 		msg += " Did you mean: " + strings.Join(near, ", ") + "?"
 	}
 	return msg + " Run /blueprint to see the catalog."
@@ -221,7 +222,7 @@ func blueprintManageHint(surface string) string {
 
 // Lists, matches, seeds a guided setup or fills and schedules a blueprint for the home
 func HandleBlueprintCommand(ctx context.Context, h, args string, origin map[string]any, surface string) (BlueprintCommandResult, error) {
-	tokens, err := pyshlex.SplitPOSIX(args, false)
+	tokens, err := shellutil.Split(args)
 	if err != nil {
 		tokens = strings.Fields(args)
 	}
@@ -263,16 +264,16 @@ func HandleBlueprintCommand(ctx context.Context, h, args string, origin map[stri
 		return BlueprintCommandResult{Text: "Failed to create the job: " + err.Error()}, nil
 	}
 	sched := job.ScheduleDisplay
-	if v, ok := spec.Vals["schedule"]; sched == "" && ok {
-		sched = pyrepr.Str(v)
+	if v, ok := spec.Get("schedule"); sched == "" && ok {
+		sched = anyutil.String(v)
 	}
 	text := "Scheduled '" + bp.Title + "'"
 	if sched != "" {
 		text += " (" + sched + ")"
 	}
 	deliver := "origin"
-	if v, ok := spec.Vals["deliver"]; ok {
-		deliver = pyrepr.Str(v)
+	if v, ok := spec.Get("deliver"); ok {
+		deliver = anyutil.String(v)
 	}
 	return BlueprintCommandResult{Text: text + ", delivering to " + deliver + ". " + blueprintManageHint(surface)}, nil
 }

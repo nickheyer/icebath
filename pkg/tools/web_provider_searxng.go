@@ -2,12 +2,12 @@ package tools
 
 import (
 	"context"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type searxngProvider struct{ baseWebProvider }
@@ -23,7 +23,7 @@ func (p *searxngProvider) Search(ctx context.Context, env *Env, query string, li
 		return searchFail("SEARXNG_URL is not set"), nil
 	}
 	data, failure := httpGetJSON(ctx, env, "SearXNG", base+"/search",
-		pyhttpx.Params{{"q", query}, {"format", "json"}, {"pageno", "1"}},
+		url.Values{"q": {query}, "format": {"json"}, "pageno": {"1"}},
 		[][2]string{{"Accept", "application/json"}}, 15*time.Second, "SearXNG at "+base)
 	if failure != nil {
 		return failure, nil
@@ -42,7 +42,7 @@ func (p *searxngProvider) Search(ctx context.Context, env *Env, query string, li
 		if err != nil {
 			return nil, err
 		}
-		if scores[i], err = pyint.Float(score); err != nil {
+		if scores[i], err = anyutil.ToFloat(score); err != nil {
 			return nil, err
 		}
 	}
@@ -74,6 +74,3 @@ func (p *searxngProvider) SetupSchema() map[string]any {
 func NewSearXNGWebProvider() WebProvider {
 	return &searxngProvider{baseWebProvider{name: "searxng", display: "SearXNG", keyEnv: "SEARXNG_URL"}}
 }
-
-// Class name the registry log and type errors print, the plugin provider class
-func (*searxngProvider) PyTypeName() string { return "SearXNGWebSearchProvider" }

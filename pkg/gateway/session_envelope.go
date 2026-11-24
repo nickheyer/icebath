@@ -3,15 +3,15 @@ package gateway
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Adapter metadata keys of an ordinary WhatsApp inbound that cross native admission
@@ -38,8 +38,8 @@ type nativeAuthorizationRunner interface {
 // Keys of a mapping value, false for any other value
 func mappingKeys(value any) ([]string, bool) {
 	switch v := value.(type) {
-	case *pyjson.Object:
-		return v.Keys, true
+	case *jsonutil.Object:
+		return v.Keys(), true
 	case map[string]any:
 		keys := make([]string, 0, len(v))
 		for key := range v {
@@ -51,10 +51,10 @@ func mappingKeys(value any) ([]string, bool) {
 }
 
 // JSON projection of the adapter metadata a native replay keeps, false when the event must be refused
-func nativeMetadata(event *MessageEvent) (*pyjson.Object, bool) {
+func nativeMetadata(event *MessageEvent) (*jsonutil.Object, bool) {
 	metadata := event.Metadata
 	if len(metadata) == 0 {
-		return pyjson.NewObject(), true
+		return jsonutil.NewObject(), true
 	}
 	if event.Source == nil || event.Source.Platform != PlatformWhatsApp {
 		return nil, false
@@ -71,7 +71,7 @@ func nativeMetadata(event *MessageEvent) (*pyjson.Object, bool) {
 			return nil, false
 		}
 	}
-	if owner := metadata["whatsapp_from_owner"]; owner != nil && !pyjson.Equal(owner, true) {
+	if owner := metadata["whatsapp_from_owner"]; owner != nil && !anyutil.Equal(owner, true) {
 		return nil, false
 	}
 	if native != nil {
@@ -85,19 +85,19 @@ func nativeMetadata(event *MessageEvent) (*pyjson.Object, bool) {
 			}
 		}
 	}
-	projected := pyjson.NewObject()
+	projected := jsonutil.NewObject()
 	for _, key := range []string{"whatsapp_native_type", "whatsapp_from_owner"} {
 		if value, has := metadata[key]; has {
 			projected.Set(key, value)
 		}
 	}
 	if native != nil {
-		encoded, err := pyjson.Dumps(native, pyjson.EnsureASCII(false), pyjson.AllowNaN(false))
+		encoded, err := jsonutil.Encode(native)
 		if err != nil {
 			return nil, false
 		}
 		if len(encoded) <= whatsappNativeMaxBytes {
-			decoded, err := pyjson.Loads(encoded)
+			decoded, err := jsonutil.Decode(encoded)
 			if err != nil {
 				return nil, false
 			}
@@ -131,7 +131,7 @@ func dropRemoteMedia(event *MessageEvent) *MessageEvent {
 	urls, types := event.MediaURLs, event.MediaTypes
 	local := true
 	for _, url := range urls {
-		local = local && pypath.IsAbs(url)
+		local = local && filepath.IsAbs(url)
 	}
 	if mediaClause(event) != "" || local {
 		return event
@@ -142,7 +142,7 @@ func dropRemoteMedia(event *MessageEvent) *MessageEvent {
 		lines = append(lines, event.Text)
 	}
 	for index, url := range urls {
-		if pypath.IsAbs(url) {
+		if filepath.IsAbs(url) {
 			kept = append(kept, index)
 			continue
 		}
@@ -202,7 +202,7 @@ func mediaClause(event *MessageEvent) string {
 // True when a provenance value binds an upstream relay
 func provenanceBindsRelay(provenance any) bool {
 	switch v := provenance.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, has := v.Get("relay")
 		return v != nil && has
 	case map[string]any:
@@ -270,7 +270,7 @@ func autoSkillValid(skill any) bool {
 }
 
 // Wire dict of a validated native sender, every trust, authorization and adapter rule checked first
-func validateNative(ctx context.Context, runner AuthorityRunner, event *MessageEvent, provenance any, freshRoles bool) (*pyjson.Object, error) {
+func validateNative(ctx context.Context, runner AuthorityRunner, event *MessageEvent, provenance any, freshRoles bool) (*jsonutil.Object, error) {
 	source := event.Source
 	if clause := eventClause(runner, event, provenance, freshRoles); clause != "" {
 		return nil, refuseNative(event, "invalid_params", clause)
@@ -303,7 +303,7 @@ func validateNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 	}
 	encoded := source.ToDict()
 	encoded.Set("is_bot", source.IsBot)
-	wire, _ := pyjson.Plain(encoded).(map[string]any)
+	wire, _ := jsonutil.Plain(encoded).(map[string]any)
 	restored, err := SessionSourceFromDict(ctx, wire)
 	if err != nil {
 		return nil, err
@@ -341,7 +341,7 @@ func capturedProvenance(ctx context.Context, runner AuthorityRunner, event *Mess
 }
 
 // Durable payload of a native event, its identity frozen before the first yield and its media captured off the caller
-func prepareNative(ctx context.Context, runner AuthorityRunner, event *MessageEvent) (*pyjson.Object, error) {
+func prepareNative(ctx context.Context, runner AuthorityRunner, event *MessageEvent) (*jsonutil.Object, error) {
 	provenance, err := capturedProvenance(ctx, runner, event)
 	if err != nil {
 		return nil, err
@@ -422,7 +422,7 @@ func optIntAny(value *int64) any {
 }
 
 // Durable payload of a validated native event with its route, sender, context and captured media
-func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageEvent, provenance any, freshRoles bool, encodedSource *pyjson.Object, media []any) (*pyjson.Object, error) {
+func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageEvent, provenance any, freshRoles bool, encodedSource *jsonutil.Object, media []any) (*jsonutil.Object, error) {
 	if encodedSource == nil {
 		var err error
 		if encodedSource, err = validateNative(ctx, runner, event, provenance, freshRoles); err != nil {
@@ -434,12 +434,12 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 	if err != nil {
 		return nil, err
 	}
-	fields := pyjson.ObjectOf("user_id", optStrAny(event.UserID), "user_name", optStrAny(event.UserName), "message_id", optStrAny(event.MessageID),
+	fields := jsonutil.ObjectOf("user_id", optStrAny(event.UserID), "user_name", optStrAny(event.UserName), "message_id", optStrAny(event.MessageID),
 		"platform_update_id", optIntAny(event.PlatformUpdateID), "reply_to_message_id", optStrAny(event.ReplyToMessageID),
 		"reply_to_text", optStrAny(event.ReplyToText), "reply_to_author_id", optStrAny(event.ReplyToAuthorID),
 		"reply_to_author_name", optStrAny(event.ReplyToAuthorName), "reply_to_is_own_message", event.ReplyToIsOwnMessage,
 		"allow_gateway_control", event.AllowGatewayControl)
-	envelope := pyjson.ObjectOf("source", encodedSource, "route", route, "event", fields, "timestamp", eventISOFormat(event.Timestamp))
+	envelope := jsonutil.ObjectOf("source", encodedSource, "route", route, "event", fields, "timestamp", eventISOFormat(event.Timestamp))
 	if event.Source.Platform == PlatformWebhook {
 		adapter, err := runner.AdapterForSource(ctx, event.Source)
 		if err != nil {
@@ -470,7 +470,7 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 		if names, isNames := skill.([]string); isNames {
 			skill = plainList(names, func(name string) any { return name })
 		}
-		fields.Set("auto_skill", pyjson.Clone(skill))
+		fields.Set("auto_skill", jsonutil.Clone(skill))
 	}
 	for _, context := range []struct {
 		name  string
@@ -521,16 +521,16 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 			fields.Set("media_filenames", plainList(event.MediaFilenames, func(name string) any { return name }))
 		}
 	}
-	payload := pyjson.ObjectOf("text", event.Text, "native_text_v1", envelope)
+	payload := jsonutil.ObjectOf("text", event.Text, "native_text_v1", envelope)
 	if provenance != nil && !runner.MultiplexProfiles() {
 		authority, err := activeAuthority(ctx, runner)
 		if err != nil {
 			return nil, err
 		}
 		if entry := store.LookupBySessionKey(ctx, route); entry != nil {
-			legacy, _ := pyjson.Clone(payload).(*pyjson.Object)
+			legacy, _ := jsonutil.Clone(payload).(*jsonutil.Object)
 			wrapped, _ := legacy.Get("native_text_v1")
-			wrapped.(*pyjson.Object).Delete("provenance")
+			wrapped.(*jsonutil.Object).Delete("provenance")
 			if authority == nil {
 				return nil, &PyError{Kind: "AttributeError", Msg: "the session store is not open"}
 			}
@@ -540,7 +540,7 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 			}
 			for _, row := range rows {
 				requestID, _ := row.Get("request_id")
-				if pyjson.Equal(requestID, optStrAny(event.MessageID)) && pyjson.Equal(rowPayload(row), legacy) {
+				if anyutil.Equal(requestID, optStrAny(event.MessageID)) && anyutil.Equal(rowPayload(row), legacy) {
 					return legacy, nil
 				}
 			}
@@ -550,12 +550,12 @@ func snapshotNative(ctx context.Context, runner AuthorityRunner, event *MessageE
 }
 
 // Native envelope of a committed payload
-func nativeEnvelope(payload *pyjson.Object) (*pyjson.Object, error) {
+func nativeEnvelope(payload *jsonutil.Object) (*jsonutil.Object, error) {
 	value, ok := payload.Get("native_text_v1")
 	if !ok {
 		return nil, &pyKeyError{"native_text_v1"}
 	}
-	envelope, isEnvelope := value.(*pyjson.Object)
+	envelope, isEnvelope := value.(*jsonutil.Object)
 	if !isEnvelope || envelope == nil {
 		return nil, &PyError{Kind: "TypeError", Msg: "the native envelope is " + errchain.Kind(value) + ", expected a mapping"}
 	}
@@ -563,7 +563,7 @@ func nativeEnvelope(payload *pyjson.Object) (*pyjson.Object, error) {
 }
 
 // Sender of a committed native payload with its provenance restored, its captured media left unverified
-func restoreNativeSource(ctx context.Context, payload *pyjson.Object, runner AuthorityRunner) (*SessionSource, error) {
+func restoreNativeSource(ctx context.Context, payload *jsonutil.Object, runner AuthorityRunner) (*SessionSource, error) {
 	envelope, err := nativeEnvelope(payload)
 	if err != nil {
 		return nil, err
@@ -649,7 +649,7 @@ func setEventField(event *MessageEvent, name string, value any) error {
 	var err error
 	switch name {
 	case "platform_update_id":
-		event.PlatformUpdateID = rowInt(pyjson.ObjectOf(name, value), name)
+		event.PlatformUpdateID = rowInt(jsonutil.ObjectOf(name, value), name)
 		if value != nil && event.PlatformUpdateID == nil {
 			return &PyError{Kind: "TypeError", Msg: name + " must be a whole number or empty, got " + errchain.Kind(value)}
 		}
@@ -660,13 +660,13 @@ func setEventField(event *MessageEvent, name string, value any) error {
 			event.ReplyExpected = &expected
 		}
 	case "auto_skill":
-		event.AutoSkill = pyjson.Clone(value)
+		event.AutoSkill = jsonutil.Clone(value)
 	case "raw_message":
 		event.RawMessage = value
 	case "metadata":
-		event.Metadata, _ = pyjson.Plain(pyjson.Clone(value)).(map[string]any)
+		event.Metadata, _ = jsonutil.Plain(jsonutil.Clone(value)).(map[string]any)
 	case "prompt_response":
-		event.PromptResponse, _ = pyjson.Plain(pyjson.Clone(value)).(map[string]any)
+		event.PromptResponse, _ = jsonutil.Plain(jsonutil.Clone(value)).(map[string]any)
 	case "media_types":
 		event.MediaTypes, err = eventStringList(name, value)
 	case "media_filenames":
@@ -692,7 +692,7 @@ func setEventField(event *MessageEvent, name string, value any) error {
 }
 
 // Event of a committed native payload with its sender, context and byte verified media
-func restoreNative(ctx context.Context, payload *pyjson.Object, runner AuthorityRunner) (*MessageEvent, error) {
+func restoreNative(ctx context.Context, payload *jsonutil.Object, runner AuthorityRunner) (*MessageEvent, error) {
 	envelope, err := nativeEnvelope(payload)
 	if err != nil {
 		return nil, err
@@ -729,7 +729,7 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 	if named, has := envelope.Get("message_type"); has {
 		name, _ := named.(string)
 		if kind = MessageType(name); !messageTypes[kind] {
-			return nil, &PyError{Kind: "ValueError", Msg: pyrepr.Repr(named) + " is not a valid MessageType"}
+			return nil, &PyError{Kind: "ValueError", Msg: anyutil.Quote(named) + " is not a valid MessageType"}
 		}
 	}
 	var references []any
@@ -746,11 +746,11 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 	if !ok {
 		return nil, &pyKeyError{"event"}
 	}
-	fields, isFields := committed.(*pyjson.Object)
+	fields, isFields := committed.(*jsonutil.Object)
 	if !isFields || fields == nil {
 		return nil, &PyError{Kind: "TypeError", Msg: "the committed message event is " + errchain.Kind(committed) + ", expected a mapping"}
 	}
-	for _, name := range fields.Keys {
+	for _, name := range fields.Keys() {
 		value, _ := fields.Get(name)
 		if err := setEventField(event, name, value); err != nil {
 			return nil, err
@@ -760,13 +760,13 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 	if !automated {
 		return event, nil
 	}
-	automation, isAutomation := described.(*pyjson.Object)
+	automation, isAutomation := described.(*jsonutil.Object)
 	if !isAutomation || automation == nil {
 		return nil, &PyError{Kind: "AttributeError", Msg: "the native source description is " + errchain.Kind(described) + ", expected a mapping"}
 	}
 	event.Internal = true
 	if heartbeat, _ := automation.Get("heartbeat"); pyTruthy(heartbeat) {
-		session := pyrepr.Str(heartbeat)
+		session := anyutil.String(heartbeat)
 		event.SetHeartbeatSessionID(&session)
 	}
 	route, ok := envelope.Get("route")
@@ -778,12 +778,12 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 		return nil, &pyKeyError{"owner"}
 	}
 	event.Metadata = map[string]any{"gateway_session_key": route, "gateway_session_id": owner}
-	for _, describe := range []func(func(string) (any, bool)) (*pyjson.Object, error){automationNotificationMetadata, AutomationDisplayMetadata} {
+	for _, describe := range []func(func(string) (any, bool)) (*jsonutil.Object, error){automationNotificationMetadata, AutomationDisplayMetadata} {
 		extra, err := describe(automation.Get)
 		if err != nil {
 			return nil, err
 		}
-		for _, key := range extra.Keys {
+		for _, key := range extra.Keys() {
 			event.Metadata[key], _ = extra.Get(key)
 		}
 	}
@@ -791,7 +791,7 @@ func restoreNative(ctx context.Context, payload *pyjson.Object, runner Authority
 }
 
 // Read only preflight of a queued native row, its sender, route, session and adapter checked without consuming it
-func checkNativeRoute(ctx context.Context, runner AuthorityRunner, payload *pyjson.Object, sessionID string, availableSource *SessionSource, adapter PlatformAdapter) (*SessionSource, string, error) {
+func checkNativeRoute(ctx context.Context, runner AuthorityRunner, payload *jsonutil.Object, sessionID string, availableSource *SessionSource, adapter PlatformAdapter) (*SessionSource, string, error) {
 	envelope, err := nativeEnvelope(payload)
 	if err != nil {
 		return nil, "", err
@@ -847,7 +847,7 @@ func checkNativeRoute(ctx context.Context, runner AuthorityRunner, payload *pyjs
 		if err != nil {
 			return nil, "", err
 		}
-		if !pyjson.Equal(digest, current) {
+		if !anyutil.Equal(digest, current) {
 			return nil, "", runtimeRefusal("admission_conflict")
 		}
 	}

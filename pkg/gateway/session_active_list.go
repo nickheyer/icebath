@@ -4,13 +4,13 @@ import (
 	"context"
 	"slices"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Live state of a turn, waiting on a prompt, working, starting before its claim or idle
-func activeStatus(live *LiveSession, handle SessionHandle, pending []*pyjson.Object) string {
+func activeStatus(live *LiveSession, handle SessionHandle, pending []*jsonutil.Object) string {
 	if handle.ExecutionState == "running" {
 		if len(live.SnapshotControls(handle.Ref.SessionID, handle.ExecutionGeneration)) > 0 {
 			return "waiting"
@@ -18,7 +18,7 @@ func activeStatus(live *LiveSession, handle SessionHandle, pending []*pyjson.Obj
 		return "working"
 	}
 	for _, row := range pending {
-		if row.GetOr("status", nil) == "queued" {
+		if row.ValueOr("status", nil) == "queued" {
 			return "starting"
 		}
 	}
@@ -26,7 +26,7 @@ func activeStatus(live *LiveSession, handle SessionHandle, pending []*pyjson.Obj
 }
 
 // Live turn states of the sessions this owner holds that the actor may read
-func activeList(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object) (any, error) {
+func activeList(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if paramsOutside(params, "profile", "current_session_id") {
 		return nil, runtimeRefusal("invalid_params")
 	}
@@ -34,8 +34,8 @@ func activeList(ctx context.Context, c *AuthorityConnection, ref SessionRef, par
 		return nil, runtimeRefusal("permission_denied")
 	}
 	current := ""
-	if value := params.GetOr("current_session_id", nil); pyrepr.Truthy(value) {
-		current = pyrepr.Str(value)
+	if value := params.ValueOr("current_session_id", nil); anyutil.IsTrue(value) {
+		current = anyutil.String(value)
 	}
 	entries, err := liveEntries(ctx, c.authority, c.actor)
 	if err != nil {
@@ -49,16 +49,16 @@ func activeList(ctx context.Context, c *AuthorityConnection, ref SessionRef, par
 		}
 		started := listingFloat(row["started_at"])
 		lastActive := started
-		if pyrepr.Truthy(row["ended_at"]) {
+		if anyutil.IsTrue(row["ended_at"]) {
 			lastActive = listingFloat(row["ended_at"])
 		}
 		title := row["title"]
-		if !pyrepr.Truthy(title) {
+		if !anyutil.IsTrue(title) {
 			title = ""
 		}
 		model := ""
-		if pyrepr.Truthy(row["model"]) {
-			model = pyrepr.Str(row["model"])
+		if anyutil.IsTrue(row["model"]) {
+			model = anyutil.String(row["model"])
 		}
 		rows = append(rows, map[string]any{"current": entry.sessionID == current, "id": entry.sessionID,
 			"session_key": entry.sessionID, "last_active": lastActive, "started_at": started,

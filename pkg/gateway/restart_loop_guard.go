@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -33,15 +33,15 @@ func restartLoopLoadBoots(ctx context.Context) ([]float64, error) {
 	if err != nil {
 		return []float64{}, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return []float64{}, nil
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return []float64{}, nil
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("the restart loop record is %s, expected a mapping", errchain.Kind(data))
 	}
@@ -84,9 +84,9 @@ func restartLoopSaveBoots(ctx context.Context, boots []float64) {
 	for i, b := range boots {
 		items[i] = b
 	}
-	obj := pyjson.NewObject()
+	obj := jsonutil.NewObject()
 	obj.Set("boots", items)
-	text, err := pyjson.Dumps(obj)
+	text, err := jsonutil.Encode(obj)
 	if err != nil {
 		return
 	}

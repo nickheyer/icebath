@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds an admission start waits on a held server's tools list
@@ -48,7 +48,7 @@ func refreezeEditor(ctx context.Context, a *SessionAuthority, ref SessionRef) er
 	if err != nil || len(data) == 0 {
 		return err
 	}
-	scope := pyrepr.Str(data["scope"])
+	scope := anyutil.String(data["scope"])
 	servers, ok := borrowedEditorMCP(a, scope)
 	if !ok {
 		return nil
@@ -74,7 +74,7 @@ func refreezeEditor(ctx context.Context, a *SessionAuthority, ref SessionRef) er
 	if err != nil {
 		return err
 	}
-	if !complete || (pyjson.Equal(schemas, pyjson.Plain(data["schemas"])) && !drifted) {
+	if !complete || (anyutil.Equal(schemas, jsonutil.Plain(data["schemas"])) && !drifted) {
 		return nil
 	}
 	return commitRefreeze(ctx, a, ref, servers)
@@ -102,6 +102,6 @@ func commitRefreeze(ctx context.Context, a *SessionAuthority, ref SessionRef, se
 	if err != nil {
 		return err
 	}
-	_, err = writeMutation(ctx, a, ref, params, copied, pyrepr.Str(principal), nil, nil)
+	_, err = writeMutation(ctx, a, ref, params, copied, anyutil.String(principal), nil, nil)
 	return err
 }

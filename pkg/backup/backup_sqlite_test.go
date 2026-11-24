@@ -11,16 +11,15 @@ import (
 	"testing"
 	"time"
 
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 	sqlite3 "modernc.org/sqlite/lib"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
 )
 
 // Opens a test connection to a database file with extra DSN pragmas, closed with the test
 func testConn(t *testing.T, path, query string) *sqliteConn {
 	t.Helper()
-	uri, err := pypath.AsURI(path)
+	uri, err := pathutil.FileURL(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +84,7 @@ func TestRollbackJournalCopyLetsALiveWriterCommitBetweenSteps(t *testing.T) {
 	var unread []int
 	var writeErrors []string
 	real := connBackup
-	connBackup = func(src, dst pysqlite.RawConn, pages int, progress func(int, int, int) error, sleep time.Duration) error {
+	connBackup = func(ctx context.Context, src, dst sqliteutil.RawConn, pages int, progress func(int, int, int) error, sleep time.Duration) error {
 		between := func(status, remaining, total int) error {
 			if status == sqlite3.SQLITE_OK {
 				if _, err := writer.c.ExecContext(context.Background(), "INSERT INTO messages VALUES ('live turn')"); err != nil {
@@ -96,7 +95,7 @@ func TestRollbackJournalCopyLetsALiveWriterCommitBetweenSteps(t *testing.T) {
 			}
 			return progress(status, remaining, total)
 		}
-		return real(src, dst, pages, between, sleep)
+		return real(ctx, src, dst, pages, between, sleep)
 	}
 	t.Cleanup(func() { connBackup = real })
 	snapshot := filepath.Join(tmp, "snapshot.db")
@@ -178,7 +177,7 @@ func TestSafeCopyDBAbortsWhenSourceRemainsBusyPastDeadline(t *testing.T) {
 	var source *sqliteConn
 	var destination *sqliteConn
 	sourceTimeout := ""
-	connBackup = func(s, d pysqlite.RawConn, pages int, progress func(int, int, int) error, sleep time.Duration) error {
+	connBackup = func(_ context.Context, s, d sqliteutil.RawConn, pages int, progress func(int, int, int) error, sleep time.Duration) error {
 		if pages <= 0 || sleep <= 0 {
 			t.Fatalf("pages %d sleep %v", pages, sleep)
 		}

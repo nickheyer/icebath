@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Records the runtime epoch a local authority fences its store's resets with, the default too when registered
@@ -32,7 +32,7 @@ func (s *SessionStore) localResetEpoch(db SessionStoreDB) (int64, error) {
 	if !ok {
 		return 0, fmt.Errorf("the session database (%T) has no path", db)
 	}
-	key, err := pypath.Resolve(pathed.Path())
+	key, err := pathutil.Resolve(pathed.Path())
 	if err != nil {
 		return 0, err
 	}
@@ -57,7 +57,7 @@ func resetLocalSession(ctx context.Context, store *SessionStore, old *SessionEnt
 		return nil, err
 	}
 	resetter, ok := db.(interface {
-		ResetLocalTarget(context.Context, int64, string, *pyjson.Object) error
+		ResetLocalTarget(context.Context, int64, string, *jsonutil.Object) error
 	})
 	if !ok {
 		return nil, fmt.Errorf("the session database (%T) cannot reset a local session", db)

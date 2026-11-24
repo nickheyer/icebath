@@ -140,12 +140,12 @@ func TestArenaMaxSettingPrefersTheExactTunable(t *testing.T) {
 			t.Errorf("%v -> %q %v", tc.env, got, ok)
 		}
 	}
-	for in, want := range map[string]int32{" 4 ": 4, "1_0": 10, "2147483647": cIntMax, "٣": 3} {
+	for in, want := range map[string]int32{" 4 ": 4, "2147483647": cIntMax} {
 		if got, ok := positiveCInt(in); !ok || got != want {
 			t.Errorf("%q -> %d %v", in, got, ok)
 		}
 	}
-	for _, in := range []string{"0", "-2", "2147483648", "x", "", "4.0"} {
+	for _, in := range []string{"0", "-2", "2147483648", "x", "", "4.0", "1_0", "٣"} {
 		if _, ok := positiveCInt(in); ok {
 			t.Errorf("%q accepted", in)
 		}

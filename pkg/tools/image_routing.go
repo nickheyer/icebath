@@ -16,8 +16,8 @@ import (
 	"golang.org/x/image/tiff"
 
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Image extensions auto attached from free text, documents and archives excluded
@@ -74,11 +74,11 @@ func matchesOutsideCode(re *regexp2.Regexp, text string) []string {
 
 // Normalized path of a regular file after tilde expansion, false when it is not one
 func existingFile(candidate string) (string, bool) {
-	expanded := pypath.Expanduser(candidate)
+	expanded := pathutil.ExpandUser(candidate)
 	if st, err := os.Stat(expanded); err != nil || !st.Mode().IsRegular() {
 		return "", false
 	}
-	return pypath.Normpath(expanded), true
+	return filepath.Clean(expanded), true
 }
 
 // ExtractImageRefs returns ordered unique existing local image paths and image URLs found outside code spans

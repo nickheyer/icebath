@@ -5,7 +5,7 @@ package pm
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func (p *Uv) LatestVersions(target, locked string) ([]string, error) {
@@ -36,8 +36,8 @@ func (p *Npm) LatestVersions(target, locked string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	if latest := tags["latest"]; pyrepr.Truthy(latest) {
-		return []string{pyrepr.Str(latest)}, nil
+	if latest := tags["latest"]; anyutil.IsTrue(latest) {
+		return []string{anyutil.String(latest)}, nil
 	}
 	return nil, nil
 }

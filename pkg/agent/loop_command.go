@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -41,11 +42,11 @@ func ParseLoopIntervalToken(token string) (int64, bool) {
 	var parts [3]int64
 	for i := range parts {
 		if g := m.GroupByNumber(i + 1); g != nil && g.RuneLength > 0 {
-			n, err := pyint.Of(g.String())
-			if err != nil || !n.IsInt64() {
+			n, err := strconv.ParseInt(g.String(), 10, 64)
+			if err != nil {
 				return 0, false
 			}
-			parts[i] = n.Int64()
+			parts[i] = n
 		}
 	}
 	total := parts[0]*3600 + parts[1]*60 + parts[2]
@@ -75,11 +76,11 @@ func ParseLoopArgs(text string) LoopArgs {
 	until := ""
 	if m, _ := loopTimesFlagRe.FindStringMatch(raw); m != nil {
 		group := m.GroupByNumber(1).String()
-		n, err := pyint.Of(group)
-		if err != nil || n.Sign() < 1 || !n.IsInt64() {
+		n, err := strconv.ParseInt(group, 10, 64)
+		if err != nil || n < 1 {
 			return LoopArgs{Error: "--times expects a positive integer, got " + errchain.Show(group)}
 		}
-		times = n.Int64()
+		times = n
 		raw = strings.TrimSpace(string(runes[:m.RuneIndex]) + string(runes[m.RuneIndex+m.RuneLength:]))
 		runes = []rune(raw)
 	}
@@ -157,7 +158,7 @@ type LoopCommandResult struct {
 }
 
 // Handles the loop command arguments for every surface, storing route on a new loop
-func DispatchLoopCommand(ctx context.Context, mgr LoopAutomation, args string, route *pyjson.Object) (LoopCommandResult, error) {
+func DispatchLoopCommand(ctx context.Context, mgr LoopAutomation, args string, route *jsonutil.Object) (LoopCommandResult, error) {
 	arg := strings.TrimSpace(args)
 	out, isControl, err := loopControlOutput(ctx, mgr, strings.ToLower(arg))
 	if err != nil {
@@ -176,7 +177,7 @@ func DispatchLoopCommand(ctx context.Context, mgr LoopAutomation, args string, r
 	replacing := mgr.HasLoop()
 	state, err := mgr.Set(ctx, parsed.Prompt, parsed.IntervalSeconds, parsed.Times, parsed.Until, route)
 	if err != nil {
-		var pyErr *pyint.Error
+		var pyErr *errorutil.Error
 		if errors.As(err, &pyErr) && pyErr.Kind == "ValueError" {
 			return LoopCommandResult{Output: "/loop: " + pyErr.Msg}, nil
 		}

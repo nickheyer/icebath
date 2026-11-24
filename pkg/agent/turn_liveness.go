@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 const (
@@ -66,7 +66,7 @@ type turnLivenessWatchdogConfig struct {
 	sessionID      string
 	timeoutS       float64
 	pollS          float64
-	stopEvent      *pythread.Event
+	stopEvent      *syncutil.Event
 	activityLock   sync.Locker
 	isTurnActive   func() bool
 	commitAbort    func(snapshot activitySnapshot, message string) bool

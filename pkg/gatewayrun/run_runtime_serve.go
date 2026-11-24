@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Stops profile local services and turns before ownership is released, false when work outlives timeout
@@ -58,7 +57,7 @@ func retireProfileAuthority(ctx context.Context, a *gateway.SessionAuthority, ti
 
 // Builds, recovers and publishes one reserved profile's runtime the way boot does per secondary
 func serveProfileRuntime(ctx context.Context, r *GatewayRunner, name, profileHome string) (*gateway.SessionAuthority, error) {
-	resolved, err := pypath.Resolve(profileHome)
+	resolved, err := pathutil.Resolve(profileHome)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +152,7 @@ func recoverPublishedAPITurns(ctx context.Context, r *GatewayRunner, authority *
 
 // Retires one profile's authority and shrinks the published set, false when a turn outlived its Stop
 func unserveProfileRuntime(ctx context.Context, r *GatewayRunner, profileHome string) (bool, error) {
-	resolved, err := pypath.Resolve(profileHome)
+	resolved, err := pathutil.Resolve(profileHome)
 	if err != nil {
 		return false, err
 	}
@@ -188,7 +187,7 @@ func recoverProfileBotMailbox(ctx context.Context, r *GatewayRunner, authority *
 		return err
 	}
 	pkgLog().Error(fmt.Sprintf("[MULTIPLEX] Profile '%s' not served: startup recovery failed: %s", name, err), "exc_info", err)
-	resolved, resolveErr := pypath.Resolve(authority.ProfileID)
+	resolved, resolveErr := pathutil.Resolve(authority.ProfileID)
 	if resolveErr != nil {
 		return resolveErr
 	}

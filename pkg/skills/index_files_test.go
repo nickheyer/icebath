@@ -92,7 +92,7 @@ func TestIterSkillIndexFilesListsEverySymlinkedPathLikeOSWalk(t *testing.T) {
 	manifest := buildSkillsManifest(root)
 	for _, rel := range []string{filepath.Join("cat", "a", "SKILL.md"), filepath.Join("cat", "b", "SKILL.md"), filepath.Join("real", "skill", "SKILL.md")} {
 		if _, ok := manifest.Get(rel); !ok {
-			t.Fatalf("manifest lacks %s, has %v", rel, manifest.Keys)
+			t.Fatalf("manifest lacks %s, has %v", rel, manifest.Keys())
 		}
 	}
 	if err := os.Symlink("..", filepath.Join(cat, "loop")); err != nil {

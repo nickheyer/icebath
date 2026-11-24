@@ -10,12 +10,12 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Lines a console prints, kept as plain text for a screen to show
@@ -25,11 +25,11 @@ type capturedLines struct {
 }
 
 // Console that keeps what it prints instead of writing it to a terminal
-func (c *capturedLines) console() *pyrich.Console {
-	return &pyrich.Console{Width: 100, Capture: func(raw string) {
+func (c *capturedLines) console() *consoleutil.Console {
+	return &consoleutil.Console{Width: 100, Capture: func(raw string) {
 		c.mu.Lock()
 		defer c.mu.Unlock()
-		for _, line := range strings.Split(strings.TrimRight(pyrich.Plain(raw), "\n"), "\n") {
+		for _, line := range strings.Split(strings.TrimRight(consoleutil.Plain(raw), "\n"), "\n") {
 			c.lines = append(c.lines, strings.TrimRight(line, " "))
 		}
 	}}
@@ -39,7 +39,7 @@ func (c *capturedLines) console() *pyrich.Console {
 func (c *capturedLines) Write(p []byte) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for _, line := range strings.Split(strings.TrimRight(pyrich.Plain(string(p)), "\n"), "\n") {
+	for _, line := range strings.Split(strings.TrimRight(consoleutil.Plain(string(p)), "\n"), "\n") {
 		c.lines = append(c.lines, strings.TrimRight(line, " "))
 	}
 	return len(p), nil
@@ -69,9 +69,9 @@ func skillsHubList(ctx context.Context, rid any, _ map[string]any) (map[string]a
 	if err != nil {
 		return nil, err
 	}
-	fromHub := map[string]*pyjson.Object{}
+	fromHub := map[string]*jsonutil.Object{}
 	for _, row := range hubRows {
-		if name := pyrepr.Str(row.GetOr("name", "")); name != "" {
+		if name := anyutil.String(row.ValueOr("name", "")); name != "" {
 			fromHub[name] = row
 		}
 	}
@@ -80,19 +80,19 @@ func skillsHubList(ctx context.Context, rid any, _ map[string]any) (map[string]a
 		return nil, err
 	}
 	disabled := x.S.DisabledSkillNames("")
-	text := func(o *pyjson.Object, key string) string {
+	text := func(o *jsonutil.Object, key string) string {
 		if o == nil {
 			return ""
 		}
-		if v := o.GetOr(key, nil); pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v := o.ValueOr(key, nil); anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 		return ""
 	}
 	out := tuigateway.SkillsHubResult{Skills: []tuigateway.SkillHubRow{}, Taps: []tuigateway.SkillTapRow{}, Bundles: []tuigateway.SkillBundleRow{}, Trusted: []string{}}
 	// The catalog keeps disabled skills in when told to skip the disabled filter
 	for _, s := range skills.SortSkills(x.S.FindAllSkills(true)) {
-		name := pyrepr.Str(s["name"])
+		name := anyutil.String(s["name"])
 		row := tuigateway.SkillHubRow{Name: name, Enabled: !disabled[name], Essential: skills.EssentialSkills[name], Source: "local"}
 		if c, ok := s["category"].(string); ok {
 			row.Category = c
@@ -113,7 +113,7 @@ func skillsHubList(ctx context.Context, rid any, _ map[string]any) (map[string]a
 		return nil, err
 	}
 	for _, t := range taps {
-		obj, isObj := t.(*pyjson.Object)
+		obj, isObj := t.(*jsonutil.Object)
 		if !isObj {
 			return nil, fmt.Errorf("a skill source entry is %T, expected a mapping", t)
 		}
@@ -124,17 +124,17 @@ func skillsHubList(ctx context.Context, rid any, _ map[string]any) (map[string]a
 		return nil, err
 	}
 	for _, b := range bundles {
-		row := tuigateway.SkillBundleRow{Name: pyrepr.Str(b["slug"]), Description: pyrepr.Str(b["description"]), Instruction: pyrepr.Str(b["instruction"]),
-			Path: pyrepr.Str(b["path"]), Skills: []string{}}
+		row := tuigateway.SkillBundleRow{Name: anyutil.String(b["slug"]), Description: anyutil.String(b["description"]), Instruction: anyutil.String(b["instruction"]),
+			Path: anyutil.String(b["path"]), Skills: []string{}}
 		if members, ok := b["skills"].([]any); ok {
 			for _, m := range members {
-				row.Skills = append(row.Skills, pyrepr.Str(m))
+				row.Skills = append(row.Skills, anyutil.String(m))
 			}
 		}
 		out.Bundles = append(out.Bundles, row)
 	}
 	for _, t := range settings.SkillsTrustedProjectDirs.Get(ctx) {
-		out.Trusted = append(out.Trusted, pyrepr.Str(t))
+		out.Trusted = append(out.Trusted, anyutil.String(t))
 	}
 	sort.Strings(out.Trusted)
 	if _, err := os.Stat(filepath.Join(x.S.SkillsDir(), skills.NoBundledSkillsMarker)); err == nil {
@@ -243,7 +243,7 @@ func skillsBundleReload(ctx context.Context, rid any, _ map[string]any) (map[str
 		out := []string{}
 		if rows, ok := diff[key].([]map[string]any); ok {
 			for _, r := range rows {
-				out = append(out, pyrepr.Str(r["name"]))
+				out = append(out, anyutil.String(r["name"]))
 			}
 		}
 		return out

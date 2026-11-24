@@ -3,8 +3,8 @@ package tuiserver
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/memory"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var toolsConfigRegistry = &handlerRegistry{}
@@ -19,10 +19,10 @@ func learningFrames(ctx context.Context, rid any, params map[string]any) (map[st
 	sizes := []int64{80, 24, 48}
 	for i, key := range []string{"cols", "rows", "frames"} {
 		raw, present := params[key]
-		if !present || !truthy(raw) {
+		if !present || !anyutil.IsTrue(raw) {
 			continue
 		}
-		n, err := pyint.Int64(raw)
+		n, err := anyutil.ToInt(raw)
 		if err != nil {
 			sizes = []int64{80, 24, 48}
 			break

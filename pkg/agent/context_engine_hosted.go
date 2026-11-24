@@ -5,9 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Context engine whose object lives in the plugin host, every method a call and the base state mirrored both ways
@@ -32,7 +31,7 @@ func newHostedContextEngine(ctx context.Context, obj *plugins.HostedObject) (*ho
 	if err != nil {
 		return nil, err
 	}
-	e := &hostedContextEngine{ContextEngineBase: NewContextEngineBase(), obj: obj, ctx: ctx, name: pyrepr.Str(name)}
+	e := &hostedContextEngine{ContextEngineBase: NewContextEngineBase(), obj: obj, ctx: ctx, name: anyutil.String(name)}
 	e.pull()
 	return e, nil
 }
@@ -112,7 +111,7 @@ func (e *hostedContextEngine) pull() {
 		}
 	}
 	if v, err := e.obj.Get(e.ctx, "emit_automatic_compaction_status"); err == nil {
-		b.EmitAutomaticCompactionStatus = pyrepr.Truthy(v)
+		b.EmitAutomaticCompactionStatus = anyutil.IsTrue(v)
 	}
 	if v, err := e.obj.Get(e.ctx, "model_thresholds"); err == nil {
 		if m := hostedMap(v); m != nil {
@@ -195,7 +194,7 @@ func (e *hostedContextEngine) UpdateFromResponse(usage map[string]any) {
 }
 
 func (e *hostedContextEngine) ShouldCompress(promptTokens *int) bool {
-	return pyrepr.Truthy(e.call("should_compress", []any{optionalInt(promptTokens)}, nil))
+	return anyutil.IsTrue(e.call("should_compress", []any{optionalInt(promptTokens)}, nil))
 }
 
 func (e *hostedContextEngine) ShouldCompressInfo(promptTokens *int) (bool, *string) {
@@ -204,10 +203,10 @@ func (e *hostedContextEngine) ShouldCompressInfo(promptTokens *int) (bool, *stri
 		panic(errors.New("the context engine should_compress_info must return a flag and a reason"))
 	}
 	if out[1] == nil {
-		return pyrepr.Truthy(out[0]), nil
+		return anyutil.IsTrue(out[0]), nil
 	}
-	reason := pyrepr.Str(out[1])
-	return pyrepr.Truthy(out[0]), &reason
+	reason := anyutil.String(out[1])
+	return anyutil.IsTrue(out[0]), &reason
 }
 
 func (e *hostedContextEngine) AcceptsCompressKeyword(keyword string) bool {
@@ -270,11 +269,11 @@ func (e *hostedContextEngine) OnTurnComplete(messages []map[string]any, usage ma
 }
 
 func (e *hostedContextEngine) ShouldCompressPreflight(messages []map[string]any) bool {
-	return pyrepr.Truthy(e.call("should_compress_preflight", []any{anyMaps(messages)}, nil))
+	return anyutil.IsTrue(e.call("should_compress_preflight", []any{anyMaps(messages)}, nil))
 }
 
 func (e *hostedContextEngine) ShouldDeferPreflightToRealUsage(roughTokens int) bool {
-	return pyrepr.Truthy(e.call("should_defer_preflight_to_real_usage", []any{roughTokens}, nil))
+	return anyutil.IsTrue(e.call("should_defer_preflight_to_real_usage", []any{roughTokens}, nil))
 }
 
 func (e *hostedContextEngine) GetAutomaticCompactionStatusMessage(phase, defaultMessage string, context map[string]any) *string {
@@ -286,12 +285,12 @@ func (e *hostedContextEngine) GetAutomaticCompactionStatusMessage(phase, default
 	if out == nil {
 		return nil
 	}
-	text := pyrepr.Str(out)
+	text := anyutil.String(out)
 	return &text
 }
 
 func (e *hostedContextEngine) HasContentToCompress(messages []map[string]any) bool {
-	return pyrepr.Truthy(e.call("has_content_to_compress", []any{anyMaps(messages)}, nil))
+	return anyutil.IsTrue(e.call("has_content_to_compress", []any{anyMaps(messages)}, nil))
 }
 
 func (e *hostedContextEngine) OnSessionStart(sessionID string, kwargs map[string]any) {
@@ -321,14 +320,14 @@ func (e *hostedContextEngine) LastRealPromptTokens() (int, bool) {
 	if err != nil {
 		panic(err)
 	}
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, true
 	}
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		panic(err)
 	}
-	return int(n.Int64()), true
+	return int(n), true
 }
 
 // Truth of the hosted compaction boundary latch, false when the object has no such attribute
@@ -341,7 +340,7 @@ func (e *hostedContextEngine) VerifyCompactionClearedThreshold() bool {
 	if err != nil {
 		panic(err)
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // Python hasattr on the hosted object, AttributeError meaning absent and any other error raised
@@ -365,7 +364,7 @@ func (e *hostedContextEngine) GetToolSchemas() []map[string]any {
 }
 
 func (e *hostedContextEngine) HandleToolCall(name string, args map[string]any, kwargs map[string]any) string {
-	return pyrepr.Str(e.call("handle_tool_call", []any{name, args}, kwargs))
+	return anyutil.String(e.call("handle_tool_call", []any{name, args}, kwargs))
 }
 
 func (e *hostedContextEngine) GetStatus() map[string]any {

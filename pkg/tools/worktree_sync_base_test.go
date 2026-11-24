@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 func wsbRun(t *testing.T, cwd string, args ...string) (string, int) {
@@ -142,7 +142,7 @@ func wsbSpyFetches(t *testing.T, stall bool) *[][]string {
 		if slices.Contains(args, "fetch") {
 			*calls = append(*calls, append([]string{}, args...))
 			if stall {
-				return nil, &pysubprocess.TimeoutExpired{Cmd: append([]string{"git"}, args...), Timeout: int(timeout / time.Second)}
+				return nil, &executil.TimeoutError{Args: append([]string{"git"}, args...), Timeout: time.Duration(int(timeout/time.Second)) * time.Second}
 			}
 		}
 		return worktreeGit(args, cwd, timeout, env)

@@ -6,6 +6,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strconv"
@@ -16,13 +17,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gatewayrun"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // One human line of an active work entry, installed by cmd/icebath over the update drain report
@@ -71,9 +72,9 @@ func pyIntValue(v any) (int64, error) {
 		if parsed, ok := pyint.Parse(strings.TrimSpace(n)); ok {
 			return parsed.Int64(), nil
 		}
-		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(n))
+		return 0, fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(n))
 	}
-	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", pyrepr.TypeName(v))
+	return 0, fmt.Errorf("int() argument must be a string, a bytes-like object or a real number, not '%s'", anyutil.Kind(v))
 }
 
 // incompatible verdict when the gateway answering for this home is one this version's clients refuse
@@ -144,35 +145,35 @@ func joinInts(values []int, sep string) string {
 }
 
 // Active agents and work of a fresh state file whose writer is alive, nil otherwise
-func liveWorkFromState(h string) (*pyjson.Object, error) {
-	record := gateway.ReadRuntimeStatus(pypath.PathJoin(h, "gateway_state.json"))
+func liveWorkFromState(h string) (*jsonutil.Object, error) {
+	record := gateway.ReadRuntimeStatus(pathutil.Join(h, "gateway_state.json"))
 	if record == nil || record.Len() == 0 || gateway.RuntimeStatusIsStale(record, gateway.RuntimeStatusStaleTTL) || !gateway.RuntimeStatusPidIsLive(record) {
 		return nil, nil
 	}
-	agents, err := gateway.ParseActiveAgents(record.GetOr("active_agents", nil))
+	agents, err := gateway.ParseActiveAgents(record.ValueOr("active_agents", nil))
 	if err != nil {
 		return nil, err
 	}
-	work, ok := record.GetOr("active_work", nil).([]any)
+	work, ok := record.ValueOr("active_work", nil).([]any)
 	if !ok {
 		work = []any{}
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("active_agents", agents)
 	out.Set("active_work", work)
 	return out, nil
 }
 
 // What the gateway serving home runs now, the control socket first then the state file when no profile narrows it
-func LiveWork(h, profile string) (*pyjson.Object, error) {
-	var params *pyjson.Object
+func LiveWork(h, profile string) (*jsonutil.Object, error) {
+	var params *jsonutil.Object
 	if profile != "" {
-		params = pyjson.NewObject()
+		params = jsonutil.NewObject()
 		params.Set("profile", profile)
 	}
 	answer := gateway.QueryGatewayControl(h, "active-work", params, gateway.DefaultControlClientTimeout)
 	if answer != nil {
-		if _, ok := answer.GetOr("active_work", nil).([]any); ok {
+		if _, ok := answer.ValueOr("active_work", nil).([]any); ok {
 			return answer, nil
 		}
 	}
@@ -187,7 +188,7 @@ func candidateHomes(ctx context.Context, system bool) ([]string, error) {
 	homes := []string{home.Dir(ctx)}
 	contains := func(p string) bool {
 		for _, h := range homes {
-			if pypath.PathStr(h) == pypath.PathStr(p) {
+			if filepath.Clean(h) == filepath.Clean(p) {
 				return true
 			}
 		}
@@ -241,16 +242,16 @@ func RefusalLines(ctx context.Context, verb string, homes []string, flagHint, pr
 	return nil, nil
 }
 
-func workLines(ctx context.Context, verb, h string, work *pyjson.Object, flagHint string) ([]string, error) {
+func workLines(ctx context.Context, verb, h string, work *jsonutil.Object, flagHint string) ([]string, error) {
 	units := []any{}
-	if list, ok := work.GetOr("active_work", nil).([]any); ok {
+	if list, ok := work.ValueOr("active_work", nil).([]any); ok {
 		for _, u := range list {
-			if _, isDict := u.(*pyjson.Object); isDict {
+			if _, isDict := u.(*jsonutil.Object); isDict {
 				units = append(units, u)
 			}
 		}
 	}
-	agents, err := pyIntValue(work.GetOr("active_agents", nil))
+	agents, err := pyIntValue(work.ValueOr("active_agents", nil))
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +299,7 @@ func RefuseWhileSessionsLive(ctx context.Context, w io.Writer, verb string, ns m
 		return nil
 	}
 	if con.StdinIsTTY() && con.StdoutIsTTY() {
-		con.PrintWarning(strings.Replace(lines[0], refusing, pystr.Capitalize(verb)+" the gateway", 1))
+		con.PrintWarning(strings.Replace(lines[0], refusing, textutil.UpperFirst(strings.ToLower(verb))+" the gateway", 1))
 		printLines(w, lines[1:len(lines)-2]...)
 		if con.PromptYesNo(ctx, fmt.Sprintf("Interrupt them and %s the gateway?", verb), false) {
 			return nil
@@ -316,7 +317,7 @@ func RefuseWhileSessionsLive(ctx context.Context, w io.Writer, verb string, ns m
 }
 
 // Truthiness of a namespace flag, false when absent
-func nsFlag(ns map[string]any, key string) bool { return pyrepr.Truthy(ns[key]) }
+func nsFlag(ns map[string]any, key string) bool { return anyutil.IsTrue(ns[key]) }
 
 // Whether the running gateway pid was launched for an external supervisor by identify, live argv or recorded argv
 func GatewayDeclaresExternalSupervisor(pid int, h string) bool {
@@ -327,7 +328,7 @@ func GatewayDeclaresExternalSupervisor(pid int, h string) bool {
 		h = home.Process()
 	}
 	identity := gateway.IdentifyGateway(h, gateway.DefaultControlClientTimeout)
-	if identity != nil && pyrepr.Equal(identity.GetOr("pid", nil), int64(pid)) && gateway.LaunchSupervisor(identity) != "" && gateway.LaunchSupervisor(identity) != "manual" {
+	if identity != nil && anyutil.Equal(identity.ValueOr("pid", nil), int64(pid)) && gateway.LaunchSupervisor(identity) != "" && gateway.LaunchSupervisor(identity) != "manual" {
 		return true
 	}
 	argv := []any{}
@@ -336,9 +337,9 @@ func GatewayDeclaresExternalSupervisor(pid int, h string) bool {
 			argv = append(argv, a)
 		}
 	} else {
-		record := gateway.ReadRuntimeStatus(pypath.PathJoin(h, "gateway_state.json"))
-		if record != nil && pyrepr.Equal(record.GetOr("pid", nil), int64(pid)) {
-			recorded, _ := record.GetOr("argv", nil).([]any)
+		record := gateway.ReadRuntimeStatus(pathutil.Join(h, "gateway_state.json"))
+		if record != nil && anyutil.Equal(record.ValueOr("pid", nil), int64(pid)) {
+			recorded, _ := record.ValueOr("argv", nil).([]any)
 			argv = recorded
 		}
 	}
@@ -359,7 +360,7 @@ func waitForSupervisedGatewayReplacement(oldPid int, timeout, pollInterval float
 		}
 		return pid, true
 	}
-	return pydeadline.PollUntil(fresh, time.Duration(max(timeout, 0.5)*float64(time.Second)), time.Duration(pollInterval*float64(time.Second)))
+	return syncutil.PollUntil(context.Background(), time.Duration(max(timeout, 0.5)*float64(time.Second)), time.Duration(pollInterval*float64(time.Second)), fresh)
 }
 
 // Hands the gateway back to its supervisor with a SIGUSR1 drain and reports the fresh pid, exit 1 on failure
@@ -411,17 +412,17 @@ func RefuseRestartOfServiceManagedGateway(ctx context.Context, w io.Writer, pid 
 }
 
 // Whether a host control answer confirms name under key without an error
-func ackConfirmed(answer *pyjson.Object, key, name string) bool {
-	return answer != nil && answer.GetOr(key, nil) == name && !pyrepr.Truthy(answer.GetOr("error", nil))
+func ackConfirmed(answer *jsonutil.Object, key, name string) bool {
+	return answer != nil && answer.ValueOr(key, nil) == name && !anyutil.IsTrue(answer.ValueOr("error", nil))
 }
 
 // Why a host control answer did not confirm the operation
-func ackFailure(answer *pyjson.Object) string {
+func ackFailure(answer *jsonutil.Object) string {
 	if answer == nil {
 		return "host control socket did not answer"
 	}
-	if v := answer.GetOr("error", nil); pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := answer.ValueOr("error", nil); anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return "host operation is still pending"
 }

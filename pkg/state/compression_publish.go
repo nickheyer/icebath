@@ -4,8 +4,6 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var conversationModelConfigKeys = []string{"onboarding_run", "prompt_refresh_epoch", "logins", "login_on_exhausted", "login_wait", SessionSettingsKey}
@@ -136,11 +134,11 @@ func totalChanges(ctx context.Context, conn SQLiteConn) (int64, error) {
 }
 
 // Unique live direct continuation of a compression ended parent, nil when none or several
-func (d *SessionDB) FindLiveCompressionChild(ctx context.Context, parentSessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) FindLiveCompressionChild(ctx context.Context, parentSessionID string) (*jsonutil.Object, error) {
 	if parentSessionID == "" {
 		return nil, nil
 	}
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := d.readCtx(ctx, true, func(conn SQLiteConn) error {
 		rows = nil
 		ended, err := connRow(ctx, conn, endedRowSQL, parentSessionID)
@@ -188,7 +186,7 @@ type CompressionChildPublish struct {
 	Source                  string
 	Messages                []map[string]any
 	Model                   *string
-	ModelConfig             *pyjson.Object
+	ModelConfig             *jsonutil.Object
 	SystemPrompt            *string
 	Cwd                     *string
 	ProfileName             *string
@@ -206,22 +204,12 @@ func NewCompressionChildPublish(parentSessionID, childSessionID, source string, 
 		RequireCompressionLease: true, LeaseTTLSeconds: 300}
 }
 
-// Optional string as a SQL value, nil for None
+// Optional string as a SQL value, nil when absent
 func optStr(s *string) any {
 	if s == nil {
 		return nil
 	}
 	return *s
-}
-
-// First truthy value in order, the last one when none is
-func pyOr(values ...any) any {
-	for _, v := range values[:len(values)-1] {
-		if pyTruthy(v) {
-			return v
-		}
-	}
-	return values[len(values)-1]
 }
 
 // Inserts the compression child's sessions row copied from the parent, conversation keys carried for a continuation
@@ -234,16 +222,16 @@ func (d *SessionDB) publishChildSessionRow(ctx context.Context, conn SQLiteConn,
 			}
 		}
 	}
-	modelConfig := pyjson.NewObject()
+	modelConfig := jsonutil.NewObject()
 	parentConfig := parseModelConfigValue(parent["model_config"])
-	for _, k := range parentConfig.Keys {
+	for _, k := range parentConfig.Keys() {
 		if continuation && strings.Contains(" "+strings.Join(conversationModelConfigKeys, " ")+" ", " "+k+" ") {
-			modelConfig.Set(k, parentConfig.Vals[k])
+			modelConfig.Set(k, parentConfig.Value(k))
 		}
 	}
 	if p.ModelConfig != nil {
-		for _, k := range p.ModelConfig.Keys {
-			modelConfig.Set(k, p.ModelConfig.Vals[k])
+		for _, k := range p.ModelConfig.Keys() {
+			modelConfig.Set(k, p.ModelConfig.Value(k))
 		}
 	}
 	hash, err := storeSystemPrompt(ctx, conn, optStr(p.SystemPrompt))
@@ -256,7 +244,7 @@ func (d *SessionDB) publishChildSessionRow(ctx context.Context, conn SQLiteConn,
 	}
 	var configText any
 	if modelConfig.Len() > 0 {
-		text, err := pyjson.Dumps(modelConfig)
+		text, err := jsonutil.Encode(modelConfig)
 		if err != nil {
 			return err
 		}
@@ -268,13 +256,13 @@ func (d *SessionDB) publishChildSessionRow(ctx context.Context, conn SQLiteConn,
 	}
 	pinned, archived, autoArchived := any(int64(0)), any(int64(0)), any(int64(0))
 	if continuation {
-		n, err := pyint.Of(pyOr(parent["pinned"], int64(0)))
+		n, err := anyutil.ToInt(anyutil.Or(parent["pinned"], int64(0)))
 		if err != nil {
 			return err
 		}
-		pinned = n.Int64()
-		archived = pyOr(parent["archived"], int64(0))
-		autoArchived = pyOr(parent["auto_archived"], int64(0))
+		pinned = n
+		archived = anyutil.Or(parent["archived"], int64(0))
+		autoArchived = anyutil.Or(parent["auto_archived"], int64(0))
 	}
 	_, err = conn.ExecContext(ctx, `INSERT INTO sessions (
                    id, source, created_source, model, model_config, system_prompt,
@@ -285,8 +273,8 @@ func (d *SessionDB) publishChildSessionRow(ctx context.Context, conn SQLiteConn,
                    archived, auto_archived
                 ) VALUES (?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		p.ChildSessionID, p.Source, createdSource, optStr(p.Model), configText, hash, parent["tool_names"], p.ParentSessionID,
-		pyOr(optStr(p.Cwd), parent["cwd"]), parent["git_branch"], parent["git_repo_root"],
-		pyOr(optStr(p.ProfileName), parent["profile_name"], ownProfile), parent["user_id"], parent["session_key"], parent["chat_id"],
+		anyutil.Or(optStr(p.Cwd), parent["cwd"]), parent["git_branch"], parent["git_repo_root"],
+		anyutil.Or(optStr(p.ProfileName), parent["profile_name"], ownProfile), parent["user_id"], parent["session_key"], parent["chat_id"],
 		parent["chat_type"], parent["thread_id"], parent["display_name"], parent["origin_json"], pinned, now(), archived, autoArchived)
 	return err
 }
@@ -317,7 +305,7 @@ func (d *SessionDB) publishCompressionChildOnConn(ctx context.Context, conn SQLi
 	if p.RequireCompressionLease {
 		lost := lock == nil || holder == "" || !pyEquals(lock["holder"], holder)
 		if !lost {
-			exp, err := pyint.Float(lock["expires_at"])
+			exp, err := anyutil.ToFloat(lock["expires_at"])
 			if err != nil {
 				return err
 			}
@@ -336,18 +324,18 @@ func (d *SessionDB) publishCompressionChildOnConn(ctx context.Context, conn SQLi
 		return err
 	}
 	if parent == nil {
-		return &pyint.Error{Kind: "RuntimeError", Msg: "Compression parent not found: " + p.ParentSessionID}
+		return &errorutil.Error{Kind: "RuntimeError", Msg: "Compression parent not found: " + p.ParentSessionID}
 	}
 	if parent["ended_at"] != nil {
 		if !IsAutomaticEndReason(parent["end_reason"]) {
-			return &pyint.Error{Kind: "RuntimeError", Msg: "Compression parent already ended: " + p.ParentSessionID}
+			return &errorutil.Error{Kind: "RuntimeError", Msg: "Compression parent already ended: " + p.ParentSessionID}
 		}
 		if _, err := conn.ExecContext(ctx, "UPDATE sessions SET ended_at = NULL, end_reason = NULL WHERE id = ?", p.ParentSessionID); err != nil {
 			return err
 		}
 	}
 	if len(p.Messages) == 0 {
-		return &pyint.Error{Kind: "RuntimeError", Msg: "Compression child handoff must not be empty"}
+		return &errorutil.Error{Kind: "RuntimeError", Msg: "Compression child handoff must not be empty"}
 	}
 	if err := d.publishChildSessionRow(ctx, conn, parent, p); err != nil {
 		return err
@@ -390,7 +378,7 @@ func (d *SessionDB) publishCompressionChildOnConn(ctx context.Context, conn SQLi
 		if err != nil {
 			return err
 		}
-		return &pyint.Error{Kind: "RuntimeError", Msg: "Compression parent changed during publication: " + p.ParentSessionID}
+		return &errorutil.Error{Kind: "RuntimeError", Msg: "Compression parent changed during publication: " + p.ParentSessionID}
 	}
 	if err := stampCompressionAncestors(ctx, conn, p.ChildSessionID); err != nil {
 		return err
@@ -493,7 +481,7 @@ func (d *SessionDB) GetCompressionLineage(ctx context.Context, sessionID string)
 		if err != nil {
 			return nil, err
 		}
-		var next *pyjson.Object
+		var next *jsonutil.Object
 		for _, row := range rows {
 			ok, err := d.isCompressionChildRow(ctx, row)
 			if err != nil {

@@ -6,10 +6,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"log/slog"
+	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Write latency budget and the verdict cache cap
@@ -178,7 +177,7 @@ func startEditCheck(s *Service, path string, preText, postText *string, owner st
 	if !s.l.running() {
 		return nil, nil
 	}
-	absPath, err := pypath.Abspath(path)
+	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
 	}

@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One path and the value a write sets there
@@ -374,8 +374,8 @@ func WriteCheck(sets *PathMap, unsets []Path, locks []Lock) (Lock, bool) {
 }
 
 // Wire set object keyed by encoded path and the encoded unset list
-func EncodeChanges(sets *PathMap, unsets []Path) (*pyjson.Object, []string) {
-	setBody := pyjson.NewObject()
+func EncodeChanges(sets *PathMap, unsets []Path) (*jsonutil.Object, []string) {
+	setBody := jsonutil.NewObject()
 	for _, e := range sets.Entries() {
 		setBody.Set(Encode(e.Path), wireObject(e.Value))
 	}
@@ -390,7 +390,7 @@ func EncodeChanges(sets *PathMap, unsets []Path) (*pyjson.Object, []string) {
 func wireObject(v any) any {
 	switch c := v.(type) {
 	case map[string]any:
-		obj := pyjson.NewObject()
+		obj := jsonutil.NewObject()
 		for _, k := range config.MappingKeys(c) {
 			obj.Set(k, wireObject(c[k]))
 		}

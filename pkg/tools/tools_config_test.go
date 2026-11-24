@@ -85,7 +85,7 @@ func TestToolsConfigPluginFailureFallsBackToBuiltIns(t *testing.T) {
 }
 
 func TestToolsConfigCategoriesListEveryProviderEnvKey(t *testing.T) {
-	if got := ToolCategories.Keys; !slices.Equal(got, []string{"tts", "stt", "web", "image_gen", "video_gen", "x_search", "browser", "computer_use"}) {
+	if got := ToolCategories.Keys(); !slices.Equal(got, []string{"tts", "stt", "web", "image_gen", "video_gen", "x_search", "browser", "computer_use"}) {
 		t.Fatal(got)
 	}
 	if !isConfigurableToolset("tts") || !isConfigurableToolset("vision") || isConfigurableToolset("terminal") {

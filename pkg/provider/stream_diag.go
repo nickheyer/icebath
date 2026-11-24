@@ -5,13 +5,13 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"reflect"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -72,7 +72,7 @@ type StreamRequestError struct {
 func (e *StreamRequestError) Error() string                       { return e.Err.Error() }
 func (e *StreamRequestError) Unwrap() error                       { return e.Err }
 func (e *StreamRequestError) FailedRequest() *FailedStreamRequest { return e.Request }
-func (e *StreamRequestError) PyTypeName() string                  { return pyrepr.TypeName(e.Err) }
+func (e *StreamRequestError) ErrorKind() string                   { return errorutil.Kind(e.Err) }
 
 // Fresh diagnostic record for one stream attempt
 func StreamDiagInit() *StreamDiag {
@@ -108,7 +108,7 @@ func FlattenExceptionChain(err error) string {
 		link = next
 	}
 	if len(seen) == 0 {
-		return pyrepr.TypeName(err)
+		return errorutil.Kind(err)
 	}
 	parts := make([]string, len(seen))
 	for i, e := range seen {
@@ -117,9 +117,9 @@ func FlattenExceptionChain(err error) string {
 			msg = textutil.First(msg, 140) + "…"
 		}
 		if msg != "" {
-			parts[i] = fmt.Sprintf("%s(%s)", pyrepr.TypeName(e), msg)
+			parts[i] = fmt.Sprintf("%s(%s)", errorutil.Kind(e), msg)
 		} else {
-			parts[i] = pyrepr.TypeName(e)
+			parts[i] = errorutil.Kind(e)
 		}
 	}
 	return strings.Join(parts, " <- ")
@@ -222,17 +222,10 @@ func LogStreamRetry(agent StreamDiagAgent, kind string, err error, attempt, maxA
 	f := diagFields(diag)
 	pkgLog().Warn(fmt.Sprintf("Stream %s on attempt %d/%d — retrying. subagent_id=%s depth=%d provider=%s base_url=%s "+
 		"error_type=%s error=%s chain=%s http_status=%s bytes=%d chunks=%d elapsed=%.2fs ttfb=%s "+
-		"serving_provider=%s finish_reason_seen=%s upstream=[%s]",
+		"serving_provider=%s finish_reason_seen=%t upstream=[%s]",
 		kind, attempt, maxAttempts, subagentID, depth, orDash(agent.StreamProvider()), orDash(agent.StreamBaseURL()),
-		pyrepr.TypeName(err), summary, FlattenExceptionChain(err), f.httpStatus, f.bytes, f.chunks, f.elapsed, f.ttfb,
-		f.servingProvider, pyBoolText(f.finishReasonSeen), f.upstream), "mid_tool_call", midToolCall)
-}
-
-func pyBoolText(b bool) string {
-	if b {
-		return "True"
-	}
-	return "False"
+		errorutil.Kind(err), summary, FlattenExceptionChain(err), f.httpStatus, f.bytes, f.chunks, f.elapsed, f.ttfb,
+		f.servingProvider, f.finishReasonSeen, f.upstream), "mid_tool_call", midToolCall)
 }
 
 // Summary of the error the agent renders, its plain text when the agent has no summarizer or it panics
@@ -265,7 +258,7 @@ func EmitStreamDrop(agent StreamDiagAgent, err error, attempt, maxAttempts int, 
 		suffix = fmt.Sprintf(" after %.1fs", math.Max(0, streamDiagNow().Sub(diag.StartedAt).Seconds()))
 	}
 	defer func() { _ = recover() }()
-	typeName := pyrepr.TypeName(err)
+	typeName := errorutil.Kind(err)
 	agent.BufferDiagnosticStatus(fmt.Sprintf("⚠️ %s stream %s (%s)%s — attempt %d/%d dropped, reconnecting", provider, kind, typeName, suffix, attempt, maxAttempts))
 	agent.TouchActivity(fmt.Sprintf("stream retry %d/%d after %s", attempt, maxAttempts, typeName))
 }
@@ -306,8 +299,8 @@ func ConnectExhaustedNotice(err error, attempts int, baseURL string) string {
 		raw = req.URL
 	}
 	host := "the endpoint"
-	if u, parseErr := pyurl.Split(raw); parseErr == nil && u.Hostname() != "" {
-		host = u.Hostname()
+	if u, parseErr := url.Parse(raw); parseErr == nil && u.Hostname() != "" {
+		host = strings.ToLower(u.Hostname())
 	}
 	line := fmt.Sprintf("❌ Could not open a stream to %s after %d attempt%s", host, attempts, attemptsPlural(attempts))
 	if req == nil || req.Content == nil {

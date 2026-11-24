@@ -2,7 +2,6 @@ package app
 
 import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Gateway session store of the CLI, nil when none is open
@@ -41,7 +40,7 @@ func takeAdmittedTurn(a *GatewayAgent, text any) map[string]any {
 	}
 	adopted := state.AdmittedTurn
 	state.AdmittedTurn = nil
-	if adopted == nil || !pyjson.Equal(adopted["text"], text) {
+	if adopted == nil || !anyutil.Equal(adopted["text"], text) {
 		return nil
 	}
 	return adopted

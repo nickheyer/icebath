@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type contentObjectPart struct {
@@ -49,7 +49,7 @@ func TestFlattenMessageTextSkipsMediaAndStringifiesScalars(t *testing.T) {
 }
 
 func TestFlattenMessageTextReadsEveryMappingKind(t *testing.T) {
-	ordered := pyjson.NewObject()
+	ordered := jsonutil.NewObject()
 	ordered.Set("type", "text")
 	ordered.Set("text", "ordered text")
 	content := []any{

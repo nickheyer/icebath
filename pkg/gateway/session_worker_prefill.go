@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Prefill file resolver and loader of the CLI config loader, installed by the process wiring
@@ -82,7 +82,7 @@ func (p *prefillPublication) Withdraw() {
 }
 
 // Stages a new session's receipt with the prefill snapshot its own commit reads and publishes
-func stageSessionPrefill(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, receipt *pyjson.Object) (*state.LocalCreateReceipt, error) {
+func stageSessionPrefill(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, receipt *jsonutil.Object) (*state.LocalCreateReceipt, error) {
 	staged := &state.LocalCreateReceipt{Receipt: receipt}
 	if !policy.IgnoreUserConfig {
 		sid, err := receiptField(receipt, "session_id")

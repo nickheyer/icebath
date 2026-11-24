@@ -28,8 +28,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	netutil "github.com/nickheyer/icebath/pkg/utils/net"
 	"gopkg.in/yaml.v3"
 )
 
@@ -498,8 +497,8 @@ func (p IronProxy) detectDockerBridgeIP() string {
 	if err != nil || !addr.Is4() {
 		return ""
 	}
-	global := !netip.MustParsePrefix("100.64.0.0/10").Contains(addr) && !pyipaddress.IsPrivate(addr)
-	if addr.IsUnspecified() || pyipaddress.IsLoopback(addr) || addr.IsMulticast() || pyipaddress.IsReserved(addr) || pyipaddress.IsLinkLocal(addr) || global {
+	global := !netip.MustParsePrefix("100.64.0.0/10").Contains(addr) && !netutil.IsPrivate(addr)
+	if addr.IsUnspecified() || addr.IsLoopback() || addr.IsMulticast() || netutil.IsReserved(addr) || addr.IsLinkLocalUnicast() || global {
 		p.log().Warn(fmt.Sprintf("Refusing suspicious docker bridge IP %s reported by `ip`; skipping bridge bind.", candidate))
 		return ""
 	}
@@ -1173,7 +1172,7 @@ func (p IronProxy) refreshSecretsFromBitwarden(env map[string]string, needed map
 			"Bitwarden refresh module unavailable at proxy start (credential_source=bitwarden with "+
 				"proxy.allow_env_fallback: false).  Either fix the import, switch to credential_source: env, or set "+
 				"`proxy.allow_env_fallback: true` to opt into the legacy fallback behaviour.",
-			fmt.Sprintf("Bitwarden refresh module unavailable at proxy start, falling back to parent env (allow_env_fallback=true): %s", pyrepr.ExceptionMessage(importErr)))
+			fmt.Sprintf("Bitwarden refresh module unavailable at proxy start, falling back to parent env (allow_env_fallback=true): %s", importErr.Error()))
 	}
 	tokenEnv := anyString(bitwardenConfig["access_token_env"])
 	if tokenEnv == "" {

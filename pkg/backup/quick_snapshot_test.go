@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Snapshot directory with an optional manifest body under a home
@@ -38,13 +38,13 @@ func TestListQuickSnapshotsNewestFirstWithStubsForBrokenManifests(t *testing.T) 
 	}
 	ids := []string{}
 	for _, m := range got {
-		ids = append(ids, m.(*pyjson.Object).Vals["id"].(string))
+		ids = append(ids, m.(*jsonutil.Object).Value("id").(string))
 	}
 	if len(ids) != 3 || ids[0] != "20260103-000000" || ids[1] != "20260102-000000" || ids[2] != "20260101-000000" {
 		t.Fatalf("ids %v", ids)
 	}
-	if stub := got[0].(*pyjson.Object); stub.Vals["file_count"] != int64(0) || stub.Vals["total_size"] != int64(0) {
-		t.Fatalf("stub %v", stub.Vals)
+	if stub := got[0].(*jsonutil.Object); stub.Value("file_count") != int64(0) || stub.Value("total_size") != int64(0) {
+		t.Fatalf("stub %v", stub)
 	}
 	if got, _ := ListQuickSnapshots(1, h); len(got) != 1 {
 		t.Fatalf("limit %v", got)

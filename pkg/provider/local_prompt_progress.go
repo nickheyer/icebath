@@ -5,16 +5,16 @@ import (
 	"math"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type promptReadingHookKey struct{}
 
 // Copy of chat completions kwargs asking llama server for prompt progress chunks through extra_body
 func WithPromptProgressKwargs(kwargs map[string]any) map[string]any {
-	merged := pyjson.NewObject()
-	if extra, ok := pyjson.AsObject(kwargs["extra_body"]); ok {
-		merged = extra.Copy()
+	merged := jsonutil.NewObject()
+	if extra, ok := jsonutil.AsObject(kwargs["extra_body"]); ok {
+		merged = extra.Clone()
 	}
 	if _, ok := merged.Get("return_progress"); !ok {
 		merged.Set("return_progress", true)

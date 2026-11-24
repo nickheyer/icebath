@@ -13,13 +13,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -50,7 +49,7 @@ func intValue(v any) int {
 		}
 		return int(n.Int64())
 	}
-	n, err := pyint.Int64(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		if f, ok := v.(float64); ok && !math.IsNaN(f) && !math.IsInf(f, 0) {
 			return int(f)
@@ -121,7 +120,7 @@ func fmt0(f float64) string {
 func transcriptEstimate(ctx context.Context, history []map[string]any) (int, int) {
 	var msgs []map[string]any
 	for _, m := range history {
-		if role := m["role"]; (role == "user" || role == "assistant") && pyrepr.Truthy(m["content"]) {
+		if role := m["role"]; (role == "user" || role == "assistant") && anyutil.IsTrue(m["content"]) {
 			msgs = append(msgs, m)
 		}
 	}
@@ -142,7 +141,7 @@ func agentContextEngine(a *agent.AIAgent) agent.ContextEngine {
 }
 
 // Model, provider, context used, context window and the winning route for the status reply
-func statusModelRoute(ctx context.Context, statusAgent *agent.AIAgent, activeOverride map[string]any, persistedRoute, sessionRow *pyjson.Object, entry *gateway.SessionEntry) (string, string, int, int, map[string]any) {
+func statusModelRoute(ctx context.Context, statusAgent *agent.AIAgent, activeOverride map[string]any, persistedRoute, sessionRow *jsonutil.Object, entry *gateway.SessionEntry) (string, string, int, int, map[string]any) {
 	contextUsed, contextTotal := 0, 0
 	type route struct {
 		model, provider string
@@ -159,7 +158,7 @@ func statusModelRoute(ctx context.Context, statusAgent *agent.AIAgent, activeOve
 	}
 	routes = append(routes, route{cleanStr(activeOverride["model"]), cleanStr(activeOverride["provider"]),
 		map[string]any{"base_url": cleanStr(activeOverride["base_url"]), "api_key": cleanStr(activeOverride["api_key"])}})
-	get := func(o *pyjson.Object, key string) any {
+	get := func(o *jsonutil.Object, key string) any {
 		if o == nil {
 			return nil
 		}
@@ -229,7 +228,7 @@ func contextCompressorLines(ctx context.Context, a *agent.AIAgent, engine agent.
 }
 
 // Session id, title, model, provider and timestamps of the status reply preformatted for display
-func gatewayStatusFields(sessionID string, sessionRow *pyjson.Object, title *string, model, provider string, entry *gateway.SessionEntry, tokens int, agentRunning bool) map[string]any {
+func gatewayStatusFields(sessionID string, sessionRow *jsonutil.Object, title *string, model, provider string, entry *gateway.SessionEntry, tokens int, agentRunning bool) map[string]any {
 	rowTitle := ""
 	if title != nil {
 		rowTitle = *title
@@ -240,7 +239,7 @@ func gatewayStatusFields(sessionID string, sessionRow *pyjson.Object, title *str
 		}
 	}
 	return map[string]any{"session_id": sessionID, "title": strings.TrimSpace(rowTitle), "model": model, "provider": provider,
-		"created": pydatetime.Strftime(entry.CreatedAt.T, statusStampFormat), "last_activity": pydatetime.Strftime(entry.UpdatedAt.T, statusStampFormat),
+		"created": entry.CreatedAt.T.Format("2006-01-02 15:04"), "last_activity": entry.UpdatedAt.T.Format("2006-01-02 15:04"),
 		"tokens": fmtThousands(tokens), "agent_running": agentRunning}
 }
 
@@ -343,10 +342,10 @@ func (r *GatewayRunner) handleStatusCommand(ctx context.Context, event *gateway.
 }
 
 // Title, row, summed token totals and recent route of the session, each failing open
-func (r *GatewayRunner) statusSessionDBFacts(ctx context.Context, sessionID string) (*string, *pyjson.Object, int, *pyjson.Object) {
+func (r *GatewayRunner) statusSessionDBFacts(ctx context.Context, sessionID string) (*string, *jsonutil.Object, int, *jsonutil.Object) {
 	asyncDB := r.sessionDB(ctx)
 	if asyncDB == nil {
-		return nil, pyjson.NewObject(), 0, pyjson.NewObject()
+		return nil, jsonutil.NewObject(), 0, jsonutil.NewObject()
 	}
 	db := asyncDB.DB()
 	title := quiet(func() (*string, error) {
@@ -356,18 +355,18 @@ func (r *GatewayRunner) statusSessionDBFacts(ctx context.Context, sessionID stri
 		}
 		return &text, nil
 	}, nil)
-	sessionRow := quiet(func() (*pyjson.Object, error) { return db.GetSession(ctx, sessionID) }, nil)
+	sessionRow := quiet(func() (*jsonutil.Object, error) { return db.GetSession(ctx, sessionID) }, nil)
 	if sessionRow == nil {
-		sessionRow = pyjson.NewObject()
+		sessionRow = jsonutil.NewObject()
 	}
 	total := 0
 	for _, k := range []string{"input_tokens", "output_tokens", "cache_read_tokens", "cache_write_tokens", "reasoning_tokens"} {
 		v, _ := sessionRow.Get(k)
 		total += intValue(v)
 	}
-	route := quiet(func() (*pyjson.Object, error) { return db.GetRecentSessionModelRoute(ctx, sessionID) }, nil)
+	route := quiet(func() (*jsonutil.Object, error) { return db.GetRecentSessionModelRoute(ctx, sessionID) }, nil)
 	if route == nil {
-		route = pyjson.NewObject()
+		route = jsonutil.NewObject()
 	}
 	return title, sessionRow, total, route
 }
@@ -460,7 +459,7 @@ func (r *GatewayRunner) resolveContextFigures(ctx context.Context, a *agent.AIAg
 	}
 	if modelName == "" {
 		if asyncDB := r.sessionDB(ctx); asyncDB != nil {
-			if row := quiet(func() (*pyjson.Object, error) { return asyncDB.DB().GetSession(ctx, entry.SessionID) }, nil); row != nil {
+			if row := quiet(func() (*jsonutil.Object, error) { return asyncDB.DB().GetSession(ctx, entry.SessionID) }, nil); row != nil {
 				v, _ := row.Get("model")
 				modelName = cleanStr(v)
 			}

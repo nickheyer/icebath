@@ -11,9 +11,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 type loggerRecord struct {
@@ -196,13 +196,13 @@ func TestWatchdogDumpTheTurnThreadStackWhenItFires(t *testing.T) {
 	parked, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
 	go pprof.Do(context.Background(), pprof.Labels("thread", "prompt-turn-stalled"), func(context.Context) {
 		defer close(done)
-		a.executionGoroutineID.Store(pythread.GoroutineID())
+		a.executionGoroutineID.Store(syncutil.GoroutineID())
 		close(parked)
 		parkStalledTurnThread(release)
 	})
 	<-parked
 	w := newTurnLivenessWatchdog(a, turnLivenessWatchdogConfig{
-		sessionID: "stalled-session", timeoutS: 600, pollS: 15, stopEvent: &pythread.Event{},
+		sessionID: "stalled-session", timeoutS: 600, pollS: 15, stopEvent: &syncutil.Event{},
 		activityLock: a.livenessActivityLock(), isTurnActive: func() bool { return true },
 		commitAbort: func(activitySnapshot, string) bool { return true }, deactivateTurn: func() {},
 	})
@@ -242,7 +242,7 @@ func TestHostSleepIsNotAStalledTurn(t *testing.T) {
 			a.TouchActivity("starting new turn")
 			aborts := 0
 			w := newTurnLivenessWatchdog(a, turnLivenessWatchdogConfig{
-				sessionID: "test", timeoutS: 600, pollS: 15, stopEvent: &pythread.Event{},
+				sessionID: "test", timeoutS: 600, pollS: 15, stopEvent: &syncutil.Event{},
 				activityLock: a.livenessActivityLock(), isTurnActive: func() bool { return true },
 				commitAbort: func(activitySnapshot, string) bool { aborts++; return true }, deactivateTurn: func() {},
 			})

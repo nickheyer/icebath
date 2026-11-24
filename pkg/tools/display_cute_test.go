@@ -11,7 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Fresh home with the English catalog and an unlimited preview cap
@@ -26,8 +25,8 @@ func cuteTestHome(t *testing.T) context.Context {
 }
 
 // Ordered dict built from alternating keys and values
-func displayObj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func displayObj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -37,7 +36,7 @@ func displayObj(kv ...any) *pyjson.Object {
 // json.dumps text of an ordered dict built from alternating keys and values
 func displayDumps(t *testing.T, kv ...any) string {
 	t.Helper()
-	out, err := pyjson.Dumps(displayObj(kv...))
+	out, err := jsonutil.Encode(displayObj(kv...))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,7 +156,7 @@ func TestDetectToolFailureStructuredSuccessfulResultNotFlagged(t *testing.T) {
 
 func TestDetectToolFailureStructuredEmptyErrorAndFailedValuesAreNotFailures(t *testing.T) {
 	ctx := cuteTestHome(t)
-	indented, err := pyjson.Dumps(displayObj("results", []any{displayObj("url", "https://example.com/", "content", "hi", "error", nil)}), pyjson.Indent(2))
+	indented, err := jsonutil.Encode(displayObj("results", []any{displayObj("url", "https://example.com/", "content", "hi", "error", nil)}), jsonutil.Indent(2))
 	if err != nil {
 		t.Fatal(err)
 	}

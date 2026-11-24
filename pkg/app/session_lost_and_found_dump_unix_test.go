@@ -41,10 +41,10 @@ func TestRecoverAttemptsSurviveDumpStderrBeyondPipeBuffer(t *testing.T) {
 		t.Fatal("the undrained stderr burned the whole salvage timeout")
 	}
 	last := attempts[len(attempts)-1]
-	if code, _ := last.GetOr("dump_returncode", nil).(int64); code != 0 {
-		t.Fatalf("dump returncode %v", last.GetOr("dump_returncode", nil))
+	if code, _ := last.Value("dump_returncode").(int64); code != 0 {
+		t.Fatalf("dump returncode %v", last.Value("dump_returncode"))
 	}
-	if tail, _ := last.GetOr("dump_stderr_tail", "").(string); !strings.Contains(tail, "file is not a database") {
+	if tail, _ := last.ValueOr("dump_stderr_tail", "").(string); !strings.Contains(tail, "file is not a database") {
 		t.Fatalf("stderr tail %q", tail)
 	}
 }

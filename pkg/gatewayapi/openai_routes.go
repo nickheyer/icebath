@@ -11,10 +11,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Unbounded agent stream queue, nil being the end of stream sentinel
@@ -107,16 +107,16 @@ func iterStreamItems(ctx context.Context, q *streamQueue, task *agentTask, respo
 }
 
 // Chat messages as the system prompt, the conversation messages and a 400 for malformed content
-func parseChatMessages(ctx context.Context, messages []any) (*string, []*pyjson.Object, *gateway.WebResponse) {
+func parseChatMessages(ctx context.Context, messages []any) (*string, []*jsonutil.Object, *gateway.WebResponse) {
 	var systemPrompt *string
-	conversation := []*pyjson.Object{}
+	conversation := []*jsonutil.Object{}
 	for idx, raw := range messages {
-		msg, ok := raw.(*pyjson.Object)
+		msg, ok := raw.(*jsonutil.Object)
 		if !ok {
-			panic(&gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))})
+			panic(&gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)})
 		}
-		role := msg.GetOr("role", "")
-		rawContent := msg.GetOr("content", "")
+		role := msg.ValueOr("role", "")
+		rawContent := msg.ValueOr("content", "")
 		switch role {
 		case "system":
 			content := gateway.APINormalizeChatContent(rawContent)
@@ -131,32 +131,32 @@ func parseChatMessages(ctx context.Context, messages []any) (*string, []*pyjson.
 			if err != nil {
 				return nil, nil, multimodalValidationError(err, fmt.Sprintf("messages[%d].content", idx))
 			}
-			conversation = append(conversation, pyjson.ObjectOf("role", role, "content", content))
+			conversation = append(conversation, jsonutil.ObjectOf("role", role, "content", content))
 		}
 	}
 	return systemPrompt, conversation, nil
 }
 
 // Responses input as messages, a 400 for a malformed input
-func parseResponsesInput(ctx context.Context, rawInput any) ([]*pyjson.Object, *gateway.WebResponse) {
-	messages := []*pyjson.Object{}
+func parseResponsesInput(ctx context.Context, rawInput any) ([]*jsonutil.Object, *gateway.WebResponse) {
+	messages := []*jsonutil.Object{}
 	switch v := rawInput.(type) {
 	case string:
-		messages = append(messages, pyjson.ObjectOf("role", "user", "content", v))
+		messages = append(messages, jsonutil.ObjectOf("role", "user", "content", v))
 	case []any:
 		for idx, item := range v {
 			switch it := item.(type) {
 			case string:
-				messages = append(messages, pyjson.ObjectOf("role", "user", "content", it))
-			case *pyjson.Object:
+				messages = append(messages, jsonutil.ObjectOf("role", "user", "content", it))
+			case *jsonutil.Object:
 				if isReasoningInputItem(it) {
 					continue
 				}
-				content, err := gateway.APINormalizeMultimodalContent(ctx, it.GetOr("content", ""))
+				content, err := gateway.APINormalizeMultimodalContent(ctx, it.ValueOr("content", ""))
 				if err != nil {
 					return nil, multimodalValidationError(err, fmt.Sprintf("input[%d].content", idx))
 				}
-				messages = append(messages, pyjson.ObjectOf("role", it.GetOr("role", "user"), "content", content))
+				messages = append(messages, jsonutil.ObjectOf("role", it.ValueOr("role", "user"), "content", content))
 			}
 		}
 	default:
@@ -176,7 +176,7 @@ func parseConversationHistory(ctx context.Context, rawHistory any) ([]any, *gate
 		if isReasoningInputItem(entry) {
 			continue
 		}
-		obj, isObj := entry.(*pyjson.Object)
+		obj, isObj := entry.(*jsonutil.Object)
 		hasRole, hasContent := false, false
 		if isObj {
 			_, hasRole = obj.Get("role")
@@ -191,13 +191,13 @@ func parseConversationHistory(ctx context.Context, rawHistory any) ([]any, *gate
 			return nil, multimodalValidationError(err, fmt.Sprintf("conversation_history[%d].content", i))
 		}
 		role, _ := obj.Get("role")
-		history = append(history, pyjson.ObjectOf("role", pyrepr.Str(role), "content", content))
+		history = append(history, jsonutil.ObjectOf("role", anyutil.String(role), "content", content))
 	}
 	return history, nil
 }
 
 // Model route alias and per request overrides, a 400 for an ambiguous mix
-func (a *APIServerAdapter) selectRequestRoute(ctx context.Context, body *pyjson.Object, sessionID, gatewaySessionKey string, modelAlias any) (map[string]string, map[string]any, *gateway.WebResponse) {
+func (a *APIServerAdapter) selectRequestRoute(ctx context.Context, body *jsonutil.Object, sessionID, gatewaySessionKey string, modelAlias any) (map[string]string, map[string]any, *gateway.WebResponse) {
 	route := a.resolveRoute(modelAlias)
 	overrides := requestAgentOverrides(body, a.modelName, a.directModelRequests)
 	requestedModel, _ := overrides["requested_model"].(string)
@@ -218,7 +218,7 @@ func (a *APIServerAdapter) registerStreamApproval(ctx context.Context, request *
 	a.runApprovalSessions[completionID] = completionID
 	a.mu.Unlock()
 	notify := func(approvalData map[string]any) error {
-		data, _ := pyjson.AsObject(approvalData)
+		data, _ := jsonutil.AsObject(approvalData)
 		event := approvalRequestEvent(ctx, completionID, data, "session_id", sessionID)
 		a.setRunStatus(ctx, completionID, "waiting_for_approval", "last_event", "approval.request", "approval", event)
 		q.put(streamTagged{"__approval__", event})
@@ -260,7 +260,7 @@ func (a *APIServerAdapter) spawnStreamAgentWith(ctx context.Context, q *streamQu
 	run.streamDeltaCallback = func(delta string) { q.put(delta) }
 	run.reasoningCallback = func(text string) {
 		if text != "" {
-			q.put(streamTagged{"__reasoning__", pyjson.ObjectOf("text", text)})
+			q.put(streamTagged{"__reasoning__", jsonutil.ObjectOf("text", text)})
 		}
 	}
 	run.statusCallback = func(kind string, message any) {
@@ -270,7 +270,7 @@ func (a *APIServerAdapter) spawnStreamAgentWith(ctx context.Context, q *streamQu
 		}
 		text := strings.TrimSpace(redactAPIErrorText(raw, -1))
 		if text != "" {
-			q.put(streamTagged{"__status__", pyjson.ObjectOf("kind", kind, "text", text)})
+			q.put(streamTagged{"__status__", jsonutil.ObjectOf("kind", kind, "text", text)})
 		}
 	}
 	var ref *agent.AIAgent
@@ -304,16 +304,16 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 	if err != nil {
 		return errorResponse("Invalid JSON in request body", http.StatusBadRequest, errOpts{}), nil
 	}
-	body, _ := raw.(*pyjson.Object)
+	body, _ := raw.(*jsonutil.Object)
 	if body == nil {
-		return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))}
+		return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 	}
 	relayMetadata := requestRelayMetadata(body)
-	messages, ok := body.GetOr("messages", nil).([]any)
+	messages, ok := body.ValueOr("messages", nil).([]any)
 	if !ok || len(messages) == 0 {
 		return invalidRequest("Missing or invalid 'messages' field"), nil
 	}
-	stream := gateway.APICoerceRequestBool(body.GetOr("stream", nil), false)
+	stream := gateway.APICoerceRequestBool(body.ValueOr("stream", nil), false)
 	systemPrompt, conversation, msgErr := parseChatMessages(ctx, messages)
 	if msgErr != nil {
 		return msgErr, nil
@@ -321,7 +321,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 	var userMessage any = ""
 	history := []any{}
 	if len(conversation) > 0 {
-		userMessage = conversation[len(conversation)-1].GetOr("content", "")
+		userMessage = conversation[len(conversation)-1].ValueOr("content", "")
 		for _, m := range conversation[:len(conversation)-1] {
 			history = append(history, m)
 		}
@@ -363,7 +363,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 		firstUser := ""
 		for _, m := range conversation {
 			if r, _ := m.Get("role"); r == "user" {
-				firstUser = pyrepr.Str(m.GetOr("content", ""))
+				firstUser = anyutil.String(m.ValueOr("content", ""))
 				break
 			}
 		}
@@ -384,12 +384,12 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 	if useStored {
 		history = make([]any, 0, len(historyRows))
 		for _, r := range historyRows {
-			obj, _ := pyjson.AsObject(r)
+			obj, _ := jsonutil.AsObject(r)
 			history = append(history, obj)
 		}
 	}
 	completionID := "chatcmpl-" + hexUUID()[:29]
-	modelName := body.GetOr("model", a.modelName)
+	modelName := body.ValueOr("model", a.modelName)
 	created := int64(apiNow())
 	route, overrides, selectionErr := a.selectRequestRoute(ctx, body, sessionID, gatewaySessionKey, modelName)
 	if selectionErr != nil {
@@ -410,7 +410,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 		run.sessionHistoryDelivery = "1"
 	}
 	a.applyAuthorityChatKwargs(&run, request, providedSessionID)
-	if providedSessionID != "" && body.GetOr("icebath_notification_category", nil) == "diagnostic" {
+	if providedSessionID != "" && body.ValueOr("icebath_notification_category", nil) == "diagnostic" {
 		run.notificationCategory = "diagnostic"
 	}
 	if stream {
@@ -429,7 +429,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 			if label == "" {
 				label = functionName
 			}
-			q.put(streamTagged{"__tool_progress__", pyjson.ObjectOf("tool", functionName, "emoji", tools.GetToolEmoji(ctx, env, functionName, ""),
+			q.put(streamTagged{"__tool_progress__", jsonutil.ObjectOf("tool", functionName, "emoji", tools.GetToolEmoji(ctx, env, functionName, ""),
 				"label", label, "toolCallId", toolCallID, "status", "running")})
 		}
 		run.toolCompleteCallback = func(toolCallID, functionName string, functionArgs map[string]any, result string) {
@@ -440,7 +440,7 @@ func (a *APIServerAdapter) handleChatCompletions(ctx context.Context, request *g
 			if !known {
 				return
 			}
-			q.put(streamTagged{"__tool_progress__", pyjson.ObjectOf("tool", functionName, "toolCallId", toolCallID, "status", "completed")})
+			q.put(streamTagged{"__tool_progress__", jsonutil.ObjectOf("tool", functionName, "toolCallId", toolCallID, "status", "completed")})
 		}
 		notify, endStreamRun := a.registerStreamApproval(ctx, request, completionID, q, sessionID)
 		run.approvalNotifyCallback = notify
@@ -472,16 +472,16 @@ func (a *APIServerAdapter) chatCompletionResponse(ctx context.Context, result, u
 	final, _ := result["final_response"].(string)
 	finalResponse := gateway.APIResolveMediaToDataURLs(ctx, final)
 	completed, isPartial, isFailed, errMsg := resultFlags(result)
-	if pyrepr.Truthy(errMsg) {
+	if anyutil.IsTrue(errMsg) {
 		errMsg = redactAPIErrorText(errMsg, -1)
 	}
 	exhausted := budgetExhausted(result)
 	finish := finishReason(completed, isPartial, isFailed, errMsg, nil, exhausted)
 	echoed := providedSessionID
 	if echoed == "" {
-		echoed = pyrepr.Str(firstTruthy(result["session_id"], sessionID))
+		echoed = anyutil.String(firstTruthy(result["session_id"], sessionID))
 		if _, has := result["session_id"]; has {
-			echoed = pyrepr.Str(result["session_id"])
+			echoed = anyutil.String(result["session_id"])
 		}
 	}
 	headers := map[string]string{"X-Icebath-Session-Id": echoed}
@@ -494,15 +494,15 @@ func (a *APIServerAdapter) chatCompletionResponse(ctx context.Context, result, u
 	}
 	if finalResponse == "" && (isFailed || isPartial) {
 		message := "Agent run did not produce a response."
-		if pyrepr.Truthy(errMsg) {
-			message = pyrepr.Str(errMsg)
+		if anyutil.IsTrue(errMsg) {
+			message = anyutil.String(errMsg)
 		}
 		if muted {
 			message = ""
 		}
 		errBody := openAIError(message, "server_error", nil, "agent_incomplete")
 		inner, _ := errBody.Get("error")
-		inner.(*pyjson.Object).Set("icebath", pyjson.ObjectOf("completed", completed, "partial", isPartial, "failed", isFailed))
+		inner.(*jsonutil.Object).Set("icebath", jsonutil.ObjectOf("completed", completed, "partial", isPartial, "failed", isFailed))
 		headers["X-Icebath-Completed"] = "false"
 		headers["X-Icebath-Partial"] = partialFlag
 		return jsonResponse(errBody, http.StatusBadGateway, headers)
@@ -511,9 +511,9 @@ func (a *APIServerAdapter) chatCompletionResponse(ctx context.Context, result, u
 	if muted {
 		content = ""
 	}
-	message := pyjson.ObjectOf("role", "assistant", "content", content)
-	data := pyjson.ObjectOf("id", completionID, "object", "chat.completion", "created", created, "model", modelName,
-		"choices", []any{pyjson.ObjectOf("index", int64(0), "message", message, "finish_reason", finish)},
+	message := jsonutil.ObjectOf("role", "assistant", "content", content)
+	data := jsonutil.ObjectOf("id", completionID, "object", "chat.completion", "created", created, "model", modelName,
+		"choices", []any{jsonutil.ObjectOf("index", int64(0), "message", message, "finish_reason", finish)},
 		"usage", chatUsagePayload(usage))
 	if reasoning := turnReasoningText(history, userMessage, result); reasoning != "" && !muted {
 		message.Set("reasoning_content", reasoning)
@@ -526,7 +526,7 @@ func (a *APIServerAdapter) chatCompletionResponse(ctx context.Context, result, u
 		data.Set("icebath", completionExtras(completed, isPartial, isFailed, extrasErr, finish, exhausted))
 		headers["X-Icebath-Completed"] = "false"
 		headers["X-Icebath-Partial"] = partialFlag
-		if pyrepr.Truthy(errMsg) && !muted {
+		if anyutil.IsTrue(errMsg) && !muted {
 			headers["X-Icebath-Error"] = redactAPIErrorText(errMsg, 200)
 		}
 	}
@@ -537,7 +537,7 @@ func (a *APIServerAdapter) chatCompletionResponse(ctx context.Context, result, u
 func historyMaps(history []any) []map[string]any {
 	out := make([]map[string]any, 0, len(history))
 	for _, h := range history {
-		if m, ok := pyjson.Plain(h).(map[string]any); ok {
+		if m, ok := jsonutil.Plain(h).(map[string]any); ok {
 			out = append(out, m)
 		}
 	}

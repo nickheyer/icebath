@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ChatAux is the auxiliary client surface sampling needs, an OpenAI shaped chat completion that forwards tools
@@ -421,7 +421,7 @@ func (h *samplingHandler) buildLLMCall(params *CreateMessageParams, model string
 	maxTokens := min(params.MaxTokens, h.maxTokensCap)
 	var toolDefs []map[string]any
 	for _, t := range params.Tools {
-		toolDefs = append(toolDefs, map[string]any{"type": "function", "function": pyjson.ObjectOf(
+		toolDefs = append(toolDefs, map[string]any{"type": "function", "function": jsonutil.ObjectOf(
 			"name", t.Name, "description", t.Description, "parameters", normalizeInputSchema(t.InputSchema))})
 	}
 	pkgLog().Log(context.Background(), h.auditLevel, fmt.Sprintf("MCP server '%s' sampling request: model=%s, max_tokens=%d, messages=%d",
@@ -498,8 +498,8 @@ func (h *samplingHandler) buildToolUseResult(calls []any, resp map[string]any) (
 	}
 	content := make([]any, 0, len(calls))
 	for _, raw := range calls {
-		tc, _ := pyjson.Dict(raw)
-		fn, _ := pyjson.Dict(tc["function"])
+		tc, _ := jsonutil.AsMap(raw)
+		fn, _ := jsonutil.AsMap(tc["function"])
 		input, ok := parseToolCallArguments(h.serverName, fn["arguments"])
 		if !ok {
 			return nil, &RPCError{Code: CodeInternalError, Message: "Input should be a valid dictionary"}

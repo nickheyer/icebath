@@ -4,8 +4,6 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -17,10 +15,10 @@ func in(r rune, set string) bool { return strings.ContainsRune(set, r) }
 
 func itoa(n int) string { return strconv.Itoa(n) }
 
-func pyStrRepr(s string) string { return pyrepr.StrRepr(s) }
+func pyStrRepr(s string) string { return strconv.Quote(s) }
 
 // Python repr of one character, a surrogate kept as its own code point
-func charRepr(r rune) string { return pyrepr.StrRepr(string([]rune{r})) }
+func charRepr(r rune) string { return strconv.Quote(string([]rune{r})) }
 
 // Digits Python int() converts before the str conversion limit refuses the text
 const intMaxStrDigits = 4300

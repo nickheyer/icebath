@@ -11,13 +11,13 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var (
@@ -116,10 +116,10 @@ func (r *GatewayRunner) kanbanNotifierWatcher(ctx context.Context, interval floa
 	gcNextAt := 0.0
 	for r.running.Load() {
 		err := catchPanic(func() error {
-			gcDue := pythread.Monotonic() >= gcNextAt
+			gcDue := timeutil.Monotonic() >= gcNextAt
 			retention := int64(30)
 			if gcDue {
-				gcNextAt = pythread.Monotonic() + kanbanGCIntervalSeconds
+				gcNextAt = timeutil.Monotonic() + kanbanGCIntervalSeconds
 				retention = gcRetentionDays(ctx)
 			}
 			deliveries, err := awaitThread(ctx, func() ([]*kanbanDelivery, error) {
@@ -139,7 +139,7 @@ func (r *GatewayRunner) kanbanNotifierWatcher(ctx context.Context, interval floa
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			pkgLog().Warn(fmt.Sprintf("kanban notifier tick failed: %s", pyrepr.Str(err)))
+			pkgLog().Warn(fmt.Sprintf("kanban notifier tick failed: %s", anyutil.String(err)))
 		}
 		if err := r.sleepBetweenTicks(ctx, interval); err != nil {
 			return err
@@ -149,7 +149,7 @@ func (r *GatewayRunner) kanbanNotifierWatcher(ctx context.Context, interval floa
 }
 
 // Calls one kanban notify operation for a subscription on its board under pin first resolution
-func (r *GatewayRunner) kanbanSubOp(ctx context.Context, board string, op string, sub *pyjson.Object, extra map[string]int64) error {
+func (r *GatewayRunner) kanbanSubOp(ctx context.Context, board string, op string, sub *jsonutil.Object, extra map[string]int64) error {
 	pinned := kanban.PinFirstBoardResolution(ctx)
 	var boardArg *string
 	if board != "" {
@@ -178,17 +178,17 @@ func (r *GatewayRunner) kanbanSubOp(ctx context.Context, board string, op string
 }
 
 // Moves the subscription cursor to cursor
-func (r *GatewayRunner) kanbanAdvance(ctx context.Context, sub *pyjson.Object, cursor int64, board string) error {
+func (r *GatewayRunner) kanbanAdvance(ctx context.Context, sub *jsonutil.Object, cursor int64, board string) error {
 	return r.kanbanSubOp(ctx, board, "advance_notify_cursor", sub, map[string]int64{"new_cursor": cursor})
 }
 
 // Removes the subscription
-func (r *GatewayRunner) kanbanUnsub(ctx context.Context, sub *pyjson.Object, board string) error {
+func (r *GatewayRunner) kanbanUnsub(ctx context.Context, sub *jsonutil.Object, board string) error {
 	return r.kanbanSubOp(ctx, board, "remove_notify_sub", sub, nil)
 }
 
 // Undoes a claimed notification cursor after a send failure
-func (r *GatewayRunner) kanbanRewind(ctx context.Context, sub *pyjson.Object, claimedCursor, oldCursor int64, board string) error {
+func (r *GatewayRunner) kanbanRewind(ctx context.Context, sub *jsonutil.Object, claimedCursor, oldCursor int64, board string) error {
 	return r.kanbanSubOp(ctx, board, "rewind_notify_cursor", sub, map[string]int64{"claimed_cursor": claimedCursor, "old_cursor": oldCursor})
 }
 
@@ -216,10 +216,10 @@ func (r *GatewayRunner) deliverKanbanArtifacts(ctx context.Context, adapter gate
 	}
 	staged := map[string]bool{}
 	for _, p := range rawPaths {
-		staged[pypath.Basename(p)] = true
+		staged[pathutil.Name(p)] = true
 	}
 	for _, p := range prosePaths {
-		if !staged[pypath.Basename(p)] {
+		if !staged[pathutil.Name(p)] {
 			rawPaths = append(rawPaths, p)
 		}
 	}
@@ -228,7 +228,7 @@ func (r *GatewayRunner) deliverKanbanArtifacts(ctx context.Context, adapter gate
 	for _, path := range rawPaths {
 		expanded := ""
 		if path != "" {
-			expanded = pypath.Expanduser(path)
+			expanded = pathutil.ExpandUser(path)
 		}
 		if expanded == "" || seen[expanded] {
 			continue
@@ -250,7 +250,7 @@ func (r *GatewayRunner) deliverKanbanArtifacts(ctx context.Context, adapter gate
 	}
 	var imagePaths, otherPaths []string
 	for _, p := range candidates {
-		if kanbanImageExts[strings.ToLower(pypath.Suffix(p))] {
+		if kanbanImageExts[strings.ToLower(pathutil.Suffix(p))] {
 			imagePaths = append(imagePaths, p)
 		} else {
 			otherPaths = append(otherPaths, p)
@@ -265,12 +265,12 @@ func (r *GatewayRunner) deliverKanbanArtifacts(ctx context.Context, adapter gate
 			_, err := adapter.SendMultipleImages(ctx, chatID, batch, metadata, 0.0)
 			return err
 		}); err != nil {
-			pkgLog().Warn(fmt.Sprintf("kanban notifier: image batch upload failed: %s", pyrepr.Str(err)))
+			pkgLog().Warn(fmt.Sprintf("kanban notifier: image batch upload failed: %s", anyutil.String(err)))
 		}
 	}
 	for _, path := range otherPaths {
 		err := catchPanic(func() error {
-			if kanbanVideoExts[strings.ToLower(pypath.Suffix(path))] {
+			if kanbanVideoExts[strings.ToLower(pathutil.Suffix(path))] {
 				_, err := adapter.SendVideo(ctx, chatID, path, "", "", metadata, nil)
 				return err
 			}
@@ -278,7 +278,7 @@ func (r *GatewayRunner) deliverKanbanArtifacts(ctx context.Context, adapter gate
 			return err
 		})
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("kanban notifier: artifact upload (%s) failed: %s", path, pyrepr.Str(err)))
+			pkgLog().Warn(fmt.Sprintf("kanban notifier: artifact upload (%s) failed: %s", path, anyutil.String(err)))
 		}
 	}
 	return nil
@@ -287,7 +287,7 @@ func (r *GatewayRunner) deliverKanbanArtifacts(ctx context.Context, adapter gate
 // Whether an event payload is a mapping
 func isPayloadMapping(v any) bool {
 	switch v.(type) {
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return true
 	}
 	return false
@@ -306,7 +306,7 @@ func (r *GatewayRunner) kanbanDispatcherBoot(ctx context.Context) (*kanbanDispat
 	r.kanbanDispatcherLockMu.Lock()
 	r.kanbanDispatcherLockHandle = nil
 	r.kanbanDispatcherLockMu.Unlock()
-	lockPath := pypath.PathJoin(kanban.KanbanHome(), "kanban", ".dispatcher.lock")
+	lockPath := pathutil.Join(kanban.KanbanHome(), "kanban", ".dispatcher.lock")
 	handle, lockState := acquireSingletonLock(lockPath)
 	switch lockState {
 	case singletonLockContended:
@@ -363,7 +363,7 @@ func (r *GatewayRunner) kanbanDispatcherWatcher(ctx context.Context) error {
 			for i, p := range pids {
 				items[i] = int64(p)
 			}
-			pkgLog().Info(fmt.Sprintf("kanban dispatcher: reaped %d zombie worker(s), pids=%s", len(pids), pyrepr.Repr(items)))
+			pkgLog().Info(fmt.Sprintf("kanban dispatcher: reaped %d zombie worker(s), pids=%s", len(pids), anyutil.Quote(items)))
 		}
 
 		err = catchPanic(func() error {

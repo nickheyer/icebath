@@ -13,11 +13,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Records User PATH registrations instead of writing the registry, answering added
@@ -76,7 +76,7 @@ func writeDistlibExe(t *testing.T, target, interpreter, root string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Fprintf(w, "import sys\nsys.path.insert(0, %s)\n", pyrepr.StrRepr(root))
+	fmt.Fprintf(w, "import sys\nsys.path.insert(0, %s)\n", strconv.Quote(root))
 	if err := zw.Close(); err != nil {
 		t.Fatal(err)
 	}

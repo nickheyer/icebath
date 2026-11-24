@@ -7,7 +7,7 @@ import (
 	"maps"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Puts the agent on a primary runtime shaped snapshot with its client, caching, compressor, reasoning and prompt identity
@@ -67,11 +67,11 @@ func reinstallCompressorModel(a *AIAgent, rt map[string]any) error {
 	case float64:
 		contextLength = int(n)
 	default:
-		big, ok := pyint.Instance(n)
+		whole, ok := anyutil.Int(n)
 		if !ok {
 			return fmt.Errorf("compressor_context_length is %s, expected a whole number", errchain.Kind(n))
 		}
-		contextLength = int(big.Int64())
+		contextLength = int(whole)
 	}
 	model, _ := fields[0].(string)
 	baseURL, _ := fields[2].(string)

@@ -4,7 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestWorkerContextPreservesAuthorityIdentityAndPromptReceipts(t *testing.T) {
@@ -25,7 +26,7 @@ func TestWorkerContextPreservesAuthorityIdentityAndPromptReceipts(t *testing.T) 
 	}
 	store := newWorkerStore(t, db, scope)
 	owned, err := store.getSession("owned")
-	if err != nil || !pyjson.Equal(rowValue(owned, "system_prompt"), "prefix") {
+	if err != nil || !anyutil.Equal(rowValue(owned, "system_prompt"), "prefix") {
 		t.Fatalf("owned %v %v", owned, err)
 	}
 	var denied *workerPersistenceError
@@ -44,13 +45,13 @@ func TestWorkerContextPreservesAuthorityIdentityAndPromptReceipts(t *testing.T) 
 		t.Fatal(err)
 	}
 	anchor, err := store.getSessionModelConfigValue("owned", "_usage_anchor")
-	if err != nil || !pyjson.Equal(anchor, pyjson.ObjectOf("tokens", 23)) {
+	if err != nil || !anyutil.Equal(anchor, jsonutil.ObjectOf("tokens", 23)) {
 		t.Fatalf("anchor %v %v", anchor, err)
 	}
 	if delegate, err := db.GetSessionModelConfigValue(ctx, "owned", "_delegate_from", nil); err != nil || delegate != "parent" {
 		t.Fatalf("delegate marker %v %v", delegate, err)
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "foreign"), "system_prompt"), "private") {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "foreign"), "system_prompt"), "private") {
 		t.Fatal("foreign prompt changed")
 	}
 	original := store.rpc
@@ -62,7 +63,7 @@ func TestWorkerContextPreservesAuthorityIdentityAndPromptReceipts(t *testing.T) 
 	if results, err := store.retryPending(); err != nil || len(results) != 1 {
 		t.Fatalf("retry %v %v", results, err)
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "owned"), "system_prompt"), "durable-prefix") {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "owned"), "system_prompt"), "durable-prefix") {
 		t.Fatal("durable prompt missing")
 	}
 	if r := receiptRefusal(t, db, store.rawReceipt("session.sidecars", map[string]any{"patch": map[string]any{"_delegate_from": "foreign"}})); r != "invalid_params" {

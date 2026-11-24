@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const cdpDocsURL = "https://chromedevtools.github.io/devtools-protocol/"
@@ -52,25 +52,25 @@ const cdpDescription = "Send a raw Chrome DevTools Protocol (CDP) command. Escap
 	"routing."
 
 // Static browser_cdp schema
-func BrowserCDPSchema() *pyjson.Object {
-	return pyjson.ObjectOf(
+func BrowserCDPSchema() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"name", "browser_cdp",
 		"description", cdpDescription,
-		"parameters", pyjson.ObjectOf(
+		"parameters", jsonutil.ObjectOf(
 			"type", "object",
-			"properties", pyjson.ObjectOf(
-				"method", pyjson.ObjectOf("type", "string", "description", "CDP method name, e.g. 'Target.getTargets', 'Runtime.evaluate', 'Page.handleJavaScriptDialog'."),
-				"params", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf(), "additionalProperties", true,
+			"properties", jsonutil.ObjectOf(
+				"method", jsonutil.ObjectOf("type", "string", "description", "CDP method name, e.g. 'Target.getTargets', 'Runtime.evaluate', 'Page.handleJavaScriptDialog'."),
+				"params", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf(), "additionalProperties", true,
 					"description", "Method-specific parameters as a JSON object. Omit or pass {} for methods that take no parameters."),
-				"target_id", pyjson.ObjectOf("type", "string", "description", "Optional. Target/tab ID from Target.getTargets result (each entry's 'targetId'). Use for "+
+				"target_id", jsonutil.ObjectOf("type", "string", "description", "Optional. Target/tab ID from Target.getTargets result (each entry's 'targetId'). Use for "+
 					"page-level methods at the top-level tab scope. Mutually exclusive with frame_id."),
-				"frame_id", pyjson.ObjectOf("type", "string", "description", "Optional. Out-of-process iframe (OOPIF) frame id from Page.getFrameTree. "+
+				"frame_id", jsonutil.ObjectOf("type", "string", "description", "Optional. Out-of-process iframe (OOPIF) frame id from Page.getFrameTree. "+
 					"When set, routes the call through the CDP supervisor's live session for "+
 					"that iframe. Essential for Runtime.evaluate inside cross-origin iframes, especially on "+
 					"Browserbase where fresh per-call CDP connections can't keep up with signed URL rotation. For "+
 					"same-origin iframes, use parent contentWindow/contentDocument from Runtime.evaluate at the "+
 					"top-level page instead."),
-				"timeout", pyjson.ObjectOf("type", "number", "default", 30, "description", "Timeout in seconds (default 30, max 300)."),
+				"timeout", jsonutil.ObjectOf("type", "number", "default", 30, "description", "Timeout in seconds (default 30, max 300)."),
 			),
 			"required", []any{"method"},
 		),
@@ -136,15 +136,15 @@ func redactCDPOutput(env *tools.Env, value any, always, flagged [][]string, dept
 		}
 		return out
 	}
-	obj, ok := pyjson.AsObject(value)
+	obj, ok := jsonutil.AsObject(value)
 	if !ok {
 		return value
 	}
 	flag, _ := obj.Get("base64Encoded")
 	base64Flagged := flag == true
-	out := pyjson.NewObject()
-	for _, key := range obj.Keys {
-		item := obj.Vals[key]
+	out := jsonutil.NewObject()
+	for _, key := range obj.Keys() {
+		item := obj.Value(key)
 		opaque := pathLeaf(always, key) || (pathLeaf(flagged, key) && base64Flagged)
 		outKey := tools.RedactSensitiveTextWith(env, key, tools.RedactOptions{Force: true})
 		if s, isStr := item.(string); isStr && opaque {
@@ -169,7 +169,7 @@ var (
 
 // Error envelope with the bounded message first and extra keys in call order
 func toolErr(message string, extra ...any) string {
-	out := pyjson.ObjectOf("error", tools.BoundErrorText(message))
+	out := jsonutil.ObjectOf("error", tools.BoundErrorText(message))
 	for i := 0; i+1 < len(extra); i += 2 {
 		out.Set(extra[i].(string), extra[i+1])
 	}
@@ -178,7 +178,7 @@ func toolErr(message string, extra ...any) string {
 
 // json.dumps with ensure_ascii off
 func dumpsUnicode(v any) string {
-	text, err := pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		return tools.ErrorResult(err)
 	}
@@ -194,9 +194,9 @@ func paramsGet(params any, key string) any {
 	if params == nil {
 		return nil
 	}
-	o, ok := pyjson.AsObject(params)
+	o, ok := jsonutil.AsObject(params)
 	if !ok {
-		panic(pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(params))))
+		panic(pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(params))))
 	}
 	v, _ := o.Get(key)
 	return v
@@ -204,10 +204,10 @@ func paramsGet(params any, key string) any {
 
 func paramStr(params any, key string) string {
 	v := paramsGet(params, key)
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 type cdpParamGuard struct {
@@ -251,17 +251,17 @@ func cdpCurrentPagePrivateURL(env *tools.Env, endpoint string, targetID any) str
 	if endpoint == "" {
 		return pageURLUnverified
 	}
-	result, err := cdpCallFn(context.Background(), endpoint, "Target.getTargets", pyjson.NewObject(), nil, 5.0)
+	result, err := cdpCallFn(context.Background(), endpoint, "Target.getTargets", jsonutil.NewObject(), nil, 5.0)
 	if err != nil {
-		cfgOf(env).logger().Debug(fmt.Sprintf("browser_cdp: page-URL probe failed: %s", pyrepr.ExceptionMessage(err)))
+		cfgOf(env).logger().Debug(fmt.Sprintf("browser_cdp: page-URL probe failed: %s", err.Error()))
 		return pageURLUnverified
 	}
 	infosVal := anyGet(result, "targetInfos")
 	infos, _ := infosVal.([]any)
 	var acted any
-	if pyrepr.Truthy(targetID) {
+	if anyutil.IsTrue(targetID) {
 		for _, t := range infos {
-			if pyrepr.Equal(anyGet(t, "targetId"), targetID) {
+			if anyutil.Equal(anyGet(t, "targetId"), targetID) {
 				acted = t
 				break
 			}
@@ -321,13 +321,13 @@ func paramURLLiterals(value any, key string) []string {
 		}
 		return out
 	}
-	o, ok := pyjson.AsObject(value)
+	o, ok := jsonutil.AsObject(value)
 	if !ok {
 		return nil
 	}
 	var out []string
-	for _, k := range o.Keys {
-		out = append(out, paramURLLiterals(o.Vals[k], k)...)
+	for _, k := range o.Keys() {
+		out = append(out, paramURLLiterals(o.Value(k), k)...)
 	}
 	return out
 }
@@ -379,11 +379,11 @@ func browserCDPPrivateGuard(env *tools.Env, method string, params any, endpoint 
 		blockedURL := currentPagePrivateURL(env, endpoint, targetID)
 		if blockedURL == pageURLUnverified {
 			return cdpBlocked(fmt.Sprintf("Blocked: could not read the browser's targets to verify that raw CDP method "+
-				"%s cannot reach a private or internal page.", pyrepr.StrRepr(method)), method)
+				"%s cannot reach a private or internal page.", strconv.Quote(method)), method)
 		}
 		if blockedURL != "" {
 			return cdpBlocked(fmt.Sprintf("Blocked: page URL targets a private or internal address (%s). "+
-				"Raw CDP method %s could expose private page content or state.", blockedURL, pyrepr.StrRepr(method)), method)
+				"Raw CDP method %s could expose private page content or state.", blockedURL, strconv.Quote(method)), method)
 		}
 	}
 	return ""
@@ -421,7 +421,8 @@ var webSocketExceptionClasses = map[string]bool{
 }
 
 func isWebSocketException(err error) bool {
-	return webSocketExceptionClasses[pyrepr.ExceptionName(err)]
+	var ce *cloudError
+	return errors.As(err, &ce) && webSocketExceptionClasses[ce.Class]
 }
 
 // Transport error mapped to the exception class and text the websockets client raises
@@ -460,7 +461,7 @@ func pyWSError(err error, rawURL string) error {
 		if addr, ok := opErr.Addr.(*net.TCPAddr); ok {
 			host, port = addr.IP.String(), addr.Port
 		}
-		return pyError(pypath.OSErrorClass(err), fmt.Sprintf("could not connect to %s port %d: %s", host, port, errno.Error()))
+		return pyError(errorutil.Kind(err), fmt.Sprintf("could not connect to %s port %d: %s", host, port, errno.Error()))
 	}
 	text := err.Error()
 	if rest, ok := strings.CutPrefix(text, "websocket handshake rejected: "); ok {
@@ -473,14 +474,14 @@ func pyWSError(err error, rawURL string) error {
 	if strings.HasPrefix(text, "websocket url") {
 		return pyError("InvalidURI", rawURL+" isn't a valid URI")
 	}
-	if pypath.IsOSError(err) {
-		return pyError(pypath.OSErrorClass(err), pypath.OSErrorText(err))
+	if errorutil.IsSystem(err) {
+		return pyError(errorutil.Kind(err), err.Error())
 	}
 	return err
 }
 
 // One CDP call on a fresh socket, attaching flattened to targetID first when given
-func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any, timeout float64) (*pyjson.Object, error) {
+func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any, timeout float64) (*jsonutil.Object, error) {
 	limit := seconds(timeout)
 	dialCtx, cancel := context.WithTimeout(ctx, limit)
 	defer cancel()
@@ -490,12 +491,12 @@ func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any
 	}
 	defer func() { _ = ws.Close(1000, "") }()
 	nextID := int64(1)
-	send := func(req *pyjson.Object, what string) (*pyjson.Object, error) {
+	send := func(req *jsonutil.Object, what string) (*jsonutil.Object, error) {
 		callID := nextID
 		nextID++
-		payload := pyjson.ObjectOf("id", callID)
-		payload.Update(req)
-		text, err := pyjson.Dumps(payload)
+		payload := jsonutil.ObjectOf("id", callID)
+		payload.Merge(req)
+		text, err := jsonutil.Encode(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -517,35 +518,35 @@ func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any
 				}
 				return nil, pyWSError(err, wsURL)
 			}
-			decoded, err := pyjson.LoadsBytes(raw)
+			decoded, err := jsonutil.Decode(raw)
 			if err != nil {
 				return nil, pyError("JSONDecodeError", err.Error())
 			}
-			msg, ok := decoded.(*pyjson.Object)
+			msg, ok := decoded.(*jsonutil.Object)
 			if !ok {
-				return nil, pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded)))
+				return nil, pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(decoded)))
 			}
-			if id, _ := msg.Get("id"); pyrepr.Equal(id, callID) {
+			if id, _ := msg.Get("id"); anyutil.Equal(id, callID) {
 				return msg, nil
 			}
 		}
 	}
 	callParams := params
-	if !pyrepr.Truthy(callParams) {
-		callParams = pyjson.NewObject()
+	if !anyutil.IsTrue(callParams) {
+		callParams = jsonutil.NewObject()
 	}
-	req := pyjson.ObjectOf("method", method, "params", callParams)
-	if pyrepr.Truthy(targetID) {
-		msg, err := send(pyjson.ObjectOf("method", "Target.attachToTarget", "params", pyjson.ObjectOf("targetId", targetID, "flatten", true)),
-			"attaching to target "+pyrepr.Str(targetID))
+	req := jsonutil.ObjectOf("method", method, "params", callParams)
+	if anyutil.IsTrue(targetID) {
+		msg, err := send(jsonutil.ObjectOf("method", "Target.attachToTarget", "params", jsonutil.ObjectOf("targetId", targetID, "flatten", true)),
+			"attaching to target "+anyutil.String(targetID))
 		if err != nil {
 			return nil, err
 		}
 		if errVal, has := msg.Get("error"); has {
-			return nil, runtimeError("Target.attachToTarget failed: " + pyrepr.Str(errVal))
+			return nil, runtimeError("Target.attachToTarget failed: " + anyutil.String(errVal))
 		}
 		sessionID := anyGet(objChild(msg, "result"), "sessionId")
-		if !pyrepr.Truthy(sessionID) {
+		if !anyutil.IsTrue(sessionID) {
 			return nil, runtimeError("Target.attachToTarget did not return a sessionId")
 		}
 		req.Set("sessionId", sessionID)
@@ -555,15 +556,15 @@ func cdpCall(ctx context.Context, wsURL, method string, params any, targetID any
 		return nil, err
 	}
 	if errVal, has := msg.Get("error"); has {
-		return nil, runtimeError("CDP error: " + pyrepr.Str(errVal))
+		return nil, runtimeError("CDP error: " + anyutil.String(errVal))
 	}
 	if result, has := msg.Get("result"); has {
-		if o, ok := pyjson.AsObject(result); ok {
+		if o, ok := jsonutil.AsObject(result); ok {
 			return o, nil
 		}
-		return nil, pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(result)))
+		return nil, pyError("AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", anyutil.Kind(result)))
 	}
-	return pyjson.NewObject(), nil
+	return jsonutil.NewObject(), nil
 }
 
 // Float seconds of a timeout argument, a TypeError for a value Python cannot add to an int
@@ -584,7 +585,7 @@ func timeoutSeconds(v any) (float64, error) {
 		f, _ := new(big.Float).SetInt(t).Float64()
 		return f, nil
 	}
-	return 0, pyError("TypeError", fmt.Sprintf("can only concatenate %s (not \"int\") to %s", pyrepr.TypeName(v), pyrepr.TypeName(v)))
+	return 0, pyError("TypeError", fmt.Sprintf("can only concatenate %s (not \"int\") to %s", anyutil.Kind(v), anyutil.Kind(v)))
 }
 
 // CDP call routed through the supervisor's live session of an out of process frame
@@ -593,16 +594,16 @@ func cdpViaSupervisor(env *tools.Env, taskID, frameID, method string, params any
 	if sup == nil {
 		return toolErr(fmt.Sprintf("No CDP supervisor is attached for task=%s. Call browser_exec or "+
 			"/browser connect first so the supervisor can attach; Page.getFrameTree lists the "+
-			"frame ids you can pass here.", pyrepr.StrRepr(taskID)))
+			"frame ids you can pass here.", strconv.Quote(taskID)))
 	}
 	tree := sup.snapshot().FrameTree
-	var frameInfo *pyjson.Object
+	var frameInfo *jsonutil.Object
 	candidates := []any{anyGet(tree, "top")}
 	if children, ok := anyGet(tree, "children").([]any); ok {
 		candidates = append(candidates, children...)
 	}
 	for _, f := range candidates {
-		if o, ok := pyjson.AsObject(f); ok && pyrepr.Truthy(f) && anyGet(o, "frame_id") == frameID {
+		if o, ok := jsonutil.AsObject(f); ok && anyutil.IsTrue(f) && anyGet(o, "frame_id") == frameID {
 			frameInfo = o
 			break
 		}
@@ -617,20 +618,20 @@ func cdpViaSupervisor(env *tools.Env, taskID, frameID, method string, params any
 	}
 	if frameInfo == nil {
 		return toolErr(fmt.Sprintf("frame_id %s not found in supervisor state. "+
-			"Call Page.getFrameTree to see the current frames.", pyrepr.StrRepr(frameID)))
+			"Call Page.getFrameTree to see the current frames.", strconv.Quote(frameID)))
 	}
 	childSID := objStr(frameInfo, "session_id")
 	if childSID == "" {
 		return toolErr(fmt.Sprintf("frame_id %s is not an out-of-process iframe (no dedicated CDP session). "+
 			"For same-origin iframes, use `browser_cdp(method='Runtime.evaluate', params={'expression': "+
-			"\"document.querySelector('iframe').contentDocument.title\"})` at the top-level page instead.", pyrepr.StrRepr(frameID)))
+			"\"document.querySelector('iframe').contentDocument.title\"})` at the top-level page instead.", strconv.Quote(frameID)))
 	}
 	if !sup.currentLoop().isRunning() {
 		return toolErr("CDP supervisor loop is not running. Try reconnecting with /browser connect.")
 	}
 	callParams := params
-	if !pyrepr.Truthy(callParams) {
-		callParams = pyjson.NewObject()
+	if !anyutil.IsTrue(callParams) {
+		callParams = jsonutil.NewObject()
 	}
 	wait, err := timeoutSeconds(timeout)
 	var reply any
@@ -641,13 +642,13 @@ func cdpViaSupervisor(env *tools.Env, taskID, frameID, method string, params any
 		}
 	}
 	if err != nil {
-		return toolErr(fmt.Sprintf("CDP call via supervisor failed: %s: %s", pyrepr.ExceptionName(err), pyrepr.ExceptionMessage(err)), "cdp_docs", cdpDocsURL)
+		return toolErr(fmt.Sprintf("CDP call via supervisor failed: %v", err), "cdp_docs", cdpDocsURL)
 	}
-	result, has := reply.(*pyjson.Object).Get("result")
+	result, has := reply.(*jsonutil.Object).Get("result")
 	if !has {
-		result = pyjson.NewObject()
+		result = jsonutil.NewObject()
 	}
-	return dumpsUnicode(pyjson.ObjectOf("success", true, "method", method, "frame_id", frameID, "session_id", childSID, "result", result))
+	return dumpsUnicode(jsonutil.ObjectOf("success", true, "method", method, "frame_id", frameID, "session_id", childSID, "result", result))
 }
 
 // Raw CDP command over a fresh socket or a frame's supervisor session, both behind the private page guard
@@ -657,16 +658,16 @@ func browserCDP(ctx context.Context, env *tools.Env, method, params, targetID, f
 		effectiveTaskID = "default"
 	}
 	methodName, _ := method.(string)
-	if pyrepr.Truthy(frameID) {
+	if anyutil.IsTrue(frameID) {
 		endpoint := resolveCDPEndpoint(env)
 		guardParams := params
-		if !pyrepr.Truthy(guardParams) {
-			guardParams = pyjson.NewObject()
+		if !anyutil.IsTrue(guardParams) {
+			guardParams = jsonutil.NewObject()
 		}
 		if blocked := browserCDPPrivateGuard(env, methodName, guardParams, endpoint, frameID); blocked != "" {
 			return blocked
 		}
-		return browserCDPViaSupervisor(env, effectiveTaskID, pyrepr.Str(frameID), methodName, params, timeout)
+		return browserCDPViaSupervisor(env, effectiveTaskID, anyutil.String(frameID), methodName, params, timeout)
 	}
 	if methodName == "" {
 		return toolErr("'method' is required (e.g. 'Target.getTargets')", "cdp_docs", cdpDocsURL)
@@ -679,20 +680,20 @@ func browserCDP(ctx context.Context, env *tools.Env, method, params, targetID, f
 	if !strings.HasPrefix(endpoint, "ws://") && !strings.HasPrefix(endpoint, "wss://") {
 		return toolErr(fmt.Sprintf("CDP endpoint is not a WebSocket URL: %s. Expected ws://... or wss://... — "+
 			"the /browser connect resolver should have rewritten this. Check that a Chromium-family "+
-			"browser is actually listening on the debug port.", pyrepr.StrRepr(endpoint)))
+			"browser is actually listening on the debug port.", strconv.Quote(endpoint)))
 	}
 	callParams := params
-	if !pyrepr.Truthy(callParams) {
-		callParams = pyjson.NewObject()
+	if !anyutil.IsTrue(callParams) {
+		callParams = jsonutil.NewObject()
 	}
-	if _, ok := pyjson.AsObject(callParams); !ok {
-		return toolErr("'params' must be an object/dict, got " + pyrepr.TypeName(callParams))
+	if _, ok := jsonutil.AsObject(callParams); !ok {
+		return toolErr("'params' must be an object/dict, got " + anyutil.Kind(callParams))
 	}
 	if blocked := browserCDPPrivateGuard(env, methodName, callParams, endpoint, targetID); blocked != "" {
 		return blocked
 	}
 	safeTimeout := 30.0
-	if pyrepr.Truthy(timeout) {
+	if anyutil.IsTrue(timeout) {
 		if f, ok := floatArg(timeout); ok {
 			safeTimeout = f
 		}
@@ -705,22 +706,27 @@ func browserCDP(ctx context.Context, env *tools.Env, method, params, targetID, f
 	}
 	result, err := cdpCallFn(ctx, endpoint, methodName, callParams, targetID, safeTimeout)
 	if err != nil {
-		switch class := pyrepr.ExceptionName(err); {
-		case class == "TimeoutError":
-			return toolErr(fmt.Sprintf("CDP call timed out after %ss: %s", pyrepr.Float(safeTimeout), pyrepr.ExceptionMessage(err)), "method", methodName)
+		var ce *cloudError
+		class := ""
+		if errors.As(err, &ce) {
+			class = ce.Class
+		}
+		switch {
+		case class == "TimeoutError" || errors.Is(err, context.DeadlineExceeded):
+			return toolErr(fmt.Sprintf("CDP call timed out after %ss: %s", strconv.FormatFloat(safeTimeout, 'f', -1, 64), err.Error()), "method", methodName)
 		case class == "RuntimeError":
-			return toolErr(pyrepr.ExceptionMessage(err), "method", methodName)
+			return toolErr(err.Error(), "method", methodName)
 		case isWebSocketException(err):
 			return toolErr(fmt.Sprintf("WebSocket error talking to CDP at %s: %s. The browser may have "+
-				"disconnected — try '/browser connect' again.", endpoint, pyrepr.ExceptionMessage(err)), "method", methodName)
+				"disconnected — try '/browser connect' again.", endpoint, err.Error()), "method", methodName)
 		default:
 			cfgOf(env).logger().Error("browser_cdp unexpected error", "error", err)
-			return toolErr(fmt.Sprintf("Unexpected error: %s: %s", class, pyrepr.ExceptionMessage(err)), "method", methodName)
+			return toolErr("Unexpected error: "+err.Error(), "method", methodName)
 		}
 	}
-	payload := pyjson.ObjectOf("success", true, "method", methodName,
+	payload := jsonutil.ObjectOf("success", true, "method", methodName,
 		"result", redactCDPOutput(env, result, cdpAlwaysBinaryPaths[methodName], cdpFlaggedBinaryPaths[methodName], 0))
-	if pyrepr.Truthy(targetID) {
+	if anyutil.IsTrue(targetID) {
 		payload.Set("target_id", targetID)
 	}
 	return dumpsUnicode(payload)
@@ -755,7 +761,7 @@ func handleBrowserCDP(ctx context.Context, call *tools.Call) string {
 	}
 	params := args["params"]
 	if call.RawArgs != "" {
-		if raw, err := pyjson.Loads(call.RawArgs); err == nil {
+		if raw, err := jsonutil.Decode(call.RawArgs); err == nil {
 			if v := anyGet(raw, "params"); v != nil {
 				params = v
 			}

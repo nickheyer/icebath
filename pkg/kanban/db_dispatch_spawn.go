@@ -18,11 +18,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // KanbanWorkerClientEntry is the argv word that runs this binary as the kanban worker client
@@ -30,8 +30,8 @@ const KanbanWorkerClientEntry = "__icebath_kanban_worker_client__"
 
 // Context bound to a profile's secrets and, with bindHome, its home and terminal policy
 func workerProfileScope(ctx context.Context, profileHome string, bindHome bool) context.Context {
-	resolved, _ := pypath.Resolve(profileHome)
-	launch, _ := pypath.Resolve(home.Process())
+	resolved, _ := pathutil.Resolve(profileHome)
+	launch, _ := pathutil.Resolve(home.Process())
 	isLaunchHome := resolved == launch
 	if bindHome {
 		ctx = home.WithOverride(ctx, profileHome)

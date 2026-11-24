@@ -1,6 +1,8 @@
 package provider
 
-import "github.com/nickheyer/icebath/pkg/internal/pyjson"
+import (
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+)
 
 // Profiles the bundled lmstudio plugin registers, base URL left empty so loopback hosts never infer LM Studio
 func lmstudioPluginProfiles() []Profile {
@@ -26,16 +28,16 @@ func hookLMStudioOptions(kw map[string]any) ([]string, bool) {
 }
 
 // Top level effort clamped to the model's published options, the generic nested shape when no probe ran
-func lmstudioBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
+func lmstudioBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
 	options, probed := hookLMStudioOptions(kw)
 	if !probed {
 		return genericNestedReasoning(hookReasoningCfg(reasoning)), map[string]any{}
 	}
 	if supports, _ := kw["supports_reasoning"].(bool); !supports {
-		return pyjson.ObjectOf(), map[string]any{}
+		return jsonutil.ObjectOf(), map[string]any{}
 	}
 	if effort, ok := resolveLMStudioEffort(hookReasoningCfg(reasoning), options); ok {
-		return pyjson.ObjectOf(), map[string]any{"reasoning_effort": effort}
+		return jsonutil.ObjectOf(), map[string]any{"reasoning_effort": effort}
 	}
-	return pyjson.ObjectOf(), map[string]any{}
+	return jsonutil.ObjectOf(), map[string]any{}
 }

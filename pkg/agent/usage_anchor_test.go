@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func anchorRow(role, content string) map[string]any {
@@ -60,7 +60,7 @@ func codexAnchorTurn(usage bool) *provider.CodexTurnResult {
 	if !usage {
 		return &provider.CodexTurnResult{}
 	}
-	obj := pyjson.NewObject()
+	obj := jsonutil.NewObject()
 	for _, kv := range [][2]any{{"inputTokens", 12_000}, {"cachedInputTokens", 0}, {"outputTokens", 100}, {"reasoningOutputTokens", 0}, {"totalTokens", 12_100}} {
 		obj.Set(kv[0].(string), kv[1])
 	}

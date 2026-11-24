@@ -17,12 +17,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 // ClawHub source over a hub whose plain GETs answer through fn and whose cache reads miss
-func clawhubTestSource(t *testing.T, fn func(url string, o hubGet) *pyhttpx.Response) (*ClawHubSource, *Hub, *[]string) {
+func clawhubTestSource(t *testing.T, fn func(url string, o hubGet) *httputil.Response) (*ClawHubSource, *Hub, *[]string) {
 	h, _ := newTestHub(t)
 	var writes []string
 	var mu sync.Mutex
@@ -36,7 +36,7 @@ func clawhubTestSource(t *testing.T, fn func(url string, o hubGet) *pyhttpx.Resp
 	return c, h, &writes
 }
 
-func statusResp(status int, body string) *pyhttpx.Response { return textResp(status, body) }
+func statusResp(status int, body string) *httputil.Response { return textResp(status, body) }
 
 func zipOf(t *testing.T, files ...string) []byte {
 	var buf bytes.Buffer
@@ -59,12 +59,12 @@ type closeTracker struct {
 
 func (c closeTracker) Close() error { *c.closed = true; return nil }
 
-func streamOf(status int, header http.Header, body []byte, closed *bool) *pyhttpx.StreamResponse {
-	return &pyhttpx.StreamResponse{Response: pyhttpx.Response{StatusCode: status, Header: header}, Body: closeTracker{bytes.NewReader(body), closed}}
+func streamOf(status int, header http.Header, body []byte, closed *bool) *httputil.StreamResponse {
+	return &httputil.StreamResponse{Response: httputil.Response{StatusCode: status, Header: header}, Body: closeTracker{bytes.NewReader(body), closed}}
 }
 
 func TestClawHubSearchUsesListingEndpointAsFallback(t *testing.T) {
-	c, _, _ := clawhubTestSource(t, func(u string, _ hubGet) *pyhttpx.Response {
+	c, _, _ := clawhubTestSource(t, func(u string, _ hubGet) *httputil.Response {
 		if strings.HasSuffix(strings.SplitN(u, "?", 2)[0], "/skills") {
 			return statusResp(200, `{"items": [{"slug": "caldav-calendar", "displayName": "CalDAV Calendar", "summary": "Calendar integration", "tags": ["calendar", "productivity"]}]}`)
 		}
@@ -83,7 +83,7 @@ func TestClawHubInspectShapes(t *testing.T) {
 		`{"skill": {"slug": "caldav-calendar", "displayName": "CalDAV Calendar", "summary": "Calendar integration", "tags": {"latest": "1.0.0"}}, "latestVersion": {"version": "1.0.0"}}`:                                                       {"CalDAV Calendar", "Calendar integration", ""},
 		`{"skill": {"slug": "apple-docs", "displayName": "Apple Docs", "summary": "Documentation reader", "tags": {"latest": "1.0.0"}}, "latestVersion": {"version": "1.0.0"}, "owner": {"handle": "thesethrose", "displayName": "Seth Rose"}}`: {"Apple Docs", "Documentation reader", "thesethrose"},
 	} {
-		c, _, _ := clawhubTestSource(t, func(string, hubGet) *pyhttpx.Response { return statusResp(200, body) })
+		c, _, _ := clawhubTestSource(t, func(string, hubGet) *httputil.Response { return statusResp(200, body) })
 		m, err := c.Inspect(context.Background(), "caldav-calendar")
 		if err != nil || m == nil || m.Name != want[0] || m.Description != want[1] {
 			t.Fatalf("%s -> %+v", body, m)
@@ -99,7 +99,7 @@ func TestClawHubInspectShapes(t *testing.T) {
 }
 
 func TestClawHubFetchResolvesLatestVersionAndDownloadsRawFiles(t *testing.T) {
-	c, h, _ := clawhubTestSource(t, func(u string, _ hubGet) *pyhttpx.Response {
+	c, h, _ := clawhubTestSource(t, func(u string, _ hubGet) *httputil.Response {
 		switch {
 		case strings.HasSuffix(u, "/skills/caldav-calendar"):
 			return statusResp(200, `{"slug": "caldav-calendar", "latestVersion": {"version": "1.0.1"}}`)
@@ -109,10 +109,10 @@ func TestClawHubFetchResolvesLatestVersionAndDownloadsRawFiles(t *testing.T) {
 		return statusResp(404, "{}")
 	})
 	var closed bool
-	c.seams.stream = func(string, pyhttpx.Params, time.Duration) *pyhttpx.StreamResponse {
+	c.seams.stream = func(string, url.Values, time.Duration) *httputil.StreamResponse {
 		return streamOf(404, http.Header{}, nil, &closed)
 	}
-	h.io.ssrfGet = func(context.Context, string, time.Duration, map[string]string) (*pyhttpx.Response, error) {
+	h.io.ssrfGet = func(context.Context, string, time.Duration, map[string]string) (*httputil.Response, error) {
 		return statusResp(200, "# Skill"), nil
 	}
 	b, err := c.Fetch(context.Background(), "caldav-calendar")
@@ -128,7 +128,7 @@ func TestClawHubFetchResolvesLatestVersionAndDownloadsRawFiles(t *testing.T) {
 }
 
 func TestClawHubFetchFallsBackToVersionsList(t *testing.T) {
-	c, _, _ := clawhubTestSource(t, func(u string, _ hubGet) *pyhttpx.Response {
+	c, _, _ := clawhubTestSource(t, func(u string, _ hubGet) *httputil.Response {
 		switch {
 		case strings.HasSuffix(u, "/skills/caldav-calendar"):
 			return statusResp(200, `{"slug": "caldav-calendar"}`)
@@ -139,7 +139,7 @@ func TestClawHubFetchFallsBackToVersionsList(t *testing.T) {
 		}
 		return statusResp(404, "{}")
 	})
-	c.seams.stream = func(string, pyhttpx.Params, time.Duration) *pyhttpx.StreamResponse { return nil }
+	c.seams.stream = func(string, url.Values, time.Duration) *httputil.StreamResponse { return nil }
 	b, _ := c.Fetch(context.Background(), "caldav-calendar")
 	if md, _ := b.File("SKILL.md"); string(md) != "# Skill" {
 		t.Fatal(string(md))
@@ -147,7 +147,7 @@ func TestClawHubFetchFallsBackToVersionsList(t *testing.T) {
 }
 
 func TestClawHubFetchBlocksPrivateRawURL(t *testing.T) {
-	c, h, _ := clawhubTestSource(t, func(u string, _ hubGet) *pyhttpx.Response {
+	c, h, _ := clawhubTestSource(t, func(u string, _ hubGet) *httputil.Response {
 		switch {
 		case strings.HasSuffix(u, "/skills/caldav-calendar"):
 			return statusResp(200, `{"slug": "caldav-calendar", "latestVersion": {"version": "1.0.1"}}`)
@@ -157,12 +157,12 @@ func TestClawHubFetchBlocksPrivateRawURL(t *testing.T) {
 		return statusResp(404, "{}")
 	})
 	h.io.isSafeURL = func(u string) bool { return !strings.HasPrefix(u, "http://127.0.0.1/") }
-	c.seams.stream = func(string, pyhttpx.Params, time.Duration) *pyhttpx.StreamResponse {
+	c.seams.stream = func(string, url.Values, time.Duration) *httputil.StreamResponse {
 		var closed bool
 		return streamOf(404, http.Header{}, nil, &closed)
 	}
 	safeCalls := 0
-	h.io.ssrfGet = func(context.Context, string, time.Duration, map[string]string) (*pyhttpx.Response, error) {
+	h.io.ssrfGet = func(context.Context, string, time.Duration, map[string]string) (*httputil.Response, error) {
 		safeCalls++
 		return statusResp(200, "x"), nil
 	}
@@ -172,8 +172,8 @@ func TestClawHubFetchBlocksPrivateRawURL(t *testing.T) {
 }
 
 // Catalog pages served by index, each advertising the next cursor until last
-func catalogPages(pages *int, last int) func(string, hubGet) *pyhttpx.Response {
-	return func(u string, _ hubGet) *pyhttpx.Response {
+func catalogPages(pages *int, last int) func(string, hubGet) *httputil.Response {
+	return func(u string, _ hubGet) *httputil.Response {
 		if !strings.HasSuffix(strings.SplitN(u, "?", 2)[0], "/skills") {
 			return statusResp(404, "{}")
 		}
@@ -233,7 +233,7 @@ func TestClawHubUnboundedWalkRetriesNonePages(t *testing.T) {
 	for _, failing := range []int{2, 5} {
 		calls := 0
 		var sleeps []time.Duration
-		c, _, writes := clawhubTestSource(t, func(string, hubGet) *pyhttpx.Response {
+		c, _, writes := clawhubTestSource(t, func(string, hubGet) *httputil.Response {
 			calls++
 			if calls <= failing {
 				return statusResp(503, "")
@@ -265,7 +265,7 @@ func TestClawHubParseIdentifierShapes(t *testing.T) {
 		}
 	}
 	calls := 0
-	c, _, _ := clawhubTestSource(t, func(string, hubGet) *pyhttpx.Response {
+	c, _, _ := clawhubTestSource(t, func(string, hubGet) *httputil.Response {
 		calls++
 		return statusResp(200, `{"slug": "x", "owner": "bob"}`)
 	})
@@ -293,7 +293,7 @@ func TestFetchOwnerHandleRetry(t *testing.T) {
 	} {
 		statuses := slices.Clone(c.statuses)
 		var sleeps []time.Duration
-		src, _, _ := clawhubTestSource(t, func(string, hubGet) *pyhttpx.Response {
+		src, _, _ := clawhubTestSource(t, func(string, hubGet) *httputil.Response {
 			s := statuses[0]
 			statuses = statuses[1:]
 			r := statusResp(s, `{"skill": {"slug": "x"}, "owner": {"handle": "alice"}}`)
@@ -310,7 +310,7 @@ func TestFetchOwnerHandleRetry(t *testing.T) {
 }
 
 func TestClawHubEnrichOwners(t *testing.T) {
-	c, _, _ := clawhubTestSource(t, func(u string, _ hubGet) *pyhttpx.Response {
+	c, _, _ := clawhubTestSource(t, func(u string, _ hubGet) *httputil.Response {
 		if strings.HasSuffix(u, "/skills/b") {
 			return statusResp(404, "{}")
 		}
@@ -329,10 +329,10 @@ func TestClawHubEnrichOwners(t *testing.T) {
 func TestClawHubZipStream(t *testing.T) {
 	data := zipOf(t, "SKILL.md", "# A normal skill")
 	for _, declared := range []string{"", "1", "invalid", "-1"} {
-		c, _, _ := clawhubTestSource(t, func(string, hubGet) *pyhttpx.Response { return statusResp(404, "") })
+		c, _, _ := clawhubTestSource(t, func(string, hubGet) *httputil.Response { return statusResp(404, "") })
 		c.ZipDownloadMaxBytes = int64(len(data) - 1)
 		var closed bool
-		c.seams.stream = func(string, pyhttpx.Params, time.Duration) *pyhttpx.StreamResponse {
+		c.seams.stream = func(string, url.Values, time.Duration) *httputil.StreamResponse {
 			hd := http.Header{}
 			if declared != "" {
 				hd.Set("content-length", declared)
@@ -346,7 +346,7 @@ func TestClawHubZipStream(t *testing.T) {
 	c, _, _ := clawhubTestSource(t, nil)
 	c.ZipDownloadMaxBytes = int64(len(data))
 	var closed bool
-	c.seams.stream = func(string, pyhttpx.Params, time.Duration) *pyhttpx.StreamResponse {
+	c.seams.stream = func(string, url.Values, time.Duration) *httputil.StreamResponse {
 		return streamOf(200, http.Header{}, data, &closed)
 	}
 	files := c.downloadZip(context.Background(), "example", "1", "")
@@ -355,10 +355,10 @@ func TestClawHubZipStream(t *testing.T) {
 	}
 	c.ZipDownloadMaxBytes = 100
 	closed = false
-	c.seams.stream = func(string, pyhttpx.Params, time.Duration) *pyhttpx.StreamResponse {
+	c.seams.stream = func(string, url.Values, time.Duration) *httputil.StreamResponse {
 		hd := http.Header{}
 		hd.Set("content-length", "101")
-		return &pyhttpx.StreamResponse{Response: pyhttpx.Response{StatusCode: 200, Header: hd}, Body: closeTracker{failReader{t}, &closed}}
+		return &httputil.StreamResponse{Response: httputil.Response{StatusCode: 200, Header: hd}, Body: closeTracker{failReader{t}, &closed}}
 	}
 	if files := c.downloadZip(context.Background(), "example", "1", ""); len(files) != 0 || !closed {
 		t.Fatal("declared oversize read")
@@ -366,7 +366,7 @@ func TestClawHubZipStream(t *testing.T) {
 	var delays []time.Duration
 	var responses []*bool
 	c.seams.sleep = func(d time.Duration) { delays = append(delays, d) }
-	c.seams.stream = func(string, pyhttpx.Params, time.Duration) *pyhttpx.StreamResponse {
+	c.seams.stream = func(string, url.Values, time.Duration) *httputil.StreamResponse {
 		hd := http.Header{}
 		hd.Set("retry-after", []string{"-1", "1000", "invalid"}[len(responses)])
 		cl := false
@@ -412,7 +412,7 @@ func TestStreamRechecksRedirectPolicy(t *testing.T) {
 			}
 			return nil
 		}
-		resp := h.guardedHTTPStream(context.Background(), "https://api.example/download", pyhttpx.Params{{"slug", "secret"}}, 30*time.Second)
+		resp := h.guardedHTTPStream(context.Background(), "https://api.example/download", url.Values{"slug": {"secret"}}, 30*time.Second)
 		if strings.Contains(dest, "download.example") {
 			body, _ := io.ReadAll(resp.Body)
 			resp.Body.Close()
@@ -525,10 +525,10 @@ func TestFetchOwnerHandleRetriesTransportErrorsAndEnrichBudget(t *testing.T) {
 	calls := 0
 	var sleeps []time.Duration
 	c, h, _ := clawhubTestSource(t, nil)
-	h.io.httpGet = func(context.Context, string, hubGet) (*pyhttpx.Response, error) {
+	h.io.httpGet = func(context.Context, string, hubGet) (*httputil.Response, error) {
 		calls++
 		if calls < 3 {
-			return nil, &pyhttpx.TimeoutError{Phase: "read"}
+			return nil, &httputil.TimeoutError{Phase: "read"}
 		}
 		return statusResp(200, `{"owner": {"handle": "alice"}}`), nil
 	}
@@ -539,7 +539,7 @@ func TestFetchOwnerHandleRetriesTransportErrorsAndEnrichBudget(t *testing.T) {
 	c.seams.sleep = func(time.Duration) {}
 	burst := map[string]int{}
 	var mu sync.Mutex
-	h.io.httpGet = func(_ context.Context, u string, _ hubGet) (*pyhttpx.Response, error) {
+	h.io.httpGet = func(_ context.Context, u string, _ hubGet) (*httputil.Response, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		burst[u]++

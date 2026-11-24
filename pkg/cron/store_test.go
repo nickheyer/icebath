@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store in a fresh temp home with its log captured in the returned buffer
@@ -63,17 +63,17 @@ func diskJobIDs(t *testing.T, s *Store) []string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := pyjson.Loads(string(raw))
+	v, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	list, ok := v.(*pyjson.Object).Vals["jobs"].([]any)
+	list, ok := v.(*jsonutil.Object).Value("jobs").([]any)
 	if !ok {
 		t.Fatalf("jobs on disk is not a list: %s", raw)
 	}
 	var ids []string
 	for _, e := range list {
-		id, _ := e.(*pyjson.Object).Get("id")
+		id, _ := e.(*jsonutil.Object).Get("id")
 		ids = append(ids, id.(string))
 	}
 	return ids

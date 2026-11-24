@@ -8,12 +8,12 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -36,13 +36,13 @@ func quotedThinkTagAlternation() string {
 func coerceContentText(raw any) (any, error) {
 	switch c := raw.(type) {
 	case map[string]any:
-		if text, ok := c["text"]; ok && pyrepr.Truthy(text) {
+		if text, ok := c["text"]; ok && anyutil.IsTrue(text) {
 			return text, nil
 		}
-		if content, ok := c["content"]; ok && pyrepr.Truthy(content) {
+		if content, ok := c["content"]; ok && anyutil.IsTrue(content) {
 			return content, nil
 		}
-		text, err := pyjson.Dumps(c)
+		text, err := jsonutil.Encode(c)
 		return text, err
 	case []map[string]any:
 		items := make([]any, len(c))
@@ -64,17 +64,17 @@ func coerceContentText(raw any) (any, error) {
 					}
 					s, ok := text.(string)
 					if !ok {
-						return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("content part %d text is %s where text was expected", i, errchain.Kind(text))}
+						return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("content part %d text is %s where text was expected", i, errchain.Kind(text))}
 					}
 					parts = append(parts, s)
 				} else if text, has := p["text"]; has {
-					parts = append(parts, pyrepr.Str(text))
+					parts = append(parts, anyutil.String(text))
 				}
 			}
 		}
 		return strings.Join(parts, "\n"), nil
 	}
-	return pyrepr.Str(raw), nil
+	return anyutil.String(raw), nil
 }
 
 // Fires post_api_request with the response, usage and timing views when a consumer is registered, failures swallowed
@@ -124,7 +124,7 @@ func firePostAPIRequestHook(ctx context.Context, a *AIAgent, s *LoopState, assis
 
 // Python len of value or empty text, false when the value has no length
 func pySizedLen(v any) (int, bool) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0, true
 	}
 	switch c := v.(type) {
@@ -160,8 +160,8 @@ func reasoningPreview(a *AIAgent, content string, assistantMessage *provider.Res
 // Relays a subagent first line preview to the parent or extracted reasoning to a top level progress callback
 func relayThinking(a *AIAgent, content any, assistantMessage *provider.Response) error {
 	text, isText := content.(string)
-	if !isText && pyrepr.Truthy(content) {
-		return &pyint.Error{Kind: "AttributeError", Msg: fmt.Sprintf("response content is %s where text was expected", errchain.Kind(content))}
+	if !isText && anyutil.IsTrue(content) {
+		return &errorutil.Error{Kind: "AttributeError", Msg: fmt.Sprintf("response content is %s where text was expected", errchain.Kind(content))}
 	}
 	thinkText := strings.TrimSpace(intakeReasoningTagRE.ReplaceAllString(strings.TrimSpace(text), ""))
 	firstLine := ""
@@ -211,19 +211,19 @@ func assistantContentPreview(content any) (string, error) {
 		return c, nil
 	case []any:
 		if len(c) > 100 {
-			return pyrepr.Str(c[:100]) + "...", nil
+			return anyutil.String(c[:100]) + "...", nil
 		}
-		return pyrepr.Str(c), nil
+		return anyutil.String(c), nil
 	case map[string]any:
-		return "", &pyint.Error{Kind: "KeyError", Msg: "response content is a mapping where text or a list was expected"}
+		return "", &errorutil.Error{Kind: "KeyError", Msg: "response content is a mapping where text or a list was expected"}
 	}
-	return "", &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("response content is %s where text or a list was expected", errchain.Kind(content))}
+	return "", &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("response content is %s where text or a list was expected", errchain.Kind(content))}
 }
 
 // Opened but never closed scratchpad in content or empty text, lists and dicts checked by membership
 func contentHasIncompleteScratchpad(content any) (bool, error) {
 	const opened, closed = "<REASONING_SCRATCHPAD>", "</REASONING_SCRATCHPAD>"
-	if !pyrepr.Truthy(content) {
+	if !anyutil.IsTrue(content) {
 		return false, nil
 	}
 	switch c := content.(type) {
@@ -232,7 +232,7 @@ func contentHasIncompleteScratchpad(content any) (bool, error) {
 	case []any:
 		has := func(want string) bool {
 			for _, item := range c {
-				if pyrepr.Equal(item, want) {
+				if anyutil.Equal(item, want) {
 					return true
 				}
 			}
@@ -244,7 +244,7 @@ func contentHasIncompleteScratchpad(content any) (bool, error) {
 		_, shut := c[closed]
 		return open && !shut, nil
 	}
-	return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("response content is %s where text, a list or a mapping was expected", errchain.Kind(content))}
+	return false, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("response content is %s where text, a list or a mapping was expected", errchain.Kind(content))}
 }
 
 // Normalizes the response into a text assistant message then runs the post response hooks and continuation guards in order
@@ -273,9 +273,9 @@ func normalizeModelResponse(ctx context.Context, a *AIAgent, s *LoopState) (Phas
 	spliceProviderProjection(a, s.Response, &s.Messages)
 	firePostAPIRequestHook(ctx, a, s, assistantMessage, finishReason)
 
-	if pyrepr.Truthy(content) && !a.quietMode {
+	if anyutil.IsTrue(content) && !a.quietMode {
 		if a.verboseLogging {
-			a.vprint(a.logPrefix+"🤖 Assistant: "+pyrepr.Str(content), false, false)
+			a.vprint(a.logPrefix+"🤖 Assistant: "+anyutil.String(content), false, false)
 		} else {
 			preview, err := assistantContentPreview(content)
 			if err != nil {

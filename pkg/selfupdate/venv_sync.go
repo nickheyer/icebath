@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"math/big"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -19,12 +20,12 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Relaunch driven completion retries back off after this many consecutive failures
@@ -91,8 +92,8 @@ type VenvSyncResult struct {
 }
 
 // Ordered JSON object of the result, the dict post update and the installers read
-func (r VenvSyncResult) object() *pyjson.Object {
-	object := pyjson.ObjectOf("state", r.State, "ok", r.OK)
+func (r VenvSyncResult) object() *jsonutil.Object {
+	object := jsonutil.ObjectOf("state", r.State, "ok", r.OK)
 	if r.Detail != "" {
 		object.Set("detail", r.Detail)
 	}
@@ -232,7 +233,7 @@ func readCompletionAttempts(record string) (*big.Int, string, bool, error) {
 	if err != nil {
 		return nil, "", false, err
 	}
-	text, err := pystr.DecodeUTF8Sig(data)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 	if err != nil {
 		return nil, "", false, err
 	}
@@ -423,7 +424,7 @@ func isTailScript(root, script string) bool {
 	if err != nil {
 		return false
 	}
-	resolved, err := pypath.Resolve(exe)
+	resolved, err := pathutil.Resolve(exe)
 	if err != nil {
 		return false
 	}
@@ -514,10 +515,10 @@ func abspath(path string) string {
 	}
 	if !strings.HasPrefix(path, "/") {
 		if wd, err := os.Getwd(); err == nil {
-			path = pypath.PosixJoin(wd, path)
+			path = path.Join(wd, path)
 		}
 	}
-	return pypath.PosixNormpath(path)
+	return path.Clean(path)
 }
 
 // Reports the binary as this process's own executable by lexical identity, never following links
@@ -526,12 +527,12 @@ func sameExecutable(binary string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return pypath.Normcase(abspath(binary)) == pypath.Normcase(abspath(exe)), nil
+	return pathutil.FoldCase(abspath(binary)) == pathutil.FoldCase(abspath(exe)), nil
 }
 
 // Finishes a self managed source update before the app runs, the install binary to relaunch into or empty
 func PrepareLaunch(ctx context.Context, projectRoot string, argv []string) (string, error) {
-	root, err := pypath.Resolve(projectRoot)
+	root, err := pathutil.Resolve(projectRoot)
 	if err != nil {
 		return "", err
 	}

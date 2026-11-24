@@ -12,15 +12,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Stand in terminal cwd values resolved to the home dir at runtime, never an explicit workspace
@@ -29,7 +29,7 @@ var cwdPlaceholders = map[string]bool{".": true, "auto": true, "cwd": true}
 // CLI banner facts the session info reports, assigned by the command wiring from the app package
 var Banner struct {
 	ReleaseDate     string
-	AvailableSkills func(ctx context.Context) *pyjson.Object
+	AvailableSkills func(ctx context.Context) *jsonutil.Object
 	UpdateResult    func(timeout time.Duration) *int64
 }
 
@@ -154,7 +154,7 @@ func profileConfiguredCwd(ctx context.Context, profileHome string) string {
 	if raw == "" || cwdPlaceholders[raw] {
 		return ""
 	}
-	resolved, err := pypath.Abspath(pypath.Expanduser(raw))
+	resolved, err := filepath.Abs(pathutil.ExpandUser(raw))
 	if err != nil || !isDir(resolved) {
 		return ""
 	}
@@ -211,18 +211,15 @@ func suppress(body func()) {
 	body()
 }
 
-// Python truthiness of a slot value
-func truthy(v any) bool { return pyrepr.Truthy(v) }
-
 // str of a value with None and falsy values read as the empty string
 func strOr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Whether a path names an existing directory
@@ -233,7 +230,7 @@ func isDir(p string) bool {
 
 // Lenient pathlib resolve, the absolute path when a component cannot be resolved
 func resolveLax(p string) string {
-	if resolved, err := pypath.Resolve(p); err == nil {
+	if resolved, err := pathutil.Resolve(p); err == nil {
 		return resolved
 	}
 	abs, _ := filepath.Abs(p)
@@ -299,8 +296,8 @@ func configOutage(failure any) bool {
 
 // Python str of a value or empty string for a falsy one
 func relayString(v any) string {
-	if !truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }

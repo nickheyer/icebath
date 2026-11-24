@@ -81,7 +81,7 @@ func TestDecodeKeychainAttr(t *testing.T) {
 	}
 }
 
-func TestOpenBrowserURLReportsThatNoRegistryBrowserTookTheURL(t *testing.T) {
+func TestOpenBrowserURLReportsThatNoBrowserTookTheURL(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	t.Setenv("BROWSER", "")
 	if err := openBrowserURL("https://example.invalid/device"); !errors.Is(err, errBrowserNotOpened) {

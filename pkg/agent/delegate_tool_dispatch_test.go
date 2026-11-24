@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestFormatBatchTagOrdinalsPerParentSession(t *testing.T) {
@@ -61,12 +61,12 @@ func TestResolveDelegationCredentialsPureInheritMergesOverParent(t *testing.T) {
 }
 
 func TestFabricatedEntryCarriesRoleAndRoute(t *testing.T) {
-	route := pyjson.NewObject()
+	route := jsonutil.NewObject()
 	route.Set("backend", "b")
 	child := &AIAgent{delegateRole: "leaf", delegateRoute: route, provider: "p", model: "m"}
 	e := fabricatedEntry(3, "error", "boom", child, 1.5)
-	if strings.Join(e.Keys, ",") != "task_index,status,summary,error,api_calls,duration_seconds,_child_role,route" {
-		t.Fatalf("keys = %v", e.Keys)
+	if strings.Join(e.Keys(), ",") != "task_index,status,summary,error,api_calls,duration_seconds,_child_role,route" {
+		t.Fatalf("keys = %v", e.Keys())
 	}
 	if v, _ := e.Get("_child_role"); v != "leaf" {
 		t.Fatalf("role = %v", v)

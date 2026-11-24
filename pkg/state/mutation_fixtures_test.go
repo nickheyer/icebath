@@ -5,23 +5,23 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Installs the gateway route builders as JSON shaped doubles for the whole package test run
 func installRouteBuilderDoubles() {
-	ResetSessionEntry = func(previous *pyjson.Object, childID string) (*pyjson.Object, error) {
-		entry := previous.Copy()
-		stamp := pydatetime.ISOFormatNaive(time.Now())
+	ResetSessionEntry = func(previous *jsonutil.Object, childID string) (*jsonutil.Object, error) {
+		entry := previous.Clone()
+		stamp := time.Now().Format(timeutil.RFC3339Micro)
 		entry.Set("session_id", childID)
 		entry.Set("created_at", stamp)
 		entry.Set("updated_at", stamp)
 		entry.Set("is_fresh_reset", true)
 		return entry, nil
 	}
-	BranchLocalRoute = func(childID, principalID string, originProfile, routeProfile any) (string, *pyjson.Object, *pyjson.Object, float64, error) {
-		source := pyjson.ObjectOf("platform", "local", "chat_id", childID, "chat_name", nil, "chat_type", "dm", "user_id", principalID,
+	BranchLocalRoute = func(childID, principalID string, originProfile, routeProfile any) (string, *jsonutil.Object, *jsonutil.Object, float64, error) {
+		source := jsonutil.ObjectOf("platform", "local", "chat_id", childID, "chat_name", nil, "chat_type", "dm", "user_id", principalID,
 			"user_name", nil, "thread_id", nil, "chat_topic", nil)
 		if profile, ok := originProfile.(string); ok && profile != "" {
 			source.Set("profile", profile)
@@ -38,10 +38,10 @@ func installRouteBuilderDoubles() {
 }
 
 // Routing entry dict in the shape SessionEntry.to_dict publishes for a local session
-func localEntryFixture(route, sessionID string, origin *pyjson.Object, at time.Time) *pyjson.Object {
-	stamp := pydatetime.ISOFormatNaive(at)
-	return pyjson.ObjectOf("session_key", route, "session_id", sessionID, "created_at", stamp, "updated_at", stamp,
-		"display_name", nil, "platform", "local", "chat_type", "dm", "metadata", pyjson.NewObject(),
+func localEntryFixture(route, sessionID string, origin *jsonutil.Object, at time.Time) *jsonutil.Object {
+	stamp := at.Format(timeutil.RFC3339Micro)
+	return jsonutil.ObjectOf("session_key", route, "session_id", sessionID, "created_at", stamp, "updated_at", stamp,
+		"display_name", nil, "platform", "local", "chat_type", "dm", "metadata", jsonutil.NewObject(),
 		"input_tokens", int64(0), "output_tokens", int64(0), "cache_read_tokens", int64(0), "cache_write_tokens", int64(0),
 		"total_tokens", int64(0), "estimated_cost_usd", 0.0, "cost_status", "unknown", "last_prompt_tokens", int64(0),
 		"expiry_finalized", false, "suspended", false, "resume_pending", false, "resume_reason", nil,
@@ -51,16 +51,16 @@ func localEntryFixture(route, sessionID string, origin *pyjson.Object, at time.T
 }
 
 // Origin dict in the shape SessionSource.to_dict publishes for a local DM
-func localOriginFixture(chatID, userID string) *pyjson.Object {
-	return pyjson.ObjectOf("platform", "local", "chat_id", chatID, "chat_name", nil, "chat_type", "dm", "user_id", userID,
+func localOriginFixture(chatID, userID string) *jsonutil.Object {
+	return jsonutil.ObjectOf("platform", "local", "chat_id", chatID, "chat_name", nil, "chat_type", "dm", "user_id", userID,
 		"user_name", nil, "thread_id", nil, "chat_topic", nil)
 }
 
 // Frozen policy dict in the shape asdict(build_policy) publishes for a cli create of cwd with model m
-func localPolicyFixture(cwd string) *pyjson.Object {
-	request, _ := pyjson.Dumps(pyjson.ObjectOf("source", "cli", "cwd", cwd, "model", "m", "toolsets", []any{}))
-	config, _ := pyjson.Dumps(pyjson.ObjectOf("platform_toolsets", pyjson.ObjectOf("cli", []any{})))
-	return pyjson.ObjectOf("source", "cli", "platform", "cli", "cwd", cwd, "model", "m", "toolsets", []any{},
+func localPolicyFixture(cwd string) *jsonutil.Object {
+	request, _ := jsonutil.Encode(jsonutil.ObjectOf("source", "cli", "cwd", cwd, "model", "m", "toolsets", []any{}))
+	config, _ := jsonutil.Encode(jsonutil.ObjectOf("platform_toolsets", jsonutil.ObjectOf("cli", []any{})))
+	return jsonutil.ObjectOf("source", "cli", "platform", "cli", "cwd", cwd, "model", "m", "toolsets", []any{},
 		"config_json", config, "request_json", request, "terminal_json", "{}", "credential_ref", nil, "config_secret_ref", nil,
 		"editor_mcp_json", nil, "kanban_json", nil, "safe_mode", false, "ignore_user_config", false, "skills_prompt", nil,
 		"coding_posture", false, "client_env_json", nil, "client_env_remote", false, "client_env_rules_json", nil,
@@ -75,7 +75,7 @@ func localSessionFixture(t *testing.T, db *SessionDB, epoch int64, cwd string) s
 		t.Fatal(err)
 	}
 	entry := localEntryFixture("local:"+sid, sid, localOriginFixture(sid, "human"), time.Now())
-	receipt := pyjson.ObjectOf("profile_id", "profile", "principal_id", "human", "request_id", "r", "session_id", sid,
+	receipt := jsonutil.ObjectOf("profile_id", "profile", "principal_id", "human", "request_id", "r", "session_id", sid,
 		"route", "local:"+sid, "entry", entry, "policy", localPolicyFixture(cwd))
 	if _, err := db.CommitLocalSession(context.Background(), epoch, LocalCreateReceipt{Receipt: receipt}); err != nil {
 		t.Fatal(err)
@@ -96,7 +96,7 @@ func localResetFixture(t *testing.T, db *SessionDB, epoch int64, child string) s
 }
 
 // Mutation arguments at the session's current revision and generation
-func mutationAt(db *SessionDB, sid, operation, requestID string, payload *pyjson.Object) RuntimeMutation {
+func mutationAt(db *SessionDB, sid, operation, requestID string, payload *jsonutil.Object) RuntimeMutation {
 	row, _ := db.GetSession(context.Background(), sid)
 	revision, _ := exactInt(rowValue(row, "runtime_revision"))
 	generation, _ := exactInt(rowValue(row, "runtime_generation"))
@@ -105,7 +105,7 @@ func mutationAt(db *SessionDB, sid, operation, requestID string, payload *pyjson
 }
 
 // Result of a mutation that must succeed
-func mustMutate(t *testing.T, db *SessionDB, in RuntimeMutation) *pyjson.Object {
+func mustMutate(t *testing.T, db *SessionDB, in RuntimeMutation) *jsonutil.Object {
 	t.Helper()
 	out, err := db.MutateRuntimeSession(context.Background(), in)
 	if err != nil {
@@ -125,7 +125,7 @@ func mutateRefusal(t *testing.T, db *SessionDB, in RuntimeMutation) string {
 func int64Ptr(n int64) *int64 { return &n }
 
 // Admits one queued input for principal human
-func admitInput(t *testing.T, db *SessionDB, epoch int64, principal, sid, requestID string, payload *pyjson.Object) *pyjson.Object {
+func admitInput(t *testing.T, db *SessionDB, epoch int64, principal, sid, requestID string, payload *jsonutil.Object) *jsonutil.Object {
 	t.Helper()
 	row, err := db.AdmitSessionInput(context.Background(), SessionInput{Epoch: epoch, PrincipalID: principal, SessionID: sid, RequestID: requestID, Payload: payload})
 	if err != nil {
@@ -135,7 +135,7 @@ func admitInput(t *testing.T, db *SessionDB, epoch int64, principal, sid, reques
 }
 
 // Claims the head of a session FIFO, fatal when nothing is claimable
-func claimHead(t *testing.T, db *SessionDB, epoch int64, sid string) *pyjson.Object {
+func claimHead(t *testing.T, db *SessionDB, epoch int64, sid string) *jsonutil.Object {
 	t.Helper()
 	claim, _, err := db.ClaimSessionInput(context.Background(), ClaimInput{Epoch: epoch, SessionID: sid})
 	if err != nil || claim == nil {
@@ -145,7 +145,7 @@ func claimHead(t *testing.T, db *SessionDB, epoch int64, sid string) *pyjson.Obj
 }
 
 // Settles a claimed admission completed with the result the gateway retain_result stores
-func retainResult(t *testing.T, db *SessionDB, epoch int64, row *pyjson.Object, result *pyjson.Object) {
+func retainResult(t *testing.T, db *SessionDB, epoch int64, row *jsonutil.Object, result *jsonutil.Object) {
 	t.Helper()
 	generation, _ := exactInt(rowValue(row, "generation"))
 	if _, err := db.SettleSessionInput(context.Background(), SettleInput{Epoch: epoch, AdmissionID: objStr(row, "admission_id"), Generation: generation, Outcome: "completed", Result: result}); err != nil {
@@ -154,7 +154,7 @@ func retainResult(t *testing.T, db *SessionDB, epoch int64, row *pyjson.Object, 
 }
 
 // Stored result of a terminal admission decoded as the gateway admission_result reads it, nil when none
-func admissionResult(t *testing.T, db *SessionDB, admissionID string) *pyjson.Object {
+func admissionResult(t *testing.T, db *SessionDB, admissionID string) *jsonutil.Object {
 	t.Helper()
 	ctx := context.Background()
 	row, err := db.GetSessionAdmission(ctx, admissionID)
@@ -175,7 +175,7 @@ func admissionResult(t *testing.T, db *SessionDB, admissionID string) *pyjson.Ob
 	if err != nil {
 		t.Fatal(err)
 	}
-	return decoded.(*pyjson.Object)
+	return decoded.(*jsonutil.Object)
 }
 
 // Message contents of a session through the direct store
@@ -193,7 +193,7 @@ func contentsOf(t *testing.T, db *SessionDB, sid string, o GetMessagesOptions) [
 }
 
 // Session row of the direct store, nil when missing
-func sessionOf(t *testing.T, db *SessionDB, sid string) *pyjson.Object {
+func sessionOf(t *testing.T, db *SessionDB, sid string) *jsonutil.Object {
 	t.Helper()
 	row, err := db.GetSession(context.Background(), sid)
 	if err != nil {

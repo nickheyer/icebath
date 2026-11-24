@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"regexp"
@@ -11,14 +12,14 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"github.com/charmbracelet/colorprofile"
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -101,13 +102,13 @@ func detectLightModeUncached(ctx context.Context) (bool, error) {
 	}
 	parts := strings.Split(strings.TrimSpace(os.Getenv("COLORFGBG")), ";")
 	last := parts[len(parts)-1]
-	if pystr.StrIsDigit(last) {
-		n, ok := pystr.IntText(last)
-		if !ok {
+	if textutil.IsDigits(last) {
+		n, err := textutil.ParseInt(last)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return false, fmt.Errorf("COLORFGBG background %s is not a whole number", last)
 		}
-		if n.IsInt64() && n.Int64() >= 0 && n.Int64() < 16 {
-			return n.Int64() == 7 || n.Int64() == 15, nil
+		if n >= 0 && n < 16 {
+			return n == 7 || n == 15, nil
 		}
 	}
 	bg, ok, err := queryOSC11Background()
@@ -212,7 +213,7 @@ func accentHex() string {
 
 var richANSITokenRe = regexp.MustCompile(`(?:\x1b\](.*?)\x1b\\)|(?:\x1b([(@-Z\\-_]|\[[0-?]*[ -/]*[@-~]))`)
 
-// Plain text of ANSI output as rich Text.from_ansi reads it, lines rejoined by newlines
+// Plain text of ANSI output with its escape sequences removed line by line, lines rejoined by newlines
 func richPlainFromANSI(text string) string {
 	lines := textutil.Lines(text)
 	for i, line := range lines {
@@ -273,7 +274,7 @@ func preserveWindowsDotSegmentsForMarkdown(text string) string {
 
 // Terminal columns, 80 when unknown
 func terminalColumns() int {
-	cols, _ := pyshutil.GetTerminalSize(80, 24)
+	cols, _ := termutil.Size(80, 24)
 	return cols
 }
 
@@ -283,18 +284,18 @@ func terminalWidthForStreaming() int {
 }
 
 // Final assistant content as markdown, stripped text or raw text
-func renderFinalAssistantContent(text, mode string) pyrich.Renderable {
+func renderFinalAssistantContent(text, mode string) consoleutil.Renderable {
 	panelWidth := max(20, terminalColumns()-4)
 	switch strings.ToLower(strings.TrimSpace(cliStr(mode, "render"))) {
 	case "strip":
-		return &pyrich.Text{Plain: tools.RealignMarkdownTables(stripMarkdownSyntax(text), &panelWidth)}
+		return consoleutil.Text(tools.RealignMarkdownTables(stripMarkdownSyntax(text), &panelWidth))
 	case "raw":
-		return &pyrich.Text{Plain: text}
+		return consoleutil.Text(text)
 	}
 	plain := richPlainFromANSI(text)
 	plain = preserveWindowsDotSegmentsForMarkdown(plain)
 	plain = tools.RealignMarkdownTables(plain, &panelWidth)
-	return &pyrich.Markdown{Source: plain}
+	return consoleutil.Markdown(plain)
 }
 
 // Text still to display after a streamed response transform, the suffix or the whole replaced response
@@ -315,48 +316,49 @@ func ptPrintANSI(text string) { fmt.Fprintln(console().Out, text) }
 // Prints ANSI text and a newline straight to the console
 func cprint(text string) { ptPrintANSI(text) }
 
-var oscEscapeRe = regexp.MustCompile(`\x1b\][\s\S]*?(?:\x07|\x1b\\)`)
-
-// ChatConsole is the rich console drop in routing rendered ANSI through cprint so colors survive the prompt
+// ChatConsole is a console routing rendered ANSI through cprint so colors survive the prompt
 type ChatConsole struct {
 	mu    sync.Mutex
 	buf   bytes.Buffer
-	inner *pyrich.Console
+	inner *consoleutil.Console
 }
 
-// A chat console rendering true color into a buffer that each print flushes line by line
+// A chat console rendering true color into a buffer that each print flushes line by line, link addresses written out as text
 func newChatConsole() *ChatConsole {
 	c := &ChatConsole{}
-	c.inner = &pyrich.Console{Out: &c.buf, Color: true, Terminal: true, NoHighlight: true, Width: 80, ColorSystem: "truecolor"}
+	c.inner = &consoleutil.Console{Out: &c.buf, Color: true, NoHighlight: true, NoLinks: true, Width: 80, Profile: colorprofile.TrueColor}
 	return c
 }
 
 // Renders through the inner console at the terminal width and flushes every line through cprint
-func (c *ChatConsole) emit(render func(*pyrich.Console)) {
+func (c *ChatConsole) emit(render func(*consoleutil.Console)) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.buf.Reset()
 	c.inner.Width = terminalColumns()
 	render(c.inner)
-	rendered := strings.TrimRight(oscEscapeRe.ReplaceAllString(c.buf.String(), ""), "\n")
+	rendered := strings.TrimRight(c.buf.String(), "\n")
 	for _, line := range strings.Split(rendered, "\n") {
 		cprint(line)
 	}
 }
 
 // Prints markup lines through cprint
-func (c *ChatConsole) Print(markup ...string) { c.emit(func(r *pyrich.Console) { r.Print(markup...) }) }
+func (c *ChatConsole) Print(markup ...string) {
+	c.emit(func(r *consoleutil.Console) { r.Print(markup...) })
+}
 
 // Prints a renderable through cprint with a base style under it and soft wrapping when asked
-func (c *ChatConsole) PrintRenderableWith(r pyrich.Renderable, o pyrich.PrintOptions) (err error) {
-	c.emit(func(con *pyrich.Console) { err = con.PrintRenderableWith(r, o) })
-	return err
+func (c *ChatConsole) PrintRenderableWith(r consoleutil.Renderable, o consoleutil.PrintOptions) {
+	c.emit(func(con *consoleutil.Console) { con.PrintRenderableWith(r, o) })
 }
 
 // Prints a panel through cprint
-func (c *ChatConsole) PrintPanel(p pyrich.Panel) { c.emit(func(r *pyrich.Console) { r.PrintPanel(p) }) }
+func (c *ChatConsole) PrintPanel(p consoleutil.Panel) {
+	c.emit(func(r *consoleutil.Console) { r.PrintPanel(p) })
+}
 
 var defaultChatConsole = newChatConsole()
 
-// Prints rich markup through the chat console
+// Prints console markup through the chat console
 func chatConsolePrint(markup string) { defaultChatConsole.Print(markup) }

@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One captured x_search request
@@ -358,11 +358,11 @@ func TestXSearchPassesProviderNumbersAndKeyOrderThrough(t *testing.T) {
 	stubXSearchHTTP(t, func(n int, req *http.Request) (*http.Response, error) {
 		return xsResponse(req, 200, `{"output_text": 12.50, "citations":[{"z": 1, "a": 1.0}, 1e2, "u"], "output":[{"type":"message","content":[{"type":"output_text","text":"t","annotations":[{"type":"url_citation","url":{"b":1,"a":1.0},"start_index":1,"end_index":2.0}]}]}]}`), nil
 	})
-	decoded, err := pyjson.Loads(xSearchTool(context.Background(), env, "q", nil, nil, "", "", false, false))
+	decoded, err := jsonutil.Decode(xSearchTool(context.Background(), env, "q", nil, nil, "", "", false, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := pyjson.Dumps(decoded, pyjson.EnsureASCII(false))
+	got, err := jsonutil.Encode(decoded)
 	if err != nil {
 		t.Fatal(err)
 	}

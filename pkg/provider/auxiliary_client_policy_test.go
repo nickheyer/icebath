@@ -339,9 +339,6 @@ func TestModelRecencyKeyOrdersDigitRunsNumerically(t *testing.T) {
 	if got := auxModelRecencyKey("GPT-5.4-mini"); !reflect.DeepEqual(got, want) {
 		t.Fatalf("key %+v", got)
 	}
-	if got := auxModelRecencyKey("v٣"); len(got) != 2 || got[1].num != 3 {
-		t.Fatalf("unicode digits %+v", got)
-	}
 }
 
 func TestResolveProviderVisionDefault(t *testing.T) {

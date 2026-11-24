@@ -8,7 +8,7 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const noAgentWithoutScriptError = "no_agent=True requires a script — with no agent and no script " +
@@ -32,7 +32,7 @@ func (s *Store) validateJobModeInvariants(monitorScript, monitorURL *string, noA
 	if sc != "" && s.scriptIsCommandLine(sc) {
 		return fmt.Errorf("script must name a file under %s (e.g. 'watchdog.sh'), not a shell command line: "+
 			"%s has no such file. Write the command into a script there and pass its filename.",
-			home.Display(s.home)+"/scripts/", pyrepr.Repr(sc))
+			home.Display(s.home)+"/scripts/", anyutil.Quote(sc))
 	}
 	return nil
 }
@@ -52,7 +52,7 @@ func validateScheduleKnobs(schedule *Schedule, timezone any, graceMinutes any) e
 	}
 	if kind != "cron" {
 		return fmt.Errorf("grace_minutes only applies to cron schedules (a fixed wall clock that can be "+
-			"missed); this job's schedule kind is %s.", pyrepr.Repr(kind))
+			"missed); this job's schedule kind is %s.", anyutil.Quote(kind))
 	}
 	return nil
 }

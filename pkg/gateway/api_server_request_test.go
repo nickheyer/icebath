@@ -7,12 +7,12 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Historical inline SSE encoder, an event line then the ASCII JSON data line
 func inlineSSEFrame(t *testing.T, data any, event string) []byte {
-	encoded, err := pyjson.Dumps(data)
+	encoded, err := jsonutil.Encode(data, jsonutil.ASCII())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,9 +34,9 @@ func mustSSEFrame(t *testing.T, data any, event string, ensureASCII bool) []byte
 func TestSSEFrameMatchesInlineEncoderWithEvent(t *testing.T) {
 	for _, c := range []struct {
 		event string
-		data  *pyjson.Object
-	}{{"icebath.tool.progress", pyjson.ObjectOf("name", "x", "status", "running")},
-		{"response.created", pyjson.ObjectOf("id", "r1", "status", "in_progress")}} {
+		data  *jsonutil.Object
+	}{{"icebath.tool.progress", jsonutil.ObjectOf("name", "x", "status", "running")},
+		{"response.created", jsonutil.ObjectOf("id", "r1", "status", "in_progress")}} {
 		if got := mustSSEFrame(t, c.data, c.event, true); string(got) != string(inlineSSEFrame(t, c.data, c.event)) {
 			t.Fatalf("%s: %q", c.event, got)
 		}
@@ -44,7 +44,7 @@ func TestSSEFrameMatchesInlineEncoderWithEvent(t *testing.T) {
 }
 
 func TestSSEFrameDefaultEnsureASCIIMatchesBareJSON(t *testing.T) {
-	payload := pyjson.ObjectOf("text", "café — Münchner \U0001F3D4")
+	payload := jsonutil.ObjectOf("text", "café — Münchner \U0001F3D4")
 	got := mustSSEFrame(t, payload, "", true)
 	if string(got) != string(inlineSSEFrame(t, payload, "")) || !strings.Contains(string(got), "\\u00e9") {
 		t.Fatalf("%q", got)
@@ -54,10 +54,10 @@ func TestSSEFrameDefaultEnsureASCIIMatchesBareJSON(t *testing.T) {
 func TestSSEFrameEnsureASCIIFalseReproducesSessionEventStream(t *testing.T) {
 	for _, c := range []struct {
 		name    string
-		payload *pyjson.Object
-	}{{"session.update", pyjson.ObjectOf("text", "café — Münchner \U0001F3D4", "id", int64(1))},
-		{"thread.message.delta", pyjson.ObjectOf("content", "héllo wörld ✓", "seq", int64(3))}} {
-		data, _ := pyjson.Dumps(c.payload, pyjson.EnsureASCII(false))
+		payload *jsonutil.Object
+	}{{"session.update", jsonutil.ObjectOf("text", "café — Münchner \U0001F3D4", "id", int64(1))},
+		{"thread.message.delta", jsonutil.ObjectOf("content", "héllo wörld ✓", "seq", int64(3))}} {
+		data, _ := jsonutil.Encode(c.payload)
 		want := "event: " + c.name + "\ndata: " + data + "\n\n"
 		if got := mustSSEFrame(t, c.payload, c.name, false); string(got) != want {
 			t.Fatalf("%q", got)
@@ -66,12 +66,12 @@ func TestSSEFrameEnsureASCIIFalseReproducesSessionEventStream(t *testing.T) {
 }
 
 func TestSSEFrameTypedObjectRoundtrip(t *testing.T) {
-	obj := pyjson.ObjectOf("id", "x", "choices", []any{pyjson.ObjectOf("index", int64(0), "delta", pyjson.ObjectOf("content", "hi"))})
+	obj := jsonutil.ObjectOf("id", "x", "choices", []any{jsonutil.ObjectOf("index", int64(0), "delta", jsonutil.ObjectOf("content", "hi"))})
 	out := string(mustSSEFrame(t, obj, "", true))
 	line := strings.TrimSpace(strings.SplitN(out, "data: ", 2)[1])
 	var decoded, want any
 	json.Unmarshal([]byte(line), &decoded)
-	wantText, _ := pyjson.Dumps(obj)
+	wantText, _ := jsonutil.Encode(obj)
 	json.Unmarshal([]byte(wantText), &want)
 	if !reflect.DeepEqual(decoded, want) {
 		t.Fatalf("%v", decoded)
@@ -80,7 +80,7 @@ func TestSSEFrameTypedObjectRoundtrip(t *testing.T) {
 
 func TestEveryConfigurableLevelIsAccepted(t *testing.T) {
 	for _, level := range config.ValidReasoningEfforts {
-		got := apiRequestReasoningConfig(pyjson.ObjectOf("reasoning_effort", level))
+		got := apiRequestReasoningConfig(jsonutil.ObjectOf("reasoning_effort", level))
 		if !reflect.DeepEqual(got, map[string]any{"enabled": true, "effort": level}) {
 			t.Fatalf("%s: %v", level, got)
 		}
@@ -88,20 +88,20 @@ func TestEveryConfigurableLevelIsAccepted(t *testing.T) {
 }
 
 func TestNoneDisables(t *testing.T) {
-	if got := apiRequestReasoningConfig(pyjson.ObjectOf("reasoning_effort", "none")); !reflect.DeepEqual(got, map[string]any{"enabled": false}) {
+	if got := apiRequestReasoningConfig(jsonutil.ObjectOf("reasoning_effort", "none")); !reflect.DeepEqual(got, map[string]any{"enabled": false}) {
 		t.Fatalf("%v", got)
 	}
 }
 
 func TestStructuredObjectShape(t *testing.T) {
-	got := apiRequestReasoningConfig(pyjson.ObjectOf("reasoning", pyjson.ObjectOf("enabled", true, "effort", "ultra")))
+	got := apiRequestReasoningConfig(jsonutil.ObjectOf("reasoning", jsonutil.ObjectOf("enabled", true, "effort", "ultra")))
 	if !reflect.DeepEqual(got, map[string]any{"enabled": true, "effort": "ultra"}) {
 		t.Fatalf("%v", got)
 	}
 }
 
 func TestUnknownLevelStillIgnored(t *testing.T) {
-	if got := apiRequestReasoningConfig(pyjson.ObjectOf("reasoning_effort", "turbo")); got != nil {
+	if got := apiRequestReasoningConfig(jsonutil.ObjectOf("reasoning_effort", "turbo")); got != nil {
 		t.Fatalf("%v", got)
 	}
 }

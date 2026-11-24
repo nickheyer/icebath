@@ -5,10 +5,10 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Live compaction dicts projected onto the owner's closed handoff fields, a None row passing through
@@ -69,7 +69,7 @@ func (s *RuntimeSessionStore) appendCompressionMessages(ctx context.Context, ses
 	if err := s.session(sessionID); err != nil {
 		return 0, err
 	}
-	result, err := s.apply(ctx, "compression.append", pyjson.ObjectOf("messages", messagesPayload(messages),
+	result, err := s.apply(ctx, "compression.append", jsonutil.ObjectOf("messages", messagesPayload(messages),
 		"compression_lock_holder", noneIfNil(lockHolder), "turn_lease_holder", noneIfNil(turnLeaseHolder), "turn_lease_ttl_seconds", ttl))
 	if err != nil {
 		return 0, err
@@ -91,7 +91,7 @@ func (s *RuntimeSessionStore) appendCompressionMessages(ctx context.Context, ses
 
 // One lineage receipt field for the target
 func (s *RuntimeSessionStore) lineageField(ctx context.Context, sessionID, field string) (any, error) {
-	result, err := s.apply(ctx, "compression.lineage", pyjson.ObjectOf("target", sessionID))
+	result, err := s.apply(ctx, "compression.lineage", jsonutil.ObjectOf("target", sessionID))
 	if err != nil {
 		return nil, err
 	}
@@ -99,8 +99,8 @@ func (s *RuntimeSessionStore) lineageField(ctx context.Context, sessionID, field
 }
 
 // Session row readable from this assignment, a lineage member checked before any foreign read
-func (s *RuntimeSessionStore) GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
-	if !pyjson.Equal(sessionID, s.scope.GetOr("session_id", nil)) {
+func (s *RuntimeSessionStore) GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
+	if !anyutil.Equal(sessionID, s.scope.ValueOr("session_id", nil)) {
 		ids, err := s.lineageField(ctx, s.scopeSessionID(), "readable_ids")
 		if err != nil {
 			return nil, err
@@ -108,7 +108,7 @@ func (s *RuntimeSessionStore) GetSession(ctx context.Context, sessionID string) 
 		list, _ := ids.([]any)
 		readable := false
 		for _, id := range list {
-			if pyjson.Equal(id, sessionID) {
+			if anyutil.Equal(id, sessionID) {
 				readable = true
 				break
 			}
@@ -117,7 +117,7 @@ func (s *RuntimeSessionStore) GetSession(ctx context.Context, sessionID string) 
 			return nil, tools.NewWorkerPersistenceError("permission_denied")
 		}
 	}
-	result, err := s.apply(ctx, "compression.context", pyjson.ObjectOf("target", sessionID))
+	result, err := s.apply(ctx, "compression.context", jsonutil.ObjectOf("target", sessionID))
 	if err != nil {
 		return nil, err
 	}
@@ -125,7 +125,7 @@ func (s *RuntimeSessionStore) GetSession(ctx context.Context, sessionID string) 
 	if err != nil || row == nil {
 		return nil, err
 	}
-	obj, ok := row.(*pyjson.Object)
+	obj, ok := row.(*jsonutil.Object)
 	if !ok {
 		return nil, &workerStoreError{"TypeError", fmt.Sprintf("session receipt is %s where a mapping was expected", errchain.Kind(row))}
 	}
@@ -196,7 +196,7 @@ func (s *RuntimeSessionStore) DeclaredScopeIdentity(ctx context.Context, session
 		return false, "", &workerStoreError{"ValueError", "identity receipt is not a pair"}
 	}
 	root, err := receiptText(list[1])
-	return pyrepr.Truthy(list[0]), root, err
+	return anyutil.IsTrue(list[0]), root, err
 }
 
 // Whether the target is an explicit fork child
@@ -207,7 +207,7 @@ func (s *RuntimeSessionStore) IsExplicitForkChild(ctx context.Context, sessionID
 
 // Newest conversation boundary of the routing key and source
 func (s *RuntimeSessionStore) LatestConversationBoundary(ctx context.Context, sessionKey, source string) (int64, bool, error) {
-	value, err := s.applyValue(ctx, "compression.boundary", pyjson.ObjectOf("session_key", sessionKey, "source", source))
+	value, err := s.applyValue(ctx, "compression.boundary", jsonutil.ObjectOf("session_key", sessionKey, "source", source))
 	if err != nil || value == nil {
 		return 0, false, err
 	}
@@ -217,7 +217,7 @@ func (s *RuntimeSessionStore) LatestConversationBoundary(ctx context.Context, se
 
 // Durable conversation of the target as the owner reads it
 func (s *RuntimeSessionStore) GetMessagesAsConversation(ctx context.Context, sessionID string, o state.ConversationOptions) ([]map[string]any, error) {
-	result, err := s.apply(ctx, "compression.history", pyjson.ObjectOf("target", sessionID, "include_ancestors", o.IncludeAncestors,
+	result, err := s.apply(ctx, "compression.history", jsonutil.ObjectOf("target", sessionID, "include_ancestors", o.IncludeAncestors,
 		"include_inactive", o.IncludeInactive, "repair_alternation", o.RepairAlternation, "include_row_ids", o.IncludeRowIDs,
 		"include_compacted", o.IncludeCompacted))
 	if err != nil {
@@ -235,7 +235,7 @@ func (s *RuntimeSessionStore) GetActiveMessageWatermark(ctx context.Context, ses
 	if err := s.session(sessionID); err != nil {
 		return 0, err
 	}
-	value, err := s.applyValue(ctx, "compression.watermark", pyjson.NewObject())
+	value, err := s.applyValue(ctx, "compression.watermark", jsonutil.NewObject())
 	if err != nil {
 		return 0, err
 	}
@@ -267,7 +267,7 @@ func (s *RuntimeSessionStore) ArchiveAndCompact(ctx context.Context, sessionID s
 	if o.ModelConfigPatch != nil {
 		patch = o.ModelConfigPatch
 	}
-	result, err := s.apply(ctx, "compression.archive", pyjson.ObjectOf("messages", storeHandoffRows(compacted),
+	result, err := s.apply(ctx, "compression.archive", jsonutil.ObjectOf("messages", storeHandoffRows(compacted),
 		"model_config_patch", patch, "watermark", noneIfNil(o.Watermark), "lock_holder", noneIfNil(o.LockHolder),
 		"tail_count", int64(o.TailCount), "carried_messages", carried, "covered_ids", covered,
 		"unresolved_held", storeDictCopies(o.UnresolvedHeld), "held_for_cas", cas))
@@ -298,7 +298,7 @@ func (s *RuntimeSessionStore) PublishCompressionChild(ctx context.Context, p sta
 	if p.ModelConfig != nil {
 		config = p.ModelConfig
 	}
-	result, err := s.apply(ctx, "compression.publish", pyjson.ObjectOf("child_session_id", p.ChildSessionID, "source", p.Source,
+	result, err := s.apply(ctx, "compression.publish", jsonutil.ObjectOf("child_session_id", p.ChildSessionID, "source", p.Source,
 		"messages", storeHandoffRows(p.Messages), "model", noneIfNil(p.Model), "model_config", config, "system_prompt", noneIfNil(p.SystemPrompt),
 		"cwd", noneIfNil(p.Cwd), "profile_name", noneIfNil(p.ProfileName), "compression_lock_holder", noneIfNil(p.CompressionLockHolder),
 		"require_compression_lease", p.RequireCompressionLease, "require_lease_refresh", p.RequireLeaseRefresh,
@@ -318,8 +318,8 @@ func (s *RuntimeSessionStore) TryAcquireCompressionLockChecked(sessionID, holder
 	if err := s.session(sessionID); err != nil {
 		return false, err
 	}
-	value, err := s.applyValue(context.Background(), "compression.lock.acquire", pyjson.ObjectOf("holder", holder, "ttl_seconds", ttlSeconds))
-	return pyrepr.Truthy(value), err
+	value, err := s.applyValue(context.Background(), "compression.lock.acquire", jsonutil.ObjectOf("holder", holder, "ttl_seconds", ttlSeconds))
+	return anyutil.IsTrue(value), err
 }
 
 // Renews the compression lock through the owner
@@ -327,8 +327,8 @@ func (s *RuntimeSessionStore) RefreshCompressionLockChecked(sessionID, holder st
 	if err := s.session(sessionID); err != nil {
 		return false, err
 	}
-	value, err := s.applyValue(context.Background(), "compression.lock.renew", pyjson.ObjectOf("holder", holder, "ttl_seconds", ttlSeconds))
-	return pyrepr.Truthy(value), err
+	value, err := s.applyValue(context.Background(), "compression.lock.renew", jsonutil.ObjectOf("holder", holder, "ttl_seconds", ttlSeconds))
+	return anyutil.IsTrue(value), err
 }
 
 // Reopens an orphaned compression session through the owner
@@ -336,13 +336,13 @@ func (s *RuntimeSessionStore) ReopenOrphanedCompressionSession(ctx context.Conte
 	if err := s.session(sessionID); err != nil {
 		return false, err
 	}
-	value, err := s.applyValue(ctx, "compression.reopen", pyjson.NewObject())
-	return pyrepr.Truthy(value), err
+	value, err := s.applyValue(ctx, "compression.reopen", jsonutil.NewObject())
+	return anyutil.IsTrue(value), err
 }
 
 // Releases the compression lock under the admission target
 func (s *RuntimeSessionStore) ReleaseCompressionLockChecked(sessionID, holder string) error {
-	_, err := s.apply(context.Background(), "compression.cleanup", pyjson.ObjectOf("target", sessionID, "holder", holder))
+	_, err := s.apply(context.Background(), "compression.cleanup", jsonutil.ObjectOf("target", sessionID, "holder", holder))
 	return err
 }
 
@@ -351,7 +351,7 @@ func (s *RuntimeSessionStore) GetCompressionLockHolder(sessionID string) (*strin
 	if err := s.session(sessionID); err != nil {
 		return nil, err
 	}
-	value, err := s.applyValue(context.Background(), "compression.lock.holder", pyjson.NewObject())
+	value, err := s.applyValue(context.Background(), "compression.lock.holder", jsonutil.NewObject())
 	if err != nil || value == nil {
 		return nil, err
 	}
@@ -364,7 +364,7 @@ func (s *RuntimeSessionStore) RecordCompressionFailureCooldownChecked(sessionID 
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(context.Background(), "compression.cooldown.record", pyjson.ObjectOf("cooldown_until", cooldownUntil, "error", noneIfNil(errValue)))
+	_, err := s.apply(context.Background(), "compression.cooldown.record", jsonutil.ObjectOf("cooldown_until", cooldownUntil, "error", noneIfNil(errValue)))
 	return err
 }
 
@@ -382,7 +382,7 @@ func (s *RuntimeSessionStore) RestoreCompressionFailureCooldownRow(sessionID str
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(context.Background(), "compression.cooldown.restore", pyjson.ObjectOf("snapshot", pyjson.ObjectOf(
+	_, err := s.apply(context.Background(), "compression.cooldown.restore", jsonutil.ObjectOf("snapshot", jsonutil.ObjectOf(
 		"session_exists", snapshot.SessionExists, "cooldown_until", noneIfNil(snapshot.CooldownUntil), "error", snapshot.Error)))
 	return err
 }
@@ -392,7 +392,7 @@ func (s *RuntimeSessionStore) ClearCompressionFailureCooldownChecked(sessionID s
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(context.Background(), "compression.cooldown.clear", pyjson.NewObject())
+	_, err := s.apply(context.Background(), "compression.cooldown.clear", jsonutil.NewObject())
 	return err
 }
 
@@ -406,7 +406,7 @@ func (s *RuntimeSessionStore) SetCompressionFallbackStreak(sessionID string, str
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(context.Background(), "compression.fallback", pyjson.ObjectOf("value", int64(max(0, streak))))
+	_, err := s.apply(context.Background(), "compression.fallback", jsonutil.ObjectOf("value", int64(max(0, streak))))
 	return err
 }
 
@@ -415,7 +415,7 @@ func (s *RuntimeSessionStore) SetCompressionIneffectiveCount(sessionID string, c
 	if err := s.session(sessionID); err != nil {
 		return err
 	}
-	_, err := s.apply(context.Background(), "compression.ineffective", pyjson.ObjectOf("value", int64(max(0, count))))
+	_, err := s.apply(context.Background(), "compression.ineffective", jsonutil.ObjectOf("value", int64(max(0, count))))
 	return err
 }
 
@@ -429,6 +429,6 @@ func (s *RuntimeSessionStore) SetCompressionRecoveryDeadline(sessionID string, d
 	if value == 0 {
 		payload = nil
 	}
-	_, err := s.apply(context.Background(), "compression.recovery", pyjson.ObjectOf("value", payload))
+	_, err := s.apply(context.Background(), "compression.recovery", jsonutil.ObjectOf("value", payload))
 	return err
 }

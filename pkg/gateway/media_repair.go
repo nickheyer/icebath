@@ -8,9 +8,9 @@ import (
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -44,7 +44,7 @@ func dictGet(d any, key string) (any, error) {
 	switch t := d.(type) {
 	case map[string]any:
 		return t[key], nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		v, _ := t.Get(key)
 		return v, nil
 	}
@@ -54,7 +54,7 @@ func dictGet(d any, key string) (any, error) {
 // Whether the value is a decoded dict
 func isDict(v any) bool {
 	switch v.(type) {
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		return true
 	}
 	return false
@@ -67,7 +67,7 @@ func firstTruthy(d any, keys ...string) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v, nil
 		}
 	}
@@ -76,7 +76,7 @@ func firstTruthy(d any, keys ...string) (any, error) {
 
 // Elements of a falsy or list value, an error for any other iterable
 func listOrEmpty(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	if l, ok := v.([]any); ok {
@@ -108,20 +108,20 @@ func ToolNameByCallID(messages []any) (map[string]string, error) {
 			}
 			fn, _ := dictGet(call, "function")
 			var name any
-			if pyrepr.Truthy(fn) {
+			if anyutil.IsTrue(fn) {
 				if name, err = dictGet(fn, "name"); err != nil {
 					return nil, err
 				}
 			}
-			if !pyrepr.Truthy(name) {
+			if !anyutil.IsTrue(name) {
 				name, _ = dictGet(call, "name")
 			}
 			nameText := ""
-			if pyrepr.Truthy(name) {
-				nameText = pyrepr.Str(name)
+			if anyutil.IsTrue(name) {
+				nameText = anyutil.String(name)
 			}
-			if pyrepr.Truthy(callID) && nameText != "" {
-				mapping[pyrepr.Str(callID)] = nameText
+			if anyutil.IsTrue(callID) && nameText != "" {
+				mapping[anyutil.String(callID)] = nameText
 			}
 		}
 	}
@@ -131,8 +131,8 @@ func ToolNameByCallID(messages []any) (map[string]string, error) {
 // Lowercased capture basename of a path in either separator style, empty when it is no capture
 func computerUseCaptureBasename(path any) string {
 	text := ""
-	if pyrepr.Truthy(path) {
-		text = pyrepr.Str(path)
+	if anyutil.IsTrue(path) {
+		text = anyutil.String(path)
 	}
 	text = strings.Trim(strings.TrimSpace(text), "`\"'")
 	basename := text[strings.LastIndexAny(text, `/\`)+1:]
@@ -154,7 +154,7 @@ func iterComputerUseCapturePaths(content any) ([]string, error) {
 			}
 			return out, nil
 		}
-		payload, err := pyjson.Loads(stripped)
+		payload, err := jsonutil.Decode(stripped)
 		if err != nil {
 			return nil, nil
 		}
@@ -238,7 +238,7 @@ func canonicalCapturePaths(turn []any) (map[string]string, error) {
 			return nil, err
 		}
 		switch role.(type) {
-		case []any, map[string]any, *pyjson.Object:
+		case []any, map[string]any, *jsonutil.Object:
 			return nil, fmt.Errorf("a media capture role is %s, expected text", errchain.Kind(role))
 		}
 		if role != "tool" && role != "function" {
@@ -250,7 +250,7 @@ func canonicalCapturePaths(turn []any) (map[string]string, error) {
 		}
 		callID := ""
 		if id != nil {
-			callID = pyrepr.Str(id)
+			callID = anyutil.String(id)
 		}
 		name, err := firstTruthy(msg, "name", "tool_name")
 		if err != nil {
@@ -258,7 +258,7 @@ func canonicalCapturePaths(turn []any) (map[string]string, error) {
 		}
 		nameText := callIDNames[callID]
 		if name != nil {
-			nameText = pyrepr.Str(name)
+			nameText = anyutil.String(name)
 		}
 		if nameText != "computer_use" {
 			continue

@@ -5,14 +5,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Real session database recording the reset writes and returning a scripted peer recovery row
 type resetRecordingDB struct {
 	*state.SessionDB
-	recovered *pyjson.Object
+	recovered *jsonutil.Object
 	promoted  [][2]string
 	ended     [][2]string
 	reopened  []string
@@ -33,7 +33,7 @@ func (d *resetRecordingDB) ReopenSession(ctx context.Context, sessionID string) 
 	return nil
 }
 
-func (d *resetRecordingDB) FindLatestGatewaySessionForPeer(ctx context.Context, q state.GatewayPeerQuery) (*pyjson.Object, error) {
+func (d *resetRecordingDB) FindLatestGatewaySessionForPeer(ctx context.Context, q state.GatewayPeerQuery) (*jsonutil.Object, error) {
 	return d.recovered, nil
 }
 
@@ -53,7 +53,7 @@ func TestAutoResetDoesNotRecoverSessionBeingEnded(t *testing.T) {
 	old.Platform = PlatformTelegram
 	old.Suspended = true
 	store.entries.set(key, old)
-	db.recovered = pyjson.ObjectOf("id", old.SessionID, "session_key", key,
+	db.recovered = jsonutil.ObjectOf("id", old.SessionID, "session_key", key,
 		"started_at", float64(old.CreatedAt.T.UnixNano())/1e9)
 
 	entry, err := store.GetOrCreateSession(ctx, source, false, true)

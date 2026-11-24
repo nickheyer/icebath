@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestRuntimeRecordStampedForAnotherHomeIsNotThisHomesGateway(t *testing.T) {
@@ -20,7 +20,7 @@ func TestRuntimeRecordStampedForAnotherHomeIsNotThisHomesGateway(t *testing.T) {
 	patch(t, &statusPidExists, func(pid int) bool { return pid == livePID })
 	patch(t, &statusProcessStartTime, fixedInt(int64(1000)))
 	patch(t, &statusReadProcessCmdline, cmdline("python -m icebath_cli.main -p eagle gateway run"))
-	patch(t, &statusMultiplexerLivenessForProfile, func(string) (int, *pyjson.Object, bool, error) { return 0, nil, false, nil })
+	patch(t, &statusMultiplexerLivenessForProfile, func(string) (int, *jsonutil.Object, bool, error) { return 0, nil, false, nil })
 	copied := filepath.Join(tmp, "sandbox-root", "profiles", "eagle")
 	if err := os.MkdirAll(copied, 0o755); err != nil {
 		t.Fatal(err)

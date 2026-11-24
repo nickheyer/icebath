@@ -4,7 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registered compute worker on the reserved session owned beside a foreign session
@@ -26,7 +27,7 @@ func setupStore(t *testing.T) (*SessionDB, *workerStore) {
 }
 
 // Rows of a read only statement on the direct store
-func rowsOf(t *testing.T, db *SessionDB, query string, args ...any) []*pyjson.Object {
+func rowsOf(t *testing.T, db *SessionDB, query string, args ...any) []*jsonutil.Object {
 	t.Helper()
 	rows, err := db.readAll(context.Background(), query, args...)
 	if err != nil {
@@ -44,21 +45,21 @@ func TestReservedConstructorBackfillAndEndAreReceipted(t *testing.T) {
 	if err != nil || created != "owned" {
 		t.Fatalf("create %v %v", created, err)
 	}
-	if row := mustSession(t, db, "owned"); !pyjson.Equal(rowValue(row, "model"), "requested") || !pyjson.Equal(rowValue(row, "system_prompt"), "prefix") {
+	if row := mustSession(t, db, "owned"); !anyutil.Equal(rowValue(row, "model"), "requested") || !anyutil.Equal(rowValue(row, "system_prompt"), "prefix") {
 		t.Fatalf("backfilled row %v", row)
 	}
 	if _, err := store.createSession("owned", "cli", map[string]any{"model": "ignored", "system_prompt": "ignored",
 		"model_config": map[string]any{"max_iterations": int64(10)}}); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "owned"), "model"), "requested") {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "owned"), "model"), "requested") {
 		t.Fatal("keep existing constructor overwrote the model")
 	}
-	if v, err := db.GetSessionModelConfigValue(ctx, "owned", "max_iterations", nil); err != nil || !pyjson.Equal(v, 5) {
+	if v, err := db.GetSessionModelConfigValue(ctx, "owned", "max_iterations", nil); err != nil || !anyutil.Equal(v, 5) {
 		t.Fatalf("max_iterations %v %v", v, err)
 	}
 	statuses, err := store.sessionLifecycleStatuses([]string{"owned"})
-	if err != nil || !pyjson.Equal(statuses, map[string]any{"owned": "empty"}) {
+	if err != nil || !anyutil.Equal(statuses, map[string]any{"owned": "empty"}) {
 		t.Fatalf("statuses %v %v", statuses, err)
 	}
 	if _, err := store.createSession("foreign", "cli", nil); err == nil || err.Error() != "permission_denied" {
@@ -78,7 +79,7 @@ func TestReservedConstructorBackfillAndEndAreReceipted(t *testing.T) {
 		t.Fatal(err)
 	}
 	statuses, _ = store.sessionLifecycleStatuses([]string{"owned"})
-	if !pyjson.Equal(statuses, map[string]any{"owned": direct["owned"]}) {
+	if !anyutil.Equal(statuses, map[string]any{"owned": direct["owned"]}) {
 		t.Fatalf("statuses %v != %v", statuses, direct)
 	}
 	original := store.rpc
@@ -95,14 +96,14 @@ func TestReservedConstructorBackfillAndEndAreReceipted(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := mustSession(t, db, "owned")
-	if !pyjson.Equal(rowValue(row, "ended_at"), rowValue(ended, "ended_at")) || !pyjson.Equal(rowValue(row, "end_reason"), "agent_close") {
+	if !anyutil.Equal(rowValue(row, "ended_at"), rowValue(ended, "ended_at")) || !anyutil.Equal(rowValue(row, "end_reason"), "agent_close") {
 		t.Fatalf("end stamp %v", row)
 	}
 	finished, err := store.finish()
-	if err != nil || !pyjson.Equal(resultValue(finished, "status"), "terminal") {
+	if err != nil || !anyutil.Equal(resultValue(finished, "status"), "terminal") {
 		t.Fatalf("finish %v %v", finished, err)
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "foreign"), "system_prompt"), "private") {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "foreign"), "system_prompt"), "private") {
 		t.Fatal("foreign prompt changed")
 	}
 }
@@ -122,13 +123,13 @@ func TestLateFinalizersCannotMutateSuccessorOrForeignRows(t *testing.T) {
 	}
 	for _, sequence := range []int64{1, 2} {
 		in := store.scope
-		in.Sequence, in.Operation, in.Payload = sequence, "session.end", pyjson.ObjectOf("end_reason", "agent_close")
+		in.Sequence, in.Operation, in.Payload = sequence, "session.end", jsonutil.ObjectOf("end_reason", "agent_close")
 		if r := receiptRefusal(t, db, in); r != "stale_generation" {
 			t.Fatalf("sequence %d -> %s", sequence, r)
 		}
 	}
 	foreign := store.scope
-	foreign.SessionID, foreign.Sequence, foreign.Operation, foreign.Payload = "foreign", 2, "session.end", pyjson.ObjectOf("end_reason", "agent_close")
+	foreign.SessionID, foreign.Sequence, foreign.Operation, foreign.Payload = "foreign", 2, "session.end", jsonutil.ObjectOf("end_reason", "agent_close")
 	if r := receiptRefusal(t, db, foreign); r != "permission_denied" {
 		t.Fatal(r)
 	}
@@ -181,14 +182,14 @@ func TestWorkerLabelsKeepRankAndRejectLateGenerations(t *testing.T) {
 	if err := store.touchSessionActivity("owned", at-1, "older", nil); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "owned"), "last_activity_description"), rowValue(expected, "last_activity_description")) {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "owned"), "last_activity_description"), rowValue(expected, "last_activity_description")) {
 		t.Fatal("older activity moved the clock backwards")
 	}
 	if err := store.clearSessionActivityLabels("owned"); err != nil {
 		t.Fatal(err)
 	}
 	row := mustSession(t, db, "owned")
-	if !pyjson.Equal(rowValue(row, "last_activity_at"), at) || !pyjson.Equal(rowValue(row, "last_activity_description"), "") {
+	if !anyutil.Equal(rowValue(row, "last_activity_at"), at) || !anyutil.Equal(rowValue(row, "last_activity_description"), "") {
 		t.Fatalf("cleared activity %v", row)
 	}
 	if err := store.touchSessionActivity("owned", at+1, "successor", nil); err != nil {
@@ -211,7 +212,7 @@ func TestWorkerLabelsKeepRankAndRejectLateGenerations(t *testing.T) {
 		}
 	}
 	row = mustSession(t, db, "owned")
-	if !pyjson.Equal(rowValue(row, "title"), "manual") || !pyjson.Equal(rowValue(row, "last_activity_description"), "successor") {
+	if !anyutil.Equal(rowValue(row, "title"), "manual") || !anyutil.Equal(rowValue(row, "last_activity_description"), "successor") {
 		t.Fatalf("late writes landed %v", row)
 	}
 }
@@ -234,32 +235,32 @@ func TestWorkerRouteAndAPIContentPreserveExactUsageAndTargetFences(t *testing.T)
 		t.Fatal(err)
 	}
 	row := mustSession(t, db, "owned")
-	if !pyjson.Equal(rowValue(row, "input_tokens"), 24) || !pyjson.Equal(rowValue(row, "output_tokens"), 10) || !pyjson.Equal(rowValue(row, "billing_provider"), "provider-two") {
+	if !anyutil.Equal(rowValue(row, "input_tokens"), 24) || !anyutil.Equal(rowValue(row, "output_tokens"), 10) || !anyutil.Equal(rowValue(row, "billing_provider"), "provider-two") {
 		t.Fatalf("usage row %v", row)
 	}
-	if !pyjson.Equal(rowValue(row, "system_prompt"), "stable-prefix") {
+	if !anyutil.Equal(rowValue(row, "system_prompt"), "stable-prefix") {
 		t.Fatal("route write touched the prompt")
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM system_prompts WHERE prompt=?", "stable-prefix"), 1) {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM system_prompts WHERE prompt=?", "stable-prefix"), 1) {
 		t.Fatal("prompt table rows")
 	}
 	visible := []any{map[string]any{"type": "text", "text": "visible"}}
 	if _, err := store.appendMessagesBatch("owned", []map[string]any{{"role": "user", "content": visible}}); err != nil {
 		t.Fatal(err)
 	}
-	if n, err := store.setLatestUserAPIContent("owned", "wrong", "must-not-land"); err != nil || !pyjson.Equal(n, 0) {
+	if n, err := store.setLatestUserAPIContent("owned", "wrong", "must-not-land"); err != nil || !anyutil.Equal(n, 0) {
 		t.Fatalf("mismatched content landed %v %v", n, err)
 	}
-	if n, err := store.setLatestUserAPIContent("owned", visible, "wire-only"); err != nil || !pyjson.Equal(n, 1) {
+	if n, err := store.setLatestUserAPIContent("owned", visible, "wire-only"); err != nil || !anyutil.Equal(n, 1) {
 		t.Fatalf("api content %v %v", n, err)
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT api_content FROM messages WHERE session_id=?", "owned"), "wire-only") {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT api_content FROM messages WHERE session_id=?", "owned"), "wire-only") {
 		t.Fatal("api_content not stored")
 	}
 	usage := rowsOf(t, db, "SELECT model,billing_provider,input_tokens,output_tokens FROM session_model_usage WHERE session_id=? ORDER BY model", "owned")
-	want := []any{pyjson.ObjectOf("model", "first", "billing_provider", "provider-one", "input_tokens", 11, "output_tokens", 7),
-		pyjson.ObjectOf("model", "second", "billing_provider", "provider-two", "input_tokens", 13, "output_tokens", 3)}
-	if !pyjson.Equal(anyObjects(usage), want) {
+	want := []any{jsonutil.ObjectOf("model", "first", "billing_provider", "provider-one", "input_tokens", 11, "output_tokens", 7),
+		jsonutil.ObjectOf("model", "second", "billing_provider", "provider-two", "input_tokens", 13, "output_tokens", 3)}
+	if !anyutil.Equal(anyObjects(usage), want) {
 		t.Fatalf("usage rows %v", usage)
 	}
 	original := store.rpc
@@ -271,7 +272,7 @@ func TestWorkerRouteAndAPIContentPreserveExactUsageAndTargetFences(t *testing.T)
 	if _, err := store.retryPending(); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "owned"), "billing_provider"), "third") {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "owned"), "billing_provider"), "third") {
 		t.Fatal("retried route missing")
 	}
 	for _, c := range []struct {
@@ -289,7 +290,7 @@ func TestWorkerRouteAndAPIContentPreserveExactUsageAndTargetFences(t *testing.T)
 			t.Fatalf("%s -> %s", c.operation, r)
 		}
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "foreign"), "system_prompt"), "private") {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "foreign"), "system_prompt"), "private") {
 		t.Fatal("foreign prompt changed")
 	}
 }

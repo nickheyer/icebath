@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"html"
 	"io"
 	"math"
 	"math/big"
@@ -16,6 +17,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -27,14 +29,12 @@ import (
 	"golang.org/x/text/unicode/norm"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyhtml"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	unicodeutil "github.com/nickheyer/icebath/pkg/utils/unicode"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // pyExc is a raised Python exception, its class name kept for the worker's error envelope
@@ -58,11 +58,8 @@ func ddgsTimedOut(err error) bool {
 	if errors.As(err, &exc) && exc.class == "TimeoutException" {
 		return true
 	}
-	var re *pyrequests.Error
-	if errors.As(err, &re) && (re.Reason == "ReadTimeoutError" || re.Reason == "ConnectTimeoutError") {
-		return true
-	}
-	return errors.Is(err, syscall.ETIMEDOUT)
+	var te *httputil.TimeoutError
+	return errors.As(err, &te) || errors.Is(err, syscall.ETIMEDOUT)
 }
 
 func raise(class, format string, args ...any) error {
@@ -151,7 +148,7 @@ type ddgsHTTPClient struct {
 	header    http.Header
 	jar       http.CookieJar
 	transport *http.Transport
-	timeout   pyrequests.Timeout
+	timeout   httputil.Timeout
 }
 
 var ddgsProxyTransports sync.Map
@@ -177,7 +174,7 @@ func newDDGSHTTPClient(proxy string, timeout int) *ddgsHTTPClient {
 	jar, _ := cookiejar.New(nil)
 	variant := primpBrowserVariants[mrand.IntN(len(primpBrowserVariants))]
 	osName := primpOSVariants[mrand.IntN(len(primpOSVariants))]
-	return &ddgsHTTPClient{header: primpHeaders(variant, osName), jar: jar, transport: ddgsTransport(proxy), timeout: pyrequests.Seconds(timeout)}
+	return &ddgsHTTPClient{header: primpHeaders(variant, osName), jar: jar, transport: ddgsTransport(proxy), timeout: httputil.EachPhase(time.Duration(timeout) * time.Second)}
 }
 
 // Merges headers into the client defaults, primp headers_update
@@ -233,7 +230,7 @@ type ddgsResponse struct {
 	text   string
 }
 
-// Sends one request, transport failures raised as the ddgs TimeoutException or DDGSException
+// Sends one request with redirects followed, a timed out exchange raised as the ddgs TimeoutException and every other failure as DDGSException
 func (c *ddgsHTTPClient) request(ctx context.Context, method, target string, params, data [][2]string) (*ddgsResponse, error) {
 	if len(params) > 0 {
 		sep := "?"
@@ -248,7 +245,7 @@ func (c *ddgsHTTPClient) request(ctx context.Context, method, target string, par
 	}
 	req, err := http.NewRequestWithContext(ctx, method, target, body)
 	if err != nil {
-		return nil, raise("DDGSException", "Exception: %s", pyrepr.Repr(err.Error()))
+		return nil, raiseFrom(err, "DDGSException", "%s", err.Error())
 	}
 	req.Header = c.header.Clone()
 	if data != nil {
@@ -257,24 +254,22 @@ func (c *ddgsHTTPClient) request(ctx context.Context, method, target string, par
 	for _, ck := range c.jar.Cookies(req.URL) {
 		req.AddCookie(ck)
 	}
-	resp, err := pyrequests.SendNoEnv(ctx, c.transport, c.timeout, req)
+	resp, err := httputil.Do(&http.Client{Transport: c.transport, CheckRedirect: httputil.RedirectPolicy(true)}, req, c.timeout)
 	if err != nil {
-		if e, ok := err.(*pyrequests.Error); ok {
-			if e.Class == "ConnectTimeout" || e.Class == "ReadTimeout" || e.Class == "Timeout" {
-				return nil, raise("TimeoutException", "%s", e.Error())
-			}
-			return nil, raiseFrom(e, "DDGSException", "%s: %s(%s)", e.Class, e.Class, pyrepr.StrRepr(e.Error()))
+		var te *httputil.TimeoutError
+		if errors.As(err, &te) {
+			return nil, raiseFrom(err, "TimeoutException", "%s", err.Error())
 		}
-		return nil, raiseFrom(err, "DDGSException", "Exception: Exception(%s)", pyrepr.StrRepr(err.Error()))
+		return nil, raiseFrom(err, "DDGSException", "%s", err.Error())
 	}
 	if final, err := url.Parse(target); err == nil {
 		c.jar.SetCookies(final, (&http.Response{Header: resp.Header}).Cookies())
 	}
-	raw, err := pyhttpx.DecodeContent(resp.Header, resp.Body)
+	raw, err := httputil.DecodeContent(resp.Header, resp.Content)
 	if err != nil {
 		return nil, raise("DDGSException", "the search reply could not be decoded: %s", err.Error())
 	}
-	return &ddgsResponse{status: resp.Status, text: ddgsDecodeText(resp.Header.Get("Content-Type"), raw)}, nil
+	return &ddgsResponse{status: resp.StatusCode, text: ddgsDecodeText(resp.Header.Get("Content-Type"), raw)}, nil
 }
 
 // Response text in the charset the content type names, UTF-8 with replacement otherwise
@@ -294,16 +289,16 @@ var ddgsStripTagsRe = regexp.MustCompile(`<.*?>`)
 
 // ddgs _normalize_text, tags stripped, entities unescaped, NFC, control and unassigned runes dropped, whitespace collapsed
 func ddgsNormalizeText(v any) (any, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return v, nil
 	}
 	s, ok := v.(string)
 	if !ok {
 		return nil, raise("TypeError", "a search result text is %s, expected text", errchain.Kind(v))
 	}
-	s = norm.NFC.String(pyhtml.Unescape(ddgsStripTagsRe.ReplaceAllString(s, "")))
+	s = norm.NFC.String(html.UnescapeString(ddgsStripTagsRe.ReplaceAllString(s, "")))
 	s = strings.Map(func(r rune) rune {
-		if pyunicode.Category(r)[0] == 'C' {
+		if unicodeutil.Category(r)[0] == 'C' {
 			return -1
 		}
 		return r
@@ -313,13 +308,13 @@ func ddgsNormalizeText(v any) (any, error) {
 
 // ddgs _normalize_url, percent decoding with spaces turned into plus signs
 func ddgsNormalizeURL(v any) (any, error) {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return v, nil
 	}
 	switch s := v.(type) {
 	case string:
-		return strings.ReplaceAll(pyurl.Unquote(s), " ", "+"), nil
-	case []any, *pyjson.Object:
+		return strings.ReplaceAll(urlutil.Unescape(s), " ", "+"), nil
+	case []any, *jsonutil.Object:
 		if in, _ := pyContains(v, "%"); in {
 			return nil, raise("TypeError", "a search result URL is %s, expected text", errchain.Kind(v))
 		}
@@ -340,7 +335,7 @@ func pyContains(container any, item string) (bool, error) {
 			}
 		}
 		return false, nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, ok := c.Get(item)
 		return ok, nil
 	}
@@ -354,7 +349,7 @@ func pyValueLen(v any) (int, error) {
 		return utf8.RuneCountInString(x), nil
 	case []any:
 		return len(x), nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len(), nil
 	}
 	return 0, raise("TypeError", "expected text, a list or a mapping to count, got %s", errchain.Kind(v))
@@ -363,13 +358,13 @@ func pyValueLen(v any) (int, error) {
 // Python subscript of a decoded value with the KeyError, IndexError or TypeError it raises
 func pySubscript(v any, key any) (any, error) {
 	switch c := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if k, ok := key.(string); ok {
 			if val, ok := c.Get(k); ok {
 				return val, nil
 			}
 		}
-		return nil, raise("KeyError", "%s", pyrepr.Repr(key))
+		return nil, raise("KeyError", "%s", anyutil.Quote(key))
 	case []any:
 		i, ok := key.(int)
 		if !ok {
@@ -401,7 +396,7 @@ func pySubscript(v any, key any) (any, error) {
 
 // json.loads of an engine answer, the JSONDecodeError text on failure
 func ddgsJSON(text string) (any, error) {
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, raise("JSONDecodeError", "%s", err.Error())
 	}
@@ -595,7 +590,7 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 				if q.timelimit != "" {
 					tf, ok := map[string]string{"d": "pd", "w": "pw", "m": "pm", "y": "py"}[q.timelimit]
 					if !ok {
-						return nil, raise("KeyError", "%s", pyrepr.StrRepr(q.timelimit))
+						return nil, raise("KeyError", "%s", strconv.Quote(q.timelimit))
 					}
 					payload = append(payload, [2]string{"tf", tf})
 				}
@@ -639,7 +634,7 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 				e.client.setCookies("google.com", [][2]string{{"CONSENT", "YES+"}})
 				filter, ok := map[string]string{"on": "2", "moderate": "1", "off": "0"}[strings.ToLower(q.safesearch)]
 				if !ok {
-					return nil, raise("KeyError", "%s", pyrepr.StrRepr(strings.ToLower(q.safesearch)))
+					return nil, raise("KeyError", "%s", strconv.Quote(strings.ToLower(q.safesearch)))
 				}
 				payload := [][2]string{{"q", q.query}, {"sca_esv", "1"}, {"filter", filter}, {"start", fmt.Sprint((q.page - 1) * 10)}}
 				country, lang, err := ddgsRegion(q.region)
@@ -668,7 +663,7 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 							return nil, err
 						}
 					}
-					if pyTruthy(r.title) && strings.HasPrefix(r.hrefStr(), "http") {
+					if anyutil.IsTrue(r.title) && strings.HasPrefix(r.hrefStr(), "http") {
 						out = append(out, r)
 					}
 				}
@@ -718,7 +713,7 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 				}
 				qadf, ok := map[string]string{"on": "heavy", "moderate": "moderate", "off": "none"}[strings.ToLower(q.safesearch)]
 				if !ok {
-					return nil, raise("KeyError", "%s", pyrepr.StrRepr(strings.ToLower(q.safesearch)))
+					return nil, raise("KeyError", "%s", strconv.Quote(strings.ToLower(q.safesearch)))
 				}
 				sc, err := ddgsStartpageSC(e, ctx)
 				if err != nil {
@@ -745,7 +740,7 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 				if err != nil {
 					return nil, err
 				}
-				e.searchURL = "https://" + lang + ".wikipedia.org/w/api.php?action=opensearch&profile=fuzzy&limit=1&search=" + pyurl.Quote(q.query, "/")
+				e.searchURL = "https://" + lang + ".wikipedia.org/w/api.php?action=opensearch&profile=fuzzy&limit=1&search=" + urlutil.Escape(q.query, "/")
 				e.lang = lang
 				return nil, nil
 			},
@@ -781,7 +776,7 @@ var ddgsTextEngines = map[string]func(proxy string, timeout int) *ddgsEngine{
 					if strings.Contains(href, "/RU=") {
 						t := strings.SplitN(href, "/RU=", 2)[1]
 						t = strings.SplitN(strings.SplitN(t, "/RK=", 2)[0], "/RS=", 2)[0]
-						if err := r.set("href", pyurl.Unquote(strings.ReplaceAll(t, "+", " "))); err != nil {
+						if err := r.set("href", urlutil.Unescape(strings.ReplaceAll(t, "+", " "))); err != nil {
 							return nil, err
 						}
 					}
@@ -819,7 +814,7 @@ func ddgsWikipediaResults(e *ddgsEngine, ctx context.Context, text string) ([]*d
 	if err != nil {
 		return nil, err
 	}
-	if !pyTruthy(titles) {
+	if !anyutil.IsTrue(titles) {
 		return nil, nil
 	}
 	r := newDDGSTextResult()
@@ -845,7 +840,7 @@ func ddgsWikipediaResults(e *ddgsEngine, ctx context.Context, text string) ([]*d
 	if !ok {
 		return nil, raise("TypeError", "quote_from_bytes() expected bytes")
 	}
-	body, found, err := e.request(ctx, "GET", "https://"+e.lang+".wikipedia.org/w/api.php?action=query&format=json&prop=extracts&titles="+pyurl.Quote(titleText, "/")+"&explaintext=0&exintro=0&redirects=1", nil, nil)
+	body, found, err := e.request(ctx, "GET", "https://"+e.lang+".wikipedia.org/w/api.php?action=query&format=json&prop=extracts&titles="+urlutil.Escape(titleText, "/")+"&explaintext=0&exintro=0&redirects=1", nil, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -882,14 +877,14 @@ func ddgsWikipediaExtract(body string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := pages.(*pyjson.Object)
+	obj, ok := pages.(*jsonutil.Object)
 	if !ok {
 		return nil, raise("AttributeError", "the Wikipedia pages are %s, expected a mapping", errchain.Kind(pages))
 	}
 	if obj.Len() == 0 {
 		return nil, raise("StopIteration", "")
 	}
-	first, _ := obj.Get(obj.Keys[0])
+	first, _ := obj.Get(obj.Keys()[0])
 	page, ok := pyDict(first)
 	if !ok {
 		return nil, pyAttributeError(first, "get")
@@ -914,7 +909,7 @@ func ddgsGrokipediaResults(_ *ddgsEngine, _ context.Context, text string) ([]*dd
 	if !present {
 		items = []any{}
 	}
-	if !pyTruthy(items) {
+	if !anyutil.IsTrue(items) {
 		return nil, nil
 	}
 	first, err := pySubscript(items, 0)
@@ -958,7 +953,7 @@ func ddgsGrokipediaResults(_ *ddgsEngine, _ context.Context, text string) ([]*dd
 	if err != nil {
 		return nil, err
 	}
-	if err := r.set("href", "https://grokipedia.com/page/"+pyrepr.Str(slug)); err != nil {
+	if err := r.set("href", "https://grokipedia.com/page/"+anyutil.String(slug)); err != nil {
 		return nil, err
 	}
 	return []*ddgsTextResult{r}, nil
@@ -1022,7 +1017,7 @@ type ddgsAggregator struct {
 
 // Registers one occurrence, keeping the copy with the longer body
 func (a *ddgsAggregator) append(r *ddgsTextResult) error {
-	key := pyrepr.Str(r.href)
+	key := anyutil.String(r.href)
 	cached, seen := a.cache[key]
 	replace := !seen
 	if seen {
@@ -1219,13 +1214,13 @@ func (c *ddgsClient) text(ctx context.Context, q ddgsQuery, maxResults int) ([]*
 				case <-p.done:
 					if p.err != nil {
 						lastErr = p.err
-						pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(p.err)+"("+pyrepr.StrRepr(p.err.Error())+")"))
+						pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(p.err)+"("+strconv.Quote(p.err.Error())+")"))
 						continue
 					}
 					if len(p.results) > 0 {
 						if err := agg.extend(p.results); err != nil {
 							lastErr = err
-							pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(err)+"("+pyrepr.StrRepr(err.Error())+")"))
+							pkgLog().Info(fmt.Sprintf("Error in engine %s: %s", p.engine.name, pyExcClass(err)+"("+strconv.Quote(err.Error())+")"))
 							continue
 						}
 						seen[p.engine.provider] = true
@@ -1274,7 +1269,7 @@ func runDDGSSearch(ctx context.Context, query string, safeLimit int) ([]WebSearc
 			break
 		}
 		href := pyOr(r.href, "")
-		hits = append(hits, titleHit(pyrepr.Str(r.title), pyrepr.Str(href), pyrepr.Str(r.body), i+1))
+		hits = append(hits, titleHit(anyutil.String(r.title), anyutil.String(href), anyutil.String(r.body), i+1))
 	}
 	return hits, nil
 }

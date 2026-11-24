@@ -9,8 +9,8 @@ import (
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // RoutingIdentity is who a turn is, resolved once at ingress, with explicit transport and runtime profiles
@@ -344,7 +344,7 @@ func ParseAuthenticatedSubject(subject any) (parts [3]string, ok bool) {
 	if !isText || !strings.HasPrefix(text, AuthSubjectPrefix) {
 		return parts, false
 	}
-	decoded, err := pyjson.Loads(text[len(AuthSubjectPrefix):])
+	decoded, err := jsonutil.Decode(text[len(AuthSubjectPrefix):])
 	if err != nil {
 		return parts, false
 	}
@@ -378,7 +378,7 @@ func AuthenticatedSubject(identity map[string]any) (string, error) {
 		}
 		return ""
 	}
-	encoded, err := pyjson.Dumps([]any{orEmpty("provider"), orEmpty("issuer"), subject}, pyjson.Separators(",", ":"), pyjson.EnsureASCII(true))
+	encoded, err := jsonutil.Encode([]any{orEmpty("provider"), orEmpty("issuer"), subject}, jsonutil.ASCII())
 	if err != nil {
 		return "", err
 	}

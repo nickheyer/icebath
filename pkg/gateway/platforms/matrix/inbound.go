@@ -15,8 +15,6 @@ import (
 	"maunium.net/go/mautrix/id"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Whether the sender is the bot itself, also true while the bot user id is unresolved
@@ -189,7 +187,7 @@ func (a *MatrixAdapter) resolveMessageContext(ctx context.Context, roomID, sende
 		}
 	}
 	if isMentioned && a.requireMention {
-		if pyTruthy(relatesTo["m.in_reply_to"]) {
+		if anyutil.IsTrue(relatesTo["m.in_reply_to"]) {
 			quoteBlock, replyText := splitReplyFallback(body)
 			body = quoteBlock + a.stripMention(replyText)
 		} else {
@@ -230,7 +228,7 @@ func (a *MatrixAdapter) resolveMessageContext(ctx context.Context, roomID, sende
 // Body without the reply fallback plus the replied event id, quoted text and its author id and name
 func (a *MatrixAdapter) extractReplyContext(ctx context.Context, roomID, body string, relatesTo map[string]any) (string, *string, *string, *string, *string) {
 	var replyTo, replyToText, replyToAuthorID, replyToAuthorName *string
-	if v := objectOf(relatesTo["m.in_reply_to"])["event_id"]; pyTruthy(v) {
+	if v := objectOf(relatesTo["m.in_reply_to"])["event_id"]; anyutil.IsTrue(v) {
 		s := strOf(v)
 		replyTo = &s
 	}
@@ -338,8 +336,8 @@ func (a *MatrixAdapter) handleMediaMessage(ctx context.Context, roomID, sender, 
 	contentInfo := objectOf(sourceContent["info"])
 	eventMimetype, _ := contentInfo["mimetype"].(string)
 	var eventSize int64
-	if v := contentInfo["size"]; pyTruthy(v) {
-		if n, err := pyint.Int64(v); err == nil {
+	if v := contentInfo["size"]; anyutil.IsTrue(v) {
+		if n, err := anyutil.ToInt(v); err == nil {
 			eventSize = n
 		}
 	}
@@ -355,7 +353,7 @@ func (a *MatrixAdapter) handleMediaMessage(ctx context.Context, roomID, sender, 
 			return nil
 		}
 	}
-	isEncryptedMedia := fileIsObject && len(fileContent) > 0 && pyTruthy(fileContent["url"])
+	isEncryptedMedia := fileIsObject && len(fileContent) > 0 && anyutil.IsTrue(fileContent["url"])
 	msgType, mediaType, isVoiceMessage := classifyInboundMedia(msgtype, eventMimetype, sourceContent)
 	var gate *VoiceGate
 	if a.voiceMayPark(roomID, body, sourceContent, relatesTo, mentionClaimed) {
@@ -427,7 +425,7 @@ func (a *MatrixAdapter) downloadAndCacheMedia(ctx context.Context, url, eventID 
 	msgType gateway.MessageType, mediaType string, isVoiceMessage bool, body string) (string, error) {
 	client := a.currentClient()
 	if client == nil {
-		return "", errors.New("'NoneType' object has no attribute 'download_media'")
+		return "", errors.New("matrix client is not connected")
 	}
 	uri, err := id.ParseContentURI(url)
 	if err != nil {
@@ -480,7 +478,7 @@ func (a *MatrixAdapter) downloadAndCacheMedia(ctx context.Context, url, eventID 
 				name = "voice.ogg"
 			}
 		}
-		ext := pypath.PathSuffix(name)
+		ext := pathutil.Suffix(name)
 		if ext == "" {
 			ext = ".ogg"
 		}
@@ -536,7 +534,7 @@ func (a *MatrixAdapter) onMemberEvent(ctx context.Context, evt *event.Event) err
 // Joins rooms an authorized user invited the bot to, recording declared DMs in m.direct
 func (a *MatrixAdapter) onInvite(ctx context.Context, evt *event.Event) error {
 	roomID := string(evt.RoomID)
-	isDirect := pyTruthy(evt.Content.Raw["is_direct"])
+	isDirect := anyutil.IsTrue(evt.Content.Raw["is_direct"])
 	inviter := string(evt.Sender)
 	if !a.isAuthorizedUser(inviter, roomID) {
 		pkgLog().Warn(fmt.Sprintf("Matrix: rejecting invite to %s from unauthorized user %s", roomID, inviter))
@@ -565,7 +563,7 @@ func (a *MatrixAdapter) joinRoomByID(ctx context.Context, roomID string) (bool, 
 	}
 	client := a.currentClient()
 	if client == nil {
-		pkgLog().Warn(fmt.Sprintf("Matrix: error joining %s: 'NoneType' object has no attribute 'join_room'", roomID))
+		pkgLog().Warn(fmt.Sprintf("Matrix: error joining %s: matrix client is not connected", roomID))
 		return false, nil
 	}
 	if _, err := client.JoinRoomByID(ctx, id.RoomID(roomID)); err != nil {
@@ -670,7 +668,7 @@ func (a *MatrixAdapter) extractInviteDMSignal(invitedRoom *mautrix.SyncInvitedRo
 		if content == nil || content["membership"] != "invite" {
 			continue
 		}
-		return pyTruthy(content["is_direct"]), string(evt.Sender)
+		return anyutil.IsTrue(content["is_direct"]), string(evt.Sender)
 	}
 	return false, ""
 }

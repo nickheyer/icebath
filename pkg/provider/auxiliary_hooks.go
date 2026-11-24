@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -68,7 +68,7 @@ func auxSystemPrompt(messages []any, kwargs map[string]any) string {
 // Chat completions usage of a response with prompt and total sums, nil without usage
 func auxUsageSummary(response any) map[string]any {
 	m, ok := response.(map[string]any)
-	if !ok || !pyrepr.Truthy(m["usage"]) {
+	if !ok || !anyutil.IsTrue(m["usage"]) {
 		return nil
 	}
 	cu := NormalizeUsage(m["usage"], "", "chat_completions")
@@ -163,7 +163,7 @@ func auxPyInt(v any) (int, error) {
 		return int(x), nil
 	case float64:
 		if math.IsNaN(x) || math.IsInf(x, 0) {
-			return 0, fmt.Errorf("cannot convert float %s to integer", pyrepr.Str(x))
+			return 0, fmt.Errorf("cannot convert float %s to integer", anyutil.String(x))
 		}
 		return int(x), nil
 	case string:
@@ -246,15 +246,15 @@ func newAuxCallHooks(ctx context.Context, a auxCallHookArgs) (*auxCallHooks, err
 		return nil, err
 	}
 	requestID := ""
-	if v := a.Metadata["api_request_id"]; pyrepr.Truthy(v) {
-		requestID = pyrepr.Str(v)
+	if v := a.Metadata["api_request_id"]; anyutil.IsTrue(v) {
+		requestID = anyutil.String(v)
 	}
 	baseURL := ""
 	if a.Client != nil {
 		baseURL = a.Client.BaseURL()
 	}
 	messages := a.Kwargs["messages"]
-	if !pyrepr.Truthy(messages) {
+	if !anyutil.IsTrue(messages) {
 		messages = a.Kwargs["input"]
 	}
 	h.base = auxParentTurnIdentity(ctx)
@@ -265,15 +265,15 @@ func newAuxCallHooks(ctx context.Context, a auxCallHookArgs) (*auxCallHooks, err
 	} {
 		h.base[k] = v
 	}
-	if v := a.Metadata["plugin_id"]; pyrepr.Truthy(v) {
-		h.base["plugin_id"] = pyrepr.Str(v)
+	if v := a.Metadata["plugin_id"]; anyutil.IsTrue(v) {
+		h.base["plugin_id"] = anyutil.String(v)
 	}
 	return h, nil
 }
 
 // Python falsy values collapse to nil the way the or 0 idiom reads them
 func auxOrNil(v any) any {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil
 	}
 	return v
@@ -301,13 +301,13 @@ func (h *auxCallHooks) pre(ctx context.Context) {
 	totalChars := 0
 	for _, m := range messages {
 		content := auxHookField(m, "content")
-		if !pyrepr.Truthy(content) {
+		if !anyutil.IsTrue(content) {
 			continue
 		}
-		totalChars += utf8.RuneCountInString(pyrepr.Str(content))
+		totalChars += utf8.RuneCountInString(anyutil.String(content))
 	}
 	maxTokens := kwargs["max_tokens"]
-	if !pyrepr.Truthy(maxTokens) {
+	if !anyutil.IsTrue(maxTokens) {
 		maxTokens = kwargs["max_completion_tokens"]
 	}
 	payload := map[string]any{}
@@ -365,11 +365,11 @@ func (h *auxCallHooks) post(ctx context.Context, response any, callErr error, no
 	if message != nil {
 		content = auxHookField(message, "content")
 		role = auxHookField(message, "role")
-		if tc := auxHookField(message, "tool_calls"); pyrepr.Truthy(tc) {
+		if tc := auxHookField(message, "tool_calls"); anyutil.IsTrue(tc) {
 			toolCalls = tc
 		}
 	}
-	if !pyrepr.Truthy(role) {
+	if !anyutil.IsTrue(role) {
 		role = "assistant"
 	}
 	var usageValue any
@@ -407,7 +407,7 @@ func auxHasHook(ctx context.Context, name string) (has bool) {
 func auxFireHook(ctx context.Context, name string, payload map[string]any) {
 	defer func() {
 		if r := recover(); r != nil {
-			pkgLog().Warn(fmt.Sprintf("%s plugin hook failed for aux_task=%s; continuing", name, pyrepr.Str(payload["aux_task"])), "err", fmt.Sprint(r))
+			pkgLog().Warn(fmt.Sprintf("%s plugin hook failed for aux_task=%s; continuing", name, anyutil.String(payload["aux_task"])), "err", fmt.Sprint(r))
 		}
 	}()
 	auxInvokeHookFn(ctx, name, payload)

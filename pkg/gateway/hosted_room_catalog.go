@@ -5,17 +5,18 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"math/big"
+	"net/netip"
+	"net/url"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Room protocol version this gateway speaks
@@ -54,7 +55,7 @@ func hostedParseLinkModes(raw any) ([]string, error) {
 	seen := map[string]bool{}
 	for _, item := range items {
 		switch item.(type) {
-		case []any, map[string]any, *pyjson.Object:
+		case []any, map[string]any, *jsonutil.Object:
 			return nil, &PyError{Kind: "TypeError", Msg: "a link mode is " + errchain.Kind(item) + ", expected text"}
 		}
 		mode, ok := item.(string)
@@ -70,27 +71,25 @@ func hostedParseLinkModes(raw any) ([]string, error) {
 }
 
 // Sorted distinct positive protocol versions
-func hostedProtocolVersions(raw []any) ([]*big.Int, error) {
-	var versions []*big.Int
-	seen := map[string]bool{}
+func hostedProtocolVersions(raw []any) ([]int64, error) {
+	var versions []int64
 	for _, item := range raw {
 		n, err := hostedPositiveInt(item, "protocol_version")
 		if err != nil {
 			return nil, err
 		}
-		if !seen[n.String()] {
-			seen[n.String()] = true
+		if !slices.Contains(versions, n) {
 			versions = append(versions, n)
 		}
 	}
-	sort.Slice(versions, func(i, j int) bool { return versions[i].Cmp(versions[j]) < 0 })
+	slices.Sort(versions)
 	return versions, nil
 }
 
 // Digest of a catalog mapping without its catalog_digest field
-func hostedCatalogDigest(value *pyjson.Object) (string, error) {
-	unsigned := pyjson.NewObject()
-	for _, key := range value.Keys {
+func hostedCatalogDigest(value *jsonutil.Object) (string, error) {
+	unsigned := jsonutil.NewObject()
+	for _, key := range value.Keys() {
 		if key != "catalog_digest" {
 			item, _ := value.Get(key)
 			unsigned.Set(key, item)
@@ -133,7 +132,7 @@ func hostedParseEndpoint(endpoint any) (hostedEndpoint, error) {
 	if err != nil {
 		return hostedEndpoint{}, err
 	}
-	if !pyjson.Equal(fields["transport_security"], security) {
+	if !anyutil.Equal(fields["transport_security"], security) {
 		return hostedEndpoint{}, &HostedRoomPeerError{"endpoint transport_security does not match its URL"}
 	}
 	return hostedEndpoint{url: &url, transportSecurity: &security}, nil
@@ -142,7 +141,7 @@ func hostedParseEndpoint(endpoint any) (hostedEndpoint, error) {
 // Authenticated gateway capabilities inherited by its Bots
 type GatewayRoomCatalog struct {
 	InstallationID    string
-	ProtocolVersions  []*big.Int
+	ProtocolVersions  []int64
 	LinkModes         []string
 	PersistentProcess bool
 	Text              bool
@@ -213,16 +212,16 @@ func GatewayRoomCatalogFromMapping(value any) (*GatewayRoomCatalog, error) {
 }
 
 // Canonical catalog mapping, the endpoint present only when advertised
-func (c *GatewayRoomCatalog) AsMapping() *pyjson.Object {
+func (c *GatewayRoomCatalog) AsMapping() *jsonutil.Object {
 	versions := make([]any, len(c.ProtocolVersions))
 	for i, v := range c.ProtocolVersions {
-		versions[i] = pyjson.ParseInt(v.String())
+		versions[i] = v
 	}
 	links := make([]any, len(c.LinkModes))
 	for i, mode := range c.LinkModes {
 		links[i] = mode
 	}
-	value := pyjson.ObjectOf("installation_id", c.InstallationID, "protocol_versions", versions, "link_modes", links,
+	value := jsonutil.ObjectOf("installation_id", c.InstallationID, "protocol_versions", versions, "link_modes", links,
 		"persistent_process", c.PersistentProcess, "text", c.Text, "attachments", c.Attachments,
 		"execution_policy", c.ExecutionPolicy.AsMapping(), "catalog_digest", c.CatalogDigest)
 	if c.EndpointURL != nil || c.EndpointReason != nil {
@@ -232,19 +231,19 @@ func (c *GatewayRoomCatalog) AsMapping() *pyjson.Object {
 }
 
 // Normalized self advertised endpoint capability
-func (c *GatewayRoomCatalog) EndpointMapping() *pyjson.Object {
+func (c *GatewayRoomCatalog) EndpointMapping() *jsonutil.Object {
 	if c.EndpointURL == nil {
 		reason := "not_configured"
 		if c.EndpointReason != nil && *c.EndpointReason != "" {
 			reason = *c.EndpointReason
 		}
-		return pyjson.ObjectOf("available", false, "reason", reason)
+		return jsonutil.ObjectOf("available", false, "reason", reason)
 	}
 	var security any
 	if c.TransportSecurity != nil {
 		security = *c.TransportSecurity
 	}
-	return pyjson.ObjectOf("available", true, "url", *c.EndpointURL, "transport_security", security)
+	return jsonutil.ObjectOf("available", true, "url", *c.EndpointURL, "transport_security", security)
 }
 
 // Arguments of one catalog build, nil fields taking the Python defaults
@@ -261,14 +260,14 @@ type CatalogOptions struct {
 }
 
 // Canonical catalog mapping with its digest for the served target profile
-func CatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, error) {
+func CatalogMapping(ctx context.Context, o CatalogOptions) (*jsonutil.Object, error) {
 	persistent := o.PersistentProcess
 	profile, err := hostedIdentifier(o.TargetProfile, "target_profile")
 	if err != nil {
 		return nil, err
 	}
 	rawPolicy := o.ExecutionPolicy
-	if !pyrepr.Truthy(rawPolicy) {
+	if !anyutil.IsTrue(rawPolicy) {
 		if rawPolicy, err = ExecutionPolicyMapping(ctx, profile, nil); err != nil {
 			return nil, err
 		}
@@ -297,7 +296,7 @@ func CatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, erro
 	}
 	versionList := make([]any, len(versions))
 	for i, v := range versions {
-		versionList[i] = pyjson.ParseInt(v.String())
+		versionList[i] = v
 	}
 	linkModes := o.LinkModes
 	if linkModes == nil {
@@ -327,9 +326,9 @@ func CatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, erro
 	if !ok {
 		return nil, &PyError{Kind: "TypeError", Msg: "the catalog endpoint is " + errchain.Kind(endpoint) + ", expected a list"}
 	}
-	endpointCopy := pyjson.NewObject()
-	if ordered, isObject := endpoint.(*pyjson.Object); isObject {
-		for _, key := range ordered.Keys {
+	endpointCopy := jsonutil.NewObject()
+	if ordered, isObject := endpoint.(*jsonutil.Object); isObject {
+		for _, key := range ordered.Keys() {
 			endpointCopy.Set(key, endpointFields[key])
 		}
 	} else {
@@ -342,7 +341,7 @@ func CatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, erro
 			endpointCopy.Set(key, endpointFields[key])
 		}
 	}
-	value := pyjson.ObjectOf("installation_id", installationID, "protocol_versions", versionList, "link_modes", links,
+	value := jsonutil.ObjectOf("installation_id", installationID, "protocol_versions", versionList, "link_modes", links,
 		"persistent_process", persistent, "text", text, "attachments", o.Attachments,
 		"execution_policy", policy.AsMapping(), "endpoint", endpointCopy)
 	digest, err := hostedCatalogDigest(value)
@@ -357,7 +356,7 @@ func CatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, erro
 }
 
 // Validated endpoint this gateway explicitly advertises, value nil reading the configured one
-func localRoomLinkEndpoint(ctx context.Context, value any) (*pyjson.Object, error) {
+func localRoomLinkEndpoint(ctx context.Context, value any) (*jsonutil.Object, error) {
 	configured := value
 	if value == nil {
 		if url, set := configuredRoomLinkURL(ctx); set {
@@ -365,20 +364,20 @@ func localRoomLinkEndpoint(ctx context.Context, value any) (*pyjson.Object, erro
 		}
 	}
 	text := ""
-	if pyrepr.Truthy(configured) {
-		text = pyrepr.Str(configured)
+	if anyutil.IsTrue(configured) {
+		text = anyutil.String(configured)
 	}
 	if strings.TrimSpace(text) == "" {
-		return pyjson.ObjectOf("available", false, "reason", "not_configured"), nil
+		return jsonutil.ObjectOf("available", false, "reason", "not_configured"), nil
 	}
 	url, security, err := ValidateRoomLinkURL(configured)
 	if err != nil {
 		if _, isPeer := err.(*HostedRoomPeerError); isPeer {
-			return pyjson.ObjectOf("available", false, "reason", "invalid_configuration"), nil
+			return jsonutil.ObjectOf("available", false, "reason", "invalid_configuration"), nil
 		}
 		return nil, err
 	}
-	return pyjson.ObjectOf("available", true, "url", url, "transport_security", security), nil
+	return jsonutil.ObjectOf("available", true, "url", url, "transport_security", security), nil
 }
 
 // Room link address a home's settings give, nil when none is set
@@ -406,23 +405,23 @@ func configuredRoomLinkURL(ctx context.Context) (string, bool) {
 // RoomLink endpoint and its transport, plaintext HTTP accepted only toward loopback
 func ValidateRoomLinkURL(value any) (string, string, error) {
 	raw := ""
-	if pyrepr.Truthy(value) {
-		raw = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		raw = anyutil.String(value)
 	}
 	raw = strings.TrimRight(strings.TrimSpace(raw), "/")
 	invalid := &HostedRoomPeerError{"target_url is invalid"}
-	parsed, err := pyurl.Split(raw)
+	parsed, err := url.Parse(raw)
 	if err != nil {
 		return "", "", invalid
 	}
 	hostname := strings.ToLower(strings.TrimRight(parsed.Hostname(), "."))
-	if _, _, err := parsed.Port(); err != nil {
+	if _, _, err := urlutil.Port(parsed); err != nil {
 		return "", "", invalid
 	}
-	if hostname == "" || strings.Contains(parsed.Netloc, "@") {
+	if hostname == "" || parsed.User != nil {
 		return "", "", invalid
 	}
-	if parsed.Query != "" || parsed.Fragment != "" {
+	if parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", "", &HostedRoomPeerError{"target_url must not include query or fragment"}
 	}
 	scheme := strings.ToLower(parsed.Scheme)
@@ -435,14 +434,14 @@ func ValidateRoomLinkURL(value any) (string, string, error) {
 	if hostname == "localhost" || strings.HasSuffix(hostname, ".localhost") {
 		return raw, "loopback", nil
 	}
-	if addr, ok := pyipaddress.IPAddress(hostname); ok && pyipaddress.IsLoopback(addr) {
+	if addr, err := netip.ParseAddr(hostname); err == nil && addr.IsLoopback() {
 		return raw, "loopback", nil
 	}
 	return "", "", &HostedRoomPeerError{"target_url must use https outside the local machine"}
 }
 
 // The one truthful catalog advertised by this local process, always a persistent process
-func LocalCatalogMapping(ctx context.Context, o CatalogOptions) (*pyjson.Object, error) {
+func LocalCatalogMapping(ctx context.Context, o CatalogOptions) (*jsonutil.Object, error) {
 	o.PersistentProcess = true
 	return CatalogMapping(ctx, o)
 }

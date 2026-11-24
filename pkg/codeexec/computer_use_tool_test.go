@@ -9,8 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestRejectUnsafeBlocksTypeAndKeyCombos(t *testing.T) {
@@ -40,14 +40,14 @@ func TestRejectUnsafeBlocksTypeAndKeyCombos(t *testing.T) {
 	if got := rejectUnsafe("type", map[string]any{"text": ""}); got != "" {
 		t.Fatalf("empty text blocked: %s", got)
 	}
-	want := `{"error": "bring_to_front requires delivery_mode='foreground'", "code": "bring_to_front_requires_foreground"}`
+	want := `{"error":"bring_to_front requires delivery_mode='foreground'","code":"bring_to_front_requires_foreground"}`
 	if got := rejectUnsafe("click", map[string]any{"bring_to_front": true}); got != want {
 		t.Fatalf("bring_to_front answered %s", got)
 	}
 	if got := rejectUnsafe("click", map[string]any{"bring_to_front": true, "delivery_mode": "foreground"}); got != "" {
 		t.Fatalf("foreground bring_to_front blocked: %s", got)
 	}
-	if got := rejectUnsafe("key", map[string]any{"keys": "win+l"}); got != `{"error": "blocked key combo: l, win", "hint": "Destructive system shortcuts are hard-blocked."}` {
+	if got := rejectUnsafe("key", map[string]any{"keys": "win+l"}); got != `{"error":"blocked key combo: l, win","hint":"Destructive system shortcuts are hard-blocked."}` {
 		t.Fatalf("win+l answered %s", got)
 	}
 }
@@ -201,8 +201,8 @@ func TestInjectedBackendFoldsIntoEmptySession(t *testing.T) {
 	}
 }
 
-func cuMeta(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func cuMeta(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -216,7 +216,7 @@ func zeroDeliveryResult(delivered int64) *ActionResult {
 		Meta: cuMeta("delivered_chars", delivered, "requested_chars", int64(11))}
 }
 
-func cuVerdict(o *pyjson.Object, key string) any {
+func cuVerdict(o *jsonutil.Object, key string) any {
 	v, _ := o.Get(key)
 	return v
 }
@@ -224,13 +224,13 @@ func cuVerdict(o *pyjson.Object, key string) any {
 func TestZeroDeliveryRecommendsSetValue(t *testing.T) {
 	v := classifyActionResult(zeroDeliveryResult(0))
 	if cuVerdict(v, "decision") != "escalate" || cuVerdict(v, "recommended") != "set_value" || !strings.Contains(cuVerdict(v, "hint").(string), "set_value") {
-		t.Fatalf("verdict %v", v.Vals)
+		t.Fatalf("verdict %v", v)
 	}
 }
 
 func TestPartialDeliveryKeepsGenericLadder(t *testing.T) {
 	if v := classifyActionResult(zeroDeliveryResult(7)); cuVerdict(v, "recommended") == "set_value" {
-		t.Fatalf("verdict %v", v.Vals)
+		t.Fatalf("verdict %v", v)
 	}
 }
 
@@ -239,24 +239,24 @@ func TestSynthesisBudgetRefusalKeepsDriverRecommendation(t *testing.T) {
 		Code: cuStrp("type_text_synthesis_budget_exceeded"), Meta: cuMeta("delivered_chars", int64(0), "requested_chars", int64(6500)),
 		Escalation: cuMeta("recommended", "chunk", "reason", "requested run exceeds the synthesis budget")})
 	if cuVerdict(v, "decision") != "escalate" || cuVerdict(v, "recommended") != "chunk" || strings.Contains(cuVerdict(v, "hint").(string), "set_value") {
-		t.Fatalf("verdict %v", v.Vals)
+		t.Fatalf("verdict %v", v)
 	}
 }
 
 func TestActionPayloadAndVerdictPrecedence(t *testing.T) {
 	yes := true
-	got := textResponse(&ActionResult{OK: true, Action: "click", Verified: &yes, Effect: cuStrp("unverifiable"), Meta: pyjson.NewObject()})
-	if got != `{"ok": true, "action": "click", "verified": true, "effect": "unverifiable", "verdict": {"decision": "done"}}` {
+	got := textResponse(&ActionResult{OK: true, Action: "click", Verified: &yes, Effect: cuStrp("unverifiable"), Meta: jsonutil.NewObject()})
+	if got != `{"ok":true,"action":"click","verified":true,"effect":"unverifiable","verdict":{"decision":"done"}}` {
 		t.Fatalf("payload %s", got)
 	}
 	if v := classifyActionResult(&ActionResult{OK: true, Action: "click", Effect: cuStrp("unverifiable")}); cuVerdict(v, "decision") != "verify_fresh_state" {
-		t.Fatalf("unverifiable verdict %v", v.Vals)
+		t.Fatalf("unverifiable verdict %v", v)
 	}
-	if v := classifyActionResult(&ActionResult{OK: false, Action: "click"}); cuVerdict(v, "decision") != "escalate" || len(v.Keys) != 2 {
-		t.Fatalf("failed transport verdict %v", v.Keys)
+	if v := classifyActionResult(&ActionResult{OK: false, Action: "click"}); cuVerdict(v, "decision") != "escalate" || v.Len() != 2 {
+		t.Fatalf("failed transport verdict %v", v.Keys())
 	}
 	if v := classifyActionResult(&ActionResult{OK: true, Action: "click"}); cuVerdict(v, "decision") != "verify_fresh_state" {
-		t.Fatalf("bare success verdict %v", v.Vals)
+		t.Fatalf("bare success verdict %v", v)
 	}
 }
 
@@ -304,7 +304,7 @@ func (b *noopBackend) record(name string, args map[string]any) *ActionResult {
 	b.mu.Lock()
 	b.calls = append(b.calls, noopCall{name, args})
 	b.mu.Unlock()
-	return &ActionResult{OK: true, Action: name, Meta: pyjson.NewObject()}
+	return &ActionResult{OK: true, Action: name, Meta: jsonutil.NewObject()}
 }
 
 func (b *noopBackend) Start() error { return nil }
@@ -353,9 +353,9 @@ func (b *noopBackend) ListApps() ([]any, error) {
 	return []any{}, nil
 }
 
-func (b *noopBackend) ListWindows() ([]*pyjson.Object, error) {
+func (b *noopBackend) ListWindows() ([]*jsonutil.Object, error) {
 	b.record("list_windows", map[string]any{})
-	return []*pyjson.Object{}, nil
+	return []*jsonutil.Object{}, nil
 }
 
 func (b *noopBackend) FocusApp(app string, raiseWindow bool) (*ActionResult, error) {

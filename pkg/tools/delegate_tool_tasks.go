@@ -8,8 +8,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var (
@@ -32,10 +30,10 @@ func recoverTasksFromJSONString(tasks any) ([]any, string) {
 	if raw == "" {
 		return nil, "Provide either 'goal' (single task) or 'tasks' (batch)."
 	}
-	parsed, err := pyjson.Loads(raw)
+	parsed, err := jsonutil.Decode(raw)
 	if err != nil {
 		msg := err.Error()
-		var de *pyjson.DecodeError
+		var de *jsonutil.SyntaxError
 		if errors.As(err, &de) {
 			msg = de.Msg
 		}
@@ -43,7 +41,7 @@ func recoverTasksFromJSONString(tasks any) ([]any, string) {
 	}
 	list, ok := parsed.([]any)
 	if !ok {
-		return nil, fmt.Sprintf("tasks must be a JSON array of task objects; parsed %s instead.", pyrepr.TypeName(parsed))
+		return nil, fmt.Sprintf("tasks must be a JSON array of task objects; parsed %s instead.", anyutil.Kind(parsed))
 	}
 	return list, ""
 }
@@ -53,17 +51,17 @@ func validateBatchTasks(taskList []map[string]any) string {
 	for i, task := range taskList {
 		goal := ""
 		if g, ok := task["goal"]; ok {
-			goal = pyrepr.Str(g)
+			goal = anyutil.String(g)
 		}
 		goal = strings.TrimSpace(goal)
 		if fillerGoalRe.MatchString(strings.Join(strings.Fields(strings.ToLower(goal)), " ")) {
-			return fmt.Sprintf("Task %d has a placeholder goal (%s). Replace it with a specific, self-contained description of what the subagent should accomplish.", i, pyrepr.Repr(goal))
+			return fmt.Sprintf("Task %d has a placeholder goal (%s). Replace it with a specific, self-contained description of what the subagent should accomplish.", i, anyutil.Quote(goal))
 		}
 		if marker := templateMarkerRe.FindString(goal); marker != "" {
-			return fmt.Sprintf("Task %d goal contains an unexpanded template marker (%s). Substitute the real value before calling delegate_task — subagents cannot resolve placeholders.", i, pyrepr.Repr(marker))
+			return fmt.Sprintf("Task %d goal contains an unexpanded template marker (%s). Substitute the real value before calling delegate_task — subagents cannot resolve placeholders.", i, anyutil.Quote(marker))
 		}
 		if utf8.RuneCountInString(goal) < minBatchGoalLen && len(taskList) >= 2 {
-			return fmt.Sprintf("Task %d goal is too short (%s). Write a specific, self-contained goal of at least %d characters so the subagent knows exactly what to do.", i, pyrepr.Repr(goal), minBatchGoalLen)
+			return fmt.Sprintf("Task %d goal is too short (%s). Write a specific, self-contained goal of at least %d characters so the subagent knows exactly what to do.", i, anyutil.Quote(goal), minBatchGoalLen)
 		}
 	}
 	return ""
@@ -101,10 +99,10 @@ func NormalizeTaskList(goal, context, tasks, outputSchema any, topRole string, m
 		switch t := item.(type) {
 		case map[string]any:
 			task = t
-		case *pyjson.Object:
-			task = t.Vals
+		case *jsonutil.Object:
+			task = t.Map()
 		default:
-			return nil, fmt.Sprintf("Task %d must be an object, got %s.", i, pyrepr.TypeName(item)), nil
+			return nil, fmt.Sprintf("Task %d must be an object, got %s.", i, anyutil.Kind(item)), nil
 		}
 		g, present := task["goal"]
 		if !present {

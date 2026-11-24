@@ -7,8 +7,8 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One SQLite write a step sequence yields
@@ -109,12 +109,12 @@ func metaValue(ctx context.Context, conn state.SQLiteConn, key string) (string, 
 }
 
 // Decoded JSON object of stored text, the error Python raises for any other shape
-func loadsObject(text string) (*pyjson.Object, error) {
-	decoded, err := pyjson.Loads(text)
+func loadsObject(text string) (*jsonutil.Object, error) {
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := decoded.(*pyjson.Object)
+	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, &PyError{Kind: "TypeError", Msg: "the stored API binding is " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
@@ -188,7 +188,7 @@ func bindAPISteps(ctx context.Context, a *SessionAuthority, sessionID string, op
 		now := sessionNow()
 		entry := NewSessionEntry(route, sessionID, now, now)
 		entry.Origin, entry.Platform, entry.TransportProfile = source, PlatformAPIServer, transportProfile
-		receipt := pyjson.ObjectOf("profile_id", a.ProfileID, "session_id", sessionID, "route", route, "entry", entry.ToDict())
+		receipt := jsonutil.ObjectOf("profile_id", a.ProfileID, "session_id", sessionID, "route", route, "entry", entry.ToDict())
 		if opts.DeclaredKey != "" {
 			receipt.Set("declared_key", opts.DeclaredKey)
 		}
@@ -431,7 +431,7 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 	if err != nil {
 		return err
 	}
-	entryDict, ok := rawEntry.(*pyjson.Object)
+	entryDict, ok := rawEntry.(*jsonutil.Object)
 	if !ok {
 		return &PyError{Kind: "AttributeError", Msg: "a stored API session entry is " + errchain.Kind(rawEntry) + ", expected a mapping"}
 	}
@@ -497,7 +497,7 @@ func restoreAPISession(ctx context.Context, a *SessionAuthority, sessionID strin
 		}
 		generation := 0
 		if raw, has := receipt.Get("room_generation"); has {
-			if n := rowInt(pyjson.ObjectOf("n", raw), "n"); n != nil {
+			if n := rowInt(jsonutil.ObjectOf("n", raw), "n"); n != nil {
 				generation = int(*n)
 			}
 		}

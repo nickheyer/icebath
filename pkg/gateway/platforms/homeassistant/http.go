@@ -2,72 +2,51 @@ package homeassistant
 
 import (
 	"bytes"
-	"compress/flate"
-	"compress/gzip"
-	"compress/zlib"
 	"context"
 	"crypto/tls"
-	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/http"
-	"net/http/httptrace"
-	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
-
-	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyaiohttpws"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 )
 
-// aiohttp ClientError of a request the transport failed, err the os error behind it
-type clientError struct {
-	kind string
-	text string
-	err  error
+// Request or connection attempt that ran out of its time limit
+type timeoutError struct {
+	what  string
+	limit time.Duration
 }
 
-func (e *clientError) Error() string      { return e.text }
-func (e *clientError) PyTypeName() string { return e.kind }
-func (e *clientError) Unwrap() error      { return e.err }
+func (e *timeoutError) Error() string { return e.what + " timed out after " + e.limit.String() }
 
-// asyncio TimeoutError of a request that outlasted its total timeout, its str empty
-type timeoutError struct{}
+// Always true: the error is a timeout
+func (e *timeoutError) Timeout() bool { return true }
 
-func (e *timeoutError) Error() string      { return "" }
-func (e *timeoutError) PyTypeName() string { return "TimeoutError" }
+// The deadline the limit stood for, so errors.Is matches context.DeadlineExceeded
+func (e *timeoutError) Unwrap() error { return context.DeadlineExceeded }
 
-// aiohttp ClientResponseError with its status, message and request URL, ContentTypeError for a non JSON body
+// HTTP error status of a REST response, or a body that is not JSON, with the URL that answered
 type responseError struct {
-	status      int
-	message     string
-	url         string
-	contentType bool
+	status  int
+	message string
+	url     string
 }
 
 func (e *responseError) Error() string {
 	return fmt.Sprintf("HTTP %d %s from %s", e.status, e.message, e.url)
 }
 
-func (e *responseError) PyTypeName() string {
-	if e.contentType {
-		return "ContentTypeError"
-	}
-	return "ClientResponseError"
-}
-
-// Content types the aiohttp json reader accepts for a JSON body
-var jsonContentTypeRE = pyre.MustCompile(`^application/(?:[\w.+-]+?\+)?json`)
+// Content types of a JSON body
+var jsonContentTypeRE = regexutil.Lazy(regexp.MustCompile, `^application/(?:[\w.+-]+?\+)?json`)
 
 // One fully read HTTP response
 type httpResponse struct {
@@ -78,10 +57,10 @@ type httpResponse struct {
 	url    string
 }
 
-// Lowercased raw Content-Type header, empty when absent, as aiohttp reads it for json and the encoding
-func (r *httpResponse) rawContentType() string { return strings.ToLower(r.header.Get("Content-Type")) }
+// Lowercased Content-Type header, empty when absent
+func (r *httpResponse) contentType() string { return strings.ToLower(r.header.Get("Content-Type")) }
 
-// Charset parameter parse_mimetype yields, the first one with spaces and double quotes stripped
+// Charset parameter of a Content-Type value, the first one with spaces and double quotes stripped
 func mimetypeCharset(ctype string) string {
 	if ctype == "" {
 		return ""
@@ -99,277 +78,63 @@ func mimetypeCharset(ctype string) string {
 	return ""
 }
 
-// Codec name get_encoding picks, the CodecInfo name codecs.lookup gives the declared charset, else utf-8
+// Canonical name of the charset the Content-Type declares, UTF-8 when it declares none or one that is unknown
 func (r *httpResponse) encoding() string {
-	if charset := mimetypeCharset(r.rawContentType()); charset != "" {
-		if name, ok := pycodecs.InfoName(charset); ok {
+	if charset := mimetypeCharset(r.contentType()); charset != "" {
+		if name, ok := charsetutil.Canonical(charset); ok {
 			return name
 		}
 	}
 	return "utf-8"
 }
 
-// aiohttp text of the body, a strict decode with the get_encoding codec
-func (r *httpResponse) text() (string, error) { return pycodecs.Decode(r.body, r.encoding()) }
+// Body as text in the charset the Content-Type names, undecodable bytes as U+FFFD
+func (r *httpResponse) text() string { return httputil.DecodeText(r.header, r.body) }
 
-// aiohttp json of the body, None for a blank body and the ContentTypeError of a non JSON content type
+// Body decoded as JSON in the declared charset, nil for a blank body, a responseError for a content type that is not JSON
 func (r *httpResponse) json() (any, error) {
-	ctype := r.rawContentType()
-	if ok, err := jsonContentTypeRE.MatchString(ctype); err != nil || !ok {
-		return nil, &responseError{status: r.status, message: "Attempt to decode JSON with unexpected mimetype: " + ctype, url: r.url,
-			contentType: true}
+	ctype := r.contentType()
+	if !jsonContentTypeRE().MatchString(ctype) {
+		return nil, &responseError{status: r.status, message: fmt.Sprintf("response is not JSON (content type %q)", ctype), url: r.url}
 	}
 	stripped := bytes.Trim(r.body, " \t\n\r\x0b\x0c")
 	if len(stripped) == 0 {
 		return nil, nil
 	}
-	text, err := pycodecs.Decode(stripped, r.encoding())
+	text, err := charsetutil.Decode(stripped, r.encoding())
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
-// HTTP/1.1 client like an aiohttp session with only its total timeout, proxy env honoured only when trustEnv
+// HTTP/1.1 client asking for compressed bodies and decoding them, the proxy settings honoured only when trustEnv
 func newSession(trustEnv bool) *http.Client {
 	transport := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
 	transport.DialContext = netpref.DialContext((&net.Dialer{KeepAlive: 30 * time.Second}).DialContext)
 	transport.TLSHandshakeTimeout = 0
 	transport.ForceAttemptHTTP2 = false
 	transport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
-	if !trustEnv {
-		transport.Proxy = nil
+	transport.Proxy = nil
+	if trustEnv {
+		transport.Proxy = httputil.Proxy
 	}
-	return &http.Client{Transport: transport}
+	return &http.Client{Transport: httputil.DecodingTransport(transport)}
 }
 
-// TLS handshake failure a traced connection attempt recorded
-type tlsFailure struct {
-	mu  sync.Mutex
-	err error
-}
-
-// Context whose connection attempts record a failed TLS handshake into the returned holder
-func withTLSTrace(ctx context.Context) (context.Context, *tlsFailure) {
-	failure := &tlsFailure{}
-	trace := &httptrace.ClientTrace{TLSHandshakeDone: func(_ tls.ConnectionState, err error) {
-		if err != nil {
-			failure.mu.Lock()
-			failure.err = err
-			failure.mu.Unlock()
-		}
-	}}
-	return httptrace.WithClientTrace(ctx, trace), failure
-}
-
-// Recorded handshake failure, nil when every handshake succeeded
-func (f *tlsFailure) get() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	return f.err
-}
-
-// aiohttp connector error of a failed TLS handshake, the certificate form for a verify failure and the ssl form otherwise
-func sslConnectError(rawURL string, err error) error {
-	text := pyrequests.SSLErrorText(err)
-	host, port := hostPort(rawURL)
-	if pyrequests.CertificateVerifyFailed(err) {
-		return &clientError{kind: "ClientConnectorCertificateError",
-			text: fmt.Sprintf("Cannot connect to host %s:%s: the TLS certificate could not be verified (%s)", host, port, text), err: err}
-	}
-	return &clientError{kind: "ClientConnectorSSLError", text: fmt.Sprintf("Cannot connect to host %s:%s: the TLS handshake failed (%s)", host, port, text), err: err}
-}
-
-// Host and port of a URL with the scheme default port
-func hostPort(rawURL string) (string, string) {
-	u, err := url.Parse(rawURL)
-	if err != nil {
-		return rawURL, ""
-	}
-	port := u.Port()
-	if port == "" {
-		port = "80"
-		if u.Scheme == "https" || u.Scheme == "wss" {
-			port = "443"
-		}
-	}
-	return u.Hostname(), port
-}
-
-// aiohttp ClientError a failed request raises, the connector text for a DNS or dial failure
-func transportError(rawURL string, err error) error {
-	var dns *net.DNSError
-	var op *net.OpError
-	switch {
-	case errors.As(err, &dns):
-		host, port := hostPort(rawURL)
-		reason := "Name or service not known"
-		if dns.IsTemporary || dns.IsTimeout {
-			reason = "Temporary failure in name resolution"
-		}
-		return &clientError{kind: "ClientConnectorDNSError", text: fmt.Sprintf("Cannot connect to host %s:%s ssl:default [%s]", host, port, reason), err: err}
-	case errors.As(err, &op) && op.Op == "dial":
-		host, port := hostPort(rawURL)
-		reason := errchain.OSText(err)
-		if tcp, ok := op.Addr.(*net.TCPAddr); ok {
-			reason = fmt.Sprintf("Connect call failed ('%s', %d)", tcp.IP.String(), tcp.Port)
-		}
-		return &clientError{kind: "ClientConnectorError", text: fmt.Sprintf("Cannot connect to host %s:%s ssl:default [%s]", host, port, reason), err: err}
-	case errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF):
-		return &clientError{kind: "ServerDisconnectedError", text: "Server disconnected", err: err}
-	}
-	return &clientError{kind: "ClientOSError", text: errchain.OSText(err), err: err}
-}
-
-// Body decoded as the aiohttp payload parser decodes gzip, deflate and zstd, with its errors for br and corrupt data
-func decodeContent(encoding string, raw []byte, rawURL string) ([]byte, error) {
-	enc := strings.ToLower(encoding)
-	if enc == "br" {
-		return nil, &responseError{status: 400, message: "Can not decode content-encoding: brotli (br). Please install `Brotli`", url: rawURL}
-	}
-	if len(raw) == 0 || (enc != "gzip" && enc != "deflate" && enc != "zstd") {
-		return raw, nil
-	}
-	var out []byte
-	var err error
-	if enc == "zstd" {
-		out, err = unzstdFrames(raw)
-	} else {
-		out, err = inflateMembers(enc, raw)
-	}
-	switch {
-	case err == nil:
-		return out, nil
-	case !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF):
-		return nil, &clientError{kind: "ClientPayloadError", text: "400, message:\n  Can not decode content-encoding: " + enc, err: err}
-	case enc == "deflate":
-		return nil, &responseError{status: 400, message: "deflate", url: rawURL}
-	}
-	return out, nil
-}
-
-// Concatenated members aiohttp decodes from one feed before it refuses the stream
-const maxDecompressMembers = 1024
-
-var errTooManyMembers = errors.New("Compressed stream has more than 1024 members")
-
-// True while the bytes present can still begin a gzip member zlib accepts
-func gzipPrefixValid(b []byte) bool {
-	if len(b) >= 2 && (b[0] != 0x1f || b[1] != 0x8b) {
-		return false
-	}
-	return len(b) < 4 || (b[2] == 8 && b[3]&0xe0 == 0)
-}
-
-// Concatenated gzip, zlib or raw deflate members decoded in order, output so far kept beside a truncation error
-func inflateMembers(enc string, raw []byte) ([]byte, error) {
-	wrapped := raw[0]&0xF == 8
-	var out []byte
-	rest := raw
-	for members := 1; len(rest) > 0; members++ {
-		if members > maxDecompressMembers {
-			return nil, errTooManyMembers
-		}
-		src := bytes.NewReader(rest)
-		var reader io.Reader
-		var err error
-		switch {
-		case enc == "gzip":
-			if !gzipPrefixValid(rest) {
-				return nil, gzip.ErrHeader
-			}
-			var zr *gzip.Reader
-			if zr, err = gzip.NewReader(src); err == nil {
-				zr.Multistream(false)
-				reader = zr
-			}
-		case wrapped:
-			reader, err = zlib.NewReader(src)
-		default:
-			reader = flate.NewReader(src)
-		}
-		if err != nil {
-			return out, err
-		}
-		chunk, err := io.ReadAll(reader)
-		out = append(out, chunk...)
-		if err != nil {
-			return out, err
-		}
-		rest = rest[len(rest)-src.Len():]
-	}
-	return out, nil
-}
-
-// Frames at the start of a zstd body counted by walking frame and block headers up to the first unreadable one
-func zstdFrameCount(raw []byte) int {
-	count := 0
-	for len(raw) > 0 {
-		var h zstd.Header
-		if err := h.Decode(raw); err != nil || h.HeaderSize > len(raw) {
-			return count
-		}
-		count++
-		pos := h.HeaderSize
-		if h.Skippable {
-			pos += int(h.SkippableSize)
-		} else {
-			for last := false; !last; {
-				if pos+3 > len(raw) {
-					return count
-				}
-				bh := int(raw[pos]) | int(raw[pos+1])<<8 | int(raw[pos+2])<<16
-				size := bh >> 3
-				if kind := (bh >> 1) & 3; kind == 1 {
-					size = 1
-				} else if kind == 3 {
-					return count
-				}
-				last = bh&1 == 1
-				pos += 3 + size
-			}
-			if h.HasCheckSum {
-				pos += 4
-			}
-		}
-		if pos > len(raw) {
-			return count
-		}
-		raw = raw[pos:]
-	}
-	return count
-}
-
-// Concatenated zstd frames decoded in order, output so far kept beside a truncation error
-func unzstdFrames(raw []byte) ([]byte, error) {
-	if zstdFrameCount(raw) > maxDecompressMembers {
-		return nil, errTooManyMembers
-	}
-	dec, err := zstd.NewReader(bytes.NewReader(raw), zstd.WithDecoderConcurrency(1))
-	if err != nil {
-		return nil, err
-	}
-	defer dec.Close()
-	return io.ReadAll(dec)
-}
-
-// One request reading the whole body within the total timeout, a timeout as the asyncio TimeoutError
+// One request reading the whole body within the total time limit, a *timeoutError when the limit runs out
 func doRequest(ctx context.Context, client *http.Client, method, rawURL string, headers map[string]string, body []byte,
 	total time.Duration) (*httpResponse, error) {
 	rctx, cancel := context.WithTimeout(ctx, total)
 	defer cancel()
-	rctx, handshake := withTLSTrace(rctx)
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
 	}
 	req, err := http.NewRequestWithContext(rctx, method, rawURL, reader)
 	if err != nil {
-		return nil, &clientError{kind: "InvalidUrlClientError", text: rawURL, err: err}
+		return nil, err
 	}
-	req.Header.Set("Accept", pyaiohttpws.Accept)
-	req.Header.Set("Accept-Encoding", pyaiohttpws.AcceptEncoding)
-	req.Header.Set("User-Agent", pyaiohttpws.UserAgent)
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
@@ -378,10 +143,8 @@ func doRequest(ctx context.Context, client *http.Client, method, rawURL string, 
 	if err == nil {
 		raw, err = io.ReadAll(resp.Body)
 		resp.Body.Close()
-	}
-	if err == nil {
-		if raw, err = decodeContent(resp.Header.Get("Content-Encoding"), raw, resp.Request.URL.String()); err != nil {
-			return nil, err
+		if err != nil {
+			err = fmt.Errorf("reading the response of %s %s: %w", method, req.URL.Redacted(), err)
 		}
 	}
 	if err != nil {
@@ -389,21 +152,18 @@ func doRequest(ctx context.Context, client *http.Client, method, rawURL string, 
 			return nil, ctx.Err()
 		}
 		if rctx.Err() != nil {
-			return nil, &timeoutError{}
+			return nil, &timeoutError{what: method + " " + req.URL.Redacted(), limit: total}
 		}
-		if tlsErr := handshake.get(); tlsErr != nil {
-			return nil, sslConnectError(rawURL, tlsErr)
-		}
-		return nil, transportError(rawURL, err)
+		return nil, err
 	}
 	reason := strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)+" ")
 	return &httpResponse{status: resp.StatusCode, reason: reason, header: resp.Header, body: raw, url: resp.Request.URL.String()}, nil
 }
 
-// One JSON POST, the payload encoded as json.dumps does with the JSON content type
+// One JSON POST with the JSON content type
 func postJSON(ctx context.Context, client *http.Client, rawURL string, headers map[string]string, payload any,
 	total time.Duration) (*httpResponse, error) {
-	text, err := pyjson.Dumps(payload)
+	text, err := jsonutil.Encode(payload)
 	if err != nil {
 		return nil, err
 	}

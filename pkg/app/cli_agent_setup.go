@@ -11,11 +11,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // turnRoute is the effective model and runtime one turn's agent is built from
@@ -62,7 +62,7 @@ func keylessCustomBase(baseURL string) bool {
 	if baseURL == "" {
 		return false
 	}
-	matches, err := pyurl.BaseURLHostMatches(baseURL, "openrouter.ai")
+	matches, err := urlutil.BaseHostMatches(baseURL, "openrouter.ai")
 	return err == nil && !matches
 }
 
@@ -94,7 +94,7 @@ func gatewayOpen(ctx context.Context, db *gatewaycli.GatewaySessionStore, sessio
 		}
 		return sessionID, ""
 	}
-	if owner, _ := snapshot.Vals["stored_session_id"].(string); owner != "" {
+	if owner, _ := snapshot.Value("stored_session_id").(string); owner != "" {
 		return owner, ""
 	}
 	return sessionID, ""
@@ -142,7 +142,7 @@ func (c *CLI) ensureRuntimeCredentials() bool {
 		if c.toolProgressMode == "off" {
 			fmt.Fprintln(stderrWriter(), message)
 		} else {
-			chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", message))
+			chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", consoleutil.Escape(message)))
 		}
 		return false
 	}
@@ -216,7 +216,7 @@ func (c *CLI) normalizeModelForProvider(resolvedProvider string) bool {
 	adopt := func(canonical string, notice func(string) string) {
 		if canonical != "" && canonical != currentModel {
 			if !c.modelIsDefault {
-				c.consolePrint(fmt.Sprintf("[yellow]⚠️  %s[/]", notice(canonical)))
+				c.consolePrint(fmt.Sprintf("[yellow]⚠️  %s[/]", consoleutil.Escape(notice(canonical))))
 			}
 			c.model = canonical
 			currentModel = canonical
@@ -262,7 +262,7 @@ func (c *CLI) normalizeModelForProvider(resolvedProvider string) bool {
 	if i := strings.Index(currentModel, "/"); i >= 0 {
 		slug := currentModel[i+1:]
 		if !c.modelIsDefault {
-			c.consolePrint("[yellow]⚠️  " + pyrich.Escape(strippedNotice("OpenAI Codex")(slug)) + "[/]")
+			c.consolePrint("[yellow]⚠️  " + consoleutil.Escape(strippedNotice("OpenAI Codex")(slug)) + "[/]")
 		}
 		c.model = slug
 		currentModel = slug
@@ -361,11 +361,11 @@ func (c *CLI) reopenSession() { c.sessionDB.ReopenSession(c.ctx, c.sessionID) }
 func (c *CLI) loadResumedHistoryLate() bool {
 	sessionMeta := c.sessionMeta(c.sessionID)
 	quietMode := c.toolProgressMode == "off"
-	say := func(plain, rich string) {
+	say := func(plain, markup string) {
 		if quietMode {
 			fmt.Fprintln(stderrWriter(), plain)
 		} else {
-			chatConsolePrint(rich)
+			chatConsolePrint(markup)
 		}
 	}
 	if sessionMeta == nil {
@@ -381,7 +381,7 @@ func (c *CLI) loadResumedHistoryLate() bool {
 		return false
 	}
 	sessionMeta = c.followCompressionChain(sessionMeta, func(rid string) {
-		chatConsolePrint(fmt.Sprintf("[dim]%s[/dim]", pyrich.Escape(i18n.T(c.ctx, "cli.resume.compressed_into", "", map[string]any{"session_id": c.sessionID, "descendant": rid}))))
+		chatConsolePrint(fmt.Sprintf("[dim]%s[/dim]", consoleutil.Escape(i18n.T(c.ctx, "cli.resume.compressed_into", "", map[string]any{"session_id": c.sessionID, "descendant": rid}))))
 	})
 	if c.resumeHistoryError != "" {
 		return false
@@ -389,7 +389,7 @@ func (c *CLI) loadResumedHistoryLate() bool {
 	if limitErr := c.resumeHistoryLimitError(true); limitErr != "" {
 		c.resumeHistoryError = limitErr
 		say(i18n.T(c.ctx, "cli.resume.cannot_resume", "", map[string]any{"error": limitErr}),
-			fmt.Sprintf("[bold red]%s[/] %s", pyrich.Escape(i18n.T(c.ctx, "cli.resume.cannot_resume_prefix", "", nil)), pyrich.Escape(limitErr)))
+			fmt.Sprintf("[bold red]%s[/] %s", consoleutil.Escape(i18n.T(c.ctx, "cli.resume.cannot_resume_prefix", "", nil)), consoleutil.Escape(limitErr)))
 		return false
 	}
 	restored, err := c.sessionDB.GetMessagesAsConversation(c.ctx, c.resumeReadID, state.ConversationOptions{RepairAlternation: true})
@@ -415,12 +415,12 @@ func (c *CLI) loadResumedHistoryLate() bool {
 		}
 		counts := resumeCounts(c, msgCount, len(filtered))
 		say(fmt.Sprintf("%s %s%s %s", i18n.T(c.ctx, "cli.resume.resumed_session", "", nil), c.sessionID, titlePart, counts),
-			fmt.Sprintf("[bold %s]%s[/] [bold]%s[/][bold %s]%s[/] %s", accentHex(), pyrich.Escape(i18n.T(c.ctx, "cli.resume.resumed_session", "", nil)),
-				pyrich.Escape(c.sessionID), accentHex(), pyrich.Escape(titlePart), counts))
+			fmt.Sprintf("[bold %s]%s[/] [bold]%s[/][bold %s]%s[/] %s", accentHex(), consoleutil.Escape(i18n.T(c.ctx, "cli.resume.resumed_session", "", nil)),
+				consoleutil.Escape(c.sessionID), accentHex(), consoleutil.Escape(titlePart), consoleutil.Escape(counts)))
 		c.restoreSessionState(sessionMeta, quietMode)
 	} else {
 		noMessages := i18n.T(c.ctx, "cli.resume.session_no_messages", "", map[string]any{"session_id": c.sessionID})
-		say(noMessages, fmt.Sprintf("[bold %s]%s[/]", accentHex(), pyrich.Escape(noMessages)))
+		say(noMessages, fmt.Sprintf("[bold %s]%s[/]", accentHex(), consoleutil.Escape(noMessages)))
 	}
 	c.reopenSession()
 	return true
@@ -432,7 +432,7 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 		return true
 	}
 	if err := c.finalizePreloadedSkills(); err != nil {
-		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", pyrich.Escape(agentInitFailureMessage(err))))
+		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", consoleutil.Escape(agentInitFailureMessage(err))))
 		return false
 	}
 	if c.env != nil {
@@ -446,7 +446,7 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 	}
 	if err := c.ensureGatewaySession(); err != nil {
 		raiseSystemExit(ExitOnResumeRefusal(err))
-		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", pyrich.Escape(agentInitFailureMessage(err))))
+		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", consoleutil.Escape(agentInitFailureMessage(err))))
 		return false
 	}
 	if c.resumed && c.sessionDB != nil && len(c.conversationHistory) == 0 && !c.loadResumedHistoryLate() {
@@ -471,7 +471,7 @@ func (c *CLI) initAgent(modelOverride string, runtimeOverride *cliRuntime, reque
 	}
 	a, err := newGatewayAgent(c.ctx, o)
 	if err != nil {
-		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", pyrich.Escape(agentInitFailureMessage(err))))
+		chatConsolePrint(fmt.Sprintf("[bold red]%s[/]", consoleutil.Escape(agentInitFailureMessage(err))))
 		return false
 	}
 	c.setAgent(a)

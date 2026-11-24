@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 type deadlineFence struct {
@@ -83,7 +83,7 @@ func TestEffectiveCeilingAndDeadlineScopeFollowTheFence(t *testing.T) {
 	if CompressionDeadlineScope(ctx, nil) != ctx {
 		t.Fatal("nil fence leaves the context")
 	}
-	f.deadline = pythread.Monotonic() + 3600
+	f.deadline = timeutil.Monotonic() + 3600
 	scoped := CompressionDeadlineScope(ctx, f)
 	provider.CurrentPromptReadingHook(scoped)(12)
 	if len(f.extended) != 1 || f.extended[0] != 12 {

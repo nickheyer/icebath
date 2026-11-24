@@ -10,19 +10,19 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Banner reads of the session inventory, assigned from pkg/app in cmd/icebath/wiring.go
 var InventoryBanner struct {
 	ReleaseDate         string
-	AvailableSkills     func(ctx context.Context) *pyjson.Object
+	AvailableSkills     func(ctx context.Context) *jsonutil.Object
 	UpdateResult        func(timeout time.Duration) *int64
 	PrefetchUpdateCheck func()
 	ToolsetAvailability func(ctx context.Context, enabled []string) map[string]any
@@ -51,17 +51,17 @@ func suppressed(fn func()) (ok bool) {
 }
 
 // Tool names by toolset in load order, a tool no toolset claims under other
-func groupedTools(ctx context.Context, defs []map[string]any) *pyjson.Object {
-	grouped := pyjson.NewObject()
+func groupedTools(ctx context.Context, defs []map[string]any) *jsonutil.Object {
+	grouped := jsonutil.NewObject()
 	scope := tools.ScopeKey(home.Dir(ctx))
 	for _, def := range defs {
-		function, _ := pyjson.Dict(def["function"])
+		function, _ := jsonutil.AsMap(def["function"])
 		name, _ := function["name"].(string)
 		toolset := tools.Default.ToolsetForTool(ctx, scope, name)
 		if toolset == "" {
 			toolset = "other"
 		}
-		names, _ := grouped.GetOr(toolset, nil).([]any)
+		names, _ := grouped.ValueOr(toolset, nil).([]any)
 		grouped.Set(toolset, append(names, name))
 	}
 	return grouped
@@ -75,7 +75,7 @@ func policyTools(ctx context.Context, policy *LocalSessionPolicy, cfg map[string
 	}
 	enabled = append([]string{}, enabled...)
 	agentSection := cfg["agent"]
-	if !pyrepr.Truthy(agentSection) {
+	if !anyutil.IsTrue(agentSection) {
 		agentSection = map[string]any{}
 	}
 	raw, err := pyGet(agentSection, "disabled_toolsets", nil)
@@ -114,7 +114,7 @@ func inventoryProject(ctx context.Context, cwd string) any {
 	if project.PrimaryPath != nil {
 		primary = *project.PrimaryPath
 	}
-	return pyjson.ObjectOf("id", project.ID, "slug", project.Slug, "name", project.Name, "primary_path", primary)
+	return jsonutil.ObjectOf("id", project.ID, "slug", project.Slug, "name", project.Name, "primary_path", primary)
 }
 
 // Tool env of the owner scope, the profile home when the context carries none
@@ -155,7 +155,7 @@ func toolNotices(ctx context.Context, enabled []string) []any {
 }
 
 // Records the project skills of a session folder: the count loaded from a trusted root, or the untrusted root that holds some
-func setProjectSkills(ctx context.Context, info *pyjson.Object, cfg map[string]any, cwd string) {
+func setProjectSkills(ctx context.Context, info *jsonutil.Object, cfg map[string]any, cwd string) {
 	if strings.TrimSpace(cwd) == "" {
 		return
 	}
@@ -184,7 +184,7 @@ func setProjectSkills(ctx context.Context, info *pyjson.Object, cfg map[string]a
 		return
 	}
 	if root, found := scope.UntrustedProjectSkillsRoot(); root != "" {
-		info.Set("project_skills_untrusted", pyjson.ObjectOf("root", root, "count", found))
+		info.Set("project_skills_untrusted", jsonutil.ObjectOf("root", root, "count", found))
 	}
 }
 
@@ -208,14 +208,14 @@ func unknownToolsets(ctx context.Context, enabled []string, cfg map[string]any) 
 }
 
 // Skill names by category as the chat client offers them, kanban skills relevant for this scan only
-func cliSkills(ctx context.Context) *pyjson.Object {
-	grouped := pyjson.NewObject()
+func cliSkills(ctx context.Context) *jsonutil.Object {
+	grouped := jsonutil.NewObject()
 	for _, skill := range skills.NewScope(home.Dir(ctx), nil).FindAllSkillsKanbanScoped() {
 		category := "general"
-		if c := skill["category"]; pyrepr.Truthy(c) {
-			category = pyrepr.Str(c)
+		if c := skill["category"]; anyutil.IsTrue(c) {
+			category = anyutil.String(c)
 		}
-		names, _ := grouped.GetOr(category, nil).([]any)
+		names, _ := grouped.ValueOr(category, nil).([]any)
 		grouped.Set(category, append(names, skill["name"]))
 	}
 	return grouped
@@ -290,8 +290,8 @@ func agentContextLength(agent any) int {
 }
 
 // Banner fields only a built agent knows, its provider, tools, cached system prompt and context length
-func AgentInventory(ctx context.Context, agent any) *pyjson.Object {
-	info := pyjson.NewObject()
+func AgentInventory(ctx context.Context, agent any) *jsonutil.Object {
+	info := jsonutil.NewObject()
 	suppressed(func() { info.Set("provider", sessionProviderOf(ctx, agent, nil)) })
 	suppressed(func() { info.Set("tools", groupedTools(ctx, agentToolDefs(agent))) })
 	info.Set("system_prompt", agentCachedSystemPrompt(agent))
@@ -302,12 +302,12 @@ func AgentInventory(ctx context.Context, agent any) *pyjson.Object {
 }
 
 // Banner and status fields of one session, each section keeping its empty value when its builder fails
-func sessionInventory(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, agent any, cwd string) (*pyjson.Object, error) {
+func sessionInventory(ctx context.Context, a *SessionAuthority, policy *LocalSessionPolicy, agent any, cwd string) (*jsonutil.Object, error) {
 	branch := ""
 	if cwd != "" {
 		branch = tools.GitProbeBranch(cwd)
 	}
-	info := pyjson.ObjectOf("tools", pyjson.NewObject(), "skills", pyjson.NewObject(), "mcp_servers", []any{},
+	info := jsonutil.ObjectOf("tools", jsonutil.NewObject(), "skills", jsonutil.NewObject(), "mcp_servers", []any{},
 		"version", "", "release_date", "", "update_behind", nil, "update_command", "",
 		"branch", branch, "project", inventoryProject(ctx, cwd))
 	scoped := ownerScope(ctx, a, false)
@@ -336,7 +336,7 @@ func sessionInventory(ctx context.Context, a *SessionAuthority, policy *LocalSes
 		}
 	} else {
 		route := cfg["model"]
-		if !pyrepr.Truthy(route) {
+		if !anyutil.IsTrue(route) {
 			route = map[string]any{}
 		}
 		name, err := pyGet(route, "provider", nil)
@@ -344,8 +344,8 @@ func sessionInventory(ctx context.Context, a *SessionAuthority, policy *LocalSes
 			return nil, err
 		}
 		info.Set("provider", "")
-		if pyrepr.Truthy(name) {
-			info.Set("provider", pyrepr.Str(name))
+		if anyutil.IsTrue(name) {
+			info.Set("provider", anyutil.String(name))
 		}
 		if policy != nil {
 			var loaded []map[string]any
@@ -408,7 +408,7 @@ func sessionInventory(ctx context.Context, a *SessionAuthority, policy *LocalSes
 }
 
 // Session info plus the banner inventory, the inventory builders run off the owner loop
-func snapshotInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*pyjson.Object, error) {
+func snapshotInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*jsonutil.Object, error) {
 	info, err := localSessionInfo(ctx, a, ref)
 	if err != nil {
 		return nil, err
@@ -425,15 +425,15 @@ func snapshotInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*py
 	if err != nil {
 		return nil, err
 	}
-	inventory, err := sessionInventory(ctx, a, policy, agent, anyText(info.GetOr("cwd", nil)))
+	inventory, err := sessionInventory(ctx, a, policy, agent, anyText(info.ValueOr("cwd", nil)))
 	if err != nil {
 		return nil, err
 	}
-	if info.GetOr("tool_count", nil) == nil {
+	if info.ValueOr("tool_count", nil) == nil {
 		total := 0
-		if grouped, ok := inventory.GetOr("tools", nil).(*pyjson.Object); ok && grouped != nil {
-			for _, key := range grouped.Keys {
-				names, _ := grouped.Vals[key].([]any)
+		if grouped, ok := inventory.ValueOr("tools", nil).(*jsonutil.Object); ok && grouped != nil {
+			for _, key := range grouped.Keys() {
+				names, _ := grouped.Value(key).([]any)
 				total += len(names)
 			}
 		}
@@ -446,18 +446,18 @@ func snapshotInfo(ctx context.Context, a *SessionAuthority, ref SessionRef) (*py
 	if usage != nil {
 		info.Set("usage", usage)
 	}
-	if !pyTruthy(inventory.GetOr("system_prompt", nil)) {
+	if !pyTruthy(inventory.ValueOr("system_prompt", nil)) {
 		row, err := a.DB.GetSession(ctx, ref.SessionID)
 		if err != nil {
 			return nil, err
 		}
 		if row != nil {
-			inventory.Set("system_prompt", anyText(row.GetOr("system_prompt", nil)))
+			inventory.Set("system_prompt", anyText(row.ValueOr("system_prompt", nil)))
 		}
 	}
-	merged := inventory.Copy()
-	for _, key := range info.Keys {
-		merged.Set(key, info.Vals[key])
+	merged := inventory.Clone()
+	for _, key := range info.Keys() {
+		merged.Set(key, info.Value(key))
 	}
 	return merged, nil
 }

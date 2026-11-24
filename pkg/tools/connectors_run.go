@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // WatchIntervalSeconds is the observe tick of a driven operation, swapped by tests
@@ -25,14 +25,14 @@ const (
 const connWakeSlice = 250 * time.Millisecond
 
 // ConnCallback hands the connection.request payload to the surface that draws the card
-type ConnCallback func(payload *pyjson.Object) string
+type ConnCallback func(payload *jsonutil.Object) string
 
 // ConnKind holds the per kind hooks of a driven operation and the note appended to its result
 type ConnKind struct {
 	Prepare func(op *ConnectionOperation)
 	Observe func(op *ConnectionOperation)
 	Note    string
-	Result  func(op *ConnectionOperation) *pyjson.Object
+	Result  func(op *ConnectionOperation) *jsonutil.Object
 }
 
 // RunOptions carries the session, card callback and tick of one driven operation
@@ -83,7 +83,7 @@ func DriveOperation(ctx context.Context, env *Env, op *ConnectionOperation, kind
 
 // Python json.dumps with ensure_ascii off of an operation payload
 func connDumps(v any) string {
-	out, err := pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(v)
 	if err != nil {
 		panic(err)
 	}

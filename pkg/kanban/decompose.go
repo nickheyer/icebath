@@ -8,13 +8,13 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -122,7 +122,7 @@ type rosterEntry struct {
 func buildRoster(ctx context.Context) ([]rosterEntry, map[string]bool) {
 	all, err := manage.ListProfiles(ctx, false)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("decompose: failed to list profiles: %s", pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("decompose: failed to list profiles: %s", err.Error()))
 		return nil, map[string]bool{}
 	}
 	roster := make([]rosterEntry, 0, len(all))
@@ -189,11 +189,11 @@ func loadRouting(ctx context.Context, rootAssignee *string) *decomposeRouting {
 }
 
 // Single task promotion of a fanout false reply, the same effect as specify
-func applySingle(ctx context.Context, task *Task, parsed *pyjson.Object, routing *decomposeRouting, author string) (*DecomposeOutcome, error) {
+func applySingle(ctx context.Context, task *Task, parsed *jsonutil.Object, routing *decomposeRouting, author string) (*DecomposeOutcome, error) {
 	titleVal, bodyVal := titleBody(parsed)
 	var assigneeVal *string
 	if task.Assignee == nil || *task.Assignee == "" {
-		chosen := normalizeAssigneeChoice(parsed.GetOr("assignee", nil), routing.defaultAssignee, routing.validNames)
+		chosen := normalizeAssigneeChoice(parsed.ValueOr("assignee", nil), routing.defaultAssignee, routing.validNames)
 		assigneeVal = &chosen
 	}
 	if titleVal == nil && bodyVal == nil {
@@ -217,23 +217,23 @@ func applySingle(ctx context.Context, task *Task, parsed *pyjson.Object, routing
 func cleanChildren(taskID string, rawTasks []any, routing *decomposeRouting) ([]any, string) {
 	children := make([]any, 0, len(rawTasks))
 	for idx, entry := range rawTasks {
-		obj, ok := entry.(*pyjson.Object)
+		obj, ok := entry.(*jsonutil.Object)
 		if !ok {
 			return nil, fmt.Sprintf("tasks[%d] is not an object", idx)
 		}
-		title, ok := obj.GetOr("title", nil).(string)
+		title, ok := obj.ValueOr("title", nil).(string)
 		if !ok || strings.TrimSpace(title) == "" {
 			return nil, fmt.Sprintf("tasks[%d].title is missing or empty", idx)
 		}
-		body := obj.GetOr("body", nil)
-		assignee := obj.GetOr("assignee", nil)
+		body := obj.ValueOr("body", nil)
+		assignee := obj.ValueOr("assignee", nil)
 		chosen := normalizeAssigneeChoice(assignee, routing.defaultAssignee, routing.validNames)
 		if s, isStr := assignee.(string); isStr && strings.TrimSpace(s) != "" && !routing.validNames[strings.TrimSpace(s)] {
 			pkgLog().Info(fmt.Sprintf("decompose: task %s child %d picked unknown assignee %s — routing to default_assignee %s",
 				taskID, idx, errchain.Show(s), errchain.Show(routing.defaultAssignee)))
 		}
-		parentsValue := obj.GetOr("parents", nil)
-		if !pyrepr.Truthy(parentsValue) {
+		parentsValue := obj.ValueOr("parents", nil)
+		if !anyutil.IsTrue(parentsValue) {
 			parentsValue = []any{}
 		}
 		rawParents, isList := parentsValue.([]any)
@@ -242,8 +242,8 @@ func cleanChildren(taskID string, rawTasks []any, routing *decomposeRouting) ([]
 		}
 		parents := []any{}
 		for _, p := range rawParents {
-			n, isInt := pyint.Instance(p)
-			if isInt && n.IsInt64() && n.Int64() >= 0 && n.Int64() < int64(len(rawTasks)) && n.Int64() != int64(idx) {
+			n, isInt := anyutil.Int(p)
+			if isInt && n >= 0 && n < int64(len(rawTasks)) && n != int64(idx) {
 				parents = append(parents, p)
 			}
 		}
@@ -251,16 +251,16 @@ func cleanChildren(taskID string, rawTasks []any, routing *decomposeRouting) ([]
 		if s, isStr := body.(string); isStr {
 			bodyText = strings.TrimSpace(s)
 		}
-		children = append(children, pyjson.ObjectOf("title", textutil.First(strings.TrimSpace(title), 200), "body", bodyText,
+		children = append(children, jsonutil.ObjectOf("title", textutil.First(strings.TrimSpace(title), 200), "body", bodyText,
 			"assignee", chosen, "parents", parents))
 	}
 	return children, ""
 }
 
 // Fan out of a reply into a child graph under the orchestrator
-func applyFanout(ctx context.Context, taskID string, parsed *pyjson.Object, routing *decomposeRouting, author string) *DecomposeOutcome {
-	rawValue := parsed.GetOr("tasks", nil)
-	if !pyrepr.Truthy(rawValue) {
+func applyFanout(ctx context.Context, taskID string, parsed *jsonutil.Object, routing *decomposeRouting, author string) *DecomposeOutcome {
+	rawValue := parsed.ValueOr("tasks", nil)
+	if !anyutil.IsTrue(rawValue) {
 		rawValue = []any{}
 	}
 	rawTasks, ok := rawValue.([]any)
@@ -280,10 +280,10 @@ func applyFanout(ctx context.Context, taskID string, parsed *pyjson.Object, rout
 	if err != nil {
 		var ve *ValueError
 		if errors.As(err, &ve) {
-			return &DecomposeOutcome{TaskID: taskID, Reason: "DB rejected graph: " + pyrepr.ExceptionMessage(err)}
+			return &DecomposeOutcome{TaskID: taskID, Reason: "DB rejected graph: " + err.Error()}
 		}
 		pkgLog().Error(fmt.Sprintf("decompose: DB error on task %s", taskID), "exc", err)
-		return &DecomposeOutcome{TaskID: taskID, Reason: "DB error: " + pyrepr.ExceptionName(err)}
+		return &DecomposeOutcome{TaskID: taskID, Reason: "DB error: " + errorutil.Kind(err)}
 	}
 	if childIDs == nil {
 		return &DecomposeOutcome{TaskID: taskID, Reason: "task already decomposed or moved out of triage"}
@@ -315,7 +315,7 @@ func DecomposeTask(ctx context.Context, taskID string, author *string) (*Decompo
 	if author != nil && *author != "" {
 		auditAuthor = *author
 	}
-	if !pyrepr.Truthy(parsed.GetOr("fanout", nil)) {
+	if !anyutil.IsTrue(parsed.ValueOr("fanout", nil)) {
 		return applySingle(ctx, task, parsed, routing, auditAuthor)
 	}
 	return applyFanout(ctx, taskID, parsed, routing, auditAuthor), nil

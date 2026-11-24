@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One canonical compress summarize the agent side runs under the session's policy scope
@@ -65,10 +65,10 @@ type compressRequest struct {
 }
 
 // Compress request of a session.mutate payload, a focus only payload parsed like every native compress
-func compressRequestOf(payload *pyjson.Object) (compressRequest, error) {
+func compressRequestOf(payload *jsonutil.Object) (compressRequest, error) {
 	var request compressRequest
 	focusOnly := true
-	for _, key := range payload.Keys {
+	for _, key := range payload.Keys() {
 		if key != "focus" {
 			focusOnly = false
 		}
@@ -77,7 +77,7 @@ func compressRequestOf(payload *pyjson.Object) (compressRequest, error) {
 		raw, _ := payload.Get("focus")
 		text := ""
 		if raw != nil {
-			text = pyrepr.Str(raw)
+			text = anyutil.String(raw)
 		}
 		rest, preview, aggressive := provider.ExtractCompressFlags(strings.TrimSpace(text))
 		partial, keepLast, focus := provider.ParsePartialCompressArgs(rest)
@@ -89,8 +89,8 @@ func compressRequestOf(payload *pyjson.Object) (compressRequest, error) {
 		}
 		request = compressRequest{Preview: preview, Aggressive: aggressive, Partial: partial, KeepLast: keepLast, FocusTopic: focus}
 	} else {
-		request = compressRequest{Preview: pyTruthy(payload.GetOr("preview", false)), Partial: pyTruthy(payload.GetOr("partial", false)), KeepLast: 2,
-			Aggressive: pyTruthy(payload.GetOr("aggressive", false))}
+		request = compressRequest{Preview: pyTruthy(payload.ValueOr("preview", false)), Partial: pyTruthy(payload.ValueOr("partial", false)), KeepLast: 2,
+			Aggressive: pyTruthy(payload.ValueOr("aggressive", false))}
 		if keep, has := payload.Get("keep_last"); has {
 			n, ok := pathIndex(keep)
 			if !ok {
@@ -99,7 +99,7 @@ func compressRequestOf(payload *pyjson.Object) (compressRequest, error) {
 			request.KeepLast = n
 		}
 		if focus, has := payload.Get("focus"); has && focus != nil {
-			text := pyrepr.Str(focus)
+			text := anyutil.String(focus)
 			request.FocusTopic = &text
 		}
 	}
@@ -137,13 +137,13 @@ func compressPlatform(source *SessionSource) string {
 func objectMessages(messages []map[string]any) []any {
 	out := make([]any, len(messages))
 	for i, m := range messages {
-		out[i], _ = pyjson.AsObject(m)
+		out[i], _ = jsonutil.AsObject(m)
 	}
 	return out
 }
 
 // Summarizes the session transcript off the commit, a preview or noop report when nothing is written
-func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error) {
+func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, prepared *jsonutil.Object) (*jsonutil.Object, error) {
 	compressor, err := sessionCompressor()
 	if err != nil {
 		return nil, err
@@ -183,7 +183,7 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 	if err != nil {
 		return nil, err
 	}
-	target := pyrepr.Str(rawTarget)
+	target := anyutil.String(rawTarget)
 	history, err := a.DB.GetMessagesAsConversation(ctx, target, state.ConversationOptions{})
 	if err != nil {
 		return nil, err
@@ -203,7 +203,7 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 	}
 	if request.Preview {
 		report := provider.SummarizeCompressPreview(messages, request.Partial, request.KeepLast, request.FocusTopic, compressor.RequestTokens(ctx, messages, "", nil))
-		return pyjson.ObjectOf("status", "preview", "lines", report["lines"], "head_count", report["head_count"],
+		return jsonutil.ObjectOf("status", "preview", "lines", report["lines"], "head_count", report["head_count"],
 			"tail_count", report["tail_count"], "message_count", report["total"]), nil
 	}
 	var resident any
@@ -226,14 +226,14 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 		if resident == nil && !compressor.BuiltinEngine(engine) {
 			compressor.EndEngine(engine, target, messages)
 		}
-		var row *pyjson.Object
+		var row *jsonutil.Object
 		if resident == nil {
 			if row, err = a.DB.GetSession(ctx, target); err != nil {
 				return nil, err
 			}
 		}
 		tokens := compressRequestTokens(ctx, compressor, resident, messages, row)
-		return pyjson.ObjectOf("status", "noop", "summary", compressor.ManualSummary(messages, messages, tokens, tokens, engine)), nil
+		return jsonutil.ObjectOf("status", "noop", "summary", compressor.ManualSummary(messages, messages, tokens, tokens, engine)), nil
 	}
 	summary := compressor.ManualSummary(messages, compressed, compressor.RequestTokens(ctx, messages, "", nil), compressor.RequestTokens(ctx, compressed, "", nil), engine)
 	var hook any
@@ -257,7 +257,7 @@ func prepareCompress(ctx context.Context, a *SessionAuthority, live *LiveSession
 }
 
 // Engine owner a prepared compress carries, nil for an exact retry
-func preparedEngineOwner(prepared *pyjson.Object) *compressEngineOwner {
+func preparedEngineOwner(prepared *jsonutil.Object) *compressEngineOwner {
 	if prepared == nil {
 		return nil
 	}
@@ -267,7 +267,7 @@ func preparedEngineOwner(prepared *pyjson.Object) *compressEngineOwner {
 }
 
 // Notifies the committed boundary and ends a one off engine after the receipt transaction, swallowing engine failures
-func finishCompressEngine(ctx context.Context, a *SessionAuthority, prepared *pyjson.Object, result *pyjson.Object) {
+func finishCompressEngine(ctx context.Context, a *SessionAuthority, prepared *jsonutil.Object, result *jsonutil.Object) {
 	owner := preparedEngineOwner(prepared)
 	if owner == nil || (result == nil && !owner.owned) {
 		return
@@ -286,7 +286,7 @@ func finishCompressEngine(ctx context.Context, a *SessionAuthority, prepared *py
 	if result != nil {
 		newSID, _ := result.Get("target_session_id")
 		oldSID, _ := result.Get("previous_target_session_id")
-		compressor.NotifyCompressionComplete(scoped, owner.engine, owner.platform, owner.sessionKey, pyrepr.Str(newSID), pyrepr.Str(oldSID))
+		compressor.NotifyCompressionComplete(scoped, owner.engine, owner.platform, owner.sessionKey, anyutil.String(newSID), anyutil.String(oldSID))
 	}
 	if owner.owned {
 		var target any
@@ -299,16 +299,16 @@ func finishCompressEngine(ctx context.Context, a *SessionAuthority, prepared *py
 		list, _ := raw.([]any)
 		messages := make([]map[string]any, 0, len(list))
 		for _, item := range list {
-			if obj, ok := item.(*pyjson.Object); ok {
-				messages = append(messages, pyjson.Plain(obj).(map[string]any))
+			if obj, ok := item.(*jsonutil.Object); ok {
+				messages = append(messages, jsonutil.Plain(obj).(map[string]any))
 			}
 		}
-		compressor.EndEngine(owner.engine, pyrepr.Str(target), messages)
+		compressor.EndEngine(owner.engine, anyutil.String(target), messages)
 	}
 }
 
 // Fires post_compaction for a committed compress in the session's profile, swallowing plugin failures
-func firePostCompactionHook(ctx context.Context, a *SessionAuthority, prepared *pyjson.Object, result *pyjson.Object) {
+func firePostCompactionHook(ctx context.Context, a *SessionAuthority, prepared *jsonutil.Object, result *jsonutil.Object) {
 	compressor, err := sessionCompressor()
 	if err != nil {
 		pkgLog().Warn("post_compaction hook delivery failed: " + pyExceptionRepr(err))
@@ -321,18 +321,18 @@ func firePostCompactionHook(ctx context.Context, a *SessionAuthority, prepared *
 	}()
 	target, _ := result.Get("target_session_id")
 	previous, _ := result.Get("previous_target_session_id")
-	old := pyrepr.Str(previous)
-	if pyjson.Equal(previous, target) {
+	old := anyutil.String(previous)
+	if anyutil.Equal(previous, target) {
 		old = ""
 	}
 	raw, _ := prepared.Get("post_compaction")
 	hook, _ := raw.(map[string]any)
-	compressor.FirePostCompaction(profileRuntimeScope(ctx, a.ProfileID, false), pyrepr.Str(target), old,
+	compressor.FirePostCompaction(profileRuntimeScope(ctx, a.ProfileID, false), anyutil.String(target), old,
 		hook["before_tokens"], hook["after_tokens"], hook["messages_removed"])
 }
 
 // Rough request estimate of a compress noop from the agent's prompt and tools or a cold session's stored pin
-func compressRequestTokens(ctx context.Context, compressor SessionCompressor, agent any, messages []map[string]any, row *pyjson.Object) int {
+func compressRequestTokens(ctx context.Context, compressor SessionCompressor, agent any, messages []map[string]any, row *jsonutil.Object) int {
 	prompt, schemas := "", []map[string]any(nil)
 	if agent != nil {
 		prompt, schemas = compressor.RequestBasis(agent)
@@ -340,12 +340,12 @@ func compressRequestTokens(ctx context.Context, compressor SessionCompressor, ag
 	if agent == nil && row != nil {
 		prompt = ""
 		if value, _ := row.Get("system_prompt"); pyTruthy(value) {
-			prompt = pyrepr.Str(value)
+			prompt = anyutil.String(value)
 		}
 		var pin any
 		if raw, _ := row.Get("tool_names"); pyTruthy(raw) {
 			if text, ok := raw.(string); ok {
-				if loaded, err := pyjson.Loads(text); err == nil {
+				if loaded, err := jsonutil.Decode(text); err == nil {
 					pin = loaded
 				}
 			}

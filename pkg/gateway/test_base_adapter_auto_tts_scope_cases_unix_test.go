@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 func TestAutoTTSUnderMultiplexSpeaksThroughTheServedProfilesCommandProviderToken(t *testing.T) {
@@ -18,7 +18,7 @@ func TestAutoTTSUnderMultiplexSpeaksThroughTheServedProfilesCommandProviderToken
 		t.Fatal(err)
 	}
 	envRefsWrite(t, served, "config.yaml", "tts:\n  provider: srv\n  providers:\n    srv:\n      type: command\n"+
-		"      command: \"sh "+pyshlex.Quote(script)+" {output_path}\"\n      env_passthrough: [SKILL_TOKEN]\n")
+		"      command: \"sh "+shellutil.Quote(script)+" {output_path}\"\n      env_passthrough: [SKILL_TOKEN]\n")
 	a := newTurnAdapter(PlatformSlack)
 	paths, requested := a.synthesizeAutoTTS(ProfileRuntimeScope(context.Background(), served, true), "hello there")
 	if requested == nil || len(paths) != 1 || paths[0] != *requested {

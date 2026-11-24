@@ -5,7 +5,8 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Workspace grouping key of a session row, git repo root else cwd, the branch never fragmenting history
@@ -82,7 +83,7 @@ func keepSessionOwnedConfig(next string, stored any) (string, error) {
 	for _, key := range sessionOwnedConfigKeys {
 		was, held := current.Get(key)
 		now, has := incoming.Get(key)
-		if held && (!has || !pyjson.Equal(was, now)) {
+		if held && (!has || !anyutil.Equal(was, now)) {
 			incoming.Set(key, was)
 			changed = true
 		}
@@ -90,7 +91,7 @@ func keepSessionOwnedConfig(next string, stored any) (string, error) {
 	if !changed {
 		return next, nil
 	}
-	return pyjson.Dumps(incoming)
+	return jsonutil.Encode(incoming)
 }
 
 // Browser or API client runtime lock fields, nil strings meaning unset
@@ -110,9 +111,9 @@ func (d *SessionDB) UpdateSessionRuntimeLock(ctx context.Context, sessionID stri
 	}
 	options := lock.ModelOptions
 	if !pyTruthy(options) {
-		options = pyjson.NewObject()
+		options = jsonutil.NewObject()
 	}
-	patch := pyjson.ObjectOf("browser_model_lock", pyjson.ObjectOf(
+	patch := jsonutil.ObjectOf("browser_model_lock", jsonutil.ObjectOf(
 		"provider", text(lock.Provider), "model", text(lock.Model), "model_options", options,
 		"route_source", text(lock.RouteSource), "confirmed", lock.Confirmed, "updated_at", now()))
 	var modelArg any
@@ -126,7 +127,7 @@ func (d *SessionDB) UpdateSessionRuntimeLock(ctx context.Context, sessionID stri
 }
 
 // Picker columns of one session without the prompt join or the token flush, nil when absent
-func (d *SessionDB) GetSessionListRow(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (d *SessionDB) GetSessionListRow(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	return d.readOne(ctx, "SELECT id, source, title, started_at, ended_at, message_count, model, hidden, archived "+
 		"FROM sessions WHERE id = ?", sessionID)
 }
@@ -182,8 +183,8 @@ func (d *SessionDB) AssertExportSafe(ctx context.Context, sessionID string, maxM
 		return 0, err
 	}
 	count := 0
-	if row != nil && len(row.Keys) > 0 {
-		n, _ := exactInt(row.Vals[row.Keys[0]])
+	if row != nil && row.Len() > 0 {
+		n, _ := exactInt(row.Value(row.Keys()[0]))
 		count = int(n)
 	}
 	if count > limit {

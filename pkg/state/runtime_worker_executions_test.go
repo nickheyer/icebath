@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Store with session s, a boot epoch and one claimed admission, returning the epoch, admission id and generation
@@ -39,7 +39,7 @@ func TestRegisterWorkerExecutionReplaysOnlyAnIdenticalRegistration(t *testing.T)
 		t.Fatalf("public row %v", first)
 	}
 	again, err := db.RegisterWorkerExecution(ctx, reg)
-	if err != nil || !pyjson.Equal(again, first) {
+	if err != nil || !anyutil.Equal(again, first) {
 		t.Fatalf("replay %v %v", again, err)
 	}
 	changed := reg

@@ -13,12 +13,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Ephemeral system prompt of a config from its personality or system prompt, assigned by the command package
@@ -29,10 +29,10 @@ var ParseServiceTierConfig func(raw string) string
 
 // Python str of a value, empty for a falsy one
 func truthyText(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Ephemeral prefill messages from the configured prefill file
@@ -54,7 +54,7 @@ func loadPrefillMessages(ctx context.Context) []any {
 		pkgLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %v", path, err))
 		return nil
 	}
-	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+	data, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("Failed to load prefill messages from %s: %v", path, err))
 		return nil
@@ -170,8 +170,8 @@ func (r *GatewayRunner) resolveModelForChannel(ctx context.Context, platform gat
 // Ephemeral system prompt of a channel or thread, its override else the current profile prompt
 func (r *GatewayRunner) getSystemPromptForChannel(ctx context.Context, platform gateway.Platform, chatID string, threadID, parentID *string) string {
 	override := r.channelOverride(platform, chatID, threadID, parentID)
-	if override != nil && pyrepr.Truthy(override.SystemPrompt) {
-		return strings.TrimSpace(pyrepr.Str(override.SystemPrompt))
+	if override != nil && anyutil.IsTrue(override.SystemPrompt) {
+		return strings.TrimSpace(anyutil.String(override.SystemPrompt))
 	}
 	return loadEphemeralSystemPrompt(ctx)
 }
@@ -187,7 +187,7 @@ func parseReasoningCommandArgs(rawArgs string) (string, bool) {
 	if text == "" {
 		return "", false
 	}
-	tokens, err := pyshlex.SplitPOSIX(text, false)
+	tokens, err := shellutil.Split(text)
 	if err != nil {
 		tokens = strings.Fields(text)
 	}

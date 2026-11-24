@@ -7,14 +7,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Replaces install-stamp.json with identity read from the checkout itself, nil when git cannot identify it
-func WriteSourceStamp(root string, adopted bool) (*pyjson.Object, error) {
-	resolved, err := pypath.Resolve(root)
+func WriteSourceStamp(root string, adopted bool) (*jsonutil.Object, error) {
+	resolved, err := pathutil.Resolve(root)
 	if err != nil {
 		return nil, err
 	}
@@ -29,7 +29,7 @@ func WriteSourceStamp(root string, adopted bool) (*pyjson.Object, error) {
 		return nil, nil
 	}
 	builtAt := pyISONowUTC()
-	stamp := pyjson.ObjectOf(
+	stamp := jsonutil.ObjectOf(
 		"schemaVersion", 2,
 		"commit", *info.Commit,
 		"commitDate", optionalValue(info.CommitDate),

@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	templateutil "github.com/nickheyer/icebath/pkg/utils/template"
 )
 
 func mustBlueprint(t *testing.T, key string) *AutomationBlueprint {
@@ -27,7 +28,7 @@ func mustBlueprint(t *testing.T, key string) *AutomationBlueprint {
 	return nil
 }
 
-func mustFill(t *testing.T, key string, values map[string]any) *pyjson.Object {
+func mustFill(t *testing.T, key string, values map[string]any) *jsonutil.Object {
 	t.Helper()
 	spec, err := fillBlueprint(mustBlueprint(t, key), values, nil)
 	if err != nil {
@@ -36,7 +37,7 @@ func mustFill(t *testing.T, key string, values map[string]any) *pyjson.Object {
 	return spec
 }
 
-func specStr(spec *pyjson.Object, key string) string {
+func specStr(spec *jsonutil.Object, key string) string {
 	v, _ := spec.Get(key)
 	s, _ := v.(string)
 	return s
@@ -114,7 +115,7 @@ func TestBlueprintValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := spec.Get("origin"); !pyrepr.Equal(got, origin) {
+	if got, _ := spec.Get("origin"); !anyutil.Equal(got, origin) {
 		t.Fatalf("origin %#v", got)
 	}
 }
@@ -123,12 +124,12 @@ func TestPriceWatchBlueprintScheduleResolves(t *testing.T) {
 	bp := mustBlueprint(t, "price-watch")
 	slot := blueprintSlot(bp, "", "interval_h")
 	for _, opt := range slot.Options {
-		expr, err := pyrepr.FormatMap(bp.ScheduleTemplate, map[string]any{"interval_h": opt})
+		expr, err := templateutil.Format(bp.ScheduleTemplate, map[string]any{"interval_h": opt})
 		if err != nil {
 			t.Fatal(err)
 		}
 		fields := strings.Fields(expr)
-		if len(fields) != 5 || fields[1] != "*/"+pyrepr.Str(opt) {
+		if len(fields) != 5 || fields[1] != "*/"+anyutil.String(opt) {
 			t.Fatalf("invalid cron expr: %s", expr)
 		}
 	}
@@ -177,7 +178,7 @@ func TestEveryBlueprintSkillIsBundledAndResolves(t *testing.T) {
 				t.Fatalf("%s skill %s not bundled", b.Key, s)
 			}
 			if !shallow[s] {
-				t.Fatalf("blueprint %s loads nonexistent skill %s", pyrepr.StrRepr(b.Key), pyrepr.StrRepr(s))
+				t.Fatalf("blueprint %s loads nonexistent skill %s", strconv.Quote(b.Key), strconv.Quote(s))
 			}
 		}
 	}
@@ -211,7 +212,7 @@ func TestPriceWatchFillsAndPersistsWithChosenCadence(t *testing.T) {
 				t.Fatalf("prompt lacks %s", text)
 			}
 		}
-		h, _ := strconv.Atoi(pyrepr.Str(hours))
+		h, _ := strconv.Atoi(anyutil.String(hours))
 		gaps := cronGaps(t, saved.Schedule.Expr, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), 26)
 		if len(gaps) != 1 || !gaps[time.Duration(h)*time.Hour] {
 			t.Fatalf("hours %v gaps %v", hours, gaps)

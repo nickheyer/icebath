@@ -11,11 +11,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var httpPrefixes = []string{"http://", "https://"}
@@ -37,7 +32,7 @@ func inboundMediaCache(ctx context.Context) string {
 
 // Mime of a path from its extension, the per kind default when it guesses none
 func guessMime(path, kind string) string {
-	if typ, _, err := pymimetypes.GuessType(path, true); err == nil && typ != "" {
+	if typ := mimeutil.TypeByURL(path); typ != "" {
 		return typ
 	}
 	if m := defaultMime[kind]; m != "" {
@@ -61,18 +56,18 @@ func (a *WhatsAppCloudAdapter) uploadMedia(ctx context.Context, filePath, mediaK
 		limit = mediaSizeLimits["document"]
 	}
 	if size := info.Size(); size > limit {
-		return nil, fmt.Sprintf("File %s is %d bytes; Cloud API %s cap is %d bytes", pypath.Basename(filePath), size, mediaKind, limit), nil
+		return nil, fmt.Sprintf("File %s is %d bytes; Cloud API %s cap is %d bytes", pathutil.Name(filePath), size, mediaKind, limit), nil
 	}
 	if mimeType == "" {
 		mimeType = guessMime(filePath, mediaKind)
 	}
-	resp, err := func() (*pyhttpx.Response, error) {
+	resp, err := func() (*httputil.Response, error) {
 		data, err := os.ReadFile(filePath)
 		if err != nil {
-			return nil, &pyErr{pypath.OSErrorClass(err), pypath.OSErrorText(err)}
+			return nil, err
 		}
 		body, contentType, err := gateway.EncodeHTTPXMultipart([]gateway.MultipartPart{
-			{Name: "file", Filename: pypath.Basename(filePath), ContentType: mimeType, Data: data},
+			{Name: "file", Filename: pathutil.Name(filePath), ContentType: mimeType, Data: data},
 			{Name: "messaging_product", Data: []byte("whatsapp")},
 			{Name: "type", Data: []byte(mimeType)},
 		})
@@ -88,7 +83,7 @@ func (a *WhatsAppCloudAdapter) uploadMedia(ctx context.Context, filePath, mediaK
 			return nil, "", ctx.Err()
 		}
 		pkgLog().Error("[whatsapp_cloud] media upload failed: " + err.Error())
-		return nil, pyrepr.ExceptionMessage(err), nil
+		return nil, err.Error(), nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		msg, err := responseError(resp)
@@ -96,11 +91,11 @@ func (a *WhatsAppCloudAdapter) uploadMedia(ctx context.Context, filePath, mediaK
 	}
 	var mediaID any
 	if decoded, err := resp.JSON(); err == nil {
-		if m, ok := pyjson.Dict(decoded); ok {
+		if m, ok := jsonutil.AsMap(decoded); ok {
 			mediaID = m["id"]
 		}
 	}
-	if !pyrepr.Truthy(mediaID) {
+	if !anyutil.IsTrue(mediaID) {
 		return nil, "Upload response missing 'id'", nil
 	}
 	return mediaID, "", nil
@@ -111,12 +106,12 @@ func (a *WhatsAppCloudAdapter) sendMedia(ctx context.Context, chatID, mediaKind 
 	if a.client() == nil {
 		return gateway.SendResult{Success: false, Error: "Not connected"}, nil
 	}
-	if pyrepr.Truthy(mediaID) == (mediaLink != "") {
+	if anyutil.IsTrue(mediaID) == (mediaLink != "") {
 		return gateway.SendResult{Success: false, Error: "Exactly one of media_id or media_link must be set"}, nil
 	}
-	block := pyjson.ObjectOf("link", mediaLink)
-	if pyrepr.Truthy(mediaID) {
-		block = pyjson.ObjectOf("id", mediaID)
+	block := jsonutil.ObjectOf("link", mediaLink)
+	if anyutil.IsTrue(mediaID) {
+		block = jsonutil.ObjectOf("id", mediaID)
 	}
 	if caption != "" && (mediaKind == "image" || mediaKind == "video" || mediaKind == "document") {
 		block.Set("caption", caption)
@@ -150,7 +145,7 @@ func (a *WhatsAppCloudAdapter) sendMediaFromPathOrLink(ctx context.Context, chat
 	if err != nil {
 		return result, err
 	}
-	if result.Success && pyrepr.Truthy(result.MessageID) && link == "" {
+	if result.Success && anyutil.IsTrue(result.MessageID) && link == "" {
 		mime := mimeType
 		if mime == "" {
 			mime = guessMime(source, mediaKind)
@@ -181,7 +176,7 @@ func (a *WhatsAppCloudAdapter) SendVideo(ctx context.Context, chatID, videoPath,
 // Local file sent as a document under its given name or its basename
 func (a *WhatsAppCloudAdapter) SendDocument(ctx context.Context, chatID, filePath, caption, fileName, replyTo string, metadata, extra map[string]any) (gateway.SendResult, error) {
 	if fileName == "" {
-		fileName = pypath.Basename(filePath)
+		fileName = pathutil.Name(filePath)
 	}
 	return a.sendMediaFromPathOrLink(ctx, chatID, filePath, "document", caption, fileName, replyTo, "")
 }
@@ -239,7 +234,7 @@ func (a *WhatsAppCloudAdapter) convertToOpus(ctx context.Context, mp3Path string
 }
 
 // Authenticated Graph GET logged uniformly on failure, nil on a transport error or non 200 status
-func (a *WhatsAppCloudAdapter) graphGet(ctx context.Context, client *http.Client, url, what, mediaID string) (*pyhttpx.Response, error) {
+func (a *WhatsAppCloudAdapter) graphGet(ctx context.Context, client *http.Client, url, what, mediaID string) (*httputil.Response, error) {
 	resp, err := doRequest(ctx, client, http.MethodGet, url, a.authHeaders(false), nil)
 	if err != nil {
 		if ctx.Err() != nil {
@@ -267,7 +262,7 @@ func (a *WhatsAppCloudAdapter) downloadMediaToCache(ctx context.Context, mediaID
 		if len(short) > 64 {
 			short = short[:64]
 		}
-		pkgLog().Warn("[whatsapp_cloud] refusing malformed media id " + pyrepr.Repr(string(short)))
+		pkgLog().Warn("[whatsapp_cloud] refusing malformed media id " + anyutil.Quote(string(short)))
 		return "", "", nil
 	}
 	metaResp, err := a.graphGet(ctx, client, fmt.Sprintf("%s/%s/%s", graphAPIBase, a.apiVersion, mediaID), "metadata", mediaID)
@@ -283,17 +278,17 @@ func (a *WhatsAppCloudAdapter) downloadMediaToCache(ctx context.Context, mediaID
 		return "", "", err
 	}
 	tempURL := mm["url"]
-	mime := pyrepr.Or(mm["mime_type"], "")
-	if !pyrepr.Truthy(tempURL) {
+	mime := anyutil.Or(mm["mime_type"], "")
+	if !anyutil.IsTrue(tempURL) {
 		return "", "", nil
 	}
-	blobResp, err := a.graphGet(ctx, client, pyrepr.Str(tempURL), "bytes", mediaID)
+	blobResp, err := a.graphGet(ctx, client, anyutil.String(tempURL), "bytes", mediaID)
 	if err != nil || blobResp == nil {
 		return "", "", err
 	}
 	mimeText := ""
-	if pyrepr.Truthy(mime) {
-		mimeText = pyrepr.Str(mime)
+	if anyutil.IsTrue(mime) {
+		mimeText = anyutil.String(mime)
 	}
 	cache := inboundMediaCache(ctx)
 	ext := extHint
@@ -305,10 +300,10 @@ func (a *WhatsAppCloudAdapter) downloadMediaToCache(ctx context.Context, mediaID
 	}
 	outPath := filepath.Join(cache, mediaID+ext)
 	if err := os.MkdirAll(cache, 0o777); err != nil {
-		return "", "", &pyErr{pypath.OSErrorClass(err), pypath.OSErrorText(err)}
+		return "", "", err
 	}
 	if err := os.WriteFile(outPath, blobResp.Content, 0o666); err != nil {
-		pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to write cached media (id=%s): %s", mediaID, pypath.OSErrorText(err)))
+		pkgLog().Error(fmt.Sprintf("[whatsapp_cloud] failed to write cached media (id=%s): %s", mediaID, err.Error()))
 		return "", "", nil
 	}
 	return outPath, mimeText, nil

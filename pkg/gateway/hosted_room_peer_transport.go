@@ -7,7 +7,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Coordinates of one scoped prepare call on a target gateway's room member API
@@ -34,10 +34,10 @@ type PeerRoomScope struct {
 // Authenticated client of a target gateway's narrow room member API
 type HostedRoomPeerClient interface {
 	Prepare(ctx context.Context, req PeerPrepare) (map[string]any, error)
-	Dispatch(ctx context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error)
+	Dispatch(ctx context.Context, dispatch *jsonutil.Object, grant string) (map[string]any, error)
 	History(ctx context.Context, roomID, profile, sessionID, grant string) ([]map[string]any, error)
 	Status(ctx context.Context, roomID, profile, sessionID, grant string) (map[string]any, error)
-	Stop(ctx context.Context, dispatch *pyjson.Object, grant string) (map[string]any, error)
+	Stop(ctx context.Context, dispatch *jsonutil.Object, grant string) (map[string]any, error)
 }
 
 // Peer client that binds its room scope before calls

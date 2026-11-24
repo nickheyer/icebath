@@ -14,9 +14,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -25,7 +25,7 @@ var cuaDriverTeamIDs = []string{"4YEC26S9KF", "YCK386LBJ7"}
 
 // CuaDriver.app bundle carrying the resolved driver binary, empty when the binary is not inside one
 func resolveCuaDriverAppPath(driverCmd string) string {
-	resolved, err := pypath.Realpath(driverCmd, pypath.Lax)
+	resolved, err := pathutil.Resolve(driverCmd)
 	if err != nil {
 		resolved = driverCmd
 	}
@@ -260,7 +260,7 @@ func newEmbeddedCuaDaemon(env *tools.Env, driverCmd, permissionMode, capabilityM
 		return nil, errors.New("bounded permission mode requires computer_use.capability_manifest")
 	}
 	if manifest != "" {
-		abs, err := pypath.Abspath(pypath.Expanduser(manifest))
+		abs, err := filepath.Abs(pathutil.ExpandUser(manifest))
 		if err != nil {
 			return nil, err
 		}

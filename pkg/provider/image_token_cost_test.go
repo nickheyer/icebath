@@ -93,7 +93,7 @@ func TestImageCostNothingLearnedWithoutImagesOrAnchor(t *testing.T) {
 	imageCostTables.mu.Lock()
 	defer imageCostTables.mu.Unlock()
 	if imageCostTables.launch != nil && imageCostTables.launch.Len() != 0 {
-		t.Fatalf("table %v", imageCostTables.launch.Keys)
+		t.Fatalf("table %v", imageCostTables.launch.Keys())
 	}
 }
 

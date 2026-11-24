@@ -6,7 +6,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctypes"
+	dlutil "github.com/nickheyer/icebath/pkg/utils/dl"
 )
 
 // Opus frame geometry and encoder settings of discord.py's opus module
@@ -47,7 +47,7 @@ type opusFuncs struct {
 var (
 	opusBindMu  sync.Mutex
 	opusBound   *opusFuncs
-	opusBoundOn *pyctypes.CDLL
+	opusBoundOn *dlutil.Library
 )
 
 // Bound functions of the loaded libopus, the not loaded error discord.py raises when none is loaded
@@ -80,7 +80,7 @@ func opusAPI() (*opusFuncs, error) {
 		if err != nil {
 			return nil, err
 		}
-		pyctypes.RegisterFunc(fn, addr)
+		dlutil.RegisterFunc(fn, addr)
 	}
 	opusBound, opusBoundOn = f, lib
 	return f, nil
@@ -96,7 +96,7 @@ type opusError struct{ code int32 }
 
 func (e *opusError) Error() string {
 	if f, err := opusAPI(); err == nil {
-		return pyctypes.GoString(f.strerror(e.code))
+		return dlutil.GoString(f.strerror(e.code))
 	}
 	return fmt.Sprintf("opus error %d", e.code)
 }

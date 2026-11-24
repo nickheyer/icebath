@@ -10,12 +10,12 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var skillMissingFields = []struct{ key, format string }{
@@ -76,7 +76,7 @@ func (s *Store) credentialStoreScopeLabel(ctx context.Context) string {
 func (s *Store) deliveryPlatformRoutedFromPrimaryGateway(ctx context.Context, platform string) bool {
 	key := strings.ToLower(platform)
 	for _, route := range primaryProfileRoutesForCurrentHome(ctx) {
-		if strings.ToLower(pyrepr.Str(route.Platform)) == key {
+		if strings.ToLower(anyutil.String(route.Platform)) == key {
 			return true
 		}
 	}
@@ -144,17 +144,17 @@ func (s *Store) preflightCheckDelivery(ctx context.Context, job *Job) *string {
 func (s *Store) preflightCheckSkills(ctx context.Context, job *Job) *string {
 	for _, name := range jobSkillNames(job) {
 		var payload map[string]any
-		if json.Unmarshal([]byte(preflightSkillView(ctx, s.home, name)), &payload) != nil || payload == nil || !pyTruthy(payload["success"]) {
+		if json.Unmarshal([]byte(preflightSkillView(ctx, s.home, name)), &payload) != nil || payload == nil || !anyutil.IsTrue(payload["success"]) {
 			continue
 		}
-		if !pyTruthy(payload["setup_needed"]) && payload["readiness_status"] != "setup_needed" {
+		if !anyutil.IsTrue(payload["setup_needed"]) && payload["readiness_status"] != "setup_needed" {
 			continue
 		}
 		var missing []string
 		for _, f := range skillMissingFields {
 			list, _ := payload[f.key].([]any)
 			for _, item := range list {
-				missing = append(missing, fmt.Sprintf(f.format, pyrepr.Str(item)))
+				missing = append(missing, fmt.Sprintf(f.format, anyutil.String(item)))
 			}
 		}
 		detail := strings.Join(missing, ", ")

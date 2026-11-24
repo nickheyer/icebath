@@ -7,8 +7,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Linux reads every process cwd from procfs
@@ -55,5 +53,5 @@ func comm(pid int) (string, error) {
 	if start < 0 || end < start {
 		return "", errors.New("malformed /proc stat line")
 	}
-	return pystr.SurrogateEscapeDecode(data[start+1 : end]), nil
+	return string(data[start+1 : end]), nil
 }

@@ -10,16 +10,16 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Type, message and the provider fields of an API error for the request dump
-func apiErrorDebugInfo(err error) *pyjson.Object {
-	info := pyjson.NewObject()
+func apiErrorDebugInfo(err error) *jsonutil.Object {
+	info := jsonutil.NewObject()
 	typeName := apiErrorClassName(err)
 	var apiErr *provider.APIError
 	if errors.As(err, &apiErr) && apiErr.StatusCode != 0 {
@@ -44,8 +44,8 @@ func apiErrorDebugInfo(err error) *pyjson.Object {
 	}
 	if apiErr.Body != "" {
 		body := any(apiErr.Body)
-		if parsed, perr := pyjson.Loads(apiErr.Body); perr == nil {
-			if obj, ok := parsed.(*pyjson.Object); ok {
+		if parsed, perr := jsonutil.Decode(apiErr.Body); perr == nil {
+			if obj, ok := parsed.(*jsonutil.Object); ok {
 				body = obj
 			}
 		}
@@ -107,7 +107,7 @@ func (a *AIAgent) dumpAPIRequestDebug(ctx context.Context, apiKwargs map[string]
 // Builds, redacts and atomically writes the request dump, echoing it to stdout when asked
 func (a *AIAgent) writeAPIRequestDump(ctx context.Context, apiKwargs map[string]any, reason string, apiErr error) (string, error) {
 	body := map[string]any{}
-	if copied, ok := pycopy.DeepCopy(apiKwargs).(map[string]any); ok {
+	if copied, ok := any(anyutil.Clone(apiKwargs)).(map[string]any); ok {
 		for k, v := range copied {
 			if v != nil && k != "timeout" {
 				body[k] = v
@@ -129,15 +129,15 @@ func (a *AIAgent) writeAPIRequestDump(ctx context.Context, apiKwargs map[string]
 	if masked == "" {
 		masked = "None"
 	}
-	headers := pyjson.NewObject()
+	headers := jsonutil.NewObject()
 	headers.Set("Authorization", "Bearer "+masked)
 	headers.Set("Content-Type", "application/json")
-	request := pyjson.NewObject()
+	request := jsonutil.NewObject()
 	request.Set("method", "POST")
 	request.Set("url", strings.TrimRight(a.baseURL, "/")+endpoint)
 	request.Set("headers", headers)
 	request.Set("body", body)
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("timestamp", naiveISOFormat(time.Now()))
 	payload.Set("session_id", a.sessionID)
 	payload.Set("reason", reason)
@@ -148,20 +148,20 @@ func (a *AIAgent) writeAPIRequestDump(ctx context.Context, apiKwargs map[string]
 	stamp := time.Now()
 	dumpFile := filepath.Join(a.logsDir, fmt.Sprintf("request_dump_%s_%s_%06d.json", safeSessionFilenameComponent(a.sessionID), stamp.Format("20060102_150405"), stamp.Nanosecond()/1000))
 	str := func(v any) (any, error) { return fmt.Sprint(v), nil }
-	serialized, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Indent(2), pyjson.Default(str))
+	serialized, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.Convert(str))
 	if err != nil {
 		return "", err
 	}
-	redacted, err := pyjson.Loads(tools.RedactSensitiveTextWith(a.env, serialized, tools.RedactOptions{Force: true}))
+	redacted, err := jsonutil.Decode(tools.RedactSensitiveTextWith(a.env, serialized, tools.RedactOptions{Force: true}))
 	if err != nil {
 		return "", err
 	}
-	if err := config.AtomicJSONWriteWith(tools.WithEnvHome(ctx, a.env), dumpFile, redacted, pyjson.Default(str)); err != nil {
+	if err := config.AtomicJSONWriteWith(tools.WithEnvHome(ctx, a.env), dumpFile, redacted, jsonutil.Convert(str)); err != nil {
 		return "", err
 	}
 	a.vprint(a.logPrefix+"🧾 Request debug dump written to: "+dumpFile, false, false)
 	if config.EnvVarEnabled("ICEBATH_DUMP_REQUEST_STDOUT") {
-		echo, err := pyjson.Dumps(redacted, pyjson.EnsureASCII(false), pyjson.Indent(2), pyjson.Default(str))
+		echo, err := jsonutil.Encode(redacted, jsonutil.Indent(2), jsonutil.Convert(str))
 		if err != nil {
 			return "", err
 		}
@@ -175,7 +175,7 @@ func (a *AIAgent) directNativeAnthropicToolCacheCapability() bool {
 	if a.apiMode != "anthropic_messages" {
 		return false
 	}
-	host, err := pyurl.BaseURLHostname(a.baseURL)
+	host, err := urlutil.BaseHost(a.baseURL)
 	if err != nil {
 		panic(err)
 	}

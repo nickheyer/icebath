@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Session bound env names stripped from a delivery child, the canonical session context surface
@@ -16,7 +16,7 @@ func deliveryChildSessionEnvNames() []string {
 }
 
 // Env of one delivery turn child built from the target profile env, dispatcher author and session identity dropped
-func DeliveryEnv(ctx context.Context, env *tools.Env, author *pyjson.Object, profileHome string) (map[string]string, error) {
+func DeliveryEnv(ctx context.Context, env *tools.Env, author *jsonutil.Object, profileHome string) (map[string]string, error) {
 	target := profileHome
 	overridden := home.Override(ctx) != "" || (env != nil && env.Home != "" && env.Home != home.Process())
 	if target == "" && IsMultiplexActive(ctx) && !overridden && boundScope(ctx) == nil {

@@ -4,10 +4,9 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Child whose conversation returns the scripted result, the MockAgent of the observability tests
@@ -40,19 +39,19 @@ func scriptedCostChild(t *testing.T, env *tools.Env, model string, promptTokens,
 	t.Cleanup(func() { newChildAIAgentFn = prevNew })
 }
 
-func delegateFirstResult(t *testing.T, parent *AIAgent, goal string) *pyjson.Object {
+func delegateFirstResult(t *testing.T, parent *AIAgent, goal string) *jsonutil.Object {
 	t.Helper()
 	out, err := delegateTask(tools.WithToolEnv(context.Background(), parent.env), parent, map[string]any{"goal": goal})
 	return firstResult(t, dispatchPayload(t, out, err))
 }
 
-func traceEntries(t *testing.T, entry *pyjson.Object) []*pyjson.Object {
+func traceEntries(t *testing.T, entry *jsonutil.Object) []*jsonutil.Object {
 	t.Helper()
 	raw, _ := entry.Get("tool_trace")
 	list, _ := raw.([]any)
-	out := make([]*pyjson.Object, 0, len(list))
+	out := make([]*jsonutil.Object, 0, len(list))
 	for _, item := range list {
-		out = append(out, item.(*pyjson.Object))
+		out = append(out, item.(*jsonutil.Object))
 	}
 	return out
 }
@@ -74,9 +73,9 @@ func TestDelegateObservabilityObservabilityFieldsPresent(t *testing.T) {
 	})
 	entry := delegateFirstResult(t, parent, "Test observability")
 	tokens, _ := entry.Get("tokens")
-	in, _ := tokens.(*pyjson.Object).Get("input")
-	out, _ := tokens.(*pyjson.Object).Get("output")
-	if entryText(entry, "model") != "claude-sonnet-4-6" || entryText(entry, "exit_reason") != "completed" || !pyrepr.Equal(in, 5000) || !pyrepr.Equal(out, 1200) {
+	in, _ := tokens.(*jsonutil.Object).Get("input")
+	out, _ := tokens.(*jsonutil.Object).Get("output")
+	if entryText(entry, "model") != "claude-sonnet-4-6" || entryText(entry, "exit_reason") != "completed" || !anyutil.Equal(in, 5000) || !anyutil.Equal(out, 1200) {
 		t.Fatalf("entry %v", entry)
 	}
 	trace := traceEntries(t, entry)
@@ -99,7 +98,7 @@ func TestDelegateObservabilityToolTraceHandlesListContentBlocks(t *testing.T) {
 	})
 	trace := traceEntries(t, delegateFirstResult(t, parent, "Test list content"))
 	resultBytes, _ := trace[0].Get("result_bytes")
-	if n, err := pyint.Float(resultBytes); entryText(trace[0], "tool") != "image_generate" || entryText(trace[0], "status") != "ok" || err != nil || n <= 0 {
+	if n, err := anyutil.ToFloat(resultBytes); entryText(trace[0], "tool") != "image_generate" || entryText(trace[0], "status") != "ok" || err != nil || n <= 0 {
 		t.Fatalf("trace %v", trace)
 	}
 }

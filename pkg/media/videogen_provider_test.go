@@ -14,10 +14,10 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 type fakeVideoProvider struct {
@@ -31,7 +31,7 @@ type fakeVideoProvider struct {
 }
 
 func (p *fakeVideoProvider) Name() string        { return p.name }
-func (p *fakeVideoProvider) DisplayName() string { return pystr.Title(p.name) }
+func (p *fakeVideoProvider) DisplayName() string { return textutil.Title(p.name) }
 func (p *fakeVideoProvider) GetSetupSchema() map[string]any {
 	return map[string]any{"name": p.DisplayName(), "badge": "", "tag": "", "env_vars": []any{}}
 }
@@ -131,15 +131,15 @@ func newFakeOpenAIVideos(t *testing.T) *fakeOpenAIVideos {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		job := func(id string) {
-			body, _ := pyjson.Dumps(map[string]any{"id": id, "status": f.status, "error": nil, "data": f.data})
+			body, _ := jsonutil.Encode(map[string]any{"id": id, "status": f.status, "error": nil, "data": f.data})
 			w.Header().Set("Content-Type", "application/json")
 			io.WriteString(w, body)
 		}
 		switch {
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/videos"):
 			raw, _ := io.ReadAll(r.Body)
-			parsed, _ := pyjson.Loads(string(raw))
-			f.create, _ = pyjson.Plain(parsed).(map[string]any)
+			parsed, _ := jsonutil.Decode(string(raw))
+			f.create, _ = jsonutil.Plain(parsed).(map[string]any)
 			job("vid_123")
 		case strings.HasSuffix(r.URL.Path, "/content"):
 			f.downloadedID = strings.TrimSuffix(strings.TrimPrefix(r.URL.Path[strings.Index(r.URL.Path, "/videos/"):], "/videos/"), "/content")

@@ -6,13 +6,13 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Prepare step of a policy or compress mutation over its fenced snapshot
-type mutationPreparer func(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *pyjson.Object, prepared *pyjson.Object) (*pyjson.Object, error)
+type mutationPreparer func(ctx context.Context, a *SessionAuthority, live *LiveSession, payload *jsonutil.Object, prepared *jsonutil.Object) (*jsonutil.Object, error)
 
 // Prepare step of an operation, the editor servers bound into the editor_mcp one
 func mutationPrepareStep(operation string, editorServers any) mutationPreparer {
@@ -22,7 +22,7 @@ func mutationPrepareStep(operation string, editorServers any) mutationPreparer {
 	case "compress":
 		return prepareCompress
 	case "editor_mcp":
-		return func(ctx context.Context, a *SessionAuthority, live *LiveSession, payload, prepared *pyjson.Object) (*pyjson.Object, error) {
+		return func(ctx context.Context, a *SessionAuthority, live *LiveSession, payload, prepared *jsonutil.Object) (*jsonutil.Object, error) {
 			return prepareEditorMCP(ctx, a, live, payload, prepared, editorServers)
 		}
 	}
@@ -31,7 +31,7 @@ func mutationPrepareStep(operation string, editorServers any) mutationPreparer {
 
 // Writer phase of session.mutate and of the editor MCP refreeze, the fenced prepare, receipt commit and its projections
 func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, params mutationParams, editorServers any, principalID string,
-	authorizeWrite func(ctx context.Context, conn state.SQLiteConn) error, commitLock sync.Locker) (*pyjson.Object, error) {
+	authorizeWrite func(ctx context.Context, conn state.SQLiteConn) error, commitLock sync.Locker) (*jsonutil.Object, error) {
 	operation := params.Operation
 	live, _ := a.live(ref.SessionID)
 	applied := false
@@ -55,12 +55,12 @@ func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, par
 	fields := state.RuntimeMutation{Epoch: a.Epoch, PrincipalID: principalID, SessionID: ref.SessionID, RequestID: params.RequestID,
 		ExpectedRevision: params.ExpectedRevision, ExpectedGeneration: params.ExpectedGeneration, Operation: operation,
 		Payload: params.Payload, LiveGuard: liveGuard}
-	prepareOnly := func() (*pyjson.Object, error) {
+	prepareOnly := func() (*jsonutil.Object, error) {
 		gate := fields
 		gate.PrepareOnly = true
 		return a.DB.MutateRuntimeSession(ctx, gate)
 	}
-	var prepared *pyjson.Object
+	var prepared *jsonutil.Object
 	var err error
 	if operation == "branch" {
 		if prepared, editorServers, err = prepareBranchEditor(ctx, a, ref, editorServers, prepareOnly); err != nil {
@@ -75,7 +75,7 @@ func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, par
 			if live == nil && (operation == "model" || operation == "compress") {
 				return nil, &PyError{Kind: "AttributeError", Msg: "the mutation has no session source"}
 			}
-			payload, ok := pyjson.AsObject(params.Payload)
+			payload, ok := jsonutil.AsObject(params.Payload)
 			if !ok {
 				return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the mutation payload is %s, expected a mapping", errchain.Kind(params.Payload))}
 			}
@@ -83,7 +83,7 @@ func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, par
 				return nil, err
 			}
 			if status, _ := prepared.Get("status"); status == "preview" || status == "noop" || status == "confirmation_required" || status == "refreshed" {
-				return preparedWith(pyjson.ObjectOf("session_id", ref.SessionID, "operation", operation), flattenObject(prepared)...), nil
+				return preparedWith(jsonutil.ObjectOf("session_id", ref.SessionID, "operation", operation), flattenObject(prepared)...), nil
 			}
 		}
 	}
@@ -93,7 +93,7 @@ func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, par
 		return nil, err
 	}
 	if operation == "model" && live != nil && prepared != nil {
-		if restore, ok := pyjson.AsObject(prepared.GetOr("restore", nil)); ok {
+		if restore, ok := jsonutil.AsObject(prepared.ValueOr("restore", nil)); ok {
 			a.mu.Lock()
 			live.OnceRestore = &onceRestore{principal: principalID, payload: restore}
 			a.mu.Unlock()
@@ -108,9 +108,9 @@ func writeMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, par
 }
 
 // Key value pairs of an object in order
-func flattenObject(o *pyjson.Object) []any {
-	pairs := make([]any, 0, 2*len(o.Keys))
-	for _, key := range o.Keys {
+func flattenObject(o *jsonutil.Object) []any {
+	pairs := make([]any, 0, 2*o.Len())
+	for _, key := range o.Keys() {
 		value, _ := o.Get(key)
 		pairs = append(pairs, key, value)
 	}
@@ -118,14 +118,14 @@ func flattenObject(o *pyjson.Object) []any {
 }
 
 // Commits the receipt under the commit lock and publishes its projections, an exact retry answering its stored result
-func commitMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, params mutationParams, prepared *pyjson.Object,
-	fields state.RuntimeMutation, authorizeWrite func(ctx context.Context, conn state.SQLiteConn) error, editorServers any, applied *bool, commitLock sync.Locker) (*pyjson.Object, error) {
+func commitMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, live *LiveSession, params mutationParams, prepared *jsonutil.Object,
+	fields state.RuntimeMutation, authorizeWrite func(ctx context.Context, conn state.SQLiteConn) error, editorServers any, applied *bool, commitLock sync.Locker) (*jsonutil.Object, error) {
 	operation := params.Operation
 	if commitLock != nil {
 		commitLock.Lock()
 		defer commitLock.Unlock()
 	}
-	var result *pyjson.Object
+	var result *jsonutil.Object
 	snapshotted := false
 	if prepared != nil {
 		_, snapshotted = prepared.Get("snapshot")
@@ -137,7 +137,7 @@ func commitMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, li
 		var err error
 		result, err = a.DB.MutateRuntimeSession(ctx, fields)
 		if operation == "compress" {
-			var committed *pyjson.Object
+			var committed *jsonutil.Object
 			if *applied {
 				committed = result
 			}
@@ -160,13 +160,13 @@ func commitMutation(ctx context.Context, a *SessionAuthority, ref SessionRef, li
 }
 
 // Fenced params of an owner mutation on the row's current revision and generation
-func fencedMutation(row *pyjson.Object, sessionID, requestID, operation string, payload any) (mutationParams, error) {
+func fencedMutation(row *jsonutil.Object, sessionID, requestID, operation string, payload any) (mutationParams, error) {
 	if row == nil {
 		return mutationParams{}, &PyError{Kind: "TypeError", Msg: "the fenced mutation row is missing"}
 	}
 	revision, ok := pathIndex(rowValue(row, "runtime_revision"))
 	if !ok {
-		return mutationParams{}, &PyError{Kind: "TypeError", Msg: "runtime_revision is not an int: " + pyrepr.Repr(rowValue(row, "runtime_revision"))}
+		return mutationParams{}, &PyError{Kind: "TypeError", Msg: "runtime_revision is not an int: " + anyutil.Quote(rowValue(row, "runtime_revision"))}
 	}
 	params := mutationParams{SessionID: sessionID, RequestID: requestID, ExpectedRevision: int64(revision), Operation: operation, Payload: payload}
 	if generation, ok := pathIndex(rowValue(row, "runtime_generation")); ok {

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Field of a refusal, empty when it names none or the error is no refusal
@@ -59,7 +59,7 @@ func TestExplicitKeyIsPrivateAndMissingAfterRestartFailsClosed(t *testing.T) {
 	if key := policyModelKey(t, ctx, policy, authority); key != raw {
 		t.Fatalf("effective model key %v", key)
 	}
-	encoded, err := pyjson.Dumps(policy.asDict())
+	encoded, err := jsonutil.Encode(policy.asDict())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestConfigCredentialsRecoverOnlyExactSource(t *testing.T) {
 	if key := policyModelKey(t, ctx, policy, owner(profileHome, "owned")); key != "owned-config-token" {
 		t.Fatalf("recovered key %v", key)
 	}
-	encoded, err := pyjson.Dumps(policy.asDict())
+	encoded, err := jsonutil.Encode(policy.asDict())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -205,19 +205,19 @@ func launchBoundPolicy(t *testing.T) (context.Context, string, string, func(path
 }
 
 // Frozen config of a policy as a mutable decoded object
-func frozenConfigObject(t *testing.T, policy *LocalSessionPolicy) *pyjson.Object {
+func frozenConfigObject(t *testing.T, policy *LocalSessionPolicy) *jsonutil.Object {
 	t.Helper()
-	decoded, err := pyjson.Loads(policy.ConfigJSON)
+	decoded, err := jsonutil.Decode(policy.ConfigJSON)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return decoded.(*pyjson.Object)
+	return decoded.(*jsonutil.Object)
 }
 
 // Policy copy whose frozen config is replaced by the given object
-func withFrozenConfig(t *testing.T, policy *LocalSessionPolicy, config *pyjson.Object) *LocalSessionPolicy {
+func withFrozenConfig(t *testing.T, policy *LocalSessionPolicy, config *jsonutil.Object) *LocalSessionPolicy {
 	t.Helper()
-	text, err := pyjson.Dumps(config)
+	text, err := jsonutil.Encode(config)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,14 +230,14 @@ func TestANonSecretPolicyChangeKeepsTheReference(t *testing.T) {
 	ctx, _, profileHome, owner, policy := launchBoundPolicy(t)
 	config := frozenConfigObject(t, policy)
 	agent, _ := config.Get("agent")
-	section, ok := agent.(*pyjson.Object)
+	section, ok := agent.(*jsonutil.Object)
 	if !ok {
-		section = pyjson.NewObject()
+		section = jsonutil.NewObject()
 		config.Set("agent", section)
 	}
 	section.Set("reasoning_effort", "low")
 	servers, _ := config.Get("mcp_servers")
-	servers.(*pyjson.Object).Set("extra", pyjson.ObjectOf("command", "extra-mcp"))
+	servers.(*jsonutil.Object).Set("extra", jsonutil.ObjectOf("command", "extra-mcp"))
 	moved := withFrozenConfig(t, policy, config)
 	other, skills := "other", "later field"
 	moved.Model, moved.Toolsets, moved.SkillsPrompt = &other, []string{"web"}, &skills
@@ -275,11 +275,11 @@ func TestASecretPairedWithAMovedEndpointIsRefusedByName(t *testing.T) {
 			field := "model.api_key"
 			if moved == "model" {
 				model, _ := config.Get("model")
-				model.(*pyjson.Object).Set("base_url", "http://attacker.invalid/v1")
+				model.(*jsonutil.Object).Set("base_url", "http://attacker.invalid/v1")
 			} else {
 				servers, _ := config.Get("mcp_servers")
-				docs, _ := servers.(*pyjson.Object).Get("docs")
-				docs.(*pyjson.Object).Set("command", "other-mcp")
+				docs, _ := servers.(*jsonutil.Object).Get("docs")
+				docs.(*jsonutil.Object).Set("command", "other-mcp")
 				field = "mcp_servers.docs.env"
 			}
 			_, err := withFrozenConfig(t, policy, config).config(ctx, owner(profileHome, "owned"), true)
@@ -324,11 +324,11 @@ func bindProfilePolicy(t *testing.T, configJSON string, loaded bool) (context.Co
 	if err := os.WriteFile(filepath.Join(profileHome, "config.yaml"), []byte(configJSON), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	decoded, err := pyjson.Loads(configJSON)
+	decoded, err := jsonutil.Decode(configJSON)
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := pyjson.Plain(decoded).(map[string]any)
+	cfg := jsonutil.Plain(decoded).(map[string]any)
 	if loaded {
 		cfg = loadGatewayConfig(ctx, filepath.Join(profileHome, "config.yaml"))
 	}
@@ -359,18 +359,18 @@ func bindProfilePolicy(t *testing.T, configJSON string, loaded bool) (context.Co
 }
 
 // Sets the value at a path of object keys and list indexes inside a decoded config
-func setConfigPath(t *testing.T, config *pyjson.Object, value any, path ...any) {
+func setConfigPath(t *testing.T, config *jsonutil.Object, value any, path ...any) {
 	t.Helper()
 	var node any = config
 	for _, part := range path[:len(path)-1] {
 		switch key := part.(type) {
 		case string:
-			node, _ = node.(*pyjson.Object).Get(key)
+			node, _ = node.(*jsonutil.Object).Get(key)
 		case int:
 			node = node.([]any)[key]
 		}
 	}
-	node.(*pyjson.Object).Set(path[len(path)-1].(string), value)
+	node.(*jsonutil.Object).Set(path[len(path)-1].(string), value)
 }
 
 // Policy whose frozen config had one value repointed without a rebind
@@ -510,7 +510,7 @@ func TestDroppedTopLevelSettingDoesNotWedgeTheSession(t *testing.T) {
 	if !slices.Equal(frozen, []string{`["API_SERVER_KEY"]`, `["model", "api_key"]`}) {
 		t.Fatalf("frozen secret paths %v", frozen)
 	}
-	encoded, err := pyjson.Dumps(policy.asDict())
+	encoded, err := jsonutil.Encode(policy.asDict())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -688,24 +688,24 @@ func TestABareCustomKeySelectedByUrlIsTheRoute(t *testing.T) {
 // Policy carrying the reference the first release of frozen config secrets wrote for it
 func legacyReferenced(t *testing.T, policy *LocalSessionPolicy) *LocalSessionPolicy {
 	t.Helper()
-	decoded, err := pyjson.Loads(strings.TrimPrefix(*policy.ConfigSecretRef, configSecretPrefix))
+	decoded, err := jsonutil.Decode(strings.TrimPrefix(*policy.ConfigSecretRef, configSecretPrefix))
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := decoded.(*pyjson.Object)
+	source := decoded.(*jsonutil.Object)
 	data := policy.asDict()
 	for _, later := range []string{"credential_ref", "config_secret_ref", "kanban_json", "safe_mode", "ignore_user_config", "skills_prompt",
 		"editor_mcp_json", "coding_posture", "client_env_json", "client_env_remote", "client_env_rules_json", "edit_approval_policy"} {
 		delete(data, later)
 	}
-	hashed, err := pyjson.Dumps(data, pyjson.SortKeys(true))
+	hashed, err := jsonutil.Encode(data, jsonutil.SortKeys())
 	if err != nil {
 		t.Fatal(err)
 	}
 	sum := sha256.Sum256([]byte(hashed))
 	source.Set("policy", hex.EncodeToString(sum[:]))
 	source.Delete("bound")
-	text, err := pyjson.Dumps(source, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(source, jsonutil.SortKeys())
 	if err != nil {
 		t.Fatal(err)
 	}

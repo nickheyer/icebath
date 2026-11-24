@@ -10,9 +10,9 @@ import (
 	"github.com/spf13/pflag"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ComputerUseArgs is the argparse namespace the computer-use parser tree produces
@@ -160,8 +160,8 @@ func cuStatus(ctx context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int,
 		return 0, err
 	}
 	rawVersion := ""
-	if v, _ := contract.Get("version"); pyrepr.Truthy(v) {
-		rawVersion = pyrepr.Str(v)
+	if v, _ := contract.Get("version"); anyutil.IsTrue(v) {
+		rawVersion = anyutil.String(v)
 	}
 	version := cuaVersionSummary(rawVersion, 120)
 	origin := ""
@@ -173,10 +173,10 @@ func cuStatus(ctx context.Context, cli *ComputerUseCLI, _ ComputerUseArgs) (int,
 		line += " (" + version + ")"
 	}
 	cli.println(line)
-	if v, _ := contract.Get("ready"); !pyrepr.Truthy(v) {
+	if v, _ := contract.Get("ready"); !anyutil.IsTrue(v) {
 		reason := "runtime contract is incomplete"
-		if r, _ := contract.Get("reason"); pyrepr.Truthy(r) {
-			reason = pyrepr.Str(r)
+		if r, _ := contract.Get("reason"); anyutil.IsTrue(r) {
+			reason = anyutil.String(r)
 		}
 		cli.println("  ⚠ Repair required: " + reason)
 		if override != "" {
@@ -228,7 +228,7 @@ func cuDoctor(ctx context.Context, cli *ComputerUseCLI, ns ComputerUseArgs) (int
 // Field of a status check row, dict or ordered object alike
 func cuRowField(row any, key string) any {
 	switch r := row.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return cuGet(r, key)
 	case map[string]any:
 		return r[key]
@@ -258,34 +258,34 @@ func cuPermsStatus(ctx context.Context, cli *ComputerUseCLI, ns ComputerUseArgs)
 	if err != nil {
 		return 0, err
 	}
-	ready := pyrepr.Truthy(cuGet(st, "ready"))
+	ready := anyutil.IsTrue(cuGet(st, "ready"))
 	exit := 1
 	if ready {
 		exit = 0
 	}
 	if ns.JSON {
-		text, err := pyjson.Dumps(st, pyjson.Indent(2), pyjson.SortKeys(true))
+		text, err := jsonutil.Encode(st, jsonutil.Indent(2), jsonutil.SortKeys())
 		if err != nil {
 			return 0, err
 		}
 		cli.println(text)
 		return exit, nil
 	}
-	plat := pyrepr.Str(cuGet(st, "platform"))
-	if !pyrepr.Truthy(cuGet(st, "platform_supported")) {
+	plat := anyutil.String(cuGet(st, "platform"))
+	if !anyutil.IsTrue(cuGet(st, "platform_supported")) {
 		cli.println("Computer Use is not supported on " + plat + ".")
 		return 1, nil
 	}
-	if !pyrepr.Truthy(cuGet(st, "installed")) {
+	if !anyutil.IsTrue(cuGet(st, "installed")) {
 		cli.println("cua-driver: not installed. Run: icebath computer-use install")
 		return 1, nil
 	}
 	version := "installed"
-	if v := cuGet(st, "version"); pyrepr.Truthy(v) {
-		version = pyrepr.Str(v)
+	if v := cuGet(st, "version"); anyutil.IsTrue(v) {
+		version = anyutil.String(v)
 	}
 	cli.printf("cua-driver: %s (%s)\n", version, plat)
-	if pyrepr.Truthy(cuGet(st, "can_grant")) {
+	if anyutil.IsTrue(cuGet(st, "can_grant")) {
 		cli.printf("  %s Accessibility\n", cuGrantGlyph(cuGet(st, "accessibility")))
 		cli.printf("  %s Screen Recording\n", cuGrantGlyph(cuGet(st, "screen_recording")))
 		if !ready {
@@ -305,12 +305,12 @@ func cuPermsStatus(ctx context.Context, cli *ComputerUseCLI, ns ComputerUseArgs)
 	}
 	checks, _ := cuGet(st, "checks").([]any)
 	for _, c := range checks {
-		if pyrepr.Str(cuRowField(c, "status")) != "ok" {
-			cli.printf("  ⚠ %s: %s\n", pyrepr.Str(cuRowField(c, "label")), pyrepr.Str(cuRowField(c, "message")))
+		if anyutil.String(cuRowField(c, "status")) != "ok" {
+			cli.printf("  ⚠ %s: %s\n", anyutil.String(cuRowField(c, "label")), anyutil.String(cuRowField(c, "message")))
 		}
 	}
-	if e := cuGet(st, "error"); pyrepr.Truthy(e) {
-		cli.println("  ⚠ " + pyrepr.Str(e))
+	if e := cuGet(st, "error"); anyutil.IsTrue(e) {
+		cli.println("  ⚠ " + anyutil.String(e))
 	}
 	return exit, nil
 }

@@ -8,8 +8,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python re patterns of the FTS5 sanitizer compiled with Python semantics
@@ -188,7 +188,7 @@ func ftsMatchSQL(table, matchQuery, orderBySQL string, limit, offset int, f sear
 }
 
 // Rows of a query as dicts in column order, a repeated name keeping its first column as sqlite3 Row does
-func queryObjects(ctx context.Context, conn SQLiteConn, query string, args ...any) ([]*pyjson.Object, error) {
+func queryObjects(ctx context.Context, conn SQLiteConn, query string, args ...any) ([]*jsonutil.Object, error) {
 	rows, err := conn.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -198,7 +198,7 @@ func queryObjects(ctx context.Context, conn SQLiteConn, query string, args ...an
 	if err != nil {
 		return nil, err
 	}
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	for rows.Next() {
 		vals := make([]any, len(cols))
 		ptrs := make([]any, len(cols))
@@ -208,7 +208,7 @@ func queryObjects(ctx context.Context, conn SQLiteConn, query string, args ...an
 		if err := rows.Scan(ptrs...); err != nil {
 			return nil, err
 		}
-		obj := pyjson.NewObject()
+		obj := jsonutil.NewObject()
 		for i, c := range cols {
 			if _, dup := obj.Get(c); !dup {
 				obj.Set(c, vals[i])
@@ -221,7 +221,7 @@ func queryObjects(ctx context.Context, conn SQLiteConn, query string, args ...an
 
 // Runs one MATCH, false when the query cannot execute or a fail open index detached after corruption
 func (s *sessionSearch) matchRows(ctx context.Context, table, matchQuery, orderBySQL, failOpen, operationalDebug string,
-	limit, offset int, f searchFilter) ([]*pyjson.Object, bool, error) {
+	limit, offset int, f searchFilter) ([]*jsonutil.Object, bool, error) {
 	query, params := ftsMatchSQL(table, matchQuery, orderBySQL, limit, offset, f)
 	rows, err := s.host.readAll(ctx, query, params...)
 	if err == nil {
@@ -249,7 +249,7 @@ func (s *sessionSearch) matchRows(ctx context.Context, table, matchQuery, orderB
 }
 
 // Canonical table LIKE scan whose first param is the snippet anchor term
-func (s *sessionSearch) likeRows(ctx context.Context, where []string, params []any, orderBy, limitSQL string) ([]*pyjson.Object, error) {
+func (s *sessionSearch) likeRows(ctx context.Context, where []string, params []any, orderBy, limitSQL string) ([]*jsonutil.Object, error) {
 	return s.host.readAll(ctx, searchSelectSQL(likeSnippetSQL, "messages m", where, orderBy, limitSQL), params...)
 }
 
@@ -313,10 +313,10 @@ func compileLikeBooleanQuery(query string) (string, []any, string, bool) {
 
 // Searches canonical messages with the compiled boolean LIKE predicate while derived FTS state is stale
 func (s *sessionSearch) searchMessagesLikeFallback(ctx context.Context, query string, limit, offset int, sort string,
-	f searchFilter) ([]*pyjson.Object, error) {
+	f searchFilter) ([]*jsonutil.Object, error) {
 	predicate, params, snippet, ok := compileLikeBooleanQuery(query)
 	if predicate == "" || !ok {
-		return []*pyjson.Object{}, nil
+		return []*jsonutil.Object{}, nil
 	}
 	where, params := searchFilterClauses([]string{"(" + predicate + ")"}, params, f)
 	order := "DESC"
@@ -349,7 +349,7 @@ func (s *sessionSearch) refreshFTSStaleState(ctx context.Context) error {
 }
 
 // Attaches up to 200 characters of each neighbouring message when context is requested, then projects the fields
-func (s *sessionSearch) finalizeSearchMatches(ctx context.Context, matches []*pyjson.Object, resultFields []string) []*pyjson.Object {
+func (s *sessionSearch) finalizeSearchMatches(ctx context.Context, matches []*jsonutil.Object, resultFields []string) []*jsonutil.Object {
 	if resultFields == nil || containsString(resultFields, "context") {
 		for start := 0; start < len(matches); start += 500 {
 			batch := matches[start:min(start+500, len(matches))]
@@ -366,9 +366,9 @@ func (s *sessionSearch) finalizeSearchMatches(ctx context.Context, matches []*py
 	if resultFields == nil {
 		return matches
 	}
-	out := make([]*pyjson.Object, 0, len(matches))
+	out := make([]*jsonutil.Object, 0, len(matches))
 	for _, match := range matches {
-		projected := pyjson.NewObject()
+		projected := jsonutil.NewObject()
 		for _, field := range resultFields {
 			if v, ok := match.Get(field); ok {
 				projected.Set(field, v)
@@ -395,31 +395,31 @@ func contextKey(id any) string {
 }
 
 // Neighbour rows of each match id in the batch, empty when the context query fails
-func (s *sessionSearch) searchContexts(ctx context.Context, batch []*pyjson.Object) map[string][]*pyjson.Object {
-	contexts := map[string][]*pyjson.Object{}
+func (s *sessionSearch) searchContexts(ctx context.Context, batch []*jsonutil.Object) map[string][]*jsonutil.Object {
+	contexts := map[string][]*jsonutil.Object{}
 	var ids []any
 	for _, match := range batch {
 		id, _ := match.Get("id")
 		if _, seen := contexts[contextKey(id)]; !seen {
-			contexts[contextKey(id)] = []*pyjson.Object{}
+			contexts[contextKey(id)] = []*jsonutil.Object{}
 			ids = append(ids, id)
 		}
 	}
 	query := strings.ReplaceAll(contextWindowSQL, "{ids}", sqlBindMarks(len(ids)))
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	err := s.host.readCtx(ctx, true, func(conn SQLiteConn) error {
 		var err error
 		rows, err = queryObjects(ctx, conn, query, ids...)
 		return err
 	})
 	if err != nil {
-		return map[string][]*pyjson.Object{}
+		return map[string][]*jsonutil.Object{}
 	}
 	for _, row := range rows {
 		matchID, _ := row.Get("match_id")
 		key := contextKey(matchID)
 		if _, ok := contexts[key]; !ok {
-			return map[string][]*pyjson.Object{}
+			return map[string][]*jsonutil.Object{}
 		}
 		contexts[key] = append(contexts[key], row)
 	}
@@ -427,7 +427,7 @@ func (s *sessionSearch) searchContexts(ctx context.Context, batch []*pyjson.Obje
 }
 
 // Role and the first 200 characters of flattened content per neighbour, empty when one cannot flatten
-func (s *sessionSearch) searchContextEntries(rows []*pyjson.Object) []any {
+func (s *sessionSearch) searchContextEntries(rows []*jsonutil.Object) []any {
 	entries := []any{}
 	for _, row := range rows {
 		role, _ := row.Get("role")
@@ -439,7 +439,7 @@ func (s *sessionSearch) searchContextEntries(rows []*pyjson.Object) []any {
 		if runes := []rune(text); len(runes) > 200 {
 			text = string(runes[:200])
 		}
-		entry := pyjson.NewObject()
+		entry := jsonutil.NewObject()
 		entry.Set("role", role)
 		entry.Set("content", text)
 		entries = append(entries, entry)

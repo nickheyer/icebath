@@ -148,7 +148,7 @@ func (r *GatewayRunner) refreshAgentCacheMessageCount(ctx context.Context, sessi
 	if err != nil || row == nil {
 		return
 	}
-	live, ok := pythonIntField(row.GetOr("message_count", int64(0)))
+	live, ok := pythonIntField(row.ValueOr("message_count", int64(0)))
 	if !ok {
 		return
 	}

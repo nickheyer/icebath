@@ -5,14 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
 // Namespace of one icebath bundles command line, the action empty when no subcommand was given
@@ -38,27 +38,27 @@ func NewBundlesCLI(s *Scope, out io.Writer) *BundlesCLI {
 }
 
 // Fresh rich console over the command output
-func (b *BundlesCLI) console() *pyrich.Console { return pyrich.NewConsole(b.Out) }
+func (b *BundlesCLI) console() *consoleutil.Console { return consoleutil.NewConsole(b.Out) }
 
 // Prints the message and returns exit status one
-func bundlesFail(c *pyrich.Console, message string) int {
+func bundlesFail(c *consoleutil.Console, message string) int {
 	c.Print(message)
 	return 1
 }
 
-// Python exception class and str of a bundle CRUD error
-func bundleErrorClass(err error) (string, string) {
+// Message of a bundle CRUD error, the failed file operation and path for an operating system error
+func bundleErrorText(err error) string {
 	var be *BundleError
 	if errors.As(err, &be) {
-		return be.Class, be.Msg
+		return be.Msg
 	}
-	return pypath.OSErrorClass(err), errchain.OSText(err)
+	return errchain.OSText(err)
 }
 
 // Bundle info value as its Python str, empty when falsy
 func bundleField(info map[string]any, key string) string {
-	if v := info[key]; pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if v := info[key]; anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -74,11 +74,11 @@ func (b *BundlesCLI) cmdList() (int, error) {
 		c.Print("[dim]No bundles installed yet. Create one with:\n  icebath bundles create <name> --skill skill1 --skill skill2[/]\nBundles directory: [bold]" + b.Scope.BundlesDir() + "[/]")
 		return 0, nil
 	}
-	t := &pyrich.Table{Title: fmt.Sprintf("Skill Bundles (%d)", len(bundles)), Columns: []pyrich.Column{
+	t := &consoleutil.Table{Title: fmt.Sprintf("Skill Bundles (%d)", len(bundles)), Columns: []consoleutil.Column{
 		{Header: "Command", Style: "bold cyan"}, {Header: "Name", Style: "bold"}, {Header: "Skills", Justify: "right"}, {Header: "Description"}}}
 	for _, info := range bundles {
 		members, _ := info["skills"].([]any)
-		t.AddRow("/"+pyrepr.Str(info["slug"]), pyrepr.Str(info["name"]), strconv.Itoa(len(members)), bundleField(info, "description"))
+		t.AddRow("/"+anyutil.String(info["slug"]), anyutil.String(info["name"]), strconv.Itoa(len(members)), bundleField(info, "description"))
 	}
 	c.PrintTable(t)
 	c.Print("\n[dim]Bundles directory: " + b.Scope.BundlesDir() + "[/]")
@@ -96,14 +96,14 @@ func (b *BundlesCLI) cmdShow(a BundlesArgs) (int, error) {
 		return bundlesFail(c, "[bold red]Bundle "+errchain.Show(a.Name)+" not found.[/]"), nil
 	}
 	members, _ := info["skills"].([]any)
-	c.Print("[bold cyan]/" + pyrepr.Str(info["slug"]) + "[/]  [bold]" + pyrepr.Str(info["name"]) + "[/]")
+	c.Print("[bold cyan]/" + anyutil.String(info["slug"]) + "[/]  [bold]" + anyutil.String(info["name"]) + "[/]")
 	if desc := bundleField(info, "description"); desc != "" {
 		c.Print("  " + desc)
 	}
-	c.Print("  [dim]File: " + pyrepr.Str(info["path"]) + "[/]")
+	c.Print("  [dim]File: " + anyutil.String(info["path"]) + "[/]")
 	c.Print(fmt.Sprintf("  [bold]Skills (%d):[/]", len(members)))
 	for _, s := range members {
-		c.Print("    - " + pyrepr.Str(s))
+		c.Print("    - " + anyutil.String(s))
 	}
 	if instruction := bundleField(info, "instruction"); instruction != "" {
 		c.Print("  [bold]Instruction:[/]\n    " + instruction)
@@ -136,11 +136,12 @@ func (b *BundlesCLI) cmdCreate(ctx context.Context, a BundlesArgs) (int, error) 
 	}
 	path, err := b.Scope.SaveBundle(ctx, a.Name, skills, a.Description, a.Instruction, a.Force)
 	if err != nil {
-		switch class, msg := bundleErrorClass(err); class {
-		case "FileExistsError":
-			return bundlesFail(c, "[bold red]"+msg+"[/]\n[dim]Pass --force to overwrite.[/]"), nil
-		case "ValueError":
-			return bundlesFail(c, "[bold red]"+msg+"[/]"), nil
+		var be *BundleError
+		switch {
+		case errors.Is(err, fs.ErrExist):
+			return bundlesFail(c, "[bold red]"+consoleutil.Escape(bundleErrorText(err))+"[/]\n[dim]Pass --force to overwrite.[/]"), nil
+		case errors.As(err, &be) && be.Class == "ValueError":
+			return bundlesFail(c, "[bold red]"+consoleutil.Escape(be.Msg)+"[/]"), nil
 		}
 		return 0, err
 	}
@@ -151,7 +152,7 @@ func (b *BundlesCLI) cmdCreate(ctx context.Context, a BundlesArgs) (int, error) 
 	}
 	if ok {
 		members, _ := info["skills"].([]any)
-		c.Print(fmt.Sprintf("  Invoke with: [bold cyan]/%s[/]  (loads %d skills)", pyrepr.Str(info["slug"]), len(members)))
+		c.Print(fmt.Sprintf("  Invoke with: [bold cyan]/%s[/]  (loads %d skills)", anyutil.String(info["slug"]), len(members)))
 	}
 	return 0, nil
 }
@@ -161,8 +162,8 @@ func (b *BundlesCLI) cmdDelete(a BundlesArgs) (int, error) {
 	c := b.console()
 	path, err := b.Scope.DeleteBundle(a.Name)
 	if err != nil {
-		if class, msg := bundleErrorClass(err); class == "FileNotFoundError" {
-			return bundlesFail(c, "[bold red]"+msg+"[/]"), nil
+		if errors.Is(err, fs.ErrNotExist) {
+			return bundlesFail(c, "[bold red]"+consoleutil.Escape(bundleErrorText(err))+"[/]"), nil
 		}
 		return 0, err
 	}
@@ -182,19 +183,19 @@ func (b *BundlesCLI) cmdReload() (int, error) {
 	if len(added) > 0 {
 		c.Print(fmt.Sprintf("[bold green]Added (%d):[/]", len(added)))
 		for _, entry := range added {
-			c.Print("  + " + pyrepr.Str(entry["name"]) + " — " + pyrepr.Str(entry["description"]))
+			c.Print("  + " + anyutil.String(entry["name"]) + " — " + anyutil.String(entry["description"]))
 		}
 	}
 	if len(removed) > 0 {
 		c.Print(fmt.Sprintf("[bold red]Removed (%d):[/]", len(removed)))
 		for _, entry := range removed {
-			c.Print("  - " + pyrepr.Str(entry["name"]))
+			c.Print("  - " + anyutil.String(entry["name"]))
 		}
 	}
 	if len(added) == 0 && len(removed) == 0 {
-		c.Print(fmt.Sprintf("[dim]No changes. %s bundle(s) loaded.[/]", pyrepr.Str(diff["total"])))
+		c.Print(fmt.Sprintf("[dim]No changes. %s bundle(s) loaded.[/]", anyutil.String(diff["total"])))
 	} else {
-		c.Print(fmt.Sprintf("[dim]Total bundles now: %s[/]", pyrepr.Str(diff["total"])))
+		c.Print(fmt.Sprintf("[dim]Total bundles now: %s[/]", anyutil.String(diff["total"])))
 	}
 	return 0, nil
 }

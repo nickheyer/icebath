@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"math/big"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -23,11 +22,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+
+	"golang.org/x/text/cases"
 )
 
 var (
@@ -187,7 +183,7 @@ func iterProcFDTargets(fn func(pid int, target, fdPath string)) error {
 		return err
 	}
 	for _, pidStr := range pids {
-		if pidStr == "" || !pystr.All(pidStr, unicode.IsDigit) {
+		if !textutil.IsDigits(pidStr) {
 			continue
 		}
 		fdDir := "/proc/" + pidStr + "/fd"
@@ -195,11 +191,10 @@ func iterProcFDTargets(fn func(pid int, target, fdPath string)) error {
 		if err != nil || len(fds) == 0 {
 			continue
 		}
-		n, ok := pyint.Parse(pidStr)
-		if !ok || !n.IsInt64() {
+		pid, err := strconv.Atoi(pidStr)
+		if err != nil {
 			return &pyConvError{"ValueError", "process id " + pidStr + " is not a whole number"}
 		}
-		pid := int(n.Int64())
 		for _, fd := range fds {
 			fdPath := fdDir + "/" + fd
 			target, err := os.Readlink(fdPath)
@@ -342,7 +337,7 @@ func iterDarwinSidecarHolders(dbPath string) ([]Holder, error) {
 	base := realpathLax(abs)
 	watched := map[string]string{}
 	for _, path := range []string{base + "-wal", base + "-shm"} {
-		watched[pystr.Casefold(path)] = path
+		watched[cases.Fold().String(path)] = path
 	}
 	done := make(chan darwinScanResult, 1)
 	loadLib, allPIDs := darwinLibproc, darwinAllPIDs
@@ -354,7 +349,7 @@ func iterDarwinSidecarHolders(dbPath string) ([]Holder, error) {
 			}
 		}()
 		err := iterDarwinFDTargetsWith(loadLib, allPIDs, func(pid, _ int, target string, identity FileIdentity) {
-			if literal, ok := watched[pystr.Casefold(target)]; ok && identityIsTrulyUnlinked(identity, literal) {
+			if literal, ok := watched[cases.Fold().String(target)]; ok && identityIsTrulyUnlinked(identity, literal) {
 				holders = append(holders, Holder{PID: pid, Target: target})
 			}
 		})
@@ -463,7 +458,7 @@ func ownDescriptorForIdentity(identity FileIdentity) (int, bool) {
 		}
 		for _, entry := range entries {
 			name := entry.Name()
-			if name == "" || !pystr.All(name, unicode.IsDigit) {
+			if !textutil.IsDigits(name) {
 				continue
 			}
 			fd, err := strconv.Atoi(name)
@@ -557,15 +552,6 @@ func parseSQLiteHeader(header []byte) map[string]any {
 // Python tuple text of an identity
 func identityRepr(id FileIdentity) string { return fmt.Sprintf("(%d, %d)", id.Dev, id.Ino) }
 
-// Reports an error Python raises as OSError
-func isOSError(err error) bool {
-	var errno syscall.Errno
-	var pathErr *fs.PathError
-	var linkErr *os.LinkError
-	var sysErr *os.SyscallError
-	return errors.As(err, &errno) || errors.As(err, &pathErr) || errors.As(err, &linkErr) || errors.As(err, &sysErr)
-}
-
 // Durably captures the lost wal generation this process still holds open and returns the artifact directory
 func CaptureRetiredWALGeneration(ctx context.Context, dbPath string, sidecarIdentity map[string]FileIdentity, trigger string) (string, error) {
 	walIdentity, ok := sidecarIdentity["-wal"]
@@ -578,7 +564,7 @@ func CaptureRetiredWALGeneration(ctx context.Context, dbPath string, sidecarIden
 	}
 	walSize, err := fdSize(walFD)
 	if err != nil {
-		return "", &RetiredGenerationCaptureError{Msg: fmt.Sprintf("cannot stat the retired WAL of %s: %s", dbPath, pypath.OSErrorText(err))}
+		return "", &RetiredGenerationCaptureError{Msg: fmt.Sprintf("cannot stat the retired WAL of %s: %s", dbPath, err.Error())}
 	}
 	name := filepath.Base(dbPath)
 	stem := name + RetiredGenerationDirSuffix + time.Now().UTC().Format("20060102-150405") + "-" + strconv.Itoa(os.Getpid())
@@ -687,9 +673,9 @@ func CaptureRetiredWALGeneration(ctx context.Context, dbPath string, sidecarIden
 	case errors.As(err, &capture):
 		os.RemoveAll(staging)
 		return "", err
-	case isOSError(err):
+	case errorutil.IsSystem(err):
 		os.RemoveAll(staging)
-		return "", &RetiredGenerationCaptureError{Msg: fmt.Sprintf("could not write the retired WAL generation of %s under %s: %s", dbPath, staging, pypath.OSErrorText(err))}
+		return "", &RetiredGenerationCaptureError{Msg: fmt.Sprintf("could not write the retired WAL generation of %s under %s: %s", dbPath, staging, err.Error())}
 	}
 	return "", err
 }
@@ -812,7 +798,7 @@ func doQuarantine(path string) string {
 		dest = filepath.Join(dir, fmt.Sprintf("%s-%d.bak", stem, n))
 	}
 	if err := os.Rename(path, dest); err != nil {
-		pkgLog().Error(fmt.Sprintf("Failed to quarantine invalid %s: %s", path, pypath.OSErrorText(err)))
+		pkgLog().Error(fmt.Sprintf("Failed to quarantine invalid %s: %s", path, err.Error()))
 		return ""
 	}
 	for _, suffix := range []string{"-wal", "-shm"} {
@@ -823,21 +809,18 @@ func doQuarantine(path string) string {
 	return dest
 }
 
-// Python int of a SQLite value, an error when int raises
+// Integer of a SQLite value as an int64, an error when it has no integer form
 func sqliteValueInt(v any) (any, error) {
-	if b, ok := v.([]byte); ok {
-		v = string(b)
-	}
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return nil, err
 	}
-	return pyint.Value(n), nil
+	return n, nil
 }
 
 // Strictly read only stats snapshot of a state.db file, every field collected independently and nil when it fails
-func CollectStateDBStats(dbPath string) (*pyjson.Object, error) {
-	stats := pyjson.NewObject()
+func CollectStateDBStats(dbPath string) (*jsonutil.Object, error) {
+	stats := jsonutil.NewObject()
 	for _, key := range []string{"page_count", "page_size", "freelist_count", "logical_size_bytes", "wal_size_bytes", "journal_mode",
 		"messages", "sessions", "fts_tables", "fts_storage_version", "fts_storage_upgrade_needed",
 		"fts_teardown_pending", "fts_rebuild_pending",
@@ -905,8 +888,8 @@ func CollectStateDBStats(dbPath string) (*pyjson.Object, error) {
 	if err := setInt("page_size", "PRAGMA page_size"); err != nil {
 		return nil, err
 	}
-	if pc, ok := stats.Vals["page_count"].(int64); ok {
-		if ps, ok := stats.Vals["page_size"].(int64); ok {
+	if pc, ok := stats.Value("page_count").(int64); ok {
+		if ps, ok := stats.Value("page_size").(int64); ok {
 			stats.Set("logical_size_bytes", pc*ps)
 		}
 	}
@@ -914,7 +897,7 @@ func CollectStateDBStats(dbPath string) (*pyjson.Object, error) {
 		return nil, err
 	}
 	if jm := scalar("PRAGMA journal_mode"); jm != nil {
-		stats.Set("journal_mode", pyrepr.Str(jm))
+		stats.Set("journal_mode", anyutil.String(jm))
 	}
 	if err := setInt("messages", "SELECT COUNT(*) FROM messages"); err != nil {
 		return nil, err
@@ -937,7 +920,7 @@ func CollectStateDBStats(dbPath string) (*pyjson.Object, error) {
 		ok = ok && rows.Err() == nil
 		rows.Close()
 		if ok {
-			tables := pyjson.NewObject()
+			tables := jsonutil.NewObject()
 			for _, t := range ftsTableNames {
 				tables.Set(t, names[t])
 			}
@@ -956,13 +939,9 @@ func CollectStateDBStats(dbPath string) (*pyjson.Object, error) {
 	progress := metaInt("fts_rebuild_progress")
 	stats.Set("fts_rebuild_progress", progress)
 	pending := false
-	if highWater != nil {
-		hw, herr := pyint.Of(highWater)
-		pr := big.NewInt(0)
-		if progress != nil {
-			pr, _ = pyint.Of(progress)
-		}
-		pending = herr == nil && pr.Cmp(hw) < 0
+	if hw, ok := highWater.(int64); ok {
+		pr, _ := progress.(int64)
+		pending = pr < hw
 	}
 	stats.Set("fts_rebuild_pending", pending)
 	if row, err := fetchOne(ctx, conn, "SELECT value FROM state_meta WHERE key = ? LIMIT 1", FTSRebuildDeferralKey); err == nil && row != nil {
@@ -970,13 +949,13 @@ func CollectStateDBStats(dbPath string) (*pyjson.Object, error) {
 		var perr error
 		switch v := row[0].(type) {
 		case string:
-			parsed, perr = pyjson.Loads(v)
+			parsed, perr = jsonutil.Decode(v)
 		case []byte:
-			parsed, perr = pyjson.LoadsBytes(v)
+			parsed, perr = jsonutil.Decode(v)
 		default:
 			perr = &pyConvError{"TypeError", "the stored JSON is not text"}
 		}
-		if obj, ok := parsed.(*pyjson.Object); ok && perr == nil {
+		if obj, ok := parsed.(*jsonutil.Object); ok && perr == nil {
 			stats.Set("fts_rebuild_deferral", obj)
 		}
 	}

@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Seconds an off loop agent cleanup may run before the caller stops waiting on it
@@ -66,9 +66,9 @@ func (r *GatewayRunner) cleanupAgentResourcesOffLoop(ctx context.Context, a *age
 	switch {
 	case err == nil:
 	case errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil:
-		pkgLog().Warn(fmt.Sprintf("Agent resource cleanup%s exceeded %ss; proceeding without blocking the event loop (the worker thread is left to finish on its own). (#53175)", ctxLabel, pyrepr.Str(cleanupTimeoutS)))
+		pkgLog().Warn(fmt.Sprintf("Agent resource cleanup%s exceeded %ss; proceeding without blocking the event loop (the worker thread is left to finish on its own). (#53175)", ctxLabel, anyutil.String(cleanupTimeoutS)))
 	default:
-		pkgLog().Warn(fmt.Sprintf("Agent resource cleanup%s failed: %s (#53175)", ctxLabel, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Agent resource cleanup%s failed: %s (#53175)", ctxLabel, err.Error()))
 	}
 }
 
@@ -91,7 +91,7 @@ func (r *GatewayRunner) deferAgentCleanupUntilFutureDone(ctx context.Context, fu
 			if cleanupContext != "" {
 				label = " (" + cleanupContext + ")"
 			}
-			pkgLog().Debug(fmt.Sprintf("Deferred agent worker%s finished with an error: %s", label, pyrepr.ExceptionMessage(err)))
+			pkgLog().Debug(fmt.Sprintf("Deferred agent worker%s finished with an error: %s", label, err.Error()))
 		}
 		r.cleanupAgentResourcesOffLoop(taskCtx, a, cleanupContext, "")
 		return nil, nil

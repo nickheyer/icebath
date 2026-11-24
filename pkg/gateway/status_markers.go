@@ -14,11 +14,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -37,8 +37,6 @@ var (
 	statusProcessCreateTime       = proc.Birth
 )
 
-func pyFloat(v any) (float64, error) { return pyint.Float(v) }
-
 func pyRound(f float64) float64 { return math.RoundToEven(f) }
 
 // Takeover marker path in the canonical target home, the process home when empty
@@ -50,7 +48,7 @@ func takeoverMarkerPath(icebathHome string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathJoin(h, takeoverMarkerFilename), nil
+	return pathutil.Join(h, takeoverMarkerFilename), nil
 }
 
 func plannedStopMarkerPath() string {
@@ -63,7 +61,7 @@ func markerIsStale(writtenAt any, ttl int) bool {
 	if !ok {
 		return true
 	}
-	stamp, aware, err := pydatetime.ParseISOFormat(s)
+	stamp, aware, err := timeutil.ParseISOZone(s, time.UTC)
 	if err != nil || !aware {
 		return true
 	}
@@ -71,7 +69,7 @@ func markerIsStale(writtenAt any, ttl int) bool {
 }
 
 // Usable marker record with its target pid and start time, malformed or expired markers unlinked
-func readLivePidMarker(path string, ttl int) (*pyjson.Object, int, any, bool, error) {
+func readLivePidMarker(path string, ttl int) (*jsonutil.Object, int, any, bool, error) {
 	record := readJSONFile(path, false)
 	if record == nil || record.Len() == 0 {
 		return nil, 0, nil, false, nil
@@ -104,7 +102,7 @@ func pidMarkerNamesSelf(targetPid int, targetStartTime any) bool {
 }
 
 // Consumes a pid marker naming this process home and pid, unlinking it unless kept
-func consumePidMarkerForSelf(path string, ttl int, onConsume func(string, *pyjson.Object) error, keep bool) (bool, error) {
+func consumePidMarkerForSelf(path string, ttl int, onConsume func(string, *jsonutil.Object) error, keep bool) (bool, error) {
 	record, targetPid, targetStart, ok, err := readLivePidMarker(path, ttl)
 	if err != nil || !ok {
 		return false, err
@@ -168,7 +166,7 @@ func WriteTakeoverMarker(ctx context.Context, targetPid int, targetHome string, 
 	if err != nil {
 		return false
 	}
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("target_pid", int64(targetPid))
 	record.Set("target_start_time", targetStartTime)
 	record.Set("target_"+home.RecordKey, markerHome)
@@ -179,7 +177,7 @@ func WriteTakeoverMarker(ctx context.Context, targetPid int, targetHome string, 
 }
 
 // Atomically writes a marker record, false on any OS failure
-func writeMarker(ctx context.Context, path string, record *pyjson.Object) bool {
+func writeMarker(ctx context.Context, path string, record *jsonutil.Object) bool {
 	return writeJSONFile(ctx, path, record) == nil
 }
 
@@ -200,7 +198,7 @@ func ClearTakeoverMarker(targetHome string) {
 }
 
 // Verified live scoped lock owner whose pid record in its own home corroborates pid, start time and home
-func validatedScopedLockGatewayOwner(record *pyjson.Object) (int, any, string, bool) {
+func validatedScopedLockGatewayOwner(record *jsonutil.Object) (int, any, string, bool) {
 	if record == nil || !recordLooksLikeGateway(record) {
 		return 0, nil, "", false
 	}
@@ -208,7 +206,7 @@ func validatedScopedLockGatewayOwner(record *pyjson.Object) (int, any, string, b
 	ownerStart := recGet(record, "start_time")
 	rawHome, isStr := recHome(record, home.RecordKey).(string)
 	if !ok || ownerPid <= 0 || ownerPid == statusGetpid() || !pyIsInt(ownerStart) || !isStr ||
-		strings.TrimSpace(rawHome) == "" || !pypath.IsAbs(pypath.Expanduser(rawHome)) {
+		strings.TrimSpace(rawHome) == "" || !filepath.IsAbs(pathutil.ExpandUser(rawHome)) {
 		return 0, nil, "", false
 	}
 	targetHome, err := canonicalIcebathHome(rawHome)
@@ -221,9 +219,9 @@ func validatedScopedLockGatewayOwner(record *pyjson.Object) (int, any, string, b
 	if live, ok := statusReadProcessCmdline(ownerPid); ok && !LooksLikeGatewayRuntimeCommandLine(live) {
 		return 0, nil, "", false
 	}
-	pidRecord := readJSONFile(pypath.PathJoin(targetHome, "gateway.pid"), false)
+	pidRecord := readJSONFile(pathutil.Join(targetHome, "gateway.pid"), false)
 	if pidRecord == nil {
-		pidRecord = pyjson.NewObject()
+		pidRecord = jsonutil.NewObject()
 	}
 	pidHome, homeIsStr := recHome(pidRecord, home.RecordKey).(string)
 	recordPid, recordOK := pidFromRecord(pidRecord, "pid")
@@ -351,7 +349,7 @@ func ReapGatewayChildren(children []gatewayChild, parentPid int, timeout time.Du
 }
 
 // Terminates one verified scoped lock holder for replace, the owner pid once that exact identity exited
-func TakeOverScopedLockHolder(ctx context.Context, record *pyjson.Object, gracefulAttempts, forceAttempts int) (int, bool) {
+func TakeOverScopedLockHolder(ctx context.Context, record *jsonutil.Object, gracefulAttempts, forceAttempts int) (int, bool) {
 	ownerPid, ownerStart, targetHome, ok := validatedScopedLockGatewayOwner(record)
 	if !ok {
 		return 0, false
@@ -406,7 +404,7 @@ func terminateVerifiedOwner(ownerPid int, ownerStart any, gracefulAttempts, forc
 
 // Records that targetPid is being stopped intentionally so its exit is clean
 func WritePlannedStopMarker(ctx context.Context, targetPid int) bool {
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("target_pid", int64(targetPid))
 	record.Set("target_start_time", statusProcessStartTime(targetPid))
 	record.Set("stopper_pid", int64(statusGetpid()))
@@ -417,14 +415,14 @@ func WritePlannedStopMarker(ctx context.Context, targetPid int) bool {
 // Whether an update pause record or a recovery claim is on disk, true when the directory cannot be listed
 func updatePauseOnDisk() (bool, error) {
 	record := updaterecord.PauseRecordPath()
-	entries, err := os.ReadDir(pypath.PathParent(record))
+	entries, err := os.ReadDir(filepath.Dir(filepath.Clean(record)))
 	if errors.Is(err, fs.ErrNotExist) {
 		return false, nil
 	}
 	if err != nil {
 		return true, nil
 	}
-	name := pypath.PathName(record)
+	name := pathutil.Name(record)
 	for _, e := range entries {
 		if e.Name() == name || (strings.HasPrefix(e.Name(), name+".") && strings.HasSuffix(e.Name(), ".claim")) {
 			return true, nil
@@ -434,7 +432,7 @@ func updatePauseOnDisk() (bool, error) {
 }
 
 // Checkpoints a consumed planned stop into a pause that appeared since the consumer first looked
-func checkpointPlannedStop(ctx context.Context, path string, record *pyjson.Object) error {
+func checkpointPlannedStop(ctx context.Context, path string, record *jsonutil.Object) error {
 	paused, err := updatePauseOnDisk()
 	if err != nil || !paused {
 		return err
@@ -466,7 +464,7 @@ func ConsumePlannedStopMarkerForSelf() (bool, error) {
 			defer release()
 			mctx = held
 		}
-		checkpoint := func(p string, r *pyjson.Object) error { return checkpointPlannedStop(mctx, p, r) }
+		checkpoint := func(p string, r *jsonutil.Object) error { return checkpointPlannedStop(mctx, p, r) }
 		return consumePidMarkerForSelf(path, plannedStopMarkerTTL, checkpoint, false)
 	}()
 	if err == nil {

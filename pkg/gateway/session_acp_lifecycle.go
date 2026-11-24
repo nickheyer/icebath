@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // End reason stamped on an ACP session its last viewer left
@@ -31,12 +31,12 @@ func localReceiptTarget(ctx context.Context, a *SessionAuthority, sessionID stri
 		return nil, nil, false, err
 	}
 	if policy, ok := rowGet(receipt, "policy"); ok {
-		if obj, isObj := policy.(*pyjson.Object); isObj {
+		if obj, isObj := policy.(*jsonutil.Object); isObj {
 			source, _ = obj.Get("source")
 		}
 	}
 	if entry, ok := rowGet(receipt, "entry"); ok {
-		if obj, isObj := entry.(*pyjson.Object); isObj {
+		if obj, isObj := entry.(*jsonutil.Object); isObj {
 			target, _ = obj.Get("session_id")
 		}
 	}
@@ -102,7 +102,7 @@ func reopenIfReattached(ctx context.Context, a *SessionAuthority, sessionID stri
 	if !ok {
 		return ended, &pyKeyError{"entry"}
 	}
-	target, ok := rowGet(entry.(*pyjson.Object), "session_id")
+	target, ok := rowGet(entry.(*jsonutil.Object), "session_id")
 	if !ok {
 		return ended, &pyKeyError{"session_id"}
 	}

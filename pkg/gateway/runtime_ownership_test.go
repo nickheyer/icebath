@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 func ownershipConflict(err error) bool {
@@ -148,13 +148,15 @@ func TestGroupBitsThatAreAnACLMaskNeverCountAsAPrivateGroup(t *testing.T) {
 		t.Fatal(err)
 	}
 	os.Chmod(h, 0o770)
-	user, err := pypwd.Getpwuid(os.Getuid())
+	user, err := userutil.LookupID(os.Getuid())
 	if err != nil {
 		t.Skip("no passwd entry for this uid")
 	}
 	realPwall, realGrgid, realXattr := discoveryGetpwall, discoveryGetgrgid, aclListxattr
-	discoveryGetpwall = func() ([]pypwd.Passwd, error) { return []pypwd.Passwd{user}, nil }
-	discoveryGetgrgid = func(int) (pypwd.Group, error) { return pypwd.Group{Name: user.Name, Passwd: "x", GID: user.GID}, nil }
+	discoveryGetpwall = func() ([]userutil.Account, error) { return []userutil.Account{user}, nil }
+	discoveryGetgrgid = func(int) (userutil.Group, error) {
+		return userutil.Group{Name: user.Name, Passwd: "x", GID: user.GID}, nil
+	}
 	aclListxattr = func(path string, dest []byte) (int, error) {
 		names := "system.posix_acl_access\x00"
 		if dest == nil {

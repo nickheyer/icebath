@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func pbResumer(t *testing.T, resume func(ctx context.Context, token map[string]any, stdout io.Writer) error) {
@@ -83,10 +83,10 @@ func TestAnUnreadyRelaunchStallsOneLaunchPerBackoffWindowAndStaysOwed(t *testing
 		t.Fatalf("claims = %v", claims)
 	}
 	body, _ := ReadPauseRecord(claims[0])
-	if profiles := mapOf(mapOf(body["token"])["profiles"]); len(profiles) != 1 || !pyrepr.Equal(profiles["alpha"], 4194000) {
+	if profiles := mapOf(mapOf(body["token"])["profiles"]); len(profiles) != 1 || !anyutil.Equal(profiles["alpha"], 4194000) {
 		t.Fatalf("the unready gateway's restart debt was dropped: %v", profiles)
 	}
-	if retry := pbRetry(t, claims[0]); !pyrepr.Equal(retry["attempts"], 1) {
+	if retry := pbRetry(t, claims[0]); !anyutil.Equal(retry["attempts"], 1) {
 		t.Fatalf("attempts = %v", retry["attempts"])
 	}
 	if strings.Contains(out.String(), "waiting for readiness") || !strings.Contains(errOut.String(), "waiting for readiness") {
@@ -96,13 +96,13 @@ func TestAnUnreadyRelaunchStallsOneLaunchPerBackoffWindowAndStaysOwed(t *testing
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := pyjson.Loads(string(raw))
+	loaded, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	plain := pyjson.Plain(loaded).(map[string]any)
+	plain := jsonutil.Plain(loaded).(map[string]any)
 	mapOf(mapOf(mapOf(plain["token"])["relaunch_retry"])["profile:alpha"])["next_at"] = 0
-	text, err := pyjson.Dumps(plain)
+	text, err := jsonutil.Encode(plain)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func TestAnUnreadyRelaunchStallsOneLaunchPerBackoffWindowAndStaysOwed(t *testing
 	if len(claims) != 1 {
 		t.Fatalf("claims = %v", claims)
 	}
-	if retry := pbRetry(t, claims[0]); !pyrepr.Equal(retry["attempts"], 2) {
+	if retry := pbRetry(t, claims[0]); !anyutil.Equal(retry["attempts"], 2) {
 		t.Fatalf("attempts = %v", retry["attempts"])
 	}
 }

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ---- message content flattening ----
@@ -196,7 +196,7 @@ func (a *ccToolCallAccumulator) Feed(delta map[string]any) (string, int) {
 		rawIdx = n
 	}
 	tcID := ccDeltaID(delta["id"])
-	fn, _ := pyjson.Dict(delta["function"])
+	fn, _ := jsonutil.AsMap(delta["function"])
 	fnName := stringOf(fn["name"])
 	if _, ok := a.activeSlotByIdx[rawIdx]; !ok {
 		a.activeSlotByIdx[rawIdx] = rawIdx
@@ -253,7 +253,7 @@ var backfillDetailKeys = []string{"signature", "id", "format", "index"}
 
 // Readable text of a reasoning detail delta, never opaque replay material
 func streamedReasoningDetailText(detail any) string {
-	dm, ok := pyjson.Dict(detail)
+	dm, ok := jsonutil.AsMap(detail)
 	if !ok {
 		return ""
 	}
@@ -274,15 +274,15 @@ func detailValueEmpty(v any) bool {
 }
 
 // Wire ordered copy of one reasoning detail entry, a plain map taking its keys in sorted order
-func reasoningDetailObject(detail any) *pyjson.Object {
-	out := pyjson.NewObject()
+func reasoningDetailObject(detail any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	switch d := detail.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if d == nil {
 			return nil
 		}
-		for _, k := range d.Keys {
-			out.Set(k, d.Vals[k])
+		for _, k := range d.Keys() {
+			out.Set(k, d.Value(k))
 		}
 	case map[string]any:
 		keys := make([]string, 0, len(d))
@@ -300,21 +300,21 @@ func reasoningDetailObject(detail any) *pyjson.Object {
 }
 
 // Accumulates one streamed reasoning_details entry, merging consecutive text and summary fragments
-func appendStreamedReasoningDetail(acc []*pyjson.Object, detail any) []*pyjson.Object {
+func appendStreamedReasoningDetail(acc []*jsonutil.Object, detail any) []*jsonutil.Object {
 	entry := reasoningDetailObject(detail)
 	if entry == nil {
 		return acc
 	}
-	dtype := stringOf(entry.Vals["type"])
+	dtype := stringOf(entry.Value("type"))
 	mergeKey, mergeable := mergeableDetailTextKeys[dtype]
 	if len(acc) > 0 && mergeable {
 		last := acc[len(acc)-1]
-		if frag, isStr := entry.Vals[mergeKey].(string); isStr && stringOf(last.Vals["type"]) == dtype {
-			prev, _ := last.Vals[mergeKey].(string)
+		if frag, isStr := entry.Value(mergeKey).(string); isStr && stringOf(last.Value("type")) == dtype {
+			prev, _ := last.Value(mergeKey).(string)
 			last.Set(mergeKey, prev+frag)
 			for _, k := range backfillDetailKeys {
-				if detailValueEmpty(last.Vals[k]) && !detailValueEmpty(entry.Vals[k]) {
-					last.Set(k, entry.Vals[k])
+				if detailValueEmpty(last.Value(k)) && !detailValueEmpty(entry.Value(k)) {
+					last.Set(k, entry.Value(k))
 				}
 			}
 			return acc
@@ -916,8 +916,8 @@ func RepairToolCallArguments(rawArgs, toolName string) string {
 		pkgLog().Warn(fmt.Sprintf("Sanitized Python-None tool_call arguments for %s", toolName))
 		return "{}"
 	}
-	if parsed, err := pyjson.LoadsLenient(stripped); err == nil {
-		if reserialised, err := pyjson.Dumps(parsed, pyjson.Separators(",", ":")); err == nil {
+	if parsed, err := jsonutil.DecodeWith(stripped, jsonutil.ControlChars()); err == nil {
+		if reserialised, err := jsonutil.Encode(parsed); err == nil {
 			if reserialised != stripped {
 				pkgLog().Warn(fmt.Sprintf("Repaired unescaped control chars in tool_call arguments for %s", toolName))
 			}

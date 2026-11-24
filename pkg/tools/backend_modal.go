@@ -18,8 +18,8 @@ import (
 	"time"
 
 	modal "github.com/modal-labs/modal-client/go"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Modal SDK stdin chunk size, under the 2 MB legacy server cap and flushed per chunk
@@ -35,7 +35,7 @@ func modalSnapshotRestoreCandidate(env *Env, taskID string) (string, bool) {
 		key    string
 		legacy bool
 	}{{"direct:" + taskID, false}, {taskID, true}} {
-		if id, ok := snapshots.Vals[entry.key].(string); ok && id != "" {
+		if id, ok := snapshots.Value(entry.key).(string); ok && id != "" {
 			return id, entry.legacy
 		}
 	}
@@ -44,7 +44,7 @@ func modalSnapshotRestoreCandidate(env *Env, taskID string) (string, bool) {
 
 // Records the namespaced snapshot id and drops the legacy key
 func modalStoreDirectSnapshot(ctx context.Context, env *Env, taskID, snapshotID string) error {
-	return envUpdateJSONStore(WithEnvHome(ctx, env), modalSnapshotStore(env), func(snapshots *pyjson.Object) {
+	return envUpdateJSONStore(WithEnvHome(ctx, env), modalSnapshotStore(env), func(snapshots *jsonutil.Object) {
 		snapshots.Set("direct:"+taskID, snapshotID)
 		snapshots.Delete(taskID)
 	})
@@ -52,7 +52,7 @@ func modalStoreDirectSnapshot(ctx context.Context, env *Env, taskID, snapshotID 
 
 // Drops both keys of a task when they hold the snapshot id, or any id when none is given
 func modalDeleteDirectSnapshot(ctx context.Context, env *Env, taskID, snapshotID string) error {
-	return envUpdateJSONStore(WithEnvHome(ctx, env), modalSnapshotStore(env), func(snapshots *pyjson.Object) {
+	return envUpdateJSONStore(WithEnvHome(ctx, env), modalSnapshotStore(env), func(snapshots *jsonutil.Object) {
 		for _, key := range []string{"direct:" + taskID, taskID} {
 			if current, ok := snapshots.Get(key); ok && current != nil && (snapshotID == "" || current == snapshotID) {
 				snapshots.Delete(key)
@@ -232,11 +232,7 @@ func (m *modalEnv) exec(ctx context.Context, cmd string, timeout time.Duration, 
 		return nil, err
 	}
 	if stdin != nil {
-		payload, err := pystr.SurrogateEscapeEncode(*stdin)
-		if err != nil {
-			return nil, err
-		}
-		if err := modalStreamStdin(proc.Stdin, payload); err != nil {
+		if err := modalStreamStdin(proc.Stdin, []byte(*stdin)); err != nil {
 			return nil, err
 		}
 	} else {
@@ -359,11 +355,7 @@ func (m *modalEnv) runBash(ctx context.Context, cmd string, login bool, timeout 
 			return "Modal exec failed: " + err.Error(), 1
 		}
 		if stdinData != nil {
-			payload, err := pystr.SurrogateEscapeEncode(*stdinData)
-			if err != nil {
-				return "", 1
-			}
-			if err := modalStreamStdin(proc.Stdin, payload); err != nil {
+			if err := modalStreamStdin(proc.Stdin, []byte(*stdinData)); err != nil {
 				return "Modal stdin failed: " + err.Error(), 1
 			}
 		} else {

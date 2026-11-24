@@ -10,14 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Inner completion of a gateway data envelope, the provider message raised for an error envelope
 func auxUnwrapDataEnvelope(response any, task string) (any, error) {
-	if pyrepr.Truthy(auxField(response, "choices", nil)) {
+	if anyutil.IsTrue(auxField(response, "choices", nil)) {
 		return response, nil
 	}
 	data, ok := auxField(response, "data", nil).(map[string]any)
@@ -26,19 +25,19 @@ func auxUnwrapDataEnvelope(response any, task string) (any, error) {
 	}
 	if success, isBool := auxField(response, "success", nil).(bool); isBool && !success {
 		var errVal any = data
-		if pyrepr.Truthy(data["error"]) {
+		if anyutil.IsTrue(data["error"]) {
 			errVal = data["error"]
 		}
 		var msg any
 		if m, isMap := errVal.(map[string]any); isMap {
 			msg = m["message"]
 		}
-		if !pyrepr.Truthy(msg) {
+		if !anyutil.IsTrue(msg) {
 			msg = errVal
 		}
-		return nil, &AuxRuntimeError{Message: fmt.Sprintf("Auxiliary %s: provider returned error envelope: %s", auxTaskOrCall(task), pyrepr.Str(msg))}
+		return nil, &AuxRuntimeError{Message: fmt.Sprintf("Auxiliary %s: provider returned error envelope: %s", auxTaskOrCall(task), anyutil.String(msg))}
 	}
-	if !pyrepr.Truthy(data["choices"]) {
+	if !anyutil.IsTrue(data["choices"]) {
 		return response, nil
 	}
 	if auxChatCompletionValidates(data) {
@@ -53,7 +52,7 @@ func auxUnwrapDataEnvelope(response any, task string) (any, error) {
 			continue
 		}
 		finish := chMap["finish_reason"]
-		if !pyrepr.Truthy(finish) {
+		if !anyutil.IsTrue(finish) {
 			finish = "stop"
 		}
 		choices = append(choices, map[string]any{"message": auxCloneMap(msg), "finish_reason": finish})
@@ -159,7 +158,7 @@ func auxRecoverAuxResponseMessage(response any) any {
 		return nil
 	}
 	finish := auxField(response, "finish_reason", nil)
-	if !pyrepr.Truthy(finish) {
+	if !anyutil.IsTrue(finish) {
 		finish = "stop"
 	}
 	choice := map[string]any{"message": map[string]any{"content": text}, "finish_reason": finish}
@@ -182,7 +181,7 @@ func auxExtractAuxResponseText(response any) string {
 	var parts []string
 	for _, item := range output {
 		itemType := auxField(item, "type", nil)
-		if pyrepr.Truthy(itemType) && itemType != "message" {
+		if anyutil.IsTrue(itemType) && itemType != "message" {
 			continue
 		}
 		content, _ := auxField(item, "content", nil).([]any)
@@ -274,7 +273,7 @@ func auxCreateWithProgress(ctx context.Context, client AuxClient, kwargs map[str
 		return nil, err
 	}
 	existing := kwargs["max_tokens"]
-	if !pyrepr.Truthy(existing) {
+	if !anyutil.IsTrue(existing) {
 		existing = kwargs["max_completion_tokens"]
 	}
 	if cap, isNum := auxPyNumber(existing); isNum && cap > 0 && cap <= float64(affordable) {
@@ -284,7 +283,7 @@ func auxCreateWithProgress(ctx context.Context, client AuxClient, kwargs map[str
 	delete(retry, "max_tokens")
 	delete(retry, "max_completion_tokens")
 	model := ""
-	if pyrepr.Truthy(kwargs["model"]) {
+	if anyutil.IsTrue(kwargs["model"]) {
 		model = auxPyStr(kwargs["model"])
 	}
 	for k, v := range AuxiliaryMaxTokensParam(ctx, affordable, model) {
@@ -321,12 +320,12 @@ func auxStreamRequestPlan(kwargs map[string]any, client AuxClient) (map[string]a
 		stream = WithPromptProgressKwargs(stream)
 	}
 	model := ""
-	if pyrepr.Truthy(kwargs["model"]) {
+	if anyutil.IsTrue(kwargs["model"]) {
 		model = auxPyStr(kwargs["model"])
 	}
 	timeout := 0.0
 	if v := kwargs["timeout"]; v != nil {
-		if f, err := pyint.Float(v); err == nil {
+		if f, err := anyutil.ToFloat(v); err == nil {
 			timeout = f
 		}
 	}
@@ -473,16 +472,16 @@ func (a *auxChatStreamAccumulator) feedToolCalls(delta map[string]any) bool {
 			acc = &auxToolCallAcc{id: "", name: ""}
 			a.toolCalls[idx] = acc
 		}
-		if id := auxField(raw, "id", nil); pyrepr.Truthy(id) {
+		if id := auxField(raw, "id", nil); anyutil.IsTrue(id) {
 			acc.id = id
 			progress = true
 		}
 		if fn := auxField(raw, "function", nil); fn != nil {
-			if name := auxField(fn, "name", nil); pyrepr.Truthy(name) {
+			if name := auxField(fn, "name", nil); anyutil.IsTrue(name) {
 				acc.name = name
 				progress = true
 			}
-			if args := auxField(fn, "arguments", nil); pyrepr.Truthy(args) {
+			if args := auxField(fn, "arguments", nil); anyutil.IsTrue(args) {
 				acc.arguments = append(acc.arguments, args)
 				progress = true
 			}
@@ -499,13 +498,13 @@ func (a *auxChatStreamAccumulator) Feed(chunk map[string]any) (bool, error) {
 	if err := a.checkDeadlines(); err != nil {
 		return false, err
 	}
-	if id := chunk["id"]; pyrepr.Truthy(id) {
+	if id := chunk["id"]; anyutil.IsTrue(id) {
 		a.respID = id
 	}
-	if model := chunk["model"]; pyrepr.Truthy(model) {
+	if model := chunk["model"]; anyutil.IsTrue(model) {
 		a.respModel = model
 	}
-	if usage := chunk["usage"]; pyrepr.Truthy(usage) {
+	if usage := chunk["usage"]; anyutil.IsTrue(usage) {
 		a.usage = usage
 	}
 	if progress != nil {
@@ -519,7 +518,7 @@ func (a *auxChatStreamAccumulator) Feed(chunk map[string]any) (bool, error) {
 		return false, nil
 	}
 	choice := choices[0]
-	if finish := auxField(choice, "finish_reason", nil); pyrepr.Truthy(finish) {
+	if finish := auxField(choice, "finish_reason", nil); anyutil.IsTrue(finish) {
 		a.finishReason = finish
 	}
 	delta, ok := auxField(choice, "delta", nil).(map[string]any)
@@ -532,7 +531,7 @@ func (a *auxChatStreamAccumulator) Feed(chunk map[string]any) (bool, error) {
 		made = true
 	}
 	reasoning := delta["reasoning"]
-	if !pyrepr.Truthy(reasoning) {
+	if !anyutil.IsTrue(reasoning) {
 		reasoning = delta["reasoning_content"]
 	}
 	if piece := flattenMessageText(reasoning, ""); piece != "" {
@@ -552,7 +551,7 @@ func (a *auxChatStreamAccumulator) Feed(chunk map[string]any) (bool, error) {
 }
 
 // Reports whether a finish reason arrived
-func (a *auxChatStreamAccumulator) HasFinishReason() bool { return pyrepr.Truthy(a.finishReason) }
+func (a *auxChatStreamAccumulator) HasFinishReason() bool { return anyutil.IsTrue(a.finishReason) }
 
 // Complete chat completion response assembled from the accumulated chunks
 func (a *auxChatStreamAccumulator) Finish() (map[string]any, error) {
@@ -570,7 +569,7 @@ func (a *auxChatStreamAccumulator) Finish() (map[string]any, error) {
 			for i, part := range acc.arguments {
 				s, ok := part.(string)
 				if !ok {
-					return nil, &auxTypeError{Message: fmt.Sprintf("sequence item %d: expected str instance, %s found", i, pyrepr.TypeName(part))}
+					return nil, &auxTypeError{Message: fmt.Sprintf("sequence item %d: expected str instance, %s found", i, anyutil.Kind(part))}
 				}
 				args.WriteString(s)
 			}
@@ -586,7 +585,7 @@ func (a *auxChatStreamAccumulator) Finish() (map[string]any, error) {
 		details = a.reasoningDetails
 	}
 	finish := a.finishReason
-	if !pyrepr.Truthy(finish) {
+	if !anyutil.IsTrue(finish) {
 		finish = "stop"
 	}
 	message := map[string]any{"role": "assistant", "content": strings.Join(a.contentParts, ""), "tool_calls": toolCalls, "reasoning": reasoning, "reasoning_details": details}

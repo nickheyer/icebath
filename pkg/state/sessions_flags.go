@@ -3,7 +3,7 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Pins or unpins a whole compression lineage, a pin also unhiding it unless it is the canonical Bot Chat
@@ -59,7 +59,7 @@ func (d *SessionDB) ArchiveSessions(ctx context.Context, olderThanDays *float64,
 }
 
 // Title of a session row, empty when unset
-func rowTitle(row *pyjson.Object) string {
+func rowTitle(row *jsonutil.Object) string {
 	if v := rowValue(row, "title"); v != nil {
 		return pyStr(v)
 	}

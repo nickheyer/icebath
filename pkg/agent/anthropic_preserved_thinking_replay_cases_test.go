@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type thinkingRoute struct{ provider, baseURL string }
@@ -393,7 +393,7 @@ func runRejectedThinkingBoundary(t *testing.T, boundary string) {
 	if boundary == "compression_child" {
 		model := a.model
 		if err := db.PublishCompressionChild(ctx, state.CompressionChildPublish{ParentSessionID: "s1", ChildSessionID: "s1-child", Source: "cli",
-			Model: &model, ModelConfig: pyjson.NewObject(), Messages: later[2:]}); err != nil {
+			Model: &model, ModelConfig: jsonutil.NewObject(), Messages: later[2:]}); err != nil {
 			t.Fatal(err)
 		}
 		a.sessionID = "s1-child"

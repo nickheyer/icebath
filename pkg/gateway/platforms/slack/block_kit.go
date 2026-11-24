@@ -10,7 +10,6 @@ import (
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -245,7 +244,7 @@ func replaceAll(re *regexp2.Regexp, s string, fn func(reMatch) string) string {
 func nonemptyElements(elements []any) []any {
 	var els []any
 	for _, e := range elements {
-		if m, ok := e.(map[string]any); ok && m["type"] == "text" && !pyrepr.Truthy(m["text"]) {
+		if m, ok := e.(map[string]any); ok && m["type"] == "text" && !anyutil.IsTrue(m["text"]) {
 			continue
 		}
 		els = append(els, e)
@@ -651,7 +650,7 @@ func splitText(text string, limit int) []string {
 // Text object with its text clamped to limit characters, changed false when it already fits, ok false where Python raises
 func clampTextObj(obj map[string]any, limit int) (out map[string]any, changed, ok bool) {
 	v := obj["text"]
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return obj, false, true
 	}
 	switch t := v.(type) {
@@ -674,7 +673,7 @@ func clampTextObj(obj map[string]any, limit int) (out map[string]any, changed, o
 // Stripped text of a text object, ok false when the text is a non string truthy value that str strip rejects
 func strippedText(obj map[string]any) (string, bool) {
 	v := obj["text"]
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", true
 	}
 	s, ok := v.(string)
@@ -689,12 +688,12 @@ func SanitizeBlocks(blocks []any) []any {
 	var out []any
 	for _, raw := range blocks {
 		block, ok := raw.(map[string]any)
-		if !ok || !pyrepr.Truthy(block["type"]) {
+		if !ok || !anyutil.IsTrue(block["type"]) {
 			continue
 		}
 		switch block["type"] {
 		case "section":
-			hasBody := pyrepr.Truthy(block["fields"]) || pyrepr.Truthy(block["accessory"])
+			hasBody := anyutil.IsTrue(block["fields"]) || anyutil.IsTrue(block["accessory"])
 			if textObj, isDict := block["text"].(map[string]any); isDict {
 				text, ok := strippedText(textObj)
 				if !ok {
@@ -735,7 +734,7 @@ func SanitizeBlocks(blocks []any) []any {
 				block["text"] = clamped
 			}
 		case "context":
-			if !pyrepr.Truthy(block["elements"]) {
+			if !anyutil.IsTrue(block["elements"]) {
 				continue
 			}
 			if elements, isList := block["elements"].([]any); isList {
@@ -757,11 +756,11 @@ func SanitizeBlocks(blocks []any) []any {
 				}
 			}
 		case "rich_text", "actions", "context_actions":
-			if !pyrepr.Truthy(block["elements"]) {
+			if !anyutil.IsTrue(block["elements"]) {
 				continue
 			}
 		case "table":
-			if !pyrepr.Truthy(block["rows"]) {
+			if !anyutil.IsTrue(block["rows"]) {
 				continue
 			}
 			if settings, isList := block["column_settings"].([]any); isList {

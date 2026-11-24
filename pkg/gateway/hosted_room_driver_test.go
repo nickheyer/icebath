@@ -7,7 +7,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Settable clock of the driver cases
@@ -381,7 +381,7 @@ func TestRestartRecoveryNeverRequeuesIndeterminateWork(t *testing.T) {
 	}
 	_, err = hrStart(db, running, recovered, clock)
 	hrRequireErr[InvalidTaskTransitionError](t, err, "")
-	if statuses := hrStatuses(t, db); !pyjson.Equal(statuses, []any{"indeterminate", "queued"}) {
+	if statuses := hrStatuses(t, db); !anyutil.Equal(statuses, []any{"indeterminate", "queued"}) {
 		t.Fatal(statuses)
 	}
 }

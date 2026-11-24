@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -165,7 +165,7 @@ func isEphemeralScaffolding(msg any) bool { return state.IsEphemeralScaffolding(
 func safeSessionFilenameComponent(sessionID any) string {
 	raw := ""
 	if pyTruthy(sessionID) {
-		raw = strings.TrimSpace(pyrepr.Str(sessionID))
+		raw = strings.TrimSpace(anyutil.String(sessionID))
 	}
 	sanitized := []rune(strings.Trim(sessionFilenameUnsafe.ReplaceAllString(raw, "_"), "._"))
 	if len(sanitized) > 96 {

@@ -42,16 +42,16 @@ func TestSlashSubscriptionKeepsTheRoutedSourceOwner(t *testing.T) {
 		t.Fatalf("subs %v %v", subs, err)
 	}
 	sub := subs[0]
-	if got := sub.GetOr("notifier_profile", nil); got != "yuki" {
+	if got := sub.ValueOr("notifier_profile", nil); got != "yuki" {
 		t.Fatalf("notifier_profile %v", got)
 	}
-	metadata, _ := sub.GetOr("delivery_metadata", nil).(map[string]any)
+	metadata, _ := sub.ValueOr("delivery_metadata", nil).(map[string]any)
 	if metadata == nil {
-		if obj, isObj := sub.GetOr("delivery_metadata", nil).(interface{ GetOr(string, any) any }); isObj {
-			metadata = map[string]any{"scope_id": obj.GetOr("scope_id", nil), "parent_chat_id": obj.GetOr("parent_chat_id", nil)}
+		if obj, isObj := sub.ValueOr("delivery_metadata", nil).(interface{ ValueOr(string, any) any }); isObj {
+			metadata = map[string]any{"scope_id": obj.ValueOr("scope_id", nil), "parent_chat_id": obj.ValueOr("parent_chat_id", nil)}
 		}
 	}
 	if metadata["scope_id"] != "guild" || metadata["parent_chat_id"] != "parent" {
-		t.Fatalf("delivery_metadata %v", sub.GetOr("delivery_metadata", nil))
+		t.Fatalf("delivery_metadata %v", sub.ValueOr("delivery_metadata", nil))
 	}
 }

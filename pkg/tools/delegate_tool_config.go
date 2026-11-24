@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Lowest spawn depth a delegation runs with whatever is stored
@@ -39,7 +39,7 @@ func LoadDelegationConfig(ctx context.Context) map[string]any {
 		h := home.Dir(ctx)
 		if tree, err := config.LoadReadonly(home.WithOverride(ctx, h), h, config.NewSecrets(h).Lookup()); err == nil {
 			raw := tree["delegation"]
-			if raw == nil || !pyrepr.Truthy(raw) {
+			if raw == nil || !anyutil.IsTrue(raw) {
 				return map[string]any{}
 			}
 			if cfg, ok := raw.(map[string]any); ok {
@@ -47,7 +47,7 @@ func LoadDelegationConfig(ctx context.Context) map[string]any {
 			}
 		}
 	}
-	if raw := LoadCLIConfig(ctx)["delegation"]; raw != nil && pyrepr.Truthy(raw) {
+	if raw := LoadCLIConfig(ctx)["delegation"]; raw != nil && anyutil.IsTrue(raw) {
 		if cfg, ok := raw.(map[string]any); ok {
 			return cfg
 		}

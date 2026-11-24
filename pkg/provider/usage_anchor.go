@@ -8,9 +8,9 @@ import (
 	"math"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // UsageAnchorModelConfigKey is the session model config key holding the persisted usage anchor
@@ -37,19 +37,19 @@ func (a UsageAnchor) ToMap() map[string]any {
 }
 
 // Persisted anchor blob in the key order the reference writes, an empty last role written as null
-func (a UsageAnchor) toObject() *pyjson.Object {
+func (a UsageAnchor) toObject() *jsonutil.Object {
 	var role any
 	if a.BaseLastRole != "" {
 		role = a.BaseLastRole
 	}
-	return pyjson.ObjectOf("prompt_tokens", a.PromptTokens, "completion_tokens", a.CompletionTokens, "base_count", a.BaseCount,
+	return jsonutil.ObjectOf("prompt_tokens", a.PromptTokens, "completion_tokens", a.CompletionTokens, "base_count", a.BaseCount,
 		"base_last_role", role, "base_last_fp", a.BaseLastFP, "base_prefix_fp", a.BasePrefixFP)
 }
 
-// Message payload text with sorted keys, ASCII escapes, compact separators and str for unknown values, else the repr of its sorted items
+// Message payload as compact JSON with sorted keys, ASCII escapes and the text of values JSON cannot hold, else the text of its sorted key and value pairs
 func usageAnchorPayloadDumps(payload map[string]any) string {
-	text, err := pyjson.Dumps(payload, pyjson.SortKeys(true), pyjson.Separators(",", ":"),
-		pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	text, err := jsonutil.Encode(payload, jsonutil.SortKeys(), jsonutil.ASCII(),
+		jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err == nil {
 		return text
 	}
@@ -60,9 +60,9 @@ func usageAnchorPayloadDumps(payload map[string]any) string {
 	sort.Strings(keys)
 	items := make([]any, 0, len(keys))
 	for _, k := range keys {
-		items = append(items, pyrepr.Tuple{k, payload[k]})
+		items = append(items, []any{k, payload[k]})
 	}
-	return pyrepr.Repr(items)
+	return anyutil.String(items)
 }
 
 // Message dict keys a fingerprint covers, the provider visible fields that round trip the session DB
@@ -101,7 +101,7 @@ func pricedPrefixFingerprint(messages []*state.Message, baseCount int) string {
 		}
 		fps = append(fps, []any{role, fp})
 	}
-	text, _ := pyjson.Dumps(fps, pyjson.Separators(",", ":"))
+	text, _ := jsonutil.Encode(fps, jsonutil.ASCII())
 	sum := sha256.Sum256([]byte(text))
 	return hex.EncodeToString(sum[:])
 }
@@ -188,9 +188,9 @@ func AnchoredContextTokens(ctx context.Context, messages []*state.Message, ancho
 func usageAnchorFromAny(v any) *UsageAnchor {
 	var m map[string]any
 	switch t := v.(type) {
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		var ok bool
-		if m, ok = pyjson.Dict(t); !ok {
+		if m, ok = jsonutil.AsMap(t); !ok {
 			return nil
 		}
 	case *UsageAnchor:

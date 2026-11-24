@@ -17,7 +17,7 @@ func TestUpdatesModelConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	stored := jsonField(t, getRow(t, db, "s1"), "model_config")
-	if stored.GetOr("cwd", nil) != "/new/path" || stored.GetOr("provider", nil) != "openai" {
-		t.Fatalf("stored = %v", stored.Vals)
+	if stored.ValueOr("cwd", nil) != "/new/path" || stored.ValueOr("provider", nil) != "openai" {
+		t.Fatalf("stored = %v", stored)
 	}
 }

@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Protocol revisions this client negotiates, newest handshake revision last
@@ -99,8 +99,8 @@ type Tool struct {
 	Name         string           `json:"name"`
 	Title        string           `json:"title,omitempty"`
 	Description  string           `json:"description,omitempty"`
-	InputSchema  *pyjson.Object   `json:"inputSchema"`
-	OutputSchema *pyjson.Object   `json:"outputSchema,omitempty"`
+	InputSchema  *jsonutil.Object `json:"inputSchema"`
+	OutputSchema *jsonutil.Object `json:"outputSchema,omitempty"`
 	Annotations  *ToolAnnotations `json:"annotations,omitempty"`
 	Meta         map[string]any   `json:"_meta,omitempty"`
 }
@@ -164,7 +164,7 @@ func (r *CallToolResult) UnmarshalJSON(data []byte) error {
 	*r = CallToolResult(w.wire)
 	r.StructuredContent = nil
 	if len(w.StructuredContent) > 0 && string(w.StructuredContent) != "null" {
-		v, err := pyjson.LoadsBytes(w.StructuredContent)
+		v, err := jsonutil.Decode(w.StructuredContent)
 		if err != nil {
 			return err
 		}
@@ -251,9 +251,9 @@ type SamplingMessage struct {
 
 // SamplingTool is one tool the server offers the sampled model
 type SamplingTool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description,omitempty"`
-	InputSchema *pyjson.Object `json:"inputSchema"`
+	Name        string           `json:"name"`
+	Description string           `json:"description,omitempty"`
+	InputSchema *jsonutil.Object `json:"inputSchema"`
 }
 
 // CreateMessageParams is sampling/createMessage

@@ -5,8 +5,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type ownerLoopKey struct{}
@@ -23,7 +23,7 @@ func onOwnerLoop(ctx context.Context) bool {
 }
 
 // Stored receipt of a session when a catch up would commit for it on this owner, nil otherwise
-func adoptionDue(ctx context.Context, a *SessionAuthority, sid string) (*pyjson.Object, error) {
+func adoptionDue(ctx context.Context, a *SessionAuthority, sid string) (*jsonutil.Object, error) {
 	receipt, _, _, _, err := ownedReceipt(ctx, a, sid)
 	due := false
 	if err == nil {
@@ -46,7 +46,7 @@ func adoptionDue(ctx context.Context, a *SessionAuthority, sid string) (*pyjson.
 }
 
 // Commits the compression catch up of a receipt at this owner's epoch
-func adoptReceipt(ctx context.Context, a *SessionAuthority, sid string, receipt *pyjson.Object) error {
+func adoptReceipt(ctx context.Context, a *SessionAuthority, sid string, receipt *jsonutil.Object) error {
 	return a.DB.AdoptUntrackedCompression(ctx, a.Epoch, sid, receipt)
 }
 
@@ -85,7 +85,7 @@ func adoptLocalCompressions(ctx context.Context, a *SessionAuthority) error {
 }
 
 // Commits a due catch up in one tracked worker per session, then publishes the session on the owner loop
-func scheduleAdoption(ctx context.Context, a *SessionAuthority, sid string, receipt *pyjson.Object) {
+func scheduleAdoption(ctx context.Context, a *SessionAuthority, sid string, receipt *jsonutil.Object) {
 	a.localAdoptionsMu.Lock()
 	defer a.localAdoptionsMu.Unlock()
 	if pending := a.localAdoptions[sid]; pending != nil {

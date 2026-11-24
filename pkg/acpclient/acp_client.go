@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"runtime"
 	"slices"
@@ -17,15 +18,16 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pypwd"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	userutil "github.com/nickheyer/icebath/pkg/utils/user"
 )
 
 const (
@@ -56,8 +58,8 @@ var acpProbe = struct {
 var acpFlagRE = pyre.MustCompile(`(?m)(?:^|[\s\[])--acp(?:[\s=\],]|$)`)
 
 // Runs the help probe like subprocess.run with captured utf-8 output, replaced by tests at this seam
-var probeRun = func(ctx context.Context, argv []string) (*pysubprocess.Completed, error) {
-	return pysubprocess.RunWith(ctx, argv, pysubprocess.Options{Timeout: 5 * time.Second})
+var probeRun = func(ctx context.Context, argv []string) (*executil.Completed, error) {
+	return executil.Run(ctx, argv, executil.Options{Timeout: 5 * time.Second})
 }
 
 // Tri state verdict whether the help text advertises the acp flag, nil when the probe was inconclusive
@@ -91,17 +93,17 @@ func resolveHomeDir() string {
 	if h := strings.TrimSpace(os.Getenv("HOME")); h != "" {
 		return h
 	}
-	if expanded := pypath.Expanduser("~"); expanded != "" && expanded != "~" {
+	if expanded := pathutil.ExpandUser("~"); expanded != "" && expanded != "~" {
 		return expanded
 	}
 	tmp := func() string {
-		dir, _ := pypath.Gettempdir()
+		dir, _ := pathutil.TempDir()
 		return dir
 	}
 	if runtime.GOOS == "windows" {
 		return tmp()
 	}
-	entry, err := pypwd.Getpwuid(os.Getuid())
+	entry, err := userutil.LookupID(os.Getuid())
 	if err != nil {
 		return tmp()
 	}
@@ -123,8 +125,8 @@ func buildSubprocessEnv(ctx context.Context, env *tools.Env) (map[string]string,
 }
 
 // JSON-RPC success reply
-func jsonrpcResult(messageID, result any) *pyjson.Object {
-	o := pyjson.NewObject()
+func jsonrpcResult(messageID, result any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("jsonrpc", "2.0")
 	o.Set("id", messageID)
 	o.Set("result", result)
@@ -132,11 +134,11 @@ func jsonrpcResult(messageID, result any) *pyjson.Object {
 }
 
 // JSON-RPC error reply with its code and message
-func jsonrpcError(messageID any, code int, message string) *pyjson.Object {
-	e := pyjson.NewObject()
+func jsonrpcError(messageID any, code int, message string) *jsonutil.Object {
+	e := jsonutil.NewObject()
 	e.Set("code", code)
 	e.Set("message", message)
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("jsonrpc", "2.0")
 	o.Set("id", messageID)
 	o.Set("error", e)
@@ -149,7 +151,7 @@ func neverDisabled(any) (bool, error) { return false, nil }
 // Whether a value is a decoded JSON object or a Go string keyed map
 func isDict(v any) bool {
 	switch v.(type) {
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return true
 	}
 	return false
@@ -158,7 +160,7 @@ func isDict(v any) bool {
 // dict.get of a decoded object, nil for a missing key
 func dictGet(v any, key string) any {
 	switch d := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		x, _ := d.Get(key)
 		return x
 	case map[string]any:
@@ -170,7 +172,7 @@ func dictGet(v any, key string) any {
 // Key membership of a decoded object
 func dictHas(v any, key string) bool {
 	switch d := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, ok := d.Get(key)
 		return ok
 	case map[string]any:
@@ -185,12 +187,12 @@ func attrGet(v any, key string) (any, error) {
 	if isDict(v) {
 		return dictGet(v, key), nil
 	}
-	return nil, pyErr("AttributeError", "'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+	return nil, pyErr("AttributeError", "'%s' object has no attribute 'get'", anyutil.Kind(v))
 }
 
 // Value or its fallback when falsy, the Python or operator
 func or(v, fallback any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return fallback
@@ -198,10 +200,10 @@ func or(v, fallback any) any {
 
 // Stripped str of a value, falsy values reading as empty
 func strField(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Items a for loop over the value yields, the TypeError for a value that is not iterable
@@ -223,9 +225,9 @@ func iterate(v any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
-		out := make([]any, len(x.Keys))
-		for i, k := range x.Keys {
+	case *jsonutil.Object:
+		out := make([]any, x.Len())
+		for i, k := range x.Keys() {
 			out[i] = k
 		}
 		return out, nil
@@ -248,7 +250,7 @@ func iterate(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, pyErr("TypeError", "'%s' object is not iterable", pyrepr.TypeName(v))
+	return nil, pyErr("TypeError", "'%s' object is not iterable", anyutil.Kind(v))
 }
 
 // Ordered unique ids of the entries the filter does not reject
@@ -290,7 +292,7 @@ func modelConfigOption(session any) (any, error) {
 		if !isDict(option) {
 			continue
 		}
-		if pyrepr.Equal(dictGet(option, "category"), "model") || pyrepr.Equal(dictGet(option, "id"), "model") {
+		if anyutil.Equal(dictGet(option, "category"), "model") || anyutil.Equal(dictGet(option, "id"), "model") {
 			return option, nil
 		}
 	}
@@ -303,7 +305,7 @@ func sessionModelIDs(session any, disabled func(any) (bool, error)) ([]string, e
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(option) {
+	if anyutil.IsTrue(option) {
 		return enabledIDList(dictGet(option, "options"), "value", disabled)
 	}
 	return legacySessionModelIDs(session, disabled)
@@ -311,7 +313,7 @@ func sessionModelIDs(session any, disabled func(any) (bool, error)) ([]string, e
 
 // Model ids of the pre stabilization availableModels extension
 func legacySessionModelIDs(session any, disabled func(any) (bool, error)) ([]string, error) {
-	available, err := attrGet(or(dictGet(session, "models"), pyjson.NewObject()), "availableModels")
+	available, err := attrGet(or(dictGet(session, "models"), jsonutil.NewObject()), "availableModels")
 	if err != nil {
 		return nil, err
 	}
@@ -319,7 +321,7 @@ func legacySessionModelIDs(session any, disabled func(any) (bool, error)) ([]str
 }
 
 // ACP request selecting the model for the session, false for unknown, disabled or session default ids
-func modelSelectionRequest(session any, requestedModel, placeholder string, disabled func(any) (bool, error)) (string, *pyjson.Object, bool, error) {
+func modelSelectionRequest(session any, requestedModel, placeholder string, disabled func(any) (bool, error)) (string, *jsonutil.Object, bool, error) {
 	sessionID := strField(dictGet(session, "sessionId"))
 	requestedModel = strings.TrimSpace(requestedModel)
 	if sessionID == "" || requestedModel == "" || requestedModel == placeholder {
@@ -329,9 +331,9 @@ func modelSelectionRequest(session any, requestedModel, placeholder string, disa
 	if err != nil {
 		return "", nil, false, err
 	}
-	params := pyjson.NewObject()
+	params := jsonutil.NewObject()
 	params.Set("sessionId", sessionID)
-	if pyrepr.Truthy(option) {
+	if anyutil.IsTrue(option) {
 		enabled, err := enabledIDList(dictGet(option, "options"), "value", disabled)
 		if err != nil {
 			return "", nil, false, err
@@ -339,7 +341,7 @@ func modelSelectionRequest(session any, requestedModel, placeholder string, disa
 		if !containsString(enabled, requestedModel) {
 			return "", nil, false, nil
 		}
-		params.Set("configId", pyrepr.Str(or(dictGet(option, "id"), "model")))
+		params.Set("configId", anyutil.String(or(dictGet(option, "id"), "model")))
 		params.Set("value", requestedModel)
 		return "session/set_config_option", params, true, nil
 	}
@@ -359,18 +361,18 @@ func ensurePathWithinCwd(pathText, cwd, verb string) (string, error) {
 	if ntErr := tools.NTNamespaceError(pathText, verb); ntErr != "" {
 		return "", pyErr("PermissionError", "%s", ntErr)
 	}
-	if !pypath.IsAbs(pypath.PathStr(pathText)) {
+	if !filepath.IsAbs(filepath.Clean(pathText)) {
 		return "", pyErr("PermissionError", "ACP file-system paths must be absolute.")
 	}
-	resolved, err := pypath.Resolve(pathText)
+	resolved, err := pathutil.Resolve(pathText)
 	if err != nil {
 		return "", err
 	}
-	root, err := pypath.Resolve(cwd)
+	root, err := pathutil.Resolve(cwd)
 	if err != nil {
 		return "", err
 	}
-	if _, ok := pypath.PathRelativeTo(resolved, root); !ok {
+	if _, ok := pathutil.RelativeTo(resolved, root); !ok {
 		return "", pyErr("PermissionError", "Path '%s' is outside the session cwd '%s'.", resolved, root)
 	}
 	return resolved, nil
@@ -383,9 +385,9 @@ func effectiveTimeout(timeout any) float64 {
 	}
 	var candidates []float64
 	switch t := timeout.(type) {
-	case pyhttpx.Timeout:
+	case httputil.Timeout:
 		candidates = durationSeconds(t.Read, t.Write, t.Connect, t.Pool)
-	case *pyhttpx.Timeout:
+	case *httputil.Timeout:
 		if t != nil {
 			candidates = durationSeconds(t.Read, t.Write, t.Connect, t.Pool)
 		}
@@ -481,7 +483,7 @@ func fsReadTextFile(env *tools.Env, params any, cwd string) (any, error) {
 	raw, err := os.ReadFile(path)
 	switch {
 	case err == nil:
-		if content, err = pystr.DecodeUTF8SigFile(raw); err != nil {
+		if content, err = textutil.DecodeUTF8(textutil.TrimBOM(raw)); err != nil {
 			return nil, err
 		}
 		content = strings.ReplaceAll(strings.ReplaceAll(content, "\r\n", "\n"), "\r", "\n")
@@ -502,7 +504,7 @@ func fsReadTextFile(env *tools.Env, params any, cwd string) (any, error) {
 			content = strings.Join(lines[start:end], "")
 		}
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	if content != "" {
 		content = tools.RedactSensitiveTextWith(env, content, tools.RedactOptions{Force: true})
 	}
@@ -524,10 +526,10 @@ func paramString(params any, key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
-	return pyrepr.Str(v), nil
+	return anyutil.String(v), nil
 }
 
 // Answers fs/write_text_file inside the cwd unless the deny list or an approval gate blocks the path
@@ -546,7 +548,7 @@ func fsWriteTextFile(env *tools.Env, params any, cwd string) (any, error) {
 	if tools.IsWriteApprovalRequired(env, path) {
 		return nil, pyErr("PermissionError", "Write denied: '%s' requires interactive approval and cannot be written through the ACP file bridge.", path)
 	}
-	if err := os.MkdirAll(pypath.PathParent(path), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(path)), 0o777); err != nil {
 		return nil, err
 	}
 	content, _ := paramString(params, "content")

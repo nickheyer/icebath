@@ -12,6 +12,7 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -23,9 +24,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -180,9 +181,9 @@ type mediaManager struct {
 func newMediaManager(c *lfClient) (*mediaManager, error) {
 	threads := 1
 	if text, ok := os.LookupEnv("LANGFUSE_MEDIA_UPLOAD_THREAD_COUNT"); ok {
-		n, ok := pyint.Parse(text)
-		if !ok {
-			return nil, &pyint.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.StrRepr(text)}
+		n, err := parseIntText("LANGFUSE_MEDIA_UPLOAD_THREAD_COUNT", text)
+		if err != nil {
+			return nil, err
 		}
 		threads = max(clampInt(n), 1)
 	}
@@ -325,7 +326,7 @@ func (m *mediaManager) walk(data any, level int, traceID, observationID, field s
 				if isMediaReference(raw) {
 					return data, false
 				}
-				media := mediaFromDataURI(concatStr("data:"+pyStr(dget(data, shape[1]))+";base64,", raw))
+				media := mediaFromDataURI(concatStr("data:"+anyutil.String(dget(data, shape[1]))+";base64,", raw))
 				m.enqueue(media, traceID, observationID, field)
 				return replaceKey(items, "data", media), true
 			}
@@ -341,10 +342,10 @@ func (m *mediaManager) walk(data any, level int, traceID, observationID, field s
 				continue
 			}
 			contentType := dget(inline, "mime_type")
-			if !truthy(contentType) {
+			if !anyutil.IsTrue(contentType) {
 				contentType = dget(inline, "mimeType")
 			}
-			if !truthy(contentType) {
+			if !anyutil.IsTrue(contentType) {
 				continue
 			}
 			text, isStr := raw.(string)
@@ -354,11 +355,11 @@ func (m *mediaManager) walk(data any, level int, traceID, observationID, field s
 			if isMediaReference(text) {
 				return data, false
 			}
-			media := mediaFromDataURI("data:" + pyStr(contentType) + ";base64," + text)
+			media := mediaFromDataURI("data:" + anyutil.String(contentType) + ";base64," + text)
 			m.enqueue(media, traceID, observationID, field)
 			return replaceKey(items, key, replaceKey(inlineItems, "data", media)), true
 		}
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		changed := false
 		for _, it := range items {
 			v, c := m.walk(it.val, level+1, traceID, observationID, field)
@@ -390,8 +391,8 @@ func concatStr(prefix string, v any) string {
 }
 
 // Copy of dict entries with one key set to a new value in place
-func replaceKey(items []item, key string, val any) *pyjson.Object {
-	out := pyjson.NewObject()
+func replaceKey(items []item, key string, val any) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, it := range items {
 		out.Set(it.key, it.val)
 	}
@@ -446,7 +447,7 @@ func requestWithBackoff[T any](fn func() (T, error)) (T, error) {
 
 // JSON call to the Langfuse public API with the SDK authentication and headers
 func (m *mediaManager) api(method, path string, body any) ([]byte, error) {
-	payload, err := pyjson.Dumps(body)
+	payload, err := jsonutil.Encode(body)
 	if err != nil {
 		return nil, err
 	}
@@ -474,7 +475,7 @@ func (m *mediaManager) api(method, path string, body any) ([]byte, error) {
 // Upload of one job, presigned URL request, the PUT and the status patch
 func (m *mediaManager) upload(job *uploadJob) error {
 	answer, err := requestWithBackoff(func() (*uploadURLResponse, error) {
-		data, err := m.api(http.MethodPost, "api/public/media", obj("traceId", nullable(job.traceID), "observationId", nullable(job.observationID),
+		data, err := m.api(http.MethodPost, "api/public/media", jsonutil.ObjectOf("traceId", nullable(job.traceID), "observationId", nullable(job.observationID),
 			"datasetId", nil, "datasetItemId", nil, "contentType", job.contentType, "contentLength", job.contentLength,
 			"sha256Hash", job.sha256Hash, "field", job.field))
 		if err != nil {
@@ -538,7 +539,7 @@ func (m *mediaManager) upload(job *uploadJob) error {
 		put = putResult{statusErr.status, statusErr.body}
 	}
 	_, patchErr := requestWithBackoff(func() ([]byte, error) {
-		return m.api(http.MethodPatch, "api/public/media/"+job.mediaID, obj("uploadedAt", isoformatUTC(time.Now().UTC()),
+		return m.api(http.MethodPatch, "api/public/media/"+job.mediaID, jsonutil.ObjectOf("uploadedAt", isoformatUTC(time.Now().UTC()),
 			"uploadHttpStatus", put.status, "uploadHttpError", put.text, "uploadTimeMs", elapsed))
 	})
 	if patchErr != nil {
@@ -675,7 +676,7 @@ func (e *mediaExporter) processString(span sdktrace.ReadOnlySpan, key, value str
 	if !mayContainSerializedMedia(value) {
 		return value
 	}
-	parsed, err := pyjson.Loads(value)
+	parsed, err := jsonutil.Decode(value)
 	if err != nil {
 		return value
 	}

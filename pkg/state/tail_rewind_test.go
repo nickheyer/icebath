@@ -42,7 +42,7 @@ func tailRecall(t *testing.T, db *SessionDB, query string) []string {
 	}
 	out := make([]string, len(hits))
 	for i, h := range hits {
-		if s, ok := h.Vals["snippet"].(string); ok {
+		if s, ok := h.Value("snippet").(string); ok {
 			out[i] = s
 		}
 	}
@@ -173,7 +173,7 @@ func TestLiveContextLoadUnaffectedByTailCount(t *testing.T) {
 	}
 	var live []any
 	for _, r := range rows {
-		live = append(live, r.Vals["content"])
+		live = append(live, r.Value("content"))
 	}
 	want := []any{"[CONTEXT COMPACTION] summary of earlier turns", "Continuing from the summary.", "turn 4", "turn 5"}
 	if fmt.Sprint(live) != fmt.Sprint(want) || len(live) != len(want) {
@@ -191,8 +191,8 @@ func TestMessageCountReflectsActiveSetAfterTailCount(t *testing.T) {
 	if err != nil || row == nil {
 		t.Fatalf("session row %v %v", row, err)
 	}
-	mc, ok := row.Vals["message_count"].(int64)
+	mc, ok := row.Value("message_count").(int64)
 	if !ok || mc != 4 {
-		t.Fatalf("message_count = %#v", row.Vals["message_count"])
+		t.Fatalf("message_count = %#v", row.Value("message_count"))
 	}
 }

@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 func TestStopReachesResidentAgentAfterRealCacheEviction(t *testing.T) {
@@ -31,7 +31,7 @@ func TestStopReachesResidentAgentAfterRealCacheEviction(t *testing.T) {
 	resident := &agent.AIAgent{}
 	r := allocGatewayRunner()
 	r.config = gateway.DefaultGatewayConfig(ctx)
-	r.agentCache = pydict.New[string, agentCacheEntry]()
+	r.agentCache = orderedutil.NewMap[string, agentCacheEntry]()
 	r.agentCache.Set(key, agentCacheEntry{agent: resident, signature: "signature"})
 	r.runningAgents().Set(key, resident)
 	owned := storeHome(t, db)
@@ -41,7 +41,7 @@ func TestStopReachesResidentAgentAfterRealCacheEviction(t *testing.T) {
 	actor := gateway.Principal{Subject: "human", ProfileID: owned, TransportID: "cli",
 		Capabilities: map[string]bool{"session:submit": true, "session:control": true}}
 	if _, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: actor.Subject, SessionID: "s",
-		RequestID: "running", Payload: pyjson.ObjectOf("text", "work")}); err != nil {
+		RequestID: "running", Payload: jsonutil.ObjectOf("text", "work")}); err != nil {
 		t.Fatal(err)
 	}
 	row, _, err := db.ClaimSessionInput(ctx, state.ClaimInput{Epoch: epoch, SessionID: "s"})

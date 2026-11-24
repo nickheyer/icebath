@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Launchd label of the default profile gateway, profile labels append a dash and the profile suffix
@@ -109,7 +109,7 @@ func retiredLaunchdServices(ctx context.Context) ([]RetiredService, error) {
 
 // Pre rename systemd units that run the gateway of the home in effect
 func retiredSystemdServices(ctx context.Context) ([]RetiredService, error) {
-	resolved, err := pypath.Resolve(home.Dir(ctx))
+	resolved, err := pathutil.Resolve(home.Dir(ctx))
 	if err != nil {
 		return nil, err
 	}

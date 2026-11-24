@@ -14,7 +14,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -230,7 +230,7 @@ func copilotSetupReasoningEfforts(model string) any {
 // Accounts card status of the selected Copilot login, else of the env token ladder, no exchange
 func copilotAccountStatus(ctx context.Context) (any, error) {
 	if entry, ok := LoadSelectedPool(LoginEnv(ctx), "copilot").Peek(); ok && entry.AccessToken != "" {
-		return pyjson.ObjectOf("logged_in", true, "source", "login", "source_label", "login "+entry.LoginName(),
+		return jsonutil.ObjectOf("logged_in", true, "source", "login", "source_label", "login "+entry.LoginName(),
 			"token_preview", nil, "expires_at", nil, "has_refresh_token", false), nil
 	}
 	h := home.Dir(ctx)
@@ -241,11 +241,11 @@ func copilotAccountStatus(ctx context.Context) (any, error) {
 		}
 		token := strings.TrimSpace(raw)
 		if valid, _ := validateCopilotToken(token); token != "" && valid {
-			return pyjson.ObjectOf("logged_in", true, "source", "env_var", "source_label", envVar+SecretSourceLabel(h, envVar),
+			return jsonutil.ObjectOf("logged_in", true, "source", "env_var", "source_label", envVar+SecretSourceLabel(h, envVar),
 				"token_preview", nil, "expires_at", nil, "has_refresh_token", false), nil
 		}
 	}
-	return pyjson.ObjectOf("logged_in", false, "source", nil), nil
+	return jsonutil.ObjectOf("logged_in", false, "source", nil), nil
 }
 
 // Python int of a JSON value, the ValueError or TypeError text when int raises
@@ -349,8 +349,8 @@ func copilotPollDeviceLogin(ctx context.Context, state any) (any, error) {
 				next[k] = v
 			}
 		} else {
-			for _, k := range state.(*pyjson.Object).Keys {
-				next[k] = state.(*pyjson.Object).Vals[k]
+			for _, k := range state.(*jsonutil.Object).Keys() {
+				next[k] = state.(*jsonutil.Object).Value(k)
 			}
 		}
 		next["interval"] = interval

@@ -9,11 +9,11 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Short fixed width tag of a session lifecycle status, a dash for none
@@ -32,7 +32,7 @@ func sessionStatusTag(status string) string {
 }
 
 // Attaches the lifecycle status of each row through one indexed lookup, rows left bare when it fails
-func annotateSessionStatuses(r *sessionsRun, sessions []*pyjson.Object, db *state.SessionDB) {
+func annotateSessionStatuses(r *sessionsRun, sessions []*jsonutil.Object, db *state.SessionDB) {
 	if db == nil || len(sessions) == 0 {
 		return
 	}
@@ -50,7 +50,7 @@ func annotateSessionStatuses(r *sessionsRun, sessions []*pyjson.Object, db *stat
 }
 
 // Title of a row, else its preview, else its id
-func sessionLabel(s *pyjson.Object) string {
+func sessionLabel(s *jsonutil.Object) string {
 	if t := strings.TrimSpace(rowText(s, "title")); t != "" {
 		return t
 	}
@@ -69,7 +69,7 @@ func clipText(text string, n int) string {
 }
 
 // Message count of a row as text, a dash when it is not an integer
-func msgsStr(s *pyjson.Object) string {
+func msgsStr(s *jsonutil.Object) string {
 	switch n := rowGet(s, "message_count").(type) {
 	case int:
 		return strconv.Itoa(n)
@@ -80,7 +80,7 @@ func msgsStr(s *pyjson.Object) string {
 }
 
 // Case insensitive substring match of a query over title, preview, id and source
-func sessionMatches(s *pyjson.Object, query string) bool {
+func sessionMatches(s *jsonutil.Object, query string) bool {
 	q := strings.ToLower(query)
 	for _, key := range []string{"title", "preview", "id", "source"} {
 		if strings.Contains(strings.ToLower(rowText(s, key)), q) {
@@ -93,7 +93,7 @@ func sessionMatches(s *pyjson.Object, query string) bool {
 const browseFixedCols = 3 + 5 + 2 + 5 + 2 + 12 + 6 + 18 + 6
 
 // One picker row with the name column sized to the screen width
-func formatRow(s *pyjson.Object, maxX int, now time.Time) string {
+func formatRow(s *jsonutil.Object, maxX int, now time.Time) string {
 	nameWidth := max(20, maxX-browseFixedCols)
 	sid := runePrefix(rowText(s, "id"), 18)
 	name := strings.TrimSpace(rowText(s, "title"))
@@ -104,27 +104,27 @@ func formatRow(s *pyjson.Object, maxX int, now time.Time) string {
 		name = sid
 	}
 	return padRight(name, nameWidth) + "  " + padRight(sessionStatusTag(rowText(s, "_status")), 5) + "  " +
-		padLeft(msgsStr(s), 5) + "  " + padRight(pydatetime.RelativeTime(rowGet(s, "last_active"), rowText(s, "id"), now), 10) + "  " +
+		padLeft(msgsStr(s), 5) + "  " + padRight(timeutil.RelativeAge(rowGet(s, "last_active"), rowText(s, "id"), now), 10) + "  " +
 		padRight(runePrefix(rowText(s, "source"), 6), 5) + " " + sid
 }
 
 // State and render loop of the full screen picker
 type cursesBrowser struct {
 	scr           cliui.Screen
-	sessions      []*pyjson.Object
+	sessions      []*jsonutil.Object
 	deleteFn      func(sessionID string) (bool, error)
 	result        string
 	cursor        int
 	scroll        int
 	search        string
-	confirmDelete *pyjson.Object
+	confirmDelete *jsonutil.Object
 	flash         string
-	filtered      []*pyjson.Object
+	filtered      []*jsonutil.Object
 }
 
 // Browser over the sessions, a nil delete function turning the delete key off
-func newCursesBrowser(scr cliui.Screen, sessions []*pyjson.Object, deleteFn func(string) (bool, error)) *cursesBrowser {
-	return &cursesBrowser{scr: scr, sessions: sessions, deleteFn: deleteFn, filtered: append([]*pyjson.Object(nil), sessions...)}
+func newCursesBrowser(scr cliui.Screen, sessions []*jsonutil.Object, deleteFn func(string) (bool, error)) *cursesBrowser {
+	return &cursesBrowser{scr: scr, sessions: sessions, deleteFn: deleteFn, filtered: append([]*jsonutil.Object(nil), sessions...)}
 }
 
 // Color pair attribute on a color terminal, the fallback attribute otherwise
@@ -340,13 +340,13 @@ func (b *cursesBrowser) run() error {
 }
 
 // Numbered list picker for a terminal with no full screen support, same columns and no delete
-func fallbackPicker(r *sessionsRun, sessions []*pyjson.Object) (string, error) {
+func fallbackPicker(r *sessionsRun, sessions []*jsonutil.Object) (string, error) {
 	r.print("\n  Browse sessions  (enter number to resume, q to cancel)\n")
 	now := time.Now()
 	for i, s := range sessions {
 		r.print("  " + padLeft(strconv.Itoa(i+1), 3) + ". " + padRight(clipText(sessionLabel(s), 50), 50) + "  " +
 			padRight(sessionStatusTag(rowText(s, "_status")), 5) + "  " + padLeft(msgsStr(s), 5) + "  " +
-			padRight(pydatetime.RelativeTime(rowGet(s, "last_active"), rowText(s, "id"), now), 10) + "  " + runePrefix(rowText(s, "source"), 6))
+			padRight(timeutil.RelativeAge(rowGet(s, "last_active"), rowText(s, "id"), now), 10) + "  " + runePrefix(rowText(s, "source"), 6))
 	}
 	for {
 		line, err := console().Input(fmt.Sprintf("\n  Select [1-%d]: ", len(sessions)))
@@ -374,7 +374,7 @@ func fallbackPicker(r *sessionsRun, sessions []*pyjson.Object) (string, error) {
 }
 
 // Session browser with live search returning the selected session id, empty when cancelled
-func sessionBrowsePicker(r *sessionsRun, sessions []*pyjson.Object, db *state.SessionDB) (string, error) {
+func sessionBrowsePicker(r *sessionsRun, sessions []*jsonutil.Object, db *state.SessionDB) (string, error) {
 	if len(sessions) == 0 {
 		r.print("No sessions found.")
 		return "", nil

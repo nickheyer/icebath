@@ -5,9 +5,9 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store that commits a full archive and compact rewrite
@@ -93,7 +93,7 @@ func (c *ContextCompressor) pruneToolResultsOnly(messages []map[string]any, curr
 	}
 	nextRearmTokens := after + max(reclaimed, c.proactivePruneTokens, c.proactivePruneMinReclaimTokens)
 	if sessionDB != nil && sessionID != "" {
-		patch := pyjson.ObjectOf(ProactivePruneRearmModelConfigKey, nextRearmTokens)
+		patch := jsonutil.ObjectOf(ProactivePruneRearmModelConfigKey, nextRearmTokens)
 		rewritten, err := c.commitPrune(sessionDB, sessionID, messages, prunedMsgs, patch)
 		var stale *StaleHeldHistory
 		var heldRewritten *state.HeldRowRewrittenError
@@ -115,7 +115,7 @@ func (c *ContextCompressor) pruneToolResultsOnly(messages []map[string]any, curr
 		} else {
 			var persisted []map[string]any
 			for i, original := range messages {
-				if pyrepr.Truthy(original[dbPersistedMarker]) {
+				if anyutil.IsTrue(original[dbPersistedMarker]) {
 					persisted = append(persisted, prunedMsgs[i])
 				}
 			}
@@ -128,7 +128,7 @@ func (c *ContextCompressor) pruneToolResultsOnly(messages []map[string]any, curr
 }
 
 // Commits the prune through an in place row rewrite or the full archive and compact, nil count for the full rewrite
-func (c *ContextCompressor) commitPrune(sessionDB any, sessionID string, messages, prunedMsgs []map[string]any, patch *pyjson.Object) (*int, error) {
+func (c *ContextCompressor) commitPrune(sessionDB any, sessionID string, messages, prunedMsgs []map[string]any, patch *jsonutil.Object) (*int, error) {
 	watermark, err := archiveWatermarkFor(c.ctx, sessionDB, sessionID, messages, nil)
 	if err != nil {
 		return nil, err
@@ -150,7 +150,7 @@ func (c *ContextCompressor) commitPrune(sessionDB any, sessionID string, message
 }
 
 // Rewrites only the changed durable rows, nil without error when the full rewrite must run instead
-func (c *ContextCompressor) rewritePrunedRowsInPlace(sessionDB any, sessionID string, messages, prunedMsgs []map[string]any, patch *pyjson.Object) (*int, error) {
+func (c *ContextCompressor) rewritePrunedRowsInPlace(sessionDB any, sessionID string, messages, prunedMsgs []map[string]any, patch *jsonutil.Object) (*int, error) {
 	rewriter, ok := sessionDB.(prunedRowRewriter)
 	if !ok || len(messages) != len(prunedMsgs) {
 		return nil, nil
@@ -163,14 +163,14 @@ func (c *ContextCompressor) rewritePrunedRowsInPlace(sessionDB any, sessionID st
 		if original == nil || replacement == nil {
 			return nil, nil
 		}
-		if !pyrepr.Truthy(original[dbPersistedMarker]) {
+		if !anyutil.IsTrue(original[dbPersistedMarker]) {
 			unwrittenSeen = true
 			continue
 		}
 		if unwrittenSeen {
 			return nil, nil
 		}
-		if !pyrepr.Equal(withoutKeys(original, ignored), withoutKeys(replacement, ignored)) {
+		if !anyutil.Equal(withoutKeys(original, ignored), withoutKeys(replacement, ignored)) {
 			changes = append(changes, state.PruneChange{Original: original, Replacement: replacement})
 		}
 	}

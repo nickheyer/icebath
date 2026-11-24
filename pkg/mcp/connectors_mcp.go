@@ -15,11 +15,11 @@ import (
 	"github.com/mattn/go-isatty"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One wait for every authorization URL of a call, the flows start together
@@ -135,11 +135,11 @@ func connCatalogEntry(ctx context.Context, name string) (*CatalogEntry, error) {
 
 // ConnectorBackend is the work behind an MCP target, the catalog, the installer and the OAuth flow
 type ConnectorBackend interface {
-	RequiredEnv(ctx context.Context, name string) ([]*pyjson.Object, error)
+	RequiredEnv(ctx context.Context, name string) ([]*jsonutil.Object, error)
 	StartOAuth(ctx context.Context, name string) (ConnectorAttempt, error)
 	InstallsWithOAuth(ctx context.Context, name string) (bool, error)
-	StartInstallOAuth(ctx context.Context, name string, env *pyjson.Object) (ConnectorAttempt, error)
-	Install(ctx context.Context, name string, env *pyjson.Object) ([]string, error)
+	StartInstallOAuth(ctx context.Context, name string, env *jsonutil.Object) (ConnectorAttempt, error)
+	Install(ctx context.Context, name string, env *jsonutil.Object) ([]string, error)
 	Enable(ctx context.Context, name string) error
 }
 
@@ -162,17 +162,17 @@ type AttemptPoll struct {
 type catalogBackend struct{ env *tools.Env }
 
 // The declared credentials of the entry that have no value yet
-func (b catalogBackend) RequiredEnv(ctx context.Context, name string) ([]*pyjson.Object, error) {
+func (b catalogBackend) RequiredEnv(ctx context.Context, name string) ([]*jsonutil.Object, error) {
 	entry, err := connCatalogEntry(ctx, name)
 	if err != nil {
 		return nil, err
 	}
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	for _, spec := range entry.Auth.Env {
 		if v, _, _ := config.GetEnvValue(ctx, home.Dir(ctx), spec.Name); v != "" {
 			continue
 		}
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		o.Set("name", spec.Name)
 		o.Set("prompt", spec.Prompt)
 		o.Set("required", spec.Required)
@@ -201,7 +201,7 @@ func (b catalogBackend) InstallsWithOAuth(ctx context.Context, name string) (boo
 }
 
 // Installs an OAuth entry through the card flow, the config and setup values landing when the token is accepted
-func (b catalogBackend) StartInstallOAuth(ctx context.Context, name string, env *pyjson.Object) (ConnectorAttempt, error) {
+func (b catalogBackend) StartInstallOAuth(ctx context.Context, name string, env *jsonutil.Object) (ConnectorAttempt, error) {
 	commit := func(cctx context.Context) error { return connSaveEnv(cctx, env, nil) }
 	entry, err := connCatalogEntry(ctx, name)
 	if err != nil {
@@ -218,11 +218,11 @@ func (b catalogBackend) StartInstallOAuth(ctx context.Context, name string, env 
 }
 
 // Probes the in memory config with ephemeral credentials and saves both only after the server answered
-func (b catalogBackend) Install(ctx context.Context, name string, env *pyjson.Object) ([]string, error) {
+func (b catalogBackend) Install(ctx context.Context, name string, env *jsonutil.Object) ([]string, error) {
 	return b.install(ctx, name, env)
 }
 
-func (b catalogBackend) install(ctx context.Context, name string, env *pyjson.Object) ([]string, error) {
+func (b catalogBackend) install(ctx context.Context, name string, env *jsonutil.Object) ([]string, error) {
 	entry, err := connCatalogEntry(ctx, name)
 	if err != nil {
 		return nil, err
@@ -240,8 +240,8 @@ func (b catalogBackend) install(ctx context.Context, name string, env *pyjson.Ob
 			secret[spec.Name] = true
 		}
 	}
-	for _, k := range env.Keys {
-		if v, _ := env.Vals[k].(string); !secret[k] && v != "" {
+	for _, k := range env.Keys() {
+		if v, _ := env.Value(k).(string); !secret[k] && v != "" {
 			cfg, _ = inlineNonSecretValue(cfg, k, v).(map[string]any)
 		}
 	}
@@ -249,8 +249,8 @@ func (b catalogBackend) install(ctx context.Context, name string, env *pyjson.Ob
 	for k, v := range provider.CurrentSecretScope(ctx) {
 		merged[k] = v
 	}
-	for _, k := range env.Keys {
-		merged[k], _ = env.Vals[k].(string)
+	for _, k := range env.Keys() {
+		merged[k], _ = env.Value(k).(string)
 	}
 	sctx := provider.WithSecretScope(ctx, merged, provider.CurrentSecretScopeHome(ctx))
 	summaries, err := probeSingleServer(sctx, b.env, name, cfg)
@@ -297,12 +297,12 @@ var ConfigWriteScope = func(ctx context.Context, profile string) (context.Contex
 }
 
 // Refuses the whole env map before the first write when any key is undeclared or unwritable
-func connCheckDeclared(name string, entry *CatalogEntry, env *pyjson.Object) error {
+func connCheckDeclared(name string, entry *CatalogEntry, env *jsonutil.Object) error {
 	declared := map[string]bool{}
 	for _, spec := range entry.Auth.Env {
 		declared[spec.Name] = true
 	}
-	for _, k := range env.Keys {
+	for _, k := range env.Keys() {
 		if !declared[k] {
 			return &ProbeError{Err: fmt.Errorf("'%s' does not declare the environment variable %s", name, k), Class: "config_invalid"}
 		}
@@ -314,9 +314,9 @@ func connCheckDeclared(name string, entry *CatalogEntry, env *pyjson.Object) err
 }
 
 // Writes each non empty value to the profile env file, only the keys in only when it is given
-func connSaveEnv(ctx context.Context, env *pyjson.Object, only map[string]bool) error {
-	for _, k := range env.Keys {
-		v, _ := env.Vals[k].(string)
+func connSaveEnv(ctx context.Context, env *jsonutil.Object, only map[string]bool) error {
+	for _, k := range env.Keys() {
+		v, _ := env.Value(k).(string)
 		if v == "" || (only != nil && !only[k]) {
 			continue
 		}
@@ -365,7 +365,7 @@ type connRunner struct {
 	opID        string
 	operation   *tools.ConnectionOperation
 	work        map[string]*connWork
-	approvedEnv map[string]*pyjson.Object
+	approvedEnv map[string]*jsonutil.Object
 }
 
 var (
@@ -378,7 +378,7 @@ func openRunner(env *tools.Env, action string, backend ConnectorBackend) *connRu
 	if backend == nil {
 		backend = connDefaultBackend(env)
 	}
-	return &connRunner{action: action, backend: backend, env: env, work: map[string]*connWork{}, approvedEnv: map[string]*pyjson.Object{}}
+	return &connRunner{action: action, backend: backend, env: env, work: map[string]*connWork{}, approvedEnv: map[string]*jsonutil.Object{}}
 }
 
 func (r *connRunner) getWork(name string) *connWork {
@@ -401,7 +401,7 @@ func (r *connRunner) popWork(name string) *connWork {
 	return w
 }
 
-func (r *connRunner) approved(name string) *pyjson.Object {
+func (r *connRunner) approved(name string) *jsonutil.Object {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.approvedEnv[name]
@@ -417,11 +417,11 @@ const (
 )
 
 // Runs the action's step of the table on one target
-func (r *connRunner) run(ctx context.Context, step connStep, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
+func (r *connRunner) run(ctx context.Context, step connStep, op *tools.ConnectionOperation, t *tools.ConnTarget, env *jsonutil.Object) {
 	if env == nil {
-		env = pyjson.NewObject()
+		env = jsonutil.NewObject()
 	}
-	type fn = func(context.Context, *connRunner, *tools.ConnectionOperation, *tools.ConnTarget, *pyjson.Object)
+	type fn = func(context.Context, *connRunner, *tools.ConnectionOperation, *tools.ConnTarget, *jsonutil.Object)
 	tables := map[connStep]map[string]fn{
 		stepPrepare: {"authorize": connStartOAuth, "install": connDeclareEnv, "enable": connNothing},
 		stepApprove: {"authorize": connNothing, "install": connStartInstall, "enable": connDoEnable},
@@ -672,8 +672,8 @@ func connDetail(r *connRunner, t *tools.ConnTarget, cause any) string {
 		text = bare
 	}
 	if approved := r.approved(t.Name); approved != nil {
-		for _, k := range approved.Keys {
-			if v, _ := approved.Vals[k].(string); v != "" {
+		for _, k := range approved.Keys() {
+			if v, _ := approved.Value(k).(string); v != "" {
 				text = strings.ReplaceAll(text, v, "[REDACTED]")
 			}
 		}
@@ -764,7 +764,7 @@ func connConnect(op *tools.ConnectionOperation, t *tools.ConnTarget, names []str
 	for i, n := range names {
 		list[i] = n
 	}
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	extra.Set("tools", list)
 	if discoveryError != "" {
 		extra.Set("discovery_error", discoveryError)
@@ -780,7 +780,7 @@ func connActorFor(op *tools.ConnectionOperation, t *tools.ConnTarget) tools.Conn
 	return tools.ActorBackendWatcher
 }
 
-func connStartOAuth(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
+func connStartOAuth(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *jsonutil.Object) {
 	actor := connActorFor(op, t)
 	instructions := connCatalogInstructions(ctx, t.Name)
 	op.UpdateTarget(t, func(t *tools.ConnTarget) { t.Instructions = instructions })
@@ -795,7 +795,7 @@ func connStartOAuth(ctx context.Context, r *connRunner, op *tools.ConnectionOper
 }
 
 // The install row waits pending while the card draws a field per credential it still needs
-func connDeclareEnv(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
+func connDeclareEnv(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *jsonutil.Object) {
 	instructions := connCatalogInstructions(ctx, t.Name)
 	op.UpdateTarget(t, func(t *tools.ConnTarget) { t.Instructions = instructions })
 	required, err := r.backend.RequiredEnv(ctx, t.Name)
@@ -807,12 +807,12 @@ func connDeclareEnv(ctx context.Context, r *connRunner, op *tools.ConnectionOper
 }
 
 // The declared required credentials that still have no value
-func connMissingRequired(ctx context.Context, r *connRunner, t *tools.ConnTarget, env *pyjson.Object) ([]*pyjson.Object, error) {
+func connMissingRequired(ctx context.Context, r *connRunner, t *tools.ConnTarget, env *jsonutil.Object) ([]*jsonutil.Object, error) {
 	declared, err := r.backend.RequiredEnv(ctx, t.Name)
 	if err != nil {
 		return nil, err
 	}
-	var missing []*pyjson.Object
+	var missing []*jsonutil.Object
 	for _, spec := range declared {
 		if !specRequired(spec) {
 			continue
@@ -826,7 +826,7 @@ func connMissingRequired(ctx context.Context, r *connRunner, t *tools.ConnTarget
 	return missing, nil
 }
 
-func specRequired(spec *pyjson.Object) bool {
+func specRequired(spec *jsonutil.Object) bool {
 	v, ok := spec.Get("required")
 	return !ok || connTruthy(v)
 }
@@ -835,7 +835,7 @@ func connStr(v any) string {
 	if !connTruthy(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 func connTruthy(v any) bool {
@@ -854,21 +854,21 @@ func connTruthy(v any) bool {
 		return x != 0
 	case []any:
 		return len(x) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len() > 0
 	}
 	return true
 }
 
-func connStartInstall(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
-	approved := pyjson.NewObject()
+func connStartInstall(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *jsonutil.Object) {
+	approved := jsonutil.NewObject()
 	if prev := r.approved(t.Name); prev != nil {
-		for _, k := range prev.Keys {
-			approved.Set(k, prev.Vals[k])
+		for _, k := range prev.Keys() {
+			approved.Set(k, prev.Value(k))
 		}
 	}
-	for _, k := range env.Keys {
-		approved.Set(k, env.Vals[k])
+	for _, k := range env.Keys() {
+		approved.Set(k, env.Value(k))
 	}
 	missing, err := connMissingRequired(ctx, r, t, approved)
 	if err != nil {
@@ -879,7 +879,7 @@ func connStartInstall(ctx context.Context, r *connRunner, op *tools.ConnectionOp
 		names := make([]string, len(missing))
 		for i, spec := range missing {
 			n, _ := spec.Get("name")
-			names[i] = pyrepr.Str(n)
+			names[i] = anyutil.String(n)
 		}
 		var url string
 		op.UpdateTarget(t, func(t *tools.ConnTarget) { t.RequiredEnv = missing; url = t.ConnectURL })
@@ -911,7 +911,7 @@ func connInstallsWithOAuth(ctx context.Context, r *connRunner, t *tools.ConnTarg
 }
 
 // Publishes the authorization link onto the already initiated row
-func connStartInstallOAuth(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
+func connStartInstallOAuth(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *jsonutil.Object) {
 	attempt, err := r.backend.StartInstallOAuth(ctx, t.Name, env)
 	if err != nil {
 		connFailInstall(ctx, r, op, t, err)
@@ -934,7 +934,7 @@ func connFailInstall(ctx context.Context, r *connRunner, op *tools.ConnectionOpe
 	connFail(op, t, connDetail(r, t, cause))
 }
 
-func connDoEnable(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
+func connDoEnable(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *jsonutil.Object) {
 	actor := connActorFor(op, t)
 	empty := ""
 	if !connMove(op, t, tools.TargetInitiated, actor, tools.TransitionFields{Detail: &empty}) {
@@ -949,7 +949,7 @@ func connDoEnable(ctx context.Context, r *connRunner, op *tools.ConnectionOperat
 }
 
 // Installs at once when no card can collect a credential
-func connInstallNow(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
+func connInstallNow(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *jsonutil.Object) {
 	required, err := r.backend.RequiredEnv(ctx, t.Name)
 	if err != nil {
 		connFail(op, t, connDetail(r, t, err))
@@ -959,7 +959,7 @@ func connInstallNow(ctx context.Context, r *connRunner, op *tools.ConnectionOper
 	for _, spec := range required {
 		if specRequired(spec) {
 			n, _ := spec.Get("name")
-			missing = append(missing, pyrepr.Str(n))
+			missing = append(missing, anyutil.String(n))
 		}
 	}
 	if len(missing) > 0 {
@@ -969,7 +969,7 @@ func connInstallNow(ctx context.Context, r *connRunner, op *tools.ConnectionOper
 	}
 	actor := connActorFor(op, t)
 	if connInstallsWithOAuth(ctx, r, t) {
-		attempt, err := r.backend.StartInstallOAuth(ctx, t.Name, pyjson.NewObject())
+		attempt, err := r.backend.StartInstallOAuth(ctx, t.Name, jsonutil.NewObject())
 		if err != nil {
 			connFail(op, t, connDetail(r, t, err))
 			return
@@ -980,7 +980,7 @@ func connInstallNow(ctx context.Context, r *connRunner, op *tools.ConnectionOper
 		return
 	}
 	connMove(op, t, tools.TargetInitiated, actor, tools.TransitionFields{})
-	if _, err := r.backend.Install(ctx, t.Name, pyjson.NewObject()); err != nil {
+	if _, err := r.backend.Install(ctx, t.Name, jsonutil.NewObject()); err != nil {
 		connFail(op, t, connDetail(r, t, err))
 		return
 	}
@@ -1046,15 +1046,15 @@ func connObserveWorker(ctx context.Context, r *connRunner, op *tools.ConnectionO
 }
 
 // Authorize needs no approval, the row's verb opens the link the flow already minted
-func connNothing(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *pyjson.Object) {
+func connNothing(ctx context.Context, r *connRunner, op *tools.ConnectionOperation, t *tools.ConnTarget, env *jsonutil.Object) {
 }
 
-func connAnswerEnv(entry *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
+func connAnswerEnv(entry *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	raw, _ := entry.Get("env")
-	if obj, ok := raw.(*pyjson.Object); ok {
-		for _, k := range obj.Keys {
-			out.Set(k, pyrepr.Str(obj.Vals[k]))
+	if obj, ok := raw.(*jsonutil.Object); ok {
+		for _, k := range obj.Keys() {
+			out.Set(k, anyutil.String(obj.Value(k)))
 		}
 	}
 	return out
@@ -1071,13 +1071,13 @@ func ApplyAnswer(ctx context.Context, op *tools.ConnectionOperation, raw string)
 			err = it
 		}
 	}()
-	answer, _ := func() (*pyjson.Object, error) {
-		v, err := pyjson.Loads(raw)
-		obj, _ := v.(*pyjson.Object)
+	answer, _ := func() (*jsonutil.Object, error) {
+		v, err := jsonutil.Decode(raw)
+		obj, _ := v.(*jsonutil.Object)
 		return obj, err
 	}()
 	if answer == nil {
-		answer = pyjson.NewObject()
+		answer = jsonutil.NewObject()
 	}
 	connRunnersMu.Lock()
 	runner := connRunners[op.OpID]
@@ -1085,7 +1085,7 @@ func ApplyAnswer(ctx context.Context, op *tools.ConnectionOperation, raw string)
 	rawTargets, _ := answer.Get("targets")
 	entries, _ := rawTargets.([]any)
 	for _, e := range entries {
-		entry, ok := e.(*pyjson.Object)
+		entry, ok := e.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -1190,7 +1190,7 @@ func connNoCardResult(ctx context.Context, r *connRunner, names []string, action
 	}
 	payload.Set("status", status)
 	payload.Set("note", connectorNoCardNote)
-	out, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(payload)
 	if err != nil {
 		panic(err)
 	}

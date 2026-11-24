@@ -15,9 +15,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // ASCII only identifier safe inside a mapping file name, a trailing newline allowed as Python's dollar does
@@ -26,8 +26,8 @@ var safeWhatsAppIdentifierRE = regexp.MustCompile(`\A[A-Za-z0-9@.+\-]+\n?\z`)
 // Bare numeric identifier with JID, LID, device and plus syntax stripped
 func NormalizeWhatsAppIdentifier(value any) string {
 	s := ""
-	if pyrepr.Truthy(value) {
-		s = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		s = anyutil.String(value)
 	}
 	s = strings.Replace(strings.TrimSpace(s), "+", "", 1)
 	s, _, _ = strings.Cut(s, ":")
@@ -117,7 +117,7 @@ func expandWhatsAppAliases(ctx context.Context, identifier string) (map[string]b
 			}
 			mapped, err := readLIDMapping(mappingPath)
 			if err != nil {
-				var decodeErr *pyjson.DecodeError
+				var decodeErr *jsonutil.SyntaxError
 				if errors.As(err, &decodeErr) || errors.As(err, new(*fs.PathError)) {
 					pkgLog().Debug(fmt.Sprintf("whatsapp_identity: failed to read %s: %s", mappingPath, err))
 					continue
@@ -156,11 +156,11 @@ func readLIDMapping(path string) (string, error) {
 	for i := 0; i < len(data); {
 		r, n := utf8.DecodeRune(data[i:])
 		if r == utf8.RuneError && n <= 1 {
-			return "", pystr.UTF8DecodeError(data, i)
+			return "", &textutil.InvalidUTF8Error{Offset: i}
 		}
 		i += n
 	}
-	v, err := pyjson.Loads(string(data))
+	v, err := jsonutil.Decode(string(data))
 	if err != nil {
 		return "", err
 	}

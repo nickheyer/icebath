@@ -1,12 +1,15 @@
 package backup
 
 import (
+	"archive/zip"
 	"bytes"
+	"compress/flate"
 	"context"
 	"database/sql"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,8 +23,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyzip"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
 // Skips a case the suite marks POSIX only
@@ -36,15 +39,15 @@ type zmember struct {
 	data string
 }
 
-// Archive written with the Python zipfile writer semantics, one writestr per member
-func writeZip(t *testing.T, path string, compression int, members ...zmember) {
+// Archive with one member per zmember, written through Writer.Create
+func writeZip(t *testing.T, path string, compression uint16, members ...zmember) {
 	t.Helper()
-	zf, err := pyzip.Create(path, compression, nil)
+	zf, err := ziputil.Create(path, compression, flate.DefaultCompression)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, m := range members {
-		f, err := zf.Open(m.name)
+		f, err := zf.Create(m.name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -60,15 +63,15 @@ func writeZip(t *testing.T, path string, compression int, members ...zmember) {
 	}
 }
 
-// Archive of files on disk under their arcnames, zipfile.ZipFile.write per member
+// Archive of files on disk under their arcnames, one AddFile per member
 func writeZipFiles(t *testing.T, path string, files ...[2]string) {
 	t.Helper()
-	zf, err := pyzip.Create(path, pyzip.Stored, nil)
+	zf, err := ziputil.Create(path, zip.Store, flate.DefaultCompression)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, f := range files {
-		if err := zf.Write(f[0], f[1]); err != nil {
+		if err := zf.AddFile(f[0], f[1]); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -139,33 +142,36 @@ func exists(path string) bool {
 	return err == nil
 }
 
-// Damages one member's data in place leaving is_zipfile and the name list intact
+// Damages one member's data in place leaving IsZip and the names intact
 func corruptMember(t *testing.T, zipPath, name, damage string) {
 	t.Helper()
-	zr, err := pyzip.OpenReader(zipPath)
+	zr, err := ziputil.OpenReader(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := zr.GetInfo(name)
+	info, ok := zr.Lookup(name)
+	if !ok {
+		zr.Close()
+		t.Fatalf("no member %q", name)
+	}
+	start, err := info.DataOffset()
 	zr.Close()
 	if err != nil {
 		t.Fatal(err)
 	}
-	dataOffset := int(info.HeaderOffset) + 30 + len(info.Filename) + len(info.Extra)
+	dataOffset := int(start)
 	raw, err := os.ReadFile(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	ho := int(info.HeaderOffset)
+	ho := dataOffset - 30 - len(info.Name) - len(info.Extra)
 	switch damage {
 	case "truncated":
 		local := raw[ho+4 : ho+26]
 		entry := bytes.Index(raw[ho+26:], local) + ho + 26 - 6
-		binary.LittleEndian.PutUint32(raw[entry+20:], uint32(info.CompressSize/2))
+		binary.LittleEndian.PutUint32(raw[entry+20:], uint32(info.CompressedSize64/2))
 	case "deflate":
 		raw[dataOffset] |= 0b110
-	case "bzip2":
-		raw[dataOffset+10] ^= 0xFF
 	default:
 		raw[dataOffset] ^= 0xFF
 	}
@@ -176,8 +182,8 @@ func corruptMember(t *testing.T, zipPath, name, damage string) {
 
 func TestValidateBackupZipStateDbPasses(t *testing.T) {
 	zipPath := filepath.Join(t.TempDir(), "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"state.db", "dummy"}, zmember{"sessions/abc.json", "dummy"})
-	zr, err := pyzip.OpenReader(zipPath)
+	writeZip(t, zipPath, zip.Store, zmember{"state.db", "dummy"}, zmember{"sessions/abc.json", "dummy"})
+	zr, err := ziputil.OpenReader(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,8 +195,8 @@ func TestValidateBackupZipStateDbPasses(t *testing.T) {
 
 func TestValidationValidateWithConfig(t *testing.T) {
 	zipPath := filepath.Join(t.TempDir(), "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "test"})
-	zr, err := pyzip.OpenReader(zipPath)
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "test"})
+	zr, err := ziputil.OpenReader(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,8 +208,8 @@ func TestValidationValidateWithConfig(t *testing.T) {
 
 func TestValidationDetectPrefixOnlyDirs(t *testing.T) {
 	zipPath := filepath.Join(t.TempDir(), "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{".icebath/", ""}, zmember{".icebath/skills/", ""})
-	zr, err := pyzip.OpenReader(zipPath)
+	writeZip(t, zipPath, zip.Store, zmember{".icebath/", ""}, zmember{".icebath/skills/", ""})
+	zr, err := ziputil.OpenReader(zipPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -220,7 +226,7 @@ func TestImportAutoInstallsGatewayService(t *testing.T) {
 	useHomes(t, h, tmp)
 	calls := noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: test\n"})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: test\n"})
 	runImport(t, zipPath, true)
 	if len(calls.contexts) == 0 || calls.contexts[0] != "import" {
 		t.Fatalf("ensure calls %v", calls.contexts)
@@ -234,7 +240,7 @@ func TestImportSkipsServiceWhenAlreadyRunning(t *testing.T) {
 	useHomes(t, h, tmp)
 	calls := noRealGatewayService(t, true, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: test\n"})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: test\n"})
 	runImport(t, zipPath, true)
 	if len(calls.contexts) != 0 {
 		t.Fatalf("ensure called %v", calls.contexts)
@@ -248,7 +254,7 @@ func TestImportSurvivesServiceLayerImportFailure(t *testing.T) {
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, errors.New("service layer unavailable"))
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: test\n"})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: test\n"})
 	runImport(t, zipPath, true)
 	if got := readText(t, filepath.Join(h, "config.yaml")); got != "model: test\n" {
 		t.Fatalf("config %q", got)
@@ -269,7 +275,7 @@ func homeForCorruptImport(t *testing.T) (string, string) {
 func TestImportImportIgnoresDamagedPmRuntimeButKeepsPortableData(t *testing.T) {
 	tmp, h := homeForCorruptImport(t)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Deflated,
+	writeZip(t, zipPath, zip.Deflate,
 		zmember{"config.yaml", "model: restored\n"},
 		zmember{"profiles/coder/installs/python.zip", strings.Repeat("machine-specific\n", 20)},
 		zmember{"skills/demo/SKILL.md", "# portable\n"})
@@ -288,16 +294,16 @@ func TestImportImportIgnoresDamagedPmRuntimeButKeepsPortableData(t *testing.T) {
 func TestImportImportSkipsMemberThatRotsAfterPreflightAndReportsIncomplete(t *testing.T) {
 	tmp, h := homeForCorruptImport(t)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Deflated,
+	writeZip(t, zipPath, zip.Deflate,
 		zmember{"config.yaml", "model: restored\n"},
 		zmember{"damaged.json", `{"will": "fail"}`},
 		zmember{"gateway.pid", strings.Repeat("12345\n", 20)},
 		zmember{"sessions/after.json", `{"restored": true}`})
 	corruptMember(t, zipPath, "gateway.pid", "deflate")
 	real := extractMember
-	extractMember = func(zr *pyzip.ZipReader, member, target string, mode uint32, ok bool) error {
+	extractMember = func(zr *ziputil.Reader, member, target string, mode uint32, ok bool) error {
 		if member == "damaged.json" {
-			return &pyzip.EOFError{Msg: "Compressed file ended before the end-of-stream marker was reached"}
+			return fmt.Errorf("%w: %w", ziputil.ErrCorrupt, io.ErrUnexpectedEOF)
 		}
 		return real(zr, member, target, mode, ok)
 	}
@@ -336,7 +342,7 @@ func TestImportSkippedMemberReportsIncompleteAndExits1(t *testing.T) {
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored,
+	writeZip(t, zipPath, zip.Store,
 		zmember{"config.yaml", "model: test\n"}, zmember{"gateway.pid", "123\n"}, zmember{"skills/demo/SKILL.md", "# demo\n"})
 	os.Chmod(locked, 0o555)
 	func() {
@@ -369,7 +375,7 @@ func TestImportPreservesPerProfileGatewayState(t *testing.T) {
 	live := `{"gateway_state": "running"}`
 	writeText(t, filepath.Join(h, "profiles", "coder", "gateway_state.json"), live)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored,
+	writeZip(t, zipPath, zip.Store,
 		zmember{"config.yaml", "model: test\n"},
 		zmember{"profiles/coder/config.yaml", "model: anthropic\n"},
 		zmember{"profiles/coder/gateway_state.json", `{"gateway_state": "stopped"}`})
@@ -391,7 +397,7 @@ func TestImportPreservesRuntimePidAndProcessFiles(t *testing.T) {
 	writeText(t, filepath.Join(h, "gateway.pid"), "4242")
 	writeText(t, filepath.Join(h, "processes.json"), `{"live": true}`)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored,
+	writeZip(t, zipPath, zip.Store,
 		zmember{"config.yaml", "model: test\n"}, zmember{"gateway.pid", "9999"}, zmember{"cron.pid", "8888"},
 		zmember{"gateway.lock", "7777"}, zmember{"processes.json", `{"stale": true}`})
 	runImport(t, zipPath, true)
@@ -422,7 +428,7 @@ func TestImportRestoresSecretFilesWith0600Perms(t *testing.T) {
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored,
+	writeZip(t, zipPath, zip.Store,
 		zmember{"config.yaml", "model: openrouter\n"}, zmember{".env", "OPENROUTER_API_KEY=sk-secret\n"},
 		zmember{"auth.json", `{"providers": {"openrouter": "token"}}`}, zmember{"state.db", "SQLite format 3\x00"},
 		zmember{"profiles/coder/.env", "ANTHROPIC_API_KEY=sk-ant-secret\n"})
@@ -446,7 +452,7 @@ func TestImportEdgeCasesEofDuringConfirmation(t *testing.T) {
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "new\n"})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "new\n"})
 	old := importInput
 	importInput = func(io.Writer, string) (string, error) { return "", cliui.ErrEOF }
 	t.Cleanup(func() { importInput = old })
@@ -467,7 +473,7 @@ func (explodingMember) Close() error { return nil }
 func breakMember(t *testing.T, failing string) {
 	real := openMember
 	seen := 0
-	openMember = func(zr *pyzip.ZipReader, member string) (io.ReadCloser, error) {
+	openMember = func(zr *ziputil.Reader, member string) (io.ReadCloser, error) {
 		if member == failing {
 			seen++
 			if seen > 1 {
@@ -488,7 +494,7 @@ func TestImportAtomicWritesFailedMemberLeavesExistingFileIntact(t *testing.T) {
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: replacement\n"}, zmember{"state.db", ""})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: replacement\n"}, zmember{"state.db", ""})
 	breakMember(t, "config.yaml")
 	runImport(t, zipPath, true)
 	if readText(t, filepath.Join(h, "config.yaml")) != original {
@@ -508,7 +514,7 @@ func TestImportAtomicWritesFailedExternalMemberLeavesExistingFileIntact(t *testi
 	original := `{"peer":"original"}`
 	writeText(t, filepath.Join(honcho, "config.json"), original)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: {}\n"}, zmember{"_external/.honcho/config.json", `{"peer":"replacement"}`})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: {}\n"}, zmember{"_external/.honcho/config.json", `{"peer":"replacement"}`})
 	useHomes(t, h, dst)
 	noRealGatewayService(t, false, nil)
 	breakMember(t, "_external/.honcho/config.json")
@@ -536,7 +542,7 @@ func TestImportAtomicWritesSymlinkedTargetKeepsItsSymlink(t *testing.T) {
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: restored\n"}, zmember{"state.db", ""})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: restored\n"}, zmember{"state.db", ""})
 	runImport(t, zipPath, true)
 	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
 		t.Fatal("import replaced the symlink with a regular file")
@@ -562,7 +568,7 @@ func TestImportAtomicWritesSymlinkedExternalTargetKeepsItsSymlink(t *testing.T) 
 	useHomes(t, h, dst)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: {}\n"}, zmember{"_external/.honcho/config.json", `{"peer":"restored"}`})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: {}\n"}, zmember{"_external/.honcho/config.json", `{"peer":"restored"}`})
 	runImport(t, zipPath, true)
 	if st, err := os.Lstat(link); err != nil || st.Mode()&os.ModeSymlink == 0 {
 		t.Fatal("import replaced the symlink with a regular file")
@@ -584,7 +590,7 @@ func TestImportAtomicWritesRestorePreservesExistingFileMode(t *testing.T) {
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: restored\n"}, zmember{"state.db", ""})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: restored\n"}, zmember{"state.db", ""})
 	runImport(t, zipPath, true)
 	st, _ := os.Stat(target)
 	if readText(t, target) != "model: restored\n" || st.Mode().Perm() != 0o640 {
@@ -602,11 +608,11 @@ func TestImportAtomicWritesRestorePreservesExistingFileOwner(t *testing.T) {
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: restored\n"}, zmember{"state.db", ""})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: restored\n"}, zmember{"state.db", ""})
 	oldPreserve, oldRestore := preserveFileOwner, restoreFileOwner
-	preserveFileOwner = func(p string) *pyfs.FileOwner {
+	preserveFileOwner = func(p string) *fsutil.Owner {
 		if exists(p) {
-			return &pyfs.FileOwner{UID: 123, GID: 456}
+			return &fsutil.Owner{UID: 123, GID: 456}
 		}
 		return nil
 	}
@@ -615,7 +621,7 @@ func TestImportAtomicWritesRestorePreservesExistingFileOwner(t *testing.T) {
 		uid, gid int
 	}
 	var calls []chown
-	restoreFileOwner = func(p string, owner *pyfs.FileOwner) {
+	restoreFileOwner = func(p string, owner *fsutil.Owner) {
 		if owner != nil {
 			calls = append(calls, chown{p, owner.UID, owner.GID})
 		}
@@ -636,7 +642,7 @@ func spyStagedModes(t *testing.T, name string) *[]uint32 {
 	real := atomicReplace
 	atomicReplace = func(tmp, dst string) (string, error) {
 		if filepath.Base(dst) == name {
-			mode, _ := pyfs.PreserveFileMode(tmp)
+			mode, _ := fsutil.PermBits(tmp)
 			modes = append(modes, mode)
 		}
 		return real(tmp, dst)
@@ -658,7 +664,7 @@ func TestImportAtomicWritesModeIsAppliedBeforeTheReplace(t *testing.T) {
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: restored\n"}, zmember{"state.db", ""})
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: restored\n"}, zmember{"state.db", ""})
 	staged := spyStagedModes(t, "config.yaml")
 	runImport(t, zipPath, true)
 	if len(*staged) != 1 || (*staged)[0]&0o777 != expected {
@@ -677,17 +683,17 @@ func TestImportAtomicWritesRestoreDoesNotCarrySetuidOntoArchiveContent(t *testin
 	os.Mkdir(h, 0o755)
 	target := filepath.Join(h, "helper.sh")
 	writeText(t, target, "#!/bin/sh\necho original\n")
-	pyfs.RestoreFileMode(target, 0o6755, true)
-	if mode, _ := pyfs.PreserveFileMode(target); mode != 0o6755 {
+	_ = fsutil.SetPermBits(target, 0o6755)
+	if mode, _ := fsutil.PermBits(target); mode != 0o6755 {
 		t.Skip("filesystem refuses setuid/setgid on a user-owned file")
 	}
 	useHomes(t, h, tmp)
 	noRealGatewayService(t, false, nil)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"helper.sh", "#!/bin/sh\necho attacker\n"}, zmember{"state.db", ""})
+	writeZip(t, zipPath, zip.Store, zmember{"helper.sh", "#!/bin/sh\necho attacker\n"}, zmember{"state.db", ""})
 	staged := spyStagedModes(t, "helper.sh")
 	runImport(t, zipPath, true)
-	published, _ := pyfs.PreserveFileMode(target)
+	published, _ := fsutil.PermBits(target)
 	if readText(t, target) != "#!/bin/sh\necho attacker\n" {
 		t.Fatal("not restored")
 	}
@@ -711,7 +717,7 @@ func TestProfileRestorationImportSkipsProfileDirsWithoutConfig(t *testing.T) {
 	wrapperDir := filepath.Join(tmp, ".local", "bin")
 	os.MkdirAll(wrapperDir, 0o755)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored,
+	writeZip(t, zipPath, zip.Store,
 		zmember{"config.yaml", "model: test\n"}, zmember{"profiles/valid/config.yaml", "model: test\n"},
 		zmember{"profiles/empty/readme.txt", "nothing here\n"})
 	runImport(t, zipPath, true)
@@ -726,7 +732,7 @@ func TestMemoryProviderExternalPathsImportRestoresExternalToHomeRelativeLocation
 	h := filepath.Join(dst, ".icebath")
 	os.MkdirAll(h, 0o755)
 	zipPath := filepath.Join(tmp, "backup.zip")
-	writeZip(t, zipPath, pyzip.Stored, zmember{"config.yaml", "model: {}\n"}, zmember{".env", "X=1\n"},
+	writeZip(t, zipPath, zip.Store, zmember{"config.yaml", "model: {}\n"}, zmember{".env", "X=1\n"},
 		zmember{"state.db", ""}, zmember{"_external/.honcho/config.json", `{"peer":"bob"}`})
 	useHomes(t, h, dst)
 	noRealGatewayService(t, false, nil)
@@ -921,7 +927,7 @@ func TestImportLiveSessionDatabaseSidecarMembersAreNotInstalledBesideARestoredDb
 		t.Fatal(err)
 	}
 	payloads := map[string]string{"-wal": "foreign-wal-from-archive", "-shm": "foreign-shm", "-journal": "foreign-journal"}
-	writeZip(t, zipPath, pyzip.Stored, zmember{"state.db", string(raw)},
+	writeZip(t, zipPath, zip.Store, zmember{"state.db", string(raw)},
 		zmember{"state.db-wal", payloads["-wal"]}, zmember{"state.db-shm", payloads["-shm"]}, zmember{"state.db-journal", payloads["-journal"]})
 	runImport(t, zipPath, true)
 	suffixes := []string{"-wal", "-shm", "-journal"}

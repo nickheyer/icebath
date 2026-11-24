@@ -3,23 +3,23 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Whether a session is a branch, delegate or tool child of its parent, reset forks too on request
-func isExplicitForkChildRow(session *pyjson.Object, includeReset bool) bool {
+func isExplicitForkChildRow(session *jsonutil.Object, includeReset bool) bool {
 	if pyEquals(rowValue(session, "source"), "tool") {
 		return true
 	}
 	raw := rowValue(session, "model_config")
 	if text, ok := raw.(string); ok {
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return false
 		}
 		raw = parsed
 	}
-	cfg, ok := raw.(*pyjson.Object)
+	cfg, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return false
 	}

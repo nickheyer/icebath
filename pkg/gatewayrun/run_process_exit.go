@@ -10,12 +10,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/logging"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Polls for the planned stop marker naming this process and drives the shutdown handler on the loop once
-func runPlannedStopWatcher(stop *pythread.Event, r *GatewayRunner, loop gateway.EventLoop, shutdownHandler func(sig *int), pollInterval float64) {
+func runPlannedStopWatcher(stop *syncutil.Event, r *GatewayRunner, loop gateway.EventLoop, shutdownHandler func(sig *int), pollInterval float64) {
 	markerPath := gateway.PlannedStopMarkerPath()
 	for !stop.IsSet() {
 		fired := func() (fired bool) {

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestQwenPluginProfileMatchesUpstreamRegistration(t *testing.T) {
@@ -12,7 +12,7 @@ func TestQwenPluginProfileMatchesUpstreamRegistration(t *testing.T) {
 	assertProfileFields(t, p, map[string]any{"name": "qwen-oauth", "aliases": []string{"qwen", "qwen-portal", "qwen-cli"},
 		"env_vars": []string{"QWEN_API_KEY"}, "base_url": "https://portal.qwen.ai/v1", "auth_type": "oauth_external",
 		"default_max_tokens": 65536, "display_name": "", "base_url_env_var": ""})
-	if got := p.BuildExtraBody("s", map[string]any{}); !reflect.DeepEqual(pyjson.Plain(got), map[string]any{"vl_high_resolution_images": true}) {
+	if got := p.BuildExtraBody("s", map[string]any{}); !reflect.DeepEqual(jsonutil.Plain(got), map[string]any{"vl_high_resolution_images": true}) {
 		t.Fatalf("extra body = %v", got)
 	}
 	md := map[string]any{"sessionId": "abc"}

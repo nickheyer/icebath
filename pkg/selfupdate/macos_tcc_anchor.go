@@ -19,11 +19,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -35,7 +33,7 @@ var (
 	tccAliasPattern       = regexp.MustCompile(`^python3(\.\d+)?$`)
 	tccIsMacOS            = func() bool { return runtime.GOOS == "darwin" }
 	tccSignManagedPython  = pm.SignManagedPython
-	tccCopy2              = pyshutil.Copy2
+	tccCopy2              = fsutil.CopyFile
 )
 
 // Staged copy that refused to boot, the live venv staying untouched
@@ -161,7 +159,7 @@ func tccInterpreterFile(src, minor string) string {
 func tccInterpreterSource(venvDir, minor string) string {
 	venvPy := pm.VenvPython(venvDir)
 	if tccIsSymlink(venvPy) {
-		if resolved, err := pypath.Realpath(venvPy, pypath.Lax); err == nil {
+		if resolved, err := pathutil.Resolve(venvPy); err == nil {
 			return resolved
 		}
 		return ""
@@ -174,7 +172,7 @@ func tccInterpreterSource(venvDir, minor string) string {
 	if err != nil {
 		return ""
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return ""
 	}
@@ -219,18 +217,18 @@ func tccMarkerMatches(venvBin, expected string) bool {
 	if err != nil {
 		return false
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	return err == nil && strings.TrimSpace(text) == expected
 }
 
 // Writes the marker atomically so a concurrent ensure never reads a torn one
 func tccWriteMarker(ctx context.Context, venvBin, sourceFile string) error {
-	return pyfs.AtomicWriteText(ctx, tccAnchorMarker(venvBin), tccMarkerValue(sourceFile), tccMarkerName+".")
+	return fsutil.WriteFile(ctx, tccAnchorMarker(venvBin), []byte(tccMarkerValue(sourceFile)), fsutil.WriteOptions{Prefix: tccMarkerName + ".", NativeLineEnds: true})
 }
 
 // Store root two levels above the resolved store interpreter
 func tccStoreRoot(sourceFile string) string {
-	resolved, err := pypath.Realpath(sourceFile, pypath.Lax)
+	resolved, err := pathutil.Resolve(sourceFile)
 	if err != nil {
 		resolved = sourceFile
 	}
@@ -267,7 +265,7 @@ func tccProvisionLibpython(venvDir, sourceFile string, refresh bool) {
 			}
 		}
 		if os.Link(src, dst) != nil {
-			if err := pyshutil.Copy2(src, dst); err != nil {
+			if err := fsutil.CopyFile(src, dst); err != nil {
 				pkgLog().Debug(fmt.Sprintf("libpython provision failed for %s", src), "err", err)
 			}
 		}
@@ -396,8 +394,8 @@ var tccPassesBootGate = func(staged, venvDir string) bool {
 		return false
 	}
 	last := printed[len(printed)-1]
-	got, err1 := pypath.Realpath(last, pypath.Lax)
-	want, err2 := pypath.Realpath(venvDir, pypath.Lax)
+	got, err1 := pathutil.Resolve(last)
+	want, err2 := pathutil.Resolve(venvDir)
 	if err1 != nil || err2 != nil {
 		return strings.Contains(last, venvDir)
 	}

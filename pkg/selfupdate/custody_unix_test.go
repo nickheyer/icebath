@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Records whether the checkout lock file is among this process's open fds, then hands over
@@ -94,7 +94,7 @@ func cuLockPath(t *testing.T, root string) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	real, err := pypath.Realpath(path, pypath.Lax)
+	real, err := pathutil.Resolve(path)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/tools"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // ForeignGatewayPid is a gateway pid outside the update scope with its home, empty when unreadable
@@ -17,8 +17,8 @@ type ForeignGatewayPid struct {
 
 // Expanded and resolved form of a home path, false when it cannot be resolved
 func resolvedScopeHome(p string) (string, bool) {
-	expanded := pypath.Expanduser(p)
-	resolved, err := pypath.Resolve(expanded)
+	expanded := pathutil.ExpandUser(p)
+	resolved, err := pathutil.Resolve(expanded)
 	if err != nil {
 		return "", false
 	}
@@ -26,7 +26,7 @@ func resolvedScopeHome(p string) (string, bool) {
 }
 
 // Set key of a resolved home compared the way pathlib compares paths on this platform
-func scopeKey(resolved string) string { return pypath.Normcase(resolved) }
+func scopeKey(resolved string) string { return pathutil.FoldCase(resolved) }
 
 // UpdateScopeHomes lists the resolved homes the running update owns, the invoking home, the root and its profiles
 func UpdateScopeHomes(ctx context.Context) map[string]bool {

@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Gates of the read lane cases, a method waiting on its gate when one is installed
@@ -37,9 +37,9 @@ func wsTestReadRig(t *testing.T) (*wsTestSocket, *wsTestGates, *wsTestLog) {
 	t.Helper()
 	wsTestNoOrphanGrace(t)
 	gates, log := &wsTestGates{gates: map[string]chan struct{}{}}, &wsTestLog{}
-	wsTestFakeAuthority(t, func(ctx context.Context, request *pyjson.Object) (*pyjson.Object, error) {
-		id := pyrepr.Str(request.GetOr("id", nil))
-		method := pyrepr.Str(request.GetOr("method", ""))
+	wsTestFakeAuthority(t, func(ctx context.Context, request *jsonutil.Object) (*jsonutil.Object, error) {
+		id := anyutil.String(request.ValueOr("id", nil))
+		method := anyutil.String(request.ValueOr("method", ""))
 		log.add("start:" + id)
 		if gate := gates.of(method); gate != nil {
 			select {
@@ -50,7 +50,7 @@ func wsTestReadRig(t *testing.T) (*wsTestSocket, *wsTestGates, *wsTestLog) {
 			}
 		}
 		log.add("done:" + id)
-		return pyjson.ObjectOf("jsonrpc", "2.0", "id", request.GetOr("id", nil), "result", pyjson.NewObject()), nil
+		return jsonutil.ObjectOf("jsonrpc", "2.0", "id", request.ValueOr("id", nil), "result", jsonutil.NewObject()), nil
 	})
 	prevRelease := wsReleaseSetupForTransport
 	wsReleaseSetupForTransport = func(tuihost.Transport) { log.add("teardown") }

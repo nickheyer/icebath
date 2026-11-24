@@ -10,7 +10,6 @@ import (
 	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 var displayIndexMissingSQL = "SELECT 1 FROM messages WHERE session_id = ?" + displayActiveClause +
@@ -156,8 +155,8 @@ func (d *SessionDB) ensureDisplayOrder(ctx context.Context, sessionID string) (b
 }
 
 // Display page of a session without the display index, newest live copy of each identity chosen
-func (d *SessionDB) legacyDisplayPage(ctx context.Context, sessionID, activeClause string, limit *int, offset int, latest bool) ([]*pyjson.Object, error) {
-	var out []*pyjson.Object
+func (d *SessionDB) legacyDisplayPage(ctx context.Context, sessionID, activeClause string, limit *int, offset int, latest bool) ([]*jsonutil.Object, error) {
+	var out []*jsonutil.Object
 	err := d.readCtx(ctx, false, func(conn SQLiteConn) error {
 		if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
 			return err
@@ -203,7 +202,7 @@ func (d *SessionDB) legacyDisplayPage(ctx context.Context, sessionID, activeClau
 		for i, identity := range order {
 			selectedIDs[i] = reps[identity].id
 		}
-		selected := map[int64]*pyjson.Object{}
+		selected := map[int64]*jsonutil.Object{}
 		for start := 0; start < len(selectedIDs); start += 900 {
 			chunk := selectedIDs[start:min(start+900, len(selectedIDs))]
 			args := []any{sessionID}
@@ -232,7 +231,7 @@ func (d *SessionDB) legacyDisplayPage(ctx context.Context, sessionID, activeClau
 }
 
 // One display page through the display index, live then newest copy per display order
-func displayRowsFromConn(ctx context.Context, conn SQLiteConn, sessionID string, limit *int, offset int, latest bool) ([]*pyjson.Object, error) {
+func displayRowsFromConn(ctx context.Context, conn SQLiteConn, sessionID string, limit *int, offset int, latest bool) ([]*jsonutil.Object, error) {
 	direction := "ASC"
 	if latest {
 		direction = "DESC"
@@ -259,7 +258,7 @@ func displayRowsFromConn(ctx context.Context, conn SQLiteConn, sessionID string,
 }
 
 // Display messages of a session on conn, false when the session is gone or its index incomplete
-func (d *SessionDB) displayMessagesFromConn(ctx context.Context, conn SQLiteConn, sessionID string) ([]*pyjson.Object, bool, error) {
+func (d *SessionDB) displayMessagesFromConn(ctx context.Context, conn SQLiteConn, sessionID string) ([]*jsonutil.Object, bool, error) {
 	exists, err := queryObjects(ctx, conn, "SELECT 1 FROM sessions WHERE id = ? LIMIT 1", sessionID)
 	if err != nil || len(exists) == 0 {
 		return nil, false, err
@@ -272,7 +271,7 @@ func (d *SessionDB) displayMessagesFromConn(ctx context.Context, conn SQLiteConn
 	if err != nil {
 		return nil, false, err
 	}
-	out := make([]*pyjson.Object, 0, len(rows))
+	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, r := range rows {
 		m, err := d.rowToMessageDict(r, "verified delete", true)
 		if err != nil {
@@ -294,7 +293,7 @@ type GetMessagesOptions struct {
 }
 
 // Message dicts of a session page under the requested visibility, deduped for display reads
-func (d *SessionDB) GetMessages(ctx context.Context, sessionID string, o GetMessagesOptions) ([]*pyjson.Object, error) {
+func (d *SessionDB) GetMessages(ctx context.Context, sessionID string, o GetMessagesOptions) ([]*jsonutil.Object, error) {
 	if o.AfterID != nil && (o.Latest || o.Offset != 0) {
 		return nil, pyValueError("after_id is incompatible with latest/offset paging")
 	}
@@ -312,7 +311,7 @@ func (d *SessionDB) GetMessages(ctx context.Context, sessionID string, o GetMess
 			return nil, err
 		}
 	}
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	var err error
 	display := o.IncludeCompacted && !o.IncludeInactive
 	switch {
@@ -377,7 +376,7 @@ func (d *SessionDB) GetMessages(ctx context.Context, sessionID string, o GetMess
 			slices.Reverse(rows)
 		}
 	}
-	out := make([]*pyjson.Object, 0, len(rows))
+	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, r := range rows {
 		m, err := d.rowToMessageDict(r, "get_messages", true)
 		if err != nil {
@@ -397,7 +396,7 @@ func (e *stateValueError) PyTypeName() string { return "ValueError" }
 func pyValueError(msg string) error { return &stateValueError{msg} }
 
 // Conversation rows of the sessions, removed row identities merged in for display reads
-func (d *SessionDB) fetchConversationRows(ctx context.Context, sessionIDs []string, clause string, withSessionID, withCompacted bool) ([]*pyjson.Object, error) {
+func (d *SessionDB) fetchConversationRows(ctx context.Context, sessionIDs []string, clause string, withSessionID, withCompacted bool) ([]*jsonutil.Object, error) {
 	head := ""
 	if withSessionID || withCompacted {
 		head = "session_id, "
@@ -415,7 +414,7 @@ func (d *SessionDB) fetchConversationRows(ctx context.Context, sessionIDs []stri
 }
 
 // Rows merged in id order with the identities of removed rows, content kept only for unindexed ones
-func (d *SessionDB) withRemovedIdentities(ctx context.Context, rows []*pyjson.Object, sessionIDs []string) ([]*pyjson.Object, error) {
+func (d *SessionDB) withRemovedIdentities(ctx context.Context, rows []*jsonutil.Object, sessionIDs []string) ([]*jsonutil.Object, error) {
 	removed, err := d.readAll(ctx, "SELECT session_id, id, role, timestamp, tool_call_id, tool_calls, tool_name, display_kind, display_metadata, "+
 		"message_uid, absorbed_message_uids, display_identity, active, compacted, "+
 		"CASE WHEN display_identity IS NULL THEN content END AS content "+
@@ -426,7 +425,7 @@ func (d *SessionDB) withRemovedIdentities(ctx context.Context, rows []*pyjson.Ob
 	}
 	out := append(slices.Clone(rows), removed...)
 	if len(removed) > 0 {
-		slices.SortStableFunc(out, func(a, b *pyjson.Object) int {
+		slices.SortStableFunc(out, func(a, b *jsonutil.Object) int {
 			x, _ := pyIntID(rowValue(a, "id"))
 			y, _ := pyIntID(rowValue(b, "id"))
 			return int(x - y)
@@ -523,7 +522,7 @@ func exactReplayedUserCloneKey(timestamp, content any) (string, bool) {
 	if timestamp == nil || emptyReplayContent(content) {
 		return "", false
 	}
-	text, err := pyjson.Dumps(content, pyjson.EnsureASCII(false), pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	text, err := jsonutil.Encode(content, jsonutil.SortKeys())
 	if err != nil {
 		return "", false
 	}
@@ -599,7 +598,7 @@ func dedupeReplayedUser(messages *[]map[string]any, msg map[string]any, clones m
 }
 
 // Conversation dicts restored from stored rows with identity, sidecars and tool uid pairing
-func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, includeAncestors, repairAlternation, includeRowIDs, includeSummaryMarkers bool) ([]map[string]any, error) {
+func (d *SessionDB) rowsToConversation(rows []*jsonutil.Object, sessionID string, includeAncestors, repairAlternation, includeRowIDs, includeSummaryMarkers bool) ([]map[string]any, error) {
 	stampSnapshot := repairAlternation && !includeRowIDs
 	var messages []map[string]any
 	restoredOrders := map[uintptr][]string{}
@@ -750,7 +749,7 @@ func (d *SessionDB) rowsToConversation(rows []*pyjson.Object, sessionID string, 
 }
 
 // Compression chain from the session through its live tip, root first
-func walkCompressionChain(sessionID string, step func(string) (*pyjson.Object, error)) ([]string, error) {
+func walkCompressionChain(sessionID string, step func(string) (*jsonutil.Object, error)) ([]string, error) {
 	current := sessionID
 	var chain []string
 	if current != "" {
@@ -775,7 +774,7 @@ func walkCompressionChain(sessionID string, step func(string) (*pyjson.Object, e
 
 // Compression continuation chain of a session, root first through the tip
 func (d *SessionDB) GetCompressionChain(ctx context.Context, sessionID string) ([]string, error) {
-	return walkCompressionChain(sessionID, func(current string) (*pyjson.Object, error) {
+	return walkCompressionChain(sessionID, func(current string) (*jsonutil.Object, error) {
 		return d.readOne(ctx, chainStepSQL, current)
 	})
 }
@@ -791,7 +790,7 @@ func (d *SessionDB) GetCompressionTip(ctx context.Context, sessionID string) (st
 
 // Compression tip walked on an open connection
 func compressionTipOn(ctx context.Context, conn SQLiteConn, sessionID string) (string, error) {
-	chain, err := walkCompressionChain(sessionID, func(current string) (*pyjson.Object, error) {
+	chain, err := walkCompressionChain(sessionID, func(current string) (*jsonutil.Object, error) {
 		rows, err := queryObjects(ctx, conn, chainStepSQL, current)
 		if err != nil || len(rows) == 0 {
 			return nil, err
@@ -866,7 +865,7 @@ func (d *SessionDB) GetResumeConversations(ctx context.Context, sessionID string
 	if err != nil {
 		return nil, nil, err
 	}
-	var tip []*pyjson.Object
+	var tip []*jsonutil.Object
 	for _, r := range rows {
 		if rowValue(r, "session_id") == sessionID && pyTruthy(rowValue(r, "active")) && rowValue(r, "role") != "session_meta" {
 			tip = append(tip, r)

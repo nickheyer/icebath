@@ -11,7 +11,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const siblingReaderHelperEnv = "ICEBATH_SIBLING_READER_HELPER"
@@ -202,7 +202,7 @@ func TestWritableCloseUsesPassiveCheckpoint(t *testing.T) {
 }
 
 // Session ids of search hits
-func hitSessionIDs(hits []*pyjson.Object) []string {
+func hitSessionIDs(hits []*jsonutil.Object) []string {
 	var out []string
 	for _, h := range hits {
 		v, _ := h.Get("session_id")

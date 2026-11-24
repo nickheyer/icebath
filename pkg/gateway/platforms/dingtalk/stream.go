@@ -1,26 +1,24 @@
 package dingtalk
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrequests"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
-	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 const (
@@ -44,22 +42,22 @@ type streamHeaders struct {
 	topic     any
 }
 
-// Headers of a frame, the ValueError int raises for a malformed time field
+// Headers of a frame, the conversion error of a time field that is not a number
 func parseStreamHeaders(value any) (streamHeaders, error) {
 	var h streamHeaders
-	obj, ok := value.(*pyjson.Object)
+	obj, ok := value.(*jsonutil.Object)
 	if !ok {
-		return h, attributeError(value, "items")
+		return h, kindError("frame headers", "an object", value)
 	}
-	for _, name := range obj.Keys {
-		field := obj.Vals[name]
+	for _, name := range obj.Keys() {
+		field := obj.Value(name)
 		switch name {
 		case "messageId":
 			h.messageID = field
 		case "topic":
 			h.topic = field
 		case "time", "eventBornTime":
-			if _, err := pyint.Of(field); err != nil {
+			if _, err := anyutil.ToInt(field); err != nil {
 				return h, err
 			}
 		}
@@ -74,28 +72,27 @@ type streamMessage struct {
 }
 
 // Frame of a decoded JSON message, the data string parsed when it is non empty
-func parseStreamMessage(d *pyjson.Object) (*streamMessage, error) {
-	msg := &streamMessage{data: pyjson.NewObject()}
+func parseStreamMessage(d *jsonutil.Object) (*streamMessage, error) {
+	msg := &streamMessage{data: jsonutil.NewObject()}
 	var data any = ""
-	for _, name := range d.Keys {
+	for _, name := range d.Keys() {
 		switch name {
 		case "data":
-			data = d.Vals[name]
+			data = d.Value(name)
 		case "headers":
-			headers, err := parseStreamHeaders(d.Vals[name])
+			headers, err := parseStreamHeaders(d.Value(name))
 			if err != nil {
 				return nil, err
 			}
 			msg.headers = headers
 		}
 	}
-	if pyrepr.Truthy(data) {
+	if anyutil.IsTrue(data) {
 		text, ok := data.(string)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("the JSON object must be str, bytes or bytearray, not %s",
-				pyrepr.TypeName(data))}
+			return nil, kindError("frame data", "a string", data)
 		}
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil, err
 		}
@@ -113,16 +110,16 @@ type ackMessage struct {
 }
 
 // Wire form of the acknowledgement, the data serialized to a JSON string
-func (a *ackMessage) toDict() (*pyjson.Object, error) {
-	headers := pyjson.ObjectOf("contentType", contentTypeJSON)
+func (a *ackMessage) toDict() (*jsonutil.Object, error) {
+	headers := jsonutil.ObjectOf("contentType", contentTypeJSON)
 	if a.messageID != nil {
 		headers.Set("messageId", a.messageID)
 	}
-	data, err := pyjson.Dumps(a.data)
+	data, err := jsonutil.Encode(a.data)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("code", a.code, "headers", headers, "message", a.message, "data", data), nil
+	return jsonutil.ObjectOf("code", a.code, "headers", headers, "message", a.message, "data", data), nil
 }
 
 // Handler of one callback topic, answering a message with an acknowledgement code and response text
@@ -140,9 +137,9 @@ type streamClient struct {
 	logger      *slog.Logger
 	topics      []string
 	handlers    map[string]callbackHandler
-	websocket   *pywebsockets.Conn
+	websocket   *websocketutil.Conn
 	preStarted  bool
-	accessToken *pyjson.Object
+	accessToken *jsonutil.Object
 }
 
 // Client for the app credentials logging as the SDK client logger
@@ -215,7 +212,7 @@ func (c *streamClient) start(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		var closed *pywebsockets.ConnectionClosed
+		var closed *websocketutil.CloseError
 		switch {
 		case err == nil:
 		case errors.Is(err, errOpenConnectionFailed):
@@ -232,7 +229,7 @@ func (c *streamClient) start(ctx context.Context) error {
 			if err := sleepSeconds(ctx, 3); err != nil {
 				return err
 			}
-			c.log().Error("unknown exception "+pyrepr.ExceptionMessage(err), "error", err)
+			c.log().Error("unknown exception "+err.Error(), "error", err)
 		}
 	}
 }
@@ -249,21 +246,22 @@ func (c *streamClient) serveConnection(ctx context.Context) error {
 	if connection == nil {
 		return errOpenConnectionFailed
 	}
-	c.log().Info(fmt.Sprintf("endpoint is %s", pyrepr.Str(connection)))
+	c.log().Info(fmt.Sprintf("endpoint is %s", anyutil.String(connection)))
 	endpoint, ok := connection.Get("endpoint")
 	if !ok {
-		return &gateway.PyError{Kind: "KeyError", Msg: "'endpoint'"}
+		return missingKey("connection", "endpoint")
 	}
 	ticket, ok := connection.Get("ticket")
 	if !ok {
-		return &gateway.PyError{Kind: "KeyError", Msg: "'ticket'"}
+		return missingKey("connection", "ticket")
 	}
 	ticketText, ok := ticket.(string)
 	if !ok {
-		return &gateway.PyError{Kind: "TypeError", Msg: "quote_from_bytes() expected bytes"}
+		return kindError("connection ticket", "a string", ticket)
 	}
-	uri := pyrepr.Str(endpoint) + "?ticket=" + pyurl.QuotePlus(ticketText, "")
-	ws, err := pywebsockets.Connect(ctx, uri, pywebsockets.ConnectOptions{})
+	uri := anyutil.String(endpoint) + "?ticket=" + url.QueryEscape(ticketText)
+	ws, err := websocketutil.Connect(ctx, uri, websocketutil.Options{OpenTimeout: 10 * time.Second, MaxMessageSize: 1 << 20,
+		Compression: true, Proxy: httputil.Proxy})
 	if err != nil {
 		return err
 	}
@@ -275,20 +273,14 @@ func (c *streamClient) serveConnection(ctx context.Context) error {
 	defer stopKeepalive()
 	go c.keepalive(kctx, ws, 60)
 	for {
-		raw, err := ws.Recv(ctx)
+		msg, err := ws.Receive(ctx)
 		if err != nil {
-			if pywebsockets.IsClosedOK(err) {
+			if websocketutil.IsCleanClose(err) {
 				return nil
 			}
 			return err
 		}
-		var parsed any
-		switch frame := raw.(type) {
-		case string:
-			parsed, err = pyjson.Loads(frame)
-		case []byte:
-			parsed, err = pyjson.LoadsBytes(frame)
-		}
+		parsed, err := jsonutil.Decode(msg.Data)
 		if err != nil {
 			return err
 		}
@@ -297,7 +289,7 @@ func (c *streamClient) serveConnection(ctx context.Context) error {
 }
 
 // Pings the socket at the interval until it closes
-func (c *streamClient) keepalive(ctx context.Context, ws *pywebsockets.Conn, pingInterval float64) {
+func (c *streamClient) keepalive(ctx context.Context, ws *websocketutil.Conn, pingInterval float64) {
 	for {
 		if sleepSeconds(ctx, pingInterval) != nil {
 			return
@@ -309,10 +301,10 @@ func (c *streamClient) keepalive(ctx context.Context, ws *pywebsockets.Conn, pin
 }
 
 // Routes one frame and closes the socket when the gateway asked to disconnect, a failure logged
-func (c *streamClient) backgroundTask(ctx context.Context, jsonMessage any, ws *pywebsockets.Conn) {
+func (c *streamClient) backgroundTask(ctx context.Context, jsonMessage any, ws *websocketutil.Conn) {
 	result, err := c.routeMessage(ctx, jsonMessage, ws)
 	if err != nil {
-		c.log().Error(fmt.Sprintf("error processing message: %s", pyrepr.ExceptionMessage(err)))
+		c.log().Error(fmt.Sprintf("error processing message: %s", err.Error()))
 		return
 	}
 	if result == streamTagDisconnect {
@@ -321,34 +313,34 @@ func (c *streamClient) backgroundTask(ctx context.Context, jsonMessage any, ws *
 }
 
 // Dispatches a system, event or callback frame to its handler and sends the acknowledgement back
-func (c *streamClient) routeMessage(ctx context.Context, jsonMessage any, ws *pywebsockets.Conn) (string, error) {
-	frame, ok := jsonMessage.(*pyjson.Object)
+func (c *streamClient) routeMessage(ctx context.Context, jsonMessage any, ws *websocketutil.Conn) (string, error) {
+	frame, ok := jsonMessage.(*jsonutil.Object)
 	if !ok {
-		return "", attributeError(jsonMessage, "get")
+		return "", kindError("frame", "an object", jsonMessage)
 	}
 	result := ""
-	msgType := frame.GetOr("type", "")
+	msgType := frame.ValueOr("type", "")
 	var ack *ackMessage
 	switch {
-	case pyrepr.Equal(msgType, "SYSTEM"):
+	case msgType == "SYSTEM":
 		msg, err := parseStreamMessage(frame)
 		if err != nil {
 			return "", err
 		}
 		ack = &ackMessage{code: ackStatusOK, messageID: msg.headers.messageID, message: "OK", data: msg.data}
-		if pyrepr.Equal(msg.headers.topic, streamTagDisconnect) {
+		if msg.headers.topic == streamTagDisconnect {
 			result = streamTagDisconnect
-			c.log().Info(fmt.Sprintf("received disconnect topic=%s, message=%s", pyrepr.Str(msg.headers.topic), pyrepr.Str(frame)))
+			c.log().Info(fmt.Sprintf("received disconnect topic=%s, message=%s", anyutil.String(msg.headers.topic), anyutil.String(frame)))
 		} else {
-			c.log().Warn(fmt.Sprintf("unknown message topic, topic=%s, message=%s", pyrepr.Str(msg.headers.topic), pyrepr.Str(frame)))
+			c.log().Warn(fmt.Sprintf("unknown message topic, topic=%s, message=%s", anyutil.String(msg.headers.topic), anyutil.String(frame)))
 		}
-	case pyrepr.Equal(msgType, "EVENT"):
+	case msgType == "EVENT":
 		msg, err := parseStreamMessage(frame)
 		if err != nil {
 			return "", err
 		}
 		ack = &ackMessage{code: ackStatusNotImplement, messageID: msg.headers.messageID, message: "not implement", data: msg.data}
-	case pyrepr.Equal(msgType, "CALLBACK"):
+	case msgType == "CALLBACK":
 		msg, err := parseStreamMessage(frame)
 		if err != nil {
 			return "", err
@@ -359,23 +351,23 @@ func (c *streamClient) routeMessage(ctx context.Context, jsonMessage any, ws *py
 		c.mu.Unlock()
 		if handler != nil {
 			code, response := handler.process(ctx, msg)
-			ack = &ackMessage{code: code, messageID: msg.headers.messageID, data: pyjson.ObjectOf("response", response)}
+			ack = &ackMessage{code: code, messageID: msg.headers.messageID, data: jsonutil.ObjectOf("response", response)}
 		} else {
-			c.log().Warn(fmt.Sprintf("unknown callback message topic, topic=%s, message=%s", pyrepr.Str(msg.headers.topic), pyrepr.Str(frame)))
+			c.log().Warn(fmt.Sprintf("unknown callback message topic, topic=%s, message=%s", anyutil.String(msg.headers.topic), anyutil.String(frame)))
 		}
 	default:
-		c.log().Warn(fmt.Sprintf("unknown message, content=%s", pyrepr.Str(frame)))
+		c.log().Warn(fmt.Sprintf("unknown message, content=%s", anyutil.String(frame)))
 	}
 	if ack != nil {
 		wire, err := ack.toDict()
 		if err != nil {
 			return "", err
 		}
-		encoded, err := pyjson.Dumps(wire)
+		encoded, err := jsonutil.Encode(wire)
 		if err != nil {
 			return "", err
 		}
-		if err := ws.Send(encoded); err != nil {
+		if err := ws.SendText(encoded); err != nil {
 			return "", err
 		}
 	}
@@ -395,25 +387,29 @@ func hostIP() string {
 	return ""
 }
 
-// One JSON POST the way the SDK sends it through requests, the response text kept for the failure log
-func sdkPost(ctx context.Context, target string, headers map[string]string, body string) (*pyrequests.Response, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, bytes.NewReader([]byte(body)))
+// One JSON POST without a time limit, the response text kept for the failure log, a 4xx or 5xx status as the error
+func sdkPost(ctx context.Context, target string, headers map[string]string, body string) (*httputil.Response, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, target, strings.NewReader(body))
 	if err != nil {
 		return nil, "", err
 	}
 	for k, v := range headers {
 		req.Header.Set(k, v)
 	}
-	resp, err := pyrequests.Send(ctx, http.DefaultTransport.(*http.Transport), pyrequests.Timeout{}, req)
+	client := &http.Client{Transport: httputil.TrustEnvCA(nil), CheckRedirect: httputil.RedirectPolicy(true)}
+	resp, err := httputil.Do(client, req, httputil.Timeout{})
 	if err != nil {
 		return nil, "", err
 	}
-	text := string(resp.Body)
-	return resp, text, resp.RaiseForStatus(target)
+	text := string(resp.Content)
+	if resp.StatusCode >= 400 {
+		return resp, text, resp.CheckStatus()
+	}
+	return resp, text, nil
 }
 
 // Asks the gateway for a WebSocket endpoint and ticket for the registered topics, nil when the request fails
-func (c *streamClient) openConnection(ctx context.Context) (*pyjson.Object, error) {
+func (c *streamClient) openConnection(ctx context.Context) (*jsonutil.Object, error) {
 	target := openAPIEndpoint(ctx) + "/v1.0/gateway/connections/open"
 	c.log().Info("open connection, url=" + target)
 	headers := map[string]string{"Content-Type": contentTypeJSON, "Accept": contentTypeJSON,
@@ -422,10 +418,10 @@ func (c *streamClient) openConnection(ctx context.Context) (*pyjson.Object, erro
 	c.mu.Lock()
 	topics := make([]any, 0, len(c.topics))
 	for _, topic := range c.topics {
-		topics = append(topics, pyjson.ObjectOf("type", "CALLBACK", "topic", topic))
+		topics = append(topics, jsonutil.ObjectOf("type", "CALLBACK", "topic", topic))
 	}
 	c.mu.Unlock()
-	body, err := pyjson.Dumps(pyjson.ObjectOf("clientId", c.clientID, "clientSecret", c.clientSecret, "subscriptions", topics,
+	body, err := jsonutil.Encode(jsonutil.ObjectOf("clientId", c.clientID, "clientSecret", c.clientSecret, "subscriptions", topics,
 		"ua", "dingtalk-sdk-python/v"+streamSDKVersion+"-union", "localIp", hostIP()))
 	if err != nil {
 		return nil, err
@@ -435,19 +431,19 @@ func (c *streamClient) openConnection(ctx context.Context) (*pyjson.Object, erro
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		c.log().Error(fmt.Sprintf("open connection failed, error=%s, response.text=%s", pyrepr.ExceptionMessage(err), text))
+		c.log().Error(fmt.Sprintf("open connection failed, error=%s, response.text=%s", err.Error(), text))
 		return nil, nil
 	}
-	parsed, err := pyjson.LoadsBytes(resp.Body)
+	parsed, err := resp.JSON()
 	if err != nil {
 		return nil, err
 	}
-	connection, ok := parsed.(*pyjson.Object)
+	connection, ok := parsed.(*jsonutil.Object)
 	if !ok {
-		if !pyrepr.Truthy(parsed) {
+		if !anyutil.IsTrue(parsed) {
 			return nil, nil
 		}
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(parsed))}
+		return nil, kindError("connection", "an object", parsed)
 	}
 	if connection.Len() == 0 {
 		return nil, nil
@@ -462,15 +458,15 @@ func (c *streamClient) getAccessToken(ctx context.Context) (any, error) {
 	cached := c.accessToken
 	c.mu.Unlock()
 	if cached != nil && cached.Len() > 0 {
-		expire, err := pyint.Int64(cached.Vals["expireTime"])
+		expire, err := anyutil.ToInt(cached.Value("expireTime"))
 		if err != nil {
 			return nil, err
 		}
 		if now < expire {
-			return cached.Vals["accessToken"], nil
+			return cached.Value("accessToken"), nil
 		}
 	}
-	values, err := pyjson.Dumps(pyjson.ObjectOf("appKey", c.clientID, "appSecret", c.clientSecret))
+	values, err := jsonutil.Encode(jsonutil.ObjectOf("appKey", c.clientID, "appSecret", c.clientSecret))
 	if err != nil {
 		return nil, err
 	}
@@ -480,29 +476,29 @@ func (c *streamClient) getAccessToken(ctx context.Context) (any, error) {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		c.log().Error(fmt.Sprintf("get dingtalk access token failed, error=%s, response.text=%s", pyrepr.ExceptionMessage(err), text))
+		c.log().Error(fmt.Sprintf("get dingtalk access token failed, error=%s, response.text=%s", err.Error(), text))
 		return nil, nil
 	}
-	parsed, err := pyjson.LoadsBytes(resp.Body)
+	parsed, err := resp.JSON()
 	if err != nil {
 		return nil, err
 	}
-	result, ok := parsed.(*pyjson.Object)
+	result, ok := parsed.(*jsonutil.Object)
 	if !ok {
-		return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object does not support item assignment", pyrepr.TypeName(parsed))}
+		return nil, kindError("access token answer", "an object", parsed)
 	}
 	expireIn, ok := result.Get("expireIn")
 	if !ok {
-		return nil, &gateway.PyError{Kind: "KeyError", Msg: "'expireIn'"}
+		return nil, missingKey("access token answer", "expireIn")
 	}
-	seconds, err := pyint.Int64(expireIn)
+	seconds, err := anyutil.ToInt(expireIn)
 	if err != nil {
 		return nil, err
 	}
 	result.Set("expireTime", time.Now().Unix()+seconds-5*60)
 	token, ok := result.Get("accessToken")
 	if !ok {
-		return nil, &gateway.PyError{Kind: "KeyError", Msg: "'accessToken'"}
+		return nil, missingKey("access token answer", "accessToken")
 	}
 	c.mu.Lock()
 	c.accessToken = result
@@ -511,7 +507,7 @@ func (c *streamClient) getAccessToken(ctx context.Context) (any, error) {
 }
 
 // Current gateway socket, nil before the first connection
-func (c *streamClient) currentWebsocket() *pywebsockets.Conn {
+func (c *streamClient) currentWebsocket() *websocketutil.Conn {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.websocket

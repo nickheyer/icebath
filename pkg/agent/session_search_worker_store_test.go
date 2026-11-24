@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func seedSearchDB(t *testing.T, dir, sessionID, content string) *state.SessionDB {
@@ -25,16 +25,16 @@ func seedSearchDB(t *testing.T, dir, sessionID, content string) *state.SessionDB
 
 func searchedSessions(t *testing.T, out string) (bool, []any) {
 	t.Helper()
-	payload, err := pyjson.LoadsDict(out)
+	payload, err := jsonutil.DecodeObject(out)
 	if err != nil {
 		t.Fatal(out)
 	}
 	var ids []any
-	results, _ := payload.GetOr("results", nil).([]any)
+	results, _ := payload.ValueOr("results", nil).([]any)
 	for _, r := range results {
-		ids = append(ids, r.(*pyjson.Object).GetOr("session_id", nil))
+		ids = append(ids, r.(*jsonutil.Object).ValueOr("session_id", nil))
 	}
-	success, _ := payload.GetOr("success", nil).(bool)
+	success, _ := payload.ValueOr("success", nil).(bool)
 	return success, ids
 }
 
@@ -43,8 +43,8 @@ func TestWorkerRecallReadsTheStateDbInsteadOfTheStore(t *testing.T) {
 	homeDir := t.TempDir()
 	db := seedSearchDB(t, homeDir, "worker-s", "the zanzibar rollout is blocked on the store")
 	defer db.Close()
-	store := mustStore(t, cannedCall(func(string, *pyjson.Object) (any, error) { return pyjson.NewObject(), nil }),
-		pyjson.ObjectOf("session_id", "worker-s"), filepath.Join(homeDir, "outbox"), 0)
+	store := mustStore(t, cannedCall(func(string, *jsonutil.Object) (any, error) { return jsonutil.NewObject(), nil }),
+		jsonutil.ObjectOf("session_id", "worker-s"), filepath.Join(homeDir, "outbox"), 0)
 	defer store.Close()
 	if _, searchable := any(store).(tools.SessionSearchStore); searchable {
 		t.Fatal("the worker store answers FTS reads")

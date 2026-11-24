@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // RecordFailureOptions holds the keyword arguments of one non success outcome record
@@ -16,7 +16,7 @@ type RecordFailureOptions struct {
 	ForceTrip         bool
 	ReleaseClaim      bool
 	EndRun            bool
-	EventPayloadExtra *pyjson.Object
+	EventPayloadExtra *jsonutil.Object
 	Infrastructure    bool
 }
 
@@ -50,7 +50,7 @@ func recordTaskFailure(ctx context.Context, conn state.SQLiteConn, taskID, errTe
 		} else {
 			retryStatus = "ready"
 		}
-		failures, err := pyIntOf(row.Get("consecutive_failures"))
+		failures, err := cellIntOf(row.Get("consecutive_failures"))
 		if err != nil {
 			return err
 		}
@@ -59,7 +59,7 @@ func recordTaskFailure(ctx context.Context, conn state.SQLiteConn, taskID, errTe
 		}
 		effectiveLimit, limitSource := limit, "dispatcher"
 		if override := rowGet(row, "max_retries", nil); override != nil {
-			if effectiveLimit, err = pyIntOf(override); err != nil {
+			if effectiveLimit, err = cellIntOf(override); err != nil {
 				return err
 			}
 			limitSource = "task"
@@ -82,7 +82,7 @@ func recordTaskFailure(ctx context.Context, conn state.SQLiteConn, taskID, errTe
 				return err
 			}
 			body := payload("error", errText)
-			body.Update(detail)
+			body.Merge(detail)
 			return appendEvent(ctx, conn, taskID, f.Outcome, body, runID)
 		}
 		claimReset := ""
@@ -104,7 +104,7 @@ func recordTaskFailure(ctx context.Context, conn state.SQLiteConn, taskID, errTe
 			body.Set("sticky", true)
 		}
 		if f.EventPayloadExtra != nil && f.EventPayloadExtra.Len() > 0 {
-			body.Update(f.EventPayloadExtra)
+			body.Merge(f.EventPayloadExtra)
 		}
 		blocked = true
 		return appendEvent(ctx, conn, taskID, "gave_up", body, runID)

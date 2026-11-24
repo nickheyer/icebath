@@ -1630,7 +1630,7 @@ func IsProviderStreamParseError(err error) bool {
 	if errors.As(err, &syntaxErr) || errors.As(err, &typeErr) || errors.As(err, &apiErr) {
 		return false
 	}
-	if mro := declaredExceptionMRO(err); mro != nil && (!slices.Contains(mro, "ValueError") || slices.Contains(mro, "JSONDecodeError") || slices.Contains(mro, "UnicodeEncodeError")) {
+	if chain := errorClassChain(err); chain != nil && (!slices.Contains(chain, "ValueError") || slices.Contains(chain, "JSONDecodeError") || slices.Contains(chain, "UnicodeEncodeError")) {
 		return false
 	}
 	return anyIn(strings.ToLower(err.Error()), ProviderStreamParseMarkers)

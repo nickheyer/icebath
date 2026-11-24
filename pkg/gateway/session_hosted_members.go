@@ -9,10 +9,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Ignored roster entries already logged, keyed by profile, field, bounded value repr and detail
@@ -64,7 +64,7 @@ func LocalBots(runner any) []LocalBot {
 			text := "a linked profile home is not supported yet"
 			problem = &text
 		}
-		bots = append(bots, LocalBot{Name: p.name, Home: pypath.PurePathStr(p.authority.ProfileID), Authority: p.authority,
+		bots = append(bots, LocalBot{Name: p.name, Home: filepath.Clean(p.authority.ProfileID), Authority: p.authority,
 			Problem: problem, Retiring: p.authority.Retiring})
 	}
 	return bots
@@ -78,13 +78,13 @@ type HostedMemberRefusal struct {
 }
 
 // Seatable profile homes by name for a group on the authority, and the names a new member may not take
-func MemberRoster(ctx context.Context, authority *SessionAuthority, siblings bool) (*pydict.Dict[string, string], map[string]HostedMemberRefusal, error) {
+func MemberRoster(ctx context.Context, authority *SessionAuthority, siblings bool) (*orderedutil.Map[string, string], map[string]HostedMemberRefusal, error) {
 	own, served, refused := hostedServedBots(authority)
 	blocked := map[string]bool{}
 	for name := range refused {
 		blocked[name] = true
 	}
-	homes := pydict.New[string, string]()
+	homes := orderedutil.NewMap[string, string]()
 	for name, profileHome := range served.All() {
 		homes.Set(name, profileHome)
 	}
@@ -150,7 +150,7 @@ func RefuseUnseatable(members any, refused map[string]HostedMemberRefusal) error
 			if !has {
 				kind = "local"
 			}
-			if !pyrepr.Equal(kind, "local") {
+			if !anyutil.Equal(kind, "local") {
 				continue
 			}
 		}
@@ -168,7 +168,7 @@ func RefuseUnseatable(members any, refused map[string]HostedMemberRefusal) error
 }
 
 // Own profile name, served homes by name and refused names over the local bots this process serves
-func hostedServedBots(authority *SessionAuthority) (string, *pydict.Dict[string, string], map[string]HostedMemberRefusal) {
+func hostedServedBots(authority *SessionAuthority) (string, *orderedutil.Map[string, string], map[string]HostedMemberRefusal) {
 	var runner any
 	if authority.Runner != nil {
 		runner = authority.Runner
@@ -184,7 +184,7 @@ func hostedServedBots(authority *SessionAuthority) (string, *pydict.Dict[string,
 	if !found {
 		own = servedProfileName(authority.ProfileID)
 	}
-	served := pydict.New[string, string]()
+	served := orderedutil.NewMap[string, string]()
 	refused := map[string]HostedMemberRefusal{}
 	for _, bot := range bots {
 		switch {
@@ -198,7 +198,7 @@ func hostedServedBots(authority *SessionAuthority) (string, *pydict.Dict[string,
 	}
 	if _, isRefused := refused[own]; !isRefused {
 		if !served.Has(own) {
-			served.Set(own, pypath.PurePathStr(authority.ProfileID))
+			served.Set(own, filepath.Clean(authority.ProfileID))
 		}
 	}
 	return own, served, refused
@@ -225,20 +225,20 @@ func hostedConfiguredProfiles(ctx context.Context, authority *SessionAuthority, 
 }
 
 // Home one entry seats with an empty reason, else its refusal and any alias home existing rooms keep
-func hostedConfigEntry(name string, value any, served *pydict.Dict[string, string], seated map[string]string) (*string, string, string, error) {
+func hostedConfigEntry(name string, value any, served *orderedutil.Map[string, string], seated map[string]string) (*string, string, string, error) {
 	text, isText := value.(string)
 	if !roomIdentifierRe.MatchString(name) || !isText {
 		return nil, "invalid_params", "must map a profile name to a home", nil
 	}
-	target := pypath.PurePathStr(text)
+	target := filepath.Clean(text)
 	if !filepath.IsAbs(target) {
 		return nil, "invalid_params", "must be an absolute, resolved home", nil
 	}
-	resolved, err := pypath.Resolve(target)
+	resolved, err := pathutil.Resolve(target)
 	if err != nil {
 		return nil, "", "", err
 	}
-	if pypath.Normcase(pypath.PurePathStr(resolved)) != pypath.Normcase(target) {
+	if pathutil.FoldCase(filepath.Clean(resolved)) != pathutil.FoldCase(target) {
 		return nil, "invalid_params", "must be an absolute, resolved home", nil
 	}
 	key := home.Key(target)
@@ -256,7 +256,7 @@ func hostedConfigEntry(name string, value any, served *pydict.Dict[string, strin
 
 // Logs one ignored entry once per value however often the roster is read
 func hostedMembersReport(own, field string, value any, detail string) {
-	text := []rune(pyrepr.Repr(value))
+	text := []rune(anyutil.Quote(value))
 	if len(text) > 200 {
 		text = text[:200]
 	}

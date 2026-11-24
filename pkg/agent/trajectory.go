@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Wall clock the trajectory timestamp reads
@@ -42,13 +42,13 @@ func SaveTrajectory(trajectory []any, model string, completed bool, filename str
 			filename = "trajectory_samples.jsonl"
 		}
 	}
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("conversations", trajectory)
 	entry.Set("timestamp", naiveISOFormat(trajectoryNow()))
 	entry.Set("model", model)
 	entry.Set("completed", completed)
 	// A trajectory file is durable and may hold tool arguments or user text, so it is redacted whatever the display toggle says
-	if safe, ok := RedactTrajectoryValue(entry).(*pyjson.Object); ok {
+	if safe, ok := RedactTrajectoryValue(entry).(*jsonutil.Object); ok {
 		entry = safe
 	}
 	if err := appendTrajectoryLine(entry, filename); err != nil {
@@ -58,8 +58,8 @@ func SaveTrajectory(trajectory []any, model string, completed bool, filename str
 	pkgLog().Info(fmt.Sprintf("Trajectory saved to %s", filename))
 }
 
-func appendTrajectoryLine(entry *pyjson.Object, filename string) (err error) {
-	line, err := pyjson.Dumps(entry, pyjson.EnsureASCII(false))
+func appendTrajectoryLine(entry *jsonutil.Object, filename string) (err error) {
+	line, err := jsonutil.Encode(entry)
 	if err != nil {
 		return err
 	}

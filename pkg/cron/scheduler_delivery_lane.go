@@ -3,7 +3,7 @@ package cron
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Bot Chat pseudo platform token and the display policy platform its warnings follow
@@ -39,7 +39,7 @@ func normalizeDeliverValue(deliver any) string {
 	case []any:
 		var parts []string
 		for _, p := range v {
-			if s := strings.TrimSpace(pyrepr.Str(p)); s != "" {
+			if s := strings.TrimSpace(anyutil.String(p)); s != "" {
 				parts = append(parts, s)
 			}
 		}
@@ -48,7 +48,7 @@ func normalizeDeliverValue(deliver any) string {
 		}
 		return strings.Join(parts, ",")
 	}
-	return pyrepr.Str(deliver)
+	return anyutil.String(deliver)
 }
 
 // Raw deliver lane of a run outcome, the failure lane when it is set for a failure else deliver

@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Backups a config writer keeps per reason
@@ -95,7 +95,7 @@ func BackupConfig(ctx context.Context, configPath, reason string, keep int) (str
 	if _, err := os.Lstat(dest); err == nil {
 		return "", nil
 	}
-	if err := pyshutil.Copy2(configPath, dest); err != nil {
+	if err := fsutil.CopyFile(configPath, dest); err != nil {
 		return fail(err), nil
 	}
 	// The copy carries the source mode, so a config an editor left world readable would yield a world readable copy of its credentials

@@ -13,26 +13,27 @@ import (
 	"io"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mimeutil "github.com/nickheyer/icebath/pkg/utils/mime"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const (
@@ -112,25 +113,25 @@ func mediaBody(mediaType, mediaID string) []any {
 // One inbound media reference with its kind
 type mediaRef struct {
 	kind  string
-	media *pyjson.Object
+	media *jsonutil.Object
 }
 
 // Caches every image and file the message or its quote carries, returning the cached paths and MIME types
-func (a *WeComAdapter) extractMedia(ctx context.Context, body *pyjson.Object) ([]string, []string, error) {
+func (a *WeComAdapter) extractMedia(ctx context.Context, body *jsonutil.Object) ([]string, []string, error) {
 	var refs []mediaRef
-	ref := func(kind string, container *pyjson.Object) bool {
-		media, ok := container.Vals[kind].(*pyjson.Object)
+	ref := func(kind string, container *jsonutil.Object) bool {
+		media, ok := container.Value(kind).(*jsonutil.Object)
 		if ok && media != nil {
 			refs = append(refs, mediaRef{kind, media})
 			return true
 		}
 		return false
 	}
-	msgtype := lowerOf(body.Vals["msgtype"])
+	msgtype := lowerOf(body.Value("msgtype"))
 	if msgtype == "mixed" {
-		items, _ := dictOrEmpty(body, "mixed").Vals["msg_item"].([]any)
+		items, _ := dictOrEmpty(body, "mixed").Value("msg_item").([]any)
 		for _, raw := range items {
-			if item, ok := raw.(*pyjson.Object); ok && item != nil && lowerOf(item.Vals["msgtype"]) == "image" {
+			if item, ok := raw.(*jsonutil.Object); ok && item != nil && lowerOf(item.Value("msgtype")) == "image" {
 				ref("image", item)
 			}
 		}
@@ -139,14 +140,14 @@ func (a *WeComAdapter) extractMedia(ctx context.Context, body *pyjson.Object) ([
 		if msgtype == "file" {
 			ref("file", body)
 		}
-		if appmsg, ok := body.Vals["appmsg"].(*pyjson.Object); msgtype == "appmsg" && ok && appmsg != nil {
+		if appmsg, ok := body.Value("appmsg").(*jsonutil.Object); msgtype == "appmsg" && ok && appmsg != nil {
 			if !ref("file", appmsg) {
 				ref("image", appmsg)
 			}
 		}
 	}
 	quote := dictOrEmpty(body, "quote")
-	if quoteType := lowerOf(quote.Vals["msgtype"]); quoteType == "image" || quoteType == "file" {
+	if quoteType := lowerOf(quote.Value("msgtype")); quoteType == "image" || quoteType == "file" {
 		ref(quoteType, quote)
 	}
 	urls, types := []string{}, []string{}
@@ -163,28 +164,25 @@ func (a *WeComAdapter) extractMedia(ctx context.Context, body *pyjson.Object) ([
 }
 
 // Caches one inbound image or file reference given inline as base64 or by URL, empty when it cannot be cached
-func (a *WeComAdapter) cacheMedia(ctx context.Context, kind string, media *pyjson.Object) (string, string, error) {
-	if inline := media.Vals["base64"]; pyrepr.Truthy(inline) {
+func (a *WeComAdapter) cacheMedia(ctx context.Context, kind string, media *jsonutil.Object) (string, string, error) {
+	if inline := media.Value("base64"); anyutil.IsTrue(inline) {
 		raw, err := decodeBase64(inline)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("[%s] Failed to decode %s base64 media: %s", a.Name(), kind, errText(err)))
+			pkgLog().Debug(fmt.Sprintf("[%s] Failed to decode %s base64 media: %s", a.Name(), kind, err.Error()))
 			return "", "", nil
 		}
-		filename := pyrepr.Str(pyrepr.Or(pyrepr.Or(media.Vals["filename"], media.Vals["name"]), "wecom_file"))
-		docMime, _, err := pymimetypes.GuessType(filename, true)
-		if err != nil {
-			return "", "", err
-		}
+		filename := anyutil.String(anyutil.Or(anyutil.Or(media.Value("filename"), media.Value("name")), "wecom_file"))
+		docMime := mimeutil.TypeByName(filename)
 		if docMime == "" {
 			docMime = "application/octet-stream"
 		}
 		return a.storeMedia(ctx, kind, raw, detectImageExt(raw), "", filename, docMime, "")
 	}
-	url := textOf(media.Vals["url"])
+	url := textOf(media.Value("url"))
 	if url == "" {
 		return "", "", nil
 	}
-	aesKey := pyurl.Unquote(textOf(media.Vals["aeskey"]))
+	aesKey := urlutil.Unescape(textOf(media.Value("aeskey")))
 	step := "download"
 	raw, headers, err := a.downloadRemoteBytes(ctx, url, absoluteMaxBytes)
 	if err == nil && aesKey != "" {
@@ -195,7 +193,7 @@ func (a *WeComAdapter) cacheMedia(ctx context.Context, kind string, media *pyjso
 		if ctx.Err() != nil {
 			return "", "", ctx.Err()
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] Failed to %s %s from %s: %s", a.Name(), step, kind, url, errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] Failed to %s %s from %s: %s", a.Name(), step, kind, url, err.Error()))
 		return "", "", nil
 	}
 	contentType := strings.TrimSpace(strings.SplitN(headers["content-type"], ";", 2)[0])
@@ -226,7 +224,7 @@ func (a *WeComAdapter) storeMedia(ctx context.Context, kind string, raw []byte, 
 	path, err := cacheImageFromBytes(ctx, raw, ext)
 	var refused *mediacache.ValueError
 	if errors.As(err, &refused) {
-		pkgLog().Warn(fmt.Sprintf("[%s] Rejected non-image bytes%s: %s", a.Name(), origin, errText(err)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Rejected non-image bytes%s: %s", a.Name(), origin, err.Error()))
 		return "", "", nil
 	}
 	if err != nil {
@@ -242,10 +240,10 @@ func (a *WeComAdapter) storeMedia(ctx context.Context, kind string, raw []byte, 
 func decodeBase64(data any) ([]byte, error) {
 	s, ok := data.(string)
 	if !ok {
-		return nil, &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'split'", pyrepr.TypeName(data))}
+		return nil, fmt.Errorf("inline media is not base64 text: got %s", anyutil.Kind(data))
 	}
 	parts := strings.SplitN(s, ",", 2)
-	return pybase64.B64Decode(strings.TrimSpace(parts[len(parts)-1]))
+	return base64util.Decode(strings.TrimSpace(parts[len(parts)-1]))
 }
 
 // Image extension from magic bytes, webp for a RIFF WEBP container and jpg otherwise
@@ -263,19 +261,19 @@ func detectImageExt(data []byte) string {
 	return ".jpg"
 }
 
-// MIME type the strict mimetypes table holds for an extension, else the fallback
+// MIME type of an extension, else the fallback
 func mimeForExt(ext, fallback string) string {
-	if typ, ok := pymimetypes.TypesMapGet(strings.ToLower(ext)); ok {
+	if typ := mimeutil.TypeByExtension(ext); typ != "" {
 		return typ
 	}
 	return fallback
 }
 
 // Extension from the content type unless it is the generic bin, then from the URL path, then the fallback
-func guessExtension(url, contentType, fallback string) (string, error) {
+func guessExtension(rawURL, contentType, fallback string) (string, error) {
 	ext := ""
 	if contentType != "" {
-		ext = pymimetypes.GuessExtension(contentType, true)
+		ext = mimeutil.ExtensionByType(contentType)
 	}
 	if ext == ".bin" {
 		ext = ""
@@ -283,33 +281,33 @@ func guessExtension(url, contentType, fallback string) (string, error) {
 	if ext != "" {
 		return ext, nil
 	}
-	parsed, err := pyurl.Parse(url)
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
-	if suffix := pypath.Suffix(parsed.Path); suffix != "" {
+	if suffix := pathutil.Suffix(parsed.Path); suffix != "" {
 		return suffix, nil
 	}
 	return fallback, nil
 }
 
 // File name from the content disposition, else the URL path name with an extension guessed when it has none
-func guessFilename(url, contentDisposition, contentType string) (string, error) {
+func guessFilename(rawURL, contentDisposition, contentType string) (string, error) {
 	if m, _ := dispositionFilenameRE.FindStringMatch(contentDisposition); m != nil {
 		return m.GroupByNumber(1).String(), nil
 	}
-	parsed, err := pyurl.Parse(url)
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
 		return "", err
 	}
-	name := pypath.Name(parsed.Path)
+	name := pathutil.Name(parsed.Path)
 	if name == "" {
 		name = "document"
 	}
 	if strings.Contains(name, ".") {
 		return name, nil
 	}
-	ext := pymimetypes.GuessExtension(contentType, true)
+	ext := mimeutil.ExtensionByType(contentType)
 	if ext == "" {
 		ext = ".bin"
 	}
@@ -324,7 +322,7 @@ func decryptFileBytes(encryptedData []byte, aesKey string) ([]byte, error) {
 	if aesKey == "" {
 		return nil, &pyErr{"ValueError", "aes_key is required"}
 	}
-	key, err := pybase64.B64Decode(aesKey + strings.Repeat("=", (4-utf8.RuneCountInString(aesKey)%4)%4))
+	key, err := base64.StdEncoding.DecodeString(aesKey + strings.Repeat("=", (4-utf8.RuneCountInString(aesKey)%4)%4))
 	if err != nil {
 		return nil, err
 	}
@@ -370,28 +368,24 @@ func (a *WeComAdapter) downloadRemoteBytes(ctx context.Context, url string, maxB
 	}
 	req.Header.Set("User-Agent", "icebath-agent/1.0")
 	req.Header.Set("Accept", "*/*")
-	stream, err := pyhttpx.Stream(client, req, 30*time.Second)
+	stream, err := httputil.Stream(client, req, httputil.EachPhase(30*time.Second))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, nil, ctx.Err()
 		}
-		var te *pyhttpx.TimeoutError
-		if errors.As(err, &te) {
-			return nil, nil, &pyErr{"ReadTimeout", ""}
-		}
-		return nil, nil, &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+		return nil, nil, err
 	}
 	defer stream.Body.Close()
-	if stream.StatusCode < 200 || stream.StatusCode >= 300 {
-		return nil, nil, &pyErr{"HTTPStatusError", stream.StatusErrorText(url)}
+	if err := stream.CheckStatus(); err != nil {
+		return nil, nil, err
 	}
 	headers := map[string]string{}
 	for key, values := range stream.Header {
 		headers[strings.ToLower(key)] = strings.Join(values, ", ")
 	}
-	if contentLength := headers["content-length"]; contentLength != "" && pystr.StrIsDigit(contentLength) {
-		if n, ok := pystr.IntText(contentLength); ok && (!n.IsInt64() || n.Int64() > int64(maxBytes)) {
-			return nil, nil, &pyErr{"ValueError", fmt.Sprintf("Remote media exceeds WeCom limit: %s bytes > %d bytes", n.String(), maxBytes)}
+	if contentLength := headers["content-length"]; textutil.IsDigits(contentLength) {
+		if n, err := textutil.ParseInt(contentLength); (err == nil || errors.Is(err, strconv.ErrRange)) && n > int64(maxBytes) {
+			return nil, nil, &pyErr{"ValueError", fmt.Sprintf("Remote media exceeds WeCom limit: %s bytes > %d bytes", contentLength, maxBytes)}
 		}
 	}
 	var data []byte
@@ -409,31 +403,24 @@ func (a *WeComAdapter) downloadRemoteBytes(ctx context.Context, url string, maxB
 			if ctx.Err() != nil {
 				return nil, nil, ctx.Err()
 			}
-			return nil, nil, &pyErr{"ReadError", pyhttpx.ErrorText(rerr)}
+			return nil, nil, rerr
 		}
 	}
 }
 
-// MIME type of a file name, audio/amr for an amr suffix the tables miss and octet stream otherwise
-func guessMimeType(filename string) (string, error) {
-	typ, _, err := pymimetypes.GuessType(filename, true)
-	if err != nil {
-		return "", err
+// MIME type of a file name, octet stream when the name tells nothing
+func guessMimeType(filename string) string {
+	if typ := mimeutil.TypeByName(filename); typ != "" {
+		return typ
 	}
-	if typ != "" {
-		return typ, nil
-	}
-	if strings.ToLower(pypath.Suffix(filename)) == ".amr" {
-		return "audio/amr", nil
-	}
-	return "application/octet-stream", nil
+	return "application/octet-stream"
 }
 
 // Lowercased bare content type, guessed from the file name when missing or generic
-func normalizeContentType(contentType, filename string) (string, error) {
+func normalizeContentType(contentType, filename string) string {
 	normalized := strings.ToLower(strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0]))
 	if normalized != "" && normalized != "application/octet-stream" && normalized != "text/plain" {
-		return normalized, nil
+		return normalized
 	}
 	return guessMimeType(filename)
 }
@@ -478,7 +465,7 @@ func applyFileSizeLimits(ctx context.Context, fileSize int, detectedType, conten
 
 // Whether a media source is an http or https URL
 func looksLikeURL(mediaSource string) bool {
-	parsed, err := pyurl.Parse(mediaSource)
+	parsed, err := urlutil.Split(mediaSource)
 	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 
@@ -491,7 +478,7 @@ func (a *WeComAdapter) loadOutboundMedia(ctx context.Context, mediaSource, fileN
 	if placeholder, _ := mediaPlaceholderRE.MatchString(source); placeholder {
 		return nil, "", "", &pyErr{"ValueError", "Media placeholder was not replaced with a real file path: " + source}
 	}
-	parsed, err := pyurl.Parse(source)
+	parsed, err := urlutil.Split(source)
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -506,15 +493,14 @@ func (a *WeComAdapter) loadOutboundMedia(ctx context.Context, mediaSource, fileN
 				return nil, "", "", err
 			}
 		}
-		contentType, err := normalizeContentType(headers["content-type"], resolvedName)
-		return data, contentType, resolvedName, err
+		return data, normalizeContentType(headers["content-type"], resolvedName), resolvedName, nil
 	}
 	localPath := source
 	if parsed.Scheme == "file" {
-		localPath = pyurl.Unquote(parsed.Path)
+		localPath = urlutil.Unescape(parsed.Path)
 	}
-	localPath = pypath.Expanduser(localPath)
-	if !pypath.IsAbs(localPath) {
+	localPath = pathutil.ExpandUser(localPath)
+	if !filepath.IsAbs(localPath) {
 		abs, err := filepath.Abs(localPath)
 		if err != nil {
 			return nil, "", "", err
@@ -529,17 +515,16 @@ func (a *WeComAdapter) loadOutboundMedia(ctx context.Context, mediaSource, fileN
 	}
 	resolvedName := fileName
 	if resolvedName == "" {
-		resolvedName = pypath.Name(localPath)
+		resolvedName = pathutil.Name(localPath)
 	}
 	data, err := os.ReadFile(localPath)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil, "", "", &pyErr{"FileNotFoundError", pypath.OSErrorText(err)}
+			return nil, "", "", &pyErr{"FileNotFoundError", err.Error()}
 		}
 		return nil, "", "", err
 	}
-	contentType, err := normalizeContentType("", resolvedName)
-	return data, contentType, resolvedName, err
+	return data, normalizeContentType("", resolvedName), resolvedName, nil
 }
 
 // Loaded outbound media with its detected type and the verdict of the size limits
@@ -563,7 +548,7 @@ func (a *WeComAdapter) prepareOutboundMedia(ctx context.Context, mediaSource, fi
 }
 
 // Sends a proactive command and fails on a response that carries an error
-func (a *WeComAdapter) checkedRequest(ctx context.Context, cmd string, body *pyjson.Object, operation string) (*pyjson.Object, error) {
+func (a *WeComAdapter) checkedRequest(ctx context.Context, cmd string, body *jsonutil.Object, operation string) (*jsonutil.Object, error) {
 	response, err := a.sendRequest(ctx, cmd, body, requestTimeoutSeconds)
 	if err != nil {
 		return nil, err
@@ -575,7 +560,7 @@ func (a *WeComAdapter) checkedRequest(ctx context.Context, cmd string, body *pyj
 }
 
 // Uploads media bytes in base64 chunks and returns the type, media id and creation time of the upload
-func (a *WeComAdapter) uploadMediaBytes(ctx context.Context, data []byte, mediaType, filename string) (*pyjson.Object, error) {
+func (a *WeComAdapter) uploadMediaBytes(ctx context.Context, data []byte, mediaType, filename string) (*jsonutil.Object, error) {
 	if len(data) == 0 {
 		return nil, &pyErr{"ValueError", "Cannot upload empty media"}
 	}
@@ -589,9 +574,9 @@ func (a *WeComAdapter) uploadMediaBytes(ctx context.Context, data []byte, mediaT
 	if err != nil {
 		return nil, err
 	}
-	uploadID := textOf(dictOrEmpty(initResponse, "body").Vals["upload_id"])
+	uploadID := textOf(dictOrEmpty(initResponse, "body").Value("upload_id"))
 	if uploadID == "" {
-		return nil, runtimeError("media upload init failed: missing upload_id in response " + pyrepr.Str(initResponse))
+		return nil, runtimeError("media upload init failed: missing upload_id in response " + anyutil.String(initResponse))
 	}
 	for chunkIndex, start := 0, 0; start < totalSize; chunkIndex, start = chunkIndex+1, start+uploadChunkSize {
 		chunk := base64.StdEncoding.EncodeToString(data[start:min(start+uploadChunkSize, totalSize)])
@@ -605,15 +590,15 @@ func (a *WeComAdapter) uploadMediaBytes(ctx context.Context, data []byte, mediaT
 		return nil, err
 	}
 	finishBody := dictOrEmpty(finishResponse, "body")
-	mediaID := textOf(finishBody.Vals["media_id"])
+	mediaID := textOf(finishBody.Value("media_id"))
 	if mediaID == "" {
-		return nil, runtimeError("media upload finish failed: missing media_id in response " + pyrepr.Str(finishResponse))
+		return nil, runtimeError("media upload finish failed: missing media_id in response " + anyutil.String(finishResponse))
 	}
-	return obj("type", pyrepr.Str(pyrepr.Or(finishBody.Vals["type"], mediaType)), "media_id", mediaID, "created_at", finishBody.Vals["created_at"]), nil
+	return obj("type", anyutil.String(anyutil.Or(finishBody.Value("type"), mediaType)), "media_id", mediaID, "created_at", finishBody.Value("created_at")), nil
 }
 
 // Sends an uploaded media proactively to a chat
-func (a *WeComAdapter) sendMediaMessage(ctx context.Context, chatID, mediaType, mediaID string) (*pyjson.Object, error) {
+func (a *WeComAdapter) sendMediaMessage(ctx context.Context, chatID, mediaType, mediaID string) (*jsonutil.Object, error) {
 	return a.checkedRequest(ctx, appCmdSend, obj(append([]any{"chatid", chatID}, mediaBody(mediaType, mediaID)...)...), "send media message")
 }
 
@@ -627,7 +612,7 @@ func (a *WeComAdapter) sendFollowupMarkdown(ctx context.Context, chatID, content
 		return nil, err
 	}
 	if !result.Success {
-		pkgLog().Warn(fmt.Sprintf("[%s] Follow-up markdown send failed: %s", a.Name(), pyrepr.Str(result.Error)))
+		pkgLog().Warn(fmt.Sprintf("[%s] Follow-up markdown send failed: %s", a.Name(), anyutil.String(result.Error)))
 	}
 	return &result, nil
 }
@@ -644,9 +629,9 @@ func (a *WeComAdapter) sendMediaSource(ctx context.Context, chatID, mediaSource,
 		}
 		var pe *pyErr
 		if !errors.As(err, &pe) || pe.kind != "FileNotFoundError" {
-			pkgLog().Error(fmt.Sprintf("[%s] Failed to prepare outbound media %s: %s", a.Name(), mediaSource, errText(err)))
+			pkgLog().Error(fmt.Sprintf("[%s] Failed to prepare outbound media %s: %s", a.Name(), mediaSource, err.Error()))
 		}
-		return gateway.SendResult{Success: false, Error: errText(err)}, nil
+		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	if prepared.rejected {
 		if text := a.Self().WarningText(ctx, "⚠️ "+prepared.rejectReason, &caption, "", "", nil); text != nil && *text != "" {
@@ -668,8 +653,8 @@ func (a *WeComAdapter) sendMediaSource(ctx context.Context, chatID, mediaSource,
 		pkgLog().Error(fmt.Sprintf("[%s] TIMEOUT in _send_media_source for %s", a.Name(), mediaSource))
 		return gateway.SendResult{Success: false, Error: "Timeout sending media to WeCom"}, nil
 	case err != nil:
-		pkgLog().Error(fmt.Sprintf("[%s] Failed to send media %s: %s", a.Name(), mediaSource, errText(err)))
-		return gateway.SendResult{Success: false, Error: errText(err)}, nil
+		pkgLog().Error(fmt.Sprintf("[%s] Failed to send media %s: %s", a.Name(), mediaSource, err.Error()))
+		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	raw := map[string]any{"upload": uploadResult, "media": mediaResponse}
 	downgrade := ""
@@ -702,14 +687,14 @@ func (a *WeComAdapter) sendMediaSource(ctx context.Context, chatID, mediaSource,
 }
 
 // Uploads the prepared media then sends it as a passive reply when a req id is usable and proactively otherwise
-func (a *WeComAdapter) uploadAndSendMedia(ctx context.Context, chatID string, prepared *preparedMedia, replyReqID string) (*pyjson.Object, *pyjson.Object, error) {
+func (a *WeComAdapter) uploadAndSendMedia(ctx context.Context, chatID string, prepared *preparedMedia, replyReqID string) (*jsonutil.Object, *jsonutil.Object, error) {
 	uploadResult, err := a.uploadMediaBytes(ctx, prepared.data, prepared.finalType, prepared.fileName)
 	if err != nil {
 		return nil, nil, err
 	}
-	mediaID := pyrepr.Str(uploadResult.Vals["media_id"])
+	mediaID := anyutil.String(uploadResult.Value("media_id"))
 	pkgLog().Info(fmt.Sprintf("[%s] upload_media_bytes OK: media_id=%s type=%s", a.Name(), mediaID, prepared.finalType))
-	var mediaResponse *pyjson.Object
+	var mediaResponse *jsonutil.Object
 	operation := "send_media_message"
 	if replyReqID != "" {
 		operation = "send_reply_media"
@@ -722,7 +707,7 @@ func (a *WeComAdapter) uploadAndSendMedia(ctx context.Context, chatID string, pr
 	if err != nil {
 		return nil, nil, err
 	}
-	pkgLog().Info(fmt.Sprintf("[%s] %s OK: %s", a.Name(), operation, pyrepr.Str(mediaResponse)))
+	pkgLog().Info(fmt.Sprintf("[%s] %s OK: %s", a.Name(), operation, anyutil.String(mediaResponse)))
 	return uploadResult, mediaResponse, nil
 }
 
@@ -732,7 +717,7 @@ func (a *WeComAdapter) SendImage(ctx context.Context, chatID, imageURL, caption,
 	if err != nil || result.Success || !looksLikeURL(imageURL) {
 		return result, err
 	}
-	pkgLog().Warn(fmt.Sprintf("[%s] Falling back to text send for image URL %s: %s", a.Name(), imageURL, pyrepr.Str(result.Error)))
+	pkgLog().Warn(fmt.Sprintf("[%s] Falling back to text send for image URL %s: %s", a.Name(), imageURL, anyutil.String(result.Error)))
 	content := imageURL
 	if caption != "" {
 		content = caption + "\n" + imageURL

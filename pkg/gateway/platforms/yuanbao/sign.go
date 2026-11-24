@@ -6,29 +6,29 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/http"
+	"regexp"
 	"runtime"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/dlclark/regexp2/v2"
-
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
+	"github.com/nickheyer/icebath/pkg/mediacache"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 const (
@@ -70,10 +70,10 @@ var maxReconnectAttempts = 100
 var noReconnectCloseCodes = map[int]bool{4012: true, 4013: true, 4014: true, 4018: true, 4019: true, 4021: true}
 
 var (
-	ybResRefRE     = pyre.MustCompile(`\[(image|voice|video|file(?::[^|\]]*)?)\|ybres:([A-Za-z0-9_\-]+)\]`)
-	ybLocalMediaRE = pyre.MustCompile(`\[(\w+):[^\]]*?(/[^\]]+?)\s*\]`)
-	indicatorRE    = pyre.MustCompile(`\s*\(\d+/\d+\)$`)
-	atUserRE       = pyre.MustCompile(`(?m)(?:(?<=\s)|(?<=^))@(\S+?)(?=\s|$)`)
+	ybResRefRE     = regexutil.Lazy(regexp.MustCompile, `\[(image|voice|video|file(?::[^|\]]*)?)\|ybres:([A-Za-z0-9_\-]+)\]`)
+	ybLocalMediaRE = regexutil.Lazy(regexp.MustCompile, `\[(\w+):[^\]]*?(/[^\]]+?)\s*\]`)
+	indicatorRE    = regexutil.Lazy(regexp.MustCompile, `[\s\v\x{85}\p{Z}]*\(\d+/\d+\)(\n?)$`)
+	atUserRE       = regexutil.Lazy(regexutil.MustCompile, `(?m)(?:(?<=[\s\v\x{85}\p{Z}])|(?<=^))@([^\s\v\x{85}\p{Z}]+?)(?=[\s\v\x{85}\p{Z}]|$)`)
 )
 
 // Media kinds whose anchors resolve to local files for the model
@@ -96,11 +96,11 @@ var (
 	}
 )
 
-// Python exception carried as a Go error with its class name
+// Error of the adapter carrying the kind of failure beside its message
 type pyErr struct{ kind, msg string }
 
-func (e *pyErr) Error() string      { return e.msg }
-func (e *pyErr) PyTypeName() string { return e.kind }
+func (e *pyErr) Error() string     { return e.msg }
+func (e *pyErr) ErrorKind() string { return e.kind }
 
 func runtimeError(msg string) error { return &RuntimeError{Msg: msg} }
 
@@ -112,41 +112,28 @@ func isTimeout(err error) bool {
 	if errors.As(err, &pe) {
 		return pe.kind == "TimeoutError"
 	}
-	var open *pywebsockets.OpenTimeoutError
+	var open *websocketutil.OpenTimeoutError
 	return errors.As(err, &open) || errors.Is(err, context.DeadlineExceeded)
 }
 
-// Whether the error is a ValueError or one of its subclasses
+// Whether the error rejects a value: a bad argument or file of this package, media the cache refuses, malformed JSON, a number that does not parse or base64 that does not decode
 func isValueError(err error) bool {
-	name := pyrepr.ExceptionName(err)
 	var pe *pyErr
-	var ie *pyint.Error
-	var be *pybase64.Error
-	switch {
-	case errors.As(err, &pe):
-		name = pe.kind
-	case errors.As(err, &ie):
-		name = ie.Kind
-	case errors.As(err, &be), errors.Is(err, pybase64.ErrNonASCII):
-		name = "ValueError"
-	}
-	for _, class := range pyrepr.ExceptionMROFrom(name, nil) {
-		if class == "ValueError" {
-			return true
-		}
-	}
-	return false
+	var ge *errorutil.Error
+	return errors.As(err, &pe) && (pe.kind == "ValueError" || pe.kind == "UnicodeDecodeError") ||
+		errors.As(err, &ge) && ge.Kind == "ValueError" ||
+		errors.As(err, new(*mediacache.ValueError)) ||
+		errors.As(err, new(*jsonutil.SyntaxError)) ||
+		errors.Is(err, anyutil.ErrNotNumber) ||
+		errors.As(err, new(base64.CorruptInputError))
 }
 
-// str of an exception as a percent s log argument renders it
-func errText(err error) string { return pyrepr.ExceptionMessage(err) }
-
-// str of an exception, its class name when the message is empty
-func errTextOrName(err error) string {
-	if msg := errText(err); msg != "" {
+// Message of an error, its kind when the message is empty
+func errTextOrKind(err error) string {
+	if msg := err.Error(); msg != "" {
 		return msg
 	}
-	return pyrepr.ExceptionName(err)
+	return errorutil.Kind(err)
 }
 
 // sys.platform of the host
@@ -181,10 +168,10 @@ func dictGetOr(d map[string]any, key string, def any) any {
 
 // str of a falsy defaulted value, like str(value or "")
 func strOrEmpty(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Stripped str of a falsy defaulted value, like str(value or "").strip()
@@ -198,45 +185,30 @@ func textValue(v any) string {
 	case string:
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Whether a decoded value equals an int the way Python compares numbers
-func equalsInt(v any, n int64) bool { return v != nil && pyjson.Equal(v, n) }
+func equalsInt(v any, n int64) bool { return v != nil && anyutil.Equal(v, n) }
 
 // A TIMTextElem message body entry
-func textElem(text string) *pyjson.Object {
-	return pyjson.ObjectOf("msg_type", textElemType, "msg_content", pyjson.ObjectOf("text", text))
+func textElem(text string) *jsonutil.Object {
+	return jsonutil.ObjectOf("msg_type", textElemType, "msg_content", jsonutil.ObjectOf("text", text))
 }
 
 // One ybres anchor of a transcript message
 type ybresRef struct{ rid, kind, filename string }
 
 // Resource id, kind and file name of each resolvable anchor match
-func iterYbresRefs(matches []*regexp2.Match) []ybresRef {
+func iterYbresRefs(matches [][]string) []ybresRef {
 	var refs []ybresRef
 	for _, m := range matches {
-		kind, filename := pystrPartition(m.GroupByNumber(1).String(), ":")
+		kind, filename, _ := strings.Cut(m[1], ":")
 		if kind = strings.TrimSpace(kind); resolvableMediaKinds[kind] {
-			refs = append(refs, ybresRef{m.GroupByNumber(2).String(), kind, strings.TrimSpace(filename)})
+			refs = append(refs, ybresRef{m[2], kind, strings.TrimSpace(filename)})
 		}
 	}
 	return refs
-}
-
-// Head and tail of text around the first separator, the whole text and an empty tail when it is absent
-func pystrPartition(text, sep string) (string, string) {
-	head, tail, _ := strings.Cut(text, sep)
-	return head, tail
-}
-
-// Every match of the pattern in the text in order
-func findAll(re *regexp2.Regexp, text string) []*regexp2.Match {
-	var out []*regexp2.Match
-	for m, _ := re.FindStringMatch(text); m != nil; m, _ = re.FindNextMatch(m) {
-		out = append(out, m)
-	}
-	return out
 }
 
 // Sign token acquisition, caching, signing and retry shared by the whole process
@@ -256,7 +228,7 @@ const (
 )
 
 // HTTP client of a sign token request, a seam tests replace
-var signHTTPClient = func() *http.Client { return pyhttpx.PlainClient(false) }
+var signHTTPClient = func() *http.Client { return httputil.Client(false) }
 
 // Refresh lock of an app key, created on demand
 func signRefreshLock(appKey string) *sync.Mutex {
@@ -331,9 +303,9 @@ func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv strin
 		nonceBytes := make([]byte, 16)
 		_, _ = rand.Read(nonceBytes)
 		nonce, timestamp := hex.EncodeToString(nonceBytes), buildTimestamp()
-		body, err := pyjson.Dumps(pyjson.ObjectOf("app_key", appKey, "nonce", nonce,
-			"signature", computeSignature(nonce, timestamp, appKey, appSecret), "timestamp", timestamp),
-			pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+		body, err := jsonutil.Encode(jsonutil.ObjectOf("app_key", appKey, "nonce", nonce,
+			"signature", computeSignature(nonce, timestamp, appKey, appSecret), "timestamp", timestamp))
+
 		if err != nil {
 			return nil, err
 		}
@@ -357,7 +329,7 @@ func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv strin
 			retry = fmt.Sprintf(" (retry %d/%d)", attempt, signMaxRetries)
 		}
 		pkgLog().Info(fmt.Sprintf("Sign token request: url=%s%s", rawURL, retry))
-		resp, err := pyhttpx.Do(client, req, signHTTPTimeout)
+		resp, err := httputil.Do(client, req, httputil.EachPhase(signHTTPTimeout))
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil, ctx.Err()
@@ -369,7 +341,7 @@ func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv strin
 		}
 		decoded, err := resp.JSON()
 		if err != nil {
-			return nil, valueError("Sign token response parse error: " + errText(err))
+			return nil, valueError("Sign token response parse error: " + err.Error())
 		}
 		result, ok := asDict(decoded)
 		if !ok {
@@ -379,15 +351,15 @@ func signFetch(ctx context.Context, appKey, appSecret, apiDomain, routeEnv strin
 		if equalsInt(code, 0) {
 			data, isDict := asDict(result["data"])
 			if !isDict {
-				return nil, valueError("Sign token response missing 'data' field: " + pyrepr.Str(decoded))
+				return nil, valueError("Sign token response missing 'data' field: " + anyutil.String(decoded))
 			}
-			pkgLog().Info(fmt.Sprintf("Sign token success: bot_id=%s", pyrepr.Str(data["bot_id"])))
+			pkgLog().Info(fmt.Sprintf("Sign token success: bot_id=%s", anyutil.String(data["bot_id"])))
 			return data, nil
 		}
 		if !equalsInt(code, signRetryableCode) || attempt >= signMaxRetries {
-			return nil, runtimeError(fmt.Sprintf("Sign token error: code=%s, msg=%s", pyrepr.Str(code), pyrepr.Str(dictGetOr(result, "msg", ""))))
+			return nil, runtimeError(fmt.Sprintf("Sign token error: code=%s, msg=%s", anyutil.String(code), anyutil.String(dictGetOr(result, "msg", ""))))
 		}
-		pkgLog().Warn(fmt.Sprintf("Sign token retryable: code=%s, retrying in %ss (attempt=%d/%d)", pyrepr.Str(code), pyrepr.Float(signRetryDelayS),
+		pkgLog().Warn(fmt.Sprintf("Sign token retryable: code=%s, retrying in %ss (attempt=%d/%d)", anyutil.String(code), strconv.FormatFloat(signRetryDelayS, 'f', -1, 64),
 			attempt+1, signMaxRetries))
 		if err := sleep(ctx, signRetryDelayS); err != nil {
 			return nil, err

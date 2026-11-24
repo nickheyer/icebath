@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/memory"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestCuratorHooksReadRewriteAndUpdateJobs(t *testing.T) {
@@ -16,7 +16,7 @@ func TestCuratorHooksReadRewriteAndUpdateJobs(t *testing.T) {
 	if err != nil || !names["old-skill"] || !names["gone-skill"] || len(names) != 2 {
 		t.Fatal(names, err)
 	}
-	consolidated := pyjson.NewObject()
+	consolidated := jsonutil.NewObject()
 	consolidated.Set("old-skill", "umbrella")
 	report, err := memory.CuratorHooks.RewriteSkillRefs(context.Background(), s.home, consolidated, []string{"gone-skill"})
 	if err != nil || report.JobsUpdated != 1 || report.JobsScanned != 2 || len(report.Rewrites) != 1 || report.Rewrites[0].JobID != keep.ID {
@@ -29,7 +29,7 @@ func TestCuratorHooksReadRewriteAndUpdateJobs(t *testing.T) {
 		if len(jobs) != 2 {
 			t.Fatal(len(jobs))
 		}
-		jobs[0].(*pyjson.Object).Set("prompt", "restored prompt")
+		jobs[0].(*jsonutil.Object).Set("prompt", "restored prompt")
 		return false, nil
 	}); err != nil {
 		t.Fatal(err)
@@ -39,7 +39,7 @@ func TestCuratorHooksReadRewriteAndUpdateJobs(t *testing.T) {
 	}
 	if err := memory.CuratorHooks.UpdateJobs(context.Background(), s.home, func(jobs []any) (bool, error) {
 		for _, item := range jobs {
-			if obj := item.(*pyjson.Object); obj.Vals["id"] == keep.ID {
+			if obj := item.(*jsonutil.Object); obj.Value("id") == keep.ID {
 				obj.Set("prompt", "restored prompt")
 			}
 		}

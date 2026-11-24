@@ -9,10 +9,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const slashCompletionLimit = 30
@@ -63,9 +63,9 @@ func skillUsageLookup(ctx context.Context) (func(string) *big.Int, func(string) 
 	}
 	hub := scope.ReadHubInstalledNames()
 	usage := func(name string) *big.Int {
-		rec, _ := records.GetOr(name, nil).(*pyjson.Object)
+		rec, _ := records.ValueOr(name, nil).(*jsonutil.Object)
 		if rec == nil {
-			rec = pyjson.NewObject()
+			rec = jsonutil.NewObject()
 		}
 		count, err := skills.ActivityCount(rec)
 		if err != nil {

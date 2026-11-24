@@ -16,8 +16,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fresh recovery process an aborted restart phase consults, replaced by tests
@@ -51,11 +51,11 @@ func runFreshRecoveryProcess(ctx context.Context, profiles []string, candidates 
 		}
 		command = append([]string{systemdRun, "--user", "--scope", "--quiet", "--collect", "--"}, command...)
 	}
-	supervisors := pyjson.NewObject()
+	supervisors := jsonutil.NewObject()
 	for _, profile := range profiles {
 		supervisors.Set(profile, candidates[profile])
 	}
-	payload, err := pyjson.Dumps(pyjson.ObjectOf("profiles", stringsAny(profiles), "supervisors", supervisors))
+	payload, err := jsonutil.Encode(jsonutil.ObjectOf("profiles", stringsAny(profiles), "supervisors", supervisors))
 	if err != nil {
 		return nil
 	}
@@ -73,7 +73,7 @@ func runFreshRecoveryProcess(ctx context.Context, profiles []string, candidates 
 }
 
 // Result of a fresh recovery that requested profiles, the per bucket profiles and the skips
-func recoveryOutcome(requested, verified, attempted, failed []string, skipped []*pyjson.Object) map[string]any {
+func recoveryOutcome(requested, verified, attempted, failed []string, skipped []*jsonutil.Object) map[string]any {
 	skippedRows := make([]any, 0, len(skipped))
 	for _, row := range skipped {
 		skippedRows = append(skippedRows, row)
@@ -101,8 +101,8 @@ func recoverGatewayRestartAfterAbort(ctx context.Context, w io.Writer, plan *Upd
 		pkgLog().Warn(fmt.Sprintf("Fresh gateway restart recovery exited %d", result.ReturnCode))
 		return allFailed(), nil
 	}
-	decoded, err := pyjson.Loads(result.Stdout)
-	recovery, isObj := decoded.(*pyjson.Object)
+	decoded, err := jsonutil.Decode(result.Stdout)
+	recovery, isObj := decoded.(*jsonutil.Object)
 	if err != nil || !isObj {
 		pkgLog().Warn("Fresh gateway restart recovery returned invalid JSON")
 		return allFailed(), nil
@@ -110,7 +110,7 @@ func recoverGatewayRestartAfterAbort(ctx context.Context, w io.Writer, plan *Upd
 	buckets := [3][]string{}
 	valid := true
 	for i, key := range []string{"verified", "relaunch_attempted", "failed"} {
-		list, ok := recovery.GetOr(key, nil).([]any)
+		list, ok := recovery.ValueOr(key, nil).([]any)
 		if !ok {
 			valid = false
 			break
@@ -149,15 +149,15 @@ func recoverGatewayRestartAfterAbort(ctx context.Context, w io.Writer, plan *Upd
 		}
 		sort.Strings(buckets[i])
 	}
-	if covered, ok := recovery.GetOr("covered", nil).(*pyjson.Object); ok {
-		for _, owner := range covered.Keys {
-			others, isList := covered.Vals[owner].([]any)
+	if covered, ok := recovery.ValueOr("covered", nil).(*jsonutil.Object); ok {
+		for _, owner := range covered.Keys() {
+			others, isList := covered.Value(owner).([]any)
 			if !isList || len(others) == 0 {
 				continue
 			}
 			names := make([]string, 0, len(others))
 			for _, other := range others {
-				names = append(names, pyrepr.Str(other))
+				names = append(names, anyutil.String(other))
 			}
 			fmt.Fprintf(w, "  • One host gateway serves %s and %s — restarted once through %s; that restart is their outcome.\n",
 				owner, strings.Join(names, ", "), owner)
@@ -187,7 +187,7 @@ func abortRecoveryIsComplete(plannedGatewayProfiles, coveredGatewayProfiles map[
 			return false
 		}
 	}
-	return !pyrepr.Truthy(recoveryResult["failed"]) && !pyrepr.Truthy(recoveryResult["relaunch_attempted"])
+	return !anyutil.IsTrue(recoveryResult["failed"]) && !anyutil.IsTrue(recoveryResult["relaunch_attempted"])
 }
 
 // Error a recovery child that outlived its budget stands for, the subprocess TimeoutExpired

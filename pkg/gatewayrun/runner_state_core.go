@@ -6,9 +6,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Cached agent of a session with the config signature it was built for
@@ -48,13 +48,13 @@ type sessionDBPin struct {
 // Attributes the constructor and the runtime init of the runner assign
 type runnerCoreState struct {
 	config   *gateway.GatewayConfig
-	adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 	// Store outage met while running and already reported to the home channels, nil while the store works
 	sessionStoreOutage   *storeOutage
 	sessionStoreOutageMu sync.Mutex
 	storeHeld            storeHeldQueue
-	profileAdapters      *pydict.Dict[string, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]]
-	profileConfigs       *pydict.Dict[string, *gateway.GatewayConfig]
+	profileAdapters      *orderedutil.Map[string, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]]
+	profileConfigs       *orderedutil.Map[string, *gateway.GatewayConfig]
 
 	prefillMessages              []any
 	reasoningConfig              map[string]any
@@ -86,7 +86,7 @@ type runnerCoreState struct {
 	exitWithFailure              bool
 	draining                     atomic.Bool
 	gatewayLoop                  gateway.EventLoop
-	shutdownEvent                *pythread.Event
+	shutdownEvent                *syncutil.Event
 	exitReason                   *string
 	exitCode                     *int
 	profileFailedPlatforms       map[string]map[gateway.Platform]*gatewayTask
@@ -119,12 +119,12 @@ type runnerCoreState struct {
 	startupRestoreTasks          []*gatewayTask
 	startupRestoreTasksMu        sync.Mutex
 	platformLockTakeoverOnStart  bool
-	sessionSources               *pydict.Dict[string, *gateway.SessionSource]
+	sessionSources               *orderedutil.Map[string, *gateway.SessionSource]
 	sessionSourcesMax            int
 
 	completionDeliveryLock                *sync.Mutex
 	completionDeliveriesInflight          map[completionIdentity]struct{}
-	completionDeliveriesDelivered         *pydict.Dict[completionIdentity, struct{}]
+	completionDeliveriesDelivered         *orderedutil.Map[completionIdentity, struct{}]
 	completionDeliveryRetention           int
 	completionNotificationBatches         map[string][]completionBatchItem
 	completionNotificationBatchTasks      map[string]*gatewayTask
@@ -132,13 +132,13 @@ type runnerCoreState struct {
 	completionNotificationBatchWindow     float64
 	completionNotificationBatchesStopping bool
 
-	agentCache                *pydict.Dict[string, agentCacheEntry]
+	agentCache                *orderedutil.Map[string, agentCacheEntry]
 	agentCacheLock            *sync.Mutex
 	kanbanNotifierProfile     string
 	primaryProfileName        string
 	teamsPipelineRuntime      any
 	teamsPipelineRuntimeError *string
-	failedPlatforms           *pydict.Dict[gateway.Platform, map[string]any]
+	failedPlatforms           *orderedutil.Map[gateway.Platform, map[string]any]
 	fatalHandlerTasks         map[*gatewayTask]struct{}
 	slashConfirmCounter       *atomic.Int64
 
@@ -161,7 +161,7 @@ type runnerCoreState struct {
 	scaleToZeroCooldownUntil        float64
 	scaleToZeroNoSuspendLogged      bool
 	scaleToZeroDirectPlatformLogged bool
-	shutdownWatchdogDone            *pythread.Event
+	shutdownWatchdogDone            *syncutil.Event
 	startupWarmupTask               *gatewayTask
 	reconnectWatcherTask            *gatewayTask
 }

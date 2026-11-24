@@ -15,7 +15,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -326,7 +326,7 @@ func isSystemBypass(content string) bool {
 
 // Whether a send is a mid turn progress or status send that must not become the cached answer
 func isInterimSend(content string, metadata map[string]any) bool {
-	if v, ok := metadata["_interim_send"]; ok && pyrepr.Truthy(v) {
+	if v, ok := metadata["_interim_send"]; ok && anyutil.IsTrue(v) {
 		return true
 	}
 	return isSystemBypass(content)

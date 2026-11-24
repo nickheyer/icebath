@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func useFlushDir(t *testing.T) string {
@@ -34,11 +34,11 @@ func readFlushPayloads(t *testing.T, dir string) []map[string]any {
 		if err != nil {
 			t.Fatal(err)
 		}
-		v, err := pyjson.Loads(string(raw))
+		v, err := jsonutil.Decode(string(raw))
 		if err != nil {
 			t.Fatal(err)
 		}
-		out = append(out, pyjson.Plain(v).(map[string]any))
+		out = append(out, jsonutil.Plain(v).(map[string]any))
 		if strings.Contains(filepath.Base(f), ":") || strings.Contains(filepath.Base(f), "telegram") {
 			t.Fatalf("session key leaked into file name %s", f)
 		}

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Generated unit of the requested scope, failing the test on error
@@ -213,7 +213,7 @@ func TestSystemUnitIcebathHomeSystemUnitUsesTargetUserHomeNotCallingUser(t *test
 
 func TestSystemUnitIcebathHomeUserUnitUnaffectedByChange(t *testing.T) {
 	sandboxServiceHomes(t)
-	resolved, _ := pypath.Resolve(os.Getenv("ICEBATH_HOME"))
+	resolved, _ := pathutil.Resolve(os.Getenv("ICEBATH_HOME"))
 	if unit := mustGenerateUnit(t, false, ""); !strings.Contains(unit, "ICEBATH_HOME="+resolved) {
 		t.Fatal(unit)
 	}
@@ -272,7 +272,7 @@ func TestProfileArgSystemdUnitForTargetUserIncludesNamedProfile(t *testing.T) {
 	unit := mustGenerateUnit(t, true, "alice")
 	for _, line := range strings.Split(unit, "\n") {
 		if value, ok := strings.CutPrefix(line, "ExecStart="); ok {
-			command, err := pyshlex.SplitPOSIX(value, false)
+			command, err := shellutil.Split(value)
 			if err != nil || len(command) < 4 || strings.Join(command[len(command)-4:], " ") != "--profile mybot gateway run" {
 				t.Fatal(command, err)
 			}
@@ -308,8 +308,8 @@ func TestServiceWorkingDirIsStableUserUnitWorkingdirectoryIsIcebathHomeNotChecko
 	h := os.Getenv("ICEBATH_HOME")
 	for _, line := range strings.Split(mustGenerateUnit(t, false, ""), "\n") {
 		if value, ok := strings.CutPrefix(line, "WorkingDirectory="); ok {
-			got, _ := pypath.Resolve(value)
-			want, _ := pypath.Resolve(h)
+			got, _ := pathutil.Resolve(value)
+			want, _ := pathutil.Resolve(h)
 			if got != want || strings.Contains(value, "/.worktrees/") {
 				t.Fatal(value)
 			}

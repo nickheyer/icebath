@@ -11,8 +11,6 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // File version of the fixed file info resource as major.minor.build.revision
@@ -56,7 +54,7 @@ func platformRegistryValueStr(k registry.Key, name string) (string, bool) {
 		}
 		parts := make([]string, len(items))
 		for i, s := range items {
-			parts[i] = pyrepr.StrRepr(s)
+			parts[i] = strconv.Quote(s)
 		}
 		return "[" + strings.Join(parts, ", ") + "]", true
 	}
@@ -67,7 +65,7 @@ func platformRegistryValueStr(k registry.Key, name string) (string, bool) {
 	if len(raw) == 0 {
 		return "None", true
 	}
-	return pyrepr.BytesRepr(raw), true
+	return strconv.Quote(string(raw)), true
 }
 
 // Uninstall entries whose DisplayName starts with the prefix, machine wide before per user

@@ -1,11 +1,10 @@
 package config
 
 import (
-	"math"
+	"errors"
 	"os"
+	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 )
 
 // Bool-ish spellings the shared truthy check accepts after stripping and lowercasing
@@ -29,27 +28,18 @@ func envNumber[T any](key string, def T, cast func(string) (T, bool)) T {
 	return value
 }
 
-// Integer value of an environment variable saturated to int64, def when unset, blank or no Python int literal
+// Integer value of an environment variable saturated to int64, def when unset, blank or not a decimal integer
 func EnvInt(key string, def int64) int64 {
 	return envNumber(key, def, func(raw string) (int64, bool) {
-		n, ok := pyint.Parse(raw)
-		if !ok {
-			return 0, false
-		}
-		if !n.IsInt64() {
-			if n.Sign() > 0 {
-				return math.MaxInt64, true
-			}
-			return math.MinInt64, true
-		}
-		return n.Int64(), true
+		n, err := strconv.ParseInt(raw, 10, 64)
+		return n, err == nil || errors.Is(err, strconv.ErrRange)
 	})
 }
 
-// Float value of an environment variable, def when unset, blank or no Python float literal
+// Float value of an environment variable, an infinity for one too large, def when unset, blank or not a number
 func EnvFloat(key string, def float64) float64 {
 	return envNumber(key, def, func(raw string) (float64, bool) {
-		f, err := pyint.ParseFloat(raw)
-		return f, err == nil
+		f, err := strconv.ParseFloat(raw, 64)
+		return f, err == nil || errors.Is(err, strconv.ErrRange)
 	})
 }

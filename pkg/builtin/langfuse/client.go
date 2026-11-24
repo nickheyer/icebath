@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
@@ -120,13 +119,13 @@ func validateLangfuseKey(envName, value string, requirePrefix bool) string {
 	preview := "<empty>"
 	if value != "" {
 		if utf8.RuneCountInString(value) <= 12 {
-			preview = pyrepr.StrRepr(value)
+			preview = strconv.Quote(value)
 		} else {
-			preview = pyrepr.StrRepr(textutil.First(value, 6) + "...")
+			preview = strconv.Quote(textutil.First(value, 6) + "...")
 		}
 	}
 	if requirePrefix && !strings.HasPrefix(value, expected) {
-		return fmt.Sprintf("%s=%s (expected %s prefix)", envName, preview, pyrepr.StrRepr(expected))
+		return fmt.Sprintf("%s=%s (expected %s prefix)", envName, preview, strconv.Quote(expected))
 	}
 	remainder := strings.ToLower(strings.TrimPrefix(value, expected))
 	template := placeholderRemainders[remainder]
@@ -199,10 +198,10 @@ func buildClient(ctx context.Context) *lfClient {
 	opts := clientOptions{publicKey: publicKey, secretKey: secretKey, baseURL: baseURL,
 		environment: setting(ctx, "ENV"), release: setting(ctx, "RELEASE")}
 	if raw := secret(ctx, "ICEBATH_LANGFUSE_SAMPLE_RATE"); raw != "" {
-		if f, err := pyint.ParseFloat(raw); err == nil {
+		if f, err := strconv.ParseFloat(strings.TrimSpace(raw), 64); err == nil {
 			opts.sampleRate = &f
 		} else {
-			pkgLog().Warn(fmt.Sprintf("Invalid ICEBATH_LANGFUSE_SAMPLE_RATE=%s", pyrepr.StrRepr(raw)))
+			pkgLog().Warn(fmt.Sprintf("Invalid ICEBATH_LANGFUSE_SAMPLE_RATE=%s", strconv.Quote(raw)))
 		}
 	}
 	_, serviceSet := os.LookupEnv("OTEL_SERVICE_NAME")

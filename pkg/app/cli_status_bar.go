@@ -1,14 +1,14 @@
 package app
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
+	"github.com/mattn/go-runewidth"
 )
 
 // Terminal cells the text occupies, wide glyphs counting two and control characters none
 func statusBarDisplayWidth(text string) int {
 	width := 0
 	for _, r := range []rune(text) {
-		width += max(0, pyunicode.WcWidth(r))
+		width += max(0, (&runewidth.Condition{StrictEmojiNeutral: true}).RuneWidth(r))
 	}
 	return width
 }

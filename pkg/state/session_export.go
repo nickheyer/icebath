@@ -3,13 +3,13 @@ package state
 import (
 	"context"
 	"strings"
+	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var (
@@ -25,7 +25,7 @@ func NormalizeExportFormat(format string) (string, error) {
 	}
 	value, ok := sessionExportFormats[strings.ToLower(strings.TrimSpace(name))]
 	if !ok {
-		return "", &pyint.Error{Kind: "ValueError", Msg: "Unsupported session export format: " + format}
+		return "", &errorutil.Error{Kind: "ValueError", Msg: "Unsupported session export format: " + format}
 	}
 	return value, nil
 }
@@ -35,15 +35,15 @@ func NormalizeExportOnly(only any) (string, error) {
 	if only == nil {
 		return "", nil
 	}
-	text := pyrepr.Str(only)
+	text := anyutil.String(only)
 	if sessionExportOnlyAliases[strings.ToLower(strings.TrimSpace(text))] {
 		return "user-prompts", nil
 	}
-	return "", &pyint.Error{Kind: "ValueError", Msg: "Unsupported session export filter: " + text}
+	return "", &errorutil.Error{Kind: "ValueError", Msg: "Unsupported session export filter: " + text}
 }
 
 // Renders exported sessions as jsonl or markdown, whole sessions or one record per user prompt
-func RenderSessionsExport(sessions []*pyjson.Object, format string, only any) (string, error) {
+func RenderSessionsExport(sessions []*jsonutil.Object, format string, only any) (string, error) {
 	exportFormat, err := NormalizeExportFormat(format)
 	if err != nil {
 		return "", err
@@ -60,7 +60,7 @@ func RenderSessionsExport(sessions []*pyjson.Object, format string, only any) (s
 		}
 		var lines []string
 		for _, row := range rows {
-			text, err := pyjson.Dumps(exportJSONValue(row), pyjson.EnsureASCII(false))
+			text, err := jsonutil.Encode(exportJSONValue(row))
 			if err != nil {
 				return "", err
 			}
@@ -72,15 +72,15 @@ func RenderSessionsExport(sessions []*pyjson.Object, format string, only any) (s
 		return strings.Join(lines, "\n") + "\n", nil
 	}
 	multiTitle, appendBody := "Icebath sessions export", appendExportSessionMessages
-	sessionHeading := func(s *pyjson.Object) string { return "Session: " + exportHeadingText(exportSessionTitleOrID(s)) }
-	headings := [2]func(*pyjson.Object) string{sessionHeading, sessionHeading}
+	sessionHeading := func(s *jsonutil.Object) string { return "Session: " + exportHeadingText(exportSessionTitleOrID(s)) }
+	headings := [2]func(*jsonutil.Object) string{sessionHeading, sessionHeading}
 	if promptsOnly {
 		multiTitle, appendBody = "User prompts export", appendExportPromptRecords
-		headings = [2]func(*pyjson.Object) string{
-			func(s *pyjson.Object) string {
+		headings = [2]func(*jsonutil.Object) string{
+			func(s *jsonutil.Object) string {
 				return "User prompts for session " + exportHeadingText(exportSessionID(s))
 			},
-			func(s *pyjson.Object) string { return "Session " + exportHeadingText(exportSessionID(s)) },
+			func(s *jsonutil.Object) string { return "Session " + exportHeadingText(exportSessionID(s)) },
 		}
 	}
 	var lines []string
@@ -111,7 +111,7 @@ func RenderSessionsExport(sessions []*pyjson.Object, format string, only any) (s
 }
 
 // Count and noun of an export for its status message, prompts for a prompt view and sessions otherwise
-func ExportRecordCount(sessions []*pyjson.Object, only any) (int, string, error) {
+func ExportRecordCount(sessions []*jsonutil.Object, only any) (int, string, error) {
 	filter, err := NormalizeExportOnly(only)
 	if err != nil {
 		return 0, "", err
@@ -123,13 +123,13 @@ func ExportRecordCount(sessions []*pyjson.Object, only any) (int, string, error)
 }
 
 // One normalized record for each user authored prompt of the sessions
-func IterUserPromptRecords(sessions []*pyjson.Object) []*pyjson.Object {
-	records := []*pyjson.Object{}
+func IterUserPromptRecords(sessions []*jsonutil.Object) []*jsonutil.Object {
+	records := []*jsonutil.Object{}
 	for _, session := range sessions {
 		sessionID := ""
 		for _, key := range []string{"id", "session_id"} {
-			if v := rowValue(session, key); pyrepr.Truthy(v) {
-				sessionID = pyrepr.Str(v)
+			if v := rowValue(session, key); anyutil.IsTrue(v) {
+				sessionID = anyutil.String(v)
 				break
 			}
 		}
@@ -144,15 +144,15 @@ func IterUserPromptRecords(sessions []*pyjson.Object) []*pyjson.Object {
 				createdAt = stamp
 			}
 			text, _ := exportMessageText(rowValue(message, "content"))
-			record := pyjson.ObjectOf("session_id", sessionID, "index", index, "created_at", createdAt, "role", "user", "text", text)
+			record := jsonutil.ObjectOf("session_id", sessionID, "index", index, "created_at", createdAt, "role", "user", "text", text)
 			if messageID := rowValue(message, "id"); messageID != nil {
 				record.Set("message_id", messageID)
 			}
 			eventID := rowValue(message, "platform_message_id")
-			if !pyrepr.Truthy(eventID) {
+			if !anyutil.IsTrue(eventID) {
 				eventID = rowValue(message, "event_id")
 			}
-			if pyrepr.Truthy(eventID) {
+			if anyutil.IsTrue(eventID) {
 				record.Set("event_id", eventID)
 			}
 			records = append(records, record)
@@ -162,20 +162,20 @@ func IterUserPromptRecords(sessions []*pyjson.Object) []*pyjson.Object {
 }
 
 // Appends the numbered user prompts of a session under headings of the given level
-func appendExportPromptRecords(lines []string, session *pyjson.Object, headingLevel int) ([]string, error) {
-	prompts := IterUserPromptRecords([]*pyjson.Object{session})
+func appendExportPromptRecords(lines []string, session *jsonutil.Object, headingLevel int) ([]string, error) {
+	prompts := IterUserPromptRecords([]*jsonutil.Object{session})
 	if len(prompts) == 0 {
 		return append(lines, "_No user prompts found._", ""), nil
 	}
 	marker := strings.Repeat("#", headingLevel)
 	for _, prompt := range prompts {
 		createdAt := "timestamp unavailable"
-		if v := rowValue(prompt, "created_at"); pyrepr.Truthy(v) {
-			createdAt = pyrepr.Str(v)
+		if v := rowValue(prompt, "created_at"); anyutil.IsTrue(v) {
+			createdAt = anyutil.String(v)
 		}
-		lines = append(lines, marker+" "+pyrepr.Str(rowValue(prompt, "index"))+". "+createdAt)
+		lines = append(lines, marker+" "+anyutil.String(rowValue(prompt, "index"))+". "+createdAt)
 		if messageID := rowValue(prompt, "message_id"); messageID != nil {
-			lines = append(lines, "Message ID: `"+pyrepr.Str(messageID)+"`", "")
+			lines = append(lines, "Message ID: `"+anyutil.String(messageID)+"`", "")
 		}
 		lines = append(lines, exportTextOr(prompt, "text", ""), "")
 	}
@@ -188,9 +188,9 @@ func exportHTMLEscape(s string) string {
 }
 
 // Appends every non system message of a session under headings of the given level, tool output folded and shell lines among them by time
-func appendExportSessionMessages(lines []string, session *pyjson.Object, headingLevel int) ([]string, error) {
+func appendExportSessionMessages(lines []string, session *jsonutil.Object, headingLevel int) ([]string, error) {
 	marker := strings.Repeat("#", headingLevel)
-	var visible []*pyjson.Object
+	var visible []*jsonutil.Object
 	for _, message := range exportDisplayRows(session) {
 		if rowValue(message, "role") != "system" {
 			visible = append(visible, message)
@@ -225,7 +225,7 @@ func appendExportSessionMessages(lines []string, session *pyjson.Object, heading
 		}
 		label, ok := map[string]string{"user": "User", "assistant": "Assistant"}[role]
 		if !ok {
-			label = pystr.Title(role)
+			label = textutil.Title(role)
 		}
 		lines = append(lines, marker+" "+label+suffix, "", text, "")
 	}
@@ -240,7 +240,7 @@ func exportMessageText(content any) (string, error) {
 		return "", nil
 	case []any:
 		list = v
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		for _, item := range v {
 			list = append(list, item)
 		}
@@ -262,26 +262,26 @@ func exportMessageText(content any) (string, error) {
 
 // Text of one content part, its text or content string or else its sorted JSON
 func exportContentPartText(part any) (string, error) {
-	var obj *pyjson.Object
+	var obj *jsonutil.Object
 	switch v := exportJSONValue(part).(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		obj = v
 	case map[string]any:
-		obj = pyjson.NewObject()
+		obj = jsonutil.NewObject()
 		for k, value := range v {
 			obj.Set(k, value)
 		}
 	case string:
 		return v, nil
 	default:
-		return pyrepr.Str(part), nil
+		return anyutil.String(part), nil
 	}
 	for _, key := range []string{"text", "content"} {
 		if value, ok := rowValue(obj, key).(string); ok {
 			return value, nil
 		}
 	}
-	return pyjson.Dumps(obj, pyjson.EnsureASCII(false), pyjson.SortKeys(true))
+	return jsonutil.Encode(obj, jsonutil.SortKeys())
 }
 
 // UTC ISO second of a stored timestamp, the raw text of a corrupt cell, false for None
@@ -289,47 +289,47 @@ func formatExportTimestamp(value any, sessionID string) (string, bool) {
 	if value == nil {
 		return "", false
 	}
-	ts, ok := pydatetime.CoerceEpoch(value, sessionID, "timestamp")
+	ts, ok := timeutil.StoredEpoch(value, sessionID, "timestamp")
 	if !ok {
-		return pyrepr.Str(value), true
+		return anyutil.String(value), true
 	}
-	return pydatetime.FromTimestamp(ts).UTC().Format("2006-01-02T15:04:05") + "Z", true
+	return timeutil.FromEpoch(ts).UTC().Format("2006-01-02T15:04:05") + "Z", true
 }
 
 // Bullet lines naming the id, source, model, title, start and message count of a session
-func exportSessionMetadataLines(session *pyjson.Object) []string {
+func exportSessionMetadataLines(session *jsonutil.Object) []string {
 	lines := []string{"- Session ID: `" + exportSessionID(session) + "`"}
 	for _, field := range [][2]string{{"source", "Source"}, {"model", "Model"}} {
-		if v := rowValue(session, field[0]); pyrepr.Truthy(v) {
-			lines = append(lines, "- "+field[1]+": `"+pyrepr.Str(v)+"`")
+		if v := rowValue(session, field[0]); anyutil.IsTrue(v) {
+			lines = append(lines, "- "+field[1]+": `"+anyutil.String(v)+"`")
 		}
 	}
-	if title := rowValue(session, "title"); pyrepr.Truthy(title) {
-		lines = append(lines, "- Title: "+strings.TrimSpace(strings.Join(textutil.Lines(pyrepr.Str(title)), " ")))
+	if title := rowValue(session, "title"); anyutil.IsTrue(title) {
+		lines = append(lines, "- Title: "+strings.TrimSpace(strings.Join(textutil.Lines(anyutil.String(title)), " ")))
 	}
 	if started, ok := formatExportTimestamp(rowValue(session, "started_at"), exportSessionID(session)); ok && started != "" {
 		lines = append(lines, "- Started: "+started)
 	}
 	if count := rowValue(session, "message_count"); count != nil {
-		lines = append(lines, "- Messages: "+pyrepr.Str(count))
+		lines = append(lines, "- Messages: "+anyutil.String(count))
 	}
 	return lines
 }
 
 // Id of an exported session, unknown when it carries none
-func exportSessionID(session *pyjson.Object) string {
+func exportSessionID(session *jsonutil.Object) string {
 	for _, key := range []string{"id", "session_id"} {
-		if v := rowValue(session, key); pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v := rowValue(session, key); anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 	}
 	return "unknown"
 }
 
 // Stripped title of an exported session, its id when untitled
-func exportSessionTitleOrID(session *pyjson.Object) string {
-	if title := rowValue(session, "title"); pyrepr.Truthy(title) {
-		if text := strings.TrimSpace(pyrepr.Str(title)); text != "" {
+func exportSessionTitleOrID(session *jsonutil.Object) string {
+	if title := rowValue(session, "title"); anyutil.IsTrue(title) {
+		if text := strings.TrimSpace(anyutil.String(title)); text != "" {
 			return text
 		}
 	}
@@ -364,10 +364,10 @@ func ExportProjection(transcript bool) (includeCompacted, includeInactive bool) 
 }
 
 // Drops the rows removed by undo, rewind or edit from a snapshot and rebuilds its timings from the rest
-func DropUndoneRows(export *pyjson.Object) *pyjson.Object {
-	kept := []*pyjson.Object{}
+func DropUndoneRows(export *jsonutil.Object) *jsonutil.Object {
+	kept := []*jsonutil.Object{}
 	for _, m := range exportMessageRows(export) {
-		if pyrepr.Truthy(rowValue(m, "active")) || pyrepr.Truthy(rowValue(m, "compacted")) {
+		if anyutil.IsTrue(rowValue(m, "active")) || anyutil.IsTrue(rowValue(m, "compacted")) {
 			kept = append(kept, m)
 		}
 	}
@@ -378,14 +378,14 @@ func DropUndoneRows(export *pyjson.Object) *pyjson.Object {
 	export.Set("messages", rows)
 	sessionID := ""
 	if id := rowValue(export, "id"); id != nil {
-		sessionID = pyrepr.Str(id)
+		sessionID = anyutil.String(id)
 	}
 	export.Set("timings", exportTimings(kept, sessionID))
 	return export
 }
 
 // Stored session a save of the format writes, nil when it has no row, refused past the export message cap
-func LoadSaveSnapshot(ctx context.Context, db *SessionDB, sessionID, format string) (*pyjson.Object, error) {
+func LoadSaveSnapshot(ctx context.Context, db *SessionDB, sessionID, format string) (*jsonutil.Object, error) {
 	transcript := IsSaveTranscriptFormat(format)
 	if !transcript {
 		if _, err := db.AssertExportSafe(ctx, sessionID, nil); err != nil {
@@ -433,32 +433,32 @@ func NormalizeSaveFormat(format string) (string, error) {
 	token = strings.ToLower(strings.TrimSpace(token))
 	canonical, ok := sessionSaveFormatAliases[token]
 	if !ok {
-		return "", &pyint.Error{Kind: "ValueError", Msg: "Unknown format " + pyrepr.Repr(token) + " — expected one of: json, md, html"}
+		return "", &errorutil.Error{Kind: "ValueError", Msg: "Unknown format " + anyutil.Quote(token) + " — expected one of: json, md, html"}
 	}
 	return canonical, nil
 }
 
 // Standalone HTML page of one exported session
-func renderHTMLForSave(session *pyjson.Object) (string, error) { return GenerateHTMLExport(session) }
+func renderHTMLForSave(session *jsonutil.Object) (string, error) { return GenerateHTMLExport(session) }
 
 // Renders one exported session for a save in the given canonical format
-func RenderSessionForSave(session *pyjson.Object, format string) (string, error) {
+func RenderSessionForSave(session *jsonutil.Object, format string) (string, error) {
 	switch format {
 	case "json":
-		return pyjson.Dumps(exportJSONValue(session), pyjson.Indent(2), pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+		return jsonutil.Encode(exportJSONValue(session), jsonutil.Indent(2), jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	case "md":
-		return RenderSessionsExport([]*pyjson.Object{session}, "markdown", nil)
+		return RenderSessionsExport([]*jsonutil.Object{session}, "markdown", nil)
 	case "html":
 		return renderHTMLForSave(session)
 	}
-	return "", &pyint.Error{Kind: "ValueError", Msg: "Unknown save format: " + pyrepr.Repr(format)}
+	return "", &errorutil.Error{Kind: "ValueError", Msg: "Unknown save format: " + anyutil.Quote(format)}
 }
 
 // Default file name of a saved session, the id reduced to letters, digits, dashes and underscores
 func DefaultSaveFilename(sessionID, format string) string {
 	var safe strings.Builder
 	for _, ch := range sessionID {
-		if pystr.IsAlnum(ch) || ch == '-' || ch == '_' {
+		if (unicode.IsLetter(ch) || unicode.IsNumber(ch)) || ch == '-' || ch == '_' {
 			safe.WriteRune(ch)
 		}
 	}
@@ -469,14 +469,14 @@ func DefaultSaveFilename(sessionID, format string) string {
 }
 
 // Messages of an exported session as a list of rows, entries that are not rows dropped
-func exportMessageRows(session *pyjson.Object) []*pyjson.Object {
+func exportMessageRows(session *jsonutil.Object) []*jsonutil.Object {
 	switch list := rowValue(session, "messages").(type) {
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		return list
 	case []any:
-		out := make([]*pyjson.Object, 0, len(list))
+		out := make([]*jsonutil.Object, 0, len(list))
 		for _, item := range list {
-			if row, ok := item.(*pyjson.Object); ok {
+			if row, ok := item.(*jsonutil.Object); ok {
 				out = append(out, row)
 			}
 		}
@@ -486,9 +486,9 @@ func exportMessageRows(session *pyjson.Object) []*pyjson.Object {
 }
 
 // Text of a row value, the fallback when it is missing, None or empty
-func exportTextOr(row *pyjson.Object, key, fallback string) string {
-	if v := rowValue(row, key); pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+func exportTextOr(row *jsonutil.Object, key, fallback string) string {
+	if v := rowValue(row, key); anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return fallback
 }
@@ -497,18 +497,18 @@ func exportTextOr(row *pyjson.Object, key, fallback string) string {
 func exportJSONValue(v any) any {
 	switch x := v.(type) {
 	case pyObject:
-		obj := pyjson.NewObject()
+		obj := jsonutil.NewObject()
 		for _, kv := range x {
 			obj.Set(kv.Key, exportJSONValue(kv.Value))
 		}
 		return obj
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if x == nil {
 			return nil
 		}
-		obj := pyjson.NewObject()
-		for _, k := range x.Keys {
-			obj.Set(k, exportJSONValue(x.Vals[k]))
+		obj := jsonutil.NewObject()
+		for _, k := range x.Keys() {
+			obj.Set(k, exportJSONValue(x.Value(k)))
 		}
 		return obj
 	case map[string]any:
@@ -523,7 +523,7 @@ func exportJSONValue(v any) any {
 			out[i] = exportJSONValue(item)
 		}
 		return out
-	case []*pyjson.Object:
+	case []*jsonutil.Object:
 		out := make([]any, len(x))
 		for i, item := range x {
 			out[i] = exportJSONValue(item)
@@ -534,8 +534,8 @@ func exportJSONValue(v any) any {
 }
 
 // One exported session as a JSON line, non ASCII text kept as written
-func DumpsExportedSession(session *pyjson.Object) (string, error) {
-	return pyjson.Dumps(exportJSONValue(session), pyjson.EnsureASCII(false))
+func DumpsExportedSession(session *jsonutil.Object) (string, error) {
+	return jsonutil.Encode(exportJSONValue(session))
 }
 
 // Decoded store JSON as pyjson values for callers outside this package

@@ -2,6 +2,7 @@ package ruamelyaml
 
 import (
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Composer of the ruamel.yaml.clib CParser, libyaml events turned into nodes resolved under YAML 1.1
@@ -37,7 +38,7 @@ func (c *cComposer) del() { c.have = false }
 // Python str of C string bytes, the UnicodeDecodeError of invalid UTF-8
 func pyFromString(b []byte) string {
 	b = cString(b)
-	text, err := pystr.DecodeUTF8(b)
+	text, err := textutil.DecodeUTF8(b)
 	if err != nil {
 		panic(Raise("UnicodeDecodeError", err.Error()))
 	}
@@ -140,7 +141,7 @@ var cStyles = map[yamlScalarStyle]rune{
 
 func (c *cComposer) composeScalar(anchor *string) *Node {
 	start := c.mark(c.ev.startMark)
-	value, err := pystr.DecodeUTF8(c.ev.value)
+	value, err := textutil.DecodeUTF8(c.ev.value)
 	if err != nil {
 		panic(Raise("UnicodeDecodeError", err.Error()))
 	}

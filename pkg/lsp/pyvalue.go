@@ -17,7 +17,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Length of the UTF-8 sequence at i, or of its maximal invalid subpart with the CPython reason
@@ -98,7 +98,7 @@ func codecRangeError(p []byte, start, end int, reason string) string {
 
 // Python value of x or fallback
 func pyOr(v, fallback any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return fallback
@@ -259,7 +259,7 @@ func pyOSError(err error, filename string) *pyExc {
 	}
 	text, _ := pypath.ErrnoText(cause)
 	if filename != "" {
-		text += ": " + pyrepr.StrRepr(filename)
+		text += ": " + strconv.Quote(filename)
 	}
 	return &pyExc{typ: pypath.OSErrorClass(cause), text: text, err: err}
 }
@@ -302,7 +302,7 @@ func errText(err error) string {
 		}
 	}
 	if errno, ok := err.(syscall.Errno); ok {
-		return pypath.OSErrorText(errno)
+		return errno.Error()
 	}
 	if errors.Is(err, context.DeadlineExceeded) {
 		var te *TimeoutError

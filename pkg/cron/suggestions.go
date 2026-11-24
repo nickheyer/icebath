@@ -18,15 +18,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Installs the suggestion registrar the skills blueprint bridge calls
 func init() {
 	skills.RegisterCronBlueprintHooks(
-		func(ctx context.Context, title, description, source string, jobSpec *pyjson.Object, dedupKey string) (map[string]any, error) {
+		func(ctx context.Context, title, description, source string, jobSpec *jsonutil.Object, dedupKey string) (map[string]any, error) {
 			rec, err := openCronStore(home.Dir(ctx), time.Now).AddSuggestion(title, description, source, jobSpec, dedupKey)
 			if err != nil || rec == nil {
 				return nil, err
@@ -36,10 +36,10 @@ func init() {
 }
 
 // Top level keys of an ordered object as a map
-func objectAsMap(obj *pyjson.Object) map[string]any {
+func objectAsMap(obj *jsonutil.Object) map[string]any {
 	out := make(map[string]any, obj.Len())
-	for _, k := range obj.Keys {
-		out[k] = obj.Vals[k]
+	for _, k := range obj.Keys() {
+		out[k] = obj.Value(k)
 	}
 	return out
 }
@@ -50,11 +50,11 @@ func jobAsMap(job *Job) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.LoadsBytes(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, err
 	}
-	return objectAsMap(decoded.(*pyjson.Object)), nil
+	return objectAsMap(decoded.(*jsonutil.Object)), nil
 }
 
 // MaxPendingSuggestions caps the pending list so new suggestions are dropped once it is full
@@ -84,11 +84,11 @@ func (s *Store) suggestionsFile() string {
 
 // Field of a stored record, an AttributeError for a record that is not an object
 func suggestionField(rec any, key string) (any, error) {
-	obj, ok := rec.(*pyjson.Object)
+	obj, ok := rec.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("a cron suggestion is %s, expected a mapping", errchain.Kind(rec))
 	}
-	return obj.Vals[key], nil
+	return obj.Value(key), nil
 }
 
 // Stored records of the suggestions file, empty for a missing, unreadable or malformed file
@@ -109,13 +109,13 @@ func (s *Store) loadSuggestionsRaw() ([]any, error) {
 	if !utf8.ValidString(text) {
 		return nil, fmt.Errorf("%s is not valid UTF-8", path)
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("suggestions.json unreadable (%s); starting empty", err))
 		return []any{}, nil
 	}
-	if obj, ok := data.(*pyjson.Object); ok {
-		if list, ok := obj.Vals["suggestions"].([]any); ok {
+	if obj, ok := data.(*jsonutil.Object); ok {
+		if list, ok := obj.Value("suggestions").([]any); ok {
 			return list, nil
 		}
 	}
@@ -132,15 +132,15 @@ func (s *Store) saveSuggestionsRaw(suggestions []any) error {
 	if err := s.ensureStoreDir(filepath.Dir(path)); err != nil {
 		return err
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("suggestions", suggestions)
 	payload.Set("updated_at", FormatISO(s.clk.now()))
-	text, err := pyjson.Dumps(payload, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
 	if !utf8.ValidString(text) {
-		if text, err = pyjson.Dumps(payload, pyjson.Indent(2), pyjson.EnsureASCII(true)); err != nil {
+		if text, err = jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.ASCII()); err != nil {
 			return err
 		}
 	}
@@ -175,9 +175,9 @@ func (s *Store) ListPendingSuggestions() ([]any, error) {
 }
 
 // Registers a pending suggestion, nil when its dedup key was seen or the pending list is full
-func (s *Store) AddSuggestion(title, description, source string, jobSpec any, dedupKey string) (*pyjson.Object, error) {
+func (s *Store) AddSuggestion(title, description, source string, jobSpec any, dedupKey string) (*jsonutil.Object, error) {
 	if !validSuggestionSources[source] {
-		return nil, fmt.Errorf("unknown suggestion source: %s", pyrepr.Repr(source))
+		return nil, fmt.Errorf("unknown suggestion source: %s", anyutil.Quote(source))
 	}
 	if strings.TrimSpace(title) == "" || strings.TrimSpace(dedupKey) == "" {
 		return nil, errors.New("title and dedup_key are required")
@@ -206,10 +206,10 @@ func (s *Store) AddSuggestion(title, description, source string, jobSpec any, de
 		return nil, err
 	}
 	if len(pending) >= MaxPendingSuggestions {
-		pkgLog().Info(fmt.Sprintf("Suggestion backlog full (%d); dropping %s", MaxPendingSuggestions, pyrepr.Repr(title)))
+		pkgLog().Info(fmt.Sprintf("Suggestion backlog full (%d); dropping %s", MaxPendingSuggestions, anyutil.Quote(title)))
 		return nil, nil
 	}
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	record.Set("id", uuid4Hex()[:12])
 	record.Set("title", strings.TrimSpace(title))
 	record.Set("description", strings.TrimSpace(description))
@@ -238,7 +238,7 @@ func isDigitString(ref string) bool {
 }
 
 // Suggestion by id, one based pending index, or case insensitive exact title
-func (s *Store) GetSuggestion(ref string) (*pyjson.Object, error) {
+func (s *Store) GetSuggestion(ref string) (*jsonutil.Object, error) {
 	suggestions, err := s.loadSuggestionsRaw()
 	if err != nil {
 		return nil, err
@@ -249,7 +249,7 @@ func (s *Store) GetSuggestion(ref string) (*pyjson.Object, error) {
 			return nil, err
 		}
 		if id == ref {
-			return rec.(*pyjson.Object), nil
+			return rec.(*jsonutil.Object), nil
 		}
 	}
 	if isDigitString(ref) {
@@ -262,12 +262,12 @@ func (s *Store) GetSuggestion(ref string) (*pyjson.Object, error) {
 			return nil, fmt.Errorf("suggestion %s is not a number", ref)
 		}
 		if n.IsInt64() && n.Int64() >= 1 && n.Int64() <= int64(len(pending)) {
-			return pending[n.Int64()-1].(*pyjson.Object), nil
+			return pending[n.Int64()-1].(*jsonutil.Object), nil
 		}
 	}
 	for _, rec := range suggestions {
-		obj := rec.(*pyjson.Object)
-		raw, present := obj.Vals["title"]
+		obj := rec.(*jsonutil.Object)
+		raw, present := obj.Get("title")
 		if !present {
 			raw = ""
 		}
@@ -296,7 +296,7 @@ func (s *Store) setSuggestionStatus(id any, status string) (bool, error) {
 			return false, err
 		}
 		if pyEqual(got, id) {
-			obj := rec.(*pyjson.Object)
+			obj := rec.(*jsonutil.Object)
 			obj.Set("status", status)
 			obj.Set("resolved_at", FormatISO(s.clk.now()))
 			return true, s.saveSuggestionsRaw(suggestions)
@@ -307,8 +307,8 @@ func (s *Store) setSuggestionStatus(id any, status string) (bool, error) {
 
 // Python equality of two decoded JSON scalars
 func pyEqual(a, b any) bool {
-	if pyrepr.Repr(a) == pyrepr.Repr(b) {
-		return pyrepr.TypeName(a) == pyrepr.TypeName(b) || (isPyNumber(a) && isPyNumber(b))
+	if anyutil.Quote(a) == anyutil.Quote(b) {
+		return anyutil.Kind(a) == anyutil.Kind(b) || (isPyNumber(a) && isPyNumber(b))
 	}
 	return false
 }
@@ -319,7 +319,7 @@ func isPyNumber(v any) bool {
 	case int, int64, float64:
 		return true
 	}
-	return pyrepr.TypeName(v) == "int"
+	return anyutil.Kind(v) == "int"
 }
 
 // Dismisses a suggestion so its dedup key is never offered again
@@ -328,11 +328,11 @@ func (s *Store) DismissSuggestion(ref string) (bool, error) {
 	if err != nil || rec == nil || rec.Len() == 0 {
 		return false, err
 	}
-	return s.setSuggestionStatus(rec.Vals["id"], suggestionDismissed)
+	return s.setSuggestionStatus(rec.Value("id"), suggestionDismissed)
 }
 
 // Job creator of an accepted suggestion, the scheduler registered create by default
-var acceptCreateJob = func(ctx context.Context, s *Store, spec *pyjson.Object) (*Job, error) {
+var acceptCreateJob = func(ctx context.Context, s *Store, spec *jsonutil.Object) (*Job, error) {
 	return s.createJobWithSchedulerRegistration(home.WithOverride(ctx, s.home), spec)
 }
 
@@ -342,14 +342,14 @@ func (s *Store) AcceptSuggestion(ctx context.Context, ref string, origin map[str
 	if err != nil {
 		return nil, err
 	}
-	if rec == nil || rec.Len() == 0 || rec.Vals["status"] != suggestionPending {
+	if rec == nil || rec.Len() == 0 || rec.Value("status") != suggestionPending {
 		return nil, nil
 	}
-	spec := pyjson.NewObject()
-	switch js := rec.Vals["job_spec"].(type) {
-	case *pyjson.Object:
-		for _, k := range js.Keys {
-			spec.Set(k, js.Vals[k])
+	spec := jsonutil.NewObject()
+	switch js := rec.Value("job_spec").(type) {
+	case *jsonutil.Object:
+		for _, k := range js.Keys() {
+			spec.Set(k, js.Value(k))
 		}
 	case []any:
 		for i, item := range js {
@@ -364,12 +364,12 @@ func (s *Store) AcceptSuggestion(ctx context.Context, ref string, origin map[str
 			spec.Set(key, pair[1])
 		}
 	default:
-		if pyrepr.Truthy(js) {
+		if anyutil.IsTrue(js) {
 			return nil, fmt.Errorf("the suggestion job spec is %s, expected a mapping", errchain.Kind(js))
 		}
 	}
 	if origin != nil {
-		if _, present := spec.Vals["origin"]; !present {
+		if _, present := spec.Get("origin"); !present {
 			spec.Set("origin", origin)
 		}
 	}
@@ -377,13 +377,13 @@ func (s *Store) AcceptSuggestion(ctx context.Context, ref string, origin map[str
 	if err != nil {
 		var regErr *CronSchedulerRegistrationError
 		if errors.As(err, &regErr) {
-			if _, serr := s.setSuggestionStatus(rec.Vals["id"], suggestionAccepted); serr != nil {
+			if _, serr := s.setSuggestionStatus(rec.Value("id"), suggestionAccepted); serr != nil {
 				return nil, serr
 			}
 		}
 		return nil, err
 	}
-	if _, err := s.setSuggestionStatus(rec.Vals["id"], suggestionAccepted); err != nil {
+	if _, err := s.setSuggestionStatus(rec.Value("id"), suggestionAccepted); err != nil {
 		return nil, err
 	}
 	return job, nil

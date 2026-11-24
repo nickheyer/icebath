@@ -14,8 +14,9 @@ import (
 	"syscall"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -38,7 +39,7 @@ func pyJSONDumpsASCII(s string) string {
 		b.WriteByte(digits[u&0xf])
 	}
 	for i := 0; i < len(s); {
-		r, size := pystr.DecodeRune(s[i:])
+		r, size := utf8.DecodeRuneInString(s[i:])
 		i += size
 		switch {
 		case r == '"':
@@ -259,7 +260,7 @@ func (s *shellFileOps) utf16PageShell(path string, offset, limit int) (string, i
 	if i := strings.Index(payload, "\n"); i >= 0 {
 		payload = payload[:i]
 	}
-	decoded, err := pyjson.DecodeWTF8([]byte(payload))
+	decoded, err := jsonutil.DecodePlain([]byte(payload))
 	data, _ := decoded.(map[string]any)
 	if err != nil {
 		return "", 0, "", false
@@ -680,9 +681,10 @@ func (s *shellFileOps) suggestSimilarFiles(path string) *ReadResult {
 		dirPath = "."
 	}
 	filename := pathBasenameOS(path)
-	basenameNoExt := pyLower(pySplitextRoot(filename))
-	ext := pyLower(pySplitextExt(filename))
-	lowerName := pyLower(filename)
+	lower := cases.Lower(language.Und)
+	basenameNoExt := lower.String(pySplitextRoot(filename))
+	ext := lower.String(pySplitextExt(filename))
+	lowerName := lower.String(filename)
 	ls := s.exec("ls -1 "+s.escapeShellArg(dirPath, true)+" 2>/dev/null | head -50", "", 0)
 	type scoredPath struct {
 		score int
@@ -694,12 +696,12 @@ func (s *shellFileOps) suggestSimilarFiles(path string) *ReadResult {
 			if f == "" {
 				continue
 			}
-			lf := pyLower(f)
+			lf := lower.String(f)
 			score := 0
 			switch {
 			case lf == lowerName:
 				score = 100
-			case pyLower(pySplitextRoot(f)) == basenameNoExt:
+			case lower.String(pySplitextRoot(f)) == basenameNoExt:
 				score = 90
 			case strings.HasPrefix(lf, lowerName) || strings.HasPrefix(lowerName, lf):
 				score = 70
@@ -707,7 +709,7 @@ func (s *shellFileOps) suggestSimilarFiles(path string) *ReadResult {
 				score = 60
 			case strings.Contains(lowerName, lf) && pyLen(lf) > 2:
 				score = 40
-			case ext != "" && pyLower(pySplitextExt(f)) == ext:
+			case ext != "" && lower.String(pySplitextExt(f)) == ext:
 				if common := runeSetIntersection(lowerName, lf); float64(common) >= float64(max(pyLen(lowerName), pyLen(lf)))*0.4 {
 					score = 30
 				}
@@ -769,7 +771,7 @@ func (s *shellFileOps) ReadFileRaw(path string) *ReadResult {
 	if failed != nil {
 		return &ReadResult{Error: "Failed to read file: " + failed.Stdout}
 	}
-	raw, _ := stripBOM(pystr.SurrogateEscapeDecode(data))
+	raw, _ := stripBOM(string(data))
 	sum := sha256.Sum256(data)
 	return &ReadResult{Content: raw, FileSize: fileSize, ContentSha256: shaRef(hexString(sum[:]))}
 }

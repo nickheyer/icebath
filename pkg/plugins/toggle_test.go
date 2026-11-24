@@ -282,16 +282,3 @@ func TestContextEngineDirsAndLoaderHelpers(t *testing.T) {
 	}
 }
 
-// Answers parse as Python int does, any script digits and single underscores, huge values out of range
-func TestToggleAnswerParsesLikePythonInt(t *testing.T) {
-	for raw, want := range map[string]int{"3": 3, "+2": 2, "-1": -1, "1_0": 10, "٣": 3, "99999999999999999999999": 0} {
-		if got, ok := pyIntAnswer(raw); !ok || got != want {
-			t.Fatalf("%q = %d %v", raw, got, ok)
-		}
-	}
-	for _, raw := range []string{"-_1", "1__0", "_1", "1_", "x", "1.0", ""} {
-		if _, ok := pyIntAnswer(raw); ok {
-			t.Fatalf("%q parsed", raw)
-		}
-	}
-}

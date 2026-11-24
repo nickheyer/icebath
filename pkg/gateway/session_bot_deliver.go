@@ -16,12 +16,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/botmode"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -87,16 +87,16 @@ func botScanOwnerReceipts(ctx context.Context, a *SessionAuthority, home string)
 		return "", nil, nil, err
 	}
 	for _, pin := range pins {
-		key := pyrepr.Str(pin.Record["delivery_id"])
+		key := anyutil.String(pin.Record["delivery_id"])
 		age := float64(time.Now().UnixNano())/1e9 - pin.MTime
 		_, legacy := pin.Record["owner"]
 		committed := false
-		if pyjson.Equal(pin.Record["profile_home"], home) {
+		if anyutil.Equal(pin.Record["profile_home"], home) {
 			if committed, err = botPinCommitted(ctx, a, pin.Record, "bot:"+key); err != nil {
 				return "", nil, nil, err
 			}
 		}
-		if !pyjson.Equal(pin.Record["profile_home"], home) || committed {
+		if !anyutil.Equal(pin.Record["profile_home"], home) || committed {
 			botWarnMalformed(pin.Path, recordShapeError(pin.Path, pin.Record))
 			continue
 		}
@@ -159,7 +159,7 @@ func botPinCommitted(ctx context.Context, a *SessionAuthority, record map[string
 
 // Resolved profile home a delivery for profile lands in, refusing another profile or a principal without submit
 func botHome(a *SessionAuthority, actor Principal, profile any) (string, error) {
-	homeDir, err := pypath.Resolve(filepath.Dir(a.DB.Path()))
+	homeDir, err := pathutil.Resolve(filepath.Dir(a.DB.Path()))
 	if err != nil {
 		return "", err
 	}
@@ -213,10 +213,10 @@ func botMigrate(ctx context.Context, a *SessionAuthority, actor Principal, home 
 		if !ok {
 			return &PyError{Kind: "TypeError", Msg: "the bot chat owner is " + errchain.Kind(record["owner"]) + ", expected a mapping"}
 		}
-		if !pyjson.Equal(owner["profile_home"], home) {
+		if !anyutil.Equal(owner["profile_home"], home) {
 			continue
 		}
-		ownerSession := pyrepr.Str(owner["session_id"])
+		ownerSession := anyutil.String(owner["session_id"])
 		tip, err := a.DB.GetCompressionTip(ctx, ownerSession)
 		if err != nil {
 			return err
@@ -262,7 +262,7 @@ func botMigrate(ctx context.Context, a *SessionAuthority, actor Principal, home 
 
 // Rebuilds derivative replies and queued legacy admissions at owner startup
 func recoverBotDeliveries(ctx context.Context, a *SessionAuthority) error {
-	homeDir, err := pypath.Resolve(filepath.Dir(a.DB.Path()))
+	homeDir, err := pathutil.Resolve(filepath.Dir(a.DB.Path()))
 	if err != nil {
 		return err
 	}
@@ -273,13 +273,13 @@ func recoverBotDeliveries(ctx context.Context, a *SessionAuthority) error {
 		}
 		for _, item := range records {
 			record := item.Record
-			if record == nil || !pyjson.Equal(record["profile_home"], homeDir) || !pyTruthy(record["admission_id"]) {
+			if record == nil || !anyutil.Equal(record["profile_home"], homeDir) || !pyTruthy(record["admission_id"]) {
 				continue
 			}
 			err := botRecoverReceipt(ctx, a, homeDir, record)
 			var refusal *state.RuntimeStoreError
 			if errors.As(err, &refusal) {
-				pkgLog().Error(fmt.Sprintf("Bot delivery %s not recovered: %s (%s)", pyrepr.Str(record["delivery_id"]), refusal.Reason, item.Path), "error", err)
+				pkgLog().Error(fmt.Sprintf("Bot delivery %s not recovered: %s (%s)", anyutil.String(record["delivery_id"]), refusal.Reason, item.Path), "error", err)
 				continue
 			}
 			if err != nil {
@@ -337,7 +337,7 @@ func botRecoverReceipt(ctx context.Context, a *SessionAuthority, home string, re
 		if !pyTruthy(following) {
 			following = record["admission_id"]
 		}
-		botWatchReply(ctx, a, home, pyrepr.Str(record["delivery_id"]), pyrepr.Str(following))
+		botWatchReply(ctx, a, home, anyutil.String(record["delivery_id"]), anyutil.String(following))
 		return nil
 	}
 	return botMaybeRetry(ctx, a, home, record)
@@ -378,8 +378,8 @@ func requireSameDelivery(record map[string]any, actor Principal, message string,
 	if !has {
 		storedCategory = "result"
 	}
-	if !pyjson.Equal(stored, message) || !SameOwner(principal, actor.Subject) || !pyjson.Equal(record["author"], author) ||
-		!pyjson.Equal(storedCategory, category) {
+	if !anyutil.Equal(stored, message) || !SameOwner(principal, actor.Subject) || !anyutil.Equal(record["author"], author) ||
+		!anyutil.Equal(storedCategory, category) {
 		return runtimeRefusal("admission_conflict")
 	}
 	return nil
@@ -543,7 +543,7 @@ func botDeliverFresh(ctx context.Context, a *SessionAuthority, actor Principal, 
 	if !has {
 		pinned = entry.SessionID
 	}
-	if !pyjson.Equal(pinned, entry.SessionID) {
+	if !anyutil.Equal(pinned, entry.SessionID) {
 		moved, err := movedAsideByThisDoor(ctx, a, holder, pinned)
 		if err != nil {
 			return err
@@ -557,7 +557,7 @@ func botDeliverFresh(ctx context.Context, a *SessionAuthority, actor Principal, 
 }
 
 // Whether the pinned Bot Chat is the title holder this delivery's target just moved aside
-func movedAsideByThisDoor(ctx context.Context, a *SessionAuthority, holder *pyjson.Object, pinned any) (bool, error) {
+func movedAsideByThisDoor(ctx context.Context, a *SessionAuthority, holder *jsonutil.Object, pinned any) (bool, error) {
 	if holder == nil {
 		return false, nil
 	}
@@ -566,7 +566,7 @@ func movedAsideByThisDoor(ctx context.Context, a *SessionAuthority, holder *pyjs
 	if err != nil {
 		return false, err
 	}
-	if !pyjson.Equal(pinned, holderID) && !pyjson.Equal(pinned, tip) {
+	if !anyutil.Equal(pinned, holderID) && !anyutil.Equal(pinned, tip) {
 		return false, nil
 	}
 	row, err := a.DB.GetSession(ctx, holderID)
@@ -608,7 +608,7 @@ func botSettleLocked(ctx context.Context, a *SessionAuthority, actor Principal, 
 			if _, err := writeReceipt(ctx, req.home, record, nil); err != nil {
 				return err
 			}
-			pkgLog().Info(fmt.Sprintf("Bot Chat delivery %s settled as not sent (%s)", req.key, pyrepr.Str(record["reason"])))
+			pkgLog().Info(fmt.Sprintf("Bot Chat delivery %s settled as not sent (%s)", req.key, anyutil.String(record["reason"])))
 		}
 		if err := requireSameDelivery(record, actor, req.message, req.author, req.category); err != nil {
 			return err
@@ -662,7 +662,7 @@ func notSentRecord(ctx context.Context, a *SessionAuthority, actor Principal, re
 	if err != nil {
 		return nil, err
 	}
-	for _, key := range notification.Keys {
+	for _, key := range notification.Keys() {
 		record[key], _ = notification.Get(key)
 	}
 	if req.author != nil {
@@ -712,7 +712,7 @@ func botAdmit(ctx context.Context, a *SessionAuthority, actor Principal, home, k
 	event := NewMessageEvent(message)
 	event.Source, event.Internal, event.MessageID = live.Source, true, &identity
 	event.Metadata = map[string]any{"gateway_session_key": live.Route, "gateway_session_id": entry.SessionID}
-	for _, name := range notification.Keys {
+	for _, name := range notification.Keys() {
 		event.Metadata[name], _ = notification.Get(name)
 	}
 	var authorFields map[string]any
@@ -726,7 +726,7 @@ func botAdmit(ctx context.Context, a *SessionAuthority, actor Principal, home, k
 	}
 	maps.Copy(record, map[string]any{"delivery_id": key, "profile_home": home, "session_id": ref.SessionID,
 		"principal_id": actor.Subject, "message": message, "status": "ambiguous"})
-	for _, name := range notification.Keys {
+	for _, name := range notification.Keys() {
 		record[name], _ = notification.Get(name)
 	}
 	if actor.Capabilities["session:operator"] {

@@ -9,11 +9,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gatewaycli"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Constructor arguments of the CLI, command line args winning over config
@@ -107,7 +107,7 @@ func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) e
 	c.model = normalized
 	if c.model == "" {
 		localBase := settings.ModelBaseURL.Get(c.ctx)
-		if host, err := pyurl.BaseURLHostname(localBase); err == nil && (host == "localhost" || host == "127.0.0.1") {
+		if host, err := urlutil.BaseHost(localBase); err == nil && (host == "localhost" || host == "127.0.0.1") {
 			if detected := provider.AutoDetectLocalModel(c.ctx, localBase); detected != "" {
 				c.model = detected
 			}
@@ -144,7 +144,7 @@ func (c *CLI) initModelAndProvider(model, providerArg, apiKey, baseURL string) e
 	keys = keys[1:]
 	matches := false
 	if c.baseURL != "" {
-		matches, _ = pyurl.BaseURLHostMatches(c.baseURL, "openrouter.ai")
+		matches, _ = urlutil.BaseHostMatches(c.baseURL, "openrouter.ai")
 	}
 	if !matches {
 		keys[0], keys[1] = keys[1], keys[0]

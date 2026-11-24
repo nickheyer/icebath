@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Keeps the fallback entries that are dicts naming both a provider and a model
 func fallbackEntries(fallbackModel []map[string]any) []map[string]any {
 	out := []map[string]any{}
 	for _, f := range fallbackModel {
-		if f != nil && pyrepr.Truthy(f["provider"]) && pyrepr.Truthy(f["model"]) {
+		if f != nil && anyutil.IsTrue(f["provider"]) && anyutil.IsTrue(f["model"]) {
 			out = append(out, f)
 		}
 	}
@@ -44,7 +44,7 @@ func initFallbackChain(a *AIAgent, fallbackModel []map[string]any) {
 	}
 	labels := make([]string, len(chain))
 	for i, f := range chain {
-		labels[i] = fmt.Sprintf("%s (%s)", pyrepr.Str(f["model"]), pyrepr.Str(f["provider"]))
+		labels[i] = fmt.Sprintf("%s (%s)", anyutil.String(f["model"]), anyutil.String(f["provider"]))
 	}
 	if len(chain) == 1 {
 		_, _ = fmt.Fprintln(statusStdout, "\U0001f504 Fallback model: "+labels[0])

@@ -11,8 +11,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Canonical authority over a fresh profile store that its routing store shares
@@ -59,9 +59,9 @@ func TestDiscardClosureFailureKeepsUnknownFenceAndRetryIsExact(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			retained := rowString(references[0].(*pyjson.Object), "path")
+			retained := rowString(references[0].(*jsonutil.Object), "path")
 			first, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: a.Epoch, PrincipalID: "human", SessionID: "s", RequestID: "lost",
-				Payload: pyjson.ObjectOf("text", "LOST", "attachments_v1", pyjson.ObjectOf("media", references, "media_types", []any{"image/png"}))})
+				Payload: jsonutil.ObjectOf("text", "LOST", "attachments_v1", jsonutil.ObjectOf("media", references, "media_types", []any{"image/png"}))})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -95,14 +95,14 @@ func TestDiscardClosureFailureKeepsUnknownFenceAndRetryIsExact(t *testing.T) {
 			}
 			appendRow(map[string]any{"role": "user", "content": "LOST"})
 			if _, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: a.Epoch, PrincipalID: "human", SessionID: "s", RequestID: "next",
-				Payload: pyjson.ObjectOf("text", "FOLLOWER")}); err != nil {
+				Payload: jsonutil.ObjectOf("text", "FOLLOWER")}); err != nil {
 				t.Fatal(err)
 			}
 			restartOwner(t, ctx, db, a)
 			holdDrains(t)
 			closeTail := closeDiscardedTurn
 			t.Cleanup(func() { closeDiscardedTurn = closeTail })
-			closeDiscardedTurn = func(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *pyjson.Object, notice, replaceAfter any, metadata *pyjson.Object) (bool, error) {
+			closeDiscardedTurn = func(ctx context.Context, db *state.SessionDB, conn state.SQLiteConn, row *jsonutil.Object, notice, replaceAfter any, metadata *jsonutil.Object) (bool, error) {
 				if _, err := closeTail(ctx, db, conn, row, notice, replaceAfter, metadata); err != nil {
 					return false, err
 				}
@@ -159,7 +159,7 @@ func TestDiscardClosesTurnLostWhileParkedOnATool(t *testing.T) {
 	ref := SessionRef{ProfileID: a.ProfileID, SessionID: "s"}
 	actor := Principal{Subject: "human", ProfileID: a.ProfileID, Capabilities: map[string]bool{"session:submit": true, "session:control": true}, TransportID: "t"}
 	first, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: a.Epoch, PrincipalID: "human", SessionID: "s", RequestID: "lost",
-		Payload: pyjson.ObjectOf("text", "LOST")})
+		Payload: jsonutil.ObjectOf("text", "LOST")})
 	if err != nil {
 		t.Fatal(err)
 	}

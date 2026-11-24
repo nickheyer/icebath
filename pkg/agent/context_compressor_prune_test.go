@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Assistant row carrying one terminal tool call
@@ -320,9 +320,9 @@ func TestProactivePruneUnsetConfigZeroBehaviorChange(t *testing.T) {
 		t.Fatal("prune armed by default")
 	}
 	msgs := pruneBuild(8, pruneIdx(0, 1, 2), 9000)
-	snapshot := pyrepr.Repr(msgs)
+	snapshot := anyutil.Quote(msgs)
 	result, pruned := c.pruneToolResultsOnly(msgs, iptr(10_000_000))
-	if pruned != 0 || !sameSlice(result, msgs) || pyrepr.Repr(msgs) != snapshot {
+	if pruned != 0 || !sameSlice(result, msgs) || anyutil.Quote(msgs) != snapshot {
 		t.Fatalf("unset config changed behavior: %d", pruned)
 	}
 }

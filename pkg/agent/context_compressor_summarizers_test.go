@@ -9,22 +9,22 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	_ "modernc.org/sqlite"
 )
 
 func dumps(t *testing.T, v any) string {
 	t.Helper()
-	out, err := pyjson.Dumps(v)
+	out, err := jsonutil.Encode(v)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return out
 }
 
-func obj(pairs ...any) *pyjson.Object { return pyjson.ObjectOf(pairs...) }
+func obj(pairs ...any) *jsonutil.Object { return jsonutil.ObjectOf(pairs...) }
 
 // Answers an answered clarify entry may carry, a runtime notice lookalike among them
 var clarifyAnswers = []any{
@@ -44,7 +44,7 @@ func clarifyResultContent(t *testing.T, size int, status string, answer any) str
 
 // Summary line of an answered clarify entry
 func clarifyAnswerSummary(answer any) string {
-	s, _ := pyjson.Dumps(answer, pyjson.EnsureASCII(false))
+	s, _ := jsonutil.Encode(answer)
 	return tools.Elide("[clarify] user responded: "+s, pruneMinChars-1)
 }
 
@@ -88,7 +88,7 @@ func TestSummarizeToolResultWebExtractUnwrapsDicts(t *testing.T) {
 
 func TestSummarizeToolResultSkillTools(t *testing.T) {
 	errText := "operations[0] (create on 'orca-ade') failed: content is required for 'create'\n— batch rolled back."
-	for _, args := range []*pyjson.Object{
+	for _, args := range []*jsonutil.Object{
 		obj("operations", []any{obj("action", "create", "name", "orca-ade"), obj("action", "patch", "name", "llama-server")}),
 		obj("action", "create", "name", "orca-ade"),
 	} {
@@ -118,7 +118,7 @@ func TestSummarizeToolResultSkillTools(t *testing.T) {
 func TestSummarizeToolResultOutcome(t *testing.T) {
 	cases := []struct {
 		tool          string
-		args, payload *pyjson.Object
+		args, payload *jsonutil.Object
 		want          string
 	}{
 		{"read_file", obj("path", "gone.py", "offset", 1), obj("error", "File not found: gone.py"), "[read_file] read gone.py from line 1 (36 chars) FAILED: File not found: gone.py"},
@@ -222,7 +222,7 @@ func TestSummarizeToolResultRefusals(t *testing.T) {
 	rmArgs := obj("command", "rm -rf build")
 	cases := []struct {
 		tool    string
-		args    *pyjson.Object
+		args    *jsonutil.Object
 		content string
 		want    []string
 	}{

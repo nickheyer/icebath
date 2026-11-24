@@ -3,7 +3,7 @@ package acpclient
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Marker base URL the former Copilot alias exported as ACP_MARKER_BASE_URL
@@ -33,7 +33,7 @@ func copilotDisabled(entry any) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	enablement, err := attrGet(or(meta, pyjson.NewObject()), "copilotEnablement")
+	enablement, err := attrGet(or(meta, jsonutil.NewObject()), "copilotEnablement")
 	if err != nil {
 		return false, err
 	}

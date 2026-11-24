@@ -268,10 +268,7 @@ func (d *daytonaEnv) runBash(ctx context.Context, cmd string, login bool, timeou
 			}
 			stateMu.Unlock()
 			remoteStdin := d.stagedStdinPath()
-			payload, err := pystr.SurrogateEscapeEncode(*stdinData)
-			if err != nil {
-				return "", 1
-			}
+			payload := []byte(*stdinData)
 			if err := sandbox.FileSystem.UploadFile(context.Background(), payload, remoteStdin); err != nil {
 				return "Daytona stdin upload failed: " + err.Error(), 1
 			}

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var (
@@ -98,8 +98,8 @@ func auxResolveMinimaxOAuthArm(ctx context.Context, req auxResolveRequest) (auxR
 	}
 	tokenSource := auxCallableTokenSource(creds["api_key"])
 	baseURL := ""
-	if v := creds["base_url"]; pyrepr.Truthy(v) {
-		baseURL = strings.TrimRight(strings.TrimSpace(pyrepr.Str(v)), "/")
+	if v := creds["base_url"]; anyutil.IsTrue(v) {
+		baseURL = strings.TrimRight(strings.TrimSpace(anyutil.String(v)), "/")
 	}
 	if tokenSource == nil || baseURL == "" {
 		auxLogOnceDebug(auxLoggedMinimaxAbsentKeys, "minimax-oauth", "resolve_provider_client: minimax-oauth credentials incomplete")

@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestWorkerPersistenceExplicitlyBypassesProxy(t *testing.T) {
@@ -23,7 +24,7 @@ func TestWorkerPersistenceExplicitlyBypassesProxy(t *testing.T) {
 		if err != nil {
 			t.Fatalf("call %d: %v", i, err)
 		}
-		if !pyjson.Equal(result, pyjson.ObjectOf("ok", true)) {
+		if !anyutil.Equal(result, jsonutil.ObjectOf("ok", true)) {
 			t.Fatalf("call %d result %v", i, result)
 		}
 		if i == 0 {

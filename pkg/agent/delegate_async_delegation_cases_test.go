@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -63,8 +63,8 @@ func asyncFakeChildren(t *testing.T) {
 	t.Cleanup(func() { buildChildPreservingParentToolsFn = prev })
 }
 
-func asyncCompletedEntry(i int, goal string) *pyjson.Object {
-	return pyjson.ObjectOf("task_index", i, "status", "completed", "summary", "done: "+goal, "api_calls", 1,
+func asyncCompletedEntry(i int, goal string) *jsonutil.Object {
+	return jsonutil.ObjectOf("task_index", i, "status", "completed", "summary", "done: "+goal, "api_calls", 1,
 		"duration_seconds", 0.1, "model", "m", "exit_reason", "completed")
 }
 
@@ -72,7 +72,7 @@ func asyncCompletedEntry(i int, goal string) *pyjson.Object {
 func asyncGatedChildren(t *testing.T, gates []chan struct{}) {
 	t.Helper()
 	prev := runSingleChildFn
-	runSingleChildFn = func(_ context.Context, i int, goal string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
+	runSingleChildFn = func(_ context.Context, i int, goal string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
 		select {
 		case <-gates[i]:
 		case <-time.After(60 * time.Second):
@@ -115,7 +115,7 @@ func resultField(v any, key string) any {
 	switch m := v.(type) {
 	case map[string]any:
 		return m[key]
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		val, _ := m.Get(key)
 		return val
 	}
@@ -136,7 +136,7 @@ func resultIndexes(t *testing.T, evt map[string]any) []int {
 	return out
 }
 
-func asyncDelegate(t *testing.T, env *tools.Env, parent *AIAgent, kwargs map[string]any) *pyjson.Object {
+func asyncDelegate(t *testing.T, env *tools.Env, parent *AIAgent, kwargs map[string]any) *jsonutil.Object {
 	t.Helper()
 	out, err := delegateTask(tools.WithToolEnv(context.Background(), env), parent, kwargs)
 	return dispatchPayload(t, out, err)
@@ -174,8 +174,8 @@ func TestDelegateTaskBackgroundUsesLiveTuiAgentSessionId(t *testing.T) {
 	asyncFakeCreds(t)
 	asyncFakeChildren(t)
 	prev := runSingleChildFn
-	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
-		return pyjson.ObjectOf("task_index", i, "status", "completed", "summary", "done", "api_calls", 1, "duration_seconds", 0.1, "model", "m", "exit_reason", "completed")
+	runSingleChildFn = func(_ context.Context, i int, _ string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
+		return jsonutil.ObjectOf("task_index", i, "status", "completed", "summary", "done", "api_calls", 1, "duration_seconds", 0.1, "model", "m", "exit_reason", "completed")
 	}
 	t.Cleanup(func() { runSingleChildFn = prev })
 	tools.SetCurrentSessionKey(env, "pre-compress-parent")
@@ -195,7 +195,7 @@ func TestDelegateTaskBackgroundUsesLiveTuiAgentSessionId(t *testing.T) {
 }
 
 // The _grouped_fanout helper, a gated background fan out returning the parsed handle
-func groupedFanout(t *testing.T, env *tools.Env, tasks []any, gates []chan struct{}) *pyjson.Object {
+func groupedFanout(t *testing.T, env *tools.Env, tasks []any, gates []chan struct{}) *jsonutil.Object {
 	t.Helper()
 	asyncFakeCreds(t)
 	asyncFakeChildren(t)
@@ -296,7 +296,7 @@ func dispatchAsyncOwnerDeathChild() {
 	resolveDelegationCredentialsFn = func(context.Context, map[string]any, *AIAgent) (map[string]any, error) {
 		return map[string]any{"model": "m", "provider": nil, "base_url": nil, "api_key": nil, "api_mode": nil, "command": nil, "args": nil}, nil
 	}
-	runSingleChildFn = func(_ context.Context, i int, goal string, _, _ *AIAgent, _ string, _, _ any) *pyjson.Object {
+	runSingleChildFn = func(_ context.Context, i int, goal string, _, _ *AIAgent, _ string, _, _ any) *jsonutil.Object {
 		if mode == "crash_group" && i == 1 {
 			time.Sleep(600 * time.Second)
 		}
@@ -312,7 +312,7 @@ func dispatchAsyncOwnerDeathChild() {
 		time.Sleep(2 * time.Second)
 		os.Exit(1)
 	case "held_finalize":
-		finalizeChildResultsFn = func(context.Context, []*pyjson.Object, []map[string]any, []delegateChild, *AIAgent) {
+		finalizeChildResultsFn = func(context.Context, []*jsonutil.Object, []map[string]any, []delegateChild, *AIAgent) {
 			_ = os.WriteFile(os.Getenv(asyncOwnerDeathMarkerEnv), []byte("child-returned"), 0o600)
 			time.Sleep(600 * time.Second)
 		}

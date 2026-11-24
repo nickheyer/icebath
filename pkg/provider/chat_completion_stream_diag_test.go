@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func TestRetryAfterDropReportsTheAttemptThatDropped(t *testing.T) {
@@ -20,7 +20,7 @@ func TestRetryAfterDropReportsTheAttemptThatDropped(t *testing.T) {
 	if len(statuses) != 1 || !strings.Contains(statuses[0], "attempt 1/3 dropped") {
 		t.Fatalf("statuses %q", statuses)
 	}
-	if len(activity) != 1 || activity[0] != "stream retry 1/3 after "+pyrepr.TypeName(drop) {
+	if len(activity) != 1 || activity[0] != "stream retry 1/3 after "+anyutil.Kind(drop) {
 		t.Fatalf("activity %q", activity)
 	}
 }

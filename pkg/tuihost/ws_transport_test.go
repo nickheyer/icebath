@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Socket counting the sends in flight while each one takes a moment
@@ -41,7 +40,7 @@ func TestWsTransportSerializesConcurrentSends(t *testing.T) {
 	transport := NewWSTransport(ws, "serialize-test", nil)
 	results := make(chan bool, 2)
 	for idx := 1; idx <= 2; idx++ {
-		go func() { results <- transport.Write(pyjson.ObjectOf("idx", idx)) }()
+		go func() { results <- transport.Write(jsonutil.ObjectOf("idx", idx)) }()
 	}
 	for range 2 {
 		select {
@@ -64,15 +63,15 @@ func TestWsTransportRepliesWithErrorForUnserializableResponse(t *testing.T) {
 	slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
 	t.Cleanup(func() { slog.SetDefault(saved) })
 	ws := &recordingWS{}
-	bad := func() *pyjson.Object {
-		return pyjson.ObjectOf("jsonrpc", "2.0", "id", "profiles",
-			"result", pyjson.ObjectOf("created", pydatetime.DateTime{Year: 2026, Month: 8, Day: 22}))
+	bad := func() *jsonutil.Object {
+		return jsonutil.ObjectOf("jsonrpc", "2.0", "id", "profiles",
+			"result", jsonutil.ObjectOf("created", pydatetime.DateTime{Year: 2026, Month: 8, Day: 22}))
 	}
 	transport := NewWSTransport(ws, "serialization-test", nil)
 	if !transport.Write(bad()) {
 		t.Fatal("write of the unserializable frame failed")
 	}
-	if !transport.Write(pyjson.ObjectOf("jsonrpc", "2.0", "id", "next", "result", pyjson.NewObject())) {
+	if !transport.Write(jsonutil.ObjectOf("jsonrpc", "2.0", "id", "next", "result", jsonutil.NewObject())) {
 		t.Fatal("write after the unserializable frame failed")
 	}
 	if !transport.WriteAsync(bad()) {
@@ -83,24 +82,24 @@ func TestWsTransportRepliesWithErrorForUnserializableResponse(t *testing.T) {
 	}
 	sent := ws.lines()
 	ids := []any{}
-	frames := []*pyjson.Object{}
+	frames := []*jsonutil.Object{}
 	for _, line := range sent {
-		frame, err := pyjson.LoadsDict(line)
+		frame, err := jsonutil.DecodeObject(line)
 		if err != nil {
 			t.Fatal(err)
 		}
 		frames = append(frames, frame)
-		ids = append(ids, frame.GetOr("id", nil))
+		ids = append(ids, frame.ValueOr("id", nil))
 	}
 	if !slices.Equal(ids, []any{"profiles", "next", "profiles"}) {
 		t.Fatalf("ids = %v", ids)
 	}
-	for _, frame := range []*pyjson.Object{frames[0], frames[2]} {
-		errObj, _ := frame.GetOr("error", nil).(*pyjson.Object)
-		if errObj == nil || !jsonIsInt(errObj.GetOr("code", nil), -32603) {
+	for _, frame := range []*jsonutil.Object{frames[0], frames[2]} {
+		errObj, _ := frame.ValueOr("error", nil).(*jsonutil.Object)
+		if errObj == nil || !jsonIsInt(errObj.ValueOr("code", nil), -32603) {
 			t.Fatalf("frame = %s", frameText(t, frame))
 		}
-		message, _ := errObj.GetOr("message", nil).(string)
+		message, _ := errObj.ValueOr("message", nil).(string)
 		if !strings.HasPrefix(message, "response serialization error") || !strings.Contains(message, "datetime") {
 			t.Fatalf("message = %q", message)
 		}

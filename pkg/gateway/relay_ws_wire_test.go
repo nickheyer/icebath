@@ -11,21 +11,21 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Wire payload as the decoded frame object the transport reads
-func relayWireObject(t *testing.T, payload map[string]any) *pyjson.Object {
+func relayWireObject(t *testing.T, payload map[string]any) *jsonutil.Object {
 	t.Helper()
 	raw, err := json.Marshal(payload)
 	if err != nil {
 		t.Fatal(err)
 	}
-	parsed, err := pyjson.Loads(string(raw))
+	parsed, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
-	obj, _ := pyjson.AsObject(parsed)
+	obj, _ := jsonutil.AsObject(parsed)
 	return obj
 }
 

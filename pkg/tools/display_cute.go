@@ -2,10 +2,10 @@ package tools
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"math"
 	"regexp"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
@@ -15,6 +15,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -46,17 +47,17 @@ func displayT(ctx context.Context, key string, kwargs map[string]any) string {
 	return i18n.T(ctx, key, "", kwargs)
 }
 
-// Decoded JSON of a string result with ints kept apart from floats, nil for undecodable or non string input
+// Decoded JSON of a string result as plain maps and slices with integers kept apart from floats, nil for undecodable or non string input
 func displayJSONLoads(result any) any {
 	s, ok := result.(string)
 	if !ok {
 		return nil
 	}
-	v, err := pyjson.DecodeWTF8Numbers([]byte(s))
+	v, err := jsonutil.Decode(s)
 	if err != nil {
 		return nil
 	}
-	return v
+	return jsonutil.Plain(v)
 }
 
 // The result itself when it is a dict, else its decoded JSON
@@ -67,44 +68,22 @@ func displayData(result any) any {
 	return displayJSONLoads(result)
 }
 
-// Python equality of a value with the int zero
-func pyEqualsZero(v any) bool {
-	switch x := v.(type) {
-	case bool:
-		return !x
-	case float64:
-		return x == 0
-	case float32:
-		return x == 0
-	case json.Number:
-		if n, ok := pyrepr.Int(x); ok {
-			return n.Sign() == 0
-		}
-		f, _ := x.Float64()
-		return f == 0
+// Whether a value is a number equal to zero, false counting as zero
+func equalsZero(v any) bool {
+	if b, ok := v.(bool); ok {
+		return !b
 	}
-	n, ok := pyrepr.Int(v)
-	return ok && n.Sign() == 0
+	f, ok := anyutil.Float(v)
+	return ok && f == 0
 }
 
-// Python greater than zero comparison, raising TypeError for a non number
-func pyGreaterThanZero(v any) bool {
-	switch x := v.(type) {
-	case bool:
-		return x
-	case float64:
-		return x > 0
-	case float32:
-		return x > 0
-	case json.Number:
-		if n, ok := pyrepr.Int(x); ok {
-			return n.Sign() > 0
-		}
-		f, _ := x.Float64()
-		return f > 0
+// Whether a number is above zero, true counting as one, raising a display error for a value that is not a number
+func greaterThanZero(v any) bool {
+	if b, ok := v.(bool); ok {
+		return b
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		return n.Sign() > 0
+	if f, ok := anyutil.Float(v); ok {
+		return f > 0
 	}
 	raiseDisplay("expected a number, got %s", errchain.Kind(v))
 	return false
@@ -146,22 +125,22 @@ func displayLen(v any) int {
 	return 0
 }
 
-// Python isinstance int value including bool, ok false for any other type or an int beyond int range
-func pyIntIndex(v any) (int, bool) {
+// Integer value as an index, true and false counting as 1 and 0, ok false for any other type, -1 for an integer beyond int range
+func intIndex(v any) (int, bool) {
 	if b, ok := v.(bool); ok {
 		if b {
 			return 1, true
 		}
 		return 0, true
 	}
-	n, ok := pyrepr.Int(v)
+	n, ok := anyutil.Int(v)
 	if !ok {
 		return 0, false
 	}
-	if !n.IsInt64() || n.Int64() > math.MaxInt || n.Int64() < math.MinInt {
+	if n > math.MaxInt || n < math.MinInt {
 		return -1, true
 	}
-	return int(n.Int64()), true
+	return int(n), true
 }
 
 // Shrinks an error for inline display, long File not found paths become the filename
@@ -180,15 +159,15 @@ func trimError(ctx context.Context, msg string) string {
 // Bracketed reason and retry hint of a degraded terminal backend result
 func degradedSuffix(ctx context.Context, data map[string]any) string {
 	reason := data["reason"]
-	if !pyrepr.Truthy(reason) {
+	if !anyutil.IsTrue(reason) {
 		reason = data["error"]
 	}
-	if !pyrepr.Truthy(reason) {
+	if !anyutil.IsTrue(reason) {
 		reason = displayT(ctx, "display.failure.terminal_backend_unavailable", nil)
 	}
-	text := strings.TrimSpace(pyrepr.Str(reason))
-	if hint := data["retry_hint"]; pyrepr.Truthy(hint) {
-		if h := strings.TrimSpace(pyrepr.Str(hint)); h != "" {
+	text := strings.TrimSpace(anyutil.String(reason))
+	if hint := data["retry_hint"]; anyutil.IsTrue(hint) {
+		if h := strings.TrimSpace(anyutil.String(hint)); h != "" {
 			text += " — " + h
 		}
 	}
@@ -205,8 +184,8 @@ func IsNeutralFailure(toolName string, result any) bool {
 		errValue = m["error"]
 	}
 	text := ""
-	if pyrepr.Truthy(errValue) {
-		text = pyrepr.Str(errValue)
+	if anyutil.IsTrue(errValue) {
+		text = anyutil.String(errValue)
 	}
 	return !strings.Contains(text, RollbackFailedMarker)
 }
@@ -221,22 +200,22 @@ func DetectToolFailure(ctx context.Context, toolName string, result any) (bool, 
 		return false, ""
 	}
 	m, isDict := data.(map[string]any)
-	if isDict && pyrepr.Truthy(m["user_summary"]) {
-		return true, " [" + tailTrunc(pyrepr.Str(m["user_summary"]), degradedSuffixMaxLen) + "]"
+	if isDict && anyutil.IsTrue(m["user_summary"]) {
+		return true, " [" + tailTrunc(anyutil.String(m["user_summary"]), degradedSuffixMaxLen) + "]"
 	}
 	if toolName == "terminal" {
 		var exitCode any
 		if isDict {
 			exitCode = m["exit_code"]
 		}
-		if exitCode == nil || pyEqualsZero(exitCode) {
+		if exitCode == nil || equalsZero(exitCode) {
 			return false, ""
 		}
 		if m["status"] == any("degraded") {
 			return true, degradedSuffix(ctx, m)
 		}
-		if errMsg := m["error"]; pyrepr.Truthy(errMsg) {
-			return true, " [" + trimError(ctx, pyrepr.Str(errMsg)) + "]"
+		if errMsg := m["error"]; anyutil.IsTrue(errMsg) {
+			return true, " [" + trimError(ctx, anyutil.String(errMsg)) + "]"
 		}
 		return true, displayT(ctx, "display.failure.exit_code", map[string]any{"code": exitCode})
 	}
@@ -252,12 +231,12 @@ func DetectToolFailure(ctx context.Context, toolName string, result any) (bool, 
 			}
 		}
 		errValue := m["error"]
-		if !pyrepr.Truthy(errValue) {
+		if !anyutil.IsTrue(errValue) {
 			errValue = m["message"]
 		}
 		_, hasError := m["error"]
-		if pyrepr.Truthy(errValue) && (failed || hasError) {
-			return true, " [" + trimError(ctx, pyrepr.Str(errValue)) + "]"
+		if anyutil.IsTrue(errValue) && (failed || hasError) {
+			return true, " [" + trimError(ctx, anyutil.String(errValue)) + "]"
 		}
 		if shapeErr := ShapeFailureError(shapeFailureData(result, m)); shapeErr != "" {
 			return true, " [" + trimError(ctx, shapeErr) + "]"
@@ -292,12 +271,12 @@ func cuteDomain(url any) string {
 
 // Tail truncates the str of a value to the configured preview cap, zero meaning unlimited
 func cuteTrunc(s any) string {
-	return tailTrunc(pyrepr.Str(s), GetToolPreviewMaxLen())
+	return tailTrunc(anyutil.String(s), GetToolPreviewMaxLen())
 }
 
 // Head truncates a path to the configured preview cap, keeping the filename end
 func cutePath(p any) string {
-	text := pyrepr.Str(p)
+	text := anyutil.String(p)
 	limit := GetToolPreviewMaxLen()
 	if limit == 0 || utf8.RuneCountInString(text) <= limit {
 		return text
@@ -333,7 +312,7 @@ func cuteWebExtract(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRo
 	urls := getOr(a, "urls", []any{})
 	list, isList := anyList(urls)
 	url := ""
-	if pyrepr.Truthy(urls) {
+	if anyutil.IsTrue(urls) {
 		if isList {
 			url = displayURL(list[0])
 		} else {
@@ -353,11 +332,11 @@ func cuteWebExtract(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRo
 // Done and total counts from a todo_list result summary, zeros when the summary is unreadable
 func planSummaryCounts(result any) (total, done any) {
 	total, done = 0, 0
-	if !pyrepr.Truthy(result) {
+	if !anyutil.IsTrue(result) {
 		return total, done
 	}
 	parsed := displayJSONLoads(result)
-	if !pyrepr.Truthy(parsed) {
+	if !anyutil.IsTrue(parsed) {
 		return total, done
 	}
 	m, ok := parsed.(map[string]any)
@@ -379,17 +358,17 @@ func cuteTodoList(ctx context.Context, _ *Env, a map[string]any, result any) Cut
 	switch {
 	case todosArg == nil:
 		detail = displayT(ctx, "display.cute.todo_reading", nil)
-		if pyGreaterThanZero(total) {
+		if greaterThanZero(total) {
 			detail = progress
 		}
-	case pyrepr.Truthy(getOr(a, "merge", false)):
-		if pyGreaterThanZero(total) && pyGreaterThanZero(done) {
+	case anyutil.IsTrue(getOr(a, "merge", false)):
+		if greaterThanZero(total) && greaterThanZero(done) {
 			detail = displayT(ctx, "display.cute.todo_update_progress", map[string]any{"done": done, "total": total})
 		} else {
 			detail = displayT(ctx, "display.cute.todo_update_count", map[string]any{"count": displayLen(todosArg)})
 		}
 	default:
-		if pyGreaterThanZero(total) && pyGreaterThanZero(done) {
+		if greaterThanZero(total) && greaterThanZero(done) {
 			detail = progress
 		} else {
 			detail = displayT(ctx, "display.cute.todo_count", map[string]any{"count": displayLen(todosArg)})
@@ -403,35 +382,35 @@ func cuteMemory(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 	action, target := getOr(op, "action", "?"), getOr(a, "target", "")
 	if action == any("add") {
 		content := op["content"]
-		if !pyrepr.Truthy(content) {
+		if !anyutil.IsTrue(content) {
 			content = op["new_text"]
 		}
-		if !pyrepr.Truthy(content) {
+		if !anyutil.IsTrue(content) {
 			content = ""
 		}
-		return cuteRow(ctx, "🧠", "memory", "+"+pyrepr.Str(target)+": \""+cuteTrunc(content)+"\""+more)
+		return cuteRow(ctx, "🧠", "memory", "+"+anyutil.String(target)+": \""+cuteTrunc(content)+"\""+more)
 	}
 	if action == any("replace") || action == any("patch") || action == any("remove") {
 		old := op["old_text"]
-		if !pyrepr.Truthy(old) {
+		if !anyutil.IsTrue(old) {
 			old = displayT(ctx, "display.preview.missing_old_text", nil)
 		}
 		sign := "~"
 		if action == any("remove") {
 			sign = "-"
 		}
-		return cuteRow(ctx, "🧠", "memory", sign+pyrepr.Str(target)+": \""+cuteTrunc(old)+"\""+more)
+		return cuteRow(ctx, "🧠", "memory", sign+anyutil.String(target)+": \""+cuteTrunc(old)+"\""+more)
 	}
-	return cuteRow(ctx, "🧠", "memory", pyrepr.Str(action))
+	return cuteRow(ctx, "🧠", "memory", anyutil.String(action))
 }
 
 func cuteSkillView(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 	label, filePath := getOr(a, "name", ""), a["file_path"]
-	if pyrepr.Truthy(filePath) {
-		if pyrepr.Truthy(label) {
-			label = pyrepr.Str(label) + " → " + pyrepr.Str(filePath)
+	if anyutil.IsTrue(filePath) {
+		if anyutil.IsTrue(label) {
+			label = anyutil.String(label) + " → " + anyutil.String(filePath)
 		} else {
-			label = pyrepr.Str(filePath)
+			label = anyutil.String(filePath)
 		}
 	}
 	return cuteRow(ctx, "📚", "skill", cuteTrunc(label))
@@ -456,20 +435,20 @@ func cuteCronjob(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 	action := getOr(a, "action", "?")
 	if action == any("create") {
 		skills := a["skills"]
-		if !pyrepr.Truthy(skills) {
+		if !anyutil.IsTrue(skills) {
 			skills = []any{}
-			if pyrepr.Truthy(a["skill"]) {
+			if anyutil.IsTrue(a["skill"]) {
 				skills = []any{a["skill"]}
 			}
 		}
 		label := a["name"]
-		if !pyrepr.Truthy(label) {
+		if !anyutil.IsTrue(label) {
 			label = nil
-			if pyrepr.Truthy(skills) {
+			if anyutil.IsTrue(skills) {
 				label = pyFirstItem(skills)
 			}
 		}
-		if !pyrepr.Truthy(label) {
+		if !anyutil.IsTrue(label) {
 			label = getOr(a, "prompt", displayT(ctx, "display.cute.cron_task_fallback", nil))
 		}
 		return cuteRow(ctx, "⏰", "cron", displayT(ctx, "display.cute.cron_create", map[string]any{"label": cuteTrunc(label)}))
@@ -477,7 +456,7 @@ func cuteCronjob(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 	if action == any("list") {
 		return cuteRow(ctx, "⏰", "cron", displayT(ctx, "display.cute.cron_listing", nil))
 	}
-	return cuteRow(ctx, "⏰", "cron", pyrepr.Str(action)+" "+pyrepr.Str(getOr(a, "job_id", "")))
+	return cuteRow(ctx, "⏰", "cron", anyutil.String(action)+" "+anyutil.String(getOr(a, "job_id", "")))
 }
 
 func cuteExecuteCode(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
@@ -525,7 +504,7 @@ func pyHead12(v any) string {
 		return textutil.First(s, 12)
 	}
 	if list, ok := v.([]any); ok {
-		return pyrepr.Str(list[:min(12, len(list))])
+		return anyutil.String(list[:min(12, len(list))])
 	}
 	raiseDisplay("expected text or a list to take the first items of, got %s", errchain.Kind(v))
 	return ""
@@ -536,7 +515,7 @@ func cuteProcessManage(ctx context.Context, _ *Env, a map[string]any, _ any) Cut
 	if action == any("list") {
 		return cuteRow(ctx, "⚙️ ", "proc", displayT(ctx, "display.cute.process_list", nil))
 	}
-	return cuteRow(ctx, "⚙️ ", "proc", pyrepr.Str(action)+" "+sid)
+	return cuteRow(ctx, "⚙️ ", "proc", anyutil.String(action)+" "+sid)
 }
 
 var scrollArrows = map[string]string{"down": "↓", "up": "↑", "right": "→", "left": "←"}
@@ -550,7 +529,7 @@ func cuteScroll(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 	name, isStr := direction.(string)
 	arrow, known := scrollArrows[name]
 	if !isStr || !known {
-		return cuteRow(ctx, "↓ ", "scroll", pyrepr.Str(direction))
+		return cuteRow(ctx, "↓ ", "scroll", anyutil.String(direction))
 	}
 	return cuteRow(ctx, arrow+" ", "scroll", displayT(ctx, "display.cute.scroll."+name, nil))
 }
@@ -576,7 +555,7 @@ func cuteArgRow(emoji, verb, key string, def any) cuteRenderer {
 // Row whose detail is the str of the argument under key
 func cuteStrRow(emoji, verb, key string, def any) cuteRenderer {
 	return func(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
-		return cuteRow(ctx, emoji, verb, pyrepr.Str(getOr(a, key, def)))
+		return cuteRow(ctx, emoji, verb, anyutil.String(getOr(a, key, def)))
 	}
 }
 
@@ -614,7 +593,7 @@ func init() {
 		},
 		"browser_snapshot": func(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 			key := "display.cute.snapshot_compact"
-			if pyrepr.Truthy(a["full"]) {
+			if anyutil.IsTrue(a["full"]) {
 				key = "display.cute.snapshot_full"
 			}
 			return cuteRow(ctx, "📸", "snapshot", displayT(ctx, key, nil))
@@ -637,7 +616,7 @@ func init() {
 		"memory": cuteMemory,
 		"skills_list": func(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 			category := a["category"]
-			if !pyrepr.Truthy(category) {
+			if !anyutil.IsTrue(category) {
 				category = displayT(ctx, "display.cute.skills_all", nil)
 			}
 			return cuteRow(ctx, "📚", "skills", displayT(ctx, "display.cute.skills_list", map[string]any{"category": category}))
@@ -647,7 +626,7 @@ func init() {
 		"text_to_speech": func(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
 			if voices, ok := a["find_voices"].(map[string]any); ok {
 				query := voices["query"]
-				if !pyrepr.Truthy(query) {
+				if !anyutil.IsTrue(query) {
 					query = "browse"
 				}
 				return cuteRow(ctx, "🗣️ ", "voices", cuteTrunc(query))
@@ -656,7 +635,7 @@ func init() {
 		},
 		"vision_analyze": cuteArgRow("👁️ ", "vision", "question", ""),
 		"send_message": func(ctx context.Context, _ *Env, a map[string]any, _ any) CuteRow {
-			return cuteRow(ctx, "📨", "send", pyrepr.Str(getOr(a, "target", "?"))+": \""+cuteTrunc(getOr(a, "message", ""))+"\"")
+			return cuteRow(ctx, "📨", "send", anyutil.String(getOr(a, "target", "?"))+": \""+cuteTrunc(getOr(a, "message", ""))+"\"")
 		},
 		"cronjob_manage": cuteCronjob,
 		"execute_code":   cuteExecuteCode,
@@ -692,20 +671,20 @@ func entryFailureSuffix(ctx context.Context, entry any) string {
 	errValue := m["error"]
 	if em, ok := errValue.(map[string]any); ok {
 		msg := em["message"]
-		if !pyrepr.Truthy(msg) {
+		if !anyutil.IsTrue(msg) {
 			msg = em["code"]
 		}
-		if !pyrepr.Truthy(msg) {
+		if !anyutil.IsTrue(msg) {
 			msg = displayT(ctx, "display.failure.generic_word", nil)
 		}
-		return " [" + trimError(ctx, pyrepr.Str(msg)) + "]"
+		return " [" + trimError(ctx, anyutil.String(msg)) + "]"
 	}
-	if !pyrepr.Truthy(errValue) && m["success"] != any(false) {
+	if !anyutil.IsTrue(errValue) && m["success"] != any(false) {
 		return ""
 	}
 	name := ""
-	if pyrepr.Truthy(m["name"]) {
-		name = pyrepr.Str(m["name"])
+	if anyutil.IsTrue(m["name"]) {
+		name = anyutil.String(m["name"])
 	}
 	_, suffix := DetectToolFailure(ctx, name, m)
 	return suffix
@@ -722,7 +701,7 @@ func bridgeRowSuffixes(ctx context.Context, rows int, result any, callSuffix str
 					continue
 				}
 				target := position
-				if index, ok := pyIntIndex(entry.(map[string]any)["index"]); ok && index >= 0 && index < rows {
+				if index, ok := intIndex(entry.(map[string]any)["index"]); ok && index >= 0 && index < rows {
 					target = index
 				}
 				suffixes[target] = suffix
@@ -733,8 +712,8 @@ func bridgeRowSuffixes(ctx context.Context, rows int, result any, callSuffix str
 		named := rows - 1
 		if match := bridgeCallIndexRe.FindStringSubmatch(callSuffix); match != nil {
 			named = -1
-			if n, ok := pystr.IntText(match[1]); ok && n.IsInt64() && n.Int64() < int64(rows) {
-				named = int(n.Int64())
+			if n, err := textutil.ParseInt(match[1]); err == nil && n < int64(rows) {
+				named = int(n)
 			}
 		}
 		if named < 0 || named >= rows {
@@ -780,11 +759,7 @@ func cuteToolMessage(ctx context.Context, env *Env, toolName string, args map[st
 	} else {
 		suffixes = bridgeRowSuffixes(ctx, len(rows), result, callSuffix)
 	}
-	elapsed, err := pyrepr.Format(duration, ".1f")
-	if err != nil {
-		panic(err)
-	}
-	rows[len(rows)-1] += "  " + elapsed + "s"
+	rows[len(rows)-1] += "  " + strconv.FormatFloat(duration, 'f', 1, 64) + "s"
 	prefix, ok := GetSkinToolPrefix(ctx).(string)
 	if !ok {
 		raiseDisplay("the skin tool prefix is %s, expected text", errchain.Kind(GetSkinToolPrefix(ctx)))
@@ -808,12 +783,7 @@ func GetCuteToolMessage(ctx context.Context, env *Env, toolName string, args map
 		if toolName != "" {
 			safeName = textutil.First(toolName, 9)
 		}
-		safeDuration, err := pyrepr.Format(duration, ".1f")
-		if err != nil {
-			safeDuration = displayT(ctx, "display.cute.fallback_done", nil)
-		} else {
-			safeDuration += "s"
-		}
+		safeDuration := strconv.FormatFloat(duration, 'f', 1, 64) + "s"
 		message = displayT(ctx, "display.cute.completed", map[string]any{"tool": fmt.Sprintf("%-9s", safeName), "duration": safeDuration})
 	}()
 	return renderCuteToolMessage(ctx, env, toolName, pythonDisplayArgs(args), duration, result)

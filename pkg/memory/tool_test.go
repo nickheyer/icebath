@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Decoded result of one memory tool call
@@ -549,7 +549,7 @@ func registryCall(t *testing.T, s *Store, args map[string]any) map[string]any {
 }
 
 func TestMemorySchemaHasNoForbiddenTopLevelCombinators(t *testing.T) {
-	params := pyjson.Plain(MemorySchema().Vals["parameters"]).(map[string]any)
+	params := jsonutil.Plain(MemorySchema().Value("parameters")).(map[string]any)
 	for _, key := range []string{"allOf", "anyOf", "oneOf", "enum", "not"} {
 		if _, has := params[key]; has {
 			t.Fatalf("top level %s", key)
@@ -558,7 +558,7 @@ func TestMemorySchemaHasNoForbiddenTopLevelCombinators(t *testing.T) {
 }
 
 func TestMemorySchemaAdvertisesEachFieldOnceAndLegacyShapesStillWrite(t *testing.T) {
-	params := pyjson.Plain(MemorySchema().Vals["parameters"]).(map[string]any)
+	params := jsonutil.Plain(MemorySchema().Value("parameters")).(map[string]any)
 	props := params["properties"].(map[string]any)
 	if len(props) != 2 || props["target"] == nil || props["operations"] == nil {
 		t.Fatal(props)
@@ -670,7 +670,7 @@ func writeMemoryConfig(t *testing.T, env *tools.Env, memoryEnabled, userEnabled 
 // Memory tool definition from one quiet registry definition pass, nil when the check hides it
 func memoryDefinition(t *testing.T, env *tools.Env) map[string]any {
 	for _, td := range tools.Default.Definitions(t.Context(), env, map[string]bool{"memory": true}, true) {
-		if fn, _ := pyjson.Plain(td["function"]).(map[string]any); fn["name"] == "memory" {
+		if fn, _ := jsonutil.Plain(td["function"]).(map[string]any); fn["name"] == "memory" {
 			return fn
 		}
 	}
@@ -678,7 +678,7 @@ func memoryDefinition(t *testing.T, env *tools.Env) map[string]any {
 }
 
 func targetEnum(def map[string]any) []any {
-	return pyjson.Plain(def["parameters"]).(map[string]any)["properties"].(map[string]any)["target"].(map[string]any)["enum"].([]any)
+	return jsonutil.Plain(def["parameters"]).(map[string]any)["properties"].(map[string]any)["target"].(map[string]any)["enum"].([]any)
 }
 
 func TestBuiltinMemoryToolHiddenWhenBothStoresDisabled(t *testing.T) {
@@ -723,13 +723,13 @@ func TestBuiltinMemorySchemaReusesAvailabilityFlagSnapshot(t *testing.T) {
 		t.Fatal("hidden")
 	}
 	writeMemoryConfig(t, env, true, false)
-	if enum := targetEnum(map[string]any{"parameters": memorySchemaOverrides(env).Vals["parameters"]}); len(enum) != 1 || enum[0] != "user" {
+	if enum := targetEnum(map[string]any{"parameters": memorySchemaOverrides(env).Value("parameters")}); len(enum) != 1 || enum[0] != "user" {
 		t.Fatal(enum)
 	}
 	if _, left := env.Values.Load(surfaceFlagsValuesKey); left {
 		t.Fatal("snapshot not consumed")
 	}
-	if enum := targetEnum(map[string]any{"parameters": memorySchemaOverrides(env).Vals["parameters"]}); len(enum) != 1 || enum[0] != "memory" {
+	if enum := targetEnum(map[string]any{"parameters": memorySchemaOverrides(env).Value("parameters")}); len(enum) != 1 || enum[0] != "memory" {
 		t.Fatal(enum)
 	}
 }

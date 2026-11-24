@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Agent double carrying the optional Codex stream hooks on top of the chat agent fake
@@ -357,7 +357,7 @@ func TestRunCodexStreamStripsNestedRequestOverrideRetention(t *testing.T) {
 		t.Fatal(err)
 	}
 	captured := client.calls[0]
-	extra, _ := pyjson.Plain(captured["extra_body"]).(map[string]any)
+	extra, _ := jsonutil.Plain(captured["extra_body"]).(map[string]any)
 	if _, has := captured["prompt_cache_retention"]; has {
 		t.Fatalf("captured %v", captured)
 	}
@@ -379,7 +379,7 @@ func TestConsumerCodexWireGuardStripsNestedExtraBodyRetention(t *testing.T) {
 	request := map[string]any{"model": "gpt-5.6-sol", "prompt_cache_key": "cache-key-sentinel", "extra_body": extraBody}
 	captureLogs(t)
 	sanitized := sanitizeConsumerCodexRequest(agent, request)
-	extra, _ := pyjson.Plain(sanitized["extra_body"]).(map[string]any)
+	extra, _ := jsonutil.Plain(sanitized["extra_body"]).(map[string]any)
 	if _, has := extra["prompt_cache_retention"]; has {
 		t.Fatalf("sanitized %v", sanitized)
 	}
@@ -392,7 +392,7 @@ func TestConsumerCodexWireGuardPreservesNestedRetentionOnCompatibleEndpoint(t *t
 	agent := newCodexStreamAgent()
 	request := map[string]any{"model": "openai.gpt-5.5", "extra_body": map[string]any{"prompt_cache_retention": "24h"}}
 	sanitized := sanitizeConsumerCodexRequest(agent, request)
-	if pyjson.Plain(sanitized["extra_body"]).(map[string]any)["prompt_cache_retention"] != "24h" {
+	if jsonutil.Plain(sanitized["extra_body"]).(map[string]any)["prompt_cache_retention"] != "24h" {
 		t.Fatalf("sanitized %v", sanitized)
 	}
 }
@@ -1002,7 +1002,7 @@ func TestCreateReceivesInputViaExtraBody(t *testing.T) {
 		t.Fatal(err)
 	}
 	created := client.calls[0]
-	extra, _ := pyjson.Dict(created["extra_body"])
+	extra, _ := jsonutil.AsMap(created["extra_body"])
 	input, _ := extra["input"].([]any)
 	tools, _ := extra["tools"].([]any)
 	_, hasInput := created["input"]
@@ -1053,7 +1053,7 @@ func codexZeroEventThenCompletedClient(seen *[]any) *codexFakeClient {
 	return &codexFakeClient{create: func(_ int, kwargs map[string]any) (any, error) {
 		input := kwargs["input"]
 		if input == nil {
-			if extra, ok := pyjson.Dict(kwargs["extra_body"]); ok {
+			if extra, ok := jsonutil.AsMap(kwargs["extra_body"]); ok {
 				input = extra["input"]
 			}
 		}

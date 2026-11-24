@@ -6,9 +6,9 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func init() {
@@ -50,16 +50,16 @@ func connectionCallbackOf(cb any) (tools.ConnCallback, error) {
 		return nil, nil
 	case tools.ConnCallback:
 		return fn, nil
-	case func(payload *pyjson.Object) string:
+	case func(payload *jsonutil.Object) string:
 		return fn, nil
 	case func(payload map[string]any):
-		return func(payload *pyjson.Object) string {
-			plain, _ := pyjson.Plain(payload).(map[string]any)
+		return func(payload *jsonutil.Object) string {
+			plain, _ := jsonutil.Plain(payload).(map[string]any)
 			fn(plain)
 			return ""
 		}, nil
 	case func(args ...any):
-		return func(payload *pyjson.Object) string {
+		return func(payload *jsonutil.Object) string {
 			fn(payload)
 			return ""
 		}, nil
@@ -87,40 +87,40 @@ func scopeInConnectedMCPServers(a *AIAgent, result string) error {
 	if enabled == nil || slices.Contains(enabled, "no_mcp") {
 		return nil
 	}
-	decoded, err := pyjson.Loads(result)
+	decoded, err := jsonutil.Decode(result)
 	if err != nil {
 		return nil
 	}
-	obj, ok := decoded.(*pyjson.Object)
+	obj, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
 	raw, _ := obj.Get("targets")
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return nil
 	}
 	var targets []any
 	switch v := raw.(type) {
 	case []any:
 		targets = v
-	case string, *pyjson.Object:
+	case string, *jsonutil.Object:
 	default:
 		return fmt.Errorf("connection targets are %s, expected a list", errchain.Kind(raw))
 	}
 	var added []string
 	for _, item := range targets {
-		t, ok := item.(*pyjson.Object)
+		t, ok := item.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
 		kind, _ := t.Get("kind")
 		stateValue, _ := t.Get("state")
 		toolList, _ := t.Get("tools")
-		if kind != "mcp" || stateValue != "connected" || !pyrepr.Truthy(toolList) {
+		if kind != "mcp" || stateValue != "connected" || !anyutil.IsTrue(toolList) {
 			continue
 		}
 		name, _ := t.Get("name")
-		if text := pyrepr.Str(name); !slices.Contains(enabled, text) {
+		if text := anyutil.String(name); !slices.Contains(enabled, text) {
 			added = append(added, text)
 		}
 	}

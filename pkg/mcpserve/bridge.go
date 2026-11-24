@@ -5,9 +5,10 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -15,13 +16,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 	_ "modernc.org/sqlite"
 )
 
@@ -32,20 +33,6 @@ const QueueLimit = 1000
 const pollInterval = 200 * time.Millisecond
 
 func sessionsDir(ctx context.Context) string { return filepath.Join(home.Dir(ctx), "sessions") }
-
-// Percent encoding of a path the way pathlib as_uri writes it, keeping slashes and unreserved bytes
-func uriPath(p string) string {
-	var b strings.Builder
-	for i := 0; i < len(p); i++ {
-		c := p[i]
-		if c == '/' || c == '_' || c == '.' || c == '-' || c == '~' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') {
-			b.WriteByte(c)
-			continue
-		}
-		fmt.Fprintf(&b, "%%%02X", c)
-	}
-	return b.String()
-}
 
 // PRAGMA data_version of state.db on a private read only connection, moving on every commit of another connection
 type stateDBVersion struct {
@@ -72,7 +59,7 @@ func (g *stateDBVersion) read(ctx context.Context) (int64, bool) {
 		if real, err := filepath.EvalSymlinks(resolved); err == nil {
 			resolved = real
 		}
-		db, err := sql.Open("sqlite", "file://"+uriPath(filepath.ToSlash(resolved))+"?mode=ro")
+		db, err := sql.Open("sqlite", urlutil.FileURL(resolved)+"?mode=ro")
 		if err != nil {
 			return 0, false
 		}
@@ -110,7 +97,7 @@ func (g *stateDBVersion) closeLocked() {
 // Parsed JSON file, an empty dict when missing or unreadable
 func readJSON(path string) any {
 	if _, err := os.Stat(path); err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	data, err := os.ReadFile(path)
 	if err == nil && !utf8.Valid(data) {
@@ -118,11 +105,11 @@ func readJSON(path string) any {
 	}
 	var parsed any
 	if err == nil {
-		parsed, err = pyjson.Loads(string(data))
+		parsed, err = jsonutil.Decode(string(data))
 	}
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("Failed to load %s: %s", filepath.Base(path), err.Error()))
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return parsed
 }
@@ -145,7 +132,7 @@ func closeQuietly(db *state.DB, what string) {
 }
 
 // Messages of one session, anything raised by the read returned as the error
-func getMessages(ctx context.Context, db *state.DB, sessionID string) (msgs []*pyjson.Object, err error) {
+func getMessages(ctx context.Context, db *state.DB, sessionID string) (msgs []*jsonutil.Object, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			msgs, err = nil, errors.New(raisedText(r))
@@ -155,7 +142,7 @@ func getMessages(ctx context.Context, db *state.DB, sessionID string) (msgs []*p
 }
 
 // Messages of one session or the error text, releasing the database handle either way
-func loadSessionMessages(ctx context.Context, sessionID string) ([]*pyjson.Object, string) {
+func loadSessionMessages(ctx context.Context, sessionID string) ([]*jsonutil.Object, string) {
 	db := getSessionDB(ctx)
 	if db == nil {
 		return nil, "Session database unavailable"
@@ -169,57 +156,40 @@ func loadSessionMessages(ctx context.Context, sessionID string) ([]*pyjson.Objec
 }
 
 // Gateway routing index of session_key to entry, from state.db rows and else the legacy sessions.json
-func loadSessionsIndex(ctx context.Context) *pyjson.Object {
+func loadSessionsIndex(ctx context.Context) *jsonutil.Object {
 	if idx := loadSessionsIndexFromDB(ctx); idx.Len() > 0 {
 		return idx
 	}
 	return loadSessionsIndexFromJSON(ctx)
 }
 
-// Naive local ISO time of epoch seconds, empty when unset or not convertible
+// Local RFC 3339 time of epoch seconds to the microsecond, empty when unset, not a number or outside the years 1 to 9999
 func isoTime(ts any) string {
-	if !pyrepr.Truthy(ts) {
+	if !anyutil.IsTrue(ts) {
 		return ""
 	}
-	f, err := pyint.Float(ts)
+	f, err := anyutil.ToFloat(ts)
 	if err != nil {
-		var pe *pyint.Error
-		if errors.As(err, &pe) && pe.Kind == "OverflowError" {
-			panic(err)
-		}
 		return ""
 	}
-	t, err := pydatetime.FromTimestampIn(f, time.Local, pydatetime.LocaltimeAccepts)
-	if err != nil {
-		var de *pydatetime.Error
-		if errors.As(err, &de) && de.Kind == "OverflowError" {
-			panic(err)
-		}
+	t := timeutil.FromEpoch(f)
+	if t.IsZero() {
 		return ""
 	}
-	return pydatetime.ISOFormatNaive(t)
-}
-
-// Python int of v, raising what int raises
-func pyIntOf(v any) *big.Int {
-	n, err := pyint.Of(v)
-	if err != nil {
-		panic(err)
-	}
-	return n
+	return t.Format(timeutil.RFC3339Micro)
 }
 
 // Converts a state.db gateway session row to the sessions.json entry shape
-func rowToIndexEntry(row *pyjson.Object) *pyjson.Object {
-	origin := pyjson.NewObject()
-	if raw := pyGet(row, "origin_json", nil); pyrepr.Truthy(raw) {
+func rowToIndexEntry(row *jsonutil.Object) *jsonutil.Object {
+	origin := jsonutil.NewObject()
+	if raw := pyGet(row, "origin_json", nil); anyutil.IsTrue(raw) {
 		var parsed any
 		var err error
 		switch t := raw.(type) {
 		case string:
-			parsed, err = pyjson.Loads(t)
+			parsed, err = jsonutil.Decode(t)
 		case []byte:
-			parsed, err = pyjson.LoadsBytes(t)
+			parsed, err = jsonutil.Decode(t)
 		default:
 			err = errors.New("the JSON object must be str, bytes or bytearray")
 		}
@@ -228,85 +198,89 @@ func rowToIndexEntry(row *pyjson.Object) *pyjson.Object {
 		}
 	}
 	if origin.Len() == 0 {
-		origin = pyjson.ObjectOf("platform", pyGet(row, "source", ""))
+		origin = jsonutil.ObjectOf("platform", pyGet(row, "source", ""))
 		for _, k := range []string{"chat_id", "chat_type", "thread_id", "user_id"} {
 			origin.Set(k, pyGet(row, k, nil))
 		}
 	}
-	tokens := func(key string) *big.Int {
+	tokens := func(key string) int64 {
 		v := pyGet(row, key, nil)
-		if !pyrepr.Truthy(v) {
-			v = int64(0)
+		if !anyutil.IsTrue(v) {
+			return 0
 		}
-		return pyIntOf(v)
+		n, err := anyutil.ToInt(v)
+		if err != nil {
+			panic(err)
+		}
+		return n
 	}
 	inputTokens, outputTokens := tokens("input_tokens"), tokens("output_tokens")
 	chatType := pyGet(row, "chat_type", nil)
-	if !pyrepr.Truthy(chatType) {
+	if !anyutil.IsTrue(chatType) {
 		chatType = pyGet(origin, "chat_type", "")
 	}
 	displayName := pyGet(row, "display_name", nil)
-	if !pyrepr.Truthy(displayName) {
+	if !anyutil.IsTrue(displayName) {
 		displayName = pyGet(origin, "chat_name", nil)
 	}
-	if !pyrepr.Truthy(displayName) {
+	if !anyutil.IsTrue(displayName) {
 		displayName = ""
 	}
 	lastActive := pyGet(row, "last_active", nil)
-	if !pyrepr.Truthy(lastActive) {
+	if !anyutil.IsTrue(lastActive) {
 		lastActive = pyGet(row, "started_at", nil)
 	}
-	return pyjson.ObjectOf(
-		"session_id", pyrepr.Str(pyGet(row, "id", "")), "session_key", pyGet(row, "session_key", ""),
+	return jsonutil.ObjectOf(
+		"session_id", anyutil.String(pyGet(row, "id", "")), "session_key", pyGet(row, "session_key", ""),
 		"platform", pyGet(row, "source", ""),
 		"chat_type", chatType,
 		"display_name", displayName,
 		"origin", origin,
 		"created_at", isoTime(pyGet(row, "started_at", nil)),
 		"updated_at", isoTime(lastActive),
-		"input_tokens", pyint.Value(inputTokens), "output_tokens", pyint.Value(outputTokens),
-		"total_tokens", pyint.Value(new(big.Int).Add(inputTokens, outputTokens)),
+		"input_tokens", inputTokens, "output_tokens", outputTokens,
+		"total_tokens", inputTokens+outputTokens,
 	)
 }
 
 // Routing index built from the open gateway session rows of state.db, empty when it cannot be read
-func loadSessionsIndexFromDB(ctx context.Context) (index *pyjson.Object) {
+func loadSessionsIndexFromDB(ctx context.Context) (index *jsonutil.Object) {
 	db := getSessionDB(ctx)
 	if db == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	defer db.Close()
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLog().Debug(fmt.Sprintf("Failed to load gateway sessions from state.db: %s", raisedText(r)))
-			index = pyjson.NewObject()
+			index = jsonutil.NewObject()
 		}
 	}()
 	rows, err := db.ListGatewaySessions(ctx, "", true)
 	if err != nil {
 		panic(err)
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, row := range rows {
 		key := pyGet(row, "session_key", nil)
-		if !pyrepr.Truthy(key) {
+		if !anyutil.IsTrue(key) {
 			continue
 		}
-		out.Set(pyrepr.Str(key), rowToIndexEntry(row))
+		out.Set(anyutil.String(key), rowToIndexEntry(row))
 	}
 	return out
 }
 
 // Legacy sessions.json index with the underscore prefixed metadata sentinels left out
-func loadSessionsIndexFromJSON(ctx context.Context) *pyjson.Object {
-	out := pyjson.NewObject()
-	data, ok := readJSON(filepath.Join(sessionsDir(ctx), "sessions.json")).(*pyjson.Object)
+func loadSessionsIndexFromJSON(ctx context.Context) *jsonutil.Object {
+	out := jsonutil.NewObject()
+	data, ok := readJSON(filepath.Join(sessionsDir(ctx), "sessions.json")).(*jsonutil.Object)
 	if !ok {
 		return out
 	}
-	for _, k := range data.Keys {
+	for _, k := range data.Keys() {
 		if !strings.HasPrefix(k, "_") {
-			out.Set(k, data.Vals[k])
+			out.Set(k, data.Value(k))
 		}
 	}
 	return out
@@ -319,21 +293,17 @@ func loadChannelDirectory(ctx context.Context) any {
 
 // Clamped int of a tool argument, def when the value does not convert
 func coerceInt(value any, def, minimum, maximum int64) int64 {
-	n, err := pyint.Of(value)
-	if err != nil {
-		var pe *pyint.Error
-		if !errors.As(err, &pe) || (pe.Kind != "TypeError" && pe.Kind != "ValueError") {
-			panic(err)
-		}
-		n = big.NewInt(def)
+	n, err := anyutil.ToInt(value)
+	if errors.Is(err, anyutil.ErrNotNumber) {
+		n = def
 	}
-	if n.Cmp(big.NewInt(maximum)) > 0 {
+	if n > maximum {
 		return maximum
 	}
-	if n.Cmp(big.NewInt(minimum)) < 0 {
+	if n < minimum {
 		return minimum
 	}
-	return n.Int64()
+	return n
 }
 
 // Text of a message, the text parts of multi part content joined by newlines
@@ -346,20 +316,20 @@ func extractMessageContent(msg any) string {
 				text := pyGet(d, "text", "")
 				s, ok := text.(string)
 				if !ok {
-					panic(&pyError{"TypeError", fmt.Sprintf("sequence item %d: expected str instance, %s found", len(parts), pyrepr.TypeName(text))})
+					panic(&pyError{"TypeError", fmt.Sprintf("sequence item %d: expected str instance, %s found", len(parts), anyutil.Kind(text))})
 				}
 				parts = append(parts, s)
 			}
 		}
 		return strings.Join(parts, "\n")
 	}
-	if pyrepr.Truthy(content) {
-		return pyrepr.Str(content)
+	if anyutil.IsTrue(content) {
+		return anyutil.String(content)
 	}
 	return ""
 }
 
-var mediaTagRE = pyre.MustCompile(`MEDIA:\s*(\S+)`)
+var mediaTagRE = regexutil.Lazy(regexp.MustCompile, `MEDIA:[\s\v\x{85}\p{Z}]*([^\s\v\x{85}\p{Z}]+)`)
 
 // Reports whether v is the str s
 func isStr(v any, s string) bool {
@@ -385,23 +355,21 @@ func extractAttachments(msg any) []any {
 					url = pyGet(image, "url", "")
 				}
 			case isStr(ptype, "image"):
-				fallback := pyGet(pyGet(part, "source", pyjson.NewObject()), "url", "")
+				fallback := pyGet(pyGet(part, "source", jsonutil.NewObject()), "url", "")
 				url = pyGet(part, "url", fallback)
 			default:
 				if !isStr(ptype, "text") {
-					attachments = append(attachments, pyjson.ObjectOf("type", ptype, "data", part))
+					attachments = append(attachments, jsonutil.ObjectOf("type", ptype, "data", part))
 				}
 				continue
 			}
-			if pyrepr.Truthy(url) {
-				attachments = append(attachments, pyjson.ObjectOf("type", "image", "url", url))
+			if anyutil.IsTrue(url) {
+				attachments = append(attachments, jsonutil.ObjectOf("type", "image", "url", url))
 			}
 		}
 	}
-	m, _ := mediaTagRE.FindStringMatch(extractMessageContent(msg))
-	for m != nil {
-		attachments = append(attachments, pyjson.ObjectOf("type", "media", "path", m.GroupByNumber(1).String()))
-		m, _ = mediaTagRE.FindNextMatch(m)
+	for _, m := range mediaTagRE().FindAllStringSubmatch(extractMessageContent(msg), -1) {
+		attachments = append(attachments, jsonutil.ObjectOf("type", "media", "path", m[1]))
 	}
 	return attachments
 }
@@ -411,13 +379,13 @@ type QueueEvent struct {
 	Cursor     int64
 	Type       string
 	SessionKey any
-	Data       *pyjson.Object
+	Data       *jsonutil.Object
 }
 
 // Wire dict of the event, its data keys following cursor, type and session_key
-func (e *QueueEvent) asDict() *pyjson.Object {
-	out := pyjson.ObjectOf("cursor", e.Cursor, "type", e.Type, "session_key", e.SessionKey)
-	out.Update(e.Data)
+func (e *QueueEvent) asDict() *jsonutil.Object {
+	out := jsonutil.ObjectOf("cursor", e.Cursor, "type", e.Type, "session_key", e.SessionKey)
+	out.Merge(e.Data)
 	return out
 }
 
@@ -426,36 +394,25 @@ func tsFloat(ts any) float64 {
 	if f, isFloat := ts.(float64); isFloat {
 		return f
 	}
-	if _, isInt := pyint.Instance(ts); isInt {
-		f, err := pyint.Float(ts)
-		if err != nil {
-			panic(err)
-		}
-		return f
+	if n, isInt := anyutil.Int(ts); isInt {
+		return float64(n)
 	}
 	text, ok := ts.(string)
 	if !ok || text == "" {
 		return 0
 	}
-	if f, err := pyint.ParseFloat(text); err == nil {
+	if f, err := strconv.ParseFloat(strings.TrimSpace(text), 64); err == nil {
 		return f
 	}
-	t, aware, err := pydatetime.ParseISOFormat(text)
+	t, err := timeutil.ParseISO(text, time.Local)
 	if err != nil {
 		return 0
 	}
-	if aware {
-		return pydatetime.Timestamp(t)
-	}
-	seconds, ok := pydatetime.LocalToSeconds(t, time.Local, 0, pydatetime.LocaltimeAccepts)
-	if !ok {
-		return 0
-	}
-	return float64(seconds) + float64(t.Nanosecond()/1000)/1e6
+	return timeutil.Epoch(t)
 }
 
 // Newest normalized timestamp among messages, zero when there are none
-func latestTS(messages []*pyjson.Object) float64 {
+func latestTS(messages []*jsonutil.Object) float64 {
 	if len(messages) == 0 {
 		return 0
 	}
@@ -522,16 +479,16 @@ type EventBridge struct {
 	running             atomic.Bool
 	done                chan struct{}
 	lastPollTimestamps  map[string]float64
-	pendingApprovals    *pyjson.Object
+	pendingApprovals    *jsonutil.Object
 	dbVersion           *stateDBVersion
 	stateDBVersion      *int64
-	cachedSessionsIndex *pyjson.Object
+	cachedSessionsIndex *jsonutil.Object
 }
 
 // Stopped bridge over the state.db of the home ctx names
 func NewEventBridge(ctx context.Context) *EventBridge {
 	return &EventBridge{ctx: ctx, newEvent: newPyEvent(), lastPollTimestamps: map[string]float64{},
-		pendingApprovals: pyjson.NewObject(), dbVersion: &stateDBVersion{}, cachedSessionsIndex: pyjson.NewObject()}
+		pendingApprovals: jsonutil.NewObject(), dbVersion: &stateDBVersion{}, cachedSessionsIndex: jsonutil.NewObject()}
 }
 
 // Baselines existing history without emitting it, then polls in the background
@@ -579,13 +536,13 @@ func (b *EventBridge) matching(afterCursor int64, sessionKey string, limit int64
 }
 
 // Events since afterCursor and the cursor to poll from next
-func (b *EventBridge) PollEvents(afterCursor int64, sessionKey string, limit int64) *pyjson.Object {
+func (b *EventBridge) PollEvents(afterCursor int64, sessionKey string, limit int64) *jsonutil.Object {
 	events := b.matching(afterCursor, sessionKey, limit)
 	var next any = afterCursor
 	if len(events) > 0 {
 		next = pyGet(events[len(events)-1], "cursor", nil)
 	}
-	return pyjson.ObjectOf("events", events, "next_cursor", next)
+	return jsonutil.ObjectOf("events", events, "next_cursor", next)
 }
 
 // Blocks until a matching event arrives or the timeout expires, nil on timeout
@@ -609,8 +566,8 @@ func (b *EventBridge) WaitForEvent(afterCursor int64, sessionKey string, timeout
 func (b *EventBridge) ListPendingApprovals() []any {
 	b.mu.Lock()
 	approvals := make([]any, 0, b.pendingApprovals.Len())
-	for _, k := range b.pendingApprovals.Keys {
-		approvals = append(approvals, b.pendingApprovals.Vals[k])
+	for _, k := range b.pendingApprovals.Keys() {
+		approvals = append(approvals, b.pendingApprovals.Value(k))
 	}
 	b.mu.Unlock()
 	sortByKey(approvals, func(a any) any { return pyGet(a, "created_at", "") }, false)
@@ -618,16 +575,16 @@ func (b *EventBridge) ListPendingApprovals() []any {
 }
 
 // Resolves a pending approval and queues its resolution event
-func (b *EventBridge) RespondToApproval(approvalID, decision string) *pyjson.Object {
+func (b *EventBridge) RespondToApproval(approvalID, decision string) *jsonutil.Object {
 	b.mu.Lock()
-	approval, _ := b.pendingApprovals.Pop(approvalID)
+	approval, _ := b.pendingApprovals.Take(approvalID)
 	b.mu.Unlock()
-	if !pyrepr.Truthy(approval) {
-		return pyjson.ObjectOf("error", "Approval not found: "+approvalID)
+	if !anyutil.IsTrue(approval) {
+		return jsonutil.ObjectOf("error", "Approval not found: "+approvalID)
 	}
 	b.enqueue(&QueueEvent{Type: "approval_resolved", SessionKey: pyGet(approval, "session_key", ""),
-		Data: pyjson.ObjectOf("approval_id", approvalID, "decision", decision)})
-	return pyjson.ObjectOf("resolved", true, "approval_id", approvalID, "decision", decision)
+		Data: jsonutil.ObjectOf("approval_id", approvalID, "decision", decision)})
+	return jsonutil.ObjectOf("resolved", true, "approval_id", approvalID, "decision", decision)
 }
 
 // Appends an event under the next cursor, trims the queue to QueueLimit and wakes every waiter
@@ -654,17 +611,17 @@ func (b *EventBridge) establishBaseline() {
 	if v, ok := b.dbVersion.read(b.ctx); ok {
 		b.stateDBVersion = &v
 	}
-	b.cachedSessionsIndex = func() (index *pyjson.Object) {
+	b.cachedSessionsIndex = func() (index *jsonutil.Object) {
 		defer func() {
 			if r := recover(); r != nil {
-				index = pyjson.NewObject()
+				index = jsonutil.NewObject()
 			}
 		}()
 		return loadSessionsIndex(b.ctx)
 	}()
-	for _, key := range b.cachedSessionsIndex.Keys {
-		sessionID := pyGet(b.cachedSessionsIndex.Vals[key], "session_id", "")
-		if !pyrepr.Truthy(sessionID) {
+	for _, key := range b.cachedSessionsIndex.Keys() {
+		sessionID := pyGet(b.cachedSessionsIndex.Value(key), "session_id", "")
+		if !anyutil.IsTrue(sessionID) {
 			continue
 		}
 		latest, ok := func() (latest float64, ok bool) {
@@ -673,7 +630,7 @@ func (b *EventBridge) establishBaseline() {
 					ok = false
 				}
 			}()
-			msgs, err := getMessages(b.ctx, db, pyrepr.Str(sessionID))
+			msgs, err := getMessages(b.ctx, db, anyutil.String(sessionID))
 			if err != nil {
 				return 0, false
 			}
@@ -718,13 +675,13 @@ func (b *EventBridge) pollOnce(db *state.DB) {
 		b.stateDBVersion = &version
 	}
 	b.cachedSessionsIndex = loadSessionsIndex(b.ctx)
-	for _, key := range b.cachedSessionsIndex.Keys {
-		sessionID := pyGet(b.cachedSessionsIndex.Vals[key], "session_id", "")
-		if !pyrepr.Truthy(sessionID) {
+	for _, key := range b.cachedSessionsIndex.Keys() {
+		sessionID := pyGet(b.cachedSessionsIndex.Value(key), "session_id", "")
+		if !anyutil.IsTrue(sessionID) {
 			continue
 		}
 		lastSeen := b.lastPollTimestamps[key]
-		messages, err := getMessages(b.ctx, db, pyrepr.Str(sessionID))
+		messages, err := getMessages(b.ctx, db, anyutil.String(sessionID))
 		if err != nil || len(messages) == 0 {
 			continue
 		}
@@ -738,9 +695,9 @@ func (b *EventBridge) pollOnce(db *state.DB) {
 			if content == "" {
 				continue
 			}
-			b.enqueue(&QueueEvent{Type: "message", SessionKey: key, Data: pyjson.ObjectOf(
+			b.enqueue(&QueueEvent{Type: "message", SessionKey: key, Data: jsonutil.ObjectOf(
 				"role", pyGet(msg, "role", ""), "content", textutil.First(content, 500),
-				"timestamp", pyrepr.Str(pyGet(msg, "timestamp", "")), "message_id", pyrepr.Str(pyGet(msg, "id", "")))})
+				"timestamp", anyutil.String(pyGet(msg, "timestamp", "")), "message_id", anyutil.String(pyGet(msg, "id", "")))})
 		}
 		if latest := latestTS(messages); latest > lastSeen {
 			b.lastPollTimestamps[key] = latest

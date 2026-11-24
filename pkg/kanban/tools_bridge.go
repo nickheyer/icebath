@@ -9,10 +9,10 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Block kinds a goal mode task may still use, the genuine external blockers
@@ -104,7 +104,7 @@ var (
 	autoHeartbeatFenceWarned bool
 	commentPollLastAttempt   float64
 	commentWatermark         = map[string]int64{}
-	bridgeMonotonic          = pythread.Monotonic
+	bridgeMonotonic          = timeutil.Monotonic
 )
 
 // Extends the claim and heartbeat of the current worker at most once a minute, true when both writes land

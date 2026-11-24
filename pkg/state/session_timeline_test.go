@@ -9,8 +9,9 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 )
 
 // Fresh store with the timeline-root desktop session the test fixture creates
@@ -22,7 +23,7 @@ func timelineStore(t *testing.T) (*SessionDB, string) {
 }
 
 // Default visibility message rows of a session
-func timelineRows(t *testing.T, db *SessionDB, sid string) []*pyjson.Object {
+func timelineRows(t *testing.T, db *SessionDB, sid string) []*jsonutil.Object {
 	t.Helper()
 	rows, err := db.GetMessages(context.Background(), sid, GetMessagesOptions{})
 	if err != nil {
@@ -32,7 +33,7 @@ func timelineRows(t *testing.T, db *SessionDB, sid string) []*pyjson.Object {
 }
 
 // Timeline page of a session
-func timelinePage(t *testing.T, db *SessionDB, sid string, limit int, after int64) *pyjson.Object {
+func timelinePage(t *testing.T, db *SessionDB, sid string, limit int, after int64) *jsonutil.Object {
 	t.Helper()
 	page, err := db.GetSessionTimeline(context.Background(), sid, limit, after)
 	if err != nil {
@@ -42,7 +43,7 @@ func timelinePage(t *testing.T, db *SessionDB, sid string, limit int, after int6
 }
 
 // Jump page anchored at a prompt row, failing when the anchor is refused
-func aroundPage(t *testing.T, db *SessionDB, sid string, rowID int64, limit int) *pyjson.Object {
+func aroundPage(t *testing.T, db *SessionDB, sid string, rowID int64, limit int) *jsonutil.Object {
 	t.Helper()
 	page, err := db.GetSessionMessagesAround(context.Background(), sid, rowID, limit)
 	if err != nil || page == nil {
@@ -52,24 +53,24 @@ func aroundPage(t *testing.T, db *SessionDB, sid string, rowID int64, limit int)
 }
 
 // One pagination field of a page
-func pageField(page *pyjson.Object, key string) any {
+func pageField(page *jsonutil.Object, key string) any {
 	pagination, _ := page.Get("pagination")
-	v, _ := pagination.(*pyjson.Object).Get(key)
+	v, _ := pagination.(*jsonutil.Object).Get(key)
 	return v
 }
 
 // Entry objects of a timeline page
-func timelineEntries(page *pyjson.Object) []*pyjson.Object {
+func timelineEntries(page *jsonutil.Object) []*jsonutil.Object {
 	raw, _ := page.Get("entries")
-	out := []*pyjson.Object{}
+	out := []*jsonutil.Object{}
 	for _, e := range raw.([]any) {
-		out = append(out, e.(*pyjson.Object))
+		out = append(out, e.(*jsonutil.Object))
 	}
 	return out
 }
 
 // Preview texts of a timeline page
-func timelinePreviews(page *pyjson.Object) []string {
+func timelinePreviews(page *jsonutil.Object) []string {
 	out := []string{}
 	for _, e := range timelineEntries(page) {
 		out = append(out, pyStr(rowValue(e, "preview")))
@@ -78,11 +79,11 @@ func timelinePreviews(page *pyjson.Object) []string {
 }
 
 // Message maps of a jump page
-func timelineMessages(page *pyjson.Object) []map[string]any {
+func timelineMessages(page *jsonutil.Object) []map[string]any {
 	raw, _ := page.Get("messages")
 	out := []map[string]any{}
 	for _, m := range raw.([]any) {
-		out = append(out, m.(*pyjson.Object).Vals)
+		out = append(out, m.(*jsonutil.Object).Map())
 	}
 	return out
 }
@@ -113,20 +114,20 @@ func TestTimelinePagesProjectHumanPromptsWithoutToolPayloads(t *testing.T) {
 	}
 	first := timelinePage(t, db, sid, 1, 0)
 	entries, _ := first.Get("entries")
-	want := []any{pyjson.ObjectOf("row_id", expected[0], "preview", "First prompt", "timestamp", int64(200))}
-	if !pyjson.Equal(entries, want) {
-		t.Fatalf("entries %v", pyjson.Plain(entries))
+	want := []any{jsonutil.ObjectOf("row_id", expected[0], "preview", "First prompt", "timestamp", int64(200))}
+	if !anyutil.Equal(entries, want) {
+		t.Fatalf("entries %v", jsonutil.Plain(entries))
 	}
-	if !pyjson.Equal(pageField(first, "total"), int64(2)) || !pyjson.Equal(pageField(first, "returned"), int64(1)) || pageField(first, "has_more") != true {
-		t.Fatalf("pagination %v", pyjson.Plain(pageField(first, "total")))
+	if !anyutil.Equal(pageField(first, "total"), int64(2)) || !anyutil.Equal(pageField(first, "returned"), int64(1)) || pageField(first, "has_more") != true {
+		t.Fatalf("pagination %v", jsonutil.Plain(pageField(first, "total")))
 	}
 	second := timelinePage(t, db, sid, 1, timelineID(t, pageField(first, "next_cursor")))
 	rows := timelineEntries(second)
-	if len(rows) != 1 || !pyjson.Equal(rowValue(rows[0], "row_id"), expected[1]) || utf8.RuneCountInString(pyStr(rowValue(rows[0], "preview"))) != 120 {
-		t.Fatalf("second page %v", pyjson.Plain(second))
+	if len(rows) != 1 || !anyutil.Equal(rowValue(rows[0], "row_id"), expected[1]) || utf8.RuneCountInString(pyStr(rowValue(rows[0], "preview"))) != 120 {
+		t.Fatalf("second page %v", jsonutil.Plain(second))
 	}
 	if pageField(second, "has_more") != false || pageField(second, "next_cursor") != nil {
-		t.Fatalf("second pagination %v", pyjson.Plain(pageField(second, "next_cursor")))
+		t.Fatalf("second pagination %v", jsonutil.Plain(pageField(second, "next_cursor")))
 	}
 	text, err := pyDumps(first, pyJSONDefault)
 	if err != nil || strings.Contains(text, "secret tool payload") {
@@ -150,7 +151,7 @@ func TestCompactedTimelineAndJumpShareDisplayOrderAndVisibility(t *testing.T) {
 				map[string]any{"role": "assistant", "content": "retained answer", "timestamp": int64(13)})
 			compacted := []map[string]any{{"role": "user", "content": SummaryPrefix + "summary", "_compressed_summary": true}}
 			for _, row := range timelineRows(t, db, sid)[2:] {
-				compacted = append(compacted, row.Vals)
+				compacted = append(compacted, row.Map())
 			}
 			archiveCompact(t, db, sid, compacted, ArchiveCompactOptions{})
 			archiveBatch(t, db, sid,
@@ -184,15 +185,15 @@ func TestCompactedTimelineAndJumpShareDisplayOrderAndVisibility(t *testing.T) {
 				contents = append(contents, m["content"])
 			}
 			if !reflect.DeepEqual(contents, []any{"retained ask", "retained answer"}) || pageField(jump, "has_older") != true || pageField(jump, "has_newer") != true {
-				t.Fatalf("jump %v %v", contents, pyjson.Plain(pageField(jump, "has_older")))
+				t.Fatalf("jump %v %v", contents, jsonutil.Plain(pageField(jump, "has_older")))
 			}
 			last := aroundPage(t, db, sid, timelineID(t, rowValue(entries[len(entries)-1], "row_id")), 120)
 			msgs := timelineMessages(last)
 			if len(msgs) != 2 || ProjectCompactionMessageForDisplay(msgs[0])["content"] != "live ask" || msgs[1]["content"] != "live answer" || pageField(last, "has_newer") != false {
-				t.Fatalf("last page %v", pyjson.Plain(last))
+				t.Fatalf("last page %v", jsonutil.Plain(last))
 			}
 			if page, err := db.GetSessionMessagesAround(ctx, sid, rewoundID, 120); err != nil || page != nil {
-				t.Fatalf("rewound row answered %v %v", pyjson.Plain(page), err)
+				t.Fatalf("rewound row answered %v %v", jsonutil.Plain(page), err)
 			}
 		})
 	}
@@ -210,23 +211,23 @@ func TestCursorSurvivesCompactionBetweenPages(t *testing.T) {
 	oldRowID := timelineID(t, rowValue(firstEntries[len(firstEntries)-1], "row_id"))
 	var retained []map[string]any
 	for _, row := range timelineRows(t, db, sid)[1:] {
-		retained = append(retained, row.Vals)
+		retained = append(retained, row.Map())
 	}
 	archiveCompact(t, db, sid, retained, ArchiveCompactOptions{})
 	second := timelinePage(t, db, sid, 2, timelineID(t, pageField(first, "next_cursor")))
 	if got := append(timelinePreviews(first), timelinePreviews(second)...); !reflect.DeepEqual(got, []string{"ask 0", "ask 1", "ask 2", "ask 3"}) {
 		t.Fatalf("previews %v", got)
 	}
-	if !pyjson.Equal(pageField(second, "total"), int64(4)) || pageField(second, "has_more") != false {
-		t.Fatalf("second pagination %v", pyjson.Plain(second))
+	if !anyutil.Equal(pageField(second, "total"), int64(4)) || pageField(second, "has_more") != false {
+		t.Fatalf("second pagination %v", jsonutil.Plain(second))
 	}
 	current := timelineEntries(timelinePage(t, db, sid, 500, 0))
 	if timelineID(t, rowValue(current[1], "row_id")) <= oldRowID {
-		t.Fatalf("compacted prompt kept its old row id %v", pyjson.Plain(current[1]))
+		t.Fatalf("compacted prompt kept its old row id %v", jsonutil.Plain(current[1]))
 	}
 	empty := timelinePage(t, db, sid, 500, 99999)
-	if len(timelineEntries(empty)) != 0 || !pyjson.Equal(pageField(empty, "total"), int64(4)) || pageField(empty, "has_more") != false {
-		t.Fatalf("empty page %v", pyjson.Plain(empty))
+	if len(timelineEntries(empty)) != 0 || !anyutil.Equal(pageField(empty, "total"), int64(4)) || pageField(empty, "has_more") != false {
+		t.Fatalf("empty page %v", jsonutil.Plain(empty))
 	}
 }
 
@@ -244,33 +245,33 @@ func TestTimelineSqlNeverReadsToolColumnsOrWrites(t *testing.T) {
 	var accesses [][2]string
 	denied := map[string]bool{"tool_calls": true, "reasoning": true, "api_content": true, "codex_reasoning_items": true}
 	authorize := func(action int, table, column, _, _ string) int {
-		if action == pysqlite.ActionRead {
+		if action == sqliteutil.ActionRead {
 			accesses = append(accesses, [2]string{table, column})
 			if table == "messages" && denied[column] {
-				return pysqlite.AuthDeny
+				return sqliteutil.AuthDeny
 			}
 		}
-		if action == pysqlite.ActionUpdate || action == pysqlite.ActionInsert || action == pysqlite.ActionDelete {
-			return pysqlite.AuthDeny
+		if action == sqliteutil.ActionUpdate || action == sqliteutil.ActionInsert || action == sqliteutil.ActionDelete {
+			return sqliteutil.AuthDeny
 		}
-		return pysqlite.AuthOK
+		return sqliteutil.AuthOK
 	}
 	err := reader.readCtx(ctx, true, func(conn SQLiteConn) error {
 		raw, ok := rawConnOf(conn)
 		if !ok {
 			t.Fatalf("read connection %T exposes no raw handle", conn)
 		}
-		if err := pysqlite.SetAuthorizer(raw, authorize); err != nil {
+		if err := sqliteutil.SetAuthorizer(raw, authorize); err != nil {
 			return err
 		}
-		defer pysqlite.SetAuthorizer(raw, nil)
+		defer sqliteutil.SetAuthorizer(raw, nil)
 		page, err := reader.GetSessionTimeline(withReadConn(ctx, conn), "timeline-root", 500, 0)
 		if err != nil {
 			return err
 		}
 		entries := timelineEntries(page)
-		if len(entries) != 1 || rowValue(entries[0], "preview") != "multimodal ask" || !pyjson.Equal(pageField(page, "total"), int64(1)) || len(accesses) == 0 {
-			t.Fatalf("guarded page %v accesses %d", pyjson.Plain(page), len(accesses))
+		if len(entries) != 1 || rowValue(entries[0], "preview") != "multimodal ask" || !anyutil.Equal(pageField(page, "total"), int64(1)) || len(accesses) == 0 {
+			t.Fatalf("guarded page %v accesses %d", jsonutil.Plain(page), len(accesses))
 		}
 		return nil
 	})

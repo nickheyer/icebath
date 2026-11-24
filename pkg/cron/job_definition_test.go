@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDistributionZoneChangeRecomputesTheInstant(t *testing.T) {
@@ -61,7 +61,7 @@ func TestMergeKeepsSchedulerStateAndDropsUnshippedDefinitionFields(t *testing.T)
 func TestImportJobDefinitionsSeedsNewIdsPausedAndNamesRefusals(t *testing.T) {
 	s, _ := newTestStore(t)
 	kept := mustCreate(t, s, CreateJobOptions{Prompt: prompt("mine"), Schedule: "every 1h", Deliver: prompt("local")})
-	shipped := pyjson.NewObject()
+	shipped := jsonutil.NewObject()
 	shipped.Set("newjob", map[string]any{"name": "fresh", "prompt": "hello", "schedule": map[string]any{"kind": "interval", "minutes": 30, "display": "every 30m"}})
 	if err := s.importJobDefinitions(context.Background(), shipped, "review first"); err != nil {
 		t.Fatal(err)
@@ -73,7 +73,7 @@ func TestImportJobDefinitionsSeedsNewIdsPausedAndNamesRefusals(t *testing.T) {
 	if mustGet(t, s, kept.ID).Prompt != "mine" {
 		t.Fatal("unshipped local job changed")
 	}
-	bad := pyjson.NewObject()
+	bad := jsonutil.NewObject()
 	bad.Set(kept.ID, map[string]any{"name": "broken", "schedule": "not a schedule"})
 	err := s.importJobDefinitions(context.Background(), bad, "review first")
 	if err == nil || !strings.HasPrefix(err.Error(), "cron job 'broken': ") {
@@ -110,7 +110,7 @@ func TestMergeRaisesThePythonErrorForMalformedRecords(t *testing.T) {
 func TestImportKeepsALocalJobShippedAsNull(t *testing.T) {
 	s, _ := newTestStore(t)
 	local := mustCreate(t, s, CreateJobOptions{Prompt: prompt("mine"), Schedule: "every 1h"})
-	shipped := pyjson.NewObject()
+	shipped := jsonutil.NewObject()
 	shipped.Set(local.ID, nil)
 	if err := s.importJobDefinitions(context.Background(), shipped, "review"); err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestImportKeepsALocalJobShippedAsNull(t *testing.T) {
 	if got := mustGet(t, s, local.ID); got.Prompt != "mine" || !got.Enabled {
 		t.Fatalf("null record changed %+v", got)
 	}
-	orphan := pyjson.NewObject()
+	orphan := jsonutil.NewObject()
 	orphan.Set("ghost", nil)
 	if err := s.importJobDefinitions(context.Background(), orphan, "review"); err == nil || err.Error() != "a job definition is nothing, expected a mapping of job fields" {
 		t.Fatalf("unmatched null record %v", err)

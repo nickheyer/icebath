@@ -7,10 +7,10 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Mapping under a key of a manifest mapping, empty when absent and an attribute error when not a mapping
@@ -52,8 +52,8 @@ func pluginServerRows(ctx context.Context, pluginDir, key string, portable bool,
 		return []map[string]any{}, nil
 	}
 	displayName := ""
-	if name := pkg.Manifest["name"]; pyrepr.Truthy(name) {
-		displayName = pyrepr.Str(name)
+	if name := pkg.Manifest["name"]; anyutil.IsTrue(name) {
+		displayName = anyutil.String(name)
 	}
 	sidecar, err := plugins.CatalogInstallRecord(ctx, pluginDir)
 	if err != nil {
@@ -61,8 +61,8 @@ func pluginServerRows(ctx context.Context, pluginDir, key string, portable bool,
 	}
 	if len(sidecar) > 0 {
 		catalogName := ""
-		if v := sidecar["catalog_name"]; pyrepr.Truthy(v) {
-			catalogName = pyrepr.Str(v)
+		if v := sidecar["catalog_name"]; anyutil.IsTrue(v) {
+			catalogName = anyutil.String(v)
 		}
 		if title := catalogTitles[catalogName]; title != "" {
 			displayName = title
@@ -114,8 +114,8 @@ func serverIdentity(ctx context.Context, env *tools.Env, cfg any) (serverIdent, 
 	}
 	expanded, _ := rendered.(map[string]any)
 	text := func(v any) string {
-		if pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 		return ""
 	}
@@ -125,10 +125,10 @@ func serverIdentity(ctx context.Context, env *tools.Env, cfg any) (serverIdent, 
 	switch {
 	case isList && len(list) > 0:
 		for _, a := range list {
-			ident.args = append(ident.args, pyrepr.Str(a))
+			ident.args = append(ident.args, anyutil.String(a))
 		}
-	case pyrepr.Truthy(args):
-		ident.args = []string{pyrepr.Str(args)}
+	case anyutil.IsTrue(args):
+		ident.args = []string{anyutil.String(args)}
 	default:
 		ident.args = []string{"()"}
 	}

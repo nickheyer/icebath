@@ -5,19 +5,18 @@ import (
 	"math"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Constructor options of AIAgent keyword arguments, the TypeError of an unknown keyword or a value its parameter cannot take
 func AIAgentOptionsFromKwargs(kwargs map[string]any) (AIAgentOptions, error) {
 	var o AIAgentOptions
 	for name, value := range kwargs {
-		if err := applyAgentKwarg(&o, name, pyjson.Plain(value)); err != nil {
+		if err := applyAgentKwarg(&o, name, jsonutil.Plain(value)); err != nil {
 			return AIAgentOptions{}, err
 		}
 	}
@@ -32,7 +31,7 @@ func agentKwargText(value any) string {
 	if text, ok := value.(string); ok {
 		return text
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Keyword value as a list of texts, None reading as nil
@@ -65,7 +64,7 @@ func agentKwargInt(name string, value any) (int, error) {
 	if value == nil {
 		return 0, nil
 	}
-	n, err := pyint.Int64(value)
+	n, err := anyutil.ToInt(value)
 	if err != nil {
 		return 0, agentKwargTypeError(name, value)
 	}
@@ -104,7 +103,7 @@ func agentKwargFloat(name string, value any) (*float64, error) {
 	case float64:
 		return &v, nil
 	}
-	n, err := pyint.Int64(value)
+	n, err := anyutil.ToInt(value)
 	if err != nil {
 		return nil, agentKwargTypeError(name, value)
 	}
@@ -177,11 +176,11 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 	case "disabled_toolsets":
 		o.DisabledToolsets, err = agentKwargTexts(name, value)
 	case "save_trajectories":
-		o.SaveTrajectories = pyrepr.Truthy(value)
+		o.SaveTrajectories = anyutil.IsTrue(value)
 	case "verbose_logging":
-		o.VerboseLogging = pyrepr.Truthy(value)
+		o.VerboseLogging = anyutil.IsTrue(value)
 	case "quiet_mode":
-		o.QuietMode = pyrepr.Truthy(value)
+		o.QuietMode = anyutil.IsTrue(value)
 	case "tool_progress_mode":
 		o.ToolProgressMode = new(agentKwargText(value))
 	case "ephemeral_system_prompt":
@@ -199,7 +198,7 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 	case "provider_sort":
 		o.ProviderSort = value
 	case "provider_require_parameters":
-		o.ProviderRequireParameters = pyrepr.Truthy(value)
+		o.ProviderRequireParameters = anyutil.IsTrue(value)
 	case "provider_data_collection":
 		o.ProviderDataCollection = value
 	case "openrouter_min_coding_score":
@@ -289,15 +288,15 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 	case "gateway_session_key":
 		o.GatewaySessionKey = agentKwargText(value)
 	case "skip_context_files":
-		o.SkipContextFiles = pyrepr.Truthy(value)
+		o.SkipContextFiles = anyutil.IsTrue(value)
 	case "load_soul_identity":
-		o.LoadSoulIdentity = pyrepr.Truthy(value)
+		o.LoadSoulIdentity = anyutil.IsTrue(value)
 	case "skip_memory":
-		o.SkipMemory = pyrepr.Truthy(value)
+		o.SkipMemory = anyutil.IsTrue(value)
 	case "memory_agent_context":
 		o.MemoryAgentContext = agentKwargText(value)
 	case "skip_background_review":
-		o.SkipBackgroundReview = pyrepr.Truthy(value)
+		o.SkipBackgroundReview = anyutil.IsTrue(value)
 	case "session_db":
 		if value != nil {
 			store, ok := value.(SessionStore)
@@ -329,7 +328,7 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 			o.CredentialPool = pool
 		}
 	case "checkpoints_enabled":
-		o.CheckpointsEnabled = pyrepr.Truthy(value)
+		o.CheckpointsEnabled = anyutil.IsTrue(value)
 	case "checkpoint_max_snapshots":
 		o.CheckpointMaxSnapshots, err = agentKwargCheckpointInt(value)
 	case "checkpoint_max_total_size_mb":
@@ -337,7 +336,7 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 	case "checkpoint_max_file_size_mb":
 		o.CheckpointMaxFileSizeMB, err = agentKwargCheckpointInt(value)
 	case "pass_session_id":
-		o.PassSessionID = pyrepr.Truthy(value)
+		o.PassSessionID = anyutil.IsTrue(value)
 	case "requested_provider":
 		o.RequestedProvider = agentKwargText(value)
 	case "capabilities":
@@ -346,13 +345,13 @@ func applyAgentKwarg(o *AIAgentOptions, name string, value any) error {
 		if caps != nil {
 			o.Capabilities = make(map[string]bool, len(caps))
 			for k, v := range caps {
-				o.Capabilities[k] = pyrepr.Truthy(v)
+				o.Capabilities[k] = anyutil.IsTrue(v)
 			}
 		}
 	case "cwd":
 		o.Cwd = agentKwargText(value)
 	case "side_agent":
-		o.SideAgent = pyrepr.Truthy(value)
+		o.SideAgent = anyutil.IsTrue(value)
 	case "memory_manager":
 		if value != nil {
 			manager, ok := value.(*memory.MemoryManager)

@@ -13,8 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/skills"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Telegram dm source of the dispatch cases
@@ -50,7 +50,7 @@ func makeDispatchRunner(t *testing.T, server *fakellm.Server) (*GatewayRunner, *
 	t.Cleanup(r.sessionStore.CloseAllDBHandles)
 	r.asyncSessionStore = gateway.NewAsyncSessionStore(r.sessionStore)
 	r.sessions = map[string]*SessionState{}
-	r.agentCache, r.agentCacheLock = pydict.New[string, agentCacheEntry](), &sync.Mutex{}
+	r.agentCache, r.agentCacheLock = orderedutil.NewMap[string, agentCacheEntry](), &sync.Mutex{}
 	return r, adapter
 }
 

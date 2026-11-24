@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -169,7 +169,7 @@ func codexItemCompletionPayload(item any) (string, bool) {
 		if list, ok := contentItems.([]any); ok && len(list) > 0 {
 			return cxDumpsCut(list, 4000), !cxTruthy(success)
 		}
-		return "success=" + pyrepr.Str(success), !cxTruthy(success)
+		return "success=" + anyutil.String(success), !cxTruthy(success)
 	}
 	return "", false
 }
@@ -193,19 +193,11 @@ func codexStableCallID(item any, name string) string {
 	return codexDeterministicCallID(prefix, cxStr(item, "id", ""))
 }
 
-// Python equality with zero for a decoded JSON number or bool
+// Whether a decoded JSON number is zero or a bool is false
 func codexIsZero(v any) bool {
 	if b, ok := v.(bool); ok {
 		return !b
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		return n.Sign() == 0
-	}
-	switch f := v.(type) {
-	case float64:
-		return f == 0
-	case float32:
-		return f == 0
-	}
-	return false
+	f, ok := anyutil.Float(v)
+	return ok && f == 0
 }

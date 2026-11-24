@@ -6,11 +6,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyemail"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysmtplib"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mailutil "github.com/nickheyer/icebath/pkg/utils/mail"
 )
 
 // One shot email delivery over SMTP without a live adapter
@@ -44,35 +43,37 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		return gateway.SendError("Email not configured (EMAIL_ADDRESS, EMAIL_PASSWORD, EMAIL_SMTP_HOST required)"), nil
 	}
 	sendErr := func() error {
-		msg := pyemail.NewTextUTF8(message)
+		msg := mailutil.NewText(message)
 		msg.Set("From", address)
-		msg.Set("To", chatID)
+		msg.Set("To", recipientField(chatID))
 		msg.Set("Subject", i18n.T(ctx, "platform.email.standalone_subject", "", nil))
-		msg.Set("Date", pyemail.FormatDateLocal())
-		server, err := openSMTP(ctx, smtpHost, smtpPort, smtpSecurity, tlsContext(smtpTLSVerify, smtpHost), pysmtplib.DialDefault, time.Duration(0))
+		msg.Set("Date", time.Now().Format(time.RFC1123Z))
+		msg.Set("Message-ID", newMessageID(address))
+		server, err := openSMTP(ctx, smtpHost, smtpPort, smtpSecurity, tlsContext(smtpTLSVerify, smtpHost), mailutil.Dial, 0)
 		if err != nil {
 			return err
 		}
-		if err := server.Login(address, password); err != nil {
+		defer func() { _ = server.Close() }()
+		if err := server.Login(ctx, address, password); err != nil {
 			return err
 		}
-		if err := server.SendMessage(msg); err != nil {
+		if err := server.SendMessage(ctx, msg); err != nil {
 			return err
 		}
-		return server.Quit()
+		return server.Quit(ctx)
 	}()
 	if sendErr != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		return gateway.SendError("Email send failed: " + pyrepr.ExceptionMessage(sendErr)), nil
+		return gateway.SendError("Email send failed: " + sendErr.Error()), nil
 	}
 	return map[string]any{"success": true, "platform": "email", "chat_id": chatID}, nil
 }
 
 // Whether an address is configured in the config extra or through EMAIL_ADDRESS
 func isConnected(ctx context.Context, config *gateway.PlatformConfig) (bool, error) {
-	if config != nil && pyrepr.Truthy(config.Extra["address"]) {
+	if config != nil && anyutil.IsTrue(config.Extra["address"]) {
 		return true, nil
 	}
 	return gateway.EnvIsConnected("EMAIL_ADDRESS")(ctx, config)

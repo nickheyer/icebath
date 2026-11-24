@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Claimed task of a worker whose dispatcher never recorded its pid, with the worker environment set
@@ -96,7 +96,7 @@ func TestReclaimLosesToAWorkerRegisteringMidSweep(t *testing.T) {
 	ctx := context.Background()
 	real := terminateReclaimedWorkerFn
 	t.Cleanup(func() { terminateReclaimedWorkerFn = real })
-	terminateReclaimedWorkerFn = func(pid any, claimLock *string, signalFn SignalFunc, startedAt any) *pyjson.Object {
+	terminateReclaimedWorkerFn = func(pid any, claimLock *string, signalFn SignalFunc, startedAt any) *jsonutil.Object {
 		if !RegisterCurrentWorkerFromEnv(ctx) {
 			t.Error("worker refused while registering mid sweep")
 		}

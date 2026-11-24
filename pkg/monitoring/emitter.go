@@ -10,7 +10,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -20,11 +20,11 @@ const (
 
 // Subscriber receives dispatched batches on the dispatcher goroutine and is matched by identity
 type Subscriber struct {
-	fn func(batch []*pyjson.Object)
+	fn func(batch []*jsonutil.Object)
 }
 
 // Subscriber handle around a batch callback
-func NewSubscriber(fn func(batch []*pyjson.Object)) *Subscriber { return &Subscriber{fn: fn} }
+func NewSubscriber(fn func(batch []*jsonutil.Object)) *Subscriber { return &Subscriber{fn: fn} }
 
 // EmitterStats is the queued, dispatched, dropped and subscriber count snapshot
 type EmitterStats struct {
@@ -36,7 +36,7 @@ type MonitoringEmitter struct {
 	enabled     atomic.Bool
 	mu          sync.Mutex
 	idle        *sync.Cond
-	q           []*pyjson.Object
+	q           []*jsonutil.Object
 	unfinished  int
 	notify      chan struct{}
 	dropped     atomic.Int64
@@ -59,14 +59,14 @@ func NewMonitoringEmitter(enabled bool) *MonitoringEmitter {
 }
 
 // Dict payload of an event, an ordered object or a plain map with sorted keys
-func eventPayload(event any) (*pyjson.Object, error) {
+func eventPayload(event any) (*jsonutil.Object, error) {
 	switch ev := event.(type) {
 	case Event:
 		return ev.ToDict(), nil
-	case *pyjson.Object:
-		out := pyjson.NewObject()
-		for _, k := range ev.Keys {
-			out.Set(k, ev.Vals[k])
+	case *jsonutil.Object:
+		out := jsonutil.NewObject()
+		for _, k := range ev.Keys() {
+			out.Set(k, ev.Value(k))
 		}
 		return out, nil
 	case map[string]any:
@@ -75,7 +75,7 @@ func eventPayload(event any) (*pyjson.Object, error) {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		for _, k := range keys {
 			out.Set(k, ev[k])
 		}
@@ -139,11 +139,11 @@ func (e *MonitoringEmitter) ensureStarted() {
 }
 
 // Takes up to one drain batch from the queue head
-func (e *MonitoringEmitter) take() []*pyjson.Object {
+func (e *MonitoringEmitter) take() []*jsonutil.Object {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	n := min(len(e.q), drainBatch)
-	batch := append([]*pyjson.Object(nil), e.q[:n]...)
+	batch := append([]*jsonutil.Object(nil), e.q[:n]...)
 	clear(e.q[:n])
 	e.q = e.q[n:]
 	return batch
@@ -186,7 +186,7 @@ func (e *MonitoringEmitter) run() {
 }
 
 // Fans one batch out to every subscriber, isolating each failure
-func (e *MonitoringEmitter) dispatch(batch []*pyjson.Object) {
+func (e *MonitoringEmitter) dispatch(batch []*jsonutil.Object) {
 	e.subMu.Lock()
 	subs := append([]*Subscriber(nil), e.subscribers...)
 	e.subMu.Unlock()

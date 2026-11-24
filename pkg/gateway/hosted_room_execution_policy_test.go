@@ -9,12 +9,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Policy the reviewer profile advertises for a config with these approvals and turns
-func roomTestPolicy(t *testing.T, approvalMode string, maxTurns int) *pyjson.Object {
+func roomTestPolicy(t *testing.T, approvalMode string, maxTurns int) *jsonutil.Object {
 	t.Helper()
 	policy, err := ExecutionPolicyMapping(context.Background(), "reviewer", map[string]any{
 		"agent":             map[string]any{"max_turns": maxTurns},
@@ -45,7 +46,7 @@ func TestExecutionPolicyDigestCoversToolsApprovalsAndIterationLimit(t *testing.T
 		field       string
 		replacement any
 	}{{"enabled_toolsets", []any{"bot_room"}}, {"approval_mode", "off"}, {"max_iterations", int64(99)}} {
-		changed := value.Copy()
+		changed := value.Clone()
 		changed.Set(change.field, change.replacement)
 		_, err := RoomExecutionPolicyFromMapping(changed)
 		if _, isValue := err.(*RoomExecutionPolicyError); !isValue || !strings.Contains(err.Error(), "policy_digest") {
@@ -66,7 +67,7 @@ func TestUnlimitedPolicySurvivesTheCatalogJsonRoundTripExactly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wire, err := pyjson.Loads(string(text))
+	wire, err := jsonutil.Decode(string(text))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,10 +76,10 @@ func TestUnlimitedPolicySurvivesTheCatalogJsonRoundTripExactly(t *testing.T) {
 		t.Fatal(err)
 	}
 	maxIterations, _ := policy.Get("max_iterations")
-	if !pyjson.Equal(maxIterations, int64(MaxPolicyIterations)) || float64(maxIterations.(int64)) != float64(MaxPolicyIterations) {
+	if !anyutil.Equal(maxIterations, int64(MaxPolicyIterations)) || float64(maxIterations.(int64)) != float64(MaxPolicyIterations) {
 		t.Fatalf("max_iterations %v", maxIterations)
 	}
-	if checked.ExecutionPolicy.MaxIterations != MaxPolicyIterations || !pyjson.Equal(checked.ExecutionPolicy.AsMapping(), policy) {
+	if checked.ExecutionPolicy.MaxIterations != MaxPolicyIterations || !anyutil.Equal(checked.ExecutionPolicy.AsMapping(), policy) {
 		t.Fatalf("checked %+v", checked.ExecutionPolicy)
 	}
 }
@@ -144,7 +145,7 @@ func TestCatalogPolicyComesFromTheServedProfileNotTheLaunchEnv(t *testing.T) {
 			t.Fatal(err)
 		}
 		raw, _ := catalog.Get("execution_policy")
-		policy := raw.(*pyjson.Object)
+		policy := raw.(*jsonutil.Object)
 		if target, _ := policy.Get("target_profile"); target != profile {
 			t.Fatalf("target %v", target)
 		}
@@ -155,7 +156,7 @@ func TestCatalogPolicyComesFromTheServedProfileNotTheLaunchEnv(t *testing.T) {
 		profile string
 		want    int64
 	}{{"alpha", 12}, {"beta", 7}, {"alpha", 12}} {
-		if got := turns(step.profile); !pyjson.Equal(got, step.want) {
+		if got := turns(step.profile); !anyutil.Equal(got, step.want) {
 			t.Fatalf("%s turns %v", step.profile, got)
 		}
 	}

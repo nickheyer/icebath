@@ -13,8 +13,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/logging"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 var toolCallLoggerMu sync.Mutex
@@ -176,7 +176,7 @@ func mediaOnlyEventText(event *gateway.MessageEvent) string {
 
 // Peeks the pending event, transcribes its voice, interrupts the agent and aborts streaming TTS
 func (r *GatewayRunner) runAgentFirePendingInterrupt(ctx context.Context, adapter gateway.PlatformAdapter, a *agent.AIAgent, tc *TurnContext,
-	interruptDetected *pythread.Event, logContext string, log func()) {
+	interruptDetected *syncutil.Event, logContext string, log func()) {
 	source := tc.source
 	peek, _ := adapter.Base().PeekPendingMessage(tc.sessionKey)
 	pendingText := ""

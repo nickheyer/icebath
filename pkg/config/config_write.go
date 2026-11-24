@@ -13,7 +13,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Strings a YAML 1.1 reader resolves to a bool or null, quoted on write at every depth
@@ -101,25 +101,22 @@ func roundtripDump(ctx context.Context, path string, doc *yaml.Node, source []by
 
 // Replaces the symlink resolved target through a synced temp file keeping its mode and owner
 func atomicPreservingWrite(ctx context.Context, path string, data []byte, prefix string) error {
-	mode, ok := pyfs.PreserveFileMode(path)
-	return atomicWriteDoc(ctx, path, data, pyfs.WriteOptions{Prefix: prefix, Mode: mode, ModeSet: ok, PreserveOwner: true})
+	return atomicWriteDoc(ctx, path, data, fsutil.WriteOptions{Prefix: prefix, KeepOwner: true})
 }
 
 // Atomic replace keeping the owner, the forced mode when set, else the existing bits or the umask mode
 func atomicWriteMode(ctx context.Context, path string, data []byte, prefix string, forced os.FileMode, force, fsyncDir bool) error {
-	if !force {
-		mode, ok := pyfs.PreserveFileMode(path)
-		return atomicWriteDoc(ctx, path, data, pyfs.WriteOptions{Prefix: prefix, Mode: mode, ModeSet: ok, PreserveOwner: true, FsyncDir: fsyncDir})
+	o := fsutil.WriteOptions{Prefix: prefix, KeepOwner: true, SyncDir: fsyncDir}
+	if force {
+		o.Mode = &forced
 	}
-	return atomicWriteDoc(ctx, path, data, pyfs.WriteOptions{Prefix: prefix, Mode: pyfs.PosixModeBits(forced), ModeSet: true, PreserveOwner: true, FsyncDir: fsyncDir})
+	return atomicWriteDoc(ctx, path, data, o)
 }
 
-// Serialized document written as text through the shared atomic writer
-func atomicWriteDoc(ctx context.Context, path string, data []byte, o pyfs.WriteOptions) error {
-	return pyfs.AtomicWrite(ctx, path, func(f *os.File) error {
-		_, err := f.WriteString(pyfs.PlatformNewlines(string(data)))
-		return err
-	}, o)
+// Serialized document written as text through the shared atomic writer, line ends native to the platform
+func atomicWriteDoc(ctx context.Context, path string, data []byte, o fsutil.WriteOptions) error {
+	o.NativeLineEnds = true
+	return fsutil.WriteFile(ctx, path, data, o)
 }
 
 // Plain value as a node with YAML 1.1 ambiguous strings quoted in the given style at every depth

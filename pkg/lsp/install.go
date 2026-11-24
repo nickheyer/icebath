@@ -12,13 +12,14 @@ import (
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Recipe is how one server package installs and which binary it provides
@@ -255,15 +256,15 @@ func doInstall(rt *Runtime, pkg string) (string, error) {
 	case "pip":
 		return installPip(rt, recipe.Pkg, binName)
 	}
-	rt.logf(slog.LevelWarn, "[install] unknown strategy %s for %s", pyrepr.StrRepr(strategy), pkg)
+	rt.logf(slog.LevelWarn, "[install] unknown strategy %s for %s", strconv.Quote(strategy), pkg)
 	return "", nil
 }
 
 // Python dict repr of a recipe
 func recipeRepr(r Recipe) string {
-	s := fmt.Sprintf("{'strategy': %s, 'pkg': %s, 'bin': %s", pyrepr.StrRepr(r.Strategy), pyrepr.StrRepr(r.Pkg), pyrepr.StrRepr(r.Bin))
+	s := fmt.Sprintf("{'strategy': %s, 'pkg': %s, 'bin': %s", strconv.Quote(r.Strategy), strconv.Quote(r.Pkg), strconv.Quote(r.Bin))
 	if r.ExtraPkgs != nil {
-		s += ", 'extra_pkgs': " + pyrepr.Repr(r.ExtraPkgs)
+		s += ", 'extra_pkgs': " + anyutil.Quote(r.ExtraPkgs)
 	}
 	return s + "}"
 }
@@ -288,7 +289,7 @@ var runInstallCommand = func(argv []string, timeout time.Duration, env map[strin
 	hideWindow(cmd)
 	err := cmd.Run()
 	if ctx.Err() == context.DeadlineExceeded {
-		return nil, &TimeoutError{msg: fmt.Sprintf("Command '%s' timed out after %d seconds", pyrepr.Repr(argv), int(timeout/time.Second))}
+		return nil, &TimeoutError{msg: fmt.Sprintf("Command '%s' timed out after %d seconds", anyutil.Quote(argv), int(timeout/time.Second))}
 	}
 	res := &installRun{stdout: decodeUTF8Replace(stdout.Bytes()), stderr: decodeUTF8Replace(stderr.Bytes())}
 	if err != nil {
@@ -405,12 +406,12 @@ var nodePMArgv = map[string]func(staging string) []string{
 // Configured Node package manager, empty for an unknown value so installs fail closed
 func nodePackageManager(rt *Runtime) string {
 	pm := "npm"
-	if v := storedSetting(rt.settingsCtx(), settings.LspPackageManager.Key); pyrepr.Truthy(v) {
-		pm = strings.ToLower(strings.TrimSpace(pyrepr.Str(v)))
+	if v := storedSetting(rt.settingsCtx(), settings.LspPackageManager.Key); anyutil.IsTrue(v) {
+		pm = strings.ToLower(strings.TrimSpace(anyutil.String(v)))
 	}
 	if _, ok := nodePMArgv[pm]; !ok {
 		rt.logf(slog.LevelWarn, "[install] lsp.package_manager=%s is not one of %s; skipping install",
-			pyrepr.StrRepr(pm), pyrepr.Repr([]string{"npm", "pnpm", "yarn"}))
+			strconv.Quote(pm), anyutil.Quote([]string{"npm", "pnpm", "yarn"}))
 		return ""
 	}
 	return pm
@@ -510,7 +511,7 @@ func installNpm(rt *Runtime, pkg, binName string, extraPkgs []string) (string, e
 	}
 	if pmBin == "" {
 		rt.logf(slog.LevelWarn, "[install] cannot install %s: lsp.package_manager is %s but no usable %s was found "+
-			"(install it, or set lsp.package_manager: npm)", pkg, pyrepr.StrRepr(pm), pm)
+			"(install it, or set lsp.package_manager: npm)", pkg, strconv.Quote(pm), pm)
 		return "", nil
 	}
 	bin, err := BinDir(rt)
@@ -566,7 +567,7 @@ func installGo(rt *Runtime, pkg, binName string) (string, error) {
 	}
 	binPath := filepath.Join(staging, binName)
 	if isWindowsHost() {
-		root, _ := pypath.Splitext(binPath)
+		root, _ := pathutil.SplitExt(binPath)
 		binPath = root + ".exe"
 	}
 	if osPathExists(binPath) {

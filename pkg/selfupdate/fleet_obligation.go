@@ -16,15 +16,15 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var (
-	fleetCollectVersions   = func() []*pyjson.Object { return CollectFleetVersions(nil, nil) }
+	fleetCollectVersions   = func() []*jsonutil.Object { return CollectFleetVersions(nil, nil) }
 	fleetReadCheckoutSHA   = updaterecord.ReadCheckoutSHA
 	fleetLatestReceipt     = updaterecord.ReadLatestReceipt
 	fleetActiveProfileName = profiles.GetActiveProfileName
@@ -55,7 +55,7 @@ func supervisedServeRow(row any) bool {
 // Identity of a gateway profile value, an error for a list or mapping value
 func gatewayOf(profile any) (gatewayIdentity, error) {
 	switch profile.(type) {
-	case map[string]any, []any, *pyjson.Object:
+	case map[string]any, []any, *jsonutil.Object:
 		return gatewayIdentity{}, fmt.Errorf("a gateway profile is %s, expected a profile name", errchain.Kind(profile))
 	}
 	return gatewayIdentity{"gateway", profile}, nil
@@ -164,14 +164,14 @@ func captureHeadSHA(ctx context.Context, gitCmd []string, cwd string) string {
 // True when the receipt is from an update that did not finish cleanly
 func receiptLooksUnfinished(receipt any) bool {
 	exitCode, outcome := rowValue(receipt, "exit_code"), rowValue(receipt, "outcome")
-	if !(exitCode == nil || pyrepr.Equal(exitCode, int64(0))) || outcome == "failed" || outcome == "partial" || outcome == "running" {
+	if !(exitCode == nil || anyutil.Equal(exitCode, int64(0))) || outcome == "failed" || outcome == "partial" || outcome == "running" {
 		return true
 	}
-	if restart := rowValue(receipt, "gateway_restart"); isRowDict(restart) && pyrepr.Truthy(rowValue(restart, "incomplete")) {
+	if restart := rowValue(receipt, "gateway_restart"); isRowDict(restart) && anyutil.IsTrue(rowValue(restart, "incomplete")) {
 		return true
 	}
-	succeeded := (exitCode != nil && pyrepr.Equal(exitCode, int64(0))) || outcome == "success"
-	return pyrepr.Truthy(rowValue(receipt, "stop_reason")) && !succeeded
+	succeeded := (exitCode != nil && anyutil.Equal(exitCode, int64(0))) || outcome == "success"
+	return anyutil.IsTrue(rowValue(receipt, "stop_reason")) && !succeeded
 }
 
 // True when the receipt records a runtime at another sha than expected, the fleet matrix before an unfinished plan
@@ -185,7 +185,7 @@ func receiptReportsStaleRuntime(ctx context.Context, receipt any, expectedSHA st
 	if expectedSHA == "" {
 		return false
 	}
-	mismatch := func(codeSHA any) bool { return pyrepr.Truthy(codeSHA) && pyrepr.Str(codeSHA) != expectedSHA }
+	mismatch := func(codeSHA any) bool { return anyutil.IsTrue(codeSHA) && anyutil.String(codeSHA) != expectedSHA }
 	if fleet, isList := rowValue(receipt, "fleet").([]any); isList && len(fleet) > 0 {
 		for _, entry := range fleet {
 			if isRowDict(entry) && !updaterecord.RowIsExternal(entry) && (rowValue(entry, "state") == "stale" || mismatch(rowValue(entry, "code_sha"))) {
@@ -217,7 +217,7 @@ func receiptOwedGateways(receipt any) (map[gatewayIdentity]bool, bool, error) {
 		defaultKind any
 	}
 	var plan any = map[string]any{}
-	if p := rowValue(receipt, "plan"); pyrepr.Truthy(p) {
+	if p := rowValue(receipt, "plan"); anyutil.IsTrue(p) {
 		if !isRowDict(p) {
 			return nil, false, fmt.Errorf("an update receipt gateway entry is %s, expected a mapping", errchain.Kind(p))
 		}
@@ -249,7 +249,7 @@ func receiptOwedGateways(receipt any) (map[gatewayIdentity]bool, bool, error) {
 		}
 		kind := rowValueOr(e.row, "kind", e.defaultKind)
 		profile := rowValue(e.row, "profile")
-		if kind != "gateway" || !pyrepr.Truthy(profile) || profile == "unknown" {
+		if kind != "gateway" || !anyutil.IsTrue(profile) || profile == "unknown" {
 			unverified = true
 			continue
 		}
@@ -270,7 +270,7 @@ func fleetCoveredGateways(fleet []any) (map[gatewayIdentity]bool, bool) {
 	covered := map[gatewayIdentity]bool{}
 	for _, row := range fleet {
 		profile := rowValue(row, "profile")
-		if !isRowDict(row) || !pyrepr.Truthy(profile) || profile == "unknown" {
+		if !isRowDict(row) || !anyutil.IsTrue(profile) || profile == "unknown" {
 			return nil, false
 		}
 		served, _ := rowValue(row, "served_profiles").([]any)
@@ -314,10 +314,10 @@ func liveFleetCoversReceipt(expectedSHA string, receipt any, owed map[gatewayIde
 	}
 	if len(owed) == 0 {
 		var plan any = map[string]any{}
-		if p := rowValue(receipt, "plan"); pyrepr.Truthy(p) {
+		if p := rowValue(receipt, "plan"); anyutil.IsTrue(p) {
 			plan = p
 		}
-		return pyrepr.Truthy(rowValue(plan, "runtimes"))
+		return anyutil.IsTrue(rowValue(plan, "runtimes"))
 	}
 	fleet := liveFleetRows()
 	if len(fleet) == 0 {
@@ -358,7 +358,7 @@ func markerOwedGateways(ctx context.Context, inventory any) (owed map[gatewayIde
 	if inventory == nil {
 		return nil, false, nil
 	}
-	if !isRowDict(inventory) || !pyrepr.Equal(rowValue(inventory, "version"), int64(1)) {
+	if !isRowDict(inventory) || !anyutil.Equal(rowValue(inventory, "version"), int64(1)) {
 		return nil, false, &inventoryValueError{"unsupported fleet-restart inventory"}
 	}
 	runtimes, isList := rowValue(inventory, "runtimes").([]any)
@@ -373,7 +373,7 @@ func markerOwedGateways(ctx context.Context, inventory any) (owed map[gatewayIde
 		if supervisedServeRow(runtime) {
 			continue
 		}
-		if rowValue(runtime, "kind") == "gateway" && pyrepr.Truthy(rowValue(runtime, "stopped_unmapped")) {
+		if rowValue(runtime, "kind") == "gateway" && anyutil.IsTrue(rowValue(runtime, "stopped_unmapped")) {
 			owed[unmappedGateway] = true
 			continue
 		}
@@ -435,11 +435,11 @@ func markerOnlyRestartObsolete(ctx context.Context) (bool, error) {
 	if !present {
 		inventoryText = "null"
 	}
-	doc, err := pyjson.Loads(inventoryText)
+	doc, err := jsonutil.Decode(inventoryText)
 	if err != nil {
 		return false, nil
 	}
-	owed, recorded, err := markerOwedGateways(ctx, pyjson.Plain(doc))
+	owed, recorded, err := markerOwedGateways(ctx, jsonutil.Plain(doc))
 	if err != nil {
 		return false, nil
 	}
@@ -493,7 +493,7 @@ func markerOnlyRestartObsolete(ctx context.Context) (bool, error) {
 			continue
 		}
 		local = append(local, row)
-		if rowValue(row, "state") != "current" || pyrepr.Str(rowValue(row, "code_sha")) != targetSHA {
+		if rowValue(row, "state") != "current" || anyutil.String(rowValue(row, "code_sha")) != targetSHA {
 			return false, nil
 		}
 	}
@@ -535,18 +535,18 @@ func probeLiveFleet() (fleet []any, err error) {
 // Pulled sha when the restart phase of the receipt completed, empty when it did not or recorded none
 func receiptRestartPhaseCompleted(receipt any) string {
 	restart := rowValue(receipt, "gateway_restart")
-	if !isRowDict(restart) || !pyrepr.Truthy(restart) {
+	if !isRowDict(restart) || !anyutil.IsTrue(restart) {
 		return ""
 	}
-	if pyrepr.Truthy(rowValue(restart, "incomplete")) || pyrepr.Truthy(rowValue(restart, "phase_error")) {
+	if anyutil.IsTrue(rowValue(restart, "incomplete")) || anyutil.IsTrue(rowValue(restart, "phase_error")) {
 		return ""
 	}
 	var post any = map[string]any{}
-	if p := rowValue(receipt, "post_update"); pyrepr.Truthy(p) {
+	if p := rowValue(receipt, "post_update"); anyutil.IsTrue(p) {
 		post = p
 	}
-	if sha := rowValue(post, "sha"); pyrepr.Truthy(sha) {
-		return pyrepr.Str(sha)
+	if sha := rowValue(post, "sha"); anyutil.IsTrue(sha) {
+		return anyutil.String(sha)
 	}
 	return ""
 }

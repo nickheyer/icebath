@@ -5,8 +5,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Records the session as launched from the given surface, an interactive local one by default
@@ -22,7 +23,7 @@ func launchedFrom(t *testing.T, ctx context.Context, db *state.SessionDB, source
 
 func TestOnlyInteractiveLocalSessionsAreOfferedQueuedControls(t *testing.T) {
 	ctx, db, a := newTestAuthority(t, "")
-	row := pyjson.ObjectOf("status", "queued", "target_session_id", "s", "payload", pyjson.ObjectOf("text", "hello"))
+	row := jsonutil.ObjectOf("status", "queued", "target_session_id", "s", "payload", jsonutil.ObjectOf("text", "hello"))
 	controls, err := queuedControls(ctx, a, row)
 	if err != nil || len(controls) != 0 {
 		t.Fatalf("no launch policy: %v %v", controls, err)
@@ -63,7 +64,7 @@ func TestPendingRowsNameTheControlsTheOwnerServes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pending := map[string]*pyjson.Object{}
+	pending := map[string]*jsonutil.Object{}
 	for _, row := range rows {
 		receipt, err := a.pendingReceipt(ctx, row)
 		if err != nil {
@@ -72,7 +73,7 @@ func TestPendingRowsNameTheControlsTheOwnerServes(t *testing.T) {
 		dict := pendingAdmissionDict(receipt)
 		pending[rowString(dict, "input_id")] = dict
 	}
-	if controls, _ := pending["follower"].Get("controls"); !pyjson.Equal(controls, []any{"steer", "replace"}) {
+	if controls, _ := pending["follower"].Get("controls"); !anyutil.Equal(controls, []any{"steer", "replace"}) {
 		t.Fatalf("follower controls %v", controls)
 	}
 	if controls, _ := pending["head"].Get("controls"); pyTruthy(controls) {
@@ -85,7 +86,7 @@ func TestTheSteerTransactionFencesOnTheQueuedRowAndTheRunningGeneration(t *testi
 	launchedFrom(t, ctx, db, "gui")
 	for _, requestID := range []string{"running", "follow-up"} {
 		if _, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: a.Epoch, PrincipalID: "human", SessionID: "s",
-			RequestID: requestID, Payload: pyjson.ObjectOf("text", requestID)}); err != nil {
+			RequestID: requestID, Payload: jsonutil.ObjectOf("text", requestID)}); err != nil {
 			t.Fatal(err)
 		}
 	}

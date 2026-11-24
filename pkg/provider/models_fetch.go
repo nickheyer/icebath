@@ -8,20 +8,20 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Clock behind every catalog TTL in this slice
@@ -41,7 +41,7 @@ func (e *modelsHTTPError) Error() string {
 	return fmt.Sprintf("HTTP %d for %s", e.Status, e.URL)
 }
 
-// GET a catalog URL through open_credentialed_url and parse its JSON body, headers sent in their recorded order
+// GET a catalog URL with credentials scoped to its origin and parse its JSON body
 func modelsGetJSON(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string, tlsCfg *tls.Config) (any, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -49,15 +49,12 @@ func modelsGetJSON(ctx context.Context, rawURL string, timeout time.Duration, he
 	if timeout <= 0 {
 		timeout = 5 * time.Second
 	}
-	var lines []pyhttpx.HeaderLine
-	acceptEncoding := ""
-	for _, k := range pyhttpx.HeaderOrder(headers) {
-		lines = append(lines, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
-		if pystr.Capitalize(k) == "Accept-encoding" {
-			acceptEncoding = headers[k]
-		}
+	h := make(http.Header, len(headers))
+	for _, k := range slices.Sorted(maps.Keys(headers)) {
+		h.Set(k, headers[k])
 	}
-	resp, err := urllibOpen(ctx, urllibCall{url: rawURL, headers: lines, credentialed: true, tls: tlsCfg, timeout: timeout, base: modelsTransport})
+	acceptEncoding := h.Get("Accept-Encoding")
+	resp, err := urllibOpen(ctx, urllibCall{url: rawURL, headers: h, credentialed: true, tls: tlsCfg, timeout: timeout, base: modelsTransport})
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +114,7 @@ func modelsReadJSONCache(path string) map[string]any {
 }
 
 // Atomically persists a cache file with the dump options, creating parents unless they lie in a dead profile
-func modelsWriteJSONCache(ctx context.Context, path string, data any, opts ...pyjson.Option) error {
+func modelsWriteJSONCache(ctx context.Context, path string, data any, opts ...jsonutil.Option) error {
 	if _, err := home.Mkdir(ctx, filepath.Dir(path)); err != nil {
 		return err
 	}
@@ -190,7 +187,7 @@ func writeOpenrouterCatalogDisk(ctx context.Context, curated []CatalogModel) {
 	for _, c := range curated {
 		rows = append(rows, []string{c.ID, c.Description})
 	}
-	if err := modelsWriteJSONCache(ctx, openrouterCatalogDiskPath(ctx), pyjson.ObjectOf("fetched_at", float64(modelsClock().UnixNano())/1e9, "curated", rows), pyjson.Indent(2)); err != nil {
+	if err := modelsWriteJSONCache(ctx, openrouterCatalogDiskPath(ctx), jsonutil.ObjectOf("fetched_at", float64(modelsClock().UnixNano())/1e9, "curated", rows), jsonutil.Indent(2)); err != nil {
 		pkgLog().Debug("openrouter curated catalog disk write failed", "error", err)
 	}
 }
@@ -422,7 +419,7 @@ func fetchAIGatewayModelsLive(ctx context.Context, timeout time.Duration) ([]str
 	if baseURL == "" {
 		baseURL = AIGatewayBaseURL
 	}
-	headers := pyhttpx.OrderedHeaderMap(pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey}, pyhttpx.HeaderLine{Name: "User-Agent", Value: userAgent("icebath-cli")})
+	headers := map[string]string{"Authorization": "Bearer " + apiKey, "User-Agent": userAgent("icebath-cli")}
 	payload, err := modelsGetJSON(ctx, strings.TrimRight(baseURL, "/")+"/models", timeout, headers, nil)
 	if err != nil {
 		return nil, false
@@ -525,11 +522,10 @@ func fetchDeepinfraCatalog(ctx context.Context, timeout time.Duration, forceRefr
 			return nil, false
 		}
 	}
-	lines := []pyhttpx.HeaderLine{{Name: "User-Agent", Value: userAgent("icebath-cli")}}
+	headers := map[string]string{"User-Agent": userAgent("icebath-cli")}
 	if apiKey := deepinfraEnv(ctx, "DEEPINFRA_API_KEY"); apiKey != "" {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey})
+		headers["Authorization"] = "Bearer " + apiKey
 	}
-	headers := pyhttpx.OrderedHeaderMap(lines...)
 	payload, err := modelsGetJSON(ctx, rawURL, timeout, headers, nil)
 	doc, _ := asMap(payload)
 	items, ok := asList(doc["data"])

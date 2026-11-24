@@ -10,16 +10,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Fraction below the compaction trigger where the real prompt count starts a prepared pass
@@ -29,7 +28,7 @@ const failedPassBackoffSeconds = 60.0
 
 const waitPollSeconds = 0.5
 
-var preparedSlots = pythread.NewBoundedSemaphore(2)
+var preparedSlots = syncutil.NewSemaphore(2)
 
 var summaryCallState = []string{
 	"summary_model", "_last_aux_model_failure_error", "_last_aux_model_failure_model", "_last_aux_resolved_model",
@@ -84,7 +83,7 @@ type PreparedCompactionCompressor interface {
 	SetCompressionCancelledCheck(check func() bool)
 	BeginCompressionTelemetry(currentTokens *int)
 	GenerateSummary(ctx context.Context, turns []map[string]any, focusTopic *string) (*string, error)
-	ActiveCompressionTelemetry() *pyjson.Object
+	ActiveCompressionTelemetry() *jsonutil.Object
 	PreviousSummary() string
 	LastSummaryError() string
 	SummaryCallAttr(name string) any
@@ -111,8 +110,8 @@ type PreparedSummary struct {
 
 type pendingPass struct {
 	window       preparedWindow
-	done         pythread.Event
-	cancelled    pythread.Event
+	done         syncutil.Event
+	cancelled    syncutil.Event
 	mu           sync.Mutex
 	cancelReason string
 	onProgress   func() error
@@ -185,7 +184,7 @@ func messageIdentity(msg any) PreparedIdentity {
 		return PreparedIdentity{Structure: "tool\x1f" + pyStrOr(m["tool_call_id"], ""), UID: uid}
 	}
 	text := strings.TrimSpace(memory.SanitizeContext(state.FlattenMessageText(m["content"], "\n")))
-	digest := hex.EncodeToString(provider.Blake2bSum(pystr.EncodeUTF8Replace(text), 8))
+	digest := hex.EncodeToString(provider.Blake2bSum([]byte(text), 8))
 	parts := []string{role}
 	calls, _ := m["tool_calls"].([]any)
 	if mc, ok := m["tool_calls"].([]map[string]any); ok {
@@ -194,16 +193,16 @@ func messageIdentity(msg any) PreparedIdentity {
 		}
 	}
 	for _, tc := range calls {
-		if d, ok := pyjson.Dict(tc); ok {
+		if d, ok := jsonutil.AsMap(tc); ok {
 			name := ""
 			fn := d["function"]
-			if !pyrepr.Truthy(fn) {
+			if !anyutil.IsTrue(fn) {
 				fn = map[string]any{}
 			}
-			if fd, ok := pyjson.Dict(fn); ok {
-				name = pyrepr.Str(pyGetDefault(fd, "name", ""))
+			if fd, ok := jsonutil.AsMap(fn); ok {
+				name = anyutil.String(pyGetDefault(fd, "name", ""))
 			}
-			parts = append(parts, pyrepr.Str(pyGetDefault(d, "id", ""))+":"+name)
+			parts = append(parts, anyutil.String(pyGetDefault(d, "id", ""))+":"+name)
 		} else {
 			parts = append(parts, toolCallAttrIdentity(tc))
 		}
@@ -477,7 +476,7 @@ func (p *PreparedCompaction) blocked(a *AIAgent, compressor PreparedCompactionCo
 	if tokens <= 0 || base.ThresholdTokens <= 0 || tokens < bandFloor {
 		return true
 	}
-	now := pythread.Monotonic()
+	now := timeutil.Monotonic()
 	p.mu.Lock()
 	retryAfter := p.retryAfter
 	p.mu.Unlock()
@@ -555,7 +554,7 @@ func (p *PreparedCompaction) MaybePrepare(ctx context.Context, a *AIAgent, compr
 	token = newPendingPass(window)
 	p.pending = token
 	p.mu.Unlock()
-	turnsCopy := pycopy.DeepCopy(turns).([]map[string]any)
+	turnsCopy := any(anyutil.Clone(turns)).([]map[string]any)
 	pass := token
 	thread = memory.SpawnContextThread(ctx, "compaction-prepare", func(ctx context.Context) {
 		p.runPass(ctx, worker, turnsCopy, focus, pass, origin)
@@ -568,10 +567,10 @@ func (p *PreparedCompaction) MaybePrepare(ctx context.Context, a *AIAgent, compr
 func (p *PreparedCompaction) runPass(ctx context.Context, worker PreparedCompactionCompressor, turns []map[string]any, focus *string, token *pendingPass, origin string) {
 	window := token.window
 	var entry *PreparedSummary
-	started := pythread.Monotonic()
+	started := timeutil.Monotonic()
 	logCancelled := func() {
 		pkgLog().Info(fmt.Sprintf("prepared compaction: pass cancelled session=%s after %.1fs (%s)", window.SessionID,
-			pythread.Monotonic()-started, token.reason()))
+			timeutil.Monotonic()-started, token.reason()))
 	}
 	defer func() {
 		if r := recover(); r != nil && !isUserInterruptPanic(r) {
@@ -583,7 +582,7 @@ func (p *PreparedCompaction) runPass(ctx context.Context, worker PreparedCompact
 			if entry != nil {
 				p.entry = entry
 			} else {
-				p.retryAfter = max(worker.SummaryFailureCooldownUntil(), pythread.Monotonic()+failedPassBackoffSeconds)
+				p.retryAfter = max(worker.SummaryFailureCooldownUntil(), timeutil.Monotonic()+failedPassBackoffSeconds)
 			}
 		}
 		p.mu.Unlock()
@@ -627,14 +626,14 @@ func (p *PreparedCompaction) runPass(ctx context.Context, worker PreparedCompact
 		entry = &PreparedSummary{preparedWindow: window, Summary: *summary, Body: worker.PreviousSummary(),
 			CallState: callState, Telemetry: values}
 		pkgLog().Info(fmt.Sprintf("prepared compaction: pass completed session=%s window=%d-%d in %.1fs",
-			window.SessionID, window.CompressStart, window.CompressEnd, pythread.Monotonic()-started))
+			window.SessionID, window.CompressStart, window.CompressEnd, timeutil.Monotonic()-started))
 	default:
 		why := worker.LastSummaryError()
 		if why == "" {
 			why = "summariser returned nothing"
 		}
 		pkgLog().Warn(fmt.Sprintf("prepared compaction: pass failed session=%s after %.1fs: %s", window.SessionID,
-			pythread.Monotonic()-started, why))
+			timeutil.Monotonic()-started, why))
 	}
 }
 

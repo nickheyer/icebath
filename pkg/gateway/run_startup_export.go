@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 )
 
@@ -61,7 +60,7 @@ func HoldsAdmission(ctx context.Context, a *SessionAuthority, sessionID string) 
 		if !a.Retiring {
 			return false, err
 		}
-		pkgLog().Warn(fmt.Sprintf("Skipping auto-resume of %s: retained store %s cannot answer: %s", sessionID, a.ProfileID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Skipping auto-resume of %s: retained store %s cannot answer: %s", sessionID, a.ProfileID, err.Error()))
 		return true, nil
 	}
 	return held, nil

@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Browserbase paid features dropped in order on a 402, with the warning each drop logs
@@ -57,7 +57,7 @@ func (p *BrowserbaseBrowserProvider) releaseHeaders(env *tools.Env, c *cloudConf
 }
 
 func (p *BrowserbaseBrowserProvider) releaseBody(c *cloudConfig) any {
-	body := pyjson.NewObject()
+	body := jsonutil.NewObject()
 	body.Set("projectId", c.ProjectID)
 	body.Set("status", "REQUEST_RELEASE")
 	return body
@@ -74,7 +74,7 @@ func (p *BrowserbaseBrowserProvider) CreateSession(env *tools.Env, taskID string
 	proxies := settings.BrowserBrowserbaseProxies.Get(ctx)
 	stealth := settings.BrowserBrowserbaseAdvancedStealth.Get(ctx)
 	keepAlive := settings.BrowserBrowserbaseKeepAlive.Get(ctx)
-	cfg := pyjson.NewObject()
+	cfg := jsonutil.NewObject()
 	cfg.Set("projectId", c.ProjectID)
 	if keepAlive {
 		cfg.Set("keepAlive", true)
@@ -200,7 +200,7 @@ func (p *BrowserUseBrowserProvider) CreateSession(env *tools.Env, taskID string)
 		return nil, err
 	}
 	headers, _ := p.headers(env, c)
-	resp, err := p.postCreate(c.BaseURL+"/browsers", headers, pyjson.NewObject(), true)
+	resp, err := p.postCreate(c.BaseURL+"/browsers", headers, jsonutil.NewObject(), true)
 	if err != nil {
 		return nil, err
 	}
@@ -218,10 +218,10 @@ func (p *BrowserUseBrowserProvider) CreateSession(env *tools.Env, taskID string)
 		return nil, err
 	}
 	cdp, _, _ := jsonGet(data, "cdpUrl")
-	if !pyrepr.Truthy(cdp) {
+	if !anyutil.IsTrue(cdp) {
 		cdp, _, _ = jsonGet(data, "connectUrl")
 	}
-	if !pyrepr.Truthy(cdp) {
+	if !anyutil.IsTrue(cdp) {
 		cdp = ""
 	}
 	expires, _, _ := jsonGet(data, "timeoutAt")

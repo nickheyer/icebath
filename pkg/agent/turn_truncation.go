@@ -10,10 +10,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var continuableModes = map[string]bool{"chat_completions": true, "bedrock_converse": true, "anthropic_messages": true, "codex_responses": true}
@@ -55,9 +55,9 @@ func (a *AIAgent) collapseContinuationTrail(ctx context.Context, messages *[]*st
 	var retained []*state.Message
 	foundTrail := false
 	for _, m := range rows[turnStart:] {
-		if m != nil && (pyrepr.Truthy(m.Extra[lengthFragmentKey]) || pyrepr.Truthy(m.Extra[lengthNudgeKey])) {
+		if m != nil && (anyutil.IsTrue(m.Extra[lengthFragmentKey]) || anyutil.IsTrue(m.Extra[lengthNudgeKey])) {
 			foundTrail = true
-			if s, ok := m.Content.(string); ok && s != "" && pyrepr.Truthy(m.Extra[lengthFragmentKey]) {
+			if s, ok := m.Content.(string); ok && s != "" && anyutil.IsTrue(m.Extra[lengthFragmentKey]) {
 				fragmentParts = append(fragmentParts, TruncatedPart{Text: s})
 			}
 			continue
@@ -137,7 +137,7 @@ func (a *AIAgent) promptFilledWindow(response any) (int, int, bool) {
 		ctxLen = engineContextLength(a.contextCompressor)
 	}
 	usage := state.ToolCallField(response, "usage")
-	if ctxLen == 0 || !pyrepr.Truthy(usage) {
+	if ctxLen == 0 || !anyutil.IsTrue(usage) {
 		return 0, 0, false
 	}
 	prompt := provider.NormalizeUsage(usage, a.provider, a.apiMode).PromptTokens()
@@ -263,7 +263,7 @@ func (a *AIAgent) truncationAbortReason(content any, hasToolCalls bool) (*[3]str
 		return nil, false, nil
 	}
 	text, isStr := content.(string)
-	if !isStr && pyrepr.Truthy(content) {
+	if !isStr && anyutil.IsTrue(content) {
 		return nil, false, fmt.Errorf("response content is %s where text was expected", errchain.Kind(content))
 	}
 	if text != "" && thinkTagRE.MatchString(text) && !a.hasContentAfterThinkBlock(text) {
@@ -282,7 +282,7 @@ func (a *AIAgent) truncationAbortReason(content any, hasToolCalls bool) (*[3]str
 // A content filter stream stall escalates to the fallback chain before the primary is retried
 func (st *truncState) contentFilterFallback(ctx context.Context, retry *TurnRetryState) (TruncationVerdict, bool) {
 	a := st.a
-	if !(pyrepr.Truthy(state.ToolCallField(st.response, "_content_filter_terminated")) && a.fallbackIndex < len(a.fallbackChain)) {
+	if !(anyutil.IsTrue(state.ToolCallField(st.response, "_content_filter_terminated")) && a.fallbackIndex < len(a.fallbackChain)) {
 		return TruncationVerdict{}, false
 	}
 	a.vprint(a.logPrefix+"🛡️  Content filter terminated stream — activating fallback provider...", true, true)
@@ -333,10 +333,10 @@ func (st *truncState) continueText(ctx context.Context, retry *TurnRetryState, a
 	st.LengthContinueRetries++
 	n := st.LengthContinueRetries
 	interim := responseContent(assistantMessage)
-	if !pyrepr.Truthy(interim) && !st.cutStream() {
+	if !anyutil.IsTrue(interim) && !st.cutStream() {
 		a.ephemeralReasoningOff = true
 	}
-	if pyrepr.Truthy(interim) {
+	if anyutil.IsTrue(interim) {
 		interimMsg := a.buildAssistantMessage(assistantMessage, st.finishReason)
 		interimMsg[lengthFragmentKey] = true
 		appendLiveMessage(&st.Messages, interimMsg)
@@ -456,7 +456,7 @@ func (st *truncState) retryTruncatedToolCall(ctx context.Context, apiKwargs map[
 	var final string
 	var err error
 	switch {
-	case st.cutStream() && pyrepr.Truthy(state.ToolCallField(st.response, "_clean_eof")):
+	case st.cutStream() && anyutil.IsTrue(state.ToolCallField(st.response, "_clean_eof")):
 		a.vprint(a.logPrefix+"⚠️  Server kept closing the stream mid tool-call after 4 retries — the action was not executed.", true, true)
 		final, err = tools.SiteCopy(ctx, "stream_closed_tool_call", map[string]any{"label": ProviderLabelFor(a.provider)})
 		failure = "truncated"
@@ -504,7 +504,7 @@ func (a *AIAgent) recoverFromTruncation(ctx context.Context, r TruncationRequest
 		a: a, response: r.Response, finishReason: r.FinishReason, conversationHistory: r.ConversationHistory,
 		apiCallCount: r.APICallCount, effectiveTaskID: r.EffectiveTaskID, currentTurnUserIdx: r.CurrentTurnUserIdx,
 	}
-	if pyrepr.Truthy(state.ToolCallField(r.Response, "_runaway_repetition")) {
+	if anyutil.IsTrue(state.ToolCallField(r.Response, "_runaway_repetition")) {
 		a.vprint(a.logPrefix+repetitionStreamCut[0], true, true)
 		return st.endTurn(tools.WithEnvHome(ctx, a.env), repetitionStreamCut[1], endTurnOptions{errText: strPtr(repetitionStreamCut[2])})
 	}
@@ -513,7 +513,7 @@ func (a *AIAgent) recoverFromTruncation(ctx context.Context, r TruncationRequest
 	}
 	var banner string
 	switch {
-	case st.cutStream() && pyrepr.Truthy(state.ToolCallField(r.Response, "_clean_eof")):
+	case st.cutStream() && anyutil.IsTrue(state.ToolCallField(r.Response, "_clean_eof")):
 		banner = "Response truncated — server ended the stream without ever sending finish_reason " +
 			"(no transport error — the server or a proxy closed the stream cleanly)"
 	case st.cutStream():
@@ -526,7 +526,7 @@ func (a *AIAgent) recoverFromTruncation(ctx context.Context, r TruncationRequest
 	}
 	a.vprint(a.logPrefix+"⚠️  "+banner, true, true)
 
-	if pyrepr.Truthy(state.ToolCallField(st.response, "_overflow_terminal")) {
+	if anyutil.IsTrue(state.ToolCallField(st.response, "_overflow_terminal")) {
 		a.flushStatusBuffer()
 		a.vprint(a.logPrefix+"⚠️ Stream ended on a context-overflow error after "+
 			"partial delivery — not continuing (the request no longer fits the model's "+
@@ -606,7 +606,7 @@ func dictItems(v any) []map[string]any {
 
 // The str value of v or "" when falsy, the AttributeError Python raises for any other truthy value
 func pyStrOrEmpty(v any) (string, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return "", nil
 	}
 	if s, ok := v.(string); ok {
@@ -616,7 +616,7 @@ func pyStrOrEmpty(v any) (string, error) {
 }
 
 func orEmptyString(v any) any {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	return v
@@ -645,8 +645,8 @@ func (a *AIAgent) continueCodexIncomplete(ctx context.Context, assistantMessage 
 	hasContent := strings.TrimSpace(interimContent) != ""
 	reasoning, isStr := interimMsg["reasoning"].(string)
 	hasReasoning := isStr && strings.TrimSpace(reasoning) != ""
-	hasCodexReasoning := pyrepr.Truthy(interimMsg["codex_reasoning_items"])
-	hasCodexMessageItems := pyrepr.Truthy(interimMsg["codex_message_items"])
+	hasCodexReasoning := anyutil.IsTrue(interimMsg["codex_reasoning_items"])
+	hasCodexMessageItems := anyutil.IsTrue(interimMsg["codex_message_items"])
 	reasoningOnly := !hasContent && !responseHasToolCalls(assistantMessage)
 	if reasoningOnly {
 		a.codexReasoningOnlyStreak++
@@ -789,9 +789,9 @@ func (a *AIAgent) handleContentPolicyRefusal(ctx context.Context, r RefusalReque
 	rawStopDetails := provider.ResponseStopDetails(refusal)
 	stopDetails, _ := rawStopDetails.(map[string]any)
 	if refusalText == "" && stopDetails != nil {
-		refusalText = strings.TrimSpace(pyrepr.Str(orEmptyString(stopDetails["explanation"])))
-		if refusalText == "" && pyrepr.Truthy(stopDetails["category"]) {
-			refusalText = "provider refusal category: " + pyrepr.Str(stopDetails["category"])
+		refusalText = strings.TrimSpace(anyutil.String(orEmptyString(stopDetails["explanation"])))
+		if refusalText == "" && anyutil.IsTrue(stopDetails["category"]) {
+			refusalText = "provider refusal category: " + anyutil.String(stopDetails["category"])
 		}
 	}
 
@@ -824,13 +824,13 @@ func (a *AIAgent) handleContentPolicyRefusal(ctx context.Context, r RefusalReque
 	if refusalLog == "" {
 		refusalLog = "(no text)"
 	}
-	nativeStop := pyrepr.Str(orEmptyString(state.ToolCallField(r.Response, "stop_reason")))
+	nativeStop := anyutil.String(orEmptyString(state.ToolCallField(r.Response, "stop_reason")))
 	if nativeStop == "" {
 		nativeStop = "n/a"
 	}
 	details := "n/a"
-	if pyrepr.Truthy(rawStopDetails) {
-		details = pyrepr.Str(rawStopDetails)
+	if anyutil.IsTrue(rawStopDetails) {
+		details = anyutil.String(rawStopDetails)
 	}
 	pkgLog().Warn(fmt.Sprintf("%sModel declined to respond (finish_reason=content_filter). model=%s provider=%s native_stop_reason=%s stop_details=%s refusal=%s",
 		a.logPrefix, a.model, a.provider, nativeStop, details, refusalLog))

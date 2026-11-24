@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/lsp"
 	"github.com/nickheyer/icebath/pkg/pm"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Trimmed stdout of argv run under env within ten seconds, failing the test on a nonzero exit
@@ -95,7 +95,7 @@ func registerInstalledTool(t *testing.T, name, executable string, companions ...
 	}
 	sum := sha256.Sum256(data)
 	digest := hex.EncodeToString(sum[:])
-	uri, err := pypath.AsURI(executable)
+	uri, err := pathutil.FileURL(executable)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +138,7 @@ func nodeStore(t *testing.T) (string, string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, inside := pypath.PathRelativeTo(abs, filepath.Join(userHome, ".icebath")); inside {
+	if _, inside := pathutil.RelativeTo(abs, filepath.Join(userHome, ".icebath")); inside {
 		t.Skip("requires a Node binary outside the real Icebath home")
 	}
 	t.Setenv("PATH", filepath.Dir(node))

@@ -2,23 +2,23 @@ package irc
 
 import (
 	"context"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Env var, extra key and conversion of every IRC value seeded from an env only setup
 var envSeedKeys = []gateway.EnvSeedRow{
 	{Env: "IRC_PORT", Key: "port", Conv: func(raw string) (any, error) {
-		n, err := pyint.Int64(raw)
-		if pe, ok := err.(*pyint.Error); ok {
-			return nil, &gateway.PyError{Kind: pe.Kind, Msg: pe.Msg}
+		n, err := strconv.ParseInt(raw, 10, 64)
+		if err != nil {
+			return nil, &gateway.PyError{Kind: "ValueError", Msg: err.Error()}
 		}
-		return n, err
+		return n, nil
 	}},
 	{Env: "IRC_NICKNAME", Key: "nickname"},
 	{Env: "IRC_SERVER_PASSWORD", Key: "server_password"},
@@ -41,7 +41,7 @@ func validateConfig(ctx context.Context, config *gateway.PlatformConfig) (bool, 
 	if err != nil {
 		return false, err
 	}
-	return pyrepr.Truthy(server) && pyrepr.Truthy(channel), nil
+	return anyutil.IsTrue(server) && anyutil.IsTrue(channel), nil
 }
 
 // Whether IRC is configured through the env or the config extra

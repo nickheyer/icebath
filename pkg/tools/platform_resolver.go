@@ -22,10 +22,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/hostinfo"
 	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyplist"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	plistutil "github.com/nickheyer/icebath/pkg/utils/plist"
 )
 
 // ResolverEffort is what a probe may do, network never implying a subprocess
@@ -84,7 +85,7 @@ type PlatformEndpoint struct {
 }
 
 func (e PlatformEndpoint) String() string {
-	return fmt.Sprintf("Endpoint(url=%s, token=<redacted>)", pyrepr.StrRepr(e.URL))
+	return fmt.Sprintf("Endpoint(url=%s, token=<redacted>)", strconv.Quote(e.URL))
 }
 
 func (e PlatformEndpoint) GoString() string { return e.String() }
@@ -490,7 +491,7 @@ func platformPlistVersion(bundle string) (observation[string], error) {
 	if err != nil {
 		return observation[string]{}, err
 	}
-	info, err := pyplist.Load(data)
+	info, err := plistutil.Decode(data)
 	if err != nil {
 		return observation[string]{}, err
 	}
@@ -499,13 +500,13 @@ func platformPlistVersion(bundle string) (observation[string], error) {
 		return observation[string]{}, &pyplist.Error{Class: "AttributeError", Msg: "the property list is not a dictionary"}
 	}
 	value, _ := d.Get("CFBundleShortVersionString")
-	if !pyTruthy(platformPlistTruthValue(value)) {
+	if !anyutil.IsTrue(platformPlistTruthValue(value)) {
 		value, _ = d.Get("CFBundleVersion")
 	}
-	if !pyTruthy(platformPlistTruthValue(value)) {
+	if !anyutil.IsTrue(platformPlistTruthValue(value)) {
 		return observation[string]{State: checkUnavailable, Detail: "no version key in Info.plist"}, nil
 	}
-	s := pyplist.Str(value)
+	s := anyutil.String(value)
 	return observation[string]{State: checkPresent, Value: &s}, nil
 }
 
@@ -514,7 +515,7 @@ func platformPlistTruthValue(v any) any {
 	switch x := v.(type) {
 	case *pyplist.Dict:
 		return x.Len() > 0
-	case pyplist.Date, pyplist.UID:
+	case time.Time, plistutil.UID:
 		return true
 	case *big.Int:
 		return x.Sign() != 0
@@ -550,7 +551,7 @@ func (s platformSession) String() string {
 	if s.PID != nil {
 		pid = s.PID.String()
 	}
-	return fmt.Sprintf("_Session(pid=%s, url=%s, token=<redacted>)", pid, pyrepr.StrRepr(s.URL))
+	return fmt.Sprintf("_Session(pid=%s, url=%s, token=<redacted>)", pid, strconv.Quote(s.URL))
 }
 
 func (s platformSession) GoString() string { return s.String() }
@@ -565,11 +566,11 @@ func platformReadServerJSON(path string, d PlatformAppDef) *platformSession {
 	if err != nil {
 		return nil
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}

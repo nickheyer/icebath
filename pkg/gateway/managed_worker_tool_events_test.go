@@ -5,16 +5,17 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // A frame as the owner reads it back off the worker's pipe
-func wireFrame(t *testing.T, kind string, body *pyjson.Object) *pyjson.Object {
+func wireFrame(t *testing.T, kind string, body *jsonutil.Object) *jsonutil.Object {
 	t.Helper()
-	frame := pyjson.ObjectOf("type", kind)
-	for _, k := range body.Keys {
-		frame.Set(k, body.Vals[k])
+	frame := jsonutil.ObjectOf("type", kind)
+	for _, k := range body.Keys() {
+		frame.Set(k, body.Value(k))
 	}
 	data, err := EncodeFrame(frame)
 	if err != nil {
@@ -41,7 +42,7 @@ func TestWorkerToolFramesPublishTheInProcessPayload(t *testing.T) {
 	live := NewLiveSession(&SessionSource{UserID: &owner}, "route")
 	a.Sessions["s"] = live
 	if _, err := db.AdmitSessionInput(ctx, state.SessionInput{Epoch: epoch, PrincipalID: "human", SessionID: "s", RequestID: "r",
-		Payload: pyjson.ObjectOf("text", "go")}); err != nil {
+		Payload: jsonutil.ObjectOf("text", "go")}); err != nil {
 		t.Fatal(err)
 	}
 	row, _, err := db.ClaimSessionInput(ctx, state.ClaimInput{Epoch: epoch, SessionID: "s"})
@@ -51,8 +52,8 @@ func TestWorkerToolFramesPublishTheInProcessPayload(t *testing.T) {
 	if err := a.StampClaim(ctx, testRef, live, row); err != nil {
 		t.Fatal(err)
 	}
-	var frames []*pyjson.Object
-	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *pyjson.Object) { frames = append(frames, frame) }}] = true
+	var frames []*jsonutil.Object
+	live.EventStream.Observers[&SessionEventObserver{Observe: func(frame *jsonutil.Object) { frames = append(frames, frame) }}] = true
 	var observed [][]any
 	record := func(kind string) APIObserverCallback {
 		return func(args []any, _ map[string]any) error {
@@ -60,7 +61,7 @@ func TestWorkerToolFramesPublishTheInProcessPayload(t *testing.T) {
 			return nil
 		}
 	}
-	admission, _ := row.GetOr("admission_id", "").(string)
+	admission, _ := row.ValueOr("admission_id", "").(string)
 	a.apiObservers = map[string][]*APIObserver{admission: {{Callbacks: map[string]APIObserverCallback{
 		"tool_start_callback": record("start"), "tool_complete_callback": record("complete")}}}}
 	args := map[string]any{"command": "echo OUT; exit 3", "timeout": int64(10)}
@@ -73,36 +74,36 @@ func TestWorkerToolFramesPublishTheInProcessPayload(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	generation, _ := row.GetOr("generation", int64(0)).(int64)
-	for _, frame := range []*pyjson.Object{wireFrame(t, "tool.start", startBody), wireFrame(t, "tool.complete", doneBody)} {
+	generation, _ := row.ValueOr("generation", int64(0)).(int64)
+	for _, frame := range []*jsonutil.Object{wireFrame(t, "tool.start", startBody), wireFrame(t, "tool.complete", doneBody)} {
 		if ok, err := publishWorkerToolEvent(ctx, a, "s", generation, frame); !ok || err != nil {
 			t.Fatalf("publish %v %v %v", frame, ok, err)
 		}
 	}
-	argsObj, _ := pyjson.AsObject(args)
+	argsObj, _ := jsonutil.AsObject(args)
 	isError := true
-	want := []*pyjson.Object{toolLifecyclePayload(ctx, "call-1", "terminal", argsObj), toolCompletePayload(ctx, "call-1", "terminal", argsObj, result, &isError)}
+	want := []*jsonutil.Object{toolLifecyclePayload(ctx, "call-1", "terminal", argsObj), toolCompletePayload(ctx, "call-1", "terminal", argsObj, result, &isError)}
 	var kinds []string
 	for i, f := range frames {
-		params := f.GetOr("params", nil).(*pyjson.Object)
-		kinds = append(kinds, params.GetOr("type", "").(string))
-		if !pyjson.Equal(params.GetOr("payload", nil), want[i]) {
-			t.Fatalf("payload %d %v want %v", i, params.GetOr("payload", nil), want[i])
+		params := f.ValueOr("params", nil).(*jsonutil.Object)
+		kinds = append(kinds, params.ValueOr("type", "").(string))
+		if !anyutil.Equal(params.ValueOr("payload", nil), want[i]) {
+			t.Fatalf("payload %d %v want %v", i, params.ValueOr("payload", nil), want[i])
 		}
 	}
 	if len(kinds) != 2 || kinds[0] != "tool.start" || kinds[1] != "tool.complete" {
 		t.Fatalf("published %v", kinds)
 	}
-	complete := frames[1].GetOr("params", nil).(*pyjson.Object).GetOr("payload", nil).(*pyjson.Object)
-	if complete.GetOr("tool_id", nil) != "call-1" || complete.GetOr("context", nil) == nil || complete.GetOr("is_error", nil) != true ||
-		complete.GetOr("result", nil) != result || !pyjson.Equal(complete.GetOr("args", nil), argsObj) {
+	complete := frames[1].ValueOr("params", nil).(*jsonutil.Object).ValueOr("payload", nil).(*jsonutil.Object)
+	if complete.ValueOr("tool_id", nil) != "call-1" || complete.ValueOr("context", nil) == nil || complete.ValueOr("is_error", nil) != true ||
+		complete.ValueOr("result", nil) != result || !anyutil.Equal(complete.ValueOr("args", nil), argsObj) {
 		t.Fatalf("complete %v", complete)
 	}
-	if len(observed) != 2 || observed[0][0] != "start" || observed[1][0] != "complete" || !pyjson.Equal(observed[0][1:], []any{"call-1", "terminal", argsObj}) ||
-		!pyjson.Equal(observed[1][1:], []any{"call-1", "terminal", argsObj, result}) {
+	if len(observed) != 2 || observed[0][0] != "start" || observed[1][0] != "complete" || !anyutil.Equal(observed[0][1:], []any{"call-1", "terminal", argsObj}) ||
+		!anyutil.Equal(observed[1][1:], []any{"call-1", "terminal", argsObj, result}) {
 		t.Fatalf("observed %v", observed)
 	}
-	if ok, _ := publishWorkerToolEvent(ctx, a, "s", generation, pyjson.ObjectOf("type", "tool.start", "tool_call_id", "x", "name", "terminal")); ok {
+	if ok, _ := publishWorkerToolEvent(ctx, a, "s", generation, jsonutil.ObjectOf("type", "tool.start", "tool_call_id", "x", "name", "terminal")); ok {
 		t.Fatal("id and name only frame published")
 	}
 }

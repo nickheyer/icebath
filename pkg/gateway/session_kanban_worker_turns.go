@@ -8,13 +8,12 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var kanbanTurnsDoneOnce sync.Once
@@ -24,7 +23,7 @@ var KanbanTurnAuthor = map[string]any{"id": "kanban:dispatcher", "name": "Kanban
 
 // Item of a kanban context, TypeError for a context that is no dict and KeyError for a missing key
 func KanbanContextItem(kctx any, key string) (any, error) {
-	obj, isDict := kctx.(*pyjson.Object)
+	obj, isDict := kctx.(*jsonutil.Object)
 	if !isDict {
 		return nil, &PyError{Kind: "TypeError", Msg: "the worker kanban context is " + errchain.Kind(kctx) + ", expected a mapping"}
 	}
@@ -32,7 +31,7 @@ func KanbanContextItem(kctx any, key string) (any, error) {
 }
 
 // Books the one shot credential exit of a worker that died before any turn ran, nothing for a chat turn
-func recordKanbanStartFailure(ctx context.Context, frame *pyjson.Object, cause error) error {
+func recordKanbanStartFailure(ctx context.Context, frame *jsonutil.Object, cause error) error {
 	kctx, err := WorkerKanbanContext(frame)
 	if err != nil || kctx == nil {
 		return err
@@ -49,7 +48,7 @@ func RecordWorkerResult(ctx context.Context, kctx any, code int, lastOutput stri
 	if err != nil {
 		return err
 	}
-	return kanban.ConnectClosing(ctx, pyrepr.Str(db), nil, func(conn state.SQLiteConn) error {
+	return kanban.ConnectClosing(ctx, anyutil.String(db), nil, func(conn state.SQLiteConn) error {
 		return kanban.WriteTxn(ctx, conn, false, func() error {
 			matches, err := boundWorkerMatches(ctx, conn, kctx)
 			if err != nil || !matches {
@@ -67,11 +66,11 @@ func RecordWorkerResult(ctx context.Context, kctx any, code int, lastOutput stri
 			if err != nil {
 				return err
 			}
-			runID, err := pyint.Int64(rawRun)
+			runID, err := anyutil.ToInt(rawRun)
 			if err != nil {
 				return err
 			}
-			return kanban.AppendTaskEvent(ctx, conn, pyrepr.Str(taskID), "worker_result", pyjson.ObjectOf("pid", int64(os.Getpid()),
+			return kanban.AppendTaskEvent(ctx, conn, anyutil.String(taskID), "worker_result", jsonutil.ObjectOf("pid", int64(os.Getpid()),
 				"claim_lock", claim, "exit_code", int64(code), "last_output", lastOutput), &runID)
 		})
 	})
@@ -91,13 +90,13 @@ func boundWorkerMatches(ctx context.Context, conn state.SQLiteConn, kctx any) (b
 	if err != nil {
 		return false, err
 	}
-	bound := pyjson.NewObject()
+	bound := jsonutil.NewObject()
 	if row != nil {
-		decoded, err := pyjson.Loads(pyrepr.Str(row["payload"]))
+		decoded, err := jsonutil.Decode(anyutil.String(row["payload"]))
 		if err != nil {
 			return false, err
 		}
-		obj, isDict := decoded.(*pyjson.Object)
+		obj, isDict := decoded.(*jsonutil.Object)
 		if !isDict {
 			return false, &PyError{Kind: "AttributeError", Msg: "the bound worker record is " + errchain.Kind(decoded) + ", expected a mapping"}
 		}
@@ -107,7 +106,7 @@ func boundWorkerMatches(ctx context.Context, conn state.SQLiteConn, kctx any) (b
 	if err != nil {
 		return false, err
 	}
-	return pyjson.Equal(bound.GetOr("pid", nil), int64(os.Getpid())) && pyjson.Equal(bound.GetOr("claim_lock", nil), claim), nil
+	return anyutil.Equal(bound.ValueOr("pid", nil), int64(os.Getpid())) && anyutil.Equal(bound.ValueOr("claim_lock", nil), claim), nil
 }
 
 // Retry proof of a managed worker, its exact run claim live and this process the one bound to it
@@ -117,7 +116,7 @@ func BoundClaimIsLive(ctx context.Context, kctx any) (bool, error) {
 		if err != nil {
 			return nil, err
 		}
-		s := pyrepr.Str(value)
+		s := anyutil.String(value)
 		return &s, nil
 	}
 	taskID, err := text("task_id")
@@ -140,11 +139,11 @@ func BoundClaimIsLive(ctx context.Context, kctx any) (bool, error) {
 	if err != nil || !live {
 		return false, err
 	}
-	resolved, err := pypath.Resolve(*db)
+	resolved, err := pathutil.Resolve(*db)
 	if err != nil {
 		return false, err
 	}
-	uri, err := pypath.AsURI(resolved)
+	uri, err := pathutil.FileURL(resolved)
 	if err != nil {
 		return false, err
 	}

@@ -5,11 +5,9 @@ import (
 	"sort"
 	"strings"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"golang.org/x/text/unicode/norm"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var loginAutofillTokens = []string{"username", "email", "tel", "current-password"}
@@ -66,7 +64,7 @@ type LoginControl struct {
 	MaxLength    *int
 }
 
-func optionalControlInt(raw *pyjson.Object, camel, snake string) (*int, error) {
+func optionalControlInt(raw *jsonutil.Object, camel, snake string) (*int, error) {
 	v, ok := raw.Get(camel)
 	if !ok {
 		v, _ = raw.Get(snake)
@@ -74,7 +72,7 @@ func optionalControlInt(raw *pyjson.Object, camel, snake string) (*int, error) {
 	if v == nil {
 		return nil, nil
 	}
-	n, err := pyint.Int64(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +81,7 @@ func optionalControlInt(raw *pyjson.Object, camel, snake string) (*int, error) {
 }
 
 // Control built from the inspection script's record, either key spelling accepted
-func LoginControlFromDict(raw *pyjson.Object) (LoginControl, error) {
+func LoginControlFromDict(raw *jsonutil.Object) (LoginControl, error) {
 	formIndex, err := optionalControlInt(raw, "formIndex", "form_index")
 	if err != nil {
 		return LoginControl{}, err
@@ -92,7 +90,7 @@ func LoginControlFromDict(raw *pyjson.Object) (LoginControl, error) {
 	if err != nil {
 		return LoginControl{}, err
 	}
-	index, err := pyint.Int64(pyrepr.Or(anyGet(raw, "index"), int64(0)))
+	index, err := anyutil.ToInt(anyutil.Or(anyGet(raw, "index"), int64(0)))
 	if err != nil {
 		return LoginControl{}, err
 	}
@@ -203,12 +201,12 @@ func controlsWithToken(classified []ClassifiedLoginControl, token string) []Clas
 }
 
 // One fill for the best current-password control, empty without a password field or password
-func SelectPasswordFill(classified []ClassifiedLoginControl, password string) []*pyjson.Object {
+func SelectPasswordFill(classified []ClassifiedLoginControl, password string) []*jsonutil.Object {
 	passwords := controlsWithToken(classified, "current-password")
 	if len(passwords) == 0 || password == "" {
-		return []*pyjson.Object{}
+		return []*jsonutil.Object{}
 	}
-	return []*pyjson.Object{pyjson.ObjectOf("index", int64(bestControl(passwords).Control.Index), "token", "current-password", "value", password)}
+	return []*jsonutil.Object{jsonutil.ObjectOf("index", int64(bestControl(passwords).Control.Index), "token", "current-password", "value", password)}
 }
 
 // Classifies one control as a payment or address fill target, password and email inputs never matching by text
@@ -254,7 +252,7 @@ func zfill2(s string) string {
 }
 
 // Maps a payment or address payload onto the best control per token, a combined expiry replacing month and year
-func SelectCheckoutFills(classified []ClassifiedLoginControl, secret map[string]string, fieldTokens *pyjson.Object) []*pyjson.Object {
+func SelectCheckoutFills(classified []ClassifiedLoginControl, secret map[string]string, fieldTokens *jsonutil.Object) []*jsonutil.Object {
 	order := []string{}
 	values := map[string]string{}
 	set := func(token, value string) {
@@ -263,9 +261,9 @@ func SelectCheckoutFills(classified []ClassifiedLoginControl, secret map[string]
 		}
 		values[token] = value
 	}
-	for _, field := range fieldTokens.Keys {
+	for _, field := range fieldTokens.Keys() {
 		if secret[field] != "" {
-			set(pyrepr.Str(fieldTokens.Vals[field]), secret[field])
+			set(anyutil.String(fieldTokens.Value(field)), secret[field])
 		}
 	}
 	month, hasMonth := values["cc-exp-month"]
@@ -273,19 +271,19 @@ func SelectCheckoutFills(classified []ClassifiedLoginControl, secret map[string]
 	if hasMonth && hasYear {
 		set("cc-exp", zfill2(month)+"/"+lastRunes(year, 2))
 	}
-	fills := []*pyjson.Object{}
+	fills := []*jsonutil.Object{}
 	combined := false
 	for _, token := range order {
 		candidates := controlsWithToken(classified, token)
 		if len(candidates) > 0 {
-			fills = append(fills, pyjson.ObjectOf("index", int64(bestControl(candidates).Control.Index), "token", token, "value", values[token]))
+			fills = append(fills, jsonutil.ObjectOf("index", int64(bestControl(candidates).Control.Index), "token", token, "value", values[token]))
 			combined = combined || token == "cc-exp"
 		}
 	}
 	if !combined {
 		return fills
 	}
-	kept := []*pyjson.Object{}
+	kept := []*jsonutil.Object{}
 	for _, f := range fills {
 		if token := anyGet(f, "token"); token != "cc-exp-month" && token != "cc-exp-year" {
 			kept = append(kept, f)
@@ -298,7 +296,7 @@ func SelectCheckoutFills(classified []ClassifiedLoginControl, secret map[string]
 const InspectionStampAttr = "data-icebath-vault-slot"
 
 // One fill per adjacent single character box of one form, else the best field takes the whole code
-func BuildOTPFills(otpControls []ClassifiedLoginControl, code string) []*pyjson.Object {
+func BuildOTPFills(otpControls []ClassifiedLoginControl, code string) []*jsonutil.Object {
 	best := otpControls[0]
 	for _, c := range otpControls[1:] {
 		if c.Score > best.Score {
@@ -314,13 +312,13 @@ func BuildOTPFills(otpControls []ClassifiedLoginControl, code string) []*pyjson.
 	sort.SliceStable(boxes, func(i, j int) bool { return boxes[i].Control.Index < boxes[j].Control.Index })
 	digits := []rune(code)
 	if len(boxes) == len(digits) && otpBoxesAdjacent(boxes) {
-		out := make([]*pyjson.Object, 0, len(boxes))
+		out := make([]*jsonutil.Object, 0, len(boxes))
 		for i, b := range boxes {
-			out = append(out, pyjson.ObjectOf("index", int64(b.Control.Index), "token", "one-time-code", "value", string(digits[i])))
+			out = append(out, jsonutil.ObjectOf("index", int64(b.Control.Index), "token", "one-time-code", "value", string(digits[i])))
 		}
 		return out
 	}
-	return []*pyjson.Object{pyjson.ObjectOf("index", int64(best.Control.Index), "token", "one-time-code", "value", code)}
+	return []*jsonutil.Object{jsonutil.ObjectOf("index", int64(best.Control.Index), "token", "one-time-code", "value", code)}
 }
 
 // Whether the boxes share exactly one form and sit next to each other in DOM order
@@ -349,7 +347,7 @@ func otpBoxesAdjacent(boxes []ClassifiedLoginControl) bool {
 }
 
 func jsonText(v any) string {
-	text, err := pyjson.Dumps(v)
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		panic(err)
 	}
@@ -404,14 +402,14 @@ const loginControlInspectionJSTemplate = `(() => {
 })()`
 
 // Page script that asserts the origin then fills the stamped controls and reports only a count
-func BuildFillJS(fills []*pyjson.Object, expectedOrigin, nonce string) string {
+func BuildFillJS(fills []*jsonutil.Object, expectedOrigin, nonce string) string {
 	payload := make([]any, 0, len(fills))
 	for _, f := range fills {
 		token, ok := f.Get("token")
 		if !ok {
 			token = "current-password"
 		}
-		payload = append(payload, pyjson.ObjectOf("index", anyGet(f, "index"), "token", token, "value", anyGet(f, "value")))
+		payload = append(payload, jsonutil.ObjectOf("index", anyGet(f, "index"), "token", token, "value", anyGet(f, "value")))
 	}
 	out := strings.ReplaceAll(fillJSTemplate, "__EXPECTED_ORIGIN__", jsonText(expectedOrigin))
 	out = strings.ReplaceAll(out, "__FILLS__", jsonText(payload))

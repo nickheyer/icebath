@@ -14,12 +14,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 func TestEnvironmentBuildPruneSitePthKeepsOnlyLoadBearingPth(t *testing.T) {
@@ -249,7 +248,7 @@ def build_wheel(wheel_directory, config_settings=None, metadata_directory=None):
     return original_build(wheel_directory, config_settings, metadata_directory)
 
 build_editable = build_wheel
-`, pyrepr.StrRepr(stdoutMarker), pyrepr.StrRepr(stderrMarker), pyrepr.StrRepr(release)))
+`, strconv.Quote(stdoutMarker), strconv.Quote(stderrMarker), strconv.Quote(release)))
 			output := &peAcknowledgingLog{markers: []string{stdoutMarker, stderrMarker}, release: release}
 			childEnv := map[string]string{}
 			for k, v := range env {
@@ -288,7 +287,7 @@ func TestEnvironmentBuildStreamingBoundsMemoryWithoutLosingFailureClass(t *testi
 				root := t.TempDir()
 				script := fmt.Sprintf("import os, time; os.write(2, %s); time.sleep(.15); os.write(2, %s); "+
 					"[os.write(2, b'x' * 65536) for _ in range(128)]; os.write(2, b'final diagnostic'); raise SystemExit(1)",
-					"b"+pyrepr.StrRepr(diagnostic[:4]), "b"+pyrepr.StrRepr(diagnostic[4:]))
+					"b"+strconv.Quote(diagnostic[:4]), "b"+strconv.Quote(diagnostic[4:]))
 				e := &PythonEnvironment{UV: python, Python: python, Destination: filepath.Join(root, "venv"), Cache: filepath.Join(root, "cache"),
 					Env: pyEnviron(), Output: io.Discard}
 				var now runtime.MemStats
@@ -343,15 +342,15 @@ func TestEnvironmentBuildChildOutputIsLiveAndKeepsExplicitIndexCredentials(t *te
 	cache := filepath.Join(root, "cache")
 	e := &PythonEnvironment{UV: python, Python: python, Destination: filepath.Join(root, "venv"), Cache: cache, Env: childEnv, Output: output}
 	script := "import os, time; from pathlib import Path; print('child-started', flush=True); " +
-		"release = Path(" + pyrepr.StrRepr(released) + "); deadline = time.monotonic() + 5\n" +
+		"release = Path(" + strconv.Quote(released) + "); deadline = time.monotonic() + 5\n" +
 		"while not release.exists() and time.monotonic() < deadline: time.sleep(.01)\n" +
 		"assert release.exists(), 'log was hidden until process exit'\n" +
 		"assert os.environ['UV_INDEX_PRIVATE_USERNAME'] == 'fixture-user'\n" +
 		"assert os.environ['UV_INDEX_PRIVATE_PASSWORD'] == 'fixture-secret'\n" +
 		"assert os.environ['UV_DEFAULT_INDEX'] == 'https://fixture.invalid/simple'\n" +
 		"assert not {'UV_PROJECT', 'UV_VENV_SEED', 'UV_SYSTEM_PYTHON'} & os.environ.keys()\n" +
-		"assert os.environ['UV_PYTHON'] == " + pyrepr.StrRepr(python) + "\n" +
-		"assert os.environ['UV_CACHE_DIR'] == " + pyrepr.StrRepr(cache) + "\n" +
+		"assert os.environ['UV_PYTHON'] == " + strconv.Quote(python) + "\n" +
+		"assert os.environ['UV_CACHE_DIR'] == " + strconv.Quote(cache) + "\n" +
 		"print('child-complete', flush=True)\n"
 	result, err := e.run(context.Background(), []string{"-c", script}, root, 10*time.Second)
 	if err != nil || result.Code != 0 {
@@ -410,14 +409,14 @@ func TestEnvironmentBuildStreamingDeadlineIncludesInheritedStdout(t *testing.T) 
 				run := peStreamingRunners(t, root)[name]
 				release, finished := filepath.Join(root, "release-descendant"), filepath.Join(root, "descendant-finished")
 				descendant := "import time; from pathlib import Path; print('inherited-output', flush=True); " +
-					"release = Path(" + pyrepr.StrRepr(release) + "); deadline = time.monotonic() + 10\n" +
+					"release = Path(" + strconv.Quote(release) + "); deadline = time.monotonic() + 10\n" +
 					"while not release.exists() and time.monotonic() < deadline: time.sleep(.01)\n" +
-					"Path(" + pyrepr.StrRepr(finished) + ").touch()\n"
+					"Path(" + strconv.Quote(finished) + ").touch()\n"
 				tail := "child.wait()"
 				if parentExits {
 					tail = "sys.exit(0)"
 				}
-				parent := "import subprocess, sys; child = subprocess.Popen([sys.executable, '-c', " + pyrepr.StrRepr(descendant) + "]); " + tail
+				parent := "import subprocess, sys; child = subprocess.Popen([sys.executable, '-c', " + strconv.Quote(descendant) + "]); " + tail
 				goroutines := runtime.NumGoroutine()
 				started := time.Now()
 				output, _ := run(parent, 2*time.Second)

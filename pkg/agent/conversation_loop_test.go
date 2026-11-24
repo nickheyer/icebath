@@ -11,10 +11,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const canonUNI = "日本語テキスト🎉 café Ω ≈ 中文字符串"
@@ -71,7 +71,7 @@ func canonCacheLen() int {
 
 func mustDumps(t *testing.T, v any) string {
 	t.Helper()
-	s, err := pyjson.Dumps(v)
+	s, err := jsonutil.Encode(v)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,7 +80,7 @@ func mustDumps(t *testing.T, v any) string {
 
 func TestCanonCacheBoundedByBytes(t *testing.T) {
 	resetCanonCache(t)
-	big := mustDumps(t, pyjson.ObjectOf("path", "/tmp/big.py", "content", strings.Repeat("y", 200_000)))
+	big := mustDumps(t, jsonutil.ObjectOf("path", "/tmp/big.py", "content", strings.Repeat("y", 200_000)))
 	for i := range 300 {
 		if _, err := canonicalizeToolCallArguments(big[:len(big)-1] + fmt.Sprintf(`,"n":%d}`, i)); err != nil {
 			t.Fatal(err)
@@ -96,15 +96,15 @@ func TestCanonCacheBoundedByBytes(t *testing.T) {
 
 func TestCanonMemoSemantics(t *testing.T) {
 	resetCanonCache(t)
-	raw := mustDumps(t, pyjson.ObjectOf("b", 2, "a", canonUNI, "nested", pyjson.ObjectOf("z", []any{3, 2, 1})))
+	raw := mustDumps(t, jsonutil.ObjectOf("b", 2, "a", canonUNI, "nested", jsonutil.ObjectOf("z", []any{3, 2, 1})))
 	canon, err := canonicalizeToolCallArguments(raw)
 	if err != nil {
 		t.Fatal(err)
 	}
 	again, _ := canonicalizeToolCallArguments(raw)
 	twice, _ := canonicalizeToolCallArguments(canon)
-	parsed, _ := pyjson.Loads(raw)
-	want, _ := pyjson.Dumps(parsed, pyjson.Separators(",", ":"), pyjson.SortKeys(true))
+	parsed, _ := jsonutil.Decode(raw)
+	want, _ := jsonutil.Encode(parsed, jsonutil.SortKeys())
 	if canon != again || twice != canon || canon != want {
 		t.Fatalf("canonical form unstable %q %q %q %q", canon, again, twice, want)
 	}
@@ -119,7 +119,7 @@ func TestCanonMemoSemantics(t *testing.T) {
 		t.Fatal("malformed arguments must raise and never be memoized")
 	}
 	for i := range canonArgsCacheMax + 100 {
-		_, _ = canonicalizeToolCallArguments(mustDumps(t, pyjson.ObjectOf("i", i)))
+		_, _ = canonicalizeToolCallArguments(mustDumps(t, jsonutil.ObjectOf("i", i)))
 	}
 	if canonCacheLen() > canonArgsCacheMax {
 		t.Fatalf("cache length %d over the count bound", canonCacheLen())
@@ -130,7 +130,7 @@ func buildToolHistory(t *testing.T, n int) []any {
 	filler := strings.Repeat("x", 2048-200)
 	var msgs []any
 	for i := range n {
-		args := mustDumps(t, pyjson.ObjectOf("path", fmt.Sprintf("/tmp/file_%d.py", i), "content", filler, "u", canonUNI, "n", i, "mode", "write"))
+		args := mustDumps(t, jsonutil.ObjectOf("path", fmt.Sprintf("/tmp/file_%d.py", i), "content", filler, "u", canonUNI, "n", i, "mode", "write"))
 		switch {
 		case i%9 == 8:
 			args = `{"broken": tru`
@@ -175,8 +175,8 @@ func TestCanonicalizeAPIToolCallsParity(t *testing.T) {
 		}
 		raw := firstArgs(history[i]).(string)
 		want := provider.RepairToolCallArguments(raw, "write_file")
-		if parsed, err := pyjson.Loads(raw); err == nil {
-			want, _ = pyjson.Dumps(parsed, pyjson.Separators(",", ":"), pyjson.SortKeys(true))
+		if parsed, err := jsonutil.Decode(raw); err == nil {
+			want, _ = jsonutil.Encode(parsed, jsonutil.SortKeys())
 		}
 		if got := firstArgs(row); got != want {
 			t.Fatalf("row %d: %q want %q", i, got, want)
@@ -206,7 +206,7 @@ func TestCanonicalizeLoadsLinear(t *testing.T) {
 	malformed := 0
 	for _, row := range history {
 		if row.(map[string]any)["role"] == "assistant" {
-			if _, err := pyjson.Loads(firstArgs(row).(string)); err != nil {
+			if _, err := jsonutil.Decode(firstArgs(row).(string)); err != nil {
 				malformed++
 			}
 		}

@@ -4,11 +4,11 @@ import (
 	"context"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Routing entry of a fresh local reset child built from the parent's stored entry, assigned by the gateway wiring
-var ResetSessionEntry func(previous *pyjson.Object, childID string) (*pyjson.Object, error)
+var ResetSessionEntry func(previous *jsonutil.Object, childID string) (*jsonutil.Object, error)
 
 // Sorted ids of a set of session ids
 func sortedIDs(ids map[string]bool) []string {
@@ -21,7 +21,7 @@ func sortedIDs(ids map[string]bool) []string {
 }
 
 // Frozen local policy receipt and its validated physical target
-func savedLocalPolicyTarget(ctx context.Context, conn SQLiteConn, sessionID string) (*pyjson.Object, string, error) {
+func savedLocalPolicyTarget(ctx context.Context, conn SQLiteConn, sessionID string) (*jsonutil.Object, string, error) {
 	raw, ok, err := fetchScalar(ctx, conn, "SELECT value FROM state_meta WHERE key=?", LocalPolicyPrefix+sessionID)
 	if err != nil {
 		return nil, "", err
@@ -41,7 +41,7 @@ func savedLocalPolicyTarget(ctx context.Context, conn SQLiteConn, sessionID stri
 }
 
 // Prepares and publishes a local reset child inside the mutation receipt transaction
-func resetInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *pyjson.Object) ([]string, *pyjson.Object, error) {
+func resetInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sessionID string, payload *jsonutil.Object) ([]string, *jsonutil.Object, error) {
 	receipt, target, err := savedLocalPolicyTarget(ctx, conn, sessionID)
 	if err != nil {
 		return nil, nil, err
@@ -68,7 +68,7 @@ func resetInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sess
 	if err != nil {
 		return nil, nil, err
 	}
-	previousEntry, ok := previous.(*pyjson.Object)
+	previousEntry, ok := previous.(*jsonutil.Object)
 	if !ok {
 		return nil, nil, &stateTypedError{"TypeError", "entry must be a dict"}
 	}
@@ -97,7 +97,7 @@ func resetInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sess
 	}
 	sourceText, _ := source.(string)
 	if err := d.publishChildSessionRow(ctx, conn, parent, CompressionChildPublish{ParentSessionID: target, ChildSessionID: childID,
-		Source: sourceText, Model: optStringOf(model), ModelConfig: pyjson.ObjectOf("_reset_from", target), Cwd: optStringOf(cwd),
+		Source: sourceText, Model: optStringOf(model), ModelConfig: jsonutil.ObjectOf("_reset_from", target), Cwd: optStringOf(cwd),
 		ProfileName: optStringOf(parent["profile_name"])}); err != nil {
 		return nil, nil, err
 	}
@@ -114,5 +114,5 @@ func resetInTransaction(d *SessionDB, ctx context.Context, conn SQLiteConn, sess
 	if err != nil {
 		return nil, nil, err
 	}
-	return []string{}, pyjson.ObjectOf("target_session_id", childID, "previous_target_session_id", target, "execution_generation", generation), nil
+	return []string{}, jsonutil.ObjectOf("target_session_id", childID, "previous_target_session_id", target, "execution_generation", generation), nil
 }

@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func ptGitBinary(t *testing.T) string {
@@ -252,11 +252,11 @@ func TestPauseTreeAMovedHeadHoldsGatewaysForDependenciesOnlyWhereALaunchSyncsThe
 			ptGit(t, root, "commit", "-q", "--allow-empty", "-m", "v2")
 			t.Setenv("ICEBATH_DISABLE_LAZY_INSTALLS", "")
 			savedStamp, savedProbe := pauseReadInstallStamp, pauseVenvIsCurrent
-			pauseReadInstallStamp = func(string) *pyjson.Object {
+			pauseReadInstallStamp = func(string) *jsonutil.Object {
 				if tc.mechanism == "" {
-					return pyjson.NewObject()
+					return jsonutil.NewObject()
 				}
-				return pyjson.ObjectOf("updateMechanism", tc.mechanism)
+				return jsonutil.ObjectOf("updateMechanism", tc.mechanism)
 			}
 			pauseVenvIsCurrent = func(context.Context, pm.VenvIsCurrentOptions) (bool, error) { return tc.probe() }
 			t.Cleanup(func() { pauseReadInstallStamp, pauseVenvIsCurrent = savedStamp, savedProbe })

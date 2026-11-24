@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Web env with every httpx vendor variable cleared from the process
@@ -67,7 +67,7 @@ func tavilyP() *tavilyProvider     { return webProvider(nil, "tavily").(*tavilyP
 func braveP() *braveFreeProvider   { return webProvider(nil, "brave-free").(*braveFreeProvider) }
 func searxngP() *searxngProvider   { return webProvider(nil, "searxng").(*searxngProvider) }
 func keenableP() *keenableProvider { return webProvider(nil, "keenable").(*keenableProvider) }
-func decodeAny(s string) any       { v, _ := pyjson.Loads(s); return v }
+func decodeAny(s string) any       { v, _ := jsonutil.Decode(s); return v }
 func mustJSONMap(s string) map[string]any {
 	m := map[string]any{}
 	json.Unmarshal([]byte(s), &m)
@@ -235,16 +235,16 @@ func TestBraveFreeProvider(t *testing.T) {
 		t.Fatal("brave not configured")
 	}
 	resp, err := braveP().Search(context.Background(), env, "hello world", 2)
-	if err != nil || !resp.Success || len(resp.Data.Web) != 2 || resp.Data.Web[1].Title != "None" || resp.Data.Web[0].Description != "first" || resp.Data.Web[1].Position != 2 {
+	if err != nil || !resp.Success || len(resp.Data.Web) != 2 || resp.Data.Web[1].Title != "" || resp.Data.Web[0].Description != "first" || resp.Data.Web[1].Position != 2 {
 		t.Fatalf("%+v %v", resp, err)
 	}
 	c := calls()[0]
-	if c.header.Get("X-Subscription-Token") != "BSAkey123" || c.header.Get("Accept") != "application/json" || c.query != "q=hello+world&count=2" {
+	if c.header.Get("X-Subscription-Token") != "BSAkey123" || c.header.Get("Accept") != "application/json" || c.query != "count=2&q=hello+world" {
 		t.Fatalf("%v %s", c.header, c.query)
 	}
 	braveP().Search(context.Background(), env, "big", 50)
 	braveP().Search(context.Background(), env, "small", 0)
-	if q := calls(); !strings.HasSuffix(q[1].query, "count=20") || !strings.HasSuffix(q[2].query, "count=1") {
+	if q := calls(); !strings.HasPrefix(q[1].query, "count=20&") || !strings.HasPrefix(q[2].query, "count=1&") {
 		t.Fatalf("%v", q)
 	}
 	resp, _ = braveP().Search(context.Background(), env, "empty", 5)
@@ -299,7 +299,7 @@ func TestBraveFreeHTTPFailures(t *testing.T) {
 		t.Fatalf("%v", err)
 	}
 	setVar(t, &braveEndpoint, "localhost:1/search")
-	if resp, _ := braveP().Search(context.Background(), env, "q", 5); resp.Error != "Could not reach Brave Search: Request URL has an unsupported protocol 'localhost://'." {
+	if resp, _ := braveP().Search(context.Background(), env, "q", 5); resp.Error != `Could not reach Brave Search: Get "localhost:1/search?count=5&q=q": unsupported protocol scheme "localhost"` {
 		t.Fatalf("%+v", resp)
 	}
 }
@@ -323,7 +323,7 @@ func TestSearXNGProvider(t *testing.T) {
 	if strings.Join(titles, ",") != "High,Mid,Mid2,Low" || resp.Data.Web[0].Description != "high" || resp.Data.Web[3].Position != 4 {
 		t.Fatalf("%v", titles)
 	}
-	if c := calls()[0]; c.path != "/search" || c.query != "q=q+x&format=json&pageno=1" || c.header.Get("Accept") != "application/json" {
+	if c := calls()[0]; c.path != "/search" || c.query != "format=json&pageno=1&q=q+x" || c.header.Get("Accept") != "application/json" {
 		t.Fatalf("%+v", c)
 	}
 	resp, _ = searxngP().Search(context.Background(), httpxProviderEnv(t, "", nil), "q", 5)
@@ -332,7 +332,7 @@ func TestSearXNGProvider(t *testing.T) {
 	}
 	refused := httpxProviderEnv(t, "SEARXNG_URL=http://127.0.0.1:1\n", nil)
 	resp, _ = searxngP().Search(context.Background(), refused, "q", 5)
-	if !strings.HasPrefix(resp.Error, "Could not reach SearXNG at http://127.0.0.1:1: [") {
+	if !strings.HasPrefix(resp.Error, `Could not reach SearXNG at http://127.0.0.1:1: Get "http://127.0.0.1:1/search?format=json&pageno=1&q=q": dial tcp 127.0.0.1:1: `) {
 		t.Fatalf("%+v", resp)
 	}
 	if got := getWebBackend(httpxProviderEnv(t, "SEARXNG_URL=http://localhost:8080\n", map[string]any{"web.backend": "searxng"})); got != "searxng" {
@@ -363,7 +363,7 @@ func TestSearXNGScoreErrorsRaise(t *testing.T) {
 		writeVendorJSON(w, 200, `{"results":[{"title":"a","score":"high"}]}`)
 	})
 	env := httpxProviderEnv(t, "SEARXNG_URL="+srv.URL+"\n", nil)
-	if _, err := searxngP().Search(context.Background(), env, "q", 5); err == nil || err.Error() != "could not convert string to float: 'high'" {
+	if _, err := searxngP().Search(context.Background(), env, "q", 5); err == nil || err.Error() != `cannot convert "high" to a number: not a number` {
 		t.Fatalf("%v", err)
 	}
 }

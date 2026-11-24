@@ -6,13 +6,14 @@ import (
 	"io"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Parsed icebath hooks arguments, Action empty when no subcommand was given
@@ -114,7 +115,7 @@ func hookMatcherPart(matcher string) string {
 func hookMtimeDrift(spec *ShellHookSpec, entry map[string]any) (int, string, string, error) {
 	now, _ := ShellHookScriptMtimeISO(spec.Command)
 	rawAt := entry["script_mtime_at_approval"]
-	at := pyrepr.Str(rawAt)
+	at := anyutil.String(rawAt)
 	if now == "" || !config.PyTruthy(rawAt) {
 		return -1, at, now, nil
 	}
@@ -216,9 +217,9 @@ func hooksTest(ctx context.Context, args HooksArgs, w io.Writer) error {
 			fmt.Fprintf(w, "Error reading payload file: %s\n", err)
 			return nil
 		}
-		if obj, isObj := custom.(*pyjson.Object); isObj {
-			for _, k := range obj.Keys {
-				payload[k] = obj.Vals[k]
+		if obj, isObj := custom.(*jsonutil.Object); isObj {
+			for _, k := range obj.Keys() {
+				payload[k] = obj.Value(k)
 			}
 		} else {
 			fmt.Fprintf(w, "Warning: %s is not a JSON object; ignoring\n", args.PayloadFile)
@@ -268,11 +269,11 @@ func readHookPayloadFile(path string) (any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("%s", errchain.OSText(err))
 	}
-	text, err := pycodecs.Decode(data, "utf-8-sig")
+	text, err := charsetutil.Decode(data, "utf-8-sig")
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 // Prints one run with its parsed directive even after an error or timeout, so fail closed and fail open differ
@@ -281,13 +282,13 @@ func printHookRunResult(w io.Writer, r *ShellHookResult) error {
 	case r.Error != "":
 		fmt.Fprintf(w, "      ✗ error: %s\n", r.Error)
 	case r.TimedOut:
-		fmt.Fprintf(w, "      ✗ timed out after %ss\n", pyrepr.Float(r.ElapsedSeconds))
+		fmt.Fprintf(w, "      ✗ timed out after %ss\n", strconv.FormatFloat(r.ElapsedSeconds, 'f', -1, 64))
 	default:
 		rc := "None"
 		if r.ReturnCode != nil {
 			rc = fmt.Sprint(*r.ReturnCode)
 		}
-		fmt.Fprintf(w, "      exit=%s  elapsed=%ss\n", rc, pyrepr.Float(r.ElapsedSeconds))
+		fmt.Fprintf(w, "      exit=%s  elapsed=%ss\n", rc, strconv.FormatFloat(r.ElapsedSeconds, 'f', -1, 64))
 		for _, stream := range []struct{ name, text string }{{"stdout", r.Stdout}, {"stderr", r.Stderr}} {
 			if text := strings.TrimSpace(stream.text); text != "" {
 				fmt.Fprintf(w, "      %s: %s\n", stream.name, hookTruncate(text, 400))
@@ -295,7 +296,7 @@ func printHookRunResult(w io.Writer, r *ShellHookResult) error {
 		}
 	}
 	if len(r.Parsed) > 0 {
-		encoded, err := pyjson.Dumps(r.Parsed)
+		encoded, err := jsonutil.Encode(r.Parsed)
 		if err != nil {
 			return err
 		}
@@ -387,7 +388,7 @@ func hookDoctorOne(ctx context.Context, spec *ShellHookSpec, w io.Writer) (int, 
 		return check.Problems, nil
 	}
 	result := check.Run
-	elapsed := pyrepr.Float(result.ElapsedSeconds)
+	elapsed := strconv.FormatFloat(result.ElapsedSeconds, 'f', -1, 64)
 	rc := "None"
 	if result.ReturnCode != nil {
 		rc = fmt.Sprint(*result.ReturnCode)

@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -79,8 +79,8 @@ func (t *TurnRunner) statusCallbackSync(eventType string, message any) {
 			platform = string(tc.source.Platform)
 		}
 		text := ""
-		if pyrepr.Truthy(message) {
-			text = pyrepr.Str(message)
+		if anyutil.IsTrue(message) {
+			text = anyutil.String(message)
 		}
 		pkgLog().Debug(fmt.Sprintf("status_callback suppressed for %s/%s: %s", platform, eventType,
 			textutil.First(redactGatewayUserFacingSecrets(t.turnCtx, text), 160)))

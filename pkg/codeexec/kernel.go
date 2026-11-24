@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"net"
 	"os"
 	"os/exec"
@@ -17,6 +16,7 @@ import (
 	"runtime"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -24,12 +24,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Cell executor source shared by the local and remote kernel runners
@@ -186,7 +185,7 @@ if __name__ == "__main__":
 // Owned spawn and temp root lookups, swapped by tests
 var (
 	spawnOwned = tools.SpawnOwned
-	gettempdir = pypath.Gettempdir
+	gettempdir = pathutil.TempDir
 )
 
 const (
@@ -295,8 +294,8 @@ func (q *responseQueue) get(timeout time.Duration) (any, bool) {
 	}
 }
 
-func statusObject(status string) *pyjson.Object {
-	o := pyjson.NewObject()
+func statusObject(status string) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("status", status)
 	return o
 }
@@ -337,12 +336,12 @@ type sessionKernel struct {
 
 	responses      *responseQueue
 	raw, stderr    boundedBuffer
-	executionCount any
+	executionCount int64
 	authority      atomic.Pointer[cellAuthority]
 }
 
 func newSessionKernel(key kernelKey) *sessionKernel {
-	return &sessionKernel{key: key, owner: key.owner, stop: make(chan struct{}), executionCount: 0,
+	return &sessionKernel{key: key, owner: key.owner, stop: make(chan struct{}),
 		budget: newRPCBudget(nil, 0), responses: newResponseQueue(), lastUsed: time.Now()}
 }
 
@@ -491,8 +490,8 @@ func (k *sessionKernel) rpcForever(env *tools.Env, ln net.Listener) {
 	}
 }
 
-// Python slice bound for a possibly negative index against length n
-func pyBound(i, n int) int {
+// End of a slice of n items at index i, a negative i counting back from the end, clamped to the items
+func sliceEnd(i, n int) int {
 	if i < 0 {
 		return max(0, n+i)
 	}
@@ -549,16 +548,16 @@ func (k *sessionKernel) stdoutReader(stream *os.File) {
 				break
 			}
 			header := rest[:newline]
-			parsed, ok := pyint.Parse(string(header))
-			if !ok || !utf8Header(header) {
+			parsed, perr := strconv.ParseInt(strings.TrimSpace(string(header)), 10, 64)
+			if perr != nil && !errors.Is(perr, strconv.ErrRange) {
 				raw(marker)
 				buf = rest
 				continue
 			}
 			length := math.MaxInt
-			if parsed.IsInt64() && parsed.Int64() <= math.MaxInt {
-				length = int(parsed.Int64())
-			} else if parsed.Sign() < 0 {
+			if parsed >= math.MinInt && parsed <= math.MaxInt {
+				length = int(parsed)
+			} else if parsed < 0 {
 				length = math.MinInt / 2
 			}
 			body := append([]byte(nil), rest[newline+1:]...)
@@ -570,8 +569,8 @@ func (k *sessionKernel) stdoutReader(stream *os.File) {
 				}
 				body = append(body, more...)
 			}
-			end := pyBound(length, len(body))
-			if decoded, err := pyjson.Loads(strings.ToValidUTF8(string(body[:end]), "\uFFFD")); err == nil {
+			end := sliceEnd(length, len(body))
+			if decoded, err := jsonutil.Decode(strings.ToValidUTF8(string(body[:end]), "\uFFFD")); err == nil {
 				k.responses.put(decoded)
 			} else {
 				k.responses.put(statusObject("protocol-error"))
@@ -582,8 +581,6 @@ func (k *sessionKernel) stdoutReader(stream *os.File) {
 }
 
 // int() of bytes decodes them as UTF-8 first, so undecodable header bytes are no frame
-func utf8Header(b []byte) bool { return strings.ToValidUTF8(string(b), "\uFFFD") == string(b) }
-
 func (k *sessionKernel) stderrReader(stream *os.File) {
 	defer stream.Close()
 	for {
@@ -871,7 +868,7 @@ func backgroundReaper(env *tools.Env) {
 	}
 }
 
-// Python AttributeError text a non dict reply raises when the cell result reads it
+// Kernel reply that is not a JSON object, so the cell result cannot be read from it
 type replyShapeError struct{ value any }
 
 func (e replyShapeError) Error() string {
@@ -879,23 +876,23 @@ func (e replyShapeError) Error() string {
 }
 
 // Waits for the cell reply polling interrupt and deadline, returning the host status and payload
-func awaitCell(kernel *sessionKernel, timeout float64, isInterrupted func() bool) (string, *pyjson.Object, error) {
+func awaitCell(kernel *sessionKernel, timeout float64, isInterrupted func() bool) (string, *jsonutil.Object, error) {
 	var deadline time.Time
 	if timeout != 0 {
 		deadline = time.Now().Add(time.Duration(timeout * float64(time.Second)))
 	}
 	for {
 		if isInterrupted() {
-			return "interrupted", pyjson.NewObject(), nil
+			return "interrupted", jsonutil.NewObject(), nil
 		}
 		if !deadline.IsZero() && time.Now().After(deadline) {
-			return "timeout", pyjson.NewObject(), nil
+			return "timeout", jsonutil.NewObject(), nil
 		}
 		v, ok := kernel.responses.get(50 * time.Millisecond)
 		if !ok {
 			continue
 		}
-		payload, isObj := v.(*pyjson.Object)
+		payload, isObj := v.(*jsonutil.Object)
 		if !isObj {
 			return "", nil, replyShapeError{v}
 		}
@@ -910,9 +907,9 @@ func withStderr(stdoutText, stderrText string) string {
 	return stdoutText + "\n--- stderr ---\n" + stderrText
 }
 
-func payloadStr(payload *pyjson.Object, key string) string {
+func payloadStr(payload *jsonutil.Object, key string) string {
 	if v, ok := payload.Get(key); ok {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	return ""
 }
@@ -931,7 +928,7 @@ type cellRun struct {
 }
 
 // Assembles the tool result of one settled cell, disposing the kernel where the contract says so
-func cellResult(kernel *sessionKernel, key kernelKey, status string, payload *pyjson.Object, run cellRun) (*pyjson.Object, error) {
+func cellResult(kernel *sessionKernel, key kernelKey, status string, payload *jsonutil.Object, run cellRun) (*jsonutil.Object, error) {
 	clean := func(text string) string {
 		return tools.RedactSensitiveTextWith(run.env, tools.StripANSI(text), tools.RedactOptions{CodeFile: true})
 	}
@@ -939,29 +936,25 @@ func cellResult(kernel *sessionKernel, key kernelKey, status string, payload *py
 		registry.discard(key, kernel)
 	}
 	duration := elapsedSeconds(run.execStart)
-	count, ok := payload.Get("execution_count")
-	if !ok {
-		prev, err := pyint.Of(kernel.executionCount)
+	count := kernel.executionCount + 1
+	if v, ok := payload.Get("execution_count"); ok {
+		n, err := anyutil.ToInt(v)
 		if err != nil {
 			return nil, err
 		}
-		count = pyint.Value(new(big.Int).Add(prev, big.NewInt(1)))
+		count = n
 	}
-	n, err := pyint.Of(count)
-	if err != nil {
-		return nil, err
-	}
-	kernel.executionCount = pyint.Value(n)
+	kernel.executionCount = count
 	stderrRaw := kernel.stderr.drain()
 	stdoutText, stdoutMeta := truncateStdoutText(run.env, clean(payloadStr(payload, "stdout")+kernel.raw.drain()))
 	cellStderr := clean(payloadStr(payload, "stderr") + stderrRaw)
 	cellStatus, _ := payload.Get("status")
-	kernelInfo := pyjson.NewObject()
+	kernelInfo := jsonutil.NewObject()
 	kernelInfo.Set("mode", "session")
 	kernelInfo.Set("reused", run.reused)
 	kernelInfo.Set("execution_count", kernel.executionCount)
 	kernelInfo.Set("state_reset", run.stateReset)
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("status", status)
 	result.Set("output", stdoutText)
 	result.Set("exit_code", 0)
@@ -969,16 +962,16 @@ func cellResult(kernel *sessionKernel, key kernelKey, status string, payload *py
 	result.Set("duration_seconds", duration)
 	result.Set("kernel", kernelInfo)
 	if stdoutMeta != nil {
-		result.Update(stdoutMeta)
+		result.Merge(stdoutMeta)
 	}
 	if toolErrors := toolErrorsSince(kernel.budget.entries(), kernel.cellLogStart); len(toolErrors) > 0 {
 		result.Set("tool_errors", toolErrors)
 	}
 	cellSpill := ""
-	if v, ok := payload.Get("stdout_spill_path"); ok && pyrepr.Truthy(v) {
-		cellSpill = pyrepr.Str(v)
+	if v, ok := payload.Get("stdout_spill_path"); ok && anyutil.IsTrue(v) {
+		cellSpill = anyutil.String(v)
 	}
-	if clipped, _ := payload.Get("stdout_clipped"); cellSpill != "" && pyrepr.Truthy(clipped) {
+	if clipped, _ := payload.Get("stdout_clipped"); cellSpill != "" && anyutil.IsTrue(clipped) {
 		result.Set("stdout_spill_path", cellSpill)
 		result.Set("warning", fmt.Sprintf("Cell stdout exceeded the inline cap; head shown. FULL output saved to %s "+
 			"— page it with read_file(path=\"%s\", offset=...) instead of re-running. "+
@@ -1087,10 +1080,10 @@ func runCell(ctx context.Context, env *tools.Env, kernel *sessionKernel, key ker
 		kernel.raw.drain()
 		kernel.stderr.drain()
 		kernel.authority.Store(authority)
-		request := pyjson.NewObject()
+		request := jsonutil.NewObject()
 		request.Set("id", uuid4Hex())
 		request.Set("code", code)
-		line, err := pyjson.Dumps(request)
+		line, err := jsonutil.Encode(request)
 		if err != nil {
 			return "", err
 		}
@@ -1112,24 +1105,12 @@ func runCell(ctx context.Context, env *tools.Env, kernel *sessionKernel, key ker
 		if err != nil {
 			return "", err
 		}
-		return pyjson.Dumps(res, pyjson.EnsureASCII(false))
+		return jsonutil.Encode(res)
 	}()
 	if err == nil {
 		return result
 	}
-	pkgLog(env).Error(fmt.Sprintf("session kernel failed: %s: %s", errorTypeName(err), err.Error()))
+	pkgLog(env).Error("session kernel failed: " + err.Error())
 	registry.discard(key, kernel)
 	return errorResult(err.Error(), kernel.budget.callCount(), elapsedSeconds(execStart), "")
-}
-
-func errorTypeName(err error) string {
-	var shape replyShapeError
-	if errors.As(err, &shape) {
-		return "AttributeError"
-	}
-	var pathErr *os.PathError
-	if errors.As(err, &pathErr) {
-		return "OSError"
-	}
-	return fmt.Sprintf("%T", err)
 }

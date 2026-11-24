@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var (
@@ -69,7 +69,7 @@ func checkoutGitDir(root string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		text, err := pystr.DecodeUTF8Sig(raw)
+		text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 		if err != nil {
 			return "", err
 		}

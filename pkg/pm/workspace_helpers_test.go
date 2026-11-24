@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Installs a manifest host reporting version and judging requires_icebath as a PEP 440 specifier set
@@ -125,7 +125,7 @@ func wsStrings(v any) []string {
 	items, _ := v.([]any)
 	out := []string{}
 	for _, item := range items {
-		out = append(out, pyrepr.Str(item))
+		out = append(out, anyutil.String(item))
 	}
 	return out
 }
@@ -160,7 +160,7 @@ func wsLocked(t *testing.T, lock string) map[string]string {
 	out := map[string]string{}
 	packages, _ := wsAt(wsTOML(t, lock), "package").([]any)
 	for _, p := range packages {
-		out[pyrepr.Str(wsAt(p, "name"))] = pyrepr.Str(wsAt(p, "version"))
+		out[anyutil.String(wsAt(p, "name"))] = anyutil.String(wsAt(p, "version"))
 	}
 	return out
 }

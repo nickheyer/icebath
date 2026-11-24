@@ -15,11 +15,10 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyipaddress"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -32,7 +31,7 @@ const (
 var msgraphTemplateKeyRE = regexp.MustCompile(`\{([a-zA-Z0-9_.]+)\}`)
 
 // Plugin owned handler of one Graph notification and its internal event, replacing gateway inference
-type NotificationScheduler func(ctx context.Context, notification *pyjson.Object, event *MessageEvent) error
+type NotificationScheduler func(ctx context.Context, notification *jsonutil.Object, event *MessageEvent) error
 
 // Whether the webhook server dependencies are available
 func CheckMSGraphWebhookRequirements() bool { return true }
@@ -42,7 +41,7 @@ func msgraphStringOrNone(value any) *string {
 	if value == nil {
 		return nil
 	}
-	text := strings.TrimSpace(pyrepr.Str(value))
+	text := strings.TrimSpace(anyutil.String(value))
 	if text == "" {
 		return nil
 	}
@@ -52,8 +51,8 @@ func msgraphStringOrNone(value any) *string {
 // Route path with a leading slash, the root for a blank value
 func msgraphNormalizePath(path any) string {
 	raw := ""
-	if pyrepr.Truthy(path) {
-		raw = strings.TrimSpace(pyrepr.Str(path))
+	if anyutil.IsTrue(path) {
+		raw = strings.TrimSpace(anyutil.String(path))
 	}
 	if raw == "" {
 		raw = "/"
@@ -89,14 +88,14 @@ func msgraphIterate(value any) ([]any, error) {
 			out = append(out, k)
 		}
 		return out, nil
-	case *pyjson.Object:
-		out := make([]any, 0, len(v.Keys))
-		for _, k := range v.Keys {
+	case *jsonutil.Object:
+		out := make([]any, 0, v.Len())
+		for _, k := range v.Keys() {
 			out = append(out, k)
 		}
 		return out, nil
 	}
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return nil, nil
 	}
 	return nil, &PyError{Kind: "TypeError", Msg: fmt.Sprintf("a Microsoft Graph notification field is %s, expected a list", errchain.Kind(value))}
@@ -110,7 +109,7 @@ func msgraphParseAllowedSourceCIDRs(raw any) []netip.Prefix {
 		candidates = strings.Split(v, ",")
 	case []any:
 		for _, chunk := range v {
-			candidates = append(candidates, pyrepr.Str(chunk))
+			candidates = append(candidates, anyutil.String(chunk))
 		}
 	case []string:
 		candidates = v
@@ -125,7 +124,7 @@ func msgraphParseAllowedSourceCIDRs(raw any) []netip.Prefix {
 		}
 		network, ok := pyipaddress.IPNetwork(chunk, false)
 		if !ok {
-			pkgLog().Warn(fmt.Sprintf("[msgraph_webhook] Ignoring invalid allowed_source_cidrs entry: %s", pyrepr.Repr(chunk)))
+			pkgLog().Warn(fmt.Sprintf("[msgraph_webhook] Ignoring invalid allowed_source_cidrs entry: %s", anyutil.Quote(chunk)))
 			continue
 		}
 		networks = append(networks, network)
@@ -151,29 +150,29 @@ func pySliceRunes(text string, n int) string {
 }
 
 // Substitutes dotted key fields from the payload, unknown keys staying literal
-func msgraphRenderTemplate(template string, payload *pyjson.Object) (string, error) {
+func msgraphRenderTemplate(template string, payload *jsonutil.Object) (string, error) {
 	var failure error
 	out := msgraphTemplateKeyRE.ReplaceAllStringFunc(template, func(match string) string {
 		key := match[1 : len(match)-1]
 		literal := "{" + key + "}"
 		var value any = payload
 		for _, part := range strings.Split(key, ".") {
-			obj, ok := value.(*pyjson.Object)
+			obj, ok := value.(*jsonutil.Object)
 			if !ok {
 				return literal
 			}
-			value = obj.GetOr(part, literal)
+			value = obj.ValueOr(part, literal)
 		}
 		switch value.(type) {
-		case *pyjson.Object, []any:
-			text, err := pyjson.Dumps(value, pyjson.SortKeys(true))
+		case *jsonutil.Object, []any:
+			text, err := jsonutil.Encode(value, jsonutil.SortKeys())
 			if err != nil {
 				failure = err
 				return match
 			}
 			return pySliceRunes(text, 2000)
 		}
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	})
 	return out, failure
 }
@@ -212,8 +211,8 @@ func NewMSGraphWebhookAdapter(config *PlatformConfig) (*MSGraphWebhookAdapter, e
 	a.BasePlatformAdapter = NewBasePlatformAdapter(config, PlatformMSGraphWebhook, a)
 	a.Traits = msgraphWebhookAdapterTraits()
 	extra := config.Extra
-	if rawHost := extra["host"]; pyrepr.Truthy(rawHost) {
-		host := pyrepr.Str(rawHost)
+	if rawHost := extra["host"]; anyutil.IsTrue(rawHost) {
+		host := anyutil.String(rawHost)
 		a.host = &host
 	}
 	port, err := msgraphIntExtra(extra, "port", msgraphDefaultPort)
@@ -236,7 +235,7 @@ func NewMSGraphWebhookAdapter(config *PlatformConfig) (*MSGraphWebhookAdapter, e
 		return nil, err
 	}
 	for _, value := range resources {
-		if text := strings.TrimSpace(pyrepr.Str(value)); text != "" {
+		if text := strings.TrimSpace(anyutil.String(value)); text != "" {
 			a.acceptedResources = append(a.acceptedResources, text)
 		}
 	}
@@ -261,7 +260,7 @@ func msgraphIntExtra(extra map[string]any, key string, def int64) (int64, error)
 	if !ok {
 		return def, nil
 	}
-	return pyint.Int64(value)
+	return anyutil.ToInt(value)
 }
 
 // Installs the plugin owned notification pipeline, nil returning ingress to gateway inference
@@ -395,7 +394,7 @@ func (a *MSGraphWebhookAdapter) handleHealth(ctx context.Context, request *WebRe
 	a.stateMu.Lock()
 	accepted, duplicates := a.acceptedCount, a.duplicateCount
 	a.stateMu.Unlock()
-	return WebJSONResponse(pyjson.ObjectOf("status", "ok", "platform", string(a.Platform), "webhook_path", a.webhookPath,
+	return WebJSONResponse(jsonutil.ObjectOf("status", "ok", "platform", string(a.Platform), "webhook_path", a.webhookPath,
 		"accepted", accepted, "duplicates", duplicates), http.StatusOK, nil)
 }
 
@@ -413,14 +412,14 @@ func (a *MSGraphWebhookAdapter) handleValidation(ctx context.Context, request *W
 
 // Classifies and schedules one notification as accepted, duplicate, auth or other
 func (a *MSGraphWebhookAdapter) ingestNotification(ctx context.Context, raw any) (string, error) {
-	original, ok := raw.(*pyjson.Object)
+	original, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return "other", nil
 	}
-	notification := original.Copy()
+	notification := original.Clone()
 	resource := ""
-	if value, _ := notification.Get("resource"); pyrepr.Truthy(value) {
-		resource = pyrepr.Str(value)
+	if value, _ := notification.Get("resource"); anyutil.IsTrue(value) {
+		resource = anyutil.String(value)
 	}
 	if !a.resourceAccepted(resource) {
 		return "other", nil
@@ -434,8 +433,8 @@ func (a *MSGraphWebhookAdapter) ingestNotification(ctx context.Context, raw any)
 	}
 	var receiptKey *string
 	explicitID := ""
-	if value, _ := notification.Get("id"); pyrepr.Truthy(value) {
-		explicitID = strings.TrimSpace(pyrepr.Str(value))
+	if value, _ := notification.Get("id"); anyutil.IsTrue(value) {
+		explicitID = strings.TrimSpace(anyutil.String(value))
 	}
 	if explicitID != "" {
 		key := "id:" + explicitID
@@ -516,15 +515,15 @@ func (a *MSGraphWebhookAdapter) readNotifications(request *WebRequest) (int, []a
 	if !utf8.Valid(rawBody) {
 		return http.StatusBadRequest, nil, nil
 	}
-	body, err := pyjson.Loads(string(rawBody))
+	body, err := jsonutil.Decode(string(rawBody))
 	if err != nil {
-		var decodeErr *pyjson.DecodeError
+		var decodeErr *jsonutil.SyntaxError
 		if errors.As(err, &decodeErr) {
 			return http.StatusBadRequest, nil, nil
 		}
 		return 0, nil, err
 	}
-	obj, ok := body.(*pyjson.Object)
+	obj, ok := body.(*jsonutil.Object)
 	if !ok {
 		return http.StatusBadRequest, nil, nil
 	}
@@ -552,7 +551,7 @@ func (a *MSGraphWebhookAdapter) sourceIPAllowed(ctx context.Context, request *We
 		return false
 	}
 	for _, network := range networks {
-		if pyipaddress.NetworkContains(network, peer) {
+		if network.Contains(peer.WithZone("")) {
 			return true
 		}
 	}
@@ -578,7 +577,7 @@ func (a *MSGraphWebhookAdapter) resourceAccepted(resource string) bool {
 }
 
 // Timing safe compare of the Graph supplied clientState against the configured shared secret
-func (a *MSGraphWebhookAdapter) verifyClientState(notification *pyjson.Object) (bool, error) {
+func (a *MSGraphWebhookAdapter) verifyClientState(notification *jsonutil.Object) (bool, error) {
 	expected := a.clientState
 	value, _ := notification.Get("clientState")
 	provided := msgraphStringOrNone(value)
@@ -604,12 +603,12 @@ func (a *MSGraphWebhookAdapter) rememberReceipt(receiptKey string) {
 }
 
 // Internal webhook event of a notification keyed by its receipt or the digest of its content
-func (a *MSGraphWebhookAdapter) buildMessageEvent(ctx context.Context, notification *pyjson.Object, receiptKey *string) (*MessageEvent, error) {
+func (a *MSGraphWebhookAdapter) buildMessageEvent(ctx context.Context, notification *jsonutil.Object, receiptKey *string) (*MessageEvent, error) {
 	messageID := ""
 	if receiptKey != nil && *receiptKey != "" {
 		messageID = *receiptKey
 	} else {
-		encoded, err := pyjson.Dumps(notification, pyjson.SortKeys(true))
+		encoded, err := jsonutil.Encode(notification, jsonutil.SortKeys())
 		if err != nil {
 			return nil, err
 		}
@@ -617,7 +616,7 @@ func (a *MSGraphWebhookAdapter) buildMessageEvent(ctx context.Context, notificat
 		messageID = "sha1:" + hex.EncodeToString(digest[:])
 	}
 	chatName, userID, userName := "msgraph/webhook", "msgraph", "Microsoft Graph"
-	source := a.BuildSource(ctx, "msgraph:"+pyrepr.Str(notification.GetOr("subscriptionId", "unknown")), SourceFields{
+	source := a.BuildSource(ctx, "msgraph:"+anyutil.String(notification.ValueOr("subscriptionId", "unknown")), SourceFields{
 		ChatName: &chatName, ChatType: "webhook", UserID: &userID, UserName: &userName})
 	text, err := a.renderPrompt(notification)
 	if err != nil {
@@ -633,21 +632,21 @@ func (a *MSGraphWebhookAdapter) buildMessageEvent(ctx context.Context, notificat
 }
 
 // Prompt of a notification from the configured template, else the notification as fenced JSON
-func (a *MSGraphWebhookAdapter) renderPrompt(notification *pyjson.Object) (string, error) {
+func (a *MSGraphWebhookAdapter) renderPrompt(notification *jsonutil.Object) (string, error) {
 	template, ok := a.Config.Extra["prompt"]
 	if !ok {
 		template = ""
 	}
-	if pyrepr.Truthy(template) {
+	if anyutil.IsTrue(template) {
 		text, isText := template.(string)
 		if !isText {
 			return "", &PyError{Kind: "TypeError", Msg: fmt.Sprintf("the prompt template is %s, expected text", errchain.Kind(template))}
 		}
-		return msgraphRenderTemplate(text, pyjson.ObjectOf("notification", notification,
-			"resource", notification.GetOr("resource", ""), "change_type", notification.GetOr("changeType", ""),
-			"subscription_id", notification.GetOr("subscriptionId", "")))
+		return msgraphRenderTemplate(text, jsonutil.ObjectOf("notification", notification,
+			"resource", notification.ValueOr("resource", ""), "change_type", notification.ValueOr("changeType", ""),
+			"subscription_id", notification.ValueOr("subscriptionId", "")))
 	}
-	rendered, err := pyjson.Dumps(notification, pyjson.Indent(2), pyjson.SortKeys(true))
+	rendered, err := jsonutil.Encode(notification, jsonutil.Indent(2), jsonutil.SortKeys())
 	if err != nil {
 		return "", err
 	}
@@ -655,7 +654,7 @@ func (a *MSGraphWebhookAdapter) renderPrompt(notification *pyjson.Object) (strin
 }
 
 // Hands the notification to the plugin scheduler when one owns the route, else admits it for inference
-func (a *MSGraphWebhookAdapter) scheduleNotification(ctx context.Context, notification *pyjson.Object, event *MessageEvent) error {
+func (a *MSGraphWebhookAdapter) scheduleNotification(ctx context.Context, notification *jsonutil.Object, event *MessageEvent) error {
 	if scheduler := a.scheduler(); scheduler != nil {
 		return scheduler(ctx, notification, event)
 	}
@@ -700,16 +699,16 @@ func (a *MSGraphWebhookAdapter) admitNotification(ctx context.Context, event *Me
 	if event.MessageID != nil {
 		messageID = *event.MessageID
 	}
-	envelope := pyjson.ObjectOf("source", source, "route", route, "provenance", provenance,
-		"timestamp", "1970-01-01T00:00:00+00:00", "event", pyjson.ObjectOf("message_id", messageID),
-		"automation", pyjson.ObjectOf("identity", messageID, "owner", ref.SessionID))
-	payload := pyjson.ObjectOf("text", event.Text, "native_text_v1", envelope)
+	envelope := jsonutil.ObjectOf("source", source, "route", route, "provenance", provenance,
+		"timestamp", "1970-01-01T00:00:00+00:00", "event", jsonutil.ObjectOf("message_id", messageID),
+		"automation", jsonutil.ObjectOf("identity", messageID, "owner", ref.SessionID))
+	payload := jsonutil.ObjectOf("text", event.Text, "native_text_v1", envelope)
 	var scheduleErr error
 	result, err := trackedWrite(scoped, authority, func(taskCtx context.Context) (any, error) {
 		return authority.DB.AdmitSessionInput(taskCtx, state.SessionInput{Epoch: authority.Epoch, PrincipalID: "msgraph:" + route,
 			SessionID: ref.SessionID, RequestID: messageID, Payload: payload, AuthorizeWrite: authority.admissionGate(nil, false)})
 	}, func(taskCtx context.Context, written any) (any, error) {
-		return authority.admitted(taskCtx, ref, event, written.(*pyjson.Object))
+		return authority.admitted(taskCtx, ref, event, written.(*jsonutil.Object))
 	}, true, func(any) { scheduleErr = authority.scheduleAdmitted(scoped, ref) })
 	if err == nil {
 		err = scheduleErr

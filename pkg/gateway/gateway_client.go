@@ -12,13 +12,14 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const GatewayWSTicketPrefix = "icebath-gateway-ticket."
@@ -110,7 +111,7 @@ func boundedReason(value any) string {
 		return ""
 	}
 	for _, r := range stripped {
-		if !pystr.IsAlnum(r) {
+		if !(unicode.IsLetter(r) || unicode.IsNumber(r)) {
 			return ""
 		}
 	}
@@ -120,7 +121,7 @@ func boundedReason(value any) string {
 // At most sixteen short keys whose values are short scalars or short lists of them
 func boundedErrorData(data any) map[string]any {
 	out := map[string]any{}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return out
 	}
@@ -133,8 +134,8 @@ func boundedErrorData(data any) map[string]any {
 		}
 		return false
 	}
-	for _, key := range obj.Keys {
-		value := obj.Vals[key]
+	for _, key := range obj.Keys() {
+		value := obj.Value(key)
 		if len(out) >= 16 || utf8.RuneCountInString(key) > 64 {
 			continue
 		}
@@ -155,11 +156,11 @@ func boundedErrorData(data any) map[string]any {
 
 // Refusal for one received error member keeping only bounded reason codes
 func RPCError(errMember any) *GatewayRPCError {
-	obj, _ := errMember.(*pyjson.Object)
+	obj, _ := errMember.(*jsonutil.Object)
 	if obj == nil {
-		obj = pyjson.NewObject()
+		obj = jsonutil.NewObject()
 	}
-	data := boundedErrorData(obj.Vals["data"])
+	data := boundedErrorData(obj.Value("data"))
 	message, ok := obj.Get("message")
 	if !ok {
 		message = "request_failed"
@@ -172,7 +173,7 @@ func RPCError(errMember any) *GatewayRPCError {
 		reason = "request_failed"
 	}
 	out := &GatewayRPCError{Msg: reason, Data: data, Raw: errMember}
-	switch c := obj.Vals["code"].(type) {
+	switch c := obj.Value("code").(type) {
 	case int64:
 		out.Code = &c
 	case int:
@@ -469,8 +470,8 @@ func (c *GatewayClient) Read() {
 			c.mu.Unlock()
 			return
 		}
-		decoded, err := pyjson.Loads(raw)
-		frame, ok := decoded.(*pyjson.Object)
+		decoded, err := jsonutil.Decode(raw)
+		frame, ok := decoded.(*jsonutil.Object)
 		if err != nil || !ok {
 			if c.hooks.Malformed != nil {
 				c.hooks.Malformed(raw)
@@ -496,7 +497,7 @@ func (c *GatewayClient) Read() {
 			} else if result, has := frame.Get("result"); has {
 				waiter <- rpcAnswer{result: result}
 			} else {
-				waiter <- rpcAnswer{result: pyjson.NewObject()}
+				waiter <- rpcAnswer{result: jsonutil.NewObject()}
 			}
 		} else if _, has := frame.Get("method"); has {
 			if c.deliver(frame, utf8.RuneCountInString(raw)) != nil {
@@ -512,7 +513,7 @@ func (c *GatewayClient) RPC(ctx context.Context, method string, params map[strin
 	if err != nil {
 		return nil, err
 	}
-	plain, ok := pyjson.Plain(result).(map[string]any)
+	plain, ok := jsonutil.Plain(result).(map[string]any)
 	if !ok {
 		return nil, fmt.Errorf("gateway %s answered %T, not an object", method, result)
 	}
@@ -544,8 +545,8 @@ func (c *GatewayClient) RPCTimeout(ctx context.Context, method string, params ma
 	if params == nil {
 		params = map[string]any{}
 	}
-	request := pyjson.ObjectOf("jsonrpc", "2.0", "id", rid, "method", method, "params", params)
-	text, err := pyjson.Dumps(request)
+	request := jsonutil.ObjectOf("jsonrpc", "2.0", "id", rid, "method", method, "params", params)
+	text, err := jsonutil.Encode(request)
 	if err != nil {
 		return nil, err
 	}
@@ -587,8 +588,8 @@ func refusesRestartWait(ctx context.Context) bool {
 }
 
 // Request line for one session ticket mint over the control socket
-func sessionTicketRequest(params *pyjson.Object) ([]byte, error) {
-	text, err := pyjson.Dumps(pyjson.ObjectOf("protocol", 1, "id", 1, "verb", "session-ticket", "params", params))
+func sessionTicketRequest(params *jsonutil.Object) ([]byte, error) {
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("protocol", 1, "id", 1, "verb", "session-ticket", "params", params))
 	if err != nil {
 		return nil, err
 	}
@@ -601,7 +602,7 @@ func sessionTicket(home string, endpoint *GatewayEndpoint, purpose, scope string
 	if purpose == "" {
 		purpose = "interactive"
 	}
-	params := pyjson.ObjectOf("profile_id", endpoint.ProfileID, "instance_id", endpoint.InstanceID, "purpose", purpose)
+	params := jsonutil.ObjectOf("profile_id", endpoint.ProfileID, "instance_id", endpoint.InstanceID, "purpose", purpose)
 	if scope != "" {
 		params.Set("scope", scope)
 	}
@@ -618,11 +619,11 @@ func sessionTicket(home string, endpoint *GatewayEndpoint, purpose, scope string
 	}
 	if refuseRestart {
 		line, _, _ := strings.Cut(string(answer), "\n")
-		refused, err := pyjson.Loads(line)
+		refused, err := jsonutil.Decode(line)
 		if err != nil {
 			return "", err
 		}
-		if obj, ok := refused.(*pyjson.Object); ok && obj.Vals["error"] == unknownTicketParams {
+		if obj, ok := refused.(*jsonutil.Object); ok && obj.Value("error") == unknownTicketParams {
 			params.Delete("restart_wait")
 			if request, err = sessionTicketRequest(params); err != nil {
 				return "", err
@@ -636,9 +637,9 @@ func sessionTicket(home string, endpoint *GatewayEndpoint, purpose, scope string
 	if err != nil {
 		return "", err
 	}
-	ticket, _ := grant.Vals["ticket"].(string)
-	if grant.Vals["profile_id"] != endpoint.ProfileID || grant.Vals["instance_id"] != endpoint.InstanceID ||
-		!pyjson.Equal(grant.Vals["runtime_protocol"], int64(1)) || ticket == "" {
+	ticket, _ := grant.Value("ticket").(string)
+	if grant.Value("profile_id") != endpoint.ProfileID || grant.Value("instance_id") != endpoint.InstanceID ||
+		!anyutil.Equal(grant.Value("runtime_protocol"), int64(1)) || ticket == "" {
 		return "", &GatewayClientError{Msg: "Gateway bootstrap identity changed; retry launch"}
 	}
 	return ticket, nil

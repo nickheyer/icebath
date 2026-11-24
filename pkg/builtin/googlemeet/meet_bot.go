@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,11 +20,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -136,7 +135,7 @@ func (s *botState) recordCaption(ctx context.Context, speaker, text string) erro
 
 // Writes status.json in table key order with the transcript path and this process id
 func (s *botState) flushLocked(ctx context.Context) error {
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	for _, f := range statusFields {
 		data.Set(f.key, s.vals[f.key])
 	}
@@ -238,31 +237,10 @@ const deniedProbeJS = `
 
 const drainJS = "window.__icebathMeetDrain && window.__icebathMeetDrain()"
 
-// Python truthiness of a value a page evaluation returned
-func truthy(v any) bool {
-	switch x := v.(type) {
-	case nil:
-		return false
-	case bool:
-		return x
-	case float64:
-		return x != 0
-	case int:
-		return x != 0
-	case string:
-		return x != ""
-	case []any:
-		return len(x) > 0
-	case map[string]any:
-		return len(x) > 0
-	}
-	return true
-}
-
 // Boolean JS probe, false on any evaluation error
 func probe(page meetPage, js string) bool {
 	v, err := page.Evaluate(js)
-	return err == nil && truthy(v)
+	return err == nil && anyutil.IsTrue(v)
 }
 
 // First match when it exists and is visible, otherwise nil with errors swallowed
@@ -400,7 +378,7 @@ func startPCMPump(ctx context.Context, rt *realtimeRes, bridgeInfo map[string]an
 		argv = []string{"paplay", "--raw", "--rate=24000", "--format=s16le", "--channels=1", "--device=" + target, "-"}
 		missing = "paplay not found — install pulseaudio-utils for realtime on Linux"
 	case "darwin":
-		if _, ok := pyshutil.Which("ffmpeg", nil); !ok {
+		if _, err := exec.LookPath("ffmpeg"); err != nil {
 			state.set(ctx, "error", ffmpegMissing)
 			return nil
 		}
@@ -570,7 +548,7 @@ func configFromEnv() (botConfig, error) {
 		key = envOr("OPENAI_API_KEY", "")
 	}
 	lobbyRaw := envOr("ICEBATH_MEET_LOBBY_TIMEOUT", "300")
-	lobby, err := pyint.ParseFloat(lobbyRaw)
+	lobby, err := strconv.ParseFloat(strings.TrimSpace(lobbyRaw), 64)
 	if err != nil {
 		return botConfig{}, fmt.Errorf("ICEBATH_MEET_LOBBY_TIMEOUT %s is not a number of seconds", lobbyRaw)
 	}
@@ -689,10 +667,10 @@ func drainCaptions(ctx context.Context, page meetPage, cfg botConfig, state *bot
 		}
 		speaker, text := "", ""
 		if v, ok := entry["speaker"]; ok {
-			speaker = pyrepr.Str(v)
+			speaker = anyutil.String(v)
 		}
 		if v, ok := entry["text"]; ok {
-			text = pyrepr.Str(v)
+			text = anyutil.String(v)
 		}
 		if err := state.recordCaption(ctx, speaker, text); err != nil {
 			return err
@@ -725,7 +703,7 @@ func runBot(ctx context.Context) int {
 		return 1
 	}
 	if !isSafeMeetURL(cfg.URL) {
-		fmt.Fprintf(os.Stderr, "google_meet bot: refusing to launch — ICEBATH_MEET_URL must be a meet.google.com URL. got: %s\n", pyrepr.StrRepr(cfg.URL))
+		fmt.Fprintf(os.Stderr, "google_meet bot: refusing to launch — ICEBATH_MEET_URL must be a meet.google.com URL. got: %s\n", strconv.Quote(cfg.URL))
 		return 2
 	}
 	if cfg.OutDir == "" {
@@ -795,7 +773,7 @@ func runBotBrowser(ctx context.Context, cfg botConfig, state *botState, rt *real
 		return 4
 	}
 	join(tools.WithEnvHome(ctx, env), page, cfg, state, 30*time.Second)
-	if v, err := page.Evaluate(enableCaptionsJS); err == nil && truthy(v) {
+	if v, err := page.Evaluate(enableCaptionsJS); err == nil && anyutil.IsTrue(v) {
 		state.set(tools.WithEnvHome(ctx, env), "captionsEnabledAttempted", true)
 	}
 	if _, err := page.Evaluate(captionObserverJS); err != nil {
@@ -839,13 +817,13 @@ func parseDuration(raw string) (float64, bool) {
 		last = string(r[len(r)-1])
 	}
 	if mult, ok := durationUnits[last]; ok {
-		v, err := pyint.ParseFloat(string(r[:len(r)-1]))
+		v, err := strconv.ParseFloat(strings.TrimSpace(string(r[:len(r)-1])), 64)
 		if err != nil {
 			return 0, false
 		}
 		return v * mult, true
 	}
-	v, err := pyint.ParseFloat(raw)
+	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
 		return 0, false
 	}

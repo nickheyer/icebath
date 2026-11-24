@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
@@ -86,7 +86,7 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 	if err := os.WriteFile(path, []byte(seeded), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if schema := discordGetDynamicSchema(env, true, "discord"); schema == nil || !strings.Contains(schema.Vals["description"].(string), "fetch_messages(channel_id)") || strings.Contains(schema.Vals["description"].(string), "search_members(") {
+	if schema := discordGetDynamicSchema(env, true, "discord"); schema == nil || !strings.Contains(schema.Value("description").(string), "fetch_messages(channel_id)") || strings.Contains(schema.Value("description").(string), "search_members(") {
 		t.Fatalf("allowlisted schema %#v", schema)
 	}
 	writeHomeConfig(t, env, "{}\n")
@@ -97,33 +97,33 @@ func TestDiscordToolsDriveTheRestAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	schema := discordGetDynamicSchema(env, true, "discord")
-	desc := schema.Vals["description"].(string)
+	desc := schema.Value("description").(string)
 	if strings.Contains(desc, "search_members(") || !strings.Contains(desc, "NOTE: Bot does NOT have the MESSAGE_CONTENT privileged intent. fetch_messages will return") {
 		t.Fatalf("intent filtered schema %s", desc)
 	}
-	if td := discordRewriter(false, "discord_admin")(env, nil, nil); td == nil || pyjson.Plain(td["function"]).(map[string]any)["name"] != "discord_admin" {
+	if td := discordRewriter(false, "discord_admin")(env, nil, nil); td == nil || jsonutil.Plain(td["function"]).(map[string]any)["name"] != "discord_admin" {
 		t.Fatalf("admin rewrite %#v", td)
 	}
 
 	t.Setenv("DISCORD_BOT_TOKEN", "bot-c")
-	if caps := discordDetectCapabilitiesNonblocking(env, "bot-c"); caps.GetOr("detected", nil) != false {
+	if caps := discordDetectCapabilitiesNonblocking(env, "bot-c"); caps.ValueOr("detected", nil) != false {
 		t.Fatalf("cold start caps %v", caps)
 	}
 	deadline := time.Now().Add(5 * time.Second)
 	for discordLoadCapsFromDisk(env, "bot-c") == nil && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
 	}
-	if caps := discordLoadCapsFromDisk(env, "bot-c"); caps == nil || caps.GetOr("has_members_intent", nil) != false || caps.GetOr("detected", nil) != true {
+	if caps := discordLoadCapsFromDisk(env, "bot-c"); caps == nil || caps.ValueOr("has_members_intent", nil) != false || caps.ValueOr("detected", nil) != true {
 		t.Fatalf("background detection saved %v", caps)
 	}
-	if caps := discordFetchCapabilities(env, "bot-c"); caps.GetOr("detected", nil) != true || caps.GetOr("has_message_content", nil) != false {
+	if caps := discordFetchCapabilities(env, "bot-c"); caps.ValueOr("detected", nil) != true || caps.ValueOr("has_message_content", nil) != false {
 		t.Fatalf("fetched caps %v", caps)
 	}
-	if caps := discordDetectCapabilitiesNonblocking(env, "bot-c"); caps.GetOr("detected", nil) != false {
+	if caps := discordDetectCapabilitiesNonblocking(env, "bot-c"); caps.ValueOr("detected", nil) != false {
 		t.Fatalf("a fetch reached the schema lookup cache %v", caps)
 	}
 	discordResetCapabilityCache()
-	if caps := discordFetchCapabilities(env, "bot-d"); caps.GetOr("detected", nil) != true || caps.GetOr("has_members_intent", nil) != false {
+	if caps := discordFetchCapabilities(env, "bot-d"); caps.ValueOr("detected", nil) != true || caps.ValueOr("has_members_intent", nil) != false {
 		t.Fatalf("first fetch caps %v", caps)
 	}
 }
@@ -148,6 +148,6 @@ func TestFeishuToolsNeedThePlatformCredentials(t *testing.T) {
 func discordResetCapabilityCache() {
 	discordCapsMu.Lock()
 	defer discordCapsMu.Unlock()
-	discordCapsCache = map[string]*pyjson.Object{}
+	discordCapsCache = map[string]*jsonutil.Object{}
 	discordCapsBgStarted = map[string]bool{}
 }

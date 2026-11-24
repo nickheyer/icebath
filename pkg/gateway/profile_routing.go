@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var whatsappIdentityPlatforms = map[string]bool{"whatsapp": true, "whatsapp_cloud": true}
@@ -68,7 +68,7 @@ func (e *ProfileRouteRejected) Error() string {
 	if len(e.Args) == 0 {
 		return ""
 	}
-	return pyrepr.Str(e.Args[0])
+	return anyutil.String(e.Args[0])
 }
 
 // One routing rule mapping a platform scope to a profile
@@ -112,7 +112,7 @@ func strPtrEq(a, b *string) bool { return (a == nil && b == nil) || (a != nil &&
 
 // True when every discriminator the route declares holds
 func (r *ProfileRoute) Matches(ctx context.Context, q RouteQuery) (bool, error) {
-	if !pyrepr.Truthy(r.Enabled) || !pyrepr.Equal(r.Platform, q.Platform) {
+	if !anyutil.IsTrue(r.Enabled) || !anyutil.Equal(r.Platform, q.Platform) {
 		return false, nil
 	}
 	if !strPtrEq(botProfileKey(r.BotProfile), botProfileKey(q.AdapterProfile)) {
@@ -178,19 +178,19 @@ func coerceRouteID(value any) *string {
 	if s, ok := value.(string); ok {
 		return &s
 	}
-	if _, ok := pyrepr.Int(value); ok {
-		s := pyrepr.Str(value)
+	if _, ok := anyutil.Int(value); ok {
+		s := anyutil.String(value)
 		return &s
 	}
 	pkgLog().Warn(fmt.Sprintf("Profile route discriminator %v (%s) can never match an inbound id — quote it in config.yaml (e.g. chat_id: \"%s\").",
-		value, errchain.Kind(value), pyrepr.Str(value)))
-	s := pyrepr.Str(value)
+		value, errchain.Kind(value), anyutil.String(value)))
+	s := anyutil.String(value)
 	return &s
 }
 
 // Profile routes of config.yaml sorted most specific first, TypeError for a non iterable value
 func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return []*ProfileRoute{}, nil
 	}
 	var items []any
@@ -219,8 +219,8 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 		if !ok {
 			profile = ""
 		}
-		if !pyrepr.Truthy(platform) || !pyrepr.Truthy(profile) {
-			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: missing platform or profile", pyrepr.Str(name)))
+		if !anyutil.IsTrue(platform) || !anyutil.IsTrue(profile) {
+			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: missing platform or profile", anyutil.String(name)))
 			continue
 		}
 		normalized, err := profiles.NormalizeProfileNameValue(profile)
@@ -229,12 +229,12 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 			err = profiles.ValidateProfileName(normalized)
 		}
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: invalid profile name %s", pyrepr.Str(name), pyrepr.Repr(profile)))
+			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: invalid profile name %s", anyutil.String(name), anyutil.Quote(profile)))
 			continue
 		}
 		userID, hasUser := entry["user_id"]
 		if s, isStr := userID.(string); hasUser && (userID == nil || isStr && strings.TrimSpace(s) == "") {
-			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: user_id cannot be null or empty", pyrepr.Str(name)))
+			pkgLog().Warn(fmt.Sprintf("Skipping profile route %s: user_id cannot be null or empty", anyutil.String(name)))
 			continue
 		}
 		enabled, ok := entry["enabled"]
@@ -242,7 +242,7 @@ func ParseProfileRoutes(ctx context.Context, raw any) ([]*ProfileRoute, error) {
 			enabled = true
 		}
 		var bot *string
-		if b := entry["bot_profile"]; pyrepr.Truthy(b) {
+		if b := entry["bot_profile"]; anyutil.IsTrue(b) {
 			s, isStr := b.(string)
 			if !isStr {
 				return nil, &PyError{"AttributeError", "a profile route field is " + errchain.Kind(b) + ", expected text"}

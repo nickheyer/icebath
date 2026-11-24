@@ -7,12 +7,12 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One builtin registry command as the palette catalog reads it
@@ -121,14 +121,14 @@ func catalogQuickCommands(ctx context.Context, cat *commandCatalogAcc) error {
 		if !hasTarget {
 			target = ""
 		}
-		defaults := map[string]string{"exec": "exec: " + pyrepr.Str(command), "alias": "alias → " + pyrepr.Str(target)}
+		defaults := map[string]string{"exec": "exec: " + anyutil.String(command), "alias": "alias → " + anyutil.String(target)}
 		var desc string
-		if described := qc["description"]; pyrepr.Truthy(described) {
-			desc = pyrepr.Str(described)
+		if described := qc["description"]; anyutil.IsTrue(described) {
+			desc = anyutil.String(described)
 		} else if text, ok := qtype.(string); ok && defaults[text] != "" {
 			desc = defaults[text]
-		} else if pyrepr.Truthy(qtype) {
-			desc = pyrepr.Str(qtype)
+		} else if anyutil.IsTrue(qtype) {
+			desc = anyutil.String(qtype)
 		} else {
 			desc = "quick command"
 		}
@@ -202,16 +202,16 @@ func catalogSkills(ctx context.Context, cat *commandCatalogAcc, skillsOut map[st
 		if !hasDesc {
 			desc = "Skill"
 		}
-		cat.pairs = append(cat.pairs, [2]string{k, pyrepr.Str(desc)})
+		cat.pairs = append(cat.pairs, [2]string{k, anyutil.String(desc)})
 		name := strings.TrimLeft(k, "/")
-		if raw := info["name"]; pyrepr.Truthy(raw) {
-			name = pyrepr.Str(raw)
+		if raw := info["name"]; anyutil.IsTrue(raw) {
+			name = anyutil.String(raw)
 		}
 		skillsOut[k] = tuigateway.SkillCatalogEntry{Usage: usage(name).Int64(), Origin: originOf(name)}
 	}
 	var names []string
 	for _, s := range scope.FindAllSkills(false) {
-		names = append(names, pyrepr.Str(s["name"]))
+		names = append(names, anyutil.String(s["name"]))
 	}
 	sort.Strings(names)
 	var notes []string

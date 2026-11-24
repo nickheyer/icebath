@@ -6,11 +6,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Whether the pre-run check runs, cron.preflight for the store's profile
@@ -20,8 +20,8 @@ func (s *Store) cronPreflightEnabled(ctx context.Context) bool {
 
 // Enabled primary gateway profile routes that target the served profile, none when this is the primary home
 func primaryProfileRoutesForCurrentHome(ctx context.Context) []*gateway.ProfileRoute {
-	primary, errP := pypath.Realpath(pypath.Expanduser(home.Root()), pypath.Lax)
-	current, errC := pypath.Realpath(pypath.Expanduser(home.Dir(ctx)), pypath.Lax)
+	primary, errP := pathutil.Resolve(pathutil.ExpandUser(home.Root()))
+	current, errC := pathutil.Resolve(pathutil.ExpandUser(home.Dir(ctx)))
 	if errP != nil || errC != nil || primary == current {
 		return nil
 	}
@@ -35,7 +35,7 @@ func primaryProfileRoutesForCurrentHome(ctx context.Context) []*gateway.ProfileR
 	}
 	var out []*gateway.ProfileRoute
 	for _, r := range routes {
-		if pyrepr.Truthy(r.Enabled) && profiles.ProfileMatchesHome(ctx, r.Profile, home.Dir(ctx)) {
+		if anyutil.IsTrue(r.Enabled) && profiles.ProfileMatchesHome(ctx, r.Profile, home.Dir(ctx)) {
 			out = append(out, r)
 		}
 	}
@@ -55,7 +55,7 @@ func newSharedRouteAdapters(adapters any, routes []*gateway.ProfileRoute) *Share
 			primary[k] = v
 		}
 	}
-	if m, ok := adapters.(*pydict.Dict[gateway.Platform, gateway.PlatformAdapter]); ok && m != nil {
+	if m, ok := adapters.(*orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]); ok && m != nil {
 		for _, platform := range m.Keys() {
 			adapter, _ := m.Get(platform)
 			primary[string(platform)] = adapter
@@ -78,17 +78,17 @@ func (a *SharedRouteAdapters) Get(ctx context.Context, platform string, target m
 	}
 	key := strings.ToLower(platform)
 	var chatID, threadID *string
-	if pyTruthy(target["chat_id"]) {
-		if c := pyrepr.Str(target["chat_id"]); c != "" {
+	if anyutil.IsTrue(target["chat_id"]) {
+		if c := anyutil.String(target["chat_id"]); c != "" {
 			chatID = &c
 		}
 	}
-	if pyTruthy(target["thread_id"]) {
-		t := pyrepr.Str(target["thread_id"])
+	if anyutil.IsTrue(target["thread_id"]) {
+		t := anyutil.String(target["thread_id"])
 		threadID = &t
 	}
 	for _, r := range a.routes {
-		routePlatform := pyrepr.Str(r.Platform)
+		routePlatform := anyutil.String(r.Platform)
 		if strings.ToLower(routePlatform) != key {
 			continue
 		}

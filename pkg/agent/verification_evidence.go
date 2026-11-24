@@ -16,15 +16,16 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/plugins/verify"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -160,7 +161,7 @@ func (e VerificationEvidence) fields() map[string]any {
 }
 
 // Current UTC time in Python isoformat
-func verifyUTCNow() string { return pydatetime.ISOFormatUTC(verifyLedgerNow()) }
+func verifyUTCNow() string { return verifyLedgerNow().UTC().Format(timeutil.RFC3339Micro) }
 
 // Ledger database file under the active home
 func verifyLedgerPath(ctx context.Context) string {
@@ -263,9 +264,9 @@ func splitShellSegments(command string, posix bool) []shellSegment {
 		var tokens []string
 		var err error
 		if posix {
-			tokens, err = pyshlex.SplitPOSIX(r.raw, false)
+			tokens, err = shellutil.Split(r.raw)
 		} else {
-			tokens, err = pyshlex.SplitNonPOSIX(r.raw)
+			tokens, err = shellutil.SplitRaw(r.raw)
 		}
 		if err != nil {
 			return nil
@@ -331,7 +332,7 @@ func segmentStatus(segments []shellSegment, matchIndex, exitCode int, pipelineSt
 
 // Tokens of a canonical command with leading dot slashes removed, empty when unparseable
 func canonicalTokens(canonical string) []string {
-	split, err := pyshlex.SplitPOSIX(canonical, false)
+	split, err := shellutil.Split(canonical)
 	if err != nil {
 		return nil
 	}
@@ -565,26 +566,26 @@ func isUnderResolved(token, base string) bool {
 	if base == "" {
 		return false
 	}
-	p, err := pypath.PathExpanduser(token)
-	if err != nil || !pypath.IsAbs(p) {
+	p, err := pathutil.ExpandUserPath(token)
+	if err != nil || !filepath.IsAbs(p) {
 		return false
 	}
-	resolved, err := pypath.Resolve(p)
+	resolved, err := pathutil.Resolve(p)
 	if err != nil {
 		return false
 	}
-	b, err := pypath.PathExpanduser(base)
+	b, err := pathutil.ExpandUserPath(base)
 	if err != nil {
 		return false
 	}
-	basePath, err := pypath.Resolve(b)
+	basePath, err := pathutil.Resolve(b)
 	if err != nil {
 		return false
 	}
 	if resolved == basePath {
 		return true
 	}
-	for _, parent := range pypath.PathParents(resolved) {
+	for _, parent := range pathutil.Parents(resolved) {
 		if parent == basePath {
 			return true
 		}
@@ -594,11 +595,11 @@ func isUnderResolved(token, base string) bool {
 
 // Whether a token is an ad hoc verify script by prefix, under the temp dir and outside the repo
 var isTempScriptPath = func(token, root string) (bool, error) {
-	p, err := pypath.PathExpanduser(token)
+	p, err := pathutil.ExpandUserPath(token)
 	if err != nil {
 		return false, nil
 	}
-	name := pypath.PathName(p)
+	name := pathutil.Name(p)
 	prefixed := false
 	for _, prefix := range adHocScriptNamePrefixes {
 		prefixed = prefixed || strings.HasPrefix(name, prefix)
@@ -606,7 +607,7 @@ var isTempScriptPath = func(token, root string) (bool, error) {
 	if !prefixed {
 		return false, nil
 	}
-	tempDir, err := pypath.Gettempdir()
+	tempDir, err := pathutil.TempDir()
 	if err != nil {
 		return false, err
 	}
@@ -628,7 +629,7 @@ func adHocScriptArgs(tokens []string, root string) ([]string, bool, error) {
 	if ok, err := isTempScriptPath(command, root); err != nil || ok {
 		return candidateTokens[1:], ok, err
 	}
-	if pypath.PathName(command) == "env" && len(candidateTokens) > 1 && isInterpreterToken(candidateTokens[1]) {
+	if pathutil.Name(command) == "env" && len(candidateTokens) > 1 && isInterpreterToken(candidateTokens[1]) {
 		candidateTokens, command = candidateTokens[1:], candidateTokens[1]
 	}
 	if isInterpreterToken(command) {
@@ -675,7 +676,7 @@ func summarizeVerifyOutput(output string) string {
 
 // Bounds ledger growth per session root, by age and in total without dropping referenced events
 func pruneOldVerifyEvents(ctx context.Context, conn state.SQLiteConn, sessionID, root string) error {
-	cutoff := pydatetime.ISOFormatUTC(verifyLedgerNow().Add(-maxVerifyEvidenceAgeDays * 24 * time.Hour))
+	cutoff := verifyLedgerNow().Add(-maxVerifyEvidenceAgeDays * 24 * time.Hour).UTC().Format(timeutil.RFC3339Micro)
 	statements := []struct {
 		query string
 		args  []any
@@ -714,7 +715,7 @@ func verifyProjectFacts(cwd string) map[string]any {
 // Workspace root from the facts, else the resolved cwd
 func verifyRootFor(facts map[string]any, cwd string) (string, error) {
 	if root := facts["root"]; pyTruthy(root) {
-		return pyrepr.Str(root), nil
+		return anyutil.String(root), nil
 	}
 	return resolveVerifyCwd(cwd)
 }
@@ -724,7 +725,7 @@ func resolveVerifyCwd(cwd string) (string, error) {
 	if cwd == "" {
 		cwd = "."
 	}
-	return pypath.Resolve(cwd)
+	return pathutil.Resolve(cwd)
 }
 
 // Decoded changed paths JSON, an empty list when it does not decode
@@ -736,7 +737,7 @@ func loadChangedPaths(raw any) any {
 	if !ok {
 		return []any{}
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return []any{}
 	}
@@ -844,12 +845,12 @@ func rememberUnattributedRun(key [2]string, command, at string) {
 func lastUnattributedRun(sessionID, root, since any) string {
 	sid := "default"
 	if pyTruthy(sessionID) {
-		sid = pyrepr.Str(sessionID)
+		sid = anyutil.String(sessionID)
 	}
 	unattributedRuns.Lock()
-	run, ok := unattributedRuns.runs[[2]string{sid, pyrepr.Str(root)}]
+	run, ok := unattributedRuns.runs[[2]string{sid, anyutil.String(root)}]
 	unattributedRuns.Unlock()
-	if !ok || (pyTruthy(since) && pyrepr.Str(since) >= run.at) {
+	if !ok || (pyTruthy(since) && anyutil.String(since) >= run.at) {
 		return ""
 	}
 	return run.command
@@ -860,13 +861,13 @@ func recordVerifyRun(ctx context.Context, env *tools.Env, root, sessionID string
 	if !verifyLedgerEnabled(ctx, env) {
 		return nil, nil
 	}
-	resolved, err := pypath.Resolve(root)
+	resolved, err := pathutil.Resolve(root)
 	if err != nil {
 		return nil, err
 	}
 	workspace := resolved
 	if r := verifyProjectFacts(root)["root"]; pyTruthy(r) {
-		workspace = pyrepr.Str(r)
+		workspace = anyutil.String(r)
 	}
 	if scope != "full" && scope != "targeted" {
 		scope = "full"
@@ -971,7 +972,7 @@ func markWorkspaceEdited(ctx context.Context, env *tools.Env, sessionID, cwd str
 		if err != nil {
 			return err
 		}
-		encoded, err := pyjson.Dumps(merged)
+		encoded, err := jsonutil.Encode(merged)
 		if err != nil {
 			return err
 		}
@@ -995,8 +996,8 @@ func mergeChangedPaths(existing any, changed []string) ([]any, error) {
 	switch v := existing.(type) {
 	case []any:
 		items = append(items, v...)
-	case *pyjson.Object:
-		for _, k := range v.Keys {
+	case *jsonutil.Object:
+		for _, k := range v.Keys() {
 			items = append(items, k)
 		}
 	case string:
@@ -1004,7 +1005,7 @@ func mergeChangedPaths(existing any, changed []string) ([]any, error) {
 			items = append(items, string([]rune{r}))
 		}
 	default:
-		return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("recorded changed paths are %s where a list was expected", errchain.Kind(existing))}
+		return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("recorded changed paths are %s where a list was expected", errchain.Kind(existing))}
 	}
 	for _, p := range changed {
 		items = append(items, p)
@@ -1012,12 +1013,12 @@ func mergeChangedPaths(existing any, changed []string) ([]any, error) {
 	var merged []any
 	for _, item := range items {
 		switch item.(type) {
-		case []any, *pyjson.Object:
-			return nil, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("recorded changed path is %s where text was expected", errchain.Kind(item))}
+		case []any, *jsonutil.Object:
+			return nil, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("recorded changed path is %s where text was expected", errchain.Kind(item))}
 		}
 		seen := false
 		for _, m := range merged {
-			if pyrepr.Equal(m, item) {
+			if anyutil.Equal(m, item) {
 				seen = true
 				break
 			}
@@ -1060,7 +1061,7 @@ func pyOrder(a, b any, op string) (bool, error) {
 		cmp, ok = af.Cmp(bf), true
 	}
 	if !ok {
-		return false, &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("cannot compare %s with %s", errchain.Kind(a), errchain.Kind(b))}
+		return false, &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("cannot compare %s with %s", errchain.Kind(a), errchain.Kind(b))}
 	}
 	if op == ">" {
 		return cmp > 0, nil

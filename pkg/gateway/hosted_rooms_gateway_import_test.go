@@ -7,7 +7,7 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 var hrImportMembers = []any{map[string]any{"member_id": "a", "profile": "default", "handle": "a"}, map[string]any{"member_id": "b", "profile": "default", "handle": "b"}}
@@ -60,7 +60,7 @@ func TestStandaloneRoomsMoveOnceWithHistoryOwnerAndOneDriver(t *testing.T) {
 			users++
 		}
 	}
-	if users != 1 || !pyjson.Equal(kinds[len(kinds)-2:], []any{"authority.lost", "authority.claimed"}) {
+	if users != 1 || !anyutil.Equal(kinds[len(kinds)-2:], []any{"authority.lost", "authority.claimed"}) {
 		t.Fatalf("kinds %v", kinds)
 	}
 	if owner := hrStr(hrRawRow(t, target, "SELECT value FROM state_meta WHERE key=?", "gateway.hosted.owner.v1:room-desk"), "value"); owner != HostOwnerSubject() {

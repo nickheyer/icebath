@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -52,18 +52,18 @@ func openrouterStickyKey(ctx context.Context, sessionID string) string {
 }
 
 // Sticky session key, provider preferences with the speed tier pin, and the pareto router plugin
-func openrouterBuildExtraBody(sessionID string, kw map[string]any) *pyjson.Object {
-	body := pyjson.ObjectOf()
+func openrouterBuildExtraBody(sessionID string, kw map[string]any) *jsonutil.Object {
+	body := jsonutil.ObjectOf()
 	if sticky := openrouterStickyKey(hookCtx(kw), sessionID); sticky != "" {
 		body.Set("session_id", sticky)
 	}
 	model := hookString(kw, "model")
-	prefs, _ := pyjson.AsObject(kw["provider_preferences"])
+	prefs, _ := jsonutil.AsObject(kw["provider_preferences"])
 	if prefs == nil {
-		prefs = pyjson.NewObject()
+		prefs = jsonutil.NewObject()
 	}
-	if pin, ok := openRouterEndpointPins[model]; ok && !(pin.base == model && pyTruthy(prefs.Vals["only"])) {
-		next := prefs.Copy()
+	if pin, ok := openRouterEndpointPins[model]; ok && !(pin.base == model && pyTruthy(prefs.Value("only"))) {
+		next := prefs.Clone()
 		next.Set("only", append([]string(nil), pin.tags...))
 		prefs = next
 	}
@@ -73,15 +73,15 @@ func openrouterBuildExtraBody(sessionID string, kw map[string]any) *pyjson.Objec
 	score, present := kw["openrouter_min_coding_score"]
 	if model == "openrouter/pareto-code" && present && score != nil && score != "" {
 		if f, err := catalogFloat(score); err == nil && f >= 0 && f <= 1 {
-			body.Set("plugins", []any{pyjson.ObjectOf("id", "pareto-router", "min_coding_score", f)})
+			body.Set("plugins", []any{jsonutil.ObjectOf("id", "pareto-router", "min_coding_score", f)})
 		}
 	}
 	return body
 }
 
 // Reasoning passthrough clamped to the catalog, mandatory Anthropic effort as verbosity, Grok cache pin and tier slug rewrite
-func openrouterBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*pyjson.Object, map[string]any) {
-	extraBody, topLevel := pyjson.ObjectOf(), map[string]any{}
+func openrouterBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*jsonutil.Object, map[string]any) {
+	extraBody, topLevel := jsonutil.ObjectOf(), map[string]any{}
 	ctx := hookCtx(kw)
 	model := hookString(kw, "model")
 	if pin, ok := openRouterEndpointPins[model]; ok && pin.base != model {
@@ -100,7 +100,7 @@ func openrouterBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*p
 				extraBody.Set("reasoning", clamped)
 			}
 		default:
-			extraBody.Set("reasoning", pyjson.ObjectOf("enabled", true, "effort", "medium"))
+			extraBody.Set("reasoning", jsonutil.ObjectOf("enabled", true, "effort", "medium"))
 		}
 	}
 	grokConvID := openrouterStickyKey(ctx, hookString(kw, "session_id"))
@@ -114,9 +114,9 @@ func openrouterBuildAPIKwargsExtras(reasoning *Reasoning, kw map[string]any) (*p
 }
 
 // Effort clamped to the catalog levels, nil when a disable meets a reasoning mandatory route
-func openrouterClampReasoningToCatalog(ctx context.Context, cfg *pyjson.Object, model string) *pyjson.Object {
-	effort, _ := cfg.Vals["effort"].(string)
-	disabled := cfg.Vals["enabled"] == false || effort == "none"
+func openrouterClampReasoningToCatalog(ctx context.Context, cfg *jsonutil.Object, model string) *jsonutil.Object {
+	effort, _ := cfg.Value("effort").(string)
+	disabled := cfg.Value("enabled") == false || effort == "none"
 	if effort == "" && !disabled {
 		return cfg
 	}
@@ -135,7 +135,7 @@ func openrouterClampReasoningToCatalog(ctx context.Context, cfg *pyjson.Object, 
 	if clamped != "" && clamped != effort {
 		pkgLog().Debug(fmt.Sprintf("openrouter: clamped reasoning effort %s \u2192 %s for %s (catalog supported_efforts=%s)",
 			pyStringRepr(effort), pyStringRepr(clamped), model, openrouterEffortsRepr(caps.SupportedEfforts)))
-		cfg = cfg.Copy()
+		cfg = cfg.Clone()
 		cfg.Set("effort", clamped)
 	}
 	return cfg

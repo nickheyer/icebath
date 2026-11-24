@@ -20,9 +20,6 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -78,9 +75,9 @@ func standaloneResponseEncoding(resp *http.Response) string {
 
 // Bytes decoded with the response charset, invalid sequences replaced
 func standaloneDecode(resp *http.Response, body []byte) string {
-	text, err := pycodecs.DecodeReplace(body, standaloneResponseEncoding(resp))
+	text, err := charsetutil.DecodeReplace(body, standaloneResponseEncoding(resp))
 	if err != nil {
-		text, _ = pycodecs.DecodeReplace(body, "utf-8")
+		text, _ = charsetutil.DecodeReplace(body, "utf-8")
 	}
 	return text
 }
@@ -106,7 +103,7 @@ func standaloneReadJSONLimited(resp *http.Response, limit int) (map[string]any, 
 	if len(body) == 0 {
 		return map[string]any{}, nil
 	}
-	data, err := pyjson.Loads(standaloneDecode(resp, body))
+	data, err := jsonutil.Decode(standaloneDecode(resp, body))
 	if err != nil {
 		return nil, err
 	}
@@ -187,7 +184,7 @@ func multipartBody(payload any, files map[string]string, order []string) (string
 	buf := &bytes.Buffer{}
 	w := multipart.NewWriter(buf)
 	if payload != nil {
-		text, err := pyjson.Dumps(payload)
+		text, err := jsonutil.Encode(payload)
 		if err != nil {
 			return "", nil, err
 		}
@@ -238,7 +235,7 @@ func standaloneMediaFiles(raw any) [][2]any {
 	case []any:
 		for _, item := range v {
 			if pair, ok := item.([]any); ok && len(pair) == 2 {
-				out = append(out, [2]any{pyrepr.Str(pair[0]), pair[1]})
+				out = append(out, [2]any{anyutil.String(pair[0]), pair[1]})
 			}
 		}
 	}
@@ -253,20 +250,20 @@ func exists(path string) bool {
 // Sends through the Discord REST API without a live gateway adapter, forum channels getting a thread post
 func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any, error) {
 	pconfig, _ := kwargs["pconfig"].(*gateway.PlatformConfig)
-	chatID := pyrepr.Str(kwargs["chat_id"])
+	chatID := anyutil.String(kwargs["chat_id"])
 	message, _ := kwargs["message"].(string)
 	threadID := ""
 	if v := kwargs["thread_id"]; v != nil {
-		threadID = pyrepr.Str(v)
+		threadID = anyutil.String(v)
 	}
 	caption := ""
 	if v := kwargs["caption"]; v != nil {
-		caption = pyrepr.Str(v)
+		caption = anyutil.String(v)
 	}
 	mediaFiles := standaloneMediaFiles(kwargs["media_files"])
 	token := ""
 	if pconfig != nil && pconfig.Token != nil {
-		token = strings.TrimSpace(pyrepr.Str(pconfig.Token))
+		token = strings.TrimSpace(anyutil.String(pconfig.Token))
 	}
 	if token == "" {
 		secret, _ := gateway.GetScopedSecret(ctx, "DISCORD_BOT_TOKEN", "", false)
@@ -455,8 +452,8 @@ func standaloneSendWithToken(ctx context.Context, proxyURL, token, chatID, messa
 				return err
 			}
 			if errPayload != nil {
-				warning := gateway.SendError(fmt.Sprintf("Failed to send media %s: %s", path, pyrepr.Str(errPayload["error"])))["error"]
-				pkgLog().Error(pyrepr.Str(warning))
+				warning := gateway.SendError(fmt.Sprintf("Failed to send media %s: %s", path, anyutil.String(errPayload["error"])))["error"]
+				pkgLog().Error(anyutil.String(warning))
 				warnings = append(warnings, warning)
 				return nil
 			}
@@ -465,7 +462,7 @@ func standaloneSendWithToken(ctx context.Context, proxyURL, token, chatID, messa
 		}()
 		if mediaErr != nil {
 			warning := gateway.SendError(fmt.Sprintf("Failed to send media %s: %s", path, gateway.ProxySafeErrorText(mediaErr, proxyURL)))["error"]
-			pkgLog().Error(pyrepr.Str(warning))
+			pkgLog().Error(anyutil.String(warning))
 			warnings = append(warnings, warning)
 		}
 	}

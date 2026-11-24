@@ -4,7 +4,7 @@ import (
 	"os"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // WorkerDelegationStore is the worker's runtime session store whose durable outbox carries ledger writes to the owner
@@ -75,7 +75,7 @@ func (l *WorkerDelegationLedger) Dispatch(record map[string]any) (any, error) {
 		return nil, NewWorkerPersistenceError("permission_denied")
 	}
 	for _, key := range asyncRoutingKeys {
-		if pyrepr.Truthy(record[key]) {
+		if anyutil.IsTrue(record[key]) {
 			return nil, NewWorkerPersistenceError("unsupported_producer")
 		}
 	}

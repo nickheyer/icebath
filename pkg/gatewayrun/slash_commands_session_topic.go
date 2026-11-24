@@ -6,9 +6,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Optional bool of a capability flag, nil unless the flag is a bool
@@ -54,7 +54,7 @@ func (r *GatewayRunner) handleTopicCommand(ctx context.Context, event *gateway.M
 		return r.restoreTelegramTopicSession(ctx, event, args)
 	}
 	capabilities := r.getTelegramTopicCapabilities(ctx, source)
-	if pyrepr.Truthy(capabilities["checked"]) {
+	if anyutil.IsTrue(capabilities["checked"]) {
 		blockedKey := ""
 		if capabilityFalse(capabilities["has_topics_enabled"]) {
 			blockedKey = "gateway.topic.topics_disabled"
@@ -75,13 +75,13 @@ func (r *GatewayRunner) handleTopicCommand(ctx context.Context, event *gateway.M
 			AllowsUsersToCreateTopics: capabilityFlag(capabilities["allows_users_to_create_topics"])})
 	}); err != nil {
 		pkgLog().Error("Failed to enable Telegram topic mode", "exc_info", err)
-		return i18n.T(ctx, "gateway.topic.enable_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.topic.enable_failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	if sattr(source.ThreadID) == "" {
 		r.ensureTelegramSystemTopic(ctx, source)
 		return r.telegramTopicRootStatusMessage(ctx, source), nil
 	}
-	binding, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) (*pyjson.Object, error) {
+	binding, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) (*jsonutil.Object, error) {
 		return d.GetTelegramTopicBinding(ctx, source.ChatID, *source.ThreadID, profileName)
 	})
 	if err != nil {

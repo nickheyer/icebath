@@ -9,9 +9,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner whose session runtime resolves to no model and an empty runtime
@@ -72,14 +72,14 @@ func TestLiteralAliasKeySurvivesOwnerRestartAndStaysInProfile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	prepared := pyjson.ObjectOf("snapshot", pyjson.ObjectOf("receipt", pyjson.ObjectOf("session_id", "sid", "policy", policy.AsDict())))
+	prepared := jsonutil.ObjectOf("snapshot", jsonutil.ObjectOf("receipt", jsonutil.ObjectOf("session_id", "sid", "policy", policy.AsDict())))
 	switchTo("far", farURL)
-	result, err := gateway.PrepareModel(ctx, first, &gateway.LiveSession{Route: "r"}, pyjson.ObjectOf("model", "far"), prepared)
+	result, err := gateway.PrepareModel(ctx, first, &gateway.LiveSession{Route: "r"}, jsonutil.ObjectOf("model", "far"), prepared)
 	if err != nil {
 		t.Fatal(err)
 	}
 	committed, _ := result.Get("policy")
-	text, err := pyjson.Dumps(committed)
+	text, err := jsonutil.Encode(committed)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,8 +98,8 @@ func TestLiteralAliasKeySurvivesOwnerRestartAndStaysInProfile(t *testing.T) {
 		t.Fatalf("api key after restart %v", got)
 	}
 	switchTo("back", oldURL)
-	again, err := gateway.PrepareModel(ctx, restarted, &gateway.LiveSession{Route: "r"}, pyjson.ObjectOf("model", "back"),
-		pyjson.ObjectOf("snapshot", pyjson.ObjectOf("receipt", pyjson.ObjectOf("session_id", "sid", "policy", committed))))
+	again, err := gateway.PrepareModel(ctx, restarted, &gateway.LiveSession{Route: "r"}, jsonutil.ObjectOf("model", "back"),
+		jsonutil.ObjectOf("snapshot", jsonutil.ObjectOf("receipt", jsonutil.ObjectOf("session_id", "sid", "policy", committed))))
 	if err != nil {
 		t.Fatal(err)
 	}

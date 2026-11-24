@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Optional reply target, nil for an empty one
@@ -112,7 +112,7 @@ func (a *RelayAdapter) sendForPlatform(ctx context.Context, platform, chatID, co
 	if sfpMetadata == nil {
 		sfpMetadata = map[string]any{}
 	}
-	interim := pyrepr.Truthy(sfpMetadata["_interim_send"])
+	interim := anyutil.IsTrue(sfpMetadata["_interim_send"])
 	delete(sfpMetadata, "_interim_send")
 	seal, err := a.absorbIntoOpenDraft(ctx, chatID, content, sfpMetadata, interim)
 	if err != nil {
@@ -130,7 +130,7 @@ func (a *RelayAdapter) sendForPlatform(ctx context.Context, platform, chatID, co
 	if err != nil {
 		return SendResult{}, err
 	}
-	if !pyrepr.Truthy(result["success"]) && IsEgressDecline(result) {
+	if !anyutil.IsTrue(result["success"]) && IsEgressDecline(result) {
 		LogDecline("send", chatID, result)
 	}
 	sr := relaySendResult(result)
@@ -195,7 +195,7 @@ func (a *RelayAdapter) Send(ctx context.Context, chatID, content, replyTo string
 	}
 	explicitPlatform := sendMetadata["_relay_logical_platform"]
 	delete(sendMetadata, "_relay_logical_platform")
-	interim := pyrepr.Truthy(sendMetadata["_interim_send"])
+	interim := anyutil.IsTrue(sendMetadata["_interim_send"])
 	delete(sendMetadata, "_interim_send")
 	seal, err := a.absorbIntoOpenDraft(ctx, chatID, content, sendMetadata, interim)
 	if err != nil {
@@ -204,12 +204,12 @@ func (a *RelayAdapter) Send(ctx context.Context, chatID, content, replyTo string
 	if seal != nil {
 		return *seal, nil
 	}
-	if pyrepr.Truthy(explicitPlatform) {
+	if anyutil.IsTrue(explicitPlatform) {
 		var md map[string]any
 		if len(sendMetadata) > 0 {
 			md = sendMetadata
 		}
-		return a.sendForPlatform(ctx, pyrepr.Str(explicitPlatform), chatID, content, relayOptReply(replyTo), md)
+		return a.sendForPlatform(ctx, anyutil.String(explicitPlatform), chatID, content, relayOptReply(replyTo), md)
 	}
 	if a.transport == nil {
 		return SendResult{Success: false, Error: "no transport"}, nil
@@ -220,9 +220,9 @@ func (a *RelayAdapter) Send(ctx context.Context, chatID, content, replyTo string
 	if err != nil {
 		return SendResult{}, err
 	}
-	if thread, name := result["thread_id"], result["auto_thread_name"]; pyrepr.Truthy(thread) && pyrepr.Truthy(name) {
+	if thread, name := result["thread_id"], result["auto_thread_name"]; anyutil.IsTrue(thread) && anyutil.IsTrue(name) {
 		a.mu.Lock()
-		a.autoThreadByChat.set(chatID, [2]string{pyrepr.Str(thread), pyrepr.Str(name)})
+		a.autoThreadByChat.set(chatID, [2]string{anyutil.String(thread), anyutil.String(name)})
 		a.autoThreadByChat.evict(256)
 		a.mu.Unlock()
 	}
@@ -289,7 +289,7 @@ func (a *RelayAdapter) resolveReplyToForSend(chatID string, replyTo *string, met
 	a.mu.Lock()
 	platform, chatType := a.platformByChat[chatID], a.chatTypeByChat[chatID]
 	a.mu.Unlock()
-	if platform != relaySlack || chatType != "dm" || pyrepr.Truthy(metadata["thread_id"]) || pyrepr.Truthy(metadata["thread_ts"]) {
+	if platform != relaySlack || chatType != "dm" || anyutil.IsTrue(metadata["thread_id"]) || anyutil.IsTrue(metadata["thread_ts"]) {
 		return replyTo
 	}
 	if a.effectiveReplyInThread() {
@@ -307,7 +307,7 @@ func (a *RelayAdapter) applySlackThreadAnchor(chatID string, replyTo *string, me
 	a.mu.Lock()
 	platform := a.platformByChat[chatID]
 	a.mu.Unlock()
-	if effective != nil && platform == relaySlack && !(pyrepr.Truthy(metadata["thread_id"]) || pyrepr.Truthy(metadata["thread_ts"])) {
+	if effective != nil && platform == relaySlack && !(anyutil.IsTrue(metadata["thread_id"]) || anyutil.IsTrue(metadata["thread_ts"])) {
 		metadata["thread_id"] = *effective
 	}
 	return effective
@@ -329,7 +329,7 @@ func (a *RelayAdapter) withStatusThreadAnchor(chatID string, metadata map[string
 	a.mu.Lock()
 	platform, chatType, latest := a.platformByChat[chatID], a.chatTypeByChat[chatID], a.lastInboundTSByChat[chatID]
 	a.mu.Unlock()
-	if !(pyrepr.Truthy(md["thread_id"]) || pyrepr.Truthy(md["thread_ts"])) && platform == relaySlack && chatType == "dm" {
+	if !(anyutil.IsTrue(md["thread_id"]) || anyutil.IsTrue(md["thread_ts"])) && platform == relaySlack && chatType == "dm" {
 		if anchor == "" {
 			anchor = latest
 		}
@@ -360,7 +360,7 @@ func (a *RelayAdapter) EditMessageWithMetadata(ctx context.Context, chatID, mess
 	if err != nil {
 		return SendResult{}, err
 	}
-	return SendResult{Success: pyrepr.Truthy(result["success"]), MessageID: pyrepr.Or(result["message_id"], messageID),
+	return SendResult{Success: anyutil.IsTrue(result["success"]), MessageID: anyutil.Or(result["message_id"], messageID),
 		Error: result["error"], RawResponse: result}, nil
 }
 
@@ -381,7 +381,7 @@ func (a *RelayAdapter) DeleteMessage(ctx context.Context, chatID, messageID stri
 		pkgLog().Debug("relay delete_message failed", "exc_info", err)
 		return false, nil
 	}
-	return pyrepr.Truthy(result["success"]), nil
+	return anyutil.IsTrue(result["success"]), nil
 }
 
 // Egresses one typing frame carrying the chat's live status phrase when one is set
@@ -445,7 +445,7 @@ func (a *RelayAdapter) SendFollowUp(ctx context.Context, sessionKey, kind, conte
 	if followUpMetadata == nil {
 		followUpMetadata = map[string]any{}
 	}
-	if !pyrepr.Truthy(followUpMetadata["profile"]) {
+	if !anyutil.IsTrue(followUpMetadata["profile"]) {
 		if profile := relayProfileFromSessionKey(sessionKey); profile != nil && *profile != "" {
 			followUpMetadata["profile"] = *profile
 		}
@@ -455,7 +455,7 @@ func (a *RelayAdapter) SendFollowUp(ctx context.Context, sessionKey, kind, conte
 	if err != nil {
 		return SendResult{}, err
 	}
-	if !pyrepr.Truthy(result["success"]) && IsEgressDecline(result) {
+	if !anyutil.IsTrue(result["success"]) && IsEgressDecline(result) {
 		LogDecline("follow_up", sessionKey, result)
 	}
 	sr := relaySendResult(result)
@@ -479,7 +479,7 @@ func (a *RelayAdapter) PrefersFreshFinalStreaming(content string, metadata map[s
 	if platform == nil {
 		platform = a.Descriptor().Platform
 	}
-	hints := a.slackUnfurlHints(pyrepr.Str(pyrepr.Or(platform, "")))
+	hints := a.slackUnfurlHints(anyutil.String(anyutil.Or(platform, "")))
 	forced := false
 	for _, v := range hints {
 		forced = forced || v

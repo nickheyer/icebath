@@ -17,11 +17,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const CatalogSidecar = ".icebath-catalog.json"
@@ -112,13 +112,13 @@ func writeCatalogSidecarRecord(target string, catalog map[string]any, sha string
 	if tier == "" {
 		tier = "community"
 	}
-	doc := pyjson.NewObject()
+	doc := jsonutil.NewObject()
 	doc.Set("catalog_name", catalog["name"])
 	doc.Set("repo", catalog["repo"])
 	doc.Set("sha", sha)
 	doc.Set("tier", tier)
 	doc.Set("installed_at", time.Now().UTC().Format("2006-01-02T15:04:05Z"))
-	text, err := pyjson.Dumps(doc, pyjson.Indent(2))
+	text, err := jsonutil.Encode(doc, jsonutil.Indent(2))
 	if err == nil {
 		err = os.WriteFile(filepath.Join(target, CatalogSidecar), []byte(text+"\n"), 0o666)
 	}
@@ -156,16 +156,16 @@ func adoptLegacySidecar(ctx context.Context, h, pluginDir string, record map[str
 	if err != nil || !utf8.Valid(stripBOM(raw)) {
 		return nil, nil
 	}
-	value, err := pyjson.Loads(string(stripBOM(raw)))
+	value, err := jsonutil.Decode(string(stripBOM(raw)))
 	if err != nil {
 		return nil, nil
 	}
-	data, ok := pyjson.Plain(value).(map[string]any)
+	data, ok := jsonutil.Plain(value).(map[string]any)
 	if !ok || !jsonTruthy(data["catalog_name"]) {
 		return nil, nil
 	}
 	sha := strings.ToLower(pyStrOr(data["sha"]))
-	entry := GetLiveCatalogEntry(ctx, pyrepr.Str(data["catalog_name"]))
+	entry := GetLiveCatalogEntry(ctx, anyutil.String(data["catalog_name"]))
 	if pinned, _ := record["pinned"].(bool); entry == nil || !pinned || record["revision"] != sha {
 		return nil, nil
 	}
@@ -200,7 +200,7 @@ func pyStrOr(v any) string {
 	if !jsonTruthy(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Catalog provenance of an installed plugin from the installer owned record, nil for a non catalog install
@@ -223,7 +223,7 @@ func readCatalogSidecar(h, pluginDir string) (map[string]any, error) {
 			if tier == "" {
 				tier = "community"
 			}
-			block, err = writeCatalogBlock(ctx, h, pluginDir, map[string]any{"name": pyrepr.Str(legacy), "repo": repo, "tier": tier, "pin": sha, "sha": sha})
+			block, err = writeCatalogBlock(ctx, h, pluginDir, map[string]any{"name": anyutil.String(legacy), "repo": repo, "tier": tier, "pin": sha, "sha": sha})
 		} else if block, err = adoptLegacySidecar(ctx, h, pluginDir, record); err == nil && block == nil {
 			block, err = adoptHandoffInstall(ctx, h, pluginDir, record)
 		}
@@ -292,7 +292,7 @@ func loginBackendProvenanceErrorRule(h string, m *Manifest, rule string) string 
 		tier = "community"
 	}
 	if !LoginBackendTiers[tier] {
-		return fmt.Sprintf("%s; catalog entry '%s' is tier %s", rule, pyrepr.Str(block["name"]), tier)
+		return fmt.Sprintf("%s; catalog entry '%s' is tier %s", rule, anyutil.String(block["name"]), tier)
 	}
 	if !jsonTruthy(block["pin"]) {
 		return rule + "; this install is not at the catalog's reviewed pin (installed with --ref)"
@@ -332,7 +332,7 @@ func removedAnnotation(h, name, dir string, removedEntries []RemovedEntry) (stri
 		if !jsonTruthy(candidate) {
 			continue
 		}
-		if removed := MatchRemoved(pyrepr.Str(candidate), removedEntries); removed != nil {
+		if removed := MatchRemoved(anyutil.String(candidate), removedEntries); removed != nil {
 			if removed.Reason == "" {
 				return "no reason recorded", true, nil
 			}
@@ -534,7 +534,7 @@ func stashLocalFiles(target string, rels []string, stash string) error {
 		if err := os.MkdirAll(filepath.Dir(dst), 0o777); err != nil {
 			return err
 		}
-		if err := pyfs.Copy2(src, dst); err != nil {
+		if err := fsutil.CopyFile(src, dst); err != nil {
 			return err
 		}
 	}
@@ -674,7 +674,7 @@ func carryUserFiles(old, newTree string, local []string, gitTree bool) ([]string
 					return err
 				}
 			}
-			if err := pyfs.Copy2(src, dst); err != nil {
+			if err := fsutil.CopyFile(src, dst); err != nil {
 				return err
 			}
 			carried = append(carried, rel)
@@ -725,7 +725,7 @@ func pluginSurface(manifest map[string]any) (map[string]map[string]bool, error) 
 			for _, x := range raw {
 				switch x.(type) {
 				case string, bool, int, int64, float64:
-					out[pyrepr.Str(x)] = true
+					out[anyutil.String(x)] = true
 				}
 			}
 			return out
@@ -789,7 +789,7 @@ func (e *RepinConsentRequired) Error() string {
 // Re-pins a catalog install to the current catalog sha through the pm update transaction, never a pull
 func repinCatalogPlugin(ctx context.Context, target string, sidecar map[string]any, interactive bool, consent func(map[string][]string) bool) (*RepinResult, error) {
 	h := home.Dir(ctx)
-	catalogName := pyrepr.Str(sidecar["catalog_name"])
+	catalogName := anyutil.String(sidecar["catalog_name"])
 	entry := catalogEntryFor(ctx, catalogName)
 	if entry == nil {
 		return nil, &PluginOperationError{Msg: fmt.Sprintf("Plugin '%s' is no longer in the catalog — it may have been removed. "+
@@ -904,7 +904,7 @@ func previewRepin(ctx context.Context, h, dir string, entry *PluginCatalogEntry,
 	if err != nil {
 		return err
 	}
-	defer pyfs.CloseTempDir(previewTmp, &err)
+	defer fsutil.CleanupTempDir(previewTmp, &err)
 	previewRoot := filepath.Join(previewTmp, "plugin")
 	gitURL, subdir, err := resolveGitURL(entry.InstallIdentifier())
 	if err != nil {
@@ -1020,7 +1020,7 @@ func pinLabel(entry *PluginCatalogEntry) string {
 }
 
 func renderEntries(entries []*PluginCatalogEntry, console *Console) {
-	table := &pyrich.Table{Title: "Icebath Plugin Catalog (curated)", Columns: []pyrich.Column{{Header: "Name", Style: "bold"},
+	table := &consoleutil.Table{Title: "Icebath Plugin Catalog (curated)", Columns: []consoleutil.Column{{Header: "Name", Style: "bold"},
 		{Header: "Category"}, {Header: "Tier"}, {Header: "Description"}, {Header: "Pinned", Style: "dim"}, {Header: "Capabilities", Style: "dim"}}}
 	rank := map[string]int{}
 	for i, t := range CatalogTiers {
@@ -1066,14 +1066,14 @@ func renderEntries(entries []*PluginCatalogEntry, console *Console) {
 }
 
 // Ordered catalog entry mapping in the to_dict key order
-func entryObject(e *PluginCatalogEntry) *pyjson.Object {
+func entryObject(e *PluginCatalogEntry) *jsonutil.Object {
 	d := e.ToDict()
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	for _, k := range []string{"name", "repo", "sha", "description", "maintainer", "tier", "category", "requires_icebath", "subdir",
 		"docs_url", "version", "image", "screenshots", "readme", "platforms", "title", "onboarding"} {
 		o.Set(k, d[k])
 	}
-	caps := pyjson.NewObject()
+	caps := jsonutil.NewObject()
 	for _, k := range []string{"provides_tools", "provides_hooks", "provides_middleware", "requires_env"} {
 		caps.Set(k, d["capabilities"].(map[string]any)[k])
 	}
@@ -1096,10 +1096,10 @@ func CmdSearch(ctx context.Context, term string, jsonOutput bool, out io.Writer)
 			}
 			results = append(results, o)
 		}
-		doc := pyjson.NewObject()
+		doc := jsonutil.NewObject()
 		doc.Set("query", term)
 		doc.Set("results", results)
-		text, err := pyjson.Dumps(doc, pyjson.Indent(2))
+		text, err := jsonutil.Encode(doc, jsonutil.Indent(2))
 		if err != nil {
 			return err
 		}
@@ -1238,8 +1238,7 @@ func CmdValidate(ctx context.Context, path string, asJSON, installDeps bool, out
 			if escapesExceptException(ctx, err) {
 				return err
 			}
-			_, text := exceptionClassAndText(err)
-			fmt.Fprintf(errOut, "dependency preparation failed: %s\n", text)
+			fmt.Fprintf(errOut, "dependency preparation failed: %s\n", errchain.OSText(err))
 		}
 		probe = prepared
 	}
@@ -1248,7 +1247,7 @@ func CmdValidate(ctx context.Context, path string, asJSON, installDeps bool, out
 		return err
 	}
 	if asJSON {
-		text, err := pyjson.Dumps(report.ToDict(), pyjson.Indent(2))
+		text, err := jsonutil.Encode(report.ToDict(), jsonutil.Indent(2))
 		if err != nil {
 			return err
 		}
@@ -1292,7 +1291,7 @@ func CatalogRowFields(h, dir string, pins, versions map[string]string) (map[stri
 		tier = "community"
 	}
 	row := map[string]any{"catalog_name": sidecar["catalog_name"], "catalog_tier": tier, "installed_sha": installedSha}
-	name := pyrepr.Str(sidecar["catalog_name"])
+	name := anyutil.String(sidecar["catalog_name"])
 	if pin := pins[name]; pin != "" {
 		row["catalog_sha"] = pin
 		row["catalog_version"] = nil

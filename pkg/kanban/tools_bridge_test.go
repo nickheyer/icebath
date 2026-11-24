@@ -13,9 +13,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Agent recording every operator note steered into it
@@ -312,7 +312,7 @@ func TestDelegatedChildContextSuppressesEnvGatedKanbanTools(t *testing.T) {
 	names := map[string]bool{}
 	var kanban []string
 	for _, s := range schema {
-		fn, isFn := pyjson.Dict(s["function"])
+		fn, isFn := jsonutil.AsMap(s["function"])
 		if !isFn {
 			continue
 		}
@@ -389,7 +389,7 @@ func TestGoalGateMessagesFillReasonAndTaskPerVerdict(t *testing.T) {
 		return rejected.payload
 	}
 	want := func(message string) string {
-		return tools.ToolResult(pyjson.ObjectOf("error", message))
+		return tools.ToolResult(jsonutil.ObjectOf("error", message))
 	}
 	if got := payload("kanban_request_review"); got != want("Goal review handoff rejected: judge ruled the goal unachievable — no {tid} here. Record the block with kanban_block instead of requesting review.") {
 		t.Fatal(got)

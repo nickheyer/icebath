@@ -19,8 +19,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/messagetools"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -180,7 +180,7 @@ func teamsPipelineCommand(args any) error {
 // Runs the named action returning 2 for usage errors, 1 for missing Graph setup and 0 otherwise
 func runTeamsPipeline(ctx context.Context, ns map[string]any) (int, error) {
 	action := ns["teams_pipeline_action"]
-	if !pyrepr.Truthy(action) {
+	if !anyutil.IsTrue(action) {
 		names := make([]string, len(teamsSubcommands))
 		for i, s := range teamsSubcommands {
 			names[i] = s.name
@@ -190,7 +190,7 @@ func runTeamsPipeline(ctx context.Context, ns map[string]any) (int, error) {
 	}
 	sub := lookupTeamsAction(action)
 	if sub == nil {
-		fmt.Fprintf(cliOut, "Unknown teams-pipeline action: %s\n", pyrepr.Str(action))
+		fmt.Fprintf(cliOut, "Unknown teams-pipeline action: %s\n", anyutil.String(action))
 		return 2, nil
 	}
 	for _, name := range sub.required {
@@ -232,16 +232,16 @@ func lookupTeamsAction(action any) *cliSubcommand {
 // Stripped string form of an optional argument, empty when absent or falsy
 func textArg(ns map[string]any, name string) string {
 	v := ns[name]
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Integer argument with the default replacing an absent or falsy value
 func intArg(ns map[string]any, name string, def int) (int, error) {
 	v, ok := ns[name]
-	if !ok || !pyrepr.Truthy(v) {
+	if !ok || !anyutil.IsTrue(v) {
 		return def, nil
 	}
 	switch n := v.(type) {
@@ -269,14 +269,14 @@ func intArg(ns map[string]any, name string, def int) (int, error) {
 func openStore(ctx context.Context, ns map[string]any) (*TeamsPipelineStore, error) {
 	path := ""
 	if v := ns["store_path"]; v != nil {
-		path = pyrepr.Str(v)
+		path = anyutil.String(v)
 	}
 	return NewTeamsPipelineStore(resolveTeamsPipelineStorePath(ctx, path))
 }
 
 // Prints the payload as sorted two space indented JSON
 func printJSON(payload any) error {
-	s, err := pyjson.Dumps(payload, pyjson.Indent(2), pyjson.SortKeys(true))
+	s, err := jsonutil.Encode(payload, jsonutil.Indent(2), jsonutil.SortKeys())
 	if err != nil {
 		return err
 	}
@@ -305,10 +305,10 @@ func printRecords(noun, emptyMessage string, records []cliRecord) {
 	}
 	fmt.Fprintf(cliOut, "\n%d %s:\n\n", len(records), noun)
 	for _, r := range records {
-		fmt.Fprintf(cliOut, "  \u25c6 %s\n", pyrepr.Str(r.title))
+		fmt.Fprintf(cliOut, "  \u25c6 %s\n", anyutil.String(r.title))
 		for _, f := range r.fields {
-			if f.required || pyrepr.Truthy(f.value) {
-				fmt.Fprintf(cliOut, "    %s: %s\n", f.label, pyrepr.Str(f.value))
+			if f.required || anyutil.IsTrue(f.value) {
+				fmt.Fprintf(cliOut, "    %s: %s\n", f.label, anyutil.String(f.value))
 			}
 		}
 		fmt.Fprintln(cliOut)
@@ -344,18 +344,18 @@ func defaultChangeTypeForResource(resource string) string {
 }
 
 // Job copy whose summary transcript is cut to a 240 character preview, an empty summary becoming null
-func compactJob(job *pyjson.Object) (*pyjson.Object, error) {
-	payload := job.Copy()
-	summary := pyjson.NewObject()
-	if raw := get(payload, "summary_payload"); pyrepr.Truthy(raw) {
+func compactJob(job *jsonutil.Object) (*jsonutil.Object, error) {
+	payload := job.Clone()
+	summary := jsonutil.NewObject()
+	if raw := get(payload, "summary_payload"); anyutil.IsTrue(raw) {
 		m, err := mapping(raw)
 		if err != nil {
 			return nil, err
 		}
-		summary = m.Copy()
+		summary = m.Clone()
 	}
-	if transcript, _ := summary.Pop("transcript_text"); pyrepr.Truthy(transcript) {
-		summary.Set("transcript_preview", textutil.First(pyrepr.Str(transcript), 240))
+	if transcript, _ := summary.Take("transcript_text"); anyutil.IsTrue(transcript) {
+		summary.Set("transcript_preview", textutil.First(anyutil.String(transcript), 240))
 	}
 	if summary.Len() > 0 {
 		payload.Set("summary_payload", summary)
@@ -366,9 +366,9 @@ func compactJob(job *pyjson.Object) (*pyjson.Object, error) {
 }
 
 // Ordered dict view of a JSON mapping value, a type error for anything else
-func mapping(v any) (*pyjson.Object, error) {
+func mapping(v any) (*jsonutil.Object, error) {
 	switch m := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return m, nil
 	case map[string]any:
 		keys := make([]string, 0, len(m))
@@ -376,7 +376,7 @@ func mapping(v any) (*pyjson.Object, error) {
 			keys = append(keys, k)
 		}
 		sort.Strings(keys)
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		for _, k := range keys {
 			o.Set(k, m[k])
 		}
@@ -397,7 +397,7 @@ func attrGet(v any, key string) (any, error) {
 // First truthy value or the last one
 func orValue(vals ...any) any {
 	for _, v := range vals[:len(vals)-1] {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			return v
 		}
 	}
@@ -417,7 +417,7 @@ func cmdValidate(ctx context.Context, ns map[string]any) error {
 	}
 	webhook := gc.Platforms[gateway.PlatformMSGraphWebhook]
 	teams := gc.Platforms[gateway.Platform("teams")]
-	graph := pyjson.NewObject()
+	graph := jsonutil.NewObject()
 	graphComplete := true
 	for _, key := range []string{"tenant_id", "client_id", "client_secret"} {
 		set := os.Getenv("MSGRAPH_"+strings.ToUpper(key)) != ""
@@ -433,7 +433,7 @@ func cmdValidate(ctx context.Context, ns map[string]any) error {
 		}
 	}
 	var teamsMode any
-	if mode := strings.TrimSpace(pyrepr.Str(orValue(teamsExtra["delivery_mode"], ""))); mode != "" {
+	if mode := strings.TrimSpace(anyutil.String(orValue(teamsExtra["delivery_mode"], ""))); mode != "" {
 		teamsMode = mode
 	}
 	if !graphComplete {
@@ -446,17 +446,17 @@ func cmdValidate(ctx context.Context, ns map[string]any) error {
 	case !teamsEnabled:
 		warnings = append(warnings, "Teams outbound delivery is disabled.")
 	case teamsMode == "incoming_webhook":
-		if !pyrepr.Truthy(teamsExtra["incoming_webhook_url"]) {
+		if !anyutil.IsTrue(teamsExtra["incoming_webhook_url"]) {
 			issues = append(issues, "TEAMS_INCOMING_WEBHOOK_URL is required for incoming_webhook mode.")
 		}
 	case teamsMode == "graph":
-		if !pyrepr.Truthy(teams.Token) && !pyrepr.Truthy(teamsExtra["access_token"]) && !graphComplete {
+		if !anyutil.IsTrue(teams.Token) && !anyutil.IsTrue(teamsExtra["access_token"]) && !graphComplete {
 			issues = append(issues, "TEAMS_GRAPH_ACCESS_TOKEN or complete MSGRAPH_* app credentials is required for graph delivery mode.")
 		}
-		if !pyrepr.Truthy(teamsExtra["team_id"]) {
+		if !anyutil.IsTrue(teamsExtra["team_id"]) {
 			issues = append(issues, "TEAMS_TEAM_ID is required for graph delivery mode.")
 		}
-		if !pyrepr.Truthy(teamsExtra["channel_id"]) && !pyrepr.Truthy(teamsExtra["chat_id"]) && teams.HomeChannel == nil {
+		if !anyutil.IsTrue(teamsExtra["channel_id"]) && !anyutil.IsTrue(teamsExtra["chat_id"]) && teams.HomeChannel == nil {
 			issues = append(issues, "TEAMS_CHANNEL_ID is required for graph delivery mode.")
 		}
 	default:
@@ -475,8 +475,8 @@ func cmdList(ctx context.Context, ns map[string]any) error {
 	}
 	all := store.ListJobs()
 	jobs := make([]any, 0, all.Len())
-	for _, k := range all.Keys {
-		jobs = append(jobs, all.Vals[k])
+	for _, k := range all.Keys() {
+		jobs = append(jobs, all.Value(k))
 	}
 	if status := strings.ToLower(textArg(ns, "status")); status != "" {
 		kept := jobs[:0:0]
@@ -485,7 +485,7 @@ func cmdList(ctx context.Context, ns map[string]any) error {
 			if err != nil {
 				return err
 			}
-			if strings.ToLower(pyrepr.Str(orValue(s, ""))) == status {
+			if strings.ToLower(anyutil.String(orValue(s, ""))) == status {
 				kept = append(kept, job)
 			}
 		}
@@ -493,11 +493,11 @@ func cmdList(ctx context.Context, ns map[string]any) error {
 	}
 	keys := make([]string, len(jobs))
 	for i, job := range jobs {
-		u, err := attrGet(orValue(job, pyjson.NewObject()), "updated_at")
+		u, err := attrGet(orValue(job, jsonutil.NewObject()), "updated_at")
 		if err != nil {
 			return err
 		}
-		keys[i] = pyrepr.Str(orValue(u, ""))
+		keys[i] = anyutil.String(orValue(u, ""))
 	}
 	idx := make([]int, len(jobs))
 	for i := range idx {
@@ -518,7 +518,7 @@ func cmdList(ctx context.Context, ns map[string]any) error {
 		if err != nil {
 			return fmt.Errorf("pipeline job is %s where a mapping was expected", errchain.Kind(jobs[i]))
 		}
-		ref, err := attrGet(orValue(get(job, "meeting_ref"), pyjson.NewObject()), "meeting_id")
+		ref, err := attrGet(orValue(get(job, "meeting_ref"), jsonutil.NewObject()), "meeting_id")
 		if err != nil {
 			return err
 		}
@@ -726,13 +726,13 @@ func cmdRenewSubscription(ctx context.Context, ns map[string]any) error {
 		return err
 	}
 	merged := obj("id", subscriptionID)
-	if pyrepr.Truthy(result) {
+	if anyutil.IsTrue(result) {
 		m, err := mapping(result)
 		if err != nil {
 			return fmt.Errorf("subscription result is %s where a mapping was expected", errchain.Kind(result))
 		}
-		for _, k := range m.Keys {
-			merged.Set(k, m.Vals[k])
+		for _, k := range m.Keys() {
+			merged.Set(k, m.Value(k))
 		}
 	}
 	merged.Set("expirationDateTime", expiration)
@@ -785,7 +785,7 @@ func cmdMaintainSubscriptions(ctx context.Context, ns map[string]any) error {
 	if cs := textArg(ns, "client_state"); cs != "" {
 		clientState = &cs
 	}
-	report, err := maintainGraphSubscriptions(ctx, client, store, renew, extend, pyrepr.Truthy(ns["dry_run"]), clientState)
+	report, err := maintainGraphSubscriptions(ctx, client, store, renew, extend, anyutil.IsTrue(ns["dry_run"]), clientState)
 	if err != nil {
 		return err
 	}
@@ -798,8 +798,8 @@ func cmdTokenHealth(ctx context.Context, ns map[string]any) error {
 	if err != nil {
 		return err
 	}
-	payload := provider.InspectTokenHealth().Copy()
-	if pyrepr.Truthy(ns["force_refresh"]) {
+	payload := provider.InspectTokenHealth().Clone()
+	if anyutil.IsTrue(ns["force_refresh"]) {
 		token, err := provider.GetAccessToken(ctx, true)
 		if err != nil {
 			payload.Set("last_refresh_succeeded", false)

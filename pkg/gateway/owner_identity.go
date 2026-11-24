@@ -3,9 +3,8 @@ package gateway
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Subject a native ticket carries on this host, the owner's own OS identity
@@ -24,7 +23,7 @@ func PrincipalSubject(identity map[string]any) (string, error) {
 	}
 	provider := ""
 	if pyTruthy(identity["provider"]) {
-		provider = strings.TrimSpace(pyrepr.Str(identity["provider"]))
+		provider = strings.TrimSpace(anyutil.String(identity["provider"]))
 	}
 	if provider == "local" {
 		login, ok := ParseAuthenticatedSubject(subject)
@@ -96,5 +95,5 @@ func pyEqualOwner(a, b any) bool {
 	if aok && bok {
 		return as == bs
 	}
-	return pyjson.Equal(a, b)
+	return anyutil.Equal(a, b)
 }

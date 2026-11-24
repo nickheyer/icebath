@@ -7,8 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Completed, partial, failed and error flags of an agent result, the defaults for a non dict
@@ -18,17 +16,17 @@ func resultFlags(result map[string]any) (bool, bool, bool, any) {
 	}
 	completed := true
 	if v, ok := result["completed"]; ok {
-		completed = pyrepr.Truthy(v)
+		completed = anyutil.IsTrue(v)
 	}
-	completed = completed && !pyrepr.Truthy(result["interrupted"])
-	return completed, pyrepr.Truthy(result["partial"]), pyrepr.Truthy(result["failed"]), result["error"]
+	completed = completed && !anyutil.IsTrue(result["interrupted"])
+	return completed, anyutil.IsTrue(result["partial"]), anyutil.IsTrue(result["failed"]), result["error"]
 }
 
 // Whether the turn ran out of its iteration budget
 func budgetExhausted(result map[string]any) bool {
 	reason := ""
-	if result != nil && pyrepr.Truthy(result["turn_exit_reason"]) {
-		reason = pyrepr.Str(result["turn_exit_reason"])
+	if result != nil && anyutil.IsTrue(result["turn_exit_reason"]) {
+		reason = anyutil.String(result["turn_exit_reason"])
 	}
 	return strings.HasPrefix(reason, "budget_exhausted") || strings.HasPrefix(reason, "max_iterations_reached(")
 }
@@ -36,8 +34,8 @@ func budgetExhausted(result map[string]any) bool {
 // OpenAI finish reason, length for truncation or a spent budget, error for failure, cancelled or stop otherwise
 func finishReason(completed, isPartial, isFailed bool, errMsg any, agentError error, exhausted bool) string {
 	errText := ""
-	if pyrepr.Truthy(errMsg) {
-		errText = pyrepr.Str(errMsg)
+	if anyutil.IsTrue(errMsg) {
+		errText = anyutil.String(errMsg)
 	}
 	if isPartial && errText != "" && strings.Contains(strings.ToLower(errText), "truncat") {
 		return "length"
@@ -58,14 +56,14 @@ var responsesFingerprintKeys = []string{"input", "instructions", "previous_respo
 	"model", "provider", "model_options", "tools"}
 
 // Whether a stored idempotency record carries its answer
-func settled(record *pyjson.Object) bool {
-	return record != nil && record.GetOr("response", nil) != nil
+func settled(record *jsonutil.Object) bool {
+	return record != nil && record.ValueOr("response", nil) != nil
 }
 
 // Fingerprint keys of a responses body, truncation joining only when sent
-func responsesFingerprintKeysFor(body *pyjson.Object) []string {
+func responsesFingerprintKeysFor(body *jsonutil.Object) []string {
 	keys := append([]string(nil), responsesFingerprintKeys...)
-	if body.GetOr("truncation", nil) != nil {
+	if body.ValueOr("truncation", nil) != nil {
 		keys = append(keys, "truncation")
 	}
 	return keys
@@ -88,7 +86,7 @@ func responseIdentity(ctx context.Context, store *gateway.ResponseStore, durable
 }
 
 // Binding match and the stored replay record, read as one store unit
-func matchingReplay(ctx context.Context, store *gateway.ResponseStore, key, binding string) (bool, *pyjson.Object, error) {
+func matchingReplay(ctx context.Context, store *gateway.ResponseStore, key, binding string) (bool, *jsonutil.Object, error) {
 	matches, err := store.RequestKeyMatches(ctx, key, binding)
 	if err != nil || !matches {
 		return false, nil, err
@@ -97,18 +95,18 @@ func matchingReplay(ctx context.Context, store *gateway.ResponseStore, key, bind
 	if err != nil {
 		return true, nil, err
 	}
-	obj, _ := record.(*pyjson.Object)
+	obj, _ := record.(*jsonutil.Object)
 	return true, obj, nil
 }
 
 // Response snapshot with its id and body
 type responseSnapshot struct {
 	id   string
-	data *pyjson.Object
+	data *jsonutil.Object
 }
 
 // Non streaming responses persistence as one store unit, body then conversation pointer then replay record
-func storeNonstreamResponse(ctx context.Context, store *gateway.ResponseStore, snapshot *responseSnapshot, replayKey string, replayRecord *pyjson.Object, conversation string, terminalReplay bool) error {
+func storeNonstreamResponse(ctx context.Context, store *gateway.ResponseStore, snapshot *responseSnapshot, replayKey string, replayRecord *jsonutil.Object, conversation string, terminalReplay bool) error {
 	_, err := store.Atomically(ctx, func(ctx context.Context) (any, error) {
 		if snapshot != nil {
 			advance := conversation != ""
@@ -141,9 +139,9 @@ func storeNonstreamResponse(ctx context.Context, store *gateway.ResponseStore, s
 // Responses status of a turn result
 func responseStatus(result map[string]any) string {
 	switch {
-	case pyrepr.Truthy(result["interrupted"]):
+	case anyutil.IsTrue(result["interrupted"]):
 		return "cancelled"
-	case pyrepr.Truthy(result["failed"]) || pyrepr.Truthy(result["error"]):
+	case anyutil.IsTrue(result["failed"]) || anyutil.IsTrue(result["error"]):
 		return "failed"
 	case result["completed"] == false:
 		return "incomplete"
@@ -152,7 +150,7 @@ func responseStatus(result map[string]any) string {
 }
 
 // Icebath completion extras with the error code the finish reason implies
-func completionExtras(completed, isPartial, isFailed bool, errMsg any, finish string, exhausted bool) *pyjson.Object {
+func completionExtras(completed, isPartial, isFailed bool, errMsg any, finish string, exhausted bool) *jsonutil.Object {
 	code := "agent_error"
 	if finish == "length" {
 		code = "output_truncated"
@@ -160,7 +158,7 @@ func completionExtras(completed, isPartial, isFailed bool, errMsg any, finish st
 			code = "iteration_budget_exhausted"
 		}
 	}
-	return pyjson.ObjectOf("completed", completed, "partial", isPartial, "failed", isFailed, "error", errMsg, "error_code", code)
+	return jsonutil.ObjectOf("completed", completed, "partial", isPartial, "failed", isFailed, "error", errMsg, "error_code", code)
 }
 
 // Localized notice that the final reply was transformed after streaming
@@ -170,7 +168,7 @@ func transformedNotice(ctx context.Context) string {
 
 // Text a stream still owes after an output transform, the suffix when it only appended
 func postStreamTransform(result map[string]any) (string, bool) {
-	if result == nil || !pyrepr.Truthy(result["response_transformed"]) {
+	if result == nil || !anyutil.IsTrue(result["response_transformed"]) {
 		return "", false
 	}
 	final, _ := result["final_response"].(string)
@@ -182,9 +180,9 @@ func postStreamTransform(result map[string]any) (string, bool) {
 }
 
 // Responses message output item with one output_text part
-func messageItem(text any) *pyjson.Object {
-	return pyjson.ObjectOf("type", "message", "role", "assistant",
-		"content", []any{pyjson.ObjectOf("type", "output_text", "text", text)})
+func messageItem(text any) *jsonutil.Object {
+	return jsonutil.ObjectOf("type", "message", "role", "assistant",
+		"content", []any{jsonutil.ObjectOf("type", "output_text", "text", text)})
 }
 
 // Head of the text plus a marker of how much was cut
@@ -200,48 +198,48 @@ func capHistoryToolOutputs(history []any, maxChars int) []any {
 	}
 	out := make([]any, 0, len(history))
 	for _, raw := range history {
-		msg, ok := raw.(*pyjson.Object)
+		msg, ok := raw.(*jsonutil.Object)
 		if !ok {
 			out = append(out, raw)
 			continue
 		}
 		role, _ := msg.Get("role")
-		if content, isStr := msg.GetOr("content", nil).(string); role == "tool" && isStr && len([]rune(content)) > maxChars {
-			msg = msg.Copy()
+		if content, isStr := msg.ValueOr("content", nil).(string); role == "tool" && isStr && len([]rune(content)) > maxChars {
+			msg = msg.Clone()
 			msg.Set("content", capTextKeep(content, maxChars))
 		}
-		if calls, isList := msg.GetOr("tool_calls", nil).([]any); role == "assistant" && isList {
+		if calls, isList := msg.ValueOr("tool_calls", nil).([]any); role == "assistant" && isList {
 			capped := make([]any, 0, len(calls))
 			for _, rawCall := range calls {
-				call, _ := rawCall.(*pyjson.Object)
-				var fn *pyjson.Object
+				call, _ := rawCall.(*jsonutil.Object)
+				var fn *jsonutil.Object
 				if call != nil {
-					fn, _ = call.GetOr("function", nil).(*pyjson.Object)
+					fn, _ = call.ValueOr("function", nil).(*jsonutil.Object)
 				}
 				var argsText string
 				var isText bool
 				if fn != nil {
-					argsText, isText = fn.GetOr("arguments", nil).(string)
+					argsText, isText = fn.ValueOr("arguments", nil).(string)
 				}
 				if isText && len([]rune(argsText)) > maxChars {
-					parsed, err := pyjson.Loads(argsText)
-					if args, isObj := parsed.(*pyjson.Object); err == nil && isObj {
-						for _, k := range args.Keys {
-							if v, isStr := args.GetOr(k, nil).(string); isStr && len([]rune(v)) > maxChars {
+					parsed, err := jsonutil.Decode(argsText)
+					if args, isObj := parsed.(*jsonutil.Object); err == nil && isObj {
+						for _, k := range args.Keys() {
+							if v, isStr := args.ValueOr(k, nil).(string); isStr && len([]rune(v)) > maxChars {
 								args.Set(k, capTextKeep(v, maxChars))
 							}
 						}
-						encoded, _ := pyjson.Dumps(args)
-						newFn := fn.Copy()
+						encoded, _ := jsonutil.Encode(args)
+						newFn := fn.Clone()
 						newFn.Set("arguments", encoded)
-						newCall := call.Copy()
+						newCall := call.Clone()
 						newCall.Set("function", newFn)
 						rawCall = newCall
 					}
 				}
 				capped = append(capped, rawCall)
 			}
-			msg = msg.Copy()
+			msg = msg.Clone()
 			msg.Set("tool_calls", capped)
 		}
 		out = append(out, msg)
@@ -250,14 +248,14 @@ func capHistoryToolOutputs(history []any, maxChars int) []any {
 }
 
 // Completed Responses reasoning output item
-func reasoningItem(text string) *pyjson.Object {
-	return pyjson.ObjectOf("id", "rs_"+hexUUID()[:24], "type", "reasoning", "status", "completed",
-		"summary", []any{pyjson.ObjectOf("type", "summary_text", "text", text)})
+func reasoningItem(text string) *jsonutil.Object {
+	return jsonutil.ObjectOf("id", "rs_"+hexUUID()[:24], "type", "reasoning", "status", "completed",
+		"summary", []any{jsonutil.ObjectOf("type", "summary_text", "text", text)})
 }
 
 // Whether an input item is an echoed back reasoning output item
 func isReasoningInputItem(item any) bool {
-	obj, ok := item.(*pyjson.Object)
+	obj, ok := item.(*jsonutil.Object)
 	if !ok {
 		return false
 	}
@@ -274,7 +272,7 @@ func turnReasoningText(history []any, userMessage any, result map[string]any) st
 	start := responseMessagesTurnStartIndex(history, userMessage, result)
 	var parts []string
 	for _, raw := range messages[min(start, len(messages)):] {
-		m := asMap(raw)
+		m, _ := jsonutil.AsMap(raw)
 		if m == nil || m["role"] != "assistant" {
 			continue
 		}
@@ -286,44 +284,44 @@ func turnReasoningText(history []any, userMessage any, result map[string]any) st
 }
 
 // Trims large tool payloads in place so the completed envelope stays small
-func trimToolItems(items []*pyjson.Object) []*pyjson.Object {
+func trimToolItems(items []*jsonutil.Object) []*jsonutil.Object {
 	for _, item := range items {
 		switch t, _ := item.Get("type"); t {
 		case "function_call":
 			func() {
 				defer func() { _ = recover() }()
-				raw := item.GetOr("arguments", nil)
+				raw := item.ValueOr("arguments", nil)
 				var args any = raw
 				if text, isStr := raw.(string); isStr {
-					parsed, err := pyjson.Loads(text)
+					parsed, err := jsonutil.Decode(text)
 					if err != nil {
 						return
 					}
 					args = parsed
 				} else if raw == nil {
-					args = pyjson.NewObject()
+					args = jsonutil.NewObject()
 				}
-				obj, isObj := args.(*pyjson.Object)
+				obj, isObj := args.(*jsonutil.Object)
 				if !isObj {
 					return
 				}
 				for _, k := range []string{"content", "query", "pattern", "old_string", "new_string"} {
-					if v, isStr := obj.GetOr(k, nil).(string); isStr && len([]rune(v)) > 500 {
+					if v, isStr := obj.ValueOr(k, nil).(string); isStr && len([]rune(v)) > 500 {
 						obj.Set(k, "["+strconv.Itoa(len([]rune(v)))+" chars — truncated for response.completed]")
 					}
 				}
-				encoded, err := pyjson.Dumps(obj)
+				encoded, err := jsonutil.Encode(obj)
 				if err != nil {
 					return
 				}
 				item.Set("arguments", encoded)
 			}()
 		case "function_call_output":
-			output, isList := item.GetOr("output", []any{}).([]any)
+			output, isList := item.ValueOr("output", []any{}).([]any)
 			if isList && len(output) > 0 {
-				if first, isObj := output[0].(*pyjson.Object); isObj {
+				if first, isObj := output[0].(*jsonutil.Object); isObj {
 					if ft, _ := first.Get("type"); ft == "input_text" {
-						text, _ := first.GetOr("text", "").(string)
+						text, _ := first.ValueOr("text", "").(string)
 						if len([]rune(text)) > 1000 {
 							first.Set("text", capTextKeep(text, 500))
 							item.Set("output", []any{first})
@@ -334,15 +332,4 @@ func trimToolItems(items []*pyjson.Object) []*pyjson.Object {
 		}
 	}
 	return items
-}
-
-// Map view of a message in either representation, nil otherwise
-func asMap(v any) map[string]any {
-	switch m := v.(type) {
-	case map[string]any:
-		return m
-	case *pyjson.Object:
-		return m.Vals
-	}
-	return nil
 }

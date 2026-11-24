@@ -20,7 +20,7 @@ func splitCarry(t *testing.T, sid, reply string) *SessionDB {
 	if err != nil {
 		t.Fatal(err)
 	}
-	copyID := row.Vals["m"]
+	copyID := row.Value("m")
 	profileExec(t, db, "UPDATE messages SET display_order = id, display_identity = zeroblob(32) WHERE id = ?", copyID)
 	profileExec(t, db, "UPDATE messages SET compacted = 1 WHERE session_id = ? AND role = 'assistant' AND active = 0 AND id <> ?", sid, copyID)
 	return db
@@ -46,7 +46,7 @@ func splitReplyCount(t *testing.T, db *SessionDB, sid, reply string, o GetMessag
 	}
 	n := 0
 	for _, r := range rows {
-		if r.Vals["role"] == "assistant" && r.Vals["content"] == reply {
+		if r.Value("role") == "assistant" && r.Value("content") == reply {
 			n++
 		}
 	}
@@ -104,7 +104,7 @@ func unaddressedRows(t *testing.T, db *SessionDB, sid string) []unaddressedRow {
 	}
 	out := make([]unaddressedRow, len(rows))
 	for i, r := range rows {
-		out[i] = unaddressedRow{r.Vals["id"].(int64), r.Vals["content"], r.Vals["token_count"], r.Vals["message_uid"]}
+		out[i] = unaddressedRow{r.Value("id").(int64), r.Value("content"), r.Value("token_count"), r.Value("message_uid")}
 	}
 	return out
 }

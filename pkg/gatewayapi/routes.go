@@ -11,8 +11,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type requestProfileKey struct{}
@@ -31,7 +31,7 @@ func withRequestProfile(ctx context.Context, profile string) context.Context {
 // Platform adapter answering HTTP events with its own verifier and dispatcher
 type HTTPEventAdapter interface {
 	VerifyHTTPEventRequest(ctx context.Context, authHeader string) (bool, string, error)
-	DispatchHTTPEvent(ctx context.Context, payload *pyjson.Object) (any, error)
+	DispatchHTTPEvent(ctx context.Context, payload *jsonutil.Object) (any, error)
 }
 
 // Adapter a platform event callback dispatches to, the routed profile's own and never the primary's
@@ -118,7 +118,7 @@ func (a *APIServerAdapter) handlePlatformEventCallback(ctx context.Context, requ
 	if err != nil {
 		return errorResponse("Invalid JSON in platform event", http.StatusBadRequest, errOpts{Code: "invalid_json"}), nil
 	}
-	obj, ok := payload.(*pyjson.Object)
+	obj, ok := payload.(*jsonutil.Object)
 	if !ok {
 		return errorResponse("Platform event must be a JSON object", http.StatusBadRequest, errOpts{Code: "invalid_request"}), nil
 	}
@@ -140,10 +140,10 @@ func (a *APIServerAdapter) handlePlatformEventCallback(ctx context.Context, requ
 		return errorResponse("Platform event dispatch failed", http.StatusInternalServerError, errOpts{Type: "server_error",
 			Code: "platform_event_dispatch_failed"}), nil
 	}
-	if resultObj, ok := result.(*pyjson.Object); ok {
+	if resultObj, ok := result.(*jsonutil.Object); ok {
 		return jsonResponse(resultObj, http.StatusOK, nil), nil
 	}
-	return jsonResponse(pyjson.NewObject(), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.NewObject(), http.StatusOK, nil), nil
 }
 
 // Profile a request prefix routes to, rejected when this gateway does not serve it

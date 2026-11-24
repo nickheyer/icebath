@@ -7,9 +7,8 @@ import (
 	"runtime"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -44,16 +43,16 @@ type StoredRoomLink struct {
 // Field view of the link without its grant
 func (l StoredRoomLink) String() string {
 	return fmt.Sprintf("StoredRoomLink(room_id=%s, member_id=%s, target_url=%s, target_profile=%s, cancellation_scope_id=%s, trace_id=%s, transport_security=%s, status=%s, updated_at=%v)",
-		pyrepr.Repr(l.RoomID), pyrepr.Repr(l.MemberID), pyrepr.Repr(l.TargetURL), pyrepr.Repr(l.TargetProfile), pyrepr.Repr(l.CancellationScopeID),
-		pyrepr.Repr(l.TraceID), pyrepr.Repr(l.TransportSecurity), pyrepr.Repr(l.Status), l.UpdatedAt)
+		anyutil.Quote(l.RoomID), anyutil.Quote(l.MemberID), anyutil.Quote(l.TargetURL), anyutil.Quote(l.TargetProfile), anyutil.Quote(l.CancellationScopeID),
+		anyutil.Quote(l.TraceID), anyutil.Quote(l.TransportSecurity), anyutil.Quote(l.Status), l.UpdatedAt)
 }
 
 // Python str of a value, empty for a falsy one
 func roomLinkText(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Bounded stripped string of any shape
@@ -100,7 +99,7 @@ func StoredRoomLinkFromMapping(value any) (StoredRoomLink, error) {
 	if !roomLinkStatuses[status] {
 		return StoredRoomLink{}, hostedPeerError("stored room link status is invalid")
 	}
-	updatedAt, err := pyint.Float(fields["updated_at"])
+	updatedAt, err := anyutil.ToFloat(fields["updated_at"])
 	if err != nil {
 		return StoredRoomLink{}, err
 	}
@@ -130,7 +129,7 @@ func StoredRoomLinkFromRecord(value map[string]any) (StoredRoomLink, error) {
 	if !has {
 		return StoredRoomLink{}, hostedPeerError("stored room link catalog is unreadable")
 	}
-	catalog, err := pyjson.Loads(pyrepr.Str(catalogJSON))
+	catalog, err := jsonutil.Decode(anyutil.String(catalogJSON))
 	if err != nil {
 		return StoredRoomLink{}, hostedPeerError("stored room link catalog is unreadable")
 	}
@@ -146,7 +145,7 @@ func StoredRoomLinkFromRecord(value map[string]any) (StoredRoomLink, error) {
 }
 
 // Canonical catalog mapping of the link
-func (l StoredRoomLink) CatalogMapping() *pyjson.Object { return l.Catalog.AsMapping() }
+func (l StoredRoomLink) CatalogMapping() *jsonutil.Object { return l.Catalog.AsMapping() }
 
 // SQLite record of the link with its catalog serialized
 func (l StoredRoomLink) AsRecord() (map[string]any, error) {

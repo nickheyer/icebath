@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // A plugin compiled into the binary that registers its tools, hooks and commands through a context
@@ -143,11 +143,11 @@ func readInstallMetadataFile(path string) (map[string]any, error) {
 	if !utf8.Valid(stripBOM(raw)) {
 		return nil, fmt.Errorf("plugin install metadata %s is not valid UTF-8", path)
 	}
-	value, err := pyjson.Loads(string(stripBOM(raw)))
+	value, err := jsonutil.Decode(string(stripBOM(raw)))
 	if err != nil {
 		return nil, &PluginOperationError{Msg: fmt.Sprintf("Could not read plugin install metadata: %v", err)}
 	}
-	doc, ok := pyjson.Plain(value).(map[string]any)
+	doc, ok := jsonutil.Plain(value).(map[string]any)
 	if !ok {
 		return nil, &PluginOperationError{Msg: "Plugin install metadata must be a JSON object."}
 	}

@@ -11,8 +11,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var jobIDRE = regexp.MustCompile(`^[a-f0-9]{12}$`)
@@ -28,7 +26,7 @@ const (
 
 // Plain JSON error body of the jobs API
 func jobsError(message string, status int) *gateway.WebResponse {
-	return jsonResponse(pyjson.ObjectOf("error", message), status, nil)
+	return jsonResponse(jsonutil.ObjectOf("error", message), status, nil)
 }
 
 // Jobs API prelude of auth, the optional drain check and job id validation
@@ -46,7 +44,7 @@ func (a *APIServerAdapter) cronRequestGuard(ctx context.Context, request *gatewa
 	}
 	jobID := request.MatchInfo["job_id"]
 	if !jobIDRE.MatchString(jobID) {
-		pkgLog().Warn(fmt.Sprintf("Cron jobs API rejected invalid job_id %s: %s", pyrepr.Repr(jobID), a.requestAuditLogSuffix(request)))
+		pkgLog().Warn(fmt.Sprintf("Cron jobs API rejected invalid job_id %s: %s", anyutil.Quote(jobID), a.requestAuditLogSuffix(request)))
 		return jobID, jobsError("Invalid job ID format", http.StatusBadRequest)
 	}
 	return jobID, nil
@@ -95,7 +93,7 @@ func jobResponse(ctx context.Context, fn func(jobID string) (*cron.Job, error), 
 	if notify {
 		notifyCronProviderJobsChanged(ctx)
 	}
-	return jsonResponse(pyjson.ObjectOf("job", job), http.StatusOK, nil)
+	return jsonResponse(jsonutil.ObjectOf("job", job), http.StatusOK, nil)
 }
 
 // Guarded lookup or mutation of one job by id
@@ -121,7 +119,7 @@ func (a *APIServerAdapter) handleListJobs(ctx context.Context, request *gateway.
 	for _, j := range jobs {
 		list = append(list, j)
 	}
-	return jsonResponse(pyjson.ObjectOf("jobs", list), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("jobs", list), http.StatusOK, nil), nil
 }
 
 // Creates a cron job registered with the active scheduler provider
@@ -139,15 +137,15 @@ func (a *APIServerAdapter) handleCreateJob(ctx context.Context, request *gateway
 		if err != nil {
 			return nil, err
 		}
-		body, ok := raw.(*pyjson.Object)
+		body, ok := raw.(*jsonutil.Object)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))}
+			return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 		}
-		name := strings.TrimSpace(pyrepr.Str(pyrepr.Or(body.GetOr("name", nil), "")))
-		schedule := strings.TrimSpace(pyrepr.Str(pyrepr.Or(body.GetOr("schedule", nil), "")))
-		prompt := body.GetOr("prompt", "")
-		skills := body.GetOr("skills", nil)
-		repeat := body.GetOr("repeat", nil)
+		name := strings.TrimSpace(anyutil.String(anyutil.Or(body.ValueOr("name", nil), "")))
+		schedule := strings.TrimSpace(anyutil.String(anyutil.Or(body.ValueOr("schedule", nil), "")))
+		prompt := body.ValueOr("prompt", "")
+		skills := body.ValueOr("skills", nil)
+		repeat := body.ValueOr("repeat", nil)
 		if name == "" {
 			return jobsError("Name is required", http.StatusBadRequest), nil
 		}
@@ -159,7 +157,7 @@ func (a *APIServerAdapter) handleCreateJob(ctx context.Context, request *gateway
 		}
 		promptText, isStr := prompt.(string)
 		if !isStr {
-			return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("object of type '%s' has no len()", pyrepr.TypeName(prompt))}
+			return nil, &gateway.PyError{Kind: "TypeError", Msg: "prompt must be a string, got " + anyutil.Kind(prompt)}
 		}
 		if promptErr := validateCronPrompt(promptText); promptErr != nil {
 			return promptErr, nil
@@ -173,14 +171,14 @@ func (a *APIServerAdapter) handleCreateJob(ctx context.Context, request *gateway
 				return jobsError("Repeat must be a positive integer", http.StatusBadRequest), nil
 			}
 		}
-		spec := pyjson.ObjectOf("prompt", prompt, "schedule", schedule, "name", name,
-			"deliver", body.GetOr("deliver", "local"), "origin", a.cronOriginFromRequest(request))
+		spec := jsonutil.ObjectOf("prompt", prompt, "schedule", schedule, "name", name,
+			"deliver", body.ValueOr("deliver", "local"), "origin", a.cronOriginFromRequest(request))
 		for _, key := range []string{"paused", "paused_reason"} {
 			if v, ok := body.Get(key); ok {
 				spec.Set(key, v)
 			}
 		}
-		if pyrepr.Truthy(skills) {
+		if anyutil.IsTrue(skills) {
 			spec.Set("skills", skills)
 		}
 		if repeat != nil {
@@ -190,15 +188,14 @@ func (a *APIServerAdapter) handleCreateJob(ctx context.Context, request *gateway
 		if err != nil {
 			return nil, err
 		}
-		return jsonResponse(pyjson.ObjectOf("job", job), http.StatusOK, nil), nil
+		return jsonResponse(jsonutil.ObjectOf("job", job), http.StatusOK, nil), nil
 	}()
 	if err != nil {
 		var regErr *cron.CronSchedulerRegistrationError
 		if errors.As(err, &regErr) {
 			return jsonResponse(regErr.ToDict(), http.StatusFailedDependency, nil), nil
 		}
-		var typed interface{ PyTypeName() string }
-		if errors.As(err, &typed) && typed.PyTypeName() == "ValueError" {
+		if errorutil.Kind(err) == "ValueError" {
 			return jobsError(err.Error(), http.StatusBadRequest), nil
 		}
 		return cronErrorResponse(err), nil
@@ -228,28 +225,28 @@ func (a *APIServerAdapter) handleUpdateJob(ctx context.Context, request *gateway
 		if err != nil {
 			return nil, err
 		}
-		body, ok := raw.(*pyjson.Object)
+		body, ok := raw.(*jsonutil.Object)
 		if !ok {
-			return nil, &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'items'", pyrepr.TypeName(raw))}
+			return nil, &gateway.PyError{Kind: "AttributeError", Msg: "expected an object, got " + anyutil.Kind(raw)}
 		}
-		for _, k := range body.Keys {
+		for _, k := range body.Keys() {
 			if updateAllowedFields[k] {
 				v, _ := body.Get(k)
-				sanitized[k] = pyjson.Plain(v)
+				sanitized[k] = jsonutil.Plain(v)
 			}
 		}
 		if len(sanitized) == 0 {
 			return jobsError("No valid fields to update", http.StatusBadRequest), nil
 		}
 		if name, ok := sanitized["name"]; ok {
-			if len([]rune(pyrepr.Str(name))) > maxJobNameLength {
+			if len([]rune(anyutil.String(name))) > maxJobNameLength {
 				return jobsError(fmt.Sprintf("Name must be ≤ %d characters", maxJobNameLength), http.StatusBadRequest), nil
 			}
 		}
 		if prompt, ok := sanitized["prompt"]; ok {
 			text, isStr := prompt.(string)
 			if !isStr {
-				return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("object of type '%s' has no len()", pyrepr.TypeName(prompt))}
+				return nil, &gateway.PyError{Kind: "TypeError", Msg: "prompt must be a string, got " + anyutil.Kind(prompt)}
 			}
 			if promptErr := validateCronPrompt(text); promptErr != nil {
 				return promptErr, nil
@@ -280,7 +277,7 @@ func (a *APIServerAdapter) handleDeleteJob(ctx context.Context, request *gateway
 		return jobsError("Job not found", http.StatusNotFound), nil
 	}
 	notifyCronProviderJobsChanged(ctx)
-	return jsonResponse(pyjson.ObjectOf("ok", true), http.StatusOK, nil), nil
+	return jsonResponse(jsonutil.ObjectOf("ok", true), http.StatusOK, nil), nil
 }
 
 // Pauses a cron job
@@ -301,9 +298,9 @@ func (a *APIServerAdapter) handleRunJob(ctx context.Context, request *gateway.We
 	}
 	extraPrompt := ""
 	if raw, err := requestJSON(request); err == nil {
-		if body, ok := raw.(*pyjson.Object); ok {
-			if rawPrompt := body.GetOr("prompt", nil); rawPrompt != nil {
-				extraPrompt = pyrepr.Str(rawPrompt)
+		if body, ok := raw.(*jsonutil.Object); ok {
+			if rawPrompt := body.ValueOr("prompt", nil); rawPrompt != nil {
+				extraPrompt = anyutil.String(rawPrompt)
 				if promptErr := validateCronPrompt(extraPrompt); promptErr != nil {
 					return promptErr, nil
 				}
@@ -334,5 +331,5 @@ func requestJSON(request *gateway.WebRequest) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(string(body))
+	return jsonutil.Decode(string(body))
 }

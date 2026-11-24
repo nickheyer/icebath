@@ -17,12 +17,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/media/speech"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -115,7 +115,7 @@ var (
 
 // Python json.dumps with ensure_ascii off over an ordered object
 func ttsDumps(v any) string {
-	s, err := pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	s, err := jsonutil.Encode(v)
 	if err != nil {
 		return tools.ErrorResult(err)
 	}
@@ -124,12 +124,12 @@ func ttsDumps(v any) string {
 
 // Failure envelope with success first then the error
 func ttsErrorJSON(message string) string {
-	return ttsDumps(pyjson.ObjectOf("success", false, "error", message))
+	return ttsDumps(jsonutil.ObjectOf("success", false, "error", message))
 }
 
 // Registry tool_error envelope carrying success false
 func ttsToolError(message string) string {
-	return ttsDumps(pyjson.ObjectOf("error", tools.BoundErrorText(message), "success", false))
+	return ttsDumps(jsonutil.ObjectOf("error", tools.BoundErrorText(message), "success", false))
 }
 
 // Built in engine of a provider with no error, unknown names taking the Edge default
@@ -284,9 +284,9 @@ func resolveOutputBase(ctx context.Context, env *tools.Env, outputPath, provider
 		if tools.HasTraversalComponent(outputPath) {
 			return "", ttsErrorJSON(fmt.Sprintf("output_path contains '..' traversal component: %s. Use an absolute path or one relative to the current directory without '..'.", outputPath)), nil
 		}
-		filePath = pypath.Expanduser(outputPath)
+		filePath = pathutil.ExpandUser(outputPath)
 		if command != nil {
-			p, err := pypath.WithSuffix(filePath, "."+command.OutputFormat)
+			p, err := pathutil.WithSuffix(filePath, "."+command.OutputFormat)
 			if err != nil {
 				return "", "", err
 			}
@@ -420,7 +420,7 @@ func textToSpeechSingle(ctx context.Context, env *tools.Env, text, fileStr strin
 			return "", err
 		}
 		pkgLog().Info(fmt.Sprintf("TTS audio saved: %s (%s bytes, provider: %s)", final, textutil.Thousands(info.Size()), provider))
-		return ttsDumps(pyjson.ObjectOf("success", true, "file_path", final, "media_tag", mediaTag([]string{final}, voiceCompatible),
+		return ttsDumps(jsonutil.ObjectOf("success", true, "file_path", final, "media_tag", mediaTag([]string{final}, voiceCompatible),
 			"provider", provider, "voice_compatible", voiceCompatible)), nil
 	}()
 	if err == nil {
@@ -461,10 +461,10 @@ func synthesizeChunks(ctx context.Context, env *tools.Env, chunks []string, base
 	for index, chunk := range chunks {
 		chunkPath := basePath
 		if len(chunks) > 1 {
-			chunkPath = withName(basePath, fmt.Sprintf("%s.chunk%03d%s", pypath.PathStem(basePath), index+1, pypath.Suffix(basePath)))
+			chunkPath = withName(basePath, fmt.Sprintf("%s.chunk%03d%s", pathutil.Stem(basePath), index+1, pathutil.Suffix(basePath)))
 		}
 		if _, err := os.Lstat(chunkPath); err == nil {
-			chunkPath = withName(chunkPath, "."+pypath.PathStem(chunkPath)+"."+randomHex(16)+pypath.Suffix(chunkPath))
+			chunkPath = withName(chunkPath, "."+pathutil.Stem(chunkPath)+"."+randomHex(16)+pathutil.Suffix(chunkPath))
 		}
 		generated[chunkPath] = true
 		raw := textToSpeechSingle(ctx, env, chunk, chunkPath, o)
@@ -474,11 +474,11 @@ func synthesizeChunks(ctx context.Context, env *tools.Env, chunks []string, base
 		}
 		if !pyTruthy(result["success"]) {
 			errMsg := dictGetDefault(result, "error", "unknown error")
-			return nil, nil, &chunkFailedError{msg: fmt.Sprintf("TTS chunk %d failed (%s): %s", index+1, o.Provider, pyrepr.Str(errMsg))}
+			return nil, nil, &chunkFailedError{msg: fmt.Sprintf("TTS chunk %d failed (%s): %s", index+1, o.Provider, anyutil.String(errMsg))}
 		}
 		actual := chunkPath
 		if pyTruthy(result["file_path"]) {
-			actual = pyrepr.Str(result["file_path"])
+			actual = anyutil.String(result["file_path"])
 		}
 		if info, err := os.Stat(actual); err != nil || !info.Mode().IsRegular() || info.Size() <= 0 {
 			return nil, nil, &ttsRuntimeError{msg: fmt.Sprintf("TTS chunk %d produced no final audio: %s", index+1, actual)}
@@ -563,7 +563,7 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 		for _, r := range results {
 			voiceCompatible = voiceCompatible && pyTruthy(r["voice_compatible"])
 		}
-		deliveryBase, err := pypath.WithSuffix(basePath, pypath.Suffix(encoded[0]))
+		deliveryBase, err := pathutil.WithSuffix(basePath, pathutil.Suffix(encoded[0]))
 		if err != nil {
 			return "", &ttsValueError{msg: err.Error()}
 		}
@@ -583,10 +583,10 @@ func textToSpeechTool(ctx context.Context, env *tools.Env, a ttsCallArgs) (strin
 		for i, p := range finalPaths {
 			filePaths[i] = p
 		}
-		return ttsDumps(pyjson.ObjectOf("success", true, "file_path", finalPaths[0], "file_paths", filePaths,
+		return ttsDumps(jsonutil.ObjectOf("success", true, "file_path", finalPaths[0], "file_paths", filePaths,
 			"media_tag", mediaTag(finalPaths, voiceCompatible), "provider", dictGetDefault(results[0], "provider", provider),
 			"voice_compatible", voiceCompatible, "chunk_count", len(chunks), "delivery_file_count", len(finalPaths),
-			"combined_chunks", combined, "delivery_profile", pyjson.ObjectOf("platform", profile.Platform,
+			"combined_chunks", combined, "delivery_profile", jsonutil.ObjectOf("platform", profile.Platform,
 				"max_file_bytes", profile.MaxFileBytes, "target_file_bytes", profile.targetFileBytes()))), nil
 	}()
 	if err == nil {
@@ -681,19 +681,19 @@ func outputPathDescription(h string) string {
 }
 
 // Static text_to_speech schema
-func ttsSchema() *pyjson.Object {
-	return pyjson.ObjectOf(
+func ttsSchema() *jsonutil.Object {
+	return jsonutil.ObjectOf(
 		"name", "text_to_speech",
 		"description", "Convert text to speech audio. Returns a MEDIA: path that the platform delivers as native audio. Compatible providers render as a voice bubble on Telegram; otherwise audio is sent as a regular attachment. In CLI mode, saves to ~/voice-memos/. "+configuredVoiceSentence,
-		"parameters", pyjson.ObjectOf(
+		"parameters", jsonutil.ObjectOf(
 			"type", "object",
-			"properties", pyjson.ObjectOf(
-				"text", pyjson.ObjectOf("type", "string",
+			"properties", jsonutil.ObjectOf(
+				"text", jsonutil.ObjectOf("type", "string",
 					"description", "The text to convert to speech. Provider-specific per-request character caps apply automatically (OpenAI 4096, xAI 15000, MiniMax 10000, ElevenLabs 5k-40k depending on model); longer input is split into ordered chunks without silent truncation."),
-				"output_path", pyjson.ObjectOf("type", "string", "description", outputPathDescription("the profile ICEBATH_HOME")),
-				"speed", pyjson.ObjectOf("type", "number",
+				"output_path", jsonutil.ObjectOf("type", "string", "description", outputPathDescription("the profile ICEBATH_HOME")),
+				"speed", jsonutil.ObjectOf("type", "number",
 					"description", "Playback speed multiplier. 1.0 = normal, 0.5 = very slow (language learning), 2.0 = fast. Range: 0.25-4.0. Overrides the speed configured in config.yaml."),
-				"instructions", pyjson.ObjectOf("type", "string",
+				"instructions", jsonutil.ObjectOf("type", "string",
 					"description", "Optional voice-design guidance: tone, emotion, pacing, accent, whispering, impressions (e.g. 'Speak in a cheerful, excited whisper'). Forwarded to the OpenAI backend (gpt-4o-mini-tts and OpenAI-compatible voice-design servers). Silently ignored by backends that don't support it."),
 			),
 			"required", []any{"text"},
@@ -702,19 +702,19 @@ func ttsSchema() *pyjson.Object {
 }
 
 // Schema overrides rebuilt from the active profile, adding voice selection when ElevenLabs is configured
-func ttsSchemaOverrides(env *tools.Env) *pyjson.Object {
+func ttsSchemaOverrides(env *tools.Env) *jsonutil.Object {
 	ctx := context.Background()
 	schema := ttsSchema()
-	params := pyjson.Clone(schema.Vals["parameters"]).(*pyjson.Object)
-	props := params.Vals["properties"].(*pyjson.Object)
-	props.Vals["output_path"].(*pyjson.Object).Set("description", outputPathDescription(home.Display(ttsHome(ctx, env))))
+	params := jsonutil.Clone(schema.Value("parameters")).(*jsonutil.Object)
+	props := params.Value("properties").(*jsonutil.Object)
+	props.Value("output_path").(*jsonutil.Object).Set("description", outputPathDescription(home.Display(ttsHome(ctx, env))))
 	if !elevenLabsVoiceSelectionActive(loadTTSRequest(ctx, env)) {
-		return pyjson.ObjectOf("parameters", params)
+		return jsonutil.ObjectOf("parameters", params)
 	}
-	props.Set("voice_id", pyjson.ObjectOf("type", "string", "description", "ElevenLabs voice for this audio (a voice_id from find_voices). Omit to use the user's configured voice."))
+	props.Set("voice_id", jsonutil.ObjectOf("type", "string", "description", "ElevenLabs voice for this audio (a voice_id from find_voices). Omit to use the user's configured voice."))
 	props.Set("find_voices", findVoicesSchema())
 	params.Set("required", []any{})
-	return pyjson.ObjectOf("parameters", params, "description", strings.ReplaceAll(schema.Vals["description"].(string), configuredVoiceSentence, elevenLabsVoiceSentence))
+	return jsonutil.ObjectOf("parameters", params, "description", strings.ReplaceAll(schema.Value("description").(string), configuredVoiceSentence, elevenLabsVoiceSentence))
 }
 
 // Optional string argument, empty for None or a non string

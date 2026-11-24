@@ -19,11 +19,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Hidden entry restarting supervised gateway profiles from a fresh process
@@ -207,20 +207,20 @@ func hostServedProfiles() map[string]bool {
 	if err != nil {
 		return served
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return served
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return served
 	}
-	record, ok := decoded.(*pyjson.Object)
-	if !ok || record.GetOr("role", nil) != "gateway" {
+	record, ok := decoded.(*jsonutil.Object)
+	if !ok || record.ValueOr("role", nil) != "gateway" {
 		return served
 	}
-	pid, isInt := pyIntValue(record.GetOr("pid", nil))
-	profiles, isList := record.GetOr("profiles", nil).([]any)
+	pid, isInt := pyIntValue(record.ValueOr("pid", nil))
+	profiles, isList := record.ValueOr("profiles", nil).([]any)
 	if !isInt || pid <= 0 || !isList || !recoveryPidIsLive(int(pid)) {
 		return served
 	}
@@ -233,7 +233,7 @@ func hostServedProfiles() map[string]bool {
 }
 
 // Restarts the requested supervised profiles once per host gateway process and buckets each outcome
-func restartProfiles(ctx context.Context, profiles []string, supervisors map[string]string) (*pyjson.Object, error) {
+func restartProfiles(ctx context.Context, profiles []string, supervisors map[string]string) (*jsonutil.Object, error) {
 	verified, attempted, failed := []any{}, []any{}, []any{}
 	seen := map[string]bool{}
 	requested := []string{}
@@ -278,7 +278,7 @@ func restartProfiles(ctx context.Context, profiles []string, supervisors map[str
 			}
 		}
 	}
-	coveredMap := pyjson.NewObject()
+	coveredMap := jsonutil.NewObject()
 	if representative != "" {
 		rows := make([]any, 0, len(covered))
 		for _, other := range covered {
@@ -286,7 +286,7 @@ func restartProfiles(ctx context.Context, profiles []string, supervisors map[str
 		}
 		coveredMap.Set(representative, rows)
 	}
-	return pyjson.ObjectOf("verified", verified, "relaunch_attempted", attempted, "failed", failed, "covered", coveredMap), nil
+	return jsonutil.ObjectOf("verified", verified, "relaunch_attempted", attempted, "failed", failed, "covered", coveredMap), nil
 }
 
 // True when systemd exits zero reporting the unit active
@@ -305,15 +305,15 @@ func stringsAny(values []string) []any {
 
 // Validated profiles and supervisors of a recovery payload, a ValueError text when malformed
 func parseRecoveryPayload(text string) ([]string, map[string]string, error) {
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil, err
 	}
-	payload, ok := decoded.(*pyjson.Object)
+	payload, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		payload = pyjson.NewObject()
+		payload = jsonutil.NewObject()
 	}
-	rawProfiles, ok := payload.GetOr("profiles", nil).([]any)
+	rawProfiles, ok := payload.ValueOr("profiles", nil).([]any)
 	if !ok {
 		return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery payload must contain a profiles list"}
 	}
@@ -326,13 +326,13 @@ func parseRecoveryPayload(text string) ([]string, map[string]string, error) {
 		profiles = append(profiles, name)
 	}
 	supervisors := map[string]string{}
-	if raw := payload.GetOr("supervisors", nil); raw != nil {
-		obj, isObj := raw.(*pyjson.Object)
+	if raw := payload.ValueOr("supervisors", nil); raw != nil {
+		obj, isObj := raw.(*jsonutil.Object)
 		if !isObj {
 			return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
 		}
-		for _, profile := range obj.Keys {
-			supervisor, isStr := obj.Vals[profile].(string)
+		for _, profile := range obj.Keys() {
+			supervisor, isStr := obj.Value(profile).(string)
 			if !isStr || !home.ProfileIDRe.MatchString(profile) || !recoverySupervisorRe.MatchString(supervisor) {
 				return nil, nil, &pm.PyError{Class: "ValueError", Message: "recovery supervisors map is invalid"}
 			}
@@ -372,8 +372,8 @@ func UpdateRestartRecoveryMain(ctx context.Context, args []string, stdin io.Read
 		fmt.Fprintf(stderr, "%s: %s\n", launchErrorClass(err), launchErrorText(err))
 		return 1
 	}
-	text, err := pystr.DecodeUTF8(raw)
-	var result *pyjson.Object
+	text, err := textutil.DecodeUTF8(raw)
+	var result *jsonutil.Object
 	var profiles []string
 	var supervisors map[string]string
 	if err == nil {
@@ -387,13 +387,13 @@ func UpdateRestartRecoveryMain(ctx context.Context, args []string, stdin io.Read
 		}
 	}
 	if err != nil {
-		body, _ := pyjson.Dumps(pyjson.ObjectOf("error", err.Error(), "verified", []any{}, "relaunch_attempted", []any{}, "failed", []any{}))
+		body, _ := jsonutil.Encode(jsonutil.ObjectOf("error", err.Error(), "verified", []any{}, "relaunch_attempted", []any{}, "failed", []any{}))
 		fmt.Fprintln(stdout, body)
 		return 2
 	}
-	body, _ := pyjson.Dumps(result, pyjson.SortKeys(true))
+	body, _ := jsonutil.Encode(result, jsonutil.SortKeys())
 	fmt.Fprintln(stdout, body)
-	if pyrepr.Truthy(result.GetOr("failed", nil)) {
+	if anyutil.IsTrue(result.ValueOr("failed", nil)) {
 		return 1
 	}
 	return 0

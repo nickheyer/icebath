@@ -22,10 +22,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var (
@@ -72,7 +73,7 @@ type doctorProbeEnv struct {
 
 // Probe dependencies of a doctor run, a client and IPv6 target honouring the environment proxies, the system resolver
 func newDoctorProbeEnv(ctx context.Context, d *Doctor) *doctorProbeEnv {
-	return &doctorProbeEnv{ctx: ctx, d: d, client: pyhttpx.EnvProxyClient(false), proxy: pyhttpx.EnvProxy, tcpConnect: doctorTCPConnect,
+	return &doctorProbeEnv{ctx: ctx, d: d, client: httputil.Client(false), proxy: httputil.Proxy, tcpConnect: doctorTCPConnect,
 		lookupIPv6: func(ctx context.Context, host string) ([]net.IP, error) {
 			return net.DefaultResolver.LookupIP(ctx, "ip6", host)
 		}}
@@ -111,7 +112,7 @@ func doctorHasHealthyOAuthFallbackForAPIKeyProvider(ctx context.Context, h, prov
 	default:
 		return false
 	}
-	return pyrepr.Truthy(status["logged_in"])
+	return anyutil.IsTrue(status["logged_in"])
 }
 
 // Builds the API key provider health check list, the static rows then every api_key profile not already present
@@ -198,7 +199,7 @@ var doctorOpenRouterStatus = map[int][2]string{
 }
 
 // Sends one request the way a bare httpx call does, a ten second limit per phase and no redirects followed
-func (e *doctorProbeEnv) send(method, rawURL string, headers [][2]string, body []byte) (*pyhttpx.Response, error) {
+func (e *doctorProbeEnv) send(method, rawURL string, headers [][2]string, body []byte) (*httputil.Response, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -210,7 +211,7 @@ func (e *doctorProbeEnv) send(method, rawURL string, headers [][2]string, body [
 	for _, h := range headers {
 		req.Header.Set(h[0], h[1])
 	}
-	return pyhttpx.Do(e.client, req, 10*time.Second)
+	return httputil.Do(e.client, req, httputil.EachPhase(10*time.Second))
 }
 
 // Probes the OpenRouter models endpoint with the configured key
@@ -222,7 +223,7 @@ func (e *doctorProbeEnv) probeOpenRouter() (doctorProbeResult, error) {
 	}
 	r, err := e.send(http.MethodGet, home.OpenRouterModelsURL, [][2]string{{"Authorization", "Bearer " + key}}, nil)
 	if err != nil {
-		return e.doctorConnectivityRow(name, "fail", "("+pyhttpx.ErrorText(err)+")", []string{"Check network connectivity"}, ""), nil
+		return e.doctorConnectivityRow(name, "fail", "("+err.Error()+")", []string{"Check network connectivity"}, ""), nil
 	}
 	if r.StatusCode == 200 {
 		return e.doctorConnectivityRow(name, "ok", "", nil, ""), nil
@@ -256,7 +257,7 @@ func (e *doctorProbeEnv) probeAnthropic() (doctorProbeResult, error) {
 		}
 	}
 	if err != nil {
-		return e.doctorConnectivityRow(name, "warn", "("+pyhttpx.ErrorText(err)+")", nil, ""), nil
+		return e.doctorConnectivityRow(name, "warn", "("+err.Error()+")", nil, ""), nil
 	}
 	switch r.StatusCode {
 	case 200:
@@ -291,13 +292,13 @@ func (e *doctorProbeEnv) probeAPIKeyProvider(p doctorAPIKeyProvider) (doctorProb
 		return e.doctorConnectivityRow(p.Name, "ok", "(key configured)", nil, label), nil
 	}
 	warn := func(err error) (doctorProbeResult, error) {
-		return e.doctorConnectivityRow(p.Name, "warn", "("+pyhttpx.ErrorText(err)+")", nil, label), nil
+		return e.doctorConnectivityRow(p.Name, "warn", "("+err.Error()+")", nil, label), nil
 	}
 	base, target, headers, err := e.doctorAPIKeyRequest(key, p.BaseEnv, p.DefaultURL)
 	if err != nil {
 		return warn(err)
 	}
-	var r *pyhttpx.Response
+	var r *httputil.Response
 	if strings.HasSuffix(strings.TrimRight(base, "/"), "/anthropic") {
 		if r, err = e.doctorAnthropicMessagesProbe(base, key); err != nil {
 			return warn(err)
@@ -331,7 +332,7 @@ func (e *doctorProbeEnv) probeAPIKeyProvider(p doctorAPIKeyProvider) (doctorProb
 }
 
 // Posts a one token message to the Anthropic route of a base URL with the auth family the runtime uses
-func (e *doctorProbeEnv) doctorAnthropicMessagesProbe(base, key string) (*pyhttpx.Response, error) {
+func (e *doctorProbeEnv) doctorAnthropicMessagesProbe(base, key string) (*httputil.Response, error) {
 	normalized, defaultQuery := provider.AnthropicBaseClientQuery(base)
 	agent, err := updaterecord.UserAgent("icebath-cli")
 	if err != nil {
@@ -344,8 +345,8 @@ func (e *doctorProbeEnv) doctorAnthropicMessagesProbe(base, key string) (*pyhttp
 		headers = append(headers, [2]string{"x-api-key", key})
 	}
 	model := "claude-sonnet-4-5"
-	if cfgModel := e.doctorModelCfg()["default"]; pyrepr.Truthy(cfgModel) && strings.TrimSpace(pyrepr.Str(cfgModel)) != "" {
-		model = strings.TrimSpace(pyrepr.Str(cfgModel))
+	if cfgModel := e.doctorModelCfg()["default"]; anyutil.IsTrue(cfgModel) && strings.TrimSpace(anyutil.String(cfgModel)) != "" {
+		model = strings.TrimSpace(anyutil.String(cfgModel))
 	}
 	var body bytes.Buffer
 	enc := json.NewEncoder(&body)
@@ -361,7 +362,7 @@ func (e *doctorProbeEnv) doctorAnthropicMessagesProbe(base, key string) (*pyhttp
 	for k, v := range defaultQuery {
 		params = append(params, [2]string{k, v})
 	}
-	target := pyhttpx.MergeParams(normalized+"/v1/messages", params)
+	target := httputil.MergeQuery(normalized+"/v1/messages", params)
 	headers = append(headers, [2]string{"Content-Type", "application/json"})
 	return e.send(http.MethodPost, target, headers, bytes.TrimRight(body.Bytes(), "\n"))
 }
@@ -385,10 +386,10 @@ func (e *doctorProbeEnv) doctorAPIKeyRequest(key, baseEnv, defaultURL string) (s
 		base = os.Getenv(baseEnv)
 	}
 	text := func(v any) string {
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			return ""
 		}
-		return strings.TrimSpace(pyrepr.Str(v))
+		return strings.TrimSpace(anyutil.String(v))
 	}
 	if base == "" && baseEnv == "AZURE_FOUNDRY_BASE_URL" && strings.ToLower(text(e.doctorModelCfg()["provider"])) == "azure-foundry" {
 		base = text(e.doctorModelCfg()["base_url"])
@@ -399,7 +400,7 @@ func (e *doctorProbeEnv) doctorAPIKeyRequest(key, baseEnv, defaultURL string) (s
 	if base != "" && strings.HasSuffix(strings.TrimRight(base, "/"), "/anthropic") {
 		base = provider.ToOpenAIBaseURL(base)
 	}
-	kimi, err := pyurl.BaseURLHostMatches(base, "api.kimi.com")
+	kimi, err := urlutil.BaseHostMatches(base, "api.kimi.com")
 	if err != nil {
 		return "", "", nil, err
 	}
@@ -414,7 +415,7 @@ func (e *doctorProbeEnv) doctorAPIKeyRequest(key, baseEnv, defaultURL string) (s
 	if err != nil {
 		return "", "", nil, err
 	}
-	if kimi, err = pyurl.BaseURLHostMatches(base, "api.kimi.com"); err != nil {
+	if kimi, err = urlutil.BaseHostMatches(base, "api.kimi.com"); err != nil {
 		return "", "", nil, err
 	}
 	if kimi {
@@ -422,11 +423,11 @@ func (e *doctorProbeEnv) doctorAPIKeyRequest(key, baseEnv, defaultURL string) (s
 	}
 	headers := [][2]string{{"Authorization", "Bearer " + key}, {"User-Agent", agent}}
 	if target != "" {
-		studio, err := pyurl.BaseURLHostMatches(target, "generativelanguage.googleapis.com")
+		studio, err := urlutil.BaseHostMatches(target, "generativelanguage.googleapis.com")
 		if err != nil {
 			return "", "", nil, err
 		}
-		vertex, err := pyurl.BaseURLHostMatches(target, "aiplatform.googleapis.com")
+		vertex, err := urlutil.BaseHostMatches(target, "aiplatform.googleapis.com")
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -465,10 +466,10 @@ func (e *doctorProbeEnv) probeAzureEntra() (doctorProbeResult, error) {
 	name := "Azure Foundry (Entra ID)"
 	label := doctorLjust(name, 28)
 	text := func(v any) string {
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			return ""
 		}
-		return strings.TrimSpace(pyrepr.Str(v))
+		return strings.TrimSpace(anyutil.String(v))
 	}
 	cfg, err := config.LoadContext(e.ctx, e.d.Home, nil)
 	if err != nil {
@@ -487,14 +488,14 @@ func (e *doctorProbeEnv) probeAzureEntra() (doctorProbeResult, error) {
 	}
 	entra := provider.NewEntraIdentityConfig(scope, true)
 	info := provider.DescribeActiveEntraCredential(e.ctx, &entra, "", 10*time.Second)
-	if pyrepr.Truthy(info["ok"]) {
+	if anyutil.IsTrue(info["ok"]) {
 		var sources []string
 		switch list := info["env_sources"].(type) {
 		case []string:
 			sources = list
 		case []any:
 			for _, s := range list {
-				sources = append(sources, pyrepr.Str(s))
+				sources = append(sources, anyutil.String(s))
 			}
 		}
 		tag := strings.Join(sources, ", ")
@@ -504,12 +505,12 @@ func (e *doctorProbeEnv) probeAzureEntra() (doctorProbeResult, error) {
 		return e.doctorConnectivityRow(name, "ok", "("+tag+", scope="+scope+")", nil, label), nil
 	}
 	errText := "credential chain exhausted"
-	if pyrepr.Truthy(info["error"]) {
-		errText = pyrepr.Str(info["error"])
+	if anyutil.IsTrue(info["error"]) {
+		errText = anyutil.String(info["error"])
 	}
 	hint := "Run `az login`, set AZURE_TENANT_ID/AZURE_CLIENT_ID/AZURE_CLIENT_SECRET, or attach a managed identity to this VM."
-	if pyrepr.Truthy(info["hint"]) {
-		hint = pyrepr.Str(info["hint"])
+	if anyutil.IsTrue(info["hint"]) {
+		hint = anyutil.String(info["hint"])
 	}
 	return e.doctorConnectivityRow(name, "warn", "("+errText+")", []string{"Azure Foundry Entra: " + errText + ". " + hint}, label), nil
 }
@@ -567,7 +568,7 @@ func (e *doctorProbeEnv) doctorIPv6ProbeTarget(target *url.URL) (host, port, sho
 // Detects an advertised IPv6 route that only times out and names the force_ipv4 remedy
 func (e *doctorProbeEnv) probeIPv6Path() (doctorProbeResult, error) {
 	name := "IPv6 route"
-	if pyrepr.Truthy(e.doctorLoadNetworkConfig()["force_ipv4"]) {
+	if anyutil.IsTrue(e.doctorLoadNetworkConfig()["force_ipv4"]) {
 		return doctorConnectivitySkip(name), nil
 	}
 	target, err := url.Parse(home.OpenRouterModelsURL)
@@ -642,7 +643,7 @@ func (e *doctorProbeEnv) probeGitHubToken() (doctorProbeResult, error) {
 	r, err := e.send(http.MethodGet, doctorGitHubAPIProbeURL, [][2]string{
 		{"Authorization", "Bearer " + token}, {"User-Agent", agent}, {"Accept", "application/vnd.github+json"}}, nil)
 	if err != nil {
-		return e.doctorConnectivityRow(name, "fail", "("+pyhttpx.ErrorText(err)+")", []string{"Check network connectivity"}, ""), nil
+		return e.doctorConnectivityRow(name, "fail", "("+err.Error()+")", []string{"Check network connectivity"}, ""), nil
 	}
 	switch r.StatusCode {
 	case 200:

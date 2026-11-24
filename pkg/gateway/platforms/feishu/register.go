@@ -8,8 +8,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +48,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		}
 		last = &r
 		if !r.Success {
-			return gateway.SendError("Feishu send failed: " + pyrepr.Str(r.Error)), nil
+			return gateway.SendError("Feishu send failed: " + anyutil.String(r.Error)), nil
 		}
 	}
 	for _, media := range mediaFiles {
@@ -72,7 +72,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		}
 		last = &r
 		if !r.Success {
-			return gateway.SendError("Feishu media send failed: " + pyrepr.Str(r.Error)), nil
+			return gateway.SendError("Feishu media send failed: " + anyutil.String(r.Error)), nil
 		}
 	}
 	if last == nil {
@@ -83,7 +83,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 
 // Connected once an app id is configured
 func isConnected(cfg *gateway.PlatformConfig) bool {
-	return cfg != nil && cfg.Extra != nil && pyrepr.Truthy(cfg.Extra["app_id"])
+	return cfg != nil && cfg.Extra != nil && anyutil.IsTrue(cfg.Extra["app_id"])
 }
 
 // Passive dependency check, satisfied since the lark SDK is compiled into the binary

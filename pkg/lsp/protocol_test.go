@@ -65,13 +65,13 @@ func TestReadMessageFraming(t *testing.T) {
 		t.Fatalf("clean EOF between messages gives no message and no error, got %v %v", ok, err)
 	}
 	cases := map[string]string{
-		"Content-Type: x\r\n\r\n":             "LSP message missing Content-Length: {'content-type': 'x'}",
-		"Content-Length: abc\r\n\r\n":         "non-integer Content-Length: 'abc'",
+		"Content-Type: x\r\n\r\n":             `LSP message missing Content-Length: {"content-type": "x"}`,
+		"Content-Length: abc\r\n\r\n":         `non-integer Content-Length: "abc"`,
 		"Content-Length: 99999999999\r\n\r\n": "unreasonable Content-Length: 99999999999",
 		"Content-Length: 10\r\n\r\n{}":        "truncated LSP body: expected 10 bytes, got 2",
-		"Content-Length: 2\r\n":               "unexpected EOF while reading LSP headers (partial=b'')",
-		"Content-Le":                          "unexpected EOF while reading LSP headers (partial=b'Content-Le')",
-		": x\r\n\r\n":                         "malformed LSP header line: b': x'",
+		"Content-Length: 2\r\n":               `unexpected EOF while reading LSP headers (partial="")`,
+		"Content-Le":                          `unexpected EOF while reading LSP headers (partial="Content-Le")`,
+		": x\r\n\r\n":                         `malformed LSP header line: ": x"`,
 		"Content-Length: 1\r\n\r\n\xff":       "non-UTF-8 LSP body: 'utf-8' codec can't decode byte 0xff in position 0: invalid start byte",
 	}
 	for input, want := range cases {
@@ -81,8 +81,8 @@ func TestReadMessageFraming(t *testing.T) {
 			t.Errorf("%q: got %v, want %q", input, err, want)
 		}
 	}
-	if _, _, err := ReadMessage(bufio.NewReader(strings.NewReader("Content-Length: 1_0\r\n\r\n1234567890")), testDecode); err != nil {
-		t.Fatalf("int() accepts digit underscores: %v", err)
+	if _, _, err := ReadMessage(bufio.NewReader(strings.NewReader("Content-Length: 1_0\r\n\r\n1234567890")), testDecode); err == nil || err.Error() != `non-integer Content-Length: "1_0"` {
+		t.Fatalf("digit underscores are not a Content-Length: %v", err)
 	}
 }
 

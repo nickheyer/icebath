@@ -6,16 +6,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Stripped stdout of a git query in the checkout, empty on a failure, a nonzero exit or no output
 func runGitQueryText(repoDir string, args ...string) string {
 	argv := append([]string{"git"}, args...)
-	out, err := pysubprocess.RunWith(context.Background(), argv, pysubprocess.Options{Dir: repoDir, Timeout: 3 * time.Second})
+	out, err := executil.Run(context.Background(), argv, executil.Options{Dir: repoDir, Timeout: 3 * time.Second})
 	if err != nil || out.Returncode != 0 {
 		return ""
 	}
@@ -77,7 +76,7 @@ func GitVersionInfo(repoDir string, includeUntracked bool) VersionInfo {
 	commit := runGitQueryText(repoDir, "rev-parse", "HEAD")
 	branch := runGitQueryText(repoDir, "branch", "--show-current")
 	var commitDate *int64
-	if raw := runGitQueryText(repoDir, "log", "-1", "--format=%ct", "HEAD"); raw != "" && pystr.StrIsDigit(raw) {
+	if raw := runGitQueryText(repoDir, "log", "-1", "--format=%ct", "HEAD"); raw != "" && textutil.IsDigits(raw) {
 		if n, err := strconv.ParseInt(raw, 10, 64); err == nil {
 			commitDate = &n
 		}
@@ -87,7 +86,7 @@ func GitVersionInfo(repoDir string, includeUntracked bool) VersionInfo {
 		status = append(status, "-uno")
 	}
 	dirty := false
-	if out, err := pysubprocess.RunWith(context.Background(), status, pysubprocess.Options{Dir: repoDir, Timeout: 3 * time.Second}); err == nil && out.Returncode == 0 {
+	if out, err := executil.Run(context.Background(), status, executil.Options{Dir: repoDir, Timeout: 3 * time.Second}); err == nil && out.Returncode == 0 {
 		dirty = strings.TrimSpace(strings.ToValidUTF8(string(out.Stdout), "\uFFFD")) != ""
 	}
 	var releases []string

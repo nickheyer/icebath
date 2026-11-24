@@ -5,12 +5,12 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // OperationDeadlineSeconds bounds every connection operation, swapped by tests
@@ -87,8 +87,8 @@ type ConnTarget struct {
 	ConnectURL   string
 	Attempt      string
 	NextReadAt   float64
-	RequiredEnv  []*pyjson.Object
-	Extra        *pyjson.Object
+	RequiredEnv  []*jsonutil.Object
+	Extra        *jsonutil.Object
 	Phase        string
 }
 
@@ -100,8 +100,8 @@ func NewConnTarget(name, kind, action string) *ConnTarget {
 func (t *ConnTarget) resolved() bool { return TargetResolves(t.Kind, t.State) }
 
 // Row snapshot in the card order with the extra fields laid over it
-func (t *ConnTarget) snapshot(withURL bool) *pyjson.Object {
-	out := pyjson.NewObject()
+func (t *ConnTarget) snapshot(withURL bool) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("name", t.Name)
 	out.Set("kind", t.Kind)
 	out.Set("action", t.Action)
@@ -130,8 +130,8 @@ func (t *ConnTarget) snapshot(withURL bool) *pyjson.Object {
 		out.Set("required_env", env)
 	}
 	if t.Extra != nil {
-		for _, k := range t.Extra.Keys {
-			out.Set(k, t.Extra.Vals[k])
+		for _, k := range t.Extra.Keys() {
+			out.Set(k, t.Extra.Value(k))
 		}
 	}
 	return out
@@ -142,7 +142,7 @@ type TransitionFields struct {
 	Detail     *string
 	ConnectURL *string
 	Attempt    *string
-	Extra      *pyjson.Object
+	Extra      *jsonutil.Object
 }
 
 // ConnectionOperation is one card's set of targets with a server owned deadline and a frozen result
@@ -161,12 +161,12 @@ type ConnectionOperation struct {
 	settledAt       *float64
 	settledBy       SettleReason
 	seq             int
-	settledSnapshot *pyjson.Object
+	settledSnapshot *jsonutil.Object
 	detached        bool
 }
 
 // OperationOnChange receives every frame of every attached operation, the class level renderer hook
-var OperationOnChange func(op *ConnectionOperation, change, snapshot *pyjson.Object)
+var OperationOnChange func(op *ConnectionOperation, change, snapshot *jsonutil.Object)
 
 // Operation over targets with a fresh id and the deadline counted from now
 func NewConnectionOperation(targets []*ConnTarget, sessionKey, toolCallID string, call any) *ConnectionOperation {
@@ -195,10 +195,10 @@ func (o *ConnectionOperation) Target(name string) *ConnTarget {
 }
 
 // Moves one target when the contract lets actor, nil change when it already sits in to
-func (o *ConnectionOperation) Transition(name string, to TargetState, actor ConnActor, f TransitionFields) (*pyjson.Object, error) {
+func (o *ConnectionOperation) Transition(name string, to TargetState, actor ConnActor, f TransitionFields) (*jsonutil.Object, error) {
 	t := o.Target(name)
 	if t == nil {
-		return nil, &IllegalTransition{Msg: fmt.Sprintf("unknown target %s", pyrepr.StrRepr(name))}
+		return nil, &IllegalTransition{Msg: fmt.Sprintf("unknown target %s", strconv.Quote(name))}
 	}
 	o.mu.Lock()
 	if t.State == to {
@@ -210,7 +210,7 @@ func (o *ConnectionOperation) Transition(name string, to TargetState, actor Conn
 		return nil, &IllegalTransition{Msg: fmt.Sprintf("%s %s: %s -> %s by %s", t.Kind, name, t.State, to, actor)}
 	}
 	from := t.State
-	change := pyjson.NewObject()
+	change := jsonutil.NewObject()
 	change.Set("target", name)
 	change.Set("from", string(from))
 	change.Set("to", string(to))
@@ -241,13 +241,13 @@ func (o *ConnectionOperation) Transition(name string, to TargetState, actor Conn
 func (o *ConnectionOperation) Refresh(name, connectURL, detail string, actor ConnActor, phase string) error {
 	t := o.Target(name)
 	if t == nil {
-		return &IllegalTransition{Msg: fmt.Sprintf("unknown target %s", pyrepr.StrRepr(name))}
+		return &IllegalTransition{Msg: fmt.Sprintf("unknown target %s", strconv.Quote(name))}
 	}
 	o.mu.Lock()
 	t.ConnectURL = connectURL
 	t.Detail = detail
 	t.Phase = phase
-	change := pyjson.NewObject()
+	change := jsonutil.NewObject()
 	change.Set("target", name)
 	change.Set("from", string(t.State))
 	change.Set("to", string(t.State))
@@ -282,14 +282,14 @@ func (o *ConnectionOperation) ResolvedTarget(t *ConnTarget) bool {
 }
 
 // Advances the write counter until settlement and returns the snapshot the frame carries
-func (o *ConnectionOperation) bumpLocked() *pyjson.Object {
+func (o *ConnectionOperation) bumpLocked() *jsonutil.Object {
 	if o.settledSnapshot == nil {
 		o.seq++
 	}
 	return o.resultLocked(true)
 }
 
-func (o *ConnectionOperation) changed(change, snapshot *pyjson.Object) {
+func (o *ConnectionOperation) changed(change, snapshot *jsonutil.Object) {
 	if hook := OperationOnChange; hook != nil && !o.detached {
 		hook(o, change, snapshot)
 	}
@@ -370,8 +370,8 @@ func (o *ConnectionOperation) SettleIfAllResolved() bool {
 	return o.AllResolved() && o.Settle(SettleAllResolved)
 }
 
-func (o *ConnectionOperation) snapshotLocked(withURLs bool) *pyjson.Object {
-	out := pyjson.NewObject()
+func (o *ConnectionOperation) snapshotLocked(withURLs bool) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("op_id", o.OpID)
 	out.Set("seq", o.seq)
 	out.Set("deadline_at", o.DeadlineAt)
@@ -390,7 +390,7 @@ func (o *ConnectionOperation) snapshotLocked(withURLs bool) *pyjson.Object {
 	return out
 }
 
-func (o *ConnectionOperation) resultLocked(withURLs bool) *pyjson.Object {
+func (o *ConnectionOperation) resultLocked(withURLs bool) *jsonutil.Object {
 	if o.settledSnapshot == nil {
 		return o.snapshotLocked(withURLs)
 	}
@@ -398,7 +398,7 @@ func (o *ConnectionOperation) resultLocked(withURLs bool) *pyjson.Object {
 	frozen, _ := src.([]any)
 	targets := make([]any, len(frozen))
 	for i, t := range frozen {
-		cp := copyObject(t.(*pyjson.Object))
+		cp := copyObject(t.(*jsonutil.Object))
 		if !withURLs {
 			cp.Delete("connect_url")
 		}
@@ -410,28 +410,28 @@ func (o *ConnectionOperation) resultLocked(withURLs bool) *pyjson.Object {
 }
 
 // Live snapshot, the frozen one once settled
-func (o *ConnectionOperation) Snapshot(withURLs bool) *pyjson.Object {
+func (o *ConnectionOperation) Snapshot(withURLs bool) *jsonutil.Object {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return o.resultLocked(withURLs)
 }
 
 // Model facing result, settled MCP rows carrying the catalog listing of their connected tools
-func (o *ConnectionOperation) Result(ctx context.Context, env *Env, withURLs bool) *pyjson.Object {
+func (o *ConnectionOperation) Result(ctx context.Context, env *Env, withURLs bool) *jsonutil.Object {
 	o.mu.Lock()
 	result := o.resultLocked(withURLs)
 	o.mu.Unlock()
 	raw, _ := result.Get("targets")
 	targets, _ := raw.([]any)
 	for _, t := range targets {
-		obj := t.(*pyjson.Object)
+		obj := t.(*jsonutil.Object)
 		obj.Delete("resolved")
 	}
 	if v, _ := result.Get("settled_at"); v == nil {
 		return result
 	}
 	for _, t := range targets {
-		obj := t.(*pyjson.Object)
+		obj := t.(*jsonutil.Object)
 		obj.Delete("instructions")
 		var names []string
 		if kind, _ := obj.Get("kind"); kind == "mcp" {
@@ -454,7 +454,7 @@ func (o *ConnectionOperation) Result(ctx context.Context, env *Env, withURLs boo
 }
 
 // The connection.request payload and resume snapshot with live rows and the server deadline
-func (o *ConnectionOperation) RequestPayload() *pyjson.Object {
+func (o *ConnectionOperation) RequestPayload() *jsonutil.Object {
 	o.mu.Lock()
 	targets := make([]any, len(o.Targets))
 	for i, t := range o.Targets {
@@ -462,7 +462,7 @@ func (o *ConnectionOperation) RequestPayload() *pyjson.Object {
 	}
 	seq := o.seq
 	o.mu.Unlock()
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("op_id", o.OpID)
 	payload.Set("seq", seq)
 	payload.Set("deadline_at", o.DeadlineAt)
@@ -474,10 +474,10 @@ func (o *ConnectionOperation) RequestPayload() *pyjson.Object {
 	return payload
 }
 
-func copyObject(src *pyjson.Object) *pyjson.Object {
-	out := &pyjson.Object{Keys: append([]string(nil), src.Keys...), Vals: make(map[string]any, len(src.Vals))}
-	for k, v := range src.Vals {
-		out.Vals[k] = v
+func copyObject(src *jsonutil.Object) *jsonutil.Object {
+	out := &jsonutil.Object{Keys: append([]string(nil), src.Keys()...), Vals: make(map[string]any, src.Len())}
+	for k, v := range src.All() {
+		out.Set(k, v)
 	}
 	return out
 }

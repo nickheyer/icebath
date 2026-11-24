@@ -6,9 +6,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const toastLimit = 200
@@ -81,5 +81,5 @@ func toast(ctx context.Context, key string, kwargs map[string]any) string {
 // Fail closed send result for a flood wait over the inline cap
 func floodCapResult(wait float64) gateway.SendResult {
 	w := wait
-	return gateway.SendResult{Success: false, Error: "flood_control:" + pyrepr.Str(wait), RetryAfter: &w}
+	return gateway.SendResult{Success: false, Error: "flood_control:" + anyutil.String(wait), RetryAfter: &w}
 }

@@ -11,9 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Force redacts text before serializing a terminal error envelope
@@ -276,7 +276,7 @@ type TerminalRequest struct {
 func planExecution(env *Env, command any, taskID string, timeout *int, background, hostLocal bool) (*execPlan, error) {
 	cmd, ok := command.(string)
 	if !ok {
-		envLog(env).Warn("Rejected invalid terminal command value: " + pyrepr.TypeName(command))
+		envLog(env).Warn("Rejected invalid terminal command value: " + anyutil.Kind(command))
 		return nil, &terminalRejected{errorJSON(fmt.Sprintf("Invalid command: expected text, got %s", errchain.Kind(command)), -1, "error", nil)}
 	}
 	cfg, err := getEnvConfig(env)
@@ -347,16 +347,16 @@ func planExecution(env *Env, command any, taskID string, timeout *int, backgroun
 
 // Attaches the foreground to background promotion note to a spawn result, unchanged on error
 func withPromotedNote(resultJSON string, requestedTimeout int) string {
-	decoded, err := pyjson.Loads(resultJSON)
-	data, _ := decoded.(*pyjson.Object)
+	decoded, err := jsonutil.Decode(resultJSON)
+	data, _ := decoded.(*jsonutil.Object)
 	if err != nil || data == nil {
 		return resultJSON
 	}
-	if e, ok := data.Get("error"); ok && pyrepr.Truthy(e) {
+	if e, ok := data.Get("error"); ok && anyutil.IsTrue(e) {
 		return resultJSON
 	}
 	template := promotedNotePollOnly
-	if notify, _ := data.Get("notify_on_complete"); pyrepr.Truthy(notify) {
+	if notify, _ := data.Get("notify_on_complete"); anyutil.IsTrue(notify) {
 		template = promotedNote
 	}
 	note := strings.ReplaceAll(strings.ReplaceAll(template, "{requested}", strconv.Itoa(requestedTimeout)), "{cap}", strconv.Itoa(foregroundMaxTimeout()))
@@ -618,7 +618,7 @@ func TerminalTool(ctx context.Context, env *Env, req TerminalRequest) (out strin
 }
 
 // Model visible schema of the terminal tool
-func terminalSchema() *pyjson.Object {
+func terminalSchema() *jsonutil.Object {
 	cap := foregroundMaxTimeout()
 	return Dict(
 		"name", "terminal",

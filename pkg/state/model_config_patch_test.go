@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func storedModelConfig(t *testing.T, db *SessionDB, sid string) map[string]any {
@@ -66,7 +66,7 @@ func TestArchiveModelConfigPatchRollsBackWithTranscript(t *testing.T) {
 	archiveBatch(t, db, sid, map[string]any{"role": "user", "content": "original"})
 	profileExec(t, db, "CREATE TRIGGER fail_replacement BEFORE INSERT ON messages WHEN NEW.content = 'replacement' "+
 		"BEGIN SELECT RAISE(ABORT, 'insert failed'); END")
-	patch := pyjson.NewObject()
+	patch := jsonutil.NewObject()
 	patch.Set("_proactive_prune_rearm_tokens", nil)
 	_, err := db.ArchiveAndCompact(context.Background(), sid, []map[string]any{{"role": "user", "content": "replacement"}},
 		ArchiveCompactOptions{ModelConfigPatch: patch})

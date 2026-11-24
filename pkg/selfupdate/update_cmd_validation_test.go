@@ -11,9 +11,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Answers the import health probe when this test binary is started as an install's probe child
@@ -74,7 +75,7 @@ func TestUpdateImportProbeUsesSelectedDependencies(t *testing.T) {
 	selected := ucInstallBinary(t, repo)
 	var ran []string
 	saved := importHealthRun
-	importHealthRun = func(ctx context.Context, argv []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
+	importHealthRun = func(ctx context.Context, argv []string, o executil.Options) (*executil.Completed, error) {
 		ran = argv
 		return saved(ctx, argv, o)
 	}
@@ -124,7 +125,7 @@ func TestUpdateProbeChildrenSkipExternalSecretSources(t *testing.T) {
 }
 
 // Replaces the probe's runner and command builder for one test
-func ucPatchProbe(t *testing.T, run func(context.Context, []string, pysubprocess.Options) (*pysubprocess.Completed, error),
+func ucPatchProbe(t *testing.T, run func(context.Context, []string, executil.Options) (*executil.Completed, error),
 	command func(string, []string, pm.LaunchCommandOptions) []string) {
 	t.Helper()
 	savedRun, savedCommand := importHealthRun, importHealthCommand
@@ -166,9 +167,9 @@ func TestImportGuardDoesNotAcceptForgedStaticMarker(t *testing.T) {
 }
 
 func TestImportGuardRejectsMalformedHealthPayload(t *testing.T) {
-	ucPatchProbe(t, func(ctx context.Context, argv []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
+	ucPatchProbe(t, func(ctx context.Context, argv []string, o executil.Options) (*executil.Completed, error) {
 		marker := argv[len(argv)-2]
-		return &pysubprocess.Completed{Args: argv, Stdout: []byte(marker + "{}")}, nil
+		return &executil.Completed{Args: argv, Stdout: []byte(marker + "{}")}, nil
 	}, nil)
 	ok, module, _, err := validateCriticalModulesImport(context.Background(), t.TempDir(), false)
 	if err != nil {
@@ -180,8 +181,8 @@ func TestImportGuardRejectsMalformedHealthPayload(t *testing.T) {
 }
 
 func TestImportGuardReportsProbeTimeout(t *testing.T) {
-	ucPatchProbe(t, func(ctx context.Context, argv []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
-		return nil, &pysubprocess.TimeoutExpired{Cmd: []string{"python"}, Timeout: 120}
+	ucPatchProbe(t, func(ctx context.Context, argv []string, o executil.Options) (*executil.Completed, error) {
+		return nil, &executil.TimeoutError{Args: []string{"python"}, Timeout: time.Duration(120) * time.Second}
 	}, nil)
 	ok, module, _, err := validateCriticalModulesImport(context.Background(), t.TempDir(), false)
 	if err != nil {
@@ -220,9 +221,9 @@ func TestImportGuardUsesTheSelectedRuntimeCommand(t *testing.T) {
 	tmp := t.TempDir()
 	var seenCommand []string
 	var seenCwd string
-	ucPatchProbe(t, func(ctx context.Context, argv []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
+	ucPatchProbe(t, func(ctx context.Context, argv []string, o executil.Options) (*executil.Completed, error) {
 		seenCommand, seenCwd = argv, o.Dir
-		return &pysubprocess.Completed{Args: argv}, nil
+		return &executil.Completed{Args: argv}, nil
 	}, func(root string, args []string, opts pm.LaunchCommandOptions) []string {
 		if root != tmp {
 			t.Fatalf("command built for %q", root)

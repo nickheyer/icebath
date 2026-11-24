@@ -6,6 +6,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sort"
 	"strings"
@@ -14,10 +15,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Archives a task, a running task having its host local worker terminated after the commit
@@ -177,8 +178,8 @@ func BuildWorkerContext(ctx context.Context, conn state.SQLiteConn, taskID strin
 }
 
 // Per status and per assignee counts with the oldest ready age
-func BoardStats(ctx context.Context, conn state.SQLiteConn) (*pyjson.Object, error) {
-	byStatus := pyjson.NewObject()
+func BoardStats(ctx context.Context, conn state.SQLiteConn) (*jsonutil.Object, error) {
+	byStatus := jsonutil.NewObject()
 	rows, err := QueryRows(ctx, conn, "SELECT status, COUNT(*) AS n FROM tasks WHERE status != 'archived' GROUP BY status")
 	if err != nil {
 		return nil, err
@@ -197,7 +198,7 @@ func BoardStats(ctx context.Context, conn state.SQLiteConn) (*pyjson.Object, err
 	now := time.Now().Unix()
 	var oldestReadyAge any
 	if oldest != nil && oldest.Get("ts") != nil {
-		ts, err := pyIntOf(oldest.Get("ts"))
+		ts, err := cellIntOf(oldest.Get("ts"))
 		if err != nil {
 			return nil, err
 		}
@@ -207,8 +208,8 @@ func BoardStats(ctx context.Context, conn state.SQLiteConn) (*pyjson.Object, err
 }
 
 // Status counts per assignee over non archived tasks
-func countsByAssignee(ctx context.Context, conn state.SQLiteConn) (*pyjson.Object, error) {
-	counts := pyjson.NewObject()
+func countsByAssignee(ctx context.Context, conn state.SQLiteConn) (*jsonutil.Object, error) {
+	counts := jsonutil.NewObject()
 	rows, err := QueryRows(ctx, conn, "SELECT assignee, status, COUNT(*) AS n FROM tasks "+
 		"WHERE status != 'archived' AND assignee IS NOT NULL "+
 		"GROUP BY assignee, status")
@@ -219,10 +220,10 @@ func countsByAssignee(ctx context.Context, conn state.SQLiteConn) (*pyjson.Objec
 		assignee := cellStr(row.Get("assignee"))
 		inner, ok := counts.Get(assignee)
 		if !ok {
-			inner = pyjson.NewObject()
+			inner = jsonutil.NewObject()
 			counts.Set(assignee, inner)
 		}
-		inner.(*pyjson.Object).Set(cellStr(row.Get("status")), cellInt(row.Get("n")))
+		inner.(*jsonutil.Object).Set(cellStr(row.Get("status")), cellInt(row.Get("n")))
 	}
 	return counts, nil
 }
@@ -268,7 +269,10 @@ func GCWorkerLogs(ctx context.Context, olderThanSeconds int64, board *string) (i
 	if !pathExists(logDir) {
 		return 0, nil
 	}
-	return pyfs.UnlinkFilesOlderThan(logDir, "*", float64(retention), nil), nil
+	if retention > int64(math.MaxInt64/time.Second) {
+		return 0, nil
+	}
+	return fsutil.RemoveOlderThan(logDir, "*", time.Now().Add(-time.Duration(retention)*time.Second)), nil
 }
 
 // Worker log path of a task on a board, which may not exist yet
@@ -277,7 +281,7 @@ func WorkerLogPath(ctx context.Context, taskID string, board *string) (string, e
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathJoin(dir, taskID+".log"), nil
+	return pathutil.Join(dir, taskID+".log"), nil
 }
 
 // Worker log text or its last tailBytes, nil when the file is missing or unreadable
@@ -336,7 +340,7 @@ func ReadWorkerLog(ctx context.Context, taskID string, tailBytes *int64, board *
 // Profiles with a config.yaml plus the implicit default, sorted
 func ListProfilesOnDisk() []string {
 	defaultRoot := home.Root()
-	profilesDir := pypath.PathJoin(defaultRoot, "profiles")
+	profilesDir := pathutil.Join(defaultRoot, "profiles")
 	names := map[string]bool{}
 	if pathExists(defaultRoot) {
 		names["default"] = true
@@ -344,8 +348,8 @@ func ListProfilesOnDisk() []string {
 	if isDir(profilesDir) {
 		if entries, err := os.ReadDir(profilesDir); err == nil {
 			for _, e := range entries {
-				dir := pypath.PathJoin(profilesDir, e.Name())
-				if isDir(dir) && isFile(pypath.PathJoin(dir, "config.yaml")) {
+				dir := pathutil.Join(profilesDir, e.Name())
+				if isDir(dir) && isFile(pathutil.Join(dir, "config.yaml")) {
 					names[e.Name()] = true
 				}
 			}
@@ -360,7 +364,7 @@ func ListProfilesOnDisk() []string {
 }
 
 // Every on disk profile or task assignee with its presence and status counts
-func KnownAssignees(ctx context.Context, conn state.SQLiteConn) ([]*pyjson.Object, error) {
+func KnownAssignees(ctx context.Context, conn state.SQLiteConn) ([]*jsonutil.Object, error) {
 	onDisk := map[string]bool{}
 	for _, n := range ListProfilesOnDisk() {
 		onDisk[n] = true
@@ -373,7 +377,7 @@ func KnownAssignees(ctx context.Context, conn state.SQLiteConn) ([]*pyjson.Objec
 	for n := range onDisk {
 		all[n] = true
 	}
-	for _, k := range counts.Keys {
+	for _, k := range counts.Keys() {
 		all[k] = true
 	}
 	names := make([]string, 0, len(all))
@@ -381,11 +385,11 @@ func KnownAssignees(ctx context.Context, conn state.SQLiteConn) ([]*pyjson.Objec
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	out := make([]*pyjson.Object, 0, len(names))
+	out := make([]*jsonutil.Object, 0, len(names))
 	for _, n := range names {
 		c, ok := counts.Get(n)
 		if !ok {
-			c = pyjson.NewObject()
+			c = jsonutil.NewObject()
 		}
 		out = append(out, payload("name", n, "on_disk", onDisk[n], "counts", c))
 	}

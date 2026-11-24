@@ -4,18 +4,17 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"math/big"
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -29,7 +28,7 @@ var (
 	desktopWindowNames    = []string{"progman", "workerw", "program manager", "shell_traywnd", "taskbar", "finder", "desktop", "dock"}
 	desktopBackdropNames  = []string{"progman", "workerw", "program manager", "finder", "desktop"}
 	axWindowTitleRE       = regexp.MustCompile(`AXWindow` + pyWS + `+"([^"]+)"`)
-	textAppPIDRE          = regexp.MustCompile(`(.+?)` + pyWS + `+\(pid` + pyWS + `+(\p{Nd}+)\)`)
+	textAppPIDRE          = regexp.MustCompile(`(.+?)` + pyWS + `+\(pid` + pyWS + `+([0-9]+)\)`)
 )
 
 const (
@@ -96,17 +95,17 @@ func driverOnLinux(env *tools.Env) bool {
 	return cuPlatform == "linux" || BotDesktopPlacementWhere(env) == botDesktopTerminal
 }
 
-// Python str of a row field with its default
-func cuStrField(w *pyjson.Object, key, def string) string {
+// Text of a row field, the default when the row lacks it
+func cuStrField(w *jsonutil.Object, key, def string) string {
 	v, has := w.Get(key)
 	if !has {
 		return def
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // True for the authorization daemon's own window under its normalized app name
-func isCuaDriverSelfWindow(w *pyjson.Object) bool {
+func isCuaDriverSelfWindow(w *jsonutil.Object) bool {
 	name := strings.ToLower(strings.TrimSpace(cuStrField(w, "app_name", "")))
 	var b strings.Builder
 	for _, r := range name {
@@ -118,15 +117,15 @@ func isCuaDriverSelfWindow(w *pyjson.Object) bool {
 }
 
 // Best window of a frontmost first list, skipping self windows and on Linux shell helpers and preferring the X11 active window
-func selectCaptureTarget(windows []*pyjson.Object, appRequested, exactTarget, linux bool, activeWindow func() *int64) *pyjson.Object {
-	var pool []*pyjson.Object
+func selectCaptureTarget(windows []*jsonutil.Object, appRequested, exactTarget, linux bool, activeWindow func() *int64) *jsonutil.Object {
+	var pool []*jsonutil.Object
 	for _, w := range windows {
 		if cuGet(w, "off_screen") != true {
 			pool = append(pool, w)
 		}
 	}
 	if !exactTarget {
-		var external []*pyjson.Object
+		var external []*jsonutil.Object
 		for _, w := range pool {
 			if !isCuaDriverSelfWindow(w) {
 				external = append(external, w)
@@ -137,7 +136,7 @@ func selectCaptureTarget(windows []*pyjson.Object, appRequested, exactTarget, li
 		}
 	}
 	if !exactTarget && !appRequested && linux {
-		var real []*pyjson.Object
+		var real []*jsonutil.Object
 		for _, w := range pool {
 			if isRealAppWindow(w) {
 				real = append(real, w)
@@ -162,34 +161,34 @@ func selectCaptureTarget(windows []*pyjson.Object, appRequested, exactTarget, li
 	return windows[0]
 }
 
-// Numeric value of a z_index for ordering
-func zValue(v any) *big.Float {
+// Numeric value of a z_index for ordering, true and false as 1 and 0, zero for anything that is not a number
+func zValue(v any) float64 {
 	switch x := v.(type) {
 	case float64:
-		return big.NewFloat(x)
+		return x
 	case bool:
 		if x {
-			return big.NewFloat(1)
+			return 1
 		}
-		return big.NewFloat(0)
+		return 0
 	}
-	if n, ok := pyrepr.Int(v); ok {
-		return new(big.Float).SetInt(n)
+	if n, ok := anyutil.Int(v); ok {
+		return float64(n)
 	}
-	return big.NewFloat(0)
+	return 0
 }
 
 // Normalised list_windows rows ordered by z_index descending, ties keeping driver order
-func sortedWindows(out *pyjson.Object) []*pyjson.Object {
+func sortedWindows(out *jsonutil.Object) []*jsonutil.Object {
 	rows := ingestWindows(windowsFromToolResult(out))
 	sort.SliceStable(rows, func(i, j int) bool {
-		return zValue(cuGet(rows[i], "z_index")).Cmp(zValue(cuGet(rows[j], "z_index"))) > 0
+		return zValue(cuGet(rows[i], "z_index")) > zValue(cuGet(rows[j], "z_index"))
 	})
 	return rows
 }
 
 // Tree markdown and window title of a get_window_state result
-func treeAndTitle(out *pyjson.Object) (string, string) {
+func treeAndTitle(out *jsonutil.Object) (string, string) {
 	data, _ := cuGet(out, "data").(string)
 	_, tree := splitTreeText(data)
 	if m := axWindowTitleRE.FindStringSubmatch(tree); m != nil {
@@ -199,54 +198,24 @@ func treeAndTitle(out *pyjson.Object) (string, string) {
 }
 
 // structuredContent of a result as an object, empty when absent
-func scObject(out *pyjson.Object) *pyjson.Object {
-	if sc, ok := cuGet(out, "structuredContent").(*pyjson.Object); ok && pyrepr.Truthy(sc) {
+func scObject(out *jsonutil.Object) *jsonutil.Object {
+	if sc, ok := cuGet(out, "structuredContent").(*jsonutil.Object); ok && anyutil.IsTrue(sc) {
 		return sc
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // A get_window_state result carrying neither a screenshot nor elements nor a parseable tree
-func gwsIsEmpty(out *pyjson.Object) bool {
+func gwsIsEmpty(out *jsonutil.Object) bool {
 	sc := scObject(out)
 	tree, _ := treeAndTitle(out)
-	return !(pyrepr.Truthy(cuGet(out, "images")) || pyrepr.Truthy(cuGet(sc, "elements")) ||
-		pyrepr.Truthy(cuGet(sc, "screenshot_png_b64")) || strings.TrimSpace(tree) != "")
-}
-
-// base64.b64decode without validation, skipping non alphabet characters and failing on bad padding
-func pyB64DecodeLoose(s string) ([]byte, error) {
-	var data []byte
-	pads := 0
-	for i := 0; i < len(s); i++ {
-		c := s[i]
-		switch {
-		case c == '=':
-			if len(data)%4 >= 2 && pads < 2 {
-				pads++
-				if (len(data)+pads)%4 == 0 {
-					return base64.RawStdEncoding.DecodeString(string(data))
-				}
-			}
-		case (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '+' || c == '/':
-			if pads > 0 {
-				pads = 0
-			}
-			data = append(data, c)
-		}
-	}
-	if len(data)%4 == 1 {
-		return nil, errors.New("Invalid base64-encoded string")
-	}
-	if len(data)%4 != 0 {
-		return nil, errors.New("Incorrect padding")
-	}
-	return base64.RawStdEncoding.DecodeString(string(data))
+	return !(anyutil.IsTrue(cuGet(out, "images")) || anyutil.IsTrue(cuGet(sc, "elements")) ||
+		anyutil.IsTrue(cuGet(sc, "screenshot_png_b64")) || strings.TrimSpace(tree) != "")
 }
 
 // Byte length and size of a capture, the sniffed size winning when the bytes carry a readable header
 func pngMetrics(pngB64 string, width, height int) (int, int, int) {
-	raw, err := pyB64DecodeLoose(pngB64)
+	raw, err := base64.StdEncoding.DecodeString(pngB64)
 	if err != nil {
 		return len(pngB64) * 3 / 4, width, height
 	}
@@ -258,7 +227,7 @@ func pngMetrics(pngB64 string, width, height int) (int, int, int) {
 }
 
 // The row names a desktop shell window
-func isDesktopWindow(w *pyjson.Object, names []string) bool {
+func isDesktopWindow(w *jsonutil.Object, names []string) bool {
 	hay := strings.ToLower(cuStrField(w, "app_name", "") + " " + cuStrField(w, "title", ""))
 	for _, n := range names {
 		if strings.Contains(hay, n) {
@@ -283,7 +252,7 @@ func (b *CuaDriverBackend) failedCapture(mode, message string) *CaptureResult {
 }
 
 // Capture stage tool call that disarms on transport or logical failure
-func (b *CuaDriverBackend) callCaptureTool(name string, args *pyjson.Object) (*pyjson.Object, error) {
+func (b *CuaDriverBackend) callCaptureTool(name string, args *jsonutil.Object) (*jsonutil.Object, error) {
 	out, err := b.session.callTool(name, args, 30)
 	if err != nil {
 		return nil, b.disarm(err)
@@ -299,7 +268,7 @@ func (b *CuaDriverBackend) callCaptureTool(name string, args *pyjson.Object) (*p
 }
 
 // One shot CLI transport call after an empty MCP result, nil on failure
-func (b *CuaDriverBackend) cliRefetch(name string, args *pyjson.Object, timeout float64, what, warning string) *pyjson.Object {
+func (b *CuaDriverBackend) cliRefetch(name string, args *jsonutil.Object, timeout float64, what, warning string) *jsonutil.Object {
 	pkgLog(nil).Warn(warning)
 	cliOut, err := b.session.callToolViaCLIFn(name, args, timeout)
 	if err != nil {
@@ -317,7 +286,7 @@ func (b *CuaDriverBackend) cliRefetch(name string, args *pyjson.Object, timeout 
 }
 
 // Capture tool call whose empty result is replaced by a non empty CLI refetch
-func (b *CuaDriverBackend) fetchOrRefetch(name string, args *pyjson.Object, timeout float64, what string, empty func(*pyjson.Object) bool, warning string) (*pyjson.Object, error) {
+func (b *CuaDriverBackend) fetchOrRefetch(name string, args *jsonutil.Object, timeout float64, what string, empty func(*jsonutil.Object) bool, warning string) (*jsonutil.Object, error) {
 	out, err := b.callCaptureTool(name, args)
 	if err != nil {
 		return nil, err
@@ -331,12 +300,12 @@ func (b *CuaDriverBackend) fetchOrRefetch(name string, args *pyjson.Object, time
 }
 
 // Visible windows frontmost first, refetched over the CLI transport when MCP returns none
-func (b *CuaDriverBackend) ListWindows() ([]*pyjson.Object, error) {
-	args := pyjson.NewObject()
+func (b *CuaDriverBackend) ListWindows() ([]*jsonutil.Object, error) {
+	args := jsonutil.NewObject()
 	args.Set("on_screen_only", true)
 	args.Set("session", b.sessionID)
 	out, err := b.fetchOrRefetch("list_windows", args, 20.0, "list_windows",
-		func(o *pyjson.Object) bool { return len(sortedWindows(o)) == 0 },
+		func(o *jsonutil.Object) bool { return len(sortedWindows(o)) == 0 },
 		"cua-driver list_windows returned no windows over MCP; re-fetching via CLI transport")
 	if err != nil {
 		return nil, err
@@ -345,10 +314,10 @@ func (b *CuaDriverBackend) ListWindows() ([]*pyjson.Object, error) {
 }
 
 // Windows of app by exact name, then exact list_apps alias, then substrings, then nameless titles
-func (b *CuaDriverBackend) matchWindowsForApp(windows []*pyjson.Object, app string) []*pyjson.Object {
+func (b *CuaDriverBackend) matchWindowsForApp(windows []*jsonutil.Object, app string) []*jsonutil.Object {
 	appLower := strings.ToLower(strings.TrimSpace(app))
-	name := func(w *pyjson.Object) string { return strings.ToLower(cuStrField(w, "app_name", "")) }
-	var directExact []*pyjson.Object
+	name := func(w *jsonutil.Object) string { return strings.ToLower(cuStrField(w, "app_name", "")) }
+	var directExact []*jsonutil.Object
 	for _, w := range windows {
 		if appLower != "" && appLower == strings.TrimSpace(name(w)) {
 			directExact = append(directExact, w)
@@ -364,7 +333,7 @@ func (b *CuaDriverBackend) matchWindowsForApp(windows []*pyjson.Object, app stri
 	}
 	exactPIDs, partialPIDs := map[int]bool{}, map[int]bool{}
 	for _, raw := range runningApps {
-		a, ok := raw.(*pyjson.Object)
+		a, ok := raw.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -389,20 +358,20 @@ func (b *CuaDriverBackend) matchWindowsForApp(windows []*pyjson.Object, app stri
 			}
 		}
 	}
-	pidIn := func(w *pyjson.Object, set map[int]bool) bool {
+	pidIn := func(w *jsonutil.Object, set map[int]bool) bool {
 		pid, ok := cuGet(w, "pid").(int)
 		return ok && set[pid]
 	}
-	tiers := []func(*pyjson.Object) bool{
-		func(w *pyjson.Object) bool { return pidIn(w, exactPIDs) },
-		func(w *pyjson.Object) bool { return strings.Contains(name(w), appLower) },
-		func(w *pyjson.Object) bool { return pidIn(w, partialPIDs) },
-		func(w *pyjson.Object) bool {
+	tiers := []func(*jsonutil.Object) bool{
+		func(w *jsonutil.Object) bool { return pidIn(w, exactPIDs) },
+		func(w *jsonutil.Object) bool { return strings.Contains(name(w), appLower) },
+		func(w *jsonutil.Object) bool { return pidIn(w, partialPIDs) },
+		func(w *jsonutil.Object) bool {
 			return strings.TrimSpace(name(w)) == "" && strings.Contains(strings.ToLower(cuStrField(w, "title", "")), appLower)
 		},
 	}
 	for _, tier := range tiers {
-		var matched []*pyjson.Object
+		var matched []*jsonutil.Object
 		for _, w := range windows {
 			if tier(w) {
 				matched = append(matched, w)
@@ -416,7 +385,7 @@ func (b *CuaDriverBackend) matchWindowsForApp(windows []*pyjson.Object, app stri
 }
 
 // Candidate windows of a capture, or the failed capture that explains why there are none
-func (b *CuaDriverBackend) resolveCaptureWindows(mode string, app *string, pid, windowID *int) ([]*pyjson.Object, *CaptureResult, error) {
+func (b *CuaDriverBackend) resolveCaptureWindows(mode string, app *string, pid, windowID *int) ([]*jsonutil.Object, *CaptureResult, error) {
 	if pid != nil || windowID != nil {
 		if pid == nil || windowID == nil {
 			return nil, b.failedCapture(mode, "<capture targeting requires both pid and window_id>"), nil
@@ -426,7 +395,7 @@ func (b *CuaDriverBackend) resolveCaptureWindows(mode string, app *string, pid, 
 		if !okP || !okW {
 			return nil, b.failedCapture(mode, "<capture targeting requires positive integer pid and window_id>"), nil
 		}
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		appName := ""
 		if app != nil {
 			appName = *app
@@ -437,7 +406,7 @@ func (b *CuaDriverBackend) resolveCaptureWindows(mode string, app *string, pid, 
 		row.Set("off_screen", false)
 		row.Set("title", "")
 		row.Set("z_index", 0)
-		return []*pyjson.Object{row}, nil, nil
+		return []*jsonutil.Object{row}, nil, nil
 	}
 	windows, err := b.ListWindows()
 	if err != nil {
@@ -450,7 +419,7 @@ func (b *CuaDriverBackend) resolveCaptureWindows(mode string, app *string, pid, 
 		return windows, nil, nil
 	}
 	if desktopShellSentinels[strings.ToLower(strings.TrimSpace(*app))] {
-		var desktop []*pyjson.Object
+		var desktop []*jsonutil.Object
 		for _, w := range windows {
 			if isDesktopWindow(w, desktopWindowNames) {
 				desktop = append(desktop, w)
@@ -471,8 +440,8 @@ func (b *CuaDriverBackend) resolveCaptureWindows(mode string, app *string, pid, 
 }
 
 // get_window_state args bounding the driver's accessibility walk by the configured element cap
-func (b *CuaDriverBackend) gwsArgs() (*pyjson.Object, error) {
-	args := pyjson.NewObject()
+func (b *CuaDriverBackend) gwsArgs() (*jsonutil.Object, error) {
+	args := jsonutil.NewObject()
 	args.Set("pid", intPtrValue(b.activePID))
 	args.Set("window_id", intPtrValue(b.activeWindowID))
 	args.Set("session", b.sessionID)
@@ -495,7 +464,7 @@ func (b *CuaDriverBackend) captureVision() (*string, *string, []UIElement, strin
 	var png, mime *string
 	title := ""
 	if b.session.hasTool("screenshot") || !b.session.capabilitiesDiscovered() {
-		args := pyjson.NewObject()
+		args := jsonutil.NewObject()
 		args.Set("window_id", intPtrValue(b.activeWindowID))
 		args.Set("format", "jpeg")
 		args.Set("quality", 85)
@@ -525,9 +494,9 @@ func (b *CuaDriverBackend) captureVision() (*string, *string, []UIElement, strin
 		}
 		cliOut := b.cliRefetch("get_window_state", args, 30.0, "vision screenshot",
 			fmt.Sprintf("cua-driver vision capture returned no image over MCP (window_id=%s); re-fetching via CLI transport",
-				pyrepr.Str(intPtrValue(b.activeWindowID))))
+				anyutil.String(intPtrValue(b.activeWindowID))))
 		if cliOut == nil {
-			cliOut = pyjson.NewObject()
+			cliOut = jsonutil.NewObject()
 		}
 		if images, _ := cuGet(cliOut, "images").([]any); len(images) > 0 {
 			if s, ok := images[0].(string); ok {
@@ -547,7 +516,7 @@ func (b *CuaDriverBackend) captureWindowState() (*string, *string, []UIElement, 
 	}
 	out, err := b.fetchOrRefetch("get_window_state", args, 30.0, "get_window_state", gwsIsEmpty,
 		fmt.Sprintf("cua-driver get_window_state returned an empty result over MCP (pid=%s window_id=%s); re-fetching via CLI transport",
-			pyrepr.Str(intPtrValue(b.activePID)), pyrepr.Str(intPtrValue(b.activeWindowID))))
+			anyutil.String(intPtrValue(b.activePID)), anyutil.String(intPtrValue(b.activeWindowID))))
 	if err != nil {
 		return nil, nil, nil, "", err
 	}
@@ -628,51 +597,28 @@ func (b *CuaDriverBackend) Capture(mode string, app *string, pid, windowID *int)
 		WindowTitle: title, PNGBytesLen: n, ImageMimeType: mime, AXMaxElements: axMax}, nil
 }
 
-// int() of a JSON value, ValueError text for an unparseable string
-func pyIntOf(v any) (int, error) {
-	switch x := v.(type) {
-	case bool:
-		if x {
-			return 1, nil
-		}
-		return 0, nil
-	case float64:
-		return int(x), nil
-	case string:
-		n, ok := pyint.Parse(x)
-		if !ok {
-			return 0, fmt.Errorf("%s is not a whole number", x)
-		}
-		return int(n.Int64()), nil
-	}
-	if n, ok := pyrepr.Int(v); ok {
-		return int(n.Int64()), nil
-	}
-	return 0, fmt.Errorf("expected a whole number, got %s", errchain.Kind(v))
-}
-
 // Composited whole screen grab through get_desktop_state with capture_scope switched and restored
 func (b *CuaDriverBackend) captureFullScreen(mode string) (*CaptureResult, error) {
 	b.clearActiveTarget()
 	var previous *string
-	cfgArgs := pyjson.NewObject()
+	cfgArgs := jsonutil.NewObject()
 	cfgArgs.Set("session", b.sessionID)
 	if out, err := b.session.callTool("get_config", cfgArgs, 10.0); err != nil {
 		pkgLog(nil).Debug(fmt.Sprintf("cua-driver get_config before full-screen capture failed: %v", err))
-	} else if sc, ok := cuGet(out, "structuredContent").(*pyjson.Object); ok {
+	} else if sc, ok := cuGet(out, "structuredContent").(*jsonutil.Object); ok {
 		if s, ok := cuGet(sc, "capture_scope").(string); ok {
 			previous = &s
 		}
 	}
 	setScope := func(value string) error {
-		args := pyjson.NewObject()
+		args := jsonutil.NewObject()
 		args.Set("key", "capture_scope")
 		args.Set("value", value)
 		args.Set("session", b.sessionID)
 		_, err := b.session.callTool("set_config", args, 10.0)
 		return err
 	}
-	out, err := func() (*pyjson.Object, error) {
+	out, err := func() (*jsonutil.Object, error) {
 		defer func() {
 			if previous != nil && *previous != "" && *previous != "desktop" {
 				if err := setScope(*previous); err != nil {
@@ -685,7 +631,7 @@ func (b *CuaDriverBackend) captureFullScreen(mode string) (*CaptureResult, error
 				return nil, err
 			}
 		}
-		args := pyjson.NewObject()
+		args := jsonutil.NewObject()
 		args.Set("session", b.sessionID)
 		return b.callCaptureTool("get_desktop_state", args)
 	}()
@@ -699,13 +645,14 @@ func (b *CuaDriverBackend) captureFullScreen(mode string) (*CaptureResult, error
 	sc := scObject(out)
 	dim := func(a, c string) (int, error) {
 		v := cuGet(sc, a)
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			v = cuGet(sc, c)
 		}
-		if !pyrepr.Truthy(v) {
-			v = 0
+		if !anyutil.IsTrue(v) {
+			return 0, nil
 		}
-		return pyIntOf(v)
+		n, err := anyutil.ToInt(v)
+		return int(n), err
 	}
 	w, err := dim("screenshot_width", "screen_width")
 	if err != nil {
@@ -722,7 +669,7 @@ func (b *CuaDriverBackend) captureFullScreen(mode string) (*CaptureResult, error
 
 // Running apps from structuredContent, the compatibility envelopes, the windows payload, then the text listing
 func (b *CuaDriverBackend) ListApps() ([]any, error) {
-	args := pyjson.NewObject()
+	args := jsonutil.NewObject()
 	args.Set("session", b.sessionID)
 	out, err := b.session.callTool("list_apps", args, 30)
 	if err != nil {
@@ -731,14 +678,14 @@ func (b *CuaDriverBackend) ListApps() ([]any, error) {
 	structured, data := cuGet(out, "structuredContent"), cuGet(out, "data")
 	candidates := []func() any{
 		func() any {
-			if s, ok := structured.(*pyjson.Object); ok {
+			if s, ok := structured.(*jsonutil.Object); ok {
 				return cuGet(s, "apps")
 			}
 			return nil
 		},
 		func() any { return data },
 		func() any {
-			if d, ok := data.(*pyjson.Object); ok {
+			if d, ok := data.(*jsonutil.Object); ok {
 				return cuGet(d, "apps")
 			}
 			return nil
@@ -768,10 +715,10 @@ func (b *CuaDriverBackend) ListApps() ([]any, error) {
 		if m == nil {
 			continue
 		}
-		pid, _ := pyint.Parse(m[2])
-		app := pyjson.NewObject()
+		pid, _ := strconv.Atoi(m[2])
+		app := jsonutil.NewObject()
 		app.Set("name", strings.TrimSpace(m[1]))
-		app.Set("pid", int(pid.Int64()))
+		app.Set("pid", pid)
 		apps = append(apps, app)
 	}
 	return apps, nil
@@ -797,9 +744,9 @@ func (b *CuaDriverBackend) FocusApp(app string, raiseWindow bool) (*ActionResult
 	}
 	b.lastApp = &last
 	if !raiseWindow {
-		return &ActionResult{OK: true, Action: "focus_app", Meta: pyjson.NewObject(), Message: fmt.Sprintf(
+		return &ActionResult{OK: true, Action: "focus_app", Meta: jsonutil.NewObject(), Message: fmt.Sprintf(
 			"Targeted %s (pid %s, window %s) without raising window.", name,
-			pyrepr.Str(intPtrValue(b.activePID)), pyrepr.Str(intPtrValue(b.activeWindowID)))}, nil
+			anyutil.String(intPtrValue(b.activePID)), anyutil.String(intPtrValue(b.activeWindowID)))}, nil
 	}
 	if !b.session.hasTool("bring_to_front") {
 		code := "bring_to_front_unsupported"

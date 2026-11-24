@@ -14,8 +14,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Tool scope with its captured logs and a cleared catalog cache
@@ -187,7 +187,7 @@ func TestSkillMatchesPlatformForms(t *testing.T) {
 		}
 	}
 	host := hostinfo.OSFamily()
-	if !skillMatchesPlatform(map[string]any{"platforms": strings.ToUpper(host)}) || !skillMatchesPlatform(map[string]any{"platforms": []any{pystr.Title(host)}}) {
+	if !skillMatchesPlatform(map[string]any{"platforms": strings.ToUpper(host)}) || !skillMatchesPlatform(map[string]any{"platforms": []any{textutil.Title(host)}}) {
 		t.Fatal("host platform not matched case insensitively")
 	}
 	if skillMatchesPlatform(map[string]any{"platforms": "plan9"}) || skillMatchesPlatform(map[string]any{"platforms": []any{"plan9"}}) {

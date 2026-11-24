@@ -13,9 +13,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/activesessions"
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Earlier queued release holding the single release worker until told to finish
@@ -101,7 +101,7 @@ func TestTheNextSessionsClaimAtTheCapSeesTheEndedTurnsSlotFree(t *testing.T) {
 	}
 	var ids []string
 	for _, e := range entries {
-		ids = append(ids, e.GetOr("session_id", nil).(string))
+		ids = append(ids, e.ValueOr("session_id", nil).(string))
 	}
 	if !slices.Equal(ids, []string{"agent:main:telegram:dm:b"}) {
 		t.Fatalf("registry %v", ids)
@@ -123,7 +123,7 @@ func rebaselineRunner(t *testing.T) (*GatewayRunner, *state.SessionDB) {
 		t.Fatal(err)
 	}
 	r := allocGatewayRunner()
-	r.agentCache = pydict.New[string, agentCacheEntry]()
+	r.agentCache = orderedutil.NewMap[string, agentCacheEntry]()
 	r.agentCacheLock = &sync.Mutex{}
 	r.pinSessionDB(state.NewAsyncSessionDB(db))
 	return r, db
@@ -136,7 +136,7 @@ func liveMessageCount(t *testing.T, db *state.SessionDB, sessionID string) *int 
 	if err != nil || row == nil {
 		return nil
 	}
-	n, ok := pythonIntField(row.GetOr("message_count", int64(0)))
+	n, ok := pythonIntField(row.ValueOr("message_count", int64(0)))
 	if !ok {
 		return nil
 	}
@@ -359,7 +359,7 @@ func TestATUIClaimOfTheSessionAGatewayTurnJustEndedIsNotAlreadyOwned(t *testing.
 	}
 	var got [][2]any
 	for _, e := range entries {
-		got = append(got, [2]any{e.GetOr("session_id", nil), e.GetOr("surface", nil)})
+		got = append(got, [2]any{e.ValueOr("session_id", nil), e.ValueOr("surface", nil)})
 	}
 	if len(got) != 1 || got[0] != [2]any{key, "tui"} {
 		t.Fatalf("registry %v", got)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const auxRelayReasoning400 = "Error code: 400 - {'error': {'message': 'Unrecognized request argument supplied: reasoning_effort', 'type': 'invalid_request_error', 'param': '', 'code': None}}"
@@ -61,7 +61,7 @@ func TestReasoningEffortRejectionRetriesOnceWithoutReasoningFields(t *testing.T)
 		if _, ok := retry["reasoning_effort"]; ok {
 			t.Fatalf("async=%v retry kept reasoning_effort %v", asyncMode, retry)
 		}
-		retryExtra, _ := pyjson.Plain(retry["extra_body"]).(map[string]any)
+		retryExtra, _ := jsonutil.Plain(retry["extra_body"]).(map[string]any)
 		if _, ok := retryExtra["reasoning"]; ok {
 			t.Fatalf("async=%v retry kept extra_body.reasoning %v", asyncMode, retryExtra)
 		}

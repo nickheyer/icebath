@@ -7,7 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Installs gateway and tools doubles for the retirement hooks, returning the released media references
@@ -16,21 +17,21 @@ func installRetirementHooks(t *testing.T) *[]any {
 	released := &[]any{}
 	prevA, prevH, prevR := AdmissionMediaReferences, HostedDocumentReferences, ReleaseUnheldMedia
 	prevF, prevN, prevS := SpilloverSQLFilter, SpilloverNamesInText, ReferencedSpilloverNames
-	AdmissionMediaReferences = func(payload *pyjson.Object) ([]*pyjson.Object, error) {
-		var out []*pyjson.Object
+	AdmissionMediaReferences = func(payload *jsonutil.Object) ([]*jsonutil.Object, error) {
+		var out []*jsonutil.Object
 		for _, field := range []string{"attachments_v1", "native_text_v1"} {
 			section, _ := payload.Get(field)
-			if so, ok := section.(*pyjson.Object); ok {
+			if so, ok := section.(*jsonutil.Object); ok {
 				media, _ := so.Get("media")
 				list, _ := media.([]any)
 				for _, m := range list {
-					out = append(out, m.(*pyjson.Object))
+					out = append(out, m.(*jsonutil.Object))
 				}
 			}
 		}
 		return out, nil
 	}
-	HostedDocumentReferences = func(string, *pyjson.Object) ([]*pyjson.Object, error) { return nil, nil }
+	HostedDocumentReferences = func(string, *jsonutil.Object) ([]*jsonutil.Object, error) { return nil, nil }
 	ReleaseUnheldMedia = func(_ *SessionDB, refs []any) error {
 		*released = append(*released, refs...)
 		return nil
@@ -163,8 +164,8 @@ func TestDeleteRetiresTerminalReceiptsAndRoutes(t *testing.T) {
 		}
 		return rowValue(row, "value")
 	}
-	marker, _ := pyjson.Loads(pyStr(meta(RetiredPrefix + "gone")))
-	if mo, ok := marker.(*pyjson.Object); !ok || mo.Vals["own"] != true {
+	marker, _ := jsonutil.Decode(pyStr(meta(RetiredPrefix + "gone")))
+	if mo, ok := marker.(*jsonutil.Object); !ok || mo.Value("own") != true {
 		t.Fatalf("retired marker %v", marker)
 	}
 	for _, key := range []string{"gateway.api.settings.v1.gone", LocalAPIBindingPrefix + "gone", LocalPolicyPrefix + "owner", MediaRetiredPrefix + "x"} {
@@ -181,22 +182,22 @@ func TestDeleteRetiresTerminalReceiptsAndRoutes(t *testing.T) {
 }
 
 func TestTerminalResultEncodingRoundTrips(t *testing.T) {
-	raw, _ := pyjson.Loads(`{"status": "ok", "result": {"final_response": "hi", "messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": "hi"}]}}`)
+	raw, _ := jsonutil.Decode(`{"status": "ok", "result": {"final_response": "hi", "messages": [{"role": "user", "content": "q"}, {"role": "assistant", "content": "hi"}]}}`)
 	enc := encodeTerminalResult(raw)
-	text, _ := pyjson.Dumps(enc)
+	text, _ := jsonutil.Encode(enc)
 	if !strings.Contains(text, `"_stored": {"v": 1, "reply_ref": 1}`) || !strings.Contains(text, `{"role": "assistant", "content": null}`) {
 		t.Fatalf("encoded %s", text)
 	}
 	back, err := loadTerminalResult(text)
-	if err != nil || !pyjson.Equal(back, raw) {
+	if err != nil || !anyutil.Equal(back, raw) {
 		t.Fatalf("decoded %v, %v", back, err)
 	}
-	escaped, _ := pyjson.Loads(`{"_stored": 5}`)
-	etext, _ := pyjson.Dumps(encodeTerminalResult(escaped))
-	if back, _ := loadTerminalResult(etext); !pyjson.Equal(back, escaped) {
+	escaped, _ := jsonutil.Decode(`{"_stored": 5}`)
+	etext, _ := jsonutil.Encode(encodeTerminalResult(escaped))
+	if back, _ := loadTerminalResult(etext); !anyutil.Equal(back, escaped) {
 		t.Fatalf("raw envelope %v", back)
 	}
-	if back, _ := loadTerminalResult(`{"_stored": {"v": true, "raw": 1}}`); pyStr(back.(*pyjson.Object).Vals["_stored"]) == "1" {
+	if back, _ := loadTerminalResult(`{"_stored": {"v": true, "raw": 1}}`); pyStr(back.(*jsonutil.Object).Value("_stored")) == "1" {
 		t.Fatal("bool version must not unwrap")
 	}
 }

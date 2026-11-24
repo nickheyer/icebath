@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type sitemapCall struct {
@@ -20,7 +20,7 @@ type sitemapCall struct {
 }
 
 // skills.sh source whose guarded GETs answer from fn and whose cache writes are counted
-func sitemapSource(t *testing.T, fn func(url string) *pyhttpx.Response) (*SkillsShSource, *[]sitemapCall, *[]string) {
+func sitemapSource(t *testing.T, fn func(url string) *httputil.Response) (*SkillsShSource, *[]sitemapCall, *[]string) {
 	h, _ := newTestHub(t)
 	var calls []sitemapCall
 	var writes []string
@@ -28,7 +28,7 @@ func sitemapSource(t *testing.T, fn func(url string) *pyhttpx.Response) (*Skills
 	h.io.siteAccess = func(string) *tools.WebsiteBlock { return nil }
 	h.io.readIndexCache = func(string) (any, error) { return nil, nil }
 	h.io.writeIndexCache = func(key string, _ any) error { writes = append(writes, key); return nil }
-	h.io.ssrfGet = func(_ context.Context, url string, _ time.Duration, headers map[string]string) (*pyhttpx.Response, error) {
+	h.io.ssrfGet = func(_ context.Context, url string, _ time.Duration, headers map[string]string) (*httputil.Response, error) {
 		calls = append(calls, sitemapCall{url, maps.Clone(headers)})
 		return fn(url), nil
 	}
@@ -38,7 +38,7 @@ func sitemapSource(t *testing.T, fn func(url string) *pyhttpx.Response) (*Skills
 }
 
 func TestSkillsShSitemapFetchesGoThroughGuardedGetAndAskForGzipOnly(t *testing.T) {
-	s, calls, _ := sitemapSource(t, func(url string) *pyhttpx.Response {
+	s, calls, _ := sitemapSource(t, func(url string) *httputil.Response {
 		if strings.HasSuffix(url, "/sitemap.xml") {
 			return textResp(200, "<sitemapindex><sitemap><loc>https://www.skills.sh/sitemap-skills-0.xml</loc></sitemap></sitemapindex>")
 		}
@@ -67,7 +67,7 @@ func TestSkillsShSearchMapsResultsToPrefixedIdentifiers(t *testing.T) {
 	h, _ := newTestHub(t)
 	h.io.readIndexCache = func(string) (any, error) { return nil, nil }
 	h.io.writeIndexCache = func(string, any) error { return nil }
-	h.io.httpGet = plainGet(func(string, hubGet) *pyhttpx.Response {
+	h.io.httpGet = plainGet(func(string, hubGet) *httputil.Response {
 		return jsonResp(t, `{"skills": [{"id": "vercel-labs/agent-skills/vercel-react-best-practices",
 			"skillId": "vercel-react-best-practices", "name": "vercel-react-best-practices", "installs": 207679,
 			"source": "vercel-labs/agent-skills"}]}`)
@@ -87,7 +87,7 @@ func TestSkillsShSearchMapsResultsToPrefixedIdentifiers(t *testing.T) {
 func TestSkillsShSitemapCatalogRetriesFailedShardAndNeverCachesPartial(t *testing.T) {
 	index := "<sitemapindex><sitemap><loc>https://www.skills.sh/sitemap-skills-0.xml</loc></sitemap>" +
 		"<sitemap><loc>https://www.skills.sh/sitemap-skills-1.xml</loc></sitemap></sitemapindex>"
-	s, calls, writes := sitemapSource(t, func(url string) *pyhttpx.Response {
+	s, calls, writes := sitemapSource(t, func(url string) *httputil.Response {
 		switch {
 		case strings.HasSuffix(url, "/sitemap.xml"):
 			return textResp(200, index)
@@ -123,7 +123,7 @@ func TestSkillsShFetchFallsBackToTreeSearchForDeeplyNestedSkills(t *testing.T) {
 	tree := `{"tree": [{"path": "README.md", "type": "blob"},
 		{"path": "cli-tool/components/skills/development/my-skill/SKILL.md", "type": "blob"},
 		{"path": "cli-tool/components/skills/development/other-skill/SKILL.md", "type": "blob"}]}`
-	get := func(url string, _ hubGet) *pyhttpx.Response {
+	get := func(url string, _ hubGet) *httputil.Response {
 		switch {
 		case strings.Contains(url, "/api/search"):
 			return textResp(404, "")
@@ -136,10 +136,10 @@ func TestSkillsShFetchFallsBackToTreeSearchForDeeplyNestedSkills(t *testing.T) {
 		case strings.Contains(url, "/git/trees/main"):
 			return jsonResp(t, tree)
 		}
-		return &pyhttpx.Response{StatusCode: 200, Header: http.Header{}, Content: []byte("<h1>my-skill</h1>")}
+		return &httputil.Response{StatusCode: 200, Header: http.Header{}, Content: []byte("<h1>my-skill</h1>")}
 	}
 	h.io.httpGet = plainGet(get)
-	h.io.ssrfGet = func(_ context.Context, url string, _ time.Duration, _ map[string]string) (*pyhttpx.Response, error) {
+	h.io.ssrfGet = func(_ context.Context, url string, _ time.Duration, _ map[string]string) (*httputil.Response, error) {
 		return get(url, hubGet{}), nil
 	}
 	s := NewSkillsShSource(h, anonAuth(h))
@@ -171,6 +171,6 @@ func bundleHas(b *SkillBundle, path, text string) bool {
 }
 
 func installsIs(v any, want string) bool {
-	s, err := pyjson.Dumps(v)
+	s, err := jsonutil.Encode(v)
 	return err == nil && s == want
 }

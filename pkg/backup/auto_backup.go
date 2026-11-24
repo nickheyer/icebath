@@ -1,17 +1,20 @@
 package backup
 
 import (
+	"archive/zip"
 	"context"
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyzip"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	ziputil "github.com/nickheyer/icebath/pkg/utils/zip"
 )
 
 const (
@@ -37,11 +40,11 @@ func newestFirst(root string, keep func(path string) bool) ([]string, error) {
 	}
 	var out []string
 	for _, e := range entries {
-		if p := pypath.PathJoin(root, e.Name()); keep(p) {
+		if p := pathutil.Join(root, e.Name()); keep(p) {
 			out = append(out, p)
 		}
 	}
-	sort.SliceStable(out, func(i, j int) bool { return pypath.PathName(out[i]) > pypath.PathName(out[j]) })
+	sort.SliceStable(out, func(i, j int) bool { return pathutil.Name(out[i]) > pathutil.Name(out[j]) })
 	return out, nil
 }
 
@@ -58,7 +61,7 @@ func pruneOldest(newest []string, keep int, remove func(string) error, what stri
 	deleted := 0
 	for _, p := range newest[sliceFrom(len(newest), keep):] {
 		if err := remove(p); err != nil {
-			pkgLog().Warn(fmt.Sprintf("Failed to prune %s %s: %s", what, pypath.PathName(p), excText(err)))
+			pkgLog().Warn(fmt.Sprintf("Failed to prune %s %s: %s", what, pathutil.Name(p), excText(err)))
 			continue
 		}
 		deleted++
@@ -75,8 +78,8 @@ func isFile(p string) bool {
 // Removes the oldest complete prefixed zips beyond keep, leaving other zips and salvage archives alone
 func prunePrefixedZips(backupDir, prefix string, keep int, what string) (int, error) {
 	backups, err := newestFirst(backupDir, func(p string) bool {
-		name := pypath.PathName(p)
-		return isFile(p) && strings.HasPrefix(name, prefix) && strings.ToLower(pypath.Suffix(p)) == ".zip" &&
+		name := pathutil.Name(p)
+		return isFile(p) && strings.HasPrefix(name, prefix) && strings.ToLower(pathutil.Suffix(p)) == ".zip" &&
 			!strings.HasSuffix(strings.ToLower(name), incompleteZipSuffix)
 	})
 	if err != nil {
@@ -88,7 +91,7 @@ func prunePrefixedZips(backupDir, prefix string, keep int, what string) (int, er
 // Keeps only the newest prefixed salvage archive
 func pruneIncompleteZips(backupDir, prefix, what string) (int, error) {
 	salvage, err := newestFirst(backupDir, func(p string) bool {
-		name := pypath.PathName(p)
+		name := pathutil.Name(p)
 		return isFile(p) && strings.HasPrefix(name, prefix) && strings.HasSuffix(strings.ToLower(name), incompleteZipSuffix)
 	})
 	if err != nil {
@@ -106,12 +109,12 @@ func createPrefixedFullBackup(ctx context.Context, h, prefix string, keep int, w
 	if !isDir(root) {
 		return "", nil
 	}
-	backupDir := pypath.PathJoin(root, preUpdateBackupsDir)
+	backupDir := pathutil.Join(root, preUpdateBackupsDir)
 	if err := home.PathMkdir(backupDir, 0o777, true, true); err != nil {
 		pkgLog().Warn(fmt.Sprintf("Could not create %s backup dir %s: %s", what, backupDir, excText(err)))
 		return "", nil
 	}
-	outPath := pypath.PathJoin(backupDir, prefix+backupNow().Format("2006-01-02-150405")+".zip")
+	outPath := pathutil.Join(backupDir, prefix+backupNow().Format("2006-01-02-150405")+".zip")
 	written, err := writeFullZipBackup(ctx, outPath, root)
 	if err != nil {
 		return "", err
@@ -169,8 +172,8 @@ func writeFullZipBackupLocked(ctx context.Context, outPath, root string) (string
 		}
 		return shown
 	}
-	name := pypath.PathName(outPath)
-	salvagePath := pypath.PathJoin(pypath.PathParent(outPath), name[:len(name)-len(pypath.Suffix(outPath))]+incompleteZipSuffix)
+	name := pathutil.Name(outPath)
+	salvagePath := pathutil.Join(filepath.Dir(filepath.Clean(outPath)), name[:len(name)-len(pathutil.Suffix(outPath))]+incompleteZipSuffix)
 	published := ""
 	publish := func() (string, bool) {
 		if len(errs) == 0 {
@@ -182,7 +185,7 @@ func writeFullZipBackupLocked(ctx context.Context, outPath, root string) (string
 	}
 	archiveStarted := time.Now()
 	err := atomicOutputPath(outPath, publish, func(archivePath string) error {
-		zf, err := pyzip.Create(archivePath, pyzip.Deflated, ptr(zipCompressSix))
+		zf, err := ziputil.Create(archivePath, zip.Deflate, zipCompressSix)
 		if err != nil {
 			return err
 		}
@@ -204,7 +207,7 @@ func writeFullZipBackupLocked(ctx context.Context, outPath, root string) (string
 	})
 	if err != nil {
 		var snap *sqliteSnapshotError
-		if pypath.IsOSError(err) || errors.As(err, &snap) {
+		if errorutil.IsSystem(err) || errors.As(err, &snap) {
 			pkgLog().Warn("Full-zip backup: zip write failed: " + excText(err))
 			return "", nil
 		}

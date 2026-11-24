@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store over a temp memories dir with the test fixture limits, loaded
@@ -35,7 +35,7 @@ func must(t *testing.T) func(Result, error) map[string]any {
 		if err != nil {
 			t.Fatalf("store raised: %v", err)
 		}
-		data, _ := pyjson.Plain(r.Data).(map[string]any)
+		data, _ := jsonutil.Plain(r.Data).(map[string]any)
 		return data
 	}
 }

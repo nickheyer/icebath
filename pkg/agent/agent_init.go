@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Known exact default routes for a canonical provider id
@@ -91,10 +91,10 @@ func customProviderRuntimeIDs(value any) map[string]bool {
 
 // Python str of value or of the empty string when falsy
 func initStr(value any) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return ""
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Global threshold merged with a per model override, a codex autoraise notice only when it raises
@@ -130,7 +130,7 @@ func customProviderModelMatches(agentModel string, entry map[string]any) bool {
 		}
 	case []any:
 		for _, v := range m {
-			catalog = append(catalog, strings.ToLower(strings.TrimSpace(pyrepr.Str(v))))
+			catalog = append(catalog, strings.ToLower(strings.TrimSpace(anyutil.String(v))))
 		}
 	}
 	for _, c := range catalog {
@@ -225,7 +225,7 @@ var explicitAPIModes = map[string]bool{"chat_completions": true, "codex_response
 // Sets the api mode and provider rewrites from an ordered ladder where the first match wins
 func (a *AIAgent) resolveAPIMode(ctx context.Context, apiMode string, providerName *string, baseURL string) {
 	host, url := a.baseURLHostname, a.baseURLLower
-	amazon, _ := pyurl.BaseURLHostMatches(url, "amazonaws.com")
+	amazon, _ := urlutil.BaseHostMatches(url, "amazonaws.com")
 	switch {
 	case provider.IsActualRoute(a.provider, baseURL):
 		a.apiMode = "chat_completions"

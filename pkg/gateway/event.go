@@ -7,8 +7,8 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyunicode"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	unicodeutil "github.com/nickheyer/icebath/pkg/utils/unicode"
 )
 
 var attachmentRefRE = regexp.MustCompile(`(?i)^(?:@(?:image|file|url):[^\n]+\n?)+`)
@@ -27,7 +27,7 @@ func CleanAttachmentFilename(name any) string {
 	}
 	var b strings.Builder
 	for _, r := range s {
-		if c := pyunicode.Category(r); c == "Cc" || c == "Cf" {
+		if c := unicodeutil.Category(r); c == "Cc" || c == "Cf" {
 			continue
 		}
 		b.WriteRune(r)

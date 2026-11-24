@@ -125,7 +125,7 @@ func TestPairingStoreAddAndList(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, ok := approved.Get("ou_new"); !ok {
-		t.Fatalf("approved = %v", approved.Keys)
+		t.Fatalf("approved = %v", approved.Keys())
 	}
 }
 

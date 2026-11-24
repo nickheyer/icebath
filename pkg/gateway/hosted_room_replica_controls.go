@@ -4,9 +4,9 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Whether a room id names a replica here rather than a room of this gateway's own store
@@ -23,7 +23,7 @@ func groupIsReplica(ctx context.Context, dbPath, roomID string) (bool, error) {
 
 // A listing page with the replicated rooms added to its first page
 func groupWithReplicas(ctx context.Context, dbPath string, params map[string]any, listed any) (any, error) {
-	page, ok := listed.(*pyjson.Object)
+	page, ok := listed.(*jsonutil.Object)
 	if !ok {
 		return listed, nil
 	}
@@ -40,7 +40,7 @@ func groupWithReplicas(ctx context.Context, dbPath string, params map[string]any
 	if err != nil {
 		return nil, err
 	}
-	rooms, _ := page.GetOr("rooms", []any{}).([]any)
+	rooms, _ := page.ValueOr("rooms", []any{}).([]any)
 	page.Set("rooms", append(append([]any{}, rooms...), replicas...))
 	return page, nil
 }
@@ -68,7 +68,7 @@ func groupReplicaControl(ctx context.Context, actor Principal, service *Canonica
 		if err != nil {
 			return nil, err
 		}
-		result := pyjson.ObjectOf("room", room)
+		result := jsonutil.ObjectOf("room", room)
 		if link["status"] != nil && room["disbanded_at"] == nil {
 			result.Set("driver_status", link["status"])
 		}
@@ -90,9 +90,9 @@ func groupReplicaControl(ctx context.Context, actor Principal, service *Canonica
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("peers", peers, "shares", []any{}), nil
+		return jsonutil.ObjectOf("peers", peers, "shares", []any{}), nil
 	case "groups.share", "groups.unshare":
-		return nil, roomRefusal("invalid_params", "only the room's home "+pyrepr.Str(link["home"])+" shares it")
+		return nil, roomRefusal("invalid_params", "only the room's home "+anyutil.String(link["home"])+" shares it")
 	case "groups.attachment.upload":
 		return ReplicaUpload(ctx, dbPath, roomID, params)
 	case "groups.attachment.download":
@@ -117,7 +117,7 @@ func groupReplicaControl(ctx context.Context, actor Principal, service *Canonica
 		if err := queue("send", map[string]any{"event_id": eventID, "payload": payload}); err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("event", nil, "client_event_id", params["event_id"], "accepted", true, "driver_started", false, "queued", true), nil
+		return jsonutil.ObjectOf("event", nil, "client_event_id", params["event_id"], "accepted", true, "driver_started", false, "queued", true), nil
 	case "groups.rename":
 		if err := groupRequire(params, "event_id", "name"); err != nil {
 			return nil, err
@@ -133,29 +133,29 @@ func groupReplicaControl(ctx context.Context, actor Principal, service *Canonica
 		if err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("room", room, "queued", true), nil
+		return jsonutil.ObjectOf("room", room, "queued", true), nil
 	case "groups.stop":
 		if err := queue("stop", map[string]any{"cancel_id": groupOr(params, "cancel_id", "group-stop")}); err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("cancelled", int64(0), "queued", true), nil
+		return jsonutil.ObjectOf("cancelled", int64(0), "queued", true), nil
 	case "groups.continue":
-		if err := queue("continue", map[string]any{"discussion_event_id": pyrepr.Str(groupOr(params, "discussion_event_id", ""))}); err != nil {
+		if err := queue("continue", map[string]any{"discussion_event_id": anyutil.String(groupOr(params, "discussion_event_id", ""))}); err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("continued", true, "event", nil, "queued", true), nil
+		return jsonutil.ObjectOf("continued", true, "event", nil, "queued", true), nil
 	case "groups.disband":
 		if err := queue("disband", map[string]any{"cancel_id": groupOr(params, "cancel_id", "room-disbanded")}); err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("tombstone", nil, "queued", true), nil
+		return jsonutil.ObjectOf("tombstone", nil, "queued", true), nil
 	case "groups.approve":
 		fields := attempt()
 		fields["choice"], fields["request_id"] = params["choice"], params["request_id"]
 		if err := queue("approve", fields); err != nil {
 			return nil, err
 		}
-		return pyjson.ObjectOf("approved", true, "result", map[string]any{}, "queued", true), nil
+		return jsonutil.ObjectOf("approved", true, "result", map[string]any{}, "queued", true), nil
 	case "groups.retry", "groups.discard":
 		op := method[len("groups."):]
 		if err := queue(op, attempt()); err != nil {
@@ -165,7 +165,7 @@ func groupReplicaControl(ctx context.Context, actor Principal, service *Canonica
 		if op == "discard" {
 			verb = "discarded"
 		}
-		return pyjson.ObjectOf(verb, true, "task", nil, "queued", true), nil
+		return jsonutil.ObjectOf(verb, true, "task", nil, "queued", true), nil
 	case "groups.promote":
 		if params["confirm"] != true {
 			return nil, roomRefusal("invalid_params", "continuing a room here needs confirm")
@@ -173,7 +173,7 @@ func groupReplicaControl(ctx context.Context, actor Principal, service *Canonica
 		if service == nil {
 			return nil, runtimeRefusal("runtime_coordination_required")
 		}
-		reason := groupOr(params, "reason", "the home gateway "+pyrepr.Str(link["home"])+" is gone")
+		reason := groupOr(params, "reason", "the home gateway "+anyutil.String(link["home"])+" is gone")
 		return service.PromoteReplicaRoom(actor, roomID, reason)
 	}
 	return nil, &pyKeyError{key: method}
@@ -184,7 +184,7 @@ func replicaUploadsPresent(ctx context.Context, dbPath, roomID string, manifest 
 	items, _ := manifest.([]any)
 	for _, raw := range items {
 		item, _ := raw.(map[string]any)
-		var row *pyjson.Object
+		var row *jsonutil.Object
 		err := replicaViewTransaction(ctx, dbPath, false, func(conn state.SQLiteConn) (err error) {
 			row, err = state.QueryRowObject(ctx, conn, "SELECT 1 AS hit FROM hosted_room_replica_uploads WHERE room_id=? AND attachment_id=?", roomID, item["attachment_id"])
 			return err

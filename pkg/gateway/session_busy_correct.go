@@ -5,8 +5,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // tui_gateway/server.py _consume_typed_stop_phrase without emit, assigned in cmd/icebath/wiring.go to the tuiserver port
@@ -26,16 +26,16 @@ var voiceStopsByAuthority sync.Map
 // Busy preference and correction verbs of a connection keyed by method name
 func busyControlHandlers(c *AuthorityConnection) map[string]controlHandler {
 	return map[string]controlHandler{
-		"config.get": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"config.get": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return busyConfig(ctx, c.authority, c.actor, ref, params, false)
 		},
-		"config.set": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"config.set": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return busyConfig(ctx, c.authority, c.actor, ref, params, true)
 		},
-		"session.steer": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"session.steer": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return correct(ctx, c, ref, params, "steer")
 		},
-		"session.redirect": func(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+		"session.redirect": func(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 			return correct(ctx, c, ref, params, "redirect")
 		},
 	}
@@ -47,9 +47,9 @@ type RedirectReceiver interface {
 }
 
 // Steers or redirects the running claim, latching for an agent not yet built and refusing managed workers
-func correct(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *pyjson.Object, verb string) (*pyjson.Object, error) {
-	text, isStr := params.GetOr("text", nil).(string)
-	echoed := params.GetOr("execution_generation", nil)
+func correct(ctx context.Context, c *AuthorityConnection, ref SessionRef, params *jsonutil.Object, verb string) (*jsonutil.Object, error) {
+	text, isStr := params.ValueOr("text", nil).(string)
+	echoed := params.ValueOr("execution_generation", nil)
 	exact, isInt := strictInt(echoed)
 	if paramsOutside(params, "session_id", "profile", "text", "execution_generation") || !isStr || strings.TrimSpace(text) == "" || !isInt {
 		return nil, runtimeRefusal("invalid_params")
@@ -67,7 +67,7 @@ func correct(ctx context.Context, c *AuthorityConnection, ref SessionRef, params
 		return nil, err
 	}
 	if stopped {
-		return pyjson.ObjectOf("voice_stopped", true), nil
+		return jsonutil.ObjectOf("voice_stopped", true), nil
 	}
 	live, err := liveSession(a, ref.SessionID)
 	if err != nil {
@@ -93,10 +93,10 @@ func correct(ctx context.Context, c *AuthorityConnection, ref SessionRef, params
 		return nil, err
 	}
 	if latched {
-		return pyjson.ObjectOf("status", "queued", "text", text, "execution_generation", echoed, "authority_epoch", a.Epoch), nil
+		return jsonutil.ObjectOf("status", "queued", "text", text, "execution_generation", echoed, "authority_epoch", a.Epoch), nil
 	}
 	if agent == nil {
-		return pyjson.ObjectOf("status", "rejected", "text", text, "execution_generation", echoed,
+		return jsonutil.ObjectOf("status", "rejected", "text", text, "execution_generation", echoed,
 			"authority_epoch", a.Epoch, "delivered", false), nil
 	}
 	var accepted bool
@@ -118,14 +118,14 @@ func correct(ctx context.Context, c *AuthorityConnection, ref SessionRef, params
 	if accepted {
 		status = map[string]string{"steer": "queued", "redirect": "redirected"}[verb]
 	}
-	return pyjson.ObjectOf("status", status, "text", text, "execution_generation", echoed, "authority_epoch", a.Epoch), nil
+	return jsonutil.ObjectOf("status", status, "text", text, "execution_generation", echoed, "authority_epoch", a.Epoch), nil
 }
 
 // Identity of a typed stop submission, false when the frame names no submission or input id
-func (c *AuthorityConnection) voiceStopKey(ref SessionRef, params *pyjson.Object) (voiceStopKey, bool) {
-	requestID := params.GetOr("submission_id", nil)
-	if !pyrepr.Truthy(requestID) {
-		requestID = params.GetOr("input_id", nil)
+func (c *AuthorityConnection) voiceStopKey(ref SessionRef, params *jsonutil.Object) (voiceStopKey, bool) {
+	requestID := params.ValueOr("submission_id", nil)
+	if !anyutil.IsTrue(requestID) {
+		requestID = params.ValueOr("input_id", nil)
 	}
 	id, ok := requestID.(string)
 	if !ok || id == "" {
@@ -141,7 +141,7 @@ func authorityVoiceStops(a *SessionAuthority) *consumedVoiceStops {
 }
 
 // True for a retry of a stop this owner already consumed, answered again by its request identity
-func (c *AuthorityConnection) voiceStopReplay(ctx context.Context, ref SessionRef, params *pyjson.Object) (bool, error) {
+func (c *AuthorityConnection) voiceStopReplay(ctx context.Context, ref SessionRef, params *jsonutil.Object) (bool, error) {
 	key, ok := c.voiceStopKey(ref, params)
 	if !ok {
 		return false, nil
@@ -157,7 +157,7 @@ func (c *AuthorityConnection) voiceStopReplay(ctx context.Context, ref SessionRe
 }
 
 // Remembers a consumed stop submission, the newest 256 kept
-func (c *AuthorityConnection) recordVoiceStop(ref SessionRef, params *pyjson.Object) {
+func (c *AuthorityConnection) recordVoiceStop(ref SessionRef, params *jsonutil.Object) {
 	key, ok := c.voiceStopKey(ref, params)
 	if !ok {
 		return
@@ -190,8 +190,8 @@ func (c *AuthorityConnection) subscribed(sessionID string) bool {
 }
 
 // A bare stop phrase typed while a local session's voice chat is on ends the chat and is never admitted
-func (c *AuthorityConnection) typedVoiceStop(ctx context.Context, ref SessionRef, params *pyjson.Object) (bool, error) {
-	text, ok := params.GetOr("text", nil).(string)
+func (c *AuthorityConnection) typedVoiceStop(ctx context.Context, ref SessionRef, params *jsonutil.Object) (bool, error) {
+	text, ok := params.ValueOr("text", nil).(string)
 	if !ok || !c.subscribed(ref.SessionID) {
 		return false, nil
 	}

@@ -9,16 +9,16 @@ import (
 	"weak"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // toolCallArgumentsCorruptionMarker replaces tool call arguments dropped as corrupted
@@ -220,11 +220,11 @@ type AIAgent struct {
 	toolGuardrailHaltDecision          *tools.ToolGuardrailDecision
 	interruptRequested                 atomic.Bool
 	interruptMessage                   string
-	hardInterruptRequested             *pythread.Event
+	hardInterruptRequested             *syncutil.Event
 	executionThreadID                  int64
 	interruptThreadSignalPending       bool
-	clientLock                         *pythread.RLock
-	modelRequestActive                 *pythread.Event
+	clientLock                         *syncutil.ReentrantMutex
+	modelRequestActive                 *syncutil.Event
 	supportsActiveTurnRedirect         bool
 	pendingSteer                       string
 	pendingSteerParts                  []steerPart
@@ -256,7 +256,7 @@ type AIAgent struct {
 	delegateImages                     []string
 	liveTranscriptPath                 string
 	evictedOnFallback                  any
-	delegateRoute                      *pyjson.Object
+	delegateRoute                      *jsonutil.Object
 	delegationID                       string
 	progressIdentityRef                map[string]any
 	oneshotChildrenSpawned             int64
@@ -289,7 +289,7 @@ type AIAgent struct {
 	codexReasoningReplayRejected       bool
 	memoryWriteOrigin                  string
 	memoryWriteContext                 string
-	sessionPersistLock                 *pythread.RLock
+	sessionPersistLock                 *syncutil.ReentrantMutex
 	pendingCLIUserMessage              any
 	lastFlushedDBIdx                   int
 	userTurnCount                      int
@@ -544,7 +544,7 @@ func NewAIAgent(ctx context.Context, o AIAgentOptions) (*AIAgent, error) {
 func (a *AIAgent) setBaseURL(value string) {
 	a.baseURL = value
 	a.baseURLLower = strings.ToLower(value)
-	a.baseURLHostname, _ = pyurl.BaseURLHostname(value)
+	a.baseURLHostname, _ = urlutil.BaseHost(value)
 }
 
 // Context bound to the agent tool env home, the home a method reads
@@ -734,7 +734,7 @@ func (a *AIAgent) toolSurface(ctx context.Context, defs []map[string]any) []map[
 }
 
 func snapshotToolName(def map[string]any) string {
-	fn, _ := pyjson.Dict(def["function"])
+	fn, _ := jsonutil.AsMap(def["function"])
 	name, _ := fn["name"].(string)
 	return name
 }
@@ -750,7 +750,7 @@ func (a *AIAgent) SavedDelegationBackend() string {
 
 func delegateDef(list []any) any {
 	for _, t := range list {
-		if d, ok := pyjson.Dict(t); ok && snapshotToolName(d) == "delegate_task" {
+		if d, ok := jsonutil.AsMap(t); ok && snapshotToolName(d) == "delegate_task" {
 			return d
 		}
 	}
@@ -759,7 +759,7 @@ func delegateDef(list []any) any {
 
 // Records the backend as the session's when the carried delegate_task is the one defs carries
 func (a *AIAgent) AdoptBuiltBackend(defs []any, backend any) {
-	if pyrepr.Equal(delegateDef(a.tools), delegateDef(defs)) {
+	if anyutil.Equal(delegateDef(a.tools), delegateDef(defs)) {
 		name, _ := backend.(string)
 		a.setDelegationBackend(name)
 	}

@@ -8,7 +8,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Temp home with the config text bound to the environment and the returned context
@@ -248,7 +248,7 @@ func TestBypassChatSDKRequestTransform(t *testing.T) {
 	req := map[string]any{"model": "m", "messages": msgs, "extra_body": map[string]any{"tools": "kept"}}
 	sdk := newAuxOpenAIClient("k", "https://api.example.com/v1", auxOpenAIOptions{})
 	got := BypassChatSDKRequestTransform(req, sdk)
-	extra, _ := pyjson.Dict(got["extra_body"])
+	extra, _ := jsonutil.AsMap(got["extra_body"])
 	if slot, ok := got["messages"].([]any); !ok || len(slot) != 0 || extra["tools"] != "kept" || len(extra["messages"].([]any)) != 1 {
 		t.Fatalf("bypassed %v", got)
 	}

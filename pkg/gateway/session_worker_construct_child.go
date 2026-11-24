@@ -5,9 +5,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keys of the per turn construct inputs the owner sends a managed worker
@@ -23,7 +23,7 @@ func dictList(value any) bool {
 		return false
 	}
 	for _, item := range items {
-		if _, isDict := item.(*pyjson.Object); !isDict {
+		if _, isDict := item.(*jsonutil.Object); !isDict {
 			return false
 		}
 	}
@@ -31,32 +31,32 @@ func dictList(value any) bool {
 }
 
 // Child side validated agent construct inputs of a bootstrap frame, empty when the owner sent none
-func ConstructKwargs(frame *pyjson.Object) (*pyjson.Object, error) {
-	policy, _ := frame.GetOr("policy", nil).(*pyjson.Object)
-	text, _ := policy.GetOr("request_json", nil).(string)
+func ConstructKwargs(frame *jsonutil.Object) (*jsonutil.Object, error) {
+	policy, _ := frame.ValueOr("policy", nil).(*jsonutil.Object)
+	text, _ := policy.ValueOr("request_json", nil).(string)
 	if text == "" {
 		text = "{}"
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	request, isDict := decoded.(*pyjson.Object)
+	request, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
 		return nil, &PyError{Kind: "AttributeError", Msg: "the worker construction arguments are " + errchain.Kind(decoded) + ", expected a mapping"}
 	}
-	raw := request.GetOr("construct_v1", nil)
+	raw := request.ValueOr("construct_v1", nil)
 	if raw == nil {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	inputs, isDict := raw.(*pyjson.Object)
-	prompt := inputs.GetOr("ephemeral_system_prompt", nil)
+	inputs, isDict := raw.(*jsonutil.Object)
+	prompt := inputs.ValueOr("ephemeral_system_prompt", nil)
 	_, promptText := prompt.(string)
-	if !isDict || !frameKeysAre(inputs, constructKeys...) || !dictList(inputs.Vals["fallback_model"]) ||
-		!dictList(inputs.Vals["prefill_messages"]) || !(prompt == nil || promptText) {
+	if !isDict || !frameKeysAre(inputs, constructKeys...) || !dictList(inputs.Value("fallback_model")) ||
+		!dictList(inputs.Value("prefill_messages")) || !(prompt == nil || promptText) {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid_managed_worker_bootstrap"}
 	}
-	return inputs.Copy(), nil
+	return inputs.Clone(), nil
 }
 
 // Child side api key, base url and api mode overrides of the worker's agent, resolved as the in process turn resolves its route
@@ -70,7 +70,7 @@ func WorkerRoute(ctx context.Context, policy *LocalSessionPolicy, construct map[
 		for key, value := range frozen {
 			copied[key] = value
 		}
-		if pyrepr.Truthy(chain) {
+		if anyutil.IsTrue(chain) {
 			copied["fallback_providers"] = chain
 		} else {
 			copied["fallback_providers"] = []any{}
@@ -91,11 +91,11 @@ func WorkerRoute(ctx context.Context, policy *LocalSessionPolicy, construct map[
 	}
 	var apiMode any = string(runtime.APIMode)
 	modelBlock, _ := frozen["model"].(map[string]any)
-	if apiMode == "chat_completions" && runtime.Provider != "custom" && !pyrepr.Truthy(modelBlock["api_mode"]) {
+	if apiMode == "chat_completions" && runtime.Provider != "custom" && !anyutil.IsTrue(modelBlock["api_mode"]) {
 		apiMode = nil
 	}
 	apiKey := construct["api_key"]
-	if !pyrepr.Truthy(apiKey) {
+	if !anyutil.IsTrue(apiKey) {
 		apiKey = runtime.APIKeyValue()
 	}
 	return map[string]any{"api_key": apiKey, "base_url": runtime.BaseURL, "api_mode": apiMode}, nil
@@ -132,7 +132,7 @@ func RoutingAgentKwargs(cfg map[string]any, model, providerName, baseURL string)
 		rawTier = ""
 	}
 	var tier any
-	if parsed := provider.ParseServiceTier(pyrepr.Str(rawTier)); parsed != "" {
+	if parsed := provider.ParseServiceTier(anyutil.String(rawTier)); parsed != "" {
 		tier = parsed
 	}
 	var overrides any

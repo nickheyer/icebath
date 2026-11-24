@@ -11,12 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/skills"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Options of a profile create, nil pointers standing for arguments the caller did not pass
@@ -86,7 +85,7 @@ func cloneAllInto(sourceDir, profileDir, canon string) (map[string]any, error) {
 	}
 	if len(materialized) > 0 {
 		pkgLog().Info(fmt.Sprintf("profile %s: materialized symlinked %s so the clone never writes through to %s",
-			canon, pyrepr.Repr(materialized), sourceDir))
+			canon, anyutil.Quote(materialized), sourceDir))
 	}
 	for _, sub := range profiles.ProfileDirs {
 		if err := os.MkdirAll(filepath.Join(profileDir, sub), 0o777); err != nil {
@@ -100,7 +99,7 @@ func cloneAllInto(sourceDir, profileDir, canon string) (map[string]any, error) {
 	}
 	if stripped := provider.StripClonedSingleUseOAuthGrants(profileDir); len(stripped) > 0 {
 		pkgLog().Info(fmt.Sprintf("profile %s: dropped the cloned single-use OAuth logins of %s (it uses the root logins instead)",
-			canon, pyrepr.Repr(stripped)))
+			canon, anyutil.Quote(stripped)))
 	}
 	ownerDir, err := profiles.GetProfileDir(canon)
 	if err != nil {
@@ -220,7 +219,7 @@ func CreateProfile(ctx context.Context, name string, o CreateOptions) (string, e
 		if !unowned {
 			return "", &profiles.ExistsError{Msg: fmt.Sprintf("Cannot create profile '%s': a running gateway still owns %s", canon, profileDir)}
 		}
-		if err := pyfs.RmTree(profileDir, nil); err != nil {
+		if err := os.RemoveAll(profileDir); err != nil {
 			return "", err
 		}
 	}
@@ -280,7 +279,7 @@ func CreateProfile(ctx context.Context, name string, o CreateOptions) (string, e
 			return "", err
 		}
 		if stripped.Len() > 0 {
-			pkgLog().Info(fmt.Sprintf("profile %s: cloned without messaging channels %s", canon, pyrepr.Repr(stripped)))
+			pkgLog().Info(fmt.Sprintf("profile %s: cloned without messaging channels %s", canon, anyutil.Quote(stripped)))
 		}
 	}
 	if err := finishProfileLayout(ctx, staging, o.NoSkills, o.CloneAll, o.Description, o.Soul); err != nil {
@@ -362,7 +361,7 @@ func BackfillProfileEnvs(quiet bool) ([]string, error) {
 		}
 		if err != nil {
 			if !quiet {
-				fmt.Fprintf(stdout, "⚠ Could not seed .env for profile '%s': %s\n", filepath.Base(entry), pyfs.OSErrorText(err))
+				fmt.Fprintf(stdout, "⚠ Could not seed .env for profile '%s': %s\n", filepath.Base(entry), err.Error())
 			}
 			continue
 		}

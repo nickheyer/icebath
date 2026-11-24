@@ -10,10 +10,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -52,17 +52,17 @@ func capitalize(s string) string {
 }
 
 func orDash(v any) string {
-	if pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+	if anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	return "-"
 }
 
 // Interactive wizard storing one login, card or address in the local vault
-func vaultCmdAdd(ctx context.Context, c *pyrich.Console, ns map[string]any) error {
+func vaultCmdAdd(ctx context.Context, c *consoleutil.Console, ns map[string]any) error {
 	c.Print("[bold]Add a vault item[/] (the password is encrypted at rest and the agent never sees it; the identifier is visible metadata the agent can type itself)")
-	kind := strings.ToLower(strings.TrimSpace(pyrepr.Str(ns["kind"])))
-	if !pyrepr.Truthy(ns["kind"]) {
+	kind := strings.ToLower(strings.TrimSpace(anyutil.String(ns["kind"])))
+	if !anyutil.IsTrue(ns["kind"]) {
 		kind = ""
 	}
 	for !slices.Contains(vault.VaultKinds, kind) {
@@ -71,7 +71,7 @@ func vaultCmdAdd(ctx context.Context, c *pyrich.Console, ns map[string]any) erro
 			kind = "login"
 		}
 		if !slices.Contains(vault.VaultKinds, kind) {
-			c.Print(fmt.Sprintf("[red]Unknown kind %s[/]", pyrepr.Repr(kind)))
+			c.Print(fmt.Sprintf("[red]Unknown kind %s[/]", anyutil.Quote(kind)))
 			kind = ""
 		}
 	}
@@ -118,7 +118,7 @@ func vaultCmdAdd(ctx context.Context, c *pyrich.Console, ns map[string]any) erro
 			required[f] = true
 		}
 		values := map[string]string{}
-		for _, field := range fields.Keys {
+		for _, field := range fields.Keys() {
 			prompt := strings.ReplaceAll(field, "_", " ")
 			if !required[field] {
 				prompt += " (optional)"
@@ -149,7 +149,7 @@ func vaultCmdAdd(ctx context.Context, c *pyrich.Console, ns map[string]any) erro
 }
 
 // Lists local items and the unlocked external managers, locked ones named for the session
-func vaultCmdList(ctx context.Context, c *pyrich.Console) error {
+func vaultCmdList(ctx context.Context, c *consoleutil.Console) error {
 	rows, locked, err := vaultListing(ctx)
 	if err != nil {
 		return err
@@ -159,13 +159,13 @@ func vaultCmdList(ctx context.Context, c *pyrich.Console) error {
 		return nil
 	}
 	if len(rows) > 0 {
-		table := &pyrich.Table{Title: fmt.Sprintf("Vault items (%d)", len(rows))}
+		table := &consoleutil.Table{Title: fmt.Sprintf("Vault items (%d)", len(rows))}
 		for _, col := range []string{"Handle", "Source", "Kind", "Label", "Identifier", "Origin"} {
 			style := ""
 			if col == "Handle" {
 				style = "bold"
 			}
-			table.Columns = append(table.Columns, pyrich.Column{Header: col, Style: style})
+			table.Columns = append(table.Columns, consoleutil.Column{Header: col, Style: style})
 		}
 		for _, r := range rows {
 			table.AddRow(r.meta.ID, r.source, r.meta.Kind, r.meta.Label, orDash(r.meta.Identifier), orDash(r.meta.Origin))
@@ -180,21 +180,21 @@ func vaultCmdList(ctx context.Context, c *pyrich.Console) error {
 }
 
 // Shows the detected password managers, --enable and --disable flipping the opt out under vault.<name>.enabled
-func vaultCmdSources(ctx context.Context, h string, c *pyrich.Console, ns map[string]any) error {
+func vaultCmdSources(ctx context.Context, h string, c *consoleutil.Console, ns map[string]any) error {
 	classes := externalBackendClasses()
 	names := make([]string, 0, len(classes))
 	for _, cls := range classes {
 		names = append(names, cls.name)
 	}
-	enable, disable := pyrepr.Truthy(ns["enable"]), pyrepr.Truthy(ns["disable"])
+	enable, disable := anyutil.IsTrue(ns["enable"]), anyutil.IsTrue(ns["disable"])
 	if enable || disable {
-		name := pyrepr.Str(ns["disable"])
+		name := anyutil.String(ns["disable"])
 		if enable {
-			name = pyrepr.Str(ns["enable"])
+			name = anyutil.String(ns["enable"])
 		}
 		cls, known := externalBackendClass(name)
 		if !known {
-			c.Print(fmt.Sprintf("[red]Unknown password manager %s[/] (expected one of %s)", pyrepr.Repr(name), strings.Join(names, ", ")))
+			c.Print(fmt.Sprintf("[red]Unknown password manager %s[/] (expected one of %s)", anyutil.Quote(name), strings.Join(names, ", ")))
 			return nil
 		}
 		if err := setVaultSource(ctx, h, cls, enable); err != nil {
@@ -226,8 +226,8 @@ func vaultCmdSources(ctx context.Context, h string, c *pyrich.Console, ns map[st
 }
 
 // Removes a local item by handle
-func vaultCmdRm(ctx context.Context, c *pyrich.Console, ns map[string]any) error {
-	handle := pyrepr.Str(ns["handle"])
+func vaultCmdRm(ctx context.Context, c *consoleutil.Console, ns map[string]any) error {
+	handle := anyutil.String(ns["handle"])
 	removed, err := RemoveVaultItem(ctx, handle)
 	if err != nil {
 		return err
@@ -235,7 +235,7 @@ func vaultCmdRm(ctx context.Context, c *pyrich.Console, ns map[string]any) error
 	if removed {
 		c.Print(fmt.Sprintf("[green]Removed[/] %s", handle))
 	} else {
-		c.Print(fmt.Sprintf("[red]No vault item with handle %s[/]", pyrepr.Repr(handle)))
+		c.Print(fmt.Sprintf("[red]No vault item with handle %s[/]", anyutil.Quote(handle)))
 	}
 	return nil
 }
@@ -246,16 +246,16 @@ func setVaultKeyStorage(ctx context.Context, h, value string) error {
 	return err
 }
 
-func keyLocationText(where *pyjson.Object, key string) string {
+func keyLocationText(where *jsonutil.Object, key string) string {
 	v, _ := where.Get(key)
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Shows where the local vault key lives, or moves it between vault.key and the OS keychain
-func vaultCmdKey(ctx context.Context, h string, c *pyrich.Console, ns map[string]any) error {
+func vaultCmdKey(ctx context.Context, h string, c *consoleutil.Console, ns map[string]any) error {
 	target := ""
-	if pyrepr.Truthy(ns["to"]) {
-		target = pyrepr.Str(ns["to"])
+	if anyutil.IsTrue(ns["to"]) {
+		target = anyutil.String(ns["to"])
 	}
 	if target != "" {
 		where, err := moveVaultKey(ctx, h, target)
@@ -274,8 +274,8 @@ func vaultCmdKey(ctx context.Context, h string, c *pyrich.Console, ns map[string
 			c.Print("[dim]Backups of this profile now hold the encrypted vault without its key; `icebath vault key migrate --to file` before moving the profile to another machine.[/]")
 		default:
 			c.Print(fmt.Sprintf("[green]Vault key moved to[/] %s (0600).", keyLocationText(where, "path")))
-			if left, has := where.Get("keychain_entry_left"); has && pyrepr.Truthy(left) {
-				c.Print(fmt.Sprintf("[yellow]The keychain copy (%s) could not be removed yet;[/] run this command again when the keychain is reachable.", pyrepr.Str(left)))
+			if left, has := where.Get("keychain_entry_left"); has && anyutil.IsTrue(left) {
+				c.Print(fmt.Sprintf("[yellow]The keychain copy (%s) could not be removed yet;[/] run this command again when the keychain is reachable.", anyutil.String(left)))
 			} else {
 				c.Print("Keychain entry removed.")
 			}
@@ -292,7 +292,7 @@ func vaultCmdKey(ctx context.Context, h string, c *pyrich.Console, ns map[string
 	case "keychain":
 		service, _ := where.Get("service")
 		account, _ := where.Get("account")
-		c.Print(fmt.Sprintf("Vault key: [bold]OS keychain[/] service %s, account %s", pyrepr.Repr(service), pyrepr.Repr(account)))
+		c.Print(fmt.Sprintf("Vault key: [bold]OS keychain[/] service %s, account %s", anyutil.Quote(service), anyutil.Quote(account)))
 	default:
 		c.Print("Vault key: [dim]none yet[/] (created with the first saved item)")
 	}
@@ -303,7 +303,7 @@ func vaultCmdKey(ctx context.Context, h string, c *pyrich.Console, ns map[string
 
 // Runs icebath vault, dispatching add, list, rm, sources and key
 func VaultCommand(ctx context.Context, h string, ns map[string]any, w io.Writer) (code int, err error) {
-	c := pyrich.NewConsole(w)
+	c := consoleutil.NewConsole(w)
 	defer func() {
 		if r := recover(); r != nil {
 			if exit, ok := r.(vaultExit); ok {
@@ -314,8 +314,8 @@ func VaultCommand(ctx context.Context, h string, ns map[string]any, w io.Writer)
 		}
 	}()
 	action := ""
-	if pyrepr.Truthy(ns["vault_action"]) {
-		action = pyrepr.Str(ns["vault_action"])
+	if anyutil.IsTrue(ns["vault_action"]) {
+		action = anyutil.String(ns["vault_action"])
 	}
 	switch action {
 	case "", "list":

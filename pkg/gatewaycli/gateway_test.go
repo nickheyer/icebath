@@ -16,8 +16,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles/manage"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const lockHolderEnv = "ICEBATH_GATEWAYCLI_TEST_LOCK_HOLDER"
@@ -119,11 +119,11 @@ func writePreviousGatewayPidFile(t *testing.T, home string, pid int) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := pyjson.Loads(string(data))
+	v, err := jsonutil.Decode(string(data))
 	if err != nil {
 		t.Fatal(err)
 	}
-	record := v.(*pyjson.Object)
+	record := v.(*jsonutil.Object)
 	raw, _ := record.Get("start_time")
 	start, isInt := raw.(int64)
 	if !isInt {
@@ -131,7 +131,7 @@ func writePreviousGatewayPidFile(t *testing.T, home string, pid int) {
 	}
 	record.Set("pid", int64(pid))
 	record.Set("start_time", max(int64(1), start-500))
-	text, _ := pyjson.Dumps(record)
+	text, _ := jsonutil.Encode(record)
 	if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 		t.Fatal(err)
 	}

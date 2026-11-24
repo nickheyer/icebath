@@ -14,7 +14,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 func memProvider() (*TracerProvider, *InMemorySpanExporter) {
@@ -24,7 +23,7 @@ func memProvider() (*TracerProvider, *InMemorySpanExporter) {
 
 func TestGatewayHealthEventMapsToSpanWithAttrs(t *testing.T) {
 	provider, mem := memProvider()
-	n := ExportBatch(provider, []*pyjson.Object{pyjson.ObjectOf("event", "gateway_health", "name", "gateway.lifecycle",
+	n := ExportBatch(provider, []*jsonutil.Object{jsonutil.ObjectOf("event", "gateway_health", "name", "gateway.lifecycle",
 		"old_state", "starting", "new_state", "running", "active_agents", int64(2), "pid", int64(4242), "profile", "secret-profile")})
 	if n != 1 {
 		t.Fatalf("exported %d", n)
@@ -84,7 +83,7 @@ func TestStreamerReceivesEventsAndRespectsFilter(t *testing.T) {
 	prev := makeProvider
 	makeProvider = func(context.Context) (*TracerProvider, *BatchSpanProcessor, error) { return provider, nil, nil }
 	t.Cleanup(func() { makeProvider = prev })
-	streamer, err := NewOTLPStreamer(context.Background(), func(ev *pyjson.Object) bool {
+	streamer, err := NewOTLPStreamer(context.Background(), func(ev *jsonutil.Object) bool {
 		kind, _ := ev.Get("event")
 		return kind == "gateway_health"
 	})
@@ -93,8 +92,8 @@ func TestStreamerReceivesEventsAndRespectsFilter(t *testing.T) {
 	}
 	em := NewMonitoringEmitter(true)
 	em.Subscribe(streamer.Subscriber())
-	em.Emit(pyjson.ObjectOf("event", "gateway_health", "name", "gateway.health_snapshot"))
-	em.Emit(pyjson.ObjectOf("event", "model_call", "provider", "anthropic"))
+	em.Emit(jsonutil.ObjectOf("event", "gateway_health", "name", "gateway.health_snapshot"))
+	em.Emit(jsonutil.ObjectOf("event", "model_call", "provider", "anthropic"))
 	em.Flush(5)
 	em.Close()
 	spans := mem.FinishedSpans()
@@ -105,10 +104,10 @@ func TestStreamerReceivesEventsAndRespectsFilter(t *testing.T) {
 
 func TestFailingStreamerNeverBreaksEmitter(t *testing.T) {
 	em := NewMonitoringEmitter(true)
-	var seen []*pyjson.Object
-	em.Subscribe(NewSubscriber(func([]*pyjson.Object) { panic("export down") }))
-	em.Subscribe(NewSubscriber(func(batch []*pyjson.Object) { seen = append(seen, batch...) }))
-	em.Emit(pyjson.ObjectOf("event", "gateway_health", "name", "gateway.lifecycle"))
+	var seen []*jsonutil.Object
+	em.Subscribe(NewSubscriber(func([]*jsonutil.Object) { panic("export down") }))
+	em.Subscribe(NewSubscriber(func(batch []*jsonutil.Object) { seen = append(seen, batch...) }))
+	em.Emit(jsonutil.ObjectOf("event", "gateway_health", "name", "gateway.lifecycle"))
 	em.Flush(5)
 	em.Close()
 	if len(seen) != 1 {
@@ -153,7 +152,7 @@ func TestHTTPExporterPostsOTLPJSONWithHeaders(t *testing.T) {
 	exporter.Resource = map[string]string{"service.name": "icebath-gateway"}
 	processor := NewBatchSpanProcessor(exporter)
 	provider := NewTracerProvider(exporter.Resource, processor)
-	if n := ExportBatch(provider, []*pyjson.Object{pyjson.ObjectOf("event", "cron_execution", "status", "ok", "duration_ms", int64(12))}); n != 1 {
+	if n := ExportBatch(provider, []*jsonutil.Object{jsonutil.ObjectOf("event", "cron_execution", "status", "ok", "duration_ms", int64(12))}); n != 1 {
 		t.Fatalf("exported %d", n)
 	}
 	processor.ForceFlush()

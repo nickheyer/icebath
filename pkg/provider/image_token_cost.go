@@ -9,8 +9,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Observed per image prices outside this band are text estimate noise, and the learned price moves halfway
@@ -30,8 +30,8 @@ type imageCostCtxKey struct{}
 // Launch profile table plus one table per routed home, each loaded lazily from its own cache file
 var imageCostTables struct {
 	mu     sync.Mutex
-	launch *pyjson.Object
-	byHome map[string]*pyjson.Object
+	launch *jsonutil.Object
+	byHome map[string]*jsonutil.Object
 }
 
 func imageCostCachePath(ctx context.Context) string {
@@ -43,22 +43,22 @@ func imageCostTableKey(model, baseURL string) string {
 }
 
 // Plausible integer prices of the cache file in file order, empty when missing or invalid
-func readImageCostCache(ctx context.Context) *pyjson.Object {
-	out := pyjson.NewObject()
+func readImageCostCache(ctx context.Context) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	raw, err := os.ReadFile(imageCostCachePath(ctx))
 	if err != nil {
 		return out
 	}
-	v, err := pyjson.Loads(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
+	v, err := jsonutil.Decode(string(bytes.TrimPrefix(raw, []byte("\xef\xbb\xbf"))))
 	if err != nil {
 		return out
 	}
-	obj, ok := v.(*pyjson.Object)
+	obj, ok := v.(*jsonutil.Object)
 	if !ok {
 		return out
 	}
-	for _, k := range obj.Keys {
-		if n, ok := obj.Vals[k].(int64); ok && n >= imageCostMinPlausible && n <= imageCostMaxPlausible {
+	for _, k := range obj.Keys() {
+		if n, ok := obj.Value(k).(int64); ok && n >= imageCostMinPlausible && n <= imageCostMaxPlausible {
 			out.Set(k, n)
 		}
 	}
@@ -66,7 +66,7 @@ func readImageCostCache(ctx context.Context) *pyjson.Object {
 }
 
 // Learned table of the active profile, the caller holds the tables lock
-func imageCostTable(ctx context.Context) *pyjson.Object {
+func imageCostTable(ctx context.Context) *jsonutil.Object {
 	if home.Override(ctx) == "" {
 		if imageCostTables.launch == nil {
 			imageCostTables.launch = readImageCostCache(ctx)
@@ -75,7 +75,7 @@ func imageCostTable(ctx context.Context) *pyjson.Object {
 	}
 	key := home.Key(metadataHome(ctx))
 	if imageCostTables.byHome == nil {
-		imageCostTables.byHome = map[string]*pyjson.Object{}
+		imageCostTables.byHome = map[string]*jsonutil.Object{}
 	}
 	table, ok := imageCostTables.byHome[key]
 	if !ok {
@@ -184,13 +184,13 @@ func CalibrateImageTokenCost(ctx context.Context, model, baseURL string, anchor 
 		learned = int(float64(p) + imageCostEMAAlpha*float64(int64(perImage)-p))
 	}
 	table.Set(key, int64(learned))
-	snapshot := pyjson.NewObject()
-	for _, k := range table.Keys {
-		snapshot.Set(k, table.Vals[k])
+	snapshot := jsonutil.NewObject()
+	for _, k := range table.Keys() {
+		snapshot.Set(k, table.Value(k))
 	}
 	imageCostTables.mu.Unlock()
 	ctx = setImageCost(ctx, learned)
-	if err := config.AtomicJSONWriteWith(ctx, imageCostCachePath(ctx), snapshot, pyjson.Indent(0), pyjson.Separators(",", ":")); err != nil {
+	if err := config.AtomicJSONWriteWith(ctx, imageCostCachePath(ctx), snapshot, jsonutil.Indent(0)); err != nil {
 		pkgLog().Debug(fmt.Sprintf("image token cost persist failed: %v", err))
 	}
 	pkgLog().Info(fmt.Sprintf("Image token cost calibrated from provider usage: %d images priced %s tokens each (learned %s for %s)",

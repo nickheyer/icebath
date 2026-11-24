@@ -16,12 +16,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 )
 
 // Installs a plain git runner as the updater runner the process wiring assigns
 func installGitlockDoubles() {
-	GitlockRunGit = func(ctx context.Context, gitCmd, args []string, o pysubprocess.Options) (*pysubprocess.Completed, error) {
+	GitlockRunGit = func(ctx context.Context, gitCmd, args []string, o executil.Options) (*executil.Completed, error) {
 		return gitlockSubprocessRun(ctx, append(slices.Clone(gitCmd), args...), o)
 	}
 }
@@ -301,12 +301,12 @@ func TestRecoveryMarksUnmarkedPacksAndRetriesTheSameFetch(t *testing.T) {
 				os.WriteFile(filepath.Join(packDir, f), nil, 0o644)
 			}
 			var calls [][2][]string
-			runner := func(gitCmd, args []string) (*pysubprocess.Completed, error) {
+			runner := func(gitCmd, args []string) (*executil.Completed, error) {
 				calls = append(calls, [2][]string{slices.Clone(gitCmd), slices.Clone(args)})
 				if len(calls) == 1 {
-					return &pysubprocess.Completed{Args: append(gitCmd, args...), Returncode: 1, Stderr: []byte(crash)}, nil
+					return &executil.Completed{Args: append(gitCmd, args...), ExitCode: 1, Stderr: []byte(crash)}, nil
 				}
-				return &pysubprocess.Completed{Args: append(gitCmd, args...)}, nil
+				return &executil.Completed{Args: append(gitCmd, args...)}, nil
 			}
 			res, err := FetchWithPartialCloneRecovery(runner, []string{"git"}, []string{"fetch", "origin", "main"}, root)
 			if err != nil || res.Returncode != 0 || len(calls) != 2 {

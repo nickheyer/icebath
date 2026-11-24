@@ -10,9 +10,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
 	"github.com/nickheyer/icebath/pkg/state"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func seededStore(t *testing.T, path string, sessions ...state.NewSession) {
@@ -56,10 +58,10 @@ func readBytes(t *testing.T, path string) []byte {
 	return data
 }
 
-func sessionIDs(rows []*pyjson.Object) []string {
+func sessionIDs(rows []*jsonutil.Object) []string {
 	ids := []string{}
 	for _, row := range rows {
-		ids = append(ids, pyStr(row.GetOr("session_id", nil)))
+		ids = append(ids, anyutil.String(row.ValueOr("session_id", nil)))
 	}
 	return ids
 }
@@ -71,7 +73,7 @@ func TestCatalogPrefersCanonicalCwdWithoutRewritingStorage(t *testing.T) {
 	before := readBytes(t, path)
 	ctx := context.Background()
 	rows, err := CatalogSessions(ctx, path, dir)
-	if err != nil || !reflect.DeepEqual(sessionIDs(rows), []string{"canonical-acp"}) || rows[0].GetOr("cwd", nil) != dir {
+	if err != nil || !reflect.DeepEqual(sessionIDs(rows), []string{"canonical-acp"}) || rows[0].ValueOr("cwd", nil) != dir {
 		t.Fatalf("rows = %v, %v", rows, err)
 	}
 	if stale, err := CatalogSessions(ctx, path, "/stale-legacy-workspace"); err != nil || len(stale) != 0 {
@@ -102,8 +104,8 @@ func TestDefaultAcpDoesNotConstructAnEmbeddedSessionManager(t *testing.T) {
 }
 
 func TestEffortPickAppliesThroughTheReasoningMutationAndReturnsThePickers(t *testing.T) {
-	swap(t, &gatewayModelState, func(context.Context, *pyjson.Object) *pyacp.SessionModelState {
-		return &pyacp.SessionModelState{AvailableModels: []pyacp.ModelInfo{{ModelID: "openrouter:fixture", Name: "fixture"}}, CurrentModelID: "openrouter:fixture"}
+	swap(t, &gatewayModelState, func(context.Context, *jsonutil.Object) *acputil.SessionModelState {
+		return &acputil.SessionModelState{AvailableModels: []acputil.ModelInfo{{ModelID: "openrouter:fixture", Name: "fixture"}}, CurrentModelID: "openrouter:fixture"}
 	})
 	info := jsonObj(t, `{"model": "fixture", "provider": "openrouter", "reasoning_effort": "medium"}`)
 	type mutation struct {
@@ -112,26 +114,26 @@ func TestEffortPickAppliesThroughTheReasoningMutationAndReturnsThePickers(t *tes
 	}
 	var mutations []mutation
 	a, link := bareGatewayAgent(t, map[string]string{"s": `{"revision": 1, "execution_generation": 1}`})
-	link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
-		copyInfo := func() *pyjson.Object {
-			out := pyjson.NewObject()
-			for _, key := range info.Keys {
-				out.Set(key, info.Vals[key])
+	link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
+		copyInfo := func() *jsonutil.Object {
+			out := jsonutil.NewObject()
+			for _, key := range info.Keys() {
+				out.Set(key, info.Value(key))
 			}
 			return out
 		}
 		switch method {
 		case "session.mutate":
-			payload := pyjson.Plain(params["payload"]).(map[string]any)
-			mutations = append(mutations, mutation{pyStr(params["operation"]), payload})
+			payload := jsonutil.Plain(params["payload"]).(map[string]any)
+			mutations = append(mutations, mutation{anyutil.String(params["operation"]), payload})
 			info.Set("reasoning_effort", payload["effort"])
 			return jsonObj(t, `{"status": "applied"}`), nil
 		case "session.info":
 			return copyInfo(), nil
 		}
-		return pyjson.ObjectOf("revision", int64(1), "execution_generation", int64(1), "info", copyInfo()), nil
+		return jsonutil.ObjectOf("revision", int64(1), "execution_generation", int64(1), "info", copyInfo()), nil
 	})
-	reply, err := a.SetConfigOption(context.Background(), &pyacp.SetConfigOptionParams{ConfigID: "reasoning_effort", SessionID: "s", Value: "high"})
+	reply, err := a.SetConfigOption(context.Background(), &acputil.SetConfigOptionParams{ConfigID: "reasoning_effort", SessionID: "s", Value: "high"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +142,7 @@ func TestEffortPickAppliesThroughTheReasoningMutationAndReturnsThePickers(t *tes
 	}
 	pickers := map[string]string{}
 	for _, option := range reply.ConfigOptions {
-		sel := option.(*pyacp.SessionConfigOptionSelect)
+		sel := option.(*acputil.SessionConfigOptionSelect)
 		pickers[*sel.Category] = sel.CurrentValue
 	}
 	if !reflect.DeepEqual(pickers, map[string]string{"mode": "ask", "model": "openrouter:fixture", "thought_level": "high"}) {
@@ -150,10 +152,10 @@ func TestEffortPickAppliesThroughTheReasoningMutationAndReturnsThePickers(t *tes
 
 func TestTheEffortPickerOffersDefaultOnlyWhileNoLevelIsSet(t *testing.T) {
 	effort := func(level string) (string, []string) {
-		options := gatewayConfigOptions(nil, pyjson.ObjectOf("reasoning_effort", level), DefaultMode)
-		sel := options[len(options)-1].(*pyacp.SessionConfigOptionSelect)
+		options := gatewayConfigOptions(nil, jsonutil.ObjectOf("reasoning_effort", level), DefaultMode)
+		sel := options[len(options)-1].(*acputil.SessionConfigOptionSelect)
 		var values []string
-		for _, choice := range sel.Options.([]pyacp.SessionConfigSelectOption) {
+		for _, choice := range sel.Options.([]acputil.SessionConfigSelectOption) {
 			values = append(values, choice.Value)
 		}
 		return sel.CurrentValue, values
@@ -201,15 +203,15 @@ func TestInitializeAdvertisesImagePromptCapability(t *testing.T) {
 
 func TestCancelUsesObservedGenerationAndMutationsFailExplicitly(t *testing.T) {
 	a, link := bareGatewayAgent(t, map[string]string{"shared": `{"execution_generation": 4, "revision": 7}`})
-	link.set(func(context.Context, string, map[string]any) (*pyjson.Object, error) {
+	link.set(func(context.Context, string, map[string]any) (*jsonutil.Object, error) {
 		return nil, &gateway.GatewayClientError{Msg: "stale_generation"}
 	})
 	ctx := context.Background()
-	if err := a.Cancel(ctx, &pyacp.CancelNotification{SessionID: "shared"}); err != nil || len(link.log()) != 0 {
+	if err := a.Cancel(ctx, &acputil.CancelNotification{SessionID: "shared"}); err != nil || len(link.log()) != 0 {
 		t.Fatalf("err %v calls %v", err, link.log())
 	}
 	onLoop(a, func() bool { a.admissions["shared"] = "adm-1"; return true })
-	if err := a.Cancel(ctx, &pyacp.CancelNotification{SessionID: "shared"}); !refusedWith(err, "stale_generation") {
+	if err := a.Cancel(ctx, &acputil.CancelNotification{SessionID: "shared"}); !refusedWith(err, "stale_generation") {
 		t.Fatalf("err = %v", err)
 	}
 	calls := link.log()
@@ -232,11 +234,11 @@ func TestCancelUsesObservedGenerationAndMutationsFailExplicitly(t *testing.T) {
 		}
 	}
 	fenced("set_session_model", func() error {
-		_, err := a.SetSessionModel(ctx, &pyacp.SetSessionModelRequest{SessionID: "shared", ModelID: "new-model"})
+		_, err := a.SetSessionModel(ctx, &acputil.SetSessionModelRequest{SessionID: "shared", ModelID: "new-model"})
 		return err
 	})
 	fenced("set_session_mode", func() error {
-		_, err := a.SetSessionMode(ctx, &pyacp.SetSessionModeRequest{SessionID: "shared", ModeID: "dont_ask"})
+		_, err := a.SetSessionMode(ctx, &acputil.SetSessionModeRequest{SessionID: "shared", ModeID: "dont_ask"})
 		return err
 	})
 }
@@ -245,7 +247,7 @@ func TestGatewayAcpCatalogDoesNotBootARuntime(t *testing.T) {
 	dir := testingHome(t)
 	a := NewGatewayACPAgent()
 	ctx := context.Background()
-	resp, err := a.ListSessions(ctx, &pyacp.ListSessionsRequest{})
+	resp, err := a.ListSessions(ctx, &acputil.ListSessionsRequest{})
 	if err != nil || len(resp.Sessions) != 0 {
 		t.Fatalf("sessions = %v, %v", resp, err)
 	}
@@ -254,7 +256,7 @@ func TestGatewayAcpCatalogDoesNotBootARuntime(t *testing.T) {
 		t.Fatalf("state.db stat err = %v", err)
 	}
 	seededStore(t, path, state.NewSession{ID: "persisted-acp", Source: "acp", Model: "fixture", ModelConfig: map[string]any{"cwd": dir}})
-	resp, err = a.ListSessions(ctx, &pyacp.ListSessionsRequest{Cwd: &dir})
+	resp, err = a.ListSessions(ctx, &acputil.ListSessionsRequest{Cwd: &dir})
 	if err != nil || len(resp.Sessions) != 1 || resp.Sessions[0].SessionID != "persisted-acp" {
 		t.Fatalf("sessions = %+v, %v", resp, err)
 	}
@@ -267,19 +269,19 @@ func TestGatewayAcpAdvertisesEverySessionCapabilityItImplements(t *testing.T) {
 	testingHome(t)
 	ctx := context.Background()
 	gatewayAgent := NewGatewayACPAgent()
-	advertised, err := gatewayAgent.Initialize(ctx, &pyacp.InitializeRequest{ProtocolVersion: 1})
+	advertised, err := gatewayAgent.Initialize(ctx, &acputil.InitializeRequest{ProtocolVersion: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	dump := func(c *pyacp.SessionCapabilities) string {
-		text, _ := pyjson.Dumps(pyacp.Dump(c, pyacp.DumpOptions{ExcludeNone: true}), pyjson.SortKeys(true))
+	dump := func(c *acputil.SessionCapabilities) string {
+		text, _ := jsonutil.Encode(pyacp.Dump(c, pyacp.DumpOptions{ExcludeNone: true}), jsonutil.SortKeys())
 		return text
 	}
 	got := dump(advertised.AgentCapabilities.SessionCapabilities)
 	var agent any = gatewayAgent
-	_, forks := agent.(pyacp.SessionForker)
-	_, lists := agent.(pyacp.SessionLister)
-	_, resumes := agent.(pyacp.SessionResumer)
+	_, forks := agent.(acputil.SessionForker)
+	_, lists := agent.(acputil.SessionLister)
+	_, resumes := agent.(acputil.SessionResumer)
 	if got != `{"fork": {}, "list": {}, "resume": {}}` || !forks || !lists || !resumes {
 		t.Fatalf("capabilities %s fork %v list %v resume %v", got, forks, lists, resumes)
 	}

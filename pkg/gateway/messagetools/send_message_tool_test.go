@@ -13,7 +13,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/gateway/platforms/telegram"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 type botCall struct {
@@ -375,16 +375,16 @@ func (a *documentAdapter) SendDocument(_ context.Context, chatID, path, _, _, _ 
 
 // Runner double exposing only the default profile adapter map
 type mapRunner struct {
-	adapters *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	adapters *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 }
 
-func (r *mapRunner) Adapters() *pydict.Dict[gateway.Platform, gateway.PlatformAdapter] {
+func (r *mapRunner) Adapters() *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter] {
 	return r.adapters
 }
 
 // Runner double whose default profile map holds one adapter under platform
 func newMapRunner(platform gateway.Platform, adapter gateway.PlatformAdapter) *mapRunner {
-	adapters := pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	adapters := orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	adapters.Set(platform, adapter)
 	return &mapRunner{adapters: adapters}
 }

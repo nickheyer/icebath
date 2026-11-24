@@ -8,12 +8,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func msgObj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func msgObj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -22,7 +22,7 @@ func msgObj(kv ...any) *pyjson.Object {
 
 func TestBackgroundReviewHarnessDetectionAndStrip(t *testing.T) {
 	for _, tc := range []struct {
-		msg  *pyjson.Object
+		msg  *jsonutil.Object
 		want bool
 	}{
 		{msgObj("role", "user", "content", "Review the conversation above and update the skill library now."), true},
@@ -31,7 +31,7 @@ func TestBackgroundReviewHarnessDetectionAndStrip(t *testing.T) {
 		{msgObj("role", "assistant", "content", "Review the conversation above and update the skill library"), false},
 	} {
 		if got, err := isBackgroundReviewHarnessMessage(tc.msg); got != tc.want || err != nil {
-			t.Fatalf("%v %v %v", tc.msg.Vals, got, err)
+			t.Fatalf("%v %v %v", tc.msg, got, err)
 		}
 	}
 	if _, err := isBackgroundReviewHarnessMessage(msgObj("role", []any{"user"})); err == nil || !strings.Contains(err.Error(), "the message role is a list, expected text") {
@@ -47,7 +47,7 @@ func TestBackgroundReviewHarnessDetectionAndStrip(t *testing.T) {
 	out, err := stripBackgroundReviewHarness(messages)
 	var contents []string
 	for _, m := range out {
-		c, _ := m.(*pyjson.Object).Get("content")
+		c, _ := m.(*jsonutil.Object).Get("content")
 		contents = append(contents, c.(string))
 	}
 	if err != nil || strings.Join(contents, "|") != "What's the weather?|It's sunny.|Thanks, now book a flight." {
@@ -69,7 +69,7 @@ func TestBackgroundReviewHarnessDetectionAndStrip(t *testing.T) {
 func TestStaleToolCallMarkersBlankedInPlace(t *testing.T) {
 	buf := captureSlog(t)
 	stale := msgObj("role", "assistant", "content", " [skill_manage] ", "tool_calls", []any{msgObj("id", "c1")})
-	keep := []*pyjson.Object{
+	keep := []*jsonutil.Object{
 		msgObj("role", "assistant", "content", "[memory]", "tool_calls", []any{}),
 		msgObj("role", "user", "content", "[memory]", "tool_calls", []any{1}),
 		msgObj("role", "assistant", "content", "[not a marker!]", "tool_calls", []any{1}),
@@ -81,7 +81,7 @@ func TestStaleToolCallMarkersBlankedInPlace(t *testing.T) {
 	}
 	for _, k := range keep {
 		if c, _ := k.Get("content"); c == "" {
-			t.Fatalf("blanked %v", k.Vals)
+			t.Fatalf("blanked %v", k)
 		}
 	}
 	if !strings.Contains(buf.String(), "Cleared 1 stale tool-call marker message(s) while restoring session (#78148)") {

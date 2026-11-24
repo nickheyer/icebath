@@ -9,7 +9,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Stages the replacement source the way the pytest helper does
@@ -43,7 +43,7 @@ func TestWindowsRealHeldHandleReportsAccessDenied(t *testing.T) {
 	if !errors.As(renameErr, &errno) || (errno != 5 && errno != 32 && errno != 33) {
 		t.Fatalf("held target rename reported %v", renameErr)
 	}
-	if !pyfs.IsContendedReplaceError(renameErr) {
+	if !fsutil.IsRenameContended(renameErr) {
 		t.Fatalf("%v not classified as a contended replace", renameErr)
 	}
 }

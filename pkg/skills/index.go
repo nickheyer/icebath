@@ -15,9 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -91,8 +91,8 @@ func ClearSkillsSystemPromptCache(home string, disk bool) {
 }
 
 // File signature manifest of every SKILL.md and DESCRIPTION.md keyed by path relative to the skills dir
-func buildSkillsManifest(skillsDir string) *pyjson.Object {
-	manifest := pyjson.NewObject()
+func buildSkillsManifest(skillsDir string) *jsonutil.Object {
+	manifest := jsonutil.NewObject()
 	prefix := filepath.Clean(skillsDir)
 	if !strings.HasSuffix(prefix, string(filepath.Separator)) {
 		prefix += string(filepath.Separator)
@@ -123,22 +123,22 @@ func pruneIndexDirs(_ string, names []string, hasSkillMD bool) []string {
 }
 
 // Disk snapshot when it parses, carries the current version, and its manifest matches
-func loadSkillsSnapshot(home string, manifest *pyjson.Object) *pyjson.Object {
+func loadSkillsSnapshot(home string, manifest *jsonutil.Object) *jsonutil.Object {
 	text, err := readSkillMDStrict(skillsPromptSnapshotPath(home))
 	if err != nil {
 		return nil
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
-	snap, ok := parsed.(*pyjson.Object)
+	snap, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
 	version, _ := snap.Get("version")
 	stored, _ := snap.Get("manifest")
-	if !pyrepr.Equal(version, int64(skillsSnapshotVersion)) || !pyrepr.Equal(stored, manifest) {
+	if !anyutil.Equal(version, int64(skillsSnapshotVersion)) || !anyutil.Equal(stored, manifest) {
 		return nil
 	}
 	return snap
@@ -164,7 +164,7 @@ func iterOrEmpty(v any) ([]any, error) {
 func strippedStrs(items []any) []any {
 	out := []any{}
 	for _, it := range items {
-		if s := strings.TrimSpace(pyrepr.Str(it)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(it)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -179,7 +179,7 @@ func requiresAppsList(fm map[string]any) []any {
 	case []any:
 		items = t
 	default:
-		if pyrepr.Truthy(raw) {
+		if anyutil.IsTrue(raw) {
 			items = []any{raw}
 		}
 	}
@@ -187,7 +187,7 @@ func requiresAppsList(fm map[string]any) []any {
 }
 
 // Serialisable index metadata of one skill file relative to its root
-func buildSnapshotEntry(skillFile, skillsDir string, fm map[string]any, description string) (*pyjson.Object, error) {
+func buildSnapshotEntry(skillFile, skillsDir string, fm map[string]any, description string) (*jsonutil.Object, error) {
 	rel, err := filepath.Rel(skillsDir, skillFile)
 	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return nil, fmt.Errorf("%s is not in the subpath of %s", errchain.Show(skillFile), errchain.Show(skillsDir))
@@ -202,7 +202,7 @@ func buildSnapshotEntry(skillFile, skillsDir string, fm map[string]any, descript
 	}
 	fmName := skillName
 	if v, ok := fm["name"]; ok {
-		fmName = pyrepr.Str(v)
+		fmName = anyutil.String(v)
 	}
 	platformsRaw := fm["platforms"]
 	if s, ok := platformsRaw.(string); ok && s != "" {
@@ -212,14 +212,14 @@ func buildSnapshotEntry(skillFile, skillsDir string, fm map[string]any, descript
 	if err != nil {
 		return nil, err
 	}
-	conditions := pyjson.NewObject()
+	conditions := jsonutil.NewObject()
 	for k, v := range extractSkillConditions(fm) {
 		conditions.Set(k, toAnyList(v))
 	}
 	sort.SliceStable(conditions.Keys, func(i, j int) bool {
-		return slices.Index(conditionKeys, conditions.Keys[i]) < slices.Index(conditionKeys, conditions.Keys[j])
+		return slices.Index(conditionKeys, conditions.Keys()[i]) < slices.Index(conditionKeys, conditions.Keys()[j])
 	})
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("skill_name", skillName)
 	entry.Set("category", category)
 	entry.Set("frontmatter_name", fmName)
@@ -304,7 +304,7 @@ func (s *Scope) pluginSkillPromptRows(ctx context.Context, disabled, availableTo
 			continue
 		}
 		fm := map[string]any{}
-		if raw := meta["frontmatter"]; pyrepr.Truthy(raw) {
+		if raw := meta["frontmatter"]; anyutil.IsTrue(raw) {
 			m, ok := raw.(map[string]any)
 			if !ok {
 				s.logger().Debug("Plugin skill prompt rows unavailable", "error", fmt.Sprintf("plugin skill row is %s where a mapping was expected", errchain.Kind(raw)))
@@ -368,9 +368,9 @@ func (s *Scope) BuildSkillsSystemPrompt(ctx context.Context, opts SkillsPromptOp
 }
 
 // Declared name of an index entry, the dir name when the frontmatter has none
-func entryName(e *pyjson.Object) string {
-	if v, _ := e.Get("frontmatter_name"); pyrepr.Truthy(v) {
-		return pyrepr.Str(v)
+func entryName(e *jsonutil.Object) string {
+	if v, _ := e.Get("frontmatter_name"); anyutil.IsTrue(v) {
+		return anyutil.String(v)
 	}
 	v, _ := e.Get("skill_name")
 	return pyStrTruthy(v)
@@ -378,7 +378,7 @@ func entryName(e *pyjson.Object) string {
 
 // One scanned index entry with its root, tier and offer time compatibility
 type indexCandidate struct {
-	entry      *pyjson.Object
+	entry      *jsonutil.Object
 	tier       int
 	root       string
 	compatible bool
@@ -400,7 +400,7 @@ func (s *Scope) scanExtraRoot(root string, files []string, tier int, what string
 }
 
 // Skills listed by snapshot entries when the value iterates, a TypeError for scalars and null
-func snapshotSkills(snap *pyjson.Object) ([]*pyjson.Object, error) {
+func snapshotSkills(snap *jsonutil.Object) ([]*jsonutil.Object, error) {
 	raw, ok := snap.Get("skills")
 	if !ok {
 		return nil, nil
@@ -409,13 +409,13 @@ func snapshotSkills(snap *pyjson.Object) ([]*pyjson.Object, error) {
 	switch t := raw.(type) {
 	case []any:
 		items = t
-	case *pyjson.Object, string:
+	case *jsonutil.Object, string:
 	default:
 		return nil, fmt.Errorf("skills snapshot list is %s where a list was expected", errchain.Kind(raw))
 	}
-	var out []*pyjson.Object
+	var out []*jsonutil.Object
 	for _, it := range items {
-		if o, ok := it.(*pyjson.Object); ok {
+		if o, ok := it.(*jsonutil.Object); ok {
 			out = append(out, o)
 		}
 	}
@@ -423,17 +423,17 @@ func snapshotSkills(snap *pyjson.Object) ([]*pyjson.Object, error) {
 }
 
 // Value of an entry key, nil when absent
-func entryGet(e *pyjson.Object, key string) any {
+func entryGet(e *jsonutil.Object, key string) any {
 	v, _ := e.Get(key)
 	return v
 }
 
 // Conditions of an entry as string lists keyed by condition name
-func entryConditions(e *pyjson.Object) map[string][]string {
+func entryConditions(e *jsonutil.Object) map[string][]string {
 	out := map[string][]string{}
-	if o, ok := entryGet(e, "conditions").(*pyjson.Object); ok {
-		for _, k := range o.Keys {
-			out[k] = fmStringList(jsonToFrontmatter(o.Vals[k]))
+	if o, ok := entryGet(e, "conditions").(*jsonutil.Object); ok {
+		for _, k := range o.Keys() {
+			out[k] = fmStringList(jsonToFrontmatter(o.Value(k)))
 		}
 	}
 	return out
@@ -442,10 +442,10 @@ func entryConditions(e *pyjson.Object) map[string][]string {
 // Converts decoded JSON values into the frontmatter value model
 func jsonToFrontmatter(v any) any {
 	switch t := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		m := map[string]any{}
-		for _, k := range t.Keys {
-			m[k] = jsonToFrontmatter(t.Vals[k])
+		for _, k := range t.Keys() {
+			m[k] = jsonToFrontmatter(t.Value(k))
 		}
 		return m
 	case []any:
@@ -460,7 +460,7 @@ func jsonToFrontmatter(v any) any {
 
 // Cache key text of every input the rendered index depends on
 func skillsPromptCacheKey(parts ...any) string {
-	text, err := pyjson.Dumps(parts, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(parts, jsonutil.SortKeys())
 	if err != nil {
 		return fmt.Sprint(parts...)
 	}
@@ -474,10 +474,10 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 	pluginRows := s.pluginSkillPromptRows(ctx, disabled, availableTools, availableToolsets, platformHint)
 	manifest := buildSkillsManifest(skillsDir)
 	var files []string
-	addFiles := func(prefix []any, m *pyjson.Object) {
-		for _, rel := range m.Keys {
+	addFiles := func(prefix []any, m *jsonutil.Object) {
+		for _, rel := range m.Keys() {
 			row := append(append([]any{}, prefix...), rel)
-			row = append(row, m.Vals[rel].([]any)...)
+			row = append(row, m.Value(rel).([]any)...)
 			files = append(files, skillsPromptCacheKey(row...))
 		}
 	}
@@ -496,7 +496,7 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 	key := skillsPromptCacheKey(skillsDir, extraKey, files, sortedSet(availableTools), sortedSet(availableToolsets),
 		platformHint, sortedSet(disabled), sortedSet(compact), s.singleQuerySession(ctx), pluginKey)
 	snapshot := loadSkillsSnapshot(s.Home, manifest)
-	var snapEntries []*pyjson.Object
+	var snapEntries []*jsonutil.Object
 	appGated := false
 	if snapshot != nil {
 		var err error
@@ -504,7 +504,7 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 			return "", err
 		}
 		for _, e := range snapEntries {
-			if pyrepr.Truthy(entryGet(e, "requires_apps")) {
+			if anyutil.IsTrue(entryGet(e, "requires_apps")) {
 				appGated = true
 			}
 		}
@@ -524,11 +524,11 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 	if snapshot != nil {
 		for _, e := range snapEntries {
 			platforms := jsonToFrontmatter(entryGet(e, "platforms"))
-			if !pyrepr.Truthy(platforms) {
+			if !anyutil.IsTrue(platforms) {
 				platforms = []any{}
 			}
 			apps := jsonToFrontmatter(entryGet(e, "requires_apps"))
-			if !pyrepr.Truthy(apps) {
+			if !anyutil.IsTrue(apps) {
 				apps = []any{}
 			}
 			ok := skillMatchesPlatformList(platforms) && skillMatchesApps(map[string]any{"requires_apps": apps})
@@ -601,7 +601,7 @@ func (s *Scope) buildSkillsSystemPromptInner(ctx context.Context, skillsDir stri
 		}
 	}
 	if snapshot == nil {
-		snap := pyjson.NewObject()
+		snap := jsonutil.NewObject()
 		snap.Set("version", int64(skillsSnapshotVersion))
 		snap.Set("manifest", buildSkillsManifest(skillsDir))
 		list := make([]any, len(candidates))

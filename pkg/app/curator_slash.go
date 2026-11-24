@@ -8,7 +8,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/commands"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
 
@@ -32,6 +31,6 @@ func RunCuratorSlash(ctx context.Context, env *tools.Env, argv []string, out io.
 			fmt.Fprintln(out, exit.Msg)
 		}
 	default:
-		fmt.Fprintln(out, i18n.T(ctx, "cli.commands.curator.failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}))
+		fmt.Fprintln(out, i18n.T(ctx, "cli.commands.curator.failed", "", map[string]any{"error": err.Error()}))
 	}
 }

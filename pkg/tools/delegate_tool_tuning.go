@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"maps"
 
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Provider side speed tier gates pkg/agent installs at init from pkg/provider
@@ -31,19 +31,19 @@ var serviceTierKeys = map[string]bool{"service_tier": true, "speed": true}
 // Deep copy of overrides without a speed tier key at the top level or inside extra_body
 func WithoutServiceTier(overrides any) map[string]any {
 	cleaned := map[string]any{}
-	switch o := pycopy.DeepCopy(overrides).(type) {
+	switch o := any(anyutil.Clone(overrides)).(type) {
 	case map[string]any:
 		cleaned = o
-	case *pyjson.Object:
-		cleaned = o.Vals
+	case *jsonutil.Object:
+		cleaned = o.Map()
 	}
 	maps.DeleteFunc(cleaned, func(k string, _ any) bool { return serviceTierKeys[k] })
 	var extra map[string]any
 	switch e := cleaned["extra_body"].(type) {
 	case map[string]any:
 		extra = e
-	case *pyjson.Object:
-		extra = e.Vals
+	case *jsonutil.Object:
+		extra = e.Map()
 	default:
 		return cleaned
 	}

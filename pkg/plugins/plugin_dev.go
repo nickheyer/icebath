@@ -15,10 +15,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/fnmatch"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	"gopkg.in/yaml.v3"
 )
 
@@ -45,50 +45,43 @@ var doctorManifestNames = []string{"plugin.yaml", "plugin.yml", "plugin.json"}
 var doctorStagingSkippedDirs = []string{".git", "__pycache__", ".pytest_cache"}
 
 // Tree copy the staging step runs, swapped by tests to observe or fail the copy
-var doctorCopyTree = func(src, dst string, ignore pyfs.IgnoreErrFunc) error {
-	return pyfs.CopyTreeAbortable(src, dst, false, false, ignore)
-}
+var doctorCopyTree = fsutil.CopyTree
 
 // Copies the plugin into staging, refusing any directory that leads into the destination
 func doctorStageCopy(source, staged string) error {
-	dest, err := pypath.Resolve(staged)
+	dest, err := pathutil.Resolve(staged)
 	if err != nil {
 		return err
 	}
 	refuseOverlap := func(path string) error {
-		real, err := pypath.Resolve(path)
+		real, err := pathutil.Resolve(path)
 		if err != nil {
 			return err
 		}
-		_, destInside := pypath.PathRelativeTo(dest, real)
-		_, realInside := pypath.PathRelativeTo(real, dest)
+		_, destInside := pathutil.RelativeTo(dest, real)
+		_, realInside := pathutil.RelativeTo(real, dest)
 		if destInside || realInside {
 			return &doctorLoadError{fmt.Sprintf("Refusing to stage %s: %s leads into Doctor's temporary directory "+
 				"%s, so the copy would recurse into itself. Point TMPDIR outside "+
-				"the plugin and remove links to it.", source, path, pypath.PathParent(staged))}
+				"the plugin and remove links to it.", source, path, filepath.Dir(filepath.Clean(staged)))}
 		}
 		return nil
 	}
-	ignore := func(directory string, names []string) (map[string]bool, error) {
+	check := func(directory string, names []string) error {
 		for _, name := range names {
 			if isDir(filepath.Join(directory, name)) {
-				if err := refuseOverlap(pypath.PathJoin(directory, name)); err != nil {
-					return nil, err
+				if err := refuseOverlap(filepath.Join(directory, name)); err != nil {
+					return err
 				}
 			}
 		}
-		skipped := map[string]bool{}
-		for _, pattern := range append(append([]string{}, doctorStagingSkippedDirs...), "*.pyc") {
-			for _, name := range fnmatch.Filter(names, pattern) {
-				skipped[name] = true
-			}
-		}
-		return skipped, nil
+		return nil
 	}
+	ignore := fsutil.IgnorePatterns(append(append([]string{}, doctorStagingSkippedDirs...), "*.pyc")...)
 	if err := refuseOverlap(source); err != nil {
 		return err
 	}
-	return doctorCopyTree(source, staged, ignore)
+	return doctorCopyTree(source, staged, fsutil.CopyTreeOptions{Ignore: ignore, Check: check})
 }
 
 // What one Doctor load registered, read while the throwaway runtime is still alive
@@ -106,7 +99,7 @@ func doctorRuntime(ctx context.Context, pluginPath string, body func(*doctorHost
 	if err != nil {
 		return err
 	}
-	defer pyfs.CloseTempDir(tmp, &err)
+	defer fsutil.CleanupTempDir(tmp, &err)
 	bundled := filepath.Join(tmp, "bundled-plugins")
 	pluginsRoot := filepath.Join(tmp, "plugins")
 	for _, dir := range []string{bundled, pluginsRoot} {
@@ -357,10 +350,10 @@ func doctorHoldsPlugin(path string) bool {
 
 // Relative id without dot components that can name an installed plugin
 func isDoctorPluginID(raw string) bool {
-	if raw == "" || pypath.IsAbs(raw) {
+	if raw == "" || filepath.IsAbs(raw) {
 		return false
 	}
-	anchor, parts := pypath.PathParts(raw)
+	anchor, parts := pathutil.Parts(raw)
 	if anchor != "" || len(parts) == 0 {
 		return false
 	}
@@ -378,10 +371,10 @@ func ResolvePluginPath(ctx context.Context, target string) (string, error) {
 	if raw == "" {
 		raw = "."
 	}
-	direct := pypath.Expanduser(raw)
+	direct := pathutil.ExpandUser(raw)
 	directIsDir := isDir(direct)
 	if directIsDir && doctorHoldsPlugin(direct) {
-		return pypath.Resolve(direct)
+		return pathutil.Resolve(direct)
 	}
 	var candidates []string
 	if isDoctorPluginID(raw) {
@@ -396,17 +389,17 @@ func ResolvePluginPath(ctx context.Context, target string) (string, error) {
 	}
 	for _, candidate := range candidates {
 		if doctorHoldsPlugin(candidate) {
-			return pypath.Resolve(candidate)
+			return pathutil.Resolve(candidate)
 		}
 	}
 	if directIsDir {
 		var nested []string
 		for _, c := range doctorCandidateDirs(direct) {
 			if doctorHasManifest(c) {
-				nested = append(nested, pypath.Join(raw, filepath.Base(c)))
+				nested = append(nested, pathutil.Join(raw, filepath.Base(c)))
 			}
 		}
-		resolved, err := pypath.Resolve(direct)
+		resolved, err := pathutil.Resolve(direct)
 		if err != nil {
 			return "", err
 		}
@@ -526,7 +519,7 @@ func doctorPlugin(ctx context.Context, target string) (*PluginDoctorReport, erro
 		if raw == "" {
 			raw = "."
 		}
-		report := &PluginDoctorReport{Path: pypath.PathStr(pypath.Expanduser(raw))}
+		report := &PluginDoctorReport{Path: filepath.Clean(pathutil.ExpandUser(raw))}
 		report.addError(err.Error())
 		return report, nil
 	}
@@ -603,7 +596,7 @@ func doctorPlugin(ctx context.Context, target string) (*PluginDoctorReport, erro
 	case errors.Is(runErr, context.Canceled) || errors.Is(runErr, context.DeadlineExceeded):
 		return nil, runErr
 	default:
-		report.addError(fmt.Sprintf("unexpected validation failure: %s: %s", doctorErrorClass(runErr), doctorErrorText(runErr)))
+		report.addError("unexpected validation failure: " + doctorErrorText(runErr))
 	}
 	return report, nil
 }
@@ -629,25 +622,10 @@ func doctorHookOrder(host *doctorHost) []string {
 	return append(order, sortedSet(rest)...)
 }
 
-// Python exception class an unexpected staging or load failure surfaces as
-func doctorErrorClass(err error) string {
-	var tree *pyfs.CopyTreeError
-	if errors.As(err, &tree) {
-		return "Error"
-	}
-	if isOSError(err) {
-		return pypath.OSErrorClass(err)
-	}
-	var typed interface{ PyTypeName() string }
-	if errors.As(err, &typed) {
-		return typed.PyTypeName()
-	}
-	return "RuntimeError"
-}
-
+// Text of an unexpected staging or load failure, an operating system failure as its reason and the path it concerns
 func doctorErrorText(err error) string {
-	if isOSError(err) {
-		var tree *pyfs.CopyTreeError
+	if errorutil.IsSystem(err) {
+		var tree *fsutil.CopyTreeError
 		if !errors.As(err, &tree) {
 			return errchain.OSText(err)
 		}

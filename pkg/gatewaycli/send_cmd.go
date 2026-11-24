@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -14,12 +15,13 @@ import (
 	xterm "github.com/charmbracelet/x/term"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -57,17 +59,17 @@ func readTextStream(r io.Reader) (string, error) {
 
 // Message body from the positional, then the file flag, then piped stdin, absent when nothing is available
 func readMessageBody(positional, filePath any, stdin io.Reader) (string, bool, error) {
-	if pyrepr.Truthy(positional) {
-		return pyrepr.Str(positional), true, nil
+	if anyutil.IsTrue(positional) {
+		return anyutil.String(positional), true, nil
 	}
-	if pyrepr.Truthy(filePath) {
-		path := pyrepr.Str(filePath)
+	if anyutil.IsTrue(filePath) {
+		path := anyutil.String(filePath)
 		if path == "-" {
 			text, err := readTextStream(stdin)
 			return text, err == nil, err
 		}
-		text, err := pyfs.ReadTextChars(path, math.MaxInt, true)
-		var decode *pyfs.UnicodeDecodeError
+		text, err := fsutil.ReadText(path, math.MaxInt)
+		var decode *fsutil.TextDecodeError
 		switch {
 		case errors.As(err, &decode):
 			return "", false, &sendExit{code: sendUsageExit, msg: fmt.Sprintf("icebath send: %s is not a text file. --file reads the "+
@@ -78,8 +80,8 @@ func readMessageBody(positional, filePath any, stdin io.Reader) (string, bool, e
 				"  icebath send --to telegram \"optional caption MEDIA:%s\"\n"+
 				"Add [[as_document]] to deliver an image as an uncompressed file:\n"+
 				"  icebath send --to telegram \"[[as_document]] MEDIA:%s\"", path, path, path, path)}
-		case err != nil && pypath.IsOSError(err):
-			return "", false, &sendExit{code: sendUsageExit, msg: fmt.Sprintf("icebath send: cannot read %s: %s", path, pypath.OSErrorText(err))}
+		case err != nil && errorutil.IsSystem(err):
+			return "", false, &sendExit{code: sendUsageExit, msg: fmt.Sprintf("icebath send: cannot read %s: %s", path, err.Error())}
 		case err != nil:
 			return "", false, err
 		}
@@ -108,30 +110,30 @@ func invalidWhatsappMentions(mentions []string) []string {
 
 // Prints the send tool result in the requested format and returns the exit code, unknown shapes failing
 func emitResult(resultJSON string, jsonMode, quiet bool, w, errw io.Writer) (int, error) {
-	var payload *pyjson.Object
+	var payload *jsonutil.Object
 	if resultJSON == "" {
-		payload = pyjson.NewObject()
+		payload = jsonutil.NewObject()
 	} else {
-		decoded, err := pyjson.Loads(resultJSON)
+		decoded, err := jsonutil.Decode(resultJSON)
 		if err != nil {
-			decoded = pyjson.ObjectOf("error", "invalid JSON from send_message_tool", "raw", resultJSON)
+			decoded = jsonutil.ObjectOf("error", "invalid JSON from send_message_tool", "raw", resultJSON)
 		}
-		obj, ok := decoded.(*pyjson.Object)
+		obj, ok := decoded.(*jsonutil.Object)
 		if !ok && !jsonMode {
-			return sendFailureExit, &pyrepr.FormatError{Class: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))}
+			return sendFailureExit, &errorutil.Error{Kind: "AttributeError", Msg: "send result must be an object, got " + anyutil.Kind(decoded)}
 		}
 		if !ok {
-			text, err := pyjson.Dumps(decoded, pyjson.Indent(2))
+			text, err := jsonutil.Encode(decoded, jsonutil.Indent(2))
 			if err != nil {
 				return sendFailureExit, err
 			}
 			fmt.Fprintln(w, text)
-			return sendFailureExit, &pyrepr.FormatError{Class: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))}
+			return sendFailureExit, &errorutil.Error{Kind: "AttributeError", Msg: "send result must be an object, got " + anyutil.Kind(decoded)}
 		}
 		payload = obj
 	}
 	dump := func() error {
-		text, err := pyjson.Dumps(payload, pyjson.Indent(2))
+		text, err := jsonutil.Encode(payload, jsonutil.Indent(2))
 		if err != nil {
 			return err
 		}
@@ -144,12 +146,12 @@ func emitResult(resultJSON string, jsonMode, quiet bool, w, errw io.Writer) (int
 			return sendFailureExit, err
 		}
 	case quiet:
-	case pyrepr.Truthy(payload.Vals["error"]):
-		fmt.Fprintf(errw, "icebath send: %s\n", pyrepr.Str(payload.Vals["error"]))
-	case pyrepr.Truthy(payload.Vals["success"]):
+	case anyutil.IsTrue(payload.Value("error")):
+		fmt.Fprintf(errw, "icebath send: %s\n", anyutil.String(payload.Value("error")))
+	case anyutil.IsTrue(payload.Value("success")):
 		note := "sent"
-		if pyrepr.Truthy(payload.Vals["note"]) {
-			note = pyrepr.Str(payload.Vals["note"])
+		if anyutil.IsTrue(payload.Value("note")) {
+			note = anyutil.String(payload.Value("note"))
 		}
 		fmt.Fprintln(w, note)
 	default:
@@ -157,7 +159,7 @@ func emitResult(resultJSON string, jsonMode, quiet bool, w, errw io.Writer) (int
 			return sendFailureExit, err
 		}
 	}
-	if !pyrepr.Truthy(payload.Vals["error"]) && (pyrepr.Truthy(payload.Vals["skipped"]) || pyrepr.Truthy(payload.Vals["success"])) {
+	if !anyutil.IsTrue(payload.Value("error")) && (anyutil.IsTrue(payload.Value("skipped")) || anyutil.IsTrue(payload.Value("success"))) {
 		return sendSuccessExit, nil
 	}
 	return sendFailureExit, nil
@@ -166,9 +168,9 @@ func emitResult(resultJSON string, jsonMode, quiet bool, w, errw io.Writer) (int
 // Prints the channel directory merged with configured platforms, filtered to one platform when named
 func listTargets(ctx context.Context, h string, platformFilter any, jsonMode bool, w, errw io.Writer) (int, error) {
 	raw := gateway.LoadChannelDirectory(ctx)
-	platforms := pyjson.NewObject()
-	if known, ok := pyjson.AsObject(raw.Vals["platforms"]); ok {
-		platforms = known.Copy()
+	platforms := jsonutil.NewObject()
+	if known, ok := jsonutil.AsObject(raw.Value("platforms")); ok {
+		platforms = known.Clone()
 	}
 	if cfg, err := gateway.LoadGatewayConfig(ctx); err == nil {
 		for _, plat := range cfg.GetConnectedPlatforms(ctx) {
@@ -181,29 +183,29 @@ func listTargets(ctx context.Context, h string, platformFilter any, jsonMode boo
 			}
 		}
 	}
-	if pyrepr.Truthy(platformFilter) {
-		key := strings.ToLower(strings.TrimSpace(pyrepr.Str(platformFilter)))
-		filtered := pyjson.NewObject()
-		for _, name := range platforms.Keys {
+	if anyutil.IsTrue(platformFilter) {
+		key := strings.ToLower(strings.TrimSpace(anyutil.String(platformFilter)))
+		filtered := jsonutil.NewObject()
+		for _, name := range platforms.Keys() {
 			if strings.ToLower(name) == key {
-				filtered.Set(name, platforms.Vals[name])
+				filtered.Set(name, platforms.Value(name))
 			}
 		}
 		if filtered.Len() == 0 {
 			configured := "(none)"
 			if platforms.Len() > 0 {
-				names := append([]string{}, platforms.Keys...)
+				names := append([]string{}, platforms.Keys()...)
 				sort.Strings(names)
 				configured = strings.Join(names, ", ")
 			}
-			fmt.Fprintf(errw, "icebath send: no targets found for platform '%s'. Configured: %s\n", pyrepr.Str(platformFilter), configured)
+			fmt.Fprintf(errw, "icebath send: no targets found for platform '%s'. Configured: %s\n", anyutil.String(platformFilter), configured)
 			return sendFailureExit, nil
 		}
 		platforms = filtered
 	}
 	if jsonMode {
-		text, err := pyjson.Dumps(pyjson.ObjectOf("platforms", platforms), pyjson.Indent(2),
-			pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+		text, err := jsonutil.Encode(jsonutil.ObjectOf("platforms", platforms), jsonutil.Indent(2),
+			jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 		if err != nil {
 			return sendFailureExit, err
 		}
@@ -214,11 +216,11 @@ func listTargets(ctx context.Context, h string, platformFilter any, jsonMode boo
 		root := home.Root()
 		fmt.Fprintln(w, "No messaging platforms configured or no channels discovered yet.")
 		fmt.Fprintln(w, "Set one up with `icebath gateway setup`, or run the gateway once so")
-		fmt.Fprintf(w, "channel discovery can populate %s.\n", pypath.PathJoin(h, "channel_directory.json"))
-		rootDirectory := pypath.PathJoin(root, "channel_directory.json")
+		fmt.Fprintf(w, "channel discovery can populate %s.\n", pathutil.Join(h, "channel_directory.json"))
+		rootDirectory := pathutil.Join(root, "channel_directory.json")
 		if _, err := os.Stat(rootDirectory); home.Key(root) != home.Key(h) && err == nil {
 			fmt.Fprintf(w, "A gateway running from %s already has %s; this shell is scoped to profile home %s, which has none.\n",
-				pypath.PathStr(root), rootDirectory, pypath.PathStr(h))
+				filepath.Clean(root), rootDirectory, filepath.Clean(h))
 		}
 		return sendSuccessExit, nil
 	}
@@ -230,33 +232,33 @@ func listTargets(ctx context.Context, h string, platformFilter any, jsonMode boo
 		fmt.Fprintln(w, text)
 		return sendSuccessExit, nil
 	}
-	names := append([]string{}, platforms.Keys...)
+	names := append([]string{}, platforms.Keys()...)
 	sort.Strings(names)
 	for _, name := range names {
 		fmt.Fprintf(w, "%s:\n", name)
-		channels, _ := platforms.Vals[name].([]any)
+		channels, _ := platforms.Value(name).([]any)
 		if len(channels) == 0 {
 			fmt.Fprintln(w, "  (no channels discovered yet)")
 			continue
 		}
 		for _, raw := range channels {
-			channel, ok := pyjson.AsObject(raw)
+			channel, ok := jsonutil.AsObject(raw)
 			if !ok {
-				return sendFailureExit, &pyrepr.FormatError{Class: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(raw))}
+				return sendFailureExit, &errorutil.Error{Kind: "AttributeError", Msg: "channel entry must be an object, got " + anyutil.Kind(raw)}
 			}
 			var label any = "?"
 			if value, has := channel.Get("name"); has {
 				label = value
 			}
 			var chatID any = ""
-			if pyrepr.Truthy(channel.Vals["id"]) {
-				chatID = channel.Vals["id"]
-			} else if pyrepr.Truthy(channel.Vals["chat_id"]) {
-				chatID = channel.Vals["chat_id"]
+			if anyutil.IsTrue(channel.Value("id")) {
+				chatID = channel.Value("id")
+			} else if anyutil.IsTrue(channel.Value("chat_id")) {
+				chatID = channel.Value("chat_id")
 			}
-			line := fmt.Sprintf("  %s:%s", name, pyrepr.Str(label))
-			if pyrepr.Truthy(chatID) && !pyjson.Equal(chatID, label) {
-				line += fmt.Sprintf("  [%s]", pyrepr.Str(chatID))
+			line := fmt.Sprintf("  %s:%s", name, anyutil.String(label))
+			if anyutil.IsTrue(chatID) && !anyutil.Equal(chatID, label) {
+				line += fmt.Sprintf("  [%s]", anyutil.String(chatID))
 			}
 			fmt.Fprintln(w, line)
 		}
@@ -287,7 +289,7 @@ func sendMentions(v any) []string {
 	case []any:
 		out := make([]string, len(list))
 		for i, item := range list {
-			out[i] = pyrepr.Str(item)
+			out[i] = anyutil.String(item)
 		}
 		return out
 	}
@@ -302,8 +304,8 @@ func SendCommand(ctx context.Context, h string, ns map[string]any, w, errw io.Wr
 // The send command reading its piped body from the given input
 func cmdSend(ctx context.Context, h string, ns map[string]any, stdin io.Reader, w, errw io.Writer) (int, error) {
 	loadIcebathEnv(ctx, h)
-	jsonMode, quiet := pyrepr.Truthy(ns["json"]), pyrepr.Truthy(ns["quiet"])
-	if pyrepr.Truthy(ns["list_targets"]) {
+	jsonMode, quiet := anyutil.IsTrue(ns["json"]), anyutil.IsTrue(ns["quiet"])
+	if anyutil.IsTrue(ns["list_targets"]) {
 		return listTargets(ctx, h, ns["message"], jsonMode, w, errw)
 	}
 	usage := func(msg string) (int, error) {
@@ -311,8 +313,8 @@ func cmdSend(ctx context.Context, h string, ns map[string]any, stdin io.Reader, 
 		return sendUsageExit, nil
 	}
 	target := ""
-	if pyrepr.Truthy(ns["to"]) {
-		target = strings.TrimSpace(pyrepr.Str(ns["to"]))
+	if anyutil.IsTrue(ns["to"]) {
+		target = strings.TrimSpace(anyutil.String(ns["to"]))
 	}
 	if target == "" {
 		return usage("icebath send: --to PLATFORM[:channel[:thread]] is required\n" +
@@ -342,8 +344,8 @@ func cmdSend(ctx context.Context, h string, ns map[string]any, stdin io.Reader, 
 		return usage("icebath send: no message provided. Pass text as a positional " +
 			"argument, use --file PATH, or pipe data via stdin.")
 	}
-	if pyrepr.Truthy(ns["subject"]) {
-		message = pyrepr.Str(ns["subject"]) + "\n\n" + strings.TrimLeftFunc(message, unicode.IsSpace)
+	if anyutil.IsTrue(ns["subject"]) {
+		message = anyutil.String(ns["subject"]) + "\n\n" + strings.TrimLeftFunc(message, unicode.IsSpace)
 	}
 	toolArgs := map[string]any{"action": "send", "target": target, "message": message}
 	if len(mentions) > 0 {

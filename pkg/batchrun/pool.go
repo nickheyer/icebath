@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/tools"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // InterruptedError reports a run a signal stopped before it finished
@@ -44,33 +44,26 @@ type batchOutcome struct {
 	err    error
 }
 
-// Progress row of the run, a live bar on the process stdout and one final row on any other writer
+// Progress row of the run, a live bar on a terminal and one final row on any other writer
 type batchProgress struct {
-	progress *pyrich.Progress
+	progress *consoleutil.Progress
 	task     int
 }
 
 // Starts the batch progress display with a spinner, a bar, the finished count and the time left
 func (r *Runner) startProgress(total int) *batchProgress {
-	var console *pyrich.Console
-	if r.onProcessStdout() {
-		console = pyrich.NewConsole(os.Stdout)
-		term := os.Getenv("TERM")
-		console.Terminal, console.Color = true, term != "dumb" && term != "unknown"
-	} else {
-		console = pyrich.NewConsole(r.out)
-	}
-	finished := fmt.Sprintf("[progress.download]{task.completed:%dd}/{task.total}", len(strconv.Itoa(total)))
-	progress := console.NewProgress(2, &pyrich.SpinnerColumn{}, pyrich.TextColumn{Format: "[bold blue]📦 Batches"},
-		pyrich.BarColumn{Width: 40}, pyrich.TextColumn{Format: finished}, pyrich.TextColumn{Format: "•"}, pyrich.TimeRemainingColumn{})
+	console := consoleutil.NewConsole(r.out)
+	digits := len(strconv.Itoa(total))
+	finished := consoleutil.TaskColumn(func(t consoleutil.Task) string { return fmt.Sprintf("[green]%*d/%d", digits, t.Completed, t.Total) })
+	progress := console.NewProgress(500*time.Millisecond, &consoleutil.SpinnerColumn{}, consoleutil.TextColumn("[bold blue]📦 Batches"),
+		consoleutil.BarColumn{Width: 40}, finished, consoleutil.TextColumn("•"), consoleutil.TimeRemainingColumn{})
 	progress.Start()
-	count := float64(total)
-	return &batchProgress{progress: progress, task: progress.AddTask("Processing", &count)}
+	return &batchProgress{progress: progress, task: progress.AddTask("Processing", total)}
 }
 
 // Worker context with its own context variables and thread locals, as a worker process starts with its own copies
 func workerContext(ctx context.Context) context.Context {
-	return tools.WithThreadLocals(pyctx.With(ctx, pyctx.CopyContext(ctx)))
+	return tools.WithThreadLocals(ctxutil.Fork(ctx))
 }
 
 // Runs batches from tasks one after another until the queue closes, the run stops or a batch fails
@@ -97,7 +90,7 @@ func (r *Runner) stopWorkers(cancel context.CancelCauseFunc, cause error, done <
 }
 
 // Processes every batch in a bounded pool of workers, checkpointing after each finished batch
-func (r *Runner) runPool(ctx context.Context, checkpoint *pyjson.Object, completed map[int]bool) ([]batchResult, error) {
+func (r *Runner) runPool(ctx context.Context, checkpoint *jsonutil.Object, completed map[int]bool) ([]batchResult, error) {
 	r.printf("\n🔧 Initializing %d workers...\n", r.o.NumWorkers)
 	if r.o.NumWorkers < 1 {
 		return nil, errors.New("Number of workers must be at least 1")

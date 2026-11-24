@@ -5,10 +5,9 @@ import (
 	"strings"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -58,8 +57,8 @@ type KeyboardContent struct{ Rows []KeyboardRow }
 
 type InlineKeyboard struct{ Content KeyboardContent }
 
-func obj(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func obj(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -67,25 +66,25 @@ func obj(kv ...any) *pyjson.Object {
 }
 
 // ToDict serializes the permission in field declaration order
-func (p KeyboardButtonPermission) ToDict() *pyjson.Object { return obj("type", int64(p.Type)) }
+func (p KeyboardButtonPermission) ToDict() *jsonutil.Object { return obj("type", int64(p.Type)) }
 
 // ToDict serializes the action in field declaration order
-func (a KeyboardButtonAction) ToDict() *pyjson.Object {
+func (a KeyboardButtonAction) ToDict() *jsonutil.Object {
 	return obj("type", int64(a.Type), "data", a.Data, "permission", a.Permission.ToDict(), "click_limit", int64(a.ClickLimit))
 }
 
 // ToDict serializes the render data in field declaration order
-func (r KeyboardButtonRenderData) ToDict() *pyjson.Object {
+func (r KeyboardButtonRenderData) ToDict() *jsonutil.Object {
 	return obj("label", r.Label, "visited_label", r.VisitedLabel, "style", int64(r.Style))
 }
 
 // ToDict serializes the button in field declaration order
-func (b KeyboardButton) ToDict() *pyjson.Object {
+func (b KeyboardButton) ToDict() *jsonutil.Object {
 	return obj("id", b.ID, "render_data", b.RenderData.ToDict(), "action", b.Action.ToDict(), "group_id", b.GroupID)
 }
 
 // ToDict serializes the row in field declaration order
-func (r KeyboardRow) ToDict() *pyjson.Object {
+func (r KeyboardRow) ToDict() *jsonutil.Object {
 	buttons := make([]any, len(r.Buttons))
 	for i, b := range r.Buttons {
 		buttons[i] = b.ToDict()
@@ -94,7 +93,7 @@ func (r KeyboardRow) ToDict() *pyjson.Object {
 }
 
 // ToDict serializes the content in field declaration order
-func (c KeyboardContent) ToDict() *pyjson.Object {
+func (c KeyboardContent) ToDict() *jsonutil.Object {
 	rows := make([]any, len(c.Rows))
 	for i, r := range c.Rows {
 		rows[i] = r.ToDict()
@@ -103,7 +102,7 @@ func (c KeyboardContent) ToDict() *pyjson.Object {
 }
 
 // ToDict serializes the keyboard payload for MessageToCreate.keyboard
-func (k InlineKeyboard) ToDict() *pyjson.Object { return obj("content", k.Content.ToDict()) }
+func (k InlineKeyboard) ToDict() *jsonutil.Object { return obj("content", k.Content.ToDict()) }
 
 // ParseApprovalButtonData splits approve data into session key and decision, ok false when it does not match
 func ParseApprovalButtonData(buttonData string) (sessionKey, decision string, ok bool) {
@@ -240,17 +239,6 @@ func (e InteractionEvent) OperatorOpenID() string {
 
 var sceneNames = map[int64]string{0: "guild", 1: "group", 2: "c2c"}
 
-// Dict view over a decoded JSON object or a Go map, ok false for any other value
-func asDict(v any) (map[string]any, bool) {
-	switch d := v.(type) {
-	case *pyjson.Object:
-		return d.Vals, true
-	case map[string]any:
-		return d, true
-	}
-	return nil, false
-}
-
 func getOr(d map[string]any, key string, def any) any {
 	if v, ok := d[key]; ok {
 		return v
@@ -259,57 +247,45 @@ func getOr(d map[string]any, key string, def any) any {
 }
 
 func orDefault(v, def any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return def
 }
 
-// Python int of a value, failing like int() on text or types it rejects
-func pyInt64(v any) (int64, error) {
-	n, err := pyint.Of(v)
-	if err != nil {
-		return 0, err
-	}
-	if !n.IsInt64() {
-		return 0, fmt.Errorf("Python int too large to convert to C ssize_t")
-	}
-	return n.Int64(), nil
-}
-
+// Error for a decoded value that should have been a JSON object
 func notDictErr(v any) error {
-	return fmt.Errorf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))
+	return fmt.Errorf("expected a JSON object, got %s", anyutil.Kind(v))
 }
 
 // ParseInteractionEvent reads the d payload of an INTERACTION_CREATE dispatch
 func ParseInteractionEvent(rawValue any) (InteractionEvent, error) {
-	raw, ok := asDict(rawValue)
+	raw, ok := jsonutil.AsMap(rawValue)
 	if !ok {
 		return InteractionEvent{}, notDictErr(rawValue)
 	}
 	dataValue := orDefault(raw["data"], map[string]any{})
-	dataRaw, ok := asDict(dataValue)
+	dataRaw, ok := jsonutil.AsMap(dataValue)
 	if !ok {
 		return InteractionEvent{}, notDictErr(dataValue)
 	}
 	resolvedValue := orDefault(dataRaw["resolved"], map[string]any{})
-	sceneCode, err := pyInt64(orDefault(getOr(raw, "chat_type", int64(0)), int64(0)))
+	sceneCode, err := anyutil.ToInt(orDefault(getOr(raw, "chat_type", int64(0)), int64(0)))
 	if err != nil {
 		return InteractionEvent{}, err
 	}
-	eventType, err := pyInt64(orDefault(getOr(dataRaw, "type", int64(0)), int64(0)))
+	eventType, err := anyutil.ToInt(orDefault(getOr(dataRaw, "type", int64(0)), int64(0)))
 	if err != nil {
 		return InteractionEvent{}, err
 	}
-	resolved, ok := asDict(resolvedValue)
+	resolved, ok := jsonutil.AsMap(resolvedValue)
 	if !ok {
 		return InteractionEvent{}, notDictErr(resolvedValue)
 	}
-	str := func(d map[string]any, key string) string { return pyrepr.Str(getOr(d, key, "")) }
 	return InteractionEvent{
-		ID: str(raw, "id"), Type: eventType, ChatType: sceneCode, Scene: sceneNames[sceneCode],
-		GroupOpenID: str(raw, "group_openid"), GroupMemberOpenID: str(raw, "group_member_openid"),
-		UserOpenID: str(raw, "user_openid"), ChannelID: str(raw, "channel_id"), GuildID: str(raw, "guild_id"),
-		ButtonData: str(resolved, "button_data"), ButtonID: str(resolved, "button_id"), ResolverUserID: str(resolved, "user_id"),
+		ID: strAt(raw, "id"), Type: eventType, ChatType: sceneCode, Scene: sceneNames[sceneCode],
+		GroupOpenID: strAt(raw, "group_openid"), GroupMemberOpenID: strAt(raw, "group_member_openid"),
+		UserOpenID: strAt(raw, "user_openid"), ChannelID: strAt(raw, "channel_id"), GuildID: strAt(raw, "guild_id"),
+		ButtonData: strAt(resolved, "button_data"), ButtonID: strAt(resolved, "button_id"), ResolverUserID: strAt(resolved, "user_id"),
 	}, nil
 }

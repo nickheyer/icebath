@@ -17,10 +17,9 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -47,7 +46,7 @@ type Archive struct {
 	Name    string
 	Sha     string
 	Created float64
-	Meta    *pyjson.Object
+	Meta    *jsonutil.Object
 	Staged  string
 }
 
@@ -86,17 +85,17 @@ func withoutOptionalLocks(env map[string]string) map[string]string {
 }
 
 // Runs git in cwd under env, stdin from input or the null device, a zero timeout means five minutes
-func archiveRun(args []string, cwd string, env map[string]string, timeout time.Duration, input []byte) (*pysubprocess.Completed, error) {
+func archiveRun(args []string, cwd string, env map[string]string, timeout time.Duration, input []byte) (*executil.Completed, error) {
 	if timeout == 0 {
 		timeout = 300 * time.Second
 	}
-	return pysubprocess.RunWith(context.Background(), append([]string{"git"}, args...),
-		pysubprocess.Options{Dir: cwd, Env: mapToEnviron(env), Input: input, Timeout: timeout})
+	return executil.Run(context.Background(), append([]string{"git"}, args...),
+		executil.Options{Dir: cwd, Env: mapToEnviron(env), Input: input, Timeout: timeout})
 }
 
 // Last three hundred characters of stripped stderr as the archive failure text
 func archiveStderrTail(stderr []byte) string {
-	s := strings.TrimSpace(pystr.SurrogateEscapeDecode(stderr))
+	s := strings.TrimSpace(string(stderr))
 	return textutil.Last(s, 300)
 }
 
@@ -444,7 +443,7 @@ func SnapshotWorktree(repoRoot, wtPath, reason string, maxUntrackedMB float64) (
 	token := fmt.Sprintf("icebath-archive-%d-%s", os.Getpid(), strings.ReplaceAll(uuid.NewString(), "-", "")[:8])
 	tmpIndex, pathspec := filepath.Join(gitDir, token+".index"), filepath.Join(gitDir, token+".pathspec")
 	name := filepath.Base(wtPath)
-	var meta *pyjson.Object
+	var meta *jsonutil.Object
 	var staged, sha string
 	err = func() error {
 		defer func() {
@@ -502,12 +501,12 @@ func SnapshotWorktree(repoRoot, wtPath, reason string, maxUntrackedMB float64) (
 		indexCommit = strings.TrimSpace(indexCommit)
 		skippedList := []any{}
 		for _, s := range skipped {
-			o := pyjson.NewObject()
+			o := jsonutil.NewObject()
 			o.Set("path", s.Path)
 			o.Set("bytes", s.Bytes)
 			skippedList = append(skippedList, o)
 		}
-		meta = pyjson.NewObject()
+		meta = jsonutil.NewObject()
 		for _, kv := range []struct {
 			k string
 			v any
@@ -516,7 +515,7 @@ func SnapshotWorktree(repoRoot, wtPath, reason string, maxUntrackedMB float64) (
 			{"skipped_untracked", skippedList}} {
 			meta.Set(kv.k, kv.v)
 		}
-		body, err := pyjson.Dumps(meta, pyjson.Indent(1), pyjson.EnsureASCII(false))
+		body, err := jsonutil.Encode(meta, jsonutil.Indent(1))
 		if err != nil {
 			return err
 		}
@@ -537,16 +536,16 @@ func SnapshotWorktree(repoRoot, wtPath, reason string, maxUntrackedMB float64) (
 	return &Archive{Ref: ref, Name: ref[len(ArchivePrefix):], Sha: sha, Created: float64(created.(int64)), Meta: meta, Staged: staged}, nil
 }
 
-func archiveParseMeta(body string) *pyjson.Object {
+func archiveParseMeta(body string) *jsonutil.Object {
 	start := strings.Index(body, "{")
 	if start < 0 {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	v, err := pyjson.Loads(body[start:])
-	if o, ok := v.(*pyjson.Object); err == nil && ok {
+	v, err := jsonutil.Decode(body[start:])
+	if o, ok := v.(*jsonutil.Object); err == nil && ok {
 		return o
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Every archive of the repository newest first, empty when git fails, a malformed created stamp raises
@@ -568,12 +567,12 @@ func ListArchives(repoRoot string) ([]Archive, error) {
 		}
 		meta := archiveParseMeta(parts[3])
 		var created any = int64(0)
-		if c, _ := meta.Get("created"); pyTruthy(c) {
+		if c, _ := meta.Get("created"); anyutil.IsTrue(c) {
 			created = c
 		} else if parts[2] != "" {
 			created = parts[2]
 		}
-		f, err := pyint.Float(created)
+		f, err := anyutil.ToFloat(created)
 		if err != nil {
 			return nil, err
 		}
@@ -786,7 +785,7 @@ func RestoreArchive(ctx context.Context, repoRoot, name, target string) (*Restor
 		WorktreeRecordRepo(ctx, repoRoot)
 	}
 	skipped, _ := arc.Meta.Get("skipped_untracked")
-	if !pyTruthy(skipped) {
+	if !anyutil.IsTrue(skipped) {
 		skipped = []any{}
 	}
 	return &RestoredArchive{Path: dest, Branch: branchV, Detached: detached, Head: head, Ref: arc.Ref, SkippedUntracked: skipped}, nil

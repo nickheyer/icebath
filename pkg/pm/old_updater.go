@@ -13,7 +13,7 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Exit status a pm command ends the process with, the error form of a Python SystemExit
@@ -159,11 +159,11 @@ func runChild(ctx context.Context, request *OrderedObject) (int, error) {
 		if err := strictUTF8(data); err != nil {
 			return 0, &PyError{Class: "UnicodeDecodeError", Message: err.Error()}
 		}
-		decoded, err := pyjson.Loads(string(data))
+		decoded, err := jsonutil.Decode(string(data))
 		if err != nil {
 			return 0, err
 		}
-		if _, ok := decoded.(*pyjson.Object); !ok {
+		if _, ok := decoded.(*jsonutil.Object); !ok {
 			return 0, &PyError{Class: "ValueError", Message: "invalid update takeover acknowledgement"}
 		}
 	}

@@ -9,8 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -57,7 +58,7 @@ func secondsSince(now float64, raw string, ok bool) (float64, bool) {
 	if !ok || raw == "" {
 		return 0, false
 	}
-	v, err := pyint.ParseFloat(raw)
+	v, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
 		return 0, false
 	}
@@ -177,7 +178,7 @@ func pyReprFloat(v float64) (string, error) {
 }
 
 // Dry run of the sessions a matching prune or archive would touch, least recently active first
-func (d *SessionDB) ListPruneCandidates(ctx context.Context, olderThanDays *float64, source string, wholeLineages bool, f PruneFilters) ([]*pyjson.Object, error) {
+func (d *SessionDB) ListPruneCandidates(ctx context.Context, olderThanDays *float64, source string, wholeLineages bool, f PruneFilters) ([]*jsonutil.Object, error) {
 	where, params, err := pruneWhere(olderThanDays, source, f, wholeLineages)
 	if err != nil {
 		return nil, err
@@ -215,7 +216,7 @@ func (d *SessionDB) CountOpenPruneMatches(ctx context.Context, olderThanDays *fl
 	}
 	const endedGuard = "s.ended_at IS NOT NULL"
 	if !strings.HasPrefix(where, endedGuard) {
-		return 0, &pyint.Error{Kind: "RuntimeError", Msg: "prune filter lost its ended-session safety guard"}
+		return 0, &errorutil.Error{Kind: "RuntimeError", Msg: "prune filter lost its ended-session safety guard"}
 	}
 	return d.countOne(ctx, "SELECT COUNT(*) FROM sessions s WHERE s.ended_at IS NULL"+where[len(endedGuard):], params)
 }
@@ -223,11 +224,11 @@ func (d *SessionDB) CountOpenPruneMatches(ctx context.Context, olderThanDays *fl
 // First column of a single count row as an int
 func (d *SessionDB) countOne(ctx context.Context, query string, params []any) (int, error) {
 	row, err := d.readOne(ctx, query, params...)
-	if err != nil || row == nil || len(row.Keys) == 0 {
+	if err != nil || row == nil || row.Len() == 0 {
 		return 0, err
 	}
-	v, _ := row.Get(row.Keys[0])
-	n, err := pyint.Float(v)
+	v, _ := row.Get(row.Keys()[0])
+	n, err := anyutil.ToFloat(v)
 	return int(n), err
 }
 
@@ -301,7 +302,7 @@ func (d *SessionDB) MaybeAutoArchive(ctx context.Context, idleDays, minIntervalH
 		}
 		last := 0.0
 		if ok && raw != "" {
-			if v, perr := pyint.ParseFloat(raw); perr == nil {
+			if v, perr := strconv.ParseFloat(strings.TrimSpace(raw), 64); perr == nil {
 				last = v
 			}
 		}

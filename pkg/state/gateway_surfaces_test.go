@@ -6,7 +6,7 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const legacyRoutingDDL = `
@@ -154,7 +154,7 @@ func TestUnsafeModelConfigDoesNotBreakSessionSurfaces(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !slices.ContainsFunc(orphans, func(o *pyjson.Object) bool { id, _ := o.Get("orphan_id"); return id == "routing-orphan" }) {
+			if !slices.ContainsFunc(orphans, func(o *jsonutil.Object) bool { id, _ := o.Get("orphan_id"); return id == "routing-orphan" }) {
 				t.Fatal("routing orphan not found", len(orphans))
 			}
 		})

@@ -23,18 +23,18 @@ import (
 	term "github.com/charmbracelet/x/term"
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	"golang.org/x/text/cases"
 )
 
 const (
@@ -107,7 +107,7 @@ var (
 	winWaitForAPIServerPortFree     func(ctx context.Context, timeout float64) (bool, error)
 	winMarkPlannedRestart           func(ctx context.Context)
 	winSleep                        = time.Sleep
-	winMonotonic                    = pythread.Monotonic
+	winMonotonic                    = timeutil.Monotonic
 	winRename                       = os.Rename
 	winRemove                       = os.Remove
 	winIsStartupEntryInstalled      func(ctx context.Context) (bool, error)
@@ -182,7 +182,7 @@ func assertWindows() error {
 
 // Path with its suffix replaced, the input unchanged when pathlib would refuse the swap
 func winWithSuffix(p, suffix string) string {
-	out, err := pypath.WithSuffix(p, suffix)
+	out, err := pathutil.WithSuffix(p, suffix)
 	if err != nil {
 		return p
 	}
@@ -192,33 +192,33 @@ func winWithSuffix(p, suffix string) string {
 // Stripped, unquoted, forward slashed and casefolded path text for prefix comparisons
 func normalizeWindowsPath(value string) string {
 	v := strings.TrimLeft(strings.TrimSpace(value), `"`)
-	return pystr.Casefold(strings.TrimRight(strings.ReplaceAll(v, `\`, "/"), "/"))
+	return cases.Fold().String(strings.TrimRight(strings.ReplaceAll(v, `\`, "/"), "/"))
 }
 
 // Path rendered under the configured home spelling when it resolves inside the home
 func preserveHomePath(ctx context.Context, p string) string {
 	h := winHome(ctx)
-	resolvedHome, err1 := pypath.Resolve(h)
-	resolved, err2 := pypath.Resolve(p)
+	resolvedHome, err1 := pathutil.Resolve(h)
+	resolved, err2 := pathutil.Resolve(p)
 	if err1 != nil || err2 != nil {
-		return pypath.PathStr(p)
+		return filepath.Clean(p)
 	}
 	sep := string(filepath.Separator)
-	homeKey, candidateKey := pypath.Normcase(resolvedHome), pypath.Normcase(resolved)
+	homeKey, candidateKey := pathutil.FoldCase(resolvedHome), pathutil.FoldCase(resolved)
 	if candidateKey == homeKey {
-		return pypath.PathStr(h)
+		return filepath.Clean(h)
 	}
 	if strings.HasPrefix(candidateKey, strings.TrimRight(homeKey, sep)+sep) {
 		rel := strings.TrimLeft(resolved[len(strings.TrimRight(resolvedHome, sep)):], sep)
-		return pypath.PathJoin(h, rel)
+		return pathutil.Join(h, rel)
 	}
-	return pypath.PathStr(p)
+	return filepath.Clean(p)
 }
 
 // One cmd.exe argument inside a cmd file, embedded quotes doubled and newlines refused
 func quoteCmdScriptArg(value string) (string, error) {
 	if strings.ContainsAny(value, "\r\n") {
-		return "", fmt.Errorf("refusing to quote value containing newline: %s", pyrepr.Repr(value))
+		return "", fmt.Errorf("refusing to quote value containing newline: %s", anyutil.Quote(value))
 	}
 	if value == "" {
 		return `""`, nil
@@ -232,7 +232,7 @@ func quoteCmdScriptArg(value string) (string, error) {
 // VBScript double quoted literal with embedded quotes doubled and newlines refused
 func quoteVbsString(value string) (string, error) {
 	if strings.ContainsAny(value, "\r\n") {
-		return "", fmt.Errorf("refusing to quote VBScript value containing newline: %s", pyrepr.Repr(value))
+		return "", fmt.Errorf("refusing to quote VBScript value containing newline: %s", anyutil.Quote(value))
 	}
 	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`, nil
 }
@@ -259,7 +259,7 @@ func currentProfileCLIArgs(ctx context.Context) ([]string, error) {
 	if err != nil || arg == "" {
 		return nil, err
 	}
-	return pyshlex.SplitPOSIX(arg, false)
+	return shellutil.Split(arg)
 }
 
 // Launches an elevated hidden gateway subcommand through UAC, true once handed off
@@ -277,7 +277,7 @@ func launchElevatedGatewayCommand(ctx context.Context, command string, extra []s
 		winPrintln(fmt.Sprintf("⚠ Could not launch elevated gateway %s prompt: %v", command, err))
 		return false, nil
 	}
-	result, err := winShellExecute(exe, pysubprocess.List2cmdline(args), serviceDefProjectRoot())
+	result, err := winShellExecute(exe, executil.WindowsCommandLine(args), serviceDefProjectRoot())
 	if err != nil {
 		winPrintln(fmt.Sprintf("⚠ Could not launch elevated gateway %s prompt: %v", command, err))
 		return false, nil
@@ -391,7 +391,7 @@ func windowsStartupStagingPath(ctx context.Context) (string, error) {
 // Home when it is a directory so a moved checkout cannot fail the launcher cd, else the project root
 func stableGatewayWorkingDir(ctx context.Context, projectRoot string) string {
 	if h := winHome(ctx); h != "" && isDirSafe(h) {
-		return pypath.PathStr(h)
+		return filepath.Clean(h)
 	}
 	return projectRoot
 }
@@ -498,7 +498,7 @@ func quoteVbsAll(values ...string) ([]string, error) {
 // CRLF hidden console gateway.vbs launcher run through wscript so logon never sends it console close events
 func buildGatewayVbsScript(ctx context.Context, pythonPath, workingDir, icebathHome, profileArg string) (string, error) {
 	exe, venv, extra := winResolveDetachedPython(pythonPath)
-	commandLine := pysubprocess.List2cmdline(windowsGatewayRunArgv(exe, profileArg))
+	commandLine := executil.WindowsCommandLine(windowsGatewayRunArgv(exe, profileArg))
 	static := strings.Join(windowsLauncherPythonpathEntries(ctx, extra), string(os.PathListSeparator))
 	head, err := quoteVbsAll("ICEBATH_HOME", icebathHome)
 	if err != nil {
@@ -532,7 +532,7 @@ func buildGatewayVbsScript(ctx context.Context, pythonPath, workingDir, icebathH
 // Startup folder vbs that runs the task launcher hidden and quits silently once the target is gone
 func buildStartupLauncher(scriptPath string) (string, error) {
 	target := winWithSuffix(scriptPath, ".vbs")
-	q, err := quoteVbsAll(target, pysubprocess.List2cmdline([]string{"wscript.exe", target}))
+	q, err := quoteVbsAll(target, executil.WindowsCommandLine([]string{"wscript.exe", target}))
 	if err != nil {
 		return "", err
 	}
@@ -719,7 +719,7 @@ func installWindowsScheduledTask(ctx context.Context, taskName, scriptPath strin
 			return false, "", err
 		}
 		if code == 0 {
-			return true, "Created Scheduled Task " + pyrepr.Repr(taskName), nil
+			return true, "Created Scheduled Task " + anyutil.Quote(taskName), nil
 		}
 		lastCode, lastErr = code, firstNonEmpty(errText, out)
 	}
@@ -896,7 +896,7 @@ func windowlessGatewayRestartSpec(ctx context.Context, runArgv []string, homeArg
 	if h == "" {
 		h = winHome(ctx)
 	}
-	resolved, err := pypath.Resolve(h)
+	resolved, err := pathutil.Resolve(h)
 	if err != nil {
 		resolved = ""
 	}
@@ -1235,8 +1235,8 @@ func confirmWindowsGatewayStable(ctx context.Context, initial []int, confirmS, i
 		return initial, nil
 	}
 	pids := initial
-	deadline := pythread.Monotonic() + confirmS
-	for pythread.Monotonic() < deadline {
+	deadline := timeutil.Monotonic() + confirmS
+	for timeutil.Monotonic() < deadline {
 		winSleep(time.Duration(intervalS * float64(time.Second)))
 		var err error
 		if pids, err = liveWindowsGatewayPids(ctx); err != nil {
@@ -1251,8 +1251,8 @@ func confirmWindowsGatewayStable(ctx context.Context, initial []int, confirmS, i
 
 // Polls for a gateway that stays visible through the confirmation window, empty at the timeout
 func waitForWindowsGatewayReady(ctx context.Context, timeoutS float64) ([]int, error) {
-	deadline := pythread.Monotonic() + timeoutS
-	for pythread.Monotonic() < deadline {
+	deadline := timeutil.Monotonic() + timeoutS
+	for timeutil.Monotonic() < deadline {
 		pids, err := liveWindowsGatewayPids(ctx)
 		if err != nil {
 			return nil, err
@@ -1285,20 +1285,20 @@ func writeStartAttestation(ctx context.Context, pids []int, via string) {
 		return
 	}
 	pidList := make([]any, len(pids))
-	createTimes := pyjson.NewObject()
+	createTimes := jsonutil.NewObject()
 	for i, p := range pids {
 		pidList[i] = int64(p)
 		if ct := tools.ProcessCreateTime(p); ct != nil {
 			createTimes.Set(strconv.Itoa(p), *ct)
 		}
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("pids", pidList)
 	payload.Set("via", via)
-	payload.Set("ts", pydatetime.ISOFormatUTC(time.Now()))
+	payload.Set("ts", time.Now().UTC().Format(timeutil.RFC3339Micro))
 	payload.Set("generation", strings.ReplaceAll(uuid.NewString(), "-", ""))
 	payload.Set("create_times", createTimes)
-	text, err := pyjson.Dumps(payload)
+	text, err := jsonutil.Encode(payload)
 	if err == nil {
 		tmp := winWithSuffix(path, ".json.tmp")
 		if err = os.WriteFile(tmp, []byte(text), 0o666); err == nil {
@@ -1319,7 +1319,7 @@ func readJSONSig(path string) (any, bool) {
 	if err != nil || !utf8.Valid(raw) {
 		return nil, false
 	}
-	data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+	data, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 	return data, err == nil
 }
 
@@ -1334,7 +1334,7 @@ func readStartAttestation(ctx context.Context) any {
 
 // Positive integer pids of an attestation, empty when any entry is malformed
 func attestedPidsFrom(data any) []*big.Int {
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -1356,12 +1356,12 @@ func attestedPidsFrom(data any) []*big.Int {
 
 // Create time an attestation bound pid to, nil for older markers
 func attestedCreateTime(data any, pid *big.Int) *float64 {
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
 	raw, _ := obj.Get("create_times")
-	times, ok := raw.(*pyjson.Object)
+	times, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -1391,10 +1391,10 @@ func attestedPidExitedCleanly(ctx context.Context, pid *big.Int, createTime *flo
 	var data any
 	parsed := utf8.Valid(raw)
 	if parsed {
-		data, err = pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+		data, err = jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 		parsed = err == nil
 	}
-	obj, isObj := data.(*pyjson.Object)
+	obj, isObj := data.(*jsonutil.Object)
 	if !parsed || !isObj {
 		return createTime != nil
 	}
@@ -1459,20 +1459,20 @@ func CheckStartAttestation(ctx context.Context, currentPids []int, scanned bool)
 	if !attestedDead(ctx, attested, currentPids, data) {
 		return "", nil
 	}
-	return formatAttestationWarning(ctx, attested, data.(*pyjson.Object)), nil
+	return formatAttestationWarning(ctx, attested, data.(*jsonutil.Object)), nil
 }
 
 // Truthy value of key rendered with str, else the fallback
-func pyOrStr(obj *pyjson.Object, key, fallback string) string {
+func pyOrStr(obj *jsonutil.Object, key, fallback string) string {
 	v, _ := obj.Get(key)
 	if !pyTruthy(v) {
 		return fallback
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Multi line warning naming the attested pids and the Job Object cause with the task recovery hint
-func formatAttestationWarning(ctx context.Context, attested []*big.Int, data *pyjson.Object) string {
+func formatAttestationWarning(ctx context.Context, attested []*big.Int, data *jsonutil.Object) string {
 	parts := make([]string, len(attested))
 	for i, p := range attested {
 		parts[i] = p.String()
@@ -1580,7 +1580,7 @@ func queryScheduledTaskXML(taskName string) (string, bool, error) {
 		return "", false, err
 	}
 	if code != 0 || strings.TrimSpace(out) == "" {
-		pkgLog().Debug(fmt.Sprintf("Could not query Scheduled Task XML for %s: %s", pyrepr.Repr(taskName), strings.TrimSpace(firstNonEmpty(errText, out))))
+		pkgLog().Debug(fmt.Sprintf("Could not query Scheduled Task XML for %s: %s", anyutil.Quote(taskName), strings.TrimSpace(firstNonEmpty(errText, out))))
 		return "", false, nil
 	}
 	return out, true, nil
@@ -1872,22 +1872,25 @@ func WindowsStop(ctx context.Context) error {
 func waitForWindowsGatewayAbsent(ctx context.Context, timeoutS float64) (bool, error) {
 	const intervalS = 0.5
 	var scanErr error
-	absent := pydeadline.PollUntil(func() (bool, bool) {
-		_, running, err := winRunningPid("", true)
-		if err != nil {
-			scanErr = err
-			return false, true
-		}
-		if running {
-			return false, false
-		}
-		pids, err := winGatewayPids(ctx)
-		if err != nil {
-			scanErr = err
-			return false, true
-		}
-		return len(pids) == 0, len(pids) == 0
-	}, time.Duration(max(timeoutS, intervalS)*float64(time.Second)), time.Duration(intervalS*float64(time.Second)))
+	absent := syncutil.PollUntil(context.Background(),
+
+		time.Duration(max(timeoutS, intervalS)*float64(time.Second)), time.Duration(intervalS*float64(time.Second)), func() (bool, bool) {
+			_, running, err := winRunningPid("", true)
+			if err != nil {
+				scanErr = err
+				return false, true
+			}
+			if running {
+				return false, false
+			}
+			pids, err := winGatewayPids(ctx)
+			if err != nil {
+				scanErr = err
+				return false, true
+			}
+			return len(pids) == 0, len(pids) == 0
+		})
+
 	return absent, scanErr
 }
 

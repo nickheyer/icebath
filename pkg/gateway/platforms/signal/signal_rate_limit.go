@@ -11,10 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -68,17 +65,17 @@ func errorMessage(err any) string {
 		if !present {
 			return ""
 		}
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	if e, ok := err.(error); ok {
 		return e.Error()
 	}
-	return pyrepr.Str(err)
+	return anyutil.String(err)
 }
 
 // Mapping value of a nested error field, an error where Python attribute access on a non dict raises
 func dictOrEmpty(v any) (map[string]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return map[string]any{}, nil
 	}
 	m, ok := v.(map[string]any)
@@ -104,7 +101,7 @@ func extractRetryAfterSeconds(err any) (float64, bool, error) {
 		case []any:
 			for _, r := range results {
 				rm, isDict := r.(map[string]any)
-				if !isDict || !pyrepr.Truthy(rm["retryAfterSeconds"]) {
+				if !isDict || !anyutil.IsTrue(rm["retryAfterSeconds"]) {
 					continue
 				}
 				if c, ok := pyhttpx.RetryAfterValue(rm["retryAfterSeconds"]); ok && (!found || c > best) {
@@ -113,7 +110,7 @@ func extractRetryAfterSeconds(err any) (float64, bool, error) {
 			}
 		case string, map[string]any:
 		default:
-			if pyrepr.Truthy(results) {
+			if anyutil.IsTrue(results) {
 				return 0, false, fmt.Errorf("the Signal rate limit results are %s, expected a list", errchain.Kind(results))
 			}
 		}
@@ -131,7 +128,7 @@ func extractRetryAfterSeconds(err any) (float64, bool, error) {
 
 // Whether a signal-cli RPC error is a rate limit by typed code, legacy substrings or a leaked retry later
 func isSignalRateLimitError(err any) bool {
-	if m, ok := err.(map[string]any); ok && pyrepr.Equal(m["code"], SignalRPCErrorRatelimit) {
+	if m, ok := err.(map[string]any); ok && anyutil.Equal(m["code"], SignalRPCErrorRatelimit) {
 		return true
 	}
 	message := errorMessage(err)
@@ -201,7 +198,7 @@ func (s *SignalAttachmentScheduler) Acquire(ctx context.Context, n int) (float64
 		return 0, nil
 	}
 	if float64(n) > s.Capacity {
-		return 0, &SignalSchedulerError{fmt.Sprintf("Signal scheduler was called requesting %d tokens (max is %s)", n, pyrepr.Str(s.Capacity))}
+		return 0, &SignalSchedulerError{fmt.Sprintf("Signal scheduler was called requesting %d tokens (max is %s)", n, anyutil.String(s.Capacity))}
 	}
 	totalSlept, firstPass := 0.0, true
 	for {
@@ -263,13 +260,13 @@ func (s *SignalAttachmentScheduler) Feedback(retryAfter *float64, nAttempted int
 }
 
 // Read only scheduler state for diagnostic logging
-func (s *SignalAttachmentScheduler) State() *pyjson.Object {
+func (s *SignalAttachmentScheduler) State() *jsonutil.Object {
 	perToken := math.Inf(1)
 	if s.RefillRate > 0 {
-		perToken = pyint.Round(1.0/s.RefillRate, 1)
+		perToken = mathutil.Round(1.0/s.RefillRate, 1)
 	}
-	return pyjson.ObjectOf("tokens", pyint.Round(s.projectedTokens(monotonic()), 1), "capacity", int(s.Capacity),
-		"refill_rate", pyint.Round(s.RefillRate, 4), "refill_seconds_per_token", perToken)
+	return jsonutil.ObjectOf("tokens", mathutil.Round(s.projectedTokens(monotonic()), 1), "capacity", int(s.Capacity),
+		"refill_rate", mathutil.Round(s.RefillRate, 4), "refill_seconds_per_token", perToken)
 }
 
 var scheduler struct {

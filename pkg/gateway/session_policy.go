@@ -12,12 +12,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Launch policy section and marker names a local session policy carries
@@ -76,7 +76,7 @@ func sourceRefusal(source any) string {
 	if label, ok := source.(string); ok && reservedSourceLabels[label] {
 		return label + " is reserved for the sessions icebath files itself, pick another tag"
 	}
-	return "a source is a surface or a tag of letters, digits and _ . : - up to 64 characters, not " + pyrepr.Repr(source)
+	return "a source is a surface or a tag of letters, digits and _ . : - up to 64 characters, not " + anyutil.Quote(source)
 }
 
 // Labels and surfaces joined into one group whenever a label runs on a surface
@@ -137,7 +137,7 @@ func setdefaultMap(config map[string]any, key string) (map[string]any, error) {
 // Replaces the session pins mapping with a copy carrying field set to pinned
 func mergeSessionPin(config map[string]any, field string, pinned bool) error {
 	merged := map[string]any{}
-	if existing := config[SessionPins]; pyrepr.Truthy(existing) {
+	if existing := config[SessionPins]; anyutil.IsTrue(existing) {
 		m, ok := existing.(map[string]any)
 		if !ok {
 			return &PyError{Kind: "TypeError", Msg: "a session policy section is " + errchain.Kind(existing) + ", expected a mapping"}
@@ -363,11 +363,11 @@ func (p *LocalSessionPolicy) PolicyCwd() string { return p.Cwd }
 
 // Decoded JSON object of a policy field, empty when the text holds no object
 func policyObject(text string) map[string]any {
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return map[string]any{}
 	}
-	m, _ := pyjson.Plain(parsed).(map[string]any)
+	m, _ := jsonutil.Plain(parsed).(map[string]any)
 	if m == nil {
 		return map[string]any{}
 	}
@@ -389,20 +389,20 @@ func (p *LocalSessionPolicy) FollowsProfile() bool {
 
 // Whether project rule files are skipped, always under safe mode
 func (p *LocalSessionPolicy) IgnoreRules() bool {
-	return p.SafeMode || pyrepr.Truthy(policyObject(p.RequestJSON)["ignore_rules"])
+	return p.SafeMode || anyutil.IsTrue(policyObject(p.RequestJSON)["ignore_rules"])
 }
 
 // Whether this session bypasses dangerous command approvals like a chat scoped yolo
-func (p *LocalSessionPolicy) Yolo() bool { return pyrepr.Truthy(policyObject(p.RequestJSON)["yolo"]) }
+func (p *LocalSessionPolicy) Yolo() bool { return anyutil.IsTrue(policyObject(p.RequestJSON)["yolo"]) }
 
 // Whether the session id rides the agent system prompt
 func (p *LocalSessionPolicy) PassSessionID() bool {
-	return pyrepr.Truthy(policyObject(p.RequestJSON)["pass_session_id"])
+	return anyutil.IsTrue(policyObject(p.RequestJSON)["pass_session_id"])
 }
 
 // Whether the session agent runs with quiet mode off so status lines reach the viewer
 func (p *LocalSessionPolicy) Verbose() bool {
-	return pyrepr.Truthy(policyObject(p.RequestJSON)["verbose"])
+	return anyutil.IsTrue(policyObject(p.RequestJSON)["verbose"])
 }
 
 // Whether a stored client map holds string values, or string lists for its rules, nil counting as valid
@@ -414,11 +414,11 @@ func validClientEnv(value any, rules bool) bool {
 	if !ok {
 		return false
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return false
 	}
-	env, ok := pyjson.Plain(parsed).(map[string]any)
+	env, ok := jsonutil.Plain(parsed).(map[string]any)
 	if !ok {
 		return false
 	}
@@ -487,7 +487,7 @@ func restoredText(data map[string]any, name string) (*string, bool) {
 
 // Stored private policy restored and validated, refusing an incomplete one rather than rebuilding defaults
 func restorePolicy(raw any) (*LocalSessionPolicy, error) {
-	policy, cause := restoredPolicy(pyjson.Plain(raw))
+	policy, cause := restoredPolicy(jsonutil.Plain(raw))
 	if cause != nil {
 		refusal := state.NewRuntimeStoreError("storage_unavailable", nil, nil)
 		refusal.Cause = cause
@@ -601,11 +601,11 @@ func restoredPolicy(raw any) (*LocalSessionPolicy, error) {
 		return nil, &PyError{Kind: "ValueError", Msg: "invalid policy"}
 	}
 	for _, text := range []string{p.ConfigJSON, p.RequestJSON, p.TerminalJSON} {
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil, err
 		}
-		if _, isMap := pyjson.Plain(parsed).(map[string]any); !isMap {
+		if _, isMap := jsonutil.Plain(parsed).(map[string]any); !isMap {
 			return nil, &PyError{Kind: "ValueError", Msg: "invalid policy object"}
 		}
 	}
@@ -652,7 +652,7 @@ func unpinReasoning(config, profile map[string]any) error {
 		}
 	case nil:
 	default:
-		if pyrepr.Truthy(held) {
+		if anyutil.IsTrue(held) {
 			return &PyError{Kind: "TypeError", Msg: "a held session policy value is " + errchain.Kind(held) + ", expected a mapping"}
 		}
 	}
@@ -778,7 +778,7 @@ func (p *LocalSessionPolicy) effective(ctx context.Context, owner launchSecretOw
 		case map[string]any:
 			frozen = block
 		default:
-			if pyrepr.Truthy(block) {
+			if anyutil.IsTrue(block) {
 				return nil, nil, &PyError{Kind: "AttributeError", Msg: "a session policy block is " + errchain.Kind(block) + ", expected a mapping"}
 			}
 			frozen = map[string]any{}
@@ -874,7 +874,7 @@ func (p *LocalSessionPolicy) BaseURL() any { return p.modelField("base_url") }
 // Frozen checkpoints enabled flag
 func (p *LocalSessionPolicy) CheckpointsEnabled() bool {
 	section, _ := p.frozenConfig()["checkpoints"].(map[string]any)
-	return pyrepr.Truthy(section["enabled"])
+	return anyutil.IsTrue(section["enabled"])
 }
 
 // Frozen iteration cap from agent max_turns
@@ -896,7 +896,7 @@ func (p *LocalSessionPolicy) ReasoningConfig() map[string]any {
 func (p *LocalSessionPolicy) ClientEnvScope(ctx context.Context) (context.Context, error) {
 	var rules *state.ClientEnvRules
 	if p.ClientEnvRulesJSON != nil {
-		parsed, err := pyjson.Loads(*p.ClientEnvRulesJSON)
+		parsed, err := jsonutil.Decode(*p.ClientEnvRulesJSON)
 		if err != nil {
 			return nil, err
 		}
@@ -925,7 +925,7 @@ func extractConfigSecrets(value any, private *RecoveredSecrets, path secretPath)
 		name, isStr := key.(string)
 		sensitive := isStr && (config.SecretConfigKeys[strings.ToLower(name)] || secretContainers[strings.ToLower(name)] ||
 			provider.IsSecretPayloadKey(name))
-		if text, ok := child.(string); sensitive && pyrepr.Truthy(child) && !(ok && (text == "{}" || text == "[]")) {
+		if text, ok := child.(string); sensitive && anyutil.IsTrue(child) && !(ok && (text == "{}" || text == "[]")) {
 			if private == nil {
 				return state.NewRuntimeStoreError("launch_credentials_unavailable", nil, nil)
 			}

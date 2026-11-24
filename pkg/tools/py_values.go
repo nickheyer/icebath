@@ -5,14 +5,14 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var pyIntLiteralRe = regexp.MustCompile(`^[+-]?\d+$`)
 
 // Ordered JSON object from alternating keys and values, the shape of a Python dict literal
-func pyObject(kv ...any) *pyjson.Object {
-	o := pyjson.NewObject()
+func pyObject(kv ...any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	for i := 0; i+1 < len(kv); i += 2 {
 		o.Set(kv[i].(string), kv[i+1])
 	}
@@ -21,7 +21,7 @@ func pyObject(kv ...any) *pyjson.Object {
 
 // json.dumps with ensure_ascii false and the default separators
 func dumpsUnicode(v any) string {
-	out, err := pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(v)
 	if err != nil {
 		return ErrorResult(err)
 	}

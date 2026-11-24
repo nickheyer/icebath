@@ -8,9 +8,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // CoerceLLMMessage pulls the message out of a response or returns a bare message, nil for an empty choices list
@@ -45,15 +45,15 @@ func CoerceLLMMessage(response any) any {
 func FirstChoiceMessage(response any) (any, error) {
 	choices := reflect.ValueOf(MessageField(response, "choices"))
 	if !choices.IsValid() || (choices.Kind() != reflect.Slice && choices.Kind() != reflect.Array) {
-		return nil, &pyint.Error{Kind: "AttributeError", Msg: "the auxiliary response is " + errchain.Kind(response) + ", expected a chat completion"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the auxiliary response is " + errchain.Kind(response) + ", expected a chat completion"}
 	}
 	if choices.Len() == 0 {
-		return nil, &pyint.Error{Kind: "IndexError", Msg: "the auxiliary response has no choices"}
+		return nil, &errorutil.Error{Kind: "IndexError", Msg: "the auxiliary response has no choices"}
 	}
 	choice := choices.Index(0).Interface()
 	message := MessageField(choice, "message")
 	if message == nil {
-		return nil, &pyint.Error{Kind: "AttributeError", Msg: "the first auxiliary choice has no message"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the first auxiliary choice has no message"}
 	}
 	return message, nil
 }
@@ -116,8 +116,8 @@ func ExtractContentOrReasoning(response any, maxReasoningChars int) string {
 	}
 	raw, ok := MessageField(msg, "content").(string)
 	if !ok {
-		if v := MessageField(msg, "content"); pyrepr.Truthy(v) {
-			raw = pyrepr.Str(v)
+		if v := MessageField(msg, "content"); anyutil.IsTrue(v) {
+			raw = anyutil.String(v)
 		}
 	}
 	if content := strings.TrimSpace(raw); content != "" {
@@ -138,25 +138,25 @@ func ExtractContentOrReasoning(response any, maxReasoningChars int) string {
 	}
 	if details, ok := MessageField(msg, "reasoning_details").([]any); ok {
 		for _, d := range details {
-			detail, ok := pyjson.Dict(d)
+			detail, ok := jsonutil.AsMap(d)
 			if !ok {
 				continue
 			}
 			summary := detail["summary"]
-			if !pyrepr.Truthy(summary) {
+			if !anyutil.IsTrue(summary) {
 				summary = detail["content"]
 			}
-			if !pyrepr.Truthy(summary) {
+			if !anyutil.IsTrue(summary) {
 				summary = detail["text"]
 			}
-			if !pyrepr.Truthy(summary) {
+			if !anyutil.IsTrue(summary) {
 				continue
 			}
 			if s, isStr := summary.(string); isStr {
 				if !seen(s) {
 					parts = append(parts, strings.TrimSpace(s))
 				}
-			} else if str := pyrepr.Str(summary); !seen(str) {
+			} else if str := anyutil.String(summary); !seen(str) {
 				parts = append(parts, str)
 			}
 		}

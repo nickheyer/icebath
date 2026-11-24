@@ -6,9 +6,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Model, language and extra keyword arguments of one plugin transcribe call, nil meaning unset
@@ -129,7 +129,7 @@ func (h hostedTranscriptionProvider) DisplayName() string {
 			return s
 		}
 	}
-	return pystr.Title(h.Name())
+	return textutil.Title(h.Name())
 }
 
 func (h hostedTranscriptionProvider) GetSetupSchema() map[string]any {

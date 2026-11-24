@@ -7,18 +7,18 @@ import (
 	"math"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -495,7 +495,7 @@ func (b *BasePlatformAdapter) FormatToolEvent(ctx context.Context, event StreamE
 	emoji, tool := tools.GetToolEmoji(ctx, env, ev.ToolName, "⚙️"), ev.ToolName
 	if mode == "verbose" && len(ev.Args) > 0 {
 		keys := []any{}
-		ordered := pyjson.NewObject()
+		ordered := jsonutil.NewObject()
 		for _, k := range ev.OrderedArgKeys() {
 			keys = append(keys, k)
 			ordered.Set(k, ev.Args[k])
@@ -702,7 +702,7 @@ func (b *BasePlatformAdapter) SetPlatformLockTakeoverAllowed(allowed bool) {
 var acquireScopedLockFn = AcquireScopedLock
 
 // Scoped lock takeover hook, a package var the way tests patch the status module
-var takeOverScopedLockHolderFn = func(ctx context.Context, record *pyjson.Object) (int, bool) {
+var takeOverScopedLockHolderFn = func(ctx context.Context, record *jsonutil.Object) (int, bool) {
 	return TakeOverScopedLockHolder(ctx, record, 20, 20)
 }
 
@@ -711,7 +711,7 @@ func (b *BasePlatformAdapter) AcquirePlatformLock(ctx context.Context, scope, id
 	b.mu.Lock()
 	b.platformLockScope, b.platformLockIdentity = scope, identity
 	b.mu.Unlock()
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("platform", string(b.Platform))
 	acquired, existing, err := acquireScopedLockFn(ctx, scope, identity, meta)
 	var unusable *ScopedLockDirUnusable
@@ -761,8 +761,8 @@ func (b *BasePlatformAdapter) AcquirePlatformLock(ctx context.Context, scope, id
 		ownerLabel = ScopedLockOwnerLabel(nil)
 	}
 	pidPart := ""
-	if pyrepr.Truthy(ownerPID) {
-		pidPart = fmt.Sprintf(" (PID %s)", pyrepr.Str(ownerPID))
+	if anyutil.IsTrue(ownerPID) {
+		pidPart = fmt.Sprintf(" (PID %s)", anyutil.String(ownerPID))
 	}
 	holder, remedy := pidPart, " Stop the other gateway first."
 	if ownerLabel != "" {
@@ -813,7 +813,7 @@ func factoryQualname(factory any) string {
 			return fn.Name()
 		}
 	}
-	return pyrepr.Repr(factory)
+	return anyutil.Quote(factory)
 }
 
 // Calls a plugin handler factory with the native client and the adapter
@@ -902,7 +902,7 @@ func (b *BasePlatformAdapter) RewirePluginHandlers(ctx context.Context) {
 }
 
 // Title cased platform value
-func (b *BasePlatformAdapter) Name() string { return pystr.Title(string(b.Platform)) }
+func (b *BasePlatformAdapter) Name() string { return textutil.Title(string(b.Platform)) }
 
 // Whether the adapter is connected
 func (b *BasePlatformAdapter) IsConnected() bool {
@@ -1147,7 +1147,7 @@ func (b *BasePlatformAdapter) coerceFloatExtra(key string, def, minValue float64
 	if b.Config != nil && b.Config.Extra != nil {
 		raw = b.Config.Extra[key]
 	}
-	parsed, err := pyint.Float(raw)
+	parsed, err := anyutil.ToFloat(raw)
 	if err != nil {
 		parsed = def
 	}
@@ -1156,7 +1156,7 @@ func (b *BasePlatformAdapter) coerceFloatExtra(key string, def, minValue float64
 	}
 	parsed = math.Max(parsed, minValue)
 	if maxValue != nil && parsed > *maxValue {
-		pkgLog().Warn(fmt.Sprintf("%s=%s exceeds the %s ceiling; clamped", key, pyrepr.Float(parsed), pyrepr.Float(*maxValue)))
+		pkgLog().Warn(fmt.Sprintf("%s=%s exceeds the %s ceiling; clamped", key, strconv.FormatFloat(parsed, 'f', -1, 64), strconv.FormatFloat(*maxValue, 'f', -1, 64)))
 		parsed = *maxValue
 	}
 	return parsed
@@ -1200,10 +1200,10 @@ func (b *BasePlatformAdapter) SourceSessionKey(ctx context.Context, source *Sess
 	}
 	groupPerUser, threadPerUser := true, false
 	if v, ok := extra["group_sessions_per_user"]; ok {
-		groupPerUser = pyrepr.Truthy(v)
+		groupPerUser = anyutil.IsTrue(v)
 	}
 	if v, ok := extra["thread_sessions_per_user"]; ok {
-		threadPerUser = pyrepr.Truthy(v)
+		threadPerUser = anyutil.IsTrue(v)
 	}
 	return BuildSessionKey(ctx, source, groupPerUser, threadPerUser, b.sessionKeyProfile(source))
 }

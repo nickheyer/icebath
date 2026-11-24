@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Home key to home path and to resolved cron store for every profile this process ticks
@@ -29,8 +29,8 @@ var gatewayProbes = struct {
 	ownsRuntimeLock      func() bool
 	runtimeLockActive    func(lockPath string) (bool, error)
 	runningPid           func(pidPath string, cleanupStale bool) (int, bool, error)
-	readRuntimeStatus    func(path string) *pyjson.Object
-	runtimeStatusIsStale func(record *pyjson.Object, ttl int) bool
+	readRuntimeStatus    func(path string) *jsonutil.Object
+	runtimeStatusIsStale func(record *jsonutil.Object, ttl int) bool
 	sameIcebathHome      func(left, right string) (bool, error)
 	profileLabelForHome  func(h string) string
 	pidExists            func(pid int) bool
@@ -128,7 +128,7 @@ func ownsCronTickFor(h string) bool {
 }
 
 // True when a gateway runtime status record proves the home, its own or one in its served set
-func recordServesProfile(record *pyjson.Object, h string) bool {
+func recordServesProfile(record *jsonutil.Object, h string) bool {
 	if record == nil {
 		return false
 	}
@@ -157,7 +157,7 @@ func recordServesProfile(record *pyjson.Object, h string) bool {
 		return false
 	}
 	for _, entry := range served {
-		if pyrepr.Equal(entry, label) {
+		if anyutil.Equal(entry, label) {
 			return true
 		}
 	}
@@ -165,8 +165,8 @@ func recordServesProfile(record *pyjson.Object, h string) bool {
 }
 
 // Runtime status record of another live host gateway that ticks the home, nil when that cannot be proven
-func liveGatewayTicking(h string) *pyjson.Object {
-	var record *pyjson.Object
+func liveGatewayTicking(h string) *jsonutil.Object {
+	var record *jsonutil.Object
 	proven := probeSafely(func() bool {
 		if gatewayProbes.ownsRuntimeLock() {
 			return false
@@ -184,7 +184,7 @@ func liveGatewayTicking(h string) *pyjson.Object {
 			return false
 		}
 		pid, _ := record.Get("pid")
-		if !pyrepr.Equal(pid, holderPid) {
+		if !anyutil.Equal(pid, holderPid) {
 			return false
 		}
 		return !gatewayProbes.runtimeStatusIsStale(record, gateway.RuntimeStatusStaleTTL)
@@ -201,7 +201,7 @@ func claimOwnerIsDead(claim *Claim) bool {
 		return false
 	}
 	parts := strings.Split(claim.By, ":")
-	if len(parts) < 2 || !isDigitText(parts[1]) {
+	if len(parts) < 2 || !textutil.IsDigits(parts[1]) {
 		return false
 	}
 	return probeSafely(func() bool {
@@ -209,23 +209,10 @@ func claimOwnerIsDead(claim *Claim) bool {
 		if err != nil || parts[0] != host {
 			return false
 		}
-		pid, ok := pyint.Parse(parts[1])
-		if !ok || !pid.IsInt64() || int64(int(pid.Int64())) != pid.Int64() {
+		pid, err := strconv.ParseInt(parts[1], 10, 64)
+		if err != nil || int64(int(pid)) != pid {
 			return false
 		}
-		return !gatewayProbes.pidExists(int(pid.Int64()))
+		return !gatewayProbes.pidExists(int(pid))
 	})
-}
-
-// True for a nonempty string of Unicode digits, the str.isdigit test
-func isDigitText(text string) bool {
-	if text == "" {
-		return false
-	}
-	for _, r := range text {
-		if !unicode.IsDigit(r) {
-			return false
-		}
-	}
-	return true
 }

@@ -14,7 +14,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Environment variables the update check reads a GitHub token from, in order
@@ -61,7 +62,7 @@ func probeGhCLIToken() (string, bool) {
 		return "", false
 	}
 	if ctx.Err() != nil {
-		pkgLog().Debug(fmt.Sprintf("gh CLI token lookup unavailable: Command '['gh', 'auth', 'token']' timed out after %d seconds", int(ghCLITimeout/time.Second)))
+		pkgLog().Debug(fmt.Sprintf("gh CLI token lookup unavailable: %v", &executil.TimeoutError{Args: cmd.Args, Timeout: ghCLITimeout}))
 		return "", false
 	}
 	token := ""
@@ -154,13 +155,13 @@ func isTimeoutError(err error) bool {
 	return errors.Is(err, os.ErrDeadlineExceeded) || errors.Is(err, context.DeadlineExceeded) || (errors.As(err, &netErr) && netErr.Timeout())
 }
 
-// Integer value of a header as int(str(value).strip()) reads it, false where that raises
+// Whole number a header holds, false when it holds none
 func githubHeaderInt(header http.Header, name string) (int64, bool) {
-	n, ok := pystr.IntText(strings.TrimSpace(header.Get(name)))
-	if !ok || !n.IsInt64() {
+	n, err := textutil.ParseInt(header.Get(name))
+	if err != nil {
 		return 0, false
 	}
-	return n.Int64(), true
+	return n, true
 }
 
 // Float floor division with the CPython rounding of float_floor_div

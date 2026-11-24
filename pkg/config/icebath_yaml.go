@@ -11,8 +11,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	ry "github.com/nickheyer/icebath/pkg/internal/ruamelyaml"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"gopkg.in/yaml.v3"
 )
 
@@ -23,10 +23,15 @@ func (e *YAMLError) Error() string { return e.Err.Error() }
 
 func (e *YAMLError) Unwrap() error { return e.Err }
 
-// Python class of the underlying failure, YAMLError for a writer failure without one
-func (e *YAMLError) PyTypeName() string {
-	if p, ok := e.Err.(ry.PyError); ok {
-		return p.PyTypeName()
+// Kind of the underlying failure: the class a ruamel error or a load exception carries, YAMLError for a writer failure without one
+func (e *YAMLError) ErrorKind() string {
+	switch x := e.Err.(type) {
+	case *ry.MarkedError:
+		return x.Class
+	case *ry.PyException:
+		return x.Class
+	case *ry.ReaderError:
+		return "ReaderError"
 	}
 	return "YAMLError"
 }
@@ -69,26 +74,26 @@ func SafeLoad(stream any) (any, error) {
 
 // Value of a YAML file's bytes read the way open with utf-8 or utf-8-sig and read does, universal newlines included
 func SafeLoadText(data []byte, sig bool) (any, error) {
-	text, err := PyReadText(data, sig)
+	text, err := decodeYAMLText(data, sig)
 	if err != nil {
 		return nil, err
 	}
 	return safeLoadInput(ry.TextInput(text))
 }
 
-// Text of file bytes as a text mode read gives it, strict utf-8 or utf-8-sig with CRLF and CR turned into LF
-func PyReadText(data []byte, sig bool) (string, error) {
+// Text of file bytes, strict UTF-8 with one leading byte order mark dropped when sig is set, CRLF and CR turned into LF
+func decodeYAMLText(data []byte, sig bool) (string, error) {
 	var text string
 	var err error
 	if sig {
-		text, err = pystr.DecodeUTF8Sig(data)
+		text, err = textutil.DecodeUTF8(textutil.TrimBOM(data))
 	} else {
-		text, err = pystr.DecodeUTF8(data)
+		text, err = textutil.DecodeUTF8(data)
 	}
 	if err != nil {
 		return "", &YAMLError{ry.Raise("UnicodeDecodeError", err.Error())}
 	}
-	return strings.ReplaceAll(strings.ReplaceAll(text, "\r\n", "\n"), "\r", "\n"), nil
+	return textutil.NormalizeNewlines(text), nil
 }
 
 // The C loader's value, the pure loader answering any YAMLError of it, every other exception raised as is
@@ -186,7 +191,7 @@ func (r *RoundtripYAML) Load(stream any) (*RoundtripDoc, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := PyReadText(data, false)
+	text, err := decodeYAMLText(data, false)
 	if err != nil {
 		return nil, err
 	}

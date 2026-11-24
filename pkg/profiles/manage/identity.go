@@ -7,11 +7,11 @@ import (
 	"path/filepath"
 	"reflect"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Control verb and store opener the identity rekey goes through, swapped by tests
@@ -70,7 +70,7 @@ func excText(err error) string {
 
 // Reports whether a decoded control answer is a mapping with ok exactly true
 func answerOK(answer any) bool {
-	m, isMap := answer.(*pyjson.Object)
+	m, isMap := answer.(*jsonutil.Object)
 	if !isMap {
 		return false
 	}
@@ -124,16 +124,16 @@ func purgeProfileIdentity(ctx context.Context, canon string, liveMux bool) bool 
 
 // Why a control socket answer is not a success, keeping the raw answer when it names no reason
 func controlAnswerFailure(answer any) string {
-	if m, ok := answer.(*pyjson.Object); ok {
+	if m, ok := answer.(*jsonutil.Object); ok {
 		for _, key := range []string{"error", "message", "detail"} {
 			if v, _ := m.Get(key); truthy(v) {
-				return pyrepr.Str(v)
+				return anyutil.String(v)
 			}
 		}
-		return pyrepr.Repr(m)
+		return anyutil.Quote(m)
 	}
 	if answer != nil {
-		return pyrepr.Repr(answer)
+		return anyutil.Quote(answer)
 	}
 	return "no response from gateway control socket"
 }
@@ -226,7 +226,7 @@ func truthy(v any) bool {
 		return len(x) > 0
 	case map[string]any:
 		return len(x) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return x.Len() > 0
 	}
 	rv := reflect.ValueOf(v)

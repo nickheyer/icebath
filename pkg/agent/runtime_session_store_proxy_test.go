@@ -8,7 +8,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // A real HTTP proxy that records every request line and refuses it, one that cannot reach loopback
@@ -56,7 +57,7 @@ func TestWorkerRpcReachesLoopbackOwnerWithProxyEnv(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(result, pyjson.ObjectOf("method", "worker.persist")) {
+	if !anyutil.Equal(result, jsonutil.ObjectOf("method", "worker.persist")) {
 		t.Fatalf("result %v", result)
 	}
 	if got := seen(); len(got) != 0 {

@@ -68,7 +68,7 @@ func (r *GatewayRunner) handleRetryCommand(ctx context.Context, event *gateway.M
 		return i18n.T(ctx, "gateway.retry.no_previous", "", nil), nil
 	}
 	unsafe := func(err error) string {
-		return i18n.T(ctx, "gateway.retry.unsafe", "", map[string]any{"error": pyrepr.ExceptionMessage(err)})
+		return i18n.T(ctx, "gateway.retry.unsafe", "", map[string]any{"error": err.Error()})
 	}
 	truncated, liveView, err := agent.HistoryBeforeUserOriginatedTurn(history, lastUserIdx)
 	var lastUserMsg string
@@ -128,7 +128,7 @@ func (r *GatewayRunner) retryInAdmission(ctx context.Context, event *gateway.Mes
 			case errors.As(err, &unavailable):
 				return failedUnchanged(), nil
 			case isValueError(err):
-				return i18n.T(ctx, "gateway.retry.unsafe", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+				return i18n.T(ctx, "gateway.retry.unsafe", "", map[string]any{"error": err.Error()}), nil
 			case pyrepr.ExceptionName(err) == "RuntimeError":
 				pkgLog().Debug(fmt.Sprintf("/retry carrier plan refused for %s", sessionID), "exc_info", err)
 				return failedUnchanged(), nil

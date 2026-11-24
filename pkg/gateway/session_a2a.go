@@ -10,10 +10,10 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Meta key prefix of an adopted pre authority local row
@@ -48,7 +48,7 @@ func a2aStorageSource(ctx context.Context, db SessionStoreDB, source *SessionSou
 	if !ok {
 		return "", errors.New("the session receipt has no policy")
 	}
-	policyObj, ok := policy.(*pyjson.Object)
+	policyObj, ok := policy.(*jsonutil.Object)
 	if !ok {
 		return "", fmt.Errorf("the session receipt policy is %s, expected a mapping", errchain.Kind(policy))
 	}
@@ -79,7 +79,7 @@ func a2aStorageSource(ctx context.Context, db SessionStoreDB, source *SessionSou
 }
 
 // Session ids a local receipt names, its lineage or the session id alone, the session id always required
-func receiptLineage(receipt *pyjson.Object) (map[string]bool, error) {
+func receiptLineage(receipt *jsonutil.Object) (map[string]bool, error) {
 	ids := map[string]bool{}
 	sid, ok := receipt.Get("session_id")
 	if !ok {
@@ -147,7 +147,7 @@ func forwardOffThread[T any](ctx context.Context, fn func() (T, error)) (T, erro
 func ForwardToOwner(ctx context.Context, home string, forward A2AForward, timeout time.Duration) (map[string]any, error) {
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	resolved, err := forwardOffThread(ctx, func() (string, error) { return pypath.Resolve(home) })
+	resolved, err := forwardOffThread(ctx, func() (string, error) { return pathutil.Resolve(home) })
 	if err != nil {
 		return nil, err
 	}
@@ -234,7 +234,7 @@ func a2aCompletion(ctx context.Context, client *GatewayClient, admissionID any) 
 		if failure, isErr := event.(error); isErr {
 			return failure
 		}
-		params, err := a2aMapping(pyjson.Plain(event), "params")
+		params, err := a2aMapping(jsonutil.Plain(event), "params")
 		if err != nil {
 			return err
 		}
@@ -245,7 +245,7 @@ func a2aCompletion(ctx context.Context, client *GatewayClient, admissionID any) 
 		if err != nil {
 			return err
 		}
-		if pyjson.Equal(payload["admission_id"], admissionID) {
+		if anyutil.Equal(payload["admission_id"], admissionID) {
 			return nil
 		}
 	}
@@ -258,7 +258,7 @@ func a2aMapping(frame any, key string) (map[string]any, error) {
 		return nil, &PyError{Kind: "AttributeError", Msg: fmt.Sprintf("an A2A frame is %s, expected a mapping", errchain.Kind(frame))}
 	}
 	value := m[key]
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return map[string]any{}, nil
 	}
 	inner, ok := value.(map[string]any)
@@ -295,7 +295,7 @@ func buildForwardPolicy(ctx context.Context, params, cfg map[string]any, private
 		peer[i] = part
 	}
 	request["source"], request["a2a_identity"] = "a2a", peer
-	text, err := pyjson.Dumps(request, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(request, jsonutil.SortKeys())
 	if err != nil {
 		return nil, err
 	}
@@ -309,11 +309,11 @@ func isForwardPolicy(policy *LocalSessionPolicy) bool {
 	if policy == nil || policy.Source != "a2a" || policy.Platform != "a2a" {
 		return false
 	}
-	parsed, err := pyjson.Loads(policy.RequestJSON)
+	parsed, err := jsonutil.Decode(policy.RequestJSON)
 	if err != nil {
 		return false
 	}
-	request, ok := pyjson.Plain(parsed).(map[string]any)
+	request, ok := jsonutil.Plain(parsed).(map[string]any)
 	if !ok {
 		return false
 	}

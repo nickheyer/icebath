@@ -14,11 +14,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -86,14 +88,14 @@ func profileHasKanbanToolset(env *tools.Env) (has bool) {
 	if err != nil {
 		return false
 	}
-	if toolsets := cfg["toolsets"]; pyrepr.Truthy(toolsets) && tools.PyContainsKanban(toolsets) {
+	if toolsets := cfg["toolsets"]; anyutil.IsTrue(toolsets) && tools.PyContainsKanban(toolsets) {
 		return true
 	}
 	if inAssembly {
 		return false
 	}
 	platforms := cfg["platform_toolsets"]
-	if !pyrepr.Truthy(platforms) {
+	if !anyutil.IsTrue(platforms) {
 		return false
 	}
 	names, values, isDict := dictItems(platforms)
@@ -112,15 +114,15 @@ func profileHasKanbanToolset(env *tools.Env) (has bool) {
 }
 
 // Ordered dict of a dict shaped value, not ok for anything else
-func dictObject(v any) (*pyjson.Object, bool) {
-	if o, ok := v.(*pyjson.Object); ok && o != nil {
+func dictObject(v any) (*jsonutil.Object, bool) {
+	if o, ok := v.(*jsonutil.Object); ok && o != nil {
 		return o, true
 	}
 	keys, values, ok := dictItems(v)
 	if !ok {
 		return nil, false
 	}
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	for i, key := range keys {
 		o.Set(key, values[i])
 	}
@@ -177,7 +179,7 @@ func reject(message string) error { return &kanbanReject{kanbanToolError(message
 
 // JSON error object the model reads for a failed tool call
 func kanbanToolError(message string) string {
-	return tools.ToolResult(pyjson.ObjectOf("error", message))
+	return tools.ToolResult(jsonutil.ObjectOf("error", message))
 }
 
 // Profile name persisted into board records, worker when nothing names a profile
@@ -194,7 +196,7 @@ func isValueError(err error) bool {
 	if errors.As(err, &ve) {
 		return true
 	}
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	return errors.As(err, &pe) && pe.Kind == "ValueError"
 }
 
@@ -289,11 +291,11 @@ func exactArgs(call *tools.Call) map[string]any {
 	if call.RawArgs == "" {
 		return out
 	}
-	decoded, err := pyjson.Loads(call.RawArgs)
+	decoded, err := jsonutil.Decode(call.RawArgs)
 	if err != nil {
 		return out
 	}
-	raw, isDict := decoded.(*pyjson.Object)
+	raw, isDict := decoded.(*jsonutil.Object)
 	if !isDict {
 		return out
 	}
@@ -327,7 +329,7 @@ func sameJSON(exact, value any) bool {
 			}
 		}
 		return true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		keys, values, isDict := dictItems(value)
 		if !isDict || len(keys) != e.Len() {
 			return false
@@ -343,7 +345,7 @@ func sameJSON(exact, value any) bool {
 	if _, isBool := value.(bool); isBool {
 		return false
 	}
-	return pyjson.Equal(exact, value)
+	return anyutil.Equal(exact, value)
 }
 
 // Refuses board mutations to a delegate_task child, which shares its parent's kanban environment
@@ -359,7 +361,7 @@ func rejectDelegatedChildMutation(k *kanbanCall, toolName string) error {
 // Task id argument, else the task the dispatcher spawned this worker for, not ok when neither applies
 func defaultTaskID(k *kanbanCall, arg any) (string, bool) {
 	if arg != nil {
-		if val := strings.TrimSpace(pyrepr.Str(arg)); val != "" {
+		if val := strings.TrimSpace(anyutil.String(arg)); val != "" {
 			return val, true
 		}
 	}
@@ -393,15 +395,15 @@ func requireTaskID(k *kanbanCall) (string, error) {
 func expectedRunID(taskID string) *int64 { return workerRunIDArg(taskID) }
 
 // Metadata with the trusted worker session id added for this worker's own task
-func stampWorkerSessionMetadata(taskID string, metadata *pyjson.Object) *pyjson.Object {
+func stampWorkerSessionMetadata(taskID string, metadata *jsonutil.Object) *jsonutil.Object {
 	sessionID, _ := ownTaskEnv(taskID, "ICEBATH_SESSION_ID")
 	if sessionID == "" {
 		return metadata
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	if metadata != nil {
-		for _, key := range metadata.Keys {
-			out.Set(key, metadata.Vals[key])
+		for _, key := range metadata.Keys() {
+			out.Set(key, metadata.Value(key))
 		}
 	}
 	out.Set("worker_session_id", sessionID)
@@ -455,7 +457,7 @@ func boardArg(v any) (*string, error) {
 	if v == nil {
 		return nil, nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	if _, isText := v.(string); !isText {
 		if _, err := normalizeBoardSlug(&s); err != nil {
 			return nil, &ValueError{fmt.Sprintf("invalid board slug %s: must be 1-64 chars, lowercase "+
@@ -502,11 +504,11 @@ func existingTask(ctx context.Context, conn state.SQLiteConn, tid string) (*Task
 
 // Success payload led by ok true with the given fields in order
 func okPayload(fields ...any) (string, error) {
-	o := pyjson.ObjectOf("ok", true)
+	o := jsonutil.ObjectOf("ok", true)
 	for i := 0; i+1 < len(fields); i += 2 {
 		o.Set(fields[i].(string), fields[i+1])
 	}
-	return pyjson.Dumps(o)
+	return jsonutil.Encode(o)
 }
 
 // Success payload reporting the run and the status the task actually landed in
@@ -532,32 +534,32 @@ func okLanded(ctx context.Context, conn state.SQLiteConn, tid, defaultStatus str
 
 // Text of a value with every secret pattern masked
 func redactText(env *tools.Env, value any) string {
-	return tools.RedactSensitiveTextWith(env, pyrepr.Str(value), tools.RedactOptions{Force: true})
+	return tools.RedactSensitiveTextWith(env, anyutil.String(value), tools.RedactOptions{Force: true})
 }
 
 // Redacted text of a truthy value, the value itself when falsy
 func redactOpt(env *tools.Env, value any) any {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return value
 	}
 	return redactText(env, value)
 }
 
 // Metadata redacted through a JSON round trip, nil when the redacted text no longer parses as a dict
-func redactMetadata(env *tools.Env, metadata *pyjson.Object) (*pyjson.Object, error) {
-	text, err := pyjson.Dumps(metadata)
+func redactMetadata(env *tools.Env, metadata *jsonutil.Object) (*jsonutil.Object, error) {
+	text, err := jsonutil.Encode(metadata)
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(tools.RedactSensitiveTextWith(env, text, tools.RedactOptions{Force: true}))
+	decoded, err := jsonutil.Decode(tools.RedactSensitiveTextWith(env, text, tools.RedactOptions{Force: true}))
 	if err != nil {
-		var bad *pyjson.DecodeError
+		var bad *jsonutil.SyntaxError
 		if errors.As(err, &bad) {
 			return nil, nil
 		}
 		return nil, err
 	}
-	out, _ := decoded.(*pyjson.Object)
+	out, _ := decoded.(*jsonutil.Object)
 	return out, nil
 }
 
@@ -586,7 +588,7 @@ func coerceStrList(value any, name, what string, strip bool) ([]any, bool, error
 	}
 	out := []any{}
 	for _, x := range items {
-		if s := strings.TrimSpace(pyrepr.Str(x)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(x)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -597,7 +599,7 @@ func coerceStrList(value any, name, what string, strip bool) ([]any, bool, error
 func strItems(items []any) []string {
 	out := make([]string, 0, len(items))
 	for _, x := range items {
-		out = append(out, pyrepr.Str(x))
+		out = append(out, anyutil.String(x))
 	}
 	return out
 }
@@ -614,11 +616,11 @@ func requireDictMetadata(metadata any) error {
 }
 
 // Folds declared artifact paths into the metadata artifacts list, merged with a list already there
-func mergeArtifacts(metadata any, artifacts []any) (*pyjson.Object, error) {
+func mergeArtifacts(metadata any, artifacts []any) (*jsonutil.Object, error) {
 	if err := requireDictMetadata(metadata); err != nil {
 		return nil, err
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	if metadata != nil {
 		out, _ = dictObject(metadata)
 	}
@@ -635,7 +637,7 @@ func mergeArtifacts(metadata any, artifacts []any) (*pyjson.Object, error) {
 	}
 	merged, seen := []any{}, map[string]bool{}
 	for _, item := range append(append([]any{}, prior...), artifacts...) {
-		if s := strings.TrimSpace(pyrepr.Str(item)); s != "" && !seen[s] {
+		if s := strings.TrimSpace(anyutil.String(item)); s != "" && !seen[s] {
 			seen[s] = true
 			merged = append(merged, s)
 		}
@@ -650,7 +652,7 @@ func requireText(k *kanbanCall, name, message string) (any, error) {
 	if message == "" {
 		message = name + " is required"
 	}
-	if !pyrepr.Truthy(value) || strings.TrimSpace(pyrepr.Str(value)) == "" {
+	if !anyutil.IsTrue(value) || strings.TrimSpace(anyutil.String(value)) == "" {
 		return nil, reject(message)
 	}
 	return value, nil
@@ -667,7 +669,7 @@ func parseBoolArg(k *kanbanCall, name string) (bool, error) {
 	if b, isBool := value.(bool); isBool {
 		return b, nil
 	}
-	parsed, known := boolWords[strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))]
+	parsed, known := boolWords[strings.ToLower(strings.TrimSpace(anyutil.String(value)))]
 	if !known {
 		return false, reject(name + " must be a boolean or 'true'/'false'")
 	}
@@ -711,8 +713,8 @@ var (
 )
 
 // Named attributes of a board row as an ordered dict, every value None for a missing row
-func fieldsOf(obj any, names []string) *pyjson.Object {
-	out := pyjson.NewObject()
+func fieldsOf(obj any, names []string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, name := range names {
 		out.Set(name, rowField(obj, name))
 	}
@@ -843,7 +845,7 @@ func rowField(obj any, name string) any {
 }
 
 // Summary row of a task with its parent and child ids and their counts
-func taskSummaryDict(ctx context.Context, conn state.SQLiteConn, task *Task) (*pyjson.Object, error) {
+func taskSummaryDict(ctx context.Context, conn state.SQLiteConn, task *Task) (*jsonutil.Object, error) {
 	parents, err := ParentIDs(ctx, conn, task.ID)
 	if err != nil {
 		return nil, err

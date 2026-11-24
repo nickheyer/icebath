@@ -10,14 +10,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Consecutive lagging turns after which the transcript lag line escalates from warning to error
@@ -84,7 +84,7 @@ type TurnRunner struct {
 	localToolStarts    map[string]float64
 	localEditSnapshots map[string]*tools.LocalEditSnapshot
 	// Completion fields of local viewer tool calls worked out as their results were stored, published with their tool.complete
-	localToolFields map[string]*pyjson.Object
+	localToolFields map[string]*jsonutil.Object
 	// Terminal scope of the session policy while the turn runs inside it
 	policyScope atomic.Pointer[tools.TerminalScope]
 	// Launch policy of the session while the turn runs inside its scope
@@ -153,11 +153,11 @@ func (t *TurnRunner) publishAPITool(eventType string, callID any, toolName any, 
 		return
 	}
 	call, name := "", "tool"
-	if pyrepr.Truthy(callID) {
-		call = pyrepr.Str(callID)
+	if anyutil.IsTrue(callID) {
+		call = anyutil.String(callID)
 	}
-	if pyrepr.Truthy(toolName) {
-		name = pyrepr.Str(toolName)
+	if anyutil.IsTrue(toolName) {
+		name = anyutil.String(toolName)
 	}
 	if err := gateway.PublishAPIToolEvent(t.turnCtx, owner.authority, owner.sessionID, owner.generation, eventType, call, name, args, result); err != nil {
 		pkgLog().Debug(fmt.Sprintf("API tool event %s failed: %s", eventType, err))
@@ -166,7 +166,7 @@ func (t *TurnRunner) publishAPITool(eventType string, callID any, toolName any, 
 
 // Served runtime source of an API adapter for a finished turn under a confirmed model lock
 type turnRuntimeMetadataSource interface {
-	TurnRuntimeMetadata(ag *agent.AIAgent, settings any, confirmedRuntimeLock bool) (*pyjson.Object, error)
+	TurnRuntimeMetadata(ag *agent.AIAgent, settings any, confirmedRuntimeLock bool) (*jsonutil.Object, error)
 }
 
 // Settles a confirmed API model lock on the runtime it named, failing the turn on a mismatch
@@ -216,7 +216,7 @@ func resolutionFailureReply(ctx context.Context, err error, platform gateway.Pla
 		return "⚠️ " + err.Error(), authPermanent, false
 	}
 	var authErr *provider.AuthError
-	if pypath.IsOSError(err) && !errors.As(err, &authErr) {
+	if errorutil.IsSystem(err) && !errors.As(err, &authErr) {
 		return i18n.T(ctx, "gateway.errors.generic_failed", "", nil), "host_error", false
 	}
 	return i18n.T(ctx, "gateway.errors.no_credentials", "", nil), authPermanent, false

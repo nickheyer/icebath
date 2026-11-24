@@ -10,11 +10,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Production seams in place of the recorders the test package installs, for a child process run
@@ -153,7 +152,7 @@ func TestCompletedOccurrenceSurvivesRestartAndPrestampRollback(t *testing.T) {
 			}
 			effect := filepath.Join(h, "effects.txt")
 			script := filepath.Join(h, "scripts", "effect.py")
-			body := fmt.Sprintf("from pathlib import Path\np = Path(%s)\nwith p.open('a') as f: f.write('effect\\n')\nprint('done')\n", pyrepr.StrRepr(effect))
+			body := fmt.Sprintf("from pathlib import Path\np = Path(%s)\nwith p.open('a') as f: f.write('effect\\n')\nprint('done')\n", strconv.Quote(effect))
 			if err := os.WriteFile(script, []byte(body), 0o600); err != nil {
 				t.Fatal(err)
 			}

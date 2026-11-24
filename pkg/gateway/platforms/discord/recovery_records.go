@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var downNoticeRE = regexp.MustCompile(`\b(?:icebath|the agent|agent|the gateway|gateway|bmo)\s+(?:is|was|appears to be|is currently|was currently)\s+(?:down|offline|unavailable|not running)\b`)
@@ -224,8 +224,8 @@ func (a *DiscordAdapter) recordDiscordProcessingComplete(ctx context.Context, ev
 // Records a send outcome against its visual or internal reply anchor and returns it unchanged
 func (a *DiscordAdapter) recordResponseAsync(ctx context.Context, replyTo string, result gateway.SendResult, content string, final bool, metadata map[string]any) gateway.SendResult {
 	ledgerReplyTo := replyTo
-	if ledgerReplyTo == "" && metadata != nil && pyrepr.Truthy(metadata["reply_to_message_id"]) {
-		ledgerReplyTo = pyrepr.Str(metadata["reply_to_message_id"])
+	if ledgerReplyTo == "" && metadata != nil && anyutil.IsTrue(metadata["reply_to_message_id"]) {
+		ledgerReplyTo = anyutil.String(metadata["reply_to_message_id"])
 	}
 	a.recordDiscordResponse(ctx, ledgerReplyTo, result, final)
 	return result
@@ -344,7 +344,7 @@ func (a *DiscordAdapter) recordRecoveryScanStart(ctx context.Context, channels s
 	now := utcNowISO()
 	sorted := keysOf(channels)
 	sort.Strings(sorted)
-	channelsJSON, _ := pyjson.Dumps(sorted)
+	channelsJSON, _ := jsonutil.Encode(sorted)
 	a.withDiscordRecoveryDB(ctx, func(conn state.SQLiteConn) (any, error) {
 		_, err := conn.ExecContext(ctx, "INSERT OR REPLACE INTO discord_recovery_scans (scan_id, started_at, status, channels, window_seconds, limit_count) VALUES (?, ?, ?, ?, ?, ?)",
 			scanID, now, "running", channelsJSON, a.missedMessageBackfillWindowSeconds(ctx), a.missedMessageBackfillLimit(ctx))

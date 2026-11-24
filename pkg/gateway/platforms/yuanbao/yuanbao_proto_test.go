@@ -6,13 +6,13 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
-func get(o *pyjson.Object, keys ...string) any {
+func get(o *jsonutil.Object, keys ...string) any {
 	var v any = o
 	for _, k := range keys {
-		v = v.(*pyjson.Object).Vals[k]
+		v = v.(*jsonutil.Object).Value(k)
 	}
 	return v
 }
@@ -91,7 +91,7 @@ func TestMsgBodyElementTextRoundTrip(t *testing.T) {
 }
 
 func TestMsgBodyElementFileRoundTrip(t *testing.T) {
-	el, _ := pyjson.Loads(`{"msg_type": "TIMFileElem", "msg_content": {"url": "https://example.com/file.pdf", "file_size": 204800, "file_name": "document.pdf"}}`)
+	el, _ := jsonutil.Decode(`{"msg_type": "TIMFileElem", "msg_content": {"url": "https://example.com/file.pdf", "file_size": 204800, "file_name": "document.pdf"}}`)
 	enc, err := EncodeMsgBodyElement(el)
 	if err != nil {
 		t.Fatal(err)
@@ -134,14 +134,14 @@ func TestDecodeInboundPushBasicC2CTextMessage(t *testing.T) {
 		t.Fatalf("got %v", r)
 	}
 	body := get(r, "msg_body").([]any)
-	if len(body) != 1 || get(body[0].(*pyjson.Object), "msg_type") != "TIMTextElem" || get(body[0].(*pyjson.Object), "msg_content", "text") != "你好" {
+	if len(body) != 1 || get(body[0].(*jsonutil.Object), "msg_type") != "TIMTextElem" || get(body[0].(*jsonutil.Object), "msg_content", "text") != "你好" {
 		t.Fatalf("body %v", body)
 	}
 }
 
 func TestDecodeInboundPushReturnsNoneOnEmpty(t *testing.T) {
 	r := DecodeInboundPush(nil)
-	if r == nil || len(r.Keys) != 2 || get(r, "msg_seq") != int64(0) {
+	if r == nil || r.Len() != 2 || get(r, "msg_seq") != int64(0) {
 		t.Fatalf("got %v", r)
 	}
 	if DecodeInboundPush([]byte{0x0b}) != nil {
@@ -156,7 +156,7 @@ func TestDecodeInboundPushMultipleMsgBodyElements(t *testing.T) {
 	buf = append(buf, EncodeField(13, WTLen, EncodeMessage(el2))...)
 	r := DecodeInboundPush(buf)
 	body := get(r, "msg_body").([]any)
-	if len(body) != 2 || get(body[0].(*pyjson.Object), "msg_content", "text") != "part1" || get(body[1].(*pyjson.Object), "msg_content", "text") != "part2" {
+	if len(body) != 2 || get(body[0].(*jsonutil.Object), "msg_content", "text") != "part1" || get(body[1].(*jsonutil.Object), "msg_content", "text") != "part2" {
 		t.Fatalf("got %v", r)
 	}
 }
@@ -250,13 +250,13 @@ func TestEndToEndSendRecvC2C(t *testing.T) {
 func TestGroupInfoAndMemberListDecoders(t *testing.T) {
 	gi := append(EncodeField(1, WTLen, EncodeMessage([]byte("g"))), EncodeField(4, WTVarint, EncodeVarint(big.NewInt(9)))...)
 	rsp := append(EncodeField(2, WTLen, EncodeMessage([]byte("ok"))), EncodeField(3, WTLen, EncodeMessage(gi))...)
-	got, _ := pyjson.Dumps(DecodeQueryGroupInfoRsp(rsp))
+	got, _ := jsonutil.Encode(DecodeQueryGroupInfoRsp(rsp))
 	if got != `{"code": 0, "message": "ok", "group_name": "g", "owner_id": "", "owner_nickname": "", "member_count": 9}` {
 		t.Fatalf("group info %s", got)
 	}
 	mem := EncodeField(1, WTLen, EncodeMessage([]byte("u1")))
 	list := append(EncodeField(3, WTLen, EncodeMessage(mem)), EncodeField(5, WTVarint, []byte{1})...)
-	got, _ = pyjson.Dumps(DecodeGetGroupMemberListRsp(list))
+	got, _ = jsonutil.Encode(DecodeGetGroupMemberListRsp(list))
 	if got != `{"code": 0, "message": "", "members": [{"user_id": "u1", "role": 0}], "next_offset": 0, "is_complete": true}` {
 		t.Fatalf("member list %s", got)
 	}

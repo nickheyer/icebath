@@ -7,8 +7,6 @@ import (
 	"maps"
 	"strings"
 	"unicode/utf8"
-
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Pairs the real prompt count with the rough estimate and judges the armed compaction verdict
@@ -231,7 +229,7 @@ func dedupeToolResults(result []map[string]any) int {
 		if msg["role"] != "tool" || !ok || utf8.RuneCountInString(content) < pruneMinChars {
 			continue
 		}
-		sum := md5.Sum(pystr.EncodeUTF8Replace(content))
+		sum := md5.Sum([]byte(content))
 		h := hex.EncodeToString(sum[:])[:12]
 		if seen[h] {
 			result[i] = rewritten(msg, "[Duplicate tool output — same content as a more recent call]")

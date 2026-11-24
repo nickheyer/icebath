@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const installHint = "BlueBubbles: BLUEBUBBLES_SERVER_URL/BLUEBUBBLES_PASSWORD not configured"
@@ -29,7 +29,7 @@ func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error)
 	if strings.TrimSpace(settings.BluebubblesServerURL.Get(gateway.SettingsContext(ctx))) == "" {
 		return false, nil
 	}
-	if cfg != nil && pyrepr.Truthy(cfg.Extra["password"]) {
+	if cfg != nil && anyutil.IsTrue(cfg.Extra["password"]) {
 		return true, nil
 	}
 	return gateway.EnvIsConnected("BLUEBUBBLES_PASSWORD")(ctx, cfg)
@@ -57,7 +57,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			return gateway.SendError("BlueBubbles send failed: " + shown), nil
 		}
 		pkgLog().Debug("BlueBubbles standalone send failed", "error", err)
-		return gateway.SendError("BlueBubbles send failed: " + pyrepr.ExceptionMessage(err)), nil
+		return gateway.SendError("BlueBubbles send failed: " + err.Error()), nil
 	}
 	adapter, err := NewBlueBubblesAdapter(ctx, cfg)
 	if err != nil {
@@ -78,7 +78,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 		return fail(sendErr)
 	}
 	if !result.Success {
-		return gateway.SendError("BlueBubbles send failed: " + pyrepr.Str(result.Error)), nil
+		return gateway.SendError("BlueBubbles send failed: " + anyutil.String(result.Error)), nil
 	}
 	return map[string]any{"success": true, "platform": "bluebubbles", "chat_id": chatID, "message_id": result.MessageID}, nil
 }

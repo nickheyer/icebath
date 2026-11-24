@@ -9,7 +9,6 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"golang.org/x/text/unicode/norm"
 )
 
@@ -167,21 +166,11 @@ func pyURLUnparse(p pyURLParts) string {
 	return u
 }
 
-// Python unquote with UTF-8 errors replaced, each maximal invalid subpart one replacement character
+// Percent decoding with invalid UTF-8 in the decoded bytes replaced, each run of invalid bytes one replacement character
 func pyUnquoteReplace(s string) string {
 	var out, pending strings.Builder
 	flush := func() {
-		p := pending.String()
-		for i := 0; i < len(p); {
-			r, size := utf8.DecodeRuneInString(p[i:])
-			if r == utf8.RuneError && size <= 1 {
-				out.WriteString("�")
-				i += pystr.UTF8MaximalSubpart([]byte(p[i:]))
-				continue
-			}
-			out.WriteString(p[i : i+size])
-			i += size
-		}
+		out.WriteString(strings.ToValidUTF8(pending.String(), string(utf8.RuneError)))
 		pending.Reset()
 	}
 	for i := 0; i < len(s); i++ {

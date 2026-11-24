@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -14,11 +16,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/browser"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // URL schemes a browser CDP endpoint may use
@@ -40,8 +42,8 @@ func browserManage(ctx context.Context, rid any, params map[string]any) map[stri
 	}
 	switch p.Action {
 	case "", "status":
-		url := resolveBrowserCDPURL(ctx)
-		return ok(rid, tuigateway.Plain(tuigateway.BrowserManageResult{Connected: url != "", URL: url}))
+		cdpURL := resolveBrowserCDPURL(ctx)
+		return ok(rid, tuigateway.Plain(tuigateway.BrowserManageResult{Connected: cdpURL != "", URL: cdpURL}))
 	case "disconnect":
 		return browserDisconnect(ctx, rid)
 	}
@@ -54,27 +56,27 @@ func resolveBrowserCDPURL(ctx context.Context) string {
 }
 
 // Whether a parsed URL is the discovery style local default, never a concrete websocket endpoint
-func isDefaultLocalCDP(parsed pyurl.URL) bool {
-	port, hasPort, err := parsed.Port()
+func isDefaultLocalCDP(parsed *url.URL) bool {
+	port, hasPort, err := urlutil.Port(parsed)
 	if err != nil {
 		return false
 	}
 	if !hasPort {
 		port = 80
 	}
-	host := parsed.Hostname()
+	host := strings.ToLower(parsed.Hostname())
 	return (parsed.Scheme == "http" || parsed.Scheme == "ws") && (host == "127.0.0.1" || host == "localhost") && port == 9222 &&
 		(parsed.Path == "" || parsed.Path == "/" || parsed.Path == "/json" || parsed.Path == "/json/version")
 }
 
 // Whether /json/version or /json on the CDP host answers 2xx
-func cdpHTTPReachable(parsed pyurl.URL, timeout time.Duration) bool {
+func cdpHTTPReachable(parsed *url.URL, timeout time.Duration) bool {
 	scheme := map[string]string{"ws": "http", "wss": "https"}[parsed.Scheme]
 	if scheme == "" {
 		scheme = parsed.Scheme
 	}
-	root := strings.TrimRight(scheme+"://"+parsed.Netloc, "/")
-	client := &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: pyurl.UrlopenProxy}}
+	root := (&url.URL{Scheme: scheme, User: parsed.User, Host: parsed.Host}).String()
+	client := &http.Client{Timeout: timeout, Transport: &http.Transport{DialContext: netpref.DialContext((&net.Dialer{}).DialContext), Proxy: httputil.Proxy}}
 	for _, target := range []string{root + "/json/version", root + "/json"} {
 		resp, err := client.Get(target)
 		if err != nil {
@@ -106,10 +108,10 @@ func connectLocalDefault(ctx context.Context, port int, system string, announce 
 	}
 	launch := browser.LaunchChromeDebug(ctx, launchPort, system)
 	if launch.Launched {
-		discovered = pydeadline.PollUntil(func() (string, bool) {
+		discovered = syncutil.PollUntil(ctx, 10*time.Second, 500*time.Millisecond, func() (string, bool) {
 			found := browser.DiscoverLocalCDPURL(ctx, launchPort, time.Second)
 			return found, found != ""
-		}, 10*time.Second, 500*time.Millisecond)
+		})
 	}
 	if discovered != "" {
 		announce(fmt.Sprintf("Chromium-family browser launched and listening on port %d", launchPort), "info")
@@ -139,15 +141,15 @@ func reapProfileBrowsers(ctx context.Context) error {
 
 // Validates, reaches or launches and then publishes the profile's live CDP endpoint
 func browserConnect(ctx context.Context, rid any, p tuigateway.BrowserManageParams) (response map[string]any) {
-	url := ""
+	cdpURL := ""
 	if p.URL != nil {
-		url = strings.TrimSpace(*p.URL)
+		cdpURL = strings.TrimSpace(*p.URL)
 	}
-	if url == "" {
-		url = browser.DefaultBrowserCDPURL
+	if cdpURL == "" {
+		cdpURL = browser.DefaultBrowserCDPURL
 	}
 	sid := p.SessionID
-	system := pyplatform.System()
+	system := runtime.GOOS
 	messages := []string{}
 	announce := func(message string, level tuigateway.BrowserProgressLevel) {
 		messages = append(messages, message)
@@ -155,23 +157,23 @@ func browserConnect(ctx context.Context, rid any, p tuigateway.BrowserManagePara
 			emitEvent(ctx, tuigateway.BrowserProgressEvent.Name(), sid, tuigateway.BrowserProgressEvent.Wire(tuigateway.BrowserProgressPayload{Message: message, Level: level}))
 		}
 	}
-	target := url
-	if !strings.Contains(url, "://") {
-		target = "http://" + url
+	target := cdpURL
+	if !strings.Contains(cdpURL, "://") {
+		target = "http://" + cdpURL
 	}
-	parsed, err := pyurl.Parse(target)
+	parsed, err := url.Parse(target)
 	if err != nil {
-		panic(err)
+		return rpcErr(rid, 4015, fmt.Sprintf("invalid browser url: %s", cdpURL), nil)
 	}
 	if !cdpSchemes[parsed.Scheme] {
-		return rpcErr(rid, 4015, fmt.Sprintf("unsupported browser url: %s", url), nil)
+		return rpcErr(rid, 4015, fmt.Sprintf("unsupported browser url: %s", cdpURL), nil)
 	}
 	if parsed.Hostname() == "" {
-		return rpcErr(rid, 4015, fmt.Sprintf("missing host in browser url: %s", url), nil)
+		return rpcErr(rid, 4015, fmt.Sprintf("missing host in browser url: %s", cdpURL), nil)
 	}
-	port, hasPort, err := parsed.Port()
+	port, hasPort, err := urlutil.Port(parsed)
 	if err != nil {
-		return rpcErr(rid, 4015, fmt.Sprintf("invalid port in browser url: %s", url), nil)
+		return rpcErr(rid, 4015, fmt.Sprintf("invalid port in browser url: %s", cdpURL), nil)
 	}
 	if !hasPort {
 		port = 80
@@ -180,11 +182,11 @@ func browserConnect(ctx context.Context, rid any, p tuigateway.BrowserManagePara
 		}
 	}
 	if isDefaultLocalCDP(parsed) {
-		url = browser.DefaultBrowserCDPURL
-		if parsed, err = pyurl.Parse(url); err != nil {
+		cdpURL = browser.DefaultBrowserCDPURL
+		if parsed, err = url.Parse(cdpURL); err != nil {
 			panic(err)
 		}
-		if port, hasPort, _ = parsed.Port(); !hasPort {
+		if port, hasPort, _ = urlutil.Port(parsed); !hasPort {
 			port = 9222
 		}
 	}
@@ -200,26 +202,26 @@ func browserConnect(ctx context.Context, rid any, p tuigateway.BrowserManagePara
 	case (parsed.Scheme == "ws" || parsed.Scheme == "wss") && strings.HasPrefix(parsed.Path, "/devtools/browser/"):
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort(parsed.Hostname(), strconv.Itoa(port)), 2*time.Second)
 		if err != nil {
-			return rpcErr(rid, 5031, fmt.Sprintf("could not reach browser CDP at %s: %s", url, err), nil)
+			return rpcErr(rid, 5031, fmt.Sprintf("could not reach browser CDP at %s: %s", cdpURL, err), nil)
 		}
 		conn.Close()
 	case isDefaultLocalCDP(parsed):
 		discovered := connectLocalDefault(ctx, port, system, announce)
 		if discovered == "" {
-			return ok(rid, tuigateway.Plain(tuigateway.BrowserManageResult{URL: url, Messages: messages}))
+			return ok(rid, tuigateway.Plain(tuigateway.BrowserManageResult{URL: cdpURL, Messages: messages}))
 		}
-		url = discovered
-		if parsed, err = pyurl.Parse(url); err != nil {
+		cdpURL = discovered
+		if parsed, err = url.Parse(cdpURL); err != nil {
 			panic(err)
 		}
 	case !cdpHTTPReachable(parsed, 2*time.Second):
-		return rpcErr(rid, 5031, fmt.Sprintf("could not reach browser CDP at %s", url), nil)
+		return rpcErr(rid, 5031, fmt.Sprintf("could not reach browser CDP at %s", cdpURL), nil)
 	}
-	normalized := pyurl.Unparse(parsed)
+	normalized := parsed.String()
 	if !strings.HasPrefix(parsed.Path, "/devtools/browser/") {
-		bare := parsed
-		bare.Path, bare.Params, bare.Query, bare.Fragment = "", "", "", ""
-		normalized = pyurl.Unparse(bare)
+		bare := *parsed
+		bare.Path, bare.RawPath, bare.RawQuery, bare.ForceQuery, bare.Fragment, bare.RawFragment = "", "", "", false, "", ""
+		normalized = bare.String()
 	}
 	if err := reapProfileBrowsers(ctx); err != nil {
 		panic(err)

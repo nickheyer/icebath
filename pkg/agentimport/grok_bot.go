@@ -9,17 +9,14 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/dlclark/regexp2/v2"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -202,11 +199,11 @@ func RedactSecrets(value any) (any, int) {
 			total += n
 		}
 		return out, total
-	case *pyjson.Object:
-		out := pyjson.NewObject()
+	case *jsonutil.Object:
+		out := jsonutil.NewObject()
 		total := 0
-		for _, k := range t.Keys {
-			v, n := RedactSecrets(t.Vals[k])
+		for _, k := range t.Keys() {
+			v, n := RedactSecrets(t.Value(k))
 			out.Set(k, v)
 			total += n
 		}
@@ -227,7 +224,7 @@ func findAllGroup(re *regexp2.Regexp, text string) []string {
 }
 
 // ParseExport returns the bots of an export document or of every json block in a pasted reply, merged per bot
-func ParseExport(text string) ([]*pyjson.Object, error) {
+func ParseExport(text string) ([]*jsonutil.Object, error) {
 	blocks := findAllGroup(fenceRe, text)
 	candidates := blocks
 	if len(blocks) == 0 {
@@ -242,7 +239,7 @@ func ParseExport(text string) ([]*pyjson.Object, error) {
 			}
 		}
 	}
-	var documents []*pyjson.Object
+	var documents []*jsonutil.Object
 	for _, c := range candidates {
 		if d := loadDocument(c, len(blocks) == 0); d != nil {
 			documents = append(documents, d)
@@ -260,7 +257,7 @@ func ParseExport(text string) ([]*pyjson.Object, error) {
 		}
 		return nil, &ExportFormatError{fmt.Sprintf("no Grok Bot export found (expected a JSON document with \"format\": \"%s\" and a \"bots\" list)", exportFormat)}
 	}
-	var bots []*pyjson.Object
+	var bots []*jsonutil.Object
 	for _, d := range documents {
 		valid, err := validatedBots(d)
 		if err != nil {
@@ -272,18 +269,18 @@ func ParseExport(text string) ([]*pyjson.Object, error) {
 }
 
 // A candidate as an export document, or with bareOK a bare bot list or bot, else nil
-func loadDocument(candidate string, bareOK bool) *pyjson.Object {
+func loadDocument(candidate string, bareOK bool) *jsonutil.Object {
 	attempts := []string{candidate, dropTrailingCommas(candidate), dropTrailingCommas(smartQuotes.Replace(candidate))}
 	for _, attempt := range attempts {
-		data, err := pyjson.Loads(attempt)
+		data, err := jsonutil.Decode(attempt)
 		if err != nil {
 			continue
 		}
 		if o, ok := asObject(data); ok {
-			if f, _ := o.Vals["format"].(string); f == exportFormat {
+			if f, _ := o.Value("format").(string); f == exportFormat {
 				return o
 			}
-			if _, has := o.Vals["bots"]; has {
+			if _, has := o.Get("bots"); has {
 				return o
 			}
 		}
@@ -298,25 +295,25 @@ func loadDocument(candidate string, bareOK bool) *pyjson.Object {
 					all = false
 					break
 				}
-				if _, has := o.Vals["name"]; !has {
+				if _, has := o.Get("name"); !has {
 					all = false
 					break
 				}
 			}
 			if all {
-				return pyjson.ObjectOf("format", exportFormat, "version", int64(1), "bots", list)
+				return jsonutil.ObjectOf("format", exportFormat, "version", int64(1), "bots", list)
 			}
 		}
 		if o, ok := asObject(data); ok {
-			if _, has := o.Vals["name"]; has {
+			if _, has := o.Get("name"); has {
 				shaped := false
 				for _, k := range append([]string{"instructions"}, listKeys...) {
-					if _, ok := o.Vals[k]; ok {
+					if _, ok := o.Get(k); ok {
 						shaped = true
 					}
 				}
 				if shaped {
-					return pyjson.ObjectOf("format", exportFormat, "version", int64(1), "bots", []any{o})
+					return jsonutil.ObjectOf("format", exportFormat, "version", int64(1), "bots", []any{o})
 				}
 			}
 		}
@@ -356,8 +353,8 @@ func dropTrailingCommas(text string) string {
 }
 
 // Lowercased trimmed name key of a bot
-func botKey(bot *pyjson.Object) string {
-	return strings.ToLower(strings.TrimSpace(pyStr(bot.Vals["name"])))
+func botKey(bot *jsonutil.Object) string {
+	return strings.ToLower(strings.TrimSpace(pyStr(bot.Value("name"))))
 }
 
 // Python emptiness of the values a merge leaves in place
@@ -369,7 +366,7 @@ func emptyValue(v any) bool {
 		return t == ""
 	case []any:
 		return len(t) == 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t == nil || t.Len() == 0
 	}
 	return false
@@ -385,29 +382,29 @@ func isListKey(k string) bool {
 }
 
 // MergeBots makes one bot per name, lists unioned and scalars keeping the last non empty value
-func MergeBots(bots []*pyjson.Object) []*pyjson.Object {
-	merged := pyjson.NewObject()
+func MergeBots(bots []*jsonutil.Object) []*jsonutil.Object {
+	merged := jsonutil.NewObject()
 	for _, bot := range bots {
 		key := botKey(bot)
-		into, ok := asObject(merged.Vals[key])
+		into, ok := asObject(merged.Value(key))
 		if !ok {
-			into = pyjson.NewObject()
+			into = jsonutil.NewObject()
 			merged.Set(key, into)
 		}
-		for _, field := range bot.Keys {
-			value := bot.Vals[field]
+		for _, field := range bot.Keys() {
+			value := bot.Value(field)
 			if list, isList := value.([]any); isList && isListKey(field) {
-				into.Set(field, union(pyIter(into.Vals[field]), list))
+				into.Set(field, union(pyIter(into.Value(field)), list))
 				continue
 			}
-			if _, has := into.Vals[field]; !emptyValue(value) || !has {
+			if _, has := into.Get(field); !emptyValue(value) || !has {
 				into.Set(field, value)
 			}
 		}
 	}
-	out := make([]*pyjson.Object, 0, merged.Len())
-	for _, k := range merged.Keys {
-		out = append(out, merged.Vals[k].(*pyjson.Object))
+	out := make([]*jsonutil.Object, 0, merged.Len())
+	for _, k := range merged.Keys() {
+		out = append(out, merged.Value(k).(*jsonutil.Object))
 	}
 	return out
 }
@@ -423,9 +420,9 @@ func pyIter(v any) []any {
 			out = append(out, string(r))
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		out := make([]any, 0, t.Len())
-		for _, k := range t.Keys {
+		for _, k := range t.Keys() {
 			out = append(out, k)
 		}
 		return out
@@ -438,27 +435,27 @@ func unionIdent(item any) string {
 	if s, ok := item.(string); ok {
 		return strings.TrimSpace(s)
 	}
-	text, err := pyjson.Dumps(item, pyjson.SortKeys(true))
+	text, err := jsonutil.Encode(item, jsonutil.SortKeys())
 	if err != nil {
-		return pyrepr.Repr(item)
+		return anyutil.Quote(item)
 	}
 	return text
 }
 
 // Union of two lists dropping only exact repeats, a repeat in current keeping its first position and last value
 func union(current, incoming []any) []any {
-	order := pyjson.NewObject()
+	order := jsonutil.NewObject()
 	for _, item := range current {
 		order.Set(unionIdent(item), item)
 	}
 	for _, item := range incoming {
-		if _, has := order.Vals[unionIdent(item)]; !has {
+		if _, has := order.Get(unionIdent(item)); !has {
 			order.Set(unionIdent(item), item)
 		}
 	}
 	out := make([]any, 0, order.Len())
-	for _, k := range order.Keys {
-		out = append(out, order.Vals[k])
+	for _, k := range order.Keys() {
+		out = append(out, order.Value(k))
 	}
 	return out
 }
@@ -467,8 +464,8 @@ func union(current, incoming []any) []any {
 func secretKeys(value any, path string) []string {
 	var found []string
 	switch t := value.(type) {
-	case *pyjson.Object:
-		for _, key := range t.Keys {
+	case *jsonutil.Object:
+		for _, key := range t.Keys() {
 			here := key
 			if path != "" {
 				here = path + "." + key
@@ -476,7 +473,7 @@ func secretKeys(value any, path string) []string {
 			if IsSecretKey(key) || strings.Contains(strings.ToLower(key), "password") {
 				found = append(found, here)
 			}
-			found = append(found, secretKeys(t.Vals[key], here)...)
+			found = append(found, secretKeys(t.Value(key), here)...)
 		}
 	case []any:
 		for i, child := range t {
@@ -504,8 +501,8 @@ func equalsOne(v any) bool {
 }
 
 // Bots of a validated export document, refusing other versions, credential keys and nameless bots
-func validatedBots(data *pyjson.Object) ([]*pyjson.Object, error) {
-	if version, has := data.Vals["version"]; has && !equalsOne(version) {
+func validatedBots(data *jsonutil.Object) ([]*jsonutil.Object, error) {
+	if version, has := data.Get("version"); has && !equalsOne(version) {
 		return nil, &ExportFormatError{"unsupported export version " + errchain.Show(version)}
 	}
 	if secrets := secretKeys(data, ""); len(secrets) > 0 {
@@ -516,16 +513,16 @@ func validatedBots(data *pyjson.Object) ([]*pyjson.Object, error) {
 		return nil, &ExportFormatError{"the export carries credential-looking keys, so it was not read: " +
 			strings.Join(shown, ", ") + ". Ask the Bot to export again without them."}
 	}
-	list, ok := data.Vals["bots"].([]any)
+	list, ok := data.Value("bots").([]any)
 	if !ok || len(list) == 0 {
 		return nil, &ExportFormatError{"the export has no bots"}
 	}
-	bots := make([]*pyjson.Object, 0, len(list))
+	bots := make([]*jsonutil.Object, 0, len(list))
 	for i, b := range list {
 		o, ok := asObject(b)
 		name := ""
-		if ok && truthy(o.Vals["name"]) {
-			name = strings.TrimSpace(pyStr(o.Vals["name"]))
+		if ok && truthy(o.Value("name")) {
+			name = strings.TrimSpace(pyStr(o.Value("name")))
 		}
 		if name == "" {
 			return nil, &ExportFormatError{fmt.Sprintf("bots[%d] needs a name", i)}
@@ -548,9 +545,9 @@ func stringsOf(value any) []string {
 }
 
 // Objects of a list value
-func dictsOf(value any) []*pyjson.Object {
+func dictsOf(value any) []*jsonutil.Object {
 	list, _ := value.([]any)
-	var out []*pyjson.Object
+	var out []*jsonutil.Object
 	for _, v := range list {
 		if o, ok := asObject(v); ok {
 			out = append(out, o)
@@ -578,25 +575,25 @@ func renameSkill(ctx context.Context, skillMD, name string) error {
 }
 
 // SKILL.md text written for a skill the export carries inline
-func skillMarkdown(skill *pyjson.Object, name string) string {
-	desc := skill.Vals["description"]
+func skillMarkdown(skill *jsonutil.Object, name string) string {
+	desc := skill.Value("description")
 	description := ""
 	if truthy(desc) {
 		description = pyStr(desc)
 	} else {
-		description = "Imported Grok Bot skill: " + pyrepr.Str(skill.Vals["name"])
+		description = "Imported Grok Bot skill: " + anyutil.String(skill.Value("name"))
 	}
 	description = strings.Join(strings.Fields(description), " ")
 	if rs := []rune(description); len(rs) > 300 {
 		description = string(rs[:300])
 	}
-	quoted, _ := pyjson.Dumps(description)
+	quoted, _ := jsonutil.Encode(description)
 	body := ""
-	if truthy(skill.Vals["instructions"]) {
-		body = strings.TrimSpace(pyStr(skill.Vals["instructions"]))
+	if truthy(skill.Value("instructions")) {
+		body = strings.TrimSpace(pyStr(skill.Value("instructions")))
 	}
 	if !strings.HasPrefix(body, "# ") {
-		body = "# " + strings.TrimSpace(pyrepr.Str(skill.Vals["name"])) + "\n\n" + body
+		body = "# " + strings.TrimSpace(anyutil.String(skill.Value("name"))) + "\n\n" + body
 	}
 	return "---\nname: " + name + "\ndescription: " + quoted + "\n---\n\n" + body + "\n"
 }
@@ -604,7 +601,7 @@ func skillMarkdown(skill *pyjson.Object, name string) string {
 // A bot read from an export or a database with the file it came from
 type sourcedBot struct {
 	path string
-	bot  *pyjson.Object
+	bot  *jsonutil.Object
 }
 
 // BotImporter plans and applies normalized bots into one home, the shared core of the Grok Bot and OpenBot importers
@@ -740,14 +737,14 @@ func (g *BotImporter) loadExportBots() []sourcedBot {
 		for _, bot := range parsed {
 			red, n := RedactSecrets(bot)
 			total += n
-			found = append(found, sourcedBot{path: path, bot: red.(*pyjson.Object)})
+			found = append(found, sourcedBot{path: path, bot: red.(*jsonutil.Object)})
 		}
 		if total > 0 {
 			g.strippedSecrets = append(g.strippedSecrets, fmt.Sprintf("%s: %d token-like value(s) redacted", filepath.Base(path), total))
 		}
 	}
 	origin := map[string]string{}
-	all := make([]*pyjson.Object, 0, len(found))
+	all := make([]*jsonutil.Object, 0, len(found))
 	for _, sb := range found {
 		origin[botKey(sb.bot)] = sb.path
 		all = append(all, sb.bot)
@@ -759,13 +756,13 @@ func (g *BotImporter) loadExportBots() []sourcedBot {
 	return out
 }
 
-func (g *BotImporter) importBot(path string, bot *pyjson.Object, single bool) error {
-	name := strings.TrimSpace(pyStr(bot.Vals["name"]))
+func (g *BotImporter) importBot(path string, bot *jsonutil.Object, single bool) error {
+	name := strings.TrimSpace(pyStr(bot.Value("name")))
 	slugs := map[string]bool{}
-	for _, r := range dictsOf(bot.Vals["routines"]) {
+	for _, r := range dictsOf(bot.Value("routines")) {
 		label := ""
-		if truthy(r.Vals["name"]) {
-			label = pyStr(r.Vals["name"])
+		if truthy(r.Value("name")) {
+			label = pyStr(r.Value("name"))
 		}
 		slugs[slug(label)] = true
 	}
@@ -775,23 +772,23 @@ func (g *BotImporter) importBot(path string, bot *pyjson.Object, single bool) er
 		return err
 	}
 	memories := filepath.Join(g.targetRoot, "memories")
-	if err := g.mergeList("memories", source, filepath.Join(memories, "MEMORY.md"), stringsOf(bot.Vals["memories"])); err != nil {
+	if err := g.mergeList("memories", source, filepath.Join(memories, "MEMORY.md"), stringsOf(bot.Value("memories"))); err != nil {
 		return err
 	}
-	if err := g.mergeList("user-facts", source, filepath.Join(memories, "USER.md"), stringsOf(bot.Vals["user_facts"])); err != nil {
+	if err := g.mergeList("user-facts", source, filepath.Join(memories, "USER.md"), stringsOf(bot.Value("user_facts"))); err != nil {
 		return err
 	}
-	skills, err := g.importSkills(source, dictsOf(bot.Vals["skills"]))
+	skills, err := g.importSkills(source, dictsOf(bot.Value("skills")))
 	if err != nil {
 		return err
 	}
-	if err := g.importRoutines(source, name, dictsOf(bot.Vals["routines"]), skills); err != nil {
+	if err := g.importRoutines(source, name, dictsOf(bot.Value("routines")), skills); err != nil {
 		return err
 	}
-	if err := g.importApps(source, dictsOf(bot.Vals["apps"])); err != nil {
+	if err := g.importApps(source, dictsOf(bot.Value("apps"))); err != nil {
 		return err
 	}
-	if servers, ok := asObject(bot.Vals["mcp_servers"]); ok && servers.Len() > 0 {
+	if servers, ok := asObject(bot.Value("mcp_servers")); ok && servers.Len() > 0 {
 		return g.importMCPServers(servers, "mcp-servers")
 	}
 	return nil
@@ -811,14 +808,14 @@ func isSeededSoul(text string) bool {
 }
 
 // The role becomes SOUL.md while that is seeded and one Bot imports, else its lines join the memory entries
-func (g *BotImporter) importRole(source string, bot *pyjson.Object, single bool) error {
-	name := strings.TrimSpace(pyStr(bot.Vals["name"]))
+func (g *BotImporter) importRole(source string, bot *jsonutil.Object, single bool) error {
+	name := strings.TrimSpace(pyStr(bot.Value("name")))
 	title, instructions := "", ""
-	if truthy(bot.Vals["title"]) {
-		title = strings.TrimSpace(pyStr(bot.Vals["title"]))
+	if truthy(bot.Value("title")) {
+		title = strings.TrimSpace(pyStr(bot.Value("title")))
 	}
-	if truthy(bot.Vals["instructions"]) {
-		instructions = strings.TrimSpace(pyStr(bot.Vals["instructions"]))
+	if truthy(bot.Value("instructions")) {
+		instructions = strings.TrimSpace(pyStr(bot.Value("instructions")))
 	}
 	if instructions == "" {
 		g.record("role", source, "", "skipped", "No instructions found", nil)
@@ -860,7 +857,7 @@ func (g *BotImporter) importRole(source string, bot *pyjson.Object, single bool)
 }
 
 // Writes each skill and returns export skill name lowercased to the imported skill name
-func (g *BotImporter) importSkills(source string, skills []*pyjson.Object) (map[string]string, error) {
+func (g *BotImporter) importSkills(source string, skills []*jsonutil.Object) (map[string]string, error) {
 	root := filepath.Join(g.targetRoot, "skills", g.skillCategory)
 	mapped := map[string]string{}
 	if len(skills) == 0 {
@@ -869,18 +866,18 @@ func (g *BotImporter) importSkills(source string, skills []*pyjson.Object) (map[
 	}
 	for _, skill := range skills {
 		label := ""
-		if truthy(skill.Vals["name"]) {
-			label = strings.TrimSpace(pyStr(skill.Vals["name"]))
+		if truthy(skill.Value("name")) {
+			label = strings.TrimSpace(pyStr(skill.Value("name")))
 		}
 		folder := ""
-		if truthy(skill.Vals["path"]) {
-			folder = pyStr(skill.Vals["path"])
+		if truthy(skill.Value("path")) {
+			folder = pyStr(skill.Value("path"))
 		}
 		if folder != "" && !isFile(filepath.Join(folder, "SKILL.md")) {
 			g.record("skill", source+" / "+label, "", "skipped", "No SKILL.md in "+folder, nil)
 			continue
 		}
-		hasText := truthy(skill.Vals["instructions"]) && strings.TrimSpace(pyStr(skill.Vals["instructions"])) != ""
+		hasText := truthy(skill.Value("instructions")) && strings.TrimSpace(pyStr(skill.Value("instructions"))) != ""
 		if label == "" || (folder == "" && !hasText) {
 			shown := label
 			if shown == "" {
@@ -891,7 +888,7 @@ func (g *BotImporter) importSkills(source string, skills []*pyjson.Object) (map[
 		}
 		identity := folder
 		if identity == "" {
-			identity = pyrepr.Str(skill.Vals["instructions"])
+			identity = anyutil.String(skill.Value("instructions"))
 		}
 		name := g.uniqueSlug(slug(label), strings.ToLower(label)+"\x00"+identity)
 		destination := filepath.Join(root, name)
@@ -917,7 +914,7 @@ func (g *BotImporter) importSkills(source string, skills []*pyjson.Object) (map[
 					}
 					return skip
 				}
-				if err := pyfs.CopyTree(src, dst, false, false, ignore); err != nil {
+				if err := fsutil.CopyTree(src, dst, fsutil.CopyTreeOptions{Ignore: ignore}); err != nil {
 					return "", err
 				}
 				return "", renameSkill(g.ctx, filepath.Join(dst, "SKILL.md"), filepath.Base(dst))
@@ -955,7 +952,7 @@ func (g *BotImporter) uniqueSlug(s, identity string) string {
 }
 
 // Scheduled routines become cron jobs, paused unless activating, event routines saved as notes
-func (g *BotImporter) importRoutines(source, botName string, routines []*pyjson.Object, skills map[string]string) error {
+func (g *BotImporter) importRoutines(source, botName string, routines []*jsonutil.Object, skills map[string]string) error {
 	if len(routines) == 0 {
 		g.record("routines", source, "", "skipped", "No routines found", nil)
 		return nil
@@ -969,11 +966,11 @@ func (g *BotImporter) importRoutines(source, botName string, routines []*pyjson.
 		existing[j.Name] = true
 	}
 	planned := map[string]bool{}
-	var unscheduled []*pyjson.Object
+	var unscheduled []*jsonutil.Object
 	for _, routine := range routines {
 		label := ""
-		if truthy(routine.Vals["name"]) {
-			label = strings.TrimSpace(pyStr(routine.Vals["name"]))
+		if truthy(routine.Value("name")) {
+			label = strings.TrimSpace(pyStr(routine.Value("name")))
 		}
 		if label == "" {
 			label = "routine"
@@ -988,8 +985,8 @@ func (g *BotImporter) importRoutines(source, botName string, routines []*pyjson.
 		}
 		where := "cron job '" + jobName + "'"
 		instruction := ""
-		if truthy(routine.Vals["instruction"]) {
-			instruction = strings.TrimSpace(pyStr(routine.Vals["instruction"]))
+		if truthy(routine.Value("instruction")) {
+			instruction = strings.TrimSpace(pyStr(routine.Value("instruction")))
 		}
 		if instruction == "" {
 			g.record("routine", source+" / "+label, "", "skipped", "Routine has no instruction", nil)
@@ -1006,12 +1003,12 @@ func (g *BotImporter) importRoutines(source, botName string, routines []*pyjson.
 		}
 		planned[jobName] = true
 		jobSkills := []string{}
-		for _, s := range stringsOf(routine.Vals["skills"]) {
+		for _, s := range stringsOf(routine.Value("skills")) {
 			if mapped, ok := skills[strings.ToLower(s)]; ok {
 				jobSkills = append(jobSkills, mapped)
 			}
 		}
-		paused := !g.activateRoutines || truthy(routine.Vals["paused"])
+		paused := !g.activateRoutines || truthy(routine.Value("paused"))
 		zone := validZone(routine)
 		details := map[string]any{"schedule": schedule, "paused": paused, "skills": jobSkills}
 		if note := zoneNote(routine); note != "" {
@@ -1053,18 +1050,18 @@ func (g *BotImporter) importRoutines(source, botName string, routines []*pyjson.
 func strPtr(s string) *string { return &s }
 
 // Schedule string cron accepts for a routine, false for an event triggered one
-func (g *BotImporter) routineSchedule(routine *pyjson.Object) (string, bool) {
+func (g *BotImporter) routineSchedule(routine *jsonutil.Object) (string, bool) {
 	trigger := "schedule"
-	if truthy(routine.Vals["trigger"]) {
-		trigger = pyStr(routine.Vals["trigger"])
+	if truthy(routine.Value("trigger")) {
+		trigger = pyStr(routine.Value("trigger"))
 	}
 	if !scheduleTrigger[strings.ToLower(strings.TrimSpace(trigger))] {
 		return "", false
 	}
 	for _, key := range []string{"schedule_cron", "schedule_text"} {
 		candidate := ""
-		if truthy(routine.Vals[key]) {
-			candidate = strings.TrimSpace(pyStr(routine.Vals[key]))
+		if truthy(routine.Value(key)) {
+			candidate = strings.TrimSpace(pyStr(routine.Value(key)))
 		}
 		if candidate == "" {
 			continue
@@ -1078,25 +1075,25 @@ func (g *BotImporter) routineSchedule(routine *pyjson.Object) (string, bool) {
 }
 
 // Time zone of a routine when it names a real IANA zone, else empty
-func validZone(routine *pyjson.Object) string {
+func validZone(routine *jsonutil.Object) string {
 	tz := ""
-	if truthy(routine.Vals["timezone"]) {
-		tz = strings.TrimSpace(pyStr(routine.Vals["timezone"]))
+	if truthy(routine.Value("timezone")) {
+		tz = strings.TrimSpace(pyStr(routine.Value("timezone")))
 	}
 	if tz == "" {
 		return ""
 	}
-	if _, err := pydatetime.ZoneInfo(tz); err != nil {
+	if _, err := time.LoadLocation(tz); err != nil {
 		return ""
 	}
 	return tz
 }
 
 // Says when the job runs on the profile clock because the routine zone is unknown
-func zoneNote(routine *pyjson.Object) string {
+func zoneNote(routine *jsonutil.Object) string {
 	tz := ""
-	if truthy(routine.Vals["timezone"]) {
-		tz = strings.TrimSpace(pyStr(routine.Vals["timezone"]))
+	if truthy(routine.Value("timezone")) {
+		tz = strings.TrimSpace(pyStr(routine.Value("timezone")))
 	}
 	if tz == "" || validZone(routine) != "" {
 		return ""
@@ -1105,30 +1102,30 @@ func zoneNote(routine *pyjson.Object) string {
 }
 
 // Event triggered routines saved in full where the user can rebuild them
-func (g *BotImporter) noteEventRoutines(source, botName string, routines []*pyjson.Object) error {
+func (g *BotImporter) noteEventRoutines(source, botName string, routines []*jsonutil.Object) error {
 	destination := filepath.Join(g.targetRoot, g.agent+"-import", slug(botName)+"-event-routines.md")
 	lines := []string{"# " + botName + ": " + g.product + " routines that run on an event", "",
 		"These start on something happening instead of a schedule, so they were not turned into " +
 			"cron jobs. Recreate each in Icebath (ask Icebath to set it up from this file).", ""}
 	for _, r := range routines {
 		name := "routine"
-		if truthy(r.Vals["name"]) {
-			name = pyStr(r.Vals["name"])
+		if truthy(r.Value("name")) {
+			name = pyStr(r.Value("name"))
 		}
 		trigger := "unknown"
-		if truthy(r.Vals["trigger"]) {
-			trigger = pyStr(r.Vals["trigger"])
+		if truthy(r.Value("trigger")) {
+			trigger = pyStr(r.Value("trigger"))
 		}
 		detail := "n/a"
 		switch {
-		case truthy(r.Vals["trigger_details"]):
-			detail = pyStr(r.Vals["trigger_details"])
-		case truthy(r.Vals["schedule_text"]):
-			detail = pyStr(r.Vals["schedule_text"])
+		case truthy(r.Value("trigger_details")):
+			detail = pyStr(r.Value("trigger_details"))
+		case truthy(r.Value("schedule_text")):
+			detail = pyStr(r.Value("schedule_text"))
 		}
 		instruction := ""
-		if truthy(r.Vals["instruction"]) {
-			instruction = pyStr(r.Vals["instruction"])
+		if truthy(r.Value("instruction")) {
+			instruction = pyStr(r.Value("instruction"))
 		}
 		lines = append(lines, "## "+strings.TrimSpace(name), "", "- Trigger: "+trigger, "- Details: "+detail, "",
 			strings.TrimSpace(instruction), "")
@@ -1159,18 +1156,18 @@ func (g *BotImporter) noteEventRoutines(source, botName string, routines []*pyjs
 }
 
 // Apps with a remote MCP URL become MCP servers and the others are listed to connect by hand
-func (g *BotImporter) importApps(source string, apps []*pyjson.Object) error {
+func (g *BotImporter) importApps(source string, apps []*jsonutil.Object) error {
 	if len(apps) == 0 {
 		return nil
 	}
-	servers := pyjson.NewObject()
+	servers := jsonutil.NewObject()
 	for _, a := range apps {
 		url := ""
-		if truthy(a.Vals["mcp_url"]) {
-			url = pyStr(a.Vals["mcp_url"])
+		if truthy(a.Value("mcp_url")) {
+			url = pyStr(a.Value("mcp_url"))
 		}
 		if strings.HasPrefix(url, "https://") || strings.HasPrefix(url, "http://") {
-			servers.Set(slug(pyrepr.Str(a.Vals["name"])), pyjson.ObjectOf("url", strings.TrimSpace(pyStr(a.Vals["mcp_url"]))))
+			servers.Set(slug(anyutil.String(a.Value("name"))), jsonutil.ObjectOf("url", strings.TrimSpace(pyStr(a.Value("mcp_url")))))
 		}
 	}
 	if servers.Len() > 0 {
@@ -1181,10 +1178,10 @@ func (g *BotImporter) importApps(source string, apps []*pyjson.Object) error {
 	var others []string
 	for _, a := range apps {
 		name := ""
-		if truthy(a.Vals["name"]) {
-			name = strings.TrimSpace(pyStr(a.Vals["name"]))
+		if truthy(a.Value("name")) {
+			name = strings.TrimSpace(pyStr(a.Value("name")))
 		}
-		if _, isServer := servers.Vals[slug(pyrepr.Str(a.Vals["name"]))]; !isServer && name != "" {
+		if _, isServer := servers.Get(slug(anyutil.String(a.Value("name")))); !isServer && name != "" {
 			others = append(others, name)
 		}
 	}

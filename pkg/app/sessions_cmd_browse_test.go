@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/cliui"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Screen of thirty rows and a hundred twenty columns replaying a key sequence, colors off
@@ -41,9 +41,9 @@ func (f *browseFakeScreen) InitPairs(map[int]int) error { return nil }
 func (f *browseFakeScreen) Colors() int                 { return 0 }
 
 // Rich session rows the way the listing returns them, every third one untitled
-func makeBrowseSessions(n int) []*pyjson.Object {
+func makeBrowseSessions(n int) []*jsonutil.Object {
 	now := float64(time.Now().UnixNano()) / 1e9
-	var sessions []*pyjson.Object
+	var sessions []*jsonutil.Object
 	for i := range n {
 		source, title := "telegram", any(fmt.Sprintf("Session %d", i))
 		if i%2 == 0 {
@@ -52,7 +52,7 @@ func makeBrowseSessions(n int) []*pyjson.Object {
 		if i%3 == 0 {
 			title = nil
 		}
-		sessions = append(sessions, pyjson.ObjectOf("id", fmt.Sprintf("20260308_%06d_abcdef", i), "source", source, "model", "test/model",
+		sessions = append(sessions, jsonutil.ObjectOf("id", fmt.Sprintf("20260308_%06d_abcdef", i), "source", source, "model", "test/model",
 			"title", title, "preview", fmt.Sprintf("Hello from session %d", i), "last_active", now-float64(i)*3600,
 			"started_at", now-float64(i)*3600-60, "message_count", (i+1)*5))
 	}
@@ -60,7 +60,7 @@ func makeBrowseSessions(n int) []*pyjson.Object {
 }
 
 // Runs the picker with full screen support absent, the answer typed on stdin
-func browseFallback(t *testing.T, sessions []*pyjson.Object, stdin string) (string, string) {
+func browseFallback(t *testing.T, sessions []*jsonutil.Object, stdin string) (string, string) {
 	t.Helper()
 	r, out := sessionsTestRun(t, sessionsTestHome(t), map[string]any{}, stdin)
 	console().OpenScreen = func() (cliui.Screen, func(), error) { return nil, nil, cliui.ErrCursesInit }
@@ -72,7 +72,7 @@ func browseFallback(t *testing.T, sessions []*pyjson.Object, stdin string) (stri
 }
 
 // Runs the full screen picker over a simulated key sequence
-func browseWithKeys(t *testing.T, sessions []*pyjson.Object, keys []int) string {
+func browseWithKeys(t *testing.T, sessions []*jsonutil.Object, keys []int) string {
 	t.Helper()
 	r, _ := sessionsTestRun(t, sessionsTestHome(t), map[string]any{}, "")
 	screen := &browseFakeScreen{keys: keys, lines: map[int]string{}}
@@ -104,7 +104,7 @@ func TestSessionBrowsePickerFallbackModeValidSelection(t *testing.T) {
 }
 
 func TestSessionBrowsePickerFallbackShowsPreviewWhenNoTitle(t *testing.T) {
-	sessions := []*pyjson.Object{pyjson.ObjectOf("id", "test_002", "source", "cli", "title", nil,
+	sessions := []*jsonutil.Object{jsonutil.ObjectOf("id", "test_002", "source", "cli", "title", nil,
 		"preview", "Hello world test message", "last_active", float64(time.Now().Unix()))}
 	if _, out := browseFallback(t, sessions, "q\n"); !strings.Contains(out, "Hello world test message") {
 		t.Fatalf("output %s", out)
@@ -119,10 +119,10 @@ func TestCursesBrowseEscapeCancels(t *testing.T) {
 
 func TestCursesBrowseTypeToFilterThenEnter(t *testing.T) {
 	now := float64(time.Now().Unix())
-	sessions := []*pyjson.Object{
-		pyjson.ObjectOf("id", "s1", "source", "cli", "title", "Alpha project", "preview", "", "last_active", now),
-		pyjson.ObjectOf("id", "s2", "source", "cli", "title", "Beta project", "preview", "", "last_active", now),
-		pyjson.ObjectOf("id", "s3", "source", "cli", "title", "Gamma project", "preview", "", "last_active", now),
+	sessions := []*jsonutil.Object{
+		jsonutil.ObjectOf("id", "s1", "source", "cli", "title", "Alpha project", "preview", "", "last_active", now),
+		jsonutil.ObjectOf("id", "s2", "source", "cli", "title", "Beta project", "preview", "", "last_active", now),
+		jsonutil.ObjectOf("id", "s3", "source", "cli", "title", "Gamma project", "preview", "", "last_active", now),
 	}
 	keys := []int{'B', 'e', 't', 'a', 10}
 	if selected := browseWithKeys(t, sessions, keys); selected != "s2" {
@@ -132,10 +132,10 @@ func TestCursesBrowseTypeToFilterThenEnter(t *testing.T) {
 
 func TestEdgeCasesRelativeTimeFormatting(t *testing.T) {
 	now := float64(time.Now().UnixNano()) / 1e9
-	sessions := []*pyjson.Object{
-		pyjson.ObjectOf("id", "recent", "source", "cli", "title", nil, "preview", "just now test", "last_active", now),
-		pyjson.ObjectOf("id", "hour_ago", "source", "cli", "title", nil, "preview", "hour ago test", "last_active", now-7200),
-		pyjson.ObjectOf("id", "days_ago", "source", "cli", "title", nil, "preview", "days ago test", "last_active", now-259200),
+	sessions := []*jsonutil.Object{
+		jsonutil.ObjectOf("id", "recent", "source", "cli", "title", nil, "preview", "just now test", "last_active", now),
+		jsonutil.ObjectOf("id", "hour_ago", "source", "cli", "title", nil, "preview", "hour ago test", "last_active", now-7200),
+		jsonutil.ObjectOf("id", "days_ago", "source", "cli", "title", nil, "preview", "days ago test", "last_active", now-259200),
 	}
 	_, out := browseFallback(t, sessions, "q\n")
 	for _, want := range []string{"just now", "2h ago", "3d ago"} {
@@ -155,7 +155,7 @@ func TestAnnotateSessionStatuses(t *testing.T) {
 	}
 	sessionsTestSeed(t, db, state.NewSession{ID: "s2", Source: "cli"}, "hi")
 	r, _ := sessionsTestRun(t, h, map[string]any{}, "")
-	rows := []*pyjson.Object{pyjson.ObjectOf("id", "s1"), pyjson.ObjectOf("id", "s2")}
+	rows := []*jsonutil.Object{jsonutil.ObjectOf("id", "s1"), jsonutil.ObjectOf("id", "s2")}
 	annotateSessionStatuses(r, rows, db)
 	if got, _ := rows[0].Get("_status"); got != state.SessionStatusComplete {
 		t.Fatalf("s1 status %v", got)
@@ -163,7 +163,7 @@ func TestAnnotateSessionStatuses(t *testing.T) {
 	if got, _ := rows[1].Get("_status"); got != state.SessionStatusInterrupted {
 		t.Fatalf("s2 status %v", got)
 	}
-	bare := []*pyjson.Object{pyjson.ObjectOf("id", "s1")}
+	bare := []*jsonutil.Object{jsonutil.ObjectOf("id", "s1")}
 	annotateSessionStatuses(r, bare, nil)
 	if _, ok := bare[0].Get("_status"); ok {
 		t.Fatal("a row was annotated without a store")

@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Session store whose writers can fail, count calls or run a hook before delegating
@@ -303,8 +303,8 @@ func TestPatchSessionModelConfigMergeAndDelete(t *testing.T) {
 	}
 	session, _ := s.db.GetSession(s.ctx, s.sid)
 	raw, _ := session.Get("model_config")
-	got, err := pyjson.Loads(fmt.Sprint(raw))
-	dumped, _ := pyjson.Dumps(got)
+	got, err := jsonutil.Decode(fmt.Sprint(raw))
+	dumped, _ := jsonutil.Encode(got)
 	if err != nil || dumped != `{"keep": "value", "added": 7}` {
 		t.Fatalf("model config %v %v", raw, err)
 	}
@@ -722,7 +722,7 @@ func TestInPlacePruneFallsBackOnlyOnANonStaleUnresolvedRow(t *testing.T) {
 func TestInPlacePruneLeavesUnwrittenSuffixToTheFlush(t *testing.T) {
 	s := newPruneStore(t, "PRUNE_IN_PLACE_SUFFIX", nil, restartHistory())
 	c := restartCompressor(t, s.db, s.sid)
-	a := &AIAgent{sessionDB: s.db, sessionID: s.sid, model: "test/model", quietMode: true, sessionPersistLock: &pythread.RLock{}, sessionDBCreated: true}
+	a := &AIAgent{sessionDB: s.db, sessionID: s.sid, model: "test/model", quietMode: true, sessionPersistLock: &syncutil.ReentrantMutex{}, sessionDBCreated: true}
 	messages := append(s.conversation(state.ConversationOptions{}), map[string]any{"role": "user", "content": "new turn"})
 	pruned, count := c.pruneToolResultsOnly(messages, iptr(120_000))
 	if count < 1 {

@@ -12,8 +12,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Text of an optional string, empty for None
@@ -161,7 +161,7 @@ func (r *GatewayRunner) profileNameForSource(ctx context.Context, source *gatewa
 		return nil, &gateway.ProfileRouteRejected{Args: []any{matched.Name, matched.Profile}}
 	}
 	pkgLog().Debug(fmt.Sprintf("No profile route matched: platform=%s chat_id=%s thread_id=%s parent_chat_id=%s",
-		source.Platform, source.ChatID, pyrepr.Str(optAny(source.ThreadID)), pyrepr.Str(optAny(source.ParentChatID))))
+		source.Platform, source.ChatID, anyutil.String(optAny(source.ThreadID)), anyutil.String(optAny(source.ParentChatID))))
 	return nil, nil
 }
 
@@ -179,7 +179,7 @@ func (r *GatewayRunner) resolveProfileHomeForSource(ctx context.Context, source 
 		return identity.RuntimeHome, nil
 	}
 	var explicit *string
-	guild := pyrepr.Str(optAny(source.GuildID))
+	guild := anyutil.String(optAny(source.GuildID))
 	name := strings.TrimSpace(optText(source.Profile))
 	if name == "" {
 		routed, err := r.profileNameForSource(ctx, source, nil)

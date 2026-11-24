@@ -7,7 +7,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // File name of the planned restart marker the next boot reads to announce the gateway is back online
@@ -23,7 +23,7 @@ func PlannedRestartMarkerPath(h string) string {
 
 // Records that the gateway is going down for a restart, never failing the restart itself
 func WritePlannedRestartMarker(ctx context.Context, viaService, detached bool) {
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("requested_at", float64(time.Now().UnixNano())/1e9)
 	payload.Set("via_service", viaService)
 	payload.Set("detached", detached)

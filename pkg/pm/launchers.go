@@ -14,14 +14,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pylaunch"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	pythonutil "github.com/nickheyer/icebath/pkg/utils/python"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+
+	"golang.org/x/text/cases"
 )
 
 // Install stamp updateMechanism values a build lane may write
@@ -65,23 +66,23 @@ func installBinaryName() string {
 }
 
 // Install stamp of a tree as a JSON object, empty when missing, unreadable or not an object
-func ReadInstallStamp(projectRoot string) *pyjson.Object {
+func ReadInstallStamp(projectRoot string) *jsonutil.Object {
 	data, err := os.ReadFile(InstallStampPath(projectRoot))
 	if err != nil {
-		return &pyjson.Object{}
+		return &jsonutil.Object{}
 	}
 	if strictUTF8(data) != nil {
-		return &pyjson.Object{}
+		return &jsonutil.Object{}
 	}
 	text := string(data)
-	doc, err := pyjson.Loads(strings.TrimPrefix(text, "\ufeff"))
-	if obj, ok := doc.(*pyjson.Object); err == nil && ok {
+	doc, err := jsonutil.Decode(strings.TrimPrefix(text, "\ufeff"))
+	if obj, ok := doc.(*jsonutil.Object); err == nil && ok {
 		return obj
 	}
-	return &pyjson.Object{}
+	return &jsonutil.Object{}
 }
 
-func stampString(stamp *pyjson.Object, key string) (string, bool) {
+func stampString(stamp *jsonutil.Object, key string) (string, bool) {
 	value, _ := stamp.Get(key)
 	s, ok := value.(string)
 	return s, ok
@@ -149,11 +150,11 @@ const storeRecordPrefix = "icebath-store "
 func writeShell(target string, command []string, store string) string {
 	quoted := make([]string, len(command))
 	for i, part := range command {
-		quoted[i] = pyshlex.Quote(part)
+		quoted[i] = shellutil.Quote(part)
 	}
 	record := ""
 	if store != "" {
-		record = "# " + storeRecordPrefix + pyshlex.Quote(store) + "\n"
+		record = "# " + storeRecordPrefix + shellutil.Quote(store) + "\n"
 	}
 	body := "#!/bin/sh\n" + record + "exec " + strings.Join(quoted, " ") + " \"$@\"\n"
 	if st, err := os.Lstat(target); err == nil && st.Mode()&os.ModeSymlink == 0 {
@@ -200,16 +201,16 @@ func storePython(runtime string) (string, error) {
 	if err != nil {
 		return "", nil
 	}
-	text, err := pycodecs.Decode(data, "utf-8-sig")
+	text, err := charsetutil.Decode(data, "utf-8-sig")
 	if err != nil {
 		return "", nil
 	}
-	doc, err := pyjson.Loads(text)
+	doc, err := jsonutil.Decode(text)
 	if err != nil {
 		return "", nil
 	}
 	get := func(value any, key string, fallback any) (any, error) {
-		obj, ok := value.(*pyjson.Object)
+		obj, ok := value.(*jsonutil.Object)
 		if !ok {
 			return nil, &PyError{Class: "AttributeError", Message: fmt.Sprintf("expected a mapping holding %s in %s, got %s", key, facts, errchain.Kind(value))}
 		}
@@ -218,7 +219,7 @@ func storePython(runtime string) (string, error) {
 		}
 		return fallback, nil
 	}
-	packages, err := get(doc, "packages", &pyjson.Object{})
+	packages, err := get(doc, "packages", &jsonutil.Object{})
 	if err != nil {
 		return "", err
 	}
@@ -226,18 +227,18 @@ func storePython(runtime string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !pyrepr.Truthy(python) {
-		python = &pyjson.Object{}
+	if !anyutil.IsTrue(python) {
+		python = &jsonutil.Object{}
 	}
 	entry, err := get(python, "entry", nil)
-	if err != nil || !pyrepr.Truthy(entry) {
+	if err != nil || !anyutil.IsTrue(entry) {
 		return "", err
 	}
 	name, ok := entry.(string)
 	if !ok {
 		return "", &PyError{Class: "TypeError", Message: fmt.Sprintf("the python entry of %s must be text, got %s", facts, errchain.Kind(entry))}
 	}
-	candidate := pypath.Join(runtime, name, rel)
+	candidate := pathutil.Join(runtime, name, rel)
 	if isRegularFile(candidate) {
 		return candidate, nil
 	}
@@ -356,7 +357,7 @@ func launcherBinary(target string) string {
 		return ""
 	}
 	if strings.EqualFold(filepath.Ext(target), ".exe") {
-		interpreter, _ := pylaunch.ExeInterpreter(data)
+		interpreter, _ := pythonutil.LauncherInterpreter(data)
 		return interpreter
 	}
 	if strictUTF8(data) != nil {
@@ -374,7 +375,7 @@ func launcherBinary(target string) string {
 	}
 	for _, entry := range lines {
 		if strings.HasPrefix(entry, "exec ") {
-			tokens, err := pyshlex.SplitPOSIX(strings.TrimPrefix(entry, "exec "), false)
+			tokens, err := shellutil.Split(strings.TrimPrefix(entry, "exec "))
 			if err != nil || len(tokens) == 0 {
 				return ""
 			}
@@ -391,7 +392,7 @@ func launcherStore(target string) string {
 		return ""
 	}
 	if strings.EqualFold(filepath.Ext(target), ".exe") {
-		interpreter, _ := pylaunch.ExeInterpreter(data)
+		interpreter, _ := pythonutil.LauncherInterpreter(data)
 		return interpreter
 	}
 	if strictUTF8(data) != nil {
@@ -406,7 +407,7 @@ func launcherStore(target string) string {
 			continue
 		}
 		if rest, ok := strings.CutPrefix(line, "# "+storeRecordPrefix); ok {
-			tokens, err := pyshlex.SplitPOSIX(rest, false)
+			tokens, err := shellutil.Split(rest)
 			if err != nil || len(tokens) == 0 {
 				return ""
 			}
@@ -489,7 +490,7 @@ func ownsLauncher(target, root string) bool {
 		return false
 	}
 	text := string(data)
-	tokens, err := pyshlex.SplitPOSIX(strings.TrimPrefix(text, "\ufeff"), true)
+	tokens, err := shellutil.SplitComments(strings.TrimPrefix(text, "\ufeff"))
 	if err != nil {
 		return false
 	}
@@ -723,7 +724,7 @@ func mergeUserPath(existing, entry string) (string, bool) {
 		if part == "" {
 			continue
 		}
-		if pystr.Casefold(strings.TrimRight(part, `\/`)) == pystr.Casefold(wanted) {
+		if cases.Fold().String(strings.TrimRight(part, `\/`)) == cases.Fold().String(wanted) {
 			return "", false
 		}
 		parts = append(parts, part)

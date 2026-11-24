@@ -15,8 +15,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -38,8 +38,8 @@ func readMarkerAttempts(marker string) *big.Int {
 	if raw == "" {
 		return new(big.Int)
 	}
-	if doc, err := pyjson.Loads(raw); err == nil {
-		if obj, ok := doc.(*pyjson.Object); ok {
+	if doc, err := jsonutil.Decode(raw); err == nil {
+		if obj, ok := doc.(*jsonutil.Object); ok {
 			value, present := obj.Get("attempts")
 			if !present {
 				return new(big.Int)
@@ -195,7 +195,7 @@ func existingMarkers(paths []string) []string {
 }
 
 func reprError(err error) string {
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return errchain.OSText(err)
 	}
 	return err.Error()

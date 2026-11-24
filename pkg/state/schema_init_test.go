@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type fakeSchemaHost struct {
@@ -478,9 +479,9 @@ func TestDeferStaleFTSForHoldersEscalatesAndGoesFutile(t *testing.T) {
 	pinVar(t, &readProcArgv, func(pid int) ([]string, bool) { return []string{"icebath", "gateway", strings.Repeat("x", 200)}, true })
 	holders := []Holder{{PID: 42, Target: "/x/state.db-wal"}, {PID: 42, Target: "/x/state.db"}, {PID: -1, Target: "?"}}
 	buf := captureSlog(t)
-	record := func() *pyjson.Object {
+	record := func() *jsonutil.Object {
 		v, _ := metaAny(t, conn, FTSRebuildDeferralKey).(string)
-		obj, _ := pyjson.SafeLoads(v, nil).(*pyjson.Object)
+		obj, _ := pyjson.SafeLoads(v, nil).(*jsonutil.Object)
 		return obj
 	}
 	deferred, err := schema.deferStaleFTSForHolders(ctx, conn, holders)

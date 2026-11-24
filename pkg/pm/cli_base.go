@@ -4,11 +4,10 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 	"runtime"
 	"sort"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // LockArgs are pm lock's arguments, a nil Name or Version when not given
@@ -51,7 +50,7 @@ var (
 
 // Reports whether two paths are equal as Python Path objects compare, lowercased on Windows
 func samePath(a, b string) bool {
-	a, b = pypath.PurePathStr(a), pypath.PurePathStr(b)
+	a, b = filepath.Clean(a), filepath.Clean(b)
 	if runtime.GOOS == "windows" {
 		return strings.ToLower(a) == strings.ToLower(b)
 	}

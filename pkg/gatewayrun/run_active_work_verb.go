@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // Authority work an unserve of a profile stops, managed workers, cron runs and side agents
@@ -49,19 +49,19 @@ func delegationUnits(now float64) []map[string]any {
 			continue
 		}
 		goal := ""
-		if pyrepr.Truthy(record["goal"]) {
-			goal = pyrepr.Str(record["goal"])
+		if anyutil.IsTrue(record["goal"]) {
+			goal = anyutil.String(record["goal"])
 		}
 		if runes := []rune(goal); len(runes) > 80 {
 			goal = string(runes[:80])
 		}
 		unit := map[string]any{"kind": "delegation", "delegation_id": record["delegation_id"], "goal": goal, "pid": os.Getpid()}
-		if pyrepr.Truthy(record["dispatched_at"]) {
-			dispatched, err := pyint.Float(record["dispatched_at"])
+		if anyutil.IsTrue(record["dispatched_at"]) {
+			dispatched, err := anyutil.ToFloat(record["dispatched_at"])
 			if err != nil {
 				panic(err)
 			}
-			unit["elapsed_s"] = pyint.Round(now-dispatched, 1)
+			unit["elapsed_s"] = mathutil.Round(now-dispatched, 1)
 		}
 		units = append(units, unit)
 	}
@@ -74,8 +74,8 @@ func profileUnits(runner activeWorkRunner, profile string, units []map[string]an
 	mine := []map[string]any{}
 	for _, u := range units {
 		session := ""
-		if pyrepr.Truthy(u["session"]) {
-			session = pyrepr.Str(u["session"])
+		if anyutil.IsTrue(u["session"]) {
+			session = anyutil.String(u["session"])
 		}
 		if u["kind"] == "chat" && strings.HasPrefix(session, prefix) {
 			mine = append(mine, u)

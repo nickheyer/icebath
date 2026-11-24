@@ -11,8 +11,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Stored creation label of an API server binding, the fallback for every other transport
@@ -24,11 +24,11 @@ func apiStorageSource(ctx context.Context, db SessionStoreDB, sessionID, fallbac
 	if err != nil || !ok {
 		return fallback, err
 	}
-	decoded, err := pyjson.Loads(saved)
+	decoded, err := jsonutil.Decode(saved)
 	if err != nil {
 		return "", err
 	}
-	binding, isObj := decoded.(*pyjson.Object)
+	binding, isObj := decoded.(*jsonutil.Object)
 	if !isObj {
 		return "", fmt.Errorf("the API session receipt is %s, expected a mapping", errchain.Kind(decoded))
 	}

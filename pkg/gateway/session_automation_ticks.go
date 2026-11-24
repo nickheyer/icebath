@@ -11,11 +11,10 @@ import (
 	"sync"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner deriving a background result's delivery identity, GatewayRunner._completion_delivery_identity
@@ -38,19 +37,19 @@ func producerIdentity(ctx context.Context, runner any, event map[string]any) (st
 	if identity == nil {
 		return "", runtimeRefusal("invalid_params")
 	}
-	return pyjson.Dumps(identity, pyjson.Separators(",", ":"))
+	return jsonutil.Encode(identity)
 }
 
 // Text of an event field with a falsy value as empty
 func eventText(event map[string]any, key string) string {
-	if value := event[key]; pyrepr.Truthy(value) {
-		return pyrepr.Str(value)
+	if value := event[key]; anyutil.IsTrue(value) {
+		return anyutil.String(value)
 	}
 	return ""
 }
 
 // Admission carrying a completion's identity on its route's owner, pending or settled, nil when none does
-func completionAdmission(ctx context.Context, runner AuthorityRunner, event map[string]any) (*pyjson.Object, error) {
+func completionAdmission(ctx context.Context, runner AuthorityRunner, event map[string]any) (*jsonutil.Object, error) {
 	a, err := activeAuthority(ctx, runner)
 	if err != nil {
 		return nil, err
@@ -83,10 +82,10 @@ func completionAdmission(ctx context.Context, runner AuthorityRunner, event map[
 }
 
 // Whether a descriptor names the identity among its batch identities or as its own
-func descriptorHolds(descriptor *pyjson.Object, identity string) bool {
+func descriptorHolds(descriptor *jsonutil.Object, identity string) bool {
 	identities, ok := descriptor.Get("identities")
 	if !ok {
-		identities = []any{descriptor.GetOr("identity", nil)}
+		identities = []any{descriptor.ValueOr("identity", nil)}
 	}
 	items, _ := identities.([]any)
 	for _, item := range items {
@@ -159,7 +158,7 @@ func deliverHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 // Whether the queued tick a prepared tick replaces was claimed or settled first
 func replacedTickClaimed(ctx context.Context, runner AuthorityRunner, prepared map[string]any) (bool, error) {
 	replaced := prepared["_replaces"]
-	if !pyrepr.Truthy(replaced) {
+	if !anyutil.IsTrue(replaced) {
 		return false, nil
 	}
 	a, err := activeAuthority(ctx, runner)
@@ -169,7 +168,7 @@ func replacedTickClaimed(ctx context.Context, runner AuthorityRunner, prepared m
 	if a == nil {
 		return false, nil
 	}
-	row, err := a.DB.GetSessionAdmission(ctx, pyrepr.Str(replaced))
+	row, err := a.DB.GetSessionAdmission(ctx, anyutil.String(replaced))
 	if err != nil || row == nil {
 		return false, err
 	}
@@ -184,8 +183,8 @@ func admitProcessNotice(ctx context.Context, runner AuthorityRunner, a *SessionA
 	}
 	if evt["type"] == "heartbeat" {
 		omitted := int64(0)
-		if raw := evt["omitted"]; pyrepr.Truthy(raw) {
-			if omitted, err = pyint.Int64(raw); err != nil {
+		if raw := evt["omitted"]; anyutil.IsTrue(raw) {
+			if omitted, err = anyutil.ToInt(raw); err != nil {
 				return AdmissionReceipt{}, err
 			}
 		}
@@ -193,8 +192,8 @@ func admitProcessNotice(ctx context.Context, runner AuthorityRunner, a *SessionA
 			event.Metadata = map[string]any{}
 		}
 		event.Metadata["heartbeat_tick"] = map[string]any{"output": eventText(evt, "output"), "omitted": omitted}
-		if replaces := evt["_replaces"]; pyrepr.Truthy(replaces) {
-			replaced := pyrepr.Str(replaces)
+		if replaces := evt["_replaces"]; anyutil.IsTrue(replaces) {
+			replaced := anyutil.String(replaces)
 			return a.AdmitAutomation(ctx, adapter, event, identity, &replaced, nil)
 		}
 	}
@@ -241,7 +240,7 @@ func admitFoldedCompletion(ctx context.Context, a *SessionAuthority, adapter Pla
 }
 
 // Route's completion row ending the queue and the finishing process's tick ids it skips
-func waitingCompletion(ctx context.Context, a *SessionAuthority, evt map[string]any, event *MessageEvent) (*pyjson.Object, []string, error) {
+func waitingCompletion(ctx context.Context, a *SessionAuthority, evt map[string]any, event *MessageEvent) (*jsonutil.Object, []string, error) {
 	entry, err := routeEntry(ctx, a, eventText(evt, "session_key"))
 	if err != nil || entry == nil {
 		return nil, nil, err
@@ -254,7 +253,7 @@ func waitingCompletion(ctx context.Context, a *SessionAuthority, evt map[string]
 	if err != nil {
 		return nil, nil, err
 	}
-	var queued []*pyjson.Object
+	var queued []*jsonutil.Object
 	for _, row := range rows {
 		if rowString(row, "status") == "queued" {
 			queued = append(queued, row)
@@ -273,7 +272,7 @@ func waitingCompletion(ctx context.Context, a *SessionAuthority, evt map[string]
 	if rowString(tail, "principal_id") != "automation:"+entry.SessionKey {
 		return nil, nil, nil
 	}
-	parsed := automationIdentitiesOf([]any{tail.GetOr("request_id", nil)})
+	parsed := automationIdentitiesOf([]any{tail.ValueOr("request_id", nil)})
 	if len(parsed) != 1 || parsed[0][0] != "completion" {
 		return nil, nil, nil
 	}
@@ -285,8 +284,8 @@ func waitingCompletion(ctx context.Context, a *SessionAuthority, evt map[string]
 		return "result"
 	}
 	metadata := metadataGetter(event.Metadata)
-	if !pyjson.Equal(category(descriptor.Get), category(metadata)) ||
-		!pyjson.Equal(descriptor.GetOr("display_kind", nil), event.Metadata["display_kind"]) {
+	if !anyutil.Equal(category(descriptor.Get), category(metadata)) ||
+		!anyutil.Equal(descriptor.ValueOr("display_kind", nil), event.Metadata["display_kind"]) {
 		return nil, nil, nil
 	}
 	return tail, skip, nil
@@ -300,12 +299,12 @@ const foldHeader = "[IMPORTANT: %d background process results arrived while this
 var foldHeaderPattern = regexp.MustCompile(`^\[IMPORTANT: \d+ background process results arrived while this session was busy\.[^\]]*\]\n\n`)
 
 // Folds the waiting completion's text and identities into the event as one batch
-func foldCompletion(event *MessageEvent, waiting *pyjson.Object, identity string) {
+func foldCompletion(event *MessageEvent, waiting *jsonutil.Object, identity string) {
 	descriptor := automationDescriptor(rowPayload(waiting))
 	set := map[string]bool{}
-	if earlier, _ := descriptor.GetOr("identities", nil).([]any); pyrepr.Truthy(earlier) {
+	if earlier, _ := descriptor.ValueOr("identities", nil).([]any); anyutil.IsTrue(earlier) {
 		for _, item := range earlier {
-			set[pyrepr.Str(item)] = true
+			set[anyutil.String(item)] = true
 		}
 	} else {
 		set[rowString(waiting, "request_id")] = true
@@ -330,7 +329,7 @@ func foldCompletion(event *MessageEvent, waiting *pyjson.Object, identity string
 		}
 		return text
 	}
-	waitingText := pyrepr.Str(rowPayload(waiting).GetOr("text", nil))
+	waitingText := anyutil.String(rowPayload(waiting).ValueOr("text", nil))
 	event.Text = MarkInternalNotification(strings.Join([]string{fmt.Sprintf(foldHeader, len(identities)), body(waitingText), body(event.Text)}, "\n\n"))
 	listed := make([]any, len(identities))
 	for i, item := range identities {
@@ -352,7 +351,7 @@ func automationIdentityList(value any) []string {
 	switch typed := value.(type) {
 	case []any:
 		for _, item := range typed {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 	case []string:
 		out = append(out, typed...)
@@ -386,7 +385,7 @@ func prepareHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 		return nil, err
 	}
 	if completed {
-		pkgLog().Debug(fmt.Sprintf("Dropped heartbeat %s of process %s: its completion is already admitted", pyrepr.Str(event["event_id"]), process))
+		pkgLog().Debug(fmt.Sprintf("Dropped heartbeat %s of process %s: its completion is already admitted", anyutil.String(event["event_id"]), process))
 		return nil, nil
 	}
 	identity, err := producerIdentity(ctx, runner, event)
@@ -404,7 +403,7 @@ func prepareHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 	if err != nil {
 		return nil, err
 	}
-	var waiting *pyjson.Object
+	var waiting *jsonutil.Object
 	for _, row := range pending {
 		if queuedTick(row, process, entry.SessionKey) {
 			waiting = row
@@ -414,11 +413,11 @@ func prepareHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 	if waiting == nil {
 		return event, nil
 	}
-	earlier, isDict := automationDescriptor(rowPayload(waiting)).GetOr("tick", nil).(*pyjson.Object)
+	earlier, isDict := automationDescriptor(rowPayload(waiting)).ValueOr("tick", nil).(*jsonutil.Object)
 	if !isDict {
 		return event, nil
 	}
-	plainEarlier, _ := pyjson.Plain(earlier).(map[string]any)
+	plainEarlier, _ := jsonutil.Plain(earlier).(map[string]any)
 	out := make(map[string]any, len(event)+3)
 	for key, value := range event {
 		out[key] = value
@@ -433,7 +432,7 @@ func prepareHeartbeat(ctx context.Context, runner AuthorityRunner, event map[str
 // Cancels a finished process's ticks still queued in its session, never failing since the completion is already in
 func withdrawProcessTicks(ctx context.Context, runner AuthorityRunner, event map[string]any) {
 	if err := withdrawTicks(ctx, runner, event); err != nil {
-		pkgLog().Warn(fmt.Sprintf("Could not withdraw the waiting heartbeats of finished process %s: %s", pyrepr.Str(event["session_id"]), err))
+		pkgLog().Warn(fmt.Sprintf("Could not withdraw the waiting heartbeats of finished process %s: %s", anyutil.String(event["session_id"]), err))
 	}
 }
 
@@ -461,7 +460,7 @@ func withdrawTicks(ctx context.Context, runner AuthorityRunner, event map[string
 	finished := map[string]bool{}
 	for _, parsed := range automationIdentitiesOf(raws) {
 		if parsed[0] == "completion" && len(parsed) > 1 {
-			finished[pyrepr.Str(parsed[1])] = true
+			finished[anyutil.String(parsed[1])] = true
 		}
 	}
 	owner, err := routeOwnerOf(ctx, a, entry)
@@ -504,7 +503,7 @@ func processCompleted(ctx context.Context, runner any, a *SessionAuthority, owne
 	if completion == nil {
 		return false, nil
 	}
-	identity, err := pyjson.Dumps(completion, pyjson.Separators(",", ":"))
+	identity, err := jsonutil.Encode(completion)
 	if err != nil {
 		return false, err
 	}
@@ -524,7 +523,7 @@ func processCompleted(ctx context.Context, runner any, a *SessionAuthority, owne
 		return false, err
 	}
 	for _, row := range rows {
-		if items, _ := automationDescriptor(rowPayload(row)).GetOr("identities", nil).([]any); pyrepr.Truthy(items) {
+		if items, _ := automationDescriptor(rowPayload(row)).ValueOr("identities", nil).([]any); anyutil.IsTrue(items) {
 			for _, item := range items {
 				if item == identity {
 					return true, nil
@@ -543,7 +542,7 @@ func automationIdentitiesOf(raws []any) [][]any {
 		if !isText {
 			continue
 		}
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			continue
 		}
@@ -555,11 +554,11 @@ func automationIdentitiesOf(raws []any) [][]any {
 }
 
 // Whether a row is the route producer's own queued liveness tick of the process
-func queuedTick(row *pyjson.Object, process, route string) bool {
+func queuedTick(row *jsonutil.Object, process, route string) bool {
 	if rowString(row, "status") != "queued" || rowString(row, "principal_id") != "automation:"+route {
 		return false
 	}
-	for _, identity := range automationIdentitiesOf([]any{row.GetOr("request_id", nil)}) {
+	for _, identity := range automationIdentitiesOf([]any{row.ValueOr("request_id", nil)}) {
 		if len(identity) == 3 && identity[0] == "heartbeat" && identity[1] == process {
 			return true
 		}
@@ -568,7 +567,7 @@ func queuedTick(row *pyjson.Object, process, route string) bool {
 }
 
 // Cancels the gateway's own queued automation row as its principal with operator access, false when claimed first
-func withdrawQueued(ctx context.Context, a *SessionAuthority, row *pyjson.Object) (bool, error) {
+func withdrawQueued(ctx context.Context, a *SessionAuthority, row *jsonutil.Object) (bool, error) {
 	actor := Principal{Subject: rowString(row, "principal_id"), ProfileID: a.ProfileID,
 		Capabilities: map[string]bool{"session:submit": true, "session:control": true, "session:operator": true}, TransportID: "producer-withdraw"}
 	receipt, err := a.CancelQueued(ctx, actor, SessionRef{a.ProfileID, rowString(row, "target_session_id")}, rowString(row, "admission_id"))
@@ -602,12 +601,12 @@ func FormatGatewayProcessNotification(evt map[string]any) string {
 	sid, cmd := get("session_id", "unknown"), get("command", "unknown")
 	switch evtType {
 	case "watch_disabled", "watch_overflow_tripped", "watch_overflow_released":
-		return fmt.Sprintf("[IMPORTANT: %s]", pyrepr.Str(get("message", "")))
+		return fmt.Sprintf("[IMPORTANT: %s]", anyutil.String(get("message", "")))
 	case "watch_match":
 		text := fmt.Sprintf("[IMPORTANT: Background process %s matched watch pattern \"%s\".\nCommand: %s\nMatched output:\n%s",
-			pyrepr.Str(sid), pyrepr.Str(get("pattern", "?")), pyrepr.Str(cmd), pyrepr.Str(get("output", "")))
-		if suppressed := get("suppressed", 0); pyrepr.Truthy(suppressed) {
-			text += fmt.Sprintf("\n(%s earlier matches were suppressed by rate limit)", pyrepr.Str(suppressed))
+			anyutil.String(sid), anyutil.String(get("pattern", "?")), anyutil.String(cmd), anyutil.String(get("output", "")))
+		if suppressed := get("suppressed", 0); anyutil.IsTrue(suppressed) {
+			text += fmt.Sprintf("\n(%s earlier matches were suppressed by rate limit)", anyutil.String(suppressed))
 		}
 		return text + "]"
 	case "async_delegation", "heartbeat":
@@ -627,7 +626,7 @@ func AdmitProcessNotice(ctx context.Context, runner AuthorityRunner, a *SessionA
 }
 
 // Admission carrying a completion's identity, for the runner's completion pre flight
-func CompletionAdmission(ctx context.Context, runner AuthorityRunner, event map[string]any) (*pyjson.Object, error) {
+func CompletionAdmission(ctx context.Context, runner AuthorityRunner, event map[string]any) (*jsonutil.Object, error) {
 	return completionAdmission(ctx, runner, event)
 }
 

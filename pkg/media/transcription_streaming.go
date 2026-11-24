@@ -17,15 +17,17 @@ import (
 	"github.com/gorilla/websocket"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var (
 	streamingProviders = map[string]bool{"openai": true, "xai": true, "elevenlabs": true}
-	streamMonotonic    = pythread.Monotonic
+	streamMonotonic    = timeutil.Monotonic
 )
 
 // Resampler converts s16le mono PCM between rates across chunk boundaries, averaging integer ratios
@@ -106,8 +108,8 @@ type StreamingSession struct {
 	provider  string
 	onPartial func(string)
 	audio     *audioQueue
-	done      *pythread.Event
-	cancelled *pythread.Event
+	done      *syncutil.Event
+	cancelled *syncutil.Event
 	mu        sync.Mutex
 	result    map[string]any
 	partial   string
@@ -117,8 +119,8 @@ type StreamingSession struct {
 }
 
 func newStreamingSession(ctx context.Context, provider string, onPartial func(string), driver streamingDriver) *StreamingSession {
-	return &StreamingSession{provider: provider, onPartial: onPartial, audio: newAudioQueue(), done: &pythread.Event{},
-		cancelled: &pythread.Event{}, result: map[string]any{}, driver: driver, ctx: ctx}
+	return &StreamingSession{provider: provider, onPartial: onPartial, audio: newAudioQueue(), done: &syncutil.Event{},
+		cancelled: &syncutil.Event{}, result: map[string]any{}, driver: driver, ctx: ctx}
 }
 
 // Provider name of the session
@@ -238,7 +240,7 @@ type wsWire interface {
 	ready() bool
 	sendAudio(ws *wsConn, chunk []byte) error
 	end(ws *wsConn) error
-	event(event *pyjson.Object) (map[string]any, error)
+	event(event *jsonutil.Object) (map[string]any, error)
 }
 
 // Websocket with a reader goroutine so receives can time out without breaking the connection
@@ -258,7 +260,7 @@ func (c *wsConn) sendText(text string) error {
 }
 
 func (c *wsConn) sendJSON(v any) error {
-	text, err := pyjson.Dumps(v)
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		return err
 	}
@@ -359,15 +361,15 @@ func (w *openAIRealtimeWire) end(ws *wsConn) error {
 }
 
 // Python str of an event field, empty when missing, None or falsy
-func eventText(event *pyjson.Object, key string) string {
+func eventText(event *jsonutil.Object, key string) string {
 	v, _ := event.Get(key)
 	if !pyTruthy(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
-func (w *openAIRealtimeWire) event(event *pyjson.Object) (map[string]any, error) {
+func (w *openAIRealtimeWire) event(event *jsonutil.Object) (map[string]any, error) {
 	kind := eventText(event, "type")
 	switch {
 	case strings.HasSuffix(kind, "input_audio_transcription.delta"):
@@ -382,7 +384,7 @@ func (w *openAIRealtimeWire) event(event *pyjson.Object) (map[string]any, error)
 	case kind == "error":
 		message := "provider error"
 		if errObj, ok := event.Get("error"); ok && pyTruthy(errObj) {
-			o, isObj := errObj.(*pyjson.Object)
+			o, isObj := errObj.(*jsonutil.Object)
 			if !isObj {
 				return nil, fmt.Errorf("OpenAI realtime error is %s where a mapping was expected", errchain.Kind(errObj))
 			}
@@ -413,7 +415,7 @@ func NewXAIStreamingSession(ctx context.Context, apiKey, baseURL, model, languag
 	if language != "" {
 		query = append(query, [2]string{"language", language})
 	}
-	u, err := streamingURL(baseURL, "/stt", pyurl.URLEncode(query))
+	u, err := streamingURL(baseURL, "/stt", urlutil.EncodeQuery(query))
 	if err != nil {
 		return nil, err
 	}
@@ -453,7 +455,7 @@ func (w *xaiStreamingWire) text() string {
 	return joinNonEmpty(append(append(append([]string(nil), w.utterances...), w.chunks...), w.interim)...)
 }
 
-func (w *xaiStreamingWire) event(event *pyjson.Object) (map[string]any, error) {
+func (w *xaiStreamingWire) event(event *jsonutil.Object) (map[string]any, error) {
 	kind, _ := event.Get("type")
 	switch kind {
 	case "transcript.created":
@@ -498,7 +500,7 @@ func NewElevenLabsRealtimeSession(ctx context.Context, apiKey, baseURL, language
 	if language != "" {
 		query = append(query, [2]string{"language_code", language})
 	}
-	u, err := streamingURL(baseURL, "/speech-to-text/realtime", pyurl.URLEncode(query))
+	u, err := streamingURL(baseURL, "/speech-to-text/realtime", urlutil.EncodeQuery(query))
 	if err != nil {
 		return nil, err
 	}
@@ -508,7 +510,7 @@ func NewElevenLabsRealtimeSession(ctx context.Context, apiKey, baseURL, language
 	return w.s, nil
 }
 
-func (w *elevenLabsRealtimeWire) chunk(pcm []byte, commit bool) *pyjson.Object {
+func (w *elevenLabsRealtimeWire) chunk(pcm []byte, commit bool) *jsonutil.Object {
 	return jsonObject("message_type", "input_audio_chunk", "audio_base_64", base64.StdEncoding.EncodeToString(pcm),
 		"commit", commit, "sample_rate", streamingInputRate)
 }
@@ -528,11 +530,11 @@ func (w *elevenLabsRealtimeWire) text() string {
 	return joinNonEmpty(append(append([]string(nil), w.committed...), w.interim)...)
 }
 
-func (w *elevenLabsRealtimeWire) event(event *pyjson.Object) (map[string]any, error) {
+func (w *elevenLabsRealtimeWire) event(event *jsonutil.Object) (map[string]any, error) {
 	raw, _ := event.Get("message_type")
 	kind := ""
 	if pyTruthy(raw) {
-		kind = pyrepr.Str(raw)
+		kind = anyutil.String(raw)
 	}
 	switch {
 	case kind == "partial_transcript":
@@ -551,7 +553,7 @@ func (w *elevenLabsRealtimeWire) event(event *pyjson.Object) (map[string]any, er
 		return map[string]any{"success": true, "transcript": w.text(), "provider": "elevenlabs"}, nil
 	case kind != "" && kind != "session_started" && kind != "committed_transcript_with_timestamps" && kind != "warning":
 		if errValue, ok := event.Get("error"); ok {
-			return w.s.errorEnvelope(fmt.Sprintf("%s: %s", kind, pyrepr.Str(errValue))), nil
+			return w.s.errorEnvelope(fmt.Sprintf("%s: %s", kind, anyutil.String(errValue))), nil
 		}
 	}
 	return nil, nil

@@ -11,16 +11,15 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
-func mustLoads(t *testing.T, text string) *pyjson.Object {
+func mustLoads(t *testing.T, text string) *jsonutil.Object {
 	t.Helper()
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 func path(t *testing.T, v any, keys ...any) any {
@@ -70,7 +69,7 @@ func TestCardAuthRequired(t *testing.T) {
 	if path(t, card, "securitySchemes", "bearer", "scheme") != "bearer" || path(t, card, "securitySchemes", "bearer", "type") != "http" {
 		t.Fatal("scheme")
 	}
-	if _, ok := path(t, card, "security", 0).(*pyjson.Object).Get("bearer"); !ok {
+	if _, ok := path(t, card, "security", 0).(*jsonutil.Object).Get("bearer"); !ok {
 		t.Fatal("security")
 	}
 	if path(t, card, "provider", "organization") != "Org" || path(t, card, "provider", "url") != "https://org.example/" ||
@@ -206,7 +205,7 @@ func TestCompletedTaskShape(t *testing.T) {
 	if path(t, task, "status", "state") != StateCompleted || path(t, task, "status", "message", "role") != RoleAgent {
 		t.Fatal("status")
 	}
-	if ExtractText(path(t, task, "artifacts", 0).(*pyjson.Object)) != "done" {
+	if ExtractText(path(t, task, "artifacts", 0).(*jsonutil.Object)) != "done" {
 		t.Fatal("artifact")
 	}
 	if _, ok := task.Get("createdAt"); ok {
@@ -216,10 +215,10 @@ func TestCompletedTaskShape(t *testing.T) {
 
 func TestFailedTaskHasMessageNoArtifacts(t *testing.T) {
 	task := BuildTask("t1", "c1", StateFailed, "boom")
-	if _, ok := task.Get("artifacts"); ok || ExtractText(path(t, task, "status", "message").(*pyjson.Object)) != "boom" {
+	if _, ok := task.Get("artifacts"); ok || ExtractText(path(t, task, "status", "message").(*jsonutil.Object)) != "boom" {
 		t.Fatal("failed task")
 	}
-	if _, ok := path(t, BuildTask("t", "c", StateWorking, ""), "status").(*pyjson.Object).Get("message"); ok {
+	if _, ok := path(t, BuildTask("t", "c", StateWorking, ""), "status").(*jsonutil.Object).Get("message"); ok {
 		t.Fatal("blank agent text")
 	}
 }
@@ -231,9 +230,9 @@ func TestTimestampsHaveMillisecondPrecision(t *testing.T) {
 }
 
 func TestJsonrpcResultAndError(t *testing.T) {
-	r, _ := pyjson.Dumps(JsonrpcResult(1, "ok"))
-	e, _ := pyjson.Dumps(JsonrpcError("x", ErrMethodNotFound, "nope"))
-	if r != `{"jsonrpc": "2.0", "id": 1, "result": "ok"}` || e != `{"jsonrpc": "2.0", "id": "x", "error": {"code": -32601, "message": "nope"}}` {
+	r, _ := jsonutil.Encode(JsonrpcResult(1, "ok"))
+	e, _ := jsonutil.Encode(JsonrpcError("x", ErrMethodNotFound, "nope"))
+	if r != `{"jsonrpc":"2.0","id":1,"result":"ok"}` || e != `{"jsonrpc":"2.0","id":"x","error":{"code":-32601,"message":"nope"}}` {
 		t.Fatalf("%s %s", r, e)
 	}
 }
@@ -272,7 +271,7 @@ func TestStatusUpdateShape(t *testing.T) {
 		t.Fatal("status update")
 	}
 	for _, k := range []string{"kind", "final"} {
-		if _, ok := path(t, u, "statusUpdate").(*pyjson.Object).Get(k); ok {
+		if _, ok := path(t, u, "statusUpdate").(*jsonutil.Object).Get(k); ok {
 			t.Fatalf("carries %s", k)
 		}
 	}
@@ -280,28 +279,28 @@ func TestStatusUpdateShape(t *testing.T) {
 
 func TestStatusUpdateWithMessage(t *testing.T) {
 	u := StatusUpdate("t1", "c1", StateInputRequired, "which one?")
-	if ExtractText(path(t, u, "statusUpdate", "status", "message").(*pyjson.Object)) != "which one?" {
+	if ExtractText(path(t, u, "statusUpdate", "status", "message").(*jsonutil.Object)) != "which one?" {
 		t.Fatal("message")
 	}
 }
 
 func TestArtifactUpdateShape(t *testing.T) {
 	u := ArtifactUpdate("t1", "c1", "chunk")
-	if path(t, u, "artifactUpdate", "taskId") != "t1" || ExtractText(path(t, u, "artifactUpdate", "artifact").(*pyjson.Object)) != "chunk" {
+	if path(t, u, "artifactUpdate", "taskId") != "t1" || ExtractText(path(t, u, "artifactUpdate", "artifact").(*jsonutil.Object)) != "chunk" {
 		t.Fatal("artifact update")
 	}
 }
 
 func TestSSEDataFraming(t *testing.T) {
 	frame, err := SSEData(obj("a", "é"), nil)
-	if err != nil || frame != "data: {\"a\": \"é\"}\n\n" {
+	if err != nil || frame != "data: {\"a\":\"é\"}\n\n" {
 		t.Fatalf("%q %v", frame, err)
 	}
 }
 
 func TestSSEDataJsonrpcEnvelope(t *testing.T) {
 	frame, err := SSEData(StreamTask(obj("id", "t1")), 7)
-	if err != nil || frame != "data: {\"jsonrpc\": \"2.0\", \"id\": 7, \"result\": {\"task\": {\"id\": \"t1\"}}}\n\n" {
+	if err != nil || frame != "data: {\"jsonrpc\":\"2.0\",\"id\":7,\"result\":{\"task\":{\"id\":\"t1\"}}}\n\n" {
 		t.Fatalf("%q %v", frame, err)
 	}
 }
@@ -395,8 +394,8 @@ func TestRecordLatencyUpdatesAverage(t *testing.T) {
 	m.RecordLatency(0.3)
 	m.InboundTotal.Add(2)
 	snap := m.Snapshot()
-	if path(t, snap, "avg_latency_ms") != 200.0 || path(t, snap, "inbound_total") != int64(2) || snap.Keys[0] != "uptime_seconds" || snap.Keys[len(snap.Keys)-1] != "avg_latency_ms" {
-		t.Fatalf("snapshot %v", snap.Keys)
+	if path(t, snap, "avg_latency_ms") != 200.0 || path(t, snap, "inbound_total") != int64(2) || snap.Keys()[0] != "uptime_seconds" || snap.Keys()[snap.Len()-1] != "avg_latency_ms" {
+		t.Fatalf("snapshot %v", snap.Keys())
 	}
 	for range 150 {
 		m.RecordLatency(1)
@@ -582,7 +581,7 @@ func TestPersistAndLoad(t *testing.T) {
 	if len(convo) != 2 || path(t, convo[0], "text") != "héllo" || path(t, convo[1], "role") != "agent" {
 		t.Fatalf("convo %v", convo)
 	}
-	if _, ok := convo[0].Get("input_id"); ok || convo[0].Keys[0] != "ts" {
+	if _, ok := convo[0].Get("input_id"); ok || convo[0].Keys()[0] != "ts" {
 		t.Fatal("entry shape")
 	}
 	if len(LoadConversation(ctx, "ctx-1", 1)) != 1 || !LoggedInput(ctx, "ctx-1", "in-9") || LoggedInput(ctx, "ctx-1", "in-8") {

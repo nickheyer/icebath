@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 type auxSessionAuxiliaryKey struct{}
@@ -51,10 +51,10 @@ func auxTaskName(task any) string {
 	case string:
 		return t
 	}
-	if !pyrepr.Truthy(task) {
+	if !anyutil.IsTrue(task) {
 		return ""
 	}
-	return pyrepr.Str(task)
+	return anyutil.String(task)
 }
 
 // Auxiliary task config with plugin defaults under the user block, route fields dropped for an authoritative task
@@ -98,7 +98,7 @@ func (r *resolver) auxTaskConfig(task string, seen map[string]bool) (resolved ma
 	}
 	defer func() {
 		if failure := recover(); failure != nil {
-			pkgLog().Debug(fmt.Sprintf("plugin auxiliary task lookup failed for %s", pyrepr.Repr(task)), "error", failure)
+			pkgLog().Debug(fmt.Sprintf("plugin auxiliary task lookup failed for %s", anyutil.Quote(task)), "error", failure)
 			resolved = taskConfig
 		}
 	}()
@@ -107,7 +107,7 @@ func (r *resolver) auxTaskConfig(task string, seen map[string]bool) (resolved ma
 			continue
 		}
 		var defaults map[string]any
-		if raw := entry["defaults"]; pyrepr.Truthy(raw) {
+		if raw := entry["defaults"]; anyutil.IsTrue(raw) {
 			m, isMap := raw.(map[string]any)
 			if !isMap {
 				break
@@ -115,10 +115,10 @@ func (r *resolver) auxTaskConfig(task string, seen map[string]bool) (resolved ma
 			defaults = m
 		}
 		inherit := entry["inherit_from"]
-		if pyrepr.Truthy(inherit) && seen[task] {
-			pkgLog().Warn(fmt.Sprintf("Auxiliary task %s has a circular inherit_from chain — ignoring inheritance", pyrepr.Repr(task)))
+		if anyutil.IsTrue(inherit) && seen[task] {
+			pkgLog().Warn(fmt.Sprintf("Auxiliary task %s has a circular inherit_from chain — ignoring inheritance", anyutil.Quote(task)))
 		}
-		if !pyrepr.Truthy(inherit) || seen[task] {
+		if !anyutil.IsTrue(inherit) || seen[task] {
 			merged := copyAnyMap(defaults)
 			for k, v := range taskConfig {
 				merged[k] = v
@@ -179,10 +179,10 @@ var AuxRouteKeys = auxRouteKeys
 
 // Python str of a value or the empty string when the value is falsy
 func auxStrOrEmpty(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Merges a task's own auxiliary block over its inherited base, a pinned route replacing the whole route

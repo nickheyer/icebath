@@ -20,12 +20,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Session sources hidden from browsing and searching, integrations, delegate runs and kanban workers
@@ -52,20 +52,20 @@ var (
 
 // SessionSearchStore is the session database surface the session_search shapes read
 type SessionSearchStore interface {
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
-	GetMessages(ctx context.Context, sessionID string, o state.GetMessagesOptions) ([]*pyjson.Object, error)
-	SearchMessages(ctx context.Context, query string, o state.SearchMessagesOptions) ([]*pyjson.Object, error)
-	GetAnchoredView(ctx context.Context, sessionID string, aroundMessageID int64, o state.AnchoredViewOptions) (*pyjson.Object, error)
-	GetMessagesAround(ctx context.Context, sessionID string, aroundMessageID int64, window int) (*pyjson.Object, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
+	GetMessages(ctx context.Context, sessionID string, o state.GetMessagesOptions) ([]*jsonutil.Object, error)
+	SearchMessages(ctx context.Context, query string, o state.SearchMessagesOptions) ([]*jsonutil.Object, error)
+	GetAnchoredView(ctx context.Context, sessionID string, aroundMessageID int64, o state.AnchoredViewOptions) (*jsonutil.Object, error)
+	GetMessagesAround(ctx context.Context, sessionID string, aroundMessageID int64, window int) (*jsonutil.Object, error)
 	ResolveSessionByTitle(ctx context.Context, title string) (string, bool, error)
-	FTSRebuildStatus(ctx context.Context) (*pyjson.Object, error)
+	FTSRebuildStatus(ctx context.Context) (*jsonutil.Object, error)
 	ReadCtx(ctx context.Context, fn func(conn state.SQLiteConn) error) error
 	Close() error
 }
 
 // Bounded recent session browse a store may offer, the whole database listing is never used
 type boundedRecentSessionLister interface {
-	ListRecentSessionsBounded(ctx context.Context, o state.RecentSessionsBoundedOptions) ([]*pyjson.Object, error)
+	ListRecentSessionsBounded(ctx context.Context, o state.RecentSessionsBoundedOptions) ([]*jsonutil.Object, error)
 }
 
 // ProfileStoreHooks resolve profile names and homes for cross profile reads, assigned by pkg/profiles at init
@@ -96,7 +96,7 @@ type SessionSearchArgs struct {
 }
 
 // Dict value for a key, nil when the object or key is absent
-func oget(o *pyjson.Object, key string) any {
+func oget(o *jsonutil.Object, key string) any {
 	if o == nil {
 		return nil
 	}
@@ -105,7 +105,7 @@ func oget(o *pyjson.Object, key string) any {
 }
 
 // Dict get with a default for a missing key, a present None staying None
-func ogetDefault(o *pyjson.Object, key string, def any) any {
+func ogetDefault(o *jsonutil.Object, key string, def any) any {
 	if o != nil {
 		if v, ok := o.Get(key); ok {
 			return v
@@ -122,7 +122,7 @@ func ostr(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Python int of a value as int64, the sign extreme when it does not fit, false where int raises
@@ -154,7 +154,7 @@ func sameInt(a, b any) bool {
 
 // Compact JSON with non ASCII kept, the json.dumps ensure_ascii False every shape returns
 func sessionSearchDumps(v any) string {
-	out, err := pyjson.Dumps(v, pyjson.EnsureASCII(false))
+	out, err := jsonutil.Encode(v)
 	if err != nil {
 		return ErrorResult(err)
 	}
@@ -162,11 +162,11 @@ func sessionSearchDumps(v any) string {
 }
 
 // Success payload with success first and the given keys in order
-func sessionSearchOK(payload *pyjson.Object) string {
-	out := pyjson.NewObject()
+func sessionSearchOK(payload *jsonutil.Object) string {
+	out := jsonutil.NewObject()
 	out.Set("success", true)
-	for _, k := range payload.Keys {
-		out.Set(k, payload.Vals[k])
+	for _, k := range payload.Keys() {
+		out.Set(k, payload.Value(k))
 	}
 	return sessionSearchDumps(out)
 }
@@ -184,7 +184,7 @@ func loud[T any](fn func() (T, error), logMsg, errorPrefix string, logArgs ...an
 
 // Error payload the model sees, the bounded error text and success False
 func sessionSearchError(message string) string {
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("error", boundErrorText(message))
 	out.Set("success", false)
 	return sessionSearchDumps(out)
@@ -203,12 +203,12 @@ func formatTimestamp(ts any) string {
 	}
 	f, ok := sessionSearchFloat(ts)
 	if !ok {
-		return pyrepr.Str(ts)
+		return anyutil.String(ts)
 	}
 	sec := math.Floor(f)
 	t := time.Unix(int64(sec), int64(math.Round((f-sec)*1e6))*1000).Local()
 	if math.IsNaN(f) || math.IsInf(f, 0) || t.Year() < 1 || t.Year() > 9999 {
-		return pyrepr.Str(ts)
+		return anyutil.String(ts)
 	}
 	return config.SafeStrftime(t, "%B %d, %Y at %I:%M %p")
 }
@@ -242,21 +242,21 @@ func sessionSearchFloat(v any) (float64, bool) {
 }
 
 // Session row of an id, an empty dict when it is missing or the read fails
-func getSessionMeta(ctx context.Context, db SessionSearchStore, sessionID string) *pyjson.Object {
+func getSessionMeta(ctx context.Context, db SessionSearchStore, sessionID string) *jsonutil.Object {
 	meta, err := db.GetSession(ctx, sessionID)
 	if err != nil {
 		pkgLog().Debug(fmt.Sprintf("get_session failed for %s: %v", sessionID, err))
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	if meta == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return meta
 }
 
 // Session metadata block of a result, when, source, model and title
-func sessionMetaBlock(meta *pyjson.Object) *pyjson.Object {
-	out := pyjson.NewObject()
+func sessionMetaBlock(meta *jsonutil.Object) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("when", formatTimestamp(oget(meta, "started_at")))
 	out.Set("source", oget(meta, "source"))
 	out.Set("model", oget(meta, "model"))
@@ -289,7 +289,7 @@ func resolveToParent(ctx context.Context, db SessionSearchStore, sessionID strin
 		reason, _ := oget(s, "end_reason").(string)
 		hasCompression = hasCompression || reason == "compression"
 		parent := oget(s, "parent_session_id")
-		if !pyrepr.Truthy(parent) {
+		if !anyutil.IsTrue(parent) {
 			break
 		}
 		cur = ostr(parent)
@@ -311,7 +311,7 @@ type sessionSearchBound struct {
 
 // Python ValueError text of an invalid bound
 func invalidTimeBound(value any) error {
-	return errors.New("invalid time bound: " + pyrepr.Repr(value) + " (expected ISO date/datetime like " +
+	return errors.New("invalid time bound: " + anyutil.Quote(value) + " (expected ISO date/datetime like " +
 		"2026-07-01, or a relative duration like 7d, 24h, 2w)")
 }
 
@@ -320,7 +320,7 @@ func parseISOBound(value any) (*sessionSearchBound, error) {
 	if value == nil {
 		return nil, nil
 	}
-	text := strings.TrimSpace(pyrepr.Str(value))
+	text := strings.TrimSpace(anyutil.String(value))
 	if text == "" {
 		return nil, nil
 	}
@@ -333,7 +333,7 @@ func parseISOBound(value any) (*sessionSearchBound, error) {
 		}
 		return &sessionSearchBound{value: ts.Int64()}, nil
 	}
-	parsed, aware, err := pydatetime.ParseISOFormat(text)
+	parsed, aware, err := timeutil.ParseISOZone(text, time.UTC)
 	if err != nil {
 		return nil, invalidTimeBound(value)
 	}
@@ -448,7 +448,7 @@ func sessionLeftLiveContext(ctx context.Context, db SessionSearchStore, sessionI
 		return false
 	}
 	reason := oget(getSessionMeta(ctx, db, sessionID), "end_reason")
-	if !pyrepr.Truthy(reason) {
+	if !anyutil.IsTrue(reason) {
 		return false
 	}
 	text, ok := reason.(string)
@@ -456,8 +456,8 @@ func sessionLeftLiveContext(ctx context.Context, db SessionSearchStore, sessionI
 }
 
 // Owning session and visibility flags of a message id, nil when missing or on error
-func getMessageStorageState(ctx context.Context, db SessionSearchStore, messageID any) *pyjson.Object {
-	if !pyrepr.Truthy(messageID) {
+func getMessageStorageState(ctx context.Context, db SessionSearchStore, messageID any) *jsonutil.Object {
+	if !anyutil.IsTrue(messageID) {
 		return nil
 	}
 	var sessionID string
@@ -471,7 +471,7 @@ func getMessageStorageState(ctx context.Context, db SessionSearchStore, messageI
 		}
 		return nil
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("session_id", sessionID)
 	out.Set("active", active)
 	out.Set("compacted", compacted)
@@ -479,7 +479,7 @@ func getMessageStorageState(ctx context.Context, db SessionSearchStore, messageI
 }
 
 // True for a compaction archive row, active zero and compacted one
-func isCompactedState(st *pyjson.Object) bool {
+func isCompactedState(st *jsonutil.Object) bool {
 	if st == nil {
 		return false
 	}
@@ -494,18 +494,18 @@ func isCompactedMessage(ctx context.Context, db SessionSearchStore, messageID an
 }
 
 // Slim message row keeping content even when empty, the anchor flagged and long content capped
-func shapeMessage(m *pyjson.Object, anchorID any, maxContentLen int) *pyjson.Object {
+func shapeMessage(m *jsonutil.Object, anchorID any, maxContentLen int) *jsonutil.Object {
 	content := oget(m, "content")
 	if s, ok := content.(string); ok && strings.Contains(s, "\x1b") {
 		content = StripANSI(s)
 	}
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("id", oget(m, "id"))
 	entry.Set("role", oget(m, "role"))
 	entry.Set("content", content)
 	entry.Set("timestamp", oget(m, "timestamp"))
 	for _, k := range []string{"tool_name", "tool_calls", "tool_call_id"} {
-		if v := oget(m, k); pyrepr.Truthy(v) {
+		if v := oget(m, k); anyutil.IsTrue(v) {
 			entry.Set(k, v)
 		}
 	}
@@ -517,9 +517,9 @@ func shapeMessage(m *pyjson.Object, anchorID any, maxContentLen int) *pyjson.Obj
 		entry.Set("content_truncated", true)
 		entry.Set("original_content_chars", utf8.RuneCountInString(s))
 	}
-	out := pyjson.NewObject()
-	for _, k := range entry.Keys {
-		if v := entry.Vals[k]; v != nil || k == "content" {
+	out := jsonutil.NewObject()
+	for _, k := range entry.Keys() {
+		if v := entry.Value(k); v != nil || k == "content" {
 			out.Set(k, v)
 		}
 	}
@@ -560,8 +560,8 @@ type discoveryFields struct {
 }
 
 // Discovery entry in canonical key order, parent_session_id set when the hit lives in a child
-func discoveryEntry(lineageRoot string, f discoveryFields) *pyjson.Object {
-	entry := pyjson.NewObject()
+func discoveryEntry(lineageRoot string, f discoveryFields) *jsonutil.Object {
+	entry := jsonutil.NewObject()
 	entry.Set("session_id", f.sessionID)
 	entry.Set("when", f.when)
 	entry.Set("source", f.source)
@@ -583,11 +583,11 @@ func discoveryEntry(lineageRoot string, f discoveryFields) *pyjson.Object {
 }
 
 // Message objects of a view key, or the fallback rows when the key is empty
-func viewRows(view *pyjson.Object, key string, fallback []*pyjson.Object) []*pyjson.Object {
+func viewRows(view *jsonutil.Object, key string, fallback []*jsonutil.Object) []*jsonutil.Object {
 	if rows, ok := oget(view, key).([]any); ok && len(rows) > 0 {
-		out := make([]*pyjson.Object, 0, len(rows))
+		out := make([]*jsonutil.Object, 0, len(rows))
 		for _, r := range rows {
-			if o, ok := r.(*pyjson.Object); ok {
+			if o, ok := r.(*jsonutil.Object); ok {
 				out = append(out, o)
 			}
 		}
@@ -597,7 +597,7 @@ func viewRows(view *pyjson.Object, key string, fallback []*pyjson.Object) []*pyj
 }
 
 // Shaped messages of a list as a JSON array value
-func shapeAll(rows []*pyjson.Object, anchorID any, maxContentLen int) []any {
+func shapeAll(rows []*jsonutil.Object, anchorID any, maxContentLen int) []any {
 	out := make([]any, 0, len(rows))
 	for _, m := range rows {
 		out = append(out, shapeMessage(m, anchorID, maxContentLen))
@@ -606,14 +606,14 @@ func shapeAll(rows []*pyjson.Object, anchorID any, maxContentLen int) []any {
 }
 
 // Discovery shaped result when the query matches a session title, nil otherwise
-func titleMatchResult(ctx context.Context, db SessionSearchStore, query, currentLineageRoot string) *pyjson.Object {
+func titleMatchResult(ctx context.Context, db SessionSearchStore, query, currentLineageRoot string) *jsonutil.Object {
 	titleQuery := strings.Trim(strings.TrimSpace(query), "`'\"")
 	if titleQuery == "" {
 		return nil
 	}
 	sessionID, found, err := db.ResolveSessionByTitle(ctx, titleQuery)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("resolve_session_by_title failed for %s", pyrepr.Repr(titleQuery)))
+		pkgLog().Debug(fmt.Sprintf("resolve_session_by_title failed for %s", anyutil.Quote(titleQuery)))
 		return nil
 	}
 	if !found || sessionID == "" {
@@ -623,7 +623,7 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 	if currentLineageRoot != "" && lineageRoot == currentLineageRoot && !sessionLeftLiveContext(ctx, db, sessionID) {
 		return nil
 	}
-	sessionMeta := pyjson.NewObject()
+	sessionMeta := jsonutil.NewObject()
 	if root, err := db.GetSession(ctx, lineageRoot); err != nil {
 		pkgLog().Debug(fmt.Sprintf("get_session failed for title match %s", sessionID))
 	} else if root != nil {
@@ -642,7 +642,7 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 		messages = nil
 	}
 	var anchorID any
-	view := pyjson.NewObject()
+	view := jsonutil.NewObject()
 	if len(messages) > 0 {
 		anchorID = oget(messages[0], "id")
 	}
@@ -686,7 +686,7 @@ func titleMatchResult(ctx context.Context, db SessionSearchStore, query, current
 func thousands(v any) string {
 	n, err := pyint.Of(v)
 	if err != nil {
-		return pyrepr.Str(v)
+		return anyutil.String(v)
 	}
 	digits := n.String()
 	sign := ""
@@ -704,13 +704,13 @@ func thousands(v any) string {
 }
 
 // Discovery response, the FTS rebuild progress noted so thin results are explained
-func discoverPayload(ctx context.Context, db SessionSearchStore, query, detail string, results []*pyjson.Object, extra *pyjson.Object) string {
+func discoverPayload(ctx context.Context, db SessionSearchStore, query, detail string, results []*jsonutil.Object, extra *jsonutil.Object) string {
 	status, err := db.FTSRebuildStatus(ctx)
 	if err != nil {
 		pkgLog().Debug("fts_rebuild_status failed", "err", err)
 		status = nil
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("mode", "discover")
 	payload.Set("query", query)
 	payload.Set("detail", detail)
@@ -720,22 +720,22 @@ func discoverPayload(ctx context.Context, db SessionSearchStore, query, detail s
 	}
 	payload.Set("results", list)
 	payload.Set("count", len(results))
-	for _, k := range extra.Keys {
-		payload.Set(k, extra.Vals[k])
+	for _, k := range extra.Keys() {
+		payload.Set(k, extra.Value(k))
 	}
 	if status != nil {
-		rebuild := pyjson.NewObject()
+		rebuild := jsonutil.NewObject()
 		rebuild.Set("percent", oget(status, "percent"))
 		rebuild.Set("note", fmt.Sprintf("The search index is rebuilding in the background (%s%% done, %s of %s messages). "+
 			"Results from older messages may be incomplete until it finishes.",
-			pyrepr.Str(oget(status, "percent")), thousands(oget(status, "indexed")), thousands(oget(status, "total"))))
+			anyutil.String(oget(status, "percent")), thousands(oget(status, "indexed")), thousands(oget(status, "total"))))
 		payload.Set("index_rebuild", rebuild)
 	}
 	return sessionSearchOK(payload)
 }
 
 // Bookend messages of a view capped at 1200 characters with compaction summaries dropped
-func bookend(view *pyjson.Object, key string) []any {
+func bookend(view *jsonutil.Object, key string) []any {
 	out := []any{}
 	for _, m := range viewRows(view, key, nil) {
 		if isCompactionSummary(ogetDefault(m, "content", "")) {
@@ -747,11 +747,11 @@ func bookend(view *pyjson.Object, key string) []any {
 }
 
 // Discovery result of a surviving FTS row, nil when its anchored view cannot load
-func hydrateHit(ctx context.Context, db SessionSearchStore, lineageRoot string, matchInfo *pyjson.Object, resultDetail string) *pyjson.Object {
+func hydrateHit(ctx context.Context, db SessionSearchStore, lineageRoot string, matchInfo *jsonutil.Object, resultDetail string) *jsonutil.Object {
 	hitSID := ostr(pyOr(oget(matchInfo, "session_id"), lineageRoot))
 	msgID := oget(matchInfo, "id")
 	id, ok := sessionSearchInt(msgID)
-	var view *pyjson.Object
+	var view *jsonutil.Object
 	var err error
 	if ok {
 		view, err = db.GetAnchoredView(ctx, hitSID, id, state.AnchoredViewOptions{Window: 5, Bookend: 3, KeepRoles: []string{"user", "assistant"}})
@@ -763,7 +763,7 @@ func hydrateHit(ctx context.Context, db SessionSearchStore, lineageRoot string, 
 		return nil
 	}
 	if view == nil {
-		view = pyjson.NewObject()
+		view = jsonutil.NewObject()
 	}
 	sessionMeta, full := getSessionMeta(ctx, db, lineageRoot), resultDetail == "full"
 	messages := []any{}
@@ -796,7 +796,7 @@ func hydrateHit(ctx context.Context, db SessionSearchStore, lineageRoot string, 
 
 // One lineage root of the discovery dedup, the title hit or the first surviving FTS row
 type seenSession struct {
-	match     *pyjson.Object
+	match     *jsonutil.Object
 	titleOnly bool
 }
 
@@ -839,7 +839,7 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 		v := beforeTS.value
 		opts.BeforeTS = &v
 	}
-	rawResults, errJSON := loud(func() ([]*pyjson.Object, error) {
+	rawResults, errJSON := loud(func() ([]*jsonutil.Object, error) {
 		if afterTS != nil && afterTS.overflow {
 			return nil, errors.New("the after timestamp is beyond the 64-bit integer range the session store holds")
 		}
@@ -857,7 +857,7 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 		return !di && dj
 	})
 	if len(rawResults) == 0 && titleResult == nil {
-		extra := pyjson.NewObject()
+		extra := jsonutil.NewObject()
 		extra.Set("message", "No matching sessions found. FTS5 ANDs all terms by default — "+
 			"broaden with OR (`alpha OR beta`), exact-match with quoted "+
 			"phrases, exclude with NOT, or prefix-match with `deploy*`.")
@@ -865,10 +865,10 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 	}
 	seenOrder := []string{}
 	seen := map[string]seenSession{}
-	results := []*pyjson.Object{}
+	results := []*jsonutil.Object{}
 	if titleResult != nil {
 		results = append(results, titleResult)
-		if titleLineage, _ := titleResult.Pop("_lineage_root"); pyrepr.Truthy(titleLineage) {
+		if titleLineage, _ := titleResult.Take("_lineage_root"); anyutil.IsTrue(titleLineage) {
 			seenOrder = append(seenOrder, ostr(titleLineage))
 			seen[ostr(titleLineage)] = seenSession{titleOnly: true}
 		}
@@ -890,7 +890,7 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 			continue
 		}
 		if _, dup := seen[resolvedSID]; !dup {
-			match := r.Copy()
+			match := r.Clone()
 			match.Set("_lineage_root", resolvedSID)
 			seenOrder = append(seenOrder, resolvedSID)
 			seen[resolvedSID] = seenSession{match: match}
@@ -912,7 +912,7 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 	for _, entry := range results {
 		entry.Set("link", sessionLink(ctx, ostr(oget(entry, "session_id")), linkProfile))
 	}
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	extra.Set("sessions_searched", len(seen))
 	extra.Set("link_hint", "When referring the user to a session, write its `link` value "+
 		"verbatim inline mid-sentence (it renders as a titled link) — never "+
@@ -924,10 +924,10 @@ func discover(ctx context.Context, db SessionSearchStore, query string, roleFilt
 
 // Another profile's state database opened read only, nil for the current profile
 func resolveProfileDB(ctx context.Context, profile any) (SessionSearchStore, error) {
-	if profile == nil || strings.TrimSpace(pyrepr.Str(profile)) == "" {
+	if profile == nil || strings.TrimSpace(anyutil.String(profile)) == "" {
 		return nil, nil
 	}
-	canon, err := ProfileStoreHooks.Normalize(pyrepr.Str(profile))
+	canon, err := ProfileStoreHooks.Normalize(anyutil.String(profile))
 	if err != nil {
 		return nil, err
 	}
@@ -975,7 +975,7 @@ func readSession(ctx context.Context, db SessionSearchStore, sessionID string, h
 	if meta.Len() == 0 {
 		return sessionSearchError("session_id not found: " + sessionID)
 	}
-	rows, errJSON := loud(func() ([]*pyjson.Object, error) { return db.GetMessages(ctx, sessionID, state.GetMessagesOptions{}) },
+	rows, errJSON := loud(func() ([]*jsonutil.Object, error) { return db.GetMessages(ctx, sessionID, state.GetMessagesOptions{}) },
 		"get_messages failed for %s: %v", "failed to load session", sessionID)
 	if errJSON != "" {
 		return errJSON
@@ -983,7 +983,7 @@ func readSession(ctx context.Context, db SessionSearchStore, sessionID string, h
 	shaped := shapeAll(rows, nil, sessionSearchReadMaxContent)
 	total := len(shaped)
 	truncated := total > head+tail
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("mode", "read")
 	payload.Set("session_id", sessionID)
 	payload.Set("link", sessionLink(ctx, sessionID, linkProfile))
@@ -1007,7 +1007,7 @@ func readScoped(ctx context.Context, db SessionSearchStore, sid string, profile 
 	if err := json.Unmarshal([]byte(result), &decoded); err != nil {
 		panic(fmt.Sprintf("session_search read result is not JSON: %v", err))
 	}
-	if success, ok := decoded["success"].(bool); !(ok && !success) || pyrepr.Truthy(profile) {
+	if success, ok := decoded["success"].(bool); !(ok && !success) || anyutil.IsTrue(profile) {
 		return result
 	}
 	return sessionSearchError(fmt.Sprintf("session_id not found in this profile: %s. If it belongs to another "+
@@ -1044,7 +1044,7 @@ func listRecentSessions(ctx context.Context, db SessionSearchStore, limit int, c
 			if len(results) >= limit {
 				break
 			}
-			row := pyjson.NewObject()
+			row := jsonutil.NewObject()
 			row.Set("session_id", id)
 			row.Set("link", sessionLink(ctx, id, linkProfile))
 			row.Set("title", pyOr(oget(s, "title"), nil))
@@ -1055,7 +1055,7 @@ func listRecentSessions(ctx context.Context, db SessionSearchStore, limit int, c
 			row.Set("preview", ogetDefault(s, "preview", ""))
 			results = append(results, row)
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		payload.Set("mode", "browse")
 		payload.Set("results", results)
 		payload.Set("count", len(results))
@@ -1086,7 +1086,7 @@ func sessionSearchClamp(value any, def, lo, hi int) int {
 }
 
 // True when a scroll anchor is still in the caller's active context and must be rejected
-func anchorInLiveContext(ctx context.Context, db SessionSearchStore, anchorState *pyjson.Object, anchorSID, currentSessionID string) bool {
+func anchorInLiveContext(ctx context.Context, db SessionSearchStore, anchorState *jsonutil.Object, anchorSID, currentSessionID string) bool {
 	if !sameLineage(ctx, db, anchorSID, currentSessionID) || isCompactedState(anchorState) {
 		return false
 	}
@@ -1118,19 +1118,19 @@ func scroll(ctx context.Context, db SessionSearchStore, sessionID string, around
 	if sessionMeta.Len() == 0 {
 		return sessionSearchError("session_id not found: " + sessionID)
 	}
-	view, errJSON := loud(func() (*pyjson.Object, error) { return db.GetMessagesAround(ctx, sessionID, anchor, win) },
+	view, errJSON := loud(func() (*jsonutil.Object, error) { return db.GetMessagesAround(ctx, sessionID, anchor, win) },
 		"get_messages_around failed: %v", "failed to load messages")
 	if errJSON != "" {
 		return errJSON
 	}
 	var err error
 	if view == nil {
-		view = pyjson.NewObject()
+		view = jsonutil.NewObject()
 	}
 	messages := viewRows(view, "window", nil)
-	extra := pyjson.NewObject()
+	extra := jsonutil.NewObject()
 	if len(messages) == 0 && owning != "" && owning != sessionID {
-		var rebind *pyjson.Object
+		var rebind *jsonutil.Object
 		if sameLineage(ctx, db, sessionID, owning) {
 			if rebind, err = db.GetMessagesAround(ctx, owning, anchor, win); err != nil {
 				pkgLog().Debug(fmt.Sprintf("rebind get_messages_around failed: %v", err))
@@ -1148,7 +1148,7 @@ func scroll(ctx context.Context, db SessionSearchStore, sessionID string, around
 	if len(messages) == 0 {
 		return sessionSearchError(fmt.Sprintf("around_message_id %d not in session_id %s", anchor, sessionID))
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("mode", "scroll")
 	payload.Set("session_id", sessionID)
 	payload.Set("around_message_id", anchor)
@@ -1161,8 +1161,8 @@ func scroll(ctx context.Context, db SessionSearchStore, sessionID string, around
 		"id; backward: the FIRST message's id (the boundary message repeats "+
 		"as an orientation marker). messages_before/messages_after < window "+
 		"means you've hit that end of the session.")
-	for _, k := range extra.Keys {
-		payload.Set(k, extra.Vals[k])
+	for _, k := range extra.Keys() {
+		payload.Set(k, extra.Value(k))
 	}
 	return sessionSearchOK(payload)
 }
@@ -1176,7 +1176,7 @@ func sessionSearchDispatch(ctx context.Context, a SessionSearchArgs, db SessionS
 		return readScoped(ctx, db, strings.TrimSpace(sid), a.Profile)
 	}
 	query, isText := a.Query.(string)
-	browse := !pyrepr.Truthy(a.Query) || !isText || strings.TrimSpace(query) == ""
+	browse := !anyutil.IsTrue(a.Query) || !isText || strings.TrimSpace(query) == ""
 	def := 3
 	if browse {
 		def = 10
@@ -1223,15 +1223,15 @@ func SessionSearch(ctx context.Context, a SessionSearchArgs) string {
 		embProfile, embID, _ := strings.Cut(sid, "/")
 		if embID != "" {
 			a.SessionID = embID
-			if embProfile != "" && (a.Profile == nil || strings.TrimSpace(pyrepr.Str(a.Profile)) == "") {
+			if embProfile != "" && (a.Profile == nil || strings.TrimSpace(anyutil.String(a.Profile)) == "") {
 				a.Profile = embProfile
 			}
 		}
 	}
 	profileDB, err := resolveProfileDBFn(ctx, a.Profile)
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("session_search: cannot open profile %s", pyrepr.Repr(a.Profile)), "err", err)
-		return sessionSearchError(fmt.Sprintf("profile '%s': %v", pyrepr.Str(a.Profile), err))
+		pkgLog().Debug(fmt.Sprintf("session_search: cannot open profile %s", anyutil.Quote(a.Profile)), "err", err)
+		return sessionSearchError(fmt.Sprintf("profile '%s': %v", anyutil.String(a.Profile), err))
 	}
 	db, currentSessionID := a.DB, a.CurrentSessionID
 	if profileDB != nil {
@@ -1302,10 +1302,10 @@ func sessionSearchArgsOf(args map[string]any, db *state.DB, currentSessionID str
 func sessionSearchInlineExecutor(ctx context.Context, host ExecutorHost, args map[string]any, _ InlineToolContext) (string, error) {
 	db := host.SessionDBForRecall(ctx)
 	if db == nil {
-		out := pyjson.NewObject()
+		out := jsonutil.NewObject()
 		out.Set("success", false)
 		out.Set("error", state.FormatSessionDBUnavailable(ctx, state.SessionDBUnavailablePrefix, false))
-		text, err := pyjson.Dumps(out)
+		text, err := jsonutil.Encode(out)
 		if err != nil {
 			return "", err
 		}

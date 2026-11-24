@@ -8,7 +8,7 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Dispatches icebath migrate, with the xai and agent subtypes
@@ -17,8 +17,8 @@ func MigrateCommand(ctx context.Context, h string, ns map[string]any, w, errw io
 	defer restore()
 	defer RecoverSetupExit(&code)
 	migrateType := ""
-	if pyrepr.Truthy(ns["migrate_type"]) {
-		migrateType = pyrepr.Str(ns["migrate_type"])
+	if anyutil.IsTrue(ns["migrate_type"]) {
+		migrateType = anyutil.String(ns["migrate_type"])
 	}
 	switch {
 	case migrateType == "xai":
@@ -36,12 +36,12 @@ func MigrateCommand(ctx context.Context, h string, ns map[string]any, w, errw io
 func cmdMigrateAgent(ctx context.Context, h string, ns map[string]any) (int, error) {
 	opts := AgentImportOptions{DryRun: nsFlag(ns, "dry_run"), Overwrite: nsFlag(ns, "overwrite"), Yes: nsFlag(ns, "yes"),
 		ActivateRoutines: nsFlag(ns, "activate_routines"), MigrateSecrets: nsFlag(ns, "migrate_secrets"), Bot: nsStringsOf(ns, "bot")}
-	if pyrepr.Truthy(ns["source"]) {
-		opts.Source = expandUserPath(pyrepr.Str(ns["source"]))
+	if anyutil.IsTrue(ns["source"]) {
+		opts.Source = expandUserPath(anyutil.String(ns["source"]))
 	}
-	agent := pyrepr.Str(ns["migrate_agent"])
-	if !pyrepr.Truthy(ns["migrate_agent"]) {
-		agent = pyrepr.Str(ns["migrate_type"])
+	agent := anyutil.String(ns["migrate_agent"])
+	if !anyutil.IsTrue(ns["migrate_agent"]) {
+		agent = anyutil.String(ns["migrate_type"])
 	}
 	return MigrateFromAgents(ctx, h, agent, opts)
 }
@@ -91,7 +91,7 @@ func cmdMigrateXai(ctx context.Context, h string, ns map[string]any, w, errw io.
 	}
 	result, err := ApplyXAIRetirementMigration(ctx, configPath, issues, !noBackup)
 	if err != nil {
-		return migrateFail(errw, fmt.Sprintf("Migration failed: %s", pyrepr.ExceptionMessage(err)))
+		return migrateFail(errw, fmt.Sprintf("Migration failed: %s", err.Error()))
 	}
 	if !result.ConfigChanged {
 		fmt.Fprintf(w, "  %s No changes written.\n", cliui.Color("⚠", cliui.Yellow))
@@ -119,7 +119,7 @@ func nsStringsOf(ns map[string]any, key string) []string {
 	case []any:
 		out := make([]string, 0, len(v))
 		for _, item := range v {
-			out = append(out, pyrepr.Str(item))
+			out = append(out, anyutil.String(item))
 		}
 		return out
 	}

@@ -14,7 +14,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 	"gopkg.in/yaml.v3"
 )
 
@@ -133,7 +133,7 @@ func TestConfigSeedRejectsForbiddenKeys(t *testing.T) {
 		t.Fatalf("int key %q", msg)
 	}
 	_, err = ParsePack("name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  yes:\n    nested:\n      true: {api_key: x}\n", "")
-	if msg := packErrText(t, err); !strings.Contains(msg, "plugin 'True' sets secret-shaped key 'nested.True.api_key'") {
+	if msg := packErrText(t, err); !strings.Contains(msg, "plugin 'true' sets secret-shaped key 'nested.true.api_key'") {
 		t.Fatalf("bool keys %q", msg)
 	}
 	_, err = ParsePack("name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  tts:\n    2001-12-14: x\n", "")
@@ -141,21 +141,22 @@ func TestConfigSeedRejectsForbiddenKeys(t *testing.T) {
 		t.Fatalf("date key %q", msg)
 	}
 	_, err = ParsePack("name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  tts:\n    2001-12-14t21:59:43.10-05:00: x\n", "")
-	if msg := packErrText(t, err); msg != "Pack config for plugin 'tts' has an invalid key: 2001-12-14 21:59:43.100000-05:00." {
+	if msg := packErrText(t, err); msg != "Pack config for plugin 'tts' has an invalid key: 2001-12-14 21:59:43.1-05:00." {
 		t.Fatalf("datetime key %q", msg)
 	}
 	_, err = ParsePack("name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  2002-12-14:\n    nested:\n      2001-12-14 21:59:43.10 -5: {api_key: x}\n", "")
-	if msg := packErrText(t, err); !strings.Contains(msg, "plugin '2002-12-14' sets secret-shaped key 'nested.2001-12-14 21:59:43.100000-05:00.api_key'") {
+	if msg := packErrText(t, err); !strings.Contains(msg, "plugin '2002-12-14' sets secret-shaped key 'nested.2001-12-14 21:59:43.1-05:00.api_key'") {
 		t.Fatalf("timestamp key paths %q", msg)
 	}
 	_, err = ParsePack("name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  tts:\n    2001-13-01: x\n", "")
-	if e, ok := err.(*pydatetime.Error); !ok || e.Kind != "ValueError" || e.Msg != "month must be in 1..12, not 13" {
+	var re *timeutil.RangeError
+	if !errors.As(err, &re) || re.Field != "month" || re.Value != 13 {
 		t.Fatalf("invalid timestamp key = %#v", err)
 	}
 	if got := mustParsePack(t, "name: p\nplugins:\n  - {repo: o/r, ref: "+packSHAA+"}\nconfig:\n  tts:\n    '2001-12-14': x\n").seedFor("tts"); !reflect.DeepEqual(got, map[string]any{"2001-12-14": "x"}) {
 		t.Fatalf("quoted timestamp key %v", got)
 	}
-	for text, want := range map[string]any{"2001-1-2": "2001-1-2", "2001-12-14": pydatetime.Date{Year: 2001, Month: 12, Day: 14}, "'2001-12-14'": "2001-12-14"} {
+	for text, want := range map[string]any{"2001-1-2": "2001-1-2", "2001-12-14": timeutil.Date{Year: 2001, Month: 12, Day: 14}, "'2001-12-14'": "2001-12-14"} {
 		var doc yaml.Node
 		if err := yaml.Unmarshal([]byte("{"+text+": 1}"), &doc); err != nil {
 			t.Fatal(err)

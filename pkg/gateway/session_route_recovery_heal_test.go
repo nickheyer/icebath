@@ -8,8 +8,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	_ "modernc.org/sqlite"
 )
 
@@ -33,7 +33,7 @@ func stripOrigin(ctx context.Context, t *testing.T, db *state.SessionDB, store *
 	data := store.LookupBySessionKey(ctx, key).ToDict()
 	data.Set("origin", nil)
 	data.Delete("platform")
-	text, _ := pyjson.Dumps(data)
+	text, _ := jsonutil.Encode(data)
 	if err := db.SaveGatewayRoutingEntry(ctx, key, text, store.routingScope()); err != nil {
 		t.Fatal(err)
 	}
@@ -110,11 +110,11 @@ func TestRoutingEntryOriginHeal(t *testing.T) {
 			t.Fatalf("session %v %v", got, err)
 		}
 		persisted := healStore(ctx, t, dir, db, false).LookupBySessionKey(ctx, entry.SessionKey)
-		want, _ := pyjson.Dumps(source.ToDict())
+		want, _ := jsonutil.Encode(source.ToDict())
 		if persisted.Origin == nil {
 			t.Fatal("origin not persisted")
 		}
-		if got, _ := pyjson.Dumps(persisted.Origin.ToDict()); got != want {
+		if got, _ := jsonutil.Encode(persisted.Origin.ToDict()); got != want {
 			t.Fatalf("origin %s want %s", got, want)
 		}
 	})
@@ -142,16 +142,16 @@ func TestRoutingEntryOriginHeal(t *testing.T) {
 		key := entry.SessionKey
 		stale := entry.ToDict()
 		stale.Set("origin", nil)
-		mirror := pyjson.NewObject()
+		mirror := jsonutil.NewObject()
 		mirror.Set(key, stale)
-		text, _ := pyjson.Dumps(mirror)
+		text, _ := jsonutil.Encode(mirror)
 		if err := os.WriteFile(filepath.Join(dir, "sessions", "sessions.json"), []byte(text), 0o600); err != nil {
 			t.Fatal(err)
 		}
 		durable := entry.ToDict()
 		durable.Set("suspended", true)
 		durable.Set("origin", nil)
-		durableText, _ := pyjson.Dumps(durable)
+		durableText, _ := jsonutil.Encode(durable)
 		if err := db.SaveGatewayRoutingEntry(ctx, key, durableText, healStore(ctx, t, dir, db, false).routingScope()); err != nil {
 			t.Fatal(err)
 		}
@@ -175,8 +175,8 @@ func TestRoutingEntryOriginHeal(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		parsed, _ := pyjson.Loads(rows[key])
-		if v, _ := parsed.(*pyjson.Object).Get("suspended"); v != true {
+		parsed, _ := jsonutil.Decode(rows[key])
+		if v, _ := parsed.(*jsonutil.Object).Get("suspended"); v != true {
 			t.Fatalf("durable row %s", rows[key])
 		}
 	})

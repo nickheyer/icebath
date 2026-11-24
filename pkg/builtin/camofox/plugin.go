@@ -5,9 +5,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Toolset every Camofox tool registers under
@@ -23,7 +24,7 @@ func (Plugin) Manifest() plugins.Manifest { return plugins.CatalogPortManifest("
 
 // Schema, handler, availability check and emoji of one tool
 type toolEntry struct {
-	schema  *pyjson.Object
+	schema  *jsonutil.Object
 	handler tools.Handler
 	check   func(env *tools.Env) bool
 	emoji   string
@@ -49,7 +50,7 @@ func (Plugin) Register(pctx *plugins.Context) error {
 		{browserImportCookiesSchema, handleImportCookies, checkCookieImportAvailable, "\U0001F36A"},
 	}
 	for _, e := range entries {
-		name, _ := e.schema.Vals["name"].(string)
+		name, _ := e.schema.Value("name").(string)
 		if _, err := pctx.RegisterTool(context.Background(), plugins.ToolSpec{Name: name, Toolset: Toolset, Schema: e.schema,
 			Handler: e.handler, Check: e.check, Emoji: e.emoji}); err != nil {
 			return err
@@ -66,7 +67,9 @@ func (Plugin) Register(pctx *plugins.Context) error {
 }
 
 // Hook argument as text, empty when absent or falsy
-func hookID(kwargs map[string]any, key string) string { return pyOrStr(kwargs[key]) }
+func hookID(kwargs map[string]any, key string) string {
+	return anyutil.String(anyutil.Or(kwargs[key], ""))
+}
 
 // Cleans the task's ephemeral session after every turn unless browser.headed keeps the window for a watcher
 func onSessionEnd(ctx context.Context, kwargs map[string]any) (any, error) {

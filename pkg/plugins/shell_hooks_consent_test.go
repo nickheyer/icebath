@@ -17,7 +17,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 )
@@ -274,7 +273,7 @@ func TestShellHookResyncKeepsInMemoryConsentAndNeverDisarmsOnBadInput(t *testing
 	a := writeHookScript(t, dir, "a.sh", "#!/bin/sh\nprintf '{}'\n")
 	b := writeHookScript(t, dir, "b.sh", "#!/bin/sh\nprintf '{}'\n")
 	cfg := hooksCfg("pre_tool_call", map[string]any{"command": a})
-	shellHookAtomicWrite = func(context.Context, string, any, os.FileMode, ...pyjson.Option) error {
+	shellHookAtomicWrite = func(context.Context, string, any, os.FileMode, ...jsonutil.Option) error {
 		return &os.PathError{Op: "open", Path: "x", Err: errors.New("ro")}
 	}
 	_ = AcceptShellHooksForLaunch(settings.WithFrozen(ctx, cfg))
@@ -331,7 +330,7 @@ func TestShellHookLaunchApprovalsAndRefusedEntries(t *testing.T) {
 	ResetShellHooksForTests()
 	ResetPluginManagersForTests()
 	_ = os.Remove(filepath.Join(h, ShellHookAllowlistFilename))
-	shellHookAtomicWrite = func(context.Context, string, any, os.FileMode, ...pyjson.Option) error {
+	shellHookAtomicWrite = func(context.Context, string, any, os.FileMode, ...jsonutil.Option) error {
 		return &os.PathError{Op: "open", Path: "x", Err: errors.New("ro")}
 	}
 	_ = AcceptShellHooksForLaunch(settings.WithFrozen(ctx, cfgA()))

@@ -2,9 +2,9 @@ package messagetools
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math"
-	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -14,10 +14,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -28,7 +27,7 @@ const (
 
 var graphRequiredEnv = []string{"MSGRAPH_TENANT_ID", "MSGRAPH_CLIENT_ID", "MSGRAPH_CLIENT_SECRET"}
 
-// Wall clock seconds since the epoch like time.time
+// Wall clock seconds since the epoch
 var timeNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 
 // Microsoft Graph auth failure, the base class of the config and token errors
@@ -67,7 +66,7 @@ func asAuthError(base *MicrosoftGraphAuthError, target any) bool {
 // Key lookup on a decoded JSON object or a plain map, false for any other value
 func jsonDict(v any) (func(string) any, bool) {
 	switch d := v.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if d == nil {
 			return nil, false
 		}
@@ -88,11 +87,11 @@ func FormatGraphError(errValue any) (string, bool) {
 		return "", false
 	}
 	code, message := get("code"), get("message")
-	if pyrepr.Truthy(code) && pyrepr.Truthy(message) {
-		return pyrepr.Str(code) + ": " + pyrepr.Str(message), true
+	if anyutil.IsTrue(code) && anyutil.IsTrue(message) {
+		return anyutil.String(code) + ": " + anyutil.String(message), true
 	}
-	if pyrepr.Truthy(message) {
-		return pyrepr.Str(message), true
+	if anyutil.IsTrue(message) {
+		return anyutil.String(message), true
 	}
 	return "", false
 }
@@ -210,9 +209,9 @@ func MicrosoftGraphTokenProviderFromEnv(environ map[string]string, opts ...Micro
 func (p *MicrosoftGraphTokenProvider) ClearCache() { p.cached.Store(nil) }
 
 // Configuration and cache state report with expiry figures null when nothing is cached
-func (p *MicrosoftGraphTokenProvider) InspectTokenHealth() *pyjson.Object {
+func (p *MicrosoftGraphTokenProvider) InspectTokenHealth() *jsonutil.Object {
 	cached, creds := p.cached.Load(), p.Credentials
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("configured", true)
 	out.Set("tenant_id", creds.TenantID)
 	out.Set("client_id", creds.ClientID)
@@ -268,10 +267,10 @@ func tokenError(msg string, cause error) error {
 // One fresh httpx style client per call, closed when the call ends
 func freshHTTPClient(transport http.RoundTripper) (*http.Client, func()) {
 	if transport != nil {
-		return &http.Client{Transport: transport, CheckRedirect: pyhttpx.RedirectPolicy(false)}, func() {}
+		return &http.Client{Transport: transport, CheckRedirect: httputil.RedirectPolicy(false)}, func() {}
 	}
 	t := netpref.Follow(http.DefaultTransport.(*http.Transport).Clone())
-	return &http.Client{Transport: t, CheckRedirect: pyhttpx.RedirectPolicy(false)}, t.CloseIdleConnections
+	return &http.Client{Transport: t, CheckRedirect: httputil.RedirectPolicy(false)}, t.CloseIdleConnections
 }
 
 // Client credentials grant against the token endpoint parsed into a cached token
@@ -288,7 +287,7 @@ func (p *MicrosoftGraphTokenProvider) fetchAccessToken(ctx context.Context) (*Ca
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	client, closeClient := freshHTTPClient(p.transport)
-	resp, err := pyhttpx.Do(client, req, p.Timeout)
+	resp, err := httputil.Do(client, req, httputil.EachPhase(p.Timeout))
 	closeClient()
 	if err != nil {
 		return nil, err
@@ -305,29 +304,23 @@ func (p *MicrosoftGraphTokenProvider) fetchAccessToken(ctx context.Context) (*Ca
 		return nil, fmt.Errorf("the Microsoft Graph token response must be a JSON object, got %s", errchain.Kind(payload))
 	}
 	accessToken := ""
-	if v := get("access_token"); pyrepr.Truthy(v) {
-		accessToken = strings.TrimSpace(pyrepr.Str(v))
+	if v := get("access_token"); anyutil.IsTrue(v) {
+		accessToken = strings.TrimSpace(anyutil.String(v))
 	}
 	if accessToken == "" {
 		return nil, tokenError("Microsoft Graph token response did not include access_token.", nil)
 	}
-	n, err := pyint.Of(get("expires_in"))
+	n, err := anyutil.ToInt(get("expires_in"))
 	if err != nil {
-		if pe, ok := err.(*pyint.Error); ok && pe.Kind == "OverflowError" {
+		if errors.Is(err, anyutil.ErrRange) {
 			return nil, err
 		}
 		return nil, tokenError("Microsoft Graph token response did not include a valid expires_in.", err)
 	}
-	if n.Sign() < 0 {
-		n = new(big.Int)
-	}
-	lifetime, _ := new(big.Float).SetInt(n).Float64()
-	if math.IsInf(lifetime, 0) {
-		return nil, &pyint.Error{Kind: "OverflowError", Msg: "int too large to convert to float"}
-	}
+	lifetime := float64(max(n, 0))
 	tokenType := "Bearer"
-	if v := get("token_type"); pyrepr.Truthy(v) {
-		tokenType = strings.TrimSpace(pyrepr.Str(v))
+	if v := get("token_type"); anyutil.IsTrue(v) {
+		tokenType = strings.TrimSpace(anyutil.String(v))
 	}
 	if tokenType == "" {
 		tokenType = "Bearer"
@@ -336,7 +329,7 @@ func (p *MicrosoftGraphTokenProvider) fetchAccessToken(ctx context.Context) (*Ca
 }
 
 // Readable detail of a token endpoint error body, error_description first then the Graph error, code or raw text
-func extractErrorDetail(resp *pyhttpx.Response) string {
+func extractErrorDetail(resp *httputil.Response) string {
 	payload, err := resp.JSON()
 	if err != nil {
 		if text := strings.TrimSpace(resp.Text()); text != "" {
@@ -346,7 +339,7 @@ func extractErrorDetail(resp *pyhttpx.Response) string {
 	}
 	get, ok := jsonDict(payload)
 	if !ok {
-		return pyrepr.Str(payload)
+		return anyutil.String(payload)
 	}
 	if s, ok := get("error_description").(string); ok {
 		return s
@@ -355,8 +348,8 @@ func extractErrorDetail(resp *pyhttpx.Response) string {
 	if detail, ok := FormatGraphError(errValue); ok {
 		return detail
 	}
-	if eget, ok := jsonDict(errValue); ok && pyrepr.Truthy(eget("code")) {
-		return pyrepr.Str(eget("code"))
+	if eget, ok := jsonDict(errValue); ok && anyutil.IsTrue(eget("code")) {
+		return anyutil.String(eget("code"))
 	}
-	return pyrepr.Str(payload)
+	return anyutil.String(payload)
 }

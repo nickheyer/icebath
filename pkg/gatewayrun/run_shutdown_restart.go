@@ -15,13 +15,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Icebath argv for update and restart, this install's own binary, else icebath on PATH, else nil
@@ -113,7 +113,7 @@ func spawnWindowsRestartWatcher(ctx context.Context, icebathCmd []string, curren
 		return err
 	}
 	argv := append([]string{watcherBinary, gateway.GatewayDetachedRestartWatcherEntry, fmt.Sprint(currentPID),
-		pyrepr.Str(restartAfterS)}, icebathCmd...)
+		anyutil.String(restartAfterS)}, icebathCmd...)
 	argv = append(argv, "gateway", "restart")
 	start := func(breakaway bool) error {
 		cmd := exec.Command(argv[0], argv[1:]...)
@@ -161,7 +161,7 @@ func (r *GatewayRunner) launchDetachedRestartCommand(ctx context.Context) error 
 	}
 	quoted := make([]string, len(icebathCmd))
 	for i, part := range icebathCmd {
-		quoted[i] = pyshlex.Quote(part)
+		quoted[i] = shellutil.Quote(part)
 	}
 	shellCmd := fmt.Sprintf("deadline=$(( $(date +%%s) + %d )); "+
 		"while kill -0 %d 2>/dev/null && [ $(date +%%s) -lt $deadline ]; do sleep 0.2; done; "+
@@ -282,10 +282,10 @@ func (r *GatewayRunner) awaitActiveWorkBeforeRestart(ctx context.Context) (bool,
 		"deferring stop() until they finish (cap=%.0fs) so in-flight "+
 		"turns are not amputated (#77184)", active, timeout))
 	r.scaleToZeroStatus(ctx, "draining", "restart wait: status mark failed")
-	deadline := pythread.Monotonic() + timeout
+	deadline := timeutil.Monotonic() + timeout
 	lastStatusAt := 0.0
 	for r.awaitableWorkCount(ctx) > 0 {
-		now := pythread.Monotonic()
+		now := timeutil.Monotonic()
 		if now >= deadline {
 			pkgLog().Warn(fmt.Sprintf("Restart after-turn wait timed out after %.0fs with %d "+
 				"still active; proceeding to stop()/drain which may "+

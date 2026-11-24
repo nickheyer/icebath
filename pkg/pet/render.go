@@ -16,7 +16,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypil"
+	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
 	_ "golang.org/x/image/bmp"
 	_ "golang.org/x/image/webp"
 )
@@ -174,7 +174,7 @@ func rawFrames(sheetPath, state string, frameW, frameH, framesPerState int) []*i
 			pkgLog().Debug(fmt.Sprintf("pet frame decode failed (%s, %s): %s", sheetPath, state, err))
 			return nil
 		}
-		return SheetFrames(pypil.ToNRGBA(decoded), state, frameW, frameH, framesPerState)
+		return SheetFrames(imageutil.ToNRGBA(decoded), state, frameW, frameH, framesPerState)
 	})
 }
 
@@ -204,7 +204,7 @@ func framesFor(sheetPath, state string, frameW, frameH, framesPerState, scaleW, 
 		}
 		out := make([]*image.NRGBA, len(raw))
 		for i, f := range raw {
-			out[i] = pypil.ResizeLanczos(f, scaleW, scaleH)
+			out[i] = imageutil.Resize(f, scaleW, scaleH, imageutil.Lanczos)
 		}
 		return out
 	})
@@ -273,7 +273,7 @@ func fitFramesToCellGrid(frames []*image.NRGBA) []*image.NRGBA {
 	}
 	out := make([]*image.NRGBA, len(frames))
 	for i, f := range frames {
-		out[i] = pypil.ResizeLanczos(f, targetW, targetH)
+		out[i] = imageutil.Resize(f, targetW, targetH, imageutil.Lanczos)
 	}
 	return out
 }
@@ -343,7 +343,7 @@ func DownscaleCells(frame *image.NRGBA, targetCols int) [][]Cell {
 	targetCols = max(4, targetCols)
 	aspect := float64(frame.Rect.Dy()) / float64(max(1, frame.Rect.Dx()))
 	targetRows := max(2, int(math.RoundToEven(float64(targetCols)*aspect*0.5))*2)
-	small := pypil.ResizeLanczos(frame, targetCols, targetRows)
+	small := imageutil.Resize(frame, targetCols, targetRows, imageutil.Lanczos)
 	pixel := func(x, y int) [4]uint8 {
 		i := small.PixOffset(x, y)
 		return [4]uint8{small.Pix[i], small.Pix[i+1], small.Pix[i+2], small.Pix[i+3]}
@@ -480,7 +480,7 @@ func SheetFrameEscapes(sheet *image.NRGBA, state, mode string, frameW, frameH, f
 	var out []string
 	for _, f := range SheetFrames(sheet, state, frameW, frameH, framesPerState) {
 		if scaleW != frameW || scaleH != frameH {
-			f = pypil.ResizeLanczos(f, scaleW, scaleH)
+			f = imageutil.Resize(f, scaleW, scaleH, imageutil.Lanczos)
 		}
 		out = append(out, encode(f))
 	}

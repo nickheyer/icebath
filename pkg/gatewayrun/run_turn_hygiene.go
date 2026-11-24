@@ -11,14 +11,14 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Hygiene pre check outcome for one turn
@@ -93,14 +93,14 @@ func (r *GatewayRunner) hmwaHygieneSettings(ctx context.Context, source *gateway
 		configuredModel, configuredProvider, configuredBaseURL := hs.model, hs.provider, hs.baseURL
 		if model, runtime, err := r.resolveSessionAgentRuntime(ctx, source, sessionKey, hs.data, true); err == nil {
 			hs.model = model
-			if v := runtime["provider"]; pyrepr.Truthy(v) {
-				hs.provider = pyrepr.Str(v)
+			if v := runtime["provider"]; anyutil.IsTrue(v) {
+				hs.provider = anyutil.String(v)
 			}
-			if v := runtime["base_url"]; pyrepr.Truthy(v) {
-				hs.baseURL = pyrepr.Str(v)
+			if v := runtime["base_url"]; anyutil.IsTrue(v) {
+				hs.baseURL = anyutil.String(v)
 			}
-			if v := runtime["api_key"]; pyrepr.Truthy(v) {
-				hs.apiKey = pyrepr.Str(v)
+			if v := runtime["api_key"]; anyutil.IsTrue(v) {
+				hs.apiKey = anyutil.String(v)
 			}
 		}
 		if hs.configContextLength != nil && provider.ShouldClearContextPin(configuredModel, hs.model, configuredBaseURL, hs.baseURL, configuredProvider, hs.provider) {
@@ -147,7 +147,7 @@ func (r *GatewayRunner) hmwaHygienePlan(ctx context.Context, hs *hygieneSettings
 	if needsCompress {
 		if db := r.SessionDB(ctx); db != nil {
 			if cooldown, err := db.GetCompressionFailureCooldown(entry.SessionID); err == nil && cooldown != nil {
-				remaining, _ := pyint.Float(cooldown.GetOr("remaining_seconds", 0))
+				remaining, _ := anyutil.ToFloat(cooldown.ValueOr("remaining_seconds", 0))
 				if remaining > 0 {
 					pkgLog().Info(fmt.Sprintf("Session hygiene: skipping compression for %s; previous failure cooldown active for %.1fs", entry.SessionID, remaining))
 					needsCompress = false
@@ -179,10 +179,10 @@ func (r *GatewayRunner) hmwaHygieneWaitForSummary(ctx context.Context, attempt *
 		if fence.IsCancelled() {
 			return nil, hygieneWaitTimeout{}
 		}
-		waited := pythread.Monotonic() - attempt.waitStarted
+		waited := timeutil.Monotonic() - attempt.waitStarted
 		ceiling := agent.EffectiveCeiling(fence, hs.totalCeilingSeconds, attempt.waitStarted)
 		slice := min(max(hs.timeoutSeconds-fence.SecondsSinceProgress(), 0.005), max(ceiling-waited, 0.005))
-		turnHoldRemaining := hs.maxTurnHoldSeconds - (pythread.Monotonic() - attempt.waitStarted)
+		turnHoldRemaining := hs.maxTurnHoldSeconds - (timeutil.Monotonic() - attempt.waitStarted)
 		if turnHoldRemaining <= 0 {
 			slice = 0.005
 		} else {
@@ -209,7 +209,7 @@ func (r *GatewayRunner) hmwaHygieneWaitForSummary(ctx context.Context, attempt *
 		if fence.IsCancelled() {
 			return nil, hygieneWaitTimeout{}
 		}
-		waited = pythread.Monotonic() - attempt.waitStarted
+		waited = timeutil.Monotonic() - attempt.waitStarted
 		ceiling = agent.EffectiveCeiling(fence, hs.totalCeilingSeconds, attempt.waitStarted)
 		idle := fence.SecondsSinceProgress()
 		if waited >= hs.maxTurnHoldSeconds {
@@ -267,7 +267,7 @@ func (r *GatewayRunner) hmwaHygieneNotify(ctx context.Context, source *gateway.S
 	err := func() (err error) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				err = fmt.Errorf("%s", pyrepr.Str(rec))
+				err = fmt.Errorf("%s", anyutil.String(rec))
 			}
 		}()
 		adapter, err := r.deliveryAdapterFor(ctx, source)
@@ -280,7 +280,7 @@ func (r *GatewayRunner) hmwaHygieneNotify(ctx context.Context, source *gateway.S
 		return err
 	}()
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to deliver %s to user: %s", what, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to deliver %s to user: %s", what, err.Error()))
 	}
 }
 
@@ -326,7 +326,7 @@ func (r *GatewayRunner) hmwaHygieneOnTurnHold(ctx context.Context, attempt *hygi
 	stampHygieneCompressionProvenance(attempt.agent, "session hygiene compression turn-hold",
 		string(state.ActivityProvenanceAgentCompressionTurnhold), "hygiene compression turn-hold activity stamp failed")
 	pkgLog().Info(fmt.Sprintf("Session hygiene compression for session %s exceeded turn-hold budget (%.1fs); proceeding without compression this turn%s",
-		entry.SessionID, pythread.Monotonic()-attempt.waitStarted, logSuffix))
+		entry.SessionID, timeutil.Monotonic()-attempt.waitStarted, logSuffix))
 	r.hmwaHygieneNotify(ctx, source, attempt.meta, i18n.T(ctx, "gateway.compress.turnhold_deferred", "", nil), "compression-turnhold notice")
 	return nil, holdErr
 }
@@ -363,10 +363,10 @@ func (r *GatewayRunner) hmwaHygieneOnTimeout(ctx context.Context, attempt *hygie
 		pkgLog().Warn(fmt.Sprintf("Session hygiene compression for session %s was cancelled at the commit fence; continuing without compression", entry.SessionID))
 		return nil, timeoutErr
 	}
-	elapsed := pythread.Monotonic() - attempt.waitStarted
+	elapsed := timeutil.Monotonic() - attempt.waitStarted
 	if totalExhausted {
 		pkgLog().Warn(fmt.Sprintf("Session hygiene compression for session %s reached its total ceiling after %.1fs (progress observed=%s); continuing without compression",
-			entry.SessionID, elapsed, pyrepr.Str(fence.ProgressObserved())))
+			entry.SessionID, elapsed, anyutil.String(fence.ProgressObserved())))
 	} else {
 		pkgLog().Warn(fmt.Sprintf("Session hygiene compression for session %s made no progress for %.1fs (total wait %.1fs, ceiling %.1fs); continuing without compression",
 			entry.SessionID, fence.SecondsSinceProgress(), elapsed, hs.totalCeilingSeconds))
@@ -411,7 +411,7 @@ func (r *GatewayRunner) hmwaHygieneAdoptTranscript(ctx context.Context, attempt 
 			entry.SessionID = newSID
 			r.rebindTurnLease(quickKey, runGeneration, newSID)
 			if err := r.AsyncSessionStore().Store().Save(ctx); err != nil {
-				pkgLog().Warn(fmt.Sprintf("Session hygiene: session index save failed: %s", pyrepr.ExceptionMessage(err)))
+				pkgLog().Warn(fmt.Sprintf("Session hygiene: session index save failed: %s", err.Error()))
 			}
 			r.syncTelegramTopicBinding(ctx, source, entry, "hygiene-compression")
 		}
@@ -490,8 +490,8 @@ func (r *GatewayRunner) hmwaHygieneCodexCompaction(ctx context.Context, hs *hygi
 			raw = "native"
 		}
 		autoMode = "native"
-		if pyrepr.Truthy(raw) {
-			autoMode, _ = agent.CodexAppServerAutoMode(pyrepr.Str(raw))
+		if anyutil.IsTrue(raw) {
+			autoMode, _ = agent.CodexAppServerAutoMode(anyutil.String(raw))
 		}
 	}
 	outcome, err := runCodexHygieneCompaction(ctx, r, sessionKey, entry.SessionID, autoMode, history, plan.approxTokens, hs.totalCeilingSeconds, hs.failureCooldownSeconds)
@@ -505,11 +505,11 @@ func (r *GatewayRunner) hmwaHygieneCodexCompaction(ctx context.Context, hs *hygi
 // Detached hygiene agent seeded with the live session's system prompt and its state database
 func (r *GatewayRunner) hmwaHygieneBuildAgent(ctx context.Context, model string, runtime map[string]any, entry *gateway.SessionEntry) (*agent.AIAgent, *state.SessionDB, error) {
 	db := r.SessionDB(ctx)
-	var sessionRow *pyjson.Object
+	var sessionRow *jsonutil.Object
 	err := func() (err error) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				err = fmt.Errorf("%s", pyrepr.Str(rec))
+				err = fmt.Errorf("%s", anyutil.String(rec))
 			}
 		}()
 		if db == nil {
@@ -521,7 +521,7 @@ func (r *GatewayRunner) hmwaHygieneBuildAgent(ctx context.Context, model string,
 	if err != nil {
 		sessionRow = nil
 		pkgLog().Warn(fmt.Sprintf("Session hygiene could not restore the system prompt for session %s: %s. Preserving an empty prompt so the live turn rebuilds it with its configured providers.",
-			entry.SessionID, pyrepr.ExceptionMessage(err)))
+			entry.SessionID, err.Error()))
 	}
 	checkpointRequired := settings.CompressionCheckpointRequired.Get(ctx)
 	opts := agent.AIAgentOptions{Model: model, MaxIterations: new(4), QuietMode: true, SkipMemory: !checkpointRequired,
@@ -569,7 +569,7 @@ func (r *GatewayRunner) hmwaHygieneDetachedAttempt(ctx context.Context, attempt 
 		return hygAgent.CompressContextUnderFence(workerCtx, hygMsgs, plan.approxTokens, fence, taskID, "gateway_hygiene")
 	})
 	r.trackDeferredAgentWorker(attempt.future, hygAgent)
-	attempt.waitStarted = pythread.Monotonic()
+	attempt.waitStarted = timeutil.Monotonic()
 	compressed, waitErr := r.hmwaHygieneWaitForSummary(ctx, attempt, hs, entry)
 	if waitErr != nil {
 		var hold *hygieneTurnHoldExceeded
@@ -613,7 +613,7 @@ func (r *GatewayRunner) hmwaRunSessionHygiene(ctx context.Context, event *gatewa
 		if strings.ToLower(noneText(runtime["api_mode"])) == "codex_app_server" {
 			return r.hmwaHygieneCodexCompaction(ctx, hs, plan, history, entry, sessionKey)
 		}
-		if !pyrepr.Truthy(runtime["api_key"]) {
+		if !anyutil.IsTrue(runtime["api_key"]) {
 			return nil
 		}
 		hygMsgs := make([]map[string]any, 0, len(history))
@@ -634,7 +634,7 @@ func (r *GatewayRunner) hmwaRunSessionHygiene(ctx context.Context, event *gatewa
 	case ctx.Err() != nil && errors.Is(err, ctx.Err()):
 		return nil, err
 	default:
-		pkgLog().Warn("Session hygiene auto-compress failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Warn("Session hygiene auto-compress failed: " + err.Error())
 	}
 	if !attempt.historyReplaced {
 		return boundHygienePayload(history, hs, entry), nil

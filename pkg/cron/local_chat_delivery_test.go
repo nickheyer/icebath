@@ -9,12 +9,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Installs the CLI prefill resolver and loader the process wiring takes from pkg/app, which this package cannot import
@@ -32,7 +32,7 @@ func installPrefillLoaders(t *testing.T) {
 		if filePath == "" {
 			return []any{}
 		}
-		path := pypath.Expanduser(filePath)
+		path := pathutil.ExpandUser(filePath)
 		if !filepath.IsAbs(path) {
 			if baseDir == "" {
 				baseDir = home.Dir(ctx)
@@ -43,11 +43,11 @@ func installPrefillLoaders(t *testing.T) {
 		if err != nil {
 			return []any{}
 		}
-		data, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+		data, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 		if err != nil {
 			return []any{}
 		}
-		list, ok := pyjson.Plain(data).([]any)
+		list, ok := jsonutil.Plain(data).([]any)
 		if !ok {
 			return []any{}
 		}
@@ -67,7 +67,7 @@ func TestCronResultForALocalOriginWithoutItsOwnerIsAnError(t *testing.T) {
 	}
 	t.Cleanup(func() { db.Close() })
 	runner := progressStampRunner{store: gateway.NewSessionStore(ctx, filepath.Join(s.Home(), "sessions"), gateway.DefaultGatewayConfig(ctx), nil),
-		adapters: pydict.New[gateway.Platform, gateway.PlatformAdapter]()}
+		adapters: orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()}
 	authority, err := gateway.InitializeSessionAuthority(ctx, runner, "default", "lc7", db, false)
 	if err != nil {
 		t.Fatal(err)
@@ -92,7 +92,7 @@ func TestCronResultForALocalOriginWithoutItsOwnerIsAnError(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, row := range rows {
-		if payload, _ := row.Get("payload"); strings.Contains(pyrepr.Str(payload), "CRON_RESULT_j1") {
+		if payload, _ := row.Get("payload"); strings.Contains(anyutil.String(payload), "CRON_RESULT_j1") {
 			t.Fatalf("admitted %v", payload)
 		}
 	}

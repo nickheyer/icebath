@@ -7,8 +7,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Mailbox home and owning session of one unsettled bot receipt
@@ -93,23 +93,23 @@ func writeReceiptLocked(ctx context.Context, home string, record map[string]any,
 		if !ok {
 			return &pyKeyError{"delivery_id"}
 		}
-		path := filepath.Join(root, pyrepr.Str(deliveryID)+".json")
+		path := filepath.Join(root, anyutil.String(deliveryID)+".json")
 		current, err := readTicket(path)
 		if err != nil {
 			return err
 		}
-		if expect != nil && !pyjson.Equal(current["status"], expect.status) {
+		if expect != nil && !anyutil.Equal(current["status"], expect.status) {
 			return nil
 		}
 		if current != nil && pyTruthy(current["principal_id"]) {
 			conflict := false
 			for _, field := range []string{"profile_home", "session_id", "principal_id", "message", "author"} {
-				if !pyjson.Equal(current[field], record[field]) {
+				if !anyutil.Equal(current[field], record[field]) {
 					conflict = true
 				}
 			}
-			if !pyjson.Equal(categoryOf(current), categoryOf(record)) ||
-				(pyTruthy(current["admission_id"]) && !pyjson.Equal(current["admission_id"], record["admission_id"])) {
+			if !anyutil.Equal(categoryOf(current), categoryOf(record)) ||
+				(pyTruthy(current["admission_id"]) && !anyutil.Equal(current["admission_id"], record["admission_id"])) {
 				conflict = true
 			}
 			if conflict {
@@ -119,7 +119,7 @@ func writeReceiptLocked(ctx context.Context, home string, record map[string]any,
 		merged := map[string]any{}
 		maps.Copy(merged, current)
 		maps.Copy(merged, record)
-		if current == nil || !pyjson.Equal(merged, current) {
+		if current == nil || !anyutil.Equal(merged, current) {
 			if err := writeTicket(ctx, path, merged); err != nil {
 				return err
 			}
@@ -247,12 +247,12 @@ func rememberReceipt(a *SessionAuthority, home string, record map[string]any) {
 	if a.botReceiptIndex == nil {
 		a.botReceiptIndex = map[string]botReceiptOwner{}
 	}
-	key := pyrepr.Str(record["delivery_id"])
+	key := anyutil.String(record["delivery_id"])
 	switch record["status"] {
 	case "settled", "failed", "cancelled":
 		delete(a.botReceiptIndex, key)
 	default:
-		a.botReceiptIndex[key] = botReceiptOwner{home, pyrepr.Str(record["session_id"])}
+		a.botReceiptIndex[key] = botReceiptOwner{home, anyutil.String(record["session_id"])}
 	}
 }
 

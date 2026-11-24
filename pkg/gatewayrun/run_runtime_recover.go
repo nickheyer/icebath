@@ -4,12 +4,11 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Recovers every serving authority against the published routing index and the adapters connected now
-func recoverGatewayNativeSessions(ctx context.Context, r *GatewayRunner) (*pyjson.Object, error) {
-	results := pyjson.NewObject()
+func recoverGatewayNativeSessions(ctx context.Context, r *GatewayRunner) (*jsonutil.Object, error) {
+	results := jsonutil.NewObject()
 	authorities := gateway.ServingAuthorities(r)
 	if len(authorities) == 0 {
 		return results, nil
@@ -29,8 +28,8 @@ func recoverGatewayNativeSessions(ctx context.Context, r *GatewayRunner) (*pyjso
 		if err != nil {
 			return nil, err
 		}
-		for _, sid := range outcome.Keys {
-			results.Set(sid, outcome.Vals[sid])
+		for _, sid := range outcome.Keys() {
+			results.Set(sid, outcome.Value(sid))
 		}
 	}
 	return results, nil

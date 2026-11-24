@@ -8,10 +8,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Sends the formatted text then each media file through an adapter and wraps the outcome
@@ -23,14 +23,14 @@ func deliverDirect(ctx context.Context, adapter *WeixinAdapter, chatID, message 
 			return nil, err
 		}
 		if !result.Success {
-			return map[string]any{"error": "Weixin send failed: " + pyrepr.Str(result.Error)}, nil
+			return map[string]any{"error": "Weixin send failed: " + anyutil.String(result.Error)}, nil
 		}
 		lastResult = &result
 	}
 	for _, media := range mediaFiles {
 		var result gateway.SendResult
 		var err error
-		if directImageExts[strings.ToLower(pypath.Suffix(media.Path))] {
+		if directImageExts[strings.ToLower(pathutil.Suffix(media.Path))] {
 			result, err = adapter.SendImageFile(ctx, chatID, media.Path, "", "", nil, nil)
 		} else {
 			result, err = adapter.SendDocument(ctx, chatID, media.Path, "", "", "", nil, nil)
@@ -39,7 +39,7 @@ func deliverDirect(ctx context.Context, adapter *WeixinAdapter, chatID, message 
 			return nil, err
 		}
 		if !result.Success {
-			return map[string]any{"error": "Weixin media send failed: " + pyrepr.Str(result.Error)}, nil
+			return map[string]any{"error": "Weixin media send failed: " + anyutil.String(result.Error)}, nil
 		}
 		lastResult = &result
 	}
@@ -57,13 +57,13 @@ func sendWeixinDirect(ctx context.Context, extra map[string]any, token any, chat
 		return nil, err
 	}
 	baseURL, cdnBaseURL := strings.TrimRight(settings.WeixinBaseURL.Get(gateway.SettingsContext(ctx)), "/"), strings.TrimRight(settings.WeixinCdnBaseURL.Get(gateway.SettingsContext(ctx)), "/")
-	tokenRaw := pyrepr.Or(token, extra["token"])
-	if !pyrepr.Truthy(tokenRaw) {
+	tokenRaw := anyutil.Or(token, extra["token"])
+	if !anyutil.IsTrue(tokenRaw) {
 		if tokenRaw, err = gateway.GetScopedSecret(ctx, "WEIXIN_TOKEN", "", false); err != nil {
 			return nil, err
 		}
 	}
-	resolvedToken := strings.TrimSpace(pyrepr.Str(tokenRaw))
+	resolvedToken := strings.TrimSpace(anyutil.String(tokenRaw))
 	if resolvedToken == "" {
 		return map[string]any{"error": "Weixin token missing. Configure WEIXIN_TOKEN or platforms.weixin.token."}, nil
 	}
@@ -113,7 +113,7 @@ var envConfigured = gateway.EnvIsConnected("WEIXIN_ACCOUNT_ID", "WEIXIN_TOKEN")
 
 // Account id and token both present in the merged platform config, a token alone not counting
 func configConnected(cfg *gateway.PlatformConfig) bool {
-	return pyrepr.Truthy(cfg.Extra["account_id"]) && (pyrepr.Truthy(cfg.Token) || pyrepr.Truthy(cfg.Extra["token"]))
+	return anyutil.IsTrue(cfg.Extra["account_id"]) && (anyutil.IsTrue(cfg.Token) || anyutil.IsTrue(cfg.Extra["token"]))
 }
 
 // Account id and token from the config or the scoped WEIXIN env, else from the home env file
@@ -130,13 +130,13 @@ func isConnected(ctx context.Context, cfg *gateway.PlatformConfig) (bool, error)
 	if err != nil {
 		return false, err
 	}
-	tokenRaw := pyrepr.Or(token, extra["token"])
-	if !pyrepr.Truthy(tokenRaw) {
+	tokenRaw := anyutil.Or(token, extra["token"])
+	if !anyutil.IsTrue(tokenRaw) {
 		if tokenRaw, err = gateway.GetScopedSecret(ctx, "WEIXIN_TOKEN", "", false); err != nil {
 			return false, err
 		}
 	}
-	if account != "" && strings.TrimSpace(pyrepr.Str(tokenRaw)) != "" {
+	if account != "" && strings.TrimSpace(anyutil.String(tokenRaw)) != "" {
 		return true, nil
 	}
 	return envConfigured(ctx, cfg)
@@ -166,7 +166,7 @@ func standaloneSend(ctx context.Context, kwargs map[string]any) (map[string]any,
 			return gateway.SendError("Weixin send failed: " + shown), nil
 		}
 		pkgLog().Debug("Weixin standalone send failed", "error", err)
-		return gateway.SendError("Weixin send failed: " + errText(err)), nil
+		return gateway.SendError("Weixin send failed: " + err.Error()), nil
 	}
 	return result, nil
 }
@@ -244,7 +244,7 @@ func InteractiveSetup(ctx context.Context) error {
 	case err != nil && ctx.Err() != nil:
 		return ctx.Err()
 	case err != nil:
-		w.PrintError("  QR login failed: " + errText(err))
+		w.PrintError("  QR login failed: " + err.Error())
 		return nil
 	case credentials == nil:
 		w.PrintWarning("  QR login did not complete.")

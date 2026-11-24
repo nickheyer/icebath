@@ -1,25 +1,26 @@
 package codeexec
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
+	"os/exec"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -36,7 +37,7 @@ func cuaDriverCmdOverride() string {
 var (
 	cuaDriverArgs               = []string{"mcp"}
 	cuaDriverRuntimeContractMin = [3]int{0, 20, 0}
-	cuaSemverRE                 = regexp.MustCompile(`^v?(\p{Nd}+)\.(\p{Nd}+)\.(\p{Nd}+)(?:[-+].*)?$`)
+	cuaSemverRE                 = regexp.MustCompile(`^v?([0-9]+)\.([0-9]+)\.([0-9]+)(?:[-+].*)?$`)
 	windowsAbsPathRE            = regexp.MustCompile(`^[A-Za-z]:[\\/]`)
 )
 
@@ -51,7 +52,7 @@ var cuaDriverRuntimeContractArgs = []struct {
 }
 
 // Parsed JSON object stdout of a driver verb, nil on spawn failure, empty or non object output or a nonzero exit
-func driverJSON(ctx context.Context, env *tools.Env, driverCmd string, timeout float64, args ...string) *pyjson.Object {
+func driverJSON(ctx context.Context, env *tools.Env, driverCmd string, timeout float64, args ...string) *jsonutil.Object {
 	proc, err := runDriver(ctx, env, driverCmd, timeout, args...)
 	if err != nil || proc == nil {
 		return nil
@@ -64,18 +65,18 @@ func driverJSON(ctx context.Context, env *tools.Env, driverCmd string, timeout f
 }
 
 // Decoded JSON object of text, nil when unparseable or not an object
-func jsonObject(text string) *pyjson.Object {
-	data, err := pyjson.Loads(text)
+func jsonObject(text string) *jsonutil.Object {
+	data, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
-	obj, _ := data.(*pyjson.Object)
+	obj, _ := data.(*jsonutil.Object)
 	return obj
 }
 
 // Argument list of an mcp_invocation object when every item is a string, possibly empty
 func validMCPArgs(invocation any) ([]string, bool) {
-	inv, ok := invocation.(*pyjson.Object)
+	inv, ok := invocation.(*jsonutil.Object)
 	if !ok {
 		return nil, false
 	}
@@ -111,7 +112,7 @@ func wslWindowsPathToPosix(path string) string {
 		return path
 	}
 	wsl := isWSL()
-	drive, _, rest := pypath.NtSplitRoot(path)
+	drive, _, rest := pathutil.WindowsSplitRoot(path)
 	drive = strings.ToLower(strings.TrimRight(drive, ":"))
 	if !wsl || drive == "" {
 		return path
@@ -135,8 +136,9 @@ func resolveCuaDriverCmd(override *string) (string, error) {
 	}
 	configured = strings.TrimSpace(configured)
 	if configured != "" {
-		expanded := pypath.Expanduser(configured)
-		resolved, ok := pyshutil.Which(expanded, nil)
+		expanded := pathutil.ExpandUser(configured)
+		resolved, lookErr := exec.LookPath(expanded)
+		ok := lookErr == nil
 		if ok && hasPathSeparator(expanded) {
 			return expanded, nil
 		}
@@ -215,7 +217,7 @@ func resolveMCPInvocation(ctx context.Context, env *tools.Env, driverCmd string,
 	args, valid := validMCPArgs(invocation)
 	command := ""
 	if valid {
-		if inv, ok := invocation.(*pyjson.Object); ok {
+		if inv, ok := invocation.(*jsonutil.Object); ok {
 			raw, _ := inv.Get("command")
 			command, _ = raw.(string)
 		}
@@ -232,14 +234,14 @@ func resolveMCPInvocation(ctx context.Context, env *tools.Env, driverCmd string,
 }
 
 // Why a parsed manifest fails the 0.20 contract, empty when it passes
-func manifestContractReason(manifest *pyjson.Object) (string, error) {
+func manifestContractReason(manifest *jsonutil.Object) (string, error) {
 	if manifest == nil {
 		return "driver manifest is missing or invalid", nil
 	}
 	raw, _ := manifest.Get("binary_version")
 	text := ""
-	if pyrepr.Truthy(raw) {
-		text = pyrepr.Str(raw)
+	if anyutil.IsTrue(raw) {
+		text = anyutil.String(raw)
 	}
 	m := cuaSemverRE.FindStringSubmatch(strings.TrimSpace(text))
 	if m == nil {
@@ -247,8 +249,8 @@ func manifestContractReason(manifest *pyjson.Object) (string, error) {
 	}
 	older := false
 	for i := range 3 {
-		n, _ := pyint.Parse(m[i+1])
-		if c := n.Cmp(big.NewInt(int64(cuaDriverRuntimeContractMin[i]))); c != 0 {
+		n, _ := strconv.ParseInt(m[i+1], 10, 64)
+		if c := cmp.Compare(n, int64(cuaDriverRuntimeContractMin[i])); c != 0 {
 			older = c < 0
 			break
 		}
@@ -267,7 +269,7 @@ func manifestContractReason(manifest *pyjson.Object) (string, error) {
 		return "", err
 	}
 	for _, c := range subList {
-		cmd, ok := c.(*pyjson.Object)
+		cmd, ok := c.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -283,11 +285,11 @@ func manifestContractReason(manifest *pyjson.Object) (string, error) {
 			return "", err
 		}
 		for _, a := range argList {
-			arg, ok := a.(*pyjson.Object)
+			arg, ok := a.(*jsonutil.Object)
 			if !ok {
 				continue
 			}
-			if n, ok := arg.Vals["name"].(string); ok {
+			if n, ok := arg.Value("name").(string); ok {
 				set[n] = true
 			}
 		}
@@ -311,7 +313,7 @@ func manifestContractReason(manifest *pyjson.Object) (string, error) {
 
 // Items a for loop over value or an empty list visits, the TypeError for a non iterable truthy value
 func pyIterItems(value any) ([]any, error) {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return nil, nil
 	}
 	switch v := value.(type) {
@@ -323,9 +325,9 @@ func pyIterItems(value any) ([]any, error) {
 			out = append(out, string(r))
 		}
 		return out, nil
-	case *pyjson.Object:
-		out := make([]any, len(v.Keys))
-		for i, k := range v.Keys {
+	case *jsonutil.Object:
+		out := make([]any, v.Len())
+		for i, k := range v.Keys() {
 			out[i] = k
 		}
 		return out, nil
@@ -334,7 +336,7 @@ func pyIterItems(value any) ([]any, error) {
 }
 
 // Readiness of a local driver for the 0.20 integration with its version and the failing reason
-func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary string) (*pyjson.Object, error) {
+func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary string) (*jsonutil.Object, error) {
 	resolved := binary
 	if resolved == "" {
 		var err error
@@ -352,7 +354,7 @@ func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary 
 		result, err := runDriver(ctx, env, resolved, timeout, "manifest")
 		if err != nil {
 			var se *spawnError
-			var te *subprocessTimeout
+			var te *executil.TimeoutError
 			if !errors.As(err, &se) && !errors.As(err, &te) {
 				return nil, err
 			}
@@ -382,8 +384,8 @@ func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary 
 			if manifest != nil {
 				raw, _ := manifest.Get("binary_version")
 				text := ""
-				if pyrepr.Truthy(raw) {
-					text = pyrepr.Str(raw)
+				if anyutil.IsTrue(raw) {
+					text = anyutil.String(raw)
 				}
 				if v := strings.TrimSpace(text); v != "" {
 					version = v
@@ -391,7 +393,7 @@ func cuaDriverRuntimeContractStatus(ctx context.Context, env *tools.Env, binary 
 			}
 		}
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("ready", reason == "")
 	if resolved != "" {
 		out.Set("binary", resolved)

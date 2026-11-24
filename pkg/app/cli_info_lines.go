@@ -9,8 +9,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Three line plus and dash box around a centered title
@@ -97,7 +97,7 @@ func platformsReport(ctx context.Context, cfg *gateway.GatewayConfig, configFile
 		if pc := cfg.Platforms[p.platform]; pc != nil && pc.Enabled {
 			homeStr := ""
 			if h := cfg.GetHomeChannel(p.platform); h != nil {
-				homeStr = " → " + pyrepr.Str(h.Name)
+				homeStr = " → " + anyutil.String(h.Name)
 			}
 			out = append(out, pyFmt("    ✓ {name:<12} ", map[string]any{"name": p.name})+t("cli.gateway_status.enabled", nil)+homeStr)
 		} else {

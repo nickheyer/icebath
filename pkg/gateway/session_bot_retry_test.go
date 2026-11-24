@@ -10,10 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const botRetryKey = "cccccccccccccccccccccccccccccccc"
@@ -45,15 +46,15 @@ func newBotRetryFixture(t *testing.T) *botRetryFixture {
 	t.Cleanup(func() { db.Close() })
 	store := NewSessionStore(ctx, filepath.Join(dir, "sessions"), DefaultGatewayConfig(ctx), nil)
 	store.PinDB(db)
-	runner := &botRetryRunner{recoverTestRunner: &recoverTestRunner{store: store, adapters: pydict.New[Platform, PlatformAdapter](),
-		profiles: pydict.New[string, *pydict.Dict[Platform, PlatformAdapter]]()}}
+	runner := &botRetryRunner{recoverTestRunner: &recoverTestRunner{store: store, adapters: orderedutil.NewMap[Platform, PlatformAdapter](),
+		profiles: orderedutil.NewMap[string, *orderedutil.Map[Platform, PlatformAdapter]]()}}
 	a, err := InitializeSessionAuthority(ctx, runner, "default", "fixture", db, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	runner.launch = a
 	installPrefillLoaders(t)
-	home, err := pypath.Resolve(dir)
+	home, err := pathutil.Resolve(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +69,7 @@ func newBotRetryFixture(t *testing.T) *botRetryFixture {
 		t.Fatal(err)
 	}
 	f.chat = chat.SessionID
-	replaceExecution(t, func(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object) (any, error) {
+	replaceExecution(t, func(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object) (any, error) {
 		f.mu.Lock()
 		var failure string
 		if len(f.errors) > 0 {
@@ -79,8 +80,8 @@ func newBotRetryFixture(t *testing.T) *botRetryFixture {
 			return "pong", nil
 		}
 		a.mu.Lock()
-		a.PendingResults[rowString(row, "admission_id")] = pyjson.ObjectOf("result", pyjson.ObjectOf(
-			"final_response", "", "messages", []any{}, "failed", true, "error", failure), "usage", pyjson.NewObject())
+		a.PendingResults[rowString(row, "admission_id")] = jsonutil.ObjectOf("result", jsonutil.ObjectOf(
+			"final_response", "", "messages", []any{}, "failed", true, "error", failure), "usage", jsonutil.NewObject())
 		a.mu.Unlock()
 		return "", nil
 	})
@@ -103,7 +104,7 @@ func (f *botRetryFixture) fail(errors ...string) {
 }
 
 // Every admission of the Bot Chat in FIFO order
-func (f *botRetryFixture) admissions(t *testing.T) []*pyjson.Object {
+func (f *botRetryFixture) admissions(t *testing.T) []*jsonutil.Object {
 	t.Helper()
 	rows, err := f.a.DB.ListSessionAdmissions(f.ctx, f.chat, false)
 	if err != nil {
@@ -200,7 +201,7 @@ func TestTransientFailureRetriesExactlyOnceAndTheReceiptFollowsTheRetry(t *testi
 	if receipt["status"] != "settled" || receipt["reply"] != "pong" {
 		t.Fatalf("receipt %v", receipt)
 	}
-	if !pyjson.Equal(receipt["admission_id"], first["admission_id"]) || !pyTruthy(receipt["retry_admission_id"]) {
+	if !anyutil.Equal(receipt["admission_id"], first["admission_id"]) || !pyTruthy(receipt["retry_admission_id"]) {
 		t.Fatalf("receipt %v first %v", receipt, first)
 	}
 	if ids := f.requestIDs(t, 0); strings.Join(ids, ",") != "bot:"+botRetryKey+",bot:"+botRetryKey+":retry" {
@@ -304,7 +305,7 @@ func TestReceiptFileStaysPendingWhileADrainingOwnerLeavesTheRetryToItsSuccessor(
 	started, gate := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	execute := executeFiniteAdmission
-	replaceExecution(t, func(ctx context.Context, a *SessionAuthority, ref SessionRef, row *pyjson.Object) (any, error) {
+	replaceExecution(t, func(ctx context.Context, a *SessionAuthority, ref SessionRef, row *jsonutil.Object) (any, error) {
 		if !strings.HasSuffix(rowString(row, "request_id"), ":retry") {
 			once.Do(func() { close(started) })
 			<-gate

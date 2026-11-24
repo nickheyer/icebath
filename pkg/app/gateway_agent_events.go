@@ -9,11 +9,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -91,14 +91,14 @@ func (a *GatewayAgent) onInterim(payload map[string]any, streamCallback func(str
 	text := payload["text"]
 	a.closeSegment(starts, false)
 	shown := ""
-	if pyrepr.Truthy(text) {
-		shown = pyrepr.Str(text)
+	if anyutil.IsTrue(text) {
+		shown = anyutil.String(text)
 	}
 	a.currentTurn().seen[strings.TrimSpace(shown)] = true
 	if cb := a.opts.InterimAssistantCallback; cb != nil {
-		cb(text, pyrepr.Truthy(payload["already_streamed"]))
-	} else if pyrepr.Truthy(text) && strings.TrimSpace(pyrepr.Str(text)) != "" {
-		a.emitPrint(pyrepr.Str(text))
+		cb(text, anyutil.IsTrue(payload["already_streamed"]))
+	} else if anyutil.IsTrue(text) && strings.TrimSpace(anyutil.String(text)) != "" {
+		a.emitPrint(anyutil.String(text))
 	}
 }
 
@@ -118,20 +118,20 @@ func (a *GatewayAgent) onToolProgress(payload map[string]any, streamCallback fun
 // Name, args and call id of a tool frame with the defaults the CLI shows
 func toolFrameFields(payload map[string]any) (string, map[string]any, string) {
 	name := "tool"
-	if pyrepr.Truthy(payload["name"]) {
-		name = pyrepr.Str(payload["name"])
-	} else if pyrepr.Truthy(payload["tool_name"]) {
-		name = pyrepr.Str(payload["tool_name"])
+	if anyutil.IsTrue(payload["name"]) {
+		name = anyutil.String(payload["name"])
+	} else if anyutil.IsTrue(payload["tool_name"]) {
+		name = anyutil.String(payload["tool_name"])
 	}
 	args, _ := payload["args"].(map[string]any)
 	if args == nil {
 		args = map[string]any{}
 	}
 	callID := ""
-	if pyrepr.Truthy(payload["tool_id"]) {
-		callID = pyrepr.Str(payload["tool_id"])
-	} else if pyrepr.Truthy(payload["tool_call_id"]) {
-		callID = pyrepr.Str(payload["tool_call_id"])
+	if anyutil.IsTrue(payload["tool_id"]) {
+		callID = anyutil.String(payload["tool_id"])
+	} else if anyutil.IsTrue(payload["tool_call_id"]) {
+		callID = anyutil.String(payload["tool_call_id"])
 	}
 	return name, args, callID
 }
@@ -166,7 +166,7 @@ func (a *GatewayAgent) onToolComplete(payload map[string]any, streamCallback fun
 		}
 	}
 	if cb := a.opts.ToolProgressCallback; cb != nil {
-		cb("tool.completed", name, "", nil, map[string]any{"duration": duration, "is_error": pyrepr.Truthy(payload["is_error"]), "result": result})
+		cb("tool.completed", name, "", nil, map[string]any{"duration": duration, "is_error": anyutil.IsTrue(payload["is_error"]), "result": result})
 	}
 	a.mu.Lock()
 	a.usageStale = true
@@ -176,7 +176,7 @@ func (a *GatewayAgent) onToolComplete(payload map[string]any, streamCallback fun
 	}
 	resultText := ""
 	if result != nil {
-		resultText = pyrepr.Str(result)
+		resultText = anyutil.String(result)
 	}
 	if diff, isStr := payload["inline_diff"].(string); isStr && diff != "" {
 		emit := diffPrinter(cprint)
@@ -195,13 +195,13 @@ func (a *GatewayAgent) onToolComplete(payload map[string]any, streamCallback fun
 func (a *GatewayAgent) todoFromResult(result any) {
 	data := result
 	if text, isStr := result.(string); isStr {
-		decoded, err := pyjson.Loads(text)
+		decoded, err := jsonutil.Decode(text)
 		if err != nil {
 			return
 		}
 		data = decoded
 	}
-	if snapshot, isDict := pyjson.Plain(data).(map[string]any); isDict {
+	if snapshot, isDict := jsonutil.Plain(data).(map[string]any); isDict {
 		a.setTodos(snapshot)
 	}
 }
@@ -249,11 +249,11 @@ func (a *GatewayAgent) onNotice(payload map[string]any, streamCallback func(stri
 	}
 	ttl, _ := pyIntValue(payload["ttl_ms"])
 	level, kind := "info", "sticky"
-	if pyrepr.Truthy(payload["level"]) {
-		level = pyrepr.Str(payload["level"])
+	if anyutil.IsTrue(payload["level"]) {
+		level = anyutil.String(payload["level"])
 	}
-	if pyrepr.Truthy(payload["kind"]) {
-		kind = pyrepr.Str(payload["kind"])
+	if anyutil.IsTrue(payload["kind"]) {
+		kind = anyutil.String(payload["kind"])
 	}
 	cb(provider.AgentNotice{Text: strOrEmpty(payload["text"]), Level: level, Kind: kind, TTLMs: ttl,
 		Key: noneOrStr(payload["key"]), ID: noneOrStr(payload["id"])})
@@ -287,7 +287,7 @@ func (a *GatewayAgent) emitPrint(text string) {
 		printFn(text)
 		return
 	}
-	fmt.Fprintln(pysys.Stdout, text)
+	fmt.Fprintln(termutil.Stdout, text)
 }
 
 // One dim status line for a prompt this run answered at once, no user being there to ask
@@ -321,27 +321,27 @@ func (a *GatewayAgent) onClarify(payload map[string]any, streamCallback func(str
 	answer := ""
 	if cb := a.opts.ClarifyCallback; cb != nil {
 		qid := any("q0")
-		if pyrepr.Truthy(payload["prompt_id"]) {
+		if anyutil.IsTrue(payload["prompt_id"]) {
 			qid = payload["prompt_id"]
 		}
 		choices, _ := payload["choices"].([]any)
 		reply := cb([]any{map[string]any{"qid": qid, "question": strOrEmpty(payload["question"]), "choices": append([]any{}, choices...),
-			"multi_select": pyrepr.Truthy(payload["multi_select"])}})
+			"multi_select": anyutil.IsTrue(payload["multi_select"])}})
 		if reply != nil {
 			answers, _ := reply["answers"].(map[string]any)
-			switch value := answers[pyrepr.Str(qid)].(type) {
+			switch value := answers[anyutil.String(qid)].(type) {
 			case []any:
 				parts := make([]string, len(value))
 				for i, v := range value {
-					parts[i] = pyrepr.Str(v)
+					parts[i] = anyutil.String(v)
 				}
 				answer = strings.Join(parts, ", ")
 			case []string:
 				answer = strings.Join(value, ", ")
 			case nil:
 			default:
-				if pyrepr.Truthy(value) {
-					answer = pyrepr.Str(value)
+				if anyutil.IsTrue(value) {
+					answer = anyutil.String(value)
 				}
 			}
 		}
@@ -359,8 +359,8 @@ func (a *GatewayAgent) onClarify(payload map[string]any, streamCallback func(str
 }
 
 // Answers a server request, the answer travelling only in the response frame
-func (a *GatewayAgent) answerRequest(frame *pyjson.Object, method string, params map[string]any) {
-	id := frame.Vals["id"]
+func (a *GatewayAgent) answerRequest(frame *jsonutil.Object, method string, params map[string]any) {
+	id := frame.Value("id")
 	answer := func() (answer any) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
@@ -432,5 +432,5 @@ func noneOrStr(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }

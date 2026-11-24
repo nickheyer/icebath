@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Adapter whose plugin registered command and callback handlers can be installed again
@@ -57,11 +57,11 @@ func (r *GatewayRunner) rewirePluginHandlers(ctx context.Context, profileName, p
 		scoped = gateway.ProfileRuntimeScope(ctx, profileHome, false)
 	}
 	count := 0
-	for platform, adapter := range pydict.Merge(adapters).All() {
+	for platform, adapter := range orderedutil.Merge(adapters).All() {
 		func() {
 			defer func() {
 				if rec := recover(); rec != nil {
-					pkgLog().Warn(fmt.Sprintf("[%s] plugin handler re-wire failed", platform), "exc_info", pyrepr.Str(rec))
+					pkgLog().Warn(fmt.Sprintf("[%s] plugin handler re-wire failed", platform), "exc_info", anyutil.String(rec))
 				}
 			}()
 			rewirer, ok := adapter.(pluginRewirer)

@@ -14,9 +14,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/fakellm"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Appends lines to a file, creating it when missing
@@ -82,7 +82,7 @@ func TestGatewayTurnUnderMultiplexRunsTerminalWithTheServedProfilesSecrets(t *te
 	t.Cleanup(r.sessionStore.CloseAllDBHandles)
 	r.asyncSessionStore = gateway.NewAsyncSessionStore(r.sessionStore)
 	r.sessions = map[string]*SessionState{}
-	r.agentCache, r.agentCacheLock = pydict.New[string, agentCacheEntry](), &sync.Mutex{}
+	r.agentCache, r.agentCacheLock = orderedutil.NewMap[string, agentCacheEntry](), &sync.Mutex{}
 	event := dispatchEvent("probe the terminal env", false)
 	profile := "beta"
 	event.Source.Profile = &profile

@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -80,7 +80,7 @@ func (h *PluginMessage) MessageID() any {
 }
 
 // Whether the last operation succeeded
-func (h *PluginMessage) OK() bool { return pyrepr.Truthy(h.Result()["ok"]) }
+func (h *PluginMessage) OK() bool { return anyutil.IsTrue(h.Result()["ok"]) }
 
 // Error code of the last operation, nil after a success
 func (h *PluginMessage) ErrorCode() any { return h.Result()["error"] }
@@ -89,7 +89,7 @@ func (h *PluginMessage) ErrorCode() any { return h.Result()["error"] }
 func (h *PluginMessage) Pending() bool { return h.pendingOp().running() }
 
 func (h *PluginMessage) String() string {
-	return fmt.Sprintf("<PluginMessage ok=%s message_id=%s error=%s>", pyrepr.Repr(h.OK()), pyrepr.Repr(h.MessageID()), pyrepr.Repr(h.ErrorCode()))
+	return fmt.Sprintf("<PluginMessage ok=%s message_id=%s error=%s>", anyutil.Quote(h.OK()), anyutil.Quote(h.MessageID()), anyutil.Quote(h.ErrorCode()))
 }
 
 // Takes over the target, result and message id of another handle
@@ -110,12 +110,12 @@ func (h *PluginMessage) refused() map[string]any {
 		return nil
 	}
 	code := "no_conversation"
-	if e := h.result["error"]; pyrepr.Truthy(e) {
-		code = pyrepr.Str(e)
+	if e := h.result["error"]; anyutil.IsTrue(e) {
+		code = anyutil.String(e)
 	}
 	detail := ""
 	if d, ok := h.result["detail"]; ok {
-		detail = pyrepr.Str(d)
+		detail = anyutil.String(d)
 	}
 	return messageErr(code, detail)
 }
@@ -125,7 +125,7 @@ func (h *PluginMessage) settle(result map[string]any) map[string]any {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.result = result
-	if pyrepr.Truthy(result["ok"]) && pyrepr.Truthy(result["message_id"]) {
+	if anyutil.IsTrue(result["ok"]) && anyutil.IsTrue(result["message_id"]) {
 		h.messageID = result["message_id"]
 	}
 	return result
@@ -270,12 +270,12 @@ func postFor(ctx context.Context, c *Context, text, sessionKey string, route any
 			}
 		} else {
 			result = post(ctx, target, text, pluginID)
-			if pyrepr.Truthy(result["ok"]) {
+			if anyutil.IsTrue(result["ok"]) {
 				return newPluginMessage(pluginID, target, result), nil
 			}
 		}
 	}
-	pkgLog().Info(fmt.Sprintf("plugin_message plugin=%s op=post refused: %s", pluginID, pyrepr.Str(result["error"])))
+	pkgLog().Info(fmt.Sprintf("plugin_message plugin=%s op=post refused: %s", pluginID, anyutil.String(result["error"])))
 	return newPluginMessage(pluginID, nil, result), nil
 }
 
@@ -359,7 +359,7 @@ func (h *PluginMessage) HostCall(ctx context.Context, method string, args []any,
 	if err != nil {
 		return nil, err
 	}
-	text := pyrepr.Str(a["text"])
+	text := anyutil.String(a["text"])
 	switch method {
 	case "edit":
 		return h.Edit(ctx, text), nil

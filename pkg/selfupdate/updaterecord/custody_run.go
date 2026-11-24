@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const custodyDrain = 5 * time.Second
@@ -273,7 +273,7 @@ func runCaptured(ctx context.Context, argv []string, timeout time.Duration, spaw
 }
 
 func decodeText(raw []byte) string {
-	return pystr.TranslateNewlines(strings.ToValidUTF8(string(raw), "\uFFFD"))
+	return textutil.NormalizeNewlines(strings.ToValidUTF8(string(raw), "\uFFFD"))
 }
 
 func killTreeOf(cmd *exec.Cmd) { proc.KillTree(cmd.Process.Pid) }

@@ -3,18 +3,19 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"net/netip"
+	"net/url"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // DefaultEnsureTimeout is the total startup deadline a client waits for a cold daemon
@@ -24,7 +25,7 @@ const DefaultEnsureTimeout = 60 * time.Second
 type GatewayEndpoint struct {
 	ProfileID       string
 	InstanceID      string
-	AuthorityEpoch  *big.Int
+	AuthorityEpoch  int64
 	RuntimeProtocol int
 	APIOrigin       string
 	Supervisor      string
@@ -52,7 +53,7 @@ func Attachable(result ObservedEndpoint) bool {
 
 // Profile home whose gateway serves home, the owner a private overlay's lock names
 func GatewayProfileHome(home string) (string, error) {
-	resolved, err := pypath.Resolve(pypath.Expanduser(home))
+	resolved, err := pathutil.Resolve(pathutil.ExpandUser(home))
 	if err != nil {
 		return "", err
 	}
@@ -63,15 +64,15 @@ var validSupervisors = map[string]bool{"none": true, "systemd": true, "launchd":
 
 func unhashable(v any) bool {
 	switch v.(type) {
-	case []any, *pyjson.Object, map[string]any:
+	case []any, *jsonutil.Object, map[string]any:
 		return true
 	}
 	return false
 }
 
-// Verdict of an identify payload for home, errors where the Python comparison raises
-func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (ObservedEndpoint, error) {
-	if rp := recGet(payload, "runtime_protocol"); !pyIsInt(rp) || !pyEq(rp, 1) {
+// Verdict of an identify payload for home, errors where a state or supervisor holds a container instead of text
+func endpointFromPayload(payload *jsonutil.Object, home, controlHome string) (ObservedEndpoint, error) {
+	if rp, ok := anyutil.Int(recGet(payload, "runtime_protocol")); !ok || rp != 1 {
 		return ObservedEndpoint{State: "incompatible", ReasonCode: "runtime_protocol"}, nil
 	}
 	profilesList, ok := recGet(payload, "served_profiles").([]any)
@@ -82,9 +83,9 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 	if err != nil {
 		return ObservedEndpoint{}, err
 	}
-	var matches []*pyjson.Object
+	var matches []*jsonutil.Object
 	for _, p := range profilesList {
-		entry, ok := p.(*pyjson.Object)
+		entry, ok := p.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -123,10 +124,9 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 	if state != "ready" && !restartWait {
 		return ObservedEndpoint{State: "inaccessible", ReasonCode: "invalid_runtime_state"}, nil
 	}
-	epoch := recGet(payload, "authority_epoch")
 	instance, instanceOK := recGet(payload, "instance_id").(string)
-	epochInt, epochOK := pyrepr.Int(epoch)
-	if !pyIsInt(epoch) || !epochOK || epochInt.Sign() <= 0 || !instanceOK || instance == "" {
+	epoch, epochOK := anyutil.Int(recGet(payload, "authority_epoch"))
+	if !epochOK || epoch <= 0 || !instanceOK || instance == "" {
 		return ObservedEndpoint{State: "inaccessible", ReasonCode: "invalid_runtime_identity"}, nil
 	}
 	origin, ok := recGet(payload, "api_origin").(string)
@@ -144,7 +144,7 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 	codeSHA, _ := recGet(payload, "code_sha").(string)
 	buildID, _ := recGet(payload, "build_id").(string)
 	endpoint := &GatewayEndpoint{
-		ProfileID: profileID, InstanceID: instance, AuthorityEpoch: epochInt, RuntimeProtocol: 1,
+		ProfileID: profileID, InstanceID: instance, AuthorityEpoch: epoch, RuntimeProtocol: 1,
 		APIOrigin: origin, Supervisor: sup, ControlHome: controlHome, CodeSHA: codeSHA,
 		BuildID: buildID,
 	}
@@ -156,23 +156,18 @@ func endpointFromPayload(payload *pyjson.Object, home, controlHome string) (Obse
 
 // Whether origin is a bare http or https loopback origin with a port and no credentials
 func loopbackOrigin(origin string) bool {
-	parsed, err := pyurl.Split(origin)
+	parsed, err := url.Parse(origin)
 	if err != nil {
 		return false
 	}
-	host := parsed.Hostname()
-	if (parsed.Scheme != "http" && parsed.Scheme != "https") || host == "" {
+	host := strings.ToLower(parsed.Hostname())
+	if (parsed.Scheme != "http" && parsed.Scheme != "https") || host == "" || parsed.User != nil {
 		return false
 	}
-	for i := 0; i < len(parsed.Netloc); i++ {
-		if parsed.Netloc[i] == '@' {
-			return false
-		}
-	}
-	if parsed.Path != "" || parsed.Query != "" || parsed.Fragment != "" {
+	if parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return false
 	}
-	port, has, err := parsed.Port()
+	port, has, err := urlutil.Port(parsed)
 	if err != nil || !has || port == 0 {
 		return false
 	}
@@ -189,8 +184,8 @@ func ControlHomeFor(home string, endpoint *GatewayEndpoint) string {
 }
 
 // Terminal verdict for a secondary the multiplexer published under parked_profiles
-func parkedByMultiplexer(payload *pyjson.Object, home string) (*ObservedEndpoint, error) {
-	parked, ok := recGet(payload, "parked_profiles").(*pyjson.Object)
+func parkedByMultiplexer(payload *jsonutil.Object, home string) (*ObservedEndpoint, error) {
+	parked, ok := recGet(payload, "parked_profiles").(*jsonutil.Object)
 	if !ok {
 		return nil, nil
 	}
@@ -198,7 +193,7 @@ func parkedByMultiplexer(payload *pyjson.Object, home string) (*ObservedEndpoint
 	if err != nil {
 		return nil, err
 	}
-	for _, key := range parked.Keys {
+	for _, key := range parked.Keys() {
 		candidate, err := profiles.NormalizeProfileName(key)
 		if err != nil {
 			return nil, err
@@ -210,7 +205,7 @@ func parkedByMultiplexer(payload *pyjson.Object, home string) (*ObservedEndpoint
 		if reason == nil {
 			return nil, nil
 		}
-		detail := []rune(pyrepr.Str(reason))
+		detail := []rune(anyutil.String(reason))
 		if len(detail) > 500 {
 			detail = detail[:500]
 		}
@@ -276,7 +271,7 @@ func ownerPid(home string) (int, bool) {
 			continue
 		}
 		recorded := recGet(record, "start_time")
-		if recorded == nil || !pyEq(recorded, statusProcessStartTime(pid)) {
+		if recorded == nil || !anyutil.Equal(recorded, statusProcessStartTime(pid)) {
 			continue
 		}
 		if RecordedGatewayHomeConflicts(record, home) {

@@ -16,15 +16,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Age past which a completion notice stops waiting for its platform adapter to connect
@@ -68,7 +66,7 @@ func (p updatePaths) unlinkAll() error {
 // Unlinks each path in order, stopping at the first failure other than a missing file
 func unlinkMissingOK(paths ...string) error {
 	for _, path := range paths {
-		if err := pypath.Unlink(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
 			return err
 		}
 	}
@@ -115,7 +113,7 @@ func (r *GatewayRunner) updatePaths(ctx context.Context) updatePaths {
 }
 
 // Owning profile of a restart or update marker, nil for the default profile
-func markerProfile(data *pyjson.Object) *string {
+func markerProfile(data *jsonutil.Object) *string {
 	if profile := strings.TrimSpace(truthyText(rowField(data, "profile"))); profile != "" {
 		return &profile
 	}
@@ -128,12 +126,12 @@ func markerProfile(data *pyjson.Object) *string {
 }
 
 // Seconds since the marker timestamp, false when it carries no parseable stamp
-func markerAgeSeconds(data *pyjson.Object) (float64, bool) {
+func markerAgeSeconds(data *jsonutil.Object) (float64, bool) {
 	raw := strings.TrimSpace(truthyText(rowField(data, "timestamp")))
 	if raw == "" {
 		return 0, false
 	}
-	stamped, aware, err := pydatetime.ParseISOFormat(raw)
+	stamped, aware, err := timeutil.ParseISOZone(raw, time.UTC)
 	if err != nil {
 		return 0, false
 	}
@@ -146,20 +144,20 @@ func markerAgeSeconds(data *pyjson.Object) (float64, bool) {
 }
 
 // Marker JSON object of a utf-8-sig file
-func readMarkerObject(path string) (*pyjson.Object, error) {
+func readMarkerObject(path string) (*jsonutil.Object, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	decoded, err := pyjson.Loads(text)
+	decoded, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	object, ok := decoded.(*pyjson.Object)
+	object, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("the update marker is %s, expected a mapping", errchain.Kind(decoded))
 	}
@@ -167,12 +165,12 @@ func readMarkerObject(path string) (*pyjson.Object, error) {
 }
 
 // Optional string form of a marker value, nil for an absent or null one
-func markerText(data *pyjson.Object, key string) *string {
+func markerText(data *jsonutil.Object, key string) *string {
 	v := rowField(data, key)
 	if v == nil {
 		return nil
 	}
-	text := pyrepr.Str(v)
+	text := anyutil.String(v)
 	return &text
 }
 
@@ -187,7 +185,7 @@ func (r *GatewayRunner) resolveUpdateTarget(ctx context.Context, paths updatePat
 			continue
 		}
 		platformStr, chatID := rowField(pending, "platform"), rowField(pending, "chat_id")
-		if !pyrepr.Truthy(platformStr) || !pyrepr.Truthy(chatID) {
+		if !anyutil.IsTrue(platformStr) || !anyutil.IsTrue(chatID) {
 			continue
 		}
 		platform, err := gateway.ParsePlatform(ctx, platformStr)
@@ -198,11 +196,11 @@ func (r *GatewayRunner) resolveUpdateTarget(ctx context.Context, paths updatePat
 		if adapter == nil {
 			return nil
 		}
-		chat := pyrepr.Str(chatID)
+		chat := anyutil.String(chatID)
 		metadata := r.pendingMarkerMetadata(platform, chat, pending, adapter)
 		sessionKey := truthyText(rowField(pending, "session_key"))
 		if sessionKey == "" {
-			sessionKey = pyrepr.Str(platformStr) + ":" + chat
+			sessionKey = anyutil.String(platformStr) + ":" + chat
 		}
 		return &updateTarget{adapter: adapter, chatID: chat, sessionKey: sessionKey, metadata: metadata, platform: platform}
 	}
@@ -210,7 +208,7 @@ func (r *GatewayRunner) resolveUpdateTarget(ctx context.Context, paths updatePat
 }
 
 // Thread metadata of a persisted update or restart marker
-func (r *GatewayRunner) pendingMarkerMetadata(platform gateway.Platform, chatID string, data *pyjson.Object, adapter gateway.PlatformAdapter) map[string]any {
+func (r *GatewayRunner) pendingMarkerMetadata(platform gateway.Platform, chatID string, data *jsonutil.Object, adapter gateway.PlatformAdapter) map[string]any {
 	chatType := ""
 	if v := markerText(data, "chat_type"); v != nil {
 		chatType = *v
@@ -263,7 +261,7 @@ func updateExitCode(paths updatePaths) (*big.Int, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
@@ -424,12 +422,12 @@ func (r *GatewayRunner) forwardPendingUpdatePrompt(ctx context.Context, paths up
 	var data any
 	if err == nil {
 		var text string
-		if text, err = pystr.DecodeUTF8Sig(raw); err == nil {
-			data, err = pyjson.Loads(text)
+		if text, err = textutil.DecodeUTF8(textutil.TrimBOM(raw)); err == nil {
+			data, err = jsonutil.Decode(text)
 		}
 	}
 	if err != nil {
-		var decodeErr *pyjson.DecodeError
+		var decodeErr *jsonutil.SyntaxError
 		var pathErr *fs.PathError
 		if errors.As(err, &decodeErr) || errors.As(err, &pathErr) {
 			pkgLog().Debug(fmt.Sprintf("Failed to read update prompt: %s", err))
@@ -437,16 +435,16 @@ func (r *GatewayRunner) forwardPendingUpdatePrompt(ctx context.Context, paths up
 		}
 		return err
 	}
-	object, ok := data.(*pyjson.Object)
+	object, ok := data.(*jsonutil.Object)
 	if !ok {
 		return fmt.Errorf("the pending update prompt is %s, expected a mapping", errchain.Kind(data))
 	}
-	promptText := object.GetOr("prompt", "")
-	if !pyrepr.Truthy(promptText) {
+	promptText := object.ValueOr("prompt", "")
+	if !anyutil.IsTrue(promptText) {
 		return nil
 	}
 	flush()
-	return r.forwardUpdatePrompt(ctx, target, pyrepr.Str(promptText), pyrepr.Str(object.GetOr("default", "")))
+	return r.forwardUpdatePrompt(ctx, target, anyutil.String(promptText), anyutil.String(object.ValueOr("default", "")))
 }
 
 // Sends the post update notice once the exit code exists, false while the update still runs, a cleanup unlink failure returned
@@ -517,19 +515,19 @@ func (r *GatewayRunner) deliverUpdateNotification(ctx context.Context, paths upd
 		return true, err
 	}
 	adapter := r.authorizationAdapter(ctx, platform, markerProfile(pending))
-	if pyrepr.Truthy(chatID) && adapter == nil {
+	if anyutil.IsTrue(chatID) && adapter == nil {
 		if age, ok := markerAgeSeconds(pending); ok && age > updateNotifyMaxAdapterWaitSeconds {
 			pkgLog().Warn(fmt.Sprintf("Post-update notification for %s:%s dropped after %.1fh: %s adapter never connected",
-				pyrepr.Str(platformStr), pyrepr.Str(chatID), age/3600.0, pyrepr.Str(platformStr)))
+				anyutil.String(platformStr), anyutil.String(chatID), age/3600.0, anyutil.String(platformStr)))
 			if err := r.clearUpdateMarkers(paths, truthyText(rowField(pending, "session_key"))); err != nil {
 				return true, err
 			}
 			return true, nil
 		}
-		return deferred(fmt.Sprintf("Update notification deferred: %s adapter not connected yet", pyrepr.Str(platformStr)))
+		return deferred(fmt.Sprintf("Update notification deferred: %s adapter not connected yet", anyutil.String(platformStr)))
 	}
-	if pyrepr.Truthy(chatID) {
-		chat := pyrepr.Str(chatID)
+	if anyutil.IsTrue(chatID) {
+		chat := anyutil.String(chatID)
 		metadata := r.pendingMarkerMetadata(platform, chat, pending, adapter)
 		output = strings.TrimSpace(tools.StripANSI(output))
 		var msg string
@@ -547,7 +545,7 @@ func (r *GatewayRunner) deliverUpdateNotification(ctx context.Context, paths upd
 		if _, err := adapter.Send(ctx, chat, msg, "", nonConversationalMetadata(metadata, platform)); err != nil {
 			return true, err
 		}
-		pkgLog().Info(fmt.Sprintf("Sent post-update notification to %s:%s (exit=%s)", pyrepr.Str(platformStr), chat, code.String()))
+		pkgLog().Info(fmt.Sprintf("Sent post-update notification to %s:%s (exit=%s)", anyutil.String(platformStr), chat, code.String()))
 	}
 	return true, nil
 }

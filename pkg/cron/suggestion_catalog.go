@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Curated starter automation offered as a suggestion with its stable dedup key and create_job spec
@@ -15,8 +15,8 @@ type CatalogEntry struct {
 }
 
 // Ordered job spec of an entry as a fresh object
-func (e CatalogEntry) jobSpecObject() *pyjson.Object {
-	obj := pyjson.NewObject()
+func (e CatalogEntry) jobSpecObject() *jsonutil.Object {
+	obj := jsonutil.NewObject()
 	for _, kv := range e.JobSpec {
 		obj.Set(kv[0], kv[1])
 	}
@@ -97,10 +97,10 @@ var Catalog = []CatalogEntry{
 }
 
 // Suggestion registrar the catalog seeds through, the store's add_suggestion shape
-type SuggestionAdder func(title, description, source string, jobSpec any, dedupKey string) (*pyjson.Object, error)
+type SuggestionAdder func(title, description, source string, jobSpec any, dedupKey string) (*jsonutil.Object, error)
 
 // Registers catalog entries as pending suggestions, keys restricting the set, returning the records created
-func SeedCatalogSuggestions(ctx context.Context, add SuggestionAdder, keys []string) ([]*pyjson.Object, error) {
+func SeedCatalogSuggestions(ctx context.Context, add SuggestionAdder, keys []string) ([]*jsonutil.Object, error) {
 	if add == nil {
 		add = openCronStore(home.Dir(ctx), time.Now).AddSuggestion
 	}
@@ -111,7 +111,7 @@ func SeedCatalogSuggestions(ctx context.Context, add SuggestionAdder, keys []str
 			wanted[k] = true
 		}
 	}
-	created := []*pyjson.Object{}
+	created := []*jsonutil.Object{}
 	for _, entry := range Catalog {
 		if wanted != nil && !wanted[entry.Key] {
 			continue

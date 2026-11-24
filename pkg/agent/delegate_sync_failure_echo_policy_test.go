@@ -13,8 +13,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Home whose config holds only the display section with the warning suppression setting when given
@@ -81,7 +81,7 @@ func TestSyncFailureRealRunToSpinnerThreeModes(t *testing.T) {
 		restore := parent.NotificationPolicySnapshot("cli")
 		result := runSingleChild(context.Background(), 0, "actual failing child", child, parent, "", nil, nil)
 		restore()
-		text, err := pyjson.Dumps(result)
+		text, err := jsonutil.Encode(result)
 		if err != nil {
 			t.Fatal(err)
 		}

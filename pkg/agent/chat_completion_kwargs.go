@@ -8,15 +8,11 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
@@ -30,7 +26,7 @@ type apiKwargsState struct {
 
 // Hostname of the url is the domain or one of its subdomains, a malformed url raising like Python
 func hostMatches(url, domain string) bool {
-	ok, err := pyurl.BaseURLHostMatches(url, domain)
+	ok, err := urlutil.BaseHostMatches(url, domain)
 	if err != nil {
 		panic(err)
 	}
@@ -152,14 +148,14 @@ func (a *AIAgent) providerPreferencesForAgent(ctx context.Context) map[string]an
 	} else {
 		merged["sort"] = nil
 	}
-	if pyrepr.Truthy(merged["require_parameters"]) {
+	if anyutil.IsTrue(merged["require_parameters"]) {
 		merged["require_parameters"] = true
 	} else {
 		merged["require_parameters"] = nil
 	}
 	out := map[string]any{}
 	for _, k := range keys {
-		if pyrepr.Truthy(merged[k]) {
+		if anyutil.IsTrue(merged[k]) {
 			out[k] = merged[k]
 		}
 	}
@@ -182,10 +178,10 @@ func (a *AIAgent) aliasToolSearchBridgeForXAI(t provider.Transport, toolsForAPI 
 			continue
 		}
 		fn := tool["function"]
-		if !pyrepr.Truthy(fn) {
+		if !anyutil.IsTrue(fn) {
 			continue
 		}
-		fnMap, ok := pyjson.Dict(fn)
+		fnMap, ok := jsonutil.AsMap(fn)
 		if !ok {
 			pkgLog().Warn(fmt.Sprintf("%s⚠️ Failed to alias tool_search bridge for xAI: tool function is %s where a mapping was expected", a.logPrefix, errchain.Kind(fn)))
 			return toolsForAPI
@@ -197,7 +193,7 @@ func (a *AIAgent) aliasToolSearchBridgeForXAI(t provider.Transport, toolsForAPI 
 	if !hasBridge {
 		return toolsForAPI
 	}
-	copied, _ := pycopy.DeepCopy(toolsForAPI).([]map[string]any)
+	copied, _ := any(anyutil.Clone(toolsForAPI)).([]map[string]any)
 	renamed, aliases := provider.RenameToolSearchBridgeForXAI(copied)
 	if canAlias {
 		aliasing.SetLastWireAliases(aliases)
@@ -265,7 +261,7 @@ func (a *AIAgent) buildCodexKwargs(ctx context.Context, apiMessages, toolsForAPI
 	route := provider.ClassifyResponsesRoute(a.provider, a.baseURL)
 	contextManagement := a.nativeCompactionContextManagement(route)
 	if route.IsXAI() {
-		copied, _ := pycopy.DeepCopy(toolsForAPI).([]map[string]any)
+		copied, _ := any(anyutil.Clone(toolsForAPI)).([]map[string]any)
 		copied, _ = tools.StripPatternAndFormat(copied)
 		toolsForAPI, _ = tools.StripSlashEnum(copied)
 	}
@@ -342,7 +338,7 @@ func (a *AIAgent) buildChatCompletionsKwargs(ctx context.Context, apiMessages, t
 		if sid == "" {
 			sid = "icebath"
 		}
-		qwenMeta = pyjson.ObjectOf("sessionId", sid, "promptId", uuid.NewString())
+		qwenMeta = jsonutil.ObjectOf("sessionId", sid, "promptId", uuid.NewString())
 	}
 	profile := a.chatProviderProfile(ctx)
 	ephemeral := a.consumeEphemeralMaxOutput()

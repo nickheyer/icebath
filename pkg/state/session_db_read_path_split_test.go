@@ -10,7 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Store holding one session with a user and an assistant message
@@ -56,8 +57,8 @@ func whileWriterLocked(t *testing.T, db *SessionDB, what string, fn func()) {
 func TestReadsDoNotTakeWriterLock(t *testing.T) {
 	db := readPathStore(t)
 	ctx := context.Background()
-	var session *pyjson.Object
-	var search, messages []*pyjson.Object
+	var session *jsonutil.Object
+	var search, messages []*jsonutil.Object
 	var errs [3]error
 	whileWriterLocked(t, db, "read path", func() {
 		session, errs[0] = db.GetSession(ctx, "s1")
@@ -140,8 +141,8 @@ func TestBackgroundStateReadsNeverTouchSharedWriter(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := db.GetHandoffState(ctx, "s1")
-	want := pyjson.ObjectOf("state", "pending", "platform", "telegram", "error", nil)
-	if !pyjson.Equal(state, want) {
+	want := jsonutil.ObjectOf("state", "pending", "platform", "telegram", "error", nil)
+	if !anyutil.Equal(state, want) {
 		t.Fatalf("handoff state %v", state)
 	}
 	var ids []string
@@ -217,7 +218,7 @@ func TestAnchoredViewAndAroundUseReadPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	anchor, _ := msgs[0].Get("id")
-	var around, view *pyjson.Object
+	var around, view *jsonutil.Object
 	var errs [2]error
 	whileWriterLocked(t, db, "anchored reads", func() {
 		around, errs[0] = db.GetMessagesAround(ctx, "s1", anchor.(int64), 2)
@@ -228,7 +229,7 @@ func TestAnchoredViewAndAroundUseReadPath(t *testing.T) {
 	if err := errors.Join(errs[:]...); err != nil {
 		t.Fatal(err)
 	}
-	for _, got := range []*pyjson.Object{around, view} {
+	for _, got := range []*jsonutil.Object{around, view} {
 		window, _ := got.Get("window")
 		if !pyTruthy(window) {
 			t.Fatalf("empty window in %v", got)

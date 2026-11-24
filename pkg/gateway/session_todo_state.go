@@ -6,13 +6,13 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Client safe full todo snapshot of a decoded value, nil when malformed or the unused empty store
-func normalizeTodoState(value any) *pyjson.Object {
-	obj, ok := value.(*pyjson.Object)
+func normalizeTodoState(value any) *jsonutil.Object {
+	obj, ok := value.(*jsonutil.Object)
 	if !ok || obj == nil {
 		return nil
 	}
@@ -35,7 +35,7 @@ func normalizeTodoState(value any) *pyjson.Object {
 	if len(todos) == 0 && parsed.Sign() == 0 {
 		return nil
 	}
-	return pyjson.ObjectOf("todos", append([]any(nil), todos...), "revision", pyint.Value(parsed))
+	return jsonutil.ObjectOf("todos", append([]any(nil), todos...), "revision", pyint.Value(parsed))
 }
 
 // Cold resume todo snapshot of a session from its persisted todo results, nil when none is usable
@@ -48,7 +48,7 @@ func todoStateFromDB(ctx context.Context, db *state.SessionDB, sessionID string)
 	if !found || utf8.RuneCountInString(content) > state.MaxTodoResultChars {
 		return nil
 	}
-	decoded, err := pyjson.Loads(content)
+	decoded, err := jsonutil.Decode(content)
 	if err != nil {
 		return nil
 	}

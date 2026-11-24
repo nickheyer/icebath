@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
 )
 
 // ThreadCallback is one per goroutine prompt callback a worker inherits from the goroutine that handed it work
@@ -80,7 +80,7 @@ func PropagateContextToThread(ctx context.Context, env *Env, target func(ctx con
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	snapshot := pyctx.CopyContext(ctx)
+	snapshot := ctxutil.CopyStore(ctx)
 	base := context.WithoutCancel(ctx)
 	var asker Asker
 	if env != nil {
@@ -88,7 +88,7 @@ func PropagateContextToThread(ctx context.Context, env *Env, target func(ctx con
 	}
 	installs, captured := captureThreadCallbacks(ctx)
 	return func() (any, error) {
-		workerCtx := WithThreadLocals(pyctx.With(base, snapshot.Copy()))
+		workerCtx := WithThreadLocals(ctxutil.WithStore(base, snapshot.Copy()))
 		var workerEnv *Env
 		if env != nil {
 			copyEnv := *env

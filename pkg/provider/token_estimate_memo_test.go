@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const parityUnicode = "日本語テキスト🎉 café Ω ≈ 中文字符串"
@@ -90,10 +90,10 @@ func TestPreflightEstimateIgnoresReasoningDetails(t *testing.T) {
 func TestMessageTextIsEstimatedOnThePythonStrOfTheShadow(t *testing.T) {
 	isolateTokenMemo(t)
 	row := map[string]any{"role": "tool", "content": "ok", "tool_call_id": "c1", "n": int64(3), "ratio": 1.5, "flag": true, "none": nil}
-	if got, want := estimateMessageTokensWithoutImages(row), EstimateTokens(pyrepr.Str(mapShadow(row))); got != want {
+	if got, want := estimateMessageTokensWithoutImages(row), EstimateTokens(anyutil.String(mapShadow(row))); got != want {
 		t.Fatalf("got %d want %d", got, want)
 	}
-	if !strings.Contains(pyrepr.Str(mapShadow(row)), "True") || !strings.Contains(pyrepr.Str(mapShadow(row)), "None") {
+	if !strings.Contains(anyutil.String(mapShadow(row)), "True") || !strings.Contains(anyutil.String(mapShadow(row)), "None") {
 		t.Fatal("the shadow renders as a Python dict")
 	}
 	if estimateMessageTokensWithoutImages("not-a-dict") != EstimateTokens("not-a-dict") {
@@ -194,7 +194,7 @@ func TestParityTokenMemo(t *testing.T) {
 		weird := []any{
 			map[string]any{"role": "user", "content": map[string]any{"_multimodal": true, "text_summary": "s"}},
 			map[string]any{"role": "user", "content": nil}, "not-a-dict",
-			map[string]any{"role": "tool", "content": []any{map[string]any{"type": "text", "text": parityUnicode}, "raw"}, "meta": pyrepr.Tuple{int64(1), int64(2)}},
+			map[string]any{"role": "tool", "content": []any{map[string]any{"type": "text", "text": parityUnicode}, "raw"}, "meta": []any{int64(1), int64(2)}},
 		}
 		for range 2 {
 			if referenceRowsTokens(weird) != estimateRowsTokens(weird, DefaultImageTokenCost) {

@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -32,17 +32,17 @@ func acceptLegacyRequestHeaders(h http.Header) {
 }
 
 // Headers of a settled replay record under their icebath names, old prefix names of older records renamed
-func storedHeaders(record *pyjson.Object) map[string]string {
+func storedHeaders(record *jsonutil.Object) map[string]string {
 	headers := map[string]string{}
 	if record == nil {
 		return headers
 	}
-	for _, key := range record.Keys {
+	for _, key := range record.Keys() {
 		value, _ := record.Get(key)
 		if rest, legacy := strings.CutPrefix(key, legacyHeaderPrefix); legacy {
 			key = headerPrefix + rest
 		}
-		headers[key] = pyrepr.Str(value)
+		headers[key] = anyutil.String(value)
 	}
 	return headers
 }

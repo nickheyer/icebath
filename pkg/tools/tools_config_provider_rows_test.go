@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Plugin provider double with a schema, availability and model catalog
@@ -61,11 +60,11 @@ func fakePickerRegistry(builtin map[string]bool, providers ...*fakePickerProvide
 }
 
 // Row as a plain map for comparisons in key order
-func rowPairs(row *pyjson.Object) []string {
+func rowPairs(row *jsonutil.Object) []string {
 	var out []string
-	for _, k := range row.Keys {
+	for _, k := range row.Keys() {
 		v, _ := row.Get(k)
-		b, _ := pyjson.EncodeWTF8(v)
+		b, _ := jsonutil.Append(nil, v)
 		out = append(out, k+"="+string(b))
 	}
 	return out
@@ -116,9 +115,9 @@ func TestPluginProviderRowsShapesRegistryRows(t *testing.T) {
 		t.Fatalf("web rows %v %v", names, tiers)
 	}
 	envRow, _ := rows[1].Get("env_vars")
-	entry := envRow.([]any)[0].(*pyjson.Object)
-	if !slices.Equal(entry.Keys, []string{"key", "prompt", "url"}) {
-		t.Fatalf("env entry order %v", entry.Keys)
+	entry := envRow.([]any)[0].(*jsonutil.Object)
+	if !slices.Equal(entry.Keys(), []string{"key", "prompt", "url"}) {
+		t.Fatalf("env entry order %v", entry.Keys())
 	}
 }
 
@@ -289,7 +288,7 @@ func TestWebServingBackendsReadsTheSharedAndPinnedBackends(t *testing.T) {
 
 func TestUnmanagedActiveChecks(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
-	active := func(row *pyjson.Object, cfg config.Tree) bool {
+	active := func(row *jsonutil.Object, cfg config.Tree) bool {
 		t.Helper()
 		got, err := s.IsProviderActive(row, cfg)
 		if err != nil {
@@ -338,7 +337,7 @@ func TestUnmanagedActiveChecks(t *testing.T) {
 func TestDetectActiveProviderIndexFallsBackToConfiguredKeys(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
 	unsetEnv(t, "SECOND_KEY")
-	rows := []*pyjson.Object{
+	rows := []*jsonutil.Object{
 		toolRow("Edge", "", "", nil, "tts_provider", "edge"),
 		toolRow("Keyed", "", "", []any{toolKey("SECOND_KEY", "Second", "")}, "tts_provider", "keyed"),
 	}
@@ -381,7 +380,7 @@ func TestModelCatalogSources(t *testing.T) {
 
 func TestWriteProviderConfigPersistsOneSelection(t *testing.T) {
 	s, _ := newTestToolsSetup(t, "")
-	write := func(row *pyjson.Object, cfg config.Tree) config.Tree {
+	write := func(row *jsonutil.Object, cfg config.Tree) config.Tree {
 		t.Helper()
 		if err := s.writeProviderConfig(row, cfg); err != nil {
 			t.Fatal(err)
@@ -389,11 +388,11 @@ func TestWriteProviderConfigPersistsOneSelection(t *testing.T) {
 		return cfg
 	}
 	cfg := write(toolRow("Edge", "", "", nil, "tts_provider", "edge"), config.Tree{"tts": map[string]any{}})
-	if !pyjson.Equal(cfg["tts"], map[string]any{"provider": "edge"}) {
+	if !anyutil.Equal(cfg["tts"], map[string]any{"provider": "edge"}) {
 		t.Fatalf("tts %v", cfg["tts"])
 	}
 	cfg = write(toolRow("Local", "", "", nil, "browser_provider", "", "browser_engine", "lightpanda"), config.Tree{"browser": map[string]any{}})
-	if !pyjson.Equal(cfg["browser"], map[string]any{"engine": "lightpanda"}) {
+	if !anyutil.Equal(cfg["browser"], map[string]any{"engine": "lightpanda"}) {
 		t.Fatalf("browser %v", cfg["browser"])
 	}
 	if err := s.writeProviderConfig(toolRow("L", "", "", nil, "browser_engine", "auto"), config.Tree{"browser": "x"}); err == nil ||
@@ -402,15 +401,15 @@ func TestWriteProviderConfigPersistsOneSelection(t *testing.T) {
 	}
 	cfg = write(toolRow("Exa paid", "", "", nil, "web_backend", "exa", "web_tier", "paid"),
 		config.Tree{"web": map[string]any{"search_backend": "tavily"}})
-	if !pyjson.Equal(cfg["web"], map[string]any{"backend": "exa", "search_backend": "tavily", "provider_tier": map[string]any{"exa": "paid"}}) {
+	if !anyutil.Equal(cfg["web"], map[string]any{"backend": "exa", "search_backend": "tavily", "provider_tier": map[string]any{"exa": "paid"}}) {
 		t.Fatalf("tiered web %v", cfg["web"])
 	}
 	cfg = write(toolRow("Exa", "", "", nil, "web_backend", "exa"), cfg)
-	if !pyjson.Equal(cfg["web"], map[string]any{"backend": "exa", "search_backend": "tavily", "provider_tier": map[string]any{}}) {
+	if !anyutil.Equal(cfg["web"], map[string]any{"backend": "exa", "search_backend": "tavily", "provider_tier": map[string]any{}}) {
 		t.Fatalf("untiered web %v", cfg["web"])
 	}
 	cfg = write(toolRow("cua", "", "", nil, "computer_use_backend", "cua"), config.Tree{})
-	if !pyjson.Equal(cfg["computer_use"], map[string]any{"backend": "cua"}) {
+	if !anyutil.Equal(cfg["computer_use"], map[string]any{"backend": "cua"}) {
 		t.Fatalf("computer use %v", cfg["computer_use"])
 	}
 }

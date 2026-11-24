@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keep existing constructor upsert on the caller's connection, refusing to recreate a retired session
@@ -36,7 +36,7 @@ func (d *SessionDB) insertSessionRowInTransaction(ctx context.Context, conn SQLi
 	}
 	var modelConfig any
 	if len(n.ModelConfig) > 0 {
-		text, err := pyjson.Dumps(n.ModelConfig)
+		text, err := jsonutil.Encode(n.ModelConfig)
 		if err != nil {
 			return err
 		}

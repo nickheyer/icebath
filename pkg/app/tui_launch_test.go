@@ -18,9 +18,9 @@ import (
 	_ "github.com/nickheyer/icebath/pkg/cron"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fresh profile home under the test temp dir
@@ -397,7 +397,7 @@ func tuiScheduled(t *testing.T, kind, status string) string {
 		s := agent.NewSessionLoopState("run the tests")
 		s.IntervalSeconds, s.Status = 600, status
 		s.NextDueAt = float64(time.Now().UnixNano())/1e9 + 600
-		s.Route = pyjson.ObjectOf("platform", "local", "chat_id", "tui-wt")
+		s.Route = jsonutil.ObjectOf("platform", "local", "chat_id", "tui-wt")
 		raw, err = s.ToJSON()
 	case "heartbeat":
 		s := agent.NewHeartbeatState("check in", 600)
@@ -495,15 +495,15 @@ func TestQuitKeepsTheTreeWhileACronJobIsBoundToIt(t *testing.T) {
 // Writes an enabled every 10m cron job bound to the tree by workdir or to the local chat by origin
 func tuiCronJob(t *testing.T, bound, cwd string) {
 	t.Helper()
-	job := pyjson.ObjectOf("id", "abc123def456", "name", "run the tests", "prompt", "run the tests",
-		"schedule", pyjson.ObjectOf("kind", "interval", "minutes", int64(10), "display", "every 10m"),
+	job := jsonutil.ObjectOf("id", "abc123def456", "name", "run the tests", "prompt", "run the tests",
+		"schedule", jsonutil.ObjectOf("kind", "interval", "minutes", int64(10), "display", "every 10m"),
 		"schedule_display", "every 10m", "enabled", true, "state", "scheduled")
 	if bound == "workdir" {
 		job.Set("workdir", cwd)
 	} else {
-		job.Set("origin", pyjson.ObjectOf("platform", "local", "chat_id", "local-chat"))
+		job.Set("origin", jsonutil.ObjectOf("platform", "local", "chat_id", "local-chat"))
 	}
-	text, err := pyjson.Dumps(pyjson.ObjectOf("jobs", []any{job}), pyjson.Indent(2))
+	text, err := jsonutil.Encode(jsonutil.ObjectOf("jobs", []any{job}), jsonutil.Indent(2))
 	if err != nil {
 		t.Fatal(err)
 	}

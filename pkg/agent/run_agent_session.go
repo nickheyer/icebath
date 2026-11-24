@@ -7,12 +7,12 @@ import (
 	"os"
 	"unsafe"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var launchGetwd = os.Getwd
@@ -34,7 +34,7 @@ func gatewayOriginJSON(ctx context.Context, a *AIAgent) string {
 	if a.chatID == "" && a.gatewaySessionKey == "" && a.userID == "" {
 		return ""
 	}
-	origin := pyjson.NewObject()
+	origin := jsonutil.NewObject()
 	origin.Set("platform", a.platform)
 	origin.Set("chat_id", noneIfEmpty(a.chatID))
 	origin.Set("chat_name", noneIfEmpty(a.chatName))
@@ -58,7 +58,7 @@ func gatewayOriginJSON(ctx context.Context, a *AIAgent) string {
 	if profile != "" {
 		origin.Set("profile", profile)
 	}
-	out, err := pyjson.Dumps(origin)
+	out, err := jsonutil.Encode(origin)
 	if err != nil {
 		return ""
 	}
@@ -148,7 +148,7 @@ func (a *AIAgent) transitionContextEngineSession(oldSessionID, newSessionID stri
 		target = a.sessionID
 	}
 	if shouldStart && target != "" {
-		start := pyjson.NewObject()
+		start := jsonutil.NewObject()
 		start.Set("old_session_id", oldSessionID)
 		start.Set("carry_over_context", carryOverContext)
 		start.Set("platform", provider.SessionSourceFor(a.env, a.platform))
@@ -161,8 +161,8 @@ func (a *AIAgent) transitionContextEngineSession(oldSessionID, newSessionID stri
 			start.Set(k, v)
 		}
 		kwargs := map[string]any{}
-		for _, k := range start.Keys {
-			v := start.Vals[k]
+		for _, k := range start.Keys() {
+			v := start.Value(k)
 			if v == nil || v == "" {
 				continue
 			}

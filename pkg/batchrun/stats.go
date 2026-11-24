@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Call, success and failure tally of one tool
@@ -58,8 +58,8 @@ func (r *reasoningStats) merge(other reasoningStats) {
 }
 
 // Counters as the JSON object the statistics file stores
-func (r reasoningStats) object() *pyjson.Object {
-	return pyjson.ObjectOf("total_assistant_turns", r.total, "turns_with_reasoning", r.with, "turns_without_reasoning", r.without)
+func (r reasoningStats) object() *jsonutil.Object {
+	return jsonutil.ObjectOf("total_assistant_turns", r.total, "turns_with_reasoning", r.with, "turns_without_reasoning", r.without)
 }
 
 // Items of a message list value, nil for anything that is not a list
@@ -90,20 +90,20 @@ func requiredKey(m map[string]any, key string) (any, error) {
 func toolCallSucceeded(content any) bool {
 	decoded := content
 	if text, ok := content.(string); ok {
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return text != "" && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(text)), "error:")
 		}
 		decoded = parsed
 	}
-	fields, ok := pyjson.Dict(decoded)
+	fields, ok := jsonutil.AsMap(decoded)
 	if !ok {
 		return true
 	}
 	if fields["error"] != nil {
 		return false
 	}
-	if inner, ok := pyjson.Dict(fields["content"]); ok && inner["error"] != nil {
+	if inner, ok := jsonutil.AsMap(fields["content"]); ok && inner["error"] != nil {
 		return false
 	}
 	return fields["success"] != false
@@ -119,9 +119,9 @@ func extractToolStats(messages []map[string]any) (*toolStats, error) {
 			return nil, err
 		}
 		switch {
-		case role == "assistant" && pyrepr.Truthy(msg["tool_calls"]):
+		case role == "assistant" && anyutil.IsTrue(msg["tool_calls"]):
 			for _, raw := range listItems(msg["tool_calls"]) {
-				call, ok := pyjson.Dict(raw)
+				call, ok := jsonutil.AsMap(raw)
 				if !ok || len(call) == 0 {
 					continue
 				}
@@ -129,15 +129,15 @@ func extractToolStats(messages []map[string]any) (*toolStats, error) {
 				if err != nil {
 					return nil, err
 				}
-				fn, ok := pyjson.Dict(fnValue)
+				fn, ok := jsonutil.AsMap(fnValue)
 				if !ok {
-					return nil, fmt.Errorf("a tool call function is %s, expected a mapping", pyrepr.TypeName(fnValue))
+					return nil, fmt.Errorf("a tool call function is %s, expected a mapping", anyutil.Kind(fnValue))
 				}
 				nameValue, err := requiredKey(fn, "name")
 				if err != nil {
 					return nil, err
 				}
-				name := pyrepr.Str(nameValue)
+				name := anyutil.String(nameValue)
 				stats.of(name).count++
 				id, err := requiredKey(call, "id")
 				if err != nil {
@@ -188,12 +188,12 @@ func turnHasReasoning(msg map[string]any) (bool, error) {
 		return true, nil
 	}
 	reasoning := msg["reasoning"]
-	if !pyrepr.Truthy(reasoning) {
+	if !anyutil.IsTrue(reasoning) {
 		return false, nil
 	}
 	text, ok := reasoning.(string)
 	if !ok {
-		return false, fmt.Errorf("'%s' object has no attribute 'strip'", pyrepr.TypeName(reasoning))
+		return false, fmt.Errorf("'%s' object has no attribute 'strip'", anyutil.Kind(reasoning))
 	}
 	return strings.TrimSpace(text) != "", nil
 }
@@ -219,13 +219,13 @@ func extractReasoningStats(messages []map[string]any) (reasoningStats, bool, err
 }
 
 // One count, success and failure object in the order the trajectory rows store
-func (s *toolStat) object() *pyjson.Object {
-	return pyjson.ObjectOf("count", s.count, "success", s.success, "failure", s.failure)
+func (s *toolStat) object() *jsonutil.Object {
+	return jsonutil.ObjectOf("count", s.count, "success", s.success, "failure", s.failure)
 }
 
 // Every known tool with zero defaults for a consistent row schema, then any tool outside the known set
-func normalizeToolStats(stats *toolStats, allTools []string) *pyjson.Object {
-	out := pyjson.NewObject()
+func normalizeToolStats(stats *toolStats, allTools []string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, name := range allTools {
 		if stat, ok := stats.byTool[name]; ok {
 			out.Set(name, stat.object())
@@ -242,8 +242,8 @@ func normalizeToolStats(stats *toolStats, allTools []string) *pyjson.Object {
 }
 
 // Failure count of every known tool with zero defaults, then any tool outside the known set
-func normalizeToolErrorCounts(stats *toolStats, allTools []string) *pyjson.Object {
-	out := pyjson.NewObject()
+func normalizeToolErrorCounts(stats *toolStats, allTools []string) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, name := range allTools {
 		failures := 0
 		if stat, ok := stats.byTool[name]; ok {
@@ -278,8 +278,8 @@ func (s *toolStat) rates() (float64, float64) {
 }
 
 // Run totals per tool with their success and failure rates, in first call order
-func (t *toolStats) statistics() *pyjson.Object {
-	out := pyjson.NewObject()
+func (t *toolStats) statistics() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	for _, name := range t.names {
 		stat := t.byTool[name]
 		success, failure := stat.rates()

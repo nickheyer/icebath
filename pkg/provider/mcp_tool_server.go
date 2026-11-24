@@ -3,7 +3,7 @@ package provider
 import (
 	"io"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Worker threads anyio lends sync tool handlers, the cap on calls a concurrent server runs at once
@@ -38,7 +38,7 @@ func MCPToolParamsFromSchema(schema any) []MCPToolParam {
 }
 
 // Registers a tool after the existing ones, a nil inputSchema listing the schema its params derive
-func (s *CodexToolsServer) AddTool(name, description string, params []MCPToolParam, inputSchema any, handler func(kwargs *pyjson.Object) string) {
+func (s *CodexToolsServer) AddTool(name, description string, params []MCPToolParam, inputSchema any, handler func(kwargs *jsonutil.Object) string) {
 	sig := codexToolsSignature{ReturnAnnotation: "str"}
 	for _, p := range params {
 		sig.Params = append(sig.Params, codexToolsParam{Name: p.Name, PyType: p.Type, Required: p.Required, Default: p.Default, HasDefault: p.HasDefault})

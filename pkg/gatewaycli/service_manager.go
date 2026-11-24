@@ -16,10 +16,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 const (
@@ -54,7 +53,7 @@ func ValidateServiceProfileName(name string) error {
 		return &profiles.ValueError{Msg: fmt.Sprintf("profile name too long (%d > %d)", n, maxProfileLen)}
 	}
 	if !validServiceProfileRE.MatchString(name) {
-		return &profiles.ValueError{Msg: "profile name must match [a-z0-9][a-z0-9_-]*, got " + pyrepr.StrRepr(name)}
+		return &profiles.ValueError{Msg: "profile name must match [a-z0-9][a-z0-9_-]*, got " + strconv.Quote(name)}
 	}
 	return nil
 }
@@ -265,17 +264,17 @@ func writeGatewayDesiredState(name, desired string) error {
 	if _, err := os.Stat(profileDir); err != nil {
 		return nil
 	}
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	if raw, err := os.ReadFile(stateFile); err == nil {
-		if v, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff")); err == nil {
-			if obj, ok := v.(*pyjson.Object); ok {
+		if v, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff")); err == nil {
+			if obj, ok := v.(*jsonutil.Object); ok {
 				data = obj
 			}
 		}
 	}
 	data.Set("desired_state", desired)
 	data.Set("updated_at", time.Now().Unix())
-	text, err := pyjson.Dumps(data, pyjson.Separators(",", ":"))
+	text, err := jsonutil.Encode(data)
 	if err != nil {
 		return nil
 	}
@@ -328,7 +327,7 @@ func runS6(timeout time.Duration, check bool, cmd string, args ...string) (s6Res
 	case <-time.After(timeout):
 		c.Process.Kill()
 		<-done
-		return s6Result{}, fmt.Errorf("Command '%s' timed out after %s seconds", s6BinDir+"/"+cmd, pyrepr.Float(timeout.Seconds()))
+		return s6Result{}, fmt.Errorf("Command '%s' timed out after %s seconds", s6BinDir+"/"+cmd, strconv.FormatFloat(timeout.Seconds(), 'f', -1, 64))
 	}
 	res := s6Result{Stdout: strings.ToValidUTF8(out.String(), "�"), Stderr: strings.ToValidUTF8(errOut.String(), "�")}
 	var exitErr *exec.ExitError
@@ -413,7 +412,7 @@ type GatewayNotRegisteredError struct {
 
 func newGatewayNotRegisteredError(profile string) *GatewayNotRegisteredError {
 	return &GatewayNotRegisteredError{S6Error{
-		Msg: "no such gateway " + pyrepr.StrRepr(profile) + ": register it with `icebath profile create " + profile +
+		Msg: "no such gateway " + strconv.Quote(profile) + ": register it with `icebath profile create " + profile +
 			"` first, or pass an existing profile name via `-p <name>`",
 		Service: "gateway-" + profile}, profile}
 }
@@ -427,7 +426,7 @@ type S6CommandError struct {
 }
 
 func newS6CommandError(service, action string, rc int, stderr string) *S6CommandError {
-	msg := fmt.Sprintf("s6-svc %s on %s failed (rc=%d)", action, pyrepr.StrRepr(service), rc)
+	msg := fmt.Sprintf("s6-svc %s on %s failed (rc=%d)", action, strconv.Quote(service), rc)
 	if s := strings.TrimSpace(stderr); s != "" {
 		msg += ": " + s
 	}
@@ -460,12 +459,12 @@ func renderS6RunScript(profile string, extraEnv map[string]string) string {
 	}
 	sort.Strings(keys)
 	for _, k := range keys {
-		lines = append(lines, "export "+k+"="+pyshlex.Quote(extraEnv[k]))
+		lines = append(lines, "export "+k+"="+shellutil.Quote(extraEnv[k]))
 	}
 	lines = append(lines, "export ICEBATH_S6_SUPERVISED_CHILD=1", "export ICEBATH_SUPERVISED_CHILD=1")
 	cmd := "icebath gateway run --replace"
 	if profile != "default" {
-		cmd = "icebath -p " + pyshlex.Quote(profile) + " gateway run --replace"
+		cmd = "icebath -p " + shellutil.Quote(profile) + " gateway run --replace"
 	}
 	lines = append(lines, `[ "$(id -u)" = 0 ] || exec `+cmd, "exec s6-setuidgid icebath "+cmd)
 	return strings.Join(lines, "\n") + "\n"
@@ -490,7 +489,7 @@ func renderS6FinishScript() string {
 
 // Log run script writing timestamped rotated logs under the profile gateway log directory
 func renderS6LogRun(profile string) string {
-	prof := pyshlex.Quote(profile)
+	prof := shellutil.Quote(profile)
 	return "#!/command/with-contenv sh\n" +
 		"# shellcheck shell=sh\n" +
 		`: "${ICEBATH_HOME:=/opt/data}"` + "\n" +
@@ -591,7 +590,7 @@ func (m *S6ServiceManager) RegisterProfileGatewayEnv(profile string, extraEnv ma
 		return err
 	}
 	if _, err := os.Lstat(svcDir); err == nil {
-		return &profiles.ValueError{Msg: "profile gateway " + pyrepr.StrRepr(profile) + " already registered at " + svcDir}
+		return &profiles.ValueError{Msg: "profile gateway " + strconv.Quote(profile) + " already registered at " + svcDir}
 	}
 	tmpDir := filepath.Join(filepath.Dir(svcDir), "."+filepath.Base(svcDir)+".tmp")
 	if _, err := os.Lstat(tmpDir); err == nil {

@@ -7,11 +7,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pycopy"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 const runtimeProviderCustom = "custom"
@@ -23,8 +22,8 @@ var (
 
 func normalizedRuntimeURL(v any) string {
 	s := ""
-	if pyrepr.Truthy(v) {
-		s = pyrepr.Str(v)
+	if anyutil.IsTrue(v) {
+		s = anyutil.String(v)
 	}
 	return strings.TrimRight(strings.TrimSpace(s), "/")
 }
@@ -168,11 +167,11 @@ func mergeRequestOverrides(runtimeOverrides, explicitOverrides any) map[string]a
 	}
 	merged := map[string]any{}
 	if len(runtime) > 0 {
-		merged = pycopy.DeepCopy(runtime).(map[string]any)
+		merged = any(anyutil.Clone(runtime)).(map[string]any)
 	}
 	explicit := map[string]any{}
 	if len(explicitIn) > 0 {
-		explicit = pycopy.DeepCopy(explicitIn).(map[string]any)
+		explicit = any(anyutil.Clone(explicitIn)).(map[string]any)
 	}
 	runtimeExtra := merged["extra_body"]
 	explicitExtra, hasExplicitExtra := explicit["extra_body"]
@@ -210,7 +209,7 @@ func overridesValue(m map[string]any) any {
 // Direct endpoint branch, provider and api mode from url heuristics with explicit api mode winning
 func directEndpointCredentials(ctx context.Context, v delegationValues, explicitRequestOverrides map[string]any) map[string]any {
 	baseLower := strings.ToLower(v.baseURL)
-	host, _ := pyurl.BaseURLHostname(v.baseURL)
+	host, _ := urlutil.BaseHost(v.baseURL)
 	providerName := "custom"
 	apiMode := string(provider.DetectAPIModeForURL(v.baseURL))
 	if apiMode == "" {
@@ -290,10 +289,10 @@ func runtimeProviderCredentials(ctx context.Context, v delegationValues, explici
 }
 
 func stripOrNone(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return strings.TrimSpace(pyrepr.Str(v))
+	return strings.TrimSpace(anyutil.String(v))
 }
 
 // Child credential bundle from the delegation config, a direct endpoint, a runtime provider or pure inherit
@@ -340,13 +339,13 @@ func childReasoning(parent *AIAgent, delegationCfg map[string]any, routeEffort a
 	}
 	reasoning := parent.reasoningConfig
 	effort := routeEffort
-	if !(pyrepr.Truthy(effort) || effort == false) {
+	if !(anyutil.IsTrue(effort) || effort == false) {
 		effort = delegationCfg["reasoning_effort"]
 	}
-	if pyrepr.Truthy(effort) || effort == false {
+	if anyutil.IsTrue(effort) || effort == false {
 		parsed := config.ParseReasoningEffort(effort)
 		if parsed == nil {
-			pkgLog().Warn(fmt.Sprintf("Unknown delegation.reasoning_effort '%s', inheriting parent level", pyrepr.Str(effort)))
+			pkgLog().Warn(fmt.Sprintf("Unknown delegation.reasoning_effort '%s', inheriting parent level", anyutil.String(effort)))
 		} else {
 			reasoning = parsed
 		}
@@ -431,7 +430,7 @@ func resolveChildRuntime(ctx context.Context, parent *AIAgent, delegationCfg map
 		o.ProvidersAllowed, o.ProvidersIgnored, o.ProvidersOrder = parent.providersAllowed, parent.providersIgnored, parent.providersOrder
 		o.ProviderSort, o.ProviderRequireParameters = parent.providerSort, parent.providerRequireParameters
 		o.ProviderDataCollection = parent.providerDataCollection
-		if !pyrepr.Truthy(o.ProviderDataCollection) {
+		if !anyutil.IsTrue(o.ProviderDataCollection) {
 			o.ProviderDataCollection = ""
 		}
 	}

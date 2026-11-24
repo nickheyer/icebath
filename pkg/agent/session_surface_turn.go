@@ -5,28 +5,28 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // SpeechInterruptedNote is prepended to the model bound message after a barge in on a spoken reply
 const SpeechInterruptedNote = "[Note: the user interrupted your previous spoken reply before it finished.]"
 
 // Model bound note of a committed surface, the barge in note first then the HUD or spoken delegation note
-func SurfaceNote(committed *pyjson.Object, validToolNames map[string]bool) string {
+func SurfaceNote(committed *jsonutil.Object, validToolNames map[string]bool) string {
 	var notes []string
-	if pyrepr.Truthy(committed.GetOr("interrupted", nil)) {
+	if anyutil.IsTrue(committed.ValueOr("interrupted", nil)) {
 		notes = append(notes, SpeechInterruptedNote)
 	}
-	switch committed.GetOr("surface", nil) {
+	switch committed.ValueOr("surface", nil) {
 	case "hud":
 		notes = append(notes, HudSurfaceNote(validToolNames, nil))
 	case "voice-live":
-		voiceContext := committed.GetOr("voice_context", nil)
+		voiceContext := committed.ValueOr("voice_context", nil)
 		text := ""
-		if pyrepr.Truthy(voiceContext) {
-			text = pyrepr.Str(voiceContext)
+		if anyutil.IsTrue(voiceContext) {
+			text = anyutil.String(voiceContext)
 		}
 		notes = append(notes, tools.VoiceLiveTurnNoteFor(text))
 	}
@@ -43,7 +43,7 @@ type surfaceTurnAgent interface {
 // Executing admission's surface note gated on the agent's tools, empty outside a surface turn
 func SurfaceTurnNote(ctx context.Context, a surfaceTurnAgent) string {
 	committed := gateway.SurfaceTurn(ctx)
-	if !pyrepr.Truthy(committed) {
+	if !anyutil.IsTrue(committed) {
 		return ""
 	}
 	return SurfaceNote(committed, a.ValidToolNames())

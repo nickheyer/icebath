@@ -5,19 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Seconds a shared index cache entry stays fresh
@@ -39,9 +38,9 @@ type Hub struct {
 
 // Replaceable hub IO, nil fields run the real implementation
 type hubIO struct {
-	httpGet         func(ctx context.Context, rawURL string, o hubGet) (*pyhttpx.Response, error)
-	ssrfGet         func(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string) (*pyhttpx.Response, error)
-	guardedGet      func(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string) *pyhttpx.Response
+	httpGet         func(ctx context.Context, rawURL string, o hubGet) (*httputil.Response, error)
+	ssrfGet         func(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string) (*httputil.Response, error)
+	guardedGet      func(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string) *httputil.Response
 	isSafeURL       func(rawURL string) bool
 	siteAccess      func(rawURL string) *tools.WebsiteBlock
 	readIndexCache  func(key string) (any, error)
@@ -50,10 +49,10 @@ type hubIO struct {
 	shippedIndex    func() any
 }
 
-// Options of one plain hub GET, the httpx keyword arguments
+// Options of one plain hub GET
 type hubGet struct {
 	Timeout         time.Duration
-	Params          pyhttpx.Params
+	Params          url.Values
 	Headers         map[string]string
 	FollowRedirects bool
 }
@@ -106,19 +105,19 @@ func (h *Hub) HTTPSession(ctx context.Context) (context.Context, func()) {
 	}
 	base := tools.NewSSRFSafeClient(h.toolsEnv(), 0, false)
 	follow := *base
-	follow.CheckRedirect = pyhttpx.RedirectPolicy(true)
+	follow.CheckRedirect = httputil.RedirectPolicy(true)
 	sess := &hubSession{noFollow: base, follow: &follow}
 	return context.WithValue(ctx, hubSessionKey{}, sess), base.CloseIdleConnections
 }
 
-// httpx.InvalidURL, raised past the HTTPError handlers of every hub fetch helper
+// Request URL that cannot be built, raised past the transport error handling of every hub fetch helper
 type hubInvalidURLError struct{ err error }
 
 func (e *hubInvalidURLError) Error() string { return e.err.Error() }
 func (e *hubInvalidURLError) Unwrap() error { return e.err }
 
 func hubRequest(ctx context.Context, rawURL string, o hubGet) (*http.Request, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, pyhttpx.MergeParams(rawURL, o.Params), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, httputil.MergeQuery(rawURL, o.Params), nil)
 	if err != nil {
 		return nil, &hubInvalidURLError{err}
 	}
@@ -129,11 +128,11 @@ func hubRequest(ctx context.Context, rawURL string, o hubGet) (*http.Request, er
 }
 
 // GET through the active session client, or a one shot plain request outside a session
-func (h *Hub) skillsHubHTTPGet(ctx context.Context, rawURL string, o hubGet) (*pyhttpx.Response, error) {
+func (h *Hub) skillsHubHTTPGet(ctx context.Context, rawURL string, o hubGet) (*httputil.Response, error) {
 	if h.io.httpGet != nil {
 		return h.io.httpGet(ctx, rawURL, o)
 	}
-	client := pyhttpx.PlainClient(o.FollowRedirects)
+	client := httputil.Client(o.FollowRedirects)
 	if sess, ok := ctx.Value(hubSessionKey{}).(*hubSession); ok {
 		client = sess.noFollow
 		if o.FollowRedirects {
@@ -144,11 +143,11 @@ func (h *Hub) skillsHubHTTPGet(ctx context.Context, rawURL string, o hubGet) (*p
 	if err != nil {
 		return nil, err
 	}
-	return pyhttpx.Do(client, req, o.Timeout)
+	return httputil.Do(client, req, httputil.EachPhase(o.Timeout))
 }
 
 // One URL fetched with connect time SSRF validation and no automatic redirects
-func (h *Hub) ssrfSafeHTTPGet(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string) (*pyhttpx.Response, error) {
+func (h *Hub) ssrfSafeHTTPGet(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string) (*httputil.Response, error) {
 	if h.io.ssrfGet != nil {
 		return h.io.ssrfGet(ctx, rawURL, timeout, headers)
 	}
@@ -159,7 +158,7 @@ func (h *Hub) ssrfSafeHTTPGet(ctx context.Context, rawURL string, timeout time.D
 	if err != nil {
 		return nil, err
 	}
-	return pyhttpx.Do(sess.noFollow, req, timeout)
+	return httputil.Do(sess.noFollow, req, httputil.EachPhase(timeout))
 }
 
 func (h *Hub) urlIsSafe(rawURL string) bool {
@@ -191,7 +190,7 @@ func (h *Hub) hopAllowed(rawURL string) bool {
 }
 
 // GET with SSRF and website policy checks on every redirect hop, nil when blocked or failed, invalid URLs raised through hubRaise
-func (h *Hub) guardedHTTPGet(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string) *pyhttpx.Response {
+func (h *Hub) guardedHTTPGet(ctx context.Context, rawURL string, timeout time.Duration, headers map[string]string) *httputil.Response {
 	if h.io.guardedGet != nil {
 		return h.io.guardedGet(ctx, rawURL, timeout, headers)
 	}
@@ -214,11 +213,7 @@ func (h *Hub) guardedHTTPGet(ctx context.Context, rawURL string, timeout time.Du
 			if location == "" {
 				return nil
 			}
-			next, err := pyurl.Join(current, location)
-			if err != nil {
-				hubRaise(err)
-			}
-			current = next
+			current = resolveRedirect(current, location)
 			continue
 		}
 		return resp
@@ -227,8 +222,21 @@ func (h *Hub) guardedHTTPGet(ctx context.Context, rawURL string, timeout time.Du
 	return nil
 }
 
+// Location of a redirect resolved against the URL that answered it, an unparsable URL raised through hubRaise
+func resolveRedirect(current, location string) string {
+	base, err := url.Parse(current)
+	if err != nil {
+		hubRaise(err)
+	}
+	ref, err := base.Parse(location)
+	if err != nil {
+		hubRaise(err)
+	}
+	return ref.String()
+}
+
 // Streams one response with policy checked redirects, nil when blocked or failed, invalid URLs raised through hubRaise
-func (h *Hub) guardedHTTPStream(ctx context.Context, rawURL string, params pyhttpx.Params, timeout time.Duration) *pyhttpx.StreamResponse {
+func (h *Hub) guardedHTTPStream(ctx context.Context, rawURL string, params url.Values, timeout time.Duration) *httputil.StreamResponse {
 	current, currentParams := rawURL, params
 	for range maxSkillFetchRedirects + 1 {
 		if !h.hopAllowed(current) {
@@ -241,9 +249,9 @@ func (h *Hub) guardedHTTPStream(ctx context.Context, rawURL string, params pyhtt
 			client = tools.NewSSRFSafeClient(h.toolsEnv(), 0, false)
 		}
 		req, err := hubRequest(ctx, current, hubGet{Params: currentParams})
-		var resp *pyhttpx.StreamResponse
+		var resp *httputil.StreamResponse
 		if err == nil {
-			resp, err = pyhttpx.Stream(client, req, timeout)
+			resp, err = httputil.Stream(client, req, httputil.EachPhase(timeout))
 		}
 		if err != nil {
 			var invalid *hubInvalidURLError
@@ -261,9 +269,7 @@ func (h *Hub) guardedHTTPStream(ctx context.Context, rawURL string, params pyhtt
 		if location == "" {
 			return nil
 		}
-		if current, err = pyurl.Join(current, location); err != nil {
-			hubRaise(err)
-		}
+		current = resolveRedirect(current, location)
 		currentParams = nil
 	}
 	h.S.logger().Warn(fmt.Sprintf("Skills Hub fetch exceeded redirect limit for %s", rawURL))
@@ -287,7 +293,7 @@ func readJSONIfFresh(path string, ttl float64) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, nil
 	}
@@ -315,11 +321,8 @@ func (h *Hub) writeIndexCache(key string, data any) error {
 	if _, err := os.Stat(ignore); err != nil {
 		_ = os.WriteFile(ignore, []byte("# Exclude hub internals from search tools\n*\n"), 0o666)
 	}
-	text, err := pyjson.Dumps(data, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+	text, err := jsonutil.Encode(data, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 	if err != nil {
-		return err
-	}
-	if err := pystr.StrictUTF8EncodeError(text); err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(dir, key+".json"), []byte(text), 0o666); err != nil {
@@ -331,7 +334,7 @@ func (h *Hub) writeIndexCache(key string, data any) error {
 // JSON state file under the hub dir with a fixed empty shape, rewritten under a cross process lock
 type jsonStateFile struct {
 	Path   string
-	empty  func() *pyjson.Object
+	empty  func() *jsonutil.Object
 	holder *tools.FileLockHolder
 	log    func() interface{ Warn(string, ...any) }
 }
@@ -348,19 +351,19 @@ func (f *jsonStateFile) read() (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return f.empty(), nil
 	}
 	return v, nil
 }
 
-func (f *jsonStateFile) readObject() (*pyjson.Object, error) {
+func (f *jsonStateFile) readObject() (*jsonutil.Object, error) {
 	v, err := f.read()
 	if err != nil {
 		return nil, err
 	}
-	o, ok := v.(*pyjson.Object)
+	o, ok := v.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("%s holds %s where a mapping was expected", f.Path, errchain.Kind(v))
 	}
@@ -372,15 +375,19 @@ func (f *jsonStateFile) write(ctx context.Context, data any, ensureASCII bool) e
 	if err := os.MkdirAll(filepath.Dir(f.Path), 0o777); err != nil {
 		return err
 	}
-	text, err := pyjson.Dumps(data, pyjson.Indent(2), pyjson.EnsureASCII(ensureASCII))
+	opts := []jsonutil.Option{jsonutil.Indent(2)}
+	if ensureASCII {
+		opts = append(opts, jsonutil.ASCII())
+	}
+	text, err := jsonutil.Encode(data, opts...)
 	if err != nil {
 		return err
 	}
-	return pyfs.AtomicWriteTextWith(ctx, f.Path, text+"\n", pyfs.TextWrite{PreserveMode: true})
+	return fsutil.WriteFile(ctx, f.Path, []byte(text+"\n"), fsutil.WriteOptions{KeepOwner: true, NativeLineEnds: true})
 }
 
 // Re reads, mutates and saves under the ten second lock, unlocked with a warning when the lock is unusable
-func (f *jsonStateFile) update(ctx context.Context, mutate func(*pyjson.Object) (bool, error), ensureASCII bool) (bool, error) {
+func (f *jsonStateFile) update(ctx context.Context, mutate func(*jsonutil.Object) (bool, error), ensureASCII bool) (bool, error) {
 	release, err := tools.AcquireFileLock(f.Path+".lock", f.holder, 10*time.Second,
 		fmt.Sprintf("Timed out waiting for the skills hub state lock (%s)", f.Path))
 	if err != nil {
@@ -407,10 +414,10 @@ func (h *Hub) LockFile(path string) *HubLockFile {
 	if path == "" {
 		path = h.LockFilePath()
 	}
-	return &HubLockFile{jsonStateFile{Path: path, holder: &hubLockHolder, log: h.warnLog, empty: func() *pyjson.Object {
-		o := pyjson.NewObject()
+	return &HubLockFile{jsonStateFile{Path: path, holder: &hubLockHolder, log: h.warnLog, empty: func() *jsonutil.Object {
+		o := jsonutil.NewObject()
 		o.Set("version", int64(1))
-		o.Set("installed", pyjson.NewObject())
+		o.Set("installed", jsonutil.NewObject())
 		return o
 	}}}
 }
@@ -418,24 +425,24 @@ func (h *Hub) LockFile(path string) *HubLockFile {
 func (h *Hub) warnLog() interface{ Warn(string, ...any) } { return h.S.logger() }
 
 // Whole lock document
-func (l *HubLockFile) Load() (*pyjson.Object, error) { return l.readObject() }
+func (l *HubLockFile) Load() (*jsonutil.Object, error) { return l.readObject() }
 
 // Rewrites the lock document keeping non ASCII text
-func (l *HubLockFile) Save(ctx context.Context, data *pyjson.Object) error {
+func (l *HubLockFile) Save(ctx context.Context, data *jsonutil.Object) error {
 	return l.write(ctx, data, false)
 }
 
-func lockInstalled(data *pyjson.Object, create bool) (*pyjson.Object, error) {
+func lockInstalled(data *jsonutil.Object, create bool) (*jsonutil.Object, error) {
 	v, ok := data.Get("installed")
 	if !ok {
 		if !create {
 			return nil, errors.New("the skills hub lock has no installed table")
 		}
-		o := pyjson.NewObject()
+		o := jsonutil.NewObject()
 		data.Set("installed", o)
 		return o, nil
 	}
-	o, isObj := v.(*pyjson.Object)
+	o, isObj := v.(*jsonutil.Object)
 	if !isObj {
 		return nil, fmt.Errorf("skills hub lock installed table is %s where a mapping was expected", errchain.Kind(v))
 	}
@@ -444,7 +451,7 @@ func lockInstalled(data *pyjson.Object, create bool) (*pyjson.Object, error) {
 
 // Records one install after validating the name and install path shape a later uninstall trusts
 func (l *HubLockFile) RecordInstall(ctx context.Context, name, source, identifier, trustLevel, scanVerdict, skillHash, installPath string,
-	files []string, metadata, scanProvenance *pyjson.Object) error {
+	files []string, metadata, scanProvenance *jsonutil.Object) error {
 	safeName, err := validateHubSkillName(name)
 	if err != nil {
 		return err
@@ -453,23 +460,23 @@ func (l *HubLockFile) RecordInstall(ctx context.Context, name, source, identifie
 	if err != nil {
 		return err
 	}
-	_, err = l.update(ctx, func(data *pyjson.Object) (bool, error) {
+	_, err = l.update(ctx, func(data *jsonutil.Object) (bool, error) {
 		installed, err := lockInstalled(data, true)
 		if err != nil {
 			return false, err
 		}
-		now := pydatetime.ISOFormatUTC(time.Now())
+		now := time.Now().UTC().Format(timeutil.RFC3339Micro)
 		fileList := make([]any, len(files))
 		for i, f := range files {
 			fileList[i] = f
 		}
 		if metadata == nil || metadata.Len() == 0 {
-			metadata = pyjson.NewObject()
+			metadata = jsonutil.NewObject()
 		}
 		if scanProvenance == nil || scanProvenance.Len() == 0 {
-			scanProvenance = pyjson.NewObject()
+			scanProvenance = jsonutil.NewObject()
 		}
-		e := pyjson.NewObject()
+		e := jsonutil.NewObject()
 		for _, kv := range [][2]any{{"source", source}, {"identifier", identifier}, {"trust_level", trustLevel},
 			{"scan_verdict", scanVerdict}, {"content_hash", skillHash}, {"install_path", safePath}, {"files", fileList},
 			{"metadata", metadata}, {"scan_provenance", scanProvenance}, {"installed_at", now}, {"updated_at", now}} {
@@ -483,7 +490,7 @@ func (l *HubLockFile) RecordInstall(ctx context.Context, name, source, identifie
 
 // Drops one installed entry
 func (l *HubLockFile) RecordUninstall(ctx context.Context, name string) error {
-	_, err := l.update(ctx, func(data *pyjson.Object) (bool, error) {
+	_, err := l.update(ctx, func(data *jsonutil.Object) (bool, error) {
 		installed, err := lockInstalled(data, true)
 		if err != nil {
 			return false, err
@@ -509,7 +516,7 @@ func (l *HubLockFile) GetInstalled(name string) (any, error) {
 }
 
 // Installed entries each led by its name
-func (l *HubLockFile) ListInstalled() ([]*pyjson.Object, error) {
+func (l *HubLockFile) ListInstalled() ([]*jsonutil.Object, error) {
 	data, err := l.Load()
 	if err != nil {
 		return nil, err
@@ -518,16 +525,16 @@ func (l *HubLockFile) ListInstalled() ([]*pyjson.Object, error) {
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*pyjson.Object, 0, installed.Len())
-	for _, name := range installed.Keys {
-		entry, ok := installed.Vals[name].(*pyjson.Object)
+	out := make([]*jsonutil.Object, 0, installed.Len())
+	for _, name := range installed.Keys() {
+		entry, ok := installed.Value(name).(*jsonutil.Object)
 		if !ok {
-			return nil, fmt.Errorf("skills hub lock entry %s is %s where a mapping was expected", name, errchain.Kind(installed.Vals[name]))
+			return nil, fmt.Errorf("skills hub lock entry %s is %s where a mapping was expected", name, errchain.Kind(installed.Value(name)))
 		}
-		row := pyjson.NewObject()
+		row := jsonutil.NewObject()
 		row.Set("name", name)
-		for _, k := range entry.Keys {
-			row.Set(k, entry.Vals[k])
+		for _, k := range entry.Keys() {
+			row.Set(k, entry.Value(k))
 		}
 		out = append(out, row)
 	}
@@ -535,16 +542,16 @@ func (l *HubLockFile) ListInstalled() ([]*pyjson.Object, error) {
 }
 
 // Installed entries keyed by identifier plus the clawhub/<slug> alias of each ClawHub row, exact ids winning
-func (l *HubLockFile) ByIdentifier() (map[string]*pyjson.Object, error) {
+func (l *HubLockFile) ByIdentifier() (map[string]*jsonutil.Object, error) {
 	rows, err := l.ListInstalled()
 	if err != nil {
 		return nil, err
 	}
-	installed := map[string]*pyjson.Object{}
-	var kept []*pyjson.Object
+	installed := map[string]*jsonutil.Object{}
+	var kept []*jsonutil.Object
 	for _, entry := range rows {
 		id, _ := entry.Get("identifier")
-		if !pyrepr.Truthy(id) {
+		if !anyutil.IsTrue(id) {
 			continue
 		}
 		kept = append(kept, entry)
@@ -573,14 +580,14 @@ func (h *Hub) Taps(path string) *TapsManager {
 	if path == "" {
 		path = h.TapsFilePath()
 	}
-	return &TapsManager{jsonStateFile{Path: path, holder: &tapsLockHolder, log: h.warnLog, empty: func() *pyjson.Object {
-		o := pyjson.NewObject()
+	return &TapsManager{jsonStateFile{Path: path, holder: &tapsLockHolder, log: h.warnLog, empty: func() *jsonutil.Object {
+		o := jsonutil.NewObject()
 		o.Set("taps", []any{})
 		return o
 	}}}
 }
 
-func tapsList(data *pyjson.Object, create bool) ([]any, error) {
+func tapsList(data *jsonutil.Object, create bool) ([]any, error) {
 	v, ok := data.Get("taps")
 	if !ok {
 		if create {
@@ -596,7 +603,7 @@ func tapsList(data *pyjson.Object, create bool) ([]any, error) {
 }
 
 func tapRepo(t any) (any, error) {
-	o, ok := t.(*pyjson.Object)
+	o, ok := t.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("skills tap is %s where a mapping was expected", errchain.Kind(t))
 	}
@@ -621,14 +628,14 @@ func (m *TapsManager) ListTaps() ([]any, error) { return m.Load() }
 
 // Rewrites the tap list
 func (m *TapsManager) Save(ctx context.Context, taps []any) error {
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	o.Set("taps", taps)
 	return m.write(ctx, o, true)
 }
 
 // Appends a tap, false when the repo is already tapped
 func (m *TapsManager) Add(ctx context.Context, repo, path string) (bool, error) {
-	return m.update(ctx, func(data *pyjson.Object) (bool, error) {
+	return m.update(ctx, func(data *jsonutil.Object) (bool, error) {
 		taps, err := tapsList(data, true)
 		if err != nil {
 			return false, err
@@ -642,7 +649,7 @@ func (m *TapsManager) Add(ctx context.Context, repo, path string) (bool, error) 
 				return false, nil
 			}
 		}
-		tap := pyjson.NewObject()
+		tap := jsonutil.NewObject()
 		tap.Set("repo", repo)
 		tap.Set("path", path)
 		data.Set("taps", append(taps, tap))
@@ -652,7 +659,7 @@ func (m *TapsManager) Add(ctx context.Context, repo, path string) (bool, error) 
 
 // Removes a tap by repo, false when it was not tapped
 func (m *TapsManager) Remove(ctx context.Context, repo string) (bool, error) {
-	return m.update(ctx, func(data *pyjson.Object) (bool, error) {
+	return m.update(ctx, func(data *jsonutil.Object) (bool, error) {
 		taps, err := tapsList(data, false)
 		if err != nil {
 			return false, err

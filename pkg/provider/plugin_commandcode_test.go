@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDeepSeekPluginProfileMatchesUpstreamRegistration(t *testing.T) {
@@ -60,7 +60,7 @@ func TestDeepSeekThinkingWireShape(t *testing.T) {
 	}
 	for _, c := range cases {
 		eb, tl := p.BuildAPIKwargsExtras(c.r, map[string]any{"model": c.model})
-		assertExtras(t, c.model+" "+reasoningLabel(c.r), pyjson.Plain(eb).(map[string]any), tl, c.eb, c.tl)
+		assertExtras(t, c.model+" "+reasoningLabel(c.r), jsonutil.Plain(eb).(map[string]any), tl, c.eb, c.tl)
 	}
 }
 
@@ -99,7 +99,7 @@ func TestCommandCodePluginProfilesMatchUpstreamRegistration(t *testing.T) {
 func TestCommandCodeDeepSeekReasoningWireControls(t *testing.T) {
 	cc := bundledPluginProfile(t, "commandcode")
 	eb, tl := cc.BuildAPIKwargsExtras(&Reasoning{Enabled: bptr(false)}, map[string]any{"model": "deepseek/deepseek-v4-flash"})
-	assertExtras(t, "disabled", pyjson.Plain(eb).(map[string]any), tl, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
+	assertExtras(t, "disabled", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{"thinking": map[string]any{"type": "disabled"}}, map[string]any{})
 	ds, _ := GetProviderProfile(context.Background(), "deepseek")
 	rc := effortCfg("low")
 	wantEB, wantTL := ds.BuildAPIKwargsExtras(rc, map[string]any{"model": "deepseek-v4.1-flash"})
@@ -107,12 +107,12 @@ func TestCommandCodeDeepSeekReasoningWireControls(t *testing.T) {
 		t.Fatalf("native %v", wantTL)
 	}
 	eb, tl = cc.BuildAPIKwargsExtras(rc, map[string]any{"model": "deepseek/deepseek-v4.1-flash"})
-	assertExtras(t, "low", pyjson.Plain(eb).(map[string]any), tl, pyjson.Plain(wantEB).(map[string]any), wantTL)
+	assertExtras(t, "low", jsonutil.Plain(eb).(map[string]any), tl, jsonutil.Plain(wantEB).(map[string]any), wantTL)
 	eb, tl = cc.BuildAPIKwargsExtras(rc, map[string]any{"model": "Qwen/Qwen3.7-Max"})
-	assertExtras(t, "qwen", pyjson.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
+	assertExtras(t, "qwen", jsonutil.Plain(eb).(map[string]any), tl, map[string]any{}, map[string]any{})
 	anth := bundledPluginProfile(t, "commandcode-anthropic")
 	eb, tl = anth.BuildAPIKwargsExtras(rc, map[string]any{"model": "deepseek/deepseek-v4.1-flash"})
-	assertExtras(t, "anthropic inherits", pyjson.Plain(eb).(map[string]any), tl, pyjson.Plain(wantEB).(map[string]any), wantTL)
+	assertExtras(t, "anthropic inherits", jsonutil.Plain(eb).(map[string]any), tl, jsonutil.Plain(wantEB).(map[string]any), wantTL)
 }
 
 func serveCommandCodeModels(t *testing.T, models string, paths *[]string) string {

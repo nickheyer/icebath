@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -36,7 +36,7 @@ func auxGetTaskNoProgressTimeout(ctx context.Context, task string) float64 {
 	}
 	if _, isBool := raw.(bool); isBool || value <= 0 {
 		pkgLog().Warn(fmt.Sprintf("auxiliary.%s.no_progress_timeout=%s is not a positive number of seconds; "+
-			"using the built-in %.0fs default", task, pyrepr.Repr(raw), auxStreamNoProgressTimeoutSeconds))
+			"using the built-in %.0fs default", task, anyutil.Quote(raw), auxStreamNoProgressTimeoutSeconds))
 		return 0
 	}
 	return value

@@ -5,8 +5,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Installs this message's callbacks, reasoning, tier, voice route and notes on the agent, never baked into the cache
@@ -113,7 +113,7 @@ func (t *TurnRunner) attachSessionTitleCallback(ctx context.Context, a *agent.AI
 		}
 	}()
 	a.SetTitleFailureCallback(func(task string, err error) {
-		pkgLog().Debug("Gateway auto-title failure suppressed (not user-visible): " + task + ": " + pyrepr.Str(err))
+		pkgLog().Debug("Gateway auto-title failure suppressed (not user-visible): " + task + ": " + anyutil.String(err))
 	})
 	sessionID := a.SessionID()
 	if localViewerTurn(t) {

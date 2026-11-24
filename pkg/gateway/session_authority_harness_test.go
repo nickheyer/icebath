@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runner double of the authority tests, never draining and resolving no adapter unless one is set
@@ -73,11 +73,11 @@ func stagedAttachment(t *testing.T, ctx context.Context, name string, size int) 
 }
 
 // First committed attachment reference of an admission
-func firstAttachmentRef(t *testing.T, ctx context.Context, db *state.SessionDB, admissionID string) *pyjson.Object {
+func firstAttachmentRef(t *testing.T, ctx context.Context, db *state.SessionDB, admissionID string) *jsonutil.Object {
 	t.Helper()
 	row, err := db.GetSessionAdmission(ctx, admissionID)
 	if err != nil || row == nil {
 		t.Fatalf("admission %s: %v %v", admissionID, row, err)
 	}
-	return nativeAttachmentMedia(t, row)[0].(*pyjson.Object)
+	return nativeAttachmentMedia(t, row)[0].(*jsonutil.Object)
 }

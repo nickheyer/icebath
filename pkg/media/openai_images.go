@@ -22,10 +22,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pymimetypes"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -206,11 +206,11 @@ func (c *openAIClient) ImagesGenerate(ctx context.Context, req map[string]any) (
 	if err != nil {
 		return nil, err
 	}
-	obj := pyjson.NewObject()
+	obj := jsonutil.NewObject()
 	for _, k := range keys {
 		obj.Set(k, req[k])
 	}
-	body, err := pyjson.Dumps(obj, pyjson.AllowNaN(false))
+	body, err := jsonutil.Encode(obj)
 	if err != nil {
 		return nil, err
 	}
@@ -299,7 +299,7 @@ func writeMultipartValue(w *multipart.Writer, key string, v any) error {
 	case bool:
 		return w.WriteField(key, strconv.FormatBool(x))
 	}
-	return w.WriteField(key, pyrepr.Str(v))
+	return w.WriteField(key, anyutil.String(v))
 }
 
 // Sends one images POST and parses its 2xx body as an ImagesResponse
@@ -438,18 +438,18 @@ var openAIStatusClasses = map[int]string{400: "BadRequestError", 401: "Authentic
 
 // APIStatusError subclass with the SDK message, Error code then the parsed body repr or the raw text
 func openAIStatusError(resp *http.Response, raw []byte) error {
-	text, _ := pyjson.DecodeBytes(raw)
+	text, _ := jsonutil.Text(raw)
 	text = strings.TrimSpace(text)
 	var body any = text
 	msg := text
 	if msg == "" {
 		msg = fmt.Sprintf("Error code: %d", resp.StatusCode)
 	}
-	if parsed, err := pyjson.Loads(text); err == nil {
+	if parsed, err := jsonutil.Decode(text); err == nil {
 		body = parsed
 		msg = fmt.Sprintf("Error code: %d - %s", resp.StatusCode, errchain.Show(parsed))
 	}
-	if m, ok := pyjson.AsObject(body); ok {
+	if m, ok := jsonutil.AsObject(body); ok {
 		if inner, ok := m.Get("error"); ok {
 			body = inner
 		}
@@ -466,13 +466,13 @@ func openAIStatusError(resp *http.Response, raw []byte) error {
 
 // ImagesResponse of a 2xx body, the raw text kept when the body is not JSON
 func parseOpenAIImagesResponse(h http.Header, raw []byte) *openAIImagesResponse {
-	text, _ := pyjson.DecodeBytes(raw)
-	parsed, err := pyjson.Loads(text)
+	text, _ := jsonutil.Text(raw)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return &openAIImagesResponse{Raw: text}
 	}
 	out := &openAIImagesResponse{Raw: parsed}
-	if m, ok := pyjson.Plain(parsed).(map[string]any); ok {
+	if m, ok := jsonutil.Plain(parsed).(map[string]any); ok {
 		out.Object = true
 		out.Data, _ = m["data"].([]any)
 		out.Usage = m["usage"]
@@ -497,7 +497,7 @@ func openAIItemString(item any, key string) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Releases the pooled connections of the client transport

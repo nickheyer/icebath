@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pet"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -82,7 +82,7 @@ func hardenTransparency(path string) string {
 		return out, nil
 	}()
 	if err != nil {
-		pkgLog().Debug(fmt.Sprintf("base draft transparency hardening failed for %s: %s", path, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("base draft transparency hardening failed for %s: %s", path, err.Error()))
 		return path
 	}
 	return out
@@ -160,7 +160,7 @@ func GenerateBaseDrafts(ctx context.Context, env *tools.Env, concept string, o D
 	if cancelled == nil {
 		cancelled = func() bool { return false }
 	}
-	pkgLog().Info(fmt.Sprintf("pet generate: drafting %d base looks for %s (style=%s)", o.N, pyrepr.Repr(concept), o.Style))
+	pkgLog().Info(fmt.Sprintf("pet generate: drafting %d base looks for %s (style=%s)", o.N, anyutil.Quote(concept), o.Style))
 	type draft struct {
 		index int
 		path  string
@@ -174,8 +174,8 @@ func GenerateBaseDrafts(ctx context.Context, env *tools.Env, concept string, o D
 		variation := BaseVariations[index%len(BaseVariations)]
 		out, err := Generate(ctx, env, BuildBasePrompt(concept, o.Style, variation), 1, refs, sprite, "pet_base", "square")
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("pet generate: draft %d failed after %.1fs: %s", index, time.Since(t0).Seconds(), pyrepr.ExceptionMessage(err)))
-			return draft{index: index, err: pyrepr.ExceptionMessage(err)}
+			pkgLog().Warn(fmt.Sprintf("pet generate: draft %d failed after %.1fs: %s", index, time.Since(t0).Seconds(), err.Error()))
+			return draft{index: index, err: err.Error()}
 		}
 		if len(out) == 0 {
 			pkgLog().Warn(fmt.Sprintf("pet generate: draft %d produced no image", index))
@@ -285,13 +285,13 @@ func generateRow(ctx context.Context, env *tools.Env, spec RowSpec, base, style,
 			return ExtractStripFrames(strips[0], spec.Frames, method, false)
 		}()
 		if err == nil {
-			pkgLog().Info(fmt.Sprintf("pet hatch %s: row %s ready in %.1fs (attempt %d)", pyrepr.Repr(slug), pyrepr.Repr(spec.State), time.Since(t0).Seconds(), attempt+1))
+			pkgLog().Info(fmt.Sprintf("pet hatch %s: row %s ready in %.1fs (attempt %d)", anyutil.Quote(slug), anyutil.Quote(spec.State), time.Since(t0).Seconds(), attempt+1))
 			return StateFrames{State: spec.State, Frames: frames}
 		}
 		lastErr = err
-		pkgLog().Warn(fmt.Sprintf("pet hatch %s: row %s attempt %d/%d failed: %s", pyrepr.Repr(slug), pyrepr.Repr(spec.State), attempt+1, rowGenAttempts, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("pet hatch %s: row %s attempt %d/%d failed: %s", anyutil.Quote(slug), anyutil.Quote(spec.State), attempt+1, rowGenAttempts, err.Error()))
 	}
-	pkgLog().Warn(fmt.Sprintf("pet hatch %s: row %s gave up after %.1fs: %s", pyrepr.Repr(slug), pyrepr.Repr(spec.State), time.Since(t0).Seconds(), pyrepr.ExceptionMessage(lastErr)))
+	pkgLog().Warn(fmt.Sprintf("pet hatch %s: row %s gave up after %.1fs: %s", anyutil.Quote(slug), anyutil.Quote(spec.State), time.Since(t0).Seconds(), lastErr.Error()))
 	return StateFrames{State: spec.State}
 }
 
@@ -328,7 +328,7 @@ func HatchPet(ctx context.Context, env *tools.Env, o HatchOptions) (*HatchResult
 	}
 	var framesByState []StateFrames
 	totalRows := len(RowSpecs)
-	pkgLog().Info(fmt.Sprintf("pet hatch %s: generating %d animation rows", pyrepr.Repr(o.Slug), totalRows))
+	pkgLog().Info(fmt.Sprintf("pet hatch %s: generating %d animation rows", anyutil.Quote(o.Slug), totalRows))
 	var generated []RowSpec
 	for _, spec := range RowSpecs {
 		if spec.State != "running-left" {
@@ -338,7 +338,7 @@ func HatchPet(ctx context.Context, env *tools.Env, o HatchOptions) (*HatchResult
 	done := 0
 	runParallel(generated, func(spec RowSpec) StateFrames {
 		return generateRow(ctx, env, spec, o.BaseImage, o.Style, o.Slug, sprite, cancelled)
-	}, cancelled, fmt.Sprintf("pet hatch %s: cancelled — dropping remaining rows", pyrepr.Repr(o.Slug)), func(sf StateFrames) {
+	}, cancelled, fmt.Sprintf("pet hatch %s: cancelled — dropping remaining rows", anyutil.Quote(o.Slug)), func(sf StateFrames) {
 		done++
 		progress("row", fmt.Sprintf("%s:%d:%d", sf.State, done, totalRows))
 		if len(sf.Frames) > 0 {
@@ -360,9 +360,9 @@ func HatchPet(ctx context.Context, env *tools.Env, o HatchOptions) (*HatchResult
 		done++
 		progress("row", fmt.Sprintf("running-left:%d:%d", done, totalRows))
 		framesByState = append(framesByState, StateFrames{State: "running-left", Frames: MirrorFrames(right)})
-		pkgLog().Info(fmt.Sprintf("pet hatch %s: row 'running-left' mirrored from running-right", pyrepr.Repr(o.Slug)))
+		pkgLog().Info(fmt.Sprintf("pet hatch %s: row 'running-left' mirrored from running-right", anyutil.Quote(o.Slug)))
 	} else {
-		pkgLog().Warn(fmt.Sprintf("pet hatch %s: no running-right to mirror; left walk left empty", pyrepr.Repr(o.Slug)))
+		pkgLog().Warn(fmt.Sprintf("pet hatch %s: no running-right to mirror; left walk left empty", anyutil.Quote(o.Slug)))
 	}
 	if len(lookup("idle")) == 0 {
 		progress("row", "idle-fallback")
@@ -373,7 +373,7 @@ func HatchPet(ctx context.Context, env *tools.Env, o HatchOptions) (*HatchResult
 		framesByState = append(framesByState, StateFrames{State: "idle", Frames: []*image.NRGBA{frame}})
 	}
 	progress("compose", "")
-	pkgLog().Info(fmt.Sprintf("pet hatch %s: composing atlas from %d states", pyrepr.Repr(o.Slug), len(framesByState)))
+	pkgLog().Info(fmt.Sprintf("pet hatch %s: composing atlas from %d states", anyutil.Quote(o.Slug), len(framesByState)))
 	sheet := ComposeAtlas(NormalizeCells(framesByState, normalizePad))
 	validation := ValidateAtlas(sheet)
 	if !validation.OK {
@@ -401,7 +401,7 @@ func HatchPet(ctx context.Context, env *tools.Env, o HatchOptions) (*HatchResult
 		return nil, &GenerationError{Msg: fmt.Sprintf("only %d/%d animation rows were usable; regenerate", len(filled), totalRows)}
 	}
 	progress("save", o.Slug)
-	pkgLog().Info(fmt.Sprintf("pet hatch %s: saving pet", pyrepr.Repr(o.Slug)))
+	pkgLog().Info(fmt.Sprintf("pet hatch %s: saving pet", anyutil.Quote(o.Slug)))
 	displayName := o.DisplayName
 	if displayName == "" {
 		displayName = o.Slug

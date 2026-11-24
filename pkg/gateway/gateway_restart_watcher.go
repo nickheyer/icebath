@@ -20,11 +20,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Hidden entry of the install binary that respawns a gateway argv once the old pid exits
@@ -141,8 +141,8 @@ func RestartArgvIsHostGateway(ctx context.Context, argv []string) bool {
 	if record := ReadHostRecord(RoleGateway, false); record != nil && RecordNamesLiveOwner(record) && len(record.Profiles) > 1 {
 		return true
 	}
-	mine, err1 := pypath.Resolve(home.Dir(ctx))
-	root, err2 := pypath.Resolve(home.RootOf(home.Dir(ctx)))
+	mine, err1 := pathutil.Resolve(home.Dir(ctx))
+	root, err2 := pathutil.Resolve(home.RootOf(home.Dir(ctx)))
 	return err1 == nil && err2 == nil && mine == root
 }
 
@@ -179,11 +179,11 @@ func SpawnGatewayRestartWatcher(ctx context.Context, oldPid int, runArgv []strin
 	if serviceGOOS == "windows" {
 		runArgv, respawnCwd, overlay = windowlessGatewayRestartSpec(ctx, slices.Clone(runArgv), profileHome)
 	}
-	cwdLiteral, err := pyjson.Dumps(respawnCwd)
+	cwdLiteral, err := jsonutil.Encode(respawnCwd)
 	if err != nil {
 		return false, err
 	}
-	envLiteral, err := pyjson.Dumps(overlay, pyjson.SortKeys(true))
+	envLiteral, err := jsonutil.Encode(overlay, jsonutil.SortKeys())
 	if err != nil {
 		return false, err
 	}

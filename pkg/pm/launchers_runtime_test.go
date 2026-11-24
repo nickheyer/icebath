@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestLaunchersRuntimeCommandPinsTheHomeBeforeTheSubcommand(t *testing.T) {
@@ -49,7 +49,7 @@ func TestLaunchersPrintRuntimeCommandEmitsTheJSONArgv(t *testing.T) {
 		if code := LaunchersMain(context.Background(), root, c.argv, &stdout, &stderr); code != 0 {
 			t.Fatalf("%q exited %d %q", c.argv, code, stderr.String())
 		}
-		parsed, err := pyjson.Loads(stdout.String())
+		parsed, err := jsonutil.Decode(stdout.String())
 		list, _ := parsed.([]any)
 		if err != nil || len(list) != len(c.want) {
 			t.Fatalf("%q printed %q", c.argv, stdout.String())

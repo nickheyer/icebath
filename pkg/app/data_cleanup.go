@@ -13,11 +13,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/install"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // User state one data only removal deletes and the runtime paths it keeps for one home
@@ -33,24 +32,24 @@ type dataPlanError struct{ msg string }
 func (e *dataPlanError) Error() string { return e.msg }
 
 // Removal of a whole tree, swapped by the failed removal case like shutil.rmtree
-var dataRmtree = pyshutil.Rmtree
+var dataRmtree = os.RemoveAll
 
 // Whether two paths are equal the way pathlib compares them on this host
 func pathEq(a, b string) bool {
-	rel, ok := pypath.PathRelativeTo(a, b)
+	rel, ok := pathutil.RelativeTo(a, b)
 	return ok && rel == "."
 }
 
 // Whether p equals root or lies under it the way PurePath.is_relative_to answers
 func pathUnder(p, root string) bool {
-	_, ok := pypath.PathRelativeTo(p, root)
+	_, ok := pathutil.RelativeTo(p, root)
 	return ok
 }
 
 // Orders paths by their normalized parts the way pathlib sorts them
 func pathCompare(a, b string) int {
 	key := func(p string) []string {
-		anchor, parts := pypath.PathParts(p)
+		anchor, parts := pathutil.Parts(p)
 		out := append([]string{anchor}, parts...)
 		if runtime.GOOS == "windows" {
 			for i := range out {
@@ -64,27 +63,27 @@ func pathCompare(a, b string) int {
 
 // Lists what a data wipe of the home removes and keeps, never the code, runtime stores or sibling profiles
 func planDataRemoval(ctx context.Context, h, project string) (*dataRemovalPlan, error) {
-	h, err := pypath.Resolve(h)
+	h, err := pathutil.Resolve(h)
 	if err != nil {
 		return nil, err
 	}
-	anchor, _ := pypath.PathParts(h)
-	userHome, err := pypath.PathHome()
+	anchor, _ := pathutil.Parts(h)
+	userHome, err := pathutil.Home()
 	if err != nil {
 		return nil, err
 	}
-	userHomeResolved, err := pypath.Resolve(userHome)
+	userHomeResolved, err := pathutil.Resolve(userHome)
 	if err != nil {
 		return nil, err
 	}
 	if pathEq(h, anchor) || pathEq(h, userHomeResolved) {
 		return nil, &dataPlanError{"refusing to erase an entire filesystem or user home: " + h}
 	}
-	machine, err := pypath.Resolve(home.RootOf(h))
+	machine, err := pathutil.Resolve(home.RootOf(h))
 	if err != nil {
 		return nil, err
 	}
-	projectResolved, err := pypath.Resolve(project)
+	projectResolved, err := pathutil.Resolve(project)
 	if err != nil {
 		return nil, err
 	}
@@ -98,7 +97,7 @@ func planDataRemoval(ctx context.Context, h, project string) (*dataRemovalPlan, 
 	}
 	protected := []string{projectResolved}
 	for _, p := range []string{venv, store, pm.InstallsRoot(ctx)} {
-		resolved, err := pypath.Resolve(p)
+		resolved, err := pathutil.Resolve(p)
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +132,7 @@ func planDataRemoval(ctx context.Context, h, project string) (*dataRemovalPlan, 
 			}
 			return err
 		}
-		resolved, err := pypath.Resolve(p)
+		resolved, err := pathutil.Resolve(p)
 		if err != nil {
 			return err
 		}
@@ -209,10 +208,10 @@ func dataErrText(err error) string {
 	if errors.As(err, &planErr) {
 		return planErr.msg
 	}
-	if pypath.IsOSError(err) {
+	if errorutil.IsSystem(err) {
 		return errchain.OSText(err)
 	}
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }
 
 // Deletes each planned path without following a link swapped in after confirmation, collecting survivors
@@ -221,8 +220,8 @@ func removeData(plan *dataRemovalPlan) ([]string, []dataRemovalFailure) {
 	var failed []dataRemovalFailure
 	for _, p := range plan.Remove {
 		err := func() error {
-			parent := pypath.PathParent(p)
-			resolvedParent, err := pypath.Resolve(parent)
+			parent := filepath.Dir(filepath.Clean(p))
+			resolvedParent, err := pathutil.Resolve(parent)
 			if err != nil {
 				return err
 			}
@@ -235,7 +234,7 @@ func removeData(plan *dataRemovalPlan) ([]string, []dataRemovalFailure) {
 			}
 			switch {
 			case st.Mode()&fs.ModeSymlink != 0 || !st.IsDir():
-				return pypath.Unlink(p)
+				return os.Remove(p)
 			case pm.IsJunction(p):
 				return os.Remove(p)
 			}

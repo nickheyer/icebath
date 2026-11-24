@@ -13,7 +13,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Denial message when the source may not run the canonical command, empty when it may
@@ -162,11 +161,11 @@ func (r *GatewayRunner) isStaleRestartRedelivery(event *gateway.MessageEvent) bo
 		}
 		return false
 	}
-	parsed, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\ufeff"))
+	parsed, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\ufeff"))
 	if err != nil {
 		return false
 	}
-	data, ok := pyjson.AsObject(parsed)
+	data, ok := jsonutil.AsObject(parsed)
 	if !ok {
 		return false
 	}

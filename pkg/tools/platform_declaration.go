@@ -4,11 +4,12 @@ import (
 	"fmt"
 	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // PlatformDeclarationError is a declaration parse or validation failure
@@ -76,7 +77,7 @@ func PlatformGPULabel(gpu string) string {
 func pyTupleRepr(items []string) string {
 	parts := make([]string, len(items))
 	for i, s := range items {
-		parts[i] = pyrepr.StrRepr(s)
+		parts[i] = strconv.Quote(s)
 	}
 	return "(" + strings.Join(parts, ", ") + ")"
 }
@@ -87,7 +88,7 @@ func pySortedListRepr(items []string) string {
 	slices.Sort(sorted)
 	parts := make([]string, len(sorted))
 	for i, s := range sorted {
-		parts[i] = pyrepr.StrRepr(s)
+		parts[i] = strconv.Quote(s)
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }
@@ -95,8 +96,8 @@ func pySortedListRepr(items []string) string {
 // Ordered keys and lookup of a decoded mapping, ok false when the value is not a dict
 func platformMapping(raw any) ([]string, func(string) (any, bool), bool) {
 	switch m := raw.(type) {
-	case *pyjson.Object:
-		return m.Keys, m.Get, true
+	case *jsonutil.Object:
+		return m.Keys(), m.Get, true
 	case map[string]any:
 		keys := make([]string, 0, len(m))
 		for k := range m {
@@ -178,10 +179,10 @@ func platformParseLocation(where, osf, presence, label string, raw any) (Platfor
 		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s must be a path or a mapping with kind one of %s", where, label, pySortedListRepr(platformLocationKindNames()))}
 	}
 	if spec.OnlyOn != "" && spec.OnlyOn != osf {
-		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s kind %s is only valid under app.%s", where, label, pyrepr.StrRepr(kind), spec.OnlyOn)}
+		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s kind %s is only valid under app.%s", where, label, strconv.Quote(kind), spec.OnlyOn)}
 	}
 	if spec.Yields != presence {
-		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s kind %s needs app.%s.presence %s", where, label, pyrepr.StrRepr(kind), osf, spec.Yields)}
+		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s kind %s needs app.%s.presence %s", where, label, strconv.Quote(kind), osf, spec.Yields)}
 	}
 	value := platformGet(get, spec.Key, nil)
 	if !platformIsRelativeName(value, false) {
@@ -191,15 +192,15 @@ func platformParseLocation(where, osf, presence, label string, raw any) (Platfor
 	if spec.NeedsFile && !platformIsRelativeName(file, true) {
 		return PlatformAppLocation{}, &PlatformDeclarationError{fmt.Sprintf("%s: %s.file must be a relative path inside the install folder", where, label)}
 	}
-	return PlatformAppLocation{Kind: kind, Value: strings.TrimSpace(value.(string)), File: strings.TrimSpace(pyrepr.Str(file))}, nil
+	return PlatformAppLocation{Kind: kind, Value: strings.TrimSpace(value.(string)), File: strings.TrimSpace(anyutil.String(file))}, nil
 }
 
 // str(value or default) with Python truthiness
 func platformStrOr(v any, def string) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return def
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Python TypeError of a dict or set membership test on an unhashable value
@@ -207,7 +208,7 @@ func platformHashable(v any) error {
 	switch v.(type) {
 	case []any:
 		return fmt.Errorf("a platform declaration value is a list, expected text")
-	case map[string]any, *pyjson.Object:
+	case map[string]any, *jsonutil.Object:
 		return fmt.Errorf("a platform declaration value is a mapping, expected text")
 	}
 	return nil
@@ -246,7 +247,7 @@ func platformParseAppOS(where, name, osf string, raw any) (PlatformAppDef, error
 		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.location is required", where, osf)}
 	}
 	version := platformGet(get, "version", nil)
-	if !pyTruthy(version) {
+	if !anyutil.IsTrue(version) {
 		version = map[string]any{"kind": "none"}
 	}
 	_, vget, err := platformRequireMapping(where, "app."+osf+".version", version)
@@ -267,14 +268,14 @@ func platformParseAppOS(where, name, osf string, raw any) (PlatformAppDef, error
 		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.version.kind must be one of %s", where, osf, pySortedListRepr(kinds))}
 	}
 	if onlyOn != "" && onlyOn != osf {
-		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.version.kind %s is only valid under app.%s", where, osf, pyrepr.StrRepr(vkind), onlyOn)}
+		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.version.kind %s is only valid under app.%s", where, osf, strconv.Quote(vkind), onlyOn)}
 	}
 	varg := platformStrOr(platformGet(vget, "display_name_prefix", nil), "")
 	if vkind == "uninstall_registry" && varg == "" {
 		return PlatformAppDef{}, &PlatformDeclarationError{fmt.Sprintf("%s: app.%s.version.display_name_prefix is required for uninstall_registry", where, osf)}
 	}
 	liveness := platformGet(get, "liveness", nil)
-	if !pyTruthy(liveness) {
+	if !anyutil.IsTrue(liveness) {
 		liveness = map[string]any{"kind": "none"}
 	}
 	_, lget, err := platformRequireMapping(where, "app."+osf+".liveness", liveness)

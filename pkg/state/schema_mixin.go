@@ -12,12 +12,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"modernc.org/libc"
 	sqlite3 "modernc.org/sqlite/lib"
@@ -69,9 +71,9 @@ func sqlQuoteIdent(ident string) string {
 // Hex SHA-256 of the UTF-8 text, the UnicodeEncodeError Python raises for a lone surrogate
 func sha256HexUTF8(text string) (string, error) {
 	for i, pos := 0, 0; i < len(text); pos++ {
-		r, n := pystr.DecodeRune(text[i:])
+		r, n := utf8.DecodeRuneInString(text[i:])
 		if pystr.IsSurrogate(r) {
-			return "", &pyint.Error{Kind: "UnicodeEncodeError", Msg: fmt.Sprintf("the text holds a lone surrogate U+%04X at character %d, which UTF-8 cannot encode", r, pos)}
+			return "", &errorutil.Error{Kind: "UnicodeEncodeError", Msg: fmt.Sprintf("the text holds a lone surrogate U+%04X at character %d, which UTF-8 cannot encode", r, pos)}
 		}
 		i += n
 	}
@@ -86,7 +88,7 @@ func storeSystemPrompt(ctx context.Context, conn SQLiteConn, systemPrompt any) (
 	}
 	text, ok := systemPrompt.(string)
 	if !ok {
-		return nil, &pyint.Error{Kind: "AttributeError", Msg: "the system prompt is " + errchain.Kind(systemPrompt) + ", expected text"}
+		return nil, &errorutil.Error{Kind: "AttributeError", Msg: "the system prompt is " + errchain.Kind(systemPrompt) + ", expected text"}
 	}
 	hash, err := sha256HexUTF8(text)
 	if err != nil {
@@ -101,7 +103,7 @@ func storeSystemPrompt(ctx context.Context, conn SQLiteConn, systemPrompt any) (
 // Feeds each complete SQL statement accumulated line by line to fn, returning the incomplete remainder
 func forEachCompleteStatement(script string, fn func(statement string) error) (string, error) {
 	if strings.IndexByte(script, 0) >= 0 {
-		return "", &pyint.Error{Kind: "ValueError", Msg: "embedded null character"}
+		return "", &errorutil.Error{Kind: "ValueError", Msg: "embedded null character"}
 	}
 	tls := libc.NewTLS()
 	defer tls.Close()
@@ -140,14 +142,14 @@ func SchemaReadProbeStatements(ctx context.Context) ([]string, error) {
 		if err != nil {
 			return nil, err
 		}
-		names := slices.Clone(tables.Keys)
+		names := slices.Clone(tables.Keys())
 		sort.Strings(names)
 		statements := []string{}
 		for _, table := range names {
 			raw, _ := tables.Get(table)
-			cols := raw.(*pyjson.Object)
-			parts := make([]string, len(cols.Keys))
-			for i, col := range cols.Keys {
+			cols := raw.(*jsonutil.Object)
+			parts := make([]string, cols.Len())
+			for i, col := range cols.Keys() {
 				parts[i] = sqlQuoteIdent(table) + "." + sqlQuoteIdent(col)
 			}
 			statements = append(statements, "SELECT "+strings.Join(parts, ", ")+" FROM "+sqlQuoteIdent(table)+" LIMIT 0")
@@ -158,20 +160,20 @@ func SchemaReadProbeStatements(ctx context.Context) ([]string, error) {
 }
 
 // Validated cached column map whose schema hash matches, nil when the cache is absent, stale or malformed
-func cachedSchemaColumns(cachePath, schemaHash string) *pyjson.Object {
+func cachedSchemaColumns(cachePath, schemaHash string) *jsonutil.Object {
 	data, err := os.ReadFile(cachePath)
 	if err != nil {
 		return nil
 	}
-	text, err := pyjson.DecodeBytes(data)
+	text, err := jsonutil.Text(data)
 	if err != nil {
 		return nil
 	}
-	blob, err := pyjson.Loads(text)
+	blob, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
-	obj, ok := blob.(*pyjson.Object)
+	obj, ok := blob.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -179,17 +181,17 @@ func cachedSchemaColumns(cachePath, schemaHash string) *pyjson.Object {
 		return nil
 	}
 	raw, _ := obj.Get("tables")
-	tables, ok := raw.(*pyjson.Object)
+	tables, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
-	for _, table := range tables.Keys {
-		cols, ok := tables.Vals[table].(*pyjson.Object)
+	for _, table := range tables.Keys() {
+		cols, ok := tables.Value(table).(*jsonutil.Object)
 		if !ok {
 			return nil
 		}
-		for _, col := range cols.Keys {
-			if _, ok := cols.Vals[col].(string); !ok {
+		for _, col := range cols.Keys() {
+			if _, ok := cols.Value(col).(string); !ok {
 				return nil
 			}
 		}
@@ -198,7 +200,7 @@ func cachedSchemaColumns(cachePath, schemaHash string) *pyjson.Object {
 }
 
 // Declared columns per table with ALTER TABLE type expressions, read from an in memory copy of the schema and cached on disk by DDL hash
-func parseSchemaColumns(ctx context.Context, schemaSQL string) (*pyjson.Object, error) {
+func parseSchemaColumns(ctx context.Context, schemaSQL string) (*jsonutil.Object, error) {
 	schemaHash, err := sha256HexUTF8(schemaSQL)
 	if err != nil {
 		return nil, err
@@ -207,7 +209,7 @@ func parseSchemaColumns(ctx context.Context, schemaSQL string) (*pyjson.Object, 
 	if tables := cachedSchemaColumns(cachePath, schemaHash); tables != nil {
 		return tables, nil
 	}
-	tables, err := func() (*pyjson.Object, error) {
+	tables, err := func() (*jsonutil.Object, error) {
 		ref, err := ConnectSQLite(":memory:", SQLiteConfig{Timeout: 5})
 		if err != nil {
 			return nil, err
@@ -220,13 +222,13 @@ func parseSchemaColumns(ctx context.Context, schemaSQL string) (*pyjson.Object, 
 		if err != nil {
 			return nil, err
 		}
-		tables := pyjson.NewObject()
+		tables := jsonutil.NewObject()
 		for _, table := range names {
 			info, err := queryObjects(ctx, ref, `PRAGMA table_info("`+table+`")`)
 			if err != nil {
 				return nil, err
 			}
-			cols := pyjson.NewObject()
+			cols := jsonutil.NewObject()
 			for _, row := range info {
 				name, _ := row.Get("name")
 				colType, _ := row.Get("type")
@@ -257,7 +259,7 @@ func parseSchemaColumns(ctx context.Context, schemaSQL string) (*pyjson.Object, 
 }
 
 // Atomically replaces the schema column cache, every failure leaving the cache for the next startup to recompute
-func writeSchemaColumnsCache(cachePath, schemaHash string, tables *pyjson.Object) {
+func writeSchemaColumnsCache(cachePath, schemaHash string, tables *jsonutil.Object) {
 	if err := os.MkdirAll(filepath.Dir(cachePath), 0o777); err != nil {
 		return
 	}
@@ -265,10 +267,10 @@ func writeSchemaColumnsCache(cachePath, schemaHash string, tables *pyjson.Object
 	if err != nil {
 		return
 	}
-	blob := pyjson.NewObject()
+	blob := jsonutil.NewObject()
 	blob.Set("schema_hash", schemaHash)
 	blob.Set("tables", tables)
-	text, err := pyjson.Dumps(blob)
+	text, err := jsonutil.Encode(blob)
 	if err == nil {
 		_, err = tmp.WriteString(text)
 	}
@@ -468,7 +470,7 @@ func executeDDLSkippingSettledTriggers(ctx context.Context, conn SQLiteConn, ddl
 			desired := strings.TrimRight(strings.Replace(current, "IF NOT EXISTS ", "", 1), ";")
 			fields := textutil.FieldsN(desired, 3)
 			if len(fields) < 3 {
-				return &pyint.Error{Kind: "IndexError", Msg: "a stored trigger statement has no trigger name"}
+				return &errorutil.Error{Kind: "IndexError", Msg: "a stored trigger statement has no trigger name"}
 			}
 			if have, ok := stored[fields[2]]; ok && have == desired {
 				pendingDrop = ""

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Marker an image bakes outside the home and the checkout, a var so tests and other image builders repoint it
@@ -36,7 +36,7 @@ func invalidProvenance(path, reason string) *ImageProvenance {
 }
 
 // Stripped text of an optional marker field, nil when absent or blank, not ok when it is not text
-func optionalProvenanceString(payload *pyjson.Object, name string) (*string, bool) {
+func optionalProvenanceString(payload *jsonutil.Object, name string) (*string, bool) {
 	value, _ := payload.Get(name)
 	if value == nil {
 		return nil, true
@@ -75,11 +75,11 @@ func ReadImageProvenance(markerPath string) *ImageProvenance {
 	if !utf8.Valid(raw) {
 		return invalidProvenance(path, "marker_unreadable:UnicodeDecodeError")
 	}
-	doc, err := pyjson.Loads(string(raw))
+	doc, err := jsonutil.Decode(string(raw))
 	if err != nil {
 		return invalidProvenance(path, "marker_unreadable:JSONDecodeError")
 	}
-	payload, isDict := doc.(*pyjson.Object)
+	payload, isDict := doc.(*jsonutil.Object)
 	if !isDict || payload == nil {
 		return invalidProvenance(path, "marker_not_object")
 	}
@@ -106,7 +106,7 @@ func ReadImageProvenance(markerPath string) *ImageProvenance {
 }
 
 // First optional marker field in reading order whose value is not text
-func firstInvalidProvenanceField(payload *pyjson.Object) string {
+func firstInvalidProvenanceField(payload *jsonutil.Object) string {
 	for _, name := range []string{"image", "version", "revision"} {
 		if _, ok := optionalProvenanceString(payload, name); !ok {
 			return name

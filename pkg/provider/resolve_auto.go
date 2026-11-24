@@ -9,12 +9,12 @@ import (
 	"os"
 	"regexp"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 )
@@ -1886,7 +1886,7 @@ var vertexNames = map[string]bool{"vertex": true, "google-vertex": true, "vertex
 func (r *resolver) raiseIfProviderDisabled(requestedProvider string) error {
 	block, ok := r.providers()[requestedProvider].(map[string]any)
 	if ok && !IsProviderEnabled(block) {
-		return &ValueError{Message: fmt.Sprintf("provider %s is disabled in config (providers.%s.enabled: false)", pyrepr.StrRepr(requestedProvider), requestedProvider)}
+		return &ValueError{Message: fmt.Sprintf("provider %s is disabled in config (providers.%s.enabled: false)", strconv.Quote(requestedProvider), requestedProvider)}
 	}
 	return nil
 }

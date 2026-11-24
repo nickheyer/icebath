@@ -7,7 +7,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Left aligns text in a column of the given width counted in code points
@@ -50,10 +50,10 @@ func pairingCommand(ctx context.Context, store *PairingStore, ns map[string]any,
 
 // Text of a stored value, the fallback when the value is falsy
 func pairingText(value any, fallback string) string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return fallback
 	}
-	return pyrepr.Str(value)
+	return anyutil.String(value)
 }
 
 // Lists every pending request and approved user
@@ -76,7 +76,7 @@ func pairingCmdList(ctx context.Context, store *PairingStore, w io.Writer) error
 		fmt.Fprintf(w, "  %s %s %s %s %s\n", padColumn("--------", 12), padColumn("----------", 18), padColumn("-------", 20), padColumn("----", 20), "---")
 		for _, p := range pending {
 			fmt.Fprintf(w, "  %s %s %s %s %dm ago\n", padColumn(p.Platform, 12), padColumn(pairingText(p.RequestID, "-"), 18),
-				padColumn(pyrepr.Str(p.UserID), 20), padColumn(pairingText(p.UserName, ""), 20), p.AgeMinutes)
+				padColumn(anyutil.String(p.UserID), 20), padColumn(pairingText(p.UserName, ""), 20), p.AgeMinutes)
 		}
 		fmt.Fprintln(w, "\n  Approve with: icebath pairing approve <platform> <request-id>")
 		fmt.Fprintln(w, "  The code the bot DM'd the user also works if they relay it.")
@@ -88,8 +88,8 @@ func pairingCmdList(ctx context.Context, store *PairingStore, w io.Writer) error
 		fmt.Fprintf(w, "  %s %s %s\n", padColumn("Platform", 12), padColumn("User ID", 20), padColumn("Name", 20))
 		fmt.Fprintf(w, "  %s %s %s\n", padColumn("--------", 12), padColumn("-------", 20), padColumn("----", 20))
 		for _, a := range approved {
-			fmt.Fprintf(w, "  %s %s %s\n", padColumn(pyrepr.Str(a.GetOr("platform", nil)), 12), padColumn(pyrepr.Str(a.GetOr("user_id", nil)), 20),
-				padColumn(pairingText(a.GetOr("user_name", nil), ""), 20))
+			fmt.Fprintf(w, "  %s %s %s\n", padColumn(anyutil.String(a.ValueOr("platform", nil)), 12), padColumn(anyutil.String(a.ValueOr("user_id", nil)), 20),
+				padColumn(pairingText(a.ValueOr("user_name", nil), ""), 20))
 		}
 	} else {
 		fmt.Fprintln(w, "\n  No approved users.")

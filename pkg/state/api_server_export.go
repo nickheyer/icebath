@@ -3,14 +3,14 @@ package state
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Seconds a settled exact retry keeps its byte exact reply
 const RetryHorizonS = retryHorizonS
 
 // First row of one statement on a connection as an ordered object, nil when it returns none
-func QueryRowObject(ctx context.Context, conn SQLiteConn, query string, args ...any) (*pyjson.Object, error) {
+func QueryRowObject(ctx context.Context, conn SQLiteConn, query string, args ...any) (*jsonutil.Object, error) {
 	rows, err := queryObjects(ctx, conn, query, args...)
 	if err != nil || len(rows) == 0 {
 		return nil, err

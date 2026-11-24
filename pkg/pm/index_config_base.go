@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/homeguard"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -151,15 +151,15 @@ func ntExpandUser(path string) string {
 		if !ok {
 			return path
 		}
-		home = pypath.NtJoin(os.Getenv("HOMEDRIVE"), homePath)
+		home = pathutil.WindowsJoin(os.Getenv("HOMEDRIVE"), homePath)
 	}
 	if i != 1 {
 		target := path[1:i]
 		if current := os.Getenv("USERNAME"); target != current {
-			if current != pypath.NtBasename(home) {
+			if current != pathutil.WindowsBase(home) {
 				return path
 			}
-			home = pypath.NtJoin(pypath.NtDirname(home), target)
+			home = pathutil.WindowsJoin(pathutil.WindowsDir(home), target)
 		}
 	}
 	return home + path[i:]

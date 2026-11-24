@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const launchdJobProbeEnv = "ICEBATH_TEST_LAUNCHD_JOB_PROBE"
@@ -69,7 +69,7 @@ func TestGatewayJobIsALaunchdOsascriptChildThatReadsAsUnsupervised(t *testing.T)
 	}
 	env["PROBE_MARKER"], env[launchdJobProbeEnv] = "env-carried", tmp
 	logPath := filepath.Join(tmp, "gateway-stdio.log")
-	job, err := startGatewayJob(context.Background(), []string{exe, "-test.run=^$"}, env, tmp, logPath, pythread.Monotonic()+60)
+	job, err := startGatewayJob(context.Background(), []string{exe, "-test.run=^$"}, env, tmp, logPath, timeutil.Monotonic()+60)
 	if err != nil || job == nil {
 		t.Fatalf("launchd refused the job in this user's GUI domain: %v", err)
 	}

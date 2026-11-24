@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // What a context breakdown reads off an agent besides the transcript
@@ -20,7 +20,7 @@ type contextMarks struct {
 }
 
 // Session usage stats of an agent value, the zero shape for no agent
-func SessionUsageStats(ctx context.Context, value any) *pyjson.Object {
+func SessionUsageStats(ctx context.Context, value any) *jsonutil.Object {
 	a, _ := value.(*AIAgent)
 	return UsageStats(ctx, a)
 }
@@ -31,11 +31,11 @@ func objectOfTagged(value any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(string(raw))
+	return jsonutil.Decode(string(raw))
 }
 
 // Category breakdown of a live agent over its model history with its context file manifest
-func SessionContextBreakdown(ctx context.Context, value any, conversation []map[string]any) (*pyjson.Object, error) {
+func SessionContextBreakdown(ctx context.Context, value any, conversation []map[string]any) (*jsonutil.Object, error) {
 	a, ok := value.(*AIAgent)
 	if !ok || a == nil {
 		return nil, fmt.Errorf("%T has no context breakdown", value)
@@ -48,7 +48,7 @@ func SessionContextBreakdown(ctx context.Context, value any, conversation []map[
 	if err != nil {
 		return nil, err
 	}
-	out, _ := loaded.(*pyjson.Object)
+	out, _ := loaded.(*jsonutil.Object)
 	sources, err := ContextFileSourcesForAgent(ctx, a)
 	if err != nil {
 		return nil, err
@@ -62,13 +62,13 @@ func SessionContextBreakdown(ctx context.Context, value any, conversation []map[
 }
 
 // Categories and estimated total of a frozen system prompt and tool schemas
-func SessionStoredContextBreakdown(ctx context.Context, systemPrompt string, tools []map[string]any, conversation []map[string]any) (*pyjson.Object, error) {
+func SessionStoredContextBreakdown(ctx context.Context, systemPrompt string, tools []map[string]any, conversation []map[string]any) (*jsonutil.Object, error) {
 	payload := StoredContextBreakdown(ctx, systemPrompt, tools, conversation)
 	categories, err := objectOfTagged(payload.Categories)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("categories", categories, "estimated_total", payload.EstimatedTotal), nil
+	return jsonutil.ObjectOf("categories", categories, "estimated_total", payload.EstimatedTotal), nil
 }
 
 // Comparable marks of model, toolset size, window, measured tokens, compressions and usage anchors

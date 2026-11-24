@@ -16,7 +16,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
 )
 
 // Error the upstream disk mirror hit raises, its TTL name is never defined in the router module
@@ -253,11 +252,10 @@ func routerFetchCatalogItems(ctx context.Context, apiKey, baseURL string, timeou
 	if apiKey == "" {
 		apiKey = routerAPIKey(ctx)
 	}
-	var lines []pyhttpx.HeaderLine
+	headers := map[string]string{"Accept": "application/json", "User-Agent": profileUserAgent()}
 	if apiKey != "" {
-		lines = append(lines, pyhttpx.HeaderLine{Name: "Authorization", Value: "Bearer " + apiKey})
+		headers["Authorization"] = "Bearer " + apiKey
 	}
-	headers := pyhttpx.OrderedHeaderMap(append(lines, pyhttpx.HeaderLine{Name: "Accept", Value: "application/json"}, pyhttpx.HeaderLine{Name: "User-Agent", Value: profileUserAgent()})...)
 	data, err := modelsGetJSON(ctx, strings.TrimRight(baseURL, "/")+"/models", timeout, headers, nil)
 	if err != nil {
 		pkgLog().Debug("router: catalog fetch failed: " + err.Error())

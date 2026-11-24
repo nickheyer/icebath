@@ -6,20 +6,20 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Exported three message session the save helpers render
-func saveSession() *pyjson.Object {
-	return pyjson.ObjectOf("id", "20260814_abc123", "title", "Test Session", "model", "test-model", "started_at", 1755100000, "messages", []any{
-		pyjson.ObjectOf("role", "user", "content", "Hello"), pyjson.ObjectOf("role", "assistant", "content", "Hi there"),
-		pyjson.ObjectOf("role", "tool", "content", "tool output")})
+func saveSession() *jsonutil.Object {
+	return jsonutil.ObjectOf("id", "20260814_abc123", "title", "Test Session", "model", "test-model", "started_at", 1755100000, "messages", []any{
+		jsonutil.ObjectOf("role", "user", "content", "Hello"), jsonutil.ObjectOf("role", "assistant", "content", "Hi there"),
+		jsonutil.ObjectOf("role", "tool", "content", "tool output")})
 }
 
 // Whether an error stands for a Python ValueError
 func isSaveValueError(err error) bool {
-	var typed *pyint.Error
+	var typed *errorutil.Error
 	return errors.As(err, &typed) && typed.Kind == "ValueError"
 }
 

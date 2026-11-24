@@ -5,9 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Python str of an exception a store command reports to the user
@@ -16,9 +13,9 @@ func cmdExcText(err error) string {
 		return errText(err)
 	}
 	if isOSError(err) {
-		return pypath.OSErrorText(err)
+		return err.Error()
 	}
-	return pyrepr.ExceptionMessage(err)
+	return err.Error()
 }
 
 // Repairs a state.db that does not open cleanly or lags the declared schema, a backup made first

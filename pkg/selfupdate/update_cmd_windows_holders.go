@@ -15,9 +15,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
-	"github.com/nickheyer/icebath/pkg/internal/pydeadline"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 // Process probes of the holder scans and the Windows pause, the calls its tests replace
@@ -101,10 +101,13 @@ func waitForWindowsUpdateGatewayExit(pids []int, timeout float64) map[int]bool {
 			}
 		}
 	}
-	pydeadline.PollUntil(func() (bool, bool) {
-		sweep()
-		return len(remaining) == 0, len(remaining) == 0
-	}, time.Duration(math.Max(timeout, 0)*float64(time.Second)), 250*time.Millisecond)
+	syncutil.PollUntil(context.Background(),
+
+		time.Duration(math.Max(timeout, 0)*float64(time.Second)), 250*time.Millisecond, func() (bool, bool) {
+			sweep()
+			return len(remaining) == 0, len(remaining) == 0
+		})
+
 	sweep()
 	return remaining
 }
@@ -135,9 +138,9 @@ func cmdlineOrEmpty(pid int) string {
 
 // Lower cased resolved path with one trailing separator, for prefix matching
 func lowerDirPrefix(path string) string {
-	raw, err := pypath.Resolve(path)
+	raw, err := pathutil.Resolve(path)
 	if err != nil {
-		raw = pypath.PathStr(path)
+		raw = filepath.Clean(path)
 	}
 	sep := string(os.PathSeparator)
 	return strings.TrimRight(strings.ToLower(raw), sep) + sep
@@ -174,13 +177,13 @@ func detectVenvPythonProcesses(ctx context.Context, excludePids map[int]bool) []
 			continue
 		}
 		exeNorm := strings.ToLower(exe)
-		if resolved, err := pypath.Resolve(exe); err == nil {
+		if resolved, err := pathutil.Resolve(exe); err == nil {
 			exeNorm = strings.ToLower(resolved)
 		}
 		inVenv := strings.HasPrefix(exeNorm, venvPrefix)
 		name, err := winName(row.PID)
 		if err != nil || name == "" {
-			name = pypath.PathName(exe)
+			name = pathutil.Name(exe)
 		}
 		nameLow := strings.ToLower(name)
 		if !(inVenv || strings.HasPrefix(nameLow, "python") || strings.HasPrefix(nameLow, "pypy") ||
@@ -208,7 +211,7 @@ func detectOtherIcebathProcesses(ctx context.Context) []venvMatch {
 		return nil
 	}
 	selfNorm := strings.ToLower(self)
-	if resolved, err := pypath.Resolve(self); err == nil {
+	if resolved, err := pathutil.Resolve(self); err == nil {
 		selfNorm = strings.ToLower(resolved)
 	}
 	table, err := winSnapshot()
@@ -227,7 +230,7 @@ func detectOtherIcebathProcesses(ctx context.Context) []venvMatch {
 			continue
 		}
 		exeNorm := strings.ToLower(exe)
-		if resolved, err := pypath.Resolve(exe); err == nil {
+		if resolved, err := pathutil.Resolve(exe); err == nil {
 			exeNorm = strings.ToLower(resolved)
 		}
 		if exeNorm != selfNorm {
@@ -235,7 +238,7 @@ func detectOtherIcebathProcesses(ctx context.Context) []venvMatch {
 		}
 		name, err := winName(row.PID)
 		if err != nil || name == "" {
-			name = pypath.PathName(exe)
+			name = pathutil.Name(exe)
 		}
 		matches = append(matches, venvMatch{PID: row.PID, Name: name, Cmdline: cmdlineOrEmpty(row.PID)})
 	}

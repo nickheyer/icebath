@@ -14,12 +14,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -491,7 +491,7 @@ func explicitEnabled(raw map[string]any, pid string) *bool {
 			continue
 		}
 		if v, ok := block["enabled"]; ok {
-			b := pyrepr.Truthy(v)
+			b := anyutil.IsTrue(v)
 			return &b
 		}
 	}
@@ -663,8 +663,8 @@ func orDefaultIndex(ctx context.Context, ix *ChannelKeyIndex) (*ChannelKeyIndex,
 }
 
 // Drops every messaging channel assignment of a dotenv file in place and returns removed keys by platform
-func StripChannelEnvFile(ctx context.Context, envPath string, ix *ChannelKeyIndex) (*pyjson.Object, error) {
-	removed := pyjson.NewObject()
+func StripChannelEnvFile(ctx context.Context, envPath string, ix *ChannelKeyIndex) (*jsonutil.Object, error) {
+	removed := jsonutil.NewObject()
 	if !isFile(envPath) {
 		return removed, nil
 	}
@@ -817,7 +817,7 @@ func removeEntry(entry string) error {
 }
 
 // Strips channel credentials and identity from a fresh clone judged in the source plugin scope
-func StripChannelSettings(ctx context.Context, profileDir string, includeState bool, sourceDir string) (*pyjson.Object, error) {
+func StripChannelSettings(ctx context.Context, profileDir string, includeState bool, sourceDir string) (*jsonutil.Object, error) {
 	ix, err := NewChannelKeyIndex(ctx, sourceDir)
 	if err != nil {
 		return nil, err
@@ -982,7 +982,7 @@ func configPlatformTokens(ctx context.Context, configPath string) (map[string]st
 				continue
 			}
 			token := b["token"]
-			if !pyrepr.Truthy(token) {
+			if !anyutil.IsTrue(token) {
 				token = b["api_key"]
 			}
 			if s, ok := token.(string); ok && strings.TrimSpace(s) != "" {

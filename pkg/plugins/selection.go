@@ -12,10 +12,10 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Manifest kinds active by default when bundled
@@ -435,7 +435,7 @@ func defaultOn(h, dir, source, key string) (bool, error) {
 	if v, ok := manifest["kind"]; ok {
 		rawKind = v
 	}
-	kind := strings.ToLower(strings.TrimSpace(pyrepr.Str(rawKind)))
+	kind := strings.ToLower(strings.TrimSpace(anyutil.String(rawKind)))
 	return kind == "model-provider" || (source == "bundled" && bundledDefaultOnKinds[kind]), nil
 }
 

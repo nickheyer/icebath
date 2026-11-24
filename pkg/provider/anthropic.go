@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,10 +25,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registers the Anthropic Messages adapter
@@ -155,7 +157,7 @@ func anthResolveMessagesMaxTokens(requested any, model string) (int, error) {
 		return resolved, nil
 	}
 	return 0, fmt.Errorf("Anthropic Messages adapter requires a positive max_tokens value for model %s; got %s and no model default resolved.",
-		pyrepr.StrRepr(model), pyrepr.Repr(requested))
+		strconv.Quote(model), anyutil.Quote(requested))
 }
 
 // Adaptive thinking models, unknown Claude defaults adaptive, Kimi family included, other vendors manual
@@ -711,7 +713,7 @@ func anthSanitizeKwargs(kwargs map[string]any, logPrefix string) []string {
 		for i, key := range leaked {
 			names[i] = key
 		}
-		pkgLog().Warn(fmt.Sprintf("%sStripped Responses-only kwarg(s) %s from an Anthropic Messages call (api_mode flip race — see #31673). The call will proceed; this breadcrumb means a kwargs build ran under a Responses api_mode while dispatch ran under anthropic_messages.", logPrefix, pyrepr.Repr(names)))
+		pkgLog().Warn(fmt.Sprintf("%sStripped Responses-only kwarg(s) %s from an Anthropic Messages call (api_mode flip race — see #31673). The call will proceed; this breadcrumb means a kwargs build ran under a Responses api_mode while dispatch ran under anthropic_messages.", logPrefix, anyutil.Quote(names)))
 	}
 	return leaked
 }
@@ -743,7 +745,7 @@ func anthTranslateResponseFormat(kwargs map[string]any, responseFormat map[strin
 	var schema any
 	switch asStr(responseFormat["type"]) {
 	case "json_schema":
-		js, ok := pyjson.Dict(responseFormat["json_schema"])
+		js, ok := jsonutil.AsMap(responseFormat["json_schema"])
 		if !ok {
 			return
 		}
@@ -892,7 +894,7 @@ func (t *anthDirectTransport) Request(ctx context.Context, op anthOperation, bod
 	if err != nil {
 		return nil, err
 	}
-	data, err := pyhttpx.JSONBody(anthMergedWireBody(params, extra))
+	data, err := httputil.JSONBody(anthMergedWireBody(params, extra))
 	if err != nil {
 		return nil, fmt.Errorf("provider: encode anthropic messages body: %w", err)
 	}
@@ -1349,16 +1351,16 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 	extraHeaders, _ := asMap(kwargs["extra_headers"])
 	delete(kwargs, "extra_headers")
 	anthTranslateResponseFormat(kwargs, req.ResponseFormat)
-	if rf, ok := pyjson.Dict(kwargs["response_format"]); ok {
+	if rf, ok := jsonutil.AsMap(kwargs["response_format"]); ok {
 		anthTranslateResponseFormat(kwargs, rf)
 	}
 	delete(kwargs, "response_format")
-	if extra, ok := pyjson.AsObject(kwargs["extra_body"]); ok {
-		if rf, ok := pyjson.Dict(extra.Vals["response_format"]); ok {
+	if extra, ok := jsonutil.AsObject(kwargs["extra_body"]); ok {
+		if rf, ok := jsonutil.AsMap(extra.Value("response_format")); ok {
 			anthTranslateResponseFormat(kwargs, rf)
 		}
-		if _, has := extra.Vals["response_format"]; has {
-			extra = extra.Copy()
+		if _, has := extra.Get("response_format"); has {
+			extra = extra.Clone()
 			extra.Delete("response_format")
 		}
 		if extra.Len() == 0 {
@@ -1391,11 +1393,11 @@ func (c *anthropicClient) prepare(ctx context.Context, req *Request, stream bool
 }
 
 // Ordered extra_body of the kwargs, created empty when absent and copied before any change
-func anthExtraBodyObject(kwargs map[string]any) *pyjson.Object {
-	if cur, ok := pyjson.AsObject(kwargs["extra_body"]); ok {
-		return cur.Copy()
+func anthExtraBodyObject(kwargs map[string]any) *jsonutil.Object {
+	if cur, ok := jsonutil.AsObject(kwargs["extra_body"]); ok {
+		return cur.Clone()
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Messages params the SDK methods take as keyword arguments, response_format translated before the call
@@ -1409,16 +1411,16 @@ var anthKwargParams = func() map[string]bool {
 
 // Merges an extra body mapping into the kwargs, Messages params set in place and every other key kept in the ordered extra_body
 func anthMergeExtraBody(kwargs map[string]any, overridesValue any) {
-	overrides, _ := pyjson.AsObject(overridesValue)
+	overrides, _ := jsonutil.AsObject(overridesValue)
 	if overrides == nil {
 		return
 	}
-	for _, k := range overrides.Keys {
-		v := overrides.Vals[k]
+	for _, k := range overrides.Keys() {
+		v := overrides.Value(k)
 		if k == "extra_body" {
-			if m, ok := pyjson.AsObject(v); ok {
+			if m, ok := jsonutil.AsObject(v); ok {
 				extra := anthExtraBodyObject(kwargs)
-				extra.Update(m)
+				extra.Merge(m)
 				kwargs["extra_body"] = extra
 			}
 			continue
@@ -1906,7 +1908,7 @@ func (c *anthropicClient) normalizeMessage(message map[string]any, raw []byte, r
 		}
 	}
 	if len(reasoningDetails) > 0 {
-		text, _ := pyjson.Dumps(reasoningDetails)
+		text, _ := jsonutil.Encode(reasoningDetails)
 		msg.ReasoningDetails = json.RawMessage(text)
 	}
 	if signed && hasToolUse {

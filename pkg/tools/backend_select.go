@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const defaultBrowserProvider = "local"
@@ -98,7 +98,7 @@ func isTruthyValue(v any, def bool) bool {
 		}
 		return false
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
 // HasDirectModalCredentials reports whether a Modal token pair or ~/.modal.toml exists
@@ -250,8 +250,8 @@ func FalKeyIsConfigured(env *Env) bool {
 
 // Text of value or the empty string when the value is falsy, the str(value or "") idiom
 func pyOrStr(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }

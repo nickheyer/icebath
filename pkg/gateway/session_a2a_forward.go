@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Fields a forwarded A2A turn carries
@@ -23,8 +23,8 @@ var unsafeSlugRun = regexp.MustCompile(`[^A-Za-z0-9_.-]+`)
 // Context id sanitized for a session title, ctx when nothing survives, at most 96 characters
 func safeContextSlug(value any) string {
 	text := ""
-	if pyrepr.Truthy(value) {
-		text = pyrepr.Str(value)
+	if anyutil.IsTrue(value) {
+		text = anyutil.String(value)
 	}
 	slug := strings.Trim(unsafeSlugRun.ReplaceAllString(text, "-"), "-._")
 	if slug == "" {
@@ -37,8 +37,8 @@ func safeContextSlug(value any) string {
 }
 
 // Valid forward params, exactly the six string fields, non empty but tenant and within their length caps
-func validForwardParams(params *pyjson.Object) bool {
-	if len(params.Keys) != len(a2aForwardFields) {
+func validForwardParams(params *jsonutil.Object) bool {
+	if params.Len() != len(a2aForwardFields) {
 		return false
 	}
 	for _, key := range a2aForwardFields {
@@ -61,7 +61,7 @@ func validForwardParams(params *pyjson.Object) bool {
 }
 
 // A2A forward verb, the peer's turn admitted on the canonical session its four part identity owns
-func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	a, actor := c.authority, c.actor
 	if actor.ProfileID != a.ProfileID {
 		return nil, runtimeRefusal("profile_mismatch")
@@ -75,11 +75,11 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 	identity := []string{}
 	identityList := []any{}
 	for _, key := range []string{"agent", "tenant", "peer", "context_id"} {
-		text := params.GetOr(key, "").(string)
+		text := params.ValueOr(key, "").(string)
 		identity = append(identity, text)
 		identityList = append(identityList, text)
 	}
-	encoded, err := pyjson.Dumps(identityList, pyjson.Separators(",", ":"))
+	encoded, err := jsonutil.Encode(identityList)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +91,7 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 		}
 		return fmt.Sprintf("%s:%d", base, n)
 	}
-	inputID := params.GetOr("input_id", "").(string)
+	inputID := params.ValueOr("input_id", "").(string)
 	var deriveErr error
 	derive := func(n int) string {
 		sid, err := state.LocalIdentity(a.ProfileID, actor.Subject, requestID(n))
@@ -137,14 +137,14 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 			return nil, err
 		}
 	} else {
-		title := fmt.Sprintf("a2a-%s-%s", params.GetOr("agent", ""), safeContextSlug(params.GetOr("context_id", nil)))
+		title := fmt.Sprintf("a2a-%s-%s", params.ValueOr("agent", ""), safeContextSlug(params.ValueOr("context_id", nil)))
 		legacy, err := a.DB.GetSessionByTitle(ctx, title)
 		if err != nil {
 			return nil, err
 		}
 		if legacy != nil {
 			pkgLog().Warn(fmt.Sprintf("A2A: pre-authority session %s titled %s has no peer identity; "+
-				"forwarding into a new session instead of adopting it", pyrepr.Str(legacy.GetOr("id", nil)), pyrepr.Repr(title)))
+				"forwarding into a new session instead of adopting it", anyutil.String(legacy.ValueOr("id", nil)), anyutil.Quote(title)))
 		}
 		existing, staged, err := stageLocalSession(withForwardIdentity(ctx, identity), a, actor,
 			map[string]any{"source": "a2a", "request_id": key}, localCreateOptions{})
@@ -170,12 +170,12 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 		}
 	}
 	if !c.subscribed(target.SessionID) {
-		if _, err := c.resume(ctx, target, pyjson.NewObject()); err != nil {
+		if _, err := c.resume(ctx, target, jsonutil.NewObject()); err != nil {
 			return nil, err
 		}
 	}
 	receipt, err := a.Submit(ctx, actor, Submission{RequestID: inputID, Ref: target,
-		Payload: map[string]any{"text": params.GetOr("text", "")}, Intent: "queue"}, SubmitOptions{})
+		Payload: map[string]any{"text": params.ValueOr("text", "")}, Intent: "queue"}, SubmitOptions{})
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +185,7 @@ func (c *AuthorityConnection) a2aForward(ctx context.Context, ref SessionRef, pa
 	}
 	var result any
 	if saved != nil {
-		savedObj, ok := saved.(*pyjson.Object)
+		savedObj, ok := saved.(*jsonutil.Object)
 		if !ok {
 			return nil, &PyError{Kind: "TypeError", Msg: "the saved A2A forward is " + errchain.Kind(saved) + ", expected a mapping"}
 		}
@@ -221,7 +221,7 @@ func checkForwardIdentity(ctx context.Context, a *SessionAuthority, sid string, 
 	if err != nil {
 		return err
 	}
-	policy, ok := rawPolicy.(*pyjson.Object)
+	policy, ok := rawPolicy.(*jsonutil.Object)
 	if !ok {
 		return &PyError{Kind: "TypeError", Msg: "the forwarded session policy is " + errchain.Kind(rawPolicy) + ", expected a mapping"}
 	}
@@ -233,15 +233,15 @@ func checkForwardIdentity(ctx context.Context, a *SessionAuthority, sid string, 
 	if !isStr {
 		return &PyError{Kind: "TypeError", Msg: "the forwarded request is " + errchain.Kind(rawRequest) + ", expected JSON text"}
 	}
-	parsed, err := pyjson.Loads(text)
+	parsed, err := jsonutil.Decode(text)
 	if err != nil {
 		return &PyError{Kind: "JSONDecodeError", Msg: err.Error()}
 	}
-	request, ok := parsed.(*pyjson.Object)
+	request, ok := parsed.(*jsonutil.Object)
 	if !ok {
 		return &PyError{Kind: "AttributeError", Msg: "the forwarded request is " + errchain.Kind(parsed) + ", expected a mapping"}
 	}
-	if !pyrepr.Equal(request.GetOr("a2a_identity", nil), identity) {
+	if !anyutil.Equal(request.ValueOr("a2a_identity", nil), identity) {
 		return runtimeRefusal("admission_conflict")
 	}
 	return nil

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Key under which a hook context map carries the caller's context, the Go form of the Python ambient contextvars
@@ -90,8 +90,8 @@ func reasoningConfigMap(r *Reasoning) map[string]any {
 }
 
 // Reasoning config as the ordered dict the agent passes on the wire, enabled before effort
-func reasoningConfigObject(r *Reasoning) *pyjson.Object {
-	out := pyjson.NewObject()
+func reasoningConfigObject(r *Reasoning) *jsonutil.Object {
+	out := jsonutil.NewObject()
 	if r == nil {
 		return out
 	}

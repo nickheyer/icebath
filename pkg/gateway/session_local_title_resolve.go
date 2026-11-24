@@ -33,7 +33,7 @@ func resolveTitledSession(ctx context.Context, a *SessionAuthority, actor Princi
 	}
 	sid := ""
 	if row != nil {
-		sid, _ = row.GetOr("id", "").(string)
+		sid, _ = row.ValueOr("id", "").(string)
 	} else if sid, _, err = db.ResolveSessionByTitle(ctx, text); err != nil {
 		return nil, err
 	}
@@ -51,7 +51,7 @@ func resolveTitledSession(ctx context.Context, a *SessionAuthority, actor Princi
 			return nil, err
 		}
 		if tipRow != nil {
-			tipID, _ = tipRow.GetOr("id", "").(string)
+			tipID, _ = tipRow.ValueOr("id", "").(string)
 		}
 	}
 	if tipID == "" {
@@ -105,7 +105,7 @@ func resolveLatestSession(ctx context.Context, a *SessionAuthority, actor Princi
 			return SessionRef{}, err
 		}
 		for _, row := range rows {
-			id, _ := row.GetOr("id", "").(string)
+			id, _ := row.ValueOr("id", "").(string)
 			tip, err := a.DB.GetCompressionTip(ctx, id)
 			if err != nil {
 				return SessionRef{}, err

@@ -9,29 +9,32 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Worker call answered by a canned function of the method and params
-func cannedCall(fn func(method string, params *pyjson.Object) (any, error)) WorkerCall {
-	return func(_ context.Context, method string, params *pyjson.Object) (any, error) { return fn(method, params) }
+func cannedCall(fn func(method string, params *jsonutil.Object) (any, error)) WorkerCall {
+	return func(_ context.Context, method string, params *jsonutil.Object) (any, error) {
+		return fn(method, params)
+	}
 }
 
 // Worker call that persists straight into the canonical store, the test setup rpc
 func dbWorkerCall(db *state.SessionDB) WorkerCall {
-	return func(ctx context.Context, _ string, p *pyjson.Object) (any, error) {
-		num := func(k string) int64 { n, _ := p.GetOr(k, int64(0)).(int64); return n }
-		text := func(k string) string { s, _ := p.GetOr(k, "").(string); return s }
+	return func(ctx context.Context, _ string, p *jsonutil.Object) (any, error) {
+		num := func(k string) int64 { n, _ := p.ValueOr(k, int64(0)).(int64); return n }
+		text := func(k string) string { s, _ := p.ValueOr(k, "").(string); return s }
 		return db.MutateWorkerExecution(ctx, state.WorkerReceipt{Epoch: num("epoch"), ExecutionID: text("execution_id"),
 			SessionID: text("session_id"), Generation: num("generation"), Sequence: num("sequence"), Operation: text("operation"),
-			Payload: p.GetOr("payload", nil)})
+			Payload: p.ValueOr("payload", nil)})
 	}
 }
 
-func mustStore(t *testing.T, rpc WorkerCall, scope *pyjson.Object, dir string, maxBytes int) *RuntimeSessionStore {
+func mustStore(t *testing.T, rpc WorkerCall, scope *jsonutil.Object, dir string, maxBytes int) *RuntimeSessionStore {
 	t.Helper()
 	store, err := NewRuntimeSessionStore(context.Background(), rpc, scope, dir, nil, maxBytes)
 	if err != nil {
@@ -48,13 +51,13 @@ func persistenceReason(err error) string {
 	return ""
 }
 
-func readJournal(t *testing.T, store *RuntimeSessionStore) *pyjson.Object {
+func readJournal(t *testing.T, store *RuntimeSessionStore) *jsonutil.Object {
 	t.Helper()
 	raw, err := os.ReadFile(store.path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	journal, err := pyjson.LoadsDict(string(raw))
+	journal, err := jsonutil.DecodeObject(string(raw))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,9 +66,9 @@ func readJournal(t *testing.T, store *RuntimeSessionStore) *pyjson.Object {
 
 func TestOutboxFreezesFailedPayloadAndReopensExclusively(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "private")
-	scope := pyjson.ObjectOf("session_id", "s", "execution_id", "w", "epoch", int64(1))
+	scope := jsonutil.ObjectOf("session_id", "s", "execution_id", "w", "epoch", int64(1))
 	rows := []map[string]any{{"role": "user", "content": "frozen"}}
-	unavailable := cannedCall(func(string, *pyjson.Object) (any, error) {
+	unavailable := cannedCall(func(string, *jsonutil.Object) (any, error) {
 		rows[0]["content"] = "caller changed"
 		return nil, &workerStoreError{"TimeoutError", "offline"}
 	})
@@ -74,12 +77,12 @@ func TestOutboxFreezesFailedPayloadAndReopensExclusively(t *testing.T) {
 		t.Fatalf("append %v", err)
 	}
 	disk := readJournal(t, store)
-	pending, _ := disk.GetOr("pending", nil).([]any)
-	first := pending[0].(*pyjson.Object).GetOr("payload", nil).(*pyjson.Object).GetOr("messages", nil).([]any)[0].(*pyjson.Object)
-	if first.GetOr("content", nil) != "frozen" {
+	pending, _ := disk.ValueOr("pending", nil).([]any)
+	first := pending[0].(*jsonutil.Object).ValueOr("payload", nil).(*jsonutil.Object).ValueOr("messages", nil).([]any)[0].(*jsonutil.Object)
+	if first.ValueOr("content", nil) != "frozen" {
 		t.Fatalf("journal content %v", first)
 	}
-	if !pyjson.Equal(store.journal.GetOr("pending", nil), disk.GetOr("pending", nil)) {
+	if !anyutil.Equal(store.journal.ValueOr("pending", nil), disk.ValueOr("pending", nil)) {
 		t.Fatal("in memory journal differs from disk")
 	}
 	if _, err := NewRuntimeSessionStore(context.Background(), unavailable, scope, dir, nil, 0); persistenceReason(err) != "outbox_in_use" {
@@ -91,21 +94,21 @@ func TestOutboxFreezesFailedPayloadAndReopensExclusively(t *testing.T) {
 	if err := store.Close(); persistenceReason(err) != "offline" {
 		t.Fatalf("close %v", err)
 	}
-	var seen []*pyjson.Object
-	commit := cannedCall(func(_ string, p *pyjson.Object) (any, error) {
+	var seen []*jsonutil.Object
+	commit := cannedCall(func(_ string, p *jsonutil.Object) (any, error) {
 		seen = append(seen, p)
-		return pyjson.ObjectOf("count", int64(1), "annotations", []any{pyjson.ObjectOf("_row_id", int64(42))}), nil
+		return jsonutil.ObjectOf("count", int64(1), "annotations", []any{jsonutil.ObjectOf("_row_id", int64(42))}), nil
 	})
 	restored := mustStore(t, commit, scope, dir, 0)
 	defer restored.Close()
 	if results, err := restored.RetryPending(context.Background()); err != nil || len(results) != 0 {
 		t.Fatalf("retry after reopen %v %v", results, err)
 	}
-	msg := seen[0].GetOr("payload", nil).(*pyjson.Object).GetOr("messages", nil).([]any)[0].(*pyjson.Object)
-	if msg.GetOr("content", nil) != "frozen" {
+	msg := seen[0].ValueOr("payload", nil).(*jsonutil.Object).ValueOr("messages", nil).([]any)[0].(*jsonutil.Object)
+	if msg.ValueOr("content", nil) != "frozen" {
 		t.Fatalf("replayed %v", msg)
 	}
-	if got := readJournal(t, restored).GetOr("pending", nil).([]any); len(got) != 0 {
+	if got := readJournal(t, restored).ValueOr("pending", nil).([]any); len(got) != 0 {
 		t.Fatalf("pending after replay %v", got)
 	}
 }
@@ -114,8 +117,8 @@ func TestOutboxHasPrivatePosixMode(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("posix only")
 	}
-	store := mustStore(t, cannedCall(func(string, *pyjson.Object) (any, error) { return pyjson.NewObject(), nil }),
-		pyjson.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
+	store := mustStore(t, cannedCall(func(string, *jsonutil.Object) (any, error) { return jsonutil.NewObject(), nil }),
+		jsonutil.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
 	defer store.Close()
 	info, err := os.Stat(store.path)
 	if err != nil || info.Mode().Perm()&0o077 != 0 {
@@ -124,8 +127,8 @@ func TestOutboxHasPrivatePosixMode(t *testing.T) {
 }
 
 func TestOutboxCapacityFailureDoesNotAdvanceOrDiscard(t *testing.T) {
-	unavailable := cannedCall(func(string, *pyjson.Object) (any, error) { return nil, &workerStoreError{"TimeoutError", "offline"} })
-	store := mustStore(t, unavailable, pyjson.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 500)
+	unavailable := cannedCall(func(string, *jsonutil.Object) (any, error) { return nil, &workerStoreError{"TimeoutError", "offline"} })
+	store := mustStore(t, unavailable, jsonutil.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 500)
 	before, _ := os.ReadFile(store.path)
 	_, err := store.AppendMessagesBatch(context.Background(), "s", []map[string]any{{"role": "user", "content": strings.Repeat("x", 1000)}}, state.AppendGuards{}, nil)
 	if persistenceReason(err) != "outbox_full" {
@@ -144,13 +147,13 @@ func TestOutboxCapacityFailureDoesNotAdvanceOrDiscard(t *testing.T) {
 }
 
 func TestWorkerTurnWaitCallbacksRemainLocal(t *testing.T) {
-	var attempts []*pyjson.Object
+	var attempts []*jsonutil.Object
 	var notices []float64
-	rpc := cannedCall(func(_ string, p *pyjson.Object) (any, error) {
+	rpc := cannedCall(func(_ string, p *jsonutil.Object) (any, error) {
 		attempts = append(attempts, p)
-		return pyjson.ObjectOf("value", len(attempts) > 1), nil
+		return jsonutil.ObjectOf("value", len(attempts) > 1), nil
 	})
-	store := mustStore(t, rpc, pyjson.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
+	store := mustStore(t, rpc, jsonutil.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
 	defer store.Close()
 	wait := state.NewTurnLeaseWait()
 	wait.WaitSeconds, wait.PollIntervalSeconds = 3, .01
@@ -162,8 +165,8 @@ func TestWorkerTurnWaitCallbacksRemainLocal(t *testing.T) {
 		t.Fatalf("notices %v attempts %d", notices, len(attempts))
 	}
 	for _, row := range attempts {
-		payload := row.GetOr("payload", nil).(*pyjson.Object)
-		if payload.Len() != 2 || payload.GetOr("holder", nil) == nil || payload.GetOr("ttl_seconds", nil) == nil {
+		payload := row.ValueOr("payload", nil).(*jsonutil.Object)
+		if payload.Len() != 2 || payload.ValueOr("holder", nil) == nil || payload.ValueOr("ttl_seconds", nil) == nil {
 			t.Fatalf("payload %v", payload)
 		}
 	}
@@ -175,8 +178,8 @@ func TestWorkerTurnWaitCallbacksRemainLocal(t *testing.T) {
 }
 
 func TestOutboxFilesystemFailureIsSticky(t *testing.T) {
-	store := mustStore(t, cannedCall(func(string, *pyjson.Object) (any, error) { return pyjson.NewObject(), nil }),
-		pyjson.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
+	store := mustStore(t, cannedCall(func(string, *jsonutil.Object) (any, error) { return jsonutil.NewObject(), nil }),
+		jsonutil.ObjectOf("session_id", "s"), filepath.Join(t.TempDir(), "private"), 0)
 	defer store.closeOwner()
 	if err := os.Remove(store.path); err != nil {
 		t.Fatal(err)
@@ -210,14 +213,14 @@ func TestWorkerStorePersistsAndRestoresTheToolsPrefixPin(t *testing.T) {
 	if _, err := db.RegisterWorkerExecution(ctx, state.WorkerRegistration{Epoch: epoch, ExecutionID: "worker", SessionID: "owned", Kind: "compute", AdoptionSecret: "test-secret"}); err != nil {
 		t.Fatal(err)
 	}
-	scope := pyjson.ObjectOf("epoch", epoch, "execution_id", "worker", "session_id", "owned", "generation", int64(0))
+	scope := jsonutil.ObjectOf("epoch", epoch, "execution_id", "worker", "session_id", "owned", "generation", int64(0))
 	store := mustStore(t, dbWorkerCall(db), scope, filepath.Join(t.TempDir(), "outbox"), 0)
 	defer store.closeOwner()
 	var defs []any
 	for _, n := range []string{"terminal", "tool_search", "tool_describe", "tool_call"} {
-		defs = append(defs, pyjson.ObjectOf("type", "function", "function", pyjson.ObjectOf("name", n, "parameters", pyjson.NewObject())))
+		defs = append(defs, jsonutil.ObjectOf("type", "function", "function", jsonutil.ObjectOf("name", n, "parameters", jsonutil.NewObject())))
 	}
-	pin := pyjson.ObjectOf("version", mcp.ToolPinVersion(), "tools", defs)
+	pin := jsonutil.ObjectOf("version", mcp.ToolPinVersion(), "tools", defs)
 	if err := store.UpdateSessionToolNames("owned", pin); err != nil {
 		t.Fatal(err)
 	}
@@ -229,23 +232,23 @@ func TestWorkerStorePersistsAndRestoresTheToolsPrefixPin(t *testing.T) {
 	}
 	owned, _ := db.GetSession(ctx, "owned")
 	direct, _ := db.GetSession(ctx, "direct")
-	ownedPin, _ := pyjson.Loads(owned.GetOr("tool_names", "").(string))
-	directPin, _ := pyjson.Loads(direct.GetOr("tool_names", "").(string))
-	if !pyjson.Equal(ownedPin, directPin) {
+	ownedPin, _ := jsonutil.Decode(owned.ValueOr("tool_names", "").(string))
+	directPin, _ := jsonutil.Decode(direct.ValueOr("tool_names", "").(string))
+	if !anyutil.Equal(ownedPin, directPin) {
 		t.Fatalf("pins differ %v %v", ownedPin, directPin)
 	}
 	viaStore, err := store.GetSession(ctx, "owned")
 	if err != nil {
 		t.Fatal(err)
 	}
-	restored, _ := pyjson.Loads(viaStore.GetOr("tool_names", "").(string))
-	if !pyjson.Equal(restored.(*pyjson.Object).GetOr("tools", nil), defs) {
+	restored, _ := jsonutil.Decode(viaStore.ValueOr("tool_names", "").(string))
+	if !anyutil.Equal(restored.(*jsonutil.Object).ValueOr("tools", nil), defs) {
 		t.Fatalf("restored tools %v", restored)
 	}
 	if err := store.UpdateSessionToolNames("foreign", []any{"terminal"}); persistenceReason(err) != "permission_denied" {
 		t.Fatalf("foreign %v", err)
 	}
-	if err := store.UpdateSessionToolNames("owned", []any{pyjson.ObjectOf("not", "a name")}); err == nil || !strings.Contains(err.Error(), "invalid_params") {
+	if err := store.UpdateSessionToolNames("owned", []any{jsonutil.ObjectOf("not", "a name")}); err == nil || !strings.Contains(err.Error(), "invalid_params") {
 		t.Fatalf("invalid pin %v", err)
 	}
 }

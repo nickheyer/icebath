@@ -35,7 +35,7 @@ func publishSettledInfoBody(ctx context.Context, t *TurnRunner, a *agent.AIAgent
 			messageID = *inboundID
 		}
 	}
-	oneTurn := pyTruthy(gateway.CLITurn(ctx, messageID).GetOr("model_override", nil))
+	oneTurn := pyTruthy(gateway.CLITurn(ctx, messageID).ValueOr("model_override", nil))
 	var live *gateway.LiveSession
 	if oneTurn {
 		if found, ok := authority.Live(sessionID); ok {
@@ -50,8 +50,8 @@ func publishSettledInfoBody(ctx context.Context, t *TurnRunner, a *agent.AIAgent
 		return err
 	}
 	info := gateway.AgentInventory(ctx, a)
-	for _, key := range local.Keys {
-		info.Set(key, local.Vals[key])
+	for _, key := range local.Keys() {
+		info.Set(key, local.Value(key))
 	}
 	if oneTurn && live != nil {
 		var policy *gateway.LocalSessionPolicy
@@ -82,6 +82,6 @@ func publishSettledInfoBody(ctx context.Context, t *TurnRunner, a *agent.AIAgent
 			}
 		}
 	}
-	t.publishExecution("session.info", info.Vals)
+	t.publishExecution("session.info", info.Map())
 	return nil
 }

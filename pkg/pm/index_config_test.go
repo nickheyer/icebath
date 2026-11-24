@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Drops every ambient uv and pip setting and disables pip config files, the clean index env fixture
@@ -159,16 +159,16 @@ func TestIndexConfigExpandUserMatchesPython(t *testing.T) {
 		t.Fatalf("home drive and path gave %q", got)
 	}
 	for _, tc := range []struct{ got, want string }{
-		{pypath.NtJoin("C:", `\Users\nick`), `C:\Users\nick`},
-		{pypath.NtJoin(`\\server\share`, "x"), `\\server\share\x`},
-		{pypath.NtJoin("C:", `D:\x`), `D:\x`},
-		{pypath.NtJoin(`c:\a`, "C:b"), `C:\a\b`},
-		{pypath.NtJoin("X", ""), `X\`},
-		{pypath.NtDirname(`\\server\share\nick`), `\\server\share\`},
-		{pypath.NtDirname(`C:\Users\nick`), `C:\Users`},
-		{pypath.NtDirname(`C:\nick`), `C:\`},
-		{pypath.NtBasename("C:foo"), "foo"},
-		{pypath.NtDirname(`\\?\UNC\srv\sh\u`), `\\?\UNC\srv\sh\`},
+		{pathutil.WindowsJoin("C:", `\Users\nick`), `C:\Users\nick`},
+		{pathutil.WindowsJoin(`\\server\share`, "x"), `\\server\share\x`},
+		{pathutil.WindowsJoin("C:", `D:\x`), `D:\x`},
+		{pathutil.WindowsJoin(`c:\a`, "C:b"), `C:\a\b`},
+		{pathutil.WindowsJoin("X", ""), `X\`},
+		{pathutil.WindowsDir(`\\server\share\nick`), `\\server\share\`},
+		{pathutil.WindowsDir(`C:\Users\nick`), `C:\Users`},
+		{pathutil.WindowsDir(`C:\nick`), `C:\`},
+		{pathutil.WindowsBase("C:foo"), "foo"},
+		{pathutil.WindowsDir(`\\?\UNC\srv\sh\u`), `\\?\UNC\srv\sh\`},
 	} {
 		if tc.got != tc.want {
 			t.Fatalf("ntpath gave %q, want %q", tc.got, tc.want)

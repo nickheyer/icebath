@@ -5,27 +5,28 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Generic JSON codec double standing for the agent's goal, heartbeat and loop state types
-type jsonAutomationState struct{ obj *pyjson.Object }
+type jsonAutomationState struct{ obj *jsonutil.Object }
 
 func (s *jsonAutomationState) Status() any             { v, _ := s.obj.Get("status"); return v }
 func (s *jsonAutomationState) SetStatus(status string) { s.obj.Set("status", status) }
 func (s *jsonAutomationState) ToJSON() (string, error) {
-	return pyjson.Dumps(s.obj, pyjson.EnsureASCII(false))
+	return jsonutil.Encode(s.obj)
 }
 
 // Installs the JSON codec double for every automation family the agent wiring would decode
 func installAutomationCodecDoubles() {
 	for _, family := range []string{"goal", "heartbeat", "loop"} {
 		WorkerAutomationCodecs[family] = func(raw string) (AutomationState, error) {
-			decoded, err := pyjson.Loads(raw)
+			decoded, err := jsonutil.Decode(raw)
 			if err != nil {
 				return nil, pyValueError(err.Error())
 			}
-			return &jsonAutomationState{decoded.(*pyjson.Object)}, nil
+			return &jsonAutomationState{decoded.(*jsonutil.Object)}, nil
 		}
 	}
 }
@@ -56,14 +57,14 @@ func TestGuardRollbackAndStreaksAreDurableReceipts(t *testing.T) {
 		t.Fatal(err)
 	}
 	row, err := db.GetCompressionFailureCooldownRow("owned")
-	if err != nil || !pyjson.Equal(row.object(), pyjson.ObjectOf("session_exists", true, "cooldown_until", deadline, "error", "latest")) {
+	if err != nil || !anyutil.Equal(row.object(), jsonutil.ObjectOf("session_exists", true, "cooldown_until", deadline, "error", "latest")) {
 		t.Fatalf("cooldown row %v %v", row.object(), err)
 	}
 	if err := store.restoreCompressionFailureCooldownRow("owned", snapshot); err != nil {
 		t.Fatal(err)
 	}
 	row, _ = db.GetCompressionFailureCooldownRow("owned")
-	if !pyjson.Equal(row.object(), snapshot) {
+	if !anyutil.Equal(row.object(), snapshot) {
 		t.Fatalf("restored %v != %v", row.object(), snapshot)
 	}
 	if err := store.recordCompressionFailureCooldown("owned", deadline, nil); err != nil {
@@ -96,7 +97,7 @@ func TestGuardRollbackAndStreaksAreDurableReceipts(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cannot restore absent") {
 		t.Fatalf("absent restore %v", err)
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT last_sequence FROM worker_executions"), seq-1) {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT last_sequence FROM worker_executions"), seq-1) {
 		t.Fatal("failed receipt advanced the sequence")
 	}
 }
@@ -198,7 +199,7 @@ func TestReopenOrphanedParentDoesNotStealLiveOrPublishedContinuations(t *testing
 	if err := db.CreateSession(NewSession{ID: "published", Source: "cli", ParentSessionID: "owned"}); err != nil {
 		t.Fatal(err)
 	}
-	if mustBool(t)(store.reopenOrphanedCompressionSession("owned")) || !pyjson.Equal(rowValue(mustSession(t, db, "owned"), "end_reason"), "compression") {
+	if mustBool(t)(store.reopenOrphanedCompressionSession("owned")) || !anyutil.Equal(rowValue(mustSession(t, db, "owned"), "end_reason"), "compression") {
 		t.Fatal("reopen stole a published continuation")
 	}
 }
@@ -217,11 +218,11 @@ func TestCompressionFlushReturnsCanonicalAnnotationsAndKeepsTurnGuard(t *testing
 		t.Fatalf("append %d %v", n, err)
 	}
 	conversation, err := db.GetMessagesAsConversation(ctx, "owned", ConversationOptions{IncludeRowIDs: true})
-	if err != nil || !pyjson.Equal(rows[0]["_row_id"], conversation[0]["_row_id"]) {
+	if err != nil || !anyutil.Equal(rows[0]["_row_id"], conversation[0]["_row_id"]) {
 		t.Fatalf("row id %v %v %v", rows[0]["_row_id"], conversation, err)
 	}
 	plain, _ := db.GetMessagesAsConversation(ctx, "owned", ConversationOptions{})
-	if !pyjson.Equal(plain[0]["api_content"], " original wire ") {
+	if !anyutil.Equal(plain[0]["api_content"], " original wire ") {
 		t.Fatalf("api_content %v", plain[0])
 	}
 	_, err = db.MutateWorkerExecution(ctx, store.rawReceipt("compression.append", map[string]any{"messages": []any{map[string]any{"role": "assistant", "content": "stale"}},
@@ -246,15 +247,15 @@ func TestUsageReceiptIncludesRouteRowsAndRollsBackOnReceiptFailure(t *testing.T)
 	if _, err := db.RegisterWorkerExecution(ctx, WorkerRegistration{Epoch: epoch, ExecutionID: "w", SessionID: "s", Generation: 0, Kind: "compute", AdoptionSecret: "private"}); err != nil {
 		t.Fatal(err)
 	}
-	payload := pyjson.ObjectOf("input_tokens", int64(13), "output_tokens", int64(7), "api_call_count", int64(1),
+	payload := jsonutil.ObjectOf("input_tokens", int64(13), "output_tokens", int64(7), "api_call_count", int64(1),
 		"model", "model-a", "billing_provider", "provider", "estimated_cost_usd", 0.25)
 	args := scope
 	args.Sequence, args.Operation, args.Payload = 1, "usage.main", payload
 	receipt := mustReceipt(t, db, args)
-	if again := mustReceipt(t, db, args); !pyjson.Equal(again, receipt) {
+	if again := mustReceipt(t, db, args); !anyutil.Equal(again, receipt) {
 		t.Fatalf("replay %v", again)
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "s"), "input_tokens"), 13) || !pyjson.Equal(scalarOf(t, db.conn, "SELECT input_tokens FROM session_model_usage"), 13) {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "s"), "input_tokens"), 13) || !anyutil.Equal(scalarOf(t, db.conn, "SELECT input_tokens FROM session_model_usage"), 13) {
 		t.Fatal("usage rows")
 	}
 	mustExecConn(t, db.conn, "CREATE TRIGGER deny_receipt BEFORE INSERT ON worker_receipts BEGIN SELECT RAISE(ABORT, 'deny receipt'); END")
@@ -263,19 +264,19 @@ func TestUsageReceiptIncludesRouteRowsAndRollsBackOnReceiptFailure(t *testing.T)
 	if _, err := db.MutateWorkerExecution(ctx, second); !isIntegrityError(err) || !strings.Contains(err.Error(), "deny receipt") {
 		t.Fatalf("denied receipt %v", err)
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "s"), "input_tokens"), 13) {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "s"), "input_tokens"), 13) {
 		t.Fatal("rolled back usage landed")
 	}
 	mustExecConn(t, db.conn, "DROP TRIGGER deny_receipt")
 	aux := scope
-	aux.Sequence, aux.Operation, aux.Payload = 2, "usage.auxiliary", pyjson.ObjectOf("task", "compression", "model", "aux", "input_tokens", int64(3))
+	aux.Sequence, aux.Operation, aux.Payload = 2, "usage.auxiliary", jsonutil.ObjectOf("task", "compression", "model", "aux", "input_tokens", int64(3))
 	mustReceipt(t, db, aux)
 	mustReceipt(t, db, aux)
-	if !pyjson.Equal(rowValue(mustSession(t, db, "s"), "input_tokens"), 13) || !pyjson.Equal(scalarOf(t, db.conn, "SELECT input_tokens FROM session_model_usage WHERE task='compression'"), 3) {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "s"), "input_tokens"), 13) || !anyutil.Equal(scalarOf(t, db.conn, "SELECT input_tokens FROM session_model_usage WHERE task='compression'"), 3) {
 		t.Fatal("auxiliary usage rows")
 	}
 	bad := scope
-	bad.Sequence, bad.Operation, bad.Payload = 3, "usage.main", pyjson.ObjectOf("input_tokens", int64(-1))
+	bad.Sequence, bad.Operation, bad.Payload = 3, "usage.main", jsonutil.ObjectOf("input_tokens", int64(-1))
 	if r := receiptRefusal(t, db, bad); r != "invalid_params" {
 		t.Fatal(r)
 	}
@@ -293,10 +294,10 @@ func TestWorkerVoiceTurnUsageCountsButNeverRewritesTheSessionRoute(t *testing.T)
 		t.Fatal(err)
 	}
 	in := WorkerReceipt{Epoch: epoch, ExecutionID: "w", SessionID: "s", Generation: 0, Sequence: 1, Operation: "usage.main",
-		Payload: pyjson.ObjectOf("input_tokens", int64(10), "api_call_count", int64(1), "model", "voice-model", "billing_provider", "voicep", "task", "voice_chat")}
+		Payload: jsonutil.ObjectOf("input_tokens", int64(10), "api_call_count", int64(1), "model", "voice-model", "billing_provider", "voicep", "task", "voice_chat")}
 	mustReceipt(t, db, in)
 	row := mustSession(t, db, "s")
-	if !pyjson.Equal(rowValue(row, "input_tokens"), 10) || !pyjson.Equal(rowValue(row, "model"), "main-model") {
+	if !anyutil.Equal(rowValue(row, "input_tokens"), 10) || !anyutil.Equal(rowValue(row, "model"), "main-model") {
 		t.Fatalf("route rewritten %v", row)
 	}
 	byTask, err := db.AuxiliaryUsageByTask(ctx, "s")
@@ -304,7 +305,7 @@ func TestWorkerVoiceTurnUsageCountsButNeverRewritesTheSessionRoute(t *testing.T)
 		t.Fatal(err)
 	}
 	voice, _ := byTask.Get("voice_chat")
-	if voice == nil || !pyjson.Equal(rowValue(voice.(*pyjson.Object), "input_tokens"), 10) {
+	if voice == nil || !anyutil.Equal(rowValue(voice.(*jsonutil.Object), "input_tokens"), 10) {
 		t.Fatalf("per task row %v", byTask)
 	}
 }
@@ -366,7 +367,7 @@ func TestRotationPreservesAdmissionIdentityAndLostAckFifo(t *testing.T) {
 		if store.scope.SessionID != child {
 			t.Fatalf("scope %s", store.scope.SessionID)
 		}
-		if !pyjson.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM sessions WHERE id=?", child), 1) {
+		if !anyutil.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM sessions WHERE id=?", child), 1) {
 			t.Fatal("child row")
 		}
 		row, _ := db.GetSessionAdmission(ctx, objStr(follower, "admission_id"))
@@ -378,10 +379,10 @@ func TestRotationPreservesAdmissionIdentityAndLostAckFifo(t *testing.T) {
 	if objStr(row, "target_session_id") != "root" {
 		t.Fatalf("target %v", row)
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT lineage_json FROM session_admissions WHERE admission_id=?", objStr(accepted, "admission_id")), `["root","child","grandchild"]`) {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT lineage_json FROM session_admissions WHERE admission_id=?", objStr(accepted, "admission_id")), `["root","child","grandchild"]`) {
 		t.Fatal("lineage json")
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM session_admissions"), 2) {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM session_admissions"), 2) {
 		t.Fatal("admission count")
 	}
 }
@@ -459,11 +460,11 @@ func TestCompactedMessagesKeepCurrentRowIDsAcrossRepeatedCompaction(t *testing.T
 				t.Fatal(err)
 			}
 			current := store.scope.SessionID
-			if pyjson.Equal(messages[0]["_row_id"], oldID) {
+			if anyutil.Equal(messages[0]["_row_id"], oldID) {
 				t.Fatalf("row id kept %v", oldID)
 			}
 			row, err := fetchOne(ctx, db.conn, "SELECT session_id,active FROM messages WHERE id=?", messages[0]["_row_id"])
-			if err != nil || !pyjson.Equal(row, []any{current, int64(1)}) {
+			if err != nil || !anyutil.Equal(row, []any{current, int64(1)}) {
 				t.Fatalf("row %v %v", row, err)
 			}
 		}
@@ -493,7 +494,7 @@ func TestOwnerMintedMessageUIDRoundTripsThroughAppendAndArchive(t *testing.T) {
 		return out
 	}
 	first := stored()
-	if !pyjson.Equal(carried(), first) {
+	if !anyutil.Equal(carried(), first) {
 		t.Fatalf("uids %v != %v", carried(), first)
 	}
 	for _, uid := range first {
@@ -505,7 +506,7 @@ func TestOwnerMintedMessageUIDRoundTripsThroughAppendAndArchive(t *testing.T) {
 		if _, err := store.archiveAndCompact("owned", messages, archiveOptions{}); err != nil {
 			t.Fatal(err)
 		}
-		if !pyjson.Equal(stored(), first) || !pyjson.Equal(carried(), first) {
+		if !anyutil.Equal(stored(), first) || !anyutil.Equal(carried(), first) {
 			t.Fatalf("uids drifted %v %v %v", stored(), carried(), first)
 		}
 	}
@@ -537,21 +538,21 @@ func TestWatermarkedCompactionPreservesForeignTailAndRejectsStaleHolder(t *testi
 	}
 	archived, err := store.archiveAndCompact("owned", textMessages("assistant", "summary", "assistant", "carry"),
 		archiveOptions{watermark: watermark, lockHolder: "holder", tailCount: 1, modelConfigPatch: map[string]any{"_proactive_prune_rearm_tokens": int64(42)}})
-	if err != nil || !pyjson.Equal(archived, 3) {
+	if err != nil || !anyutil.Equal(archived, 3) {
 		t.Fatalf("archive %v %v", archived, err)
 	}
 	rows, err := store.getMessagesAsConversation("owned", ConversationOptions{IncludeRowIDs: true})
 	if err != nil {
 		t.Fatal(err)
 	}
-	last := rows[len(rows)-1].(*pyjson.Object)
-	if !pyjson.Equal(rowValue(last, "content"), "foreign tail") || !pyjson.Equal(rowValue(last, "api_content"), " EXACT ") || !pyjson.Equal(rowValue(last, "display_metadata"), pyjson.ObjectOf("_accepted_input_id", "input-tail")) {
+	last := rows[len(rows)-1].(*jsonutil.Object)
+	if !anyutil.Equal(rowValue(last, "content"), "foreign tail") || !anyutil.Equal(rowValue(last, "api_content"), " EXACT ") || !anyutil.Equal(rowValue(last, "display_metadata"), jsonutil.ObjectOf("_accepted_input_id", "input-tail")) {
 		t.Fatalf("tail %v", last)
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM messages WHERE session_id='owned' AND compacted=1"), 1) {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM messages WHERE session_id='owned' AND compacted=1"), 1) {
 		t.Fatal("compacted count")
 	}
-	if v, err := store.getSessionModelConfigValue("owned", "_proactive_prune_rearm_tokens"); err != nil || !pyjson.Equal(v, 42) {
+	if v, err := store.getSessionModelConfigValue("owned", "_proactive_prune_rearm_tokens"); err != nil || !anyutil.Equal(v, 42) {
 		t.Fatalf("patch %v %v", v, err)
 	}
 }
@@ -578,7 +579,7 @@ func TestPublicationReplayAdvancesAssignmentOnceAndKeepsMarkers(t *testing.T) {
 	if err == nil || err.Error() != "lost-ack" {
 		t.Fatalf("lost ack %v", err)
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT session_id FROM worker_executions"), "child") || !pyjson.Equal(rowValue(mustSession(t, db, "owned"), "end_reason"), "compression") {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT session_id FROM worker_executions"), "child") || !anyutil.Equal(rowValue(mustSession(t, db, "owned"), "end_reason"), "compression") {
 		t.Fatal("publication did not land")
 	}
 	store.rpc = original
@@ -597,20 +598,20 @@ func TestPublicationReplayAdvancesAssignmentOnceAndKeepsMarkers(t *testing.T) {
 	}
 	contents := []any{}
 	for _, r := range rows {
-		contents = append(contents, rowValue(r.(*pyjson.Object), "content"))
+		contents = append(contents, rowValue(r.(*jsonutil.Object), "content"))
 	}
-	if !pyjson.Equal(contents, []any{"summary", "foreign", "after"}) {
+	if !anyutil.Equal(contents, []any{"summary", "foreign", "after"}) {
 		t.Fatalf("contents %v", contents)
 	}
-	second := rows[1].(*pyjson.Object)
-	if !pyjson.Equal(rowValue(second, "api_content"), " exact tail ") || !pyjson.Equal(rowValue(second, "display_metadata"), pyjson.ObjectOf("_accepted_input_id", "delivery")) {
+	second := rows[1].(*jsonutil.Object)
+	if !anyutil.Equal(rowValue(second, "api_content"), " exact tail ") || !anyutil.Equal(rowValue(second, "display_metadata"), jsonutil.ObjectOf("_accepted_input_id", "delivery")) {
 		t.Fatalf("markers %v", second)
 	}
 	lineage, err := store.lineageField("child", "lineage")
-	if err != nil || !pyjson.Equal(lineage, []any{"owned", "child"}) {
+	if err != nil || !anyutil.Equal(lineage, []any{"owned", "child"}) {
 		t.Fatalf("lineage %v %v", lineage, err)
 	}
-	if !pyjson.Equal(rowValue(mustSession(t, db, "child"), "system_prompt"), "prefix") {
+	if !anyutil.Equal(rowValue(mustSession(t, db, "child"), "system_prompt"), "prefix") {
 		t.Fatal("child prompt")
 	}
 }
@@ -622,16 +623,16 @@ func TestInPlaceArchiveWithoutALeasePersistsFromAWorker(t *testing.T) {
 		t.Fatal(err)
 	}
 	archived, err := store.archiveAndCompact("owned", textMessages("assistant", "pruned"), archiveOptions{})
-	if err != nil || !pyjson.Equal(archived, 1) {
+	if err != nil || !anyutil.Equal(archived, 1) {
 		t.Fatalf("archive %v %v", archived, err)
 	}
 	if store.failure != "" || len(store.pending) != 0 {
 		t.Fatal("journal stuck")
 	}
-	if got := conversationContents(t, db, "owned"); !pyjson.Equal(anyStrings(got), []any{"pruned"}) {
+	if got := conversationContents(t, db, "owned"); !anyutil.Equal(anyStrings(got), []any{"pruned"}) {
 		t.Fatalf("contents %v", got)
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM messages WHERE session_id='owned' AND compacted=1"), 2) {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM messages WHERE session_id='owned' AND compacted=1"), 2) {
 		t.Fatal("compacted count")
 	}
 	if _, err := store.appendMessagesBatch("owned", textMessages("user", "after")); err != nil {
@@ -640,9 +641,9 @@ func TestInPlaceArchiveWithoutALeasePersistsFromAWorker(t *testing.T) {
 	rows, _ := store.getMessagesAsConversation("owned", ConversationOptions{})
 	contents := []any{}
 	for _, r := range rows {
-		contents = append(contents, rowValue(r.(*pyjson.Object), "content"))
+		contents = append(contents, rowValue(r.(*jsonutil.Object), "content"))
 	}
-	if !pyjson.Equal(contents, []any{"pruned", "after"}) {
+	if !anyutil.Equal(contents, []any{"pruned", "after"}) {
 		t.Fatalf("contents %v", contents)
 	}
 }
@@ -683,19 +684,19 @@ func TestHistoryAndLineageKeepCacheScopeDistinctFromAttribution(t *testing.T) {
 	store := newWorkerStore(t, db, scope)
 	viaStore, err := store.getMessagesAsConversation("tip", ConversationOptions{IncludeRowIDs: true})
 	direct, derr := db.GetMessagesAsConversation(ctx, "tip", ConversationOptions{IncludeRowIDs: true})
-	if err != nil || derr != nil || !pyjson.Equal(viaStore, jsonRoundTrip(anyMessages(direct))) {
+	if err != nil || derr != nil || !anyutil.Equal(viaStore, jsonRoundTrip(anyMessages(direct))) {
 		t.Fatalf("history %v %v %v %v", viaStore, err, direct, derr)
 	}
 	lineage, _ := store.lineageField("tip", "lineage")
 	directLineage, _ := db.GetCompressionLineage(ctx, "tip")
-	if !pyjson.Equal(lineage, anyStrings(directLineage)) || !pyjson.Equal(lineage, []any{"child", "tip"}) {
+	if !anyutil.Equal(lineage, anyStrings(directLineage)) || !anyutil.Equal(lineage, []any{"child", "tip"}) {
 		t.Fatalf("lineage %v %v", lineage, directLineage)
 	}
 	if root, _ := store.lineageField("tip", "root"); root != "root" {
 		t.Fatalf("root %v", root)
 	}
 	rootRow, err := store.getSession("root")
-	if err != nil || !pyjson.Equal(rowValue(rootRow, "system_prompt"), "root prefix") {
+	if err != nil || !anyutil.Equal(rowValue(rootRow, "system_prompt"), "root prefix") {
 		t.Fatalf("root read %v %v", rootRow, err)
 	}
 	tip, _ := store.lineageField("child", "tip")
@@ -709,14 +710,14 @@ func TestHistoryAndLineageKeepCacheScopeDistinctFromAttribution(t *testing.T) {
 		t.Fatalf("resume %v %v", resume, directResume)
 	}
 	identity, _ := store.lineageField("child", "identity")
-	if !pyjson.Equal(identity, []any{true, "cli"}) {
+	if !anyutil.Equal(identity, []any{true, "cli"}) {
 		t.Fatalf("identity %v", identity)
 	}
 	seq := store.nextSequence
 	if r := receiptRefusal(t, db, store.rawReceipt("compression.context", map[string]any{"target": "foreign"})); r != "permission_denied" {
 		t.Fatal(r)
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT last_sequence FROM worker_executions"), seq-1) {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT last_sequence FROM worker_executions"), seq-1) {
 		t.Fatal("refused read advanced the sequence")
 	}
 }
@@ -752,7 +753,7 @@ func TestDeclaredCacheBoundaryMatchesLocalDatabase(t *testing.T) {
 	if ok {
 		direct = generation
 	}
-	if !pyjson.Equal(boundary, direct) {
+	if !anyutil.Equal(boundary, direct) {
 		t.Fatalf("boundary %v != %v", boundary, direct)
 	}
 	if _, err := store.latestConversationBoundary("foreign-chat", "cli"); refusalReason(t, err) != "permission_denied" {
@@ -775,15 +776,15 @@ func TestTerminalWorkerKeepsNoFullHistoryReceipt(t *testing.T) {
 	if _, err := db.RegisterWorkerExecution(ctx, WorkerRegistration{Epoch: epoch, ExecutionID: "worker", SessionID: "s", Generation: 0, Kind: "compute", AdoptionSecret: "secret"}); err != nil {
 		t.Fatal(err)
 	}
-	read := func(includeRowIDs bool) *pyjson.Object {
-		return pyjson.ObjectOf("target", "s", "include_ancestors", false, "include_inactive", false, "repair_alternation", false,
+	read := func(includeRowIDs bool) *jsonutil.Object {
+		return jsonutil.ObjectOf("target", "s", "include_ancestors", false, "include_inactive", false, "repair_alternation", false,
 			"include_row_ids", includeRowIDs, "include_compacted", false)
 	}
 	history := scope
 	history.Sequence, history.Operation, history.Payload = 1, "compression.history", read(false)
 	result := mustReceipt(t, db, history)
-	first := resultValue(result, "messages").([]any)[0].(*pyjson.Object)
-	if !pyjson.Equal(rowValue(first, "content"), strings.Repeat("x", 2000)) {
+	first := resultValue(result, "messages").([]any)[0].(*jsonutil.Object)
+	if !anyutil.Equal(rowValue(first, "content"), strings.Repeat("x", 2000)) {
 		t.Fatalf("history %v", first)
 	}
 	mustReceipt(t, db, finishReceipt(scope, 2))
@@ -799,7 +800,7 @@ func TestTerminalWorkerKeepsNoFullHistoryReceipt(t *testing.T) {
 	if r := receiptRefusal(t, db, history); r != "stale_generation" {
 		t.Fatal(r)
 	}
-	if again := mustReceipt(t, db, finishReceipt(scope, 2)); !pyjson.Equal(again, pyjson.ObjectOf("status", "terminal")) {
+	if again := mustReceipt(t, db, finishReceipt(scope, 2)); !anyutil.Equal(again, jsonutil.ObjectOf("status", "terminal")) {
 		t.Fatalf("finish replay %v", again)
 	}
 }
@@ -808,13 +809,13 @@ func TestPublicationMovesAutomationOnceAndPreservesClearedControls(t *testing.T)
 	ctx := context.Background()
 	db, store := workerFixture(t)
 	defer db.Close()
-	values := map[string]*pyjson.Object{
-		"goal":      pyjson.ObjectOf("goal", "retain objective", "status", "paused"),
-		"loop":      pyjson.ObjectOf("prompt", "retain loop", "status", "active", "interval_seconds", int64(60)),
-		"heartbeat": pyjson.ObjectOf("status", "active", "interval_seconds", int64(120)),
+	values := map[string]*jsonutil.Object{
+		"goal":      jsonutil.ObjectOf("goal", "retain objective", "status", "paused"),
+		"loop":      jsonutil.ObjectOf("prompt", "retain loop", "status", "active", "interval_seconds", int64(60)),
+		"heartbeat": jsonutil.ObjectOf("status", "active", "interval_seconds", int64(120)),
 	}
 	for family, value := range values {
-		text, _ := pyjson.Dumps(value)
+		text, _ := jsonutil.Encode(value)
 		if err := db.SetMeta(ctx, family+":owned", text); err != nil {
 			t.Fatal(err)
 		}
@@ -825,27 +826,27 @@ func TestPublicationMovesAutomationOnceAndPreservesClearedControls(t *testing.T)
 	if err := store.publishCompressionChild("owned", "child", "cli", textMessages("assistant", "summary"), publishOptions{compressionLockHolder: "compressor"}); err != nil {
 		t.Fatal(err)
 	}
-	meta := func(key string) *pyjson.Object {
+	meta := func(key string) *jsonutil.Object {
 		raw, ok, err := db.GetMeta(ctx, key)
 		if err != nil || !ok {
 			t.Fatalf("%s missing %v", key, err)
 		}
-		decoded, err := pyjson.Loads(raw)
+		decoded, err := jsonutil.Decode(raw)
 		if err != nil {
 			t.Fatal(err)
 		}
-		return decoded.(*pyjson.Object)
+		return decoded.(*jsonutil.Object)
 	}
 	for family, value := range values {
 		want, _ := value.Get("status")
-		if !pyjson.Equal(rowValue(meta(family+":child"), "status"), want) {
+		if !anyutil.Equal(rowValue(meta(family+":child"), "status"), want) {
 			t.Fatalf("%s child status", family)
 		}
-		if !pyjson.Equal(rowValue(meta(family+":owned"), "status"), "cleared") {
+		if !anyutil.Equal(rowValue(meta(family+":owned"), "status"), "cleared") {
 			t.Fatalf("%s parent not cleared", family)
 		}
 	}
-	if !pyjson.Equal(rowValue(meta("goal:child"), "goal"), "retain objective") || !pyjson.Equal(rowValue(meta("loop:child"), "prompt"), "retain loop") {
+	if !anyutil.Equal(rowValue(meta("goal:child"), "goal"), "retain objective") || !anyutil.Equal(rowValue(meta("loop:child"), "prompt"), "retain loop") {
 		t.Fatal("moved payloads")
 	}
 }

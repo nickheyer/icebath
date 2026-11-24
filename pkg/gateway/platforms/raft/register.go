@@ -5,8 +5,8 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Whether the config enables the platform or carries a bridge token
@@ -14,7 +14,7 @@ func isConnected(config *gateway.PlatformConfig) bool {
 	if config == nil {
 		return false
 	}
-	return pyrepr.Truthy(config.Extra["enabled"]) || pyrepr.Truthy(config.Extra["bridge_token"])
+	return anyutil.IsTrue(config.Extra["enabled"]) || anyutil.IsTrue(config.Extra["bridge_token"])
 }
 
 // Enables the platform during gateway config load when the scope aware RAFT_PROFILE is set

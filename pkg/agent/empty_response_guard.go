@@ -9,10 +9,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 const (
@@ -146,7 +146,7 @@ func (a *AIAgent) emptyAttempts() *[]emptyAttempt { return &a.emptyAttemptHistor
 // Canonical usage of the response, false when it carries none or its normalization fails
 func (a *AIAgent) emptyGuardUsage(response any, what string) (usage provider.CanonicalUsage, ok bool) {
 	rawUsage := state.ToolCallField(response, "usage")
-	if !pyrepr.Truthy(rawUsage) {
+	if !anyutil.IsTrue(rawUsage) {
 		return provider.CanonicalUsage{}, false
 	}
 	defer func() {

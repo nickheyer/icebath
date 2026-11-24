@@ -15,8 +15,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Discord HTTP failure rendered the way discord.py words it, status, reason, code and flattened errors
@@ -57,7 +57,7 @@ func flattenErrorDict(d map[string]any, key string, out *[][2]string) {
 			flattenErrorDict(sub, newKey, out)
 			continue
 		}
-		*out = append(*out, [2]string{newKey, pyrepr.Str(v)})
+		*out = append(*out, [2]string{newKey, anyutil.String(v)})
 	}
 }
 
@@ -112,7 +112,7 @@ func (a *DiscordAdapter) liveClient() *discordgo.Session {
 func snowflakeInt(raw string) (string, error) {
 	n, ok := pyint.Parse(raw)
 	if !ok {
-		return "", fmt.Errorf("invalid literal for int() with base 10: %s", pyrepr.Repr(raw))
+		return "", fmt.Errorf("invalid literal for int() with base 10: %s", anyutil.Quote(raw))
 	}
 	return n.String(), nil
 }
@@ -204,7 +204,7 @@ func (a *DiscordAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 	if a.liveClient() == nil {
 		return gateway.SendResult{Success: false, Error: "send_path_degraded", Retryable: true}, nil
 	}
-	notify := metadata != nil && pyrepr.Truthy(metadata["notify"])
+	notify := metadata != nil && anyutil.IsTrue(metadata["notify"])
 	if strings.TrimSpace(content) == "" {
 		pkgLog().Warn(fmt.Sprintf("[%s] Dropped empty message to chat=%s (caller bug). Call site:\n%s", a.Name(), chatID, debug.Stack()))
 		return a.recordResponseAsync(ctx, replyTo, gateway.SendResult{Success: false, Error: "Refusing to send empty message"}, content, notify, metadata), nil
@@ -225,8 +225,8 @@ func (a *DiscordAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 // Body of send whose errors the caller classifies as transport or permanent
 func (a *DiscordAdapter) sendInner(ctx context.Context, chatID, content, replyTo string, metadata map[string]any, final bool) (gateway.SendResult, error) {
 	threadID := ""
-	if metadata != nil && pyrepr.Truthy(metadata["thread_id"]) {
-		threadID = pyrepr.Str(metadata["thread_id"])
+	if metadata != nil && anyutil.IsTrue(metadata["thread_id"]) {
+		threadID = anyutil.String(metadata["thread_id"])
 	}
 	nonconversational := metadataMarksNonconversational(metadata)
 	target := chatID
@@ -506,8 +506,8 @@ func (a *DiscordAdapter) EditMessageWithMetadata(ctx context.Context, chatID, me
 		result := gateway.SendResult{Success: true, MessageID: messageID}
 		if finalize {
 			replyTo := ""
-			if metadata != nil && pyrepr.Truthy(metadata["reply_to_message_id"]) {
-				replyTo = pyrepr.Str(metadata["reply_to_message_id"])
+			if metadata != nil && anyutil.IsTrue(metadata["reply_to_message_id"]) {
+				replyTo = anyutil.String(metadata["reply_to_message_id"])
 			}
 			a.recordResponseAsync(ctx, replyTo, result, content, true, nil)
 		}

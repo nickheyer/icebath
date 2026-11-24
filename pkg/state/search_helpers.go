@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Python floor division of two ints
@@ -34,13 +34,13 @@ type backfillProgress struct {
 }
 
 // Progress callback payload of a backfill pass
-func (p *backfillProgress) info() *pyjson.Object {
+func (p *backfillProgress) info() *jsonutil.Object {
 	done, total := p.indexed, p.total
 	percent := 100
 	if total != 0 {
 		percent = min(100, floorDiv(100*done, total))
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("phase", p.phase)
 	out.Set("percent", percent)
 	out.Set("indexed", min(done, total))
@@ -64,13 +64,13 @@ func newTeardownProgress() *teardownProgress {
 }
 
 // Progress callback payload of the teardown phase
-func (p *teardownProgress) info() *pyjson.Object {
+func (p *teardownProgress) info() *jsonutil.Object {
 	done, total := p.drained, p.total
 	percent := 100
 	if total != 0 {
 		percent = min(100, floorDiv(100*done, total))
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("phase", "teardown")
 	out.Set("percent", percent)
 	out.Set("indexed", done)
@@ -94,8 +94,8 @@ func newVacuumProgress(sizeBytes, estimatedBytes int64) *vacuumProgress {
 }
 
 // Progress callback payload of the vacuum phase
-func (p *vacuumProgress) info() *pyjson.Object {
-	out := pyjson.NewObject()
+func (p *vacuumProgress) info() *jsonutil.Object {
+	out := jsonutil.NewObject()
 	out.Set("phase", "vacuum")
 	out.Set("percent", 0)
 	out.Set("indexed", 0)
@@ -306,7 +306,7 @@ func flattenText(decoded any) (string, error) {
 	}
 	var parts []any
 	for _, p := range list {
-		obj, ok := p.(*pyjson.Object)
+		obj, ok := p.(*jsonutil.Object)
 		if !ok {
 			continue
 		}
@@ -326,7 +326,7 @@ func flattenText(decoded any) (string, error) {
 		}
 		s, ok := t.(string)
 		if !ok {
-			return "", &pyint.Error{Kind: "TypeError", Msg: fmt.Sprintf("text part %d is %s, expected text", len(texts), errchain.Kind(t))}
+			return "", &errorutil.Error{Kind: "TypeError", Msg: fmt.Sprintf("text part %d is %s, expected text", len(texts), errchain.Kind(t))}
 		}
 		texts = append(texts, s)
 	}
@@ -350,10 +350,10 @@ func positiveInt(name string, value any) error {
 		n = v
 	}
 	if n == nil {
-		return &pyint.Error{Kind: "TypeError", Msg: name + " must be an integer"}
+		return &errorutil.Error{Kind: "TypeError", Msg: name + " must be an integer"}
 	}
 	if n.Sign() <= 0 {
-		return &pyint.Error{Kind: "ValueError", Msg: name + " must be greater than zero"}
+		return &errorutil.Error{Kind: "ValueError", Msg: name + " must be greater than zero"}
 	}
 	return nil
 }

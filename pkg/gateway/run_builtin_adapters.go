@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Adapter class a platform module exports, its constructor and the class attributes it declares
@@ -79,7 +79,7 @@ func requirementsMet(probe any) bool {
 	if check, ok := probe.(func() bool); ok {
 		return check()
 	}
-	return pyrepr.Truthy(probe)
+	return anyutil.IsTrue(probe)
 }
 
 // Core adapter of a platform, nil when the platform is not builtin or its requirements are unmet

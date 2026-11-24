@@ -10,9 +10,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 const nonConversationalMaxTracked = 2000
@@ -49,14 +46,14 @@ func (t *nonConversationalTracker) load() []string {
 		}
 		return nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err == nil {
 		var data any
-		if data, err = pyjson.Loads(text); err == nil {
+		if data, err = jsonutil.Decode(text); err == nil {
 			if items, ok := data.([]any); ok {
 				out := []string{}
 				for _, item := range items {
-					if s := pyrepr.Str(item); strings.TrimSpace(s) != "" {
+					if s := anyutil.String(item); strings.TrimSpace(s) != "" {
 						out = append(out, s)
 					}
 				}

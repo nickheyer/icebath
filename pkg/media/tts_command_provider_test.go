@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/tools"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 )
 
 // Records the spawn of a command provider run and starts the real child
@@ -341,7 +341,7 @@ func TestTTSCommandRenderQuotesBareValues(t *testing.T) {
 		return
 	}
 	got := renderCommandTemplate("tts {voice}", commandTemplateValues(map[string]string{"voice": "a b"}))
-	if got != "tts "+pyshlex.Quote("a b") {
+	if got != "tts "+shellutil.Quote("a b") {
 		t.Fatalf("rendered %q", got)
 	}
 }

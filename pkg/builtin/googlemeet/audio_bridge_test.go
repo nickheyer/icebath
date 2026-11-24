@@ -17,7 +17,7 @@ func fakeBridge(t *testing.T, system string, run func(argv []string) (string, st
 
 func TestSetupLinuxLoadsNullSinkAndVirtualSource(t *testing.T) {
 	var calls [][]string
-	fakeBridge(t, "Linux", func(argv []string) (string, string, int, error) {
+	fakeBridge(t, "linux", func(argv []string) (string, string, int, error) {
 		calls = append(calls, argv)
 		joined := strings.Join(argv, " ")
 		if strings.Contains(joined, "module-null-sink") {
@@ -48,7 +48,7 @@ func TestSetupLinuxLoadsNullSinkAndVirtualSource(t *testing.T) {
 }
 
 func TestTeardownLinuxUnloadsModulesInReverseOrder(t *testing.T) {
-	fakeBridge(t, "Linux", func(argv []string) (string, string, int, error) {
+	fakeBridge(t, "linux", func(argv []string) (string, string, int, error) {
 		if strings.Contains(strings.Join(argv, " "), "module-null-sink") {
 			return "42\n", "", 0, nil
 		}

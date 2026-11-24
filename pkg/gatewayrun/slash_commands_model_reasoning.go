@@ -7,9 +7,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // One fast argument as its service tier, persisted value and label key, an empty label key showing the argument upper cased
@@ -51,8 +51,8 @@ func (r *GatewayRunner) handleReasoningCommand(ctx context.Context, event *gatew
 	}
 	sessionRoute, _ := r.sessionModelOverrides().Get(sessionKey)
 	sessionModel := ""
-	if sessionRoute != nil && pyrepr.Truthy(sessionRoute["model"]) {
-		sessionModel = pyrepr.Str(sessionRoute["model"])
+	if sessionRoute != nil && anyutil.IsTrue(sessionRoute["model"]) {
+		sessionModel = anyutil.String(sessionRoute["model"])
 	}
 	rc, err := r.resolveSessionReasoningConfig(ctx, event.Source, sessionKey, sessionModel)
 	if err != nil {
@@ -68,10 +68,10 @@ func (r *GatewayRunner) handleReasoningCommand(ctx context.Context, event *gatew
 	if m, ok := gateway.LoadGatewayConfigMap(ctx, "")["model"].(map[string]any); ok && m != nil {
 		modelCfg = m
 	}
-	routeProvider := pyrepr.Str(pyrepr.Or(pyrepr.Or(sessionRoute["provider"], modelCfg["provider"]), ""))
+	routeProvider := anyutil.String(anyutil.Or(anyutil.Or(sessionRoute["provider"], modelCfg["provider"]), ""))
 	routeModel := sessionModel
 	if routeModel == "" {
-		routeModel = pyrepr.Str(pyrepr.Or(modelCfg["default"], ""))
+		routeModel = anyutil.String(anyutil.Or(modelCfg["default"], ""))
 	}
 	routeMode := provider.GetCurrentCodexRuntime(map[string]any{"model": modelCfg})
 	label := func(effort string) string {
@@ -86,7 +86,7 @@ func (r *GatewayRunner) handleReasoningCommand(ctx context.Context, event *gatew
 	default:
 		currentEffort = "medium"
 		if effort, ok := rc["effort"]; ok {
-			currentEffort = pyrepr.Str(effort)
+			currentEffort = anyutil.String(effort)
 		}
 		level = label(currentEffort)
 	}
@@ -219,7 +219,7 @@ func (r *GatewayRunner) trySendChoicePicker(ctx context.Context, event *gateway.
 	onChoiceSelected func(ctx context.Context, chatID, value string) (string, error)) bool {
 	adapter, err := r.deliveryAdapterFor(ctx, event.Source)
 	if err != nil {
-		pkgLog().Warn("send_choice_picker failed, falling back to text: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Warn("send_choice_picker failed, falling back to text: " + err.Error())
 		return false
 	}
 	picker, ok := adapter.(gateway.ChoicePickerSender)
@@ -228,7 +228,7 @@ func (r *GatewayRunner) trySendChoicePicker(ctx context.Context, event *gateway.
 	}
 	result, err := picker.SendChoicePicker(ctx, event.Source.ChatID, title, choices, sessionKey, onChoiceSelected, r.replyMetadata(event))
 	if err != nil {
-		pkgLog().Warn("send_choice_picker failed, falling back to text: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Warn("send_choice_picker failed, falling back to text: " + err.Error())
 		return false
 	}
 	return result.Success

@@ -6,23 +6,23 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/mcp"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Reports whether the .env text names a provider credential or base URL setting
@@ -151,7 +151,7 @@ func checkMCPSecurity(ctx context.Context, d *Doctor, shouldFix bool) (*Finding,
 func checkEnvFile(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, error) {
 	return doctorCheck(func(f *Finding) error {
 		doctorManagedScopeCheck(d.W)
-		envPath := pypath.PathJoin(d.Home, ".env")
+		envPath := pathutil.Join(d.Home, ".env")
 		if _, err := os.Stat(envPath); err == nil {
 			doctorCheckOK(d.W, d.DisplayHome+"/.env file exists", "")
 			content, err := os.ReadFile(envPath)
@@ -165,7 +165,7 @@ func checkEnvFile(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, err
 			}
 			return nil
 		}
-		if _, err := os.Stat(pypath.PathJoin(d.ProjectRoot, ".env")); err == nil {
+		if _, err := os.Stat(pathutil.Join(d.ProjectRoot, ".env")); err == nil {
 			doctorCheckOK(d.W, ".env file exists (in project directory)", "")
 			return nil
 		}
@@ -175,7 +175,7 @@ func checkEnvFile(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, err
 			f.Issues = append(f.Issues, "Start 'icebath' and type '/setup model' to create .env")
 			return nil
 		}
-		if err := pyfs.Makedirs(pypath.PathParent(envPath), 0o777, true); err != nil {
+		if err := os.MkdirAll(filepath.Dir(filepath.Clean(envPath)), 0o777); err != nil {
 			return err
 		}
 		file, err := os.OpenFile(envPath, os.O_CREATE|os.O_WRONLY, 0o666)
@@ -209,15 +209,15 @@ func doctorKnownProviderIDs(ctx context.Context, cfg map[string]any) (map[string
 	}
 	for _, entry := range customProviders {
 		name := ""
-		if pyrepr.Truthy(entry["name"]) {
-			name = strings.TrimSpace(pyrepr.Str(entry["name"]))
+		if anyutil.IsTrue(entry["name"]) {
+			name = strings.TrimSpace(anyutil.String(entry["name"]))
 		}
 		if name == "" {
 			continue
 		}
 		providerKey := ""
-		if pyrepr.Truthy(entry["provider_key"]) {
-			providerKey = strings.TrimSpace(pyrepr.Str(entry["provider_key"]))
+		if anyutil.IsTrue(entry["provider_key"]) {
+			providerKey = strings.TrimSpace(anyutil.String(entry["provider_key"]))
 		}
 		for alias := range provider.CustomProviderAliases(name, providerKey) {
 			known[alias] = true
@@ -255,7 +255,7 @@ func doctorProviderHasCredentials(ctx context.Context, h, runtimeProvider string
 	}
 	if row := provider.RegistryRow(ctx, runtimeProvider); row != nil && row.AuthType == provider.AuthTypeAPIKey {
 		status := provider.GetAuthStatus(doctorPoolEnv(ctx, h), runtimeProvider)
-		return pyrepr.Truthy(status["configured"]) || pyrepr.Truthy(status["logged_in"]) || pyrepr.Truthy(status["api_key"]), nil
+		return anyutil.IsTrue(status["configured"]) || anyutil.IsTrue(status["logged_in"]) || anyutil.IsTrue(status["api_key"]), nil
 	}
 	return true, nil
 }
@@ -264,7 +264,7 @@ func doctorProviderHasCredentials(ctx context.Context, h, runtimeProvider string
 func doctorStripField(m map[string]any, keys ...string) (string, error) {
 	for _, k := range keys {
 		v := m[k]
-		if !pyrepr.Truthy(v) {
+		if !anyutil.IsTrue(v) {
 			continue
 		}
 		s, ok := v.(string)
@@ -283,7 +283,7 @@ func doctorValidateModelConfig(ctx context.Context, d *Doctor, configPath string
 		return err
 	}
 	modelSection := map[string]any{}
-	if raw := cfg["model"]; pyrepr.Truthy(raw) {
+	if raw := cfg["model"]; anyutil.IsTrue(raw) {
 		section, ok := raw.(map[string]any)
 		if !ok {
 			return fmt.Errorf("config model section is %s where a mapping was expected", errchain.Kind(raw))
@@ -352,11 +352,11 @@ func doctorValidateModelConfig(ctx context.Context, d *Doctor, configPath string
 	policyID = strings.ToLower(strings.TrimSpace(policyID))
 	acceptsVendorSlug := doctorVendorSlugProviders[policyID] || policyID == "custom" || strings.HasPrefix(policyID, "custom:")
 	modelBaseURL := ""
-	if pyrepr.Truthy(modelSection["base_url"]) {
-		modelBaseURL = strings.TrimSpace(pyrepr.Str(modelSection["base_url"]))
+	if anyutil.IsTrue(modelSection["base_url"]) {
+		modelBaseURL = strings.TrimSpace(anyutil.String(modelSection["base_url"]))
 	}
 	if policyID == "openai-api" && modelBaseURL != "" && !acceptsVendorSlug {
-		matches, merr := pyurl.BaseURLHostMatches(modelBaseURL, "api.openai.com")
+		matches, merr := urlutil.BaseHostMatches(modelBaseURL, "api.openai.com")
 		if merr != nil {
 			return merr
 		}
@@ -390,8 +390,8 @@ func doctorWarnBuiltinNameOwnedByEntry(ctx context.Context, d *Doctor, providerR
 	entry, _ := entries[owner].(map[string]any)
 	url := ""
 	for _, key := range []string{"base_url", "api", "url"} {
-		if value := entry[key]; pyrepr.Truthy(value) {
-			url = strings.TrimSpace(pyrepr.Str(value))
+		if value := entry[key]; anyutil.IsTrue(value) {
+			url = strings.TrimSpace(anyutil.String(value))
 			break
 		}
 	}
@@ -408,10 +408,10 @@ func doctorValidateAuxiliaryConfig(ctx context.Context, d *Doctor, configPath st
 		return err
 	}
 	field := func(block map[string]any, key string) string {
-		if !pyrepr.Truthy(block[key]) {
+		if !anyutil.IsTrue(block[key]) {
 			return ""
 		}
-		return strings.TrimSpace(pyrepr.Str(block[key]))
+		return strings.TrimSpace(anyutil.String(block[key]))
 	}
 	aux, _ := cfg["auxiliary"].(map[string]any)
 	var tasks []string
@@ -449,7 +449,7 @@ func doctorValidateAuxiliaryConfig(ctx context.Context, d *Doctor, configPath st
 				"("+runtime.Provider+" @ "+runtime.BaseURL+")")
 			continue
 		}
-		host, herr := pyurl.BaseURLHostname(runtime.BaseURL)
+		host, herr := urlutil.BaseHost(runtime.BaseURL)
 		if herr != nil {
 			return herr
 		}
@@ -495,10 +495,10 @@ func checkConfigFile(ctx context.Context, d *Doctor, shouldFix bool) (*Finding, 
 			return doctorWarnOnError(d.W, "Could not validate auxiliary task routing", "({e})", nil, func() error {
 				return doctorValidateAuxiliaryConfig(ctx, d, configPath, &f.Issues)
 			})
-		case doctorPathExists(pypath.PathJoin(d.ProjectRoot, "cli-config.yaml")):
+		case doctorPathExists(pathutil.Join(d.ProjectRoot, "cli-config.yaml")):
 			doctorCheckOK(d.W, "cli-config.yaml exists (in project directory)", "")
 		case shouldFix:
-			fromTemplate, serr := config.SeedConfigFile(ctx, d.Home, configPath, pypath.PathJoin(d.ProjectRoot, "cli-config.yaml.example"))
+			fromTemplate, serr := config.SeedConfigFile(ctx, d.Home, configPath, pathutil.Join(d.ProjectRoot, "cli-config.yaml.example"))
 			if serr != nil {
 				return serr
 			}
@@ -658,8 +658,8 @@ func doctorCheckChannelRecordHygiene(ctx context.Context, d *Doctor) {
 	}
 	for _, s := range stale {
 		recorded := "<no path>"
-		if pyrepr.Truthy(s.Record["path"]) {
-			recorded = pyrepr.Str(s.Record["path"])
+		if anyutil.IsTrue(s.Record["path"]) {
+			recorded = anyutil.String(s.Record["path"])
 		}
 		var detail string
 		switch s.Reason {

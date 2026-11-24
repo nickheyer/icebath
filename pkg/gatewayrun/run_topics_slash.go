@@ -14,10 +14,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Window between two BotFather Threads Settings screenshots for one profile and chat
@@ -153,7 +153,7 @@ func (r *GatewayRunner) ensureTelegramSystemTopic(ctx context.Context, source *g
 		p, can := holder.TelegramBot().(telegramMessagePinner)
 		return p, can
 	}()
-	if !pyrepr.Truthy(sent.MessageID) || !ok {
+	if !anyutil.IsTrue(sent.MessageID) || !ok {
 		return
 	}
 	err = func() error {
@@ -228,7 +228,7 @@ func (r *GatewayRunner) disableTelegramTopicModeForChat(ctx context.Context, sou
 		return struct{}{}, db.DisableTelegramTopicMode(ctx, chatID, profileName, true)
 	}); err != nil {
 		pkgLog().Error("Failed to disable Telegram topic mode", "exc_info", err)
-		return i18n.T(ctx, "gateway.topic.disable_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)})
+		return i18n.T(ctx, "gateway.topic.disable_failed", "", map[string]any{"error": err.Error()})
 	}
 	if key := telegramTopicCooldownKey(source); key != "" {
 		delete(r.telegramLobbyReminderTS, key)
@@ -240,10 +240,10 @@ func (r *GatewayRunner) disableTelegramTopicModeForChat(ctx context.Context, sou
 // Topic mode status of the root DM with the user's sessions not yet bound to a topic
 func (r *GatewayRunner) telegramTopicRootStatusMessage(ctx context.Context, source *gateway.SessionSource) string {
 	lines := []string{i18n.T(ctx, "gateway.topic.status_enabled", "", nil), "", i18n.T(ctx, "gateway.topic.status_how_to", "", nil), ""}
-	var sessions []*pyjson.Object
+	var sessions []*jsonutil.Object
 	err := errors.New("no session database to list unlinked Telegram sessions from")
 	if asyncDB := r.sessionDB(ctx); asyncDB != nil {
-		sessions, err = state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) ([]*pyjson.Object, error) {
+		sessions, err = state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) ([]*jsonutil.Object, error) {
 			return d.ListUnlinkedTelegramSessionsForUser(ctx, strOrNone(source.UserID), telegramTopicProfileName(source), 10)
 		})
 	}
@@ -289,7 +289,7 @@ func (r *GatewayRunner) restoreTelegramTopicSession(ctx context.Context, event *
 	if err != nil {
 		return "", err
 	}
-	var session *pyjson.Object
+	var session *jsonutil.Object
 	if sessionID != "" {
 		if session, err = db.GetSession(ctx, sessionID); err != nil {
 			return "", err
@@ -349,8 +349,8 @@ func (r *GatewayRunner) restoreTelegramTopicSession(ctx context.Context, event *
 				continue
 			}
 			projected := state.ProjectCompactionMessageForDisplay(messages[i])
-			if projected != nil && pyrepr.Truthy(projected["content"]) {
-				lastAssistant = pyrepr.Str(projected["content"])
+			if projected != nil && anyutil.IsTrue(projected["content"]) {
+				lastAssistant = anyutil.String(projected["content"])
 				break
 			}
 		}

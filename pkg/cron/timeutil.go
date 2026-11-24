@@ -3,7 +3,7 @@ package cron
 import (
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // ISOTime is a parsed ISO 8601 stamp that remembers whether it carried a UTC offset
@@ -20,12 +20,12 @@ func systemFixedZone(now time.Time) *time.Location {
 
 // FormatISO renders t the way Python isoformat does
 func FormatISO(t time.Time) string {
-	return pydatetime.ISOFormat(t)
+	return t.Format(timeutil.RFC3339Micro)
 }
 
 // ParseISO parses like Python datetime fromisoformat, naive values kept as UTC wall fields
 func ParseISO(value string) (ISOTime, error) {
-	t, aware, err := pydatetime.ParseISOFormat(value)
+	t, aware, err := timeutil.ParseISOZone(value, time.UTC)
 	if err != nil {
 		return ISOTime{}, err
 	}

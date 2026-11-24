@@ -6,17 +6,20 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 var permanentSendErrors = []string{"invalid", "forbidden", "not found"}
@@ -32,7 +35,7 @@ func containsAny(text string, needles ...string) bool {
 }
 
 // One authenticated REST call, a RuntimeError for an HTTP error status or a timeout
-func (a *QQAdapter) apiRequest(ctx context.Context, method, path string, body *pyjson.Object, timeout float64) (any, error) {
+func (a *QQAdapter) apiRequest(ctx context.Context, method, path string, body *jsonutil.Object, timeout float64) (any, error) {
 	client, err := a.requireHTTPClient()
 	if err != nil {
 		return nil, err
@@ -49,9 +52,9 @@ func (a *QQAdapter) apiRequest(ctx context.Context, method, path string, body *p
 	}
 	resp, err := httpRequest(ctx, client, method, apiBase(ctx)+path, headers, payload, timeout)
 	if err != nil {
-		var pe *pyErr
-		if errors.As(err, &pe) && pe.kind == "ReadTimeout" {
-			return nil, runtimeError(fmt.Sprintf("QQ Bot API timeout [%s]: %s", path, pe.msg))
+		var te *httputil.TimeoutError
+		if errors.As(err, &te) {
+			return nil, runtimeError(fmt.Sprintf("QQ Bot API timeout [%s]: %v", path, te))
 		}
 		return nil, err
 	}
@@ -60,11 +63,11 @@ func (a *QQAdapter) apiRequest(ctx context.Context, method, path string, body *p
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		dict, ok := asDict(data)
+		dict, ok := jsonutil.AsMap(data)
 		if !ok {
 			return nil, notDictErr(data)
 		}
-		return nil, &RuntimeError{Msg: fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, pyrepr.Str(getOr(dict, "message", data))), BizCode: bizCodeOf(dict)}
+		return nil, &RuntimeError{Msg: fmt.Sprintf("QQ Bot API error [%d] %s: %s", resp.StatusCode, path, anyutil.String(getOr(dict, "message", data))), BizCode: bizCodeOf(dict)}
 	}
 	return data, nil
 }
@@ -79,10 +82,10 @@ func (a *QQAdapter) authHeaders(ctx context.Context) (map[string]string, error) 
 }
 
 // Registers media by URL or base64 data with up to three attempts, permanent failures raised at once
-func (a *QQAdapter) uploadMedia(ctx context.Context, targetType, targetID string, fileType int, url, fileData string, srvSendMsg bool, fileName string) (any, error) {
+func (a *QQAdapter) uploadMedia(ctx context.Context, targetType, targetID string, fileType int, mediaURL, fileData string, srvSendMsg bool, fileName string) (any, error) {
 	body := obj("file_type", int64(fileType), "srv_send_msg", srvSendMsg)
-	if url != "" {
-		body.Set("url", url)
+	if mediaURL != "" {
+		body.Set("url", mediaURL)
 	} else if fileData != "" {
 		body.Set("file_data", fileData)
 	}
@@ -95,7 +98,7 @@ func (a *QQAdapter) uploadMedia(ctx context.Context, targetType, targetID string
 		if err == nil {
 			return data, nil
 		}
-		if !isRuntimeError(err) || attempt == 2 || containsAny(errText(err), "400", "401", "Invalid", "timeout", "Timeout") {
+		if !isRuntimeError(err) || attempt == 2 || containsAny(err.Error(), "400", "401", "Invalid", "timeout", "Timeout") {
 			return nil, err
 		}
 		if serr := sleep(ctx, 1.5*float64(attempt+1)); serr != nil {
@@ -175,18 +178,18 @@ func (a *QQAdapter) sendChunk(ctx context.Context, chatID, content, replyTo stri
 			return gateway.SendResult{}, ctx.Err()
 		}
 		lastErr = err
-		if containsAny(strings.ToLower(errText(err)), append(append([]string{}, permanentSendErrors...), "bad request")...) {
+		if containsAny(strings.ToLower(err.Error()), append(append([]string{}, permanentSendErrors...), "bad request")...) {
 			break
 		}
 		if attempt < 2 {
 			delay := 1.0 * math.Pow(2, float64(attempt))
-			pkgLog().Warn(fmt.Sprintf("[%s] send retry %d/3 after %.1fs: %s", a.logTag(), attempt+1, delay, errText(err)))
+			pkgLog().Warn(fmt.Sprintf("[%s] send retry %d/3 after %.1fs: %v", a.logTag(), attempt+1, delay, err))
 			if serr := sleep(ctx, delay); serr != nil {
 				return gateway.SendResult{}, serr
 			}
 		}
 	}
-	errorMsg := errTextOrName(lastErr)
+	errorMsg := lastErr.Error()
 	pkgLog().Error(fmt.Sprintf("[%s] Send failed: %s", a.logTag(), errorMsg))
 	return gateway.SendResult{Success: false, Error: errorMsg, Retryable: !containsAny(strings.ToLower(errorMsg), permanentSendErrors...)}, nil
 }
@@ -203,16 +206,16 @@ func restPath(chatType, targetID, endpoint string) string {
 func messagesPath(chatType, targetID string) string { return restPath(chatType, targetID, "messages") }
 
 // Posts a message body and wraps the response as a successful send result
-func (a *QQAdapter) postMessage(ctx context.Context, path string, body *pyjson.Object) (gateway.SendResult, error) {
+func (a *QQAdapter) postMessage(ctx context.Context, path string, body *jsonutil.Object) (gateway.SendResult, error) {
 	data, err := a.apiRequest(ctx, http.MethodPost, path, body, DefaultAPITimeout)
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	dict, ok := asDict(data)
+	dict, ok := jsonutil.AsMap(data)
 	if !ok {
 		return gateway.SendResult{}, notDictErr(data)
 	}
-	return gateway.SendResult{Success: true, MessageID: pyrepr.Str(getOr(dict, "id", uuidHex()[:12])), RawResponse: data}, nil
+	return gateway.SendResult{Success: true, MessageID: anyutil.String(getOr(dict, "id", uuidHex()[:12])), RawResponse: data}, nil
 }
 
 // Sends text, optionally with an inline keyboard, to a c2c user or a group
@@ -273,7 +276,7 @@ func (a *QQAdapter) SendWithKeyboard(ctx context.Context, chatID, content string
 	chatType := a.guessChatType(chatID)
 	sender := a.textSenderFor(chatType, true)
 	if sender == nil {
-		return gateway.SendResult{Success: false, Error: "Inline keyboards not supported for chat_type " + pyrepr.Repr(chatType), Retryable: false}, nil
+		return gateway.SendResult{Success: false, Error: "Inline keyboards not supported for chat_type " + strconv.Quote(chatType), Retryable: false}, nil
 	}
 	truncated := textutil.First(a.FormatMessage(content), MaxMessageLength)
 	result, err := sender(ctx, chatID, truncated, replyTo, &keyboard)
@@ -281,8 +284,8 @@ func (a *QQAdapter) SendWithKeyboard(ctx context.Context, chatID, content string
 		if ctx.Err() != nil {
 			return gateway.SendResult{}, ctx.Err()
 		}
-		pkgLog().Error(fmt.Sprintf("[%s] send_with_keyboard failed: %s", a.logTag(), errText(err)))
-		return gateway.SendResult{Success: false, Error: errTextOrName(err)}, nil
+		pkgLog().Error(fmt.Sprintf("[%s] send_with_keyboard failed: %v", a.logTag(), err))
+		return gateway.SendResult{Success: false, Error: err.Error()}, nil
 	}
 	return result, nil
 }
@@ -324,7 +327,7 @@ func (a *QQAdapter) SendUpdatePrompt(ctx context.Context, chatID, prompt, def, s
 }
 
 // Text message body, markdown when supported and plain content with a message reference otherwise
-func (a *QQAdapter) buildTextBody(content, replyTo string) *pyjson.Object {
+func (a *QQAdapter) buildTextBody(content, replyTo string) *jsonutil.Object {
 	msgSeq := nextMsgSeq()
 	text := textutil.First(content, MaxMessageLength)
 	if a.markdownSupport {
@@ -343,7 +346,7 @@ func (a *QQAdapter) SendImage(ctx context.Context, chatID, imageURL, caption, re
 	if err != nil || result.Success || !isURL(imageURL) {
 		return result, err
 	}
-	pkgLog().Warn(fmt.Sprintf("[%s] Image send failed, falling back to text: %s", a.logTag(), pyrepr.Str(result.Error)))
+	pkgLog().Warn(fmt.Sprintf("[%s] Image send failed, falling back to text: %s", a.logTag(), anyutil.String(result.Error)))
 	fallback := imageURL
 	if caption != "" {
 		fallback = caption + "\n" + imageURL
@@ -395,23 +398,23 @@ func (a *QQAdapter) sendMedia(ctx context.Context, chatID, mediaSource string, f
 	if errors.As(err, &dailyLimit) {
 		pkgLog().Warn(fmt.Sprintf("[%s] Daily upload limit exceeded for %s (%s)", a.logTag(), dailyLimit.FileName, dailyLimit.FileSizeHuman()))
 		return gateway.SendResult{Success: false, Retryable: false,
-			Error: fmt.Sprintf("QQ daily upload limit exceeded for %s (%s). Retry tomorrow.", pyrepr.Repr(dailyLimit.FileName), dailyLimit.FileSizeHuman())}, nil
+			Error: fmt.Sprintf("QQ daily upload limit exceeded for %s (%s). Retry tomorrow.", strconv.Quote(dailyLimit.FileName), dailyLimit.FileSizeHuman())}, nil
 	}
-	pkgLog().Error(fmt.Sprintf("[%s] Media send failed: %s", a.logTag(), errText(err)))
-	return gateway.SendResult{Success: false, Error: errTextOrName(err)}, nil
+	pkgLog().Error(fmt.Sprintf("[%s] Media send failed: %v", a.logTag(), err))
+	return gateway.SendResult{Success: false, Error: err.Error()}, nil
 }
 
 // File info of an upload response at the top level or under its data object
 func extractFileInfo(upload any) any {
-	dict, ok := asDict(upload)
+	dict, ok := jsonutil.AsMap(upload)
 	if !ok {
 		return nil
 	}
-	if info := dict["file_info"]; pyrepr.Truthy(info) {
+	if info := dict["file_info"]; anyutil.IsTrue(info) {
 		return info
 	}
-	if data, isDict := asDict(dict["data"]); isDict {
-		if info := data["file_info"]; pyrepr.Truthy(info) {
+	if data, isDict := jsonutil.AsMap(dict["data"]); isDict {
+		if info := data["file_info"]; anyutil.IsTrue(info) {
 			return info
 		}
 	}
@@ -425,11 +428,11 @@ func (a *QQAdapter) uploadAndSendMedia(ctx context.Context, chatType, chatID, me
 	if isURL(mediaSource) {
 		resolvedName := fileName
 		if resolvedName == "" {
-			parsed, perr := pyurl.Parse(mediaSource)
+			parsed, perr := url.Parse(mediaSource)
 			if perr != nil {
 				return gateway.SendResult{}, perr
 			}
-			if resolvedName = pypath.Name(parsed.Path); resolvedName == "" {
+			if resolvedName = pathutil.Name(parsed.Path); resolvedName == "" {
 				resolvedName = "media"
 			}
 		}
@@ -443,12 +446,12 @@ func (a *QQAdapter) uploadAndSendMedia(ctx context.Context, chatType, chatID, me
 	if err != nil {
 		return gateway.SendResult{}, err
 	}
-	if _, ok := asDict(upload); !ok {
+	if _, ok := jsonutil.AsMap(upload); !ok {
 		return gateway.SendResult{}, notDictErr(upload)
 	}
 	fileInfo := extractFileInfo(upload)
 	if fileInfo == nil {
-		return gateway.SendResult{Success: false, Error: "Upload returned no file_info: " + pyrepr.Str(upload)}, nil
+		return gateway.SendResult{Success: false, Error: "Upload returned no file_info: " + anyutil.String(upload)}, nil
 	}
 	body := obj("msg_type", int64(MsgTypeMedia), "media", obj("file_info", fileInfo), "msg_seq", nextMsgSeq())
 	if caption != "" {
@@ -460,10 +463,10 @@ func (a *QQAdapter) uploadAndSendMedia(ctx context.Context, chatType, chatID, me
 	return a.postMessage(ctx, messagesPath(chatType, chatID), body)
 }
 
-// Absolute path of a local media source, a ValueError for a placeholder and FileNotFoundError for a missing file
+// Absolute path of a local media source, an error for a placeholder or a missing file
 func resolveLocalMedia(mediaSource string, placeholderCheck bool) (string, error) {
-	localPath := pypath.Expanduser(mediaSource)
-	if !pypath.IsAbs(localPath) {
+	localPath := pathutil.ExpandUser(mediaSource)
+	if !filepath.IsAbs(localPath) {
 		abs, err := filepath.Abs(localPath)
 		if err != nil {
 			return "", err
@@ -475,17 +478,17 @@ func resolveLocalMedia(mediaSource string, placeholderCheck bool) (string, error
 	}
 	if info, err := os.Stat(localPath); err != nil || !info.Mode().IsRegular() {
 		if placeholderCheck && (strings.HasPrefix(mediaSource, "<") || utf8.RuneCountInString(mediaSource) < 3) {
-			return "", &pyErr{"ValueError", "Invalid media source (looks like a placeholder): " + pyrepr.Repr(mediaSource)}
+			return "", errors.New("Invalid media source (looks like a placeholder): " + strconv.Quote(mediaSource))
 		}
-		return "", &pyErr{"FileNotFoundError", "Media file not found: " + localPath}
+		return "", errors.New("Media file not found: " + localPath)
 	}
 	return localPath, nil
 }
 
 // PUT of part bytes to a presigned URL through a client
 func httpPutVia(client *http.Client) HTTPPutFunc {
-	return func(ctx context.Context, url string, data []byte, headers map[string]string) (PutResponse, error) {
-		resp, err := httpRequest(ctx, client, http.MethodPut, url, headers, data, DefaultAPITimeout)
+	return func(ctx context.Context, putURL string, data []byte, headers map[string]string) (PutResponse, error) {
+		resp, err := httpRequest(ctx, client, http.MethodPut, putURL, headers, data, DefaultAPITimeout)
 		if err != nil {
 			return PutResponse{}, err
 		}
@@ -504,7 +507,7 @@ func (a *QQAdapter) uploadLocalFile(ctx context.Context, chatType, chatID, media
 		return nil, err
 	}
 	if fileName == "" {
-		fileName = pypath.Name(localPath)
+		fileName = pathutil.Name(localPath)
 	}
 	return NewChunkedUploader(a.apiRequest, httpPutVia(client), a.logTag()).Upload(ctx, chatType, chatID, localPath, fileType, fileName)
 }
@@ -524,7 +527,7 @@ func (a *QQAdapter) SendTyping(ctx context.Context, chatID string, metadata map[
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		pkgLog().Debug(fmt.Sprintf("[%s] send_typing failed: %s", a.logTag(), errText(err)))
+		pkgLog().Debug(fmt.Sprintf("[%s] send_typing failed: %v", a.logTag(), err))
 		return nil
 	}
 	a.mu.Lock()
@@ -552,7 +555,7 @@ func (a *QQAdapter) GetChatInfo(ctx context.Context, chatID string) (map[string]
 
 // Whether a media source is an http or https URL
 func isURL(source string) bool {
-	parsed, err := pyurl.Parse(source)
+	parsed, err := urlutil.Split(source)
 	return err == nil && (parsed.Scheme == "http" || parsed.Scheme == "https")
 }
 

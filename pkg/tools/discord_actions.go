@@ -17,10 +17,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Bot token of the active profile secret scope, empty when unset
@@ -36,7 +36,7 @@ func discordChannelTypeName(typeID any) string {
 			return name
 		}
 	}
-	return "unknown(" + pyrepr.Str(typeID) + ")"
+	return "unknown(" + anyutil.String(typeID) + ")"
 }
 
 // Day long disk cache of privileged intents, intents change only when the user flips them in the portal
@@ -44,13 +44,13 @@ const discordCapabilityDiskTTLSeconds = 24 * 3600
 
 var (
 	discordCapsMu        sync.Mutex
-	discordCapsCache     = map[string]*pyjson.Object{}
+	discordCapsCache     = map[string]*jsonutil.Object{}
 	discordCapsBgStarted = map[string]bool{}
 )
 
 // All actions exposed while detection failed or is pending, call time 403s turned into guidance
-func discordPermissiveCaps() *pyjson.Object {
-	return pyjson.ObjectOf("has_members_intent", true, "has_message_content", true, "detected", false)
+func discordPermissiveCaps() *jsonutil.Object {
+	return jsonutil.ObjectOf("has_members_intent", true, "has_message_content", true, "detected", false)
 }
 
 // Disk cache of detected capabilities under the profile cache folder
@@ -65,36 +65,36 @@ func discordTokenCacheKey(token string) string {
 }
 
 // Disk cache contents keyed by token, empty when missing or corrupt
-func discordReadCapsFile(path string) *pyjson.Object {
+func discordReadCapsFile(path string) *jsonutil.Object {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	text, err := pystr.DecodeUTF8(data)
+	text, err := textutil.DecodeUTF8(data)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	parsed, err := pyjson.Loads(strings.TrimPrefix(text, string(rune(0xFEFF))))
+	parsed, err := jsonutil.Decode(strings.TrimPrefix(text, string(rune(0xFEFF))))
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	if o, ok := parsed.(*pyjson.Object); ok {
+	if o, ok := parsed.(*jsonutil.Object); ok {
 		return o
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Fresh disk cached capabilities of the token, nil when stale, missing or malformed
-func discordLoadCapsFromDisk(env *Env, token string) *pyjson.Object {
-	entry, ok := discordReadCapsFile(discordCapabilityDiskCachePath(env)).GetOr(discordTokenCacheKey(token), nil).(*pyjson.Object)
+func discordLoadCapsFromDisk(env *Env, token string) *jsonutil.Object {
+	entry, ok := discordReadCapsFile(discordCapabilityDiskCachePath(env)).ValueOr(discordTokenCacheKey(token), nil).(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
-	ts, valid := jsonFloat(entry.GetOr("ts", int64(0)))
+	ts, valid := jsonFloat(entry.ValueOr("ts", int64(0)))
 	if !valid || epochSeconds()-ts > discordCapabilityDiskTTLSeconds {
 		return nil
 	}
-	caps, ok := entry.GetOr("caps", nil).(*pyjson.Object)
+	caps, ok := entry.ValueOr("caps", nil).(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -105,15 +105,15 @@ func discordLoadCapsFromDisk(env *Env, token string) *pyjson.Object {
 }
 
 // Writes the token's capabilities into the disk cache through a temp file, logging any failure
-func discordSaveCapsToDisk(env *Env, token string, caps *pyjson.Object) {
+func discordSaveCapsToDisk(env *Env, token string, caps *jsonutil.Object) {
 	path := discordCapabilityDiskCachePath(env)
 	err := func() error {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return err
 		}
 		data := discordReadCapsFile(path)
-		data.Set(discordTokenCacheKey(token), pyjson.ObjectOf("caps", caps, "ts", epochSeconds()))
-		text, err := pyjson.Dumps(data)
+		data.Set(discordTokenCacheKey(token), jsonutil.ObjectOf("caps", caps, "ts", epochSeconds()))
+		text, err := jsonutil.Encode(data)
 		if err != nil {
 			return err
 		}
@@ -129,7 +129,7 @@ func discordSaveCapsToDisk(env *Env, token string, caps *pyjson.Object) {
 }
 
 // Capabilities for a schema build from memory, then fresh disk, else the permissive default with a background detection
-func discordDetectCapabilitiesNonblocking(env *Env, token string) *pyjson.Object {
+func discordDetectCapabilitiesNonblocking(env *Env, token string) *jsonutil.Object {
 	discordCapsMu.Lock()
 	defer discordCapsMu.Unlock()
 	if cached := discordCapsCache[token]; cached != nil {
@@ -145,7 +145,7 @@ func discordDetectCapabilitiesNonblocking(env *Env, token string) *pyjson.Object
 		discordCapsBgStarted[token] = true
 		go func() {
 			caps := discordFetchCapabilities(env, token)
-			if connTruthy(caps.GetOr("detected", nil)) {
+			if connTruthy(caps.ValueOr("detected", nil)) {
 				discordSaveCapsToDisk(env, token, caps)
 			}
 		}()
@@ -154,16 +154,16 @@ func discordDetectCapabilitiesNonblocking(env *Env, token string) *pyjson.Object
 }
 
 // Capabilities from GET /applications/@me, permissive when detection fails, never touching the in process cache
-func discordFetchCapabilities(env *Env, token string) *pyjson.Object {
+func discordFetchCapabilities(env *Env, token string) *jsonutil.Object {
 	caps := discordPermissiveCaps()
 	app, err := DiscordRequest(context.Background(), "GET", "/applications/@me", token, nil, nil, 5*time.Second)
 	var flags int64
 	if err == nil {
-		o, isDict := app.(*pyjson.Object)
+		o, isDict := app.(*jsonutil.Object)
 		if !isDict {
 			err = fmt.Errorf("the Discord application reply is %s, expected a mapping", errchain.Kind(app))
 		} else {
-			flags, err = discordInt(o.GetOr("flags", int64(0)), 0)
+			flags, err = discordInt(o.ValueOr("flags", int64(0)), 0)
 		}
 	}
 	if err != nil {
@@ -213,11 +213,11 @@ func discordInt(v any, fallback int64) (int64, error) {
 // KeyError a missing required key of a Discord answer raises
 type discordKeyError struct{ key string }
 
-func (e *discordKeyError) Error() string { return pyrepr.Repr(e.key) }
+func (e *discordKeyError) Error() string { return anyutil.Quote(e.key) }
 
 // Dict view of a decoded value, panicking with the AttributeError a get on a non dict raises
-func discordDict(v any) *pyjson.Object {
-	o, ok := v.(*pyjson.Object)
+func discordDict(v any) *jsonutil.Object {
+	o, ok := v.(*jsonutil.Object)
 	if !ok {
 		panic(fmt.Errorf("a Discord reply value is %s, expected a mapping", errchain.Kind(v)))
 	}
@@ -225,7 +225,7 @@ func discordDict(v any) *pyjson.Object {
 }
 
 // Required key of a Discord answer, panicking with the KeyError of a missing key
-func discordReq(o *pyjson.Object, key string) any {
+func discordReq(o *jsonutil.Object, key string) any {
 	v, ok := o.Get(key)
 	if !ok {
 		panic(&discordKeyError{key})
@@ -250,12 +250,12 @@ func discordSortKey(v any) float64 {
 
 // JSON text of a listing with its item count
 func discordListing(key string, items []any) string {
-	return dumpsDefault(pyjson.ObjectOf(key, items, "count", len(items)))
+	return dumpsDefault(jsonutil.ObjectOf(key, items, "count", len(items)))
 }
 
 // json.dumps with the default separators and ASCII escaping
 func dumpsDefault(v any) string {
-	text, err := pyjson.Dumps(v)
+	text, err := jsonutil.Encode(v)
 	if err != nil {
 		panic(err)
 	}
@@ -263,44 +263,44 @@ func dumpsDefault(v any) string {
 }
 
 // Member row, the full shape adding the avatar and join fields member_info exposes
-func discordMemberSummary(m *pyjson.Object, full bool) *pyjson.Object {
-	user := discordDict(m.GetOr("user", pyjson.NewObject()))
-	row := pyjson.ObjectOf("user_id", user.GetOr("id", nil), "username", user.GetOr("username", nil), "display_name", user.GetOr("global_name", nil),
-		"nickname", m.GetOr("nick", nil), "avatar", user.GetOr("avatar", nil), "bot", user.GetOr("bot", false),
-		"roles", m.GetOr("roles", []any{}), "joined_at", m.GetOr("joined_at", nil), "premium_since", m.GetOr("premium_since", nil))
+func discordMemberSummary(m *jsonutil.Object, full bool) *jsonutil.Object {
+	user := discordDict(m.ValueOr("user", jsonutil.NewObject()))
+	row := jsonutil.ObjectOf("user_id", user.ValueOr("id", nil), "username", user.ValueOr("username", nil), "display_name", user.ValueOr("global_name", nil),
+		"nickname", m.ValueOr("nick", nil), "avatar", user.ValueOr("avatar", nil), "bot", user.ValueOr("bot", false),
+		"roles", m.ValueOr("roles", []any{}), "joined_at", m.ValueOr("joined_at", nil), "premium_since", m.ValueOr("premium_since", nil))
 	if full {
 		return row
 	}
-	out := pyjson.NewObject()
-	for _, k := range row.Keys {
+	out := jsonutil.NewObject()
+	for _, k := range row.Keys() {
 		if k != "avatar" && k != "joined_at" && k != "premium_since" {
-			out.Set(k, row.Vals[k])
+			out.Set(k, row.Value(k))
 		}
 	}
 	return out
 }
 
 // Message row with its author, attachments, reactions and pin state
-func discordMessageSummary(msg *pyjson.Object) *pyjson.Object {
-	author := discordDict(msg.GetOr("author", pyjson.NewObject()))
+func discordMessageSummary(msg *jsonutil.Object) *jsonutil.Object {
+	author := discordDict(msg.ValueOr("author", jsonutil.NewObject()))
 	attachments := []any{}
-	for _, raw := range discordList(msg.GetOr("attachments", []any{})) {
+	for _, raw := range discordList(msg.ValueOr("attachments", []any{})) {
 		a := discordDict(raw)
-		attachments = append(attachments, pyjson.ObjectOf("filename", a.GetOr("filename", nil), "url", a.GetOr("url", nil), "size", a.GetOr("size", nil)))
+		attachments = append(attachments, jsonutil.ObjectOf("filename", a.ValueOr("filename", nil), "url", a.ValueOr("url", nil), "size", a.ValueOr("size", nil)))
 	}
 	reactions := []any{}
-	if connTruthy(msg.GetOr("reactions", nil)) {
-		for _, raw := range discordList(msg.GetOr("reactions", []any{})) {
+	if connTruthy(msg.ValueOr("reactions", nil)) {
+		for _, raw := range discordList(msg.ValueOr("reactions", []any{})) {
 			r := discordDict(raw)
-			emoji := discordDict(r.GetOr("emoji", pyjson.NewObject()))
-			reactions = append(reactions, pyjson.ObjectOf("emoji", emoji.GetOr("name", nil), "count", r.GetOr("count", int64(0))))
+			emoji := discordDict(r.ValueOr("emoji", jsonutil.NewObject()))
+			reactions = append(reactions, jsonutil.ObjectOf("emoji", emoji.ValueOr("name", nil), "count", r.ValueOr("count", int64(0))))
 		}
 	}
-	return pyjson.ObjectOf("id", discordReq(msg, "id"), "content", msg.GetOr("content", ""),
-		"author", pyjson.ObjectOf("id", author.GetOr("id", nil), "username", author.GetOr("username", nil),
-			"display_name", author.GetOr("global_name", nil), "bot", author.GetOr("bot", false)),
-		"timestamp", msg.GetOr("timestamp", nil), "edited_timestamp", msg.GetOr("edited_timestamp", nil),
-		"attachments", attachments, "reactions", reactions, "pinned", msg.GetOr("pinned", false))
+	return jsonutil.ObjectOf("id", discordReq(msg, "id"), "content", msg.ValueOr("content", ""),
+		"author", jsonutil.ObjectOf("id", author.ValueOr("id", nil), "username", author.ValueOr("username", nil),
+			"display_name", author.ValueOr("global_name", nil), "bot", author.ValueOr("bot", false)),
+		"timestamp", msg.ValueOr("timestamp", nil), "edited_timestamp", msg.ValueOr("edited_timestamp", nil),
+		"attachments", attachments, "reactions", reactions, "pinned", msg.ValueOr("pinned", false))
 }
 
 // Page size text capped at Discord's 100 per page, the default when the limit is no integer
@@ -315,7 +315,7 @@ func discordLimitParam(limit any, def int64) string {
 // Action arguments with every handler default filled in
 type discordArgs map[string]any
 
-func (a discordArgs) str(key string) string { return pyrepr.Str(a[key]) }
+func (a discordArgs) str(key string) string { return anyutil.String(a[key]) }
 
 // Servers the bot is in
 func discordListGuilds(ctx context.Context, token string, _ discordArgs) (string, error) {
@@ -326,8 +326,8 @@ func discordListGuilds(ctx context.Context, token string, _ discordArgs) (string
 	items := []any{}
 	for _, raw := range discordList(guilds) {
 		g := discordDict(raw)
-		items = append(items, pyjson.ObjectOf("id", discordReq(g, "id"), "name", discordReq(g, "name"), "icon", g.GetOr("icon", nil),
-			"owner", g.GetOr("owner", false), "permissions", g.GetOr("permissions", nil)))
+		items = append(items, jsonutil.ObjectOf("id", discordReq(g, "id"), "name", discordReq(g, "name"), "icon", g.ValueOr("icon", nil),
+			"owner", g.ValueOr("owner", false), "permissions", g.ValueOr("permissions", nil)))
 	}
 	return discordListing("guilds", items), nil
 }
@@ -339,11 +339,11 @@ func discordServerInfo(ctx context.Context, token string, a discordArgs) (string
 		return "", err
 	}
 	g := discordDict(raw)
-	return dumpsDefault(pyjson.ObjectOf("id", discordReq(g, "id"), "name", discordReq(g, "name"), "description", g.GetOr("description", nil),
-		"icon", g.GetOr("icon", nil), "owner_id", g.GetOr("owner_id", nil), "member_count", g.GetOr("approximate_member_count", nil),
-		"online_count", g.GetOr("approximate_presence_count", nil), "features", g.GetOr("features", []any{}),
-		"premium_tier", g.GetOr("premium_tier", nil), "premium_subscription_count", g.GetOr("premium_subscription_count", nil),
-		"verification_level", g.GetOr("verification_level", nil))), nil
+	return dumpsDefault(jsonutil.ObjectOf("id", discordReq(g, "id"), "name", discordReq(g, "name"), "description", g.ValueOr("description", nil),
+		"icon", g.ValueOr("icon", nil), "owner_id", g.ValueOr("owner_id", nil), "member_count", g.ValueOr("approximate_member_count", nil),
+		"online_count", g.ValueOr("approximate_presence_count", nil), "features", g.ValueOr("features", []any{}),
+		"premium_tier", g.ValueOr("premium_tier", nil), "premium_subscription_count", g.ValueOr("premium_subscription_count", nil),
+		"verification_level", g.ValueOr("verification_level", nil))), nil
 }
 
 // Every channel grouped by category with uncategorized first, each group sorted by position
@@ -353,42 +353,42 @@ func discordListChannels(ctx context.Context, token string, a discordArgs) (stri
 		return "", err
 	}
 	channels := discordList(raw)
-	var cats []*pyjson.Object
+	var cats []*jsonutil.Object
 	for _, c := range channels {
 		ch := discordDict(c)
-		if pyjson.Equal(discordReq(ch, "type"), int64(4)) {
+		if anyutil.Equal(discordReq(ch, "type"), int64(4)) {
 			cats = append(cats, ch)
 		}
 	}
 	sort.SliceStable(cats, func(i, j int) bool {
-		return discordSortKey(cats[i].GetOr("position", int64(0))) < discordSortKey(cats[j].GetOr("position", int64(0)))
+		return discordSortKey(cats[i].ValueOr("position", int64(0))) < discordSortKey(cats[j].ValueOr("position", int64(0)))
 	})
-	groups := map[string][]*pyjson.Object{"": {}}
+	groups := map[string][]*jsonutil.Object{"": {}}
 	isCategory := map[string]bool{}
 	for _, c := range cats {
-		id := pyrepr.Str(discordReq(c, "id"))
-		groups[id] = []*pyjson.Object{}
+		id := anyutil.String(discordReq(c, "id"))
+		groups[id] = []*jsonutil.Object{}
 		isCategory[id] = true
 	}
 	for _, c := range channels {
 		ch := discordDict(c)
 		typ := discordReq(ch, "type")
-		if pyjson.Equal(typ, int64(4)) {
+		if anyutil.Equal(typ, int64(4)) {
 			continue
 		}
 		key := ""
-		if parent, ok := ch.GetOr("parent_id", nil).(string); ok && isCategory[parent] {
+		if parent, ok := ch.ValueOr("parent_id", nil).(string); ok && isCategory[parent] {
 			key = parent
 		}
-		groups[key] = append(groups[key], pyjson.ObjectOf("id", discordReq(ch, "id"), "name", ch.GetOr("name", ""), "type", discordChannelTypeName(typ),
-			"position", ch.GetOr("position", int64(0)), "topic", ch.GetOr("topic", nil), "nsfw", ch.GetOr("nsfw", false)))
+		groups[key] = append(groups[key], jsonutil.ObjectOf("id", discordReq(ch, "id"), "name", ch.ValueOr("name", ""), "type", discordChannelTypeName(typ),
+			"position", ch.ValueOr("position", int64(0)), "topic", ch.ValueOr("topic", nil), "nsfw", ch.ValueOr("nsfw", false)))
 	}
 	for _, group := range groups {
 		sort.SliceStable(group, func(i, j int) bool {
-			return discordSortKey(group[i].Vals["position"]) < discordSortKey(group[j].Vals["position"])
+			return discordSortKey(group[i].Value("position")) < discordSortKey(group[j].Value("position"))
 		})
 	}
-	asList := func(rows []*pyjson.Object) []any {
+	asList := func(rows []*jsonutil.Object) []any {
 		out := make([]any, len(rows))
 		for i, r := range rows {
 			out[i] = r
@@ -398,14 +398,14 @@ func discordListChannels(ctx context.Context, token string, a discordArgs) (stri
 	result := []any{}
 	total := len(groups[""])
 	if len(groups[""]) > 0 {
-		result = append(result, pyjson.ObjectOf("category", nil, "channels", asList(groups[""])))
+		result = append(result, jsonutil.ObjectOf("category", nil, "channels", asList(groups[""])))
 	}
 	for _, c := range cats {
-		id := pyrepr.Str(c.Vals["id"])
+		id := anyutil.String(c.Value("id"))
 		total += len(groups[id])
-		result = append(result, pyjson.ObjectOf("category", pyjson.ObjectOf("id", c.Vals["id"], "name", discordReq(c, "name")), "channels", asList(groups[id])))
+		result = append(result, jsonutil.ObjectOf("category", jsonutil.ObjectOf("id", c.Value("id"), "name", discordReq(c, "name")), "channels", asList(groups[id])))
 	}
-	return dumpsDefault(pyjson.ObjectOf("channel_groups", result, "total_channels", total)), nil
+	return dumpsDefault(jsonutil.ObjectOf("channel_groups", result, "total_channels", total)), nil
 }
 
 // Single channel details
@@ -415,10 +415,10 @@ func discordChannelInfo(ctx context.Context, token string, a discordArgs) (strin
 		return "", err
 	}
 	ch := discordDict(raw)
-	return dumpsDefault(pyjson.ObjectOf("id", discordReq(ch, "id"), "name", ch.GetOr("name", nil), "type", discordChannelTypeName(discordReq(ch, "type")),
-		"guild_id", ch.GetOr("guild_id", nil), "topic", ch.GetOr("topic", nil), "nsfw", ch.GetOr("nsfw", false),
-		"position", ch.GetOr("position", nil), "parent_id", ch.GetOr("parent_id", nil),
-		"rate_limit_per_user", ch.GetOr("rate_limit_per_user", int64(0)), "last_message_id", ch.GetOr("last_message_id", nil))), nil
+	return dumpsDefault(jsonutil.ObjectOf("id", discordReq(ch, "id"), "name", ch.ValueOr("name", nil), "type", discordChannelTypeName(discordReq(ch, "type")),
+		"guild_id", ch.ValueOr("guild_id", nil), "topic", ch.ValueOr("topic", nil), "nsfw", ch.ValueOr("nsfw", false),
+		"position", ch.ValueOr("position", nil), "parent_id", ch.ValueOr("parent_id", nil),
+		"rate_limit_per_user", ch.ValueOr("rate_limit_per_user", int64(0)), "last_message_id", ch.ValueOr("last_message_id", nil))), nil
 }
 
 // Roles sorted by position from the top, each color as a hex string
@@ -427,26 +427,26 @@ func discordListRoles(ctx context.Context, token string, a discordArgs) (string,
 	if err != nil {
 		return "", err
 	}
-	var roles []*pyjson.Object
+	var roles []*jsonutil.Object
 	for _, r := range discordList(raw) {
 		roles = append(roles, discordDict(r))
 	}
 	sort.SliceStable(roles, func(i, j int) bool {
-		return discordSortKey(roles[i].GetOr("position", int64(0))) > discordSortKey(roles[j].GetOr("position", int64(0)))
+		return discordSortKey(roles[i].ValueOr("position", int64(0))) > discordSortKey(roles[j].ValueOr("position", int64(0)))
 	})
 	items := []any{}
 	for _, r := range roles {
 		var color any
-		if c := r.GetOr("color", nil); connTruthy(c) {
+		if c := r.ValueOr("color", nil); connTruthy(c) {
 			n, err := discordInt(c, 0)
 			if err != nil {
 				panic(err)
 			}
 			color = fmt.Sprintf("#%06x", n)
 		}
-		items = append(items, pyjson.ObjectOf("id", discordReq(r, "id"), "name", discordReq(r, "name"), "color", color,
-			"position", r.GetOr("position", int64(0)), "mentionable", r.GetOr("mentionable", false), "managed", r.GetOr("managed", false),
-			"member_count", r.GetOr("member_count", nil), "hoist", r.GetOr("hoist", false)))
+		items = append(items, jsonutil.ObjectOf("id", discordReq(r, "id"), "name", discordReq(r, "name"), "color", color,
+			"position", r.ValueOr("position", int64(0)), "mentionable", r.ValueOr("mentionable", false), "managed", r.ValueOr("managed", false),
+			"member_count", r.ValueOr("member_count", nil), "hoist", r.ValueOr("hoist", false)))
 	}
 	return discordListing("roles", items), nil
 }
@@ -503,23 +503,23 @@ func discordListPins(ctx context.Context, token string, a discordArgs) (string, 
 	items := []any{}
 	for _, m := range discordList(raw) {
 		msg := discordDict(m)
-		content, ok := msg.GetOr("content", "").(string)
+		content, ok := msg.ValueOr("content", "").(string)
 		if !ok {
-			panic(fmt.Errorf("a pinned message content is %s, expected text", errchain.Kind(msg.Vals["content"])))
+			panic(fmt.Errorf("a pinned message content is %s, expected text", errchain.Kind(msg.Value("content"))))
 		}
 		if r := []rune(content); len(r) > 200 {
 			content = string(r[:200])
 		}
-		author := discordDict(msg.GetOr("author", pyjson.NewObject()))
-		items = append(items, pyjson.ObjectOf("id", discordReq(msg, "id"), "content", content, "author", author.GetOr("username", nil),
-			"timestamp", msg.GetOr("timestamp", nil)))
+		author := discordDict(msg.ValueOr("author", jsonutil.NewObject()))
+		items = append(items, jsonutil.ObjectOf("id", discordReq(msg, "id"), "content", content, "author", author.ValueOr("username", nil),
+			"timestamp", msg.ValueOr("timestamp", nil)))
 	}
 	return discordListing("pinned_messages", items), nil
 }
 
 // Thread anchored to the message when one is named, else a standalone public thread
 func discordCreateThread(ctx context.Context, token string, a discordArgs) (string, error) {
-	body := pyjson.ObjectOf("name", a["name"], "auto_archive_duration", a["auto_archive_duration"])
+	body := jsonutil.ObjectOf("name", a["name"], "auto_archive_duration", a["auto_archive_duration"])
 	path := "/channels/" + a.str("channel_id") + "/threads"
 	if connTruthy(a["message_id"]) {
 		path = "/channels/" + a.str("channel_id") + "/messages/" + a.str("message_id") + "/threads"
@@ -531,7 +531,7 @@ func discordCreateThread(ctx context.Context, token string, a discordArgs) (stri
 		return "", err
 	}
 	thread := discordDict(raw)
-	return dumpsDefault(pyjson.ObjectOf("success", true, "thread_id", discordReq(thread, "id"), "name", thread.GetOr("name", nil))), nil
+	return dumpsDefault(jsonutil.ObjectOf("success", true, "thread_id", discordReq(thread, "id"), "name", thread.ValueOr("name", nil))), nil
 }
 
 // Body less write action whose path and message are templates over the action arguments
@@ -546,7 +546,7 @@ func discordMutation(method, path, message string) discordAction {
 		if _, err := DiscordRequest(ctx, method, format(path, a), token, nil, nil, 15*time.Second); err != nil {
 			return "", err
 		}
-		return dumpsDefault(pyjson.ObjectOf("success", true, "message", format(message, a))), nil
+		return dumpsDefault(jsonutil.ObjectOf("success", true, "message", format(message, a))), nil
 	}
 }
 
@@ -623,7 +623,7 @@ func discordLoadAllowedActionsConfig(env *Env) ([]string, bool) {
 	}
 	var names, invalid, known []string
 	for _, n := range items {
-		if s := strings.TrimSpace(pyrepr.Str(n)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(n)); s != "" {
 			names = append(names, s)
 		}
 	}
@@ -648,8 +648,8 @@ func discordLoadAllowedActionsConfig(env *Env) ([]string, bool) {
 }
 
 // Visible actions from the intents and the config allowlist, in manifest order
-func discordAvailableActions(caps *pyjson.Object, allowlist []string, restricted bool) []string {
-	membersOK := connTruthy(caps.GetOr("has_members_intent", true))
+func discordAvailableActions(caps *jsonutil.Object, allowlist []string, restricted bool) []string {
+	membersOK := connTruthy(caps.ValueOr("has_members_intent", true))
 	var out []string
 	for _, row := range discordActionManifest {
 		if (membersOK || !discordIntentGatedMembers[row.name]) && (!restricted || inList(allowlist, row.name)) {
@@ -667,8 +667,8 @@ var discordToolDescriptions = map[string][2]string{
 }
 
 // Parameter schemas every discord action shares
-func discordSchemaProperties() *pyjson.Object {
-	str := func(desc string) *pyjson.Object { return Dict("type", "string", "description", desc) }
+func discordSchemaProperties() *jsonutil.Object {
+	str := func(desc string) *jsonutil.Object { return Dict("type", "string", "description", desc) }
 	return Dict(
 		"guild_id", str("Discord server (guild) ID."), "channel_id", str("Discord channel ID."), "user_id", str("Discord user ID."),
 		"role_id", str("Discord role ID."), "message_id", str("Discord message ID."),
@@ -684,12 +684,12 @@ const discordContentNote = "\n\nNOTE: Bot does NOT have the MESSAGE_CONTENT priv
 	"Enable the intent in the Discord Developer Portal to see all content."
 
 // Tool schema of the filtered action list, nil when no action remains so the tool is dropped
-func discordBuildSchema(actions []string, caps *pyjson.Object, toolName string) *pyjson.Object {
+func discordBuildSchema(actions []string, caps *jsonutil.Object, toolName string) *jsonutil.Object {
 	if len(actions) == 0 {
 		return nil
 	}
 	if caps == nil {
-		caps = pyjson.NewObject()
+		caps = jsonutil.NewObject()
 	}
 	var lines, affected []string
 	for _, row := range discordActionManifest {
@@ -703,7 +703,7 @@ func discordBuildSchema(actions []string, caps *pyjson.Object, toolName string) 
 		}
 	}
 	contentNote := ""
-	if hasContent, set := caps.Get("has_message_content"); len(affected) > 0 && connTruthy(caps.GetOr("detected", nil)) && set && hasContent == false {
+	if hasContent, set := caps.Get("has_message_content"); len(affected) > 0 && connTruthy(caps.ValueOr("detected", nil)) && set && hasContent == false {
 		sort.Strings(affected)
 		contentNote = fmt.Sprintf(discordContentNote, strings.Join(affected, " and "))
 	}
@@ -712,14 +712,14 @@ func discordBuildSchema(actions []string, caps *pyjson.Object, toolName string) 
 		desc = discordToolDescriptions["discord"]
 	}
 	properties := Dict("action", Dict("type", "string", "enum", enumValues(actions)))
-	properties.Update(discordSchemaProperties())
+	properties.Merge(discordSchemaProperties())
 	return Dict("name", toolName,
 		"description", desc[0]+"\n\nAvailable actions:\n"+strings.Join(lines, "\n")+"\n\n"+desc[1]+contentNote,
 		"parameters", Dict("type", "object", "properties", properties, "required", []any{"action"}))
 }
 
 // Schema of the action subset filtered by the bot's intents and the config allowlist, nil when none remain
-func discordGetDynamicSchema(env *Env, core bool, toolName string) *pyjson.Object {
+func discordGetDynamicSchema(env *Env, core bool, toolName string) *jsonutil.Object {
 	token := discordBotToken(env)
 	if token == "" {
 		return nil
@@ -799,7 +799,7 @@ func discordRunAction(ctx context.Context, env *Env, action string, core bool, t
 	valid := discordActionNames(core)
 	row, known := discordManifestOf(action)
 	if !known || !inList(valid, action) {
-		return toolErrorJSON("Unknown action: "+action, pyjson.ObjectOf("available_actions", enumValues(valid)))
+		return toolErrorJSON("Unknown action: "+action, jsonutil.ObjectOf("available_actions", enumValues(valid)))
 	}
 	if allowlist, restricted := discordLoadAllowedActionsConfig(env); restricted && !inList(allowlist, action) {
 		allowed := "<none>"
@@ -856,11 +856,11 @@ func registerDiscordTools() {
 	}{{"discord", true}, {"discord_admin", false}} {
 		tool := tool
 		Register(Def{Name: tool.name, Toolset: tool.name, RequiresEnv: []string{"DISCORD_BOT_TOKEN"}, Check: checkDiscordToolRequirements,
-			Schema: discordBuildSchema(discordActionNames(tool.core), pyjson.ObjectOf("detected", false), tool.name),
+			Schema: discordBuildSchema(discordActionNames(tool.core), jsonutil.ObjectOf("detected", false), tool.name),
 			Handler: func(ctx context.Context, call *Call) string {
 				action := ""
 				if v, ok := call.Args["action"]; ok {
-					action = pyrepr.Str(v)
+					action = anyutil.String(v)
 				}
 				return discordRunAction(ctx, call.Env, action, tool.core, tool.name, call.Args)
 			}})

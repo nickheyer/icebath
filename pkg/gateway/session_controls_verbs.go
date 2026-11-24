@@ -10,11 +10,11 @@ import (
 	"sort"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Generation a turn never carries, standing for a None or non integer generation param
@@ -41,8 +41,8 @@ func generationParam(value any) int64 {
 }
 
 // Dataclass dict of a session handle
-func sessionHandleDict(h SessionHandle) *pyjson.Object {
-	return pyjson.ObjectOf("ref", pyjson.ObjectOf("profile_id", h.Ref.ProfileID, "session_id", h.Ref.SessionID),
+func sessionHandleDict(h SessionHandle) *jsonutil.Object {
+	return jsonutil.ObjectOf("ref", jsonutil.ObjectOf("profile_id", h.Ref.ProfileID, "session_id", h.Ref.SessionID),
 		"instance_id", h.InstanceID, "authority_epoch", h.AuthorityEpoch, "revision", h.Revision,
 		"execution_generation", h.ExecutionGeneration, "execution_state", h.ExecutionState)
 }
@@ -57,21 +57,21 @@ func runtimeStoreErrorOf(err error) *state.RuntimeStoreError {
 }
 
 // Admission id param, empty for a missing or non text one
-func admissionIDParam(params *pyjson.Object) string {
-	id, _ := params.GetOr("admission_id", nil).(string)
+func admissionIDParam(params *jsonutil.Object) string {
+	id, _ := params.ValueOr("admission_id", nil).(string)
 	return id
 }
 
 // Liveness verb in the dispatch handler shape
-func (c *AuthorityConnection) pingVerb(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	plain, _ := pyjson.Plain(params).(map[string]any)
+func (c *AuthorityConnection) pingVerb(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
+	plain, _ := jsonutil.Plain(params).(map[string]any)
 	return c.ping(plain)
 }
 
 // Ends one subscription of this connection, a viewer closing the conversation when it names an end reason
-func (c *AuthorityConnection) detach(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) detach(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	named := map[string]bool{}
-	for _, key := range params.Keys {
+	for _, key := range params.Keys() {
 		if key != "end_reason" {
 			named[key] = true
 		}
@@ -79,15 +79,15 @@ func (c *AuthorityConnection) detach(ctx context.Context, ref SessionRef, params
 	if len(named) != 2 || !named["session_id"] || !named["subscription_id"] {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	sessionID, sessionText := params.GetOr("session_id", nil).(string)
-	subscriptionID, subscriptionText := params.GetOr("subscription_id", nil).(string)
-	rawReason := params.GetOr("end_reason", nil)
+	sessionID, sessionText := params.ValueOr("session_id", nil).(string)
+	subscriptionID, subscriptionText := params.ValueOr("subscription_id", nil).(string)
+	rawReason := params.ValueOr("end_reason", nil)
 	endReason, reasonText := rawReason.(string)
 	if !sessionText || sessionID == "" || !subscriptionText || subscriptionID == "" ||
 		(rawReason != nil && !(reasonText && endReasonPattern.MatchString(endReason))) {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	result := pyjson.ObjectOf("session_id", sessionID, "subscription_id", subscriptionID, "detached", false)
+	result := jsonutil.ObjectOf("session_id", sessionID, "subscription_id", subscriptionID, "detached", false)
 	c.mu.Lock()
 	current := c.subscriptions[sessionID]
 	c.mu.Unlock()
@@ -117,7 +117,7 @@ var submissionFields = []string{"session_id", "text", "submission_id", "input_id
 	"turn_author", "api_text", "model_override", "clarify_batch"}
 
 // Admission a prompt.submit shaped request asks for, prompt.replace_queued too
-func (c *AuthorityConnection) submission(ctx context.Context, ref SessionRef, params *pyjson.Object) (Submission, error) {
+func (c *AuthorityConnection) submission(ctx context.Context, ref SessionRef, params *jsonutil.Object) (Submission, error) {
 	c.mu.Lock()
 	_, subscribed := c.subscriptions[ref.SessionID]
 	c.mu.Unlock()
@@ -127,22 +127,22 @@ func (c *AuthorityConnection) submission(ctx context.Context, ref SessionRef, pa
 	if paramsOutside(params, submissionFields...) {
 		return Submission{}, runtimeRefusal("invalid_params")
 	}
-	requestID := params.GetOr("submission_id", nil)
+	requestID := params.ValueOr("submission_id", nil)
 	if !pyTruthy(requestID) {
-		requestID = params.GetOr("input_id", nil)
+		requestID = params.ValueOr("input_id", nil)
 	}
 	id, isText := requestID.(string)
 	if !isText || id == "" {
 		return Submission{}, runtimeRefusal("invalid_params")
 	}
-	plain, _ := pyjson.Plain(params).(map[string]any)
+	plain, _ := jsonutil.Plain(params).(map[string]any)
 	finite, err := admitFiniteFor(ctx, plain, &finiteSubmitter{connection: c, ref: ref})
 	if err != nil {
 		return Submission{}, err
 	}
-	payload := map[string]any{"text": params.GetOr("text", nil)}
-	for _, key := range finite.Keys {
-		payload[key] = finite.Vals[key]
+	payload := map[string]any{"text": params.ValueOr("text", nil)}
+	for _, key := range finite.Keys() {
+		payload[key] = finite.Value(key)
 	}
 	maps.Copy(payload, submitSurfaceFields(plain))
 	maps.Copy(payload, SubmitDisplayFields(plain))
@@ -154,22 +154,22 @@ func (c *AuthorityConnection) submission(ctx context.Context, ref SessionRef, pa
 }
 
 // Receipt of one admission, with the committed structured result of a terminal one when asked
-func (c *AuthorityConnection) receipt(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) receipt(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	receipt, err := c.authority.Receipt(ctx, c.actor, ref, admissionIDParam(params))
 	if err != nil {
 		return nil, err
 	}
 	out := admissionReceiptDict(receipt)
-	if params.GetOr("include_result", nil) == true && receipt.Status == AdmissionTerminal {
+	if params.ValueOr("include_result", nil) == true && receipt.Status == AdmissionTerminal {
 		saved, err := admissionResult(ctx, c.authority.DB, receipt.AdmissionID)
 		if err != nil {
 			return nil, err
 		}
-		if record, ok := saved.(*pyjson.Object); ok {
-			out.Set("result", record.GetOr("result", nil))
-			usage := record.GetOr("usage", nil)
+		if record, ok := saved.(*jsonutil.Object); ok {
+			out.Set("result", record.ValueOr("result", nil))
+			usage := record.ValueOr("usage", nil)
 			if !pyTruthy(usage) {
-				usage = pyjson.NewObject()
+				usage = jsonutil.NewObject()
 			}
 			out.Set("usage", usage)
 		}
@@ -178,7 +178,7 @@ func (c *AuthorityConnection) receipt(ctx context.Context, ref SessionRef, param
 }
 
 // Withdraws a queued admission, stopping the exact claim when the drain already started it
-func (c *AuthorityConnection) cancel(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) cancel(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	a := c.authority
 	admissionID := admissionIDParam(params)
 	receipt, err := a.Receipt(ctx, c.actor, ref, admissionID)
@@ -200,12 +200,12 @@ func (c *AuthorityConnection) cancel(ctx context.Context, ref SessionRef, params
 		if row == nil {
 			return nil, &PyError{Kind: "TypeError", Msg: "the session to cancel is missing"}
 		}
-		if status, _ := row.GetOr("status", nil).(string); status == "started" {
+		if status, _ := row.ValueOr("status", nil).(string); status == "started" {
 			var generation any
 			if receipt.ExecutionGeneration != nil {
 				generation = *receipt.ExecutionGeneration
 			}
-			if _, err := c.interrupt(ctx, ref, pyjson.ObjectOf("execution_generation", generation)); err != nil {
+			if _, err := c.interrupt(ctx, ref, jsonutil.ObjectOf("execution_generation", generation)); err != nil {
 				if refusal := runtimeStoreErrorOf(err); refusal == nil || refusal.Reason != "stale_generation" {
 					return nil, err
 				}
@@ -225,7 +225,7 @@ func (c *AuthorityConnection) cancel(ctx context.Context, ref SessionRef, params
 		return nil, err
 	}
 	if row != nil {
-		if _, err := c.interrupt(ctx, ref, pyjson.ObjectOf("execution_generation", row.GetOr("generation", nil))); err != nil {
+		if _, err := c.interrupt(ctx, ref, jsonutil.ObjectOf("execution_generation", row.ValueOr("generation", nil))); err != nil {
 			return nil, err
 		}
 	}
@@ -233,12 +233,12 @@ func (c *AuthorityConnection) cancel(ctx context.Context, ref SessionRef, params
 }
 
 // Operator acknowledgement that an unknown turn will not finish
-func (c *AuthorityConnection) resolveUnknown(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	if len(params.Keys) != 3 || paramsOutside(params, "session_id", "admission_id", "execution_generation") {
+func (c *AuthorityConnection) resolveUnknown(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
+	if params.Len() != 3 || paramsOutside(params, "session_id", "admission_id", "execution_generation") {
 		return nil, runtimeRefusal("invalid_params")
 	}
 	receipt, err := c.authority.ResolveUnknown(ctx, c.actor, ref, admissionIDParam(params),
-		generationParam(params.GetOr("execution_generation", nil)))
+		generationParam(params.ValueOr("execution_generation", nil)))
 	if err != nil {
 		return nil, err
 	}
@@ -246,8 +246,8 @@ func (c *AuthorityConnection) resolveUnknown(ctx context.Context, ref SessionRef
 }
 
 // Stops the running turn of a generation, a managed worker's turn first
-func (c *AuthorityConnection) interrupt(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	generation := params.GetOr("execution_generation", nil)
+func (c *AuthorityConnection) interrupt(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
+	generation := params.ValueOr("execution_generation", nil)
 	handled, err := interruptManaged(ctx, c.authority, c.actor, ref, generation)
 	if err != nil {
 		return nil, err
@@ -265,21 +265,21 @@ func (c *AuthorityConnection) interrupt(ctx context.Context, ref SessionRef, par
 }
 
 // Answers one approval prompt of a generation
-func (c *AuthorityConnection) respond(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	if len(params.Keys) != 4 || paramsOutside(params, "session_id", "execution_generation", "prompt_id", "choice") {
+func (c *AuthorityConnection) respond(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
+	if params.Len() != 4 || paramsOutside(params, "session_id", "execution_generation", "prompt_id", "choice") {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	return c.authority.Respond(ctx, c.actor, ref, params.GetOr("execution_generation", nil), params.GetOr("prompt_id", nil),
-		pyjson.ObjectOf("choice", params.GetOr("choice", nil)), "approval")
+	return c.authority.Respond(ctx, c.actor, ref, params.ValueOr("execution_generation", nil), params.ValueOr("prompt_id", nil),
+		jsonutil.ObjectOf("choice", params.ValueOr("choice", nil)), "approval")
 }
 
 // Answers one clarify prompt of a generation
-func (c *AuthorityConnection) respondClarify(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
-	if len(params.Keys) != 4 || paramsOutside(params, "session_id", "execution_generation", "prompt_id", "answer") {
+func (c *AuthorityConnection) respondClarify(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
+	if params.Len() != 4 || paramsOutside(params, "session_id", "execution_generation", "prompt_id", "answer") {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	return c.authority.Respond(ctx, c.actor, ref, params.GetOr("execution_generation", nil), params.GetOr("prompt_id", nil),
-		pyjson.ObjectOf("answer", params.GetOr("answer", nil)), "clarify")
+	return c.authority.Respond(ctx, c.actor, ref, params.ValueOr("execution_generation", nil), params.ValueOr("prompt_id", nil),
+		jsonutil.ObjectOf("answer", params.ValueOr("answer", nil)), "clarify")
 }
 
 // Tears the connection down, orphaning its subscriptions and arming the close of sessions it kept in the background
@@ -349,23 +349,23 @@ func startedAtKey(value any) float64 {
 	if !pyTruthy(value) {
 		return 0
 	}
-	f, _ := pyint.Float(value)
+	f, _ := anyutil.ToFloat(value)
 	return f
 }
 
 // Live picker feed, the stored one, or one title's identity, over the sessions the actor may read
-func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if !c.actor.Capabilities["session:read"] {
 		return nil, runtimeRefusal("permission_denied")
 	}
-	limit, isInt := strictInt(params.GetOr("limit", int64(200)))
+	limit, isInt := strictInt(params.ValueOr("limit", int64(200)))
 	if paramsOutside(params, "limit", "title", "include_hidden", "include_archived", "scope") || !isInt || limit.Cmp(big.NewInt(1)) < 0 ||
 		limit.Cmp(big.NewInt(200)) > 0 {
 		return nil, runtimeRefusal("invalid_params")
 	}
-	scope := params.GetOr("scope", "live")
+	scope := params.ValueOr("scope", "live")
 	switch scope.(type) {
-	case *pyjson.Object, []any:
+	case *jsonutil.Object, []any:
 		return nil, &PyError{Kind: "TypeError", Msg: "the session list scope is " + errchain.Kind(scope) + ", expected text"}
 	}
 	_, hasTitle := params.Get("title")
@@ -375,23 +375,23 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 	}
 	a := c.authority
 	if scope == "stored" {
-		return storedPickerSessions(ctx, a, c.actor, int(limit.Int64()), pyTruthy(params.GetOr("include_hidden", false)), pyTruthy(params.GetOr("include_archived", false)))
+		return storedPickerSessions(ctx, a, c.actor, int(limit.Int64()), pyTruthy(params.ValueOr("include_hidden", false)), pyTruthy(params.ValueOr("include_archived", false)))
 	}
 	if hasTitle {
-		title := params.GetOr("title", nil)
+		title := params.ValueOr("title", nil)
 		found, err := resolveTitledSession(ctx, a, c.actor, title, true)
 		if err != nil {
 			return nil, err
 		}
 		if found == nil {
-			return pyjson.ObjectOf("sessions", []any{}, "scope", "stored"), nil
+			return jsonutil.ObjectOf("sessions", []any{}, "scope", "stored"), nil
 		}
 		row, err := a.DB.GetSession(ctx, found.SessionID)
 		if err != nil {
 			return nil, err
 		}
 		if row == nil {
-			row = pyjson.NewObject()
+			row = jsonutil.NewObject()
 		}
 		byTitle, _, err := a.DB.ResolveSessionByTitle(ctx, title.(string))
 		if err != nil {
@@ -414,21 +414,21 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 			return fallback
 		}
 		_, running := a.live(found.SessionID)
-		entry := pyjson.ObjectOf("session_id", found.SessionID, "id", or(root.GetOr("id", nil), found.SessionID),
-			"resolved_id", found.SessionID, "title", or(row.GetOr("title", nil), ""), "root_title", or(root.GetOr("title", nil), ""),
-			"source", row.GetOr("source", nil), "started_at", row.GetOr("started_at", nil),
-			"message_count", row.GetOr("message_count", int64(0)), "running", running)
-		return pyjson.ObjectOf("sessions", []any{entry}, "scope", "stored"), nil
+		entry := jsonutil.ObjectOf("session_id", found.SessionID, "id", or(root.ValueOr("id", nil), found.SessionID),
+			"resolved_id", found.SessionID, "title", or(row.ValueOr("title", nil), ""), "root_title", or(root.ValueOr("title", nil), ""),
+			"source", row.ValueOr("source", nil), "started_at", row.ValueOr("started_at", nil),
+			"message_count", row.ValueOr("message_count", int64(0)), "running", running)
+		return jsonutil.ObjectOf("sessions", []any{entry}, "scope", "stored"), nil
 	}
 	entries, err := liveEntries(ctx, a, c.actor)
 	if err != nil {
 		return nil, err
 	}
-	sessions := []*pyjson.Object{}
+	sessions := []*jsonutil.Object{}
 	for _, entry := range entries {
 		row := entry.row
 		source, _ := row["source"].(string)
-		hidden := !pyTruthy(params.GetOr("include_hidden", nil)) && (pyTruthy(row["hidden"]) || pyTruthy(row["archived"]))
+		hidden := !pyTruthy(params.ValueOr("include_hidden", nil)) && (pyTruthy(row["hidden"]) || pyTruthy(row["archived"]))
 		if slices.Contains(InternalListingSources, source) || entry.closed || hidden {
 			continue
 		}
@@ -440,13 +440,13 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 		if !hasCount {
 			count = int64(0)
 		}
-		sessions = append(sessions, pyjson.ObjectOf("session_id", entry.sessionID, "id", entry.sessionID, "title", title,
+		sessions = append(sessions, jsonutil.ObjectOf("session_id", entry.sessionID, "id", entry.sessionID, "title", title,
 			"source", row["source"], "started_at", row["started_at"], "message_count", count, "model", row["model"],
 			"running", entry.handle.ExecutionState == "running", "preview", state.ShapePreview(row["_preview_raw"]), "pinned", pyTruthy(row["pinned"]),
 			"archived", pyTruthy(row["archived"])))
 	}
 	sort.SliceStable(sessions, func(i, j int) bool {
-		return startedAtKey(sessions[i].GetOr("started_at", nil)) > startedAtKey(sessions[j].GetOr("started_at", nil))
+		return startedAtKey(sessions[i].ValueOr("started_at", nil)) > startedAtKey(sessions[j].ValueOr("started_at", nil))
 	})
 	out := []any{}
 	for i, session := range sessions {
@@ -455,16 +455,16 @@ func (c *AuthorityConnection) listSessions(ctx context.Context, ref SessionRef, 
 		}
 		out = append(out, session)
 	}
-	return pyjson.ObjectOf("sessions", out, "scope", "live"), nil
+	return jsonutil.ObjectOf("sessions", out, "scope", "live"), nil
 }
 
 // Owner identity, capabilities, creation parameters and the owning profile's skin
-func (c *AuthorityConnection) describe(ctx context.Context, ref SessionRef, params *pyjson.Object) (any, error) {
+func (c *AuthorityConnection) describe(ctx context.Context, ref SessionRef, params *jsonutil.Object) (any, error) {
 	if _, err := c.pingVerb(ctx, ref, params); err != nil {
 		return nil, err
 	}
 	a := c.authority
-	return pyjson.ObjectOf("instance_id", a.InstanceID, "profile_id", a.ProfileID, "authority_epoch", a.Epoch,
+	return jsonutil.ObjectOf("instance_id", a.InstanceID, "profile_id", a.ProfileID, "authority_epoch", a.Epoch,
 		"skin", resolvedSkin(ctx), "build", tuigateway.BuildID()), nil
 }
 

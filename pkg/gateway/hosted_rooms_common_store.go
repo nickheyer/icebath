@@ -5,19 +5,18 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Missing mapping key of a hosted room record, a KeyError
 type HostedKeyError struct{ Key string }
 
-func (e *HostedKeyError) Error() string { return pyrepr.Repr(e.Key) }
+func (e *HostedKeyError) Error() string { return anyutil.Quote(e.Key) }
 
-// Python class name of the error
-func (e *HostedKeyError) PyTypeName() string { return "KeyError" }
+// Kind label of the error
+func (e *HostedKeyError) ErrorKind() string { return "KeyError" }
 
 // Non blank string bounded by maxBytes of UTF-8, strip false keeping and measuring the raw text
 func roomText(value any, label string, maxBytes int, strip bool, fail roomErrorFunc) (string, error) {
@@ -112,26 +111,26 @@ func roomExecCount(ctx context.Context, conn state.SQLiteConn, query string, arg
 }
 
 // Python int of a stored column, zero for NULL
-func hrInt(row *pyjson.Object, key string) int64 {
-	n, _ := pyint.Int64(row.Vals[key])
+func hrInt(row *jsonutil.Object, key string) int64 {
+	n, _ := anyutil.ToInt(row.Value(key))
 	return n
 }
 
 // Python float of a stored column, zero for NULL
-func hrFloat(row *pyjson.Object, key string) float64 {
-	f, _ := pyint.Float(row.Vals[key])
+func hrFloat(row *jsonutil.Object, key string) float64 {
+	f, _ := anyutil.ToFloat(row.Value(key))
 	return f
 }
 
 // Text of a stored column, empty for NULL
-func hrStr(row *pyjson.Object, key string) string {
-	text, _ := row.Vals[key].(string)
+func hrStr(row *jsonutil.Object, key string) string {
+	text, _ := row.Value(key).(string)
 	return text
 }
 
 // Plain dict copy of one stored row
-func hrDict(row *pyjson.Object) map[string]any {
-	return pyjson.Plain(row).(map[string]any)
+func hrDict(row *jsonutil.Object) map[string]any {
+	return jsonutil.Plain(row).(map[string]any)
 }
 
 // Values of the named keys in order, the KeyError of the first absent one
@@ -149,11 +148,11 @@ func recordValues(record map[string]any, keys []string) ([]any, error) {
 
 // Decoded JSON text with objects as plain maps
 func roomLoads(text string) (any, error) {
-	value, err := pyjson.Loads(text)
+	value, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Plain(value), nil
+	return jsonutil.Plain(value), nil
 }
 
 // Whether path names a regular file

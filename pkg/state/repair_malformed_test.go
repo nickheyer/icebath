@@ -40,7 +40,7 @@ func storeCount(t *testing.T, db *SessionDB, query string) int64 {
 	if err != nil || row == nil {
 		t.Fatalf("%s: %v %v", query, row, err)
 	}
-	n, _ := exactInt(row.Vals[row.Keys[0]])
+	n, _ := exactInt(row.Value(row.Keys()[0]))
 	return n
 }
 

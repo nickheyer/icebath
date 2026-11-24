@@ -19,12 +19,12 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/periodic"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -72,8 +72,8 @@ func tierInEffect(child *AIAgent) string {
 	overrides := child.requestOverrides
 	extra, _ := overrides["extra_body"].(map[string]any)
 	for _, scope := range []map[string]any{overrides, extra} {
-		if v := scope["service_tier"]; pyrepr.Truthy(v) {
-			return pyrepr.Str(v)
+		if v := scope["service_tier"]; anyutil.IsTrue(v) {
+			return anyutil.String(v)
 		}
 		if scope["speed"] == "fast" {
 			return "priority"
@@ -83,18 +83,18 @@ func tierInEffect(child *AIAgent) string {
 }
 
 // What a backend routed child actually ran on, nil for the default backend's unlabelled route
-func routeReport(child *AIAgent) *pyjson.Object {
+func routeReport(child *AIAgent) *jsonutil.Object {
 	if child == nil || child.delegateRoute == nil {
 		return nil
 	}
-	out := pyjson.NewObject()
-	for _, k := range child.delegateRoute.Keys {
-		out.Set(k, child.delegateRoute.Vals[k])
+	out := jsonutil.NewObject()
+	for _, k := range child.delegateRoute.Keys() {
+		out.Set(k, child.delegateRoute.Value(k))
 	}
 	var effort any
 	if r := child.reasoningConfig; r != nil {
 		enabled, has := r["enabled"]
-		if !has || pyrepr.Truthy(enabled) {
+		if !has || anyutil.IsTrue(enabled) {
 			effort = r["effort"]
 		} else {
 			effort = "none"
@@ -119,8 +119,8 @@ func childRole(child *AIAgent) any {
 }
 
 // Result entry of a child that raised, never finished, or was abandoned
-func fabricatedEntry(idx int, status, errText string, child *AIAgent, duration float64) *pyjson.Object {
-	e := pyjson.NewObject()
+func fabricatedEntry(idx int, status, errText string, child *AIAgent, duration float64) *jsonutil.Object {
+	e := jsonutil.NewObject()
 	e.Set("task_index", idx)
 	e.Set("status", status)
 	e.Set("summary", nil)
@@ -135,13 +135,13 @@ func fabricatedEntry(idx int, status, errText string, child *AIAgent, duration f
 }
 
 // Records steer text that lost the race with the child's failure or timeout
-func appendMissedSteer(entry *pyjson.Object, lateSteer string) {
+func appendMissedSteer(entry *jsonutil.Object, lateSteer string) {
 	if lateSteer == "" {
 		return
 	}
 	entry.Set("missed_steer", lateSteer)
 	prev, _ := entry.Get("error")
-	entry.Set("error", pyrepr.Str(prev)+" [steer did not land before the subagent stopped: "+lateSteer+"]")
+	entry.Set("error", anyutil.String(prev)+" [steer did not land before the subagent stopped: "+lateSteer+"]")
 }
 
 // Closes the child's tool sandboxes, daemons and clients, logging any failure
@@ -244,7 +244,7 @@ func diagSizes(child *AIAgent) []string {
 		if child.tools == nil {
 			return nil, nil
 		}
-		b, err := pyjson.EncodeWTF8PythonASCII(child.tools)
+		b, err := jsonutil.Append(nil, child.tools, jsonutil.ASCII())
 		if err != nil {
 			return nil, err
 		}
@@ -687,7 +687,7 @@ type schemaOutcome struct {
 // Validates the final answer against the output schema with one bounded retry turn
 func validateChildOutputSchema(ctx context.Context, child *AIAgent, result map[string]any, taskIndex int, childTaskID string, relay func(string)) schemaOutcome {
 	schema := child.delegateOutputSchema
-	if _, ok := pyjson.Dict(schema); !ok {
+	if _, ok := jsonutil.AsMap(schema); !ok {
 		return schemaOutcome{schema: schema}
 	}
 	firstText, _ := result["final_response"].(string)
@@ -766,8 +766,8 @@ func resultMessages(v any) []map[string]any {
 // Tool trace of the child's messages, pairing parallel calls with results by tool call id
 func buildToolTrace(env *tools.Env, messages any) []any {
 	trace := []any{}
-	byID := map[string]*pyjson.Object{}
-	var last *pyjson.Object
+	byID := map[string]*jsonutil.Object{}
+	var last *jsonutil.Object
 	for _, msg := range resultMessages(messages) {
 		switch msg["role"] {
 		case "assistant":
@@ -778,14 +778,14 @@ func buildToolTrace(env *tools.Env, messages any) []any {
 				}
 			}
 			for _, raw := range calls {
-				tc, _ := pyjson.Dict(raw)
-				fn, _ := pyjson.Dict(tc["function"])
+				tc, _ := jsonutil.AsMap(raw)
+				fn, _ := jsonutil.AsMap(tc["function"])
 				name := "unknown"
 				if n, ok := fn["name"]; ok {
-					name = pyrepr.Str(n)
+					name = anyutil.String(n)
 				}
 				arguments, _ := fn["arguments"].(string)
-				entry := pyjson.NewObject()
+				entry := jsonutil.NewObject()
 				entry.Set("tool", name)
 				entry.Set("args_bytes", utf8.RuneCountInString(arguments))
 				entry.Set("input_summary", summarizeToolArguments(env, fn["arguments"]))
@@ -817,7 +817,7 @@ func buildToolTrace(env *tools.Env, messages any) []any {
 }
 
 // Parent visible result entry with status, exit reason, tool trace, tokens and cost
-func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, duration float64, schema schemaOutcome) *pyjson.Object {
+func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, duration float64, schema schemaOutcome) *jsonutil.Object {
 	summary, _ := result["final_response"].(string)
 	usable := summary != "" && strings.TrimSpace(summary) != "(empty)"
 	interruptNote := ""
@@ -856,7 +856,7 @@ func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, dura
 	if !ok {
 		apiCalls = 0
 	}
-	e := pyjson.NewObject()
+	e := jsonutil.NewObject()
 	e.Set("task_index", taskIndex)
 	e.Set("status", status)
 	e.Set("summary", summary)
@@ -865,7 +865,7 @@ func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, dura
 	e.Set("model", strOrNone(child.model))
 	e.Set("exit_reason", exitReason)
 	e.Set("truncated", exitReason == "max_iterations")
-	tokens := pyjson.NewObject()
+	tokens := jsonutil.NewObject()
 	tokens.Set("input", child.sessionPromptTokens)
 	tokens.Set("output", child.sessionCompletionTokens)
 	e.Set("tokens", tokens)
@@ -894,7 +894,7 @@ func buildResultEntry(child *AIAgent, result map[string]any, taskIndex int, dura
 	} else if interruptNote != "" {
 		e.Set("error", interruptNote)
 	}
-	if _, ok := pyjson.Dict(schema.schema); ok {
+	if _, ok := jsonutil.AsMap(schema.schema); ok {
 		valid := schema.valid != nil && *schema.valid
 		e.Set("schema_valid", valid)
 		if schema.retries != 0 {
@@ -1051,7 +1051,7 @@ func (r *childRun) relayText(delta string) {
 }
 
 // Inspects and prunes the child worktree into the entry, then applies the parent copy redaction
-func (r *childRun) attachWorktree(entry *pyjson.Object) *pyjson.Object {
+func (r *childRun) attachWorktree(entry *jsonutil.Object) *jsonutil.Object {
 	if r.worktreeInfo != nil {
 		payload, err := finalizeSubagentWorktree(r.worktreeInfo, true)
 		if err != nil {
@@ -1063,8 +1063,8 @@ func (r *childRun) attachWorktree(entry *pyjson.Object) *pyjson.Object {
 	return redactedEntry(r.child, entry)
 }
 
-func redactedEntry(child *AIAgent, entry *pyjson.Object) *pyjson.Object {
-	out, ok := tools.RedactChildResultAt(child.env, entry, child.delegateOutputSchema, false, emitCompleteValidateDepth).(*pyjson.Object)
+func redactedEntry(child *AIAgent, entry *jsonutil.Object) *jsonutil.Object {
+	out, ok := tools.RedactChildResultAt(child.env, entry, child.delegateOutputSchema, false, emitCompleteValidateDepth).(*jsonutil.Object)
 	if !ok {
 		return entry
 	}
@@ -1097,10 +1097,10 @@ func (r *childRun) seedWorkspace() {
 }
 
 // Shared failure tail emitting subagent.complete, noting a late steer and reporting the worktree
-func (r *childRun) finishFailed(entry *pyjson.Object, lateSteer, preview, summary, status string) *pyjson.Object {
+func (r *childRun) finishFailed(entry *jsonutil.Object, lateSteer, preview, summary, status string) *jsonutil.Object {
 	if status == "" {
 		s, _ := entry.Get("status")
-		status = pyrepr.Str(s)
+		status = anyutil.String(s)
 	}
 	duration, _ := entry.Get("duration_seconds")
 	safeProgress(r.progressCB, "subagent.complete", "", tools.RedactChildText(r.child.env, preview, false), map[string]any{
@@ -1162,7 +1162,7 @@ type childOutcome struct {
 }
 
 // Runs the child's conversation on a worker goroutine, the result or a failure entry with its deferred close flag
-func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
+func (r *childRun) awaitChild() (map[string]any, *jsonutil.Object, bool) {
 	child, taskIndex := r.child, r.taskIndex
 	childTimeout := childTimeoutFn(r.ctx)
 	approval := tools.SubagentApprovalCallback(r.ctx)
@@ -1282,7 +1282,7 @@ func (r *childRun) awaitChild() (map[string]any, *pyjson.Object, bool) {
 	if isTimeout {
 		status = "timeout"
 	}
-	e := pyjson.NewObject()
+	e := jsonutil.NewObject()
 	e.Set("task_index", taskIndex)
 	e.Set("status", status)
 	e.Set("summary", nil)
@@ -1334,7 +1334,7 @@ func pyFormatG(v float64) string {
 }
 
 // Warns the parent when the child wrote files the parent had already read
-func (r *childRun) appendSiblingWriteReminder(entry *pyjson.Object) {
+func (r *childRun) appendSiblingWriteReminder(entry *jsonutil.Object) {
 	if r.parentTaskID == "" || len(r.parentReadsSnapshot) == 0 {
 		return
 	}
@@ -1363,8 +1363,8 @@ func (r *childRun) appendSiblingWriteReminder(entry *pyjson.Object) {
 			reminder += fmt.Sprintf(" (+%d more)", len(modPaths)-8)
 		}
 		reminder += "]"
-		if s, _ := entry.Get("summary"); pyrepr.Truthy(s) {
-			entry.Set("summary", pyrepr.Str(s)+reminder)
+		if s, _ := entry.Get("summary"); anyutil.IsTrue(s) {
+			entry.Set("summary", anyutil.String(s)+reminder)
 		} else {
 			list := make([]any, len(modPaths))
 			for i, p := range modPaths {
@@ -1376,7 +1376,7 @@ func (r *childRun) appendSiblingWriteReminder(entry *pyjson.Object) {
 }
 
 // Names the child's handed off, still running and unread background processes before cleanup kills them
-func (r *childRun) accountBackgroundProcesses(entry *pyjson.Object) {
+func (r *childRun) accountBackgroundProcesses(entry *jsonutil.Object) {
 	if len(r.child.handedOffProcesses) > 0 {
 		handed := make([]any, len(r.child.handedOffProcesses))
 		for i, p := range r.child.handedOffProcesses {
@@ -1390,7 +1390,7 @@ func (r *childRun) accountBackgroundProcesses(entry *pyjson.Object) {
 		if leftover := reg.RunningOwnedBy(r.childTaskID); len(leftover) > 0 {
 			list := []any{}
 			for _, s := range leftover {
-				o := pyjson.NewObject()
+				o := jsonutil.NewObject()
 				o.Set("session_id", s.ID)
 				o.Set("command", textutil.First(tools.RedactChildText(r.child.env, s.Command, false), 200))
 				o.Set("runtime_seconds", int(math.RoundToEven(now-s.StartedAt)))
@@ -1401,7 +1401,7 @@ func (r *childRun) accountBackgroundProcesses(entry *pyjson.Object) {
 		if unread := reg.UnreadCompletionsOwnedBy(r.childTaskID); len(unread) > 0 {
 			list := []any{}
 			for _, s := range unread {
-				o := pyjson.NewObject()
+				o := jsonutil.NewObject()
 				o.Set("session_id", s.ID)
 				o.Set("command", textutil.First(tools.RedactChildText(r.child.env, s.Command, false), 200))
 				var code any
@@ -1419,21 +1419,21 @@ func (r *childRun) accountBackgroundProcesses(entry *pyjson.Object) {
 }
 
 // Fires subagent.complete with the per branch tokens, cost, files touched and tool output tail
-func (r *childRun) emitComplete(result map[string]any, entry *pyjson.Object, duration float64) {
+func (r *childRun) emitComplete(result map[string]any, entry *jsonutil.Object, duration float64) {
 	if r.progressCB == nil {
 		return
 	}
 	child := r.child
 	redacted := redactedEntry(child, entry)
-	for _, k := range redacted.Keys {
-		entry.Set(k, redacted.Vals[k])
+	for _, k := range redacted.Keys() {
+		entry.Set(k, redacted.Value(k))
 	}
 	summaryV, _ := entry.Get("summary")
 	summary, _ := summaryV.(string)
 	errV, _ := entry.Get("error")
 	errText := ""
 	if errV != nil {
-		errText = pyrepr.Str(errV)
+		errText = anyutil.String(errV)
 	}
 	var filesRead []any
 	delegateQuiet("", func() {
@@ -1469,7 +1469,7 @@ func (r *childRun) emitComplete(result map[string]any, entry *pyjson.Object, dur
 	}
 	status, _ := entry.Get("status")
 	apiCalls, _ := entry.Get("api_calls")
-	kwargs := pyjson.NewObject()
+	kwargs := jsonutil.NewObject()
 	kwargs.Set("status", status)
 	kwargs.Set("duration_seconds", duration)
 	kwargs.Set("summary", longSummary)
@@ -1480,17 +1480,17 @@ func (r *childRun) emitComplete(result map[string]any, entry *pyjson.Object, dur
 	kwargs.Set("files_read", filesRead)
 	kwargs.Set("files_written", writtenList)
 	kwargs.Set("output_tail", extractOutputTail(r.child.env, result, 8, 600))
-	if fr, _ := entry.Get("failure_reason"); pyrepr.Truthy(fr) {
+	if fr, _ := entry.Get("failure_reason"); anyutil.IsTrue(fr) {
 		kwargs.Set("failure_reason", fr)
 	}
 	kwargs.Set("cost_usd", child.sessionEstimatedCostUSD)
-	cleaned, ok := tools.RedactChildResult(r.child.env, kwargs, nil, false).(*pyjson.Object)
+	cleaned, ok := tools.RedactChildResult(r.child.env, kwargs, nil, false).(*jsonutil.Object)
 	if !ok {
 		cleaned = kwargs
 	}
 	extra := map[string]any{}
-	for _, k := range cleaned.Keys {
-		extra[k] = cleaned.Vals[k]
+	for _, k := range cleaned.Keys() {
+		extra[k] = cleaned.Value(k)
 	}
 	safeProgress(r.progressCB, "subagent.complete", "", preview, extra)
 }

@@ -13,12 +13,11 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 var (
@@ -39,8 +38,8 @@ func (s repairProfilesStore) dbPath() string { return filepath.Join(s.home, "sta
 // Read surface a scan uses, a real store or the empty stand in for a profile without a database
 type repairScanDB interface {
 	FindCrossedProfileSessions(ctx context.Context, owner string) (*state.CrossedProfileSessions, error)
-	FindProfileLessTelegramTopicRows(ctx context.Context) ([]*pyjson.Object, error)
-	ListGatewayRoutingRows(ctx context.Context) ([]*pyjson.Object, error)
+	FindProfileLessTelegramTopicRows(ctx context.Context) ([]*jsonutil.Object, error)
+	ListGatewayRoutingRows(ctx context.Context) ([]*jsonutil.Object, error)
 	KeyProfilesForChat(ctx context.Context, platform, chatID string) (map[string]bool, error)
 }
 
@@ -50,10 +49,10 @@ type repairEmptyStore struct{}
 func (repairEmptyStore) FindCrossedProfileSessions(context.Context, string) (*state.CrossedProfileSessions, error) {
 	return &state.CrossedProfileSessions{}, nil
 }
-func (repairEmptyStore) FindProfileLessTelegramTopicRows(context.Context) ([]*pyjson.Object, error) {
+func (repairEmptyStore) FindProfileLessTelegramTopicRows(context.Context) ([]*jsonutil.Object, error) {
 	return nil, nil
 }
-func (repairEmptyStore) ListGatewayRoutingRows(context.Context) ([]*pyjson.Object, error) {
+func (repairEmptyStore) ListGatewayRoutingRows(context.Context) ([]*jsonutil.Object, error) {
 	return nil, nil
 }
 func (repairEmptyStore) KeyProfilesForChat(context.Context, string, string) (map[string]bool, error) {
@@ -134,18 +133,18 @@ func (s *repairProfilesSession) close() {
 type repairProfilesFinding struct {
 	kind, store, subject, detail string
 	action, reason               *string
-	fix                          func(*repairProfilesSession) (*pyjson.Object, error)
+	fix                          func(*repairProfilesSession) (*jsonutil.Object, error)
 }
 
 // Report dict of the finding
-func (f *repairProfilesFinding) asDict() *pyjson.Object {
+func (f *repairProfilesFinding) asDict() *jsonutil.Object {
 	optional := func(s *string) any {
 		if s == nil {
 			return nil
 		}
 		return *s
 	}
-	return pyjson.ObjectOf("kind", f.kind, "store", f.store, "subject", f.subject, "detail", f.detail,
+	return jsonutil.ObjectOf("kind", f.kind, "store", f.store, "subject", f.subject, "detail", f.detail,
 		"action", optional(f.action), "reason", optional(f.reason))
 }
 
@@ -274,13 +273,13 @@ func (p *repairProfilesPlan) scan(ctx context.Context, session *repairProfilesSe
 }
 
 // Value of a row field as a person writes it
-func rowShown(row *pyjson.Object, key string) string { return errchain.Show(rowGet(row, key)) }
+func rowShown(row *jsonutil.Object, key string) string { return errchain.Show(rowGet(row, key)) }
 
 // Python str of a row value
-func rowStr(row *pyjson.Object, key string) string { return pyrepr.Str(rowGet(row, key)) }
+func rowStr(row *jsonutil.Object, key string) string { return anyutil.String(rowGet(row, key)) }
 
 // Python key of a row value usable in sets and dict lookups
-func rowKey(row *pyjson.Object, key string) string { return pyrepr.Str(rowGet(row, key)) }
+func rowKey(row *jsonutil.Object, key string) string { return anyutil.String(rowGet(row, key)) }
 
 // Plans the wrong store, mislabelled and crossed parent findings of one store
 func (p *repairProfilesPlan) scanSessions(ctx context.Context, session *repairProfilesSession, store repairProfilesStore) error {
@@ -293,7 +292,7 @@ func (p *repairProfilesPlan) scanSessions(ctx context.Context, session *repairPr
 		return err
 	}
 	moving := map[string]bool{}
-	var candidates []*pyjson.Object
+	var candidates []*jsonutil.Object
 	for _, r := range crossed.Foreign {
 		if p.wouldMove(store, r) {
 			candidates = append(candidates, r)
@@ -321,7 +320,7 @@ func (p *repairProfilesPlan) scanSessions(ctx context.Context, session *repairPr
 			detail: fmt.Sprintf("profile_name=%s but key %s belongs to %s", rowShown(row, "profile_name"),
 				rowShown(row, "session_key"), rowShown(row, "key_profile")),
 			action: strRef("relabel to " + rowShown(row, "key_profile")),
-			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
+			fix: func(s *repairProfilesSession) (*jsonutil.Object, error) {
 				db, err := s.writable(st)
 				if err != nil {
 					return nil, err
@@ -330,7 +329,7 @@ func (p *repairProfilesPlan) scanSessions(ctx context.Context, session *repairPr
 				if err != nil {
 					return nil, err
 				}
-				return pyjson.ObjectOf("relabelled", n), nil
+				return jsonutil.ObjectOf("relabelled", n), nil
 			}})
 	}
 	for _, row := range crossed.CrossedParents {
@@ -343,7 +342,7 @@ func (p *repairProfilesPlan) scanSessions(ctx context.Context, session *repairPr
 			detail: fmt.Sprintf("%s row inherits from parent %s keyed under %s", rowShown(row, "key_profile"),
 				rowStr(row, "parent_session_id"), rowShown(row, "parent_profile")),
 			action: strRef("sever parent_session_id"),
-			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
+			fix: func(s *repairProfilesSession) (*jsonutil.Object, error) {
 				db, err := s.writable(st)
 				if err != nil {
 					return nil, err
@@ -352,14 +351,14 @@ func (p *repairProfilesPlan) scanSessions(ctx context.Context, session *repairPr
 				if err != nil {
 					return nil, err
 				}
-				return pyjson.ObjectOf("severed", n), nil
+				return jsonutil.ObjectOf("severed", n), nil
 			}})
 	}
 	return nil
 }
 
 // Whether the plan copies this foreign row to another store
-func (p *repairProfilesPlan) wouldMove(store repairProfilesStore, row *pyjson.Object) bool {
+func (p *repairProfilesPlan) wouldMove(store repairProfilesStore, row *jsonutil.Object) bool {
 	keyProfile := rowGet(row, "key_profile")
 	if keyProfile == "default" && store.profile != "default" {
 		return p.legacyMain == "move" && p.routingStore != nil
@@ -369,7 +368,7 @@ func (p *repairProfilesPlan) wouldMove(store repairProfilesStore, row *pyjson.Ob
 }
 
 // Plans a row keyed to another profile, a move into its store or a report when no profile claims it
-func (p *repairProfilesPlan) planForeignRow(store repairProfilesStore, row *pyjson.Object, moving map[string]bool) {
+func (p *repairProfilesPlan) planForeignRow(store repairProfilesStore, row *jsonutil.Object, moving map[string]bool) {
 	keyProfile, sid := rowGet(row, "key_profile"), rowKey(row, "id")
 	detail := fmt.Sprintf("key %s (%s messages) sits in the %s store", rowShown(row, "session_key"),
 		rowStr(row, "message_count"), store.profile)
@@ -381,7 +380,7 @@ func (p *repairProfilesPlan) planForeignRow(store repairProfilesStore, row *pyjs
 	if !p.claimed[name] {
 		p.add(&repairProfilesFinding{kind: "unclaimed_namespace", store: store.profile, subject: sid, detail: detail,
 			reason: strRef(fmt.Sprintf("no live profile named %s; create it, then rerun, or "+
-				"`icebath profile migrate-identity %s <target>`", errchain.Show(keyProfile), pyrepr.Str(keyProfile)))})
+				"`icebath profile migrate-identity %s <target>`", errchain.Show(keyProfile), anyutil.String(keyProfile)))})
 		return
 	}
 	moving[sid] = true
@@ -390,7 +389,7 @@ func (p *repairProfilesPlan) planForeignRow(store repairProfilesStore, row *pyjs
 }
 
 // Plans a legacy default namespace row in a named store by the legacy main policy
-func (p *repairProfilesPlan) planLegacyMainRow(store repairProfilesStore, row *pyjson.Object, moving map[string]bool) {
+func (p *repairProfilesPlan) planLegacyMainRow(store repairProfilesStore, row *jsonutil.Object, moving map[string]bool) {
 	sid := rowKey(row, "id")
 	detail := fmt.Sprintf("legacy default-namespace key %s (%s messages) in the %s store",
 		rowShown(row, "session_key"), rowStr(row, "message_count"), store.profile)
@@ -399,7 +398,7 @@ func (p *repairProfilesPlan) planLegacyMainRow(store repairProfilesStore, row *p
 		st := store
 		p.add(&repairProfilesFinding{kind: "legacy_main", store: store.profile, subject: sid, detail: detail,
 			action: strRef("rekey to agent:" + store.profile + ":"),
-			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
+			fix: func(s *repairProfilesSession) (*jsonutil.Object, error) {
 				db, err := s.writable(st)
 				if err != nil {
 					return nil, err
@@ -408,7 +407,7 @@ func (p *repairProfilesPlan) planLegacyMainRow(store repairProfilesStore, row *p
 				if err != nil {
 					return nil, err
 				}
-				return pyjson.ObjectOf("rekeyed", n), nil
+				return jsonutil.ObjectOf("rekeyed", n), nil
 			}})
 	case p.legacyMain == "move" && p.routingStore != nil:
 		moving[sid] = true
@@ -448,12 +447,12 @@ func (p *repairProfilesPlan) scanTopics(ctx context.Context, session *repairProf
 			subject: fmt.Sprintf("chat %s thread %s", rowStr(row, "chat_id"), rowStr(row, "thread_id")),
 			detail:  "telegram topic binding labelled 'default' but keyed " + rowShown(row, "session_key"),
 			action:  strRef("relabel to " + rowShown(row, "key_profile")),
-			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
+			fix: func(s *repairProfilesSession) (*jsonutil.Object, error) {
 				db, err := s.writable(st)
 				if err != nil {
 					return nil, err
 				}
-				return db.RelabelTelegramTopicRows(s.ctx, []*pyjson.Object{r})
+				return db.RelabelTelegramTopicRows(s.ctx, []*jsonutil.Object{r})
 			}})
 	}
 	return nil
@@ -482,7 +481,7 @@ func (p *repairProfilesPlan) scanRouting(ctx context.Context, session *repairPro
 					detail: fmt.Sprintf("routing row for a namespace no live profile claims (%s); every "+
 						"inbound event on it logs a missing-profile error", errchain.Show(keyProfile)),
 					action: strRef("delete"),
-					fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
+					fix: func(s *repairProfilesSession) (*jsonutil.Object, error) {
 						db, err := s.writable(st)
 						if err != nil {
 							return nil, err
@@ -491,7 +490,7 @@ func (p *repairProfilesPlan) scanRouting(ctx context.Context, session *repairPro
 						if err != nil {
 							return nil, err
 						}
-						return pyjson.ObjectOf("routing_deleted", n), nil
+						return jsonutil.ObjectOf("routing_deleted", n), nil
 					}})
 			}
 			continue
@@ -506,7 +505,7 @@ func (p *repairProfilesPlan) scanRouting(ctx context.Context, session *repairPro
 		p.add(&repairProfilesFinding{kind: "routing_stray", store: store.profile, subject: subject,
 			detail: "routing row in the " + store.profile + " store; the index lives in the default store",
 			action: strRef("move to the default store (existing row there wins)"),
-			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
+			fix: func(s *repairProfilesSession) (*jsonutil.Object, error) {
 				return moveRoutingRow(s, st, rs, r)
 			}})
 	}
@@ -514,12 +513,12 @@ func (p *repairProfilesPlan) scanRouting(ctx context.Context, session *repairPro
 }
 
 // Copies a stray routing row into the routing store when absent there, then deletes it from its store
-func moveRoutingRow(session *repairProfilesSession, store, routingStore repairProfilesStore, row *pyjson.Object) (*pyjson.Object, error) {
+func moveRoutingRow(session *repairProfilesSession, store, routingStore repairProfilesStore, row *jsonutil.Object) (*jsonutil.Object, error) {
 	dst, err := session.writable(routingStore)
 	if err != nil {
 		return nil, err
 	}
-	updatedAt, err := pyint.Float(rowGet(row, "updated_at"))
+	updatedAt, err := anyutil.ToFloat(rowGet(row, "updated_at"))
 	if err != nil {
 		return nil, err
 	}
@@ -536,7 +535,7 @@ func moveRoutingRow(session *repairProfilesSession, store, routingStore repairPr
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("routing_adopted", adopted, "routing_deleted", deleted), nil
+	return jsonutil.ObjectOf("routing_adopted", adopted, "routing_deleted", deleted), nil
 }
 
 // JSON document of a file read as utf-8-sig, false when missing, unreadable or malformed
@@ -545,13 +544,13 @@ func repairReadJSON(path string) (any, bool, error) {
 	if err != nil {
 		return nil, false, nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, false, err
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	if err != nil {
-		var decodeErr *pyjson.DecodeError
+		var decodeErr *jsonutil.SyntaxError
 		if errors.As(err, &decodeErr) {
 			return nil, false, nil
 		}
@@ -567,12 +566,12 @@ func (p *repairProfilesPlan) scanVoiceModes(ctx context.Context, session *repair
 	if err != nil || !ok {
 		return err
 	}
-	data, isDict := loaded.(*pyjson.Object)
+	data, isDict := loaded.(*jsonutil.Object)
 	if !isDict {
 		return nil
 	}
 	var keys []string
-	for _, k := range data.Keys {
+	for _, k := range data.Keys() {
 		if strings.Count(k, ":") == 1 {
 			keys = append(keys, k)
 		}
@@ -614,10 +613,10 @@ func (p *repairProfilesPlan) scanVoiceModes(ctx context.Context, session *repair
 		}
 		owner, k := names[0], key
 		p.add(&repairProfilesFinding{kind: "voice_profile_less", store: store.profile, subject: key,
-			detail: fmt.Sprintf("voice mode %s without a profile; chat is held only by %s", errchain.Show(data.Vals[key]),
+			detail: fmt.Sprintf("voice mode %s without a profile; chat is held only by %s", errchain.Show(data.Value(key)),
 				errchain.Show(owner)),
 			action: strRef("rekey to " + owner + ":" + key),
-			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
+			fix: func(s *repairProfilesSession) (*jsonutil.Object, error) {
 				return rekeyVoiceModeEntry(s.ctx, path, k, owner)
 			}})
 	}
@@ -631,12 +630,12 @@ func (p *repairProfilesPlan) scanSessionsJSON(store repairProfilesStore) error {
 	if err != nil || !ok {
 		return err
 	}
-	data, isDict := loaded.(*pyjson.Object)
+	data, isDict := loaded.(*jsonutil.Object)
 	if !isDict {
 		return nil
 	}
 	var keys []string
-	for _, k := range data.Keys {
+	for _, k := range data.Keys() {
 		if !strings.HasPrefix(k, "_") {
 			keys = append(keys, k)
 		}
@@ -652,7 +651,7 @@ func (p *repairProfilesPlan) scanSessionsJSON(store repairProfilesStore) error {
 			detail: fmt.Sprintf("sessions.json mirror entry for a namespace no live profile claims (%s); "+
 				"the legacy import re-injects it into routing on every boot", errchain.Show(keyProfile)),
 			action: strRef("delete entry"),
-			fix: func(s *repairProfilesSession) (*pyjson.Object, error) {
+			fix: func(s *repairProfilesSession) (*jsonutil.Object, error) {
 				return dropSessionsJSONEntry(s.ctx, path, k)
 			}})
 	}
@@ -667,12 +666,12 @@ func repairCount(v any) (int64, error) {
 		}
 		return 0, nil
 	}
-	return pyint.Int64(v)
+	return anyutil.ToInt(v)
 }
 
 // Runs every repairable fix after snapshotting each existing store, collecting totals and per finding failures
-func (p *repairProfilesPlan) apply(ctx context.Context, session *repairProfilesSession, snapshot func(context.Context, repairProfilesStore) (string, bool)) (*pyjson.Object, error) {
-	snapshots := pyjson.NewObject()
+func (p *repairProfilesPlan) apply(ctx context.Context, session *repairProfilesSession, snapshot func(context.Context, repairProfilesStore) (string, bool)) (*jsonutil.Object, error) {
+	snapshots := jsonutil.NewObject()
 	for _, s := range p.stores {
 		if _, err := os.Stat(s.dbPath()); err != nil {
 			continue
@@ -683,7 +682,7 @@ func (p *repairProfilesPlan) apply(ctx context.Context, session *repairProfilesS
 			snapshots.Set(s.profile, nil)
 		}
 	}
-	totals := pyjson.NewObject()
+	totals := jsonutil.NewObject()
 	failures := []any{}
 	for _, finding := range p.repairable() {
 		err := func() error {
@@ -694,30 +693,30 @@ func (p *repairProfilesPlan) apply(ctx context.Context, session *repairProfilesS
 			if counts == nil {
 				return nil
 			}
-			for _, key := range counts.Keys {
-				n, err := repairCount(counts.Vals[key])
+			for _, key := range counts.Keys() {
+				n, err := repairCount(counts.Value(key))
 				if err != nil {
 					return err
 				}
-				prev, _ := totals.GetOr(key, int64(0)).(int64)
+				prev, _ := totals.ValueOr(key, int64(0)).(int64)
 				totals.Set(key, prev+n)
 			}
 			return nil
 		}()
 		if err != nil {
 			pkgLog().Warn(fmt.Sprintf("repair-profiles: %s on %s failed: %s", finding.kind, finding.subject, errchain.Text(err)))
-			failures = append(failures, pyjson.ObjectOf("kind", finding.kind, "subject", finding.subject,
+			failures = append(failures, jsonutil.ObjectOf("kind", finding.kind, "subject", finding.subject,
 				"error", err.Error()))
 		}
 	}
-	return pyjson.ObjectOf("snapshots", snapshots, "totals", totals, "failures", failures), nil
+	return jsonutil.ObjectOf("snapshots", snapshots, "totals", totals, "failures", failures), nil
 }
 
 // Every session moving from one store to another, exported, imported parents first, then deleted
 type repairMoveBatch struct {
 	src, dst repairProfilesStore
 	ids      []string
-	result   map[string]*pyjson.Object
+	result   map[string]*jsonutil.Object
 	errs     map[string]error
 }
 
@@ -727,13 +726,13 @@ func newRepairMoveBatch(src, dst repairProfilesStore) *repairMoveBatch {
 }
 
 // Registers a session in the batch and returns the fix reporting its outcome
-func (b *repairMoveBatch) fixFor(sid string) func(*repairProfilesSession) (*pyjson.Object, error) {
+func (b *repairMoveBatch) fixFor(sid string) func(*repairProfilesSession) (*jsonutil.Object, error) {
 	b.ids = append(b.ids, sid)
-	return func(s *repairProfilesSession) (*pyjson.Object, error) { return b.outcome(s, sid) }
+	return func(s *repairProfilesSession) (*jsonutil.Object, error) { return b.outcome(s, sid) }
 }
 
 // Outcome of one session of the batch, its own error raised
-func (b *repairMoveBatch) outcome(session *repairProfilesSession, sid string) (*pyjson.Object, error) {
+func (b *repairMoveBatch) outcome(session *repairProfilesSession, sid string) (*jsonutil.Object, error) {
 	result, err := b.run(session)
 	if err != nil {
 		return nil, err
@@ -744,11 +743,11 @@ func (b *repairMoveBatch) outcome(session *repairProfilesSession, sid string) (*
 	if r, ok := result[sid]; ok {
 		return r, nil
 	}
-	return pyjson.ObjectOf("missing", 1), nil
+	return jsonutil.ObjectOf("missing", 1), nil
 }
 
 // Moves the whole batch once, a failing row holding back only its own lineage
-func (b *repairMoveBatch) run(session *repairProfilesSession) (map[string]*pyjson.Object, error) {
+func (b *repairMoveBatch) run(session *repairProfilesSession) (map[string]*jsonutil.Object, error) {
 	if b.result != nil {
 		return b.result, nil
 	}
@@ -785,10 +784,10 @@ func (b *repairMoveBatch) run(session *repairProfilesSession) (map[string]*pyjso
 		}
 	}
 	ordered := parentsFirst(present)
-	result := map[string]*pyjson.Object{}
+	result := map[string]*jsonutil.Object{}
 	for _, sid := range exported {
 		if _, failed := b.errs[sid]; payloads[sid] == nil && !failed {
-			result[sid] = pyjson.ObjectOf("missing", 1)
+			result[sid] = jsonutil.ObjectOf("missing", 1)
 		}
 	}
 	for _, payload := range ordered {
@@ -812,10 +811,10 @@ func (b *repairMoveBatch) run(session *repairProfilesSession) (map[string]*pyjso
 		if count < len(payload.Messages) {
 			pkgLog().Warn(fmt.Sprintf("repair-profiles: %s copied into %s with fewer messages than the source; "+
 				"source row kept", sid, b.dst.profile))
-			result[sid] = pyjson.ObjectOf("copied_incomplete", 1)
+			result[sid] = jsonutil.ObjectOf("copied_incomplete", 1)
 			continue
 		}
-		result[sid] = pyjson.ObjectOf(outcome, 1)
+		result[sid] = jsonutil.ObjectOf(outcome, 1)
 	}
 	awaited := map[string]bool{}
 	for _, payload := range ordered {
@@ -848,8 +847,8 @@ func (b *repairMoveBatch) run(session *repairProfilesSession) (map[string]*pyjso
 }
 
 // Stray rows that must stay put with the reason, ledgered rows and the lineage linked to them
-func ledgeredLineages(foreign []*pyjson.Object) map[string]string {
-	byID := map[string]*pyjson.Object{}
+func ledgeredLineages(foreign []*jsonutil.Object) map[string]string {
+	byID := map[string]*jsonutil.Object{}
 	var order []string
 	for _, row := range foreign {
 		id := rowKey(row, "id")
@@ -890,12 +889,12 @@ func ledgeredLineages(foreign []*pyjson.Object) map[string]string {
 		row := byID[sid]
 		var anchors []string
 		for m := range groups[sid] {
-			if pyrepr.Truthy(rowGet(byID[m], "ledgered")) {
+			if anyutil.IsTrue(rowGet(byID[m], "ledgered")) {
 				anchors = append(anchors, m)
 			}
 		}
 		sort.Strings(anchors)
-		if pyrepr.Truthy(rowGet(row, "ledgered")) {
+		if anyutil.IsTrue(rowGet(row, "ledgered")) {
 			held[sid] = "has gateway admission/worker history, which a move cannot carry"
 		} else if len(anchors) > 0 {
 			held[sid] = "its lineage holds " + anchors[0] + ", which has gateway admission/worker history"
@@ -954,7 +953,7 @@ func parentsFirst(payloads []*state.SessionMovePayload) []*state.SessionMovePayl
 // Membership test of a JSON document the way the in operator answers it
 func jsonContains(data any, key string) (bool, error) {
 	switch d := data.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		_, ok := d.Get(key)
 		return ok, nil
 	case []any:
@@ -976,11 +975,11 @@ func repairLoadForFix(path string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil, err
 	}
-	return pyjson.Loads(text)
+	return jsonutil.Decode(text)
 }
 
 // Refusal of a JSON document that is not a mapping
@@ -989,7 +988,7 @@ func repairNoAttribute(data any) error {
 }
 
 // Moves a voice mode entry under the owner prefix, an existing prefixed entry winning
-func rekeyVoiceModeEntry(ctx context.Context, path, key, owner string) (*pyjson.Object, error) {
+func rekeyVoiceModeEntry(ctx context.Context, path, key, owner string) (*jsonutil.Object, error) {
 	data, err := repairLoadForFix(path)
 	if err != nil {
 		return nil, err
@@ -999,13 +998,13 @@ func rekeyVoiceModeEntry(ctx context.Context, path, key, owner string) (*pyjson.
 		return nil, err
 	}
 	if !in {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil, repairNoAttribute(data)
 	}
-	value := obj.Vals[key]
+	value := obj.Value(key)
 	obj.Delete(key)
 	if _, exists := obj.Get(owner + ":" + key); !exists {
 		obj.Set(owner+":"+key, value)
@@ -1014,11 +1013,11 @@ func rekeyVoiceModeEntry(ctx context.Context, path, key, owner string) (*pyjson.
 	if err := config.AtomicJSONWrite(ctx, path, obj); err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("voice_rekeyed", 1), nil
+	return jsonutil.ObjectOf("voice_rekeyed", 1), nil
 }
 
 // Drops one sessions.json mirror entry, rewriting the file private
-func dropSessionsJSONEntry(ctx context.Context, path, key string) (*pyjson.Object, error) {
+func dropSessionsJSONEntry(ctx context.Context, path, key string) (*jsonutil.Object, error) {
 	data, err := repairLoadForFix(path)
 	if err != nil {
 		return nil, err
@@ -1028,17 +1027,17 @@ func dropSessionsJSONEntry(ctx context.Context, path, key string) (*pyjson.Objec
 		return nil, err
 	}
 	if !in {
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
-	obj, ok := data.(*pyjson.Object)
+	obj, ok := data.(*jsonutil.Object)
 	if !ok {
 		return nil, &appClassedError{class: "TypeError", msg: "the file holds " + errchain.Kind(data) + " where a mapping was expected"}
 	}
 	obj.Delete(key)
-	if err := config.AtomicJSONWriteMode(ctx, path, obj, 0o600, pyjson.Indent(2)); err != nil {
+	if err := config.AtomicJSONWriteMode(ctx, path, obj, 0o600, jsonutil.Indent(2)); err != nil {
 		return nil, err
 	}
-	return pyjson.ObjectOf("sessions_json_dropped", 1), nil
+	return jsonutil.ObjectOf("sessions_json_dropped", 1), nil
 }
 
 // Opens every store and builds the plan, the caller owning the returned session
@@ -1066,7 +1065,7 @@ func defaultSnapshot(ctx context.Context, store repairProfilesStore) (string, bo
 	label := "repair-profiles"
 	id, err := backup.CreateQuickSnapshot(&label, store.home, nil, nil)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("repair-profiles: snapshot of %s failed: %s", store.home, pyrepr.ExceptionMessage(err)))
+		pkgLog().Warn(fmt.Sprintf("repair-profiles: snapshot of %s failed: %s", store.home, err.Error()))
 		return "", false
 	}
 	if id == "" {

@@ -9,6 +9,7 @@ import (
 	"golang.org/x/text/language"
 
 	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
 )
 
 // Python str.lower with the full Unicode mapping and final sigma rule
@@ -50,7 +51,7 @@ func latin1Ignore(s string) []byte {
 
 // String bytes.decode unicode_escape yields, the strict UnicodeDecodeError on a malformed escape
 func pyUnicodeEscapeDecode(data []byte) (string, error) {
-	text, err := pycodecs.Decode(data, "unicode_escape")
+	text, err := charsetutil.Decode(data, "unicode_escape")
 	if err != nil {
 		var bad *pycodecs.UnicodeDecodeError
 		if errors.As(err, &bad) {

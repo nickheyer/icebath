@@ -2,9 +2,9 @@ package commands
 
 import (
 	"errors"
+	"strconv"
 	"sync/atomic"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -38,7 +38,7 @@ func (v *choiceValue) refusal(value string) error {
 	if v.typeMsg != "" {
 		return errors.New(v.typeMsg)
 	}
-	repr := pyrepr.StrRepr
+	repr := strconv.Quote
 	if t := v.Value.Type(); t == "int" || t == "float64" {
 		repr = func(s string) string { return s }
 	}

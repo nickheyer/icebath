@@ -10,7 +10,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -239,7 +239,7 @@ func retentionHash(wt string, env map[string]string, data []byte, rel string, ra
 	} else {
 		args = append(args, "--path="+rel)
 	}
-	r, err := pysubprocess.RunWith(context.Background(), args, pysubprocess.Options{Dir: wt, Env: mapToEnviron(env), Input: data, Timeout: 60 * time.Second})
+	r, err := executil.Run(context.Background(), args, executil.Options{Dir: wt, Env: mapToEnviron(env), Input: data, Timeout: 60 * time.Second})
 	if err != nil || r.Returncode != 0 {
 		return ""
 	}

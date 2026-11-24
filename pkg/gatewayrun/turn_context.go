@@ -5,9 +5,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Unbounded thread safe FIFO whose put never blocks
@@ -92,7 +92,7 @@ type TurnContext struct {
 	persistUserDisplayMetadata      map[string]any
 	userConfig                      map[string]any
 	muteNotificationReply           bool
-	capturedResult                  *pyjson.Object
+	capturedResult                  *jsonutil.Object
 	voiceTurn                       bool
 	enabledToolsets                 []string
 	disabledToolsets                []string

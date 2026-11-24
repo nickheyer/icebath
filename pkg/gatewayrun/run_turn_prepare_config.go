@@ -7,8 +7,9 @@ import (
 	"slices"
 
 	"github.com/nickheyer/icebath/pkg/agent"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Service tier a turn config resolves with, the runner's per turn tier unless an explicit one is given
@@ -93,7 +94,7 @@ func (r *GatewayRunner) syncSessionModelFromAgent(ctx context.Context, sessionID
 	if model == "" {
 		return
 	}
-	runtime := pyjson.NewObject()
+	runtime := jsonutil.NewObject()
 	for _, kv := range [][2]any{
 		{"provider", provider.SessionProviderIdentity(ctx, a.Provider(), a.RequestedProvider(), a.BaseURL(), model)},
 		{"base_url", a.BaseURL()},
@@ -115,22 +116,22 @@ func (r *GatewayRunner) syncSessionModelFromAgent(ctx context.Context, sessionID
 		if err != nil || row == nil || row.Len() == 0 {
 			return err
 		}
-		cfg := pyjson.NewObject()
-		if raw, _ := row.GetOr("model_config", nil).(string); raw != "" {
-			if parsed, err := pyjson.Loads(raw); err == nil {
-				if obj, ok := parsed.(*pyjson.Object); ok {
+		cfg := jsonutil.NewObject()
+		if raw, _ := row.ValueOr("model_config", nil).(string); raw != "" {
+			if parsed, err := jsonutil.Decode(raw); err == nil {
+				if obj, ok := parsed.(*jsonutil.Object); ok {
 					cfg = obj
 				}
 			}
 		}
-		gatewayRuntime := pyjson.NewObject()
-		if existing, ok := cfg.GetOr("gateway_runtime", nil).(*pyjson.Object); ok && existing != nil {
-			gatewayRuntime = existing.Copy()
+		gatewayRuntime := jsonutil.NewObject()
+		if existing, ok := cfg.ValueOr("gateway_runtime", nil).(*jsonutil.Object); ok && existing != nil {
+			gatewayRuntime = existing.Clone()
 		}
-		same := row.GetOr("model", nil) == model
-		for _, k := range runtime.Keys {
+		same := row.ValueOr("model", nil) == model
+		for _, k := range runtime.Keys() {
 			v, _ := runtime.Get(k)
-			if !pyjson.Equal(gatewayRuntime.GetOr(k, nil), v) {
+			if !anyutil.Equal(gatewayRuntime.ValueOr(k, nil), v) {
 				same = false
 			}
 		}
@@ -138,7 +139,7 @@ func (r *GatewayRunner) syncSessionModelFromAgent(ctx context.Context, sessionID
 			return nil
 		}
 		cfg.Set("gateway_runtime", runtime)
-		text, err := pyjson.Dumps(cfg)
+		text, err := jsonutil.Encode(cfg)
 		if err != nil {
 			return err
 		}

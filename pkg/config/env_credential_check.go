@@ -4,9 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var nonASCIIWarnOutput io.Writer = os.Stderr
@@ -27,7 +26,7 @@ func CheckNonASCIICredential(key, value string) string {
 	var sanitized strings.Builder
 	for i, ch := range []rune(value) {
 		if ch > 127 {
-			badChars = append(badChars, fmt.Sprintf("  position %d: %s (U+%04X)", i, pyrepr.StrRepr(string(ch)), ch))
+			badChars = append(badChars, fmt.Sprintf("  position %d: %s (U+%04X)", i, strconv.Quote(string(ch)), ch))
 			continue
 		}
 		sanitized.WriteRune(ch)

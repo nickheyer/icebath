@@ -6,14 +6,14 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func iptr(n int) *int   { return &n }
 func bptr(b bool) *bool { return &b }
 func falPayload(f falFamily, in falPayloadInput) map[string]any {
-	return pyjson.Plain(falBuildVideoPayload(f, in)).(map[string]any)
+	return jsonutil.Plain(falBuildVideoPayload(f, in)).(map[string]any)
 }
 
 func TestKlingV3StandardAndProPayloadShape(t *testing.T) {

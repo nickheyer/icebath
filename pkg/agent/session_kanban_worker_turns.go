@@ -15,13 +15,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/goals"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/kanban"
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -39,15 +38,15 @@ func init() {
 }
 
 // Kanban attempt whose exit code is booked on the board
-func runKanbanAttempt(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, history []map[string]any, kctx any) (map[string]any, error) {
+func runKanbanAttempt(ctx context.Context, a WorkerTurnAgent, frame *jsonutil.Object, history []map[string]any, kctx any) (map[string]any, error) {
 	code, lastOutput := 1, ""
 	result, runErr := runTaskTurns(ctx, a, frame, history, kctx)
 	if runErr == nil {
 		code = tools.TurnExitCode(result, tools.TurnExitOptions{KanbanWorker: true})
 		if result != nil {
 			text := ""
-			if final := result["final_response"]; pyrepr.Truthy(final) {
-				text = pyrepr.Str(final)
+			if final := result["final_response"]; anyutil.IsTrue(final) {
+				text = anyutil.String(final)
 			}
 			lastOutput = textutil.Last(text, 500)
 		}
@@ -62,7 +61,7 @@ func runKanbanAttempt(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Obje
 }
 
 // Kanban attempt with its preloaded skills, in place provider recovery under the bound claim, then the goal loop
-func runTaskTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, history []map[string]any, kctx any) (map[string]any, error) {
+func runTaskTurns(ctx context.Context, a WorkerTurnAgent, frame *jsonutil.Object, history []map[string]any, kctx any) (map[string]any, error) {
 	var itemErr error
 	item := func(key string) any {
 		if itemErr != nil {
@@ -80,7 +79,7 @@ func runTaskTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, 
 	switch list := rawSkills.(type) {
 	case []any:
 		for _, raw := range list {
-			identifiers = append(identifiers, pyrepr.Str(raw))
+			identifiers = append(identifiers, anyutil.String(raw))
 		}
 	case nil:
 	default:
@@ -95,8 +94,8 @@ func runTaskTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, 
 		return nil, itemErr
 	}
 	var parts []string
-	for i, part := range []any{prompt, cardContext, frame.GetOr("text", nil)} {
-		if !pyrepr.Truthy(part) {
+	for i, part := range []any{prompt, cardContext, frame.ValueOr("text", nil)} {
+		if !anyutil.IsTrue(part) {
 			continue
 		}
 		text, isText := part.(string)
@@ -140,7 +139,7 @@ func runTaskTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, 
 		next.ConversationHistory = prior
 		result, recoverErr = a.RunConversationContent(ctx, nudge, next)
 	}
-	taskID := pyrepr.Str(item("task_id"))
+	taskID := anyutil.String(item("task_id"))
 	if itemErr != nil {
 		return nil, itemErr
 	}
@@ -160,7 +159,7 @@ func runTaskTurns(ctx context.Context, a WorkerTurnAgent, frame *pyjson.Object, 
 	if itemErr != nil {
 		return nil, itemErr
 	}
-	if !pyrepr.Truthy(goalMode) || tools.TurnExitCode(result, tools.TurnExitOptions{KanbanWorker: true}) != 0 {
+	if !anyutil.IsTrue(goalMode) || tools.TurnExitCode(result, tools.TurnExitOptions{KanbanWorker: true}) != 0 {
 		return result, nil
 	}
 	return runKanbanGoalTurns(ctx, a, kctx, taskID, result, sessionConversation, taskTurn)
@@ -176,7 +175,7 @@ func runKanbanGoalTurns(ctx context.Context, a WorkerTurnAgent, kctx any, taskID
 	}
 	var runID *int64
 	if rawRun != nil {
-		n, err := pyint.Int64(rawRun)
+		n, err := anyutil.ToInt(rawRun)
 		if err != nil {
 			return nil, err
 		}
@@ -191,19 +190,19 @@ func runKanbanGoalTurns(ctx context.Context, a WorkerTurnAgent, kctx any, taskID
 		return nil, err
 	}
 	maxTurns := 0
-	if pyrepr.Truthy(rawMax) {
-		n, err := pyint.Int64(rawMax)
+	if anyutil.IsTrue(rawMax) {
+		n, err := anyutil.ToInt(rawMax)
 		if err != nil {
 			return nil, err
 		}
 		maxTurns = int(n)
 	}
 	firstResponse := ""
-	if final := result["final_response"]; pyrepr.Truthy(final) {
-		firstResponse = pyrepr.Str(final)
+	if final := result["final_response"]; anyutil.IsTrue(final) {
+		firstResponse = anyutil.String(final)
 	}
 	_, err = goals.RunKanbanGoalLoop(ctx, goals.GoalLoopOptions{
-		TaskID: taskID, GoalText: pyrepr.Str(goalText), MaxTurns: maxTurns, FirstResponse: firstResponse,
+		TaskID: taskID, GoalText: anyutil.String(goalText), MaxTurns: maxTurns, FirstResponse: firstResponse,
 		RunTurn: func(prompt string) (any, error) {
 			history, err := sessionConversation()
 			if err != nil {

@@ -45,7 +45,7 @@ func runMainFailureCode(err error, stderr io.Writer) int {
 		}
 		return 128 + int(syscall.SIGINT)
 	}
-	message := pyrepr.ExceptionMessage(err)
+	message := err.Error()
 	if message == "" {
 		message = pyrepr.ExceptionName(err)
 	}

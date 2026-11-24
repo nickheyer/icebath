@@ -12,9 +12,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func TestNewSessionIsCreatedOnTheGatewayAndItsIdAdopted(t *testing.T) {
@@ -295,7 +295,7 @@ func TestVerboseFlagRidesSessionCreate(t *testing.T) {
 
 func resolved(t *testing.T, path string) string {
 	t.Helper()
-	real, err := pypath.Resolve(path)
+	real, err := pathutil.Resolve(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -408,7 +408,7 @@ func TestExplicitFlagsOnResumeAreCheckedAgainstTheFrozenRoute(t *testing.T) {
 		sent := client.lastOf(t, "session.mutate")
 		payload, _ := sent["payload"].(map[string]any)
 		for key, value := range launch {
-			if sent["operation"] != "launch" || len(payload) != 1 || (!pyjson.Equal(payload[key], value) && pyFloatOf(payload[key]) != pyFloatOf(value)) {
+			if sent["operation"] != "launch" || len(payload) != 1 || (!anyutil.Equal(payload[key], value) && pyFloatOf(payload[key]) != pyFloatOf(value)) {
 				t.Fatalf("launch %v relaunched with %v", launch, sent)
 			}
 		}
@@ -432,7 +432,7 @@ func TestExplicitToolsetsOnResumeAreCheckedAgainstTheFrozenRoute(t *testing.T) {
 		t.Fatal(err)
 	}
 	sent := client.lastOf(t, "session.mutate")
-	if payload, _ := sent["payload"].(map[string]any); sent["operation"] != "launch" || !pyjson.Equal(payload["toolsets"], []any{"web"}) || len(payload) != 1 {
+	if payload, _ := sent["payload"].(map[string]any); sent["operation"] != "launch" || !anyutil.Equal(payload["toolsets"], []any{"web"}) || len(payload) != 1 {
 		t.Fatalf("toolsets relaunched with %v", sent)
 	}
 	relaunches := len(client.of("session.mutate"))
@@ -464,7 +464,7 @@ func TestResumeRelaunchesTheClashingFlags(t *testing.T) {
 			t.Fatalf("launch %v sent %v", launch, sent)
 		}
 		for key, value := range launch {
-			if !pyjson.Equal(payload[key], value) && !(key == "run_budget" && payload[key] == 30.0) {
+			if !anyutil.Equal(payload[key], value) && !(key == "run_budget" && payload[key] == 30.0) {
 				t.Fatalf("launch %v payload %v", launch, payload)
 			}
 		}
@@ -522,7 +522,7 @@ func TestCliListingsIncludeGatewayRowsCreatedByTheCli(t *testing.T) {
 	}
 	var listedIDs []string
 	for _, row := range listed {
-		listedIDs = append(listedIDs, row.Vals["id"].(string))
+		listedIDs = append(listedIDs, row.Value("id").(string))
 	}
 	wantIDs(t, sortedIDs(listedIDs), "legacy", "local-cli")
 	found, err := db.SearchSessions(ctx, SearchSessionsOptions{Sources: []string{"cli", "oneshot"}, Limit: 10})

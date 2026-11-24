@@ -8,11 +8,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -44,7 +44,7 @@ func chatNameOrID(source *gateway.SessionSource) string {
 }
 
 // Titled sessions visible to the caller, origin scoped unless an admin asked for all
-func (r *GatewayRunner) listTitledSessions(ctx context.Context, source *gateway.SessionSource, sessionKey string, allowAll bool) ([]*pyjson.Object, error) {
+func (r *GatewayRunner) listTitledSessions(ctx context.Context, source *gateway.SessionSource, sessionKey string, allowAll bool) ([]*jsonutil.Object, error) {
 	widen := allowAll && r.resumeCallerIsAdmin(source)
 	asyncDB := r.sessionDB(ctx)
 	if asyncDB == nil {
@@ -54,17 +54,17 @@ func (r *GatewayRunner) listTitledSessions(ctx context.Context, source *gateway.
 	if !widen {
 		opts.SessionKey = sessionKey
 	}
-	sessions, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) ([]*pyjson.Object, error) { return d.ListSessionsRich(ctx, opts) })
+	sessions, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) ([]*jsonutil.Object, error) { return d.ListSessionsRich(ctx, opts) })
 	if err != nil {
 		return nil, err
 	}
-	var titled []*pyjson.Object
+	var titled []*jsonutil.Object
 	for _, s := range sessions {
-		if title, _ := s.Get("title"); pyrepr.Truthy(title) && len(titled) < 10 {
+		if title, _ := s.Get("title"); anyutil.IsTrue(title) && len(titled) < 10 {
 			titled = append(titled, s)
 		}
 	}
-	var visible []*pyjson.Object
+	var visible []*jsonutil.Object
 	for _, s := range titled {
 		if r.resumeRowVisible(ctx, source, s, allowAll) {
 			visible = append(visible, s)
@@ -77,11 +77,11 @@ func (r *GatewayRunner) listTitledSessions(ctx context.Context, source *gateway.
 func (r *GatewayRunner) resolveResumeTarget(ctx context.Context, source *gateway.SessionSource, sessionKey, name string, allowAll bool) (string, string, string, error) {
 	db := r.sessionDB(ctx).DB()
 	targetID := ""
-	if pystr.StrIsDigit(name) {
+	if textutil.IsDigits(name) {
 		titled, err := r.listTitledSessions(ctx, source, sessionKey, allowAll)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("Failed to list titled sessions for numeric resume: %s", pyrepr.ExceptionMessage(err)))
-			return "", "", i18n.T(ctx, "gateway.resume.list_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+			pkgLog().Debug(fmt.Sprintf("Failed to list titled sessions for numeric resume: %s", err.Error()))
+			return "", "", i18n.T(ctx, "gateway.resume.list_failed", "", map[string]any{"error": err.Error()}), nil
 		}
 		index, ok := pystr.IntText(name)
 		if !ok {
@@ -102,7 +102,7 @@ func (r *GatewayRunner) resolveResumeTarget(ctx context.Context, source *gateway
 		}
 		if session != nil && session.Len() > 0 {
 			id, _ := session.Get("id")
-			targetID = pyrepr.Str(id)
+			targetID = anyutil.String(id)
 		} else if targetID, _, err = db.ResolveSessionByTitle(ctx, name); err != nil {
 			return "", "", "", err
 		}
@@ -111,7 +111,7 @@ func (r *GatewayRunner) resolveResumeTarget(ctx context.Context, source *gateway
 		return "", "", i18n.T(ctx, "gateway.resume.not_found", "", map[string]any{"name": name}), nil
 	}
 	if resolved, err := db.ResolveResumeSessionID(targetID); err != nil {
-		pkgLog().Debug(fmt.Sprintf("Failed to resolve resume continuation for %s: %s", targetID, pyrepr.ExceptionMessage(err)))
+		pkgLog().Debug(fmt.Sprintf("Failed to resolve resume continuation for %s: %s", targetID, err.Error()))
 	} else {
 		targetID = resolved
 	}
@@ -147,9 +147,9 @@ func (r *GatewayRunner) handleResumeCommand(ctx context.Context, event *gateway.
 	if err != nil {
 		return "", err
 	}
-	parts, err := pyshlex.SplitPOSIX(strings.TrimSpace(event.GetCommandArgs()), false)
+	parts, err := shellutil.Split(strings.TrimSpace(event.GetCommandArgs()))
 	if err != nil {
-		return i18n.T(ctx, "gateway.resume.parse_error", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.resume.parse_error", "", map[string]any{"error": err.Error()}), nil
 	}
 	allowAll, allowCrossRoom := false, false
 	for _, p := range parts {
@@ -160,8 +160,8 @@ func (r *GatewayRunner) handleResumeCommand(ctx context.Context, event *gateway.
 	if name == "" {
 		titled, err := r.listTitledSessions(ctx, source, sessionKey, allowAll)
 		if err != nil {
-			pkgLog().Debug(fmt.Sprintf("Failed to list titled sessions: %s", pyrepr.ExceptionMessage(err)))
-			return i18n.T(ctx, "gateway.resume.list_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+			pkgLog().Debug(fmt.Sprintf("Failed to list titled sessions: %s", err.Error()))
+			return i18n.T(ctx, "gateway.resume.list_failed", "", map[string]any{"error": err.Error()}), nil
 		}
 		return r.resumeListingReply(ctx, source, titled, allowAll), nil
 	}
@@ -252,7 +252,7 @@ func (r *GatewayRunner) handleResumeCommand(ctx context.Context, event *gateway.
 }
 
 // Numbered resume list, a non admin all request falling back to same origin scoping with a note
-func (r *GatewayRunner) resumeListingReply(ctx context.Context, source *gateway.SessionSource, titled []*pyjson.Object, allowAll bool) string {
+func (r *GatewayRunner) resumeListingReply(ctx context.Context, source *gateway.SessionSource, titled []*jsonutil.Object, allowAll bool) string {
 	scopeNote := ""
 	if allowAll && !r.resumeCallerIsAdmin(source) {
 		scopeNote = i18n.T(ctx, "gateway.resume.all_requires_admin", "", nil)
@@ -270,7 +270,7 @@ func (r *GatewayRunner) resumeListingReply(ctx context.Context, source *gateway.
 	lines := []string{i18n.T(ctx, "gateway.resume.list_header", "", nil)}
 	for idx, s := range titled[:min(len(titled), 10)] {
 		titleValue, _ := s.Get("title")
-		title := pyrepr.Str(titleValue)
+		title := anyutil.String(titleValue)
 		if source.Platform == gateway.PlatformMatrix && allowAll {
 			if origin := r.gatewaySessionOriginForID(ctx, rowStr(s, "id")); origin != nil {
 				title = title + " — " + chatNameOrID(origin)
@@ -279,7 +279,7 @@ func (r *GatewayRunner) resumeListingReply(ctx context.Context, source *gateway.
 		previewValue, _ := s.Get("preview")
 		preview := ""
 		if previewValue != nil {
-			preview = textutil.First(pyrepr.Str(previewValue), 40)
+			preview = textutil.First(anyutil.String(previewValue), 40)
 		}
 		previewPart := ""
 		if preview != "" {
@@ -302,7 +302,7 @@ func (r *GatewayRunner) handleSessionsCommand(ctx context.Context, event *gatewa
 	}
 	includeAll, includeUnnamed, target, searchQuery, err := state.ParseSessionListingArgs(strings.TrimSpace(event.GetCommandArgs()))
 	if err != nil {
-		return i18n.T(ctx, "gateway.resume.parse_error", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		return i18n.T(ctx, "gateway.resume.parse_error", "", map[string]any{"error": err.Error()}), nil
 	}
 	if searchQuery != nil && *searchQuery == "" {
 		return i18n.T(ctx, "gateway.sessions.usage_search", "", nil), nil
@@ -334,14 +334,14 @@ func (r *GatewayRunner) handleSessionsCommand(ctx context.Context, event *gatewa
 		query.SearchQuery = *searchQuery
 		query.Limit = 50
 	}
-	rows, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) ([]*pyjson.Object, error) {
+	rows, err := state.AsyncCall(ctx, asyncDB, func(d *state.SessionDB) ([]*jsonutil.Object, error) {
 		return state.QuerySessionListing(ctx, d, query)
 	})
 	if err != nil {
 		return "", err
 	}
 	if !crossOrigin {
-		var visible []*pyjson.Object
+		var visible []*jsonutil.Object
 		for _, row := range rows {
 			if r.resumeRowVisible(ctx, source, row, false) {
 				visible = append(visible, row)

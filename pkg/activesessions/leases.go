@@ -18,11 +18,11 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Machine readable refusal reasons, capacity and ownership calling for different operator action
@@ -78,15 +78,15 @@ func FormatRefusalStderr(message *Refusal) string {
 }
 
 // Compact holders phrase like tui x4, cli with the age of the oldest lease
-func SummarizeHolders(entries []*pyjson.Object) string {
+func SummarizeHolders(entries []*jsonutil.Object) string {
 	if len(entries) == 0 {
 		return ""
 	}
 	counts := map[string]int{}
 	for _, e := range entries {
 		surface := "unknown"
-		if v := e.GetOr("surface", nil); pyTruthy(v) {
-			surface = pyrepr.Str(v)
+		if v := e.ValueOr("surface", nil); pyTruthy(v) {
+			surface = anyutil.String(v)
 		}
 		counts[surface]++
 	}
@@ -107,7 +107,7 @@ func SummarizeHolders(entries []*pyjson.Object) string {
 	held := strings.Join(parts, ", ")
 	oldest, found := 0.0, false
 	for _, e := range entries {
-		if t, ok := optionalFloat(e.GetOr("started_at", nil)); ok && t != 0 && (!found || t < oldest) {
+		if t, ok := optionalFloat(e.ValueOr("started_at", nil)); ok && t != 0 && (!found || t < oldest) {
 			oldest, found = t, true
 		}
 	}
@@ -118,7 +118,7 @@ func SummarizeHolders(entries []*pyjson.Object) string {
 }
 
 // Capacity refusal text naming the surfaces that hold the slots
-func ActiveSessionLimitMessage(activeCount int, maxSessions *big.Int, entries []*pyjson.Object) string {
+func ActiveSessionLimitMessage(activeCount int, maxSessions *big.Int, entries []*jsonutil.Object) string {
 	detail := ""
 	if held := SummarizeHolders(entries); held != "" {
 		detail = fmt.Sprintf(" Held by: %s.", held)
@@ -127,14 +127,14 @@ func ActiveSessionLimitMessage(activeCount int, maxSessions *big.Int, entries []
 }
 
 // Refusal text for a session another live process holds, the plain sentence first and details second
-func SessionAlreadyOwnedMessage(sessionID string, entry *pyjson.Object) string {
+func SessionAlreadyOwnedMessage(sessionID string, entry *jsonutil.Object) string {
 	return "This chat is open in another Icebath window/terminal. Use it there, or start a new chat here.\n" +
 		SessionOwnerDetails(sessionID, entry)
 }
 
 // True when an existing lease belongs to this pid and the same live session re acquiring it
-func isSameWriter(entry *pyjson.Object, metadata map[string]any) bool {
-	raw := entry.GetOr("pid", nil)
+func isSameWriter(entry *jsonutil.Object, metadata map[string]any) bool {
+	raw := entry.ValueOr("pid", nil)
 	if !pyTruthy(raw) {
 		raw = int64(-1)
 	}
@@ -143,12 +143,12 @@ func isSameWriter(entry *pyjson.Object, metadata map[string]any) bool {
 		return false
 	}
 	existing := ""
-	if meta, ok := entry.GetOr("metadata", nil).(*pyjson.Object); ok && meta != nil {
-		existing = pyrepr.Str(orEmpty(meta.GetOr("live_session_id", nil)))
+	if meta, ok := entry.ValueOr("metadata", nil).(*jsonutil.Object); ok && meta != nil {
+		existing = anyutil.String(orEmpty(meta.ValueOr("live_session_id", nil)))
 	}
 	incoming := ""
 	if metadata != nil {
-		incoming = pyrepr.Str(orEmpty(metadata["live_session_id"]))
+		incoming = anyutil.String(orEmpty(metadata["live_session_id"]))
 	}
 	return existing != "" && incoming != "" && existing == incoming
 }
@@ -212,14 +212,14 @@ func flock(fh *os.File, lock bool, timeout time.Duration) error {
 			return err
 		}
 		if !held {
-			return fmt.Errorf("file lock still held after %ss", pyrepr.Repr(timeout.Seconds()))
+			return fmt.Errorf("file lock still held after %ss", anyutil.Quote(timeout.Seconds()))
 		}
 		return nil
 	}
 	if lock {
-		return pyfs.LockFile(fh)
+		return fsutil.LockFile(fh)
 	}
-	return pyfs.UnlockFile(fh)
+	return fsutil.UnlockFile(fh)
 }
 
 // Exclusive lock on a path whose file stays open from enter to exit
@@ -325,11 +325,11 @@ var (
 
 // Normalised real path keying the queued releases of one registry file
 func registryKey(path string) string {
-	real, err := pypath.Realpath(path, pypath.Lax)
+	real, err := pathutil.Resolve(path)
 	if err != nil {
 		real = path
 	}
-	return pypath.Normcase(real)
+	return pathutil.FoldCase(real)
 }
 
 // Retires a lease from this process view of the registry now, its file write coming later
@@ -362,7 +362,7 @@ func unmarkReleaseQueued(statePath, leaseID string) {
 }
 
 // Entries with the releases this process has queued for the registry hidden
-func withoutQueuedReleases(path string, entries []*pyjson.Object) []*pyjson.Object {
+func withoutQueuedReleases(path string, entries []*jsonutil.Object) []*jsonutil.Object {
 	queuedReleasesMu.Lock()
 	empty := len(queuedReleases) == 0
 	queuedReleasesMu.Unlock()
@@ -376,7 +376,7 @@ func withoutQueuedReleases(path string, entries []*pyjson.Object) []*pyjson.Obje
 	if len(queued) == 0 {
 		return entries
 	}
-	var kept []*pyjson.Object
+	var kept []*jsonutil.Object
 	for _, e := range entries {
 		if !queued[leaseIDOf(e)] {
 			kept = append(kept, e)
@@ -386,8 +386,8 @@ func withoutQueuedReleases(path string, entries []*pyjson.Object) []*pyjson.Obje
 }
 
 // Metadata as a JSON object keyed in sorted order
-func cleanMetadata(metadata map[string]any) *pyjson.Object {
-	obj := pyjson.NewObject()
+func cleanMetadata(metadata map[string]any) *jsonutil.Object {
+	obj := jsonutil.NewObject()
 	for _, k := range slices.Sorted(maps.Keys(metadata)) {
 		obj.Set(k, metadata[k])
 	}
@@ -395,8 +395,8 @@ func cleanMetadata(metadata map[string]any) *pyjson.Object {
 }
 
 // Entries without the lease, the registry written only when it was present
-func dropLease(statePath string, entries []*pyjson.Object, leaseID string) ([]*pyjson.Object, error) {
-	var kept []*pyjson.Object
+func dropLease(statePath string, entries []*jsonutil.Object, leaseID string) ([]*jsonutil.Object, error) {
+	var kept []*jsonutil.Object
 	for _, e := range entries {
 		if leaseIDOf(e) != leaseID {
 			kept = append(kept, e)
@@ -411,12 +411,12 @@ func dropLease(statePath string, entries []*pyjson.Object, leaseID string) ([]*p
 }
 
 // True when a non empty session id has an entry among the leases
-func holdsSession(entries []*pyjson.Object, sessionID string) bool {
+func holdsSession(entries []*jsonutil.Object, sessionID string) bool {
 	if sessionID == "" {
 		return false
 	}
 	for _, e := range entries {
-		if pyrepr.Str(orEmpty(e.GetOr("session_id", nil))) == sessionID {
+		if anyutil.String(orEmpty(e.ValueOr("session_id", nil))) == sessionID {
 			return true
 		}
 	}
@@ -424,10 +424,10 @@ func holdsSession(entries []*pyjson.Object, sessionID string) bool {
 }
 
 // Raw and pruned registry entries, false with the warning logged when unreadable and untracked
-func readLiveEntries(statePath string, trackLiveness bool, warn string, targetSessionID *string, targetPid *int) ([]*pyjson.Object, []*pyjson.Object, bool, error) {
+func readLiveEntries(statePath string, trackLiveness bool, warn string, targetSessionID *string, targetPid *int) ([]*jsonutil.Object, []*jsonutil.Object, bool, error) {
 	raw, err := readEntries(statePath, true)
 	if err == nil {
-		var live []*pyjson.Object
+		var live []*jsonutil.Object
 		live, err = pruneDead(raw, trackLiveness, targetSessionID, targetPid)
 		if err == nil {
 			return raw, live, true, nil
@@ -442,13 +442,13 @@ func readLiveEntries(statePath string, trackLiveness bool, warn string, targetSe
 }
 
 // Registry entry of a new lease owned by this process
-func leaseEntry(leaseID, sessionID, surface string, metadata map[string]any, trackLiveness bool) *pyjson.Object {
+func leaseEntry(leaseID, sessionID, surface string, metadata map[string]any, trackLiveness bool) *jsonutil.Object {
 	now := nowSeconds()
 	var start any
 	if s, ok := ownStartTime(); ok {
 		start = s
 	}
-	entry := pyjson.ObjectOf(
+	entry := jsonutil.ObjectOf(
 		"lease_id", leaseID,
 		"session_id", sessionID,
 		"surface", surface,
@@ -505,7 +505,7 @@ func TryAcquire(ctx context.Context, sessionID, surface string, cfg any, metadat
 	}
 	if key != "" {
 		for index, existing := range entries {
-			if pyrepr.Str(orEmpty(existing.GetOr("session_id", nil))) != key {
+			if anyutil.String(orEmpty(existing.ValueOr("session_id", nil))) != key {
 				continue
 			}
 			if isSameWriter(existing, metadata) {
@@ -516,7 +516,7 @@ func TryAcquire(ctx context.Context, sessionID, surface string, cfg any, metadat
 				return lease, nil, nil
 			}
 			return refuse(SessionAlreadyOwnedMessage(key, existing), SessionNotOwned,
-				fmt.Sprintf("Refused active session %s: already held by pid=%s surface=%s", key, pyrepr.Str(existing.GetOr("pid", nil)), pyrepr.Str(existing.GetOr("surface", nil))))
+				fmt.Sprintf("Refused active session %s: already held by pid=%s surface=%s", key, anyutil.String(existing.ValueOr("pid", nil)), anyutil.String(existing.ValueOr("surface", nil))))
 		}
 	}
 	if maxSessions != nil && big.NewInt(int64(len(entries))).Cmp(maxSessions) >= 0 {
@@ -581,7 +581,7 @@ func TransferActiveSession(lease *Lease, sessionID string, metadata map[string]a
 	if err != nil || !loaded {
 		return false, err
 	}
-	var own *pyjson.Object
+	var own *jsonutil.Object
 	for _, e := range entries {
 		if leaseIDOf(e) == lease.LeaseID {
 			own = e
@@ -608,16 +608,16 @@ func TransferActiveSession(lease *Lease, sessionID string, metadata map[string]a
 }
 
 // Drops leases of this process its caller cannot vouch for, sparing foreign and freshly written ones
-func dropSelfOrphans(entries []*pyjson.Object, ownLiveLeaseIDs map[string]bool) []*pyjson.Object {
+func dropSelfOrphans(entries []*jsonutil.Object, ownLiveLeaseIDs map[string]bool) []*jsonutil.Object {
 	if ownLiveLeaseIDs == nil {
 		return entries
 	}
 	pid := int64(os.Getpid())
 	cutoff := nowSeconds() - selfOrphanGraceSeconds
-	var kept []*pyjson.Object
+	var kept []*jsonutil.Object
 	for _, e := range entries {
-		started, _ := optionalFloat(e.GetOr("started_at", nil))
-		if !pyjson.Equal(e.GetOr("pid", nil), pid) || ownLiveLeaseIDs[leaseIDOf(e)] || started > cutoff {
+		started, _ := optionalFloat(e.ValueOr("started_at", nil))
+		if !anyutil.Equal(e.ValueOr("pid", nil), pid) || ownLiveLeaseIDs[leaseIDOf(e)] || started > cutoff {
 			kept = append(kept, e)
 		}
 	}
@@ -627,7 +627,7 @@ func dropSelfOrphans(entries []*pyjson.Object, ownLiveLeaseIDs map[string]bool) 
 // Count of orphaned leases of this process dropped from the registry of one home
 func releaseOrphanedLeasesInHome(registryHome string, liveLeaseIDs map[string]bool) (int, error) {
 	statePath := registryStatePath(context.Background(), registryHome)
-	if info, err := pypath.PathlibStat(statePath); err != nil || info == nil {
+	if info, err := pathutil.StatIfExists(statePath); err != nil || info == nil {
 		return 0, err
 	}
 	unlock, err := enterFileLock(registryLockPath(context.Background(), registryHome))

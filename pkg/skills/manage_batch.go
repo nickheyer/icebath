@@ -2,6 +2,7 @@ package skills
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path"
@@ -10,10 +11,10 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const batchMaxOps = 20
@@ -83,12 +84,12 @@ func misplacedTextHint(action string, args map[string]any) string {
 func opShapeError(action string, args map[string]any) string {
 	for _, req := range requiredArgs[action] {
 		v := args[req.arg]
-		if (req.isNone && v == nil) || (!req.isNone && !pyrepr.Truthy(v)) {
+		if (req.isNone && v == nil) || (!req.isNone && !anyutil.IsTrue(v)) {
 			return req.message + misplacedTextHint(action, args)
 		}
 	}
 	if action == "patch" {
-		content, old := pyrepr.Truthy(args["content"]), pyrepr.Truthy(args["old_string"])
+		content, old := anyutil.IsTrue(args["content"]), anyutil.IsTrue(args["old_string"])
 		if content && (old || args["new_string"] != nil) {
 			return patchEitherOr
 		}
@@ -105,7 +106,7 @@ func opShapeError(action string, args map[string]any) string {
 // Name an op targets, its own truthy name else the default, a TypeError for a non string name
 func opName(op map[string]any, defaultName string) (string, error) {
 	v := op["name"]
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return defaultName, nil
 	}
 	name, ok := v.(string)
@@ -116,15 +117,15 @@ func opName(op map[string]any, defaultName string) (string, error) {
 }
 
 // Validated op maps and the target names, else the error result
-func (s *Scope) validateBatchOps(operations []any, defaultName string) ([]map[string]any, []string, *pyjson.Object, error) {
-	fail := func(i int, msg string) ([]map[string]any, []string, *pyjson.Object, error) {
+func (s *Scope) validateBatchOps(operations []any, defaultName string) ([]map[string]any, []string, *jsonutil.Object, error) {
+	fail := func(i int, msg string) ([]map[string]any, []string, *jsonutil.Object, error) {
 		return nil, nil, toolErrorObj(fmt.Sprintf("operations[%d]%s", i, msg)), nil
 	}
 	ops := make([]map[string]any, len(operations))
 	var names []string
 	for i, raw := range operations {
 		op, ok := raw.(map[string]any)
-		if !ok || !pyrepr.Truthy(op["action"]) {
+		if !ok || !anyutil.IsTrue(op["action"]) {
 			return fail(i, " needs an 'action'.")
 		}
 		ops[i] = op
@@ -165,9 +166,9 @@ func (s *Scope) validateBatchOps(operations []any, defaultName string) ([]map[st
 	touched := map[[2]string]bool{}
 	for i, op := range ops {
 		act, nm := op["action"].(string), names[i]
-		fullRewrite := act == "patch" && pyrepr.Truthy(op["content"])
+		fullRewrite := act == "patch" && anyutil.IsTrue(op["content"])
 		fp := ""
-		if v := op["file_path"]; pyrepr.Truthy(v) {
+		if v := op["file_path"]; anyutil.IsTrue(v) {
 			str, ok := v.(string)
 			if !ok {
 				return nil, nil, nil, &manageTypeError{msg: fmt.Sprintf("operation field is %s where text was expected", errchain.Kind(v))}
@@ -198,15 +199,15 @@ type skillSnapshot struct {
 // Snapshot copy and per op dispatch of a batch, replaced by the batch tests
 var batchSteps = struct {
 	copyTree func(src, dst string) error
-	applyOp  func(s *Scope, ctx context.Context, payload map[string]any, taskID, sessionID string) (*pyjson.Object, error)
+	applyOp  func(s *Scope, ctx context.Context, payload map[string]any, taskID, sessionID string) (*jsonutil.Object, error)
 }{
-	copyTree: func(src, dst string) error { return pyfs.CopyTree(src, dst, false, false, nil) },
+	copyTree: func(src, dst string) error { return fsutil.CopyTree(src, dst, fsutil.CopyTreeOptions{}) },
 }
 
 func init() { batchSteps.applyOp = applyBatchOp }
 
 // Parses one batch op payload and runs it through the single op dispatcher
-func applyBatchOp(s *Scope, ctx context.Context, payload map[string]any, taskID, sessionID string) (*pyjson.Object, error) {
+func applyBatchOp(s *Scope, ctx context.Context, payload map[string]any, taskID, sessionID string) (*jsonutil.Object, error) {
 	a, err := parseManageArgs(payload, taskID, sessionID)
 	if err != nil {
 		return nil, err
@@ -228,7 +229,7 @@ func (s *Scope) snapshotSkills(names []string, snapRoot string, createTargets ma
 		if found && isDir(preDir) {
 			snap = filepath.Join(snapRoot, nm)
 			if err := batchSteps.copyTree(preDir, snap); err != nil {
-				return nil, fmt.Sprintf("Could not snapshot '%s' for atomic batch: %s", nm, pyErrText(err))
+				return nil, fmt.Sprintf("Could not snapshot '%s' for atomic batch: %s", nm, copyErrorText(err))
 			}
 		}
 		target, ok := createTargets[nm]
@@ -238,16 +239,14 @@ func (s *Scope) snapshotSkills(names []string, snapRoot string, createTargets ma
 	return out, ""
 }
 
-// Python str of an error raised from a filesystem helper
-func pyErrText(err error) string {
-	if _, ok := err.(*pyfs.CopyTreeError); ok {
+// Text of a filesystem helper failure, every entry a tree copy could not copy listed
+func copyErrorText(err error) string {
+	var ce *fsutil.CopyTreeError
+	if errors.As(err, &ce) {
 		return err.Error()
 	}
 	return osErrorText(err)
 }
-
-// Ignores every rmtree failure the way ignore_errors does
-func ignoreRmTree(pyfs.RmTreeOp, string, error) error { return nil }
 
 // Puts one skill back to its snapshot, removing batch created content
 func restoreSnapshot(sn skillSnapshot, postDir string, written []string) error {
@@ -257,7 +256,7 @@ func restoreSnapshot(sn skillSnapshot, postDir string, written []string) error {
 			return nil
 		}
 		if !sn.dirPreExisted {
-			return pyfs.RmTree(postDir, nil)
+			return os.RemoveAll(postDir)
 		}
 		for _, rel := range append([]string{"SKILL.md"}, written...) {
 			target := filepath.Join(postDir, filepath.FromSlash(rel))
@@ -273,16 +272,16 @@ func restoreSnapshot(sn skillSnapshot, postDir string, written []string) error {
 		return batchSteps.copyTree(sn.snap, sn.preDir)
 	}
 	aside := filepath.Join(filepath.Dir(postDir), filepath.Base(postDir)+".rollback-broken")
-	pyfs.RmTree(aside, ignoreRmTree)
+	os.RemoveAll(aside)
 	if err := os.Rename(postDir, aside); err != nil {
 		return err
 	}
 	if err := batchSteps.copyTree(sn.snap, sn.preDir); err != nil {
-		pyfs.RmTree(sn.preDir, ignoreRmTree)
+		os.RemoveAll(sn.preDir)
 		os.Rename(aside, sn.preDir)
 		return err
 	}
-	pyfs.RmTree(aside, ignoreRmTree)
+	os.RemoveAll(aside)
 	return nil
 }
 
@@ -306,7 +305,7 @@ func (s *Scope) rollbackBatch(snapshots []skillSnapshot, results []batchResult) 
 		}
 		post, _ := s.FindSkill(sn.name)
 		if err := restoreSnapshot(sn, post, written); err != nil {
-			note := fmt.Sprintf("%s for '%s' (%s)", tools.RollbackFailedMarker, sn.name, pyErrText(err))
+			note := fmt.Sprintf("%s for '%s' (%s)", tools.RollbackFailedMarker, sn.name, copyErrorText(err))
 			if sn.snap != "" {
 				note += fmt.Sprintf("; snapshot preserved at '%s'", sn.snap)
 			}
@@ -320,7 +319,7 @@ func (s *Scope) rollbackBatch(snapshots []skillSnapshot, results []batchResult) 
 }
 
 // Applies operations atomically, rolling every touched skill back on any failure
-func (s *Scope) skillManageBatch(ctx context.Context, operations any, defaultName, taskID, sessionID string) (*pyjson.Object, error) {
+func (s *Scope) skillManageBatch(ctx context.Context, operations any, defaultName, taskID, sessionID string) (*jsonutil.Object, error) {
 	list, ok := operations.([]any)
 	if !ok || len(list) == 0 {
 		return toolErrorObj("operations must be a non-empty array."), nil
@@ -392,7 +391,7 @@ func (s *Scope) skillManageBatch(ctx context.Context, operations any, defaultNam
 	}
 	snapshots, snapErr := s.snapshotSkills(names, snapRoot, createTargets)
 	if snapErr != "" {
-		pyfs.RmTree(snapRoot, ignoreRmTree)
+		os.RemoveAll(snapRoot)
 		return toolErrorObj(snapErr), nil
 	}
 	rollbackFailed := false
@@ -400,7 +399,7 @@ func (s *Scope) skillManageBatch(ctx context.Context, operations any, defaultNam
 		if rollbackFailed {
 			s.logger().Warn(fmt.Sprintf("skill_manage batch rollback failed, snapshots kept at %s", snapRoot))
 		} else {
-			pyfs.RmTree(snapRoot, ignoreRmTree)
+			os.RemoveAll(snapRoot)
 		}
 	}()
 	bypassCtx := context.WithValue(lockedCtx, skillGateBypassKey{}, true)
@@ -425,12 +424,12 @@ func (s *Scope) skillManageBatch(ctx context.Context, operations any, defaultNam
 			fail := resultObj("success", false,
 				"error", fmt.Sprintf("operations[%d] (%s on '%s') failed: %s — batch aborted, %s.", i, op["action"], names[i], errText, note),
 				"failed_index", i, "completed_before_failure", i)
-			for _, k := range parsed.Keys {
-				if k == "success" || k == "error" || parsed.Vals[k] == nil {
+			for _, k := range parsed.Keys() {
+				if k == "success" || k == "error" || parsed.Value(k) == nil {
 					continue
 				}
 				if _, exists := fail.Get(k); !exists {
-					fail.Set(k, parsed.Vals[k])
+					fail.Set(k, parsed.Value(k))
 				}
 			}
 			return fail, nil

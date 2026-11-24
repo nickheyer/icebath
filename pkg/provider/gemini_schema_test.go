@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestGeminiSchemaStripsUnknownTopLevelKeys(t *testing.T) {
@@ -36,21 +36,21 @@ func TestGeminiSchemaNonDictInputReturnsEmpty(t *testing.T) {
 
 func TestGeminiRequiredPruningInsideArrayItems(t *testing.T) {
 	cleaned := sanitizeGeminiSchema(gemMap(`{"type": "object", "properties": {"issue_fields": {"type": "array", "items": {"type": "object", "required": ["field_id", "value"]}}}, "required": ["issue_fields"]}`))
-	if _, ok := pyjson.Plain(gemAt(cleaned, "properties", "issue_fields", "items")).(map[string]any)["required"]; ok {
+	if _, ok := jsonutil.Plain(gemAt(cleaned, "properties", "issue_fields", "items")).(map[string]any)["required"]; ok {
 		t.Fatal("dangling required kept")
 	}
-	gemEq(t, cleaned.Vals["required"], `["issue_fields"]`)
+	gemEq(t, cleaned.Value("required"), `["issue_fields"]`)
 }
 
 func TestGeminiRequiredPruningValidRequiredUntouched(t *testing.T) {
 	cleaned := sanitizeGeminiSchema(gemMap(`{"type": "object", "properties": {"a": {"type": "string"}, "b": {"type": "integer"}}, "required": ["a", "b"]}`))
-	gemEq(t, cleaned.Vals["required"], `["a", "b"]`)
+	gemEq(t, cleaned.Value("required"), `["a", "b"]`)
 }
 
 func TestGeminiRequiredPruningInsideAnyOfBranches(t *testing.T) {
 	cleaned := sanitizeGeminiSchema(gemMap(`{"anyOf": [{"type": "object", "properties": {"x": {"type": "string"}}, "required": ["x", "ghost"]}, {"type": "object", "required": ["orphan"]}]}`))
 	gemEq(t, gemAt(cleaned, "anyOf", 0, "required"), `["x"]`)
-	if _, ok := pyjson.Plain(gemAt(cleaned, "anyOf", 1)).(map[string]any)["required"]; ok {
+	if _, ok := jsonutil.Plain(gemAt(cleaned, "anyOf", 1)).(map[string]any)["required"]; ok {
 		t.Fatal("orphan required kept")
 	}
 }
@@ -74,7 +74,7 @@ func TestGeminiPrepareFullJSONSchemaSurvivesAndInputIsNotMutated(t *testing.T) {
 	params := gemMap(text)
 	out := prepareGeminiToolParameters(params)
 	gemEq(t, params, text)
-	if _, ok := out.Vals["$schema"]; ok {
+	if _, ok := out.Get("$schema"); ok {
 		t.Fatal("$schema kept")
 	}
 	gemEq(t, gemAt(out, "properties", "globs", "anyOf", 1), `{"type": "array", "items": {"type": "string"}}`)
@@ -86,7 +86,7 @@ func TestGeminiPrepareFullJSONSchemaSurvivesAndInputIsNotMutated(t *testing.T) {
 func TestGeminiPrepareLocalRefsInlinedWithSiblingOverrideAndDefsDropped(t *testing.T) {
 	out := prepareGeminiToolParameters(gemMap(`{"type": "object", "properties": {"user": {"$ref": "#/$defs/User", "description": "who"}},
 		"$defs": {"User": {"type": "object", "description": "generic", "properties": {"tags": {"type": "array", "items": {"$ref": "#/$defs/Tag"}}}}, "Tag": {"type": "string"}}}`))
-	if _, ok := out.Vals["$defs"]; ok {
+	if _, ok := out.Get("$defs"); ok {
 		t.Fatal("$defs kept")
 	}
 	gemEq(t, gemAt(out, "properties", "user", "description"), `"who"`)
@@ -97,7 +97,7 @@ func TestGeminiPrepareUnresolvableOrCircularRefPassesSchemaThroughUntouched(t *t
 	for _, defs := range []string{`{"Loop": {"type": "object", "properties": {"next": {"$ref": "#/$defs/Loop"}}}}`, `{}`} {
 		out := prepareGeminiToolParameters(gemMap(`{"type": "object", "properties": {"p": {"$ref": "#/$defs/Loop"}}, "$defs": ` + defs + `}`))
 		gemEq(t, gemAt(out, "properties", "p"), `{"$ref": "#/$defs/Loop"}`)
-		gemEq(t, out.Vals["$defs"], defs)
+		gemEq(t, out.Value("$defs"), defs)
 	}
 }
 
@@ -171,7 +171,7 @@ func TestGeminiNativeTypeArraysPreserveAlternatives(t *testing.T) {
 				case "anyOf":
 					out = gemAt(out, 0)
 				}
-				om, isDict := pyjson.Dict(out)
+				om, isDict := jsonutil.AsMap(out)
 				if !isDict {
 					t.Fatalf("%v/%s: translated node %v", types, location, out)
 				}
@@ -200,7 +200,7 @@ func TestGeminiNativeTypeArraysPreserveAlternatives(t *testing.T) {
 				}
 				actual := map[string]bool{}
 				for _, raw := range branches {
-					b, isDict := pyjson.Dict(raw)
+					b, isDict := jsonutil.AsMap(raw)
 					if !isDict {
 						t.Fatalf("%v/%s: branch %v", types, location, raw)
 					}

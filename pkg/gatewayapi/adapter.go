@@ -16,13 +16,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	mathutil "github.com/nickheyer/icebath/pkg/utils/math"
 )
 
 // APIServerAdapter serves OpenAI format requests through real agents on an HTTP listener
@@ -111,7 +111,7 @@ func NewAPIServerAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*API
 	}
 	a.host, a.port = ListenAddress(ctx, extra)
 	if v, ok := extra["key"]; ok {
-		a.apiKey = pyrepr.Str(v)
+		a.apiKey = anyutil.String(v)
 	} else {
 		key, err := gateway.GetScopedSecret(ctx, "API_SERVER_KEY", "", true)
 		if err != nil {
@@ -126,7 +126,7 @@ func NewAPIServerAdapter(ctx context.Context, cfg *gateway.PlatformConfig) (*API
 	a.corsOrigins = parseCORSOrigins(cors)
 	var explicitModel string
 	if v, ok := extra["model_name"]; ok {
-		explicitModel = pyrepr.Str(v)
+		explicitModel = anyutil.String(v)
 	} else {
 		name, err := gateway.GetScopedSecret(ctx, "API_SERVER_MODEL_NAME", "", true)
 		if err != nil {
@@ -280,7 +280,7 @@ func (a *APIServerAdapter) activeStructuredRunCount() int {
 
 // Configured CORS origins as a stable list
 func parseCORSOrigins(value any) []string {
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return []string{}
 	}
 	var items []any
@@ -296,11 +296,11 @@ func parseCORSOrigins(value any) []string {
 			items = append(items, s)
 		}
 	default:
-		items = []any{pyrepr.Str(v)}
+		items = []any{anyutil.String(v)}
 	}
 	out := []string{}
 	for _, item := range items {
-		if s := strings.TrimSpace(pyrepr.Str(item)); s != "" {
+		if s := strings.TrimSpace(anyutil.String(item)); s != "" {
 			out = append(out, s)
 		}
 	}
@@ -327,11 +327,11 @@ func resolveAPIServerInt(ctx context.Context, key string, def int) (value int) {
 	if !ok || raw == nil {
 		raw = int64(def)
 	}
-	n, err := pyint.Of(raw)
-	if err != nil || !n.IsInt64() {
+	n, err := anyutil.ToInt(raw)
+	if err != nil {
 		return def
 	}
-	return max(0, int(n.Int64()))
+	return max(0, int(n))
 }
 
 // UTC day bucket of the daily metrics
@@ -374,14 +374,14 @@ func totalTokensFromUsage(usage map[string]any) int {
 		return 0
 	}
 	raw := usage["total_tokens"]
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return 0
 	}
-	n, err := pyint.Of(raw)
-	if err != nil || !n.IsInt64() {
+	n, err := anyutil.ToInt(raw)
+	if err != nil {
 		return 0
 	}
-	return max(0, int(n.Int64()))
+	return max(0, int(n))
 }
 
 // Nearest rank p95 of the latency samples rounded to two places, nil without samples
@@ -392,11 +392,11 @@ func latencyP95Ms(samples []float64) any {
 	ordered := append([]float64(nil), samples...)
 	sort.Float64s(ordered)
 	index := max(0, min(len(ordered)-1, int(float64(len(ordered))*0.95+0.999999)-1))
-	return pyint.Round(ordered[index], 2)
+	return mathutil.Round(ordered[index], 2)
 }
 
 // Runtime status metrics payload of this listener
-func (a *APIServerAdapter) apiServerStatusPayload(heartbeatAt *float64) *pyjson.Object {
+func (a *APIServerAdapter) apiServerStatusPayload(heartbeatAt *float64) *jsonutil.Object {
 	structured := a.activeStructuredRunCount()
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -405,13 +405,13 @@ func (a *APIServerAdapter) apiServerStatusPayload(heartbeatAt *float64) *pyjson.
 	if heartbeatAt != nil {
 		heartbeat = heartbeatAt
 	}
-	return pyjson.ObjectOf(
+	return jsonutil.ObjectOf(
 		"host", a.host, "port", int64(a.port),
 		"active_runs", int64(structured+a.inflightAgentRuns),
 		"stored_runs", int64(len(a.runStatuses)),
 		"last_request_at", isoTimestamp(a.metricsLastRequestAt),
 		"last_heartbeat", isoTimestamp(heartbeat),
-		"metrics_today", pyjson.ObjectOf(
+		"metrics_today", jsonutil.ObjectOf(
 			"day", a.metricsDay, "requests", int64(a.metricsRequestsToday),
 			"messages", int64(a.metricsMessagesToday), "tokens", int64(a.metricsTokensToday),
 			"latency_p95_ms", latencyP95Ms(a.metricsLatencyMs)))
@@ -526,7 +526,7 @@ func cleanLogValue(value any, maxLen int) string {
 	if value == nil {
 		return ""
 	}
-	text := strings.TrimSpace(strings.NewReplacer("\r", " ", "\n", " ").Replace(pyrepr.Str(value)))
+	text := strings.TrimSpace(strings.NewReplacer("\r", " ", "\n", " ").Replace(anyutil.String(value)))
 	runes := []rune(text)
 	if len(runes) > maxLen {
 		return string(runes[:maxLen])
@@ -557,7 +557,7 @@ func (a *APIServerAdapter) requestAuditLogSuffix(request *gateway.WebRequest) st
 	var fields []string
 	for _, kv := range a.requestAuditContext(request) {
 		if kv[1] != "" {
-			fields = append(fields, kv[0]+"="+pyrepr.Repr(kv[1]))
+			fields = append(fields, kv[0]+"="+anyutil.Quote(kv[1]))
 		}
 	}
 	if len(fields) == 0 {
@@ -590,7 +590,7 @@ func (a *APIServerAdapter) expectedAPIKey(ctx context.Context) string {
 	}
 	key, _, err := provider.GetSecret(ctx, "API_SERVER_KEY")
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("Failed to resolve a usable profile-scoped API_SERVER_KEY for %s: %s", pyrepr.Repr(profile), pyTypeName(err)))
+		pkgLog().Warn(fmt.Sprintf("Failed to resolve a usable profile-scoped API_SERVER_KEY for %q: %s", profile, errorutil.Kind(err)))
 		return ""
 	}
 	if provider.HasUsableSecret(key, 16) {
@@ -601,7 +601,7 @@ func (a *APIServerAdapter) expectedAPIKey(ctx context.Context) string {
 
 // Gateway auth failure 401
 func authFailedResponse() *gateway.WebResponse {
-	return jsonResponse(pyjson.ObjectOf("error", pyjson.ObjectOf("message", "Invalid gateway API key (API_SERVER_KEY)",
+	return jsonResponse(jsonutil.ObjectOf("error", jsonutil.ObjectOf("message", "Invalid gateway API key (API_SERVER_KEY)",
 		"type", "gateway_auth_error", "code", "gateway_auth_failed")), http.StatusUnauthorized, nil)
 }
 
@@ -614,7 +614,7 @@ func (a *APIServerAdapter) checkAuth(ctx context.Context, request *gateway.WebRe
 			return nil
 		}
 		pkgLog().Warn(fmt.Sprintf("API server rejected request for profile %s: no profile-scoped API_SERVER_KEY is configured; %s",
-			pyrepr.Repr(profile), a.requestAuditLogSuffix(request)))
+			anyutil.Quote(profile), a.requestAuditLogSuffix(request)))
 		return authFailedResponse()
 	}
 	header := request.Header.Get("Authorization")
@@ -637,15 +637,4 @@ func normalizeCallbackPlatform(value string) string {
 		return normalized
 	}
 	return ""
-}
-
-// Python type name of an error for logs that must not carry its text
-func pyTypeName(err error) string {
-	if typed, ok := err.(interface{ PyTypeName() string }); ok {
-		return typed.PyTypeName()
-	}
-	if pyErr, ok := err.(*gateway.PyError); ok {
-		return pyErr.Kind
-	}
-	return fmt.Sprintf("%T", err)
 }

@@ -6,7 +6,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Telegram message entity as the bot API delivers it, fields untyped so malformed values are skipped like Python
@@ -88,7 +87,7 @@ func expandLinkEntities(message EntityMessage) string {
 	for _, entity := range entities {
 		typeName := ""
 		if entity.Type != nil {
-			typeName = pyrepr.Str(entity.Type)
+			typeName = anyutil.String(entity.Type)
 		}
 		parts := strings.Split(typeName, ".")
 		rawURL, _ := entity.URL.(string)

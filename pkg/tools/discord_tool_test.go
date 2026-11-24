@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Local stand in for the Discord REST base recording the last request
@@ -35,8 +35,8 @@ func TestDiscordRequestGetRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	obj, ok := result.(*pyjson.Object)
-	if !ok || obj.Len() != 1 || obj.Vals["ok"] != true {
+	obj, ok := result.(*jsonutil.Object)
+	if !ok || obj.Len() != 1 || obj.Value("ok") != true {
 		t.Fatalf("result %#v", result)
 	}
 	if got.URL.Path != "/api/v10/test" || got.Header.Get("Authorization") != "Bot token123" || got.Method != "GET" {

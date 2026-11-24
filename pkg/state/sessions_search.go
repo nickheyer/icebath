@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // WHERE for a workspace key, git_repo_root equal to it or an older row whose cwd lies at or under it
@@ -29,7 +29,7 @@ type SearchSessionsOptions struct {
 }
 
 // Sessions most recently active first with a computed last_active, scoped by source and workspace
-func (d *SessionDB) SearchSessions(ctx context.Context, o SearchSessionsOptions) ([]*pyjson.Object, error) {
+func (d *SessionDB) SearchSessions(ctx context.Context, o SearchSessionsOptions) ([]*jsonutil.Object, error) {
 	var where []string
 	var params []any
 	if o.SkipLaunchStubs {
@@ -58,7 +58,7 @@ func (d *SessionDB) SearchSessions(ctx context.Context, o SearchSessionsOptions)
 	if err != nil {
 		return nil, err
 	}
-	out := make([]*pyjson.Object, 0, len(rows))
+	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, sessionRowDict(row))
 	}
@@ -75,14 +75,14 @@ type SearchSessionsByIDOptions struct {
 }
 
 // Surfaced sessions ranked exact, prefix then substring by id, an old compression root id resolving to its live tip
-func (d *SessionDB) SearchSessionsByID(ctx context.Context, query string, o SearchSessionsByIDOptions) ([]*pyjson.Object, error) {
+func (d *SessionDB) SearchSessionsByID(ctx context.Context, query string, o SearchSessionsByIDOptions) ([]*jsonutil.Object, error) {
 	limit := 20
 	if o.Limit != nil {
 		limit = *o.Limit
 	}
 	needle := strings.ToLower(strings.TrimSpace(query))
 	if needle == "" || limit <= 0 {
-		return []*pyjson.Object{}, nil
+		return []*jsonutil.Object{}, nil
 	}
 	fetch := max(limit*4, limit)
 	candidates, err := d.ListSessionsRich(ctx, ListSessionsRichOptions{
@@ -91,7 +91,7 @@ func (d *SessionDB) SearchSessionsByID(ctx context.Context, query string, o Sear
 	if err != nil {
 		return nil, err
 	}
-	score := func(row *pyjson.Object) int {
+	score := func(row *jsonutil.Object) int {
 		normalized := []string{}
 		for _, key := range []string{"id", "_lineage_root_id"} {
 			if v := rowValue(row, key); pyTruthy(v) {
@@ -107,6 +107,6 @@ func (d *SessionDB) SearchSessionsByID(ctx context.Context, query string, o Sear
 		return 2
 	}
 	ranked := slices.Clone(candidates)
-	slices.SortStableFunc(ranked, func(a, b *pyjson.Object) int { return score(a) - score(b) })
+	slices.SortStableFunc(ranked, func(a, b *jsonutil.Object) int { return score(a) - score(b) })
 	return ranked[:min(limit, len(ranked))], nil
 }

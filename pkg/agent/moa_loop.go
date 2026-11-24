@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -19,13 +20,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -85,7 +85,7 @@ func moaStr(v any) string {
 	if !pyTruthy(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Mapping view of a decoded config value, false for anything else
@@ -244,7 +244,7 @@ func resolvePresetCached(ctx context.Context, presetName string) (map[string]any
 		stamp = v
 	}
 	moaRaw := moaBlock(ctx)
-	key := pyrepr.Repr(stamp) + "\x00" + presetName
+	key := anyutil.Quote(stamp) + "\x00" + presetName
 	var preset map[string]any
 	if stamp != nil {
 		moaPresetCacheMu.Lock()
@@ -479,7 +479,7 @@ func slotRequestHeaders(ctx context.Context, runtime map[string]any, a *AIAgent)
 	case map[string]any:
 		out := make(map[string]string, len(headers))
 		for k, v := range headers {
-			out[k] = pyrepr.Str(v)
+			out[k] = anyutil.String(v)
 		}
 		return out
 	}
@@ -887,16 +887,16 @@ func renderToolCalls(toolCalls any) string {
 		case string:
 			argsText = args
 		default:
-			if dumped, err := pyjson.Dumps(args, pyjson.EnsureASCII(false)); err == nil {
+			if dumped, err := jsonutil.Encode(args); err == nil {
 				argsText = dumped
 			} else {
-				argsText = pyrepr.Str(args)
+				argsText = anyutil.String(args)
 			}
 		}
 		if argsText != "" {
-			lines = append(lines, "[called tool: "+pyrepr.Str(name)+"("+argsText+")]")
+			lines = append(lines, "[called tool: "+anyutil.String(name)+"("+argsText+")]")
 		} else {
-			lines = append(lines, "[called tool: "+pyrepr.Str(name)+"]")
+			lines = append(lines, "[called tool: "+anyutil.String(name)+"]")
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -949,7 +949,7 @@ func referenceMessages(messages []map[string]any) []map[string]any {
 		case "tool":
 			block := "[tool result: " + truncateToolResult(text, moaReferenceToolResultBudget) + "]"
 			if n := len(rendered); n > 0 && rendered[n-1]["role"] == "assistant" {
-				rendered[n-1]["content"] = pyrepr.Str(rendered[n-1]["content"]) + "\n" + block
+				rendered[n-1]["content"] = anyutil.String(rendered[n-1]["content"]) + "\n" + block
 			} else {
 				rendered = append(rendered, map[string]any{"role": "assistant", "content": block})
 			}
@@ -1020,7 +1020,7 @@ func presetTemperature(preset map[string]any, key string) *float64 {
 	if s, ok := value.(string); ok && strings.TrimSpace(s) == "" {
 		return nil
 	}
-	f, err := pyint.Float(value)
+	f, err := anyutil.ToFloat(value)
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("ignoring non-numeric %s=%s in MoA preset", key, errchain.Show(value)))
 		return nil
@@ -1032,7 +1032,7 @@ func presetTemperature(preset map[string]any, key string) *float64 {
 func hashMessages(msgs []map[string]any) string {
 	parts := make([]string, len(msgs))
 	for i, m := range msgs {
-		parts[i] = pyrepr.Str(m["role"]) + ":" + pyrepr.Str(m["content"])
+		parts[i] = anyutil.String(m["role"]) + ":" + anyutil.String(m["content"])
 	}
 	sum := sha256.Sum256([]byte(strings.ToValidUTF8(strings.Join(parts, "\x00"), "?")))
 	return hex.EncodeToString(sum[:])
@@ -1246,7 +1246,7 @@ func peelReferenceGuidance(messages []map[string]any, guidance any) []map[string
 	if !pyTruthy(guidance) || len(messages) == 0 {
 		return messages
 	}
-	text := pyrepr.Str(guidance)
+	text := anyutil.String(guidance)
 	last := messages[len(messages)-1]
 	if last == nil || last["role"] != "user" {
 		return messages
@@ -1441,7 +1441,7 @@ func (c *MoAChatCompletions) RebasePreparedRequest(prepared map[string]any, mess
 		aggMessages[i] = moaCopyRow(m)
 	}
 	if guidance := prepared["guidance"]; pyTruthy(guidance) {
-		aggMessages = attachReferenceGuidance(aggMessages, pyrepr.Str(guidance))
+		aggMessages = attachReferenceGuidance(aggMessages, anyutil.String(guidance))
 	}
 	out := moaCopyRow(prepared)
 	out["messages"] = aggMessages
@@ -1458,7 +1458,7 @@ func (c *MoAChatCompletions) planAggregatorCache(ctx context.Context, aggMessage
 	}()
 	planning := aggMessages
 	if pyTruthy(guidance) {
-		planning = peelReferenceGuidance(aggMessages, pyrepr.Str(guidance))
+		planning = peelReferenceGuidance(aggMessages, anyutil.String(guidance))
 	}
 	cacheDisabled, cacheTTL := agentCacheOpts(c.agent)
 	var static *string
@@ -1469,7 +1469,7 @@ func (c *MoAChatCompletions) planAggregatorCache(ctx context.Context, aggMessage
 	planned, plannedTools := provider.PlanCacheSectionsForDestination(ctx, planning, tools, moaStr(aggRuntime["provider"]),
 		moaStr(aggRuntime["base_url"]), moaStr(aggRuntime["api_mode"]), moaStr(aggRuntime["model"]), cacheDisabled, cacheTTL, static)
 	if pyTruthy(guidance) {
-		planned = attachReferenceGuidance(planned, pyrepr.Str(guidance))
+		planned = attachReferenceGuidance(planned, anyutil.String(guidance))
 	}
 	return planned, plannedTools
 }
@@ -1579,17 +1579,14 @@ func (c *MoAChatCompletions) callPreparedAggregator(ctx context.Context, prepare
 func (c *MoAChatCompletions) fanoutCacheKey(preset map[string]any, refMessages, referenceModels []map[string]any) *moaFanoutKey {
 	fanoutMode := "user_turn"
 	if pyTruthy(preset["fanout"]) {
-		fanoutMode = pyrepr.Str(preset["fanout"])
+		fanoutMode = anyutil.String(preset["fanout"])
 	}
 	fanoutMode = strings.ToLower(strings.TrimSpace(fanoutMode))
 	everyN := 0
 	if strings.HasPrefix(fanoutMode, "every_n:") {
-		if n, ok := pyint.Parse(strings.SplitN(fanoutMode, ":", 2)[1]); ok {
-			if n.IsInt64() && n.Int64() <= math.MaxInt32 {
-				everyN = int(n.Int64())
-			} else if n.Sign() > 0 {
-				everyN = math.MaxInt32
-			}
+		n, err := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(fanoutMode, "every_n:")), 10, 64)
+		if err == nil || errors.Is(err, strconv.ErrRange) {
+			everyN = int(min(n, math.MaxInt32))
 		}
 		if everyN < 2 {
 			fanoutMode = "per_iteration"
@@ -1633,7 +1630,7 @@ func (c *MoAChatCompletions) fanoutCacheKey(preset map[string]any, refMessages, 
 func (c *MoAChatCompletions) runFanout(ctx context.Context, preset map[string]any, refMessages, referenceModels []map[string]any, aggregator map[string]any, aggregatorTemperature any, cacheKey *moaFanoutKey) ([]moaRefOutput, error) {
 	var referenceTimeout *float64
 	if raw := preset["reference_timeout"]; pyTruthy(raw) {
-		f, err := pyint.Float(raw)
+		f, err := anyutil.ToFloat(raw)
 		if err != nil {
 			return nil, err
 		}
@@ -1782,7 +1779,7 @@ func (c *MoAChatCompletions) Create(ctx context.Context, apiKwargs map[string]an
 	}
 	policy := "loud"
 	if pyTruthy(preset["degraded_reference_policy"]) {
-		policy = pyrepr.Str(preset["degraded_reference_policy"])
+		policy = anyutil.String(preset["degraded_reference_policy"])
 	}
 	var guidance any
 	if text, ok := c.buildGuidance(outputs, aggregator, policy, cacheHit && toolActivitySinceLastUser(messages)); ok && text != "" {
@@ -1907,7 +1904,7 @@ func buildMoaFacade(ctx context.Context, a *AIAgent, presetName any) *MoAClient 
 	}
 	name := "default"
 	if pyTruthy(resolved) {
-		name = pyrepr.Str(resolved)
+		name = anyutil.String(resolved)
 	}
 	func() {
 		defer func() {
@@ -1920,7 +1917,7 @@ func buildMoaFacade(ctx context.Context, a *AIAgent, presetName any) *MoAClient 
 		if _, ok := presets[name]; !ok {
 			name = "default"
 			if pyTruthy(normalized["default_preset"]) {
-				name = pyrepr.Str(normalized["default_preset"])
+				name = anyutil.String(normalized["default_preset"])
 			}
 		}
 	}()
@@ -1937,7 +1934,7 @@ func bindMoaRuntime(ctx context.Context, a *AIAgent, presetName string, apiKey a
 	a.apiMode = "chat_completions"
 	a.apiKey = moaVirtualAPIKey
 	if pyTruthy(apiKey) {
-		a.apiKey = pyrepr.Str(apiKey)
+		a.apiKey = anyutil.String(apiKey)
 	}
 	a.baseURL = moaVirtualBaseURL
 	a.clientKwargs = map[string]any{}

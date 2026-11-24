@@ -10,8 +10,8 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/hermetic"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/state"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 var realKanbanRoot string
@@ -47,15 +47,15 @@ func TestMain(m *testing.M) {
 // Real kanban root from the pre sandbox environment, the order KanbanHome resolves it in
 func captureRealKanbanRoot() string {
 	if override := strings.TrimSpace(os.Getenv("ICEBATH_KANBAN_HOME")); override != "" {
-		r, _ := pypath.Resolve(pypath.Expanduser(override))
+		r, _ := pathutil.Resolve(pathutil.ExpandUser(override))
 		return r
 	}
 	if strings.TrimSpace(os.Getenv("ICEBATH_HOME")) != "" {
-		r, _ := pypath.Resolve(home.Root())
+		r, _ := pathutil.Resolve(home.Root())
 		return r
 	}
 	uh, _ := home.UserHome()
-	r, _ := pypath.Resolve(filepath.Join(uh, ".icebath"))
+	r, _ := pathutil.Resolve(filepath.Join(uh, ".icebath"))
 	return r
 }
 
@@ -69,7 +69,7 @@ func kanbanWriteGuard(ctx context.Context, dbPath string, board *string) error {
 		}
 		target = p
 	}
-	resolved, _ := pypath.Resolve(pypath.Expanduser(target))
+	resolved, _ := pathutil.Resolve(pathutil.ExpandUser(target))
 	if resolved == realKanbanRoot || strings.HasPrefix(resolved, realKanbanRoot+string(filepath.Separator)) {
 		return &RuntimeError{fmt.Sprintf("kanban_write_guard: refusing to write kanban DB under the real root %s (resolved %s)", realKanbanRoot, resolved)}
 	}
@@ -104,14 +104,14 @@ func mustDBPath(t *testing.T, board *string) string {
 // Drops a path from the init cache like _INITIALIZED_PATHS.discard
 func discardInitialized(t *testing.T, path string) {
 	t.Helper()
-	if r, err := pypath.Resolve(path); err == nil {
+	if r, err := pathutil.Resolve(path); err == nil {
 		forgetInitialized(r)
 	}
 }
 
 // Reports whether the resolved path is in the init cache
 func isInitialized(path string) bool {
-	r, _ := pypath.Resolve(path)
+	r, _ := pathutil.Resolve(path)
 	return pathInitialized(r)
 }
 

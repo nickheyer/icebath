@@ -4,7 +4,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const reactionMarkerMax = 8
@@ -24,8 +23,8 @@ func slackReactionsMarker(msg map[string]any) string {
 			continue
 		}
 		name := ""
-		if pyrepr.Truthy(reaction["name"]) {
-			name = pyrepr.Str(reaction["name"])
+		if anyutil.IsTrue(reaction["name"]) {
+			name = anyutil.String(reaction["name"])
 		}
 		name = strings.Trim(replaceAll(unsafeNameChars, name, func(reMatch) string { return "" }), ":")
 		if name == "" {
@@ -43,7 +42,7 @@ func slackReactionsMarker(msg map[string]any) string {
 	}
 	shown := parts
 	if extra := len(parts) - reactionMarkerMax; extra > 0 {
-		shown = append(append([]string{}, parts[:reactionMarkerMax]...), "+"+pyrepr.Str(extra)+" more")
+		shown = append(append([]string{}, parts[:reactionMarkerMax]...), "+"+anyutil.String(extra)+" more")
 	}
 	return "[reactions: " + strings.Join(shown, " ") + "]"
 }

@@ -18,10 +18,10 @@ func TestGatewayAPIServerAnswers503(t *testing.T) {
 	}
 	resp, err := app.Handle(context.Background(), NewWebRequest(httptest.NewRequest("GET", "/v1/x", nil), 0))
 	status, body := webhookResponseJSON(t, resp, err)
-	if status != 503 || body.GetOr("error", nil) == nil {
+	if status != 503 || body.ValueOr("error", nil) == nil {
 		t.Fatalf("%d %s", status, resp.Text())
 	}
-	if code := body.GetOr("error", nil).(interface{ GetOr(string, any) any }).GetOr("code", nil); code != "config_backend_unavailable" {
+	if code := body.ValueOr("error", nil).(interface{ ValueOr(string, any) any }).ValueOr("code", nil); code != "config_backend_unavailable" {
 		t.Fatalf("code %v", code)
 	}
 }

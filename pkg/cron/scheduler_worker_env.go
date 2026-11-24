@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/pm"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Resolved site packages of the interpreter this process runs as, false when it cannot be read
@@ -17,7 +17,7 @@ var installedPurelib = func() (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	prefix, err := pypath.Resolve(filepath.Dir(exe))
+	prefix, err := pathutil.Resolve(filepath.Dir(exe))
 	if err != nil {
 		return "", false
 	}
@@ -25,7 +25,7 @@ var installedPurelib = func() (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	resolved, err := pypath.Resolve(site)
+	resolved, err := pathutil.Resolve(site)
 	if err != nil {
 		return "", false
 	}
@@ -56,7 +56,7 @@ func committedDependencySitePackages(s *Store, ctx context.Context, projectRoot 
 func pinIcebathTreeOnPythonpath(s *Store, ctx context.Context, workerEnv map[string]string, repoRoot string) (map[string]string, error) {
 	root := repoRoot
 	purelib, ok := installedPurelib()
-	resolved, err := pypath.Resolve(root)
+	resolved, err := pathutil.Resolve(root)
 	if err != nil {
 		return nil, err
 	}

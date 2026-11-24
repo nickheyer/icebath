@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"math"
 	"math/big"
+	"strconv"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Langfuse usage key, canonical usage attribute and the rate card column billing it
@@ -31,14 +33,14 @@ var usageFields = []usageField{
 
 // Python int() of a token count that may be None, a float, a numeric string or a bool
 func pyIntOf(v any) int {
-	if !truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return 0
 	}
 	switch t := v.(type) {
 	case string:
 		n, ok := pyint.Parse(t)
 		if !ok {
-			panic(&pyint.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.StrRepr(t)})
+			panic(&errorutil.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(t)})
 		}
 		return clampInt(n)
 	case float64:
@@ -51,7 +53,7 @@ func pyIntOf(v any) int {
 		}
 		f, err := t.Float64()
 		if err != nil {
-			panic(&pyint.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + pyrepr.StrRepr(t.String())})
+			panic(&errorutil.Error{Kind: "ValueError", Msg: "invalid literal for int() with base 10: " + strconv.Quote(t.String())})
 		}
 		return floatToInt(f)
 	case *big.Int:
@@ -66,23 +68,23 @@ func pyIntOf(v any) int {
 // Python int() of a float, raising on NaN and infinity
 func floatToInt(f float64) int {
 	if math.IsNaN(f) {
-		panic(&pyint.Error{Kind: "ValueError", Msg: "cannot convert float NaN to integer"})
+		panic(&errorutil.Error{Kind: "ValueError", Msg: "cannot convert float NaN to integer"})
 	}
 	if math.IsInf(f, 0) {
-		panic(&pyint.Error{Kind: "OverflowError", Msg: "cannot convert float infinity to integer"})
+		panic(&errorutil.Error{Kind: "OverflowError", Msg: "cannot convert float infinity to integer"})
 	}
 	return int(math.Trunc(f))
 }
 
 // Langfuse token buckets from canonical counts, reasoning split out of output so the buckets sum to the total
-func usageBuckets(read func(attr string) any) *pyjson.Object {
+func usageBuckets(read func(attr string) any) *jsonutil.Object {
 	tokens := map[string]int{}
 	for _, f := range usageFields {
 		tokens[f.key] = max(pyIntOf(read(f.attr)), 0)
 	}
 	reasoning := min(tokens["output_reasoning_tokens"], tokens["output"])
 	tokens["output_reasoning_tokens"], tokens["output"] = reasoning, tokens["output"]-reasoning
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	for _, f := range usageFields {
 		out.Set(f.key, tokens[f.key])
 	}
@@ -128,15 +130,15 @@ func entryRate(e provider.PricingEntry, column string, above bool) *big.Rat {
 }
 
 // Langfuse usage and cost maps of canonical usage, costs left out where Langfuse should estimate or the total is unknown
-func canonicalUsageAndCost(ctx context.Context, canonical provider.CanonicalUsage, providerName, model, baseURL string) (*pyjson.Object, *pyjson.Object) {
+func canonicalUsageAndCost(ctx context.Context, canonical provider.CanonicalUsage, providerName, model, baseURL string) (*jsonutil.Object, *jsonutil.Object) {
 	buckets := usageBuckets(canonicalReader(canonical))
-	usageDetails := pyjson.NewObject()
-	for _, k := range buckets.Keys {
-		if n := buckets.Vals[k].(int); n != 0 || k == "input" || k == "output" {
+	usageDetails := jsonutil.NewObject()
+	for _, k := range buckets.Keys() {
+		if n := buckets.Value(k).(int); n != 0 || k == "input" || k == "output" {
 			usageDetails.Set(k, n)
 		}
 	}
-	costDetails := pyjson.NewObject()
+	costDetails := jsonutil.NewObject()
 	var cost provider.CostResult
 	priced := func() (ok bool) {
 		defer func() {
@@ -166,7 +168,7 @@ func canonicalUsageAndCost(ctx context.Context, canonical provider.CanonicalUsag
 		above := entry.HasTier && canonical.PromptTokens() > entry.TierThresholdTokens
 		for _, f := range usageFields {
 			rate := entryRate(entry, f.rate, above)
-			tokens := buckets.Vals[f.key].(int)
+			tokens := buckets.Value(f.key).(int)
 			if rate != nil && tokens != 0 {
 				part := new(big.Rat).Mul(big.NewRat(int64(tokens), 1), rate)
 				part.Quo(part, big.NewRat(1000000, 1))
@@ -179,17 +181,17 @@ func canonicalUsageAndCost(ctx context.Context, canonical provider.CanonicalUsag
 }
 
 // Usage and cost maps from a response object's usage, or from the post_api_request usage summary when one is given
-func usageAndCost(ctx context.Context, response any, providerName, model, baseURL, apiMode string, usage any) (usageDetails, costDetails *pyjson.Object) {
+func usageAndCost(ctx context.Context, response any, providerName, model, baseURL, apiMode string, usage any) (usageDetails, costDetails *jsonutil.Object) {
 	rawUsage := objectAttr(response, "usage")
-	if usage == nil && !truthy(rawUsage) {
-		return pyjson.NewObject(), pyjson.NewObject()
+	if usage == nil && !anyutil.IsTrue(rawUsage) {
+		return jsonutil.NewObject(), jsonutil.NewObject()
 	}
 	defer func() {
 		if r := recover(); r != nil {
 			if usage == nil {
 				debugLog(fmt.Sprintf("usage normalization failed: %v", r))
 			}
-			usageDetails, costDetails = pyjson.NewObject(), pyjson.NewObject()
+			usageDetails, costDetails = jsonutil.NewObject(), jsonutil.NewObject()
 		}
 	}()
 	var canonical provider.CanonicalUsage
@@ -197,7 +199,7 @@ func usageAndCost(ctx context.Context, response any, providerName, model, baseUR
 		canonical = provider.NormalizeUsage(rawUsage, providerName, apiMode)
 	} else {
 		output := dget(usage, "output_tokens")
-		if !truthy(output) {
+		if !anyutil.IsTrue(output) {
 			output = dget(usage, "completion_tokens")
 		}
 		requestCount := 1

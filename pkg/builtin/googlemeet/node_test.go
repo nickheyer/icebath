@@ -13,18 +13,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"github.com/spf13/cobra"
 )
 
 func TestProtocolEncodeDecodeRoundtrip(t *testing.T) {
-	req, err := makeRequest("status", "tok", pyjson.ObjectOf("a", 1), "")
+	req, err := makeRequest("status", "tok", jsonutil.ObjectOf("a", 1), "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	text, _ := encodeEnvelope(req)
 	back, err := decodeEnvelope([]byte(text))
-	if err != nil || !pyjson.Equal(back, req) {
+	if err != nil || !anyutil.Equal(back, req) {
 		t.Fatal(back, err)
 	}
 	if ok, reason := validateRequest(back, "tok"); !ok || reason != "" {
@@ -33,7 +34,7 @@ func TestProtocolEncodeDecodeRoundtrip(t *testing.T) {
 	if ok, reason := validateRequest(back, "other"); ok || reason != "token mismatch" {
 		t.Fatal(reason)
 	}
-	if _, err := makeRequest("bogus", "tok", pyjson.NewObject(), ""); err == nil || err.Error() != "unknown request type: 'bogus'" {
+	if _, err := makeRequest("bogus", "tok", jsonutil.NewObject(), ""); err == nil || err.Error() != `unknown request type: "bogus"` {
 		t.Fatal(err)
 	}
 	if _, err := decodeEnvelope([]byte("[1]")); err == nil || err.Error() != "envelope must be a JSON object" {
@@ -51,10 +52,10 @@ func TestRegistryAddGetRoundtripPersists(t *testing.T) {
 		t.Fatal(err)
 	}
 	entry, err := newNodeRegistry(context.Background(), path).get("mac")
-	if err != nil || entry == nil || entry.Vals["name"] != "mac" || entry.Vals["url"] != "ws://mac.local:18789" || entry.Vals["token"] != "tok" {
+	if err != nil || entry == nil || entry.Value("name") != "mac" || entry.Value("url") != "ws://mac.local:18789" || entry.Value("token") != "tok" {
 		t.Fatal(entry, err)
 	}
-	if r, _ := reg.resolve(""); r == nil || r.Vals["name"] != "mac" {
+	if r, _ := reg.resolve(""); r == nil || r.Value("name") != "mac" {
 		t.Fatal(r)
 	}
 	if err := reg.add(context.Background(), "", "u", "t"); err == nil {
@@ -95,7 +96,7 @@ func (w *replyWS) Close() {}
 func TestClientRPCSendsCorrectEnvelopeAndParsesResponse(t *testing.T) {
 	ws := &replyWS{reply: func(raw string) string {
 		req, _ := decodeEnvelope([]byte(raw))
-		resp, _ := makeResponse(req.Vals["id"], pyjson.ObjectOf("ok", true, "echo", req.Vals["type"]))
+		resp, _ := makeResponse(req.Value("id"), jsonutil.ObjectOf("ok", true, "echo", req.Value("type")))
 		text, _ := encodeEnvelope(resp)
 		return text
 	}}
@@ -107,8 +108,8 @@ func TestClientRPCSendsCorrectEnvelopeAndParsesResponse(t *testing.T) {
 		return ws, nil
 	}
 	c, _ := newNodeClient("ws://remote:1", "tok123", 10*time.Second)
-	out, err := c.rpc("ping", pyjson.ObjectOf("hello", 1))
-	if err != nil || !pyjson.Equal(out, pyjson.ObjectOf("ok", true, "echo", "ping")) {
+	out, err := c.rpc("ping", jsonutil.ObjectOf("hello", 1))
+	if err != nil || !anyutil.Equal(out, jsonutil.ObjectOf("ok", true, "echo", "ping")) {
 		t.Fatal(out, err)
 	}
 	var sent map[string]any
@@ -126,11 +127,11 @@ func TestNodeServerAnswersARealWebsocketClient(t *testing.T) {
 	defer ts.Close()
 	c, _ := newNodeClient("ws"+strings.TrimPrefix(ts.URL, "http"), tok, 10*time.Second)
 	pong, err := c.ping()
-	if err != nil || pong.Vals["display_name"] != "icebath-meet-node" {
+	if err != nil || pong.Value("display_name") != "icebath-meet-node" {
 		t.Fatal(pong, err)
 	}
 	st, err := c.status()
-	if err != nil || st.Vals["ok"] != false || st.Vals["reason"] != "no active meeting" {
+	if err != nil || st.Value("ok") != false || st.Value("reason") != "no active meeting" {
 		t.Fatal(st, err)
 	}
 	bad, _ := newNodeClient("ws"+strings.TrimPrefix(ts.URL, "http"), "wrong", 10*time.Second)

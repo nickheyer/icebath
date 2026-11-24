@@ -13,7 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Copies a tree like shutil.copytree with copy2, links copied as links or followed, failures gathered
@@ -53,7 +53,7 @@ func copyTreeLike(src, dst string, symlinks bool, ignore func(dir string, names 
 				err = os.Symlink(target, to)
 			}
 			if err == nil {
-				err = pyshutil.CopyLinkStat(from, to)
+				err = fsutil.CopyLinkMetadata(from, to)
 			}
 			if err != nil {
 				failures = append(failures, fmt.Sprintf("could not copy %s -> %s: %s", from, to, errchain.OSText(err)))

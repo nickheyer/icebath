@@ -9,11 +9,11 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // GatewayMetric is one exported gauge with its value and string attributes
@@ -37,10 +37,10 @@ func containsAny(needles ...string) func(string) bool {
 
 // Stable opaque sha256 key of a source id that never exports the id itself
 func safeInstanceID(raw any) string {
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		raw = "unknown"
 	}
-	sum := sha256.Sum256(pystr.EncodeUTF8Replace(pyrepr.Str(raw)))
+	sum := sha256.Sum256([]byte(anyutil.String(raw)))
 	return "sha256:" + hex.EncodeToString(sum[:])[:24]
 }
 
@@ -81,8 +81,8 @@ var gatewayErrorRules = []gatewayErrorRule{
 
 // Python str of a value, the default when the value is falsy
 func strOr(raw any, def string) string {
-	if pyrepr.Truthy(raw) {
-		return pyrepr.Str(raw)
+	if anyutil.IsTrue(raw) {
+		return anyutil.String(raw)
 	}
 	return def
 }
@@ -145,7 +145,7 @@ func optionalState(raw any, allowed map[string]bool) *string {
 
 // True for the int conversion errors Python callers catch as TypeError or ValueError
 func intConversionRejected(err error) bool {
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	return errors.As(err, &pe) && (pe.Kind == "TypeError" || pe.Kind == "ValueError")
 }
 
@@ -201,17 +201,17 @@ func gatewayParseActiveAgents(raw any) (n any, ok bool) {
 }
 
 // Object value itself, an empty object for anything that is not a dict
-func dictOrEmpty(raw any) *pyjson.Object {
-	if o, ok := raw.(*pyjson.Object); ok && o != nil {
+func dictOrEmpty(raw any) *jsonutil.Object {
+	if o, ok := raw.(*jsonutil.Object); ok && o != nil {
 		return o
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Platforms mapping of a runtime status payload, empty when absent or malformed
-func platformsOf(runtime *pyjson.Object) *pyjson.Object {
+func platformsOf(runtime *jsonutil.Object) *jsonutil.Object {
 	if runtime == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	v, _ := runtime.Get("platforms")
 	return dictOrEmpty(v)
@@ -253,7 +253,7 @@ func sameState(a, b *string) bool {
 }
 
 // Gateway lifecycle transition events with the startup_failed diagnostic and the exit event
-func lifecycleEvents(previous, current *pyjson.Object, profile, version string) ([]Event, error) {
+func lifecycleEvents(previous, current *jsonutil.Object, profile, version string) ([]Event, error) {
 	var prevState any
 	if previous != nil {
 		prevState, _ = previous.Get("gateway_state")
@@ -265,7 +265,7 @@ func lifecycleEvents(previous, current *pyjson.Object, profile, version string) 
 		return nil, nil
 	}
 	restartRaw, _ := current.Get("restart_requested")
-	restartRequested := pyrepr.Truthy(restartRaw)
+	restartRequested := anyutil.IsTrue(restartRaw)
 	health := func(name string) (Event, error) {
 		exitRaw, _ := current.Get("exit_reason")
 		activeRaw, ok := current.Get("active_agents")
@@ -297,7 +297,7 @@ func lifecycleEvents(previous, current *pyjson.Object, profile, version string) 
 	out := []Event{first}
 	if *newState == "startup_failed" {
 		exitRaw, _ := current.Get("exit_reason")
-		if !pyrepr.Truthy(exitRaw) {
+		if !anyutil.IsTrue(exitRaw) {
 			exitRaw = "startup_failed"
 		}
 		errorClass := ClassifyGatewayError(exitRaw)
@@ -318,16 +318,16 @@ func lifecycleEvents(previous, current *pyjson.Object, profile, version string) 
 }
 
 // Per platform state_change diagnostics plus platform.fatal when the new state is fatal
-func platformEvents(previous, current *pyjson.Object, profile, version string) []Event {
+func platformEvents(previous, current *jsonutil.Object, profile, version string) []Event {
 	oldPlatforms := platformsOf(previous)
 	currentPlatforms := platformsOf(current)
 	var out []Event
-	for _, platform := range currentPlatforms.Keys {
+	for _, platform := range currentPlatforms.Keys() {
 		pv, _ := currentPlatforms.Get(platform)
 		pdata := dictOrEmpty(pv)
 		ov, ok := oldPlatforms.Get(platform)
 		if !ok {
-			ov = pyjson.NewObject()
+			ov = jsonutil.NewObject()
 		}
 		prev := dictOrEmpty(ov)
 		prevRaw, _ := prev.Get("state")
@@ -338,7 +338,7 @@ func platformEvents(previous, current *pyjson.Object, profile, version string) [
 			continue
 		}
 		codeRaw, _ := pdata.Get("error_code")
-		if !pyrepr.Truthy(codeRaw) {
+		if !anyutil.IsTrue(codeRaw) {
 			codeRaw, _ = pdata.Get("error_message")
 		}
 		errorCode := ClassifyGatewayError(codeRaw)
@@ -364,7 +364,7 @@ func platformEvents(previous, current *pyjson.Object, profile, version string) [
 }
 
 // Emits content free gateway events for a runtime status change, failing open with a debug log
-func EmitRuntimeStatusTransition(previous, current *pyjson.Object) {
+func EmitRuntimeStatusTransition(previous, current *jsonutil.Object) {
 	defer func() {
 		if r := recover(); r != nil {
 			pkgLog().Debug(fmt.Sprintf("gateway runtime status transition emit failed: %v", r))

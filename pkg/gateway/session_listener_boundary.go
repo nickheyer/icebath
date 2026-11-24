@@ -3,9 +3,8 @@ package gateway
 import (
 	"fmt"
 	"strings"
-	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Host values a loopback bind accepts, the DNS rebinding defence of GHSA-ppp5-vxwm-4cf7
@@ -41,7 +40,7 @@ func HostHeaderHostname(hostHeader string) string {
 			return ""
 		}
 		suffix := value[closeAt+1:]
-		if suffix != "" && !(len(suffix) > 1 && suffix[0] == ':' && pystr.All(suffix[1:], unicode.IsDigit)) {
+		if suffix != "" && !(len(suffix) > 1 && suffix[0] == ':' && textutil.IsDigits(suffix[1:])) {
 			return ""
 		}
 		return strings.ToLower(hostname)
@@ -51,7 +50,7 @@ func HostHeaderHostname(hostHeader string) string {
 	}
 	if i := strings.LastIndex(value, ":"); i >= 0 {
 		hostname, port := value[:i], value[i+1:]
-		if hostname == "" || !pystr.StrIsDigit(port) {
+		if hostname == "" || !textutil.IsDigits(port) {
 			return ""
 		}
 		return strings.ToLower(hostname)

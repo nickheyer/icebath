@@ -1,13 +1,12 @@
 package app
 
 import (
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 var (
@@ -25,14 +24,14 @@ var (
 func parseDurationSeconds(value string) (float64, bool) {
 	s := strings.ToLower(strings.TrimSpace(value))
 	if m, _ := bareDaysRE.FindStringMatch(s); m != nil {
-		days, err := pyint.ParseFloat(s)
+		days, err := strconv.ParseFloat(strings.TrimSpace(s), 64)
 		return days * 86400, err == nil
 	}
 	m, _ := durationRE.FindStringMatch(s)
 	if m == nil {
 		return 0, false
 	}
-	amount, err := pyint.ParseFloat(m.GroupByNumber(1).String())
+	amount, err := strconv.ParseFloat(strings.TrimSpace(m.GroupByNumber(1).String()), 64)
 	if err != nil {
 		return 0, false
 	}
@@ -41,33 +40,33 @@ func parseDurationSeconds(value string) (float64, bool) {
 
 // Epoch of a CLI time value, a duration meaning that long ago and an ISO timestamp taken as written
 func parsePointInTime(value any, flag string) (float64, error) {
-	s := strings.TrimSpace(pyrepr.Str(value))
+	s := strings.TrimSpace(anyutil.String(value))
 	if dur, ok := parseDurationSeconds(s); ok {
 		return float64(time.Now().UnixNano())/1e9 - dur, nil
 	}
-	dt, aware, err := pydatetime.ParseISOFormat(s)
+	dt, aware, err := timeutil.ParseISOZone(s, time.UTC)
 	if err != nil {
-		return 0, &pyint.Error{Kind: "ValueError", Msg: "Invalid value for " + flag + ": '" + pyrepr.Str(value) + "'. Use a duration like '5h', " +
+		return 0, &errorutil.Error{Kind: "ValueError", Msg: "Invalid value for " + flag + ": '" + anyutil.String(value) + "'. Use a duration like '5h', " +
 			"'30m', '2d', '1w', a bare number of days, or an ISO timestamp " +
 			"like '2026-07-05' or '2026-07-05 14:30'."}
 	}
 	if aware {
-		return pydatetime.Timestamp(dt.UTC()), nil
+		return timeutil.Epoch(dt.UTC()), nil
 	}
 	seconds, ok := pydatetime.LocalToSeconds(dt, time.Local, 0, pydatetime.LocaltimeAccepts)
 	if !ok {
-		return 0, &pyint.Error{Kind: "OverflowError", Msg: "timestamp out of range for platform time_t"}
+		return 0, &errorutil.Error{Kind: "OverflowError", Msg: "timestamp out of range for platform time_t"}
 	}
 	return float64(seconds) + float64(dt.Nanosecond()/1000)/1e6, nil
 }
 
 // Short local time of an epoch timestamp, a dash when unset or corrupt
 func formatEpoch(ts any) string {
-	epoch, ok := pydatetime.CoerceEpoch(ts, "", "timestamp")
+	epoch, ok := timeutil.StoredEpoch(ts, "", "timestamp")
 	if !ok {
 		return "-"
 	}
-	return pydatetime.Strftime(pydatetime.FromTimestamp(epoch), "%Y-%m-%d %H:%M")
+	return timeutil.FromEpoch(epoch).Format("2006-01-02 15:04")
 }
 
 // The four epoch bounds as filter key, namespace dest, CLI flag and description template
@@ -126,7 +125,7 @@ func buildPruneFilters(ns map[string]any) (map[string]any, error) {
 		lo, hasLo := bounds[w[0]]
 		hi, hasHi := bounds[w[1]]
 		if hasHi && hasLo && lo >= hi {
-			return nil, &pyint.Error{Kind: "ValueError", Msg: "Empty " + w[2] + " window: the " + w[3] + " bound " +
+			return nil, &errorutil.Error{Kind: "ValueError", Msg: "Empty " + w[2] + " window: the " + w[3] + " bound " +
 				"(" + formatEpoch(lo) + ") is not earlier than the " +
 				w[4] + " bound (" + formatEpoch(hi) + ")."}
 		}
@@ -147,12 +146,12 @@ func describeFilters(filters map[string]any) string {
 	}
 	for _, f := range argFilters {
 		v := filters[f[0]]
-		active := pyrepr.Truthy(v)
+		active := anyutil.IsTrue(v)
 		if strings.HasPrefix(f[0], "min_") || strings.HasPrefix(f[0], "max_") {
 			active = v != nil
 		}
 		if active {
-			parts = append(parts, strings.ReplaceAll(f[2], "{v}", pyrepr.Str(v)))
+			parts = append(parts, strings.ReplaceAll(f[2], "{v}", anyutil.String(v)))
 		}
 	}
 	if len(parts) == 0 {

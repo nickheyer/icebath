@@ -6,12 +6,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func addressSchema(t *testing.T) any {
 	t.Helper()
-	schema, err := pyjson.Loads(`{"type": "object", "properties": {"city": {"type": "string"}, "zip": {"type": "string"}}, "required": ["city"]}`)
+	schema, err := jsonutil.Decode(`{"type": "object", "properties": {"city": {"type": "string"}, "zip": {"type": "string"}}, "required": ["city"]}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestPromptPlumbing(t *testing.T) {
 
 // test_delegate_output_schema.py TestToolSchemaSurface test_output_schema_advertised_per_task_only
 func TestOutputSchemaAdvertisedPerTaskOnly(t *testing.T) {
-	props := pyjson.Plain(DelegateTaskSchema).(map[string]any)["parameters"].(map[string]any)["properties"].(map[string]any)
+	props := jsonutil.Plain(DelegateTaskSchema).(map[string]any)["parameters"].(map[string]any)["properties"].(map[string]any)
 	if _, ok := props["output_schema"]; ok {
 		t.Fatal("legacy top level output_schema advertised")
 	}
@@ -120,12 +120,12 @@ func TestStructuredSummaryIsRedactedPerValueAndStaysValidJSON(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			entry := RedactChildResult(nil, map[string]any{"summary": wrap(answer), "schema_valid": true}, map[string]any{"type": "object"}, true).(map[string]any)
-			parsed, err := pyjson.Loads(ExtractJSONCandidate(entry["summary"].(string)))
+			parsed, err := jsonutil.Decode(ExtractJSONCandidate(entry["summary"].(string)))
 			if err != nil {
 				t.Fatalf("summary %q no longer JSON: %v", entry["summary"], err)
 			}
-			obj := parsed.(*pyjson.Object)
-			if obj.Vals["n"] != int64(2) || strings.Contains(obj.Vals["env"].(string), key) || entry["schema_valid"] != true {
+			obj := parsed.(*jsonutil.Object)
+			if obj.Value("n") != int64(2) || strings.Contains(obj.Value("env").(string), key) || entry["schema_valid"] != true {
 				t.Fatalf("entry %v", entry)
 			}
 		})
@@ -134,9 +134,9 @@ func TestStructuredSummaryIsRedactedPerValueAndStaysValidJSON(t *testing.T) {
 
 // test_delegated_output_redaction.py test_redacted_schema_verdict_describes_delivered_summary_without_rerunning_child projection half
 func TestRedactedSchemaVerdictDescribesDeliveredSummary(t *testing.T) {
-	schema, _ := pyjson.Loads(`{"type": "object", "properties": {"value": {"const": "` + delegationSecret + `"}}, "required": ["value"]}`)
+	schema, _ := jsonutil.Decode(`{"type": "object", "properties": {"value": {"const": "` + delegationSecret + `"}}, "required": ["value"]}`)
 	entry := RedactChildResult(nil, map[string]any{"status": "completed", "summary": `{"value": "` + delegationSecret + `"}`, "schema_valid": true}, schema, true).(map[string]any)
-	text, _ := pyjson.Dumps(entry)
+	text, _ := jsonutil.Encode(entry)
 	if entry["status"] != "completed" || entry["schema_valid"] != false || strings.Contains(text, delegationSecret) {
 		t.Fatalf("entry %s", text)
 	}
@@ -159,10 +159,10 @@ func TestStructuredScalarSummaryStaysValidJSON(t *testing.T) {
 		{`17`, `{"type": "integer"}`},
 		{`1.5`, `{"type": "number"}`},
 	} {
-		schema, _ := pyjson.Loads(tc.schema)
+		schema, _ := jsonutil.Decode(tc.schema)
 		entry := RedactChildResult(nil, map[string]any{"summary": tc.summary, "schema_valid": true}, schema, true).(map[string]any)
 		summary := entry["summary"].(string)
-		delivered, err := pyjson.Loads(summary)
+		delivered, err := jsonutil.Decode(summary)
 		if err != nil || entry["schema_valid"] != true {
 			t.Fatalf("%s: summary %q valid %v err %v", tc.summary, summary, entry["schema_valid"], err)
 		}
@@ -200,7 +200,7 @@ func TestParentCopyHonoursOptOutWhilePersistedCopiesStayForced(t *testing.T) {
 	if event["goal"] != delegationSecret || event["summary"] != forced || event["status"] != "completed" {
 		t.Fatalf("event %v", event)
 	}
-	text, _ := pyjson.Dumps(map[string]any{"summary": carrier})
+	text, _ := jsonutil.Encode(map[string]any{"summary": carrier})
 	if !strings.Contains(text, delegationSecret) {
 		t.Fatalf("carrier serialized %s", text)
 	}

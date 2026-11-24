@@ -7,9 +7,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Shortest wait in seconds a button view may be given
@@ -46,7 +46,7 @@ func ResolveExecApprovalAdminGate(configExtra map[string]any) (bool, map[string]
 	if !ok {
 		rawToggle = false
 	}
-	switch strings.ToLower(strings.TrimSpace(pyrepr.Str(rawToggle))) {
+	switch strings.ToLower(strings.TrimSpace(anyutil.String(rawToggle))) {
 	case "true", "1", "yes":
 	default:
 		return false, map[string]struct{}{}

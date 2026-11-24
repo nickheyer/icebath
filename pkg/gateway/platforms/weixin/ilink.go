@@ -8,10 +8,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -22,12 +24,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/netpref"
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -87,24 +86,24 @@ var (
 	}
 )
 
-// Python exception carried as a Go error with its class name
+// Error carrying a kind label beside its message
 type pyErr struct{ kind, msg string }
 
-func (e *pyErr) Error() string      { return e.msg }
-func (e *pyErr) PyTypeName() string { return e.kind }
+func (e *pyErr) Error() string     { return e.msg }
+func (e *pyErr) ErrorKind() string { return e.kind }
 
 func runtimeError(msg string) error { return &pyErr{"RuntimeError", msg} }
 
+// Failure of a call made while the adapter holds no open HTTP session
+var errSessionClosed = runtimeError("weixin HTTP session is not open")
+
 func valueError(msg string) error { return &pyErr{"ValueError", msg} }
 
-// Whether the error is the TimeoutError of an awaited request
+// Whether the error is the timeout of an awaited request
 func isTimeout(err error) bool {
 	var pe *pyErr
 	return errors.As(err, &pe) && pe.kind == "TimeoutError"
 }
-
-// str of an exception as a percent s log argument renders it
-func errText(err error) string { return pyrepr.ExceptionMessage(err) }
 
 // Kind of a failure and the proxy's host when the proxy URL a session to the hosts reads from the environment holds a secret the raw error text could
 // repeat, empty when the raw text is safe to show
@@ -114,36 +113,36 @@ func proxyErrorShown(ctx context.Context, err error, hosts ...string) string {
 
 // Text of a failed request to the adapter's hosts for a log line or a send result, redacted when the raw text could repeat a proxy secret
 func (a *WeixinAdapter) proxySafeErrText(ctx context.Context, err error) string {
-	return cmp.Or(proxyErrorShown(ctx, err, a.baseURL, a.cdnBaseURL), errText(err))
+	return cmp.Or(proxyErrorShown(ctx, err, a.baseURL, a.cdnBaseURL), err.Error())
 }
 
-// Dict view of a decoded value, an empty object for a falsy value and the AttributeError of any other
-func objOrEmpty(v any) (*pyjson.Object, error) {
-	if !pyrepr.Truthy(v) {
-		return pyjson.NewObject(), nil
+// Object view of a decoded value, an empty object for an empty or missing value and an error for anything else
+func objOrEmpty(v any) (*jsonutil.Object, error) {
+	if !anyutil.IsTrue(v) {
+		return jsonutil.NewObject(), nil
 	}
-	if o, ok := pyjson.AsObject(v); ok {
+	if o, ok := jsonutil.AsObject(v); ok {
 		return o, nil
 	}
-	return nil, &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(v))}
+	return nil, fmt.Errorf("expected an object, got %s", anyutil.Kind(v))
 }
 
-// str of a falsy defaulted value, like str(value or "")
+// Text of a value, empty for an empty or missing one
 func strOf(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
-// Stripped str of a falsy defaulted value, like str(value or "").strip()
+// Trimmed text of a value, empty for an empty or missing one
 func textOf(v any) string { return strings.TrimSpace(strOf(v)) }
 
 // Whether a decoded value equals an int the way Python compares numbers
-func equalsInt(v any, n int64) bool { return v != nil && pyjson.Equal(v, n) }
+func equalsInt(v any, n int64) bool { return v != nil && anyutil.Equal(v, n) }
 
-// Whether a ret or errcode value is zero or absent, the in {0, None} test
-func zeroOrNone(v any) bool { return v == nil || pyjson.Equal(v, int64(0)) }
+// Whether a ret or errcode value is zero or absent
+func zeroOrNone(v any) bool { return v == nil || anyutil.Equal(v, int64(0)) }
 
 // Scoped WEIXIN env of the key first, else the extra value, stripped
 func extraOrSecret(ctx context.Context, extra map[string]any, key, def string) (string, error) {
@@ -151,7 +150,7 @@ func extraOrSecret(ctx context.Context, extra map[string]any, key, def string) (
 	if err != nil {
 		return "", err
 	}
-	return strings.TrimSpace(pyrepr.Str(v)), nil
+	return strings.TrimSpace(anyutil.String(v)), nil
 }
 
 // Whether a minus two response is a stale session rather than a real rate limit
@@ -167,15 +166,15 @@ func isStaleSessionRet(ret, errcode, errmsg any) bool {
 }
 
 // Whether a response reports an expired session or its stale session variant
-func isSessionExpired(resp *pyjson.Object, ret, errcode any) bool {
+func isSessionExpired(resp *jsonutil.Object, ret, errcode any) bool {
 	return equalsInt(ret, sessionExpiredErrcode) || equalsInt(errcode, sessionExpiredErrcode) ||
-		isStaleSessionRet(ret, errcode, pyrepr.Or(resp.Vals["errmsg"], resp.Vals["msg"]))
+		isStaleSessionRet(ret, errcode, anyutil.Or(resp.Value("errmsg"), resp.Value("msg")))
 }
 
 // Error of a stale session that survives the tokenless resend, the peer must message the bot first
 func sessionNotReadyError(ret, errcode, errmsg any) error {
 	return runtimeError(fmt.Sprintf("iLink sendmessage session not ready: ret=%s errcode=%s errmsg=%s — the user must send the bot a message first (or re-pair)",
-		pyrepr.Str(ret), pyrepr.Str(errcode), pyrepr.Str(pyrepr.Or(errmsg, "unknown error"))))
+		anyutil.String(ret), anyutil.String(errcode), anyutil.String(anyutil.Or(errmsg, "unknown error"))))
 }
 
 // One HTTP session with its closed flag
@@ -297,11 +296,7 @@ func readJSON(path string) any {
 	if err != nil {
 		return nil
 	}
-	text, err := pystr.DecodeUTF8SigFile(raw)
-	if err != nil {
-		return nil
-	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil
 	}
@@ -316,7 +311,7 @@ func saveWeixinAccount(ctx context.Context, home, accountID, token, baseURL, use
 	}
 	path := filepath.Join(dir, accountID+".json")
 	savedAt := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	if err := config.AtomicJSONWrite(ctx, path, pyjson.ObjectOf("token", token, "base_url", baseURL, "user_id", userID, "saved_at", savedAt)); err != nil {
+	if err := config.AtomicJSONWrite(ctx, path, jsonutil.ObjectOf("token", token, "base_url", baseURL, "user_id", userID, "saved_at", savedAt)); err != nil {
 		return err
 	}
 	_ = os.Chmod(path, 0o600)
@@ -324,12 +319,12 @@ func saveWeixinAccount(ctx context.Context, home, accountID, token, baseURL, use
 }
 
 // Persisted credentials of an account, nil when none were saved
-func loadWeixinAccount(home, accountID string) (*pyjson.Object, error) {
+func loadWeixinAccount(home, accountID string) (*jsonutil.Object, error) {
 	dir, err := accountDir(home)
 	if err != nil {
 		return nil, err
 	}
-	account, _ := readJSON(filepath.Join(dir, accountID+".json")).(*pyjson.Object)
+	account, _ := readJSON(filepath.Join(dir, accountID+".json")).(*jsonutil.Object)
 	return account, nil
 }
 
@@ -369,23 +364,20 @@ func (s *contextTokenStore) restore(accountID string) error {
 	}
 	var data any
 	if err == nil {
-		var text string
-		if text, err = pystr.DecodeUTF8SigFile(raw); err == nil {
-			data, err = pyjson.Loads(text)
-		}
+		data, err = jsonutil.Decode(raw)
 	}
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("weixin: failed to restore context tokens for %s: %s", safeID(accountID), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("weixin: failed to restore context tokens for %s: %s", safeID(accountID), err.Error()))
 		return nil
 	}
-	tokens, ok := data.(*pyjson.Object)
+	tokens, ok := data.(*jsonutil.Object)
 	if !ok {
-		return &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'items'", pyrepr.TypeName(data))}
+		return fmt.Errorf("context tokens of %s: expected an object, got %s", safeID(accountID), anyutil.Kind(data))
 	}
 	restored := 0
 	s.mu.Lock()
-	for _, userID := range tokens.Keys {
-		if token, isStr := tokens.Vals[userID].(string); isStr && token != "" {
+	for _, userID := range tokens.Keys() {
+		if token, isStr := tokens.Value(userID).(string); isStr && token != "" {
 			s.put(tokenKey(accountID, userID), token)
 			restored++
 		}
@@ -429,7 +421,7 @@ func (s *contextTokenStore) set(ctx context.Context, accountID, userID, token st
 	s.persistMu.Lock()
 	defer s.persistMu.Unlock()
 	prefix := accountID + ":"
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	s.mu.Lock()
 	for _, key := range s.order {
 		if strings.HasPrefix(key, prefix) {
@@ -438,7 +430,7 @@ func (s *contextTokenStore) set(ctx context.Context, accountID, userID, token st
 	}
 	s.mu.Unlock()
 	if err := config.AtomicJSONWrite(ctx, filepath.Join(s.root, accountID+".context-tokens.json"), payload); err != nil {
-		pkgLog().Warn(fmt.Sprintf("weixin: failed to persist context tokens for %s: %s", safeID(accountID), errText(err)))
+		pkgLog().Warn(fmt.Sprintf("weixin: failed to persist context tokens for %s: %s", safeID(accountID), err.Error()))
 	}
 }
 
@@ -479,9 +471,9 @@ func (c *typingTicketCache) set(userID, ticket string) {
 func parseAESKey(aesKeyB64 any) ([]byte, error) {
 	encoded, ok := aesKeyB64.(string)
 	if !ok {
-		return nil, &pyErr{"TypeError", fmt.Sprintf("argument should be a bytes-like object or ASCII string, not '%s'", pyrepr.TypeName(aesKeyB64))}
+		return nil, fmt.Errorf("aes_key must be base64 text, got %s", anyutil.Kind(aesKeyB64))
 	}
-	decoded, err := pybase64.B64Decode(encoded)
+	decoded, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
 		return nil, err
 	}
@@ -496,29 +488,29 @@ func parseAESKey(aesKeyB64 any) ([]byte, error) {
 			}
 		}
 		if hexText := text.String(); hexText != "" && strings.Trim(hexText, "0123456789abcdefABCDEF") == "" {
-			return pystr.BytesFromHex(hexText)
+			return hex.DecodeString(hexText)
 		}
 	}
 	return nil, valueError(fmt.Sprintf("unexpected aes_key format (%d decoded bytes)", len(decoded)))
 }
 
 // Chat type and effective chat id of an inbound message
-func guessChatType(message *pyjson.Object, accountID string) (string, string) {
-	roomID := textOf(pyrepr.Or(message.Vals["room_id"], message.Vals["chat_room_id"]))
-	toUserID := textOf(message.Vals["to_user_id"])
-	if roomID != "" || (toUserID != "" && accountID != "" && toUserID != accountID && equalsInt(message.Vals["msg_type"], 1)) {
+func guessChatType(message *jsonutil.Object, accountID string) (string, string) {
+	roomID := textOf(anyutil.Or(message.Value("room_id"), message.Value("chat_room_id")))
+	toUserID := textOf(message.Value("to_user_id"))
+	if roomID != "" || (toUserID != "" && accountID != "" && toUserID != accountID && equalsInt(message.Value("msg_type"), 1)) {
 		for _, candidate := range []string{roomID, toUserID} {
 			if candidate != "" {
 				return "group", candidate
 			}
 		}
-		return "group", strOf(message.Vals["from_user_id"])
+		return "group", strOf(message.Value("from_user_id"))
 	}
-	return "dm", strOf(message.Vals["from_user_id"])
+	return "dm", strOf(message.Value("from_user_id"))
 }
 
 // Runs one request and returns its status, headers and body under a whole call deadline
-func (s *ilinkSession) do(ctx context.Context, method, rawURL string, headers []header, body []byte, timeoutSeconds float64) (*pyhttpx.Response, error) {
+func (s *ilinkSession) do(ctx context.Context, method, rawURL string, headers []header, body []byte, timeoutSeconds float64) (*httputil.Response, error) {
 	rctx, cancel := context.WithTimeout(ctx, time.Duration(timeoutSeconds*float64(time.Second)))
 	defer cancel()
 	var reader io.Reader
@@ -544,26 +536,30 @@ func (s *ilinkSession) do(ctx context.Context, method, rawURL string, headers []
 	if err != nil {
 		return nil, requestError(ctx, rctx, rawURL, err)
 	}
-	return &pyhttpx.Response{StatusCode: resp.StatusCode, Header: resp.Header, URL: rawURL, Content: content, Status: resp.Status}, nil
+	return &httputil.Response{StatusCode: resp.StatusCode, Header: resp.Header, URL: rawURL, Content: content, Status: resp.Status}, nil
 }
 
-// Error of a failed request, the caller's cancellation first, then the deadline TimeoutError, then the connect error
+// Error of a failed request naming the host, the caller's cancellation first, then the deadline timeout, then the transport error
 func requestError(ctx, rctx context.Context, rawURL string, err error) error {
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
-	if rctx.Err() != nil {
-		return &pyErr{"TimeoutError", ""}
-	}
 	host := rawURL
-	if parsed, perr := pyurl.Parse(rawURL); perr == nil {
-		host = parsed.Netloc
+	if parsed, perr := url.Parse(rawURL); perr == nil {
+		host = parsed.Host
 	}
-	return &pyErr{"ClientConnectorError", fmt.Sprintf("Cannot connect to host %s ssl:default [%s]", host, pyhttpx.OSErrorText(err))}
+	if rctx.Err() != nil {
+		return &pyErr{"TimeoutError", "request to " + host + " timed out"}
+	}
+	var urlErr *url.Error
+	if errors.As(err, &urlErr) {
+		err = urlErr.Err
+	}
+	return fmt.Errorf("request to %s failed: %w", host, err)
 }
 
-// One iLink call returning its decoded JSON, a RuntimeError for an HTTP error status
-func apiRequest(ctx context.Context, session *ilinkSession, method, baseURL, endpoint string, headers []header, timeoutMS int, body []byte) (*pyjson.Object, error) {
+// One iLink call returning its decoded JSON, an error for an HTTP error status
+func apiRequest(ctx context.Context, session *ilinkSession, method, baseURL, endpoint string, headers []header, timeoutMS int, body []byte) (*jsonutil.Object, error) {
 	resp, err := session.do(ctx, method, strings.TrimRight(baseURL, "/")+"/"+endpoint, headers, body, float64(timeoutMS)/1000)
 	if err != nil {
 		return nil, err
@@ -572,22 +568,22 @@ func apiRequest(ctx context.Context, session *ilinkSession, method, baseURL, end
 	if resp.StatusCode >= 400 {
 		return nil, runtimeError(fmt.Sprintf("iLink %s %s HTTP %d: %s", method, endpoint, resp.StatusCode, textutil.First(raw, 200)))
 	}
-	decoded, err := pyjson.Loads(raw)
+	decoded, err := jsonutil.Decode(raw)
 	if err != nil {
 		return nil, err
 	}
-	data, ok := decoded.(*pyjson.Object)
+	data, ok := decoded.(*jsonutil.Object)
 	if !ok {
-		return nil, &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute 'get'", pyrepr.TypeName(decoded))}
+		return nil, fmt.Errorf("iLink %s %s: expected an object, got %s", method, endpoint, anyutil.Kind(decoded))
 	}
 	return data, nil
 }
 
 // POST of a payload with the channel version base info
-func apiPost(ctx context.Context, session *ilinkSession, baseURL, endpoint string, payload *pyjson.Object, token string, timeoutMS int) (*pyjson.Object, error) {
-	full := payload.Copy()
-	full.Set("base_info", pyjson.ObjectOf("channel_version", channelVersion))
-	body, err := pyjson.Dumps(full, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"))
+func apiPost(ctx context.Context, session *ilinkSession, baseURL, endpoint string, payload *jsonutil.Object, token string, timeoutMS int) (*jsonutil.Object, error) {
+	full := payload.Clone()
+	full.Set("base_info", jsonutil.ObjectOf("channel_version", channelVersion))
+	body, err := jsonutil.Encode(full)
 	if err != nil {
 		return nil, err
 	}
@@ -595,42 +591,42 @@ func apiPost(ctx context.Context, session *ilinkSession, baseURL, endpoint strin
 }
 
 // GET of an endpoint with the app id and client version headers
-func apiGet(ctx context.Context, session *ilinkSession, baseURL, endpoint string, timeoutMS int) (*pyjson.Object, error) {
+func apiGet(ctx context.Context, session *ilinkSession, baseURL, endpoint string, timeoutMS int) (*jsonutil.Object, error) {
 	headers := []header{{"iLink-App-Id", ilinkAppID}, {"iLink-App-ClientVersion", strconv.Itoa(ilinkAppClientVersion)}}
 	return apiRequest(ctx, session, http.MethodGet, baseURL, endpoint, headers, timeoutMS, nil)
 }
 
 // Long poll for updates, a timeout answering an empty batch at the same cursor
-func getUpdates(ctx context.Context, session *ilinkSession, baseURL, token string, syncBuf any, timeoutMS int) (*pyjson.Object, error) {
-	resp, err := apiPost(ctx, session, baseURL, epGetUpdates, pyjson.ObjectOf("get_updates_buf", syncBuf), token, timeoutMS)
+func getUpdates(ctx context.Context, session *ilinkSession, baseURL, token string, syncBuf any, timeoutMS int) (*jsonutil.Object, error) {
+	resp, err := apiPost(ctx, session, baseURL, epGetUpdates, jsonutil.ObjectOf("get_updates_buf", syncBuf), token, timeoutMS)
 	if isTimeout(err) {
-		return pyjson.ObjectOf("ret", int64(0), "msgs", []any{}, "get_updates_buf", syncBuf), nil
+		return jsonutil.ObjectOf("ret", int64(0), "msgs", []any{}, "get_updates_buf", syncBuf), nil
 	}
 	return resp, err
 }
 
 // Sends an item list to a peer as a finished bot message
-func sendItems(ctx context.Context, session *ilinkSession, baseURL, token, to string, itemList []any, contextToken, clientID string) (*pyjson.Object, error) {
-	message := pyjson.ObjectOf("from_user_id", "", "to_user_id", to, "client_id", clientID, "message_type", int64(msgTypeBot),
+func sendItems(ctx context.Context, session *ilinkSession, baseURL, token, to string, itemList []any, contextToken, clientID string) (*jsonutil.Object, error) {
+	message := jsonutil.ObjectOf("from_user_id", "", "to_user_id", to, "client_id", clientID, "message_type", int64(msgTypeBot),
 		"message_state", int64(msgStateFinish), "item_list", itemList)
 	if contextToken != "" {
 		message.Set("context_token", contextToken)
 	}
-	return apiPost(ctx, session, baseURL, epSendMessage, pyjson.ObjectOf("msg", message), token, apiTimeoutMS)
+	return apiPost(ctx, session, baseURL, epSendMessage, jsonutil.ObjectOf("msg", message), token, apiTimeoutMS)
 }
 
-// Sends one text message, a ValueError for blank text
-func sendMessage(ctx context.Context, session *ilinkSession, baseURL, token, to, text, contextToken, clientID string) (*pyjson.Object, error) {
+// Sends one text message, an error for blank text
+func sendMessage(ctx context.Context, session *ilinkSession, baseURL, token, to, text, contextToken, clientID string) (*jsonutil.Object, error) {
 	if strings.TrimSpace(text) == "" {
 		return nil, valueError("_send_message: text must not be empty")
 	}
-	itemList := []any{pyjson.ObjectOf("type", int64(itemText), "text_item", pyjson.ObjectOf("text", text))}
+	itemList := []any{jsonutil.ObjectOf("type", int64(itemText), "text_item", jsonutil.ObjectOf("text", text))}
 	return sendItems(ctx, session, baseURL, token, to, itemList, contextToken, clientID)
 }
 
 // Fetches the per user config that carries the typing ticket
-func getConfig(ctx context.Context, session *ilinkSession, baseURL, token, userID, contextToken string) (*pyjson.Object, error) {
-	payload := pyjson.ObjectOf("ilink_user_id", userID)
+func getConfig(ctx context.Context, session *ilinkSession, baseURL, token, userID, contextToken string) (*jsonutil.Object, error) {
+	payload := jsonutil.ObjectOf("ilink_user_id", userID)
 	if contextToken != "" {
 		payload.Set("context_token", contextToken)
 	}
@@ -638,8 +634,8 @@ func getConfig(ctx context.Context, session *ilinkSession, baseURL, token, userI
 }
 
 // Requests an upload slot of the encrypted CDN for one media file
-func getUploadURL(ctx context.Context, session *ilinkSession, baseURL, token, toUserID string, mediaType int, filekey string, rawsize int, rawfilemd5 string, filesize int, aeskeyHex string) (*pyjson.Object, error) {
-	payload := pyjson.ObjectOf("filekey", filekey, "media_type", int64(mediaType), "to_user_id", toUserID, "rawsize", int64(rawsize),
+func getUploadURL(ctx context.Context, session *ilinkSession, baseURL, token, toUserID string, mediaType int, filekey string, rawsize int, rawfilemd5 string, filesize int, aeskeyHex string) (*jsonutil.Object, error) {
+	payload := jsonutil.ObjectOf("filekey", filekey, "media_type", int64(mediaType), "to_user_id", toUserID, "rawsize", int64(rawsize),
 		"rawfilemd5", rawfilemd5, "filesize", int64(filesize), "no_need_thumb", true, "aeskey", aeskeyHex)
 	return apiPost(ctx, session, baseURL, epGetUploadURL, payload, token, apiTimeoutMS)
 }
@@ -662,15 +658,14 @@ func uploadCiphertext(ctx context.Context, session *ilinkSession, ciphertext []b
 	return "", runtimeError(fmt.Sprintf("CDN upload HTTP %d: %s", resp.StatusCode, raw))
 }
 
-// Downloads a URL, the response error of an HTTP error status
+// Downloads a URL, the status error of an HTTP error status
 func downloadBytes(ctx context.Context, session *ilinkSession, rawURL string, timeoutSeconds float64) ([]byte, error) {
 	resp, err := session.do(ctx, http.MethodGet, rawURL, nil, nil, timeoutSeconds)
 	if err != nil {
 		return nil, err
 	}
 	if resp.StatusCode >= 400 {
-		reason := strings.TrimSpace(strings.TrimPrefix(resp.Status, strconv.Itoa(resp.StatusCode)))
-		return nil, &pyErr{"ClientResponseError", fmt.Sprintf("%d, message=%s, url=%s", resp.StatusCode, pyrepr.Repr(reason), pyrepr.Repr(rawURL))}
+		return nil, &httputil.StatusError{StatusCode: resp.StatusCode, Status: resp.Status, URL: rawURL}
 	}
 	return resp.Content, nil
 }
@@ -679,18 +674,18 @@ func downloadBytes(ctx context.Context, session *ilinkSession, rawURL string, ti
 var weixinCDNAllowlist = map[string]bool{"novac2c.cdn.weixin.qq.com": true, "ilinkai.weixin.qq.com": true, "wx.qlogo.cn": true,
 	"thirdwx.qlogo.cn": true, "res.wx.qq.com": true, "mmbiz.qpic.cn": true, "mmbiz.qlogo.cn": true}
 
-// ValueError for a media URL that is not http or https on an allowlisted WeChat CDN host
+// Error for a media URL that is not http or https on an allowlisted WeChat CDN host
 func assertWeixinCDNURL(rawURL string) error {
-	parsed, err := pyurl.Parse(rawURL)
+	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return valueError("Unparseable media URL: " + pyrepr.Repr(rawURL))
+		return valueError("Unparseable media URL: " + strconv.Quote(rawURL))
 	}
-	scheme, host := strings.ToLower(parsed.Scheme), parsed.Hostname()
+	scheme, host := strings.ToLower(parsed.Scheme), strings.ToLower(parsed.Hostname())
 	if scheme != "http" && scheme != "https" {
-		return valueError(fmt.Sprintf("Media URL has disallowed scheme %s; only http/https are permitted.", pyrepr.Repr(scheme)))
+		return valueError(fmt.Sprintf("Media URL has disallowed scheme %s; only http/https are permitted.", strconv.Quote(scheme)))
 	}
 	if !weixinCDNAllowlist[host] {
-		return valueError(fmt.Sprintf("Media URL host %s is not in the WeChat CDN allowlist. Refusing to fetch to prevent SSRF.", pyrepr.Repr(host)))
+		return valueError(fmt.Sprintf("Media URL host %s is not in the WeChat CDN allowlist. Refusing to fetch to prevent SSRF.", strconv.Quote(host)))
 	}
 	return nil
 }
@@ -699,10 +694,10 @@ func assertWeixinCDNURL(rawURL string) error {
 func downloadAndDecryptMedia(ctx context.Context, session *ilinkSession, cdnBaseURL string, encryptedQueryParam, aesKeyB64, fullURL any, timeoutSeconds float64) ([]byte, error) {
 	var rawURL string
 	switch {
-	case pyrepr.Truthy(encryptedQueryParam):
-		rawURL = strings.TrimRight(cdnBaseURL, "/") + "/download?encrypted_query_param=" + pyurl.Quote(pyrepr.Str(encryptedQueryParam), "")
-	case pyrepr.Truthy(fullURL):
-		rawURL = pyrepr.Str(fullURL)
+	case anyutil.IsTrue(encryptedQueryParam):
+		rawURL = strings.TrimRight(cdnBaseURL, "/") + "/download?encrypted_query_param=" + url.QueryEscape(anyutil.String(encryptedQueryParam))
+	case anyutil.IsTrue(fullURL):
+		rawURL = anyutil.String(fullURL)
 		if err := assertWeixinCDNURL(rawURL); err != nil {
 			return nil, err
 		}
@@ -713,7 +708,7 @@ func downloadAndDecryptMedia(ctx context.Context, session *ilinkSession, cdnBase
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(aesKeyB64) {
+	if !anyutil.IsTrue(aesKeyB64) {
 		return raw, nil
 	}
 	key, err := parseAESKey(aesKeyB64)

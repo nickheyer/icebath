@@ -12,10 +12,10 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Maintenance purpose a browse schema catch up holder publishes
@@ -34,11 +34,11 @@ func (e *OwnershipConflict) Unwrap() error { return e.Cause }
 
 // Canonical absolute home path with host case rules, the key every reservation uses
 func CanonicalHome(h string) (string, error) {
-	resolved, err := pypath.Realpath(pypath.Expanduser(h), pypath.Lax)
+	resolved, err := pathutil.Resolve(pathutil.ExpandUser(h))
 	if err != nil {
 		return "", err
 	}
-	return pypath.Normcase(resolved), nil
+	return pathutil.FoldCase(resolved), nil
 }
 
 // Lock open flags, never following a symlink planted at the lock path
@@ -98,7 +98,7 @@ func openLock(path string) (*os.File, error) {
 // Reservations of canonical profile homes held through open locked descriptors
 type ProfileOwnership struct {
 	mu       sync.Mutex
-	handles  *pydict.Dict[string, *os.File]
+	handles  *orderedutil.Map[string, *os.File]
 	writers  []*ownershipWriter
 	busy     map[string]int
 	parked   map[string]*os.File
@@ -124,7 +124,7 @@ func (w *ownershipWriter) alive() bool {
 
 // Empty ownership with no reservations
 func NewProfileOwnership() *ProfileOwnership {
-	return &ProfileOwnership{handles: pydict.New[string, *os.File](), busy: map[string]int{}, parked: map[string]*os.File{},
+	return &ProfileOwnership{handles: orderedutil.NewMap[string, *os.File](), busy: map[string]int{}, parked: map[string]*os.File{},
 		released: map[string]bool{}}
 }
 
@@ -188,7 +188,7 @@ func (o *ProfileOwnership) reserveOne(ctx context.Context, h, purpose string) er
 	if _, err := home.MakeUserDir(ctx, h, 0o700, true, true); err != nil {
 		return err
 	}
-	path := pypath.PathJoin(h, gatewayLockFilename)
+	path := pathutil.Join(h, gatewayLockFilename)
 	f, err := openLock(path)
 	if err != nil {
 		return err
@@ -197,16 +197,16 @@ func (o *ProfileOwnership) reserveOne(ctx context.Context, h, purpose string) er
 		f.Close()
 		return &OwnershipConflict{Msg: "Gateway runtime already owns profile " + h}
 	}
-	record := pyjson.NewObject()
+	record := jsonutil.NewObject()
 	base := statusBuildPidRecord()
-	for _, k := range base.Keys {
+	for _, k := range base.Keys() {
 		record.Set(k, recGet(base, k))
 	}
 	record.Set(home.RecordKey, h)
 	if purpose != "" {
 		record.Set("purpose", purpose)
 	}
-	text, err := pyjson.Dumps(record)
+	text, err := jsonutil.Encode(record)
 	if err == nil {
 		err = rewriteLockRecord(f, text)
 	}
@@ -340,12 +340,12 @@ func (o *ProfileOwnership) Close() {
 }
 
 // Live holder record of home's gateway.lock when it is a maintenance reservation for purpose
-func MaintenanceHolder(h, purpose string) *pyjson.Object {
+func MaintenanceHolder(h, purpose string) *jsonutil.Object {
 	c, err := CanonicalHome(h)
 	if err != nil {
 		return nil
 	}
-	record := readGatewayLockRecord(pypath.PathJoin(c, gatewayLockFilename))
+	record := readGatewayLockRecord(pathutil.Join(c, gatewayLockFilename))
 	if record == nil || record.Len() == 0 || !pyEq(recGet(record, "purpose"), purpose) {
 		return nil
 	}
@@ -361,7 +361,7 @@ func LockRecordUnpublished(h string) bool {
 	if err != nil {
 		return false
 	}
-	record := readGatewayLockRecord(pypath.PathJoin(c, gatewayLockFilename))
+	record := readGatewayLockRecord(pathutil.Join(c, gatewayLockFilename))
 	if record == nil || record.Len() == 0 {
 		return true
 	}
@@ -460,15 +460,15 @@ func LiveRuntimeOwner(h string) (int, bool, error) {
 	if err != nil {
 		return 0, false, err
 	}
-	record := readGatewayLockRecord(pypath.PathJoin(c, gatewayLockFilename))
+	record := readGatewayLockRecord(pathutil.Join(c, gatewayLockFilename))
 	livePid, live := 0, false
 	if record != nil && record.Len() > 0 {
 		livePid, live = liveFromRecord(record)
 	}
-	if live && pyrepr.Truthy(recGet(record, "purpose")) {
+	if live && anyutil.IsTrue(recGet(record, "purpose")) {
 		return 0, false, nil
 	}
-	pid, ok, err := GetRunningPid(pypath.PathJoin(c, "gateway.pid"), false)
+	pid, ok, err := GetRunningPid(pathutil.Join(c, "gateway.pid"), false)
 	if err != nil {
 		return 0, false, err
 	}

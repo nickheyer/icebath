@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // HookView is one configured shell hook with its consent state
@@ -83,7 +83,7 @@ func HooksOverview(ctx context.Context) ([]HookView, []WebhookView, error) {
 			Allowed: approved[[2]string{spec.Event, spec.Command}], Drift: -1}
 		if view.Allowed {
 			if entry := ShellHookAllowlistEntry(ctx, spec.Event, spec.Command); len(entry) > 0 && config.PyTruthy(entry["approved_at"]) {
-				view.ApprovedAt = pyrepr.Str(entry["approved_at"])
+				view.ApprovedAt = anyutil.String(entry["approved_at"])
 				if view.Drift, view.DriftWas, view.DriftNow, err = hookMtimeDrift(spec, entry); err != nil {
 					return nil, nil, err
 				}
@@ -150,7 +150,7 @@ func ShellHookDirective(result *ShellHookResult) (string, error) {
 	if len(result.Parsed) == 0 {
 		return "", nil
 	}
-	return pyjson.Dumps(result.Parsed)
+	return jsonutil.Encode(result.Parsed)
 }
 
 // What checking one hook finds: whether its script can run, whether it is allowed and unchanged, and how a run on a sample event of an allowed, runnable hook ends
@@ -169,7 +169,7 @@ func checkShellHook(ctx context.Context, spec *ShellHookSpec) (*HookCheck, error
 	if !ok {
 		approvedAt = "?"
 	}
-	check.ApprovedAt = pyrepr.Str(approvedAt)
+	check.ApprovedAt = anyutil.String(approvedAt)
 	if config.PyTruthy(entry["script_mtime_at_approval"]) {
 		var err error
 		if check.Drift, check.DriftWas, check.DriftNow, err = hookMtimeDrift(spec, entry); err != nil {
@@ -198,7 +198,7 @@ func checkShellHook(ctx context.Context, spec *ShellHookSpec) (*HookCheck, error
 	case stdout == "":
 		check.Output = "empty"
 	default:
-		if _, err := pyjson.Loads(stdout); err == nil {
+		if _, err := jsonutil.Decode(stdout); err == nil {
 			check.Output = "json"
 		} else {
 			check.Output = "invalid"
@@ -231,7 +231,7 @@ func AddShellHook(ctx context.Context, event, command, matcher string, timeout i
 	case matcher != "" && !shellHookToolEvents[event]:
 		return &HookRefusal{Message: "only hooks before and after a tool call may name tools"}
 	case timeout < 0 || timeout > ShellHookMaxTimeoutSeconds:
-		return &HookRefusal{Message: "a hook may take at most " + pyrepr.Str(int64(ShellHookMaxTimeoutSeconds)) + " seconds"}
+		return &HookRefusal{Message: "a hook may take at most " + anyutil.String(int64(ShellHookMaxTimeoutSeconds)) + " seconds"}
 	}
 	entry := map[string]any{"command": command}
 	if matcher != "" {

@@ -11,8 +11,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 func writeTestFile(t *testing.T, path, text string) {
@@ -86,7 +86,7 @@ func TestManagedRoutesReplaceUserFileRoutes(t *testing.T) {
 	writeTestFile(t, filepath.Join(managed, "config.yaml"), routesYAML(satWhatsAppRoute))
 	var platforms []string
 	for _, route := range primaryProfileRoutesForCurrentHome(ctx) {
-		platforms = append(platforms, pyrepr.Str(route.Platform))
+		platforms = append(platforms, anyutil.String(route.Platform))
 	}
 	if len(platforms) != 1 || platforms[0] != "whatsapp" {
 		t.Fatalf("platforms = %v", platforms)

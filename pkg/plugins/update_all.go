@@ -5,14 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"regexp"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/pm"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -83,21 +81,13 @@ func shortReason(reason string) string {
 	return string(first[:197]) + "..."
 }
 
-var pyExceptionPrefix = regexp.MustCompile(`^([A-Z][A-Za-z0-9_]*(?:Error|Exception|Exit|Interrupt)): (?s)(.*)$`)
-
-// Python exception class name and str of an error raised inside one batch update
-func exceptionClassAndText(err error) (string, string) {
-	var pyErr *pm.PyError
-	switch {
-	case errors.As(err, &pyErr):
-		return pyErr.Class, pyErr.Message
-	case pypath.IsOSError(err):
-		return pypath.OSErrorClass(err), errchain.OSText(err)
+// Text of an error raised inside one batch update, a package worker failure led by the exception class the worker reported
+func updateFailureText(err error) string {
+	var workerErr *pm.PyError
+	if errors.As(err, &workerErr) {
+		return workerErr.Class + ": " + workerErr.Message
 	}
-	if m := pyExceptionPrefix.FindStringSubmatch(err.Error()); m != nil {
-		return m[1], m[2]
-	}
-	return "RuntimeError", err.Error()
+	return errchain.OSText(err)
 }
 
 // Runs one plan row through the single plugin update, returning updated, current or failed with detail
@@ -117,18 +107,18 @@ func updatePlanRow(ctx context.Context, row *CheckResult, console *Console, inte
 	switch {
 	case err == nil:
 	case errors.As(err, &consent):
-		console.Print(fmt.Sprintf("[yellow]Update of %s not applied:[/yellow] %s", pyrich.Escape(row.Name), pyrich.Escape(consent.Error())))
+		console.Print(fmt.Sprintf("[yellow]Update of %s not applied:[/yellow] %s", consoleutil.Escape(row.Name), consoleutil.Escape(consent.Error())))
 		return "failed", shortReason("not applied: " + consent.Error()), nil
 	case errors.As(err, &opErr):
-		console.Print("[red]Error:[/red] " + pyrich.Escape(opErr.Error()))
+		console.Print("[red]Error:[/red] " + consoleutil.Escape(opErr.Error()))
 		return "failed", shortReason(opErr.Error()), nil
 	case errors.As(err, &exit), errors.As(err, &interrupt), errors.Is(err, ErrUserInterrupt), errors.Is(err, context.Canceled):
 		return "", "", err
 	default:
 		pkgLog().Warn(fmt.Sprintf("update of plugin %s failed", row.Name), excInfo(err)...)
-		class, text := exceptionClassAndText(err)
-		console.Print(fmt.Sprintf("[red]Error:[/red] %s: %s", pyrich.Escape(class), pyrich.Escape(text)))
-		return "failed", shortReason(class + ": " + text), nil
+		text := updateFailureText(err)
+		console.Print("[red]Error:[/red] " + consoleutil.Escape(text))
+		return "failed", shortReason(text), nil
 	}
 	if !moved {
 		return "current", "", nil
@@ -162,7 +152,7 @@ func printUpdatePlan(console *Console, plan UpdatePlan) {
 
 func printSkippedUpdates(console *Console, plan UpdatePlan) {
 	for _, s := range plan.Skipped {
-		console.Print(fmt.Sprintf("  [dim]skipped %s (%s): %s[/dim]", pyrich.Escape(s.Row.Name), s.Row.Class, pyrich.Escape(s.Reason)))
+		console.Print(fmt.Sprintf("  [dim]skipped %s (%s): %s[/dim]", consoleutil.Escape(s.Row.Name), s.Row.Class, consoleutil.Escape(s.Reason)))
 	}
 }
 
@@ -212,9 +202,9 @@ func CmdUpdateAll(ctx context.Context, yes bool, out io.Writer) error {
 	marks := map[string]string{"updated": "[green]✓ updated[/green]", "current": "[dim]= already current[/dim]", "failed": "[red]✗ failed[/red]"}
 	failed := false
 	for _, o := range outcomes {
-		line := fmt.Sprintf("  %s  %s", marks[o.status], pyrich.Escape(o.name))
+		line := fmt.Sprintf("  %s  %s", marks[o.status], consoleutil.Escape(o.name))
 		if o.detail != "" {
-			line += fmt.Sprintf("  [dim]%s[/dim]", pyrich.Escape(o.detail))
+			line += fmt.Sprintf("  [dim]%s[/dim]", consoleutil.Escape(o.detail))
 		}
 		console.Print(line)
 		failed = failed || o.status == "failed"

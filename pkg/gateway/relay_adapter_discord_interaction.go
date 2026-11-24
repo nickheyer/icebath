@@ -8,8 +8,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const relayDiscordLabelsMax = 2048
@@ -44,7 +44,7 @@ func relayLabelText(v any) *string {
 	if v == nil {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	return &s
 }
 
@@ -216,7 +216,7 @@ func relayMapGet(v any, key string) any {
 // Python membership of a value among the integer interaction or channel type codes
 func relayJSONIn(v any, codes ...int) bool {
 	for _, code := range codes {
-		if pyrepr.Equal(v, code) {
+		if anyutil.Equal(v, code) {
 			return true
 		}
 	}
@@ -225,10 +225,10 @@ func relayJSONIn(v any, codes ...int) bool {
 
 // Optional text of a truthy value, nil for a falsy one
 func relayTruthyStr(v any) *string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	return &s
 }
 
@@ -237,17 +237,17 @@ func (a *RelayAdapter) discordInteractionToEvent(forward *PassthroughForward) (*
 	if !utf8.Valid(forward.Body) {
 		return nil, nil
 	}
-	parsed, err := pyjson.Loads(string(forward.Body))
+	parsed, err := jsonutil.Decode(string(forward.Body))
 	if err != nil {
 		return nil, nil
 	}
-	payload, ok := pyjson.Plain(parsed).(map[string]any)
+	payload, ok := jsonutil.Plain(parsed).(map[string]any)
 	if !ok {
 		return nil, nil
 	}
 	itype := payload["type"]
 	var data any = map[string]any{}
-	if pyrepr.Truthy(payload["data"]) {
+	if anyutil.IsTrue(payload["data"]) {
 		data = payload["data"]
 	}
 	messageType := MessageTypeText
@@ -258,7 +258,7 @@ func (a *RelayAdapter) discordInteractionToEvent(forward *PassthroughForward) (*
 		if err != nil {
 			return nil, err
 		}
-		text = strings.TrimRight("/"+pyrepr.Str(pyrepr.Or(name, "")), "/")
+		text = strings.TrimRight("/"+anyutil.String(anyutil.Or(name, "")), "/")
 		if text != "" {
 			options, _ := relayDictGet(data, "options")
 			parts := append([]string{text}, relayRenderInteractionOptions(options)...)
@@ -270,7 +270,7 @@ func (a *RelayAdapter) discordInteractionToEvent(forward *PassthroughForward) (*
 		if err != nil {
 			return nil, err
 		}
-		text = pyrepr.Str(pyrepr.Or(customID, ""))
+		text = anyutil.String(anyutil.Or(customID, ""))
 	case relayJSONIn(itype, 5):
 		text, err = relayRenderModalSubmit(data)
 		if err != nil {
@@ -278,11 +278,11 @@ func (a *RelayAdapter) discordInteractionToEvent(forward *PassthroughForward) (*
 		}
 	}
 	var member any = map[string]any{}
-	if pyrepr.Truthy(payload["member"]) {
+	if anyutil.IsTrue(payload["member"]) {
 		member = payload["member"]
 	}
 	user := relayMapGet(member, "user")
-	if !pyrepr.Truthy(user) {
+	if !anyutil.IsTrue(user) {
 		user = payload["user"]
 	}
 	if _, isMap := user.(map[string]any); !isMap {
@@ -291,21 +291,21 @@ func (a *RelayAdapter) discordInteractionToEvent(forward *PassthroughForward) (*
 	guildID := payload["guild_id"]
 	var userName *string
 	for _, v := range []any{relayMapGet(member, "nick"), relayMapGet(user, "global_name"), relayMapGet(user, "username")} {
-		if pyrepr.Truthy(v) {
+		if anyutil.IsTrue(v) {
 			userName = relayTruthyStr(v)
 			break
 		}
 	}
-	chatID := pyrepr.Str(pyrepr.Or(payload["channel_id"], ""))
+	chatID := anyutil.String(anyutil.Or(payload["channel_id"], ""))
 	channel, isMap := payload["channel"].(map[string]any)
 	if !isMap {
 		channel = map[string]any{}
 	}
-	isThread := pyrepr.Truthy(guildID) && relayJSONIn(channel["type"], 10, 11, 12)
+	isThread := anyutil.IsTrue(guildID) && relayJSONIn(channel["type"], 10, 11, 12)
 	chatType := "dm"
 	if isThread {
 		chatType = "thread"
-	} else if pyrepr.Truthy(guildID) {
+	} else if anyutil.IsTrue(guildID) {
 		chatType = "group"
 	}
 	source := &SessionSource{Platform: PlatformDiscord, ChatID: chatID, ChatType: chatType,
@@ -322,8 +322,8 @@ func (a *RelayAdapter) discordInteractionToEvent(forward *PassthroughForward) (*
 	if relayJSONIn(itype, 3) {
 		if promptID, optionID, ok := relayDecodePromptToken(text); ok {
 			var promptMessageID any
-			if msg, isMsg := payload["message"].(map[string]any); isMsg && pyrepr.Truthy(msg["id"]) {
-				promptMessageID = pyrepr.Str(msg["id"])
+			if msg, isMsg := payload["message"].(map[string]any); isMsg && anyutil.IsTrue(msg["id"]) {
+				promptMessageID = anyutil.String(msg["id"])
 			}
 			event.PromptResponse = map[string]any{"prompt_id": promptID, "option_id": optionID, "prompt_message_id": promptMessageID}
 			event.Text = "/" + optionID
@@ -351,9 +351,9 @@ func relayRenderModalSubmit(data any) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	lines := []string{pyrepr.Str(pyrepr.Or(customID, ""))}
+	lines := []string{anyutil.String(anyutil.Or(customID, ""))}
 	components, _ := relayDictGet(data, "components")
-	initial, err := relayListOf(pyrepr.Or(components, []any{}))
+	initial, err := relayListOf(anyutil.Or(components, []any{}))
 	if err != nil {
 		return "", err
 	}
@@ -366,9 +366,9 @@ func relayRenderModalSubmit(data any) (string, error) {
 			continue
 		}
 		nested := m["components"]
-		if !pyrepr.Truthy(nested) {
+		if !anyutil.IsTrue(nested) {
 			nested = []any{}
-			if pyrepr.Truthy(m["component"]) {
+			if anyutil.IsTrue(m["component"]) {
 				nested = []any{m["component"]}
 			}
 		}
@@ -382,12 +382,12 @@ func relayRenderModalSubmit(data any) (string, error) {
 		if list, isList := value.([]any); isList {
 			texts := make([]string, len(list))
 			for i, v := range list {
-				texts[i] = pyrepr.Str(v)
+				texts[i] = anyutil.String(v)
 			}
 			value = strings.Join(texts, ", ")
 		}
-		if value != nil && strings.TrimSpace(pyrepr.Str(value)) != "" {
-			lines = append(lines, fmt.Sprintf("%s: %s", pyrepr.Str(pyrepr.Or(m["custom_id"], "")), pyrepr.Str(value)))
+		if value != nil && strings.TrimSpace(anyutil.String(value)) != "" {
+			lines = append(lines, fmt.Sprintf("%s: %s", anyutil.String(anyutil.Or(m["custom_id"], "")), anyutil.String(value)))
 		}
 	}
 	return strings.TrimSpace(strings.Join(lines, "\n")), nil
@@ -435,14 +435,14 @@ func relayRenderInteractionOptions(options any) []string {
 			continue
 		}
 		if relayJSONIn(m["type"], 1, 2) {
-			if sub := strings.TrimSpace(pyrepr.Str(pyrepr.Or(m["name"], ""))); sub != "" {
+			if sub := strings.TrimSpace(anyutil.String(anyutil.Or(m["name"], ""))); sub != "" {
 				parts = append(parts, sub)
 			}
 			parts = append(parts, relayRenderInteractionOptions(m["options"])...)
 			continue
 		}
 		if value := m["value"]; value != nil {
-			if s := strings.TrimSpace(pyrepr.Str(value)); s != "" {
+			if s := strings.TrimSpace(anyutil.String(value)); s != "" {
 				parts = append(parts, s)
 			}
 		}

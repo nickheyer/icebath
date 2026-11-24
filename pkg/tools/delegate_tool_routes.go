@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var delegationParamNameRE = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
@@ -24,11 +24,11 @@ type TaskRoute struct {
 }
 
 // Route a backend routed result carries, nil for the default backend unlabelled route
-func (r *TaskRoute) Report() *pyjson.Object {
+func (r *TaskRoute) Report() *jsonutil.Object {
 	if r.Backend == DefaultDelegationBackend && r.Label == "" {
 		return nil
 	}
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("backend", r.Backend)
 	if r.Label != "" {
 		out.Set("label", r.Label)
@@ -37,14 +37,14 @@ func (r *TaskRoute) Report() *pyjson.Object {
 }
 
 // Result entry for a task this route refused before any child was built
-func (r *TaskRoute) RefusedEntry(index int) *pyjson.Object {
+func (r *TaskRoute) RefusedEntry(index int) *jsonutil.Object {
 	route := r.Report()
 	if route == nil {
-		route = pyjson.NewObject()
+		route = jsonutil.NewObject()
 		route.Set("backend", r.Backend)
 	}
 	route.Set("refused", true)
-	out := pyjson.NewObject()
+	out := jsonutil.NewObject()
 	out.Set("task_index", index)
 	out.Set("status", "error")
 	out.Set("summary", nil)
@@ -60,27 +60,27 @@ func activeDelegationProvider(ctx context.Context, config map[string]any) (Deleg
 }
 
 // Provider task parameters in their declared order minus malformed or reserved names, each a detached copy
-func declaredDelegationParameters(p DelegationProvider, config map[string]any) (accepted *pyjson.Object) {
+func declaredDelegationParameters(p DelegationProvider, config map[string]any) (accepted *jsonutil.Object) {
 	defer func() {
 		if rec := recover(); rec != nil {
 			pkgLog().Warn(fmt.Sprintf("delegation provider %s.task_parameters() raised; no extra parameters", p.Name()),
 				"exc_info", fmt.Sprint(rec))
-			accepted = pyjson.NewObject()
+			accepted = jsonutil.NewObject()
 		}
 	}()
-	accepted = pyjson.NewObject()
+	accepted = jsonutil.NewObject()
 	raw := p.TaskParameters(config)
 	if raw == nil {
 		return accepted
 	}
-	for _, name := range raw.Keys {
+	for _, name := range raw.Keys() {
 		if !delegationParamNameRE.MatchString(name) || ReservedTaskParameters[name] {
 			pkgLog().Warn(fmt.Sprintf("delegation provider %s: task parameter %s refused (reserved or invalid name)",
-				p.Name(), pyrepr.Repr(name)))
+				p.Name(), anyutil.Quote(name)))
 			continue
 		}
-		if schema, ok := pyjson.AsObject(raw.Vals[name]); ok {
-			accepted.Set(name, pyjson.Clone(schema))
+		if schema, ok := jsonutil.AsObject(raw.Value(name)); ok {
+			accepted.Set(name, jsonutil.Clone(schema))
 		}
 	}
 	return accepted
@@ -90,17 +90,17 @@ func declaredDelegationParameters(p DelegationProvider, config map[string]any) (
 func DeclaredDelegationParameters(p DelegationProvider, config map[string]any) map[string]map[string]any {
 	out := map[string]map[string]any{}
 	declared := declaredDelegationParameters(p, config)
-	for _, name := range declared.Keys {
-		out[name], _ = pyjson.Plain(declared.Vals[name]).(map[string]any)
+	for _, name := range declared.Keys() {
+		out[name], _ = jsonutil.Plain(declared.Value(name)).(map[string]any)
 	}
 	return out
 }
 
 // Extra task properties and description addendum of the active provider, none when it cannot be resolved
-func SchemaExtension(ctx context.Context, config map[string]any) (*pyjson.Object, string) {
+func SchemaExtension(ctx context.Context, config map[string]any) (*jsonutil.Object, string) {
 	p, err := activeDelegationProvider(ctx, config)
 	if err != nil {
-		return pyjson.NewObject(), ""
+		return jsonutil.NewObject(), ""
 	}
 	addendum := func() (text string) {
 		defer func() {
@@ -121,15 +121,15 @@ func delegationParamError(index int, name string, value any, schema map[string]a
 		return ""
 	}
 	for _, allowed := range enum {
-		if pyrepr.Equal(value, allowed) {
+		if anyutil.Equal(value, allowed) {
 			return ""
 		}
 	}
 	parts := make([]string, len(enum))
 	for i, v := range enum {
-		parts[i] = pyrepr.Str(v)
+		parts[i] = anyutil.String(v)
 	}
-	return fmt.Sprintf("Task %d: '%s' must be one of %s (got %s).", index, name, strings.Join(parts, ", "), pyrepr.Repr(value))
+	return fmt.Sprintf("Task %d: '%s' must be one of %s (got %s).", index, name, strings.Join(parts, ", "), anyutil.Quote(value))
 }
 
 // DelegationParamError returns the enum violation text of one task parameter, empty when allowed

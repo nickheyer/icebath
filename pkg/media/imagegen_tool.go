@@ -9,10 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var (
@@ -497,7 +498,7 @@ func imageGenerateTool(ctx context.Context, env *tools.Env, a imageToolArgs) str
 		dbg := imageDebugSession(env)
 		dbg.LogCall("image_generate_tool", debugData)
 		dbg.Save(env)
-		return dumpOrdered(keys, response, pyjson.Indent(2), pyjson.EnsureASCII(false))
+		return dumpOrdered(keys, response, jsonutil.Indent(2))
 	}
 	fail := func(err error) string {
 		msg := "Error generating image: " + err.Error()
@@ -528,7 +529,7 @@ func imageGenerateTool(ctx context.Context, env *tools.Env, a imageToolArgs) str
 	}
 	shouldUpscale := false
 	if a.Upscale != nil {
-		shouldUpscale = pyrepr.Truthy(a.Upscale)
+		shouldUpscale = anyutil.IsTrue(a.Upscale)
 	} else {
 		up, _ := meta["upscale"].(bool)
 		shouldUpscale = up && !useEdit
@@ -565,12 +566,12 @@ func buildNoBackendSetupMessage() string {
 }
 
 // JSON text of the map with keys in the given insertion order
-func dumpOrdered(keys []string, m map[string]any, opts ...pyjson.Option) string {
-	o := pyjson.NewObject()
+func dumpOrdered(keys []string, m map[string]any, opts ...jsonutil.Option) string {
+	o := jsonutil.NewObject()
 	for _, k := range keys {
 		o.Set(k, m[k])
 	}
-	s, _ := pyjson.Dumps(o, opts...)
+	s, _ := jsonutil.Encode(o, opts...)
 	return s
 }
 

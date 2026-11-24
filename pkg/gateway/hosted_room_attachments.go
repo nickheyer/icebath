@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -16,7 +17,7 @@ const (
 
 // Validated attachment manifest of one message
 func ValidateAttachmentManifest(value any) ([]map[string]any, error) {
-	list, ok := pyjson.Plain(value).([]any)
+	list, ok := jsonutil.Plain(value).([]any)
 	if !ok {
 		return nil, &AttachmentError{"attachments must be a list"}
 	}
@@ -52,7 +53,7 @@ func retainMessageAttachments(ctx context.Context, conn state.SQLiteConn, roomID
 	if len(normalized) == 0 {
 		return nil
 	}
-	if !pyjson.Equal(toAnyList(normalized), pyjson.Plain(manifest)) {
+	if !anyutil.Equal(toAnyList(normalized), jsonutil.Plain(manifest)) {
 		return &AttachmentError{"published attachment metadata must be canonical"}
 	}
 	table, err := state.QueryRowObject(ctx, conn, "SELECT 1 FROM sqlite_master WHERE type='table' AND name='hosted_room_attachments'")
@@ -67,11 +68,11 @@ func retainMessageAttachments(ctx context.Context, conn state.SQLiteConn, roomID
 		if err != nil {
 			return err
 		}
-		changed := row == nil || row.Vals["room_id"] != roomID || row.Vals["event_id"] != eventID || row.Vals["state"] != "committed" ||
-			!pyjson.Equal(row.Vals["viewer_access"], int64(1)) || (row.Vals["expires_at"] != nil && hrFloat(row, "expires_at") <= now)
+		changed := row == nil || row.Value("room_id") != roomID || row.Value("event_id") != eventID || row.Value("state") != "committed" ||
+			!anyutil.Equal(row.Value("viewer_access"), int64(1)) || (row.Value("expires_at") != nil && hrFloat(row, "expires_at") <= now)
 		if !changed {
 			for key, value := range entry {
-				if !pyjson.Equal(row.Vals[key], value) {
+				if !anyutil.Equal(row.Value(key), value) {
 					changed = true
 					break
 				}

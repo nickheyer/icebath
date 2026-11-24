@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // First argument that turns the test binary into the stdio MCP peer of the editor cases
@@ -107,11 +107,11 @@ func TestColdEditorRebindRequiresExactBorrowedConfig(t *testing.T) {
 	cwd := t.TempDir()
 	spec := ownedServerSpec(t)
 	original := editorPolicy(t, ctx, editorOwner(), "cold", spec, cwd)
-	text, err := pyjson.Dumps(original.asDict())
+	text, err := jsonutil.Encode(original.asDict())
 	if err != nil {
 		t.Fatal(err)
 	}
-	stored, err := pyjson.Loads(text)
+	stored, err := jsonutil.Decode(text)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +125,7 @@ func TestColdEditorRebindRequiresExactBorrowedConfig(t *testing.T) {
 	if reason := refusedReason(err); reason != "launch_credentials_unavailable" {
 		t.Fatalf("cold scope %v", err)
 	}
-	changed := pyjson.Plain(pyjson.Clone(spec)).(map[string]any)
+	changed := jsonutil.Plain(jsonutil.Clone(spec)).(map[string]any)
 	changed["env"].([]any)[0].(map[string]any)["value"] = "CHANGED_SECRET"
 	if reason := refusedReason(attachEditorMCP(ctx, authority, cold, []any{changed})); reason != "acp_mcp_policy_conflict" {
 		t.Fatalf("changed secret attach gave %q", reason)

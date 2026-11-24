@@ -20,8 +20,9 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
+	hostutil "github.com/nickheyer/icebath/pkg/utils/host"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Versions of the pinned azure-identity and msal whose heads the Entra token requests carry
@@ -49,7 +50,7 @@ var msalWellKnownB2CHosts = []string{"b2clogin.com", "b2clogin.cn", "b2clogin.us
 
 // User-Agent of the azure-identity pipeline, AZURE_HTTP_USER_AGENT appended when set
 func azureIdentityUserAgent() string {
-	ua := "azsdk-python-identity/" + azureIdentityVersion + " Python/" + pinnedPythonRuntimeVersion() + " (" + pyplatform.Platform() + ")"
+	ua := "azsdk-python-identity/" + azureIdentityVersion + " Python/" + pinnedPythonRuntimeVersion() + " (" + hostutil.Platform() + ")"
 	if extra, ok := os.LookupEnv("AZURE_HTTP_USER_AGENT"); ok {
 		ua += " " + extra
 	}
@@ -66,7 +67,7 @@ func msalClientOS() string {
 	case "aix":
 		return "aix"
 	}
-	major, _, _ := strings.Cut(pyplatform.Release(), ".")
+	major, _, _ := strings.Cut(hostutil.Release(), ".")
 	return runtime.GOOS + major
 }
 
@@ -120,7 +121,7 @@ func (p *azureIdentityPipeline) run(ctx context.Context, method, target string, 
 	}
 	call := append(append([]pyhttpx.HeaderLine(nil), headers...), pyhttpx.HeaderLine{Name: "x-ms-client-request-id", Value: requestID.String()},
 		pyhttpx.HeaderLine{Name: "User-Agent", Value: azureIdentityUserAgent()})
-	body := pyurl.URLEncode(form)
+	body := urlutil.EncodeQuery(form)
 	total, connects, reads, statuses := 10, 3, 3, 3
 	history := 0
 	for {

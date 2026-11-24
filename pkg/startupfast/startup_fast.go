@@ -6,20 +6,22 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/app"
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pycodecs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	charsetutil "github.com/nickheyer/icebath/pkg/utils/charset"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Text of a small utf-8-sig file with universal newlines, false when it is missing, unreadable or undecodable
@@ -28,11 +30,11 @@ func readText(path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	text, err := pycodecs.Decode(data, "utf-8-sig")
+	text, err := charsetutil.Decode(data, "utf-8-sig")
 	if err != nil {
 		return "", false
 	}
-	return pystr.TranslateNewlines(text), true
+	return textutil.NormalizeNewlines(text), true
 }
 
 // Reports whether the path exists the way os.path.exists does, any stat failure counting as absent
@@ -52,7 +54,7 @@ func isContainerStartupEnvironment() bool {
 
 // Cheap probe for an active non default profile redirecting the home
 func activeProfileMayOverrideHome(root string) bool {
-	text, _ := readText(pypath.Join(root, "active_profile"))
+	text, _ := readText(pathutil.Join(root, "active_profile"))
 	active := strings.TrimSpace(text)
 	return active != "" && active != "default"
 }
@@ -63,14 +65,14 @@ func ContainerModeMayBeActive() bool {
 		return false
 	}
 	if h := strings.TrimSpace(os.Getenv(home.EnvHome)); h != "" {
-		if pathExists(pypath.Join(h, ".container-mode")) {
+		if pathExists(pathutil.Join(h, ".container-mode")) {
 			return true
 		}
-		parent := pypath.Basename(pypath.Dirname(pypath.Normpath(h)))
+		parent := pathutil.Name(filepath.Dir(filepath.Clean(h)))
 		return parent != home.ProfilesDir && activeProfileMayOverrideHome(h)
 	}
 	def := home.PlatformDefault()
-	return activeProfileMayOverrideHome(def) || pathExists(pypath.Join(def, ".container-mode"))
+	return activeProfileMayOverrideHome(def) || pathExists(pathutil.Join(def, ".container-mode"))
 }
 
 // The canonical icebath --version output, also behind the /version command, the update status line when asked
@@ -104,7 +106,7 @@ func PrintFastVersionInfo(ctx context.Context, w io.Writer, checkUpdates bool) {
 }
 
 // Passive source check of the install the extras tier installs with self update, unset in a build without an updater
-var UpdateCheck func(ctx context.Context, installRoot, home string) (*pyjson.Object, error)
+var UpdateCheck func(ctx context.Context, installRoot, home string) (*jsonutil.Object, error)
 
 // Lines the linked tiers add to the version output, each printed after the Go line
 var VersionLines []func() string
@@ -125,38 +127,38 @@ func printUpdateStatus(ctx context.Context, w io.Writer, root string) {
 }
 
 // Update status line, rollback before the behind count, none when no branch matches or the command lookup fails
-func updateStatusLine(status *pyjson.Object, command func() (string, error)) (string, bool) {
+func updateStatusLine(status *jsonutil.Object, command func() (string, error)) (string, bool) {
 	behind, _ := status.Get("behind")
 	rollback, _ := status.Get("rollback")
 	switch {
-	case pyrepr.Truthy(rollback):
+	case anyutil.IsTrue(rollback):
 		sourceVersion, _ := status.Get("sourceVersion")
 		cmd, err := command()
 		if err != nil {
 			return "", false
 		}
-		return fmt.Sprintf("Newer than stable release v%s — '%s' moves back to it", pyrepr.Str(sourceVersion), cmd), true
-	case pyrepr.Equal(behind, updaterecord.UpdateAvailableNoCount):
+		return fmt.Sprintf("Newer than stable release v%s — '%s' moves back to it", anyutil.String(sourceVersion), cmd), true
+	case anyutil.Equal(behind, updaterecord.UpdateAvailableNoCount):
 		cmd, err := command()
 		if err != nil {
 			return "", false
 		}
 		return fmt.Sprintf("Update available — run '%s'", cmd), true
-	case pyrepr.Truthy(behind):
+	case anyutil.IsTrue(behind):
 		positive, comparable := pyPositive(behind)
 		if !comparable || !positive {
 			return "", false
 		}
 		word := "commits"
-		if pyrepr.Equal(behind, 1) {
+		if anyutil.Equal(behind, 1) {
 			word = "commit"
 		}
 		cmd, err := command()
 		if err != nil {
 			return "", false
 		}
-		return fmt.Sprintf("Update available: %s %s behind — run '%s'", pyrepr.Str(behind), word, cmd), true
-	case pyrepr.Equal(behind, 0):
+		return fmt.Sprintf("Update available: %s %s behind — run '%s'", anyutil.String(behind), word, cmd), true
+	case anyutil.Equal(behind, 0):
 		return "Up to date", true
 	}
 	return "", false
@@ -188,6 +190,6 @@ func readInstallMethod() string {
 	if h == "" {
 		h = home.PlatformDefault()
 	}
-	text, _ := readText(pypath.Join(h, ".install_method"))
+	text, _ := readText(pathutil.Join(h, ".install_method"))
 	return strings.ToLower(strings.TrimSpace(text))
 }

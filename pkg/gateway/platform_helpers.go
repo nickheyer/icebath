@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"math/big"
 	"net/http"
 	"os"
 	"reflect"
@@ -19,14 +18,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -40,14 +37,14 @@ var dedupNow = func() float64 { return float64(time.Now().UnixNano()) / 1e9 }
 // TTL bounded cache of seen message ids that also caps its size under load
 type MessageDeduplicator struct {
 	mu      sync.Mutex
-	seen    *pydict.Dict[string, float64]
+	seen    *orderedutil.Map[string, float64]
 	maxSize int
 	ttl     float64
 }
 
 // Empty cache keeping at most maxSize ids for ttlSeconds each
 func NewMessageDeduplicator(maxSize int, ttlSeconds float64) *MessageDeduplicator {
-	return &MessageDeduplicator{seen: pydict.New[string, float64](), maxSize: maxSize, ttl: ttlSeconds}
+	return &MessageDeduplicator{seen: orderedutil.NewMap[string, float64](), maxSize: maxSize, ttl: ttlSeconds}
 }
 
 // True when the id was already seen inside the window, otherwise records it and trims the cache
@@ -69,7 +66,7 @@ func (d *MessageDeduplicator) IsDuplicate(msgID string) bool {
 		return false
 	}
 	cutoff := now - d.ttl
-	fresh := pydict.New[string, float64]()
+	fresh := orderedutil.NewMap[string, float64]()
 	for k, v := range d.seen.All() {
 		if v > cutoff {
 			fresh.Set(k, v)
@@ -83,7 +80,7 @@ func (d *MessageDeduplicator) IsDuplicate(msgID string) bool {
 			b, _ := fresh.Get(keys[j])
 			return a < b
 		})
-		newest := pydict.New[string, float64]()
+		newest := orderedutil.NewMap[string, float64]()
 		for _, k := range keys[max(len(keys)-d.maxSize, 0):] {
 			v, _ := fresh.Get(k)
 			newest.Set(k, v)
@@ -245,7 +242,7 @@ func CancelTask(ctx context.Context, task *AdapterTask) {
 }
 
 // Inserts into an insertion ordered map with a hard bound, evicting the oldest keys and refreshing a re put key
-func BoundedPut[V any](store *pydict.Dict[string, V], key string, value V, capacity int) {
+func BoundedPut[V any](store *orderedutil.Map[string, V], key string, value V, capacity int) {
 	store.Delete(key)
 	store.Set(key, value)
 	for store.Len() > capacity {
@@ -335,12 +332,12 @@ type ThreadParticipationTracker struct {
 	maxTracked int
 	mu         sync.Mutex
 	ioMu       sync.Mutex
-	threads    *pydict.Dict[string, struct{}]
+	threads    *orderedutil.Map[string, struct{}]
 }
 
 // State file of a platform's tracker under the active home, replaced by tests at this seam
 var threadTrackerStatePath = func(ctx context.Context, platform string) string {
-	return pypath.PathJoin(home.Dir(ctx), platform+"_threads.json")
+	return pathutil.Join(home.Dir(ctx), platform+"_threads.json")
 }
 
 var helpersAtomicJSONWrite = func(ctx context.Context, path string, data any) error {
@@ -349,7 +346,7 @@ var helpersAtomicJSONWrite = func(ctx context.Context, path string, data any) er
 
 // Tracker seeded in file order from the platform state file, keeping at most maxTracked ids on persist
 func NewThreadParticipationTracker(ctx context.Context, platform string, maxTracked int) *ThreadParticipationTracker {
-	t := &ThreadParticipationTracker{platform: platform, maxTracked: maxTracked, threads: pydict.New[string, struct{}]()}
+	t := &ThreadParticipationTracker{platform: platform, maxTracked: maxTracked, threads: orderedutil.NewMap[string, struct{}]()}
 	for _, id := range t.load(ctx) {
 		t.threads.Set(id, struct{}{})
 	}
@@ -362,18 +359,18 @@ func (t *ThreadParticipationTracker) load(ctx context.Context) []string {
 	if err != nil {
 		return nil
 	}
-	text, err := pystr.DecodeUTF8SigFile(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil
 	}
-	data, err := pyjson.Loads(text)
+	data, err := jsonutil.Decode(text)
 	list, ok := data.([]any)
 	if err != nil || !ok {
 		return nil
 	}
 	out := make([]string, len(list))
 	for i, id := range list {
-		out[i] = pyrepr.Str(id)
+		out[i] = anyutil.String(id)
 	}
 	return out
 }
@@ -386,7 +383,7 @@ func (t *ThreadParticipationTracker) save(ctx context.Context) error {
 	list := t.threads.Keys()
 	if len(list) > t.maxTracked {
 		list = list[pyNegativeSliceStart(len(list), t.maxTracked):]
-		t.threads = pydict.New[string, struct{}]()
+		t.threads = orderedutil.NewMap[string, struct{}]()
 		for _, id := range list {
 			t.threads.Set(id, struct{}{})
 		}
@@ -632,7 +629,7 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 			}
 		}
 		compiled := compile(texts, func(p string, err error) {
-			log.Warn(fmt.Sprintf("[%s] Invalid %s mention pattern %s: %s", opts.LogPrefix, display, pyrepr.Repr(p), err))
+			log.Warn(fmt.Sprintf("[%s] Invalid %s mention pattern %s: %s", opts.LogPrefix, display, anyutil.Quote(p), err))
 		})
 		if len(compiled) > 0 {
 			log.Info(fmt.Sprintf("[%s] Loaded %d %s mention pattern(s)", opts.LogPrefix, len(compiled), display))
@@ -650,7 +647,7 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 		var loaded any
 		if text == "" {
 			loaded = []any{}
-		} else if v, err := pyjson.Loads(text); err == nil {
+		} else if v, err := jsonutil.Decode(text); err == nil {
 			loaded = v
 		}
 		if list, ok := loaded.([]any); ok {
@@ -669,12 +666,12 @@ func CompileMentionPatterns(raw any, opts MentionPatternOptions) []*regexp2.Rege
 	}
 	var texts []string
 	for _, p := range patterns {
-		if t := strings.TrimSpace(pyrepr.Str(p)); t != "" {
+		if t := strings.TrimSpace(anyutil.String(p)); t != "" {
 			texts = append(texts, t)
 		}
 	}
 	return compile(texts, func(p string, err error) {
-		log.Warn(fmt.Sprintf("[%s] Invalid mention pattern %s: %s", opts.LogPrefix, pyrepr.Repr(p), err))
+		log.Warn(fmt.Sprintf("[%s] Invalid mention pattern %s: %s", opts.LogPrefix, anyutil.Quote(p), err))
 	})
 }
 
@@ -993,7 +990,7 @@ type DiscordChannelNameReader interface {
 func IsDiscordChannelObfuscated(channel any) bool {
 	if r, ok := channel.(DiscordChannelFlagsReader); ok {
 		if value, has := r.DiscordChannelFlags(); has {
-			if n, isInt := pyint.Instance(value); isInt && new(big.Int).And(n, big.NewInt(DiscordChannelObfuscatedFlag)).Sign() != 0 {
+			if n, isInt := anyutil.Int(value); isInt && n&DiscordChannelObfuscatedFlag != 0 {
 				return true
 			}
 		}

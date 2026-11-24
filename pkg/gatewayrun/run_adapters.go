@@ -11,6 +11,7 @@ import (
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Home of a named routed profile, the unresolved marker never standing for the launch profile
@@ -154,7 +155,7 @@ func (r *GatewayRunner) connectAdapterBounded(ctx context.Context, adapter gatew
 func pyFormatG(value float64) string {
 	text, err := pyrepr.Format(value, "g")
 	if err != nil {
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	}
 	return text
 }

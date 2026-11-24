@@ -7,9 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Builtin platforms whose allowed users and allow all env vars count as an allowlist or open access opt in
@@ -50,8 +50,8 @@ func ownPolicyEnvs(ctx context.Context, platform gateway.Platform) (dmEnv, group
 	if len(own) > 1 {
 		groupEnv = own[1]
 	}
-	if allowAll := gateway.AuthzField(string(platform), "allow_all_env", entry); pyrepr.Truthy(allowAll) {
-		allowAllEnv = pyrepr.Str(allowAll)
+	if allowAll := gateway.AuthzField(string(platform), "allow_all_env", entry); anyutil.IsTrue(allowAll) {
+		allowAllEnv = anyutil.String(allowAll)
 	}
 	return dmEnv, groupEnv, allowAllEnv, true
 }
@@ -86,8 +86,8 @@ func ownPolicyOpenStartupViolation(ctx context.Context, cfg *gateway.GatewayConf
 		}
 		extra := cfg.Platforms[platform].Extra
 		policy := func(key, env string) string {
-			if value := extra[key]; pyrepr.Truthy(value) {
-				return strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+			if value := extra[key]; anyutil.IsTrue(value) {
+				return strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 			}
 			if env == "" {
 				return "pairing"

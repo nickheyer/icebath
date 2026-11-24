@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Distro libatomic repair Node's staged verification asks for, replaced by tests
@@ -233,7 +233,7 @@ func (p *Npm) Unpack(archive, staged, target string) error {
 	if !present {
 		return missingKey("the node install record has no entry")
 	}
-	nodeBin := node.Binary(location.Store.Entry(pyrepr.Str(entryName)), target)
+	nodeBin := node.Binary(location.Store.Entry(anyutil.String(entryName)), target)
 	if nodeBin == "" || !isRegularFile(nodeBin) {
 		return NewInstallError(p.Name, "node's entry is missing its binary", "")
 	}

@@ -8,19 +8,18 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 )
 
 var (
 	compressionThresholdForModel           = provider.CompressionThresholdForModel
 	isCodexGPT54OrGPT55                    = provider.IsCodexGPT54OrGPT55
 	isCodexSpark                           = provider.IsCodexSpark
-	invalidConfigStderr          io.Writer = pysys.Stderr
+	invalidConfigStderr          io.Writer = termutil.Stderr
 )
 
 // Is_truthy_value, nil the default, strings by the 1 true yes on set, the rest by Python truth
@@ -35,10 +34,10 @@ func isTruthyValue(v any, def bool) bool {
 		}
 		return false
 	}
-	return pyrepr.Truthy(v)
+	return anyutil.IsTrue(v)
 }
 
-// Python int of the value when positive, nil otherwise, bools and floats refused outright when asked
+// Integer of the value when positive, nil otherwise, bools and floats refused outright when asked
 func configPositiveInt(raw any, rejectBoolFloat bool) *int {
 	if rejectBoolFloat {
 		switch raw.(type) {
@@ -46,11 +45,11 @@ func configPositiveInt(raw any, rejectBoolFloat bool) *int {
 			return nil
 		}
 	}
-	n, err := pyint.Of(raw)
-	if err != nil || n.Sign() <= 0 || !n.IsInt64() {
+	n, err := anyutil.ToInt(raw)
+	if err != nil || n <= 0 {
 		return nil
 	}
-	v := int(n.Int64())
+	v := int(n)
 	return &v
 }
 
@@ -186,7 +185,7 @@ func warnInvalidConfigInt(ctx context.Context, what string, value any, requireme
 
 // Stderr of the invalid config warning as work under ctx sees it, the process stderr routed by ctx or the writer a redirect put in its place
 func scopedInvalidConfigStderr(ctx context.Context) io.Writer {
-	if invalidConfigStderr != pysys.Stderr {
+	if invalidConfigStderr != termutil.Stderr {
 		return invalidConfigStderr
 	}
 	return tools.ScopedStderr(ctx)

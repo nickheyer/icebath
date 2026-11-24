@@ -9,7 +9,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func TestExecuteCodeRunsEachSessionsOwnInterpreter(t *testing.T) {
@@ -37,7 +37,7 @@ func TestExecuteCodeRunsEachSessionsOwnInterpreter(t *testing.T) {
 		return pair[0], pair[1]
 	}
 	resolved := func(p string) string {
-		r, err := pypath.Realpath(p, pypath.Lax)
+		r, err := pathutil.Resolve(p)
 		if err != nil {
 			t.Fatal(err)
 		}

@@ -6,10 +6,9 @@ import (
 	"math/big"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Python repr of a float with the short repr exponent thresholds
@@ -74,10 +73,10 @@ func pyJSONRepr(v any) string {
 			parts[i] = pyJSONRepr(e)
 		}
 		return "[" + strings.Join(parts, ", ") + "]"
-	case *pyjson.Object:
-		parts := make([]string, len(x.Keys))
-		for i, k := range x.Keys {
-			parts[i] = pyReprStr(k) + ": " + pyJSONRepr(x.Vals[k])
+	case *jsonutil.Object:
+		parts := make([]string, x.Len())
+		for i, k := range x.Keys() {
+			parts[i] = pyReprStr(k) + ": " + pyJSONRepr(x.Value(k))
 		}
 		return "{" + strings.Join(parts, ", ") + "}"
 	}
@@ -100,14 +99,14 @@ func pyJSONIter(v any) ([]any, error) {
 	case string:
 		out := []any{}
 		for i := 0; i < len(x); {
-			_, size := pystr.DecodeRune(x[i:])
+			_, size := utf8.DecodeRuneInString(x[i:])
 			out = append(out, x[i:i+size])
 			i += size
 		}
 		return out, nil
-	case *pyjson.Object:
-		out := make([]any, len(x.Keys))
-		for i, k := range x.Keys {
+	case *jsonutil.Object:
+		out := make([]any, x.Len())
+		for i, k := range x.Keys() {
 			out[i] = k
 		}
 		return out, nil
@@ -118,7 +117,7 @@ func pyJSONIter(v any) ([]any, error) {
 // TypeError for an unhashable JSON value used as a set or dict key
 func pyJSONHashable(v any) error {
 	switch v.(type) {
-	case []any, *pyjson.Object:
+	case []any, *jsonutil.Object:
 		return fmt.Errorf("expected text or a number, got %s", errchain.Kind(v))
 	}
 	return nil

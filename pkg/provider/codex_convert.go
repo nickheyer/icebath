@@ -16,10 +16,10 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // ---- endpoint quirks and issuer kinds ----
@@ -349,12 +349,12 @@ func textTypeFor(role string) string {
 func coerceArguments(arguments any) string {
 	var s string
 	switch t := arguments.(type) {
-	case map[string]any, *pyjson.Object:
-		s, _ = pyjson.Dumps(t, pyjson.EnsureASCII(false))
+	case map[string]any, *jsonutil.Object:
+		s, _ = jsonutil.Encode(t)
 	case string:
 		s = t
 	default:
-		s = pyrepr.Str(arguments)
+		s = anyutil.String(arguments)
 	}
 	if s = strings.TrimSpace(s); s == "" {
 		return "{}"
@@ -447,16 +447,16 @@ func neutralizeHarmonyStructure(value any) (any, error) {
 			out[k] = v
 		}
 		return out, nil
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return value, nil
 		}
-		out := pyjson.NewObject()
-		for _, k := range t.Keys {
+		out := jsonutil.NewObject()
+		for _, k := range t.Keys() {
 			if neutralizeHarmonyTokens(k) != k {
 				return nil, errHarmonyKey
 			}
-			v, err := neutralizeHarmonyStructure(t.Vals[k])
+			v, err := neutralizeHarmonyStructure(t.Value(k))
 			if err != nil {
 				return nil, err
 			}
@@ -701,7 +701,7 @@ func CoerceToolName(name any, fallback string) string {
 func responsesTools(toolDefs []map[string]any) []map[string]any {
 	var converted []map[string]any
 	for _, item := range toolDefs {
-		fn, _ := pyjson.Dict(item["function"])
+		fn, _ := jsonutil.AsMap(item["function"])
 		if !nonblank(fn["name"]) {
 			continue
 		}
@@ -1400,7 +1400,7 @@ func preflightTool(tool any, idx int) (map[string]any, error) {
 	}
 	switch p := params.(type) {
 	case map[string]any:
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if p == nil {
 			return nil, fmt.Errorf("Codex Responses tools[%d] is missing valid parameters.", idx)
 		}
@@ -1439,7 +1439,7 @@ func pyTruthy(v any) bool {
 		return len(t) > 0
 	case map[string]any:
 		return len(t) > 0
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return t != nil && t.Len() > 0
 	}
 	return true
@@ -2600,12 +2600,12 @@ func codexSchemaNodes(v any, fn func(enum any, drop func())) {
 		for _, child := range t {
 			codexSchemaNodes(child, fn)
 		}
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return
 		}
-		fn(t.Vals["enum"], func() { t.Delete("enum") })
-		for _, child := range t.Vals {
+		fn(t.Value("enum"), func() { t.Delete("enum") })
+		for _, child := range t.All() {
 			codexSchemaNodes(child, fn)
 		}
 	case []any:
@@ -2628,8 +2628,8 @@ func codexStripSlashEnum(toolList []map[string]any) []map[string]any {
 		for k, v := range tool {
 			cp[k] = v
 		}
-		if _, isDict := pyjson.Dict(cp["parameters"]); isDict {
-			clone := pyjson.Clone(cp["parameters"])
+		if _, isDict := jsonutil.AsMap(cp["parameters"]); isDict {
+			clone := jsonutil.Clone(cp["parameters"])
 			codexSchemaNodes(clone, func(rawEnum any, drop func()) {
 				enum, ok := rawEnum.([]any)
 				if !ok {

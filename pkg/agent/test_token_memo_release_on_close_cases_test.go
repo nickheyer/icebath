@@ -5,8 +5,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/provider"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestCompressionTelemetryDoesNotPinTheOneShotSummaryPrompt(t *testing.T) {
@@ -17,7 +17,7 @@ func TestCompressionTelemetryDoesNotPinTheOneShotSummaryPrompt(t *testing.T) {
 	if provider.ForgetMessageTokenMemo(probe, nil) != 1 {
 		t.Fatal("a plain estimate must pin the prompt so the release below is observable")
 	}
-	recorder := &CompressionTelemetry{Active: pyjson.NewObject()}
+	recorder := &CompressionTelemetry{Active: jsonutil.NewObject()}
 	recorder.Active.Set("effective_aux_context", nil)
 	recorder.RecordAuxCall(context.Background(), AuxCompressionCall{PromptMessages: []map[string]any{{"role": "user", "content": prompt}}, DurationMs: 1})
 	if n, _ := recorder.Active.Get("aux_prompt_tokens"); n.(int) <= 0 {

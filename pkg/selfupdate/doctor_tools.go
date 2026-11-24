@@ -15,15 +15,15 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/linktier"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // doctorToolset is one unavailable toolset row of the tool availability report
@@ -43,7 +43,7 @@ var (
 	doctorWhich                 = func(cmd string) string { p, _ := pyshutil.Which(cmd, nil); return p }
 	doctorIsTermux              = hostinfo.IsTermux
 	doctorIsContainer           = hostinfo.IsContainer
-	doctorSubprocessRun         = pysubprocess.RunWith
+	doctorSubprocessRun         = executil.Run
 	doctorFindDocker            = func() string { return tools.FindDocker(nil) }
 	doctorDescribeVercelAuth    = func() tools.VercelAuthStatus { return tools.DescribeVercelAuth(nil) }
 	doctorActiveSearchProvider  = tools.ActiveSearchProvider
@@ -122,9 +122,9 @@ func doctorTool(ctx context.Context, name string) (string, string) {
 
 // True when the command exits zero within the timeout, a timeout counting as failure
 var doctorRunOK = func(ctx context.Context, cmd []string, timeout time.Duration) (bool, error) {
-	done, err := doctorSubprocessRun(ctx, cmd, pysubprocess.Options{Timeout: timeout})
+	done, err := doctorSubprocessRun(ctx, cmd, executil.Options{Timeout: timeout})
 	if err != nil {
-		var expired *pysubprocess.TimeoutExpired
+		var expired *executil.TimeoutError
 		if errors.As(err, &expired) {
 			return false, nil
 		}
@@ -384,7 +384,7 @@ func doctorCheckSSHBackend(ctx context.Context, d *Doctor, issues *[]string) err
 		cmd = append(cmd, "-p", strconv.Itoa(sshPort))
 	}
 	if sshKey != "" {
-		cmd = append(cmd, "-i", pypath.Expanduser(sshKey))
+		cmd = append(cmd, "-i", pathutil.ExpandUser(sshKey))
 	}
 	target := sshHost
 	if sshUser != "" {
@@ -527,7 +527,7 @@ func doctorConfigText(v any) string {
 	if !config.PyTruthy(v) {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Why the profile config needs no local Chromium, empty when it does
@@ -706,7 +706,7 @@ func checkToolAvailability(ctx context.Context, d *Doctor, shouldFix bool) (*Fin
 		for _, tid := range available {
 			name := tid
 			if v, ok := requirements[tid]["name"]; ok {
-				name = pyrepr.Str(v)
+				name = anyutil.String(v)
 			}
 			doctorCheckOK(d.W, name, doctorToolAvailabilityDetail(tid))
 		}

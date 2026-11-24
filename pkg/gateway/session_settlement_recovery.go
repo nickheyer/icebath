@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Interrupt reasons a gateway stop records on the turns it cuts short
@@ -32,11 +32,11 @@ func transientSettleFailure(err error) bool {
 	if _, ok := state.SQLiteClassOf(err); ok {
 		return true
 	}
-	return pypath.IsOSError(err)
+	return errorutil.IsSystem(err)
 }
 
 // Fences a claim whose settlement failed as unknown, returning the status the row holds afterwards
-func markUnknown(ctx context.Context, a *SessionAuthority, row *pyjson.Object) (string, error) {
+func markUnknown(ctx context.Context, a *SessionAuthority, row *jsonutil.Object) (string, error) {
 	live, _ := a.live(rowString(row, "target_session_id"))
 	transfers := settlementTransfers(a, live, row)
 	admissionID, generation := rowString(row, "admission_id"), rowGeneration(row)
@@ -78,7 +78,7 @@ func markUnknown(ctx context.Context, a *SessionAuthority, row *pyjson.Object) (
 }
 
 // Steers handed to a claim, read under the stream lock once its execution returned
-func settlementTransfers(a *SessionAuthority, live *LiveSession, row *pyjson.Object) map[string]bool {
+func settlementTransfers(a *SessionAuthority, live *LiveSession, row *jsonutil.Object) map[string]bool {
 	if live == nil {
 		return nil
 	}
@@ -88,7 +88,7 @@ func settlementTransfers(a *SessionAuthority, live *LiveSession, row *pyjson.Obj
 }
 
 // Stamps the recovery fence of a failed settlement, retrying until storage lets it commit
-func recoverFailedSettlement(ctx context.Context, a *SessionAuthority, row *pyjson.Object) (string, error) {
+func recoverFailedSettlement(ctx context.Context, a *SessionAuthority, row *jsonutil.Object) (string, error) {
 	for {
 		task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) { return markUnknown(taskCtx, a, row) })
 		status, err := task.wait()
@@ -105,19 +105,19 @@ func recoverFailedSettlement(ctx context.Context, a *SessionAuthority, row *pyjs
 }
 
 // Result object of a captured execution, empty when it captured none
-func capturedResultOf(captured *pyjson.Object) *pyjson.Object {
+func capturedResultOf(captured *jsonutil.Object) *jsonutil.Object {
 	if captured != nil {
 		if value, _ := captured.Get("result"); pyTruthy(value) {
-			if obj, ok := value.(*pyjson.Object); ok {
+			if obj, ok := value.(*jsonutil.Object); ok {
 				return obj
 			}
 		}
 	}
-	return pyjson.NewObject()
+	return jsonutil.NewObject()
 }
 
 // Completion frame payload of a settled turn with its outcome, status and the fields a viewer redraws from
-func completionPayload(row, settled *pyjson.Object, response any, captured *pyjson.Object) *pyjson.Object {
+func completionPayload(row, settled *jsonutil.Object, response any, captured *jsonutil.Object) *jsonutil.Object {
 	outcome := rowString(settled, "outcome")
 	published := outcome
 	if outcome == "interrupted" {
@@ -130,7 +130,7 @@ func completionPayload(row, settled *pyjson.Object, response any, captured *pyjs
 	case "interrupted":
 		status = "interrupted"
 	}
-	complete := pyjson.ObjectOf("text", response, "content", response, "admission_id", rowString(row, "admission_id"),
+	complete := jsonutil.ObjectOf("text", response, "content", response, "admission_id", rowString(row, "admission_id"),
 		"outcome", published, "status", status)
 	result := capturedResultOf(captured)
 	textOf := func(key string) string {
@@ -143,19 +143,19 @@ func completionPayload(row, settled *pyjson.Object, response any, captured *pyjs
 		return pyTruthy(value)
 	}
 	surface, _ := result.Get("error_surface")
-	if _, isSurface := surface.(*pyjson.Object); !isSurface && status == "error" {
+	if _, isSurface := surface.(*jsonutil.Object); !isSurface && status == "error" {
 		providerName, model := "", ""
 		if truthy("provider") {
 			value, _ := result.Get("provider")
-			providerName = pyrepr.Str(value)
+			providerName = anyutil.String(value)
 		}
 		if truthy("model") {
 			value, _ := result.Get("model")
-			model = pyrepr.Str(value)
+			model = anyutil.String(value)
 		}
 		surface = buildErrorSurfaceFromResult(result, providerName, model)
 	}
-	if descriptor, ok := surface.(*pyjson.Object); ok && descriptor != nil {
+	if descriptor, ok := surface.(*jsonutil.Object); ok && descriptor != nil {
 		complete.Set("error_surface", descriptor)
 	}
 	if pyTruthy(response) && truthy("response_reused") {
@@ -176,7 +176,7 @@ func completionPayload(row, settled *pyjson.Object, response any, captured *pyjs
 			complete.Set("warning", warning)
 		}
 		if billing, _ := result.Get("billing_block"); billing != nil {
-			if block, ok := billing.(*pyjson.Object); ok {
+			if block, ok := billing.(*jsonutil.Object); ok {
 				complete.Set("billing", block)
 			}
 		}
@@ -189,14 +189,14 @@ func completionPayload(row, settled *pyjson.Object, response any, captured *pyjs
 	}
 	if captured != nil {
 		if usage, _ := captured.Get("session_usage"); usage != nil {
-			if stats, ok := usage.(*pyjson.Object); ok {
+			if stats, ok := usage.(*jsonutil.Object); ok {
 				complete.Set("usage", tuiUsage(stats))
 			}
 		}
 	}
 	if persisted, _ := result.Get("persisted_turn"); persisted != nil {
-		if turn, ok := persisted.(*pyjson.Object); ok {
-			bound := turn.Copy()
+		if turn, ok := persisted.(*jsonutil.Object); ok {
+			bound := turn.Clone()
 			requestID, _ := row.Get("request_id")
 			bound.Set("submission_id", requestID)
 			complete.Set("persisted_turn", bound)
@@ -206,7 +206,7 @@ func completionPayload(row, settled *pyjson.Object, response any, captured *pyjs
 }
 
 // Publishes a settled turn's completion frame under the stream lock the caller holds, no storage write
-func publishCompletion(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row, settled *pyjson.Object, response any, captured *pyjson.Object) error {
+func publishCompletion(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row, settled *jsonutil.Object, response any, captured *jsonutil.Object) error {
 	func() {
 		defer func() {
 			if r := recover(); r != nil {
@@ -225,7 +225,7 @@ func publishCompletion(ctx context.Context, a *SessionAuthority, live *LiveSessi
 }
 
 // Named notice for a turn the owner's restart or shutdown interrupted, empty for any other turn
-func ownerStopNotice(captured *pyjson.Object, outcome string, row *pyjson.Object) string {
+func ownerStopNotice(captured *jsonutil.Object, outcome string, row *jsonutil.Object) string {
 	if outcome != "interrupted" {
 		return ""
 	}
@@ -244,27 +244,27 @@ func ownerStopNotice(captured *pyjson.Object, outcome string, row *pyjson.Object
 }
 
 // Notice and display metadata of a failed turn the gateway itself refused with a renderable descriptor, nil metadata otherwise
-func gatewayRefusalBoundary(captured *pyjson.Object, outcome string) (string, *pyjson.Object) {
+func gatewayRefusalBoundary(captured *jsonutil.Object, outcome string) (string, *jsonutil.Object) {
 	value := capturedResultOf(captured)
 	surface, _ := value.Get("error_surface")
 	failure, _ := value.Get("error")
-	descriptor, isSurface := surface.(*pyjson.Object)
+	descriptor, isSurface := surface.(*jsonutil.Object)
 	text, isText := failure.(string)
 	if outcome != "failed" || !isSurface || descriptor == nil || !isText || text == "" {
 		return "", nil
 	}
-	return text, pyjson.ObjectOf("error", text, "error_surface", descriptor.Copy())
+	return text, jsonutil.ObjectOf("error", text, "error_surface", descriptor.Clone())
 }
 
 // Releases a settled admission's media in its own write after publication, a failure logged and dropped
-func releaseSettledMedia(ctx context.Context, a *SessionAuthority, row *pyjson.Object) {
+func releaseSettledMedia(ctx context.Context, a *SessionAuthority, row *jsonutil.Object) {
 	if err := releaseAdmissionMedia(ctx, a.DB, rowString(row, "admission_id")); err != nil {
 		pkgLog().Error(fmt.Sprintf("Terminal media cleanup failed for admission %s", rowString(row, "admission_id")), "error", err)
 	}
 }
 
 // Commits a turn's result off the stream lock and publishes its completion, the claim reading started until then
-func CommitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response any, outcome string, captured *pyjson.Object, settlement *TurnSettlement) error {
+func CommitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *jsonutil.Object, response any, outcome string, captured *jsonutil.Object, settlement *TurnSettlement) error {
 	prepared, err := prepareResult(row, response, outcome, captured)
 	if err != nil {
 		return err
@@ -305,7 +305,7 @@ func CommitAndPublish(ctx context.Context, a *SessionAuthority, live *LiveSessio
 }
 
 // Commits the captured result, retrying a transient storage failure a bounded number of times
-func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *pyjson.Object, response any, outcome string, captured *pyjson.Object, settlement *TurnSettlement) error {
+func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession, ref SessionRef, row *jsonutil.Object, response any, outcome string, captured *jsonutil.Object, settlement *TurnSettlement) error {
 	for attempt := 0; ; attempt++ {
 		task := trackMutation(ctx, a, func(taskCtx context.Context) (any, error) {
 			return nil, CommitAndPublish(taskCtx, a, live, ref, row, response, outcome, captured, settlement)
@@ -330,7 +330,7 @@ func settleWithRetry(ctx context.Context, a *SessionAuthority, live *LiveSession
 }
 
 // Publishes a committed outcome once, then releases its media and publishes the idle state
-func publishTerminal(ctx context.Context, a *SessionAuthority, ref SessionRef, row, settled *pyjson.Object, response any, captured *pyjson.Object) error {
+func publishTerminal(ctx context.Context, a *SessionAuthority, ref SessionRef, row, settled *jsonutil.Object, response any, captured *jsonutil.Object) error {
 	live, ok := a.live(ref.SessionID)
 	if !ok {
 		return &pyKeyError{ref.SessionID}

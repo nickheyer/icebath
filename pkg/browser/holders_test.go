@@ -10,7 +10,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestContentionIsRetriedUntilTheDeadlineThenFailsNamingTheDir(t *testing.T) {
@@ -66,8 +66,8 @@ func TestALockHeldElsewhereIsNotTakenAndTimesOut(t *testing.T) {
 	}
 }
 
-func lease(holderPID int64, holderStart, startTime any, ns any) *pyjson.Object {
-	o := pyjson.NewObject()
+func lease(holderPID int64, holderStart, startTime any, ns any) *jsonutil.Object {
+	o := jsonutil.NewObject()
 	o.Set("holder_pid", holderPID)
 	o.Set("holder_start_time", holderStart)
 	o.Set("pid", int64(4242))
@@ -77,9 +77,9 @@ func lease(holderPID int64, holderStart, startTime any, ns any) *pyjson.Object {
 	return o
 }
 
-func writeJSON(t *testing.T, path string, o *pyjson.Object) {
+func writeJSON(t *testing.T, path string, o *jsonutil.Object) {
 	t.Helper()
-	text, _ := pyjson.Dumps(o)
+	text, _ := jsonutil.Encode(o)
 	if err := os.WriteFile(path, []byte(text), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -140,7 +140,7 @@ func TestDeadLeasesAreDroppedAndAHandOverNamesTheNewOwner(t *testing.T) {
 		t.Fatalf("entries %v", entries)
 	}
 	record := filepath.Join(dir, "r.json")
-	data := pyjson.NewObject()
+	data := jsonutil.NewObject()
 	data.Set("pid", int64(9))
 	data.Set("owner_pid", int64(1))
 	data.Set("ns", nsValue())
@@ -148,9 +148,9 @@ func TestDeadLeasesAreDroppedAndAHandOverNamesTheNewOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, _ := os.ReadFile(record)
-	got, _ := pyjson.LoadsBytes(raw)
-	obj := got.(*pyjson.Object)
-	if strings.Join(obj.Keys, ",") != "pid,owner_pid,ns,owner_start_time" || objGet(obj, "owner_pid") != int64(111) || objGet(obj, "owner_start_time") != int64(5) {
+	got, _ := jsonutil.Decode(raw)
+	obj := got.(*jsonutil.Object)
+	if strings.Join(obj.Keys(), ",") != "pid,owner_pid,ns,owner_start_time" || objGet(obj, "owner_pid") != int64(111) || objGet(obj, "owner_start_time") != int64(5) {
 		t.Fatalf("record %s", raw)
 	}
 }

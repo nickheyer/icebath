@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"maps"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Launch secret owner of the active authority, a nil owner when the runner has none
@@ -77,7 +77,7 @@ func (p *LocalSessionPolicy) CurrentServiceTier(ctx context.Context, runner any,
 	agentSection, _ := cfg["agent"].(map[string]any)
 	raw := ""
 	if value := agentSection["service_tier"]; value != nil {
-		raw = pyrepr.Str(value)
+		raw = anyutil.String(value)
 	}
 	tier := provider.ParseServiceTier(raw)
 	if tier == "" {

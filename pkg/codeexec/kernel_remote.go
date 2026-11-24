@@ -4,19 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyshlex"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	shellutil "github.com/nickheyer/icebath/pkg/utils/shell"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -88,9 +87,9 @@ var (
 )
 
 // Runner source with the cell protocol, capture limit and idle window filled in one pass
-func remoteKernelRunnerSource(idleExit *big.Int) string {
-	return strings.NewReplacer("{cell_source}", runnerCellSource, "{capture_limit}", fmt.Sprint(maxStdoutBytes),
-		"{idle_exit}", idleExit.String()).Replace(remoteKernelRunnerTemplate)
+func remoteKernelRunnerSource(idleExit int64) string {
+	return strings.NewReplacer("{cell_source}", runnerCellSource, "{capture_limit}", strconv.Itoa(maxStdoutBytes),
+		"{idle_exit}", strconv.FormatInt(idleExit, 10)).Replace(remoteKernelRunnerTemplate)
 }
 
 // Output text of cmd run on the remote from the filesystem root
@@ -111,7 +110,7 @@ type remoteKernel struct {
 	rpcToken       string
 	owner          string
 	lastUsed       time.Time
-	executionCount any
+	executionCount int64
 	cellSeq        int
 	attached       int
 	pinned         bool
@@ -124,16 +123,16 @@ func (k *remoteKernel) sh(cmd string, timeout int) (string, error) {
 
 // Bounded kill -0 probe through the transport, any transport failure reading as dead
 func (k *remoteKernel) isAlive() bool {
-	out, err := k.sh(fmt.Sprintf("kill -0 %s 2>/dev/null && echo ALIVE", pyshlex.Quote(k.pid)), 15)
+	out, err := k.sh(fmt.Sprintf("kill -0 %s 2>/dev/null && echo ALIVE", shellutil.Quote(k.pid)), 15)
 	return err == nil && strings.Contains(out, "ALIVE")
 }
 
 // Kills the runner and its children, then removes the kernel dir, logging each transport failure
 func (k *remoteKernel) kill() {
-	qPid := pyshlex.Quote(k.pid)
+	qPid := shellutil.Quote(k.pid)
 	steps := [][2]string{
 		{fmt.Sprintf("pkill -TERM -P %s 2>/dev/null; kill %s 2>/dev/null; true", qPid, qPid), "remote kernel kill failed (transport?)"},
-		{"rm -rf " + pyshlex.Quote(k.kernelDir), "remote kernel dir cleanup failed"},
+		{"rm -rf " + shellutil.Quote(k.kernelDir), "remote kernel dir cleanup failed"},
 	}
 	for _, step := range steps {
 		if _, err := k.sh(step[0], 15); err != nil {
@@ -179,11 +178,10 @@ func shutdownRemoteKernelsForOwner(owner string) {
 func shutdownRemoteKernelsWhere(matches func(owner string) bool) { remoteRegistry.shutdown(matches) }
 
 // Pops idle expired unattached kernels, the caller holds the lock and tears them down after release
-func reapRemoteUnlocked(now time.Time, idleTimeout *big.Int) []*remoteKernel {
-	limit := new(big.Float).SetInt(idleTimeout)
+func reapRemoteUnlocked(now time.Time, idleTimeout int64) []*remoteKernel {
 	var doomed []*remoteKernel
 	for key, k := range remoteRegistry.kernels {
-		if k.attached == 0 && big.NewFloat(now.Sub(k.lastUsed).Seconds()).Cmp(limit) > 0 {
+		if k.attached == 0 && now.Sub(k.lastUsed).Seconds() > float64(idleTimeout) {
 			doomed = append(doomed, k)
 			delete(remoteRegistry.kernels, key)
 		}
@@ -226,13 +224,13 @@ func evictRemoteOverCapUnlocked(env *tools.Env, keep remoteKernelKey) []*remoteK
 }
 
 // Starts a detached runner on the remote, nil with the kernel dir removed on any failure
-func spawnRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environment, envType, owner string, sandboxTools []string, idleExit *big.Int) (*remoteKernel, error) {
+func spawnRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environment, envType, owner string, sandboxTools []string, idleExit int64) (*remoteKernel, error) {
 	tmp, err := envTempDir(envr)
 	if err != nil {
 		return nil, err
 	}
 	kernelDir := tmp + "/icebath_rkernel_" + uuid4Hex()[:12]
-	qDir := pyshlex.Quote(kernelDir)
+	qDir := shellutil.Quote(kernelDir)
 	var kernel *remoteKernel
 	err = func() error {
 		if _, err := executeChecked(ctx, envr, privateDirsCmd(kernelDir, kernelDir+"/cells", kernelDir+"/rpc"), "remote kernel dir setup", 15, nil); err != nil {
@@ -306,7 +304,7 @@ type remoteCell struct {
 	timeout      float64
 	maxToolCalls int
 	reset        bool
-	idleExit     *big.Int
+	idleExit     int64
 }
 
 // Finds or respawns the owner's kernel after reaping idle entries, reporting reuse, reset and loss
@@ -348,16 +346,16 @@ func acquireRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environ
 }
 
 // Ships one cell request and polls for its result file, returning the cell status and payload
-func runRemoteCell(ctx context.Context, kernel *remoteKernel, code string, timeout float64) (any, *pyjson.Object, error) {
+func runRemoteCell(ctx context.Context, kernel *remoteKernel, code string, timeout float64) (any, *jsonutil.Object, error) {
 	remoteRegistry.mu.Lock()
 	kernel.cellSeq++
 	seq := fmt.Sprintf("%06d", kernel.cellSeq)
 	remoteRegistry.mu.Unlock()
-	qCells, qRes := pyshlex.Quote(kernel.kernelDir+"/cells"), pyshlex.Quote("cell_res_"+seq+".json")
-	request := pyjson.NewObject()
+	qCells, qRes := shellutil.Quote(kernel.kernelDir+"/cells"), shellutil.Quote("cell_res_"+seq+".json")
+	request := jsonutil.NewObject()
 	request.Set("id", seq)
 	request.Set("code", code)
-	body, err := pyjson.Dumps(request, pyjson.EnsureASCII(false))
+	body, err := jsonutil.Encode(request)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -372,11 +370,11 @@ func runRemoteCell(ctx context.Context, kernel *remoteKernel, code string, timeo
 		}
 		if text := strings.TrimSpace(out); text != "" {
 			var status any
-			payload := pyjson.NewObject()
-			decoded, err := pyjson.Loads(text)
+			payload := jsonutil.NewObject()
+			decoded, err := jsonutil.Decode(text)
 			if err != nil {
 				status = "protocol-error"
-			} else if obj, ok := decoded.(*pyjson.Object); ok {
+			} else if obj, ok := decoded.(*jsonutil.Object); ok {
 				payload = obj
 				status = objGet(obj, "status", "error")
 			} else {
@@ -389,11 +387,11 @@ func runRemoteCell(ctx context.Context, kernel *remoteKernel, code string, timeo
 		}
 		time.Sleep(cellPollInterval)
 	}
-	return "timeout", pyjson.NewObject(), nil
+	return "timeout", jsonutil.NewObject(), nil
 }
 
 // Value under key, the default when the key is absent
-func objGet(o *pyjson.Object, key string, def any) any {
+func objGet(o *jsonutil.Object, key string, def any) any {
 	if v, ok := o.Get(key); ok {
 		return v
 	}
@@ -404,7 +402,7 @@ func objGet(o *pyjson.Object, key string, def any) any {
 func slogDebug(env *tools.Env, msg string, err error) { pkgLog(env).Debug(msg, "error", err) }
 
 // Runs one cell in the owner's remote kernel, nil when no kernel could be spawned so the caller runs per call
-func executeInRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environment, code string, c remoteCell) (*pyjson.Object, error) {
+func executeInRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Environment, code string, c remoteCell) (*jsonutil.Object, error) {
 	owner := resolveOwner(ctx, env, c.taskEnvID)
 	kernel, reused, stateReset, stateLost, err := acquireRemoteKernel(ctx, env, envr, owner, c)
 	if err != nil || kernel == nil {
@@ -429,8 +427,8 @@ func executeInRemoteKernel(ctx context.Context, env *tools.Env, envr tools.Envir
 }
 
 // Runs the cell under a per cell RPC poll loop carrying this call's authority and builds the raw cell result
-func runAttachedCell(ctx context.Context, env *tools.Env, kernel *remoteKernel, key remoteKernelKey, code string, c remoteCell, reused, stateReset, stateLost bool) (*pyjson.Object, error) {
-	qRPC := pyshlex.Quote(kernel.kernelDir + "/rpc")
+func runAttachedCell(ctx context.Context, env *tools.Env, kernel *remoteKernel, key remoteKernelKey, code string, c remoteCell, reused, stateReset, stateLost bool) (*jsonutil.Object, error) {
+	qRPC := shellutil.Quote(kernel.kernelDir + "/rpc")
 	_, _ = kernel.sh(fmt.Sprintf("rm -f %s/req_* %s/res_*", qRPC, qRPC), 10)
 	budget := newRPCBudget(c.sandboxTools, c.maxToolCalls)
 	stop, done := make(chan struct{}), make(chan struct{})
@@ -448,10 +446,10 @@ func runAttachedCell(ctx context.Context, env *tools.Env, kernel *remoteKernel, 
 		remoteRegistry.discard(key, kernel)
 		return nil, err
 	}
-	info := pyjson.NewObject()
+	info := jsonutil.NewObject()
 	info.Set("reused", reused)
 	info.Set("remote", true)
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("status", "error")
 	result.Set("stdout", objGet(payload, "stdout", ""))
 	result.Set("stderr", objGet(payload, "stderr", ""))
@@ -476,23 +474,21 @@ func runAttachedCell(ctx context.Context, env *tools.Env, kernel *remoteKernel, 
 		remoteRegistry.discard(key, kernel)
 		info.Set("ended", true)
 	}
-	count := objGet(payload, "execution_count", 0)
-	if !pyrepr.Truthy(count) {
-		count = 0
-	}
-	n, err := pyint.Of(count)
-	if err != nil {
-		return nil, err
+	var n int64
+	if count := objGet(payload, "execution_count", 0); anyutil.IsTrue(count) {
+		if n, err = anyutil.ToInt(count); err != nil {
+			return nil, err
+		}
 	}
 	remoteRegistry.mu.Lock()
-	kernel.executionCount = pyint.Value(n)
+	kernel.executionCount = n
 	remoteRegistry.mu.Unlock()
-	info.Set("execution_count", pyint.Value(n))
+	info.Set("execution_count", n)
 	if isStatus(status, "ok", "exit") {
 		result.Set("status", "success")
 	}
-	result.Set("stdout_clipped", pyrepr.Truthy(objGet(payload, "stdout_clipped", nil)))
-	result.Set("stderr_clipped", pyrepr.Truthy(objGet(payload, "stderr_clipped", nil)))
+	result.Set("stdout_clipped", anyutil.IsTrue(objGet(payload, "stdout_clipped", nil)))
+	result.Set("stderr_clipped", anyutil.IsTrue(objGet(payload, "stderr_clipped", nil)))
 	if stateReset {
 		info.Set("state_reset", true)
 	}
@@ -501,7 +497,7 @@ func runAttachedCell(ctx context.Context, env *tools.Env, kernel *remoteKernel, 
 		info.Set("note", "The previous remote kernel was gone (transport drop, container "+
 			"restart, or idle self-exit); state from earlier calls was lost and a fresh kernel was started.")
 	}
-	if tb, _ := result.Get("traceback"); isStatus(status, "error") && pyrepr.Truthy(tb) {
+	if tb, _ := result.Get("traceback"); isStatus(status, "error") && anyutil.IsTrue(tb) {
 		text, ok := tb.(string)
 		if !ok {
 			return nil, fmt.Errorf("remote kernel traceback is %s where text was expected", errchain.Kind(tb))

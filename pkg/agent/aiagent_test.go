@@ -10,9 +10,9 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/state"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 func TestStreamWriterFenceSupersedesEarlierClaims(t *testing.T) {
@@ -348,7 +348,7 @@ func TestEmitNoticeReachesTheNoticeCallback(t *testing.T) {
 func TestApplyFallbackChainSkipsWhileCooldownHoldsFallback(t *testing.T) {
 	live := []map[string]any{{"provider": "deepseek", "model": "deepseek-v4-flash"}}
 	a := &AIAgent{fallbackChain: live, fallbackIndex: 1, fallbackActivated: true}
-	a.rateLimitedUntil = pythread.Monotonic() + 30
+	a.rateLimitedUntil = timeutil.Monotonic() + 30
 	a.ApplyFallbackChain([]map[string]any{{"provider": "openrouter", "model": "anthropic/claude-sonnet-4.6"}})
 	if len(a.fallbackChain) != 1 || a.fallbackChain[0]["provider"] != "deepseek" || a.fallbackIndex != 1 || !a.fallbackActivated {
 		t.Fatalf("a live fallback activation was clobbered: %v index %d", a.fallbackChain, a.fallbackIndex)

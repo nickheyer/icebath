@@ -24,11 +24,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 
 	"github.com/google/uuid"
 	"github.com/nickheyer/icebath/pkg/internal/msalruntime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 const (
@@ -114,19 +114,19 @@ func loadVSCodeAuthRecord() (*entraAuthRecord, error) {
 		}
 		raw, err := os.ReadFile(path)
 		if err != nil {
-			return nil, errors.New(errchain.OSText(err) + ": " + pyrepr.StrRepr(path))
+			return nil, errors.New(errchain.OSText(err) + ": " + strconv.Quote(path))
 		}
 		text := string(raw)
 		if !utf8.Valid(raw) {
-			if _, derr := pyjson.DecodeBytes(raw); derr != nil {
+			if _, derr := jsonutil.Text(raw); derr != nil {
 				return nil, &entraValueError{msg: derr.Error()}
 			}
 		}
-		parsed, err := pyjson.Loads(text)
+		parsed, err := jsonutil.Decode(text)
 		if err != nil {
 			return nil, &entraValueError{msg: err.Error()}
 		}
-		obj, ok := parsed.(*pyjson.Object)
+		obj, ok := parsed.(*jsonutil.Object)
 		if !ok {
 			return nil, errors.New(entraSubscriptTypeError(parsed))
 		}
@@ -146,7 +146,7 @@ func entraSubscriptTypeError(v any) string {
 }
 
 // Schema and value checks of the record, every failure joined into one ValueError
-func validateVSCodeAuthRecord(data *pyjson.Object) error {
+func validateVSCodeAuthRecord(data *jsonutil.Object) error {
 	var errs []string
 	str := func(k string) (string, bool, bool) {
 		v, present := data.Get(k)
@@ -646,7 +646,7 @@ func newEntraPublicApp(ctx context.Context, authorityURL, clientID, library stri
 			app.broker = rt
 		}
 	}
-	pkgLog().Debug(fmt.Sprintf("Broker enabled? %s", pyrepr.Repr(app.broker != nil)))
+	pkgLog().Debug(fmt.Sprintf("Broker enabled? %s", anyutil.Quote(app.broker != nil)))
 	return app, nil
 }
 
@@ -1086,7 +1086,7 @@ func (app *entraPublicApp) brokerAcquireTokenSilently(ctx context.Context, accou
 		if rerr := entraRedirectURIError(failure, "None"); rerr != nil {
 			return nil, rerr
 		}
-		pkgLog().Debug(fmt.Sprintf("read_account_by_id() error: %s", pyrepr.Repr(entraConvertBrokerError(failure))))
+		pkgLog().Debug(fmt.Sprintf("read_account_by_id() error: %s", anyutil.Quote(entraConvertBrokerError(failure))))
 		return nil, nil
 	}
 	account, err := read.Account()

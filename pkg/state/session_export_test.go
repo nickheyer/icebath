@@ -4,23 +4,23 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Exported session with a system turn, two user prompts, an assistant turn and a tool result
-func sampleExportSession() *pyjson.Object {
-	return pyjson.ObjectOf("id", "sess-123", "source", "cli", "model", "test/model", "title", "Debug auth flow",
+func sampleExportSession() *jsonutil.Object {
+	return jsonutil.ObjectOf("id", "sess-123", "source", "cli", "model", "test/model", "title", "Debug auth flow",
 		"started_at", 1700000000, "message_count", 5, "messages", []any{
-			pyjson.ObjectOf("id", 1, "role", "system", "content", "hidden system context", "timestamp", 1700000000),
-			pyjson.ObjectOf("id", 2, "role", "user", "content", "Why is login broken?", "timestamp", 1700000001, "platform_message_id", "evt-2"),
-			pyjson.ObjectOf("id", 3, "role", "assistant", "content", "I will inspect the auth middleware.", "timestamp", 1700000002),
-			pyjson.ObjectOf("id", 4, "role", "tool", "tool_name", "read_file", "content", "def redirect_after_login(): pass", "timestamp", 1700000003),
-			pyjson.ObjectOf("id", 5, "role", "user", "content", []any{pyjson.ObjectOf("type", "text", "text", "Only show me the prompts.")}, "timestamp", 1700000004),
+			jsonutil.ObjectOf("id", 1, "role", "system", "content", "hidden system context", "timestamp", 1700000000),
+			jsonutil.ObjectOf("id", 2, "role", "user", "content", "Why is login broken?", "timestamp", 1700000001, "platform_message_id", "evt-2"),
+			jsonutil.ObjectOf("id", 3, "role", "assistant", "content", "I will inspect the auth middleware.", "timestamp", 1700000002),
+			jsonutil.ObjectOf("id", 4, "role", "tool", "tool_name", "read_file", "content", "def redirect_after_login(): pass", "timestamp", 1700000003),
+			jsonutil.ObjectOf("id", 5, "role", "user", "content", []any{jsonutil.ObjectOf("type", "text", "text", "Only show me the prompts.")}, "timestamp", 1700000004),
 		})
 }
 
 func TestExportRecordCountSwitchesUnitForPromptOnlyExports(t *testing.T) {
-	sessions := []*pyjson.Object{sampleExportSession()}
+	sessions := []*jsonutil.Object{sampleExportSession()}
 	if n, noun, err := ExportRecordCount(sessions, nil); err != nil || n != 1 || noun != "session" {
 		t.Fatalf("count %d %q %v", n, noun, err)
 	}
@@ -30,7 +30,7 @@ func TestExportRecordCountSwitchesUnitForPromptOnlyExports(t *testing.T) {
 }
 
 func TestRenderSessionsExportMarkdownAndPromptViews(t *testing.T) {
-	sessions := []*pyjson.Object{sampleExportSession()}
+	sessions := []*jsonutil.Object{sampleExportSession()}
 	metadata := "- Session ID: `sess-123`\n- Source: `cli`\n- Model: `test/model`\n- Title: Debug auth flow\n" +
 		"- Started: 2023-11-14T22:13:20Z\n- Messages: 5\n\n"
 	wantMarkdown := "# Session: Debug auth flow\n" + metadata +
@@ -53,7 +53,7 @@ func TestRenderSessionsExportMarkdownAndPromptViews(t *testing.T) {
 	if got, err := RenderSessionsExport(sessions, "jsonl", "prompts"); err != nil || got != wantJSONL {
 		t.Fatalf("prompt jsonl %v\n%q\nwant\n%q", err, got, wantJSONL)
 	}
-	two := []*pyjson.Object{sampleExportSession(), pyjson.ObjectOf("session_id", "other", "messages", nil)}
+	two := []*jsonutil.Object{sampleExportSession(), jsonutil.ObjectOf("session_id", "other", "messages", nil)}
 	got, err := RenderSessionsExport(two, "markdown", nil)
 	if err != nil || !strings.HasPrefix(got, "# Icebath sessions export\n\n## Session: Debug auth flow\n- Session ID: `sess-123`\n") ||
 		!strings.Contains(got, "### User - 2023-11-14T22:13:21Z\n") || !strings.HasSuffix(got, "\n## Session: other\n- Session ID: `other`\n\n_No messages found._\n") {
@@ -88,7 +88,7 @@ func TestSaveFormatsNormalizeAndRender(t *testing.T) {
 	if got := DefaultSaveFilename("///", "json"); got != "icebath_session_session.json" {
 		t.Fatalf("empty id file name %q", got)
 	}
-	session := pyjson.ObjectOf("id", "s1", "title", "Tést", "messages", []any{})
+	session := jsonutil.ObjectOf("id", "s1", "title", "Tést", "messages", []any{})
 	if got, err := RenderSessionForSave(session, "json"); err != nil || got != "{\n  \"id\": \"s1\",\n  \"title\": \"Tést\",\n  \"messages\": []\n}" {
 		t.Fatalf("json save %v %q", err, got)
 	}

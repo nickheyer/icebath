@@ -17,12 +17,11 @@ import (
 	"time"
 	"weak"
 
-	"github.com/nickheyer/icebath/pkg/internal/pybase64"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	base64util "github.com/nickheyer/icebath/pkg/utils/base64"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const emptyTextPlaceholder = "(empty)"
@@ -32,7 +31,7 @@ var cacheableBlockTypes = map[string]bool{"text": true, "tool_use": true}
 var bedrockRegionPrefixes = []string{"global.", "us.", "eu.", "apac.", "ap.", "au.", "jp.", "ca.", "sa.", "me.", "af."}
 
 func asMap(v any) (map[string]any, bool) {
-	return pyjson.Dict(v)
+	return jsonutil.AsMap(v)
 }
 
 func asList(v any) ([]any, bool) {
@@ -63,13 +62,13 @@ func deepCopyAny(v any) any {
 			out[k] = deepCopyAny(val)
 		}
 		return out
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if t == nil {
 			return v
 		}
-		out := pyjson.NewObject()
-		for _, k := range t.Keys {
-			out.Set(k, deepCopyAny(t.Vals[k]))
+		out := jsonutil.NewObject()
+		for _, k := range t.Keys() {
+			out.Set(k, deepCopyAny(t.Value(k)))
 		}
 		return out
 	case []any:
@@ -225,9 +224,9 @@ func parseToolArgs(raw any) any {
 	if !ok {
 		return raw
 	}
-	out, err := pyjson.Loads(s)
+	out, err := jsonutil.Decode(s)
 	if err != nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
 	return out
 }
@@ -322,27 +321,27 @@ func toolUseBlock(id, name string, input any) map[string]any {
 }
 
 // Tool schema acceptable to Anthropic with nullable unions collapsed and top level combinators dropped, dict order kept
-func normalizeToolInputSchema(schema any) *pyjson.Object {
+func normalizeToolInputSchema(schema any) *jsonutil.Object {
 	var normalized any
-	if pyrepr.Truthy(schema) {
+	if anyutil.IsTrue(schema) {
 		normalized = tools.StripNullableUnions(schema, false)
 	}
-	m, ok := pyjson.AsObject(normalized)
+	m, ok := jsonutil.AsObject(normalized)
 	if !ok || m == nil {
-		return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
+		return jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject())
 	}
 	banned := map[string]bool{"oneOf": true, "allOf": true, "anyOf": true}
 	hasBanned := false
-	for _, k := range m.Keys {
+	for _, k := range m.Keys() {
 		if banned[k] {
 			hasBanned = true
 		}
 	}
 	if hasBanned {
-		clean := pyjson.NewObject()
-		for _, k := range m.Keys {
+		clean := jsonutil.NewObject()
+		for _, k := range m.Keys() {
 			if !banned[k] {
-				clean.Set(k, m.Vals[k])
+				clean.Set(k, m.Value(k))
 			}
 		}
 		if _, has := clean.Get("type"); !has {
@@ -350,10 +349,10 @@ func normalizeToolInputSchema(schema any) *pyjson.Object {
 		}
 		m = clean
 	}
-	if t, _ := m.Vals["type"].(string); t == "object" {
-		if _, isDict := pyjson.Dict(m.Vals["properties"]); !isDict {
-			m = m.Copy()
-			m.Set("properties", pyjson.NewObject())
+	if t, _ := m.Value("type").(string); t == "object" {
+		if _, isDict := jsonutil.AsMap(m.Value("properties")); !isDict {
+			m = m.Clone()
+			m.Set("properties", jsonutil.NewObject())
 		}
 	}
 	return m
@@ -418,7 +417,7 @@ func rasterizeSVGDataURL(u string) string {
 	}
 	var raw []byte
 	if strings.Contains(strings.ToLower(header), ";base64") {
-		decoded, err := pybase64.B64Decode(payload)
+		decoded, err := base64util.Decode(payload)
 		if err != nil {
 			return ""
 		}
@@ -500,11 +499,11 @@ func convertContentPartToAnthropic(part any) any {
 		if s, ok := asString(part); ok {
 			return textBlock(s)
 		}
-		return textBlock(pyrepr.Str(part))
+		return textBlock(anyutil.String(part))
 	}
 	if ptype := asStr(pm["type"]); ptype != "input_text" && ptype != "text" && ptype != "image_url" && ptype != "input_image" {
-		copied, _ := pyjson.AsObject(part)
-		copied = copied.Copy()
+		copied, _ := jsonutil.AsObject(part)
+		copied = copied.Clone()
 		if cc := cacheControlOf(pm); cc != nil {
 			if _, has := copied.Get("cache_control"); !has {
 				copied.Set("cache_control", deepCopyAny(cc))
@@ -560,7 +559,7 @@ func contentPartsToAnthropicBlocks(parts any) []any {
 	list, _ := asList(parts)
 	var out []any
 	for _, p := range list {
-		block, _ := pyjson.Dict(convertContentPartToAnthropic(p))
+		block, _ := jsonutil.AsMap(convertContentPartToAnthropic(p))
 		if block == nil {
 			continue
 		}
@@ -589,13 +588,13 @@ func extractPreservedThinkingBlocks(message map[string]any, opts convertOptions)
 	}
 	var out []any
 	for _, d := range raw {
-		dm, ok := pyjson.Dict(d)
+		dm, ok := jsonutil.AsMap(d)
 		if !ok {
 			continue
 		}
 		if thinkingBlockTypes[strings.ToLower(strings.TrimSpace(asStr(dm["type"])))] {
-			if obj, ordered := d.(*pyjson.Object); ordered {
-				out = append(out, pyjson.Clone(obj))
+			if obj, ordered := d.(*jsonutil.Object); ordered {
+				out = append(out, jsonutil.Clone(obj))
 			} else {
 				out = append(out, deepCopyAny(dm))
 			}
@@ -690,11 +689,11 @@ func replayOrderedBlocks(m map[string]any, ordered []any) []any {
 	redactedInput := map[string]any{}
 	if calls, ok := asList(m["tool_calls"]); ok {
 		for _, tc := range calls {
-			tcm, ok := pyjson.Dict(tc)
+			tcm, ok := jsonutil.AsMap(tc)
 			if !ok {
 				continue
 			}
-			fn, _ := pyjson.Dict(tcm["function"])
+			fn, _ := jsonutil.AsMap(tcm["function"])
 			args := fn["arguments"]
 			if args == nil {
 				args = "{}"
@@ -772,11 +771,11 @@ func convertAssistantMessage(m map[string]any, opts convertOptions) map[string]a
 	}
 	if calls, ok := asList(m["tool_calls"]); ok {
 		for _, tc := range calls {
-			tcm, ok := pyjson.Dict(tc)
+			tcm, ok := jsonutil.AsMap(tc)
 			if !ok || len(tcm) == 0 {
 				continue
 			}
-			fn, _ := pyjson.Dict(tcm["function"])
+			fn, _ := jsonutil.AsMap(tcm["function"])
 			args := fn["arguments"]
 			if args == nil {
 				args = "{}"
@@ -800,7 +799,7 @@ func safeTextRaw(v any) string {
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Tool message content resolved into tool_result content blocks or a string
@@ -844,7 +843,7 @@ func toolResultContent(m map[string]any) any {
 		} else if cm, ok := asMap(c); ok && len(cm) == 0 {
 			text = ""
 		} else {
-			text, _ = pyjson.Dumps(c)
+			text, _ = jsonutil.Encode(c)
 		}
 	}
 	if text == "" {

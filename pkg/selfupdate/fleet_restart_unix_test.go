@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestUpdateSignalsProvenStaleGatewaySurvivor(t *testing.T) {
@@ -47,8 +47,8 @@ func TestUpdateSignalsProvenStaleGatewaySurvivor(t *testing.T) {
 	restart.Incomplete = true
 	restart.PreRestartGatewayPIDs = []int{child.Process.Pid}
 	fleet := []any{
-		pyjson.ObjectOf("profile", "default", "pid", int64(child.Process.Pid), "state", "stale", "code_sha", strings.Repeat("a", 40)),
-		pyjson.ObjectOf("profile", "fresh", "pid", int64(os.Getpid()), "state", "current", "code_sha", strings.Repeat("b", 40)),
+		jsonutil.ObjectOf("profile", "default", "pid", int64(child.Process.Pid), "state", "stale", "code_sha", strings.Repeat("a", 40)),
+		jsonutil.ObjectOf("profile", "fresh", "pid", int64(os.Getpid()), "state", "current", "code_sha", strings.Repeat("b", 40)),
 	}
 	signalled := signalStaleFleetSurvivors(h.ctx, io.Discard, fleet, restart, 10.0)
 	select {

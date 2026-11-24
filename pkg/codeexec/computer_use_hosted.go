@@ -5,11 +5,10 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // User installed provider living in the plugin host child, every hook a call on its object
@@ -27,13 +26,13 @@ func newHostedComputerUseProvider(ctx context.Context, obj *plugins.HostedObject
 	if err != nil {
 		return nil, err
 	}
-	p.name = pyrepr.Str(name)
+	p.name = anyutil.String(name)
 	display, err := obj.Get(ctx, "display_name")
 	if err != nil {
 		return nil, err
 	}
-	p.displayName = pyrepr.Str(display)
-	if !pyrepr.Truthy(display) {
+	p.displayName = anyutil.String(display)
+	if !anyutil.IsTrue(display) {
 		p.displayName = p.name
 	}
 	return p, nil
@@ -74,20 +73,20 @@ func (p *hostedComputerUseProvider) IsAvailable() (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	return config.PyTruthy(v), nil
+	return anyutil.IsTrue(v), nil
 }
 
-// Exit code the provider doctor returns, ok false when it answers None
+// Exit code the provider doctor returns, ok false when it answers nothing
 func (p *hostedComputerUseProvider) Doctor() (int, bool, error) {
 	v, err := p.obj.Call(p.ctx, "doctor", nil, nil)
 	if err != nil || v == nil {
 		return 0, false, err
 	}
-	code, err := pyIntOf(v)
+	code, err := anyutil.ToInt(v)
 	if err != nil {
 		return 0, false, err
 	}
-	return code, true, nil
+	return int(code), true, nil
 }
 
 // Backend object living in the plugin host child
@@ -120,7 +119,7 @@ func (b *hostedComputerUseBackend) Stop() error {
 
 func (b *hostedComputerUseBackend) IsAvailable() (bool, error) {
 	v, err := b.call("is_available", nil, nil)
-	return config.PyTruthy(v), err
+	return anyutil.IsTrue(v), err
 }
 
 func (b *hostedComputerUseBackend) Capture(mode string, app *string, pid, windowID *int) (*CaptureResult, error) {
@@ -172,7 +171,7 @@ func (b *hostedComputerUseBackend) ListApps() ([]any, error) {
 	return rows, nil
 }
 
-func (b *hostedComputerUseBackend) ListWindows() ([]*pyjson.Object, error) {
+func (b *hostedComputerUseBackend) ListWindows() ([]*jsonutil.Object, error) {
 	v, err := b.call("list_windows", nil, nil)
 	if err != nil {
 		return nil, err
@@ -181,7 +180,7 @@ func (b *hostedComputerUseBackend) ListWindows() ([]*pyjson.Object, error) {
 	if !ok {
 		return nil, fmt.Errorf("computer-use backend list_windows() returned %T, not a list", v)
 	}
-	out := make([]*pyjson.Object, 0, len(rows))
+	out := make([]*jsonutil.Object, 0, len(rows))
 	for _, row := range rows {
 		m, isMap := hostedMap(row)
 		if !isMap {
@@ -248,13 +247,13 @@ func hostedMap(v any) (map[string]any, bool) {
 }
 
 // Ordered object over a decoded dict, keys sorted since the wire map carries no order
-func hostedObject(m map[string]any) *pyjson.Object {
+func hostedObject(m map[string]any) *jsonutil.Object {
 	keys := make([]string, 0, len(m))
 	for k := range m {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
-	o := pyjson.NewObject()
+	o := jsonutil.NewObject()
 	for _, k := range keys {
 		o.Set(k, m[k])
 	}
@@ -265,7 +264,7 @@ func hostedOptStr(v any) *string {
 	if v == nil {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	return &s
 }
 
@@ -273,7 +272,7 @@ func hostedOptBool(v any) *bool {
 	if v == nil {
 		return nil
 	}
-	b := config.PyTruthy(v)
+	b := anyutil.IsTrue(v)
 	return &b
 }
 
@@ -281,15 +280,15 @@ func hostedInt(v any) int {
 	if v == nil {
 		return 0
 	}
-	n, _ := pyIntOf(v)
-	return n
+	n, _ := anyutil.ToInt(v)
+	return int(n)
 }
 
 func hostedStr(v any) string {
 	if v == nil {
 		return ""
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // CaptureResult rebuilt from the dataclass fields the child sent
@@ -330,7 +329,7 @@ func hostedActionResult(method string, v any) (*ActionResult, error) {
 	if !ok {
 		return nil, fmt.Errorf("computer-use backend %s() returned %T, not an ActionResult", method, v)
 	}
-	r := &ActionResult{OK: config.PyTruthy(m["ok"]), Action: hostedStr(m["action"]), Message: hostedStr(m["message"]),
+	r := &ActionResult{OK: anyutil.IsTrue(m["ok"]), Action: hostedStr(m["action"]), Message: hostedStr(m["message"]),
 		Verified: hostedOptBool(m["verified"]), Effect: hostedOptStr(m["effect"]), Path: hostedOptStr(m["path"]),
 		Degraded: hostedOptBool(m["degraded"]), DeliveryMode: hostedOptStr(m["delivery_mode"]), Code: hostedOptStr(m["code"])}
 	if m["capture"] != nil {

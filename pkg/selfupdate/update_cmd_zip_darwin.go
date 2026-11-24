@@ -9,9 +9,8 @@ import (
 	"unsafe"
 
 	"github.com/ebitengine/purego"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 	"golang.org/x/sys/unix"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
 )
 
 // Sets the access and modification times of st on the open file itself through libc futimens
@@ -20,7 +19,7 @@ func utimeHandle(out *os.File, st os.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	times := [2]unix.Timespec{unix.NsecToTimespec(pyshutil.FileAtime(st).UnixNano()), unix.NsecToTimespec(st.ModTime().UnixNano())}
+	times := [2]unix.Timespec{unix.NsecToTimespec(fsutil.Atime(st).UnixNano()), unix.NsecToTimespec(st.ModTime().UnixNano())}
 	status, _, errno := purego.SyscallN(futimens, out.Fd(), uintptr(unsafe.Pointer(&times)))
 	runtime.KeepAlive(&times)
 	if int32(status) != 0 {

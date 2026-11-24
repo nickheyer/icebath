@@ -6,10 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -17,8 +20,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
+	"github.com/nickheyer/icebath/pkg/internal/netpref"
 	"github.com/nickheyer/icebath/pkg/settings"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 // ModelsDevURL is the live registry endpoint
@@ -477,28 +481,33 @@ func (e *ModelsDevFetchDeadlineError) Error() string {
 	return fmt.Sprintf("models.dev fetch exceeded %s", e.Timeout)
 }
 
-// Pool of one requests.get call, environment proxies and the connect and read limits of the fetch
+// Pool of one registry fetch, the proxy each request picks and the connect and read limits of the fetch
 func modelsDevTransport() *http.Transport {
-	tr := pyStackWireTransport(pyhttpx.RequestsProxy, modelsDevConnectLimit, 10)
-	tr.ResponseHeaderTimeout = modelsDevReadLimit
-	return tr
+	return &http.Transport{
+		Proxy:                 httputil.Proxy,
+		DialContext:           netpref.DialContext((&net.Dialer{Timeout: modelsDevConnectLimit, KeepAlive: 30 * time.Second}).DialContext),
+		TLSClientConfig:       PlatformTLSConfig(),
+		TLSHandshakeTimeout:   modelsDevConnectLimit,
+		ResponseHeaderTimeout: modelsDevReadLimit,
+		MaxIdleConns:          10,
+		MaxIdleConnsPerHost:   10,
+		IdleConnTimeout:       90 * time.Second,
+	}
 }
 
-// One registry GET with optional If-None-Match as requests.get sends it, returning status, decoded payload and ETag
-func downloadModelsDevHTTP(ctx context.Context, url string, headers map[string]string) (int, any, string, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+// One registry GET with optional If-None-Match, returning status, decoded payload and ETag
+func downloadModelsDevHTTP(ctx context.Context, rawURL string, headers map[string]string) (int, any, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return 0, nil, "", err
 	}
-	var call []pyhttpx.HeaderLine
-	for _, k := range pyhttpx.HeaderOrder(headers) {
-		call = append(call, pyhttpx.HeaderLine{Name: k, Value: headers[k]})
+	for _, k := range slices.Sorted(maps.Keys(headers)) {
+		req.Header.Set(k, headers[k])
 	}
 	tr := modelsDevTransport()
 	defer tr.CloseIdleConnections()
-	req.Host = httpxHost(req.URL)
-	client := &http.Client{Transport: pyhttpx.WireTransport{Base: tr, Decoders: requestsDecoders}}
-	resp, err := client.Do(pyhttpx.WithWire(req, requestsLines(call...)))
+	client := &http.Client{Transport: httputil.DecodingTransport(tr), CheckRedirect: httputil.RedirectPolicy(true)}
+	resp, err := client.Do(req)
 	if err != nil {
 		return 0, nil, "", err
 	}

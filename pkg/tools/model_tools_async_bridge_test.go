@@ -18,15 +18,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Registry dispatcher whose single tool runs handler under the given name
 func bridgeDispatcher(t *testing.T, name string, handler Handler) (*Dispatcher, *Env) {
 	t.Helper()
 	r := NewRegistry()
-	r.Register(Def{Name: name, Toolset: "web", Schema: pyjson.ObjectOf("name", name, "description", name, "parameters", pyjson.ObjectOf("type", "object")),
+	r.Register(Def{Name: name, Toolset: "web", Schema: jsonutil.ObjectOf("name", name, "description", name, "parameters", jsonutil.ObjectOf("type", "object")),
 		Check: func(*Env) bool { return true }, Handler: handler})
 	return NewDispatcher(r), newTestToolEnv(t)
 }

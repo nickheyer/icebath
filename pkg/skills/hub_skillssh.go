@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/dlclark/regexp2/v2"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var htmlTagRe = regexp.MustCompile(`<[^>]+>`)
@@ -44,9 +44,9 @@ var (
 
 // Overrides of the skills.sh internals tests replace
 type skillsShSeams struct {
-	fetchDetailPage      func(identifier string) *pyjson.Object
+	fetchDetailPage      func(identifier string) *jsonutil.Object
 	candidateIdentifiers func(identifier string) []string
-	discoverIdentifier   func(identifier string, detail *pyjson.Object) (string, bool)
+	discoverIdentifier   func(identifier string, detail *jsonutil.Object) (string, bool)
 	sleep                func(d time.Duration)
 }
 
@@ -72,16 +72,16 @@ func (s *SkillsShSource) TrustLevelFor(identifier string) string {
 	return s.GitHub.TrustLevelFor(skillsShNormalizeIdentifier(identifier))
 }
 
-func (s *SkillsShSource) meta(canonical, name, description, path string, extra *pyjson.Object) SkillMeta {
+func (s *SkillsShSource) meta(canonical, name, description, path string, extra *jsonutil.Object) SkillMeta {
 	parts := strings.SplitN(canonical, "/", 3)
 	if extra == nil {
-		extra = pyjson.NewObject()
+		extra = jsonutil.NewObject()
 	}
 	return SkillMeta{Name: name, Description: description, Source: "skills.sh", Identifier: skillsShWrapIdentifier(canonical),
 		TrustLevel: s.GitHub.TrustLevelFor(canonical), Repo: strPtr(strings.Join(parts[:min(2, len(parts))], "/")), Path: strPtr(path), Extra: extra}
 }
 
-func skillsShURLsFor(canonical, repo string) *pyjson.Object {
+func skillsShURLsFor(canonical, repo string) *jsonutil.Object {
 	return objectOf("detail_url", skillsShBaseURL+"/"+canonical, "repo_url", "https://github.com/"+repo)
 }
 
@@ -116,7 +116,7 @@ func (s *SkillsShSource) Search(ctx context.Context, query string, limit int) (o
 		return []SkillMeta{}, nil
 	}
 	var items any = []any{}
-	if o, isObj := data.(*pyjson.Object); isObj {
+	if o, isObj := data.(*jsonutil.Object); isObj {
 		items = pyGet(o, "skills", []any{})
 	}
 	list, isList := items.([]any)
@@ -162,10 +162,10 @@ func (s *SkillsShSource) Fetch(ctx context.Context, identifier string) (b *Skill
 			bundle.Name = trimmed[strings.LastIndex(trimmed, "/")+1:]
 		}
 		if bundle.Metadata == nil {
-			bundle.Metadata = pyjson.NewObject()
+			bundle.Metadata = jsonutil.NewObject()
 		}
 		md := s.detailToMetadata(canonical, detail)
-		for _, k := range md.Keys {
+		for _, k := range md.Keys() {
 			v, _ := md.Get(k)
 			bundle.Metadata.Set(k, v)
 		}
@@ -346,7 +346,7 @@ func groupBigThousands(n *big.Int) string {
 
 // Search API item as a result, nil without a usable owner, repo and skill path
 func (s *SkillsShSource) metaFromSearchItem(item any) *SkillMeta {
-	o, ok := item.(*pyjson.Object)
+	o, ok := item.(*jsonutil.Object)
 	if !ok {
 		return nil
 	}
@@ -372,12 +372,12 @@ func (s *SkillsShSource) metaFromSearchItem(item any) *SkillMeta {
 		label = " · " + groupBigThousands(n) + " installs"
 	}
 	name := skillPath[strings.LastIndex(skillPath, "/")+1:]
-	if v, _ := o.Get("name"); pyrepr.Truthy(v) {
-		name = pyrepr.Str(v)
+	if v, _ := o.Get("name"); anyutil.IsTrue(v) {
+		name = anyutil.String(v)
 	}
 	extra := objectOf("installs", installs)
 	urls := skillsShURLsFor(canonical, repo)
-	for _, k := range urls.Keys {
+	for _, k := range urls.Keys() {
 		v, _ := urls.Get(k)
 		extra.Set(k, v)
 	}
@@ -386,7 +386,7 @@ func (s *SkillsShSource) metaFromSearchItem(item any) *SkillMeta {
 }
 
 // Parsed skills.sh detail page through the index cache, nil when unreachable or unparsable
-func (s *SkillsShSource) fetchDetailPage(ctx context.Context, identifier string) *pyjson.Object {
+func (s *SkillsShSource) fetchDetailPage(ctx context.Context, identifier string) *jsonutil.Object {
 	if s.seams.fetchDetailPage != nil {
 		return s.seams.fetchDetailPage(identifier)
 	}
@@ -400,16 +400,16 @@ func (s *SkillsShSource) fetchDetailPage(ctx context.Context, identifier string)
 			return d, nil
 		}
 		return nil, nil
-	}, func(c any) bool { _, ok := c.(*pyjson.Object); return ok })
+	}, func(c any) bool { _, ok := c.(*jsonutil.Object); return ok })
 	if err != nil {
 		hubRaise(err)
 	}
-	o, _ := v.(*pyjson.Object)
+	o, _ := v.(*jsonutil.Object)
 	return o
 }
 
 // Repo, install skill, titles, summary, installs, command, urls and audits of a detail page
-func (s *SkillsShSource) parseDetailPage(identifier, html string) *pyjson.Object {
+func (s *SkillsShSource) parseDetailPage(identifier, html string) *jsonutil.Object {
 	repo, installSkill, ok := splitRepoID(identifier)
 	if !ok {
 		return nil
@@ -439,7 +439,7 @@ func (s *SkillsShSource) parseDetailPage(identifier, html string) *pyjson.Object
 		"body_title", firstOrNone(skillsShProseH1Re), "body_summary", firstOrNone(skillsShProsePRe),
 		"weekly_installs", weekly, "install_command", installCommand)
 	urls := skillsShURLsFor(identifier, repo)
-	for _, k := range urls.Keys {
+	for _, k := range urls.Keys() {
 		v, _ := urls.Get(k)
 		out.Set(k, v)
 	}
@@ -480,8 +480,8 @@ func skillsShExtractWeeklyInstalls(html string) (string, bool) {
 }
 
 // Pass, Warn or Fail verdict found within 500 characters after each audit provider link
-func skillsShExtractSecurityAudits(html string) *pyjson.Object {
-	audits := pyjson.NewObject()
+func skillsShExtractSecurityAudits(html string) *jsonutil.Object {
+	audits := jsonutil.NewObject()
 	for _, audit := range []string{"agent-trust-hub", "socket", "snyk"} {
 		idx := strings.Index(html, "/security/"+audit)
 		if idx < 0 {
@@ -500,7 +500,7 @@ func skillsShExtractSecurityAudits(html string) *pyjson.Object {
 }
 
 // Identifier found under a standard base path, the repo tree, a root skill, or a top level dir
-func (s *SkillsShSource) discoverIdentifier(ctx context.Context, identifier string, detail *pyjson.Object) (string, bool) {
+func (s *SkillsShSource) discoverIdentifier(ctx context.Context, identifier string, detail *jsonutil.Object) (string, bool) {
 	if s.seams.discoverIdentifier != nil {
 		return s.seams.discoverIdentifier(identifier, detail)
 	}
@@ -510,7 +510,7 @@ func (s *SkillsShSource) discoverIdentifier(ctx context.Context, identifier stri
 	}
 	repo := defaultRepo
 	if detail != nil {
-		repo = pyrepr.Str(pyGet(detail, "repo", defaultRepo))
+		repo = anyutil.String(pyGet(detail, "repo", defaultRepo))
 	}
 	token := skillPath[strings.LastIndex(skillPath, "/")+1:]
 	tokens := []any{token}
@@ -554,7 +554,7 @@ func (s *SkillsShSource) discoverIdentifier(ctx context.Context, identifier stri
 			if pyGet(entry, "type", nil) != "dir" {
 				continue
 			}
-			nameV, has := entry.(*pyjson.Object).Get("name")
+			nameV, has := entry.(*jsonutil.Object).Get("name")
 			if !has {
 				hubRaise(errors.New("a skills.sh entry has no name"))
 			}
@@ -576,7 +576,7 @@ func (s *SkillsShSource) discoverIdentifier(ctx context.Context, identifier stri
 }
 
 // GitHub metadata of the first candidate that inspects, else of the discovered identifier
-func (s *SkillsShSource) resolveGitHubMeta(ctx context.Context, identifier string, detail *pyjson.Object) *SkillMeta {
+func (s *SkillsShSource) resolveGitHubMeta(ctx context.Context, identifier string, detail *jsonutil.Object) *SkillMeta {
 	for _, cand := range s.candidateIdentifiers(identifier) {
 		if meta := s.GitHub.inspect(ctx, cand); meta != nil {
 			return meta
@@ -589,15 +589,15 @@ func (s *SkillsShSource) resolveGitHubMeta(ctx context.Context, identifier strin
 }
 
 // GitHub metadata relabelled as skills.sh with the detail page summary and installs
-func (s *SkillsShSource) finalizeInspectMeta(meta *SkillMeta, canonical string, detail *pyjson.Object) *SkillMeta {
+func (s *SkillsShSource) finalizeInspectMeta(meta *SkillMeta, canonical string, detail *jsonutil.Object) *SkillMeta {
 	meta.Source, meta.Identifier = "skills.sh", skillsShWrapIdentifier(canonical)
 	meta.TrustLevel = s.TrustLevelFor(canonical)
-	merged := pyjson.NewObject()
-	for _, src := range []*pyjson.Object{meta.Extra, s.detailToMetadata(canonical, detail)} {
+	merged := jsonutil.NewObject()
+	for _, src := range []*jsonutil.Object{meta.Extra, s.detailToMetadata(canonical, detail)} {
 		if src == nil {
 			continue
 		}
-		for _, k := range src.Keys {
+		for _, k := range src.Keys() {
 			v, _ := src.Get(k)
 			merged.Set(k, v)
 		}
@@ -605,10 +605,10 @@ func (s *SkillsShSource) finalizeInspectMeta(meta *SkillMeta, canonical string, 
 	meta.Extra = merged
 	if detail != nil {
 		summary, weekly := pyGet(detail, "body_summary", nil), pyGet(detail, "weekly_installs", nil)
-		if pyrepr.Truthy(summary) {
-			meta.Description = pyrepr.Str(summary)
-		} else if meta.Description != "" && pyrepr.Truthy(weekly) {
-			meta.Description = fmt.Sprintf("%s · %s weekly installs on skills.sh", meta.Description, pyrepr.Str(weekly))
+		if anyutil.IsTrue(summary) {
+			meta.Description = anyutil.String(summary)
+		} else if meta.Description != "" && anyutil.IsTrue(weekly) {
+			meta.Description = fmt.Sprintf("%s · %s weekly installs on skills.sh", meta.Description, anyutil.String(weekly))
 		}
 	}
 	return meta
@@ -643,10 +643,10 @@ func skillsShMatchesSkillTokens(meta SkillMeta, tokens []any) bool {
 // Lowercased spelling variants of a skill token, empty for a falsy value
 func skillsShTokenVariants(value any) map[string]bool {
 	out := map[string]bool{}
-	if !pyrepr.Truthy(value) {
+	if !anyutil.IsTrue(value) {
 		return out
 	}
-	plain := strings.ToLower(strings.Trim(strings.TrimSpace(stripHTML(pyrepr.Str(value))), "/"))
+	plain := strings.ToLower(strings.Trim(strings.TrimSpace(stripHTML(anyutil.String(value))), "/"))
 	if plain == "" {
 		return out
 	}
@@ -664,7 +664,7 @@ func skillsShTokenVariants(value any) map[string]bool {
 }
 
 // Detail and repo urls plus every truthy detail field worth keeping in bundle metadata
-func (s *SkillsShSource) detailToMetadata(canonical string, detail *pyjson.Object) *pyjson.Object {
+func (s *SkillsShSource) detailToMetadata(canonical string, detail *jsonutil.Object) *jsonutil.Object {
 	parts := strings.SplitN(canonical, "/", 3)
 	md := objectOf("detail_url", skillsShBaseURL+"/"+canonical)
 	if len(parts) >= 2 {
@@ -672,7 +672,7 @@ func (s *SkillsShSource) detailToMetadata(canonical string, detail *pyjson.Objec
 	}
 	if detail != nil {
 		for _, k := range []string{"weekly_installs", "install_command", "repo_url", "detail_url", "security_audits"} {
-			if v, _ := detail.Get(k); pyrepr.Truthy(v) {
+			if v, _ := detail.Get(k); anyutil.IsTrue(v) {
 				md.Set(k, v)
 			}
 		}

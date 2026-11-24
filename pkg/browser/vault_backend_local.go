@@ -3,7 +3,7 @@ package browser
 import (
 	"context"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"github.com/nickheyer/icebath/pkg/vault"
 )
 
@@ -69,8 +69,8 @@ func (b *LocalLoginBackend) ResolveSecret(handle string) (map[string]string, err
 		return nil, err
 	}
 	out := make(map[string]string, secret.Len())
-	for _, k := range secret.Keys {
-		out[k] = pyrepr.Str(secret.Vals[k])
+	for _, k := range secret.Keys() {
+		out[k] = anyutil.String(secret.Value(k))
 	}
 	return out, nil
 }

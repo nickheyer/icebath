@@ -14,11 +14,10 @@ import (
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
 )
 
 const (
@@ -152,8 +151,8 @@ func credentials(ctx context.Context, config *gateway.PlatformConfig) (string, s
 	}
 	out := make([]string, 3)
 	for i, pair := range [][2]string{{"client_id", "TEAMS_CLIENT_ID"}, {"client_secret", "TEAMS_CLIENT_SECRET"}, {"tenant_id", "TEAMS_TENANT_ID"}} {
-		if v := extra[pair[0]]; pyrepr.Truthy(v) {
-			out[i] = pyrepr.Str(v)
+		if v := extra[pair[0]]; anyutil.IsTrue(v) {
+			out[i] = anyutil.String(v)
 			continue
 		}
 		val, err := gateway.GetScopedSecret(ctx, pair[1], "", false)
@@ -284,8 +283,8 @@ func (a *TeamsAdapter) getBotFrameworkToken(ctx context.Context) (string, error)
 		return "", err
 	}
 	expiresIn := 3600.0
-	if v, ok := payload["expires_in"]; ok && pyrepr.Truthy(v) {
-		if f, err := pyint.Float(v); err == nil {
+	if v, ok := payload["expires_in"]; ok && anyutil.IsTrue(v) {
+		if f, err := anyutil.ToFloat(v); err == nil {
 			expiresIn = f
 		} else {
 			return "", err
@@ -332,7 +331,7 @@ func (a *TeamsAdapter) fetchAttachmentBytes(ctx context.Context, rawURL string, 
 
 // httpx raise_for_status text of a response
 func statusErrorText(resp *http.Response, rawURL string) string {
-	return pyhttpx.RaiseForStatusMessage(resp.StatusCode, rawURL, resp.Header.Get("Location"))
+	return (&httputil.StatusError{StatusCode: resp.StatusCode, URL: rawURL, Location: resp.Header.Get("Location")}).Error()
 }
 
 // Chat info of a conversation id

@@ -20,17 +20,18 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
 	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/tools"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Owner connection the gateway agent projects, requests answered as ordered objects
 type gatewayLink interface {
-	RPC(ctx context.Context, method string, params map[string]any, timeout time.Duration) (*pyjson.Object, error)
+	RPC(ctx context.Context, method string, params map[string]any, timeout time.Duration) (*jsonutil.Object, error)
 	Events() *gateway.EventQueue
 	ReaderDone() bool
 	Close() error
@@ -38,12 +39,12 @@ type gatewayLink interface {
 
 type clientLink struct{ client *gateway.GatewayClient }
 
-func (c *clientLink) RPC(ctx context.Context, method string, params map[string]any, timeout time.Duration) (*pyjson.Object, error) {
+func (c *clientLink) RPC(ctx context.Context, method string, params map[string]any, timeout time.Duration) (*jsonutil.Object, error) {
 	result, err := c.client.RPCTimeout(ctx, method, params, timeout)
 	if err != nil {
 		return nil, err
 	}
-	obj, ok := result.(*pyjson.Object)
+	obj, ok := result.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("gateway %s answered %T, not an object", method, result)
 	}
@@ -75,7 +76,7 @@ type gatewayEditor interface {
 	SendRequest(ctx context.Context, method string, params any) (any, error)
 }
 
-type editorConn struct{ *pyacp.AgentSideConnection }
+type editorConn struct{ *acputil.AgentSideConnection }
 
 func (e editorConn) SendRequest(ctx context.Context, method string, params any) (any, error) {
 	return e.Conn().SendRequest(ctx, method, params)
@@ -104,7 +105,7 @@ type inflightKey struct{ session, admission string }
 
 // Mode, model, provider and effort the editor's config options last showed
 type shownConfig struct {
-	fields *pyjson.Object
+	fields *jsonutil.Object
 	mode   string
 }
 
@@ -112,7 +113,7 @@ func (c *shownConfig) equal(o *shownConfig) bool {
 	if c == nil || o == nil {
 		return c == o
 	}
-	return c.mode == o.mode && pyrepr.Equal(c.fields, o.fields)
+	return c.mode == o.mode && anyutil.Equal(c.fields, o.fields)
 }
 
 // Canonical command name a text invokes, false for ordinary text
@@ -154,11 +155,11 @@ func bypassRoute() (map[string]any, error) {
 }
 
 // Notice that the owner re-froze the session's editor MCP tools
-func toolsChangedNotice(payload *pyjson.Object) string {
+func toolsChangedNotice(payload *jsonutil.Object) string {
 	var names []string
 	if servers, ok := dget(payload, "mcp_servers").([]any); ok {
 		for _, s := range servers {
-			names = append(names, pyStr(s))
+			names = append(names, anyutil.String(s))
 		}
 	}
 	servers := strings.Join(names, ", ")
@@ -169,19 +170,19 @@ func toolsChangedNotice(payload *pyjson.Object) string {
 }
 
 var (
-	_ pyacp.Connector          = (*GatewayACPAgent)(nil)
-	_ pyacp.Initializer        = (*GatewayACPAgent)(nil)
-	_ pyacp.Authenticator      = (*GatewayACPAgent)(nil)
-	_ pyacp.SessionCreator     = (*GatewayACPAgent)(nil)
-	_ pyacp.SessionLoader      = (*GatewayACPAgent)(nil)
-	_ pyacp.SessionResumer     = (*GatewayACPAgent)(nil)
-	_ pyacp.Canceller          = (*GatewayACPAgent)(nil)
-	_ pyacp.SessionForker      = (*GatewayACPAgent)(nil)
-	_ pyacp.SessionLister      = (*GatewayACPAgent)(nil)
-	_ pyacp.Prompter           = (*GatewayACPAgent)(nil)
-	_ pyacp.SessionModelSetter = (*GatewayACPAgent)(nil)
-	_ pyacp.SessionModeSetter  = (*GatewayACPAgent)(nil)
-	_ pyacp.ConfigOptionSetter = (*GatewayACPAgent)(nil)
+	_ acputil.Connector          = (*GatewayACPAgent)(nil)
+	_ acputil.Initializer        = (*GatewayACPAgent)(nil)
+	_ acputil.Authenticator      = (*GatewayACPAgent)(nil)
+	_ acputil.SessionCreator     = (*GatewayACPAgent)(nil)
+	_ acputil.SessionLoader      = (*GatewayACPAgent)(nil)
+	_ acputil.SessionResumer     = (*GatewayACPAgent)(nil)
+	_ acputil.Canceller          = (*GatewayACPAgent)(nil)
+	_ acputil.SessionForker      = (*GatewayACPAgent)(nil)
+	_ acputil.SessionLister      = (*GatewayACPAgent)(nil)
+	_ acputil.Prompter           = (*GatewayACPAgent)(nil)
+	_ acputil.SessionModelSetter = (*GatewayACPAgent)(nil)
+	_ acputil.SessionModeSetter  = (*GatewayACPAgent)(nil)
+	_ acputil.ConfigOptionSetter = (*GatewayACPAgent)(nil)
 )
 
 // ACP projection of the profile gateway, it never constructs an execution owner
@@ -193,39 +194,39 @@ type GatewayACPAgent struct {
 	connection      gatewayLink
 	connectLock     *coLock
 	home            string
-	snapshots       *pydict.Dict[string, *pyjson.Object]
+	snapshots       *orderedutil.Map[string, *jsonutil.Object]
 	eventTask       *loopTask
-	terminals       *pydict.Dict[string, *pyjson.Object]
+	terminals       *orderedutil.Map[string, *jsonutil.Object]
 	streamed        map[string]string
 	segments        map[string][]string
 	failure         error
 	link            int
 	lostFailure     error
-	editorMCP       map[string]*pyjson.Object
+	editorMCP       map[string]*jsonutil.Object
 	permissions     map[permissionKey]*loopTask
 	admissions      map[string]string
 	submitting      map[string]bool
-	unacked         *pydict.Dict[string, retainedSubmit]
+	unacked         *orderedutil.Map[string, retainedSubmit]
 	settling        map[string]bool
-	receipted       *pydict.Dict[string, struct{}]
+	receipted       *orderedutil.Map[string, struct{}]
 	cut             map[string]string
-	inflight        *pydict.Dict[inflightKey, struct{}]
+	inflight        *orderedutil.Map[inflightKey, struct{}]
 	lost            map[string]error
 	resumes         map[string]int
 	adopted         map[string]int
 	pendingCancels  map[string]bool
-	toolArgs        *pydict.Dict[toolKey, heldTool]
+	toolArgs        *orderedutil.Map[toolKey, heldTool]
 	messageIDs      map[string]*AssistantMessageIDAllocator
-	aliases         *pydict.Dict[string, string]
+	aliases         *orderedutil.Map[string, string]
 	formElicitation bool
 	mutations       PreparedMutations
 	titles          map[string]string
 	modes           map[string]string
 	configs         map[string]*shownConfig
-	usage           map[string]*pyjson.Object
+	usage           map[string]*jsonutil.Object
 	background      map[*loopTask]bool
-	answerApproval  func(ctx context.Context, sessionID string, prompt *pyjson.Object) bool
-	answerQuestion  func(ctx context.Context, sessionID string, prompt *pyjson.Object) bool
+	answerApproval  func(ctx context.Context, sessionID string, prompt *jsonutil.Object) bool
+	answerQuestion  func(ctx context.Context, sessionID string, prompt *jsonutil.Object) bool
 	confirmer       func(sessionID string) MutationConfirm
 }
 
@@ -238,14 +239,14 @@ func NewGatewayACPAgent() *GatewayACPAgent {
 	}
 	a := &GatewayACPAgent{
 		loop: newCoLoop(), ctx: ctx, connectLock: newCoLock(), home: profileHome,
-		snapshots: pydict.New[string, *pyjson.Object](), terminals: pydict.New[string, *pyjson.Object](),
-		streamed: map[string]string{}, segments: map[string][]string{}, editorMCP: map[string]*pyjson.Object{},
+		snapshots: orderedutil.NewMap[string, *jsonutil.Object](), terminals: orderedutil.NewMap[string, *jsonutil.Object](),
+		streamed: map[string]string{}, segments: map[string][]string{}, editorMCP: map[string]*jsonutil.Object{},
 		permissions: map[permissionKey]*loopTask{}, admissions: map[string]string{}, submitting: map[string]bool{},
-		unacked: pydict.New[string, retainedSubmit](), settling: map[string]bool{}, receipted: pydict.New[string, struct{}](),
-		cut: map[string]string{}, inflight: pydict.New[inflightKey, struct{}](), lost: map[string]error{}, resumes: map[string]int{},
-		adopted: map[string]int{}, pendingCancels: map[string]bool{}, toolArgs: pydict.New[toolKey, heldTool](),
-		messageIDs: map[string]*AssistantMessageIDAllocator{}, aliases: pydict.New[string, string](), mutations: NewPreparedMutations(),
-		titles: map[string]string{}, modes: map[string]string{}, configs: map[string]*shownConfig{}, usage: map[string]*pyjson.Object{},
+		unacked: orderedutil.NewMap[string, retainedSubmit](), settling: map[string]bool{}, receipted: orderedutil.NewMap[string, struct{}](),
+		cut: map[string]string{}, inflight: orderedutil.NewMap[inflightKey, struct{}](), lost: map[string]error{}, resumes: map[string]int{},
+		adopted: map[string]int{}, pendingCancels: map[string]bool{}, toolArgs: orderedutil.NewMap[toolKey, heldTool](),
+		messageIDs: map[string]*AssistantMessageIDAllocator{}, aliases: orderedutil.NewMap[string, string](), mutations: NewPreparedMutations(),
+		titles: map[string]string{}, modes: map[string]string{}, configs: map[string]*shownConfig{}, usage: map[string]*jsonutil.Object{},
 		background: map[*loopTask]bool{},
 	}
 	a.answerApproval, a.answerQuestion, a.confirmer = a.answerPermission, a.answerClarify, a.modelConfirmer
@@ -256,7 +257,7 @@ func NewGatewayACPAgent() *GatewayACPAgent {
 func NewAgent() any { return NewGatewayACPAgent() }
 
 // Stores the editor connection and observes its raw initialize message
-func (a *GatewayACPAgent) OnConnect(conn *pyacp.AgentSideConnection) {
+func (a *GatewayACPAgent) OnConnect(conn *acputil.AgentSideConnection) {
 	a.loop.enter()
 	a.conn = editorConn{conn}
 	a.loop.leave()
@@ -265,8 +266,8 @@ func (a *GatewayACPAgent) OnConnect(conn *pyacp.AgentSideConnection) {
 
 // Reads the raw initialize capabilities the typed model drops
 func (a *GatewayACPAgent) observeClientMessage(event pyacp.StreamEvent) {
-	message, ok := event.Message.(*pyjson.Object)
-	if event.Direction != pyacp.StreamIncoming || !ok || dget(message, "method") != "initialize" {
+	message, ok := event.Message.(*jsonutil.Object)
+	if event.Direction != acputil.StreamIncoming || !ok || dget(message, "method") != "initialize" {
 		return
 	}
 	supported := ClientSupportsFormElicitation(dget(message, "params"))
@@ -294,7 +295,7 @@ func isClientOSOrTimeout(err error) bool {
 }
 
 // Sends one session update to the editor, the coroutine suspended while it is written
-func (a *GatewayACPAgent) sessionUpdate(ctx context.Context, sessionID string, update pyacp.SessionUpdate) error {
+func (a *GatewayACPAgent) sessionUpdate(ctx context.Context, sessionID string, update acputil.SessionUpdate) error {
 	conn := a.conn
 	var err error
 	if cancelled := a.loop.awaitCtx(ctx, func() { err = conn.SessionUpdate(ctx, sessionID, update, nil) }); cancelled != nil {
@@ -304,16 +305,16 @@ func (a *GatewayACPAgent) sessionUpdate(ctx context.Context, sessionID string, u
 }
 
 func (a *GatewayACPAgent) say(ctx context.Context, sessionID, text string) error {
-	return a.sessionUpdate(ctx, sessionID, pyacp.UpdateAgentMessageText(text))
+	return a.sessionUpdate(ctx, sessionID, acputil.UpdateAgentMessageText(text))
 }
 
 // One owner request, the coroutine suspended until its answer
-func (a *GatewayACPAgent) rpc(ctx context.Context, link gatewayLink, method string, params map[string]any) (*pyjson.Object, error) {
+func (a *GatewayACPAgent) rpc(ctx context.Context, link gatewayLink, method string, params map[string]any) (*jsonutil.Object, error) {
 	return a.rpcTimeout(ctx, link, method, params, 0)
 }
 
-func (a *GatewayACPAgent) rpcTimeout(ctx context.Context, link gatewayLink, method string, params map[string]any, timeout time.Duration) (*pyjson.Object, error) {
-	var result *pyjson.Object
+func (a *GatewayACPAgent) rpcTimeout(ctx context.Context, link gatewayLink, method string, params map[string]any, timeout time.Duration) (*jsonutil.Object, error) {
+	var result *jsonutil.Object
 	var err error
 	if cancelled := a.loop.awaitCtx(ctx, func() { result, err = link.RPC(ctx, method, params, timeout) }); cancelled != nil {
 		return nil, cancelled
@@ -328,25 +329,25 @@ func (a *GatewayACPAgent) mutationRPC(link gatewayLink) MutationRPC {
 		if err != nil {
 			return nil, err
 		}
-		plain, _ := pyjson.Plain(result).(map[string]any)
+		plain, _ := jsonutil.Plain(result).(map[string]any)
 		return plain, nil
 	}
 }
 
 // Answers initialize with the protocol version, agent info, capabilities and auth methods
-func (a *GatewayACPAgent) Initialize(ctx context.Context, req *pyacp.InitializeRequest) (*pyacp.InitializeResponse, error) {
+func (a *GatewayACPAgent) Initialize(ctx context.Context, req *acputil.InitializeRequest) (*acputil.InitializeResponse, error) {
 	info, err := getVersionInfo()
 	if err != nil {
 		return nil, err
 	}
-	return &pyacp.InitializeResponse{
-		ProtocolVersion: pyacp.ProtocolVersion,
-		AgentInfo:       &pyacp.Implementation{Name: "icebath-agent", Version: info.BaseVersion},
-		AgentCapabilities: &pyacp.AgentCapabilities{
-			LoadSession:        pyacp.Ptr(true),
-			PromptCapabilities: &pyacp.PromptCapabilities{Image: pyacp.Ptr(true)},
-			SessionCapabilities: &pyacp.SessionCapabilities{
-				Fork: &pyacp.SessionForkCapabilities{}, List: &pyacp.SessionListCapabilities{}, Resume: &pyacp.SessionResumeCapabilities{},
+	return &acputil.InitializeResponse{
+		ProtocolVersion: acputil.ProtocolVersion,
+		AgentInfo:       &acputil.Implementation{Name: "icebath-agent", Version: info.BaseVersion},
+		AgentCapabilities: &acputil.AgentCapabilities{
+			LoadSession:        new(true),
+			PromptCapabilities: &acputil.PromptCapabilities{Image: new(true)},
+			SessionCapabilities: &acputil.SessionCapabilities{
+				Fork: &acputil.SessionForkCapabilities{}, List: &acputil.SessionListCapabilities{}, Resume: &acputil.SessionResumeCapabilities{},
 			},
 		},
 		AuthMethods: BuildAuthMethods(ctx),
@@ -354,7 +355,7 @@ func (a *GatewayACPAgent) Initialize(ctx context.Context, req *pyacp.InitializeR
 }
 
 // Answers authenticate for the detected provider or the terminal setup method
-func (a *GatewayACPAgent) Authenticate(ctx context.Context, req *pyacp.AuthenticateRequest) (*pyacp.AuthenticateResponse, error) {
+func (a *GatewayACPAgent) Authenticate(ctx context.Context, req *acputil.AuthenticateRequest) (*acputil.AuthenticateResponse, error) {
 	return authenticate(ctx, req.MethodID), nil
 }
 
@@ -435,15 +436,15 @@ func (a *GatewayACPAgent) reattach(ctx context.Context, link gatewayLink) error 
 }
 
 // Installs a fresh session.resume snapshot as the session's projection and projects its mode
-func (a *GatewayACPAgent) adopt(ctx context.Context, sessionID string, snapshot *pyjson.Object, resumes *int) error {
+func (a *GatewayACPAgent) adopt(ctx context.Context, sessionID string, snapshot *jsonutil.Object, resumes *int) error {
 	a.snapshots.Set(sessionID, snapshot)
 	if resumes != nil {
 		a.adopted[sessionID] = *resumes
 	}
 	a.loop.notifyAll()
-	info, _ := dget(snapshot, "info").(*pyjson.Object)
-	if !truthy(info) {
-		info = pyjson.NewObject()
+	info, _ := dget(snapshot, "info").(*jsonutil.Object)
+	if !anyutil.IsTrue(info) {
+		info = jsonutil.NewObject()
 	}
 	return a.projectMode(ctx, sessionID, a.editorID(sessionID), info)
 }
@@ -499,7 +500,7 @@ func (a *GatewayACPAgent) teardown() {
 }
 
 // Editor MCP servers as the owner reads them, each server dumped by alias
-func mcpServersPayload(servers []pyacp.McpServer) []any {
+func mcpServersPayload(servers []acputil.MCPServer) []any {
 	out := make([]any, 0, len(servers))
 	for _, server := range servers {
 		out = append(out, pyacp.Dump(server, pyacp.DumpOptions{ByAlias: true}))
@@ -508,7 +509,7 @@ func mcpServersPayload(servers []pyacp.McpServer) []any {
 }
 
 // Creates an owner session for the editor with its MCP servers and launch flags frozen into its policy
-func (a *GatewayACPAgent) NewSession(ctx context.Context, req *pyacp.NewSessionRequest) (*pyacp.NewSessionResponse, error) {
+func (a *GatewayACPAgent) NewSession(ctx context.Context, req *acputil.NewSessionRequest) (*acputil.NewSessionResponse, error) {
 	a.loop.enter()
 	defer a.loop.leave()
 	link, err := a.client(ctx)
@@ -517,14 +518,14 @@ func (a *GatewayACPAgent) NewSession(ctx context.Context, req *pyacp.NewSessionR
 	}
 	flags := EnvLaunchFlags()
 	params := map[string]any{"request_id": uuidHex(), "source": "acp", "cwd": translateACPCwd(req.Cwd)}
-	editor := pyjson.NewObject()
+	editor := jsonutil.NewObject()
 	editor.Set("mcp_servers", mcpServersPayload(req.MCPServers))
 	editor.Set("edit_approval_policy", "ask")
 	params["editor"] = editor
-	for _, key := range flags.Keys {
-		params[key] = flags.Vals[key]
+	for _, key := range flags.Keys() {
+		params[key] = flags.Value(key)
 	}
-	if truthy(dget(flags, "safe_mode")) || truthy(dget(flags, "ignore_user_config")) {
+	if anyutil.IsTrue(dget(flags, "safe_mode")) || anyutil.IsTrue(dget(flags, "ignore_user_config")) {
 		route, err := bypassRoute()
 		if err != nil {
 			return nil, err
@@ -540,17 +541,17 @@ func (a *GatewayACPAgent) NewSession(ctx context.Context, req *pyacp.NewSessionR
 	if !dhas(snapshot, "session_id") {
 		return nil, errors.New("the gateway session snapshot has no session_id")
 	}
-	sessionID := pyStr(dget(snapshot, "session_id"))
+	sessionID := anyutil.String(dget(snapshot, "session_id"))
 	if err := a.adopt(ctx, sessionID, snapshot, nil); err != nil {
 		return nil, err
 	}
 	if len(req.MCPServers) > 0 {
-		held := pyjson.NewObject()
+		held := jsonutil.NewObject()
 		held.Set("mcp_servers", mcpServersPayload(req.MCPServers))
 		a.editorMCP[sessionID] = held
 	}
-	info, _ := dget(snapshot, "info").(*pyjson.Object)
-	if !truthy(info) {
+	info, _ := dget(snapshot, "info").(*jsonutil.Object)
+	if !anyutil.IsTrue(info) {
 		if info, err = a.rpc(ctx, link, "session.info", map[string]any{"session_id": sessionID}); err != nil {
 			return nil, err
 		}
@@ -562,12 +563,12 @@ func (a *GatewayACPAgent) NewSession(ctx context.Context, req *pyacp.NewSessionR
 	if err != nil {
 		return nil, err
 	}
-	return &pyacp.NewSessionResponse{SessionID: sessionID, Models: fields.models, Modes: fields.modes, Meta: fields.meta, ConfigOptions: fields.configOptions}, nil
+	return &acputil.NewSessionResponse{SessionID: sessionID, Models: fields.models, Modes: fields.modes, Meta: fields.meta, ConfigOptions: fields.configOptions}, nil
 }
 
 // Object form of a decoded JSON value, nil for anything else
-func asObject(v any) *pyjson.Object {
-	obj, _ := v.(*pyjson.Object)
+func asObject(v any) *jsonutil.Object {
+	obj, _ := v.(*jsonutil.Object)
 	return obj
 }
 
@@ -594,22 +595,22 @@ func (a *GatewayACPAgent) editorID(sessionID string) string {
 
 // Reply fields shared by new, load, resume and fork
 type sessionFields struct {
-	models        *pyacp.SessionModelState
-	modes         *pyacp.SessionModeState
-	meta          *pyjson.Object
-	configOptions []pyacp.SessionConfigOption
+	models        *acputil.SessionModelState
+	modes         *acputil.SessionModeState
+	meta          *jsonutil.Object
+	configOptions []acputil.SessionConfigOption
 }
 
 // Model picker, modes, provenance and config options of a session reply, the post attach notices scheduled behind it
-func (a *GatewayACPAgent) sessionFields(ctx context.Context, sessionID string, info *pyjson.Object, editorID string) (*sessionFields, error) {
+func (a *GatewayACPAgent) sessionFields(ctx context.Context, sessionID string, info *jsonutil.Object, editorID string) (*sessionFields, error) {
 	if title, ok := dget(info, "title").(string); ok && strings.TrimSpace(title) != "" {
 		a.titles[sessionID] = title
 	}
-	var models *pyacp.SessionModelState
+	var models *acputil.SessionModelState
 	if cancelled := a.loop.awaitCtx(ctx, func() { models = gatewayModelState(ctx, info) }); cancelled != nil {
 		return nil, cancelled
 	}
-	var meta *pyjson.Object
+	var meta *jsonutil.Object
 	var err error
 	if cancelled := a.loop.awaitCtx(ctx, func() { meta, err = gatewayProvenanceMeta(ctx, filepath.Join(a.home, "state.db"), editorID, sessionID) }); cancelled != nil {
 		return nil, cancelled
@@ -625,7 +626,7 @@ func (a *GatewayACPAgent) sessionFields(ctx context.Context, sessionID string, i
 		shown = gatewaySessionModes(info).CurrentModeID
 		a.modes[sessionID] = shown
 	}
-	policy := pyjson.NewObject()
+	policy := jsonutil.NewObject()
 	policy.Set("edit_approval_policy", ModeToEditApprovalPolicy[shown])
 	modes := gatewaySessionModes(policy)
 	return &sessionFields{models: models, modes: modes, meta: meta, configOptions: gatewayConfigOptions(models, info, modes.CurrentModeID)}, nil
@@ -651,7 +652,7 @@ func (a *GatewayACPAgent) spawnBackground(ctx context.Context, fn func(ctx conte
 	}
 	task = a.loop.createTask(a.ctx, gate, func(t *loopTask) { delete(a.background, t) })
 	a.background[task] = true
-	pyacp.AfterResponse(ctx, func() { close(started) })
+	acputil.AfterResponse(ctx, func() { close(started) })
 }
 
 // Advertises the commands and the context indicator after the session reply
@@ -680,7 +681,7 @@ func (a *GatewayACPAgent) afterAttach(ctx context.Context, sessionID, editorID s
 }
 
 // Session info of a session to attach, a thread the in process server wrote adopted through session.resume first
-func (a *GatewayACPAgent) attachInfo(ctx context.Context, link gatewayLink, sessionID string) (*pyjson.Object, error) {
+func (a *GatewayACPAgent) attachInfo(ctx context.Context, link gatewayLink, sessionID string) (*jsonutil.Object, error) {
 	info, err := a.rpc(ctx, link, "session.info", map[string]any{"session_id": sessionID})
 	if err == nil {
 		return info, nil
@@ -703,7 +704,7 @@ func (a *GatewayACPAgent) attachInfo(ctx context.Context, link gatewayLink, sess
 }
 
 // Attaches the editor to an existing session, replaying its live transcript before the reply
-func (a *GatewayACPAgent) resume(ctx context.Context, cwd, heldID string, servers []pyacp.McpServer) (*sessionFields, error) {
+func (a *GatewayACPAgent) resume(ctx context.Context, cwd, heldID string, servers []acputil.MCPServer) (*sessionFields, error) {
 	link, err := a.client(ctx)
 	if err != nil {
 		return nil, err
@@ -715,7 +716,7 @@ func (a *GatewayACPAgent) resume(ctx context.Context, cwd, heldID string, server
 	if err != nil {
 		return nil, err
 	}
-	kept := pydict.New[string, string]()
+	kept := orderedutil.NewMap[string, string]()
 	for held, sid := range a.aliases.All() {
 		if sid != sessionID {
 			kept.Set(held, sid)
@@ -740,9 +741,9 @@ func (a *GatewayACPAgent) resume(ctx context.Context, cwd, heldID string, server
 		}
 	}
 	params := map[string]any{"session_id": sessionID}
-	var editor *pyjson.Object
+	var editor *jsonutil.Object
 	if len(servers) > 0 {
-		editor = pyjson.NewObject()
+		editor = jsonutil.NewObject()
 		editor.Set("mcp_servers", mcpServersPayload(servers))
 		params["editor"] = editor
 	}
@@ -787,13 +788,13 @@ func (a *GatewayACPAgent) resume(ctx context.Context, cwd, heldID string, server
 	if err := a.requestLiveReasoning(ctx, link, sessionID); err != nil {
 		return nil, err
 	}
-	merged := pyjson.NewObject()
-	for _, key := range info.Keys {
-		merged.Set(key, info.Vals[key])
+	merged := jsonutil.NewObject()
+	for _, key := range info.Keys() {
+		merged.Set(key, info.Value(key))
 	}
-	if snapInfo, ok := dget(snapshot, "info").(*pyjson.Object); ok && truthy(snapInfo) {
-		for _, key := range snapInfo.Keys {
-			merged.Set(key, snapInfo.Vals[key])
+	if snapInfo, ok := dget(snapshot, "info").(*jsonutil.Object); ok && anyutil.IsTrue(snapInfo) {
+		for _, key := range snapInfo.Keys() {
+			merged.Set(key, snapInfo.Value(key))
 		}
 	}
 	return a.sessionFields(ctx, sessionID, merged, heldID)
@@ -808,17 +809,17 @@ func liveMessages(raw any) []map[string]any {
 	}
 	var rows []row
 	for _, item := range items {
-		obj, ok := item.(*pyjson.Object)
-		if !ok || truthy(dget(obj, "archived")) {
+		obj, ok := item.(*jsonutil.Object)
+		if !ok || anyutil.IsTrue(dget(obj, "archived")) {
 			continue
 		}
 		id := 0.0
-		if v := dget(obj, "row_id"); truthy(v) {
+		if v := dget(obj, "row_id"); anyutil.IsTrue(v) {
 			id, _ = pyFloat(v)
 		}
-		message := make(map[string]any, len(obj.Keys))
-		for _, key := range obj.Keys {
-			message[key] = obj.Vals[key]
+		message := make(map[string]any, obj.Len())
+		for _, key := range obj.Keys() {
+			message[key] = obj.Value(key)
 		}
 		rows = append(rows, row{message, id})
 	}
@@ -831,13 +832,13 @@ func liveMessages(raw any) []map[string]any {
 }
 
 // Whether the session's cwd differs from the editor's
-func (a *GatewayACPAgent) moved(info *pyjson.Object, cwd string) bool {
-	return dhas(info, "cwd") && normalizeCwdForCompare(pyStr(dget(info, "cwd"))) != normalizeCwdForCompare(translateACPCwd(cwd))
+func (a *GatewayACPAgent) moved(info *jsonutil.Object, cwd string) bool {
+	return dhas(info, "cwd") && normalizeCwdForCompare(anyutil.String(dget(info, "cwd"))) != normalizeCwdForCompare(translateACPCwd(cwd))
 }
 
 // Moves the session's execution cwd through the owner's workspace mutation and returns the fresh info
-func (a *GatewayACPAgent) moveWorkspace(ctx context.Context, link gatewayLink, sessionID, cwd string) (*pyjson.Object, error) {
-	payload := pyjson.ObjectOf("cwd", translateACPCwd(cwd))
+func (a *GatewayACPAgent) moveWorkspace(ctx context.Context, link gatewayLink, sessionID, cwd string) (*jsonutil.Object, error) {
+	payload := jsonutil.ObjectOf("cwd", translateACPCwd(cwd))
 	a.unacked.Delete(sessionID)
 	if _, err := a.mutations.Apply(ctx, a.mutationRPC(link), sessionID, "workspace", payload, nil); err != nil {
 		return nil, err
@@ -847,7 +848,7 @@ func (a *GatewayACPAgent) moveWorkspace(ctx context.Context, link gatewayLink, s
 }
 
 // Rebinds the session's editor MCP servers through the owner's editor_mcp mutation
-func (a *GatewayACPAgent) rebindEditorMCP(ctx context.Context, link gatewayLink, sessionID string, editor *pyjson.Object) error {
+func (a *GatewayACPAgent) rebindEditorMCP(ctx context.Context, link gatewayLink, sessionID string, editor *jsonutil.Object) error {
 	a.unacked.Delete(sessionID)
 	if _, err := a.mutations.Apply(ctx, a.mutationRPC(link), sessionID, "editor_mcp", editor, nil); err != nil {
 		return err
@@ -857,25 +858,25 @@ func (a *GatewayACPAgent) rebindEditorMCP(ctx context.Context, link gatewayLink,
 }
 
 // Loads a session, replaying its transcript
-func (a *GatewayACPAgent) LoadSession(ctx context.Context, req *pyacp.LoadSessionRequest) (*pyacp.LoadSessionResponse, error) {
+func (a *GatewayACPAgent) LoadSession(ctx context.Context, req *acputil.LoadSessionRequest) (*acputil.LoadSessionResponse, error) {
 	a.loop.enter()
 	defer a.loop.leave()
 	fields, err := a.resume(ctx, req.Cwd, req.SessionID, req.MCPServers)
 	if err != nil {
 		return nil, err
 	}
-	return &pyacp.LoadSessionResponse{Models: fields.models, Modes: fields.modes, Meta: fields.meta, ConfigOptions: fields.configOptions}, nil
+	return &acputil.LoadSessionResponse{Models: fields.models, Modes: fields.modes, Meta: fields.meta, ConfigOptions: fields.configOptions}, nil
 }
 
 // Resumes a session, replaying its transcript
-func (a *GatewayACPAgent) ResumeSession(ctx context.Context, req *pyacp.ResumeSessionRequest) (*pyacp.ResumeSessionResponse, error) {
+func (a *GatewayACPAgent) ResumeSession(ctx context.Context, req *acputil.ResumeSessionRequest) (*acputil.ResumeSessionResponse, error) {
 	a.loop.enter()
 	defer a.loop.leave()
 	fields, err := a.resume(ctx, req.Cwd, req.SessionID, req.MCPServers)
 	if err != nil {
 		return nil, err
 	}
-	return &pyacp.ResumeSessionResponse{Models: fields.models, Modes: fields.modes, Meta: fields.meta, ConfigOptions: fields.configOptions}, nil
+	return &acputil.ResumeSessionResponse{Models: fields.models, Modes: fields.modes, Meta: fields.meta, ConfigOptions: fields.configOptions}, nil
 }
 
 // Cancels this editor's own admission, interrupting the turn only when that admission is the one executing
@@ -916,7 +917,7 @@ func (a *GatewayACPAgent) cancelAdmission(ctx context.Context, sessionID, admiss
 }
 
 // Cancels the editor's prompt on a session, a submit still in flight cancelled once it is acked
-func (a *GatewayACPAgent) Cancel(ctx context.Context, req *pyacp.CancelNotification) error {
+func (a *GatewayACPAgent) Cancel(ctx context.Context, req *acputil.CancelNotification) error {
 	a.loop.enter()
 	defer a.loop.leave()
 	sessionID := a.resolveAlias(req.SessionID)
@@ -941,7 +942,7 @@ func (a *GatewayACPAgent) resolveAlias(sessionID string) string {
 }
 
 // Forks a session through the owner's branch mutation and attaches the child
-func (a *GatewayACPAgent) ForkSession(ctx context.Context, req *pyacp.ForkSessionRequest) (*pyacp.ForkSessionResponse, error) {
+func (a *GatewayACPAgent) ForkSession(ctx context.Context, req *acputil.ForkSessionRequest) (*acputil.ForkSessionResponse, error) {
 	a.loop.enter()
 	defer a.loop.leave()
 	sessionID := a.resolveAlias(req.SessionID)
@@ -953,7 +954,7 @@ func (a *GatewayACPAgent) ForkSession(ctx context.Context, req *pyacp.ForkSessio
 	if err != nil {
 		return nil, err
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	if len(req.MCPServers) > 0 {
 		payload.Set("mcp_servers", mcpServersPayload(req.MCPServers))
 	}
@@ -965,7 +966,7 @@ func (a *GatewayACPAgent) ForkSession(ctx context.Context, req *pyacp.ForkSessio
 	if _, ok := result["branched_session_id"]; !ok {
 		return nil, errors.New("the gateway fork reply has no branched_session_id")
 	}
-	child := pyStr(result["branched_session_id"])
+	child := anyutil.String(result["branched_session_id"])
 	if a.moved(info, req.Cwd) {
 		if _, err := a.moveWorkspace(ctx, link, child, req.Cwd); err != nil {
 			return nil, err
@@ -985,8 +986,8 @@ func (a *GatewayACPAgent) ForkSession(ctx context.Context, req *pyacp.ForkSessio
 	}
 	a.mutations.Acknowledge(sessionID, "branch", payload)
 	childSnapshot, _ := a.snapshots.Get(child)
-	info, _ = dget(childSnapshot, "info").(*pyjson.Object)
-	if !truthy(info) {
+	info, _ = dget(childSnapshot, "info").(*jsonutil.Object)
+	if !anyutil.IsTrue(info) {
 		if info, err = a.rpc(ctx, link, "session.info", map[string]any{"session_id": child}); err != nil {
 			return nil, err
 		}
@@ -998,17 +999,17 @@ func (a *GatewayACPAgent) ForkSession(ctx context.Context, req *pyacp.ForkSessio
 	if err != nil {
 		return nil, err
 	}
-	return &pyacp.ForkSessionResponse{SessionID: child, Models: fields.models, Modes: fields.modes, Meta: fields.meta, ConfigOptions: fields.configOptions}, nil
+	return &acputil.ForkSessionResponse{SessionID: child, Models: fields.models, Modes: fields.modes, Meta: fields.meta, ConfigOptions: fields.configOptions}, nil
 }
 
 // Picks the session's model through the owner's model mutation
-func (a *GatewayACPAgent) SetSessionModel(ctx context.Context, req *pyacp.SetSessionModelRequest) (*pyacp.SetSessionModelResponse, error) {
+func (a *GatewayACPAgent) SetSessionModel(ctx context.Context, req *acputil.SetSessionModelRequest) (*acputil.SetSessionModelResponse, error) {
 	a.loop.enter()
 	defer a.loop.leave()
 	return a.setSessionModel(ctx, req.ModelID, req.SessionID)
 }
 
-func (a *GatewayACPAgent) setSessionModel(ctx context.Context, modelID, heldID string) (*pyacp.SetSessionModelResponse, error) {
+func (a *GatewayACPAgent) setSessionModel(ctx context.Context, modelID, heldID string) (*acputil.SetSessionModelResponse, error) {
 	sessionID := a.resolveAlias(heldID)
 	link, err := a.client(ctx)
 	if err != nil {
@@ -1018,7 +1019,7 @@ func (a *GatewayACPAgent) setSessionModel(ctx context.Context, modelID, heldID s
 	if cancelled := a.loop.awaitCtx(ctx, func() { providerName, model = parseModelInput(ctx, modelID, "", nil) }); cancelled != nil {
 		return nil, cancelled
 	}
-	payload := pyjson.ObjectOf("model", model)
+	payload := jsonutil.ObjectOf("model", model)
 	if providerName != "" {
 		payload.Set("provider", providerName)
 	}
@@ -1043,26 +1044,26 @@ func (a *GatewayACPAgent) setSessionModel(ctx context.Context, modelID, heldID s
 			return nil, err
 		}
 	}
-	return &pyacp.SetSessionModelResponse{}, nil
+	return &acputil.SetSessionModelResponse{}, nil
 }
 
 // Asks the editor to confirm a guarded deferred pick at the turn boundary and tells it the outcome
-func (a *GatewayACPAgent) confirmDeferredPick(ctx context.Context, sessionID, editorID string, ask *pyjson.Object) error {
+func (a *GatewayACPAgent) confirmDeferredPick(ctx context.Context, sessionID, editorID string, ask *jsonutil.Object) error {
 	say := func(text string) error {
 		if a.conn != nil {
 			return a.say(ctx, editorID, text+"\n")
 		}
 		return nil
 	}
-	askPayload, _ := dget(ask, "payload").(*pyjson.Object)
+	askPayload, _ := dget(ask, "payload").(*jsonutil.Object)
 	target := dget(ask, "target_model")
-	if !truthy(target) {
+	if !anyutil.IsTrue(target) {
 		target = dget(askPayload, "model")
 	}
 	committed := func(reason string) map[string]any {
 		return map[string]any{"model": dget(ask, "committed_model"), "provider": dget(ask, "committed_provider"), "target_model": target, "reason": reason}
 	}
-	plainAsk, _ := pyjson.Plain(ask).(map[string]any)
+	plainAsk, _ := jsonutil.Plain(ask).(map[string]any)
 	err := func() error {
 		confirm := a.confirmer(sessionID)
 		if confirm == nil {
@@ -1083,10 +1084,10 @@ func (a *GatewayACPAgent) confirmDeferredPick(ctx context.Context, sessionID, ed
 		if err != nil {
 			return err
 		}
-		payload := pyjson.NewObject()
+		payload := jsonutil.NewObject()
 		if askPayload != nil {
-			for _, key := range askPayload.Keys {
-				payload.Set(key, askPayload.Vals[key])
+			for _, key := range askPayload.Keys() {
+				payload.Set(key, askPayload.Value(key))
 			}
 		}
 		payload.Set("confirm", dget(ask, "confirm"))
@@ -1095,7 +1096,7 @@ func (a *GatewayACPAgent) confirmDeferredPick(ctx context.Context, sessionID, ed
 		if err != nil {
 			return err
 		}
-		plain, _ := pyjson.Plain(result).(map[string]any)
+		plain, _ := jsonutil.Plain(result).(map[string]any)
 		if plain["status"] == "confirmation_required" {
 			return say(ModelRefusalText(plain, true))
 		}
@@ -1130,7 +1131,7 @@ func (a *GatewayACPAgent) modelConfirmer(sessionID string) MutationConfirm {
 		title := ConfirmationTitle(refusal)
 		target := ""
 		if v, ok := refusal["target_model"]; ok {
-			target = pyStr(v)
+			target = anyutil.String(v)
 		}
 		if _, ok := refusal["confirm_message"]; !ok {
 			return false, errors.New("the gateway refusal has no confirm_message")
@@ -1142,16 +1143,16 @@ func (a *GatewayACPAgent) modelConfirmer(sessionID string) MutationConfirm {
 				guards = append(guards, warning["kind"])
 			}
 		}
-		rawInput := pyjson.NewObject()
+		rawInput := jsonutil.NewObject()
 		rawInput.Set("model", refusal["target_model"])
 		rawInput.Set("provider", refusal["target_provider"])
 		rawInput.Set("guards", guards)
 		kind, status := "other", "pending"
-		toolCall := pyacp.UpdateToolCall("model-confirm-"+uuidHex()[:12], pyacp.ToolCallFields{
-			Title: pyacp.Ptr(title + ": " + target), Kind: &kind, Status: &status,
-			Content:  []pyacp.ToolCallContent{pyacp.ToolContent(pyacp.TextBlock(pyStr(refusal["confirm_message"])))},
+		toolCall := acputil.UpdateToolCall("model-confirm-"+uuidHex()[:12], acputil.ToolCallFields{
+			Title: new(title + ": " + target), Kind: &kind, Status: &status,
+			Content:  []acputil.ToolCallContent{acputil.ToolContent(acputil.TextBlock(anyutil.String(refusal["confirm_message"])))},
 			RawInput: rawInput})
-		options := []pyacp.PermissionOption{
+		options := []acputil.PermissionOption{
 			{OptionID: "allow_once", Kind: "allow_once", Name: i18n.T(ctx, "cli.model.choice_switch_anyway", "", nil)},
 			{OptionID: "deny", Kind: "reject_once", Name: i18n.T(ctx, "cli.model.choice_cancel", "", nil)},
 		}
@@ -1159,15 +1160,15 @@ func (a *GatewayACPAgent) modelConfirmer(sessionID string) MutationConfirm {
 		if err != nil {
 			return false, err
 		}
-		allowed, ok := response.Outcome.(*pyacp.AllowedOutcome)
+		allowed, ok := response.Outcome.(*acputil.AllowedOutcome)
 		return ok && allowed.OptionID == "allow_once", nil
 	}
 }
 
 // Asks the editor to pick one permission option for a tool call
-func (a *GatewayACPAgent) requestPermission(ctx context.Context, editorID string, toolCall *pyacp.ToolCallProgress, options []pyacp.PermissionOption) (*pyacp.RequestPermissionResponse, error) {
+func (a *GatewayACPAgent) requestPermission(ctx context.Context, editorID string, toolCall *acputil.ToolCallProgress, options []acputil.PermissionOption) (*acputil.RequestPermissionResponse, error) {
 	conn := a.conn
-	var response *pyacp.RequestPermissionResponse
+	var response *acputil.RequestPermissionResponse
 	var err error
 	if cancelled := a.loop.awaitCtx(ctx, func() { response, err = requestPermissionVia(conn)(ctx, editorID, toolCall, options) }); cancelled != nil {
 		return nil, cancelled
@@ -1185,7 +1186,7 @@ func (a *GatewayACPAgent) heldSession(sessionID string) (string, error) {
 }
 
 // Sets the session's edit approval policy on the owner from the editor's mode
-func (a *GatewayACPAgent) SetSessionMode(ctx context.Context, req *pyacp.SetSessionModeRequest) (*pyacp.SetSessionModeResponse, error) {
+func (a *GatewayACPAgent) SetSessionMode(ctx context.Context, req *acputil.SetSessionModeRequest) (*acputil.SetSessionModeResponse, error) {
 	a.loop.enter()
 	defer a.loop.leave()
 	policy, ok := ModeToEditApprovalPolicy[req.ModeID]
@@ -1199,11 +1200,11 @@ func (a *GatewayACPAgent) SetSessionMode(ctx context.Context, req *pyacp.SetSess
 	if err := a.setEditPolicy(ctx, sessionID, policy); err != nil {
 		return nil, err
 	}
-	return &pyacp.SetSessionModeResponse{}, nil
+	return &acputil.SetSessionModeResponse{}, nil
 }
 
 // Applies one of the advertised pickers and answers the full option list read back from the owner
-func (a *GatewayACPAgent) SetConfigOption(ctx context.Context, req *pyacp.SetConfigOptionParams) (*pyacp.SetSessionConfigOptionResponse, error) {
+func (a *GatewayACPAgent) SetConfigOption(ctx context.Context, req *acputil.SetConfigOptionParams) (*acputil.SetSessionConfigOptionResponse, error) {
 	a.loop.enter()
 	defer a.loop.leave()
 	editorID := req.SessionID
@@ -1239,7 +1240,7 @@ func (a *GatewayACPAgent) SetConfigOption(ctx context.Context, req *pyacp.SetCon
 		if value != "default" {
 			effort = value
 		}
-		if err := a.idleControl(ctx, sessionID, "reasoning", pyjson.ObjectOf("effort", effort), "Reasoning effort"); err != nil {
+		if err := a.idleControl(ctx, sessionID, "reasoning", jsonutil.ObjectOf("effort", effort), "Reasoning effort"); err != nil {
 			return nil, err
 		}
 	}
@@ -1251,7 +1252,7 @@ func (a *GatewayACPAgent) SetConfigOption(ctx context.Context, req *pyacp.SetCon
 	if err != nil {
 		return nil, err
 	}
-	var models *pyacp.SessionModelState
+	var models *acputil.SessionModelState
 	if cancelled := a.loop.awaitCtx(ctx, func() { models = gatewayModelState(ctx, info) }); cancelled != nil {
 		return nil, cancelled
 	}
@@ -1259,12 +1260,12 @@ func (a *GatewayACPAgent) SetConfigOption(ctx context.Context, req *pyacp.SetCon
 	if mode == "" {
 		mode = gatewayCurrentMode(info)
 	}
-	return &pyacp.SetSessionConfigOptionResponse{ConfigOptions: gatewayConfigOptions(models, info, mode)}, nil
+	return &acputil.SetSessionConfigOptionResponse{ConfigOptions: gatewayConfigOptions(models, info, mode)}, nil
 }
 
 // Commits the session's edit approval policy on the owner
 func (a *GatewayACPAgent) setEditPolicy(ctx context.Context, sessionID, policy string) error {
-	if err := a.idleControl(ctx, sessionID, "edit_policy", pyjson.ObjectOf("policy", policy), "Mode"); err != nil {
+	if err := a.idleControl(ctx, sessionID, "edit_policy", jsonutil.ObjectOf("policy", policy), "Mode"); err != nil {
 		return err
 	}
 	a.modes[sessionID] = EditApprovalPolicyToMode[policy]
@@ -1272,7 +1273,7 @@ func (a *GatewayACPAgent) setEditPolicy(ctx context.Context, sessionID, policy s
 }
 
 // Revision fenced owner mutation that applies to idle sessions only
-func (a *GatewayACPAgent) idleControl(ctx context.Context, sessionID, operation string, payload *pyjson.Object, label string) error {
+func (a *GatewayACPAgent) idleControl(ctx context.Context, sessionID, operation string, payload *jsonutil.Object, label string) error {
 	link, err := a.client(ctx)
 	if err != nil {
 		return err
@@ -1292,14 +1293,14 @@ func (a *GatewayACPAgent) idleControl(ctx context.Context, sessionID, operation 
 				return err
 			}
 		}
-		return pyacp.NewRequestError(-32603, text, nil)
+		return acputil.NewRequestError(-32603, text, nil)
 	}
 	a.mutations.Acknowledge(sessionID, operation, payload)
 	return nil
 }
 
 // Lists the profile's ACP sessions after the cursor, fifty per page
-func (a *GatewayACPAgent) ListSessions(ctx context.Context, req *pyacp.ListSessionsRequest) (*pyacp.ListSessionsResponse, error) {
+func (a *GatewayACPAgent) ListSessions(ctx context.Context, req *acputil.ListSessionsRequest) (*acputil.ListSessionsResponse, error) {
 	a.loop.enter()
 	defer a.loop.leave()
 	cwd, cursor := "", ""
@@ -1309,7 +1310,7 @@ func (a *GatewayACPAgent) ListSessions(ctx context.Context, req *pyacp.ListSessi
 	if req.Cursor != nil {
 		cursor = *req.Cursor
 	}
-	var rows []*pyjson.Object
+	var rows []*jsonutil.Object
 	var err error
 	if cancelled := a.loop.awaitCtx(ctx, func() { rows, err = CatalogSessions(ctx, filepath.Join(a.home, "state.db"), cwd) }); cancelled != nil {
 		return nil, cancelled
@@ -1318,7 +1319,7 @@ func (a *GatewayACPAgent) ListSessions(ctx context.Context, req *pyacp.ListSessi
 		return nil, err
 	}
 	if cursor != "" {
-		rest := []*pyjson.Object{}
+		rest := []*jsonutil.Object{}
 		for i, row := range rows {
 			if dget(row, "session_id") == cursor {
 				rest = rows[i+1:]
@@ -1328,32 +1329,32 @@ func (a *GatewayACPAgent) ListSessions(ctx context.Context, req *pyacp.ListSessi
 		rows = rest
 	}
 	more := len(rows) > 50
-	page := []pyacp.SessionInfo{}
+	page := []acputil.SessionInfo{}
 	for _, row := range rows[:min(len(rows), 50)] {
-		info := pyacp.SessionInfo{SessionID: pyStr(dget(row, "session_id")), Cwd: pyStr(dget(row, "cwd"))}
+		info := acputil.SessionInfo{SessionID: anyutil.String(dget(row, "session_id")), Cwd: anyutil.String(dget(row, "cwd"))}
 		if title := dget(row, "title"); title != nil {
-			info.Title = pyacp.Ptr(pyStr(title))
+			info.Title = new(anyutil.String(title))
 		}
 		if updated := dget(row, "updated_at"); updated != nil {
-			info.UpdatedAt = pyacp.Ptr(pyStr(updated))
+			info.UpdatedAt = new(anyutil.String(updated))
 		}
 		page = append(page, info)
 	}
-	resp := &pyacp.ListSessionsResponse{Sessions: page}
+	resp := &acputil.ListSessionsResponse{Sessions: page}
 	if more {
-		resp.NextCursor = pyacp.Ptr(page[len(page)-1].SessionID)
+		resp.NextCursor = new(page[len(page)-1].SessionID)
 	}
 	return resp, nil
 }
 
 // Submits the editor's prompt to the owner and waits for its turn to settle
-func (a *GatewayACPAgent) Prompt(ctx context.Context, req *pyacp.PromptRequest) (*pyacp.PromptResponse, error) {
+func (a *GatewayACPAgent) Prompt(ctx context.Context, req *acputil.PromptRequest) (*acputil.PromptResponse, error) {
 	a.loop.enter()
 	defer a.loop.leave()
 	return a.prompt(ctx, req.Prompt, req.SessionID)
 }
 
-func (a *GatewayACPAgent) prompt(ctx context.Context, blocks []pyacp.ContentBlock, heldID string) (*pyacp.PromptResponse, error) {
+func (a *GatewayACPAgent) prompt(ctx context.Context, blocks []acputil.ContentBlock, heldID string) (*acputil.PromptResponse, error) {
 	sessionID := a.resolveAlias(heldID)
 	if !a.snapshots.Has(sessionID) {
 		return nil, &gateway.GatewayClientError{Msg: "not_found"}
@@ -1364,7 +1365,7 @@ func (a *GatewayACPAgent) prompt(ctx context.Context, blocks []pyacp.ContentBloc
 			return nil, err
 		}
 		if cancelled {
-			return &pyacp.PromptResponse{StopReason: "cancelled"}, nil
+			return &acputil.PromptResponse{StopReason: "cancelled"}, nil
 		}
 	}
 	if a.hasUnknown(sessionID) {
@@ -1382,7 +1383,7 @@ func (a *GatewayACPAgent) prompt(ctx context.Context, blocks []pyacp.ContentBloc
 		return nil, err
 	}
 	if prepared == nil {
-		return &pyacp.PromptResponse{StopReason: "cancelled"}, nil
+		return &acputil.PromptResponse{StopReason: "cancelled"}, nil
 	}
 	text := prepared.text
 	if len(prepared.attachments) == 0 {
@@ -1391,7 +1392,7 @@ func (a *GatewayACPAgent) prompt(ctx context.Context, blocks []pyacp.ContentBloc
 			return nil, err
 		}
 		if answered {
-			return &pyacp.PromptResponse{StopReason: "end_turn"}, nil
+			return &acputil.PromptResponse{StopReason: "end_turn"}, nil
 		}
 		text = submit
 	}
@@ -1400,14 +1401,14 @@ func (a *GatewayACPAgent) prompt(ctx context.Context, blocks []pyacp.ContentBloc
 	if len(prepared.attachments) > 0 {
 		attachments := make([]any, 0, len(prepared.attachments))
 		for _, staged := range prepared.attachments {
-			attachments = append(attachments, pyjson.ObjectOf("path", staged.Path, "mime", staged.Mime))
+			attachments = append(attachments, jsonutil.ObjectOf("path", staged.Path, "mime", staged.Mime))
 		}
 		submit["attachments"] = attachments
 	}
 	a.submitting[sessionID] = true
 	var link gatewayLink
 	var linkID, resumes int
-	receipt, err := func() (receipt *pyjson.Object, err error) {
+	receipt, err := func() (receipt *jsonutil.Object, err error) {
 		defer delete(a.submitting, sessionID)
 		defer func() {
 			if r := recover(); r != nil {
@@ -1437,10 +1438,10 @@ func (a *GatewayACPAgent) prompt(ctx context.Context, blocks []pyacp.ContentBloc
 		return nil, err
 	}
 	if !admitted {
-		return &pyacp.PromptResponse{StopReason: "end_turn"}, nil
+		return &acputil.PromptResponse{StopReason: "end_turn"}, nil
 	}
 	a.inflight.Set(inflightKey{sessionID, admissionID}, struct{}{})
-	terminal, err := func() (*pyjson.Object, error) {
+	terminal, err := func() (*jsonutil.Object, error) {
 		defer func() {
 			if a.admissions[sessionID] == admissionID {
 				delete(a.admissions, sessionID)
@@ -1490,9 +1491,9 @@ func (a *GatewayACPAgent) prompt(ctx context.Context, blocks []pyacp.ContentBloc
 	case "failed":
 		return nil, &gateway.GatewayClientError{Msg: "admitted_turn_failed"}
 	case "cancelled":
-		return &pyacp.PromptResponse{StopReason: "cancelled", Usage: gatewayTurnUsage(a.usageOf(sessionID))}, nil
+		return &acputil.PromptResponse{StopReason: "cancelled", Usage: gatewayTurnUsage(a.usageOf(sessionID))}, nil
 	}
-	return &pyacp.PromptResponse{StopReason: "end_turn", Usage: gatewayTurnUsage(a.usageOf(sessionID))}, nil
+	return &acputil.PromptResponse{StopReason: "end_turn", Usage: gatewayTurnUsage(a.usageOf(sessionID))}, nil
 }
 
 func (a *GatewayACPAgent) usageOf(sessionID string) any {
@@ -1512,7 +1513,7 @@ func (a *GatewayACPAgent) retainUnacked(sessionID string, prepared *retainedSubm
 }
 
 // Admission a prompt.submit receipt names, false when the owner admitted nothing
-func (a *GatewayACPAgent) admissionFromReceipt(ctx context.Context, link gatewayLink, heldID, sessionID string, receipt *pyjson.Object) (string, bool, error) {
+func (a *GatewayACPAgent) admissionFromReceipt(ctx context.Context, link gatewayLink, heldID, sessionID string, receipt *jsonutil.Object) (string, bool, error) {
 	if dget(receipt, "voice_stopped") == true {
 		delete(a.pendingCancels, sessionID)
 		if a.conn != nil {
@@ -1525,7 +1526,7 @@ func (a *GatewayACPAgent) admissionFromReceipt(ctx context.Context, link gateway
 	if !dhas(receipt, "admission_id") {
 		return "", false, errors.New("the gateway receipt has no admission_id")
 	}
-	admissionID := pyStr(dget(receipt, "admission_id"))
+	admissionID := anyutil.String(dget(receipt, "admission_id"))
 	a.admissions[sessionID] = admissionID
 	switch dget(receipt, "status") {
 	case "terminal":
@@ -1570,7 +1571,7 @@ func (a *GatewayACPAgent) runSlash(ctx context.Context, heldID, sessionID, text 
 }
 
 // Retry key, input id and staged content of one prompt, nil when the editor's Stop arrived while it was staged
-func (a *GatewayACPAgent) prepareSubmit(ctx context.Context, sessionID string, blocks []pyacp.ContentBlock) (*retainedSubmit, error) {
+func (a *GatewayACPAgent) prepareSubmit(ctx context.Context, sessionID string, blocks []acputil.ContentBlock) (*retainedSubmit, error) {
 	content, err := ContentBlocksToOpenAIUserContent(blocks)
 	if err != nil {
 		return nil, err
@@ -1631,7 +1632,7 @@ func (a *GatewayACPAgent) currentGateway() (gatewayLink, error) {
 func (a *GatewayACPAgent) recover(ctx context.Context, sessionID, admissionID string) error {
 	snapshot, _ := a.snapshots.Get(sessionID)
 	pending, _ := dget(snapshot, "pending").([]any)
-	plainPending, _ := pyjson.Plain(pending).([]any)
+	plainPending, _ := jsonutil.Plain(pending).([]any)
 	status := ReplayGapPendingStatus(plainPending, admissionID)
 	if status == "queued" || status == "unknown" || a.terminals.Has(admissionID) || a.settling[admissionID] || a.receipted.Has(admissionID) {
 		return nil
@@ -1641,7 +1642,7 @@ func (a *GatewayACPAgent) recover(ctx context.Context, sessionID, admissionID st
 	if _, ok := a.cut[admissionID]; !ok {
 		a.cut[admissionID] = streamed
 	}
-	if truthy(status) {
+	if anyutil.IsTrue(status) {
 		return nil
 	}
 	link, err := a.currentGateway()
@@ -1653,9 +1654,9 @@ func (a *GatewayACPAgent) recover(ctx context.Context, sessionID, admissionID st
 		if !isClientOSOrTimeout(err) {
 			return err
 		}
-		receipt = pyjson.ObjectOf("status", "terminal")
+		receipt = jsonutil.ObjectOf("status", "terminal")
 	}
-	plainReceipt, _ := pyjson.Plain(receipt).(map[string]any)
+	plainReceipt, _ := jsonutil.Plain(receipt).(map[string]any)
 	verdict := ReplayGapSettled(plainReceipt)
 	if verdict == nil || *verdict {
 		if !a.receipted.Has(admissionID) {
@@ -1673,12 +1674,12 @@ func (a *GatewayACPAgent) recover(ctx context.Context, sessionID, admissionID st
 }
 
 // Reports a turn that already settled from its terminal receipt, once
-func (a *GatewayACPAgent) settledReceipt(ctx context.Context, link gatewayLink, heldID, sessionID string, receipt, saved *pyjson.Object) error {
+func (a *GatewayACPAgent) settledReceipt(ctx context.Context, link gatewayLink, heldID, sessionID string, receipt, saved *jsonutil.Object) error {
 	if !dhas(receipt, "admission_id") {
 		return errors.New("the gateway receipt has no admission_id")
 	}
-	admissionID := pyStr(dget(receipt, "admission_id"))
-	if !truthy(saved) {
+	admissionID := anyutil.String(dget(receipt, "admission_id"))
+	if !anyutil.IsTrue(saved) {
 		var err error
 		if saved, err = a.rpc(ctx, link, "prompt.receipt", map[string]any{"session_id": sessionID, "admission_id": admissionID, "include_result": true}); err != nil {
 			return err
@@ -1697,16 +1698,16 @@ func (a *GatewayACPAgent) settledReceipt(ctx context.Context, link gatewayLink, 
 	if outcome == "interrupted" {
 		outcome = "cancelled"
 	}
-	result, _ := dget(saved, "result").(*pyjson.Object)
+	result, _ := dget(saved, "result").(*jsonutil.Object)
 	final := ""
-	if v := dget(result, "final_response"); truthy(v) {
-		final = pyStr(v)
+	if v := dget(result, "final_response"); anyutil.IsTrue(v) {
+		final = anyutil.String(v)
 	}
-	payload := pyjson.ObjectOf("text", final, "outcome", outcome, "response_reused", dget(result, "response_reused"), "receipt", true)
+	payload := jsonutil.ObjectOf("text", final, "outcome", outcome, "response_reused", dget(result, "response_reused"), "receipt", true)
 	if err := a.finishReply(ctx, sessionID, heldID, admissionID, payload); err != nil {
 		return err
 	}
-	a.terminals.Set(admissionID, pyjson.ObjectOf("outcome", outcome))
+	a.terminals.Set(admissionID, jsonutil.ObjectOf("outcome", outcome))
 	a.loop.notifyAll()
 	return nil
 }
@@ -1718,7 +1719,7 @@ func (a *GatewayACPAgent) unknownRecovery(sessionID, admissionID string, submitt
 		pending, _ := dget(snapshot, "pending").([]any)
 		for _, raw := range pending {
 			if row := asObject(raw); dget(row, "status") == "unknown" {
-				lost = append(lost, pyStr(dget(row, "admission_id")))
+				lost = append(lost, anyutil.String(dget(row, "admission_id")))
 			}
 		}
 	}
@@ -1771,7 +1772,7 @@ func (a *GatewayACPAgent) refreshUnknownForPrompt(ctx context.Context, sessionID
 	return cancelled, nil
 }
 
-func snapshotWatermark(snapshot *pyjson.Object) pendingWatermark {
+func snapshotWatermark(snapshot *jsonutil.Object) pendingWatermark {
 	if mark, ok := dget(snapshot, "_pending_watermark").(pendingWatermark); ok {
 		return mark
 	}
@@ -1804,7 +1805,7 @@ func (a *GatewayACPAgent) refreshUnknown(ctx context.Context, sessionID string) 
 	}
 	mark := snapshotWatermark(cached)
 	freshSequence, _ := pyFloat(dgetOr(fresh, "last_sequence", int64(0)))
-	if dhas(fresh, "pending") && (!pyrepr.Equal(dget(fresh, "replay_epoch"), mark.epoch) || freshSequence >= mark.sequence) {
+	if dhas(fresh, "pending") && (!anyutil.Equal(dget(fresh, "replay_epoch"), mark.epoch) || freshSequence >= mark.sequence) {
 		cached.Set("pending", dget(fresh, "pending"))
 		cached.Set("_pending_watermark", pendingWatermark{epoch: dget(fresh, "replay_epoch"), sequence: freshSequence})
 	}
@@ -1812,11 +1813,11 @@ func (a *GatewayACPAgent) refreshUnknown(ctx context.Context, sessionID string) 
 }
 
 // Whether a pending event is newer than the snapshot's pending watermark
-func (a *GatewayACPAgent) pendingEventIsNew(sessionID string, event *pyjson.Object) bool {
+func (a *GatewayACPAgent) pendingEventIsNew(sessionID string, event *jsonutil.Object) bool {
 	snapshot, _ := a.snapshots.Get(sessionID)
 	fence, ok := dget(snapshot, "_pending_watermark").(pendingWatermark)
 	sequence := dget(event, "seq")
-	if !ok || sequence == nil || !pyrepr.Equal(dget(event, "replay_epoch"), fence.epoch) {
+	if !ok || sequence == nil || !anyutil.Equal(dget(event, "replay_epoch"), fence.epoch) {
 		return true
 	}
 	seq, _ := pyFloat(sequence)
@@ -1858,10 +1859,10 @@ func (a *GatewayACPAgent) events(ctx context.Context) error {
 					return err
 				}
 				continue
-			case *pyjson.Object:
-				event, _ := dget(item, "params").(*pyjson.Object)
+			case *jsonutil.Object:
+				event, _ := dget(item, "params").(*jsonutil.Object)
 				if event == nil {
-					event = pyjson.NewObject()
+					event = jsonutil.NewObject()
 				}
 				sid, _ := dget(event, "session_id").(string)
 				snapshot, ok := a.snapshots.Get(sid)
@@ -1871,7 +1872,7 @@ func (a *GatewayACPAgent) events(ctx context.Context) error {
 				epoch := dget(event, "replay_epoch")
 				seq, _ := pyFloat(dgetOr(event, "seq", int64(0)))
 				last, _ := pyFloat(dgetOr(snapshot, "last_sequence", int64(0)))
-				if pyrepr.Equal(epoch, dget(snapshot, "replay_epoch")) && seq <= last {
+				if anyutil.Equal(epoch, dget(snapshot, "replay_epoch")) && seq <= last {
 					continue
 				}
 				snapshot.Set("replay_epoch", epoch)
@@ -1893,17 +1894,17 @@ func (a *GatewayACPAgent) events(ctx context.Context) error {
 }
 
 // Projects one owner event onto the editor
-func (a *GatewayACPAgent) project(ctx context.Context, event *pyjson.Object) error {
+func (a *GatewayACPAgent) project(ctx context.Context, event *jsonutil.Object) error {
 	kind, _ := dget(event, "type").(string)
-	payload, _ := dget(event, "payload").(*pyjson.Object)
+	payload, _ := dget(event, "payload").(*jsonutil.Object)
 	if payload == nil {
-		payload = pyjson.NewObject()
+		payload = jsonutil.NewObject()
 	}
-	sid := pyStr(dget(event, "session_id"))
+	sid := anyutil.String(dget(event, "session_id"))
 	editorID := a.editorID(sid)
 	aid := ""
 	if v := dget(event, "admission_id"); v != nil {
-		aid = pyStr(v)
+		aid = anyutil.String(v)
 	}
 	switch kind {
 	case "session.info", "session.updated", "session.usage", "session.tools_changed":
@@ -1920,7 +1921,7 @@ func (a *GatewayACPAgent) project(ctx context.Context, event *pyjson.Object) err
 		if !dhas(payload, "prompt_id") || !dhas(payload, "execution_generation") {
 			return errors.New("the gateway prompt has no prompt_id or execution_generation")
 		}
-		key := permissionKey{sid, pyrepr.Repr(dget(payload, "prompt_id")), pyrepr.Repr(dget(payload, "execution_generation"))}
+		key := permissionKey{sid, anyutil.Quote(dget(payload, "prompt_id")), anyutil.Quote(dget(payload, "execution_generation"))}
 		if task, ok := a.permissions[key]; ok {
 			delete(a.permissions, key)
 			task.Cancel()
@@ -1940,7 +1941,7 @@ func (a *GatewayACPAgent) project(ctx context.Context, event *pyjson.Object) err
 		a.closeSegment(aid)
 		text := replyText(payload)
 		a.endMessage(sid)
-		if !truthy(dget(payload, "already_streamed")) && strings.TrimSpace(text) != "" {
+		if !anyutil.IsTrue(dget(payload, "already_streamed")) && strings.TrimSpace(text) != "" {
 			a.segments[aid] = append(a.segments[aid], text)
 			if a.conn != nil {
 				if err := a.sessionUpdate(ctx, editorID, a.chunk(sid, text+"\n\n", false)); err != nil {
@@ -2009,7 +2010,7 @@ func (a *GatewayACPAgent) gapGuard(ctx context.Context, kind, sid, aid string) (
 				if !dhas(row, "admission_id") {
 					return false, errors.New("the gateway receipt has no admission_id")
 				}
-				add(pyStr(dget(row, "admission_id")))
+				add(anyutil.String(dget(row, "admission_id")))
 			}
 		}
 		for _, key := range a.inflight.Keys() {
@@ -2039,7 +2040,7 @@ func (a *GatewayACPAgent) gapGuard(ctx context.Context, kind, sid, aid string) (
 }
 
 // Projects usage, tool changes, model pick outcomes, pending rows, title and mode of a session state event
-func (a *GatewayACPAgent) projectSessionState(ctx context.Context, kind, sid, editorID string, payload, event *pyjson.Object) error {
+func (a *GatewayACPAgent) projectSessionState(ctx context.Context, kind, sid, editorID string, payload, event *jsonutil.Object) error {
 	if kind == "session.usage" {
 		return a.projectUsage(ctx, sid, editorID, payload)
 	}
@@ -2051,7 +2052,7 @@ func (a *GatewayACPAgent) projectSessionState(ctx context.Context, kind, sid, ed
 	}
 	if kind == "session.updated" && dget(payload, "operation") == "model" && dget(payload, "status") == "refused" {
 		if a.conn != nil {
-			plain, _ := pyjson.Plain(payload).(map[string]any)
+			plain, _ := jsonutil.Plain(payload).(map[string]any)
 			return a.say(ctx, editorID, refusedPickText(plain)+"\n")
 		}
 		return nil
@@ -2080,7 +2081,7 @@ func (a *GatewayACPAgent) projectSessionState(ctx context.Context, kind, sid, ed
 }
 
 // Projects another surface's edit policy change as a current mode update, the first one seeding silently
-func (a *GatewayACPAgent) projectMode(ctx context.Context, sid, editorID string, payload *pyjson.Object) error {
+func (a *GatewayACPAgent) projectMode(ctx context.Context, sid, editorID string, payload *jsonutil.Object) error {
 	policy, _ := dget(payload, "edit_approval_policy").(string)
 	if mode, ok := EditApprovalPolicyToMode[policy]; ok {
 		shown, seeded := a.modes[sid]
@@ -2089,7 +2090,7 @@ func (a *GatewayACPAgent) projectMode(ctx context.Context, sid, editorID string,
 		} else if shown != mode {
 			a.modes[sid] = mode
 			if a.conn != nil {
-				if err := a.sessionUpdate(ctx, editorID, &pyacp.CurrentModeUpdate{CurrentModeID: mode}); err != nil {
+				if err := a.sessionUpdate(ctx, editorID, &acputil.CurrentModeUpdate{CurrentModeID: mode}); err != nil {
 					return err
 				}
 			}
@@ -2099,7 +2100,7 @@ func (a *GatewayACPAgent) projectMode(ctx context.Context, sid, editorID string,
 }
 
 // Resends the full config option list when the mode, model or effort the editor shows changed
-func (a *GatewayACPAgent) projectConfig(ctx context.Context, sid, editorID string, payload *pyjson.Object) error {
+func (a *GatewayACPAgent) projectConfig(ctx context.Context, sid, editorID string, payload *jsonutil.Object) error {
 	fields := []string{"model", "provider", "reasoning_effort"}
 	relevant := dhas(payload, "edit_approval_policy")
 	for _, key := range fields {
@@ -2109,10 +2110,10 @@ func (a *GatewayACPAgent) projectConfig(ctx context.Context, sid, editorID strin
 		return nil
 	}
 	seen := a.configs[sid]
-	shown := &shownConfig{fields: pyjson.NewObject()}
+	shown := &shownConfig{fields: jsonutil.NewObject()}
 	if seen != nil {
-		for _, key := range seen.fields.Keys {
-			shown.fields.Set(key, seen.fields.Vals[key])
+		for _, key := range seen.fields.Keys() {
+			shown.fields.Set(key, seen.fields.Value(key))
 		}
 	}
 	for _, key := range fields {
@@ -2131,18 +2132,18 @@ func (a *GatewayACPAgent) projectConfig(ctx context.Context, sid, editorID strin
 	if seen == nil || a.conn == nil {
 		return nil
 	}
-	var models *pyacp.SessionModelState
+	var models *acputil.SessionModelState
 	if cancelled := a.loop.awaitCtx(ctx, func() { models = gatewayModelState(ctx, shown.fields) }); cancelled != nil {
 		return cancelled
 	}
 	if a.configs[sid] != shown {
 		return nil
 	}
-	return a.sessionUpdate(ctx, editorID, &pyacp.ConfigOptionUpdate{ConfigOptions: gatewayConfigOptions(models, shown.fields, shown.mode)})
+	return a.sessionUpdate(ctx, editorID, &acputil.ConfigOptionUpdate{ConfigOptions: gatewayConfigOptions(models, shown.fields, shown.mode)})
 }
 
 // Keeps the owner's usage dict for the turn's response and shows it as the context indicator
-func (a *GatewayACPAgent) projectUsage(ctx context.Context, sid, editorID string, stats *pyjson.Object) error {
+func (a *GatewayACPAgent) projectUsage(ctx context.Context, sid, editorID string, stats *jsonutil.Object) error {
 	a.usage[sid] = stats
 	if a.conn != nil {
 		if update := gatewayUsageUpdate(stats); update != nil {
@@ -2168,7 +2169,7 @@ func (a *GatewayACPAgent) projectTitle(ctx context.Context, sid, editorID string
 // Raises a permission or clarify card for a pending prompt unless one is already open
 func (a *GatewayACPAgent) permission(sessionID string, raw any) error {
 	prompt := asObject(raw)
-	var answer func(ctx context.Context, sessionID string, prompt *pyjson.Object) bool
+	var answer func(ctx context.Context, sessionID string, prompt *jsonutil.Object) bool
 	switch dget(prompt, "kind") {
 	case "approval":
 		answer = a.answerApproval
@@ -2181,7 +2182,7 @@ func (a *GatewayACPAgent) permission(sessionID string, raw any) error {
 	if !dhas(prompt, "prompt_id") || !dhas(prompt, "execution_generation") {
 		return errors.New("the gateway prompt has no prompt_id or execution_generation")
 	}
-	key := permissionKey{sessionID, pyrepr.Repr(dget(prompt, "prompt_id")), pyrepr.Repr(dget(prompt, "execution_generation"))}
+	key := permissionKey{sessionID, anyutil.Quote(dget(prompt, "prompt_id")), anyutil.Quote(dget(prompt, "execution_generation"))}
 	if _, open := a.permissions[key]; !open {
 		var task *loopTask
 		task = a.loop.createTask(a.ctx, func(ctx context.Context) (any, error) {
@@ -2204,7 +2205,7 @@ func (a *GatewayACPAgent) retireUnanswered(key permissionKey, task *loopTask) {
 }
 
 // Answers a clarify prompt through form elicitation or a permission card, false when nothing was answered
-func (a *GatewayACPAgent) answerClarify(ctx context.Context, sessionID string, prompt *pyjson.Object) (answered bool) {
+func (a *GatewayACPAgent) answerClarify(ctx context.Context, sessionID string, prompt *jsonutil.Object) (answered bool) {
 	editorID := a.editorID(sessionID)
 	err := func() error {
 		var answer string
@@ -2235,7 +2236,7 @@ func (a *GatewayACPAgent) answerClarify(ctx context.Context, sessionID string, p
 			if err := a.closeCard(ctx, editorID, toolCall, options, response); err != nil {
 				return err
 			}
-			if allowed, isAllowed := response.Outcome.(*pyacp.AllowedOutcome); isAllowed {
+			if allowed, isAllowed := response.Outcome.(*acputil.AllowedOutcome); isAllowed {
 				answer, ok = answers[allowed.OptionID]
 			} else {
 				answer, ok = answers[SkipOption], true
@@ -2262,21 +2263,21 @@ func (a *GatewayACPAgent) answerClarify(ctx context.Context, sessionID string, p
 }
 
 // Answers an approval prompt through a permission card, false when nothing was answered
-func (a *GatewayACPAgent) answerPermission(ctx context.Context, sessionID string, prompt *pyjson.Object) (answered bool) {
+func (a *GatewayACPAgent) answerPermission(ctx context.Context, sessionID string, prompt *jsonutil.Object) (answered bool) {
 	choices := map[string]bool{}
 	if raw, ok := dget(prompt, "choices").([]any); ok {
 		for _, choice := range raw {
-			choices[pyStr(choice)] = true
+			choices[anyutil.String(choice)] = true
 		}
 	}
-	var options []pyacp.PermissionOption
+	var options []acputil.PermissionOption
 	for _, option := range buildPermissionOptions(choices["always"], choices["session"], false) {
 		if choices[optionIDToIcebath[option.OptionID]] {
 			options = append(options, option)
 		}
 	}
 	err := func() error {
-		var toolCall *pyacp.ToolCallProgress
+		var toolCall *acputil.ToolCallProgress
 		if dhas(prompt, "edit") {
 			proposal, err := editProposalOf(dget(prompt, "edit"))
 			if err != nil {
@@ -2286,10 +2287,10 @@ func (a *GatewayACPAgent) answerPermission(ctx context.Context, sessionID string
 		} else {
 			command, description := "", ""
 			if v := dget(prompt, "command"); v != nil {
-				command = pyStr(v)
+				command = anyutil.String(v)
 			}
 			if v := dget(prompt, "description"); v != nil {
-				description = pyStr(v)
+				description = anyutil.String(v)
 			}
 			toolCall = buildPermissionToolCall(command, description)
 		}
@@ -2301,7 +2302,7 @@ func (a *GatewayACPAgent) answerPermission(ctx context.Context, sessionID string
 		if err := a.closeCard(ctx, a.editorID(sessionID), toolCall, options, response); err != nil {
 			return err
 		}
-		allowed, ok := response.Outcome.(*pyacp.AllowedOutcome)
+		allowed, ok := response.Outcome.(*acputil.AllowedOutcome)
 		if !ok {
 			return nil
 		}
@@ -2331,30 +2332,30 @@ func (a *GatewayACPAgent) answerPermission(ctx context.Context, sessionID string
 
 // Edit proposal of an approval prompt's edit payload
 func editProposalOf(raw any) (*tools.EditProposal, error) {
-	edit, ok := raw.(*pyjson.Object)
+	edit, ok := raw.(*jsonutil.Object)
 	if !ok {
 		return nil, fmt.Errorf("an edit proposal is %s, expected a mapping", errchain.Kind(raw))
 	}
 	proposal := &tools.EditProposal{}
-	for _, key := range edit.Keys {
-		value := edit.Vals[key]
+	for _, key := range edit.Keys() {
+		value := edit.Value(key)
 		switch key {
 		case "tool_name":
-			proposal.ToolName = pyStr(value)
+			proposal.ToolName = anyutil.String(value)
 		case "path":
-			proposal.Path = pyStr(value)
+			proposal.Path = anyutil.String(value)
 		case "old_text":
 			if text, ok := value.(string); ok {
 				proposal.OldText = &text
 			}
 		case "new_text":
-			proposal.NewText = pyStr(value)
+			proposal.NewText = anyutil.String(value)
 		case "arguments":
-			proposal.Arguments, _ = pyjson.Plain(value).(map[string]any)
+			proposal.Arguments, _ = jsonutil.Plain(value).(map[string]any)
 		case "paths":
 			if items, ok := value.([]any); ok {
 				for _, item := range items {
-					proposal.Paths = append(proposal.Paths, pyStr(item))
+					proposal.Paths = append(proposal.Paths, anyutil.String(item))
 				}
 			}
 		default:

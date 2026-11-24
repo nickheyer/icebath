@@ -4,14 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/nickheyer/icebath/pkg/config"
+	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // One Python parameter of a plugin context method
@@ -154,25 +155,25 @@ var registerToolParams = []pyParam{req("name"), req("toolset"), req("schema"), r
 	opt("check_fn", nil), opt("requires_env", nil), opt("is_async", false), opt("description", ""), opt("emoji", ""), opt("override", false)}
 
 // Dict argument of the ctx call being served, read from its request frame so every object keeps its wire key order
-func orderedCtxArg(ctx context.Context, params []pyParam, name string, bound any) *pyjson.Object {
+func orderedCtxArg(ctx context.Context, params []pyParam, name string, bound any) *jsonutil.Object {
 	if frame := servingFrame(ctx); frame != nil {
-		if parsed, err := pyjson.LoadsBytes(frame); err == nil {
-			if msg, ok := parsed.(*pyjson.Object); ok {
-				if call, ok := msg.Vals["params"].(*pyjson.Object); ok {
-					if kwargs, ok := call.Vals["kwargs"].(*pyjson.Object); ok {
+		if parsed, err := jsonutil.Decode(frame); err == nil {
+			if msg, ok := parsed.(*jsonutil.Object); ok {
+				if call, ok := msg.Value("params").(*jsonutil.Object); ok {
+					if kwargs, ok := call.Value("kwargs").(*jsonutil.Object); ok {
 						if v, ok := kwargs.Get(name); ok {
-							obj, _ := pyjson.AsObject(v)
+							obj, _ := jsonutil.AsObject(v)
 							return obj
 						}
 					}
-					args, _ := call.Vals["args"].([]any)
+					args, _ := call.Value("args").([]any)
 					pos := 0
 					for _, p := range params {
 						if p.varKw || p.kwOnly {
 							continue
 						}
 						if p.name == name && pos < len(args) {
-							obj, _ := pyjson.AsObject(args[pos])
+							obj, _ := jsonutil.AsObject(args[pos])
 							return obj
 						}
 						pos++
@@ -181,7 +182,7 @@ func orderedCtxArg(ctx context.Context, params []pyParam, name string, bound any
 			}
 		}
 	}
-	obj, _ := pyjson.AsObject(argMap(bound))
+	obj, _ := jsonutil.AsObject(argMap(bound))
 	return obj
 }
 
@@ -222,13 +223,13 @@ func argList(v any) []any {
 }
 
 func argFloat(v any, def float64) float64 {
-	if f, ok := pyFloat(v); ok {
+	if f, err := anyutil.ToFloat(v); err == nil || errors.Is(err, anyutil.ErrRange) {
 		return f
 	}
 	return def
 }
 
-// ArgFloat reads a plugin argument the way float() does, def when it does not convert
+// ArgFloat gives the number a plugin argument converts to, def when it does not convert
 func ArgFloat(v any, def float64) float64 { return argFloat(v, def) }
 
 // Callable argument of a registrar, a TypeError naming the parameter when the plugin passed something else

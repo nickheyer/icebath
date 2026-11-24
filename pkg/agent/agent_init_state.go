@@ -6,13 +6,13 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
 	"github.com/nickheyer/icebath/pkg/logging"
 	"github.com/nickheyer/icebath/pkg/memory"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/state"
 	"github.com/nickheyer/icebath/pkg/tools"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
 )
 
 var (
@@ -26,9 +26,9 @@ var (
 // Fresh control flow state for interrupts, steer, redirect, delegation and background review
 func setControlStateDefaults(a *AIAgent) {
 	a.toolGuardrails = tools.NewToolCallGuardrailController(nil)
-	a.hardInterruptRequested = &pythread.Event{}
-	a.clientLock = &pythread.RLock{}
-	a.modelRequestActive = &pythread.Event{}
+	a.hardInterruptRequested = &syncutil.Event{}
+	a.clientLock = &syncutil.ReentrantMutex{}
+	a.modelRequestActive = &syncutil.Event{}
 	a.supportsActiveTurnRedirect = true
 	a.pendingSteerLock = &sync.Mutex{}
 	a.pendingRedirectLock = &sync.Mutex{}
@@ -57,7 +57,7 @@ func setStreamStateDefaults(a *AIAgent) {
 	a.streamThinkScrubber = provider.NewStreamingThinkScrubber()
 	a.setCurrentStreamedAssistantText("")
 	a.deliveredInterimTexts = map[string]bool{}
-	a.streamWriterLock, a.streamWriterTLS = &sync.Mutex{}, &pythread.Local{}
+	a.streamWriterLock, a.streamWriterTLS = &sync.Mutex{}, &syncutil.GoroutineLocal[any]{}
 	a.anthropicImageFallbackCache = map[string]string{}
 }
 

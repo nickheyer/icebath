@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type reviewParentDouble struct{ prompt string }
@@ -178,7 +178,7 @@ func TestBriefingIncludesLoadedSkillsInstruction(t *testing.T) {
 }
 
 func TestFormatDispatchNoteDispatched(t *testing.T) {
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("status", "dispatched")
 	result.Set("review_model", "opus")
 	note := FormatDispatchNote(result, strings.Repeat("security\n", 100))

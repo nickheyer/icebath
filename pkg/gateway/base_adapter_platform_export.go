@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // Owner the message handler was bound from, the runner of a bound method and nil for a closure
@@ -40,13 +40,13 @@ func CoerceAllowSet(raw any) map[string]bool {
 	raw = DecodeJSONListLiteral(raw)
 	if items, ok := raw.([]any); ok {
 		for _, item := range items {
-			if part := strings.TrimSpace(pyrepr.Str(item)); part != "" {
+			if part := strings.TrimSpace(anyutil.String(item)); part != "" {
 				out[part] = true
 			}
 		}
 		return out
 	}
-	for _, part := range strings.Split(pyrepr.Str(raw), ",") {
+	for _, part := range strings.Split(anyutil.String(raw), ",") {
 		if part = strings.TrimSpace(part); part != "" {
 			out[part] = true
 		}

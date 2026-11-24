@@ -4,18 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Refusal the editor shows as the command's reply while the prompt itself ends normally
@@ -110,7 +110,7 @@ func gatewayInfo(ctx context.Context, a *GatewayACPAgent, sessionID, command, ar
 	if command == "tools" {
 		return toolsText(info), nil, nil
 	}
-	plain, _ := pyjson.Plain(info).(map[string]any)
+	plain, _ := jsonutil.Plain(info).(map[string]any)
 	return modelText("Current model", plain), nil, nil
 }
 
@@ -141,7 +141,7 @@ func gatewayDiscardUnknown(ctx context.Context, a *GatewayACPAgent, sessionID, c
 	}
 	snapshot, _ := a.snapshots.Get(sessionID)
 	pending, _ := dget(snapshot, "pending").([]any)
-	var lost *pyjson.Object
+	var lost *jsonutil.Object
 	for _, raw := range pending {
 		if row := asObject(raw); dget(row, "admission_id") == admissionID && dget(row, "status") == "unknown" {
 			lost = row
@@ -179,35 +179,35 @@ func gatewayForward(ctx context.Context, a *GatewayACPAgent, link gatewayLink, s
 		return "", nil, err
 	}
 	if kind := dget(reply, "type"); kind == "skill" || kind == "send" {
-		if notice := dget(reply, "notice"); truthy(notice) && a.conn != nil {
-			if err := a.sessionUpdate(ctx, a.editorID(sessionID), pyacp.UpdateAgentMessageText(pyStr(notice)+"\n")); err != nil {
+		if notice := dget(reply, "notice"); anyutil.IsTrue(notice) && a.conn != nil {
+			if err := a.sessionUpdate(ctx, a.editorID(sessionID), acputil.UpdateAgentMessageText(anyutil.String(notice)+"\n")); err != nil {
 				return "", nil, err
 			}
 		}
 		if !dhas(reply, "message") {
 			return "", nil, errors.New("the gateway reply has no message")
 		}
-		message := pyStr(dget(reply, "message"))
+		message := anyutil.String(dget(reply, "message"))
 		return "", &message, nil
 	}
 	for _, key := range []string{"output", "notice"} {
-		if v := dget(reply, key); truthy(v) {
-			return pyStr(v), nil, nil
+		if v := dget(reply, key); anyutil.IsTrue(v) {
+			return anyutil.String(v), nil, nil
 		}
 	}
 	return fmt.Sprintf("/%s: no output", command), nil, nil
 }
 
 func gatewayRename(ctx context.Context, a *GatewayACPAgent, link gatewayLink, sessionID, title string) (string, error) {
-	payload := pyjson.ObjectOf("title", title)
+	payload := jsonutil.ObjectOf("title", title)
 	result, err := a.mutations.Apply(ctx, a.mutationRPC(link), sessionID, "rename", payload, nil)
 	if err != nil {
 		return "", err
 	}
 	a.mutations.Acknowledge(sessionID, "rename", payload)
 	shown := title
-	if v := result["title"]; truthy(v) {
-		shown = pyStr(v)
+	if v := result["title"]; anyutil.IsTrue(v) {
+		shown = anyutil.String(v)
 	}
 	return "Session title set: " + shown, nil
 }
@@ -217,21 +217,18 @@ func gatewayRewind(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 	retry := command == "retry"
 	turns := int64(1)
 	if !retry && arg != "" {
-		if !pystr.StrIsDigit(arg) {
+		if !textutil.IsDigits(arg) {
 			return "", nil, &CommandRefused{Msg: "Usage: /undo [N]"}
 		}
-		n, err := pyint.Of(arg)
-		if err != nil {
+		// A count past int64 exceeds every transcript: ParseInt then gives the largest int64, which finds the same nothing
+		n, err := strconv.ParseInt(arg, 10, 64)
+		if err != nil && !errors.Is(err, strconv.ErrRange) {
 			return "", nil, err
 		}
-		if n.Sign() <= 0 {
+		if n <= 0 {
 			return "", nil, &CommandRefused{Msg: "Usage: /undo [N]"}
 		}
-		// A count past int64 exceeds every transcript, so the largest int64 finds the same nothing
-		turns = math.MaxInt64
-		if n.IsInt64() {
-			turns = n.Int64()
-		}
+		turns = n
 	}
 	target := RewindTo(turns, retry)
 	var payload MutationDerive = func(snapshot map[string]any) (map[string]any, error) {
@@ -250,7 +247,7 @@ func gatewayRewind(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 	if retry {
 		missing = "cli.session.retry_no_user_message"
 	}
-	if result["status"] == "nothing" || !truthy(result["rewound_count"]) {
+	if result["status"] == "nothing" || !anyutil.IsTrue(result["rewound_count"]) {
 		a.mutations.Acknowledge(sessionID, "rewind", payload)
 		return i18n.T(ctx, missing, "", nil), nil, nil
 	}
@@ -281,7 +278,7 @@ func gatewayRewind(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 	if turns == 1 {
 		plural = ""
 	}
-	reply := fmt.Sprintf("Undid %d turn%s (%s message(s)).\n", turns, plural, pyStr(result["rewound_count"]))
+	reply := fmt.Sprintf("Undid %d turn%s (%s message(s)).\n", turns, plural, anyutil.String(result["rewound_count"]))
 	if removed != "" {
 		reply += "Removed message: " + removed
 	}
@@ -332,7 +329,7 @@ func gatewaySteer(ctx context.Context, a *GatewayACPAgent, sessionID, text strin
 
 // Applies a retained session mutation for a typed command and reports what it changed
 func gatewayMutate(ctx context.Context, a *GatewayACPAgent, link gatewayLink, sessionID, command, arg string) (string, error) {
-	operation, payload := "reset", pyjson.NewObject()
+	operation, payload := "reset", jsonutil.NewObject()
 	if command != "new" {
 		var err error
 		if operation, payload, err = SlashMutation("/"+command, arg); err != nil {
@@ -344,7 +341,7 @@ func gatewayMutate(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 		if err != nil {
 			return "", err
 		}
-		plain, _ := pyjson.Plain(info).(map[string]any)
+		plain, _ := jsonutil.Plain(info).(map[string]any)
 		return modelText("Current model", plain), nil
 	}
 	var confirm MutationConfirm
@@ -377,7 +374,7 @@ func gatewayMutate(ctx context.Context, a *GatewayACPAgent, link gatewayLink, se
 		switch operation {
 		case "model":
 			reply = modelText("Model switched to", result)
-			if payload.GetOr("once", nil) == true {
+			if payload.ValueOr("once", nil) == true {
 				reply = modelText("Model switched for the next turn to", result)
 			}
 		case "compress":
@@ -412,7 +409,7 @@ var unchangedReplies = map[string]func(ctx context.Context, result map[string]an
 		items, _ := raw.([]any)
 		lines := make([]string, len(items))
 		for i, line := range items {
-			lines[i] = pyStr(line)
+			lines[i] = anyutil.String(line)
 		}
 		return strings.Join(lines, "\n"), nil
 	},
@@ -438,14 +435,14 @@ func refreshContext(ctx context.Context, a *GatewayACPAgent, link gatewayLink, s
 		raw, _ := dget(snapshot, "messages").([]any)
 		var messages []map[string]any
 		for _, item := range raw {
-			if obj := asObject(item); obj != nil && !truthy(dget(obj, "archived")) {
-				plain, _ := pyjson.Plain(obj).(map[string]any)
+			if obj := asObject(item); obj != nil && !anyutil.IsTrue(dget(obj, "archived")) {
+				plain, _ := jsonutil.Plain(obj).(map[string]any)
 				messages = append(messages, plain)
 			}
 		}
-		merged := pyjson.NewObject()
-		for _, key := range stats.Keys {
-			merged.Set(key, stats.Vals[key])
+		merged := jsonutil.NewObject()
+		for _, key := range stats.Keys() {
+			merged.Set(key, stats.Value(key))
 		}
 		merged.Set("context_length", dget(a.usage[sessionID], "context_length"))
 		tokens := 0
@@ -461,8 +458,8 @@ func refreshContext(ctx context.Context, a *GatewayACPAgent, link gatewayLink, s
 // Reply for a pick stored for the next turn
 func deferredPickText(result map[string]any) string {
 	model := "The picked model"
-	if v := result["model"]; truthy(v) {
-		model = pyStr(v)
+	if v := result["model"]; anyutil.IsTrue(v) {
+		model = anyutil.String(v)
 	}
 	return model + " applies from your next message."
 }
@@ -470,18 +467,18 @@ func deferredPickText(result map[string]any) string {
 // Reply for a deferred pick the owner dropped at the turn boundary
 func refusedPickText(update map[string]any) string {
 	current := "the current model"
-	if v := update["model"]; truthy(v) {
-		current = pyStr(v)
+	if v := update["model"]; anyutil.IsTrue(v) {
+		current = anyutil.String(v)
 	}
-	if v := update["provider"]; truthy(v) {
-		current += fmt.Sprintf(" (%s)", pyStr(v))
+	if v := update["provider"]; anyutil.IsTrue(v) {
+		current += fmt.Sprintf(" (%s)", anyutil.String(v))
 	}
 	target, reason := "the picked model", "refused"
-	if v := update["target_model"]; truthy(v) {
-		target = pyStr(v)
+	if v := update["target_model"]; anyutil.IsTrue(v) {
+		target = anyutil.String(v)
 	}
-	if v := update["reason"]; truthy(v) {
-		reason = pyStr(v)
+	if v := update["reason"]; anyutil.IsTrue(v) {
+		reason = anyutil.String(v)
 	}
 	return fmt.Sprintf("Model switch to %s was not applied (%s); still using %s.", target, reason, current)
 }
@@ -490,8 +487,8 @@ func summaryText(result map[string]any) string {
 	summary, _ := result["summary"].(map[string]any)
 	var lines []string
 	for _, key := range []string{"headline", "token_line", "note"} {
-		if v := summary[key]; truthy(v) {
-			lines = append(lines, pyStr(v))
+		if v := summary[key]; anyutil.IsTrue(v) {
+			lines = append(lines, anyutil.String(v))
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -499,27 +496,27 @@ func summaryText(result map[string]any) string {
 
 func modelText(label string, fields map[string]any) string {
 	model := "unknown"
-	if v := fields["model"]; truthy(v) {
-		model = pyStr(v)
+	if v := fields["model"]; anyutil.IsTrue(v) {
+		model = anyutil.String(v)
 	}
 	lines := []string{label + ": " + model}
-	if v := fields["provider"]; truthy(v) {
-		lines = append(lines, "Provider: "+pyStr(v))
+	if v := fields["provider"]; anyutil.IsTrue(v) {
+		lines = append(lines, "Provider: "+anyutil.String(v))
 	}
 	return strings.Join(lines, "\n")
 }
 
 // Session tools by toolset from session.info
-func toolsText(info *pyjson.Object) string {
-	groups, _ := dget(info, "tools").(*pyjson.Object)
+func toolsText(info *jsonutil.Object) string {
+	groups, _ := dget(info, "tools").(*jsonutil.Object)
 	nameSet := map[string]bool{}
 	byToolset := map[string][]string{}
 	if groups != nil {
-		for _, toolset := range groups.Keys {
-			items, _ := groups.Vals[toolset].([]any)
+		for _, toolset := range groups.Keys() {
+			items, _ := groups.Value(toolset).([]any)
 			for _, item := range items {
-				nameSet[pyStr(item)] = true
-				byToolset[toolset] = append(byToolset[toolset], pyStr(item))
+				nameSet[anyutil.String(item)] = true
+				byToolset[toolset] = append(byToolset[toolset], anyutil.String(item))
 			}
 		}
 	}
@@ -527,7 +524,7 @@ func toolsText(info *pyjson.Object) string {
 		var toolsets []string
 		if raw, ok := dget(info, "enabled_toolsets").([]any); ok {
 			for _, item := range raw {
-				toolsets = append(toolsets, pyStr(item))
+				toolsets = append(toolsets, anyutil.String(item))
 			}
 		}
 		if len(toolsets) > 0 {

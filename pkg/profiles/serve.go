@@ -11,7 +11,7 @@ import (
 	"syscall"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 	"gopkg.in/yaml.v3"
 )
 
@@ -46,7 +46,7 @@ var (
 // Truthiness of gateway.standalone, strings through the shared token parser and other values by Python bool
 func standaloneTruthy(value any) bool {
 	if s, ok := value.(string); ok {
-		v, known := pystr.BoolToken(s)
+		v, known := textutil.ParseBool(s)
 		return known && v
 	}
 	return pyTruthy(value)

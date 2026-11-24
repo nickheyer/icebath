@@ -13,7 +13,8 @@ func dedupeAgentTurn(t *testing.T, history []any, userMessage, answer string) ma
 	t.Helper()
 	messages := make([]map[string]any, 0, len(history)+2)
 	for _, h := range history {
-		messages = append(messages, asMap(h))
+		m, _ := jsonutil.AsMap(h)
+		messages = append(messages, m)
 	}
 	state.AppendMessage(&messages, map[string]any{"role": "user", "content": userMessage}, nil)
 	if _, err := state.RepairMessageSequence(&messages); err != nil {

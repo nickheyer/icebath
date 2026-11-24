@@ -11,12 +11,12 @@ import (
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/profiles"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Steward owning the sealed install tree, installed by cmd/icebath over the self update steward probe
@@ -160,7 +160,7 @@ func dispatchViaServiceManagerIfS6(ctx context.Context, w io.Writer, action, pro
 		case regErr != nil:
 			err = regErr
 		case registered:
-			fmt.Fprintf(w, "✓ registered the s6 gateway slot for profile %s\n", pyrepr.Repr(profile))
+			fmt.Fprintf(w, "✓ registered the s6 gateway slot for profile %s\n", anyutil.Quote(profile))
 			err = mgr.Start(service)
 		}
 	}
@@ -209,7 +209,7 @@ func dispatchAllViaServiceManagerIfS6(ctx context.Context, w io.Writer, action s
 		verb = "stopped"
 	}
 	if succeeded := len(names) - len(failures); succeeded > 0 {
-		fmt.Fprintf(w, "✓ %s %d profile gateway(s) under s6\n", pystr.Capitalize(verb), succeeded)
+		fmt.Fprintf(w, "✓ %s %d profile gateway(s) under s6\n", textutil.UpperFirst(strings.ToLower(verb)), succeeded)
 	}
 	for _, f := range failures {
 		fmt.Fprintf(w, "✗ Could not %s gateway-%s: %s\n", action, f.profile, f.err)
@@ -230,7 +230,7 @@ func installedServiceKind(ctx context.Context) (string, error) {
 // Whether err is a checked subprocess failure
 func isCalledProcessError(err error) bool {
 	var gwErr *gateway.CalledProcessError
-	var spErr *pysubprocess.CalledProcessError
+	var spErr *executil.StatusError
 	return errors.As(err, &gwErr) || errors.As(err, &spErr)
 }
 

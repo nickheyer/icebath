@@ -11,8 +11,9 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	"gopkg.in/yaml.v3"
 )
 
@@ -130,7 +131,7 @@ func TestConfigureToolCategorySingleProviderRunsItsHook(t *testing.T) {
 	want := "\n  --- 🖱️ Computer Use (macOS/Windows/Linux) (cua-driver (background)) ---\n" +
 		"    Background computer-use via cua-driver — does NOT steal your cursor or focus. Works with any model.\n" +
 		"✓   cua-driver (background) - no configuration needed!\n"
-	if out.String() != want || installs != 1 || !pyjson.Equal(map[string]any(cfg), map[string]any{"computer_use": map[string]any{"backend": "cua"}}) {
+	if out.String() != want || installs != 1 || !anyutil.Equal(map[string]any(cfg), map[string]any{"computer_use": map[string]any{"backend": "cua"}}) {
 		t.Fatalf("output %q installs %d cfg %v", out.String(), installs, cfg)
 	}
 	s, out = newTestToolsSetup(t, "")
@@ -234,7 +235,7 @@ func TestConfigureXAIImagineStorageChoices(t *testing.T) {
 		if err := s.configureXAIImagineStorage("video_gen", cfg); err != nil {
 			t.Fatal(err)
 		}
-		if got, _ := config.CfgGet(cfg, "video_gen", "xai", "storage"); !pyjson.Equal(got, c.storage) {
+		if got, _ := config.CfgGet(cfg, "video_gen", "xai", "storage"); !anyutil.Equal(got, c.storage) {
 			t.Fatalf("input %q storage %v", c.input, got)
 		}
 		assertLinesInOrder(t, out.String(),
@@ -251,7 +252,7 @@ func TestSelectPluginGenProviderWritesTheVendor(t *testing.T) {
 	if err := s.selectPluginGenProvider("video_gen", "xai", cfg); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(cfg["video_gen"], map[string]any{"provider": "xai", "xai": map[string]any{"storage": map[string]any{"enabled": false}}}) {
+	if !anyutil.Equal(cfg["video_gen"], map[string]any{"provider": "xai", "xai": map[string]any{"storage": map[string]any{"enabled": false}}}) {
 		t.Fatalf("video section %v", cfg["video_gen"])
 	}
 	assertLinesInOrder(t, out.String(), "✓   video_gen.provider set to: xai\n", "✓   xAI stored public URLs disabled\n")
@@ -300,14 +301,14 @@ func TestFinishProviderSelectionRunsTheModelPickers(t *testing.T) {
 	if err := s.finishProviderSelection(toolRow("FAL", "", "", nil, "imagegen_backend", "fal"), cfg); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(cfg["image_gen"], map[string]any{"model": "fal-ai/flux", "provider": "fal"}) {
+	if !anyutil.Equal(cfg["image_gen"], map[string]any{"model": "fal-ai/flux", "provider": "fal"}) {
 		t.Fatalf("fal pick %v", cfg["image_gen"])
 	}
 }
 
 func TestPrintProviderSelectionLines(t *testing.T) {
 	for _, c := range []struct {
-		row         *pyjson.Object
+		row         *jsonutil.Object
 		reconfigure bool
 		want        string
 	}{
@@ -391,7 +392,7 @@ func TestConfigureProviderKeyFlows(t *testing.T) {
 	if out.String() != "✓   FIRST_KEY: already configured\n\n⚠     Skipped\n" {
 		t.Fatalf("skipped key output %q", out.String())
 	}
-	if !pyjson.Equal(map[string]any(cfg), map[string]any{"tts": map[string]any{"provider": "twokeys"}}) {
+	if !anyutil.Equal(map[string]any(cfg), map[string]any{"tts": map[string]any{"provider": "twokeys"}}) {
 		t.Fatalf("config %v", cfg)
 	}
 	s, out = newTestToolsSetup(t, "")
@@ -519,7 +520,7 @@ func TestConfigureVisionProviderModelPicker(t *testing.T) {
 	if err := s.configureVisionProviderModel(cfg, vision); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(vision, map[string]any{"provider": "openrouter", "model": "openai/gpt-4o"}) || !slices.Equal(asked, []string{"openrouter|m|http://old"}) {
+	if !anyutil.Equal(vision, map[string]any{"provider": "openrouter", "model": "openai/gpt-4o"}) || !slices.Equal(asked, []string{"openrouter|m|http://old"}) {
 		t.Fatalf("vision %v asked %v", vision, asked)
 	}
 	assertLinesInOrder(t, out.String(), "  Choose vision provider:", " 1. OpenRouter (2 models)\n", " 2. Local\n", " 3. Cancel\n",
@@ -533,7 +534,7 @@ func TestConfigureVisionProviderModelPicker(t *testing.T) {
 	if err := s.configureVisionProviderModel(config.Tree{"auxiliary": map[string]any{"vision": vision}}, vision); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(vision, map[string]any{"provider": "local", "model": "my/llava-13b"}) {
+	if !anyutil.Equal(vision, map[string]any{"provider": "local", "model": "my/llava-13b"}) {
 		t.Fatalf("custom model %v", vision)
 	}
 	assertLinesInOrder(t, out.String(), "  Choose vision model for local:", "    Model id: ")
@@ -635,7 +636,7 @@ func assertVisionKeys(t *testing.T, cfg config.Tree, want map[string]any, absent
 	raw, _ := config.CfgGet(cfg, "auxiliary", "vision")
 	vision, _ := pyDictOf(raw)
 	for k, v := range want {
-		if !pyjson.Equal(vision[k], v) {
+		if !anyutil.Equal(vision[k], v) {
 			t.Fatalf("auxiliary.vision.%s = %v in %v", k, vision[k], vision)
 		}
 	}
@@ -647,4 +648,4 @@ func assertVisionKeys(t *testing.T, cfg config.Tree, want map[string]any, absent
 }
 
 // Rows of a category as objects
-func catalogProviders(cat *pyjson.Object) []*pyjson.Object { return catProviders(cat) }
+func catalogProviders(cat *jsonutil.Object) []*jsonutil.Object { return catProviders(cat) }

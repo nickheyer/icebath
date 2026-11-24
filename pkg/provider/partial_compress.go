@@ -1,11 +1,11 @@
 package provider
 
 import (
+	"errors"
 	"fmt"
-	"math/big"
+	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -98,19 +98,13 @@ func SummarizeCompressPreview(history []map[string]any, partial bool, keepLast i
 	}
 }
 
-// Keep count token clamped to one through the ceiling, the default when int would raise
+// Keep count token clamped to one through the ceiling, the default when it is not a whole number
 func coerceKeep(value string) int {
-	n, ok := pystr.IntText(value)
-	if !ok {
+	n, err := textutil.ParseInt(value)
+	if err != nil && !errors.Is(err, strconv.ErrRange) {
 		return DefaultKeepLast
 	}
-	if n.Cmp(big.NewInt(MaxKeepLast)) > 0 {
-		return MaxKeepLast
-	}
-	if n.Cmp(big.NewInt(1)) < 0 {
-		return 1
-	}
-	return int(n.Int64())
+	return int(min(max(n, 1), MaxKeepLast))
 }
 
 // Summarized head and verbatim tail of the last keep exchanges, whole history and no tail when the head is empty

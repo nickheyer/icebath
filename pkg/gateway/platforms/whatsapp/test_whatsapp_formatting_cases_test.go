@@ -13,8 +13,8 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/mediacache"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Running adapter with open DM and group policy and the allow all opt in, the formatting cases harness
@@ -46,9 +46,9 @@ func recordingBridge(t *testing.T, a *WhatsAppAdapter, messageID string) *[]map[
 }
 
 // Bridge payload object from JSON text
-func payload(t *testing.T, text string) *pyjson.Object {
+func payload(t *testing.T, text string) *jsonutil.Object {
 	t.Helper()
-	obj, err := pyjson.LoadsDict(text)
+	obj, err := jsonutil.DecodeObject(text)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,10 +151,10 @@ func TestBridgeEventMetadataQuotedReplyMetadataIsPreservedInRawMessage(t *testin
 	if event == nil {
 		t.Fatal("event dropped")
 	}
-	raw := event.RawMessage.(*pyjson.Object)
-	if raw.GetOr("quotedMessageId", nil) != "outbound-msg" || raw.GetOr("quotedParticipant", nil) != "99999999999@s.whatsapp.net" ||
-		raw.GetOr("quotedRemoteJid", nil) != "15551234567@s.whatsapp.net" || raw.GetOr("hasQuotedMessage", nil) != true {
-		t.Fatalf("raw = %v", raw.Vals)
+	raw := event.RawMessage.(*jsonutil.Object)
+	if raw.ValueOr("quotedMessageId", nil) != "outbound-msg" || raw.ValueOr("quotedParticipant", nil) != "99999999999@s.whatsapp.net" ||
+		raw.ValueOr("quotedRemoteJid", nil) != "15551234567@s.whatsapp.net" || raw.ValueOr("hasQuotedMessage", nil) != true {
+		t.Fatalf("raw = %v", raw)
 	}
 }
 

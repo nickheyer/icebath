@@ -13,17 +13,18 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/pm"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const (
@@ -50,16 +51,16 @@ func HostStateDir() string {
 		return override
 	}
 	stateHome := os.Getenv("XDG_STATE_HOME")
-	if !pypath.IsAbs(stateHome) {
-		stateHome = pypath.Join(pypath.Expanduser("~"), ".local", "state")
+	if !filepath.IsAbs(stateHome) {
+		stateHome = pathutil.Join(pathutil.ExpandUser("~"), ".local", "state")
 	}
-	return pypath.Join(stateHome, "icebath", "gateway-locks")
+	return pathutil.Join(stateHome, "icebath", "gateway-locks")
 }
 
 // This install's host obligation record, keyed by the normcased install root
 func HostObligationPath() string {
-	sum := sha256.Sum256([]byte(pypath.Normcase(obligationInstall())))
-	return pypath.PathJoin(HostStateDir(), hostObligationNameStem+"-"+hex.EncodeToString(sum[:])[:16]+".json")
+	sum := sha256.Sum256([]byte(pathutil.FoldCase(obligationInstall())))
+	return pathutil.Join(HostStateDir(), hostObligationNameStem+"-"+hex.EncodeToString(sum[:])[:16]+".json")
 }
 
 // Record a reader honours, this install's own else an older release's unkeyed one
@@ -74,8 +75,8 @@ func owedPath() string {
 	return path
 }
 
-func writeObligationRecord(path string, record *pyjson.Object) error {
-	text, err := pyjson.Dumps(record, pyjson.Indent(2), pyjson.EnsureASCII(false))
+func writeObligationRecord(path string, record *jsonutil.Object) error {
+	text, err := jsonutil.Encode(record, jsonutil.Indent(2))
 	if err != nil {
 		return err
 	}
@@ -83,23 +84,23 @@ func writeObligationRecord(path string, record *pyjson.Object) error {
 }
 
 // Published obligation record, nil when absent, corrupt or another version
-func ReadHostObligation() *pyjson.Object { return readObligationRecord(owedPath()) }
+func ReadHostObligation() *jsonutil.Object { return readObligationRecord(owedPath()) }
 
-func readObligationRecord(path string) *pyjson.Object {
+func readObligationRecord(path string) *jsonutil.Object {
 	raw, err := os.ReadFile(path)
 	if err != nil {
 		return nil
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return nil
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return nil
 	}
-	record, ok := v.(*pyjson.Object)
-	if !ok || !pyrepr.Equal(record.Vals["version"], obligationRecordVersion) {
+	record, ok := v.(*jsonutil.Object)
+	if !ok || !anyutil.Equal(record.Value("version"), obligationRecordVersion) {
 		return nil
 	}
 	return record
@@ -131,12 +132,12 @@ func ArmHostObligation(ctx context.Context, marker, expectedSHA string, runtimes
 	if WriteHostObligation(ctx, expectedSHA, runtimes, profile, owner) {
 		return true, nil
 	}
-	lines := []string{"started=" + pyrepr.Float(obligationNow()), fmt.Sprintf("pid=%d", os.Getpid())}
+	lines := []string{"started=" + strconv.FormatFloat(obligationNow(), 'f', -1, 64), fmt.Sprintf("pid=%d", os.Getpid())}
 	if expectedSHA != "" {
 		lines = append(lines, "expected_sha="+expectedSHA)
 	}
 	if runtimes != nil {
-		inventory, err := pyjson.Dumps(pyjson.ObjectOf("version", 1, "runtimes", runtimes))
+		inventory, err := jsonutil.Encode(jsonutil.ObjectOf("version", 1, "runtimes", runtimes))
 		if err != nil {
 			return false, err
 		}
@@ -237,8 +238,8 @@ func writeObligationLocked(ctx context.Context, path, expectedSHA string, runtim
 			return false
 		}
 	}
-	if existing != nil && expectedSHA != "" && pyrepr.Equal(existing.Vals["expected_sha"], expectedSHA) {
-		fields := pyjson.NewObject()
+	if existing != nil && expectedSHA != "" && anyutil.Equal(existing.Value("expected_sha"), expectedSHA) {
+		fields := jsonutil.NewObject()
 		owners := obligationOwners(existing)
 		if owner != "" && !containsString(owners, owner) {
 			fields.Set("owners", stringList(append(append([]string(nil), owners...), owner)))
@@ -246,29 +247,29 @@ func writeObligationLocked(ctx context.Context, path, expectedSHA string, runtim
 				fields.Set("found", found)
 			}
 		}
-		inventory := pyjson.ObjectOf("version", 1, "runtimes", runtimes)
-		if runtimes != nil && !pyrepr.Equal(existing.Vals["inventory"], inventory) {
+		inventory := jsonutil.ObjectOf("version", 1, "runtimes", runtimes)
+		if runtimes != nil && !anyutil.Equal(existing.Value("inventory"), inventory) {
 			fields.Set("inventory", inventory)
 		}
 		if fields.Len() == 0 {
 			return true
 		}
-		merged := existing.Copy()
-		merged.Update(fields)
+		merged := existing.Clone()
+		merged.Merge(fields)
 		if err := writeObligationRecord(path, merged); err != nil {
 			obligationLog().Debug(fmt.Sprintf("Could not amend host update-restart obligation: %s", errchain.OSText(err)))
 			return false
 		}
 		return true
 	}
-	payload := pyjson.ObjectOf("version", obligationRecordVersion, "started", obligationNow(), "pid", os.Getpid(),
+	payload := jsonutil.ObjectOf("version", obligationRecordVersion, "started", obligationNow(), "pid", os.Getpid(),
 		"armed_by_profile", profile, "expected_sha", expectedSHA)
 	if owner != "" {
 		payload.Set("owners", []any{owner})
 		payload.Set("found", found)
 	}
 	if runtimes != nil {
-		payload.Set("inventory", pyjson.ObjectOf("version", 1, "runtimes", runtimes))
+		payload.Set("inventory", jsonutil.ObjectOf("version", 1, "runtimes", runtimes))
 	}
 	if _, err := home.MakeUserDir(ctx, filepath.Dir(path), 0o777, true, true); err != nil {
 		obligationLog().Debug(fmt.Sprintf("Could not write host update-restart obligation: %s", errchain.OSText(err)))
@@ -295,17 +296,17 @@ func withObligationMutex(ctx context.Context, path string, fn func() error) erro
 	return fn()
 }
 
-func obligationOwners(record *pyjson.Object) []string {
+func obligationOwners(record *jsonutil.Object) []string {
 	if record == nil {
 		return nil
 	}
-	list, ok := record.Vals["owners"].([]any)
+	list, ok := record.Value("owners").([]any)
 	if !ok {
 		return nil
 	}
 	out := make([]string, len(list))
 	for i, o := range list {
-		out[i] = pyrepr.Str(o)
+		out[i] = anyutil.String(o)
 	}
 	return out
 }
@@ -320,7 +321,7 @@ func containsString(values []string, s string) bool {
 }
 
 // What owner's release puts back as base64, nil for absent, an unreadable record raising
-func baselineFor(owner string, existing *pyjson.Object, path string) (any, error) {
+func baselineFor(owner string, existing *jsonutil.Object, path string) (any, error) {
 	owners := obligationOwners(existing)
 	if !containsString(owners, owner) {
 		return foundField(path)
@@ -332,11 +333,11 @@ func baselineFor(owner string, existing *pyjson.Object, path string) (any, error
 		}
 	}
 	if len(others) == 0 {
-		return existing.Vals["found"], nil
+		return existing.Value("found"), nil
 	}
-	shared := existing.Copy()
+	shared := existing.Clone()
 	shared.Set("owners", stringList(others))
-	text, err := pyjson.Dumps(shared, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(shared, jsonutil.Indent(2))
 	if err != nil {
 		return nil, err
 	}
@@ -377,12 +378,12 @@ func releaseObligationLocked(path, owner string) error {
 		}
 	}
 	if len(remaining) > 0 {
-		merged := record.Copy()
+		merged := record.Clone()
 		merged.Set("owners", stringList(remaining))
 		return writeObligationRecord(path, merged)
 	}
 	var found []byte
-	if raw := record.Vals["found"]; raw != nil {
+	if raw := record.Value("found"); raw != nil {
 		text, ok := raw.(string)
 		if !ok || strings.ContainsAny(text, "\r\n") {
 			return nil
@@ -455,24 +456,24 @@ func ObligationFields() map[string]string {
 		return nil
 	}
 	fields := map[string]string{"expected_sha": ""}
-	if sha := record.Vals["expected_sha"]; truthy(sha) {
-		fields["expected_sha"] = pyrepr.Str(sha)
+	if sha := record.Value("expected_sha"); truthy(sha) {
+		fields["expected_sha"] = anyutil.String(sha)
 	}
-	if inventory, present := record.Vals["inventory"]; present && inventory != nil {
-		fields["inventory"], _ = pyjson.Dumps(inventory)
+	if inventory, present := record.Get("inventory"); present && inventory != nil {
+		fields["inventory"], _ = jsonutil.Encode(inventory)
 	}
 	return fields
 }
 
 // Records that the host process restarted onto sha, never failing
 func MarkHostRestartCompleted(ctx context.Context, sha string) {
-	updateObligationRecord(ctx, func(record *pyjson.Object) {
-		record.Set("restarted", pyjson.ObjectOf("sha", sha, "pid", os.Getpid(), "at", obligationNow()))
+	updateObligationRecord(ctx, func(record *jsonutil.Object) {
+		record.Set("restarted", jsonutil.ObjectOf("sha", sha, "pid", os.Getpid(), "at", obligationNow()))
 	}, "stamp restart completion on")
 }
 
 // Reads, changes and rewrites an armed record under the guard, no record meaning no write
-func updateObligationRecord(ctx context.Context, change func(*pyjson.Object), what string) {
+func updateObligationRecord(ctx context.Context, change func(*jsonutil.Object), what string) {
 	path := owedPath()
 	if readObligationRecord(path) == nil {
 		return
@@ -496,13 +497,13 @@ func HostRestartAlreadyCompleted(sha string) bool {
 	if record == nil || sha == "" {
 		return false
 	}
-	restarted, ok := record.Vals["restarted"].(*pyjson.Object)
+	restarted, ok := record.Value("restarted").(*jsonutil.Object)
 	if !ok {
 		return false
 	}
 	got := ""
-	if v := restarted.Vals["sha"]; truthy(v) {
-		got = pyrepr.Str(v)
+	if v := restarted.Value("sha"); truthy(v) {
+		got = anyutil.String(v)
 	}
 	return got == sha
 }

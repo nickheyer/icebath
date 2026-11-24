@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestDeclaredKeyIsDurableAndCannotRebind(t *testing.T) {
@@ -51,8 +51,8 @@ func TestPersistedOwnerScopeIsPrivateStrictAndLegacySafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := admitted.Row.GetOr("payload", nil).(*pyjson.Object)
-	if stored := payload.GetOr("api_turn_v1", nil).(*pyjson.Object).GetOr("run_owner_scope", nil); stored != scope {
+	payload := admitted.Row.ValueOr("payload", nil).(*jsonutil.Object)
+	if stored := payload.ValueOr("api_turn_v1", nil).(*jsonutil.Object).ValueOr("run_owner_scope", nil); stored != scope {
 		t.Fatalf("stored scope = %v", stored)
 	}
 	prepared, err := gateway.PrepareAPIExecution(ctx, admitted.Authority, admitted.Ref, payload)
@@ -66,7 +66,7 @@ func TestPersistedOwnerScopeIsPrivateStrictAndLegacySafe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	encoded, err := pyjson.Dumps(projection)
+	encoded, err := jsonutil.Encode(projection)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,13 +131,13 @@ func TestCompressedAPIConversationKeepsItsRootQueueAndFollowsTheTip(t *testing.T
 				t.Fatalf("advance = %v, %v", entry, err)
 			}
 			if queuedFollower {
-				if err := gateway.CheckAPITurn(ctx, owner, ref, follower.Row.GetOr("payload", nil).(*pyjson.Object)); err != nil {
+				if err := gateway.CheckAPITurn(ctx, owner, ref, follower.Row.ValueOr("payload", nil).(*jsonutil.Object)); err != nil {
 					t.Fatal(err)
 				}
 			} else {
 				again := admit("second")
-				if again.Ref != ref || again.Row.GetOr("target_session_id", nil) != ref.SessionID {
-					t.Fatalf("second admission = %v %v", again.Ref, again.Row.GetOr("target_session_id", nil))
+				if again.Ref != ref || again.Row.ValueOr("target_session_id", nil) != ref.SessionID {
+					t.Fatalf("second admission = %v %v", again.Ref, again.Row.ValueOr("target_session_id", nil))
 				}
 			}
 			if tip, _ := store.PeekSessionID(route); tip != child {
@@ -148,12 +148,12 @@ func TestCompressedAPIConversationKeepsItsRootQueueAndFollowsTheTip(t *testing.T
 				t.Fatal(err)
 			}
 			for _, row := range rows {
-				if row.GetOr("target_session_id", nil) != ref.SessionID {
-					t.Fatalf("admission targets %v", row.GetOr("target_session_id", nil))
+				if row.ValueOr("target_session_id", nil) != ref.SessionID {
+					t.Fatalf("admission targets %v", row.ValueOr("target_session_id", nil))
 				}
 			}
-			if first.Row.GetOr("target_session_id", nil) != ref.SessionID {
-				t.Fatalf("first target = %v", first.Row.GetOr("target_session_id", nil))
+			if first.Row.ValueOr("target_session_id", nil) != ref.SessionID {
+				t.Fatalf("first target = %v", first.Row.ValueOr("target_session_id", nil))
 			}
 		})
 	}

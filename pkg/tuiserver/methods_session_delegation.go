@@ -11,11 +11,11 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuigateway"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 func init() {
@@ -74,19 +74,19 @@ func spawnTreeSave(ctx context.Context, rid any, params map[string]any) map[stri
 		started = *request.StartedAt
 	}
 	meta := [][2]any{{"session_id", sessionID}, {"started_at", started}, {"finished_at", finishedAt}, {"label", deref(request.Label)}}
-	snapshot := pyjson.NewObject()
+	snapshot := jsonutil.NewObject()
 	for _, kv := range meta {
 		snapshot.Set(kv[0].(string), kv[1])
 	}
 	snapshot.Set("subagents", tuigateway.Plain(request.Subagents))
-	encoded, err := pyjson.Dumps(snapshot, pyjson.EnsureASCII(false))
+	encoded, err := jsonutil.Encode(snapshot)
 	panicIf(err)
 	_, statErr := os.Stat(path)
 	listed := statErr == nil
 	if err := os.WriteFile(path, []byte(encoded), 0o644); err != nil {
-		return rpcErr(rid, 5000, "spawn_tree.save failed: "+pypath.OSErrorText(err), nil)
+		return rpcErr(rid, 5000, "spawn_tree.save failed: "+err.Error(), nil)
 	}
-	entry := pyjson.NewObject()
+	entry := jsonutil.NewObject()
 	entry.Set("path", path)
 	for _, kv := range meta {
 		entry.Set(kv[0].(string), kv[1])
@@ -99,9 +99,9 @@ func spawnTreeSave(ctx context.Context, rid any, params map[string]any) map[stri
 }
 
 // Appends an ordered entry line to the session index
-func appendSpawnTreeIndexObject(sessionDir string, entry *pyjson.Object) {
-	plain, _ := pyjson.Plain(entry).(map[string]any)
-	line, err := pyjson.Dumps(entry, pyjson.EnsureASCII(false))
+func appendSpawnTreeIndexObject(sessionDir string, entry *jsonutil.Object) {
+	plain, _ := jsonutil.Plain(entry).(map[string]any)
+	line, err := jsonutil.Encode(entry)
 	if err != nil {
 		appendSpawnTreeIndex(sessionDir, plain)
 		return
@@ -126,9 +126,9 @@ func legacySpawnTreeEntry(p, sessionDirName string) map[string]any {
 	suppress(func() {
 		data, readErr := os.ReadFile(p)
 		panicIf(readErr)
-		decoded, loadErr := pyjson.Loads(string(data))
+		decoded, loadErr := jsonutil.Decode(string(data))
 		panicIf(loadErr)
-		if dict, isDict := pyjson.Plain(decoded).(map[string]any); isDict {
+		if dict, isDict := jsonutil.Plain(decoded).(map[string]any); isDict {
 			raw = dict
 		}
 	})
@@ -137,15 +137,15 @@ func legacySpawnTreeEntry(p, sessionDirName string) map[string]any {
 		count = len(subagents)
 	}
 	sessionID := raw["session_id"]
-	if !truthy(sessionID) {
+	if !anyutil.IsTrue(sessionID) {
 		sessionID = sessionDirName
 	}
 	finished := raw["finished_at"]
-	if !truthy(finished) {
+	if !anyutil.IsTrue(finished) {
 		finished = float64(info.ModTime().UnixNano()) / 1e9
 	}
 	label := raw["label"]
-	if !truthy(label) {
+	if !anyutil.IsTrue(label) {
 		label = ""
 	}
 	return map[string]any{"path": p, "session_id": sessionID, "finished_at": finished, "started_at": raw["started_at"],
@@ -183,8 +183,8 @@ func spawnTreeList(ctx context.Context, rid any, params map[string]any) map[stri
 				if !isDict {
 					panic(fmt.Errorf("a spawn tree index entry must be a mapping, got %s", errchain.Kind(item)))
 				}
-				if p := entry["path"]; truthy(p) {
-					if _, err := os.Stat(pyrepr.Str(p)); err == nil {
+				if p := entry["path"]; anyutil.IsTrue(p) {
+					if _, err := os.Stat(anyutil.String(p)); err == nil {
 						entries = append(entries, typedRow[tuigateway.SpawnTreeEntry]("spawn_tree.list", entry))
 					}
 				}
@@ -221,11 +221,11 @@ func spawnTreeLoad(ctx context.Context, rid any, params map[string]any) map[stri
 	if err != nil || request.Path == "" {
 		return rpcErr(rid, 4000, "path required", nil)
 	}
-	resolved, err := pypath.Realpath(request.Path, pypath.Lax)
+	resolved, err := pathutil.Resolve(request.Path)
 	if err != nil {
 		return rpcErr(rid, 4030, "path outside spawn-trees root: "+err.Error(), nil)
 	}
-	root, err := pypath.Realpath(spawnTreesRoot(), pypath.Lax)
+	root, err := pathutil.Resolve(spawnTreesRoot())
 	if err != nil {
 		return rpcErr(rid, 4030, "path outside spawn-trees root: "+err.Error(), nil)
 	}
@@ -235,7 +235,7 @@ func spawnTreeLoad(ctx context.Context, rid any, params map[string]any) map[stri
 	}
 	data, err := os.ReadFile(resolved)
 	if err != nil {
-		return rpcErr(rid, 5000, "spawn_tree.load failed: "+pypath.OSErrorText(err), nil)
+		return rpcErr(rid, 5000, "spawn_tree.load failed: "+err.Error(), nil)
 	}
 	var snapshot tuigateway.SpawnTreeLoadResult
 	if err := tuigateway.Strict(data, &snapshot); err != nil {

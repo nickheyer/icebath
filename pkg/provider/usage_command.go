@@ -7,8 +7,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Where the usage command reports a missing snapshot, stderr like the command
@@ -23,7 +23,7 @@ func UsageSnapshotDocument(snapshot *AccountUsageSnapshot) map[string]any {
 			used = *w.UsedPercent
 		}
 		if w.ResetAt != nil {
-			resets = pydatetime.ISOFormat(*w.ResetAt)
+			resets = (*w.ResetAt).Format(timeutil.RFC3339Micro)
 		}
 		windows = append(windows, map[string]any{"label": w.Label, "used_percent": used, "resets_at": resets, "detail": w.Detail})
 	}
@@ -43,7 +43,7 @@ func UsageSnapshotDocument(snapshot *AccountUsageSnapshot) map[string]any {
 		"source":             snapshot.Source,
 		"title":              snapshot.Title,
 		"plan":               plan,
-		"fetched_at":         pydatetime.ISOFormat(snapshot.FetchedAt),
+		"fetched_at":         snapshot.FetchedAt.Format(timeutil.RFC3339Micro),
 		"windows":            windows,
 		"details":            details,
 		"unavailable_reason": unavailable,
@@ -62,7 +62,7 @@ func UsageCommand(ctx context.Context, env PoolEnv, ns map[string]any, w io.Writ
 		return 1, nil
 	}
 	if truthy(ns["json"]) {
-		doc, err := pyjson.Dumps(UsageSnapshotDocument(snapshot), pyjson.Indent(2))
+		doc, err := jsonutil.Encode(UsageSnapshotDocument(snapshot), jsonutil.Indent(2))
 		if err != nil {
 			return 1, err
 		}

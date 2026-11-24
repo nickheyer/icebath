@@ -11,9 +11,9 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Message fields a branch child row copies from its parent row
@@ -35,7 +35,7 @@ func branchRow(msg map[string]any) map[string]any {
 	if role, ok := msg["role"]; ok {
 		row["role"] = role
 	}
-	row["tool_name"] = pyrepr.Or(msg["tool_name"], msg["name"])
+	row["tool_name"] = anyutil.Or(msg["tool_name"], msg["name"])
 	row["api_content"] = nil
 	if sidecar, ok := agent.ExtractAPIContentSidecar(msg); ok {
 		row["api_content"] = sidecar
@@ -128,7 +128,7 @@ func (r *GatewayRunner) handleBranchCommand(ctx context.Context, event *gateway.
 				origin = current.Origin
 			}
 		}
-		text, err := pyjson.Dumps(origin.ToDict())
+		text, err := jsonutil.Encode(origin.ToDict())
 		if err != nil {
 			return ""
 		}
@@ -156,8 +156,8 @@ func (r *GatewayRunner) handleBranchCommand(ctx context.Context, event *gateway.
 			ChatType: destSource.ChatType, ThreadID: sattr(destSource.ThreadID), OriginJSON: originJSON, DisplayName: displayName,
 			SystemPrompt: systemPrompt})
 	}(); err != nil {
-		pkgLog().Error(fmt.Sprintf("Failed to create branch session: %s", pyrepr.ExceptionMessage(err)))
-		return i18n.T(ctx, "gateway.branch.create_failed", "", map[string]any{"error": pyrepr.ExceptionMessage(err)}), nil
+		pkgLog().Error(fmt.Sprintf("Failed to create branch session: %s", err.Error()))
+		return i18n.T(ctx, "gateway.branch.create_failed", "", map[string]any{"error": err.Error()}), nil
 	}
 	rows := make([]map[string]any, len(history))
 	for i, msg := range history {

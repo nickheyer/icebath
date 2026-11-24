@@ -3,7 +3,7 @@ package gateway
 import (
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
 // Reaction name of an emoji for platforms that react by name, a bare or colon wrapped name kept as given
@@ -12,5 +12,5 @@ func ReactionShortcode(emoji string) (string, bool) {
 	if trimmed != "" && strings.Trim(trimmed, "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-+") == "" {
 		return strings.ToLower(trimmed), true
 	}
-	return pyrich.EmojiShortName(emoji)
+	return consoleutil.EmojiShortName(emoji)
 }

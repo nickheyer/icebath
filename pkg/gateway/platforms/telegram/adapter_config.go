@@ -6,8 +6,8 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -58,7 +58,7 @@ func flattenRichBlocks(blocks any) string {
 					continue
 				}
 				if label := item["label"]; pyTruthy(label) {
-					lines = append(lines, strings.TrimSpace(pyrepr.Str(label)+" "+itemLines[0]))
+					lines = append(lines, strings.TrimSpace(anyutil.String(label)+" "+itemLines[0]))
 				} else {
 					lines = append(lines, itemLines[0])
 				}
@@ -115,7 +115,7 @@ func applyYAMLConfig(ctx context.Context, yamlCfg, telegramCfg map[string]any) (
 		}
 	}
 	if proxy, ok := telegramCfg["proxy_url"]; ok {
-		extras["proxy_url"] = strings.TrimSpace(pyrepr.Str(proxy))
+		extras["proxy_url"] = strings.TrimSpace(anyutil.String(proxy))
 	}
 	telegramExtra, _ := telegramCfg["extra"].(map[string]any)
 	for k, v := range telegramExtra {

@@ -3,6 +3,7 @@ package config
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"math"
@@ -12,12 +13,13 @@ import (
 	"reflect"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 var (
@@ -102,23 +104,22 @@ func SwapSafeDump(f func(any) ([]byte, error)) func() {
 
 // Writes data as YAML plus extra through a synced temp file, keeping the existing mode and owner
 func AtomicYAMLWrite(ctx context.Context, path string, data any, extra string) error {
-	return atomicYAMLWrite(ctx, path, data, extra, 0, false)
+	return atomicYAMLWrite(ctx, path, data, extra, nil)
 }
 
 // Writes like AtomicYAMLWrite with a new file created at the given mode
 func AtomicYAMLWriteCreateMode(ctx context.Context, path string, data any, extra string, createMode os.FileMode) error {
-	return atomicYAMLWrite(ctx, path, data, extra, pyfs.PosixModeBits(createMode), true)
+	return atomicYAMLWrite(ctx, path, data, extra, &createMode)
 }
 
-// Safe dumped YAML plus extra written with the existing bits kept or the create mode for a new file
-func atomicYAMLWrite(ctx context.Context, path string, data any, extra string, createMode uint32, createSet bool) error {
+// Safe dumped YAML plus extra written with the existing bits kept, else the create mode when given for a new file
+func atomicYAMLWrite(ctx context.Context, path string, data any, extra string, createMode *os.FileMode) error {
 	text, err := safeDumpImpl(data)
 	if err != nil {
 		return err
 	}
 	stem := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
-	mode, ok := pyfs.ModeForWrite(path, createMode, createSet, true)
-	return atomicWriteDoc(ctx, path, append(text, extra...), pyfs.WriteOptions{Prefix: "." + stem + "_", Mode: mode, ModeSet: ok, PreserveOwner: true})
+	return atomicWriteDoc(ctx, path, append(text, extra...), fsutil.WriteOptions{Prefix: "." + stem + "_", CreateMode: createMode, KeepOwner: true})
 }
 
 // Represented node of the safe representer, a scalar, sequence or mapping with alternating keys and values
@@ -162,11 +163,9 @@ func (r *safeRepresenter) represent(v any) (*dumpNode, error) {
 		return r.sequence(reflect.ValueOf(x))
 	case time.Time:
 		return &dumpNode{kind: 's', value: representTime(x)}, nil
-	case pydatetime.Date:
-		return &dumpNode{kind: 's', value: x.PyStr()}, nil
-	case pydatetime.DateTime:
-		return &dumpNode{kind: 's', value: x.PyStr()}, nil
-	case *pydatetime.Date, *pydatetime.DateTime, *time.Time:
+	case timeutil.Date:
+		return &dumpNode{kind: 's', value: x.String()}, nil
+	case *timeutil.Date, *time.Time:
 		return r.sharedScalar(reflect.ValueOf(x))
 	case []byte:
 		return representBinaryAsLiteralBlock(x)
@@ -192,7 +191,7 @@ func (r *safeRepresenter) represent(v any) (*dumpNode, error) {
 	case reflect.Array:
 		return r.sequence(rv)
 	}
-	return nil, &YAMLError{fmt.Errorf("cannot represent an object: %s", pyrepr.Repr(v))}
+	return nil, &YAMLError{fmt.Errorf("cannot represent an object: %s", anyutil.Quote(v))}
 }
 
 // Keys of a Go map in sorted order, the order an unordered mapping is iterated in
@@ -213,7 +212,7 @@ func sortPyKeys(keys []any) {
 	for i, k := range keys {
 		_, isStr := k.(string)
 		allStr = allStr && isStr
-		n, isInt := pyrepr.Int(k)
+		n, isInt := integerValue(k)
 		ints[i] = n
 		allInt = allInt && isInt
 	}
@@ -345,10 +344,27 @@ func representScalar(v any) (string, bool, bool) {
 	case float64:
 		return representFloat(x), false, true
 	}
-	if n, ok := pyrepr.Int(v); ok {
+	if n, ok := integerValue(v); ok {
 		return n.String(), false, true
 	}
 	return "", false, false
+}
+
+// Integer a value holds when its type is a Go integer kind, a *big.Int or an integral json.Number; a bool is no integer
+func integerValue(v any) (*big.Int, bool) {
+	switch x := v.(type) {
+	case *big.Int:
+		return x, x != nil
+	case json.Number:
+		return new(big.Int).SetString(string(x), 10)
+	}
+	switch rv := reflect.ValueOf(v); {
+	case rv.CanInt():
+		return big.NewInt(rv.Int()), true
+	case rv.CanUint():
+		return new(big.Int).SetUint64(rv.Uint()), true
+	}
+	return nil, false
 }
 
 func representFloat(f float64) string {
@@ -360,14 +376,11 @@ func representFloat(f float64) string {
 	case math.IsInf(f, -1):
 		return "-.inf"
 	}
-	return strings.ToLower(pyrepr.Float(f))
+	return strings.ToLower(strconv.FormatFloat(f, 'f', -1, 64))
 }
 
-// Date isoformat for a midnight UTC value, else the datetime isoformat with a space separator
+// Datetime in ISO form with a space separator, microseconds when there are any and the offset unless the value is UTC without a zone
 func representTime(t time.Time) string {
-	if t.Location() == time.UTC && t.Hour() == 0 && t.Minute() == 0 && t.Second() == 0 && t.Nanosecond() == 0 {
-		return t.Format("2006-01-02")
-	}
 	s := t.Format("2006-01-02 15:04:05")
 	if us := t.Nanosecond() / 1000; us != 0 {
 		s += fmt.Sprintf(".%06d", us)

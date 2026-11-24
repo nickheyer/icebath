@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestGeminiBuildRequestPreservesExplicitMaxTokensWithoutThinking(t *testing.T) {
@@ -239,7 +239,7 @@ func TestGeminiBuildRequestTranslatesResponseFormatOnBothSchemaSurfaces(t *testi
 		if gen["responseMimeType"] != "application/json" {
 			t.Fatalf("mime %v", gen)
 		}
-		out, isDict := pyjson.Dict(gen[tc.key])
+		out, isDict := jsonutil.AsMap(gen[tc.key])
 		if !isDict {
 			t.Fatalf("%s %v", tc.key, gen[tc.key])
 		}

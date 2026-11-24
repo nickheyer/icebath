@@ -1,9 +1,6 @@
 package gateway
 
 import (
-	"unicode"
-	"unicode/utf8"
-
 	"context"
 	"errors"
 	"fmt"
@@ -11,14 +8,17 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/provider"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	urlutil "github.com/nickheyer/icebath/pkg/utils/url"
 )
 
 // Seconds the one shot post delivery callback may run before it is abandoned
@@ -160,8 +160,8 @@ func (b *BasePlatformAdapter) finalizeDeliveryObligation(ctx context.Context, ob
 			return MarkDelivered(ctx, obligationID)
 		}
 		errText := ""
-		if pyrepr.Truthy(result.Error) {
-			errText = pyrepr.Str(result.Error)
+		if anyutil.IsTrue(result.Error) {
+			errText = anyutil.String(result.Error)
 		}
 		if err := MarkFailed(ctx, obligationID, errText); err != nil {
 			return err
@@ -188,17 +188,17 @@ func (b *BasePlatformAdapter) finalizeDeliveryObligation(ctx context.Context, ob
 func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event *MessageEvent, mediaFiles []MediaRef, localFiles []string, forceDocument bool, humanDelay float64, metadata map[string]any, recordDelivery func(SendResult)) error {
 	self := b.Self()
 	asImage := func(path string) bool {
-		return imageExts[strings.ToLower(pypath.PathSuffix(path))] && !forceDocument
+		return imageExts[strings.ToLower(pathutil.Suffix(path))] && !forceDocument
 	}
 	var images []ImageRef
 	for _, m := range mediaFiles {
 		if !m.IsVoice && asImage(m.Path) {
-			images = append(images, ImageRef{URL: "file://" + pyurl.Quote(m.Path, "/")})
+			images = append(images, ImageRef{URL: urlutil.FileURL(m.Path)})
 		}
 	}
 	for _, p := range localFiles {
 		if asImage(p) {
-			images = append(images, ImageRef{URL: "file://" + pyurl.Quote(p, "/")})
+			images = append(images, ImageRef{URL: urlutil.FileURL(p)})
 		}
 	}
 	if len(images) > 0 {
@@ -209,7 +209,7 @@ func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event
 	}
 	chatID := event.Source.ChatID
 	sendOne := func(path string, isVoice, mediaTag bool) (SendResult, error) {
-		ext := strings.ToLower(pypath.PathSuffix(path))
+		ext := strings.ToLower(pathutil.Suffix(path))
 		var result SendResult
 		var err error
 		switch {
@@ -231,9 +231,9 @@ func (b *BasePlatformAdapter) deliverMediaAttachments(ctx context.Context, event
 			if mediaTag {
 				kind = "media"
 			}
-			pkgLog().Warn(fmt.Sprintf("[%s] Failed to send %s (%s): %s", self.Name(), kind, ext, pyrepr.Str(result.Error)))
+			pkgLog().Warn(fmt.Sprintf("[%s] Failed to send %s (%s): %s", self.Name(), kind, ext, anyutil.String(result.Error)))
 			raw, _ := result.RawResponse.(map[string]any)
-			if raw == nil || !pyrepr.Truthy(raw["failure_notice_sent"]) {
+			if raw == nil || !anyutil.IsTrue(raw["failure_notice_sent"]) {
 				b.notifyMediaDeliveryFailure(ctx, chatID, path, isVoice, metadata)
 			}
 		}
@@ -323,7 +323,7 @@ func (b *BasePlatformAdapter) SendFinalLedgered(ctx context.Context, event *Mess
 
 // Clears the crash marker handed to this delivery lifecycle and wakes the waiting drain
 func (b *BasePlatformAdapter) releaseTurnMarker(ctx context.Context, event *MessageEvent) error {
-	if event.TurnMarkerHandoff() && pyrepr.Truthy(event.GatewayActiveTurnToken()) && b.GatewayRunner != nil {
+	if event.TurnMarkerHandoff() && anyutil.IsTrue(event.GatewayActiveTurnToken()) && b.GatewayRunner != nil {
 		clearer, ok := b.GatewayRunner.(DurableActiveTurnClearer)
 		if !ok {
 			return fmt.Errorf("the gateway runner (%T) cannot clear a durable active turn", b.GatewayRunner)
@@ -345,8 +345,8 @@ func (b *BasePlatformAdapter) sendFinalText(ctx context.Context, event *MessageE
 		return err
 	}
 	recordDelivery(result)
-	if ttl > 0 && result.Success && pyrepr.Truthy(result.MessageID) {
-		deliveryAdapter.Base().ScheduleEphemeralDelete(ctx, event.Source.ChatID, pyrepr.Str(result.MessageID), ttl)
+	if ttl > 0 && result.Success && anyutil.IsTrue(result.MessageID) {
+		deliveryAdapter.Base().ScheduleEphemeralDelete(ctx, event.Source.ChatID, anyutil.String(result.MessageID), ttl)
 	}
 	return nil
 }
@@ -362,7 +362,7 @@ func (b *BasePlatformAdapter) notifyTurnError(ctx context.Context, event *Messag
 			}
 		}()
 		threadMetadata = threadMetadataForEvent(event)
-		detail := pyrepr.ExceptionMessage(turnErr)
+		detail := turnErr.Error()
 		if detail != "" {
 			detail = textutil.First(detail, 300)
 		} else {
@@ -373,7 +373,7 @@ func (b *BasePlatformAdapter) notifyTurnError(ctx context.Context, event *Messag
 		if !config.DiagnosticWakeMuted(scoped, event) {
 			fallback := i18n.T(scoped, "gateway.notify.turn_error", "", nil)
 			detailed := i18n.T(scoped, "gateway.notify.turn_error_detailed", "", map[string]any{
-				"error_type": pyrepr.ExceptionName(turnErr), "error_detail": detail})
+				"error_type": errorutil.Kind(turnErr), "error_detail": detail})
 			content = self.WarningText(scoped, detailed, &fallback, event.Source.Platform, event.Source.ChatID, threadMetadata)
 		}
 		release()
@@ -415,7 +415,7 @@ func (b *BasePlatformAdapter) deliverAttachments(ctx context.Context, event *Mes
 
 // Spawns the typing refresh task, nil when the platform disables typing or the turn is a scheduled heartbeat
 func (b *BasePlatformAdapter) startTypingRefresh(ctx context.Context, event *MessageEvent, interruptEvent *InterruptEvent, metadata map[string]any) *adapterTask {
-	if (b.Config != nil && !b.Config.TypingIndicator) || pyrepr.Truthy(event.HeartbeatSessionID()) {
+	if (b.Config != nil && !b.Config.TypingIndicator) || anyutil.IsTrue(event.HeartbeatSessionID()) {
 		return nil
 	}
 	self := b.Self()
@@ -477,7 +477,7 @@ func (b *BasePlatformAdapter) extractResponseContent(ctx context.Context, respon
 			}
 			if len(suppressed) > 0 {
 				pkgLog().Info(fmt.Sprintf("[%s] Suppressing %d bare local file path(s) already delivered in "+
-					"this session: %s", name, len(suppressed), pyrepr.Repr(suppressed)))
+					"this session: %s", name, len(suppressed), anyutil.Quote(suppressed)))
 				localFiles = kept
 			}
 		}
@@ -899,7 +899,7 @@ func (b *BasePlatformAdapter) BuildSource(ctx context.Context, chatID string, f 
 		case errors.As(err, &refusal):
 			rejected = true
 			if p := refusal.Profile(); p != nil {
-				s := pyrepr.Str(p)
+				s := anyutil.String(p)
 				rejectedProfile = &s
 			}
 		case err != nil:

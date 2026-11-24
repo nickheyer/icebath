@@ -10,16 +10,17 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
 	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	syncutil "github.com/nickheyer/icebath/pkg/utils/sync"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -61,7 +62,7 @@ func LogFileFormatter() (*Formatter, error) { return newRedactingFormatter(logFo
 func formatTime(t time.Time, datefmt string) string {
 	t = t.Local()
 	if datefmt != "" {
-		return pydatetime.Strftime(t, datefmt)
+		return timeutil.Strftime(t, datefmt)
 	}
 	return fmt.Sprintf("%s,%03d", t.Format("2006-01-02 15:04:05"), t.Nanosecond()/1e6)
 }
@@ -177,7 +178,7 @@ func fromSlog(level slog.Level) int { return 20 + int(level)*5/2 }
 
 // Level, filters, formatter and the reentrant I/O lock every handler shares
 type handlerCore struct {
-	lock      pythread.RLock
+	lock      syncutil.ReentrantMutex
 	mu        sync.Mutex
 	level     int
 	filters   []Filter
@@ -237,7 +238,7 @@ func (c *handlerCore) filter(rec *Record) bool {
 
 // Prints the logging error report to stderr the way Handler.handleError does
 func handleErrorBase(rec *Record, err error) {
-	fmt.Fprintf(os.Stderr, "--- Logging error ---\n%s: %s\nMessage: %s\nArguments: ()\n", errorClass(err), errorText(err), pyrepr.StrRepr(rec.Msg))
+	fmt.Fprintf(os.Stderr, "--- Logging error ---\n%s: %s\nMessage: %s\nArguments: ()\n", errorClass(err), errorText(err), strconv.Quote(rec.Msg))
 }
 
 // Python exception class name an error stands for
@@ -272,7 +273,7 @@ func errorText(err error) string {
 		return "I/O operation on closed file."
 	}
 	if isOSError(err) {
-		return pypath.OSErrorText(err)
+		return err.Error()
 	}
 	if cls, msg, ok := strings.Cut(err.Error(), ": "); ok && strings.HasSuffix(cls, "Error") && !strings.ContainsAny(cls, " .") {
 		return msg

@@ -12,7 +12,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/agent"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Starts the prompt as a background agent with its own session, answering in this chat when done
@@ -63,7 +62,7 @@ func (r *GatewayRunner) handleBtwCommand(ctx context.Context, event *gateway.Mes
 	if m, runtime, err := r.resolveSessionAgentRuntime(ctx, source, "", nil, true); err == nil {
 		model, rt = m, runtime
 	}
-	if !pyrepr.Truthy(rt["api_key"]) {
+	if !anyutil.IsTrue(rt["api_key"]) {
 		return i18n.T(ctx, "gateway.btw.no_provider", "", nil), nil
 	}
 	mainRuntime := map[string]any{"model": model, "provider": rt["provider"], "base_url": rt["base_url"],
@@ -90,8 +89,8 @@ func (r *GatewayRunner) handleBtwCommand(ctx context.Context, event *gateway.Mes
 		answer, err := agent.AnswerSideQuestion(ctx, question, snapshot, opts)
 		var reply string
 		if err != nil {
-			pkgLog().Warn(fmt.Sprintf("/btw side question failed: %s", pyrepr.ExceptionMessage(err)))
-			reply = i18n.T(ctx, "gateway.btw.failed", "", map[string]any{"preview": shown, "error": pyrepr.ExceptionMessage(err)})
+			pkgLog().Warn(fmt.Sprintf("/btw side question failed: %s", err.Error()))
+			reply = i18n.T(ctx, "gateway.btw.failed", "", map[string]any{"preview": shown, "error": err.Error()})
 		} else {
 			reply = i18n.T(ctx, "gateway.btw.answer", "", map[string]any{"preview": shown, "answer": answer})
 		}

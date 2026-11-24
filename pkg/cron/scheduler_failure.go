@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 
@@ -12,12 +14,13 @@ import (
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -44,7 +47,7 @@ func setCronSessionTitle(ctx context.Context, db cronTitleDB, sessionID, baseTit
 	if err == nil {
 		return title, nil
 	}
-	var pe *pyint.Error
+	var pe *errorutil.Error
 	if !errors.As(err, &pe) || pe.Kind != "ValueError" {
 		return "", err
 	}
@@ -149,18 +152,18 @@ func (e *CronTickYielded) Error() string {
 	return fmt.Sprintf("Cron tick yielded to a fresh gateway process (stale code: booted on %s, disk is at %s)", e.BootRev, e.DiskRev)
 }
 
-var staleYieldRe = mustPyRe(`stale code: booted on (\S+), disk is at (\S+)\)`)
+var staleYieldRe = regexutil.Lazy(regexp.MustCompile, `stale code: booted on (\S+), disk is at (\S+)\)`)
 
 // Boot and disk revisions from a persisted ticker error that is a tick yield, false otherwise
 func staleCodeYieldLabels(recordedError string) (bootRev, diskRev string, ok bool) {
 	if !strings.Contains(recordedError, "Cron tick yielded to a fresh gateway process (stale code:") {
 		return "", "", false
 	}
-	m, err := staleYieldRe.FindStringMatch(recordedError)
-	if err != nil || m == nil {
+	m := staleYieldRe().FindStringSubmatch(recordedError)
+	if m == nil {
 		return "", "", false
 	}
-	return m.GroupByNumber(1).String(), m.GroupByNumber(2).String(), true
+	return m[1], m[2], true
 }
 
 // Revisions when this profile's tick must yield to a fresher gateway serving it, false on any doubt
@@ -197,10 +200,10 @@ func (s *Store) shouldYieldTickToFreshGateway() (bootRev, diskRev string, ok boo
 }
 
 var (
-	idleLimitRe      = mustPyRe(`idle for \d+s\s*\(limit \d+s\)`)
-	leadingExcNameRe = mustPyRe(`^(RuntimeError|Exception|ValueError|HTTPStatusError):\s*`)
-	whitespaceRunRe  = mustPyRe(`\s+`)
-	importErrorRe    = mustPyRe(`cannot import name|modulenotfounderror|importerror`)
+	idleLimitRe      = regexutil.Lazy(regexp.MustCompile, `idle for \d+s\s*\(limit \d+s\)`)
+	leadingExcNameRe = regexutil.Lazy(regexp.MustCompile, `^(RuntimeError|Exception|ValueError|HTTPStatusError):\s*`)
+	whitespaceRunRe  = regexutil.Lazy(regexp.MustCompile, `[\s\v\x{85}\p{Z}]+`)
+	importErrorRe    = regexutil.Lazy(regexp.MustCompile, `cannot import name|modulenotfounderror|importerror`)
 )
 
 // One line failure notice for the job's chat, deterministic script shapes first then the classifier
@@ -225,7 +228,7 @@ func (s *Store) summarizeCronFailureForDelivery(job *Job, errText *string) strin
 	if strings.HasPrefix(lower, "script timed out") {
 		return scriptTimeoutNotice(s.home, name, id)
 	}
-	if ok, _ := idleLimitRe.MatchString(lower); ok {
+	if idleLimitRe().MatchString(lower) {
 		return inactivityNotice(s.home, name, id)
 	}
 	if !job.NoAgent {
@@ -245,14 +248,14 @@ func (s *Store) summarizeCronFailureForDelivery(job *Job, errText *string) strin
 	if len(runes) > 2000 {
 		runes = runes[:2000]
 	}
-	cleaned, _ := leadingExcNameRe.Replace(string(runes), "", -1, -1)
-	collapsed, _ := whitespaceRunRe.Replace(cleaned, " ", -1, -1)
+	cleaned := leadingExcNameRe().ReplaceAllLiteralString(string(runes), "")
+	collapsed := whitespaceRunRe().ReplaceAllLiteralString(cleaned, " ")
 	cleaned = strings.TrimRight(strings.TrimSpace(collapsed), ".")
 	if cr := []rune(cleaned); len(cr) > 180 {
 		cleaned = strings.TrimRightFunc(string(cr[:177]), unicode.IsSpace) + "..."
 	}
 	message := genericFailureNotice(s.home, name, id, cleaned)
-	if isImport, _ := importErrorRe.MatchString(lower); !job.NoAgent && isImport {
+	if !job.NoAgent && importErrorRe().MatchString(lower) {
 		if bootRev, diskRev, ok := detectGatewayCodeSkew(); ok {
 			message += fmt.Sprintf(" Likely cause: the gateway is running stale code (booted "+
 				"on %s, disk is at %s) — run `icebath gateway restart` to fix it.", bootRev, diskRev)
@@ -427,7 +430,7 @@ func resolveCronEnabledToolsets(ctx context.Context, job *Job, cfg config.Tree) 
 	if cfg == nil {
 		cfg = config.Tree{}
 	}
-	if pt := cfg["platform_toolsets"]; pyrepr.Truthy(pt) {
+	if pt := cfg["platform_toolsets"]; anyutil.IsTrue(pt) {
 		if _, ok := pt.(map[string]any); !ok {
 			return nil, fmt.Errorf("Cron toolset resolution failed, so this run was refused rather than given every "+
 				"tool. Check `platform_toolsets.cron` in config.yaml (`icebath cron doctor`): platform_toolsets is %s, expected a mapping", errchain.Kind(pt))
@@ -457,7 +460,7 @@ func (s *Store) resolveJobReasoningConfig(ctx context.Context, job *Job, model s
 		s.log.Warn(fmt.Sprintf("Job '%s': invalid stored reasoning_effort %s — ignoring the pin "+
 			"and falling back to config resolution. Fix with `cronjob "+
 			"action=update job_id=%s reasoning_effort=<level>` (valid: none, "+
-			"minimal, low, medium, high, xhigh, max, ultra).", jobIDOrUnknown(job), pyrepr.StrRepr(pinned), jobIDOrUnknown(job)))
+			"minimal, low, medium, high, xhigh, max, ultra).", jobIDOrUnknown(job), strconv.Quote(pinned), jobIDOrUnknown(job)))
 	}
 	return settings.ReasoningConfig(home.WithOverride(ctx, s.home), model)
 }

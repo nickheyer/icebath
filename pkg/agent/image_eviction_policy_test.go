@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -296,7 +296,7 @@ func TestOutboundStaleVisionEviction(t *testing.T) {
 		}
 		outbound := sanitizeForSend(history)
 		size := func() int {
-			s, err := pyjson.Dumps(outbound, pyjson.EnsureASCII(false))
+			s, err := jsonutil.Encode(outbound)
 			if err != nil {
 				t.Fatal(err)
 			}

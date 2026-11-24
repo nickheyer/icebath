@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // OpenAPI Schema subset the legacy Gemini parameters field accepts
@@ -59,7 +59,7 @@ func stringifyGeminiEnumValue(item any) (string, bool) {
 }
 
 // Type array folded into a single type, an anyOf of single types, or null, with nullable for a null member
-func schemaTypeArrayInto(value []any, out *pyjson.Object) {
+func schemaTypeArrayInto(value []any, out *jsonutil.Object) {
 	hasNull := false
 	var nonNull []string
 	for _, t := range value {
@@ -86,7 +86,7 @@ func schemaTypeArrayInto(value []any, out *pyjson.Object) {
 	} else {
 		branches := make([]any, 0, len(nonNull))
 		for _, t := range nonNull {
-			branches = append(branches, pyjson.ObjectOf("type", t))
+			branches = append(branches, jsonutil.ObjectOf("type", t))
 		}
 		out.Set("anyOf", branches)
 	}
@@ -98,66 +98,66 @@ func schemaTypeArrayInto(value []any, out *pyjson.Object) {
 }
 
 // Keeps union alternatives with their branch local structural constraints
-func normalizeGeminiTypeArray(typeArray []any, cleaned *pyjson.Object) {
-	derived := pyjson.NewObject()
+func normalizeGeminiTypeArray(typeArray []any, cleaned *jsonutil.Object) {
+	derived := jsonutil.NewObject()
 	schemaTypeArrayInto(typeArray, derived)
-	if branches, ok := derived.Vals["anyOf"].([]any); ok {
-		constraints := pyjson.NewObject()
+	if branches, ok := derived.Value("anyOf").([]any); ok {
+		constraints := jsonutil.NewObject()
 		if v, ok := cleaned.Get("anyOf"); ok {
 			constraints.Set("anyOf", v)
 		}
-		structural := pyjson.NewObject()
+		structural := jsonutil.NewObject()
 		for _, kind := range geminiStructuralKinds {
 			for _, key := range geminiStructuralKeys[kind] {
-				if v, ok := cleaned.Pop(key); ok {
+				if v, ok := cleaned.Take(key); ok {
 					structural.Set(key, v)
 				}
 			}
 		}
 		out := make([]any, 0, len(branches))
 		for _, raw := range branches {
-			branch := raw.(*pyjson.Object)
-			merged := branch.Copy()
-			merged.Update(constraints)
-			typ, _ := branch.Vals["type"].(string)
+			branch := raw.(*jsonutil.Object)
+			merged := branch.Clone()
+			merged.Merge(constraints)
+			typ, _ := branch.Value("type").(string)
 			allowed := map[string]bool{}
 			for _, key := range geminiStructuralKeys[typ] {
 				allowed[key] = true
 			}
-			for _, key := range structural.Keys {
+			for _, key := range structural.Keys() {
 				if allowed[key] {
-					merged.Set(key, structural.Vals[key])
+					merged.Set(key, structural.Value(key))
 				}
 			}
 			out = append(out, sanitizeGeminiSchema(merged))
 		}
 		cleaned.Set("anyOf", out)
 	} else {
-		cleaned.Set("type", derived.Vals["type"])
+		cleaned.Set("type", derived.Value("type"))
 	}
-	if b, _ := derived.Vals["nullable"].(bool); b {
+	if b, _ := derived.Value("nullable").(bool); b {
 		cleaned.Set("nullable", true)
 	}
 }
 
 // Gemini compatible copy of a tool parameter schema keeping only the documented subset, recursively, dict order kept
-func sanitizeGeminiSchema(schema any) *pyjson.Object {
-	m, ok := pyjson.AsObject(schema)
+func sanitizeGeminiSchema(schema any) *jsonutil.Object {
+	m, ok := jsonutil.AsObject(schema)
 	if !ok || m == nil {
-		return pyjson.NewObject()
+		return jsonutil.NewObject()
 	}
-	cleaned := pyjson.NewObject()
-	for _, key := range m.Keys {
-		value := m.Vals[key]
+	cleaned := jsonutil.NewObject()
+	for _, key := range m.Keys() {
+		value := m.Value(key)
 		if !geminiSchemaAllowedKeys[key] {
 			continue
 		}
 		switch key {
 		case "properties":
-			if props, ok := pyjson.AsObject(value); ok && props != nil {
-				out := pyjson.NewObject()
-				for _, name := range props.Keys {
-					out.Set(name, sanitizeGeminiSchema(props.Vals[name]))
+			if props, ok := jsonutil.AsObject(value); ok && props != nil {
+				out := jsonutil.NewObject()
+				for _, name := range props.Keys() {
+					out.Set(name, sanitizeGeminiSchema(props.Value(name)))
 				}
 				cleaned.Set(key, out)
 			}
@@ -167,7 +167,7 @@ func sanitizeGeminiSchema(schema any) *pyjson.Object {
 			if list, ok := value.([]any); ok {
 				out := make([]any, 0, len(list))
 				for _, item := range list {
-					if _, isDict := pyjson.Dict(item); isDict {
+					if _, isDict := jsonutil.AsMap(item); isDict {
 						out = append(out, sanitizeGeminiSchema(item))
 					}
 				}
@@ -177,13 +177,13 @@ func sanitizeGeminiSchema(schema any) *pyjson.Object {
 			cleaned.Set(key, value)
 		}
 	}
-	typeArray, isArray := cleaned.Vals["type"].([]any)
+	typeArray, isArray := cleaned.Value("type").([]any)
 	if isArray {
 		cleaned.Delete("type")
 		normalizeGeminiTypeArray(typeArray, cleaned)
 	}
-	if enumVal, ok := cleaned.Vals["enum"].([]any); ok {
-		typ, _ := cleaned.Vals["type"].(string)
+	if enumVal, ok := cleaned.Value("enum").([]any); ok {
+		typ, _ := cleaned.Value("type").(string)
 		if isArray || typ == "integer" || typ == "number" || typ == "boolean" {
 			seen := map[string]bool{}
 			stringified := []any{}
@@ -202,8 +202,8 @@ func sanitizeGeminiSchema(schema any) *pyjson.Object {
 			}
 		}
 	}
-	if required, ok := cleaned.Vals["required"].([]any); ok {
-		props, _ := pyjson.Dict(cleaned.Vals["properties"])
+	if required, ok := cleaned.Value("required").([]any); ok {
+		props, _ := jsonutil.AsMap(cleaned.Value("properties"))
 		valid := []any{}
 		for _, name := range required {
 			if s, ok := name.(string); ok {
@@ -222,22 +222,22 @@ func sanitizeGeminiSchema(schema any) *pyjson.Object {
 }
 
 // Tool parameters normalized to a valid Gemini object schema
-func sanitizeGeminiToolParameters(parameters any) *pyjson.Object {
+func sanitizeGeminiToolParameters(parameters any) *jsonutil.Object {
 	if cleaned := sanitizeGeminiSchema(parameters); cleaned.Len() > 0 {
 		return cleaned
 	}
-	return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
+	return jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject())
 }
 
 // Node a same document JSON pointer names under root, nil when the pointer does not resolve to a dict
-func resolveLocalRef(root *pyjson.Object, ref string) *pyjson.Object {
+func resolveLocalRef(root *jsonutil.Object, ref string) *jsonutil.Object {
 	if !strings.HasPrefix(ref, "#/") {
 		return nil
 	}
 	var node any = root
 	for _, raw := range strings.Split(ref[2:], "/") {
 		part := strings.ReplaceAll(strings.ReplaceAll(raw, "~1", "/"), "~0", "~")
-		m, ok := node.(*pyjson.Object)
+		m, ok := node.(*jsonutil.Object)
 		if !ok {
 			return nil
 		}
@@ -247,12 +247,12 @@ func resolveLocalRef(root *pyjson.Object, ref string) *pyjson.Object {
 		}
 		node = next
 	}
-	out, _ := node.(*pyjson.Object)
+	out, _ := node.(*jsonutil.Object)
 	return out
 }
 
 // Inlines same document refs, failing on an unresolvable or circular ref or an exhausted budget
-func inlineGeminiRefs(node any, root *pyjson.Object, budget *int, stack []string) (any, error) {
+func inlineGeminiRefs(node any, root *jsonutil.Object, budget *int, stack []string) (any, error) {
 	switch t := node.(type) {
 	case []any:
 		out := make([]any, len(t))
@@ -264,12 +264,12 @@ func inlineGeminiRefs(node any, root *pyjson.Object, budget *int, stack []string
 			out[i] = x
 		}
 		return out, nil
-	case *pyjson.Object:
-		ref, isRef := t.Vals["$ref"].(string)
+	case *jsonutil.Object:
+		ref, isRef := t.Value("$ref").(string)
 		if !isRef {
-			out := pyjson.NewObject()
-			for _, k := range t.Keys {
-				x, err := inlineGeminiRefs(t.Vals[k], root, budget, stack)
+			out := jsonutil.NewObject()
+			for _, k := range t.Keys() {
+				x, err := inlineGeminiRefs(t.Value(k), root, budget, stack)
 				if err != nil {
 					return nil, err
 				}
@@ -294,10 +294,10 @@ func inlineGeminiRefs(node any, root *pyjson.Object, budget *int, stack []string
 		if err != nil {
 			return nil, err
 		}
-		siblings := pyjson.NewObject()
-		for _, k := range t.Keys {
+		siblings := jsonutil.NewObject()
+		for _, k := range t.Keys() {
 			if k != "$ref" {
-				siblings.Set(k, t.Vals[k])
+				siblings.Set(k, t.Value(k))
 			}
 		}
 		if siblings.Len() == 0 {
@@ -307,20 +307,20 @@ func inlineGeminiRefs(node any, root *pyjson.Object, budget *int, stack []string
 		if err != nil {
 			return nil, err
 		}
-		merged := inlined.(*pyjson.Object).Copy()
-		merged.Update(resolved.(*pyjson.Object))
+		merged := inlined.(*jsonutil.Object).Clone()
+		merged.Merge(resolved.(*jsonutil.Object))
 		return merged, nil
 	}
 	return node, nil
 }
 
 // Full JSON schema for parametersJsonSchema with root $schema dropped, local refs inlined and an object root guaranteed
-func prepareGeminiToolParameters(parameters any) *pyjson.Object {
-	src, ok := pyjson.AsObject(parameters)
+func prepareGeminiToolParameters(parameters any) *jsonutil.Object {
+	src, ok := jsonutil.AsObject(parameters)
 	if !ok || src == nil || src.Len() == 0 {
-		return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
+		return jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject())
 	}
-	schema := pyjson.Ordered(src).(*pyjson.Object)
+	schema := jsonutil.Ordered(src).(*jsonutil.Object)
 	schema.Delete("$schema")
 	budget := geminiMaxRefExpansions
 	inlined, err := inlineGeminiRefs(schema, schema, &budget, nil)
@@ -328,15 +328,15 @@ func prepareGeminiToolParameters(parameters any) *pyjson.Object {
 		pkgLog().Debug("Gemini tool schema kept as-is ($ref inlining skipped): " + err.Error())
 		return schema
 	}
-	schema = inlined.(*pyjson.Object)
+	schema = inlined.(*jsonutil.Object)
 	schema.Delete("$defs")
 	schema.Delete("definitions")
 	if schema.Len() == 0 {
-		return pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject())
+		return jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject())
 	}
-	if t, _ := schema.Vals["type"].(string); t == "object" {
+	if t, _ := schema.Value("type").(string); t == "object" {
 		if _, has := schema.Get("properties"); !has {
-			schema.Set("properties", pyjson.NewObject())
+			schema.Set("properties", jsonutil.NewObject())
 		}
 	}
 	return schema
@@ -344,6 +344,6 @@ func prepareGeminiToolParameters(parameters any) *pyjson.Object {
 
 // Whether a value is a dict as isinstance(value, dict) sees it, a plain map or an ordered object
 func geminiIsDict(v any) bool {
-	_, ok := pyjson.Dict(v)
+	_, ok := jsonutil.AsMap(v)
 	return ok
 }

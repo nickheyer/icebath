@@ -6,8 +6,8 @@ import (
 	"io"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
 )
 
 // The secrets command parser, the bitwarden and onepassword integrations under secrets_command
@@ -91,7 +91,7 @@ func (p *secretsParser) printHelp(w io.Writer) {
 // SecretsCommand runs icebath secrets from the parsed namespace, printing help when no integration was named
 func SecretsCommand(ctx context.Context, h string, ns map[string]any, w io.Writer) (int, error) {
 	parser := buildSecretsParser()
-	return dispatchSecrets(parser, &secretsCLI{ctx: ctx, home: h, console: pyrich.NewConsole(w)}, ns, w)
+	return dispatchSecrets(parser, &secretsCLI{ctx: ctx, home: h, console: consoleutil.NewConsole(w)}, ns, w)
 }
 
 // Runs the handler the namespace names, help for a missing integration or subcommand
@@ -103,7 +103,7 @@ func dispatchSecrets(parser *secretsCommandParser, cli *secretsCLI, ns map[strin
 	}
 	integration := parser.integration(sub)
 	if integration == nil {
-		return 2, fmt.Errorf("argument secrets_command: invalid choice: %s", pyrepr.Repr(sub))
+		return 2, fmt.Errorf("argument secrets_command: invalid choice: %s", anyutil.Quote(sub))
 	}
 	handler := integration.handler(ns)
 	if handler == nil {

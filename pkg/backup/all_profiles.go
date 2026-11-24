@@ -3,14 +3,15 @@ package backup
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"sort"
 
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Profile id grammar with Python match semantics, a trailing newline before the end accepted
@@ -32,20 +33,20 @@ func isDir(p string) bool {
 func SiblingProfileHomes(invokingHome string) [][2]string {
 	homes := [][2]string{}
 	fail := func(err error) [][2]string {
-		pkgLog().Debug(fmt.Sprintf("Sibling profile enumeration failed: %s", pypath.OSErrorText(err)))
+		pkgLog().Debug(fmt.Sprintf("Sibling profile enumeration failed: %s", err.Error()))
 		return homes
 	}
-	invoking, err := pypath.Resolve(invokingHome)
+	invoking, err := pathutil.Resolve(invokingHome)
 	if err != nil {
 		return fail(err)
 	}
 	if def := profiles.DefaultHome(); isDir(def) {
-		resolved, err := pypath.Resolve(def)
+		resolved, err := pathutil.Resolve(def)
 		if err != nil {
 			return fail(err)
 		}
 		if resolved != invoking {
-			homes = append(homes, [2]string{"default", pypath.PathStr(def)})
+			homes = append(homes, [2]string{"default", filepath.Clean(def)})
 		}
 	}
 	root := profiles.ProfilesRoot()
@@ -58,7 +59,7 @@ func SiblingProfileHomes(invokingHome string) [][2]string {
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	for _, e := range entries {
-		p := pypath.PathJoin(root, e.Name())
+		p := pathutil.Join(root, e.Name())
 		if !isDir(p) || e.Name() == "default" {
 			continue
 		}
@@ -68,7 +69,7 @@ func SiblingProfileHomes(invokingHome string) [][2]string {
 			}
 			continue
 		}
-		resolved, err := pypath.Resolve(p)
+		resolved, err := pathutil.Resolve(p)
 		if err != nil {
 			return fail(err)
 		}

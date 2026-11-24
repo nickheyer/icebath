@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"os"
 	"os/exec"
 	"strings"
@@ -16,16 +15,16 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/errchain"
 	"github.com/nickheyer/icebath/pkg/hostinfo"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const cuaNativeWaylandEnvVar = "CUA_DRIVER_RS_ENABLE_WAYLAND"
 
-// completedProcess is the subprocess.CompletedProcess of a text mode run
+// Finished command of a text mode run: its exit code, the negated signal number when a signal ended it, and both streams decoded as text
 type completedProcess struct {
 	Args       []string
 	Returncode int
@@ -33,39 +32,29 @@ type completedProcess struct {
 	Stderr     string
 }
 
-// subprocessTimeout is subprocess.TimeoutExpired, a SubprocessError
-type subprocessTimeout struct {
-	Cmd     []string
-	Timeout float64
-}
-
-func (e *subprocessTimeout) Error() string {
-	return fmt.Sprintf("%s timed out after %s seconds", strings.Join(e.Cmd, " "), errchain.Show(e.Timeout))
-}
-
-// spawnError is the OSError subprocess raises when the program cannot start
+// Failure to start a program at all, its text naming the program and the operating system's reason
 type spawnError struct{ err error }
 
 func (e *spawnError) Error() string { return errchain.OSText(e.err) }
 func (e *spawnError) Unwrap() error { return e.err }
 
-// runOpts are the subprocess.run keywords the probe helpers forward
+// Settings of one probe run: the child environment, its standard input and whether the console window stays hidden
 type runOpts struct {
 	Env        map[string]string
 	Stdin      io.Reader
-	NoCapture  bool
 	HideWindow bool
 }
 
-// Text of a universal newline decode with invalid bytes replaced
+// Text of output bytes with CRLF and lone CR turned into LF and invalid bytes replaced
 func textModeDecode(b []byte) string {
 	s := strings.ToValidUTF8(string(b), "\uFFFD")
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r\n", "\n"), "\r", "\n")
 }
 
-// Runs a short probe verb with stdin closed and output captured, killed with a timeout error past the deadline
+// Runs a short probe verb with output captured, killed with an *executil.TimeoutError past the deadline
 var runQuiet = func(argv []string, timeout float64, o runOpts) (*completedProcess, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout*float64(time.Second)))
+	limit := time.Duration(timeout * float64(time.Second))
+	ctx, cancel := context.WithTimeout(context.Background(), limit)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
 	cmd.WaitDelay = time.Second
@@ -74,11 +63,7 @@ var runQuiet = func(argv []string, timeout float64, o runOpts) (*completedProces
 	}
 	cmd.Stdin = o.Stdin
 	var stdout, stderr bytes.Buffer
-	if !o.NoCapture {
-		cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	} else {
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-	}
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if o.HideWindow {
 		hideConsoleWindow(cmd)
 	}
@@ -87,7 +72,7 @@ var runQuiet = func(argv []string, timeout float64, o runOpts) (*completedProces
 	}
 	err := cmd.Wait()
 	if ctx.Err() == context.DeadlineExceeded {
-		return nil, &subprocessTimeout{Cmd: argv, Timeout: timeout}
+		return nil, &executil.TimeoutError{Args: argv, Timeout: limit, Stdout: stdout.Bytes(), Stderr: stderr.Bytes()}
 	}
 	code := 0
 	var exitErr *exec.ExitError
@@ -142,7 +127,7 @@ func manifestIsModeIndependent(path string) bool {
 		pkgLog(nil).Debug(fmt.Sprintf("could not read capability manifest %s", path), "err", err)
 		return false
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		pkgLog(nil).Debug(fmt.Sprintf("could not read capability manifest %s", path), "err", err)
 		return false
@@ -156,11 +141,8 @@ func manifestIsModeIndependent(path string) bool {
 	if !ok {
 		return false
 	}
-	if _, isBool := m["version"].(bool); isBool {
-		return false
-	}
-	n, ok := pyrepr.Int(m["version"])
-	return ok && n.Cmp(big.NewInt(3)) >= 0
+	n, ok := anyutil.Int(m["version"])
+	return ok && n >= 3
 }
 
 // Longest edge cap of captured images, zero or less for no cap

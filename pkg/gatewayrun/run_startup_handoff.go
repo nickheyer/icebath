@@ -7,8 +7,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Resolved destination of one handoff row
@@ -29,11 +27,11 @@ type scopeIDForChatAdapter interface {
 }
 
 // Config and adapters of the profile that queued the handoff, failing closed for a secondary it cannot load
-func (r *GatewayRunner) handoffResolveScope(ctx context.Context, profileName *string) (*gateway.GatewayConfig, *pydict.Dict[gateway.Platform, gateway.PlatformAdapter], error) {
+func (r *GatewayRunner) handoffResolveScope(ctx context.Context, profileName *string) (*gateway.GatewayConfig, *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter], error) {
 	if profileName == nil || *profileName == "" || *profileName == "default" {
 		return r.config, r.adapters, nil
 	}
-	var secondary *pydict.Dict[gateway.Platform, gateway.PlatformAdapter]
+	var secondary *orderedutil.Map[gateway.Platform, gateway.PlatformAdapter]
 	if r.profileAdapters != nil {
 		secondary, _ = r.profileAdapters.Get(*profileName)
 	}
@@ -50,10 +48,10 @@ func (r *GatewayRunner) handoffResolveScope(ctx context.Context, profileName *st
 
 // Platform, transport, home channel, thread and destination source of a handoff row
 func (r *GatewayRunner) handoffResolveDestination(ctx context.Context, row map[string]any, profileName *string) (*handoffDestination, error) {
-	cliSessionID := pyrepr.Str(row["id"])
+	cliSessionID := anyutil.String(row["id"])
 	platformName := ""
-	if value := row["handoff_platform"]; pyrepr.Truthy(value) {
-		platformName = strings.ToLower(strings.TrimSpace(pyrepr.Str(value)))
+	if value := row["handoff_platform"]; anyutil.IsTrue(value) {
+		platformName = strings.ToLower(strings.TrimSpace(anyutil.String(value)))
 	}
 	if platformName == "" {
 		return nil, fmt.Errorf("handoff_platform is empty")
@@ -75,8 +73,8 @@ func (r *GatewayRunner) handoffResolveDestination(ctx context.Context, row map[s
 		return nil, fmt.Errorf("no home channel configured for %s; run /sethome on the desired chat first", platformName)
 	}
 	homeChatID := homeChannel.ChatID
-	cliTitle := pyrepr.Str(row["title"])
-	if !pyrepr.Truthy(row["title"]) {
+	cliTitle := anyutil.String(row["title"])
+	if !anyutil.IsTrue(row["title"]) {
 		cliTitle = string([]rune(cliSessionID)[:min(8, len([]rune(cliSessionID)))])
 	}
 	adapter, _ := transport.Adapter.(gateway.PlatformAdapter)
@@ -133,7 +131,7 @@ func (r *GatewayRunner) handoffResolveDestination(ctx context.Context, row map[s
 	}
 	var chatName *string
 	if homeChannel.Name != nil {
-		name := pyrepr.Str(homeChannel.Name)
+		name := anyutil.String(homeChannel.Name)
 		chatName = &name
 	}
 	source := &gateway.SessionSource{Platform: platform, ChatID: chatID, ChatName: chatName, ChatType: chatType,
@@ -177,7 +175,7 @@ func (r *GatewayRunner) handoffSessionKey(ctx context.Context, dest *handoffDest
 	}
 	flag := func(key string, def bool) bool {
 		if value, present := extra[key]; present {
-			return pyrepr.Truthy(value)
+			return anyutil.IsTrue(value)
 		}
 		return def
 	}

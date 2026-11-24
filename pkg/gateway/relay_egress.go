@@ -7,10 +7,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 const (
@@ -25,13 +24,13 @@ func IsEgressDecline(result any) bool {
 	if !ok {
 		return false
 	}
-	if pyrepr.Truthy(get("success")) || pyrepr.Truthy(get("ambiguous")) {
+	if anyutil.IsTrue(get("success")) || anyutil.IsTrue(get("ambiguous")) {
 		return false
 	}
-	if pyrepr.Str(orEmpty(get("code"))) == EgressDeclineCode {
+	if anyutil.String(orEmpty(get("code"))) == EgressDeclineCode {
 		return true
 	}
-	return strings.Contains(strings.ToLower(pyrepr.Str(orEmpty(get("error")))), EgressDeclineMarker)
+	return strings.Contains(strings.ToLower(anyutil.String(orEmpty(get("error")))), EgressDeclineMarker)
 }
 
 // Key lookup of a Python dict value held as a Go map or a decoded JSON object
@@ -39,7 +38,7 @@ func dictGetter(v any) (func(string) any, bool) {
 	switch d := v.(type) {
 	case map[string]any:
 		return func(k string) any { return d[k] }, true
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		if d == nil {
 			return nil, false
 		}
@@ -50,7 +49,7 @@ func dictGetter(v any) (func(string) any, bool) {
 
 // Python value or empty string, the value or "" idiom
 func orEmpty(v any) any {
-	if pyrepr.Truthy(v) {
+	if anyutil.IsTrue(v) {
 		return v
 	}
 	return ""
@@ -64,10 +63,10 @@ func DeclinedSend(result *SendResult) bool {
 	if _, ok := dictGetter(result.RawResponse); ok {
 		return IsEgressDecline(result.RawResponse)
 	}
-	if !pyrepr.Truthy(result.Error) {
+	if !anyutil.IsTrue(result.Error) {
 		return false
 	}
-	if strings.Contains(strings.ToLower(pyrepr.Str(result.Error)), ambiguousAckMarker) {
+	if strings.Contains(strings.ToLower(anyutil.String(result.Error)), ambiguousAckMarker) {
 		return false
 	}
 	return IsEgressDecline(map[string]any{"success": false, "error": result.Error})
@@ -76,8 +75,8 @@ func DeclinedSend(result *SendResult) bool {
 // Connector decline text verbatim, or the generic relay egress declined text
 func DeclineError(result any) string {
 	if get, ok := dictGetter(result); ok {
-		if e := get("error"); pyrepr.Truthy(e) {
-			return pyrepr.Str(e)
+		if e := get("error"); anyutil.IsTrue(e) {
+			return anyutil.String(e)
 		}
 	}
 	return "relay egress declined"
@@ -85,7 +84,7 @@ func DeclineError(result any) string {
 
 // Warns about a decline on a lane whose contract cannot carry an error
 func LogDecline(op string, chatID, result any) {
-	pkgLog().Warn(fmt.Sprintf("relay %s DECLINED for %s: %s", op, pyrepr.Str(chatID), DeclineError(result)))
+	pkgLog().Warn(fmt.Sprintf("relay %s DECLINED for %s: %s", op, anyutil.String(chatID), DeclineError(result)))
 }
 
 // Relay routing could not be determined, callers fail closed
@@ -180,7 +179,7 @@ func hasLiveNativeAdapter(ctx context.Context, platformName string) (live bool, 
 	if runner == nil {
 		return false, nil
 	}
-	var adapters *pydict.Dict[Platform, PlatformAdapter]
+	var adapters *orderedutil.Map[Platform, PlatformAdapter]
 	if reg, ok := runner.(primaryAdaptersRunner); ok {
 		adapters = reg.Adapters()
 	}
@@ -247,26 +246,26 @@ func egressDirectoryIDs(ctx context.Context, platformName string) (map[string]bo
 	ids := map[string]bool{}
 	platforms, _ := loadChannelDirectory(ctx).Get("platforms")
 	if platforms == nil {
-		platforms = pyjson.NewObject()
+		platforms = jsonutil.NewObject()
 	}
-	pobj, ok := platforms.(*pyjson.Object)
+	pobj, ok := platforms.(*jsonutil.Object)
 	if !ok {
 		return ids, nil
 	}
 	entries, _ := pobj.Get(platformName)
-	if !pyrepr.Truthy(entries) {
+	if !anyutil.IsTrue(entries) {
 		return ids, nil
 	}
 	switch list := entries.(type) {
 	case []any:
 		for _, e := range list {
-			if entry, ok := e.(*pyjson.Object); ok {
-				if id, _ := entry.Get("id"); pyrepr.Truthy(id) {
-					ids[pyrepr.Str(id)] = true
+			if entry, ok := e.(*jsonutil.Object); ok {
+				if id, _ := entry.Get("id"); anyutil.IsTrue(id) {
+					ids[anyutil.String(id)] = true
 				}
 			}
 		}
-	case string, *pyjson.Object:
+	case string, *jsonutil.Object:
 	default:
 		return ids, fmt.Errorf("the egress directory is %s, expected a list", errchain.Kind(entries))
 	}
@@ -278,13 +277,13 @@ func egressSessionIDs(ctx context.Context, platformName string) map[string]bool 
 	ids := map[string]bool{}
 	for _, entry := range BuildFromSessions(ctx, platformName) {
 		id, _ := entry.Get("id")
-		if !pyrepr.Truthy(id) {
+		if !anyutil.IsTrue(id) {
 			continue
 		}
-		raw := pyrepr.Str(id)
+		raw := anyutil.String(id)
 		ids[raw] = true
-		if tid, _ := entry.Get("thread_id"); pyrepr.Truthy(tid) {
-			if suffix := ":" + pyrepr.Str(tid); strings.HasSuffix(raw, suffix) {
+		if tid, _ := entry.Get("thread_id"); anyutil.IsTrue(tid) {
+			if suffix := ":" + anyutil.String(tid); strings.HasSuffix(raw, suffix) {
 				ids[raw[:len(raw)-len(suffix)]] = true
 			}
 		}
@@ -345,7 +344,7 @@ func hasNativeCredential(ctx context.Context, platformName string) (has bool) {
 		return true
 	}
 	pc := cfg.Platforms[platform]
-	return pc != nil && pc.Enabled && pyrepr.Truthy(pc.Token)
+	return pc != nil && pc.Enabled && anyutil.IsTrue(pc.Token)
 }
 
 // Snapshot of the native token a send will use, Set false when the caller passed none
@@ -360,7 +359,7 @@ func isUnresolvedHandle(ctx context.Context, platformName, target string, native
 		return false
 	}
 	if native.Set {
-		return !pyrepr.Truthy(native.Token)
+		return !anyutil.IsTrue(native.Token)
 	}
 	return !hasNativeCredential(ctx, platformName)
 }
@@ -379,7 +378,7 @@ func AuthorizeRelayTarget(ctx context.Context, platformName string, chatID, thre
 	if !routed {
 		return "", nil
 	}
-	target := strings.TrimSpace(pyrepr.Str(orEmpty(chatID)))
+	target := strings.TrimSpace(anyutil.String(orEmpty(chatID)))
 	if target == "" {
 		return "", nil
 	}
@@ -389,7 +388,7 @@ func AuthorizeRelayTarget(ctx context.Context, platformName string, chatID, thre
 		return "", err
 	}
 	if attested[target] {
-		thread := strings.TrimSpace(pyrepr.Str(orEmpty(threadID)))
+		thread := strings.TrimSpace(anyutil.String(orEmpty(threadID)))
 		if thread != "" && thread != target {
 			if attested[target+":"+thread] {
 				return "", nil

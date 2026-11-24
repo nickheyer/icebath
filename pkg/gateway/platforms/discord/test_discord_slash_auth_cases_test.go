@@ -12,8 +12,8 @@ import (
 	"github.com/bwmarrin/discordgo"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
 	"github.com/nickheyer/icebath/pkg/settings"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
 )
 
 // Slash interaction from a user in a guild channel
@@ -56,7 +56,7 @@ func (a *alertAdapter) sent() [][2]string {
 
 // Runner seam answering with the given adapters and home channels
 func installAlertRunner(t *testing.T, a *DiscordAdapter, adapters map[gateway.Platform]gateway.PlatformAdapter, homes map[gateway.Platform]string) {
-	m := pydict.New[gateway.Platform, gateway.PlatformAdapter]()
+	m := orderedutil.NewMap[gateway.Platform, gateway.PlatformAdapter]()
 	for p, ad := range adapters {
 		m.Set(p, ad)
 	}

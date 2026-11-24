@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Local session created over a real runner's own authority, with its owner connection
@@ -40,11 +40,11 @@ func installContractPrefillLoaders(t *testing.T) {
 		if err != nil {
 			return []any{}
 		}
-		decoded, err := pyjson.Loads(string(raw))
+		decoded, err := jsonutil.Decode(string(raw))
 		if err != nil {
 			return []any{}
 		}
-		list, _ := pyjson.Plain(decoded).([]any)
+		list, _ := jsonutil.Plain(decoded).([]any)
 		return list
 	}
 	t.Cleanup(func() { gateway.ResolvePrefillMessagesFile, gateway.LoadPrefillMessages = prevResolve, prevLoad })
@@ -75,7 +75,7 @@ func newContractLocalSession(t *testing.T, configYAML string) *contractLocalSess
 		_ = owner.Close(ctx)
 		runner.sessionStore.CloseAllDBHandles()
 	})
-	created, err := owner.Dispatch(ctx, pyjson.ObjectOf("id", "c", "method", "session.create", "params", pyjson.ObjectOf(
+	created, err := owner.Dispatch(ctx, jsonutil.ObjectOf("id", "c", "method", "session.create", "params", jsonutil.ObjectOf(
 		"request_id", "local", "source", "tui", "cwd", dir, "toolsets", []any{}, "model", "m")))
 	if err != nil {
 		t.Fatal(err)
@@ -90,13 +90,13 @@ func newContractLocalSession(t *testing.T, configYAML string) *contractLocalSess
 }
 
 // Session mutate on the local session with the fences of its stored row
-func (s *contractLocalSession) mutate(t *testing.T, operation string, payload *pyjson.Object, requestID string) *pyjson.Object {
+func (s *contractLocalSession) mutate(t *testing.T, operation string, payload *jsonutil.Object, requestID string) *jsonutil.Object {
 	t.Helper()
 	row, err := s.authority.DB.GetSession(s.ctx, s.sid)
 	if err != nil {
 		t.Fatal(err)
 	}
-	fences := pyjson.NewObject()
+	fences := jsonutil.NewObject()
 	revision, _ := row.Get("runtime_revision")
 	generation, _ := row.Get("runtime_generation")
 	fences.Set("revision", revision)
@@ -117,7 +117,7 @@ func TestLocalReasoningPickClearsTheTypedOverrideOnARealRunner(t *testing.T) {
 		t.Fatalf("typed %v %v", typed, err)
 	}
 
-	picked := s.mutate(t, "reasoning", pyjson.ObjectOf("effort", "high"), "pick")
+	picked := s.mutate(t, "reasoning", jsonutil.ObjectOf("effort", "high"), "pick")
 
 	if effort, _ := picksField(picked, "result").Get("effort"); effort != "high" {
 		t.Fatalf("picked %s", picksDump(picked))

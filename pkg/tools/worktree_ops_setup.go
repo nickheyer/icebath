@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
-	"github.com/nickheyer/icebath/pkg/internal/pysys"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	termutil "github.com/nickheyer/icebath/pkg/utils/term"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Colored CLI line printer of the worktree setup, the cli _cprint the app replaces with its renderer
-var WorktreeCprint = func(text string) { fmt.Fprintln(pysys.Stdout, text) }
+var WorktreeCprint = func(text string) { fmt.Fprintln(termutil.Stdout, text) }
 
 // Sweeps the partial dir, the locked admin entry and the branch a failed worktree creation left behind
 func cleanupFailedWorktreeAdd(repoRoot, wtPath, branchName string) {
@@ -140,7 +140,7 @@ func resolveWorktreeBase(repoRoot string, fetchTimeout, freshnessWindow float64)
 		}
 		var reason string
 		fetched, err := run([]string{"fetch", remote, trackingRefspec(remote, branch)}, fetchTimeout)
-		var timeout *pysubprocess.TimeoutExpired
+		var timeout *executil.TimeoutError
 		switch {
 		case err == nil && fetched.Returncode == 0:
 			return ref, fmt.Sprintf("%s (fetched)", ref)
@@ -276,7 +276,7 @@ func SetupWorktree(ctx context.Context, repoRoot string, syncBase bool, name str
 
 // Creates a worktree locked for the owner process, its lines written to out or the CLI printers when out is nil
 func SetupWorktreeFor(ctx context.Context, repoRoot string, syncBase bool, name string, retainDB *string, ownerPid int, out io.Writer) map[string]string {
-	cprint, plain := WorktreeCprint, pysys.Stdout
+	cprint, plain := WorktreeCprint, termutil.Stdout
 	if out != nil {
 		cprint, plain = func(text string) { fmt.Fprintln(out, text) }, out
 	}

@@ -6,10 +6,9 @@ import (
 	"strconv"
 	"unsafe"
 
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 	"golang.org/x/sys/windows"
 	"golang.org/x/sys/windows/registry"
-
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Effective ProgId of a URL scheme as the Windows Shell resolves it, empty when the query fails
@@ -46,7 +45,7 @@ func registryProgIDText(key registry.Key) (string, bool) {
 		if len(data) == 0 {
 			return "", true
 		}
-		return pyrepr.BytesRepr(data), true
+		return strconv.Quote(string(data)), true
 	}
 	if list, _, err := key.GetStringsValue("ProgId"); err == nil {
 		if len(list) == 0 {
@@ -56,7 +55,7 @@ func registryProgIDText(key registry.Key) (string, bool) {
 		for _, s := range list {
 			items = append(items, s)
 		}
-		return pyrepr.Repr(items), true
+		return anyutil.Quote(items), true
 	}
 	return "", false
 }

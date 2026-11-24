@@ -4,11 +4,11 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Keyword arguments of search_messages, NewSearchMessagesOptions giving the Python defaults
@@ -39,7 +39,7 @@ type searchRoute struct {
 }
 
 // Searches messages through the routed indexes, logging the path of any search slower than search_slow_ms
-func (s *sessionSearch) SearchMessages(ctx context.Context, query string, o SearchMessagesOptions) ([]*pyjson.Object, error) {
+func (s *sessionSearch) SearchMessages(ctx context.Context, query string, o SearchMessagesOptions) ([]*jsonutil.Object, error) {
 	started := time.Now()
 	rows, err := s.searchMessagesImpl(ctx, query, o)
 	elapsedMS := float64(time.Since(started)) / float64(time.Millisecond)
@@ -53,27 +53,27 @@ func (s *sessionSearch) SearchMessages(ctx context.Context, query string, o Sear
 			head = string(runes[:200])
 		}
 		pkgLog().Info(fmt.Sprintf("slow session search: path=%s elapsed=%.0fms rows=%s query=%s",
-			s.describeSearchPath(query), elapsedMS, count, pyrepr.StrRepr(head)))
+			s.describeSearchPath(query), elapsedMS, count, strconv.Quote(head)))
 	}
 	return rows, err
 }
 
 // Routes a sanitized query to the LIKE fallback, base, CJK, trigram and OR relaxed searches, then finalizes the hits
-func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o SearchMessagesOptions) ([]*pyjson.Object, error) {
+func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o SearchMessagesOptions) ([]*jsonutil.Object, error) {
 	resultFields, err := searchMessageFields(o.Fields)
 	if err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(query) == "" {
-		return []*pyjson.Object{}, nil
+		return []*jsonutil.Object{}, nil
 	}
 	if query = sanitizeFTS5Query(query); query == "" {
-		return []*pyjson.Object{}, nil
+		return []*jsonutil.Object{}, nil
 	}
 	f := searchFilter{includeInactive: o.IncludeInactive, sourceFilter: o.SourceFilter, excludeSources: o.ExcludeSources,
 		roleFilter: o.RoleFilter, afterTS: o.AfterTS, beforeTS: o.BeforeTS}
 	wantsTool := slices.Contains(o.RoleFilter, "tool")
-	likeFallback := func() ([]*pyjson.Object, error) {
+	likeFallback := func() ([]*jsonutil.Object, error) {
 		matches, err := s.searchMessagesLikeFallback(ctx, query, o.Limit, o.Offset, o.Sort, f)
 		if err != nil {
 			return nil, err
@@ -90,7 +90,7 @@ func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o 
 		return likeFallback()
 	}
 	if !s.fts.ftsEnabled.Load() {
-		return []*pyjson.Object{}, nil
+		return []*jsonutil.Object{}, nil
 	}
 	orderBy, ok := ftsOrderBy[strings.ToLower(strings.TrimSpace(o.Sort))]
 	if !ok {
@@ -101,7 +101,7 @@ func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o 
 		return slices.Contains(FTSTrigramExcludedSources, src)
 	})
 	isCJK := queryContainsCJK(query)
-	var matches []*pyjson.Object
+	var matches []*jsonutil.Object
 	if isCJK {
 		if matches, err = s.searchCJK(ctx, query, wantsUnindexed, route); err != nil {
 			return nil, err
@@ -111,7 +111,7 @@ func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o 
 		matches, err = s.host.readAll(ctx, sqlText, params...)
 		if err != nil {
 			if isOperationalError(err) {
-				return []*pyjson.Object{}, nil
+				return []*jsonutil.Object{}, nil
 			}
 			if !isDatabaseError(err) {
 				return nil, err
@@ -180,13 +180,13 @@ func (s *sessionSearch) searchMessagesImpl(ctx context.Context, query string, o 
 		}
 	}
 	if matches == nil {
-		matches = []*pyjson.Object{}
+		matches = []*jsonutil.Object{}
 	}
 	return s.finalizeSearchMatches(ctx, matches, resultFields), nil
 }
 
 // CJK routing through the bigram index, then trigram, then a LIKE scan with one clause per non operator token
-func (s *sessionSearch) searchCJK(ctx context.Context, query string, wantsUnindexedRows bool, route searchRoute) ([]*pyjson.Object, error) {
+func (s *sessionSearch) searchCJK(ctx context.Context, query string, wantsUnindexedRows bool, route searchRoute) ([]*jsonutil.Object, error) {
 	rawQuery := strings.TrimSpace(strings.Trim(stripCJKWildcards(query), `"`))
 	matchQuery := quoteFTSTokens(rawQuery)
 	if s.fts.ftsCJKAvailable.Load() && !wantsUnindexedRows && !hasLoneCJKRun(rawQuery) {
@@ -219,7 +219,7 @@ func (s *sessionSearch) searchCJK(ctx context.Context, query string, wantsUninde
 }
 
 // LIKE scan of the ids the deferred rebuild has not indexed yet, AND joining the query terms
-func (s *sessionSearch) searchUnindexedGap(ctx context.Context, ftsQuery string, limit int, f searchFilter) ([]*pyjson.Object, error) {
+func (s *sessionSearch) searchUnindexedGap(ctx context.Context, ftsQuery string, limit int, f searchFilter) ([]*jsonutil.Object, error) {
 	st, err := s.rebuildState(ctx, "fts_rebuild")
 	if err != nil {
 		return nil, err
@@ -230,7 +230,7 @@ func (s *sessionSearch) searchUnindexedGap(ctx context.Context, ftsQuery string,
 		}
 	}
 	if st == nil || limit <= 0 {
-		return []*pyjson.Object{}, nil
+		return []*jsonutil.Object{}, nil
 	}
 	var terms []string
 	for _, raw := range likeTokenRE.FindAllString(ftsQuery, -1) {
@@ -240,7 +240,7 @@ func (s *sessionSearch) searchUnindexedGap(ctx context.Context, ftsQuery string,
 		}
 	}
 	if len(terms) == 0 {
-		return []*pyjson.Object{}, nil
+		return []*jsonutil.Object{}, nil
 	}
 	indexed, err := sqliteInt(st.indexed)
 	if err != nil {

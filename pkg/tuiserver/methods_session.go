@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
 )
 
 var sessionRegistry = &handlerRegistry{}
@@ -22,14 +23,14 @@ func intParam(params map[string]any, key string, def int) int {
 	}
 	n, err := pyint.Of(raw)
 	if err != nil {
-		var pyErr *pyint.Error
+		var pyErr *errorutil.Error
 		if errors.As(err, &pyErr) && pyErr.Kind == "OverflowError" {
 			panic(err)
 		}
 		return def
 	}
 	if !n.IsInt64() {
-		panic(&pyint.Error{Kind: "OverflowError", Msg: fmt.Sprintf("the %s value %s is larger than a 64 bit integer holds", key, n.String())})
+		panic(&errorutil.Error{Kind: "OverflowError", Msg: fmt.Sprintf("the %s value %s is larger than a 64 bit integer holds", key, n.String())})
 	}
 	return int(n.Int64())
 }

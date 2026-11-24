@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 )
 
 // Appends pending messages to sessions/<id>.jsonl under the home, returning the path or empty when nothing was written
@@ -33,13 +31,13 @@ func DivertSessionTranscriptJSONL(ctx context.Context, sessionID string, message
 		}
 		record := msg
 		switch msg.(type) {
-		case *pyjson.Object, map[string]any:
+		case *jsonutil.Object, map[string]any:
 		default:
-			o := pyjson.NewObject()
-			o.Set("content", pyrepr.Str(msg))
+			o := jsonutil.NewObject()
+			o.Set("content", anyutil.String(msg))
 			record = o
 		}
-		line, err := pyjson.Dumps(record, pyjson.EnsureASCII(false), pyjson.Default(func(v any) (any, error) { return pyrepr.Str(v), nil }))
+		line, err := jsonutil.Encode(record, jsonutil.Convert(func(v any) (any, error) { return anyutil.String(v), nil }))
 		if err != nil {
 			return "", err
 		}

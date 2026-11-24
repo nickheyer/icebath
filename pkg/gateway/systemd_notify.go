@@ -5,13 +5,14 @@ import (
 	"math"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 // Socket path systemd set in NOTIFY_SOCKET, empty where the platform has no unix sockets
@@ -37,7 +38,7 @@ func SystemdWatchdogIntervalSeconds() *float64 {
 	if systemdNotifySocket() != "" {
 		raw = os.Getenv("WATCHDOG_USEC")
 	}
-	usec, err := pyint.ParseFloat(raw)
+	usec, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
 		return nil
 	}
@@ -111,7 +112,7 @@ func (w *SystemdWatchdog) lagTolerance() float64 {
 	if w.lagToleranceSeconds == nil {
 		return fallback
 	}
-	value, err := pyint.Float(w.lagToleranceSeconds)
+	value, err := anyutil.ToFloat(w.lagToleranceSeconds)
 	if err != nil {
 		return fallback
 	}
@@ -131,7 +132,7 @@ func (w *SystemdWatchdog) Start(ctx context.Context) bool {
 	if w.task != nil && !w.task.finished() {
 		return true
 	}
-	if !pyctx.RunningLoop(ctx) {
+	if !ctxutil.NonBlocking(ctx) {
 		return false
 	}
 	w.stopping, w.unhealthy, w.stoppingNotified = false, false, false
@@ -179,7 +180,7 @@ func (w *SystemdWatchdog) run(ctx context.Context) {
 		return
 	}
 	cadence := math.Max(0.01, *w.IntervalSeconds/2.0)
-	scheduledAt := pythread.Monotonic() + cadence
+	scheduledAt := timeutil.Monotonic() + cadence
 	for {
 		w.mu.Lock()
 		halted := w.stopping || w.unhealthy
@@ -187,7 +188,7 @@ func (w *SystemdWatchdog) run(ctx context.Context) {
 		if halted {
 			return
 		}
-		wait := math.Max(0, scheduledAt-pythread.Monotonic())
+		wait := math.Max(0, scheduledAt-timeutil.Monotonic())
 		timer := time.NewTimer(time.Duration(wait * float64(time.Second)))
 		select {
 		case <-ctx.Done():
@@ -195,7 +196,7 @@ func (w *SystemdWatchdog) run(ctx context.Context) {
 			return
 		case <-timer.C:
 		}
-		now := pythread.Monotonic()
+		now := timeutil.Monotonic()
 		if !w.RecordTick(scheduledAt, now) {
 			return
 		}

@@ -6,8 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pysqlite"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	sqliteutil "github.com/nickheyer/icebath/pkg/utils/sqlite"
 )
 
 // Ends a created session a hundred days ago
@@ -33,7 +35,7 @@ func settledAdmission(t *testing.T, db *SessionDB, epoch int64, sid, requestID s
 }
 
 // Admits and claims one input, returning the claim
-func startedAdmission(t *testing.T, db *SessionDB, epoch int64, sid, requestID string) *pyjson.Object {
+func startedAdmission(t *testing.T, db *SessionDB, epoch int64, sid, requestID string) *jsonutil.Object {
 	t.Helper()
 	admitInput(t, db, epoch, "human", sid, requestID, admissionText("x"))
 	return claimHead(t, db, epoch, sid)
@@ -47,13 +49,13 @@ func ledgerRows(t *testing.T, db *SessionDB, sid string) any {
 
 // Delete mutation of sid at its current revision and generation
 func deleteMutation(db *SessionDB, epoch int64, sid, requestID string) RuntimeMutation {
-	in := mutationAt(db, sid, "delete", requestID, pyjson.NewObject())
+	in := mutationAt(db, sid, "delete", requestID, jsonutil.NewObject())
 	in.Epoch = epoch
 	return in
 }
 
 // Foreign key check rows of the store
-func foreignKeyViolations(t *testing.T, db *SessionDB) []*pyjson.Object {
+func foreignKeyViolations(t *testing.T, db *SessionDB) []*jsonutil.Object {
 	t.Helper()
 	return rowsOf(t, db, "PRAGMA foreign_key_check")
 }
@@ -77,10 +79,10 @@ func TestUsedHistoryRetirementIsAtomicAndExact(t *testing.T) {
 	if _, err := db.RegisterWorkerExecution(ctx, WorkerRegistration{Epoch: epoch, ExecutionID: "worker", SessionID: "used", Generation: generation, Kind: "compute", AdoptionSecret: "owned-proof"}); err != nil {
 		t.Fatal(err)
 	}
-	workerAppend := pyjson.ObjectOf("messages", []any{pyjson.ObjectOf("role", "assistant", "content", "worker history")})
+	workerAppend := jsonutil.ObjectOf("messages", []any{jsonutil.ObjectOf("role", "assistant", "content", "worker history")})
 	scope := WorkerReceipt{Epoch: epoch, ExecutionID: "worker", SessionID: "used", Generation: generation, Sequence: 1, Operation: "transcript.append", Payload: workerAppend}
 	workerResult := mustReceipt(t, db, scope)
-	result := pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "exact reply", "messages", []any{}), "usage", pyjson.ObjectOf("input_tokens", int64(7)))
+	result := jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "exact reply", "messages", []any{}), "usage", jsonutil.ObjectOf("input_tokens", int64(7)))
 	retainResult(t, db, epoch, row, result)
 	del := deleteMutation(db, epoch, "used", "delete")
 	mustExecConn(t, db.conn, "CREATE TRIGGER deny_delete_receipt BEFORE INSERT ON state_meta WHEN NEW.key LIKE 'gateway.mutation.v1.%' BEGIN SELECT RAISE(ABORT,'receipt failed'); END")
@@ -109,12 +111,12 @@ func TestUsedHistoryRetirementIsAtomicAndExact(t *testing.T) {
 		t.Fatal("foreign key violations")
 	}
 	for _, table := range []string{"session_admissions", "worker_executions", "worker_receipts"} {
-		if !pyjson.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM "+table), 0) {
+		if !anyutil.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM "+table), 0) {
 			t.Fatalf("%s rows survived", table)
 		}
 	}
 	del.Epoch = epoch
-	if again := mustMutate(t, db, del); !pyjson.Equal(again, receipt) {
+	if again := mustMutate(t, db, del); !anyutil.Equal(again, receipt) {
 		t.Fatalf("delete replay %v", again)
 	}
 	input.Epoch = epoch
@@ -122,18 +124,18 @@ func TestUsedHistoryRetirementIsAtomicAndExact(t *testing.T) {
 	if err != nil || objStr(replay, "admission_id") != objStr(row, "admission_id") || objStr(replay, "status") != "terminal" {
 		t.Fatalf("replay %v %v", replay, err)
 	}
-	if !pyjson.Equal(rowValue(replay, "payload"), pyjson.NewObject()) {
+	if !anyutil.Equal(rowValue(replay, "payload"), jsonutil.NewObject()) {
 		t.Fatal("input history must not be archived in the identity tombstone")
 	}
-	wantResult := pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "exact reply", "messages", []any{}, "_messages_are_turn_suffix", true), "usage", pyjson.ObjectOf("input_tokens", int64(7)))
-	if got := admissionResult(t, db, objStr(row, "admission_id")); !pyjson.Equal(got, wantResult) {
+	wantResult := jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "exact reply", "messages", []any{}, "_messages_are_turn_suffix", true), "usage", jsonutil.ObjectOf("input_tokens", int64(7)))
+	if got := admissionResult(t, db, objStr(row, "admission_id")); !anyutil.Equal(got, wantResult) {
 		t.Fatalf("result %v", got)
 	}
 	digest, err := AdmissionFingerprint("used", map[string]any{"operation": "transcript.append", "payload": workerAppend})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(rowValue(workerResult, "count"), 1) {
+	if !anyutil.Equal(rowValue(workerResult, "count"), 1) {
 		t.Fatal("worker count")
 	}
 	if _, err := db.TerminalWorkerReceipt(ctx, "worker", "used", generation, 1, "owned-proof", digest); refusalReason(t, err) != "stale_generation" {
@@ -193,7 +195,7 @@ func TestNonterminalObligationsPreventAnyRetirement(t *testing.T) {
 			reason = "unknown_execution"
 		}
 		err := db.executeWrite(ctx, func(conn SQLiteConn) error {
-			_, _, err := deleteInTransaction(db, ctx, conn, status, pyjson.NewObject())
+			_, _, err := deleteInTransaction(db, ctx, conn, status, jsonutil.NewObject())
 			return err
 		}, nil)
 		if refusalReason(t, err) != reason {
@@ -232,23 +234,23 @@ func TestLateAccountingBackfillCannotResurrectARetiredSession(t *testing.T) {
 	if sessionOf(t, db, "retired") != nil {
 		t.Fatal("late accounting resurrected a deleted session")
 	}
-	if !pyjson.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM session_model_usage WHERE session_id='retired'"), 0) {
+	if !anyutil.Equal(scalarOf(t, db.conn, "SELECT COUNT(*) FROM session_model_usage WHERE session_id='retired'"), 0) {
 		t.Fatal("usage rows written")
 	}
-	if again := mustMutate(t, db, del); !pyjson.Equal(again, receipt) {
+	if again := mustMutate(t, db, del); !anyutil.Equal(again, receipt) {
 		t.Fatalf("replay %v", again)
 	}
 	if err := db.UpdateTokenCounts("fresh", TokenCountDelta{InputTokens: 1, OutputTokens: 1, Model: &model}); err != nil {
 		t.Fatal(err)
 	}
-	if !pyjson.Equal(rowValue(sessionOf(t, db, "fresh"), "source"), "unknown") {
+	if !anyutil.Equal(rowValue(sessionOf(t, db, "fresh"), "source"), "unknown") {
 		t.Fatal("legacy backfill")
 	}
 }
 
 // Read receipt payload of a full history read of the session
-func historyRead(target string) *pyjson.Object {
-	return pyjson.ObjectOf("target", target, "include_ancestors", false, "include_inactive", false, "repair_alternation", false,
+func historyRead(target string) *jsonutil.Object {
+	return jsonutil.ObjectOf("target", target, "include_ancestors", false, "include_inactive", false, "repair_alternation", false,
 		"include_row_ids", false, "include_compacted", false)
 }
 
@@ -269,7 +271,7 @@ func TestDeletionTombstoneKeepsOnlyTheClosingWorkerResult(t *testing.T) {
 	read := scope
 	read.Sequence, read.Operation, read.Payload = 1, "compression.history", historyRead("gone")
 	history := mustReceipt(t, db, read)
-	historyText, _ := pyjson.Dumps(history)
+	historyText, _ := jsonutil.Encode(history)
 	if !strings.Contains(historyText, "SECRET_HISTORY_LINE") {
 		t.Fatal("history read without the line")
 	}
@@ -280,18 +282,18 @@ func TestDeletionTombstoneKeepsOnlyTheClosingWorkerResult(t *testing.T) {
 	if strings.Contains(metaBlob(t, db, "SELECT value FROM state_meta WHERE key LIKE 'gateway.terminal_worker.v1.%'"), "SECRET_HISTORY_LINE") {
 		t.Fatal("deleted history survives in worker tombstones")
 	}
-	digest := func(op string, payload *pyjson.Object) string {
+	digest := func(op string, payload *jsonutil.Object) string {
 		d, err := AdmissionFingerprint("gone", map[string]any{"operation": op, "payload": payload})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return d
 	}
-	replay, err := db.TerminalWorkerReceipt(ctx, "worker", "gone", 0, 2, "proof", digest("execution.finish", pyjson.NewObject()))
-	if err != nil || !pyjson.Equal(replay, closing) {
+	replay, err := db.TerminalWorkerReceipt(ctx, "worker", "gone", 0, 2, "proof", digest("execution.finish", jsonutil.NewObject()))
+	if err != nil || !anyutil.Equal(replay, closing) {
 		t.Fatalf("closing replay %v %v", replay, err)
 	}
-	if _, err := db.TerminalWorkerReceipt(ctx, "worker", "gone", 0, 1, "proof", digest("execution.finish", pyjson.NewObject())); refusalReason(t, err) != "admission_conflict" {
+	if _, err := db.TerminalWorkerReceipt(ctx, "worker", "gone", 0, 1, "proof", digest("execution.finish", jsonutil.NewObject())); refusalReason(t, err) != "admission_conflict" {
 		t.Fatal(err)
 	}
 }
@@ -304,7 +306,7 @@ func TestDeletingASessionDropsTranscriptCopiesFromItsTerminalResults(t *testing.
 	mustCreate(t, db, NewSession{ID: "gone", Source: "api_server"})
 	epoch, _ := db.BeginRuntimeEpoch(ctx, "owner")
 	history := []any{}
-	rows := []*pyjson.Object{}
+	rows := []*jsonutil.Object{}
 	for turn := 0; turn < 3; turn++ {
 		ask := "SECRET_HISTORY q" + pyStr(int64(turn))
 		answer := "a" + pyStr(int64(turn))
@@ -313,14 +315,14 @@ func TestDeletingASessionDropsTranscriptCopiesFromItsTerminalResults(t *testing.
 		if _, err := db.AppendMessage(ctx, "gone", map[string]any{"role": "user", "content": ask}, AppendGuards{}); err != nil {
 			t.Fatal(err)
 		}
-		history = append(history, pyjson.ObjectOf("role", "user", "content", ask), pyjson.ObjectOf("role", "assistant", "content", answer))
-		retainResult(t, db, epoch, row, pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", answer, "messages", append([]any{}, history...),
+		history = append(history, jsonutil.ObjectOf("role", "user", "content", ask), jsonutil.ObjectOf("role", "assistant", "content", answer))
+		retainResult(t, db, epoch, row, jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", answer, "messages", append([]any{}, history...),
 			"last_reasoning", "SECRET_HISTORY why", "completed", true, "api_calls", int64(1), "input_tokens", int64(5)),
-			"usage", pyjson.ObjectOf("input_tokens", int64(5), "output_tokens", int64(2))))
+			"usage", jsonutil.ObjectOf("input_tokens", int64(5), "output_tokens", int64(2))))
 		rows = append(rows, row)
 		stored := admissionResult(t, db, objStr(row, "admission_id"))
-		messages := rowValue(rowValue(stored, "result").(*pyjson.Object), "messages")
-		if !pyjson.Equal(messages, []any{pyjson.ObjectOf("role", "assistant", "content", answer)}) {
+		messages := rowValue(rowValue(stored, "result").(*jsonutil.Object), "messages")
+		if !anyutil.Equal(messages, []any{jsonutil.ObjectOf("role", "assistant", "content", answer)}) {
 			t.Fatalf("turn %d receipt %v", turn, stored)
 		}
 	}
@@ -334,9 +336,9 @@ func TestDeletingASessionDropsTranscriptCopiesFromItsTerminalResults(t *testing.
 	if err != nil || objStr(replay, "admission_id") != objStr(rows[2], "admission_id") || objStr(replay, "status") != "terminal" {
 		t.Fatalf("replay %v %v", replay, err)
 	}
-	want := pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "a2", "messages", []any{}, "completed", true, "api_calls", int64(1), "input_tokens", int64(5),
-		"_messages_are_turn_suffix", true), "usage", pyjson.ObjectOf("input_tokens", int64(5), "output_tokens", int64(2)))
-	if got := admissionResult(t, db, objStr(replay, "admission_id")); !pyjson.Equal(got, want) {
+	want := jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "a2", "messages", []any{}, "completed", true, "api_calls", int64(1), "input_tokens", int64(5),
+		"_messages_are_turn_suffix", true), "usage", jsonutil.ObjectOf("input_tokens", int64(5), "output_tokens", int64(2)))
+	if got := admissionResult(t, db, objStr(replay, "admission_id")); !anyutil.Equal(got, want) {
 		t.Fatalf("retired result %v", got)
 	}
 }
@@ -379,7 +381,7 @@ func TestAMalformedUnrelatedRouteOrPolicyRowCannotAbortADelete(t *testing.T) {
 			if retired, err := db.RetiredSession(ctx, "target"); err != nil || !retired {
 				t.Fatalf("%s: retired %v %v", mode, retired, err)
 			}
-			if !pyjson.Equal(scalarOf(t, db.conn, "SELECT (SELECT COUNT(*) FROM gateway_routing) + (SELECT COUNT(*) FROM state_meta WHERE key GLOB 'gateway.local_policy.v1:*')"), 1) {
+			if !anyutil.Equal(scalarOf(t, db.conn, "SELECT (SELECT COUNT(*) FROM gateway_routing) + (SELECT COUNT(*) FROM state_meta WHERE key GLOB 'gateway.local_policy.v1:*')"), 1) {
 				t.Fatalf("%s: the unrelated row changed", mode)
 			}
 			db.Close()
@@ -405,10 +407,10 @@ func TestDeletedHistoryIsNotRecoverableFromWorkerOrMutationReceipts(t *testing.T
 	appendText("gone", "assistant", "a1")
 	rewound := appendText("gone", "user", "SECRET_REWOUND")
 	appendText("gone", "assistant", "a2")
-	rewind := mutationAt(db, "gone", "rewind", "rw", pyjson.ObjectOf("target_message_id", rewound))
+	rewind := mutationAt(db, "gone", "rewind", "rw", jsonutil.ObjectOf("target_message_id", rewound))
 	rewind.Epoch = epoch
 	receipt := mustMutate(t, db, rewind)
-	if text, _ := pyjson.Dumps(receipt); !strings.Contains(text, "SECRET_REWOUND") {
+	if text, _ := jsonutil.Encode(receipt); !strings.Contains(text, "SECRET_REWOUND") {
 		t.Fatal("rewind receipt without the turn")
 	}
 	appendText("gone", "user", "SECRET_HISTORY_LINE")
@@ -428,9 +430,9 @@ func TestDeletedHistoryIsNotRecoverableFromWorkerOrMutationReceipts(t *testing.T
 		t.Fatal("deleted history survives in receipts")
 	}
 	replay := mustMutate(t, db, rewind)
-	want := receipt.Copy()
+	want := receipt.Clone()
 	want.Set("target_message", nil)
-	if !pyjson.Equal(replay, want) {
+	if !anyutil.Equal(replay, want) {
 		t.Fatalf("replay %v", replay)
 	}
 	digest, _ := AdmissionFingerprint("gone", map[string]any{"operation": "compression.history", "payload": historyRead("gone")})
@@ -447,7 +449,7 @@ func TestMutationReceiptsNamingADeletedPhysicalTargetDropItsText(t *testing.T) {
 	defer db.Close()
 	epoch, _ := db.BeginRuntimeEpoch(ctx, "owner")
 	sid := localSessionFixture(t, db, epoch, dir)
-	reset := mutationAt(db, sid, "reset", "reset", pyjson.NewObject())
+	reset := mutationAt(db, sid, "reset", "reset", jsonutil.NewObject())
 	reset.Epoch = epoch
 	child := objStr(mustMutate(t, db, reset), "target_session_id")
 	appendText := func(role, content string) int64 {
@@ -461,12 +463,12 @@ func TestMutationReceiptsNamingADeletedPhysicalTargetDropItsText(t *testing.T) {
 	appendText("assistant", "a1")
 	target := appendText("user", "SECRET_CHILD_TURN")
 	appendText("assistant", "a2")
-	rewind := mutationAt(db, sid, "rewind", "rw", pyjson.ObjectOf("target_message_id", target))
+	rewind := mutationAt(db, sid, "rewind", "rw", jsonutil.ObjectOf("target_message_id", target))
 	rewind.Epoch = epoch
-	if text, _ := pyjson.Dumps(mustMutate(t, db, rewind)); !strings.Contains(text, "SECRET_CHILD_TURN") {
+	if text, _ := jsonutil.Encode(mustMutate(t, db, rewind)); !strings.Contains(text, "SECRET_CHILD_TURN") {
 		t.Fatal("rewind receipt without the turn")
 	}
-	rename := mutationAt(db, sid, "rename", "rn", pyjson.ObjectOf("title", "SECRET_TITLE"))
+	rename := mutationAt(db, sid, "rename", "rn", jsonutil.ObjectOf("title", "SECRET_TITLE"))
 	rename.Epoch = epoch
 	mustMutate(t, db, rename)
 	if ok, err := db.DeleteSession(ctx, child, DeleteSessionOptions{}); err != nil || !ok || sessionOf(t, db, sid) != nil {
@@ -477,7 +479,7 @@ func TestMutationReceiptsNamingADeletedPhysicalTargetDropItsText(t *testing.T) {
 		t.Fatal("deleted text survives in receipts")
 	}
 	replay := mustMutate(t, db, rewind)
-	if rowValue(replay, "target_message") != nil || !pyjson.Equal(rowValue(replay, "rewound_count"), 2) {
+	if rowValue(replay, "target_message") != nil || !anyutil.Equal(rowValue(replay, "rewound_count"), 2) {
 		t.Fatalf("rewind replay %v", replay)
 	}
 	if rowValue(mustMutate(t, db, rename), "title") != nil {
@@ -494,16 +496,16 @@ func TestRetirementDropsTheTurnUserRowCopy(t *testing.T) {
 	epoch, _ := db.BeginRuntimeEpoch(ctx, "owner")
 	admitInput(t, db, epoch, "api", "gone", "r1", admissionText("secret ask"))
 	row := claimHead(t, db, epoch, "gone")
-	user := pyjson.ObjectOf("role", "user", "content", "secret ask", "api_content", "memory: secret ask")
-	retainResult(t, db, epoch, row, pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "reply", "current_turn_user_idx", int64(0),
-		"messages", []any{user, pyjson.ObjectOf("role", "assistant", "content", "reply")})))
+	user := jsonutil.ObjectOf("role", "user", "content", "secret ask", "api_content", "memory: secret ask")
+	retainResult(t, db, epoch, row, jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "reply", "current_turn_user_idx", int64(0),
+		"messages", []any{user, jsonutil.ObjectOf("role", "assistant", "content", "reply")})))
 	stored := admissionResult(t, db, objStr(row, "admission_id"))
-	if !pyjson.Equal(rowValue(rowValue(stored, "result").(*pyjson.Object), "_turn_user_row"), user) {
+	if !anyutil.Equal(rowValue(rowValue(stored, "result").(*jsonutil.Object), "_turn_user_row"), user) {
 		t.Fatalf("stored %v", stored)
 	}
 	mustMutate(t, db, deleteMutation(db, epoch, "gone", "del"))
-	retired := rowValue(admissionResult(t, db, objStr(row, "admission_id")), "result").(*pyjson.Object)
-	if _, has := retired.Get("_turn_user_row"); has || !pyjson.Equal(rowValue(retired, "final_response"), "reply") {
+	retired := rowValue(admissionResult(t, db, objStr(row, "admission_id")), "result").(*jsonutil.Object)
+	if _, has := retired.Get("_turn_user_row"); has || !anyutil.Equal(rowValue(retired, "final_response"), "reply") {
 		t.Fatalf("retired %v", retired)
 	}
 }
@@ -522,7 +524,7 @@ func TestTombstonesPastTheRetryHorizonAreReclaimedByThePrunePass(t *testing.T) {
 			t.Fatal(err)
 		}
 		row := claimHead(t, db, epoch, sid)
-		retainResult(t, db, epoch, row, pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "reply "+sid, "messages", []any{})))
+		retainResult(t, db, epoch, row, jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "reply "+sid, "messages", []any{})))
 		restore := SetWallClock(func() float64 { return at })
 		mustMutate(t, db, deleteMutation(db, epoch, sid, "del"))
 		restore()
@@ -553,7 +555,7 @@ func TestTombstonesPastTheRetryHorizonAreReclaimedByThePrunePass(t *testing.T) {
 	if len(rowsNaming("young", youngID)) != 4 {
 		t.Fatalf("young rows %v", rowsNaming("young", youngID))
 	}
-	if got := rowsNaming("old", oldID); !pyjson.Equal(anyStrings(got), []any{RetiredPrefix + "old"}) {
+	if got := rowsNaming("old", oldID); !anyutil.Equal(anyStrings(got), []any{RetiredPrefix + "old"}) {
 		t.Fatalf("tombstones past the horizon were not reclaimed (the deletion fence stays): %v", got)
 	}
 	if _, err := db.AdmitSessionInput(ctx, old); refusalReason(t, err) != "not_found" {
@@ -563,7 +565,7 @@ func TestTombstonesPastTheRetryHorizonAreReclaimedByThePrunePass(t *testing.T) {
 	if err != nil || objStr(replay, "admission_id") != youngID || objStr(replay, "status") != "terminal" {
 		t.Fatalf("young replay %v %v", replay, err)
 	}
-	if !pyjson.Equal(rowValue(rowValue(admissionResult(t, db, youngID), "result").(*pyjson.Object), "final_response"), "reply young") {
+	if !anyutil.Equal(rowValue(rowValue(admissionResult(t, db, youngID), "result").(*jsonutil.Object), "final_response"), "reply young") {
 		t.Fatal("young result")
 	}
 }
@@ -644,17 +646,17 @@ func TestLegacyDeleteRetiresTerminalLedgerRowsAndRefusesLiveWork(t *testing.T) {
 		if !legacyDeletes[name](t, db, "settled") {
 			t.Fatalf("%s refused the settled session", name)
 		}
-		if sessionOf(t, db, "settled") != nil || !pyjson.Equal(ledgerRows(t, db, "settled"), 0) {
+		if sessionOf(t, db, "settled") != nil || !anyutil.Equal(ledgerRows(t, db, "settled"), 0) {
 			t.Fatalf("%s left rows", name)
 		}
 		tombstone, _ := db.GetSessionAdmission(ctx, admissionID)
-		if objStr(tombstone, "status") != "terminal" || !pyjson.Equal(rowValue(tombstone, "payload"), pyjson.NewObject()) {
+		if objStr(tombstone, "status") != "terminal" || !anyutil.Equal(rowValue(tombstone, "payload"), jsonutil.NewObject()) {
 			t.Fatalf("tombstone %v", tombstone)
 		}
 		if r := legacyDeleteRefusal(t, db, name, "busy"); r != "session_busy" {
 			t.Fatalf("%s -> %s", name, r)
 		}
-		if sessionOf(t, db, "busy") == nil || !pyjson.Equal(ledgerRows(t, db, "busy"), 1) {
+		if sessionOf(t, db, "busy") == nil || !anyutil.Equal(ledgerRows(t, db, "busy"), 1) {
 			t.Fatal("busy session touched")
 		}
 		if len(foreignKeyViolations(t, db)) != 0 {
@@ -745,7 +747,7 @@ func TestSweepsSkipSessionsWithLiveWorkAndRetireTheRest(t *testing.T) {
 	if sessionOf(t, db, "ghost_settled") != nil || sessionOf(t, db, "ghost_busy") == nil {
 		t.Fatal("a live session must not abort the whole prune")
 	}
-	if !pyjson.Equal(ledgerRows(t, db, "ghost_settled"), 0) || !pyjson.Equal(ledgerRows(t, db, "ghost_busy"), 1) {
+	if !anyutil.Equal(ledgerRows(t, db, "ghost_settled"), 0) || !anyutil.Equal(ledgerRows(t, db, "ghost_busy"), 1) {
 		t.Fatal("ghost ledger rows")
 	}
 	days := 30.0
@@ -755,7 +757,7 @@ func TestSweepsSkipSessionsWithLiveWorkAndRetireTheRest(t *testing.T) {
 	if sessionOf(t, db, "old_settled") != nil || sessionOf(t, db, "old_plain") != nil || sessionOf(t, db, "old_busy") == nil {
 		t.Fatal("prune set")
 	}
-	if !pyjson.Equal(ledgerRows(t, db, "old_busy"), 1) {
+	if !anyutil.Equal(ledgerRows(t, db, "old_busy"), 1) {
 		t.Fatal("old busy ledger")
 	}
 	if n, err := db.DeleteEmptySessions(ctx, ""); err != nil || n != 0 {
@@ -770,7 +772,7 @@ func TestSweepsSkipSessionsWithLiveWorkAndRetireTheRest(t *testing.T) {
 }
 
 // Local cli owned session plus the reset entry dict of child, the ledger consistency fixture
-func localSessionWithReset(t *testing.T, db *SessionDB, epoch int64) (string, *pyjson.Object) {
+func localSessionWithReset(t *testing.T, db *SessionDB, epoch int64) (string, *jsonutil.Object) {
 	t.Helper()
 	sid := localSessionFixture(t, db, epoch, t.TempDir())
 	reset := localEntryFixture("local:"+sid, "child", localOriginFixture(sid, "human"), time.Now())
@@ -789,7 +791,7 @@ func TestLocalResetRefusesOverStartedAdmissionThenFencesGeneration(t *testing.T)
 	if err := db.ResetLocalTarget(ctx, epoch, sid, reset); refusalReason(t, err) != "session_busy" {
 		t.Fatal(err)
 	}
-	if sessionOf(t, db, "child") != nil || !pyjson.Equal(sessionOf(t, db, sid), before) {
+	if sessionOf(t, db, "child") != nil || !anyutil.Equal(sessionOf(t, db, sid), before) {
 		t.Fatal("refused reset changed rows")
 	}
 	generation, _ := exactInt(rowValue(started, "generation"))
@@ -801,7 +803,7 @@ func TestLocalResetRefusesOverStartedAdmissionThenFencesGeneration(t *testing.T)
 	}
 	after := sessionOf(t, db, sid)
 	beforeGen, _ := exactInt(rowValue(before, "runtime_generation"))
-	if !pyjson.Equal(rowValue(after, "end_reason"), "session_reset") || sessionOf(t, db, "child") == nil || !pyjson.Equal(rowValue(after, "runtime_generation"), beforeGen+1) {
+	if !anyutil.Equal(rowValue(after, "end_reason"), "session_reset") || sessionOf(t, db, "child") == nil || !anyutil.Equal(rowValue(after, "runtime_generation"), beforeGen+1) {
 		t.Fatalf("after %v", after)
 	}
 	if _, err := db.RegisterWorkerExecution(ctx, WorkerRegistration{Epoch: epoch, ExecutionID: "stale", SessionID: sid, Generation: beforeGen, Kind: "compute", AdoptionSecret: "private-fixture"}); refusalReason(t, err) != "stale_generation" {
@@ -829,7 +831,7 @@ func TestLocalResetRefusesOverLiveComputeWorkerButNotAQueuedFollower(t *testing.
 		if err := db.ResetLocalTarget(ctx, epoch, sid, reset); refusalReason(t, err) != "session_busy" {
 			t.Fatal(err)
 		}
-		if !pyjson.Equal(sessionOf(t, db, sid), before) || sessionOf(t, db, "child") != nil {
+		if !anyutil.Equal(sessionOf(t, db, sid), before) || sessionOf(t, db, "child") != nil {
 			t.Fatal("refused reset changed rows")
 		}
 		mustReceipt(t, db, appendReceipt(scope, 1, "ok"))
@@ -838,7 +840,7 @@ func TestLocalResetRefusesOverLiveComputeWorkerButNotAQueuedFollower(t *testing.
 			t.Fatal(err)
 		}
 		beforeGen, _ := exactInt(rowValue(before, "runtime_generation"))
-		if !pyjson.Equal(rowValue(sessionOf(t, db, sid), "runtime_generation"), beforeGen+1) {
+		if !anyutil.Equal(rowValue(sessionOf(t, db, sid), "runtime_generation"), beforeGen+1) {
 			t.Fatal("generation")
 		}
 		if claimed := claimHead(t, db, epoch, sid); objStr(claimed, "admission_id") != objStr(follower, "admission_id") {
@@ -926,7 +928,7 @@ func TestPendingAndIdleProbesDoNotScanFinishedHistory(t *testing.T) {
 		}
 		inner = tracked.SQLiteConn
 	}
-	raw, ok := inner.(pysqlite.RawConn)
+	raw, ok := inner.(sqliteutil.RawConn)
 	if !ok {
 		t.Fatalf("writer connection %T exposes no raw handle", inner)
 	}
@@ -979,7 +981,7 @@ func TestADeletedCompressedRootLeavesItsBranchAndNoReusableID(t *testing.T) {
 	mustCreate(t, db, NewSession{ID: "root", Source: "cli"})
 	admitInput(t, db, epoch, "owner", "root", "r1", admissionText("turn"))
 	row := claimHead(t, db, epoch, "root")
-	retainResult(t, db, epoch, row, pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "reply"), "usage", pyjson.NewObject()))
+	retainResult(t, db, epoch, row, jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "reply"), "usage", jsonutil.NewObject()))
 	if _, err := db.AppendMessage(ctx, "root", map[string]any{"role": "user", "content": "turn"}, AppendGuards{}); err != nil {
 		t.Fatal(err)
 	}
@@ -1027,7 +1029,7 @@ func TestADeletedCompressedRootLeavesItsBranchAndNoReusableID(t *testing.T) {
 			t.Fatalf("%s keys survived: %v", prefix, keys)
 		}
 	}
-	if got := metaKeys(t, db, RetiredPrefix); !pyjson.Equal(anyStrings(got), []any{RetiredPrefix + "root", RetiredPrefix + "tip"}) {
+	if got := metaKeys(t, db, RetiredPrefix); !anyutil.Equal(anyStrings(got), []any{RetiredPrefix + "root", RetiredPrefix + "tip"}) {
 		t.Fatalf("retired keys %v", got)
 	}
 	for _, sid := range []string{"root", "tip"} {
@@ -1051,7 +1053,7 @@ func TestSweepsKeepTheOwnerARetainedResetChildNeeds(t *testing.T) {
 			sid := localSessionFixture(t, db, epoch, dir)
 			var child string
 			if producer == "canonical" {
-				reset := mutationAt(db, sid, "reset", "reset-0", pyjson.NewObject())
+				reset := mutationAt(db, sid, "reset", "reset-0", jsonutil.NewObject())
 				reset.Epoch = epoch
 				child = objStr(mustMutate(t, db, reset), "target_session_id")
 			} else {
@@ -1059,9 +1061,9 @@ func TestSweepsKeepTheOwnerARetainedResetChildNeeds(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				old := rowValue(receipt, "entry").(*pyjson.Object)
+				old := rowValue(receipt, "entry").(*jsonutil.Object)
 				child = NewUID()
-				entry := old.Copy()
+				entry := old.Clone()
 				entry.Set("session_id", child)
 				entry.Set("is_fresh_reset", true)
 				if err := db.ResetLocalTarget(ctx, epoch, sid, entry); err != nil {
@@ -1095,7 +1097,7 @@ func TestSweepsKeepTheOwnerARetainedResetChildNeeds(t *testing.T) {
 			if sessionOf(t, db, sid) == nil {
 				t.Fatal("owner swept")
 			}
-			if got := contentsOf(t, db, child, GetMessagesOptions{}); !pyjson.Equal(got, []any{"hi", "hello"}) {
+			if got := contentsOf(t, db, child, GetMessagesOptions{}); !anyutil.Equal(got, []any{"hi", "hello"}) {
 				t.Fatalf("child messages %v", got)
 			}
 			var target string
@@ -1116,9 +1118,9 @@ func TestSweepsKeepTheOwnerARetainedResetChildNeeds(t *testing.T) {
 }
 
 // Installs a lifecycle hook invoker recording on_session_delete events with the row state after commit
-func recordDeleteEvents(t *testing.T, db *SessionDB, before func() error) *[]*pyjson.Object {
+func recordDeleteEvents(t *testing.T, db *SessionDB, before func() error) *[]*jsonutil.Object {
 	t.Helper()
-	events := &[]*pyjson.Object{}
+	events := &[]*jsonutil.Object{}
 	SetLifecycleHookInvoker(func(ctx context.Context, hookName string, kwargs map[string]any) ([]any, error) {
 		if hookName != "on_session_delete" {
 			return nil, nil
@@ -1127,7 +1129,7 @@ func recordDeleteEvents(t *testing.T, db *SessionDB, before func() error) *[]*py
 		if before != nil {
 			firstErr = before()
 		}
-		event := pyjson.NewObject()
+		event := jsonutil.NewObject()
 		for k, v := range kwargs {
 			event.Set(k, v)
 		}
@@ -1145,7 +1147,7 @@ func recordDeleteEvents(t *testing.T, db *SessionDB, before func() error) *[]*py
 }
 
 // Canonical mutation of sid at its current revision
-func canonicalMutate(t *testing.T, db *SessionDB, sid, operation string, payload *pyjson.Object) *pyjson.Object {
+func canonicalMutate(t *testing.T, db *SessionDB, sid, operation string, payload *jsonutil.Object) *jsonutil.Object {
 	t.Helper()
 	epoch, err := db.BeginRuntimeEpoch(context.Background(), "test")
 	if err != nil {
@@ -1204,7 +1206,7 @@ func TestEveryDeleteAndArchivePathFiresOnceAfterCommit(t *testing.T) {
 	if n, err := db.PruneSessions(ctx, PruneSessionsOptions{OlderThanDays: &days}); err != nil || n != 1 {
 		t.Fatalf("prune %d %v", n, err)
 	}
-	canonicalMutate(t, db, "desk", "delete", pyjson.NewObject())
+	canonicalMutate(t, db, "desk", "delete", jsonutil.NewObject())
 	if ok, err := db.SetSessionArchived(ctx, "arch", true, true); err != nil || !ok {
 		t.Fatalf("archive %v %v", ok, err)
 	}
@@ -1214,7 +1216,7 @@ func TestEveryDeleteAndArchivePathFiresOnceAfterCommit(t *testing.T) {
 	if _, err := db.SetSessionArchived(ctx, "arch", false, true); err != nil {
 		t.Fatal(err)
 	}
-	canonicalMutate(t, db, "desk-arch", "sidebar", pyjson.ObjectOf("archived", true))
+	canonicalMutate(t, db, "desk-arch", "sidebar", jsonutil.ObjectOf("archived", true))
 	if _, err := db.ArchiveStaleSessions(ctx, 0, true); err != nil {
 		t.Fatal(err)
 	}
@@ -1232,11 +1234,11 @@ func TestEveryDeleteAndArchivePathFiresOnceAfterCommit(t *testing.T) {
 		[]any{"arch", "archive", []any{"arch", "arch-root"}, true},
 		[]any{"desk-arch", "archive", []any{"desk-arch", "desk-arch-root"}, true},
 	}
-	if !pyjson.Equal(jsonRoundTrip(got), jsonRoundTrip(want)) {
+	if !anyutil.Equal(jsonRoundTrip(got), jsonRoundTrip(want)) {
 		t.Fatalf("events %v", got)
 	}
 	for _, e := range *events {
-		if !pyjson.Equal(rowValue(e, "profile"), rowValue((*events)[0], "profile")) {
+		if !anyutil.Equal(rowValue(e, "profile"), rowValue((*events)[0], "profile")) {
 			t.Fatal("profiles differ")
 		}
 	}
@@ -1263,7 +1265,7 @@ func TestRaisingCallbackNeverBreaksDeletion(t *testing.T) {
 	for _, e := range *events {
 		ids = append(ids, rowValue(e, "session_id"))
 	}
-	if !pyjson.Equal(ids, []any{"s1", "s2"}) {
+	if !anyutil.Equal(ids, []any{"s1", "s2"}) {
 		t.Fatalf("events %v", ids)
 	}
 }
@@ -1337,7 +1339,7 @@ func TestAnOlderReleaseDeleteOfALedgeredSessionIsRefusedWithTheWayBack(t *testin
 	}
 	db = mustSessionDB(t, path, false)
 	defer db.Close()
-	if got := contentsOf(t, db, "ledgered", GetMessagesOptions{}); !pyjson.Equal(got, []any{"kept"}) {
+	if got := contentsOf(t, db, "ledgered", GetMessagesOptions{}); !anyutil.Equal(got, []any{"kept"}) {
 		t.Fatalf("messages %v", got)
 	}
 	if sessionOf(t, db, "plain") != nil {
@@ -1365,7 +1367,7 @@ func TestAnUpgradedStoreGainsTheGuardOnItsNextOpen(t *testing.T) {
 }
 
 // Exports a session, deletes it through the canonical mutation and prunes its tombstones at once
-func exportedThenDeleted(t *testing.T, db *SessionDB, epoch int64, sid string) *pyjson.Object {
+func exportedThenDeleted(t *testing.T, db *SessionDB, epoch int64, sid string) *jsonutil.Object {
 	t.Helper()
 	ctx := context.Background()
 	mustCreate(t, db, NewSession{ID: sid, Source: "cli"})
@@ -1391,7 +1393,7 @@ func TestImportSessionsRefusesADeletedIDByName(t *testing.T) {
 	epoch, _ := db.BeginRuntimeEpoch(ctx, "owner")
 	exported := exportedThenDeleted(t, db, epoch, "s")
 	result, err := db.ImportSessions(ctx, []any{exported})
-	if err != nil || rowValue(result, "ok") != false || !pyjson.Equal(rowValue(result, "imported"), 0) {
+	if err != nil || rowValue(result, "ok") != false || !anyutil.Equal(rowValue(result, "imported"), 0) {
 		t.Fatalf("result %v %v", result, err)
 	}
 	found := false
@@ -1414,7 +1416,7 @@ func TestTheRuntimeImportRefusesADeletedIDByName(t *testing.T) {
 	epoch, _ := db.BeginRuntimeEpoch(ctx, "owner")
 	exported := exportedThenDeleted(t, db, epoch, "s")
 	_, err := db.MutateRuntimeSession(ctx, RuntimeMutation{Epoch: epoch, PrincipalID: "human", SessionID: "s", RequestID: "restore", ExpectedRevision: 0,
-		Operation: "import", Payload: pyjson.ObjectOf("sessions", []any{exported})})
+		Operation: "import", Payload: jsonutil.ObjectOf("sessions", []any{exported})})
 	if refusalReason(t, err) != "admission_conflict" {
 		t.Fatal(err)
 	}
@@ -1450,7 +1452,7 @@ func TestASweptSessionRestoresOnceItsFenceAgesOut(t *testing.T) {
 		t.Fatal(err)
 	}
 	result, err := db.ImportSessions(ctx, []any{exported})
-	if err != nil || !pyjson.Equal(rowValue(result, "imported"), 1) || sessionOf(t, db, "swept") == nil {
+	if err != nil || !anyutil.Equal(rowValue(result, "imported"), 1) || sessionOf(t, db, "swept") == nil {
 		t.Fatalf("import %v %v", result, err)
 	}
 }
@@ -1477,7 +1479,7 @@ func TestADeletedSessionIsNeverRecreatedAfterTheHorizon(t *testing.T) {
 		t.Fatal(err)
 	}
 	row := claimHead(t, db, epoch, "s")
-	retainResult(t, db, epoch, row, pyjson.ObjectOf("result", pyjson.ObjectOf("final_response", "done"), "usage", pyjson.NewObject()))
+	retainResult(t, db, epoch, row, jsonutil.ObjectOf("result", jsonutil.ObjectOf("final_response", "done"), "usage", jsonutil.NewObject()))
 	deleteEightDaysAgo(t, db, epoch, "s")
 	days := 90.0
 	if _, err := db.PruneSessions(ctx, PruneSessionsOptions{OlderThanDays: &days}); err != nil {
@@ -1575,7 +1577,7 @@ func TestAPermanentMarkerAnEarlierReleaseWroteForASweptAPISessionStays(t *testin
 	ctx := context.Background()
 	db := mustSessionDB(t, t.TempDir()+"/state.db", false)
 	defer db.Close()
-	marker, _ := pyjson.Dumps(pyjson.ObjectOf("retired_at", now()-30*86400))
+	marker, _ := jsonutil.Encode(jsonutil.ObjectOf("retired_at", now()-30*86400))
 	if err := db.SetMeta(ctx, RetiredPrefix+"user-42", marker); err != nil {
 		t.Fatal(err)
 	}

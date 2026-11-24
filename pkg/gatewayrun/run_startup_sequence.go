@@ -13,7 +13,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/monitoring"
 	"github.com/nickheyer/icebath/pkg/plugins"
@@ -21,6 +20,8 @@ import (
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
 	"github.com/nickheyer/icebath/pkg/tuihost"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Whether a chat restart completion marker is waiting to be delivered
@@ -231,9 +232,9 @@ func (r *GatewayRunner) startPostConnectServices(ctx context.Context, connected 
 			return
 		}
 		count := 0
-		if platforms, ok := directory.GetOr("platforms", nil).(*pyjson.Object); ok && platforms != nil {
-			for _, key := range platforms.Keys {
-				if list, ok := platforms.Vals[key].([]any); ok {
+		if platforms, ok := directory.ValueOr("platforms", nil).(*jsonutil.Object); ok && platforms != nil {
+			for _, key := range platforms.Keys() {
+				if list, ok := platforms.Value(key).([]any); ok {
 					count += len(list)
 				}
 			}
@@ -300,8 +301,8 @@ func (r *GatewayRunner) startFinishWiring(ctx context.Context, connected int) er
 		for _, watcher := range tools.DefaultProcessRegistry().TakePendingWatchers() {
 			w := watcher
 			r.spawnSupervised(func(c context.Context) error { return r.runProcessWatcher(c, w) },
-				fmt.Sprintf("process_watcher:%s", pyrepr.Str(w["session_id"])), false, 0, supervisedHooks{})
-			pkgLog().Info(fmt.Sprintf("Resumed watcher for recovered process %s", pyrepr.Str(w["session_id"])))
+				fmt.Sprintf("process_watcher:%s", anyutil.String(w["session_id"])), false, 0, supervisedHooks{})
+			pkgLog().Info(fmt.Sprintf("Resumed watcher for recovered process %s", anyutil.String(w["session_id"])))
 		}
 	}()
 	return nil

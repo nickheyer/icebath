@@ -3,8 +3,8 @@ package provider
 import (
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const turnAuthorFamily = "\U0001F468‍\U0001F469‍\U0001F467"
@@ -19,7 +19,7 @@ func TestParseTurnAuthorRejectsJunkAndAuthorsWithoutIDOrName(t *testing.T) {
 }
 
 func TestTurnAuthorEnvRoundTripAndTake(t *testing.T) {
-	author := pyjson.NewObject()
+	author := jsonutil.NewObject()
 	author.Set("id", "bot:alpha")
 	author.Set("name", "Alpha")
 	author.Set("is_bot", true)
@@ -27,11 +27,11 @@ func TestTurnAuthorEnvRoundTripAndTake(t *testing.T) {
 	if err != nil || len(env) != 1 || env[TurnAuthorEnvName] != `{"id":"bot:alpha","name":"Alpha","is_bot":true}` {
 		t.Fatalf("env %v %v", env, err)
 	}
-	if got := TurnAuthorFromEnv(env); !pyrepr.Equal(got, author) {
+	if got := TurnAuthorFromEnv(env); !anyutil.Equal(got, author) {
 		t.Fatalf("round trip %v", got)
 	}
 	env["OTHER"] = "kept"
-	if got := TakeTurnAuthorFromEnv(env); !pyrepr.Equal(got, author) || len(env) != 1 || env["OTHER"] != "kept" {
+	if got := TakeTurnAuthorFromEnv(env); !anyutil.Equal(got, author) || len(env) != 1 || env["OTHER"] != "kept" {
 		t.Fatalf("take %v %v", got, env)
 	}
 	if TakeTurnAuthorFromEnv(env) != nil {

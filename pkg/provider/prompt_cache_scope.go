@@ -11,9 +11,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -29,7 +29,7 @@ type cacheScopeLineageReader interface {
 }
 
 type cacheScopeSessionReader interface {
-	GetSession(ctx context.Context, id string) (*pyjson.Object, error)
+	GetSession(ctx context.Context, id string) (*jsonutil.Object, error)
 }
 
 type cacheScopeForkReader interface {
@@ -52,7 +52,7 @@ type cacheScopeMemoKey struct {
 // Session store methods the prompt cache scope reads, as the state package exposes them with a context
 type CacheScopeStore interface {
 	GetCompressionLineage(ctx context.Context, sessionID string) ([]string, error)
-	GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error)
+	GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error)
 	IsExplicitForkChild(ctx context.Context, sessionID string) (bool, error)
 	DeclaredScopeIdentity(ctx context.Context, sessionID string) (bool, string, error)
 	LatestConversationBoundary(ctx context.Context, sessionKey, source string) (int64, bool, error)
@@ -65,7 +65,7 @@ func (c CacheScopeSessionStore) GetCompressionLineage(sessionID string) ([]strin
 	return c.DB.GetCompressionLineage(context.Background(), sessionID)
 }
 
-func (c CacheScopeSessionStore) GetSession(ctx context.Context, sessionID string) (*pyjson.Object, error) {
+func (c CacheScopeSessionStore) GetSession(ctx context.Context, sessionID string) (*jsonutil.Object, error) {
 	return c.DB.GetSession(ctx, sessionID)
 }
 

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func swap[T any](t *testing.T, target *T, value T) {
@@ -18,27 +18,27 @@ func swap[T any](t *testing.T, target *T, value T) {
 
 type connUpdate struct {
 	sessionID string
-	update    pyacp.SessionUpdate
+	update    acputil.SessionUpdate
 }
 
 type captureConn struct {
 	mu         sync.Mutex
 	updates    []connUpdate
-	permission func(options []pyacp.PermissionOption, sessionID string, toolCall *pyacp.ToolCallUpdate) (*pyacp.RequestPermissionResponse, error)
+	permission func(options []acputil.PermissionOption, sessionID string, toolCall *acputil.ToolCallUpdate) (*acputil.RequestPermissionResponse, error)
 }
 
-func (c *captureConn) SessionUpdate(ctx context.Context, sessionID string, update pyacp.SessionUpdate, meta *pyjson.Object) error {
+func (c *captureConn) SessionUpdate(ctx context.Context, sessionID string, update acputil.SessionUpdate, meta *jsonutil.Object) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.updates = append(c.updates, connUpdate{sessionID, update})
 	return nil
 }
 
-func (c *captureConn) RequestPermission(ctx context.Context, options []pyacp.PermissionOption, sessionID string, toolCall *pyacp.ToolCallUpdate, meta *pyjson.Object) (*pyacp.RequestPermissionResponse, error) {
+func (c *captureConn) RequestPermission(ctx context.Context, options []acputil.PermissionOption, sessionID string, toolCall *acputil.ToolCallUpdate, meta *jsonutil.Object) (*acputil.RequestPermissionResponse, error) {
 	if c.permission != nil {
 		return c.permission(options, sessionID, toolCall)
 	}
-	return &pyacp.RequestPermissionResponse{Outcome: &pyacp.AllowedOutcome{OptionID: "allow_once"}}, nil
+	return &acputil.RequestPermissionResponse{Outcome: &acputil.AllowedOutcome{OptionID: "allow_once"}}, nil
 }
 
 func (c *captureConn) seen() []connUpdate {
@@ -53,6 +53,6 @@ func (c *captureConn) reset() {
 	c.updates = nil
 }
 
-func textPrompt(sessionID, text string) *pyacp.PromptRequest {
-	return &pyacp.PromptRequest{SessionID: sessionID, Prompt: []pyacp.ContentBlock{pyacp.TextBlock(text)}}
+func textPrompt(sessionID, text string) *acputil.PromptRequest {
+	return &acputil.PromptRequest{SessionID: sessionID, Prompt: []acputil.ContentBlock{acputil.TextBlock(text)}}
 }

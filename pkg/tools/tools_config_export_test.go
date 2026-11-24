@@ -2,7 +2,6 @@ package tools
 
 import (
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Swaps one configurator seam for an external test, the returned func restoring it
@@ -33,11 +32,11 @@ func SwapConfigureToolsetForTest(fn func(s *ToolsSetup, tsKey string, cfg config
 }
 
 // Plugin image generation rows for the external picker tests
-func (s *ToolsSetup) PluginImageGenProvidersForTest() []*pyjson.Object {
+func (s *ToolsSetup) PluginImageGenProvidersForTest() []*jsonutil.Object {
 	return s.pluginImageGenProviders()
 }
 
 // Rows of a tool category for the external picker tests
-func CategoryProvidersForTest(category string) []*pyjson.Object {
+func CategoryProvidersForTest(category string) []*jsonutil.Object {
 	return catProviders(categoryOf(category))
 }

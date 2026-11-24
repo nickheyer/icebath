@@ -15,7 +15,6 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/cliui"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 )
 
 // Prints how to ask each Bot for its export and how to bring it back
@@ -93,7 +92,7 @@ func resolveExportFiles(ctx context.Context, args *Args) ([]string, int, error) 
 	}
 	source := ""
 	if args.Source != "" {
-		resolved, err := pypath.Resolve(pypath.Expanduser(args.Source))
+		resolved, err := pathutil.Resolve(pathutil.ExpandUser(args.Source))
 		if err != nil {
 			return nil, 0, err
 		}
@@ -156,7 +155,7 @@ func resolveExportFiles(ctx context.Context, args *Args) ([]string, int, error) 
 			c.PrintError("~/Downloads/grok-bot-export-<bot>.json, then press Enter again.")
 			continue
 		}
-		picked = pypath.Expanduser(strings.Trim(answer, `'"`))
+		picked = pathutil.ExpandUser(strings.Trim(answer, `'"`))
 		if exists(picked) {
 			break
 		}

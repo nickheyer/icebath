@@ -2,6 +2,7 @@ package provider
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,11 +13,10 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyrich"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	consoleutil "github.com/nickheyer/icebath/pkg/utils/console"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
 )
 
 // Iron proxy module surface as the egress CLI reaches it, the attributes tests patch
@@ -71,7 +71,7 @@ func newEgressBackend(p IronProxy) egressBackend {
 type egressCLI struct {
 	ctx     context.Context
 	home    string
-	console *pyrich.Console
+	console *consoleutil.Console
 	ns      map[string]any
 	ip      egressBackend
 }
@@ -172,13 +172,13 @@ func EgressCommand(ctx context.Context, h string, ns map[string]any, w io.Writer
 		parser.printHelp(w)
 		return 0, nil
 	}
-	return handler(&egressCLI{ctx: ctx, home: h, console: pyrich.NewConsole(w), ns: ns, ip: newEgressBackend(IronProxy{Home: h})})
+	return handler(&egressCLI{ctx: ctx, home: h, console: consoleutil.NewConsole(w), ns: ns, ip: newEgressBackend(IronProxy{Home: h})})
 }
 
 func egressCmdInstall(cli *egressCLI) (int, error) {
 	binary, err := cli.ip.installIronProxy(nsFlag(cli.ns, "force"))
 	if err != nil {
-		cli.console.Print("[red]✗ install failed:[/red] " + pyrepr.ExceptionMessage(err))
+		cli.console.Print("[red]✗ install failed:[/red] " + consoleutil.Escape(err.Error()))
 		cli.console.Print("  Manual install: https://github.com/ironsh/iron-proxy/releases")
 		return 1, nil
 	}
@@ -186,14 +186,14 @@ func egressCmdInstall(cli *egressCLI) (int, error) {
 	if version == "" {
 		version = "(version unknown)"
 	}
-	cli.console.Print(fmt.Sprintf("[green]✓[/green] installed %s  %s", binary, version))
+	cli.console.Print(fmt.Sprintf("[green]✓[/green] installed %s  %s", consoleutil.Escape(binary), consoleutil.Escape(version)))
 	return 0, nil
 }
 
 // Four step wizard, each setup phase printing its own step and aborting the run when it fails
 func egressCmdSetup(cli *egressCLI) (int, error) {
 	console := cli.console
-	console.PrintPanel(pyrich.Panel{Body: "[bold]iron-proxy setup[/bold]\n\n" +
+	console.PrintPanel(consoleutil.Panel{Body: "[bold]iron-proxy setup[/bold]\n\n" +
 		"Routes outbound sandbox traffic through a local TLS-intercepting\n" +
 		"proxy so prompt-injected agents never see real provider API keys.\n\n" +
 		"[dim]Project: https://github.com/ironsh/iron-proxy  (Apache-2.0)[/dim]", BorderStyle: "cyan", Fit: true})
@@ -234,7 +234,7 @@ func setupInstallBinary(cli *egressCLI) bool {
 		cli.console.Print("  No iron-proxy on PATH — downloading…")
 		installed, err := cli.ip.installIronProxy(false)
 		if err != nil {
-			cli.console.Print(fmt.Sprintf("  [red]✗ install failed: %s[/red]", pyrepr.ExceptionMessage(err)))
+			cli.console.Print(fmt.Sprintf("  [red]✗ install failed: %s[/red]", consoleutil.Escape(err.Error())))
 			return false
 		}
 		binary = installed
@@ -243,7 +243,7 @@ func setupInstallBinary(cli *egressCLI) bool {
 	if version == "" {
 		version = "(version unknown)"
 	}
-	cli.console.Print(fmt.Sprintf("  [green]✓[/green] %s  %s", binary, version))
+	cli.console.Print(fmt.Sprintf("  [green]✓[/green] %s  %s", consoleutil.Escape(binary), consoleutil.Escape(version)))
 	return true
 }
 
@@ -251,10 +251,10 @@ func setupCACert(cli *egressCLI) (string, string, bool) {
 	step(cli.console, 2, "Generate a CA cert")
 	caCert, caKey, err := cli.ip.ensureCACert(false)
 	if err != nil {
-		cli.console.Print(fmt.Sprintf("  [red]✗ CA generation failed: %s[/red]", pyrepr.ExceptionMessage(err)))
+		cli.console.Print(fmt.Sprintf("  [red]✗ CA generation failed: %s[/red]", consoleutil.Escape(err.Error())))
 		return "", "", false
 	}
-	cli.console.Print(fmt.Sprintf("  [green]✓[/green] %s", caCert))
+	cli.console.Print(fmt.Sprintf("  [green]✓[/green] %s", consoleutil.Escape(caCert)))
 	return caCert, caKey, true
 }
 
@@ -297,7 +297,7 @@ func setupMintTokens(cli *egressCLI) ([]TokenMapping, bool, error) {
 			}
 		}
 		if err := backupMappingsBeforeRotation(cli); err != nil {
-			console.Print(fmt.Sprintf("  [yellow]Could not back up mappings before rotation: %s[/yellow]", pyrepr.ExceptionMessage(err)))
+			console.Print(fmt.Sprintf("  [yellow]Could not back up mappings before rotation: %s[/yellow]", consoleutil.Escape(err.Error())))
 		}
 	} else if rotate {
 		console.Print("[dim]Note: --rotate-tokens is a no-op on first-time setup (no existing tokens to rotate).[/dim]")
@@ -336,39 +336,38 @@ func backupMappingsBeforeRotation(cli *egressCLI) error {
 		return nil
 	}
 	backup := filepath.Join(stateDir, "mappings.json.rotated-"+time.Now().Format("20060102T150405"))
-	if err := pyfs.Copy2(source, backup); err != nil {
+	if err := fsutil.CopyFile(source, backup); err != nil {
 		return err
 	}
-	cli.console.Print(fmt.Sprintf("  [dim]backup: %s[/dim]", backup))
+	cli.console.Print(fmt.Sprintf("  [dim]backup: %s[/dim]", consoleutil.Escape(backup)))
 	return nil
 }
 
-// Integer of a config value the way int() reads it, the default for a missing one
+// Integer of a config value, the default for a missing one
 func cfgInt(cfg map[string]any, key string, def int) (int, error) {
 	v, ok := cfg[key]
 	if !ok {
 		return def, nil
 	}
-	n, err := pyint.Of(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		return 0, err
 	}
-	return int(n.Int64()), nil
+	return int(n), nil
 }
 
 // Tunnel port from the flag, else the configured or default one, false after printing a bad flag
 func setupTunnelPort(cli *egressCLI, proxyCfg map[string]any) (int, bool, error) {
-	if raw := cli.ns["tunnel_port"]; raw != nil && !pyrepr.Equal(raw, 0) {
-		n, err := pyint.Of(raw)
-		if err != nil {
+	if raw := cli.ns["tunnel_port"]; raw != nil && !anyutil.Equal(raw, 0) {
+		port, err := anyutil.ToInt(raw)
+		if err != nil && !errors.Is(err, anyutil.ErrRange) {
 			return 0, false, err
 		}
-		port := int(n.Int64())
 		if port < 1 || port > 65534 {
 			cli.console.Print("  [red]✗ --tunnel-port must be between 1 and 65534 (the plain-HTTP listener uses port+1).[/red]")
 			return 0, false, nil
 		}
-		return port, true, nil
+		return int(port), true, nil
 	}
 	port, err := cfgInt(proxyCfg, "tunnel_port", DefaultIronTunnelPort)
 	if err != nil {
@@ -405,7 +404,7 @@ func setupWriteConfig(cli *egressCLI, mappings []TokenMapping, caCert, caKey str
 	auditLogOK := true
 	if err := cli.ip.ensureAuditLog(auditLogPath); err != nil {
 		auditLogOK = false
-		console.Print(fmt.Sprintf("  [yellow]⚠ %s[/yellow]", pyrepr.ExceptionMessage(err)))
+		console.Print(fmt.Sprintf("  [yellow]⚠ %s[/yellow]", consoleutil.Escape(err.Error())))
 	}
 	denyCIDRs, denySet := proxyCfg["upstream_deny_cidrs"]
 	ironCfg := cli.ip.buildProxyConfig(IronProxyConfigOptions{Mappings: mappings, CACert: caCert, CAKey: caKey, TunnelPort: tunnelPort,
@@ -421,12 +420,12 @@ func setupWriteConfig(cli *egressCLI, mappings []TokenMapping, caCert, caKey str
 	if _, err := cli.ip.ensureManagementToken(false); err != nil {
 		return nil, false, err
 	}
-	console.Print(fmt.Sprintf("  [green]✓[/green] config:   %s", cfgPath))
-	console.Print(fmt.Sprintf("  [green]✓[/green] mappings: %s", mappingsPath))
+	console.Print(fmt.Sprintf("  [green]✓[/green] config:   %s", consoleutil.Escape(cfgPath)))
+	console.Print(fmt.Sprintf("  [green]✓[/green] mappings: %s", consoleutil.Escape(mappingsPath)))
 	if auditLogOK {
 		console.Print(fmt.Sprintf("  [green]✓[/green] audit log: %s "+
 			"[dim](reserved — not written by iron-proxy v0.39; "+
-			"per-request records land in iron-proxy.log)[/dim]", auditLogPath))
+			"per-request records land in iron-proxy.log)[/dim]", consoleutil.Escape(auditLogPath)))
 	}
 	proxyCfg["enabled"] = true
 	for _, entry := range []struct {
@@ -494,7 +493,7 @@ func setupRestartDaemon(cli *egressCLI, proxyCfg map[string]any) error {
 	if doRestart {
 		newStatus, err := cli.ip.startProxy(IronProxyStartOptions{InstallIfMissing: cfgBool(proxyCfg, "auto_install", true)})
 		if err != nil {
-			console.Print(fmt.Sprintf("  [yellow]⚠ could not start iron-proxy with the new config: %s[/yellow]", pyrepr.ExceptionMessage(err)))
+			console.Print(fmt.Sprintf("  [yellow]⚠ could not start iron-proxy with the new config: %s[/yellow]", consoleutil.Escape(err.Error())))
 			console.Print("  Run [cyan]icebath egress start[/cyan] manually before launching new Docker sandboxes.")
 			return nil
 		}
@@ -574,7 +573,7 @@ func egressCmdStart(cli *egressCLI) (int, error) {
 	status, err := cli.ip.startProxy(IronProxyStartOptions{InstallIfMissing: settings.ProxyAutoInstall.Get(ctx),
 		RefreshSecretsFromBitwarden: refreshBW, BitwardenConfig: bitwardenConfig})
 	if err != nil {
-		console.Print("[red]✗ failed to start iron-proxy:[/red] " + pyrepr.ExceptionMessage(err))
+		console.Print("[red]✗ failed to start iron-proxy:[/red] " + consoleutil.Escape(err.Error()))
 		return 1, nil
 	}
 	if status.PID == 0 {
@@ -617,7 +616,7 @@ func egressCmdRestart(cli *egressCLI) (int, error) {
 // Hot reloads the ruleset through the management API, new secrets still needing a restart
 func egressCmdReload(cli *egressCLI) (int, error) {
 	if err := cli.ip.reloadProxy(); err != nil {
-		cli.console.Print("[red]✗ reload failed:[/red] " + pyrepr.ExceptionMessage(err))
+		cli.console.Print("[red]✗ reload failed:[/red] " + consoleutil.Escape(err.Error()))
 		return 1, nil
 	}
 	cli.console.Print("[green]✓[/green] iron-proxy ruleset reloaded in-place (no restart, connections preserved)")
@@ -638,7 +637,7 @@ func FormatEgressStatusText(h string, showTokens bool) (string, error) {
 			return "yes"
 		}
 		return "no"
-	}, func(t string) string { return t }) {
+	}, func(t string) string { return t }, func(t string) string { return t }) {
 		lines = append(lines, row[0]+": "+row[1])
 	}
 	lines = append(lines, "Scope: Docker backend only in this release")
@@ -674,8 +673,8 @@ func FormatEgressStatusText(h string, showTokens bool) (string, error) {
 func egressCmdStatus(cli *egressCLI) (int, error) {
 	console := cli.console
 	status := cli.ip.getStatus()
-	table := &pyrich.Table{HideHeader: true, NoBox: true, PadX: 2, Columns: []pyrich.Column{{Style: "bold"}, {}}}
-	for _, row := range statusRows(cli.settingsCtx(), status, yn, func(t string) string { return "[dim]" + t + "[/dim]" }) {
+	table := &consoleutil.Table{HideHeader: true, NoBox: true, PadX: 2, Columns: []consoleutil.Column{{Style: "bold"}, {}}}
+	for _, row := range statusRows(cli.settingsCtx(), status, yn, func(t string) string { return "[dim]" + t + "[/dim]" }, consoleutil.Escape) {
 		table.AddRow(row[0], row[1])
 	}
 	console.PrintTable(table)
@@ -727,7 +726,7 @@ func egressCmdConfig(cli *egressCLI) (int, error) {
 		cli.console.Print("[yellow](no config generated — run `icebath egress setup`)[/yellow]")
 		return 1, nil
 	}
-	cli.console.Print(status.ConfigPath)
+	cli.console.Print(consoleutil.Escape(status.ConfigPath))
 	return 0, nil
 }
 
@@ -743,12 +742,12 @@ func bitwardenEnvNames(cli *egressCLI) []string {
 	tokenEnv := settings.SecretsBitwardenAccessTokenEnv.Get(ctx)
 	accessToken := strings.TrimSpace(os.Getenv(tokenEnv))
 	if accessToken == "" {
-		console.Print(fmt.Sprintf("  [red]✗ --from-bitwarden requested but %s is not set in the environment.[/red]", tokenEnv))
+		console.Print(fmt.Sprintf("  [red]✗ --from-bitwarden requested but %s is not set in the environment.[/red]", consoleutil.Escape(tokenEnv)))
 		return nil
 	}
 	secrets, _, err := cli.ip.fetchBitwardenSecrets(BitwardenFetchOptions{AccessToken: accessToken, ProjectID: settings.SecretsBitwardenProjectId.Get(ctx), CacheTTL: 0, UseCache: false, HomePath: cli.home})
 	if err != nil {
-		console.Print(fmt.Sprintf("  [red]✗ Could not enumerate Bitwarden secrets: %s[/red]", pyrepr.ExceptionMessage(err)))
+		console.Print(fmt.Sprintf("  [red]✗ Could not enumerate Bitwarden secrets: %s[/red]", consoleutil.Escape(err.Error())))
 		console.Print("  Either fix the Bitwarden config and retry, or rerun setup " +
 			"without --from-bitwarden (the proxy will read secrets from the host process env at start time).")
 		return nil
@@ -781,27 +780,27 @@ func loadEnvFileIntoEnviron(h string) int {
 }
 
 // Table of the mappings with tokens masked unless asked to show them
-func mappingsTable(mappings []TokenMapping, envHeader, hostsHeader string, showTokens bool) *pyrich.Table {
-	table := &pyrich.Table{Columns: []pyrich.Column{{Header: envHeader, Style: "cyan"}, {Header: hostsHeader, Style: "dim"}, {Header: "Proxy token", Style: "green"}}}
+func mappingsTable(mappings []TokenMapping, envHeader, hostsHeader string, showTokens bool) *consoleutil.Table {
+	table := &consoleutil.Table{Columns: []consoleutil.Column{{Header: envHeader, Style: "cyan"}, {Header: hostsHeader, Style: "dim"}, {Header: "Proxy token", Style: "green"}}}
 	for _, m := range mappings {
 		tok := m.ProxyToken
 		if !showTokens {
 			tok = config.MaskSecret(m.ProxyToken, "")
 		}
-		table.AddRow(m.RealEnvName, strings.Join(m.UpstreamHosts, ", "), tok)
+		table.AddRow(consoleutil.Escape(m.RealEnvName), consoleutil.Escape(strings.Join(m.UpstreamHosts, ", ")), consoleutil.Escape(tok))
 	}
 	return table
 }
 
 // Prints the refusing to start headline plus an indented remedy, exit code 1
-func egressRefuse(console *pyrich.Console, reason, hint string) int {
-	console.Print(fmt.Sprintf("[red]✗ Refusing to start: %s[/red]", reason))
-	console.Print("  " + hint)
+func egressRefuse(console *consoleutil.Console, reason, hint string) int {
+	console.Print(fmt.Sprintf("[red]✗ Refusing to start: %s[/red]", consoleutil.Escape(reason)))
+	console.Print("  " + consoleutil.Escape(hint))
 	return 1
 }
 
 // Lowered and stripped answer to a prompt, a closed stdin reading as empty
-func egressPrompt(console *pyrich.Console, text string) string {
+func egressPrompt(console *consoleutil.Console, text string) string {
 	answer, err := console.Input(text)
 	if err != nil {
 		return ""
@@ -809,13 +808,13 @@ func egressPrompt(console *pyrich.Console, text string) string {
 	return strings.ToLower(strings.TrimSpace(answer))
 }
 
-// Label and value rows shared by the rich status table and the plain text variant
-func statusRows(ctx context.Context, status IronProxyStatus, yn func(bool) string, dim func(string) string) [][2]string {
+// Label and value rows shared by the rich status table and the plain text variant, values from the host passed through text
+func statusRows(ctx context.Context, status IronProxyStatus, yn func(bool) string, dim, text func(string) string) [][2]string {
 	orDim := func(value, missing string) string {
 		if value == "" {
 			return dim(missing)
 		}
-		return value
+		return text(value)
 	}
 	process := dim("(stopped)")
 	if status.PID != 0 {
@@ -830,7 +829,7 @@ func statusRows(ctx context.Context, status IronProxyStatus, yn func(bool) strin
 		{"Tunnel port", fmt.Sprint(status.TunnelPort)},
 		{"Process", process},
 		{"Listening", yn(status.Listening)},
-		{"Credential src", settings.ProxyCredentialSource.Get(ctx)},
+		{"Credential src", text(settings.ProxyCredentialSource.Get(ctx))},
 		{"Docker enforce", yn(settings.ProxyEnforceOnDocker.Get(ctx))},
 	}
 }

@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 func TestReopenPrunesSettledIdentitiesToTheBound(t *testing.T) {
@@ -24,7 +24,7 @@ func TestReopenPrunesSettledIdentitiesToTheBound(t *testing.T) {
 		if err != nil || !bound {
 			t.Fatalf("bind %s: %v %v", key, bound, err)
 		}
-		if err := store.Put(ctx, key, pyjson.ObjectOf("fingerprint", "fp", "response", pyjson.ObjectOf("id", "resp_"+strconv.Itoa(index)))); err != nil {
+		if err := store.Put(ctx, key, jsonutil.ObjectOf("fingerprint", "fp", "response", jsonutil.ObjectOf("id", "resp_"+strconv.Itoa(index)))); err != nil {
 			t.Fatal(err)
 		}
 	}

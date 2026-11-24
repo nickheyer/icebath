@@ -12,22 +12,23 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyacp"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	acputil "github.com/nickheyer/icebath/pkg/utils/acp"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 var pngFixture = append([]byte("\x89PNG\r\n\x1a\n"), []byte(strings.Repeat("0", 32))...)
 
-func snapshotPeer(t *testing.T, snapshots ...string) func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+func snapshotPeer(t *testing.T, snapshots ...string) func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 	var mu sync.Mutex
-	return func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+	return func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 		mu.Lock()
 		defer mu.Unlock()
 		switch method {
 		case "session.resume":
 			if len(snapshots) == 0 {
 				t.Errorf("no snapshot left for session.resume")
-				return pyjson.NewObject(), nil
+				return jsonutil.NewObject(), nil
 			}
 			next := snapshots[0]
 			snapshots = snapshots[1:]
@@ -36,7 +37,7 @@ func snapshotPeer(t *testing.T, snapshots ...string) func(ctx context.Context, m
 			return jsonObj(t, `{"status": "terminal", "outcome": "interrupted"}`), nil
 		}
 		t.Errorf("unexpected %s %v", method, params)
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 }
 
@@ -54,8 +55,8 @@ func TestDiscardPreservesBufferedReply(t *testing.T) {
 			editor := &editorFake{}
 			marker := make(chan struct{})
 			var once sync.Once
-			editor.onUpdate = func(sessionID string, update pyacp.SessionUpdate) error {
-				if chunk, ok := update.(*pyacp.AgentMessageChunk); ok && chunk.Content.(*pyacp.TextContentBlock).Text == "MARKER" {
+			editor.onUpdate = func(sessionID string, update acputil.SessionUpdate) error {
+				if chunk, ok := update.(*acputil.AgentMessageChunk); ok && chunk.Content.(*acputil.TextContentBlock).Text == "MARKER" {
 					once.Do(func() { close(marker) })
 				}
 				return nil
@@ -100,9 +101,9 @@ func TestPausedImageRefusalDoesNotStageImage(t *testing.T) {
 		a.unacked.Set("s", retainedSubmit{key: submitKey{"s", "prior-retry"}, inputID: "prior-id", text: "prior-content"})
 		return true
 	})
-	blocks := []pyacp.ContentBlock{pyacp.TextBlock("explain image"),
-		&pyacp.ImageContentBlock{Data: base64.StdEncoding.EncodeToString(pngFixture), MimeType: "image/png"}}
-	_, err := a.Prompt(context.Background(), &pyacp.PromptRequest{Prompt: blocks, SessionID: "s"})
+	blocks := []acputil.ContentBlock{acputil.TextBlock("explain image"),
+		&acputil.ImageContentBlock{Data: base64.StdEncoding.EncodeToString(pngFixture), MimeType: "image/png"}}
+	_, err := a.Prompt(context.Background(), &acputil.PromptRequest{Prompt: blocks, SessionID: "s"})
 	if !isUnknownExecution(err) {
 		t.Fatalf("err = %v", err)
 	}
@@ -153,34 +154,34 @@ func (o *lostOwner) serve(sock *pipeSocket) {
 		case <-sock.closed:
 			return
 		}
-		decoded, err := pyjson.Loads(raw)
+		decoded, err := jsonutil.Decode(raw)
 		if err != nil {
 			return
 		}
-		frame := decoded.(*pyjson.Object)
-		method := pyStr(frame.GetOr("method", nil))
-		params, _ := frame.GetOr("params", nil).(*pyjson.Object)
+		frame := decoded.(*jsonutil.Object)
+		method := anyutil.String(frame.ValueOr("method", nil))
+		params, _ := frame.ValueOr("params", nil).(*jsonutil.Object)
 		o.mu.Lock()
 		o.calls = append(o.calls, method)
 		o.mu.Unlock()
-		result := pyjson.NewObject()
+		result := jsonutil.NewObject()
 		switch method {
 		case "runtime.describe":
 			result.Set("profile_id", o.profileID)
 		case "session.resume":
-			pending, _ := pyjson.Loads(o.pending)
-			result = pyjson.ObjectOf("session_id", params.GetOr("session_id", nil), "messages", []any{}, "prompts", []any{},
+			pending, _ := jsonutil.Decode(o.pending)
+			result = jsonutil.ObjectOf("session_id", params.ValueOr("session_id", nil), "messages", []any{}, "prompts", []any{},
 				"pending", pending, "replay_epoch", o.epoch, "last_sequence", int64(0))
 		case "prompt.submit":
 			result.Set("admission_id", "next")
 		}
-		reply, _ := pyjson.Dumps(pyjson.ObjectOf("jsonrpc", "2.0", "id", frame.GetOr("id", nil), "result", result))
+		reply, _ := jsonutil.Encode(jsonutil.ObjectOf("jsonrpc", "2.0", "id", frame.ValueOr("id", nil), "result", result))
 		sock.toClient <- reply
 		if method == "prompt.submit" {
-			event := pyjson.ObjectOf("jsonrpc", "2.0", "method", "event", "params", pyjson.ObjectOf(
-				"session_id", params.GetOr("session_id", nil), "type", "message.complete", "seq", int64(1), "replay_epoch", o.epoch,
-				"admission_id", "next", "payload", pyjson.ObjectOf("outcome", "completed")))
-			text, _ := pyjson.Dumps(event)
+			event := jsonutil.ObjectOf("jsonrpc", "2.0", "method", "event", "params", jsonutil.ObjectOf(
+				"session_id", params.ValueOr("session_id", nil), "type", "message.complete", "seq", int64(1), "replay_epoch", o.epoch,
+				"admission_id", "next", "payload", jsonutil.ObjectOf("outcome", "completed")))
+			text, _ := jsonutil.Encode(event)
 			sock.toClient <- text
 		}
 	}
@@ -219,8 +220,8 @@ func TestReattachAfterRestartPostsTheUnknownRecoveryNotice(t *testing.T) {
 	second := &lostOwner{profileID: a.home, epoch: "second", pending: `[{"admission_id": "lost-1", "status": "unknown"}]`}
 	connectOwners(t, first, second)
 	defer a.Close()
-	held, _ := pyacp.WithResponseScope(context.Background())
-	if _, err := a.LoadSession(held, &pyacp.LoadSessionRequest{Cwd: "/", SessionID: "s"}); err != nil {
+	held, _ := acputil.WithResponseScope(context.Background())
+	if _, err := a.LoadSession(held, &acputil.LoadSessionRequest{Cwd: "/", SessionID: "s"}); err != nil {
 		t.Fatal(err)
 	}
 	before := len(editor.seen())
@@ -231,12 +232,12 @@ func TestReattachAfterRestartPostsTheUnknownRecoveryNotice(t *testing.T) {
 	}
 	var notices []connUpdate
 	for _, u := range editor.seen()[before:] {
-		if _, ok := u.update.(*pyacp.AgentMessageChunk); ok {
+		if _, ok := u.update.(*acputil.AgentMessageChunk); ok {
 			notices = append(notices, u)
 		}
 	}
 	if len(notices) != 1 || notices[0].sessionID != "s" ||
-		!strings.Contains(notices[0].update.(*pyacp.AgentMessageChunk).Content.(*pyacp.TextContentBlock).Text, "/discard lost-1") {
+		!strings.Contains(notices[0].update.(*acputil.AgentMessageChunk).Content.(*acputil.TextContentBlock).Text, "/discard lost-1") {
 		t.Fatalf("notices = %v", notices)
 	}
 }
@@ -254,7 +255,7 @@ func TestNextPromptReconnectsAfterTheLostTurnWasDiscardedWhileOffline(t *testing
 	second := &lostOwner{profileID: a.home, epoch: "second", pending: `[]`}
 	connectOwners(t, first, second)
 	defer a.Close()
-	if _, err := a.LoadSession(context.Background(), &pyacp.LoadSessionRequest{Cwd: "/", SessionID: "s"}); err != nil {
+	if _, err := a.LoadSession(context.Background(), &acputil.LoadSessionRequest{Cwd: "/", SessionID: "s"}); err != nil {
 		t.Fatal(err)
 	}
 	for _, task := range onLoop(a, func() []*loopTask {
@@ -288,7 +289,7 @@ func TestAModeChangeWhileTheAttachBuildsItsReplyReachesTheReply(t *testing.T) {
 				editor := &editorFake{}
 				onLoop(a, func() bool { a.conn = editor; return true })
 				defer a.Close()
-				link.set(func(ctx context.Context, method string, params map[string]any) (*pyjson.Object, error) {
+				link.set(func(ctx context.Context, method string, params map[string]any) (*jsonutil.Object, error) {
 					switch method {
 					case "runtime.describe":
 						return jsonObj(t, `{"session_create": {"sources": ["acp"]}, "capabilities": ["acp-editor-policy-v1"]}`), nil
@@ -297,10 +298,10 @@ func TestAModeChangeWhileTheAttachBuildsItsReplyReachesTheReply(t *testing.T) {
 					case "session.info":
 						return jsonObj(t, ask), nil
 					case "config.set", "session.stats":
-						return pyjson.NewObject(), nil
+						return jsonutil.NewObject(), nil
 					}
 					t.Errorf("unexpected %s", method)
-					return pyjson.NewObject(), nil
+					return jsonutil.NewObject(), nil
 				})
 				paused, release := make(chan struct{}), make(chan struct{})
 				var once sync.Once
@@ -312,20 +313,20 @@ func TestAModeChangeWhileTheAttachBuildsItsReplyReachesTheReply(t *testing.T) {
 					}
 				}
 				if lookup == "model_state" {
-					swap(t, &gatewayModelState, func(context.Context, *pyjson.Object) *pyacp.SessionModelState { hold(); return nil })
+					swap(t, &gatewayModelState, func(context.Context, *jsonutil.Object) *acputil.SessionModelState { hold(); return nil })
 				} else {
-					swap(t, &gatewayProvenanceMeta, func(context.Context, string, string, string) (*pyjson.Object, error) { hold(); return nil, nil })
+					swap(t, &gatewayProvenanceMeta, func(context.Context, string, string, string) (*jsonutil.Object, error) { hold(); return nil, nil })
 				}
 				startPump(t, a)
 				type reply struct {
-					modes *pyacp.SessionModeState
+					modes *acputil.SessionModeState
 					err   error
 				}
 				attaching := make(chan reply, 1)
-				held, _ := pyacp.WithResponseScope(context.Background())
+				held, _ := acputil.WithResponseScope(context.Background())
 				go func() {
 					if attach == "new" {
-						resp, err := a.NewSession(held, &pyacp.NewSessionRequest{Cwd: "/"})
+						resp, err := a.NewSession(held, &acputil.NewSessionRequest{Cwd: "/"})
 						if err != nil {
 							attaching <- reply{nil, err}
 							return
@@ -333,7 +334,7 @@ func TestAModeChangeWhileTheAttachBuildsItsReplyReachesTheReply(t *testing.T) {
 						attaching <- reply{resp.Modes, nil}
 						return
 					}
-					resp, err := a.LoadSession(held, &pyacp.LoadSessionRequest{Cwd: "/", SessionID: "s"})
+					resp, err := a.LoadSession(held, &acputil.LoadSessionRequest{Cwd: "/", SessionID: "s"})
 					if err != nil {
 						attaching <- reply{nil, err}
 						return
@@ -345,7 +346,7 @@ func TestAModeChangeWhileTheAttachBuildsItsReplyReachesTheReply(t *testing.T) {
 				case <-time.After(5 * time.Second):
 					t.Fatal("the attach never reached its metadata lookup")
 				}
-				link.put(pyjson.ObjectOf("params", pyjson.ObjectOf("session_id", "s", "type", "session.info", "replay_epoch", "e", "seq", int64(11), "payload", jsonObj(t, dontAsk))))
+				link.put(jsonutil.ObjectOf("params", jsonutil.ObjectOf("session_id", "s", "type", "session.info", "replay_epoch", "e", "seq", int64(11), "payload", jsonObj(t, dontAsk))))
 				until(t, "the pump projecting the change", func() bool {
 					return onLoop(a, func() any {
 						snapshot, _ := a.snapshots.Get("s")
@@ -371,8 +372,8 @@ func TestAModeChangeWhileTheAttachBuildsItsReplyReachesTheReply(t *testing.T) {
 }
 
 func TestAcloseStopsAPausedPostAttachNoticeBeforeItReconnects(t *testing.T) {
-	swap(t, &gatewayModelState, func(context.Context, *pyjson.Object) *pyacp.SessionModelState { return nil })
-	swap(t, &gatewayProvenanceMeta, func(context.Context, string, string, string) (*pyjson.Object, error) { return nil, nil })
+	swap(t, &gatewayModelState, func(context.Context, *jsonutil.Object) *acputil.SessionModelState { return nil })
+	swap(t, &gatewayProvenanceMeta, func(context.Context, string, string, string) (*jsonutil.Object, error) { return nil, nil })
 	var mu sync.Mutex
 	var connects []string
 	swap(t, &connectGateway, func(context.Context) (gatewayLink, error) {
@@ -385,14 +386,14 @@ func TestAcloseStopsAPausedPostAttachNoticeBeforeItReconnects(t *testing.T) {
 	editor := &editorFake{}
 	paused, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	editor.onUpdate = func(string, pyacp.SessionUpdate) error {
+	editor.onUpdate = func(string, acputil.SessionUpdate) error {
 		once.Do(func() { close(paused) })
 		<-release
 		return nil
 	}
 	onLoop(a, func() bool { a.conn = editor; return true })
 	if _, err := onLoop2(a, func() (*sessionFields, error) {
-		return a.sessionFields(context.Background(), "s", pyjson.NewObject(), "s")
+		return a.sessionFields(context.Background(), "s", jsonutil.NewObject(), "s")
 	}); err != nil {
 		t.Fatal(err)
 	}

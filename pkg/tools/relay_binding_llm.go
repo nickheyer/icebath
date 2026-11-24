@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Binding surface of nemo_relay.llm, each nil field a missing attribute
@@ -62,17 +62,17 @@ func RelayAttributeError(object, name string) error { return relayAttributeError
 
 // Context of code driven by a Relay event loop, the running loop every on loop check reports
 func RelayWithRunningLoop(ctx context.Context) context.Context {
-	return pyctx.WithRunningLoop(ctx)
+	return ctxutil.WithNonBlocking(ctx)
 }
 
 // Context of a worker thread spawned off the loop, which has no running loop
 func RelayWithoutRunningLoop(ctx context.Context) context.Context {
-	return pyctx.WithoutRunningLoop(ctx)
+	return ctxutil.WithBlocking(ctx)
 }
 
 // Whether ctx runs on an event loop, the Relay loop included
 func RelayHasRunningEventLoop(ctx context.Context) bool {
-	return pyctx.RunningLoop(ctx)
+	return ctxutil.NonBlocking(ctx)
 }
 
 // Awaits a RelayAwaitable on a fresh loop, refusing when ctx already runs on one
@@ -112,8 +112,8 @@ func RelayJSONable(value any) any {
 			out[i] = RelayJSONable(item)
 		}
 		return out
-	case *pyjson.Object:
-		return RelayJSONable(pyjson.Plain(v))
+	case *jsonutil.Object:
+		return RelayJSONable(jsonutil.Plain(v))
 	}
 	rv := reflect.ValueOf(value)
 	switch rv.Kind() {
@@ -124,12 +124,12 @@ func RelayJSONable(value any) any {
 		out := make(map[string]any, rv.Len())
 		iter := rv.MapRange()
 		for iter.Next() {
-			out[pyrepr.Str(iter.Key().Interface())] = RelayJSONable(iter.Value().Interface())
+			out[anyutil.String(iter.Key().Interface())] = RelayJSONable(iter.Value().Interface())
 		}
 		return out
 	case reflect.Slice, reflect.Array:
 		if rv.Type().Elem().Kind() == reflect.Uint8 {
-			return pyrepr.Str(value)
+			return anyutil.String(value)
 		}
 		out := make([]any, rv.Len())
 		for i := range out {
@@ -150,7 +150,7 @@ func RelayJSONable(value any) any {
 		rv = rv.Elem()
 	}
 	if rv.Kind() != reflect.Struct {
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	}
 	attributes := map[string]any{}
 	for i := 0; i < rv.NumField(); i++ {
@@ -170,7 +170,7 @@ func RelayJSONable(value any) any {
 		attributes[name] = rv.Field(i).Interface()
 	}
 	if len(attributes) == 0 {
-		return pyrepr.Str(value)
+		return anyutil.String(value)
 	}
 	return RelayJSONable(attributes)
 }
@@ -180,7 +180,7 @@ func RelayCanonicalJSON(value any, encode func(any) any) (string, error) {
 	if encode == nil {
 		encode = RelayJSONable
 	}
-	return pyjson.Dumps(encode(value), pyjson.SortKeys(true), pyjson.Separators(",", ":"))
+	return jsonutil.Encode(encode(value), jsonutil.SortKeys())
 }
 
 // Waits up to timeout seconds for every operation lease to be released

@@ -10,9 +10,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // OTelSDKModule is the Go OpenTelemetry SDK module the exporter is linked against
@@ -26,9 +26,9 @@ func ResolveHeaders(headersEnv any) map[string]string {
 		return resolved
 	}
 	for headerName, envName := range entries {
-		name := pyrepr.Str(envName)
+		name := anyutil.String(envName)
 		if val := os.Getenv(name); val != "" {
-			resolved[pyrepr.Str(headerName)] = val
+			resolved[anyutil.String(headerName)] = val
 		} else {
 			pkgLog().Debug(fmt.Sprintf("OTLP header %s: env var %s not set; skipping", headerName, name))
 		}
@@ -77,7 +77,7 @@ func SafeResourceAttributes(raw any) map[string]string {
 		if !resourceAttributeKeys[key] || value == nil {
 			continue
 		}
-		text := pyrepr.Str(value)
+		text := anyutil.String(value)
 		if key == "service.instance.id" {
 			attrs[key] = safeInstanceID(value)
 		} else if safeResourceValue.MatchString(text) && RedactBoundedWith(text, 128, "[redacted]", RedactionUnavailable) == text {
@@ -129,7 +129,7 @@ var keepByKind = map[string][]string{
 }
 
 // icebath.<key> attributes for the present keys, string values redacted and bounded
-func allowlistedAttrs(ev *pyjson.Object, keys []string) map[string]any {
+func allowlistedAttrs(ev *jsonutil.Object, keys []string) map[string]any {
 	attrs := map[string]any{}
 	for _, col := range keys {
 		v, has := ev.Get(col)
@@ -146,26 +146,26 @@ func allowlistedAttrs(ev *pyjson.Object, keys []string) map[string]any {
 }
 
 // SpanAttrs maps a monitoring event to span attributes, content free by construction
-func SpanAttrs(ev *pyjson.Object) map[string]any {
+func SpanAttrs(ev *jsonutil.Object) map[string]any {
 	kind, _ := ev.Get("event")
 	attrs := map[string]any{"icebath.event": "unknown"}
-	if pyrepr.Truthy(kind) {
+	if anyutil.IsTrue(kind) {
 		attrs["icebath.event"] = kind
 	}
-	for k, v := range allowlistedAttrs(ev, keepByKind[pyrepr.Str(kind)]) {
+	for k, v := range allowlistedAttrs(ev, keepByKind[anyutil.String(kind)]) {
 		attrs[k] = v
 	}
 	return attrs
 }
 
 // ExportBatch maps a batch of events to spans on the provider and returns how many it created
-func ExportBatch(provider *TracerProvider, batch []*pyjson.Object) int {
+func ExportBatch(provider *TracerProvider, batch []*jsonutil.Object) int {
 	tracer := provider.Tracer("icebath.monitoring")
 	n := 0
 	for _, ev := range batch {
 		name := "event"
 		if kind, has := ev.Get("event"); has && kind != nil {
-			name = pyrepr.Str(kind)
+			name = anyutil.String(kind)
 		}
 		if err := tracer.RecordSpan("icebath."+name, SpanAttrs(ev)); err != nil {
 			pkgLog().Debug("OTLP span map failed: " + err.Error())
@@ -180,14 +180,14 @@ func ExportBatch(provider *TracerProvider, batch []*pyjson.Object) int {
 type OTLPStreamer struct {
 	provider  *TracerProvider
 	processor *BatchSpanProcessor
-	filter    func(*pyjson.Object) bool
+	filter    func(*jsonutil.Object) bool
 	sub       *Subscriber
 	mu        sync.Mutex
 	exported  int
 }
 
 // NewOTLPStreamer builds the provider the profile names and the subscriber that exports every batch
-func NewOTLPStreamer(ctx context.Context, eventFilter func(*pyjson.Object) bool) (*OTLPStreamer, error) {
+func NewOTLPStreamer(ctx context.Context, eventFilter func(*jsonutil.Object) bool) (*OTLPStreamer, error) {
 	provider, processor, err := makeProvider(ctx)
 	if err != nil {
 		return nil, err
@@ -198,7 +198,7 @@ func NewOTLPStreamer(ctx context.Context, eventFilter func(*pyjson.Object) bool)
 }
 
 // Call exports the batch after the filter, the emitter callable
-func (s *OTLPStreamer) Call(batch []*pyjson.Object) {
+func (s *OTLPStreamer) Call(batch []*jsonutil.Object) {
 	if s.filter != nil {
 		kept := batch[:0:0]
 		for _, ev := range batch {
@@ -244,7 +244,7 @@ func IsOTLPEnabled(ctx context.Context) bool {
 }
 
 // StartStreaming attaches a streamer to the singleton emitter when OTLP is enabled, nil otherwise or when the provider cannot build
-func StartStreaming(ctx context.Context, eventFilter func(*pyjson.Object) bool) *OTLPStreamer {
+func StartStreaming(ctx context.Context, eventFilter func(*jsonutil.Object) bool) *OTLPStreamer {
 	if !IsOTLPEnabled(ctx) {
 		return nil
 	}

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/profiles"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // Default home at dir and the account home at accountHome for the export path helpers
@@ -32,7 +32,7 @@ func assertOutside(t *testing.T, path, root string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, inside := pypath.PathRelativeTo(filepath.Join(parent, filepath.Base(path)), resolvedRoot); inside {
+	if _, inside := pathutil.RelativeTo(filepath.Join(parent, filepath.Base(path)), resolvedRoot); inside {
 		t.Fatalf("%s lies inside %s", path, root)
 	}
 }

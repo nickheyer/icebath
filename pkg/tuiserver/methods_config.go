@@ -1,15 +1,15 @@
 package tuiserver
 
 import (
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
 )
 
 // int of a param value or its default when falsy, raising like int() on a bad value
 func intParamOr(v any, def int) int {
-	if !truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return def
 	}
-	n, err := pyint.Int64(v)
+	n, err := anyutil.ToInt(v)
 	if err != nil {
 		panic(err)
 	}

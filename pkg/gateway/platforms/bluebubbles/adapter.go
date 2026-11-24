@@ -1,9 +1,6 @@
 package bluebubbles
 
 import (
-	"unicode"
-	"unicode/utf8"
-
 	"bytes"
 	"container/list"
 	"context"
@@ -11,24 +8,27 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math/big"
 	"net/http"
+	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/dlclark/regexp2/v2"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyhttpx"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyre"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	errorutil "github.com/nickheyer/icebath/pkg/utils/error"
+	httputil "github.com/nickheyer/icebath/pkg/utils/http"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	regexutil "github.com/nickheyer/icebath/pkg/utils/regex"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 const (
@@ -59,12 +59,12 @@ var messageEvents = map[string]bool{"new-message": true, "message": true, "updat
 var localHosts = map[string]bool{"0.0.0.0": true, "127.0.0.1": true, "localhost": true, "::": true}
 
 var (
-	phoneRE            = pyre.MustCompile(`\+?\d{7,15}`)
-	emailRE            = pyre.MustCompile(`[\w.+-]+@[\w-]+\.[\w.]+`)
-	paginationSuffixRE = pyre.MustCompile(`\s*\(\d+/\d+\)$`)
-	addressRE          = pyre.MustCompile(`^\+\d+`)
-	paragraphBreakRE   = pyre.MustCompile(`\n\s*\n`)
-	schemeRE           = mustIgnoreCase(`^https?://`)
+	phoneRE            = regexutil.Lazy(regexp.MustCompile, `\+?\p{Nd}{7,15}`)
+	emailRE            = regexutil.Lazy(regexp.MustCompile, `[\p{L}\p{M}\p{N}\p{Pc}\x{200C}\x{200D}.+-]+@[\p{L}\p{M}\p{N}\p{Pc}\x{200C}\x{200D}-]+\.[\p{L}\p{M}\p{N}\p{Pc}\x{200C}\x{200D}.]+`)
+	paginationSuffixRE = regexutil.Lazy(regexp.MustCompile, `\s*\(\d+/\d+\)$`)
+	addressRE          = regexutil.Lazy(regexp.MustCompile, `^\+\d+`)
+	paragraphBreakRE   = regexutil.Lazy(regexp.MustCompile, `\n[\s\v\x{85}\p{Z}]*\n`)
+	schemeRE           = regexutil.Lazy(regexp.MustCompile, `(?i)^https?://`)
 )
 
 // Media cache writers and URL fetcher the adapter stores inbound and outbound media through
@@ -75,32 +75,17 @@ var (
 	cacheImageFromURL      = gateway.CacheImageFromURL
 )
 
-// Case insensitive Python pattern, panicking on a pattern that does not compile
-func mustIgnoreCase(pattern string) *regexp2.Regexp {
-	re, err := pyre.CompileIgnoreCase(pattern)
-	if err != nil {
-		panic(err)
-	}
-	return re
+// Failure for a decoded or configured value of the wrong JSON kind
+func kindError(want string, v any) error {
+	return fmt.Errorf("expected %s, got %s", want, anyutil.Kind(v))
 }
 
-// Python exception carried as a Go error with its class name
-type pyErr struct{ kind, msg string }
-
-func (e *pyErr) Error() string      { return e.msg }
-func (e *pyErr) PyTypeName() string { return e.kind }
-
-// AttributeError of calling a dict method on a value that is not a dict
-func noAttr(v any, attr string) error {
-	return &pyErr{"AttributeError", fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
-}
-
-// Dict view of a decoded JSON value, the AttributeError a get call raises otherwise
+// Map view of a decoded JSON object, a kind error for any other value
 func dictOf(v any) (map[string]any, error) {
-	if m, ok := pyjson.Dict(v); ok {
+	if m, ok := jsonutil.AsMap(v); ok {
 		return m, nil
 	}
-	return nil, noAttr(v, "get")
+	return nil, kindError("an object", v)
 }
 
 // Value under key or the default when the key is absent, dict get with a default
@@ -111,30 +96,30 @@ func getOr(m map[string]any, key string, def any) any {
 	return def
 }
 
-// String form of a value interpolated into a Python f-string, empty for falsy values
+// Text of a decoded value, empty for falsy values
 func textOf(v any) string {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Text of a REST failure for a log line or a send result: the kind of error and the proxy's host when the proxy URL the client reads from the environment
-// holds a secret the raw text could repeat, else the error text with the password every request URL carries masked, the class name when that is empty
+// holds a secret the raw text could repeat, else the error text with the password every request URL carries masked, the error kind when that is empty
 func safeError(err error, serverURL string) string {
 	if shown := gateway.DescribeProxyError(err, gateway.EnvProxyForRedaction(serverURL)); shown != "" {
 		return shown
 	}
-	if text := tools.RedactSensitiveTextWith(nil, pyrepr.ExceptionMessage(err), tools.RedactOptions{Force: true, URLCredentials: true}); text != "" {
+	if text := tools.RedactSensitiveTextWith(nil, err.Error(), tools.RedactOptions{Force: true, URLCredentials: true}); text != "" {
 		return text
 	}
-	return pyrepr.ExceptionName(err)
+	return errorutil.Kind(err)
 }
 
-// Optional string pointer, nil for the empty value Python holds as None
+// Optional string pointer, nil for the empty value
 func optional(s string) *string {
 	if s == "" {
 		return nil
@@ -144,30 +129,21 @@ func optional(s string) *string {
 
 // Phone numbers and emails replaced by a redaction marker for log output
 func redact(text string) string {
-	return reSub(emailRE, reSub(phoneRE, text, "[REDACTED]"), "[REDACTED]")
-}
-
-// Every match of re in s replaced by repl, s unchanged when matching fails
-func reSub(re *regexp2.Regexp, s, repl string) string {
-	out, err := re.Replace(s, repl, -1, -1)
-	if err != nil {
-		return s
-	}
-	return out
+	return emailRE().ReplaceAllLiteralString(phoneRE().ReplaceAllLiteralString(text, "[REDACTED]"), "[REDACTED]")
 }
 
 // Server URL stripped, given an http scheme when it has none and without trailing slashes
 func normalizeServerURL(raw any) (string, error) {
-	if !pyrepr.Truthy(raw) {
+	if !anyutil.IsTrue(raw) {
 		return "", nil
 	}
 	s, ok := raw.(string)
 	if !ok {
-		return "", noAttr(raw, "strip")
+		return "", kindError("a string", raw)
 	}
 	value := strings.TrimSpace(s)
 	if value != "" {
-		if matched, _ := schemeRE.MatchString(value); !matched {
+		if !schemeRE().MatchString(value) {
 			value = "http://" + value
 		}
 	}
@@ -182,11 +158,9 @@ func closedExt(mime string, overrides map[string]string, fallback string) string
 	return fallback
 }
 
-// Temporary message GUID from the naive UTC now read as local time like datetime.utcnow().timestamp()
+// Temporary message GUID from the current Unix time in seconds
 func tempGUID() string {
-	now := time.Now().UTC()
-	sec, _ := pydatetime.LocalToSeconds(now, time.Local, 0, nil)
-	return "temp-" + pyrepr.Float(float64(sec)+float64(now.Nanosecond()/1000)/1e6)
+	return "temp-" + strconv.FormatFloat(timeutil.Epoch(time.Now()), 'f', -1, 64)
 }
 
 // Plain ok acknowledgement for webhook events accepted but not processed
@@ -250,7 +224,7 @@ func NewBlueBubblesAdapter(ctx context.Context, config *gateway.PlatformConfig) 
 	if a.serverURL, err = normalizeServerURL(strings.TrimSpace(settings.BluebubblesServerURL.Get(sctx))); err != nil {
 		return nil, err
 	}
-	if pw := extra["password"]; pyrepr.Truthy(pw) {
+	if pw := extra["password"]; anyutil.IsTrue(pw) {
 		a.password = textOf(pw)
 	} else if a.password, err = gateway.GetScopedSecret(ctx, "BLUEBUBBLES_PASSWORD", "", false); err != nil {
 		return nil, err
@@ -312,7 +286,7 @@ func (a *BlueBubblesAdapter) apiURL(path string) string {
 	if strings.Contains(path, "?") {
 		sep = "&"
 	}
-	return a.serverURL + path + sep + "password=" + pyurl.Quote(a.password, "")
+	return a.serverURL + path + sep + "password=" + url.QueryEscape(a.password)
 }
 
 // REST client in use, nil while disconnected
@@ -322,8 +296,8 @@ func (a *BlueBubblesAdapter) httpClient() *http.Client {
 	return a.client
 }
 
-// One request with httpx phase timeouts, transport failures carrying the httpx error text
-func doRequest(ctx context.Context, client *http.Client, method, rawURL string, body []byte, contentType string, timeout time.Duration) (*pyhttpx.Response, error) {
+// One request with a timeout on each phase, the context error when the caller gave up
+func doRequest(ctx context.Context, client *http.Client, method, rawURL string, body []byte, contentType string, timeout time.Duration) (*httputil.Response, error) {
 	var reader io.Reader
 	if body != nil {
 		reader = bytes.NewReader(body)
@@ -335,38 +309,34 @@ func doRequest(ctx context.Context, client *http.Client, method, rawURL string, 
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	resp, err := pyhttpx.Do(client, req, timeout)
+	resp, err := httputil.Do(client, req, httputil.EachPhase(timeout))
 	if err != nil {
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		var te *pyhttpx.TimeoutError
-		if errors.As(err, &te) {
-			return nil, &pyErr{"ReadTimeout", te.Error()}
-		}
-		return nil, &pyErr{"ConnectError", pyhttpx.ErrorText(err)}
+		return nil, err
 	}
 	return resp, nil
 }
 
-// HTTPStatusError of httpx raise_for_status for a response outside the 2xx range
-func raiseForStatus(resp *pyhttpx.Response, rawURL string) error {
+// Status error of a response outside the 2xx range naming the URL as the caller shows it, nil for a success
+func checkStatus(resp *httputil.Response, shownURL string) error {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
-	return &pyErr{"HTTPStatusError", resp.StatusErrorText(rawURL)}
+	return &httputil.StatusError{StatusCode: resp.StatusCode, Status: resp.Status, URL: shownURL, Location: resp.Header.Get("Location")}
 }
 
 // Authenticated REST call raising on HTTP errors and returning the decoded JSON body
 func (a *BlueBubblesAdapter) apiJSON(ctx context.Context, method, path string, payload any) (any, error) {
 	client := a.httpClient()
 	if client == nil {
-		return nil, &pyErr{"AssertionError", ""}
+		return nil, errors.New("bluebubbles: REST client not connected")
 	}
 	var body []byte
 	contentType := ""
 	if payload != nil {
-		text, err := pyjson.Dumps(payload, pyjson.EnsureASCII(false), pyjson.Separators(",", ":"), pyjson.AllowNaN(false))
+		text, err := jsonutil.Encode(payload)
 		if err != nil {
 			return nil, err
 		}
@@ -377,7 +347,7 @@ func (a *BlueBubblesAdapter) apiJSON(ctx context.Context, method, path string, p
 	if err != nil {
 		return nil, err
 	}
-	if err := raiseForStatus(resp, rawURL); err != nil {
+	if err := checkStatus(resp, rawURL); err != nil {
 		return nil, err
 	}
 	return resp.JSON()
@@ -400,12 +370,12 @@ func (a *BlueBubblesAdapter) postMessage(ctx context.Context, path string, paylo
 		var m map[string]any
 		if m, err = dictOf(res); err == nil {
 			data := m["data"]
-			if !pyrepr.Truthy(data) {
+			if !anyutil.IsTrue(data) {
 				data = map[string]any{}
 			}
 			var dm map[string]any
 			if dm, err = dictOf(data); err == nil {
-				msgID := pyrepr.Str(pyrepr.Or(pyrepr.Or(dm["guid"], dm["messageGuid"]), "ok"))
+				msgID := anyutil.String(anyutil.Or(anyutil.Or(dm["guid"], dm["messageGuid"]), "ok"))
 				return gateway.SendResult{Success: true, MessageID: msgID, RawResponse: res}, nil
 			}
 		}
@@ -447,7 +417,7 @@ func (a *BlueBubblesAdapter) AddReaction(ctx context.Context, chatID, messageID,
 	if err != nil {
 		return err
 	}
-	return raiseForStatus(resp, "/api/v1/message/react")
+	return checkStatus(resp, "/api/v1/message/react")
 }
 
 // Private API chat action for typing or read, true only when the call was made
@@ -466,7 +436,7 @@ func (a *BlueBubblesAdapter) privateAPIChatCall(ctx context.Context, chatID, act
 	if client == nil {
 		return false
 	}
-	_, err = doRequest(ctx, client, method, a.apiURL("/api/v1/chat/"+pyurl.Quote(guid, "")+"/"+action), nil, "", 5*time.Second)
+	_, err = doRequest(ctx, client, method, a.apiURL("/api/v1/chat/"+url.PathEscape(guid)+"/"+action), nil, "", 5*time.Second)
 	return err == nil
 }
 
@@ -479,7 +449,7 @@ func (a *BlueBubblesAdapter) probeServer(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(info) {
+	if !anyutil.IsTrue(info) {
 		info = map[string]any{}
 	}
 	im, err := dictOf(info)
@@ -491,11 +461,11 @@ func (a *BlueBubblesAdapter) probeServer(ctx context.Context) error {
 		return err
 	}
 	a.mu.Lock()
-	a.privateAPIEnabled = pyrepr.Truthy(serverData["private_api"])
-	a.helperConnected = pyrepr.Truthy(serverData["helper_connected"])
+	a.privateAPIEnabled = anyutil.IsTrue(serverData["private_api"])
+	a.helperConnected = anyutil.IsTrue(serverData["helper_connected"])
 	private, helper := a.privateAPIEnabled, a.helperConnected
 	a.mu.Unlock()
-	pkgLog().Info(fmt.Sprintf("[bluebubbles] connected to %s (private_api=%s, helper=%s)", a.serverURL, pyrepr.Str(private), pyrepr.Str(helper)))
+	pkgLog().Info(fmt.Sprintf("[bluebubbles] connected to %s (private_api=%t, helper=%t)", a.serverURL, private, helper))
 	return nil
 }
 
@@ -508,7 +478,7 @@ func (a *BlueBubblesAdapter) Connect(ctx context.Context, isReconnect bool) (boo
 	client := gateway.LimitedHTTPClient(gateway.PlatformHTTPXLimits(ctx), false)
 	a.mu.Lock()
 	a.client = client
-	a.followClient = &http.Client{Transport: client.Transport, CheckRedirect: pyhttpx.RedirectPolicy(true)}
+	a.followClient = &http.Client{Transport: client.Transport, CheckRedirect: httputil.RedirectPolicy(true)}
 	a.mu.Unlock()
 	if err := a.probeServer(ctx); err != nil {
 		if ctx.Err() != nil {
@@ -599,7 +569,7 @@ func (a *BlueBubblesAdapter) webhookRegisterURLWith(passwordParam string) string
 
 // Registered webhook URL carrying the password, the only way the server can authenticate its callbacks
 func (a *BlueBubblesAdapter) webhookRegisterURL() string {
-	return a.webhookRegisterURLWith(pyurl.Quote(a.password, ""))
+	return a.webhookRegisterURLWith(url.QueryEscape(a.password))
 }
 
 // Registered webhook URL with the password masked for logs
@@ -607,8 +577,8 @@ func (a *BlueBubblesAdapter) webhookRegisterURLForLog() string {
 	return a.webhookRegisterURLWith("***")
 }
 
-// Server webhook entries registered for url, empty when the listing fails
-func (a *BlueBubblesAdapter) findRegisteredWebhooks(ctx context.Context, url string) []map[string]any {
+// Server webhook entries registered for target, empty when the listing fails
+func (a *BlueBubblesAdapter) findRegisteredWebhooks(ctx context.Context, target string) []map[string]any {
 	res, err := a.apiGet(ctx, "/api/v1/webhook")
 	if err != nil {
 		return nil
@@ -627,7 +597,7 @@ func (a *BlueBubblesAdapter) findRegisteredWebhooks(ctx context.Context, url str
 		if err != nil {
 			return nil
 		}
-		if s, isStr := wh["url"].(string); isStr && s == url {
+		if s, isStr := wh["url"].(string); isStr && s == target {
 			out = append(out, wh)
 		}
 	}
@@ -644,7 +614,7 @@ func (a *BlueBubblesAdapter) registerWebhook(ctx context.Context) (bool, error) 
 		pkgLog().Info("[bluebubbles] webhook already registered: " + logURL)
 		return true, nil
 	}
-	res, err := a.apiPost(ctx, "/api/v1/webhook", pyjson.ObjectOf("url", webhookURL, "events", []any{"new-message", "updated-message"}))
+	res, err := a.apiPost(ctx, "/api/v1/webhook", jsonutil.ObjectOf("url", webhookURL, "events", []any{"new-message", "updated-message"}))
 	if err == nil {
 		var m map[string]any
 		if m, err = dictOf(res); err == nil {
@@ -655,7 +625,7 @@ func (a *BlueBubblesAdapter) registerWebhook(ctx context.Context) (bool, error) 
 					pkgLog().Info("[bluebubbles] webhook registered with server: " + logURL)
 					return true, nil
 				}
-				pkgLog().Warn(fmt.Sprintf("[bluebubbles] webhook registration returned status %s: %s", pyrepr.Str(status), pyrepr.Str(m["message"])))
+				pkgLog().Warn(fmt.Sprintf("[bluebubbles] webhook registration returned status %s: %s", anyutil.String(status), anyutil.String(m["message"])))
 				return false, nil
 			}
 		}
@@ -667,16 +637,16 @@ func (a *BlueBubblesAdapter) registerWebhook(ctx context.Context) (bool, error) 
 	return false, nil
 }
 
-// Whether a decoded status lies in 200 to 299, the TypeError comparing a non number raises
+// Whether a decoded status lies in 200 to 299, a kind error for a value that is not a number
 func statusIs2xx(status any) (bool, error) {
 	if f, ok := status.(float64); ok {
 		return f >= 200 && f < 300, nil
 	}
-	n, ok := pyint.Instance(status)
+	n, ok := anyutil.Int(status)
 	if !ok {
-		return false, &pyErr{"TypeError", fmt.Sprintf("'<=' not supported between instances of 'int' and '%s'", pyrepr.TypeName(status))}
+		return false, kindError("a number", status)
 	}
-	return n.Cmp(big.NewInt(200)) >= 0 && n.Cmp(big.NewInt(300)) < 0, nil
+	return n >= 200 && n < 300, nil
 }
 
 // Removes every registration matching the webhook URL, true when any was removed
@@ -689,15 +659,15 @@ func (a *BlueBubblesAdapter) unregisterWebhook(ctx context.Context) bool {
 	err := func() error {
 		for _, wh := range a.findRegisteredWebhooks(ctx, a.webhookRegisterURL()) {
 			id := wh["id"]
-			if !pyrepr.Truthy(id) {
+			if !anyutil.IsTrue(id) {
 				continue
 			}
-			rawURL := a.apiURL("/api/v1/webhook/" + pyrepr.Str(id))
+			rawURL := a.apiURL("/api/v1/webhook/" + anyutil.String(id))
 			resp, err := doRequest(ctx, client, http.MethodDelete, rawURL, nil, "", requestTimeout)
 			if err != nil {
 				return err
 			}
-			if err := raiseForStatus(resp, rawURL); err != nil {
+			if err := checkStatus(resp, rawURL); err != nil {
 				return err
 			}
 			removed = true
@@ -750,7 +720,7 @@ func (a *BlueBubblesAdapter) resolveChatGUIDFromServer(ctx context.Context, targ
 	if guid, ok := a.cachedGUID(target); ok {
 		return guid, nil
 	}
-	payload, err := a.apiPost(ctx, "/api/v1/chat/query", pyjson.ObjectOf("limit", int64(100), "offset", int64(0)))
+	payload, err := a.apiPost(ctx, "/api/v1/chat/query", jsonutil.ObjectOf("limit", int64(100), "offset", int64(0)))
 	if err != nil {
 		return "", ctx.Err()
 	}
@@ -767,10 +737,10 @@ func (a *BlueBubblesAdapter) resolveChatGUIDFromServer(ctx context.Context, targ
 		if err != nil {
 			return "", nil
 		}
-		if ident, isStr := pyrepr.Or(chat["chatIdentifier"], chat["identifier"]).(string); !isStr || ident != target {
+		if ident, isStr := anyutil.Or(chat["chatIdentifier"], chat["identifier"]).(string); !isStr || ident != target {
 			continue
 		}
-		guid := textOf(pyrepr.Or(chat["guid"], chat["chatGuid"]))
+		guid := textOf(anyutil.Or(chat["guid"], chat["chatGuid"]))
 		if guid != "" {
 			a.storeGUID(target, guid)
 		}
@@ -781,14 +751,14 @@ func (a *BlueBubblesAdapter) resolveChatGUIDFromServer(ctx context.Context, targ
 
 // New chat created by sending the first message to an address
 func (a *BlueBubblesAdapter) createChatForHandle(ctx context.Context, address, message string) (gateway.SendResult, error) {
-	return a.postMessage(ctx, "/api/v1/chat/new", pyjson.ObjectOf("addresses", []any{address}, "message", message, "tempGuid", tempGUID()))
+	return a.postMessage(ctx, "/api/v1/chat/new", jsonutil.ObjectOf("addresses", []any{address}, "message", message, "tempGuid", tempGUID()))
 }
 
 // Base splitter without the pagination suffixes, iMessage bubbles flowing naturally
 func (a *BlueBubblesAdapter) TruncateMessage(content string, maxLength int, lenFn func(string) int) []string {
 	chunks := gateway.TruncateMessage(content, maxLength, lenFn)
 	for i, c := range chunks {
-		chunks[i] = reSub(paginationSuffixRE, c, "")
+		chunks[i] = paginationSuffixRE().ReplaceAllLiteralString(c, "")
 	}
 	return chunks
 }
@@ -796,18 +766,10 @@ func (a *BlueBubblesAdapter) TruncateMessage(content string, maxLength int, lenF
 // Paragraphs of text split on blank lines, stripped and without empty ones
 func paragraphsOf(text string) []string {
 	var out []string
-	runes := []rune(text)
-	start := 0
-	m, _ := paragraphBreakRE.FindStringMatch(text)
-	for m != nil {
-		if p := strings.TrimSpace(string(runes[start:m.RuneIndex])); p != "" {
+	for _, p := range paragraphBreakRE().Split(text, -1) {
+		if p = strings.TrimSpace(p); p != "" {
 			out = append(out, p)
 		}
-		start = m.RuneIndex + m.RuneLength
-		m, _ = paragraphBreakRE.FindNextMatch(m)
-	}
-	if p := strings.TrimSpace(string(runes[start:])); p != "" {
-		out = append(out, p)
 	}
 	return out
 }
@@ -841,12 +803,12 @@ func (a *BlueBubblesAdapter) Send(ctx context.Context, chatID, content, replyTo 
 		private, helper := a.privateAPIEnabled, a.helperConnected
 		a.mu.Unlock()
 		if guid == "" {
-			if isAddr, _ := addressRE.MatchString(chatID); private && (strings.Contains(chatID, "@") || isAddr) {
+			if private && (strings.Contains(chatID, "@") || addressRE().MatchString(chatID)) {
 				return a.createChatForHandle(ctx, chatID, chunk)
 			}
 			return gateway.SendResult{Success: false, Error: "BlueBubbles chat not found for target: " + chatID}, nil
 		}
-		payload := pyjson.ObjectOf("chatGuid", guid, "tempGuid", tempGUID(), "message", chunk)
+		payload := jsonutil.ObjectOf("chatGuid", guid, "tempGuid", tempGUID(), "message", chunk)
 		if replyTo != "" && private && helper {
 			payload.Set("method", "private-api")
 			payload.Set("selectedMessageGuid", replyTo)
@@ -878,11 +840,11 @@ func (a *BlueBubblesAdapter) GetChatInfo(ctx context.Context, chatID string) (ma
 	if guid == "" {
 		return info, nil
 	}
-	res, err := a.apiGet(ctx, "/api/v1/chat/"+pyurl.Quote(guid, "")+"?with=participants")
+	res, err := a.apiGet(ctx, "/api/v1/chat/"+url.PathEscape(guid)+"?with=participants")
 	if err != nil {
 		return info, ctx.Err()
 	}
-	if !pyrepr.Truthy(res) {
+	if !anyutil.IsTrue(res) {
 		res = map[string]any{}
 	}
 	rm, err := dictOf(res)
@@ -893,9 +855,9 @@ func (a *BlueBubblesAdapter) GetChatInfo(ctx context.Context, chatID string) (ma
 	if err != nil {
 		return info, nil
 	}
-	info["name"] = pyrepr.Or(pyrepr.Or(data["displayName"], data["chatIdentifier"]), chatID)
+	info["name"] = anyutil.Or(anyutil.Or(data["displayName"], data["chatIdentifier"]), chatID)
 	rawParticipants := getOr(data, "participants", []any{})
-	if !pyrepr.Truthy(rawParticipants) {
+	if !anyutil.IsTrue(rawParticipants) {
 		rawParticipants = []any{}
 	}
 	items, ok := rawParticipants.([]any)
@@ -908,7 +870,7 @@ func (a *BlueBubblesAdapter) GetChatInfo(ctx context.Context, chatID string) (ma
 		if err != nil {
 			return info, nil
 		}
-		addr := pyrepr.Or(p["address"], "")
+		addr := anyutil.Or(p["address"], "")
 		s, isStr := addr.(string)
 		if !isStr {
 			return info, nil

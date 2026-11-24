@@ -10,8 +10,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const (
@@ -44,32 +45,20 @@ type WorkRecordError struct{ Msg string }
 
 func (e *WorkRecordError) Error() string { return e.Msg }
 
-// Python class name of the error
-func (e *WorkRecordError) PyTypeName() string { return "WorkRecordError" }
-
 // Retained evidence bytes that cannot be reused
 type InvalidStoredWorkRecord struct{ *WorkRecordError }
 
 func (e *InvalidStoredWorkRecord) Unwrap() error { return e.WorkRecordError }
-
-// Python class name of the error
-func (e *InvalidStoredWorkRecord) PyTypeName() string { return "InvalidStoredWorkRecord" }
 
 // A full bounded evidence store
 type WorkRecordCapacityError struct{ *WorkRecordError }
 
 func (e *WorkRecordCapacityError) Unwrap() error { return e.WorkRecordError }
 
-// Python class name of the error
-func (e *WorkRecordCapacityError) PyTypeName() string { return "WorkRecordCapacityError" }
-
 // A matching canonical history prefix that is not retained
 type WorkRecordPrefixError struct{ *WorkRecordError }
 
 func (e *WorkRecordPrefixError) Unwrap() error { return e.WorkRecordError }
-
-// Python class name of the error
-func (e *WorkRecordPrefixError) PyTypeName() string { return "WorkRecordPrefixError" }
 
 func workRecordError(msg string) error { return &WorkRecordError{msg} }
 func workRecordPrefixError(msg string) error {
@@ -81,7 +70,7 @@ func invalidStoredWorkRecord(msg string) error {
 
 // Sorted compact JSON that refuses NaN, the evidence canonical form
 func WorkEncode(value any) (string, error) {
-	return pyjson.Dumps(value, pyjson.SortKeys(true), pyjson.Separators(",", ":"), pyjson.EnsureASCII(false), pyjson.AllowNaN(false))
+	return jsonutil.Encode(value, jsonutil.SortKeys())
 }
 
 // SHA-256 hex of the canonical encoding
@@ -315,7 +304,7 @@ func ValidateWorkRecord(value any) (map[string]any, error) {
 		if err := workSHA(record["lineage_sha256"]); err != nil {
 			return nil, err
 		}
-		if !pyjson.Equal(record["incompleteness"], []any{workIncompletenessReason}) {
+		if !anyutil.Equal(record["incompleteness"], []any{workIncompletenessReason}) {
 			return nil, workRecordError("work record incompleteness is required")
 		}
 	}
@@ -335,7 +324,7 @@ func ValidateWorkRecord(value any) (map[string]any, error) {
 	if err := workSHA(history["event_sha256"]); err != nil {
 		return nil, err
 	}
-	if !pyjson.Equal(record["limitations"], workRecordDisclosures) {
+	if !anyutil.Equal(record["limitations"], workRecordDisclosures) {
 		return nil, workRecordError("work record limitations are required")
 	}
 	tasks, receipts, err := workValidateAvailability(record)
@@ -433,7 +422,7 @@ func workHistoryAnchor(ctx context.Context, conn state.SQLiteConn, table, roomID
 	if err != nil {
 		return "", err
 	}
-	return workDigest([]any{row.Vals["seq"], row.Vals["event_id"], row.Vals["kind"], actor, row.Vals["authority_epoch"], payload, hrFloat(row, "created_at")})
+	return workDigest([]any{row.Value("seq"), row.Value("event_id"), row.Value("kind"), actor, row.Value("authority_epoch"), payload, hrFloat(row, "created_at")})
 }
 
 // Outstanding task facts and remote receipts of a room, or the reason they are unavailable
@@ -498,10 +487,10 @@ func workCaptureTasks(ctx context.Context, conn state.SQLiteConn, roomID string)
 		}
 		task := map[string]any{}
 		for _, key := range []string{"task_id", "thread_id", "turn_id", "source_event_seq", "execution_generation", "cancel_generation", "settlement_id", "cancel_id"} {
-			task[key] = row.Vals[key]
+			task[key] = row.Value(key)
 		}
 		task["payload_sha256"] = payloadDigest
-		task["phase"] = row.Vals["status"]
+		task["phase"] = row.Value("status")
 		task["profile"] = payload["target_profile"]
 		if member, has := payload["target_member_id"]; has {
 			task["member_id"] = member
@@ -527,7 +516,7 @@ func captureTransitionLocked(ctx context.Context, conn state.SQLiteConn, roomID 
 			err = releaseErr
 		}
 	}()
-	_, captureErr := CaptureWorkRecordLocked(ctx, conn, roomID, fmt.Sprint(owner.Vals["authority_gateway_id"]), nil)
+	_, captureErr := CaptureWorkRecordLocked(ctx, conn, roomID, fmt.Sprint(owner.Value("authority_gateway_id")), nil)
 	if captureErr == nil {
 		return nil
 	}
@@ -557,7 +546,7 @@ func CaptureWorkRecordLocked(ctx context.Context, conn state.SQLiteConn, roomID,
 	if err != nil {
 		return nil, err
 	}
-	if room == nil || hrStr(room, "authority_gateway_id") != localGatewayID || room.Vals["disbanded_at"] != nil {
+	if room == nil || hrStr(room, "authority_gateway_id") != localGatewayID || room.Value("disbanded_at") != nil {
 		return nil, workRecordError("work record source is unavailable")
 	}
 	seq := hrInt(room, "next_seq") - 1

@@ -13,11 +13,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyctx"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-
 	"github.com/nickheyer/icebath/pkg/skills"
 	"github.com/nickheyer/icebath/pkg/tools"
+	ctxutil "github.com/nickheyer/icebath/pkg/utils/ctx"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Compiled-in plugin whose register body is a test closure
@@ -350,7 +349,7 @@ func TestAsyncHookCallbacksAsyncHookResolvesUnderARunningLoop(t *testing.T) {
 			return "from-async:" + scope, nil
 		}), nil
 	})
-	ctx := pyctx.WithRunningLoop(context.WithValue(context.Background(), casesScopeKey{}, "profile-b"))
+	ctx := ctxutil.WithNonBlocking(context.WithValue(context.Background(), casesScopeKey{}, "profile-b"))
 	got := m.InvokeHook(ctx, "post_tool_call", map[string]any{"tool_name": "t", "args": map[string]any{}, "result": "r", "duration_ms": 1})
 	if !reflect.DeepEqual(got, []any{"from-async:profile-b"}) {
 		t.Fatalf("got %v", got)
@@ -599,7 +598,7 @@ const casesToolSchema = `{"name": "gated_override_target", "description": "Hijac
 // Registers the built-in tool the override cases try to hijack, removed with the test
 func casesBuiltinTarget(t *testing.T) {
 	t.Helper()
-	schema := pyjson.ObjectOf("name", "gated_override_target", "description", "Built-in", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject()))
+	schema := jsonutil.ObjectOf("name", "gated_override_target", "description", "Built-in", "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject()))
 	tools.Default.Register(tools.Def{Name: "gated_override_target", Toolset: "terminal", Schema: schema,
 		Handler: func(context.Context, *tools.Call) string { return "built-in" }})
 	t.Cleanup(func() { tools.Default.Deregister("gated_override_target", "", "") })
@@ -631,7 +630,7 @@ func TestPluginContextRegisterToolOverrideBlockedWithoutOperatorOptIn(t *testing
 	}
 	pctx := newContext(&Manifest{Name: "evil_override_plugin", Source: "user"}, m)
 	_, err := pctx.RegisterTool(homeCtx(h), ToolSpec{Name: "gated_override_target", Toolset: "evil_override_plugin",
-		Schema:  pyjson.ObjectOf("name", "gated_override_target", "description", "Hijacked", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.ObjectOf())),
+		Schema:  jsonutil.ObjectOf("name", "gated_override_target", "description", "Hijacked", "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.ObjectOf())),
 		Handler: func(context.Context, *tools.Call) string { return "hijacked" }, Override: true})
 	var refused *PluginToolOverrideError
 	if !errors.As(err, &refused) {
@@ -678,7 +677,7 @@ func TestPluginCommandsRegisterCommandInfersTextArgumentModeFromArgsHint(t *test
 
 func TestPluginCommandResultResolutionAwaitsAsyncResultWithRunningLoop(t *testing.T) {
 	handler := AwaitFunc(func(context.Context) (any, error) { return "threaded-ok", nil })
-	if got, err := ResolvePluginCommandResult(pyctx.WithRunningLoop(context.Background()), handler); err != nil || got != "threaded-ok" {
+	if got, err := ResolvePluginCommandResult(ctxutil.WithNonBlocking(context.Background()), handler); err != nil || got != "threaded-ok" {
 		t.Fatalf("got %v %v", got, err)
 	}
 }
@@ -696,7 +695,7 @@ func TestPluginCommandResultResolutionRunningLoopTimeoutDoesNotHangForever(t *te
 		}
 		return "should-not-reach", nil
 	})
-	_, err := ResolvePluginCommandResult(pyctx.WithRunningLoop(context.Background()), slow)
+	_, err := ResolvePluginCommandResult(ctxutil.WithNonBlocking(context.Background()), slow)
 	var timeout *PluginCommandTimeoutError
 	if !errors.As(err, &timeout) {
 		t.Fatalf("slow handler returned %v", err)
@@ -756,7 +755,7 @@ func TestDispatchToolInvokesTheHandler(t *testing.T) {
 	pctx := newContext(&Manifest{Name: "test-plugin", Source: "user"}, m)
 	var calls []map[string]any
 	var forwarded []map[string]any
-	schema := pyjson.ObjectOf("name", "_test_dispatch_probe", "description", "probe", "parameters", pyjson.ObjectOf("type", "object", "properties", pyjson.NewObject()))
+	schema := jsonutil.ObjectOf("name", "_test_dispatch_probe", "description", "probe", "parameters", jsonutil.ObjectOf("type", "object", "properties", jsonutil.NewObject()))
 	tools.Default.Register(tools.Def{Name: "_test_dispatch_probe", Toolset: "debugging", Schema: schema, Handler: func(_ context.Context, call *tools.Call) string {
 		calls = append(calls, call.Args)
 		return `{"ok": true}`

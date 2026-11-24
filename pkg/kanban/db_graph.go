@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Copies the creator session and notify subscriptions inside the creating transaction without adding dependencies
@@ -74,7 +74,7 @@ func initialTaskState(ctx context.Context, conn state.SQLiteConn, parents []stri
 // Value of a key in a decoded JSON object or a Go map
 func dictGet(d any, key string) (any, bool) {
 	switch m := d.(type) {
-	case *pyjson.Object:
+	case *jsonutil.Object:
 		return m.Get(key)
 	case map[string]any:
 		v, ok := m[key]
@@ -86,7 +86,7 @@ func dictGet(d any, key string) (any, bool) {
 // Reports whether a value is a dict
 func isDict(d any) bool {
 	switch d.(type) {
-	case *pyjson.Object, map[string]any:
+	case *jsonutil.Object, map[string]any:
 		return true
 	}
 	return false
@@ -137,7 +137,7 @@ func validateChildrenGraph(children []any) error {
 		for _, p := range list {
 			i, ok := pyIndex(p)
 			if !ok || i.Sign() < 0 || i.Cmp(big.NewInt(int64(n))) >= 0 {
-				return &ValueError{fmt.Sprintf("child[%d].parents[%s] is not a valid index into children", idx, pyrepr.Str(p))}
+				return &ValueError{fmt.Sprintf("child[%d].parents[%s] is not a valid index into children", idx, anyutil.String(p))}
 			}
 			if i.Int64() == int64(idx) {
 				return &ValueError{fmt.Sprintf("child[%d] cannot list itself as a parent", idx)}

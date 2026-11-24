@@ -4,21 +4,17 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyfs"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 )
 
 // Reports whether a directory carries board.json, the identity marker a db-only board directory lacks
 func dirHoldsBoard(d string) bool {
-	_, err := os.Stat(pypath.PathJoin(d, "board.json"))
+	_, err := os.Stat(pathutil.Join(d, "board.json"))
 	return err == nil
 }
 
@@ -28,7 +24,7 @@ func BoardMetadataPath(board *string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return pypath.PathJoin(d, "board.json"), nil
+	return pathutil.Join(d, "board.json"), nil
 }
 
 // Title cased words of a slug, the slug itself when it has none
@@ -36,7 +32,7 @@ func defaultBoardDisplayName(slug string) string {
 	var parts []string
 	for _, part := range strings.Split(strings.ReplaceAll(slug, "_", "-"), "-") {
 		if part != "" {
-			parts = append(parts, pystr.Capitalize(part))
+			parts = append(parts, textutil.UpperFirst(strings.ToLower(part)))
 		}
 	}
 	if len(parts) == 0 {
@@ -46,12 +42,12 @@ func defaultBoardDisplayName(slug string) string {
 }
 
 // board.json merged over defaults plus slug and db_path, a missing or malformed file yielding the synthesized entry
-func ReadBoardMetadata(board *string) (*pyjson.Object, error) {
+func ReadBoardMetadata(board *string) (*jsonutil.Object, error) {
 	slug, err := slugOrDefault(board)
 	if err != nil {
 		return nil, err
 	}
-	meta := pyjson.NewObject()
+	meta := jsonutil.NewObject()
 	meta.Set("slug", slug)
 	meta.Set("name", defaultBoardDisplayName(slug))
 	meta.Set("description", "")
@@ -63,12 +59,12 @@ func ReadBoardMetadata(board *string) (*pyjson.Object, error) {
 	meta.Set("archived", false)
 	p, _ := BoardMetadataPath(&slug)
 	if data, err := os.ReadFile(p); err == nil {
-		if text, err := pystr.DecodeUTF8Sig(data); err == nil {
-			if raw, err := pyjson.Loads(text); err == nil {
-				if obj, ok := raw.(*pyjson.Object); ok {
+		if text, err := textutil.DecodeUTF8(textutil.TrimBOM(data)); err == nil {
+			if raw, err := jsonutil.Decode(text); err == nil {
+				if obj, ok := raw.(*jsonutil.Object); ok {
 					obj.Set("slug", slug)
-					for _, k := range obj.Keys {
-						meta.Set(k, obj.Vals[k])
+					for _, k := range obj.Keys() {
+						meta.Set(k, obj.Value(k))
 					}
 				}
 			}
@@ -94,7 +90,7 @@ type BoardMetadataUpdate struct {
 }
 
 // Creates or updates board.json preserving unmentioned fields, created_at set on first write
-func WriteBoardMetadata(ctx context.Context, board *string, u BoardMetadataUpdate) (*pyjson.Object, error) {
+func WriteBoardMetadata(ctx context.Context, board *string, u BoardMetadataUpdate) (*jsonutil.Object, error) {
 	if err := assertNotDelegatedChildMutation(ctx, ""); err != nil {
 		return nil, err
 	}
@@ -137,17 +133,17 @@ func WriteBoardMetadata(ctx context.Context, board *string, u BoardMetadataUpdat
 			}
 		}
 	}
-	if !pyrepr.Truthy(objGet(meta, "created_at")) {
+	if !anyutil.IsTrue(objGet(meta, "created_at")) {
 		meta.Set("created_at", time.Now().Unix())
 	}
 	path, err := BoardMetadataPath(&slug)
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(pypath.PathParent(path), 0o777); err != nil {
+	if err := os.MkdirAll(filepath.Dir(filepath.Clean(path)), 0o777); err != nil {
 		return nil, err
 	}
-	text, err := pyjson.Dumps(meta, pyjson.Indent(2), pyjson.EnsureASCII(false))
+	text, err := jsonutil.Encode(meta, jsonutil.Indent(2))
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +169,7 @@ type BoardCreateOptions struct {
 }
 
 // Creates board dir, database and metadata, an existing board returning its metadata and losing any archive tombstone
-func CreateBoard(ctx context.Context, slug string, o BoardCreateOptions) (*pyjson.Object, error) {
+func CreateBoard(ctx context.Context, slug string, o BoardCreateOptions) (*jsonutil.Object, error) {
 	normed, err := requireSlug(slug)
 	if err != nil {
 		return nil, err
@@ -193,13 +189,13 @@ func CreateBoard(ctx context.Context, slug string, o BoardCreateOptions) (*pyjso
 }
 
 // Metadata for every board, default first then board dirs holding board.json sorted case insensitively
-func ListBoards(includeArchived bool) ([]*pyjson.Object, error) {
+func ListBoards(includeArchived bool) ([]*jsonutil.Object, error) {
 	def := DefaultBoard
 	first, err := ReadBoardMetadata(&def)
 	if err != nil {
 		return nil, err
 	}
-	entries := []*pyjson.Object{first}
+	entries := []*jsonutil.Object{first}
 	seen := map[string]bool{DefaultBoard: true}
 	root := BoardsRoot()
 	children, err := os.ReadDir(root)
@@ -210,7 +206,7 @@ func ListBoards(includeArchived bool) ([]*pyjson.Object, error) {
 		return strings.Compare(strings.ToLower(a.Name()), strings.ToLower(b.Name()))
 	})
 	for _, child := range children {
-		full := pypath.PathJoin(root, child.Name())
+		full := pathutil.Join(root, child.Name())
 		if st, err := os.Stat(full); err != nil || !st.IsDir() {
 			continue
 		}
@@ -223,7 +219,7 @@ func ListBoards(includeArchived bool) ([]*pyjson.Object, error) {
 		if err != nil {
 			return nil, err
 		}
-		if pyrepr.Truthy(objGet(meta, "archived")) && !includeArchived {
+		if anyutil.IsTrue(objGet(meta, "archived")) && !includeArchived {
 			continue
 		}
 		entries = append(entries, meta)
@@ -233,7 +229,7 @@ func ListBoards(includeArchived bool) ([]*pyjson.Object, error) {
 }
 
 // Archives a board under boards/_archived with a tombstone at its slug, or deletes it, default never removable
-func RemoveBoard(ctx context.Context, slug string, archive bool) (*pyjson.Object, error) {
+func RemoveBoard(ctx context.Context, slug string, archive bool) (*jsonutil.Object, error) {
 	if err := assertNotDelegatedChildMutation(ctx, ""); err != nil {
 		return nil, err
 	}
@@ -256,15 +252,15 @@ func RemoveBoard(ctx context.Context, slug string, archive bool) (*pyjson.Object
 			return nil, err
 		}
 	}
-	if resolved, err := pypath.Resolve(pypath.PathJoin(d, "kanban.db")); err == nil {
+	if resolved, err := pathutil.Resolve(pathutil.Join(d, "kanban.db")); err == nil {
 		initMu.Lock()
 		delete(initializedPaths, resolved)
 		initMu.Unlock()
 	}
-	result := pyjson.NewObject()
+	result := jsonutil.NewObject()
 	result.Set("slug", normed)
 	if !archive {
-		if err := pyfs.RmTree(d, nil); err != nil {
+		if err := os.RemoveAll(d); err != nil {
 			return nil, err
 		}
 		result.Set("action", "deleted")
@@ -275,14 +271,14 @@ func RemoveBoard(ctx context.Context, slug string, archive bool) (*pyjson.Object
 	if err != nil {
 		return nil, err
 	}
-	archiveRoot := pypath.PathJoin(BoardsRoot(), "_archived")
+	archiveRoot := pathutil.Join(BoardsRoot(), "_archived")
 	if err := os.MkdirAll(archiveRoot, 0o777); err != nil {
 		return nil, err
 	}
 	ts := time.Now().Unix()
-	target := pypath.PathJoin(archiveRoot, fmt.Sprintf("%s-%d", normed, ts))
+	target := pathutil.Join(archiveRoot, fmt.Sprintf("%s-%d", normed, ts))
 	for suffix := 1; pathExists(target); suffix++ {
-		target = pypath.PathJoin(archiveRoot, fmt.Sprintf("%s-%d-%d", normed, ts, suffix))
+		target = pathutil.Join(archiveRoot, fmt.Sprintf("%s-%d-%d", normed, ts, suffix))
 	}
 	if err := os.Rename(d, target); err != nil {
 		return nil, err
@@ -301,30 +297,30 @@ func RemoveBoard(ctx context.Context, slug string, archive bool) (*pyjson.Object
 }
 
 // Metadata value as the str() a write applies, nil when absent or null
-func metaStr(meta *pyjson.Object, key string) *string {
+func metaStr(meta *jsonutil.Object, key string) *string {
 	v := objGet(meta, key)
 	if v == nil {
 		return nil
 	}
-	s := pyrepr.Str(v)
+	s := anyutil.String(v)
 	return &s
 }
 
 // Value of a key in a decoded object, nil when absent
-func objGet(o *pyjson.Object, key string) any {
+func objGet(o *jsonutil.Object, key string) any {
 	v, _ := o.Get(key)
 	return v
 }
 
 // Metadata value for a clearable field, empty for a falsy value so the write stores null
-func metaClearableStr(meta *pyjson.Object, key string) *string {
+func metaClearableStr(meta *jsonutil.Object, key string) *string {
 	v := objGet(meta, key)
 	if v == nil {
 		return nil
 	}
 	s := ""
-	if pyrepr.Truthy(v) {
-		s = pyrepr.Str(v)
+	if anyutil.IsTrue(v) {
+		s = anyutil.String(v)
 	}
 	return &s
 }

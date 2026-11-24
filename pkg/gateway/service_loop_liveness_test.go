@@ -8,15 +8,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Writes a heartbeat for pid aged ageS seconds with optional extra payload keys
 func writeAgedHeartbeat(t *testing.T, h string, pid int, ageS float64, extra map[string]any) string {
 	t.Helper()
-	var ex *pyjson.Object
+	var ex *jsonutil.Object
 	if len(extra) > 0 {
-		ex = pyjson.NewObject()
+		ex = jsonutil.NewObject()
 		for k, v := range extra {
 			ex.Set(k, v)
 		}

@@ -3,16 +3,15 @@ package gateway
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pythread"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	timeutil "github.com/nickheyer/icebath/pkg/utils/time"
 )
 
 type pendingSpawn struct{}
@@ -22,14 +21,14 @@ func (pendingSpawn) Pid() int          { return 1 }
 
 // Ready verdict of a current owner serving home
 func readyVerdict(h string) ObservedEndpoint {
-	return ObservedEndpoint{State: "ready", Endpoint: &GatewayEndpoint{ProfileID: h, InstanceID: "new", AuthorityEpoch: big.NewInt(1),
+	return ObservedEndpoint{State: "ready", Endpoint: &GatewayEndpoint{ProfileID: h, InstanceID: "new", AuthorityEpoch: 1,
 		RuntimeProtocol: 1, APIOrigin: "http://127.0.0.1:1", Supervisor: "none"}}
 }
 
 // Resolved temp home with the update fence open
 func replaceHome(t *testing.T) string {
 	t.Helper()
-	h, _ := pypath.Resolve(filepath.Join(t.TempDir(), ".icebath"))
+	h, _ := pathutil.Resolve(filepath.Join(t.TempDir(), ".icebath"))
 	os.Mkdir(h, 0o700)
 	swapSeam(t, &ensureUpdateFenced, func(context.Context, []string) (bool, error) { return false, nil })
 	return h
@@ -88,26 +87,26 @@ func TestARefusedReplacementIsReportedWithItsReason(t *testing.T) {
 }
 
 // Identify payload of an older owner without runtime_protocol
-func ownerPayload(t *testing.T, h string, pid int, startTime any) *pyjson.Object {
+func ownerPayload(t *testing.T, h string, pid int, startTime any) *jsonutil.Object {
 	t.Helper()
-	start, err := pyjson.Dumps(startTime)
+	start, err := jsonutil.Encode(startTime)
 	if err != nil {
 		t.Fatal(err)
 	}
-	v, err := pyjson.Loads(fmt.Sprintf(`{"protocol": 1, "kind": %q, "pid": %d, "start_time": %s, "icebath_home": %q, "supervisor": "manual"}`, gatewayKind, pid, start, h))
+	v, err := jsonutil.Decode(fmt.Sprintf(`{"protocol": 1, "kind": %q, "pid": %d, "start_time": %s, "icebath_home": %q, "supervisor": "manual"}`, gatewayKind, pid, start, h))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return v.(*pyjson.Object)
+	return v.(*jsonutil.Object)
 }
 
 func TestReplacementNeverTargetsItself(t *testing.T) {
 	h := replaceHome(t)
 	swapSeam(t, &replaceInstallRootOf, func() string { return h })
-	swapSeam(t, &replaceIdentifyOf, func(string, time.Duration) (string, *pyjson.Object, error) {
+	swapSeam(t, &replaceIdentifyOf, func(string, time.Duration) (string, *jsonutil.Object, error) {
 		return h, ownerPayload(t, h, os.Getpid(), 1), nil
 	})
-	if refusal := ReplaceIncompatibleOwner(context.Background(), h, pythread.Monotonic()+5); refusal != "owner_unverified" {
+	if refusal := ReplaceIncompatibleOwner(context.Background(), h, timeutil.Monotonic()+5); refusal != "owner_unverified" {
 		t.Fatal(refusal)
 	}
 }

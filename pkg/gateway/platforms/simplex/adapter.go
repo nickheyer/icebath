@@ -15,6 +15,7 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,16 +26,18 @@ import (
 
 	"github.com/nickheyer/icebath/pkg/gateway"
 	"github.com/nickheyer/icebath/pkg/internal/pydatetime"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
 	"github.com/nickheyer/icebath/pkg/internal/pypil"
 	"github.com/nickheyer/icebath/pkg/internal/pyre"
 	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pyurl"
 	"github.com/nickheyer/icebath/pkg/internal/pywebsockets"
 	"github.com/nickheyer/icebath/pkg/settings"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	imageutil "github.com/nickheyer/icebath/pkg/utils/image"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
+	websocketutil "github.com/nickheyer/icebath/pkg/utils/websocket"
 )
 
 const (
@@ -80,7 +83,7 @@ func warnNameAllowlistEntries(ctx context.Context) {
 	names := []any{}
 	unique := map[string]bool{}
 	for _, u := range entries {
-		if u != "" && u != "*" && !pystr.StrIsDigit(u) {
+		if u != "" && u != "*" && !textutil.IsDigits(u) {
 			names = append(names, u)
 			unique[u] = true
 		}
@@ -102,15 +105,15 @@ func warnNameAllowlistEntries(ctx context.Context) {
 		return
 	}
 	pkgLog().Warn(fmt.Sprintf("SimpleX: simplex.allowed_users (SIMPLEX_ALLOWED_USERS) entries %s are not numeric contactIds and are ignored "+
-		"(display names are not trusted; see /contacts for IDs)", pyrepr.Repr(names)))
+		"(display names are not trusted; see /contacts for IDs)", anyutil.Quote(names)))
 }
 
 // Id with its middle masked, short ids whole and an empty id as a marker
 func redactID(contactID any) string {
-	if !pyrepr.Truthy(contactID) {
+	if !anyutil.IsTrue(contactID) {
 		return "<none>"
 	}
-	rs := []rune(pyrepr.Str(contactID))
+	rs := []rune(anyutil.String(contactID))
 	if len(rs) <= 4 {
 		return string(rs)
 	}
@@ -134,7 +137,7 @@ func mimeForExt(ext string) string {
 
 // AttributeError an attribute read raises on a value of another type
 func attributeError(v any, attr string) error {
-	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", pyrepr.TypeName(v), attr)}
+	return &gateway.PyError{Kind: "AttributeError", Msg: fmt.Sprintf("'%s' object has no attribute '%s'", anyutil.Kind(v), attr)}
 }
 
 // dict get of a decoded JSON value, the AttributeError a non dict raises
@@ -155,7 +158,7 @@ func dictOrEmpty(v any, key string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !pyrepr.Truthy(val) {
+	if !anyutil.IsTrue(val) {
 		return map[string]any{}, nil
 	}
 	return val, nil
@@ -178,7 +181,7 @@ func displayName(obj any, profileKey string, def any) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	if pyrepr.Truthy(local) {
+	if anyutil.IsTrue(local) {
 		return local, nil
 	}
 	profile, err := dictOrEmpty(obj, profileKey)
@@ -194,7 +197,7 @@ func sendCmd(chatID string, items []any) (string, error) {
 	if strings.HasPrefix(chatID, "group:") {
 		target = "#" + chatID[6:]
 	}
-	encoded, err := pyjson.Dumps(items)
+	encoded, err := jsonutil.Encode(items)
 	if err != nil {
 		return "", err
 	}
@@ -217,7 +220,7 @@ type SimplexAdapter struct {
 	groupAllowFrom map[string]bool
 
 	mu                   sync.Mutex
-	ws                   *pywebsockets.Conn
+	ws                   *websocketutil.Conn
 	wsTask               *gateway.AdapterTask
 	healthTask           *gateway.AdapterTask
 	lastWSActivity       float64
@@ -270,7 +273,7 @@ func NewSimplexAdapter(ctx context.Context, config *gateway.PlatformConfig) (*Si
 	if len(a.groupAllowFrom) > 0 {
 		groups = "enabled"
 	}
-	pkgLog().Info(fmt.Sprintf("SimpleX adapter initialized: url=%s auto_accept=%s groups=%s", a.wsURL, pyrepr.Str(a.autoAccept), groups))
+	pkgLog().Info(fmt.Sprintf("SimpleX adapter initialized: url=%s auto_accept=%s groups=%s", a.wsURL, anyutil.String(a.autoAccept), groups))
 	return a, nil
 }
 
@@ -281,7 +284,7 @@ func (a *SimplexAdapter) Connect(ctx context.Context, isReconnect bool) (bool, e
 		return false, nil
 	}
 	warnNameAllowlistEntries(ctx)
-	probe, err := pywebsockets.Connect(ctx, a.wsURL, pywebsockets.ConnectOptions{OpenTimeout: 10 * time.Second})
+	probe, err := websocketutil.Connect(ctx, a.wsURL, pywebsockets.ConnectOptions{OpenTimeout: 10 * time.Second})
 	if err != nil {
 		if ctx.Err() != nil {
 			return false, ctx.Err()
@@ -340,7 +343,7 @@ func (a *SimplexAdapter) wsListener(ctx context.Context) error {
 	backoff := wsRetryDelayInitial
 	for a.IsConnected() {
 		pkgLog().Debug(fmt.Sprintf("SimpleX WS: connecting to %s", a.wsURL))
-		ws, err := pywebsockets.Connect(ctx, a.wsURL, pywebsockets.ConnectOptions{PingInterval: 20 * time.Second,
+		ws, err := websocketutil.Connect(ctx, a.wsURL, pywebsockets.ConnectOptions{PingInterval: 20 * time.Second,
 			PingTimeout: 20 * time.Second, CloseTimeout: 10 * time.Second})
 		if err == nil {
 			a.mu.Lock()
@@ -381,11 +384,11 @@ func (a *SimplexAdapter) wsListener(ctx context.Context) error {
 }
 
 // Handles every frame of one socket until the adapter stops or the connection ends, a clean close ending quietly
-func (a *SimplexAdapter) readEvents(ctx context.Context, ws *pywebsockets.Conn) error {
+func (a *SimplexAdapter) readEvents(ctx context.Context, ws *websocketutil.Conn) error {
 	for {
 		raw, err := ws.Recv(ctx)
 		if err != nil {
-			if pywebsockets.IsClosedOK(err) {
+			if websocketutil.IsCleanClose(err) {
 				return nil
 			}
 			return err
@@ -400,12 +403,12 @@ func (a *SimplexAdapter) readEvents(ctx context.Context, ws *pywebsockets.Conn) 
 		var perr error
 		switch frame := raw.(type) {
 		case string:
-			parsed, perr = pyjson.Loads(frame)
+			parsed, perr = jsonutil.Decode(frame)
 		case []byte:
-			parsed, perr = pyjson.LoadsBytes(frame)
+			parsed, perr = jsonutil.Decode(frame)
 		}
 		if perr == nil {
-			perr = a.handleEvent(ctx, pyjson.Plain(parsed))
+			perr = a.handleEvent(ctx, jsonutil.Plain(parsed))
 		}
 		if perr == nil {
 			continue
@@ -413,9 +416,9 @@ func (a *SimplexAdapter) readEvents(ctx context.Context, ws *pywebsockets.Conn) 
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		var decodeErr *pyjson.DecodeError
+		var decodeErr *jsonutil.SyntaxError
 		if errors.As(perr, &decodeErr) {
-			pkgLog().Debug(fmt.Sprintf("SimpleX WS: invalid JSON: %s", textutil.First(pyrepr.Str(raw), 100)))
+			pkgLog().Debug(fmt.Sprintf("SimpleX WS: invalid JSON: %s", textutil.First(anyutil.String(raw), 100)))
 			continue
 		}
 		pkgLog().Error("SimpleX WS: error handling event", "error", perr)
@@ -449,7 +452,7 @@ func (a *SimplexAdapter) healthMonitor(ctx context.Context) error {
 func unhashable(v any) error {
 	switch v.(type) {
 	case []any, map[string]any:
-		return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", pyrepr.TypeName(v))}
+		return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("unhashable type: '%s'", anyutil.Kind(v))}
 	}
 	return nil
 }
@@ -465,7 +468,7 @@ func (a *SimplexAdapter) handleEvent(ctx context.Context, event any) error {
 		resp = respValue
 	}
 	corrID := event.(map[string]any)["corrId"]
-	if pyrepr.Truthy(corrID) {
+	if anyutil.IsTrue(corrID) {
 		if err := unhashable(corrID); err != nil {
 			return err
 		}
@@ -493,7 +496,7 @@ func (a *SimplexAdapter) handleEvent(ctx context.Context, event any) error {
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(respType) {
+	if !anyutil.IsTrue(respType) {
 		respType = getIfDict(event, "type", "")
 	}
 	if err := unhashable(respType); err != nil {
@@ -512,8 +515,8 @@ func (a *SimplexAdapter) handleEvent(ctx context.Context, event any) error {
 	case "rcvFileComplete":
 		return a.onRcvFileComplete(ctx, resp)
 	}
-	if pyrepr.Truthy(respType) {
-		pkgLog().Debug(fmt.Sprintf("SimpleX: unhandled event type: %s", pyrepr.Str(respType)))
+	if anyutil.IsTrue(respType) {
+		pkgLog().Debug(fmt.Sprintf("SimpleX: unhandled event type: %s", anyutil.String(respType)))
 	}
 	return nil
 }
@@ -533,8 +536,8 @@ func (a *SimplexAdapter) onContactRequest(ctx context.Context, resp any) error {
 		return err
 	}
 	if contactReqID != nil {
-		pkgLog().Info(fmt.Sprintf("SimpleX: auto-accepting contact request %s", redactID(pyrepr.Str(contactReqID))))
-		if _, err := a.sendCommand(ctx, "/accept "+pyrepr.Str(contactReqID), 30.0); err != nil {
+		pkgLog().Info(fmt.Sprintf("SimpleX: auto-accepting contact request %s", redactID(anyutil.String(contactReqID))))
+		if _, err := a.sendCommand(ctx, "/accept "+anyutil.String(contactReqID), 30.0); err != nil {
 			return err
 		}
 	}
@@ -548,8 +551,8 @@ func (a *SimplexAdapter) onRcvFileDescrReady(ctx context.Context, resp any) erro
 		return err
 	}
 	if fileID := getIfDict(rcvFile, "fileId", nil); fileID != nil {
-		pkgLog().Debug(fmt.Sprintf("SimpleX: rcvFileDescrReady for fileId=%s — sending /freceive", pyrepr.Str(fileID)))
-		return a.sendFireAndForget(ctx, "/freceive "+pyrepr.Str(fileID))
+		pkgLog().Debug(fmt.Sprintf("SimpleX: rcvFileDescrReady for fileId=%s — sending /freceive", anyutil.String(fileID)))
+		return a.sendFireAndForget(ctx, "/freceive "+anyutil.String(fileID))
 	}
 	return nil
 }
@@ -560,7 +563,7 @@ func (a *SimplexAdapter) onNewChatItems(ctx context.Context, resp any) error {
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(chatItems) {
+	if !anyutil.IsTrue(chatItems) {
 		return nil
 	}
 	items, ok := chatItems.([]any)
@@ -585,7 +588,7 @@ func fileKey(fileID any) string {
 	if n, ok := pyrepr.Int(fileID); ok {
 		return "n:" + n.String()
 	}
-	return pyrepr.TypeName(fileID) + ":" + pyrepr.Repr(fileID)
+	return anyutil.Kind(fileID) + ":" + anyutil.Quote(fileID)
 }
 
 // Delivers the chat item held back until its file transfer completed
@@ -621,7 +624,7 @@ func (a *SimplexAdapter) onRcvFileComplete(ctx context.Context, resp any) error 
 		return err
 	}
 	filePath := getIfDict(fileSource, "filePath", nil)
-	if !pyrepr.Truthy(filePath) {
+	if !anyutil.IsTrue(filePath) {
 		return nil
 	}
 	pendingItemData, err := dictOrEmpty(pending, "chatItem")
@@ -639,7 +642,7 @@ func (a *SimplexAdapter) onRcvFileComplete(ctx context.Context, resp any) error 
 	}
 	fileMap, isMap := file.(map[string]any)
 	if !isMap {
-		return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object does not support item assignment", pyrepr.TypeName(file))}
+		return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object does not support item assignment", anyutil.Kind(file))}
 	}
 	fileMap["fileSource"] = map[string]any{"filePath": filePath}
 	pending.(map[string]any)["chatItem"] = itemMap
@@ -702,14 +705,14 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 	if textBearingTypes[msgTypeStr] {
 		text = getIfDict(msgContent, "text", "")
 	}
-	if !pyrepr.Truthy(text) && msgTypeStr != "image" && msgTypeStr != "file" && msgTypeStr != "voice" {
+	if !anyutil.IsTrue(text) && msgTypeStr != "image" && msgTypeStr != "file" && msgTypeStr != "voice" {
 		return nil
 	}
-	isGroup := pyrepr.Equal(chatType, "group")
+	isGroup := anyutil.Equal(chatType, "group")
 	var chatID, senderID string
 	var chatName, senderName any
 	switch {
-	case pyrepr.Equal(chatType, "direct"):
+	case anyutil.Equal(chatType, "direct"):
 		contact, err := dictOrEmpty(chatInfo, "contact")
 		if err != nil {
 			return err
@@ -718,7 +721,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		if err != nil {
 			return err
 		}
-		senderID = pyrepr.Str(contactID)
+		senderID = anyutil.String(contactID)
 		chatID = senderID
 		if senderName, err = displayName(contact, "profile", ""); err != nil {
 			return err
@@ -733,7 +736,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		if err != nil {
 			return err
 		}
-		groupID := pyrepr.Str(groupIDValue)
+		groupID := anyutil.String(groupIDValue)
 		chatID = "group:" + groupID
 		member, err := dictOrEmpty(itemDirection, "groupMember")
 		if err != nil {
@@ -743,7 +746,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		if err != nil {
 			return err
 		}
-		senderID = pyrepr.Str(memberID)
+		senderID = anyutil.String(memberID)
 		if senderName, err = displayName(member, "memberProfile", ""); err != nil {
 			return err
 		}
@@ -759,7 +762,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 			return nil
 		}
 	default:
-		pkgLog().Debug(fmt.Sprintf("SimpleX: unhandled chat type: %s", pyrepr.Str(chatType)))
+		pkgLog().Debug(fmt.Sprintf("SimpleX: unhandled chat type: %s", anyutil.String(chatType)))
 		return nil
 	}
 	if senderID == "" {
@@ -779,31 +782,31 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		filePathValue := getIfDict(fileSource, "filePath", nil)
 		fileID := fileInfo["fileId"]
 		filePath, ext := "", ""
-		if pyrepr.Truthy(filePathValue) {
+		if anyutil.IsTrue(filePathValue) {
 			var isStr bool
 			if filePath, isStr = filePathValue.(string); !isStr {
 				return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
-					pyrepr.TypeName(filePathValue))}
+					anyutil.Kind(filePathValue))}
 			}
-			ext = strings.ToLower(pypath.PathSuffix(filePath))
+			ext = strings.ToLower(pathutil.Suffix(filePath))
 		}
-		if fileName := fileInfo["fileName"]; ext == "" && pyrepr.Truthy(fileName) {
+		if fileName := fileInfo["fileName"]; ext == "" && anyutil.IsTrue(fileName) {
 			name, isStr := fileName.(string)
 			if !isStr {
 				return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("expected str, bytes or os.PathLike object, not %s",
-					pyrepr.TypeName(fileName))}
+					anyutil.Kind(fileName))}
 			}
-			ext = strings.ToLower(pypath.PathSuffix(name))
+			ext = strings.ToLower(pathutil.Suffix(name))
 		}
 		if filePath == "" && isAudioExt(ext) && fileID != nil {
 			if err := unhashable(fileID); err != nil {
 				return err
 			}
-			pkgLog().Info(fmt.Sprintf("SimpleX: voice file %s not yet received, accepting transfer", pyrepr.Str(fileID)))
+			pkgLog().Info(fmt.Sprintf("SimpleX: voice file %s not yet received, accepting transfer", anyutil.String(fileID)))
 			a.mu.Lock()
 			a.pendingFileTransfers[fileKey(fileID)] = chatItem
 			a.mu.Unlock()
-			return a.sendFireAndForget(ctx, "/freceive "+pyrepr.Str(fileID))
+			return a.sendFireAndForget(ctx, "/freceive "+anyutil.String(fileID))
 		}
 		if filePath != "" {
 			mediaURLs = append(mediaURLs, filePath)
@@ -811,10 +814,10 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		}
 	}
 	userName := senderName
-	if !pyrepr.Truthy(userName) {
+	if !anyutil.IsTrue(userName) {
 		userName = senderID
 	}
-	chatNameText, userNameText := pyrepr.Str(chatName), pyrepr.Str(userName)
+	chatNameText, userNameText := anyutil.String(chatName), anyutil.String(userName)
 	sourceChatType := "dm"
 	if isGroup {
 		sourceChatType = "group"
@@ -838,11 +841,11 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 	if err != nil {
 		return err
 	}
-	if !pyrepr.Truthy(tsValue) {
+	if !anyutil.IsTrue(tsValue) {
 		tsValue = getIfDict(meta, "createdAt", "")
 	}
 	timestamp := time.Now().UTC()
-	if pyrepr.Truthy(tsValue) {
+	if anyutil.IsTrue(tsValue) {
 		tsText, isStr := tsValue.(string)
 		if !isStr {
 			return &gateway.PyError{Kind: "TypeError", Msg: "fromisoformat: argument must be str"}
@@ -852,10 +855,10 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 		}
 	}
 	body := ""
-	if pyrepr.Truthy(text) {
+	if anyutil.IsTrue(text) {
 		var isStr bool
 		if body, isStr = text.(string); !isStr {
-			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", pyrepr.TypeName(text))}
+			return &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not subscriptable", anyutil.Kind(text))}
 		}
 	}
 	msgEvent := gateway.NewMessageEvent(body)
@@ -864,7 +867,7 @@ func (a *SimplexAdapter) handleChatItem(ctx context.Context, chatItem any) error
 	msgEvent.Timestamp, msgEvent.RawMessage = timestamp, chatItem
 	if metaDict, isDict := meta.(map[string]any); isDict && metaDict["itemId"] != nil {
 		itemID := metaDict["itemId"]
-		id := pyrepr.Str(itemID)
+		id := anyutil.String(itemID)
 		msgEvent.MessageID = &id
 	}
 	pkgLog().Debug(fmt.Sprintf("SimpleX: message from %s in %s: %s", redactID(senderID), textutil.First(chatID, 20), textutil.First(body, 50)))
@@ -911,7 +914,7 @@ func (a *SimplexAdapter) makeCorrID() string {
 }
 
 // Open daemon socket, nil while disconnected
-func (a *SimplexAdapter) socket() *pywebsockets.Conn {
+func (a *SimplexAdapter) socket() *websocketutil.Conn {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return a.ws
@@ -919,7 +922,7 @@ func (a *SimplexAdapter) socket() *pywebsockets.Conn {
 
 // JSON of a command frame with its correlation id first
 func commandFrame(corrID, command string) (string, error) {
-	return pyjson.Dumps(pyjson.ObjectOf("corrId", corrID, "cmd", command))
+	return jsonutil.Encode(jsonutil.ObjectOf("corrId", corrID, "cmd", command))
 }
 
 // Writes one command frame without waiting for a reply, dropped while disconnected and a write failure logged
@@ -1011,7 +1014,7 @@ func (a *SimplexAdapter) AddReaction(ctx context.Context, chatID, messageID, emo
 	if strings.HasPrefix(chatID, "group:") {
 		target = "#" + chatID[6:]
 	}
-	reaction, err := pyjson.Dumps(pyjson.ObjectOf("type", "emoji", "emoji", emoji))
+	reaction, err := jsonutil.Encode(jsonutil.ObjectOf("type", "emoji", "emoji", emoji))
 	if err != nil {
 		return err
 	}
@@ -1023,8 +1026,8 @@ func (a *SimplexAdapter) AddReaction(ctx context.Context, chatID, messageID, emo
 	if answer == nil {
 		return errors.New("SimpleX gave no answer to the reaction")
 	}
-	if kind := pyrepr.Str(answer["type"]); strings.Contains(kind, "Error") || strings.Contains(kind, "error") {
-		detail, _ := pyjson.Dumps(answer)
+	if kind := anyutil.String(answer["type"]); strings.Contains(kind, "Error") || strings.Contains(kind, "error") {
+		detail, _ := jsonutil.Encode(answer)
 		return fmt.Errorf("SimpleX refused the reaction: %s", detail)
 	}
 	return nil
@@ -1047,7 +1050,7 @@ func (a *SimplexAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 		content = strings.TrimSpace(stripped)
 	}
 	if content != "" {
-		command, err := sendCmd(chatID, []any{pyjson.ObjectOf("msgContent", pyjson.ObjectOf("type", "text", "text", content))})
+		command, err := sendCmd(chatID, []any{jsonutil.ObjectOf("msgContent", jsonutil.ObjectOf("type", "text", "text", content))})
 		if err != nil {
 			return gateway.SendResult{}, err
 		}
@@ -1058,7 +1061,7 @@ func (a *SimplexAdapter) Send(ctx context.Context, chatID, content, replyTo stri
 	for _, path := range mediaPaths {
 		var result gateway.SendResult
 		var err error
-		if _, ext := pypath.Splitext(path); voiceTagExts[strings.ToLower(ext)] {
+		if _, ext := pathutil.SplitExt(path); voiceTagExts[strings.ToLower(ext)] {
 			result, err = a.SendVoice(ctx, chatID, path, "", "", nil, nil)
 		} else {
 			result, err = a.SendDocument(ctx, chatID, path, "", "", "", nil, nil)
@@ -1100,14 +1103,14 @@ func (a *SimplexAdapter) ListChannels(ctx context.Context) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if contactID == nil && !pyrepr.Truthy(name) {
+		if contactID == nil && !anyutil.IsTrue(name) {
 			continue
 		}
 		label := name
-		if !pyrepr.Truthy(label) {
+		if !anyutil.IsTrue(label) {
 			label = contactID
 		}
-		channels = append(channels, map[string]any{"id": pyrepr.Str(label), "name": pyrepr.Str(label), "type": "dm"})
+		channels = append(channels, map[string]any{"id": anyutil.String(label), "name": anyutil.String(label), "type": "dm"})
 	}
 	if resp, err = a.sendCommand(ctx, "/groups", 10.0); err != nil {
 		return nil, err
@@ -1134,17 +1137,17 @@ func (a *SimplexAdapter) ListChannels(ctx context.Context) (any, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !pyrepr.Truthy(name) {
-			name = pyrepr.Str(groupID)
+		if !anyutil.IsTrue(name) {
+			name = anyutil.String(groupID)
 		}
-		channels = append(channels, map[string]any{"id": "group:" + pyrepr.Str(groupID), "name": pyrepr.Str(name), "type": "group"})
+		channels = append(channels, map[string]any{"id": "group:" + anyutil.String(groupID), "name": anyutil.String(name), "type": "group"})
 	}
 	return channels, nil
 }
 
 // Items a for loop yields over a decoded JSON value, nothing for a falsy one and a TypeError for a non iterable
 func iterItems(v any) ([]any, error) {
-	if !pyrepr.Truthy(v) {
+	if !anyutil.IsTrue(v) {
 		return nil, nil
 	}
 	switch t := v.(type) {
@@ -1163,17 +1166,17 @@ func iterItems(v any) ([]any, error) {
 		}
 		return out, nil
 	}
-	return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", pyrepr.TypeName(v))}
+	return nil, &gateway.PyError{Kind: "TypeError", Msg: fmt.Sprintf("'%s' object is not iterable", anyutil.Kind(v))}
 }
 
 // PNG or JPEG path of an image, converting other formats to PNG, with a 128 pixel JPEG thumbnail data URI
 func prepareImage(filePath string) (string, string, error) {
-	suffix := strings.ToLower(pypath.PathSuffix(filePath))
+	suffix := strings.ToLower(pathutil.Suffix(filePath))
 	needsPNG := suffix != ".png" && suffix != ".jpg" && suffix != ".jpeg"
 	pngPath := filePath
 	if needsPNG {
 		var err error
-		if pngPath, err = pypath.WithSuffix(filePath, ".png"); err != nil {
+		if pngPath, err = pathutil.WithSuffix(filePath, ".png"); err != nil {
 			return "", "", err
 		}
 	}
@@ -1184,7 +1187,7 @@ func prepareImage(filePath string) (string, string, error) {
 	src, _, err := image.Decode(f)
 	f.Close()
 	if errors.Is(err, image.ErrFormat) {
-		return "", "", &gateway.PyError{Kind: "UnidentifiedImageError", Msg: "cannot identify image file " + pyrepr.StrRepr(filePath)}
+		return "", "", &gateway.PyError{Kind: "UnidentifiedImageError", Msg: "cannot identify image file " + strconv.Quote(filePath)}
 	}
 	if err != nil {
 		return "", "", err
@@ -1202,7 +1205,7 @@ func prepareImage(filePath string) (string, string, error) {
 			return "", "", err
 		}
 	}
-	nrgba := pypil.ToNRGBA(src)
+	nrgba := imageutil.ToNRGBA(src)
 	var thumb *image.NRGBA
 	_, paletted := src.(*image.Paletted)
 	_, gray := src.(*image.Gray)
@@ -1239,7 +1242,7 @@ func prepareImage(filePath string) (string, string, error) {
 // Copy shrunk to fit the side box by nearest neighbour, the resampling a palette image gets
 func nearestThumbnail(img *image.NRGBA, side int) *image.NRGBA {
 	w, h := img.Rect.Dx(), img.Rect.Dy()
-	fw, fh, ok := pypil.ThumbnailSize(w, h, side)
+	fw, fh, ok := imageutil.FitSize(w, h, side)
 	if !ok || (fw == w && fh == h) {
 		out := image.NewNRGBA(img.Rect)
 		copy(out.Pix, img.Pix)
@@ -1273,8 +1276,8 @@ func (a *SimplexAdapter) SendImage(ctx context.Context, chatID, imageURL, captio
 			if ctx.Err() != nil {
 				return gateway.SendResult{}, ctx.Err()
 			}
-			pkgLog().Warn(fmt.Sprintf("SimpleX: failed to download image: %s", pyrepr.ExceptionMessage(err)))
-			return gateway.SendResult{Success: false, Error: pyrepr.ExceptionMessage(err)}, nil
+			pkgLog().Warn(fmt.Sprintf("SimpleX: failed to download image: %s", err.Error()))
+			return gateway.SendResult{Success: false, Error: err.Error()}, nil
 		}
 		filePath = cached
 	}
@@ -1283,10 +1286,10 @@ func (a *SimplexAdapter) SendImage(ctx context.Context, chatID, imageURL, captio
 	}
 	pngPath, thumbURI, err := prepareImage(filePath)
 	if err != nil {
-		pkgLog().Warn(fmt.Sprintf("SimpleX: failed to prepare image: %s", pyrepr.ExceptionMessage(err)))
-		return gateway.SendResult{Success: false, Error: "Failed to prepare image: " + pyrepr.ExceptionMessage(err)}, nil
+		pkgLog().Warn(fmt.Sprintf("SimpleX: failed to prepare image: %s", err.Error()))
+		return gateway.SendResult{Success: false, Error: "Failed to prepare image: " + err.Error()}, nil
 	}
-	item := pyjson.ObjectOf("filePath", pngPath, "msgContent", pyjson.ObjectOf("type", "image", "image", thumbURI, "text", caption))
+	item := jsonutil.ObjectOf("filePath", pngPath, "msgContent", jsonutil.ObjectOf("type", "image", "image", thumbURI, "text", caption))
 	return a.sendItems(ctx, chatID, []any{item}, "Failed to send image")
 }
 
@@ -1305,7 +1308,7 @@ func (a *SimplexAdapter) SendDocument(ctx context.Context, chatID, filePath, cap
 	if !pathExists(filePath) {
 		return gateway.SendResult{Success: false, Error: "File not found"}, nil
 	}
-	item := pyjson.ObjectOf("filePath", filePath, "msgContent", pyjson.ObjectOf("type", "file", "text", caption))
+	item := jsonutil.ObjectOf("filePath", filePath, "msgContent", jsonutil.ObjectOf("type", "file", "text", caption))
 	return a.sendItems(ctx, chatID, []any{item}, "Failed to send document")
 }
 
@@ -1318,8 +1321,8 @@ func (a *SimplexAdapter) SendVoice(ctx context.Context, chatID, audioPath, capti
 	if v, ok := extra["duration"]; ok {
 		duration = v
 	}
-	item := pyjson.ObjectOf("msgContent", pyjson.ObjectOf("type", "voice", "text", caption, "duration", duration),
-		"fileSource", pyjson.ObjectOf("filePath", audioPath))
+	item := jsonutil.ObjectOf("msgContent", jsonutil.ObjectOf("type", "voice", "text", caption, "duration", duration),
+		"fileSource", jsonutil.ObjectOf("filePath", audioPath))
 	return a.sendItems(ctx, chatID, []any{item}, "Failed to send voice message")
 }
 

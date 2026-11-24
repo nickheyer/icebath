@@ -7,9 +7,9 @@ import (
 	"iter"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/provider"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 const DefaultTTSOutputFormat = "mp3"
@@ -146,7 +146,7 @@ func (h hostedTTSProvider) DisplayName() string {
 			return s
 		}
 	}
-	return pystr.Title(h.Name())
+	return textutil.Title(h.Name())
 }
 
 func (h hostedTTSProvider) GetSetupSchema() map[string]any {

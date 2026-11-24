@@ -7,9 +7,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/plugins"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -46,14 +46,14 @@ func RenderHistoryForSideQuestion(history []map[string]any, charBudget int) stri
 		if calls, ok := msg["tool_calls"].([]any); role == "assistant" && ok && len(calls) > 0 {
 			var names []string
 			for _, tc := range calls {
-				call, ok := pyjson.Dict(tc)
+				call, ok := jsonutil.AsMap(tc)
 				if !ok {
 					continue
 				}
-				fn, _ := pyjson.Dict(call["function"])
+				fn, _ := jsonutil.AsMap(call["function"])
 				name := "?"
 				if v, ok := fn["name"]; ok {
-					name = pyrepr.Str(v)
+					name = anyutil.String(v)
 				}
 				names = append(names, name)
 			}
@@ -123,11 +123,11 @@ func answerViaFork(ctx context.Context, parent *AIAgent, question string, histor
 		return "", err
 	}
 	text := ""
-	if v, ok := result["final_response"]; ok && pyrepr.Truthy(v) {
-		text = pyrepr.Str(v)
+	if v, ok := result["final_response"]; ok && anyutil.IsTrue(v) {
+		text = anyutil.String(v)
 	}
-	if text == "" && result != nil && pyrepr.Truthy(result["error"]) {
-		return "", errors.New(pyrepr.Str(result["error"]))
+	if text == "" && result != nil && anyutil.IsTrue(result["error"]) {
+		return "", errors.New(anyutil.String(result["error"]))
 	}
 	return strings.TrimSpace(text), nil
 }

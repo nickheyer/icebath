@@ -14,8 +14,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 	"github.com/nickheyer/icebath/pkg/selfupdate/updaterecord"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 type cuEvent []any
@@ -227,11 +227,11 @@ func cuReadReceipt(t *testing.T, path string) map[string]any {
 	if err != nil {
 		t.Fatal(err)
 	}
-	loaded, err := pyjson.Loads(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
+	loaded, err := jsonutil.Decode(strings.TrimPrefix(string(raw), "\xef\xbb\xbf"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	return pyjson.Plain(loaded).(map[string]any)
+	return jsonutil.Plain(loaded).(map[string]any)
 }
 
 // First receipt step with this name

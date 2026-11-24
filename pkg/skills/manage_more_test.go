@@ -9,7 +9,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 const recoveryContent = "---\nname: test-skill\ndescription: A test skill.\n---\n\n# Test Skill\n\nStep 1: Do the thing.\nStep 2: Do the other thing.\n"
@@ -23,7 +23,7 @@ func forceScanBlocked(t *testing.T) {
 }
 
 // Reports a true success key on a direct handler result
-func objSuccess(o *pyjson.Object) bool {
+func objSuccess(o *jsonutil.Object) bool {
 	v, _ := o.Get("success")
 	return v == true
 }
@@ -58,7 +58,7 @@ func TestCreateOccupiedDirectoryPreservedWhenScanBlocks(t *testing.T) {
 	os.Mkdir(empty, 0o755)
 	emptyResult := mustObj(s.createSkill(context.Background(), "empty-skill", validSkillContent, nil))
 	freshResult := mustObj(s.createSkill(context.Background(), "fresh-skill", validSkillContent, nil))
-	var unreadableResult *pyjson.Object
+	var unreadableResult *jsonutil.Object
 	unreadable := filepath.Join(skills, "unreadable-skill")
 	if runtime.GOOS != "windows" && os.Geteuid() != 0 {
 		os.Mkdir(unreadable, 0o755)
@@ -173,7 +173,7 @@ func TestPatchExternalSkillWritesInPlace(t *testing.T) {
 	}
 	result := mustObj(s.patchSkill(context.Background(), "ext-skill", strp("OLD_MARKER"), strp("NEW_MARKER"), nil, false))
 	if !objSuccess(result) || !strings.Contains(readText(t, filepath.Join(skillDir, "SKILL.md")), "NEW_MARKER") {
-		t.Fatalf("external patch %v", result.Vals)
+		t.Fatalf("external patch %v", result)
 	}
 	if lexists(filepath.Join(skills, "ext-skill")) {
 		t.Fatal("external skill duplicated into the local root")
@@ -264,7 +264,7 @@ func curatorPassScope(t *testing.T) (*Scope, string) {
 	SetCurrentWriteOrigin(s.Env, BackgroundReview)
 	ResetBackgroundReviewReadMarks(s.Env)
 	if res := mustObj(s.createSkill(context.Background(), "reviewed", namedSkillContent("reviewed"), nil)); !objSuccess(res) {
-		t.Fatalf("create %v", res.Vals)
+		t.Fatalf("create %v", res)
 	}
 	s.MarkAgentCreated(context.Background(), "reviewed")
 	return s, skills
@@ -334,7 +334,7 @@ func TestFullCreateViaDispatcherIsNotAgentCreated(t *testing.T) {
 	}
 	var createdBy any
 	if rec, ok := usage.Get("test-skill"); ok {
-		if obj, ok := rec.(*pyjson.Object); ok {
+		if obj, ok := rec.(*jsonutil.Object); ok {
 			createdBy, _ = obj.Get("created_by")
 		}
 	}

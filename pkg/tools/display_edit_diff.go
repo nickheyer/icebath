@@ -13,8 +13,9 @@ import (
 	"unicode/utf8"
 
 	"github.com/nickheyer/icebath/pkg/config"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Skill directory a create action targets, the skills package installs it
@@ -127,7 +128,7 @@ type LocalEditSnapshot struct {
 
 // Filesystem path of a possibly relative tool path against the current directory
 func resolvedDisplayPath(path string) string {
-	expanded := pypath.Expanduser(path)
+	expanded := pathutil.ExpandUser(path)
 	if filepath.IsAbs(expanded) {
 		return expanded
 	}
@@ -144,16 +145,16 @@ func snapshotText(path string) (string, bool) {
 	if err != nil {
 		return "", false
 	}
-	text, err := pystr.DecodeUTF8SigFile(data)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(data))
 	if err != nil {
 		return "", false
 	}
-	return pystr.TranslateNewlines(text), true
+	return textutil.NormalizeNewlines(text), true
 }
 
 // Path relative to the current directory when it lies under it, else the path itself
 func displayDiffPath(path string) string {
-	resolved, err := pypath.Resolve(path)
+	resolved, err := pathutil.Resolve(path)
 	if err != nil {
 		return path
 	}
@@ -161,11 +162,11 @@ func displayDiffPath(path string) string {
 	if err != nil {
 		return path
 	}
-	base, err := pypath.Resolve(cwd)
+	base, err := pathutil.Resolve(cwd)
 	if err != nil {
 		return path
 	}
-	if rel, under := pypath.PathRelativeTo(resolved, base); under {
+	if rel, under := pathutil.RelativeTo(resolved, base); under {
 		return rel
 	}
 	return path
@@ -264,11 +265,11 @@ func resultSucceeded(result string) bool {
 		return false
 	}
 	data, ok := safeJSONLoads(result).(map[string]any)
-	if !ok || pyTruthy(data["error"]) {
+	if !ok || anyutil.IsTrue(data["error"]) {
 		return false
 	}
 	if success, has := data["success"]; has {
-		return pyTruthy(success)
+		return anyutil.IsTrue(success)
 	}
 	return true
 }

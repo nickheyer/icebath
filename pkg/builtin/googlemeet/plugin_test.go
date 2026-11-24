@@ -8,22 +8,22 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyplatform"
 	"github.com/nickheyer/icebath/pkg/plugins"
 	"github.com/nickheyer/icebath/pkg/pm"
 	"github.com/nickheyer/icebath/pkg/tools"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Runs the test only where the plugin installs, the platforms marker of the upstream case
 func requireMeetPlatform(t *testing.T) {
 	t.Helper()
-	if s := pyplatform.System(); s != "Linux" && s != "Darwin" {
+	if s := runtime.GOOS; s != "linux" && s != "darwin" {
 		t.Skipf("google_meet install runs on linux and macos, this host is %s", s)
 	}
 }
@@ -54,9 +54,9 @@ func TestOnSessionEndNoopWhenNothingActive(t *testing.T) {
 	prev := sessionEndStop
 	t.Cleanup(func() { sessionEndStop = prev })
 	called := false
-	sessionEndStop = func(context.Context, string) (*pyjson.Object, error) {
+	sessionEndStop = func(context.Context, string) (*jsonutil.Object, error) {
 		called = true
-		return pyjson.NewObject(), nil
+		return jsonutil.NewObject(), nil
 	}
 	if res, err := onSessionEnd(context.Background(), nil); res != nil || err != nil {
 		t.Fatal(res, err)
@@ -69,12 +69,12 @@ func TestOnSessionEndNoopWhenNothingActive(t *testing.T) {
 func TestOnSessionEndStopsLiveBot(t *testing.T) {
 	isolateHome(t)
 	ctx := context.Background()
-	_ = writeActive(ctx, pyjson.ObjectOf("pid", 22222, "meeting_id", "a-b-c", "out_dir", filepath.Join(t.TempDir(), "a-b-c"), "url", "https://meet.google.com/a-b-c", "started_at", 0))
+	_ = writeActive(ctx, jsonutil.ObjectOf("pid", 22222, "meeting_id", "a-b-c", "out_dir", filepath.Join(t.TempDir(), "a-b-c"), "url", "https://meet.google.com/a-b-c", "started_at", 0))
 	prevStop, prevAlive := sessionEndStop, pidAlive
 	t.Cleanup(func() { sessionEndStop, pidAlive = prevStop, prevAlive })
 	pidAlive = func(int) bool { return true }
 	var reasons []string
-	sessionEndStop = func(_ context.Context, reason string) (*pyjson.Object, error) {
+	sessionEndStop = func(_ context.Context, reason string) (*jsonutil.Object, error) {
 		reasons = append(reasons, reason)
 		return nil, errors.New("signal failed")
 	}

@@ -6,16 +6,17 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pydict"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/state"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	orderedutil "github.com/nickheyer/icebath/pkg/utils/ordered"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 // State meta prefix naming the durable owner subject of a hosted room
@@ -31,7 +32,7 @@ type CanonicalHostedRoomService struct {
 	Authority          *SessionAuthority
 	loop               context.Context
 	memberMu           sync.Mutex
-	memberRPCs         *pydict.Dict[[5]string, InternalSessionRPC]
+	memberRPCs         *orderedutil.Map[[5]string, InternalSessionRPC]
 	transportInstalled bool
 	readyImportStarted bool
 	flagsMu            sync.Mutex
@@ -41,7 +42,7 @@ type CanonicalHostedRoomService struct {
 // Hosted room service over the authority's own room store, producers dispatching onto the owner loop
 func NewCanonicalHostedRoomService(ctx context.Context, authority *SessionAuthority, loop context.Context) (*CanonicalHostedRoomService, error) {
 	c := &CanonicalHostedRoomService{HostedRoomService: &HostedRoomService{}, Authority: authority, loop: loop,
-		memberRPCs: pydict.New[[5]string, InternalSessionRPC]()}
+		memberRPCs: orderedutil.NewMap[[5]string, InternalSessionRPC]()}
 	err := c.HostedRoomService.init(ctx, c, HostedRoomServiceOptions{DBPath: authority.DB.Path(),
 		MakeRPC: c.makeRPC})
 	if err != nil {
@@ -82,7 +83,7 @@ func (c *CanonicalHostedRoomService) RoomProfiles(room map[string]any) ([]string
 	for _, name := range names {
 		seen[name] = true
 	}
-	members, _ := pyjson.Plain(room["members"]).([]any)
+	members, _ := jsonutil.Plain(room["members"]).([]any)
 	for _, raw := range members {
 		member, ok := hostedMapping(raw)
 		if !ok {
@@ -93,7 +94,7 @@ func (c *CanonicalHostedRoomService) RoomProfiles(room map[string]any) ([]string
 			continue
 		}
 		target := map[string]any{}
-		if pyrepr.Truthy(member["target"]) {
+		if anyutil.IsTrue(member["target"]) {
 			if target, ok = hostedMapping(member["target"]); !ok {
 				return nil, errors.New("a room member target is " + errchain.Kind(member["target"]) + ", expected a mapping")
 			}
@@ -102,7 +103,7 @@ func (c *CanonicalHostedRoomService) RoomProfiles(room map[string]any) ([]string
 		if !has {
 			kind = "local"
 		}
-		if pyrepr.Equal(kind, "local") {
+		if anyutil.Equal(kind, "local") {
 			seen[profile] = true
 		}
 	}
@@ -133,7 +134,7 @@ func (c *CanonicalHostedRoomService) Attest(ctx context.Context, selector map[st
 		return nil, err
 	}
 	seated := false
-	members, _ := pyjson.Plain(room["members"]).([]any)
+	members, _ := jsonutil.Plain(room["members"]).([]any)
 	for _, raw := range members {
 		m, _ := hostedMapping(raw)
 		target, _ := hostedMapping(m["target"])
@@ -141,7 +142,7 @@ func (c *CanonicalHostedRoomService) Attest(ctx context.Context, selector map[st
 		if !has {
 			kind = "local"
 		}
-		if pyrepr.Equal(m["member_id"], member) && pyrepr.Equal(m["profile"], profile) && pyrepr.Equal(kind, "local") {
+		if anyutil.Equal(m["member_id"], member) && anyutil.Equal(m["profile"], profile) && anyutil.Equal(kind, "local") {
 			seated = true
 			break
 		}
@@ -155,7 +156,7 @@ func (c *CanonicalHostedRoomService) Attest(ctx context.Context, selector map[st
 	}
 	profileName, _ := profile.(string)
 	targetHome, found := homes[profileName]
-	if !found || !pyrepr.Equal(params["_target_home"], targetHome) {
+	if !found || !anyutil.Equal(params["_target_home"], targetHome) {
 		return nil, runtimeRefusal("permission_denied")
 	}
 	result := map[string]any{"owner": owner, "target_home": targetHome}
@@ -180,7 +181,7 @@ func (c *CanonicalHostedRoomService) Attest(ctx context.Context, selector map[st
 	if !has {
 		manifestValue = []any{}
 	}
-	memberID := pyrepr.Str(member)
+	memberID := anyutil.String(member)
 	if operation == "attachment" {
 		manifest, err := hostedManifestItems(manifestValue)
 		if err != nil {
@@ -209,7 +210,7 @@ func (c *CanonicalHostedRoomService) Attest(ctx context.Context, selector map[st
 
 // Stored manifest items of a running task payload as mappings
 func hostedManifestItems(value any) ([]map[string]any, error) {
-	list, _ := pyjson.Plain(value).([]any)
+	list, _ := jsonutil.Plain(value).([]any)
 	out := make([]map[string]any, 0, len(list))
 	for _, raw := range list {
 		item, ok := hostedMapping(raw)
@@ -226,15 +227,15 @@ func (c *CanonicalHostedRoomService) attestMatches(task map[string]any, member, 
 	payload, _ := hostedMapping(task["payload"])
 	execution, _ := hostedStrictInt(task["execution_generation"])
 	wantedGeneration, isInt := hostedStrictInt(params["execution_generation"])
-	if !pyrepr.Equal(hrTaskIdentity(task).AsDict(), pyjson.Plain(params["task"])) || !isInt || execution != wantedGeneration ||
-		!pyrepr.Equal(task["status"], "running") {
+	if !anyutil.Equal(hrTaskIdentity(task).AsDict(), jsonutil.Plain(params["task"])) || !isInt || execution != wantedGeneration ||
+		!anyutil.Equal(task["status"], "running") {
 		return false
 	}
 	targetMember, has := payload["target_member_id"]
 	if !has {
 		targetMember = payload["target_profile"]
 	}
-	if !pyrepr.Equal(targetMember, member) || !pyrepr.Equal(payload["target_profile"], profile) {
+	if !anyutil.Equal(targetMember, member) || !anyutil.Equal(payload["target_profile"], profile) {
 		return false
 	}
 	if operation == "execute" {
@@ -243,10 +244,10 @@ func (c *CanonicalHostedRoomService) attestMatches(task map[string]any, member, 
 	prompt, _ := payload["prompt"].(string)
 	if wantedDigest, has := params["prompt_sha256"]; has {
 		digest := sha256.Sum256([]byte(prompt))
-		if !pyrepr.Equal(hex.EncodeToString(digest[:]), wantedDigest) {
+		if !anyutil.Equal(hex.EncodeToString(digest[:]), wantedDigest) {
 			return false
 		}
-	} else if !pyrepr.Equal(payload["prompt"], params["prompt"]) {
+	} else if !anyutil.Equal(payload["prompt"], params["prompt"]) {
 		return false
 	}
 	stored, has := payload["attachments"]
@@ -254,10 +255,10 @@ func (c *CanonicalHostedRoomService) attestMatches(task map[string]any, member, 
 		stored = []any{}
 	}
 	sent := params["attachments"]
-	if !pyrepr.Truthy(sent) {
+	if !anyutil.IsTrue(sent) {
 		sent = []any{}
 	}
-	return pyrepr.Equal(pyjson.Plain(stored), pyjson.Plain(sent))
+	return anyutil.Equal(jsonutil.Plain(stored), jsonutil.Plain(sent))
 }
 
 // Room bindings of the base service whose rooms this authority owns
@@ -349,17 +350,17 @@ func (c *CanonicalHostedRoomService) owner(roomID string) (string, error) {
 	if row == nil {
 		return "", runtimeRefusal("permission_denied")
 	}
-	return pyrepr.Str(row["value"]), nil
+	return anyutil.String(row["value"]), nil
 }
 
 // Member turn producer, a peer route when remote, an owner relay for another home, else the local FIFO
 func (c *CanonicalHostedRoomService) ResolveMemberTransport(binding HostedRoomBinding, task map[string]any) (InternalSessionRPC, error) {
 	payload, _ := hostedMapping(task["payload"])
 	memberValue := payload["target_member_id"]
-	if !pyrepr.Truthy(memberValue) {
+	if !anyutil.IsTrue(memberValue) {
 		memberValue = payload["target_profile"]
 	}
-	member := pyrepr.Str(memberValue)
+	member := anyutil.String(memberValue)
 	peer, err := c.memberIsPeer(binding.RoomID, member)
 	if err != nil {
 		return nil, err
@@ -371,7 +372,7 @@ func (c *CanonicalHostedRoomService) ResolveMemberTransport(binding HostedRoomBi
 	if !has {
 		return nil, &pyKeyError{"target_profile"}
 	}
-	profile := pyrepr.Str(profileValue)
+	profile := anyutil.String(profileValue)
 	owner, err := c.owner(binding.RoomID)
 	if err != nil {
 		return nil, err
@@ -429,7 +430,7 @@ func (c *CanonicalHostedRoomService) ResolveMemberTransport(binding HostedRoomBi
 
 // Pathlib equality of two paths, case folded where the platform folds case
 func hostedSamePath(a, b string) bool {
-	return pypath.Normcase(pypath.PurePathStr(a)) == pypath.Normcase(pypath.PurePathStr(b))
+	return pathutil.FoldCase(filepath.Clean(a)) == pathutil.FoldCase(filepath.Clean(b))
 }
 
 // Whether a producer operation still matches room ownership, authority, seating, home and task state in one snapshot
@@ -442,7 +443,7 @@ func (c *CanonicalHostedRoomService) producerAuthorized(ctx context.Context, con
 	if err != nil {
 		return false, err
 	}
-	if owned == nil || !pyrepr.Equal(owned["value"], owner) {
+	if owned == nil || !anyutil.Equal(owned["value"], owner) {
 		return false, nil
 	}
 	storedRooms, err := queryHostedRows(ctx, conn, "SELECT * FROM hosted_rooms WHERE room_id=?", binding.RoomID)
@@ -459,14 +460,14 @@ func (c *CanonicalHostedRoomService) producerAuthorized(ctx context.Context, con
 	if err != nil {
 		return false, err
 	}
-	if !pyrepr.Equal(room["authority_gateway_id"], binding.GatewayID) || !pyrepr.Equal(room["authority_epoch"], binding.AuthorityEpoch) {
+	if !anyutil.Equal(room["authority_gateway_id"], binding.GatewayID) || !anyutil.Equal(room["authority_epoch"], binding.AuthorityEpoch) {
 		return false, nil
 	}
 	seated := false
-	members, _ := pyjson.Plain(room["members"]).([]any)
+	members, _ := jsonutil.Plain(room["members"]).([]any)
 	for _, raw := range members {
 		m, _ := hostedMapping(raw)
-		if !pyrepr.Equal(m["member_id"], member) || !pyrepr.Equal(m["profile"], profile) {
+		if !anyutil.Equal(m["member_id"], member) || !anyutil.Equal(m["profile"], profile) {
 			continue
 		}
 		target, present := m["target"]
@@ -479,7 +480,7 @@ func (c *CanonicalHostedRoomService) producerAuthorized(ctx context.Context, con
 			if !has {
 				kind = "local"
 			}
-			if pyrepr.Equal(kind, "local") {
+			if anyutil.Equal(kind, "local") {
 				seated = true
 				break
 			}
@@ -521,16 +522,16 @@ func (c *CanonicalHostedRoomService) producerAuthorized(ctx context.Context, con
 	execution, _ := hostedStrictInt(current["execution_generation"])
 	status, _ := current["status"].(string)
 	return hrTaskIdentity(current) == *identity && generation != nil && execution == *generation &&
-		pyrepr.Equal(payload["target_profile"], profile) && pyrepr.Equal(targetMember, member) && statuses[status], nil
+		anyutil.Equal(payload["target_profile"], profile) && anyutil.Equal(targetMember, member) && statuses[status], nil
 }
 
 // Rows of a hosted query as ordered objects
-func queryHostedRows(ctx context.Context, conn state.SQLiteConn, query string, args ...any) ([]*pyjson.Object, error) {
+func queryHostedRows(ctx context.Context, conn state.SQLiteConn, query string, args ...any) ([]*jsonutil.Object, error) {
 	return state.QueryObjects(ctx, conn, query, args...)
 }
 
 // Reconstructs the private producer of a queued hosted admission from durable task state before its claim
-func (c *CanonicalHostedRoomService) CheckAdmission(ctx context.Context, ref SessionRef, row *pyjson.Object) error {
+func (c *CanonicalHostedRoomService) CheckAdmission(ctx context.Context, ref SessionRef, row *jsonutil.Object) error {
 	err := c.checkAdmission(ctx, ref, row)
 	if err == nil || !hostedValueFamily(err) {
 		return err
@@ -541,7 +542,7 @@ func (c *CanonicalHostedRoomService) CheckAdmission(ctx context.Context, ref Ses
 // Errors of the Python ValueError, TypeError, KeyError and StopIteration families the admission check folds into a refusal
 func hostedValueFamily(err error) bool {
 	return errAs[*state.RuntimeStoreError](err) || errAs[*HostedRoomError](err) || errAs[*AttachmentError](err) ||
-		errAs[*DriverValidationError](err) || errAs[*pyKeyError](err) || errAs[*pyjson.DecodeError](err) || errAs[*hostedAdmissionMismatch](err)
+		errAs[*DriverValidationError](err) || errAs[*pyKeyError](err) || errAs[*jsonutil.SyntaxError](err) || errAs[*hostedAdmissionMismatch](err)
 }
 
 // A hosted admission whose durable binding no longer matches its producer, a ValueError
@@ -549,7 +550,7 @@ type hostedAdmissionMismatch struct{ msg string }
 
 func (e *hostedAdmissionMismatch) Error() string { return e.msg }
 
-func (c *CanonicalHostedRoomService) checkAdmission(ctx context.Context, ref SessionRef, row *pyjson.Object) error {
+func (c *CanonicalHostedRoomService) checkAdmission(ctx context.Context, ref SessionRef, row *jsonutil.Object) error {
 	requestID := rowString(row, "request_id")
 	if !strings.HasPrefix(requestID, "hosted:") {
 		return &hostedAdmissionMismatch{"not a hosted admission"}
@@ -604,7 +605,7 @@ func (c *CanonicalHostedRoomService) checkAdmission(ctx context.Context, ref Ses
 	case *HostedRoomOwnerRPC:
 		rpcRef, hasRef = producer.currentRef()
 	}
-	if !hasRef || rpcRef != ref || !pyrepr.Equal(task["status"], "running") {
+	if !hasRef || rpcRef != ref || !anyutil.Equal(task["status"], "running") {
 		return &hostedAdmissionMismatch{"changed hosted binding"}
 	}
 	producer, ok := rpc.(*HostedRoomAuthorityRPC)
@@ -618,7 +619,7 @@ func (c *CanonicalHostedRoomService) checkAdmission(ctx context.Context, ref Ses
 		return err
 	}
 	stored, _ := row.Get("payload")
-	if !pyjson.Equal(stored, committed) {
+	if !anyutil.Equal(stored, committed) {
 		return &hostedAdmissionMismatch{"changed hosted binding"}
 	}
 	allowed, err := producer.Authorizer(ctx, "execute", &identity, &generation)
@@ -761,7 +762,7 @@ func ensureHostedService(ctx context.Context, runner any, authority *SessionAuth
 // Starts a fully prepared served set behind the published ready gate, then imports once more
 func StartReadyHostedServices(runner any) error {
 	lifecycle, ok := runner.(hostedServiceRunner)
-	if !ok || !pyrepr.Equal(lifecycle.SessionRuntimeDescriptor()["state"], "ready") || lifecycle.Draining() {
+	if !ok || !anyutil.Equal(lifecycle.SessionRuntimeDescriptor()["state"], "ready") || lifecycle.Draining() {
 		return nil
 	}
 	authorities := servingAuthorities(runner)

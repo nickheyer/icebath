@@ -10,10 +10,10 @@ import (
 	"github.com/nickheyer/icebath/pkg/config"
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/i18n"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/settings"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Enabled and disabled toolsets of the listing, an explicit toolsets flag or the profile CLI selection
@@ -24,7 +24,7 @@ func gatewayListingSelection(ctx context.Context, args map[string]any) ([]string
 	} else if list, ok := requested.([]any); ok {
 		parts := make([]string, len(list))
 		for i, item := range list {
-			parts[i] = pyrepr.Str(item)
+			parts[i] = anyutil.String(item)
 		}
 		requested = strings.Join(parts, ",")
 	}
@@ -59,7 +59,7 @@ func printToolListing(ctx context.Context, args map[string]any) (int, error) {
 		return 0, err
 	}
 	env := bannerToolEnv(ctx)
-	if pyrepr.Truthy(args["list_tools"]) {
+	if anyutil.IsTrue(args["list_tools"]) {
 		defs := tools.Default.ToolDefinitions(ctx, env, tools.DefinitionOptions{Enabled: enabled, Disabled: disabled,
 			Quiet: true, SkipToolSearchAssembly: true})
 		if len(defs) == 0 {
@@ -67,8 +67,8 @@ func printToolListing(ctx context.Context, args map[string]any) (int, error) {
 			return 0, nil
 		}
 		toolName := func(def map[string]any) string {
-			fn, _ := pyjson.Dict(def["function"])
-			return pyrepr.Str(requireKey(fn, "name"))
+			fn, _ := jsonutil.AsMap(def["function"])
+			return anyutil.String(requireKey(fn, "name"))
 		}
 		sorted := append([]map[string]any(nil), defs...)
 		sort.SliceStable(sorted, func(i, j int) bool { return toolName(sorted[i]) < toolName(sorted[j]) })
@@ -76,10 +76,10 @@ func printToolListing(ctx context.Context, args map[string]any) (int, error) {
 		grouped := map[string][]row{}
 		for _, def := range sorted {
 			name := toolName(def)
-			fn, _ := pyjson.Dict(def["function"])
+			fn, _ := jsonutil.AsMap(def["function"])
 			desc := ""
 			if raw, ok := fn["description"]; ok {
-				desc = pyrepr.Str(raw)
+				desc = anyutil.String(raw)
 			}
 			desc, _, _ = strings.Cut(desc, "\n")
 			if i := strings.Index(desc, ". "); i >= 0 {

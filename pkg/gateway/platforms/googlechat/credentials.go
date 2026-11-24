@@ -11,8 +11,8 @@ import (
 	"sync"
 
 	"github.com/nickheyer/icebath/pkg/home"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/provider"
+	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
 // Classified service account load failure, the kind selecting the message
@@ -76,7 +76,7 @@ func loadSACredentialsFrom(ctx context.Context, saValue string) (*provider.Googl
 			if err != nil {
 				return nil, err
 			}
-			text, err := pystr.DecodeUTF8Sig(raw)
+			text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 			if err != nil {
 				return nil, &saCredentialError{"file_invalid", err}
 			}
@@ -121,7 +121,7 @@ func (s *threadCountStore) load() {
 		pkgLog().Warn(fmt.Sprintf("[GoogleChat] could not read thread-count store at %s: %v", s.path, err))
 		return
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		pkgLog().Warn(fmt.Sprintf("[GoogleChat] thread-count store at %s is corrupt; starting fresh: %v", s.path, err))
 		return

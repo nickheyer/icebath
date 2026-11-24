@@ -4,16 +4,15 @@ import (
 	"fmt"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Decoded create request JSON, an AttributeError as dict.pop raises when it is not an object
-func decodeCreateRequest(requestJSON string) (*pyjson.Object, error) {
-	decoded, err := pyjson.Loads(requestJSON)
+func decodeCreateRequest(requestJSON string) (*jsonutil.Object, error) {
+	decoded, err := jsonutil.Decode(requestJSON)
 	if err != nil {
 		return nil, pyValueError(err.Error())
 	}
-	request, ok := decoded.(*pyjson.Object)
+	request, ok := decoded.(*jsonutil.Object)
 	if !ok {
 		return nil, &pyConvError{"AttributeError", fmt.Sprintf("the stored create request is %s, expected a mapping", errchain.Kind(decoded))}
 	}
@@ -29,13 +28,13 @@ func derivedKeys(derived any) ([]string, error) {
 			switch k := item.(type) {
 			case string:
 				keys = append(keys, k)
-			case []any, *pyjson.Object:
+			case []any, *jsonutil.Object:
 				return nil, &pyConvError{"TypeError", fmt.Sprintf("a derived key of the create request is %s, expected text", errchain.Kind(k))}
 			}
 		}
 		return keys, nil
-	case *pyjson.Object:
-		return append([]string(nil), d.Keys...), nil
+	case *jsonutil.Object:
+		return append([]string(nil), d.Keys()...), nil
 	case string:
 		var keys []string
 		for _, r := range d {
@@ -47,17 +46,17 @@ func derivedKeys(derived any) ([]string, error) {
 }
 
 // The frozen create request as the client sent it, a nil derived meaning a receipt from before route_derived
-func ClientRequest(requestJSON string, derived any) (*pyjson.Object, error) {
+func ClientRequest(requestJSON string, derived any) (*jsonutil.Object, error) {
 	request, err := decodeCreateRequest(requestJSON)
 	if err != nil {
 		return nil, err
 	}
-	request.Pop("desktop_local")
+	request.Take("desktop_local")
 	if derived == nil {
-		request.Pop("route_derived")
+		request.Take("route_derived")
 	}
 	if _, has := request.Get("model_requested"); has {
-		request.Pop("model")
+		request.Take("model")
 		keys := []string{"base_url"}
 		if derived != nil {
 			if keys, err = derivedKeys(derived); err != nil {
@@ -65,7 +64,7 @@ func ClientRequest(requestJSON string, derived any) (*pyjson.Object, error) {
 			}
 		}
 		for _, k := range keys {
-			request.Pop(k)
+			request.Take(k)
 		}
 	}
 	return request, nil
@@ -86,7 +85,7 @@ func SameCreateRequest(savedJSON, retryJSON string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if pyjson.Equal(savedClient, retryClient) {
+	if anyutil.Equal(savedClient, retryClient) {
 		return true, nil
 	}
 	retry, err := decodeCreateRequest(retryJSON)
@@ -95,15 +94,15 @@ func SameCreateRequest(savedJSON, retryJSON string) (bool, error) {
 	}
 	requested, _ := retry.Get("model_requested")
 	model, _ := retry.Get("model")
-	if pyjson.Equal(requested, model) {
-		retry.Pop("model_requested")
-		retry.Pop("route_derived")
+	if anyutil.Equal(requested, model) {
+		retry.Take("model_requested")
+		retry.Take("route_derived")
 	}
-	return pyjson.Equal(saved, retry), nil
+	return anyutil.Equal(saved, retry), nil
 }
 
 // The exact retry identity of a create, its sent request and its unstored client env judged by the saved policy rules
-func SameCreateRetry(savedPolicy *pyjson.Object, retryJSON string, clientRequest *pyjson.Object) (bool, error) {
+func SameCreateRetry(savedPolicy *jsonutil.Object, retryJSON string, clientRequest *jsonutil.Object) (bool, error) {
 	raw, has := savedPolicy.Get("request_json")
 	if !has {
 		return false, &pyConvError{"KeyError", "the create request row has no request_json"}

@@ -9,9 +9,9 @@ import (
 	"strings"
 
 	"github.com/nickheyer/icebath/pkg/gateway"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
 	"github.com/nickheyer/icebath/pkg/tools"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 )
 
 // Adapter that plays audio in a connected voice channel of a guild
@@ -43,7 +43,7 @@ func (r *GatewayRunner) shouldSendVoiceReply(ctx context.Context, event *gateway
 		if hasMode {
 			mode = voiceMode
 		}
-		pkgLog().Debug(fmt.Sprintf("Auto voice reply skipped: mode=%s adapter_auto_tts=%s chat=%s platform=%s", mode, pyrepr.Str(adapterAutoTTS), chatID, string(event.Source.Platform)))
+		pkgLog().Debug(fmt.Sprintf("Auto voice reply skipped: mode=%s adapter_auto_tts=%s chat=%s platform=%s", mode, anyutil.String(adapterAutoTTS), chatID, string(event.Source.Platform)))
 		return false
 	}
 	start := 0
@@ -59,8 +59,8 @@ func (r *GatewayRunner) shouldSendVoiceReply(ctx context.Context, event *gateway
 		}
 		calls, _ := msg["tool_calls"].([]any)
 		for _, raw := range calls {
-			call, _ := pyjson.Dict(raw)
-			fn, _ := pyjson.Dict(call["function"])
+			call, _ := jsonutil.AsMap(raw)
+			fn, _ := jsonutil.AsMap(call["function"])
 			if fn["name"] == "text_to_speech" {
 				return false
 			}
@@ -85,7 +85,7 @@ func (r *GatewayRunner) sendVoiceReply(ctx context.Context, event *gateway.Messa
 	err := func() (err error) {
 		defer func() {
 			if rec := recover(); rec != nil {
-				err = fmt.Errorf("%s", pyrepr.Str(rec))
+				err = fmt.Errorf("%s", anyutil.String(rec))
 			}
 		}()
 		ttsText := tools.PrepareSpokenTextUncapped(text)
@@ -116,22 +116,22 @@ func (r *GatewayRunner) sendVoiceReply(ctx context.Context, event *gateway.Messa
 		}
 		var paths []string
 		for _, c := range candidates {
-			if !pyrepr.Truthy(c) {
+			if !anyutil.IsTrue(c) {
 				continue
 			}
-			if st, err := os.Stat(pyrepr.Str(c)); err == nil && st.Mode().IsRegular() {
-				paths = append(paths, pyrepr.Str(c))
+			if st, err := os.Stat(anyutil.String(c)); err == nil && st.Mode().IsRegular() {
+				paths = append(paths, anyutil.String(c))
 			}
 		}
-		if !pyrepr.Truthy(result["success"]) || len(paths) == 0 {
-			pkgLog().Warn("Auto voice reply TTS failed: " + pyrepr.Str(result["error"]))
+		if !anyutil.IsTrue(result["success"]) || len(paths) == 0 {
+			pkgLog().Warn("Auto voice reply TTS failed: " + anyutil.String(result["error"]))
 			return nil
 		}
 		actualPaths = paths
 		return r.deliverVoiceReply(ctx, event, actualPaths)
 	}()
 	if err != nil {
-		pkgLog().Warn("Auto voice reply failed: " + pyrepr.ExceptionMessage(err))
+		pkgLog().Warn("Auto voice reply failed: " + err.Error())
 	}
 }
 

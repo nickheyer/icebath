@@ -7,15 +7,15 @@ import (
 	"io/fs"
 	"iter"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
 	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 )
 
 const (
@@ -110,7 +110,7 @@ func cachedWhoamiSID() (string, error) {
 	stripped := strings.TrimSpace(text)
 	sid := strings.Trim(strings.TrimSpace(stripped[strings.LastIndex(stripped, ",")+1:]), `"`)
 	if !strings.HasPrefix(strings.ToUpper(sid), "S-1-") {
-		return "", fmt.Errorf("could not resolve the current user SID from whoami: %s", pyrepr.StrRepr(text))
+		return "", fmt.Errorf("could not resolve the current user SID from whoami: %s", strconv.Quote(text))
 	}
 	whoamiCached = sid
 	return sid, nil
@@ -163,23 +163,23 @@ func grant(path string, isDir bool, expected string, links subtreeLinks) (bool, 
 
 // Path and each ancestor strictly below the process home, outermost first, empty off the home
 func componentsBelowHome(ctx context.Context, path string) []string {
-	h, err := pypath.Abspath(Dir(ctx))
+	h, err := filepath.Abs(Dir(ctx))
 	if err != nil {
 		return nil
 	}
-	abs, err := pypath.Abspath(path)
+	abs, err := filepath.Abs(path)
 	if err != nil {
 		return nil
 	}
-	rel, ok := pypath.PathRelativeTo(abs, h)
+	rel, ok := pathutil.RelativeTo(abs, h)
 	if !ok {
 		return nil
 	}
-	h = pypath.PathStr(h)
-	_, parts := pypath.PathParts(rel)
+	h = filepath.Clean(h)
+	_, parts := pathutil.Parts(rel)
 	out := make([]string, 0, len(parts))
 	for i := 1; i <= len(parts); i++ {
-		out = append(out, pypath.PathJoin(h, parts[:i]...))
+		out = append(out, pathutil.Join(h, parts[:i]...))
 	}
 	return out
 }
@@ -190,18 +190,18 @@ func expectedFinal(ctx context.Context, path string) (string, error) {
 	if len(components) == 0 {
 		return "", nil
 	}
-	h := pypath.PathParent(components[0])
-	real, err := pypath.Realpath(h, pypath.Lax)
+	h := filepath.Dir(filepath.Clean(components[0]))
+	real, err := pathutil.Resolve(h)
 	if err != nil {
 		return "", err
 	}
-	abs, err := pypath.Abspath(path)
+	abs, err := filepath.Abs(path)
 	if err != nil {
 		return "", err
 	}
-	rel, _ := pypath.PathRelativeTo(abs, h)
-	_, parts := pypath.PathParts(rel)
-	return pypath.Join(real, parts...), nil
+	rel, _ := pathutil.RelativeTo(abs, h)
+	_, parts := pathutil.Parts(rel)
+	return pathutil.Join(real, parts...), nil
 }
 
 func excText(err error) string {
@@ -220,7 +220,7 @@ func GrantUserAccess(ctx context.Context, path string, elevated, repairChildren 
 	if !elevated {
 		return false
 	}
-	target := pypath.PathStr(path)
+	target := filepath.Clean(path)
 	expected := ""
 	owed, err := func() (bool, error) {
 		for _, component := range componentsBelowHome(ctx, target) {
@@ -249,7 +249,7 @@ func GrantUserAccess(ctx context.Context, path string, elevated, repairChildren 
 	if repairChildren && owed {
 		real := expected
 		if real == "" {
-			real, _ = pypath.Realpath(target, pypath.Lax)
+			real, _ = pathutil.Resolve(target)
 		}
 		var skipped []string
 		var entries []treeEntry
@@ -273,17 +273,17 @@ type treeEntry struct {
 
 // Python sort key of a sibling path, case folded on Windows and code point ordered elsewhere
 func siblingKey(p string) string {
-	name := pypath.PathName(p)
+	name := pathutil.Name(p)
 	if runtime.GOOS == "windows" {
 		return strings.ToLower(name)
 	}
-	return pystr.SurrogateEscapeDecode([]byte(name))
+	return string(name)
 }
 
 // Yields root and everything under it, never entering or yielding a link, which lands in skipped
 func IterTreeWithoutReparsePoints(root string, skipped *[]string) iter.Seq2[string, bool] {
 	return func(yield func(string, bool) bool) {
-		r := pypath.PathStr(root)
+		r := filepath.Clean(root)
 		if IsReparsePoint(r) {
 			*skipped = append(*skipped, r)
 			return
@@ -301,7 +301,7 @@ func IterTreeWithoutReparsePoints(root string, skipped *[]string) iter.Seq2[stri
 			}
 			children := make([]string, len(entries))
 			for i, entry := range entries {
-				children[i] = pypath.PathJoin(directory, entry.Name())
+				children[i] = pathutil.Join(directory, entry.Name())
 			}
 			slices.SortFunc(children, func(a, b string) int { return strings.Compare(siblingKey(a), siblingKey(b)) })
 			for _, child := range children {
@@ -325,20 +325,20 @@ func GrantTreeUserAccess(root string, pinRoot, elevated bool) (int, []string, []
 	var r string
 	var err error
 	if pinRoot {
-		r, err = pypath.Realpath(root, pypath.Lax)
+		r, err = pathutil.Resolve(root)
 	} else {
-		r, err = pypath.Abspath(root)
+		r, err = filepath.Abs(root)
 	}
 	if err != nil {
 		return 0, nil, nil, err
 	}
-	r = pypath.PathStr(r)
+	r = filepath.Clean(r)
 	var skipped []string
 	var entries []treeEntry
 	for p, d := range iterTree(r, &skipped) {
 		entries = append(entries, treeEntry{p, d})
 	}
-	realRoot, err := pypath.Realpath(r, pypath.Lax)
+	realRoot, err := pathutil.Resolve(r)
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -377,8 +377,8 @@ func grantEntries(root, realRoot string, entries []treeEntry, skipped []string) 
 		if bad == root {
 			continue
 		}
-		for _, parent := range pypath.PathParents(bad) {
-			if parent == root || slices.Contains(pypath.PathParents(parent), root) {
+		for _, parent := range pathutil.Parents(bad) {
+			if parent == root || slices.Contains(pathutil.Parents(parent), root) {
 				holdsLink[parent] = true
 			}
 		}
@@ -389,13 +389,13 @@ func grantEntries(root, realRoot string, entries []treeEntry, skipped []string) 
 	granted := 0
 	var failed []GrantFailure
 	for _, e := range entries {
-		rel, _ := pypath.PathRelativeTo(e.path, root)
-		_, parts := pypath.PathParts(rel)
+		rel, _ := pathutil.RelativeTo(e.path, root)
+		_, parts := pathutil.Parts(rel)
 		links := linksAbsent
 		if e.isDir && holdsLink[e.path] {
 			links = linksPresent
 		}
-		_, err := grant(e.path, e.isDir, pypath.Join(realRoot, parts...), links)
+		_, err := grant(e.path, e.isDir, pathutil.Join(realRoot, parts...), links)
 		var refused *ReparsePointRefused
 		switch {
 		case errors.As(err, &refused):
@@ -427,12 +427,12 @@ func MakeUserDir(ctx context.Context, path string, mode os.FileMode, parents, ex
 }
 
 func makeUserDir(ctx context.Context, path string, mode os.FileMode, parents, existOK, elevated bool) (string, error) {
-	target := pypath.PathStr(path)
+	target := filepath.Clean(path)
 	if !elevated {
 		return target, pathMkdir(target, mode, parents, existOK)
 	}
 	var created []string
-	for probe := target; !pathExists(probe) && pypath.PathParent(probe) != probe; probe = pypath.PathParent(probe) {
+	for probe := target; !pathExists(probe) && filepath.Dir(filepath.Clean(probe)) != probe; probe = filepath.Dir(filepath.Clean(probe)) {
 		created = append(created, probe)
 	}
 	if err := pathMkdir(target, mode, parents, existOK); err != nil {
@@ -500,7 +500,7 @@ func pathMkdir(p string, mode os.FileMode, parents, existOK bool) error {
 		return nil
 	}
 	if errors.Is(err, fs.ErrNotExist) {
-		parent := pypath.PathParent(p)
+		parent := filepath.Dir(filepath.Clean(p))
 		if !parents || parent == p {
 			return err
 		}

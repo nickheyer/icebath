@@ -16,7 +16,11 @@ import (
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyshutil"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	executil "github.com/nickheyer/icebath/pkg/utils/exec"
+	fsutil "github.com/nickheyer/icebath/pkg/utils/fs"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
+	pathutil "github.com/nickheyer/icebath/pkg/utils/path"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 
 	"modernc.org/sqlite"
@@ -25,11 +29,6 @@ import (
 	"github.com/nickheyer/icebath/pkg/home"
 	"github.com/nickheyer/icebath/pkg/internal/proc"
 	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pypath"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
-	"github.com/nickheyer/icebath/pkg/internal/pysubprocess"
 	"github.com/nickheyer/icebath/pkg/pm"
 )
 
@@ -42,11 +41,11 @@ type worktreeGitResult struct {
 
 // Runs git in cwd capturing utf-8 text with replacement, env nil inherits the process environment
 func worktreeGit(args []string, cwd string, timeout time.Duration, env map[string]string) (*worktreeGitResult, error) {
-	o := pysubprocess.Options{Dir: cwd, Timeout: timeout}
+	o := executil.Options{Dir: cwd, Timeout: timeout}
 	if env != nil {
 		o.Env = mapToEnviron(env)
 	}
-	r, err := pysubprocess.RunWith(context.Background(), append([]string{"git"}, args...), o)
+	r, err := executil.Run(context.Background(), append([]string{"git"}, args...), o)
 	if err != nil {
 		return nil, err
 	}
@@ -179,29 +178,29 @@ func copyWorktreeIncludes(repoRoot, wtPath string) {
 		return
 	}
 	log := envLog(nil)
-	repoResolved, err := pypath.Realpath(repoRoot, pypath.Lax)
+	repoResolved, err := pathutil.Resolve(repoRoot)
 	if err != nil {
 		log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", errchain.OSText(err)))
 		return
 	}
-	wtResolved, err := pypath.Realpath(wtPath, pypath.Lax)
+	wtResolved, err := pathutil.Resolve(wtPath)
 	if err != nil {
 		log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", errchain.OSText(err)))
 		return
 	}
 	for _, entry := range entries {
 		src, dst := filepath.Join(repoRoot, entry), filepath.Join(wtPath, entry)
-		srcResolved, err1 := pypath.Realpath(src, pypath.Lax)
-		dstResolved, err2 := pypath.Realpath(dst, pypath.Lax)
+		srcResolved, err1 := pathutil.Resolve(src)
+		dstResolved, err2 := pathutil.Resolve(dst)
 		if err1 != nil || err2 != nil {
 			log.Debug(fmt.Sprintf("Skipping invalid .worktreeinclude entry: %s", entry))
 			continue
 		}
-		if _, inside := pypath.PathRelativeTo(srcResolved, repoResolved); !inside {
+		if _, inside := pathutil.RelativeTo(srcResolved, repoResolved); !inside {
 			log.Warn(fmt.Sprintf("Skipping .worktreeinclude entry outside repo root: %s", entry))
 			continue
 		}
-		if _, inside := pypath.PathRelativeTo(dstResolved, wtResolved); !inside {
+		if _, inside := pathutil.RelativeTo(dstResolved, wtResolved); !inside {
 			log.Warn(fmt.Sprintf("Skipping .worktreeinclude entry that escapes worktree: %s", entry))
 			continue
 		}
@@ -211,7 +210,7 @@ func copyWorktreeIncludes(repoRoot, wtPath string) {
 		}
 		if st.Mode().IsRegular() {
 			if err := os.MkdirAll(filepath.Dir(dst), 0o777); err == nil {
-				err = pyshutil.Copy2(src, dst)
+				err = fsutil.CopyFile(src, dst)
 			}
 			if err != nil {
 				log.Debug(fmt.Sprintf("Error copying .worktreeinclude entries: %s", errchain.OSText(err)))
@@ -232,7 +231,7 @@ func copyWorktreeIncludes(repoRoot, wtPath string) {
 				return
 			}
 			log.Info(fmt.Sprintf(".worktreeinclude: symlink failed (%s) \u2014 falling back to copytree on Windows.", errchain.OSText(err)))
-			if err := pyshutil.CopyTree(srcResolved, dst, true, false); err != nil {
+			if err := fsutil.CopyTree(srcResolved, dst, fsutil.CopyTreeOptions{Symlinks: true}); err != nil {
 				log.Warn(fmt.Sprintf(".worktreeinclude: copy fallback also failed for %s -> %s: %s", src, dst, err))
 			}
 		}
@@ -247,8 +246,8 @@ func includeSymlinkPaths(worktreePath, repoRoot string) map[string]bool {
 		if !isSymlink(dst) {
 			continue
 		}
-		a, errA := pypath.Resolve(dst)
-		b, errB := pypath.Resolve(filepath.Join(repoRoot, entry))
+		a, errA := pathutil.Resolve(dst)
+		b, errB := pathutil.Resolve(filepath.Join(repoRoot, entry))
 		if errA == nil && errB == nil && a == b {
 			paths[strings.TrimRight(filepath.ToSlash(filepath.Clean(entry)), "/")] = true
 		}
@@ -334,7 +333,7 @@ func deepenShallowRepo(repoRoot string, timeout time.Duration) bool {
 		for _, extra := range [][]string{{"--filter=blob:none"}, {}} {
 			r, err := worktreeGit(append([]string{"fetch", remote, "--unshallow"}, extra...), repoRoot, timeout, NoninteractiveGitEnv(nil))
 			if err != nil {
-				if _, isTimeout := err.(*pysubprocess.TimeoutExpired); isTimeout {
+				if _, isTimeout := err.(*executil.TimeoutError); isTimeout {
 					return true
 				}
 				envLog(nil).Debug(fmt.Sprintf("Deepening shallow repo failed (non-fatal): %s", err))
@@ -408,19 +407,19 @@ func loadWorktreeMergeCache() *mergeVerdicts {
 	if err != nil {
 		return out
 	}
-	text, err := pystr.DecodeUTF8Sig(raw)
+	text, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return out
 	}
-	v, err := pyjson.Loads(text)
-	obj, ok := v.(*pyjson.Object)
+	v, err := jsonutil.Decode(text)
+	obj, ok := v.(*jsonutil.Object)
 	if err != nil || !ok {
 		return out
 	}
 	entries, _ := obj.Get("verdicts")
-	if eo, ok := entries.(*pyjson.Object); ok {
-		for _, k := range eo.Keys {
-			if b, ok := eo.Vals[k].(bool); ok {
+	if eo, ok := entries.(*jsonutil.Object); ok {
+		for _, k := range eo.Keys() {
+			if b, ok := eo.Value(k).(bool); ok {
 				out.set(k, b)
 			}
 		}
@@ -431,11 +430,11 @@ func loadWorktreeMergeCache() *mergeVerdicts {
 // Atomically persists the newest verdicts up to the cache cap, never failing the caller
 func saveWorktreeMergeCache(ctx context.Context, verdicts *mergeVerdicts) {
 	keys := verdicts.keys[max(0, len(verdicts.keys)-worktreeMergeCacheMax):]
-	inner := pyjson.NewObject()
+	inner := jsonutil.NewObject()
 	for _, k := range keys {
 		inner.Set(k, verdicts.vals[k])
 	}
-	payload := pyjson.NewObject()
+	payload := jsonutil.NewObject()
 	payload.Set("version", int64(1))
 	payload.Set("verdicts", inner)
 	path := worktreeMergeCachePath()
@@ -519,7 +518,7 @@ func worktreeCurrentBranch(worktreePath string, timeout time.Duration) (string, 
 
 // Runs the gh cli for the merged pull request probe, swapped by tests
 var worktreeGhRun = func(args []string, cwd string, timeout time.Duration) (*worktreeGitResult, error) {
-	r, err := pysubprocess.RunWith(context.Background(), append([]string{"gh"}, args...), pysubprocess.Options{Dir: cwd, Timeout: timeout})
+	r, err := executil.Run(context.Background(), append([]string{"gh"}, args...), executil.Options{Dir: cwd, Timeout: timeout})
 	if err != nil {
 		return nil, err
 	}
@@ -553,7 +552,7 @@ func worktreeBranchPRMerged(worktreePath string, timeout time.Duration, cache *m
 	if text == "" {
 		text = "[]"
 	}
-	v, err := pyjson.Loads(text)
+	v, err := jsonutil.Decode(text)
 	if err != nil {
 		return false
 	}
@@ -612,7 +611,7 @@ func retainWorktreeForSession(repoRoot, worktreePath, sessionID, dbPath string) 
 }
 
 // Native path identity of a spelling, the os.path.normcase tests patch
-var insideTreeNormcase = pypath.Normcase
+var insideTreeNormcase = pathutil.FoldCase
 
 // Core count the classification pool is sized from, the os.cpu_count tests patch
 var worktreeCPUCount = runtime.NumCPU
@@ -624,12 +623,12 @@ func insideTreeKey(value string) string {
 
 // Reports whether cwd is the tree or under it by native path identity of its spelling and its resolved form
 func insideTree(worktreePath string) func(cwd any) bool {
-	roots := []string{insideTreeKey(pypath.PurePathStr(worktreePath))}
-	if resolved, err := pypath.Resolve(worktreePath); err == nil {
+	roots := []string{insideTreeKey(filepath.Clean(worktreePath))}
+	if resolved, err := pathutil.Resolve(worktreePath); err == nil {
 		roots = append(roots, insideTreeKey(resolved))
 	}
 	return func(cwd any) bool {
-		if !pyTruthy(cwd) {
+		if !anyutil.IsTrue(cwd) {
 			return false
 		}
 		var s string
@@ -639,7 +638,7 @@ func insideTree(worktreePath string) func(cwd any) bool {
 		case []byte:
 			s = string(v)
 		default:
-			s = pyrepr.Str(cwd)
+			s = anyutil.String(cwd)
 		}
 		k := insideTreeKey(s)
 		for _, r := range roots {
@@ -741,14 +740,14 @@ func sqlText(v any) string {
 	case []byte:
 		return string(x)
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Installed by pkg/cron at init over the current store, the jobs.json path, its parsed payload and the runnable non terminal test
 var WorktreeCronStore struct {
 	JobsFile  func() string
 	ParseJobs func(path string) (any, error)
-	JobActive func(job *pyjson.Object) bool
+	JobActive func(job *jsonutil.Object) bool
 }
 
 // Whether an enabled non terminal cron job runs inside the tree or is bound to a local chat of a session there
@@ -770,20 +769,20 @@ func cronBoundToTree(worktreePath string, chats map[string]bool) bool {
 		return true
 	}
 	jobs := data
-	if o, ok := data.(*pyjson.Object); ok {
+	if o, ok := data.(*jsonutil.Object); ok {
 		jobs, _ = o.Get("jobs")
 	}
 	list, _ := jobs.([]any)
 	inside := insideTree(worktreePath)
 	for _, j := range list {
-		job, ok := j.(*pyjson.Object)
+		job, ok := j.(*jsonutil.Object)
 		if !ok || !WorktreeCronStore.JobActive(job) {
 			continue
 		}
 		originV, _ := job.Get("origin")
-		origin, ok := originV.(*pyjson.Object)
+		origin, ok := originV.(*jsonutil.Object)
 		if !ok {
-			origin = pyjson.NewObject()
+			origin = jsonutil.NewObject()
 		}
 		workdir, _ := job.Get("workdir")
 		if inside(workdir) {
@@ -800,13 +799,13 @@ func cronBoundToTree(worktreePath string, chats map[string]bool) bool {
 
 // Text of str(value or "") for a decoded JSON value
 func jsonStrOr(v any) string {
-	if !pyTruthy(v) {
+	if !anyutil.IsTrue(v) {
 		return ""
 	}
 	if s, ok := v.(string); ok {
 		return s
 	}
-	return pyrepr.Str(v)
+	return anyutil.String(v)
 }
 
 // Whether a resumable session has its cwd inside the retained tree, pendingOnly counts pending gateway work alone
@@ -853,7 +852,7 @@ func worktreeLockReason(repoRoot, worktreePath string, timeout time.Duration) (b
 	if err != nil {
 		return false, nil, err
 	}
-	link, err := pystr.DecodeUTF8Sig(raw)
+	link, err := textutil.DecodeUTF8(textutil.TrimBOM(raw))
 	if err != nil {
 		return false, nil, err
 	}
@@ -864,7 +863,7 @@ func worktreeLockReason(repoRoot, worktreePath string, timeout time.Duration) (b
 	if !filepath.IsAbs(target) {
 		target = filepath.Join(worktreePath, target)
 	}
-	admin, err := pypath.Resolve(target)
+	admin, err := pathutil.Resolve(target)
 	if err != nil {
 		return false, nil, err
 	}
@@ -872,7 +871,7 @@ func worktreeLockReason(repoRoot, worktreePath string, timeout time.Duration) (b
 	if !filepath.IsAbs(commonPath) {
 		commonPath = filepath.Join(repoRoot, commonPath)
 	}
-	worktrees, err := pypath.Resolve(filepath.Join(commonPath, "worktrees"))
+	worktrees, err := pathutil.Resolve(filepath.Join(commonPath, "worktrees"))
 	if err != nil {
 		return false, nil, err
 	}
@@ -1094,7 +1093,7 @@ func reapPruneVerdicts(repoRoot string, verdicts []pruneVerdict, staleWorkCutoff
 					return err
 				}
 			}
-			envLog(nil).Debug(fmt.Sprintf("Pruned stale worktree: %s (force=%s)", name, pyrepr.Str(v.force)))
+			envLog(nil).Debug(fmt.Sprintf("Pruned stale worktree: %s (force=%s)", name, anyutil.String(v.force)))
 			return nil
 		}()
 		if err != nil {

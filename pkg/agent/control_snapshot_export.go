@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/nickheyer/icebath/pkg/goals"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
 )
 
 // Raised when a persisted goal, loop or heartbeat row cannot be parsed
@@ -15,7 +14,7 @@ func (e *ControlStoreError) Error() string { return "storage_unavailable" }
 func (e *ControlStoreError) Unwrap() error { return e.Err }
 
 // Goal, loop and heartbeat cards of a segment with their revision and newest persisted timestamp
-func ControlSnapshot(ctx context.Context, getMeta func(ctx context.Context, key string) (string, bool, error), target string) (*pyjson.Object, error) {
+func ControlSnapshot(ctx context.Context, getMeta func(ctx context.Context, key string) (string, bool, error), target string) (*jsonutil.Object, error) {
 	read := func(key string) (string, error) {
 		raw, ok, err := getMeta(ctx, key)
 		if err != nil || !ok {
@@ -84,11 +83,11 @@ func ControlSnapshot(ctx context.Context, getMeta func(ctx context.Context, key 
 	if found {
 		updatedAt = best
 	}
-	return pyjson.ObjectOf("goal", nilObject(goal), "loop", nilObject(loop), "heartbeat", nilObject(heartbeat),
+	return jsonutil.ObjectOf("goal", nilObject(goal), "loop", nilObject(loop), "heartbeat", nilObject(heartbeat),
 		"revision", revision, "updated_at", updatedAt), nil
 }
 
-func nilObject(o *pyjson.Object) any {
+func nilObject(o *jsonutil.Object) any {
 	if o == nil {
 		return nil
 	}

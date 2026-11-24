@@ -8,16 +8,15 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/nickheyer/icebath/pkg/errchain"
-	"github.com/nickheyer/icebath/pkg/internal/pyint"
-	"github.com/nickheyer/icebath/pkg/internal/pyjson"
-	"github.com/nickheyer/icebath/pkg/internal/pyrepr"
-	"github.com/nickheyer/icebath/pkg/internal/pystr"
+	anyutil "github.com/nickheyer/icebath/pkg/utils/any"
+	jsonutil "github.com/nickheyer/icebath/pkg/utils/json"
 	textutil "github.com/nickheyer/icebath/pkg/utils/text"
 )
 
@@ -68,7 +67,7 @@ func (e *ddgsInterruptedError) Error() string { return e.msg }
 
 // Seconds of a Python number setting
 func pySeconds(v any) time.Duration {
-	f, err := pyint.Float(v)
+	f, err := anyutil.ToFloat(v)
 	if err != nil {
 		return 0
 	}
@@ -164,7 +163,7 @@ func ddgsSpawnWorker(childEnv map[string]string) (*ddgsWorkerProc, *os.File, *os
 		stdoutR.Close()
 		var pe *os.PathError
 		if errors.As(err, &pe) {
-			return nil, nil, nil, raise("OSError", "%s: %s", errchain.OSText(pe.Err), pyrepr.StrRepr(exe))
+			return nil, nil, nil, raise("OSError", "%s: %s", errchain.OSText(pe.Err), strconv.Quote(exe))
 		}
 		return nil, nil, nil, err
 	}
@@ -183,21 +182,21 @@ func ddgsParseEnvelope(raw string, p *ddgsWorkerProc) ([]WebSearchHit, error) {
 	if raw == "" {
 		return nil, raise("RuntimeError", "DDGS worker exited without a result (code=%s)", p.returncode())
 	}
-	envelope, err := pyjson.Loads(raw)
+	envelope, err := jsonutil.Decode(raw)
 	if err != nil {
-		return nil, raise("RuntimeError", "DDGS worker returned invalid JSON: %s", pyrepr.StrRepr(textutil.First(raw, 200)))
+		return nil, raise("RuntimeError", "DDGS worker returned invalid JSON: %s", strconv.Quote(textutil.First(raw, 200)))
 	}
-	d, ok := envelope.(*pyjson.Object)
+	d, ok := envelope.(*jsonutil.Object)
 	if !ok {
-		return nil, raise("RuntimeError", "DDGS worker returned an invalid envelope: %s", pyrepr.Repr(envelope))
+		return nil, raise("RuntimeError", "DDGS worker returned an invalid envelope: %s", anyutil.Quote(envelope))
 	}
 	okv, _ := d.Get("ok")
-	if !pyTruthy(okv) {
+	if !anyutil.IsTrue(okv) {
 		errv, _ := d.Get("error")
-		return nil, raise("RuntimeError", "%s", pyrepr.Str(pyOr(errv, "DDGS worker failed")))
+		return nil, raise("RuntimeError", "%s", anyutil.String(anyutil.Or(errv, "DDGS worker failed")))
 	}
 	rawResults, _ := d.Get("results")
-	items, ok := pyOr(rawResults, []any{}).([]any)
+	items, ok := anyutil.Or(rawResults, []any{}).([]any)
 	if !ok {
 		return nil, raise("RuntimeError", "DDGS worker returned non-list results")
 	}
@@ -205,18 +204,17 @@ func ddgsParseEnvelope(raw string, p *ddgsWorkerProc) ([]WebSearchHit, error) {
 	for _, item := range items {
 		row, _ := pyDict(item)
 		if row == nil {
-			row = pyjson.NewObject()
+			row = jsonutil.NewObject()
 		}
 		title, _ := row.Get("title")
 		u, _ := row.Get("url")
 		description, _ := row.Get("description")
 		position, _ := row.Get("position")
-		pos, _ := pyint.Of(position)
 		n := 0
-		if pos != nil && pos.IsInt64() {
-			n = int(pos.Int64())
+		if pos, err := anyutil.ToInt(position); err == nil {
+			n = int(pos)
 		}
-		hits = append(hits, titleHit(pyStrField(title), pyStrField(u), pyStrField(description), n))
+		hits = append(hits, titleHit(anyutil.String(title), anyutil.String(u), anyutil.String(description), n))
 	}
 	return hits, nil
 }
@@ -232,7 +230,7 @@ func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit in
 		request.Set("test_hook", ddgsTestHook)
 		childEnv["ICEBATH_DDGS_ALLOW_TEST_HOOKS"] = "1"
 	}
-	payload, err := pyjson.Dumps(request)
+	payload, err := jsonutil.Encode(request)
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +246,7 @@ func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit in
 		out, _ := io.ReadAll(stdout)
 		stdout.Close()
 		<-p.exited
-		result <- pystr.TranslateNewlines(strings.ToValidUTF8(string(out), "\uFFFD"))
+		result <- textutil.NormalizeNewlines(strings.ToValidUTF8(string(out), "\uFFFD"))
 	}()
 	grace := time.Duration(ddgsTerminateGraceSecs * float64(time.Second))
 	interrupted, done, raw := false, false, ""
@@ -281,7 +279,7 @@ func ddgsSearchBounded(ctx context.Context, env *Env, query string, safeLimit in
 		return nil, &ddgsInterruptedError{"DuckDuckGo search interrupted"}
 	}
 	if !done {
-		return nil, &ddgsTimeoutError{fmt.Sprintf("DuckDuckGo search timed out after %ss", pyrepr.Str(ddgsSearchTimeoutSecs))}
+		return nil, &ddgsTimeoutError{fmt.Sprintf("DuckDuckGo search timed out after %ss", anyutil.String(ddgsSearchTimeoutSecs))}
 	}
 	return ddgsParseEnvelope(raw, p)
 }
@@ -312,10 +310,10 @@ func (p *ddgsProvider) Search(ctx context.Context, env *Env, query string, limit
 		var ie *ddgsInterruptedError
 		switch {
 		case errors.As(err, &te):
-			envLog(env).Warn(fmt.Sprintf("DDGS search timed out after %ds for query: %s", int(pySeconds(ddgsSearchTimeoutSecs)/time.Second), pyrepr.StrRepr(query)))
-			return searchFail(fmt.Sprintf("DuckDuckGo search timed out after %ss — DuckDuckGo may be rate-limiting or slow. Try again later or switch to a different search provider.", pyrepr.Str(ddgsSearchTimeoutSecs))), nil
+			envLog(env).Warn(fmt.Sprintf("DDGS search timed out after %ds for query: %s", int(pySeconds(ddgsSearchTimeoutSecs)/time.Second), strconv.Quote(query)))
+			return searchFail(fmt.Sprintf("DuckDuckGo search timed out after %ss — DuckDuckGo may be rate-limiting or slow. Try again later or switch to a different search provider.", anyutil.String(ddgsSearchTimeoutSecs))), nil
 		case errors.As(err, &ie):
-			envLog(env).Info(fmt.Sprintf("DDGS search interrupted for query: %s", pyrepr.StrRepr(query)))
+			envLog(env).Info(fmt.Sprintf("DDGS search interrupted for query: %s", strconv.Quote(query)))
 			return searchFail("DuckDuckGo search interrupted"), nil
 		}
 		envLog(env).Warn(fmt.Sprintf("DDGS search error: %s", err))
@@ -332,8 +330,8 @@ func (p *ddgsProvider) SetupSchema() map[string]any {
 
 // Worker entrypoint reading one request from stdin and writing one envelope to stdout
 func ddgsWorkerMain(ctx context.Context, in io.Reader, out io.Writer, getenv func(string) string) int {
-	write := func(envelope *pyjson.Object) {
-		text, _ := pyjson.Dumps(envelope)
+	write := func(envelope *jsonutil.Object) {
+		text, _ := jsonutil.Encode(envelope)
 		_, _ = io.WriteString(out, text)
 	}
 	fail := func(msg string, code int) int {
@@ -344,47 +342,47 @@ func ddgsWorkerMain(ctx context.Context, in io.Reader, out io.Writer, getenv fun
 	if err != nil {
 		return fail("invalid request: "+err.Error(), 2)
 	}
-	if pos, ok := pystr.ValidIndex(data); !ok {
-		return fail("invalid request: "+pystr.UTF8DecodeError(data, pos).Error(), 2)
+	if err := textutil.ValidateUTF8(data); err != nil {
+		return fail("invalid request: "+err.Error(), 2)
 	}
-	request, err := pyjson.Loads(string(data))
+	request, err := jsonutil.Decode(data)
 	if err != nil {
 		return fail("invalid request: "+err.Error(), 2)
 	}
-	d, ok := request.(*pyjson.Object)
+	d, ok := request.(*jsonutil.Object)
 	if !ok {
 		return 1
 	}
-	if hook, _ := d.Get("test_hook"); pyTruthy(hook) {
+	if hook, _ := d.Get("test_hook"); anyutil.IsTrue(hook) {
 		if getenv("ICEBATH_DDGS_ALLOW_TEST_HOOKS") != "1" {
 			return fail("test_hook refused (hooks not enabled)", 3)
 		}
-		var envelope *pyjson.Object
-		switch name := pyrepr.Str(hook); name {
+		var envelope *jsonutil.Object
+		switch name := anyutil.String(hook); name {
 		case "sleep", "gil":
 			time.Sleep(30 * time.Second)
 			envelope = pyObject("ok", false, "error", name+" hook returned unexpectedly")
 		case "empty":
 			envelope = pyObject("ok", true, "results", []any{})
 		default:
-			envelope = pyObject("ok", false, "error", "unknown test_hook: "+pyrepr.Repr(hook))
+			envelope = pyObject("ok", false, "error", "unknown test_hook: "+anyutil.Quote(hook))
 		}
 		write(envelope)
-		if okv, _ := envelope.Get("ok"); pyTruthy(okv) {
+		if okv, _ := envelope.Get("ok"); anyutil.IsTrue(okv) {
 			return 0
 		}
 		return 1
 	}
 	rawQuery, _ := d.Get("query")
-	query := pyrepr.Str(pyOr(rawQuery, ""))
+	query := anyutil.String(anyutil.Or(rawQuery, ""))
 	rawLimit, _ := d.Get("safe_limit")
-	n, err := pyint.Of(pyOr(rawLimit, 1))
-	if err != nil {
+	n, err := anyutil.ToInt(anyutil.Or(rawLimit, 1))
+	if err != nil && !errors.Is(err, anyutil.ErrRange) {
 		return 1
 	}
 	safeLimit := math.MaxInt
-	if n.IsInt64() && n.Int64() < math.MaxInt {
-		safeLimit = int(n.Int64())
+	if n < math.MaxInt {
+		safeLimit = int(n)
 	}
 	safeLimit = max(1, safeLimit)
 	hits, err := runDDGSSearch(ctx, query, safeLimit)
@@ -403,6 +401,3 @@ func ddgsWorkerMain(ctx context.Context, in io.Reader, out io.Writer, getenv fun
 func NewDDGSWebProvider() WebProvider {
 	return &ddgsProvider{baseWebProvider{name: "ddgs", display: "DuckDuckGo (ddgs)"}}
 }
-
-// Class name the registry log and type errors print, the plugin provider class
-func (*ddgsProvider) PyTypeName() string { return "DDGSWebSearchProvider" }
